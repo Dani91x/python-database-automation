@@ -1,0 +1,28 @@
+m1_fill_di_casa: ROSSA 9 failed, 9 passed, 2 warnings in 40.00s
+m2_close_rest_non_ignorato: ROSSA 1 failed in 14.73s
+m3_apertura_rest_non_ignorato: ROSSA 2 failed, 2 warnings in 16.35s
+m4_s7_rimando_paper: ROSSA 2 failed in 18.72s
+m5_reconcile_conferma_riserva: ROSSA 1 failed in 13.68s
+m6_motivo_rinominato: ROSSA 2 failed in 14.00s
+m7_paper_ladder_ancora_cancello: ROSSA 2 failed in 20.01s
+m8_omega_senza_timeout: ROSSA 1 failed in 10.61s
+m9_scanner_senza_timeout: ROSSA 1 failed in 20.87s
+m10_cor_non_salvato: ROSSA 1 failed in 9.35s
+m11_reconcile_senza_cor: ROSSA 2 failed in 7.98s
+m12_memoria_perde_il_cor: ROSSA 1 failed in 9.30s
+m13_tennis_non_al_minimo: ROSSA 2 failed in 15.89s
+m14_chiusura_gonfiata: ROSSA 1 failed in 10.86s
+m15_banco_senza_cor: ROSSA 1 failed in 6.29s
+m16_cleared_senza_cor: ROSSA (rilanciata dopo l'aggiornamento del bersaglio, vedi sotto)
+m17_senza_runner_consuma: ROSSA 2 failed, 2 warnings in 13.33s
+m18_seme_riconta: ROSSA 1 failed in 8.73s
+m19_log_senza_freno: ROSSA 1 failed, 2 warnings in 13.24s
+m20_nessuna_attesa: ROSSA 1 failed, 2 warnings in 8.30s
+m21_po1_integrale_come_prima: ROSSA 2 failed in 14.14s
+m22_po1_stato_mai_done: ROSSA 1 failed in 22.15s
+m23_uscita_senza_runner_consuma: ROSSA 1 failed in 16.08s
+m24_riserva_a_runner_giu: ROSSA 2 failed in 18.65s
+m25_omega_green_up_consuma: ROSSA 1 failed in 19.20s
+m26_cor_storico_perso: ROSSA 1 failed in 5.64s
+m27_cor_mai_aggiornato: ROSSA 1 failed in 10.33s
+m28_riepilogo_assente: ROSSA 1 failed in 10.43s

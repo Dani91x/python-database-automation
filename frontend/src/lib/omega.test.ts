@@ -75,9 +75,10 @@ describe('24/09 uscite_protezione — chi esegue l’uscita calcolata', () => {
         expect(modoUsciteProtezione('automatico')).toBe('automatico');
         expect(modoUsciteProtezione(' Automatico ')).toBe('automatico');
     });
-    it('il campo è un «choice» a DUE pulsanti con i valori del servizio', () => {
+    it('28/09: il campo e\' l\'interruttore COMUNE delle uscite, coi valori del servizio', () => {
         const f = OMEGA_PARAM_GROUPS.flatMap((g) => g.fields).find((x) => x.key === USCITE_PROTEZIONE_KEY);
-        expect(f?.type).toBe('choice');
+        expect(f?.type).toBe('uscite');
+        expect(f?.uscite).toEqual({ automatico: 'automatico', manuale: 'avvisa_e_proponi' });
         expect(f?.options?.map((o) => o.value)).toEqual(['avvisa_e_proponi', 'automatico']);
     });
 });

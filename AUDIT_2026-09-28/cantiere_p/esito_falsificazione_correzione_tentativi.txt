@@ -1,0 +1,6 @@
+﻿m1_fill_di_casa: ROSSA 11 failed, 7 passed, 2 warnings in 15.77s
+m6_motivo_rinominato: ROSSA 2 failed in 5.22s
+m17_senza_runner_consuma: ROSSA 2 failed, 2 warnings in 8.99s
+m18_seme_riconta: ROSSA 1 failed in 8.03s
+m19_log_senza_freno: ROSSA 1 failed, 2 warnings in 7.39s
+m20_nessuna_attesa: ROSSA 1 failed, 2 warnings in 7.00s

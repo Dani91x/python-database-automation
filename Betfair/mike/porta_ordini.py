@@ -122,6 +122,11 @@ class VistaMike:
     def __init__(self, base: Any, *, appoggiata: bool = False) -> None:
         self.base = base
         self.appoggiata = bool(appoggiata)
+        # D1-ter (28/09): il taker di Mike in LIVE e' un FOK anche sotto il
+        # minimo (``place_submin_live(fill_or_kill=True)``): ``execution`` deve
+        # decidere il piano come il live prima di mandare il comando. La lay
+        # appoggiata no (``fill_or_kill=False`` in live).
+        self.submin_fill_or_kill = not self.appoggiata
 
     @property
     def attore(self) -> str:

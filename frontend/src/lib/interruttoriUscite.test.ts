@@ -20,6 +20,7 @@ vi.mock('@/lib/safeBot', async (orig) => ({ ...(await orig() as object), updateS
 import {
     interruttoreDi, statoUscite, usciteInterruttori, paramsConUscite, usciteSafeDi,
     usciteSessioniScalper, conPosizioniAperte, creaInterruttori, UsciteNonGestiteQui,
+    usciteBotTennis, interruttoriDiSport,
     INTERRUTTORI, type Interruttore,
 } from '@/lib/interruttori';
 import type { Bot } from '@/lib/controlRoom';
@@ -187,9 +188,52 @@ describe('comando cambiaUscite: la RPC giusta con i parametri composti', () => {
         expect(updateMikeParams).not.toHaveBeenCalled();
     });
 
-    it('bot tennis: rifiutato (altro perimetro)', async () => {
-        const { c } = comandi({});
-        const tennis = INTERRUTTORI.find((i: Interruttore) => i.sport === 'tennis' && i.bot !== 'safe')!;
-        await expect(c.cambiaUscite!(tennis.id, false)).rejects.toBeInstanceOf(UsciteNonGestiteQui);
+    // 28/09 (CANTIERE N): i bot tennis hanno lo STESSO pulsante degli altri
+    // (prima: rifiutato qui, pulsante a parte in UsciteTennis.tsx).
+    it('bot tennis -> RPC tennis_bot_service_set_uscite sul SUO bot', async () => {
+        const { c, dopo } = comandi({});
+        const bots = INTERRUTTORI.filter((i: Interruttore) => i.sport === 'tennis' && i.bot !== 'safe');
+        expect(bots.map((i) => i.bot).sort())
+            .toEqual(['tennis_flb', 'tennis_pro', 'tennis_scalper', 'tennis_swing']);
+        for (const i of bots) {
+            rpc.mockClear();
+            await c.cambiaUscite!(i.id, true);
+            expect(rpc).toHaveBeenCalledWith('tennis_bot_service_set_uscite',
+                { p_bot_key: i.bot, p_automatiche: true });
+        }
+        expect(dopo).toHaveBeenCalled();
+        expect(updateSafeParams).not.toHaveBeenCalled();
+    });
+
+    it('Safe "a mano" resta senza interruttore', async () => {
+        const { c } = comandi({ safe: { variants: ['base'] } });
+        await expect(c.cambiaUscite!('safe-manual', false)).rejects.toBeInstanceOf(UsciteNonGestiteQui);
+    });
+});
+
+describe('29/09 Safe modello: ha la sua riga e il suo pulsante (reperto D del revisore)', () => {
+    it('la riga "Safe modello" e\' nella plancia del calcio e ha lo stato delle uscite', () => {
+        const calcio = interruttoriDiSport('calcio').map((i) => i.id);
+        expect(calcio).toContain('safe-model');
+        const out = usciteInterruttori(INTERRUTTORI, (b) => (b === 'safe' ? { uscite_automatiche: { model: true } } : null));
+        expect(out['safe-model']).toEqual({ automatiche: true });
+        expect(paramsConUscite(interruttoreDi('safe-model'), { a: 1 }, false))
+            .toEqual({ a: 1, uscite_automatiche: { model: false } });
+    });
+});
+
+describe('28/09 bot tennis: lo stato dalla colonna della riga', () => {
+    const now = Date.parse('2026-09-28T12:00:00Z');
+    it('colonna letta: manuali/automatiche; non letta: null (nessun pulsante)', () => {
+        expect(usciteBotTennis(false, null, now)).toEqual({ automatiche: false });
+        expect(usciteBotTennis(true, null, now)).toEqual({ automatiche: true });
+        expect(usciteBotTennis(undefined, null, now)).toEqual({ automatiche: null });
+        expect(usciteBotTennis(null, null, now)).toEqual({ automatiche: null });
+    });
+    it('a bot acceso le posizioni aperte e da quanti minuti', () => {
+        expect(usciteBotTennis(false, { posizioniAperteManuali: 2, posizioneApertaDal: '2026-09-28T11:50:30Z' }, now))
+            .toEqual({ automatiche: false, aperte: 2, daMin: 9 });
+        expect(usciteBotTennis(false, { posizioniAperteManuali: 0, posizioneApertaDal: null }, now))
+            .toEqual({ automatiche: false, aperte: 0, daMin: null });
     });
 });

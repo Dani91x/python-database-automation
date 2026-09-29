@@ -578,6 +578,23 @@ export function pnlLordoBot(s: Pick<SessioneScalper, 'stats'>): number | null {
     return r2(base + sn + th);
 }
 
+/**
+ * 28/09 (cantiere J2) - `stats.flusso` scritto dal battito della sessione
+ * (`scalper_session.sorveglia_flusso_sessione`, chiavi di
+ * `stream_muto.SorvegliaStream.dichiarazione`): con un episodio in corso
+ * (`interrotto`) la frase «FLUSSO PREZZI INTERROTTO da N s»; altrimenti null.
+ */
+export function flussoSessioneScalper(s: Pick<SessioneScalper, 'stats'>): string | null {
+    const f = (s.stats as Record<string, unknown> | null)?.flusso;
+    if (!f || typeof f !== 'object') return null;
+    const o = f as Record<string, unknown>;
+    if (o.interrotto !== true) return null;
+    const da = num(o.muto_da_s);
+    const motivo = typeof o.motivo === 'string' ? o.motivo : null;
+    return `FLUSSO PREZZI INTERROTTO${da == null ? '' : ` da ${Math.round(da)} s`}`
+        + `${motivo ? ` (${motivo})` : ''}: i bot non ricevono prezzi, posizione NON gestita`;
+}
+
 function etaS(iso: string | null | undefined, nowMs: number): number | null {
     const t = ms(iso);
     return t == null ? null : Math.max(0, Math.round((nowMs - t) / 1000));
@@ -595,6 +612,10 @@ export function notaSessioneScalper(
     etaCanaleS: number | null = null,
 ): string {
     const parti: string[] = [`sessione ${s.status}`];
+    // 28/09 (cantiere J2): stream di mercato della sessione MUTO = i bot non
+    // ricevono book e non gestiscono la posizione. Lo si dice PER PRIMO.
+    const fl = flussoSessioneScalper(s);
+    if (fl) parti.unshift(fl);
     if (s.ultima_attivita_kind) {
         const a = etaS(s.ultima_attivita_at, nowMs);
         parti.push(`ultima attivita' ${s.ultima_attivita_kind}${a == null ? '' : ` ${a} s fa`}`);

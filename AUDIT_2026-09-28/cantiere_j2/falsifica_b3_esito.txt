@@ -1,0 +1,9 @@
+R1 runner: _best_prices ignora la riserva: ROSSO | test_stream_muto_prezzi_dalla_riserva_mai_dal_book_fermo | 1 failed, 90 deselected in 1.98s
+R2 riserva: episodio ignorato: ROSSO | test_stream_muto_prezzi_dalla_riserva_mai_dal_book_fermo | 1 failed, 90 deselected in 1.55s
+R3 riserva: feed fermo usato: ROSSO | test_riserva_ferma_anche_lei_nessun_prezzo_e_motivo | 1 failed, 90 deselected in 4.60s
+R4 stop-entry apre a stream muto: ROSSO | test_stop_entry_non_scatta_a_stream_muto_ne_apre_poi_al_rientro_si | 1 failed, 90 deselected, 2 warnings in 5.96s
+R5 protezioni sull'LTP fermo: ROSSO | test_stop_loss_a_stream_muto_scatta_sulla_riserva_non_sul_book_fermo | 1 failed, 90 deselected in 2.67s
+R6 chase riprezza a stream muto: ROSSO | test_chase_non_riprezza_a_stream_muto | 1 failed, 90 deselected in 2.00s
+R7 runner: stato della riserva mai impostato: ROSSO | test_il_battito_del_runner_imposta_lo_stato_della_riserva | 1 failed, 90 deselected in 2.40s
+R8 riserva: handicap non controllato: ROSSO | test_mercato_non_seguito_dal_feed_o_handicap_nessun_prezzo | 1 failed, 90 deselected in 2.58s
+EXIT=0

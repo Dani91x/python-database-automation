@@ -1,0 +1,4 @@
+﻿m29_canale_alzato_in_execution: ROSSA 2 failed in 17.37s
+m30_rest_non_dichiara: ROSSA 1 failed in 7.90s
+m13_tennis_non_al_minimo: ROSSA 2 failed in 8.20s
+m14_chiusura_gonfiata: ROSSA 1 failed in 7.96s

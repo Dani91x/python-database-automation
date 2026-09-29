@@ -129,8 +129,13 @@ def ref_di_riga(riga: Dict[str, Any]) -> set:
         pass
     meta = riga.get("meta") or {}
     if isinstance(meta, dict):
-        for k in ("flumine_client_ref", "client_ref", "customer_order_ref"):
+        # CANTIERE P (28/09, R-2): ``canale_cor`` = customerOrderRef di flumine
+        # dell'ordine mandato sul canale (salvato alla prima vista dell'evento)
+        for k in ("flumine_client_ref", "client_ref", "customer_order_ref", "canale_cor"):
             v = meta.get(k)
+            if v:
+                refs.add(str(v))
+        for v in meta.get("canale_cor_storico") or []:
             if v:
                 refs.add(str(v))
     return refs

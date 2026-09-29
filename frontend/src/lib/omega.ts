@@ -439,6 +439,11 @@ export const OMEGA_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
     greenup_failed: { label: 'GREEN-UP FALLITO', cls: A_BAD, critical: true },
     greenup_residual_dropped: { label: 'GREEN-UP · residuo abbandonato', cls: A_BAD, critical: true },
     greenup_blind: { label: 'GREEN-UP CIECO (senza feed)', cls: A_BAD, critical: true },
+    // 28/09 (cantiere J): i prezzi del feed di questa partita non arrivano più;
+    // Omega non li usa (apre/chiude solo su un book REST fresco, o aspetta)
+    flusso_interrotto: { label: 'FLUSSO PREZZI INTERROTTO', cls: A_BAD, critical: true },
+    // 28/09 (cantiere J2, regola unica): green-up deciso sui prezzi del ripiego REST
+    ripiego_rest: { label: 'PREZZI DAL RIPIEGO REST (flusso fermo)', cls: A_WARN },
     cashout: { label: 'CASH OUT', cls: A_CLOSE },
     cashout_manual: { label: 'CASH OUT MANUALE', cls: A_CLOSE },
     cashout_error: { label: 'CASH OUT FALLITO', cls: A_BAD, critical: true },
@@ -1222,10 +1227,15 @@ export const OMEGA_PARAM_GROUPS: ParamGroup[] = [
             { key: 'proposta_p_lose_max_pct', label: 'Proposte: P massima tollerata del risultato bancato (punti %)', type: 'number', step: 0.5, min: 0, max: 100, hint: '0 = SPENTA (default del servizio). Sopra zero, quando la P che il risultato bancato esca supera questa soglia il bot propone l’uscita col motivo « rischio » — non perché sia un affare, ma per ridurre il rischio' },
             // 24/09 (ordine dell'utente: «QUESTO PER TUTTI I BOT») — CHI esegue
             // l'uscita che il bot ha calcolato. I criteri non cambiano.
-            { key: 'uscite_protezione', label: 'Uscite calcolate dal bot', type: 'choice', hint: 'Avvisa e proponi: la proposta arriva nella scheda « Uscite — decidi tu » e parte solo se la firmi. Automatico: la stessa uscita (stessi criteri, in profitto e in perdita) la esegue il bot, e la riga lo dice.', options: [
-                { value: 'avvisa_e_proponi', label: 'Avvisa e proponi l’uscita' },
-                { value: 'automatico', label: 'Automatico (se ne occupa il bot)' },
-            ] },
+            // 28/09 (CANTIERE N): si cambia SOLO col componente comune delle
+            // uscite (stesse parole della Control Room, conferma per passare ad
+            // automatiche); i valori scritti restano quelli che il servizio legge.
+            { key: 'uscite_protezione', label: 'Uscite calcolate dal bot', type: 'uscite', hint: 'MANUALI (Avvisa e proponi): la proposta arriva nella scheda " Uscite - decidi tu " e parte solo se la firmi. AUTOMATICHE: la stessa uscita (stessi criteri, in profitto e in perdita) la esegue il bot, e la riga lo dice.',
+                uscite: { automatico: 'automatico', manuale: 'avvisa_e_proponi' },
+                options: [
+                    { value: 'avvisa_e_proponi', label: 'Avvisa e proponi l\'uscita' },
+                    { value: 'automatico', label: 'Automatico (se ne occupa il bot)' },
+                ] },
         ],
     },
 ];

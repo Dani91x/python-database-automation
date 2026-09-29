@@ -91,7 +91,7 @@ describe('avvisoUsciteManuali — avviso permanente', () => {
     });
     it('manuali senza posizione: lo dice lo stesso', () => {
         expect(avvisoUsciteManuali(leggiAutoTennis(stats({ uscite_automatiche: false })), now)).toBe(
-            'uscite manuali: il bot non prende profitto da solo (stop e protezioni restano attivi)');
+            'uscite manuali: ogni uscita del bot (anche stop e time-stop) e\' una proposta da approvare; da soli restano solo Chiudi, freno e fine mercato');
     });
     it('manuali con posizione aperta: da quanto', () => {
         expect(avvisoUsciteManuali(leggiAutoTennis(stats({

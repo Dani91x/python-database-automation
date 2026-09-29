@@ -1701,6 +1701,24 @@ def _level_price(level: Any) -> Optional[float]:
 def _best_prices(
     market: Any, selection_id: int, handicap: float
 ) -> "tuple[Optional[float], Optional[float]]":
+    """(best back, best lay) per la selezione: dallo stream del runner
+    (``_best_prices_stream``) finche' e' vivo per il mercato.
+
+    CANTIERE J2 (28/09): a stream del runner MUTO (episodio dichiarato dal suo
+    battito, ``stream_muto``) il book in memoria e' FERMO. Allora i prezzi
+    vengono dalla RISERVA: il feed dello scanner, solo se lo scanner li
+    dichiara vivi per quel mercato (``riserva_prezzi``); se no (None, None) e
+    chi chiama non agisce. Nessuna chiamata Betfair in piu'."""
+    from . import riserva_prezzi as _RP
+
+    back, lay, _fonte = _RP.prezzi_protezione(market, selection_id, handicap,
+                                              _best_prices_stream)
+    return back, lay
+
+
+def _best_prices_stream(
+    market: Any, selection_id: int, handicap: float
+) -> "tuple[Optional[float], Optional[float]]":
     """(best_available_to_back, best_available_to_lay) per la selezione dal market_book flumine.
 
     Prezzi "taker" immediatamente abbinabili: per backare si prende il best available-to-back,

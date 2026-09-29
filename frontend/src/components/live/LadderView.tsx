@@ -69,6 +69,7 @@ import {
     loadServants, saveServants, upsertServant, removeServant, resolveStepPrice, servantLabel,
     MAX_SERVANTS, type Servant, type ServantStep,
 } from '@/lib/servants';
+import FlussoStreamBanner from '@/components/live/FlussoStreamBanner';
 
 // ---------------------------------------------------------------------------
 // Dependency injection: sorgente DATI (ladder) e API ORDINI iniettabili. I DEFAULT
@@ -1388,6 +1389,9 @@ interface Props {
     // e FRESCA, accanto al nome selezione compare il chip Kelly del motore (stake suggerito,
     // UN click per accettarlo — MAI auto-applicato). Sport senza motore (tennis) non la passano.
     signals?: LiveSignalsRow | null;
+    // 28/09 (cantiere J2): mostra l'avviso «FLUSSO INTERROTTO» dello stream del
+    // runner (topic `flusso_stream`). Default acceso; il REPLAY lo spegne.
+    flussoRunner?: boolean;
 }
 
 // profilo iniziale delle colonne: se non c'è nulla salvato per lo sport, usa il layout
@@ -1417,7 +1421,7 @@ function initLadderProfile(sport: string): LadderProfile {
 export function LadderView({
     marketId, marketName, orderMode = 'off', handicap = 0, sport = 'calcio', fallbackSelections = [],
     ladderSource = DEFAULT_LADDER_SOURCE, orderApi = DEFAULT_ORDER_API, enableDragMove = true,
-    popout, multiSlot, signals = null,
+    popout, multiSlot, signals = null, flussoRunner = true,
 }: Props) {
     const [row, setRow] = useState<LiveLadderRow | null>(null);
     const [loading, setLoading] = useState(true);
@@ -2270,6 +2274,11 @@ export function LadderView({
 
     return (
         <Card className="glass-card border-white/10 overflow-hidden relative">
+            {/* 28/09 (cantiere J2): stream del RUNNER muto = prezzi fermi, detto in rosso.
+                Mai nel replay (i prezzi li da' la registrazione, non il runner). */}
+            {flussoRunner && (sport === 'calcio' || sport === 'tennis') && (
+                <FlussoStreamBanner sport={sport} marketId={marketId} />
+            )}
             {/* header mercato: nome + modalità + stake preset + 1-click + stato */}
             <div className="px-3 py-2.5 border-b border-white/10 bg-white/[0.03] flex items-center justify-between gap-3 flex-wrap">
                 <div className="flex items-center gap-2 min-w-0">

@@ -41,7 +41,7 @@ import { dayLabel as etichettaGiorno } from '@/lib/dailyHistory';
 import { fmtMoney, fmtOdds, fmtAge, fmtTime, DASH } from '@/lib/format';
 import { romeDay, dayLabel } from '@/lib/dailyHistory';
 import {
-    BOT_LABEL, affidabilePerPiazzare, BOT_TENNIS,
+    BOT_LABEL, affidabilePerPiazzare, BOT_TENNIS, isBotTennis,
     type Bot, type GruppoCampionato, type Freschezza, type PartitaGiornata,
 } from '@/lib/controlRoom';
 import { runnerPhase, type RunnerPhase } from '@/lib/safeBot';
@@ -55,8 +55,8 @@ import { righeInterruttori } from '@/components/controlroom/righeBot';
 import { PannelloBot } from '@/components/controlroom/PannelloBot';
 import { RigaOrdiniReali } from '@/components/controlroom/RigaOrdiniReali';
 import { RigaFreno } from '@/components/controlroom/RigaFreno';
+import { ProposteUsciteFlusso } from '@/components/controlroom/ProposteUsciteFlusso';
 import { RigaCapacitaMercati } from '@/components/controlroom/RigaCapacitaMercati';
-import { UsciteTennis } from '@/components/controlroom/UsciteTennis';
 import {
     STAKE_TENNIS, differenzeSoloTennis, altreInLiveAdesso,
 } from '@/components/controlroom/soloTennis';
@@ -75,7 +75,7 @@ import { leggiRitorno, dimenticaRitorno, portaInVista } from '@/lib/ritorno';
 import { creaComandiControlRoom } from '@/components/controlroom/comandiBot';
 import {
     interruttoriDiSport, importiInterruttori, type InterruttoreId,
-    usciteInterruttori, conPosizioniAperte,
+    usciteInterruttori, conPosizioniAperte, usciteBotTennis,
 } from '@/lib/interruttori';
 import { BotParamsSheet, type StrategiaFiltro } from '@/components/safestrategy/BotParamsSheet';
 import { MikeParamsSheet } from '@/components/mike/MikeParamsSheet';
@@ -317,14 +317,22 @@ export default function ControlRoom() {
     );
     // 25/09 — «uscite: automatiche / manuali, N posizioni aperte da X min»,
     // riga per riga, dai parametri del servizio e dalle posizioni gia' lette.
-    const uscite = useMemo(
-        () => conPosizioniAperte(
+    const uscite = useMemo(() => {
+        const out = conPosizioniAperte(
             usciteInterruttori(interruttoriDiSport(sport), paramsDi),
             (vm.posizioni ?? []).map((p) => ({ bot: p.bot, piazzataAt: p.piazzataAt, gamba: p.dettaglio?.gamba ?? null })),
             vm.nowMs,
-        ),
-        [paramsDi, sport, vm.posizioni, vm.nowMs],
-    );
+        );
+        // 28/09 (CANTIERE N): i 4 bot tennis nello STESSO pulsante degli altri
+        // (prima avevano `UsciteTennis` nello slot dei parametri, con altre
+        // parole). Lo stato e' la colonna della loro riga di control.
+        for (const i of interruttoriDiSport(sport)) {
+            if (!isBotTennis(i.bot)) continue;
+            const b = vm.bots.find((x) => x.bot === i.bot);
+            out[i.id] = usciteBotTennis(b?.usciteTennis, b?.autoTennis ?? null, vm.nowMs);
+        }
+        return out;
+    }, [paramsDi, sport, vm.posizioni, vm.nowMs, vm.bots]);
 
     // ── LA PLANCIA, RISTRETTA ALLO SPORT SCELTO ──────────────────────────────
     // «Nella scheda tennis voglio vedere SOLO i bot di tennis» (utente,
@@ -462,19 +470,10 @@ export default function ControlRoom() {
                     onSaved={() => vm.ricarica()}
                 />
             ) : <ParametriNonLetti bot={BOT_LABEL[bot]} />;
-            // 25/09 (TENNIS AUTO-MODE) - l'interruttore delle uscite e il suo
-            // avviso permanente, accanto al foglio del bot. Righe isolate.
-            out[bot] = (
-                <>
-                    <UsciteTennis
-                        botKey={bot}
-                        auto={vm.bots.find((x) => x.bot === bot)?.autoTennis}
-                        nowMs={Date.now()}
-                        onSaved={() => vm.ricarica()}
-                    />
-                    {foglio}
-                </>
-            );
+            // 28/09 (CANTIERE N): l'interruttore delle uscite dei bot tennis
+            // e' quello comune della riga (`InterruttoreUscite` in PannelloBot),
+            // non piu' un pulsante suo qui accanto al foglio.
+            out[bot] = foglio;
         }
 
         return out;
@@ -649,6 +648,16 @@ export default function ControlRoom() {
                         )}
                     </>
                 ) : undefined}
+            />
+
+            {/* 28/09 (CANTIERE N): le uscite da approvare dei bot di flusso
+                (4 bot tennis, scalper calcio), con i numeri e "approva". Mike,
+                Omega e Safe hanno le loro schede proposta di sempre. */}
+            <ProposteUsciteFlusso
+                proposte={vm.bots.filter((b) => sport == null
+                    || (sport === 'tennis') === isBotTennis(b.bot))
+                    .flatMap((b) => b.proposteUscite ?? [])}
+                nowMs={vm.nowMs}
             />
 
             {erroreComando && (

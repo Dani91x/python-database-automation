@@ -58,7 +58,9 @@ def test_a_avvio_nuovo_spegne_e_riporta_in_prova(monkeypatch):
 
     assert esito["azzerato"] is True
     assert db.control["status"] == "stopped" and db.control["mode"] == "paper"
-    assert db.control["params"] == prima            # nessun parametro toccato
+    # nessun parametro di strategia toccato; 28/09 (CANTIERE N): SOLO
+    # l'interruttore delle uscite torna manuale a ogni avvio nuovo
+    assert db.control["params"] == {**prima, "uscite_automatiche": False}
     assert db.control["stats"]["boot_id"] == "OGGI"
     assert db.control["stats"]["realized_today"] == 7.5
     assert db.control["stats"]["fermato_all_avvio_at"] == NOW.isoformat()
@@ -143,6 +145,12 @@ def test_d_posizione_aperta_a_bot_fermo_le_uscite_girano(monkeypatch):
     S._GUARDIA_AVVIO.azzera()
     S.ferma_al_nuovo_avvio(db=db, now=NOW)
     assert db.control["status"] == "stopped"
+    # 28/09 (CANTIERE N): il nuovo avvio riporta le uscite a MANUALI; questo
+    # test certifica che il servizio fermo continua a LAVORARE le uscite, quindi
+    # l'utente le rimette in automatico (il ramo manuale e' in
+    # test_mike_uscite_automatiche_2026_09_25.py).
+    assert db.control["params"]["uscite_automatiche"] is False
+    db.control["params"]["uscite_automatiche"] = True
 
     # la partita gia' avviata continua a essere lavorata: la gamba di uscita
     # viene appoggiata come se il bot fosse acceso.

@@ -1111,6 +1111,15 @@ def test_l5_tutti_i_kind_di_attivita_sono_dichiarati():
         # 25/09 (ordine dell'utente): uscite manuali. L'utente APPROVA l'uscita
         # proposta dal bot a interruttore spento.
         "uscita_approvata",
+        # 28/09 (cantiere J, decisione dell'utente): il FLUSSO PREZZI delle linee
+        # di Mike e' interrotto (stream caduto e REST muto, o giro dello scanner
+        # bloccato). Le linee escono dalla decisione e lo si DICE, col motivo.
+        "flusso_interrotto",
+        # seconda consegna: scanner vecchio (stato senza ``flusso``), UNA riga
+        "flusso_non_dichiarato",
+        # cantiere J2 (regola unica): prezzi dal ripiego REST; flusso fermo e
+        # REST muto con posizione aperta (critico, 1/min)
+        "ripiego_rest", "flusso_interrotto_senza_rest",
     }
     assert found - declared == set(), f"kind non dichiarati: {sorted(found - declared)}"
 

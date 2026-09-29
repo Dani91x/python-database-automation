@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
-"""USCITE AUTOMATICHE / MANUALI dei bot tennis (25/09).
+"""USCITE AUTOMATICHE / MANUALI dei bot tennis (25/09; 28/09 CANTIERE N: anche
+stop, time-stop e uscita strutturale sono uscite di TRADING e a uscite manuali
+diventano proposte - i test "..._resta" del 25/09 sono diventati
+"..._diventa_proposta" + "..._parte" in automatico).
 
 Con ``uscite_automatiche = False`` (interruttore del bot in Control Room, letto
 a caldo dal runner) si spengono SOLO le prese di profitto discrezionali:
@@ -36,10 +39,11 @@ def test_di_classe_le_uscite_sono_manuali():
     Replay e backtest che non passano `uscite_automatiche` esplicito prendono
     ora questo default: manuali. Prima del 25/09 sera il default di classe
     era True (automatiche)."""
-    for cls in (TennisSwingStrategy, TennisProStrategy, TennisFLBStrategy):
+    # 28/09 (CANTIERE N, "nessuna eccezione per strategia"): anche lo scalper
+    # tennis ha l'interruttore e nasce manuale (prima: non ce l'aveva).
+    for cls in (TennisSwingStrategy, TennisProStrategy, TennisFLBStrategy,
+                TennisScalperStrategy):
         assert cls.uscite_automatiche is False
-    # lo scalper non ha il cancello (la sua uscita e' la strategia)
-    assert "uscite_automatiche" not in vars(TennisScalperStrategy)
 
 
 # ---------------------------------------------------------------- SWING
@@ -67,22 +71,35 @@ def test_swing_manuale_NON_prende_il_target():
     assert m.placed == [], "nessun ordine di chiusura"
 
 
-def test_swing_manuale_lo_STOP_resta():
+def _swing_in_stop(auto: bool):
     s = SW._make(stop_ticks=2, maker=False, tmax=10_000)
-    s.uscite_automatiche = False
+    s.uscite_automatiche = auto
     m = SW._Market(SW._Blotter([SW._Order(111, "BACK", 2.0, 1.50)]))
     s._tr["1.1"] = {"sel": 111, "side": "BACK", "etk": _tki(1.50),
                     "anchor": _tki(1.40), "order": None, "held": 0,
                     "wait": 0, "t0": 1_000}
     mb = SW._MB([SW._Runner(111, (1.60, 100), (1.62, 100), ltp=1.61)], pt=2_000)
     s.process_market_book(m, mb)
-    assert s._tr["1.1"].get("closing") is True, "lo stop e' una protezione"
-    assert m.placed
+    return s, m
 
 
-def test_swing_manuale_il_TIME_STOP_resta():
+def test_swing_automatico_lo_STOP_parte():
+    s, m = _swing_in_stop(True)
+    assert s._tr["1.1"].get("closing") is True and m.placed
+
+
+def test_swing_manuale_lo_STOP_diventa_proposta():
+    """28/09 (CANTIERE N, regola dell'utente): lo stop a tick e' un'uscita di
+    TRADING in perdita. A uscite manuali non parte: diventa una proposta."""
+    s, m = _swing_in_stop(False)
+    assert not s._tr["1.1"].get("closing") and m.placed == []
+    prop = s.stats["uscite_proposte"]
+    assert len(prop) == 1 and prop[0]["motivo"] == "stop" and prop[0]["urgente"] is True
+
+
+def _swing_in_time(auto: bool):
     s = SW._make(tmax=90, stop_ticks=50, target_frac=0.5, maker=False)
-    s.uscite_automatiche = False
+    s.uscite_automatiche = auto
     m = SW._Market(SW._Blotter([SW._Order(111, "BACK", 2.0, 2.00)]))
     t0 = 1_000_000
     s._tr["1.1"] = {"sel": 111, "side": "BACK", "etk": _tki(2.00),
@@ -90,7 +107,18 @@ def test_swing_manuale_il_TIME_STOP_resta():
                     "wait": 0, "t0": t0}
     s.process_market_book(m, SW._MB([SW._Runner(111, (2.00, 100), (2.02, 100))],
                                     pt=t0 + 91_000))
+    return s, m
+
+
+def test_swing_automatico_il_TIME_STOP_parte():
+    s, _m = _swing_in_time(True)
     assert s._tr["1.1"].get("closing") is True
+
+
+def test_swing_manuale_il_TIME_STOP_diventa_proposta():
+    s, m = _swing_in_time(False)
+    assert not s._tr["1.1"].get("closing") and m.placed == []
+    assert [p["motivo"] for p in s.stats["uscite_proposte"]] == ["time"]
 
 
 # ---------------------------------------------------------------- PRO
@@ -121,9 +149,16 @@ def test_pro_manuale_niente_target():
     assert s.stats["greens"] == 0 and m.placed == []
 
 
-def test_pro_manuale_lo_STOP_resta():
-    s, m = _pro(False, 1.84, 1.85)
+def test_pro_automatico_lo_STOP_parte():
+    s, m = _pro(True, 1.84, 1.85)
     assert s.stats["stops"] == 1 and m.placed
+
+
+def test_pro_manuale_lo_STOP_diventa_proposta():
+    """28/09 (CANTIERE N): lo stop e' un'uscita di trading in perdita."""
+    s, m = _pro(False, 1.84, 1.85)
+    assert s.stats["stops"] == 0 and m.placed == []
+    assert [p["motivo"] for p in s.stats["uscite_proposte"]] == ["stop"]
 
 
 # ---------------------------------------------------------------- FLB

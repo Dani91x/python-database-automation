@@ -416,6 +416,11 @@ def place_attempts() -> dict[tuple[str, str], dict[str, Any]]:
         pl = (r.get("meta") or {}).get("place")
         if not (eid and key and isinstance(pl, dict)):
             continue
+        # CANTIERE P (28/09): «runner paper non raggiungibile» non e' un
+        # tentativo (nessun rifiuto del mercato): mai ricontato dopo un riavvio
+        if pl.get("senza_runner") or str(pl.get("last_error") or "").startswith(
+                "paper_senza_runner"):
+            continue
         prev = out.get((str(eid), str(key))) or {}
         if int(pl.get("attempts") or 0) >= int(prev.get("attempts") or 0):
             out[(str(eid), str(key))] = {"attempts": int(pl.get("attempts") or 0),

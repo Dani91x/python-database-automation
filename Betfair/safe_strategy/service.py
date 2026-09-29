@@ -60,6 +60,7 @@ from Betfair.stream.auth import CustodeSessione
 from Betfair.stream.scores.betfair_inplay import normalize_timeline, parse_score_dict
 from Betfair.stream.single_instance import acquire_single_instance_lock
 from Betfair.stream import valuta as _valuta
+from Betfair.stream import flusso_prezzi as _flusso
 from Betfair.stream.tennis_scalper.tennis_score import parse_tennis_scores
 
 from . import db as scan_db
@@ -219,6 +220,9 @@ _FLUMINE = "flumine"
 # quanti mercati senza quote si elencano nello stato (il conteggio e' sempre
 # intero): la riga di stato non deve diventare un registro
 _SENZA_QUOTE_ELENCO_MAX = 30
+# cantiere J: quante partite col flusso fermo si elencano nello stato (oltre, il
+# conteggio resta intero; un bot non in elenco ha comunque il flag nella riga)
+_FLUSSO_ELENCO_MAX = 300
 
 
 def _pre_ko_usabile(ev: Dict[str, Any]) -> bool:
@@ -445,6 +449,21 @@ class Scanner:
         # modo per accorgersene dal vivo.
         self.book_vuoti: Dict[str, int] = {}
         self.book_vuoti_rest = 0
+        # CANTIERE J (28/09) - I PREZZI SONO VIVI? Per mercato, l'ultimo book
+        # ricevuto da ciascuna fonte: (con prezzi?, istante). Orologio dello
+        # scanner (``_ora_mono``): nel banco di replay e' il tempo di mercato.
+        self.flusso_stream: Dict[str, "tuple[bool, float]"] = {}
+        self.flusso_rest: Dict[str, "tuple[bool, float]"] = {}
+        # ultima conferma senza book: heartbeat di una connessione viva (in
+        # produzione) o la registrazione che scorre (banco, ``conferma_flusso``)
+        self.flusso_conferma: Dict[str, float] = {}
+        # mercati serviti da uno shard con ``status: 503``: lo stream non conferma
+        self.flusso_latenti: set = set()
+        # stato per evento {vivo, motivo, dal_ms, mercati_fermi}: ``dal_ms``
+        # cambia solo a un passaggio, cosi' la riga si riscrive una volta sola
+        self.flusso_eventi: Dict[str, Dict[str, Any]] = {}
+        # istantanea per lo stato (thread del battito): calcolata nel giro
+        self.flusso_istantanea: Dict[str, Any] = {}
         # mercati rilevanti senza un prezzo da oltre _SENZA_QUOTE_MAX_AGE_SEC
         # (aggiornato a ogni tick) e da quanto dura il piu' vecchio: e' il FATTO,
         # comprese le linee a gol illiquide
@@ -697,6 +716,156 @@ class Scanner:
         self.mercati_allarme = [mid for _, mid in allarme]
         return coperti, self.mercati_allarme
 
+    # ------------------------------------------------------ flusso (cantiere J)
+    def conferma_flusso(self, market_ids: Any, adesso: Optional[float] = None) -> int:
+        """La fonte dice che il prezzo in mano di questi mercati e' ANCORA
+        quello corrente (nessun cambiamento). Vale solo per i mercati il cui
+        ultimo book aveva prezzi. In produzione la chiama ``_conferme_dallo_stream``
+        con l'istante dell'ultimo messaggio di una connessione viva; nel banco di
+        replay la chiama il banco a ogni pubblicazione, perche' la registrazione
+        che scorre e' lo stream vivo. Ritorna quanti mercati ha confermato."""
+        t = self._ora_mono() if adesso is None else float(adesso)
+        n = 0
+        for m in market_ids or []:
+            mid = str(m)
+            ultimo = self._flusso_ultimo(mid)
+            if ultimo is None or not ultimo[0]:
+                continue
+            if t > self.flusso_conferma.get(mid, -1e18):
+                self.flusso_conferma[mid] = t
+            n += 1
+        return n
+
+    def _flusso_ultimo(self, mid: str) -> Optional["tuple[bool, float]"]:
+        s = self.flusso_stream.get(mid)
+        r = self.flusso_rest.get(mid)
+        if s is None:
+            return r
+        if r is None:
+            return s
+        return s if s[1] >= r[1] else r
+
+    def _conferme_dallo_stream(self) -> None:
+        """Heartbeat delle connessioni vive -> conferma dei loro mercati il cui
+        ultimo book DALLO STREAM, con prezzi, e' arrivato sulla connessione
+        attuale (cioe' dopo la sua subscription: immagine iniziale compresa)."""
+        if self.stream is None:
+            return
+        try:
+            conferme, latenti = self.stream.conferme_flusso()
+        except Exception as e:  # noqa: BLE001 - una misura non ferma mai il giro
+            logger.debug("[safe-scan] conferme del flusso KO: %s", str(e)[:120])
+            return
+        self.flusso_latenti = set(latenti)
+        for ids, ultimo_msg, sub_da in conferme:
+            for mid in ids:
+                s = self.flusso_stream.get(mid)
+                if s is None or not s[0] or s[1] < sub_da:
+                    continue
+                if ultimo_msg > self.flusso_conferma.get(mid, -1e18):
+                    self.flusso_conferma[mid] = ultimo_msg
+
+    def _soglia_flusso(self, sport: Optional[str], inplay: bool) -> float:
+        if inplay:
+            return _flusso.SOGLIA_INPLAY_S.get(str(sport), _flusso.SOGLIA_INPLAY_S["calcio"])
+        return _flusso.SOGLIA_PRE_S
+
+    def flusso_mercato(self, mid: str, soglia: float,
+                       adesso: Optional[float] = None) -> "tuple[bool, Optional[str]]":
+        """(vivo, motivo) di UN mercato. Vivo = ultimo book con prezzi E una
+        conferma (book con prezzi da stream non latente o da REST, oppure
+        heartbeat/registrazione) piu' giovane di ``soglia``."""
+        mid = str(mid)
+        t = self._ora_mono() if adesso is None else float(adesso)
+        ultimo = self._flusso_ultimo(mid)
+        if ultimo is None:
+            return False, _flusso.MOTIVO_MAI_RICEVUTO
+        if not ultimo[0]:
+            return False, _flusso.MOTIVO_SENZA_PREZZI
+        latente = mid in self.flusso_latenti
+        conferme: List[float] = []
+        r = self.flusso_rest.get(mid)
+        if r is not None and r[0]:
+            conferme.append(r[1])
+        if not latente:
+            s = self.flusso_stream.get(mid)
+            if s is not None and s[0]:
+                conferme.append(s[1])
+            c = self.flusso_conferma.get(mid)
+            if c is not None:
+                conferme.append(c)
+        if not conferme:
+            return False, _flusso.MOTIVO_LATENTE
+        if t - max(conferme) > soglia:
+            return False, (_flusso.MOTIVO_LATENTE if latente else _flusso.MOTIVO_INTERROTTO)
+        return True, None
+
+    def flusso_evento(self, eid: str, sport: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Il blocco ``flusso`` della riga: ``vivo``/``motivo`` del MATCH_ODDS,
+        ``mercati_fermi`` fra gli ALTRI mercati APERTI della riga, ``dal_ms``
+        (epoch ms) del passaggio allo stato attuale. Stabile fra un passaggio e
+        l'altro: nella firma di scrittura non aggiunge riscritture a regime."""
+        adesso = self._ora_mono()
+        soglia = self._soglia_flusso(sport, bool(payload.get("inplay")))
+        mo = str(payload.get("mo_market_id") or "")
+        vivo, motivo = self.flusso_mercato(mo, soglia, adesso) if mo else (
+            False, _flusso.MOTIVO_MAI_RICEVUTO)
+        fermi: List[str] = []
+        for mid in _flusso.mercati_dal_payload(payload):
+            if mid == mo:
+                continue
+            if self._blocco_chiuso(payload, mid):
+                continue
+            ok, _ = self.flusso_mercato(mid, soglia, adesso)
+            if not ok:
+                fermi.append(mid)
+        fermi.sort()
+        prec = self.flusso_eventi.get(eid)
+        if prec is not None and prec.get("vivo") == vivo and prec.get("motivo") == motivo:
+            dal_ms = prec.get("dal_ms")
+        else:
+            dal_ms = int(self._ora() * 1000)
+        blk = {"vivo": bool(vivo), "motivo": motivo, "dal_ms": dal_ms, "mercati_fermi": fermi}
+        self.flusso_eventi[eid] = blk
+        return blk
+
+    @staticmethod
+    def _blocco_chiuso(payload: Dict[str, Any], mid: str) -> bool:
+        """Il blocco del mercato ``mid`` nella riga e' CLOSED? (un mercato finito
+        non ha un flusso da sorvegliare)."""
+        blocchi: List[Any] = [payload.get(k) for k in ("cs", "ht", "btts", "ht_result")]
+        blocchi.extend(payload.get("ou") or [])
+        for b in blocchi:
+            if isinstance(b, dict) and str(b.get("market_id") or "") == mid:
+                return b.get("status") == "CLOSED"
+        return False
+
+    def _flusso_istantanea(self, wanted: List[str]) -> None:
+        """Per lo STATO dello scanner: quando si e' calcolato e quali partite
+        hanno il MATCH_ODDS fermo. Gli eventi non piu' monitorati escono."""
+        voluti = set(wanted)
+        for eid in [e for e in self.flusso_eventi if e not in voluti]:
+            self.flusso_eventi.pop(eid, None)
+        # le mappe per mercato non devono crescere all'infinito: fuori chi non e'
+        # piu' nel catalogo (stessa vita di ``market_meta``)
+        for mappa in (self.flusso_stream, self.flusso_rest, self.flusso_conferma):
+            if len(mappa) > len(self.market_meta):
+                for mid in [m for m in mappa if m not in self.market_meta]:
+                    mappa.pop(mid, None)
+        fermi = {eid: blk.get("motivo") for eid, blk in self.flusso_eventi.items()
+                 if not blk.get("vivo")}
+        con_mercati_fermi = sum(1 for blk in self.flusso_eventi.values()
+                                if blk.get("mercati_fermi"))
+        elenco = dict(sorted(fermi.items())[:_FLUSSO_ELENCO_MAX])
+        self.flusso_istantanea = {
+            "calcolato_ms": int(self._ora() * 1000),
+            "eventi_fermi": elenco,
+            "eventi_fermi_n": len(fermi),
+            "eventi_con_mercati_fermi_n": con_mercati_fermi,
+            "eventi_n": len(self.flusso_eventi),
+            "latenti_n": len(self.flusso_latenti),
+        }
+
     def _e_core(self, market_id: str) -> bool:
         """E' un mercato CORE (MATCH_ODDS, Correct Score, Half Time Score)?
 
@@ -910,9 +1079,16 @@ class Scanner:
         self.price_mono[mid] = ora
         if dallo_stream:
             self.stream_price_mono[mid] = ora
+        self._segna_flusso(mid, True, dallo_stream)
+
+    def _segna_flusso(self, mid: str, pieno: bool, dallo_stream: bool) -> None:
+        """Cantiere J: l'ultimo book di questo mercato, per fonte."""
+        (self.flusso_stream if dallo_stream else self.flusso_rest)[mid] = (
+            bool(pieno), self._ora_mono())
 
     def _segna_book_vuoto(self, market_id: Any, dallo_stream: bool) -> None:
         """Book SENZA un solo prezzo: si conta, non si applica come quota."""
+        self._segna_flusso(str(market_id), False, dallo_stream)
         if dallo_stream:
             mid = str(market_id)
             self.book_vuoti[mid] = self.book_vuoti.get(mid, 0) + 1
@@ -1791,6 +1967,11 @@ class Scanner:
                         # congelata {p1, p2} (stesso nome e schema del calcio)
                         "pre_ko": ev.get("pre_ko"),
                     }
+                # CANTIERE J (28/09): i prezzi di questa partita sono VIVI?
+                # Chiave ADDITIVA; cambia solo a un passaggio vivo/fermo, quindi
+                # la riga si riscrive una volta per passaggio (e il canale la
+                # spinge nello stesso istante), mai a regime.
+                payload[_flusso.CHIAVE] = self.flusso_evento(eid, sport, payload)
                 sig = scanner.payload_signature(payload)
                 if self.written_sig.get(eid) == sig:
                     continue  # write-on-change
@@ -1842,6 +2023,7 @@ class Scanner:
                 self.written_sig[eid] = sig
                 self.written_crit[eid] = crit
                 rows.append(riga)
+        self._flusso_istantanea(wanted)
         return rows, wanted
 
     def hydrate_schede(self, now: Optional[datetime] = None) -> int:
@@ -2021,6 +2203,11 @@ class Scanner:
             "fonte": self.fonte.stato(time.monotonic()),
             "sessione": self.sessione.stato(time.monotonic()),
             "avvisi_in_attesa": len(self._avvisi_in_attesa),
+            # CANTIERE J (28/09): quando il giro ha calcolato il flusso e quali
+            # partite hanno i prezzi fermi. Viaggia sulla riga di stato che si
+            # scrive comunque: zero scritture in piu'. ``calcolato_ms`` vecchio =
+            # giro bloccato = nessun prezzo confermato (``flusso_prezzi``).
+            "flusso": dict(self.flusso_istantanea),
         }
         self._scarica_avvisi()
         # lo STESSO payload che va (o andrebbe) sul database: nessuna proiezione,
@@ -2128,6 +2315,9 @@ class Scanner:
                 if self.stream is not None:
                     for b in self.stream.drain():
                         self._apply_market_book(b, dallo_stream=True)
+                    # cantiere J: gli heartbeat delle connessioni vive
+                    # confermano i prezzi dei mercati fermi ma serviti
+                    self._conferme_dallo_stream()
             # 17/09 - COPERTURA PER MERCATO. Prima: `covered_ids()` sulla salute
             # del SOCKET, cioe' gli heartbeat ogni 5 s; una connessione viva che
             # non consegnava quote dichiarava coperti tutti i mercati e
@@ -2416,6 +2606,18 @@ def main() -> None:
     lock = None
     if not args.once:
         lock = acquire_single_instance_lock(_LOCK_PORT, "safe-strategy")
+    # CANTIERE P (28/09): timeout PostgREST del profilo bot (5 s connessione,
+    # 20 s lettura) invece dei 120 s della libreria. Misurato su
+    # pg_stat_statements: nessuna query dello scanner oltre 6,3 s, e il ruolo
+    # ``authenticator`` taglia comunque a 8 s lato server. L'atlante hazard
+    # (``hazard_atlas_sync``) usa urllib col suo timeout: non e' toccato.
+    try:
+        import db_client as _dbc
+
+        logger.info("[safe-scan] timeout PostgREST del profilo bot: %s",
+                    _dbc.usa_timeout_bot())
+    except Exception as e:  # noqa: BLE001 - resta il default della libreria
+        logger.warning("[safe-scan] timeout PostgREST bot non applicato: %s", str(e)[:120])
 
     client = build_client(login=True)
     # K1 (26/09): cambio GBP->EUR per le size dello stream (listCurrencyRates,

@@ -122,6 +122,11 @@ TOPIC: Mapping[str, str] = MappingProxyType({
     # AL CAMBIO dal worker che lo registra (``live_order_worker._refresh_settings``).
     "battito": "battito",
     "modo_ordini": "modo_ordini",
+    # 28/09 (cantiere J2): lo STREAM DI MERCATO del runner e' vivo? Stato del
+    # processo (niente busta), chiavi in ``stream_muto.CHIAVI_CANALE``: esce a
+    # ogni battito e subito al passaggio vivo/muto. Lo leggono ladder e Segui
+    # Live (``frontend/src/lib/runnerCanale.ts``, ``leggiFlussoStream``).
+    "flusso_stream": "flusso_stream",
 })
 
 #: La porta del canale dei 4 bot tennis: NUOVA, ma dentro un processo che gira

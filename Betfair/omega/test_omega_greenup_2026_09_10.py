@@ -40,6 +40,15 @@ class _DB(FakeDB):
     def __init__(self, control, events=None):
         super().__init__(control)
         self.events = events or {}
+        # CANTIERE P (28/09): le chiusure paper di Omega che passano da
+        # ``execution.close_trade`` NON si riempiono piu' «in casa» (gate
+        # chiuso = non eseguite): vivono sul runner. Runner paper finto di
+        # Omega (cantiere C), stesso contratto di coda/specchio di omega_db.
+        # (montato con ``monta_runner_paper``: stesso runner, ma ``follow``
+        # resta un comando del test, come nei finti di Safe)
+        from Betfair.safe_strategy.tests.runner_finto import monta_runner_paper
+
+        monta_runner_paper(self)
 
     def get_event(self, event_id):
         return self.events.get(event_id)
@@ -106,8 +115,23 @@ def _trade(db, *, phase="ft_cs", market_id=CS_MID, sid=14, name="1 - 3", price=5
 
 
 def _run(db, payload, params=None, *, now=NOW, market=None):
-    return S.process_auto_greenup(params=params or _params(), market=market or FakeMarket([], None, _open_snapshot()),
-                                  db=db, now=now, feed=lambda eid: payload if eid == EID else None)
+    params = params or _params()
+    market = market or FakeMarket([], None, _open_snapshot())
+    n = S.process_auto_greenup(params=params, market=market,
+                               db=db, now=now, feed=lambda eid: payload if eid == EID else None)
+    # CANTIERE P (28/09): l'esito della chiusura paper arriva dal runner col
+    # poll del giro dopo; poi le fasi VERE di Omega riallineano l'apertura e lo
+    # stato del green-up (``_settle_hedged``: apply_hedge_state + P-O1)
+    _esito_omega(db, params=params, market=market, now=now)
+    return n
+
+
+def _esito_omega(db, *, params=None, market=None, now=NOW):
+    if callable(getattr(db, "enqueue_live_order", None)):
+        params = params or _params()
+        market = market or FakeMarket([], None, _open_snapshot())
+        S.poll_flumine_pending(db=db, params=params, now=now, market=market)
+        S._settle_hedged(params=params, market=market, db=db, now=now)
 
 
 def _closings(db, tid):
@@ -160,6 +184,8 @@ def test_trigger_gol_esce_dopo_assestamento_e_marca_le_due_righe(lambdas):
     assert opened["meta"]["exit_kind"] == "loss" and opened["meta"]["exit_reason"]
     assert opened["meta"]["exit_profit"] is False
     assert opened["meta"]["greenup"]["kind"] == "loss"
+    # CANTIERE P (28/09) - P-O1 corretto: la chiusura paper e' sul runner, lo
+    # stato passa a 'done' quando il fill e' confermato (``_settle_hedged``).
     assert opened["meta"]["greenup"]["state"] == "done"
     assert legs[0]["meta"]["exit_kind"] == "loss" and legs[0]["meta"]["exit_reason"] == opened["meta"]["exit_reason"]
     assert opened["meta"]["locked_pnl"] < 0
@@ -170,7 +196,11 @@ def test_trigger_gol_esce_dopo_assestamento_e_marca_le_due_righe(lambdas):
     assert g["p_lose"] is not None and 0.02 < g["p_lose"] < 0.15 and g["p_source"] == "model"
     assert g["locked_pnl"] < 0 and g["back_price"] == 8.0 and g["size"] > 0 and g["trade_id"] == tr["id"]
     assert g["ev_hold"] is not None and g["locked_pnl"] >= g["ev_hold"] - 0.10 and g["decision"] == "exit"
-    assert g["exit_kind"] == "loss" and g["kind"] == "loss" and g["state"] == "done"
+    # l'evento 'greenup' si scrive all'INVIO: sul runner il fill e' ancora in
+    # volo ('pending', ``pending_fill``); lo stato della riga passa a 'done'
+    # alla conferma (asserito qui sopra). Col fill di casa era 'done' subito.
+    assert g["exit_kind"] == "loss" and g["kind"] == "loss" and g["state"] == "pending"
+    assert g["pending_fill"] is True
     # ciclo successivo: posizione chiusa → nulla da fare (mai un secondo invio)
     assert _run(db, goal, now=NOW + timedelta(seconds=60)) == 0
     assert len(_closings(db, tr["id"])) == 1
@@ -315,12 +345,80 @@ def test_take_profit_blocca_il_profitto_quasi_pieno(lambdas):
     assert _run(db, _payload(85, 1, 0, cs=[_sel(14, "1 - 3", 1000.0, 990.0)]), p) == 1
     g = _logs(db, "greenup")[0]
     # take-profit INTEGRALE in utile: questo e' il green-up VERO -> 'greenup'
+    # (CANTIERE P, P-O1 corretto: anche col fill in volo sul runner)
     assert g["trigger"] == "take_profit" and g["exit_kind"] == "greenup" and g["locked_pnl"] >= 4.5
     assert g["kind"] == "profit"
     opened = db.get_trade(tr["id"])
     assert opened["status"] == "hedged" and opened["meta"]["exit_kind"] == "greenup"
     assert opened["meta"]["exit_profit"] is True
+    assert opened["meta"]["greenup"]["state"] == "done"
     assert _closings(db, tr["id"])[0]["meta"]["exit_kind"] == "greenup"
+
+
+def test_p_o1_green_up_integrale_col_fill_in_volo_e_greenup(lambdas):
+    """CANTIERE P (28/09, P-O1): all'INVIO il fill e' in volo (``pending_fill``)
+    e l'uscita e' comunque INTEGRALE (fraction 1.0): etichetta 'greenup'."""
+    db = _db_with_model()
+    tr = _trade(db)
+    p = _params(greenup_settle_delay_s=0)
+    n = S.process_auto_greenup(
+        params=p, market=FakeMarket([], None, _open_snapshot()), db=db, now=NOW,
+        feed=lambda eid: _payload(85, 1, 0, cs=[_sel(14, "1 - 3", 1000.0, 990.0)]))
+    assert n == 1
+    meta = db.get_trade(tr["id"])["meta"]
+    assert meta["greenup"]["pending_fill"] is True and meta["greenup"]["state"] == "pending"
+    assert meta["exit_kind"] == "greenup"
+
+
+def test_p_o1_stato_done_al_fill_e_mai_un_secondo_invio(lambdas):
+    """CANTIERE P (28/09, P-O1): lo stato passa a 'done' quando il runner
+    conferma il fill; ne' prima ne' dopo parte un secondo ordine di chiusura
+    (la guardia e' ``hedge_pending_ids`` / 'hedged', non lo stato)."""
+    db = _db_with_model()
+    tr = _trade(db)
+    goal = _payload(70, 1, 2, cs=[_sel(14, "1 - 3", 8.2, 8.0)])
+    p = _params(greenup_settle_delay_s=0, greenup_retry_s=0)
+    mk = FakeMarket([], None, _open_snapshot())
+    # invio: fill in volo, e un secondo giro PRIMA del fill non manda nulla
+    assert S.process_auto_greenup(params=p, market=mk, db=db, now=NOW,
+                                  feed=lambda eid: goal) == 1
+    assert S.process_auto_greenup(params=p, market=mk, db=db,
+                                  now=NOW + timedelta(seconds=3), feed=lambda eid: goal) == 0
+    assert len(_closings(db, tr["id"])) == 1
+    assert db.get_trade(tr["id"])["meta"]["greenup"]["state"] == "pending"
+    # il runner conferma: 'hedged' e stato 'done'
+    _esito_omega(db, params=p, market=mk, now=NOW + timedelta(seconds=4))
+    apri = db.get_trade(tr["id"])
+    assert apri["status"] == "hedged" and apri["meta"]["greenup"]["state"] == "done"
+    assert apri["meta"]["greenup"]["pending_fill"] is False
+    # e dopo: nessun'altra chiusura
+    for s in (10, 60, 400):
+        _run(db, goal, p, now=NOW + timedelta(seconds=s))
+    assert len(_closings(db, tr["id"])) == 1
+
+
+def test_p_green_up_paper_senza_runner_non_consuma_e_avvisa(lambdas):
+    """CANTIERE P (28/09): paper col runner NON raggiungibile. Il green-up non
+    parte (nessuna gamba riservata), NON consuma tentativi (mai 'failed' per
+    questo), e scrive una riga CRITICA con l'esposizione al piu' 1/min.
+    Appena il runner torna, parte."""
+    db = _db_with_model()
+    db.follow = "NONE"
+    tr = _trade(db)
+    goal = _payload(70, 1, 2, cs=[_sel(14, "1 - 3", 8.2, 8.0)])
+    p = _params(greenup_settle_delay_s=0, greenup_retry_s=0, greenup_max_attempts=2)
+    mk = FakeMarket([], None, _open_snapshot())
+    for s in range(0, 30, 3):
+        S.process_auto_greenup(params=p, market=mk, db=db, now=NOW + timedelta(seconds=s),
+                               feed=lambda eid: goal)
+    meta = db.get_trade(tr["id"])["meta"]
+    assert meta["greenup"]["attempts"] == 0 and not meta["greenup"].get("failed")
+    assert _closings(db, tr["id"]) == []
+    crit = [x for x in _logs(db, "greenup_retry") if x.get("reason") == "paper_senza_runner"]
+    assert len(crit) == 1 and crit[0]["critical"] is True and crit[0]["esposizione_eur"] > 0
+    db.follow = "STREAMING"
+    assert _run(db, goal, p, now=NOW + timedelta(seconds=40)) == 1
+    assert db.get_trade(tr["id"])["status"] == "hedged"
 
 
 # ---------------------------------------------------------------------------
@@ -408,6 +506,10 @@ def test_bot_fermo_gestisce_comunque_le_uscite(lambdas):
     out = S.run_once(market=FakeMarket([], None, _open_snapshot()), db=db, now=NOW,
                      greenup_feed=lambda eid: goal)
     assert out.get("idle") is True and out.get("greenup") == 1
+    # CANTIERE P (28/09): chiusura paper sul runner, esito al giro dopo
+    from Betfair.safe_strategy.tests.runner_finto import esito_del_runner
+
+    esito_del_runner(db, now=NOW)
     assert db.get_trade(tr["id"])["status"] == "hedged"
     assert len(_closings(db, tr["id"])) == 1
 

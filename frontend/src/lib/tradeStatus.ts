@@ -492,6 +492,12 @@ export const ACTIVITY_BASE: Record<string, ActivityMeta> = {
     // guardie
     feed_blind: { label: 'FEED CIECO', cls: BAD, critical: true },
     feed_back: { label: 'FEED TORNATO', cls: GOOD },
+    // 28/09 (cantiere J): scanner vecchio, il flusso dei prezzi non e' dichiarato
+    flusso_non_dichiarato: { label: 'FLUSSO PREZZI NON DICHIARATO (scanner vecchio)', cls: BAD, critical: true },
+    // 28/09 (cantiere J2, regola unica): flusso fermo + REST muto = posizione
+    // senza chiusura (critico); chiusura decisa sui prezzi del ripiego REST
+    flusso_interrotto: { label: 'FLUSSO PREZZI INTERROTTO: posizione senza chiusura', cls: BAD, critical: true },
+    ripiego_rest: { label: 'PREZZI DAL RIPIEGO REST (flusso fermo)', cls: WARN },
     feed_line_missing: { label: 'LINEA ASSENTE DAL FEED', cls: WARN },
     daily_stop: { label: 'STOP GIORNALIERO', cls: BAD, critical: true },
     goal_stop: { label: 'OBIETTIVO RAGGIUNTO: STOP', cls: GOOD },

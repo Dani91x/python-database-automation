@@ -12,8 +12,9 @@ Contratto (tutto money-critical, invarianti del repo):
   • MAI un fill parziale non contabilizzato: la size è CAPPATA alla liquidità
     abbinabile al miglior prezzo (``best_size``) prima di piazzare.
   • PAPER = LIVE: se il gate flumine passa, anche il paper passa dalla coda del
-    runner (fill simulato REALE: coda, liquidità, betDelay). Gate KO → fallback
-    dichiarato (fill su snapshot in paper, place REST FOK in live).
+    runner (fill simulato REALE: coda, liquidità, betDelay). Gate KO → in
+    live place REST FOK; in paper l'ordine NON e' eseguito
+    (``paper_senza_runner:<motivo>``, cantiere P 28/09: nessun fill di casa).
   • Il ``mode`` deriva SEMPRE e SOLO dal trade: mai un ordine 'live' da un
     trade paper (invariante supremo di Omega §6-bis).
 
@@ -88,6 +89,48 @@ def _min_size_live(side: str = "back") -> float:
     return 0.50 if str(side).lower() == "lay" else 2.0
 
 
+#: CANTIERE P (28/09): ``porta_al_minimo_apertura`` arriva con il cantiere D2
+#: (``Betfair/stream/trading/submin.py``). Import PROTETTO: finche' non c'e', il
+#: comportamento e' quello di oggi (place-and-trim alla size esatta) e lo si
+#: dichiara nel log una volta per processo.
+try:
+    from Betfair.stream.trading.submin import porta_al_minimo_apertura as _PORTA_AL_MINIMO
+except ImportError:  # pragma: no cover - dipende dall'integrazione di D2
+    _PORTA_AL_MINIMO = None
+_AVVISO_SENZA_PORTA_AL_MINIMO = {"fatto": False}
+
+
+def _e_tennis(client_ref: Any) -> bool:
+    """Riga di Safe TENNIS: il ref lo costruisce ``porta_ordini.ref_ordine``
+    (``safe_tennis-t<id>``) e ``close_trade`` (``{table_prefix}-t<id>``)."""
+    return str(client_ref or "").startswith("safe_tennis-")
+
+
+def _porta_al_minimo_tennis(side: str, size: float) -> "tuple[float, Optional[float]]":
+    """(size da piazzare, size di prima se e' stata portata al minimo, altrimenti None).
+    Senza la funzione di D2: (size invariata, None) e un avviso nel log."""
+    import os
+
+    if _PORTA_AL_MINIMO is None:
+        if not _AVVISO_SENZA_PORTA_AL_MINIMO["fatto"]:
+            _AVVISO_SENZA_PORTA_AL_MINIMO["fatto"] = True
+            logger.warning("[safe.exec] porta_al_minimo_apertura non disponibile (cantiere D2 "
+                           "non integrato): apertura tennis sotto il minimo col place-and-trim "
+                           "alla size esatta, come prima")
+        return size, None
+    try:
+        nuova = round(float(_PORTA_AL_MINIMO(
+            (os.getenv("TENNIS_LIVE_JURISDICTION") or "it").strip().lower(), side, size)), 2)
+    except Exception as ex:  # noqa: BLE001 - regola non valutabile: size di sempre
+        logger.warning("[safe.exec] porta al minimo tennis non valutabile: %s", str(ex)[:120])
+        return size, None
+    if nuova > size + 1e-9:
+        logger.info("[safe.exec] apertura tennis %s %.2f sotto il minimo: portata a %.2f",
+                    side, size, nuova)
+        return nuova, size
+    return size, None
+
+
 def _live_brake() -> Optional[str]:
     """Motivo per cui un ordine LIVE non deve partire, o None se puo' partire.
 
@@ -156,9 +199,9 @@ def _freno_aperture() -> Optional[str]:
     live che paper». E' il kill-switch CONDIVISO (``controls.motivo_kill_switch``:
     ``LIVE_KILL_SWITCH`` dell'ambiente oppure ``betfair_live_settings.kill_switch``
     dalla UI, cache ~2 s), lo stesso che ferma gia' il worker della coda e il
-    motore del canale su ENTRAMBE le modalita'. Qui serve al fill PAPER
-    simulato in casa (gate flumine chiuso), l'unica strada di apertura che il
-    freno non vedeva. Il modo ordini (``LIVE_ORDER_MODE``) NON c'entra: quello
+    motore del canale su ENTRAMBE le modalita'. Qui serve al ramo PAPER a
+    gate flumine chiuso (dal 28/09 non esegue piu' nulla, ma il motivo del
+    freno resta quello scritto sulla riga, come in live). Il modo ordini (``LIVE_ORDER_MODE``) NON c'entra: quello
     resta in ``_live_brake`` e riguarda solo i soldi veri.
     Freno non valutabile (import fallito, errore inatteso) = apertura FERMATA."""
     try:
@@ -229,7 +272,6 @@ class PlaceOutcome:
     # BET_TAKEN_OR_LAPSED...): finora ``ok=False`` li appiattiva tutti in uno.
     error_code: Optional[str] = None
     betfair_updated_at: Optional[str] = None
-
     @property
     def ok(self) -> bool:
         return self.status in ("open", "pending")
@@ -482,7 +524,13 @@ def _place_via_canale(porta: Any, *, db, mode: str, market_id: str, selection_id
             # sotto il minimo``): ogni apertura sotto il minimo moriva sul
             # canale mentre sulla coda partiva. Ora come la coda: niente FOK,
             # e il motore sceglie da se' la stessa macchina place-and-trim.
-            time_in_force=(None if sotto_minimo else PO.FOK),
+            # D1-ter (28/09, caso B): la porta di un taker il cui live e' FOK
+            # anche sotto il minimo (``submin_fill_or_kill``, Mike) manda il
+            # FOK: il motore fa la stessa sequenza del live e RITIRA il residuo
+            # a fine sequenza (``motore_ordini._ritira_residuo_fok``).
+            time_in_force=(PO.FOK if (not sotto_minimo
+                                      or getattr(porta, "submin_fill_or_kill", False))
+                           else None),
             reduces_liability=bool(is_closing))
     except ValueError as ex:
         return PlaceOutcome("error", None, 0.0, None, f"canale_comando_non_valido:{ex}"[:160])
@@ -621,8 +669,16 @@ def place(
     now: Optional[datetime] = None,
     params: Optional[dict[str, Any]] = None,
     porta: Any = None,
+    best_back: Optional[float] = None,
+    best_lay: Optional[float] = None,
+    _nota: Optional[dict[str, Any]] = None,
 ) -> PlaceOutcome:
     """Esegue UN ordine per una riga già RISERVATA ('pending').
+
+    ``_nota`` (correzione 28/09 sera): dict del chiamante in cui ``place``
+    scrive ``portata_al_minimo`` ({chiesto, piazzato}) quando porta QUI al
+    minimo un'apertura tennis (strade senza motore), cosi' chi conferma la
+    riga non lo perde.
 
     ``trade_id`` serve solo alle scritture di marcatura flumine; se assente si
     ricava dal suffisso di ``client_ref``. ``best_size`` è la liquidità
@@ -633,6 +689,11 @@ def place(
     interruttore ``SAFE_ORDINI_VIA_CANALE`` acceso) manda il comando al runner
     sul canale: vedi ``_place_via_canale``. Prezzo, size e lato sono calcolati
     QUI SOPRA, uguali per le due porte: cambia solo il trasporto.
+
+    D1-ter (28/09) - ``best_back``/``best_lay``: il book dello stream, letto
+    SOLO sulla strada del canale per una porta che dichiara
+    ``submin_fill_or_kill`` (vedi ``_rifiuto_submin_fok``). Il live REST non li
+    usa: ``place_submin_live`` legge il book da Betfair come sempre.
     """
     params = params or {}
     meta = dict(meta or {})
@@ -675,6 +736,35 @@ def place(
     # RIDUCONO una posizione (review C2), quindi passano dal percorso normale.
     min_live = _min_size_live(side)
     is_closing = bool(meta.get("cashout") or meta.get("closes_trade_id"))
+    # CANTIERE P (28/09) - DECISIONE DELL'UTENTE per il TENNIS: un'APERTURA
+    # sotto il minimo di Betfair si porta AL minimo (BACK 2,00, LAY 0,50) su
+    # OGNI strada (canale, coda, REST live), non piu' il place-and-trim alla
+    # size esatta che restava sul REST. Le CHIUSURE restano esatte.
+    # CORREZIONE (28/09 sera): sulla strada del CANALE la regola la applica il
+    # MOTORE del runner (``esecutore_tennis._apertura_al_minimo``) e la DICHIARA
+    # nell'evento (``extra.portata_al_minimo``, letto dal controllo R8 del
+    # banco): qui NON si alza la size, altrimenti al motore arriva gia' al
+    # minimo e l'evento non dice piu' che l'importo e' stato cambiato. Qui si
+    # alza solo dove il motore non c'e' (coda di sempre, REST live), con le
+    # STESSE chiavi dell'evento (``chiesto``, ``piazzato``) sulla riga e
+    # nell'attivita'.
+    via_canale = porta is not None and getattr(porta, "via_canale", False)
+    if not is_closing and not via_canale and _e_tennis(client_ref):
+        size, prima = _porta_al_minimo_tennis(side, size)
+        if prima is not None:
+            portata = {"chiesto": round(float(prima), 2), "piazzato": round(float(size), 2)}
+            meta["portata_al_minimo"] = portata
+            if _nota is not None:
+                _nota["portata_al_minimo"] = portata
+            if tid is not None:
+                try:
+                    db.update_trade(tid, meta=dict(meta))     # la riga lo dichiara subito
+                except Exception:  # noqa: BLE001 - lo porta comunque l'esito
+                    pass
+            _log(db, "diagnosi", {"trade_id": tid, "mode": mode, "side": side,
+                                  "reason": "portata_al_minimo", "portata_al_minimo": portata,
+                                  "nota": "apertura tennis sotto il minimo di Betfair "
+                                          "portata al minimo (decisione dell'utente)"})
     sotto_minimo = bool(min_live > 0 and size < min_live - 1e-9 and not is_closing)
 
     # --- F5 (24/09): PORTA A COMANDI sul canale del runner ----------------------
@@ -682,6 +772,14 @@ def place(
     # canale era giu' PRIMA dell'invio e la gamba e' una CHIUSURA: si prosegue
     # col trasporto di oggi (D5). Tutto il resto finisce qui.
     if porta is not None and getattr(porta, "via_canale", False):
+        if sotto_minimo:
+            # D1-ter (28/09): taker FOK sotto il minimo = stessa decisione del
+            # live, stesso rifiuto, nessun comando al runner.
+            rif = _rifiuto_submin_fok(porta, side=side, price=price, size=size,
+                                      best_back=best_back, best_lay=best_lay)
+            if rif is not None:
+                return _esito_rifiuto_certo(db, rif, tid=tid, mode=mode, side=side,
+                                            price=price, size=size, sotto_minimo=True)
         esito_canale = _place_via_canale(
             porta, db=db, mode=mode, market_id=market_id, selection_id=selection_id,
             side=side, price=price, size=size, client_ref=client_ref, tid=tid, meta=meta,
@@ -722,72 +820,36 @@ def place(
     # size CAPPATA a ``best_size``) veniva riempita in paper e RIFIUTATA in
     # live. Paper = live senza soldi: lo stesso ordine deve avere lo stesso
     # esito, altrimenti il paper dichiara posizioni che il live non avrebbe mai.
-    if sotto_minimo:
-        # La coda non era disponibile (runner fermo, evento non in streaming...).
-        # In PAPER non esiste nessun minimo da aggirare: l'esecuzione e' simulata e
-        # il fill di 0,73 EUR e' fedele a quello che il place-and-trim otterrebbe
-        # davvero in live. In LIVE, senza coda, la sequenza non e' eseguibile: si
-        # dichiara l'errore col MOTIVO, cosi' si vede che manca il runner e non
-        # che "l'importo e' troppo piccolo".
-        if mode != "paper" and not hasattr(market, "place_submin_live"):
-            # nessuna coda E nessun place-and-trim su questo mercato: si dichiara
-            # il MOTIVO, non "l'importo e' troppo piccolo"
-            return PlaceOutcome("error", None, 0.0, None,
-                                f"submin_non_disponibile:{gate_reason}")
     if mode == "paper":
-        # R3 (25/09): il freno unico vale anche sul fill simulato, NELLO STESSO
-        # PUNTO in cui il live applica ``_live_brake`` (dopo il gate, prima
-        # dell'esecuzione): paper = specchio del live anche col freno tirato.
-        # SOLO sulle aperture: le chiusure passano sempre. Esito identico al
-        # live (``PlaceOutcome`` 'error' col motivo): chi chiama lo scrive
-        # come oggi scrive il freno live (Safe ``_place_fail``, Mike ``skip``).
+        # R3 (25/09): il freno unico vale anche in paper, NELLO STESSO PUNTO in
+        # cui il live applica ``_live_brake`` (dopo il gate, prima
+        # dell'esecuzione). SOLO sulle aperture: le chiusure passano sempre.
         blocco_paper = None if is_closing else _freno_aperture()
         if blocco_paper:
             return PlaceOutcome("error", None, 0.0, None, blocco_paper)
-        try:
-            # ``best_size`` = liquidita' abbinabile al best price dichiarata dal
-            # chiamante (la size e' gia' cappata li' sopra): senza ladder e' la
-            # SOLA controparte ammessa. Se il chiamante non la dichiara e non
-            # c'e' ladder, paper_fill ritorna None (nessun fill regalato).
-            fill = E.paper_fill(size, best_price=price, lay_ladder=_ladder_tuple(ladder),
-                                limit_price=price, side=side,
-                                best_size=best_size)
-        except Exception as ex:  # noqa: BLE001 — stessa semantica del live
-            return _reconciling(db, tid, meta=meta, mode=mode, price=price, size=size, ex=ex)
-        if fill is None or fill.matched_size <= 0:
-            return PlaceOutcome("error", None, 0.0, None, f"paper_no_fill:{gate_reason}")
-        # CERTIFICAZIONE 12/09 — PAPER = LIVE anche sul FILL OR KILL.
-        # In live l'ordine parte con ``time_in_force=FILL_OR_KILL`` (coda) o come
-        # FOK REST: se il book non copre TUTTA la size, Betfair lo annulla e a
-        # mercato non resta nulla. In paper invece il fill parziale veniva
-        # accettato: una richiesta da 5,00 EUR risultava "eseguita" con 0,43 EUR
-        # (caso reale safe_strategy_requests#7). Cosi' il paper dichiarava
-        # posizioni che il live non avrebbe mai avuto, e i suoi numeri non
-        # potevano valere come prova. Ora il paper uccide come il live.
-        if not fill.fully_matched:
-            return PlaceOutcome("error", None, 0.0, None,
-                                f"paper_fok_parziale:{round(fill.matched_size, 2)}/{size}")
-        return PlaceOutcome(
-            "open", fill.avg_price, fill.matched_size, None,
-            f"paper_fill:{gate_reason}",
-            esecuzione={
-                "t4_inviato": _ora_ms(), "t5_risposta": _ora_ms(),
-                "price_richiesto": price,
-                "price_medio": fill.avg_price,
-                "scorrimento_tick": scorrimento(price, fill.avg_price, side),
-                "livelli": livelli_attraversati(ladder, size, price, side),
-                "percorso": "paper",
-                "size_richiesta": size,
-                "size_abbinata": round(float(fill.matched_size), 2),
-                "size_residua": 0.0,
-            },
-            # C.12a — paper = specchio del live anche qui: il paper uccide il
-            # parziale (FOK), quindi abbinato = chiesto e residuo 0. Che i tre
-            # numeri ci siano ANCHE in paper e' cio' che permette di confrontare
-            # riga per riga i due percorsi.
-            size_requested=size,
-            size_remaining=0.0,
-            avg_price_matched=(float(fill.avg_price) if fill.avg_price else None))
+        # CANTIERE P (28/09, ordine dell'utente «deve essere lo specchio per
+        # tutti i bot») - NESSUN FILL «DI CASA» IN PAPER.
+        # Fino a oggi, con il runner non raggiungibile (gate della coda chiuso,
+        # canale giu' su una chiusura), il paper riempiva l'ordine QUI, sul
+        # libro del feed dell'istante: istantaneo, senza bet delay, senza coda,
+        # e per il sotto-minimo con un FOK diretto della size al posto del
+        # place-and-trim (parcheggio, taglio, riprezzo a limite che puo' restare
+        # non abbinato). Il live nello stesso punto va a Betfair e decide
+        # l'exchange: i due mondi davano esiti diversi (righe S3 e S6 della
+        # tabella di parita' di Safe). Un ordine paper ESISTE solo sul runner
+        # (client simulato di flumine: coda, bet delay, parziali, FOK veri):
+        # senza runner l'ordine NON e' eseguito e lo si dice col motivo.
+        # Chi chiama lo tratta come un rifiuto: le APERTURE consumano il budget
+        # dei tentativi (Safe ``_place_fail``), le USCITE restano da ritentare
+        # col backoff di sempre (``close_trade`` -> ``chiusura_non_eseguita``),
+        # Mike lo riconosce dal prefisso (``_NOTE_SENZA_RUNNER``).
+        return PlaceOutcome("error", None, 0.0, None, f"paper_senza_runner:{gate_reason}",
+                            size_requested=size, size_remaining=0.0)
+    if sotto_minimo and not hasattr(market, "place_submin_live"):
+        # LIVE, nessuna coda E nessun place-and-trim su questo mercato: si
+        # dichiara il MOTIVO, non "l'importo e' troppo piccolo"
+        return PlaceOutcome("error", None, 0.0, None,
+                            f"submin_non_disponibile:{gate_reason}")
 
     # LIVE — soldi veri: REST FOK generico (side esplicito). Sotto il minimo di
     # PIAZZAMENTO si usa il place-and-trim (parcheggio + taglio + riprezzo): e'
@@ -834,16 +896,8 @@ def place(
         # restava 'pending' IN VERIFICA su un ordine che NON ESISTE: il segnale
         # restava bloccato dall'indice unico e la liability veniva contata piena.
         # Un rifiuto certo e' una riga 'error', col codice di Betfair scritto.
-        codice = getattr(ex, "error_code", None)
-        _log(db, "place_rifiutato", {"trade_id": tid, "mode": mode, "side": side,
-                                     "price": price, "size": size,
-                                     "error_code": codice, "critical": True,
-                                     "percorso": "submin" if sotto_minimo else "rest",
-                                     "reason": str(ex)[:160],
-                                     "nota": "Betfair ha rifiutato: nessun ordine a mercato"})
-        return PlaceOutcome("error", None, 0.0, None,
-                            f"live_rifiutato:{codice or 'senza_codice'}",
-                            size_requested=size, size_remaining=0.0, error_code=codice)
+        return _esito_rifiuto_certo(db, ex, tid=tid, mode=mode, side=side, price=price,
+                                    size=size, sotto_minimo=sotto_minimo)
     except Exception as ex:  # noqa: BLE001 — esito IGNOTO: MAI ripiazzare
         return _reconciling(db, tid, meta=meta, mode=mode, price=price, size=size, ex=ex)
     t5 = _ora_ms()
@@ -915,6 +969,55 @@ def place(
         betfair_updated_at=getattr(res, "betfair_updated_at", None))
 
 
+def _esito_rifiuto_certo(db, ex: Exception, *, tid: Optional[int], mode: str, side: str,
+                         price: float, size: float, sotto_minimo: bool) -> PlaceOutcome:
+    """RIFIUTO CERTO del place (``PlaceRifiutato``): riga 'error' col codice.
+
+    Unico punto che lo scrive: il live (REST) e, dal D1-ter, il paper di un
+    taker FOK sotto il minimo sul canale, che deve dare lo STESSO esito."""
+    codice = getattr(ex, "error_code", None)
+    _log(db, "place_rifiutato", {"trade_id": tid, "mode": mode, "side": side,
+                                 "price": price, "size": size,
+                                 "error_code": codice, "critical": True,
+                                 "percorso": "submin" if sotto_minimo else "rest",
+                                 "reason": str(ex)[:160],
+                                 "nota": "Betfair ha rifiutato: nessun ordine a mercato"})
+    return PlaceOutcome("error", None, 0.0, None,
+                        f"live_rifiutato:{codice or 'senza_codice'}",
+                        size_requested=size, size_remaining=0.0, error_code=codice)
+
+
+def _rifiuto_submin_fok(porta: Any, *, side: str, price: float, size: float,
+                        best_back: Optional[float],
+                        best_lay: Optional[float]) -> Optional[PlaceRifiutato]:
+    """D1-ter (28/09) - il piano del LIVE per un taker FOK sotto il minimo.
+
+    In live un taker FOK sotto il minimo passa da ``place_submin_live``
+    (``fill_or_kill=True`` di default), che decide il piano con
+    ``omega_market.piano_submin_live`` e, se la quota NON e' abbinabile
+    (percorso A) o il piano e' irrealizzabile, rifiuta PRIMA di toccare
+    Betfair: zero ordini. Sul canale del runner il paper mandava invece il
+    comando senza FOK e il motore faceva il place-and-trim a riposo: nasceva
+    un ordine che il live non avrebbe mai avuto. Qui la STESSA funzione, col
+    book dello stream (il live lo legge da Betfair). Vale SOLO per la porta che
+    lo dichiara (``submin_fill_or_kill``: il taker di Mike); Safe, Omega e la
+    lay appoggiata di Mike non lo dichiarano e non cambiano.
+
+    Ritorna l'eccezione di rifiuto (da scrivere come il live) o None."""
+    if not getattr(porta, "submin_fill_or_kill", False):
+        return None
+    from Betfair.omega import omega_market as _OM
+
+    try:
+        _OM.piano_submin_live(side=side, target_price=E.round_to_tick(float(price)),
+                              target_size=round(float(size), 2),
+                              best_back=best_back, best_lay=best_lay,
+                              max_stake=None, fill_or_kill=True)
+    except PlaceRifiutato as ex:
+        return ex
+    return None
+
+
 def _reconciling(db, trade_id: Optional[int], *, meta: dict[str, Any], mode: str,
                  price: float, size: float, ex: Exception) -> PlaceOutcome:
     """ESITO IGNOTO del place (eccezione: es. timeout DOPO che Betfair ha accettato).
@@ -959,6 +1062,10 @@ def reconcile_decision(trade: dict[str, Any], current_orders: list[dict],
     sid = trade.get("selection_id")
     sid = int(sid) if sid is not None else None
     side = str(trade.get("side", "lay")).lower()
+    # CANTIERE P (28/09, R-2): un ordine mandato sul CANALE arriva a Betfair col
+    # customerOrderRef di flumine, salvato in ``meta.canale_cor`` alla prima
+    # vista dell'evento: e' un ref in piu' della STESSA riga (mai di un'altra).
+    ref = refs_di_riconciliazione(trade, ref)
     if trade.get("closes_trade_id") is not None:
         # una gamba di CHIUSURA condivide mercato+selezione con l'apertura: mai
         # il fallback senza ref (confermerebbe la chiusura con l'ordine
@@ -992,6 +1099,71 @@ def reconcile_decision(trade: dict[str, Any], current_orders: list[dict],
     if age < E.RECON_GRACE_S:
         return {"action": "keep"}
     return {"action": "free"}
+
+
+#: prefisso del motivo «runner paper non raggiungibile» (``place``)
+SENZA_RUNNER = "paper_senza_runner"
+
+
+def e_senza_runner(nota: Any) -> bool:
+    """L'esito dice «runner paper non raggiungibile»: NON un rifiuto del mercato."""
+    return str(nota or "").startswith(SENZA_RUNNER)
+
+
+def esposizione_eur(trade: dict[str, Any]) -> float:
+    """Rischio ancora vivo della posizione in euro, per gli avvisi: il residuo
+    dopo le coperture (``residual_liability``) e, se la riga non porta la
+    colonna ``liability``, quello calcolato da lato, size e prezzo."""
+    v = residual_liability(trade)
+    if v <= 0 and not (trade.get("meta") or {}).get("hedge"):
+        try:
+            v = liability_of(str(trade.get("side") or "lay"), float(trade.get("size") or 0.0),
+                             float(trade.get("price") or 0.0))
+        except (TypeError, ValueError):
+            v = 0.0
+    return round(float(v), 2)
+
+
+def _runner_paper_assente(porta: Any, *, db, trade: dict[str, Any], params: dict[str, Any],
+                          now: Optional[datetime]) -> Optional[str]:
+    """Motivo per cui una chiusura PAPER non puo' raggiungere il runner, o None.
+    Stessa regola di ``place``: canale (se la porta c'e' ed e' disponibile)
+    oppure gate della coda. Nessuna scrittura, nessuna chiamata al mercato."""
+    if porta is not None and getattr(porta, "via_canale", False):
+        try:
+            if porta.disponibile():
+                return None
+        except Exception:  # noqa: BLE001 - porta illeggibile: si prova la coda
+            pass
+    ok, motivo = _gate(str(trade.get("event_id") or ""), db=db, mode="paper",
+                       params=params, now=now)
+    return None if ok else str(motivo)
+
+
+def refs_di_riconciliazione(trade: dict[str, Any], ref: Any) -> Any:
+    """Il ref (o i ref) con cui cercare su Betfair l'ordine di QUESTA riga:
+    quello chiesto dal chiamante piu' ``meta.canale_cor`` se c'e' (R-2).
+    Senza ``canale_cor`` ritorna ``ref`` INVARIATO (stesso tipo)."""
+    cors = cor_di_riga(trade)
+    if not cors:
+        return ref
+    base = list(ref) if isinstance(ref, (list, tuple, set)) else ([ref] if ref else [])
+    return base + [c for c in cors if c not in base]
+
+
+def cor_di_riga(trade: dict[str, Any]) -> list[str]:
+    """I customerOrderRef di flumine visti per QUESTA riga: il corrente
+    (``meta.canale_cor``) e gli ordini precedenti della stessa riga
+    (``meta.canale_cor_storico``, place-and-trim che ripiazza)."""
+    meta = trade.get("meta") or {}
+    if not isinstance(meta, dict):
+        return []
+    out: list[str] = []
+    for c in [meta.get("canale_cor"), *list(meta.get("canale_cor_storico") or [])]:
+        c = str(c or "").strip()
+        if c and c not in out:
+            out.append(c)
+    return out
 
 
 def _trade_id_from_ref(client_ref: str) -> Optional[int]:
@@ -1599,19 +1771,13 @@ def close_trade(*, db, market, trade: dict[str, Any], prices: dict[str, Any],
 
     side = str(plan.side)
     best_size = _num(prices.get(f"{side}_size"))
-    # CERTIFICAZIONE 12/09 — PAPER = LIVE: senza sapere QUANTO c'e' sul book non
-    # si puo' simulare un fill (``paper_fill`` non riempie piu' a controparte
-    # ignota). Ci si ferma PRIMA di riservare la gamba: altrimenti ogni ciclo
-    # creava una riga di chiusura 'error' e l'uscita non avveniva mai, con un
-    # motivo tecnico ("paper_no_fill") al posto della causa vera. In LIVE non
-    # serve: decide l'exchange col FOK.
-    if mode == "paper" and not (prices.get(f"{side}_ladder") or ()) and (
-            best_size is None or float(best_size) <= 0):
-        _log(db, "exit_wait", {"trade_id": trade.get("id"), "side": side,
-                               "reason": "book_size_ignota", "price": plan.price})
-        return {"error": "liquidita_del_book_ignota",
-                "note": "il feed porta il prezzo ma non la size abbinabile: "
-                        "chiusura rimandata al prossimo aggiornamento del book"}
+    # CANTIERE P (28/09, riga S7) - qui c'era, SOLO in paper, lo stop
+    # ``liquidita_del_book_ignota`` (12/09): senza la size del book il fill «di
+    # casa» non si poteva simulare e la chiusura veniva RIMANDATA, mentre il
+    # live nello stesso istante mandava l'ordine e decideva Betfair col FOK.
+    # Il fill di casa non esiste piu': l'ordine paper va al runner, che abbina
+    # sul book VERO come Betfair (FOK compreso). Stessa strada del live: la
+    # size ignota non ferma piu' nulla, ne' in paper ne' in live.
     lock = locked_pnl(trade, plan)
 
     reserve: dict[str, Any] = {
@@ -1646,6 +1812,29 @@ def close_trade(*, db, market, trade: dict[str, Any], prices: dict[str, Any],
     # non sarebbe possibile — la riga porterebbe solo il prezzo ottenuto.
     reserve["meta"]["price_segnale"] = plan.price
     reserve.update(extra_row or {})
+
+    # CANTIERE P (28/09): ``execution_mode='rest'`` e' la scelta del pannello
+    # per i SOLDI VERI (REST di Betfair invece della coda). In paper il REST non
+    # esiste: un ordine paper vive solo sul runner, quindi per una chiusura
+    # paper il gate della coda si valuta come 'auto' (stessa regola delle
+    # aperture paper di Omega, ``_flumine_paper_gate``). Altrimenti con 'rest'
+    # ogni chiusura paper sarebbe «non eseguita» mentre quella live, con la
+    # stessa scelta, parte. Chiamano ``close_trade`` solo Safe e Omega, che
+    # leggono entrambi gli esiti della coda (``poll_flumine_pending``).
+    params_ordine = params
+    if mode == "paper" and str(params.get("execution_mode") or "auto") != "auto":
+        params_ordine = {**params, "execution_mode": "auto"}
+    # CANTIERE P (28/09): paper col runner NON raggiungibile (ne' canale ne'
+    # coda): la chiusura non puo' partire. Lo si dice PRIMA di riservare la
+    # gamba, cosi' un runner giu' per minuti non lascia una riga 'error' ogni
+    # ritentativo; l'esito e' lo stesso di ``place`` (``paper_senza_runner``)
+    # e chi chiama lo ritenta senza consumare tentativi (``senza_runner``).
+    if mode == "paper":
+        motivo = _runner_paper_assente(porta, db=db, trade=trade, params=params_ordine,
+                                       now=now)
+        if motivo is not None:
+            return {"error": "chiusura_non_eseguita", "senza_runner": True,
+                    "detail": f"{SENZA_RUNNER}:{motivo}"}
     try:
         closing_id = db.insert_trade(reserve)
     except Exception as ex:  # noqa: BLE001
@@ -1666,7 +1855,7 @@ def close_trade(*, db, market, trade: dict[str, Any], prices: dict[str, Any],
         # piano andava perso (L-09 valeva solo sull'errore)
         meta={**dict(reserve.get("meta") or {}), "cashout": True,
               "closes_trade_id": trade.get("id")},
-        now=now, params=params,
+        now=now, params=params_ordine,
         **({"porta": porta} if porta is not None else {}),
     )
     if out.status == "error":
@@ -1941,7 +2130,13 @@ def _cleared_match(row: dict[str, Any], by_bet: dict[str, dict], by_ref: dict[st
         ref = f"{table_prefix}-t{int(row.get('id') or 0)}"
     except (TypeError, ValueError):
         return None
-    return by_ref.get(ref)
+    if ref in by_ref:
+        return by_ref[ref]
+    # CANTIERE P (28/09, R-2): ordine mandato sul canale = ref di flumine
+    for cor in cor_di_riga(row):
+        if cor in by_ref:
+            return by_ref[cor]
+    return None
 
 
 def _posizione_da_cleared(trade: dict[str, Any], legs: list[dict[str, Any]],

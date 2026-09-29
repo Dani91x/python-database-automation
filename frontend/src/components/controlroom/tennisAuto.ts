@@ -118,7 +118,7 @@ export function notaAutoTennis(a: AutoTennis | null): string | null {
 export function avvisoUsciteManuali(a: AutoTennis | null, nowMs: number): string | null {
     if (a == null || a.usciteAutomatiche !== false || a.usciteSempreAutomatiche) return null;
     if (a.posizioniAperteManuali <= 0 || a.posizioneApertaDal == null) {
-        return 'uscite manuali: il bot non prende profitto da solo (stop e protezioni restano attivi)';
+        return 'uscite manuali: ogni uscita del bot (anche stop e time-stop) e\' una proposta da approvare; da soli restano solo Chiudi, freno e fine mercato';
     }
     const t = Date.parse(a.posizioneApertaDal);
     const da = Number.isFinite(t) ? secondi((nowMs - t) / 1000) : '?';

@@ -44,6 +44,7 @@ import { Power, Square, SlidersHorizontal, AlertTriangle, Loader2, Ban } from 'l
 import { fmtMoney, fmtAge, DASH } from '@/lib/format';
 import { BOT_LABEL, type Bot } from '@/lib/controlRoom';
 import { interruttoreDi } from '@/lib/interruttori';
+import { InterruttoreUscite } from './InterruttoreUscite';
 import type {
     CampoImporto, InterruttoreId, Modalita, ComandiInterruttori, SportBot, StatoUscite,
 } from '@/lib/interruttori';
@@ -501,10 +502,6 @@ function RigaBot({
     /** istante in cui la conferma è comparsa; null = non armato */
     const [armatoDa, setArmatoDa] = useState<number | null>(null);
     const [mio, setMio] = useState(false);
-    /** 25/09 sera: conferma per passare le uscite ad AUTOMATICHE (il default
-     *  ora è manuale, quindi la conferma si è invertita: passare a manuali
-     *  non chiede niente, passare ad automatiche sì). */
-    const [confermaUscite, setConfermaUscite] = useState(false);
     /** ridisegna quando l'attesa anti-doppio-clic scade */
     const [, setTic] = useState(0);
     const armato = armatoDa != null;
@@ -689,58 +686,16 @@ function RigaBot({
                 le voglio spente, decido io se uscire o no»): passare a
                 manuali non chiede niente, passare ad AUTOMATICHE si conferma
                 (secondo clic). */}
+            {/* 28/09 (CANTIERE N): UN componente per tutti i bot, stesse parole
+                ("uscite: MANUALI, approvi tu" / "uscite: AUTOMATICHE"), conferma
+                inerte anti-doppio-clic per passare ad automatiche. */}
             {uscite && (
-                <div className="flex items-center gap-2 mt-1.5 flex-wrap text-[10.5px]"
-                    data-testid={`cr-uscite-${r.id}`}>
-                    <span className="text-white/40">uscite:</span>
-                    {uscite.automatiche == null ? (
-                        <span className="text-orange-300" data-testid={`cr-uscite-stato-${r.id}`}>
-                            non lette{uscite.nota ? ` (${uscite.nota})` : ''}
-                        </span>
-                    ) : uscite.automatiche ? (
-                        <span className="text-emerald-300" data-testid={`cr-uscite-stato-${r.id}`}>
-                            automatiche{uscite.nota ? ` (${uscite.nota})` : ''}
-                        </span>
-                    ) : (
-                        <span className="text-amber-300 font-semibold" data-testid={`cr-uscite-stato-${r.id}`}>
-                            manuali{uscite.aperte != null
-                                ? ` — ${uscite.aperte} ${uscite.aperte === 1 ? 'posizione aperta' : 'posizioni aperte'}`
-                                    + (uscite.aperte > 0 && uscite.daMin != null ? ` da ${uscite.daMin} min` : '')
-                                : ''}
-                        </span>
-                    )}
-                    {uscite.automatiche === true && comandi.cambiaUscite && (
-                        <Button
-                            type="button" size="sm" variant="ghost"
-                            disabled={occupato}
-                            onClick={() => void esegui(() => comandi.cambiaUscite!(r.id, false))}
-                            data-testid={`cr-uscite-cambia-${r.id}`}
-                            title="le uscite della strategia diventano PROPOSTE nella scheda: le approvi o chiudi tu. Le protezioni restano automatiche"
-                            className="h-6 px-2 text-[10px]"
-                        >passa a manuali</Button>
-                    )}
-                    {uscite.automatiche === false && comandi.cambiaUscite && (
-                        confermaUscite ? (
-                            <Button
-                                type="button" size="sm" variant="ghost"
-                                disabled={occupato}
-                                onClick={() => { setConfermaUscite(false); void esegui(() => comandi.cambiaUscite!(r.id, true)); }}
-                                data-testid={`cr-uscite-conferma-${r.id}`}
-                                title="confermi? il bot esegue da solo le uscite della strategia: quelle già proposte partono al prossimo giro"
-                                className="h-6 px-2 text-[10px] bg-amber-600/70 hover:bg-amber-600 text-white"
-                            >confermi? passa ad automatiche</Button>
-                        ) : (
-                            <Button
-                                type="button" size="sm" variant="ghost"
-                                disabled={occupato}
-                                onClick={() => setConfermaUscite(true)}
-                                data-testid={`cr-uscite-cambia-${r.id}`}
-                                title="il bot esegue da solo le uscite della strategia: quelle già proposte partono al prossimo giro"
-                                className="h-6 px-2 text-[10px]"
-                            >passa ad automatiche</Button>
-                        )
-                    )}
-                </div>
+                <InterruttoreUscite
+                    id={r.id} uscite={uscite} occupato={occupato}
+                    cambia={comandi.cambiaUscite
+                        ? (automatiche) => esegui(() => comandi.cambiaUscite!(r.id, automatiche))
+                        : undefined}
+                />
             )}
 
             {/* GLI IMPORTI, con i nomi del bot. Compaiono solo se esistono

@@ -101,6 +101,7 @@ CODICI_RIFIUTO = frozenset({"MAX_CONNECTION_LIMIT_EXCEEDED", "TOO_MANY_REQUESTS"
                             "SUBSCRIPTION_LIMIT_EXCEEDED"})
 
 _RE_OP_STATUS = re.compile(r'"op"\s*:\s*"status"')
+_RE_HEARTBEAT_MS = re.compile(r'"heartbeatMs"\s*:\s*(\d+)')
 
 
 def _env_int(nome: str, default: int, lo: int, hi: int) -> int:
@@ -134,6 +135,10 @@ class FrammentoListener(RawTeeStreamListener):
         # perderebbe. Qui si tiene anche lo 0.
         self.connessioni_disponibili: Optional[int] = None
         self.connessioni_lette_mono = 0.0
+        # J2 (28/09): l'heartbeat VERO che Betfair ha rimandato a questa
+        # connessione (``heartbeatMs`` dell'immagine iniziale, schema ESA): la
+        # soglia dello stream muto e' 3 volte questo (``stream_muto.soglia_per``)
+        self.heartbeat_ms_server: Optional[int] = None
 
     def on_data(self, raw_data: str):  # type: ignore[override]
         try:
@@ -146,6 +151,10 @@ class FrammentoListener(RawTeeStreamListener):
         ora = time.monotonic()
         self.ultimo_msg_mono = ora
         tipo = classifica_messaggio_stream(raw_data)
+        if isinstance(raw_data, str) and '"heartbeatMs"' in raw_data:
+            m = _RE_HEARTBEAT_MS.search(raw_data)
+            if m:
+                self.heartbeat_ms_server = int(m.group(1))
         if tipo == MSG_DATI:
             self.ultimo_dato_mono = ora
             return

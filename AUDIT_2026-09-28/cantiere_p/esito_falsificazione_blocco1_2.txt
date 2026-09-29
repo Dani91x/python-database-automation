@@ -1,0 +1,7 @@
+﻿m1_fill_di_casa: ROSSA 11 failed, 7 passed, 2 warnings in 20.56s
+m2_close_rest_non_ignorato: ROSSA 1 failed in 10.44s
+m3_apertura_rest_non_ignorato: ROSSA 2 failed, 2 warnings in 10.96s
+m4_s7_rimando_paper: ROSSA 2 failed in 9.50s
+m5_reconcile_conferma_riserva: ROSSA 1 failed in 6.80s
+m6_motivo_rinominato: ROSSA 2 failed in 9.24s
+m7_paper_ladder_ancora_cancello: ROSSA 2 failed in 6.24s

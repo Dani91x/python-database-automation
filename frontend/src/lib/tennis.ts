@@ -950,7 +950,8 @@ export interface TennisBotServiceRow {
     heartbeat_at: string | null;
     updated_at: string | null;
     /** 25/09 (`migrations/tennis_uscite_manuali_2026-09-25.sql`): assente =
-     *  migrazione non applicata, e allora le uscite sono AUTOMATICHE. */
+     *  migrazione non applicata; il runner allora resta MANUALE (default dal
+     *  25/09 sera) e la Control Room non offre il pulsante ("non lette"). */
     uscite_automatiche?: boolean;
 }
 

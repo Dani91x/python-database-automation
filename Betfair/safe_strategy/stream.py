@@ -64,6 +64,13 @@ _SERVING_MAX_AGE_SEC = 20.0
 _RESUB_EXTRA_TOLLERATI = 25
 _HEARTBEAT_MS = 5000
 _CONFLATE_MS = 1000
+# Cantiere J (28/09): una connessione CONFERMA i prezzi dei suoi mercati finche'
+# riceve messaggi (heartbeat compresi) da meno di tre heartbeat. La Exchange
+# Stream API manda solo i cambiamenti: senza dati manda un heartbeat ogni
+# ``heartbeatMs``. Con ``status: 503`` (schema ESA: "downstream services are
+# experiencing latencies") lo stream non conferma niente.
+_FLUSSO_SOCKET_MAX_S = 3 * _HEARTBEAT_MS / 1000.0
+_STATUS_LATENTE = 503
 
 # limiti Betfair (hard cap: mai superabili da configurazione)
 BETFAIR_MAX_CONNECTIONS = 10
@@ -175,6 +182,10 @@ class StreamShard:
         self.riconnessioni = 0
         self.ultimo_errore: Optional[str] = None
         self._last_resub = 0.0
+        # Cantiere J (28/09): quando e' nata la subscription della connessione
+        # ATTUALE (0 = nessuna) e il listener che la serve (per ``status``)
+        self._connesso_mono = 0.0
+        self._listener: Any = None
         self._lock = threading.Lock()
         # serializza la risottoscrizione "a caldo" con la ricostruzione del
         # thread: senza, si potrebbe scrivere sul socket di uno stream morente
@@ -317,6 +328,37 @@ class StreamShard:
             and time.monotonic() - self._last_book_mono < _SERVING_MAX_AGE_SEC
         )
 
+    def latente(self) -> bool:
+        """L'ultimo messaggio della connessione portava uno ``status`` diverso da
+        null/200 (503 = latenza da schema ESA)? J2: FAIL-CLOSED su ogni altro
+        codice, anche illeggibile: la connessione non conferma i prezzi."""
+        st = getattr(self._listener, "status", None)
+        if st is None:
+            return False
+        try:
+            return int(st) != 200
+        except (TypeError, ValueError):
+            return True
+
+    def conferma_flusso(self) -> Optional["tuple[float, float]"]:
+        """(istante dell'ultimo messaggio, istante della subscription attuale)
+        se la connessione sta confermando i prezzi dei suoi mercati, altrimenti
+        None. Cantiere J (28/09).
+
+        Conferma = socket con una subscription ATTUALE, ultimo messaggio
+        (heartbeat compreso) da meno di ``_FLUSSO_SOCKET_MAX_S``, nessuna
+        latenza dichiarata da Betfair. Chi la usa deve pretendere, per ogni
+        mercato, un book con prezzi ricevuto DOPO l'istante della subscription:
+        e' l'immagine iniziale che rende valida la cache (17/09: connessione
+        viva e muta)."""
+        if self._stream is None or self._connesso_mono <= 0.0 or self._last_msg_mono <= 0.0:
+            return None
+        if time.monotonic() - self._last_msg_mono > _FLUSSO_SOCKET_MAX_S:
+            return None
+        if self.latente():
+            return None
+        return self._last_msg_mono, self._connesso_mono
+
     def stato(self) -> dict:
         """Referto per ``safe_strategy_status`` (visibilita', 17/09)."""
         mono = time.monotonic()
@@ -334,6 +376,9 @@ class StreamShard:
             "eta_resub_s": eta(self._last_resub),
             "riconnessioni": self.riconnessioni,
             "ultimo_errore": self.ultimo_errore,
+            # Cantiere J (28/09), chiavi ADDITIVE
+            "latente": self.latente(),
+            "conferma": self.conferma_flusso() is not None,
         }
 
     def drain(self) -> List[Any]:
@@ -369,6 +414,7 @@ class StreamShard:
                 continue
             try:
                 listener = _HealthListener(self.queue, self._touch).listener
+                self._listener = listener
                 stream = self.client.streaming.create_stream(listener=listener)
                 # 17/09 - la subscription PRIMA della pubblicazione di
                 # ``self._stream``. Pubblicandolo prima, un ``_kick()`` che
@@ -381,6 +427,7 @@ class StreamShard:
                 self._stream = stream
                 self._subscribed = set(ids)
                 self._last_resub = time.monotonic()
+                self._connesso_mono = self._last_resub
                 self.ultimo_errore = None
                 logger.info(
                     "[safe-scan] stream#%d ATTIVO: %d mercati sottoscritti", self.index, len(ids)
@@ -401,6 +448,7 @@ class StreamShard:
             with self._io_lock:
                 self._stream = None
                 self._subscribed = set()
+                self._connesso_mono = 0.0
             self._last_book_mono = 0.0
             self._last_msg_mono = 0.0
             if self._stop:
@@ -489,6 +537,23 @@ class MarketStreamPool:
         for s in self.shards:
             out |= s.subscribed_ids()
         return out
+
+    def conferme_flusso(self) -> "tuple[List[tuple], Set[str]]":
+        """Cantiere J (28/09). ([(mercati, ultimo_msg, subscription_da)] degli
+        shard che confermano, mercati degli shard LATENTI (status 503))."""
+        conferme: List[tuple] = []
+        latenti: Set[str] = set()
+        for s in self.shards:
+            if s.desired_count() <= 0:
+                continue
+            ids = s.subscribed_ids()
+            if s.latente():
+                latenti |= ids
+                continue
+            c = s.conferma_flusso()
+            if c is not None and ids:
+                conferme.append((ids, c[0], c[1]))
+        return conferme, latenti
 
     def active_connections(self) -> int:
         return sum(1 for s in self.shards if s.healthy())

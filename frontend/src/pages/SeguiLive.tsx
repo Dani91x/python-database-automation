@@ -55,6 +55,7 @@ import {
     type LiveFollow, type LiveNowRow, type LiveNowMarket, type LiveSignalsRow,
 } from '@/lib/live';
 import { setFollowRecord } from '@/lib/omegaMissions';
+import FlussoStreamBanner from '@/components/live/FlussoStreamBanner';
 
 // ---- CANALE LOCALE (app desktop, latenza ~0) ----
 // Wrapper dei DEFAULT calcio (le stesse funzioni di LadderView): quando il canale
@@ -491,6 +492,9 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt,
     const busy = cashingMarket || cashingEvent;
     return (
         <div className="space-y-2">
+            {/* 28/09 (cantiere J2): lo stream del runner e' MUTO su questa partita =
+                prezzi fermi. Detto in rosso sopra a tutto, con il segnale del runner. */}
+            <FlussoStreamBanner sport="calcio" marketId={marketId ?? null} />
             {/* ================= TOP BAR STICKY del terminal =================
                 Canone dei tool pro (Bet Angel/Fairbot): badge modalità, book% back/lay,
                 freschezza dati, azioni d'emergenza SEMPRE visibili (cash-out + kill). */}

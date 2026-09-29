@@ -52,6 +52,11 @@ logger = logging.getLogger("safe.selezione")
 
 # lo STESSO file dell'advisor di Omega (che ha il blocco h2h_hint): non se ne
 # aggiunge un altro, non se ne copia il contenuto.
+# CANTIERE P (28/09): ATTENZIONE, dal 24/09 ``atlante()`` NON legge questo
+# percorso ma quello CORRENTE di ``hazard_atlas.percorso_atlante()`` (il live
+# rigenerato ogni notte se esiste, altrimenti questo v2). Resta come nome del
+# ripiego committato; chi confronta coi numeri del codice usi
+# ``percorso_atlante()`` (era la causa del test rosso sull'atlante locale).
 ATLAS_PATH = os.path.abspath(os.path.join(
     os.path.dirname(__file__), "..", "omega", "data", "hazard_atlas_v2.json"))
 

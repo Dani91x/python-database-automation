@@ -50,6 +50,8 @@ from .condotta_ordini import (
     stato_ordine,
 )
 from .tennis_scalper_bot import compute_green, ticks_between
+from ..uscite_proposte import CHIAVE_STATS as CHIAVE_PROPOSTE
+from ..uscite_proposte import CancelloUscite, ora_s, proposta_di
 
 logger = logging.getLogger(__name__)
 MIN_STAKE = 2.0
@@ -131,6 +133,8 @@ class TennisFLBStrategy(BaseStrategy):
         # gli ordini gia' contati nel settlement: `process_closed_market` puo'
         # essere richiamato piu' volte sullo stesso mercato (vedi la nota li').
         self._pnl_settled_oids: set = set()
+        # 28/09 (CANTIERE N): proposte d'uscita e firme dell'utente
+        self.cancello_uscite = CancelloUscite(emetti=lambda ev, p: self._emit(ev, **p))
 
     # ------------------------------------------------------------- telemetria
     def _emit(self, event: str, **payload: Any) -> None:
@@ -143,6 +147,15 @@ class TennisFLBStrategy(BaseStrategy):
 
     def check_market_book(self, market: Any, mb: Any) -> bool:
         return getattr(mb, "status", None) == "OPEN" and bool(getattr(mb, "runners", None))
+
+    def _pubblica_proposte(self) -> None:
+        """28/09 (CANTIERE N): le proposte vive nel battito (``stats``), solo
+        per le posizioni ancora aperte."""
+        self.cancello_uscite.tieni_solo(
+            [f"tennis_flb|{k[0]}|{int(k[1])}|{st.get('t0')}|"
+             for k, st in self._pos_state.items()
+             if st and st.get("state") == OPEN])
+        self.stats[CHIAVE_PROPOSTE] = self.cancello_uscite.vive()
 
     # ------------------------------------------------------- posizione matchata
     def _matched(self, market: Any, sel: int) -> Tuple[float, float, float, float]:
@@ -487,12 +500,33 @@ class TennisFLBStrategy(BaseStrategy):
         entry = st["entry"]
         # green-up sullo swing: la quota (best-back per chiudere un lay) e' RISALITA
         up = ticks_between(entry, bb) if bb > entry else 0
-        # 25/09 USCITE MANUALI: il green sullo swing e' una presa di profitto,
-        # a interruttore spento non scatta (come exit_mode "hold"). Il FLB non
-        # ha stop per progetto: restano chiudi-ora e fine mercato.
-        if self.exit_mode in ("green", "hybrid") and not st["greened"] \
-                and self.uscite_automatiche \
-                and up and up >= self.green_ticks:
+        # 28/09 (CANTIERE N) USCITE MANUALI: il green sullo swing e' una presa
+        # di profitto: a uscite manuali diventa una PROPOSTA coi numeri e parte
+        # solo con la firma, quando la condizione vale ancora. Il FLB non ha
+        # stop per progetto: restano chiudi-ora e fine mercato.
+        prefisso = f"tennis_flb|{key[0]}|{int(sel)}|{st.get('t0')}|"
+        vuole_green = bool(self.exit_mode in ("green", "hybrid") and not st["greened"]
+                           and up and up >= self.green_ticks)
+        if vuole_green:
+            frac0 = 1.0 if self.exit_mode == "green" else self.green_frac
+            nw0, nl0 = self._net(b, ba, l, la)
+            g0 = compute_green(nw0, nl0, bb)
+            vuole_green = self.cancello_uscite.lascia_uscire(
+                automatiche=bool(self.uscite_automatiche), chiave=prefisso + "green",
+                now_s=ora_s(pt),
+                proposta=proposta_di(
+                    bot="tennis_flb", motivo="green", market_id=key[0], selection_id=sel,
+                    lato_ingresso="LAY", prezzo=bb,
+                    lato_chiusura=(g0[0] if g0 else None),
+                    size_chiusura=((g0[1] * frac0) if g0 else None),
+                    se_chiudi=((g0[2] * frac0) if g0 else None),
+                    se_vince=nw0, se_perde=nl0, frazione=frac0))
+            if not vuole_green:
+                self.cancello_uscite.conferma_vive(prefisso, (prefisso + "green",))
+        else:
+            self.cancello_uscite.conferma_vive(prefisso, ())
+        self._pubblica_proposte()
+        if vuole_green:
             frac = 1.0 if self.exit_mode == "green" else self.green_frac
             locked, go = self._green(market, sel, bb, frac)
             st["greened"] = True

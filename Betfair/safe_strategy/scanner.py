@@ -554,6 +554,9 @@ def critical_signature(sport: str, payload: Dict[str, Any]) -> str:
     # lo stato IPS grezzo è il feed dei runner (punti tennis, corner/cartellini
     # calcio): ogni suo cambio va pubblicato subito, come un gol
     crit["score_raw"] = payload.get("score_raw")
+    # cantiere J (28/09): un passaggio vivo/fermo dei prezzi va pubblicato SUBITO
+    # (il bot deve saperlo adesso, non fra 2,5 s); a regime il blocco non cambia
+    crit["flusso"] = payload.get("flusso")
     return json.dumps(crit, sort_keys=True, separators=(",", ":"), default=str)
 
 

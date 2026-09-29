@@ -56,6 +56,8 @@ from flumine import BaseStrategy
 from flumine.order.order import OrderStatus
 from flumine.order.ordertype import LimitOrder
 from flumine.order.trade import Trade
+from ..uscite_proposte import CHIAVE_STATS as CHIAVE_PROPOSTE
+from ..uscite_proposte import CancelloUscite, UltimiPrezzi, proposta_di
 from flumine.utils import get_nearest_price, get_price, get_size, price_ticks_away
 
 from ..trading.stato_mercato import AttesaRiapertura, guardia_flumine
@@ -220,6 +222,8 @@ class _Slot:
     t_last_submin: int = 0               # rate-limit creazione submin (anti-cascata)
     submin_count: int = 0                # sequenze create nel ciclo corrente (tetto)
     swing: bool = False                  # ciclo originato dal trend (target/stop swing)
+    # 28/09 (CANTIERE N) - uscite manuali: il motivo dell'ultima proposta
+    proposta: Optional[str] = None
     inplay_cycle: bool = False           # ciclo aperto in-play (per circuit breaker)
     # campioni RADI del micro-price (1 ogni ~30s) per la deriva di lungo
     # periodo: history (maxlen 64) copre solo secondi sui mercati veloci
@@ -262,6 +266,13 @@ class TennisScalperStrategy(BaseStrategy):
         wom_block: float = 0.85       se |WoM| oltre soglia ED e' contro la
                                       reversion, blocca l'ingresso
     """
+
+    #: 28/09 (CANTIERE N, ordine dell'utente: "nessuna eccezione per
+    #: strategia"): prima lo scalper tennis era SEMPRE automatico
+    #: (``auto_mode.BOT_USCITE_SEMPRE_AUTOMATICHE``). Ora ha l'interruttore come
+    #: gli altri bot e nasce MANUALE: target, gamba opposta come chiusura,
+    #: scratch, stop e lock_ttl diventano PROPOSTE e partono con la firma.
+    uscite_automatiche: bool = False
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         # estrai i parametri dedicati PRIMA di passare il resto a BaseStrategy
@@ -527,6 +538,10 @@ class TennisScalperStrategy(BaseStrategy):
 
         # stato per (market_id, selection_id)
         self._slots: Dict[Tuple[str, int], _Slot] = {}
+        # 28/09 (CANTIERE N): proposte d'uscita e firme dell'utente
+        self.cancello_uscite = CancelloUscite(emetti=lambda ev, p: self._emit(ev, **p))
+        # 29/09 (CANTIERE N, UM2): l'ultimo prezzo di chiusura visto (solo numeri)
+        self._ultimi_prezzi = UltimiPrezzi()
         # ordini regolati (dedup per id) per il report del P&L
         self._settled_by_id: Dict[Any, Tuple[Any, str]] = {}
         # kickoff (ms epoch) per market_id, dal market_definition (NON wall-clock:
@@ -782,6 +797,9 @@ class TennisScalperStrategy(BaseStrategy):
         # sola, e da qui lo leggono i contatori a finestra (`_orologio_s`)
         self._now_ms = int(now)
         mid = market_book.market_id
+        if self.cancello_uscite.proposte:
+            # 28/09 (CANTIERE N): una posizione chiusa porta via le sue proposte
+            self._pubblica_proposte()
         if self.uscita_manuale_chiesta and self.uscita_manuale is None:
             self._avvia_uscita_manuale(mid)
         inplay = bool(getattr(market_book, "inplay", False))
@@ -1519,7 +1537,7 @@ class TennisScalperStrategy(BaseStrategy):
         # ripiazzare una close nuova azzererebbe la posizione in coda).
         if mb > 0:
             done = not self._has_live(eb)
-            if done and el is not None and abs(mb - float(
+            if done and el is not None and self.uscite_automatiche and abs(mb - float(
                 getattr(getattr(el, "order_type", None), "size", 0.0) or 0.0
             )) <= 0.01:
                 slot.entry, slot.entry_side = eb, "BACK"
@@ -1561,7 +1579,7 @@ class TennisScalperStrategy(BaseStrategy):
             return  # parziale vivo entro TTL e non avverso: lascia lavorare
         if ml > 0:
             done = not self._has_live(el)
-            if done and eb is not None and abs(ml - float(
+            if done and eb is not None and self.uscite_automatiche and abs(ml - float(
                 getattr(getattr(eb, "order_type", None), "size", 0.0) or 0.0
             )) <= 0.01:
                 slot.entry, slot.entry_side = el, "LAY"
@@ -1784,6 +1802,12 @@ class TennisScalperStrategy(BaseStrategy):
             for o in slot.flatten_orders:
                 if self._has_live(o):
                     self._cancel_if_live(market, o)
+            # 28/09 (CANTIERE N): posizione in attesa dell'utente e uscite
+            # riaccese, o chiusura a target FIRMATA: la chiusura parte adesso.
+            if (slot.close is None and slot.proposta is not None and slot.entry is not None
+                    and (self.uscite_automatiche or self._firmata(slot, "target"))):
+                self._open_lock(market, slot, now, slot.entry, best_back, best_lay)
+                return
             close = slot.close
             c_match = float(getattr(close, "size_matched", 0.0) or 0.0) if close else 0.0
             if close is not None and c_match > 0 and not self._has_live(close):
@@ -1848,9 +1872,43 @@ class TennisScalperStrategy(BaseStrategy):
                         self.stop_ticks
                         + (self.stop_ticks_far - self.stop_ticks) * frac
                     ))
-            if (adverse is not None and adverse >= eff_stop) or (
-                slot.t_lock is not None and now - slot.t_lock > self.lock_ttl_ms
-            ):
+            # 28/09 (CANTIERE N): quali uscite vuole la strategia ADESSO
+            cond_stop = adverse is not None and adverse >= eff_stop
+            cond_ttl = slot.t_lock is not None and now - slot.t_lock > self.lock_ttl_ms
+            cond_scratch = bool(self.scratch_enable and scratch_now
+                                and not slot.close_scratched and c_match <= _EPS
+                                and entry_p is not None)
+            pref = self._prefisso_uscite(slot)
+            vive = [pref + m for m, v in (("target", slot.close is None),
+                                          ("stop", cond_stop),
+                                          ("timeout", cond_ttl and not cond_stop),
+                                          ("scratch", cond_scratch)) if v]
+            self.cancello_uscite.conferma_vive(pref, vive)
+            self._pubblica_proposte(pota=False)
+            # 29/09 (CANTIERE N, UM2): l'ultimo prezzo di chiusura VISTO, per i
+            # numeri della proposta quando il book di adesso non ha quel lato
+            k_sl = self._chiave_slot(slot) or ("?", 0)
+            self._ultimi_prezzi.annota((k_sl[0], k_sl[1], "LAY"), best_lay, now)
+            self._ultimi_prezzi.annota((k_sl[0], k_sl[1], "BACK"), best_back, now)
+            if cond_stop or cond_ttl:
+                nw_x = sb * (ob - 1.0) - sl * (ol - 1.0)
+                nl_x = sl - sb
+                px_x = best_lay if slot.entry_side == "BACK" else best_back
+                # la PROPOSTA porta sempre i numeri (prezzo vivo, o l'ultimo
+                # visto con la sua eta', o il motivo dichiarato); l'uscita, se
+                # parte, parte dal flatten di sempre sul mercato di adesso
+                px_p, extra_p = self._ultimi_prezzi.per_proposta(
+                    (k_sl[0], k_sl[1], "LAY" if slot.entry_side == "BACK" else "BACK"),
+                    px_x, now)
+                g_x = compute_green(nw_x, nl_x, px_p) if px_p else None
+                if not self._lascia_uscire(
+                        slot, "stop" if cond_stop else "timeout",
+                        lato=(g_x[0] if g_x else None), prezzo=px_p,
+                        size=(g_x[1] if g_x else None),
+                        bloccabile=(g_x[2] if g_x else None),
+                        se_vince=nw_x, se_perde=nl_x, now_ms=now, extra=extra_p):
+                    return
+            if cond_stop or cond_ttl:
                 self._cancel_if_live(market, close)
                 self._cancel_if_live(market, slot.next_entry)
                 self._begin_flatten(slot)
@@ -1862,13 +1920,15 @@ class TennisScalperStrategy(BaseStrategy):
             # SCRATCH: il touch ha raggiunto il nostro prezzo d'ingresso ->
             # ripiazza la chiusura A PARI (profitto 0) invece di inseguire
             # +scalp_ticks che ormai non arrivera'. Una sola volta per ciclo.
-            if (
-                self.scratch_enable
-                and scratch_now
-                and not slot.close_scratched
-                and c_match <= _EPS
-                and entry_p is not None
-            ):
+            if cond_scratch:
+                nw_s = sb * (ob - 1.0) - sl * (ol - 1.0)
+                g_s = compute_green(nw_s, sl - sb, entry_p)
+                if not self._lascia_uscire(slot, "scratch", lato=(g_s[0] if g_s else None),
+                                           prezzo=entry_p, size=(g_s[1] if g_s else None),
+                                           bloccabile=(g_s[2] if g_s else None),
+                                           se_vince=nw_s, se_perde=sl - sb, now_ms=now):
+                    return
+            if cond_scratch:
                 self._cancel_if_live(market, close)
                 if close is not None:
                     slot.flatten_orders.append(close)  # contabilita' posizione
@@ -1964,6 +2024,17 @@ class TennisScalperStrategy(BaseStrategy):
             self._begin_flatten(slot)
             return
         side, size, _locked = g
+        if not self._lascia_uscire(slot, "target", lato=side, prezzo=target, size=size,
+                                   bloccabile=_locked, se_vince=net_win,
+                                   se_perde=net_lose, now_ms=now):
+            # 28/09 (CANTIERE N) - uscite MANUALI: nessuna chiusura del bot;
+            # la posizione resta in LOCKING e l'utente firma la proposta.
+            slot.close = None
+            if slot.t_lock is None:
+                slot.t_lock = now
+            slot.status = LOCKING
+            self._pubblica_proposte()
+            return
         # floor_min=False: l'hedge deve coprire ESATTAMENTE la quota matchata.
         # Forzare MIN_STAKE su un fill parziale creerebbe una posizione direzionale.
         order = self._place(market, entry.selection_id, side, target, size, floor_min=False, slot=slot)
@@ -1973,6 +2044,49 @@ class TennisScalperStrategy(BaseStrategy):
         slot.close = order
         slot.t_lock = now
         slot.status = LOCKING
+
+    # ----------------------------------- 28/09 (CANTIERE N): il cancello uscite
+    def _chiave_slot(self, slot: _Slot) -> Optional[Tuple[str, int]]:
+        for k, v in self._slots.items():
+            if v is slot:
+                return k
+        return None
+
+    def _prefisso_uscite(self, slot: _Slot) -> str:
+        k = self._chiave_slot(slot) or ("?", 0)
+        ingresso = getattr(slot.entry, "id", None) or id(slot.entry)
+        return f"tennis_scalper|{k[0]}|{k[1]}|{ingresso}|"
+
+    def _firmata(self, slot: _Slot, motivo: str) -> bool:
+        return self.cancello_uscite.firmata(self._prefisso_uscite(slot) + motivo)
+
+    def _lascia_uscire(self, slot: _Slot, motivo: str, *, lato: Any, prezzo: Any,
+                       size: Any, bloccabile: Any, se_vince: Any = None,
+                       se_perde: Any = None, now_ms: Optional[int] = None,
+                       extra: Optional[Dict[str, Any]] = None) -> bool:
+        """True = l'uscita decisa dalla strategia parte ADESSO (automatiche o
+        firmata); False = proposta coi numeri, niente ordini."""
+        k = self._chiave_slot(slot) or ("?", 0)
+        ok = self.cancello_uscite.lascia_uscire(
+            automatiche=bool(self.uscite_automatiche),
+            chiave=self._prefisso_uscite(slot) + motivo,
+            now_s=(float(now_ms) / 1000.0 if now_ms is not None else self._orologio_s()),
+            proposta=proposta_di(
+                bot="tennis_scalper", motivo=motivo, market_id=k[0], selection_id=k[1],
+                lato_ingresso=slot.entry_side, prezzo=prezzo, lato_chiusura=lato,
+                size_chiusura=size, se_chiudi=bloccabile, se_vince=se_vince,
+                se_perde=se_perde, **(extra or {})))
+        if not ok:
+            slot.proposta = motivo
+        self._pubblica_proposte(pota=False)
+        return ok
+
+    def _pubblica_proposte(self, pota: bool = True) -> None:
+        if pota:
+            self.cancello_uscite.tieni_solo(
+                [self._prefisso_uscite(s) for s in self._slots.values()
+                 if s.status == LOCKING and s.entry is not None])
+        self.stats[CHIAVE_PROPOSTE] = self.cancello_uscite.vive()  # type: ignore[assignment]
 
     def _begin_flatten(self, slot: _Slot) -> None:
         """Avvia la chiusura GARANTITA della posizione (stato FLATTENING).
@@ -2733,6 +2847,7 @@ class TennisScalperStrategy(BaseStrategy):
         slot.flat_tries = 0
         slot.t_quote = None
         slot.t_lock = None
+        slot.proposta = None
         slot.ref_price = None
         # contabilita' incrementale del ciclo (fix audit #6): il NUOVO ciclo
         # riparte da zero accreditato e non ancora contato.

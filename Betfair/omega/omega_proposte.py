@@ -179,6 +179,46 @@ def parametri_modello() -> "V3.Parametri":
 def svuota_le_cache() -> None:
     """Le cache di PROCESSO di questo modulo (un riavvio le butta via)."""
     _PARAMETRI_CACHE.clear()
+    _VALUTAZIONI.clear()
+
+
+# ---------------------------------------------------------------------------
+# 29/09 (CANTIERE N, verifica del coordinatore) - LA VALUTAZIONE DI ADESSO.
+# Una proposta APPROVATA passa da 'proposed' a 'pending': da quel momento il
+# produttore non la aggiorna piu' (``proposta_di_chiusura_viva`` legge solo le
+# 'proposed'), e il suo payload resta quello del clic. Il produttore gira PRIMA
+# delle richieste nello stesso giro (``run_once``): qui annota, per ogni gamba,
+# cosa pensa ADESSO (propone? con che motivo?), e l'esecuzione della firma
+# (``omega_service._manual_cashout``) la confronta con la proposta firmata.
+# Memoria di processo: dopo un riavvio non c'e', e la firma aspetta il giro dopo.
+# ---------------------------------------------------------------------------
+_VALUTAZIONI: dict[int, tuple[float, bool, str]] = {}
+
+
+def _annota_valutazione(tr: dict[str, Any], now: datetime, proponi: bool,
+                        motivo: str) -> None:
+    try:
+        _VALUTAZIONI[int(tr["id"])] = (now.timestamp(), bool(proponi), str(motivo))
+    except (KeyError, TypeError, ValueError):
+        pass
+
+
+def firma_ancora_valida(trade_id: Any, motivo_firmato: Any,
+                        now: datetime) -> Optional[str]:
+    """None se la proposta firmata (motivo ``motivo_firmato``) e' quella che il
+    produttore vuole ANCORA in questo giro; altrimenti il perche' no."""
+    try:
+        v = _VALUTAZIONI.get(int(trade_id))
+    except (TypeError, ValueError):
+        v = None
+    if v is None or now.timestamp() - v[0] > _RICONTROLLO_PROPOSTA_S:
+        return "condizione non verificabile adesso (il bot non ha valutato la gamba in questo giro)"
+    if not v[1]:
+        return "la condizione di uscita non vale piu' (" + v[2] + ")"
+    if str(v[2]) != str(motivo_firmato):
+        return ("la condizione e' cambiata (" + str(motivo_firmato) + " -> " + v[2]
+                + "): arriva una proposta nuova")
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -324,6 +364,13 @@ def _salta(db: Any, tr: dict[str, Any], motivo: str, **extra: Any) -> None:
     legge e un database che non respira)."""
     from . import omega_service as S
 
+    if motivo not in ("prezzo_di_back_assente", "controparte_insufficiente"):
+        # 29/09: il bot non ha potuto valutare la gamba in questo giro: una
+        # firma non si esegue su una valutazione vecchia
+        try:
+            _VALUTAZIONI.pop(int(tr.get("id") or 0), None)
+        except (TypeError, ValueError):
+            pass
     S._log_dedup(db, (tr.get("id"), f"proposta_{motivo}"), "skip",
                  {"trade_id": tr.get("id"), "event_id": tr.get("event_id"),
                   "fase": "proposta_uscita", "reason": motivo, **extra})
@@ -425,6 +472,10 @@ def _una_gamba(*, tr: dict[str, Any], params: dict[str, Any], market: Any, db: A
     ingredienti = {"commissione": float(commissione), "p_lose_max": p_lose_max,
                    "margine_attesa": margine_attesa()}
 
+    if not (not proposta.proponi and str(proposta.motivo_codice) in MOTIVI_TRANSITORI):
+        # 29/09: cosa vuole il bot ADESSO (un book momentaneamente sottile non
+        # cambia l'idea del bot: la valutazione precedente resta)
+        _annota_valutazione(tr, now, bool(proposta.proponi), str(proposta.motivo_codice))
     if not proposta.proponi:
         if str(proposta.motivo_codice) in MOTIVI_TRANSITORI:
             # NON e' che il bot abbia cambiato idea: e' il book che si e'

@@ -1,0 +1,4 @@
+M14 banco: registrazione che scorre non conferma: ROSSO | test_banco_la_registrazione_che_scorre_conferma_come_gli_heartbeat | 1 failed, 93 deselected in 7.63s
+K1 banco: book applicati dentro il buco: ROSSO | test_buco_dichiarato_il_flusso_diventa_fermo_e_rientra | 1 failed, 93 deselected in 8.86s
+K2 banco: registrazione che conferma anche nel buco: ROSSO | test_buco_dichiarato_il_flusso_diventa_fermo_e_rientra | 1 failed, 93 deselected in 7.27s
+EXIT=0

@@ -40,6 +40,7 @@ from Betfair.safe_strategy import certificazione as CERT
 from Betfair.safe_strategy.tests.test_audit_2026_09_11 import (_combo, _combo_feed_row,
                                                               _kinds)
 from Betfair.safe_strategy.tests.test_bot_service import (NOW, FakeDB, FakeMarket,
+                                                          _poll_runner,
                                                           _reset_module_state)
 
 
@@ -363,6 +364,9 @@ def test_parita_gamba_automatica_di_combo_incompleta_svolta_come_ieri():
     assert figlie[0]["origin"] == "auto"
     assert figlie[0]["meta"]["exit_kind"] == "forced"
     assert "combo incompleta" in figlie[0]["meta"]["exit_reason"]
+    # CANTIERE P (28/09): la chiusura paper e' un ordine sul runner; l'apertura
+    # passa a 'hedged' quando il poll (giro dopo) ne conferma l'abbinato
+    _poll_runner(db)
     assert db.get_trade(tid)["status"] == "hedged"
     assert _avvisi(db) == []
     assert S.COMBO_LASCIATA_KEY not in (db.get_trade(tid)["meta"] or {})

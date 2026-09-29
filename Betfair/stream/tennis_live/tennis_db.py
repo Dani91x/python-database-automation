@@ -684,15 +684,20 @@ def set_tennis_bot_service_state(
     heartbeat: bool = False,
     stopped: bool = False,
     mode: Optional[str] = None,
+    uscite_automatiche: Optional[bool] = None,
 ) -> bool:
     """Aggiorna la riga di interruttore di UN bot. `False` = non scritto.
-    R2 (25/09): ``mode`` opzionale (None = non si tocca)."""
+    R2 (25/09): ``mode`` opzionale (None = non si tocca).
+    28/09 (CANTIERE N): ``uscite_automatiche`` opzionale (None = non si tocca):
+    all'avvio nuovo dell'app l'interruttore delle uscite torna MANUALE."""
     sb = get_tennis_client()
     upd: Dict[str, Any] = {"updated_at": _now_iso()}
     if status is not None:
         upd["status"] = str(status)
     if mode is not None:
         upd["mode"] = str(mode)
+    if uscite_automatiche is not None:
+        upd["uscite_automatiche"] = bool(uscite_automatiche)
     if stats is not None:
         upd["stats"] = stats
     if error is not None:

@@ -719,7 +719,8 @@ def test_place_and_trim_timeout_ritira_il_residuo(amb, monkeypatch):
 
 @pytest.mark.parametrize("modifica,parola", [
     ({"size": 0.005}, "floor"),                         # sotto il centesimo
-    ({"time_in_force": "FILL_OR_KILL"}, "FILL_OR_KILL"),  # FOK non parcheggiabile
+    # D1-ter (28/09, caso B): il FOK sotto il minimo NON e' piu' rifiutato: fa
+    # la sequenza del live e ritira il residuo (test_motore_submin_fok_caso_b_*)
 ])
 def test_place_and_trim_non_percorribile_rifiuto_con_motivo(amb, modifica, parola):
     amb.market.borsa = True

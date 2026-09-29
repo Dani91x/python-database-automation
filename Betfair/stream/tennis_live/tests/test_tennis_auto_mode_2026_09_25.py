@@ -234,7 +234,8 @@ def test_scegli_tiene_le_armate_e_non_supera_il_tetto():
 ])
 def test_uscite_true_solo_se_scritto(riga, atteso):
     assert AM.uscite_automatiche_riga(riga) is atteso
-    assert AM.uscite_automatiche_bot("tennis_scalper", riga) is True
+    # 28/09 (CANTIERE N): nessuna eccezione, lo scalper segue la riga come gli altri
+    assert AM.uscite_automatiche_bot("tennis_scalper", riga) is atteso
 
 
 def test_origine_auto_solo_se_scritta():
@@ -488,12 +489,13 @@ def test_uscite_senza_colonna_nessuna_chiave_nessuna_scrittura():
     assert _stats(db)["auto"]["uscite_automatiche"] is None
 
 
-def test_scalper_uscite_sempre_automatiche_nello_stato():
+def test_scalper_ha_l_interruttore_come_gli_altri_nello_stato():
+    """28/09 (CANTIERE N): prima 'sempre automatiche'; ora segue la riga."""
     db = _Db([_servizio(bot="tennis_scalper", con_uscite=True, uscite=False)],
              feed=[_feed("1")])
     S.riconcilia_interruttori(db)
     st = _stats(db, "tennis_scalper")["auto"]
-    assert st["uscite_automatiche"] is True and st["uscite_sempre_automatiche"] is True
+    assert st["uscite_automatiche"] is False and st["uscite_sempre_automatiche"] is False
 
 
 def test_posizione_aperta_a_uscite_manuali_arriva_alla_control_room():
@@ -520,7 +522,9 @@ def test_le_chiavi_di_stats_auto_sono_quelle_della_pagina():
         "in_attesa", "feed_letto", "feed_vivo", "feed_partite", "feed_eta_s",
         "fonte", "origine_ok", "live_in_dry_run", "uscite_automatiche",
         "uscite_sempre_automatiche", "posizioni_aperte_manuali",
-        "posizione_aperta_dal", "letto_at"}
+        "posizione_aperta_dal", "letto_at",
+        # 28/09 (CANTIERE N): le proposte d'uscita da approvare
+        "uscite_proposte"}
 
 
 # ===========================================================================
@@ -588,11 +592,12 @@ def test_uscite_flat_nessun_avviso(monkeypatch, runner_db):
     assert TR.session_posizioni_aperte(sess) == {}
 
 
-def test_scalper_resta_automatico_anche_se_la_riga_dice_manuale(monkeypatch, runner_db):
+def test_scalper_segue_la_riga_come_gli_altri(monkeypatch, runner_db):
+    """28/09 (CANTIERE N): la riga dice manuale -> lo scalper passa a manuale."""
     s = _Strat(auto=True)
     monkeypatch.setattr(TR, "_strategy_is_flat", lambda fl, st: True)
     TR._aggiorna_uscite(None, _Sess(), ("1", "tennis_scalper"), s, {"uscite_automatiche": False})
-    assert s.uscite_automatiche is True and runner_db == []
+    assert s.uscite_automatiche is False
 
 
 def test_restart_senza_forzare_niente_force_flat_niente_restart(monkeypatch, runner_db):
@@ -735,7 +740,7 @@ def test_instantiate_bot_porta_le_uscite_della_riga():
         .uscite_automatiche is False
     sc = TR._instantiate_bot("tennis_scalper", {**ctl, "bot_key": "tennis_scalper"},
                              "1.1", {}, None, df, "PAPER")
-    assert sc.uscite_automatiche is True
+    assert sc.uscite_automatiche is False   # 28/09: la riga dice manuale
 
 
 # ===========================================================================

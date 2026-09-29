@@ -172,6 +172,11 @@ class Snapshot:
     # True perche' gli scenari dei test che non la passano restano validi: chi
     # vuole provare il rifiuto la mette a False apposta.
     order_fresh: bool = True
+    # CANTIERE J2 (28/09): da dove vengono i prezzi dei book: "feed" (lo
+    # scanner) o "rest_ripiego" (flusso dello scanner fermo, book letto dal
+    # REST per chiudere/coprire). Col ripiego ``order_fresh`` resta falso:
+    # nessuna apertura (``service.execute_place`` lo ricontrolla).
+    fonte_prezzi: str = "feed"
     hazard: Optional[float] = None
     p4_market: Optional[float] = None
     p4_model: Optional[float] = None
@@ -297,6 +302,16 @@ class MatchCtx:
     # Serve a riconoscere la TRANSIZIONE (e a scrivere un'attivita' una volta
     # sola, non a ogni giro). Persistito.
     cover_mercato: Optional[Dict[str, Any]] = None
+    # D1-quater (29/09) - LE APERTURE FERME PER UNA CAUSA CHE NON E' IL MERCATO
+    # (modo ordini non LIVE, kill-switch, freni non leggibili, runner giu' in
+    # paper). Un'apertura rifiutata cosi' non e' un «no» del mercato: riproporla
+    # a ogni giro creava una riga ``error`` a ogni giro (replay 35760084: 254
+    # righe, P1 x94, «la forma esatta del loop del 15/09»). Lo scrive il servizio
+    # al primo rifiuto e lo toglie quando la causa non c'e' piu':
+    #   {"motivo": str, "mode": str, "dal": float}
+    # Finche' c'e', ``decide`` toglie le APERTURE (``_strip_openings``, come H8):
+    # uscite, green-up e chiusure passano sempre. Persistito.
+    aperture_ferme: Optional[Dict[str, Any]] = None
     # ⚠️ ORDINE DELL'UTENTE 16/09 — LA MEMORIA DELLA SOSPENSIONE.
     # La lay di uscita al fischio e' APPOGGIATA: resta sul book, e Betfair la
     # CANCELLA (LAPSE) a ogni sospensione del mercato — un gol precoce basta.
@@ -2174,6 +2189,12 @@ def decide(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Decision:
     if has_unknown_orders(ctx):
         # H8 — ordine a esito ignoto: via le APERTURE, restano le riduzioni di rischio
         d = _strip_openings(d, "ordine a esito ignoto: nessuna apertura", ctx.state)
+    elif isinstance(ctx.aperture_ferme, dict):
+        # D1-quater (29/09): aperture ferme per una causa che non e' il mercato,
+        # detta UNA volta dal servizio; si aspetta che la causa cambi.
+        d = _strip_openings(d, "aperture ferme (%s): non si ripropongono finche' la "
+                               "causa non cambia" % ctx.aperture_ferme.get("motivo"),
+                            ctx.state)
     # ORDINE DELL'UTENTE 16/09 h16:15 — «non devono mai esserci 2 lay a mercato».
     # Ultima parola, su OGNI ramo: vedi ``_una_sola_lay``.
     # ORDINE DELL'UTENTE 17/09 — il FRENO sui rifiuti ripetuti della copertura e
@@ -2274,6 +2295,21 @@ def _approvazione_valida(ctx: MatchCtx, chiave: str, now: float) -> bool:
         return False
 
 
+def _stessa_uscita_firmata(ctx: MatchCtx, d: Decision) -> bool:
+    """28/09 (CANTIERE N) - la decisione di ADESSO e' l'uscita che l'utente ha
+    firmato? La chiave (``categoria|cN``) non porta il motivo: una firma su un
+    cash out in profitto non deve eseguire un'uscita in perdita della stessa
+    categoria. Si confronta il ``close_reason`` della proposta firmata (ancora
+    in ``ctx.uscita_proposta``: la firma non la toglie) con quello di adesso."""
+    firmata = ctx.uscita_proposta if isinstance(ctx.uscita_proposta, dict) else None
+    if firmata is None:
+        # 29/09 (verifica del coordinatore): una firma SENZA la sua proposta non
+        # dice che cosa e' stato approvato -> non esegue niente
+        return False
+    return (str(firmata.get("close_reason") or "")
+            == str(d.updates.get("close_reason") or ""))
+
+
 def _con(d: Decision, *, updates: Dict[str, Any], telemetry: Dict[str, Any]) -> Decision:
     return Decision(d.state, list(d.actions), d.reason, updates, telemetry)
 
@@ -2281,9 +2317,17 @@ def _con(d: Decision, *, updates: Dict[str, Any], telemetry: Dict[str, Any]) -> 
 def _decadi(ctx: MatchCtx, d: Decision, motivo: str) -> Decision:
     """La proposta viva non regge piu': si toglie e lo si dice UNA volta."""
     if not isinstance(ctx.uscita_proposta, dict):
+        if isinstance(ctx.uscita_approvata, dict):
+            # firma rimasta senza proposta: cade anche lei (29/09)
+            return _con(d, updates={**d.updates, "uscita_approvata": None},
+                        telemetry=dict(d.telemetry))
         return d
     upd = dict(d.updates)
     upd["uscita_proposta"] = None
+    # 29/09 (verifica del coordinatore): la firma vale per la proposta vista;
+    # se la proposta decade, la firma cade con lei
+    if isinstance(ctx.uscita_approvata, dict):
+        upd["uscita_approvata"] = None
     tele = dict(d.telemetry)
     tele["uscita_proposta_decaduta"] = {"chiave": ctx.uscita_proposta.get("chiave"),
                                         "motivo": motivo}
@@ -2319,7 +2363,9 @@ def gate_uscite(ctx: MatchCtx, d: Decision, snap: Snapshot, params: Dict[str, An
     if _uscita_gia_in_corso(ctx, d):
         return d
     chiave = chiave_uscita(ctx, cat)
-    if _approvazione_valida(ctx, chiave, snap.now):
+    firma_altra_uscita = (_approvazione_valida(ctx, chiave, snap.now)
+                          and not _stessa_uscita_firmata(ctx, d))
+    if _approvazione_valida(ctx, chiave, snap.now) and not firma_altra_uscita:
         # approvata dall'utente: passa ESATTAMENTE la decisione della strategia
         # (prezzi e size di adesso); approvazione e proposta si consumano.
         upd = dict(d.updates)
@@ -2373,6 +2419,14 @@ def gate_uscite(ctx: MatchCtx, d: Decision, snap: Snapshot, params: Dict[str, An
     # un'approvazione per un'altra chiave e' vecchia: non deve sbloccare niente
     if isinstance(ctx.uscita_approvata, dict) and ctx.uscita_approvata.get("chiave") != chiave:
         upd["uscita_approvata"] = None
+    # 28/09 (CANTIERE N): stessa chiave ma motivo cambiato: la firma era per
+    # un'altra uscita e cade; si firma la proposta nuova sul presente
+    if firma_altra_uscita:
+        upd["uscita_approvata"] = None
+        tele["uscita_firmata_non_eseguita"] = {
+            "chiave": chiave,
+            "firmata": (ctx.uscita_proposta or {}).get("close_reason"),
+            "adesso": d.updates.get("close_reason")}
     return Decision(stato, keep, "uscita proposta all'utente (uscite manuali): %s" % d.reason,
                     upd, tele)
 

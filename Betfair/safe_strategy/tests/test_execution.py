@@ -132,20 +132,62 @@ def _gate_open_params():
     return {"execution_mode": "auto", "omega_live_via_flumine": True}
 
 
+# CANTIERE P (28/09): in paper NON esiste piu' il fill «di casa» di
+# ``X.place``: un ordine paper vive solo sul runner. I test che collaudano
+# ALTRO (chiusure, hedge, settlement) aprono/chiudono ora la posizione sulla
+# strada vera: runner paper finto (``runner_finto.monta_runner_paper``: coda +
+# specchio con le chiavi di ``bot_db``/``omega_db``) + poll VERO della coda
+# (``omega_service.poll_flumine_pending``) + riallineamento dell'apertura
+# (``X.apply_hedge_state``, cio' che ``sync_hedges`` fa al giro dopo).
+def _con_runner(db, esito="abbinato"):
+    from Betfair.safe_strategy.tests.runner_finto import monta_runner_paper
+
+    return monta_runner_paper(db, esito=esito)
+
+
+def _esito_runner(db, params=None):
+    """Il giro dopo: poll della coda, poi aperture riallineate alle chiusure."""
+    n = OS.poll_flumine_pending(db=db, params=params or {}, now=NOW)
+    for tr in [t for t in db.trades if t.get("status") == "open"
+               and not t.get("closes_trade_id")]:
+        legs = db.closing_trades_for([tr["id"]])
+        if legs:
+            X.apply_hedge_state(db, tr, legs, NOW)
+    return n
+
+
 # ---------------------------------------------------------------------------
 # place()
 # ---------------------------------------------------------------------------
-def test_place_paper_riempie_al_prezzo_e_cappa_alla_liquidita():
+def test_place_paper_senza_runner_non_esegue_nulla():
+    """CANTIERE P (28/09) - sostituisce ``test_place_paper_riempie_al_prezzo_e_
+    cappa_alla_liquidita``, che asseriva il fill «di casa» a gate chiuso
+    (istantaneo, senza bet delay, senza coda: il live nello stesso punto va a
+    Betfair). Ora: nessun ordine, motivo dichiarato, riga intatta."""
     db, mk = FakeDB(), FakeMarket()
-    db.follow = "NONE"  # gate chiuso -> percorso legacy
+    db.follow = "NONE"  # runner non raggiungibile
+    tid = db.insert_trade({"event_id": "1.1", "status": "pending", "side": "back",
+                           "meta": {"phase": "reserved"}})
+    out = X.place(db=db, market=mk, mode="paper", event_id="1.1", market_id="m1",
+                  selection_id=7, side="back", price=3.0, size=50.0, best_size=12.0,
+                  client_ref=f"safe-t{tid}", trade_id=tid, now=NOW, params={})
+    assert out.status == "error"
+    assert out.fill_note == "paper_senza_runner:follow_none", out.fill_note
+    assert out.size == 0.0 and out.size_requested == 12.0 and out.size_remaining == 0.0
+    assert mk.placed == [] and db.queue == [], "in paper non si tocca Betfair"
+    assert db.get_trade(tid)["meta"] == {"phase": "reserved"}
+
+
+def test_place_paper_col_runner_cappa_alla_liquidita_e_accoda():
+    db, mk = FakeDB(), FakeMarket()
     tid = db.insert_trade({"event_id": "1.1", "status": "pending", "side": "back"})
     out = X.place(db=db, market=mk, mode="paper", event_id="1.1", market_id="m1",
                   selection_id=7, side="back", price=3.0, size=50.0, best_size=12.0,
                   client_ref=f"safe-t{tid}", trade_id=tid, now=NOW, params={})
-    assert out.status == "open"
-    assert out.size == 12.0, "la size deve essere cappata alla liquidita' disponibile"
-    assert out.price == 3.0
-    assert mk.placed == [], "in paper non si tocca Betfair"
+    assert out.status == "pending"
+    assert db.queue[0]["size"] == 12.0, "la size deve essere cappata alla liquidita'"
+    assert db.queue[0]["time_in_force"] == "FILL_OR_KILL"
+    assert mk.placed == []
 
 
 def test_place_rifiuta_size_o_prezzo_non_validi():
@@ -304,21 +346,25 @@ def test_place_live_rifiuto_provato_dall_exchange_resta_error():
     assert out.status == "error" and out.fill_note.startswith("live_not_matched")
 
 
-def test_place_paper_eccezione_del_fill_resta_pending(monkeypatch):
-    """Stessa semantica in paper: eccezione -> pending riconciliabile."""
+def test_place_paper_non_chiama_mai_il_simulatore_di_casa(monkeypatch):
+    """CANTIERE P (28/09) - sostituisce ``test_place_paper_eccezione_del_fill_
+    resta_pending``: collaudava un'eccezione del simulatore «di casa»
+    (``omega_engine.paper_fill``), che ``place`` non chiama piu'. Qui: nemmeno
+    con il runner giu' il simulatore viene toccato."""
     db, mk = FakeDB(), FakeMarket()
     db.follow = "NONE"
     tid = db.insert_trade({"event_id": "1.1", "status": "pending", "side": "back"})
 
     def boom(*a, **kw):
-        raise RuntimeError("ladder corrotta")
+        raise AssertionError("fill di casa chiamato")
 
     monkeypatch.setattr(X.E, "paper_fill", boom)
-    out = X.place(db=db, market=mk, mode="paper", event_id="1.1", market_id="m1",
-                  selection_id=7, side="back", price=2.5, size=8.0,
-                  client_ref=f"safe-t{tid}", trade_id=tid, now=NOW, params={})
-    assert out.status == "pending"
-    assert db.get_trade(tid)["meta"]["reason"] == "place_exception_reconciling"
+    for meta in ({}, {"cashout": True, "closes_trade_id": 1}):
+        out = X.place(db=db, market=mk, mode="paper", event_id="1.1", market_id="m1",
+                      selection_id=7, side="back", price=2.5, size=8.0,
+                      client_ref=f"safe-t{tid}", trade_id=tid, now=NOW, params={},
+                      ladder=((2.5, 100.0),), best_size=100.0, meta=meta)
+        assert out.status == "error" and out.fill_note.startswith("paper_senza_runner:")
 
 
 # ---------------------------------------------------------------------------
@@ -375,22 +421,24 @@ def test_close_plan_senza_prezzo_del_lato_richiesto_non_e_azionabile():
 # close_trade(): riga di chiusura + originale 'hedged'
 # ---------------------------------------------------------------------------
 def test_close_trade_crea_la_gamba_di_chiusura_e_marca_hedged():
-    db, mk = FakeDB(), FakeMarket()
-    db.follow = "NONE"
+    # CANTIERE P (28/09): prima ``follow="NONE"`` = fill di casa sincrono; ora la
+    # chiusura paper va al runner e l'apertura diventa 'hedged' all'esito
+    db, mk = _con_runner(FakeDB()), FakeMarket()
     tid = db.insert_trade({**_lay_trade(), "status": "open"})
     tr = db.get_trade(tid)
     res = X.close_trade(db=db, market=mk, trade=tr,
                         prices={"back": 5.0, "back_size": 500.0, "lay": 5.2,
                                 "lay_size": 500.0},
                         now=NOW, params={}, origin="manual", table_prefix="safe")
-    assert res.get("ok") is True
+    assert res.get("ok") is True and res["pending_fill"] is True
+    _esito_runner(db)
     closing = db.get_trade(res["closing_trade_id"])
     assert closing["side"] == "back"
     assert closing["closes_trade_id"] == tid
     assert closing["status"] == "open"
     original = db.get_trade(tid)
     assert original["status"] == "hedged"
-    assert original["meta"]["locked_pnl"] == res["locked_pnl"]
+    assert original["meta"]["locked_pnl"] == res["planned_lock"]
     assert original["meta"]["closing_trade_id"] == closing["id"]
 
 
@@ -484,8 +532,9 @@ def _omega_book(sid=7, back=5.0, lay=5.2):
 
 
 def test_omega_process_manual_esegue_il_cashout():
-    db, mk = OmegaFakeDB(), FakeMarket()
-    db.follow = "NONE"
+    # CANTIERE P (28/09): la chiusura paper di Omega che passa da
+    # ``execution.close_trade`` va al runner (prima: fill di casa a gate chiuso)
+    db, mk = _con_runner(OmegaFakeDB()), FakeMarket()
     mk.book = _omega_book()
     tid = db.insert_trade({**_lay_trade(), "status": "open", "origin": "auto",
                            "runner_name": "3 - 2", "event_name": "Home v Away"})
@@ -496,10 +545,34 @@ def test_omega_process_manual_esegue_il_cashout():
     req = db.manual_reqs[0]
     assert req["status"] == "done", req.get("result")
     assert req["result"]["ok"] is True
+    _esito_runner(db)
     closing = db.get_trade(req["result"]["closing_trade_id"])
     assert closing["side"] == "back" and closing["closes_trade_id"] == tid
     assert closing["runner_name"] == "3 - 2"
     assert db.get_trade(tid)["status"] == "hedged"
+
+
+def test_omega_chiusura_paper_senza_runner_non_si_riempie_in_casa():
+    """CANTIERE P (28/09), reperto del cantiere C §6: una CHIUSURA paper di
+    Omega che passa da ``execution.close_trade`` senza porta e col gate della
+    coda chiuso veniva riempita subito in casa. Ora: nessuna gamba riservata
+    (il runner manca: si dice PRIMA della riserva), motivo nella risposta,
+    apertura ancora 'open' (da ritentare), nessun ordine."""
+    db, mk = OmegaFakeDB(), FakeMarket()
+    db.follow = "NONE"
+    mk.book = _omega_book()
+    tid = db.insert_trade({**_lay_trade(), "status": "open", "origin": "auto",
+                           "runner_name": "3 - 2", "event_name": "Home v Away"})
+    db.manual_reqs.append({"id": 1, "kind": "cashout", "status": "pending",
+                           "payload": {"trade_id": tid}})
+    OS.process_manual(market=mk, db=db, now=NOW)
+    req = db.manual_reqs[0]
+    assert req["result"].get("error") == "chiusura_non_eseguita", req["result"]
+    assert req["result"]["detail"].startswith("paper_senza_runner:")
+    assert req["result"]["senza_runner"] is True
+    assert [t for t in db.trades if t.get("closes_trade_id") == tid] == []
+    assert db.get_trade(tid)["status"] == "open"
+    assert mk.placed == [] and db.queue == []
 
 
 def test_omega_cashout_rifiuta_trade_inesistente_o_chiuso():
@@ -533,13 +606,13 @@ def _closed_snapshot(winner_id, sid=7):
 
 
 def test_omega_settle_regola_la_coppia_hedged_insieme():
-    db, mk = OmegaFakeDB(), FakeMarket()
-    db.follow = "NONE"
+    db, mk = _con_runner(OmegaFakeDB()), FakeMarket()   # CANTIERE P: via runner
     tid = db.insert_trade({**_lay_trade(10.0, 6.0), "status": "open"})
     # LAY 10@6 chiuso in BACK 12@5 -> P&L bloccato -2.00 su OGNI esito
     X.close_trade(db=db, market=mk, trade=db.get_trade(tid),
                   prices={"back": 5.0, "back_size": 300.0, "lay": 5.2, "lay_size": 300.0},
                   now=NOW, params={}, origin="manual", table_prefix="omega")
+    _esito_runner(db)
     apri = db.get_trade(tid)
     assert apri["status"] == "hedged"
     assert apri["meta"]["locked_pnl"] == pytest.approx(-2.0, abs=0.01)
@@ -612,7 +685,9 @@ def test_gate_chiuso_se_heartbeat_stantio():
                   selection_id=7, side="back", price=3.0, size=5.0, best_size=100.0,
                   client_ref=f"safe-t{tid}", trade_id=tid, now=NOW,
                   params=_gate_open_params())
-    assert out.status == "open" and db.queue == []
+    # CANTIERE P (28/09): prima 'open' (fill di casa); runner muto = non eseguito
+    assert out.status == "error" and db.queue == []
+    assert out.fill_note == "paper_senza_runner:runner_heartbeat_stantio"
 
 
 # ---------------------------------------------------------------------------
@@ -657,13 +732,13 @@ def test_close_trade_parziale_resta_open_con_residuo_e_poi_chiude_il_resto():
     """HIGH-6: fraction<1 NON marca 'hedged': l'apertura resta 'open' con
     hedged_size accumulato e locked_pnl dal fill; un secondo cash-out lavora
     sul RESIDUO e solo a residuo nullo si passa a 'hedged'."""
-    db, mk = FakeDB(), FakeMarket()
-    db.follow = "NONE"
+    db, mk = _con_runner(FakeDB()), FakeMarket()     # CANTIERE P: via runner
     tid = db.insert_trade({**_lay_trade(10.0, 6.0), "status": "open"})
     r1 = X.close_trade(db=db, market=mk, trade=db.get_trade(tid), prices=_prices(),
                        fraction=0.5, now=NOW, params={}, table_prefix="safe")
     assert r1["ok"] and r1["hedged"] is False
     assert r1["size"] == pytest.approx(6.0, abs=0.01)     # meta' del green totale (12@5)
+    _esito_runner(db)
     apri = db.get_trade(tid)
     assert apri["status"] == "open"
     assert apri["meta"]["hedged_size"] == pytest.approx(5.0, abs=0.01)   # 6*5/6
@@ -675,8 +750,9 @@ def test_close_trade_parziale_resta_open_con_residuo_e_poi_chiude_il_resto():
     assert apri["meta"]["best_case"] == pytest.approx(4.0, abs=0.01)
     r2 = X.close_trade(db=db, market=mk, trade=db.get_trade(tid), prices=_prices(),
                        fraction=1.0, now=NOW, params={}, table_prefix="safe")
-    assert r2["ok"] and r2["hedged"] is True
+    assert r2["ok"] and r2["pending_fill"] is True
     assert r2["size"] == pytest.approx(6.0, abs=0.01), "chiude SOLO il residuo"
+    _esito_runner(db)
     apri = db.get_trade(tid)
     assert apri["status"] == "hedged"
     assert apri["meta"]["residual_size"] < 0.01
@@ -693,13 +769,13 @@ def test_close_trade_parziale_resta_open_con_residuo_e_poi_chiude_il_resto():
 
 def test_close_trade_size_cappata_alla_liquidita_resta_open():
     """HIGH-6: chiusura cappata al best_size = hedge PARZIALE -> apertura 'open'."""
-    db, mk = FakeDB(), FakeMarket()
-    db.follow = "NONE"
+    db, mk = _con_runner(FakeDB()), FakeMarket()     # CANTIERE P: via runner
     tid = db.insert_trade({**_lay_trade(10.0, 6.0), "status": "open"})
     res = X.close_trade(db=db, market=mk, trade=db.get_trade(tid),
                         prices=_prices(back_size=4.0), now=NOW, params={},
                         table_prefix="safe")
     assert res["ok"] and res["size"] == 4.0 and res["hedged"] is False
+    _esito_runner(db)
     apri = db.get_trade(tid)
     assert apri["status"] == "open"
     assert apri["meta"]["hedged_size"] == pytest.approx(4.0 * 5.0 / 6.0, abs=0.01)
@@ -745,12 +821,12 @@ def test_hedge_state_chiusura_in_errore_non_conta():
 def test_omega_settle_apertura_open_con_chiusura_confermata_regola_in_coppia():
     """HIGH-4: l'apertura e' ancora 'open' (hedge parziale) ma ha una chiusura
     con fill certo -> MAI regolata da sola: coppia nettata."""
-    db, mk = OmegaFakeDB(), FakeMarket()
-    db.follow = "NONE"
+    db, mk = _con_runner(OmegaFakeDB()), FakeMarket()   # CANTIERE P: via runner
     tid = db.insert_trade({**_lay_trade(10.0, 6.0), "status": "open"})
     X.close_trade(db=db, market=mk, trade=db.get_trade(tid),
                   prices=_prices(back_size=4.0), now=NOW, params={},
                   origin="manual", table_prefix="omega")
+    _esito_runner(db)
     assert db.get_trade(tid)["status"] == "open"
     mk.snapshot = _closed_snapshot(999)  # il punteggio layato NON esce
     n = OS.settle_open(params={"commission_pct": 5.0}, market=mk, db=db, now=NOW)
@@ -858,24 +934,51 @@ def test_flumine_cancel_ref_eredita_il_prefisso_del_bot():
 # di chiusura 'error' con motivo tecnico, e l'uscita non avveniva mai.
 # Ora ci si ferma PRIMA della riserva, con un motivo leggibile.
 # ===========================================================================
-def test_close_trade_paper_senza_size_del_book_non_riserva_nulla():
-    db, mk = FakeDB(), FakeMarket()
-    db.follow = "NONE"
+def test_close_trade_paper_senza_size_del_book_va_al_runner_come_il_live():
+    """CANTIERE P (28/09, riga S7) - sostituisce ``test_close_trade_paper_
+    senza_size_del_book_non_riserva_nulla``, che fissava la divergenza: in
+    paper la chiusura senza size nota veniva RIMANDATA (il fill di casa non la
+    sapeva simulare) mentre il live la mandava e decideva Betfair col FOK. Ora
+    il paper fa come il live: la gamba parte (al runner) con la size del piano,
+    FOK, e l'esito lo decide il matching del runner."""
+    db, mk = _con_runner(FakeDB()), FakeMarket()
     tid = db.insert_trade({**_lay_trade(), "status": "open"})
-    prima = len(db.trades)
     res = X.close_trade(db=db, market=mk, trade=db.get_trade(tid),
                         prices={"back": 5.0, "lay": 5.2},   # prezzi si, size no
                         now=NOW, params={}, mode="paper",
                         origin="manual", table_prefix="safe")
-    assert res.get("error") == "liquidita_del_book_ignota", res
-    assert len(db.trades) == prima          # NESSUNA riga di chiusura creata
-    assert db.get_trade(tid)["status"] == "open"   # la posizione resta viva
+    assert res.get("ok") is True and res["pending_fill"] is True, res
+    q = db.queue[-1]
+    assert q["mode"] == "paper" and q["time_in_force"] == "FILL_OR_KILL"
+    assert q["size"] == res["size"] and q["params"]["reduces_liability"] is True
+    _esito_runner(db)
+    assert db.get_trade(tid)["status"] == "hedged"
+
+
+def test_close_trade_senza_size_paper_e_live_partono_uguali():
+    """Stesso ingresso, stessa gamba: prezzo, size, lato. Cambia solo chi
+    esegue (runner paper / Betfair)."""
+    def chiudi(mode):
+        db, mk = _con_runner(FakeDB()), FakeMarket()
+        if mode == "live":
+            db.follow = "NONE"          # live in REST (gate live chiuso)
+        tid = db.insert_trade({**_lay_trade(), "status": "open", "mode": mode})
+        res = X.close_trade(db=db, market=mk, trade=db.get_trade(tid),
+                            prices={"back": 5.0, "lay": 5.2}, now=NOW, params={},
+                            mode=mode, origin="manual", table_prefix="safe")
+        ordine = db.queue[-1] if mode == "paper" else mk.placed[-1]
+        return res, ordine
+
+    rp, op = chiudi("paper")
+    rl, ol = chiudi("live")
+    assert "error" not in rp and "error" not in rl
+    assert (rp["side"], rp["price"], rp["size"]) == (rl["side"], rl["price"], rl["size"])
+    assert (op["side"], op["price"], op["size"]) == (ol["side"], ol["price"], ol["size"])
 
 
 def test_close_trade_paper_con_ladder_procede_anche_senza_campo_size():
-    """La ladder E' la controparte: se c'e', la chiusura parte."""
-    db, mk = FakeDB(), FakeMarket()
-    db.follow = "NONE"
+    """La ladder E' la controparte: se c'e', la chiusura parte (al runner)."""
+    db, mk = _con_runner(FakeDB()), FakeMarket()
     tid = db.insert_trade({**_lay_trade(), "status": "open"})
     res = X.close_trade(db=db, market=mk, trade=db.get_trade(tid),
                         prices={"back": 5.0, "lay": 5.2,
@@ -913,8 +1016,7 @@ def test_commission_fallback_none_torna_al_5_percento():
 
 
 def test_close_trade_senza_aliquota_sul_trade_usa_il_default_non_zero():
-    db, mk = FakeDB(), FakeMarket()
-    db.follow = "NONE"
+    db, mk = _con_runner(FakeDB()), FakeMarket()     # CANTIERE P: via runner
     tr = {**_lay_trade(), "status": "open"}
     tr.pop("commission")                       # apertura storica senza aliquota
     tid = db.insert_trade(tr)
@@ -928,8 +1030,7 @@ def test_close_trade_senza_aliquota_sul_trade_usa_il_default_non_zero():
 
 
 def test_close_trade_eredita_sempre_l_aliquota_del_trade():
-    db, mk = FakeDB(), FakeMarket()
-    db.follow = "NONE"
+    db, mk = _con_runner(FakeDB()), FakeMarket()     # CANTIERE P: via runner
     tid = db.insert_trade({**_lay_trade(), "status": "open", "commission": 0.02})
     res = X.close_trade(db=db, market=mk, trade=db.get_trade(tid),
                         prices={"back": 5.0, "lay": 5.2, "back_size": 500.0},
@@ -941,22 +1042,37 @@ def test_close_trade_eredita_sempre_l_aliquota_del_trade():
 # ===========================================================================
 # CERTIFICAZIONE 12/09 — PAPER = LIVE sul minimo Betfair di 2 EUR.
 # ===========================================================================
-def test_place_sotto_il_minimo_senza_coda_paper_si_live_no():
-    """Senza la coda del runner (qui ``follow='NONE'``) il place-and-trim non e'
-    eseguibile: in LIVE si dichiara che manca la coda, in PAPER l'ordine si
-    abbina lo stesso perche' l'esecuzione e' simulata e non esiste nessun minimo
-    da aggirare. La differenza e' dichiarata nel motivo, non nascosta."""
+def test_place_sotto_il_minimo_senza_coda_ne_paper_ne_live():
+    """CANTIERE P (28/09, riga S6) - sostituisce ``..._paper_si_live_no``, che
+    fissava la divergenza: senza coda il paper riempiva il sotto-minimo con un
+    FOK diretto della size, mentre il live non ha modo di eseguirlo (e quando
+    lo esegue e' parcheggio, taglio e riprezzo a LIMITE che puo' restare non
+    abbinato). Ora nessuno dei due inventa un esito: entrambi 'error' col
+    motivo che dice che manca il runner."""
     db, mk = FakeDB(), FakeMarket()
     db.follow = "NONE"
     common = dict(db=db, market=mk, event_id="1.1", market_id="m1", selection_id=7,
                   side="back", price=3.0, best_size=100.0, trade_id=1, now=NOW, params={})
     paper = X.place(mode="paper", size=1.5, client_ref="safe-t1", **common)
     live = X.place(mode="live", size=1.5, client_ref="safe-t1", **common)
-    assert paper.status == "open" and paper.size == 1.5
+    assert paper.status == "error" and paper.fill_note == "paper_senza_runner:follow_none"
     assert live.status == "error"
     assert live.fill_note.startswith("submin_non_disponibile")
-    # a 2,00 EUR esatti passano entrambi dal percorso normale
-    assert X.place(mode="paper", size=2.0, client_ref="safe-t1", **common).status == "open"
+    # a 2,00 EUR esatti: live REST FOK, paper di nuovo senza runner
+    assert X.place(mode="paper", size=2.0, client_ref="safe-t1", **common).status == "error"
+
+
+def test_place_sotto_il_minimo_paper_va_al_place_and_trim_del_runner():
+    """Riga S6: il sotto-minimo paper e' la STESSA macchina del live
+    (``place_submin`` sul runner, senza FOK, size esatta in ``target_size``)."""
+    db, mk = FakeDB(), FakeMarket()
+    out = X.place(db=db, market=mk, mode="paper", event_id="1.1", market_id="m1",
+                  selection_id=7, side="back", price=3.0, size=1.5, best_size=100.0,
+                  client_ref="safe-t1", trade_id=1, now=NOW, params={})
+    assert out.status == "pending" and out.fill_note.startswith("flumine_submin")
+    q = db.queue[-1]
+    assert q["action"] == "place_submin" and q["params"]["target_size"] == 1.5
+    assert "time_in_force" not in q and mk.placed == []
 
 
 def test_place_sotto_il_minimo_in_live_usa_il_place_and_trim():
@@ -994,13 +1110,16 @@ def test_place_sotto_il_minimo_in_live_usa_il_place_and_trim():
 def test_place_paper_minimo_non_blocca_la_gamba_di_chiusura():
     """Betfair ACCETTA il sotto-minimo che RIDUCE una posizione: un residuo da
     1,40 EUR deve poter essere chiuso, in paper come in live (review C2)."""
+    # CANTIERE P (28/09): al runner, come place FOK che riduce (non place_submin)
     db, mk = FakeDB(), FakeMarket()
-    db.follow = "NONE"
     out = X.place(db=db, market=mk, mode="paper", event_id="1.1", market_id="m1",
                   selection_id=7, side="back", price=3.0, size=1.4, best_size=100.0,
                   client_ref="safe-t9", trade_id=9, now=NOW, params={},
                   meta={"cashout": True, "closes_trade_id": 1})
-    assert out.status == "open" and out.size == 1.4
+    assert out.status == "pending" and out.size == 1.4
+    q = db.queue[-1]
+    assert q["action"] == "place" and q["size"] == 1.4
+    assert q["params"]["reduces_liability"] is True
 
 
 # ===========================================================================
@@ -1152,39 +1271,45 @@ def test_copertura_parziale_non_dichiara_nessun_bloccato():
 # che il live non avrebbe mai avuto.
 # ===========================================================================
 def test_paper_non_accetta_un_fill_parziale_come_il_fok_live():
-    db, mk = FakeDB(), FakeMarket()
-    db.follow = "NONE"
-    tid = db.insert_trade({"event_id": "1.1", "status": "pending", "side": "back"})
-    # il book ha solo 3 EUR al prezzo richiesto, se ne chiedono 10
+    """CANTIERE P (28/09): il FOK paper lo esegue il RUNNER (flumine simula il
+    FOK come Betfair), non piu' il simulatore di casa: l'ordine parte FOK e un
+    runner che lo uccide lascia la riga in 'error', zero abbinato."""
+    db, mk = _con_runner(FakeDB(), esito="ucciso"), FakeMarket()
+    tid = db.insert_trade({"event_id": "1.1", "status": "pending", "side": "back",
+                           "size": 10.0, "price": 3.0, "mode": "paper"})
     out = X.place(db=db, market=mk, mode="paper", event_id="1.1", market_id="m1",
                   selection_id=7, side="back", price=3.0, size=10.0,
                   ladder=((3.0, 3.0),), client_ref=f"safe-t{tid}", trade_id=tid,
                   now=NOW, params={})
-    assert out.status == "error", out
-    assert out.fill_note.startswith("paper_fok_parziale"), out.fill_note
-    assert out.size == 0.0
+    assert out.status == "pending", out
+    assert db.queue[-1]["time_in_force"] == "FILL_OR_KILL"
+    _esito_runner(db)
+    t = db.get_trade(tid)
+    assert t["status"] == "error" and t["meta"]["reason"].startswith("flumine_terminal")
 
 
 def test_paper_accetta_il_fill_completo():
-    db, mk = FakeDB(), FakeMarket()
-    db.follow = "NONE"
-    tid = db.insert_trade({"event_id": "1.1", "status": "pending", "side": "back"})
+    db, mk = _con_runner(FakeDB()), FakeMarket()     # CANTIERE P: via runner
+    tid = db.insert_trade({"event_id": "1.1", "status": "pending", "side": "back",
+                           "size": 10.0, "price": 3.0, "mode": "paper"})
     out = X.place(db=db, market=mk, mode="paper", event_id="1.1", market_id="m1",
                   selection_id=7, side="back", price=3.0, size=10.0,
                   ladder=((3.0, 50.0),), client_ref=f"safe-t{tid}", trade_id=tid,
                   now=NOW, params={})
-    assert out.status == "open" and out.size == 10.0
+    assert out.status == "pending"
+    _esito_runner(db)
+    t = db.get_trade(tid)
+    assert t["status"] == "open" and t["size"] == 10.0
 
 
 def test_paper_size_cappata_alla_liquidita_resta_un_fill_completo():
     """La size viene prima cappata a ``best_size``: cosi' il FOK trova tutto."""
-    db, mk = FakeDB(), FakeMarket()
-    db.follow = "NONE"
+    db, mk = FakeDB(), FakeMarket()                  # CANTIERE P: via runner
     tid = db.insert_trade({"event_id": "1.1", "status": "pending", "side": "back"})
     out = X.place(db=db, market=mk, mode="paper", event_id="1.1", market_id="m1",
                   selection_id=7, side="back", price=3.0, size=50.0, best_size=12.0,
                   client_ref=f"safe-t{tid}", trade_id=tid, now=NOW, params={})
-    assert out.status == "open" and out.size == 12.0
+    assert out.status == "pending" and out.size == 12.0 and db.queue[-1]["size"] == 12.0
 
 
 # ---------------------------------------------------------------------------
@@ -1223,25 +1348,24 @@ def test_livelli_attraversati_dimostra_lo_scorrimento():
     assert X.livelli_attraversati(lad, 0.0, None, "lay") == []
 
 
-def test_il_piazzamento_in_paper_racconta_come_e_andato():
+def test_il_piazzamento_in_paper_con_rest_non_si_simula_in_casa():
+    """CANTIERE P (28/09) - sostituisce ``test_il_piazzamento_in_paper_
+    racconta_come_e_andato``, che collaudava la storia dell'ordine del fill
+    «di casa» (percorso 'paper', livelli del book dell'istante). Quel percorso
+    non esiste piu': ``X.place`` chiamato con ``execution_mode='rest'`` in
+    paper non ha runner e lo dice; la storia dell'ordine paper la scrive chi
+    risolve la riga dal runner. (Safe non ci arriva: ``bot_service.
+    _params_ordine`` valuta 'rest' come 'auto' per le righe paper.)"""
     db, mk = FakeDB(), FakeMarket()
     tid = db.insert_trade({"event_id": "1.1", "status": "pending", "side": "lay"})
     out = X.place(db=db, market=mk, mode="paper", event_id="1.1", market_id="m1",
                   selection_id=7, side="lay", price=1.32, size=4.0,
                   ladder=((1.30, 1.0), (1.31, 5.0)),
                   client_ref=f"safe-t{tid}", trade_id=tid, now=NOW,
-                  # gate flumine CHIUSO: qui si collauda il percorso locale, che
-                  # e' quello che simula il fill e quindi l'unico che conosce i
-                  # livelli del book
                   params={"execution_mode": "rest"})
-    assert out.status == "open"
-    e = out.esecuzione
-    assert e is not None
-    assert e["price_richiesto"] == 1.32
-    assert e["livelli"] == [{"price": 1.3, "size": 1.0}, {"price": 1.31, "size": 3.0}]
-    assert e["price_medio"] == out.price
-    assert e["t4_inviato"] > 0 and e["t5_risposta"] >= e["t4_inviato"]
-    assert e["percorso"] == "paper"
+    assert out.status == "error"
+    assert out.fill_note == "paper_senza_runner:execution_mode_rest"
+    assert out.esecuzione is None and db.queue == []
 
 
 def test_la_chiusura_scrive_il_prezzo_del_SEGNALE_prima_di_piazzare():

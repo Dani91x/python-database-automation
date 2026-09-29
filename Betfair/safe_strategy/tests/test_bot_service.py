@@ -57,9 +57,20 @@ class FakeDB:
         self.opportunities: list[dict] = []
         self.scan_rows: list[dict] = []
         self.queue: list[dict] = []
-        self.follow = "NONE"          # gate flumine chiuso -> percorso legacy
+        # CANTIERE P (28/09): prima ``follow="NONE"`` = gate della coda chiuso =
+        # OGNI ordine paper riempito dal simulatore «di casa» di
+        # ``execution.place``, che non esiste piu' (il paper vive solo sul
+        # runner). Era un finto sbagliato: faceva passare i test da una strada
+        # che in produzione il live non ha. Ora il runner PAPER c'e' (coda +
+        # specchio + battito, ``runner_finto.monta_runner_paper``, stesse
+        # chiavi di ``bot_db``); un test che vuole il runner giu' mette
+        # ``follow="NONE"`` o un battito vecchio, come prima.
+        self.follow = "STREAMING"
         self.heartbeat = {"ts": NOW.isoformat(), "mode": "PAPER"}
         self._id = 0
+        from Betfair.safe_strategy.tests.runner_finto import monta_runner_paper
+
+        monta_runner_paper(self)
 
     # --- control/log ---
     def read_control(self):
@@ -220,28 +231,10 @@ class FakeDB:
     def purge_opportunities(self, older_than_iso):
         self.purged = getattr(self, "purged", []) + [older_than_iso]
 
-    # --- coda flumine (contratto del gate) ---
-    def live_follow_status(self, event_id):
-        return self.follow
-
-    def runner_heartbeat(self):
-        return self.heartbeat
-
-    def enqueue_live_order(self, payload):
-        self.queue.append(payload)
-        return len(self.queue)
-
-    def get_live_order_request(self, rid):
-        return {"id": rid, "status": "pending"}
-
-    def get_live_order_request_by_ref(self, ref):
-        return None
-
-    def get_live_order_mirror(self, ref, mode="paper"):
-        return None
-
-    def revoke_live_order_request(self, rid):
-        return True
+    # --- coda flumine (contratto del gate): la monta ``monta_runner_paper``
+    #     in ``__init__`` (live_follow_status, runner_heartbeat,
+    #     enqueue_live_order, get_live_order_request[_by_ref],
+    #     get_live_order_mirror, revoke_live_order_request) ---
 
 
 class FakeMarket:
@@ -298,8 +291,36 @@ def _run(db, market=None, engine=None, **kw):
     # dell'evento nessun segnale passerebbe -> feed di default (sel 7, 3.0/3.1)
     if engine is not None and not db.scan_rows:
         db.scan_rows = [_feed_row()]
-    return S.run_once(db=db, market=market or FakeMarket(), engine=engine,
-                      now=NOW, **kw)
+    market = market or FakeMarket()
+    res = S.run_once(db=db, market=market, engine=engine, now=NOW, **kw)
+    # CANTIERE P (28/09): un ordine paper e' accodato al runner in questo giro
+    # e il suo esito lo legge il poll VERO della coda, che in produzione e' la
+    # PRIMA fase del giro successivo (``run_once`` -> ``poll_flumine``). Qui lo
+    # si esegue subito dopo, cosi' il test vede la riga risolta come la
+    # vedrebbe il giro dopo (stessa strada del finto di Omega, ``gira``).
+    _poll_runner(db, market)
+    return res
+
+
+def _poll_runner(db, market=None):
+    """Le prime fasi VERE del giro successivo: il poll della coda del runner
+    (``bot_service.poll_flumine``) e il riallineamento delle aperture con le
+    chiusure appena confermate (``sync_hedges``, prima cosa di
+    ``settle_open``): una chiusura paper confermata dal poll porta l'apertura
+    a 'hedged' come la chiusura live sincrona la porta in ``close_trade``."""
+    try:
+        params = S.resolve_params((db.read_control() or {}).get("params"))
+    except Exception:  # noqa: BLE001 - control illeggibile (ciclo degradato)
+        params = S.resolve_params(None)
+    n = S.poll_flumine(db=db, params=params, now=NOW, market=market)
+    if n and callable(getattr(db, "open_trades", None)):
+        parents = [t for t in db.open_trades() or [] if not t.get("closes_trade_id")]
+        closings: dict = {}
+        if parents:
+            for c in db.closing_trades_for([int(t["id"]) for t in parents]) or []:
+                closings.setdefault(int(c.get("closes_trade_id") or 0), []).append(c)
+            S.sync_hedges(db, parents, closings, NOW)
+    return n
 
 
 # ---------------------------------------------------------------------------
@@ -339,7 +360,11 @@ def test_running_piazza_il_segnale_con_reserve_first():
     assert t["origin"] == "auto" and t["signal_key"] == "k1"
     assert t["strategy"] == "base" and t["mode"] == "paper"
     assert t["liability"] == 10.0, "BACK: il rischio e' lo stake"
-    assert "place" in db.kinds()
+    # CANTIERE P (28/09): l'attivita' 'place' la scriveva il fill «di casa»
+    # sincrono; sulla strada del runner (l'unica del paper) l'ordine si accoda
+    # ('place_pending') e l'abbinato arriva dal poll ('flumine_fill').
+    assert "place_pending" in db.kinds() and "flumine_fill" in db.kinds()
+    assert db.queue and db.queue[0]["mode"] == "paper"
 
 
 def test_lo_stesso_segnale_non_viene_mai_ripiazzato():
@@ -1210,16 +1235,25 @@ def test_reconcile_paper_riserva_mai_piazzata_va_in_errore_non_diventa_posizione
     assert t["meta"]["error_final"] is True
 
 
-def test_reconcile_paper_riga_storica_senza_fase_si_conferma_ancora():
-    """Il ripiego per le righe STORICHE resta: una riga senza ``meta.phase``
-    viene da una versione precedente del servizio, non da una riserva
-    interrotta, e si conferma coi dati della riserva come prima."""
+def test_reconcile_paper_riga_storica_senza_fase_non_si_conferma_piu():
+    """CANTIERE P (28/09) - il test di prima («..._si_conferma_ancora»)
+    asseriva che una riga paper 'pending' SENZA marcatori si confermasse coi
+    dati della RISERVA: un fill inventato «di casa», che il live non avrebbe
+    mai (senza un ordine trovato Betfair non conferma nulla). Dal 28/09 un
+    ordine paper esiste solo sul runner: senza i suoi marcatori nessuna fonte
+    puo' dire che si e' abbinato -> 'error' terminale, mai una posizione."""
     db = FakeDB(status="stopped")
     tid = _pending_live(db, mode="paper", meta={})
     res = _run(db)
     assert res["reconciled"] == 1
     t = db.get_trade(tid)
-    assert t["status"] == "open" and t["size"] == 10.0 and t["meta"]["reconciled"] == "paper"
+    assert t["status"] == "error"
+    assert t["meta"]["reason"] == "reconcile_paper_senza_runner"
+    assert t["meta"]["error_final"] is True
+    # una riga di riepilogo con quante e quali righe sono state chiuse cosi'
+    rie = [p for k, p in db.activity if k == "reconciled_error"
+           and p.get("reason") == "reconcile_paper_senza_runner_riepilogo"]
+    assert len(rie) == 1 and rie[0]["n"] == 1 and rie[0]["trade_ids"] == [tid]
 
 
 def test_reconcile_della_chiusura_riallinea_l_apertura():
@@ -1736,7 +1770,12 @@ def _closings(db, tid):
 
 def _cycle(db, feed_row, at=NOW, market=None):
     db.scan_rows = [feed_row]
-    return S.run_once(db=db, market=market or FakeMarket(), engine=None, now=at)
+    market = market or FakeMarket()
+    res = S.run_once(db=db, market=market, engine=None, now=at)
+    # CANTIERE P (28/09): la chiusura paper va al runner; il suo esito arriva
+    # col poll del giro dopo (vedi ``_run``)
+    _poll_runner(db, market)
+    return res
 
 
 def test_resolve_params_fonde_la_sezione_exits():
@@ -1863,7 +1902,11 @@ def test_exit_tennis_profit_al_game_vinto():
     r = _cycle(db, won)
     assert r["exits"] == 1 and len(_closings(db, tid)) == 1
     ex = [p for k, p in db.activity if k == "exit"][0]
-    assert ex["kind"] == "profit" and ex["locked_pnl"] > 0
+    # CANTIERE P (28/09): la chiusura paper va al runner, l'evento 'exit' nasce
+    # con l'abbinato ancora in volo (locked_pnl None, come il live sulla coda):
+    # il bloccato si legge sull'apertura dopo il poll che conferma la chiusura.
+    assert ex["kind"] == "profit" and ex["pending_fill"] is True
+    assert db.get_trade(tid)["meta"]["locked_pnl"] > 0
     assert ex["model_why"].startswith("profitto bloccato")
 
 
@@ -1975,6 +2018,9 @@ def test_exit_ritenta_fino_al_cap_poi_logga_errore():
     assert db.closing_attempts == 3
     # scaduto il backoff: SI RITENTA (mai terminale, la liability e' viva)
     at = NOW + timedelta(seconds=100)
+    # CANTIERE P (28/09): battito del runner fresco (oltre 90 s il runner e'
+    # «giu'» e la chiusura paper non si riserverebbe nemmeno)
+    db.heartbeat = {"ts": at.isoformat(), "mode": "PAPER"}
     _cycle(db, _exit_feed_row(82, 1, 0, updated_at=at), at=at)
     assert db.closing_attempts == 4
     assert db.get_trade(tid)["meta"]["exit"]["attempts"] == 4
@@ -2023,7 +2069,10 @@ def test_exit_residuo_dopo_fill_cappato_viene_richiuso_dopo_il_cooldown():
     assert t["meta"]["hedged_size"] == pytest.approx(1.08, abs=0.01)
     assert t["meta"]["residual_size"] == pytest.approx(0.92, abs=0.01)
     ex = [p for k, p in db.activity if k == "exit"]
-    assert ex[0]["attempt"] == 1 and ex[0]["residual_after"] == pytest.approx(0.92, abs=0.01)
+    # CANTIERE P (28/09): al momento dell'invio la chiusura e' in volo sul runner
+    # (residuo ancora pieno nell'evento); il residuo vero (0,92) e' quello
+    # sull'apertura, asserito qui sopra dopo il poll.
+    assert ex[0]["attempt"] == 1 and ex[0]["pending_fill"] is True
     # entro il cooldown (20 s) NON si ritenta, anche con liquidita' tornata
     for s in (2, 19):
         at = NOW + timedelta(seconds=s)
@@ -2042,7 +2091,9 @@ def test_exit_residuo_dopo_fill_cappato_viene_richiuso_dopo_il_cooldown():
     ex = [p for k, p in db.activity if k == "exit"]
     assert len(ex) == 2 and ex[1]["attempt"] == 2
     assert ex[1]["residual_before"] == pytest.approx(0.92, abs=0.01)
-    assert ex[1]["residual_after"] < 0.01 and ex[1]["kind"] == "time"
+    # CANTIERE P: residuo nell'evento = prima della conferma del runner (in volo);
+    # quello vero e' sull'apertura (residual_size < 0,01, asserito sopra)
+    assert ex[1]["pending_fill"] is True and ex[1]["kind"] == "time"
     # posizione chiusa: mai un altro tentativo
     at = NOW + timedelta(seconds=60)
     r = _cycle(db, _cs_row(74, back_size=50.0, updated_at=at), at=at)
@@ -2129,6 +2180,7 @@ def _reset_module_state():
     S._FEED_BLIND_LOG.clear()
     S._SCANNER_TS_CACHE.update({"cycle_ts": None, "value": None})
     S._SPAZZINO_PROPOSTE["ts"] = 0.0     # D1 (28/09): ritmo dello spazzino proposte
+    S._SENZA_RUNNER_LOG.clear()          # cantiere P (28/09): riga critica 1/min
 
 
 def _skips(db, reason=None):
@@ -2277,7 +2329,8 @@ def test_uscita_a_tempo_esce_se_il_rischio_supera_il_cap(monkeypatch):
     ex = [p for k, p in db.activity if k == "exit"][0]
     assert ex["p_lose"] == 0.15 and ex["p_source"] == "test"
     assert ex["model_why"].startswith("rischio alto: P(perdita)=15.0%")
-    assert ex["locked_pnl"] == pytest.approx(-4.0, abs=0.01)
+    # CANTIERE P: bloccato letto sull'apertura dopo il poll (chiusura via runner)
+    assert db.get_trade(tid)["meta"]["locked_pnl"] == pytest.approx(-4.0, abs=0.01)
     assert db.get_trade(tid)["meta"]["exit_kind"] == "time"
 
 
@@ -2288,7 +2341,8 @@ def test_uscita_a_tempo_in_profitto_esce_sempre():
     r = _cycle(db, _cs_away_row(72, back=65.0, lay=70.0))
     assert r["exits"] == 1 and _holds(db) == []
     ex = [p for k, p in db.activity if k == "exit"][0]
-    assert ex["locked_pnl"] == pytest.approx(0.15, abs=0.01)
+    # CANTIERE P: bloccato letto sull'apertura dopo il poll (chiusura via runner)
+    assert db.get_trade(tid)["meta"]["locked_pnl"] == pytest.approx(0.15, abs=0.01)
     assert ex["model_why"].startswith("profitto bloccato +0,14")   # M-27: netto
     assert db.get_trade(tid)["status"] == "hedged"
 
@@ -2323,7 +2377,8 @@ def test_hold_non_blocca_la_successiva_uscita_in_perdita():
     r = _cycle(db, _cs_away_row(75, sa=2, back=5.0, lay=6.0, updated_at=t_ok), at=t_ok)
     assert r["exits"] == 1
     ex = [p for k, p in db.activity if k == "exit"][0]
-    assert ex["kind"] == "loss" and ex["locked_pnl"] < -4.0
+    # CANTIERE P: bloccato letto sull'apertura dopo il poll (chiusura via runner)
+    assert ex["kind"] == "loss" and db.get_trade(tid)["meta"]["locked_pnl"] < -4.0
     assert ex["p_lose"] is None, "uscita in perdita: nessun gate a modello"
     meta = db.get_trade(tid)["meta"]
     assert meta["exit_kind"] == "loss" and "exit_hold" not in meta
@@ -2722,8 +2777,8 @@ def test_uscita_modello_take_profit(monkeypatch):
     # H-01: take profit del modello con bloccato >= 0 = 'greenup'
     assert meta["exit_kind"] == "greenup"
     assert meta["exit_reason"] == "Take profit del modello: profitto bloccato"
-    ex = [p for k, p in db.activity if k == "exit"][0]
-    assert ex["locked_pnl"] >= 16.0
+    # CANTIERE P: bloccato letto sull'apertura dopo il poll (chiusura via runner)
+    assert db.get_trade(tid)["meta"]["locked_pnl"] >= 16.0
     # a 1.3 blocca solo ~13 (< 16): si tiene
     db = FakeDB(status="running")
     tid = _model_trade(db, side="back", selection_id=7, price=3.0, selection_name="Home",

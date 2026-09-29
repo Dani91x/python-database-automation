@@ -694,7 +694,11 @@ def test_cashout_a_canale_giu_usa_il_trasporto_di_oggi(motore):
     assert out.get("ok") is True, out
     assert motore.comandi == []
     chiusura = next(t for t in db.trades if t.get("closes_trade_id") == tr["id"])
-    assert chiusura["status"] == "open"                      # fill paper di sempre
+    # CANTIERE P (28/09): il «trasporto di oggi» per una chiusura PAPER e' la
+    # coda del runner (prima: fill paper «di casa», istantaneo, che il live non
+    # ha). La gamba resta 'pending' col marcatore della coda.
+    assert chiusura["status"] == "pending"
+    assert chiusura["meta"].get("flumine_client_ref") == "omega-t%d" % chiusura["id"]
     assert _logs(db, "canale_giu_ripiego")
 
 

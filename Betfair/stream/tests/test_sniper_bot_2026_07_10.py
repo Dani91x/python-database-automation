@@ -157,7 +157,9 @@ def test_dry_run_emette_trigger_senza_ordini():
 
 # ---------------------------------------------------------------- 3. timeout
 def test_timeout_flatten():
-    s = _strategy(max_pos_s=300.0)
+    # 29/09 (CANTIERE N): il timeout e' un'uscita di trading; questa suite prova
+    # la meccanica, a uscite AUTOMATICHE (il ramo manuale: test_sniper_uscite_*)
+    s = _strategy(max_pos_s=300.0, uscite_automatiche=True)
     mkt = _FakeMarket()
     pos = s._p("1.234", 1221385)
     pos.entries = [_FakeOrder("BACK", price=3.40, size_matched=10.0, avg=3.40)]

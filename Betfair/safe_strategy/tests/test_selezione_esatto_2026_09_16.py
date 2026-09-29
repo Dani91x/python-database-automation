@@ -39,7 +39,17 @@ from Betfair.safe_strategy.tests.test_certificazione_c3_2026_09_16 import (
 # il DATO: l'atlante vero, letto due volte (dal modulo e a mano)
 # ---------------------------------------------------------------------------
 def _atlante_a_mano() -> Dict[str, Any]:
-    with open(SEL.ATLAS_PATH, "r", encoding="utf-8") as fh:
+    """CANTIERE P (28/09): il conto indipendente si fa sullo STESSO file che il
+    codice legge. Prima qui si apriva ``SEL.ATLAS_PATH`` (il v2 committato), ma
+    dal 24/09 ``selezione`` legge l'atlante CORRENTE di
+    ``hazard_atlas.percorso_atlante()``: ``hazard_atlas_live.json`` (rigenerato
+    ogni notte da ``hazard_atlas_sync``, non committato) se esiste, altrimenti
+    il v2. Sul PC dell'utente il live c'e': il test confrontava due file diversi
+    e andava rosso (1,492 del live contro 1,446 del v2) senza alcun difetto nel
+    codice; nei worktree senza il live era verde per caso."""
+    from Betfair.stream.scalper.hazard_atlas import percorso_atlante
+
+    with open(percorso_atlante(), "r", encoding="utf-8") as fh:
         return json.load(fh)
 
 

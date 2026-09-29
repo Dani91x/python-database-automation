@@ -56,6 +56,8 @@ from ..auth import build_client, safe_logout
 from ..recorder import serialize_book
 from .. import valuta as _valuta
 from .. import arresto_ordinato as _AO  # 28/09: spegnimento ordinato dell'app
+from .. import stream_muto as _SM  # 28/09: lo stream di mercato e' vivo? (cantiere J2)
+from .. import uscite_proposte as _UP  # 28/09 CANTIERE N: firme sulle uscite
 from ..runner_lifecycle import any_follow_alive, uptime_exceeded
 from ..runner_lifecycle import (
     VERDETTO_ATTENDI,
@@ -1867,6 +1869,11 @@ def bot_control_worker(context: dict, flumine: Any, session: TennisLiveSession) 
                 aperta_dal = session_posizioni_aperte(session).get((ev, bot_key))
                 if aperta_dal:
                     battito[_AM.CHIAVE_POSIZIONE_APERTA] = aperta_dal
+                # 28/09 (cantiere J2): lo stream del runner e' vivo? La riga del
+                # bot dichiara «flusso interrotto» finche' dura
+                _fl = getattr(session, "flusso_runner", None)
+                if isinstance(_fl, dict):
+                    battito["flusso"] = dict(_fl)
                 tennis_db.set_tennis_bot_status(
                     event_id, bot_key, "running",
                     stats=battito,
@@ -1909,6 +1916,16 @@ def session_posizioni_aperte(session: Any) -> Dict[tuple, str]:
     return d
 
 
+#: 29/09 (CANTIERE N) - cosa succede davvero alle uscite, detto all'utente
+TESTO_USCITE_AUTOMATICHE = ("uscite AUTOMATICHE: il bot chiude da solo secondo la "
+                            "strategia (presa di profitto, stop, time-stop, uscita "
+                            "strutturale)")
+TESTO_USCITE_MANUALI = ("uscite MANUALI: ogni uscita del bot (presa di profitto, stop, "
+                        "time-stop, uscita strutturale) e' una PROPOSTA che approvi tu "
+                        "dalla Control Room; da soli restano solo il tuo \"Chiudi\", "
+                        "il freno e la fine del mercato")
+
+
 def _aggiorna_uscite(flumine: Any, session: Any, key: tuple, strat: Any,
                      riga: Optional[Dict[str, Any]]) -> None:
     """Allinea ``strat.uscite_automatiche`` alla riga e, a uscite MANUALI,
@@ -1927,12 +1944,19 @@ def _aggiorna_uscite(flumine: Any, session: Any, key: tuple, strat: Any,
                     tennis_db.write_tennis_bot_activity(
                         key[0], key[1], "uscite",
                         {"automatiche": bool(voluto),
-                         "note": ("uscite AUTOMATICHE: il bot prende profitto da solo"
-                                  if voluto else
-                                  "uscite MANUALI: il bot non prende profitto da solo, "
-                                  "stop e protezioni restano; chiudi con «Chiudi»")})
+                         # 29/09 (CANTIERE N): le parole vere. Da oggi in
+                         # manuale anche stop, time-stop e uscita strutturale
+                         # sono PROPOSTE da approvare; da soli restano solo
+                         # "Chiudi", freno e fine mercato.
+                         "note": (TESTO_USCITE_AUTOMATICHE if voluto
+                                  else TESTO_USCITE_MANUALI)})
                 except Exception:  # noqa: BLE001 - l'attivita' e' best-effort
                     pass
+        # 28/09 (CANTIERE N): le FIRME dell'utente sulle proposte d'uscita
+        # (RPC tennis_bot_approva_uscita -> params.uscite_approvate della riga
+        # per partita), stessa lettura del battito: valgono dal book dopo.
+        if riga is not None:
+            _UP.applica_firme((strat,), riga.get("params"))
         aperte = session_posizioni_aperte(session)
         if getattr(strat, "uscite_automatiche", False) is False \
                 and not _strategy_is_flat(flumine, strat):
@@ -2112,11 +2136,81 @@ def _tennis_blocker_uscita_stallo(flumine: Any, session: TennisLiveSession) -> O
     return None
 
 
+#: attivita' dei bot tennis per l'episodio di stream muto (cantiere J2)
+KIND_FLUSSO_INTERROTTO = "flusso_interrotto"
+KIND_FLUSSO_RIPRESO = "flusso_ripreso"
+_FLUSSO_ATTIVITA_MAX = 40
+
+
+def _sorveglia_flusso_tennis(flumine: Any, session: TennisLiveSession,
+                             adesso_ms: Optional[float] = None) -> Dict[str, Any]:
+    """CANTIERE J2 (28/09) - lo stream di mercato del runner tennis e' vivo?
+
+    Misura: gli istanti gia' tenuti dal tee (``RAW_TEE.last_heartbeat_ms`` e
+    ``last_data_ms``, heartbeat compresi): nessuna seconda misura. I bot tennis
+    agiscono solo su un book nuovo: a stream muto nessuno gestisce le loro
+    posizioni. Una volta per episodio: ``live_alerts`` CRITICAL (con i bot non
+    flat) e una riga ``flusso_interrotto`` nell'attivita' di ogni bot ospitato;
+    INFO e ``flusso_ripreso`` al rientro. La dichiarazione resta in
+    ``session.flusso_runner`` (il battito dei bot la scrive in ``stats.flusso``)
+    ed esce sul canale 47332, topic ``flusso_stream``. Mai solleva."""
+    ora_ms = time.time() * 1000.0 if adesso_ms is None else float(adesso_ms)
+    ora = ora_ms / 1000.0
+    sorv = getattr(session, "flusso_sorveglia", None)
+    if sorv is None:
+        sorv = _SM.SorvegliaStream()
+        session.flusso_sorveglia = sorv
+    try:
+        st = _SM.stato_da_battiti(RAW_TEE.last_heartbeat_ms, RAW_TEE.last_data_ms, ora_ms,
+                                  mercati=[(m or {}).get("market_id")
+                                           for m in (session.market_meta or {}).values()])
+        non_flat = (_hosted_not_flat(flumine, session)
+                    if st.get("vivo") is False and not sorv.interrotto else [])
+        posizione = ", ".join(f"{bk}@{ev}" for ev, bk, _s in non_flat) or None
+        avviso = sorv.osserva(st, ora, posizione)
+    except Exception as e:  # noqa: BLE001 - la misura non ferma mai il runner
+        logger.debug("[tennis-runner] sorveglianza flusso KO: %s", str(e)[:120])
+        return sorv.dichiarazione(ora)
+    if avviso:
+        inizio = avviso["code"] == _SM.CODICE_INIZIO
+        (logger.critical if inizio else logger.info)("[tennis-runner] %s", avviso["message"])
+        try:
+            from .. import db as _db
+
+            _db.insert_alert(avviso["level"], "TENNIS_" + avviso["code"],
+                             "runner tennis: " + avviso["message"])
+        except Exception as e:  # noqa: BLE001 - alert best-effort
+            logger.debug("[tennis-runner] alert flusso KO: %s", str(e)[:120])
+        for (ev, bot_key) in list(session.hosted.keys())[:_FLUSSO_ATTIVITA_MAX]:
+            try:
+                tennis_db.write_tennis_bot_activity(
+                    ev, bot_key, KIND_FLUSSO_INTERROTTO if inizio else KIND_FLUSSO_RIPRESO,
+                    {"msg": avviso["message"], "critical": bool(inizio),
+                     "motivo": st.get("motivo"), "eta_s": st.get("eta_s")})
+            except Exception as e:  # noqa: BLE001
+                logger.debug("[tennis-runner] attivita' flusso %s/%s KO: %s", ev, bot_key, e)
+    dich = sorv.dichiarazione(ora)
+    session.flusso_runner = dich
+    if st.get("vivo") is None and not sorv.interrotto:
+        return dich                     # nessun mercato: niente da dire
+    try:
+        from .. import canale_bot as _cb
+
+        _cb.pubblica_stato_processo(_cb.TOPIC["flusso_stream"],
+                                    _SM.messaggio_canale(dich, ora_ms))
+    except Exception as e:  # noqa: BLE001 - mostrare non ferma mai il runner
+        logger.debug("[tennis-runner] flusso sul canale KO: %s", str(e)[:120])
+    return dich
+
+
 def stall_worker(context: dict, flumine: Any, session: TennisLiveSession) -> None:  # noqa: ARG001
     """Rilevamento dello stallo dello stream tennis (R-STREAM-1, 26/09)."""
     try:
         if session.shutdown_requested.is_set() or not session.market_meta:
             return
+        # 28/09 (cantiere J2): stream muto = bot senza book = posizioni non
+        # gestite. Lo si dice (una volta per episodio) e lo stato lo dichiara.
+        _sorveglia_flusso_tennis(flumine, session)
         now_mono = time.monotonic()
         now_ms = time.time() * 1000.0
         started = getattr(session, "stream_started_monotonic", None)

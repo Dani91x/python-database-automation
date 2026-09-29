@@ -59,6 +59,7 @@ from Betfair.safe_strategy import proposte_opportunita as PO
 from Betfair.safe_strategy import risk as RK
 from Betfair.stream import arresto_ordinato as _AO  # 28/09 (cantiere K): spegnimento ordinato
 from Betfair.stream import avvio_app as AA
+from Betfair.stream import flusso_prezzi as _FP
 from Betfair.stream.trading import stato_mercato as _SM
 
 logger = logging.getLogger("safe.bot")
@@ -870,6 +871,26 @@ def _porta_kw(riga: dict[str, Any]) -> dict[str, Any]:
     return {"porta": p} if p is not None else {}
 
 
+def _params_ordine(params: dict[str, Any], riga: dict[str, Any]) -> dict[str, Any]:
+    """I parametri con cui si esegue l'ordine di QUESTA riga.
+
+    CANTIERE P (28/09): ``execution_mode='rest'`` e' una scelta del pannello
+    che vale per i SOLDI VERI (REST di Betfair invece della coda). In paper il
+    REST non esiste: dal 28/09 un ordine paper esiste solo sul runner, quindi
+    con 'rest' in paper il gate della coda si chiudeva e OGNI ordine paper
+    sarebbe stato dichiarato non eseguito (``paper_senza_runner``) mentre il
+    live, con la stessa scelta, va a mercato. Per le righe paper il gate si
+    valuta come 'auto' (stessa regola di Omega, ``_flumine_paper_gate``).
+    Le righe live NON cambiano: nessuna chiave toccata. Serve alle APERTURE
+    (``_execute`` -> ``X.place``); le chiusure lo fanno gia' in
+    ``X.close_trade``."""
+    if str(riga.get("mode") or "") != "paper":
+        return params
+    if str((params or {}).get("execution_mode") or "auto") == "auto":
+        return params
+    return {**(params or {}), "execution_mode": "auto"}
+
+
 def _porta_kw_annullo(riga: dict[str, Any]) -> dict[str, Any]:
     """Come ``_porta_kw`` per il cancel, con la modalita' DELLA RIGA."""
     p = _porta_di(riga)
@@ -938,6 +959,35 @@ def _risolvi_una_via_canale(db, tr: dict[str, Any], *, now: datetime, os_mod: An
     ev = porta.esiti(ref) if porta is not None else None
     if ev is not None and str(ev.get("mode") or "") != mode:
         ev = None                     # paper e live MAI mischiati
+    # CANTIERE P (28/09, R-2 lato Safe): l'ordine nato da un comando va a
+    # Betfair col customerOrderRef di FLUMINE (``<hash>-<id>``), non col nostro
+    # ``safe-t<id>``: se la riga live resta senza eventi oltre la scadenza, la
+    # ricerca per ref su Betfair col SOLO ``safe-t<id>`` non la trova. Il runner
+    # manda quel ref nell'evento ``order`` (campo ``cor``): lo si salva alla
+    # PRIMA vista in ``meta.canale_cor`` e ``X.reconcile_decision`` lo usa come
+    # ref in piu'. Evento senza ``cor`` (runner di prima): nulla cambia.
+    # Un ordine NUOVO della stessa riga (il place-and-trim sotto il minimo
+    # RIPIAZZA: parcheggio -> taglio -> riprezzo, e flumine da' al nuovo ordine
+    # un customerOrderRef nuovo) porta un ``cor`` diverso: il corrente va in
+    # ``canale_cor`` e i precedenti restano in ``canale_cor_storico`` (tutti
+    # della STESSA riga: il ``cor`` arriva dall'evento del SUO ref).
+    cor = str((ev or {}).get("cor") or "").strip()[:64]
+    if cor and cor != meta.get("canale_cor"):
+        prima = dict(meta)
+        storico = [c for c in (meta.get("canale_cor_storico") or []) if c]
+        if meta.get("canale_cor") and meta["canale_cor"] not in storico:
+            storico.append(meta["canale_cor"])
+        meta["canale_cor"] = cor
+        if storico:
+            meta["canale_cor_storico"] = storico[-8:]
+        try:
+            db.update_trade(int(tr["id"]), meta=dict(meta))
+            tr["meta"] = dict(meta)
+        except Exception as ex:  # noqa: BLE001 - si riprova alla prossima vista
+            logger.warning("[safe.bot] canale_cor non salvato (trade %s): %s",
+                           tr.get("id"), str(ex)[:120])
+            meta.clear()
+            meta.update(prima)
     if ev is not None and _PO.terminale(ev) and os_mod is not None:
         fase = str(ev.get("fase"))
         matched = float(ev.get("size_matched") or 0.0)
@@ -1047,7 +1097,9 @@ def reconcile_pending(*, market, db, now: datetime) -> int:
     #    ESPLOSO, quindi NON e' mai avvenuto → 'error' terminale (L-10: prima
     #    veniva confermata come se fosse stata abbinata al prezzo della riserva,
     #    inventando una posizione paper che il live non avrebbe avuto);
-    #  • riga senza alcun marker (storica): si conferma coi dati della riserva.
+    #  • riga senza alcun marker (storica): 'error' terminale (cantiere P,
+    #    28/09: prima si confermava coi dati della riserva = fill inventato).
+    chiuse_senza_runner: list[Any] = []
     for tr in [t for t in legacy if str(t.get("mode")) == "paper"]:
         try:
             if X.is_reconciling(tr):
@@ -1077,12 +1129,36 @@ def reconcile_pending(*, market, db, now: datetime) -> int:
                                               "how": "paper"})
                 _sync_parent_of(db, tr, now)
             else:
-                _reconcile_confirm(db, tr, price=float(tr.get("price") or 0.0),
-                                   size=float(tr.get("size") or 0.0), bet_id=None,
-                                   how="paper", now=now)
+                # CANTIERE P (28/09): qui si CONFERMAVA la riga coi dati della
+                # riserva (prezzo e size chiesti), cioe' un fill inventato «di
+                # casa». Una riga paper senza marcatori del runner (coda o
+                # canale) non ha nessun ordine dietro: dal 28/09 il paper non
+                # esegue piu' nulla fuori dal runner, quindi nessuna fonte puo'
+                # dire che si e' abbinata. Come il live quando Betfair non
+                # conosce l'ordine: 'error' terminale, mai una posizione
+                # inventata (stessa regola di Omega, cantiere C 1.3).
+                _terminal_error(db, tr, reason="reconcile_paper_senza_runner", now=now,
+                                extra={"how": "paper"})
+                _log(db, "reconciled_error", {"trade_id": tr.get("id"),
+                                              "event_id": tr.get("event_id"),
+                                              "reason": "reconcile_paper_senza_runner",
+                                              "how": "paper"})
+                _sync_parent_of(db, tr, now)
+                chiuse_senza_runner.append(tr.get("id"))
             n += 1
         except Exception as ex:  # noqa: BLE001
             _log(db, "reconcile_error", {"trade_id": tr.get("id"), "err": str(ex)[:160]})
+    if chiuse_senza_runner:
+        # CANTIERE P (28/09): UNA riga di riepilogo, con gli id, delle righe
+        # paper storiche chiuse cosi' in questo giro (dopo l'aggiornamento se
+        # ne vedono al primo giro, poi nessuna)
+        _log(db, "reconciled_error", {"reason": "reconcile_paper_senza_runner_riepilogo",
+                                      "n": len(chiuse_senza_runner),
+                                      "trade_ids": list(chiuse_senza_runner),
+                                      "critical": True, "how": "paper",
+                                      "nota": "righe paper 'pending' senza marcatori del "
+                                              "runner chiuse in errore: nessun ordine "
+                                              "dietro, mai confermate coi dati della riserva"})
     # FAIL-SAFE: tutto ciò che non è esplicitamente 'paper' si verifica su Betfair.
     live = [t for t in legacy if str(t.get("mode")) != "paper"]
     if not live:
@@ -2711,8 +2787,11 @@ def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
     # bottoni, ma il DB-as-bus accetta richieste da qualunque altra via: la
     # barriera deve stare QUI, non solo a schermo.
     row_feed = (rows_by_event or {}).get(event_id)
-    if not _row_is_fresh(row_feed, now.timestamp(), _scanner_ts(db, now.timestamp())):
-        motivo = _stale_reason(row_feed)
+    # cantiere J2 (28/09): anche il FLUSSO del mercato dell'ordine (non solo il
+    # MATCH_ODDS): una proposta APPROVATA su una linea ferma non parte
+    if not _row_is_fresh(row_feed, now.timestamp(), _scanner_ts(db, now.timestamp()),
+                         market_id=market_id):
+        motivo = _stale_reason(row_feed, market_id)
         _log(db, "skip", {"event_id": event_id, "reason": motivo, "origin": "manual",
                           "market_id": market_id, "selection_id": selection_id})
         return {"error": motivo}
@@ -3062,6 +3141,15 @@ def _request_place_combo(*, db, market, rows_by_event, payload: dict, params: di
             (rows_by_event or {}).get(event_id), "combo")
         if rifiuto_mercato is not None:
             return {**rifiuto_mercato, "gamba": i}
+        # cantiere J2 (28/09): FLUSSO prezzi del mercato della gamba. Una gamba
+        # su una linea col flusso fermo = nessuna gamba (tutto o niente)
+        if isinstance(row_feed, dict) and not XE.flusso_esito(
+                row_feed, _scanner_stato(), market_id, now.timestamp()).vivo:
+            motivo_flusso = _stale_reason(row_feed, market_id)
+            _log(db, "skip", {"event_id": event_id, "reason": motivo_flusso,
+                              "origin": "manual", "combo_id": cid, "gamba": i,
+                              "market_id": market_id})
+            return {"error": motivo_flusso, "gamba": i}
         # NESSUNA GAMBA PIAZZATA se anche una sola e' sparita o fuori
         # tolleranza: si esce SUBITO, prima di riservare qualsiasi cosa.
         prices = prices_for(market=market, rows_by_event=rows_by_event, event_id=event_id,
@@ -3294,7 +3382,9 @@ def _request_cashout(*, db, market, rows_by_event, payload: dict, params: dict,
                 "message": f"rifiutato: {invalida}. Nessun ordine: se la condizione "
                            f"torna, il bot la ripropone con i dati di adesso"}
     feed_ok = isinstance(row, dict) and XE.feed_is_fresh(row, now.timestamp(),
-                                                         _scanner_ts(db, now.timestamp()))
+                                                         _scanner_ts(db, now.timestamp()),
+                                                         scanner_stato=_scanner_stato(),
+                                                         market_id=trade.get("market_id"))
     source = "feed"
     prices = None
     if feed_ok:
@@ -3309,7 +3399,10 @@ def _request_cashout(*, db, market, rows_by_event, payload: dict, params: dict,
         prices = _book_prices(market=market, trade=trade)
     if not prices:
         if not feed_ok:
+            # cantiere J2 (28/09): vale anche per un'uscita APPROVATA dall'utente:
+            # su prezzi non vivi l'ordine non parte, e si dice perche'
             return {"rejected": "quote non disponibili", "trade_id": int(tid),
+                    "motivo": _stale_reason(row, trade.get("market_id")),
                     "message": "rifiutato: quote non aggiornate (feed fermo) e book "
                                "Betfair non leggibile, riprova"}
         return {"error": "prezzi_non_disponibili"}
@@ -3609,6 +3702,16 @@ def _proposta_non_piu_valida(trade: dict[str, Any], payload: dict[str, Any],
             return "la condizione d'uscita non vale piu'"
         if str(d.kind) != str(kind):
             return f"la condizione d'uscita e' cambiata ({kind} -> {d.kind})"
+        # 29/09 (CANTIERE N, verifica del coordinatore): stesso tipo ma MOTIVO
+        # diverso (es. 'loss' da sfavorita_pareggia a un'altra regola) = un'altra
+        # uscita: la firma vale per quella vista
+        # (il minuto dentro il motivo delle uscite a tempo, "minuto_81_...", non
+        # e' un motivo diverso: si confronta il motivo senza i numeri)
+        motivo_firmato = payload.get("exit_reason")
+        if motivo_firmato and (re.sub(r"\d+", "#", str(d.reason))
+                               != re.sub(r"\d+", "#", str(motivo_firmato))):
+            return (f"il motivo dell'uscita e' cambiato ({motivo_firmato} -> "
+                    f"{d.reason})")
         return None
     eta = _eta_marcatore_proposta(trade, now)
     if eta is None or eta > _PROPOSTA_SENZA_CONFERMA_S:
@@ -3775,7 +3878,7 @@ def _request_cancel(*, db, payload: dict, now: Optional[datetime] = None) -> dic
 # ---------------------------------------------------------------------------
 # (c-bis) USCITE automatiche — SEMPRE (anche a bot fermo: gestione posizioni)
 # ---------------------------------------------------------------------------
-_SCANNER_TS_CACHE: dict[str, Any] = {"cycle_ts": None, "value": None}
+_SCANNER_TS_CACHE: dict[str, Any] = {"cycle_ts": None, "value": None, "stato": None}
 
 
 def _scanner_ts(db, cycle_ts: Optional[float] = None) -> Optional[float]:
@@ -3796,10 +3899,29 @@ def _scanner_ts(db, cycle_ts: Optional[float] = None) -> Optional[float]:
             row = None
         if isinstance(row, dict):
             value = XE.parse_ts(row.get("updated_at"))
+            # cantiere J (28/09): il payload dello stato porta il blocco
+            # ``flusso`` (giro bloccato, partite coi prezzi fermi): stessa
+            # lettura, nessuna SELECT in piu'
+            stato = row.get("payload") if isinstance(row.get("payload"), dict) else None
+        else:
+            stato = None
+        _SCANNER_TS_CACHE["stato"] = stato
+        if _FP.primo_avviso_scanner_vecchio("safe", stato):
+            # cantiere J, seconda consegna: lo scanner in esercizio non dichiara
+            # il flusso (versione vecchia): lo si DICE, una volta, critico
+            _log(db, "flusso_non_dichiarato", {"critical": True,
+                                               "message": _FP.TESTO_SCANNER_VECCHIO})
     if cycle_ts is not None:
         _SCANNER_TS_CACHE["cycle_ts"] = cycle_ts
         _SCANNER_TS_CACHE["value"] = value
     return value
+
+
+def _scanner_stato() -> Optional[dict[str, Any]]:
+    """CANTIERE J (28/09): il payload dell'ultimo stato dello scanner letto da
+    ``_scanner_ts`` (None se mai letto o illeggibile)."""
+    v = _SCANNER_TS_CACHE.get("stato")
+    return v if isinstance(v, dict) else None
 
 
 def _residual_of(trade: dict[str, Any]) -> Optional[float]:
@@ -4048,17 +4170,33 @@ def _process_exit_one(*, db, market, trade: dict[str, Any], row: Optional[dict],
         _pulisci_dato_mancante(db, trade, meta)
         if now_ts < float(decision.not_before_ts or 0.0):
             return False   # assestamento post-evento: si aspetta
-    if not XE.feed_is_fresh(row, now_ts, scanner_ts):
-        if decision is not None:
-            _exit_wait(db, trade, meta, decision, "feed_non_fresco", now_ts)
-        return False
-    if XE.market_open(trade, payload) is False:
+    prezzi_rest: Optional[dict[str, Any]] = None
+    if not XE.feed_is_fresh(row, now_ts, scanner_ts, scanner_stato=_scanner_stato(),
+                            market_id=trade.get("market_id")):
+        # cantiere J2 (28/09, regola unica): col FLUSSO dei prezzi fermo una
+        # chiusura/protezione prova il ripiego REST gia' esistente (col suo
+        # tetto, ``rest_gate``); con la sola riga vecchia (flusso vivo) si
+        # aspetta come prima.
+        esito_fl = XE.flusso_esito(row, _scanner_stato(), trade.get("market_id"), now_ts)
+        if not esito_fl.vivo:
+            prezzi_rest = _prezzi_ripiego_rest(market=market, trade=trade, now_ts=now_ts)
+        if not prezzi_rest:
+            if decision is not None:
+                # cantiere J: il motivo dice se e' il FLUSSO dei prezzi a essere fermo
+                _exit_wait(db, trade, meta, decision,
+                           _stale_reason(row, trade.get("market_id")), now_ts)
+            if not esito_fl.vivo:
+                _avviso_critico_flusso(db, trade, row, now_ts, esito_fl.motivo)
+            return False
+        _nota_ripiego_rest(db, trade, now_ts, esito_fl.motivo, prezzi_rest)
+    if prezzi_rest is None and XE.market_open(trade, payload) is False:
         if decision is not None:
             _exit_wait(db, trade, meta, decision, "mercato_sospeso", now_ts)
         return False
-    prices = prices_from_row(row, market_type=str(trade.get("market_type") or ""),
-                             selection_id=int(trade.get("selection_id") or 0),
-                             market_id=trade.get("market_id"))
+    # col ripiego REST il mercato e' OPEN per costruzione (``prices_for``)
+    prices = prezzi_rest or prices_from_row(row, market_type=str(trade.get("market_type") or ""),
+                                            selection_id=int(trade.get("selection_id") or 0),
+                                            market_id=trade.get("market_id"))
     if not prices or not (prices.get("back") or prices.get("lay")):
         if decision is not None:
             _exit_wait(db, trade, meta, decision, "prezzi_non_nel_feed", now_ts)
@@ -4205,6 +4343,20 @@ def _close_combo_siblings(*, db, market, legs: list[dict[str, Any]],
                                    "nota": "gamba di combo NON chiusa: mercato non "
                                            "operabile, si riprova alla riapertura"})
             continue
+        # cantiere J2 (28/09): FLUSSO prezzi fermo sul mercato della SORELLA (una
+        # combo mette insieme mercati diversi: il padre puo' essere vivo e la
+        # sorella no) -> nessuna chiusura su quei prezzi, si riprova dopo
+        esito_sorella = (XE.flusso_esito(row, _scanner_stato(), leg.get("market_id"),
+                                         now.timestamp()) if isinstance(row, dict) else None)
+        if (esito_sorella is not None and not esito_sorella.vivo
+                and prices.get("fonte") != _FP.FONTE_RIPIEGO_REST):
+            # regola unica J2: ripiego REST (col suo tetto) o attesa dichiarata
+            prices = _prezzi_ripiego_rest(market=market, trade=leg, now_ts=now.timestamp())
+            if not prices:
+                _annuncia_flusso_fermo(db, leg, row, now.timestamp(), reason="combo_solidale")
+                _avviso_critico_flusso(db, leg, row, now.timestamp(), esito_sorella.motivo)
+                continue
+            _nota_ripiego_rest(db, leg, now.timestamp(), esito_sorella.motivo, prices)
         # B25 (24/09) - "il bot non deve MAI chiudere le mie gambe". Questo e'
         # il collo di bottiglia di OGNI chiusura di gamba di combo (svolgimento
         # della combo incompleta E chiusura solidale): la guardia sta qui, cosi'
@@ -5421,6 +5573,24 @@ def _send_exit(*, db, market, trade: dict[str, Any], meta: dict[str, Any],
         _write_exit_state(db, trade, trade.get("meta") or meta, state="done",
                           last_error=None, next_retry_at=None)
         return False
+    if err and X.e_senza_runner(res.get("detail")):
+        # CANTIERE P (28/09): paper, runner NON raggiungibile. Non e' un rifiuto
+        # del mercato: nessun tentativo consumato, mai 'failed', si ritenta al
+        # primo gradino del backoff (5 s) finche' il runner torna; una riga
+        # CRITICA al piu' 1/min con la posizione e l'esposizione ancora viva.
+        if on_residual:
+            req.update({"residual_attempts": r_attempts - 1})
+        else:
+            req.update({"attempts": attempts - 1})
+        req.update({"last_error": err, "detail": res.get("detail")})
+        _persist_exit_request(db, trade, req)
+        _write_exit_state(db, trade, trade.get("meta") or meta, state="retrying",
+                          kind=decision.kind, reason=decision.reason,
+                          last_error=str(res.get("detail") or err),
+                          next_retry_at=_iso_in(now, XE.retry_backoff_s(1)))
+        _log_uscita_senza_runner(db, trade, now, decision=decision,
+                                 dettaglio=str(res.get("detail") or ""))
+        return False
     if err:
         if on_residual:
             # il fallimento sul residuo conta nel SUO cap: si ritenta dopo il cooldown
@@ -5699,18 +5869,20 @@ def _execute(*, db, market, trade_id: int, row: dict[str, Any], params: dict,
         _place_fail(db, trade_id, row, f"size_sotto_il_minimo_assoluto:{size:.2f}", now, params)
         return X.PlaceOutcome("error", None, 0.0, None,
                               f"size_sotto_il_minimo_assoluto:{size:.2f}")
-    if mode == "paper" and not ladder:
-        lvl = _paper_ladder(side, feed_prices, best_size)
-        if lvl is None:
-            _place_fail(db, trade_id, row, "paper_prezzi_non_disponibili", now, params)
-            return X.PlaceOutcome("error", None, 0.0, None, "paper_prezzi_non_disponibili")
-        ladder = lvl
+    # CANTIERE P (28/09): qui c'era, SOLO in paper, la costruzione del livello
+    # di libro dal feed (``_paper_ladder``) per il fill simulato «di casa», con
+    # il rifiuto ``paper_prezzi_non_disponibili`` quando il feed non aveva la
+    # riga. Il fill di casa non esiste piu' (``X.place``: un ordine paper vive
+    # solo sul runner, che abbina sul book vero): quel rifiuto era un cancello
+    # che il live non ha (il live manda l'ordine e decide Betfair), quindi si
+    # toglie. ``_paper_ladder`` resta per chi la usa come funzione pura.
     # F1 (25/09): ref UNIFICATO sul prefisso dell'attore ("safe_tennis-t<id>"
     # per il tennis, "safe-t<id>" invariato per il calcio) — vedi
     # ``porta_ordini.ref_ordine``. Prima di questo fix il tennis usava lo
     # stesso ref del calcio e il motore del runner rifiutava OGNI comando
     # tennis mandato via canale (prefisso attore "safe_tennis-" atteso, mai
     # scritto).
+    nota_place: dict[str, Any] = {}      # portata_al_minimo (tennis, strade senza motore)
     out = X.place(
         db=db, market=market, mode=mode, event_id=str(row["event_id"]),
         market_id=str(row["market_id"]), selection_id=int(row["selection_id"]),
@@ -5718,7 +5890,9 @@ def _execute(*, db, market, trade_id: int, row: dict[str, Any], params: dict,
         best_size=best_size, ladder=ladder,
         client_ref=_PO.ref_ordine(trade_id, sport=_sport_di(row)),
         trade_id=int(trade_id), meta=dict(row.get("meta") or {}), now=now,
-        params=params, **_porta_kw(row),
+        params=_params_ordine(params, row), **_porta_kw(row),
+        # solo il tennis ha la regola del minimo: il calcio chiama place come sempre
+        **({"_nota": nota_place} if _sport_di(row) == "tennis" else {}),
     )
     if out.status == "pending":
         # coda flumine o esito REST ignoto: la riga resta 'pending' coi suoi
@@ -5729,6 +5903,9 @@ def _execute(*, db, market, trade_id: int, row: dict[str, Any], params: dict,
         # il meta della riserva (variant, idempotency_key, manual...) si CONSERVA
         meta = {k: v for k, v in (row.get("meta") or {}).items() if k != "phase"}
         meta["fill"] = out.fill_note
+        if nota_place.get("portata_al_minimo"):
+            # apertura tennis portata al minimo sulle strade senza motore
+            meta["portata_al_minimo"] = dict(nota_place["portata_al_minimo"])
         # CERT. 14/09 — t4/t5/t6 DELL'APERTURA: i due istanti attorno alla
         # chiamata a Betfair e il momento del fill. Con t0..t3 che il piazzamento
         # ha gia' scritto nel meta della riserva, la riga porta la catena INTERA
@@ -5755,6 +5932,9 @@ def _execute(*, db, market, trade_id: int, row: dict[str, Any], params: dict,
                            "side": row["side"], "price": out.price, "size": out.size,
                            "mode": row["mode"], "strategy": row.get("strategy")})
     elif out.status == "error":
+        if nota_place.get("portata_al_minimo"):
+            row = {**row, "meta": {**(row.get("meta") or {}),
+                                   "portata_al_minimo": dict(nota_place["portata_al_minimo"])}}
         _place_fail(db, trade_id, row, out.fill_note, now, params)
     return out
 
@@ -5820,6 +6000,9 @@ def _place_fail(db, trade_id: int, row: dict[str, Any], err: str, now: datetime,
     """Riga in 'error' TERMINALE col marker ``meta.place`` (attempts/last_error/
     next_retry_at/final) e attività ``place_retry`` / ``place_exhausted``.
     Il meta della riserva viene CONSERVATO (L-09: prima era sovrascritto)."""
+    if X.e_senza_runner(err):
+        _place_fail_senza_runner(db, trade_id, row, err, now)
+        return
     key = _place_key(row.get("event_id"), row.get("signal_key"))
     st = _PLACE_ATTEMPTS.setdefault(key, {"attempts": 0})
     st["attempts"] = int(st.get("attempts") or 0) + 1
@@ -5849,6 +6032,73 @@ def _place_fail(db, trade_id: int, row: dict[str, Any], err: str, now: datetime,
     # compatibilità: la UI/e i log storici leggono 'skip' per il motivo
     _log(db, "skip", {"trade_id": trade_id, "event_id": row.get("event_id"),
                       "mode": row.get("mode"), "reason": err})
+
+
+#: ultima riga CRITICA «runner non raggiungibile» per partita (al piu' 1/min)
+_SENZA_RUNNER_LOG: dict[str, float] = {}
+_SENZA_RUNNER_LOG_S = 60.0
+
+
+def _place_fail_senza_runner(db, trade_id: int, row: dict[str, Any], err: str,
+                             now: datetime) -> None:
+    """CANTIERE P (28/09) - paper, runner NON raggiungibile: NON e' un rifiuto
+    del mercato (brief standard par. 2 punti 6-7: nessuna partita idonea resta
+    fuori per limiti tecnici NOSTRI; resilienza). La riga si chiude come ogni
+    errore ('error' col motivo), ma il budget ``place_max_attempts`` NON si
+    consuma e il segnale non diventa mai ``final``: si ripresenta dopo il
+    PRIMO gradino del backoff gia' esistente (``XE.retry_backoff_s(1)``), e
+    appena il runner torna l'apertura parte se il segnale vale ancora. Stessa
+    regola di Mike (``_senza_runner``). ``meta.place.senza_runner`` = True: il
+    seme dal DB (``bot_db.place_attempts``) non la riconta dopo un riavvio."""
+    key = _place_key(row.get("event_id"), row.get("signal_key"))
+    st = _PLACE_ATTEMPTS.setdefault(key, {"attempts": 0})
+    attesa = XE.retry_backoff_s(1)
+    st["last_ts"] = now.timestamp()
+    st["final"] = bool(st.get("final"))        # un final VERO di prima resta, mai creato qui
+    st["next_ts"] = now.timestamp() + attesa
+    place_meta = {"attempts": int(st.get("attempts") or 0), "last_error": err,
+                  "last_ts": now.isoformat(), "final": False, "senza_runner": True,
+                  "next_retry_at": _iso_in(now, attesa)}
+    meta = {k: v for k, v in (row.get("meta") or {}).items() if k != "phase"}
+    meta.update({"reason": err, "error_final": True, "place": place_meta})
+    try:
+        db.update_trade(trade_id, status="error", settled_at=now.isoformat(), meta=meta)
+    except Exception:  # noqa: BLE001
+        pass
+    eid = str(row.get("event_id") or "")
+    ultimo = _SENZA_RUNNER_LOG.get(eid)
+    if ultimo is None or now.timestamp() - ultimo >= _SENZA_RUNNER_LOG_S:
+        _SENZA_RUNNER_LOG[eid] = now.timestamp()
+        # kind 'skip' (gia' nel catalogo e nella UI; stesso kind di Mike)
+        _log(db, "skip", {
+            "trade_id": trade_id, "event_id": row.get("event_id"),
+            "signal_key": row.get("signal_key"), "strategy": row.get("strategy"),
+            "mode": row.get("mode"), "reason": err, "critical": True,
+            "next_retry_at": place_meta["next_retry_at"],
+            "nota": "paper: runner non raggiungibile, ordine non eseguito "
+                    "(nessun tentativo consumato, si riprova)"})
+
+
+def _log_uscita_senza_runner(db, trade: dict[str, Any], now: datetime, *,
+                             decision: Any = None, dettaglio: str = "") -> None:
+    """CANTIERE P (28/09): uscita paper che non parte perche' il runner non e'
+    raggiungibile. Riga CRITICA al piu' 1/min per posizione, con la posizione
+    e l'ESPOSIZIONE ancora viva in euro (``X.residual_liability``). Kind
+    'exit_retry' (gia' nel catalogo e nella UI)."""
+    chiave = f"uscita:{trade.get('id')}"
+    ultimo = _SENZA_RUNNER_LOG.get(chiave)
+    if ultimo is not None and now.timestamp() - ultimo < _SENZA_RUNNER_LOG_S:
+        return
+    _SENZA_RUNNER_LOG[chiave] = now.timestamp()
+    _log(db, "exit_retry", {
+        "trade_id": trade.get("id"), "event_id": trade.get("event_id"),
+        "mode": trade.get("mode"), "strategy": trade.get("strategy"),
+        "kind": getattr(decision, "kind", None), "reason": getattr(decision, "reason", None),
+        "err": dettaglio[:120], "critical": True, "senza_runner": True,
+        "side": trade.get("side"), "price": trade.get("price"), "size": trade.get("size"),
+        "esposizione_eur": X.esposizione_eur(trade),
+        "nota": "paper: runner non raggiungibile, uscita NON eseguita; si ritenta "
+                "ogni 5 s senza consumare tentativi"})
 
 
 def _sig(signal: Any, name: str, default: Any = None) -> Any:
@@ -6558,9 +6808,11 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
         # o partita non riscritta da >120 s): il paper riempirebbe a quote
         # vecchie, il live manderebbe un FOK a vuoto.
         feed_row = rows_by_event.get(str(event_id))
-        if not _row_is_fresh(feed_row, now_ts, scanner_ts):
+        # cantiere J: anche il FLUSSO del mercato del segnale (Correct Score
+        # dell'ESATTO, non solo il MATCH_ODDS)
+        if not _row_is_fresh(feed_row, now_ts, scanner_ts, market_id=_sig(s, "market_id")):
             _log_skip(db, now, params, {"event_id": str(event_id), "signal_key": str(key),
-                                        "reason": _stale_reason(feed_row)})
+                                        "reason": _stale_reason(feed_row, _sig(s, "market_id"))})
             continue
         # H-21: budget dei ritentativi dopo un rifiuto dell'exchange
         blocked_place = place_allowed(db, now, params, event_id, key)
@@ -7827,20 +8079,30 @@ def _feed_prices_of(rows_by_event: Optional[dict], event_id: str,
 
 
 def _row_is_fresh(row: Optional[dict[str, Any]], now_ts: float,
-                  scanner_ts: Optional[float]) -> bool:
+                  scanner_ts: Optional[float], market_id: Any = None) -> bool:
     """12/09: nessun piazzamento AUTOMATICO su una riga del feed non fresca
     (``exits.feed_is_fresh``: ≤ 20 s o scanner vivo, mai oltre 120 s). Il
     motore e i modelli non guardano ``updated_at``: con lo scanner fermo i
     segnali restavano 'attivi' e il paper riempiva a quote vecchie (live: FOK
     a vuoto). Riga assente = non fresca."""
-    return isinstance(row, dict) and XE.feed_is_fresh(row, now_ts, scanner_ts)
+    return isinstance(row, dict) and XE.feed_is_fresh(row, now_ts, scanner_ts,
+                                                      scanner_stato=_scanner_stato(),
+                                                      market_id=market_id)
 
 
-def _stale_reason(row: Optional[dict[str, Any]]) -> str:
+def _stale_reason(row: Optional[dict[str, Any]], market_id: Any = None) -> str:
     """Motivo dello scarto per FRESCHEZZA, distinto per l'operatore: la partita
     NON e' nel feed (lo scanner non la sta seguendo) oppure c'e' ma le sue quote
-    sono vecchie. Due guasti diversi, due interventi diversi."""
-    return "feed_non_fresco" if isinstance(row, dict) else "feed_assente"
+    sono vecchie. Due guasti diversi, due interventi diversi.
+
+    CANTIERE J (28/09): terzo guasto, il piu' insidioso: la riga e' fresca ma
+    il FLUSSO dei prezzi e' interrotto (``flusso_interrotto:<motivo>``)."""
+    if not isinstance(row, dict):
+        return "feed_assente"
+    esito = XE.flusso_esito(row, _scanner_stato(), market_id)
+    if not esito.vivo:
+        return f"flusso_interrotto:{esito.motivo}"
+    return "feed_non_fresco"
 
 
 # ---------------------------------------------------------------------------
@@ -8513,6 +8775,93 @@ def _safe_open_trades(db) -> list[dict[str, Any]]:
         return []
 
 
+_FLUSSO_ANNUNCIATO: dict[int, float] = {}
+_FLUSSO_RILOG_S = 60.0
+# cantiere J2 (28/09): righe CRITICHE del flusso fermo e note del ripiego REST,
+# al piu' una al minuto per posizione
+_FLUSSO_CRITICO = _FP.Promemoria()
+_FLUSSO_RIPIEGO = _FP.Promemoria()
+
+
+def _prezzi_ripiego_rest(*, market, trade: dict[str, Any], now_ts: float) -> Optional[dict[str, Any]]:
+    """Il book REST della selezione col ripiego GIA' esistente (``prices_for``
+    senza righe del feed, quindi dritto al REST) e il SUO tetto (``rest_gate``:
+    10 s per mercato, 8 chiamate per giro). None = REST muto, mercato non OPEN
+    o budget esaurito: chi chiama aspetta."""
+    if market is None:
+        return None
+    p = prices_for(market=market, rows_by_event={}, event_id=str(trade.get("event_id") or ""),
+                   market_id=str(trade.get("market_id") or ""),
+                   market_type=str(trade.get("market_type") or ""),
+                   selection_id=int(trade.get("selection_id") or 0),
+                   allow_rest=True, rest_now_ts=now_ts)
+    if not p or not (p.get("back") or p.get("lay")):
+        return None
+    # marcati: chi li riceve sa che vengono dal REST (vivo) e non dal feed fermo
+    return {**p, "fonte": _FP.FONTE_RIPIEGO_REST}
+
+
+def _esposizione_eur(trade: dict[str, Any]) -> Optional[float]:
+    """La responsabilita' della posizione in euro: lay = size x (quota - 1),
+    back = size. None se i numeri mancano (mai uno zero inventato)."""
+    try:
+        size = float(trade.get("size_matched") or trade.get("size") or 0.0)
+        price = float(trade.get("avg_price_matched") or trade.get("price") or 0.0)
+    except (TypeError, ValueError):
+        return None
+    if size <= 0:
+        return None
+    lato = str(trade.get("side") or "").lower()
+    return round(size * (price - 1.0), 2) if lato == "lay" and price > 1.0 else round(size, 2)
+
+
+def _avviso_critico_flusso(db, trade: dict[str, Any], riga: Optional[dict[str, Any]],
+                           now_ts: float, motivo: Optional[str]) -> None:
+    """Flusso fermo E ripiego REST muto: nessun ordine, e lo si DICE (critico,
+    al piu' una volta al minuto per posizione) con posizione, esposizione e da
+    quanti secondi."""
+    tid = int(trade.get("id") or 0)
+    if not _FLUSSO_CRITICO.dovuto(tid, now_ts):
+        return
+    payload = (riga or {}).get("payload") if isinstance(riga, dict) else None
+    _log(db, "flusso_interrotto", {
+        "critical": True, "trade_id": tid, "mode": trade.get("mode"),
+        "event_id": trade.get("event_id"), "market_id": trade.get("market_id"),
+        "selection_id": trade.get("selection_id"), "side": trade.get("side"),
+        "motivo": motivo, "esposizione_eur": _esposizione_eur(trade),
+        "da_secondi": _FP.secondi_fermo(payload, _scanner_stato(), int(now_ts * 1000)),
+        "message": "flusso prezzi FERMO e book REST non leggibile: la posizione resta "
+                   "senza chiusura finche' un prezzo vivo non torna"})
+
+
+def _nota_ripiego_rest(db, trade: dict[str, Any], now_ts: float, motivo: Optional[str],
+                       prezzi: dict[str, Any]) -> None:
+    """La decisione si prende sui prezzi del ripiego REST: lo si scrive
+    nell'attivita' (``fonte = rest_ripiego``), al piu' una volta al minuto."""
+    tid = int(trade.get("id") or 0)
+    if not _FLUSSO_RIPIEGO.dovuto(tid, now_ts):
+        return
+    _log(db, "ripiego_rest", {
+        "trade_id": tid, "mode": trade.get("mode"), "event_id": trade.get("event_id"),
+        "market_id": trade.get("market_id"), "fonte": _FP.FONTE_RIPIEGO_REST,
+        "motivo": motivo, "back": prezzi.get("back"), "lay": prezzi.get("lay")})
+
+
+def _annuncia_flusso_fermo(db, leg: dict[str, Any], riga: dict[str, Any], now_ts: float,
+                           reason: str = "combo incompleta") -> None:
+    """Cantiere J: la gamba aspetta perche' il FLUSSO dei prezzi e' fermo. Una
+    riga ``exit_wait`` per gamba al minuto al massimo (niente rumore sul DB)."""
+    tid = int(leg.get("id") or 0)
+    if now_ts - _FLUSSO_ANNUNCIATO.get(tid, -1e18) < _FLUSSO_RILOG_S:
+        return
+    if len(_FLUSSO_ANNUNCIATO) > 5000:
+        _FLUSSO_ANNUNCIATO.clear()
+    _FLUSSO_ANNUNCIATO[tid] = now_ts
+    _log(db, "exit_wait", {"trade_id": tid, "mode": leg.get("mode"), "kind": "forced",
+                           "reason": reason,
+                           "wait": _stale_reason(riga, leg.get("market_id"))})
+
+
 def _unwind_combo(*, db, market, ids: list[int], rows_by_event: dict, event_id: str,
                   params: dict, now: datetime) -> int:
     """Chiude le gambe FILLATE di una combo rimasta incompleta (uscita 'forced',
@@ -8543,6 +8892,23 @@ def _unwind_combo(*, db, market, ids: list[int], rows_by_event: dict, event_id: 
             _lascia_gamba_manuale(db, leg, now=now, params=params, prices=prices,
                                   riga_feed=rows_by_event.get(str(leg.get("event_id") or event_id)))
             continue
+        # cantiere J (28/09): flusso prezzi fermo sul mercato della gamba -> la
+        # chiusura a mercato NON parte su quei prezzi; la riprende il ciclo dopo
+        riga_gamba = rows_by_event.get(str(leg.get("event_id") or event_id))
+        da_rest = False
+        esito_gamba = (XE.flusso_esito(riga_gamba, _scanner_stato(), leg.get("market_id"),
+                                       now.timestamp())
+                       if isinstance(riga_gamba, dict) else None)
+        if esito_gamba is not None and not esito_gamba.vivo:
+            # cantiere J2 (regola unica): chiusura col flusso fermo = ripiego REST
+            # (col suo tetto); se anche il REST tace si aspetta e lo si dice
+            prices = _prezzi_ripiego_rest(market=market, trade=leg, now_ts=now.timestamp())
+            if not prices:
+                _annuncia_flusso_fermo(db, leg, riga_gamba, now.timestamp())
+                _avviso_critico_flusso(db, leg, riga_gamba, now.timestamp(), esito_gamba.motivo)
+                continue
+            da_rest = True
+            _nota_ripiego_rest(db, leg, now.timestamp(), esito_gamba.motivo, prices)
         if not prices or not (prices.get("back") or prices.get("lay")):
             _log(db, "exit_failed", {"reason": "combo_incompleta_senza_prezzi",
                                      "trade_id": tid, "critical": True})
@@ -8551,7 +8917,7 @@ def _unwind_combo(*, db, market, ids: list[int], rows_by_event: dict, event_id: 
         # Betfair la rifiutava con `exit_failed` critico a ogni ciclo; in paper
         # si riempiva su quote congelate): si aspetta, e questa stessa funzione
         # la riprende al ciclo dopo con le quote di quel momento.
-        if _mercato_non_operabile(
+        if not da_rest and _mercato_non_operabile(
                 db, str(leg.get("event_id") or event_id), leg,
                 rows_by_event.get(str(leg.get("event_id") or event_id)),
                 "combo_incompleta") is not None:
@@ -9052,7 +9418,7 @@ def _novita_per_il_lento(trade: dict[str, Any], row: dict[str, Any],
     decisione = XE.decide(copia, payload, meta, now_ts, xp)
     if decisione is None or now_ts < float(decisione.not_before_ts or 0.0):
         return None
-    if not XE.feed_is_fresh(row, now_ts, None):
+    if not XE.feed_is_fresh(row, now_ts, None, market_id=copia.get("market_id")):
         return None
     if XE.market_open(copia, payload) is False:
         return None
@@ -9260,7 +9626,9 @@ def ferma_al_nuovo_avvio(db=_real_db, now: Optional[datetime] = None) -> Optiona
         return AA.ferma_al_nuovo_avvio(_GUARDIA_AVVIO, control=control,
                                        set_control=db.set_control, log=db.log,
                                        now_iso=now.isoformat(),
-                                       params_reset=strategy_modes_a_paper)
+                                       params_reset=strategy_modes_a_paper,
+                                       # 28/09 CANTIERE N: uscite MANUALI a ogni avvio nuovo
+                                       uscite_bot="safe")
     except Exception as ex:  # noqa: BLE001
         logger.critical("[safe.bot] controllo d'avvio NON riuscito (%s): "
                         "nessuna apertura finche' non riesce.", str(ex)[:160])
@@ -10203,17 +10571,21 @@ def svuota_le_cache() -> None:
     _FEED_BLIND_LOG.clear()
     _DATO_MANCANTE_LOG.clear()
     _PLACE_ATTEMPTS.clear()
+    _SENZA_RUNNER_LOG.clear()          # cantiere P (28/09): riga critica 1/min
     _SKIP_LOG_STATE.clear()
     _EVENT_NAMES.clear()
     _PENDING_CICLO.clear()
     _AGG_ULTIMO_BUONO.clear()
     _AGG_LOG_TS.clear()
     _LAST_CONTROL.clear()
+    _FLUSSO_ANNUNCIATO.clear()   # cantiere J (28/09)
+    _FLUSSO_CRITICO.azzera()     # cantiere J2 (28/09)
+    _FLUSSO_RIPIEGO.azzera()
     # -- cache a CHIAVI FISSE: si ripristina il valore iniziale -------------
     _REST_STATE.clear()
     _REST_STATE.update({"last": {}, "cycle_ts": 0.0, "used": 0})
     _SCANNER_TS_CACHE.clear()
-    _SCANNER_TS_CACHE.update({"cycle_ts": None, "value": None})
+    _SCANNER_TS_CACHE.update({"cycle_ts": None, "value": None, "stato": None})
     _EXIT_MODEL.clear()
     _EXIT_MODEL.update({"model": None, "mod": None})
     _SPAZZINO_PROPOSTE.clear()          # D1 (28/09): ritmo dello spazzino proposte

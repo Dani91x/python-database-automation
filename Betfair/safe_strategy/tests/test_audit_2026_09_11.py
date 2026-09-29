@@ -17,7 +17,7 @@ from Betfair.safe_strategy import execution as X
 from Betfair.safe_strategy import exits as XE
 from Betfair.safe_strategy.tests.test_bot_service import (
     NOW, FakeDB, FakeMarket, ReconMarket, _feed_row, _order, _place_payload,
-    _reset_module_state, _signal, FakeEngine,
+    _reset_module_state, _signal, FakeEngine, _poll_runner,
 )
 
 
@@ -459,6 +459,10 @@ def test_l4_la_guardia_combo_decide_UGUALE_in_paper_e_in_live():
             rationale=corpo.get("rationale"), params=params, now=NOW,
             rows_by_event={"1.1": row}, risk_ctx=None)
         n = 1 if esito["placed"] == esito["total"] else 0
+        # CANTIERE P (28/09): in paper le gambe sono ordini sul runner, il loro
+        # esito lo legge il poll (prima fase del giro dopo); il live REST FOK
+        # risponde nello stesso giro. Si confronta lo stato a esito noto.
+        _poll_runner(db)
         return n, db
 
     n_pap, db_pap = gira("paper")
@@ -676,18 +680,24 @@ def test_m06_copertura_parziale_espone_meta_hedge():
     prices = {"back": 6.0, "back_size": 4.0, "lay": 6.2, "lay_size": 100.0}
     res = X.close_trade(db=db, market=FakeMarket(), trade=db.get_trade(tid),
                         prices=prices, now=NOW, params={"commission_pct": 5.0})
-    assert res["ok"] is True and res["residual_size"] > 0.01
-    hedge = db.get_trade(tid)["meta"]["hedge"]
+    # CANTIERE P (28/09): la chiusura paper va al runner (pending_fill); il suo
+    # abbinato lo conferma il poll del giro dopo, poi l'apertura si riallinea.
+    assert res["ok"] is True and res["pending_fill"] is True
+    _poll_runner(db)
+    meta = db.get_trade(tid)["meta"]
+    assert meta["residual_size"] > 0.01
+    hedge = meta["hedge"]
     assert 0 < hedge["fraction"] < 1
     assert hedge["remaining_liability"] > 0 and hedge["complete"] is False
     # L-11: su un parziale il P&L NON e' bloccato
-    assert res["locked_pnl"] is None and res["planned_lock"] is not None
+    assert meta["locked_pnl"] is None and res["planned_lock"] is not None
     # il RESIDUO resta chiudibile
     res2 = X.close_trade(db=db, market=FakeMarket(), trade=db.get_trade(tid),
                          prices={"back": 6.0, "back_size": 100.0, "lay": 6.2,
                                  "lay_size": 100.0},
                          fraction=1.0, now=NOW, params={"commission_pct": 5.0})
     assert res2["ok"] is True
+    _poll_runner(db)
     hedge = db.get_trade(tid)["meta"]["hedge"]
     assert hedge["complete"] is True and hedge["remaining_liability"] == 0.0
 
@@ -972,28 +982,46 @@ def test_m31_in_paper_qualsiasi_importo_si_abbina():
 
     Il vincolo di fedelta' paper=live della certificazione 12/09 resta, ma ora
     e' soddisfatto dal verso giusto: non rifiutando in paper cio' che il live
-    non sapeva fare, bensi' insegnandolo al live."""
+    non sapeva fare, bensi' insegnandolo al live.
+
+    CANTIERE P (28/09, riga S6): la frase «in paper non c'e' nessun minimo da
+    aggirare» era il difetto. Il fill FOK diretto della size non e' cio' che
+    il place-and-trim ottiene in live: li' il riprezzo e' un LIMITE che puo'
+    restare non abbinato. Ora il sotto-minimo paper va al RUNNER con l'azione
+    ``place_submin`` (stessa macchina del live, sul client simulato) e senza
+    FOK; la chiusura sotto il minimo resta un ``place`` FOK normale."""
     db = FakeDB(status="stopped")
     out = X.place(db=db, market=FakeMarket(), mode="paper", event_id="1.1",
                   market_id="m1", selection_id=7, side="back", price=3.0, size=0.5,
                   best_size=100.0, client_ref="safe-t1", trade_id=1, now=NOW, params={})
-    assert out.status == "open" and out.size == 0.5
+    assert out.status == "pending" and out.fill_note.startswith("flumine_submin")
+    q = db.queue[-1]
+    assert q["action"] == "place_submin" and q["params"]["target_size"] == 0.5
+    assert "time_in_force" not in q
     # anche cinque centesimi
     out = X.place(db=db, market=FakeMarket(), mode="paper", event_id="1.1",
                   market_id="m1", selection_id=7, side="back", price=3.0, size=0.05,
                   best_size=100.0, client_ref="safe-t1b", trade_id=11, now=NOW, params={})
-    assert out.status == "open" and out.size == 0.05
-    # gamba di CHIUSURA: passava gia' prima (Betfair accetta cio' che riduce)
+    assert out.status == "pending" and db.queue[-1]["params"]["target_size"] == 0.05
+    # gamba di CHIUSURA: un place normale FOK che riduce la posizione
     out = X.place(db=db, market=FakeMarket(), mode="paper", event_id="1.1",
                   market_id="m1", selection_id=7, side="back", price=3.0, size=0.5,
                   best_size=100.0, client_ref="safe-t2", trade_id=2, now=NOW, params={},
                   meta={"cashout": True, "closes_trade_id": 1})
-    assert out.status == "open"
-    # size CAPPATA dalla liquidita' sotto il minimo: si piazza quella disponibile
+    assert out.status == "pending" and db.queue[-1]["action"] == "place"
+    assert db.queue[-1]["time_in_force"] == "FILL_OR_KILL"
+    assert db.queue[-1]["params"]["reduces_liability"] is True
+    # size CAPPATA dalla liquidita' sotto il minimo: si accoda quella disponibile
     out = X.place(db=db, market=FakeMarket(), mode="paper", event_id="1.1",
                   market_id="m1", selection_id=7, side="back", price=3.0, size=5.0,
                   best_size=1.2, client_ref="safe-t3", trade_id=3, now=NOW, params={})
-    assert out.status == "open" and out.size == 1.2
+    assert out.status == "pending" and db.queue[-1]["params"]["target_size"] == 1.2
+    # runner giu': NESSUN fill di casa (prima: fill FOK diretto della size)
+    db.follow = "NONE"
+    out = X.place(db=db, market=FakeMarket(), mode="paper", event_id="1.1",
+                  market_id="m1", selection_id=7, side="back", price=3.0, size=0.5,
+                  best_size=100.0, client_ref="safe-t4", trade_id=4, now=NOW, params={})
+    assert out.status == "error" and out.fill_note.startswith("paper_senza_runner:")
 
 
 # ===========================================================================
@@ -1169,6 +1197,12 @@ def test_h16_catalogo_dei_kind_di_attivita():
         # / chiusura col trasporto di oggi).
         "canale_inviato", "canale_rifiutato", "canale_senza_ack",
         "canale_giu", "canale_giu_ripiego",
+        # 28/09 (cantiere J): lo scanner in esercizio non dichiara il flusso
+        # dei prezzi (versione vecchia): detto UNA volta, critico
+        "flusso_non_dichiarato",
+        # 28/09 (cantiere J2, regola unica): flusso fermo e REST muto (critico,
+        # 1/min per posizione); chiusura decisa sui prezzi del ripiego REST
+        "flusso_interrotto", "ripiego_rest",
     }
     import re as _re
     from pathlib import Path

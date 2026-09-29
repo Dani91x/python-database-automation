@@ -20,7 +20,8 @@ import pytest
 
 from Betfair.safe_strategy import bot_service as S
 from Betfair.safe_strategy.tests.test_bot_service import (
-    NOW, FakeDB, FakeEngine, FakeMarket, _feed_row, _reset_module_state, _signal,
+    NOW, FakeDB, FakeEngine, FakeMarket, _feed_row, _poll_runner, _reset_module_state,
+    _signal,
 )
 from Betfair.stream import avvio_app as AA
 from Betfair.stream.tests.test_avvio_app_2026_09_16 import riga_control
@@ -154,6 +155,9 @@ def test_d_a_bot_fermo_dall_avvio_il_cash_out_del_trader_gira(monkeypatch):
     db.scan_rows = [_feed_row()]
     # il bot dell'utente apre la posizione (stesso avvio: nessuno lo spegne)
     S.run_once(db=db, market=FakeMarket(), engine=FakeEngine([_signal()]), now=NOW)
+    # CANTIERE P (28/09): l'apertura paper e' un ordine sul runner, la conferma
+    # arriva col poll (prima fase del giro dopo)
+    _poll_runner(db)
     assert len(db.trades) == 1 and db.trades[0]["status"] == "open"
 
     # l'app viene riaperta: nuovo avvio, il bot si ferma

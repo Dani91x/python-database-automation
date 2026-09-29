@@ -29,6 +29,7 @@ import { Clock } from 'lucide-react';
 import { fmtTime, fmtAge, fmtOdds, DASH } from '@/lib/format';
 import { teamLogo } from '@/lib/sportsLogos';
 import { dividiNomi } from '@/components/controlroom/AzioniPartita';
+import FlussoBadge from '@/components/controlroom/FlussoBadge';
 import { AzioniPartita } from '@/components/controlroom/AzioniPartita';
 import { QUOTE_CLS, QUOTE_TESTO } from '@/components/controlroom/SchedaPartita';
 import { RigaOperazione } from '@/components/controlroom/DettaglioRigaView';
@@ -106,6 +107,8 @@ export function SchedaPreMatch({
                             {odds?.p2 && <><span className="text-white/25"> · </span>P2 {fmtOdds(odds.p2.back)}/{fmtOdds(odds.p2.lay)}</>}
                         </span>
                     )}
+                    {/* cantiere J (28/09): il flusso dei prezzi della partita */}
+                    <FlussoBadge flusso={p.flusso} />
                     {p.latenzaQuoteS != null && (
                         <span className={`font-mono ml-auto ${QUOTE_CLS[p.statoQuote]}`}
                             title={p.statoQuote === 'fermo'

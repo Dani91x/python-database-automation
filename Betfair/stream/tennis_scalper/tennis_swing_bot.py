@@ -36,6 +36,8 @@ from .condotta_ordini import (
     stato_ordine,
 )
 from .tennis_scalper_bot import compute_green
+from ..uscite_proposte import CHIAVE_STATS as CHIAVE_PROPOSTE
+from ..uscite_proposte import CancelloUscite, ora_s, proposta_di
 
 logger = logging.getLogger(__name__)
 MIN_STAKE = 2.0
@@ -125,11 +127,49 @@ class TennisSwingStrategy(BaseStrategy):
         # letta NON e' un'esposizione nulla: senza questo flag, un'eccezione del
         # blotter faceva dichiarare piatta una posizione aperta.
         self._blotter_letto: bool = True
+        # 28/09 (CANTIERE N): proposte d'uscita e firme dell'utente
+        self.cancello_uscite = CancelloUscite(emetti=lambda ev, p: self._emit(ev, **p))
 
     def _emit(self, ev: str, **p: Any) -> None:
         if self.event_sink:
             try: self.event_sink(ev, p)
             except Exception: pass  # noqa
+
+    # ---- 28/09 (CANTIERE N): il cancello delle uscite ----
+    def _prefisso_uscite(self, mid: str, tr: Dict[str, Any]) -> str:
+        """La posizione (mercato, selezione, istante d'ingresso): le proposte e
+        le firme valgono per QUESTA posizione e per nessun'altra."""
+        return f"tennis_swing|{mid}|{int(tr.get('sel') or 0)}|{tr.get('t0')}|"
+
+    def _cancello_lascia(self, prefisso: str, kind: str, pt: Any, *, sel: int,
+                         side: str, px: float, b: float, ba: float, l: float,
+                         la: float) -> bool:
+        """True = l'uscita ``kind`` decisa dalla strategia parte adesso."""
+        nw = b * (ba - 1.0) - l * (la - 1.0)
+        nl = l - b
+        g = compute_green(nw, nl, px)
+        mid = prefisso.split("|")[1]
+        proposta = proposta_di(bot="tennis_swing", motivo=kind, market_id=mid,
+                               selection_id=sel, lato_ingresso=side, prezzo=px,
+                               lato_chiusura=(g[0] if g else None),
+                               size_chiusura=(g[1] if g else None),
+                               se_chiudi=(g[2] if g else None),
+                               se_vince=nw, se_perde=nl)
+        chiave = prefisso + kind
+        ok = self.cancello_uscite.lascia_uscire(
+            automatiche=bool(self.uscite_automatiche), chiave=chiave,
+            now_s=ora_s(pt), proposta=proposta)
+        if not ok:
+            self.cancello_uscite.conferma_vive(prefisso, (chiave,))
+            self._pubblica_proposte()
+        return ok
+
+    def _pubblica_proposte(self) -> None:
+        """Le proposte vive nel battito (``stats``): il runner le scrive sulla
+        riga per partita, la Control Room le mostra con "approva"."""
+        self.cancello_uscite.tieni_solo(
+            [self._prefisso_uscite(m, t) for m, t in self._tr.items() if t])
+        self.stats[CHIAVE_PROPOSTE] = self.cancello_uscite.vive()
 
     def check_market_book(self, market: Any, mb: Any) -> bool:
         return getattr(mb, "status", None) == "OPEN" and bool(getattr(mb, "runners", None))
@@ -484,15 +524,28 @@ class TennisSwingStrategy(BaseStrategy):
         t0 = tr.get("t0")
         timed_out = ((pt is not None and t0 is not None and (pt - t0) / 1000.0 >= self.tmax)
                      or ((pt is None or t0 is None) and tr["held"] >= self.tmax))
-        # 25/09 USCITE MANUALI (interruttore del bot, letto a caldo dal runner):
-        # si spegne SOLO la presa di profitto (target). Stop a tick e time-stop
-        # restano: sono protezioni. Default True = identico a prima.
-        if hit and not self.uscite_automatiche:
-            hit = False
-        if hit or adverse or timed_out:
+        # 28/09 (CANTIERE N) USCITE MANUALI: target, stop a tick e time-stop
+        # sono TUTTE uscite di trading (la regola dell'utente di oggi supera il
+        # 25/09, quando stop e time-stop restavano automatici). A uscite manuali
+        # nessuna parte da sola: diventa una PROPOSTA coi numeri e parte solo
+        # con la firma dell'utente, la prossima volta che la condizione vale
+        # ancora (``uscite_proposte.CancelloUscite``). Protezioni fuori da qui.
+        prefisso = self._prefisso_uscite(mid, tr)
+        if not (hit or adverse or timed_out):
+            # nessuna uscita decisa adesso: una proposta di questa posizione
+            # rimasta viva non vale piu' e sparisce dalla scheda
+            self.cancello_uscite.conferma_vive(prefisso, ())
+            self._pubblica_proposte()
+            return
+        if hit or adverse or timed_out:   # (sempre vero qui: blocco di prima)
             # esci a quota migliore (maker) o al touch
             px = (bb if self.maker else bl) if side == "BACK" else (bl if self.maker else bb)
             kind = "target" if hit else ("stop" if adverse else "time")
+            if not self._cancello_lascia(prefisso, kind, pt, sel=sel, side=side, px=px,
+                                         b=b, ba=ba, l=l, la=la):
+                return
+            self.cancello_uscite.chiudi_posizione(prefisso)
+            self._pubblica_proposte()
             if self.dry_run:
                 # esito VIRTUALE al prezzo di uscita: green spalmato dalla
                 # posizione sintetica (stesso compute_green del reale)
@@ -541,6 +594,9 @@ class TennisSwingStrategy(BaseStrategy):
             if tr_m:
                 self._manage_trade(market, mb, mid, tr_m)
             return
+        if self.cancello_uscite.proposte:
+            # 28/09: una posizione chiusa altrove porta via le sue proposte
+            self._pubblica_proposte()
         tr = self._tr.get(mid)
         if tr:  # la GESTIONE della posizione non è mai gateata (né da min_matched
             #     né dal favorito corrente): prima il denaro, poi i segnali.

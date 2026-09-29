@@ -912,6 +912,41 @@ def _submin_ritira(market_id: str, bet_id: Optional[str], obbligatorio: bool = F
     return True
 
 
+def piano_submin_live(*, side: str, target_price: float, target_size: float,
+                      best_back: Optional[float], best_lay: Optional[float],
+                      max_stake: Optional[float] = None,
+                      fill_or_kill: bool = True) -> Any:
+    """LA decisione del live sul place-and-trim, PRIMA di toccare Betfair.
+
+    D1-ter (28/09): estratta da ``place_submin_live`` senza cambiarne una
+    riga, perche' il PAPER di un taker FOK (Mike sul canale del runner) deve
+    decidere con la STESSA funzione: stesso piano (``pianifica_submin``), stesso
+    rifiuto, stesso codice. Pura: nessuna rete (il book lo passa il chiamante).
+
+    Solleva ``PlaceRifiutato`` (rifiuto CERTO, zero ordini):
+      * ``SUBMIN_PIANO_RIFIUTATO`` se il piano non e' eseguibile;
+      * ``SUBMIN_NESSUNA_CONTROPARTE`` se fill-or-kill e quota NON abbinabile
+        (percorso A: l'ordine resterebbe a riposo e il FOK lo ritirerebbe).
+    Altrimenti ritorna il ``PianoSubmin``."""
+    piano = _SUBMIN.pianifica_submin(
+        side=side, target_price=target_price, target_size=target_size,
+        jurisdiction="it", best_back=best_back, best_lay=best_lay,
+        max_stake=max_stake,
+    )
+    if piano.rifiuto:
+        raise PlaceRifiutato("place-and-trim: " + piano.rifiuto,
+                             error_code="SUBMIN_PIANO_RIFIUTATO")
+    # Fill-or-kill + quota NON abbinabile sono incompatibili: l'ordine resterebbe
+    # a riposo e il FOK lo ritirerebbe subito. Si dichiara il rifiuto PRIMA di
+    # toccare Betfair: zero chiamate mutanti, zero ordini ignoti sul conto.
+    if fill_or_kill and piano.serve_trucco and piano.park_mode == _SUBMIN.PARK_TARGET:
+        raise PlaceRifiutato(
+            "place-and-trim: quota %s NON abbinabile con fill-or-kill "
+            "(nessuna controparte immediata): niente ordine" % target_price,
+            error_code="SUBMIN_NESSUNA_CONTROPARTE")
+    return piano
+
+
 def place_submin_live(
     *, market_id: str, selection_id: int, price: float, size: float, event_id: str,
     side: str = "back", customer_ref: Optional[str] = None,
@@ -973,22 +1008,9 @@ def place_submin_live(
     # adattatori. Vedi ``Betfair/stream/trading/PLACE_AND_TRIM_INDAGINE_2026-09-17.md``.
     if best_back is None and best_lay is None:
         best_back, best_lay = _submin_best_prices(market_id, selection_id)
-    piano = _SUBMIN.pianifica_submin(
-        side=side_l, target_price=target_tick, target_size=target,
-        jurisdiction="it", best_back=best_back, best_lay=best_lay,
-        max_stake=max_stake,
-    )
-    if piano.rifiuto:
-        raise PlaceRifiutato("place-and-trim: " + piano.rifiuto,
-                             error_code="SUBMIN_PIANO_RIFIUTATO")
-    # Fill-or-kill + quota NON abbinabile sono incompatibili: l'ordine resterebbe
-    # a riposo e il FOK lo ritirerebbe subito. Si dichiara il rifiuto PRIMA di
-    # toccare Betfair: zero chiamate mutanti, zero ordini ignoti sul conto.
-    if fill_or_kill and piano.serve_trucco and piano.park_mode == _SUBMIN.PARK_TARGET:
-        raise PlaceRifiutato(
-            "place-and-trim: quota %s NON abbinabile con fill-or-kill "
-            "(nessuna controparte immediata): niente ordine" % target_tick,
-            error_code="SUBMIN_NESSUNA_CONTROPARTE")
+    piano = piano_submin_live(side=side_l, target_price=target_tick, target_size=target,
+                              best_back=best_back, best_lay=best_lay,
+                              max_stake=max_stake, fill_or_kill=fill_or_kill)
     parcheggio = piano.park_price
     # DIFESA IN PROFONDITA' (money-critical): nel percorso A il parcheggio sta
     # ALLA quota target, quindi per un LAY impegna size*(quota-1). Il piano lo ha

@@ -78,7 +78,9 @@ def test_buchi_incrementali_uguali_al_ricalcolo():
 def test_control_sniper_accende_lo_sniper_e_le_uscite_di_produzione():
     c = RR.control_della_ui("1", RR.SCENARIO_SNIPER)
     assert c["params"]["sniper_mode"] is True and c["dry_run"] is False
-    assert "uscite_automatiche" not in c["params"]           # nasce manuale
+    # N3 (28/09): gli scenari esistenti girano a uscite AUTOMATICHE dichiarate;
+    # le manuali hanno i loro scenari (`SCENARI_USCITE_MANUALI`)
+    assert c["params"]["uscite_automatiche"] is True
     assert RR.control_della_ui("1", RR.SCENARIO_SNIPER_PAPER)["dry_run"] is True
     auto = RR.control_della_ui("1", RR.SCENARIO_SNIPER_AUTO)["params"]
     assert auto["uscite_automatiche"] is True

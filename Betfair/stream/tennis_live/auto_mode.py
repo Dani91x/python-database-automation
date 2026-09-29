@@ -62,8 +62,12 @@ TETTO_MASSIMO = 40
 ORIGINE_AUTO = "auto"
 ORIGINE_MANUALE = "manuale"
 
-#: i bot la cui uscita discrezionale E' la strategia (vedi docstring, punto 3)
-BOT_USCITE_SEMPRE_AUTOMATICHE = frozenset({"tennis_scalper"})
+#: i bot la cui uscita discrezionale E' la strategia (vedi docstring, punto 3).
+#: 28/09 (CANTIERE N, ordine dell'utente: "NESSUNA ECCEZIONE per strategia"):
+#: VUOTO. Lo scalper tennis ha l'interruttore come gli altri e nasce MANUALE
+#: (``tennis_scalper_bot.TennisScalperStrategy.uscite_automatiche``); il punto 3
+#: della docstring qui sopra descrive la decisione del 25/09, superata.
+BOT_USCITE_SEMPRE_AUTOMATICHE: frozenset = frozenset()
 #: chiave delle ``stats`` della riga per partita (la scrive il runner nel
 #: battito): da quando la posizione di un bot a uscite MANUALI e' aperta
 CHIAVE_POSIZIONE_APERTA = "posizione_aperta_dal"

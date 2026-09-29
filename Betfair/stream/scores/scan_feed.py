@@ -348,6 +348,22 @@ class ScanRowCache:
             row = self._status_row
         return row_age_sec(row) if row else None
 
+    def scanner_stato(self) -> Optional[Dict[str, Any]]:
+        """CANTIERE J (28/09): il PAYLOAD dell'ultimo stato dello scanner (porta il
+        blocco ``flusso``: giro bloccato, partite coi prezzi fermi). Dal canale se
+        vivo, altrimenti dalla stessa riga che ``scanner_age_sec`` ha gia' letto
+        dal DB: nessuna lettura in piu'. None = non noto."""
+        if punteggi_canale_acceso():
+            lettore = self._lettore()
+            if canale_vivo(lettore):
+                p = getattr(lettore, "stato_payload", None)
+                if isinstance(p, dict):
+                    return p
+        with self._lock:
+            row = self._status_row
+        p = row.get("payload") if isinstance(row, dict) else None
+        return p if isinstance(p, dict) else None
+
     def scanner_alive(self) -> bool:
         age = self.scanner_age_sec()
         return age is not None and age <= SCANNER_ALIVE_MAX_AGE_SEC

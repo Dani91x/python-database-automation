@@ -1786,6 +1786,30 @@ class ScannerReplay:
         self.tabella: Dict[str, Dict[str, Any]] = {}
         self.righe_scritte: int = 0
         self.mercati_visti: Dict[str, str] = {}      # market_id -> market_type
+        # CANTIERE J2 (28/09, reperto B): i BUCHI DEI DATI dichiarati dallo
+        # scenario «flusso-interrotto»: [(da_s, a_s, mercati o None = tutti)].
+        # Dentro un buco i book di quei mercati NON arrivano allo scanner (come
+        # uno stream caduto) e la registrazione non li conferma: dopo la soglia
+        # lo scanner dichiara il flusso FERMO, come dal vivo. Vuoto = il banco
+        # di sempre, byte per byte (``test_banco_flusso_interrotto``).
+        self.buchi_flusso: List[Tuple[float, float, Optional[frozenset]]] = []
+        self.book_persi_nel_buco: int = 0
+
+    # ------------------------------------------------------------- buchi (J2)
+    def dichiara_buco_flusso(self, da_s: float, a_s: float,
+                             mercati: Optional[Any] = None) -> None:
+        """Un buco dei dati da ``da_s`` ad ``a_s`` (epoch s, tempo di mercato)
+        sui ``mercati`` (None = tutti)."""
+        if a_s <= da_s:
+            raise ValueError("buco del flusso vuoto o rovesciato")
+        self.buchi_flusso.append((float(da_s), float(a_s),
+                                  None if mercati is None else frozenset(str(m) for m in mercati)))
+
+    def nel_buco(self, market_id: str) -> bool:
+        for da, a, mercati in self.buchi_flusso:
+            if da <= self._ora_s < a and (mercati is None or str(market_id) in mercati):
+                return True
+        return False
 
     # ------------------------------------------------------------- orologio
     @property
@@ -1902,6 +1926,10 @@ class ScannerReplay:
         mid = str(getattr(market_book, "market_id", "") or "")
         if mid not in self.scan.market_meta:
             return False
+        if self.buchi_flusso and self.nel_buco(mid):
+            # scenario «flusso-interrotto»: lo stream di questo mercato e' caduto
+            self.book_persi_nel_buco += 1
+            return False
         if self.conflate_ms > 0:
             adesso_ms = int(self._ora_s * 1000)
             if adesso_ms - self._ultimo_book_ms.get(mid, -10 ** 12) < self.conflate_ms:
@@ -1924,6 +1952,15 @@ class ScannerReplay:
         sono piu' monitorabili vengono CANCELLATE dalla tabella (e' quello che
         in produzione fa sparire la riga dal feed quando la partita chiude).
         """
+        # CANTIERE J (28/09): la registrazione che scorre E' lo stream vivo. In
+        # produzione i mercati fermi ma serviti li confermano gli heartbeat della
+        # connessione; qui li conferma lo scorrere della registrazione, cosi' il
+        # blocco ``flusso`` della riga dice "vivo" esattamente come dal vivo e il
+        # replay non inventa veti che in produzione non ci sarebbero.
+        # J2 (reperto B): dentro un buco dichiarato la registrazione NON conferma
+        # (nessun heartbeat da una connessione caduta)
+        self.scan.conferma_flusso([m for m in self.mercati_visti
+                                   if not (self.buchi_flusso and self.nel_buco(m))])
         rows, wanted = self.scan.build_rows(self.adesso())
         for row in rows:
             self.tabella[str(row["event_id"])] = row

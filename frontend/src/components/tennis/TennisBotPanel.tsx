@@ -668,7 +668,8 @@ export function TennisBotPanel({ eventId, marketId, orderMode = 'OFF' }: Props) 
                                     <span className={cn('font-bold', acc.text)}>{desc?.short ? desc.name : a.bot_key}</span>{' '}
                                     <span
                                         className={cn(
-                                            a.kind === 'error'
+                                            // 28/09 (cantiere J2): stream del runner muto
+                                            a.kind === 'error' || a.kind === 'flusso_interrotto'
                                                 ? 'text-red-300 font-bold'
                                                 : a.kind === 'cycle' || a.kind === 'scalp'
                                                     ? 'text-emerald-300 font-bold'

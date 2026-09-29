@@ -73,6 +73,8 @@ PAYLOAD_VERO_CALCIO = {
     "fixture_round",
     # K1 (26/09), chiave ADDITIVA: size e volumi in EUR (Betfair.stream.valuta)
     "valuta",
+    # cantiere J (28/09), chiave ADDITIVA: i prezzi della partita sono VIVI?
+    "flusso",
 }
 PAYLOAD_VERO_TENNIS = {
     "competition", "event_name", "games", "inplay", "media", "mo_market_id",
@@ -89,6 +91,8 @@ PAYLOAD_VERO_TENNIS = {
     "pre_ko",
     # K1 (26/09), chiave ADDITIVA: size e volumi in EUR
     "valuta",
+    # cantiere J (28/09), chiave ADDITIVA: i prezzi della partita sono VIVI?
+    "flusso",
 }
 OU_BLOCCO_VERO = {"bet_delay", "inplay", "line", "market_id", "market_type",
                   "seen_ms", "selections", "status", "total_matched", "ts_ms"}

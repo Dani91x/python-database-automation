@@ -1,0 +1,17 @@
+M6 shard: conferma anche con status 503: ROSSO | test_shard_conferma_solo_se_connesso_vivo_e_non_latente | 1 failed, 101 deselected in 6.79s
+M14 banco: registrazione che scorre non conferma: ROSSO | test_banco_la_registrazione_che_scorre_conferma_come_gli_heartbeat | 1 failed, 101 deselected in 6.57s
+M31 stream muto: 503 non latente: ROSSO | test_status_503_e_latente | 1 failed, 101 deselected in 6.46s
+M32 stream muto: soglia ignorata: ROSSO | test_nessun_messaggio_oltre_soglia_e_muto | 1 failed, 101 deselected in 6.20s
+M33 stream muto: avviso a ogni giro: ROSSO | test_episodio_detto_una_volta_inizio_e_fine | 1 failed, 101 deselected in 6.28s
+C1 chase: apertura senza riserva non ritirata: ROSSO | test_chase_apertura_senza_riserva_si_ritira_e_non_si_ripiazza | 1 failed, 101 deselected in 6.37s
+C2 chase: chiusura trattata come apertura: ROSSO | test_chase_chiusura_senza_riserva_resta_e_si_grida_una_volta_al_minuto | 1 failed, 101 deselected in 6.40s
+C3 appoggiati: avviso a ogni giro: ROSSO | test_chase_chiusura_senza_riserva_resta_e_si_grida_una_volta_al_minuto | 1 failed, 101 deselected in 6.70s
+C4 chase chiusura: niente inseguimento sulla riserva: ROSSO | test_chase_chiusura_con_riserva_viva_insegue_sulla_riserva | 1 failed, 101 deselected in 7.04s
+C5 bracket: decide al buio senza riserva: ROSSO | test_bracket_senza_riserva_grida_e_non_decide | 1 failed, 101 deselected in 6.60s
+C6 status 500 accettato: ROSSO | test_status_diverso_da_null_o_200_non_conferma_col_suo_codice | 1 failed, 101 deselected in 6.58s
+C7 shard scanner: status 500 accettato: ROSSO | test_shard_dello_scanner_fail_closed_sullo_status | 1 failed, 101 deselected in 7.31s
+C8 soglia non calcolata dall'heartbeat vero: ROSSO | test_soglia_e_tre_volte_l_heartbeat_chiesto | 1 failed, 101 deselected in 6.53s
+C9 banco senza buchi diverso da prima: ROSSO | test_banco_senza_buchi_righe_identiche_al_banco_di_prima | 1 failed, 101 deselected in 6.56s
+K1 banco: book applicati dentro il buco: ROSSO | test_buco_dichiarato_il_flusso_diventa_fermo_e_rientra | 1 failed, 101 deselected in 6.40s
+K2 banco: registrazione che conferma anche nel buco: ROSSO | test_buco_dichiarato_il_flusso_diventa_fermo_e_rientra | 1 failed, 101 deselected in 6.50s
+EXIT=0

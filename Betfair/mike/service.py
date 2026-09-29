@@ -280,7 +280,11 @@ _CTX_FIELDS = ("last_green_at", "last_action_at", "attempts", "reentry_allowed",
                # M1 (25/09, PREPARATO, SPENTO): il veto sulla P calibrata
                # dell'Under 3.5 scattato su questa partita. Un riavvio non deve
                # far rientrare col PERSIST una posizione chiusa per il veto.
-               "veto_u35")
+               "veto_u35",
+               # D1-quater (29/09): le aperture ferme per una causa che non e'
+               # il mercato (freno, modo ordini, runner giu'). Un riavvio non
+               # deve far ripartire la riproposizione a ogni giro.
+               "aperture_ferme")
 
 
 def _p_under35_calibrata(dossier: Dict[str, Any]) -> Optional[float]:
@@ -372,6 +376,10 @@ def svuota_le_cache() -> None:
     _RICONCILIATO_A.clear()
     _SCRITTO_A.clear()
     _LAST_HEARTBEAT.clear()
+    _ULTIMO_STATO_SCANNER.clear()   # cantiere J (28/09): stato dello scanner letto
+    _RIPIEGO_REST_ULTIMO.clear()    # cantiere J2 (28/09): tetto del ripiego REST
+    _FLUSSO_CRITICO.azzera()
+    _FLUSSO_RIPIEGO.azzera()
     _EVENTI_LETTI_A = 0.0
     # 23/09: le righe arrivate dal canale 47336 sono memoria di PROCESSO come
     # ``_CACHE_FEED`` (``_CANALE_FEED``): si buttano insieme.
@@ -613,7 +621,8 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
                   feed_fresh: bool = True, closes_trade_id: Optional[int] = None,
                   close_reason: Optional[str] = None,
                   ctx: Optional[E.MatchCtx] = None,
-                  approvazione_id: Optional[int] = None) -> str:
+                  approvazione_id: Optional[int] = None,
+                  fonte_prezzi: str = "feed") -> str:
     """Piazza la gamba (reserve-first). Ritorna 'open' | 'cancelled' | 'pending'.
 
     Regola prezzo TAKER: il fill avviene solo se il prezzo richiesto e' ANCORA
@@ -688,6 +697,15 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
                         "stato_mercato": E.stato_mercato(book),
                         "market": leg.market}, info.event_id)
         return "cancelled"
+    if fonte_prezzi == F._flusso.FONTE_RIPIEGO_REST and leg.role in APERTURE_MIKE:
+        # CANTIERE J2 (28/09, regola unica): col flusso dello scanner fermo i
+        # prezzi vengono dal ripiego REST e servono SOLO a chiudere, coprire,
+        # proteggere. Un'apertura non parte mai, nemmeno col REST vivo.
+        leg.status = "cancelled"
+        db.log("no_fill", {"leg": leg.ref, "role": leg.role, "reason": "flusso_interrotto",
+                           "fonte": fonte_prezzi, "wanted": leg.price, "side": leg.side,
+                           "mode": mode}, info.event_id)
+        return "cancelled"
     if not feed_fresh:
         # D1 (29/09) - PREZZI NON VIVI = NESSUN ORDINE, in paper E IN LIVE.
         # Decisione dell'utente del 28/09: nessun bot opera su prezzi non vivi.
@@ -743,6 +761,8 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
         if porta_paper is None:
             leg.status = "cancelled"
             _senza_runner(db, info.event_id, leg)
+            _ferma_aperture(db, ctx, leg, "paper_senza_runner", mode, info.event_id,
+                            now.timestamp())
             return "cancelled"
     row = _trade_row(info, leg, mode, params, minute, score, closes_trade_id, close_reason,
                      approvazione_id=approvazione_id)
@@ -827,7 +847,10 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
                       best_size=avail_size, ladder=ladder_paper,
                       client_ref=f"mike-t{trade_id}", trade_id=int(trade_id), meta=meta_exec,
                       now=now, params=exec_params,
-                      **({"porta": porta_paper} if porta_paper is not None else {}))
+                      # D1-ter (28/09): il book per il piano del place-and-trim
+                      # (solo sul canale; il live REST lo rilegge da Betfair)
+                      **({"porta": porta_paper, "best_back": book.best_back,
+                          "best_lay": book.best_lay} if porta_paper is not None else {}))
     if mode == "paper" and out.status == "pending" and porta_paper is not None \
             and not str(out.fill_note or "").startswith("place_exception_reconciling"):
         # D1 (29/09): come il REST FOK del live, che risponde DOPO il bet delay
@@ -844,6 +867,8 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
             return "open"
         if leg.status == "cancelled":
             return "cancelled"
+        if leg.needs_reconcile:
+            return "pending_reconcile"     # D1-ter: esito ignoto del runner
     if mode == "paper" and out.status == "error" and _nota_senza_runner(out.fill_note):
         leg.status = "cancelled"
         try:
@@ -853,6 +878,8 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
         except Exception:  # noqa: BLE001
             pass
         _senza_runner(db, info.event_id, leg, dettaglio=str(out.fill_note or ""))
+        _ferma_aperture(db, ctx, leg, "paper_senza_runner", mode, info.event_id,
+                        now.timestamp())
         return "cancelled"
     if out.status == "open":
         leg.matched = float(out.size)
@@ -909,6 +936,10 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
                            now_ts=now.timestamp(), params=params, event_id=info.event_id)
     db.log("skip", {"leg": leg.ref, "trade_id": trade_id, "reason": out.fill_note,
                     "error_code": out.error_code}, info.event_id)
+    if _rifiuto_non_di_mercato(out.fill_note):
+        # D1-quater (29/09): freno / modo ordini / runner giu' -> detto UNA volta
+        _ferma_aperture(db, ctx, leg, str(out.fill_note or ""), mode, info.event_id,
+                        now.timestamp())
     return "cancelled"
 
 
@@ -1115,8 +1146,86 @@ def _aggregates(db: Any, now: datetime, mode: Optional[str] = None) -> Dict[str,
         return dict(last) if isinstance(last, dict) else {}
 
 
+_ULTIMO_STATO_SCANNER: Dict[str, Any] = {}
+
+# CANTIERE J2 (28/09, regola unica): le gambe che APRONO rischio (nessuna col
+# flusso fermo). La copertura ``over_cover`` e' una COPERTURA di rischio: col
+# ripiego REST vivo parte (brief J2), come chiusure e green-up.
+APERTURE_MIKE = tuple(r for r in E.OPENING_ROLES if r != "over_cover")
+# ripiego REST delle linee col flusso fermo: al piu' una lettura ogni 10 s per
+# mercato (stessa cadenza del tetto REST di Safe, ``bot_service.rest_gate``)
+_RIPIEGO_REST_MIN_S = 10.0
+_RIPIEGO_REST_ULTIMO: Dict[str, float] = {}
+_FLUSSO_CRITICO = F._flusso.Promemoria()
+_FLUSSO_RIPIEGO = F._flusso.Promemoria()
+
+
+def _books_ripiego_rest(market: Any, info: Any, mercati: Any, now_ts: float,
+                        con_tetto: bool = True) -> Dict[str, Dict[str, Any]]:
+    """{OU35/OU45: book REST} delle linee di Mike col flusso fermo, con la
+    lettura REST GIA' esistente (``market.read_book``, la stessa del
+    regolamento). ``con_tetto``: al piu' una lettura ogni ``_RIPIEGO_REST_MIN_S``
+    per mercato (l'azione dell'utente non ha tetto: e' un clic). Vuoto = REST
+    muto o mercato non OPEN."""
+    out: Dict[str, Dict[str, Any]] = {}
+    fermi = {str(m) for m in (mercati or [])}
+    for mkey in (E.MARKET_OU35, E.MARKET_OU45):
+        mid = info.market_id(mkey) if info is not None else None
+        if not mid or (fermi and str(mid) not in fermi):
+            continue
+        if con_tetto:
+            prec = _RIPIEGO_REST_ULTIMO.get(str(mid))
+            if prec is not None and now_ts - prec < _RIPIEGO_REST_MIN_S:
+                continue
+            _RIPIEGO_REST_ULTIMO[str(mid)] = now_ts
+        try:
+            book = market.read_book(str(mid), {}) if market is not None else None
+        except Exception as ex:  # noqa: BLE001 - un REST muto e' un'attesa, non un crash
+            logger.warning("[mike] ripiego REST %s KO: %s", mid, str(ex)[:120])
+            book = None
+        if isinstance(book, dict) and str(book.get("status") or "").upper() == "OPEN":
+            out[mkey] = book
+    if len(_RIPIEGO_REST_ULTIMO) > 2000:
+        _RIPIEGO_REST_ULTIMO.clear()
+    return out
+
+
+def _esposizione_mike(ctx: Any) -> Optional[float]:
+    """Responsabilita' delle gambe ABBINATE ancora aperte (EUR): back = stake,
+    lay = stake x (quota - 1). None se non leggibile."""
+    try:
+        tot = 0.0
+        for leg in getattr(ctx, "legs", None) or []:
+            m = float(getattr(leg, "matched", 0.0) or 0.0)
+            if m <= 0 or getattr(leg, "status", None) not in ("open", "pending"):
+                continue
+            p = float(getattr(leg, "avg_price", None) or getattr(leg, "price", 0.0) or 0.0)
+            tot += m * (p - 1.0) if getattr(leg, "side", "") == "lay" and p > 1.0 else m
+        return round(tot, 2)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _scanner_stato() -> Optional[Dict[str, Any]]:
+    """CANTIERE J (28/09): il payload dell'ultimo stato dello scanner letto da
+    ``_scanner_age`` (stesso giro, nessuna lettura in piu'). None = non letto."""
+    v = _ULTIMO_STATO_SCANNER.get("v")
+    return v if isinstance(v, dict) else None
+
+
 def _scanner_age(db: Any, now: float) -> Optional[float]:
     st = db.scanner_status()
+    # cantiere J: il payload dello stato porta il blocco ``flusso`` (giro dello
+    # scanner bloccato / partite coi prezzi fermi); si tiene quello di questo giro
+    _ULTIMO_STATO_SCANNER["v"] = (st.get("payload") if isinstance(st, dict)
+                                  and isinstance(st.get("payload"), dict) else None)
+    if F._flusso.primo_avviso_scanner_vecchio("mike", _ULTIMO_STATO_SCANNER["v"]):
+        # seconda consegna: scanner vecchio (stato senza ``flusso``): UNA riga
+        try:
+            db.log("flusso_non_dichiarato", {"critical": True,
+                                             "message": F._flusso.TESTO_SCANNER_VECCHIO})
+        except Exception:  # noqa: BLE001 - un avviso non ferma mai il giro
+            pass
     if not st:
         return None
     ts = F.parse_iso_epoch(st.get("updated_at"))
@@ -1431,7 +1540,60 @@ def _segui_ordini_paper_su_runner(*, db: Any, ctx: E.MatchCtx, ev: Dict[str, Any
                 _mark_trade_cancelled(db, eid, leg, str(meta.get("annullo_richiesto")),
                                       cache, market=market)
             continue
+        if fase == "errore" and bet_id and porta is not None:
+            # D1-ter (28/09): l'ordine puo' risultare morto PER bet_id (evento
+            # terminale definitivo arrivato per lo stesso bet_id): vale quello.
+            mem = getattr(porta, "memoria", None)
+            per_bet = (mem.esito_per_bet(str(bet_id))
+                       if mem is not None and hasattr(mem, "esito_per_bet") else None)
+            if (MP.terminale(per_bet) and str(per_bet.get("fase") or "") != "errore"
+                    and str(per_bet.get("mode") or "paper") == "paper"):
+                e = per_bet
+                abbinato = _num_evento(e, "size_matched")
+                medio = _num_evento(e, "average_price_matched") or None
+                fase = str(e.get("fase") or "")
+                seq = int(e.get("seq") or 0)
+                if abbinato > float(leg.matched or 0.0) + 1e-9:
+                    leg.matched = abbinato
+                    leg.avg_price = float(medio) if medio else float(leg.price)
+                consap.update({"size_matched": round(abbinato, 2),
+                               "size_remaining": round(_num_evento(e, "size_remaining"), 2),
+                               "avg_price_matched": medio})
+        if fase == "errore":
+            # D1-ter (28/09) - ESITO IGNOTO, MAI «annullato» (controllo J4).
+            # La fase ``errore`` del runner e' il ``post_place:`` o il
+            # place-and-trim abbandonato: l'ordine POTREBBE esistere a mercato.
+            # Prima la gamba si chiudeva 'cancelled': il motore rientrava con un
+            # ordine forse vivo. Ora, come il ramo C3 del sincrono
+            # (``place_exception_reconciling``): gamba in riconciliazione, riga
+            # 'pending' marcata (conta nel rischio e blocca le aperture), si
+            # risolve al primo terminale DEFINITIVO del runner (stesso ref, o
+            # stesso bet_id) nel giro successivo. Nessun conteggio del freno
+            # delle coperture: su un esito ignoto non si conta niente.
+            if seq > gia or not leg.needs_reconcile:
+                leg.status = E.STATUS_RECONCILE
+                meta.update({"canale_fase": fase, "canale_seq": seq,
+                             "phase": "reserved", "reason": "place_exception_reconciling",
+                             "err": "runner_errore_esito_ignoto",
+                             "runner_esito_ignoto": True})
+                campi_ig: Dict[str, Any] = {"meta": meta}
+                if bet_id and not r.get("bet_id"):
+                    campi_ig["bet_id"] = str(bet_id)
+                try:
+                    X.aggiorna_trade(db, int(r["id"]), campi=campi_ig, consapevolezza=consap)
+                    r.update(campi_ig)
+                except Exception as ex:  # noqa: BLE001
+                    logger.warning("[mike] esito ignoto runner %s non scritto: %s", leg.ref,
+                                   str(ex)[:120])
+                logger.critical("[mike] %s: %s esito IGNOTO dal runner (fase errore) -> "
+                                "riconciliazione", eid, leg.ref)
+                db.log("reconcile_pending", {"leg": leg.ref, "trade_id": r.get("id"),
+                                             "role": leg.role, "reason": "runner_errore",
+                                             "bet_id": bet_id, "critical": True}, eid)
+                n += 1
+            continue
         # -- terminale ---------------------------------------------------------
+        ignoto_prima = bool(meta.pop("runner_esito_ignoto", False))
         meta.update({"canale_fase": fase, "canale_seq": seq})
         meta.pop("reason", None)
         meta.pop("err", None)
@@ -1450,8 +1612,14 @@ def _segui_ordini_paper_su_runner(*, db: Any, ctx: E.MatchCtx, ev: Dict[str, Any
             leg.status = "cancelled"
             meta.update({"phase": "cancelled", "reason": f"runner_{fase}"})
             campi["status"] = "error"
-            no_definitivo = not appoggiata and fase in ("rifiutato", "annullato", "scaduto")
-            if not appoggiata and fase == "rifiutato":
+            # D1-ter: un ordine passato da esito IGNOTO (fase ``errore``) e poi
+            # morto non e' un «no» del mercato a questa richiesta: niente
+            # conteggio del freno, niente ``_rifiutata``.
+            no_definitivo = (not appoggiata and not ignoto_prima
+                             and fase in ("rifiutato", "annullato", "scaduto"))
+            if ignoto_prima:
+                pass
+            elif not appoggiata and fase == "rifiutato":
                 _rifiutata(ctx, leg, f"rifiutata dal runner ({fase})")
             elif not appoggiata and fase in ("annullato", "scaduto"):
                 # il FOK ucciso: il mercato ha detto no a questa richiesta
@@ -1640,6 +1808,80 @@ def _freno_aperture_rest() -> Optional[str]:
     except Exception as ex:  # noqa: BLE001
         logger.error("[mike] kill-switch non valutabile, apertura FERMATA: %s", str(ex)[:120])
         return "kill_switch_illeggibile"
+
+
+# D1-quater (29/09) - i rifiuti di un'APERTURA che NON vengono dal mercato: i
+# motivi dei freni (``execution._live_brake``, ``controls.motivo_kill_switch``,
+# ``_freno_aperture_rest``) e il runner giu' in paper (``_NOTE_SENZA_RUNNER``).
+_PREFISSI_NON_DI_MERCATO = ("live_order_mode_non_live", "live_kill_switch_attivo",
+                            "db_kill_switch_attivo", "kill_switch_illeggibile",
+                            "freni_live_non_letti")
+
+
+def _rifiuto_non_di_mercato(nota: Any) -> bool:
+    n = str(nota or "")
+    return n.startswith(_PREFISSI_NON_DI_MERCATO) or _nota_senza_runner(n)
+
+
+def _ferma_aperture(db: Any, ctx: Optional[E.MatchCtx], leg: E.Leg, motivo: str,
+                    mode: str, event_id: Any, now_ts: float) -> None:
+    """D1-quater (29/09): un'APERTURA rifiutata per una causa che non e' il
+    mercato si dice UNA volta e si aspetta che la causa cambi (stesso schema del
+    freno delle coperture e di ``_senza_runner``): il motore non la ripropone
+    (``engine.decide`` toglie le aperture finche' ``ctx.aperture_ferme`` c'e').
+    Nessuna soglia di strategia toccata: e' la condotta, non la decisione."""
+    if ctx is None or leg.role not in E.OPENING_ROLES:
+        return
+    motivo = str(motivo or "")[:120]
+    prima = ctx.aperture_ferme if isinstance(ctx.aperture_ferme, dict) else None
+    if prima is not None and prima.get("motivo") == motivo and prima.get("mode") == mode:
+        return
+    ctx.aperture_ferme = {"motivo": motivo, "mode": str(mode), "dal": float(now_ts)}
+    # kind ``skip`` (gia' dichiarato in UI), ``reason`` = la causa (lo stesso
+    # motivo del rifiuto, come il freno di sempre), marca ``aperture_ferme``
+    db.log("skip", {"leg": leg.ref, "role": leg.role, "reason": motivo,
+                    "aperture_ferme": True, "mode": mode, "critical": True,
+                              "nota": "apertura NON eseguita per una causa che non e' il "
+                                      "mercato: non si ripropone finche' la causa non cambia"},
+           event_id)
+    logger.critical("[mike] %s: aperture FERME (%s, %s): nessuna riproposizione finche' la "
+                    "causa non cambia", event_id, motivo, mode)
+
+
+def _causa_aperture_ferme(ferme: Dict[str, Any], mode: str) -> Optional[str]:
+    """La causa, riletta adesso (None = non c'e' piu'). Stesse funzioni che la
+    decidono al piazzamento: runner in paper, freno live, freno paper."""
+    motivo = str(ferme.get("motivo") or "")
+    if _nota_senza_runner(motivo):
+        return motivo if _porta_paper(appoggiata=False) is None else None
+    if mode == "live":
+        return X._live_brake()
+    return _freno_aperture_rest()
+
+
+def _aggiorna_aperture_ferme(db: Any, ctx: E.MatchCtx, mode: str, event_id: Any) -> None:
+    """Prima di ``decide``: se le aperture sono ferme, si rilegge la causa. Sparita
+    (o cambiato il modo della partita) -> si riprende, detto una volta."""
+    ferme = ctx.aperture_ferme if isinstance(ctx.aperture_ferme, dict) else None
+    if ferme is None:
+        return
+    if str(ferme.get("mode") or "") != str(mode):
+        causa = None
+    else:
+        try:
+            causa = _causa_aperture_ferme(ferme, mode)
+        except Exception as ex:  # noqa: BLE001 - causa non valutabile: restano ferme
+            logger.warning("[mike] causa delle aperture ferme non valutabile: %s", str(ex)[:120])
+            return
+    if causa is not None:
+        return
+    ctx.aperture_ferme = None
+    # kind ``state`` (gia' dichiarato in UI): lo stato resta, cambia il fermo
+    db.log("state", {"from": ctx.state, "to": ctx.state, "reason": "aperture_riprese",
+                     "motivo_prima": ferme.get("motivo"), "mode": mode,
+                     "nota": "la causa del fermo non c'e' piu': le aperture ripartono"},
+           event_id)
+    logger.warning("[mike] %s: aperture RIPRESE (prima: %s)", event_id, ferme.get("motivo"))
 
 
 def _freno_resting_paper(db: Any, leg: E.Leg, event_id: Any) -> bool:
@@ -2781,6 +3023,8 @@ def _result(code: str, message: str, **extra: Any) -> Dict[str, Any]:
 _REJECT_CODES = ("evento_non_seguito", "stato_terminale", "posizione_aperta", "stato_non_riprendibile",
                  "feed_assente", "snapshot_assente", "niente_da_chiudere", "feed_stantio",
                  "richiesta_ambigua",
+                 # 28/09 (cantiere J) - flusso prezzi interrotto: rifiuto ATTESO
+                 "flusso_interrotto",
                  # 25/09 — approvazione di un'uscita che non c'e' piu' o e' cambiata
                  "proposta_non_viva", "proposta_cambiata")
 
@@ -3065,11 +3309,34 @@ def _request_flatten(db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dic
         return _result("feed_assente",
                        "Quote non disponibili nel feed per questa partita: chiusura impossibile ora.")
     snap = F.snapshot_from_row(row, info, now=now.timestamp(), params=params,
-                              scanner_age_s=scanner_age)
+                              scanner_age_s=scanner_age, scanner_stato=_scanner_stato())
     if snap is None:
         return _result("snapshot_assente", "Fotografia del mercato non disponibile: riprova.")
+    # cantiere J (28/09): flusso prezzi interrotto -> lo si DICE con il suo nome
+    esito_flusso = F.flusso_esito(row, _scanner_stato(), now.timestamp())
+    if not esito_flusso.vivo:
+        # cantiere J2 (regola unica): la chiusura dell'utente prova il ripiego
+        # REST (lettura del book che Mike gia' usa; un clic, niente tetto)
+        books_rest = _books_ripiego_rest(market, info, esito_flusso.mercati, now.timestamp(),
+                                         con_tetto=False)
+        if not books_rest:
+            return _result("flusso_interrotto",
+                           "Flusso prezzi INTERROTTO su questa partita e book Betfair (REST) non "
+                           f"leggibile: chiudere ora userebbe prezzi vecchi ({esito_flusso.testo}). "
+                           "Riprova quando i prezzi tornano.")
+        snap = F.snapshot_from_row(row, info, now=now.timestamp(), params=params,
+                                  scanner_age_s=scanner_age, scanner_stato=_scanner_stato(),
+                                  books_rest=books_rest)
+        if snap is None:
+            return _result("snapshot_assente", "Fotografia del mercato non disponibile: riprova.")
+        db.log("ripiego_rest", {"fonte": F._flusso.FONTE_RIPIEGO_REST,
+                                             "reason": esito_flusso.motivo, "azione": kind,
+                                             "mercati": sorted(str(info.market_id(k))
+                                                               for k in books_rest)}, eid)
     # soglia d'ORDINE, non di lettura: qui si attraversa lo spread davvero.
-    if not snap.order_fresh:
+    # (col ripiego REST i prezzi sono quelli di Betfair adesso: la soglia vale
+    # per il feed)
+    if not snap.order_fresh and snap.fonte_prezzi != F._flusso.FONTE_RIPIEGO_REST:
         return _result("feed_stantio",
                        "Feed non aggiornato: chiudere ora userebbe prezzi vecchi. Riprova tra qualche secondo.")
     reconciling = E.has_unknown_orders(ctx)
@@ -3151,7 +3418,9 @@ def ferma_al_nuovo_avvio(db: Any = _real_db, now: Optional[datetime] = None) -> 
     try:
         return AA.ferma_al_nuovo_avvio(_GUARDIA_AVVIO, control=control,
                                        set_control=db.set_control, log=db.log,
-                                       now_iso=now.isoformat())
+                                       now_iso=now.isoformat(),
+                                       # 28/09 CANTIERE N: uscite MANUALI a ogni avvio nuovo
+                                       uscite_bot="mike")
     except Exception as ex:  # noqa: BLE001
         logger.critical("[mike] controllo d'avvio NON riuscito (%s): "
                         "nessuna apertura finche' non riesce.", str(ex)[:160])
@@ -3960,6 +4229,17 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                             payload=payload, wait_step_min=int(params.get("cover_wait_step_min", 5)),
                             ht_score=ht_score, empirical=empirical,
                             emp_min_n=int(params.get("loss_exit_emp_min_n", 200)))
+    # cantiere J (28/09): flusso prezzi fermo sulle linee di Mike -> nessuna
+    # decisione su quei prezzi (lo snapshot le toglie); il MOTIVO va
+    # nell'attivita' (una riga per motivo, stesso freno di ``feed_line_missing``)
+    esito_flusso = F.flusso_esito(row, _scanner_stato(), now_ts)
+    # cantiere J2 (28/09, regola unica): con una POSIZIONE aperta le linee ferme
+    # si leggono dal ripiego REST (col suo tetto) per chiudere/coprire/proteggere;
+    # le aperture restano bloccate (``order_fresh`` falso + ``execute_place``).
+    books_rest: Dict[str, Dict[str, Any]] = {}
+    posizione = bool(E.open_selections(ctx.legs))
+    if not esito_flusso.vivo and posizione and not dry:
+        books_rest = _books_ripiego_rest(market, info, esito_flusso.mercati, now_ts)
     snap = F.snapshot_from_row(row, info, now=now_ts, params=params, scanner_age_s=scanner_age,
                                hazard=live.get("hazard"), p4_model=live.get("p4_model"),
                                last_goal_ts=extra.get("last_goal_ts"),
@@ -3967,7 +4247,31 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                                pressure=float(live.get("pressure") or 1.0),
                                model_probs=live.get("model_probs"),
                                p_total_model=live.get("p_total_model"), p_total_emp=live.get("p_total_emp"),
-                               p_under35_cal=_p_under35_calibrata(dossier))
+                               p_under35_cal=_p_under35_calibrata(dossier),
+                               scanner_stato=_scanner_stato(),
+                               books_rest=books_rest or None)
+    if not esito_flusso.vivo:
+        _log_throttled(db, extra, params, now_ts, "flusso_interrotto",
+                       {"reason": esito_flusso.motivo, "testo": esito_flusso.testo,
+                        "mercati": list(esito_flusso.mercati), "state": ctx.state,
+                        "critical": posizione}, ev["event_id"])
+        if posizione and books_rest and _FLUSSO_RIPIEGO.dovuto(str(ev["event_id"]), now_ts):
+            db.log("ripiego_rest",
+                   {"fonte": F._flusso.FONTE_RIPIEGO_REST, "reason": esito_flusso.motivo,
+                    "mercati": sorted(str(info.market_id(k)) for k in books_rest),
+                    "state": ctx.state}, ev["event_id"])
+        elif posizione and not books_rest and not dry \
+                and _FLUSSO_CRITICO.dovuto(str(ev["event_id"]), now_ts):
+            db.log("flusso_interrotto_senza_rest", {
+                "critical": True, "reason": esito_flusso.motivo, "state": ctx.state,
+                "mercati": list(esito_flusso.mercati),
+                "esposizione_eur": _esposizione_mike(ctx),
+                "da_secondi": F._flusso.secondi_fermo((row or {}).get("payload"),
+                                                      _scanner_stato(), int(now_ts * 1000)),
+                "selezioni": [f"{m}|{s}" for (m, s) in E.open_selections(ctx.legs)],
+                "message": "flusso prezzi FERMO e book REST non leggibile: la posizione "
+                           "resta senza chiusura ne' copertura finche' un prezzo vivo non torna"},
+                   ev["event_id"])
     if snap is None:
         # payload senza ``open_date`` (o non leggibile): la partita smetterebbe di
         # essere decisa SENZA dire niente. Con una posizione aperta e' un allarme.
@@ -3987,7 +4291,8 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                    if snap.book(m, s) is None]
         if missing:
             _log_throttled(db, extra, params, now_ts, "feed_line_missing",
-                           {"reason": "linee assenti dal feed", "selections": missing,
+                           {"reason": ("flusso prezzi interrotto" if not esito_flusso.vivo
+                                       else "linee assenti dal feed"), "selections": missing,
                             "state": ctx.state, "critical": True}, ev["event_id"])
 
     # -- SOSPENSIONE E RIAPERTURA (ordine dell'utente, 16/09) ---------------------
@@ -4107,7 +4412,7 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                 continue
         execute_place(db=db, market=market, info=info, leg=leg, book=book,
                       mode=mode, params=params, now=now, dry=dry, minute=snap.minute,
-                      score=score_str, feed_fresh=snap.feed_fresh,
+                      score=score_str, feed_fresh=snap.feed_fresh, fonte_prezzi=snap.fonte_prezzi,
                       close_reason=ctx.close_reason, closes_trade_id=closes_id(leg),
                       ctx=ctx, approvazione_id=_id_approvazione(item.get("approvazione_id")))
         n_actions += 1
@@ -4118,6 +4423,9 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
     # motore la consuma (``uscita_eseguita_su_approvazione``), le gambe
     # d'uscita nate adesso portano la sua chiave. Solo notizia sulla riga.
     approvazione_prima = ctx.uscita_approvata if isinstance(ctx.uscita_approvata, dict) else None
+    # D1-quater (29/09): aperture ferme per una causa non di mercato -> si
+    # rilegge la causa; se non c'e' piu' si riparte (detto una volta).
+    _aggiorna_aperture_ferme(db, ctx, mode, ev["event_id"])
     d = E.decide(ctx, snap, params)
     approvazione_id = _approvazione_eseguita(approvazione_prima, d)
     # IL TETTO DELLE PARTITE, APPLICATO DOVE NASCONO I SOLDI (13/09).
@@ -4153,7 +4461,11 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
         if _is_resting_leg(leg, params):
             # lay appoggiata: resta 'pending' sul book (del runner in paper, di
             # Betfair in live) finche' non si abbina o scade
-            if not dry and not snap.feed_fresh:
+            if not dry and (not snap.feed_fresh or (
+                    snap.fonte_prezzi == F._flusso.FONTE_RIPIEGO_REST
+                    and leg.role in APERTURE_MIKE)):
+                # cantiere J2: col ripiego REST solo chiusure/coperture, mai
+                # un'apertura appoggiata.
                 # D1 (29/09): prezzi non vivi = nessun ordine, paper e live
                 # (stessa regola di ``execute_place``). Non e' un rifiuto del
                 # mercato: il motore ripropone quando il feed torna vivo.
@@ -4209,7 +4521,8 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
         # memoria prima di questa versione si esauriscono nel ciclo di sopra.
         execute_place(db=db, market=market, info=info, leg=leg, book=book, mode=mode, params=params,
                       now=now, dry=dry, minute=snap.minute, score=score_str,
-                      feed_fresh=snap.feed_fresh, close_reason=ctx.close_reason,
+                      feed_fresh=snap.feed_fresh, fonte_prezzi=snap.fonte_prezzi,
+                      close_reason=ctx.close_reason,
                       closes_trade_id=closes_id(leg), ctx=ctx,
                       approvazione_id=_chiave_gamba(approvazione_id, leg))
         n_actions += 1

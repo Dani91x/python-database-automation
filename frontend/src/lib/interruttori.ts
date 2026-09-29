@@ -40,7 +40,7 @@ import { activateSafe, stopSafe, updateSafeParams, type SafeBotParams } from '@/
 import { activateMike, stopMike, updateMikeParams, type MikeParams } from '@/lib/mike';
 import {
     activateTennisBotService, stopTennisBotService, updateTennisBotService,
-    type TennisBotKey,
+    setTennisBotUscite, type TennisBotKey,
 } from '@/lib/tennis';
 import { isBotTennis, BOT_TENNIS, BOT_LABEL, type Bot, type BotTennis } from '@/lib/controlRoom';
 import { svegliaBot } from '@/lib/localChannel';
@@ -1021,7 +1021,13 @@ export function creaInterruttori(
      */
     const cambiaUscite = async (id: InterruttoreId, automatiche: boolean) => {
         const i = interruttoreDi(id);
-        if (isBotTennis(i.bot)) throw new UsciteNonGestiteQui(i.etichetta);
+        if (isBotTennis(i.bot)) {
+            // 28/09 (CANTIERE N): i bot tennis hanno lo STESSO pulsante degli
+            // altri; la RPC owner-only scrive la colonna dell'interruttore
+            // (`tennis_bot_service_set_uscite`), il ponte la propaga al runner.
+            await setTennisBotUscite(i.bot as TennisBotKey, automatiche);
+            svegliaBot(i.bot, 'comando'); dopo(); return;
+        }
         if (i.bot === 'scalper') {
             await impostaUsciteScalper(automatiche);
             dopo(); return;
@@ -1128,6 +1134,28 @@ export function statoUscite(i: Interruttore, params: Record<string, unknown> | n
     }
     if (i.bot === 'mike') return { automatiche: usciteMikeDi(params) };
     return { automatiche: usciteSafeDi(params, String(i.strategia)) };
+}
+
+/**
+ * 28/09 (CANTIERE N) - le uscite di un BOT TENNIS: la colonna
+ * `tennis_bot_service_control.uscite_automatiche` (non sta nei `params`).
+ * `null`/assente = non letta (migrazione non applicata o riga assente):
+ * fail-closed, nessun pulsante. Le posizioni aperte (per "da X min") le
+ * dichiara il ponte in `stats.auto` solo a bot acceso.
+ */
+export function usciteBotTennis(
+    automatiche: boolean | null | undefined,
+    auto: { posizioniAperteManuali: number; posizioneApertaDal: string | null } | null | undefined,
+    nowMs: number,
+): StatoUscite {
+    if (typeof automatiche !== 'boolean') return { automatiche: null };
+    if (auto == null) return { automatiche };
+    const t = auto.posizioneApertaDal ? Date.parse(auto.posizioneApertaDal) : NaN;
+    return {
+        automatiche,
+        aperte: auto.posizioniAperteManuali,
+        daMin: Number.isFinite(t) ? Math.max(0, Math.floor((nowMs - t) / 60_000)) : null,
+    };
 }
 
 /** Le uscite di ogni interruttore di un elenco (come `importiInterruttori`). */

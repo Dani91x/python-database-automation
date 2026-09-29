@@ -1,0 +1,9 @@
+﻿m8_omega_senza_timeout: ROSSA 1 failed in 10.82s
+m9_scanner_senza_timeout: ROSSA 1 failed in 9.13s
+m10_cor_non_salvato: ROSSA 1 failed in 13.64s
+m11_reconcile_senza_cor: ROSSA 2 failed in 13.22s
+m12_memoria_perde_il_cor: ROSSA 1 failed in 10.75s
+m13_tennis_non_al_minimo: ROSSA 2 failed in 10.80s
+m14_chiusura_gonfiata: ROSSA 1 failed in 13.79s
+m15_banco_senza_cor: ROSSA 1 failed in 10.97s
+m16_cleared_senza_cor: ROSSA 1 failed in 8.19s

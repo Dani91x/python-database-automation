@@ -23,7 +23,7 @@ import pytest
 
 from Betfair.safe_strategy import bot_service as S
 
-from test_bot_service import NOW, FakeDB, FakeMarket, _feed_row
+from test_bot_service import NOW, FakeDB, FakeMarket, _feed_row, _poll_runner
 
 
 def _riga_parziale(db, *, mode="paper", sport="calcio", event_id="1.1"):
@@ -74,6 +74,9 @@ def test_riga_safe_chiusa_dal_suo_bot_sull_abbinato():
     assert c["side"] == "back" and c["mode"] == "paper" and c["origin"] == "manual"
     # L'ABBINATO (10 @ 6,0 chiuso a 5,0 = 12,00), mai il chiesto (16 -> 19,20)
     assert c["size"] == pytest.approx(12.0, abs=0.01), c["size"]
+    # CANTIERE P (28/09): chiusura paper = ordine sul runner; l'apertura passa a
+    # 'hedged' quando il poll (giro dopo) conferma l'abbinato
+    _poll_runner(db)
     assert db.get_trade(tid)["status"] == "hedged"
 
 

@@ -103,6 +103,7 @@ from types import SimpleNamespace
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ...backtest import chiusura_parziale as CP
+from ...backtest import uscite_manuali as UM
 from .. import certificazione as CERT
 
 logger = logging.getLogger(__name__)
@@ -130,6 +131,73 @@ SCENARIO_SNIPER = "sniper"
 SCENARIO_SNIPER_PAPER = "sniper-paper"
 SCENARIO_SNIPER_AUTO = "sniper-uscite-auto"
 SCENARI_SNIPER = (SCENARIO_SNIPER, SCENARIO_SNIPER_PAPER, SCENARIO_SNIPER_AUTO)
+
+# 28/09 (CANTIERE N3): gli scenari a uscite MANUALI (interruttore spento, il
+# default di produzione dopo ogni avvio). Tutti gli ALTRI scenari girano con
+# le uscite AUTOMATICHE accese e lo DICHIARANO nel referto (NOTA_USCITE_AUTO).
+SCENARI_USCITE_MANUALI: Tuple[str, ...] = UM.SCENARI
+NOTA_USCITE_AUTO = ("SCENARIO DICHIARATO: uscite automatiche accese, e' la "
+                    "condotta certificata (params `uscite_automatiche=True`, "
+                    "come li scrive l'interruttore della UI su AUTOMATICHE)")
+
+
+def uscite_automatiche_scenario(scenario: str) -> bool:
+    """Il valore di `uscite_automatiche` che lo scenario scrive nei params della
+    riga `scalper_control` (lo leggono `ScalperStrategy`/`SniperStrategy` e, a
+    caldo, `scalper_session.applica_uscite_automatiche`)."""
+    return scenario not in SCENARI_USCITE_MANUALI
+
+
+#: la chiave (solo del banco) con le posizioni candidate di un `sniper_green`
+CHIAVE_PREFISSI_GREEN = "_prefissi_banco"
+
+
+def prefissi_del_green(sn: Any) -> List[str]:
+    """Le posizioni dello sniper che, nell'istante di `sniper_green`, soddisfano
+    la condizione del verde (`sniper_bot`: chiusura non viva, abbinata, entrate
+    ancora presenti). Di norma una sola; piu' d'una solo se due verdi cadono
+    sullo stesso book (dichiarato: Z3 accetta la firma di una qualsiasi)."""
+    out: List[str] = []
+    for pos in list(dict(getattr(sn, "_pos", {}) or {}).values()):
+        close = getattr(pos, "close", None)
+        if close is None or not getattr(pos, "entries", None):
+            continue
+        try:
+            viva = bool(sn._has_live(close))
+        except Exception:  # noqa: BLE001 - finto senza _has_live: non vivo
+            viva = False
+        if viva or float(getattr(close, "size_matched", 0.0) or 0.0) <= 0:
+            continue
+        out.append(sn._prefisso_uscite(pos))
+    return out
+
+
+def z3_verdi_senza_la_loro_firma(eventi: List[Tuple[str, Dict[str, Any]]]) -> List[str]:
+    """Z3 per IDENTITA' (N3, reperto del coordinatore): ogni `sniper_green` a
+    uscite manuali deve avere la SUA `uscita_eseguita_su_approvazione`: stessa
+    chiave (la sua posizione + `target`), emessa PRIMA del verde e usata UNA
+    volta sola. Un verde senza la sua firma e una firma d'altra posizione non
+    si compensano mai. Torna la descrizione di ogni verde abusivo."""
+    libere: List[str] = []
+    abusivi: List[str] = []
+    for n, (k, p) in enumerate(eventi):
+        if k == "uscita_eseguita_su_approvazione":
+            libere.append(str(p.get("chiave") or ""))
+        elif k == "sniper_green":
+            cand = [str(x) + "target" for x in (p.get(CHIAVE_PREFISSI_GREEN) or [])]
+            presa = next((c for c in libere if c in cand), None)
+            if presa is None:
+                abusivi.append("verde #%d su %s senza la sua firma (firme libere: %s)"
+                               % (n, cand or "posizione ignota", libere or "nessuna"))
+            else:
+                libere.remove(presa)
+    return abusivi
+
+
+def sniper_acceso(scenario: str) -> bool:
+    """Gli scenari con lo SNIPER acceso: i `sniper*` e quelli a uscite manuali
+    (maker + sniper nella stessa sessione, come in produzione dal 25/09)."""
+    return scenario in SCENARI_SNIPER or scenario in SCENARI_USCITE_MANUALI
 
 SCENARI_DESCRITTI: Dict[str, str] = {
     "base": ("come gira in produzione, sul percorso degli ordini VERI: il control "
@@ -167,16 +235,22 @@ SCENARI_DESCRITTI: Dict[str, str] = {
     # `.scores.jsonl` (gli stessi `score_home/score_away/minute` che il runner
     # scrive in `live_now`) con la funzione di produzione
     # `scalper_session.applica_linea_sniper` alla stessa cadenza (15 s di
-    # mercato). Interruttore uscite: quello di produzione (spento = manuali).
+    # mercato). N3 (28/09): interruttore uscite ACCESO e dichiarato, come in
+    # tutti gli scenari esistenti; le uscite manuali stanno in `uscite-manuali`.
     SCENARIO_SNIPER: ("come `base` (LIVE, dry_run=False) con lo SNIPER acceso "
-                      "(`sniper_mode`, stake 10) e le uscite come nascono in "
-                      "produzione (manuali): maker + sniper nella stessa "
+                      "(`sniper_mode`, stake 10) e le uscite AUTOMATICHE "
+                      "dichiarate: maker + sniper nella stessa "
                       "sessione fino a KO+130'"),
     SCENARIO_SNIPER_PAPER: ("come `sniper` con dry_run=True: client paper, "
                             "stessa sessione (paper = live)"),
     SCENARIO_SNIPER_AUTO: ("come `sniper` con le uscite AUTOMATICHE accese "
                            "(interruttore della sessione): lo sniper prende "
                            "profitto da solo"),
+    # N3 (28/09): le uscite MANUALI, maker + sniper (come `sniper`, LIVE). Le
+    # firme passano da `params.uscite_approvate` della riga, rilette dalla
+    # sessione VERA al battito (`uscite_proposte.applica_firme`).
+    UM.SCENARIO_MANUALI: "come `sniper`, ma " + UM.DESCRIZIONE_MANUALI,
+    UM.SCENARIO_FIRMATE: "come `sniper`, ma " + UM.DESCRIZIONE_FIRMATE,
 }
 
 
@@ -197,11 +271,11 @@ def control_della_ui(event_id: str, scenario: str) -> Dict[str, Any]:
     }
     if scenario == "senza-missione":
         params["one_green_per_phase"] = False
-    if scenario in SCENARI_SNIPER:
+    if sniper_acceso(scenario):
         # 28/09: lo sniper acceso (il default di produzione dal 25/09)
         params["sniper_mode"] = True
-        if scenario == SCENARIO_SNIPER_AUTO:
-            params["uscite_automatiche"] = True
+    # N3 (28/09): l'interruttore delle uscite, sempre SCRITTO e DICHIARATO
+    params["uscite_automatiche"] = uscite_automatiche_scenario(scenario)
     return {
         "event_id": str(event_id), "status": "requested", "mode": "maker",
         "dry_run": scenario in ("paper", SCENARIO_SNIPER_PAPER), "stake": 25,
@@ -981,6 +1055,9 @@ class _Banco:
         self._linea_ms: Optional[int] = None
         self.sniper_ultimo: Any = None
         self.sniper_ordini_visti: set = set()
+        # N3 (28/09): l'osservatore delle uscite manuali (None fuori da
+        # `uscite-manuali*`)
+        self.osservatore_um: Optional[Any] = None
 
     # ------------------------------------------------------------ sessioni
     def strategia_corrente(self) -> Any:
@@ -1002,10 +1079,18 @@ class _Banco:
             vero = getattr(s, "event_sink", None)
             att, ora = self.attivita_sniper, self.orologio.ora_ms
 
-            def _tee(kind: str, payload: Dict[str, Any], _v: Any = vero) -> None:
+            def _tee(kind: str, payload: Dict[str, Any], _v: Any = vero,
+                     _s: Any = s) -> None:
                 # SOLO il tee dell'event_sink (sola lettura): lo sniper non ha
                 # gli slot del maker (`_on_cycle_closed` e' del maker)
-                att.append((str(kind), dict(payload or {}), ora()))
+                copia = dict(payload or {})
+                if kind == "sniper_green":
+                    # N3 (Z3 per IDENTITA'): la posizione del green, letta
+                    # nell'istante dell'emissione (entrate e chiusura ancora
+                    # al loro posto) con la funzione di produzione
+                    # `_prefisso_uscite`. Solo nella copia del banco.
+                    copia[CHIAVE_PREFISSI_GREEN] = prefissi_del_green(_s)
+                att.append((str(kind), copia, ora()))
                 if _v is not None:
                     _v(kind, payload)
             s.event_sink = _tee
@@ -1267,9 +1352,9 @@ class _Banco:
            |se vince - se perde| entro 0,02 o entro il residuo che ha accettato
            e dichiarato), oppure la sessione lo ha DICHIARATO non piatto;
         Z3 a uscite MANUALI (default) lo sniper non prende MAI profitto da
-           solo: nessun `sniper_green` (la presa di profitto e' una proposta);
-        Z4 a uscite manuali ogni proposta porta le chiavi dello scalper
-           (`motivo, selection_id, entry_side, lato, prezzo, size, bloccabile`)."""
+           solo: nessun `sniper_green` oltre quelli FIRMATI (N3);
+        Z4 a uscite manuali ogni proposta porta le chiavi comuni dei bot di
+           flusso (`uscite_manuali.CHIAVI_PROPOSTA`, dal 29/09)."""
         sn = self.sniper_ultimo
         if sn is None:
             return
@@ -1301,19 +1386,24 @@ class _Banco:
         eventi = [(k, p) for k, p, _t in self.attivita_sniper]
         if fine and manuali:
             sol["Z3"] = sol.get("Z3", 0) + 1
-            if any(k == "sniper_green" for k, _p in eventi):
+            # N3 (28/09): un green FIRMATO dall'utente e' consentito (scenario
+            # `uscite-manuali-firmate`): da solo, mai
+            # (per IDENTITA', mai per conteggio: vedi z3_verdi_senza_la_loro_firma)
+            for det in z3_verdi_senza_la_loro_firma(eventi):
                 self.ref.violazioni.append(CERT.Violazione(
                     "Z3", "a uscite manuali lo sniper non prende profitto da solo",
-                    "sniper_green con l'interruttore spento", quando))
-            chiavi = {"motivo", "selection_id", "entry_side", "lato", "prezzo", "size",
-                      "bloccabile"}
+                    det, quando))
+            # 29/09 (CANTIERE N): le chiavi comuni di ogni proposta
+            # (`uscite_proposte.proposta_di`), non piu' quelle vecchie dello scalper
+            # tutte presenti E valorizzate (`uscite_manuali.difetti_proposta`)
             for k, p in eventi:
                 if k == "uscita_proposta":
                     sol["Z4"] = sol.get("Z4", 0) + 1
-                    if set(p) != chiavi:
+                    difetti = UM.difetti_proposta(p)
+                    if difetti:
                         self.ref.violazioni.append(CERT.Violazione(
-                            "Z4", "proposta con le chiavi dello scalper",
-                            "chiavi %s" % sorted(p), quando))
+                            "Z4", "proposta con tutti i numeri obbligatori",
+                            "%s: %s" % (p.get("chiave"), ", ".join(difetti)), quando))
         if fine:
             sol["Z2"] = sol.get("Z2", 0) + 1
             dichiarato = any(CERT.messaggio_dichiara_non_flat(m) for m in self.db.messaggi())
@@ -1322,7 +1412,62 @@ class _Banco:
                     "Z2", "a fine sessione lo sniper e' piatto o dichiarato",
                     "sniper NON piatto e nessuna dichiarazione della sessione", quando))
 
+    def strategie_vive(self) -> List[Any]:
+        """Maker e sniper della sessione viva (quelli con `cancello_uscite`)."""
+        out: List[Any] = []
+        s = self.strategia_corrente()
+        if s is not None:
+            out.append(s)
+        if self.sniper_ultimo is not None:
+            out.append(self.sniper_ultimo)
+        return out
+
+    def ruolo_ordine(self, ordine: Any) -> Optional[str]:
+        """N3 UF2: il RUOLO di un ordine dalla credenza VERA del maker
+        (`certificazione.credenze`: ingressi e uscite dello slot)."""
+        for c in CERT.credenze(self.strategia_corrente()):
+            if any(x is ordine for x in (c.get("ingressi") or ())):
+                return "ingresso"
+            if any(x is ordine for x in (c.get("uscite") or ())):
+                return "uscita"
+        return None
+
+    def resto_dichiarato(self, s: Any, sel: Any, lato: str, resto: float) -> bool:
+        """N3 UF2: maker e sniper scrivono `min_bet_skip` (selection_id, side,
+        size) per il resto che NON piazzano (regola esistente, < 0,05)."""
+        for k, p, _t in list(self.attivita) + list(self.attivita_sniper):
+            if k != "min_bet_skip":
+                continue
+            try:
+                if (int(p.get("selection_id")) == int(sel)
+                        and str(p.get("side") or "").upper() == str(lato).upper()
+                        and abs(float(p.get("size")) - float(resto)) < 1e-9):
+                    return True
+            except (TypeError, ValueError):
+                continue
+        return False
+
+    def piatto_a_fine(self) -> Optional[str]:
+        """N3 (UM3b): a fine sessione, a uscite manuali, maker e sniper sono
+        piatti (slot IDLE/DONE, `is_flat` dello sniper) o la sessione lo ha
+        DICHIARATO: vuol dire che le protezioni (force-flat di fine finestra,
+        freno, tetti) sono scattate da sole."""
+        if any(CERT.messaggio_dichiara_non_flat(m) for m in self.db.messaggi()):
+            return None
+        difetti = []
+        aperti = [c for c in CERT.credenze(self.strategia_corrente())
+                  if str(c.get("stato") or "") not in CERT.STATI_SLOT_CHIUSI]
+        if aperti:
+            difetti.append("maker con %d slot aperti (%s)" % (
+                len(aperti), ", ".join(sorted({str(c.get("stato")) for c in aperti}))))
+        sn = self.sniper_ultimo
+        if sn is not None and not sn.is_flat():
+            difetti.append("sniper non piatto")
+        return "; ".join(difetti) or None
+
     def giro(self, ms: int, quando: str, *, fine: bool = False) -> None:
+        if self.osservatore_um is not None:
+            self.osservatore_um.giro(ms, fine=fine)
         if self.sniper_ultimo is not None:
             self.controlli_sniper(ms, quando, fine)
         if not self.sessioni and not fine:
@@ -1694,11 +1839,13 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
     ref.note.append("control della UI: mode=%s dry_run=%s stake=%s params=%s"
                     % (control["mode"], control["dry_run"], control["stake"],
                        sorted(control["params"].items())))
+    if control["params"].get("uscite_automatiche") is True:
+        ref.note.append(NOTA_USCITE_AUTO)
     ref.note.append("limiti dichiarati: catalogo sintetizzato dai marketDefinition; "
                     "scanner non usato (lo scalper legge il book); orologio di "
                     "mercato per `time.time`; settlement non raggiunto (fine vita "
                     "della sessione); theta fuori perimetro%s"
-                    % ("" if scenario in SCENARI_SNIPER else "; sniper spento (scenari "
+                    % ("" if sniper_acceso(scenario) else "; sniper spento (scenari "
                        "`sniper*` per lo sniper)"))
 
     orologio = _Orologio()
@@ -1708,7 +1855,7 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
         # del mercato (le scritture d'avvio portano quell'istante)
         orologio.ora_s = primo / 1000.0
     db = _DbFinto(orologio, control, follow)
-    if scenario in SCENARI_SNIPER:
+    if sniper_acceso(scenario):
         db.punteggi_live_now = righe_live_now(data_dir, event_id)
         ref.note.append("SNIPER: righe live_now dal sidecar %d (linea Under (gol+1).5 "
                         "con `scalper_session.applica_linea_sniper` ogni %d s di "
@@ -1757,8 +1904,35 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
             guasto_cp = CP.GuastoChiusuraParziale(ruolo=_ruolo)
             banco.motore.guasto_chiusure = guasto_cp
             banco.sorveglianza_cp = CP.Sorveglianza(guasto_cp)
+        if scenario in UM.SCENARI:
+            def _firma(chiave: str, istante: str) -> None:
+                # la RPC `scalper_approva_uscita`: {chiave: now()} unito alle
+                # firme gia' presenti in params.uscite_approvate
+                # (params sostituiti interi: la sessione li legge da un altro
+                # thread e un dizionario non cambia mai sotto la sua lettura)
+                params = dict(db.control.get("params") or {})
+                firme = dict(params.get("uscite_approvate") or {})
+                firme[str(chiave)] = istante
+                params["uscite_approvate"] = firme
+                db.control["params"] = params
+
+            banco.osservatore_um = UM.Osservatore(
+                scenario, strategie=banco.strategie_vive,
+                ordini_di=lambda s: banco.ordini_di([s]),
+                firma=_firma if scenario == UM.SCENARIO_FIRMATE else None,
+                piatto_a_fine=banco.piatto_a_fine,
+                ruolo=banco.ruolo_ordine,
+                resto_non_piazzabile=banco.resto_dichiarato)
+            ref.note.append("USCITE MANUALI: interruttore spento; %s"
+                            % ("il banco firma ogni proposta dopo %d s di mercato "
+                               "(params.uscite_approvate, riletta dalla sessione al "
+                               "battito)" % int(UM.FIRMA_DOPO_S)
+                               if scenario == UM.SCENARIO_FIRMATE else "nessuna firma"))
         try:
-            with _iniezioni(banco, orologio, kill_file):
+            with ExitStack() as pila:
+                if banco.osservatore_um is not None:
+                    pila.enter_context(banco.osservatore_um.attivo())
+                pila.enter_context(_iniezioni(banco, orologio, kill_file))
                 esiti["prima"] = _una_sessione(SS, event_id, banco)
                 if scenario == "riavvio" and esiti["prima"] == "ucciso":
                     _riarma(SS, event_id, banco, esiti)
@@ -1851,6 +2025,10 @@ def _chiudi_referto(ref: CERT.Referto, banco: _Banco, rifiuti: Any, ritardi: Any
                     % (mot.book_in_ritardo, mot.lapse_al_fischio,
                        mot.lapse_alla_sospensione, len(banco.righe_specchio)))
     ref.note.append("fasi viste: %s" % ", ".join(banco.fasi_viste))
+    ref.note.append("uscite EFFETTIVE delle strategie a fine sessione: %s"
+                    % ("AUTOMATICHE" if viste and all(
+                        getattr(s, "uscite_automatiche", False) is True for s in viste) else
+                       ("MANUALI" if viste else "nessuna strategia")))
     if banco.sniper_ultimo is not None:
         sn = banco.sniper_ultimo
         eventi: Dict[str, int] = {}
@@ -1882,5 +2060,16 @@ def _chiudi_referto(ref: CERT.Referto, banco: _Banco, rifiuti: Any, ritardi: Any
             "BANCO-PONTE", "un errore del replay dentro il giro di un book e' un "
             "guasto del banco, mai un OK muto",
             "%d errori, primo: %s" % (len(banco.errori_ponte), banco.errori_ponte[0])))
+    oss = banco.osservatore_um
+    if oss is not None:
+        for cod, n in oss.sollecitati.items():
+            ref.sollecitati[cod] = ref.sollecitati.get(cod, 0) + n
+        for cod, reg, det, quando in oss.violazioni:
+            ref.violazioni.append(CERT.Violazione(cod, reg, det, quando))
+        ref.note.append(oss.riepilogo())
+        mai = [c for c, _r in UM.elenco_controlli(oss.scenario) if not oss.sollecitati.get(c)]
+        if mai:
+            ref.note.append("USCITE MANUALI: controlli MAI sollecitati (non lo so): %s"
+                            % ", ".join(mai))
     if not ref.decisioni:
         ref.note.append("la strategia non ha MAI deciso: il referto dice 'non lo so'")

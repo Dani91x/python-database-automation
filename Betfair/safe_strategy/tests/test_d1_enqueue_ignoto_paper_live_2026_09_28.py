@@ -223,8 +223,11 @@ def test_paper_se_la_richiesta_non_esiste_si_chiude_come_NON_eseguito():
 @pytest.mark.parametrize("mode", ["paper", "live"])
 def test_accodamento_CERTAMENTE_mancato_ripiega_uguale_nei_due_modi(mode):
     """Cintura: se la ricerca per ref RISPONDE «non c'e'», l'accodamento non e'
-    avvenuto e il ripiego di sempre resta (paper: fill sul libro; live: REST).
-    Un solo esito in entrambi i modi."""
+    avvenuto e il ripiego di sempre resta. Un solo esito in entrambi i modi.
+
+    CANTIERE P (28/09): il ripiego PAPER era il fill sul libro «di casa»; non
+    esiste piu' (un ordine paper vive solo sul runner). Paper: 'error'
+    ``paper_senza_runner:enqueue_failed`` (nessun ordine). Live: REST FOK."""
     db = DbRisposteRotte(mode_runner=mode.upper())
 
     def enqueue_perso(payload):
@@ -232,6 +235,9 @@ def test_accodamento_CERTAMENTE_mancato_ripiega_uguale_nei_due_modi(mode):
     db.enqueue_live_order = enqueue_perso
     mk = MercatoCheConta()
     tid, out = _piazza(db, mk, mode)
-    assert out.status == "open"
-    assert len(mk.piazzati) == (1 if mode == "live" else 0)
+    if mode == "live":
+        assert out.status == "open" and len(mk.piazzati) == 1
+    else:
+        assert out.status == "error" and mk.piazzati == []
+        assert out.fill_note == "paper_senza_runner:enqueue_failed"
     assert "flumine_client_ref" not in (db.get_trade(tid)["meta"] or {})

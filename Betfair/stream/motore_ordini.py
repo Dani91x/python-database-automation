@@ -541,6 +541,24 @@ def riga_specchio_da_esito(result: Dict[str, Any], *, cust_ref: str, rid: int,
     return out
 
 
+#: stati flumine in cui l'ordine non e' piu' a mercato (``OrderStatus``)
+_STATI_TERMINALI_ORDINE = frozenset({"EXECUTION_COMPLETE", "EXPIRED", "VIOLATION"})
+
+
+def _ordine_terminale(ordine: Any) -> bool:
+    """D1-ter: l'ordine flumine e' confermato morto (letto dallo stato, con la
+    lettura difensiva del nucleo place-and-trim)."""
+    from .trading.submin import _status_name
+
+    return _status_name(ordine) in _STATI_TERMINALI_ORDINE
+
+
+def _ordine_eseguibile(ordine: Any) -> bool:
+    from .trading.submin import _is_executable
+
+    return _is_executable(ordine)
+
+
 # ---------------------------------------------------------------------------
 # Il motore
 # ---------------------------------------------------------------------------
@@ -983,10 +1001,15 @@ class MotoreOrdini:
             except Exception:  # noqa: BLE001 - minimo ignoto: fail-closed
                 raise Rifiuto(M_SUBMIN, "minimo di giurisdizione non determinabile")
             if float(riga["size"]) < minimo - 1e-9:
+                # D1-ter (28/09, caso B): un FILL_OR_KILL sotto il minimo era
+                # RIFIUTATO qui, mentre il live REST (``place_submin_live``,
+                # ``fill_or_kill=True``) lo esegue: parcheggio, taglio, rimpiazzo
+                # alla quota target e residuo NON abbinato RITIRATO a fine
+                # sequenza. Ora la stessa sequenza (la macchina parcheggia sempre
+                # senza FOK: ``FlumineSubminOps.place``) e il ritiro del residuo
+                # al passo ``done`` (``_ritira_residuo_fok``), in paper E in live.
                 if riga.get("time_in_force") == "FILL_OR_KILL":
-                    raise Rifiuto(M_SUBMIN, "FILL_OR_KILL sotto il minimo: il "
-                                            "place-and-trim parcheggia l'ordine, non "
-                                            "puo' essere un fill-or-kill")
+                    piano["submin_fok"] = True
                 from .trading.submin import start_submin
                 try:
                     start_submin(side=str(riga["side"]).lower(),
@@ -1230,7 +1253,7 @@ class MotoreOrdini:
         stato = {"attore": attore, "ref": ref, "mode": piano["mode"], "riga": riga,
                  "differito": differito, "captured": lsb.captured,
                  "strategy_ref": piano["strategy_ref"], "t0": time.monotonic(),
-                 "step": None}
+                 "step": None, "fok": bool(piano.get("submin_fok"))}
         self._submin[cust] = stato
         with self._lock_seq:
             self._emetti(attore, ref, riga_specchio_da_esito(
@@ -1252,6 +1275,15 @@ class MotoreOrdini:
             mode = s["mode"]
             lsb = LOW._LocalSb(s["differito"])
             lsb.captured = s["captured"]
+            if s.get("ritiro_pendente"):
+                # D1-ter (M1): sequenza gia' abbandonata, ritiro non ancora
+                # confermato: si RITENTA a ogni giro, la sequenza non avanza.
+                self._abbandona_submin(cust, lsb, str(s["ritiro_pendente"]))
+                continue
+            if s.get("ritiro_fok"):
+                # D1-ter (caso B): sequenza finita, residuo del FOK da ritirare
+                self._ritira_residuo_fok(cust)
+                continue
             if time.monotonic() - s["t0"] > LOW._submin_timeout_sec():
                 self._abbandona_submin(cust, lsb, "timeout della sequenza place-and-trim")
                 continue
@@ -1265,14 +1297,18 @@ class MotoreOrdini:
                         LOW._strategy_for_mode(self._strategie, mode),
                         client=LOW._client_for_mode(self._flumine, mode))
             except Exception as ex:  # noqa: BLE001 - come il worker: riga in errore
-                try:
-                    LOW._write_error(lsb, riga["id"], riga, mode, ex)
-                except Exception:  # noqa: BLE001
-                    pass
-                self._chiudi_submin(cust, False, str(ex))
-                continue
+                fallito: Optional[Exception] = ex
+            else:
+                fallito = None
             finally:
                 self._pulisci_contesto()
+            if fallito is not None:
+                # D1-ter (28/09): un passo fallito lascia l'ordine FORSE vivo
+                # (parcheggio o residuo): stessa regola del timeout, ritiro
+                # pendente e terminale ``errore`` solo a ordine confermato morto
+                # (``_abbandona_submin`` scrive la riga in errore a quel punto).
+                self._abbandona_submin(cust, lsb, str(fallito))
+                continue
             self._dopo_passo_submin(cust)
         return n
 
@@ -1292,26 +1328,93 @@ class MotoreOrdini:
                         result, cust_ref=cust, rid=s["riga"]["id"], mode=s["mode"],
                         riga=s["riga"]), fase, extra={"submin_step": step})
         if step == "done":
-            self._chiudi_submin(cust, True, None)
+            if s.get("fok"):
+                s["ritiro_fok"] = True
+                self._ritira_residuo_fok(cust)
+            else:
+                self._chiudi_submin(cust, True, None)
         elif step == "aborted":
             self._chiudi_submin(cust, False, result.get("error") or result.get("detail"))
 
-    def _abbandona_submin(self, cust: str, lsb: Any, motivo: str) -> None:
-        """Timeout: il residuo si RITIRA (mai un parcheggio lasciato a mercato
-        senza dirlo), poi errore esplicito."""
-        LOW = self._low  # 25/09: l'esecutore dello sport (calcio: live_order_worker)
-        s = self._submin[cust]
+    def _ritira_residuo_fok(self, cust: str) -> None:
+        """D1-ter (28/09, caso B) - FILL_OR_KILL sotto il minimo: finito il
+        rimpiazzo, la parte NON abbinata si RITIRA (come ``place_submin_live``
+        con ``fill_or_kill=True``: «o si abbina, o non esiste»). Il terminale
+        arriva SOLO a ordine confermato morto (stato terminale di flumine); se
+        l'annullo solleva o l'ordine non e' ancora annullabile si ritenta al
+        giro dopo. L'evento terminale e' la riga dello specchio dell'ordine
+        (abbinato / annullato), come per ogni ordine del canale."""
+        LOW = self._low
+        s = self._submin.get(cust)
+        if s is None:
+            return
         result = s["captured"].get("result") or {}
+        morto = False
         try:
             ordine = LOW._find_submin_order(
                 self._flumine, s["riga"].get("market_id"), result.get("submin_order_id"),
                 result.get("bet_id"), cust_ref=cust)
-            if ordine is not None:
+            if ordine is None or _ordine_terminale(ordine):
+                morto = True
+            elif getattr(ordine, "bet_id", None) and _ordine_eseguibile(ordine):
                 with LOW.LUCCHETTO_ORDINI:
                     LOW._resolve_market(self._flumine, s["riga"].get("market_id")) \
                         .cancel_order(ordine)
-        except Exception:  # noqa: BLE001 - ritiro best-effort, l'errore si dice sotto
-            logger.exception("[motore] place-and-trim %s: ritiro del residuo KO", s["ref"])
+                morto = _ordine_terminale(ordine)
+        except Exception:  # noqa: BLE001 - si ritenta al giro dopo, mai lasciato a riposo
+            logger.exception("[motore] place-and-trim FOK %s: ritiro del residuo KO, "
+                             "si ritenta", s["ref"])
+        if morto:
+            self._chiudi_submin(cust, True, None)
+
+    def _abbandona_submin(self, cust: str, lsb: Any, motivo: str) -> None:
+        """Timeout: il residuo si RITIRA (mai un parcheggio lasciato a mercato
+        senza dirlo), poi errore esplicito.
+
+        D1-ter (28/09, M1) - IL TERMINALE SOLO A ORDINE CONFERMATO MORTO.
+        Prima: se l'ordine non aveva ancora il ``bet_id`` (pacchetto ancora nel
+        bet delay) ``cancel_order`` sollevava ``OrderUpdateError``, l'eccezione
+        era presa e il motore emetteva comunque il terminale ``errore`` e
+        abbandonava: il parcheggio da 2,00 EUR poteva nascere DOPO e restare a
+        mercato senza nessuno che lo seguisse. Ora la sequenza resta in
+        «ritiro pendente» (``s["ritiro_pendente"]``) e ``avanza_submin`` ritenta
+        il ritiro a ogni giro finche' l'ordine e' TERMINALE (o non esiste nel
+        blotter): solo allora ``errore`` + chiusura. Stessa strada paper e live."""
+        LOW = self._low  # 25/09: l'esecutore dello sport (calcio: live_order_worker)
+        s = self._submin[cust]
+        result = s["captured"].get("result") or {}
+        if not s.get("ritiro_pendente"):
+            s["ritiro_pendente"] = motivo
+            s["ritiro_t0"] = time.monotonic()
+        morto = False
+        try:
+            ordine = LOW._find_submin_order(
+                self._flumine, s["riga"].get("market_id"), result.get("submin_order_id"),
+                result.get("bet_id"), cust_ref=cust)
+            if ordine is None:
+                # nessun ordine nel blotter di questo processo: niente da ritirare
+                morto = True
+            elif _ordine_terminale(ordine):
+                morto = True
+            elif getattr(ordine, "bet_id", None) and _ordine_eseguibile(ordine):
+                # bet_id noto e ordine vivo: si chiede il ritiro (asincrono in
+                # flumine); la conferma e' lo stato terminale a un giro successivo
+                with LOW.LUCCHETTO_ORDINI:
+                    LOW._resolve_market(self._flumine, s["riga"].get("market_id")) \
+                        .cancel_order(ordine)
+                morto = _ordine_terminale(ordine)
+            # senza bet_id (o con un annullo gia' in corso): si aspetta il giro dopo
+        except Exception:  # noqa: BLE001 - ritiro non riuscito: si RITENTA, mai abbandonare
+            logger.exception("[motore] place-and-trim %s: ritiro del residuo KO, si ritenta",
+                             s["ref"])
+        if not morto:
+            ora = time.monotonic()
+            if ora - float(s.get("ritiro_log_t") or 0.0) >= 10.0:
+                s["ritiro_log_t"] = ora
+                logger.critical("[motore] place-and-trim %s: ritiro PENDENTE da %.1f s "
+                                "(ordine non ancora confermato morto): nessun terminale",
+                                s["ref"], ora - float(s["ritiro_t0"]))
+            return
         try:
             LOW._write_error(lsb, s["riga"]["id"], s["riga"], s["mode"], ValueError(motivo))
         except Exception:  # noqa: BLE001

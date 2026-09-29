@@ -74,8 +74,26 @@ function numero(v: unknown): number | null {
     return typeof v === 'number' && Number.isFinite(v) ? v : null;
 }
 
+/**
+ * 28/09 (cantiere J): `wait` = `flusso_interrotto:<motivo>` quando il FLUSSO
+ * dei prezzi della partita è fermo (`bot_service._stale_reason`). Il motivo
+ * viene da `Betfair/stream/flusso_prezzi.py`.
+ */
+const FLUSSO_IT: Record<string, string> = {
+    flusso_interrotto: 'nessun dato ricevuto da Betfair oltre la soglia',
+    mai_ricevuto: 'prezzi mai ricevuti su questo mercato',
+    senza_prezzi: 'ultimo book senza prezzi (mercato vuoto o sospeso)',
+    stream_latente: 'stream Betfair in latenza (503)',
+    scanner_bloccato: 'giro dello scanner fermo',
+    mercato_fermo: 'il mercato della posizione ha il flusso fermo',
+};
+
 function waitLabel(wait: string | null): string {
     if (!wait) return 'motivo non dichiarato';
+    if (wait.startsWith('flusso_interrotto:')) {
+        const motivo = wait.slice('flusso_interrotto:'.length);
+        return `FLUSSO PREZZI INTERROTTO (${FLUSSO_IT[motivo] ?? motivo}): nessuna chiusura a mercato su prezzi vecchi`;
+    }
     return WAIT_IT[wait] ?? wait;
 }
 function blindLabel(reason: string | null): string {

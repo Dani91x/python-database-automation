@@ -32,6 +32,7 @@ from Betfair.stream import local_channel as _lc
 from Betfair.stream import sveglia_canale as _SV
 from Betfair.stream.trading import stato_mercato as _SM
 from Betfair.stream.scores import scan_feed as _scan_feed
+from Betfair.stream import flusso_prezzi as _flusso
 from Betfair.stream.scores.betfair_inplay import parse_score_dict as _parse_score_dict
 
 logger = logging.getLogger("omega.service")
@@ -266,6 +267,8 @@ def svuota_le_cache() -> None:
     _ULTIMI_PARAMS = None
     _ULTIME_MISSIONI_ATTIVE = 0
     _ATTESE_MERCATO.svuota()  # D2 (24/09)
+    _FLUSSO_CRITICO_OMEGA.azzera()  # cantiere J2 (28/09)
+    _FLUSSO_RIPIEGO_OMEGA.azzera()
     _CACHE_FEED_RIGHE.clear()
     _CACHE_FEED_LETTO_A.clear()
     _CACHE_FEED_CHIESTO_A.clear()
@@ -930,6 +933,35 @@ def _feed_row(event_id: str, hard_max_age: Optional[float] = None) -> "tuple[Opt
         return None, None
 
 
+_ULTIMO_STATO_SCANNER_OMEGA: dict = {}
+
+
+def _flusso_feed(event_id: str) -> "_flusso.Esito":
+    """CANTIERE J (28/09): i PREZZI della riga del feed di questa partita sono
+    VIVI? (MATCH_ODDS, Correct Score e Half Time della riga; giro dello scanner
+    non bloccato). Il 26/09 la riga veniva riscritta per i cambi di punteggio con
+    quote ferme da ore: l'eta' della riga non lo poteva dire. Mai solleva: un
+    guasto qui = non noto (restano i veti di eta' di sempre)."""
+    try:
+        cache = _scan_feed.shared_cache()
+        row = _feed_riga_cached(cache, str(event_id))
+        payload = row.get("payload") if isinstance(row, dict) else None
+        if not isinstance(payload, dict):
+            return _flusso.NON_NOTO
+        mercati = [payload.get("mo_market_id")]
+        for k in ("cs", "ht"):
+            blk = payload.get(k)
+            if isinstance(blk, dict):
+                mercati.append(blk.get("market_id"))
+        stato_fn = getattr(cache, "scanner_stato", None)
+        stato = stato_fn() if callable(stato_fn) else None
+        _ULTIMO_STATO_SCANNER_OMEGA["v"] = stato
+        return _flusso.valuta(payload, stato, None, [m for m in mercati if m])
+    except Exception as ex:  # noqa: BLE001 - il feed non deve mai rompere il ciclo
+        logger.debug("[omega] flusso KO per %s: %s", event_id, str(ex)[:120])
+        return _flusso.NON_NOTO
+
+
 def _cs_from_feed(market, event_id: str, max_age: Optional[float] = None) -> Optional["tuple[Any, Any]"]:
     """Mercato+snapshot CS dal feed, SOLO col market reale (i fake dei test → REST).
 
@@ -940,6 +972,8 @@ def _cs_from_feed(market, event_id: str, max_age: Optional[float] = None) -> Opt
     """
     if market is not _real_market:
         return None
+    if not _flusso_feed(event_id).vivo:
+        return None     # cantiere J: flusso fermo -> il chiamante va al book REST
     payload, _ = _feed_row(event_id, hard_max_age=max_age)
     return cs_snapshot_from_payload(event_id, payload)
 
@@ -995,6 +1029,8 @@ def _feed_prices_fresh(market, event_id: str) -> bool:
     tetto i prezzi si prendono dal book REST. Con un market fake (test): True."""
     if market is not _real_market:
         return True
+    if not _flusso_feed(str(event_id)).vivo:
+        return False    # cantiere J: flusso fermo -> prezzi dal book REST o attesa
     payload, _ = _feed_row(str(event_id), hard_max_age=CASHOUT_FEED_MAX_AGE_S)
     return isinstance(payload, dict)
 
@@ -1004,6 +1040,8 @@ def _feed_fresh_for_decision(market, event_id: str) -> bool:
     bypass "scanner vivo")? Con un market fake (test) il feed non esiste: True."""
     if market is not _real_market:
         return True
+    if not _flusso_feed(str(event_id)).vivo:
+        return False    # cantiere J: flusso fermo -> niente decisione sui prezzi del feed
     payload, _ = _feed_row(str(event_id), hard_max_age=DECISION_MAX_AGE_S)
     return isinstance(payload, dict)
 
@@ -1872,6 +1910,20 @@ def _scan_event_legs(*, ev, events, control, params, traded_ids, traded_legs, ag
         phase = E.mission_phase(status=status, minute=state.minute, kickoff=ev.open_date, now=now)
         # book del feed SOLO se fresco per decidere (F6): altrimenti REST fresco
         payload = _feed_state(market, ev.event_id) if _feed_fresh_for_decision(market, ev.event_id) else None
+        if market is _real_market:
+            _es_flusso = _flusso_feed(str(ev.event_id))
+            if _flusso.primo_avviso_scanner_vecchio("omega", _ULTIMO_STATO_SCANNER_OMEGA.get("v")):
+                db.log("flusso_non_dichiarato", {"critical": True,
+                                                 "message": _flusso.TESTO_SCANNER_VECCHIO})
+            if not _es_flusso.vivo:
+                # cantiere J: si DICE perche' i prezzi del feed non si usano
+                _log_dedup(db, (ev.event_id, "flusso_interrotto"), "flusso_interrotto",
+                           {"event_id": ev.event_id, "reason": _es_flusso.motivo,
+                            "testo": _es_flusso.testo, "fase": "apertura",
+                            "mercati": list(_es_flusso.mercati)})
+                # cantiere J2 (28/09, regola unica): col flusso dello scanner
+                # fermo un'APERTURA non parte mai, nemmeno col book REST vivo
+                return 0, traded_count
         for leg, mtype, half, leg_phase, k_min, k_max in _LEGS:
             if phase != leg_phase or (ev.event_id, leg) in traded_legs:
                 continue
@@ -4873,6 +4925,11 @@ def _settle_hedged(*, params: dict[str, Any], market, db, now: datetime,
             if str(tr.get("status")) == "open":
                 before = str(tr.get("status"))
                 X.apply_hedge_state(db, tr, closings.get(int(tr["id"]), []), now)
+                # CANTIERE P (28/09, reperto P-O1): il fill della chiusura arriva
+                # DOPO l'invio (runner, canale o coda): lo stato del green-up
+                # scritto 'pending' all'invio si porta a 'done' qui, quando la
+                # copertura e' confermata. Prima restava 'pending' per sempre.
+                _greenup_fill_confermato(db, tr, now)
                 if before == "open" and str(tr.get("status")) == "hedged":
                     # L-06: il passaggio open→hedged non era loggato da nessuna parte
                     db.log("hedged", {"trade_id": tr["id"], "event_id": tr.get("event_id"),
@@ -5669,6 +5726,50 @@ def _richiesta_non_di_questa_riga(payload: dict[str, Any],
     return None
 
 
+def _condizione_caduta(payload: dict) -> Optional[str]:
+    """28/09 (CANTIERE N) - il motivo per cui la condizione di una PROPOSTA del
+    bot non vale piu', o None.
+
+    La valutazione e' quella che il produttore (``omega_proposte``) riscrive a
+    ogni giro sulla proposta viva (``valutazione.valida``/``motivo_codice``).
+    Solo le proposte del bot (``motivo_codice``) si ricontrollano: il cash out
+    dell'utente e' un suo comando e non passa di qui."""
+    if not isinstance(payload, dict) or not payload.get("motivo_codice"):
+        return None
+    val = payload.get("valutazione")
+    if not isinstance(val, dict) or val.get("valida") is not False:
+        return None
+    return str(val.get("motivo_codice") or "condizione_non_piu_valida")
+
+
+def _rifiuta_se_condizione_caduta(db: Any, tr: dict, payload: dict,
+                                  now: Optional[datetime] = None) -> Optional[dict]:
+    """28/09 (CANTIERE N, ordine dell'utente): "approvata, l'ordine parte sul
+    mercato di ADESSO e solo se la condizione vale ancora". Una firma su una
+    proposta che il bot ha gia' marcato NON PIU' VALIDA non chiude: la posizione
+    resta aperta e l'utente puo' sempre chiuderla col suo "Chiudi".
+    29/09 (verifica del coordinatore): il payload firmato e' fermo al clic;
+    conta anche cosa il produttore pensa ADESSO in questo giro
+    (``omega_proposte.firma_ancora_valida``): se non propone piu', o propone per
+    un ALTRO motivo, la firma non esegue."""
+    motivo = _condizione_caduta(payload)
+    if motivo is None and payload.get("motivo_codice") and now is not None:
+        from . import omega_proposte as PR
+        motivo = PR.firma_ancora_valida(tr.get("id"), payload.get("motivo_codice"), now)
+    if motivo is None:
+        return None
+    db.log("error", {"reason": "condizione_non_piu_valida", "trade_id": tr.get("id"),
+                     "event_id": tr.get("event_id"),
+                     "motivo_codice": payload.get("motivo_codice"),
+                     "motivo_adesso": motivo,
+                     "valutata_at": (payload.get("valutazione") or {}).get("valutata_at"),
+                     "nota": "firma su una proposta la cui condizione non vale piu': "
+                             "non si esegue"})
+    return {"error": "condizione_non_piu_valida",
+            "message": ("la condizione di uscita non vale piu' (" + motivo + "): la "
+                        "proposta non si esegue. Per chiudere comunque usa 'Chiudi'.")}
+
+
 def _manual_cashout(*, market, db, payload: dict, now: datetime) -> dict:
     """Chiude a mercato (green-up totale o cash-out parziale) UNA gamba aperta.
 
@@ -5731,6 +5832,9 @@ def _manual_cashout(*, market, db, payload: dict, now: datetime) -> dict:
                                  "NON si esegue. In V3 nessuna chiusura parte da sola."})
         return {"error": "proposta_non_firmata",
                 "message": "questa chiusura non risulta approvata: non si esegue"}
+    rifiuto = _rifiuta_se_condizione_caduta(db, tr, payload, now)
+    if rifiuto is not None:
+        return rifiuto
 
     prices = _cashout_prices(market, tr)
     if not prices:
@@ -6165,6 +6269,25 @@ def _greenup_clear_blind(db, tr: dict[str, Any], now: datetime) -> None:
     elif req.get("trigger"):
         rest.update(_greenup_state_fields("hold", "in sorveglianza", now, attempts=att))
     _greenup_write_key(db, tr, dict(meta), GREENUP_KEY, rest or None)
+
+
+def _greenup_fill_confermato(db, tr: dict[str, Any], now: datetime) -> None:
+    """CANTIERE P (28/09, reperto P-O1): green-up inviato col fill IN VOLO
+    (``state='pending'``, ``pending_fill``) la cui copertura e' ora confermata
+    (apertura 'hedged', residuo nullo, nessuna chiusura in volo): lo stato
+    diventa 'done' con i numeri veri (``residual_after``, ``pending_fill``
+    False). Idempotente; a copertura PARZIALE resta 'pending' (residuo da
+    coprire, il giro dopo lo ritenta come sempre). Mai un invio: solo lo stato."""
+    meta = tr.get("meta") or {}
+    req = meta.get(GREENUP_KEY)
+    if not (isinstance(req, dict) and req.get("sent") and req.get("state") == "pending"):
+        return
+    if meta.get("hedge_pending_ids") or str(tr.get("status")) != "hedged":
+        return
+    nuovo = {**req, "pending_fill": False, "residual_after": meta.get("residual_size"),
+             **_greenup_state_fields("done", "posizione coperta", now,
+                                     attempts=req.get("attempts"))}
+    _greenup_write_key(db, tr, dict(meta), GREENUP_KEY, nuovo)
 
 
 def _greenup_candidates(db, chiusi: Optional[set] = None) -> list[dict[str, Any]]:
@@ -6629,6 +6752,23 @@ def _greenup_send(*, db, market, tr: dict[str, Any], meta: dict[str, Any], trigg
     except Exception as ex:  # noqa: BLE001
         res = {"error": "exception", "detail": str(ex)[:160]}
     err = res.get("error")
+    if err and X.e_senza_runner(res.get("detail")):
+        # CANTIERE P (28/09): paper, runner NON raggiungibile: non e' un rifiuto
+        # del mercato, nessun tentativo consumato (mai 'failed' per questo); si
+        # riguarda al giro dopo (cadenza ``greenup_retry_s``). Riga CRITICA al
+        # piu' 1/min per posizione, con l'esposizione ancora viva.
+        req["attempts"] = attempts - 1
+        req["last_error"] = str(res.get("detail") or err)
+        _greenup_persist(db, tr, req)
+        _log_dedup(db, (tr.get("id"), "greenup_senza_runner", int(now.timestamp() // 60)),
+                   "greenup_retry",
+                   {"trade_id": tr.get("id"), "event_id": tr.get("event_id"),
+                    "reason": "paper_senza_runner", "err": str(res.get("detail") or "")[:120],
+                    "critical": True, "liability": tr.get("liability"),
+                    "esposizione_eur": X.esposizione_eur(tr),
+                    "nota": "paper: runner non raggiungibile, green-up NON eseguito; si "
+                            "ritenta senza consumare tentativi"})
+        return False
     if err in ("chiusura_in_corso", "niente_da_chiudere"):
         # non è un fallimento: si riguarda al ciclo dopo (F3: 'niente_da_chiudere' era
         # terminale → posizione esclusa PER SEMPRE dal green-up con liability piena)
@@ -6687,7 +6827,14 @@ def _greenup_send(*, db, market, tr: dict[str, Any], meta: dict[str, Any], trigg
     if locked_real is None:
         locked_real = res.get("planned_lock") if res.get("planned_lock") is not None else locked
     profit = locked_real is not None and float(locked_real) >= 0.0
-    exit_kind = XE.ui_exit_kind(kind, locked=locked_real, integral=covered)
+    # CANTIERE P (28/09, reperto P-O1): "integrale" = chiusura dell'INTERA
+    # posizione (primo invio, fraction 1.0), non "residuo gia' a zero": col fill
+    # in volo (runner, canale o coda: la strada normale del paper) il residuo e'
+    # ancora pieno e un green-up integrale in utile usciva etichettato 'profit'.
+    # Stessa regola di Safe (M3, ``bot_service``): un invio sul RESIDUO non e'
+    # mai integrale.
+    integral = residual is None and (bool(res.get("pending_fill")) or covered)
+    exit_kind = XE.ui_exit_kind(kind, locked=locked_real, integral=integral)
     req["exit_kind"] = exit_kind
     _greenup_persist(db, tr, req, extra={"exit_kind": exit_kind, "exit_reason": ui_reason,
                                          "exit_profit": profit})
@@ -6709,6 +6856,49 @@ def _greenup_send(*, db, market, tr: dict[str, Any], meta: dict[str, Any], trigg
         "hedged_size": res.get("hedged_size"), "mode": tr.get("mode"),
     })
     return True
+
+
+_FLUSSO_CRITICO_OMEGA = _flusso.Promemoria()
+_FLUSSO_RIPIEGO_OMEGA = _flusso.Promemoria()
+
+
+def _nota_flusso_greenup(db, tr: dict[str, Any], rest_ok: bool, now_ts: float,
+                         prices: Optional[dict[str, Any]]) -> None:
+    """CANTIERE J2 (28/09): green-up col flusso del feed fermo. Prezzi dal
+    ripiego REST = riga ``ripiego_rest`` (fonte ``rest_ripiego``); REST muto =
+    riga CRITICA ``flusso_interrotto`` con posizione, esposizione in euro e da
+    quanti secondi. Entrambe al piu' una volta al minuto per posizione."""
+    tid = int(tr.get("id") or 0)
+    if rest_ok:
+        if _FLUSSO_RIPIEGO_OMEGA.dovuto(tid, now_ts):
+            db.log("ripiego_rest", {
+                "trade_id": tid, "event_id": tr.get("event_id"), "mode": tr.get("mode"),
+                "market_id": tr.get("market_id"), "fonte": _flusso.FONTE_RIPIEGO_REST,
+                "fase": "green-up", "back": (prices or {}).get("back"),
+                "lay": (prices or {}).get("lay")})
+        return
+    if not _FLUSSO_CRITICO_OMEGA.dovuto(tid, now_ts):
+        return
+    try:
+        size = float(tr.get("size_matched") or tr.get("size") or 0.0)
+        price = float(tr.get("avg_price_matched") or tr.get("price") or 0.0)
+        esposizione = round(size * (price - 1.0), 2) if size > 0 and price > 1.0 else None
+    except (TypeError, ValueError):
+        esposizione = None
+    riga = None
+    try:
+        riga = _feed_riga_cached(_scan_feed.shared_cache(), str(tr.get("event_id") or ""))
+    except Exception:  # noqa: BLE001 - la riga serve solo a dire da quanto
+        riga = None
+    db.log("flusso_interrotto", {
+        "critical": True, "trade_id": tid, "event_id": tr.get("event_id"), "mode": tr.get("mode"),
+        "market_id": tr.get("market_id"), "selection_id": tr.get("selection_id"),
+        "runner_name": tr.get("runner_name"), "fase": "green-up",
+        "esposizione_eur": esposizione,
+        "da_secondi": _flusso.secondi_fermo((riga or {}).get("payload") if isinstance(riga, dict) else None,
+                                            _ULTIMO_STATO_SCANNER_OMEGA.get("v"), int(now_ts * 1000)),
+        "message": "flusso prezzi FERMO e book REST non leggibile: la posizione resta senza "
+                   "green-up finche' un prezzo vivo non torna"})
 
 
 def _greenup_one(*, tr: dict[str, Any], params: dict[str, Any], market, db,
@@ -6737,6 +6927,14 @@ def _greenup_one(*, tr: dict[str, Any], params: dict[str, Any], market, db,
         db.update_trade(int(tr["id"]), meta=meta)
         tr["meta"] = meta
     block, half = _greenup_block(tr, payload)
+    if market is _real_market:
+        _es_flusso = _flusso_feed(str(tr.get("event_id") or ""))
+        if not _es_flusso.vivo:
+            # cantiere J: i prezzi del feed non si usano per chiudere; lo si DICE
+            _log_dedup(db, (tr.get("event_id"), "flusso_interrotto_greenup"), "flusso_interrotto",
+                       {"event_id": tr.get("event_id"), "trade_id": tr.get("id"),
+                        "reason": _es_flusso.motivo, "testo": _es_flusso.testo,
+                        "fase": "green-up", "mercati": list(_es_flusso.mercati)})
     if block is not None and not _feed_prices_fresh(market, str(tr.get("event_id") or "")):
         # cert. 12/09: lo STATO può avere fino a GREENUP_MAX_AGE_S (90 s) per non
         # restare ciechi, ma i PREZZI di una chiusura hanno il tetto del cash out
@@ -6782,6 +6980,13 @@ def _greenup_one(*, tr: dict[str, Any], params: dict[str, Any], market, db,
         prices, wait = _cashout_prices(market, tr), "prezzi_non_disponibili"
     else:
         return False
+    # cantiere J2 (28/09, regola unica): col flusso del feed fermo la chiusura
+    # ha preso i prezzi dal ripiego REST gia' esistente (``_cashout_prices``):
+    # lo si scrive; se anche il REST tace, riga CRITICA al piu' 1/min.
+    flusso_fermo = market is _real_market and not _flusso_feed(str(tr.get("event_id") or "")).vivo
+    if flusso_fermo and trigger is not None:
+        _nota_flusso_greenup(db, tr, bool(prices and (prices.get("back") or prices.get("lay"))),
+                             now_ts, prices)
     if not prices or not (prices.get("back") or prices.get("lay")):
         if trigger is not None:
             _greenup_wait(db, tr, meta, trigger, wait or "prezzi_non_disponibili")
@@ -6947,6 +7152,10 @@ def _cs_suggestion(*, market, mission: dict, market_type: str, params: dict,
     ev_stub = SimpleNamespace(event_id=event_id, name=mission.get("event_name") or "",
                               open_date=_parse_iso_dt(mission.get("kickoff")))
     payload = _feed_state(market, event_id)
+    if payload is not None and not _flusso_feed(event_id).vivo:
+        # cantiere J2 (28/09): prezzi del feed col flusso fermo -> il blocco del
+        # feed non si usa per proporre: si va al catalogo+book REST (vivo)
+        payload = None
     pair = _leg_market(market, ev_stub, market_type, payload)   # feed (HT e FT) → REST
     if pair is None:
         return None
@@ -7479,7 +7688,9 @@ def ferma_al_nuovo_avvio(db=_real_db, now: Optional[datetime] = None) -> Optiona
     try:
         return AA.ferma_al_nuovo_avvio(_GUARDIA_AVVIO, control=control,
                                        set_control=db.set_control, log=db.log,
-                                       now_iso=now.isoformat())
+                                       now_iso=now.isoformat(),
+                                       # 28/09 CANTIERE N: uscite MANUALI a ogni avvio nuovo
+                                       uscite_bot="omega")
     except Exception as ex:  # noqa: BLE001
         logger.critical("[omega] controllo d'avvio NON riuscito (%s): "
                         "nessuna apertura finche' non riesce.", str(ex)[:160])
@@ -8273,6 +8484,8 @@ def main() -> None:
         logger.error("[omega] un'altra istanza è già in esecuzione (porta %s) — esco.", _SINGLE_INSTANCE_PORT)
         return
     logger.info("[omega] servizio avviato")
+    # CANTIERE P (28/09): timeout PostgREST del profilo bot (5 s connessione, 20 s lettura)
+    logger.info("[omega] timeout PostgREST del profilo bot: %s", __import__("db_client").usa_timeout_bot())
     _avvia_canale()
     # 23/09: saldo del conto riletto dopo ogni ordine reale / regolazione nuova
     # (una chiamata per evento, nessun polling; vedi stream/saldo_evento.py).

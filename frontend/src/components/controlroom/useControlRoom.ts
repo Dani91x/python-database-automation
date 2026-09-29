@@ -126,6 +126,8 @@ import {
 } from '@/lib/scalperCanale';
 import type { BotConChiusura } from './chiudiRiga';
 import { leggiAutoTennis, notaAutoTennis, type AutoTennis } from './tennisAuto';
+// 28/09 (CANTIERE N): proposte d'uscita dei bot di flusso
+import { leggiProposteFlusso, type PropostaFlusso } from '@/lib/proposteUscite';
 // 25/09 — interruttore «uscite automatiche» dello scalper (aggregato sessioni)
 import { usciteSessioniScalper } from '@/lib/interruttori';
 
@@ -300,6 +302,12 @@ export interface StatoBot {
     /** 25/09 - i 4 bot tennis: l'auto-mode dichiarato dal ponte (`stats.auto`),
      *  `null`/assente = non dichiarato (bot spento o ponte di prima) */
     autoTennis?: AutoTennis | null;
+    /** 28/09 (CANTIERE N) - i 4 bot tennis: la colonna
+     *  `tennis_bot_service_control.uscite_automatiche`; null = non letta */
+    usciteTennis?: boolean | null;
+    /** 28/09 (CANTIERE N) - bot di flusso (tennis, scalper): le proposte
+     *  d'uscita da approvare, dal battito del bot */
+    proposteUscite?: PropostaFlusso[];
     /**
      * 25/09 (voce 4) - DA DOVE viene lo stato mostrato (modalita', stato,
      * parametri, motivo del blocco): 'canale' = il push `*_stato` piu' fresco
@@ -2309,7 +2317,19 @@ export function useControlRoom(): ControlRoomVM {
                 const auto = base.inCorsa
                     ? leggiAutoTennis((c?.stats ?? null) as Record<string, unknown> | null)
                     : null;
-                return { ...base, autoTennis: auto, nota: notaAutoTennis(auto) };
+                // 28/09 (CANTIERE N): l'interruttore delle uscite e' una COLONNA
+                // della riga (non sta nei params); si legge anche a bot spento.
+                const usciteTennis = c == null || typeof c.uscite_automatiche !== 'boolean'
+                    ? null : c.uscite_automatiche;
+                // 28/09 (CANTIERE N): le proposte d'uscita che il ponte raccoglie
+                // dalle righe per partita (`stats.auto.uscite_proposte`)
+                const autoGrezzo = ((c?.stats ?? null) as Record<string, unknown> | null)?.auto;
+                const proposteUscite = base.inCorsa && autoGrezzo != null && typeof autoGrezzo === 'object'
+                    ? leggiProposteFlusso((autoGrezzo as Record<string, unknown>).uscite_proposte)
+                    : [];
+                return {
+                    ...base, autoTennis: auto, nota: notaAutoTennis(auto), usciteTennis, proposteUscite,
+                };
             }),
             rigaScalper(),
         ];
@@ -2379,6 +2399,14 @@ export function useControlRoom(): ControlRoomVM {
                 pnlOggi: scalperVista.realeOggi,
                 pnlOggiPaper: null,
                 nota: [notaAuto, `${quante} - ${fonte}`, senzaAuto].filter(Boolean).join(' - '),
+                // 28/09 (CANTIERE N): le proposte d'uscita delle sessioni vive
+                // (29/09: anche lo sniper della stessa sessione, `sniper_uscite_proposte`)
+                proposteUscite: vive.flatMap((s) => [
+                    ...leggiProposteFlusso(
+                        (s.stats as Record<string, unknown> | null)?.uscite_proposte, String(s.event_id)),
+                    ...leggiProposteFlusso(
+                        (s.stats as Record<string, unknown> | null)?.sniper_uscite_proposte, String(s.event_id)),
+                ]),
             };
         }
     }, [omega?.control, safe?.control, safe?.params_effective, mike?.control,

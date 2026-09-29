@@ -275,6 +275,8 @@ def test_h04_greenup_riuscito_scrive_state_done_e_exit_kind_greenup():
     assert _run(db, pay, _gparams(greenup_settle_delay_s=0)) == 1
     opened = db.get_trade(tr["id"])
     g = opened["meta"]["greenup"]
+    # CANTIERE P (28/09): chiusura paper sul runner; lo stato diventa 'done'
+    # alla conferma del fill (P-O1 corretto, ``_settle_hedged``)
     assert g["state"] == "done" and g["reason"] and g["at"]
     assert g["attempts"] == 1
     # H-01 + review H3: exit_kind dal VOCABOLARIO CONDIVISO (exits.ui_exit_kind):
@@ -286,7 +288,8 @@ def test_h04_greenup_riuscito_scrive_state_done_e_exit_kind_greenup():
     # la regola che ha deciso l'uscita resta leggibile a parte
     assert g["kind"] in ("profit", "loss")
     lg = _logs(db, "greenup")[0]
-    assert lg["exit_kind"] == "loss" and lg["state"] == "done"
+    # l'evento si scrive all'INVIO, col fill ancora in volo sul runner
+    assert lg["exit_kind"] == "loss" and lg["state"] == "pending" and lg["pending_fill"] is True
 
 
 def test_h04_hold_scrive_state_hold_e_kind_attivita():
@@ -786,6 +789,10 @@ def test_m19_cash_out_manuale_parziale_dice_parziale_e_lascia_il_residuo():
     res = S._manual_cashout(market=_M([], None, _open_snapshot()), db=db,
                             payload={"trade_id": tr["id"], "fraction": 0.5}, now=NOW)
     assert res.get("ok") is True
+    # CANTIERE P (28/09): chiusura paper sul runner, esito al giro dopo
+    from Betfair.safe_strategy.tests.runner_finto import esito_del_runner
+
+    esito_del_runner(db, now=NOW)
     opened = db.get_trade(tr["id"])
     assert opened["meta"]["exit_kind"] == "manual"
     assert "parziale" in opened["meta"]["exit_reason"].lower()

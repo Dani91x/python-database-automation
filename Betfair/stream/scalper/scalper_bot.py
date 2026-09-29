@@ -60,6 +60,8 @@ from flumine.utils import get_nearest_price, get_price, get_size, price_ticks_aw
 
 from ..trading.freno_rifiuti import BACKOFF_SCALPER_S, FrenoRifiuti
 from ..trading.stato_mercato import AttesaRiapertura, guardia_flumine
+from ..uscite_proposte import CHIAVE_STATS as CHIAVE_PROPOSTE
+from ..uscite_proposte import CancelloUscite, UltimiPrezzi, proposta_di
 
 logger = logging.getLogger(__name__)
 
@@ -445,6 +447,14 @@ class ScalperStrategy(BaseStrategy):
         # Solo un booleano vero conta: ogni altro valore = False (25/09 sera).
         _ua = c.get("uscite_automatiche", False)
         self.uscite_automatiche: bool = _ua if isinstance(_ua, bool) else False
+        # 28/09 (CANTIERE N, regola dell'utente): anche STOP a N tick e TIMEOUT
+        # `lock_ttl` sono uscite di TRADING. A uscite manuali target, scratch,
+        # stop e timeout diventano PROPOSTE coi numeri e partono solo con la
+        # firma dell'utente (riga `scalper_control.params.uscite_approvate`,
+        # riletta a caldo dalla sessione), quando la condizione vale ancora.
+        self.cancello_uscite = CancelloUscite(emetti=lambda ev, p: self._emit(ev, **p))
+        # 29/09 (CANTIERE N, UM2): l'ultimo prezzo di chiusura visto (solo numeri)
+        self._ultimi_prezzi = UltimiPrezzi()
         # tetto TRANSAZIONI/ora (anti transaction-charge): oltre il budget si
         # bloccano i NUOVI ingressi; hedge/close/flatten passano SEMPRE.
         self.max_txn_hour: int = int(c.get("max_txn_hour", 0))
@@ -630,6 +640,10 @@ class ScalperStrategy(BaseStrategy):
         self._ora_mercato_ms = int(now)
         mid = market_book.market_id
         inplay = bool(getattr(market_book, "inplay", False))
+        if self.cancello_uscite.proposte:
+            # 28/09: una posizione chiusa (uscita, protezione, reset) porta via
+            # le sue proposte
+            self._pubblica_proposte()
         # GATE DI EVENTO valutato PER-BOOK (fix 10/07: prima viveva solo in
         # _try_enter — con gli slot in cooldown o quota fuori banda il loss
         # cap non si armava). Arma il force-flat e blocca i nuovi ingressi.
@@ -1623,8 +1637,10 @@ class ScalperStrategy(BaseStrategy):
             # 25/09 - posizione in attesa dell'utente (uscite manuali) e
             # l'utente ha RIACCESO le uscite automatiche: il bot mette adesso
             # la SUA chiusura, calcolata come sempre dal fill d'ingresso.
-            if (slot.close is None and slot.proposta is not None
-                    and self.uscite_automatiche and slot.entry is not None):
+            # 28/09 (CANTIERE N): o l'utente ha FIRMATO la chiusura a target
+            # (``_firmata``): stessa strada, la chiusura parte adesso.
+            if (slot.close is None and slot.proposta is not None and slot.entry is not None
+                    and (self.uscite_automatiche or self._firmata(slot, "target"))):
                 self._open_lock(market, slot, now, slot.entry, best_back, best_lay)
                 return
             close = slot.close
@@ -1690,9 +1706,48 @@ class ScalperStrategy(BaseStrategy):
                         self.stop_ticks
                         + (self.stop_ticks_far - self.stop_ticks) * frac
                     ))
-            if (adverse is not None and adverse >= eff_stop) or (
-                slot.t_lock is not None and now - slot.t_lock > self.lock_ttl_ms
-            ):
+            # 28/09 (CANTIERE N): quali uscite vuole la strategia ADESSO su
+            # questa posizione; le proposte delle altre (condizione caduta)
+            # spariscono dalla scheda.
+            cond_stop = adverse is not None and adverse >= eff_stop
+            cond_ttl = slot.t_lock is not None and now - slot.t_lock > self.lock_ttl_ms
+            cond_scratch = bool(self.scratch_enable and scratch_now
+                                and not slot.close_scratched and c_match <= _EPS
+                                and entry_p is not None)
+            pref = self._prefisso_uscite(slot)
+            vive = [pref + m for m, v in (("target", slot.close is None),
+                                          ("stop", cond_stop),
+                                          ("timeout", cond_ttl and not cond_stop),
+                                          ("scratch", cond_scratch)) if v]
+            self.cancello_uscite.conferma_vive(pref, vive)
+            self._pubblica_proposte(pota=False)
+            # 29/09 (CANTIERE N, UM2): l'ultimo prezzo di chiusura VISTO, per i
+            # numeri della proposta quando il book di adesso non ha quel lato
+            k_sl = self._chiave_slot(slot) or ("?", 0)
+            self._ultimi_prezzi.annota((k_sl[0], k_sl[1], "LAY"), best_lay, now)
+            self._ultimi_prezzi.annota((k_sl[0], k_sl[1], "BACK"), best_back, now)
+            if cond_stop or cond_ttl:
+                # 28/09: stop e timeout sono uscite di TRADING: a uscite
+                # manuali diventano una proposta (chiusura a mercato coi numeri
+                # di adesso) e la posizione resta finche' l'utente non firma.
+                nw_x = sb * (ob - 1.0) - sl * (ol - 1.0)
+                nl_x = sl - sb
+                px_x = best_lay if slot.entry_side == "BACK" else best_back
+                # la PROPOSTA porta sempre i numeri (prezzo vivo, o l'ultimo
+                # visto con la sua eta', o il motivo dichiarato); l'uscita, se
+                # parte, parte dal flatten di sempre sul mercato di adesso
+                px_p, extra_p = self._ultimi_prezzi.per_proposta(
+                    (k_sl[0], k_sl[1], "LAY" if slot.entry_side == "BACK" else "BACK"),
+                    px_x, now)
+                g_x = compute_green(nw_x, nl_x, px_p) if px_p else None
+                if not self._lascia_uscire(
+                        slot, "stop" if cond_stop else "timeout",
+                        lato=(g_x[0] if g_x else None), prezzo=px_p,
+                        size=(g_x[1] if g_x else None),
+                        bloccabile=(g_x[2] if g_x else None),
+                        se_vince=nw_x, se_perde=nl_x, now_ms=now, extra=extra_p):
+                    return
+            if cond_stop or cond_ttl:
                 self._cancel_if_live(market, close)
                 self._cancel_if_live(market, slot.next_entry)
                 self._begin_flatten(slot)
@@ -1704,23 +1759,18 @@ class ScalperStrategy(BaseStrategy):
             # SCRATCH: il touch ha raggiunto il nostro prezzo d'ingresso ->
             # ripiazza la chiusura A PARI (profitto 0) invece di inseguire
             # +scalp_ticks che ormai non arrivera'. Una sola volta per ciclo.
-            if (
-                self.scratch_enable
-                and scratch_now
-                and not slot.close_scratched
-                and c_match <= _EPS
-                and entry_p is not None
-                and not self.uscite_automatiche
-            ):
+            if cond_scratch:
                 # 25/09 - uscite MANUALI: lo scratch a pari e' un'uscita
                 # discrezionale. Non si tocca niente (la chiusura a target, se
-                # c'era, resta dov'e'): si dichiara e decide l'utente.
+                # c'era, resta dov'e'): si propone e decide l'utente. Dal 28/09
+                # con la sua firma lo scratch parte (ramo qui sotto).
                 nw_s = sb * (ob - 1.0) - sl * (ol - 1.0)
                 g_s = compute_green(nw_s, sl - sb, entry_p)
-                self._proponi_uscita(slot, motivo="scratch", lato=(g_s[0] if g_s else None),
-                                     prezzo=entry_p, size=(g_s[1] if g_s else None),
-                                     bloccabile=(g_s[2] if g_s else None))
-                return
+                if not self._lascia_uscire(slot, "scratch", lato=(g_s[0] if g_s else None),
+                                           prezzo=entry_p, size=(g_s[1] if g_s else None),
+                                           bloccabile=(g_s[2] if g_s else None),
+                                           se_vince=nw_s, se_perde=sl - sb, now_ms=now):
+                    return
             if (
                 self.scratch_enable
                 and scratch_now
@@ -1823,16 +1873,19 @@ class ScalperStrategy(BaseStrategy):
             self._begin_flatten(slot)
             return
         side, size, _locked = g
-        if not self.uscite_automatiche:
+        if not self._lascia_uscire(slot, "target", lato=side, prezzo=target, size=size,
+                                   bloccabile=_locked, se_vince=net_win,
+                                   se_perde=net_lose, now_ms=now):
             # 25/09 - uscite MANUALI: la chiusura a target e' un'uscita
             # discrezionale, non parte. La posizione entra in LOCKING SENZA
-            # chiusura: stop a N tick e lock_ttl (protezioni) restano armati
-            # dall'istante del fill, esattamente come con la chiusura sul book.
+            # chiusura; dal 28/09 anche stop a N tick e lock_ttl sono proposte
+            # (i loro timer partono comunque dall'istante del fill).
+            # Firmata dall'utente -> si prosegue qui sotto e la chiusura parte.
             slot.close = None
-            slot.t_lock = now
+            if slot.t_lock is None:
+                slot.t_lock = now
             slot.status = LOCKING
-            self._proponi_uscita(slot, motivo="target", lato=side, prezzo=target,
-                                 size=size, bloccabile=_locked)
+            self._pubblica_proposte()
             return
         # floor_min=False: l'hedge deve coprire ESATTAMENTE la quota matchata.
         # Forzare MIN_STAKE su un fill parziale creerebbe una posizione direzionale.
@@ -1844,21 +1897,65 @@ class ScalperStrategy(BaseStrategy):
         slot.t_lock = now
         slot.status = LOCKING
 
+    # ----------------------------------- 28/09 (CANTIERE N): il cancello uscite
+    def _chiave_slot(self, slot: _Slot) -> Optional[Tuple[str, int]]:
+        for k, v in self._slots.items():
+            if v is slot:
+                return k
+        return None
+
+    def _prefisso_uscite(self, slot: _Slot) -> str:
+        """La posizione (mercato, selezione, ordine d'ingresso): proposte e
+        firme valgono per QUESTA posizione e per nessun'altra."""
+        k = self._chiave_slot(slot) or ("?", 0)
+        ingresso = getattr(slot.entry, "id", None) or id(slot.entry)
+        return f"scalper|{k[0]}|{k[1]}|{ingresso}|"
+
+    def _firmata(self, slot: _Slot, motivo: str) -> bool:
+        """C'e' una firma dell'utente (non ancora usata) per questa uscita?"""
+        return self.cancello_uscite.firmata(self._prefisso_uscite(slot) + motivo)
+
+    def _lascia_uscire(self, slot: _Slot, motivo: str, *, lato: Any, prezzo: Any,
+                       size: Any, bloccabile: Any, se_vince: Any = None,
+                       se_perde: Any = None, now_ms: Optional[int] = None,
+                       extra: Optional[Dict[str, Any]] = None) -> bool:
+        """True = l'uscita ``motivo`` decisa dalla strategia parte ADESSO
+        (automatiche, o firmata dall'utente entro il TTL). False = proposta coi
+        numeri, niente ordini."""
+        k = self._chiave_slot(slot) or ("?", 0)
+        ok = self.cancello_uscite.lascia_uscire(
+            automatiche=bool(self.uscite_automatiche),
+            chiave=self._prefisso_uscite(slot) + motivo,
+            now_s=(float(now_ms) / 1000.0 if now_ms is not None else self._orologio_s()),
+            proposta=proposta_di(
+                bot="scalper", motivo=motivo, market_id=k[0], selection_id=k[1],
+                lato_ingresso=slot.entry_side, prezzo=prezzo, lato_chiusura=lato,
+                size_chiusura=size, se_chiudi=bloccabile, se_vince=se_vince,
+                se_perde=se_perde, **(extra or {})))
+        if not ok:
+            if slot.proposta != motivo:
+                slot.proposta = motivo
+                self.stats["uscite_proposte_emesse"] = int(
+                    self.stats.get("uscite_proposte_emesse", 0) or 0) + 1
+        self._pubblica_proposte(pota=False)
+        return ok
+
+    def _pubblica_proposte(self, pota: bool = True) -> None:
+        """Le proposte vive nel battito (``stats``, che la sessione scrive sulla
+        riga di controllo). ``pota``: via quelle delle posizioni non piu' in
+        LOCKING (chiuse da un'uscita, da una protezione, dal reset)."""
+        if pota:
+            self.cancello_uscite.tieni_solo(
+                [self._prefisso_uscite(s) for s in self._slots.values()
+                 if s.status == LOCKING and s.entry is not None])
+        self.stats[CHIAVE_PROPOSTE] = self.cancello_uscite.vive()  # type: ignore[assignment]
+
     def _proponi_uscita(self, slot: _Slot, *, motivo: str, lato: Any, prezzo: Any,
                         size: Any, bloccabile: Any) -> None:
-        """25/09 - uscita discrezionale NON eseguita (uscite manuali): la si
-        DICHIARA una volta per motivo e per ciclo ('uscita_proposta' nel log
-        della sessione), mai a ogni book."""
-        if slot.proposta == motivo:
-            return
-        slot.proposta = motivo
-        self.stats["uscite_proposte"] = int(self.stats.get("uscite_proposte", 0) or 0) + 1
-        self._emit("uscita_proposta", motivo=motivo,
-                   selection_id=getattr(slot.entry, "selection_id", None),
-                   entry_side=slot.entry_side, lato=lato,
-                   prezzo=(round(float(prezzo), 2) if prezzo else None),
-                   size=(round(float(size), 2) if size is not None else None),
-                   bloccabile=(round(float(bloccabile), 4) if bloccabile is not None else None))
+        """25/09 - uscita discrezionale NON eseguita (uscite manuali). Dal 28/09
+        passa dal cancello (proposta coi numeri, firma dell'utente)."""
+        self._lascia_uscire(slot, motivo, lato=lato, prezzo=prezzo, size=size,
+                            bloccabile=bloccabile)
 
     def _begin_flatten(self, slot: _Slot) -> None:
         """Avvia la chiusura GARANTITA della posizione (stato FLATTENING).

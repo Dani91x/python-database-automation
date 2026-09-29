@@ -41,6 +41,14 @@ export function MikeParamsSheet({ params, busy, onSave }: MikeParamsSheetProps) 
             if (f.kind === 'number') {
                 return { key: f.key, label: f.label, hint: f.hint, type: 'number' as const, min: f.min, max: f.max, step: f.step };
             }
+            // 28/09 (CANTIERE N): l'interruttore delle uscite si cambia SOLO col
+            // componente comune (conferma per passare ad automatiche)
+            if (f.key === 'uscite_automatiche') {
+                return {
+                    key: f.key, label: f.label, hint: f.hint, type: 'uscite' as const,
+                    uscite: { automatico: true, manuale: false },
+                };
+            }
             if (f.kind === 'bool') return { key: f.key, label: f.label, hint: f.hint, type: 'boolean' as const };
             if (f.kind === 'choice') {
                 return {

@@ -1797,12 +1797,14 @@ def _componi_note(out: CERT.Referto, strategia: Any, banco: ScannerReplay,
             f"(es. {strategia.mercato.rifiutati[0].get('err')}) - e' la condizione che "
             f"mette alla prova il difetto 2 del 15/09 (`res.ok` mai letto), K2")
     if scenario == SCENARIO_PAPER:
-        out.note.append("[DIVERGENZA, REPERTO] percorso PAPER legacy: il fill lo "
-                        "fa `bot_service._paper_ladder` + `omega_engine.paper_fill` "
-                        "sul book del FEED, NON il matching di flumine: niente "
-                        "coda `_piq`, niente bet delay, niente volume scambiato. "
-                        "Decisione 3 dell'utente (16/09): il paper deve passare "
-                        "dal client simulato. Qui si MISURA, non si corregge.")
+        # CANTIERE P (28/09): il fill «di casa» non esiste piu'. In questo
+        # scenario il gate della coda e' chiuso (``live_follow_status`` None):
+        # ogni ordine paper e' dichiarato NON eseguito (``paper_senza_runner``).
+        # Il paper vero si certifica col trasporto (``--trasporto canale``).
+        out.note.append("[PAPER SENZA RUNNER] dal 28/09 (cantiere P) il paper non "
+                        "riempie piu' in casa: senza runner ogni ordine paper e' "
+                        "'error' paper_senza_runner. Zero ingressi qui e' l'atteso; "
+                        "il paper si certifica con --trasporto canale.")
     out.note.extend(CERT.tabella_per_strategia(out))
 
 

@@ -1,0 +1,111 @@
+ramo di prova 3 2f53bb0
+BOT: tennis_scalper | spec: TENNIS_BOT_DOSSIER.md | registrazioni: 1 in C:/Users/Admin/Desktop/tennis_rec/20260707
+controlli attivi: 19 | flumine 2.13.11 | betfairlightweight 2.23.2 | codice bot 8c87b2f3a26d (2 file)
+comando: python -m Betfair.stream.backtest.certifica tennis_scalper 35794049 --scenari base,live,gate-aperto,parziali,uscite-manuali,uscite-manuali-firmate
+qualita' delle registrazioni: COMPLETE x1
+SCENARI: base, live, gate-aperto, parziali, uscite-manuali, uscite-manuali-firmate
+        i numeri di scenari diversi sono confrontabili SOLO dove la sequenza di chiamate e' identica fino al punto confrontato: ogni chiamata bloccante consuma tempo di mercato (in produzione come nel replay) e sposta il book su cui abbina tutto cio' che viene dopo
+
+OK  35794049 [base]  tick=  8608 decisioni= 8602 azioni=   1 stati=IDLE [COMPLETE]
+      nota: qualita' registrazione: COMPLETE 99.1% (1 buchi dichiarati)
+      nota: punteggi: 180 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo DICHIARATO (il raw non lo contiene): Sinner, Struff
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35794049 [live]  tick=  8608 decisioni= 8602 azioni= 309 stati=QUOTING2,LOCKING,CANCELLING,IDLE,FLATTENING,DONE [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 99.1% (1 buchi dichiarati)
+      nota: punteggi: 180 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo DICHIARATO (il raw non lo contiene): Sinner, Struff
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 1
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['inplay_tick_enabled', 'min_flow', 'min_matched', 'min_size', 'min_total_matched', 'price_max', 'price_min', 'runner_filter', 'warmup_ms'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35794049 [gate-aperto]  tick=  8608 decisioni= 8602 azioni= 309 stati=QUOTING2,LOCKING,CANCELLING,IDLE,FLATTENING,DONE [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 99.1% (1 buchi dichiarati)
+      nota: punteggi: 180 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo DICHIARATO (il raw non lo contiene): Sinner, Struff
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 1
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['inplay_tick_enabled', 'min_flow', 'min_matched', 'min_size', 'min_total_matched', 'price_max', 'price_min', 'runner_filter', 'warmup_ms'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35794049 [parziali]  tick=  8608 decisioni= 8602 azioni=   1 stati=IDLE [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 99.1% (1 buchi dichiarati)
+      nota: punteggi: 180 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo DICHIARATO (il raw non lo contiene): Sinner, Struff
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['stake'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35794049 [uscite-manuali]  tick=  8608 decisioni= 8602 azioni= 114 stati=QUOTING2,LOCKING,CANCELLING,IDLE,FLATTENING,DONE [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 99.1% (1 buchi dichiarati)
+      nota: punteggi: 180 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo DICHIARATO (il raw non lo contiene): Sinner, Struff
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: MANUALI
+      nota: USCITE MANUALI: interruttore spento; nessuna firma
+      nota: USCITE MANUALI (uscite-manuali): decisioni 6938, proposte nate 45, decadute 43, firme del banco 0, uscite firmate eseguite 0; non giudicabili: UM3b: il bot non ha una fine finestra con force-flat (tiene fino a fine mercato per progetto): le protezioni restano quelle dei suoi controlli (Chiudi, freno, fine mercato)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['inplay_tick_enabled', 'min_flow', 'min_matched', 'min_size', 'min_total_matched', 'price_max', 'price_min', 'runner_filter', 'warmup_ms'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35794049 [uscite-manuali-firmate]  tick=  8608 decisioni= 8602 azioni= 434 stati=QUOTING2,LOCKING,FLATTENING,CANCELLING,IDLE,DONE [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 99.1% (1 buchi dichiarati)
+      nota: punteggi: 180 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo DICHIARATO (il raw non lo contiene): Sinner, Struff
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: MANUALI
+      nota: USCITE MANUALI: interruttore spento; il banco firma ogni proposta dopo 5 s di mercato (params.uscite_approvate, riletta da `_aggiorna_uscite` ogni BOT_CONTROL_POLL_SEC)
+      nota: USCITE MANUALI (uscite-manuali-firmate): decisioni 151, proposte nate 32, decadute 6, firme del banco 27, uscite firmate eseguite 21; non giudicabili: UF2 tennis_scalper|1.259781331|10372252|140099530590298972|target: proposta 2.02, uscita 2.00; resto 0.02 dichiarato NON piazzabile dal bot (min_bet_skip, regola esistente); UF2 tennis_scalper|1.259781331|10372252|140099530597788704|target: proposta 2.02, uscita 2.00; resto 0.02 dichiarato NON piazzabile dal bot (min_bet_skip, regola esistente); UF2 tennis_scalper|1.259781331|10372252|140099530598662728|target: proposta 2.02, uscita 2.00; resto 0.02 dichiarato NON piazzabile dal bot (min_bet_skip, regola esistente); UF2 tennis_scalper|1.259781331|10372252|140099530635587458|target: proposta 2.02, uscita 2.00; resto 0.02 dichiarato NON piazzabile dal bot (min_bet_skip, regola esistente); UF2 tennis_scalper|1.259781331|10372252|140099530749036696|target: proposta 2.02, uscita 2.00; resto 0.02 dichiarato NON piazzabile dal bot (min_bet_skip, regola esistente); UF2 tennis_scalper|1.259781331|10372252|140099530962720119|target: proposta 2.02, uscita 2.00; resto 0.02 dichiarato NON piazzabile dal bot (min_bet_skip, regola esistente)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['inplay_tick_enabled', 'min_flow', 'min_matched', 'min_size', 'min_total_matched', 'price_max', 'price_min', 'runner_filter', 'warmup_ms'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+
+ESITO: 6 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+       0 violazioni totali
+
+COPERTURA DEI CONTROLLI — quante volte ognuno ha avuto un caso:
+  ?? B1  x0       in DRY-RUN il bot non manda MAI un ordine a mercato (dossier §4: `
+     B2  x34412   ogni ordine chiesto ha prezzo nella ladder Betfair [1.01, 1000] e 
+  ?? B3  x0       un bot DISABILITATO (disarm del runner, `_tennis_disabled`) non ap
+     B4  x6       nessun ordine viene chiesto a mercato NON operabile (sospeso o chi
+     B5  x376     lo stake d'ingresso e' quello del control (mai piu' di quanto l'ut
+  ?? B6  x0       FLB: l'ingresso e' sempre un LAY del favorito ESTREMO (best-lay <=
+     B7  x34408   l'esposizione per selezione non supera il tetto che il runner pass
+     B8  x8603    in LIVE .it nessun ordine sotto il minimo di giurisdizione (back 2
+  ?? B9  x0       "chiudi ora" dell'utente (D3, 24/09): UNA sola chiusura dell'abbin
+     K1  x34408   ogni ordine che il bot STA SEGUENDO esiste davvero a mercato: un o
+  ?? K2  x0       un ordine RIFIUTATO (place_order ha risposto False, oppure stato V
+     K3  x34412   lo stato di ogni ordine si rilegge come Enum `OrderStatus` (`.valu
+     K4  x34408   una posizione che il bot crede VIVA ha almeno un ordine a mercato 
+     K5  x34364   nessuna ESPOSIZIONE abbinata resta senza una posizione viva del bo
+     K6  x34412   quando il bot dichiara la posizione CHIUSA non resta nessun suo or
+     K7  x51618   il prezzo medio e l'abbinato che il bot pubblica nelle sue `stats`
+     P1  x34412   ogni ordine del bot arriva allo specchio `tennis_live_orders` con 
+     P2  x34412   lo specchio non dichiara MAI un ordine abbinato piu' di quanto il 
+     P3  x6       a mercato CHIUSO il bot pubblica un P&L di settlement: senza, lo s
+  -- controlli del banco comune, scenari a uscite manuali (uscite-manuali, uscite-manuali-firmate):
+     UM1 x7089    a uscite manuali nessuna uscita di trading parte senza la firma de
+     UM2 x7068    ogni uscita decisa dalla strategia diventa una proposta coi numeri
+     UM3 x7089    le protezioni non passano dal cancello e scattano da sole
+     UM4 x49      una proposta la cui condizione cade sparisce, con la sua firma
+     UF1 x21      una firma fa partire l'uscita una volta sola
+     UF2 x21      l'uscita firmata parte all'importo esatto della proposta di adesso
+     UF3 x21      una firma non esegue mai un'uscita diversa da quella firmata
+
+?? MAI SOLLECITATI: 5 controlli su 19. Su questi il referto NON dice «sano», dice «non lo so»:
+     B1: in DRY-RUN il bot non manda MAI un ordine a mercato (dossier §4: `dry_run` gatea ogni `market.place_order`; e' il kill-switch che il runner forza in OFF)
+     B3: un bot DISABILITATO (disarm del runner, `_tennis_disabled`) non apre piu' nulla: le protezioni girano, le aperture no (PROCESSO_STANDARD_BOT §6.3)
+     B6: FLB: l'ingresso e' sempre un LAY del favorito ESTREMO (best-lay <= `lay_max`) e mai un BACK (dossier §4.3)
+     B9: "chiudi ora" dell'utente (D3, 24/09): UNA sola chiusura dell'abbinato, poi nessun rientro - dopo l'esito del bot nessun ordine nuovo e' un INGRESSO, mai due ordini di chiusura vivi insieme sulla stessa selezione, e con "nessuna posizione" nessun ordine nuovo
+     K2: un ordine RIFIUTATO (place_order ha risposto False, oppure stato Violation) non lascia il bot con una posizione creduta viva (difetto 2 del 15/09: `res.ok` mai letto)
+
+real	3m33.042s
+user	0m0.000s
+sys	0m0.030s

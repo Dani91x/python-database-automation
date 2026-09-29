@@ -70,6 +70,87 @@ def _ltp(market: Any, selection_id: int, handicap: float) -> Optional[float]:
     return None
 
 
+def _stream_muto(rule: Dict[str, Any]) -> bool:
+    """CANTIERE J2 (28/09): lo stream del runner e' MUTO per il mercato della
+    regola (episodio dichiarato dal battito, ``riserva_prezzi.stream_vivo``)?"""
+    from . import riserva_prezzi as _RP
+
+    return not _RP.stream_vivo(rule.get("market_id"))
+
+
+def _prezzo_di_confronto(market: Any, rule: Dict[str, Any], sel: int, hcap: float,
+                         best_back: Optional[float], best_lay: Optional[float]) -> Optional[float]:
+    """Il prezzo con cui una PROTEZIONE confronta le sue soglie.
+
+    Stream vivo: l'LTP del book (come sempre). Stream MUTO: l'LTP in memoria e'
+    FERMO; si usa il miglior prezzo di CHIUSURA della riserva (``_best_prices``
+    = feed dello scanner vivo): lay per un ingresso back, back per un ingresso
+    lay. E' il prezzo a cui la posizione si chiuderebbe adesso: per uno stop
+    scatta un filo PRIMA dell'LTP, per un take-profit un filo DOPO (prudente
+    in entrambi i casi). Senza riserva: None = nessuno scatto sul prezzo."""
+    if not _stream_muto(rule):
+        return _ltp(market, sel, hcap)
+    side = str(rule.get("entry_side") or "").lower()
+    return best_lay if side == "back" else best_back if side == "lay" else None
+
+
+def _riduce_rischio(side: str, w: float, l: float) -> bool:
+    """CANTIERE J2: l'ordine (``side``) CHIUDE o copre la posizione abbinata
+    della selezione (w = profitto se vince, l = se perde)? Un back chiude una
+    posizione LAY (l > w), un lay chiude una posizione BACK (w > l). Posizione
+    piatta = qualunque ordine APRE."""
+    s = str(side or "").lower()
+    if s == "back":
+        return (float(l) - float(w)) > risk_engine.FLAT_EPS
+    if s == "lay":
+        return (float(w) - float(l)) > risk_engine.FLAT_EPS
+    return False
+
+
+# righe critiche degli ordini appoggiati di chiusura a stream muto: 1/min per regola
+_AVVISO_APPOGGIATI_OGNI_S = 60.0
+_AVVISO_APPOGGIATI: Dict[Any, float] = {}
+
+
+def _avviso_appoggiato_senza_prezzi(rule: Dict[str, Any], ruolo: str, w: float, l: float,
+                                    adesso_s: Optional[float] = None) -> bool:
+    """Stream del runner muto e nessun prezzo di riserva vivo, ordine di
+    CHIUSURA appoggiato: resta (riduce il rischio) ma lo si grida, CRITICO, al
+    piu' una volta al minuto per regola, con posizione ed esposizione."""
+    import time as _t
+
+    ora = _t.time() if adesso_s is None else float(adesso_s)
+    rid = rule.get("id")
+    prec = _AVVISO_APPOGGIATI.get(rid)
+    if prec is not None and ora - prec < _AVVISO_APPOGGIATI_OGNI_S:
+        return False
+    if len(_AVVISO_APPOGGIATI) > 5000:
+        _AVVISO_APPOGGIATI.clear()
+    _AVVISO_APPOGGIATI[rid] = ora
+    _alert("CRITICAL",
+           f"FLUSSO PREZZI INTERROTTO (stream del runner muto, nessun prezzo di riserva): "
+           f"regola {rid} ({ruolo}) mercato {rule.get('market_id')} selezione "
+           f"{rule.get('selection_id')}: l'ordine di chiusura resta appoggiato senza "
+           f"sorveglianza. Posizione: se vince {w:+.2f} EUR, se perde {l:+.2f} EUR.")
+    return True
+
+
+def _ritira_apertura_appoggiata(sb: Any, rule: Dict[str, Any], res: Dict[str, Any],
+                                mode_l: str, bet_id: str, residuo: float) -> None:
+    """Stream del runner muto e nessun prezzo di riserva vivo, ordine di
+    APERTURA appoggiato: si RITIRA (cancel in coda, ref deterministico) e la
+    regola si chiude dicendolo (critico). Nessun ripiazzamento al rientro: la
+    strategia ridecide da sola."""
+    _enqueue(sb, {"client_ref": f"risk{rule['id']}cf", "action": "cancel",
+                  "mode": mode_l, "market_id": rule["market_id"], "bet_id": str(bet_id)})
+    nota = ("flusso prezzi del runner INTERROTTO e nessun prezzo di riserva: ordine di "
+            f"APERTURA appoggiato ({residuo:.2f} non abbinati) RITIRATO; al rientro nessun "
+            "ripiazzamento automatico")
+    _update_rule(sb, rule["id"], {"status": "done", "triggered_at": _now_iso(),
+                                  "result": {**res, "note": nota, "ritirato_flusso": True}})
+    _alert("CRITICAL", f"Regola {rule.get('id')} mercato {rule.get('market_id')}: {nota}.")
+
+
 def _market_inplay(market: Any) -> Optional[bool]:
     """True/False se il mercato è in-play, None se non determinabile (dal market_book flumine)."""
     mb = low._val(market, "market_book")
@@ -301,8 +382,10 @@ def _handle_monitored(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str, 
                                           "nessuna posizione da proteggere (anti-gamba-nuda)"}})
             return
 
-    ltp = _ltp(market, sel, hcap)
+    # 28/09 (cantiere J2): a stream muto prezzi e LTP dalla RISERVA (feed vivo
+    # dello scanner) o nessuno: mai l'ultimo book fermo in memoria
     best_back, best_lay = low._best_prices(market, sel, hcap)
+    ltp = _prezzo_di_confronto(market, rule, sel, hcap, best_back, best_lay)
     w, l = low._read_matched_exposures(flumine, market, strategy, sel, hcap)
     decision = risk_engine.evaluate_rule(
         rule_type=str(rule.get("rule_type")), entry_side=str(rule.get("entry_side")),
@@ -560,10 +643,16 @@ def _handle_bracket(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str, st
                 "result": {**res, "state": "done", "note": "take-profit (offset) eseguito; stop annullato (OCO)"}})
             return
 
-        # b) STOP: valuta la condizione avversa.
-        ltp = _ltp(market, sel, hcap)
+        # b) STOP: valuta la condizione avversa. 28/09 (cantiere J2): a stream
+        # muto prezzi e LTP dalla riserva (feed vivo) o nessuno.
         best_back, best_lay = low._best_prices(market, sel, hcap)
+        ltp = _prezzo_di_confronto(market, rule, sel, hcap, best_back, best_lay)
         w, l = low._read_matched_exposures(flumine, market, strategy, sel, hcap)
+        if _stream_muto(rule) and best_back is None and best_lay is None:
+            # J2: il take-profit appoggiato (una CHIUSURA) resta, lo stop non ha
+            # prezzi: lo si grida (1/min), niente decisioni al buio
+            _avviso_appoggiato_senza_prezzi(rule, "bracket", w, l)
+            return
         decision = risk_engine.evaluate_rule(
             rule_type="stop_loss", entry_side=str(rule.get("entry_side")),
             entry_price=low._f(rule.get("entry_price")), params=_params(rule), current_price=ltp,
@@ -647,6 +736,19 @@ def _handle_stop_entry(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str)
                                       "error": "stop_entry: entry_size/entry_side non validi"})
         _alert("CRITICAL", f"Stop-entry {rule.get('id')} DISATTIVATO: entry_size/side non validi.")
         return
+    if _stream_muto(rule):
+        # 28/09 (cantiere J2): uno stop-entry APRE una posizione. A stream del
+        # runner muto nessuna posizione nuova (brief J2): resta armata e scatta
+        # al rientro dei prezzi dello stream. Lo si scrive UNA volta nella regola.
+        if res.get("attesa_flusso") is not True:
+            res["attesa_flusso"] = True
+            _update_rule(sb, rule["id"], {"result": {**res, "note": (
+                "flusso prezzi del runner INTERROTTO: nessun ingresso finche' "
+                "lo stream non torna (la regola resta armata)")}})
+        return
+    if res.get("attesa_flusso"):
+        res["attesa_flusso"] = False
+        _update_rule(sb, rule["id"], {"result": {**res, "note": "flusso prezzi ripreso"}})
     ltp = _ltp(market, sel, hcap)
     try:
         fired = risk_engine.stop_entry_fires(
@@ -694,7 +796,8 @@ def _chase_done(sb: Any, rule: Dict[str, Any], res: Dict[str, Any], note: str) -
                                   "result": {**res, "note": note}})
 
 
-def _handle_chase(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str) -> None:
+def _handle_chase(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str,
+                  strategy: Any = None) -> None:
     market = low._resolve_market(flumine, rule.get("market_id"))
     sel = int(rule["selection_id"]); hcap = float(rule.get("handicap") or 0)
     res = _result(rule)
@@ -807,7 +910,28 @@ def _handle_chase(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str) -> N
     if st in _TERMINAL or rem <= 0:
         _chase_done(sb, rule, res, f"ordine terminale ({st or 'abbinato'}): chase concluso")
         return
-    best_back, best_lay = low._best_prices(market, sel, hcap)
+    if _stream_muto(rule):
+        # 28/09 (cantiere J2, regola 11 dell'utente: nessun bot apre ne' chiude
+        # su prezzi non vivi). ``_best_prices`` qui e' gia' la RISERVA (feed
+        # vivo dello scanner) o niente.
+        best_back, best_lay = low._best_prices(market, sel, hcap)
+        riserva_viva = best_back is not None or best_lay is not None
+        w, l = low._read_matched_exposures(flumine, market, strategy, sel, hcap)
+        chiude = _riduce_rischio(side, w, l)
+        if not riserva_viva:
+            if not chiude:
+                # APERTURA appoggiata senza nessun prezzo vivo: si RITIRA e lo si
+                # dice; al rientro la strategia ridecide (nessun ripiazzo automatico)
+                _ritira_apertura_appoggiata(sb, rule, res, mode_l, bet_id, rem)
+                return
+            # CHIUSURA/copertura appoggiata: resta (riduce il rischio), si grida
+            _avviso_appoggiato_senza_prezzi(rule, "chase", w, l)
+            return
+        if not chiude:
+            return      # apertura: nessun ri-prezzamento su prezzi di riserva
+        # chiusura con riserva viva: il chase continua sui prezzi della riserva
+    else:
+        best_back, best_lay = low._best_prices(market, sel, hcap)
     try:
         target = risk_engine.chase_target_price(side, best_back, best_lay, offset_ticks)
     except ValueError as ex:
@@ -1021,7 +1145,7 @@ def _process_rule(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str, stra
     elif rt == "stop_entry":
         _handle_stop_entry(sb, flumine, rule, mode_l)
     elif rt == "chase":
-        _handle_chase(sb, flumine, rule, mode_l)
+        _handle_chase(sb, flumine, rule, mode_l, strategy)
     elif rt == "auto_hedge":
         _handle_auto_hedge(sb, flumine, rule, mode_l)
     else:

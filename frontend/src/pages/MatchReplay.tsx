@@ -1211,6 +1211,7 @@ export default function MatchReplay() {
                                         marketId={trainingMarketId}
                                         orderMode="paper"
                                         sport="calcio"
+                                        flussoRunner={false}
                                         ladderSource={trainingSource}
                                         orderApi={trainApiRef.current}
                                         fallbackSelections={(replay.markets.find(m => m.market_id === trainingMarketId)?.selections ?? [])

@@ -74,11 +74,18 @@ class _MB:
         self.publish_time_epoch = pt
 
 
-def _make(**p):
-    return TennisSwingStrategy(
+def _make(uscite_automatiche: bool = True, **p):
+    s = TennisSwingStrategy(
         market_filter=filters.streaming_market_filter(market_ids=["1.1"]),
         swing_params={"dry_run": False, **p},
     )
+    # 28/09 (CANTIERE N): da oggi anche stop e time-stop passano dal cancello
+    # delle uscite. Questa suite prova la MECCANICA delle uscite (quale ordine,
+    # a che prezzo, quando): la si fa girare a uscite AUTOMATICHE; il ramo
+    # manuale (proposta, firma) ha la sua suite
+    # (`test_uscite_manuali_bot_tennis_2026_09_25.py`, `test_uscite_proposte_*`).
+    s.uscite_automatiche = uscite_automatiche
+    return s
 
 
 # ---------------------------------------------------------------------------

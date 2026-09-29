@@ -58,6 +58,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Optional
 
+from Betfair.stream import flusso_prezzi as _flusso
+
 # strategie con regole di uscita automatica del manuale (manual: mai toccata)
 EXIT_STRATEGIES = ("base", "esatto", "punta", "tennis")
 # strategie di MODELLO (regole a modello: decide_model); il tipo è in meta.kind
@@ -396,11 +398,36 @@ def parse_ts(v: Any) -> Optional[float]:
         return None
 
 
+def flusso_esito(row: Optional[dict[str, Any]],
+                 scanner_stato: Optional[dict[str, Any]] = None,
+                 market_id: Any = None,
+                 now_ts: Optional[float] = None) -> "_flusso.Esito":
+    """CANTIERE J (28/09): i prezzi di questa riga sono VIVI? Il MATCH_ODDS della
+    partita (``flusso.vivo``) e, se c'e', il mercato della decisione
+    (``market_id``: Correct Score, linea a gol...). Con lo stato dello scanner si
+    guarda anche che il suo giro non sia bloccato e che la partita non sia fra
+    quelle ferme. Riga di uno scanner precedente (senza ``flusso``): non noto,
+    nessun veto (restano i veti di eta')."""
+    if not isinstance(row, dict):
+        return _flusso.NON_NOTO
+    payload = row.get("payload")
+    if not isinstance(payload, dict):
+        payload = None
+    mercati = None
+    if market_id is not None and payload is not None:
+        mo = payload.get("mo_market_id")
+        mercati = [m for m in (mo, market_id) if m]
+    adesso_ms = None if now_ts is None else int(float(now_ts) * 1000)
+    return _flusso.valuta(payload, scanner_stato, row.get("event_id"), mercati, adesso_ms)
+
+
 def feed_is_fresh(row: Optional[dict[str, Any]], now_ts: float,
                   scanner_ts: Optional[float] = None,
                   max_age_s: float = FEED_FRESH_S,
                   hard_max_age_s: float = FEED_HARD_MAX_S,
-                  scanner_max_age_s: float = SCANNER_HEARTBEAT_MAX_S) -> bool:
+                  scanner_max_age_s: float = SCANNER_HEARTBEAT_MAX_S,
+                  scanner_stato: Optional[dict[str, Any]] = None,
+                  market_id: Any = None) -> bool:
     """La riga del feed è utilizzabile per una chiusura: aggiornata da
     ≤ ``max_age_s`` OPPURE scanner vivo (heartbeat ≤ ``scanner_max_age_s``: la
     riga non cambia perché non è cambiato nulla, non perché il feed è morto).
@@ -412,8 +439,15 @@ def feed_is_fresh(row: Optional[dict[str, Any]], now_ts: float,
 
     TETTO DURO (M-24): oltre ``hard_max_age_s`` la riga NON è mai utilizzabile,
     nemmeno con lo scanner vivo — uno scanner che non riscrive quella partita da
-    due minuti non sta osservando quel mercato, e su quote vecchie non si chiude."""
+    due minuti non sta osservando quel mercato, e su quote vecchie non si chiude.
+
+    CANTIERE J (28/09): PRIMA di tutto il FLUSSO dei prezzi (``flusso_esito``).
+    Il 26/09 le righe erano riscritte ogni pochi secondi per i cambi di
+    punteggio con quote ferme da ore: una riga "giovane" non dice che i prezzi
+    arrivano. Flusso fermo = non fresca, qualunque sia l'eta' della riga."""
     if not isinstance(row, dict):
+        return False
+    if not flusso_esito(row, scanner_stato, market_id, now_ts).vivo:
         return False
     ts = parse_ts(row.get("updated_at"))
     if ts is not None and now_ts - ts > float(hard_max_age_s):

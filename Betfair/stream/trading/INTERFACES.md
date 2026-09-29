@@ -550,10 +550,17 @@ Besiktas v Marseille, mercato `1.262290365`, selezione `58805`, in-play, `betDel
   `sizeCancelled` 1.9), annullato pulito. **CERTIFICATO IN-PLAY.**
 
 **REGOLA (IN VERIFICA, 17/09 sera)**: vedi sotto — la causa vera sembra l'IMPORTO, non il percorso.
-`pianifica_submin` ha quindi `consenti_replace=False` per DEFAULT: con quota abbinabile o
-book ignoto ritorna `rifiuto = "SUBMIN_REPLACE_NON_PERCORRIBILE: ..."` e **0 chiamate
-mutanti**. `consenti_replace=True` resta solo come flag per esperimenti dichiarati (i test
-storici della sequenza B lo passano esplicitamente).
+
+**CORREZIONE 28/09 (cantiere D1-ter, verificata sul codice)**: il default VERO nel codice e'
+`consenti_replace=True` (`submin.py`, firma di `pianifica_submin`), e ne' `place_submin_live`
+ne' `start_submin` lo passano. Quindi con quota abbinabile o book ignoto il piano e' il
+PERCORSO B (parcheggio lontano, taglio, rimpiazzo), NON il rifiuto
+`SUBMIN_REPLACE_NON_PERCORRIBILE` scritto qui sopra e nelle due righe della matrice
+(«rifiuto per default»): quelle righe descrivono una scelta del 17/09 poi ritirata. L'esito
+del rimpiazzo lo decide Betfair (misure del 17/09: `INVALID_BET_SIZE` sui BACK non multipli
+di 0,50). Con `fill_or_kill=True` (default di `place_submin_live`) il residuo non abbinato
+dopo il rimpiazzo viene RITIRATO. Il piano del live per un taker FOK e' in
+`omega_market.piano_submin_live` (pura), riusata dal paper del canale (D1-ter).
 
 **Replace rifiutato con la meta' cancel riuscita** (`cancelInstructionReport.status ==
 SUCCESS` e `sizeCancelled >= residuo`): l'ordine e' **certamente morto**, quindi rifiuto

@@ -104,9 +104,11 @@ def test_spento_il_maker_ritira_la_gamba_opposta_e_propone():
     prop = _proposte(events)
     assert len(prop) == 1
     p = prop[0]
-    assert p["motivo"] == "target" and p["lato"] == "LAY" and p["entry_side"] == "BACK"
-    assert p["prezzo"] == pytest.approx(2.20) and p["size"] > 0 and p["bloccabile"] > 0
-    assert slot.t_lock == 2_000, "stop e lock_ttl armati dal fill"
+    # 28/09 (CANTIERE N): le chiavi comuni a tutti i bot (uscite_proposte.proposta_di)
+    assert p["motivo"] == "target" and p["lato_chiusura"] == "LAY" and p["lato_ingresso"] == "BACK"
+    assert p["prezzo"] == pytest.approx(2.20) and p["size_chiusura"] > 0 and p["se_chiudi"] > 0
+    assert slot.t_lock == 2_000, "i timer di stop e lock_ttl partono dal fill"
+    assert s.stats["uscite_proposte"][0]["chiave"] == p["chiave"]
 
 
 def test_spento_la_proposta_e_una_sola_anche_su_piu_book():
@@ -124,18 +126,76 @@ def test_spento_la_proposta_e_una_sola_anche_su_piu_book():
     assert len(_proposte(events)) == 1 and m.orders == []
 
 
-def test_spento_lo_stop_a_n_tick_resta_automatico():
+def _in_stop(auto: bool):
     events = []
-    s = _strategy(events, uscite_automatiche=False)
+    s = _strategy(events, uscite_automatiche=auto)
     m = _FakeMarket()
     slot = s._slot("1.234", 42)
     slot.entry, slot.entry_side = _back_abbinato(), "BACK"
     s._open_lock(m, slot, 2_000, slot.entry, 2.22, 2.24)
-    assert slot.status == LOCKING and slot.close is None
+    return events, s, m, slot
+
+
+def test_acceso_lo_stop_a_n_tick_parte():
+    events, s, m, slot = _in_stop(True)
     # il best back sale di 3 tick oltre il nostro back (2.22 -> 2.28): stop
     s._manage(m, None, None, slot, 2_500, 2.28, 2.30, 500.0, 500.0)
     assert slot.status == FLATTENING
     assert "stop" in [k for k, _ in events]
+
+
+def test_spento_lo_stop_a_n_tick_diventa_proposta():
+    """28/09 (CANTIERE N, regola dell'utente): lo stop e' un'uscita di TRADING
+    in perdita. A uscite manuali la posizione resta: nasce la proposta coi
+    numeri (chiusura a mercato adesso) e parte solo con la firma."""
+    events, s, m, slot = _in_stop(False)
+    assert slot.status == LOCKING and slot.close is None
+    s._manage(m, None, None, slot, 2_500, 2.28, 2.30, 500.0, 500.0)
+    assert slot.status == LOCKING and "stop" not in [k for k, _ in events]
+    stop = [p for p in s.stats["uscite_proposte"] if p["motivo"] == "stop"]
+    assert len(stop) == 1 and stop[0]["urgente"] is True and stop[0]["se_chiudi"] < 0
+    # l'utente firma: al book dopo, se lo stop vale ancora, parte
+    s.cancello_uscite.approva({stop[0]["chiave"]: 2.6})
+    s._manage(m, None, None, slot, 2_700, 2.28, 2.30, 500.0, 500.0)
+    assert slot.status == FLATTENING and "stop" in [k for k, _ in events]
+
+
+def test_spento_stop_firmato_ma_rientrato_non_parte():
+    events, s, m, slot = _in_stop(False)
+    s._manage(m, None, None, slot, 2_500, 2.28, 2.30, 500.0, 500.0)
+    chiave = next(p["chiave"] for p in s.stats["uscite_proposte"] if p["motivo"] == "stop")
+    s._manage(m, None, None, slot, 2_600, 2.20, 2.22, 500.0, 500.0)   # rientrato
+    assert [p["motivo"] for p in s.stats["uscite_proposte"]] == ["target"]
+    s.cancello_uscite.approva({chiave: 2.65})
+    s._manage(m, None, None, slot, 2_700, 2.20, 2.22, 500.0, 500.0)
+    assert slot.status == LOCKING and m.orders == []
+
+
+def test_spento_il_timeout_lock_ttl_diventa_proposta():
+    events, s, m, slot = _in_stop(False)
+    s._manage(m, None, None, slot, 2_000 + s.lock_ttl_ms + 1, 2.20, 2.22, 500.0, 500.0)
+    assert slot.status == LOCKING
+    assert "timeout" in [p["motivo"] for p in s.stats["uscite_proposte"]]
+
+
+def test_spento_la_firma_del_target_mette_la_chiusura():
+    events, s, m, slot = _in_stop(False)
+    chiave = s.stats["uscite_proposte"][0]["chiave"]
+    s.cancello_uscite.approva({chiave: 2.4})
+    s._manage(m, None, None, slot, 2_500, 2.20, 2.22, 500.0, 500.0)
+    assert slot.close is not None and m.orders, "la chiusura a target parte con la firma"
+
+
+def test_force_flat_resta_protezione_in_manuale():
+    events, s, m, slot = _in_stop(False)
+    s.force_flat = True
+    mb = SimpleNamespace(market_id="1.234", publish_time_epoch=2_500, inplay=False,
+                         runners=[], market_definition=None, status="OPEN")
+    try:
+        s.process_market_book(m, mb)
+    except Exception:  # noqa: BLE001 - il finto del book e' minimo
+        pass
+    assert slot.status != LOCKING or s.force_flat is True
 
 
 def test_spento_lo_scratch_a_pari_non_parte_ma_si_propone():
@@ -198,3 +258,41 @@ def test_sessione_applica_il_valore_letto_a_caldo():
     assert SS.applica_uscite_automatiche(db, "E1", strat, {"uscite_automatiche": "no"}) is False
     assert strat.uscite_automatiche is False
     assert db.righe[-1][1] == "info" and db.righe[-1][2]["uscite_automatiche"] is False
+
+
+def test_la_sessione_passa_le_firme_ai_bot_vivi():
+    """28/09 (CANTIERE N): la firma scritta dalla RPC scalper_approva_uscita
+    in params.uscite_approvate arriva al maker (lo sniper, se c'e', uguale)."""
+    s = _strategy([], uscite_automatiche=False)
+    # 29/09: la firma vale solo per una proposta VIVA nata prima della firma
+    s.cancello_uscite.lascia_uscire(automatiche=False, chiave="k",
+                                    now_s=SS._UP._secondi("2026-09-28T11:59:00+00:00"),
+                                    proposta={"motivo": "stop"})
+    n = SS._UP.applica_firme((s, None), {"uscite_approvate": {"k": "2026-09-28T12:00:00+00:00"},
+                                         "uscite_automatiche": False})
+    assert n == 1 and "k" in s.cancello_uscite.approvate
+    assert SS._UP.applica_firme((s,), None) == 0, "params non letti: niente cambia"
+
+
+def test_firma_data_prima_di_un_riavvio_cade_e_non_esegue_su_altre_posizioni():
+    """29/09 (reperto I del revisore): la chiave della proposta porta l'ordine
+    d'ingresso (``Order.id``, o ``id()`` dell'oggetto se manca). Dopo un
+    riavvio del processo la posizione rinasce con un ordine nuovo: la firma
+    rimasta sulla riga di controllo ha la chiave VECCHIA, non trova la sua
+    proposta e cade; e anche se la chiave coincidesse, e' anteriore alla
+    proposta nuova e cade lo stesso. Mai un'uscita su un'altra posizione."""
+    events, s, m, slot = _in_stop(False)
+    s._manage(m, None, None, slot, 2_500, 2.28, 2.30, 500.0, 500.0)
+    vecchia = next(p["chiave"] for p in s.stats["uscite_proposte"] if p["motivo"] == "stop")
+    # ---- riavvio: istanza nuova, posizione ritrovata con un ordine nuovo
+    events2, s2, m2, slot2 = _in_stop(False)
+    s2._manage(m2, None, None, slot2, 9_000, 2.28, 2.30, 500.0, 500.0)
+    nuova = next(p["chiave"] for p in s2.stats["uscite_proposte"] if p["motivo"] == "stop")
+    assert nuova != vecchia
+    SS._UP.applica_firme((s2,), {"uscite_approvate": {vecchia: 2.6}})
+    s2._manage(m2, None, None, slot2, 9_200, 2.28, 2.30, 500.0, 500.0)
+    assert slot2.status == LOCKING and m2.orders == []
+    # stessa chiave (caso peggiore), firma anteriore alla proposta nuova: cade
+    SS._UP.applica_firme((s2,), {"uscite_approvate": {nuova: 2.6}})
+    s2._manage(m2, None, None, slot2, 9_300, 2.28, 2.30, 500.0, 500.0)
+    assert slot2.status == LOCKING and m2.orders == []

@@ -25,6 +25,9 @@ from typing import Any, Dict, List, Optional
 
 # 26/09: la chiave del marcatore "fermata dal freno" vive in auto_mode (chi la legge)
 from .auto_mode import CHIAVE_FERMATA_FRENO
+# 28/09 (cantiere J2): lo stream di mercato della sessione e' vivo?
+from .. import stream_muto as _SM
+from .. import uscite_proposte as _UP
 
 logger = logging.getLogger(__name__)
 
@@ -605,6 +608,56 @@ def _handle_flumine_crash(db: Any, event_id: str, trading: Any,
         }).execute()
     except Exception:  # noqa: BLE001 - alert best-effort
         pass
+
+
+#: kind dell'attivita' della sessione per l'episodio di stream muto (UI:
+#: ``frontend/src/lib/scalperControlRoom.ts``)
+KIND_FLUSSO_INTERROTTO = "flusso_interrotto"
+KIND_FLUSSO_RIPRESO = "flusso_ripreso"
+
+
+def sorveglia_flusso_sessione(db: Any, event_id: str, framework: Any,
+                              sorv: "_SM.SorvegliaStream",
+                              adesso_s: Optional[float] = None,
+                              stato: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """CANTIERE J2 (28/09) - a ogni battito della sessione: lo stream di mercato
+    di flumine e' vivo? I bot della sessione agiscono SOLO su un book nuovo
+    (flumine non ripete i book): a stream muto nessuno gestisce la posizione,
+    force-flat e stop compresi, finche' non torna un book.
+
+    Una volta per EPISODIO: avviso CRITICAL in ``live_alerts`` (Control Room) e
+    riga ``flusso_interrotto`` nell'attivita' della sessione, con la posizione
+    aperta NON gestita dichiarata; al rientro INFO ``flusso_ripreso``. Ritorna
+    la dichiarazione per ``stats.flusso`` (la riga di controllo dice «flusso
+    interrotto» finche' dura). Mai solleva: e' una misura, non un ordine."""
+    ora = time.time() if adesso_s is None else float(adesso_s)
+    try:
+        st = stato if stato is not None else _SM.stato_stream(framework)
+        posizione = _dichiarazione_non_flat(framework) if st.get("vivo") is False else None
+        avviso = sorv.osserva(st, ora, posizione)
+    except Exception as ex:  # noqa: BLE001 - la misura non ferma mai la sessione
+        logger.debug("[scalper-sess] sorveglianza flusso KO: %s", str(ex)[:120])
+        return sorv.dichiarazione(ora)
+    if avviso:
+        inizio = avviso.get("code") == _SM.CODICE_INIZIO
+        try:
+            db.sb.table("live_alerts").insert({
+                "level": avviso["level"], "code": avviso["code"],
+                "message": f"sessione scalper {event_id}: {avviso['message']}"[:500],
+                "event_id": event_id,
+            }).execute()
+        except Exception:  # noqa: BLE001 - alert best-effort
+            pass
+        try:
+            db.log(event_id, KIND_FLUSSO_INTERROTTO if inizio else KIND_FLUSSO_RIPRESO, {
+                "msg": avviso["message"], "critical": bool(inizio),
+                "motivo": st.get("motivo"), "eta_s": st.get("eta_s"),
+                "mercati_fermi": list(st.get("mercati_fermi") or [])[:20],
+                **({"posizione_non_gestita": posizione} if inizio and posizione else {}),
+            })
+        except Exception:  # noqa: BLE001
+            pass
+    return sorv.dichiarazione(ora)
 
 
 def _make_session_mirror(market_ids: List[str], exec_mode: str) -> Any:
@@ -1401,10 +1454,17 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             daemon=True, name="scalper-freno",
         ).start()
 
+        # 28/09 (cantiere J2): la memoria degli episodi di stream muto
+        sorv_flusso = _SM.SorvegliaStream()
+
         while runner.is_alive():
             time.sleep(HEARTBEAT_S)
             flush()
-            db.set_control(ev, heartbeat_at=_now_iso(), stats=_stats())
+            # 28/09 (cantiere J2): stream di mercato muto = nessun book = nessuna
+            # gestione della posizione. Lo si DICE (alert + attivita', una volta
+            # per episodio) e la riga lo dichiara finche' dura (stats.flusso).
+            _flusso = sorveglia_flusso_sessione(db, ev, framework, sorv_flusso)
+            db.set_control(ev, heartbeat_at=_now_iso(), stats={**_stats(), "flusso": _flusso})
             # RICONCILIAZIONE bot↔ordini (condizione §0-bis n.1, fix 11/07):
             # le divergenze ledger↔ordini rilevate dalle strategie diventano
             # alert CRITICAL in-app (live_alerts) — mai piu' posizioni
@@ -1451,6 +1511,10 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             # l'attributo arrivava solo al maker e lo sniper chiudeva da solo)
             if sniper is not None:
                 applica_uscite_automatiche(db, ev, sniper, params_vivi)
+            # 28/09 (CANTIERE N): le FIRME dell'utente sulle proposte d'uscita
+            # (RPC scalper_approva_uscita -> params.uscite_approvate), stessa
+            # lettura del battito: la firma vale dal book successivo.
+            _UP.applica_firme((strategy, sniper), params_vivi)
             # fix 15/07 (bug 2, lato sessione): anche 'stopped'/'error' scritti
             # da fuori (supervisore/UI) sono un ordine di stop — mai continuare
             # a tradare su una riga che il resto del sistema considera chiusa.

@@ -291,6 +291,15 @@ def _smonta(st: Dict[str, Any]) -> None:
 _CHIAVI_RIGA = ("id", "status", "side", "market_id", "selection_id", "price", "size",
                 "mode")
 
+#: D1-ter (28/09) - bot il cui trasporto «coda» del banco e' la strada REST LIVE
+#: e il cui trasporto «canale» e' la strada PAPER del runner (Mike: il live e'
+#: REST, il paper passa SEMPRE dal runner). Per loro le righe differiscono per
+#: costruzione solo nel ``mode`` ('live' contro 'paper'), che quindi NON entra
+#: nel confronto delle righe. Per tutti gli altri bot (Omega, Safe) il
+#: confronto resta identico: ``mode`` compreso.
+BOT_CODA_LIVE_CANALE_PAPER = frozenset({"mike"})
+_CHIAVI_FUORI_CONFRONTO_LIVE_PAPER = ("mode",)
+
 
 def _num(v: Any) -> Optional[float]:
     try:
@@ -393,8 +402,14 @@ def confronta(coda: Dict[str, Any], canale: Dict[str, Any]) -> Dict[str, Any]:
             break
     scarti_t = [s for s in (_secondi(x.get("t_mercato"), y.get("t_mercato"))
                             for x, y in zip(a, b)) if s is not None]
-    ra = {r.get("id"): r for r in coda.get("righe") or []}
-    rb = {r.get("id"): r for r in canale.get("righe") or []}
+    bot = str(coda.get("bot") or canale.get("bot") or "")
+    fuori = (_CHIAVI_FUORI_CONFRONTO_LIVE_PAPER
+             if bot in BOT_CODA_LIVE_CANALE_PAPER else ())
+
+    def _per_confronto(r: Dict[str, Any]) -> Dict[str, Any]:
+        return {k: v for k, v in r.items() if k not in fuori}
+    ra = {r.get("id"): _per_confronto(r) for r in coda.get("righe") or []}
+    rb = {r.get("id"): _per_confronto(r) for r in canale.get("righe") or []}
     righe_diverse = []
     for rid in sorted(set(ra) | set(rb), key=lambda x: (x is None, x)):
         x, y = ra.get(rid), rb.get(rid)
@@ -402,7 +417,9 @@ def confronta(coda: Dict[str, Any], canale: Dict[str, Any]) -> Dict[str, Any]:
             righe_diverse.append({"id": rid, "coda": x, "canale": y})
     ordini_uguali = primo is None
     parita = ordini_uguali and not righe_diverse and not canale.get("rest_sul_canale")
+    extra = {"chiavi_fuori_confronto": list(fuori)} if fuori else {}
     return {
+        **extra,
         "parita": parita,
         "ordini_coda": len(a), "ordini_canale": len(b),
         "ordini_uguali": ordini_uguali,

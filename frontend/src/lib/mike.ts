@@ -1240,6 +1240,15 @@ export const MIKE_ACTIVITY_KINDS = [
     'uscita_eseguita_su_approvazione',
     // M1 (25/09, interruttore spento): il veto sulla P calibrata dell'Under 3.5
     'veto_under_calibrata',
+    // 28/09 (cantiere J, decisione dell'utente): il FLUSSO PREZZI delle linee è
+    // interrotto (stream caduto e REST muto, o giro dello scanner bloccato):
+    // le linee escono dalla decisione, niente aperture né chiusure a mercato.
+    'flusso_interrotto',
+    // 28/09 (seconda consegna): lo scanner in esercizio non dichiara il flusso
+    'flusso_non_dichiarato',
+    // 28/09 (cantiere J2, regola unica): chiusura/copertura sui prezzi del
+    // ripiego REST; flusso fermo E REST muto con posizione aperta (critico)
+    'ripiego_rest', 'flusso_interrotto_senza_rest',
 ] as const;
 
 /** kind specifici di Mike che si aggiungono ad ACTIVITY_BASE (design system §6). */
@@ -1282,6 +1291,9 @@ export const MIKE_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
     reconcile_pending: { label: 'ORDINE IN VERIFICA', cls: 'bg-red-500/15 text-red-300 border-red-500/40', critical: true },
     reconcile_fix: { label: 'RICONCILIAZIONE · corretto', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
     feed_line_missing: { label: 'LINEA ASSENTE NEL FEED', cls: 'bg-red-500/15 text-red-300 border-red-500/40', critical: true },
+    flusso_interrotto: { label: 'FLUSSO PREZZI INTERROTTO', cls: 'bg-red-500/15 text-red-300 border-red-500/40', critical: true },
+    ripiego_rest: { label: 'PREZZI DAL RIPIEGO REST', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
+    flusso_interrotto_senza_rest: { label: 'FLUSSO FERMO E REST MUTO: POSIZIONE SCOPERTA', cls: 'bg-red-500/15 text-red-300 border-red-500/40', critical: true },
     schema_warn: { label: 'SCHEMA DB', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
     cover: { label: 'COPERTURA OVER 4.5', cls: 'bg-teal-500/15 text-teal-300 border-teal-500/40' },
     skip: { label: 'SALTO', cls: 'bg-white/5 text-slate-400 border-white/10' },
@@ -1497,6 +1509,8 @@ export function mikeActivityLine(kind: string, payload: Record<string, unknown> 
             return `${String(p.leg ?? '')} · ${reasonLabel(p.action)}${p.status ? ` · stato ${String(p.status)}` : ''}${Number.isFinite(n('size')) ? ` · ${money('size')}` : ''}${Number.isFinite(n('price')) ? ` @ ${odds('price')}` : ''}`;
         case 'feed_line_missing':
             return `linee assenti nel feed: ${[...(Array.isArray(p.markets) ? p.markets : []), ...(Array.isArray(p.selections) ? p.selections : [])].map((x) => lineLabel(String(x))).join(', ') || reasonLabel(p.reason)} · fase ${stateLabel(p.state)}`;
+        case 'flusso_interrotto':
+            return `${String(p.testo ?? 'flusso prezzi interrotto')} · nessuna apertura né chiusura a mercato su quei prezzi · fase ${stateLabel(p.state)}`;
         case 'config_warn':
             return `${String(p.message ?? '')} (finestra ${String(p.entry_hours_before_ko ?? '?')} h · scanner ${String(p.scanner_pre_ko_hours ?? '?')} h)`;
         case 'schema_warn':
@@ -1599,6 +1613,8 @@ export const MIKE_REQUEST_CODE_MESSAGE: Record<string, string> = {
     snapshot_assente: 'nessuno snapshot del mercato',
     niente_da_chiudere: 'niente da chiudere',
     feed_stantio: 'feed stantio',
+    // 28/09 (cantiere J): i prezzi della partita non arrivano più
+    flusso_interrotto: 'flusso prezzi interrotto: nessuna chiusura su prezzi vecchi',
     kind_non_valido: 'comando non valido',
     errore_interno: 'errore interno del servizio',
     processing_stale: 'richiesta rimasta in lavorazione',

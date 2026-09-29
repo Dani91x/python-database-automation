@@ -121,14 +121,22 @@ def test_safe_paper_apertura_ferma_col_freno(freno, sorgente):
 
 @pytest.mark.parametrize("meta", [{"closes_trade_id": 40}, {"cashout": True}])
 def test_safe_paper_chiusura_passa_col_freno(freno, meta):
+    # CANTIERE P (28/09): senza runner (qui: niente gate) il paper non riempie
+    # piu' «in casa». La chiusura PASSA il freno e arriva fino al trasporto,
+    # che dice che il runner manca: il motivo NON e' il freno.
     freno("db")
     out = _safe_paper(meta)
-    assert out.status == "open", "a freno tirato le chiusure passano sempre"
+    assert out.status == "error"
+    assert out.fill_note.startswith("paper_senza_runner:"), \
+        "a freno tirato le chiusure passano sempre (fino al trasporto)"
 
 
 def test_safe_paper_freno_rilasciato_parita(freno):
+    # CANTIERE P (28/09): freno rilasciato = si arriva al trasporto (runner
+    # assente qui -> non eseguito), mai fermati dal freno
     freno(None)
-    assert _safe_paper().status == "open"
+    out = _safe_paper()
+    assert out.status == "error" and out.fill_note.startswith("paper_senza_runner:")
 
 
 # ===========================================================================

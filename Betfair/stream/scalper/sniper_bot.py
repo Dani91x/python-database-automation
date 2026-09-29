@@ -38,6 +38,8 @@ from flumine.order.trade import Trade
 from flumine.utils import get_nearest_price, get_price, get_size, price_ticks_away
 
 from .scalper_bot import compute_green, ticks_between
+from ..uscite_proposte import CHIAVE_STATS as CHIAVE_PROPOSTE
+from ..uscite_proposte import CancelloUscite, UltimiPrezzi, proposta_di
 
 logger = logging.getLogger(__name__)
 _EPS = 1e-9
@@ -156,6 +158,15 @@ class SniperStrategy(BaseStrategy):
         # Solo un booleano vero conta: ogni altro valore = False.
         _ua = c.get("uscite_automatiche", False)
         self.uscite_automatiche: bool = _ua if isinstance(_ua, bool) else False
+        # 29/09 (CANTIERE N, regola dell'utente del 28/09): in manuale anche
+        # STOP a N tick e TIMEOUT ``max_pos_s`` sono uscite di TRADING: tutte e
+        # tre (con la presa di profitto) diventano PROPOSTE coi numeri e
+        # partono solo con la firma, quando la condizione vale ancora. Restano
+        # protezioni automatiche: fine finestra, force-flat (freno/cap),
+        # divergenza del ledger, flatten e close parziale.
+        self.cancello_uscite = CancelloUscite(emetti=lambda ev, p: self._emit(ev, **p))
+        # 29/09 (CANTIERE N, UM2): l'ultimo prezzo di chiusura visto (solo numeri)
+        self._ultimi_prezzi = UltimiPrezzi()
         self.force_flat: bool = False
         self._event_done: bool = False
         # clock REALE di partita (da live_now.minute, spinto dal watcher di
@@ -384,6 +395,10 @@ class SniperStrategy(BaseStrategy):
             sl = get_size(ex.available_to_lay, 0)
             key = (mid, int(runner.selection_id))
             self._update_micro(key, float(now), bb, sb, bl)
+            # 29/09 (CANTIERE N, UM2): l'ultimo prezzo VISTO per lato (solo i
+            # numeri della proposta, quando il book di adesso non ha quel lato)
+            self._ultimi_prezzi.annota((mid, int(runner.selection_id), "BACK"), bb, now)
+            self._ultimi_prezzi.annota((mid, int(runner.selection_id), "LAY"), bl, now)
             pos = self._p(mid, int(runner.selection_id))
             # avanza le sequenze exact (park-trim-replace) PRIMA di tutto
             self._drive_submins(market, pos)
@@ -421,9 +436,12 @@ class SniperStrategy(BaseStrategy):
             has_pos = bool(pos.entries) or pos.flattening
 
             # TIMEOUT duro: il tick non arriva -> fuori subito
+            vive_n: List[str] = []
             if (pos.entries and not pos.flattening
                     and pos.entry_fill_pt is not None
-                    and now - pos.entry_fill_pt > self.max_pos_s * 1000.0):
+                    and now - pos.entry_fill_pt > self.max_pos_s * 1000.0
+                    and self._lascia_uscire(pos, runner.selection_id, "timeout",
+                                            bb, bl, now, vive_n)):
                 self.stats["timeouts"] += 1
                 self._emit("sniper_timeout",
                            pos_s=round((now - pos.entry_fill_pt) / 1000.0, 1))
@@ -436,6 +454,9 @@ class SniperStrategy(BaseStrategy):
                 continue
 
             if bb is None or bl is None:
+                # 29/09 (CANTIERE N, UM2): la proposta nata qui sopra (timeout,
+                # coi numeri dell'ultimo prezzo visto) arriva SUBITO alla scheda
+                self._pubblica_proposte()
                 continue
             if not (self.price_min <= bb <= self.price_max):
                 continue
@@ -451,7 +472,9 @@ class SniperStrategy(BaseStrategy):
                     up = ticks_between(get_nearest_price(ob),
                                        get_nearest_price(bb)) \
                         if (ob and bb and bb > ob) else 0
-                    if up is not None and up >= self.stop_ticks:
+                    if (up is not None and up >= self.stop_ticks
+                            and self._lascia_uscire(pos, runner.selection_id, "stop",
+                                                    bb, bl, now, vive_n)):
                         self.stats["stops"] += 1
                         self._emit("sniper_stop", up=up)
                         self._begin_flatten(market, pos)
@@ -463,18 +486,16 @@ class SniperStrategy(BaseStrategy):
                             get_nearest_price(ob), -self.target_ticks)
                         if price and price > 1.0:
                             g = compute_green(nw, nl, price)
-                            if g is not None and not self.uscite_automatiche:
+                            if g is not None and not self._lascia_uscire(
+                                    pos, runner.selection_id, "target", bb, bl, now,
+                                    vive_n, prezzo=price, g=g):
                                 # 28/09 (R-F2-9) - uscite MANUALI: la presa di
                                 # profitto a +target_ticks e' un'uscita
                                 # discrezionale, non parte: si DICHIARA e
                                 # decide l'utente. Stop, timeout e fine
                                 # finestra (protezioni) restano armati qui
                                 # sopra, come nello scalper.
-                                side, size, locked = g
-                                self._proponi_uscita(
-                                    pos, runner.selection_id, motivo="target",
-                                    lato=side, prezzo=price, size=size,
-                                    bloccabile=locked)
+                                pass    # proposta scritta dal cancello
                             elif g is not None:
                                 side, size, locked = g
                                 o = self._place(market, runner.selection_id,
@@ -519,6 +540,9 @@ class SniperStrategy(BaseStrategy):
                             self._event_done = True
                             self._emit("sniper_mission_done",
                                        pnl=round(self.stats["pnl_locked"], 3))
+                if pos.entries:
+                    self.cancello_uscite.conferma_vive(self._prefisso_uscite(pos), vive_n)
+                self._pubblica_proposte()
                 continue
 
             # ---- nessuna posizione: si spara SOLO col gate verde ----
@@ -593,6 +617,63 @@ class SniperStrategy(BaseStrategy):
         if self.live_minute is not None:
             return round(float(self.live_minute), 1)
         return round(el / 60.0, 1) if el else None
+
+    # ----------------------------------- 29/09 (CANTIERE N): il cancello uscite
+    def _prefisso_uscite(self, pos: _Pos) -> str:
+        """La posizione (mercato, selezione, primo ingresso). Il primo pezzo
+        e' 'scalper': la firma passa dalla stessa RPC della sessione
+        (``scalper_approva_uscita``); ``sn-`` distingue lo sniper dal maker."""
+        k = next((kk for kk, v in self._pos.items() if v is pos), ("?", 0))
+        e0 = pos.entries[0] if pos.entries else None
+        ingresso = getattr(e0, "id", None) or id(e0)
+        return f"scalper|{k[0]}|{k[1]}|sn-{ingresso}|"
+
+    def _lascia_uscire(self, pos: _Pos, selection_id: Any, motivo: str,
+                       bb: Any, bl: Any, now: float, vive: List[str], *,
+                       prezzo: Any = None, g: Any = None) -> bool:
+        """True = l'uscita ``motivo`` decisa dalla strategia parte ADESSO
+        (automatiche, o firmata dall'utente entro il TTL); False = proposta
+        coi numeri e niente ordini. Lo stop e il timeout si chiudono a mercato
+        (flatten al touch): la proposta porta quel prezzo."""
+        sb_m, ob, sl_m, ol = self._matched(pos.entries)
+        nw = sb_m * ((ob or 1.0) - 1.0) - sl_m * ((ol or 1.0) - 1.0)
+        nl = sl_m - sb_m
+        extra: Dict[str, Any] = {}
+        if prezzo is None:
+            # 29/09 (CANTIERE N, UM2): la proposta porta sempre i numeri:
+            # prezzo vivo, o l'ultimo visto con la sua eta', o il motivo
+            k_p = next((kk for kk, v in self._pos.items() if v is pos), ("?", 0))
+            lato_book = "LAY" if nw > nl else "BACK"
+            prezzo, extra = self._ultimi_prezzi.per_proposta(
+                (k_p[0], int(k_p[1]), lato_book), bl if nw > nl else bb, now)
+        if g is None and prezzo:
+            g = compute_green(nw, nl, prezzo)
+        chiave = self._prefisso_uscite(pos) + motivo
+        ok = self.cancello_uscite.lascia_uscire(
+            automatiche=bool(self.uscite_automatiche), chiave=chiave,
+            now_s=float(now) / 1000.0,
+            proposta=proposta_di(
+                bot="sniper", motivo=motivo, market_id=chiave.split("|")[1],
+                selection_id=(int(selection_id) if selection_id is not None else None),
+                lato_ingresso="BACK", prezzo=prezzo,
+                lato_chiusura=(g[0] if g else None),
+                size_chiusura=(g[1] if g else None),
+                se_chiudi=(g[2] if g else None), se_vince=nw, se_perde=nl, **extra))
+        if not ok:
+            vive.append(chiave)
+            if pos.proposta != motivo:
+                pos.proposta = motivo
+                self.stats["uscite_proposte_emesse"] = int(
+                    self.stats.get("uscite_proposte_emesse", 0) or 0) + 1
+        return ok
+
+    def _pubblica_proposte(self) -> None:
+        """Le proposte vive nelle ``stats`` (la sessione le scrive come
+        ``sniper_uscite_proposte``): solo quelle delle posizioni aperte."""
+        self.cancello_uscite.tieni_solo(
+            [self._prefisso_uscite(p) for p in self._pos.values()
+             if p.entries and not p.flattening])
+        self.stats[CHIAVE_PROPOSTE] = self.cancello_uscite.vive()  # type: ignore[assignment]
 
     def _proponi_uscita(self, pos: _Pos, selection_id: Any, *, motivo: str, lato: Any,
                         prezzo: Any, size: Any, bloccabile: Any) -> None:

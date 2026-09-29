@@ -26,6 +26,7 @@ import {
     groupTradesIntoCicli, groupCicliByEvent, isSettled, isErrorRow,
     type PnlTradeLike,
 } from './eventGroups';
+import { giudizioFlusso, type FlussoRiga, type GiudizioFlusso } from './flussoPrezzi';
 
 // ---------------------------------------------------------------- vocabolario
 
@@ -250,6 +251,8 @@ export interface PartitaFeedLike {
         p1?: { back: number | null; lay: number | null } | null;
         p2?: { back: number | null; lay: number | null } | null;
     } | null;
+    /** 28/09 (cantiere J) — i prezzi sono VIVI? (`lib/flussoPrezzi.ts`) */
+    flusso?: FlussoRiga | null;
 }
 
 /**
@@ -759,6 +762,10 @@ export interface PartitaGiornata {
      * esposizione). Opzionale per lo stesso motivo di `statoMercato`.
      */
     odds?: PartitaFeedLike['odds'];
+    /** 28/09 (cantiere J) — il flusso dei prezzi di questa partita, gia'
+     *  giudicato (`giudizioFlusso`). Opzionale per lo stesso motivo di
+     *  `statoMercato`. */
+    flusso?: GiudizioFlusso | null;
 }
 
 export interface GruppoCampionato {
@@ -836,6 +843,7 @@ export function costruisciGiornata(args: {
                 ? p.mo_total_matched : null,
             giocatori: p ? { p1: p.p1 ?? null, p2: p.p2 ?? null } : null,
             odds: p?.odds ?? null,
+            flusso: giudizioFlusso(p?.flusso, nowMs),
         };
     });
 

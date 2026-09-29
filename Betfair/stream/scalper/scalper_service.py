@@ -387,7 +387,10 @@ def giro_auto(db: Any, st: StatoAuto, righe_attive: List[Dict[str, Any]],
                 st.guardia, control=serv,
                 set_control=lambda **c: _pubblica("scalper_stato", db.set_servizio(**c)),
                 log=lambda kind, payload: db.activity("servizio", kind, payload),
-                now_iso=ora_iso)
+                now_iso=ora_iso,
+                # 28/09 CANTIERE N: uscite MANUALI a ogni avvio nuovo (le
+                # sessioni nuove nascono con il valore di questa riga)
+                uscite_bot="scalper")
             serv = db.servizio() or serv
         except Exception as e:  # noqa: BLE001 - la guardia resta armata
             logger.warning("[scalper-svc] controllo d'avvio dell'auto-mode KO: %s",

@@ -1,0 +1,51 @@
+M1 scanner: flusso sempre vivo: ROSSO | test_26_09_punteggio_che_cambia_prezzi_fermi_da_ore_il_bot_non_opera | 1 failed, 90 deselected in 3.46s
+M2 scanner: blocco flusso non pubblicato nella riga: ROSSO | test_26_09_punteggio_che_cambia_prezzi_fermi_da_ore_il_bot_non_opera | 1 failed, 90 deselected in 3.43s
+M3 Safe: feed_is_fresh ignora il flusso: ROSSO | test_26_09_punteggio_che_cambia_prezzi_fermi_da_ore_il_bot_non_opera | 1 failed, 90 deselected in 1.96s
+M4 scanner: heartbeat conferma anche il book della connessione vecchia: ROSSO | test_heartbeat_di_una_connessione_nuova_non_conferma_un_book_della_vecchia | 1 failed, 90 deselected in 3.84s
+M5 scanner: latenza 503 ignorata: ROSSO | test_stream_latente_503_non_conferma | 1 failed, 90 deselected in 1.45s
+M6 shard: conferma anche con status 503: ROSSO | test_shard_conferma_solo_se_connesso_vivo_e_non_latente | 1 failed, 90 deselected in 2.64s
+M7 firma critica senza flusso (freno di 2,5 s sul passaggio): ROSSO | test_il_passaggio_a_fermo_salta_il_freno_di_scrittura | 1 failed, 90 deselected in 2.16s
+M8 Mike: linee ferme non tolte dal book: ROSSO | test_mike_linea_ferma_via_dal_book_e_order_fresh_falso | 1 failed, 90 deselected in 1.97s
+M9 Mike: order_fresh senza flusso: ROSSO | test_mike_linea_ferma_via_dal_book_e_order_fresh_falso | 1 failed, 90 deselected in 2.48s
+M10 Omega: prezzi del feed senza flusso: ROSSO | test_omega_flusso_fermo_niente_prezzi_dal_feed | 1 failed, 90 deselected in 2.89s
+M11 stato: giro bloccato non visto: ROSSO | test_stato_porta_il_flusso_e_il_giro_bloccato_ferma_tutti | 1 failed, 90 deselected in 3.66s
+M12 scanner: dal_ms rigenerato a ogni giro (IO): ROSSO | test_26_09_rientro_dei_prezzi_riaccende_il_flusso_con_una_sola_riscrittura | 1 failed, 90 deselected in 1.73s
+M13 scanner: nessuna conferma dagli heartbeat: ROSSO | test_mercato_fermo_con_heartbeat_vivi_resta_vivo_per_dieci_minuti | 1 failed, 90 deselected in 1.91s
+M14 banco: registrazione che scorre non conferma: ROSSO | test_banco_la_registrazione_che_scorre_conferma_come_gli_heartbeat | 1 failed, 90 deselected in 9.96s
+M15 Safe: combo incompleta chiusa col flusso fermo: ROSSO | test_safe_combo_incompleta_non_chiude_a_mercato_col_flusso_fermo | 1 failed, 90 deselected in 3.15s
+M16 book senza prezzi trattato come prezzo: ROSSO | test_book_senza_prezzi_non_e_un_prezzo_operabile | 1 failed, 90 deselected in 2.85s
+M17 per mercato: linea ferma non segnalata: ROSSO | test_linea_ferma_con_match_odds_vivo_va_in_mercati_fermi | 1 failed, 90 deselected in 2.28s
+M18 Safe: _row_is_fresh ignora il mercato: ROSSO | test_linea_ferma_con_match_odds_vivo_va_in_mercati_fermi | 1 failed, 90 deselected in 2.29s
+M19 Mike: giro bloccato non svuota i book: ROSSO | test_mike_giro_scanner_bloccato_nessun_book | 1 failed, 90 deselected in 3.59s
+M20 Safe apertura: market_id=None al posto del mercato del segnale: ROSSO | test_apertura_esatto_linea_ferma_mo_vivo_non_apre | 1 failed, 90 deselected in 3.01s
+M21 Safe uscita: feed_is_fresh senza market_id: ROSSO | test_uscita_linea_ferma_mo_vivo_non_esce | 1 failed, 90 deselected in 2.74s
+M22 Safe uscita: feed_is_fresh senza scanner_stato: ROSSO | test_uscita_giro_scanner_bloccato_non_esce | 1 failed, 90 deselected in 3.59s
+M23 Safe cash-out: feed_is_fresh senza market_id: ROSSO | test_cashout_linea_ferma_mo_vivo_non_usa_il_feed | 1 failed, 90 deselected in 3.09s
+M24 Omega _feed_fresh_for_decision ignora il flusso: ROSSO | test_omega_decisione_e_prezzi_col_cs_fermo | 1 failed, 90 deselected in 2.23s
+M25 Omega _feed_prices_fresh ignora il flusso: ROSSO | test_omega_decisione_e_prezzi_col_cs_fermo | 1 failed, 90 deselected in 2.31s
+M26 Omega _cs_from_feed ignora il flusso: ROSSO | test_omega_decisione_e_prezzi_col_cs_fermo | 1 failed, 90 deselected in 2.55s
+M27 dato assente con scanner nuovo = non noto: ROSSO | test_riga_senza_chiave_con_scanner_nuovo_non_e_viva | 1 failed, 90 deselected in 1.85s
+M28 scanner vecchio: avviso a ogni giro: ROSSO | test_scanner_vecchio_si_dice_una_volta_safe | 1 failed, 90 deselected in 1.80s
+M29 Mike: avviso scanner vecchio mai scritto: ROSSO | test_scanner_vecchio_si_dice_una_volta_mike | 1 failed, 90 deselected in 2.63s
+M30 stato dello scanner senza flusso prima del primo giro: ROSSO | test_ogni_riga_e_ogni_stato_dello_scanner_nuovo_portano_la_chiave | 1 failed, 90 deselected in 2.30s
+N1 Safe ordine a mano/proposta approvata: veto solo sul MATCH_ODDS: ROSSO | test_ordine_approvato_su_linea_ferma_non_parte_e_dice_perche | 1 failed, 90 deselected in 2.27s
+N2 Safe combo approvata: gamba ferma accettata: ROSSO | test_combo_approvata_con_una_gamba_su_linea_ferma_nessuna_gamba | 1 failed, 90 deselected in 2.12s
+N3 Safe chiusura solidale: sorella ferma chiusa: ROSSO | test_sorella_su_linea_ferma_non_si_chiude | 1 failed, 90 deselected in 3.21s
+N4 Safe cash-out rifiutato senza motivo: ROSSO | test_cashout_rifiutato_dice_il_motivo_del_flusso | 1 failed, 90 deselected in 2.22s
+N5 Omega missione: blocco del feed fermo usato: ROSSO | test_omega_missione_col_cs_fermo_va_al_rest | 1 failed, 90 deselected in 2.38s
+N6 Mike ciclo: stato dello scanner non passato allo snapshot: ROSSO | test_giro_dello_scanner_bloccato_nessun_comando | 1 failed, 90 deselected in 1.50s
+N7 Mike ciclo: flusso interrotto non detto: ROSSO | test_linee_ferme_nessuna_apertura_nessun_comando_al_runner | 1 failed, 90 deselected in 3.21s
+A1 Safe uscita: ripiego REST ignorato: ROSSO | test_regola_unica_safe_chiusura_col_flusso_fermo_e_rest_vivo_parte_coi_prezzi_rest | 1 failed, 90 deselected in 3.42s
+A2 Safe: riga critica a ogni giro: ROSSO | test_regola_unica_safe_flusso_fermo_e_rest_muto_nessun_ordine_e_riga_critica | 1 failed, 90 deselected in 3.23s
+A3 Safe: REST muto senza riga critica: ROSSO | test_regola_unica_safe_flusso_fermo_e_rest_muto_nessun_ordine_e_riga_critica | 1 failed, 90 deselected in 2.18s
+A4 Mike ciclo: ripiego REST ignorato: ROSSO | test_regola_unica_mike_flusso_fermo_rest_vivo_la_chiusura_parte_coi_prezzi_rest | 1 failed, 90 deselected in 1.83s
+A5 Mike: apertura sui prezzi REST: ROSSO | test_regola_unica_mike_execute_place_rifiuta_un_apertura_sui_prezzi_rest | 1 failed, 90 deselected in 10.51s
+A6 Mike: riga critica a ogni giro: ROSSO | test_regola_unica_mike_flusso_fermo_rest_muto_nessun_ordine_e_riga_critica | 1 failed, 90 deselected in 2.02s
+A7 Mike: REST letto anche senza posizione: ROSSO | test_regola_unica_mike_nessuna_apertura_anche_col_rest_vivo | 1 failed, 90 deselected in 3.51s
+A8 Mike cash-out utente: niente ripiego REST: ROSSO | test_regola_unica_mike_cash_out_dell_utente_col_flusso_fermo | 1 failed, 90 deselected in 2.02s
+A9 Omega: apertura col flusso fermo: ROSSO | test_regola_unica_omega_nessuna_apertura_col_flusso_fermo | 1 failed, 90 deselected in 2.51s
+A10 Omega green-up: flusso fermo non detto: ROSSO | test_regola_unica_omega_green_up_col_ripiego_rest_e_col_rest_muto | 1 failed, 90 deselected in 2.06s
+A11 Omega: riga critica a ogni giro: ROSSO | test_regola_unica_omega_green_up_col_ripiego_rest_e_col_rest_muto | 1 failed, 90 deselected, 2 warnings in 4.93s
+A12 Safe: apertura letta dal REST: ROSSO | test_regola_unica_safe_nessuna_apertura_col_flusso_fermo_anche_col_rest_vivo | 1 failed, 90 deselected in 2.95s
+A13 Safe sorella: ripiego REST ignorato: ROSSO | test_regola_unica_safe_sorella_ferma_col_rest_vivo_si_chiude_coi_prezzi_rest | 1 failed, 90 deselected in 4.90s
+EXIT=0

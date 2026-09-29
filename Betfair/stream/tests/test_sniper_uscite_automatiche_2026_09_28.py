@@ -31,8 +31,11 @@ from Betfair.stream.tests.test_sniper_bot_2026_07_10 import (
     _strategy,
 )
 
-CHIAVI_PROPOSTA_SCALPER = {"motivo", "selection_id", "entry_side", "lato", "prezzo",
-                           "size", "bloccabile"}
+# 29/09 (CANTIERE N): la proposta passa dal cancello comune
+# (``uscite_proposte.proposta_di``): stesse chiavi di tutti i bot di flusso
+CHIAVI_PROPOSTA = {"bot", "motivo", "urgente", "market_id", "selection_id", "lato_ingresso",
+                   "prezzo", "lato_chiusura", "size_chiusura", "se_chiudi", "se_vince",
+                   "se_perde", "chiave", "decided_at"}
 
 
 def _in_posizione(**over: Any):
@@ -62,9 +65,10 @@ def test_spento_la_presa_di_profitto_non_parte_e_si_propone():
     prop = _proposte(s)
     assert len(prop) == 1
     p = prop[0]
-    assert set(p) == CHIAVI_PROPOSTA_SCALPER
-    assert p["motivo"] == "target" and p["lato"] == "LAY" and p["entry_side"] == "BACK"
-    assert p["prezzo"] == pytest.approx(3.35) and p["size"] > 0 and p["bloccabile"] > 0
+    assert set(p) == CHIAVI_PROPOSTA
+    assert p["motivo"] == "target" and p["lato_chiusura"] == "LAY" and p["lato_ingresso"] == "BACK"
+    assert p["prezzo"] == pytest.approx(3.35) and p["size_chiusura"] > 0 and p["se_chiudi"] > 0
+    assert p["bot"] == "sniper" and p["chiave"].startswith("scalper|1.234|1221385|sn-")
 
 
 def test_spento_la_proposta_e_una_sola_anche_su_piu_book():
@@ -72,7 +76,8 @@ def test_spento_la_proposta_e_una_sola_anche_su_piu_book():
     for i in range(5):
         s.process_market_book(mkt, _book(650 + i, bb=3.40, bl=3.45, sb=200))
     assert len(_proposte(s)) == 1
-    assert s.stats["uscite_proposte"] == 1
+    assert s.stats["uscite_proposte_emesse"] == 1
+    assert [p["motivo"] for p in s.stats["uscite_proposte"]] == ["target"]
 
 
 def test_acceso_la_chiusura_la_mette_il_bot_come_prima():
@@ -83,23 +88,54 @@ def test_acceso_la_chiusura_la_mette_il_bot_come_prima():
     assert _proposte(s) == []
 
 
-def test_spento_lo_stop_a_n_tick_resta_automatico():
-    s, mkt, pos = _in_posizione()
+def test_acceso_lo_stop_a_n_tick_parte():
+    s, mkt, pos = _in_posizione(uscite_automatiche=True)
     # quote SALITE di 2 tick contro il back (3,40 -> 3,50): stop, chiusura garantita
     s.process_market_book(mkt, _book(650, bb=3.50, bl=3.55, sb=200))
     assert s.stats["stops"] == 1 and pos.flattening is True
-    assert _proposte(s) == []                      # lo stop non e' una proposta
-    # il flatten (protezione) piazza la chiusura al book dopo, da solo
     s.process_market_book(mkt, _book(651, bb=3.50, bl=3.55, sb=200))
     assert any(o.side == "LAY" for o in mkt.orders), "chiusura garantita attesa"
 
 
-def test_spento_il_timeout_della_posizione_resta_automatico():
+def test_spento_lo_stop_a_n_tick_diventa_proposta_e_parte_con_la_firma():
+    """29/09 (CANTIERE N, regola dell'utente del 28/09): lo stop e' un'uscita di
+    TRADING in perdita. In manuale non parte: proposta coi numeri; con la firma
+    (condizione ancora vera) parte al book dopo."""
     s, mkt, pos = _in_posizione()
+    s.process_market_book(mkt, _book(650, bb=3.50, bl=3.55, sb=200))
+    assert s.stats["stops"] == 0 and pos.flattening is False and mkt.orders == []
+    stop = [p for p in s.stats["uscite_proposte"] if p["motivo"] == "stop"]
+    assert len(stop) == 1 and stop[0]["urgente"] is True and stop[0]["se_chiudi"] < 0
+    s.cancello_uscite.approva({stop[0]["chiave"]: (KO_MS + 650_500.0) / 1000.0})
+    s.process_market_book(mkt, _book(651, bb=3.50, bl=3.55, sb=200))
+    assert s.stats["stops"] == 1 and pos.flattening is True
+
+
+def test_acceso_il_timeout_della_posizione_parte():
+    s, mkt, pos = _in_posizione(uscite_automatiche=True)
     pos.entry_fill_pt = KO_MS + 100_000.0          # 550 s fa (> max_pos_s 300)
     s.process_market_book(mkt, _book(650, bb=3.40, bl=3.45, sb=200))
     assert s.stats["timeouts"] == 1
     assert any(o.side == "LAY" for o in mkt.orders), "chiusura garantita attesa"
+
+
+def test_spento_il_timeout_della_posizione_diventa_proposta():
+    """29/09 (CANTIERE N): il timeout ``max_pos_s`` prima scavalcava
+    l'interruttore (``_begin_flatten`` diretto); ora in manuale e' una proposta."""
+    s, mkt, pos = _in_posizione()
+    pos.entry_fill_pt = KO_MS + 100_000.0
+    s.process_market_book(mkt, _book(650, bb=3.40, bl=3.45, sb=200))
+    assert s.stats["timeouts"] == 0 and pos.flattening is False
+    assert not any(o.side == "LAY" for o in mkt.orders)
+    assert "timeout" in [p["motivo"] for p in s.stats["uscite_proposte"]]
+
+
+def test_fuori_finestra_resta_protezione_in_manuale():
+    """Fine finestra in-play: la strategia non puo' restare aperta -> chiude."""
+    s, mkt, pos = _in_posizione()
+    s.inplay_to_s = 100.0                          # finestra gia' chiusa
+    s.process_market_book(mkt, _book(650, bb=3.40, bl=3.45, sb=200))
+    assert pos.flattening is True
 
 
 @pytest.mark.parametrize("acceso", [False, True])
@@ -146,5 +182,8 @@ def test_ciclo_nuovo_proposta_nuova():
     s.process_market_book(mkt, _book(651, bb=3.40, bl=3.45, sb=200))
     assert len(_proposte(s)) == 1
     s._close_cycle_clock(pos, KO_MS + 652_000.0)       # fine ciclo
+    # ciclo nuovo = ingresso NUOVO (la chiave della proposta porta l'ordine)
+    pos.entries = [_FakeOrder("BACK", price=3.40, size_matched=10.0, avg=3.40)]
+    pos.entry_fill_pt = KO_MS + 652_500.0
     s.process_market_book(mkt, _book(653, bb=3.40, bl=3.45, sb=200))
     assert len(_proposte(s)) == 2

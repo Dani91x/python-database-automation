@@ -83,8 +83,10 @@ describe('safeBot RPC', () => {
     it('fetchSafeState normalizza una risposta vuota', async () => {
         rpc.mockResolvedValue({ data: null, error: null });
         const st = await fetchSafeState();
+        // 29/09: dal 26/09 (FIX-A, Safe per modalita') lo stato porta anche
+        // `aggregates_by_mode`; a risposta vuota e' null, mai assente.
         expect(st).toEqual({
-            control: null, trades: [], aggregates: null,
+            control: null, trades: [], aggregates: null, aggregates_by_mode: null,
             activity: [], params_effective: null, operating_day: null,
         });
     });

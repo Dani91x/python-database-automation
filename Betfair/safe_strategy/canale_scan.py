@@ -346,6 +346,9 @@ class ClientScan:
         #: scanner e' VIVO senza rileggere ``safe_strategy_status`` dal DB.
         #: Il battito NON e' una riga: ``incassa`` continua a tornare False.
         self.stato_mono = 0.0
+        # cantiere J (28/09): l'ultimo stato dello scanner arrivato sul canale
+        # (porta il blocco ``flusso``: giro bloccato, partite coi prezzi fermi)
+        self.stato_payload: Optional[Dict[str, Any]] = None
 
     # ------------------------------------------------------------- ciclo vita
     def avvia(self) -> None:
@@ -441,6 +444,9 @@ class ClientScan:
             # scanner lo emette ogni ``_STATUS_PERIOD_SEC``) e basta. Non e' una
             # riga e non entra nella cache delle righe.
             self.stato_mono = time.monotonic()
+            d = msg.get("d")
+            if isinstance(d, dict):
+                self.stato_payload = d
             return False
         if msg.get("t") not in TOPIC_SCAN_NOMI:
             # ``hello`` e gli altri topic passano di qui e non sono righe:

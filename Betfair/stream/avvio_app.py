@@ -38,6 +38,9 @@ spegnendo il bot che l'utente aveva appena acceso.
 LE STRATEGIE NON SI TOCCANO: qui si scrivono solo ``status``, ``mode``,
 ``stopped_at`` e ``stats``. L'unica chiave di ``params`` che puo' cambiare e'
 ``strategy_modes`` (Safe), che e' modalita' — paper o live — non strategia.
+28/09 (CANTIERE N, ordine dell'utente): anche l'interruttore delle USCITE torna
+MANUALE a ogni avvio nuovo (``uscite_a_manuali``): cambia CHI esegue le uscite,
+non quando la strategia le decide.
 """
 from __future__ import annotations
 
@@ -148,6 +151,69 @@ class Guardia:
         return stats_timbrate(stats, self.boot_id, self.fermato_at)
 
 
+#: 28/09 (CANTIERE N) - le strategie di Safe con uscite decise dal bot. Copia di
+#: ``safe_strategy.bot_service.STRATEGIE_CON_USCITE`` (qui non si importa Safe):
+#: un test di contratto le tiene uguali.
+STRATEGIE_SAFE_CON_USCITE = ("base", "esatto", "punta", "tennis", "model")
+
+_VERI_TESTO = ("1", "true", "yes", "on")
+
+
+def _bool_come_mike(v: Any) -> bool:
+    """La stessa coercizione di ``mike.config._coerce`` per un bool."""
+    if v is None:
+        return False
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, str):
+        return v.strip().lower() in _VERI_TESTO
+    return bool(v)
+
+
+def uscite_a_manuali(bot: str, params: Any) -> Optional[dict[str, Any]]:
+    """28/09 (CANTIERE N) - "uscite MANUALI anche dopo ogni riavvio dell'app".
+
+    Ritorna una COPIA di ``params`` con l'interruttore delle uscite di ``bot``
+    riportato a MANUALE, oppure ``None`` se e' gia' manuale (niente da scrivere).
+    Tocca SOLO la chiave dell'interruttore: nessuna soglia, nessuno stake.
+
+      * ``mike``    ``uscite_automatiche`` -> False
+      * ``scalper`` ``uscite_automatiche`` -> False (riga dell'interruttore)
+      * ``omega``   ``uscite_protezione`` -> ``'avvisa_e_proponi'``
+      * ``safe``    ``uscite_automatiche`` -> tutte le strategie False e
+                    ``tennis_exit_approval`` -> True (il cancelletto storico
+                    del tennis: una sola verita' con la mappa)
+    """
+    if not isinstance(params, dict):
+        return None
+    b = str(bot or "").strip().lower()
+    if b == "mike":
+        if not _bool_come_mike(params.get("uscite_automatiche")):
+            return None
+        return {**params, "uscite_automatiche": False}
+    if b == "scalper":
+        v = params.get("uscite_automatiche")
+        if v is None or v is False:
+            return None
+        return {**params, "uscite_automatiche": False}
+    if b == "omega":
+        v = str(params.get("uscite_protezione") or "").strip().lower()
+        if v != "automatico":
+            return None
+        return {**params, "uscite_protezione": "avvisa_e_proponi"}
+    if b == "safe":
+        mappa = params.get("uscite_automatiche")
+        mappa = dict(mappa) if isinstance(mappa, dict) else {}
+        qualcuna = any(v is True for v in mappa.values())
+        tennis_auto = params.get("tennis_exit_approval") is False
+        if not (qualcuna or tennis_auto):
+            return None
+        nuova = {k: False for k in mappa}
+        nuova.update({s: False for s in STRATEGIE_SAFE_CON_USCITE})
+        return {**params, "uscite_automatiche": nuova, "tennis_exit_approval": True}
+    return None
+
+
 def ferma_al_nuovo_avvio(
     guardia: Guardia,
     *,
@@ -157,6 +223,7 @@ def ferma_al_nuovo_avvio(
     now_iso: str,
     params_reset: Optional[Callable[[Any], Any]] = None,
     boot_id: Optional[str] = None,
+    uscite_bot: Optional[str] = None,
 ) -> Optional[dict[str, Any]]:
     """Ferma il bot se questo processo appartiene a un avvio NUOVO dell'app.
 
@@ -165,6 +232,9 @@ def ferma_al_nuovo_avvio(
     ``log(kind, payload)``: attivita' (best-effort, non ferma niente).
     ``params_reset(params_grezzi) -> (params_patchati | None, elenco_live)``:
       solo Safe. Tocca ESCLUSIVAMENTE ``strategy_modes``.
+    ``uscite_bot``: 28/09 (CANTIERE N) - il nome del bot (``mike``, ``omega``,
+      ``safe``, ``scalper``) il cui interruttore delle uscite torna MANUALE a
+      ogni avvio nuovo (``uscite_a_manuali``). ``None`` = non si tocca.
 
     Ritorna il riepilogo di cio' che e' stato azzerato, oppure ``None`` se non
     c'era niente da fare (stesso avvio, controllo gia' fatto, bot gia' fermo in
@@ -202,6 +272,15 @@ def ferma_al_nuovo_avvio(
                            guardia.nome, str(ex)[:160])
             patched, live_prima = None, []
 
+    # 28/09 (CANTIERE N): le uscite tornano MANUALI a ogni avvio nuovo, sopra
+    # l'eventuale reset delle modalita' (Safe). Non conta come "bot fermato":
+    # un bot gia' fermo in prova ma in automatico non riceve il cartello, ma
+    # l'attivita' lo dice.
+    uscite_manuali = None
+    if uscite_bot:
+        base = patched if patched is not None else params_grezzi
+        uscite_manuali = uscite_a_manuali(uscite_bot, base)
+
     # C'ERA DAVVERO QUALCOSA DA SPEGNERE? La riga si riscrive comunque (l'id
     # dell'avvio deve restare sulla riga), ma l'attivita' e il cartello in
     # Control Room hanno senso solo se questo avvio ha fermato qualcosa: un bot
@@ -217,7 +296,9 @@ def ferma_al_nuovo_avvio(
         "stopped_at": now_iso,
         "stats": stats_timbrate(stats, boot, fermato_at),
     }
-    if patched is not None:
+    if uscite_manuali is not None:
+        campi["params"] = uscite_manuali
+    elif patched is not None:
         campi["params"] = patched
     set_control(**campi)
 
@@ -229,13 +310,14 @@ def ferma_al_nuovo_avvio(
         "mode_precedente": modo_prima,
         "strategy_modes_live": list(live_prima),
         "azzerato": azzerato,
+        "uscite_riportate_a_manuali": uscite_manuali is not None,
         "motivo": ("APP_BOOT_ID assente nell'ambiente: trattato come avvio nuovo"
                    if not boot else "avvio nuovo dell'app"),
         "effetto": ("i bot li accende l'utente: status=stopped, mode=paper. "
                     "Le posizioni gia' aperte restano sorvegliate."),
         "ts": now_iso,
     }
-    if azzerato and log is not None:
+    if (azzerato or uscite_manuali is not None) and log is not None:
         try:
             log(KIND_ATTIVITA, riepilogo)
         except Exception as ex:  # noqa: BLE001 — il log non ferma mai un bot

@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
+from Betfair.stream import flusso_prezzi as _flusso
 from Betfair.stream.trading.xhedge import OVER_UNDER, canonical_selection
 
 from . import engine as E
@@ -94,6 +95,72 @@ def blocco_osservato(blk: Dict[str, Any], now: float, max_age_s: float) -> bool:
         return True
 
 
+def mercati_fermi(payload: Dict[str, Any]) -> frozenset:
+    """CANTIERE J (28/09): i market_id che lo scanner dichiara col flusso prezzi
+    fermo (``payload.flusso.mercati_fermi``). Vuoto se la riga non lo dice."""
+    blk = _flusso.blocco_riga(payload)
+    if blk is None:
+        return frozenset()
+    return frozenset(str(m) for m in (blk.get("mercati_fermi") or []))
+
+
+def mercati_di_mike(payload: Dict[str, Any]) -> list:
+    """I market_id delle DUE linee di Mike (3.5 e 4.5) presenti nella riga."""
+    out = []
+    for blk in payload.get("ou") or []:
+        if not isinstance(blk, dict) or not blk.get("market_id"):
+            continue
+        line = _num(blk.get("line"))
+        if line is not None and line in _LINE_TO_MARKET:
+            out.append(str(blk["market_id"]))
+    return out
+
+
+def flusso_esito(row: Dict[str, Any], scanner_stato: Optional[Dict[str, Any]] = None,
+                 now: Optional[float] = None) -> "_flusso.Esito":
+    """CANTIERE J (28/09): i prezzi delle linee di Mike sono VIVI? (giro dello
+    scanner non bloccato + nessuna delle due linee col flusso fermo). Mike non
+    decide sul MATCH_ODDS (prima del fischio non e' nemmeno sullo stream)."""
+    payload = row.get("payload") if isinstance(row, dict) else None
+    if not isinstance(payload, dict):
+        return _flusso.NON_NOTO
+    adesso_ms = None if now is None else int(float(now) * 1000)
+    return _flusso.valuta(payload, scanner_stato, None, mercati_di_mike(payload), adesso_ms)
+
+
+def payload_blocchi_ou(payload: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """{OU35/OU45: blocco} della riga SENZA filtri (per bet_delay e inplay dal
+    feed quando i prezzi vengono dal REST)."""
+    out: Dict[str, Dict[str, Any]] = {}
+    for blk in payload.get("ou") or []:
+        if isinstance(blk, dict):
+            m = _LINE_TO_MARKET.get(_num(blk.get("line")))
+            if m is not None:
+                out[m] = blk
+    return out
+
+
+def blocco_da_rest(rest: Optional[Dict[str, Any]],
+                   feed_blk: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """CANTIERE J2: un book REST (``omega_market.read_book``: ``status``,
+    ``inplay``, ``runners`` con ``back_price``/``lay_price``/``*_size``) nella
+    forma del blocco ``ou`` del feed, che ``_book_for`` legge. ``bet_delay``
+    dal feed (il REST non lo porta). None se il mercato non e' OPEN o vuoto."""
+    if not isinstance(rest, dict) or str(rest.get("status") or "").upper() != "OPEN":
+        return None
+    sel = []
+    for r in rest.get("runners") or []:
+        if isinstance(r, dict) and r.get("selection_id") is not None:
+            sel.append({"selection_id": int(r["selection_id"]), "back": r.get("back_price"),
+                        "back_size": r.get("back_size"), "lay": r.get("lay_price"),
+                        "lay_size": r.get("lay_size")})
+    if not sel:
+        return None
+    return {"market_id": rest.get("market_id") or feed_blk.get("market_id"), "status": "OPEN",
+            "inplay": bool(rest.get("inplay")), "bet_delay": feed_blk.get("bet_delay"),
+            "selections": sel, "fonte": _flusso.FONTE_RIPIEGO_REST}
+
+
 def ou_blocks(payload: Dict[str, Any], *, now: Optional[float] = None,
               seen_max_s: Optional[float] = None) -> Dict[str, Dict[str, Any]]:
     """{OU35: blocco, OU45: blocco} dalla lista ``ou`` del payload.
@@ -103,11 +170,18 @@ def ou_blocks(payload: Dict[str, Any], *, now: Optional[float] = None,
     mentre non aveva nessun modo di sospettare di un book presente ma morto.
     """
     out: Dict[str, Dict[str, Any]] = {}
+    # CANTIERE J (28/09): con ``now`` (cioe' quando si DECIDE) anche una linea
+    # il cui flusso prezzi e' fermo per lo scanner viene scartata come assente:
+    # stesso trattamento del blocco non piu' osservato. ``event_info`` (senza
+    # ``now``) non filtra: gli id servono per annullare ordini vivi.
+    fermi = mercati_fermi(payload) if now is not None else frozenset()
     for blk in payload.get("ou") or []:
         if not isinstance(blk, dict):
             continue
         if (now is not None and seen_max_s is not None
                 and not blocco_osservato(blk, now, seen_max_s)):
+            continue
+        if fermi and str(blk.get("market_id") or "") in fermi:
             continue
         line = _num(blk.get("line"))
         market = _LINE_TO_MARKET.get(line) if line is not None else None
@@ -305,10 +379,17 @@ def snapshot_from_row(row: Dict[str, Any], info: EventInfo, *, now: float, param
                       model_probs: Optional[Dict[str, float]] = None,
                       p_total_model: Optional[Dict[int, float]] = None,
                       p_total_emp: Optional[Dict[int, float]] = None,
-                      p_under35_cal: Optional[float] = None) -> Optional[E.Snapshot]:
+                      p_under35_cal: Optional[float] = None,
+                      scanner_stato: Optional[Dict[str, Any]] = None,
+                      books_rest: Optional[Dict[str, Dict[str, Any]]] = None) -> Optional[E.Snapshot]:
     payload = row.get("payload") if isinstance(row, dict) else None
     if not isinstance(payload, dict) or info.ko_at is None:
         return None
+    # CANTIERE J (28/09): flusso prezzi fermo sulle linee di Mike (o giro dello
+    # scanner bloccato) = feed NON fresco per decidere e per ordinare, anche se
+    # la riga e' appena stata riscritta per un cambio di punteggio (26/09).
+    esito_flusso = flusso_esito(row, scanner_stato, now)
+    flusso_vivo = esito_flusso.vivo
     # I book su cui si DECIDE: un blocco non piu' osservato viene scartato come
     # se non ci fosse (vedi ``blocco_osservato``). Mike sa gia' non fare niente
     # quando un book manca; non sapeva sospettare di un book presente ma morto,
@@ -318,6 +399,19 @@ def snapshot_from_row(row: Dict[str, Any], info: EventInfo, *, now: float, param
     # altrimenti non potremmo nemmeno ANNULLARE un ordine ancora vivo li' sopra.
     blocks = ou_blocks(payload, now=now,
                        seen_max_s=float(params.get("book_seen_max_s") or 90.0))
+    if esito_flusso.motivo == _flusso.MOTIVO_SCANNER_BLOCCATO:
+        # giro dello scanner fermo: nessuna linea e' confermata (cantiere J)
+        blocks = {}
+    # CANTIERE J2 (28/09, regola unica): col flusso fermo le linee lette dal
+    # RIPIEGO REST (book vivo, mercato aperto) tornano nella decisione con i
+    # prezzi di Betfair adesso. ``order_fresh`` resta FALSO: nessuna apertura.
+    rest_usato = False
+    if not flusso_vivo and books_rest:
+        for mkey, rest in books_rest.items():
+            blk = blocco_da_rest(rest, (payload_blocchi_ou(payload).get(mkey) or {}))
+            if blk is not None:
+                blocks[mkey] = blk
+                rest_usato = True
     books: Dict[Tuple[str, str], E.Book] = {}
     for key in ((E.MARKET_OU35, E.SEL_UNDER), (E.MARKET_OU45, E.SEL_OVER), (E.MARKET_OU45, E.SEL_UNDER)):
         bk = _book_for(blocks.get(key[0]), info.selection_id(*key))
@@ -331,9 +425,11 @@ def snapshot_from_row(row: Dict[str, Any], info: EventInfo, *, now: float, param
         minute=payload.get("minute") if isinstance(payload.get("minute"), int) else None,
         goals=goals_from_payload(payload),
         ht_active=ht_active_from_payload(payload),
-        feed_fresh=feed_fresh(row, now, float(params["feed_max_age_s"]), scanner_age_s,
-                              float(params.get("scanner_alive_max_s") or 75.0)),
-        order_fresh=order_fresh(row, now, params, scanner_age_s),
+        feed_fresh=rest_usato or (
+            flusso_vivo and feed_fresh(row, now, float(params["feed_max_age_s"]), scanner_age_s,
+                                       float(params.get("scanner_alive_max_s") or 75.0))),
+        order_fresh=flusso_vivo and order_fresh(row, now, params, scanner_age_s),
+        fonte_prezzi=(_flusso.FONTE_RIPIEGO_REST if rest_usato else "feed"),
         hazard=hazard, p4_market=implied_p4(blocks, info), p4_model=p4_model,
         last_goal_ts=last_goal_ts, market_status=status, final_total=None,
         total_matched=_num(blk35.get("total_matched")),   # diagnostica, nessun gate

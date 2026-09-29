@@ -33,6 +33,7 @@ from .. import avvio_app as AA
 from .. import canale_bot as _cb
 from .. import local_channel as _lc
 from .. import sveglia_canale as _SV
+from .. import uscite_proposte as _UP  # 28/09 CANTIERE N
 from ..single_instance import acquire_single_instance_lock
 from . import auto_mode as _AM
 from . import canale_bot_tennis as _CBT
@@ -907,11 +908,17 @@ def _stato_auto(d: Dict[str, Any], bot: str, tetto: int, feed: Dict[str, Any],
     """Lo stato dell'auto-mode di UN bot, con i nomi che la Control Room legge
     (``tennisAuto.ts``). Solo fatti: le parole le sceglie la pagina."""
     aperte = []
+    proposte: List[Dict[str, Any]] = []
     for r in righe_attive:
         st = r.get("stats") if isinstance(r.get("stats"), dict) else {}
         dal = st.get(_AM.CHIAVE_POSIZIONE_APERTA)
         if dal:
             aperte.append(str(dal))
+        # 28/09 (CANTIERE N): le PROPOSTE d'uscita che il bot tiene nel suo
+        # battito, con la partita: la Control Room le mostra con "approva"
+        for p in (st.get(_UP.CHIAVE_STATS) or []):
+            if isinstance(p, dict) and p.get("chiave"):
+                proposte.append({**p, "event_id": str(r.get("event_id") or "")})
     uscite = d.get("uscite_automatiche")
     return {
         "attivo": bool(origine_ok and tetto > 0),
@@ -933,6 +940,7 @@ def _stato_auto(d: Dict[str, Any], bot: str, tetto: int, feed: Dict[str, Any],
         "uscite_sempre_automatiche": bot in _AM.BOT_USCITE_SEMPRE_AUTOMATICHE,
         "posizioni_aperte_manuali": len(aperte),
         "posizione_aperta_dal": min(aperte) if aperte else None,
+        "uscite_proposte": proposte,
         "letto_at": datetime.fromtimestamp(ora, tz=timezone.utc).isoformat(),
     }
 
@@ -968,18 +976,24 @@ def ferma_interruttori_al_nuovo_avvio(boot_id: str | None = None,
         # R2 (25/09): anche un interruttore gia' fermo ma rimasto in LIVE torna
         # PAPER, altrimenti il prossimo «avvia» ripartirebbe in soldi veri.
         in_live = str(r.get("mode") or "").strip().lower() == "live"
-        if not (acceso or in_live):
+        # 28/09 (CANTIERE N): anche un interruttore fermo in prova ma con le
+        # uscite AUTOMATICHE torna MANUALE a ogni avvio nuovo dell'app.
+        uscite_auto = r.get("uscite_automatiche") is True
+        if not (acceso or in_live or uscite_auto):
             continue
         if AA.stesso_avvio(r.get("stats"), boot):
             continue          # stesso avvio (watchdog): non si tocca
-        stats = AA.stats_timbrate(r.get("stats"), boot, ora)
-        # il frontend legge `stats.fermato_all_avvio_at` e lo mostra: e' il
-        # modo in cui l'utente capisce perche' il bot che aveva acceso e' fermo
-        stats["fermato_all_avvio_at"] = ora
+        stats = AA.stats_timbrate(r.get("stats"), boot,
+                                  ora if (acceso or in_live) else "")
+        if acceso or in_live:
+            # il frontend legge `stats.fermato_all_avvio_at` e lo mostra: e' il
+            # modo in cui l'utente capisce perche' il bot che aveva acceso e' fermo
+            stats["fermato_all_avvio_at"] = ora
+        extra: Dict[str, Any] = {"uscite_automatiche": False} if uscite_auto else {}
         # R2 (25/09): stopped E mode='paper', come gli altri bot: in live ci si
         # torna solo con un gesto dell'utente dalla Control Room.
         if db.set_tennis_bot_service_state(bot, status="stopped", stopped=True,
-                                           stats=stats, mode="paper"):
+                                           stats=stats, mode="paper", **extra):
             fermati.append(bot)
             logger.info("[tennis-bot-svc] avvio NUOVO dell'app: interruttore "
                         "%s riportato a 'stopped' e 'paper' (lo accende l'utente).", bot)

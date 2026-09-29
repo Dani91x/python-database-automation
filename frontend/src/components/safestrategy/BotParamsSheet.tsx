@@ -643,7 +643,11 @@ export function BotParamsSheet({
                 // tennis. Le aperture restano automatiche. Acceso, OGNI chiusura
                 // del tennis — compresa l'uscita obbligatoria del manuale —
                 // resta ferma finché non la approvi tu dalla Control Room.
-                { key: 'tennis_exit_approval', label: 'TENNIS: le chiusure le approvo io', type: 'boolean' as const, hint: 'le aperture restano automatiche; ogni chiusura ti viene PROPOSTA e parte solo quando la approvi. Vale anche per l’uscita obbligatoria del manuale: finché non approvi, la posizione resta aperta' },
+                // 28/09 (CANTIERE N): l'interruttore delle uscite del tennis si
+                // cambia SOLO col componente comune (conferma per passare ad
+                // automatiche). `tennis_exit_approval` true = MANUALI.
+                { key: 'tennis_exit_approval', label: 'TENNIS: le chiusure le approvo io', type: 'uscite' as const,
+                  uscite: { automatico: false, manuale: true }, hint: 'le aperture restano automatiche; ogni chiusura ti viene PROPOSTA e parte solo quando la approvi. Vale anche per l\'uscita obbligatoria del manuale: finché non approvi, la posizione resta aperta' },
             ],
         },
         {

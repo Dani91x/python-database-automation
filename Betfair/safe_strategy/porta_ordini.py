@@ -432,6 +432,12 @@ class MemoriaComandi:
                     self.conti["vecchi"] += 1
                     return False
             copia = dict(d)
+            # CANTIERE P (28/09, R-2): il customerOrderRef VERO di Betfair
+            # (``cor``) il motore lo manda solo nel PRIMO evento (``inviato``);
+            # gli eventi dopo lo portano via sostituendo quello di prima. Lo si
+            # conserva, cosi' chi legge l'esito tardi lo trova ancora.
+            if prima is not None and prima.get("cor") and not copia.get("cor"):
+                copia["cor"] = prima["cor"]
             self._eventi.pop(ref, None)
             self._eventi[ref] = copia
             bet = copia.get("bet_id")

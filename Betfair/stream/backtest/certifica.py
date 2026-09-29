@@ -222,19 +222,41 @@ def _freni_da_banco() -> Iterator[None]:
     riga "dalla UI" a LIVE senza kill (``modo_ordini.dichiara_per_banco``) e
     la cache dei settings di ``controls`` a "kill spento, mai da rileggere".
     Senza, ogni apertura live tentava una connessione rifiutata (sandbox) e il
-    replay di Mike impiegava ore invece di minuti (reperto del 24/09)."""
+    replay di Mike impiegava ore invece di minuti (reperto del 24/09).
+
+    D1-quater (29/09): si dichiara ANCHE il TETTO d'ambiente
+    (``FRENI_AMBIENTE_DEL_BANCO``: ``LIVE_ORDER_MODE=LIVE``,
+    ``LIVE_KILL_SWITCH=false``). Prima il tetto veniva dal ``.env`` che
+    ``config_stream`` trova risalendo le cartelle: un checkout FUORI dal repo
+    non lo trovava, il tetto valeva OFF e ogni apertura live del replay moriva
+    ``live_order_mode_non_live:OFF`` (Mike 35760084, 254 righe). E' il valore
+    di PARTENZA: uno scenario che tira il freno (``LIVE_KILL_SWITCH=true``,
+    kill della riga) lo tira sopra questo. All'uscita (anche su eccezione)
+    le due variabili tornano esattamente com'erano (assenti comprese)."""
     from Betfair.stream import modo_ordini as _mo
     from Betfair.stream.trading import controls as _ctl
 
     prima = dict(_ctl._SETTINGS_CACHE)
+    prima_env = {k: os.environ.get(k) for k in FRENI_AMBIENTE_DEL_BANCO}
     _ctl._SETTINGS_CACHE["data"] = {"kill_switch": False}
     _ctl._SETTINGS_CACHE["ts"] = float("inf")
     try:
+        os.environ.update(FRENI_AMBIENTE_DEL_BANCO)
         with _mo.dichiara_per_banco("LIVE", kill=False):
             yield
     finally:
+        for k, v in prima_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
         _ctl._SETTINGS_CACHE.clear()
         _ctl._SETTINGS_CACHE.update(prima)
+
+
+#: D1-quater (29/09) - il tetto d'ambiente dichiarato per la durata del replay,
+#: per TUTTI i bot (stesso valore del ``.env`` del checkout principale).
+FRENI_AMBIENTE_DEL_BANCO = {"LIVE_ORDER_MODE": "LIVE", "LIVE_KILL_SWITCH": "false"}
 
 
 def _lavora(compito: tuple) -> Any:
@@ -708,6 +730,23 @@ def main(argv: Optional[List[str]] = None) -> int:
         print("  -- controlli del banco comune, scenari del modello montato "
               f"({', '.join(scenari_pm)}):")
         for cod, reg in PMZ.controlli_per(scenari_pm):
+            n = sollecitati_tot.get(cod, 0)
+            segno = "  " if n else "??"
+            print(f"  {segno} {cod:3} x{n:<7} {reg[:66]}")
+            if not n:
+                mai.append((cod, reg))
+    # N3 (28/09): i controlli delle USCITE MANUALI (famiglie UM/UF, scenari
+    # `uscite-manuali*` dei bot di flusso): stessa regola, contati solo se
+    # almeno uno di quegli scenari e' stato eseguito.
+    from . import uscite_manuali as UMZ
+
+    scenari_um = [sc for sc in scelti if sc in UMZ.SCENARI]
+    if scenari_um:
+        print("  -- controlli del banco comune, scenari a uscite manuali "
+              f"({', '.join(scenari_um)}):")
+        per_um = (UMZ.elenco_controlli() if UMZ.SCENARIO_FIRMATE in scenari_um
+                  else UMZ.elenco_controlli(UMZ.SCENARIO_MANUALI))
+        for cod, reg in per_um:
             n = sollecitati_tot.get(cod, 0)
             segno = "  " if n else "??"
             print(f"  {segno} {cod:3} x{n:<7} {reg[:66]}")

@@ -100,6 +100,8 @@ from . import motore_ordini as _MOT  # 24/09: _MO e' modo_ordini (master)
 from . import auto_follow as _AF  # 25/09: i bot seguono da soli le partite
 from . import frammenti_mercato as _FR  # 28/09: piu' connessioni di mercato (cantiere B)
 from . import arresto_ordinato as _AO  # 28/09: spegnimento ordinato dell'app
+from . import stream_muto as _SM  # 28/09: lo stream di mercato e' vivo? (cantiere J2)
+from . import riserva_prezzi as _RP  # 28/09: prezzi di riserva a stream muto (cantiere J2)
 from .risk_engine_worker import risk_engine_worker
 from .trading.controls import LiveEventExposureControl, LiveExposureControl, LiveRateControl
 from .xhedge_worker import xhedge_worker
@@ -1442,6 +1444,76 @@ def _pubblica_battito(session: Any) -> None:
         logger.debug("[runner] battito sul canale KO: %s", str(ex)[:120])
 
 
+def _ordini_vivi_nel_blotter(flumine: Any) -> Optional[str]:
+    """Gli ordini VIVI nel blotter del runner (sola memoria, nessuna lettura DB):
+    cio' che a stream muto non ha piu' prezzi nuovi su cui essere gestito."""
+    try:
+        parti = []
+        for market in list(getattr(flumine, "markets", None) or []):
+            blotter = getattr(market, "blotter", None)
+            live = list(getattr(blotter, "live_orders", None) or []) if blotter is not None else []
+            if live:
+                parti.append(f"{len(live)} ordini vivi su {getattr(market, 'market_id', '?')}")
+        return "; ".join(parti[:5]) or None
+    except Exception:  # noqa: BLE001 - dichiarazione best-effort
+        return "blotter non leggibile"
+
+
+def _sorveglia_flusso_runner(session: Any, flumine: Any,
+                             adesso_s: Optional[float] = None,
+                             adesso_mono: Optional[float] = None) -> Dict[str, Any]:
+    """CANTIERE J2 (28/09) - lo stream di mercato del runner calcio e' vivo?
+
+    Misura: il battito PER CONNESSIONE che ``frammenti_mercato.FrammentoListener``
+    gia' tiene (``ultimo_msg_mono``, heartbeat compresi): nessuna seconda misura.
+    Una volta per episodio: ``live_alerts`` CRITICAL (con gli ordini vivi che
+    restano senza prezzi nuovi) e INFO al rientro. La dichiarazione resta in
+    ``session.flusso_runner`` (la leggono la riserva dei prezzi e il canale) ed
+    esce sul canale 47331, topic ``flusso_stream``, a ogni battito. Mai solleva."""
+    ora = time.time() if adesso_s is None else float(adesso_s)
+    sorv = getattr(session, "flusso_sorveglia", None)
+    if sorv is None:
+        sorv = _SM.SorvegliaStream()
+        try:
+            session.flusso_sorveglia = sorv
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        st = _SM.stato_stream(flumine, adesso_mono=adesso_mono)
+        posizione = (_ordini_vivi_nel_blotter(flumine)
+                     if st.get("vivo") is False and not sorv.interrotto else None)
+        avviso = sorv.osserva(st, ora, posizione)
+    except Exception as ex:  # noqa: BLE001 - la misura non ferma mai il runner
+        logger.debug("[runner] sorveglianza flusso KO: %s", str(ex)[:120])
+        return sorv.dichiarazione(ora)
+    if avviso:
+        if avviso["level"] == "CRITICAL":
+            logger.critical("[runner] %s", avviso["message"])
+        else:
+            logger.info("[runner] %s", avviso["message"])
+        try:
+            db.insert_alert(avviso["level"], "RUNNER_" + avviso["code"],
+                            "runner calcio: " + avviso["message"])
+        except Exception:  # noqa: BLE001 - alert best-effort
+            pass
+    dich = sorv.dichiarazione(ora)
+    try:
+        session.flusso_runner = dich
+    except Exception:  # noqa: BLE001
+        pass
+    # blocco 3 (cantiere J2): la RISERVA dei prezzi sa quali mercati hanno lo
+    # stream muto (``live_order_worker._best_prices`` e le regole di rischio)
+    _RP.imposta_stato(dich)
+    if st.get("vivo") is None and not sorv.interrotto:
+        return dich                     # nessuno stream di mercato: niente da dire
+    try:
+        _cb.pubblica_stato_processo(_cb.TOPIC["flusso_stream"],
+                                    _SM.messaggio_canale(dich, ora * 1000.0))
+    except Exception as ex:  # noqa: BLE001 - mostrare non ferma mai il runner
+        logger.debug("[runner] flusso sul canale KO: %s", str(ex)[:120])
+    return dich
+
+
 def _battito_in_attesa(session: Any, adesso: float) -> None:
     """Il battito del runner PARCHEGGIATO in attesa di eventi (14/09): stessa
     cadenza di ``heartbeat_worker`` (``HEARTBEAT_SEC``), sul DB come prima e, dal
@@ -1470,6 +1542,9 @@ def heartbeat_worker(context: dict, flumine: Flumine, session: LiveSession) -> N
     # 25/09 (punto 6): lo stesso battito sul canale locale (anche se il DB e' KO:
     # il processo e' vivo comunque, ed e' questo che il battito dice)
     _pubblica_battito(session)
+    # 28/09 (cantiere J2): lo stream di mercato del runner e' vivo? (alert una
+    # volta per episodio, dichiarazione sul canale e nella sessione)
+    _sorveglia_flusso_runner(session, flumine)
     # keepAlive periodico della sessione Betfair mentre si streamma (fix 16/07,
     # vedi _STREAM_KEEPALIVE_SEC): best-effort, mai far cadere il runner.
     # 26/09 (FIX-C, causa della cecita' delle 10:41Z): il keepAlive che ingoiava

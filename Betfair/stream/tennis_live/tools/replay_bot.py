@@ -83,6 +83,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .. import certificazione_bot as CERT
 from ...backtest import chiusura_parziale as CP
+from ...backtest import uscite_manuali as UM
 from ..tennis_recorder import default_record_dir
 
 logger = logging.getLogger(__name__)
@@ -96,6 +97,22 @@ MERCATI = ("MATCH_ODDS",)
 
 # D3 (24/09): lo scenario del "chiudi ora" dell'utente (controllo B9)
 SCENARIO_CHIUDI_ORA = "chiudi-ora"
+
+# 28/09 (CANTIERE N3): gli scenari a uscite MANUALI (interruttore spento, il
+# default di produzione dopo ogni avvio). Tutti gli ALTRI scenari girano con
+# le uscite AUTOMATICHE accese e lo DICHIARANO nel referto (NOTA_USCITE_AUTO).
+SCENARI_USCITE_MANUALI: Tuple[str, ...] = UM.SCENARI
+NOTA_USCITE_AUTO = ("SCENARIO DICHIARATO: uscite automatiche accese, e' la "
+                    "condotta certificata (riga del bot con "
+                    "`uscite_automatiche=True`, come la scrive l'interruttore "
+                    "della UI su AUTOMATICHE)")
+
+
+def uscite_automatiche_scenario(scenario: str) -> bool:
+    """Il valore di `uscite_automatiche` che lo scenario scrive nella riga del
+    bot (`tennis_bot_control`): lo legge `_instantiate_bot` con la funzione di
+    produzione `auto_mode.uscite_automatiche_bot`."""
+    return scenario not in SCENARI_USCITE_MANUALI
 
 
 # ---------------------------------------------------------------------------
@@ -151,12 +168,19 @@ SCENARI_DESCRITTI: Dict[str, str] = {
         "i gate di `gate-aperto`; a meta' partita l'utente preme \"Chiudi\" "
         "sulla riga del bot: la richiesta passa da `chiusura_manuale` come in "
         "produzione, il bot esce con la SUA uscita e non rientra (B9)"),
+    # N3 (28/09): le uscite MANUALI, con i gate di `gate-aperto` (senza, swing
+    # e scalper non aprono mai e non esisterebbe un'uscita da proporre). Le
+    # firme passano da `tennis_runner._aggiorna_uscite` alla cadenza del
+    # `bot_control_worker`, come quelle della RPC `tennis_bot_approva_uscita`.
+    UM.SCENARIO_MANUALI: "i gate di `gate-aperto`; " + UM.DESCRIZIONE_MANUALI,
+    UM.SCENARIO_FIRMATE: "i gate di `gate-aperto`; " + UM.DESCRIZIONE_FIRMATE,
 }
 
 
 def parametri_scenario(scenario: str, bot: str) -> Dict[str, Any]:
     """I parametri che lo scenario cambia. SOLO numeri gia' esposti dalla UI."""
-    if scenario in ("rifiuti-betfair", "live", CP.SCENARIO, SCENARIO_CHIUDI_ORA):
+    if scenario in ("rifiuti-betfair", "live", CP.SCENARIO, SCENARIO_CHIUDI_ORA) \
+            or scenario in UM.SCENARI:
         # ⚠️ IL CASO VA PROVOCATO, non sperato. Con i parametri di produzione
         # lo scalper e lo swing non tentano MAI un ingresso su questa partita:
         # il rifiuto non sarebbe nemmeno possibile e K2 resterebbe «non lo so»
@@ -583,6 +607,14 @@ class _Ponte:
         # via di produzione, e gli id degli ordini che c'erano al clic
         self._chiudi: Optional[Dict[str, Any]] = None
         self._ids_prima_manuale: Optional[set] = None
+        # N3 (28/09): scenari a uscite manuali. `firme` e' la colonna
+        # `params.uscite_approvate` della riga per partita (come la scrive la
+        # RPC); il `bot_control_worker` la rilegge alla sua cadenza.
+        self.osservatore: Optional[Any] = None
+        self.firme: Dict[str, str] = {}
+        self._firme_ms = 0
+        self._sess_firme: Optional[Any] = None
+        self.ultimo_ms = 0
 
     def ruolo_ordine(self, ordine: Any) -> Optional[str]:
         """Il RUOLO di un ordine per il guasto CP, dalla credenza VERA del bot
@@ -611,6 +643,7 @@ class _Ponte:
         self._forse_disarmo(market, ms)
         self._forse_riavvio(market, ms)
         self._forse_chiudi_ora(market, ms)
+        self._forse_firme(ms)
         return bool(self.s.check_market_book(market, market_book))
 
     def process_market_book(self, market: Any, market_book: Any) -> None:
@@ -750,6 +783,41 @@ class _Ponte:
             esiti = [r.get("message") for _rid, r in db.fatte + db.errori]
             self.ref.note.append("CHIUDI ORA concluso: stato riga %s; esito: %s"
                                  % ([s for _e, _b, s in db.stati], esiti))
+
+    def firma(self, chiave: str, istante: str) -> None:
+        """La RPC `tennis_bot_approva_uscita`: `{chiave: now()}` nella colonna."""
+        self.firme[str(chiave)] = istante
+
+    def _forse_firme(self, ms: int) -> None:
+        """N3: il `bot_control_worker` alla cadenza vera rilegge la riga e la
+        passa al bot con la funzione di PRODUZIONE `_aggiorna_uscite`
+        (interruttore + firme). Solo negli scenari a uscite manuali."""
+        if ms > 0:
+            self.ultimo_ms = ms
+        if self.osservatore is None or ms <= 0:
+            return
+        self.osservatore.giro(ms)
+        from ..tennis_runner import BOT_CONTROL_POLL_SEC
+        if ms - self._firme_ms < int(float(BOT_CONTROL_POLL_SEC or 3.0) * 1000):
+            return
+        self._firme_ms = ms
+        from .. import tennis_runner as TR
+
+        if self._sess_firme is None:
+            self._sess_firme = TR.TennisLiveSession(trading=None)
+        riga = {"event_id": self.event_id, "bot_key": self.bot_key,
+                "uscite_automatiche": False,
+                "params": {"uscite_approvate": dict(self.firme)}}
+        vera = TR.tennis_db.write_tennis_bot_activity
+        scritte: List[Any] = []
+        # il DB qui non esiste: l'attivita' si registra, mai si scrive
+        TR.tennis_db.write_tennis_bot_activity = (  # type: ignore[assignment]
+            lambda *a, **k: scritte.append((a, k)))
+        try:
+            TR._aggiorna_uscite(self.quadro, self._sess_firme,
+                                (self.event_id, self.bot_key), self.s, riga)
+        finally:
+            TR.tennis_db.write_tennis_bot_activity = vera  # type: ignore[assignment]
 
     def imposta_finestra(self, primo_ms: int, ultimo_ms: int) -> None:
         self._meta_ms = primo_ms + (ultimo_ms - primo_ms) // 2
@@ -962,6 +1030,11 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
     # e' un bot acceso in LIVE dall'utente: senza `mode='live'` il runner lo
     # eseguirebbe PAPER (riga senza modalita' = paper, mai ereditata dal runner).
     control["mode"] = "live" if modalita == "LIVE" else "paper"
+    # N3 (28/09): l'interruttore delle uscite, DICHIARATO. Senza la chiave la
+    # funzione di produzione darebbe MANUALI (default dal 25/09 sera).
+    control["uscite_automatiche"] = uscite_automatiche_scenario(scenario)
+    if control["uscite_automatiche"]:
+        ref.note.append(NOTA_USCITE_AUTO)
 
     from betfairlightweight.filters import streaming_market_data_filter
     from flumine import FlumineSimulation
@@ -993,6 +1066,9 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
                 ref.note.append("il bot non si e' istanziato: %s: %s"
                                 % (type(ex).__name__, ex))
                 return ref
+            ref.note.append("uscite EFFETTIVE del bot istanziato: %s"
+                            % ("AUTOMATICHE" if getattr(strat, "uscite_automatiche",
+                                                        False) is True else "MANUALI"))
             # il market_filter del banco: la registrazione al posto dello stream
             strat.market_filter = {"markets": [raw]}
             cap = getattr(strat, "max_selection_exposure", None)
@@ -1043,6 +1119,28 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
                     ref.note.append("guasto iniettato: il punteggio smette di "
                                     "arrivare dopo il primo terzo (blackout IPS)")
 
+            if scenario in UM.SCENARI:
+                def _ordini_di(s: Any) -> List[Any]:
+                    m = quadro.markets.markets.get(market_id)
+                    blotter = getattr(m, "blotter", None)
+                    try:
+                        return list(blotter.strategy_orders(s) or []) if blotter else []
+                    except Exception:  # noqa: BLE001 - blotter illeggibile
+                        return []
+
+                ponte.osservatore = UM.Osservatore(
+                    scenario, strategie=lambda: [ponte.s], ordini_di=_ordini_di,
+                    firma=ponte.firma if scenario == UM.SCENARIO_FIRMATE else None,
+                    ruolo=ponte.ruolo_ordine,
+                    resto_non_piazzabile=resto_dichiarato_dal_bot)
+                ref.note.append("USCITE MANUALI: interruttore spento; %s"
+                                % ("il banco firma ogni proposta dopo %d s di mercato "
+                                   "(params.uscite_approvate, riletta da "
+                                   "`_aggiorna_uscite` ogni BOT_CONTROL_POLL_SEC)"
+                                   % int(UM.FIRMA_DOPO_S)
+                                   if scenario == UM.SCENARIO_FIRMATE
+                                   else "nessuna firma"))
+
             motore = BC.MotoreReplay(quadro)
             guasto_cp = None
             if scenario == CP.SCENARIO:
@@ -1050,7 +1148,14 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
                 guasto_cp = CP.GuastoChiusuraParziale(ruolo=ponte.ruolo_ordine)
                 motore.guasto_chiusure = guasto_cp
                 ponte.sorveglianza_cp = CP.Sorveglianza(guasto_cp)
-            motore.esegui(ponte)
+            oss_um = ponte.osservatore
+            if oss_um is not None:
+                with oss_um.attivo():
+                    motore.esegui(ponte)
+                    oss_um.giro(ponte.ultimo_ms, fine=True)
+                _chiudi_uscite_manuali(ref, oss_um)
+            else:
+                motore.esegui(ponte)
             if guasto_cp is not None:
                 ref.note.append(guasto_cp.riepilogo())
             ref.note.append(
@@ -1062,7 +1167,7 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
             ponte.chiudi(mercato)
 
     if scenario in ("gate-aperto", "parziali", "rifiuti-betfair", "live", CP.SCENARIO,
-                    SCENARIO_CHIUDI_ORA):
+                    SCENARIO_CHIUDI_ORA) or scenario in UM.SCENARI:
         ref.note.append("SCENARIO DICHIARATO: cambiati SOLO i parametri %s "
                         "(numeri che l'utente puo' gia' cambiare dalla UI). La "
                         "strategia e' quella di produzione."
@@ -1071,6 +1176,35 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
         ref.note.append("il bot non ha MAI deciso: nessun controllo puo' dire "
                         "«sano», il referto dice «non lo so»")
     return ref
+
+
+def resto_dichiarato_dal_bot(s: Any, sel: Any, lato: str, resto: float) -> bool:
+    """N3 UF2: il bot ha DICHIARATO non piazzabile questo resto? Lo scalper
+    tennis tiene la sua memoria dei `min_bet_skip` gia' scritti
+    (`TennisScalperStrategy._min_bet_detto`: (selezione, lato, size)); gli altri
+    bot tennis non hanno un resto non piazzabile (place-and-trim di D2)."""
+    detto = getattr(s, "_min_bet_detto", None) or ()
+    for k in list(detto):
+        try:
+            if (int(k[0]) == int(sel) and str(k[1]).upper() == str(lato).upper()
+                    and abs(float(k[2]) - float(resto)) < 1e-9):
+                return True
+        except (TypeError, ValueError, IndexError):
+            continue
+    return False
+
+
+def _chiudi_uscite_manuali(ref: CERT.Referto, oss: Any) -> None:
+    """N3: i controlli UM/UF nel referto (sollecitati, violazioni, riepilogo)."""
+    for cod, n in oss.sollecitati.items():
+        ref.sollecitati[cod] = ref.sollecitati.get(cod, 0) + n
+    for cod, reg, det, quando in oss.violazioni:
+        ref.violazioni.append(CERT.Violazione(cod, reg, det, quando))
+    ref.note.append(oss.riepilogo())
+    mai = [c for c, _r in UM.elenco_controlli(oss.scenario) if not oss.sollecitati.get(c)]
+    if mai:
+        ref.note.append("USCITE MANUALI: controlli MAI sollecitati (non lo so): %s"
+                        % ", ".join(mai))
 
 
 def certifica_evento(event_id: str, *, data_dir: str, scenario: str = "base",

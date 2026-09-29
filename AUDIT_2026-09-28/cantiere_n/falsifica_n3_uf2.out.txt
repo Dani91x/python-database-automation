@@ -1,0 +1,47 @@
+﻿ROSSO T1 tennis: riga senza interruttore
+ROSSO T2 tennis: nota non scritta
+ROSSO T3 tennis: scenario sempre manuale
+ROSSO S1 scalper: params senza interruttore
+ROSSO S2 scalper: nota non scritta
+ROSSO S3 scalper: scenario sempre manuale
+ROSSO TTL1 cancello: firma senza scadenza
+ROSSO TTL2 cancello: limite del TTL escluso
+ROSSO UM1a interruttore acceso non visto
+ROSSO UM1b uscita senza firma non vista
+ROSSO UM2a decisione senza proposta non vista
+ROSSO UM2b proposta senza numeri non vista
+ROSSO UM3a protezione nel cancello non vista
+ROSSO UM3b fine sessione non piatta non vista
+ROSSO UM4 proposta decaduta rimasta non vista
+ROSSO UF0 firma subito (senza attesa di N s)
+ROSSO UF1 firma doppia non vista
+ROSSO UF2a nessun ordine non visto
+ROSSO UF2b importo sempre giusto
+ROSSO UF2e parcheggio vivo contato come importo
+ROSSO UF2f parcheggio abbinato non contato
+ROSSO UF2g non aspetta la fine della catena
+ROSSO UF2h rimpiazzi della catena ignorati
+ROSSO UF2i ingressi del ciclo nuovo contati
+ROSSO UF2j resto scusato senza dichiarazione
+ROSSO UF2k resto scusato oltre la soglia
+ROSSO UF2l quota del parcheggio sbagliata
+ROSSO UF2m tennis: memoria del bot non letta
+ROSSO UF2n scalper: resto di un'altra selezione
+ROSSO UF2c ordini di prima contati
+ROSSO UF2d lato non guardato
+ROSSO UF3a proposta diversa non vista
+ROSSO UF3b chiavi diverse non viste
+ROSSO W1 tennis: scenari manuali senza gate
+ROSSO W2 tennis: firme non passate al runner
+ROSSO W3 scalper: sniper spento a uscite manuali
+ROSSO Z3a firma di qualsiasi posizione accettata
+ROSSO Z3b firma usata piu' volte
+ROSSO Z3c firma dopo il verde accettata
+ROSSO Z3d motivo della firma ignorato
+ROSSO Z3e il tee non scrive la posizione
+ROSSO Z3f posizione del verde non letta
+ROSSO Z3g conteggio al posto dell'identita' (il vecchio Z3)
+ROSSO Z4a numero vuoto accettato
+ROSSO Z4b chiave assente accettata
+ROSSO Z4c Z4 non guarda i difetti
+ROSSO W6 scalper: sniper non piatto non visto

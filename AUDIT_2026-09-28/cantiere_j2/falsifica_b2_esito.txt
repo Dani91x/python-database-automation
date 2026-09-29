@@ -1,0 +1,15 @@
+M31 stream muto: 503 non latente: ROSSO | test_status_503_e_latente | 1 failed, 90 deselected in 2.59s
+M32 stream muto: soglia ignorata: ROSSO | test_nessun_messaggio_oltre_soglia_e_muto | 1 failed, 90 deselected in 2.53s
+M33 stream muto: avviso a ogni giro: ROSSO | test_episodio_detto_una_volta_inizio_e_fine | 1 failed, 90 deselected in 2.25s
+B1 runner calcio: battito del frammento ignorato (seconda misura): ROSSO | test_runner_calcio_usa_il_battito_del_frammento_non_una_seconda_misura | 1 failed, 90 deselected in 1.75s
+B2 frammento appena aperto dato per interrotto: ROSSO | test_frammento_appena_aperto_non_e_interrotto_ma_dopo_la_grazia_si | 1 failed, 90 deselected in 1.51s
+B3 frammento chiuso contato: ROSSO | test_frammento_chiuso_non_conta | 1 failed, 90 deselected in 1.39s
+B4 nessuna grazia all'avvio: ROSSO | test_all_avvio_la_connessione_ha_la_grazia_poi_e_un_episodio | 1 failed, 90 deselected in 1.83s
+B5 scalper: battito senza sorveglianza: ROSSO | test_scalper_il_battito_scrive_la_dichiarazione_nelle_stats | 1 failed, 90 deselected in 2.26s
+B6 scalper: posizione non gestita non dichiarata: ROSSO | test_scalper_episodio_detto_una_volta_con_la_posizione_e_il_rientro | 1 failed, 90 deselected in 2.08s
+B7 runner calcio: battito senza sorveglianza: ROSSO | test_runner_calcio_il_battito_chiama_la_sorveglianza | 1 failed, 90 deselected in 2.80s
+B8 runner calcio: ordini vivi non dichiarati: ROSSO | test_runner_calcio_alert_una_volta_canale_a_ogni_battito | 1 failed, 90 deselected in 1.71s
+B9 tennis: attivita' dei bot non scritta: ROSSO | test_tennis_attivita_di_ogni_bot_e_stats | 1 failed, 90 deselected in 2.09s
+B10 tennis: stats dei bot senza flusso: ROSSO | test_tennis_lo_stall_worker_sorveglia_e_il_battito_dei_bot_dichiara | 1 failed, 90 deselected in 2.40s
+B11 tee tennis: eta' ignorata: ROSSO | test_battiti_del_tee_tennis | 1 failed, 90 deselected in 2.28s
+EXIT=0

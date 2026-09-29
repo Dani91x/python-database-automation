@@ -1,0 +1,61 @@
+﻿Betfair/omega/test_omega_audit_2026_09_11.py | def test_h04_greenup_riuscito_scrive_state_done_e_exit_kind_greenup | assert lg["exit_kind"] == "loss" and lg["state"] == "done"
+Betfair/omega/test_omega_greenup_2026_09_10.py | def test_trigger_gol_esce_dopo_assestamento_e_marca_le_due_righe | assert g["exit_kind"] == "loss" and g["kind"] == "loss" and g["state"] == "done"
+Betfair/omega/tests/test_porta_ordini_omega_f6_2026_09_24.py | def test_cashout_a_canale_giu_usa_il_trasporto_di_oggi | assert chiusura["status"] == "open"                      # fill paper di sempre
+Betfair/safe_strategy/tests/test_audit_2026_09_11.py | def test_m06_copertura_parziale_espone_meta_hedge | assert res["ok"] is True and res["residual_size"] > 0.01
+Betfair/safe_strategy/tests/test_audit_2026_09_11.py | def test_m06_copertura_parziale_espone_meta_hedge | assert res["locked_pnl"] is None and res["planned_lock"] is not None
+Betfair/safe_strategy/tests/test_audit_2026_09_11.py | def test_m31_in_paper_qualsiasi_importo_si_abbina | assert out.status == "open" and out.size == 0.5
+Betfair/safe_strategy/tests/test_audit_2026_09_11.py | def test_m31_in_paper_qualsiasi_importo_si_abbina | assert out.status == "open" and out.size == 0.05
+Betfair/safe_strategy/tests/test_audit_2026_09_11.py | def test_m31_in_paper_qualsiasi_importo_si_abbina | assert out.status == "open"
+Betfair/safe_strategy/tests/test_audit_2026_09_11.py | def test_m31_in_paper_qualsiasi_importo_si_abbina | assert out.status == "open" and out.size == 1.2
+Betfair/safe_strategy/tests/test_bot_service.py | def test_running_piazza_il_segnale_con_reserve_first | assert "place" in db.kinds()
+Betfair/safe_strategy/tests/test_bot_service.py | def test_reconcile_paper_riga_storica_senza_fase_si_conferma_ancora | assert t["status"] == "open" and t["size"] == 10.0 and t["meta"]["reconciled"] == "paper"
+Betfair/safe_strategy/tests/test_bot_service.py | def test_exit_tennis_profit_al_game_vinto | assert ex["kind"] == "profit" and ex["locked_pnl"] > 0
+Betfair/safe_strategy/tests/test_bot_service.py | def test_exit_residuo_dopo_fill_cappato_viene_richiuso_dopo_il_cooldown | assert ex[0]["attempt"] == 1 and ex[0]["residual_after"] == pytest.approx(0.92, abs=0.01)
+Betfair/safe_strategy/tests/test_bot_service.py | def test_exit_residuo_dopo_fill_cappato_viene_richiuso_dopo_il_cooldown | assert ex[1]["residual_after"] < 0.01 and ex[1]["kind"] == "time"
+Betfair/safe_strategy/tests/test_bot_service.py | def test_uscita_a_tempo_esce_se_il_rischio_supera_il_cap | assert ex["locked_pnl"] == pytest.approx(-4.0, abs=0.01)
+Betfair/safe_strategy/tests/test_bot_service.py | def test_uscita_a_tempo_in_profitto_esce_sempre | assert ex["locked_pnl"] == pytest.approx(0.15, abs=0.01)
+Betfair/safe_strategy/tests/test_bot_service.py | def test_hold_non_blocca_la_successiva_uscita_in_perdita | assert ex["kind"] == "loss" and ex["locked_pnl"] < -4.0
+Betfair/safe_strategy/tests/test_bot_service.py | def test_uscita_modello_take_profit | assert ex["locked_pnl"] >= 16.0
+Betfair/safe_strategy/tests/test_d1_enqueue_ignoto_paper_live_2026_09_28.py | def test_accodamento_CERTAMENTE_mancato_ripiega_uguale_nei_due_modi | assert out.status == "open"
+Betfair/safe_strategy/tests/test_d1_enqueue_ignoto_paper_live_2026_09_28.py | def test_accodamento_CERTAMENTE_mancato_ripiega_uguale_nei_due_modi | assert len(mk.piazzati) == (1 if mode == "live" else 0)
+Betfair/safe_strategy/tests/test_execution.py | def test_place_paper_riempie_al_prezzo_e_cappa_alla_liquidita | assert out.status == "open"
+Betfair/safe_strategy/tests/test_execution.py | def test_place_paper_riempie_al_prezzo_e_cappa_alla_liquidita | assert out.size == 12.0, "la size deve essere cappata alla liquidita' disponibile"
+Betfair/safe_strategy/tests/test_execution.py | def test_place_paper_riempie_al_prezzo_e_cappa_alla_liquidita | assert out.price == 3.0
+Betfair/safe_strategy/tests/test_execution.py | def test_place_paper_riempie_al_prezzo_e_cappa_alla_liquidita | assert mk.placed == [], "in paper non si tocca Betfair"
+Betfair/safe_strategy/tests/test_execution.py | def test_place_paper_eccezione_del_fill_resta_pending | assert out.status == "pending"
+Betfair/safe_strategy/tests/test_execution.py | def test_place_paper_eccezione_del_fill_resta_pending | assert db.get_trade(tid)["meta"]["reason"] == "place_exception_reconciling"
+Betfair/safe_strategy/tests/test_execution.py | def test_close_trade_crea_la_gamba_di_chiusura_e_marca_hedged | assert res.get("ok") is True
+Betfair/safe_strategy/tests/test_execution.py | def test_close_trade_crea_la_gamba_di_chiusura_e_marca_hedged | assert original["meta"]["locked_pnl"] == res["locked_pnl"]
+Betfair/safe_strategy/tests/test_execution.py | def test_gate_chiuso_se_heartbeat_stantio | assert out.status == "open" and db.queue == []
+Betfair/safe_strategy/tests/test_execution.py | def test_close_trade_parziale_resta_open_con_residuo_e_poi_chiude_il_resto | assert r2["ok"] and r2["hedged"] is True
+Betfair/safe_strategy/tests/test_execution.py | def test_close_trade_paper_senza_size_del_book_non_riserva_nulla | assert res.get("error") == "liquidita_del_book_ignota", res
+Betfair/safe_strategy/tests/test_execution.py | def test_close_trade_paper_senza_size_del_book_non_riserva_nulla | assert len(db.trades) == prima          # NESSUNA riga di chiusura creata
+Betfair/safe_strategy/tests/test_execution.py | def test_close_trade_paper_senza_size_del_book_non_riserva_nulla | assert db.get_trade(tid)["status"] == "open"   # la posizione resta viva
+Betfair/safe_strategy/tests/test_execution.py | def test_place_sotto_il_minimo_senza_coda_paper_si_live_no | assert paper.status == "open" and paper.size == 1.5
+Betfair/safe_strategy/tests/test_execution.py | def test_place_sotto_il_minimo_senza_coda_paper_si_live_no | assert X.place(mode="paper", size=2.0, client_ref="safe-t1", **common).status == "open"
+Betfair/safe_strategy/tests/test_execution.py | def test_place_paper_minimo_non_blocca_la_gamba_di_chiusura | assert out.status == "open" and out.size == 1.4
+Betfair/safe_strategy/tests/test_execution.py | def test_paper_non_accetta_un_fill_parziale_come_il_fok_live | assert out.status == "error", out
+Betfair/safe_strategy/tests/test_execution.py | def test_paper_non_accetta_un_fill_parziale_come_il_fok_live | assert out.fill_note.startswith("paper_fok_parziale"), out.fill_note
+Betfair/safe_strategy/tests/test_execution.py | def test_paper_non_accetta_un_fill_parziale_come_il_fok_live | assert out.size == 0.0
+Betfair/safe_strategy/tests/test_execution.py | def test_paper_accetta_il_fill_completo | assert out.status == "open" and out.size == 10.0
+Betfair/safe_strategy/tests/test_execution.py | def test_paper_size_cappata_alla_liquidita_resta_un_fill_completo | assert out.status == "open" and out.size == 12.0
+Betfair/safe_strategy/tests/test_execution.py | def test_il_piazzamento_in_paper_racconta_come_e_andato | assert out.status == "open"
+Betfair/safe_strategy/tests/test_execution.py | def test_il_piazzamento_in_paper_racconta_come_e_andato | assert e is not None
+Betfair/safe_strategy/tests/test_execution.py | def test_il_piazzamento_in_paper_racconta_come_e_andato | assert e["price_richiesto"] == 1.32
+Betfair/safe_strategy/tests/test_execution.py | def test_il_piazzamento_in_paper_racconta_come_e_andato | assert e["livelli"] == [{"price": 1.3, "size": 1.0}, {"price": 1.31, "size": 3.0}]
+Betfair/safe_strategy/tests/test_execution.py | def test_il_piazzamento_in_paper_racconta_come_e_andato | assert e["price_medio"] == out.price
+Betfair/safe_strategy/tests/test_execution.py | def test_il_piazzamento_in_paper_racconta_come_e_andato | assert e["t4_inviato"] > 0 and e["t5_risposta"] >= e["t4_inviato"]
+Betfair/safe_strategy/tests/test_execution.py | def test_il_piazzamento_in_paper_racconta_come_e_andato | assert e["percorso"] == "paper"
+Betfair/safe_strategy/tests/test_paper_fill_al_best_2026_09_26.py | def _place | assert out.status == "open"
+Betfair/safe_strategy/tests/test_paper_fill_al_best_2026_09_26.py | def _place | assert out.price == pytest.approx(5.8)
+Betfair/safe_strategy/tests/test_paper_fill_al_best_2026_09_26.py | def _place | assert out.avg_price_matched == pytest.approx(5.8)
+Betfair/safe_strategy/tests/test_paper_fill_al_best_2026_09_26.py | def _place | assert out.esecuzione["price_richiesto"] == 5.5
+Betfair/safe_strategy/tests/test_paper_fill_al_best_2026_09_26.py | def _place | assert out.esecuzione["scorrimento_tick"] < 0        # meglio del chiesto, detto
+Betfair/safe_strategy/tests/test_paper_fill_al_best_2026_09_26.py | def _place | assert out.status == "open" and out.price == pytest.approx(2.9)
+Betfair/safe_strategy/tests/test_paper_fill_al_best_2026_09_26.py | def _place | assert out.status == "error" and out.fill_note.startswith("paper_no_fill")
+Betfair/safe_strategy/tests/test_paper_fill_al_best_2026_09_26.py | def test_best_peggiore_del_limite_nessun_fill | assert out.status == "open" and out.size == pytest.approx(3.0)
+Betfair/safe_strategy/tests/test_paper_fill_al_best_2026_09_26.py | def test_best_peggiore_del_limite_nessun_fill | assert out.price == pytest.approx(5.8)
+Betfair/safe_strategy/tests/test_paper_fill_al_best_2026_09_26.py | def test_liquidita_del_livello | assert out.status == "open" and out.price == pytest.approx(5.5)
+Betfair/safe_strategy/tests/test_paper_fill_al_best_2026_09_26.py | def test_safe_costruisce_il_livello_dal_feed_e_riempie_al_best | assert out.status == "open" and out.price == pytest.approx(5.8)
+Betfair/stream/tests/test_r3_freno_unico_2026_09_25.py | def test_safe_paper_chiusura_passa_col_freno | assert out.status == "open", "a freno tirato le chiusure passano sempre"
+Betfair/stream/tests/test_r3_freno_unico_2026_09_25.py | def test_safe_paper_freno_rilasciato_parita | assert _safe_paper().status == "open"

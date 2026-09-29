@@ -56,6 +56,8 @@ from .condotta_ordini import (
     stato_ordine,
 )
 from .tennis_scalper_bot import compute_green, ticks_between
+from ..uscite_proposte import CHIAVE_STATS as CHIAVE_PROPOSTE
+from ..uscite_proposte import CancelloUscite, ora_s, proposta_di
 from .tennis_score import TennisScore
 
 logger = logging.getLogger(__name__)
@@ -236,6 +238,8 @@ class TennisProStrategy(BaseStrategy):
         # il blotter e' stato letto davvero nell'ultima `_position`? Un'esposizione
         # non letta NON e' un'esposizione nulla.
         self._blotter_letto: bool = True
+        # 28/09 (CANTIERE N): proposte d'uscita e firme dell'utente
+        self.cancello_uscite = CancelloUscite(emetti=lambda ev, p: self._emit(ev, **p))
 
     # ------------------------------------------------------------- telemetria
     def _emit(self, event: str, **payload: Any) -> None:
@@ -249,6 +253,42 @@ class TennisProStrategy(BaseStrategy):
     def check_market_book(self, market: Any, market_book: Any) -> bool:
         return getattr(market_book, "status", None) == "OPEN" \
             and bool(getattr(market_book, "runners", None))
+
+    # ------------------------------------- 28/09 (CANTIERE N): il cancello
+    def _prefisso_uscite(self, mid: Any, trade: Dict[str, Any]) -> str:
+        """La posizione (mercato, selezione, istante d'apertura): proposte e
+        firme valgono per QUESTA posizione e per nessun'altra."""
+        return f"tennis_pro|{mid}|{int(trade.get('sel') or 0)}|{trade.get('t_open')}|"
+
+    def _cancello_lascia(self, prefisso: str, motivo: str, vive: List[str],
+                         b: float, ba: float, l: float, la: float, sel: int,
+                         prezzo: float, lato: str, frazione: float = 1.0) -> bool:
+        """True = l'uscita ``motivo`` decisa dalla strategia parte adesso; se no
+        la proposta coi numeri resta viva (``vive``)."""
+        nw, nl = self._net(b, ba, l, la)
+        g = compute_green(nw, nl, prezzo)
+        proposta = proposta_di(
+            bot="tennis_pro", motivo=motivo, market_id=prefisso.split("|")[1],
+            selection_id=sel, lato_ingresso=lato, prezzo=prezzo,
+            lato_chiusura=(g[0] if g else None),
+            size_chiusura=((g[1] * frazione) if g else None),
+            se_chiudi=((g[2] * frazione) if g else None),
+            se_vince=nw, se_perde=nl, frazione=frazione)
+        chiave = prefisso + motivo
+        ok = self.cancello_uscite.lascia_uscire(
+            automatiche=bool(self.uscite_automatiche), chiave=chiave,
+            now_s=ora_s(getattr(self, "_now_pt", None)), proposta=proposta)
+        if not ok:
+            vive.append(chiave)
+        return ok
+
+    def _pubblica_proposte(self) -> None:
+        """Le proposte vive nel battito (``stats``): il runner le scrive sulla
+        riga per partita, la Control Room le mostra con "approva"."""
+        self.cancello_uscite.tieni_solo(
+            [self._prefisso_uscite(m, t) for m, t in self._trade.items()
+             if t and t.get("state") == OPEN])
+        self.stats[CHIAVE_PROPOSTE] = self.cancello_uscite.vive()
 
     # ---------------------------------------------------------- helper punteggio
     def _lookup_sel(self, name: Optional[str]) -> Optional[int]:
@@ -678,6 +718,9 @@ class TennisProStrategy(BaseStrategy):
         if self.uscita_manuale_chiesta:
             self._avvia_uscita_manuale(market, mid, px)
 
+        if self.cancello_uscite.proposte:
+            # 28/09: una posizione chiusa altrove porta via le sue proposte
+            self._pubblica_proposte()
         # 1) gestisci trade aperto
         trade = self._trade.get(mid)
         if trade and trade["state"] == OPEN:
@@ -796,32 +839,45 @@ class TennisProStrategy(BaseStrategy):
         stop_t = ticks_between(min(entry, trade["stop"]),
                                max(entry, trade["stop"])) or 1
 
-        # 25/09 USCITE MANUALI: scaglione e target sono prese di profitto e a
-        # interruttore spento non scattano. Stop e uscita strutturale restano.
-        auto = self.uscite_automatiche
+        # 28/09 (CANTIERE N) USCITE MANUALI: scaglione, target, stop e uscita
+        # strutturale sono TUTTE uscite di trading (la regola dell'utente di
+        # oggi supera il 25/09, quando stop e strutturale restavano automatici).
+        # A uscite manuali nessuna parte da sola: diventa una PROPOSTA coi
+        # numeri e parte solo con la firma, quando la condizione vale ancora.
+        prefisso = self._prefisso_uscite(market.market_id, trade)
+        vive: List[str] = []
+        nums = (b, ba, l, la, sel, mkt, trade["side"])
         # scaglione: a meta' strada verso il target, green del frac
-        if (auto and self.staged and not trade["staged_done"] and favorable
+        if (self.staged and not trade["staged_done"] and favorable
                 and move_t >= max(1, target_t // 2)):
-            _, staged_o = self._close_at(market, sel, mkt, frac=self.staged_frac)
-            trade["staged_done"] = True
-            trade["staged_order"] = staged_o
-            self._emit("staged_green", sel=sel, price=mkt)
+            if self._cancello_lascia(prefisso, "scaglione", vive, *nums,
+                                     frazione=self.staged_frac):
+                _, staged_o = self._close_at(market, sel, mkt, frac=self.staged_frac)
+                trade["staged_done"] = True
+                trade["staged_order"] = staged_o
+                self._emit("staged_green", sel=sel, price=mkt)
 
-        if auto and favorable and move_t >= target_t:      # TARGET -> green totale
-            self._finish(market, trade, "green", sel,
-                         *self._full_close(market, trade, sel, mkt))
-            return
+        if favorable and move_t >= target_t:      # TARGET -> green totale
+            if self._cancello_lascia(prefisso, "target", vive, *nums):
+                self._finish(market, trade, "green", sel,
+                             *self._full_close(market, trade, sel, mkt))
+                return
         if (not favorable) and move_t >= stop_t:  # STOP
-            self._finish(market, trade, "stop", sel,
-                         *self._full_close(market, trade, sel, mkt))
-            return
+            if self._cancello_lascia(prefisso, "stop", vive, *nums):
+                self._finish(market, trade, "stop", sel,
+                             *self._full_close(market, trade, sel, mkt))
+                return
         # USCITA STRUTTURALE: il game/set che ha innescato si e' risolto -> chiudi
         s = self.score
         if s is not None and trade.get("entry_games") is not None:
             if (s.games_home, s.games_away, s.sets_home, s.sets_away) != trade["entry_games"]:
-                self._finish(market, trade, "scratch", sel,
-                             *self._full_close(market, trade, sel, mkt))
-                return
+                if self._cancello_lascia(prefisso, "strutturale", vive, *nums):
+                    self._finish(market, trade, "scratch", sel,
+                                 *self._full_close(market, trade, sel, mkt))
+                    return
+        # le proposte di questa posizione la cui condizione non vale piu' spariscono
+        self.cancello_uscite.conferma_vive(prefisso, vive)
+        self._pubblica_proposte()
 
     def _full_close(self, market: Any, trade: Dict[str, Any], sel: int,
                     price: float) -> "Tuple[float, Optional[Any]]":

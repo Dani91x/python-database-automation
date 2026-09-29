@@ -18,6 +18,8 @@ import {
 import { Settings } from 'lucide-react';
 import { fmtNum } from '@/lib/format';
 import { T } from '@/lib/tradeStatus';
+// 28/09 (CANTIERE N): l'interruttore delle uscite e' UNO per tutta l'app
+import { InterruttoreUscite } from '@/components/controlroom/InterruttoreUscite';
 
 export interface ParamOption { value: string; label: string }
 
@@ -28,11 +30,16 @@ export interface ParamField {
     hint?: ReactNode;
     /** 'text' = stringa libera (es. un percorso): nessun clamp, nessun cast;
      *  'choice' = uno fra `options`, mostrati come PULSANTI affiancati */
-    type: 'number' | 'boolean' | 'select' | 'text' | 'choice';
+    type: 'number' | 'boolean' | 'select' | 'text' | 'choice' | 'uscite';
     min?: number;
     max?: number;
     step?: number;
     options?: ParamOption[];
+    /** 28/09 (CANTIERE N) - `type: 'uscite'`: l'interruttore delle uscite del
+     *  bot. Si cambia SOLO col componente comune `InterruttoreUscite` (stesse
+     *  parole della Control Room, conferma per passare ad automatiche): qui i
+     *  due valori che il servizio legge per "automatiche" e "manuali". */
+    uscite?: { automatico: string | boolean; manuale: string | boolean };
 }
 
 export interface ParamGroup {
@@ -172,11 +179,23 @@ export function ParamsSheetBase({
                                 // come pulsanti affiancati. Dentro un <label> il clic sul
                                 // testo premerebbe il primo pulsante: qui il contenitore e'
                                 // un <div role="group">.
-                                const Wrap = f.type === 'choice' ? 'div' : 'label';
+                                const Wrap = f.type === 'choice' || f.type === 'uscite' ? 'div' : 'label';
                                 return (
                                     <Wrap key={f.key} className={f.type === 'boolean' ? 'flex items-center gap-2 text-sm' : 'block'}
-                                        {...(f.type === 'choice' ? { role: 'group', 'aria-label': f.label } : {})}>
-                                        {f.type === 'choice' ? (
+                                        {...(f.type === 'choice' || f.type === 'uscite' ? { role: 'group', 'aria-label': f.label } : {})}>
+                                        {f.type === 'uscite' && f.uscite ? (
+                                            <>
+                                                <span className="text-xs text-slate-400">{f.label}</span>
+                                                <InterruttoreUscite
+                                                    id={`params-${f.key}`}
+                                                    uscite={{ automatiche: String(v ?? '') === String(f.uscite.automatico) }}
+                                                    cambia={(a) => setField(f, a ? f.uscite!.automatico : f.uscite!.manuale)}
+                                                />
+                                                <span className="text-[11px] text-slate-500 block">
+                                                    si applica al bot con "Salva parametri"
+                                                </span>
+                                            </>
+                                        ) : f.type === 'choice' ? (
                                             <>
                                                 <span className="text-xs text-slate-400">{f.label}</span>
                                                 <div className="mt-1 grid grid-cols-2 gap-2">
