@@ -378,3 +378,52 @@ anche su questo: per ogni ordine nuovo (banca Under 4,5 di copertura, punta Unde
 ultimo ingresso, banche che restano fino al fischio) Mike deve sapere se e' abbinato, abbinato in
 parte, in coda, cancellato da Betfair, rifiutato o a esito ignoto, e scriverlo nel registro.
 Criteri di accettazione: controlli di condotta del banco (K5, K6, S1-S4, UF1-UF3) a 0 violazioni.
+
+---
+
+## Punto 5 - Importi e cash out: cosa dice la documentazione (verifica del 29/09)
+
+Richiesta dell'utente: «controlla attentamente nella documentazione come funziona il cash out,
+dato che dal sito di Betfair appare e sia back che lay permettono di chiudere qualsiasi importo».
+
+### Fonti lette
+| Fonte | Dove | Cosa dice |
+|---|---|---|
+| Betfair, assistenza sviluppatori, «Is 'Cashout' available via the Betfair API?» | in rete (support.developer.betfair.com, articolo 115003887431) | «The 'Cashout' functionality isn't available via the API as an operation.» |
+| Betfair, «Betting On Italian Exchange», regole dell'Exchange italiano | in rete (documentazione ufficiale, pagina 2687808) | «The stake for each back offer is a minimum of 200 Euro Cents and can only be incremented in multiples of 50 Euro Cents.» e «Any lay offers placed by the customer, must be placed in such a way as to ensure that the stake for any corresponding back offer amounts to a minimum of 50 Euro Cents.» e «placeOrders request containing both back and lay bets in the same order will be rejected.» |
+| Betfair, placeOrders | in rete (pagina 2687496) | «Please note that additional bet sizing rules apply to bets placed into the Italian Exchange.» |
+| NEL REPO: `Betfair/stream/trading/PLACE_AND_TRIM_INDAGINE_2026-09-17.md`, par. 8 | ordini REALI del 17/09 sul listino italiano, in gioco | PUNTA 2,25 piazzata diretta: RIFIUTATA (importo non multiplo di 0,50); PUNTA 1,21: rifiutata 171 volte; BANCA 2,25 diretta: ACCETTATA; BANCA 1,21: ACCETTATA; bancate da 0,50 e 0,01 messe a mano dal sito: abbinate |
+| NEL REPO: `Betfair/Betfair_api_documentation.pdf` | 62 pagine | non parla di cash out ne' delle regole italiane (rimanda a una documentazione separata per Spagna e Italia) |
+
+### Cosa se ne ricava
+1. **Il pulsante Cash Out esiste solo sul sito.** Per un programma non c'e' un comando «cash out»:
+   Mike deve piazzare da solo gli ordini che chiudono la posizione.
+2. **I limiti di importo valgono per le PUNTATE, non per le BANCATE.** Puntata: minimo 2,00 EUR e
+   solo multipli di 0,50. Bancata: minimo 0,50 EUR, poi al centesimo. Confermato dalla regola
+   ufficiale e dai nostri ordini veri.
+3. **In un mercato a due esiti (Under / Over) puntare un esito equivale a bancare l'altro.** Quindi
+   ogni chiusura si puo' scrivere come BANCATA, scegliendo la selezione giusta:
+
+| Cosa serve | Scritto come puntata (con i limiti) | Scritto come bancata (senza i limiti) |
+|---|---|---|
+| Coprire l'Under 3,5 | punta Over 4,5 | **banca Under 4,5** (decisione M3.1) |
+| Chiudere l'Under 3,5 | - | banca Under 3,5 (e' gia' cosi') |
+| Chiudere la copertura | punta Under 4,5 | **banca Over 4,5** |
+
+   Esempio, copertura banca Under 4,5 12,63 a 1,18, da chiudere con l'Under 4,5 sceso a 1,05:
+   puntando l'Under 4,5 servono 14,19 EUR (non multiplo di 0,50: non parte diretta); bancando
+   l'Over 4,5 servono 0,71 EUR a quota 21. Il risultato bloccato e' lo stesso (-1,56).
+4. **Resta un caso scoperto:** quando la bancata equivalente scende sotto 0,50 EUR (esempio: Under
+   4,5 a 1,02, bancata Over 4,5 da 0,28) e la puntata non e' multiplo di 0,50. Li' resta solo il
+   «piazza e riduci» passivo di oggi.
+
+### PROPOSTA del coordinatore (da far decidere all'utente)
+- **M5.1 - Ogni ordine di Mike si scrive dal lato in cui l'importo e' piazzabile.** Prima scelta la
+  bancata (sull'esito giusto); se la bancata e' sotto 0,50 EUR, la puntata se e' un multiplo di
+  0,50 da almeno 2,00; solo in ultimo il «piazza e riduci». La strategia non cambia: cambia solo
+  come si scrive l'ordine.
+- Da verificare prima: liquidita' sul lato scelto (la bancata sull'Over 4,5 a quota alta pesca da
+  chi punta l'Over a quota alta), e il conto della posizione quando sullo stesso mercato ci sono
+  ordini sulle due selezioni.
+- NON verificato: se una bancata sotto 0,50 EUR passa dall'API (dal sito 0,01 e' passata; dall'API
+  i tre tentativi del 17/09 sono caduti per un altro motivo e non sono conclusivi).
