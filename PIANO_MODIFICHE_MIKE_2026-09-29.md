@@ -614,3 +614,29 @@ nessun controllo d'ingresso cambia, salvo `reentry_max_goals` (ordine dell'utent
 Riferimento di partenza per i confronti: replay di Mike del giro finale del 29/09, 15 scenari, 0
 violazioni, 446 s con tre processi
 (`AUDIT_2026-09-28/replay/giro_finale_29_09/mike_tutti_9048238.txt`).
+
+### Aggiornamento del 29/09 sera: progetto del pacchetto P5 consegnato
+Documento: `AUDIT_2026-09-29/MIKE_P5_PROGETTO.md` (mappa di ogni punto del codice, formule, prove).
+Verificato dal coordinatore sul codice: `exposure` compensa le gambe per selezione
+(`Betfair/mike/engine.py:649-665`); la chiusura della copertura e' GIA' oggi una banca sull'Over 4,5
+(ruolo `over_close`, `engine.py:1754-1760`).
+- **M3.3 precisata:** l'ordine che annulla la copertura NON cambia rispetto a oggi (banca Over 4,5).
+  Cambia che la copertura sta sull'Under 4,5 e la sua chiusura sull'Over 4,5: due selezioni dello
+  stesso mercato.
+- **M3.4 (nuova, prerequisito): i conti del mercato 4,5 si fanno PER MERCATO e non per selezione.**
+  Senza questo, dopo una chiusura riuscita Mike vedrebbe due posizioni aperte e la disferebbe, e nel
+  rientro lascerebbe una banca Over scoperta (circa 14 EUR di perdita con 5 o piu' gol). E' il primo
+  blocco di P5 e non cambia nessuna decisione di oggi.
+- **Niente migrazione del database:** si tiene il ruolo `over_cover` (lato banca, selezione Under).
+  Resta da far eseguire all'utente UNA lettura di controllo sui vincoli veri della tabella.
+- **Interruttore di sicurezza `cover_form`** (`lay_under45` / `back_over45`): di serie sul nuovo solo
+  a fine pacchetto; permette di tornare alla forma vecchia dall'app.
+- **Correzione nel motore ordini** (`_riduzione_verificata`, `Betfair/stream/motore_ordini.py`): in
+  paper, con l'interruttore generale tirato, la banca Over che chiude la copertura verrebbe
+  rifiutata perche' non riconosciuta come riduzione. Paper = specchio del live: si corregge.
+- **Misura preliminare sulla liquidita'** (20 registrazioni): al miglior prezzo mancano i 12,63 EUR
+  nel 7,6 % dei momenti; entro 2 tick solo nell'1,4 %. Il rischio in piu' rispetto alla puntata e'
+  di 3 centesimi in mediana.
+- **Domande aperte per l'utente:** (1) coprire solo se al miglior prezzo c'e' tutto l'importo (regola
+  di oggi) oppure contare la liquidita' entro i 2 tick del cuscinetto; (2) residuo sotto 0,50 EUR
+  dopo un abbinamento parziale: portarlo a 0,50 o considerarlo coperto.
