@@ -19,18 +19,25 @@ come «non provato».
 
 ## 2. Stato bot per bot
 
-| Bot | Replay | Si puo' accendere in paper |
-|---|---|---|
-| Mike | 15 scenari, 0 violazioni | si' |
-| Omega | 13 scenari, 0 violazioni, stesso esito sui due trasporti | si' |
-| Safe base, esatto, punta | 14 scenari ciascuno, 0 violazioni, stesso esito sui due trasporti | si' |
-| Safe tennis | 14 scenari, 0 violazioni, stesso esito sui due trasporti | si' |
-| Tennis pro | 6 scenari, 0 violazioni (anche in manuale e con firma) | si' |
-| Tennis FLB | 6 scenari, 0 violazioni | si' |
-| Scalper tennis | 6 scenari, 0 violazioni | si' |
-| Tennis swing | 6 scenari «OK» ma 0 azioni | NO: non provato |
-| Sniper | 2 scenari «OK» ma 0 azioni | NO: non provato |
-| Scalper calcio | FALLITO: al fischio resta una posizione da 4,44 EUR e il bot la crede chiusa | NO |
+**Aggiornato alle 13:00 del 29/09: giro finale di tutti i bot sul codice di master di oggi.**
+
+| Bot | Replay | Tempo | Si puo' accendere in paper |
+|---|---|---|---|
+| Mike | 15 scenari, 0 violazioni | 7 min 26 | si' |
+| Omega | 13 scenari, 0 violazioni, stesso esito sui due trasporti | 1 min 25 | si' |
+| Safe base, esatto, punta | 14 scenari ciascuno, 0 violazioni, stesso esito sui due trasporti | circa 1 min 40 l'uno | si' |
+| Safe tennis | 14 scenari, 0 violazioni, stesso esito sui due trasporti | 16 secondi | si' |
+| Tennis pro | 6 scenari su 2 partite, 0 violazioni (anche in manuale e con firma) | sotto 1 minuto | si' |
+| Tennis FLB | 6 scenari su 2 partite, 0 violazioni | sotto 1 minuto | si' |
+| Scalper tennis | 6 scenari su 2 partite, 0 violazioni | circa 2 minuti | si' |
+| Tennis swing | 6 scenari su 2 partite, 0 violazioni; opera solo sulla seconda (232 azioni), che e' una registrazione parziale | sotto 1 minuto | si' |
+| Scalper calcio | 4 scenari (base, paper, uscite manuali, uscite manuali firmate), 0 violazioni; 10 uscite firmate su 10 esatte | 7 min 14 | si' |
+| Sniper | provato DENTRO gli scenari dello scalper calcio, dove opera (3 ingressi, 3 uscite firmate, 5 chiusure sotto il minimo, piatto a fine sessione); il suo scenario dedicato fa 0 azioni e non prova niente | | si', insieme allo scalper calcio |
+
+Difetti trovati e corretti il 29/09 per arrivarci: chiusura doppia nello scalper calcio e nello
+sniper (restava a mercato una puntata senza padrone), proposte d'uscita a 0,00 nei bot tennis,
+chiusura firmata che partiva per 2,50 invece di 2,80, un controllo del banco che attribuiva a una
+firma gli ordini di un'altra, replay dello scalper calcio da 115 minuti portato a 7.
 
 ## 3. Le migliorie, una per una
 
