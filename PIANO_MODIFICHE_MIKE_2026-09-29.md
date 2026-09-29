@@ -196,6 +196,7 @@ restano quelli di oggi, salvo ordine esplicito.
 | 13 | 29/09 | TUTTE le uscite in profitto partono da sole (pre-partita, fischio, cash out 5 %, cash out intelligente, green del rientro) | confermata, da implementare (M1.1, M4.1-M4.4) |
 | 14 | 29/09 | Cash out intelligente: resta com'e' | confermata |
 | 15 | 29/09 | Mike deve sempre sapere lo stato di ogni suo ordine (abbinato, chiuso, registrato) | regola permanente, criterio di accettazione di ogni modifica |
+| 16 | 29/09 | Uscita in perdita: resta una proposta da firmare, esattamente com'e' ora («decido io») | confermata; nessuna modifica |
 
 ---
 
@@ -369,6 +370,16 @@ bloccano un profitto:
 Resta com'e' (tre condizioni: 3 o piu' gol; profitto a meno di 2 punti dalla soglia in fase calda;
 il modello dice che aspettare vale meno che chiudere; mai sotto il 2 % del capitale impegnato) e
 parte da solo (M4.3).
+
+### Passo 3 - Uscita in perdita
+DECISIONE dell'utente (29/09): «la teniamo come proposta, esattamente com'e' ora, decido io».
+- Resta tutto com'e': si valuta all'intervallo o fra il 46' e l'85', con 3 o 4 gol; confronto fra
+  «chiudo adesso» e «tengo fino alla fine» col modello (margine di prudenza 10 % per la probabilita'
+  del quarto gol); senza modello, regola fissa del 25 %.
+- Resta una PROPOSTA da firmare (urgente). Se l'utente non firma, Mike non chiude.
+- Nessuna modifica. E' l'unica famiglia di uscite che resta governata dalla firma dell'utente.
+- Ancora da decidere (non chiesto all'utente in questo passo): una rete automatica di perdita
+  quando l'utente non risponde. Oggi l'unica e' il tetto al 100 % del capitale impegnato (passo 4).
 
 ### PRINCIPIO dell'utente sugli ordini (29/09)
 Parole sue: «MIKE deve assicurarsi che tutti gli ordini da lui gestiti siano abbinati, chiusi,
