@@ -131,6 +131,37 @@ chiusura non esiste piu': lasciando tutto il resto «cosi'», l'ultimo ingresso 
 piu'. Da confermare con l'utente: l'ultimo ingresso sparisce, oppure parte quando a 10 minuti dal
 fischio Mike e' piatto.
 
+### DECISIONE dell'utente sull'ultimo ingresso (29/09, pomeriggio) - sostituisce la domanda sopra
+Parole sue: «L'ultimo ingresso e' da intendersi cosi': Mike ha posizioni aperte per quella
+specifica partita? NO: entriamo. SI': nessun altro ingresso, piazziamo il lay fino al fischio di
+inizio. Quando inizia la partita, Mike si trovera' con SOLO l'Under 3,5 abbinato.»
+
+In chiaro, a 10 minuti dal fischio:
+| Mike su quella partita | Cosa fa |
+|---|---|
+| NON ha una posizione aperta (e' piatto) | ULTIMO INGRESSO: punta Under 3,5 e appoggia subito la banca a 2 tick sotto, LAPSE, che resta fino al fischio |
+| HA una posizione aperta (con la banca in attesa) | nessun altro ingresso; la banca resta li' fino al fischio |
+
+Al fischio: la banca non abbinata la cancella Betfair (LAPSE) e Mike entra in gioco con SOLO
+l'Under 3,5 abbinato. Se invece la banca e' stata abbinata prima del fischio, Mike entra in gioco
+piatto, col profitto del giro chiuso.
+
+- **M2.4 - L'ultimo ingresso non dipende piu' dalla chiusura al mercato.** Parte a 10 minuti dal
+  fischio se e solo se Mike e' piatto su quella partita, ed e' un ingresso come gli altri: punta
+  piu' banca a 2 tick sotto in LAPSE.
+  - Per il tecnico: oggi l'ultimo ingresso (`under_last`) nasce in `_after_final_green`
+    (`Betfair/mike/engine.py:2858-2931`) solo dopo la chiusura «finale» abbinata, e porta
+    `persistence="PERSIST"` sulla riga (l'ordine vero parte comunque LAPSE + tutto o niente:
+    `Betfair/safe_strategy/execution.py:514`, `Betfair/omega/omega_market.py:735-746`). Il ramo
+    «a 10 minuti gia' piatto: niente ultimo ingresso» e' la scheda 9 dell'inventario B. Vanno
+    rivisti gli stati `PRE_GREEN_PENDING` (finale), `PRE_LAST_ENTRY_PENDING`, `HOLD` e il ritiro del
+    residuo dopo il fischio (`_late_persist_cancel`, `cancel_unmatched_after_ko_s`).
+
+Ipotesi mie, scritte all'utente per conferma (se non le corregge valgono cosi'):
+- l'ultimo ingresso passa dagli stessi controlli d'ingresso degli altri giri;
+- l'ultimo ingresso si valuta al segno dei 10 minuti; dopo, nessun altro ingresso fino al fischio
+  (anche se la banca viene abbinata negli ultimi 10 minuti).
+
 ### Rimandato al capitolo «dal fischio d'inizio»
 - La modalita' «al mercato» della banca.
 - Cosa fa Mike se al fischio la banca non e' stata abbinata e l'Under 3,5 e' aperto (oggi: nuova
@@ -146,3 +177,6 @@ fischio Mike e' piatto.
 | 2 | 29/09 | La banca di chiusura resta li' fino al fischio d'inizio | confermata, da implementare (M2.1) |
 | 3 | 29/09 | Nel pre-partita Mike non chiude MAI in perdita | confermata, da implementare (M2.2) |
 | 4 | 29/09 | La banca di chiusura e' LAPSE: la parte non abbinata la cancella Betfair al passaggio in gioco | confermata; il codice fa gia' cosi'; da aggiungere la lettura di cio' che resta al fischio (M2.3) |
+| 5 | 29/09 | Niente giri nuovi negli ultimi 10 minuti prima del fischio | confermata; gia' cosi' |
+| 6 | 29/09 | Ultimo ingresso: a 10 minuti dal fischio, se Mike NON ha posizione su quella partita entra (punta + banca a 2 tick sotto); se ce l'ha, nessun altro ingresso. Al fischio Mike ha solo l'Under 3,5 abbinato | confermata, da implementare (M2.4) |
+| 7 | 29/09 | La posizione in perdita nel pre-partita si porta in live, non si chiude | confermata, da implementare (M2.2) |
