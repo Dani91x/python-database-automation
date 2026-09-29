@@ -4233,3 +4233,42 @@ safe_tennis; mike copertura-rifiutata entrambi; mike «tutti» canale (30 min);
   35797769, sniper. Se la sessione cade: rilanciare dal bot che non ha il referto completo (riga `real` in fondo).
 - A GIRO VERDE: portare `staging-2026-09-28` su master a percorsi espliciti, poi le tre correzioni piccole in arrivo
   (P minimo, N3 Z3, J2 correzioni) ciascuna col replay del solo bot che tocca.
+
+## 2026-09-29 — Ripresa del mattino (stessa sessione; coordinatore Fable 5.1)
+
+**Checkpoint 06:44 del 29/09 — cosa e' successo nella notte e punto esatto di ripresa**
+- NELLA NOTTE il PC ha esaurito la memoria: il sistema ha FERMATO da solo i comandi in background (non li ho fermati io):
+  il giro di replay dal ramo di prova (arrivato fino a `mike copertura-rifiutata`; `mike tutti` fermato all'avvio), il
+  replay dello sniper su master (1 scenario su 9 letto: OK, 0 azioni), il vecchio confronto dello scalper calcio
+  (pid 6140) e la copia dei worktree del pomeriggio. Il delegato J2 e' caduto per un errore di RETE a meta' delle
+  correzioni. Alle 06:41: 7,0 GB liberi su 15,8, nessun processo python vivo, master pulito = origin = `aa1cd0b`.
+  Causa del carico: troppi lavori insieme (2 replay + suite intere + mutazioni + delegati). REGOLA: un replay alla
+  volta e, mentre gira, al piu' UNA suite mirata.
+- MASTER NON E' CAMBIATO nella notte: `82239df` (codice) + cronostoria. Rami locali intatti: `staging-2026-09-28` =
+  `prova-tutto-2026-09-28` = `02d4c30`.
+- **ESITO DEL GIRO DI REPLAY DAL RAMO DI PROVA `02d4c30`** (referti in `AUDIT_2026-09-28/replay/giro_ramo_di_prova/`):
+| Bot | Scenari | Esito |
+|---|---|---|
+| tennis_flb | base, live, gate-aperto, parziali, uscite-manuali, uscite-manuali-firmate | 6 OK, 0 violazioni |
+| tennis_swing | gli stessi 6 | 6 OK ma 0 AZIONI: non provato (il bot non entra su 35794049) |
+| tennis_pro | gli stessi 6 | 5 OK; `uscite-manuali-firmate` KO: UF2 x26 (proposta 2,06, ordini nuovi 4,00) |
+| tennis_scalper | gli stessi 6 | 5 OK; `uscite-manuali-firmate` KO: UF2 x8 (proposta 2,02, ordini nuovi 2,00) |
+| omega | rapidi, trasporto entrambi | 13 OK, PARITA' RAGGIUNTA |
+| safe_base, safe_esatto, safe_punta | rapidi, trasporto entrambi | 14 OK ciascuno, PARITA' RAGGIUNTA |
+| mike | copertura-rifiutata, entrambi | CANALE OK; **CODA KO: P1 x1, P2 x1** (apertura riproposta 94 volte di fila, 254 righe `error`, motivo `live_order_mode_non_live:OFF`); parita' non raggiunta |
+| mike «tutti», scalper_calcio 35797769, sniper | — | NON ESEGUITI (fermati dal sistema): RILANCIATI alle 06:44, uno alla volta |
+- **DUE REPERTI NUOVI, SOLO SUL RAMO DI PROVA (master non li ha):**
+  1. Mike sulla strada REST live (trasporto coda): su master `d407b59` lo stesso replay era OK (1 ordine, 2 righe). Una
+     delle consegne sommate ha cambiato quella strada. Assegnato al delegato D1-ter (agente `a79de1e6f1d8fe77d`):
+     isolare il commit e correggere la riproposizione a ogni giro.
+  2. UF2 sulle uscite FIRMATE di tennis pro e scalper tennis: da stabilire se sbaglia il controllo nuovo (conta il
+     parcheggio del place-and-trim) o il bot (importo diverso dalla proposta). Assegnato a N (agente `a29743622286cd394`).
+- CONSEGNE PICCOLE ARRIVATE NELLA NOTTE, DA VERIFICARE E SOMMARE (copie in `_checkpoint_2026-09-28/sera/int/`):
+  `cantiere_n3_z3.patch` (controllo Z3 per identita', 37 mutazioni rosse dichiarate) e
+  `CANTIERE_P_correzione_minimo.patch` (apertura tennis al minimo dichiarata nell'evento; suite intera 8127 verdi
+  dichiarata). J2 correzioni: in corso (delegato ripreso).
+- ORDINE DEI PROSSIMI PASSI: 1) esito di `mike tutti`, scalper calcio, sniper; 2) verificare e sommare Z3 e P-minimo;
+  3) correzioni di D1-ter (Mike coda), N (UF2), J2; 4) rilanciare SOLO i replay dei bot toccati dalle correzioni;
+  5) a replay tutti verdi: ramo di prova su master a percorsi espliciti, push; 6) suite intere, tsc, vitest,
+  `npm run build`; 7) elenco finale all'utente (blocco 8 del checkpoint delle 22:40).
+- ORDINE DELL'UTENTE (29/09, 06:41): «a che punto siamo? hai 30 minuti per finire tutti i lavori».
