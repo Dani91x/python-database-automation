@@ -4354,3 +4354,10 @@ safe_tennis; mike copertura-rifiutata entrambi; mike «tutti» canale (30 min);
   replay dello scalper calcio sul codice finale (ultimo scenario) e il replay di confronto.
 - STATO PER IL PAPER: accendibili Mike, Omega, Safe base/esatto/punta, Safe tennis, tennis pro, tennis FLB, scalper
   tennis. NON accendere: scalper calcio (KO), sniper e tennis swing (non provati: 0 azioni sulle registrazioni usate).
+
+**Checkpoint 09:29 del 29/09 — REPORT GIORNALIERO: copie dei .bat trasformate in rimandi**
+- L'utente lancia `aggiorna_report.bat` da una ricerca di Esplora file che ordina per data: ha aperto una COPIA dentro `_checkpoint_2026-09-28gent-ae644388fb18920f7gent-afc61df7a8e98907d\` (copie di sicurezza create da me il 28/09 sera), dove mancano `config.py` e `betfair_full_odds.py`. ERRORE MIO: le copie di sicurezza contenevano file avviabili.
+- CORREZIONE: 536 copie degli 11 file `.bat` di lancio (cartella `_checkpoint_2026-09-28` e radice dei 29 worktree dei delegati) sono ora un RIMANDO al file vero della radice (`cd /d` sulla radice + `call` del file vero). I file veri NON sono stati toccati (hash verificato). Nei worktree i `.bat` sono marcati `assume-unchanged`: non compaiono nei diff dei delegati. Elenco dei file cambiati: `scratchpad/copie_bat_rimandate.txt`; script: `scratchpad/rimanda_copie_bat.py`.
+- Creato sul Desktop il collegamento `AGGIORNA REPORT` verso il file vero.
+- Il report NON l'ho eseguito (scrive sul DB e chiama Betfair: lo lancia l'utente). Verificato dal delegato: i file usati dal report esistono, sintassi corretta, nessuno modificato il 28-29/09 in modo da romperlo.
+- REGOLA: una copia di sicurezza contiene solo patch e file nuovi, MAI copie di worktree interi e MAI file avviabili.
