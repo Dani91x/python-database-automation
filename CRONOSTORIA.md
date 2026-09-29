@@ -4306,3 +4306,30 @@ safe_tennis; mike copertura-rifiutata entrambi; mike «tutti» canale (30 min);
   principale; 5) elenco finale all'utente.
 - REPERTO APERTO segnalato da N, non indagato: in tennis_pro proposte firmate `scaglione`/`strutturale` con
   `size_chiusura` 0,00.
+
+**Checkpoint 07:49 del 29/09 — INTEGRAZIONE UNICA SU MASTER (commit LOCALE `304a8e1`, push dopo i replay di scalper e sniper)**
+- Ordine dell'utente (07:15): «finisci quello che devi finire nel minor tempo possibile, poi facciamo riepilogo».
+- `304a8e1` = master `82239df` + TUTTO il ramo locale `prova-tutto-3-2026-09-29` (`2f53bb0`: D1-ter 1-5, N, N3 punti 1 e 2, Z3,
+  UF2, UM2, J2 blocchi 1-4 + banco + correzioni, P + correzione minimo, D1-quater banco e produzione) + correzione del
+  test `frontend/src/lib/safeBot.test.ts` (rosso dal 26/09: il test non conosceva `aggregates_by_mode`). 193 file, a
+  percorsi espliciti. Verificato: i file del checkout principale coincidono uno per uno col ramo di prova.
+- REPLAY DI CERTIFICAZIONE (dai worktree di verifica con le variabili non segrete del `.env` DICHIARATE nell'ambiente:
+  `LIVE_ORDER_MODE=LIVE`, `LIVE_KILL_SWITCH=false`, `MIKE_LIVE_ENABLED=1`, `SAFE_PRE_KO_OU_HOURS=1`,
+  `LIVE_RECONCILE_POLL_SEC=5`, `LIVE_MARKET_TYPES=MATCH_ODDS,CORRECT_SCORE,HALF_TIME_SCORE`; i 20 interruttori dei canali a
+  0; Supabase finto). Referti: `AUDIT_2026-09-28/replay/certificazione_29_09/`.
+| Bot | Codice | Scenari | Esito |
+|---|---|---|---|
+| mike | `a739a59` | tutti (15), trasporto canale | 15 OK, 0 violazioni |
+| mike | `a739a59` | copertura-rifiutata, entrambi | coda OK, canale OK, 0 violazioni; parita' «non raggiunta» per UNA riga: sulla coda il finto REST del banco rifiuta la copertura (guasto dello scenario), sul canale il guasto non e' iniettato e la copertura si abbina: limite DEL BANCO (proposta P2 di D1-bis), non della produzione |
+| omega | `a739a59` | rapidi, entrambi | 13 OK, PARITA' RAGGIUNTA |
+| safe_base, safe_esatto, safe_punta | `a739a59` | rapidi, entrambi | 14 OK ciascuno, PARITA' RAGGIUNTA |
+| safe_tennis | `a739a59` | rapidi, entrambi | 14 OK, PARITA' RAGGIUNTA |
+| tennis_pro | `a739a59` | base, live, gate-aperto, parziali, uscite-manuali, uscite-manuali-firmate | 6 OK, 0 violazioni |
+| tennis_flb | `a739a59` | gli stessi 6 | 6 OK, 0 violazioni |
+| tennis_scalper | `2f53bb0` | gli stessi 6 | 6 OK, 0 violazioni (prima di UM2: UM2 x19, proposte di stop senza numeri) |
+| tennis_swing | `a739a59` | gli stessi 6 | 6 OK ma 0 AZIONI: NON PROVATO (il bot non entra su 35794049): serve un'altra registrazione |
+| scalper_calcio (35797769) e sniper (35674515) | `a739a59` e `2f53bb0` | base, paper, uscite-manuali, uscite-manuali-firmate; sniper, sniper-paper | IN CORSO alle 07:49 (registrazione pesante: oltre 30 minuti di CPU) |
+- FRONTEND dal checkout principale: tsc 0 errori; vitest 4151 verdi (1 test corretto); `npm run build` fatta (45 s).
+- Suite Python INTERA finale dal checkout principale su `304a8e1`: in corso (`scratchpad/int/suite_finale_master.txt`).
+- SE LA SESSIONE CADE ORA: master locale e' AVANTI di 1 rispetto a origin (`304a8e1` non pushato). Prima di pushare:
+  leggere i replay di scalper_calcio e sniper (`scratchpad/replay/giro2/` e `giro3/`) e la suite finale.
