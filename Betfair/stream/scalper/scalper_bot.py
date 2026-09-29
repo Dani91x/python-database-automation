@@ -204,6 +204,9 @@ class _Slot:
     flow_inside: Deque[Tuple[int, float]] = field(default_factory=lambda: deque(maxlen=512))
     t_last_submin: int = 0               # rate-limit creazione submin (anti-cascata)
     submin_count: int = 0                # sequenze create nel ciclo corrente (tetto)
+    # 29/09 (cantiere S): chiusura non piazzabile gia' dichiarata CRITICAL
+    # (una riga per episodio, non una a ogni book)
+    chiusura_bloccata_detta: bool = False
     swing: bool = False                  # ciclo originato dal trend (target/stop swing)
     # 25/09 - uscite manuali: il motivo dell'ultima proposta emessa su questo
     # ciclo (una sola 'uscita_proposta' per motivo, mai una a ogni book)
@@ -822,7 +825,11 @@ class ScalperStrategy(BaseStrategy):
                 live += list(slot.flatten_orders)
                 if not adopt:
                     live.append(ne)
-                still = [o for o in live if self._has_live(o)]
+                # CANTIERE S (29/09): anche un ordine IN VOLO (cancel o rimpiazzo
+                # non ancora eseguiti) tiene lo slot: il reset svuota
+                # `flatten_orders` e un abbinamento (o un sostituto) che arriva
+                # dopo resterebbe a mercato senza padrone
+                still = [o for o in live if self._vivo_o_in_volo(o)]
                 if still:
                     # in DONE nessun ordine deve restare vivo: ritenta il cancel
                     for o in still:
@@ -1631,7 +1638,18 @@ class ScalperStrategy(BaseStrategy):
         if slot.status == LOCKING:
             # vecchie close sostituite (scratch): ritenta il cancel finche'
             # non sono morte (il primo cancel puo' fallire su ordini PENDING)
+            # CANTIERE S (29/09): SOLO quelle. Dal 11/07 `_place` traccia in
+            # `flatten_orders` OGNI ordine piazzato con lo slot (anti-orfani),
+            # quindi anche la close CORRENTE messa da `_open_lock` (automatica o
+            # FIRMATA dall'utente), la sua aggiunta di pre-dimensione alla
+            # stessa quota e il parcheggio della sequenza del resto: questo
+            # ciclo li ritirava tutti al book dopo (replay 35797769, uscite
+            # firmate: "proposta 24,42, ordini nuovi 0,00"; il ciclo finiva
+            # poi a stop o timeout invece che a target).
+            tenute = self._ordini_della_close(slot)
             for o in slot.flatten_orders:
+                if id(o) in tenute:
+                    continue
                 if self._has_live(o):
                     self._cancel_if_live(market, o)
             # 25/09 - posizione in attesa dell'utente (uscite manuali) e
@@ -1652,6 +1670,16 @@ class ScalperStrategy(BaseStrategy):
                 nw0, nl0 = self._net_position(slot)
                 if abs(nw0 - nl0) > 0.02:
                     self._begin_flatten(slot)
+                elif (slot.submins
+                      or any(self._vivo_o_in_volo(o) for o in slot.flatten_orders)):
+                    # CANTIERE S (29/09, gemello del cantiere T): ciclo pari ma
+                    # nello slot resta un ordine vivo o in volo (un parcheggio
+                    # PENDING il cui cancel e' fallito, la sequenza della
+                    # pre-dimensione della close): chiuderlo ora lo lascerebbe
+                    # a mercato senza padrone. Le sequenze si chiudono, i cancel
+                    # si ritentano qui sopra e si decide al book dopo.
+                    self._cancel_submins(market, slot)
+                    return
                 else:
                     # TELEMETRIA ONESTA (fix 11/07, §12.1 bibbia): "scalp" =
                     # TICK VERO (locked >= soglia green). Lo scratch chiuso a
@@ -1840,7 +1868,10 @@ class ScalperStrategy(BaseStrategy):
         if matched > 0:
             # fill arrivato durante la cancel -> chiusura garantita (mai nuda)
             self._begin_flatten(slot)
-        elif not any(self._has_live(o) for o in legs):
+        elif not any(self._vivo_o_in_volo(o) for o in legs):
+            # CANTIERE S (29/09): a cancel ESEGUITO, non solo chiesto (in
+            # CANCELLING l'ordine puo' ancora abbinarsi e il reset lo
+            # dimenticherebbe)
             self._reset(slot)
 
     def _open_lock(
@@ -1993,6 +2024,18 @@ class ScalperStrategy(BaseStrategy):
         # loss cap CIECO alle perdite da stop, missione inerte — visto nel
         # backtest di validazione su 74 run). locked = worst-case dei 2 esiti.
         if abs(net_win - net_lose) <= 0.02:
+            # CANTIERE S (29/09, gemello del cantiere T): piatta, ma un ordine
+            # dello slot ancora vivo o in volo (il parcheggio di una sequenza,
+            # un rimpiazzo il cui sostituto non e' ancora nato) potrebbe
+            # abbinarsi DOPO la chiusura dichiarata. A posizione piatta le
+            # sequenze si chiudono (un loro rimpiazzo la ROVESCEREBBE), gli
+            # ordini si ritirano e la chiusura si dichiara solo a ordini morti.
+            in_volo = [o for o in slot.flatten_orders if self._vivo_o_in_volo(o)]
+            if in_volo or slot.submins:
+                self._cancel_submins(market, slot)
+                for o in in_volo:
+                    self._cancel_if_live(market, o)
+                return
             locked = min(net_win, net_lose)
             slot.status = DONE
             self.stats["flattens"] += 1
@@ -2012,6 +2055,7 @@ class ScalperStrategy(BaseStrategy):
             return
         # un flatten vivo ma STANTIO (il book si e' allontanato: non fillera')
         # va cancellato e ripiazzato piu' aggressivo al giro dopo
+        in_seq = self._ordini_in_sequenza(slot)
         for o in slot.flatten_orders:
             if not self._has_live(o):
                 continue
@@ -2020,7 +2064,12 @@ class ScalperStrategy(BaseStrategy):
             # imabbinabili PER DESIGN: non sono flatten stantii, NON vanno
             # cancellati qui (il 03/07 questo li uccideva ogni 1.5s e la
             # sequenza park-trim-replace non completava mai → churn di txn)
-            if p >= 999.0 or p <= 1.011:
+            # CANTIERE S (29/09, gemello del cantiere T): ma SOLO quelli di una
+            # sequenza IN CORSO. Un parcheggio ORFANO (sequenza finita o
+            # abortita, cancel fallito su un ordine ancora PENDING senza bet_id)
+            # non lo governa piu' nessuno: si ritira qui, a ogni giro, finche'
+            # non e' morto. Prima il flatten lo aspettava per sempre.
+            if (p >= 999.0 or p <= 1.011) and id(o) in in_seq:
                 continue
             side = (getattr(o, "side", "") or "").upper()
             stale = (
@@ -2030,7 +2079,10 @@ class ScalperStrategy(BaseStrategy):
             )
             if stale:
                 self._cancel_if_live(market, o)
-        if any(self._has_live(o) for o in slot.flatten_orders):
+        # CANTIERE S (29/09): si aspetta anche un ordine IN VOLO (cancel o
+        # rimpiazzo non ancora eseguiti): la posizione vista ora non e' quella
+        # che resta, e una chiusura nuova la rovescerebbe
+        if any(self._vivo_o_in_volo(o) for o in slot.flatten_orders):
             return  # un flatten e' ancora in coda: aspetta il fill
         # ANTI-CHURN (live): se l'exchange rifiuta istantaneamente (es. size
         # invalida) l'ordine muore subito e questo loop ritenterebbe ad ogni
@@ -2047,6 +2099,16 @@ class ScalperStrategy(BaseStrategy):
         slot.flat_tries += 1
         if fo is not None:
             slot.flatten_orders.append(fo)
+            slot.chiusura_bloccata_detta = False
+            if now is not None:
+                slot.t_last_flat = int(now)
+        elif slot.submins:
+            # CANTIERE S (29/09, gemello del cantiere T): `_place_exact` torna
+            # None quando la chiusura e' TUTTA sotto il minimo ma ha AVVIATO la
+            # sequenza del resto: non e' un residuo da accettare, e' una
+            # chiusura in corso. Lo slot resta FLATTENING (niente DONE col
+            # parcheggio vivo) e ai book successivi il parcheggio tracciato fa
+            # aspettare il flatten.
             if now is not None:
                 slot.t_last_flat = int(now)
         else:
@@ -2075,7 +2137,8 @@ class ScalperStrategy(BaseStrategy):
                                nw=round(net_win, 3), nl=round(net_lose, 3),
                                msg=_msg_residuo(net_win, net_lose))
                 slot.status = DONE
-            elif not slot.submins and slot.flat_tries > 12:
+            elif not slot.submins and slot.flat_tries > 12 and self._resto_davvero_non_piazzabile(
+                    slot, net_win, net_lose, best_back, best_lay):
                 # ULTIMA SPIAGGIA (direttiva operatore 10/07 §12.1: il flatten
                 # TERMINA, sempre, con ledger chiuso): niente e' piazzabile
                 # (minimi .it, submin esauriti/rate-limited), nessuna sequenza
@@ -2097,13 +2160,52 @@ class ScalperStrategy(BaseStrategy):
                                nw=round(net_win, 3), nl=round(net_lose, 3),
                                msg=_msg_residuo(net_win, net_lose))
                 slot.status = DONE
-            elif (
-                best_back is None and best_lay is None and slot.flat_tries > 50
-            ):
-                # solo con book DAVVERO vuoto e dopo molti tentativi: esci dal
-                # loop (il monitor dello stato DONE riprovera' se l'esposizione
-                # non e' piatta). MAI arrendersi con prezzi disponibili.
-                slot.status = DONE
+            elif slot.flat_tries > 12 and not slot.chiusura_bloccata_detta:
+                # CANTIERE S (29/09): PROTEZIONE che non si arrende. La chiusura
+                # non parte (prezzi del lato di chiusura assenti = flusso dei
+                # prezzi interrotto, mercato non operabile, sequenza del resto
+                # in pausa) ma la posizione e' piazzabile: prima, dopo 12
+                # tentativi, la "ULTIMA SPIAGGIA" l'accettava INTERA come
+                # residuo (banco: LAY 25 @2,22 accettata a prezzi assenti, slot
+                # DONE, aperta al fischio) e col book vuoto lo slot andava DONE
+                # comunque. Ora lo slot resta FLATTENING (ogni ordine vivo gia'
+                # ritirato qui sopra, nuovo tentativo a ogni book) e lo si DICE
+                # una volta per episodio, CRITICAL.
+                slot.chiusura_bloccata_detta = True
+                self._emit("flatten_bloccato", level="CRITICAL",
+                           nw=round(net_win, 3), nl=round(net_lose, 3),
+                           prezzi=bool(best_back is not None or best_lay is not None),
+                           msg="posizione NON flat e chiusura non piazzabile ora "
+                               "(prezzi assenti o mercato fermo): si ritenta a "
+                               "ogni book, mai accettata come residuo")
+
+    def _resto_davvero_non_piazzabile(
+        self, slot: _Slot, net_win: float, net_lose: float,
+        best_back: Optional[float], best_lay: Optional[float],
+    ) -> bool:
+        """CANTIERE S (29/09): la ULTIMA SPIAGGIA accetta SOLO cio' che il suo
+        commento promette ("bounded by-design: sotto il minimo di piazzamento
+        del lato", place-and-trim esaurito): c'e' il prezzo del lato di
+        chiusura, la chiusura e' SOTTO il minimo diretto e, con le uscite
+        esatte, le sequenze del ciclo sono finite (tetto invariato). Mai una
+        posizione piazzabile, mai a prezzi assenti, mai durante la pausa fra
+        due sequenze."""
+        if net_win > net_lose:
+            side, base = "LAY", best_lay
+        else:
+            side, base = "BACK", best_back
+        if base is None:
+            return False
+        g = compute_green(net_win, net_lose, get_nearest_price(base))
+        if g is None:
+            return False
+        size = float(g[1])
+        if size >= self._side_min(side) - _EPS:
+            return False
+        if self.exact_exits and not self.dry_run and \
+                getattr(slot, "submin_count", 0) < self._SUBMIN_MAX_PER_CYCLE:
+            return False
+        return True
 
     def _flatten(
         self, market: Any, slot: _Slot,
@@ -2387,6 +2489,39 @@ class ScalperStrategy(BaseStrategy):
     # ricreava la sequenza ogni 5s pur con l'ordine gia' a riposo al target)
     _SUBMIN_MAX_PER_CYCLE = 5
 
+    def _ordini_della_close(self, slot: _Slot) -> set:
+        """CANTIERE S (29/09): id() degli ordini che SONO la chiusura corrente
+        del ciclo in LOCKING: la close, le sue aggiunte di pre-dimensione
+        (`_presize_close`: stesso lato, stessa quota) e gli ordini delle
+        sequenze place-and-trim in corso (parcheggio e sostituti)."""
+        ids = self._ordini_in_sequenza(slot)
+        close = slot.close
+        if close is None:
+            return ids
+        ids.add(id(close))
+        c_side = (getattr(close, "side", "") or "").upper()
+        c_price = float(getattr(getattr(close, "order_type", None), "price", 0.0) or 0.0)
+        for o in slot.flatten_orders:
+            p = float(getattr(getattr(o, "order_type", None), "price", 0.0) or 0.0)
+            if ((getattr(o, "side", "") or "").upper() == c_side
+                    and abs(p - c_price) < 1e-9):
+                ids.add(id(o))
+        return ids
+
+    @staticmethod
+    def _ordini_in_sequenza(slot: _Slot) -> set:
+        """id() degli ordini delle sequenze place-and-trim IN CORSO dello slot
+        (parcheggio e sostituti: tutti gli ordini del loro Trade)."""
+        ids: set = set()
+        for entry in slot.submins:
+            o = entry.get("order") or getattr(entry.get("ops"), "last_order", None)
+            if o is None:
+                continue
+            ids.add(id(o))
+            for x in list(getattr(getattr(o, "trade", None), "orders", None) or []):
+                ids.add(id(x))
+        return ids
+
     def _cancel_submins(self, market: Any, slot: _Slot) -> None:
         """Cancella le sequenze exact dello slot (ordini gia' tracciati)."""
         for entry in list(slot.submins):
@@ -2489,6 +2624,19 @@ class ScalperStrategy(BaseStrategy):
 
     def _drive_submins(self, market: Any, slot: _Slot, now: int) -> None:
         """Avanza le sequenze park-trim-replace dello slot (idempotente)."""
+        # CANTIERE S (29/09, gemello del cantiere T): il SOSTITUTO del rimpiazzo
+        # nasce quando flumine esegue il replace, cioe' (con la latenza vera)
+        # book DOPO che la sequenza e' passata a DONE ed e' uscita da
+        # `slot.submins`. Nessuno lo agganciava: abbinato a mercato ma fuori da
+        # `_net_position`, il bot si credeva scoperto (residuo "accettato" che
+        # non esiste, o chiusura ripiazzata = posizione ROVESCIATA). Si
+        # agganciano a ogni book tutti gli ordini dei Trade gia' tracciati (il
+        # Trade di un parcheggio contiene solo parcheggio e sostituti; ogni
+        # altro Trade del bot ha un solo ordine).
+        for o in list(slot.flatten_orders):
+            tr = getattr(o, "trade", None)
+            for x in list(getattr(tr, "orders", None) or []):
+                self._track(slot, x)
         if not slot.submins:
             return
         from ..trading.submin import SubminStep, advance_submin
@@ -2548,6 +2696,45 @@ class ScalperStrategy(BaseStrategy):
                                matched=round(matched, 2),
                                selection_id=getattr(o_ab, "selection_id", None))
                     self._begin_flatten(slot)
+            elif (
+                new_state.step in (SubminStep.PLACED, SubminStep.TRIMMED)
+                and entry.get("order") is not None
+                and getattr(entry["order"], "status", None) is not None
+                and not self._vivo_o_in_volo(entry["order"])
+            ):
+                # CANTIERE S (29/09, gemello del cantiere T): il parcheggio e'
+                # MORTO prima del rimpiazzo (ritirato da un'altra via: cancel
+                # delle vecchie close in LOCKING, force-flat, sorveglianza DONE)
+                # e `advance_submin` in PLACED senza taglio richiesto ASPETTA PER
+                # SEMPRE. La sequenza restava in `slot.submins` e lo slot DONE
+                # saltava la sorveglianza (`if slot.submins: continue`): la
+                # posizione restava senza padrone. La sequenza finisce qui,
+                # dichiarata; la chiusura la rifanno flatten e sorveglianza.
+                self._emit("submin_abort",
+                           note="parcheggio non piu' vivo prima del rimpiazzo: "
+                                "sequenza chiusa, la chiusura si rifa'")
+                slot.submins.remove(entry)
+
+    @staticmethod
+    def _vivo_o_in_volo(order: Any) -> bool:
+        """CANTIERE S (29/09): l'ordine puo' ancora cambiare la posizione.
+
+        Vivo (``_has_live``) OPPURE con una richiesta in volo non ancora
+        eseguita da flumine: CANCELLING (il cancel puo' fallire e l'ordine
+        abbinarsi), UPDATING, REPLACING (il SOSTITUTO del rimpiazzo nascera' al
+        book in cui il replace e' eseguito). Nessuno di questi puo' lasciare lo
+        slot dichiarato chiuso ne' far ripiazzare una chiusura: il bot la
+        piazzerebbe su una posizione che il sostituto sta per chiudere
+        (posizione ROVESCIATA, cantiere T). Stessi stati del gemello tennis
+        (``tennis_scalper_bot._LIVE_ORDER_STATUSES``)."""
+        if order is None:
+            return False
+        if getattr(order, "status", None) not in (
+            OrderStatus.EXECUTABLE, OrderStatus.PENDING, OrderStatus.CANCELLING,
+            OrderStatus.UPDATING, OrderStatus.REPLACING,
+        ):
+            return False
+        return float(getattr(order, "size_remaining", 0.0) or 0.0) > _EPS
 
     @staticmethod
     def _has_live(order: Any) -> bool:
@@ -2587,6 +2774,7 @@ class ScalperStrategy(BaseStrategy):
         slot.residual_ok = False
         slot.residual_accepted = 0.0
         slot.submin_count = 0
+        slot.chiusura_bloccata_detta = False
         slot.next_entry = None
         slot.flatten_orders = []
         slot.flat_tries = 0
