@@ -5,8 +5,10 @@
 // gestisco io manualmente tramite l'apposita scheda» (utente, 25/09).
 //
 // Con «Uscite automatiche» SPENTO il motore di Mike non esegue le uscite
-// discrezionali (green-up, uscita al fischio, cash out, uscita in perdita a
-// modello): scrive la PROPOSTA nel contesto della partita
+// in PERDITA (29/09, piano Mike P1: le uscite in profitto - green-up, uscita al
+// fischio, cash out in profitto, green del re-ingresso - partono sempre da
+// sole e non arrivano piu' qui; le loro categorie restano sotto perche' una
+// proposta vecchia salvata deve ancora potersi leggere): scrive la PROPOSTA nel contesto della partita
 // (`mike_events.ctx.uscita_proposta`, `engine.gate_uscite`). Qui la si mostra
 // con tutto quello che serve per decidere, e il bottone APPROVA manda la
 // richiesta `approva_uscita` con la chiave della proposta e il contesto del
@@ -21,8 +23,14 @@
 import { useContext, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { fmtMoney, fmtOdds, DASH } from '@/lib/format';
-import { etaQuoteS, feedFreshness, requestMike, roleLabel, type MikeBook, type MikeEvent } from '@/lib/mike';
+import { etaPubblicazioneS, etaQuoteS, feedFreshness, requestMike, roleLabel, type MikeBook, type MikeEvent } from '@/lib/mike';
 import { useSecondTick } from '@/components/mike/useMikeClock';
+import { useMikeEventoAlMs, type CanaleEventiMike } from '@/components/mike/useMikeEventoAlMs';
+
+/** 29/09 (M7.1): oltre questi secondi la cifra «chiudendo ora» e' VECCHIA. Il
+ *  bot la ricalcola a ogni giro (~1 s) e la spinge sul canale al ms; stessa
+ *  soglia del verde del feed (`feedFreshness`: fino a 5 s). */
+export const CIFRA_VECCHIA_S = 5;
 import { sorgenteLadderAlMs } from '@/lib/localTransport';
 import { prezzoDelLato, type PrezzoScheda } from '@/lib/schedaAlMs';
 import { ChiusuraRigaContext } from './BottoneChiudiRiga';
@@ -132,11 +140,19 @@ function OrdineMikeRiga({ o, prezzo, testId }: { o: OrdineProposto; prezzo: Prez
     );
 }
 
-export function PropostaUscitaMike({ ev, testId = 'cr-mike-proposta', sorgenteLadder = SORGENTE_DI_SERIE }: {
+export function PropostaUscitaMike({
+    ev: evDb, testId = 'cr-mike-proposta', sorgenteLadder = SORGENTE_DI_SERIE, canaleMike,
+}: {
     ev: MikeEvent; testId?: string;
     /** D7 (25/09) — la sorgente del ladder al ms (test: una finta; null = solo il feed) */
     sorgenteLadder?: SorgenteLadder | null;
+    /** 29/09 (M7.1) — il canale locale di Mike (test: un finto; null = solo il database) */
+    canaleMike?: (() => CanaleEventiMike) | null;
 }) {
+    // 29/09 (M7.1): le cifre VIVE della proposta arrivano dal canale al ms del
+    // bot (via principale); la riga del database resta il ripiego. La proposta
+    // (`ctx`) arriva solo dal database: il bot non spinge `ctx` sul canale.
+    const { ev } = useMikeEventoAlMs(evDb, propostaDi(evDb) != null, canaleMike);
     const prop = propostaDi(ev);
     const adesso = useSecondTick(prop != null);
     // D7 (25/09) — il prezzo AL MS del primo ordine proposto (quello che va
@@ -170,6 +186,10 @@ export function PropostaUscitaMike({ ev, testId = 'cr-mike-proposta', sorgenteLa
     const spento = fresh.tone === 'stale' || fresh.tone === 'unknown' || inVolo;
     const daDecisioneS = Math.max(0, Math.round(adesso / 1000 - Number(prop.decided_at)));
     const bloccabileOra = typeof live.cashout?.net === 'number' ? live.cashout.net : null;
+    // 29/09 (M7.1): l'ETA' della cifra «chiudendo ora» = da quanto il bot l'ha
+    // calcolata (`live.published_ts`); oltre CIFRA_VECCHIA_S e' dichiarata vecchia
+    const etaCifra = etaPubblicazioneS(live, adesso);
+    const cifraVecchia = etaCifra == null || etaCifra > CIFRA_VECCHIA_S;
 
     const approva = async () => {
         setInVolo(true); setEsito(null);
@@ -242,7 +262,14 @@ export function PropostaUscitaMike({ ev, testId = 'cr-mike-proposta', sorgenteLa
                 momento), come la strategia la vuole; dopo il clic qui sotto il prezzo reale di abbinamento
             </div>
             <div className="text-[10.5px] text-white/60" data-testid={`${testId}-numeri`}>
-                chiudendo ora {bloccabileOra == null ? DASH : fmtMoney(bloccabileOra, { signed: true })}
+                chiudendo ora <span className={cifraVecchia ? 'line-through text-amber-300/80' : ''}
+                    data-testid={`${testId}-cifra`}>{bloccabileOra == null ? DASH : fmtMoney(bloccabileOra, { signed: true })}</span>
+                {' '}<span className={cifraVecchia ? 'text-amber-300 font-semibold' : 'text-white/45'}
+                    data-testid={`${testId}-eta-cifra`} data-vecchia={cifraVecchia ? '1' : '0'}>
+                    {etaCifra == null ? '(VECCHIA: eta’ del dato sconosciuta)'
+                        : cifraVecchia ? `(VECCHIA: aggiornata ${Math.round(etaCifra)} s fa)`
+                            : `(aggiornata ${Math.round(etaCifra)} s fa)`}
+                </span>
                 {' · '}alla decisione {prop.bloccabile == null ? DASH : fmtMoney(prop.bloccabile, { signed: true })}
                 {' · '}deciso {daDecisioneS} s fa
                 {prop.minuto != null ? ` · ${prop.minuto}′` : ''}

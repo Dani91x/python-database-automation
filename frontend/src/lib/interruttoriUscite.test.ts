@@ -39,11 +39,16 @@ describe('lettura: specchio del servizio', () => {
 
     it('Mike: assente = manuali (DEFAULT dal 25/09 sera); stringhe come config._coerce', () => {
         const m = interruttoreDi('mike');
-        expect(statoUscite(m, { stake: 10 })).toEqual({ automatiche: false });
-        expect(statoUscite(m, { uscite_automatiche: false })).toEqual({ automatiche: false });
-        expect(statoUscite(m, { uscite_automatiche: true })).toEqual({ automatiche: true });
-        expect(statoUscite(m, { uscite_automatiche: 'false' })).toEqual({ automatiche: false });
-        expect(statoUscite(m, { uscite_automatiche: 'true' })).toEqual({ automatiche: true });
+        // 29/09 (piano Mike P1, decisioni 13 e 16): lo stato porta la nota di
+        // cosa governa l'interruttore (solo le uscite in perdita)
+        const nota = 'governa solo le uscite in perdita; le uscite in profitto le esegue Mike';
+        expect(statoUscite(m, { stake: 10 })).toEqual({ automatiche: false, nota });
+        expect(statoUscite(m, { uscite_automatiche: false })).toEqual({ automatiche: false, nota });
+        expect(statoUscite(m, { uscite_automatiche: true })).toEqual({ automatiche: true, nota });
+        expect(statoUscite(m, { uscite_automatiche: 'false' })).toEqual({ automatiche: false, nota });
+        expect(statoUscite(m, { uscite_automatiche: 'true' })).toEqual({ automatiche: true, nota });
+        // parametri non letti: nessuna nota, nessun pulsante (fail-closed invariato)
+        expect(statoUscite(m, null)).toEqual({ automatiche: null });
     });
 
     it('Safe: la mappa per strategia, il tennis ripiega sul cancelletto storico', () => {

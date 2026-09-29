@@ -40,6 +40,7 @@ import { pnlClass } from '@/lib/tradeStatus';
 import { etaQuoteS, feedFreshness, MIKE_TERMINAL_STATES, type MikeEvent } from '@/lib/mike';
 import { useSecondTick } from '@/components/mike/useMikeClock';
 import { PropostaUscitaMike } from './PropostaUscitaMike';
+import { EsitoChiusuraMike } from './EsitoChiusuraMike';
 
 /** Una coppia «etichetta / valore», il mattone di tutta la scheda. */
 function Voce({ label, children, title, testId }: {
@@ -113,6 +114,8 @@ export function SchedaMike({ ev, testId = 'cr-mike' }: { ev: MikeEvent; testId?:
             {/* 25/09 — uscite MANUALI: l'uscita che Mike vorrebbe fare, da
                 approvare (compare solo se c'e' una proposta viva) */}
             <PropostaUscitaMike ev={ev} testId={`${testId}-proposta`} />
+            {/* 29/09 (M7.2) — com'e' finita la chiusura: stesso componente della pagina di Mike */}
+            <EsitoChiusuraMike ev={ev} testId={`${testId}-esito-chiusura`} />
 
             {/* ── P(4 gol ESATTI): il numero su cui Mike decide (engine.py
                 `hold_expectation`: 4 gol esatti = l'unico esito in cui perdono

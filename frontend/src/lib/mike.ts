@@ -506,7 +506,9 @@ export const MIKE_PARAM_FIELDS: readonly MikeParamField[] = [
     // Betfair/mike/config.py PARAM_SPEC['uscite_automatiche']. 25/09 sera:
     // default cambiato a false (manuale) - ordine dell'utente: «di default
     // tutte le uscite le voglio spente».
-    { key: 'uscite_automatiche', label: 'Uscite automatiche', kind: 'bool', hint: 'acceso: green-up, cash out e uscite in perdita li esegue il bot. Spento (di serie): ogni uscita nuova diventa una PROPOSTA nella scheda e parte solo se la approvi (o chiudi tu). Copertura Over 4.5, cap perdita partita e regolamento restano sempre automatici', group: 'uscite' },
+    // 29/09 (piano Mike P1, decisioni 13 e 16): l'interruttore governa SOLO le
+    // uscite in perdita; le uscite in profitto partono sempre da sole.
+    { key: 'uscite_automatiche', label: 'Uscite automatiche', kind: 'bool', hint: 'governa solo le uscite in PERDITA: acceso = Mike le esegue da solo; spento (di serie) = ogni uscita in perdita diventa una PROPOSTA nella scheda e parte solo se la approvi (o chiudi tu). Le uscite in PROFITTO (green-up pre-partita, uscita al fischio, cash out in profitto, cash out intelligente, green del re-ingresso) le esegue Mike da solo in ogni caso. Copertura e regolamento restano sempre automatici', group: 'uscite' },
     { key: 'cashout_smart_min_pct', label: 'Profitto minimo per chiudere prima (%)', kind: 'number', step: 0.5, min: 0, max: 50, hint: 'mai sotto questo profitto, qualunque sia il rischio', group: 'cashout' },
     { key: 'cashout_smart_tolerance_pct', label: '"A un passo" dalla soglia = entro (punti %)', kind: 'number', step: 0.5, min: 0, max: 50, hint: 'es. soglia 5 e tolleranza 2 → da 3% in su si può chiudere se la fase è calda', group: 'cashout' },
     { key: 'cashout_smart_hazard_hot', label: 'Fase calda: hazard gol 3′ ≥', kind: 'number', step: 0.01, min: 0, max: 1, hint: 'Atlante + modello + pressione', group: 'cashout' },
@@ -528,9 +530,11 @@ export const MIKE_PARAM_FIELDS: readonly MikeParamField[] = [
     { key: 'h2_loss_pct', label: '2T: perdita tollerata %', kind: 'number', step: 1, min: 0, max: 100, hint: '', group: 'uscite' },
     { key: 'h2_loss_from_min', label: '2T: dal minuto', kind: 'number', step: 1, min: 45, max: 100, hint: '', group: 'uscite' },
     { key: 'h2_loss_to_min', label: '2T: fino al minuto', kind: 'number', step: 1, min: 45, max: 100, hint: '', group: 'uscite' },
-    { key: 'reentry_enabled', label: 'Re-ingresso attivo', kind: 'bool', hint: 'dopo una chiusura in profitto, con 1 gol, sull’Under 4.5', group: 'reentry' },
+    { key: 'reentry_enabled', label: 'Re-ingresso attivo', kind: 'bool', hint: 'dopo una chiusura in profitto, con 1 o 2 gol, sull’Under 4.5', group: 'reentry' },
     { key: 'reentry_green_ticks', label: 'Green re-ingresso (+tick)', kind: 'number', step: 1, min: 1, max: 10, hint: '', group: 'reentry' },
-    { key: 'reentry_max_goals', label: 'Gol max per il re-ingresso', kind: 'number', step: 1, min: 0, max: 1, hint: '1 = linea 4.5 (unica nel feed)', group: 'reentry' },
+    // 29/09 (piano Mike M6.1, decisione 20): rientro con 1 o 2 gol. Specchio di
+    // Betfair/mike/config.py PARAM_SPEC['reentry_max_goals'] (serie 2, massimo 2).
+    { key: 'reentry_max_goals', label: 'Gol max per il re-ingresso', kind: 'number', step: 1, min: 0, max: 2, hint: '2 = rientra con 1 o 2 gol segnati (linea 4.5); con 0 gol non rientra mai', group: 'reentry' },
     { key: 'reentry_until_min', label: 'Re-ingresso entro il minuto', kind: 'number', step: 1, min: 0, max: 100, hint: '', group: 'reentry' },
     { key: 'reentry_exit_until_min', label: 'Chiusura forzata del re-ingresso al minuto', kind: 'number', step: 1, min: 0, max: 100, hint: '0 = mai: la lay a +N tick resta sul book fino a fine gara', group: 'reentry' },
     { key: 'reentry_price_min_over_entry', label: 'Solo se U4.5 > quota iniziale U3.5', kind: 'bool', hint: 'regola della specifica', group: 'reentry' },
@@ -539,7 +543,10 @@ export const MIKE_PARAM_FIELDS: readonly MikeParamField[] = [
     { key: 'max_open_matches', label: 'Partite aperte max', kind: 'number', step: 1, min: 1, max: 90, hint: 'partite con posizione contemporaneamente', group: 'rischio' },
     { key: 'daily_loss_stop', label: 'Stop perdita giornaliera (€)', kind: 'number', step: 5, min: 0, max: 100_000, hint: '0 = off', group: 'rischio' },
     { key: 'max_liability_per_match', label: 'Cap capitale per partita (€)', kind: 'number', step: 5, min: 0, max: 100_000, hint: '0 = off; clamp anche dentro il motore', group: 'rischio' },
-    { key: 'event_loss_cap_pct', label: 'Cap perdita per partita %', kind: 'number', step: 5, min: 0, max: 500, hint: 'oltre: chiusura forzata', group: 'rischio' },
+    // 29/09 (piano Mike M4.5, decisione 18: tetto tolto). Resta in elenco perche'
+    // il valore e' salvato sul DB e il contratto con config.py lo vuole, ma lo
+    // DICHIARA: come `ko_green_retry_s`, un campo senza effetto non si nasconde.
+    { key: 'event_loss_cap_pct', label: 'Cap perdita per partita % (NON ATTIVO)', kind: 'number', step: 5, min: 0, max: 500, hint: 'NON ATTIVO dal 29/09 (decisione dell’utente: tetto tolto). Il valore resta salvato ma Mike non chiude piu’ niente per questo tetto: nessuna chiusura in perdita parte senza la tua firma', group: 'rischio' },
     { key: 'skip_log_interval_s', label: 'Log skip ogni (s)', kind: 'number', step: 30, min: 10, max: 3600, hint: '', group: 'rischio' },
     { key: 'feed_cache_s', label: 'Rileggi il feed ogni (s)', kind: 'number', step: 0.5, min: 0, max: 30, hint: 'lo scanner non lo aggiorna più in fretta: rileggerlo a ogni giro consuma il budget di IO del database senza dare nulla in più', group: 'rischio' },
     { key: 'events_reload_s', label: 'Rileggi tutte le partite ogni (s)', kind: 'number', step: 10, min: 0, max: 600, hint: 'fra una rilettura e l’altra vale la copia in memoria: il servizio è l’unico che scrive le schede', group: 'rischio' },
@@ -582,7 +589,7 @@ export const MIKE_PARAM_DEFAULTS: Record<string, number | boolean | string> = {
     loss_exit_mode: 'model', loss_exit_risk_premium_pct: 10, loss_exit_p4_prudent: true, loss_exit_max_pct: 0, loss_exit_emp_min_n: 200,
     ht_loss_exit_enabled: true, ht_loss_pct: 25, ht_loss_goals_min: 3, ht_loss_goals_max: 4,
     h2_loss_exit_enabled: true, h2_loss_pct: 25, h2_loss_from_min: 46, h2_loss_to_min: 85,
-    reentry_enabled: true, reentry_green_ticks: 2, reentry_max_goals: 1, reentry_until_min: 45,
+    reentry_enabled: true, reentry_green_ticks: 2, reentry_max_goals: 2, reentry_until_min: 45,
     reentry_exit_until_min: 0, reentry_price_min_over_entry: true, reentry_hold_if_loss: false,
     settle_confirm_s: 60, max_open_matches: 10, daily_loss_stop: 50, max_liability_per_match: 0,
     event_loss_cap_pct: 100, skip_log_interval_s: 300,
@@ -918,6 +925,26 @@ export function voidedMarketsOf(
 export function isManualTrade(t: MikeTrade): boolean {
     return t.origin === 'manual' || t.role === 'manual_close'
         || (t.meta ?? {})['exit_kind'] === 'manual';
+}
+
+/**
+ * 29/09 (piano Mike M8.13) - COME E' FINITO un ordine non abbinato. Il bot
+ * scrive nella riga dell'ordine `meta.esito_ordine` (lo `status` resta
+ * `error`): qui le parole del trader. Chiave assente (righe vecchie) o valore
+ * sconosciuto = `null`: la pagina resta col testo di oggi, mai un esito inventato.
+ */
+export const MIKE_ESITO_ORDINE_LABEL: Record<string, string> = {
+    ritirato_da_noi: 'ritirato da Mike',
+    rifiutato: 'rifiutato da Betfair',
+    non_abbinato_fok: 'non abbinato: tutto o niente',
+    cancellato_da_betfair: 'cancellato da Betfair',
+    fermato_da_noi: 'fermato da un nostro blocco',
+};
+
+export function esitoOrdineMike(t: { status: string | null | undefined; meta?: Record<string, unknown> | null }): string | null {
+    if (t.status !== 'error') return null;
+    const v = (t.meta ?? {})['esito_ordine'];
+    return typeof v === 'string' ? (MIKE_ESITO_ORDINE_LABEL[v] ?? null) : null;
 }
 
 /** tetto di righe della RPC get_mike_state (migrations/mike_bot_v2.sql) */

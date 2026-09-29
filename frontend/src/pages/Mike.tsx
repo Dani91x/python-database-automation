@@ -28,6 +28,7 @@ import { MikeParamsSheet } from '@/components/mike/MikeParamsSheet';
 import { MikeMatchCard } from '@/components/mike/MikeMatchCard';
 import { MikeEventPnlTable } from '@/components/mike/MikeEventPnlTable';
 import { PropostaUscitaMike } from '@/components/controlroom/PropostaUscitaMike';
+import { EsitoChiusuraMike } from '@/components/controlroom/EsitoChiusuraMike';
 import { SectionFilter, useSectionFilter } from '@/components/trading/SectionFilter';
 import { SCANNER_STALE_MS } from '@/lib/safeBot';
 import { fetchScanStatus, type ScanStatusRow } from '@/lib/safeStrategyScan';
@@ -347,6 +348,9 @@ export default function Mike() {
         <div key={e.event_id} className="space-y-1.5" data-testid={`mike-card-${e.event_id}`}>
             {renderMatchCard(e)}
             <PropostaUscitaMike ev={e} testId={`mike-proposta-${e.event_id}`} />
+            {/* 29/09 (M7.2): com'e' finita la chiusura, stesso componente della Control Room */}
+            <EsitoChiusuraMike ev={e} tentativiMax={Number(bot.params.close_max_attempts)}
+                testId={`mike-esito-chiusura-${e.event_id}`} />
         </div>
     );
     const renderMatchCard = (e: MikeEvent) => (

@@ -151,6 +151,9 @@ export interface RigheLabels<T extends PnlTradeLike> {
     badge?: (t: T) => ReactNode;
     /** badge extra accanto allo STATO (uscita, green-up…) */
     statoExtra?: (t: T) => ReactNode;
+    /** 29/09 (Mike M8.13): parola dello STATO al posto di quella comune;
+     *  `null`/assente = la parola comune di sempre (gli altri bot non la passano) */
+    statoLabel?: (t: T) => string | null;
     /** tooltip del P&L (lordo, commissione…) */
     pnlTitle?: (t: T) => string;
     /** minuto e punteggio d'ingresso, se il bot li registra */
@@ -177,7 +180,7 @@ function RigaGamba<T extends PnlTradeLike>({ t, lab }: { t: T; lab: RigheLabels<
             <td className="px-2 text-right tabular-nums text-slate-300">{fmtMoney(t.size, { currency: '' })}</td>
             <td className="px-2 text-right tabular-nums text-slate-300">{fmtOdds(t.price)}</td>
             <td className="px-2">
-                <span className={st.cls}>{st.label}</span>
+                <span className={st.cls}>{lab.statoLabel?.(t) ?? st.label}</span>
                 {lab.statoExtra?.(t)}
             </td>
             <td

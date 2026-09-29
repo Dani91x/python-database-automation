@@ -33,7 +33,7 @@ import { fmtMoney } from '@/lib/format';
 import { pnlClass } from '@/lib/tradeStatus';
 import { exitInfo } from '@/lib/dailyHistory';
 import {
-    fasePerCiclo, marketLabel, roleLabel, isManualTrade,
+    fasePerCiclo, marketLabel, roleLabel, isManualTrade, esitoOrdineMike,
     type MikeFase, type MikeTradeGroup, type MikeTrade,
 } from '@/lib/mike';
 
@@ -68,6 +68,8 @@ const ETICHETTE_MIKE: RigheLabels<MikeTrade> = {
         const uscita = exitInfo(t.meta ?? {});
         return uscita ? <ExitBadge info={uscita} className="ml-1" /> : null;
     },
+    // 29/09 (M8.13): un ordine in errore dice COME e' finito, se il bot lo scrive
+    statoLabel: (t) => esitoOrdineMike(t),
     pnlTitle,
 };
 

@@ -1102,6 +1102,9 @@ export function usciteSafeDi(params: Record<string, unknown> | null | undefined,
     return false;
 }
 
+/** 29/09 (piano Mike P1, decisioni 13 e 16): cosa governa l'interruttore di Mike. */
+export const NOTA_USCITE_MIKE = 'governa solo le uscite in perdita; le uscite in profitto le esegue Mike';
+
 /** Mike: stessa coercizione di `config._coerce` per un bool. DEFAULT dal
  *  25/09 sera (ordine dell'utente): assente = false (manuale); prima era true. */
 function usciteMikeDi(params: Record<string, unknown>): boolean {
@@ -1132,7 +1135,9 @@ export function statoUscite(i: Interruttore, params: Record<string, unknown> | n
     if (i.bot === 'omega') {
         return { automatiche: String(params.uscite_protezione ?? '').trim().toLowerCase() === 'automatico' };
     }
-    if (i.bot === 'mike') return { automatiche: usciteMikeDi(params) };
+    // 29/09 (piano Mike P1): per Mike l'interruttore governa SOLO le uscite in
+    // perdita; lo si dice accanto allo stato, con le stesse parole per sempre
+    if (i.bot === 'mike') return { automatiche: usciteMikeDi(params), nota: NOTA_USCITE_MIKE };
     return { automatiche: usciteSafeDi(params, String(i.strategia)) };
 }
 
