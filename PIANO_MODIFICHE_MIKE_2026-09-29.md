@@ -188,3 +188,102 @@ restano quelli di oggi, salvo ordine esplicito.
 | 5 | 29/09 | Niente giri nuovi negli ultimi 10 minuti prima del fischio | confermata; gia' cosi' |
 | 6 | 29/09 | Ultimo ingresso: a 10 minuti dal fischio, se Mike NON ha posizione su quella partita entra (punta + banca a 2 tick sotto); se ce l'ha, nessun altro ingresso. Al fischio Mike ha solo l'Under 3,5 abbinato | confermata, da implementare (M2.4) |
 | 7 | 29/09 | La posizione in perdita nel pre-partita si porta in live, non si chiude | confermata, da implementare (M2.2) |
+
+---
+
+## Punto 3 - Dal fischio d'inizio: uscita al fischio, seconda puntata, copertura
+
+Fase: partita IN GIOCO, Mike ha l'Under 3,5 abbinato.
+
+### Cosa vuole l'utente (29/09, pomeriggio)
+| Passo | Oggi | Decisione dell'utente |
+|---|---|---|
+| 1. Al fischio Mike appoggia una banca a 2 tick sotto il prezzo medio e la tiene 3 minuti | si' | **resta cosi'** |
+| 2. Banca abbinata: piatto, profitto chiuso | si' | **resta cosi'** |
+| 3. Gol in quei 3 minuti: ritira la banca e punta altri 5 EUR sull'Under 3,5, una volta sola | si' | **resta cosi'**; la puntata va «al miglior prezzo disponibile, cosi' alziamo la quota media» (e' gia' cosi': miglior prezzo back) |
+| 4. Passati i 3 minuti senza abbinamento: copertura | oggi PUNTA Over 4,5 | **DA CAMBIARE: BANCA Under 4,5** |
+
+### La modifica sulla copertura (parole dell'utente)
+«Invece che OVER 4.5 BACK (abbiamo i problemi di puntata per i limiti di Betfair), DEVE FARE LAY
+UNDER 4.5, andando a calcolare l'importo del BACK UNDER 3.5 con 20% di margine in piu'. MASSIMA
+ATTENZIONE A QUESTO PUNTO. LA STRATEGIA NON CAMBIA, CAMBIAMO SOLO IL MERCATO PER POTER PIAZZARE
+GLI IMPORTI CORRETTI SENZA LIMITI DI BETFAIR.»
+
+### Perche' e' la stessa scommessa
+Puntare Over 4,5 e bancare Under 4,5 sono la stessa posizione sullo stesso mercato (Over/Under
+4,5): in entrambi i casi si incassa se i gol sono 5 o piu' e si paga se sono 4 o meno. Cambia solo
+come si scrive l'ordine:
+
+| | Punta Over 4,5 (oggi) | Banca Under 4,5 (nuovo) |
+|---|---|---|
+| Quota d'esempio | 6,60 | 1,18 (e' la stessa quota vista dall'altro lato: 6,60 / 5,60 = 1,1786) |
+| Importo dell'ordine | 2,26 EUR | 12,63 EUR |
+| Quanto si rischia (si paga con 0-4 gol) | 2,26 EUR | 12,63 x 0,18 = 2,27 EUR |
+| Quanto si incassa con 5+ gol, tolta la commissione del 5 % | 2,26 x 5,60 x 0,95 = 12,02 | 12,63 x 0,95 = 12,00 |
+| Limiti di Betfair sull'importo | minimo 2,00 EUR e passi da 0,50: 2,26 non e' piazzabile diretto, sotto 2,00 serve il «piazza e riduci» | l'importo e' 5-6 volte piu' grande: il minimo non e' piu' un problema |
+
+### Il conto, con la posizione d'esempio (punta Under 3,5 10,00 EUR a 1,50)
+- Regola di oggi, che NON cambia: la copertura deve incassare, con 5 o piu' gol, 1,2 volte cio'
+  che si perde sull'Under 3,5 (il «20 % di margine in piu'», parametro `cover_profit_factor` 1,2),
+  al netto della commissione. Perdita sull'Under 3,5 = 10,00. Obiettivo = 12,00 netti.
+- Banca Under 4,5: importo = 12,00 / 0,95 = **12,63 EUR**.
+- **Proprieta' nuova e comoda: l'importo della banca NON dipende dalla quota.** Con la puntata
+  sull'Over l'importo cambiava a ogni movimento di quota; con la banca sull'Under 4,5 l'importo e'
+  sempre «perdita dell'Under 3,5 x 1,2 / 0,95». La quota decide solo quanto si rischia:
+  a 1,17 si rischiano 2,15 EUR, a 1,18 2,27, a 1,19 2,40.
+- Risultato finale, uguale a oggi:
+
+| Gol finali | Under 3,5 (punta 10 a 1,50) | Under 4,5 (banca 12,63 a 1,18) | Totale | Oggi con Over 4,5 |
+|---|---|---|---|---|
+| 0-3 | +4,75 | -2,27 | **+2,48** | +2,49 |
+| 4 | -10,00 | -2,27 | **-12,27** | -12,26 |
+| 5 o piu' | -10,00 | +12,00 | **+2,00** | +2,02 |
+
+### UNA domanda sul conto (da confermare)
+L'utente ha detto: «l'importo del BACK UNDER 3.5 con 20 % di margine in piu'».
+- Lettura A (la strategia resta identica al centesimo): importo = 10 x 1,2 / 0,95 = **12,63**; con
+  5+ gol il totale e' +2,00 come oggi.
+- Lettura B (alla lettera): importo = 10 x 1,2 = **12,00**; con 5+ gol si incassano 11,40 netti e
+  il totale scende a +1,40.
+Proposta del coordinatore: lettura A, perche' «la strategia non cambia».
+
+### Cosa va cambiato
+- **M3.1 - La copertura diventa BANCA Under 4,5** al posto di PUNTA Over 4,5. Stesso mercato,
+  stesso momento, stesse condizioni (quando si copre e quando no, attesa dopo un gol, tranche dopo
+  la seconda puntata, massimo 2 gol, freno dopo 3 rifiuti), stesso obiettivo (1,2 volte la perdita
+  dell'Under 3,5, netto di commissione, meno cio' che e' gia' coperto).
+- **M3.2 - Il cuscinetto sul prezzo si rovescia.** Oggi l'ordine sull'Over parte con un limite 2
+  tick SOTTO il miglior prezzo per non morire durante il ritardo di piazzamento. Per una banca il
+  limite va 2 tick SOPRA il miglior prezzo lay (si accetta di rischiare un po' di piu' per essere
+  abbinati); Betfair abbina comunque al miglior prezzo disponibile.
+- **M3.3 - Anche la chiusura della copertura si rovescia.** Oggi per chiudere la copertura Mike
+  BANCA l'Over 4,5; dopo dovra' PUNTARE l'Under 4,5.
+
+### Punti di MASSIMA ATTENZIONE (da verificare uno per uno prima e durante l'implementazione)
+1. **Importi legali**: nel codice i limiti (minimo 2,00 EUR, passi da 0,50) valgono per le PUNTATE
+   (`IT_BACK_MIN`, `IT_BACK_STEP`, `needs_submin` in `Betfair/mike/engine.py:67-68, 509`); per le
+   BANCATE il codice non ne applica. Da confermare sulla documentazione del repo e sul campo che
+   una bancata da 12,63 EUR parta diretta.
+2. **La chiusura della copertura torna a essere una PUNTATA** (M3.3): li' i limiti di Betfair
+   valgono di nuovo (12,63 non e' un multiplo di 0,50: 12,50 diretti + 0,13 col «piazza e riduci»).
+   Il problema dei limiti sparisce in apertura, non in chiusura.
+3. **Il rientro usa lo stesso mercato e la stessa selezione** (punta Under 4,5, poi banca Under
+   4,5). Copertura e rientro si sommano sulla stessa selezione: i conti della posizione, la regola
+   «una sola banca a mercato» e il giudizio delle uscite vanno provati con i due insieme.
+4. **Ruoli e database**: la copertura oggi si chiama `over_cover` (punta, selezione Over). Una
+   gamba nuova (banca, selezione Under del mercato 4,5) richiede di aggiornare i ruoli ammessi nel
+   database (vincolo CHECK: il 13-14/09 un ruolo nuovo non ammesso ha fatto rifiutare le scritture
+   per 12 giorni), il regolamento, la pagina e il banco di replay. Migrazione SQL scritta dal
+   delegato e APPLICATA DALL'UTENTE.
+5. **Liquidita'**: va misurata sulle registrazioni la quantita' disponibile da bancare sull'Under
+   4,5 nei minuti in cui Mike copre, contro i 12-13 EUR che servono.
+6. **Passo di quota**: a quota 1,18 un tick vale 0,01, cioe' circa 0,13 EUR di rischio in piu' o in
+   meno su 12,63; sull'Over a 6,60 un tick vale 0,20.
+7. **Paper specchio del live** e **certificazione sul replay** (15 scenari di Mike, piu' lo scenario
+   delle coperture sui due trasporti) prima di qualunque uso.
+
+### Per il tecnico
+Copertura: `_decide_uncovered` (`engine.py:3273`), `_decide_cover_pending` 3425, `frazione_copertura`
+3240, `cover_residual` 426, `cover_matched_value` 446 (gia' calcolato sul mercato intero a 5 gol),
+`cover_place_price` 1687, `_mai_sovracopertura` 1972, `_freno_copertura` 2023, `_close_actions`
+1754, `settle_legs_by_market` 1265; ruoli in `engine.py:46-52`; servizio `execute_place`.
