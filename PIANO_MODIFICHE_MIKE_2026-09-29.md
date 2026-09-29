@@ -198,6 +198,7 @@ restano quelli di oggi, salvo ordine esplicito.
 | 15 | 29/09 | Mike deve sempre sapere lo stato di ogni suo ordine (abbinato, chiuso, registrato) | regola permanente, criterio di accettazione di ogni modifica |
 | 16 | 29/09 | Uscita in perdita: resta una proposta da firmare, esattamente com'e' ora («decido io») | confermata; nessuna modifica |
 | 17 | 29/09 | Per annullare la copertura Mike BANCA l'Over 4,5 invece di puntare l'Under 4,5 (stesso risultato, importo sempre accettato) | confermata, da implementare (M3.3) |
+| 18 | 29/09 | Tetto di perdita della partita: si toglie | confermata, da implementare (M4.5) |
 
 ---
 
@@ -381,6 +382,21 @@ DECISIONE dell'utente (29/09): «la teniamo come proposta, esattamente com'e' or
 - Nessuna modifica. E' l'unica famiglia di uscite che resta governata dalla firma dell'utente.
 - Ancora da decidere (non chiesto all'utente in questo passo): una rete automatica di perdita
   quando l'utente non risponde. Oggi l'unica e' il tetto al 100 % del capitale impegnato (passo 4).
+
+### Passo 4 - Tetto di perdita della partita
+DECISIONE dell'utente (29/09): «toglilo».
+- Oggi: se la perdita, chiudendo tutto adesso, raggiunge il 100 % del capitale impegnato
+  (`event_loss_cap_pct` 100), Mike chiude tutto da solo, anche in manuale. Con la copertura in
+  piedi la perdita massima e' proprio il 100 % e ci si arriva solo a partita finita con 4 gol
+  esatti: in pratica non scatta quasi mai.
+- **M4.5 - Il tetto di perdita della partita si toglie.** Mike non chiude mai in perdita da solo:
+  l'unica chiusura in perdita e' quella proposta e firmata dall'utente (passo 3).
+  - Per il tecnico: ramo «loss_cap» di `_decide_covered` (`Betfair/mike/engine.py:3579-3583`),
+    parametro `event_loss_cap_pct` (0 = spento), e i punti in cui il tetto fa decadere una
+    proposta (`gate_uscite`). Da decidere in implementazione se togliere il ramo o portare il
+    parametro a 0 di serie: il risultato per l'utente e' lo stesso.
+- CONSEGUENZA scritta all'utente: dopo questa modifica, in gioco, nessuna chiusura in perdita parte
+  senza la sua firma.
 
 ### PRINCIPIO dell'utente sugli ordini (29/09)
 Parole sue: «MIKE deve assicurarsi che tutti gli ordini da lui gestiti siano abbinati, chiusi,
