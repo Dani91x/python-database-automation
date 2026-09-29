@@ -190,6 +190,8 @@ restano quelli di oggi, salvo ordine esplicito.
 | 7 | 29/09 | La posizione in perdita nel pre-partita si porta in live, non si chiude | confermata, da implementare (M2.2) |
 | 8 | 29/09 | Dal fischio: banca a 2 tick sotto per 3 minuti; se abbinata piatto; gol nei 3 minuti = seconda puntata da 5 EUR al miglior prezzo | confermata; gia' cosi' |
 | 9 | 29/09 | La copertura diventa BANCA Under 4,5 (non piu' punta Over 4,5): stessa strategia, stesso margine del 20 %, importo = perdita Under 3,5 x 1,2 / 0,95 (lettura A) | confermata, da implementare (M3.1, M3.2, M3.3) |
+| 10 | 29/09 | Caso A (3 minuti senza gol): prima ritira la banca sull'Under 3,5, poi copre sulla posizione rimasta | confermata; gia' cosi' |
+| 11 | 29/09 | Caso B (gol nei 3 minuti): seconda puntata 5 EUR, poi copertura in due tranche (2 minuti dal gol, poi 3 minuti dopo) | confermata; gia' cosi' |
 
 ---
 
@@ -293,3 +295,21 @@ Copertura: `_decide_uncovered` (`engine.py:3273`), `_decide_cover_pending` 3425,
 3240, `cover_residual` 426, `cover_matched_value` 446 (gia' calcolato sul mercato intero a 5 gol),
 `cover_place_price` 1687, `_mai_sovracopertura` 1972, `_freno_copertura` 2023, `_close_actions`
 1754, `settle_legs_by_market` 1265; ruoli in `engine.py:46-52`; servizio `execute_place`.
+
+### Chiarimenti sul punto 3, confermati dall'utente (29/09): «A: ok, B: ok»
+**Caso A - passano 3 minuti, nessun gol, banca sull'Under 3,5 non abbinata.** Resta com'e' oggi:
+1. Mike RITIRA la banca a 2 tick sotto sull'Under 3,5;
+2. al giro dopo legge la posizione vera rimasta abbinata;
+3. copre su quella posizione (con M3.1: banca Under 4,5). Banca abbinata per intero nel frattempo =
+   piatto, niente copertura; abbinata in parte = copre solo il residuo.
+   DA PROVARE NEL REPLAY: banca abbinata mentre il ritiro e' in corso.
+
+**Caso B - gol nei primi 3 minuti.** Resta com'e' oggi:
+1. Mike ritira la banca sull'Under 3,5;
+2. a mercato riaperto punta 5 EUR (50 % dello stake) sull'Under 3,5 al miglior prezzo, e riprova a
+   ogni giro fino a 2 minuti dal gol;
+3. puntata abbinata: posizione 15 EUR (esempio: 10 a 1,50 + 5 a 1,95 = media 1,65), copertura in
+   DUE tranche: la prima (meta') 2 minuti dopo il gol, la seconda (il resto, ricalcolato) 3 minuti
+   dopo la prima. Con M3.1: banca Under 4,5 totale 15 x 1,2 / 0,95 = 18,95 EUR, prima tranche 9,47;
+4. puntata non abbinata entro 2 minuti: si ritira e si copre in una volta la posizione da 10 EUR;
+5. dopo la seconda puntata Mike NON rimette la banca a 2 tick sotto sull'Under 3,5.
