@@ -647,32 +647,112 @@ def selection_decided(market: str, selection: str, goals: Optional[int]) -> Opti
 
 
 def exposure(legs: List[Leg], market: str, selection: str) -> Tuple[float, float]:
-    """(W, L) = profit se la selezione vince / perde, dai soli fill."""
+    """(W, L) = profit se la selezione vince / perde, dai soli fill.
+
+    29/09 (piano Mike M3.4, pacchetto P5) - i conti sono PER MERCATO, non per
+    selezione. I mercati di Mike (Over/Under 3,5 e 4,5) hanno DUE esiti: quando
+    vince una selezione perde l'altra. Una gamba sull'ALTRA selezione dello
+    stesso mercato pesa quindi rovesciata: punta Y = se vince X perde lo stake,
+    se X perde incassa s*(p-1); banca Y = il contrario. Senza questo, la
+    copertura sull'Under 4,5 e la sua chiusura sull'Over 4,5 sembravano due
+    posizioni aperte dopo una chiusura riuscita. Con gambe su una sola selezione
+    il risultato e' identico a prima (stesse gambe, stesso ordine, stessi conti).
+    """
     w = l = 0.0
     for leg in legs:
-        if leg.market != market or leg.selection != selection or leg.matched <= 0:
+        if leg.market != market or leg.matched <= 0:
             continue
         if leg.archived:
             continue  # ciclo pre-match gia' chiuso in green: non e' capitale a rischio
         s = float(leg.matched)
         p = leg.fill_price
-        if leg.side == "back":
-            w += s * (p - 1.0)
-            l -= s
+        if leg.selection == selection:
+            if leg.side == "back":
+                w += s * (p - 1.0)
+                l -= s
+            else:
+                w -= s * (p - 1.0)
+                l += s
+        elif leg.side == "back":
+            # punta sull'altra selezione: se vince la nostra, quella perde
+            w -= s
+            l += s * (p - 1.0)
         else:
-            w -= s * (p - 1.0)
-            l += s
+            # banca sull'altra selezione: se vince la nostra, quella perde e si incassa
+            w += s
+            l -= s * (p - 1.0)
     return (round(w, 4), round(l, 4))
 
 
+def selezioni_con_gambe(legs: List[Leg], market: str) -> List[str]:
+    """Selezioni del mercato su cui c'e' almeno una gamba abbinata non archiviata
+    (ordine deterministico: UNDER, poi OVER)."""
+    presenti = {l.selection for l in legs
+                if l.market == market and float(l.matched) > 0 and not l.archived}
+    return [s for s in (SEL_UNDER, SEL_OVER) if s in presenti]
+
+
+def _chiave_ou45(legs: List[Leg]) -> Optional[Tuple[str, str]]:
+    """La selezione che RAPPRESENTA la posizione sul mercato 4,5 (M3.4), o None
+    se il mercato e' piatto.
+
+    Una chiave sola per mercato: le due selezioni sono la stessa posizione vista
+    dai due lati, e due chiavi farebbero chiudere due volte la stessa cosa.
+      * gambe su UNA selezione sola: quella selezione, esattamente come prima
+        (anche un residuo di arrotondamento corto resta dov'e': nessun ordine
+        nuovo nato da un centesimo), SALVO che la posizione corta sia nata da una
+        BANCA di apertura (la copertura come banca Under 4,5): allora la chiave e'
+        l'altra selezione, quella LUNGA, e la chiusura e' una banca su di essa
+        (M3.3: la copertura si annulla BANCANDO l'Over 4,5);
+      * gambe sulle DUE selezioni: la selezione LUNGA (quella che, se vince, paga
+        di piu'), cosi' la chiusura e' sempre una banca.
+    """
+    sels = selezioni_con_gambe(legs, MARKET_OU45)
+    if not sels:
+        return None
+    if len(sels) == 1:
+        sel = sels[0]
+        w, l = exposure(legs, MARKET_OU45, sel)
+        if abs(w - l) < _FLAT_EPS:
+            return None
+        if (w - l) < 0 and any(g.market == MARKET_OU45 and g.selection == sel
+                               and g.side == "lay" and g.role in OPENING_ROLES
+                               and float(g.matched) > 0 and not g.archived for g in legs):
+            return (MARKET_OU45, SEL_OVER if sel == SEL_UNDER else SEL_UNDER)
+        return (MARKET_OU45, sel)
+    w, l = exposure(legs, MARKET_OU45, SEL_UNDER)
+    if abs(w - l) < _FLAT_EPS:
+        return None
+    return (MARKET_OU45, SEL_UNDER if (w - l) > 0 else SEL_OVER)
+
+
 def open_selections(legs: List[Leg]) -> List[Tuple[str, str]]:
-    """Selezioni con esposizione non piatta (ordine deterministico)."""
+    """Posizioni non piatte, UNA chiave per mercato (ordine deterministico).
+
+    29/09 (M3.4): sul mercato 4,5 la chiave e' quella di ``_chiave_ou45``. Sul
+    3,5 c'e' solo l'Under (il feed non porta il libro dell'Over 3,5)."""
     out = []
-    for key in ((MARKET_OU35, SEL_UNDER), (MARKET_OU45, SEL_OVER), (MARKET_OU45, SEL_UNDER)):
-        w, l = exposure(legs, *key)
-        if abs(w - l) >= _FLAT_EPS:
-            out.append(key)
+    w, l = exposure(legs, MARKET_OU35, SEL_UNDER)
+    if abs(w - l) >= _FLAT_EPS:
+        out.append((MARKET_OU35, SEL_UNDER))
+    key = _chiave_ou45(legs)
+    if key is not None:
+        out.append(key)
     return out
+
+
+def selezioni_da_sorvegliare(legs: List[Leg]) -> List[Tuple[str, str]]:
+    """Le (mercato, selezione) su cui Mike ha soldi in una posizione NON piatta:
+    la chiave di ``open_selections`` piu' ogni altra selezione dello stesso
+    mercato con gambe abbinate. Serve a chi controlla il CONTO selezione per
+    selezione (M3.4): con la copertura come banca Under 4,5 la chiave e' l'Over,
+    ma le gambe stanno sull'Under, e l'Under va controllato."""
+    out = set()
+    for (m, s) in open_selections(legs):
+        out.add((m, s))
+        for altra in selezioni_con_gambe(legs, m):
+            out.add((m, altra))
+    return sorted(out)
 
 
 def live_open_selections(legs: List[Leg], goals: Optional[int] = None) -> List[Tuple[str, str]]:
@@ -698,9 +778,15 @@ def position(legs: List[Leg], market: str, selection: str, roles: Tuple[str, ...
 
 
 def invested(legs: List[Leg]) -> float:
-    """Capitale investito nei back di apertura ancora abbinati (base del cash-out)."""
-    return round(sum(float(l.matched) for l in legs
-                     if l.side == "back" and l.role in OPENING_ROLES and l.matched > 0
+    """Capitale investito nelle gambe di apertura ancora abbinate (base del cash-out).
+
+    Una puntata impegna lo stake; una BANCA di apertura (la copertura come banca
+    Under 4,5, M3.4) impegna il suo rischio, abbinato x (prezzo medio - 1).
+    Esempio: punta Under 3,5 10,00 + banca Under 4,5 12,63 a 1,18 = 12,27."""
+    return round(sum((float(l.matched) if l.side == "back"
+                      else float(l.matched) * (l.fill_price - 1.0))
+                     for l in legs
+                     if l.role in OPENING_ROLES and l.matched > 0
                      and not l.archived), 2)
 
 
@@ -990,15 +1076,39 @@ def exit_kind_for(role: str, close_reason: Optional[str]) -> str:
     return "other"
 
 
-def opening_ref(legs: List[Leg], market: str, selection: str) -> Optional[str]:
+# 29/09 (M3.4): quale apertura chiude ogni ruolo di chiusura. ``manual_close``
+# (e un ruolo non elencato) chiude qualunque apertura.
+_APERTURE_DEL_RUOLO: Dict[str, Tuple[str, ...]] = {
+    "over_close": ("over_cover",),
+    "reentry_green": ("reentry",),
+    "under_green": UNDER_ROLES,
+    "ko_green": UNDER_ROLES,
+    "under_close": UNDER_ROLES,
+}
+
+
+def opening_ref(legs: List[Leg], market: str, selection: str,
+                role: Optional[str] = None) -> Optional[str]:
     """``ref`` della gamba di APERTURA che una chiusura su questa selezione sta
-    chiudendo: l'ultima abbinata e non archiviata (H4)."""
-    cands = [l for l in legs if l.market == market and l.selection == selection
-             and l.role in OPENING_ROLES and l.side == "back"]
-    live = [l for l in cands if float(l.matched) > 0 and not l.archived]
-    if live:
-        return live[-1].ref
-    return cands[-1].ref if cands else None
+    chiudendo: l'ultima abbinata e non archiviata (H4).
+
+    29/09 (M3.4): si cerca prima sulla STESSA selezione (come prima), poi
+    sull'intero MERCATO: la banca Over 4,5 che chiude la copertura come banca
+    Under 4,5 sta sull'altra selezione. Il lato non conta piu' (la copertura
+    nuova e' una banca); il ruolo di chiusura dice quale apertura cercare."""
+    ruoli = _APERTURE_DEL_RUOLO.get(str(role or ""), OPENING_ROLES)
+
+    def _scegli(cands: List[Leg]) -> Optional[str]:
+        live = [l for l in cands if float(l.matched) > 0 and not l.archived]
+        if live:
+            return live[-1].ref
+        return cands[-1].ref if cands else None
+
+    ref = _scegli([l for l in legs if l.market == market and l.selection == selection
+                   and l.role in ruoli])
+    if ref is not None:
+        return ref
+    return _scegli([l for l in legs if l.market == market and l.role in ruoli])
 
 
 def should_cashout(value_net: float, base: float, pct: float) -> bool:
@@ -1392,6 +1502,13 @@ def riepilogo_cicli(legs: List[Leg], commission: float) -> List[Dict[str, Any]]:
         stake = round(sum(float(l.matched) for l in aperture), 2)
         p_in = (round(sum(float(l.matched) * l.fill_price for l in aperture) / stake, 4)
                 if stake > 0 else None)
+        # 29/09 (M3.4): una BANCA di apertura (la copertura come banca Under 4,5)
+        # impegna il suo rischio, abbinato x (prezzo - 1): entra nello stake del
+        # ciclo, non nel prezzo d'ingresso (che resta quello delle puntate).
+        rischio_banche = round(sum(float(l.matched) * (l.fill_price - 1.0) for l in gambe
+                                   if l.role in OPENING_ROLES and l.side == "lay"), 2)
+        if rischio_banche > 0:
+            stake = round(stake + rischio_banche, 2)
         size_out = round(sum(float(l.matched) for l in chiusure), 2)
         p_out = (round(sum(float(l.matched) * l.fill_price for l in chiusure) / size_out, 4)
                  if size_out > 0 else None)
@@ -1425,9 +1542,19 @@ def posizione_per_selezione(legs: List[Leg], books: Dict[Tuple[str, str], Book],
     for key in open_selections(legs):
         market, selection = key
         w, l = exposure(legs, market, selection)
+        # 29/09 (M3.4): una riga per MERCATO. L'abbinato conta le gambe delle due
+        # selezioni (con la copertura come banca Under 4,5 la chiave e' l'Over ma
+        # le gambe stanno sull'Under); il dettaglio per selezione e' a parte.
         abbinato = round(sum(float(x.matched) for x in legs
-                             if x.market == market and x.selection == selection
+                             if x.market == market
                              and not x.archived and float(x.matched) > 0), 2)
+        per_sel: Dict[str, Dict[str, float]] = {}
+        for x in legs:
+            if x.market != market or x.archived or float(x.matched) <= 0:
+                continue
+            cella = per_sel.setdefault(x.selection, {"back": 0.0, "lay": 0.0})
+            lato = "back" if x.side == "back" else "lay"
+            cella[lato] = round(cella[lato] + float(x.matched), 2)
         medio = None
         back = [x for x in legs if x.market == market and x.selection == selection
                 and x.side == "back" and not x.archived and float(x.matched) > 0]
@@ -1445,6 +1572,7 @@ def posizione_per_selezione(legs: List[Leg], books: Dict[Tuple[str, str], Book],
             "lato": "back" if (w - l) > 0 else "lay",
             "netto": round(abs(w - l), 2),
             "abbinato": abbinato,
+            "abbinato_per_selezione": per_sel,
             "prezzo_medio": medio,
             "se_vince": round(w, 2), "se_perde": round(l, 2),
             "decisa": selection_decided(market, selection, goals),
@@ -1746,9 +1874,22 @@ def ordini_vivi_su(ctx: MatchCtx, market: str, selection: str,
     chiusura del cash-out. Misurato su 10 EUR di stake: -9,39 EUR invece di
     +1,41, e sull'esito piu' probabile.
     """
+    # 29/09 (M3.4): sullo STESSO MERCATO, non solo sulla stessa selezione. In un
+    # mercato a due esiti un ordine vivo sull'altra selezione pesa sulla stessa
+    # posizione (la copertura come banca Under 4,5 viva mentre parte la banca
+    # Over 4,5 che la chiude).
     return [l for l in ctx.legs
-            if l.is_live and l.market == market and l.selection == selection
+            if l.is_live and _stessa_posizione(l.market, l.selection, market, selection)
             and l.role not in escludi]
+
+
+def _stessa_posizione(m1: Optional[str], s1: Optional[str],
+                      m2: Optional[str], s2: Optional[str]) -> bool:
+    """Due ordini pesano sulla STESSA posizione? (M3.4) Si' se stanno sullo stesso
+    mercato: i mercati di Mike (Over/Under) hanno due esiti, e un ordine su una
+    selezione equivale a quello opposto sull'altra. Sul 3,5 esiste solo l'Under,
+    quindi li' e' la stessa regola di prima."""
+    return m1 == m2 and (s1 == s2 or m1 in LINE)
 
 
 def _close_actions(ctx: MatchCtx, cv: CashoutValue, params: Dict[str, Any],
@@ -1886,11 +2027,15 @@ def lay_in_volo(ctx: MatchCtx, market: Optional[str], selection: Optional[str],
     «In volo» comprende l'esito IGNOTO (``pending_reconcile``): una gamba che
     il bot non sa dov'e' puo' essere viva su Betfair esattamente come una
     'pending' (§4.11).
+
+    29/09 (M3.4): sul mercato, non sulla selezione (``_stessa_posizione``): UNA
+    banca per MERCATO. La banca Over 4,5 di chiusura non parte mentre la banca
+    Under 4,5 della copertura e' ancora in volo.
     """
     for l in ctx.legs:
         if l.side != "lay" or not (l.is_live or l.needs_reconcile):
             continue
-        if l.market != market or l.selection != selection:
+        if not _stessa_posizione(l.market, l.selection, market, selection):
             continue
         if escludi is not None and l.ref == escludi:
             continue
@@ -1957,11 +2102,15 @@ def copertura_in_volo(ctx: MatchCtx, market: Optional[str], selection: Optional[
 
     «In volo» comprende l'esito IGNOTO (``pending_reconcile``): §4.11, una gamba
     che il bot non sa dov'e' puo' essere viva su Betfair.
+
+    29/09 (M3.4): qualunque copertura in volo sul MERCATO. Al cambio di forma
+    (punta Over 4,5 vecchia ancora viva, banca Under 4,5 nuova) due selezioni
+    diverse sarebbero una DOPPIA COPERTURA.
     """
     for l in ctx.legs:
         if l.role != "over_cover" or not (l.is_live or l.needs_reconcile):
             continue
-        if l.market != market or l.selection != selection:
+        if not _stessa_posizione(l.market, l.selection, market, selection):
             continue
         if escludi is not None and l.ref == escludi:
             continue
@@ -2100,7 +2249,8 @@ def _decide_flatten(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> De
     altra = next((l for l in ctx.legs
                   if (l.is_live or l.needs_reconcile) and l.side == "lay"
                   and l.role != "manual_close"
-                  and any(c.market == l.market and c.selection == l.selection for c in closes)),
+                  and any(_stessa_posizione(c.market, c.selection, l.market, l.selection)
+                          for c in closes)),
                  None)
     if altra is not None:
         return Decision(ctx.state, [], "chiusura manuale: attendo l'esito della lay '%s' "
@@ -3951,7 +4101,7 @@ def apply_decision(ctx: MatchCtx, d: Decision, now: float) -> List[Leg]:
         if a.role in CLOSING_ROLES:
             # H4: ogni gamba di chiusura sa QUALE apertura chiude (sul DB:
             # closes_trade_id) → lo storico conta i CICLI, non le gambe
-            leg.closes_ref = a.closes_ref or opening_ref(ctx.legs, a.market, a.selection)
+            leg.closes_ref = a.closes_ref or opening_ref(ctx.legs, a.market, a.selection, a.role)
         ctx.legs.append(leg)
         new.append(leg)
     if d.actions:

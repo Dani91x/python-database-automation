@@ -497,7 +497,8 @@ def _row_from_ctx(row: Dict[str, Any], ctx: E.MatchCtx, extra: Dict[str, Any]) -
 # non essere scritto MAI, e quello e' un errore che costa soldi.
 _LIVE_VOLATILI = frozenset({
     # l'orologio puro: cambiano a ogni giro per costruzione
-    "published_at", "published_ts", "feed_age_s", "scanner_age_s",    # il book e tutto cio' che ne discende (un tick in piu' o in meno)
+    "published_at", "published_ts", "feed_age_s", "scanner_age_s",
+    # il book e tutto cio' che ne discende (un tick in piu' o in meno)
     "books", "total_matched", "cashout", "posizioni",
     "hazard", "hazard_atlas", "hazard_model", "pressure",
     # 25/09 atlante: n della cella e nota cambiano col bucket di 5' (diagnostica)
@@ -1342,8 +1343,8 @@ def _log_throttled(db: Any, extra: Dict[str, Any], params: Dict[str, Any], now_t
 
 
 # M8.4/M8.5 (29/09): un dato che manca (quote di una selezione aperta, punteggio
-# in gioco) si dichiara UNA volta per episodio: dopo questi secondi per le quote
-# (sparizioni di un giro sono normali), subito per il punteggio.
+# in gioco) si dichiara UNA volta per episodio, dopo questi secondi (sparizioni
+# di un giro sono normali; al fischio il punteggio arriva qualche secondo dopo).
 _DATO_ASSENTE_AVVISO_S = 10.0
 
 
@@ -2909,7 +2910,10 @@ def _sorveglia_posizione_di_conto(*, db: Any, market: Any, ctx: E.MatchCtx,
     per_mercato: Dict[str, List[Dict[str, Any]]] = {}
     chiuse: List[Dict[str, Any]] = []
     parziali: List[Dict[str, Any]] = []
-    for (mercato, selezione) in sorted(aperte):
+    # 29/09 (M3.4): ogni selezione con gambe di un mercato NON piatto, non solo la
+    # chiave: con la copertura come banca Under 4,5 la chiave e' l'Over (atteso 0)
+    # e l'Under, dove stanno i soldi, non verrebbe mai controllato sul conto.
+    for (mercato, selezione) in E.selezioni_da_sorvegliare(ctx.legs):
         atteso = _posizione_attesa(ctx, mercato, selezione)
         if abs(atteso) <= _CONTO_EPS:
             continue
@@ -4463,7 +4467,10 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
     # porta ``goals=None``: chi decide sui gol deve saperlo (motore).
     _episodio_dato_assente(db, extra, now_ts, ev["event_id"], "punteggio_assente",
                            ["punteggio"] if bool(payload.get("inplay")) and goals is None else [],
-                           0.0, {"reason": "punteggio_assente", "state": ctx.state,
+                           # P4 blocco 4: avviso dopo 10 s (al fischio la riga e' in
+                           # gioco pochi secondi prima del punteggio IPS)
+                           _DATO_ASSENTE_AVVISO_S,
+                           {"reason": "punteggio_assente", "state": ctx.state,
                                  "critical": bool(E.open_selections(ctx.legs)),
                                  "nota": "in gioco il feed non porta il punteggio: non vale "
                                          "zero gol, nessuna decisione sui gol finche' manca"})
@@ -4810,7 +4817,8 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                   "score_home": payload.get("score_home"), "score_away": payload.get("score_away"),
                   # C1/H6 — diagnostica sempre visibile: eta' del feed per EVENTO,
                   # linee mancanti e riconciliazione in corso
-                  "feed_age_s": round(max(0.0, now_ts - (F.parse_iso_epoch(row.get("updated_at")) or now_ts)), 1),                  "scanner_age_s": round(scanner_age, 1) if scanner_age is not None else None,
+                  "feed_age_s": round(max(0.0, now_ts - (F.parse_iso_epoch(row.get("updated_at")) or now_ts)), 1),
+                  "scanner_age_s": round(scanner_age, 1) if scanner_age is not None else None,
                   "lines_missing": [f"{m}|{s}" for (m, s) in
                                     ((E.MARKET_OU35, E.SEL_UNDER), (E.MARKET_OU45, E.SEL_OVER),
                                      (E.MARKET_OU45, E.SEL_UNDER))

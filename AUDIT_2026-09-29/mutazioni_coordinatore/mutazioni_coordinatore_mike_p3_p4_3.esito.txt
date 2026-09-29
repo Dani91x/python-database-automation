@@ -1,0 +1,15 @@
+BASE (senza mutazioni): VERDE  1122 passed in 65.07s (0:01:05)
+K1 rientro: valore di serie rimasto a 1 gol                              rossa  1 failed, 206 passed in 8.93s  | FAILED Betfair/mike/tests/test_mike_certificazione_ui_2026_09_11.py::test_contratto_parametri_stessi_clamp_scelte_e_default
+K2 rientro: massimo consentito 3 gol                                     rossa  1 failed, 206 passed in 9.09s  | FAILED Betfair/mike/tests/test_mike_certificazione_ui_2026_09_11.py::test_contratto_parametri_stessi_clamp_scelte_e_default
+K3 banco H2: accetta il rientro con 3 gol                                rossa  1 failed, 863 passed in 29.96s  | FAILED Betfair/mike/tests/test_mike_p3_rientro_2026_09_29.py::test_banco_h2_ammette_1_o_2_gol_e_vede_il_3
+K4 banco H2: rifiuta il rientro con 2 gol                                rossa  1 failed, 863 passed in 37.07s  | FAILED Betfair/mike/tests/test_mike_p3_rientro_2026_09_29.py::test_banco_h2_ammette_1_o_2_gol_e_vede_il_3
+V1 paper: ordine senza risposta dato per non eseguito                    rossa  1 failed, 379 passed in 18.37s  | FAILED Betfair/mike/tests/test_mike_d1_paper_sul_runner_2026_09_29.py::test_taker_senza_esito_dal_runner_non_e_eseguito
+V2 paper: ordine senza risposta ridichiarato a ogni giro                 SOPRAVVISSUTA  1122 passed in 41.99s
+V3 punteggio assente in gioco: mai dichiarato                            rossa  1 failed, 875 passed in 33.40s  | FAILED Betfair/mike/tests/test_mike_p4_dati_assenti_2026_09_29.py::test_punteggio_assente_in_gioco_si_dichiara_una_volta_e_quando_torna
+V4 punteggio assente dichiarato anche prima del fischio                  rossa  1 failed, 876 passed in 34.42s  | FAILED Betfair/mike/tests/test_mike_p4_dati_assenti_2026_09_29.py::test_prima_del_fischio_nessun_avviso_sul_punteggio
+V5 quote assenti: avviso subito invece che dopo 10 s                     rossa  1 failed, 877 passed in 37.55s  | FAILED Betfair/mike/tests/test_mike_p4_dati_assenti_2026_09_29.py::test_quota_che_manca_si_avvisa_una_volta_dopo_un_tempo_breve
+V6 dato assente: avviso a ogni giro                                      rossa  1 failed, 875 passed in 35.58s  | FAILED Betfair/mike/tests/test_mike_p4_dati_assenti_2026_09_29.py::test_punteggio_assente_in_gioco_si_dichiara_una_volta_e_quando_torna
+V7 dato tornato: detto anche se l'assenza non era stata avvisata         SOPRAVVISSUTA  1122 passed in 45.47s
+V8 dato tornato: l'episodio non si chiude                                SOPRAVVISSUTA  1122 passed in 50.03s
+V9 paper: ordine senza risposta, riga segnata in errore come prima       rossa  1 failed, 379 passed in 29.25s  | FAILED Betfair/mike/tests/test_mike_d1_paper_sul_runner_2026_09_29.py::test_taker_senza_esito_dal_runner_non_e_eseguito
+mutazioni sopravvissute o non valide: 3 su 13

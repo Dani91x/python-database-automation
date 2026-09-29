@@ -234,9 +234,48 @@ def test_la_guardia_non_tocca_le_lay_ne_le_altre_selezioni():
     assert E._mai_sovracopertura(ctx, d).actions == [lay]
 
 
-def test_copertura_in_volo_su_UNALTRA_selezione_non_conta():
+def test_copertura_in_volo_su_UNALTRA_selezione_del_mercato_4_5_CONTA():
+    """Prima (16/09) diceva: una copertura in volo sull'ALTRA selezione del
+    mercato 4,5 non ferma la copertura nuova (la regola era per selezione).
+
+    Cambia il 29/09 (piano Mike M3.4, pacchetto P5): la copertura puo' stare
+    sull'Under 4,5 (banca) o sull'Over 4,5 (punta), e le due sono la STESSA
+    posizione del mercato a due esiti. Una copertura in volo sull'altra
+    selezione piu' una nuova e' la DOPPIA COPERTURA che l'ordine dell'utente del
+    16/09 vieta ("MAI SOVRACOPERTURA"). Stesso scenario: ora la copertura nuova
+    viene rimandata e lo stato non avanza."""
     ctx = E.MatchCtx(state="LIVE_COVERED",
                      legs=[gamba_ingresso(), copertura(selection=E.SEL_UNDER)])
+    d = E.Decision("LIVE_COVER_PENDING", [azione_copertura()], "copertura")
+    fuori = E._mai_sovracopertura(ctx, d)
+    assert [a for a in fuori.actions if a.kind == "place"] == []
+    assert fuori.state == "LIVE_COVERED"
+    assert "mai sovracopertura" in fuori.reason
+
+
+def test_copertura_in_volo_su_UN_ALTRO_MERCATO_non_conta():
+    """Il confine della regola (29/09, M3.4): una copertura in volo su un ALTRO
+    mercato (il 3,5, se mai esistesse) non ferma la copertura sul 4,5."""
+    ctx = E.MatchCtx(state="LIVE_COVERED",
+                     legs=[gamba_ingresso(),
+                           copertura(market=E.MARKET_OU35, selection=E.SEL_UNDER)])
+    d = E.Decision("LIVE_COVER_PENDING", [azione_copertura()], "copertura")
+    assert len(E._mai_sovracopertura(ctx, d).actions) == 1
+
+
+@pytest.mark.parametrize("ruolo,selezione", [("reentry_green", E.SEL_UNDER),
+                                             ("over_close", E.SEL_OVER),
+                                             ("reentry", E.SEL_UNDER)])
+def test_una_gamba_di_ALTRO_RUOLO_in_volo_sul_4_5_non_e_una_copertura(ruolo, selezione):
+    """Il confine della regola (29/09, M3.4): sul mercato 4,5 conta solo il
+    ruolo ``over_cover``; banca del rientro o chiusura in volo non fermano la
+    copertura."""
+    lato = "back" if ruolo == "reentry" else "lay"
+    ctx = E.MatchCtx(state="LIVE_COVERED",
+                     legs=[gamba_ingresso(),
+                           copertura(role=ruolo, selection=selezione, side=lato,
+                                     ref=f"{ruolo}-0-7")])
+    assert E.copertura_in_volo(ctx, E.MARKET_OU45, E.SEL_OVER) is None
     d = E.Decision("LIVE_COVER_PENDING", [azione_copertura()], "copertura")
     assert len(E._mai_sovracopertura(ctx, d).actions) == 1
 

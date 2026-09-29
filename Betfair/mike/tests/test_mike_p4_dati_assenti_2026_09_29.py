@@ -37,23 +37,48 @@ def _log(db, kind, reason):
 # ===========================================================================
 # M8.4 - IL PUNTEGGIO CHE MANCA
 # ===========================================================================
-def test_punteggio_assente_in_gioco_si_dichiara_una_volta_e_quando_torna():
+def _giri_senza_punteggio(db, mk, ev, secondi):
+    for s in secondi:
+        t = NOW + timedelta(seconds=s)
+        p = payload(ko=KO, inplay=True, minute=30, sh=None, sa=None)
+        _giro(db, mk, ev, row(p, updated=t), ora=t)
+
+
+def _torna(db, mk, ev, s):
+    t = NOW + timedelta(seconds=s)
+    _giro(db, mk, ev, row(payload(ko=KO, inplay=True, minute=30, sh=0, sa=0), updated=t), ora=t)
+
+
+def test_punteggio_assente_per_12_s_si_dichiara_una_volta_e_quando_torna():
+    """P4 blocco 4: l'avviso parte dopo `_DATO_ASSENTE_AVVISO_S` (10 s), una volta."""
     db = FakeDB(mode="live")
     ctx = _ctx_scoperto()
     _riga(db, ctx.legs[0], status="open", bet_id="B0")
     mk = MercatoOrdini([])
     ev = _evento(ctx)
-    for s in (0, 2, 4):
-        t = NOW + timedelta(seconds=s)
-        p = payload(ko=KO, inplay=True, minute=30, sh=None, sa=None)
-        _giro(db, mk, ev, row(p, updated=t), ora=t)
+    _giri_senza_punteggio(db, mk, ev, (0, 3, 6, 9, 12, 15))
     avvisi = _log(db, "feed_line_missing", "punteggio_assente")
     assert len(avvisi) == 1 and avvisi[0]["critical"] is True
+    assert avvisi[0]["da_secondi"] >= S._DATO_ASSENTE_AVVISO_S
     assert ev["live"]["goals"] is None          # mai zero: il dato non c'e'
-    t = NOW + timedelta(seconds=6)
-    _giro(db, mk, ev, row(payload(ko=KO, inplay=True, minute=30, sh=0, sa=0), updated=t), ora=t)
+    _torna(db, mk, ev, 17)
     assert len(_log(db, "skip", "punteggio_assente_tornato")) == 1
     assert ev["live"]["goals"] == 0
+
+
+def test_punteggio_assente_per_5_s_al_fischio_nessun_avviso():
+    """Al fischio la riga e' in gioco pochi secondi prima del punteggio IPS:
+    nessun avviso, nessuna riga di ritorno; lo snapshot porta comunque None."""
+    db = FakeDB(mode="live")
+    ctx = _ctx_scoperto()
+    _riga(db, ctx.legs[0], status="open", bet_id="B0")
+    mk = MercatoOrdini([])
+    ev = _evento(ctx)
+    _giri_senza_punteggio(db, mk, ev, (0, 2, 5))
+    assert ev["live"]["goals"] is None
+    _torna(db, mk, ev, 7)
+    assert _log(db, "feed_line_missing", "punteggio_assente") == []
+    assert _log(db, "skip", "punteggio_assente_tornato") == []
 
 
 def test_prima_del_fischio_nessun_avviso_sul_punteggio():
