@@ -188,6 +188,8 @@ restano quelli di oggi, salvo ordine esplicito.
 | 5 | 29/09 | Niente giri nuovi negli ultimi 10 minuti prima del fischio | confermata; gia' cosi' |
 | 6 | 29/09 | Ultimo ingresso: a 10 minuti dal fischio, se Mike NON ha posizione su quella partita entra (punta + banca a 2 tick sotto); se ce l'ha, nessun altro ingresso. Al fischio Mike ha solo l'Under 3,5 abbinato | confermata, da implementare (M2.4) |
 | 7 | 29/09 | La posizione in perdita nel pre-partita si porta in live, non si chiude | confermata, da implementare (M2.2) |
+| 8 | 29/09 | Dal fischio: banca a 2 tick sotto per 3 minuti; se abbinata piatto; gol nei 3 minuti = seconda puntata da 5 EUR al miglior prezzo | confermata; gia' cosi' |
+| 9 | 29/09 | La copertura diventa BANCA Under 4,5 (non piu' punta Over 4,5): stessa strategia, stesso margine del 20 %, importo = perdita Under 3,5 x 1,2 / 0,95 (lettura A) | confermata, da implementare (M3.1, M3.2, M3.3) |
 
 ---
 
@@ -246,6 +248,10 @@ L'utente ha detto: «l'importo del BACK UNDER 3.5 con 20 % di margine in piu'».
 - Lettura B (alla lettera): importo = 10 x 1,2 = **12,00**; con 5+ gol si incassano 11,40 netti e
   il totale scende a +1,40.
 Proposta del coordinatore: lettura A, perche' «la strategia non cambia».
+
+**DECISIONE DELL'UTENTE (29/09): lettura A.** Importo della banca = perdita dell'Under 3,5 x 1,2 /
+(1 - commissione), meno cio' che e' gia' coperto, per la frazione della tranche. E' la formula di
+oggi (`cover_residual`), scritta per la banca.
 
 ### Cosa va cambiato
 - **M3.1 - La copertura diventa BANCA Under 4,5** al posto di PUNTA Over 4,5. Stesso mercato,
