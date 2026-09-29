@@ -385,7 +385,8 @@ describe('MikeMatchCard — leggibilita per il trader (audit UI 12/09)', () => {
         expect(screen.getByTestId('mike-phase')).toHaveTextContent('TIENE FINO AL FISCHIO');
         expect(screen.getByTestId('mike-phase')).not.toHaveTextContent('HOLD');
         expect(screen.getByTestId('mike-phase-what'))
-            .toHaveTextContent('chiudere adesso sarebbe in perdita');
+            // 29/09 (piano Mike P2, M2.1-M2.4): HOLD = dopo il segno dei 10 minuti, banca fino al fischio
+            .toHaveTextContent('dopo il segno dei 10 minuti: nessun ingresso fino al fischio');
     });
 
     it('riga meta leggibile: volume, quota di ingresso e ciclo contato da 1', () => {

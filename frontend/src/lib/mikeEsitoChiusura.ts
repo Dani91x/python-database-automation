@@ -28,7 +28,7 @@
 //   4. i dati della partita non sono vecchi.
 // ============================================================================
 import { fmtMoney, fmtOdds } from '@/lib/format';
-import { roleLabel, type MikeEvent, type MikeLeg } from '@/lib/mike';
+import { MIKE_PARAM_DEFAULTS, roleLabel, type MikeEvent, type MikeLeg } from '@/lib/mike';
 
 export type TipoEsitoChiusura = 'in_corso' | 'chiusa' | 'non_completa' | 'da_verificare';
 
@@ -55,7 +55,8 @@ export interface EsitoChiusuraMike {
     ordini: OrdineDiChiusura[];
     /** tentativo in corso (1-based) e massimo; null = non pertinente */
     tentativo: number | null;
-    tentativiMax: number;
+    /** `null` = massimo non noto a chi mostra (card della Control Room): «tentativo n» senza «di M» */
+    tentativiMax: number | null;
     /** risultato bloccato (netto commissione, dal bot) */
     bloccato: number | null;
     /** righe di dettaglio: esposizioni per linea, motivi del «da verificare» */
@@ -167,13 +168,17 @@ function risultatoBloccato(ev: MikeEvent, goals: number | null): number | null {
  * da raccontare (partita che lavora normalmente, o gia' regolata).
  */
 export function esitoChiusuraMike(
-    ev: MikeEvent, opts: { nowMs: number; tentativiMax: number },
+    ev: MikeEvent, opts: { nowMs: number; tentativiMax: number | null },
 ): EsitoChiusuraMike | null {
     const ctx = (ev.ctx ?? {}) as Record<string, unknown>;
     const cr = typeof ctx.close_reason === 'string' && ctx.close_reason ? ctx.close_reason : null;
     const flatten = ctx.flatten_pending === true;
     const tent = num(ctx.attempts);
-    const max = opts.tentativiMax;
+    // massimo NOTO (dai parametri del bot) o, per riconoscere i tentativi
+    // esauriti, il valore di serie; a video il «di M» solo se noto
+    const maxNoto = opts.tentativiMax;
+    const max = maxNoto ?? Number(MIKE_PARAM_DEFAULTS.close_max_attempts);
+    const diMax = maxNoto != null ? ` di ${maxNoto}` : '';
     const legs = ev.positions ?? [];
     const goals = num(ev.live?.goals);
     const stato = ev.state;
@@ -199,12 +204,12 @@ export function esitoChiusuraMike(
         `linea ${NOME_LINEA[e.mercato] ?? e.mercato}: se vince l’Under ${fmtMoney(e.seUnder, { signed: true })}`
         + ` / se vince l’Over ${fmtMoney(e.seOver, { signed: true })}`);
     const tentativo = tent == null ? null : Math.min(Math.max(1, tent + 1), max);
-    const base = { motivo: motivoDi(cr ?? (flatten ? 'manual' : null)), ordini, tentativiMax: max };
+    const base = { motivo: motivoDi(cr ?? (flatten ? 'manual' : null)), ordini, tentativiMax: maxNoto };
     const peggiore = esposte.slice().sort((a, b) => b.importo - a.importo)[0];
     const nonCompleta = (tent: number | null, extra: string[]): EsitoChiusuraMike => ({
         ...base, tipo: 'non_completa', tentativo: tent, bloccato: null,
         titolo: `NON COMPLETA - resta esposizione di ${fmtMoney(peggiore.importo)} su ${peggiore.selezione}`
-            + (tent != null ? ` - tentativo ${tent} di ${max}` : ''),
+            + (tent != null ? ` - tentativo ${tent}${diMax}` : ''),
         dettagli: [...dettagliEsposte, ...extra],
     });
 
@@ -215,7 +220,7 @@ export function esitoChiusuraMike(
         }
         return {
             ...base, tipo: 'in_corso', tentativo, bloccato: null,
-            titolo: `Chiusura in corso${tentativo != null ? ` - tentativo ${tentativo} di ${max}` : ''}`,
+            titolo: `Chiusura in corso${tentativo != null ? ` - tentativo ${tentativo}${diMax}` : ''}`,
             dettagli: ordini.length ? dettagliEsposte : ['nessun ordine di chiusura ancora a mercato', ...dettagliEsposte],
         };
     }

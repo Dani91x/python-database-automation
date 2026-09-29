@@ -455,12 +455,13 @@ export const MIKE_PARAM_FIELDS: readonly MikeParamField[] = [
     { key: 'pre_entry_ttl_s', label: 'TTL ingresso non abbinato (s)', kind: 'number', step: 5, min: 5, max: 3600, hint: 'oltre: ordine ritirato', group: 'pre' },
     { key: 'pre_max_cycles', label: 'Cicli max per partita', kind: 'number', step: 1, min: 0, max: 100, hint: 'ingresso → green → ingresso…', group: 'pre' },
     { key: 'pre_reentry_cooldown_s', label: 'Pausa dopo un green (s)', kind: 'number', step: 5, min: 0, max: 3600, hint: 'attesa prima del ciclo successivo', group: 'pre' },
-    { key: 'pre_last_entry_min', label: 'Ultimo ingresso (min prima del KO)', kind: 'number', step: 1, min: 1, max: 120, hint: 'in profitto chiude e rientra in PERSIST; in perdita tiene', group: 'pre' },
-    { key: 'last_entry_persist', label: 'Ultimo ingresso in PERSIST', kind: 'bool', hint: 'la posizione entra in live', group: 'pre' },
-    { key: 'last_entry_ticks_above', label: 'Ultimo ingresso: tick sopra il best', kind: 'number', step: 1, min: 0, max: 3, hint: '0 = taker al best', group: 'pre' },
+    // 29/09 (piano Mike P2, M2.1-M2.4): testi dell'ultimo ingresso e della banca fino al fischio
+    { key: 'pre_last_entry_min', label: 'Ultimo ingresso (min prima del KO)', kind: 'number', step: 1, min: 1, max: 120, hint: 'a questo segno: se Mike e’ piatto sulla partita fa l’ultimo ingresso; se ha posizione non entra piu’ e la banca resta appoggiata fino al fischio. Da qui nessun giro nuovo', group: 'pre' },
+    { key: 'last_entry_persist', label: 'Ultimo ingresso a 10 min dal fischio', kind: 'bool', hint: 'acceso = al segno dei minuti qui sopra, solo se Mike non ha posizione, punta l’Under 3.5 con gli stessi controlli d’ingresso e appoggia subito la banca a 2 tick sotto, che resta fino al fischio (non piu’ un ordine PERSIST)', group: 'pre' },
+    { key: 'last_entry_ticks_above', label: 'Ultimo ingresso: tick sopra il best (NON ATTIVO)', kind: 'number', step: 1, min: 0, max: 3, hint: 'NON ATTIVO dal 29/09: l’ultimo ingresso e’ un ingresso normale al miglior prezzo e Mike non legge piu’ questo valore', group: 'pre' },
     // M1 (25/09, PREPARATO, SPENTO): veto sulla P calibrata dell'Under 3.5.
     // Specchio di Betfair/mike/config.py PARAM_SPEC['veto_p_under35_*'].
-    { key: 'veto_p_under35_cal', label: 'Veto P calibrata Under 3.5 (M1)', kind: 'bool', hint: 'ACCESO di default (misura 25/09: migliora); spento = condotta di sempre. Acceso: all\'ultimo ingresso la posizione in perdita si tiene, e il PERSIST si piazza, solo se la P calibrata dell\'Under 3.5 del dossier regge la quota (soglie qui sotto, interpolate). Senza P calibrata: nessun veto', group: 'pre' },
+    { key: 'veto_p_under35_cal', label: 'Veto P calibrata Under 3.5 (M1)', kind: 'bool', hint: 'ACCESO di default (misura 25/09: migliora); spento = condotta di sempre. Acceso: blocca l\'ultimo ingresso se la P calibrata dell\'Under 3.5 del dossier non regge la quota (soglie qui sotto, interpolate). Non chiude mai niente: nel pre-partita Mike non chiude in perdita. Senza P calibrata: nessun veto', group: 'pre' },
     { key: 'veto_p_under35_soglia_130', label: 'Veto M1: P minima a quota 1,30', kind: 'number', step: 0.001, min: 0, max: 1, hint: 'misura 25/09: 0,807', group: 'pre' },
     { key: 'veto_p_under35_soglia_150', label: 'Veto M1: P minima a quota 1,50', kind: 'number', step: 0.001, min: 0, max: 1, hint: 'misura 25/09: 0,684', group: 'pre' },
     { key: 'veto_p_under35_soglia_200', label: 'Veto M1: P minima a quota 2,00', kind: 'number', step: 0.001, min: 0, max: 1, hint: 'misura 25/09: 0,514', group: 'pre' },
@@ -640,8 +641,8 @@ export const MIKE_PHASE_META: Record<MikeState, PhaseMeta> = {
     PRE_ENTRY_PENDING: { label: 'INGRESSO IN CORSO', what: 'ordine di ingresso Under 3.5 sul book: aspetta l’abbinamento', cls: 'bg-teal-500/20 text-teal-200 border-teal-400/50 animate-pulse', dot: 'bg-teal-400 animate-pulse', group: 'pre' },
     PRE_OPEN: { label: 'UNDER 3.5 APERTO', what: 'posizione abbinata prima del fischio: aspetta il green-up a +N tick', cls: 'bg-teal-500/25 text-teal-100 border-teal-300/60', dot: 'bg-teal-300', group: 'pre' },
     PRE_GREEN_PENDING: { label: 'GREEN-UP IN CORSO', what: 'lay appoggiata sul book per bloccare il profitto del ciclo', cls: 'bg-emerald-500/20 text-emerald-200 border-emerald-400/50 animate-pulse', dot: 'bg-emerald-400 animate-pulse', group: 'pre' },
-    HOLD: { label: 'TIENE FINO AL FISCHIO', what: 'chiudere adesso sarebbe in perdita: tiene l’Under 3.5 e lo porta in gioco', cls: 'bg-amber-500/20 text-amber-200 border-amber-400/50', dot: 'bg-amber-400', group: 'pre' },
-    PRE_LAST_ENTRY_PENDING: { label: 'ULTIMO INGRESSO', what: 'ultimo ingresso prima del fischio: l’ordine resta valido anche in gioco', cls: 'bg-teal-500/25 text-teal-100 border-teal-300/60', dot: 'bg-teal-300', group: 'pre' },
+    HOLD: { label: 'TIENE FINO AL FISCHIO', what: 'dopo il segno dei 10 minuti: nessun ingresso fino al fischio; la banca resta appoggiata', cls: 'bg-amber-500/20 text-amber-200 border-amber-400/50', dot: 'bg-amber-400', group: 'pre' },
+    PRE_LAST_ENTRY_PENDING: { label: 'ULTIMO INGRESSO', what: 'ultimo ingresso a 10 minuti dal fischio: ingresso normale, poi la banca a 2 tick sotto fino al fischio', cls: 'bg-teal-500/25 text-teal-100 border-teal-300/60', dot: 'bg-teal-300', group: 'pre' },
     IDLE_LIVE: { label: 'IN GIOCO · NESSUNA POSIZIONE', what: 'partita iniziata senza posizione: Mike non opera più su questa partita', cls: 'bg-slate-600/30 text-slate-300 border-slate-500/40', dot: 'bg-white/30', group: 'live' },
     LIVE_KO_GREEN: { label: 'USCITA AL FISCHIO', what: 'lay appoggiata a +N tick dal nostro ingresso: se si abbina si esce in profitto senza coprire', cls: 'bg-emerald-500/20 text-emerald-200 border-emerald-400/50 animate-pulse', dot: 'bg-emerald-400 animate-pulse', group: 'live' },
     LIVE_SECOND_ENTRY: { label: 'GOL PRECOCE · SECONDA PUNTATA', what: 'gol dentro la finestra: seconda puntata sull’Under 3.5 al miglior prezzo, poi copertura a tranche', cls: 'bg-amber-500/20 text-amber-200 border-amber-400/50 animate-pulse', dot: 'bg-amber-400 animate-pulse', group: 'live' },
@@ -1535,6 +1536,8 @@ export function mikeActivityLine(kind: string, payload: Record<string, unknown> 
         case 'reconcile_fix':
             return `${String(p.leg ?? '')} · ${reasonLabel(p.action)}${p.status ? ` · stato ${String(p.status)}` : ''}${Number.isFinite(n('size')) ? ` · ${money('size')}` : ''}${Number.isFinite(n('price')) ? ` @ ${odds('price')}` : ''}`;
         case 'feed_line_missing':
+            // 29/09 (P4 blocco 3): il punteggio che manca non e' una linea assente
+            if (p.reason === 'punteggio_assente') return `${reasonLabel(p.reason)} · fase ${stateLabel(p.state)}`;
             return `linee assenti nel feed: ${[...(Array.isArray(p.markets) ? p.markets : []), ...(Array.isArray(p.selections) ? p.selections : [])].map((x) => lineLabel(String(x))).join(', ') || reasonLabel(p.reason)} · fase ${stateLabel(p.state)}`;
         case 'flusso_interrotto':
             return `${String(p.testo ?? 'flusso prezzi interrotto')} · nessuna apertura né chiusura a mercato su quei prezzi · fase ${stateLabel(p.state)}`;
@@ -1601,7 +1604,29 @@ export const MIKE_REASON_LABEL: Record<string, string> = {
     runner_heartbeat_stantio: 'runner dello stream senza battito',
     enqueue_failed: 'accodamento fallito', gate_error: 'errore del gate di esecuzione',
     ok: 'ok',
+    // 29/09 (piano Mike P4 blocco 2, M8.7): una lettura fallita non e' una partita sparita
+    lettura_feed_fallita: 'lettura dei dati fallita: Mike ritenta, nessuna partita data per sparita',
+    lettura_feed_ripresa: 'lettura dei dati ripresa',
+    // 29/09 (piano Mike P4 blocco 3, M8.4-M8.5, M8.12): punteggio e quote mancanti, ordini senza risposta
+    punteggio_assente: 'in gioco il punteggio non arriva: Mike non decide niente che dipenda dai gol',
+    punteggio_assente_tornato: 'il punteggio e’ tornato',
+    quote_assenti_tornato: 'le quote sono tornate',
+    runner_senza_esito: 'ordine senza risposta: Mike lo sta verificando',
 };
+
+/**
+ * 29/09 (piano Mike P4 blocco 2, M8.6) - note di REGOLAMENTO sulla riga
+ * dell'ordine (`meta.regolamento`, `meta.settle_reason`), in parole del
+ * trader. `null` = niente da dire (righe vecchie o valori sconosciuti).
+ */
+export function notaRegolamentoMike(meta: Record<string, unknown> | null | undefined): string | null {
+    const m = meta ?? {};
+    if (m['regolamento'] === 'non_determinabile') return 'da regolare a mano: risultato non leggibile';
+    if (m['settle_reason'] === 'risultato_indipendente_dal_punteggio') {
+        return 'regolata senza punteggio: il risultato non dipendeva dai gol';
+    }
+    return null;
+}
 
 /**
  * Motivo del backend → italiano. Gestisce anche i motivi COMPOSTI `a:b`

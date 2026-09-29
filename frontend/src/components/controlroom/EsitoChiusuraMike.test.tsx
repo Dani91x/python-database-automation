@@ -63,6 +63,16 @@ describe('M7.2 - chiusura in corso', () => {
             'Chiusura Under 3.5 · banca · chiesti 10,14 € · abbinati 4,00 € @ 1,48 · abbinato in parte, resto sul book');
     });
 
+    it('massimo dei tentativi non noto (card della Control Room): «tentativo n» senza «di M»', () => {
+        const parziale = gamba({ ref: 'c1', role: 'under_close', side: 'lay', price: 1.48, size: 10.14, matched: 0, avg_price: null, status: 'pending' });
+        render(<EsitoChiusuraMike ev={ev('LIVE_CLOSING', [INGRESSO, parziale], { close_reason: 'manual', attempts: 4 })} />);
+        expect(screen.getByTestId('cr-mike-esito-chiusura-titolo').textContent).toBe('Chiusura in corso - tentativo 5');
+        // i tentativi esauriti si riconoscono comunque (valore di serie del bot)
+        const e = esitoChiusuraMike(ev('LIVE_CLOSING', [INGRESSO, parziale], { close_reason: 'manual', attempts: 20 }),
+            { nowMs: ORA_MS, tentativiMax: null })!;
+        expect(e.titolo).toBe('NON COMPLETA - resta esposizione di 10,00 € su Under 3.5 - tentativo 20');
+    });
+
     it('comando dell’utente in pre-partita (flatten in corso): chiusura in corso', () => {
         const e = esitoChiusuraMike(ev('PRE_GREEN_PENDING', [INGRESSO], { flatten_pending: true, attempts: 0 }), opt);
         expect(e?.tipo).toBe('in_corso');

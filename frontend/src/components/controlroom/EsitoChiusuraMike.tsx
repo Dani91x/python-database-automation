@@ -12,7 +12,7 @@
 // oppure DA VERIFICARE col motivo. Senza chiusure da raccontare non disegna niente.
 // ============================================================================
 import { fmtMoney, fmtOdds } from '@/lib/format';
-import { MIKE_PARAM_DEFAULTS, MIKE_TERMINAL_STATES, type MikeEvent } from '@/lib/mike';
+import { MIKE_TERMINAL_STATES, type MikeEvent } from '@/lib/mike';
 import { esitoChiusuraMike, type TipoEsitoChiusura } from '@/lib/mikeEsitoChiusura';
 import { useSecondTick } from '@/components/mike/useMikeClock';
 import { useMikeEventoAlMs, type CanaleEventiMike } from '@/components/mike/useMikeEventoAlMs';
@@ -37,8 +37,10 @@ export function EsitoChiusuraMike({ ev: evDb, tentativiMax, testId = 'cr-mike-es
     const { ev } = useMikeEventoAlMs(evDb, !terminaleDb, canaleMike);
     const terminale = MIKE_TERMINAL_STATES.includes(ev.state);
     const adesso = useSecondTick(!terminale);
+    // il «di M» solo se i parametri del bot sono noti (pagina di Mike); la card
+    // della Control Room non li riceve: «tentativo n» e basta, mai un 20 finto
     const max = typeof tentativiMax === 'number' && Number.isFinite(tentativiMax) && tentativiMax > 0
-        ? tentativiMax : Number(MIKE_PARAM_DEFAULTS.close_max_attempts);
+        ? tentativiMax : null;
     const e = esitoChiusuraMike(ev, { nowMs: adesso, tentativiMax: max });
     if (e == null) return null;
     return (

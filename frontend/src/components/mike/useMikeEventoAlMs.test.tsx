@@ -119,6 +119,6 @@ describe('M7.1 - l’esito della chiusura segue lo stesso canale', () => {
         render(<EsitoChiusuraMike ev={e} canaleMike={c.fn} />);
         expect(screen.queryByTestId('cr-mike-esito-chiusura')).toBeNull();
         c.spingi(push(-2.0, Date.now() / 1000, { state: 'LIVE_CLOSING' }));
-        expect(screen.getByTestId('cr-mike-esito-chiusura-titolo').textContent).toBe('Chiusura in corso - tentativo 1 di 20');
+        expect(screen.getByTestId('cr-mike-esito-chiusura-titolo').textContent).toBe('Chiusura in corso - tentativo 1');
     });
 });
