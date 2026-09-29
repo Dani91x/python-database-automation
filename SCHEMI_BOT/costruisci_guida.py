@@ -428,24 +428,81 @@ def analizza_blocchi(righe: list[str]) -> list[BloccoMD]:
             para_righe.append(r)
             pos += 1
         testo_para = " ".join(x.strip() for x in para_righe)
-        blocchi.append(BloccoMD(tipo="p", testo_grezzo=testo_para, html=formatta_in_linea(testo_para)))
+        blocchi.append(BloccoMD(tipo="p", testo_grezzo=testo_para, html=f"<p>{formatta_in_linea(testo_para)}</p>"))
 
-    # unisci la coppia "**Per il tecnico**" (paragrafo bold da solo) + blocco
-    # successivo in un unico blocco 'tecnico'
-    fusi: list[BloccoMD] = []
-    i = 0
-    while i < len(blocchi):
-        b = blocchi[i]
-        if b.tipo == "p" and b.testo_grezzo.strip() == "**Per il tecnico**":
-            interno = "<p>Per il tecnico</p>"
-            if i + 1 < len(blocchi) and blocchi[i + 1].tipo in ("list", "p", "code", "table"):
-                interno += blocchi[i + 1].html
-                i += 1
-            fusi.append(BloccoMD(tipo="tecnico", html=f'<div class="per-il-tecnico">{interno}</div>'))
+    return blocchi
+
+
+# Le sette voci fisse di ogni scheda (regola 14 di REGOLE_DI_CHIAREZZA.md).
+# L'ordine conta solo per chiarezza: il riconoscimento guarda l'inizio del
+# paragrafo, non la posizione.
+CAMPI_SCHEDA = [
+    ("Cosa fa", "cosa-fa"),
+    ("Quando", "quando"),
+    ("Numeri", "numeri"),
+    ("Esempio con le cifre", "esempio"),
+    ("Cosa vedi nell'app", "cosa-vedi"),
+    ("Se qualcosa va storto", "se-va-storto"),
+    ("Per il tecnico", "tecnico"),
+]
+
+
+def rileva_campo_scheda(testo_grezzo: str) -> Optional[tuple[str, str, str]]:
+    """Riconosce se un paragrafo grezzo comincia con una delle sette
+    etichette di scheda, in una qualunque delle forme viste nei file:
+    '**Cosa fa**' da sola, oppure '**Cosa fa.** testo...', oppure
+    '**Cosa fa (dettaglio):** testo...'. Ritorna (etichetta, chiave css,
+    HTML gia' formattato del resto della frase), oppure None."""
+    t = testo_grezzo.strip()
+    if not t.startswith("**"):
+        return None
+    for etichetta, chiave in CAMPI_SCHEDA:
+        prefisso = "**" + etichetta
+        if not t.startswith(prefisso):
+            continue
+        resto = t[len(prefisso):]
+        m = re.match(r"^[.:]?\s*(?:\([^)]*\))?\s*\*\*\s*(.*)$", resto, re.S)
+        if m:
+            return etichetta, chiave, formatta_in_linea(m.group(1).strip())
+    return None
+
+
+def raggruppa_campi_scheda(blocchi: list[BloccoMD]) -> list[tuple[Optional[str], Optional[str], list[str]]]:
+    """Raggruppa i blocchi di un riquadro nelle sue voci di scheda. Un blocco
+    che non e' l'inizio di una voce nota si aggiunge alla voce aperta (il
+    caso delle schede in cui l'etichetta sta da sola e il contenuto e' negli
+    elenchi delle righe successive); se non c'e' ancora nessuna voce aperta,
+    il blocco resta "libero" e si mostra cosi' com'e'."""
+    gruppi: list[list] = []
+    indice_corrente: Optional[int] = None
+    for b in blocchi:
+        rilevato = rileva_campo_scheda(b.testo_grezzo) if b.tipo == "p" else None
+        if rilevato is not None:
+            etichetta, chiave, html_resto = rilevato
+            pezzi = [f"<p>{html_resto}</p>"] if html_resto else []
+            gruppi.append([etichetta, chiave, pezzi])
+            indice_corrente = len(gruppi) - 1
+        elif indice_corrente is not None:
+            gruppi[indice_corrente][2].append(b.html)
         else:
-            fusi.append(b)
-        i += 1
-    return fusi
+            gruppi.append([None, None, [b.html]])
+    return [(e, c, p) for e, c, p in gruppi]
+
+
+def rendi_campi_scheda(gruppi: list[tuple[Optional[str], Optional[str], list[str]]]) -> str:
+    parti: list[str] = ['<div class="scheda">']
+    for etichetta, chiave, pezzi in gruppi:
+        if etichetta is None:
+            parti.extend(pezzi)
+            continue
+        classe_extra = f" campo-{chiave}" if chiave else ""
+        parti.append(
+            f'<div class="scheda-campo{classe_extra}">'
+            f'<div class="etichetta">{html.escape(etichetta)}</div>'
+            f'<div class="valore">{"".join(pezzi)}</div></div>'
+        )
+    parti.append("</div>")
+    return "".join(parti)
 
 
 def dividi_in_sezioni_h2(righe_senza_h1: list[str]) -> list[tuple[Optional[str], list[str]]]:
@@ -492,22 +549,37 @@ def rendi_schede_md(testo: str, ancora_capitolo: str, capitolo_titolo: str) -> t
     punti: list[PuntoDaDecidere] = []
 
     for titolo_sez, corpo in sezioni:
-        blocchi = analizza_blocchi(corpo)
+        blocchi = [b for b in analizza_blocchi(corpo) if b.tipo != "hr"]
+
         if titolo_sez is None:
-            # testo introduttivo prima del primo "## "
+            # testo introduttivo prima del primo "## ": i riferimenti tecnici
+            # (Schema:/Fonte dei fatti/Schede dell'inventario) vanno in un
+            # riquadro richiudibile, il resto (come si legge, colori, ...)
+            # resta visibile normalmente.
+            normali: list[str] = []
+            tecnici: list[str] = []
             for b in blocchi:
-                if b.tipo == "tecnico":
-                    pezzi.append(b.html)
-                elif b.tipo == "heading":
-                    pezzi.append(f"<h4>{b.html}</h4>")
+                if b.tipo == "heading":
+                    normali.append(f"<h4>{b.html}</h4>")
+                    continue
+                grezzo_pulito = b.testo_grezzo.lstrip("*").strip() if b.tipo == "p" else ""
+                if b.tipo == "p" and grezzo_pulito.startswith(("Schema:", "Fonte dei fatti", "Schede dell'inventario")):
+                    tecnici.append(b.html)
                 else:
-                    pezzi.append(b.html)
+                    normali.append(b.html)
+            pezzi.extend(normali)
+            if tecnici:
+                pezzi.append(
+                    '<details class="per-il-tecnico-fonti">'
+                    '<summary>Per il tecnico: fonti di questo capitolo</summary>'
+                    + "".join(tecnici) + "</details>"
+                )
             continue
 
         titolo_basso = titolo_sez.lower()
-        contenuto_html = "".join(b.html for b in blocchi)
 
         if titolo_basso.startswith("punti da decidere"):
+            contenuto_html = "".join(b.html for b in blocchi)
             pezzi.append(
                 f'<div class="punti-decidere-box" id="{ancora_capitolo}-decidere">'
                 f'<h3>{formatta_in_linea(titolo_sez)}</h3>{contenuto_html}</div>'
@@ -524,14 +596,17 @@ def rendi_schede_md(testo: str, ancora_capitolo: str, capitolo_titolo: str) -> t
                         ))
                     break
         elif titolo_basso.startswith("punti non chiariti"):
+            contenuto_html = "".join(b.html for b in blocchi)
             pezzi.append(
                 f'<div class="punti-non-chiariti-box">'
                 f'<h3>{formatta_in_linea(titolo_sez)}</h3>{contenuto_html}</div>'
             )
         elif titolo_basso.startswith("frecce"):
+            contenuto_html = "".join(b.html for b in blocchi)
             pezzi.append(f'<div class="frecce-box"><h3>{formatta_in_linea(titolo_sez)}</h3>{contenuto_html}</div>')
         else:
-            pezzi.append(f'<div class="riquadro"><h3>{formatta_in_linea(titolo_sez)}</h3>{contenuto_html}</div>')
+            corpo_scheda = rendi_campi_scheda(raggruppa_campi_scheda(blocchi))
+            pezzi.append(f'<div class="riquadro"><h3>{formatta_in_linea(titolo_sez)}</h3>{corpo_scheda}</div>')
 
     return "".join(pezzi), punti
 
@@ -832,7 +907,7 @@ a { color: var(--link); }
 .content {
   flex: 1;
   min-width: 0;
-  max-width: 1100px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 2rem 2rem 6rem;
 }
@@ -862,14 +937,56 @@ a { color: var(--link); }
   background: var(--warn-bg);
 }
 .punti-decidere-box h3 { margin-top: 0; color: var(--warn-border); }
-.per-il-tecnico {
-  margin-top: 0.8rem;
-  padding: 0.6rem 0.8rem;
-  border-left: 3px solid var(--border);
+
+/* Le sette voci fisse di ogni scheda: etichetta a sinistra, testo a destra;
+   etichetta sopra il testo quando lo schermo e' stretto. */
+.scheda { display: flex; flex-direction: column; gap: 0.1rem; }
+.scheda-campo {
+  display: grid;
+  grid-template-columns: 170px 1fr;
+  gap: 0.3rem 1rem;
+  padding: 0.7rem 0;
+  border-top: 1px solid var(--border);
+}
+.scheda-campo:first-child { border-top: none; padding-top: 0.2rem; }
+.scheda-campo .etichetta { font-weight: 700; padding-top: 0.1rem; }
+.scheda-campo .valore p:first-child { margin-top: 0; }
+.scheda-campo .valore p:last-child { margin-bottom: 0; }
+.scheda-campo.campo-esempio {
+  background: var(--accent-soft);
+  border-radius: 8px;
+  border-top: none;
+  padding: 0.7rem 0.8rem;
+  margin: 0.4rem 0;
+}
+.scheda-campo.campo-tecnico {
+  margin-top: 0.6rem;
+  color: var(--text-muted);
+  font-size: 13.5px;
+  border-top: 1px dashed var(--border);
+}
+.scheda-campo.campo-tecnico .etichetta {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 12px;
+  font-weight: 600;
+}
+@media (max-width: 700px) {
+  .scheda-campo { grid-template-columns: 1fr; gap: 0.15rem; }
+}
+details.per-il-tecnico-fonti {
+  margin: 0.8rem 0;
   color: var(--text-muted);
   font-size: 13.5px;
 }
-.per-il-tecnico p:first-child { margin: 0 0 0.3rem; text-transform: uppercase; letter-spacing: 0.04em; font-size: 12px; }
+details.per-il-tecnico-fonti summary {
+  cursor: pointer;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 12px;
+}
+details.per-il-tecnico-fonti[open] summary { margin-bottom: 0.5rem; }
 table { border-collapse: collapse; width: 100%; font-size: 15.5px; }
 .table-wrap { overflow-x: auto; margin: 0.8rem 0; border: 1px solid var(--border); border-radius: 6px; }
 th, td { border: 1px solid var(--border); padding: 0.4rem 0.6rem; text-align: left; vertical-align: top; }
@@ -882,7 +999,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 1.2rem 0; }
   margin: 1rem 0;
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 1rem;
+  padding: 0.35rem;
   overflow: auto;
   background: var(--bg-alt);
 }
