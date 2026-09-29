@@ -391,23 +391,31 @@ def aggregates(now: Optional[datetime] = None, mode: Optional[str] = None) -> di
     if m:
         righe = [r for r in righe if str(r.get("mode") or "paper").lower() == m]
     agg = aggregate_rows(righe, day_start)
-    agg.update(_cumulative_totals(day_start))
+    # M8.9 (29/09): anche i cumulativi di sempre SOLO della modalita' chiesta
+    agg.update(_cumulative_totals(day_start, m))
     agg["totals_from"] = "full_scan_cache"
     if m:
         agg["mode"] = m
     return agg
 
 
-def _cumulative_totals(day_start: datetime) -> dict[str, Any]:
+def _cumulative_totals(day_start: datetime, mode: Optional[str] = None) -> dict[str, Any]:
     """{realized_total, won, lost} di SEMPRE, da una scansione completa messa in
-    cache per ``_TOTALS_TTL_S`` (l'unico dato non calcolabile da una finestra)."""
+    cache per ``_TOTALS_TTL_S`` (l'unico dato non calcolabile da una finestra).
+
+    M8.9 (29/09): con ``mode`` si contano SOLO le righe di quella modalita' e la
+    cache e' PER MODALITA' (prima il ripiego sommava paper e live nei cumulativi)."""
     now_ts = datetime.now(timezone.utc).timestamp()
-    cached = _TOTALS.get("v")
-    if cached is not None and now_ts - float(_TOTALS.get("ts") or 0.0) < _TOTALS_TTL_S:
+    chiave_v, chiave_ts = ("v", "ts") if mode is None else (f"v:{mode}", f"ts:{mode}")
+    cached = _TOTALS.get(chiave_v)
+    if cached is not None and now_ts - float(_TOTALS.get(chiave_ts) or 0.0) < _TOTALS_TTL_S:
         return cached
-    full = aggregate_rows(all_trades(), day_start)
+    righe = all_trades()
+    if mode is not None:
+        righe = [r for r in righe if str(r.get("mode") or "paper").lower() == mode]
+    full = aggregate_rows(righe, day_start)
     v = {k: full[k] for k in ("realized_total", "won", "lost")}
-    _TOTALS.update({"ts": now_ts, "v": v})
+    _TOTALS.update({chiave_ts: now_ts, chiave_v: v})
     return v
 
 
@@ -505,14 +513,18 @@ def fail_stale_processing(max_age_min: int = 10,
 # ---------------------------------------------------------------------------
 # FEED UNICO (safe_strategy_scan) — sola lettura
 # ---------------------------------------------------------------------------
-def fetch_scan_rows() -> list[dict[str, Any]]:
-    """Tutte le righe calcio del feed: {event_id, sport, payload, updated_at}. UNA select."""
+def fetch_scan_rows() -> Optional[list[dict[str, Any]]]:
+    """Tutte le righe calcio del feed: {event_id, sport, payload, updated_at}. UNA select.
+
+    M8.7 (29/09): ``None`` = LETTURA FALLITA, mai confusa con «nessuna riga»
+    (prima tornava ``[]`` e dopo 10 minuti ogni partita risultava sparita e
+    andava al regolamento)."""
     try:
         return (_sb().table("safe_strategy_scan").select("event_id,sport,payload,updated_at")
                 .eq("sport", "calcio").execute().data or [])
     except Exception as ex:  # noqa: BLE001
         logger.warning("[mike.db] lettura feed KO: %s", str(ex)[:160])
-        return []
+        return None
 
 
 def scanner_status() -> Optional[dict[str, Any]]:

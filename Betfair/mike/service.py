@@ -2720,7 +2720,8 @@ _CONTO_LETTO_A: Dict[str, float] = {}
 # difetto 1 del 15/09, reintrodotto da un azzeramento troppo allegro.
 _CACHE_DI_PROCESSO = ("_DAILY_STOP_LOGGED", "_LAST_HEARTBEAT", "_CONFIG_WARNED",
                       "_CACHE_EVENTI", "_RICONCILIATO_A", "_SCRITTO_A",
-                      "_MALFORMED_LOGGED", "_LAST_AGG", "_CONTO_LETTO_A")
+                      "_MALFORMED_LOGGED", "_LAST_AGG", "_CONTO_LETTO_A",
+                      "_FEED_KO")   # M8.7 (29/09)
 
 
 def azzera_cache_di_processo() -> List[str]:
@@ -4072,6 +4073,96 @@ def _firma_loss_exit_deciso(v: Any) -> str:
 
 
 
+def _sorveglia_gambe(*, db: Any, market: Any, ctx: E.MatchCtx, ev: Dict[str, Any],
+                     extra: Dict[str, Any], params: Dict[str, Any], mode: str,
+                     now: datetime,
+                     cache: Optional[Dict[str, List[Dict[str, Any]]]] = None) -> None:
+    """Gambe stantie, esiti ignoti, lay appoggiate: la sorveglianza degli ordini
+    che NON ha bisogno dei prezzi. Codice e ordine identici a quelli che stavano
+    in ``_run_event`` (spostati qui il 29/09, M8.8, per farli girare anche
+    quando il giro esce prima: riga assente o dati incompleti)."""
+    now_ts = now.timestamp()
+    # -- gambe pending stantie (esito mai arrivato) --------------------------------
+    # C3 — un ordine il cui esito e' IGNOTO (execution._reconciling →
+    # meta.reason='place_exception_reconciling') NON viene MAI dato per "non
+    # piazzato" e MAI marcato cancelled/error dal TTL: resta 'pending_reconcile'
+    # (conta nel rischio, blocca il rientro) finche' non si riconcilia contro
+    # Betfair. Solo le gambe con esito NOTO vengono ritirate.
+    for leg in ctx.legs:
+        if leg.is_live and now_ts - leg.placed_at > _PENDING_STALE_S and not _is_resting_leg(leg, params):
+            # (la lay APPOGGIATA resta legittimamente sul book per ore: esclusa)
+            if _trade_unknown_outcome(db, ev["event_id"], leg, cache):
+                leg.status = E.STATUS_RECONCILE
+                logger.critical("[mike] %s: gamba %s con esito REST IGNOTO → riconciliazione",
+                                ev["event_id"], leg.ref)
+                _log_throttled(db, extra, params, now_ts, "reconcile_pending",
+                               {"leg": leg.ref, "reason": "pending_unknown_outcome",
+                                "critical": True}, ev["event_id"])
+                continue
+            # C.12a — la gamba stantia con un ordine LIVE viene annullata DAVVERO
+            # su Betfair prima di essere dichiarata ritirata; se Betfair non
+            # conferma, `_mark_trade_cancelled` la lascia in riconciliazione.
+            _mark_trade_cancelled(db, ev["event_id"], leg, "pending_stale", cache, market=market)
+
+    # -- C3/H8: gambe a esito IGNOTO -----------------------------------------------
+    # Si tenta la riconciliazione con un THROTTLE (2 chiamate REST per evento:
+    # senza freno erano 2 al secondo per evento) e il ciclo CONTINUA: restano
+    # attive tutte le azioni che RIDUCONO il rischio (annulli, cash-out, uscite,
+    # cap di perdita) — le APERTURE le toglie l'engine (`_strip_openings`).
+    if E.has_unknown_orders(ctx):
+        every = max(5.0, float(params.get("settle_confirm_s") or 30.0))
+        if now_ts >= float(extra.get("reconcile_next_ts") or 0.0):
+            extra["reconcile_next_ts"] = now_ts + every
+            _reconcile_unknown(db, market, ev["event_id"], ctx, mode, now, cache)
+        if E.has_unknown_orders(ctx):
+            _log_throttled(db, extra, params, now_ts, "reconcile_pending",
+                           {"legs": [l.ref for l in ctx.legs if l.needs_reconcile],
+                            "state": ctx.state, "critical": True}, ev["event_id"])
+
+    # -- lay APPOGGIATE (resting): fill simulato solo se il mercato scambia sotto ----
+    # H3 — SOLO in paper: in live una lay appoggiata deve stare DAVVERO sul book
+    # (REST senza FOK / coda flumine, F6). Simularla in live significherebbe
+    # contabilizzare un profitto che non esiste.
+    for leg in ctx.legs:
+        if leg.is_live and _is_resting_leg(leg, params):
+            if mode != "paper":
+                # In LIVE l'abbinamento non si simula e non si deduce dal
+                # prezzo: si LEGGE dal book ordini di Betfair. Un ordine vivo
+                # che nessuno contabilizza diventa una posizione doppia con
+                # soldi veri quando piu' tardi si abbina da solo.
+                _segui_resting_live(db=db, market=market, leg=leg, extra=extra,
+                                    params=params, now_ts=now_ts, ev=ev,
+                                    rilettura_in_corso=bool(
+                                        ctx.riapertura and not ctx.riapertura.get("letto")))
+                continue
+            # D1 (29/09): in PAPER la lay appoggiata sta sul book del RUNNER
+            # (matching di flumine, coda, parziali): l'abbinamento lo legge
+            # ``_segui_ordini_paper_su_runner`` qui sopra. Il fill «simulato in
+            # casa» quando il best back scendeva sotto il prezzo non esiste piu'.
+            continue
+
+
+def _sorveglia_senza_dati(*, db: Any, market: Any, ctx: E.MatchCtx, ev: Dict[str, Any],
+                          extra: Dict[str, Any], params: Dict[str, Any], mode: str,
+                          now: datetime,
+                          cache: Optional[Dict[str, List[Dict[str, Any]]]] = None) -> None:
+    """M8.8 (29/09) - LA SORVEGLIANZA DEGLI ORDINI GIRA SEMPRE. Con la riga del
+    feed assente o coi dati incompleti il giro non decide (niente prezzi), ma
+    gli ordini si seguono lo stesso, nello stesso ordine del giro pieno: esiti
+    del runner (paper), posizione di conto, gambe stantie, esiti ignoti, lay
+    appoggiate. La sospensione e il mercato della copertura si leggono dai
+    prezzi: senza prezzi non si leggono (la lay sparita dai correnti la rilegge
+    ``_segui_resting_live`` per bet_id, M6.2)."""
+    now_ts = now.timestamp()
+    if mode == "paper":
+        _segui_ordini_paper_su_runner(db=db, ctx=ctx, ev=ev, now_ts=now_ts, cache=cache,
+                                      params=params, market=market)
+    _sorveglia_posizione_di_conto(db=db, market=market, ctx=ctx, ev=ev, extra=extra,
+                                  params=params, mode=mode, now_ts=now_ts, cache=cache)
+    _sorveglia_gambe(db=db, market=market, ctx=ctx, ev=ev, extra=extra, params=params,
+                     mode=mode, now=now, cache=cache)
+
+
 def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[str, Any]],
                params: Dict[str, Any], mode: str, now: datetime, scanner_age: Optional[float],
                atlas: Optional[Dict[str, Any]], dry: bool,
@@ -4119,7 +4210,11 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
     ko_ts = float(F.parse_iso_epoch(ev.get("ko_at")) or 0.0)
     status_closed = row is not None and str((F.ou_blocks(payload).get(E.MARKET_OU35) or {}).get("status") or
                                             payload.get("mo_status") or "").upper() == "CLOSED"
-    if row is None:
+    if row is None and _feed_non_letto():
+        # M8.7 (29/09): la LETTURA del feed sta fallendo: la riga non e'
+        # «assente», e' non letta. Nessun orologio di assenza, nessun regolamento.
+        absent_closed = False
+    elif row is None:
         extra["row_missing_since"] = float(extra.get("row_missing_since") or now_ts)
         missing_for = now_ts - float(extra["row_missing_since"])
         absent_closed = missing_for >= _ROW_MISSING_GRACE_S or (ko_ts > 0 and (
@@ -4130,6 +4225,9 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
         absent_closed = False
     closed = status_closed or absent_closed
     if row is None and not closed and ctx.state not in E.TERMINAL_STATES:
+        # M8.8 (29/09): senza riga non si decide, ma gli ordini si seguono
+        _sorveglia_senza_dati(db=db, market=market, ctx=ctx, ev=ev, extra=extra,
+                              params=params, mode=mode, now=now, cache=cache)
         ev.update(_row_from_ctx(ev, ctx, extra))          # memorizza da quando manca
         _persist(db, ev, before_sig, now_ts=now_ts, params=params, lotto=lotto)
         return (0, 0)
@@ -4223,6 +4321,21 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                 comm = C.commission_rate(_settle_params(db, ev["event_id"], params))
                 netto = E.pnl_indipendente_dal_risultato(ctx.legs, comm)
                 if netto is not None:
+                    # M8.6 (29/09): partita regolata = TUTTE le sue righe regolate.
+                    # Il P&L non dipende dal risultato: le righe si regolano con un
+                    # totale qualunque (0 gol) e la somma fa lo stesso netto; le
+                    # righe mai abbinate vanno a 'void'. Prima restavano open/pending.
+                    res0 = E.settle_legs(ctx.legs, 0, comm)
+                    ok0 = _settle_trades(db, ev["event_id"], ctx,
+                                         {"per_leg": res0.per_leg,
+                                          "per_leg_gross": res0.per_leg_gross,
+                                          "commission_by_market": res0.commission_by_market,
+                                          "senza_punteggio": True}, params)
+                    if not ok0 and _retry_settle_rows(db, ev["event_id"], ctx, extra, now_ts):
+                        ev.update(_row_from_ctx(ev, ctx, extra))
+                        _persist(db, ev, before_sig, now_ts=now_ts, params=params, lotto=lotto)
+                        return (0, 0)
+                    extra.pop("settle_rows_attempts", None)
                     db.log("settled", {"reason": "punteggio non recuperabile, ma il risultato "
                                                  "non dipende dal punteggio",
                                        "pnl": netto, "gambe_abbinate":
@@ -4233,7 +4346,12 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                     ev.update(_row_from_ctx(ev, ctx, extra))
                     _persist(db, ev, before_sig, now_ts=now_ts, params=params, lotto=lotto)
                     return (0, 1)
-                db.log("error", {"reason": "settle_timeout", "critical": True}, ev["event_id"])
+                # M8.6 (29/09): il P&L dipende da un risultato che non si legge: le
+                # righe ancora aperte NON si regolano con un numero inventato, ma
+                # si marcano «da regolare» e si elencano (prima restavano mute).
+                da_regolare = _marca_righe_non_regolate(db, ev["event_id"])
+                db.log("error", {"reason": "settle_timeout", "critical": True,
+                                 "righe_da_regolare": da_regolare}, ev["event_id"])
                 d = E.Decision(state="ERROR", actions=[], reason="regolamento non determinabile")
                 E.apply_decision(ctx, d, now_ts)
                 ev.update(_row_from_ctx(ev, ctx, extra))
@@ -4264,6 +4382,10 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
         _persist(db, ev, before_sig, now_ts=now_ts, params=params, lotto=lotto)
         return (0, settled)
     if row is None or info is None or not info.complete:
+        # M8.8 (29/09): dati incompleti = nessuna decisione, ma gli ordini si
+        # seguono lo stesso (fill, scadenze, riconciliazione, posizione di conto)
+        _sorveglia_senza_dati(db=db, market=market, ctx=ctx, ev=ev, extra=extra,
+                              params=params, mode=mode, now=now, cache=cache)
         # C1 — la riga c'e' ma una delle due linee NON e' nel feed (tetto dei
         # mercati opportunita' dello scanner): con una posizione aperta questo
         # significa nessuna copertura, nessun cash out, nessuna uscita. Non si
@@ -4282,6 +4404,11 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                             "state": ctx.state, "critical": True}, ev["event_id"])
             ev["live"] = {**(ev.get("live") or {}), "lines_missing": missing or ["selezioni"],
                           "feed_incomplete": True}
+            ev.update(_row_from_ctx(ev, ctx, extra))
+            _persist(db, ev, before_sig, now_ts=now_ts, params=params, lotto=lotto)
+        elif _signature({**ev, **_row_from_ctx(ev, ctx, extra)}) != before_sig:
+            # M8.8: cio' che la sorveglianza ha cambiato (una gamba chiusa, un
+            # esito letto) si salva; se non e' cambiato niente, niente scrittura
             ev.update(_row_from_ctx(ev, ctx, extra))
             _persist(db, ev, before_sig, now_ts=now_ts, params=params, lotto=lotto)
         return (0, 0)
@@ -4358,6 +4485,9 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
         _log_throttled(db, extra, params, now_ts, "feed_line_missing",
                        {"reason": "snapshot_non_costruibile", "state": ctx.state,
                         "critical": bool(E.open_selections(ctx.legs))}, ev["event_id"])
+        # M8.8 (29/09): niente snapshot = niente decisione, ordini seguiti lo stesso
+        _sorveglia_senza_dati(db=db, market=market, ctx=ctx, ev=ev, extra=extra,
+                              params=params, mode=mode, now=now, cache=cache)
         ev.update(_row_from_ctx(ev, ctx, extra))
         _persist(db, ev, before_sig, now_ts=now_ts, params=params, lotto=lotto)
         return (0, 0)
@@ -4401,65 +4531,12 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
     _sorveglia_posizione_di_conto(db=db, market=market, ctx=ctx, ev=ev, extra=extra,
                                   params=params, mode=mode, now_ts=now_ts, cache=cache)
 
-    # -- gambe pending stantie (esito mai arrivato) --------------------------------
-    # C3 — un ordine il cui esito e' IGNOTO (execution._reconciling →
-    # meta.reason='place_exception_reconciling') NON viene MAI dato per "non
-    # piazzato" e MAI marcato cancelled/error dal TTL: resta 'pending_reconcile'
-    # (conta nel rischio, blocca il rientro) finche' non si riconcilia contro
-    # Betfair. Solo le gambe con esito NOTO vengono ritirate.
-    for leg in ctx.legs:
-        if leg.is_live and now_ts - leg.placed_at > _PENDING_STALE_S and not _is_resting_leg(leg, params):
-            # (la lay APPOGGIATA resta legittimamente sul book per ore: esclusa)
-            if _trade_unknown_outcome(db, ev["event_id"], leg, cache):
-                leg.status = E.STATUS_RECONCILE
-                logger.critical("[mike] %s: gamba %s con esito REST IGNOTO → riconciliazione",
-                                ev["event_id"], leg.ref)
-                _log_throttled(db, extra, params, now_ts, "reconcile_pending",
-                               {"leg": leg.ref, "reason": "pending_unknown_outcome",
-                                "critical": True}, ev["event_id"])
-                continue
-            # C.12a — la gamba stantia con un ordine LIVE viene annullata DAVVERO
-            # su Betfair prima di essere dichiarata ritirata; se Betfair non
-            # conferma, `_mark_trade_cancelled` la lascia in riconciliazione.
-            _mark_trade_cancelled(db, ev["event_id"], leg, "pending_stale", cache, market=market)
-
-    # -- C3/H8: gambe a esito IGNOTO -----------------------------------------------
-    # Si tenta la riconciliazione con un THROTTLE (2 chiamate REST per evento:
-    # senza freno erano 2 al secondo per evento) e il ciclo CONTINUA: restano
-    # attive tutte le azioni che RIDUCONO il rischio (annulli, cash-out, uscite,
-    # cap di perdita) — le APERTURE le toglie l'engine (`_strip_openings`).
-    if E.has_unknown_orders(ctx):
-        every = max(5.0, float(params.get("settle_confirm_s") or 30.0))
-        if now_ts >= float(extra.get("reconcile_next_ts") or 0.0):
-            extra["reconcile_next_ts"] = now_ts + every
-            _reconcile_unknown(db, market, ev["event_id"], ctx, mode, now, cache)
-        if E.has_unknown_orders(ctx):
-            _log_throttled(db, extra, params, now_ts, "reconcile_pending",
-                           {"legs": [l.ref for l in ctx.legs if l.needs_reconcile],
-                            "state": ctx.state, "critical": True}, ev["event_id"])
-
-    # -- lay APPOGGIATE (resting): fill simulato solo se il mercato scambia sotto ----
-    # H3 — SOLO in paper: in live una lay appoggiata deve stare DAVVERO sul book
-    # (REST senza FOK / coda flumine, F6). Simularla in live significherebbe
-    # contabilizzare un profitto che non esiste.
+    # M8.8 (29/09): gambe stantie, esiti ignoti e lay appoggiate stanno in UNA
+    # funzione (``_sorveglia_gambe``, stesso codice e stesso ordine di prima) per
+    # girare anche quando il giro esce prima (riga assente, dati incompleti).
+    _sorveglia_gambe(db=db, market=market, ctx=ctx, ev=ev, extra=extra, params=params,
+                     mode=mode, now=now, cache=cache)
     n_actions = 0
-    for leg in ctx.legs:
-        if leg.is_live and _is_resting_leg(leg, params):
-            if mode != "paper":
-                # In LIVE l'abbinamento non si simula e non si deduce dal
-                # prezzo: si LEGGE dal book ordini di Betfair. Un ordine vivo
-                # che nessuno contabilizza diventa una posizione doppia con
-                # soldi veri quando piu' tardi si abbina da solo.
-                _segui_resting_live(db=db, market=market, leg=leg, extra=extra,
-                                    params=params, now_ts=now_ts, ev=ev,
-                                    rilettura_in_corso=bool(
-                                        ctx.riapertura and not ctx.riapertura.get("letto")))
-                continue
-            # D1 (29/09): in PAPER la lay appoggiata sta sul book del RUNNER
-            # (matching di flumine, coda, parziali): l'abbinamento lo legge
-            # ``_segui_ordini_paper_su_runner`` qui sopra. Il fill «simulato in
-            # casa» quando il best back scendeva sotto il prezzo non esiste piu'.
-            continue
 
     # -- azioni differite (paper + in-play: betDelay) -------------------------------
     # H5: gli id delle righe servono SOLO per collegare una chiusura alla sua
@@ -5273,6 +5350,31 @@ def _mark_trade_cancelled(db: Any, event_id: str, leg: E.Leg, reason: str,
 _SETTLE_ROWS_MAX_TRIES = 5
 
 
+def _marca_righe_non_regolate(db: Any, event_id: str) -> List[Any]:
+    """M8.6 (29/09) - regolamento NON determinabile (partita in ERROR): le righe
+    ancora aperte (``open``/``pending``/``hedged``) restano col loro stato (il
+    P&L dipende da un risultato che non si conosce: niente numeri inventati) ma
+    portano nel ``meta`` ``regolamento="non_determinabile"``. Torna i loro id."""
+    try:
+        righe = db.trades_for_event(str(event_id)) or []
+    except Exception as ex:  # noqa: BLE001 - lettura KO: lo si dice nel log
+        logger.warning("[mike] %s: righe non lette per la marcatura: %s", event_id, str(ex)[:120])
+        return []
+    ids: List[Any] = []
+    for r in righe:
+        if str(r.get("status")) not in ("open", "pending", "hedged"):
+            continue
+        meta = dict(r.get("meta") or {})
+        meta["regolamento"] = "non_determinabile"
+        try:
+            db.update_trade(int(r["id"]), meta=meta)
+            ids.append(r.get("id"))
+        except Exception as ex:  # noqa: BLE001
+            logger.warning("[mike] %s: marcatura riga %s KO: %s", event_id, r.get("id"),
+                           str(ex)[:120])
+    return ids
+
+
 def _retry_settle_rows(db: Any, event_id: str, ctx: E.MatchCtx, extra: Dict[str, Any],
                        now_ts: float) -> bool:
     """Righe ``mike_trades`` NON aggiornate dal regolamento: la partita NON puo'
@@ -5402,6 +5504,10 @@ def _settle_trades(db: Any, event_id: str, ctx: E.MatchCtx, settle: Dict[str, An
             meta["commission_market"] = round(float(comm_market[leg.market]), 2)
         if settle.get("void"):
             meta["void_reason"] = "mercato_annullato"
+        if settle.get("senza_punteggio"):
+            # M8.6 (29/09): regolata senza punteggio perche' il risultato non
+            # cambia il conto; esito della singola riga calcolato su 0 gol
+            meta["settle_reason"] = "risultato_indipendente_dal_punteggio"
         try:
             db.update_trade(int(r["id"]), status=st, pnl=round(float(pnl), 2), settled_at=now_iso,
                             meta=meta)
@@ -5939,6 +6045,39 @@ def _canale_copre_tutte(righe_db: Any, fresche: Dict[str, Any]) -> bool:
         return False
 
 
+# M8.7 (29/09) - la lettura del feed (``safe_strategy_scan``) sta FALLENDO:
+# {"dal": ts della prima lettura fallita dell'episodio}. Vuoto = letture buone.
+_FEED_KO: Dict[str, float] = {}
+
+
+def _feed_non_letto() -> bool:
+    """La lettura del feed sta fallendo adesso (episodio aperto)?"""
+    return bool(_FEED_KO.get("dal"))
+
+
+def _avvisa_feed_non_letto(db: Any, now_ts: float, *, ripreso: bool = False) -> None:
+    """UNA riga all'inizio dell'episodio e UNA alla ripresa, mai a ogni giro."""
+    if ripreso:
+        dal = _FEED_KO.pop("dal", None)
+        if dal:
+            logger.warning("[mike] lettura del feed RIPRESA dopo %.0f s", now_ts - float(dal))
+            db.log("skip", {"reason": "lettura_feed_ripresa",
+                            "secondi_senza_lettura": round(now_ts - float(dal), 1),
+                            "nota": "il feed si legge di nuovo: le partite seguite non "
+                                    "sono mai state date per sparite"})
+        return
+    if _FEED_KO.get("dal"):
+        return
+    _FEED_KO["dal"] = float(now_ts)
+    logger.critical("[mike] lettura del feed FALLITA: si ritenta a ogni giro, nessuna "
+                    "partita viene data per sparita")
+    db.log("error", {"reason": "lettura_feed_fallita", "critical": True,
+                     "nota": "lettura di safe_strategy_scan fallita: Mike ritenta a ogni "
+                             "giro con l'ultima lista buona (prezzi vecchi = nessun "
+                             "ordine); una partita smette di essere seguita solo a "
+                             "mercato chiuso"})
+
+
 def _righe_del_feed(db: Any, params: Dict[str, Any], now_ts: float
                     ) -> "tuple[List[Dict[str, Any]], str]":
     """Le righe del feed del giro, e da dove arrivano (``canale``/``db``).
@@ -5972,7 +6111,16 @@ def _righe_del_feed(db: Any, params: Dict[str, Any], now_ts: float
     if _CACHE_FEED.fresco(now_ts, ttl):
         righe_db = _CACHE_FEED.valore
     else:
-        righe_db = _CACHE_FEED.metti(list(db.fetch_scan_rows() or []), now_ts)
+        letto = db.fetch_scan_rows()
+        if letto is None:
+            # M8.7 (29/09): lettura FALLITA != partite sparite. Si tiene l'ultima
+            # lista buona (prezzi vecchi = nessun ordine, la freschezza la
+            # giudica ``feed_fresh``), si ritenta al giro dopo e lo si dice.
+            righe_db = list(_CACHE_FEED.valore or [])
+            _avvisa_feed_non_letto(db, now_ts)
+        else:
+            righe_db = _CACHE_FEED.metti(list(letto), now_ts)
+            _avvisa_feed_non_letto(db, now_ts, ripreso=True)
     if not acceso:
         _CANALE_FEED["fonte"] = "db"
         _CANALE_FEED["dal_canale"] = 0

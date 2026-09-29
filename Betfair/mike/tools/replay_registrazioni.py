@@ -227,6 +227,15 @@ SCENARIO_RIAVVIO = "riavvio"
 SCENARIO_FERMO_COPERTURA = "fermo-copertura"
 FERMO_COPERTURA_S = 90.0
 
+# P4 (29/09, M8.7/M8.8): LA LETTURA DEL FEED CADE E TORNA. Non tocca un
+# parametro: dal primo giro in gioco, per ``LETTURA_KO_S`` secondi di mercato
+# (piu' dei 10 minuti dopo cui una riga assente valeva «partita sparita»), la
+# lettura di ``safe_strategy_scan`` FALLISCE; la riga arriva a Mike dalla
+# funzione di produzione ``service._righe_del_feed``. Mike deve ritentare,
+# avvisare UNA volta, non regolare niente e ripartire quando la lettura torna.
+SCENARIO_LETTURA_KO = "lettura-dati-ko"
+LETTURA_KO_S = 720.0
+
 
 def _riavvia_processo() -> List[str]:
     """Butta via le cache di PROCESSO di `mike/service.py`, come un riavvio.
@@ -439,6 +448,9 @@ def _crea_strategia():
             # P4 (29/09, M8.3): il freno d'emergenza acceso durante la copertura
             self.fermo_copertura = bool(kw.pop("fermo_copertura", False))
             self.fermo: Dict[str, Any] = {}
+            # P4 (29/09, M8.7/M8.8): la lettura del feed che cade e torna
+            self.lettura_ko = bool(kw.pop("lettura_ko", False))
+            self.ko: Dict[str, Any] = {}
             # A2 — I GIRI DEL SERVIZIO SU UNA PARTITA GIA' TERMINALE.
             # Il controllo A2 («da uno stato terminale non esce nessuna azione»)
             # non puo' avere un caso attraverso il servizio: `_run_event` esce
@@ -555,6 +567,8 @@ def _crea_strategia():
             # 3) LA RIGA LA SCRIVE LO SCANNER VERO
             self.banco.pubblica()
             row = self.banco.riga(self.event_id)
+            if self.lettura_ko:
+                row = self._riga_via_lettura(row, pt_ms)
             if row is None:
                 # riga assente dal feed: NON si salta il giro. E' esattamente il
                 # caso che `_run_event` deve saper gestire (row_missing_since,
@@ -711,6 +725,34 @@ def _crea_strategia():
                 self.db.log("replay_fermo_copertura", {"acceso": False, "ms": int(pt_ms)},
                             self.event_id)
 
+        def _riga_via_lettura(self, row: Optional[Dict[str, Any]],
+                              pt_ms: int) -> Optional[Dict[str, Any]]:
+            """P4 (M8.7/M8.8): la riga passa dalla lettura di PRODUZIONE
+            (``service._righe_del_feed``); nella finestra del guasto la lettura
+            del database fallisce (``fetch_scan_rows`` -> None, come ``db.py``)."""
+            if not self.ko:
+                # memoria del feed del processo pulita UNA volta, all'inizio: nel
+                # guasto Mike deve ritrovare l'ultima lista BUONA letta prima
+                self.ko = {"pronto": True}
+                S._CACHE_FEED.svuota()
+            if "dal" not in self.ko and bool(((row or {}).get("payload") or {}).get("inplay")):
+                self.ko["dal"] = int(pt_ms)
+                self.db.log("replay_lettura_ko", {"guasto": True, "ms": int(pt_ms)}, self.event_id)
+            elif "dal" in self.ko and "al" not in self.ko \
+                    and pt_ms - self.ko["dal"] >= LETTURA_KO_S * 1000:
+                self.ko["al"] = int(pt_ms)
+                self.db.log("replay_lettura_ko", {"guasto": False, "ms": int(pt_ms)}, self.event_id)
+            self.db.scan_rows = [row] if row is not None else []
+            if "dal" in self.ko and "al" not in self.ko:
+                self.db.fetch_scan_rows = lambda *_a, **_k: None   # lettura FALLITA
+                stato = str((self.db.events.get(self.event_id) or {}).get("state") or "")
+                if stato in ("SETTLING", "SETTLED", "ERROR"):
+                    self.ko["regolata_nel_guasto"] = stato
+            else:
+                self.db.__dict__.pop("fetch_scan_rows", None)
+            righe, _fonte = S._righe_del_feed(self.db, self.params, pt_ms / 1000.0)
+            return next((r for r in righe if str(r.get("event_id")) == self.event_id), None)
+
         def spegni_fermo(self) -> None:
             if "dal" in self.fermo and not self.fermo.get("spento"):
                 prima = self.fermo.get("prima")
@@ -814,7 +856,8 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                       cashout_utente: bool = False,
                       chiuso_fuori_app: bool = False,
                       chiusura_parziale: bool = False,
-                      fermo_copertura: bool = False) -> CERT.Referto:
+                      fermo_copertura: bool = False,
+                      lettura_ko: bool = False) -> CERT.Referto:
     """Fa rivivere a Mike una partita registrata e ritorna il referto."""
     from flumine import FlumineSimulation
 
@@ -883,7 +926,7 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                           invecchia_s=invecchia_s, campioni_diff=campioni_diff,
                           riavvia=riavvia, cashout_utente=cashout_utente,
                           chiuso_fuori_app=chiuso_fuori_app,
-                          fermo_copertura=fermo_copertura,
+                          fermo_copertura=fermo_copertura, lettura_ko=lettura_ko,
                           market_filter={"markets": [raw]},
                           max_order_exposure=1e9, max_selection_exposure=1e9,
                           max_trade_count=int(1e9), max_live_trade_count=int(1e9))
@@ -1040,6 +1083,23 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                 "M8.3", "un fermo NOSTRO non conta fra i rifiuti del mercato della copertura "
                         "(P4, 29/09)", f"copertura bloccata {bloccate} volte dal freno",
                 "LIVE_COVER_BLOCKED"))
+    if strategia.lettura_ko:
+        # P4 (M8.7/M8.8): la lettura del feed caduta e tornata
+        avvisi = [str((p_ or {}).get("reason") or "") for k, p_, _e in strategia.db.attivita
+                  if (p_ or {}).get("reason") in ("lettura_feed_fallita", "lettura_feed_ripresa")]
+        dal, al = strategia.ko.get("dal"), strategia.ko.get("al")
+        out.note.append(
+            "scenario lettura-dati-ko (M8.7/M8.8): "
+            + ("il guasto non e' mai partito (partita mai vista in gioco)" if dal is None else
+               f"lettura KO da {dal} a {al} ms | avvisi {avvisi} (attesi: una caduta, una "
+               f"ripresa) | stato di regolamento durante il guasto: "
+               f"{strategia.ko.get('regolata_nel_guasto') or 'nessuno (corretto)'}"))
+        if strategia.ko.get("regolata_nel_guasto"):
+            out.violazioni.append(CERT.Violazione(
+                "M8.7", "una lettura del feed fallita non e' una partita sparita: niente "
+                        "regolamento finche' la lettura non torna (P4, 29/09)",
+                f"stato {strategia.ko.get('regolata_nel_guasto')} durante il guasto",
+                str(strategia.ko.get("regolata_nel_guasto"))))
     # LE QUATTRO REAZIONI ALLA RIAPERTURA, contate una per una (§15.6, R1).
     # «Quante volte R1 ha avuto un caso» non basta: dice che la catena gira, non
     # QUALE dei quattro rami e' stato esercitato. Il ramo (b) «scaduto alla
@@ -1144,6 +1204,10 @@ SCENARI_DESCRITTI: Dict[str, str] = {
     SCENARIO_FERMO_COPERTURA: "freno d'emergenza acceso per 90 s all'ingresso nella fase "
                               "della copertura: la copertura si ferma senza contare rifiuti "
                               "del mercato e riparte da sola quando il freno si spegne (M8.3)",
+    # P4 (29/09, M8.7/M8.8)
+    SCENARIO_LETTURA_KO: "la lettura del feed dal database FALLISCE per 12 minuti dal primo "
+                         "giro in gioco e poi torna: Mike ritenta, avvisa una volta, non "
+                         "regola niente e continua a seguire gli ordini (M8.7, M8.8)",
 }
 
 
@@ -1246,7 +1310,8 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
         cashout_utente=(scenario == SCENARIO_CASHOUT_GLOBALE),
         chiuso_fuori_app=(scenario == SCENARIO_CHIUSO_FUORI_APP),
         chiusura_parziale=(scenario == CP.SCENARIO),
-        fermo_copertura=(scenario == SCENARIO_FERMO_COPERTURA))
+        fermo_copertura=(scenario == SCENARIO_FERMO_COPERTURA),
+        lettura_ko=(scenario == SCENARIO_LETTURA_KO))
     if scenario == SCENARIO_GOL_PRECOCE:
         # Lo scenario DICHIARA se il caso e' capitato davvero. Un referto
         # "zero violazioni" su una registrazione senza gol precoce non dice
