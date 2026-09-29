@@ -189,6 +189,19 @@ from typing import (TYPE_CHECKING, Any, Callable, Deque, Dict, List, Optional,
 from ...safe_strategy import scanner as SCAN
 from .sim_strategy import _offer_price, _offer_size, _synth_name
 
+_FLUMINE_MODULI: List[Any] = []
+
+
+def _flumine_utils_events() -> Tuple[Any, Any]:
+    """`flumine.utils` e `flumine.events.events`, importati la prima volta che
+    servono (come prima) e poi tenuti: niente `import` a ogni book."""
+    if not _FLUMINE_MODULI:
+        from flumine import utils as futils
+        from flumine.events import events as fevents
+
+        _FLUMINE_MODULI[:] = [futils, fevents]
+    return _FLUMINE_MODULI[0], _FLUMINE_MODULI[1]
+
 # `omega_market` e lo `Scanner` si importano PIGRAMENTE: portano dentro il
 # client Supabase e l'autenticazione Betfair, e questo modulo deve poter essere
 # importato anche da chi vuole solo l'helper del middleware (`run_backtest`).
@@ -1407,9 +1420,9 @@ class MotoreReplay:
 
     # ------------------------------------------------------------- flumine
     def _a_flumine(self, market_book: Any):
-        from flumine import utils as futils
-        from flumine.events import events as fevents
-
+        # 29/09 (cantiere V): moduli presi una volta sola (l'`import` in una
+        # funzione chiamata a OGNI book costava); stessi oggetti
+        futils, fevents = _flumine_utils_events()
         quadro = self.quadro
         market_id = market_book.market_id
         adesso = market_book.publish_time

@@ -386,10 +386,31 @@ def _vita_da_control(control: Dict[str, Any]) -> int:
                                 "ht_mode": bool(p.get("ht_mode"))}))
 
 
-def SS_LINEA_OGNI_S() -> int:  # noqa: N802 - costante letta dal vero
-    from .. import scalper_session as _SS
+_MODULI: Dict[str, Any] = {}
 
-    return int(_SS.SNIPER_LINEA_OGNI_S)
+
+def _modulo(nome: str) -> Any:
+    """29/09 (cantiere V): i moduli importati "tardi" (per non creare cicli
+    d'importazione) una volta sola invece che a ogni book: l'istruzione
+    `import` dentro una funzione chiamata 1,5 milioni di volte costa. Gli
+    attributi si leggono sempre dal modulo vivo (una sostituzione nei test si
+    vede lo stesso)."""
+    m = _MODULI.get(nome)
+    if m is None:
+        if nome == "auto_mode":
+            from .. import auto_mode as m
+        elif nome == "scalper_session":
+            from .. import scalper_session as m
+        elif nome == "flumine.utils":
+            from flumine import utils as m
+        else:  # pragma: no cover - nome sbagliato = guasto del banco
+            raise KeyError(nome)
+        _MODULI[nome] = m
+    return m
+
+
+def SS_LINEA_OGNI_S() -> int:  # noqa: N802 - costante letta dal vero
+    return int(_modulo("scalper_session").SNIPER_LINEA_OGNI_S)
 
 
 class _ThreadingSessione:
@@ -482,14 +503,23 @@ class _Orologio:
         # `libro_ms` a ogni giro dei controlli (1 s di mercato): con la vita
         # della sessione sniper (KO+130', 60.000+ book) il banco diventava
         # quadratico e rallentava fino a fermarsi (misurato: 120 min reali).
+        return list(self.vista_buchi(soglia_ms))
+
+    def vista_buchi(self, soglia_ms: int = 2000) -> "CERT.VistaBuchi":
+        """29/09 (cantiere V): gli STESSI buchi di `buchi()`, come vista del
+        registro solo-in-aggiunta (`CERT.RegistroBuchi`) invece che come
+        copia: niente copia di tutti i buchi a ogni giro e S5 aggiunge solo i
+        nuovi (prefisso garantito per costruzione)."""
         cache = self.__dict__.setdefault("_buchi_cache", {})
-        out, prima, fatti = cache.get(soglia_ms, ([], None, 0))
+        registro, prima, fatti = cache.get(soglia_ms, (None, None, 0))
+        if registro is None:
+            registro = CERT.RegistroBuchi()
         for ms in self.libro_ms[fatti:]:
             if prima is not None and ms - prima >= soglia_ms:
-                out.append((prima, ms))
+                registro.aggiungi(prima, ms)
             prima = ms
-        cache[soglia_ms] = (out, prima, len(self.libro_ms))
-        return list(out)
+        cache[soglia_ms] = (registro, prima, len(self.libro_ms))
+        return registro.vista()
 
     def ora_ms(self) -> int:
         return int(round(self.time() * 1000.0))
@@ -1233,6 +1263,50 @@ class _Banco:
                 d["in_gioco@%s" % mid] = t
         return d
 
+    def running_e_battiti_lento(self) -> Tuple[Optional[int], List[int]]:
+        """Il riferimento (il codice di prima del cantiere V): riscorre TUTTE le
+        scritture a ogni giro. Resta per il test di equivalenza."""
+        running = None
+        for w in self.db.scritture:
+            if (w.get("campi") or {}).get("status") == "running":
+                running = w["ms"]
+        battiti = [w["ms"] for w in self.db.scritture
+                   if "heartbeat_at" in (w.get("campi") or {})
+                   and running is not None and w["ms"] >= running
+                   and (self.stop_ms is None or w["ms"] <= self.stop_ms)]
+        return running, battiti
+
+    def running_e_battiti(self) -> Tuple[Optional[int], List[int]]:
+        """29/09 (cantiere V) - lo STESSO risultato di `running_e_battiti_lento`
+        senza riscorrere tutte le scritture a ogni giro (costo che cresceva con
+        la vita della sessione). `db.scritture` e' solo in aggiunta
+        (`_DbFinto.set_control`): si leggono solo le scritture nuove; il filtro
+        (running, stop) si rifa' da capo solo quando running o stop cambiano."""
+        scritture = self.db.scritture
+        st = self.__dict__.get("_rb")
+        if st is None or st["lista"] is not scritture or len(scritture) < st["da"]:
+            # prima volta, o un elenco di scritture diverso: si riparte da zero
+            st = self.__dict__["_rb"] = {"lista": scritture, "da": 0, "running": None,
+                                         "hb": [], "chiave": None, "fatti": 0, "out": []}
+        for w in scritture[st["da"]:]:
+            campi = w.get("campi") or {}
+            if campi.get("status") == "running":
+                st["running"] = w["ms"]
+            if "heartbeat_at" in campi:
+                st["hb"].append(w["ms"])
+        st["da"] = len(scritture)
+        running, stop = st["running"], self.stop_ms
+        if running is None:
+            return None, []
+        if st["chiave"] != (running, stop):
+            st["chiave"], st["fatti"], st["out"] = (running, stop), 0, []
+        hb, out = st["hb"], st["out"]
+        for ms in hb[st["fatti"]:]:
+            if ms >= running and (stop is None or ms <= stop):
+                out.append(ms)
+        st["fatti"] = len(hb)
+        return running, list(out)
+
     def osservazione(self, ms: int, quando: str, *, fine: bool = False,
                      stato_mercato: str = "OPEN") -> CERT.Osservazione:
         s = self.strategia_corrente()
@@ -1261,14 +1335,7 @@ class _Banco:
         self._specchio_da = len(self.righe_specchio)
         # il giro NORMALE della sessione CORRENTE: dall'ultimo 'running' allo
         # stop (dopo lo stop il servizio aspetta il flat senza battere)
-        running = None
-        for w in self.db.scritture:
-            if (w.get("campi") or {}).get("status") == "running":
-                running = w["ms"]
-        battiti = [w["ms"] for w in self.db.scritture
-                   if "heartbeat_at" in (w.get("campi") or {})
-                   and running is not None and w["ms"] >= running
-                   and (self.stop_ms is None or w["ms"] <= self.stop_ms)]
+        running, battiti = self.running_e_battiti()
         orfani = None
         if self.orfani_attivi and self.sessioni_morte:
             morti = self.ordini_di([x[1] for x in self.sessioni_morte])
@@ -1308,7 +1375,7 @@ class _Banco:
                 or any(str(a.get("code") or "") == "SCALPER_CRASH"
                        for a in self.db.tabelle.get("live_alerts", []))),
             heartbeat_ms=battiti, running_da_ms=running,
-            buchi_registrazione_ms=self.orologio.buchi(),
+            buchi_registrazione_ms=self.orologio.vista_buchi(),
             parita=parita, orfani_dopo_riavvio=orfani,
             allarmi=list(self.db.tabelle.get("live_alerts", [])),
         )
@@ -1333,13 +1400,21 @@ class _Banco:
     def vita_ms(self) -> int:
         """La vita della sessione (ms dal KO) con i parametri del control: la
         funzione di produzione (`auto_mode.vita_sessione_s`)."""
-        from ..auto_mode import vita_sessione_s
-
+        # 29/09 (cantiere V): chiamata a OGNI book. Il risultato dipende solo
+        # dai tre interruttori e dalla funzione di produzione con le sue
+        # costanti: si ricalcola solo quando uno di questi cambia (stesso numero)
+        _AM = _modulo("auto_mode")
         p = self.db.control.get("params") or {}
-        return int(1000 * float(vita_sessione_s({
-            "sniper_mode": bool(p.get("sniper_mode")),
-            "theta_mode": bool(p.get("theta_mode")),
-            "ht_mode": bool(p.get("ht_mode"))})))
+        chiave = (bool(p.get("sniper_mode")), bool(p.get("theta_mode")),
+                  bool(p.get("ht_mode")), _AM.vita_sessione_s, _AM.sniper_mode_acceso,
+                  _AM.VITA_SNIPER_THETA_S, _AM.VITA_HT_S, _AM.VITA_MAKER_S)
+        cache = self.__dict__.get("_vita_cache")
+        if cache is not None and cache[0] == chiave:
+            return cache[1]
+        valore = int(1000 * float(_AM.vita_sessione_s({
+            "sniper_mode": chiave[0], "theta_mode": chiave[1], "ht_mode": chiave[2]})))
+        self.__dict__["_vita_cache"] = (chiave, valore)
+        return valore
 
     def controlli_sniper(self, ms: int, quando: str, fine: bool) -> None:
         """28/09 - i controlli di condotta dello SNIPER (i controlli del maker
@@ -1553,8 +1628,7 @@ class _Ponte:
         return False
 
     def _giro_del_book(self, market: Any, market_book: Any, ms: int) -> None:
-        from flumine import utils as futils
-
+        futils = _modulo("flumine.utils")
         b = self.b
         # FINE VITA della sessione maker: KO + 10' (`run_session`, `_life_s`
         # = 600 senza ht/sniper/theta; docstring del modulo: 'o KO+10''). E'

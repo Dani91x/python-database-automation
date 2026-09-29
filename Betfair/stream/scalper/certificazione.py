@@ -57,6 +57,7 @@ ASCII-only nel codice; i commenti sono in italiano.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from collections.abc import Sequence as SequenceABC
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from . import scalper_bot as SB
@@ -932,6 +933,162 @@ def _buco_dentro_ms(buchi: Sequence[Tuple[int, int]], a: int, b: int,
     return sum(_sovrapposizione_ms(a, b, ga, gb) for ga, gb in buchi)
 
 
+class RegistroBuchi:
+    """29/09 (cantiere V) - l'elenco dei buchi della registrazione che il
+    replay costruisce (``_Orologio``): SOLO in aggiunta (nessun metodo toglie o
+    cambia una voce), quindi ogni ``vista()`` presa prima e' un PREFISSO esatto
+    di ogni vista presa dopo. E' questa proprieta' di costruzione, non un
+    confronto, che permette a S5 di aggiungere solo i buchi nuovi."""
+
+    __slots__ = ("_voci",)
+
+    def __init__(self) -> None:
+        self._voci: List[Tuple[int, int]] = []
+
+    def aggiungi(self, ga: int, gb: int) -> None:
+        self._voci.append((ga, gb))
+
+    def __len__(self) -> int:
+        return len(self._voci)
+
+    def vista(self) -> "VistaBuchi":
+        return VistaBuchi(self, len(self._voci))
+
+
+class VistaBuchi(SequenceABC):
+    """I primi ``n`` buchi di un ``RegistroBuchi`` al momento del giro: si
+    legge come una lista (lunghezza, indice, fette, iterazione, uguaglianza
+    con una lista), non si copia (prima il replay copiava TUTTI i buchi a ogni
+    giro) e non cambia se il registro cresce dopo."""
+
+    __slots__ = ("registro", "n")
+
+    def __init__(self, registro: RegistroBuchi, n: int) -> None:
+        self.registro = registro
+        self.n = int(n)
+
+    def __len__(self) -> int:
+        return self.n
+
+    def __getitem__(self, i: Any) -> Any:
+        if isinstance(i, slice):
+            return self.registro._voci[:self.n][i]
+        if i < 0:
+            i += self.n
+        if not 0 <= i < self.n:
+            raise IndexError("indice fuori dalla vista dei buchi")
+        return self.registro._voci[i]
+
+    def __iter__(self) -> Any:
+        voci = self.registro._voci
+        for i in range(self.n):
+            yield voci[i]
+
+    def __eq__(self, altro: object) -> bool:
+        if isinstance(altro, (VistaBuchi, list, tuple)):
+            return list(self) == list(altro)
+        return NotImplemented
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def __repr__(self) -> str:
+        return "VistaBuchi(%r)" % (list(self),)
+
+
+class _CoperturaCrescente:
+    """29/09 (cantiere V) - la copertura dei buchi che VIVE fra un giro e
+    l'altro (nella ``Memoria`` del replay) invece di essere ricostruita da zero
+    su TUTTI i buchi a ogni giro (misurato: meta' del tempo del replay, costo
+    quadratico nella vita della sessione).
+
+    * ``allinea(buchi)``: se l'elenco di adesso PROLUNGA quello gia' visto
+      (stesso prefisso, confronto esatto elemento per elemento) si aggiungono
+      solo i buchi nuovi; altrimenti si riparte da zero e si risponde False
+      (chi usa la copertura deve buttare cio' che ha dedotto dall'elenco
+      vecchio). I buchi nuovi possono essere fuori ordine, sovrapposti o
+      degeneri: nessuna ipotesi sul loro ordine.
+    * ``dentro(a, b)``: IDENTICO a ``sum(_sovrapposizione_ms(a, b, ga, gb))``
+      su tutti i buchi visti. Parte statica (``_CoperturaBuchi``, O(log n))
+      sui primi ``k`` buchi + coda dei buchi arrivati dopo sommata con la
+      formula di riferimento; la parte statica si ricostruisce quando la coda
+      supera ``max(CODA_MIN, k // CODA_FRAZIONE)`` (costo ammortizzato)."""
+
+    CODA_MIN = 64
+    CODA_FRAZIONE = 16
+
+    def __init__(self) -> None:
+        self.visti: List[Tuple[int, int]] = []
+        self._statica: Optional[_CoperturaBuchi] = None
+        self._k = 0          # buchi coperti dalla parte statica
+        # il registro da cui vengono i buchi visti, se sono arrivati come
+        # ``VistaBuchi`` (prefisso garantito per costruzione)
+        self._registro: Optional[RegistroBuchi] = None
+
+    def allinea(self, buchi: Sequence[Tuple[int, int]]) -> bool:
+        k = len(self.visti)
+        if (isinstance(buchi, VistaBuchi) and self._registro is not None
+                and buchi.registro is self._registro and buchi.n >= k):
+            # stesso registro, solo in aggiunta: i primi k sono QUELLI gia'
+            # visti, per costruzione (``RegistroBuchi``)
+            if buchi.n > k:
+                self.visti.extend(buchi.registro._voci[k:buchi.n])
+            return True
+        # qualunque altra sequenza: confronto esatto del prefisso
+        if len(buchi) >= k and list(buchi[:k]) == self.visti:
+            if len(buchi) > k:
+                self.visti.extend(buchi[k:])
+            self._registro = buchi.registro if isinstance(buchi, VistaBuchi) else None
+            return True
+        self.visti = list(buchi)
+        self._statica = None
+        self._k = 0
+        self._registro = buchi.registro if isinstance(buchi, VistaBuchi) else None
+        return False
+
+    def dentro(self, a: int, b: int) -> int:
+        if b <= a:
+            return 0
+        n = len(self.visti)
+        if n - self._k > max(self.CODA_MIN, self._k // self.CODA_FRAZIONE):
+            self._statica = _CoperturaBuchi(self.visti)
+            self._k = n
+        tot = self._statica.dentro(a, b) if self._statica is not None else 0
+        for ga, gb in self.visti[self._k:]:
+            tot += _sovrapposizione_ms(a, b, ga, gb)
+        return tot
+
+
+class _StatoS5:
+    """29/09 (cantiere V) - cio' che S5 porta da un giro all'altro.
+
+    * ``copertura``: la ``_CoperturaCrescente`` dei buchi della registrazione;
+    * ``sane``: le coppie di battiti (a, b, massimo) gia' giudicate SANE con i
+      buchi visti finora. Perche' un giudizio 'sano' non puo' cambiare quando
+      arrivano altri buchi (dimostrazione): lo scarto e'
+      ``(b - a) - somma_i |[a,b) inters. [ga_i,gb_i)|`` e ogni addendo e' >= 0;
+      se l'elenco dei buchi si ALLUNGA soltanto (prefisso identico, verificato
+      da ``allinea``), la somma puo' solo crescere e lo scarto solo calare:
+      scarto <= massimo resta vero. Se l'elenco non prolunga quello visto
+      (buchi tolti o cambiati) le coppie sane si buttano tutte. Una coppia
+      NON sana non si ricorda mai: si rigiudica a ogni giro, come oggi."""
+
+    def __init__(self) -> None:
+        self.copertura = _CoperturaCrescente()
+        self.sane: set = set()
+        self._allineata = False
+
+    def nuovo_giro(self) -> None:
+        self._allineata = False
+
+    def allinea(self, buchi: Sequence[Tuple[int, int]]) -> None:
+        """Una volta per giro, e solo se serve (qualche coppia da giudicare)."""
+        if self._allineata:
+            return
+        if not self.copertura.allinea(buchi):
+            self.sane.clear()
+        self._allineata = True
+
+
 @_controllo("S5", "mentre la sessione e' 'running' il servizio scrive "
                   "heartbeat_at e stats almeno ogni HEARTBEAT_S (+1 s) di "
                   "mercato EFFETTIVAMENTE trascorso (al netto dei silenzi "
@@ -939,24 +1096,46 @@ def _buco_dentro_ms(buchi: Sequence[Tuple[int, int]], a: int, b: int,
                   "in fretta), con le chiavi delle stats della strategia (UI e "
                   "supervisore leggono QUESTE: par.6.5, par.7.20, par.7.23)",
             quando=_q_running)
-def _s5(o: Osservazione) -> Optional[str]:
+def _s5(o: Osservazione, stato: Optional[_StatoS5] = None) -> Optional[str]:
     # si giudica il giro NORMALE della sessione corrente: dopo uno stop il
     # servizio aspetta il flat (fino a 30 s) senza battere, per progetto (il
     # supervisore tollera 60 s: `ORPHAN_HEARTBEAT_S`), e un riavvio fa ripartire
     # il conto (`heartbeat_ms` arriva gia' filtrato dal replay)
+    #
+    # 29/09 (cantiere V) - STESSO giudizio di prima, senza ricostruire la
+    # copertura di tutti i buchi a ogni giro:
+    # * una coppia con b - a <= massimo e' sana SENZA guardare i buchi (la
+    #   copertura e' >= 0, quindi scarto <= b - a <= massimo);
+    # * una coppia gia' giudicata sana con un prefisso dei buchi di adesso resta
+    #   sana (``_StatoS5``, dimostrazione nel docstring);
+    # * le altre si giudicano con la copertura crescente, numero IDENTICO alla
+    #   formula di riferimento (``_sovrapposizione_ms``).
+    # Senza ``stato`` (chi chiama `verifica` senza Memoria) si usa uno stato
+    # nuovo: stesso giudizio, solo senza ricordo fra i giri.
+    if stato is None:
+        stato = _StatoS5()
+    stato.nuovo_giro()
     battiti = sorted(o.heartbeat_ms)
     massimo = int((o.heartbeat_cadenza_s + 1.0) * 1000)
     buchi = o.buchi_registrazione_ms or []
-    copertura = _CoperturaBuchi(buchi) if buchi else None
     for a, b in zip(battiti, battiti[1:]):
-        scarto = (b - a) - _buco_dentro_ms(buchi, a, b, copertura)
+        if b - a <= massimo:
+            continue
+        stato.allinea(buchi)
+        chiave = (a, b, massimo)
+        if chiave in stato.sane:
+            continue
+        scarto = (b - a) - stato.copertura.dentro(a, b)
         if scarto > massimo:
             return ("heartbeat fermo per %d ms di mercato EFFETTIVO (fra %d e "
                     "%d, %d ms sono silenzio della registrazione), la cadenza "
                     "del servizio e' %.0f s"
                     % (scarto, a, b, (b - a) - scarto, o.heartbeat_cadenza_s))
-    if (o.sessione_viva and o.stop_richiesto_ms is None and battiti):
-        scarto = (o.ms - battiti[-1]) - _buco_dentro_ms(buchi, battiti[-1], o.ms, copertura)
+        stato.sane.add(chiave)
+    if (o.sessione_viva and o.stop_richiesto_ms is None and battiti
+            and o.ms - battiti[-1] > massimo):
+        stato.allinea(buchi)
+        scarto = (o.ms - battiti[-1]) - stato.copertura.dentro(battiti[-1], o.ms)
         if scarto > massimo:
             return ("ultimo heartbeat %d ms fa di mercato EFFETTIVO, la "
                     "cadenza del servizio e' %.0f s" % (scarto, o.heartbeat_cadenza_s))
@@ -1064,6 +1243,9 @@ class Memoria:
 
     def __init__(self) -> None:
         self._fila: Dict[str, int] = {}
+        # 29/09 (cantiere V): lo stato di S5 fra un giro e l'altro (copertura
+        # dei buchi e coppie di battiti gia' giudicate sane)
+        self.s5 = _StatoS5()
 
     def conferma(self, codice: str, det: Optional[str]) -> bool:
         if det is None:
@@ -1092,7 +1274,11 @@ def verifica(oss: Osservazione, sollecitati: Optional[Dict[str, int]] = None,
         if sollecitati is not None:
             sollecitati[codice] = sollecitati.get(codice, 0) + 1
         try:
-            det = _FUNZIONI[codice](oss)
+            if codice == "S5" and memoria is not None:
+                # 29/09 (cantiere V): S5 ricorda fra i giri (stesso giudizio)
+                det = _FUNZIONI[codice](oss, memoria.s5)  # type: ignore[call-arg]
+            else:
+                det = _FUNZIONI[codice](oss)
         except Exception as ex:  # noqa: BLE001 - un controllo rotto E' un referto
             out.append(Violazione("%s-ERRORE" % codice, regola,
                                   "il controllo e' esploso: %s: %s"

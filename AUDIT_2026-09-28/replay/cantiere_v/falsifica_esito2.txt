@@ -1,0 +1,20 @@
+BASE (senza mutazioni): rc=0 200 passed in 28.18s
+M1 vista: buchi nuovi non aggiunti                      ROSSO | 1 failed, 25 passed in 12.57s
+M2 lista: buchi nuovi non aggiunti                      ROSSO | 1 failed in 2.02s
+M3 lista: buco fuori ordine ignorato                    ROSSO | 1 failed in 3.04s
+M4 coda dei buchi ignorata                              ROSSO | 1 failed in 2.05s
+M5 coppie sane non buttate a elenco cambiato            ROSSO | 1 failed, 151 passed in 37.14s
+M6 scorciatoia delle coppie sbagliata                   ROSSO | 1 failed, 77 passed in 32.49s
+M7 scorciatoia della coda sbagliata                     ROSSO | 1 failed, 77 passed in 28.20s
+M8 coppia difettosa ricordata come sana                 ROSSO | 1 failed, 78 passed in 30.42s
+M9 vista non ferma (segue il registro)                  ROSSO | 1 failed, 62 passed in 30.74s
+M10 registro dei buchi perso fra i giri (replay)        ROSSO | 1 failed, 63 passed in 26.30s
+M11 vista di un altro registro presa per prolungamento  ROSSO | 1 failed, 61 passed in 31.26s
+M12 parte statica mai ricostruita e coda persa          ROSSO | 1 failed in 2.34s
+M13 vita_ms: chiave senza ht_mode                       ROSSO | 1 failed, 76 passed in 24.88s
+M14 vita_ms: chiave senza le costanti                   ROSSO | 1 failed, 76 passed in 22.76s
+M15 battiti: filtro non rifatto quando lo stop cambia   ROSSO | 1 failed, 64 passed in 29.30s
+M16 battiti: running nuovo non letto                    ROSSO | 1 failed, 64 passed in 24.37s
+hash ripristinato ok: Betfair/stream/scalper/certificazione.py 1fc4c35ecf00
+hash ripristinato ok: Betfair/stream/scalper/tools/replay_registrazioni.py 29dfdc230adb
+TEMPO_S 435 RC 0
