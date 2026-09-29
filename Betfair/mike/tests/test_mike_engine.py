@@ -359,32 +359,24 @@ def test_taker_mode_closes_when_two_ticks_available():
     assert d.actions[0].side == "lay" and d.actions[0].price == pytest.approx(1.48)
 
 
-def test_last_entry_in_profit_greens_then_places_persist():
+def test_last_entry_in_profit_keeps_the_green_until_ko():
+    # 29/09 (piano Mike M2.1, M2.4): prima a 10' in profitto si ritirava la green,
+    # si chiudeva al mercato e si piazzava l'ultimo ingresso PERSIST. Ora la green
+    # appoggiata resta fino al fischio e, con la posizione aperta, nessun altro
+    # ingresso; al fischio la parte non abbinata la cancella Betfair.
     ctx, p = _open_prematch()
     s = snap(KO - 9 * 60, u35=book(1.44, bl=1.45))
     d = E.decide(ctx, s, p)
-    # 16/09 (ordine dell'utente): la lay viva si ANNULLA e basta; la nuova
-    # arriva al giro dopo, quando l'annullamento e' CONFERMATO da Betfair.
-    assert [a.kind for a in d.actions] == ["cancel"]
+    assert d.actions == [] and d.state == "HOLD"
     E.apply_decision(ctx, d, s.now)
-    conferma_annulli(ctx, d)
-    d = E.decide(ctx, s, p)
-    assert d.state == "PRE_GREEN_PENDING"
-    assert [a.kind for a in d.actions] == ["place"]   # chiude taker, da sola
-    assert d.actions[0].price == 1.45 and d.actions[0].final is True
-    E.apply_decision(ctx, d, s.now)
-    green = [l for l in ctx.legs if l.status == "pending"][-1]
-    fill(green)
     s2 = snap(KO - 8 * 60, u35=book(1.44, bl=1.45))
     d2 = E.decide(ctx, s2, p)
-    assert d2.state == "PRE_LAST_ENTRY_PENDING"
-    a = d2.actions[0]
-    assert (a.role, a.side, a.persistence, a.price, a.size) == ("under_last", "back", "PERSIST", 1.44, 20.0)
-    E.apply_decision(ctx, d2, s2.now)
-    fill(ctx.legs[-1])
+    assert d2.actions == [] and d2.state == "HOLD"
+    assert not any(l.role == "under_last" for l in ctx.legs)
     d3 = E.decide(ctx, snap(KO + 30, u35=book(1.44, inplay=True), inplay=True, minute=0, goals=0), p)
     # dal 13/09 la posizione portata in gioco prova PRIMA a uscire a +N tick
     assert d3.state == "LIVE_KO_GREEN"
+    assert [(a.kind, a.role) for a in d3.actions] == [("cancel", "under_green")]
 
 
 def test_last_entry_in_loss_holds_into_live():
@@ -392,39 +384,43 @@ def test_last_entry_in_loss_holds_into_live():
     s = snap(KO - 9 * 60, u35=book(1.54, bl=1.55))
     d = E.decide(ctx, s, p)
     assert d.state == "HOLD"
-    assert [a.kind for a in d.actions] == ["cancel"]
+    # 29/09 (M2.1): la green appoggiata NON si ritira piu' al segno
+    assert d.actions == []
     E.apply_decision(ctx, d, s.now)
     d2 = E.decide(ctx, snap(KO + 30, u35=book(1.54, inplay=True), inplay=True, minute=0, goals=0), p)
     assert d2.state == "LIVE_KO_GREEN"
 
 
-def test_last_entry_persist_disabled_goes_idle_live():
+def test_last_entry_persist_disabled_no_last_entry():
+    # 29/09 (piano Mike M2.4): `last_entry_persist` resta l'interruttore
+    # dell'ultimo ingresso. Prima il caso era "chiusura finale abbinata -> niente
+    # PERSIST -> IDLE_LIVE"; ora: piatto al segno e interruttore spento -> nessun
+    # ultimo ingresso, si resta a guardare fino al fischio.
     ctx, p = _open_prematch()
     p["last_entry_persist"] = False
-    s = snap(KO - 9 * 60, u35=book(1.44, bl=1.45))
-    # 16/09 (ordine dell'utente): la lay viva si ANNULLA e basta; la nuova
-    # arriva al giro dopo, quando l'annullamento e' CONFERMATO da Betfair.
-    d0 = E.decide(ctx, s, p)
-    E.apply_decision(ctx, d0, s.now)
-    conferma_annulli(ctx, d0)
+    fill(ctx.legs[1])                                   # green abbinata prima del segno
+    s = snap(KO - 11 * 60, u35=book(1.44, bl=1.45))
     E.apply_decision(ctx, E.decide(ctx, s, p), s.now)
-    fill([l for l in ctx.legs if l.status == "pending"][-1])
+    assert ctx.state == "WATCH"
     d = E.decide(ctx, snap(KO - 8 * 60, u35=book(1.44)), p)
-    assert d.state == "IDLE_LIVE" and d.actions == []
+    assert d.state == "WATCH" and d.actions == []
+    d2 = E.decide(ctx, snap(KO + 30, u35=book(1.44, inplay=True), inplay=True, minute=0, goals=0), p)
+    assert d2.state == "IDLE_LIVE" and d2.actions == []
 
 
 def test_unmatched_persist_cancelled_after_ko_grace():
+    # 29/09 (piano Mike M2.4): l'ultimo ingresso PERSIST non nasce piu'; il ritiro
+    # del suo residuo dopo il fischio resta per una partita salvata PRIMA
+    # dell'aggiornamento (stato PRE_LAST_ENTRY_PENDING con `under_last` viva).
     ctx, p = _open_prematch()
-    s = snap(KO - 9 * 60, u35=book(1.44, bl=1.45))
-    # 16/09 (ordine dell'utente): la lay viva si ANNULLA e basta; la nuova
-    # arriva al giro dopo, quando l'annullamento e' CONFERMATO da Betfair.
-    d0 = E.decide(ctx, s, p)
-    E.apply_decision(ctx, d0, s.now)
-    conferma_annulli(ctx, d0)
-    E.apply_decision(ctx, E.decide(ctx, s, p), s.now)
-    fill([l for l in ctx.legs if l.status == "pending"][-1])
-    s2 = snap(KO - 8 * 60, u35=book(1.44))
-    E.apply_decision(ctx, E.decide(ctx, s2, p), s2.now)
+    fill(ctx.legs[1])
+    for l in ctx.legs:
+        l.archived = True                               # ciclo chiuso dalla chiusura finale
+    ctx.state = "PRE_LAST_ENTRY_PENDING"
+    ctx.legs.append(E.Leg(role="under_last", market=E.MARKET_OU35, selection=E.SEL_UNDER,
+                          side="back", price=1.44, size=20.0, ref="under_last-1-3",
+                          persistence="PERSIST", placed_at=KO - 8 * 60, cycle_no=1))
+    ctx.cycle_no = 1
     last = ctx.legs[-1]
     last.matched = 10.0; last.avg_price = 1.44; last.status = "pending"   # meta' abbinata
     d = E.decide(ctx, snap(KO + 130, u35=book(1.44, inplay=True), inplay=True, minute=2, goals=0), p)
@@ -804,21 +800,23 @@ def test_partial_resting_green_never_closes_cycle_and_reposts_residual():
 
 
 def test_last_entry_with_partial_green_uses_net_exposure():
+    # 29/09 (piano Mike M2.1): all'ultimo ingresso la green abbinata in parte NON
+    # si ritira piu' per chiudere al mercato: resta appoggiata (HOLD). Se il suo
+    # residuo sparisce, se ne rimette una sul RESIDUO netto, sempre a 2 tick sotto.
     ctx, p = _open_prematch("resting")
     green = ctx.legs[1]
     green.matched = 5.0; green.avg_price = 1.48; green.status = "pending"    # meta' abbinata, ancora viva
     s = snap(KO - 9 * 60, u35=book(1.44, bl=1.45))
     d = E.decide(ctx, s, p)
-    # 16/09 (ordine dell'utente): la lay viva si ANNULLA e basta; la nuova
-    # arriva al giro dopo, quando l'annullamento e' CONFERMATO da Betfair.
-    assert [a.kind for a in d.actions] == ["cancel"]
+    assert d.actions == [] and d.state == "HOLD"
     E.apply_decision(ctx, d, s.now)
-    conferma_annulli(ctx, d)
+    green.status = "open"                               # residuo cancellato, 5 abbinati
     d = E.decide(ctx, s, p)
-    assert d.state == "PRE_GREEN_PENDING"
-    assert [a.kind for a in d.actions] == ["place"]
+    assert d.state == "HOLD"
+    assert [(a.kind, a.role) for a in d.actions] == [("place", "under_green")]
     w, l = E.exposure(ctx.legs, E.MARKET_OU35, E.SEL_UNDER)
-    assert d.actions[0].size == pytest.approx(round((w - l) / 1.45, 2), abs=0.01)
+    assert d.actions[0].price == pytest.approx(1.48)
+    assert d.actions[0].size == pytest.approx(round((w - l) / 1.48, 2), abs=0.01)
     assert d.actions[0].size < 20.0                     # solo il residuo (stake 20, 5 gia' coperti)
 
 

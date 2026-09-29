@@ -178,23 +178,21 @@ def test_uscita_in_perdita_firmata_parte():
     assert "uscita_eseguita_su_approvazione" in d.telemetry
 
 
-def test_chiusura_del_veto_pre_partita_resta_governata_in_p1():
-    """La chiusura del veto sull'Under 3,5 (a 10' dal fischio, in perdita) e'
-    un'uscita IN PERDITA: in P1 resta una proposta (P2 la toglie del tutto)."""
+def test_chiusura_del_veto_pre_partita_non_parte_mai():
+    """La chiusura del veto sull'Under 3,5 (a 10' dal fischio, in perdita) era
+    un'uscita IN PERDITA: in P1 restava una proposta; dal pacchetto P2 (M2.2)
+    non esiste piu' (nel pre-partita Mike non chiude mai in perdita)."""
     from dataclasses import replace
-    from Betfair.mike.tests.test_mike_engine import _open_prematch, conferma_annulli
+    from Betfair.mike.tests.test_mike_engine import _open_prematch
     ctx, p = _open_prematch()
     p.update(uscite_automatiche=False, veto_p_under35_cal=True)
     s = replace(snap(KO - 9 * 60, u35=book(1.50, bl=1.52)), p_under35_cal=0.60)
-    d = E.decide(ctx, s, p)
-    assert [a.kind for a in d.actions] == ["cancel"]     # la green appoggiata si ritira
-    E.apply_decision(ctx, d, s.now)
-    conferma_annulli(ctx, d)
-    d2 = E.decide(ctx, s, p)
-    assert _posti(d2) == [], "chiusura in perdita del veto partita senza firma"
-    assert d2.updates["uscita_proposta"]["categoria"] == "green_pre"
-    assert d2.updates["veto_u35"]["esito"] == "veto"
-    assert not {"G2", "G3"} & set(_codici(ctx, s, d2, p))
+    for _ in range(2):
+        d = E.decide(ctx, s, p)
+        assert _posti(d) == [] and d.actions == [], "chiusura in perdita nel pre-partita"
+        assert not isinstance(d.updates.get("uscita_proposta"), dict)
+        assert not {"G2", "G3"} & set(_codici(ctx, s, d, p))
+        E.apply_decision(ctx, d, s.now)
 
 
 def test_chiusura_a_tempo_del_rientro_resta_governata():

@@ -120,60 +120,46 @@ def _in_perdita(p_cal, **over):
     return ctx, p, s, d
 
 
+# 29/09 (piano Mike M2.2, decisioni 3 e 7 dell'utente): nel pre-partita Mike
+# non chiude MAI in perdita. Il punto "hold" del veto (chiudere la posizione in
+# perdita a 10' dal fischio) non esiste piu': la posizione si tiene, la green
+# appoggiata resta fino al fischio, e il veto non si valuta li' (non avrebbe
+# effetto). Il veto resta sull'ultimo ingresso (punto "persist", sotto).
 def test_hold_spento_tiene_come_oggi_anche_con_p_bassissima():
     ctx, p, s, d = _in_perdita(0.10, veto_p_under35_cal=False)
-    assert d.state == "HOLD" and [a.kind for a in d.actions] == ["cancel"]
+    assert d.state == "HOLD" and d.actions == []          # 29/09: la green non si ritira
     assert TELE not in d.telemetry and "veto_u35" not in d.updates
 
 
-def test_hold_acceso_p_sotto_soglia_a_quota_150_chiude():
+def test_hold_acceso_p_sotto_soglia_a_quota_150_non_chiude_piu():
+    # prima: la green si annullava e partiva la lay finale di chiusura in perdita
     ctx, p, s, d = _in_perdita(0.60, veto_p_under35_cal=True)
-    # giro 1: la green appoggiata si ANNULLA e basta (mai due lay a mercato)
-    assert [a.kind for a in d.actions] == ["cancel"] and d.state == "PRE_OPEN"
-    assert TELE not in d.telemetry
+    assert d.state == "HOLD" and d.actions == []
+    assert TELE not in d.telemetry and "veto_u35" not in d.updates
     E.apply_decision(ctx, d, s.now)
-    conferma_annulli(ctx, d)
-    d = E.decide(ctx, s, p)
-    assert d.state == "PRE_GREEN_PENDING"
-    a = d.actions[-1]
-    assert (a.role, a.side, a.final, a.price) == ("under_green", "lay", True, 1.52)
-    assert a.note == E.VETO_U35_NOTE
-    v = d.telemetry[TELE]
-    assert v["esito"] == "veto" and v["eseguito"] is True and v["punto"] == "hold"
-    assert v["p_under35_cal"] == 0.60 and v["quota"] == 1.50 and v["soglia"] == pytest.approx(0.684)
-    assert d.updates["veto_u35"]["esito"] == "veto"
-    # la chiusura si abbina: niente ultimo ingresso PERSIST, si va in gioco senza posizione
-    E.apply_decision(ctx, d, s.now)
-    fill([l for l in ctx.legs if l.role == "under_green" and l.status == "pending"][-1])
-    d2 = E.decide(ctx, _snap_p(KO - 8 * 60, 0.60, u35=book(1.44, bl=1.45)), p)
-    assert d2.state == "IDLE_LIVE" and d2.actions == []
-    assert "non si rientra dopo il veto" in d2.reason
+    d2 = E.decide(ctx, s, p)
+    assert d2.state == "HOLD" and d2.actions == []
 
 
 def test_hold_acceso_p_sopra_soglia_a_quota_150_tiene():
     ctx, p, s, d = _in_perdita(0.70, veto_p_under35_cal=True)
-    assert d.state == "HOLD" and [a.kind for a in d.actions] == ["cancel"]
-    v = d.telemetry[TELE]
-    assert v["esito"] == "nessun_veto" and v["eseguito"] is False
-    assert v["soglia"] == pytest.approx(0.684) and v["p_under35_cal"] == 0.70
-    assert "veto_u35" not in d.updates
+    assert d.state == "HOLD" and d.actions == []
+    assert TELE not in d.telemetry and "veto_u35" not in d.updates
 
 
-def test_hold_coi_parametri_di_default_il_veto_scatta():
-    """25/09 sera: coi parametri di DEFAULT (nessuna chiave toccata) il veto e'
-    acceso: P 0,60 a quota 1,50 (soglia 0,684) -> la green si annulla per
-    chiudere, non si tiene."""
+def test_hold_coi_parametri_di_default_il_veto_non_chiude():
+    """25/09 sera: coi parametri di DEFAULT il veto e' acceso. Prima: P 0,60 a
+    quota 1,50 (soglia 0,684) -> la green si annullava per chiudere. 29/09
+    (M2.2): la posizione si tiene, la green resta."""
     ctx, p, s, d = _in_perdita(0.60)
     assert p["veto_p_under35_cal"] is True
-    assert [a.kind for a in d.actions] == ["cancel"] and d.state == "PRE_OPEN"
+    assert d.actions == [] and d.state == "HOLD"
 
 
-def test_hold_acceso_senza_p_calibrata_tiene_e_lo_dichiara():
+def test_hold_acceso_senza_p_calibrata_tiene():
     ctx, p, s, d = _in_perdita(None, veto_p_under35_cal=True)
-    assert d.state == "HOLD"
-    v = d.telemetry[TELE]
-    assert v["esito"] == "non_valutabile" and v["soglia"] is None
-    assert "assente" in v["motivo"]
+    assert d.state == "HOLD" and d.actions == []
+    assert TELE not in d.telemetry
 
 
 # ============================================================ PERSIST (in profitto)
@@ -188,47 +174,56 @@ def _open_a(prezzo, p):
 
 
 def _fino_al_persist(prezzo_in, prezzo_ora, p_cal, **over):
-    """Ingresso a prezzo_in, all'ultimo ingresso il mercato e' sceso a
-    prezzo_ora (profitto): chiusura finale abbinata, poi la decisione PERSIST."""
+    """29/09 (piano Mike M2.4): l'ultimo ingresso nasce quando al segno dei 10
+    minuti Mike e' PIATTO (non piu' dopo una chiusura finale al mercato).
+    Ingresso a prezzo_in, green abbinata prima del segno (giro chiuso), al segno
+    il mercato e' a prezzo_ora: e' la decisione dell'ultimo ingresso (il punto
+    "persist" del veto)."""
     p = _p(stake=20.0, **over)
     ctx = _open_a(prezzo_in, p)
-    s = _snap_p(KO - 9 * 60, p_cal, u35=book(prezzo_ora))
-    d = E.decide(ctx, s, p)
-    E.apply_decision(ctx, d, s.now)
-    conferma_annulli(ctx, d)
-    d = E.decide(ctx, s, p)
-    assert d.state == "PRE_GREEN_PENDING"
-    E.apply_decision(ctx, d, s.now)
     g = [l for l in ctx.legs if l.role == "under_green" and l.status == "pending"][-1]
     # abbinata per l'importo ESATTO che pareggia la posizione (la size chiesta e'
     # arrotondata al centesimo e lascerebbe un residuo: non e' lo scenario qui)
     fill(g, size=20.0 * prezzo_in / g.price)
-    return E.decide(ctx, _snap_p(KO - 8 * 60, p_cal, u35=book(prezzo_ora)), p)
+    s = _snap_p(KO - 15 * 60, p_cal, u35=book(prezzo_ora))
+    d = E.decide(ctx, s, p)
+    assert d.state == "WATCH"
+    E.apply_decision(ctx, d, s.now)
+    return E.decide(ctx, _snap_p(KO - 9 * 60, p_cal, u35=book(prezzo_ora)), p)
+
+
+def _ultimo(d):
+    a = d.actions[0]
+    return (a.role, a.side, a.persistence, a.price, a.size)
 
 
 def test_persist_spento_rientra_come_oggi():
+    # 29/09: l'ultimo ingresso e' un ingresso come gli altri (under_entry,
+    # LAPSE, al miglior prezzo); prima era `under_last` PERSIST
     d = _fino_al_persist(2.60, 2.50, 0.10, veto_p_under35_cal=False)
-    assert d.state == "PRE_LAST_ENTRY_PENDING"
-    assert (d.actions[0].role, d.actions[0].persistence, d.actions[0].price) == ("under_last", "PERSIST", 2.50)
+    assert d.state == "PRE_ENTRY_PENDING"
+    assert _ultimo(d) == ("under_entry", "back", "LAPSE", 2.50, 20.0)
     assert TELE not in d.telemetry
 
 
 def test_persist_acceso_quota_250_p_sotto_soglia_non_rientra():
+    # 29/09: prima IDLE_LIVE (ciclo archiviato dalla chiusura finale); ora HOLD:
+    # nessun ingresso fino al fischio
     d = _fino_al_persist(2.60, 2.50, 0.35, veto_p_under35_cal=True)
-    assert d.state == "IDLE_LIVE" and d.actions == []
+    assert d.state == "HOLD" and d.actions == []
     v = d.telemetry[TELE]
     assert v["esito"] == "veto" and v["punto"] == "persist" and v["quota"] == 2.50
-    assert v["soglia"] == pytest.approx(0.385)
-    assert d.updates["veto_u35"]["esito"] == "veto" and d.updates["_archive_legs"] is True
+    assert v["soglia"] == pytest.approx(0.385) and v["eseguito"] is True
+    assert d.updates["veto_u35"]["esito"] == "veto"
 
 
 def test_persist_acceso_quota_250_p_sopra_soglia_rientra():
     d = _fino_al_persist(2.60, 2.50, 0.40, veto_p_under35_cal=True)
-    assert d.state == "PRE_LAST_ENTRY_PENDING" and d.actions[0].role == "under_last"
+    assert d.state == "PRE_ENTRY_PENDING" and d.actions[0].role == "under_entry"
     assert d.telemetry[TELE]["esito"] == "nessun_veto"
 
 
-@pytest.mark.parametrize("p_cal,stato", [(0.71, "IDLE_LIVE"), (0.73, "PRE_LAST_ENTRY_PENDING")])
+@pytest.mark.parametrize("p_cal,stato", [(0.71, "HOLD"), (0.73, "PRE_ENTRY_PENDING")])
 def test_persist_acceso_quota_144_interpola_fra_130_e_150(p_cal, stato):
     # 1,44: soglia 0,807 + (0,684 - 0,807) * 0,7 = 0,7209
     d = _fino_al_persist(1.50, 1.44, p_cal, veto_p_under35_cal=True)
@@ -238,7 +233,7 @@ def test_persist_acceso_quota_144_interpola_fra_130_e_150(p_cal, stato):
 
 def test_persist_acceso_senza_p_calibrata_rientra_e_lo_dichiara():
     d = _fino_al_persist(2.60, 2.50, None, veto_p_under35_cal=True)
-    assert d.state == "PRE_LAST_ENTRY_PENDING"
+    assert d.state == "PRE_ENTRY_PENDING"
     assert d.telemetry[TELE]["esito"] == "non_valutabile"
 
 
@@ -324,26 +319,21 @@ def test_servizio_spento_in_perdita_tiene_come_oggi():
     assert db.events["E1"]["ctx"].get("veto_u35") is None
 
 
-def test_servizio_acceso_in_perdita_p_sotto_soglia_chiude_e_lo_scrive():
+def test_servizio_acceso_in_perdita_p_sotto_soglia_non_chiude_piu():
+    # 29/09 (piano Mike M2.2): prima il veto chiudeva la posizione in perdita
+    # (lay finale al best) e scriveva l'attivita' del punto "hold". Ora nel
+    # pre-partita nessuna chiusura in perdita: si tiene, la green resta.
     db = _giro_ultimo_ingresso({"stake": 10, "veto_p_under35_cal": True}, p_over35_cal=0.45)
-    # giro 1: annullo della green appoggiata; giro 2: lay finale al best, abbinata
-    # in paper; giro 3: nessun ultimo ingresso PERSIST -> in gioco senza posizione
-    assert state(db) == "IDLE_LIVE"
-    chiusure = [l for l in legs(db) if l["role"] == "under_green" and l["final"]]
-    assert chiusure and chiusure[-1]["side"] == "lay" and chiusure[-1]["price"] == 1.55
-    assert chiusure[-1]["matched"] > 0
+    assert state(db) == "HOLD"
+    assert not [l for l in legs(db) if l["role"] == "under_green" and l["final"]]
+    green = [l for l in legs(db) if l["role"] == "under_green"]
+    assert green and green[-1]["status"] == "pending" and green[-1]["price"] == 1.48
     assert not [l for l in legs(db) if l["role"] == "under_last"]
-    righe = [pl for k, pl, _ in db.activity if k == TELE]
-    assert len(righe) == 1                       # una volta sola
-    v = righe[0]
-    # quota 1,54: soglia 0,684 + (0,514 - 0,684) * 0,08 = 0,6704
-    assert v["esito"] == "veto" and v["p_under35_cal"] == 0.55
-    assert v["soglia"] == pytest.approx(0.6704, abs=1e-4) and v["quota"] == 1.54
-    assert db.events["E1"]["ctx"]["veto_u35"]["esito"] == "veto"      # persistito
+    assert TELE not in db.kinds()
+    assert db.events["E1"]["ctx"].get("veto_u35") is None
 
 
-def test_servizio_acceso_in_perdita_p_sopra_soglia_tiene_e_lo_scrive():
+def test_servizio_acceso_in_perdita_p_sopra_soglia_tiene():
     db = _giro_ultimo_ingresso({"stake": 10, "veto_p_under35_cal": True}, p_over35_cal=0.25)
     assert state(db) == "HOLD"
-    righe = [pl for k, pl, _ in db.activity if k == TELE]
-    assert len(righe) == 1 and righe[0]["esito"] == "nessun_veto" and righe[0]["p_under35_cal"] == 0.75
+    assert TELE not in db.kinds()                # 29/09: punto "hold" non piu' valutato

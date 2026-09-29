@@ -325,6 +325,46 @@ def _d2(ctx, snap, d, params):
     return None
 
 
+def _ritira_banca_pre(ctx, snap, d) -> bool:
+    """Prima del fischio, fuori da una chiusura manuale, la decisione ritira la
+    banca di green appoggiata mentre la posizione e' ancora aperta."""
+    if snap.inplay or ctx.flatten_pending or ctx.state not in ("PRE_OPEN", "HOLD"):
+        return False
+    if not any(a.kind == "cancel" and a.role == "under_green" for a in d.actions):
+        return False
+    w, l = E.exposure(ctx.legs, E.MARKET_OU35, E.SEL_UNDER)
+    return abs(w - l) >= 0.01
+
+
+@_controllo("D3", "pre-partita: la banca di green appoggiata resta fino al fischio, "
+                  "non si ritira ne' si sostituisce con una chiusura al mercato "
+                  "(piano Mike 29/09, M2.1)",
+            quando=lambda ctx, snap, d, p: (not snap.inplay) and ctx.state in ("PRE_OPEN", "HOLD"))
+def _d3(ctx, snap, d, params):
+    if _ritira_banca_pre(ctx, snap, d):
+        return f"banca pre-partita ritirata con la posizione aperta: {d.reason}"
+    return None
+
+
+def _segno_ultimo_ingresso(snap, params) -> float:
+    return float(snap.ko_at) - float(params.get("pre_last_entry_min") or 0.0) * 60.0
+
+
+@_controllo("B6", "dopo il segno dei 10 minuti al piu' UN ingresso (l'ultimo), e solo "
+                  "da piatto (piano Mike 29/09, M2.4)",
+            quando=lambda ctx, snap, d, p: (not snap.inplay)
+            and any(a.role == 'under_entry' for a in _piazzamenti(d))
+            and snap.now >= _segno_ultimo_ingresso(snap, p))
+def _b6(ctx, snap, d, params):
+    segno = _segno_ultimo_ingresso(snap, params)
+    if ctx.state != "WATCH":
+        return f"ingresso dopo il segno da {ctx.state} (non da piatto)"
+    dopo = [l.ref for l in ctx.legs if float(l.placed_at or 0.0) >= segno]
+    if dopo:
+        return f"secondo ingresso dopo il segno: gia' nate {dopo}"
+    return None
+
+
 # ===========================================================================
 # E. LA COPERTURA (§3 Fase 3, §4.3)
 # ===========================================================================

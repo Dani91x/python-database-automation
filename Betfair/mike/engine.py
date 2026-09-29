@@ -2687,6 +2687,14 @@ def _decide_prematch(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
             acts.append(Action(kind="cancel", ref=leg.ref, role=leg.role, market=leg.market,
                                selection=leg.selection))
         if S > 0:
+            # 29/09 (piano Mike M2.3): al fischio si LEGGE cosa resta della banca
+            # pre-partita. Abbinata per intero (e nessuna lay in volo) = piatto
+            # col profitto del giro: si chiude il giro, niente flusso del gioco.
+            w_ko, l_ko = exposure(ctx.legs, MARKET_OU35, SEL_UNDER)
+            if abs(w_ko - l_ko) < _FLAT_EPS and lay_in_volo(ctx, MARKET_OU35, SEL_UNDER) is None:
+                fatto = _cycle_done(ctx, snap, S, Pe, _last(ctx, "under_green"), w_ko)
+                return Decision("IDLE_LIVE", acts, "al fischio: banca abbinata, " + fatto.reason,
+                                updates=fatto.updates, telemetry=fatto.telemetry)
             upd: Dict[str, Any] = {"entry_price_initial": ctx.entry_price_initial or Pe}
             # il prezzo del fischio si scrive UNA volta: i giri successivi non
             # devono sovrascriverlo col prezzo del 10' o del 40'
@@ -2709,6 +2717,11 @@ def _decide_prematch(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
         return Decision("IDLE_LIVE", acts, "in-play senza posizione")
 
     if st == "WATCH":
+        # 29/09 (piano Mike M2.4): al segno dei 10 minuti Mike e' piatto -> l'ULTIMO
+        # INGRESSO, valutato una volta (``_ultimo_ingresso``). ``last_entry_persist``
+        # resta l'interruttore dell'ultimo ingresso (a bot fermo lo spegne il servizio).
+        if snap.now >= last_entry_at and params["last_entry_persist"] and params["pre_enabled"]:
+            return _ultimo_ingresso(ctx, snap, params, bk, stake, last_entry_at)
         why = _entry_guard(ctx, snap, params)
         if why:
             return Decision("WATCH", [], why)
@@ -2733,8 +2746,14 @@ def _decide_prematch(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
             return _after_entry_fill(ctx, snap, params, leg)
         return Decision(st, [], "attesa fill ingresso")
 
-    if st == "PRE_OPEN":
+    # 29/09 (piano Mike M2.1, M2.2, M2.4): HOLD = dopo il segno dei 10 minuti con
+    # la posizione aperta. Si gestisce come PRE_OPEN (la banca appoggiata si
+    # tiene, e si rimette se manca) ma senza nessun ingresso fino al fischio.
+    if st in ("PRE_OPEN", "HOLD"):
         if S <= 0:
+            if st == "HOLD":
+                return Decision("HOLD", _cancel_live(ctx),
+                                "dopo l'ultimo ingresso: nessuna posizione, aspetto il fischio")
             return Decision("WATCH", _cancel_live(ctx), "posizione assente")
         green = _last(ctx, "under_green")
         # ESPOSIZIONE NETTA della selezione (ingresso + eventuali fill PARZIALI della
@@ -2743,47 +2762,21 @@ def _decide_prematch(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
         flat = abs(w - l) < _FLAT_EPS
         # ultimo ingresso: KO - pre_last_entry_min
         if snap.now >= last_entry_at:
-            acts = _cancel_live(ctx, ("under_green",))
-            if flat:
-                return _cycle_done(ctx, snap, S, Pe, green, w)
-            if bk is None or bk.best_lay is None:
-                veto = valuta_veto_under35(snap, params, bk.best_back if bk else None, "hold")
-                if veto is not None:
-                    # M1: senza prezzo lay non si puo' chiudere comunque; si dichiara
-                    veto["eseguito"] = False
-                    return Decision("HOLD", acts, "ultimo ingresso: prezzo lay assente, tengo",
-                                    telemetry={"veto_under_calibrata": veto})
-                return Decision("HOLD", acts, "ultimo ingresso: prezzo lay assente, tengo")
-            plan = compute_greenup(matched_if_win=w, matched_if_lose=l, best_back_price=bk.best_back,
-                                   best_lay_price=bk.best_lay, fraction=1.0)
-            locked = min(plan.expected_if_win, plan.expected_if_lose) if plan.actionable else 0.0
-            if plan.actionable and locked > _FLAT_EPS:
-                acts.append(_place("under_green", MARKET_OU35, SEL_UNDER, "lay", plan.price,
-                                   plan.size, final=True, note="ultimo ingresso: chiusura in profitto"))
-                return Decision("PRE_GREEN_PENDING", acts, f"ultimo ingresso: locked {locked:.2f} > 0",
-                                telemetry={"last_entry_locked": round(locked, 2)})
-            veto = valuta_veto_under35(snap, params, bk.best_back, "hold")
-            if veto is not None:
-                # M1 (interruttore acceso): la posizione in perdita si tiene SOLO se
-                # la P calibrata dell'Under regge la quota di adesso
-                if veto["esito"] == "veto" and plan.actionable:
-                    veto["eseguito"] = True
-                    acts.append(_place("under_green", MARKET_OU35, SEL_UNDER, "lay", plan.price,
-                                       plan.size, final=True, note=VETO_U35_NOTE))
-                    # una volta sola: con le uscite manuali la proposta si ripete a
-                    # ogni giro, e con la green ancora viva la lay arriva al giro dopo
-                    # (``_una_sola_lay``): l'attivita' si scrive quando la lay parte
-                    gia_detto = isinstance(ctx.veto_u35, dict) \
-                        or lay_in_volo(ctx, MARKET_OU35, SEL_UNDER) is not None
-                    tele = {} if gia_detto else {"veto_under_calibrata": veto}
-                    return Decision("PRE_GREEN_PENDING", acts,
-                                    f"ultimo ingresso: locked {locked:.2f} <= 0, "
-                                    f"{veto['motivo']}: chiudo",
-                                    updates={"veto_u35": veto}, telemetry=tele)
-                veto["eseguito"] = False
-                return Decision("HOLD", acts, f"ultimo ingresso: locked {locked:.2f} <= 0, tengo",
-                                telemetry={"veto_under_calibrata": veto})
-            return Decision("HOLD", acts, f"ultimo ingresso: locked {locked:.2f} <= 0, tengo")
+            # 29/09 (M2.1, M2.2): la banca appoggiata NON si ritira e non si
+            # sostituisce con una chiusura al mercato; mai una chiusura in perdita
+            # (il veto non chiude piu'). Resta fino al fischio (LAPSE).
+            if flat and (st == "PRE_OPEN" or green is None or not green.is_live):
+                fatto = _cycle_done(ctx, snap, S, Pe, green, w)
+                if st == "HOLD":
+                    # M2.4: banca abbinata negli ultimi minuti: piatto col profitto,
+                    # nessun giro nuovo fino al fischio
+                    return Decision("HOLD", fatto.actions, fatto.reason, fatto.updates,
+                                    fatto.telemetry)
+                return fatto        # piatto al segno: WATCH valuta l'ultimo ingresso
+            if st == "PRE_OPEN":
+                # M2.4: al segno Mike HA la posizione: nessun altro ingresso
+                return Decision("HOLD", [], "ultimo ingresso: posizione aperta, nessun altro "
+                                            "ingresso; la banca resta fino al fischio")
         # esposizione piatta (green abbinata per intero) -> ciclo chiuso
         if flat and (green is None or not green.is_live):
             return _cycle_done(ctx, snap, S, Pe, green, w)
@@ -2798,10 +2791,10 @@ def _decide_prematch(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
                     prop = _place("under_green", MARKET_OU35, SEL_UNDER, "lay", plan.price, plan.size)
                     rifiutata = tentativo_gia_rifiutato(ctx, prop)
                     if rifiutata is not None:
-                        return Decision("PRE_OPEN", [], motivo_del_rifiuto(prop, rifiutata))
-                    return Decision("PRE_OPEN", [prop],
+                        return Decision(st, [], motivo_del_rifiuto(prop, rifiutata))
+                    return Decision(st, [prop],
                                     "green resting appoggiata (residuo)" if green is not None else "green resting appoggiata")
-            return Decision("PRE_OPEN", [], "posizione aperta, green resting sul book")
+            return Decision(st, [], "posizione aperta, green resting sul book")
         # taker
         target = green_target(Pe, int(params["pre_green_ticks"]))
         if bk is not None and bk.best_lay is not None and bk.best_lay <= target + _EPS:
@@ -2815,9 +2808,9 @@ def _decide_prematch(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
                 prop = _place("under_green", MARKET_OU35, SEL_UNDER, "lay", plan.price, plan.size)
                 rifiutata = tentativo_gia_rifiutato(ctx, prop)
                 if rifiutata is not None:
-                    return Decision("PRE_OPEN", [], motivo_del_rifiuto(prop, rifiutata))
+                    return Decision(st, [], motivo_del_rifiuto(prop, rifiutata))
                 return Decision("PRE_GREEN_PENDING", [prop], "green taker: 2 tick disponibili")
-        return Decision("PRE_OPEN", [], "posizione aperta, in attesa dei 2 tick")
+        return Decision(st, [], "posizione aperta, in attesa dei 2 tick")
 
     if st == "PRE_GREEN_PENDING":
         green = _last(ctx, "under_green")
@@ -2951,6 +2944,46 @@ def _after_final_green(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any],
                     "ultimo ingresso PERSIST", updates=upd)
 
 
+def _ultimo_ingresso(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any],
+                     bk: Optional[Book], stake: float, last_entry_at: float) -> Decision:
+    """29/09 (piano Mike M2.4, decisione 6 dell'utente): l'ULTIMO INGRESSO.
+
+    Al segno dei 10 minuti (``pre_last_entry_min``) Mike e' piatto su questa
+    partita: entra come in ogni altro giro (punta Under 3,5 con lo stake al
+    miglior prezzo, passando da TUTTI i controlli d'ingresso di oggi tranne la
+    finestra, che e' proprio questo segno) e all'abbinamento appoggia la banca a
+    2 tick sotto (``_after_entry_fill``), che resta fino al fischio. Si valuta
+    UNA volta: una gamba nata dopo il segno (l'ultimo ingresso stesso, o una
+    green) dice che e' gia' stato valutato; un controllo che non passa porta in
+    HOLD (nessun ingresso fino al fischio). Prezzi non vivi o mercato sospeso NON
+    sono una valutazione: si aspetta (una sospensione non e' una rinuncia, 15/09).
+    Il veto sulla P calibrata blocca l'ultimo ingresso come prima."""
+    if any(float(l.placed_at or 0.0) >= last_entry_at for l in ctx.legs):
+        return Decision("HOLD", [], "ultimo ingresso gia' valutato: nessun altro ingresso "
+                                    "fino al fischio")
+    if not snap.order_fresh:
+        return Decision("WATCH", [], "ultimo ingresso: feed stantio, aspetto prezzi vivi")
+    if bk is not None and price_ok(bk.best_back) and not operabile(bk) and riaprira(bk):
+        return Decision("WATCH", [], "ultimo ingresso: mercato %s, aspetto" % stato_mercato(bk))
+    why = _entry_guard(ctx, snap, dict(params, pre_last_entry_min=0))
+    if why:
+        return Decision("HOLD", [], "ultimo ingresso: %s: nessun ingresso fino al fischio" % why)
+    if veto_u35_acceso(params) and isinstance(ctx.veto_u35, dict):
+        return Decision("HOLD", [], "ultimo ingresso: non si entra dopo il veto sulla P "
+                                    "calibrata Under 3.5")
+    veto = valuta_veto_under35(snap, params, bk.best_back, "persist")
+    tele: Dict[str, Any] = {}
+    if veto is not None:
+        veto["eseguito"] = veto["esito"] == "veto"
+        tele = {"veto_under_calibrata": veto}
+        if veto["esito"] == "veto":
+            return Decision("HOLD", [], "ultimo ingresso: %s, non entro" % veto["motivo"],
+                            updates={"veto_u35": veto}, telemetry=tele)
+    return Decision("PRE_ENTRY_PENDING",
+                    [_place("under_entry", MARKET_OU35, SEL_UNDER, "back", bk.best_back, stake)],
+                    f"ultimo ingresso: ingresso ciclo {cycle_label(ctx.cycle_no)}", telemetry=tele)
+
+
 # ---- live -----------------------------------------------------------------------
 # ---- flusso dal fischio d'inizio (specifica utente 13/09) -------------------
 #
@@ -3052,7 +3085,22 @@ def _decide_ko_green(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
         base["live_since"] = snap.now
     if ctx.ko_goals is None and snap.goals is not None:
         base["ko_goals"] = int(snap.goals)
+    # 29/09 (piano Mike M2.3): la banca pre-partita resta fino al fischio. Finche'
+    # Mike non SA com'e' finita (abbinata, in parte, cancellata da Betfair: LAPSE)
+    # non decide niente sul gioco: la legge, non la suppone.
+    banca = next((l for l in ctx.legs if l.role == "under_green"
+                  and (l.is_live or l.needs_reconcile)), None)
+    if banca is not None:
+        return Decision("LIVE_KO_GREEN", acts, "al fischio: attendo l'esito della banca "
+                                               "pre-partita '%s'" % banca.ref, updates=base)
     uscita = _last(ctx, "ko_green")
+    if uscita is None:
+        w_ko, l_ko = exposure(ctx.legs, MARKET_OU35, SEL_UNDER)
+        if abs(w_ko - l_ko) < _FLAT_EPS:
+            # M2.3: la banca pre-partita si era abbinata per intero: piatto
+            fatto = _cycle_done(ctx, snap, S, Pe, _last(ctx, "under_green"), w_ko)
+            return Decision("IDLE_LIVE", acts, "al fischio: banca abbinata, " + fatto.reason,
+                            updates={**base, **fatto.updates}, telemetry=fatto.telemetry)
 
     def _annulla(leg: Optional[Leg]) -> None:
         if leg is not None and leg.is_live:

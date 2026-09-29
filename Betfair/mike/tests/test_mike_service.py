@@ -219,18 +219,20 @@ def test_lay_appoggiata_su_feed_stantio_non_parte_in_nessun_modo(runner, monkeyp
                for k, p, _ in db.activity)
 
 
-def test_last_entry_cancels_resting_green_in_loss():
+def test_last_entry_keeps_resting_green_in_loss():
+    # 29/09 (piano Mike M2.1): prima a 10' dal fischio la resting veniva
+    # ritirata; ora resta appoggiata fino al fischio (LAPSE), si tiene la posizione
     db = FakeDB(params={"stake": 10})
     mk = FakeMarket()
     run(db, mk, NOW, [row(payload())])
     run(db, mk, NOW + timedelta(seconds=2), [row(payload())])
     assert [l for l in legs(db) if l["role"] == "under_green"][0]["status"] == "pending"
-    # 9 minuti al KO, posizione in perdita (lay 1.55): la resting viene ritirata, si tiene
+    # 9 minuti al KO, posizione in perdita (lay 1.55): la resting resta, si tiene
     ko = KO_IN_FINESTRA
     run(db, mk, ko - timedelta(minutes=9), [row(payload(u35=(1.54, 1.55, 30.0, 25.0)))])
     assert state(db) == "HOLD"
-    assert [l for l in legs(db) if l["role"] == "under_green"][0]["status"] == "cancelled"
-    assert db.trades[-1]["status"] == "error" and "cancel" in db.kinds()
+    assert [l for l in legs(db) if l["role"] == "under_green"][0]["status"] == "pending"
+    assert db.trades[-1]["status"] == "pending" and "cancel" not in db.kinds()
 
 
 def test_prematch_cycle_entry_and_green_taker():
