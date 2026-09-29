@@ -497,8 +497,7 @@ def _row_from_ctx(row: Dict[str, Any], ctx: E.MatchCtx, extra: Dict[str, Any]) -
 # non essere scritto MAI, e quello e' un errore che costa soldi.
 _LIVE_VOLATILI = frozenset({
     # l'orologio puro: cambiano a ogni giro per costruzione
-    "published_at", "published_ts", "feed_age_s", "scanner_age_s",
-    # il book e tutto cio' che ne discende (un tick in piu' o in meno)
+    "published_at", "published_ts", "feed_age_s", "scanner_age_s",    # il book e tutto cio' che ne discende (un tick in piu' o in meno)
     "books", "total_matched", "cashout", "posizioni",
     "hazard", "hazard_atlas", "hazard_model", "pressure",
     # 25/09 atlante: n della cella e nota cambiano col bucket di 5' (diagnostica)
@@ -1342,6 +1341,36 @@ def _log_throttled(db: Any, extra: Dict[str, Any], params: Dict[str, Any], now_t
     return True
 
 
+# M8.4/M8.5 (29/09): un dato che manca (quote di una selezione aperta, punteggio
+# in gioco) si dichiara UNA volta per episodio: dopo questi secondi per le quote
+# (sparizioni di un giro sono normali), subito per il punteggio.
+_DATO_ASSENTE_AVVISO_S = 10.0
+
+
+def _episodio_dato_assente(db: Any, extra: Dict[str, Any], now_ts: float, event_id: Any,
+                           chiave: str, mancanti: List[str], dopo_s: float,
+                           payload: Dict[str, Any]) -> None:
+    """Episodio di dato assente, in ``extra[chiave]`` = {"dal", "avvisato"}.
+    Attivita' ``feed_line_missing`` (gia' in UI) all'avviso, ``skip`` con
+    motivo ``<chiave>_tornato`` quando il dato torna (solo se era stato detto)."""
+    ep = extra.get(chiave) if isinstance(extra.get(chiave), dict) else None
+    if mancanti:
+        if ep is None:
+            ep = {"dal": float(now_ts), "avvisato": False}
+        if not ep.get("avvisato") and now_ts - float(ep.get("dal") or now_ts) >= dopo_s:
+            ep["avvisato"] = True
+            db.log("feed_line_missing",
+                   {**payload, "da_secondi": round(now_ts - float(ep["dal"]), 1)}, event_id)
+        extra[chiave] = ep
+        return
+    if ep is not None:
+        extra.pop(chiave, None)
+        if ep.get("avvisato"):
+            db.log("skip", {"reason": f"{chiave}_tornato",
+                            "da_secondi": round(now_ts - float(ep.get("dal") or now_ts), 1)},
+                   event_id)
+
+
 def _rifiutata(ctx: Optional[E.MatchCtx], leg: E.Leg, motivo: str) -> None:
     """Scrive NEL CTX che il mercato ha rifiutato questa richiesta.
 
@@ -1534,17 +1563,25 @@ def _segui_ordini_paper_su_runner(*, db: Any, ctx: E.MatchCtx, ev: Dict[str, Any
         appoggiata = _is_resting_leg(leg, params)
         if e is None:
             inviato = F.parse_iso_epoch(meta.get("canale_inviato_at")) or float(leg.placed_at or 0.0)
-            if not appoggiata and now_ts - float(inviato) > _SCADENZA_TAKER_PAPER_S:
-                leg.status = "cancelled"
-                meta.update({"phase": "cancelled", "reason": "runner_senza_esito"})
-                meta.pop("err", None)
+            if (not appoggiata and not leg.needs_reconcile
+                    and now_ts - float(inviato) > _SCADENZA_TAKER_PAPER_S):
+                # M8.12 (29/09): un ordine SENZA RISPOSTA non e' un ordine non
+                # eseguito. Come il live (eccezione/timeout -> esito ignoto):
+                # gamba in riconciliazione, riga 'pending' marcata come ignota
+                # (conta nel rischio, ferma le aperture); la chiude il primo
+                # esito certo del runner (stesso ref o stesso bet_id) che arriva.
+                leg.status = E.STATUS_RECONCILE
+                meta.update({"phase": "reserved", "reason": "place_exception_reconciling",
+                             "err": "runner_senza_esito", "runner_esito_ignoto": True})
                 try:
-                    X.aggiorna_trade(db, int(r["id"]), campi={"status": "error", "meta": meta},
-                                     consapevolezza={"size_matched": 0.0, "size_remaining": 0.0})
+                    X.aggiorna_trade(db, int(r["id"]), campi={"meta": meta})
                 except Exception as ex:  # noqa: BLE001
-                    logger.warning("[mike] chiusura %s senza esito KO: %s", leg.ref, str(ex)[:120])
-                db.log("no_fill", {"leg": leg.ref, "role": leg.role, "reason": "runner_senza_esito",
-                                   "wanted": leg.price, "side": leg.side, "critical": True}, eid)
+                    logger.warning("[mike] %s senza esito: marcatura KO: %s", leg.ref, str(ex)[:120])
+                logger.critical("[mike] %s: %s senza esito dal runner da oltre %.0f s -> "
+                                "riconciliazione", eid, leg.ref, _SCADENZA_TAKER_PAPER_S)
+                db.log("reconcile_pending", {"leg": leg.ref, "trade_id": r.get("id"),
+                                             "role": leg.role, "reason": "runner_senza_esito",
+                                             "critical": True}, eid)
                 n += 1
             continue
         abbinato = _num_evento(e, "size_matched")
@@ -4421,6 +4458,15 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
         extra["last_goals"] = goals
     if bool(payload.get("inplay")):
         extra["seen_inplay"] = True
+    # M8.4 (29/09): in gioco un punteggio che manca NON vale zero gol: lo si
+    # dichiara (una volta per episodio, e una volta quando torna). Lo snapshot
+    # porta ``goals=None``: chi decide sui gol deve saperlo (motore).
+    _episodio_dato_assente(db, extra, now_ts, ev["event_id"], "punteggio_assente",
+                           ["punteggio"] if bool(payload.get("inplay")) and goals is None else [],
+                           0.0, {"reason": "punteggio_assente", "state": ctx.state,
+                                 "critical": bool(E.open_selections(ctx.legs)),
+                                 "nota": "in gioco il feed non porta il punteggio: non vale "
+                                         "zero gol, nessuna decisione sui gol finche' manca"})
     extra["selections"] = {f"{m}|{s}": sid for (m, s), sid in info.selections.items()}
     live = {}
     if bool(payload.get("inplay")):
@@ -4496,14 +4542,16 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
     # Il tetto dei mercati opportunità dello scanner (20 eventi, i minuti più
     # avanzati) può lasciare una partita Mike senza blocco `ou`: senza la 4.5
     # non c'è copertura né cash out. Non si può inventare un prezzo: si GRIDA.
-    if E.open_selections(ctx.legs):
-        missing = [f"{m}|{s}" for (m, s) in E.live_open_selections(ctx.legs, snap.goals)
-                   if snap.book(m, s) is None]
-        if missing:
-            _log_throttled(db, extra, params, now_ts, "feed_line_missing",
+    missing = ([f"{m}|{s}" for (m, s) in E.live_open_selections(ctx.legs, snap.goals)
+                if snap.book(m, s) is None] if E.open_selections(ctx.legs) else [])
+    # M8.5 (29/09): la quota mancante si ricontrolla a ogni giro (i book sono
+    # riletti dalla riga di ogni giro); se manca oltre ``_DATO_ASSENTE_AVVISO_S``
+    # si avvisa UNA volta per episodio, e UNA volta quando torna.
+    _episodio_dato_assente(db, extra, now_ts, ev["event_id"], "quote_assenti", missing,
+                           _DATO_ASSENTE_AVVISO_S,
                            {"reason": ("flusso prezzi interrotto" if not esito_flusso.vivo
                                        else "linee assenti dal feed"), "selections": missing,
-                            "state": ctx.state, "critical": True}, ev["event_id"])
+                            "state": ctx.state, "critical": True})
 
     # -- SOSPENSIONE E RIAPERTURA (ordine dell'utente, 16/09) ---------------------
     # PRIMA della decisione, sempre: a mercato riaperto dopo una sospensione le
@@ -4762,8 +4810,7 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                   "score_home": payload.get("score_home"), "score_away": payload.get("score_away"),
                   # C1/H6 — diagnostica sempre visibile: eta' del feed per EVENTO,
                   # linee mancanti e riconciliazione in corso
-                  "feed_age_s": round(max(0.0, now_ts - (F.parse_iso_epoch(row.get("updated_at")) or now_ts)), 1),
-                  "scanner_age_s": round(scanner_age, 1) if scanner_age is not None else None,
+                  "feed_age_s": round(max(0.0, now_ts - (F.parse_iso_epoch(row.get("updated_at")) or now_ts)), 1),                  "scanner_age_s": round(scanner_age, 1) if scanner_age is not None else None,
                   "lines_missing": [f"{m}|{s}" for (m, s) in
                                     ((E.MARKET_OU35, E.SEL_UNDER), (E.MARKET_OU45, E.SEL_OVER),
                                      (E.MARKET_OU45, E.SEL_UNDER))

@@ -88,6 +88,10 @@ def test_feed_stantio_nessun_ordine_in_entrambi_i_modi(mode, monkeypatch, runner
 # taker paper: il runner non dice niente
 # ---------------------------------------------------------------------------
 def test_taker_senza_esito_dal_runner_non_e_eseguito(runner):
+    """M8.12 (29/09, decisione dell'utente «va verificato»): PRIMA di questa data
+    un taker senza esito per 60 s era dichiarato «non eseguito» (riga 'error').
+    Ora e' come il live (timeout = esito ignoto): riconciliazione finche' non
+    arriva un esito certo; quando il runner parla, vale quello."""
     runner.trattieni = True
     db = db_vuoto()
     leg = _taker()
@@ -99,9 +103,17 @@ def test_taker_senza_esito_dal_runner_non_e_eseguito(runner):
     tardi = ORA.timestamp() + S._SCADENZA_TAKER_PAPER_S + 1
     S._segui_ordini_paper_su_runner(db=db, ctx=ctx, ev={"event_id": EVENTO}, now_ts=tardi,
                                     params=_params())
-    assert leg.status == "cancelled" and leg.matched == 0.0
+    assert leg.status == E.STATUS_RECONCILE and leg.matched == 0.0
     riga = db.trades_for_event(EVENTO)[-1]
-    assert riga["status"] == "error" and riga["meta"]["reason"] == "runner_senza_esito"
+    assert riga["status"] == "pending"
+    assert riga["meta"]["reason"] == "place_exception_reconciling"
+    assert riga["meta"]["err"] == "runner_senza_esito" and riga["meta"]["runner_esito_ignoto"]
+    # l'esito certo arriva: vale quello (qui: abbinato per intero)
+    runner.rilascia()
+    S._segui_ordini_paper_su_runner(db=db, ctx=ctx, ev={"event_id": EVENTO}, now_ts=tardi + 5,
+                                    params=_params())
+    assert leg.status == "open" and leg.matched == pytest.approx(3.0)
+    assert db.trades_for_event(EVENTO)[-1]["status"] == "open"
 
 
 # ---------------------------------------------------------------------------

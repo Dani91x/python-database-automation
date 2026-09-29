@@ -236,6 +236,13 @@ FERMO_COPERTURA_S = 90.0
 SCENARIO_LETTURA_KO = "lettura-dati-ko"
 LETTURA_KO_S = 720.0
 
+# P4 (29/09, M8.4): IL PUNTEGGIO MANCA E TORNA. Non tocca un parametro ne' un
+# prezzo: per ``PUNTEGGIO_KO_S`` secondi dal primo giro in gioco la riga arriva
+# a Mike SENZA punteggio (``score_home``/``score_away`` = None, come quando l'IPS
+# tace). Mike deve dirlo UNA volta, non contarlo come zero gol, e dirlo quando torna.
+SCENARIO_PUNTEGGIO_KO = "punteggio-ko"
+PUNTEGGIO_KO_S = 300.0
+
 
 def _riavvia_processo() -> List[str]:
     """Butta via le cache di PROCESSO di `mike/service.py`, come un riavvio.
@@ -451,6 +458,9 @@ def _crea_strategia():
             # P4 (29/09, M8.7/M8.8): la lettura del feed che cade e torna
             self.lettura_ko = bool(kw.pop("lettura_ko", False))
             self.ko: Dict[str, Any] = {}
+            # P4 (29/09, M8.4): il punteggio che manca e torna
+            self.punteggio_ko = bool(kw.pop("punteggio_ko", False))
+            self.pko: Dict[str, Any] = {}
             # A2 — I GIRI DEL SERVIZIO SU UNA PARTITA GIA' TERMINALE.
             # Il controllo A2 («da uno stato terminale non esce nessuna azione»)
             # non puo' avere un caso attraverso il servizio: `_run_event` esce
@@ -569,6 +579,8 @@ def _crea_strategia():
             row = self.banco.riga(self.event_id)
             if self.lettura_ko:
                 row = self._riga_via_lettura(row, pt_ms)
+            if self.punteggio_ko and row is not None:
+                row = self._senza_punteggio(row, pt_ms)
             if row is None:
                 # riga assente dal feed: NON si salta il giro. E' esattamente il
                 # caso che `_run_event` deve saper gestire (row_missing_since,
@@ -753,6 +765,18 @@ def _crea_strategia():
             righe, _fonte = S._righe_del_feed(self.db, self.params, pt_ms / 1000.0)
             return next((r for r in righe if str(r.get("event_id")) == self.event_id), None)
 
+        def _senza_punteggio(self, row: Dict[str, Any], pt_ms: int) -> Dict[str, Any]:
+            """P4 (M8.4): nella finestra la riga non porta il punteggio (IPS muto)."""
+            p = row.get("payload") or {}
+            if "dal" not in self.pko and bool(p.get("inplay")):
+                self.pko["dal"] = int(pt_ms)
+            if "dal" in self.pko and "al" not in self.pko \
+                    and pt_ms - self.pko["dal"] >= PUNTEGGIO_KO_S * 1000:
+                self.pko["al"] = int(pt_ms)
+            if "dal" in self.pko and "al" not in self.pko:
+                return dict(row, payload={**p, "score_home": None, "score_away": None})
+            return row
+
         def spegni_fermo(self) -> None:
             if "dal" in self.fermo and not self.fermo.get("spento"):
                 prima = self.fermo.get("prima")
@@ -857,7 +881,8 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                       chiuso_fuori_app: bool = False,
                       chiusura_parziale: bool = False,
                       fermo_copertura: bool = False,
-                      lettura_ko: bool = False) -> CERT.Referto:
+                      lettura_ko: bool = False,
+                      punteggio_ko: bool = False) -> CERT.Referto:
     """Fa rivivere a Mike una partita registrata e ritorna il referto."""
     from flumine import FlumineSimulation
 
@@ -927,6 +952,7 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                           riavvia=riavvia, cashout_utente=cashout_utente,
                           chiuso_fuori_app=chiuso_fuori_app,
                           fermo_copertura=fermo_copertura, lettura_ko=lettura_ko,
+                          punteggio_ko=punteggio_ko,
                           market_filter={"markets": [raw]},
                           max_order_exposure=1e9, max_selection_exposure=1e9,
                           max_trade_count=int(1e9), max_live_trade_count=int(1e9))
@@ -1100,6 +1126,22 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                         "regolamento finche' la lettura non torna (P4, 29/09)",
                 f"stato {strategia.ko.get('regolata_nel_guasto')} durante il guasto",
                 str(strategia.ko.get("regolata_nel_guasto"))))
+    if strategia.punteggio_ko:
+        # P4 (M8.4): il punteggio mancato e tornato, detto una volta per parte
+        cadute = sum(1 for k, p_, _e in strategia.db.attivita
+                     if k == "feed_line_missing" and (p_ or {}).get("reason") == "punteggio_assente")
+        riprese = sum(1 for k, p_, _e in strategia.db.attivita
+                      if k == "skip" and (p_ or {}).get("reason") == "punteggio_assente_tornato")
+        pko = strategia.pko
+        out.note.append(
+            "scenario punteggio-ko (M8.4): "
+            + ("il guasto non e' mai partito (partita mai vista in gioco)" if "dal" not in pko
+               else f"punteggio assente da {pko.get('dal')} a {pko.get('al')} ms | avvisi "
+                    f"di assenza {cadute} | di ritorno {riprese} (attesi 1 e 1)"))
+        if "dal" in pko and (cadute != 1 or riprese != (1 if "al" in pko else 0)):
+            out.violazioni.append(CERT.Violazione(
+                "M8.4", "un punteggio che manca si dichiara UNA volta per episodio, e quando "
+                        "torna (P4, 29/09)", f"avvisi {cadute}, ritorni {riprese}", "LIVE"))
     # LE QUATTRO REAZIONI ALLA RIAPERTURA, contate una per una (§15.6, R1).
     # «Quante volte R1 ha avuto un caso» non basta: dice che la catena gira, non
     # QUALE dei quattro rami e' stato esercitato. Il ramo (b) «scaduto alla
@@ -1208,6 +1250,10 @@ SCENARI_DESCRITTI: Dict[str, str] = {
     SCENARIO_LETTURA_KO: "la lettura del feed dal database FALLISCE per 12 minuti dal primo "
                          "giro in gioco e poi torna: Mike ritenta, avvisa una volta, non "
                          "regola niente e continua a seguire gli ordini (M8.7, M8.8)",
+    # P4 (29/09, M8.4)
+    SCENARIO_PUNTEGGIO_KO: "per 5 minuti dal primo giro in gioco la riga arriva senza "
+                           "punteggio (IPS muto): Mike lo dichiara una volta, non lo conta "
+                           "come zero gol, e dichiara quando torna (M8.4)",
 }
 
 
@@ -1311,7 +1357,8 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
         chiuso_fuori_app=(scenario == SCENARIO_CHIUSO_FUORI_APP),
         chiusura_parziale=(scenario == CP.SCENARIO),
         fermo_copertura=(scenario == SCENARIO_FERMO_COPERTURA),
-        lettura_ko=(scenario == SCENARIO_LETTURA_KO))
+        lettura_ko=(scenario == SCENARIO_LETTURA_KO),
+        punteggio_ko=(scenario == SCENARIO_PUNTEGGIO_KO))
     if scenario == SCENARIO_GOL_PRECOCE:
         # Lo scenario DICHIARA se il caso e' capitato davvero. Un referto
         # "zero violazioni" su una registrazione senza gol precoce non dice

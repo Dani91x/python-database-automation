@@ -1,0 +1,40 @@
+BASE (senza mutazioni): VERDE  1110 passed in 50.95s
+Z1 al fischio: piatto anche con una banca ancora in volo                 SOPRAVVISSUTA  1110 passed in 57.91s
+Z2 ultimo ingresso anche con l'interruttore spento                       rossa  1 failed, 464 passed in 41.32s  | FAILED Betfair/mike/tests/test_mike_engine.py::test_last_entry_persist_disabled_no_last_entry
+Z3 ultimo ingresso valutato anche col pre-partita spento                 SOPRAVVISSUTA  1110 passed in 59.01s
+Z4 ultimo ingresso valutato piu' volte                                   rossa  1 failed, 838 passed in 39.01s  | FAILED Betfair/mike/tests/test_mike_p2_prepartita_2026_09_29.py::test_m2_4_ultimo_ingresso_non_abbinato_non_si_rifa
+Z5 prezzi non vivi al segno = rinuncia                                   rossa  1 failed, 843 passed in 34.16s  | FAILED Betfair/mike/tests/test_mike_p2_prepartita_2026_09_29.py::test_m2_4_mercato_sospeso_o_prezzi_non_vivi_si_aspetta[False]
+Z6 mercato sospeso al segno = rinuncia                                   ANCORA NON UNICA (2)
+Z7 ultimo ingresso senza i controlli d'ingresso                          rossa  1 failed, 837 passed in 32.89s  | FAILED Betfair/mike/tests/test_mike_p2_prepartita_2026_09_29.py::test_m2_4_ultimo_ingresso_passa_dai_controlli_d_ingresso
+Z8 il veto non blocca piu' l'ultimo ingresso                             rossa  1 failed, 839 passed in 33.94s  | FAILED Betfair/mike/tests/test_mike_p2_prepartita_2026_09_29.py::test_m2_4_il_veto_blocca_ancora_l_ultimo_ingresso
+Z9 dopo il segno senza posizione si torna a cercare ingressi             rossa  1 failed, 835 passed in 33.59s  | FAILED Betfair/mike/tests/test_mike_p2_prepartita_2026_09_29.py::test_m2_4_banca_abbinata_negli_ultimi_minuti_piatto_e_nessun_rientro
+Z10 al segno con la posizione aperta non si passa in attesa              rossa  1 failed, 462 passed in 27.36s  | FAILED Betfair/mike/tests/test_mike_engine.py::test_last_entry_in_profit_keeps_the_green_until_ko
+Z11 al fischio non si aspetta l'esito della banca                        rossa  1 failed, 847 passed in 34.19s  | FAILED Betfair/mike/tests/test_mike_p2_prepartita_2026_09_29.py::test_m2_3_banca_non_abbinata_cancellata_da_betfair_parte_il_flusso_del_gioco
+Z12 al fischio la banca a esito ignoto non si aspetta                    SOPRAVVISSUTA  1110 passed in 35.35s
+Z13 banca abbinata al fischio: si apre lo stesso il gioco                rossa  1 failed, 849 passed in 37.80s  | FAILED Betfair/mike/tests/test_mike_p2_prepartita_2026_09_29.py::test_m2_3_banca_scoperta_abbinata_dopo_il_fischio_piatto
+Z14 banca abbinata dopo il segno: si torna a cercare ingressi            rossa  1 failed, 835 passed in 39.51s  | FAILED Betfair/mike/tests/test_mike_p2_prepartita_2026_09_29.py::test_m2_4_banca_abbinata_negli_ultimi_minuti_piatto_e_nessun_rientro
+Z15 dopo il segno la banca mancante non si rimette                       rossa  1 failed, 484 passed in 27.49s  | FAILED Betfair/mike/tests/test_mike_engine.py::test_last_entry_with_partial_green_uses_net_exposure
+Z16 dopo un veto gia' scattato si entra lo stesso                        SOPRAVVISSUTA  1110 passed in 40.52s
+C1 banco D3 muto                                                         rossa  1 failed, 852 passed in 54.47s  | FAILED Betfair/mike/tests/test_mike_p2_prepartita_2026_09_29.py::test_banco_d3_vede_la_banca_ritirata_al_segno
+C2 banco B6: secondo ingresso dopo il segno non visto                    rossa  1 failed, 853 passed in 36.32s  | FAILED Betfair/mike/tests/test_mike_p2_prepartita_2026_09_29.py::test_banco_b6_vede_un_secondo_ingresso_dopo_il_segno
+C3 banco B6: ingresso dopo il segno non da piatto non visto              SOPRAVVISSUTA  1110 passed in 41.79s
+W1 lettura fallita torna lista vuota                                     rossa  1 failed, 858 passed in 38.18s  | FAILED Betfair/mike/tests/test_mike_p4_conti_dati_2026_09_29.py::test_la_lettura_del_feed_fallita_torna_None
+W2 lettura fallita: si butta l'ultima lista buona                        rossa  1 failed, 859 passed in 38.17s  | FAILED Betfair/mike/tests/test_mike_p4_conti_dati_2026_09_29.py::test_lettura_fallita_si_tiene_l_ultima_lista_e_si_avvisa_una_volta
+W3 lettura fallita: parte l'orologio della riga assente                  rossa  1 failed, 860 passed in 37.16s  | FAILED Betfair/mike/tests/test_mike_p4_conti_dati_2026_09_29.py::test_con_la_lettura_rotta_nessun_regolamento_dopo_dieci_minuti
+W4a riga assente: ordini non seguiti                                     rossa  1 failed, 856 passed in 39.10s  | FAILED Betfair/mike/tests/test_mike_p4_conti_dati_2026_09_29.py::test_riga_assente_la_lay_appoggiata_si_segue_lo_stesso
+W4b dati incompleti: ordini non seguiti                                  rossa  1 failed, 857 passed in 39.18s  | FAILED Betfair/mike/tests/test_mike_p4_conti_dati_2026_09_29.py::test_dati_incompleti_la_lay_appoggiata_si_segue_lo_stesso
+W4c snapshot non costruibile: ordini non seguiti                         SOPRAVVISSUTA  1110 passed in 43.42s
+W5 regolata senza punteggio: righe non regolate                          rossa  1 failed, 865 passed in 50.91s  | FAILED Betfair/mike/tests/test_mike_p4_conti_dati_2026_09_29.py::test_regolata_senza_punteggio_regola_anche_le_righe
+W5b regolata senza punteggio: righe non scritte, nessun nuovo tentativo  SOPRAVVISSUTA  1110 passed in 45.62s
+W6 regolamento non determinabile: righe non marcate                      rossa  1 failed, 866 passed in 43.50s  | FAILED Betfair/mike/tests/test_mike_p4_conti_dati_2026_09_29.py::test_regolamento_non_determinabile_marca_le_righe_aperte
+W7 cumulativi: paper e live sommati                                      rossa  1 failed, 861 passed in 69.13s (0:01:09)  | FAILED Betfair/mike/tests/test_mike_p4_conti_dati_2026_09_29.py::test_i_cumulativi_del_ripiego_sono_per_modalita
+W8 cumulativi: memoria unica per le due modalita'                        rossa  1 failed, 861 passed in 54.59s  | FAILED Betfair/mike/tests/test_mike_p4_conti_dati_2026_09_29.py::test_i_cumulativi_del_ripiego_sono_per_modalita
+W9 dati incompleti: cio' che la sorveglianza cambia non si salva         rossa  1 failed, 857 passed in 63.00s (0:01:03)  | FAILED Betfair/mike/tests/test_mike_p4_conti_dati_2026_09_29.py::test_dati_incompleti_la_lay_appoggiata_si_segue_lo_stesso
+W10 lettura fallita: avviso a ogni giro                                  rossa  1 failed, 859 passed in 74.21s (0:01:14)  | FAILED Betfair/mike/tests/test_mike_p4_conti_dati_2026_09_29.py::test_lettura_fallita_si_tiene_l_ultima_lista_e_si_avvisa_una_volta
+W11 il guasto del feed sopravvive al riavvio del banco                   SOPRAVVISSUTA  1110 passed in 96.13s (0:01:36)
+W12 la ripresa della lettura non si dice e il guasto non si chiude       rossa  1 failed, 859 passed in 43.47s  | FAILED Betfair/mike/tests/test_mike_p4_conti_dati_2026_09_29.py::test_lettura_fallita_si_tiene_l_ultima_lista_e_si_avvisa_una_volta
+W13 senza dati, in paper: esiti del runner non letti                     SOPRAVVISSUTA  1110 passed in 31.40s
+W14 senza dati: posizione di conto non sorvegliata                       SOPRAVVISSUTA  1110 passed in 32.32s
+mutazioni sopravvissute o non valide: 11 su 36
+occorrenze: 1
+Z6 mercato sospeso al segno = rinuncia: rossa 1 failed, 842 passed in 49.71s | FAILED Betfair/mike/tests/test_mike_p2_prepartita_2026_09_29.py::test_m2_4_mercato_sospeso_o_prezzi_non_vivi_si_aspetta[True]
