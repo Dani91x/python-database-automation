@@ -4333,3 +4333,5 @@ safe_tennis; mike copertura-rifiutata entrambi; mike «tutti» canale (30 min);
 - Suite Python INTERA finale dal checkout principale su `304a8e1`: in corso (`scratchpad/int/suite_finale_master.txt`).
 - SE LA SESSIONE CADE ORA: master locale e' AVANTI di 1 rispetto a origin (`304a8e1` non pushato). Prima di pushare:
   leggere i replay di scalper_calcio e sniper (`scratchpad/replay/giro2/` e `giro3/`) e la suite finale.
+
+**Checkpoint 07:54 del 29/09** — suite Python INTERA dal checkout principale su `304a8e1`: **8319 verdi, 0 rossi** (5 min 57 s). Sniper (35674515, scenari sniper e sniper-paper) su `2f53bb0`: 2 OK, 0 violazioni ma 0 AZIONI (lo sniper su quella partita non spara): NON PROVATO. Scalper calcio 35797769: replay ancora in corso. PUSH di master fatto ora come copia di sicurezza: scalper calcio, sniper e tennis swing restano NON CERTIFICATI finche' non hanno un replay in cui il bot opera.
