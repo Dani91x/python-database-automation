@@ -132,7 +132,20 @@ SCENARI: Dict[str, Dict[str, Any]] = {
     #    si tenta poche volte; col default il freno non scatterebbe mai.
     # Stessa natura della taratura di ``cap-stretto``: si stringe per far parlare
     # una guardia, non si cambia la strategia.
-    "copertura-rifiutata": {"cover_rifiuti_max": 1, "stake": 3.00},
+    # 29/09 (P5): con la copertura come BANCA Under 4,5 (importo sempre sopra
+    # il minimo) la copertura sotto minimo non esiste piu': si rifiuta la BANCA
+    # sul mercato 4,5 (leva ``rifiuta_lato``/``rifiuta_market_id`` del banco
+    # comune). Il caso del 17/09 resta certificato sulla forma di prima in
+    # ``copertura-rifiutata-legacy``.
+    "copertura-rifiutata": {"cover_rifiuti_max": 1, "cover_form": "lay_under45"},
+    "copertura-rifiutata-legacy": {"cover_rifiuti_max": 1, "stake": 3.00,
+                                   "cover_form": "back_over45"},
+    # 29/09 (P5): la forma di prima (punta Over 4,5) resta certificata: e'
+    # l'interruttore di sicurezza dell'utente
+    "copertura-legacy": {"cover_form": "back_over45"},
+    # 29/09 (P5): partita coperta e poi cash out dell'utente (richiesta VERA):
+    # la chiusura della copertura-banca e' una banca Over 4,5
+    "cashout-dopo-copertura": {"cover_form": "lay_under45"},
     # bot fermo / stop giornaliero: nessuna apertura, le chiusure restano (§5)
     "bot-fermo": {"pre_enabled": False, "reentry_enabled": False},
     # seconda puntata spenta: l'altro ramo del gol precoce (§15.3)
@@ -178,6 +191,8 @@ QUANTI_RIFIUTI = 3
 # 17/09 (reperto 25): la COPERTURA sotto minimo rifiutata SEMPRE, con il
 # codice vero di quel giorno. Non un rifiuto che finisce dopo N: 171 su 171.
 SCENARIO_COVER_RIFIUTATA = "copertura-rifiutata"
+SCENARIO_COVER_RIFIUTATA_LEGACY = "copertura-rifiutata-legacy"
+SCENARIO_CASHOUT_DOPO_COPERTURA = "cashout-dopo-copertura"
 COVER_RIFIUTO_CODICE = "CANCELLED_NOT_PLACED"
 COVER_RIFIUTO_INTERNO = "INVALID_BET_SIZE"
 # quanto l'utente ha di SUO sulla stessa selezione, prima di chiudere tutto:
@@ -642,6 +657,17 @@ def _crea_strategia():
             self.db.upsert_event(ev)
             self.db.scan_rows = [row] if row is not None else []
             now = pt_ms / 1000.0
+            # 29/09 (P5): leve degli scenari della copertura-banca
+            # (il market id del 4,5 si legge dalla RIGA: in pre-partita la riga
+            # puo' portare solo il 3,5, e ``ev["markets"]`` si scrive una volta)
+            if getattr(self, "rifiuta_banca_ou45", False) and row is not None:
+                try:
+                    mid45 = str(S.F.event_info(self.event_id, row.get("payload") or {})
+                                .market_id(E.MARKET_OU45) or "")
+                except Exception:  # noqa: BLE001 - riga non leggibile: si riprova
+                    mid45 = ""
+                if mid45:
+                    self.mercato.rifiuta_market_id = mid45
             if self.fermo_copertura:
                 self._gestisci_fermo(pt_ms, str(ev.get("state") or ""))
             terminale = str(self.db.events[self.event_id].get("state") or "") in E.TERMINAL_STATES
@@ -664,7 +690,10 @@ def _crea_strategia():
             # allo STESSO `service.process_requests` che la esegue in produzione.
             # Da qui in poi il bot non deve aprire piu' niente sulla partita (R2).
             if self.cashout_utente and self.cashout_fatto is None and any(
-                    str(r.get("status")) == "open" for r in self.db.trades):
+                    str(r.get("status")) == "open" for r in self.db.trades) and (
+                    # 29/09 (P5): `cashout-dopo-copertura` aspetta la partita COPERTA
+                    not getattr(self, "cashout_dopo_copertura", False)
+                    or str(self.db.events[self.event_id].get("state") or "") == "LIVE_COVERED"):
                 try:
                     esito = S.process_requests(
                         db=self.db, market=self.mercato,
@@ -882,7 +911,8 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                       chiusura_parziale: bool = False,
                       fermo_copertura: bool = False,
                       lettura_ko: bool = False,
-                      punteggio_ko: bool = False) -> CERT.Referto:
+                      punteggio_ko: bool = False,
+                      cashout_dopo_copertura: bool = False) -> CERT.Referto:
     """Fa rivivere a Mike una partita registrata e ritorna il referto."""
     from flumine import FlumineSimulation
 
@@ -956,6 +986,8 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                           market_filter={"markets": [raw]},
                           max_order_exposure=1e9, max_selection_exposure=1e9,
                           max_trade_count=int(1e9), max_live_trade_count=int(1e9))
+    # 29/09 (P5): leve degli scenari della copertura-banca (lette in `_un_giro`)
+    strategia.cashout_dopo_copertura = bool(cashout_dopo_copertura)
     if rifiuti > 0:
         # i primi N piazzamenti tornano `ok=False`: e' il RIFIUTO dichiarato di
         # Betfair, non un errore di rete (quello e' `place_exception`)
@@ -973,6 +1005,15 @@ def _certifica_evento(event_id: str, *, data_dir: str,
         strategia.mercato.rifiuta_sotto_minimo = 2.00
         strategia.mercato.rifiuto_codice = COVER_RIFIUTO_CODICE
         strategia.mercato.rifiuto_codice_interno = COVER_RIFIUTO_INTERNO
+        if E.cover_form(par) == E.COVER_LAY_U45:
+            # 29/09 (P5): la copertura e' una BANCA Under 4,5 sopra il minimo: si
+            # rifiuta ogni BANCA sul mercato 4,5 (il market id lo fissa il primo
+            # giro con la riga, ``_un_giro``); le banche dell'Under 3,5 passano.
+            strategia.mercato.rifiuta_lato = "lay"
+            strategia.mercato.rifiuta_sotto_minimo = None
+            strategia.mercato.rifiuto_codice_interno = "INVALID_ODDS"
+            strategia.mercato.rifiuta_market_id = "__mercato_4_5_non_ancora_noto__"
+            strategia.rifiuta_banca_ou45 = True
     if guasti > 0:
         # i primi N piazzamenti falliranno con esito IGNOTO: e' cosi' che
         # nascono le gambe `pending_reconcile` che altrimenti non si vedono mai
@@ -1231,10 +1272,17 @@ SCENARI_DESCRITTI: Dict[str, str] = {
                                "flumine con un ref che non e' di Mike, piu' una posizione sua "
                                "sulla stessa selezione): il bot lo scopre dalla POSIZIONE DI "
                                "CONTO e non gestisce piu' quella partita (§15.7-ter, R3)",
-    SCENARIO_COVER_RIFIUTATA: "Betfair rifiuta SEMPRE la copertura sotto minimo "
-                              "(CANCELLED_NOT_PLACED / INVALID_BET_SIZE, come il 17/09 "
-                              "sull'evento 36077571): sollecita il FRENO fail-closed "
-                              "(S1) e il ritmo minimo fra due tentativi",
+    SCENARIO_COVER_RIFIUTATA: "copertura come BANCA Under 4,5: Betfair rifiuta SEMPRE le "
+                              "banche sul mercato 4,5 (CANCELLED_NOT_PLACED): sollecita il "
+                              "FRENO fail-closed (S1) e il ritmo minimo fra due tentativi",
+    SCENARIO_COVER_RIFIUTATA_LEGACY: "forma di prima (punta Over 4,5, stake 3,00): Betfair "
+                                     "rifiuta SEMPRE la copertura sotto minimo, come il 17/09 "
+                                     "(S1, ritmo minimo)",
+    "copertura-legacy": "come `base` con la forma di prima (punta Over 4,5): l'interruttore "
+                        "`cover_form=back_over45` resta certificato",
+    SCENARIO_CASHOUT_DOPO_COPERTURA: "partita COPERTA, poi cash out dell'utente (richiesta "
+                                     "vera): la copertura-banca si annulla bancando l'Over 4,5 "
+                                     "(M3.3), mai due banche sul 4,5 (J5B)",
     SCENARIO_RIFIUTI: "Betfair RIFIUTA i primi piazzamenti (`ok=False`): l'esito si legge "
                       "e nessuna gamba rifiutata diventa una posizione (difetto 2 del "
                       "catalogo del 15/09)",
@@ -1350,10 +1398,11 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
         guasti=(QUANTI_GUASTI if scenario in (SCENARIO_ESITI_IGNOTI,
                                               SCENARIO_TAKER_IGNOTI) else 0),
         rifiuti=(QUANTI_RIFIUTI if scenario == SCENARIO_RIFIUTI else 0),
-        cover_rifiutata=(scenario == SCENARIO_COVER_RIFIUTATA),
+        cover_rifiutata=(scenario in (SCENARIO_COVER_RIFIUTATA, SCENARIO_COVER_RIFIUTATA_LEGACY)),
         campioni_diff=campioni_diff,
         riavvia=(scenario == SCENARIO_RIAVVIO),
-        cashout_utente=(scenario == SCENARIO_CASHOUT_GLOBALE),
+        cashout_utente=(scenario in (SCENARIO_CASHOUT_GLOBALE, SCENARIO_CASHOUT_DOPO_COPERTURA)),
+        cashout_dopo_copertura=(scenario == SCENARIO_CASHOUT_DOPO_COPERTURA),
         chiuso_fuori_app=(scenario == SCENARIO_CHIUSO_FUORI_APP),
         chiusura_parziale=(scenario == CP.SCENARIO),
         fermo_copertura=(scenario == SCENARIO_FERMO_COPERTURA),

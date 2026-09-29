@@ -1,0 +1,14 @@
+BASE (senza mutazioni): VERDE  1237 passed in 41.10s
+T1 banco E2: l'importo della banca non si verifica piu'                              rossa  1 failed, 944 passed in 36.47s  | FAILED Betfair/mike/tests/test_mike_p5_banco_2026_09_29.py::test_E2_banca_sbagliata_parla
+T2 banco E2: banca senza Under abbinato non vista                                    SOPRAVVISSUTA  1237 passed in 37.39s
+T3 banco E2: banca piu' piccola accettata anche senza tetto                          SOPRAVVISSUTA  1237 passed in 37.14s
+T4 banco J5B: due banche in volo sul 4,5 non viste                                   rossa  1 failed, 953 passed in 34.47s  | FAILED Betfair/mike/tests/test_mike_p5_banco_2026_09_29.py::test_J5B_due_banche_in_volo_sulle_due_selezioni
+T5 banco J5B: banca nuova sul 4,5 con un'altra in volo non vista                     rossa  1 failed, 952 passed in 34.64s  | FAILED Betfair/mike/tests/test_mike_p5_banco_2026_09_29.py::test_J5B_banca_over_mentre_la_banca_under_e_in_volo
+T6 banco J6: sovracopertura della banca non vista                                    rossa  1 failed, 947 passed in 34.20s  | FAILED Betfair/mike/tests/test_mike_p5_banco_2026_09_29.py::test_J6_banca_oltre_il_residuo_e_sovracopertura
+T7 banco J6: la banca giudicata col conto della puntata                              rossa  1 failed, 946 passed in 34.26s  | FAILED Betfair/mike/tests/test_mike_p5_banco_2026_09_29.py::test_J6_banca_intera_tace
+T8 banco S2: guarda sempre il libro dell'Over                                        rossa  1 failed, 949 passed in 34.75s  | FAILED Betfair/mike/tests/test_mike_p5_banco_2026_09_29.py::test_S2_il_caso_segue_la_forma_scelta_senza_ordini
+T9 banco S2: non guarda la selezione dell'ordine proposto                            rossa  1 failed, 950 passed in 34.13s  | FAILED Betfair/mike/tests/test_mike_p5_banco_2026_09_29.py::test_S2_l_ordine_proposto_decide_il_libro
+T10 chiusura manuale: a mercato sospeso piazza lo stesso                             rossa  1 failed, 954 passed in 34.63s  | FAILED Betfair/mike/tests/test_mike_p5_banco_2026_09_29.py::test_chiusura_manuale_in_gioco_aspetta_la_riapertura
+T11 impronta: il motore esce dal registro di Mike                                    rossa  1 failed, 941 passed in 33.01s  | FAILED Betfair/mike/tests/test_mike_p5_4b_2026_09_29.py::test_impronta_di_mike_contiene_ogni_modulo_importato_dal_servizio
+T12 impronta: la configurazione esce dal registro di Mike                            rossa  1 failed, 941 passed in 31.89s  | FAILED Betfair/mike/tests/test_mike_p5_4b_2026_09_29.py::test_impronta_di_mike_contiene_ogni_modulo_importato_dal_servizio
+mutazioni sopravvissute o non valide: 2 su 12

@@ -2398,6 +2398,30 @@ def _decide_flatten(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> De
         return Decision(ctx.state, [], "chiusura manuale: attendo l'esito della lay '%s' "
                                        "(mai due lay a mercato)" % altra.ref,
                         updates={"close_reason": "manual"})
+    # 29/09 (P5, reperto del banco nello scenario `cashout-dopo-copertura`, C3):
+    # la chiusura manuale IN GIOCO non guardava lo stato del mercato e piazzava
+    # anche a mercato SOSPESO (gol). Sospeso non e' chiuso: si aspetta la
+    # riapertura, lo stato non avanza, nessun ordine.
+    # 29/09 (P5 4C, coordinatore): SOSPESO o ignoto riapre -> si aspetta tutto;
+    # CHIUSO non riapre -> quella chiusura non si puo' fare e NON ferma le altre.
+    ferme = [c for c in closes if not operabile(snap.book(c.market, c.selection))
+             and riaprira(snap.book(c.market, c.selection))]
+    if ferme:
+        return Decision(ctx.state, [], "chiusura manuale: mercato %s su %s|%s, attendo "
+                                       "la riapertura"
+                        % (stato_mercato(snap.book(ferme[0].market, ferme[0].selection)),
+                           ferme[0].market, ferme[0].selection),
+                        updates={"close_reason": "manual"})
+    su_chiusi = [c for c in closes if not operabile(snap.book(c.market, c.selection))]
+    nota_chiusi = ""
+    if su_chiusi:
+        chiusi = ", ".join(sorted({f"{c.market}|{c.selection}" for c in su_chiusi}))
+        closes = [c for c in closes if c not in su_chiusi]
+        if not closes:
+            return Decision(ctx.state, [], "chiusura manuale: mercato CHIUSO su %s, nessuna "
+                                           "chiusura possibile (va al regolamento)" % chiusi,
+                            updates={"close_reason": "manual"})
+        nota_chiusi = " (mercato CHIUSO su %s: quella chiusura non si puo' fare)" % chiusi
     working = [l for l in ctx.legs if l.is_live and l.role == "manual_close"]
     if working:
         stale = [l for l in working
@@ -2410,11 +2434,11 @@ def _decide_flatten(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> De
                        selection=l.selection) for l in stale]
         # ``closes`` e' gia' dimensionato sull'esposizione NETTA (la parte abbinata
         # della gamba pending e' dentro ``exposure``): si riprezza il solo residuo.
-        return Decision(st_close, acts + closes, "chiusura manuale: riprezzo",
+        return Decision(st_close, acts + closes, "chiusura manuale: riprezzo" + nota_chiusi,
                         updates={"close_reason": "manual", "attempts": ctx.attempts + 1})
     if closes:
         return Decision(st_close, closes,
-                        "chiusura manuale: chiudo la posizione",
+                        "chiusura manuale: chiudo la posizione" + nota_chiusi,
                         updates={"close_reason": "manual", "attempts": 0})
     if live_open_selections(ctx.legs, snap.goals):
         # posizione ancora VIVA ma nessun prezzo con cui chiuderla: si ASPETTA.

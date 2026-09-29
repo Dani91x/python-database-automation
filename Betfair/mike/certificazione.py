@@ -385,7 +385,39 @@ def _e1(ctx, snap, d, params):
             quando=lambda ctx, snap, d, p: any(a.role == 'over_cover' for a in _piazzamenti(d)))
 def _e2(ctx, snap, d, params):
     for a in _piazzamenti(d):
-        if a.role != "over_cover" or a.side != "back":
+        if a.role != "over_cover":
+            continue
+        if a.side == "lay":
+            # 29/09 (P5, M3.1): copertura come BANCA Under 4,5, X = factor*L/(1-c)
+            # (lettura A), non dipende dalla quota. Stessa tolleranza della punta.
+            # L'importo si VERIFICA (non solo il tetto): residuo dai fill x frazione
+            # della tranche, al centesimo; piu' piccolo solo se il tetto per
+            # partita lo riduce (rischio al limite dentro lo spazio).
+            liab = E.under_liability(ctx.legs)
+            if liab <= 0:
+                return f"banca di copertura da {a.size} senza nessun Under abbinato"
+            c_l = float(params.get("commission_pct", 5.0)) / 100.0
+            f_l = float(params.get("cover_profit_factor", 1.2))
+            gia = E.cover_matched_value(ctx.legs, c_l)
+            residuo = E.cover_residual_lay(liab, c_l, f_l, gia)
+            stadio = int(ctx.cover_stage or 0)
+            if stadio in (1, 2) and ctx.early_goal_at is None:
+                stadio = 0
+            frazione, _decl = E.frazione_copertura(stadio, params, residuo)
+            x = round(residuo * frazione, 2)
+            size = float(a.size)
+            if abs(size - x) <= 0.011:
+                continue
+            spazio = E.liability_room(ctx, params)
+            # piu' piccola solo se il tetto per partita c'e' e la tiene fuori
+            if size < x and spazio != float("inf") \
+                    and x * (float(a.price) - 1.0) > spazio + 0.011 \
+                    and size * (float(a.price) - 1.0) <= spazio + 0.011:
+                continue
+            return (f"banca di copertura {a.size} diversa dall'importo previsto {x} "
+                    f"(liability {liab}, gia' coperto {round(gia, 2)}, frazione "
+                    f"{round(frazione, 3)})")
+        if a.side != "back":
             continue
         S = sum(float(l.matched or 0.0) for l in ctx.legs
                 if not l.archived and l.market == E.MARKET_OU35
@@ -669,6 +701,35 @@ def _j5(ctx, snap, d, params):
     return None
 
 
+@_controllo("J5B", "MAI due lay VIVE o IN VOLO sullo stesso MERCATO 4,5, anche su "
+                   "selezioni diverse: la banca Under e la banca Over pesano sulla stessa "
+                   "posizione (piano Mike M3.4, 29/09)",
+            quando=lambda ctx, snap, d, p: any(
+                l.side == 'lay' and l.market == E.MARKET_OU45
+                and (l.is_live or l.needs_reconcile) for l in ctx.legs))
+def _j5b(ctx, snap, d, params):
+    """J5 guarda la selezione; sul mercato a due esiti una banca Under 4,5 (la
+    copertura nuova) e una banca Over 4,5 (la sua chiusura) sono due lay sulla
+    STESSA posizione: se si abbinano entrambe la chiusura e' doppia. Stato e
+    decisione, come J5, sul solo mercato 4,5."""
+    in_volo = [l for l in ctx.legs if l.side == "lay" and l.market == E.MARKET_OU45
+               and (l.is_live or l.needs_reconcile)]
+    if len(in_volo) > 1:
+        return (f"due lay in volo sul mercato 4,5: {[f'{l.ref}|{l.selection}' for l in in_volo]}")
+    if not in_volo:
+        return None
+    g0 = in_volo[0]
+    for a in _piazzamenti(d):
+        if str(a.side) == "lay" and a.market == E.MARKET_OU45:
+            annullata = any(getattr(x, "kind", "") == "cancel"
+                            and getattr(x, "ref", None) == g0.ref for x in d.actions)
+            come = ("annullata nello STESSO giro: l'annullamento emesso non e' "
+                    "un annullamento confermato" if annullata else "ancora in volo")
+            return (f"nuova lay '{a.role}' su OU45|{a.selection} mentre '{g0.ref}' "
+                    f"(OU45|{g0.selection}) e' {come}")
+    return None
+
+
 @_controllo("J6", "MAI SOVRACOPERTURA: mai due back di copertura VIVI o IN VOLO "
                   "sull'Over 4.5, e la somma di cio' che e' in volo non supera la "
                   "copertura prevista (ordine dell'utente 16/09 sera)",
@@ -712,6 +773,24 @@ def _j6(ctx, snap, d, params):
         return (f"nuova copertura mentre '{g0.ref}' e' {come} "
                 f"(abbinato {g0.matched}/{g0.size})")
     if not nuove:
+        return None
+    if all(str(a.side) == "lay" for a in nuove):
+        # 29/09 (P5, M3.1): copertura come BANCA Under 4,5. Il residuo previsto
+        # e' ``cover_residual_lay`` (non dipende dalla quota); nessun margine di
+        # arrotondamento legale (una banca va al centesimo).
+        try:
+            c = float(params["commission_pct"]) / 100.0
+            liab = E.under_liability(ctx.legs)
+            gia = E.cover_matched_value(ctx.legs, c)
+            residuo = E.cover_residual_lay(liab, c, float(params["cover_profit_factor"]), gia)
+        except Exception:  # noqa: BLE001 - senza numeri non si accusa
+            return None
+        chiesto = sum(float(a.size or 0.0) for a in nuove) + sum(
+            max(0.0, float(l.size or 0.0) - float(l.matched or 0.0)) for l in in_volo)
+        if chiesto > residuo + 0.01:
+            return (f"sovracopertura: banca {round(chiesto, 2)} in volo+proposta contro un "
+                    f"residuo previsto di {round(residuo, 2)} (liability {liab}, gia' "
+                    f"coperto {round(gia, 2)})")
         return None
     # 3. la quantita': quanto Over si sta comprando in tutto contro quanto ne
     #    serve ancora. Se manca un prezzo non si giudica (controllo conservativo).
@@ -840,22 +919,37 @@ def _s1(ctx, snap, d, params):
     return None
 
 
-@_controllo("S2", "nessun piazzamento di copertura mentre il mercato Over 4.5 non e' "
-                  "OPEN: si aspetta la riapertura (ordine dell'utente 17/09, n.5)",
+def _sel_copertura(ctx, d, params) -> str:
+    """29/09 (P5): la selezione del libro della copertura: quella dell'ordine di
+    copertura proposto, o di quello sul book, altrimenti la forma scelta."""
+    for a in _piazzamenti(d):
+        if a.role == "over_cover" and a.selection:
+            return str(a.selection)
+    for l in reversed(ctx.legs):
+        if l.role == "over_cover" and (l.is_live or l.needs_reconcile):
+            return str(l.selection)
+    return E.SEL_UNDER if E.cover_form(params or {}) == E.COVER_LAY_U45 else E.SEL_OVER
+
+
+@_controllo("S2", "nessun piazzamento di copertura mentre il mercato della copertura "
+                  "(Over 4.5, o Under 4.5 per la banca) non e' OPEN: si aspetta la "
+                  "riapertura (ordine dell'utente 17/09, n.5)",
             quando=lambda ctx, snap, d, p: not E.operabile(
-                _book(snap, E.MARKET_OU45, E.SEL_OVER)))
+                _book(snap, E.MARKET_OU45, _sel_copertura(ctx, d, p))))
 def _s2(ctx, snap, d, params):
     """Sospeso, chiuso, non attivo e IGNOTO valgono tutti «non adesso»: un place
     su mercato sospeso non nasce, e il cancel che lo accompagna lascerebbe la
     posizione ancora piu' scoperta."""
-    bk = _book(snap, E.MARKET_OU45, E.SEL_OVER)
+    sel = _sel_copertura(ctx, d, params)
+    bk = _book(snap, E.MARKET_OU45, sel)
     if E.operabile(bk):
         return None
     tocca = [a for a in d.actions
              if a.role == "over_cover" and a.kind in ("place", "cancel")]
     if tocca:
         ruoli = ", ".join(sorted({str(a.kind) for a in tocca}))
-        return (f"mercato Over 4.5 {E.stato_mercato(bk)} e il bot emette lo stesso "
+        nome = "Under 4.5" if sel == E.SEL_UNDER else "Over 4.5"
+        return (f"mercato {nome} {E.stato_mercato(bk)} e il bot emette lo stesso "
                 f"{ruoli} sulla copertura")
     return None
 
