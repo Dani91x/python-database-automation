@@ -4272,3 +4272,37 @@ safe_tennis; mike copertura-rifiutata entrambi; mike «tutti» canale (30 min);
   5) a replay tutti verdi: ramo di prova su master a percorsi espliciti, push; 6) suite intere, tsc, vitest,
   `npm run build`; 7) elenco finale all'utente (blocco 8 del checkpoint delle 22:40).
 - ORDINE DELL'UTENTE (29/09, 06:41): «a che punto siamo? hai 30 minuti per finire tutti i lavori».
+
+**Checkpoint 07:11 del 29/09 — Mike «tutti» a 0 violazioni; il KO della coda era l'AMBIENTE; ramo di prova 2**
+- **`certifica mike 35760084 --scenari tutti --trasporto canale` dal ramo di prova `02d4c30`: 15 scenari OK, 0 violazioni**
+  (25 min 30 s). Referto: `AUDIT_2026-09-28/replay/giro_ramo_di_prova/mike_tutti_canale_02d4c30.txt`.
+- **IL KO DI MIKE SULLA CODA NON ERA UNA REGRESSIONE** (errore mio di lettura, corretto): i miei worktree di verifica stanno
+  FUORI dal repo e non trovano il `.env`; senza, `LIVE_ORDER_MODE` vale OFF e ogni apertura live muore con
+  `live_order_mode_non_live:OFF`. Dal checkout principale (`.env`: `LIVE_ORDER_MODE=LIVE`) il replay era a posto.
+  Variabili NON segrete del `.env` che cambiano la condotta nel replay: `LIVE_ORDER_MODE=LIVE`, `MIKE_LIVE_ENABLED=1`,
+  `SAFE_PRE_KO_OU_HOURS=1`, `LIVE_RECONCILE_POLL_SEC=5`, `LIVE_MARKET_TYPES=MATCH_ODDS,CORRECT_SCORE,HALF_TIME_SCORE`,
+  `HAZARD_ATLAS_SYNC=1` (elenco completo: `d1ter/variabili_env_lette_dai_bot.txt` nel worktree del delegato).
+  CONSEGUENZA: i replay fatti dai worktree fuori dal repo (28/09 sera e notte) valgono come PRE-CONTROLLO. La
+  CERTIFICAZIONE e' il giro finale lanciato dal CHECKOUT PRINCIPALE dopo l'integrazione su master.
+- Il difetto di condotta emerso e' VERO ed e' corretto (D1-quater produzione): un'apertura di Mike rifiutata per una
+  causa che non e' il mercato (modo ordini, kill-switch, runner giu') si dice UNA volta (`ctx.aperture_ferme`) e riparte
+  quando la causa sparisce; prima scriveva una riga `error` a ogni giro (254 in una partita).
+- UF2 sulle uscite firmate di tennis pro e scalper tennis: sbagliava il CONTROLLO nuovo (contava il parcheggio del
+  place-and-trim e la gamba d'ingresso del ciclo dopo), non il bot. Provato dal delegato con una sonda sugli ordini:
+  stop da 2,06 = 2,00 abbinati + parcheggio tagliato e rimpiazzato da 0,06 abbinati = 2,06. Controllo corretto senza
+  allargare la tolleranza (un'uscita davvero gonfiata resta una violazione: test).
+- **RAMO LOCALE `prova-tutto-2-2026-09-29` (`a739a59`)** = `staging-2026-09-28` (`02d4c30`) + Z3 + P correzione minimo + J2
+  correzioni + D1-quater banco e produzione + N3 UF2. Tutto sommato SENZA conflitti. Verifiche mie: suite mirata
+  (Safe, tennis_live, stream/tests, scalper) 5427 verdi 0 rossi; Mike + banco 1090 verdi; test del banco N3 169 verdi;
+  tsc 0 errori; vitest 4150 verdi, 1 rosso (`safeBot.test.ts` «fetchSafeState normalizza una risposta vuota»: il file
+  `safeBot.ts` e' IDENTICO a master, quindi o e' rosso anche su master o dipende dall'ambiente del worktree: da
+  rilanciare dal checkout principale).
+- REPLAY IN CORSO: (1) dal worktree `verifica/staging` (`02d4c30`): scalper_calcio 35797769, poi sniper, poi mike
+  copertura-rifiutata entrambi con `LIVE_ORDER_MODE=LIVE`; (2) dal worktree `verifica/D1ter` (`a739a59`): tennis_pro,
+  tennis_scalper (6 scenari), safe_tennis, mike copertura-rifiutata entrambi. Uscite in `scratchpad/replay/giro/` e
+  `scratchpad/replay/giro2/`.
+- PROSSIMI PASSI: 1) esiti dei due giri; 2) se verdi: `prova-tutto-2-2026-09-29` su master a percorsi espliciti, push;
+  3) GIRO FINALE DI CERTIFICAZIONE dal checkout principale, un bot alla volta; 4) vitest e `npm run build` dal checkout
+  principale; 5) elenco finale all'utente.
+- REPERTO APERTO segnalato da N, non indagato: in tennis_pro proposte firmate `scaglione`/`strutturale` con
+  `size_chiusura` 0,00.
