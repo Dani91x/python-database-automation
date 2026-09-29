@@ -1,0 +1,13 @@
+BASE (senza mutazioni): VERDE  112 passed, 2967 deselected in 9.77s
+B1 flatten: parcheggio di una sequenza ritirato a ogni book    rossa  1 failed, 42 passed, 2967 deselected in 9.37s
+B2 flatten: piatta dichiarata con ordini in volo o sequenze    rossa  1 failed, 49 passed, 2967 deselected in 9.96s
+B3 CAUSA: seconda chiusura con un ordine in Cancelling         rossa  1 failed, 44 passed, 2967 deselected in 10.50s
+B4 ultima spiaggia: accetta anche a prezzi assenti             rossa  1 failed, 54 passed, 2967 deselected in 10.04s
+B5 ultima spiaggia: accetta una posizione piazzabile           rossa  1 failed, 52 passed, 2967 deselected in 10.01s
+B6 ordine rifiutato contato come chiusura partita              rossa  1 failed, 52 passed, 2967 deselected in 9.79s
+B7 sostituto del rimpiazzo non agganciato                      rossa  1 failed, 38 passed, 2967 deselected in 9.09s
+B8 parcheggio morto: la sequenza resta appesa                  rossa  1 failed, 50 passed, 2967 deselected in 9.72s
+B9 in volo: REPLACING non conta                                SOPRAVVISSUTA  112 passed, 2967 deselected in 9.71s
+B10 in volo: CANCELLING non conta                              rossa  1 failed, 34 passed, 2967 deselected in 8.94s
+B11 chiusura bloccata: accettata in silenzio                   rossa  1 failed, 50 passed, 2967 deselected in 9.72s
+mutazioni sopravvissute o non applicate: 1 su 11
