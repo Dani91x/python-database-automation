@@ -180,6 +180,34 @@ def compute_green(
     return "BACK", size, locked
 
 
+def green_piazzabile(
+    net_win: float, net_lose: float, price: Any, frazione: float = 1.0
+) -> Optional[Tuple[str, float, float]]:
+    """29/09 (CANTIERE U): la chiusura che PARTIREBBE davvero adesso.
+
+    ``(lato, importo, locked)``: l'importo e' ``compute_green`` x ``frazione``
+    arrotondato al centesimo, cioe' esattamente la size che i ``_place`` dei
+    bot tennis mandano (``round(size, 2)``). ``None`` se non c'e' niente di
+    piazzabile: prezzo non valido, posizione gia' pari, o importo sotto il
+    centesimo (quello che ``_place`` scarterebbe: ``size < 0.01``). Una
+    proposta d'uscita con importo 0,00 non deve nascere: se questa funzione
+    torna None, alla firma non partirebbe nessun ordine."""
+    try:
+        p = float(price) if price is not None else None
+    except (TypeError, ValueError):
+        return None
+    if p is None:
+        return None
+    g = compute_green(net_win, net_lose, p)
+    if g is None:
+        return None
+    lato, size, locked = g
+    importo = round(max(0.0, float(size) * float(frazione)), 2)
+    if importo < 0.01:
+        return None
+    return lato, importo, locked
+
+
 @dataclass
 class _Slot:
     """Stato per (market_id, selection_id)."""

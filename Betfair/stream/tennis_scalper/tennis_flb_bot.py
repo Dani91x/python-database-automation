@@ -49,7 +49,7 @@ from .condotta_ordini import (
     size_legale,
     stato_ordine,
 )
-from .tennis_scalper_bot import compute_green, ticks_between
+from .tennis_scalper_bot import compute_green, green_piazzabile, ticks_between
 from ..uscite_proposte import CHIAVE_STATS as CHIAVE_PROPOSTE
 from ..uscite_proposte import CancelloUscite, ora_s, proposta_di
 
@@ -283,6 +283,12 @@ class TennisFLBStrategy(BaseStrategy):
             return min(nw, nl), None
         gside, gsize, _locked_full = g
         p = float(get_nearest_price(price))
+        # 29/09 (CANTIERE U): sotto il centesimo non si piazza niente (come
+        # prima: `_place` lo scartava). L'ordine vale round(size, 2), cioe'
+        # esattamente il `size_chiusura` di `green_piazzabile` della proposta;
+        # la stima del locked resta sulla size piena (telemetria, fix audit #11)
+        if green_piazzabile(nw, nl, price, frac) is None:
+            return min(nw, nl), None
         size = gsize * frac
         # COPERTURA: passa il freno rifiuti e puo' essere bumpata al minimo .it
         o = self._place(market, sel, gside, p, size, copertura=True)
@@ -400,13 +406,22 @@ class TennisFLBStrategy(BaseStrategy):
                 st: Dict[str, Any], bb: float, bl: float,
                 pt: Optional[int] = None) -> None:
         b, ba, l, la = self._matched(market, sel)
+        # 29/09 (CANTIERE U): `_matched` somma TUTTI gli ordini del bot sulla
+        # selezione, anche quelli della posizione precedente gia' coperta (in
+        # modalita' "green" la selezione torna DONE e poi si ri-arma). Prima
+        # del green, una posizione senza niente di PIAZZABILE da chiudere al
+        # prezzo del green (best-back) e' l'ingresso nuovo non ancora abbinato
+        # sopra il residuo di centesimi del ciclo prima: niente proposta 0,00
+        # e nessun "cancel perso" inventato dal residuo.
+        vuota = (not st.get("greened") and (b + l) > _EPS
+                 and green_piazzabile(*self._net(b, ba, l, la), bb) is None)
         if st.get("state") == PENDING:
             # ⚠️ CANCEL IN VOLO. `market.cancel_order` e' ASINCRONA: l'ordine
             # passa per `Cancelling` prima di morire, e in quella finestra puo'
             # ancora riempirsi. Dichiarare DONE subito dopo il cancel lasciava
             # un ordine VIVO sul book sotto una posizione «chiusa» (misurato sul
             # replay del 17/09, 35790089: K6, 2,00 EUR ancora `Cancelling`).
-            if (b + l) > _EPS:
+            if (b + l) > _EPS and not vuota:
                 # si e' riempito lo stesso: e' una posizione vera, si gestisce
                 # come tutte le altre (uscite del dossier §4.3)
                 st["state"] = OPEN
@@ -419,7 +434,7 @@ class TennisFLBStrategy(BaseStrategy):
                 return
             else:
                 return      # cancel non ancora confermato: si aspetta
-        if (b + l) <= _EPS:
+        if (b + l) <= _EPS or vuota:
             # ⚠️ L'INGRESSO PUO' ESSERE GIA' MORTO: con `persistence_type=LAPSE`
             # Betfair uccide l'appoggiato a ogni SOSPENSIONE (in tennis: a ogni
             # punto). Prima il bot aspettava 40 s una quota che a mercato non
@@ -510,19 +525,22 @@ class TennisFLBStrategy(BaseStrategy):
         if vuole_green:
             frac0 = 1.0 if self.exit_mode == "green" else self.green_frac
             nw0, nl0 = self._net(b, ba, l, la)
-            g0 = compute_green(nw0, nl0, bb)
-            vuole_green = self.cancello_uscite.lascia_uscire(
+            # 29/09 (CANTIERE U): l'importo che PARTE alla firma (stessa
+            # `green_piazzabile` di `_green`); niente di piazzabile = nessuna
+            # proposta e nessun green
+            g0 = green_piazzabile(nw0, nl0, bb, frac0)
+            vuole_green = g0 is not None and self.cancello_uscite.lascia_uscire(
                 automatiche=bool(self.uscite_automatiche), chiave=prefisso + "green",
                 now_s=ora_s(pt),
                 proposta=proposta_di(
                     bot="tennis_flb", motivo="green", market_id=key[0], selection_id=sel,
                     lato_ingresso="LAY", prezzo=bb,
-                    lato_chiusura=(g0[0] if g0 else None),
-                    size_chiusura=((g0[1] * frac0) if g0 else None),
-                    se_chiudi=((g0[2] * frac0) if g0 else None),
+                    lato_chiusura=g0[0], size_chiusura=g0[1],
+                    se_chiudi=(g0[2] * frac0),
                     se_vince=nw0, se_perde=nl0, frazione=frac0))
             if not vuole_green:
-                self.cancello_uscite.conferma_vive(prefisso, (prefisso + "green",))
+                self.cancello_uscite.conferma_vive(
+                    prefisso, (prefisso + "green",) if g0 is not None else ())
         else:
             self.cancello_uscite.conferma_vive(prefisso, ())
         self._pubblica_proposte()

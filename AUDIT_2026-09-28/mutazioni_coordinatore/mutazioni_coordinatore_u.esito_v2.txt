@@ -1,0 +1,14 @@
+BASE (senza mutazioni): VERDE  377 passed in 5.21s
+M1 soglia del centesimo tolta                              rossa  1 failed in 2.96s
+M2 pro: residuo di nuovo scambiato per posizione           rossa  1 failed, 2 passed in 2.90s
+M3 pro: proposta con importo della chiusura TOTALE         rossa  1 failed, 4 passed in 3.00s
+M4 pro: l'ordine manda un importo diverso dalla proposta   rossa  1 failed, 4 passed in 2.84s
+M5 pro: proposta a zero rinasce (nessun rifiuto)           rossa  1 failed, 5 passed in 2.84s
+M6 swing: residuo di nuovo scambiato per posizione         rossa  1 failed, 7 passed in 4.32s
+M7 swing: proposta a zero rinasce                          rossa  1 failed, 11 passed in 3.11s
+M8 flb: residuo di nuovo scambiato per posizione           rossa  1 failed, 9 passed in 3.48s
+M9 flb: cancel perso inventato dal residuo                 rossa  1 failed, 9 passed in 3.82s
+M10 flb: green a zero rinasce                              rossa  1 failed, 12 passed in 4.17s
+M11 banco UM2: lo zero torna un numero presente            rossa  1 failed, 14 passed in 2.86s
+M12 pro: prezzo di uscita del lato sbagliato               rossa  1 failed, 10 passed in 3.22s
+mutazioni sopravvissute o non applicate: 0 su 12

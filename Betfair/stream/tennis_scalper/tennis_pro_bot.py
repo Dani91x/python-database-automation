@@ -55,7 +55,7 @@ from .condotta_ordini import (
     size_legale,
     stato_ordine,
 )
-from .tennis_scalper_bot import compute_green, ticks_between
+from .tennis_scalper_bot import compute_green, green_piazzabile, ticks_between
 from ..uscite_proposte import CHIAVE_STATS as CHIAVE_PROPOSTE
 from ..uscite_proposte import CancelloUscite, ora_s, proposta_di
 from .tennis_score import TennisScore
@@ -264,15 +264,23 @@ class TennisProStrategy(BaseStrategy):
                          b: float, ba: float, l: float, la: float, sel: int,
                          prezzo: float, lato: str, frazione: float = 1.0) -> bool:
         """True = l'uscita ``motivo`` decisa dalla strategia parte adesso; se no
-        la proposta coi numeri resta viva (``vive``)."""
+        la proposta coi numeri resta viva (``vive``).
+
+        29/09 (CANTIERE U): l'importo della proposta e' quello che PARTE alla
+        firma, calcolato dalla stessa ``green_piazzabile`` di ``_close_at``.
+        Se non c'e' niente di piazzabile da chiudere (importo sotto il
+        centesimo) la proposta NON nasce e l'uscita non parte: prima nasceva
+        una scheda "chiudi 0,00" e la firma non mandava nessun ordine ma
+        chiudeva il trade (annullando l'ingresso ancora in coda)."""
         nw, nl = self._net(b, ba, l, la)
-        g = compute_green(nw, nl, prezzo)
+        g = green_piazzabile(nw, nl, prezzo, frazione)
+        if g is None:
+            return False
         proposta = proposta_di(
             bot="tennis_pro", motivo=motivo, market_id=prefisso.split("|")[1],
             selection_id=sel, lato_ingresso=lato, prezzo=prezzo,
-            lato_chiusura=(g[0] if g else None),
-            size_chiusura=((g[1] * frazione) if g else None),
-            se_chiudi=((g[2] * frazione) if g else None),
+            lato_chiusura=g[0], size_chiusura=g[1],
+            se_chiudi=(g[2] * frazione),
             se_vince=nw, se_perde=nl, frazione=frazione)
         chiave = prefisso + motivo
         ok = self.cancello_uscite.lascia_uscire(
@@ -518,9 +526,15 @@ class TennisProStrategy(BaseStrategy):
         g = compute_green(nw, nl, price)
         if g is None:
             return min(nw, nl), None
-        side, size, locked = g
+        side, _size, locked = g
+        # 29/09 (CANTIERE U): l'importo e' quello di `green_piazzabile`, la
+        # stessa funzione che scrive `size_chiusura` nella proposta: la firma
+        # manda esattamente il numero che l'utente ha visto.
+        gp = green_piazzabile(nw, nl, price, frac)
+        if gp is None:
+            return float(locked), None      # sotto il centesimo: niente da piazzare
         # COPERTURA: passa il freno rifiuti e puo' essere bumpata al minimo .it
-        o = self._place(market, sel, side, get_nearest_price(price), size * frac,
+        o = self._place(market, sel, gp[0], get_nearest_price(price), gp[1],
                         copertura=True)
         return float(locked), o
 
@@ -775,7 +789,16 @@ class TennisProStrategy(BaseStrategy):
         d = px.get(sel)
         b, ba, l, la = self._position(market, sel)
 
-        if (b + l) <= _EPS:
+        # 29/09 (CANTIERE U): `_position` somma TUTTI gli ordini del bot su
+        # questa selezione, anche quelli dei trade gia' chiusi. Dopo un trade
+        # chiuso resta un residuo di centesimi (pari entro 0,02: se vince
+        # -0,056 / se perde -0,060 nel replay 35794049) e il trade NUOVO, con
+        # l'ingresso ancora in coda, sembrava "abbinato": nascevano scaglione,
+        # target e strutturale con importo 0,00, e la firma chiudeva il trade
+        # nuovo senza mandare nessun ordine. Una posizione senza niente di
+        # PIAZZABILE da chiudere al prezzo di uscita e' un ingresso non ancora
+        # abbinato: si gestisce come tale (timeout, ingresso morto).
+        if (b + l) <= _EPS or self._niente_da_chiudere(b, ba, l, la, d, trade["side"]):
             # ⚠️ L'INGRESSO PUO' ESSERE GIA' MORTO: con `persistence_type=LAPSE`
             # Betfair uccide l'appoggiato a ogni SOSPENSIONE (in tennis: a ogni
             # punto). Prima il bot aspettava 25 s una quota che a mercato non
@@ -878,6 +901,21 @@ class TennisProStrategy(BaseStrategy):
         # le proposte di questa posizione la cui condizione non vale piu' spariscono
         self.cancello_uscite.conferma_vive(prefisso, vive)
         self._pubblica_proposte()
+
+    def _niente_da_chiudere(self, b: float, ba: float, l: float, la: float,
+                            d: Optional[Dict[str, Any]], lato_trade: Any) -> bool:
+        """29/09 (CANTIERE U): True se la posizione letta dal blotter NON ha
+        niente di piazzabile da chiudere al prezzo di uscita di `_manage`
+        (best-lay per un trade BACK, best-back per un LAY): lo stesso calcolo
+        dell'ordine (`green_piazzabile`). Senza prezzo non si decide (False:
+        come prima)."""
+        if (b + l) <= _EPS or not d:
+            return False
+        px = d.get("bl") if lato_trade == "BACK" else d.get("bb")
+        if px is None:
+            return False
+        nw, nl = self._net(b, ba, l, la)
+        return green_piazzabile(nw, nl, px, 1.0) is None
 
     def _full_close(self, market: Any, trade: Dict[str, Any], sel: int,
                     price: float) -> "Tuple[float, Optional[Any]]":

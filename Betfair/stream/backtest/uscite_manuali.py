@@ -111,6 +111,19 @@ def difetti_proposta(p: Dict[str, Any]) -> List[str]:
     out += ["%s senza valore" % k for k in CHIAVI_NUMERI_OBBLIGATORI
             if k in p and p.get(k) is None
             and not (dichiarato and k in CHIAVI_NUMERI_CHIUSURA)]
+    # 29/09 (CANTIERE U): un importo di chiusura a 0,00 (o negativo) NON e' un
+    # numero presente: la scheda dice "chiudi 0,00 EUR" e alla firma non parte
+    # niente (replay 35794049 del tennis_pro, scenario firmato). Si tratta
+    # come un numero mancante, senza eccezioni (nemmeno `numeri_non_disponibili`:
+    # quella dichiara un numero ASSENTE, non un numero falso).
+    size = p.get("size_chiusura")
+    if size is not None:
+        try:
+            if float(size) <= 0.0:
+                out.append("size_chiusura a zero (%r): nessun importo da chiudere"
+                           % (size,))
+        except (TypeError, ValueError):
+            out.append("size_chiusura non numerica (%r)" % (size,))
     return out
 
 DESCRIZIONE_MANUALI = (

@@ -35,7 +35,7 @@ from .condotta_ordini import (
     size_legale,
     stato_ordine,
 )
-from .tennis_scalper_bot import compute_green
+from .tennis_scalper_bot import compute_green, green_piazzabile
 from ..uscite_proposte import CHIAVE_STATS as CHIAVE_PROPOSTE
 from ..uscite_proposte import CancelloUscite, ora_s, proposta_di
 
@@ -147,14 +147,19 @@ class TennisSwingStrategy(BaseStrategy):
         """True = l'uscita ``kind`` decisa dalla strategia parte adesso."""
         nw = b * (ba - 1.0) - l * (la - 1.0)
         nl = l - b
-        g = compute_green(nw, nl, px)
+        # 29/09 (CANTIERE U): l'importo e' quello che PARTE alla firma (stessa
+        # `green_piazzabile` di `_close`); niente di piazzabile = nessuna
+        # proposta e nessuna uscita (mai una scheda "chiudi 0,00")
+        g = green_piazzabile(nw, nl, px)
+        if g is None:
+            self.cancello_uscite.conferma_vive(prefisso, ())
+            self._pubblica_proposte()
+            return False
         mid = prefisso.split("|")[1]
         proposta = proposta_di(bot="tennis_swing", motivo=kind, market_id=mid,
                                selection_id=sel, lato_ingresso=side, prezzo=px,
-                               lato_chiusura=(g[0] if g else None),
-                               size_chiusura=(g[1] if g else None),
-                               se_chiudi=(g[2] if g else None),
-                               se_vince=nw, se_perde=nl)
+                               lato_chiusura=g[0], size_chiusura=g[1],
+                               se_chiudi=g[2], se_vince=nw, se_perde=nl)
         chiave = prefisso + kind
         ok = self.cancello_uscite.lascia_uscire(
             automatiche=bool(self.uscite_automatiche), chiave=chiave,
@@ -308,9 +313,13 @@ class TennisSwingStrategy(BaseStrategy):
         nw, nl = b*(ba-1)-l*(la-1), l-b
         g = compute_green(nw, nl, price)
         if g is None: return min(nw, nl), None
-        side, sz, locked = g
+        side, _sz, locked = g
+        # 29/09 (CANTIERE U): l'importo di `green_piazzabile`, lo stesso della
+        # proposta che l'utente ha firmato
+        gp = green_piazzabile(nw, nl, price)
+        if gp is None: return float(locked), None   # sotto il centesimo
         # COPERTURA: passa il freno rifiuti e puo' essere bumpata al minimo .it
-        o = self._place(market, sel, side, get_nearest_price(price), sz,
+        o = self._place(market, sel, gp[0], get_nearest_price(price), gp[1],
                         copertura=True)
         return float(locked), o
 
@@ -467,7 +476,15 @@ class TennisSwingStrategy(BaseStrategy):
                            rettifica=round(delta, 3))
             return
 
-        if (b+l) <= _EPS:
+        # 29/09 (CANTIERE U): `_pos` somma TUTTI gli ordini del bot sulla
+        # selezione, anche quelli dei trade gia' chiusi (residuo di centesimi,
+        # pari entro 0,02). Senza niente di PIAZZABILE da chiudere al prezzo di
+        # uscita, il trade nuovo ha l'ingresso non ancora abbinato: si gestisce
+        # come tale, non come una posizione da chiudere a 0,00.
+        px_uscita = (bb if self.maker else bl) if side == "BACK" else (bl if self.maker else bb)
+        vuota = (not self.dry_run and (b + l) > _EPS and green_piazzabile(
+            b*(ba-1.0) - l*(la-1.0), l - b, px_uscita) is None)
+        if (b+l) <= _EPS or vuota:
             # ⚠️ L'INGRESSO PUO' ESSERE GIA' MORTO. Con `persistence_type=LAPSE`
             # Betfair uccide l'ordine appoggiato a ogni SOSPENSIONE (in tennis:
             # a ogni punto). Prima il bot continuava ad aspettare 40 s una quota
