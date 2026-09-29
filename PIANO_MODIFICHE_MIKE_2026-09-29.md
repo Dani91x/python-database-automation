@@ -193,6 +193,9 @@ restano quelli di oggi, salvo ordine esplicito.
 | 10 | 29/09 | Caso A (3 minuti senza gol): prima ritira la banca sull'Under 3,5, poi copre sulla posizione rimasta | confermata; gia' cosi' |
 | 11 | 29/09 | Caso B (gol nei 3 minuti): seconda puntata 5 EUR, poi copertura in due tranche (2 minuti dal gol, poi 3 minuti dopo) | confermata; gia' cosi' |
 | 12 | 29/09 | Cash out in profitto: soglia 5 % confermata; parte SEMPRE da solo («se c'e' possibilita' di chiudere senza rischi deve farlo da solo») | confermata, da implementare (M4.1) |
+| 13 | 29/09 | TUTTE le uscite in profitto partono da sole (pre-partita, fischio, cash out 5 %, cash out intelligente, green del rientro) | confermata, da implementare (M1.1, M4.1-M4.4) |
+| 14 | 29/09 | Cash out intelligente: resta com'e' | confermata |
+| 15 | 29/09 | Mike deve sempre sapere lo stato di ogni suo ordine (abbinato, chiuso, registrato) | regola permanente, criterio di accettazione di ogni modifica |
 
 ---
 
@@ -343,8 +346,35 @@ manuale.
 - Esempio: capitale 12,27, soglia 0,61; al 40' sullo 0-0 con Under 3,5 a 1,20 e Under 4,5 a 1,05:
   chiusura Under 3,5 circa +2,38 netti, chiusura copertura circa -1,56, totale circa +0,81: chiude.
 
-### Conseguenza del principio, DA CONFERMARE con l'utente
-Anche queste chiusure bloccano un profitto e oggi, in manuale, sono proposte:
-- la banca a 2 tick sotto al fischio d'inizio (uscita al fischio);
-- la banca di green del rientro sull'Under 4,5.
-(La banca di green del pre-partita e' gia' decisa: parte sempre da sola, M1.1.)
+### REGOLA GENERALE dell'utente sulle uscite (29/09)
+Parole sue: «TUTTO QUELLO CHE SONO USCITE IN PROFITTO, MIKE PUO' FARLE DA SOLO COME DA INDICAZIONI E
+DA PROGETTAZIONE».
+Quindi partono SEMPRE da sole, con l'interruttore su manuale o su automatico, tutte le chiusure che
+bloccano un profitto:
+| Uscita in profitto | Oggi in manuale | Dopo |
+|---|---|---|
+| Banca di green del pre-partita (2 tick sotto) | proposta | da sola (M1.1) |
+| Banca a 2 tick sotto al fischio d'inizio | proposta | da sola (M4.2) |
+| Cash out in profitto al 5 % | proposta | da solo (M4.1) |
+| Cash out intelligente (profitto di almeno il 2 %) | proposta | da solo (M4.3) |
+| Banca di green del rientro sull'Under 4,5 | proposta | da sola (M4.4) |
+
+- **M4.2, M4.3, M4.4**: come M4.1, le uscite in profitto escono dal cancello delle uscite manuali.
+- L'interruttore manuale/automatico resta e governa cio' che NON e' un'uscita in profitto (le
+  uscite in perdita: da decidere nel passo 3).
+- Il pulsante resta su ogni bot, di serie su manuale (regola permanente dell'utente): cambia solo
+  che cosa governa in Mike.
+
+### Passo 2 - Cash out intelligente
+Resta com'e' (tre condizioni: 3 o piu' gol; profitto a meno di 2 punti dalla soglia in fase calda;
+il modello dice che aspettare vale meno che chiudere; mai sotto il 2 % del capitale impegnato) e
+parte da solo (M4.3).
+
+### PRINCIPIO dell'utente sugli ordini (29/09)
+Parole sue: «MIKE deve assicurarsi che tutti gli ordini da lui gestiti siano abbinati, chiusi,
+loggati. DEVE ESSERE SEMPRE AL CORRENTE DI QUELLO CHE SUCCEDE, SPECIALMENTE PER GLI ORDINI».
+E' la regola permanente «consapevolezza degli ordini». Ogni modifica di questo piano va provata
+anche su questo: per ogni ordine nuovo (banca Under 4,5 di copertura, punta Under 4,5 di chiusura,
+ultimo ingresso, banche che restano fino al fischio) Mike deve sapere se e' abbinato, abbinato in
+parte, in coda, cancellato da Betfair, rifiutato o a esito ignoto, e scriverlo nel registro.
+Criteri di accettazione: controlli di condotta del banco (K5, K6, S1-S4, UF1-UF3) a 0 violazioni.
