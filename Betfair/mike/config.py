@@ -293,7 +293,9 @@ PARAM_SPEC: dict[str, Spec] = {
     # ---- re-ingresso Under (gol + 3.5) ----
     "reentry_enabled": (True, bool, None, None, None),
     "reentry_green_ticks": (2, int, 1, 10, None),
-    "reentry_max_goals": (1, int, 0, 1, None),
+    # 29/09 (piano Mike M6.1, decisione 20 dell'utente): rientro con 1 O 2 gol
+    # (prima esattamente 1); il minimo di 1 gol e' nel motore
+    "reentry_max_goals": (2, int, 0, 2, None),
     "reentry_until_min": (45, int, 0, 100, None),
     # 0 = NESSUNA chiusura forzata: la lay a +N tick resta sul book fino a fine gara (specifica utente)
     "reentry_exit_until_min": (0, int, 0, 100, None),

@@ -611,8 +611,9 @@ def test_reentry_guards():
     ctx = E.MatchCtx(state="FLAT", entry_price_initial=1.50, reentry_allowed=True)
     d = E.decide(ctx, snap(KO + 50 * 60, u45=book(1.60, inplay=True), minute=50, goals=1, **base), p)
     assert d.actions == []
-    # 2 gol: linea 5.5 non sottoscritta
-    d = E.decide(ctx, snap(KO + 30 * 60, u45=book(1.60, inplay=True), minute=30, goals=2, **base), p)
+    # 29/09 (piano Mike M6.1): con 2 gol ora si rientra (sempre sull'Under 4.5,
+    # test_mike_p3_rientro_2026_09_29); fuori range resta da 3 gol in su
+    d = E.decide(ctx, snap(KO + 30 * 60, u45=book(1.60, inplay=True), minute=30, goals=3, **base), p)
     assert d.actions == []
 
 

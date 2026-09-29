@@ -538,13 +538,13 @@ def _h1(ctx, snap, d, params):
     return None
 
 
-@_controllo("H2", "il re-ingresso vuole ESATTAMENTE 1 gol e il primo tempo "
-                  "(§3 Fase 6)",
+@_controllo("H2", "il re-ingresso vuole 1 o 2 gol e il primo tempo "
+                  "(§3 Fase 6; 1 o 2 gol dal 29/09, piano Mike M6.1)",
             quando=lambda ctx, snap, d, p: any(a.role == 'reentry' for a in _piazzamenti(d)))
 def _h2(ctx, snap, d, params):
     if not any(a.role == "reentry" for a in _piazzamenti(d)):
         return None
-    if snap.goals is not None and int(snap.goals) != 1:
+    if snap.goals is not None and int(snap.goals) not in (1, 2):
         return f"re-ingresso con {snap.goals} gol"
     if snap.minute is not None and int(snap.minute) > 45:
         return f"re-ingresso al {snap.minute}'"
