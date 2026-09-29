@@ -192,6 +192,7 @@ restano quelli di oggi, salvo ordine esplicito.
 | 9 | 29/09 | La copertura diventa BANCA Under 4,5 (non piu' punta Over 4,5): stessa strategia, stesso margine del 20 %, importo = perdita Under 3,5 x 1,2 / 0,95 (lettura A) | confermata, da implementare (M3.1, M3.2, M3.3) |
 | 10 | 29/09 | Caso A (3 minuti senza gol): prima ritira la banca sull'Under 3,5, poi copre sulla posizione rimasta | confermata; gia' cosi' |
 | 11 | 29/09 | Caso B (gol nei 3 minuti): seconda puntata 5 EUR, poi copertura in due tranche (2 minuti dal gol, poi 3 minuti dopo) | confermata; gia' cosi' |
+| 12 | 29/09 | Cash out in profitto: soglia 5 % confermata; parte SEMPRE da solo («se c'e' possibilita' di chiudere senza rischi deve farlo da solo») | confermata, da implementare (M4.1) |
 
 ---
 
@@ -313,3 +314,37 @@ Copertura: `_decide_uncovered` (`engine.py:3273`), `_decide_cover_pending` 3425,
    dopo la prima. Con M3.1: banca Under 4,5 totale 15 x 1,2 / 0,95 = 18,95 EUR, prima tranche 9,47;
 4. puntata non abbinata entro 2 minuti: si ritira e si copre in una volta la posizione da 10 EUR;
 5. dopo la seconda puntata Mike NON rimette la banca a 2 tick sotto sull'Under 3,5.
+
+---
+
+## Punto 4 - Posizione coperta: le uscite
+
+Fase: partita in gioco, Under 3,5 abbinato e copertura abbinata.
+
+### PRINCIPIO dell'utente (29/09): «se c'e' possibilita' di chiudere SENZA RISCHI deve farlo da solo»
+Una chiusura che blocca un PROFITTO non aspetta la firma: parte da sola, anche con le uscite in
+manuale.
+
+### Passo 1 - Cash out in profitto a soglia fissa
+| Cosa | Oggi | Decisione dell'utente |
+|---|---|---|
+| Soglia: profitto netto, chiudendo tutto adesso, almeno il 5 % del capitale impegnato (`cashout_profit_pct` 5) | si' | **resta 5 %** |
+| Come chiude: banca l'Under 3,5 e chiude la copertura, al miglior prezzo | si' | resta |
+| In manuale | proposta da firmare | **DA CAMBIARE: chiude da solo** |
+
+- **M4.1 - Il cash out in profitto parte sempre da solo**, con l'interruttore su manuale o su
+  automatico.
+  - Per il tecnico: ramo «profit» di `_decide_covered` (`Betfair/mike/engine.py:3527-3539`),
+    `categoria_uscita` «chiusura» (`engine.py:2252`), `gate_uscite` 2337: la categoria «chiusura»
+    oggi copre sia il profitto sia la perdita, va divisa per motivo di chiusura.
+- **Attenzione (legata a M3.1)**: il «capitale impegnato» oggi somma le PUNTATE a rischio (Under +
+  Over + rientro). Con la copertura come banca va contato il RISCHIO della banca (12,63 x 0,18 =
+  2,27 nell'esempio): stessa cifra di prima, calcolo da adattare (`invested`, `engine.py:700`).
+- Esempio: capitale 12,27, soglia 0,61; al 40' sullo 0-0 con Under 3,5 a 1,20 e Under 4,5 a 1,05:
+  chiusura Under 3,5 circa +2,38 netti, chiusura copertura circa -1,56, totale circa +0,81: chiude.
+
+### Conseguenza del principio, DA CONFERMARE con l'utente
+Anche queste chiusure bloccano un profitto e oggi, in manuale, sono proposte:
+- la banca a 2 tick sotto al fischio d'inizio (uscita al fischio);
+- la banca di green del rientro sull'Under 4,5.
+(La banca di green del pre-partita e' gia' decisa: parte sempre da sola, M1.1.)
