@@ -205,6 +205,8 @@ restano quelli di oggi, salvo ordine esplicito.
 | 22 | 29/09 | Le cifre della proposta si aggiornano in tempo reale; fra clic e ordine si accetta il movimento del mercato; dopo la chiusura la scheda dice che e' stata fatta e che non resta esposizione | confermata, da implementare (M7.1, M7.2) |
 | 23 | 29/09 | Difetti D1-D12: risposte dell utente nel punto 8 (D5 aperto; D10 criterio scelto dal coordinatore, da confermare) | da implementare (M8.1-M8.12) |
 | 24 | 29/09 | ORDINE: implementare tutto col massimo dell attenzione, senza rompere niente, fino ai replay veloci con le prestazioni | in corso |
+| 25 | 29/09 | Copertura: si copre solo se al miglior prezzo c e tutto l importo (regola di oggi, invariata) | confermata; nessuna modifica |
+| 26 | 29/09 | Copertura: un ordine solo per l importo intero, calcolato bene all inizio; nessuna operazione doppia per i resti piccoli | confermata, da implementare (M3.5) |
 
 ---
 
@@ -640,3 +642,21 @@ Verificato dal coordinatore sul codice: `exposure` compensa le gambe per selezio
 - **Domande aperte per l'utente:** (1) coprire solo se al miglior prezzo c'e' tutto l'importo (regola
   di oggi) oppure contare la liquidita' entro i 2 tick del cuscinetto; (2) residuo sotto 0,50 EUR
   dopo un abbinamento parziale: portarlo a 0,50 o considerarlo coperto.
+
+### Risposte dell'utente alle due domande del P5 (29/09 sera)
+1. **Liquidita': «cosi'».** Resta la regola di oggi: Mike copre solo se al miglior prezzo c'e' TUTTO
+   l'importo; altrimenti aspetta e riprova al giro dopo. La liquidita' entro i 2 tick del cuscinetto
+   NON si conta. Nessuna modifica.
+2. **Resto piccolo: «devi fare il calcolo bene all'inizio, non voglio operazioni doppie che aumentano
+   i rischi».**
+   - **M3.5 - La copertura e' UN ordine solo, per l'importo intero, calcolato bene prima di
+     partire.** Parte «tutto o niente»: o viene abbinato per intero, o non viene abbinato affatto e
+     si riprova per intero. Nessun ordine di completamento per un resto piccolo.
+   - Le due tranche dopo la seconda puntata restano (decisione 11): sono due ordini voluti, ognuno
+     calcolato per intero al suo momento, non un completamento.
+   - Se, nonostante il «tutto o niente», resta da coprire meno di 0,50 EUR, Mike NON manda un
+     secondo ordine: considera la posizione coperta e lo scrive nel registro.
+   - Per il tecnico: verificare che la bancata di copertura parta davvero «tutto o niente» in paper
+     e in live (`Betfair/safe_strategy/execution.py`, `Betfair/omega/omega_market.py`) e che il ramo
+     «riprezzo del residuo» di `_decide_cover_pending` non generi un secondo ordine per resti sotto
+     `IT_LAY_MIN`. Scenario di replay `copertura-banca-parziale` come prova.
