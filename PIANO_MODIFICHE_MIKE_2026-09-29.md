@@ -107,19 +107,34 @@ Importo 10 EUR, 2 tick, 60 secondi, 10 giri, 1 ora, banca appoggiata. Sono i val
   fischio e la parte cancellata da Betfair (`sizeLapsed`), e ripartire dalla posizione vera.
   Da verificare nel replay (scenario con banca abbinata in parte al fischio).
 
-### Da chiarire con l'utente
-1. **L'ultimo ingresso** (la puntata da 10 EUR a 10 minuti dal fischio, fatta oggi solo dopo una
-   chiusura in profitto): resta? Con la banca che non si ritira piu', a 10 minuti dal fischio Mike
-   puo' essere gia' piatto (giro chiuso) oppure in posizione con la banca in attesa.
-2. **Nuovi giri negli ultimi 10 minuti**: oggi Mike non apre giri nuovi da 10 minuti prima del
-   fischio. Resta cosi', o i giri continuano fino al fischio?
-3. **Il veto sull'Under 3,5**: non potendo piu' chiudere in perdita, a cosa serve? Solo a non
-   entrare (blocca gli ingressi nuovi), oppure si spegne del tutto?
-4. **La modalita' «al mercato» della banca** (Mike aspetta che il prezzo scenda di 2 tick e poi
-   banca al volo), oggi spenta: si toglie o resta come opzione?
-5. **Al fischio, con la banca non abbinata**: Mike entra in gioco con l'Under 3,5 aperto. Cosa deve
-   fare da li' lo si decide nel punto «dal fischio d'inizio» (oggi: nuova banca 2 tick sotto per 3
-   minuti, poi copertura Over 4,5).
+### Risposte dell'utente (29/09, pomeriggio)
+1. **L'ultimo ingresso: RESTA COSI'.**
+2. **Nuovi giri negli ultimi 10 minuti: RESTA COSI'** (Mike non apre giri nuovi da 10 minuti prima
+   del fischio).
+3. **Il veto sull'Under 3,5**: la domanda era posta male. Vale la regola dell'utente: nel
+   pre-partita non si chiude mai in perdita. Quindi il veto NON chiude piu' niente (M2.2); il
+   resto del veto resta com'e' oggi.
+4. **La modalita' «al mercato» della banca**: per l'utente riguarda il live. Si riprende nel
+   capitolo del gioco, non qui.
+
+### Documentazione Betfair: dove sta
+L'utente ha ricordato che la documentazione e' NEL REPO: `Betfair/Betfair_api_documentation.pdf`
+(62 pagine, guida ufficiale) e `docs/BETFAIR_BEST_PRACTICES_2026-07.md`. Si cerca PRIMA li'. Letta
+il 29/09: il PDF contiene gli esempi di ordini con `"persistenceType": "LAPSE"` (pag. 47, 54, 55)
+ma non la frase che descrive cosa succede al passaggio in gioco; quella frase viene dalle pagine
+ufficiali in rete citate sopra (stessa fonte, stesso editore).
+
+### Una conseguenza da confermare (unica domanda rimasta sul pre-partita)
+Oggi l'ultimo ingresso parte SOLO dopo la chiusura al prezzo di mercato che Mike fa a 10 minuti
+dal fischio quando e' in profitto. Con la banca che resta li' fino al fischio (M2.1) quella
+chiusura non esiste piu': lasciando tutto il resto «cosi'», l'ultimo ingresso non scatterebbe
+piu'. Da confermare con l'utente: l'ultimo ingresso sparisce, oppure parte quando a 10 minuti dal
+fischio Mike e' piatto.
+
+### Rimandato al capitolo «dal fischio d'inizio»
+- La modalita' «al mercato» della banca.
+- Cosa fa Mike se al fischio la banca non e' stata abbinata e l'Under 3,5 e' aperto (oggi: nuova
+  banca 2 tick sotto per 3 minuti, poi copertura Over 4,5).
 
 ---
 
