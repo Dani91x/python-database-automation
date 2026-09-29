@@ -1,0 +1,11 @@
+BASE (senza mutazioni): VERDE  1074 passed in 40.15s
+Y1 un fermo nostro torna a contare come rifiuto (richiesta)    rossa  1 failed, 846 passed in 35.35s
+Y2 un fermo nostro torna a contare nel freno della copertura   rossa  1 failed, 846 passed in 40.87s
+Y3 la sospensione letta solo dal mercato Under 3,5             rossa  1 failed, 842 passed in 40.11s
+Y4 lo sportello vero non sa rileggere per numero di scommessa  rossa  1 failed, 832 passed in 42.90s
+Y5 ordine uscito dai correnti: non si rilegge, resta ignoto    rossa  1 failed, 840 passed in 72.50s (0:01:12)
+Y6 alla riapertura si legge anche a mercato ancora sospeso     SOPRAVVISSUTA  1074 passed in 62.12s (0:01:02)
+Y7 un ritiro nostro scritto come rifiuto                       rossa  1 failed, 848 passed in 43.97s
+Y8 un ordine decaduto non detto «cancellato da Betfair»        rossa  1 failed, 849 passed in 33.31s
+Y9 il fermo nostro detto «rifiutato»                           rossa  1 failed, 852 passed in 36.44s
+mutazioni sopravvissute o non valide: 1 su 9

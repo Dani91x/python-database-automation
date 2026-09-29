@@ -218,6 +218,15 @@ SCENARIO_TAKER_IGNOTI = "taker-esiti-ignoti"
 # base e punta spente per ore), riprodotto apposta invece che aspettato.
 SCENARIO_RIAVVIO = "riavvio"
 
+# P4 (29/09, M8.3): FERMO NOSTRO DURANTE LA COPERTURA. Non tocca un parametro:
+# quando la partita entra nella fase della copertura si accende il freno
+# d'emergenza (``LIVE_KILL_SWITCH``, lo stesso interruttore di produzione) per
+# ``FERMO_COPERTURA_S`` secondi di mercato, poi lo si spegne. La copertura deve
+# fermarsi SENZA contare rifiuti del mercato e ripartire da sola (niente
+# «Riprendi»): prima 3 fermi = copertura bloccata per sempre.
+SCENARIO_FERMO_COPERTURA = "fermo-copertura"
+FERMO_COPERTURA_S = 90.0
+
 
 def _riavvia_processo() -> List[str]:
     """Butta via le cache di PROCESSO di `mike/service.py`, come un riavvio.
@@ -427,6 +436,9 @@ def _crea_strategia():
             # flumine con un ref che non e' del bot.
             self.chiuso_fuori_app = bool(kw.pop("chiuso_fuori_app", False))
             self.chiusura_utente: Optional[Dict[str, Any]] = None
+            # P4 (29/09, M8.3): il freno d'emergenza acceso durante la copertura
+            self.fermo_copertura = bool(kw.pop("fermo_copertura", False))
+            self.fermo: Dict[str, Any] = {}
             # A2 — I GIRI DEL SERVIZIO SU UNA PARTITA GIA' TERMINALE.
             # Il controllo A2 («da uno stato terminale non esce nessuna azione»)
             # non puo' avere un caso attraverso il servizio: `_run_event` esce
@@ -604,6 +616,8 @@ def _crea_strategia():
             self.db.upsert_event(ev)
             self.db.scan_rows = [row] if row is not None else []
             now = pt_ms / 1000.0
+            if self.fermo_copertura:
+                self._gestisci_fermo(pt_ms, str(ev.get("state") or ""))
             terminale = str(self.db.events[self.event_id].get("state") or "") in E.TERMINAL_STATES
             try:
                 azioni, _settled = S._run_event(
@@ -678,6 +692,33 @@ def _crea_strategia():
             stato = str(self.db.events[self.event_id].get("state") or "")
             if stato and stato not in self._stati:
                 self._stati.append(stato)
+
+        def _gestisci_fermo(self, pt_ms: int, stato: str) -> None:
+            """P4 (M8.3): il freno d'emergenza di PRODUZIONE (``LIVE_KILL_SWITCH``,
+            letto a caldo da ``controls.motivo_kill_switch`` e ``_live_brake``)
+            acceso all'ingresso nella fase della copertura, spento dopo
+            ``FERMO_COPERTURA_S`` secondi di mercato."""
+            if "dal" not in self.fermo:
+                if stato in ("LIVE_UNCOVERED", "LIVE_COVER_PENDING"):
+                    self.fermo = {"dal": int(pt_ms), "prima": os.environ.get("LIVE_KILL_SWITCH")}
+                    os.environ["LIVE_KILL_SWITCH"] = "true"
+                    self.db.log("replay_fermo_copertura", {"acceso": True, "ms": int(pt_ms)},
+                                self.event_id)
+                return
+            if "al" not in self.fermo and pt_ms - self.fermo["dal"] >= FERMO_COPERTURA_S * 1000:
+                self.spegni_fermo()
+                self.fermo["al"] = int(pt_ms)
+                self.db.log("replay_fermo_copertura", {"acceso": False, "ms": int(pt_ms)},
+                            self.event_id)
+
+        def spegni_fermo(self) -> None:
+            if "dal" in self.fermo and not self.fermo.get("spento"):
+                prima = self.fermo.get("prima")
+                if prima is None:
+                    os.environ.pop("LIVE_KILL_SWITCH", None)
+                else:
+                    os.environ["LIVE_KILL_SWITCH"] = prima
+                self.fermo["spento"] = True
 
         def _verifica_consapevolezza(self) -> None:
             ev = self.db.events.get(self.event_id)
@@ -772,7 +813,8 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                       riavvia: bool = False,
                       cashout_utente: bool = False,
                       chiuso_fuori_app: bool = False,
-                      chiusura_parziale: bool = False) -> CERT.Referto:
+                      chiusura_parziale: bool = False,
+                      fermo_copertura: bool = False) -> CERT.Referto:
     """Fa rivivere a Mike una partita registrata e ritorna il referto."""
     from flumine import FlumineSimulation
 
@@ -841,6 +883,7 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                           invecchia_s=invecchia_s, campioni_diff=campioni_diff,
                           riavvia=riavvia, cashout_utente=cashout_utente,
                           chiuso_fuori_app=chiuso_fuori_app,
+                          fermo_copertura=fermo_copertura,
                           market_filter={"markets": [raw]},
                           max_order_exposure=1e9, max_selection_exposure=1e9,
                           max_trade_count=int(1e9), max_live_trade_count=int(1e9))
@@ -900,6 +943,7 @@ def _certifica_evento(event_id: str, *, data_dir: str,
         motore.esegui(strategia)
     finally:
         E.decide = decide_vero             # type: ignore[assignment]
+        strategia.spegni_fermo()           # P4: il freno torna com'era, sempre
 
     out = strategia.chiudi()
     if guasto_cp is not None:
@@ -972,6 +1016,30 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                 f"scenario chiuso-fuori-app: ordini VERI dell'utente su flumine con un ref "
                 f"non di Mike ({strategia.chiusura_utente}); il controllo R3 «se ha chiuso "
                 f"l'utente il bot non fa piu' niente» e' stato sollecitato {quante} volte")
+    if strategia.fermo_copertura:
+        # P4 (M8.3): che cosa e' successo alla copertura durante e dopo il fermo
+        ferme = sum(1 for k, p_, _e in strategia.db.attivita
+                    if k == "skip" and (p_ or {}).get("aperture_ferme"))
+        riprese = sum(1 for k, p_, _e in strategia.db.attivita
+                      if k == "state" and (p_ or {}).get("reason") == "aperture_riprese")
+        bloccate = sum(1 for k, p_, _e in strategia.db.attivita
+                       if k == "error" and (p_ or {}).get("reason") == "copertura_bloccata")
+        al = strategia.fermo.get("al")
+        coperture_dopo = sum(1 for r in strategia.db.trades
+                             if str(r.get("role")) == "over_cover" and al is not None
+                             and str(r.get("status")) == "open")
+        out.note.append(
+            "scenario fermo-copertura (M8.3): "
+            + ("il fermo non e' mai scattato (la partita non e' arrivata alla copertura)"
+               if "dal" not in strategia.fermo else
+               f"freno acceso a {strategia.fermo.get('dal')} ms, spento a {al} ms | "
+               f"aperture ferme dichiarate {ferme} | riprese {riprese} | copertura "
+               f"bloccata {bloccate} (deve essere 0) | coperture abbinate {coperture_dopo}"))
+        if bloccate:
+            out.violazioni.append(CERT.Violazione(
+                "M8.3", "un fermo NOSTRO non conta fra i rifiuti del mercato della copertura "
+                        "(P4, 29/09)", f"copertura bloccata {bloccate} volte dal freno",
+                "LIVE_COVER_BLOCKED"))
     # LE QUATTRO REAZIONI ALLA RIAPERTURA, contate una per una (§15.6, R1).
     # «Quante volte R1 ha avuto un caso» non basta: dice che la catena gira, non
     # QUALE dei quattro rami e' stato esercitato. Il ramo (b) «scaduto alla
@@ -1072,6 +1140,10 @@ SCENARI_DESCRITTI: Dict[str, str] = {
     # (`Betfair/stream/backtest/chiusura_parziale.py`): la prima gamba di
     # chiusura su ogni selezione si abbina al piu' per il 40 %.
     CP.SCENARIO: "come `base`, ma " + CP.DESCRIZIONE,
+    # P4 (29/09, M8.3)
+    SCENARIO_FERMO_COPERTURA: "freno d'emergenza acceso per 90 s all'ingresso nella fase "
+                              "della copertura: la copertura si ferma senza contare rifiuti "
+                              "del mercato e riparte da sola quando il freno si spegne (M8.3)",
 }
 
 
@@ -1173,7 +1245,8 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
         riavvia=(scenario == SCENARIO_RIAVVIO),
         cashout_utente=(scenario == SCENARIO_CASHOUT_GLOBALE),
         chiuso_fuori_app=(scenario == SCENARIO_CHIUSO_FUORI_APP),
-        chiusura_parziale=(scenario == CP.SCENARIO))
+        chiusura_parziale=(scenario == CP.SCENARIO),
+        fermo_copertura=(scenario == SCENARIO_FERMO_COPERTURA))
     if scenario == SCENARIO_GOL_PRECOCE:
         # Lo scenario DICHIARA se il caso e' capitato davvero. Un referto
         # "zero violazioni" su una registrazione senza gol precoce non dice

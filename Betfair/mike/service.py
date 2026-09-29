@@ -200,6 +200,18 @@ class _RealMarket:
         _RealMarket._bind_strategy_ref(omega_market)
         return list(omega_market.list_cleared_orders(strategy_ref=_STRATEGY_REF) or [])
 
+    @staticmethod
+    def order_state_by_bet_id(bet_id: str) -> Dict[str, Any]:
+        """M6.2 (29/09) - UN ordine di Mike riletto per ``betId`` (correnti, poi
+        regolati SETTLED/VOIDED/LAPSED/CANCELLED): la lettura che esisteva gia'
+        in ``omega_market`` e che questo sportello non esponeva, per cui in live
+        un ordine uscito dai correnti (es. scaduto alla sospensione) finiva
+        sempre «ignoto / mercato_senza_lettura». Stesse chiavi del vero perche'
+        E' il vero; solleva sugli errori di rete (chi chiama riprova)."""
+        from Betfair.omega import omega_market
+
+        return dict(omega_market.order_state_by_bet_id(str(bet_id)) or {"found": False})
+
     # ------------------------------------------- LA POSIZIONE DI CONTO
     # ORDINE DELL'UTENTE 16/09 SERA - "se chiudo io il bot deve saperlo, anche
     # fuori dall'app". Le due letture qui sotto NON filtrano per
@@ -615,6 +627,27 @@ def _insert_trade_row(db: Any, row: Dict[str, Any], event_id: str) -> Optional[i
         return db.insert_trade(fallback)
 
 
+# M8.13 (29/09) - COME E' FINITO UN ORDINE NON ABBINATO, scritto nel ``meta`` della
+# riga (``meta.esito_ordine``). Lo ``status`` resta 'error' (vincolo CHECK di
+# ``mike_trades``: pending|open|hedged|won|lost|void|error, e la pagina lo legge):
+# la distinzione che l'utente chiede sta qui, senza migrazione.
+ESITO_RITIRATO_DA_NOI = "ritirato_da_noi"            # annullo nostro confermato
+ESITO_RIFIUTATO = "rifiutato"                        # Betfair / runner ha detto no
+ESITO_NON_ABBINATO_FOK = "non_abbinato_fok"          # tutto-o-niente non abbinato
+ESITO_CANCELLATO_DA_BETFAIR = "cancellato_da_betfair"  # LAPSE (sospensione, in gioco)
+ESITO_FERMATO_DA_NOI = "fermato_da_noi"              # mai partito: freno/modo/runner nostri
+
+
+def _esito_del_rifiuto(nota: Any, error_code: Any, fermo_nostro: bool) -> str:
+    """M8.13: il nome dell'esito per un ordine taker che non e' nato
+    (``live_not_matched:<stato>`` senza codice d'errore = FOK non abbinato)."""
+    if fermo_nostro:
+        return ESITO_FERMATO_DA_NOI
+    if str(nota or "").startswith("live_not_matched") and not error_code:
+        return ESITO_NON_ABBINATO_FOK
+    return ESITO_RIFIUTATO
+
+
 def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: Optional[E.Book],
                   mode: str, params: Dict[str, Any], now: datetime, dry: bool,
                   minute: Optional[int] = None, score: Optional[str] = None,
@@ -924,19 +957,27 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
     # gia' arrivata. La stessa richiesta identica non si rifa (fail-closed: la
     # Costituzione non dice «riprova» per questo caso, §3 Fase 1 e Fase 6
     # descrivono UNA uscita appoggiata per ciclo).
-    _rifiutata(ctx, leg, f"rifiutata da Betfair ({out.error_code or out.fill_note})")
+    # M8.3 (29/09): un fermo NOSTRO (freno, modo ordini, runner giu') non e' un
+    # «no» del mercato: niente ``_rifiutata`` e niente conteggio del freno della
+    # copertura (prima 3 fermi = copertura bloccata fino a «Riprendi»).
+    fermo_nostro = _rifiuto_non_di_mercato(out.fill_note)
+    if not fermo_nostro:
+        _rifiutata(ctx, leg, f"rifiutata da Betfair ({out.error_code or out.fill_note})")
     try:
-        db.update_trade(int(trade_id), status="error", meta={**row["meta"], "reason": out.fill_note})
+        db.update_trade(int(trade_id), status="error", meta={
+            **row["meta"], "reason": out.fill_note,
+            "esito_ordine": _esito_del_rifiuto(out.fill_note, out.error_code, fermo_nostro)})
     except Exception:  # noqa: BLE001
         pass
     # conteggio del freno della copertura + righe di attivita': la STESSA
     # funzione del ramo asincrono del runner (D1-bis)
-    _esito_rifiuto_mercato(db, ctx, leg, error_code=out.error_code,
-                           motivo=str(out.fill_note or ""), trade_id=trade_id,
-                           now_ts=now.timestamp(), params=params, event_id=info.event_id)
+    if not fermo_nostro:
+        _esito_rifiuto_mercato(db, ctx, leg, error_code=out.error_code,
+                               motivo=str(out.fill_note or ""), trade_id=trade_id,
+                               now_ts=now.timestamp(), params=params, event_id=info.event_id)
     db.log("skip", {"leg": leg.ref, "trade_id": trade_id, "reason": out.fill_note,
                     "error_code": out.error_code}, info.event_id)
-    if _rifiuto_non_di_mercato(out.fill_note):
+    if fermo_nostro:
         # D1-quater (29/09): freno / modo ordini / runner giu' -> detto UNA volta
         _ferma_aperture(db, ctx, leg, str(out.fill_note or ""), mode, info.event_id,
                         now.timestamp())
@@ -1610,7 +1651,12 @@ def _segui_ordini_paper_su_runner(*, db: Any, ctx: E.MatchCtx, ev: Dict[str, Any
                           "liability": X.liability_of(leg.side, abbinato, prezzo)})
         else:
             leg.status = "cancelled"
-            meta.update({"phase": "cancelled", "reason": f"runner_{fase}"})
+            meta.update({"phase": "cancelled", "reason": f"runner_{fase}",
+                         # M8.13 (29/09): come e' finito, detto per nome
+                         "esito_ordine": (ESITO_RIFIUTATO if fase == "rifiutato" else
+                                          (ESITO_CANCELLATO_DA_BETFAIR if fase == "scaduto"
+                                           else ESITO_RITIRATO_DA_NOI) if appoggiata else
+                                          ESITO_NON_ABBINATO_FOK)})
             campi["status"] = "error"
             # D1-ter: un ordine passato da esito IGNOTO (fase ``errore``) e poi
             # morto non e' un «no» del mercato a questa richiesta: niente
@@ -2162,6 +2208,10 @@ _ALIAS_ORDINE: Dict[str, tuple] = {
     "selection_id": ("selection_id", "selectionId"),
     "status": ("status",),
     "side": ("side",),
+    # M8.14 (29/09): il MOTIVO della decadenza dichiarato da Betfair
+    # (``lapseStatusReasonCode``: MKT_SUSPENDED, TIME_ELAPSED). Oggi la
+    # normalizzazione di ``omega_market`` non lo porta: vale None finche' manca.
+    "lapse_status_reason_code": ("lapse_status_reason_code", "lapseStatusReasonCode"),
 }
 
 
@@ -2355,6 +2405,16 @@ def _segui_resting_live(*, db: Any, market: Any, leg: E.Leg, extra: Dict[str, An
                                     "il mercato e' sospeso: l'esito lo dice Betfair alla "
                                     "riapertura, non si indovina adesso"}, eid)
             return
+        # M6.2 (29/09): prima di dichiararlo ignoto lo si RILEGGE per bet_id
+        # (regolati LAPSED/CANCELLED compresi): scaduto, abbinato e abbinato in
+        # parte sono esiti CERTI e si applicano come alla riapertura.
+        riga_bet = _trade_row_for_leg(db, eid, leg)
+        letto = (_rileggi_per_bet_id(market=market, leg=leg, riga=riga_bet, eid=eid)
+                 if riga_bet is not None else None)
+        if letto is not None and letto[0] in (_ESITO_SCADUTO, _ESITO_ABBINATO, _ESITO_PARZIALE):
+            _applica_esito_riapertura(db=db, event_id=eid, leg=leg, esito=letto[0],
+                                      numeri={**letto[1], "fonte": "fuori_dai_correnti"})
+            return
         # Non e' piu' fra i vivi: o si e' abbinato del tutto, o e' stato
         # annullato, o non e' mai arrivato. Non si indovina fra tre casi che
         # hanno conseguenze opposte: riconciliazione.
@@ -2454,7 +2514,9 @@ def _classifica_ordine(leg: E.Leg, o: Dict[str, Any]) -> tuple:
               "size_cancelled": round(annullato, 2),
               "order_status": stato or None,
               "avg_price_matched": campo_ordine(o, "avg_price_matched"),
-              "betfair_updated_at": campo_ordine(o, "matched_date") or campo_ordine(o, "placed_date")}
+              "betfair_updated_at": campo_ordine(o, "matched_date") or campo_ordine(o, "placed_date"),
+              # M8.14: il motivo di Betfair, vuoto se la lettura non lo porta
+              "lapse_status_reason_code": campo_ordine(o, "lapse_status_reason_code")}
     if residuo > 0.009 and stato != "EXECUTION_COMPLETE":
         return (_ESITO_VIVO, numeri)
     if abbinato >= float(leg.size) - 0.009:
@@ -2488,6 +2550,13 @@ def _rileggi_ordine_appoggiato(*, db: Any, market: Any, leg: E.Leg, ev: Dict[str
     o = _ordine_della_riga(vivi, riga)
     if o is not None:
         return _classifica_ordine(leg, o)
+    return _rileggi_per_bet_id(market=market, leg=leg, riga=riga, eid=eid)
+
+
+def _rileggi_per_bet_id(*, market: Any, leg: E.Leg, riga: Dict[str, Any], eid: str):
+    """La meta' «per bet_id» di ``_rileggi_ordine_appoggiato`` (estratta il 29/09,
+    M6.2, per usarla anche da ``_segui_resting_live``). ``None`` = non si e'
+    potuto leggere (si riprova); ``ignoto`` = Betfair non sa dire."""
     bet_id = str(riga.get("bet_id") or "").strip()
     fn = getattr(market, "order_state_by_bet_id", None)
     if not bet_id or not callable(fn):
@@ -2528,7 +2597,11 @@ def _chiudi_gamba_scaduta(db: Any, event_id: str, leg: E.Leg, numeri: Dict[str, 
     if r is None:
         return
     meta = dict(r.get("meta") or {})
-    meta.update({"phase": "lapsed", "reason": "lapsed_alla_sospensione"})
+    meta.update({"phase": "lapsed", "reason": "lapsed_alla_sospensione",
+                 # M8.13/M8.14 (29/09): chi l'ha tolto dal mercato, e perche'
+                 "esito_ordine": ESITO_CANCELLATO_DA_BETFAIR})
+    if numeri.get("lapse_status_reason_code"):
+        meta["lapse_status_reason_code"] = numeri.get("lapse_status_reason_code")
     campi: Dict[str, Any] = {"meta": meta}
     if abbinato > 0:
         campi.update({"status": "open", "size": round(abbinato, 2), "price": leg.fill_price})
@@ -2878,29 +2951,36 @@ def _sorveglia_sospensione(*, db: Any, market: Any, ctx: E.MatchCtx, snap: E.Sna
     Gira PRIMA della decisione: il motore deve vedere gambe che dicono la
     verita', non gambe date per vive per abitudine.
     """
-    bk = snap.book(E.MARKET_OU35, E.SEL_UNDER)
-    stato = E.stato_mercato(bk)
+    # M6.3 (29/09): lo stato si legge dal mercato DOVE STA ogni ordine appoggiato
+    # (la banca del rientro vive sull'Under 4.5): prima si leggeva solo l'Under
+    # 3.5 anche per gli ordini sull'Under 4.5.
+    def _stato_di(l: E.Leg) -> str:
+        return E.stato_mercato(snap.book(l.market, l.selection))
 
-    if stato in (E.STATO_SOSPESO, E.STATO_IGNOTO):
-        vive = _gambe_appoggiate_vive(ctx, params)
-        if not vive:
-            return
-        refs = sorted(l.ref for l in vive)
+    sospese = [l for l in _gambe_appoggiate_vive(ctx, params)
+               if _stato_di(l) in (E.STATO_SOSPESO, E.STATO_IGNOTO)]
+    if sospese:
+        stato = _stato_di(sospese[0])
+        refs = sorted(l.ref for l in sospese)
         gia = ctx.riapertura or {}
         if gia and not gia.get("letto") and sorted(gia.get("refs") or []) == refs:
             return                       # stessa sospensione, gia' annotata
         ctx.riapertura = {"ts": now_ts, "refs": refs, "letto": False, "esiti": {}}
         db.log("mercato_sospeso", {"stato": stato, "refs": refs, "critical": True,
+                                   "mercati": sorted({l.market for l in sospese}),
                                    "nota": "mercato sospeso con una lay appoggiata viva: "
                                            "Betfair puo' averla fatta scadere, alla "
                                            "riapertura si rilegge"}, str(ev["event_id"]))
         return
 
-    if stato != E.STATO_APERTO:
-        return                            # chiuso: non c'e' piu' niente da appoggiare
     r = ctx.riapertura
     if not r or r.get("letto"):
         return
+    annotate = [l for l in ctx.legs if l.ref in set(r.get("refs") or [])]
+    stati = ([_stato_di(l) for l in annotate] if annotate
+             else [E.stato_mercato(snap.book(E.MARKET_OU35, E.SEL_UNDER))])
+    if any(s != E.STATO_APERTO for s in stati):
+        return                            # non ancora riaperto (o chiuso): non si legge
 
     eid = str(ev["event_id"])
     esiti: Dict[str, Any] = dict(r.get("esiti") or {})
@@ -5168,7 +5248,11 @@ def _mark_trade_cancelled(db: Any, event_id: str, leg: E.Leg, reason: str,
     leg.status = esito_base
     try:
         meta = dict(r.get("meta") or {})
-        meta.update({"phase": "cancelled", "reason": reason})
+        meta.update({"phase": "cancelled", "reason": reason,
+                     # M8.13 (29/09): ritirato da noi / rifiutato / cancellato da Betfair
+                     "esito_ordine": {"resting_rifiutata": ESITO_RIFIUTATO,
+                                      "lapsed_alla_sospensione": ESITO_CANCELLATO_DA_BETFAIR
+                                      }.get(str(reason), ESITO_RITIRATO_DA_NOI)})
         if leg.matched > 0:
             X.aggiorna_trade(db, int(r["id"]),
                              campi={"status": "open", "size": round(leg.matched, 2),

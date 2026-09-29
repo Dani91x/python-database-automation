@@ -765,7 +765,11 @@ def _r1(ctx, snap, d, params):
     r = ctx.riapertura or {}
     if r.get("letto"):
         return None
-    if not E.operabile(_book(snap, E.MARKET_OU35, E.SEL_UNDER)):
+    # M6.3 (29/09): il mercato e' quello DOVE STANNO le gambe annotate (la banca
+    # del rientro vive sull'Under 4.5), come nel servizio.
+    annotate = [(l.market, l.selection) for l in ctx.legs if l.ref in set(r.get("refs") or [])]
+    if not all(E.operabile(_book(snap, m, s))
+               for (m, s) in (annotate or [(E.MARKET_OU35, E.SEL_UNDER)])):
         return None                    # ancora sospeso: non c'e' niente da rileggere
     return (f"mercato riaperto e le gambe {r.get('refs')} non sono state rilette da "
             f"Betfair (sospeso a {r.get('ts')}): il bot le sta dando per vive")
