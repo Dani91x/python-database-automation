@@ -199,7 +199,9 @@ restano quelli di oggi, salvo ordine esplicito.
 | 16 | 29/09 | Uscita in perdita: resta una proposta da firmare, esattamente com'e' ora («decido io») | confermata; nessuna modifica |
 | 17 | 29/09 | Per annullare la copertura Mike BANCA l'Over 4,5 invece di puntare l'Under 4,5 (stesso risultato, importo sempre accettato) | confermata, da implementare (M3.3) |
 | 18 | 29/09 | Tetto di perdita della partita: si toglie | confermata, da implementare (M4.5) |
-| 19 | 29/09 | Riprezzo di una chiusura ferma: da 10 a 20 secondi; 20 tentativi restano | confermata, da implementare (M4.6) |
+| 19 | 29/09 | Riprezzo di una chiusura ferma: RESTA a 10 secondi, 20 tentativi (la proposta dei 20 secondi e' stata ritirata dall'utente) | nessuna modifica; M4.6 annullata |
+| 20 | 29/09 | Rientro sull'Under 4,5: si fa con 1 o 2 gol (non piu' solo con 1); tutte le altre condizioni invariate | confermata, da implementare (M6.1) |
+| 21 | 29/09 | Mike deve sapere sempre se una sua banca e' abbinata o no, e se una sospensione ha cancellato un suo ordine LAPSE | regola permanente; correzioni M6.2-M6.3 |
 
 ---
 
@@ -400,7 +402,10 @@ DECISIONE dell'utente (29/09): «toglilo».
   senza la sua firma.
 
 ### Passo 5 - Come Mike esegue una chiusura
-DECISIONE dell'utente (29/09): «alzerei il riprezzo a 20 secondi».
+DECISIONE FINALE dell'utente (29/09): «Lasciamo a 10 secondi, ignora la modifica precedente».
+**M4.6 e' ANNULLATA: il riprezzo resta a 10 secondi, nessuna modifica.** (Prima aveva detto «alzerei
+il riprezzo a 20 secondi»; ha cambiato idea dopo aver saputo che lo stesso parametro governa anche
+il riprezzo della copertura. Il testo qui sotto resta solo come memoria.)
 - Resta com'e': un ordine di chiusura per ogni selezione aperta, al miglior prezzo; niente chiusura
   su una selezione gia' decisa dai gol; residuo sotto 1 centesimo al regolamento; massimo 20
   tentativi (`close_max_attempts` 20), poi Mike resta in attesa dell'abbinamento.
@@ -481,3 +486,41 @@ annullare anche la copertura.
   ordini sulle due selezioni.
 - NON verificato: se una bancata sotto 0,50 EUR passa dall'API (dal sito 0,01 e' passata; dall'API
   i tre tentativi del 17/09 sono caduti per un altro motivo e non sono conclusivi).
+
+---
+
+## Punto 6 - Piatto e rientro sull'Under 4,5
+
+### Cosa vuole l'utente (29/09)
+«Il rientro deve cambiare solo una condizione: il numero di gol NON ESATTAMENTE 1, ma 1-2 gol, il
+resto delle condizioni resta invariato. MIKE DEVE MONITORARE OVVIAMENTE GLI ORDINI: se il lay non
+si abbina deve saperlo; in live ci possono essere sospensioni che cancellano i nostri ordini LAPSE,
+ovviamente deve saperlo.»
+
+### Cosa resta com'e' oggi
+Un solo rientro per partita; solo dopo una chiusura in profitto; mai dopo una chiusura fatta a mano
+dall'utente; entro il 45'; quota dell'Under 4,5 piu' alta della quota del primo ingresso; liquidita'
+di almeno 10 EUR; prezzi vivi e mercato aperto; puntata 10 EUR al miglior prezzo; banca a 2 tick
+sotto (che parte da sola: M4.4) e resta sul mercato fino a fine partita; se Betfair la cancella
+per una sospensione, Mike la rimette alla riapertura.
+
+### Cosa va cambiato
+- **M6.1 - Il rientro si fa con 1 o 2 gol segnati** (oggi: esattamente 1).
+  - Per il tecnico: `reentry_max_goals` oggi vale 1 con limiti 0-1 (`Betfair/mike/config.py:296`):
+    portare il valore di serie a 2 e il limite massimo ad almeno 2; il minimo di 1 gol e' scritto
+    nel codice (`engine.py:3690-3692`, «gol < 1») e resta. E' un cambio di PARAMETRO ordinato
+    dall'utente: va aggiornato anche il valore salvato nel database, il pannello e la guida.
+- **M6.2 - In live Mike deve poter rileggere un suo ordine per numero di scommessa.** Oggi, in live,
+  se una banca appoggiata non abbinata sparisce dagli ordini correnti (per esempio cancellata da
+  Betfair a una sospensione), Mike non riesce a sapere com'e' finita: la segna «esito ignoto» e la
+  manda in riconciliazione (`Betfair/mike/service.py:2491-2496`: cerca `order_state_by_bet_id`, che
+  lo sportello di produzione `_RealMarket` non ha). Nel banco di replay invece quella lettura
+  esiste: il replay prova una strada che la produzione non ha. DIFETTO contro la regola
+  dell'utente, da correggere.
+- **M6.3 - La sospensione va letta dal mercato GIUSTO.** Oggi Mike legge la sospensione solo dal
+  mercato Under 3,5, anche per la banca del rientro che sta sull'Under 4,5
+  (`Betfair/mike/service.py:2881-2882`). Con la copertura e la sua chiusura sul mercato 4,5 (M3.1,
+  M3.3) conta ancora di piu'. DIFETTO, da correggere.
+- Criterio di accettazione: scenario di replay con sospensione per gol mentre la banca del rientro
+  e' appoggiata, e scenario con la banca della copertura/chiusura sul mercato 4,5: Mike deve dire
+  «cancellata da Betfair» (non «esito ignoto») e rimetterla alla riapertura.
