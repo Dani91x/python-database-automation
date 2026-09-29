@@ -197,6 +197,7 @@ restano quelli di oggi, salvo ordine esplicito.
 | 14 | 29/09 | Cash out intelligente: resta com'e' | confermata |
 | 15 | 29/09 | Mike deve sempre sapere lo stato di ogni suo ordine (abbinato, chiuso, registrato) | regola permanente, criterio di accettazione di ogni modifica |
 | 16 | 29/09 | Uscita in perdita: resta una proposta da firmare, esattamente com'e' ora («decido io») | confermata; nessuna modifica |
+| 17 | 29/09 | Per annullare la copertura Mike BANCA l'Over 4,5 invece di puntare l'Under 4,5 (stesso risultato, importo sempre accettato) | confermata, da implementare (M3.3) |
 
 ---
 
@@ -428,7 +429,17 @@ dato che dal sito di Betfair appare e sia back che lay permettono di chiudere qu
    4,5 a 1,02, bancata Over 4,5 da 0,28) e la puntata non e' multiplo di 0,50. Li' resta solo il
    «piazza e riduci» passivo di oggi.
 
-### PROPOSTA del coordinatore (da far decidere all'utente)
+### DECISIONE dell'utente (29/09): «ok»
+Casistica: quando Mike, dopo essersi coperto bancando l'Under 4,5, deve chiudere tutta la
+posizione (cash out in profitto, uscita in perdita firmata, tetto di perdita) e deve quindi
+annullare anche la copertura.
+- **M3.3 (riscritta) - Mike annulla la copertura BANCANDO l'Over 4,5** invece di puntare l'Under
+  4,5: risultato identico, ma la bancata e' accettata a qualsiasi cifra da 0,50 EUR in su, mentre
+  la puntata e' rifiutata se non e' un multiplo di 0,50.
+- Se la bancata equivalente e' sotto 0,50 EUR: si usa la puntata se l'importo e' un multiplo di
+  0,50 da almeno 2,00; altrimenti il «piazza e riduci» di oggi.
+
+### Proposta piu' ampia del coordinatore (NON decisa: l'utente ha approvato solo la casistica sopra)
 - **M5.1 - Ogni ordine di Mike si scrive dal lato in cui l'importo e' piazzabile.** Prima scelta la
   bancata (sull'esito giusto); se la bancata e' sotto 0,50 EUR, la puntata se e' un multiplo di
   0,50 da almeno 2,00; solo in ultimo il «piazza e riduci». La strategia non cambia: cambia solo
