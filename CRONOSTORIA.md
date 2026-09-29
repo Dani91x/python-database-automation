@@ -4427,3 +4427,24 @@ safe_tennis; mike copertura-rifiutata entrambi; mike «tutti» canale (30 min);
 - GIRO FINALE di tutti gli altri bot sul codice 9048238 (shell bxrvhf73q, script scratchpad/giro_completo.sh, referti in scratchpad/replay/giro_finale/): omega, safe base/esatto/punta, safe tennis, 4 bot tennis su 2 partite, mike coperture, mike tutti. `--worker 0`.
 - CANTIERE V2 (Mike veloce + tempi nel referto): ancora in corso; misura intermedia 22 min 36 -> 11 min 30.
 - PUNTO DI RIPRESA: leggere gli esiti del giro finale; ricevere S3, verificarlo (test, mutazioni mie, replay 4 scenari = 0 violazioni), integrare; tabella finale all'utente.
+
+**Checkpoint 12:31 del 29/09 — TUTTI I BOT PASSATI DAL REPLAY SUL CODICE DI OGGI; S-bis e S3 SU MASTER (`89a058a`)**
+| Bot | Comando (tutti `--worker 0`, ambiente neutro) | Esito | Tempo |
+|---|---|---|---|
+| omega | `certifica omega 35760084 --scenari rapidi --trasporto entrambi` | 13 OK, parita' raggiunta | 85 s |
+| safe_base / safe_esatto / safe_punta | idem | 14 OK ciascuno, parita' raggiunta | 99 / 107 / 104 s |
+| safe_tennis | `certifica safe_tennis 35795993 --scenari rapidi --trasporto entrambi` | 14 OK, parita' raggiunta | 16 s |
+| tennis_pro | 35794049 e 35795993, 6 scenari | 6 + 6 OK (azioni max 173 e 310) | 33 e 18 s |
+| tennis_flb | idem | 6 + 6 OK (azioni max 1 e 14) | 19 e 15 s |
+| tennis_swing | idem | 6 + 6 OK (azioni max 0 e 232: prova valida sulla seconda, registrazione PARTIAL) | 17 e 29 s |
+| tennis_scalper | idem | 6 + 6 OK (azioni max 434 e 86) | 85 e 43 s |
+| mike | `certifica mike 35760084 --scenari tutti --trasporto canale` | 15 OK | 446 s |
+| mike coperture | `--scenari copertura-rifiutata --trasporto entrambi` | 2 OK, parita' NON raggiunta (limite noto del banco) | 90 s |
+| scalper_calcio + sniper dentro la sessione | `certifica scalper_calcio 35797769 --scenari base,paper,uscite-manuali,uscite-manuali-firmate` su a0f7b56 + S3 | base OK, paper OK, uscite-manuali OK, uscite-manuali-firmate KO per 1 caso su 10 | 349 s |
+| scenario sniper | `certifica scalper_calcio 35674515 --scenari sniper,sniper-paper` | 2 OK ma 0 azioni: non prova niente | 89 s |
+- Codice del giro: 9048238 per tutti tranne lo scalper calcio (a0f7b56 + S3 = codice ora su master 89a058a, hash dei tre file verificato uguale). Referti: `AUDIT_2026-09-28/replay/giro_finale_29_09/` e `AUDIT_2026-09-28/replay/cantiere_s3/`.
+- S3 VERIFICATO DA ME: suite `Betfair/stream` dal checkout principale 4070 verdi; mutazioni mie S3 8 rosse su 9 (sopravvive U4: firma su un altro mercato, test chiesto), scalper 15 su 15, sniper 11 su 11 (B9 ora rossa). Esiti in `AUDIT_2026-09-28/mutazioni_coordinatore/`.
+- RILIEVO APERTO (unico): scalper calcio, scenario firmato, `UF2 x1`: uscita `scratch` firmata sulla selezione 22 del mercato 1.259819674, proposta 2,80, uscita a quota abbinabile 2,50. CANTIERE S4 al delegato a33555648dadfee29: sonda, poi correzione del bot se il bot lascia 0,30 scoperti; test per U4.
+- NON CERTIFICATO in senso pieno: scalper calcio e sniper sulle uscite firmate (il caso sopra). Tutto il resto e' a 0 violazioni. Nessun bot e' stato ancora provato in paper dal vivo.
+- CANTIERE V2 (Mike sotto i 5 minuti + tempi nel referto): ancora in corso.
+- PUNTO DI RIPRESA: ricevere S4, verificarlo, replay dei 4 scenari = 0 violazioni; poi tabella finale e decisioni dell'utente su Mike (guida in `SCHEMI_BOT/mike/GUIDA_MIKE.html`).
