@@ -202,6 +202,7 @@ restano quelli di oggi, salvo ordine esplicito.
 | 19 | 29/09 | Riprezzo di una chiusura ferma: RESTA a 10 secondi, 20 tentativi (la proposta dei 20 secondi e' stata ritirata dall'utente) | nessuna modifica; M4.6 annullata |
 | 20 | 29/09 | Rientro sull'Under 4,5: si fa con 1 o 2 gol (non piu' solo con 1); tutte le altre condizioni invariate | confermata, da implementare (M6.1) |
 | 21 | 29/09 | Mike deve sapere sempre se una sua banca e' abbinata o no, e se una sospensione ha cancellato un suo ordine LAPSE | regola permanente; correzioni M6.2-M6.3 |
+| 22 | 29/09 | Le cifre della proposta si aggiornano in tempo reale; fra clic e ordine si accetta il movimento del mercato; dopo la chiusura la scheda dice che e' stata fatta e che non resta esposizione | confermata, da implementare (M7.1, M7.2) |
 
 ---
 
@@ -524,3 +525,43 @@ per una sospensione, Mike la rimette alla riapertura.
 - Criterio di accettazione: scenario di replay con sospensione per gol mentre la banca del rientro
   e' appoggiata, e scenario con la banca della copertura/chiusura sul mercato 4,5: Mike deve dire
   «cancellata da Betfair» (non «esito ignoto») e rimetterla alla riapertura.
+
+---
+
+## Punto 7 - La proposta, la firma e l'esito della chiusura
+
+### Cosa vuole l'utente (29/09)
+«LE FIRME DEVONO AGGIORNARSI IN TEMPO REALE, gia' detto mille volte. Ovviamente se in quel
+frangente, dal click all'ordine, succede qualcosa non possiamo fare nulla. MA mi deve essere
+restituita dalla scheda il fatto che il cash out sia effettivamente stato fatto e che su
+quell'evento non abbiamo altra esposizione.»
+
+### Decisioni
+| Cosa | Decisione |
+|---|---|
+| Le cifre della proposta | si aggiornano IN TEMPO REALE, finche' la proposta e' a video |
+| Fra il clic e l'ordine il mercato si muove | si accetta: Mike esegue ai prezzi di quel momento. NESSUN blocco sull'importo, nessun margine |
+| Dopo la chiusura | la scheda deve dire che la chiusura e' stata FATTA davvero e che sulla partita NON resta esposizione |
+
+### Cosa fa il codice oggi
+- La proposta mostra gia' due cifre: «chiudendo ora» e «alla decisione», piu' l'eta' della
+  decisione. Le cifre le calcola il bot a ogni giro; l'app le rilegge a ogni notifica in tempo
+  reale (raggruppate entro 1,5 secondi) e comunque ogni 15 secondi.
+- Col feed fermo o ignoto il pulsante «approva uscita» e' spento.
+- Dopo il clic la scheda scrive solo «approvazione inviata: parte al prossimo giro del bot».
+
+### Cosa va cambiato
+- **M7.1 - Cifre della proposta vive.** La cifra «chiudendo ora» deve seguire i prezzi col canale
+  al millisecondo (via principale; la rilettura ogni 15 secondi resta solo come ripiego), con
+  l'eta' del dato a video. DA MISURARE prima: il ritardo vero di oggi fra prezzo e cifra a video.
+- **M7.2 - L'esito della chiusura torna nella scheda.** Dopo ogni chiusura (firmata dall'utente O
+  partita da sola) la scheda mostra, in quest'ordine: «chiusura in corso» con gli ordini e quanto e'
+  abbinato; poi «CHIUSA: risultato bloccato X,XX EUR - nessuna esposizione residua su questa
+  partita»; oppure «NON COMPLETA: resta esposizione di X,XX EUR su <selezione>, tentativo n di 20».
+  L'assenza di esposizione si dichiara sui conti degli ordini ABBINATI (riletti da Betfair), non
+  sulla convinzione del bot.
+- **M7.3 - Nessun controllo sull'importo alla firma** (resta com'e'): scritto qui perche' sia una
+  scelta e non una dimenticanza.
+- Per il tecnico: `frontend/src/components/controlroom/PropostaUscitaMike.tsx`, `SchedaMike.tsx`,
+  `trovaEsitoUscita.ts`, `certezzaChiusura.ts`, `pages/Mike.tsx`; bot: `gate_uscite`
+  (`Betfair/mike/engine.py:2337`), pubblicazione delle proposte, `_decide_closing` 3606.
