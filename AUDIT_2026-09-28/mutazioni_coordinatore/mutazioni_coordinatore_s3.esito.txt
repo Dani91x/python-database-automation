@@ -1,0 +1,11 @@
+BASE (senza mutazioni): VERDE  380 passed, 27 skipped, 2962 deselected in 36.15s
+U1 la finestra non si chiude alla firma successiva             rossa  1 failed, 181 passed, 19 skipped, 2962 deselected in 20.80s
+U2 uscita superata giudicata su abbinato e residuo             rossa  1 failed, 174 passed, 19 skipped, 2962 deselected in 21.73s
+U3 la firma di un'altra selezione chiude la finestra           rossa  1 failed, 180 passed, 19 skipped, 2962 deselected in 21.34s
+U4 la firma di un altro mercato chiude la finestra             SOPRAVVISSUTA  380 passed, 27 skipped, 2962 deselected in 33.55s
+U5 il rimpiazzo di un'uscita precedente contato nella nuova    rossa  1 failed, 175 passed, 19 skipped, 2962 deselected in 15.34s
+U6 uscita superata: passa qualunque importo                    rossa  1 failed, 179 passed, 19 skipped, 2962 deselected in 16.80s
+C1 scalper: CRITICAL anche durante la pausa fra due sequenze   rossa  1 failed, 164 passed, 19 skipped, 2962 deselected in 16.23s
+C2 scalper: resto sotto 0,05 aspetta il tetto per sempre       rossa  1 failed, 166 passed, 19 skipped, 2962 deselected in 18.30s
+C3 scalper: CRITICAL mai con prezzi assenti                    rossa  1 failed, 166 passed, 19 skipped, 2962 deselected in 18.54s
+mutazioni sopravvissute o non valide: 1 su 9

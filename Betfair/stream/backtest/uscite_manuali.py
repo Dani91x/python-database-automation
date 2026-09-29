@@ -347,11 +347,26 @@ class Osservatore:
         if ids_prima is None:
             self.non_giudicabili.append("UF2 %s: strategia non trovata" % chiave)
             return
+        # S3 (29/09, reperto scalper 35797769: target firmata 24,42 eseguita
+        # esatta, poi SCRATCH firmato 25,00 eseguito 9 s dopo sulla stessa
+        # posizione): ogni uscita firmata conta SOLO i propri ordini. La finestra
+        # di un'uscita ancora da giudicare si CHIUDE quando si esegue la firma
+        # successiva sulla stessa posizione (stesso mercato e selezione): gli
+        # ordini nati da li' in poi sono dell'uscita nuova, che ha la sua
+        # proposta e il suo giudizio.
+        for prec in self._pendenti:
+            if (prec.get("fino_ids") is None
+                    and str(prec.get("market_id")) == str(proposta.get("market_id"))
+                    and str(prec.get("selection_id")) == str(proposta.get("selection_id"))):
+                prec["fino_ids"] = set(ids_prima[1])
+                prec["superata_da"] = chiave
         self._pendenti.append({
             "strategia": ids_prima[0], "ids_prima": ids_prima[1], "chiave": chiave,
+            "market_id": proposta.get("market_id"),
             "selection_id": proposta.get("selection_id"),
             "lato": _lato(proposta.get("lato_chiusura")),
-            "size": _f(proposta.get("size_chiusura")), "da_ms": self.ora_ms})
+            "size": _f(proposta.get("size_chiusura")), "da_ms": self.ora_ms,
+            "fino_ids": None, "superata_da": None})
 
     def _evento(self, canc: Any, ev: str, p: Dict[str, Any]) -> None:
         self._cancelli[id(canc)] = canc
@@ -416,8 +431,15 @@ class Osservatore:
                 if str(getattr(o, "id", "")) not in pend["ids_prima"]
                 and str(getattr(o, "selection_id", "")) == str(pend["selection_id"])
                 and (not pend["lato"] or _lato(getattr(o, "side", "")) == pend["lato"])
-                and not self._e_ingresso(o)}
-        scelti = [o for o in ordini if str(getattr(o, "id", "")) in pend["congelati"]]
+                and not self._e_ingresso(o)
+                # S3: il RIMPIAZZO di un ordine nato prima della firma (gradino 3
+                # della catena di un'uscita precedente) e' di quell'uscita
+                and not self._rimpiazzo_di_prima(o, pend["ids_prima"])}
+        fino = pend.get("fino_ids")
+        # S3: la finestra si chiude alla firma successiva eseguita sulla stessa
+        # posizione: gli ordini nati dopo sono dell'uscita successiva
+        scelti = [o for o in ordini if str(getattr(o, "id", "")) in pend["congelati"]
+                  and (fino is None or str(getattr(o, "id", "")) in fino)]
         for p in list(scelti):
             if not e_parcheggio(p):
                 continue
@@ -428,6 +450,14 @@ class Osservatore:
                         and all(o is not q for q in scelti):
                     scelti.append(o)
         return scelti
+
+    @staticmethod
+    def _rimpiazzo_di_prima(o: Any, ids_prima: set) -> bool:
+        """S3: ``o`` e' il rimpiazzo (non il primo ordine del suo Trade) di un
+        ordine gia' esistente prima della firma: appartiene alla catena
+        place-and-trim di un'uscita precedente, non a questa."""
+        tr = list(getattr(getattr(o, "trade", None), "orders", None) or [])
+        return bool(tr) and tr[0] is not o and str(getattr(tr[0], "id", "")) in ids_prima
 
     def _e_ingresso(self, o: Any) -> bool:
         if self._ruolo is None:
@@ -455,10 +485,25 @@ class Osservatore:
             # L'IMPORTO FINALE A QUOTA ABBINABILE: abbinato di tutto + residuo
             # vivo dei soli ordini NON di parcheggio (il parcheggio a 1000/1,01
             # non e' un importo d'uscita: e' il gradino 1 del place-and-trim).
-            eff = round(sum((_f(getattr(o, "size_matched", 0.0)) or 0.0)
-                            + (0.0 if e_parcheggio(o) else
-                               (_f(getattr(o, "size_remaining", 0.0)) or 0.0))
-                            for o in uscita), 2)
+            if pend.get("superata_da"):
+                # S3: un'uscita SUPERATA da un'altra uscita firmata sulla stessa
+                # posizione (lo scratch firmato ritira la close a target firmata:
+                # condotta di sempre, anche in automatico) non puo' finire:
+                # i suoi ordini sono stati ritirati dall'uscita nuova. Si giudica
+                # l'importo che ha PIAZZATO a quota abbinabile (size chiesta
+                # degli ordini non di parcheggio, rimpiazzi compresi) piu'
+                # l'eventuale abbinato di un parcheggio: la stessa regola
+                # dell'importo esatto, contro la SUA proposta.
+                eff = round(sum((_f(getattr(o, "size_matched", 0.0)) or 0.0)
+                                if e_parcheggio(o) else
+                                (_f(getattr(getattr(o, "order_type", None), "size", 0.0))
+                                 or 0.0)
+                                for o in uscita), 2)
+            else:
+                eff = round(sum((_f(getattr(o, "size_matched", 0.0)) or 0.0)
+                                + (0.0 if e_parcheggio(o) else
+                                   (_f(getattr(o, "size_remaining", 0.0)) or 0.0))
+                                for o in uscita), 2)
             size = pend["size"]
             if size is None:
                 self.non_giudicabili.append("UF2 %s: la proposta non porta size_chiusura"

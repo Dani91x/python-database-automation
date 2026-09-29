@@ -69,6 +69,9 @@ class _Pos:
     t_last_submin: int = 0
     submin_count: int = 0
     residual_accepted: float = 0.0   # entita' |nw-nl| del residuo accettato
+    # 29/09 (cantiere S-bis): chiusura non piazzabile gia' dichiarata CRITICAL
+    # (una riga per episodio, non una a ogni book)
+    chiusura_bloccata_detta: bool = False
     # F4b: contatori PER LINEA (ogni linea OU e' un mercato → una _Pos):
     # il conteggio 10/07 (+1.28€) e' con cap e cooldown PER LINEA, non globali
     shots: int = 0                   # colpi sparati su QUESTA linea
@@ -246,7 +249,7 @@ class SniperStrategy(BaseStrategy):
             if pos.flattening or pos.entries:
                 return True
             for o in (*pos.entries, pos.close, *pos.flatten_orders):
-                if self._has_live(o):
+                if self._vivo_o_in_volo(o):
                     return True
         return False
 
@@ -256,7 +259,7 @@ class SniperStrategy(BaseStrategy):
             if pos.flattening or pos.submins:
                 return False
             for o in (*pos.entries, pos.close, *pos.flatten_orders):
-                if self._has_live(o):
+                if self._vivo_o_in_volo(o):
                     return False
             # 28/09 (reperto e2e 26/09 "posizione NON flat dopo 30 s" con il
             # micro-residuo sniper 0,085 EUR): qui si confrontavano le STAKE
@@ -504,7 +507,7 @@ class SniperStrategy(BaseStrategy):
                                 if o is not None:
                                     pos.close = o
                                     pos.close_locked = locked
-                    if (pos.close is not None and not self._has_live(pos.close)
+                    if (pos.close is not None and not self._vivo_o_in_volo(pos.close)
                             and float(getattr(pos.close, "size_matched", 0.0)
                                       or 0.0) > 0
                             and not pos.submins):
@@ -768,13 +771,32 @@ class SniperStrategy(BaseStrategy):
                        bb: Optional[float], bl: Optional[float],
                        now: Optional[float]) -> None:
         """Chiude finche' non e' piatta (escalation, tolleranza 0.02)."""
+        # CANTIERE S-bis (29/09, gemello del cantiere S dello scalper): il
+        # ritiro di ogni ordine vivo a ogni book NON tocca gli ordini di una
+        # sequenza place-and-trim IN CORSO (parcheggio e sostituti): prima il
+        # parcheggio moriva al book dopo e la sequenza non arrivava mai in
+        # fondo. Un parcheggio ORFANO (sequenza finita o abortita) si ritira.
+        in_seq = self._ordini_in_sequenza(pos)
         for o in pos.flatten_orders:
+            if id(o) in in_seq:
+                continue
             if self._has_live(o):
                 self._cancel_if_live(market, o)
         sb, ob, sl, ol = self._matched(pos.flatten_orders)
         nw = sb * (ob - 1.0) - sl * (ol - 1.0)
         nl = sl - sb
         if abs(nw - nl) <= 0.02:
+            # CANTIERE S-bis: piatta, ma un ordine vivo o IN VOLO (cancel o
+            # rimpiazzo non ancora eseguiti) o una sequenza in corso potrebbe
+            # abbinarsi DOPO: le sequenze si chiudono (un loro rimpiazzo la
+            # ROVESCEREBBE), gli ordini si ritirano, la piatta si dichiara solo
+            # a ordini morti.
+            in_volo = [o for o in pos.flatten_orders if self._vivo_o_in_volo(o)]
+            if in_volo or pos.submins:
+                self._cancel_submins(market, pos)
+                for o in in_volo:
+                    self._cancel_if_live(market, o)
+                return
             locked = self._book_locked(pos, nw, nl)   # delta, mai il cumulato
             pos.flattening = False
             pos.done = False  # riarmabile (salvo event_done)
@@ -784,7 +806,12 @@ class SniperStrategy(BaseStrategy):
             self._emit("sniper_flat", locked=round(locked, 3))
             self._loss_capped()
             return
-        if any(self._has_live(o) for o in pos.flatten_orders):
+        # CANTIERE S-bis (29/09): si aspetta anche un ordine IN VOLO. Prima il
+        # cancel appena chiesto qui sopra (stato Cancelling) contava come
+        # morto e al book stesso partiva una chiusura NUOVA: con la latenza
+        # vera la vecchia puo' ancora abbinarsi -> chiusura DOPPIA (reperto
+        # del maker, replay 35797769: BACK 2,00 nudo al fischio).
+        if any(self._vivo_o_in_volo(o) for o in pos.flatten_orders):
             return
         # micro-residuo ACCETTATO (come lo scalper, fix 11/07): nessun ordine
         # vivo, nessuna sequenza exact in corso e sbilancio piccolo → si
@@ -802,7 +829,8 @@ class SniperStrategy(BaseStrategy):
                        nw=round(nw, 3), nl=round(nl, 3))
             self._loss_capped()
             return
-        if not pos.submins and pos.flat_tries > 12:
+        if not pos.submins and pos.flat_tries > 12 and self._resto_davvero_non_piazzabile(
+                pos, nw, nl, bb, bl):
             # ULTIMA SPIAGGIA (direttiva operatore 10/07 §12.1: il flatten
             # TERMINA sempre, con ledger chiuso): niente e' piazzabile e
             # nessuna sequenza exact attiva dopo molti tentativi → il residuo
@@ -828,12 +856,96 @@ class SniperStrategy(BaseStrategy):
             price = price_ticks_away(base, -cross) if base else None
         g = compute_green(nw, nl, price) if price else None
         pos.flat_tries += 1
+        o = None
         if g is not None:
             side, size, _l = g
             o = self._place(market, self._sid(pos), side, price, size,
                             floor=False, pos=pos)
             if o is not None:
                 self._track(pos, o)
+            # un ordine RIFIUTATO (trading control: stato Violation, mai a
+            # mercato) non e' una chiusura partita
+            if o is not None and getattr(o, "status", None) == OrderStatus.VIOLATION:
+                o = None
+            if o is not None:
+                pos.chiusura_bloccata_detta = False
+        if (o is None and not pos.submins and pos.flat_tries > 12
+                and not pos.chiusura_bloccata_detta
+                and self._chiusura_bloccata(nw, nl, bb, bl)):
+            # CANTIERE S-bis (29/09): PROTEZIONE che non si arrende. La
+            # chiusura non parte (prezzi del lato assenti = flusso dei prezzi
+            # interrotto, mercato non operabile, pausa fra due sequenze) ma la
+            # posizione non e' un resto sotto il minimo: prima, dopo 12
+            # tentativi, la ULTIMA SPIAGGIA l'accettava INTERA come residuo.
+            # Ora resta in chiusura (nuovo tentativo a ogni book) e lo si DICE
+            # una volta per episodio, CRITICAL.
+            pos.chiusura_bloccata_detta = True
+            self._emit("flatten_bloccato", level="CRITICAL",
+                       nw=round(nw, 3), nl=round(nl, 3),
+                       prezzi=bool(bb is not None or bl is not None),
+                       msg="sniper: posizione NON flat e chiusura non piazzabile "
+                           "ora (prezzi assenti o mercato fermo): si ritenta a "
+                           "ogni book, mai accettata come residuo")
+
+    def _chiusura_bloccata(self, nw: float, nl: float,
+                           bb: Optional[float], bl: Optional[float]) -> bool:
+        """S3 (29/09, come lo scalper): la chiusura e' bloccata DAVVERO (riga
+        CRITICAL) solo se manca il prezzo del lato di chiusura oppure la
+        chiusura e' sopra il minimo diretto e non parte (rifiutata, mercato
+        fermo). Un resto sotto il minimo in attesa della prossima sequenza
+        place-and-trim NON lo e' (falso allarme visto nel replay 35797769:
+        CRITICAL a nw 0,30 nella pausa, chiuso dalla sequenza dopo)."""
+        if nw > nl:
+            side, base = "LAY", bl
+        else:
+            side, base = "BACK", bb
+        if base is None:
+            return True
+        g = compute_green(nw, nl, get_nearest_price(base))
+        if g is None:
+            return True
+        return float(g[1]) >= self._side_min(side) - _EPS
+
+    def _resto_davvero_non_piazzabile(self, pos: _Pos, nw: float, nl: float,
+                                      bb: Optional[float], bl: Optional[float]) -> bool:
+        """CANTIERE S-bis (29/09, come lo scalper): la ULTIMA SPIAGGIA accetta
+        SOLO un resto davvero non piazzabile: c'e' il prezzo del lato di
+        chiusura, la chiusura e' SOTTO il minimo diretto e, con le uscite
+        esatte, le sequenze del ciclo sono finite (tetto invariato). Mai una
+        posizione piazzabile, mai a prezzi assenti, mai durante la pausa fra
+        due sequenze."""
+        if nw > nl:
+            side, base = "LAY", bl
+        else:
+            side, base = "BACK", bb
+        if base is None:
+            return False
+        g = compute_green(nw, nl, get_nearest_price(base))
+        if g is None:
+            return False
+        if float(g[1]) >= self._side_min(side) - _EPS:
+            return False
+        # S3 (29/09, come lo scalper): un resto sotto 0,05 non avvia mai una
+        # sequenza (`_place_exact`: `rest < 0.05` -> `min_bet_skip`): aspettare
+        # il tetto delle sequenze lo lascerebbe in chiusura per sempre.
+        if (self.exact_exits and not self.dry_run and float(g[1]) >= 0.05
+                and pos.submin_count < self._SUBMIN_MAX_PER_CYCLE):
+            return False
+        return True
+
+    @staticmethod
+    def _ordini_in_sequenza(pos: _Pos) -> set:
+        """id() degli ordini delle sequenze place-and-trim IN CORSO della
+        posizione (parcheggio e sostituti: tutti gli ordini del loro Trade)."""
+        ids: set = set()
+        for entry in pos.submins:
+            o = entry.get("order") or getattr(entry.get("ops"), "last_order", None)
+            if o is None:
+                continue
+            ids.add(id(o))
+            for x in list(getattr(getattr(o, "trade", None), "orders", None) or []):
+                ids.add(id(x))
+        return ids
 
     def _sid(self, pos: _Pos) -> int:
         for (mid, sid), p in self._pos.items():
@@ -1009,6 +1121,18 @@ class SniperStrategy(BaseStrategy):
 
     def _drive_submins(self, market: Any, pos: _Pos) -> None:
         """Avanza le sequenze park-trim-replace (idempotente)."""
+        # CANTIERE S-bis (29/09, gemello del cantiere S): il SOSTITUTO del
+        # rimpiazzo nasce quando flumine esegue il replace, cioe' (con la
+        # latenza vera) book DOPO che la sequenza e' finita e uscita da
+        # `pos.submins`. Nessuno lo agganciava: abbinato a mercato ma fuori da
+        # `_matched`, lo sniper si credeva scoperto (chiusura ripiazzata =
+        # posizione ROVESCIATA, o residuo accettato che non esiste). Si
+        # agganciano a ogni book gli ordini dei Trade gia' tracciati (il Trade di
+        # un parcheggio contiene solo parcheggio e sostituti).
+        for o in list(pos.flatten_orders):
+            tr = getattr(o, "trade", None)
+            for x in list(getattr(tr, "orders", None) or []):
+                self._track(pos, x)
         if not pos.submins:
             return
         from ..trading.submin import SubminStep, advance_submin
@@ -1064,6 +1188,39 @@ class SniperStrategy(BaseStrategy):
                     self._emit("submin_abort_matched", level="CRITICAL",
                                matched=round(matched, 2))
                     self._begin_flatten(market, pos)
+            elif (
+                new_state.step in (SubminStep.PLACED, SubminStep.TRIMMED)
+                and entry.get("order") is not None
+                and getattr(entry["order"], "status", None) is not None
+                and not self._vivo_o_in_volo(entry["order"])
+            ):
+                # CANTIERE S-bis (29/09): il parcheggio e' MORTO prima del
+                # rimpiazzo (ritirato da un'altra via) e `advance_submin` in
+                # PLACED senza taglio richiesto ASPETTA PER SEMPRE: la sequenza
+                # restava in `pos.submins`, il flatten non accettava ne' chiudeva
+                # (`not pos.submins`) e la posizione restava ferma. La sequenza
+                # finisce qui, dichiarata; la chiusura la rifa' il flatten.
+                self._emit("submin_abort",
+                           note="parcheggio non piu' vivo prima del rimpiazzo: "
+                                "sequenza chiusa, la chiusura si rifa'")
+                pos.submins.remove(entry)
+
+    @staticmethod
+    def _vivo_o_in_volo(o: Any) -> bool:
+        """CANTIERE S-bis (29/09, come lo scalper): l'ordine puo' ancora
+        cambiare la posizione. Vivo (``_has_live``) OPPURE con una richiesta in
+        volo non ancora eseguita da flumine: CANCELLING (il cancel puo' fallire
+        e l'ordine abbinarsi, il simulatore di flumine li abbina), UPDATING,
+        REPLACING (il SOSTITUTO del rimpiazzo nascera' al book in cui il
+        replace e' eseguito)."""
+        if o is None:
+            return False
+        if getattr(o, "status", None) not in (
+            OrderStatus.EXECUTABLE, OrderStatus.PENDING, OrderStatus.CANCELLING,
+            OrderStatus.UPDATING, OrderStatus.REPLACING,
+        ):
+            return False
+        return float(getattr(o, "size_remaining", 0.0) or 0.0) > _EPS
 
     @staticmethod
     def _has_live(o: Any) -> bool:

@@ -1,0 +1,17 @@
+BASE (senza mutazioni): VERDE  417 passed, 4 skipped, 2676 deselected in 19.75s
+S1 sorveglianza DONE: l'ordine in volo non tiene lo slot       rossa  1 failed, 120 passed, 2676 deselected in 15.36s
+S2 LOCKING: la close corrente viene di nuovo ritirata          rossa  1 failed, 111 passed, 2676 deselected in 12.94s
+S3 cancel chiesto = cancel eseguito (reset troppo presto)      rossa  1 failed, 121 passed, 2676 deselected in 15.63s
+S4 flatten: DONE a posizione piatta con ordini in volo         rossa  1 failed, 103 passed, 2676 deselected in 13.21s
+S5 flatten: il parcheggio orfano si aspetta per sempre         rossa  1 failed, 105 passed, 2676 deselected in 12.76s
+S6 CAUSA RADICE: seconda chiusura col parcheggio in Cancelling rossa  1 failed, 99 passed, 2676 deselected in 12.54s
+S7 flatten: sequenza avviata letta come residuo da accettare   rossa  1 failed, 93 passed, 2676 deselected in 12.58s
+S8 ultima spiaggia: accetta anche a prezzi assenti             rossa  1 failed, 55 passed, 2676 deselected in 10.05s
+S9 ultima spiaggia: accetta una posizione piazzabile           rossa  1 failed, 123 passed, 2676 deselected in 15.42s
+S10 sostituto del rimpiazzo non agganciato                     rossa  1 failed, 54 passed, 2676 deselected in 10.25s
+S11 parcheggio morto: la sequenza resta appesa                 rossa  1 failed, 109 passed, 2676 deselected in 13.93s
+S12 in volo: REPLACING non conta                               rossa  1 failed, 96 passed, 2676 deselected in 12.62s
+S13 in volo: CANCELLING non conta                              rossa  1 failed, 53 passed, 2676 deselected in 10.53s
+S14 LOCKING: ciclo pari chiuso con ordini vivi                 rossa  1 failed, 108 passed, 2676 deselected in 11.68s
+S15 chiusura bloccata: torna il DONE silenzioso                rossa  1 failed, 55 passed, 2676 deselected in 9.37s
+mutazioni sopravvissute o non applicate: 0 su 15

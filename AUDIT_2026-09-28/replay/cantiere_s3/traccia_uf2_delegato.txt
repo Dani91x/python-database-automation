@@ -1,0 +1,131 @@
+S 1783701106771 ('IDLE', None, 0, False, 0)
+E 1783701705191 scalper place {'market_id': '1.259819674', 'selection_id': 58805, 'side': 'BACK', 'price': 4.3, 'size': 25.0}
+E 1783701705191 scalper place {'market_id': '1.259819674', 'selection_id': 58805, 'side': 'LAY', 'price': 4.2, 'size': 25.0}
+S 1783701832143 ('QUOTING2', None, 0, False, 0)
+O+ 1783701832143 140099680546289497 ('Pending', 'BACK', 4.3, 25.0, 0.0, 25.0, 'ScalperStrategy', 'entry_back', '')
+O+ 1783701832143 140099680546292522 ('Pending', 'LAY', 4.2, 25.0, 0.0, 25.0, 'ScalperStrategy', 'entry_lay', '')
+O  1783701832143 140099680546289497 ('Executable', 'BACK', 4.3, 25.0, 0.0, 25.0, 'ScalperStrategy', 'entry_back', '')
+O  1783701832143 140099680546292522 ('Executable', 'LAY', 4.2, 25.0, 0.0, 25.0, 'ScalperStrategy', 'entry_lay', '')
+E 1783702313412 scalper uscita_proposta {'bot': 'scalper', 'motivo': 'target', 'urgente': False, 'market_id': '1.259819674', 'selection_id': 58805, 'lato_ingresso': 'LAY', 'prezzo': 4.3, 'lato_chiusura': 'BACK', 'size_chiusura': 24.42, 'se_chiudi': 0.581, 'se_vince': -80.0, 'se_perde': 25.0, 'chiave': 'scalper|1.259819674|58805|140099680546292522|target', 'decided_at': 1783702315.0}
+S 1783702315000 ('LOCKING', 'target', 0, False, 0)
+O  1783702315000 140099680546289497 ('Cancelling', 'BACK', 4.3, 25.0, 0.0, 25.0, 'ScalperStrategy', '-', '')
+O  1783702315000 140099680546292522 ('Execution complete', 'LAY', 4.2, 25.0, 25.0, 0.0, 'ScalperStrategy', 'entry', '')
+E 1783702315000 scalper uscita_proposta {'bot': 'scalper', 'motivo': 'scratch', 'urgente': False, 'market_id': '1.259819674', 'selection_id': 58805, 'lato_ingresso': 'LAY', 'prezzo': 4.2, 'lato_chiusura': 'BACK', 'size_chiusura': 25.0, 'se_chiudi': 0.0, 'se_vince': -80.0, 'se_perde': 25.0, 'chiave': 'scalper|1.259819674|58805|140099680546292522|scratch', 'decided_at': 1783702315.409}
+S 1783702315409 ('LOCKING', 'scratch', 0, False, 0)
+O  1783702315409 140099680546289497 ('Execution complete', 'BACK', 4.3, 25.0, 0.0, 0.0, 'ScalperStrategy', '-', '')
+E 1783702318628 scalper uscita_eseguita_su_approvazione {'chiave': 'scalper|1.259819674|58805|140099680546292522|target', 'approvata_at': 1783702320.907, 'motivo': 'target', 'decisa_at': 1783702315.0}
+L 1783702318628 scalper|1.259819674|58805|140099680546292522|target auto=False firma=1783702320.907 ok=True motivo=target lato=BACK quota=4.3 size=24.42 se_vince=-80.0 se_perde=25.0
+E 1783702318628 scalper place {'market_id': '1.259819674', 'selection_id': 58805, 'side': 'BACK', 'price': 4.3, 'size': 24.0}
+E 1783702318628 scalper submin_start {'selection_id': 58805, 'side': 'BACK', 'size': 0.42, 'price': 4.3}
+S 1783702327219 ('LOCKING', 'scratch', 1, False, 0.0)
+O+ 1783702327219 140099680551399122 ('Pending', 'BACK', 4.3, 24.0, 0.0, 24.0, 'ScalperStrategy', 'close', '')
+E 1783702327219 scalper submin_step {'step': 'placed', 'note': 'step1 place 2.00@1000.0 (LAPSE)'}
+E 1783702327219 scalper uscita_eseguita_su_approvazione {'chiave': 'scalper|1.259819674|58805|140099680546292522|scratch', 'approvata_at': 1783702320.907, 'motivo': 'scratch', 'decisa_at': 1783702315.409}
+L 1783702327219 scalper|1.259819674|58805|140099680546292522|scratch auto=False firma=1783702320.907 ok=True motivo=scratch lato=BACK quota=4.2 size=25.0 se_vince=-80.0 se_perde=25.0
+E 1783702327219 scalper place {'market_id': '1.259819674', 'selection_id': 58805, 'side': 'BACK', 'price': 4.2, 'size': 25.0}
+E 1783702327219 scalper scratch {'selection_id': 58805, 'price': 4.2, 'entry_side': 'LAY'}
+O  1783702327219 140099680551399122 ('Pending', 'BACK', 4.3, 24.0, 0.0, 24.0, 'ScalperStrategy', 'flatten_orders', '')
+O+ 1783702327219 140099680551458671 ('Pending', 'BACK', 1000.0, 2.0, 0.0, 2.0, 'ScalperStrategy', 'flatten_orders', '')
+O+ 1783702327219 140099680551464053 ('Pending', 'BACK', 4.2, 25.0, 0.0, 25.0, 'ScalperStrategy', 'close', '')
+O  1783702327219 140099680551399122 ('Cancelling', 'BACK', 4.3, 24.0, 0.0, 24.0, 'ScalperStrategy', 'flatten_orders', '')
+O  1783702327219 140099680551458671 ('Cancelling', 'BACK', 1000.0, 2.0, 0.0, 2.0, 'ScalperStrategy', 'flatten_orders', '')
+O  1783702327219 140099680551464053 ('Executable', 'BACK', 4.2, 25.0, 0.0, 25.0, 'ScalperStrategy', 'close', '')
+E 1783702327219 scalper submin_step {'step': 'trimmed', 'note': 'step2 VERIFICATO su osservazione: residuo 0.42 ≤ target 0.42'}
+O  1783702327219 140099680551399122 ('Execution complete', 'BACK', 4.3, 24.0, 0.0, 0.0, 'ScalperStrategy', 'flatten_orders', '')
+O  1783702327219 140099680551458671 ('Executable', 'BACK', 1000.0, 2.0, 0.0, 0.42, 'ScalperStrategy', 'flatten_orders', '')
+E 1783702327219 scalper submin_step {'step': 'repriced', 'note': 'step3 replace → 4.3'}
+O  1783702327219 140099680551458671 ('Replacing', 'BACK', 1000.0, 2.0, 0.0, 0.42, 'ScalperStrategy', 'flatten_orders', '')
+E 1783702327219 scalper submin_step {'step': 'done', 'note': 'submin completato: ordine sotto-minimo a riposo alla target_price'}
+S 1783702327219 ('LOCKING', 'scratch', 0, False, 0.0)
+O  1783702327219 140099680551458671 ('Execution complete', 'BACK', 1000.0, 2.0, 0.0, 0.0, 'ScalperStrategy', 'flatten_orders', '')
+O+ 1783702327219 140099680551549652 ('Cancelling', 'BACK', 4.3, 0.42, 0.0, 0.42, 'ScalperStrategy', 'flatten_orders', 'SOST')
+O  1783702331150 140099680551549652 ('Execution complete', 'BACK', 4.3, 0.42, 0.0, 0.0, 'ScalperStrategy', 'flatten_orders', 'SOST')
+S 1783702742135 ('LOCKING', 'scratch', 0, False, 10.36)
+O  1783702742135 140099680551464053 ('Executable', 'BACK', 4.2, 25.0, 10.36, 14.64, 'ScalperStrategy', 'close', '')
+S 1783702801312 ('LOCKING', 'scratch', 0, False, 11.35)
+O  1783702801312 140099680551464053 ('Executable', 'BACK', 4.2, 25.0, 11.35, 13.65, 'ScalperStrategy', 'close', '')
+S 1783702806704 ('LOCKING', 'scratch', 0, False, 13.68)
+O  1783702806704 140099680551464053 ('Executable', 'BACK', 4.2, 25.0, 13.68, 11.32, 'ScalperStrategy', 'close', '')
+E 1783702818825 scalper cycle {'esito': 'scratch_par', 'locked': 0.0, 'selection_id': 58805}
+S 1783702822420 ('DONE', 'scratch', 0, False, 25.0)
+O  1783702822420 140099680551464053 ('Execution complete', 'BACK', 4.2, 25.0, 25.0, 0.0, 'ScalperStrategy', 'close', '')
+S 1783702822735 ('IDLE', None, 0, False, 0)
+O  1783702822735 140099680546292522 ('Execution complete', 'LAY', 4.2, 25.0, 25.0, 0.0, 'ScalperStrategy', '-', '')
+O  1783702822735 140099680551399122 ('Execution complete', 'BACK', 4.3, 24.0, 0.0, 0.0, 'ScalperStrategy', '-', '')
+O  1783702822735 140099680551458671 ('Execution complete', 'BACK', 1000.0, 2.0, 0.0, 0.0, 'ScalperStrategy', '-', '')
+O  1783702822735 140099680551464053 ('Execution complete', 'BACK', 4.2, 25.0, 25.0, 0.0, 'ScalperStrategy', '-', '')
+O  1783702822735 140099680551549652 ('Execution complete', 'BACK', 4.3, 0.42, 0.0, 0.0, 'ScalperStrategy', '-', 'SOST')
+E 1783702829211 scalper uscita_proposta_decaduta {'chiave': 'scalper|1.259819674|22|140099680561426080|scratch', 'motivo': "la condizione di uscita non vale piu'"}
+E 1783702836932 scalper uscita_eseguita_su_approvazione {'chiave': 'scalper|1.259819674|22|140099680561426080|target', 'approvata_at': 1783702835.132, 'motivo': 'target', 'decisa_at': 1783702829.153}
+E 1783702838738 scalper submin_step {'step': 'placed', 'note': 'step1 place 2.00@1000.0 (LAPSE)'}
+E 1783702839931 scalper submin_step {'step': 'trimmed', 'note': 'step2 VERIFICATO su osservazione: residuo 0.28 ≤ target 0.28'}
+E 1783702839931 scalper submin_step {'step': 'repriced', 'note': 'step3 replace → 1.66'}
+E 1783702839931 scalper submin_step {'step': 'done', 'note': 'submin completato: ordine sotto-minimo a riposo alla target_price'}
+E 1783702843561 scalper uscita_eseguita_su_approvazione {'chiave': 'scalper|1.259819674|22|140099680561426080|scratch', 'approvata_at': 1783702838.738, 'motivo': 'scratch', 'decisa_at': 1783702833.716}
+E 1783704092295 scalper submin_step {'step': 'placed', 'note': 'step1 place 2.00@1000.0 (LAPSE)'}
+E 1783704092295 scalper submin_step {'step': 'trimmed', 'note': 'step2 VERIFICATO su osservazione: residuo 0.30 ≤ target 0.30'}
+E 1783704092295 scalper submin_step {'step': 'repriced', 'note': 'step3 replace → 1.64'}
+E 1783704095098 scalper submin_step {'step': 'done', 'note': 'submin completato: ordine sotto-minimo a riposo alla target_price'}
+E 1783704095098 scalper flatten_done {'locked': -0.003}
+E 1783704372024 scalper place {'market_id': '1.259819674', 'selection_id': 58805, 'side': 'BACK', 'price': 4.2, 'size': 25.0}
+E 1783704372024 scalper place {'market_id': '1.259819674', 'selection_id': 58805, 'side': 'LAY', 'price': 4.1, 'size': 25.0}
+S 1783704374616 ('QUOTING2', None, 0, False, 0)
+O+ 1783704374616 140099680584898595 ('Pending', 'BACK', 4.2, 25.0, 0.0, 25.0, 'ScalperStrategy', 'entry_back', '')
+O+ 1783704374616 140099680584901518 ('Pending', 'LAY', 4.1, 25.0, 0.0, 25.0, 'ScalperStrategy', 'entry_lay', '')
+O  1783704374616 140099680584898595 ('Executable', 'BACK', 4.2, 25.0, 0.0, 25.0, 'ScalperStrategy', 'entry_back', '')
+O  1783704374616 140099680584901518 ('Executable', 'LAY', 4.1, 25.0, 0.0, 25.0, 'ScalperStrategy', 'entry_lay', '')
+E 1783704377013 scalper uscita_eseguita_su_approvazione {'chiave': 'scalper|1.259819682|47973|140099680584120718|target', 'approvata_at': 1783704378.401, 'motivo': 'target', 'decisa_at': 1783704373.111}
+E 1783704377013 scalper submin_step {'step': 'placed', 'note': 'step1 place 2.00@1000.0 (LAPSE)'}
+E 1783704377013 scalper submin_step {'step': 'trimmed', 'note': 'step2 VERIFICATO su osservazione: residuo 0.36 ≤ target 0.36'}
+E 1783704377013 scalper submin_step {'step': 'repriced', 'note': 'step3 replace → 1.85'}
+E 1783704377013 scalper submin_step {'step': 'done', 'note': 'submin completato: ordine sotto-minimo a riposo alla target_price'}
+E 1783704396541 scalper uscita_eseguita_su_approvazione {'chiave': 'scalper|1.259819682|47973|140099680584120718|scratch', 'approvata_at': 1783704390.428, 'motivo': 'scratch', 'decisa_at': 1783704383.52}
+E 1783704431377 scalper uscita_eseguita_su_approvazione {'chiave': 'scalper|1.259819682|47973|140099680587271654|target', 'approvata_at': 1783704435.956, 'motivo': 'target', 'decisa_at': 1783704429.774}
+E 1783704431377 scalper submin_step {'step': 'placed', 'note': 'step1 place 2.00@1.01 (LAPSE)'}
+E 1783704444991 scalper submin_step {'step': 'trimmed', 'note': 'step2 VERIFICATO su osservazione: residuo 0.14 ≤ target 0.14'}
+E 1783704447799 scalper submin_step {'step': 'repriced', 'note': 'step3 replace → 1.84'}
+E 1783704447799 scalper submin_step {'step': 'done', 'note': 'submin completato: ordine sotto-minimo a riposo alla target_price'}
+E 1783704461008 scalper mission {'phase': 'prematch', 'locked': 0.14, 'msg': 'tick di fase completato'}
+S 1783704461008 ('CANCELLING', None, 0, False, 0)
+O  1783704461008 140099680584898595 ('Cancelling', 'BACK', 4.2, 25.0, 0.0, 25.0, 'ScalperStrategy', 'entry_back', '')
+O  1783704461008 140099680584901518 ('Cancelling', 'LAY', 4.1, 25.0, 0.0, 25.0, 'ScalperStrategy', 'entry_lay', '')
+S 1783704461008 ('IDLE', None, 0, False, 0)
+O  1783704461008 140099680584898595 ('Execution complete', 'BACK', 4.2, 25.0, 0.0, 0.0, 'ScalperStrategy', '-', '')
+O  1783704461008 140099680584901518 ('Execution complete', 'LAY', 4.1, 25.0, 0.0, 0.0, 'ScalperStrategy', '-', '')
+E 1783711817470 sniper sniper_lines {'lines': ['OVER_UNDER_25']}
+E 1783712463793 sniper sniper_lines {'lines': ['OVER_UNDER_35']}
+E 1783712857882 sniper sniper_fire {'price': 2.22, 'size': 10.0, 'minute': 46.0}
+E 1783712868572 sniper uscita_eseguita_su_approvazione {'chiave': 'scalper|1.259819686|1222344|sn-140099681681337437|target', 'approvata_at': 1783712868.36, 'motivo': 'target', 'decisa_at': 1783712863.071}
+E 1783712868572 sniper submin_step {'step': 'placed', 'note': 'step1 place 2.00@1.01 (LAPSE)'}
+E 1783712875896 sniper submin_step {'step': 'trimmed', 'note': 'step2 VERIFICATO su osservazione: residuo 0.09 ≤ target 0.09'}
+E 1783712875896 sniper submin_step {'step': 'repriced', 'note': 'step3 replace → 2.2'}
+E 1783712876304 sniper submin_step {'step': 'done', 'note': 'submin completato: ordine sotto-minimo a riposo alla target_price'}
+E 1783713030052 sniper sniper_close_partial {'level': 'WARN', 'nw': 0.2, 'nl': 0.0}
+E 1783713030052 sniper sniper_flat_residual {'locked': 0.0, 'nw': 0.2, 'nl': 0.0}
+E 1783714915529 sniper sniper_fire {'price': 1.59, 'size': 10.0, 'minute': 58.0}
+E 1783714931447 sniper uscita_eseguita_su_approvazione {'chiave': 'scalper|1.259819686|1222344|sn-140099682154933669|target', 'approvata_at': 1783714926.222, 'motivo': 'target', 'decisa_at': 1783714921.009}
+E 1783714931447 sniper submin_step {'step': 'placed', 'note': 'step1 place 2.00@1.01 (LAPSE)'}
+E 1783714935955 sniper submin_step {'step': 'trimmed', 'note': 'step2 VERIFICATO su osservazione: residuo 0.06 ≤ target 0.06'}
+E 1783714935955 sniper submin_step {'step': 'repriced', 'note': 'step3 replace → 1.58'}
+E 1783714935955 sniper submin_step {'step': 'done', 'note': 'submin completato: ordine sotto-minimo a riposo alla target_price'}
+E 1783715029603 sniper sniper_close_partial {'level': 'WARN', 'nw': 0.3, 'nl': 0.0}
+E 1783715030217 sniper submin_step {'step': 'placed', 'note': 'step1 place 2.00@1.01 (LAPSE)'}
+E 1783715035801 sniper submin_step {'step': 'trimmed', 'note': 'step2 VERIFICATO su osservazione: residuo 0.19 ≤ target 0.19'}
+E 1783715035801 sniper submin_step {'step': 'repriced', 'note': 'step3 replace → 1.55'}
+E 1783715036005 sniper submin_step {'step': 'done', 'note': 'submin completato: ordine sotto-minimo a riposo alla target_price'}
+E 1783715042644 sniper flatten_bloccato {'level': 'CRITICAL', 'nw': 0.3, 'nl': 0.0, 'prezzi': True, 'msg': 'sniper: posizione NON flat e chiusura non piazzabile ora (prezzi assenti o mercato fermo): si ritenta a ogni book, mai accettata come residuo'}
+E 1783715059951 sniper submin_step {'step': 'placed', 'note': 'step1 place 2.00@1.01 (LAPSE)'}
+E 1783715065852 sniper submin_step {'step': 'trimmed', 'note': 'step2 VERIFICATO su osservazione: residuo 0.18 ≤ target 0.18'}
+E 1783715065950 sniper submin_step {'step': 'repriced', 'note': 'step3 replace → 1.64'}
+E 1783715066054 sniper submin_step {'step': 'done', 'note': 'submin completato: ordine sotto-minimo a riposo alla target_price'}
+E 1783715071272 sniper sniper_flat {'locked': 0.18}
+E 1783715123043 sniper sniper_fire {'price': 1.5, 'size': 10.0, 'minute': 62.0}
+E 1783715133521 sniper uscita_eseguita_su_approvazione {'chiave': 'scalper|1.259819686|1222344|sn-140099682212646993|target', 'approvata_at': 1783715133.464, 'motivo': 'target', 'decisa_at': 1783715128.251}
+E 1783715134553 sniper submin_step {'step': 'placed', 'note': 'step1 place 2.00@1.01 (LAPSE)'}
+E 1783715137160 sniper uscita_proposta_decaduta {'chiave': 'scalper|1.259819686|1222344|sn-140099682212646993|stop', 'motivo': "la condizione di uscita non vale piu'"}
+E 1783715139952 sniper submin_step {'step': 'trimmed', 'note': 'step2 VERIFICATO su osservazione: residuo 0.07 ≤ target 0.07'}
+E 1783715140056 sniper submin_step {'step': 'repriced', 'note': 'step3 replace → 1.49'}
+E 1783715140056 sniper submin_step {'step': 'done', 'note': 'submin completato: ordine sotto-minimo a riposo alla target_price'}
+E 1783715274485 sniper sniper_green {'locked': 0.07, 'minute': 65.0}
+E 1783715274485 sniper sniper_mission_done {'pnl': 0.25}
+E 1783716586724 sniper sniper_lines {'lines': ['OVER_UNDER_45']}

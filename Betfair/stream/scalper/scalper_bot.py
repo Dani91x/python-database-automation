@@ -2160,7 +2160,8 @@ class ScalperStrategy(BaseStrategy):
                                nw=round(net_win, 3), nl=round(net_lose, 3),
                                msg=_msg_residuo(net_win, net_lose))
                 slot.status = DONE
-            elif slot.flat_tries > 12 and not slot.chiusura_bloccata_detta:
+            elif (slot.flat_tries > 12 and not slot.chiusura_bloccata_detta
+                  and self._chiusura_bloccata(net_win, net_lose, best_back, best_lay)):
                 # CANTIERE S (29/09): PROTEZIONE che non si arrende. La chiusura
                 # non parte (prezzi del lato di chiusura assenti = flusso dei
                 # prezzi interrotto, mercato non operabile, sequenza del resto
@@ -2178,6 +2179,27 @@ class ScalperStrategy(BaseStrategy):
                            msg="posizione NON flat e chiusura non piazzabile ora "
                                "(prezzi assenti o mercato fermo): si ritenta a "
                                "ogni book, mai accettata come residuo")
+
+    def _chiusura_bloccata(
+        self, net_win: float, net_lose: float,
+        best_back: Optional[float], best_lay: Optional[float],
+    ) -> bool:
+        """S3 (29/09): la chiusura e' bloccata DAVVERO (riga CRITICAL) solo se
+        manca il prezzo del lato di chiusura oppure la chiusura e' piazzabile
+        direttamente (sopra il minimo del lato) e non parte (rifiutata, mercato
+        fermo). Un resto sotto il minimo in attesa della prossima sequenza
+        place-and-trim (pausa di 30 s, tetto non raggiunto) NON e' un blocco:
+        la sequenza dopo lo chiude (falso allarme visto nel replay)."""
+        if net_win > net_lose:
+            side, base = "LAY", best_lay
+        else:
+            side, base = "BACK", best_back
+        if base is None:
+            return True
+        g = compute_green(net_win, net_lose, get_nearest_price(base))
+        if g is None:
+            return True
+        return float(g[1]) >= self._side_min(side) - _EPS
 
     def _resto_davvero_non_piazzabile(
         self, slot: _Slot, net_win: float, net_lose: float,
@@ -2202,7 +2224,11 @@ class ScalperStrategy(BaseStrategy):
         size = float(g[1])
         if size >= self._side_min(side) - _EPS:
             return False
-        if self.exact_exits and not self.dry_run and \
+        # S3 (29/09): un resto sotto 0,05 NON avvia mai una sequenza (regola
+        # esistente di `_place_exact`: `rest < 0.05` -> `min_bet_skip`), quindi
+        # il tetto delle sequenze non si raggiunge mai: se si aspettasse il
+        # tetto, lo slot resterebbe in chiusura PER SEMPRE con quel resto.
+        if self.exact_exits and not self.dry_run and size >= 0.05 and \
                 getattr(slot, "submin_count", 0) < self._SUBMIN_MAX_PER_CYCLE:
             return False
         return True
