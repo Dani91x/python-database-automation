@@ -1,0 +1,30 @@
+"""Confronto di due referti TOLTE le righe dei tempi e i WARNING di log
+(che escono su stderr, mescolati a stdout a caso) e le righe `real/user/sys`.
+Uso: python confronta.py A B"""
+import difflib
+import sys
+
+from Betfair.stream.backtest.certifica import righe_senza_tempi
+
+
+def pulisci(percorso):
+    import re
+    testo = open(percorso, encoding="utf-8", errors="replace").read()
+    # le righe di LOG (stderr) si infilano a caso dentro quelle di stdout: si
+    # tolgono CON il loro a capo, cosi' la riga di stdout spezzata si ricompone
+    testo = re.sub(r"(CRITICAL|WARNING|ERROR|INFO):[\w.]+:[^\n]*\n", "", testo)
+    out = []
+    for r in righe_senza_tempi(testo):
+        if r.startswith(("real\t", "user\t", "sys\t")):
+            continue
+        if not r.strip():
+            continue
+        out.append(r)
+    return out
+
+
+a, b = pulisci(sys.argv[1]), pulisci(sys.argv[2])
+d = list(difflib.unified_diff(a, b, lineterm="", n=0))
+print(f"righe A={len(a)} B={len(b)} differenze={len([x for x in d if x[:1] in '+-' and x[:3] not in ('+++', '---')])}")
+for x in d[:80]:
+    print(x[:220])

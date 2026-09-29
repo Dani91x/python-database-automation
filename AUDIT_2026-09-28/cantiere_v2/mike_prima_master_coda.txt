@@ -1,0 +1,338 @@
+BOT: mike | spec: Betfair/mike/COSTITUZIONE_MIKE.md | registrazioni: 1 in C:/Users/Admin/Desktop/PYTHON DATABASE/python-database-automation/_live_raw
+controlli attivi: 37 | flumine 2.13.11 | betfairlightweight 2.23.2 | codice bot b51583886760 (2 file)
+comando: python -m Betfair.stream.backtest.certifica mike 35760084 --scenari tutti
+qualita' delle registrazioni: COMPLETE x1
+SCENARI: base, taker, cap-stretto, bot-fermo, senza-seconda-puntata, feed-stantio, esiti-ignoti, taker-esiti-ignoti, riavvio, gol-precoce, cashout-globale, chiuso-fuori-app, copertura-rifiutata, rifiuti-betfair, chiusura-abbinata-in-parte
+        i numeri di scenari diversi sono confrontabili SOLO dove la sequenza di chiamate e' identica fino al punto confrontato: ogni chiamata bloccante consuma tempo di mercato (in produzione come nel replay) e sposta il book su cui abbina tutto cio' che viene dopo
+
+OK  35760084 [base]  tick= 54639 decisioni= 5588 azioni=   2 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PENDING,LIVE_COVERED [COMPLETE]
+      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: ht_ft_rows: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi la tabella empirica del dossier resta assente
+      nota: ordini reali piazzati: 2 | righe mike_trades scritte: 2
+      nota: attivita' del servizio: flusso_interrotto x37, flusso_interrotto_senza_rest x28, uscita_proposta x20, uscita_proposta_decaduta x18, state x7, feed_line_missing x3, loss_exit_deciso x3, place x2, veto_under_calibrata x1, cover x1
+      nota: righe per stato: {'open': 2}
+      nota: riapertura dopo una sospensione (§15.6): riletture nessuna | ordini dichiarati SCADUTI alla sospensione (ramo b): 0
+      nota: stato TERMINALE: la partita non ci e' mai arrivata in questo scenario, quindi A2 non ha avuto nemmeno un giro da guardare
+      nota: fill: 2 abbinamenti su 2 ordini per 14.21 EUR (prezzi [1.71, 4.0])
+      nota: P&L del replay: lordo -14.21 | commissione 0.00 (5.0%) | NETTO -14.21 EUR (non e' il metro della certificazione: il metro e' la condotta)
+      nota: bet delay: 797 book passati mentre i piazzamenti aspettavano Betfair | book arrivati in ritardo (orologio fermo): 560388 | ordini appoggiati uccisi dal passaggio in gioco (LAPSE): 0 | uccisi dalla SOSPENSIONE in gioco (gol/rigore/rosso): 0
+      nota: chiamate di LETTURA a Betfair: 758 (0.14 per giro) | latenza ASSUNTA 120 ms per chiamata (non misurata: `storia_operazioni.py` ha solo la catena del piazzamento) -> 91.0 s di tempo di mercato consumati, 20653 book passati
+      nota: righe di scan scritte dallo SCANNER VERO: 2431 | giri senza riga nel feed: 19
+      motivo x2393: tengo
+      motivo x695: uscita proposta all'utente (uscite manuali): green resting appoggiata
+      motivo x210: uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-2.04) vale 
+      motivo x198: in perdita pre-KO: tengo fino al live
+      motivo x154: uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-2.08) vale 
+      motivo x143: uscita proposta all'utente (uscite manuali): uscita appoggiata a 1.69
+OK  35760084 [taker]  tick= 54770 decisioni= 5647 azioni=   2 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PENDING,LIVE_COVERED [COMPLETE]
+      nota: ordini reali piazzati: 2 | righe mike_trades scritte: 2
+      nota: attivita' del servizio: flusso_interrotto x37, uscita_proposta x19, uscita_proposta_decaduta x17, state x7, feed_line_missing x3, loss_exit_deciso x3, place x2, veto_under_calibrata x1, cover x1
+      nota: righe per stato: {'open': 2}
+      nota: riapertura dopo una sospensione (§15.6): riletture nessuna | ordini dichiarati SCADUTI alla sospensione (ramo b): 0
+      nota: stato TERMINALE: la partita non ci e' mai arrivata in questo scenario, quindi A2 non ha avuto nemmeno un giro da guardare
+      nota: fill: 2 abbinamenti su 2 ordini per 14.21 EUR (prezzi [1.71, 4.0])
+      nota: P&L del replay: lordo -14.21 | commissione 0.00 (5.0%) | NETTO -14.21 EUR (non e' il metro della certificazione: il metro e' la condotta)
+      nota: bet delay: 797 book passati mentre i piazzamenti aspettavano Betfair | book arrivati in ritardo (orologio fermo): 560388 | ordini appoggiati uccisi dal passaggio in gioco (LAPSE): 0 | uccisi dalla SOSPENSIONE in gioco (gol/rigore/rosso): 0
+      nota: chiamate di LETTURA a Betfair: 610 (0.11 per giro) | latenza ASSUNTA 120 ms per chiamata (non misurata: `storia_operazioni.py` ha solo la catena del piazzamento) -> 73.2 s di tempo di mercato consumati, 16625 book passati
+      nota: righe di scan scritte dallo SCANNER VERO: 2439 | giri senza riga nel feed: 19
+      motivo x2421: tengo
+      motivo x695: posizione aperta, in attesa dei 2 tick
+      motivo x210: uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-2.04) vale 
+      motivo x198: in perdita pre-KO: tengo fino al live
+      motivo x154: uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-2.08) vale 
+      motivo x143: uscita proposta all'utente (uscite manuali): uscita appoggiata a 1.69
+OK  35760084 [cap-stretto]  tick= 54770 decisioni= 5647 azioni=   2 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PENDING,LIVE_COVERED [COMPLETE]
+      nota: ordini reali piazzati: 2 | righe mike_trades scritte: 2
+      nota: attivita' del servizio: flusso_interrotto x37, uscita_proposta x25, uscita_proposta_decaduta x23, state x7, feed_line_missing x3, loss_exit_deciso x3, place x2, veto_under_calibrata x1, cover x1
+      nota: righe per stato: {'open': 2}
+      nota: riapertura dopo una sospensione (§15.6): riletture nessuna | ordini dichiarati SCADUTI alla sospensione (ramo b): 0
+      nota: stato TERMINALE: la partita non ci e' mai arrivata in questo scenario, quindi A2 non ha avuto nemmeno un giro da guardare
+      nota: fill: 2 abbinamenti su 2 ordini per 12.0 EUR (prezzi [1.71, 4.0])
+      nota: P&L del replay: lordo -12.00 | commissione 0.00 (5.0%) | NETTO -12.00 EUR (non e' il metro della certificazione: il metro e' la condotta)
+      nota: bet delay: 797 book passati mentre i piazzamenti aspettavano Betfair | book arrivati in ritardo (orologio fermo): 560388 | ordini appoggiati uccisi dal passaggio in gioco (LAPSE): 0 | uccisi dalla SOSPENSIONE in gioco (gol/rigore/rosso): 0
+      nota: chiamate di LETTURA a Betfair: 610 (0.11 per giro) | latenza ASSUNTA 120 ms per chiamata (non misurata: `storia_operazioni.py` ha solo la catena del piazzamento) -> 73.2 s di tempo di mercato consumati, 16625 book passati
+      nota: righe di scan scritte dallo SCANNER VERO: 2439 | giri senza riga nel feed: 19
+      motivo x2241: tengo
+      motivo x695: uscita proposta all'utente (uscite manuali): green resting appoggiata
+      motivo x219: uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-5.28) vale 
+      motivo x198: in perdita pre-KO: tengo fino al live
+      motivo x166: uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-5.32) vale 
+      motivo x143: uscita proposta all'utente (uscite manuali): uscita appoggiata a 1.69
+OK  35760084 [bot-fermo]  tick= 56229 decisioni= 1006 azioni=   0 stati=WATCH,IDLE_LIVE,SETTLED [COMPLETE]
+      nota: ordini reali piazzati: 0 | righe mike_trades scritte: 0
+      nota: attivita' del servizio: state x2
+      nota: righe per stato: {}
+      nota: riapertura dopo una sospensione (§15.6): riletture nessuna | ordini dichiarati SCADUTI alla sospensione (ramo b): 0
+      nota: stato TERMINALE: 4860 giri del servizio su una partita gia' chiusa, azioni prodotte 0 (devono essere 0). Il controllo A2 resta a zero casi per COSTRUZIONE: `service._run_event` esce prima di chiamare `decide` su uno stato terminale, quindi A2 e' la SECONDA linea di difesa e la si mette alla prova togliendo quel return (falsificazione dichiarata nel checkpoint), non con una registrazione
+      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
+      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro della certificazione: il metro e' la condotta)CRITICAL:mike:[mike] 35760084: gamba under_entry-0-1 con esito IGNOTO → riconciliazione (nessun rientro)
+CRITICAL:mike:[mike] 35760084: gamba under_entry-0-2 con esito IGNOTO → riconciliazione (nessun rientro)
+CRITICAL:mike:[mike] 35760084: gamba under_entry-0-3 con esito IGNOTO → riconciliazione (nessun rientro)
+CRITICAL:mike:[mike] 35760084: gamba under_entry-0-1 con esito IGNOTO → riconciliazione (nessun rientro)
+CRITICAL:mike:[mike] 35760084: gamba under_entry-0-2 con esito IGNOTO → riconciliazione (nessun rientro)
+CRITICAL:mike:[mike] 35760084: gamba under_entry-0-3 con esito IGNOTO → riconciliazione (nessun rientro)
+
+      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book arrivati in ritardo (orologio fermo): 560388 | ordini appoggiati uccisi dal passaggio in gioco (LAPSE): 0 | uccisi dalla SOSPENSIONE in gioco (gol/rigore/rosso): 0
+      nota: chiamate di LETTURA a Betfair: 0 (0.00 per giro) | latenza ASSUNTA 120 ms per chiamata (non misurata: `storia_operazioni.py` ha solo la catena del piazzamento) -> 0.0 s di tempo di mercato consumati, 0 book passati
+      nota: righe di scan scritte dallo SCANNER VERO: 2473 | giri senza riga nel feed: 19
+      motivo x1004: pre_disabilitato
+      motivo x1: in-play senza posizione
+      motivo x1: nessuna operazione
+OK  35760084 [senza-seconda-puntata]  tick= 54770 decisioni= 5647 azioni=   2 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PENDING,LIVE_COVERED [COMPLETE]
+      nota: ordini reali piazzati: 2 | righe mike_trades scritte: 2
+      nota: attivita' del servizio: flusso_interrotto x37, uscita_proposta x20, uscita_proposta_decaduta x18, state x7, feed_line_missing x3, loss_exit_deciso x3, place x2, veto_under_calibrata x1, cover x1
+      nota: righe per stato: {'open': 2}
+      nota: riapertura dopo una sospensione (§15.6): riletture nessuna | ordini dichiarati SCADUTI alla sospensione (ramo b): 0
+      nota: stato TERMINALE: la partita non ci e' mai arrivata in questo scenario, quindi A2 non ha avuto nemmeno un giro da guardare
+      nota: fill: 2 abbinamenti su 2 ordini per 14.21 EUR (prezzi [1.71, 4.0])
+      nota: P&L del replay: lordo -14.21 | commissione 0.00 (5.0%) | NETTO -14.21 EUR (non e' il metro della certificazione: il metro e' la condotta)
+      nota: bet delay: 797 book passati mentre i piazzamenti aspettavano Betfair | book arrivati in ritardo (orologio fermo): 560388 | ordini appoggiati uccisi dal passaggio in gioco (LAPSE): 0 | uccisi dalla SOSPENSIONE in gioco (gol/rigore/rosso): 0
+      nota: chiamate di LETTURA a Betfair: 610 (0.11 per giro) | latenza ASSUNTA 120 ms per chiamata (non misurata: `storia_operazioni.py` ha solo la catena del piazzamento) -> 73.2 s di tempo di mercato consumati, 16625 book passati
+      nota: righe di scan scritte dallo SCANNER VERO: 2439 | giri senza riga nel feed: 19
+      motivo x2421: tengo
+      motivo x695: uscita proposta all'utente (uscite manuali): green resting appoggiata
+      motivo x210: uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-2.04) vale 
+      motivo x198: in perdita pre-KO: tengo fino al live
+      motivo x154: uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-2.08) vale 
+      motivo x143: uscita proposta all'utente (uscite manuali): uscita appoggiata a 1.69
+OK  35760084 [feed-stantio]  tick= 56229 decisioni= 1006 azioni=   0 stati=WATCH,IDLE_LIVE,SETTLED [COMPLETE]
+      nota: ordini reali piazzati: 0 | righe mike_trades scritte: 0
+      nota: attivita' del servizio: state x2
+      nota: righe per stato: {}
+      nota: riapertura dopo una sospensione (§15.6): riletture nessuna | ordini dichiarati SCADUTI alla sospensione (ramo b): 0
+      nota: stato TERMINALE: 4860 giri del servizio su una partita gia' chiusa, azioni prodotte 0 (devono essere 0). Il controllo A2 resta a zero casi per COSTRUZIONE: `service._run_event` esce prima di chiamare `decide` su uno stato terminale, quindi A2 e' la SECONDA linea di difesa e la si mette alla prova togliendo quel return (falsificazione dichiarata nel checkpoint), non con una registrazione
+      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
+      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro della certificazione: il metro e' la condotta)
+      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book arrivati in ritardo (orologio fermo): 560388 | ordini appoggiati uccisi dal passaggio in gioco (LAPSE): 0 | uccisi dalla SOSPENSIONE in gioco (gol/rigore/rosso): 0
+      nota: chiamate di LETTURA a Betfair: 0 (0.00 per giro) | latenza ASSUNTA 120 ms per chiamata (non misurata: `storia_operazioni.py` ha solo la catena del piazzamento) -> 0.0 s di tempo di mercato consumati, 0 book passati
+      nota: righe di scan scritte dallo SCANNER VERO: 2473 | giri senza riga nel feed: 19
+      motivo x1004: feed stantio
+      motivo x1: in-play senza posizione
+      motivo x1: nessuna operazione
+OK  35760084 [esiti-ignoti]  tick= 54774 decisioni= 5647 azioni=   5 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PENDING,LIVE_COVERED [COMPLETE]
+      nota: ordini reali piazzati: 2 | righe mike_trades scritte: 5
+      nota: attivita' del servizio: flusso_interrotto x37, uscita_proposta x20, uscita_proposta_decaduta x18, state x13, reconcile_pending x6, place_exception x3, reconcile_fix x3, feed_line_missing x3, loss_exit_deciso x3, place x2, veto_under_calibrata x1, cover x1
+      nota: righe per stato: {'error': 3, 'open': 2}
+      nota: motivi dichiarati: place_exception_reconciling:guasto provocato: esito IGNOTO d x3 |  x3
+      nota: riapertura dopo una sospensione (§15.6): riletture nessuna | ordini dichiarati SCADUTI alla sospensione (ramo b): 0
+      nota: stato TERMINALE: la partita non ci e' mai arrivata in questo scenario, quindi A2 non ha avuto nemmeno un giro da guardare
+      nota: fill: 2 abbinamenti su 2 ordini per 14.21 EUR (prezzi [1.72, 4.0])
+      nota: P&L del replay: lordo -14.21 | commissione 0.00 (5.0%) | NETTO -14.21 EUR (non e' il metro della certificazione: il metro e' la condotta)
+      nota: bet delay: 792 book passati mentre i piazzamenti aspettavano Betfair | book arrivati in ritardo (orologio fermo): 560388 | ordini appoggiati uccisi dal passaggio in gioco (LAPSE): 0 | uccisi dalla SOSPENSIONE in gioco (gol/rigore/rosso): 0
+      nota: chiamate di LETTURA a Betfair: 610 (0.11 per giro) | latenza ASSUNTA 120 ms per chiamata (non misurata: `storia_operazioni.py` ha solo la catena del piazzamento) -> 73.2 s di tempo di mercato consumati, 16561 book passati
+      nota: righe di scan scritte dallo SCANNER VERO: 2440 | giri senza riga nel feed: 19
+      motivo x2423: tengo
+      motivo x646: uscita proposta all'utente (uscite manuali): green resting appoggiata
+      motivo x210: uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-2.03) vale 
+      motivo x198: in perdita pre-KO: tengo fino al live
+      motivo x154: uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-2.11) vale 
+      motivo x143: uscita proposta all'utente (uscite manuali): uscita appoggiata a 1.70
+OK  35760084 [taker-esiti-ignoti]  tick= 54774 decisioni= 5647 azioni=   5 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PENDING,LIVE_COVERED [COMPLETE]
+      nota: ordini reali piazzati: 2 | righe mike_trades scritte: 5
+      nota: attivita' del servizio: flusso_interrotto x37, uscita_proposta x19, uscita_proposta_decaduta x17, state x13, reconcile_pending x6, place_exception x3, reconcile_fix x3, feed_line_missing x3, loss_exit_deciso x3, place x2, veto_under_calibrata x1, cover x1
+      nota: righe per stato: {'error': 3, 'open': 2}
+      nota: motivi dichiarati: place_exception_reconciling:guasto provocato: esito IGNOTO d x3 |  x3
+      nota: riapertura dopo una sospensione (§15.6): riletture nessuna | ordini dichiarati SCADUTI alla sospensione (ramo b): 0
+      nota: stato TERMINALE: la partita non ci e' mai arrivata in questo scenario, quindi A2 non ha avuto nemmeno un giro da guardare
+      nota: fill: 2 abbinamenti su 2 ordini per 14.21 EUR (prezzi [1.72, 4.0])
+      nota: P&L del replay: lordo -14.21 | commissione 0.00 (5.0%) | NETTO -14.21 EUR (non e' il metro della certificazione: il metro e' la condotta)
+      nota: bet delay: 792 book passati mentre i piazzamenti aspettavano Betfair | book arrivati in ritardo (orologio fermo): 560388 | ordini appoggiati uccisi dal passaggio in gioco (LAPSE): 0 | uccisi dalla SOSPENSIONE in gioco (gol/rigore/rosso): 0
+      nota: chiamate di LETTURA a Betfair: 610 (0.11 per giro) | latenza ASSUNTA 120 ms per chiamata (non misurata: `storia_operazioni.py` ha solo la catena del piazzamento) -> 73.2 s di tempo di mercato consumati, 16561 book passatiCRITICAL:mike:[mike] 35760084: posizione chiusa DALL'UTENTE fuori dall'app -> il bot non gestisce piu' questa partita
+
+      nota: righe di scan scritte dallo SCANNER VERO: 2440 | giri senza riga nel feed: 19
+      motivo x2423: tengo
+      motivo x646: posizione aperta, in attesa dei 2 tick
+      motivo x210: uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-2.03) vale 
+      motivo x198: in perdita pre-KO: tengo fino al live
+      motivo x154: uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-2.11) vale 
+      motivo x143: uscita proposta all'utente (uscite manuali): uscita appoggiata a 1.70
+OK  35760084 [riavvio]  tick= 54770 decisioni= 5647 azioni=   2 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PENDING,LIVE_COVERED [COMPLETE]
+      nota: ordini reali piazzati: 2 | righe mike_trades scritte: 2
+      nota: attivita' del servizio: flusso_interrotto x37, uscita_proposta x20, uscita_proposta_decaduta x18, state x7, feed_line_missing x3, loss_exit_deciso x3, place x2, replay_riavvio x1, veto_under_calibrata x1, cover x1
+      nota: righe per stato: {'open': 2}
+      nota: RIAVVIO a meta' partita: azzerate le cache di processo _DAILY_STOP_LOGGED, _LAST_HEARTBEAT, _CONFIG_WARNED, _CACHE_EVENTI, _RICONCILIATO_A, _SCRITTO_A, _MALFORMED_LOGGED, _LAST_AGG
+      nota: riapertura dopo una sospensione (§15.6): riletture nessuna | ordini dichiarati SCADUTI alla sospensione (ramo b): 0
+      nota: stato TERMINALE: la partita non ci e' mai arrivata in questo scenario, quindi A2 non ha avuto nemmeno un giro da guardare
+      nota: fill: 2 abbinamenti su 2 ordini per 14.21 EUR (prezzi [1.71, 4.0])
+      nota: P&L del replay: lordo -14.21 | commissione 0.00 (5.0%) | NETTO -14.21 EUR (non e' il metro della certificazione: il metro e' la condotta)
+      nota: bet delay: 797 book passati mentre i piazzamenti aspettavano Betfair | book arrivati in ritardo (orologio fermo): 560388 | ordini appoggiati uccisi dal passaggio in gioco (LAPSE): 0 | uccisi dalla SOSPENSIONE in gioco (gol/rigore/rosso): 0
+      nota: chiamate di LETTURA a Betfair: 610 (0.11 per giro) | latenza ASSUNTA 120 ms per chiamata (non misurata: `storia_operazioni.py` ha solo la catena del piazzamento) -> 73.2 s di tempo di mercato consumati, 16625 book passati
+      nota: righe di scan scritte dallo SCANNER VERO: 2439 | giri senza riga nel feed: 19
+      motivo x2421: tengo
+      motivo x695: uscita proposta all'utente (uscite manuali): green resting appoggiata
+      motivo x210: uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-2.04) vale 
+      motivo x198: in perdita pre-KO: tengo fino al live
+      motivo x154: uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-2.08) vale 
+      motivo x143: uscita proposta all'utente (uscite manuali): uscita appoggiata a 1.69
+OK  35760084 [gol-precoce]  tick= 54770 decisioni= 5647 azioni=   2 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PENDING,LIVE_COVERED [COMPLETE]
+      nota: ordini reali piazzati: 2 | righe mike_trades scritte: 2
+      nota: attivita' del servizio: flusso_interrotto x37, uscita_proposta x20, uscita_proposta_decaduta x18, state x7, feed_line_missing x3, loss_exit_deciso x3, place x2, veto_under_calibrata x1, cover x1
+      nota: righe per stato: {'open': 2}
+      nota: riapertura dopo una sospensione (§15.6): riletture nessuna | ordini dichiarati SCADUTI alla sospensione (ramo b): 0
+      nota: stato TERMINALE: la partita non ci e' mai arrivata in questo scenario, quindi A2 non ha avuto nemmeno un giro da guardare
+      nota: fill: 2 abbinamenti su 2 ordini per 14.21 EUR (prezzi [1.71, 4.0])
+      nota: P&L del replay: lordo -14.21 | commissione 0.00 (5.0%) | NETTO -14.21 EUR (non e' il metro della certificazione: il metro e' la condotta)
+      nota: bet delay: 797 book passati mentre i piazzamenti aspettavano Betfair | book arrivati in ritardo (orologio fermo): 560388 | ordini appoggiati uccisi dal passaggio in gioco (LAPSE): 0 | uccisi dalla SOSPENSIONE in gioco (gol/rigore/rosso): 0
+      nota: chiamate di LETTURA a Betfair: 610 (0.11 per giro) | latenza ASSUNTA 120 ms per chiamata (non misurata: `storia_operazioni.py` ha solo la catena del piazzamento) -> 73.2 s di tempo di mercato consumati, 16625 book passati
+      nota: righe di scan scritte dallo SCANNER VERO: 2439 | giri senza riga nel feed: 19
+      nota: scenario gol-precoce (§15.6): il controllo R1 «alla riapertura l'ordine appoggiato e' stato riletto» e' stato sollecitato 0 volte — su questa registrazione la sospensione con una lay appoggiata viva NON e' mai capitata: serve una partita con gol nei primi minuti (35777617)
+      motivo x2421: tengo
+      motivo x695: uscita proposta all'utente (uscite manuali): green resting appoggiata
+      motivo x210: uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-2.04) vale 
+      motivo x198: in perdita pre-KO: tengo fino al live
+      motivo x154: uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-2.08) vale 
+      motivo x143: uscita proposta all'utente (uscite manuali): uscita appoggiata a 1.69
+OK  35760084 [cashout-globale]  tick= 56220 decisioni= 5865 azioni=   2 stati=WATCH,PRE_ENTRY_PENDING,PRE_GREEN_PENDING,IDLE_LIVE [COMPLETE]
+      nota: ordini reali piazzati: 2 | righe mike_trades scritte: 2
+      nota: attivita' del servizio: flusso_interrotto x7, state x4, place x2, replay_cashout_utente x1, chiuso_dall_utente x1
+      nota: righe per stato: {'open': 2}
+      nota: scenario cashout-globale: richiesta `cashout` VERA mandata dall'utente ({'richieste': 1, 'ms': 1782832089862}); il controllo R2 «dopo un cash-out globale il bot non apre piu' niente» e' stato sollecitato 5835 volte
+      nota: riapertura dopo una sospensione (§15.6): riletture nessuna | ordini dichiarati SCADUTI alla sospensione (ramo b): 0
+      nota: stato TERMINALE: la partita non ci e' mai arrivata in questo scenario, quindi A2 non ha avuto nemmeno un giro da guardare
+      nota: fill: 2 abbinamenti su 2 ordini per 19.77 EUR (prezzi [1.71, 1.75])
+      nota: P&L del replay: lordo -0.23 | commissione 0.00 (5.0%) | NETTO -0.23 EUR (non e' il metro della certificazione: il metro e' la condotta)
+      nota: bet delay: 54 book passati mentre i piazzamenti aspettavano Betfair | book arrivati in ritardo (orologio fermo): 560388 | ordini appoggiati uccisi dal passaggio in gioco (LAPSE): 0 | uccisi dalla SOSPENSIONE in gioco (gol/rigore/rosso): 0
+      nota: chiamate di LETTURA a Betfair: 2 (0.00 per giro) | latenza ASSUNTA 120 ms per chiamata (non misurata: `storia_operazioni.py` ha solo la catena del piazzamento) -> 0.2 s di tempo di mercato consumati, 38 book passati
+      nota: righe di scan scritte dallo SCANNER VERO: 2474 | giri senza riga nel feed: 19
+      motivo x4861: nessuna posizione
+      motivo x973: rientro disabilitato (chiusura manuale): premi Riprendi
+      motivo x24: liquidita 8.02 < 10.00
+      motivo x3: spread 9 tick
+      motivo x1: ingresso ciclo 1
+      motivo x1: chiusura manuale: chiudo la posizione
+OK  35760084 [chiuso-fuori-app]  tick= 56219 decisioni= 5865 azioni=   1 stati=WATCH,PRE_ENTRY_PENDING [COMPLETE]
+      nota: ordini reali piazzati: 1 | righe mike_trades scritte: 1
+      nota: attivita' del servizio: flusso_interrotto x37, place x1, state x1, replay_chiusura_fuori_app x1, chiuso_dall_utente x1
+      nota: righe per stato: {'open': 1}
+      nota: scenario chiuso-fuori-app: ordini VERI dell'utente su flumine con un ref non di Mike ({'ms': 1782832089862, 'market_id': '1.259475537', 'selection_id': 1222344, 'posizione_del_bot': 10.0, 'back_dell_utente': 3.0, 'lay_di_chiusura_abbinata': 13.0}); il controllo R3 «se ha chiuso l'utente il bot non fa piu' niente» e' stato sollecitato 5837 volte
+      nota: riapertura dopo una sospensione (§15.6): riletture nessuna | ordini dichiarati SCADUTI alla sospensione (ramo b): 0
+      nota: stato TERMINALE: la partita non ci e' mai arrivata in questo scenario, quindi A2 non ha avuto nemmeno un giro da guardare
+      nota: fill: 1 abbinamenti su 1 ordini per 10.0 EUR (prezzi [1.71])CRITICAL:mike:[mike] 35760084: COPERTURA BLOCCATA dopo 1 rifiuti 'CANCELLED_NOT_PLACED' (over_cover-0-2)
+
+      nota: P&L del replay: lordo -10.00 | commissione 0.00 (5.0%) | NETTO -10.00 EUR (non e' il metro della certificazione: il metro e' la condotta)
+      nota: bet delay: 62 book passati mentre i piazzamenti aspettavano Betfair | book arrivati in ritardo (orologio fermo): 560388 | ordini appoggiati uccisi dal passaggio in gioco (LAPSE): 0 | uccisi dalla SOSPENSIONE in gioco (gol/rigore/rosso): 0
+      nota: chiamate di LETTURA a Betfair: 2 (0.00 per giro) | latenza ASSUNTA 120 ms per chiamata (non misurata: `storia_operazioni.py` ha solo la catena del piazzamento) -> 0.2 s di tempo di mercato consumati, 47 book passati
+      nota: righe di scan scritte dallo SCANNER VERO: 2474 | giri senza riga nel feed: 19
+      motivo x5837: chiuso dall'utente fuori dall'app: la posizione non e' piu' del bot
+      motivo x24: liquidita 8.02 < 10.00
+      motivo x3: spread 9 tick
+      motivo x1: ingresso ciclo 1
+OK  35760084 [copertura-rifiutata]  tick= 54804 decisioni= 5648 azioni=   2 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PENDING,LIVE_COVERED,FLAT [COMPLETE]
+      nota: ordini rifiutati: 1 (es. CANCELLED_NOT_PLACED (rifiuto provocato))
+      nota: ordini reali piazzati: 1 | righe mike_trades scritte: 2
+      nota: attivita' del servizio: cover x1912, flusso_interrotto x37, uscita_proposta x18, uscita_proposta_decaduta x17, state x9, skip x5, mercato_sospeso x5, loss_exit_deciso x3, place_rifiutato x2, place x1, veto_under_calibrata x1, error x1
+      nota: righe per stato: {'open': 1, 'error': 1}
+      nota: motivi dichiarati: mercato_riaperto x4 | copertura_bloccata x1 | live_not_matched:EXPIRED:CANCELLED_NOT_PLACED x1
+      nota: riapertura dopo una sospensione (§15.6): riletture nessuna | ordini dichiarati SCADUTI alla sospensione (ramo b): 0
+      nota: stato TERMINALE: la partita non ci e' mai arrivata in questo scenario, quindi A2 non ha avuto nemmeno un giro da guardare
+      nota: fill: 1 abbinamenti su 1 ordini per 3.0 EUR (prezzi [1.7])
+      nota: P&L del replay: lordo -3.00 | commissione 0.00 (5.0%) | NETTO -3.00 EUR (non e' il metro della certificazione: il metro e' la condotta)
+      nota: bet delay: 19 book passati mentre i piazzamenti aspettavano Betfair | book arrivati in ritardo (orologio fermo): 560388 | ordini appoggiati uccisi dal passaggio in gioco (LAPSE): 0 | uccisi dalla SOSPENSIONE in gioco (gol/rigore/rosso): 0
+      nota: chiamate di LETTURA a Betfair: 618 (0.11 per giro) | latenza ASSUNTA 120 ms per chiamata (non misurata: `storia_operazioni.py` ha solo la catena del piazzamento) -> 74.2 s di tempo di mercato consumati, 17026 book passati
+      nota: righe di scan scritte dallo SCANNER VERO: 2437 | giri senza riga nel feed: 19
+      motivo x1911: copertura FERMATA dal freno: 1 rifiuti con lo stesso codice (CANCELLED_NOT_PLACED) — serve
+      motivo x1115: flat
+      motivo x717: uscita proposta all'utente (uscite manuali): green resting appoggiata
+      motivo x333: tengo
+      motivo x259: uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-2.48) vale 
+      motivo x223: uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-2.47) vale 
+OK  35760084 [rifiuti-betfair]  tick= 54770 decisioni= 5647 azioni=   2 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PENDING,LIVE_COVERED [COMPLETE]
+      nota: ordini reali piazzati: 2 | righe mike_trades scritte: 2
+      nota: attivita' del servizio: flusso_interrotto x37, uscita_proposta x20, uscita_proposta_decaduta x18, state x7, feed_line_missing x3, loss_exit_deciso x3, place x2, veto_under_calibrata x1, cover x1
+      nota: righe per stato: {'open': 2}
+      nota: riapertura dopo una sospensione (§15.6): riletture nessuna | ordini dichiarati SCADUTI alla sospensione (ramo b): 0
+      nota: stato TERMINALE: la partita non ci e' mai arrivata in questo scenario, quindi A2 non ha avuto nemmeno un giro da guardare
+      nota: fill: 2 abbinamenti su 2 ordini per 14.21 EUR (prezzi [1.71, 4.0])
+      nota: P&L del replay: lordo -14.21 | commissione 0.00 (5.0%) | NETTO -14.21 EUR (non e' il metro della certificazione: il metro e' la condotta)
+      nota: bet delay: 797 book passati mentre i piazzamenti aspettavano Betfair | book arrivati in ritardo (orologio fermo): 560388 | ordini appoggiati uccisi dal passaggio in gioco (LAPSE): 0 | uccisi dalla SOSPENSIONE in gioco (gol/rigore/rosso): 0
+      nota: chiamate di LETTURA a Betfair: 610 (0.11 per giro) | latenza ASSUNTA 120 ms per chiamata (non misurata: `storia_operazioni.py` ha solo la catena del piazzamento) -> 73.2 s di tempo di mercato consumati, 16625 book passati
+      nota: righe di scan scritte dallo SCANNER VERO: 2439 | giri senza riga nel feed: 19
+      motivo x2421: tengo
+      motivo x695: uscita proposta all'utente (uscite manuali): green resting appoggiata
+      motivo x210: uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-2.04) vale 
+      motivo x198: in perdita pre-KO: tengo fino al live
+      motivo x154: uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-2.08) vale 
+      motivo x143: uscita proposta all'utente (uscite manuali): uscita appoggiata a 1.69
+OK  35760084 [chiusura-abbinata-in-parte]  tick= 54770 decisioni= 5647 azioni=   2 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PENDING,LIVE_COVERED [COMPLETE]
+      nota: scenario chiusura-abbinata-in-parte: NESSUNA chiusura colpita (il bot non ha mai chiuso una posizione su questa partita: CP1-CP4 "non lo so")
+      nota: CP2 (copertura dichiarata sull'abbinato) NON APPLICABILE a Mike: non scrive una copertura per riga (`meta.hedged_size`), la posizione la ricalcola dalle gambe; la consapevolezza dell'abbinato la guardano CP1 e i controlli K
+      nota: ordini reali piazzati: 2 | righe mike_trades scritte: 2
+      nota: attivita' del servizio: flusso_interrotto x37, uscita_proposta x20, uscita_proposta_decaduta x18, state x7, feed_line_missing x3, loss_exit_deciso x3, place x2, veto_under_calibrata x1, cover x1
+      nota: righe per stato: {'open': 2}
+      nota: riapertura dopo una sospensione (§15.6): riletture nessuna | ordini dichiarati SCADUTI alla sospensione (ramo b): 0
+      nota: stato TERMINALE: la partita non ci e' mai arrivata in questo scenario, quindi A2 non ha avuto nemmeno un giro da guardare
+      nota: fill: 2 abbinamenti su 2 ordini per 14.21 EUR (prezzi [1.71, 4.0])
+      nota: P&L del replay: lordo -14.21 | commissione 0.00 (5.0%) | NETTO -14.21 EUR (non e' il metro della certificazione: il metro e' la condotta)
+      nota: bet delay: 797 book passati mentre i piazzamenti aspettavano Betfair | book arrivati in ritardo (orologio fermo): 560388 | ordini appoggiati uccisi dal passaggio in gioco (LAPSE): 0 | uccisi dalla SOSPENSIONE in gioco (gol/rigore/rosso): 0
+      nota: chiamate di LETTURA a Betfair: 610 (0.11 per giro) | latenza ASSUNTA 120 ms per chiamata (non misurata: `storia_operazioni.py` ha solo la catena del piazzamento) -> 73.2 s di tempo di mercato consumati, 16625 book passati
+      nota: righe di scan scritte dallo SCANNER VERO: 2439 | giri senza riga nel feed: 19
+      motivo x2421: tengo
+      motivo x695: uscita proposta all'utente (uscite manuali): green resting appoggiata
+      motivo x210: uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-2.04) vale 
+      motivo x198: in perdita pre-KO: tengo fino al live
+      motivo x154: uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-2.08) vale 
+      motivo x143: uscita proposta all'utente (uscite manuali): uscita appoggiata a 1.69
+
+ESITO: 15 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+       0 violazioni totali
+
+COPERTURA DEI CONTROLLI — quante volte ognuno ha avuto un caso:
+     A1  x75801   lo stato prodotto deve essere uno stato dichiarato (§3)
+  ?? A2  x0       da uno stato TERMINALE non esce nessuna azione (§3)
+     A3  x31      ogni decisione dichiara un motivo leggibile (§8)
+     B1  x11      Mike non entra MAI in-play da zero: l'unico ingresso live e' il re
+     B2  x15501   feed stantio: nessun ingresso, le chiusure restano permesse (§5)
+     B3  x90      ordine a esito IGNOTO: via le APERTURE, restano le riduzioni di ri
+     B4  x19      ingresso pre-match solo con la quota BACK Under 3.5 nella banda de
+     B5  x19      i cicli pre-match non superano `pre_max_cycles` (§3 Fase 1)
+     C1  x31      ogni ordine ha un prezzo dentro la scala Betfair e una size positi
+     C2  x31      Mike non inventa prezzi: nessun ordine su una linea assente dal fe
+     C3  x31      nessun ordine su un mercato che non e' APERTO (§3 Fase 1)
+  ?? D1  x0       le esposizioni vengono dai FILL, mai dalla size chiesta: la gamba 
+  ?? D2  x0       pre-match non si chiude mai in perdita: il green e' a quota MIGLIO
+     E1  x33380   con 3+ gol non si copre piu': la gestione passa al cash-out (§3 Fa
+     E2  x11      la copertura si dimensiona con X = factor*S/((Po-1)(1-c)) (§4.3)
+     F1  x2       `max_liability_per_match` e' un tetto DENTRO il motore (§4.9)
+     F2  x1006    a bot fermo / stop giornaliero non si apre niente (§5, §11)
+  ?? G1  x0       l'uscita in perdita esiste solo con 2, 3 o 4 gol totali (§3 Fase 5
+  ?? H1  x0       il re-ingresso live avviene UNA volta sola per partita (§3 Fase 6)
+  ?? H2  x0       il re-ingresso vuole ESATTAMENTE 1 gol e il primo tempo (§3 Fase 6
+     J1  x90      mai due gambe IN VOLO con lo stesso ruolo, ciclo e lato (freno ant
+     J2  x1       non si piazza una gamba di chiusura se ce n'e' gia' una IN VOLO co
+     J3  x73452   ogni gamba nasce con un riferimento suo, e nessun riferimento si r
+     J4  x90      una gamba a esito IGNOTO non viene mai data per annullata, ne' sos
+  ?? J5  x0       MAI due lay VIVE o IN VOLO sullo stesso mercato/selezione: se si a
+     J6  x11      MAI SOVRACOPERTURA: mai due back di copertura VIVI o IN VOLO sull'
+     R3  x5837    se la posizione l'ha chiusa l'UTENTE fuori dall'app, il bot non em
+     R2  x5835    dopo un cash-out globale dell'utente il bot NON apre piu' niente s
+  ?? R1  x0       dopo una sospensione con la lay appoggiata VIVA, alla riapertura l
+     S1  x4582    a freno scattato (cover_rifiuti_max rifiuti con lo stesso codice) 
+     S2  x290     nessun piazzamento di copertura mentre il mercato Over 4.5 non e' 
+     S3  x4582    dopo `cover_rifiuti_max` coperture RIFIUTATE dal mercato il bot no
+     S4  x11      fra due tentativi di copertura passa almeno `cover_retry_min_s` (b
+     K1  x73699   cio' che il bot CREDE di una gamba coincide con cio' che il MERCAT
+     K2  x73699   una gamba il cui ordine Betfair ha RIFIUTATO non resta mai viva (d
+     K3  x73699   il riferimento con cui il bot ha piazzato si RILEGGE con la stessa
+     K4  x73699   ogni gamba di CHIUSURA dichiara la riga di apertura che chiude (di
+  -- controlli del banco comune, scenario chiusura-abbinata-in-parte:
+  ?? CP1 x0       chiusura abbinata in parte: la riga (o la credenza) del bot porta 
+  ?? CP2 x0       la copertura dichiarata (hedge_state, meta.hedged_size) si conta s
+  ?? CP3 x0       una posizione con esposizione residua o con il residuo della chius
+  ?? CP4 x0       dopo una chiusura abbinata in parte nessun loop: mai una chiusura 
+
+?? MAI SOLLECITATI: 12 controlli su 37. Su questi il referto NON dice «sano», dice «non lo so»:
+     A2: da uno stato TERMINALE non esce nessuna azione (§3)
+     D1: le esposizioni vengono dai FILL, mai dalla size chiesta: la gamba di green non supera l'abbinato (§4.1)
+     D2: pre-match non si chiude mai in perdita: il green e' a quota MIGLIORE dell'ingresso (§3 Fase 1)
+     G1: l'uscita in perdita esiste solo con 2, 3 o 4 gol totali (§3 Fase 5)
+     H1: il re-ingresso live avviene UNA volta sola per partita (§3 Fase 6)
+     H2: il re-ingresso vuole ESATTAMENTE 1 gol e il primo tempo (§3 Fase 6)
+     J5: MAI due lay VIVE o IN VOLO sullo stesso mercato/selezione: se si abbinano entrambe la posizione si ribalta e resta SCOPERTA (ordine dell'utente 16/09 h16:15)
+     R1: dopo una sospensione con la lay appoggiata VIVA, alla riapertura l'ordine si RILEGGE da Betfair prima di decidere (§15.6)
+     CP1: chiusura abbinata in parte: la riga (o la credenza) del bot porta l'abbinato VERO della chiusura - chiesto, abbinato, residuo e prezzo medio come a mercato (PROCESSO par.6.4 parziali, par.6.5)
+     CP2: la copertura dichiarata (hedge_state, meta.hedged_size) si conta sull'ABBINATO della chiusura, mai sul chiesto (fix del 18/09)
+     CP3: una posizione con esposizione residua o con il residuo della chiusura ancora vivo a mercato non e' mai dichiarata CHIUSA
+     CP4: dopo una chiusura abbinata in parte nessun loop: mai una chiusura nuova con un'altra viva sulla stessa selezione, mai una size che chiede piu' di quanto resta da chiudere, al piu' 10 chiusure dopo, mai sovracopertura (catalogo par.7.1: 32 ordini veri in loop il 15/09)
+
+real	23m12.563s
+user	0m0.046s
+sys	0m0.031s

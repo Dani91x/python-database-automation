@@ -1,0 +1,83 @@
+"""ESPERIMENTO CANTIERE V2 (non tocca il repo): quanto si guadagnerebbe con
+due interventi FUORI dal perimetro del delegato, applicati SOLO in questo
+processo, e se il referto resta identico.
+
+  chiusura : flumine rielabora `_process_close_market` a OGNI riemissione dello
+             STESSO MarketBook CLOSED (GeneratoreLibri riusa l'oggetto se la
+             cache non e' cambiata): qui la seconda volta dello stesso oggetto
+             si salta.
+  lambda   : `omega_model.lambdas_from_pre_ko` (pura) ricalcolata a ogni giro
+             sulla stessa quota pre-KO congelata: qui memoizzata.
+
+Uso: python esperimento.py VARIANTE(nulla|chiusura|lambda|entrambi) SCENARI DATA_DIR
+"""
+from __future__ import annotations
+
+import functools
+import sys
+
+
+def main() -> int:
+    variante, scenari, data_dir = sys.argv[1], sys.argv[2], sys.argv[3]
+    extra = sys.argv[4:]
+    if variante in ("chiusura", "entrambi"):
+        from flumine.baseflumine import BaseFlumine
+
+        orig = BaseFlumine._process_close_market
+
+        def _una_volta(self, event):
+            mb = event.event
+            if not isinstance(mb, dict):
+                memo = self.__dict__.setdefault("_v2_chiusi", {})
+                if memo.get(mb.market_id) is mb:
+                    return None
+                orig(self, event)
+                memo[mb.market_id] = mb
+                return None
+            return orig(self, event)
+
+        BaseFlumine._process_close_market = _una_volta
+    if variante in ("lambda", "entrambi"):
+        from Betfair.omega import omega_model as M
+
+        vera = M.lambdas_from_pre_ko
+
+        @functools.lru_cache(maxsize=4096)
+        def _memo(h, d, a, total, rho):
+            return vera({"home": h, "draw": d, "away": a}, total, rho)
+
+        def lambdas(pre_ko, total_goals=M.DEFAULT_TOTAL_GOALS, rho=M.DEFAULT_RHO):
+            if not isinstance(pre_ko, dict):
+                return vera(pre_ko, total_goals, rho)
+            try:
+                return _memo(pre_ko.get("home"), pre_ko.get("draw"), pre_ko.get("away"),
+                             total_goals, rho)
+            except TypeError:
+                return vera(pre_ko, total_goals, rho)
+
+        M.lambdas_from_pre_ko = lambdas
+    from Betfair.stream.backtest import certifica
+
+    argv = ["mike", "35760084", "--scenari", scenari, "--worker", "1",
+            "--data-dir", data_dir] + extra
+    import os
+    prof = os.environ.get("V2_PROFILO")
+    if prof:
+        import cProfile
+        pr = cProfile.Profile()
+        pr.enable()
+        try:
+            return certifica.main(argv)
+        finally:
+            pr.disable()
+            pr.dump_stats(prof)
+    import time
+    c0 = time.process_time()
+    try:
+        return certifica.main(argv)
+    finally:
+        print("CPU del processo: %.1f s" % (time.process_time() - c0))
+
+
+if __name__ == "__main__":
+    sys.exit(main())

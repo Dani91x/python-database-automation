@@ -31,6 +31,7 @@ import logging
 import contextlib
 import os
 import sys
+import time
 from typing import Iterator, Any, Dict, List, Optional, Tuple
 
 from . import registro_bot as REG
@@ -304,6 +305,92 @@ def _lavora(compito: tuple) -> Any:
     return r, picco_memoria_mb()
 
 
+def _lavora_cronometrato(compito: tuple) -> Tuple[Any, float, float]:
+    """CANTIERE V2 (29/09) - `_lavora` con il CRONOMETRO: ``(referto, picco MB,
+    secondi)``. Il tempo si misura DENTRO il processo che fa il replay (anche
+    nei figli della pool), e viaggia A PARTE come la memoria: il referto resta
+    identico. `_lavora` non cambia firma (la usano `trasporto_rapido` e i test
+    con ``r, _mem = _lavora(...)``)."""
+    t0 = time.perf_counter()
+    r, mem = _lavora(compito)
+    return r, mem, time.perf_counter() - t0
+
+
+# ---------------------------------------------------------------------------
+# CANTIERE V2 (29/09) - LO STANDARD DEI TEMPI DEL REPLAY
+# ---------------------------------------------------------------------------
+# Ordine dell'utente del 29/09: "voglio i replay estremamente rapidi per ogni
+# bot, devi renderlo uno standard". La certificazione completa di un bot (tutti
+# i suoi scenari, una registrazione, `--worker 1`) deve stare in 5 minuti; il
+# TETTO e' 10. Il referto stampa il tempo di OGNI scenario e il totale; sopra il
+# tetto stampa una riga `LENTO:` ben visibile. E' un AVVISO: non cambia l'esito
+# OK/KO, non cambia l'exit code e non interrompe il replay.
+#
+# Le righe dei tempi stanno su righe PROPRIE, tutte riconoscibili da
+# `RIGA_DEI_TEMPI`: tolte quelle, due referti della stessa registrazione devono
+# essere IDENTICI riga per riga (`righe_senza_tempi`), ed e' cosi' che si prova
+# che un replay piu' veloce non ha smesso di controllare qualcosa.
+#: l'obiettivo dello standard (5 minuti), solo dichiarato nel referto
+OBIETTIVO_CERTIFICAZIONE_S = 300.0
+#: il tetto (10 minuti): sopra, la riga `LENTO:`
+TETTO_CERTIFICAZIONE_S = 600.0
+#: la variabile d'ambiente che sposta il tetto (secondi)
+ENV_TETTO_CERTIFICAZIONE = "CERTIFICA_TETTO_S"
+#: i prefissi delle righe dei tempi: sono le SOLE righe che cambiano fra due
+#: giri identici (dopo gli spazi iniziali)
+PREFISSI_RIGHE_TEMPI = ("tempo:", "TEMPO TOTALE:", "LENTO:")
+
+
+def tetto_certificazione_s() -> float:
+    """Il tetto in secondi: ``CERTIFICA_TETTO_S`` se e' un numero positivo,
+    altrimenti ``TETTO_CERTIFICAZIONE_S``. Un valore illeggibile non spegne
+    l'avviso: vale il default."""
+    grezzo = (os.environ.get(ENV_TETTO_CERTIFICAZIONE) or "").strip()
+    try:
+        v = float(grezzo) if grezzo else 0.0
+    except ValueError:
+        v = 0.0
+    return v if v > 0 else TETTO_CERTIFICAZIONE_S
+
+
+def durata_leggibile(secondi: float) -> str:
+    """``83.4`` -> ``1m23.4s``; sotto il minuto ``12.3s``."""
+    s = max(0.0, float(secondi))
+    m = int(s // 60)
+    return f"{m}m{s - 60 * m:04.1f}s" if m else f"{s:.1f}s"
+
+
+def riga_tempo_scenario(etichetta: str, secondi: float, tick: int) -> str:
+    """La riga del tempo di UNO scenario x registrazione (riga propria)."""
+    tps = (float(tick) / secondi) if secondi > 0 else 0.0
+    return (f"      tempo: {etichetta} {durata_leggibile(secondi)} "
+            f"({secondi:.1f} s) | {tps:.0f} tick/s")
+
+
+def righe_finali_tempi(tempi: List[Tuple[str, float]], totale_s: float,
+                       tetto_s: Optional[float] = None) -> List[str]:
+    """Le righe in coda al referto: il totale e, SOLO sopra il tetto, la riga
+    `LENTO:` con lo scenario piu' caro. Non toccano l'esito."""
+    tetto = tetto_certificazione_s() if tetto_s is None else float(tetto_s)
+    righe = [f"TEMPO TOTALE: {durata_leggibile(totale_s)} ({totale_s:.1f} s) su "
+             f"{len(tempi)} replay | obiettivo {OBIETTIVO_CERTIFICAZIONE_S:.0f} s, "
+             f"tetto {tetto:.0f} s ({ENV_TETTO_CERTIFICAZIONE})"]
+    if totale_s > tetto:
+        caro = max(tempi, key=lambda x: x[1]) if tempi else ("-", 0.0)
+        righe.append(f"LENTO: la certificazione ha impiegato {durata_leggibile(totale_s)} "
+                     f"({totale_s:.1f} s), sopra il tetto di {tetto:.0f} s | scenario "
+                     f"piu' caro: {caro[0]} {durata_leggibile(caro[1])} ({caro[1]:.1f} s) "
+                     f"| e' un AVVISO: l'esito non cambia")
+    return righe
+
+
+def righe_senza_tempi(testo: str) -> List[str]:
+    """Il referto SENZA le righe dei tempi: e' il termine del confronto "prima
+    e dopo" (stessa registrazione, stessi scenari -> stesse righe)."""
+    return [r for r in testo.splitlines()
+            if not r.lstrip().startswith(PREFISSI_RIGHE_TEMPI)]
+
+
 def picco_memoria_mb() -> float:
     """Il PICCO di memoria del processo corrente, in MB.
 
@@ -380,27 +467,47 @@ def quanti_processi(richiesti: int, compiti: int) -> int:
     return max(1, min(WORKER_DEFAULT, tetto, compiti))
 
 
-def _esegui_compiti(compiti: List[tuple], processi: int, picchi: List[float]):
+#: CANTIERE V2 (29/09): i secondi di ogni replay, nell'ordine dei referti che
+#: `_esegui_compiti` restituisce. Vive a livello di modulo (non come argomento)
+#: perche' la firma di `_esegui_compiti` e' quella che i test sostituiscono
+#: (``_fake(compiti, processi, picchi)``): un sostituto che non lo riempie da'
+#: tempi a zero, non un errore.
+_TEMPI_REPLAY: List[float] = []
+
+
+def _esegui_compiti(compiti: List[tuple], processi: int, picchi: List[float],
+                    tempi: Optional[List[float]] = None):
     """Esegue i compiti e li restituisce NELL'ORDINE IN CUI SONO STATI DATI.
 
     Con un processo solo si resta in casa (nessun costo di avvio, ed e' il caso
     del singolo evento). Con piu' processi si sottomette tutto subito e si
     raccoglie nell'ordine canonico: cosi' la stampa e il diario escono come
     prima, in ordine, e restano osservabili mentre il lavoro procede.
+
+    CANTIERE V2 (29/09): ``tempi`` (di default `_TEMPI_REPLAY`) riceve, nello
+    STESSO ordine dei referti, i secondi di ogni replay (misurati nel processo
+    che lo ha fatto).
     """
+    if tempi is None:
+        tempi = _TEMPI_REPLAY
     if processi <= 1:
         for c in compiti:
-            yield _lavora(c)[0]
+            r, _mem, secondi = _lavora_cronometrato(c)
+            if tempi is not None:
+                tempi.append(secondi)
+            yield r
         return
     from concurrent.futures import ProcessPoolExecutor
 
     with ProcessPoolExecutor(max_workers=processi,
                              initializer=_prepara_figlio) as pool:
-        futuri = [pool.submit(_lavora, c) for c in compiti]
+        futuri = [pool.submit(_lavora_cronometrato, c) for c in compiti]
         for f in futuri:
-            referto, memoria = f.result()
+            referto, memoria, secondi = f.result()
             if memoria:
                 picchi.append(memoria)
+            if tempi is not None:
+                tempi.append(secondi)
             yield referto
 
 
@@ -505,6 +612,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                    help="file in cui scrivere il referto DOPO OGNI partita: senza, "
                         "un run lungo resta cieco fino alla fine")
     a = p.parse_args(argv)
+    # CANTIERE V2 (29/09): il cronometro della certificazione intera
+    t_inizio = time.perf_counter()
 
     logging.basicConfig(level=logging.WARNING)
     if a.elenco or not a.bot:
@@ -572,7 +681,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     print(f"comando: python -m Betfair.stream.backtest.certifica {scheda.nome} "
           + " ".join(a.eventi) + (" --complete" if a.complete else "")
           + f" --scenari {a.scenari}"
-          + (f" --ogni-ms {a.ogni_ms}" if a.ogni_ms else ""))
+          + (f" --ogni-ms {a.ogni_ms}" if a.ogni_ms else "")
+          # CANTIERE V2 (29/09): il trasporto cambia il referto (le etichette
+          # `<canale>` e i numeri): senza, il comando stampato non lo rifaceva
+          # (PROCESSO_STANDARD_BOT par. 6.8, "comando esatto")
+          + (f" --trasporto {a.trasporto}" if a.trasporto else ""))
     qualita: Dict[str, int] = {}
     for e in eventi:
         v = verdetti.get(e, "?")
@@ -623,10 +736,20 @@ def main(argv: Optional[List[str]] = None) -> int:
         print()
     picchi: List[float] = []
     esplosi: List[str] = []
+    secondi_replay = _TEMPI_REPLAY
+    secondi_replay.clear()
+    tempi_scenari: List[Tuple[str, float]] = []
     risultati = _esegui_compiti(compiti, processi, picchi)
+    n_letti = 0
     for tr in trasporti:
         for sc, ev in [(sc, ev) for sc in scelti for ev in eventi]:
             r = next(risultati)
+            n_letti += 1
+            # il tempo di QUESTO replay (0 se chi esegue non lo misura)
+            secondi = (secondi_replay[n_letti - 1]
+                       if len(secondi_replay) >= n_letti else 0.0)
+            etichetta = f"{ev} [{sc}]" + (f" <{tr}>" if tr else "")
+            tempi_scenari.append((etichetta, secondi))
             if len(scelti) > 1 or tr:
                 r.event_id = f"{ev} [{sc}]" + (f" <{tr}>" if tr else "")
             if tr:
@@ -661,6 +784,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 esempio = next(v for v in r.violazioni if v.codice == cod)
                 print(f"      {cod} x{n}: {esempio.regola}")
                 print(f"           es. {esempio.dettaglio}")
+            # CANTIERE V2: il tempo di questo replay, su una riga SUA
+            print(riga_tempo_scenario(etichetta, secondi, int(r.tick or 0)))
 
     if picchi:
         # QUANTE PARTITE IN PARALLELO REGGONO: la memoria e' il limite vero, non
@@ -759,6 +884,11 @@ def main(argv: Optional[List[str]] = None) -> int:
               f"«sano», dice «non lo so»:")
         for cod, reg in mai:
             print(f"     {cod}: {reg}")
+    # CANTIERE V2 (29/09): il tempo totale e, sopra il tetto, l'avviso LENTO.
+    # Non tocca `esito_exit_code`: e' un avviso, non un verdetto. Nessuna riga
+    # vuota in piu': tolte le righe dei tempi il referto resta quello di prima.
+    for riga in righe_finali_tempi(tempi_scenari, time.perf_counter() - t_inizio):
+        print(riga)
     if a.come_json:
         print(json.dumps([{
             "event_id": r.event_id, "tick": r.tick, "decisioni": r.decisioni,

@@ -1,0 +1,8 @@
+giro 1 nulla: TEMPO TOTALE: 4m06.8s (246.8 s) su 3 replay | obiettivo 300 s, tetto 600 s (CERTIFICA_TETTO_S) CPU del processo: 232.8 s 
+giro 1 chiusura: TEMPO TOTALE: 3m05.0s (185.0 s) su 3 replay | obiettivo 300 s, tetto 600 s (CERTIFICA_TETTO_S) CPU del processo: 179.2 s 
+giro 1 lambda: TEMPO TOTALE: 3m07.5s (187.5 s) su 3 replay | obiettivo 300 s, tetto 600 s (CERTIFICA_TETTO_S) CPU del processo: 185.4 s 
+giro 1 entrambi: TEMPO TOTALE: 2m19.4s (139.4 s) su 3 replay | obiettivo 300 s, tetto 600 s (CERTIFICA_TETTO_S) CPU del processo: 138.3 s 
+giro 2 nulla: TEMPO TOTALE: 3m08.6s (188.6 s) su 3 replay | obiettivo 300 s, tetto 600 s (CERTIFICA_TETTO_S) CPU del processo: 186.6 s 
+giro 2 chiusura: TEMPO TOTALE: 2m17.1s (137.1 s) su 3 replay | obiettivo 300 s, tetto 600 s (CERTIFICA_TETTO_S) CPU del processo: 135.5 s 
+giro 2 lambda: TEMPO TOTALE: 2m40.9s (160.9 s) su 3 replay | obiettivo 300 s, tetto 600 s (CERTIFICA_TETTO_S) CPU del processo: 159.5 s 
+giro 2 entrambi: TEMPO TOTALE: 1m45.8s (105.8 s) su 3 replay | obiettivo 300 s, tetto 600 s (CERTIFICA_TETTO_S) CPU del processo: 104.7 s 

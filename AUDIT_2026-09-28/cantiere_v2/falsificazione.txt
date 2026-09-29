@@ -1,0 +1,14 @@
+﻿M1 riga del tempo per scenario non stampata        ROSSO | 1 failed in 2.38s
+M2 LENTO anche al tetto esatto (>=)                ROSSO | 1 failed, 3 passed in 2.40s
+M3 LENTO sempre                                    ROSSO | 1 failed, 1 passed in 2.87s
+M4 LENTO cambia l'exit code                        ROSSO | 1 failed, 2 passed in 3.57s
+M5 variabile d'ambiente ignorata                   ROSSO | 1 failed, 4 passed in 2.34s
+M6 scenario piu' caro = il meno caro               ROSSO | 1 failed, 2 passed in 2.63s
+M7 righe_senza_tempi non toglie LENTO              ROSSO | 1 failed, 10 passed in 4.93s
+M8 trasporto assente dal comando stampato          ROSSO | 1 failed, 12 passed in 3.28s
+M9 cronometro a zero                               ROSSO | 1 failed in 7.87s
+M10 tempo del replay sbagliato (sempre il primo)   ROSSO | 1 failed in 6.59s
+M12 il ciclo in casa non registra il tempo         ROSSO | 1 failed in 3.09s
+M11 tick al secondo sbagliati                      ROSSO | 1 failed in 3.19s
+hash ripristinato: OK 8a412d13be484a69
+MUTAZIONE nel file: 0
