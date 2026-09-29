@@ -199,6 +199,7 @@ restano quelli di oggi, salvo ordine esplicito.
 | 16 | 29/09 | Uscita in perdita: resta una proposta da firmare, esattamente com'e' ora («decido io») | confermata; nessuna modifica |
 | 17 | 29/09 | Per annullare la copertura Mike BANCA l'Over 4,5 invece di puntare l'Under 4,5 (stesso risultato, importo sempre accettato) | confermata, da implementare (M3.3) |
 | 18 | 29/09 | Tetto di perdita della partita: si toglie | confermata, da implementare (M4.5) |
+| 19 | 29/09 | Riprezzo di una chiusura ferma: da 10 a 20 secondi; 20 tentativi restano | confermata, da implementare (M4.6) |
 
 ---
 
@@ -397,6 +398,21 @@ DECISIONE dell'utente (29/09): «toglilo».
     parametro a 0 di serie: il risultato per l'utente e' lo stesso.
 - CONSEGUENZA scritta all'utente: dopo questa modifica, in gioco, nessuna chiusura in perdita parte
   senza la sua firma.
+
+### Passo 5 - Come Mike esegue una chiusura
+DECISIONE dell'utente (29/09): «alzerei il riprezzo a 20 secondi».
+- Resta com'e': un ordine di chiusura per ogni selezione aperta, al miglior prezzo; niente chiusura
+  su una selezione gia' decisa dai gol; residuo sotto 1 centesimo al regolamento; massimo 20
+  tentativi (`close_max_attempts` 20), poi Mike resta in attesa dell'abbinamento.
+- **M4.6 - Il riprezzo di una chiusura ferma passa da 10 a 20 secondi** (`close_retry_s` da 10 a
+  20). E' un cambio di PARAMETRO ordinato dall'utente.
+  - Per il tecnico: valore di serie in `Betfair/mike/config.py`; va aggiornato anche il valore
+    salvato nel database dei parametri di Mike (lo cambia l'utente dall'app, oppure migrazione), il
+    pannello dei parametri e la tabella `12_tutti_i_parametri` della guida. Verificare quali rami
+    leggono `close_retry_s` (chiusura in gioco, chiusura manuale, riprezzo della copertura) e dire
+    all'utente se il nuovo valore tocca anche quelli.
+- Conseguenza: con 20 tentativi a 20 secondi, una chiusura che non si abbina viene riprezzata per
+  circa 6-7 minuti invece di 3-4.
 
 ### PRINCIPIO dell'utente sugli ordini (29/09)
 Parole sue: «MIKE deve assicurarsi che tutti gli ordini da lui gestiti siano abbinati, chiusi,
