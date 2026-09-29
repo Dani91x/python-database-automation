@@ -1,0 +1,6 @@
+BASE (senza mutazioni): VERDE  420 passed, 4 skipped, 2676 deselected in 47.32s
+D1 la pausa di 30 s torna a valere anche fuori dal flatten     rossa  1 failed, 71 passed, 2676 deselected in 24.71s
+D2 la sequenza di un'altra chiusura presa per propria          rossa  1 failed, 71 passed, 2676 deselected in 16.59s
+D3 ALLARGATA: nessuna pausa nemmeno nel flatten                rossa  1 failed, 53 passed, 2676 deselected in 14.87s
+D4 ALLARGATA: nel flatten la sequenza equivalente si ricrea    SOPRAVVISSUTA  420 passed, 4 skipped, 2676 deselected in 35.21s
+mutazioni sopravvissute o non valide: 1 su 4

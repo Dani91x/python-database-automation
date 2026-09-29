@@ -2595,7 +2595,16 @@ class ScalperStrategy(BaseStrategy):
 
         import time as _t
         now_ms = int(_t.time() * 1000)
-        rate_ok = now_ms - (slot.t_last_submin or 0) >= self._SUBMIN_MIN_INTERVAL_MS
+        # S4 (29/09, replay 35797769 `uscite-manuali-firmate`, selezione 22): la
+        # pausa anti-cascata (30 s, INVARIATA) nasce dall'INSEGUIMENTO del
+        # flatten (02-03/07: sequenze ricreate a ogni giro). Una chiusura decisa
+        # UNA volta fuori dal flatten (close a target, scratch, pre-dimensione:
+        # una per ciclo, tetto di 5 sequenze invariato) parte INTERA: prima lo
+        # scratch firmato da 2,80 partiva con 2,50 e i 0,30 restavano scoperti
+        # ~20 minuti perche' la sequenza della close a target, appena ritirata
+        # dallo scratch stesso, aveva consumato la pausa 7 s prima.
+        rate_ok = (slot.status != FLATTENING
+                   or now_ms - (slot.t_last_submin or 0) >= self._SUBMIN_MIN_INTERVAL_MS)
         # tetto per ciclo: oltre, il residuo (comunque <=0.25 di rischio) si
         # accetta come micro e si smette di creare sequenze
         if getattr(slot, "submin_count", 0) >= self._SUBMIN_MAX_PER_CYCLE:
@@ -2609,8 +2618,14 @@ class ScalperStrategy(BaseStrategy):
         if slot.submins:
             for entry in slot.submins:
                 st_old = entry.get("state")
+                # S4 (29/09): "equivalente" vale per l'inseguimento del flatten
+                # (prezzo che scorre di un tick). Fuori dal flatten la sequenza
+                # in corso e' di UN'ALTRA chiusura (la close a target che lo
+                # scratch sostituisce): si ritira e parte quella di adesso,
+                # alla SUA quota e al SUO importo.
                 if (
-                    st_old is not None
+                    slot.status == FLATTENING
+                    and st_old is not None
                     and st_old.side == side.lower()
                     and abs(st_old.target_size - rest) < 0.05
                     and abs(st_old.target_price - price) < 0.021
