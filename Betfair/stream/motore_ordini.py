@@ -479,6 +479,21 @@ def riduce_esposizione(win: float, lose: float, side: str, price: float,
     return min(nw, nl) >= min(win, lose) - eps and abs(nw - nl) <= abs(win - lose) + eps
 
 
+def altro_runner_due_esiti(market: Any, selection_id: int) -> Optional[tuple]:
+    """(selection_id, handicap) dell'ALTRA selezione se il mercato ha esattamente
+    due runner (dal ``market_book`` di flumine) e uno e' ``selection_id``;
+    altrimenti None (tre o piu' esiti, o book non leggibile: nessuna ipotesi)."""
+    mb = getattr(market, "market_book", None)
+    runners = list(getattr(mb, "runners", None) or [])
+    if len(runners) != 2:
+        return None
+    ids = [(int(getattr(r, "selection_id")), float(getattr(r, "handicap", 0.0) or 0.0))
+           for r in runners]
+    if int(selection_id) not in (ids[0][0], ids[1][0]):
+        return None
+    return ids[1] if ids[0][0] == int(selection_id) else ids[0]
+
+
 def fase_da_riga(riga: Dict[str, Any]) -> str:
     """Fase del protocollo da una riga dello specchio (stato flumine + numeri)."""
     st = str(riga.get("status") or "").upper()
@@ -1031,8 +1046,21 @@ class MotoreOrdini:
             win, lose = LOW._read_matched_exposures(
                 flumine, market, strat, int(riga["selection_id"]),
                 float(riga.get("handicap") or 0.0))
-            return riduce_esposizione(float(win), float(lose), str(riga["side"]),
-                                      float(riga["price"]), float(riga["size"]))
+            if riduce_esposizione(float(win), float(lose), str(riga["side"]),
+                                  float(riga["price"]), float(riga["size"])):
+                return True
+            # 29/09 (Mike P5, M3.4): in un mercato a DUE esiti (Over/Under) la
+            # posizione e' del MERCATO: la banca Over 4,5 che annulla la copertura
+            # banca Under 4,5 riduce la posizione anche se sulla sua selezione non
+            # c'e' niente. Si somma l'altra selezione rovesciata. Solo in piu': un
+            # caso gia' verificato per selezione resta verificato come prima.
+            altro = altro_runner_due_esiti(market, int(riga["selection_id"]))
+            if altro is None:
+                return False
+            w2, l2 = LOW._read_matched_exposures(flumine, market, strat, altro[0], altro[1])
+            return riduce_esposizione(float(win) + float(l2), float(lose) + float(w2),
+                                      str(riga["side"]), float(riga["price"]),
+                                      float(riga["size"]))
         except Exception:  # noqa: BLE001 - non verificabile = non verificata
             return False
 

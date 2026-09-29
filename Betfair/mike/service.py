@@ -574,6 +574,11 @@ def _trade_row(info: F.EventInfo, leg: E.Leg, mode: str, params: Dict[str, Any],
         meta["exit_reason"] = str(close_reason or leg.role)
         if leg.closes_ref:
             meta["closes_ref"] = leg.closes_ref
+    if leg.role == "over_cover":
+        # 29/09 (P5, M3.1): la FORMA della copertura, letta dall'ordine stesso
+        # (il ruolo resta ``over_cover``: nessuna migrazione)
+        meta["cover_form"] = (E.COVER_LAY_U45 if (leg.side == "lay" and leg.selection == E.SEL_UNDER)
+                              else E.COVER_BACK_O45)
     row = {
         "event_id": info.event_id, "event_name": info.event_name, "sport": "calcio",
         "strategy": leg.role, "role": leg.role, "cycle_no": int(leg.cycle_no),
@@ -3084,8 +3089,21 @@ def _sorveglia_sospensione(*, db: Any, market: Any, ctx: E.MatchCtx, snap: E.Sna
     ctx.riapertura = {**r, "letto": True, "letto_ts": now_ts, "esiti": esiti}
 
 
+def _selezione_copertura(ctx: E.MatchCtx, params: Optional[Dict[str, Any]]) -> str:
+    """29/09 (P5, M3.1): su quale selezione del 4,5 sta la copertura. Una
+    copertura gia' sul book (viva o a esito ignoto) dice la sua; altrimenti la
+    forma scelta (``cover_form``): banca Under 4,5 o punta Over 4,5."""
+    for l in reversed(ctx.legs):
+        if l.role == "over_cover" and (l.is_live or l.needs_reconcile):
+            return l.selection
+    if params is not None and E.cover_form(params) == E.COVER_LAY_U45:
+        return E.SEL_UNDER
+    return E.SEL_OVER
+
+
 def _sorveglia_mercato_copertura(*, db: Any, ctx: E.MatchCtx, snap: E.Snapshot,
-                                 now_ts: float, ev: Dict[str, Any]) -> None:
+                                 now_ts: float, ev: Dict[str, Any],
+                                 params: Optional[Dict[str, Any]] = None) -> None:
     """⚠️ ORDINE DELL'UTENTE 17/09 — «il bot deve essere informato dei cambi di
     stato del mercato (SOSPESO / APERTO / CHIUSO) DURANTE la copertura».
 
@@ -3106,7 +3124,10 @@ def _sorveglia_mercato_copertura(*, db: Any, ctx: E.MatchCtx, snap: E.Snapshot,
     """
     if not E.copertura_in_corso(ctx):
         return
-    bk = snap.book(E.MARKET_OU45, E.SEL_OVER)
+    # 29/09 (P5): il libro della selezione su cui sta (o stara') la copertura
+    sel = _selezione_copertura(ctx, params)
+    etichetta = "Under 4.5 (banca)" if sel == E.SEL_UNDER else "Over 4.5"
+    bk = snap.book(E.MARKET_OU45, sel)
     stato = E.stato_mercato(bk)
     prima = str((ctx.cover_mercato or {}).get("stato") or "")
     if stato == prima:
@@ -3118,16 +3139,17 @@ def _sorveglia_mercato_copertura(*, db: Any, ctx: E.MatchCtx, snap: E.Snapshot,
     gambe = sorted(l.ref for l in ctx.legs
                    if l.role == "over_cover" and (l.is_live or l.needs_reconcile))
     comune = {"stato": stato, "mercato": E.MARKET_OU45, "market_id": mid,
-              "fase": "copertura", "refs": gambe, "state": ctx.state}
+              "fase": "copertura", "refs": gambe, "state": ctx.state, "selezione": sel}
     if stato != E.STATO_APERTO:
         db.log("mercato_sospeso", {**comune, "critical": True,
-                                   "nota": "mercato della copertura Over 4.5 non operabile: "
-                                           "nessun ordine di copertura finche' non riapre"},
+                                   "nota": "mercato della copertura %s non operabile: "
+                                           "nessun ordine di copertura finche' non riapre"
+                                           % etichetta},
                str(ev["event_id"]))
         return
     db.log("skip", {**comune, "reason": "mercato_riaperto",
-                    "nota": "mercato della copertura Over 4.5 di nuovo aperto: "
-                            "la copertura riprende da dove era rimasta"},
+                    "nota": "mercato della copertura %s di nuovo aperto: "
+                            "la copertura riprende da dove era rimasta" % etichetta},
            str(ev["event_id"]))
 
 
@@ -4576,7 +4598,7 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
     # Il fratello del controllo qui sopra, sull'altro mercato: quello guarda la
     # lay appoggiata sull'Under 3.5, questo guarda l'Over 4.5 mentre la
     # copertura e' in corso. Anche questo PRIMA della decisione.
-    _sorveglia_mercato_copertura(db=db, ctx=ctx, snap=snap, now_ts=now_ts, ev=ev)
+    _sorveglia_mercato_copertura(db=db, ctx=ctx, snap=snap, now_ts=now_ts, ev=ev, params=params)
 
     # -- LA POSIZIONE DI CONTO (ordine dell'utente, 16/09 sera) -------------------
     # «SE CHIUDO IO, IL BOT DEVE SAPERLO, ANCHE FUORI DALL'APP». Anche questa
