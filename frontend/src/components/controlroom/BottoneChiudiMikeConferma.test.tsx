@@ -8,9 +8,9 @@
 // Il finto dell'API ha la forma di `ChiusuraRigaApi` (stessa del vero).
 // ============================================================================
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { ATTESA_CONFERMA_USCITE_MS } from './InterruttoreUscite';
-import { BottoneChiudiRiga, ChiusuraRigaContext, type ChiusuraRigaApi } from './BottoneChiudiRiga';
+import { BottoneChiudiRiga, ChiusuraRigaContext, SCADENZA_CONFERMA_MS, type ChiusuraRigaApi } from './BottoneChiudiRiga';
 import type { RigaDaChiudere } from './chiudiRiga';
 
 function riga(over: Partial<RigaDaChiudere> = {}): RigaDaChiudere {
@@ -115,5 +115,56 @@ describe('D5 - Chiudi di Mike: un clic in paper, conferma in live', () => {
         fireEvent.click(screen.getByTestId('cr-op-chiudi'));
         expect(api.chiudi).toHaveBeenCalledTimes(1);
         expect(screen.queryByTestId('cr-op-chiudi-conferma')).toBeNull();
+    });
+});
+
+describe('review incrociata 30/09 (M1, secondo giro): la conferma armata non resta valida per sempre', () => {
+    it('si disarma quando il bottone si spegne (riga occupata) e al ritorno il primo clic e\' di nuovo «Chiudi»', () => {
+        // la riga diventa «occupata» quando l'api dichiara una richiesta in corso
+        let inCorso = false;
+        const api: ChiusuraRigaApi = {
+            chiudi: vi.fn(async () => undefined),
+            // forma VERA di `StatoChiusuraRiga` (chiudiRiga.ts): richiesta inviata, non chiusa
+            stato: vi.fn(() => (inCorso ? {
+                bot: 'mike' as const, id: 7, requestId: 1, faseRichiesta: 'inviata' as const,
+                richiestaChiusa: false, motivo: null, rigaCambiata: false, inviataMs: Date.now(),
+            } : null)),
+        };
+        const r = riga({ modalita: 'live' });
+        const ui = (occupato: boolean) => {
+            inCorso = occupato;
+            return (
+                <ChiusuraRigaContext.Provider value={api}>
+                    <BottoneChiudiRiga riga={r} />
+                </ChiusuraRigaContext.Provider>
+            );
+        };
+        const { rerender } = render(ui(false));
+        fireEvent.click(screen.getByTestId('cr-op-chiudi'));
+        expect(screen.getByTestId('cr-op-chiudi-conferma')).toBeTruthy();
+        rerender(ui(true));
+        expect(screen.queryByTestId('cr-op-chiudi-conferma')).toBeNull();
+        rerender(ui(false));
+        // NON e' armato: c'e' «Chiudi», non «Conferma»
+        expect(screen.queryByTestId('cr-op-chiudi-conferma')).toBeNull();
+        expect(screen.getByTestId('cr-op-chiudi').textContent).toBe('Chiudi');
+        expect(api.chiudi).not.toHaveBeenCalled();
+    });
+
+    it('scade da sola dopo SCADENZA_CONFERMA_MS', () => {
+        vi.useFakeTimers();
+        try {
+            const api = monta(riga({ modalita: 'live' }));
+            fireEvent.click(screen.getByTestId('cr-op-chiudi'));
+            expect(screen.getByTestId('cr-op-chiudi-conferma')).toBeTruthy();
+            act(() => { vi.advanceTimersByTime(SCADENZA_CONFERMA_MS - 500); });
+            expect(screen.getByTestId('cr-op-chiudi-conferma')).toBeTruthy();
+            act(() => { vi.advanceTimersByTime(1000); });
+            expect(screen.queryByTestId('cr-op-chiudi-conferma')).toBeNull();
+            expect(screen.getByTestId('cr-op-chiudi').textContent).toBe('Chiudi');
+            expect(api.chiudi).not.toHaveBeenCalled();
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });

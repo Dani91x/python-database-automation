@@ -24,6 +24,9 @@
 // ============================================================================
 import { createContext, useContext, useEffect, useState } from 'react';
 import { ATTESA_CONFERMA_USCITE_MS } from './InterruttoreUscite';
+
+/** dopo quanto una conferma armata e non usata si disarma da sola */
+export const SCADENZA_CONFERMA_MS = 10_000;
 import { BOT_LABEL } from '@/lib/controlRoom';
 import { fmtMoney } from '@/lib/format';
 import {
@@ -98,13 +101,27 @@ export function BottoneChiudiRiga({ riga, testId = 'cr-op-chiudi', variante = 'r
         const t = window.setTimeout(() => setTic((n) => n + 1), ATTESA_CONFERMA_USCITE_MS + 20);
         return () => window.clearTimeout(t);
     }, [armatoDa]);
+    // review incrociata 30/09 (M1 del secondo giro): una conferma armata e
+    // dimenticata non deve restare valida per sempre. Si DISARMA quando il
+    // bottone si spegne (riga occupata, non piu' chiudibile, contesto assente)
+    // e comunque allo scadere di SCADENZA_CONFERMA_MS: riaprendo la scheda
+    // piu' tardi, il primo clic torna a essere «Chiudi», mai «Conferma».
+    const cPre = chiudibile(riga);
+    const sPre = api ? api.stato(riga.bot, riga.id) : null;
+    const accesoPre = !!api && cPre != null && cPre.ok && !(inVolo || inCorso(sPre));
+    useEffect(() => { if (!accesoPre) setArmatoDa(null); }, [accesoPre]);
+    useEffect(() => {
+        if (armatoDa == null) return;
+        const t = window.setTimeout(() => setArmatoDa(null), SCADENZA_CONFERMA_MS);
+        return () => window.clearTimeout(t);
+    }, [armatoDa]);
     const armato = armatoDa != null;
     const troppoPresto = armatoDa != null && Date.now() - armatoDa < ATTESA_CONFERMA_USCITE_MS;
     const setArmato = (v: boolean) => setArmatoDa(v ? Date.now() : null);
     if (!api) return null;
-    const c = chiudibile(riga);
+    const c = cPre;
     if (c == null) return null;
-    const s = api.stato(riga.bot, riga.id);
+    const s = sPre;
     const occupato = inVolo || inCorso(s);
     const acceso = c.ok && !occupato;
     const titolo = !c.ok
