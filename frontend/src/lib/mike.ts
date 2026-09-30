@@ -416,6 +416,10 @@ export interface MikeStateView {
     day_start: string | null;
     /** criterio di attribuzione della giornata: 'placed' (piazzamento) */
     day_by: string | null;
+    /** 30/09 - arretrati PAPER regolati oggi di partite precedenti (chiave additiva
+     *  di `mike_state_arretrati_prova_2026-09-30.sql`); la forma la valida la
+     *  pagina (`lib/provaGiornata.ts`); null = migrazione non applicata ("non letti") */
+    arretrati_prova?: unknown;
 }
 
 // ------------------------------------------------------------- parametri
@@ -2162,6 +2166,8 @@ export async function fetchMikeState(): Promise<MikeStateView> {
         requests: Array.isArray(d.requests) ? d.requests : [],
         day_start: d.day_start ?? null,
         day_by: d.day_by ?? null,
+        // 30/09 - chiave additiva: assente = migrazione non applicata -> null ("non letti")
+        arretrati_prova: (d as { arretrati_prova?: unknown }).arretrati_prova ?? null,
     };
 }
 

@@ -43,6 +43,8 @@ export interface MikeView {
     activity: MikeActivity[];
     aggregates: MikeAggregates | null;
     requests: MikeRequest[];
+    /** 30/09 - arretrati PAPER regolati oggi (chiave additiva della RPC); null = non letti */
+    arretratiProva: unknown;
     /**
      * Stato del canale locale (app desktop): 'connected' = quote, P&L e stato
      * arrivano PUSHATI da 127.0.0.1 a ogni giro del bot, senza passare dal
@@ -89,6 +91,9 @@ export function useMike(handlers: MikeHandlers = {}): MikeView {
     const [trades, setTrades] = useState<MikeTrade[]>([]);
     const [activity, setActivity] = useState<MikeActivity[]>([]);
     const [aggregates, setAggregates] = useState<MikeAggregates | null>(null);
+    // 30/09 - arretrati PAPER regolati oggi di partite precedenti (chiave additiva
+    // della RPC; null = migrazione non applicata, la pagina scrive "non letti")
+    const [arretratiProva, setArretratiProva] = useState<unknown>(null);
     const [requests, setRequests] = useState<MikeRequest[]>([]);
     const [dayStartMs, setDayStartMs] = useState<number | null>(null);
     const [dayStartSource, setDayStartSource] = useState<'rpc' | 'client'>('client');
@@ -130,6 +135,7 @@ export function useMike(handlers: MikeHandlers = {}): MikeView {
         setTrades(state.trades);
         setActivity(state.activity);
         setAggregates(state.aggregates);
+        setArretratiProva(state.arretrati_prova ?? null);
         setRequests(reqs);
         // senza `mike_bot_v2.sql` la RPC non espone `day_start`: la giornata
         // operativa e' comunque la mezzanotte di Roma (certificazione dati reali)
@@ -367,6 +373,7 @@ export function useMike(handlers: MikeHandlers = {}): MikeView {
         loading, busy, error,
         control: controlVisibile, events: eventiVisibili, trades, activity,
         aggregates: aggregatiVisibili, requests,
+        arretratiProva,
         dayStartMs, dayStartSource, canaleLocale,
         params,
         mode: running ? (control?.mode ?? desiredMode) : desiredMode,
