@@ -75,7 +75,7 @@ describe('ObiettivoHero', () => {
         expect(s.getByTestId('cr-prova-safe_calcio-oggi').textContent).toContain('+0,00 €');
         expect(s.getByTestId('cr-prova-safe_calcio-arretrati').textContent).toBe('+7,60 € (4 operazioni aperte il 26/09)');
         expect(s.getByTestId('cr-prova-mike-arretrati').textContent).toBe('arretrati di Mike: non letti');
-        expect(s.getByTestId('cr-prova-bot_tennis-arretrati').textContent).toMatch(/per giorno di regolamento/);
+        expect(s.getByTestId('cr-prova-bot_tennis-arretrati').textContent).toMatch(/per giorno come lo pubblica il servizio/);
         // la cifra unica di prima (provaPaper -1,20) non compare piu'
         expect(s.getByTestId('cr-composizione-prova').textContent).not.toMatch(/1,20/);
     });

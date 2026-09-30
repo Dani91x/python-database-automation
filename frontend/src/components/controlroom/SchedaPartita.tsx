@@ -221,7 +221,7 @@ function TennisVivoBar({ eventId, abilitato, giocatori }: {
                 di `EtaQuote` («ultimo cambio»), che misura un'altra cosa. */}
             {(vivo.row?.state?.markets ?? []).flatMap((m) => m.selections ?? []).length > 0 && (
                 <span className="font-mono text-[11px] whitespace-nowrap" data-testid="cr-tennis-vivo-eta-quote"
-                    title="età delle quote della barra: ultima LETTURA dello stato mercati da parte del runner tennis (state.updated_ms), non l’ultimo cambio di prezzo. Sopra 20 s il dato è vecchio">
+                    title="età dell’ULTIMA RICOSTRUZIONE dello stato mercati da parte del runner tennis (state.updated_ms): dice che il runner gira, NON che le quote siano cambiate né che lo stream sia vivo. Sopra 20 s il runner è fermo e il dato è vecchio">
                     <span className="text-white/35">ultimo aggiornamento del runner: </span>
                     <span className={LETTURA_CLS[vivo.freschezzaQuote]} data-testid="cr-tennis-vivo-eta-quote-valore">
                         {vivo.etaQuoteS == null ? 'età ignota' : fmtAge(vivo.etaQuoteS)}
@@ -590,7 +590,18 @@ function StatoPill({ p }: { p: PartitaGiornata }) {
             </span>
         );
     }
-    return <span className="shrink-0 text-[11px] px-1.5 py-0.5 rounded bg-white/5 text-white/30">conclusa</span>;
+    // review finale 30/09 (R2-A1): `stato === 'chiusa'` vuol dire solo «non in
+    // gioco e orario passato» (rinvii e ritardi compresi): «conclusa» solo se
+    // Betfair ha CHIUSO il Match Odds; altrimenti lo si dice com'e'
+    if (p.statoMercato === 'CLOSED') {
+        return <span className="shrink-0 text-[11px] px-1.5 py-0.5 rounded bg-white/5 text-white/30">conclusa</span>;
+    }
+    return (
+        <span className="shrink-0 text-[11px] px-1.5 py-0.5 rounded bg-white/5 text-white/30"
+            title="orario d’inizio passato ma il mercato non è in gioco e Betfair non lo ha chiuso: ritardo, sospensione o rinvio">
+            non in gioco · orario passato
+        </span>
+    );
 }
 
 export default SchedaPartita;

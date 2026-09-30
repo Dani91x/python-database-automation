@@ -74,7 +74,7 @@ describe('OrdiniContoPartita', () => {
     });
     it('limite del backend: \u00abaperto per il conto letto alle HH:MM:SS\u00bb (ora di Roma)', () => {
         mostra(raggruppaOrdiniConto(VSETIN, '2026-09-30T14:19:48Z'), 'VSETIN');
-        expect(screen.getByTestId('cr-ordini-conto-letto').textContent).toBe('aperto per il conto letto alle 16:19:48');
+        expect(screen.getByTestId('cr-ordini-conto-letto').textContent).toMatch(/^aperto secondo lo specchio degli ordini interrogato alle 16:19:48/) // R2-A2: letto_at = interrogazione;
     });
     it('scheda TENNIS: niente (gli ordini manuali tennis non sono in questa fonte)', () => {
         const { container } = render(

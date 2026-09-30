@@ -50,7 +50,8 @@ describe('apertoAdesso - somma PER PARTITA del cash out LIVE', () => {
     it('Follo -0,82 (due gambe di Mike, una partita)', () => {
         const a = apertoAdesso({ operazioni: new Map([['E1', FOLLO]]), prezzo: prezzo(LIBRO), nowMs: 2 });
         expect(a).toEqual({ netto: -0.82, partite: 1, nonCalcolabili: 0,
-            perBot: { mike: { netto: -0.82, partite: 1, nonCalcolabili: 0 } } });
+            perBot: { mike: { netto: -0.82, partite: 1, nonCalcolabili: 0 } },
+            etaPrezziS: 0.001, calcolatoAlMs: 2 });
     });
 
     it('Farul PAREGGIATA: la chiusura abbinata netta la punta (quasi 0), non la si conta aperta', () => {
@@ -78,6 +79,14 @@ describe('apertoAdesso - somma PER PARTITA del cash out LIVE', () => {
             operazioni: new Map([['E1', FOLLO.map((o) => ({ ...o, modalita: 'paper' as const }))]]),
             prezzo: prezzo(LIBRO), nowMs: 2,
         });
-        expect(a).toEqual({ netto: null, partite: 0, nonCalcolabili: 0, perBot: {} });
+        expect(a).toEqual({ netto: null, partite: 0, nonCalcolabili: 0, perBot: {}, etaPrezziS: null, calcolatoAlMs: 2 });
+    });
+
+    it('R2-2: eta\' dei prezzi = il prezzo PIU\' VECCHIO fra le partite calcolabili, all\'istante del calcolo', () => {
+        const libro = { ...LIBRO, '1.35|11': { ...LIBRO['1.35|11'], istanteMs: 0 }, '1.45|21': { ...LIBRO['1.45|21'], istanteMs: 20_000 } };
+        const a = apertoAdesso({ operazioni: new Map([['E1', FOLLO]]), prezzo: prezzo(libro), nowMs: 30_000 });
+        expect(a.netto).toBe(-0.82);
+        expect(a.etaPrezziS).toBe(30);
+        expect(a.calcolatoAlMs).toBe(30_000);
     });
 });

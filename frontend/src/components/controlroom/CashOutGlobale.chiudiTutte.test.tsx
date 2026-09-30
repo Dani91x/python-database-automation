@@ -9,7 +9,7 @@
 // ============================================================================
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
-import { CashOutGlobale, pianoChiusuraPartita, testoPiano, type OperazionePerChiusura } from './CashOutGlobale';
+import { CashOutGlobale, pianoChiusuraPartita, testoPiano, SCADENZA_ARMATURA_MS, type OperazionePerChiusura } from './CashOutGlobale';
 import { ChiusuraRigaContext } from './BottoneChiudiRiga';
 import { ATTESA_CONFERMA_USCITE_MS } from './InterruttoreUscite';
 import type { RigaDaChiudere, StatoChiusuraRiga } from './chiudiRiga';
@@ -107,7 +107,7 @@ describe('P16: il pulsante nel riquadro', () => {
         fireEvent.click(screen.getByTestId('cr-cashout-globale-live-chiudi-tutte-avvia'));
         expect(c.chiudi).not.toHaveBeenCalled();
         expect(screen.getByTestId('cr-cashout-globale-live-chiudi-tutte-armato').textContent)
-            .toBe('Sono soldi veri: 2 comandi a 2 bot. annulla');
+            .toBe('Sono soldi veri: 2 comandi a 2 bot (effetti: vedi il title). annulla');
         const conf = screen.getByTestId('cr-cashout-globale-live-chiudi-tutte-conferma') as HTMLButtonElement;
         expect(conf.disabled).toBe(true);
         fireEvent.click(conf);
@@ -158,6 +158,58 @@ describe('P16: il pulsante nel riquadro', () => {
         expect(b.disabled).toBe(true);
         expect(screen.getByTestId('cr-cashout-globale-live-chiudi-tutte-bloccato').textContent)
             .toBe('prezzi fermi da 30 s: non si chiude su prezzi vecchi');
+    });
+
+    it('R2-1: armato con prezzi freschi, se i prezzi diventano FERMI la conferma si spegne e dice perche', async () => {
+        vi.useFakeTimers();
+        const c = contesto();
+        const r = monta(c);
+        fireEvent.click(screen.getByTestId('cr-cashout-globale-live-chiudi-tutte-avvia'));
+        await act(async () => { vi.advanceTimersByTime(ATTESA_CONFERMA_USCITE_MS + 50); });
+        expect((screen.getByTestId('cr-cashout-globale-live-chiudi-tutte-conferma') as HTMLButtonElement).disabled).toBe(false);
+        // il feed si ferma: stesso componente, prezzi di 30 s
+        r.rerender(
+            <ChiusuraRigaContext.Provider value={{ chiudi: c.chiudi, stato: c.stato }}>
+                <CashOutGlobale risultato={risultato(30_000)} operazioni={OPS} />
+            </ChiusuraRigaContext.Provider>,
+        );
+        // review incrociata (M1): l'armatura CADE: niente «Confermo», «avvia» spento col motivo
+        expect(screen.queryByTestId('cr-cashout-globale-live-chiudi-tutte-conferma')).toBeNull();
+        expect((screen.getByTestId('cr-cashout-globale-live-chiudi-tutte-avvia') as HTMLButtonElement).disabled).toBe(true);
+        expect(c.chiudi).not.toHaveBeenCalled();
+        expect(screen.getByTestId('cr-cashout-globale-live-chiudi-tutte-bloccato').textContent)
+            .toBe('prezzi fermi da 30 s: non si chiude su prezzi vecchi');
+    });
+
+    it('M1: l’armatura scade da sola dopo SCADENZA_ARMATURA_MS; e cade se il piano cambia', async () => {
+        vi.useFakeTimers();
+        const c = contesto();
+        const r = monta(c);
+        fireEvent.click(screen.getByTestId('cr-cashout-globale-live-chiudi-tutte-avvia'));
+        await act(async () => { vi.advanceTimersByTime(SCADENZA_ARMATURA_MS + 50); });
+        expect(screen.queryByTestId('cr-cashout-globale-live-chiudi-tutte-conferma')).toBeNull();
+        // riarmo, poi una gamba sparisce dal piano (si e' chiusa da sola): disarmo
+        fireEvent.click(screen.getByTestId('cr-cashout-globale-live-chiudi-tutte-avvia'));
+        await act(async () => { vi.advanceTimersByTime(ATTESA_CONFERMA_USCITE_MS + 50); });
+        expect(screen.queryByTestId('cr-cashout-globale-live-chiudi-tutte-conferma')).not.toBeNull();
+        r.rerender(
+            <ChiusuraRigaContext.Provider value={{ chiudi: c.chiudi, stato: c.stato }}>
+                <CashOutGlobale risultato={risultato()} operazioni={OPS.slice(0, OPS.length - 1)} />
+            </ChiusuraRigaContext.Provider>,
+        );
+        expect(screen.queryByTestId('cr-cashout-globale-live-chiudi-tutte-conferma')).toBeNull();
+        expect(c.chiudi).not.toHaveBeenCalled();
+    });
+
+    it('M2: due posizioni dello stesso bot TENNIS sulla stessa partita/mercato = UN comando (chiude la partita)', () => {
+        const due: OperazionePerChiusura[] = [
+            op({ bot: 'tennis_pro', id: 501, eventId: 'T1', marketId: '1.MO' }),
+            op({ bot: 'tennis_pro', id: 502, eventId: 'T1', marketId: '1.MO' }),
+        ];
+        const p = pianoChiusuraPartita(due, 'live');
+        const tennis = p.comandi.filter((x) => x.bot === 'tennis_pro');
+        expect(tennis).toHaveLength(1);
+        expect(tennis[0].gambe).toBe(2);
     });
 
     it('senza il contesto della Control Room (altre pagine) il pulsante non c\'e\'', () => {

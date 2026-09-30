@@ -250,6 +250,9 @@ export interface EsitoOrdineMeta extends Meta {
 const NEUTRO_ESITO = 'bg-slate-500/15 text-slate-300 border-slate-500/40';
 const ATTENZIONE_ESITO = 'bg-amber-500/15 text-amber-300 border-amber-500/40';
 
+/** stati Betfair dopo i quali un ordine non abbinato NON e' piu' sul book */
+const STATI_TERMINALI_FOK = new Set(['', 'NO_FILL', 'EXPIRED', 'LAPSED', 'CANCELLED', 'EXECUTION_COMPLETE', 'VOIDED']);
+
 export function esitoOrdineMeta(
     row: { status: string | null | undefined; meta?: MetaObj },
     /** codice di rifiuto gia' estratto dal chiamante (`statoOrdine().errorCode`) */
@@ -298,7 +301,14 @@ export function esitoOrdineMeta(
     // Omega coda `live_fok_<stato>`, :3780)
     // (la forma nuda `live_not_matched` di Omega manuale NON porta il codice
     // anche quando c'era: resta ERRORE col motivo, mai un'etichetta senza prova)
-    if (reason.startsWith('live_not_matched:') || reason.startsWith('live_fok_')) return ESITO_FOK;
+    // review incrociata 30/09 (M4): «tutto o niente» solo se lo stato dell'ordine
+    // e' TERMINALE; con EXECUTABLE (percorso sotto-minimo non FOK, Safe
+    // execution.py:531) l'ordine puo' essere ANCORA sul book: resta ERRORE col
+    // motivo, mai «nessun ordine a mercato» senza prova
+    if (reason.startsWith('live_not_matched:') || reason.startsWith('live_fok_')) {
+        const statoOrdine = (reason.startsWith('live_fok_') ? reason.slice('live_fok_'.length) : (parti[1] ?? '')).toUpperCase();
+        return STATI_TERMINALI_FOK.has(statoOrdine) ? ESITO_FOK : null;
+    }
     // scaduto su Betfair senza abbinato (fase `scaduto` del motore ordini,
     // stream/motore_ordini.py:503-509; Omega paper `terminal_expired/lapsed`)
     if (reason === 'canale_scaduto' || reason === 'terminal_expired' || reason === 'terminal_lapsed') {

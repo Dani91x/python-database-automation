@@ -10,7 +10,7 @@
 // ============================================================================
 import { describe, it, expect } from 'vitest';
 import { statoPartitaAperta } from './statoPartitaAperta';
-import type { OperazionePerCashOut } from '@/lib/cashOutPartita';
+import { dueEsitiPartita, type OperazionePerCashOut } from '@/lib/cashOutPartita';
 
 function ordine(side: 'back' | 'lay', price: number, size: number, matched = size) {
     return {
@@ -88,5 +88,20 @@ describe('statoPartitaAperta - i fatti del 30/09', () => {
         const r = statoPartitaAperta([op({ id: 1, marketId: '1.OU35', selectionId: 35, ordine: ordine('back', 2, 5, 0) })],
             { chiusa: false, dueEsiti: DUE });
         expect(r.stato).toBe('NON CALCOLABILE');
+    });
+
+    it('R2-4 tennis: back su P1 e su P2 nel Match Odds (due esiti) = coperta, NON «A RISCHIO −20»', () => {
+        const tennis = [
+            op({ id: 7001, bot: 'safe', selezione: 'Sinner', lato: 'back', marketId: '1.MO', selectionId: 1,
+                ordine: ordine('back', 2.00, 10.00) }),
+            op({ id: 7002, bot: 'safe', selezione: 'Alcaraz', lato: 'back', marketId: '1.MO', selectionId: 2,
+                ordine: ordine('back', 2.00, 10.00) }),
+        ];
+        // come la pagina: `dueEsitiPartita('tennis', moMarketId, dueEsitiMike(...))`
+        const r = statoPartitaAperta(tennis, { chiusa: false, dueEsiti: dueEsitiPartita('tennis', '1.MO', undefined) });
+        expect(r.stato).toBe('PAREGGIATA');
+        expect(r.casoPeggiore).toBe(0);
+        // senza la regola dei due esiti lo stesso caso conterebbe «nessuno vince»
+        expect(statoPartitaAperta(tennis, { chiusa: false }).stato).toBe('A RISCHIO');
     });
 });

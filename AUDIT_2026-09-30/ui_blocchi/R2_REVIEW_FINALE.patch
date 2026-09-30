@@ -1,0 +1,787 @@
+diff --git a/frontend/src/components/controlroom/CashOutGlobale.chiudiTutte.test.tsx b/frontend/src/components/controlroom/CashOutGlobale.chiudiTutte.test.tsx
+index f21fe39..def78f0 100644
+--- a/frontend/src/components/controlroom/CashOutGlobale.chiudiTutte.test.tsx
++++ b/frontend/src/components/controlroom/CashOutGlobale.chiudiTutte.test.tsx
+@@ -9,7 +9,7 @@
+ // ============================================================================
+ import { describe, it, expect, vi, afterEach } from 'vitest';
+ import { render, screen, fireEvent, act } from '@testing-library/react';
+-import { CashOutGlobale, pianoChiusuraPartita, testoPiano, type OperazionePerChiusura } from './CashOutGlobale';
++import { CashOutGlobale, pianoChiusuraPartita, testoPiano, SCADENZA_ARMATURA_MS, type OperazionePerChiusura } from './CashOutGlobale';
+ import { ChiusuraRigaContext } from './BottoneChiudiRiga';
+ import { ATTESA_CONFERMA_USCITE_MS } from './InterruttoreUscite';
+ import type { RigaDaChiudere, StatoChiusuraRiga } from './chiudiRiga';
+@@ -107,7 +107,7 @@ describe('P16: il pulsante nel riquadro', () => {
+         fireEvent.click(screen.getByTestId('cr-cashout-globale-live-chiudi-tutte-avvia'));
+         expect(c.chiudi).not.toHaveBeenCalled();
+         expect(screen.getByTestId('cr-cashout-globale-live-chiudi-tutte-armato').textContent)
+-            .toBe('Sono soldi veri: 2 comandi a 2 bot. annulla');
++            .toBe('Sono soldi veri: 2 comandi a 2 bot (effetti: vedi il title). annulla');
+         const conf = screen.getByTestId('cr-cashout-globale-live-chiudi-tutte-conferma') as HTMLButtonElement;
+         expect(conf.disabled).toBe(true);
+         fireEvent.click(conf);
+@@ -160,6 +160,58 @@ describe('P16: il pulsante nel riquadro', () => {
+             .toBe('prezzi fermi da 30 s: non si chiude su prezzi vecchi');
+     });
+ 
++    it('R2-1: armato con prezzi freschi, se i prezzi diventano FERMI la conferma si spegne e dice perche', async () => {
++        vi.useFakeTimers();
++        const c = contesto();
++        const r = monta(c);
++        fireEvent.click(screen.getByTestId('cr-cashout-globale-live-chiudi-tutte-avvia'));
++        await act(async () => { vi.advanceTimersByTime(ATTESA_CONFERMA_USCITE_MS + 50); });
++        expect((screen.getByTestId('cr-cashout-globale-live-chiudi-tutte-conferma') as HTMLButtonElement).disabled).toBe(false);
++        // il feed si ferma: stesso componente, prezzi di 30 s
++        r.rerender(
++            <ChiusuraRigaContext.Provider value={{ chiudi: c.chiudi, stato: c.stato }}>
++                <CashOutGlobale risultato={risultato(30_000)} operazioni={OPS} />
++            </ChiusuraRigaContext.Provider>,
++        );
++        // review incrociata (M1): l'armatura CADE: niente «Confermo», «avvia» spento col motivo
++        expect(screen.queryByTestId('cr-cashout-globale-live-chiudi-tutte-conferma')).toBeNull();
++        expect((screen.getByTestId('cr-cashout-globale-live-chiudi-tutte-avvia') as HTMLButtonElement).disabled).toBe(true);
++        expect(c.chiudi).not.toHaveBeenCalled();
++        expect(screen.getByTestId('cr-cashout-globale-live-chiudi-tutte-bloccato').textContent)
++            .toBe('prezzi fermi da 30 s: non si chiude su prezzi vecchi');
++    });
++
++    it('M1: l’armatura scade da sola dopo SCADENZA_ARMATURA_MS; e cade se il piano cambia', async () => {
++        vi.useFakeTimers();
++        const c = contesto();
++        const r = monta(c);
++        fireEvent.click(screen.getByTestId('cr-cashout-globale-live-chiudi-tutte-avvia'));
++        await act(async () => { vi.advanceTimersByTime(SCADENZA_ARMATURA_MS + 50); });
++        expect(screen.queryByTestId('cr-cashout-globale-live-chiudi-tutte-conferma')).toBeNull();
++        // riarmo, poi una gamba sparisce dal piano (si e' chiusa da sola): disarmo
++        fireEvent.click(screen.getByTestId('cr-cashout-globale-live-chiudi-tutte-avvia'));
++        await act(async () => { vi.advanceTimersByTime(ATTESA_CONFERMA_USCITE_MS + 50); });
++        expect(screen.queryByTestId('cr-cashout-globale-live-chiudi-tutte-conferma')).not.toBeNull();
++        r.rerender(
++            <ChiusuraRigaContext.Provider value={{ chiudi: c.chiudi, stato: c.stato }}>
++                <CashOutGlobale risultato={risultato()} operazioni={OPS.slice(0, OPS.length - 1)} />
++            </ChiusuraRigaContext.Provider>,
++        );
++        expect(screen.queryByTestId('cr-cashout-globale-live-chiudi-tutte-conferma')).toBeNull();
++        expect(c.chiudi).not.toHaveBeenCalled();
++    });
++
++    it('M2: due posizioni dello stesso bot TENNIS sulla stessa partita/mercato = UN comando (chiude la partita)', () => {
++        const due: OperazionePerChiusura[] = [
++            op({ bot: 'tennis_pro', id: 501, eventId: 'T1', marketId: '1.MO' }),
++            op({ bot: 'tennis_pro', id: 502, eventId: 'T1', marketId: '1.MO' }),
++        ];
++        const p = pianoChiusuraPartita(due, 'live');
++        const tennis = p.comandi.filter((x) => x.bot === 'tennis_pro');
++        expect(tennis).toHaveLength(1);
++        expect(tennis[0].gambe).toBe(2);
++    });
++
+     it('senza il contesto della Control Room (altre pagine) il pulsante non c\'e\'', () => {
+         render(<CashOutGlobale risultato={risultato()} operazioni={OPS} />);
+         expect(screen.queryByTestId('cr-cashout-globale-live-chiudi-tutte')).toBeNull();
+diff --git a/frontend/src/components/controlroom/CashOutGlobale.tsx b/frontend/src/components/controlroom/CashOutGlobale.tsx
+index e191125..2abf20c 100644
+--- a/frontend/src/components/controlroom/CashOutGlobale.tsx
++++ b/frontend/src/components/controlroom/CashOutGlobale.tsx
+@@ -31,6 +31,8 @@ import {
+     chiudibile, faseMostrata, TESTO_FASE, type RigaDaChiudere,
+ } from '@/components/controlroom/chiudiRiga';
+ import { ATTESA_CONFERMA_USCITE_MS } from '@/components/controlroom/InterruttoreUscite';
++/** review incrociata 30/09 (M1): dopo questo tempo l'armatura di «Chiudi tutte» cade da sola */
++export const SCADENZA_ARMATURA_MS = 10_000;
+ import { feedFreshness } from '@/lib/mike';
+ import { isBotTennis } from '@/lib/controlRoom';
+ import { useCashOutPartita, type ArgsCashOutPartita } from '@/components/controlroom/useCashOutPartita';
+@@ -142,15 +144,29 @@ export function pianoChiusuraPartita(
+     const comandi: ComandoChiusura[] = [];
+     const senzaComando: PianoChiusura['senzaComando'] = [];
+     const mike: { riga: RigaDaChiudere; ok: boolean; motivo: string | null }[] = [];
++    // review incrociata 30/09 (M2): un bot TENNIS chiude la sua posizione sulla
++    // PARTITA (`chiudiRiga.ts`, `chiudi_bot` per event/market): UN comando per
++    // (bot, partita, mercato), non uno per riga, come per Mike
++    const tennis = new Map<string, { riga: RigaDaChiudere; ok: boolean; motivo: string | null }[]>();
+     for (const o of ops) {
+         if (o.modalita !== modalita) continue;
+         const riga = rigaDa(o);
+         const c = chiudibile(riga);
+         if (c == null) continue;                        // non e' una posizione
+         if (o.bot === 'mike') { mike.push({ riga, ok: c.ok, motivo: c.ok ? null : c.motivo }); continue; }
++        if (isBotTennis(o.bot)) {
++            const k = `${o.bot}|${riga.eventId ?? ''}|${riga.marketId ?? ''}`;
++            tennis.set(k, [...(tennis.get(k) ?? []), { riga, ok: c.ok, motivo: c.ok ? null : c.motivo }]);
++            continue;
++        }
+         if (c.ok) comandi.push({ bot: o.bot, riga, gambe: 1 });
+         else senzaComando.push({ bot: o.bot, id: o.id, motivo: c.motivo });
+     }
++    for (const gruppo of tennis.values()) {
++        const ok = gruppo.find((g) => g.ok);
++        if (ok) comandi.push({ bot: ok.riga.bot, riga: ok.riga, gambe: gruppo.length });
++        else for (const g of gruppo) senzaComando.push({ bot: g.riga.bot, id: g.riga.id, motivo: g.motivo ?? '' });
++    }
+     const primaOk = mike.find((m) => m.ok);
+     if (primaOk) comandi.unshift({ bot: 'mike', riga: primaOk.riga, gambe: mike.length });
+     else for (const m of mike) senzaComando.push({ bot: 'mike', id: m.riga.id, motivo: m.motivo ?? '' });
+@@ -178,8 +194,17 @@ function ChiudiTutteLeGambe({ piano, modalita, spentoPerche, testId }: {
+     useEffect(() => {
+         if (armatoDa == null) return undefined;
+         const t = window.setTimeout(() => setTic((n) => n + 1), ATTESA_CONFERMA_USCITE_MS + 20);
+-        return () => window.clearTimeout(t);
++        // review incrociata 30/09 (M1): l'armatura SCADE: un «Confermo» lasciato
++        // armato non deve restare pronto per minuti (le gambe cambiano)
++        const s = window.setTimeout(() => setArmatoDa(null), SCADENZA_ARMATURA_MS);
++        return () => { window.clearTimeout(t); window.clearTimeout(s); };
+     }, [armatoDa]);
++    // review incrociata 30/09 (M1): se il PIANO cambia (una gamba si chiude da
++    // sola, ne compare una nuova) o scatta il BLOCCO (prezzi fermi/ignoti,
++    // cifra non calcolabile) l'armatura cade: si riparte da «avvia»
++    const firmaPiano = piano.comandi.map((c) => `${c.bot}:${c.riga.id}:${c.gambe}`).join(',')
++        + '|' + piano.senzaComando.map((s) => `${s.bot}:${s.id}`).join(',');
++    useEffect(() => { setArmatoDa(null); }, [firmaPiano, spentoPerche]);
+     if (!api) return null;
+     if (piano.comandi.length === 0 && piano.senzaComando.length === 0) return null;
+     const troppoPresto = armatoDa != null && Date.now() - armatoDa < ATTESA_CONFERMA_USCITE_MS;
+@@ -208,13 +233,18 @@ function ChiudiTutteLeGambe({ piano, modalita, spentoPerche, testId }: {
+                 {armatoDa != null ? (
+                     <>
+                         <button type="button" data-testid={`${testId}-conferma`}
+-                            disabled={troppoPresto || inVolo}
+-                            onClick={() => { if (!troppoPresto) void esegui(); }}
++                            // review finale 30/09 (R2-1): il cancello «prezzi fermi/ignoti o cifra
++                            // non calcolabile» vale ANCHE dopo l'armatura: se il feed si ferma fra
++                            // «avvia» e «confermo», la conferma si spegne e il motivo si legge
++                            disabled={troppoPresto || inVolo || blocco != null}
++                            title={blocco ?? undefined}
++                            onClick={() => { if (!troppoPresto && blocco == null) void esegui(); }}
+                             className="h-6 px-2 text-[10px] rounded bg-orange-500 text-black font-bold uppercase disabled:opacity-40">
+                             Confermo: chiudi tutte le gambe
+                         </button>
+                         <span className="text-[10px] text-orange-300" data-testid={`${testId}-armato`}>
+-                            Sono soldi veri: {piano.comandi.length} {piano.comandi.length === 1 ? 'comando' : 'comandi'} a {nBot} {nBot === 1 ? 'bot' : 'bot'}.{' '}
++                            Sono soldi veri: {piano.comandi.length} {piano.comandi.length === 1 ? 'comando' : 'comandi'} a {nBot} {nBot === 1 ? 'bot' : 'bot'}
++                            {' '}<span className="text-white/50" title="Mike chiude l'intero ciclo della partita; un bot tennis chiude la sua posizione sulla partita e non rientra finche' non lo riarmi; lo scalper ferma la sessione; Omega e Safe chiudono la singola posizione">(effetti: vedi il title)</span>.{' '}
+                             <button type="button" className="underline" onClick={() => setArmatoDa(null)}
+                                 data-testid={`${testId}-annulla`}>annulla</button>
+                         </span>
+@@ -228,7 +258,7 @@ function ChiudiTutteLeGambe({ piano, modalita, spentoPerche, testId }: {
+                         Chiudi tutte le gambe dei bot
+                     </button>
+                 )}
+-                {blocco != null && armatoDa == null && (
++                {blocco != null && (
+                     <span className="text-[10px] text-white/40" data-testid={`${testId}-bloccato`}>{blocco}</span>
+                 )}
+             </div>
+diff --git a/frontend/src/components/controlroom/MarchioSoldi.test.tsx b/frontend/src/components/controlroom/MarchioSoldi.test.tsx
+index 492c865..4faabcb 100644
+--- a/frontend/src/components/controlroom/MarchioSoldi.test.tsx
++++ b/frontend/src/components/controlroom/MarchioSoldi.test.tsx
+@@ -53,7 +53,7 @@ describe('MarchioSoldi', () => {
+     it('title = solo il testo della fonte senza dettaglio', () => {
+         render(<MarchioSoldi fonte="conto" />);
+         expect(screen.getByTestId('marchio-soldi').getAttribute('title'))
+-            .toBe('cifra letta dal conto Betfair: comprende tutti gli ordini (bot, app e sito)');
++            .toBe("cifra letta dal conto Betfair (il dettaglio dice se e' tutto il conto o la sola voce di un bot); eta' = ultimo cambio dei regolati letti dal conto");
+     });
+ });
+ 
+diff --git a/frontend/src/components/controlroom/ObiettivoHero.test.tsx b/frontend/src/components/controlroom/ObiettivoHero.test.tsx
+index df50f7a..714b5d2 100644
+--- a/frontend/src/components/controlroom/ObiettivoHero.test.tsx
++++ b/frontend/src/components/controlroom/ObiettivoHero.test.tsx
+@@ -75,7 +75,7 @@ describe('ObiettivoHero', () => {
+         expect(s.getByTestId('cr-prova-safe_calcio-oggi').textContent).toContain('+0,00 €');
+         expect(s.getByTestId('cr-prova-safe_calcio-arretrati').textContent).toBe('+7,60 € (4 operazioni aperte il 26/09)');
+         expect(s.getByTestId('cr-prova-mike-arretrati').textContent).toBe('arretrati di Mike: non letti');
+-        expect(s.getByTestId('cr-prova-bot_tennis-arretrati').textContent).toMatch(/per giorno di regolamento/);
++        expect(s.getByTestId('cr-prova-bot_tennis-arretrati').textContent).toMatch(/per giorno come lo pubblica il servizio/);
+         // la cifra unica di prima (provaPaper -1,20) non compare piu'
+         expect(s.getByTestId('cr-composizione-prova').textContent).not.toMatch(/1,20/);
+     });
+diff --git a/frontend/src/components/controlroom/ObiettivoHero.tsx b/frontend/src/components/controlroom/ObiettivoHero.tsx
+index 72c1f4f..6896745 100644
+--- a/frontend/src/components/controlroom/ObiettivoHero.tsx
++++ b/frontend/src/components/controlroom/ObiettivoHero.tsx
+@@ -149,6 +149,7 @@ export function ObiettivoHero({
+                                 {r.valore != null && fonteDi(r) != null && (
+                                     <MarchioSoldi fonte={fonteDi(r) === 'conto' ? 'conto' : 'bot'} className="ml-1"
+                                         etaS={fonteDi(r) === 'conto' ? contoEtaS : undefined}
++                                        dettaglio={fonteDi(r) === 'conto' ? 'solo gli ordini che il conto attribuisce a questa voce' : undefined}
+                                         testId={`cr-composizione-${r.chiave}-fonte`} />
+                                 )}
+                             </span>
+@@ -231,7 +232,7 @@ function RigaProvaBot({ v, modalita }: { v: VoceProva; modalita: 'paper' | 'live
+                 {v.arretrati == null ? (
+                     <span className="text-amber-300/80">{v.nota ?? 'non letti'}</span>
+                 ) : v.perRegolamento ? (
+-                    <span className="text-white/35">per giorno di regolamento: non separabili</span>
++                    <span className="text-white/35" title="il servizio tennis pubblica una cifra sola per giorno: di regolamento, oppure di partita se la migrazione del 30/09 (get_tennis_bot_daily) e' applicata">per giorno come lo pubblica il servizio: non separabili</span>
+                 ) : v.arretrati.length === 0 ? (
+                     <span className="text-white/30">nessuno</span>
+                 ) : v.arretrati.map((g) => (
+diff --git a/frontend/src/components/controlroom/ObiettivoVoci.tsx b/frontend/src/components/controlroom/ObiettivoVoci.tsx
+index 9049695..c1e7167 100644
+--- a/frontend/src/components/controlroom/ObiettivoVoci.tsx
++++ b/frontend/src/components/controlroom/ObiettivoVoci.tsx
+@@ -16,18 +16,31 @@ import { MarchioSoldi } from './MarchioSoldi';
+ 
+ const partite = (n: number) => `${n} ${n === 1 ? 'partita' : 'partite'}`;
+ 
+-export function apertoNode(a: ApertoAdesso | null): ReactNode {
++/** oltre questa eta' i prezzi dello scanner non sono piu' «adesso»: lo si dice in ambra */
++export const PREZZI_VECCHI_S = 20;
++
++export function apertoNode(a: ApertoAdesso | null, nowMs?: number): ReactNode {
+     if (a == null || (a.partite === 0 && a.nonCalcolabili === 0)) return undefined;
++    // review finale 30/09 (R2-2): l'eta' dei prezzi cresce con l'orologio della
++    // pagina, non resta quella del momento del calcolo (memo sulla firma dei dati)
++    const etaS = a.etaPrezziS == null || nowMs == null ? a.etaPrezziS
++        : a.etaPrezziS + Math.max(0, Math.round((nowMs - a.calcolatoAlMs) / 1000));
+     return (
+         <span className="inline-flex items-center gap-1 flex-wrap" data-testid="cr-giornata-aperto"
+-            title="se chiudo TUTTO adesso: somma per partita del cash out delle posizioni LIVE, netto commissione, ai prezzi dello scanner">
++            title="se chiudo TUTTE le gambe dei bot adesso: somma per partita del cash out delle posizioni LIVE dei bot (non gli ordini fatti fuori dai bot), netto commissione, ai prezzi dello scanner">
+             aperto adesso (se chiudo tutto){' '}
+             {a.netto != null ? (
+                 <b className={pnlClass(a.netto)} data-testid="cr-giornata-aperto-valore">{fmtMoney(a.netto, { signed: true })}</b>
+             ) : (
+                 <b className="text-slate-400" data-testid="cr-giornata-aperto-valore">{DASH}</b>
+             )}
+-            <MarchioSoldi fonte="pagina" dettaglio="prezzi dello scanner, cash out per partita" testId="cr-giornata-aperto-marchio" />
++            <MarchioSoldi fonte="pagina" etaS={a.netto != null ? etaS : undefined} dettaglio="prezzi dello scanner, cash out per partita, solo gambe dei bot" testId="cr-giornata-aperto-marchio" />
++            {a.netto != null && etaS != null && etaS > PREZZI_VECCHI_S && (
++                <span className="text-amber-300" data-testid="cr-giornata-aperto-prezzi-vecchi"
++                    title="lo scanner non aggiorna i prezzi di almeno una partita da questo tempo: la cifra e' calcolata su prezzi vecchi">
++                    prezzi di {etaS} s fa
++                </span>
++            )}
+             {a.partite > 0 && <span className="text-slate-400">su {partite(a.partite)}</span>}
+             {a.nonCalcolabili > 0 && (
+                 <span className="text-amber-300" data-testid="cr-giornata-aperto-non-calcolabili">
+diff --git a/frontend/src/components/controlroom/OrdiniContoPartita.test.tsx b/frontend/src/components/controlroom/OrdiniContoPartita.test.tsx
+index ba61c57..fa23be7 100644
+--- a/frontend/src/components/controlroom/OrdiniContoPartita.test.tsx
++++ b/frontend/src/components/controlroom/OrdiniContoPartita.test.tsx
+@@ -74,7 +74,7 @@ describe('OrdiniContoPartita', () => {
+     });
+     it('limite del backend: \u00abaperto per il conto letto alle HH:MM:SS\u00bb (ora di Roma)', () => {
+         mostra(raggruppaOrdiniConto(VSETIN, '2026-09-30T14:19:48Z'), 'VSETIN');
+-        expect(screen.getByTestId('cr-ordini-conto-letto').textContent).toBe('aperto per il conto letto alle 16:19:48');
++        expect(screen.getByTestId('cr-ordini-conto-letto').textContent).toMatch(/^aperto secondo lo specchio degli ordini interrogato alle 16:19:48/) // R2-A2: letto_at = interrogazione;
+     });
+     it('scheda TENNIS: niente (gli ordini manuali tennis non sono in questa fonte)', () => {
+         const { container } = render(
+diff --git a/frontend/src/components/controlroom/OrdiniContoPartita.tsx b/frontend/src/components/controlroom/OrdiniContoPartita.tsx
+index 08e8477..9ad4842 100644
+--- a/frontend/src/components/controlroom/OrdiniContoPartita.tsx
++++ b/frontend/src/components/controlroom/OrdiniContoPartita.tsx
+@@ -56,12 +56,16 @@ export function OrdiniContoPartita({ eventId, sport = 'calcio' }: {
+                     </span>
+                 ))}
+                 <MarchioSoldi fonte="conto" etaS={etaS} testId="cr-ordini-conto-marchio"
+-                    dettaglio="ordini sul conto non piazzati dai bot (get_live_orders_account_open)" />
++                    dettaglio="ordini sul conto non piazzati dai bot, dallo specchio degli ordini (get_live_orders_account_open); eta' = interrogazione, non freschezza dello specchio" />
+             </div>
+             {/* limite dichiarato dal backend: ad app chiusa il "regolato" non si
+                 aggiorna, quindi "aperto" vale per il conto letto a quell'ora */}
+             <div className="text-[10px] text-white/40" data-testid="cr-ordini-conto-letto">
+-                aperto per il conto letto alle {Number.isFinite(ms) ? fmtTime(ms, { seconds: true }) : DASH}
++                {/* review finale 30/09 (R2-A2): `letto_at` e' l'istante dell'INTERROGAZIONE
++                    (now() nella RPC); le righe vengono dallo specchio degli ordini che
++                    scrive il runner: se il runner e' fermo lo specchio e' vecchio */}
++                aperto secondo lo specchio degli ordini interrogato alle {Number.isFinite(ms) ? fmtTime(ms, { seconds: true }) : DASH}
++                <span className="text-white/30"> (lo specchio lo aggiorna il runner: se il runner e' fermo, e' vecchio)</span>
+             </div>
+             <div className="text-[10.5px] text-amber-300" data-testid="cr-ordini-conto-avviso">
+                 il bot non li vede: la cifra del cash out delle gambe dei bot non e&apos; la posizione del conto
+diff --git a/frontend/src/components/controlroom/SchedaPartita.test.tsx b/frontend/src/components/controlroom/SchedaPartita.test.tsx
+index 9794bb7..6a42aa8 100644
+--- a/frontend/src/components/controlroom/SchedaPartita.test.tsx
++++ b/frontend/src/components/controlroom/SchedaPartita.test.tsx
+@@ -413,8 +413,8 @@ describe('SchedaPartita — B1: tennis, quote della barra con lo stesso componen
+         monta(partita({ soldi: SOLDI_APERTI }));
+         const e = await screen.findByTestId('cr-tennis-vivo-eta-quote');
+         expect(e).toHaveTextContent(/^ultimo aggiornamento del runner: [78] s$/);
+-        expect(e.getAttribute('title')).toMatch(/LETTURA/);
+-        expect(e.getAttribute('title')).toMatch(/non .* cambio/);
++        expect(e.getAttribute('title')).toMatch(/RICOSTRUZIONE/);
++        expect(e.getAttribute('title')).toMatch(/NON che le quote siano cambiate/);
+         expect(within(e).getByTestId('cr-tennis-vivo-eta-quote-valore').className).toContain('text-white/50');
+     });
+ 
+diff --git a/frontend/src/components/controlroom/SchedaPartita.tsx b/frontend/src/components/controlroom/SchedaPartita.tsx
+index 5aa80ad..4e96406 100644
+--- a/frontend/src/components/controlroom/SchedaPartita.tsx
++++ b/frontend/src/components/controlroom/SchedaPartita.tsx
+@@ -221,7 +221,7 @@ function TennisVivoBar({ eventId, abilitato, giocatori }: {
+                 di `EtaQuote` («ultimo cambio»), che misura un'altra cosa. */}
+             {(vivo.row?.state?.markets ?? []).flatMap((m) => m.selections ?? []).length > 0 && (
+                 <span className="font-mono text-[11px] whitespace-nowrap" data-testid="cr-tennis-vivo-eta-quote"
+-                    title="età delle quote della barra: ultima LETTURA dello stato mercati da parte del runner tennis (state.updated_ms), non l’ultimo cambio di prezzo. Sopra 20 s il dato è vecchio">
++                    title="età dell’ULTIMA RICOSTRUZIONE dello stato mercati da parte del runner tennis (state.updated_ms): dice che il runner gira, NON che le quote siano cambiate né che lo stream sia vivo. Sopra 20 s il runner è fermo e il dato è vecchio">
+                     <span className="text-white/35">ultimo aggiornamento del runner: </span>
+                     <span className={LETTURA_CLS[vivo.freschezzaQuote]} data-testid="cr-tennis-vivo-eta-quote-valore">
+                         {vivo.etaQuoteS == null ? 'età ignota' : fmtAge(vivo.etaQuoteS)}
+@@ -590,7 +590,18 @@ function StatoPill({ p }: { p: PartitaGiornata }) {
+             </span>
+         );
+     }
+-    return <span className="shrink-0 text-[11px] px-1.5 py-0.5 rounded bg-white/5 text-white/30">conclusa</span>;
++    // review finale 30/09 (R2-A1): `stato === 'chiusa'` vuol dire solo «non in
++    // gioco e orario passato» (rinvii e ritardi compresi): «conclusa» solo se
++    // Betfair ha CHIUSO il Match Odds; altrimenti lo si dice com'e'
++    if (p.statoMercato === 'CLOSED') {
++        return <span className="shrink-0 text-[11px] px-1.5 py-0.5 rounded bg-white/5 text-white/30">conclusa</span>;
++    }
++    return (
++        <span className="shrink-0 text-[11px] px-1.5 py-0.5 rounded bg-white/5 text-white/30"
++            title="orario d’inizio passato ma il mercato non è in gioco e Betfair non lo ha chiuso: ritardo, sospensione o rinvio">
++            non in gioco · orario passato
++        </span>
++    );
+ }
+ 
+ export default SchedaPartita;
+diff --git a/frontend/src/components/controlroom/SchedaPreMatch.tsx b/frontend/src/components/controlroom/SchedaPreMatch.tsx
+index ba5ec81..a0ce444 100644
+--- a/frontend/src/components/controlroom/SchedaPreMatch.tsx
++++ b/frontend/src/components/controlroom/SchedaPreMatch.tsx
+@@ -157,7 +157,7 @@ export function SchedaPreMatch({
+                 PROVA separati). Senza gambe non si monta e non apre niente. */}
+             {operazioni.length > 0 && (
+                 <div className="-mx-2.5">
+-                    <CashOutGlobalePartita sport={p.sport} operazioni={operazioni} mike={mike} />
++                    <CashOutGlobalePartita sport={p.sport} operazioni={operazioni} mike={mike} moMarketId={p.marketId} />
+                 </div>
+             )}
+             {mikeConPosizione && mike && (
+diff --git a/frontend/src/components/controlroom/SplitSport.tsx b/frontend/src/components/controlroom/SplitSport.tsx
+index 488644f..e91aaac 100644
+--- a/frontend/src/components/controlroom/SplitSport.tsx
++++ b/frontend/src/components/controlroom/SplitSport.tsx
+@@ -213,7 +213,7 @@ function ArretratiSport({ sport, prova }: { sport: SportKey; prova: ProvaGiornat
+             )}
+             {regol.length > 0 && (
+                 <div data-testid={`cr-sport-${sport}-per-regolamento`}>
+-                    {regol.join(', ')}: per giorno di regolamento (la fonte non porta il giorno della partita)
++                    {regol.join(', ')}: per giorno come lo pubblica il servizio (regolamento, o partita se la migrazione del 30/09 e' applicata)
+                 </div>
+             )}
+         </div>
+diff --git a/frontend/src/components/controlroom/W_B2EsitiOmegaSafe.test.tsx b/frontend/src/components/controlroom/W_B2EsitiOmegaSafe.test.tsx
+index 5c427cb..a4c07e6 100644
+--- a/frontend/src/components/controlroom/W_B2EsitiOmegaSafe.test.tsx
++++ b/frontend/src/components/controlroom/W_B2EsitiOmegaSafe.test.tsx
+@@ -89,6 +89,11 @@ describe('Safe: esiti dalla nota dell’esecuzione', () => {
+     it('FOK non abbinato (nota senza codice)', () => {
+         expect(esito(safePlaceFail('live_not_matched:EXPIRED'))).toBe('NON ABBINATO (tutto o niente)');
+     });
++    it('review incrociata M4: stato NON terminale (EXECUTABLE) = ordine forse ancora sul book: ERRORE col motivo, mai «tutto o niente»', () => {
++        expect(esito(safePlaceFail('live_not_matched:EXECUTABLE'))).not.toBe('NON ABBINATO (tutto o niente)');
++        expect(esito(safePlaceFail('live_not_matched:LAPSED'))).toBe('NON ABBINATO (tutto o niente)');
++        expect(esito(safePlaceFail('flumine_live_fok_executable'))).not.toBe('NON ABBINATO (tutto o niente)');
++    });
+     it('rifiuto del runner (nostro): nessun ordine a Betfair', () => {
+         expect(esito(safePlaceFail('canale_rifiutato:submin_non_percorribile'))).toBe('RIFIUTATO dal runner: submin non percorribile');
+     });
+diff --git a/frontend/src/components/controlroom/aperte/statoPartitaAperta.test.ts b/frontend/src/components/controlroom/aperte/statoPartitaAperta.test.ts
+index b5e9cd1..7fa9f92 100644
+--- a/frontend/src/components/controlroom/aperte/statoPartitaAperta.test.ts
++++ b/frontend/src/components/controlroom/aperte/statoPartitaAperta.test.ts
+@@ -10,7 +10,7 @@
+ // ============================================================================
+ import { describe, it, expect } from 'vitest';
+ import { statoPartitaAperta } from './statoPartitaAperta';
+-import type { OperazionePerCashOut } from '@/lib/cashOutPartita';
++import { dueEsitiPartita, type OperazionePerCashOut } from '@/lib/cashOutPartita';
+ 
+ function ordine(side: 'back' | 'lay', price: number, size: number, matched = size) {
+     return {
+@@ -89,4 +89,19 @@ describe('statoPartitaAperta - i fatti del 30/09', () => {
+             { chiusa: false, dueEsiti: DUE });
+         expect(r.stato).toBe('NON CALCOLABILE');
+     });
++
++    it('R2-4 tennis: back su P1 e su P2 nel Match Odds (due esiti) = coperta, NON «A RISCHIO −20»', () => {
++        const tennis = [
++            op({ id: 7001, bot: 'safe', selezione: 'Sinner', lato: 'back', marketId: '1.MO', selectionId: 1,
++                ordine: ordine('back', 2.00, 10.00) }),
++            op({ id: 7002, bot: 'safe', selezione: 'Alcaraz', lato: 'back', marketId: '1.MO', selectionId: 2,
++                ordine: ordine('back', 2.00, 10.00) }),
++        ];
++        // come la pagina: `dueEsitiPartita('tennis', moMarketId, dueEsitiMike(...))`
++        const r = statoPartitaAperta(tennis, { chiusa: false, dueEsiti: dueEsitiPartita('tennis', '1.MO', undefined) });
++        expect(r.stato).toBe('PAREGGIATA');
++        expect(r.casoPeggiore).toBe(0);
++        // senza la regola dei due esiti lo stesso caso conterebbe «nessuno vince»
++        expect(statoPartitaAperta(tennis, { chiusa: false }).stato).toBe('A RISCHIO');
++    });
+ });
+diff --git a/frontend/src/components/controlroom/useControlRoom.ts b/frontend/src/components/controlroom/useControlRoom.ts
+index fa3e46f..b0050d6 100644
+--- a/frontend/src/components/controlroom/useControlRoom.ts
++++ b/frontend/src/components/controlroom/useControlRoom.ts
+@@ -114,7 +114,7 @@ import {
+ } from '@/lib/provaGiornata';
+ import { composizioneDalConto, etaContoS, perSportDalConto, type SportDalConto } from '@/lib/composizioneConto';
+ import { apertoAdesso, type ApertoAdesso } from '@/lib/apertoAdesso';
+-import { dueEsitiMike, esitoDecisoMike } from '@/lib/cashOutPartita';
++import { dueEsitiMike, dueEsitiPartita, esitoDecisoMike } from '@/lib/cashOutPartita';
+ import type { FonteOggiLive } from '@/components/controlroom/righeBot';
+ import { prezzoVivoPerGamba } from '@/lib/comboPrezzoVivo';
+ import { updateOmegaParams } from '@/lib/omega';
+@@ -779,6 +779,8 @@ export interface ControlRoomVM {
+     /** obiettivo del giorno: quello storicizzato di Omega, che è l'unico che esiste */
+     obiettivo: number | null;
+     obiettivoStoricizzato: boolean;
++    /** 30/09 (M5): false = riga di controllo di Omega non letta (non «non ha girato») */
++    omegaLetto?: boolean;
+     realizzato: number | null;
+     /**
+      * IL REALIZZATO DI OGGI, diviso come serve davvero: **live e paper mai
+@@ -2764,7 +2766,10 @@ export function useControlRoom(): ControlRoomVM {
+                 return { ...b, pnlOggi: l.valore, fonteOggiLive: l.f, pnlOggiPaper: p.oggi, arretratiPaper: p.arretrati };
+             }
+             if (b.bot === 'mike') {
+-                const l = liveDi('mike', di(b.bot, 'live'));
++                // review incrociata 30/09 (M3): dalle RIGHE (conto non letto) la cifra
++                // comprende anche gli ordini dell'utente sulle partite di Mike
++                const l = liveDi('mike', di(b.bot, 'live'),
++                    'righe di Mike: comprendono anche gli ordini fatti dall\'utente sulle sue partite');
+                 return {
+                     ...b, pnlOggi: l.valore, fonteOggiLive: l.f, pnlOggiPaper: provaDellaRiga(pMike).oggi,
+                     arretratiPaper: arretratiMike,
+@@ -3528,11 +3533,17 @@ export function useControlRoom(): ControlRoomVM {
+                 eventId, feedPerEvento.get(eventId)?.updated_at ?? null,
+                 mikeEventi.get(eventId)?.updated_at ?? null,
+                 ops.map((o) => [o.id, o.bot, o.modalita, o.marketId, o.selectionId, o.lato,
+-                    o.ordine, o.chiusureOrdini, o.chiusureGambe ?? null, o.chiusura?.alMs?.aliquota ?? null]),
++                    o.ordine, o.chiusureOrdini, o.chiusureGambe ?? null, o.chiusura?.alMs?.aliquota ?? null,
++                    // review finale 30/09 (R2-3): anche cio' che `gambeDaOperazioni` legge per
++                    // tennis (pnl = regolato) e scalper (pnl, stato, residuo, esposizioni)
++                    o.pnl ?? null, o.stato ?? null, o.residuo ?? null, o.esposizioneSelezioni ?? null]),
+             ]));
+         }
+         return parti.join('\n');
+     }, [operazioni, feedPerEvento, mikeEventi]);
++    // lo sport della partita dalle sue righe (lo porta la riga al ms)
++    const sportDiAperto = (eventId: string) => (operazioni.get(eventId) ?? [])
++        .map((o) => o.chiusura?.alMs?.sport ?? null).find((s) => s != null) ?? null;
+     const apertoOggi = useMemo<ApertoAdesso>(() => apertoAdesso({
+         operazioni,
+         prezzo: (eventId, marketId, selectionId) => {
+@@ -3547,11 +3558,16 @@ export function useControlRoom(): ControlRoomVM {
+                 fonte: 'scanner', statoMercato: b.statoMercato ?? l.statoMercato ?? null,
+             };
+         },
+-        dueEsiti: (eventId) => dueEsitiMike(mikeEventi.get(eventId)),
++        // review finale 30/09 (R2-4): nel tennis il Match Odds (`mo_market_id` del
++        // feed) e' a DUE esiti, come nella scheda in gioco; senza feed o sport
++        // ignoto restano i soli mercati di Mike
++        dueEsiti: (eventId) => {
++            const sport = sportDiAperto(eventId);
++            const mo = (feedPerEvento.get(eventId)?.payload as { mo_market_id?: string | null } | null)?.mo_market_id ?? null;
++            return dueEsitiPartita(sport === 'tennis' ? 'tennis' : 'calcio', mo, dueEsitiMike(mikeEventi.get(eventId)));
++        },
+         esitoDeciso: (eventId) => esitoDecisoMike(mikeEventi.get(eventId), operazioni.get(eventId) ?? []),
+-        // lo sport della partita dalle sue righe (lo porta la riga al ms)
+-        sportDi: (eventId) => (operazioni.get(eventId) ?? [])
+-            .map((o) => o.chiusura?.alMs?.sport ?? null).find((s) => s != null) ?? null,
++        sportDi: sportDiAperto,
+         nowMs: Date.now(),
+     // la firma contiene tutto cio' che il calcolo legge (righe LIVE, feed, Mike)
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+@@ -4015,6 +4031,8 @@ export function useControlRoom(): ControlRoomVM {
+         giornata, totali,
+         obiettivo,
+         obiettivoStoricizzato: omega?.goal_snapshot === true,
++        // review incrociata 30/09 (M5): stato di Omega NON LETTO e' un'altra cosa da «non ha ancora girato»
++        omegaLetto: omega != null,
+         realizzato,
+         realizzatoOggi,
+         soldiGiornata: giornataSoldi,
+diff --git a/frontend/src/lib/apertoAdesso.test.ts b/frontend/src/lib/apertoAdesso.test.ts
+index 8742250..671013e 100644
+--- a/frontend/src/lib/apertoAdesso.test.ts
++++ b/frontend/src/lib/apertoAdesso.test.ts
+@@ -50,7 +50,8 @@ describe('apertoAdesso - somma PER PARTITA del cash out LIVE', () => {
+     it('Follo -0,82 (due gambe di Mike, una partita)', () => {
+         const a = apertoAdesso({ operazioni: new Map([['E1', FOLLO]]), prezzo: prezzo(LIBRO), nowMs: 2 });
+         expect(a).toEqual({ netto: -0.82, partite: 1, nonCalcolabili: 0,
+-            perBot: { mike: { netto: -0.82, partite: 1, nonCalcolabili: 0 } } });
++            perBot: { mike: { netto: -0.82, partite: 1, nonCalcolabili: 0 } },
++            etaPrezziS: 0.001, calcolatoAlMs: 2 });
+     });
+ 
+     it('Farul PAREGGIATA: la chiusura abbinata netta la punta (quasi 0), non la si conta aperta', () => {
+@@ -78,6 +79,14 @@ describe('apertoAdesso - somma PER PARTITA del cash out LIVE', () => {
+             operazioni: new Map([['E1', FOLLO.map((o) => ({ ...o, modalita: 'paper' as const }))]]),
+             prezzo: prezzo(LIBRO), nowMs: 2,
+         });
+-        expect(a).toEqual({ netto: null, partite: 0, nonCalcolabili: 0, perBot: {} });
++        expect(a).toEqual({ netto: null, partite: 0, nonCalcolabili: 0, perBot: {}, etaPrezziS: null, calcolatoAlMs: 2 });
++    });
++
++    it('R2-2: eta\' dei prezzi = il prezzo PIU\' VECCHIO fra le partite calcolabili, all\'istante del calcolo', () => {
++        const libro = { ...LIBRO, '1.35|11': { ...LIBRO['1.35|11'], istanteMs: 0 }, '1.45|21': { ...LIBRO['1.45|21'], istanteMs: 20_000 } };
++        const a = apertoAdesso({ operazioni: new Map([['E1', FOLLO]]), prezzo: prezzo(libro), nowMs: 30_000 });
++        expect(a.netto).toBe(-0.82);
++        expect(a.etaPrezziS).toBe(30);
++        expect(a.calcolatoAlMs).toBe(30_000);
+     });
+ });
+diff --git a/frontend/src/lib/apertoAdesso.ts b/frontend/src/lib/apertoAdesso.ts
+index 750bf3d..fbe42f1 100644
+--- a/frontend/src/lib/apertoAdesso.ts
++++ b/frontend/src/lib/apertoAdesso.ts
+@@ -33,6 +33,14 @@ export interface ApertoAdesso {
+     nonCalcolabili: number;
+     /** per bot: le SOLE gambe di quel bot, partita per partita */
+     perBot: Record<string, ApertoPerBot>;
++    /**
++     * review finale 30/09 (R2-2) - eta' (s) del prezzo PIU' VECCHIO usato dalle
++     * partite calcolabili, all'istante del calcolo (`calcolatoAlMs`); null =
++     * nessuna partita calcolabile o eta' ignota. La pagina la fa crescere col
++     * suo orologio: se lo scanner si ferma, la cifra resta ma la sua eta' lo dice.
++     */
++    etaPrezziS: number | null;
++    calcolatoAlMs: number;
+ }
+ 
+ export interface IngressoAperto {
+@@ -49,7 +57,7 @@ export interface IngressoAperto {
+ 
+ /** Il cash out LIVE di un insieme di gambe di UNA partita: netto o null (non calcolabile), o 'vuoto'. */
+ function liveDi(
+-    gambe: readonly GambaViva[], eventId: string, i: IngressoAperto,
++    gambe: readonly GambaViva[], eventId: string, i: IngressoAperto, eta?: { max: number | null },
+ ): number | null | 'vuoto' {
+     const r = cashOutPartita(gambe, {
+         prezzo: (m, s) => i.prezzo(eventId, m, s),
+@@ -57,16 +65,18 @@ function liveDi(
+         esitoDeciso: i.esitoDeciso?.(eventId),
+     }).live;
+     if (r.nGambe === 0 && r.mancanti.length === 0) return 'vuoto';
++    if (eta && r.completo && r.netto != null && r.etaPrezziS != null) eta.max = Math.max(eta.max ?? 0, r.etaPrezziS);
+     return r.completo && r.netto != null ? r.netto : null;
+ }
+ 
+ export function apertoAdesso(i: IngressoAperto): ApertoAdesso {
+-    const out: ApertoAdesso = { netto: null, partite: 0, nonCalcolabili: 0, perBot: {} };
++    const out: ApertoAdesso = { netto: null, partite: 0, nonCalcolabili: 0, perBot: {}, etaPrezziS: null, calcolatoAlMs: i.nowMs };
+     let cent = 0;
++    const eta = { max: null as number | null };
+     for (const [eventId, ops] of i.operazioni) {
+         if (!ops.some((o) => o.modalita === 'live')) continue;
+         const gambe = gambeDaOperazioni(ops, { dueEsiti: i.dueEsiti?.(eventId) });
+-        const tot = liveDi(gambe, eventId, i);
++        const tot = liveDi(gambe, eventId, i, eta);
+         if (tot === 'vuoto') continue;
+         if (tot == null) out.nonCalcolabili += 1;
+         else { out.partite += 1; cent += Math.round(tot * 100); }
+@@ -85,5 +95,6 @@ export function apertoAdesso(i: IngressoAperto): ApertoAdesso {
+         }
+     }
+     out.netto = out.partite > 0 ? cent / 100 : null;
++    out.etaPrezziS = eta.max;
+     return out;
+ }
+diff --git a/frontend/src/lib/fonteSoldi.ts b/frontend/src/lib/fonteSoldi.ts
+index 15832e4..e79f7d7 100644
+--- a/frontend/src/lib/fonteSoldi.ts
++++ b/frontend/src/lib/fonteSoldi.ts
+@@ -14,7 +14,11 @@ export type FonteSoldi = 'conto' | 'bot' | 'prova' | 'pagina';
+ export const FONTE_SOLDI: Record<FonteSoldi, { label: string; title: string; cls: string }> = {
+     conto: {
+         label: 'CONTO BETFAIR',
+-        title: 'cifra letta dal conto Betfair: comprende tutti gli ordini (bot, app e sito)',
++        // review finale 30/09 (R2-M2/M3): il perimetro lo dice ogni cifra nel suo
++        // dettaglio (tutto il conto, oppure la sola voce di un bot/sport); l'eta'
++        // del P&L regolato e' quella dell'ULTIMO CAMBIO dei regolati (il servizio
++        // ripubblica solo quando cambiano: `reconcile_worker.py`)
++        title: 'cifra letta dal conto Betfair (il dettaglio dice se e\' tutto il conto o la sola voce di un bot); eta\' = ultimo cambio dei regolati letti dal conto',
+         cls: 'bg-white/10 text-slate-100 border-white/25',
+     },
+     bot: {
+diff --git a/frontend/src/lib/tradeStatus.ts b/frontend/src/lib/tradeStatus.ts
+index 4af050a..f28a16d 100644
+--- a/frontend/src/lib/tradeStatus.ts
++++ b/frontend/src/lib/tradeStatus.ts
+@@ -250,6 +250,9 @@ export interface EsitoOrdineMeta extends Meta {
+ const NEUTRO_ESITO = 'bg-slate-500/15 text-slate-300 border-slate-500/40';
+ const ATTENZIONE_ESITO = 'bg-amber-500/15 text-amber-300 border-amber-500/40';
+ 
++/** stati Betfair dopo i quali un ordine non abbinato NON e' piu' sul book */
++const STATI_TERMINALI_FOK = new Set(['', 'NO_FILL', 'EXPIRED', 'LAPSED', 'CANCELLED', 'EXECUTION_COMPLETE', 'VOIDED']);
++
+ export function esitoOrdineMeta(
+     row: { status: string | null | undefined; meta?: MetaObj },
+     /** codice di rifiuto gia' estratto dal chiamante (`statoOrdine().errorCode`) */
+@@ -298,7 +301,14 @@ export function esitoOrdineMeta(
+     // Omega coda `live_fok_<stato>`, :3780)
+     // (la forma nuda `live_not_matched` di Omega manuale NON porta il codice
+     // anche quando c'era: resta ERRORE col motivo, mai un'etichetta senza prova)
+-    if (reason.startsWith('live_not_matched:') || reason.startsWith('live_fok_')) return ESITO_FOK;
++    // review incrociata 30/09 (M4): «tutto o niente» solo se lo stato dell'ordine
++    // e' TERMINALE; con EXECUTABLE (percorso sotto-minimo non FOK, Safe
++    // execution.py:531) l'ordine puo' essere ANCORA sul book: resta ERRORE col
++    // motivo, mai «nessun ordine a mercato» senza prova
++    if (reason.startsWith('live_not_matched:') || reason.startsWith('live_fok_')) {
++        const statoOrdine = (reason.startsWith('live_fok_') ? reason.slice('live_fok_'.length) : (parti[1] ?? '')).toUpperCase();
++        return STATI_TERMINALI_FOK.has(statoOrdine) ? ESITO_FOK : null;
++    }
+     // scaduto su Betfair senza abbinato (fase `scaduto` del motore ordini,
+     // stream/motore_ordini.py:503-509; Omega paper `terminal_expired/lapsed`)
+     if (reason === 'canale_scaduto' || reason === 'terminal_expired' || reason === 'terminal_lapsed') {
+diff --git a/frontend/src/pages/ControlRoom.test.tsx b/frontend/src/pages/ControlRoom.test.tsx
+index 46d2ad5..68752da 100644
+--- a/frontend/src/pages/ControlRoom.test.tsx
++++ b/frontend/src/pages/ControlRoom.test.tsx
+@@ -196,6 +196,17 @@ describe('modalità — soldi veri o simulati, senza possibilità di equivoco',
+         expect(b.textContent).not.toMatch(/REALI/);
+     });
+ 
++    it('review finale M1: un bot con modalità NON LETTA: il banner non dice «nessuno usa soldi veri» e nomina il bot', () => {
++        const v = vm();
++        v.bots[1] = { ...v.bots[1], modalita: null };
++        mVm.mockReturnValue(v);
++        const b = mostra().getByTestId('cr-banner-modalita');
++        expect(b.textContent).toMatch(/NON LETTA/);
++        expect(b.textContent).toMatch(/Safe/);
++        expect(b.textContent).not.toMatch(/Nessun bot sta usando soldi veri/);
++        expect(screen.getByTestId('cr-banner-modalita-non-lette').textContent).toMatch(/Safe/);
++    });
++
+     it('un solo bot in live: l\'avviso c\'è e NOMINA quel bot', () => {
+         const v = vm();
+         v.bots[1] = { ...v.bots[1], modalita: 'live' };
+@@ -1080,7 +1091,7 @@ describe('la pagina non mostra MAI un numero che somma paper e live', () => {
+         expect(s.queryByTestId('cr-riga-paper')).toBeNull();
+         // tennis: la prova dei bot tennis e' per giorno di regolamento, detto A SCHERMO
+         expect(within(s.getByTestId('cr-sport-tennis')).getByTestId('cr-sport-tennis-per-regolamento').textContent)
+-            .toMatch(/per giorno di regolamento/);
++            .toMatch(/per giorno come lo pubblica il servizio/); // R2-M14: la UI non sa quale versione della RPC e' applicata
+     });
+ 
+     it('R_G: nel riquadro Obiettivo niente liability LORDA e niente «in corso (stimato)»; la barra avanza col solo realizzato', () => {
+@@ -1114,6 +1125,7 @@ describe('la pagina non mostra MAI un numero che somma paper e live', () => {
+     const apertoFollo = {
+         netto: -0.82, partite: 1, nonCalcolabili: 0,
+         perBot: { mike: { netto: -0.82, partite: 1, nonCalcolabili: 0 } },
++        etaPrezziS: 3, calcolatoAlMs: Date.parse('2026-09-14T15:00:00Z'),
+     };
+ 
+     it('P6: conto letto e 0 ordini -> «+0,00 €» con CONTO e «nessun ordine regolato oggi»; aperto -0,82 per partita; rischio 9,95 dal conto', () => {
+@@ -2011,6 +2023,12 @@ describe('W_T/P15 - Posizioni aperte da trader', () => {
+         const fp = within(within(col).getByTestId('cr-aperta-FARUL')).getByTestId('cr-scheda-fuori-programma');
+         expect(within(fp).getByTestId('cr-nomi-partita').getAttribute('title')).toBe('Farul (W) v Sparta Prague (W)');
+         expect(within(fp).getByTestId('cr-posizione')).toBeTruthy();
++        // review finale 30/09 (R2-5): UNA riga e UN solo «Chiudi» per gamba (prima la
++        // stessa gamba LIVE compariva due volte, con due pulsanti di chiusura)
++        expect(within(fp).getAllByTestId('cr-posizione')).toHaveLength(1);
++        expect(within(fp).queryAllByTestId('cr-chiudi').length).toBeLessThanOrEqual(1);
++        expect(within(fp).queryAllByTestId('cr-op')).toHaveLength(0);
++        expect(within(fp).queryAllByTestId('cr-op-chiudi')).toHaveLength(0);
+     });
+ });
+ 
+diff --git a/frontend/src/pages/ControlRoom.tsx b/frontend/src/pages/ControlRoom.tsx
+index 05ff359..d7d402a 100644
+--- a/frontend/src/pages/ControlRoom.tsx
++++ b/frontend/src/pages/ControlRoom.tsx
+@@ -43,8 +43,7 @@ import { SchedaPartita } from '@/components/controlroom/SchedaPartita';
+ // W_T/P15 (30/09) - scheda «Posizioni aperte»: stato per partita e fuori programma
+ import { NomiPartita } from '@/components/controlroom/NomiPartita';
+ import { CashOutGlobalePartita } from '@/components/controlroom/CashOutGlobale';
+-import { RigaOperazione } from '@/components/controlroom/DettaglioRigaView';
+-import { dueEsitiMike } from '@/lib/cashOutPartita';
++import { dueEsitiMike, dueEsitiPartita } from '@/lib/cashOutPartita';
+ // W_T/P14 - ordini del conto fuori dai bot, per partita (contesto per le schede)
+ import { OrdiniContoPartita, OrdiniContoContext } from '@/components/controlroom/OrdiniContoPartita';
+ import type { MikeEvent } from '@/lib/mike';
+@@ -222,6 +221,9 @@ export default function ControlRoom() {
+     }, [vm.posizioni, sport, sportDiEvento]);
+ 
+     const inLive = vm.bots.some((b) => b.modalita === 'live');
++    // review finale 30/09 (R2-M1): un bot con modalita' NON LETTA non e' «in prova»:
++    // il banner verde «nessuno usa soldi veri» vale solo se le ha lette tutte
++    const modalitaNonLette = vm.bots.filter((b) => b.modalita == null).map((b) => BOT_LABEL[b.bot]);
+ 
+     // quante righe ha ogni scheda: un numero sulla linguetta evita di doverle
+     // aprire tutte per scoprire quale ha qualcosa dentro.
+@@ -521,7 +523,12 @@ export default function ControlRoom() {
+                             .map((b) => descriviModalita(b)).join(' · ') || 'nessun bot'
+                     }</b>. Tutto il resto opera in prova.</>
+                 }
+-                paperText="Nessun bot sta usando soldi veri: tutte le operazioni sono simulate sui prezzi live."
++                paperText={modalitaNonLette.length === 0
++                    ? 'Nessun bot sta usando soldi veri: tutte le operazioni sono simulate sui prezzi live.'
++                    : `Nessun bot LETTO usa soldi veri; modalita' NON LETTA per: ${modalitaNonLette.join(', ')} — finche' non si legge non si puo' dire che sia tutto in prova.`}
++                extra={modalitaNonLette.length > 0 && !inLive ? (
++                    <span className="text-amber-300" data-testid="cr-banner-modalita-non-lette">modalita' non letta: {modalitaNonLette.join(', ')}</span>
++                ) : undefined}
+             />
+ 
+             {/* ═══ ZONA 1 — L'OBIETTIVO (hero, una volta sola) + SALDO ═══════
+@@ -564,7 +571,7 @@ export default function ControlRoom() {
+                         realizedEstimated: vm.soldiGiornata.realizzatoStimato,
+                         // W_G: al posto della stima per riga, l'«aperto adesso» PER PARTITA
+                         openNow: vm.apertoAdesso?.netto ?? null,
+-                        openNowNode: apertoNode(vm.apertoAdesso ?? null),
++                        openNowNode: apertoNode(vm.apertoAdesso ?? null, vm.nowMs),
+                         riskNode: rischioNode(vm.soldiVeri?.conto ?? null),
+                         labels: { operations: 'operazioni regolate oggi' },
+                         liveLabel: (vm.soldiVeri?.partite?.live ?? vm.totali.conPosizioneLive) === 1
+@@ -584,7 +591,9 @@ export default function ControlRoom() {
+                         // e' il rischio vero: il rischio si legge dal conto, in testata
+                         openLiability: null,
+                         note: [
+-                            vm.obiettivoStoricizzato ? null : 'Omega oggi non ha ancora girato: l\'obiettivo e\' quello corrente del servizio',
++                            vm.obiettivoStoricizzato ? null
++                                : vm.omegaLetto === false ? 'stato di Omega non letto: l\'obiettivo e\' quello corrente del servizio, non si sa se e\' quello di oggi'
++                                : 'Omega oggi non ha ancora girato: l\'obiettivo e\' quello corrente del servizio',
+                             // W_G: fonte del realizzato accanto al numero; rischio e aperto
+                             // nella riga; qui resta il programma dello scanner (fuori dai soldi)
+                             `programma dello scanner: ${vm.totali.partite} ${vm.totali.partite === 1 ? 'partita' : 'partite'}`,
+@@ -1443,7 +1452,14 @@ function AperteTab({
+             <div key={e.eventId} className="space-y-1" data-testid={`cr-aperta-${e.eventId}`}>
+                 {conStato && (
+                     <StatoPartitaRiga
+-                        esito={statoPartitaAperta(ops, { chiusa: e.partita?.stato === 'chiusa', dueEsiti: dueEsitiMike(mike) })}
++                        esito={statoPartitaAperta(ops, {
++                            // review finale 30/09 (R2-A1): «DA REGOLARE» solo se Betfair ha CHIUSO il
++                            // Match Odds; «chiusa» da sola vale anche per ritardi e rinvii
++                            chiusa: e.partita?.stato === 'chiusa' && e.partita?.statoMercato === 'CLOSED',
++                            // review finale 30/09 (R2-4): nel tennis il Match Odds e' a DUE esiti
++                            // (P1/P2 si nettano), come nella scheda in gioco
++                            dueEsiti: dueEsitiPartita(e.partita?.sport === 'tennis' ? 'tennis' : 'calcio', e.partita?.marketId, dueEsitiMike(mike)),
++                        })}
+                         testId={`cr-aperta-stato-${e.eventId}`} />
+                 )}
+                 {e.partita ? (
+@@ -1591,8 +1607,8 @@ function StatoPartitaRiga({ esito, testId }: { esito: EsitoStatoPartita; testId:
+ /**
+  * W_T/P15: una partita FUORI dal programma di oggi con la STESSA grafica delle
+  * altre: nomi (`NomiPartita`, dal nome della riga del bot), riquadro del cash
+- * out della partita (`CashOutGlobalePartita`, con le sue operazioni), le righe
+- * (`RigaOperazione`); sotto, per gamba, il «chiudi ora» di sempre.
++ * out della partita (`CashOutGlobalePartita`, con le sue operazioni); sotto,
++ * per gamba, la riga di sempre con il suo UNICO «Chiudi» (`RigaPosizioneOrfana`).
+  */
+ function SchedaFuoriProgramma({ posizioni, operazioni, mike }: {
+     posizioni: PosizioneAperta[];
+@@ -1612,11 +1628,9 @@ function SchedaFuoriProgramma({ posizioni, operazioni, mike }: {
+             </div>
+             <CashOutGlobalePartita sport={tennis ? 'tennis' : 'calcio'} operazioni={operazioni} mike={mike} />
+             {posizioni[0] && <OrdiniContoPartita eventId={posizioni[0].eventId} sport={tennis ? 'tennis' : 'calcio'} />}
+-            {operazioni.length > 0 && (
+-                <div className="px-2.5 pt-1.5 space-y-1">
+-                    {operazioni.map((o) => <RigaOperazione key={`${o.bot}-${o.id}`} o={o} />)}
+-                </div>
+-            )}
++            {/* review finale 30/09 (R2-5): UNA riga per gamba, con UN solo «Chiudi»
++                (`RigaPosizioneOrfana`, testid di sempre): prima la stessa gamba LIVE
++                compariva due volte, con due pulsanti di chiusura */}
+             <div className="p-2.5 space-y-2">
+                 {posizioni.map((p) => <RigaPosizioneOrfana key={`${p.bot}-${p.id}`} p={p} />)}
+             </div>

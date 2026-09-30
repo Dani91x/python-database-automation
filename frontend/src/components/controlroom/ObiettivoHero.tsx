@@ -149,6 +149,7 @@ export function ObiettivoHero({
                                 {r.valore != null && fonteDi(r) != null && (
                                     <MarchioSoldi fonte={fonteDi(r) === 'conto' ? 'conto' : 'bot'} className="ml-1"
                                         etaS={fonteDi(r) === 'conto' ? contoEtaS : undefined}
+                                        dettaglio={fonteDi(r) === 'conto' ? 'solo gli ordini che il conto attribuisce a questa voce' : undefined}
                                         testId={`cr-composizione-${r.chiave}-fonte`} />
                                 )}
                             </span>
@@ -231,7 +232,7 @@ function RigaProvaBot({ v, modalita }: { v: VoceProva; modalita: 'paper' | 'live
                 {v.arretrati == null ? (
                     <span className="text-amber-300/80">{v.nota ?? 'non letti'}</span>
                 ) : v.perRegolamento ? (
-                    <span className="text-white/35">per giorno di regolamento: non separabili</span>
+                    <span className="text-white/35" title="il servizio tennis pubblica una cifra sola per giorno: di regolamento, oppure di partita se la migrazione del 30/09 (get_tennis_bot_daily) e' applicata">per giorno come lo pubblica il servizio: non separabili</span>
                 ) : v.arretrati.length === 0 ? (
                     <span className="text-white/30">nessuno</span>
                 ) : v.arretrati.map((g) => (

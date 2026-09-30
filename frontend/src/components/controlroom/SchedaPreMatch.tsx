@@ -157,7 +157,7 @@ export function SchedaPreMatch({
                 PROVA separati). Senza gambe non si monta e non apre niente. */}
             {operazioni.length > 0 && (
                 <div className="-mx-2.5">
-                    <CashOutGlobalePartita sport={p.sport} operazioni={operazioni} mike={mike} />
+                    <CashOutGlobalePartita sport={p.sport} operazioni={operazioni} mike={mike} moMarketId={p.marketId} />
                 </div>
             )}
             {mikeConPosizione && mike && (

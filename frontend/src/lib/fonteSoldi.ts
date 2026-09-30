@@ -14,7 +14,11 @@ export type FonteSoldi = 'conto' | 'bot' | 'prova' | 'pagina';
 export const FONTE_SOLDI: Record<FonteSoldi, { label: string; title: string; cls: string }> = {
     conto: {
         label: 'CONTO BETFAIR',
-        title: 'cifra letta dal conto Betfair: comprende tutti gli ordini (bot, app e sito)',
+        // review finale 30/09 (R2-M2/M3): il perimetro lo dice ogni cifra nel suo
+        // dettaglio (tutto il conto, oppure la sola voce di un bot/sport); l'eta'
+        // del P&L regolato e' quella dell'ULTIMO CAMBIO dei regolati (il servizio
+        // ripubblica solo quando cambiano: `reconcile_worker.py`)
+        title: 'cifra letta dal conto Betfair (il dettaglio dice se e\' tutto il conto o la sola voce di un bot); eta\' = ultimo cambio dei regolati letti dal conto',
         cls: 'bg-white/10 text-slate-100 border-white/25',
     },
     bot: {

@@ -213,7 +213,7 @@ function ArretratiSport({ sport, prova }: { sport: SportKey; prova: ProvaGiornat
             )}
             {regol.length > 0 && (
                 <div data-testid={`cr-sport-${sport}-per-regolamento`}>
-                    {regol.join(', ')}: per giorno di regolamento (la fonte non porta il giorno della partita)
+                    {regol.join(', ')}: per giorno come lo pubblica il servizio (regolamento, o partita se la migrazione del 30/09 e' applicata)
                 </div>
             )}
         </div>

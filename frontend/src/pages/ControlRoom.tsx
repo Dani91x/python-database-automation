@@ -43,8 +43,7 @@ import { SchedaPartita } from '@/components/controlroom/SchedaPartita';
 // W_T/P15 (30/09) - scheda «Posizioni aperte»: stato per partita e fuori programma
 import { NomiPartita } from '@/components/controlroom/NomiPartita';
 import { CashOutGlobalePartita } from '@/components/controlroom/CashOutGlobale';
-import { RigaOperazione } from '@/components/controlroom/DettaglioRigaView';
-import { dueEsitiMike } from '@/lib/cashOutPartita';
+import { dueEsitiMike, dueEsitiPartita } from '@/lib/cashOutPartita';
 // W_T/P14 - ordini del conto fuori dai bot, per partita (contesto per le schede)
 import { OrdiniContoPartita, OrdiniContoContext } from '@/components/controlroom/OrdiniContoPartita';
 import type { MikeEvent } from '@/lib/mike';
@@ -222,6 +221,9 @@ export default function ControlRoom() {
     }, [vm.posizioni, sport, sportDiEvento]);
 
     const inLive = vm.bots.some((b) => b.modalita === 'live');
+    // review finale 30/09 (R2-M1): un bot con modalita' NON LETTA non e' «in prova»:
+    // il banner verde «nessuno usa soldi veri» vale solo se le ha lette tutte
+    const modalitaNonLette = vm.bots.filter((b) => b.modalita == null).map((b) => BOT_LABEL[b.bot]);
 
     // quante righe ha ogni scheda: un numero sulla linguetta evita di doverle
     // aprire tutte per scoprire quale ha qualcosa dentro.
@@ -521,7 +523,12 @@ export default function ControlRoom() {
                             .map((b) => descriviModalita(b)).join(' · ') || 'nessun bot'
                     }</b>. Tutto il resto opera in prova.</>
                 }
-                paperText="Nessun bot sta usando soldi veri: tutte le operazioni sono simulate sui prezzi live."
+                paperText={modalitaNonLette.length === 0
+                    ? 'Nessun bot sta usando soldi veri: tutte le operazioni sono simulate sui prezzi live.'
+                    : `Nessun bot LETTO usa soldi veri; modalita' NON LETTA per: ${modalitaNonLette.join(', ')} — finche' non si legge non si puo' dire che sia tutto in prova.`}
+                extra={modalitaNonLette.length > 0 && !inLive ? (
+                    <span className="text-amber-300" data-testid="cr-banner-modalita-non-lette">modalita' non letta: {modalitaNonLette.join(', ')}</span>
+                ) : undefined}
             />
 
             {/* ═══ ZONA 1 — L'OBIETTIVO (hero, una volta sola) + SALDO ═══════
@@ -564,7 +571,7 @@ export default function ControlRoom() {
                         realizedEstimated: vm.soldiGiornata.realizzatoStimato,
                         // W_G: al posto della stima per riga, l'«aperto adesso» PER PARTITA
                         openNow: vm.apertoAdesso?.netto ?? null,
-                        openNowNode: apertoNode(vm.apertoAdesso ?? null),
+                        openNowNode: apertoNode(vm.apertoAdesso ?? null, vm.nowMs),
                         riskNode: rischioNode(vm.soldiVeri?.conto ?? null),
                         labels: { operations: 'operazioni regolate oggi' },
                         liveLabel: (vm.soldiVeri?.partite?.live ?? vm.totali.conPosizioneLive) === 1
@@ -584,7 +591,9 @@ export default function ControlRoom() {
                         // e' il rischio vero: il rischio si legge dal conto, in testata
                         openLiability: null,
                         note: [
-                            vm.obiettivoStoricizzato ? null : 'Omega oggi non ha ancora girato: l\'obiettivo e\' quello corrente del servizio',
+                            vm.obiettivoStoricizzato ? null
+                                : vm.omegaLetto === false ? 'stato di Omega non letto: l\'obiettivo e\' quello corrente del servizio, non si sa se e\' quello di oggi'
+                                : 'Omega oggi non ha ancora girato: l\'obiettivo e\' quello corrente del servizio',
                             // W_G: fonte del realizzato accanto al numero; rischio e aperto
                             // nella riga; qui resta il programma dello scanner (fuori dai soldi)
                             `programma dello scanner: ${vm.totali.partite} ${vm.totali.partite === 1 ? 'partita' : 'partite'}`,
@@ -1443,7 +1452,14 @@ function AperteTab({
             <div key={e.eventId} className="space-y-1" data-testid={`cr-aperta-${e.eventId}`}>
                 {conStato && (
                     <StatoPartitaRiga
-                        esito={statoPartitaAperta(ops, { chiusa: e.partita?.stato === 'chiusa', dueEsiti: dueEsitiMike(mike) })}
+                        esito={statoPartitaAperta(ops, {
+                            // review finale 30/09 (R2-A1): «DA REGOLARE» solo se Betfair ha CHIUSO il
+                            // Match Odds; «chiusa» da sola vale anche per ritardi e rinvii
+                            chiusa: e.partita?.stato === 'chiusa' && e.partita?.statoMercato === 'CLOSED',
+                            // review finale 30/09 (R2-4): nel tennis il Match Odds e' a DUE esiti
+                            // (P1/P2 si nettano), come nella scheda in gioco
+                            dueEsiti: dueEsitiPartita(e.partita?.sport === 'tennis' ? 'tennis' : 'calcio', e.partita?.marketId, dueEsitiMike(mike)),
+                        })}
                         testId={`cr-aperta-stato-${e.eventId}`} />
                 )}
                 {e.partita ? (
@@ -1591,8 +1607,8 @@ function StatoPartitaRiga({ esito, testId }: { esito: EsitoStatoPartita; testId:
 /**
  * W_T/P15: una partita FUORI dal programma di oggi con la STESSA grafica delle
  * altre: nomi (`NomiPartita`, dal nome della riga del bot), riquadro del cash
- * out della partita (`CashOutGlobalePartita`, con le sue operazioni), le righe
- * (`RigaOperazione`); sotto, per gamba, il «chiudi ora» di sempre.
+ * out della partita (`CashOutGlobalePartita`, con le sue operazioni); sotto,
+ * per gamba, la riga di sempre con il suo UNICO «Chiudi» (`RigaPosizioneOrfana`).
  */
 function SchedaFuoriProgramma({ posizioni, operazioni, mike }: {
     posizioni: PosizioneAperta[];
@@ -1612,11 +1628,9 @@ function SchedaFuoriProgramma({ posizioni, operazioni, mike }: {
             </div>
             <CashOutGlobalePartita sport={tennis ? 'tennis' : 'calcio'} operazioni={operazioni} mike={mike} />
             {posizioni[0] && <OrdiniContoPartita eventId={posizioni[0].eventId} sport={tennis ? 'tennis' : 'calcio'} />}
-            {operazioni.length > 0 && (
-                <div className="px-2.5 pt-1.5 space-y-1">
-                    {operazioni.map((o) => <RigaOperazione key={`${o.bot}-${o.id}`} o={o} />)}
-                </div>
-            )}
+            {/* review finale 30/09 (R2-5): UNA riga per gamba, con UN solo «Chiudi»
+                (`RigaPosizioneOrfana`, testid di sempre): prima la stessa gamba LIVE
+                compariva due volte, con due pulsanti di chiusura */}
             <div className="p-2.5 space-y-2">
                 {posizioni.map((p) => <RigaPosizioneOrfana key={`${p.bot}-${p.id}`} p={p} />)}
             </div>

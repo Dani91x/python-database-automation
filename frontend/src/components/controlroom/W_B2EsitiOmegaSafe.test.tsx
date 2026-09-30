@@ -89,6 +89,11 @@ describe('Safe: esiti dalla nota dell’esecuzione', () => {
     it('FOK non abbinato (nota senza codice)', () => {
         expect(esito(safePlaceFail('live_not_matched:EXPIRED'))).toBe('NON ABBINATO (tutto o niente)');
     });
+    it('review incrociata M4: stato NON terminale (EXECUTABLE) = ordine forse ancora sul book: ERRORE col motivo, mai «tutto o niente»', () => {
+        expect(esito(safePlaceFail('live_not_matched:EXECUTABLE'))).not.toBe('NON ABBINATO (tutto o niente)');
+        expect(esito(safePlaceFail('live_not_matched:LAPSED'))).toBe('NON ABBINATO (tutto o niente)');
+        expect(esito(safePlaceFail('flumine_live_fok_executable'))).not.toBe('NON ABBINATO (tutto o niente)');
+    });
     it('rifiuto del runner (nostro): nessun ordine a Betfair', () => {
         expect(esito(safePlaceFail('canale_rifiutato:submin_non_percorribile'))).toBe('RIFIUTATO dal runner: submin non percorribile');
     });

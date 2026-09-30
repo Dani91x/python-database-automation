@@ -413,8 +413,8 @@ describe('SchedaPartita — B1: tennis, quote della barra con lo stesso componen
         monta(partita({ soldi: SOLDI_APERTI }));
         const e = await screen.findByTestId('cr-tennis-vivo-eta-quote');
         expect(e).toHaveTextContent(/^ultimo aggiornamento del runner: [78] s$/);
-        expect(e.getAttribute('title')).toMatch(/LETTURA/);
-        expect(e.getAttribute('title')).toMatch(/non .* cambio/);
+        expect(e.getAttribute('title')).toMatch(/RICOSTRUZIONE/);
+        expect(e.getAttribute('title')).toMatch(/NON che le quote siano cambiate/);
         expect(within(e).getByTestId('cr-tennis-vivo-eta-quote-valore').className).toContain('text-white/50');
     });
 

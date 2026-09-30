@@ -53,7 +53,7 @@ describe('MarchioSoldi', () => {
     it('title = solo il testo della fonte senza dettaglio', () => {
         render(<MarchioSoldi fonte="conto" />);
         expect(screen.getByTestId('marchio-soldi').getAttribute('title'))
-            .toBe('cifra letta dal conto Betfair: comprende tutti gli ordini (bot, app e sito)');
+            .toBe("cifra letta dal conto Betfair (il dettaglio dice se e' tutto il conto o la sola voce di un bot); eta' = ultimo cambio dei regolati letti dal conto");
     });
 });
 

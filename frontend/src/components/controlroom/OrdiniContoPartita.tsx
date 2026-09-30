@@ -56,12 +56,16 @@ export function OrdiniContoPartita({ eventId, sport = 'calcio' }: {
                     </span>
                 ))}
                 <MarchioSoldi fonte="conto" etaS={etaS} testId="cr-ordini-conto-marchio"
-                    dettaglio="ordini sul conto non piazzati dai bot (get_live_orders_account_open)" />
+                    dettaglio="ordini sul conto non piazzati dai bot, dallo specchio degli ordini (get_live_orders_account_open); eta' = interrogazione, non freschezza dello specchio" />
             </div>
             {/* limite dichiarato dal backend: ad app chiusa il "regolato" non si
                 aggiorna, quindi "aperto" vale per il conto letto a quell'ora */}
             <div className="text-[10px] text-white/40" data-testid="cr-ordini-conto-letto">
-                aperto per il conto letto alle {Number.isFinite(ms) ? fmtTime(ms, { seconds: true }) : DASH}
+                {/* review finale 30/09 (R2-A2): `letto_at` e' l'istante dell'INTERROGAZIONE
+                    (now() nella RPC); le righe vengono dallo specchio degli ordini che
+                    scrive il runner: se il runner e' fermo lo specchio e' vecchio */}
+                aperto secondo lo specchio degli ordini interrogato alle {Number.isFinite(ms) ? fmtTime(ms, { seconds: true }) : DASH}
+                <span className="text-white/30"> (lo specchio lo aggiorna il runner: se il runner e' fermo, e' vecchio)</span>
             </div>
             <div className="text-[10.5px] text-amber-300" data-testid="cr-ordini-conto-avviso">
                 il bot non li vede: la cifra del cash out delle gambe dei bot non e&apos; la posizione del conto

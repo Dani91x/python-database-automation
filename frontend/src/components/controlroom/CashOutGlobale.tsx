@@ -31,6 +31,8 @@ import {
     chiudibile, faseMostrata, TESTO_FASE, type RigaDaChiudere,
 } from '@/components/controlroom/chiudiRiga';
 import { ATTESA_CONFERMA_USCITE_MS } from '@/components/controlroom/InterruttoreUscite';
+/** review incrociata 30/09 (M1): dopo questo tempo l'armatura di «Chiudi tutte» cade da sola */
+export const SCADENZA_ARMATURA_MS = 10_000;
 import { feedFreshness } from '@/lib/mike';
 import { isBotTennis } from '@/lib/controlRoom';
 import { useCashOutPartita, type ArgsCashOutPartita } from '@/components/controlroom/useCashOutPartita';
@@ -142,14 +144,28 @@ export function pianoChiusuraPartita(
     const comandi: ComandoChiusura[] = [];
     const senzaComando: PianoChiusura['senzaComando'] = [];
     const mike: { riga: RigaDaChiudere; ok: boolean; motivo: string | null }[] = [];
+    // review incrociata 30/09 (M2): un bot TENNIS chiude la sua posizione sulla
+    // PARTITA (`chiudiRiga.ts`, `chiudi_bot` per event/market): UN comando per
+    // (bot, partita, mercato), non uno per riga, come per Mike
+    const tennis = new Map<string, { riga: RigaDaChiudere; ok: boolean; motivo: string | null }[]>();
     for (const o of ops) {
         if (o.modalita !== modalita) continue;
         const riga = rigaDa(o);
         const c = chiudibile(riga);
         if (c == null) continue;                        // non e' una posizione
         if (o.bot === 'mike') { mike.push({ riga, ok: c.ok, motivo: c.ok ? null : c.motivo }); continue; }
+        if (isBotTennis(o.bot)) {
+            const k = `${o.bot}|${riga.eventId ?? ''}|${riga.marketId ?? ''}`;
+            tennis.set(k, [...(tennis.get(k) ?? []), { riga, ok: c.ok, motivo: c.ok ? null : c.motivo }]);
+            continue;
+        }
         if (c.ok) comandi.push({ bot: o.bot, riga, gambe: 1 });
         else senzaComando.push({ bot: o.bot, id: o.id, motivo: c.motivo });
+    }
+    for (const gruppo of tennis.values()) {
+        const ok = gruppo.find((g) => g.ok);
+        if (ok) comandi.push({ bot: ok.riga.bot, riga: ok.riga, gambe: gruppo.length });
+        else for (const g of gruppo) senzaComando.push({ bot: g.riga.bot, id: g.riga.id, motivo: g.motivo ?? '' });
     }
     const primaOk = mike.find((m) => m.ok);
     if (primaOk) comandi.unshift({ bot: 'mike', riga: primaOk.riga, gambe: mike.length });
@@ -178,8 +194,17 @@ function ChiudiTutteLeGambe({ piano, modalita, spentoPerche, testId }: {
     useEffect(() => {
         if (armatoDa == null) return undefined;
         const t = window.setTimeout(() => setTic((n) => n + 1), ATTESA_CONFERMA_USCITE_MS + 20);
-        return () => window.clearTimeout(t);
+        // review incrociata 30/09 (M1): l'armatura SCADE: un «Confermo» lasciato
+        // armato non deve restare pronto per minuti (le gambe cambiano)
+        const s = window.setTimeout(() => setArmatoDa(null), SCADENZA_ARMATURA_MS);
+        return () => { window.clearTimeout(t); window.clearTimeout(s); };
     }, [armatoDa]);
+    // review incrociata 30/09 (M1): se il PIANO cambia (una gamba si chiude da
+    // sola, ne compare una nuova) o scatta il BLOCCO (prezzi fermi/ignoti,
+    // cifra non calcolabile) l'armatura cade: si riparte da «avvia»
+    const firmaPiano = piano.comandi.map((c) => `${c.bot}:${c.riga.id}:${c.gambe}`).join(',')
+        + '|' + piano.senzaComando.map((s) => `${s.bot}:${s.id}`).join(',');
+    useEffect(() => { setArmatoDa(null); }, [firmaPiano, spentoPerche]);
     if (!api) return null;
     if (piano.comandi.length === 0 && piano.senzaComando.length === 0) return null;
     const troppoPresto = armatoDa != null && Date.now() - armatoDa < ATTESA_CONFERMA_USCITE_MS;
@@ -208,13 +233,18 @@ function ChiudiTutteLeGambe({ piano, modalita, spentoPerche, testId }: {
                 {armatoDa != null ? (
                     <>
                         <button type="button" data-testid={`${testId}-conferma`}
-                            disabled={troppoPresto || inVolo}
-                            onClick={() => { if (!troppoPresto) void esegui(); }}
+                            // review finale 30/09 (R2-1): il cancello «prezzi fermi/ignoti o cifra
+                            // non calcolabile» vale ANCHE dopo l'armatura: se il feed si ferma fra
+                            // «avvia» e «confermo», la conferma si spegne e il motivo si legge
+                            disabled={troppoPresto || inVolo || blocco != null}
+                            title={blocco ?? undefined}
+                            onClick={() => { if (!troppoPresto && blocco == null) void esegui(); }}
                             className="h-6 px-2 text-[10px] rounded bg-orange-500 text-black font-bold uppercase disabled:opacity-40">
                             Confermo: chiudi tutte le gambe
                         </button>
                         <span className="text-[10px] text-orange-300" data-testid={`${testId}-armato`}>
-                            Sono soldi veri: {piano.comandi.length} {piano.comandi.length === 1 ? 'comando' : 'comandi'} a {nBot} {nBot === 1 ? 'bot' : 'bot'}.{' '}
+                            Sono soldi veri: {piano.comandi.length} {piano.comandi.length === 1 ? 'comando' : 'comandi'} a {nBot} {nBot === 1 ? 'bot' : 'bot'}
+                            {' '}<span className="text-white/50" title="Mike chiude l'intero ciclo della partita; un bot tennis chiude la sua posizione sulla partita e non rientra finche' non lo riarmi; lo scalper ferma la sessione; Omega e Safe chiudono la singola posizione">(effetti: vedi il title)</span>.{' '}
                             <button type="button" className="underline" onClick={() => setArmatoDa(null)}
                                 data-testid={`${testId}-annulla`}>annulla</button>
                         </span>
@@ -228,7 +258,7 @@ function ChiudiTutteLeGambe({ piano, modalita, spentoPerche, testId }: {
                         Chiudi tutte le gambe dei bot
                     </button>
                 )}
-                {blocco != null && armatoDa == null && (
+                {blocco != null && (
                     <span className="text-[10px] text-white/40" data-testid={`${testId}-bloccato`}>{blocco}</span>
                 )}
             </div>

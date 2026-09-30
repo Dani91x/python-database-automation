@@ -33,6 +33,14 @@ export interface ApertoAdesso {
     nonCalcolabili: number;
     /** per bot: le SOLE gambe di quel bot, partita per partita */
     perBot: Record<string, ApertoPerBot>;
+    /**
+     * review finale 30/09 (R2-2) - eta' (s) del prezzo PIU' VECCHIO usato dalle
+     * partite calcolabili, all'istante del calcolo (`calcolatoAlMs`); null =
+     * nessuna partita calcolabile o eta' ignota. La pagina la fa crescere col
+     * suo orologio: se lo scanner si ferma, la cifra resta ma la sua eta' lo dice.
+     */
+    etaPrezziS: number | null;
+    calcolatoAlMs: number;
 }
 
 export interface IngressoAperto {
@@ -49,7 +57,7 @@ export interface IngressoAperto {
 
 /** Il cash out LIVE di un insieme di gambe di UNA partita: netto o null (non calcolabile), o 'vuoto'. */
 function liveDi(
-    gambe: readonly GambaViva[], eventId: string, i: IngressoAperto,
+    gambe: readonly GambaViva[], eventId: string, i: IngressoAperto, eta?: { max: number | null },
 ): number | null | 'vuoto' {
     const r = cashOutPartita(gambe, {
         prezzo: (m, s) => i.prezzo(eventId, m, s),
@@ -57,16 +65,18 @@ function liveDi(
         esitoDeciso: i.esitoDeciso?.(eventId),
     }).live;
     if (r.nGambe === 0 && r.mancanti.length === 0) return 'vuoto';
+    if (eta && r.completo && r.netto != null && r.etaPrezziS != null) eta.max = Math.max(eta.max ?? 0, r.etaPrezziS);
     return r.completo && r.netto != null ? r.netto : null;
 }
 
 export function apertoAdesso(i: IngressoAperto): ApertoAdesso {
-    const out: ApertoAdesso = { netto: null, partite: 0, nonCalcolabili: 0, perBot: {} };
+    const out: ApertoAdesso = { netto: null, partite: 0, nonCalcolabili: 0, perBot: {}, etaPrezziS: null, calcolatoAlMs: i.nowMs };
     let cent = 0;
+    const eta = { max: null as number | null };
     for (const [eventId, ops] of i.operazioni) {
         if (!ops.some((o) => o.modalita === 'live')) continue;
         const gambe = gambeDaOperazioni(ops, { dueEsiti: i.dueEsiti?.(eventId) });
-        const tot = liveDi(gambe, eventId, i);
+        const tot = liveDi(gambe, eventId, i, eta);
         if (tot === 'vuoto') continue;
         if (tot == null) out.nonCalcolabili += 1;
         else { out.partite += 1; cent += Math.round(tot * 100); }
@@ -85,5 +95,6 @@ export function apertoAdesso(i: IngressoAperto): ApertoAdesso {
         }
     }
     out.netto = out.partite > 0 ? cent / 100 : null;
+    out.etaPrezziS = eta.max;
     return out;
 }

@@ -196,6 +196,17 @@ describe('modalità — soldi veri o simulati, senza possibilità di equivoco', 
         expect(b.textContent).not.toMatch(/REALI/);
     });
 
+    it('review finale M1: un bot con modalità NON LETTA: il banner non dice «nessuno usa soldi veri» e nomina il bot', () => {
+        const v = vm();
+        v.bots[1] = { ...v.bots[1], modalita: null };
+        mVm.mockReturnValue(v);
+        const b = mostra().getByTestId('cr-banner-modalita');
+        expect(b.textContent).toMatch(/NON LETTA/);
+        expect(b.textContent).toMatch(/Safe/);
+        expect(b.textContent).not.toMatch(/Nessun bot sta usando soldi veri/);
+        expect(screen.getByTestId('cr-banner-modalita-non-lette').textContent).toMatch(/Safe/);
+    });
+
     it('un solo bot in live: l\'avviso c\'è e NOMINA quel bot', () => {
         const v = vm();
         v.bots[1] = { ...v.bots[1], modalita: 'live' };
@@ -1080,7 +1091,7 @@ describe('la pagina non mostra MAI un numero che somma paper e live', () => {
         expect(s.queryByTestId('cr-riga-paper')).toBeNull();
         // tennis: la prova dei bot tennis e' per giorno di regolamento, detto A SCHERMO
         expect(within(s.getByTestId('cr-sport-tennis')).getByTestId('cr-sport-tennis-per-regolamento').textContent)
-            .toMatch(/per giorno di regolamento/);
+            .toMatch(/per giorno come lo pubblica il servizio/); // R2-M14: la UI non sa quale versione della RPC e' applicata
     });
 
     it('R_G: nel riquadro Obiettivo niente liability LORDA e niente «in corso (stimato)»; la barra avanza col solo realizzato', () => {
@@ -1114,6 +1125,7 @@ describe('la pagina non mostra MAI un numero che somma paper e live', () => {
     const apertoFollo = {
         netto: -0.82, partite: 1, nonCalcolabili: 0,
         perBot: { mike: { netto: -0.82, partite: 1, nonCalcolabili: 0 } },
+        etaPrezziS: 3, calcolatoAlMs: Date.parse('2026-09-14T15:00:00Z'),
     };
 
     it('P6: conto letto e 0 ordini -> «+0,00 €» con CONTO e «nessun ordine regolato oggi»; aperto -0,82 per partita; rischio 9,95 dal conto', () => {
@@ -2011,6 +2023,12 @@ describe('W_T/P15 - Posizioni aperte da trader', () => {
         const fp = within(within(col).getByTestId('cr-aperta-FARUL')).getByTestId('cr-scheda-fuori-programma');
         expect(within(fp).getByTestId('cr-nomi-partita').getAttribute('title')).toBe('Farul (W) v Sparta Prague (W)');
         expect(within(fp).getByTestId('cr-posizione')).toBeTruthy();
+        // review finale 30/09 (R2-5): UNA riga e UN solo «Chiudi» per gamba (prima la
+        // stessa gamba LIVE compariva due volte, con due pulsanti di chiusura)
+        expect(within(fp).getAllByTestId('cr-posizione')).toHaveLength(1);
+        expect(within(fp).queryAllByTestId('cr-chiudi').length).toBeLessThanOrEqual(1);
+        expect(within(fp).queryAllByTestId('cr-op')).toHaveLength(0);
+        expect(within(fp).queryAllByTestId('cr-op-chiudi')).toHaveLength(0);
     });
 });
 

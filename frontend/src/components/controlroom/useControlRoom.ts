@@ -114,7 +114,7 @@ import {
 } from '@/lib/provaGiornata';
 import { composizioneDalConto, etaContoS, perSportDalConto, type SportDalConto } from '@/lib/composizioneConto';
 import { apertoAdesso, type ApertoAdesso } from '@/lib/apertoAdesso';
-import { dueEsitiMike, esitoDecisoMike } from '@/lib/cashOutPartita';
+import { dueEsitiMike, dueEsitiPartita, esitoDecisoMike } from '@/lib/cashOutPartita';
 import type { FonteOggiLive } from '@/components/controlroom/righeBot';
 import { prezzoVivoPerGamba } from '@/lib/comboPrezzoVivo';
 import { updateOmegaParams } from '@/lib/omega';
@@ -779,6 +779,8 @@ export interface ControlRoomVM {
     /** obiettivo del giorno: quello storicizzato di Omega, che è l'unico che esiste */
     obiettivo: number | null;
     obiettivoStoricizzato: boolean;
+    /** 30/09 (M5): false = riga di controllo di Omega non letta (non «non ha girato») */
+    omegaLetto?: boolean;
     realizzato: number | null;
     /**
      * IL REALIZZATO DI OGGI, diviso come serve davvero: **live e paper mai
@@ -2764,7 +2766,10 @@ export function useControlRoom(): ControlRoomVM {
                 return { ...b, pnlOggi: l.valore, fonteOggiLive: l.f, pnlOggiPaper: p.oggi, arretratiPaper: p.arretrati };
             }
             if (b.bot === 'mike') {
-                const l = liveDi('mike', di(b.bot, 'live'));
+                // review incrociata 30/09 (M3): dalle RIGHE (conto non letto) la cifra
+                // comprende anche gli ordini dell'utente sulle partite di Mike
+                const l = liveDi('mike', di(b.bot, 'live'),
+                    'righe di Mike: comprendono anche gli ordini fatti dall\'utente sulle sue partite');
                 return {
                     ...b, pnlOggi: l.valore, fonteOggiLive: l.f, pnlOggiPaper: provaDellaRiga(pMike).oggi,
                     arretratiPaper: arretratiMike,
@@ -3528,11 +3533,17 @@ export function useControlRoom(): ControlRoomVM {
                 eventId, feedPerEvento.get(eventId)?.updated_at ?? null,
                 mikeEventi.get(eventId)?.updated_at ?? null,
                 ops.map((o) => [o.id, o.bot, o.modalita, o.marketId, o.selectionId, o.lato,
-                    o.ordine, o.chiusureOrdini, o.chiusureGambe ?? null, o.chiusura?.alMs?.aliquota ?? null]),
+                    o.ordine, o.chiusureOrdini, o.chiusureGambe ?? null, o.chiusura?.alMs?.aliquota ?? null,
+                    // review finale 30/09 (R2-3): anche cio' che `gambeDaOperazioni` legge per
+                    // tennis (pnl = regolato) e scalper (pnl, stato, residuo, esposizioni)
+                    o.pnl ?? null, o.stato ?? null, o.residuo ?? null, o.esposizioneSelezioni ?? null]),
             ]));
         }
         return parti.join('\n');
     }, [operazioni, feedPerEvento, mikeEventi]);
+    // lo sport della partita dalle sue righe (lo porta la riga al ms)
+    const sportDiAperto = (eventId: string) => (operazioni.get(eventId) ?? [])
+        .map((o) => o.chiusura?.alMs?.sport ?? null).find((s) => s != null) ?? null;
     const apertoOggi = useMemo<ApertoAdesso>(() => apertoAdesso({
         operazioni,
         prezzo: (eventId, marketId, selectionId) => {
@@ -3547,11 +3558,16 @@ export function useControlRoom(): ControlRoomVM {
                 fonte: 'scanner', statoMercato: b.statoMercato ?? l.statoMercato ?? null,
             };
         },
-        dueEsiti: (eventId) => dueEsitiMike(mikeEventi.get(eventId)),
+        // review finale 30/09 (R2-4): nel tennis il Match Odds (`mo_market_id` del
+        // feed) e' a DUE esiti, come nella scheda in gioco; senza feed o sport
+        // ignoto restano i soli mercati di Mike
+        dueEsiti: (eventId) => {
+            const sport = sportDiAperto(eventId);
+            const mo = (feedPerEvento.get(eventId)?.payload as { mo_market_id?: string | null } | null)?.mo_market_id ?? null;
+            return dueEsitiPartita(sport === 'tennis' ? 'tennis' : 'calcio', mo, dueEsitiMike(mikeEventi.get(eventId)));
+        },
         esitoDeciso: (eventId) => esitoDecisoMike(mikeEventi.get(eventId), operazioni.get(eventId) ?? []),
-        // lo sport della partita dalle sue righe (lo porta la riga al ms)
-        sportDi: (eventId) => (operazioni.get(eventId) ?? [])
-            .map((o) => o.chiusura?.alMs?.sport ?? null).find((s) => s != null) ?? null,
+        sportDi: sportDiAperto,
         nowMs: Date.now(),
     // la firma contiene tutto cio' che il calcolo legge (righe LIVE, feed, Mike)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -4015,6 +4031,8 @@ export function useControlRoom(): ControlRoomVM {
         giornata, totali,
         obiettivo,
         obiettivoStoricizzato: omega?.goal_snapshot === true,
+        // review incrociata 30/09 (M5): stato di Omega NON LETTO e' un'altra cosa da «non ha ancora girato»
+        omegaLetto: omega != null,
         realizzato,
         realizzatoOggi,
         soldiGiornata: giornataSoldi,
