@@ -1,0 +1,347 @@
+diff --git a/Betfair/stream/board_worker.py b/Betfair/stream/board_worker.py
+index 25dbd4a..8e5eb6d 100644
+--- a/Betfair/stream/board_worker.py
++++ b/Betfair/stream/board_worker.py
+@@ -92,10 +92,15 @@ def _refresh_catalogue(api_client: Any, event_type_id: str) -> None:
+ 
+ 
+ def _best(levels: Any) -> Optional[float]:
+-    try:
+-        return float(levels[0].price) if levels else None
+-    except Exception:  # noqa: BLE001
+-        return None
++    # 30/09: nel processo del runner flumine e' importato e SOSTITUISCE
++    # ``bettingresources.RunnerBookEX`` con la sua classe "pigra"
++    # (flumine/__init__.py), che lascia i livelli come DIZIONARI
++    # {"price", "size"}: ``levels[0].price`` sollevava e il board mostrava
++    # quote vuote su ogni mercato letto via REST. Si legge con la funzione
++    # dello scanner che tollera ENTRAMBE le forme (oggetto PriceSize o dict).
++    from Betfair.safe_strategy.scanner import best_price
++
++    return best_price(levels)
+ 
+ 
+ def _row_from_book(meta: Dict[str, Any], b: Any) -> Dict[str, Any]:
+diff --git a/frontend/src/components/controlroom/useControlRoom.test.tsx b/frontend/src/components/controlroom/useControlRoom.test.tsx
+index 1bec6d9..95d2734 100644
+--- a/frontend/src/components/controlroom/useControlRoom.test.tsx
++++ b/frontend/src/components/controlroom/useControlRoom.test.tsx
+@@ -1253,3 +1253,63 @@ describe('26/09 correzioni fase 3 sul modello di vista', () => {
+         expect(omega.pnlOggi).toBeNull();
+     });
+ });
++
++// ============================================ 30/09 - LA RIGA TENNIS STANTIA
++// Visto dall'utente: "Swing - paper - 14:41 - 36117569 - LAY - 1,21 - importo
++// 2,00 - residuo 2,00" fra le posizioni aperte. E' la riga 46018 di
++// `tennis_live_orders` (letta dal DB in sola lettura, stesse chiavi e valori):
++// ordine paper MAI abbinato di un follow CLOSED dal 28/09, che la ripresa del
++// runner tennis (`tennis_db.chiudi_specchio_paper_orfano`) ha chiuso alle 14:41
++// scrivendo `status = VOIDED` e `updated_at = adesso`, ma lasciando
++// `size_remaining = 2`. `placed_at` nullo -> la RPC di oggi la prende per
++// `updated_at`, e la regola "residuo > 0 = a mercato" la rimetteva fra le aperte.
++// FALSIFICAZIONE: togliendo il controllo sugli stati terminali da
++// `residuoTennisSulBook` (lib/controlRoom.ts) i test "non compare" diventano rossi.
++
++const ADESSO = `${OGGI}T12:41:12.430851+00:00`;
++
++function rigaStantia(over: Partial<TennisBotOrderRow> = {}): TennisBotOrderRow {
++    return ordine({
++        id: 46018, bet_id: null, client_order_ref: 'tsw-x7dce4552881542fb', request_id: null,
++        mode: 'paper', source: 'tennis_swing', event_id: '36117569', market_id: '1.262929640',
++        selection_id: 8681451, handicap: 0, side: 'lay', order_type: 'LIMIT',
++        price: 1.21, size: 2, size_matched: 0, size_remaining: 2, size_cancelled: 0,
++        size_lapsed: 0, size_voided: 0, average_price_matched: 0, status: 'VOIDED',
++        persistence: null, placed_at: null, matched_at: null, updated_at: ADESSO,
++        pnl: null, commission: null, settled_at: null,
++        ...over,
++    });
++}
++
++describe('30/09: un ordine tennis TERMINALE mai abbinato non e una posizione aperta', () => {
++    it('la riga VOIDED della ripresa (residuo 2,00, mai abbinata) non compare', async () => {
++        const result = await conOrdini([rigaStantia()]);
++        expect(result.current.posizioni.filter((p) => p.bot === 'tennis_swing')).toHaveLength(0);
++    });
++
++    it.each(['LAPSED', 'CANCELLED', 'EXPIRED', 'EXECUTION_COMPLETE'])(
++        'lo stesso per %s: il residuo di un ordine terminale non e sul book', async (stato) => {
++            const result = await conOrdini([rigaStantia({ status: stato })]);
++            expect(result.current.posizioni.filter((p) => p.bot === 'tennis_swing')).toHaveLength(0);
++        });
++
++    it('un ordine ancora EXECUTABLE con residuo resta fra le aperte', async () => {
++        const result = await conOrdini([rigaStantia({ status: 'EXECUTABLE' })]);
++        const p = result.current.posizioni.filter((x) => x.bot === 'tennis_swing');
++        expect(p.map((x) => x.id)).toEqual([46018]);
++    });
++
++    it('VOIDED ma con un ABBINATO non regolato resta: l esposizione e vera', async () => {
++        const result = await conOrdini([rigaStantia({ size_matched: 0.5, size_remaining: 1.5 })]);
++        expect(result.current.posizioni.filter((x) => x.bot === 'tennis_swing').map((x) => x.id))
++            .toEqual([46018]);
++    });
++
++    it('i soldi di partita (marcaTennis) non la contano come aperta', async () => {
++        const { marcaTennis } = await import('@/lib/controlRoom');
++        const r = rigaStantia();
++        const riga = { ...r, mode: 'paper' as const, side: 'lay' as const };
++        expect(marcaTennis([riga], 'tennis_swing')).toHaveLength(0);
++        expect(marcaTennis([{ ...riga, status: 'EXECUTABLE' }], 'tennis_swing')).toHaveLength(1);
++    });
++});
+diff --git a/frontend/src/components/controlroom/useControlRoom.ts b/frontend/src/components/controlroom/useControlRoom.ts
+index 8f8ea84..6f5fad0 100644
+--- a/frontend/src/components/controlroom/useControlRoom.ts
++++ b/frontend/src/components/controlroom/useControlRoom.ts
+@@ -78,7 +78,7 @@ import {
+     costruisciGiornata, soldiPerPartita, marca, marcaTennis, totaliGiornata, coperturaControllo,
+     etaSecondi, freschezza, freschezzaBattito, realizzatoGiornata, arricchimentoDa, perSportGiornata,
+     type ArricchimentoPartita, type RigaTennisPerSoldi,
+-    BOT_TENNIS, isBotTennis, BOT_LABEL,
++    BOT_TENNIS, isBotTennis, BOT_LABEL, residuoTennisSulBook,
+     type Bot, type BotTennis, type GruppoCampionato, type TotaliGiornata, type Freschezza, type PartitaFeedLike, type Sport,
+     type Realizzato, type RigaRealizzato,
+ } from '@/lib/controlRoom';
+@@ -3811,9 +3811,10 @@ function ordineTennisAperto(o: TennisBotOrderRow): boolean {
+     if (isErrorRow(o.status)) return false;
+     if (o.settled_at != null) return false;
+     const abbinato = Number(o.size_matched ?? 0);
+-    const residuo = Number(o.size_remaining ?? 0);
+-    return (Number.isFinite(abbinato) && abbinato > 0)
+-        || (Number.isFinite(residuo) && residuo > 0);
++    // 30/09: il residuo conta solo se l'ordine non e' terminale (VOIDED della
++    // ripresa del runner tennis con size_remaining lasciato a 2,00): stessa
++    // regola di `tennisAncoraAMercato` in lib/controlRoom.ts.
++    return (Number.isFinite(abbinato) && abbinato > 0) || residuoTennisSulBook(o);
+ }
+ 
+ /** Il P&L NETTO di oggi di un bot tennis, dalle righe del database. `null` =
+diff --git a/frontend/src/lib/controlRoom.ts b/frontend/src/lib/controlRoom.ts
+index cc51ec1..f86fd39 100644
+--- a/frontend/src/lib/controlRoom.ts
++++ b/frontend/src/lib/controlRoom.ts
+@@ -27,6 +27,7 @@ import {
+     type PnlTradeLike,
+ } from './eventGroups';
+ import { giudizioFlusso, type FlussoRiga, type GiudizioFlusso } from './flussoPrezzi';
++import { TERMINALI_FLUMINE } from './esitoAbbinamento';
+ 
+ // ---------------------------------------------------------------- vocabolario
+ 
+@@ -541,8 +542,23 @@ function tennisAncoraAMercato(o: RigaTennisPerSoldi): boolean {
+     if (isErrorRow(o.status)) return false;
+     if (o.settled_at != null) return false;
+     const abbinato = Number(o.size_matched ?? 0);
++    return (Number.isFinite(abbinato) && abbinato > 0) || residuoTennisSulBook(o);
++}
++
++/**
++ * 30/09 - Il RESIDUO di un ordine tennis e' sul book solo se l'ordine NON e' in
++ * uno stato terminale di flumine (VOIDED, LAPSED, CANCELLED, EXPIRED, ...).
++ * La ripresa del runner tennis chiude lo specchio paper orfano scrivendo
++ * `status = VOIDED` ma lascia `size_remaining` com'era (2,00): senza questa
++ * regola un ordine paper mai abbinato di un follow chiuso da giorni tornava
++ * "posizione aperta" con l'ora del riavvio (placed_at nullo -> updated_at).
++ * L'ABBINATO invece resta una posizione fino al regolamento, qualunque sia lo
++ * stato dell'ordine: questa regola tocca solo il residuo.
++ */
++export function residuoTennisSulBook(o: { status?: string | null; size_remaining?: number | null }): boolean {
++    if (TERMINALI_FLUMINE.has(String(o.status ?? '').toUpperCase())) return false;
+     const residuo = Number(o.size_remaining ?? 0);
+-    return (Number.isFinite(abbinato) && abbinato > 0) || (Number.isFinite(residuo) && residuo > 0);
++    return Number.isFinite(residuo) && residuo > 0;
+ }
+ 
+ /**
+diff --git a/Betfair/stream/tests/test_board_quote_flumine_2026_09_30.py b/Betfair/stream/tests/test_board_quote_flumine_2026_09_30.py
+new file mode 100644
+index 0000000..8b22c1e
+--- /dev/null
++++ b/Betfair/stream/tests/test_board_quote_flumine_2026_09_30.py
+@@ -0,0 +1,130 @@
++"""Board del giorno (board_worker): quote REST lette anche con flumine importato.
++
++Difetto del 30/09: nel processo del runner calcio flumine e' importato e
++``flumine/__init__.py`` sostituisce ``bettingresources.RunnerBookEX`` con la
++classe "pigra" ``flumine.patching.EX``, che lascia i livelli come dizionari.
++``_best`` faceva ``levels[0].price`` -> eccezione -> None: 46 righe su 47 del
++"Programma di oggi" senza back/lay (solo quella coperta dallo scanner li aveva).
++
++I libri sono OGGETTI VERI di betfairlightweight costruiti dalla risposta grezza
++di ``listMarketBook`` (catturata il 30/09 dalla sonda
++``AUDIT_2026-09-30/sonda_board_rest.py``): stesse chiavi e stessi tipi del vero.
++"""
++from __future__ import annotations
++
++import pytest
++from betfairlightweight.resources import bettingresources
++
++from Betfair.stream import board_worker as bw
++
++# risposta grezza di listMarketBook (1.262865434, 30/09 ~14:00), EX_BEST_OFFERS
++_RAW = {
++    "marketId": "1.262865434", "isMarketDataDelayed": False, "status": "OPEN",
++    "betDelay": 0, "bspReconciled": False, "complete": True, "inplay": False,
++    "numberOfWinners": 1, "numberOfRunners": 3, "numberOfActiveRunners": 3,
++    "lastMatchTime": "2026-09-30T12:00:08.114Z", "totalMatched": 288.8,
++    "totalAvailable": 1499.0, "crossMatching": True, "runnersVoidable": False,
++    "version": 7646641232,
++    "runners": [
++        {"selectionId": 9459683, "handicap": 0.0, "status": "ACTIVE", "lastPriceTraded": 3.2,
++         "totalMatched": 1.99,
++         "ex": {"availableToBack": [{"price": 3.05, "size": 96.59}, {"price": 3.0, "size": 3.6}],
++                "availableToLay": [{"price": 3.2, "size": 15.0}, {"price": 3.25, "size": 41.5}],
++                "tradedVolume": []}},
++        {"selectionId": 328191, "handicap": 0.0, "status": "ACTIVE", "totalMatched": 0.0,
++         "ex": {"availableToBack": [{"price": 2.46, "size": 5.0}],
++                "availableToLay": [{"price": 2.56, "size": 17.0}],
++                "tradedVolume": []}},
++        {"selectionId": 58805, "handicap": 0.0, "status": "ACTIVE", "lastPriceTraded": 3.6,
++         "totalMatched": 286.8,
++         "ex": {"availableToBack": [{"price": 3.4, "size": 56.76}],
++                "availableToLay": [{"price": 3.6, "size": 3.0}],
++                "tradedVolume": []}},
++    ],
++}
++_META = {
++    "market_id": "1.262865434", "event_id": "36081505", "event_name": "Torque v Penarol",
++    "open_date": "2026-09-30T23:00:00+00:00",
++    "runners": {9459683: "Torque", 328191: "Penarol", 58805: "The Draw"},
++}
++_ATTESO = [(9459683, 3.05, 3.2, 3.2), (328191, 2.46, 2.56, None), (58805, 3.4, 3.6, 3.6)]
++
++
++def _libro():
++    return bettingresources.MarketBook(**_RAW)
++
++
++@pytest.fixture()
++def ex_di_flumine(monkeypatch):
++    """Il processo del runner: RunnerBookEX/SP sostituiti da flumine.
++
++    Gli originali si registrano PRIMA dell'import (che li sostituisce per tutto
++    il processo) cosi' il monkeypatch li rimette a posto a fine test."""
++    monkeypatch.setattr(bettingresources, "RunnerBookEX", bettingresources.RunnerBookEX)
++    monkeypatch.setattr(bettingresources, "RunnerBookSP", bettingresources.RunnerBookSP)
++    from flumine.patching import EX, SP
++
++    monkeypatch.setattr(bettingresources, "RunnerBookEX", EX)
++    monkeypatch.setattr(bettingresources, "RunnerBookSP", SP)
++    return EX
++
++
++def _coppie(riga):
++    return [(s["selection_id"], s["back"], s["lay"], s["ltp"]) for s in riga["selections"]]
++
++
++def test_quote_con_flumine_importato(ex_di_flumine):
++    libro = _libro()
++    # la forma e' davvero quella del runner: livelli come dizionari
++    assert type(libro.runners[0].ex) is ex_di_flumine
++    assert isinstance(libro.runners[0].ex.available_to_back[0], dict)
++    riga = bw._row_from_book(_META, libro)
++    assert _coppie(riga) == _ATTESO
++    assert riga["status"] == "OPEN" and riga["total_matched"] == 288.8
++
++
++def _libro_forma_originale():
++    """Il libro nella forma di betfairlightweight SENZA flumine: livelli come
++    ``PriceSize`` (la classe vera). Il conftest importa gia' flumine, e la
++    classe RunnerBookEX originale non e' piu' raggiungibile per nome: si
++    riportano i livelli alla forma PriceSize che quella classe produce."""
++    libro = _libro()
++    for r in libro.runners:
++        for campo in ("available_to_back", "available_to_lay"):
++            livelli = getattr(r.ex, campo) or []
++            setattr(r.ex, campo, [
++                lv if isinstance(lv, bettingresources.PriceSize)
++                else bettingresources.PriceSize(**lv) for lv in livelli])
++    return libro
++
++
++def test_quote_senza_flumine():
++    libro = _libro_forma_originale()
++    assert isinstance(libro.runners[0].ex.available_to_back[0], bettingresources.PriceSize)
++    assert _coppie(bw._row_from_book(_META, libro)) == _ATTESO
++
++
++def test_poll_rest_con_flumine(ex_di_flumine):
++    """Il giro REST intero (_poll_books_rest) con un client finto che restituisce
++    i MarketBook veri costruiti dalla risposta grezza, come betfairlightweight."""
++    chiamate = []
++
++    class _Betting:
++        def list_market_book(self, market_ids, price_projection=None, **kw):
++            chiamate.append((list(market_ids), price_projection))
++            return [_libro()]
++
++    class _Client:
++        betting = _Betting()
++
++    rows = bw._poll_books_rest(_Client(), {_META["market_id"]: _META})
++    assert _coppie(rows[_META["market_id"]]) == _ATTESO
++    assert chiamate[0][1]["priceData"] == ["EX_BEST_OFFERS"]
++
++
++def test_livelli_vuoti_restano_none(ex_di_flumine):
++    raw = dict(_RAW)
++    raw["runners"] = [dict(r, ex={"availableToBack": [], "availableToLay": [], "tradedVolume": []})
++                      for r in _RAW["runners"]]
++    riga = bw._row_from_book(_META, bettingresources.MarketBook(**raw))
++    assert all(s["back"] is None and s["lay"] is None for s in riga["selections"])
+diff --git a/migrations/tennis_paper_voided_residuo_zero_2026-09-30.sql b/migrations/tennis_paper_voided_residuo_zero_2026-09-30.sql
+new file mode 100644
+index 0000000..ece4e6a
+--- /dev/null
++++ b/migrations/tennis_paper_voided_residuo_zero_2026-09-30.sql
+@@ -0,0 +1,49 @@
++-- ============================================================================
++-- tennis_paper_voided_residuo_zero_2026-09-30.sql  (SOLO DATI, IDEMPOTENTE)
++-- ============================================================================
++-- PERCHE' (30/09): in Control Room, "Posizioni aperte", compariva
++--   "Swing - paper - 14:41 - 36117569 - LAY - 1,21 - residuo 2,00".
++-- E' la riga 46018 di `tennis_live_orders`: ordine PAPER mai abbinato di un
++-- follow CLOSED dal 28/09. All'avvio dell'app (14:41) la ripresa del runner
++-- tennis (`Betfair/stream/tennis_live/tennis_db.py`, `chiudi_specchio_paper_orfano`)
++-- l'ha chiusa scrivendo `status = 'VOIDED'` e `updated_at = now()`, ma ha
++-- lasciato `size_remaining = 2`. Con `placed_at` nullo la RPC
++-- `get_tennis_bot_orders_today` la considera "di oggi" (coalesce(placed_at,
++-- updated_at)) e la vista la contava aperta perche' il residuo era > 0.
++--
++-- La correzione VERA e' nel frontend (`residuoTennisSulBook`, lib/controlRoom.ts:
++-- il residuo di un ordine in stato terminale non e' sul book) e vale dopo
++-- `npm run build` + ricarica dell'app. Questa migrazione e' FACOLTATIVA: toglie
++-- la riga SUBITO, senza ricostruire il frontend, e rende coerenti con Betfair
++-- (un ordine annullato ha residuo 0 e la quota annullata in `size_voided`) le
++-- righe paper gia' chiuse dalla ripresa (35 al 30/09, tutte VOIDED, mai
++-- abbinate: 26/09 e 30/09).
++--
++-- COSA TOCCA: solo righe PAPER dei 4 bot tennis, gia' VOIDED, non regolate,
++-- con residuo > 0. Mai righe LIVE, mai righe abbinate o regolate, nessuna
++-- riga cancellata. Rilanciata una seconda volta non trova nulla (residuo 0).
++--
++-- Da applicare a cura dell'utente (SQL editor di Supabase).
++-- ============================================================================
++
++-- ANTEPRIMA (facoltativa): le righe che verranno toccate.
++-- SELECT id, source, event_id, status, size, size_matched, size_remaining,
++--        size_voided, placed_at, updated_at
++--   FROM public.tennis_live_orders
++--  WHERE mode = 'paper'
++--    AND source IN ('tennis_scalper','tennis_pro','tennis_flb','tennis_swing')
++--    AND status = 'VOIDED'
++--    AND settled_at IS NULL
++--    AND coalesce(size_matched, 0) = 0
++--    AND size_remaining > 0
++--  ORDER BY id;
++
++UPDATE public.tennis_live_orders
++   SET size_voided    = coalesce(size_voided, 0) + size_remaining,
++       size_remaining = 0
++ WHERE mode = 'paper'
++   AND source IN ('tennis_scalper','tennis_pro','tennis_flb','tennis_swing')
++   AND status = 'VOIDED'
++   AND settled_at IS NULL
++   AND coalesce(size_matched, 0) = 0
++   AND size_remaining > 0;

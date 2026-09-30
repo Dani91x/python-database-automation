@@ -92,10 +92,15 @@ def _refresh_catalogue(api_client: Any, event_type_id: str) -> None:
 
 
 def _best(levels: Any) -> Optional[float]:
-    try:
-        return float(levels[0].price) if levels else None
-    except Exception:  # noqa: BLE001
-        return None
+    # 30/09: nel processo del runner flumine e' importato e SOSTITUISCE
+    # ``bettingresources.RunnerBookEX`` con la sua classe "pigra"
+    # (flumine/__init__.py), che lascia i livelli come DIZIONARI
+    # {"price", "size"}: ``levels[0].price`` sollevava e il board mostrava
+    # quote vuote su ogni mercato letto via REST. Si legge con la funzione
+    # dello scanner che tollera ENTRAMBE le forme (oggetto PriceSize o dict).
+    from Betfair.safe_strategy.scanner import best_price
+
+    return best_price(levels)
 
 
 def _row_from_book(meta: Dict[str, Any], b: Any) -> Dict[str, Any]:

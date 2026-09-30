@@ -78,7 +78,7 @@ import {
     costruisciGiornata, soldiPerPartita, marca, marcaTennis, totaliGiornata, coperturaControllo,
     etaSecondi, freschezza, freschezzaBattito, realizzatoGiornata, arricchimentoDa, perSportGiornata,
     type ArricchimentoPartita, type RigaTennisPerSoldi,
-    BOT_TENNIS, isBotTennis, BOT_LABEL,
+    BOT_TENNIS, isBotTennis, BOT_LABEL, residuoTennisSulBook,
     type Bot, type BotTennis, type GruppoCampionato, type TotaliGiornata, type Freschezza, type PartitaFeedLike, type Sport,
     type Realizzato, type RigaRealizzato,
 } from '@/lib/controlRoom';
@@ -3811,9 +3811,10 @@ function ordineTennisAperto(o: TennisBotOrderRow): boolean {
     if (isErrorRow(o.status)) return false;
     if (o.settled_at != null) return false;
     const abbinato = Number(o.size_matched ?? 0);
-    const residuo = Number(o.size_remaining ?? 0);
-    return (Number.isFinite(abbinato) && abbinato > 0)
-        || (Number.isFinite(residuo) && residuo > 0);
+    // 30/09: il residuo conta solo se l'ordine non e' terminale (VOIDED della
+    // ripresa del runner tennis con size_remaining lasciato a 2,00): stessa
+    // regola di `tennisAncoraAMercato` in lib/controlRoom.ts.
+    return (Number.isFinite(abbinato) && abbinato > 0) || residuoTennisSulBook(o);
 }
 
 /** Il P&L NETTO di oggi di un bot tennis, dalle righe del database. `null` =

@@ -1253,3 +1253,63 @@ describe('26/09 correzioni fase 3 sul modello di vista', () => {
         expect(omega.pnlOggi).toBeNull();
     });
 });
+
+// ============================================ 30/09 - LA RIGA TENNIS STANTIA
+// Visto dall'utente: "Swing - paper - 14:41 - 36117569 - LAY - 1,21 - importo
+// 2,00 - residuo 2,00" fra le posizioni aperte. E' la riga 46018 di
+// `tennis_live_orders` (letta dal DB in sola lettura, stesse chiavi e valori):
+// ordine paper MAI abbinato di un follow CLOSED dal 28/09, che la ripresa del
+// runner tennis (`tennis_db.chiudi_specchio_paper_orfano`) ha chiuso alle 14:41
+// scrivendo `status = VOIDED` e `updated_at = adesso`, ma lasciando
+// `size_remaining = 2`. `placed_at` nullo -> la RPC di oggi la prende per
+// `updated_at`, e la regola "residuo > 0 = a mercato" la rimetteva fra le aperte.
+// FALSIFICAZIONE: togliendo il controllo sugli stati terminali da
+// `residuoTennisSulBook` (lib/controlRoom.ts) i test "non compare" diventano rossi.
+
+const ADESSO = `${OGGI}T12:41:12.430851+00:00`;
+
+function rigaStantia(over: Partial<TennisBotOrderRow> = {}): TennisBotOrderRow {
+    return ordine({
+        id: 46018, bet_id: null, client_order_ref: 'tsw-x7dce4552881542fb', request_id: null,
+        mode: 'paper', source: 'tennis_swing', event_id: '36117569', market_id: '1.262929640',
+        selection_id: 8681451, handicap: 0, side: 'lay', order_type: 'LIMIT',
+        price: 1.21, size: 2, size_matched: 0, size_remaining: 2, size_cancelled: 0,
+        size_lapsed: 0, size_voided: 0, average_price_matched: 0, status: 'VOIDED',
+        persistence: null, placed_at: null, matched_at: null, updated_at: ADESSO,
+        pnl: null, commission: null, settled_at: null,
+        ...over,
+    });
+}
+
+describe('30/09: un ordine tennis TERMINALE mai abbinato non e una posizione aperta', () => {
+    it('la riga VOIDED della ripresa (residuo 2,00, mai abbinata) non compare', async () => {
+        const result = await conOrdini([rigaStantia()]);
+        expect(result.current.posizioni.filter((p) => p.bot === 'tennis_swing')).toHaveLength(0);
+    });
+
+    it.each(['LAPSED', 'CANCELLED', 'EXPIRED', 'EXECUTION_COMPLETE'])(
+        'lo stesso per %s: il residuo di un ordine terminale non e sul book', async (stato) => {
+            const result = await conOrdini([rigaStantia({ status: stato })]);
+            expect(result.current.posizioni.filter((p) => p.bot === 'tennis_swing')).toHaveLength(0);
+        });
+
+    it('un ordine ancora EXECUTABLE con residuo resta fra le aperte', async () => {
+        const result = await conOrdini([rigaStantia({ status: 'EXECUTABLE' })]);
+        const p = result.current.posizioni.filter((x) => x.bot === 'tennis_swing');
+        expect(p.map((x) => x.id)).toEqual([46018]);
+    });
+
+    it('VOIDED ma con un ABBINATO non regolato resta: l esposizione e vera', async () => {
+        const result = await conOrdini([rigaStantia({ size_matched: 0.5, size_remaining: 1.5 })]);
+        expect(result.current.posizioni.filter((x) => x.bot === 'tennis_swing').map((x) => x.id))
+            .toEqual([46018]);
+    });
+
+    it('i soldi di partita (marcaTennis) non la contano come aperta', async () => {
+        const { marcaTennis } = await import('@/lib/controlRoom');
+        const r = rigaStantia();
+        const riga = { ...r, mode: 'paper' as const, side: 'lay' as const };
+        expect(marcaTennis([riga], 'tennis_swing')).toHaveLength(0);
+        expect(marcaTennis([{ ...riga, status: 'EXECUTABLE' }], 'tennis_swing')).toHaveLength(1);
+    });
+});

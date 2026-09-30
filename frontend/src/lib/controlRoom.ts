@@ -27,6 +27,7 @@ import {
     type PnlTradeLike,
 } from './eventGroups';
 import { giudizioFlusso, type FlussoRiga, type GiudizioFlusso } from './flussoPrezzi';
+import { TERMINALI_FLUMINE } from './esitoAbbinamento';
 
 // ---------------------------------------------------------------- vocabolario
 
@@ -541,8 +542,23 @@ function tennisAncoraAMercato(o: RigaTennisPerSoldi): boolean {
     if (isErrorRow(o.status)) return false;
     if (o.settled_at != null) return false;
     const abbinato = Number(o.size_matched ?? 0);
+    return (Number.isFinite(abbinato) && abbinato > 0) || residuoTennisSulBook(o);
+}
+
+/**
+ * 30/09 - Il RESIDUO di un ordine tennis e' sul book solo se l'ordine NON e' in
+ * uno stato terminale di flumine (VOIDED, LAPSED, CANCELLED, EXPIRED, ...).
+ * La ripresa del runner tennis chiude lo specchio paper orfano scrivendo
+ * `status = VOIDED` ma lascia `size_remaining` com'era (2,00): senza questa
+ * regola un ordine paper mai abbinato di un follow chiuso da giorni tornava
+ * "posizione aperta" con l'ora del riavvio (placed_at nullo -> updated_at).
+ * L'ABBINATO invece resta una posizione fino al regolamento, qualunque sia lo
+ * stato dell'ordine: questa regola tocca solo il residuo.
+ */
+export function residuoTennisSulBook(o: { status?: string | null; size_remaining?: number | null }): boolean {
+    if (TERMINALI_FLUMINE.has(String(o.status ?? '').toUpperCase())) return false;
     const residuo = Number(o.size_remaining ?? 0);
-    return (Number.isFinite(abbinato) && abbinato > 0) || (Number.isFinite(residuo) && residuo > 0);
+    return Number.isFinite(residuo) && residuo > 0;
 }
 
 /**
