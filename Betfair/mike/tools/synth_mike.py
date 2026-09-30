@@ -472,9 +472,31 @@ def caso_reingresso_2gol(modelli: Dict[str, Dict[str, Any]],
                            primo_gol_min=15, secondo_gol_min=25)
 
 
+def caso_ultimo_ingresso_riprova(modelli: Dict[str, Dict[str, Any]],
+                                 modello_score: Dict[str, Any], cartella: str,
+                                 event_id: str) -> Dict[str, Any]:
+    """L'ULTIMO INGRESSO RITENTATO (30/09, decisione dell'utente "riprova fino
+    al fischio"; controllo B6).
+
+    Come `ultimo_ingresso`, ma senza la sospensione, con i due casi in cui prima
+    l'ultimo ingresso si perdeva:
+      (a) la banca del giro si abbina nei 60 s di pausa PRIMA del segno (scambi a
+          1,48 da 45 a 25 secondi prima): al primo giro dopo il segno la pausa
+          dopo un giro chiuso (``pre_reentry_cooldown_s``) non e' finita;
+      (b) da 25 secondi prima a 90 secondi dopo il segno la liquidita' al best
+          dell'Under 3,5 e' 1,00 (sotto lo stake): il controllo d'ingresso non
+          passa anche a pausa finita.
+    Prima: Mike in HOLD al primo giro dopo il segno, nessun ultimo ingresso.
+    Ora: aspetta, e a 90 secondi dal segno (liquidita' tornata) fa l'ULTIMO
+    INGRESSO a 1,50 con la banca a 1,48, che NON si abbina; al fischio porta in
+    gioco l'Under 3,5 abbinato; 0-0.
+    """
+    return caso_ultimo_ingresso(modelli, modello_score, cartella, event_id, riprova=True)
+
+
 def caso_ultimo_ingresso(modelli: Dict[str, Dict[str, Any]],
                          modello_score: Dict[str, Any], cartella: str,
-                         event_id: str) -> Dict[str, Any]:
+                         event_id: str, riprova: bool = False) -> Dict[str, Any]:
     """L'ULTIMO INGRESSO (29/09, piano Mike M2.4, controllo B6).
 
     La storia:
@@ -515,6 +537,9 @@ def caso_ultimo_ingresso(modelli: Dict[str, Dict[str, Any]],
     u45_pre = {1: _quattro(1.20, 300, 1.22, 300), 2: _quattro(5.40, 300, 5.60, 300)}
 
     pt = t0
+    if riprova:
+        return _ultimo_ingresso_riprova(c, istante, modelli, modello_score, cartella,
+                                        event_id, t0, ko, u35_pre, u45_pre)
     abbina = ko - 25 * 60 * 1000
     while pt < abbina:                                   # 1) ingresso e banca
         istante(pt, u35=u35_pre, u45=u45_pre, definizione=(pt == t0))
@@ -534,6 +559,15 @@ def caso_ultimo_ingresso(modelli: Dict[str, Dict[str, Any]],
         istante(pt, u35=u35_pre, u45=u45_pre, definizione=primo)
         primo = False
         pt += PASSO_MS
+    return _coda_ultimo_ingresso(c, istante, modelli, modello_score, cartella, event_id,
+                                 t0, ko, u35_pre, u45_pre)
+
+
+def _coda_ultimo_ingresso(c: "Costruttore", istante: Any, modelli: Dict[str, Dict[str, Any]],
+                          modello_score: Dict[str, Any], cartella: str, event_id: str,
+                          t0: int, ko: int, u35_pre: Any, u45_pre: Any) -> Dict[str, Any]:
+    """Dal fischio in poi (casi `ultimo_ingresso` e `ultimo_ingresso_riprova`)."""
+    mo, ou35, ou45 = "MATCH_ODDS", "OVER_UNDER_35", "OVER_UNDER_45"
     # 5) il fischio: in gioco, sospensione tecnica, riapertura senza scambi a 1,48
     istante(ko, u35=u35_pre, u45=u45_pre, inplay=True, bet_delay=5, definizione=True)
     istante(ko + PASSO_MS, u35=u35_pre, u45=u45_pre, status="SUSPENDED",
@@ -570,8 +604,36 @@ def caso_ultimo_ingresso(modelli: Dict[str, Dict[str, Any]],
             "punteggi": len(punti), "ko_ms": ko}
 
 
+def _ultimo_ingresso_riprova(c: "Costruttore", istante: Any, modelli: Dict[str, Dict[str, Any]],
+                             modello_score: Dict[str, Any], cartella: str, event_id: str,
+                             t0: int, ko: int, u35_pre: Any, u45_pre: Any) -> Dict[str, Any]:
+    """Il pre-partita del caso `ultimo_ingresso_riprova`; dal fischio in poi e'
+    identico a `ultimo_ingresso` (stessi prezzi, stessi punteggi, 0-0)."""
+    segno = ko - 10 * 60 * 1000
+    abbina, fine_abbina = segno - 45 * 1000, segno - 25 * 1000
+    torna = segno + 90 * 1000
+    # (b) stesso livello 1,50 con size 1,00: e' un delta sulla stessa quota del
+    # ladder (``atb``), nessun livello fantasma
+    u35_magro = {1: _quattro(1.50, 1.0, 1.52, 300), 2: u35_pre[2]}
+    pt = t0
+    while pt < ko:
+        if pt < abbina:                                  # 1) ingresso e banca
+            istante(pt, u35=u35_pre, u45=u45_pre, definizione=(pt == t0))
+        elif pt < fine_abbina:                           # 2) (a) la banca si abbina
+            istante(pt, u35=u35_pre, u45=u45_pre,
+                    scambiato={"OVER_UNDER_35": {1: (1.48, 200.0)}})
+        elif pt < torna:                                 # 3) (b) liquidita' sotto lo stake
+            istante(pt, u35=u35_magro, u45=u45_pre)
+        else:                                            # 4) l'ultimo ingresso
+            istante(pt, u35=u35_pre, u45=u45_pre)
+        pt += PASSO_MS
+    return _coda_ultimo_ingresso(c, istante, modelli, modello_score, cartella, event_id,
+                                 t0, ko, u35_pre, u45_pre)
+
+
 CASI = {"reingresso": caso_reingresso, "prezzo_migliore": caso_prezzo_migliore,
-        "reingresso_2gol": caso_reingresso_2gol, "ultimo_ingresso": caso_ultimo_ingresso}
+        "reingresso_2gol": caso_reingresso_2gol, "ultimo_ingresso": caso_ultimo_ingresso,
+        "ultimo_ingresso_riprova": caso_ultimo_ingresso_riprova}
 
 
 def genera(caso: str, data_dir: Optional[str] = None) -> Dict[str, Any]:

@@ -3260,6 +3260,12 @@ def _after_final_green(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any],
                     "ultimo ingresso PERSIST", updates=upd)
 
 
+# 30/09: i soli controlli d'ingresso che all'ultimo ingresso sono RINUNCIA
+# definitiva (HOLD fino al fischio). Tutti gli altri motivi di ``_entry_guard``
+# sono attesa: si riprova al giro dopo (vedi ``_ultimo_ingresso``).
+_ULTIMO_INGRESSO_RINUNCIA = frozenset({"max cicli", "cap liability partita"})
+
+
 def _ultimo_ingresso(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any],
                      bk: Optional[Book], stake: float, last_entry_at: float) -> Decision:
     """29/09 (piano Mike M2.4, decisione 6 dell'utente): l'ULTIMO INGRESSO.
@@ -3270,10 +3276,13 @@ def _ultimo_ingresso(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any],
     finestra, che e' proprio questo segno) e all'abbinamento appoggia la banca a
     2 tick sotto (``_after_entry_fill``), che resta fino al fischio. Si valuta
     UNA volta: una gamba nata dopo il segno (l'ultimo ingresso stesso, o una
-    green) dice che e' gia' stato valutato; un controllo che non passa porta in
-    HOLD (nessun ingresso fino al fischio). Prezzi non vivi o mercato sospeso NON
-    sono una valutazione: si aspetta (una sospensione non e' una rinuncia, 15/09).
-    Il veto sulla P calibrata blocca l'ultimo ingresso come prima."""
+    green) dice che e' gia' stato valutato. 30/09 (decisione dell'utente): un
+    controllo che non passa e' ATTESA (si resta in WATCH e si riprova a ogni giro
+    fino al fischio: pausa dopo un giro chiuso, libro assente, spread, prezzo
+    fuori banda, liquidita', prezzi non vivi, mercato sospeso); porta in HOLD
+    (nessun ingresso fino al fischio) solo un controllo di sostanza: massimo
+    cicli, tetto di liability della partita, mercato chiuso, veto sulla P
+    calibrata Under 3.5 (che blocca l'ultimo ingresso come prima)."""
     if any(float(l.placed_at or 0.0) >= last_entry_at for l in ctx.legs):
         return Decision("HOLD", [], "ultimo ingresso gia' valutato: nessun altro ingresso "
                                     "fino al fischio")
@@ -3282,6 +3291,13 @@ def _ultimo_ingresso(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any],
     if bk is not None and price_ok(bk.best_back) and not operabile(bk) and riaprira(bk):
         return Decision("WATCH", [], "ultimo ingresso: mercato %s, aspetto" % stato_mercato(bk))
     why = _entry_guard(ctx, snap, dict(params, pre_last_entry_min=0))
+    if bk is not None and stato_mercato(bk) == STATO_CHIUSO:
+        why = why or "mercato chiuso"      # chiuso non riapre: si rinuncia (15/09)
+    elif why and why not in _ULTIMO_INGRESSO_RINUNCIA:
+        # 30/09 (decisione dell'utente, "riprova fino al fischio"): la pausa dopo
+        # un giro chiuso e i controlli momentanei (libro, spread, prezzo fuori
+        # banda, liquidita') sono ATTESA: si riprova al giro dopo, fino al fischio.
+        return Decision("WATCH", [], "ultimo ingresso: %s: riprovo al prossimo giro" % why)
     if why:
         return Decision("HOLD", [], "ultimo ingresso: %s: nessun ingresso fino al fischio" % why)
     if veto_u35_acceso(params) and isinstance(ctx.veto_u35, dict):

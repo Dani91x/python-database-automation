@@ -157,11 +157,16 @@ def test_m2_4_piatto_al_segno_entra_e_appoggia_subito_la_banca():
 def test_m2_4_ultimo_ingresso_passa_dai_controlli_d_ingresso():
     ctx, p = _piatto_prima_del_segno()
     d = E.decide(ctx, snap(KO - 9 * 60, u35=book(1.50, bl=1.60)), p)     # spread 10 tick
-    assert _posti(d) == [] and d.state == "HOLD" and "spread" in d.reason
+    assert _posti(d) == [] and "spread" in d.reason
+    # 30/09 (decisione dell'utente, "riprova fino al fischio"): un controllo
+    # momentaneo che non passa e' ATTESA, non rinuncia; si riprova al giro dopo
+    # (prima: HOLD fino al fischio). Test dedicato:
+    # test_mike_ultimo_ingresso_2026_09_30.py
+    assert d.state == "WATCH"
     E.apply_decision(ctx, d, KO - 9 * 60)
-    # valutato UNA volta: anche con un book buono dopo, nessun ingresso
     d2 = E.decide(ctx, snap(KO - 8 * 60, u35=book(1.50)), p)
-    assert _posti(d2) == [] and d2.state == "HOLD"
+    assert d2.state == "PRE_ENTRY_PENDING"
+    assert _posti(d2) == [("under_entry", "back", 1.50, 20.0, "LAPSE")]
 
 
 def test_m2_4_ultimo_ingresso_non_abbinato_non_si_rifa():
