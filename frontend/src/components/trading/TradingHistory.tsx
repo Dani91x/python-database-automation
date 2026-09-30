@@ -115,7 +115,7 @@ export function TradingHistory({
                     Giornata operativa = fuso Europe/Rome · oggi <b className="text-slate-300">{dayLabel(todayDay)}</b> ·
                     {attributionOf(variant) === 'placed'
                         ? ' P&L realizzato = posizioni PIAZZATE nel giorno (chiusure incluse), anche se si regolano dopo'
-                        : ' P&L realizzato = trade REGOLATI nel giorno (chiusure incluse)'}
+                        : ' P&L realizzato = posizioni REGOLATE nel giorno (chiusure incluse), come in «Posizioni chiuse»'}
                 </span>
                 <Button variant="ghost" size="sm" className="ml-auto h-7 text-xs" onClick={() => setManualRefresh((n) => n + 1)} disabled={loading}>
                     <RefreshCw className={`w-3.5 h-3.5 mr-1 ${loading ? 'animate-spin' : ''}`} />Aggiorna

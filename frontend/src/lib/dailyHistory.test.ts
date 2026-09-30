@@ -417,7 +417,8 @@ describe('attributionOf / summarizeDayTrades (M-18 / H-11)', () => {
 
     it('Omega e Mike attribuiscono per PIAZZAMENTO, Safe per REGOLAZIONE', () => {
         expect(attributionOf('omega')).toBe('placed');
-        expect(attributionOf('mike')).toBe('placed');
+        // 29/09 (piano Mike M8.10, difetto D10): Mike per REGOLAMENTO, come «Posizioni chiuse»
+        expect(attributionOf('mike')).toBe('settled');
         expect(attributionOf('safe')).toBe('placed');   // safe_strategy_bot_v2: giorno di piazzamento
     });
 

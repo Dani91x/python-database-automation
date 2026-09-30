@@ -361,6 +361,7 @@ export function RigaOperazione({ o, testId = 'cr-op', nomeSelezioneRisolto = nul
                 }}
                 testId={`${testId}-chiudi`}
                 prezzoAlClic={ch ? () => prezzoAlClic(ch, Date.now()) : undefined}
+                stimaOra={ch?.bloccabile ?? null}
             />
             {o.quale && (
                 <span className="text-[9px] text-white/30 uppercase"

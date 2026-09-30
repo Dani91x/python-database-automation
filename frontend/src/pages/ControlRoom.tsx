@@ -1517,6 +1517,7 @@ function RigaPosizioneOrfana({ p }: {
                                 }}
                                 testId="cr-chiudi" variante="orfana"
                                 prezzoAlClic={() => prezzoAlClic(ch, Date.now())}
+                                stimaOra={ch.bloccabile}
                             />
                         </>
                     )}

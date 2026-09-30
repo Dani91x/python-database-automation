@@ -15,9 +15,16 @@
 //     `title` = il motivo (D3, 24/09: i bot tennis ora si chiudono);
 //   · dopo il clic → «richiesta inviata / presa in carico / eseguita /
 //     rifiutata: motivo / esito ignoto» accanto al bottone.
+//
+// 30/09 (decisione dell'utente, difetto D5): per MIKE «un clic in paper,
+// conferma in live». In PAPER il primo clic chiude; in LIVE il primo clic
+// ARMA (compare «Conferma»: soldi veri, con la stima di chiusura se la scheda
+// la conosce) e solo la conferma manda la richiesta. La richiesta e' la stessa
+// di prima. Stesso gesto di `CashOutPartita` (primo clic arma, secondo manda).
 // ============================================================================
 import { createContext, useContext, useState } from 'react';
 import { BOT_LABEL } from '@/lib/controlRoom';
+import { fmtMoney } from '@/lib/format';
 import {
     chiudibile, cosaFaIlClic, faseMostrata, inCorso, TESTO_FASE,
     type RigaDaChiudere, type StatoChiusuraRiga, type FaseChiusura,
@@ -62,7 +69,10 @@ const CLS_BOTTONE: Record<'riga' | 'orfana', string> = {
         + 'hover:text-white hover:border-emerald-500/50 disabled:opacity-40 disabled:cursor-not-allowed',
 };
 
-export function BottoneChiudiRiga({ riga, testId = 'cr-op-chiudi', variante = 'riga', prezzoAlClic }: {
+/** Bot che in LIVE chiedono la conferma prima di piazzare la chiusura (30/09, D5). */
+const BOT_CON_CONFERMA_LIVE: ReadonlySet<Bot> = new Set<Bot>(['mike']);
+
+export function BottoneChiudiRiga({ riga, testId = 'cr-op-chiudi', variante = 'riga', prezzoAlClic, stimaOra }: {
     riga: RigaDaChiudere;
     testId?: string;
     variante?: 'riga' | 'orfana';
@@ -72,9 +82,13 @@ export function BottoneChiudiRiga({ riga, testId = 'cr-op-chiudi', variante = 'r
      * l'abbinamento, MAI nel payload della richiesta.
      */
     prezzoAlClic?: () => { prezzo: number | null; contesto: ContestoPrezzoVisto };
+    /** 30/09 - P&L stimato chiudendo ora, se la scheda lo conosce: solo per la
+     *  frase della conferma live, MAI nel payload della richiesta. */
+    stimaOra?: number | null;
 }) {
     const api = useContext(ChiusuraRigaContext);
     const [inVolo, setInVolo] = useState(false);
+    const [armato, setArmato] = useState(false);
     if (!api) return null;
     const c = chiudibile(riga);
     if (c == null) return null;
@@ -89,8 +103,36 @@ export function BottoneChiudiRiga({ riga, testId = 'cr-op-chiudi', variante = 'r
     const fase = s ? faseMostrata(s) : null;
     // B17 (25/09) — dopo la richiesta, l'ORDINE: a che prezzo e quanto abbinato
     const es = api.esito?.(riga.bot, riga.id) ?? null;
+    // FAIL-CLOSED: una modalita' non paper (live o ignota) chiede la conferma.
+    const chiedeConferma = BOT_CON_CONFERMA_LIVE.has(riga.bot) && riga.modalita !== 'paper';
+    const manda = () => {
+        setArmato(false);
+        setInVolo(true);
+        const visto = prezzoAlClic?.();
+        void api.chiudi(visto ? { ...riga, prezzoVisto: visto.prezzo, contestoVisto: visto.contesto } : riga)
+            .finally(() => setInVolo(false));
+    };
     return (
         <span className="inline-flex items-baseline gap-1" data-testid={`${testId}-box`}>
+            {armato && acceso ? (
+                <>
+                    <button
+                        type="button"
+                        className={`${CLS_BOTTONE[variante]} border-orange-500/60 text-orange-300`}
+                        title="conferma la chiusura: sono soldi veri"
+                        data-testid={`${testId}-conferma`}
+                        data-bot={riga.bot}
+                        onClick={manda}
+                    >Conferma</button>
+                    <span className="text-[9px] text-orange-300" data-testid={`${testId}-armato`}>
+                        Live, soldi veri: confermi la chiusura?
+                        {stimaOra != null ? ` Stima chiudendo ora ${fmtMoney(stimaOra, { signed: true })}.` : ''}
+                        {' '}
+                        <button type="button" className="underline" onClick={() => setArmato(false)}
+                            data-testid={`${testId}-annulla`}>annulla</button>
+                    </span>
+                </>
+            ) : (
             <button
                 type="button"
                 className={CLS_BOTTONE[variante]}
@@ -102,12 +144,11 @@ export function BottoneChiudiRiga({ riga, testId = 'cr-op-chiudi', variante = 'r
                 data-motivo={c.ok ? undefined : c.motivo}
                 onClick={() => {
                     if (!acceso) return;
-                    setInVolo(true);
-                    const visto = prezzoAlClic?.();
-                    void api.chiudi(visto ? { ...riga, prezzoVisto: visto.prezzo, contestoVisto: visto.contesto } : riga)
-                        .finally(() => setInVolo(false));
+                    if (chiedeConferma) { setArmato(true); return; }
+                    manda();
                 }}
             >Chiudi</button>
+            )}
             {fase && (
                 <span className={`text-[9px] ${CLS_FASE[fase]}`} data-testid={`${testId}-esito`}
                     data-fase={fase} title={s?.motivo ?? undefined}>

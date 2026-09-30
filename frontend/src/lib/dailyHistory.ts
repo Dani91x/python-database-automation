@@ -525,14 +525,17 @@ export function historyWindow(
 export type DayAttribution = 'placed' | 'settled';
 
 /**
- * Giornata operativa = giorno di PIAZZAMENTO per TUTTI E TRE i bot.
+ * Giornata operativa = giorno di PIAZZAMENTO per Omega e Safe; per Mike (dal
+ * 29/09, M8.10) il giorno del REGOLAMENTO.
  * (Il commento storico diceva «Safe per regolazione»: non è più vero dal
  * `safe_strategy_bot_v2.sql`, e la funzione ha sempre ritornato 'placed'.)
  */
 export function attributionOf(variant: HistoryVariant): DayAttribution {
-    // Giornata operativa = giorno di PIAZZAMENTO per TUTTI i bot (Omega §14,
-    // Safe `safe_strategy_bot_v2.sql`, Mike `mike_history_v2.sql`)
-    void variant;
+    // Giornata operativa = giorno di PIAZZAMENTO per Omega (§14) e Safe
+    // (`safe_strategy_bot_v2.sql`). 29/09 (piano Mike M8.10, difetto D10): Mike
+    // conta il giorno del REGOLAMENTO, come «Posizioni chiuse» - va insieme a
+    // `migrations/mike_storico_giorno_regolamento_2026-09-29.sql`.
+    if (variant === 'mike') return 'settled';
     return 'placed';
 }
 

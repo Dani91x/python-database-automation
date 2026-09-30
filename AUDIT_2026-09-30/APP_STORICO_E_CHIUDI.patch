@@ -1,0 +1,443 @@
+diff --git a/frontend/src/components/controlroom/BottoneChiudiMikeConferma.test.tsx b/frontend/src/components/controlroom/BottoneChiudiMikeConferma.test.tsx
+new file mode 100644
+index 0000000..9b6fbf2
+--- /dev/null
++++ b/frontend/src/components/controlroom/BottoneChiudiMikeConferma.test.tsx
+@@ -0,0 +1,88 @@
++// ============================================================================
++// BottoneChiudiMikeConferma.test.tsx - 30/09, difetto D5, decisione dell'utente:
++// «Un clic in paper, conferma in live» per il «Chiudi» di Mike.
++//   - PAPER: il primo clic manda la richiesta.
++//   - LIVE: il primo clic NON manda nulla, arma («Conferma»); solo la conferma
++//     manda; «annulla» disarma senza inviare. La richiesta e' identica.
++//   - Gli altri bot restano a un clic (nessun cambiamento fuori perimetro).
++// Il finto dell'API ha la forma di `ChiusuraRigaApi` (stessa del vero).
++// ============================================================================
++import { describe, it, expect, vi } from 'vitest';
++import { render, screen, fireEvent } from '@testing-library/react';
++import { BottoneChiudiRiga, ChiusuraRigaContext, type ChiusuraRigaApi } from './BottoneChiudiRiga';
++import type { RigaDaChiudere } from './chiudiRiga';
++
++function riga(over: Partial<RigaDaChiudere> = {}): RigaDaChiudere {
++    return {
++        bot: 'mike', id: 801, eventId: 'E2', marketId: '1.9', modalita: 'paper', stato: 'open',
++        chiudeId: null, regolata: false, ...over,
++    };
++}
++
++function monta(r: RigaDaChiudere, stimaOra?: number | null) {
++    const api: ChiusuraRigaApi = {
++        chiudi: vi.fn(async () => undefined),
++        stato: vi.fn(() => null),
++    };
++    render(
++        <ChiusuraRigaContext.Provider value={api}>
++            <BottoneChiudiRiga riga={r} stimaOra={stimaOra} />
++        </ChiusuraRigaContext.Provider>,
++    );
++    return api;
++}
++
++describe('D5 - Chiudi di Mike: un clic in paper, conferma in live', () => {
++    it('PAPER: il primo clic chiude, senza conferma', () => {
++        const api = monta(riga({ modalita: 'paper' }));
++        fireEvent.click(screen.getByTestId('cr-op-chiudi'));
++        expect(api.chiudi).toHaveBeenCalledTimes(1);
++        expect(screen.queryByTestId('cr-op-chiudi-conferma')).toBeNull();
++    });
++
++    it('LIVE: il primo clic NON manda, chiede conferma con la stima', () => {
++        const api = monta(riga({ modalita: 'live' }), 4.75);
++        fireEvent.click(screen.getByTestId('cr-op-chiudi'));
++        expect(api.chiudi).not.toHaveBeenCalled();
++        expect(screen.getByTestId('cr-op-chiudi-conferma')).toBeTruthy();
++        expect(screen.getByTestId('cr-op-chiudi-armato').textContent).toMatch(/soldi veri/);
++        expect(screen.getByTestId('cr-op-chiudi-armato').textContent).toMatch(/4[.,]75/);
++    });
++
++    it('LIVE: la conferma manda la STESSA richiesta di sempre, una volta sola', () => {
++        const r = riga({ modalita: 'live' });
++        const api = monta(r);
++        fireEvent.click(screen.getByTestId('cr-op-chiudi'));
++        fireEvent.click(screen.getByTestId('cr-op-chiudi-conferma'));
++        expect(api.chiudi).toHaveBeenCalledTimes(1);
++        expect(api.chiudi).toHaveBeenCalledWith(r);
++    });
++
++    it('LIVE: annulla disarma senza mandare nulla e il Chiudi torna al primo passaggio', () => {
++        const api = monta(riga({ modalita: 'live' }));
++        fireEvent.click(screen.getByTestId('cr-op-chiudi'));
++        fireEvent.click(screen.getByTestId('cr-op-chiudi-annulla'));
++        expect(api.chiudi).not.toHaveBeenCalled();
++        expect(screen.queryByTestId('cr-op-chiudi-conferma')).toBeNull();
++        fireEvent.click(screen.getByTestId('cr-op-chiudi'));
++        expect(api.chiudi).not.toHaveBeenCalled();
++    });
++
++    it('modalita\' IGNOTA (null): bottone spento, nessuna richiesta, nessuna conferma armata', () => {
++        // fail-closed: lo blocca `chiudibile` a monte; se non lo facesse, la conferma
++        // scatterebbe comunque (`modalita !== 'paper'`). Vedi la falsificazione nel referto.
++        const api = monta(riga({ modalita: null }));
++        const b = screen.getByTestId('cr-op-chiudi');
++        expect(b).toBeDisabled();
++        fireEvent.click(b);
++        expect(api.chiudi).not.toHaveBeenCalled();
++        expect(screen.queryByTestId('cr-op-chiudi-conferma')).toBeNull();
++        expect(screen.queryByTestId('cr-op-chiudi-armato')).toBeNull();
++    });
++
++    it('gli altri bot non cambiano: Omega live chiude ancora al primo clic', () => {
++        const api = monta(riga({ bot: 'omega', modalita: 'live' }));
++        fireEvent.click(screen.getByTestId('cr-op-chiudi'));
++        expect(api.chiudi).toHaveBeenCalledTimes(1);
++    });
++});
+diff --git a/frontend/src/components/controlroom/BottoneChiudiRiga.tsx b/frontend/src/components/controlroom/BottoneChiudiRiga.tsx
+index 4d4743c..83d61b6 100644
+--- a/frontend/src/components/controlroom/BottoneChiudiRiga.tsx
++++ b/frontend/src/components/controlroom/BottoneChiudiRiga.tsx
+@@ -15,9 +15,16 @@
+ //     `title` = il motivo (D3, 24/09: i bot tennis ora si chiudono);
+ //   · dopo il clic → «richiesta inviata / presa in carico / eseguita /
+ //     rifiutata: motivo / esito ignoto» accanto al bottone.
++//
++// 30/09 (decisione dell'utente, difetto D5): per MIKE «un clic in paper,
++// conferma in live». In PAPER il primo clic chiude; in LIVE il primo clic
++// ARMA (compare «Conferma»: soldi veri, con la stima di chiusura se la scheda
++// la conosce) e solo la conferma manda la richiesta. La richiesta e' la stessa
++// di prima. Stesso gesto di `CashOutPartita` (primo clic arma, secondo manda).
+ // ============================================================================
+ import { createContext, useContext, useState } from 'react';
+ import { BOT_LABEL } from '@/lib/controlRoom';
++import { fmtMoney } from '@/lib/format';
+ import {
+     chiudibile, cosaFaIlClic, faseMostrata, inCorso, TESTO_FASE,
+     type RigaDaChiudere, type StatoChiusuraRiga, type FaseChiusura,
+@@ -62,7 +69,10 @@ const CLS_BOTTONE: Record<'riga' | 'orfana', string> = {
+         + 'hover:text-white hover:border-emerald-500/50 disabled:opacity-40 disabled:cursor-not-allowed',
+ };
+ 
+-export function BottoneChiudiRiga({ riga, testId = 'cr-op-chiudi', variante = 'riga', prezzoAlClic }: {
++/** Bot che in LIVE chiedono la conferma prima di piazzare la chiusura (30/09, D5). */
++const BOT_CON_CONFERMA_LIVE: ReadonlySet<Bot> = new Set<Bot>(['mike']);
++
++export function BottoneChiudiRiga({ riga, testId = 'cr-op-chiudi', variante = 'riga', prezzoAlClic, stimaOra }: {
+     riga: RigaDaChiudere;
+     testId?: string;
+     variante?: 'riga' | 'orfana';
+@@ -72,9 +82,13 @@ export function BottoneChiudiRiga({ riga, testId = 'cr-op-chiudi', variante = 'r
+      * l'abbinamento, MAI nel payload della richiesta.
+      */
+     prezzoAlClic?: () => { prezzo: number | null; contesto: ContestoPrezzoVisto };
++    /** 30/09 - P&L stimato chiudendo ora, se la scheda lo conosce: solo per la
++     *  frase della conferma live, MAI nel payload della richiesta. */
++    stimaOra?: number | null;
+ }) {
+     const api = useContext(ChiusuraRigaContext);
+     const [inVolo, setInVolo] = useState(false);
++    const [armato, setArmato] = useState(false);
+     if (!api) return null;
+     const c = chiudibile(riga);
+     if (c == null) return null;
+@@ -89,8 +103,36 @@ export function BottoneChiudiRiga({ riga, testId = 'cr-op-chiudi', variante = 'r
+     const fase = s ? faseMostrata(s) : null;
+     // B17 (25/09) — dopo la richiesta, l'ORDINE: a che prezzo e quanto abbinato
+     const es = api.esito?.(riga.bot, riga.id) ?? null;
++    // FAIL-CLOSED: una modalita' non paper (live o ignota) chiede la conferma.
++    const chiedeConferma = BOT_CON_CONFERMA_LIVE.has(riga.bot) && riga.modalita !== 'paper';
++    const manda = () => {
++        setArmato(false);
++        setInVolo(true);
++        const visto = prezzoAlClic?.();
++        void api.chiudi(visto ? { ...riga, prezzoVisto: visto.prezzo, contestoVisto: visto.contesto } : riga)
++            .finally(() => setInVolo(false));
++    };
+     return (
+         <span className="inline-flex items-baseline gap-1" data-testid={`${testId}-box`}>
++            {armato && acceso ? (
++                <>
++                    <button
++                        type="button"
++                        className={`${CLS_BOTTONE[variante]} border-orange-500/60 text-orange-300`}
++                        title="conferma la chiusura: sono soldi veri"
++                        data-testid={`${testId}-conferma`}
++                        data-bot={riga.bot}
++                        onClick={manda}
++                    >Conferma</button>
++                    <span className="text-[9px] text-orange-300" data-testid={`${testId}-armato`}>
++                        Live, soldi veri: confermi la chiusura?
++                        {stimaOra != null ? ` Stima chiudendo ora ${fmtMoney(stimaOra, { signed: true })}.` : ''}
++                        {' '}
++                        <button type="button" className="underline" onClick={() => setArmato(false)}
++                            data-testid={`${testId}-annulla`}>annulla</button>
++                    </span>
++                </>
++            ) : (
+             <button
+                 type="button"
+                 className={CLS_BOTTONE[variante]}
+@@ -102,12 +144,11 @@ export function BottoneChiudiRiga({ riga, testId = 'cr-op-chiudi', variante = 'r
+                 data-motivo={c.ok ? undefined : c.motivo}
+                 onClick={() => {
+                     if (!acceso) return;
+-                    setInVolo(true);
+-                    const visto = prezzoAlClic?.();
+-                    void api.chiudi(visto ? { ...riga, prezzoVisto: visto.prezzo, contestoVisto: visto.contesto } : riga)
+-                        .finally(() => setInVolo(false));
++                    if (chiedeConferma) { setArmato(true); return; }
++                    manda();
+                 }}
+             >Chiudi</button>
++            )}
+             {fase && (
+                 <span className={`text-[9px] ${CLS_FASE[fase]}`} data-testid={`${testId}-esito`}
+                     data-fase={fase} title={s?.motivo ?? undefined}>
+diff --git a/frontend/src/components/controlroom/DettaglioRigaView.tsx b/frontend/src/components/controlroom/DettaglioRigaView.tsx
+index f909bbf..8455332 100644
+--- a/frontend/src/components/controlroom/DettaglioRigaView.tsx
++++ b/frontend/src/components/controlroom/DettaglioRigaView.tsx
+@@ -361,6 +361,7 @@ export function RigaOperazione({ o, testId = 'cr-op', nomeSelezioneRisolto = nul
+                 }}
+                 testId={`${testId}-chiudi`}
+                 prezzoAlClic={ch ? () => prezzoAlClic(ch, Date.now()) : undefined}
++                stimaOra={ch?.bloccabile ?? null}
+             />
+             {o.quale && (
+                 <span className="text-[9px] text-white/30 uppercase"
+diff --git a/frontend/src/components/trading/StoricoMikeGiornoRegolamento.test.tsx b/frontend/src/components/trading/StoricoMikeGiornoRegolamento.test.tsx
+new file mode 100644
+index 0000000..4af50cd
+--- /dev/null
++++ b/frontend/src/components/trading/StoricoMikeGiornoRegolamento.test.tsx
+@@ -0,0 +1,43 @@
++// ============================================================================
++// StoricoMikeGiornoRegolamento.test.tsx - piano Mike 29/09, M8.10 (difetto D10):
++// lo Storico di Mike attribuisce una posizione al giorno del REGOLAMENTO, come
++// «Posizioni chiuse». Omega e Safe restano al giorno di piazzamento.
++// Righe finte con le chiavi di `trading_day_trades` (to_jsonb(o.*) + placed_in_day,
++// settled_in_day, closes, total_pnl).
++// ============================================================================
++import { describe, it, expect } from 'vitest';
++import { render, screen } from '@testing-library/react';
++import { attributionOf, summarizeDayTrades, type DayTrade } from '@/lib/dailyHistory';
++import { TradingHistory } from './TradingHistory';
++
++function riga(over: Record<string, unknown>): DayTrade {
++    return {
++        id: 1, event_id: 'e1', event_name: 'Roma v Lazio', side: 'back', mode: 'paper',
++        price: 1.5, size: 10, liability: 10, status: 'won', pnl: 4.75, bet_id: 'b1',
++        placed_at: '2026-09-28T21:30:00Z', settled_at: '2026-09-28T23:15:00Z',
++        meta: null, closes: [], total_pnl: 4.75, placed_in_day: false, settled_in_day: true, ...over,
++    } as never;
++}
++
++describe('M8.10 - Mike per giorno di regolamento', () => {
++    it('attribuzione: Mike settled, Omega e Safe invariati', () => {
++        expect(attributionOf('mike')).toBe('settled');
++        expect(attributionOf('omega')).toBe('placed');
++        expect(attributionOf('safe')).toBe('placed');
++    });
++
++    it('la posizione piazzata ieri sera e regolata oggi conta OGGI nello storico di Mike', () => {
++        const ieriOggi = riga({ id: 1 });
++        const oggiDomani = riga({ id: 2, pnl: -10, total_pnl: -10, status: 'open', placed_in_day: true, settled_in_day: false, settled_at: null });
++        const s = summarizeDayTrades([ieriOggi, oggiDomani], attributionOf('mike'));
++        expect(s.pnl).toBeCloseTo(4.75);
++        expect(s.settled).toBe(1);
++        // ancora aperta, piazzata oggi: resta visibile fra le aperte di oggi
++        expect(s.open).toBe(1);
++    });
++
++    it('la pagina dice il criterio: posizioni REGOLATE nel giorno', async () => {
++        render(<TradingHistory variant="mike" fetchDaily={async () => []} fetchDayTrades={async () => []} today="2026-09-29" />);
++        expect(await screen.findByText(/P&L realizzato = posizioni REGOLATE nel giorno/)).toBeTruthy();
++    });
++});
+diff --git a/frontend/src/components/trading/TradingHistory.tsx b/frontend/src/components/trading/TradingHistory.tsx
+index 79e50d1..0cc2886 100644
+--- a/frontend/src/components/trading/TradingHistory.tsx
++++ b/frontend/src/components/trading/TradingHistory.tsx
+@@ -115,7 +115,7 @@ export function TradingHistory({
+                     Giornata operativa = fuso Europe/Rome · oggi <b className="text-slate-300">{dayLabel(todayDay)}</b> ·
+                     {attributionOf(variant) === 'placed'
+                         ? ' P&L realizzato = posizioni PIAZZATE nel giorno (chiusure incluse), anche se si regolano dopo'
+-                        : ' P&L realizzato = trade REGOLATI nel giorno (chiusure incluse)'}
++                        : ' P&L realizzato = posizioni REGOLATE nel giorno (chiusure incluse), come in «Posizioni chiuse»'}
+                 </span>
+                 <Button variant="ghost" size="sm" className="ml-auto h-7 text-xs" onClick={() => setManualRefresh((n) => n + 1)} disabled={loading}>
+                     <RefreshCw className={`w-3.5 h-3.5 mr-1 ${loading ? 'animate-spin' : ''}`} />Aggiorna
+diff --git a/frontend/src/lib/dailyHistory.test.ts b/frontend/src/lib/dailyHistory.test.ts
+index c703288..cb31aa4 100644
+--- a/frontend/src/lib/dailyHistory.test.ts
++++ b/frontend/src/lib/dailyHistory.test.ts
+@@ -417,7 +417,8 @@ describe('attributionOf / summarizeDayTrades (M-18 / H-11)', () => {
+ 
+     it('Omega e Mike attribuiscono per PIAZZAMENTO, Safe per REGOLAZIONE', () => {
+         expect(attributionOf('omega')).toBe('placed');
+-        expect(attributionOf('mike')).toBe('placed');
++        // 29/09 (piano Mike M8.10, difetto D10): Mike per REGOLAMENTO, come «Posizioni chiuse»
++        expect(attributionOf('mike')).toBe('settled');
+         expect(attributionOf('safe')).toBe('placed');   // safe_strategy_bot_v2: giorno di piazzamento
+     });
+ 
+diff --git a/frontend/src/lib/dailyHistory.ts b/frontend/src/lib/dailyHistory.ts
+index 40daf7c..27ffffb 100644
+--- a/frontend/src/lib/dailyHistory.ts
++++ b/frontend/src/lib/dailyHistory.ts
+@@ -525,14 +525,17 @@ export function historyWindow(
+ export type DayAttribution = 'placed' | 'settled';
+ 
+ /**
+- * Giornata operativa = giorno di PIAZZAMENTO per TUTTI E TRE i bot.
++ * Giornata operativa = giorno di PIAZZAMENTO per Omega e Safe; per Mike (dal
++ * 29/09, M8.10) il giorno del REGOLAMENTO.
+  * (Il commento storico diceva «Safe per regolazione»: non è più vero dal
+  * `safe_strategy_bot_v2.sql`, e la funzione ha sempre ritornato 'placed'.)
+  */
+ export function attributionOf(variant: HistoryVariant): DayAttribution {
+-    // Giornata operativa = giorno di PIAZZAMENTO per TUTTI i bot (Omega §14,
+-    // Safe `safe_strategy_bot_v2.sql`, Mike `mike_history_v2.sql`)
+-    void variant;
++    // Giornata operativa = giorno di PIAZZAMENTO per Omega (§14) e Safe
++    // (`safe_strategy_bot_v2.sql`). 29/09 (piano Mike M8.10, difetto D10): Mike
++    // conta il giorno del REGOLAMENTO, come «Posizioni chiuse» - va insieme a
++    // `migrations/mike_storico_giorno_regolamento_2026-09-29.sql`.
++    if (variant === 'mike') return 'settled';
+     return 'placed';
+ }
+ 
+diff --git a/frontend/src/pages/ControlRoom.tsx b/frontend/src/pages/ControlRoom.tsx
+index 61b3974..626056a 100644
+--- a/frontend/src/pages/ControlRoom.tsx
++++ b/frontend/src/pages/ControlRoom.tsx
+@@ -1517,6 +1517,7 @@ function RigaPosizioneOrfana({ p }: {
+                                 }}
+                                 testId="cr-chiudi" variante="orfana"
+                                 prezzoAlClic={() => prezzoAlClic(ch, Date.now())}
++                                stimaOra={ch.bloccabile}
+                             />
+                         </>
+                     )}
+diff --git a/migrations/mike_storico_giorno_regolamento_2026-09-29.sql b/migrations/mike_storico_giorno_regolamento_2026-09-29.sql
+new file mode 100644
+index 0000000..61e0ce9
+--- /dev/null
++++ b/migrations/mike_storico_giorno_regolamento_2026-09-29.sql
+@@ -0,0 +1,117 @@
++-- ============================================================================
++-- MIKE - lo STORICO conta il giorno del REGOLAMENTO (piano Mike 29/09, M8.10)
++-- ============================================================================
++-- DIFETTO D10: «Posizioni chiuse» (Control Room) attribuisce una posizione al
++-- giorno in cui e' stata REGOLATA; lo Storico di Mike al giorno in cui e' stata
++-- PIAZZATA. Una partita pre-partita delle 23:30 regolata alle 01:15 finiva in due
++-- giorni diversi nelle due pagine. Decisione dell'utente: «uniformare»; criterio
++-- scelto dal coordinatore: il giorno del REGOLAMENTO, come gia' fa la Control Room.
++--
++-- COSA CAMBIA: SOLO l'ultimo argomento con cui le due RPC di Mike chiamano il
++-- motore comune (`trading_daily_history` / `trading_day_trades`): 'placed' ->
++-- 'settled'. Il corpo e' quello VIVO di `mike_storico_per_modalita_2026-09-14.sql`
++-- con la correzione dell'alias di `mike_storico_per_modalita_fix_alias_2026-09-14.sql`
++-- (`o.mode` per `trading_day_trades`). Il motore comune supporta gia' 'settled'
++-- (e' il suo valore di serie: `storico_esito_a_zero_2026-09-26.sql` riga 34,
++-- `mike_history_v2.sql` riga 274). Omega e Safe NON cambiano.
++--
++-- Stesse firme (date,date,text) e (date,text), stessi permessi. Idempotente
++-- (CREATE OR REPLACE). Nessuna modifica ai dati.
++--
++-- DA SAPERE: la pagina «Storico calcio» (`lib/storicoSport.ts`) somma per giorno
++-- Omega, Safe e Mike: dopo questa migrazione Mike vi entra per regolamento, gli
++-- altri due per piazzamento (differenza solo sulle posizioni a cavallo della
++-- mezzanotte). La pagina di Mike va aggiornata insieme (patch MIKE_P6_4: il testo
++-- dello Storico e il dettaglio del giorno usano 'settled' per Mike).
++--
++-- VERIFICA dopo l'applicazione (devono rispondere, non sollevare):
++--   SELECT jsonb_array_length(public.get_mike_daily(NULL, NULL, 'paper'));
++--   SELECT jsonb_array_length(public.get_mike_day_trades(current_date, 'paper'));
++-- Confronto col prima (stessa modalita', ultimi 30 giorni): il TOTALE del P&L non
++-- cambia, cambia solo il giorno a cui va:
++--   SELECT sum((r->>'pnl_realized')::numeric)
++--     FROM jsonb_array_elements(public.get_mike_daily(current_date - 30, current_date, 'paper')) r;
++-- ============================================================================
++
++CREATE OR REPLACE FUNCTION public.get_mike_daily(
++    p_from date DEFAULT NULL,
++    p_to   date DEFAULT NULL,
++    p_mode text DEFAULT NULL
++) RETURNS jsonb
++LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public, pg_temp
++AS $$
++DECLARE
++    v_today  date := (now() AT TIME ZONE 'Europe/Rome')::date;
++    v_mode   text := nullif(btrim(lower(coalesce(p_mode, ''))), '');
++    v_filter text;
++    v_rows   jsonb;
++    v_out    jsonb := '[]'::jsonb;
++    v_row    jsonb;
++BEGIN
++    IF NOT public.betfair_live_is_owner() THEN
++        RAISE EXCEPTION 'non autorizzato (owner-only)';
++    END IF;
++    IF v_mode IS NULL THEN
++        SELECT lower(btrim(mode)) INTO v_mode FROM public.mike_control LIMIT 1;
++        v_mode := coalesce(v_mode, 'paper');
++    END IF;
++    IF v_mode NOT IN ('paper', 'live') THEN
++        RAISE EXCEPTION 'modalità non valida: % (ammesse: paper, live)', p_mode;
++    END IF;
++    v_filter := format('t.mode = %L', v_mode);
++
++    v_rows := public.trading_daily_history(
++        'mike_trades',
++        $e$coalesce(t.role, t.strategy)$e$,
++        $e$'calcio'$e$,
++        v_filter,
++        coalesce(p_from, coalesce(p_to, v_today) - 90),
++        coalesce(p_to, v_today),
++        NULL,
++        -- M8.10 (29/09): giorno del REGOLAMENTO, come «Posizioni chiuse»
++        'settled');
++
++    FOR v_row IN SELECT * FROM jsonb_array_elements(v_rows) LOOP
++        v_out := v_out || jsonb_build_array(
++            v_row - 'goal' || jsonb_build_object('goal', NULL, 'mode', v_mode));
++    END LOOP;
++    RETURN v_out;
++END;
++$$;
++
++REVOKE ALL    ON FUNCTION public.get_mike_daily(date, date, text) FROM public, anon;
++GRANT EXECUTE ON FUNCTION public.get_mike_daily(date, date, text) TO authenticated, service_role;
++
++
++CREATE OR REPLACE FUNCTION public.get_mike_day_trades(
++    p_day  date,
++    p_mode text DEFAULT NULL
++) RETURNS jsonb
++LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public, pg_temp
++AS $$
++DECLARE
++    v_mode text := nullif(btrim(lower(coalesce(p_mode, ''))), '');
++BEGIN
++    IF NOT public.betfair_live_is_owner() THEN
++        RAISE EXCEPTION 'non autorizzato (owner-only)';
++    END IF;
++    IF v_mode IS NULL THEN
++        SELECT lower(btrim(mode)) INTO v_mode FROM public.mike_control LIMIT 1;
++        v_mode := coalesce(v_mode, 'paper');
++    END IF;
++    IF v_mode NOT IN ('paper', 'live') THEN
++        RAISE EXCEPTION 'modalità non valida: % (ammesse: paper, live)', p_mode;
++    END IF;
++    -- ALIAS `o` (aperture di `trading_day_trades`), vedi il fix del 14/09.
++    -- M8.10 (29/09): 'settled' = anche le posizioni REGOLATE nel giorno.
++    RETURN public.trading_day_trades('mike_trades', format('o.mode = %L', v_mode),
++                                     p_day, 'settled');
++END;
++$$;
++
++REVOKE ALL    ON FUNCTION public.get_mike_day_trades(date, text) FROM public, anon;
++GRANT EXECUTE ON FUNCTION public.get_mike_day_trades(date, text) TO authenticated, service_role;
++
++-- Verifica (sola lettura), dopo l'applicazione: le due chiamate devono rispondere, non sollevare.
++--   SELECT jsonb_array_length(public.get_mike_daily(NULL, NULL, 'paper'));
++--   SELECT jsonb_array_length(public.get_mike_day_trades(current_date, 'paper'));
