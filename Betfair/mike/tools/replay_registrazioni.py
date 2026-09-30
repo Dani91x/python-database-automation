@@ -69,10 +69,11 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import sys
 from bisect import bisect_right
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from .. import certificazione as CERT
 from .. import config as C
@@ -186,7 +187,13 @@ SCENARI: Dict[str, Dict[str, Any]] = {
     # l'interruttore delle uscite su AUTOMATICO: le uscite in perdita le esegue
     # il bot, G2 ha un caso (e tace)
     "uscite-automatiche": {"uscite_automatiche": True},
+    # 30/09 (ordine dell'utente 15:40, caso vero 36130526): NON tocca un
+    # parametro. La BANCA AL FISCHIO (``ko_green``) trova il mercato sottile:
+    # il guasto comune `chiusura-abbinata-in-parte` colpisce SOLO lei (40 %
+    # abbinato con la spinta dichiarata, residuo vivo). Controllo KG1.
+    "ko-green-parziale": {},
 }
+SCENARIO_KO_GREEN_PARZIALE = "ko-green-parziale"
 SCENARIO_USCITE_FIRMATE = "uscite-in-perdita-firmate"
 SCENARIO_USCITE_AUTOMATICHE = "uscite-automatiche"
 # dopo quanti secondi di MERCATO dalla decisione l'utente firma la proposta
@@ -1256,6 +1263,56 @@ def _crea_strategia():
     return MikeCert
 
 
+_RE_RIGA_MIKE = re.compile(r"-t(\d+)$")
+
+
+def e_banca_al_fischio(righe: Callable[[], Sequence[Dict[str, Any]]]) -> Callable[[Any], bool]:
+    """30/09 (scenario ``ko-green-parziale``): l'ordine di flumine e' la BANCA AL
+    FISCHIO di Mike? Si legge dalla riga di ``mike_trades`` che lo ha chiesto
+    (colonna ``strategy`` = ruolo della gamba). Sulla CODA il ref dell'ordine e'
+    ``mike-t<id>`` (id della riga); sul CANALE l'ordine porta il ref interno del
+    runner (``awlq<id>``), e la riga si riconosce dalla STESSA domanda: mercato,
+    selezione, lato, prezzo e importo chiesti."""
+    def _ruolo(r: Dict[str, Any]) -> str:
+        return str(r.get("strategy") or r.get("role") or "")
+
+    def _e(ordine: Any) -> bool:
+        note = getattr(ordine, "notes", None) or {}
+        ref = str(note.get("bot_ref") or "")
+        m = _RE_RIGA_MIKE.search(ref)
+        tutte = list(righe() or [])
+        if m:
+            rid = int(m.group(1))
+            for r in tutte:
+                try:
+                    if int(r.get("id")) == rid:
+                        return _ruolo(r) == "ko_green"
+                except (TypeError, ValueError):
+                    continue
+            return False
+        ot = getattr(ordine, "order_type", None)
+        try:
+            prezzo = float(getattr(ot, "price", 0.0) or 0.0)
+            size = float(getattr(ot, "size", 0.0) or 0.0)
+            sel = int(getattr(ordine, "selection_id", 0))
+        except (TypeError, ValueError):
+            return False
+        lato = str(getattr(ordine, "side", "") or "").lower()
+        mid = str(getattr(ordine, "market_id", "") or "")
+        for r in tutte:
+            try:
+                if (_ruolo(r) == "ko_green" and str(r.get("market_id") or "") == mid
+                        and int(r.get("selection_id") or 0) == sel
+                        and str(r.get("side") or "").lower() == lato
+                        and abs(float(r.get("price") or 0.0) - prezzo) < 1e-9
+                        and abs(float(r.get("size") or 0.0) - size) < 0.005):
+                    return True
+            except (TypeError, ValueError):
+                continue
+        return False
+    return _e
+
+
 # ---------------------------------------------------------------------------
 # un evento
 # ---------------------------------------------------------------------------
@@ -1285,7 +1342,8 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                       cashout_dopo_copertura: bool = False,
                       firma_dopo_gol: bool = False,
                       chiusure_perse: bool = False,
-                      firma_ogni_perdita: bool = False) -> CERT.Referto:
+                      firma_ogni_perdita: bool = False,
+                      solo_banca_fischio: bool = False) -> CERT.Referto:
     """Fa rivivere a Mike una partita registrata e ritorna il referto."""
     from flumine import FlumineSimulation
 
@@ -1441,8 +1499,11 @@ def _certifica_evento(event_id: str, *, data_dir: str,
         # contano SOLO dove il guasto ha avuto effetto. Prima le tre chiusure
         # colpite erano banche al fischio SCADUTE (abbinato 0,00) e CP1 contava
         # 12052 casi di una condizione mai accaduta.
+        # 30/09 (ko-green-parziale): il guasto colpisce SOLO la banca al fischio
         guasto_cp = CP.GuastoChiusuraParziale(
-            ruolo=CP.ruolo_da_righe(lambda: strategia.db.trades), spinta_prezzo=True)
+            ruolo=CP.ruolo_da_righe(lambda: strategia.db.trades), spinta_prezzo=True,
+            bersaglio=(e_banca_al_fischio(lambda: strategia.db.trades)
+                       if solo_banca_fischio else None))
         motore.guasto_chiusure = guasto_cp
         strategia.sorveglianza_cp = CP.Sorveglianza(guasto_cp, solo_con_effetto=True)
     E.decide = decide_sorvegliata          # type: ignore[assignment]
@@ -1817,6 +1878,12 @@ SCENARI_DESCRITTI: Dict[str, str] = {
     # (`Betfair/stream/backtest/chiusura_parziale.py`): la prima gamba di
     # chiusura su ogni selezione si abbina al piu' per il 40 %.
     CP.SCENARIO: "come `base`, ma " + CP.DESCRIZIONE,
+    # 30/09 (ordine dell'utente 15:40, caso vero 36130526)
+    SCENARIO_KO_GREEN_PARZIALE: "come `base`, ma la BANCA AL FISCHIO (ko_green, in gioco) "
+                                "trova il mercato sottile: 40 % abbinato nei primi secondi, "
+                                "residuo vivo. Deve restare a mercato fino allo scadere "
+                                "della finestra; poi annullo del residuo e copertura sul "
+                                "rischio residuo (KG1, CP1-CP4)",
     # P4 (29/09, M8.3)
     SCENARIO_FERMO_COPERTURA: "freno d'emergenza acceso per 90 s all'ingresso nella fase "
                               "della copertura: la copertura si ferma senza contare rifiuti "
@@ -2016,6 +2083,12 @@ def causa_non_esercitato(scenario: str, ref: CERT.Referto) -> Optional[str]:
     elif scenario == SCENARIO_USCITE_AUTOMATICHE:
         if zero("G2"):
             return "nessuna uscita in perdita eseguita dal bot: G2 senza un caso"
+    elif scenario == SCENARIO_KO_GREEN_PARZIALE:
+        if not c.get("chiusure_con_effetto"):
+            return ("la banca al fischio non si e' mai abbinata in parte: KG1 senza "
+                    "un caso vero")
+        if zero("KG1"):
+            return "banca al fischio abbinata in parte ma KG1 mai sollecitato"
     elif scenario == CP.SCENARIO:
         if not c.get("chiusure_con_effetto"):
             return ("il guasto non ha mai avuto effetto (nessuna chiusura abbinata in "
@@ -2058,7 +2131,8 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
         cashout_utente=(scenario in (SCENARIO_CASHOUT_GLOBALE, SCENARIO_CASHOUT_DOPO_COPERTURA)),
         cashout_dopo_copertura=(scenario == SCENARIO_CASHOUT_DOPO_COPERTURA),
         chiuso_fuori_app=(scenario == SCENARIO_CHIUSO_FUORI_APP),
-        chiusura_parziale=(scenario == CP.SCENARIO),
+        chiusura_parziale=(scenario in (CP.SCENARIO, SCENARIO_KO_GREEN_PARZIALE)),
+        solo_banca_fischio=(scenario == SCENARIO_KO_GREEN_PARZIALE),
         fermo_copertura=(scenario == SCENARIO_FERMO_COPERTURA),
         lettura_ko=(scenario == SCENARIO_LETTURA_KO),
         punteggio_ko=(scenario == SCENARIO_PUNTEGGIO_KO),

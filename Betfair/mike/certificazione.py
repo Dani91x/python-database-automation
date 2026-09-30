@@ -1099,6 +1099,119 @@ def _r1(ctx, snap, d, params):
 
 
 # ===========================================================================
+# KG. LA BANCA AL FISCHIO ABBINATA IN PARTE (ordine dell'utente, 30/09 15:40)
+#
+# Fatto: live, partita 36130526, banca al fischio 5,10 @ 2,08 abbinata 1,00 a
+# 29 s dal fischio e ANNULLATA nello stesso secondo, copertura a 37 s. L'utente:
+# "quell'ordine deve restare a mercato per 3 minuti come da progettazione, SOLO
+# DOPO I 3 minuti [...] RITIRA IL RESTO, e si copre [...] PER L'IMPORTO
+# RIMANENTE". Il controllo e' scritto con conti suoi (non con le funzioni del
+# motore che giudica): netto da chiudere e rischio residuo dalle sole gambe.
+# ===========================================================================
+def _banca_fischio_parziale(ctx: E.MatchCtx) -> Optional[E.Leg]:
+    """L'ultima uscita al fischio, se abbinata IN PARTE (viva o no)."""
+    ko = [l for l in ctx.legs if l.role == "ko_green"]
+    if not ko:
+        return None
+    u = ko[-1]
+    if float(u.matched) <= 0.005 or float(u.matched) >= float(u.size) - 0.005:
+        return None
+    return u
+
+
+def _qualche_banca_fischio_abbinata(ctx: E.MatchCtx) -> bool:
+    return any(l.role == "ko_green" and float(l.matched) > 0.005 for l in ctx.legs)
+
+
+def _netto_da_chiudere_senza(ctx: E.MatchCtx, esclusa: E.Leg) -> float:
+    """Netto (W - L) dell'Under 3,5 dalle gambe abbinate, SENZA ``esclusa``: la
+    banca giusta a prezzo p ha size netto / p (formula del green-up)."""
+    netto = 0.0
+    for l in ctx.legs:
+        if l is esclusa or l.market != E.MARKET_OU35 or l.archived or float(l.matched) <= 0:
+            continue
+        s, p = float(l.matched), float(l.avg_price or l.price)
+        pro_under = (l.selection == E.SEL_UNDER) == (l.side == "back")
+        netto += s * p if pro_under else -s * p
+    return netto
+
+
+def _rischio_under_residuo(ctx: E.MatchCtx) -> float:
+    """Euro persi sull'Under 3,5 se l'Under PERDE, dalle sole gambe abbinate."""
+    perdita = 0.0
+    for l in ctx.legs:
+        if l.market != E.MARKET_OU35 or l.archived or float(l.matched) <= 0:
+            continue
+        s, p = float(l.matched), float(l.avg_price or l.price)
+        if l.selection == E.SEL_UNDER:
+            perdita += s if l.side == "back" else -s
+        else:
+            perdita += -s * (p - 1.0) if l.side == "back" else s * (p - 1.0)
+    return max(0.0, perdita)
+
+
+def _eccezione_del_fischio(ctx: E.MatchCtx, snap: E.Snapshot) -> bool:
+    """Le strade che ritirano l'uscita prima dello scadere: gol dopo il fischio
+    (strada C) o mercato chiuso."""
+    gol = (snap.goals is not None and ctx.ko_goals is not None
+           and int(snap.goals) > int(ctx.ko_goals))
+    bk = _book(snap, E.MARKET_OU35, E.SEL_UNDER)
+    chiuso = bk is not None and str(bk.status or "").upper() == "CLOSED"
+    return gol or chiuso
+
+
+def _kg1_caso(ctx, snap, d, p) -> bool:
+    if ctx.state == "LIVE_KO_GREEN":
+        return _banca_fischio_parziale(ctx) is not None
+    return (ctx.state in ("LIVE_UNCOVERED", "LIVE_COVER_PENDING")
+            and _qualche_banca_fischio_abbinata(ctx)
+            and any(a.role == "over_cover" for a in _piazzamenti(d)))
+
+
+@_controllo("KG1", "la banca al fischio abbinata in parte resta a mercato fino allo "
+                   "scadere della finestra; il residuo si annulla solo dopo, e la "
+                   "copertura vale il rischio residuo (ordine dell'utente 30/09)",
+            quando=_kg1_caso)
+def _kg1(ctx, snap, d, params):
+    if ctx.state == "LIVE_KO_GREEN":
+        u = _banca_fischio_parziale(ctx)
+        if u is None or ctx.live_since is None:
+            return None
+        trascorsi = float(snap.now) - float(ctx.live_since)
+        if trascorsi >= float(params["ko_green_window_s"]) or _eccezione_del_fischio(ctx, snap):
+            return None
+        if d.state == "LIVE_UNCOVERED":
+            return (f"copertura a {trascorsi:.0f} s dal fischio con la banca '{u.ref}' "
+                    f"abbinata in parte ({float(u.matched):.2f} su {float(u.size):.2f}): "
+                    f"la finestra e' di {int(params['ko_green_window_s'])} s")
+        annullata = any(a.kind == "cancel" and a.ref == u.ref for a in d.actions)
+        if not annullata or not u.is_live:
+            return None
+        # riallineo legittimo: la posizione d'ingresso e' cambiata (un'altra
+        # gamba abbinata), e la banca viva non e' piu' quella giusta
+        giusta = _netto_da_chiudere_senza(ctx, u) / float(u.price)
+        if abs(giusta - float(u.size)) > 0.011 + 0.01 * float(u.size):
+            return None
+        return (f"residuo della banca '{u.ref}' ({float(u.matched):.2f} su "
+                f"{float(u.size):.2f}) annullato a {trascorsi:.0f} s dal fischio, "
+                f"prima dello scadere dei {int(params['ko_green_window_s'])} s")
+    # la copertura dopo una banca al fischio abbinata (in parte): vale il rischio
+    # RESIDUO dell'Under 3,5, mai lo stake lordo (forma di serie: banca Under 4,5)
+    if E.cover_form(params) != E.COVER_LAY_U45:
+        return None
+    c = float(params.get("commission_pct", 5.0)) / 100.0
+    fattore = float(params["cover_profit_factor"])
+    gia = E.cover_matched_value(ctx.legs, c)
+    massimo = max(0.0, (fattore * _rischio_under_residuo(ctx) - gia) / (1.0 - c))
+    for a in _piazzamenti(d):
+        if a.role == "over_cover" and a.side == "lay" and float(a.size) > massimo + 0.02:
+            return (f"copertura banca Under 4,5 da {float(a.size):.2f} quando il rischio "
+                    f"residuo dell'Under 3,5 ({_rischio_under_residuo(ctx):.2f}) ne "
+                    f"chiede al piu' {massimo:.2f}")
+    return None
+
+
+# ===========================================================================
 # S. IL FRENO DELLA COPERTURA E LO STATO DEL MERCATO (17/09, reperto 25)
 #
 # Fatto: evento 36077571, la copertura Over 4.5 sotto minimo rifiutata 171

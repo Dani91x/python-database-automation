@@ -1,0 +1,16 @@
+M1 riallineo sul piano che conta il parziale (codice di oggi)  ROSSO come atteso | rossi: test_parziale_a_30_secondi_resta_a_mercato, test_parziale_abbinato_a_prezzo_migliore_resta_a_mercato, test_servizio_parziale_al_fischio_resta_fino_allo_scadere
+M2 parziale non vivo -> copertura subito (codice di oggi)      ROSSO come atteso | rossi: test_parziale_scaduto_da_betfair_nella_finestra_si_riappoggia_il_residuo
+M3 allo scadere nessun annullo                                 ROSSO come atteso | rossi: test_parziale_allo_scadere_annulla_il_residuo_e_copre_il_rischio_residuo, test_non_abbinata_allo_scadere_annullo_e_copertura_intera, test_servizio_parziale_al_fischio_resta_fino_allo_scadere
+M4 la banca viva non si riallinea mai                          ROSSO come atteso | rossi: test_se_cambia_la_posizione_d_ingresso_la_banca_si_riallinea
+M5 la finestra non scade mai                                   ROSSO come atteso | rossi: test_parziale_allo_scadere_annulla_il_residuo_e_copre_il_rischio_residuo, test_non_abbinata_allo_scadere_annullo_e_copertura_intera, test_parziale_scaduto_da_betfair_a_finestra_chiusa_si_copre, test_servizio_parziale_al_fischio_resta_fino_allo_scadere, test_strada_A_fill_parziale_copre_solo_il_residuo
+M6 gol dopo il fischio ignorato                                ROSSO come atteso | rossi: test_gol_nella_finestra_con_parziale_strada_c
+M7 tutta abbinata non e' FLAT                                  ROSSO come atteso | rossi: test_tutta_abbinata_a_60_secondi_e_flat_subito, test_parziale_scaduto_da_betfair_a_finestra_chiusa_si_copre
+M8 copertura sullo stake lordo                                 ROSSO come atteso | rossi: test_parziale_allo_scadere_annulla_il_residuo_e_copre_il_rischio_residuo, test_servizio_parziale_al_fischio_resta_fino_allo_scadere, test_strada_A_fill_parziale_copre_solo_il_residuo
+M9 due lay nello stesso giro (J5 spento)                       ROSSO come atteso | rossi: test_sostituire_una_lay_viva_emette_SOLO_l_annullamento, test_con_l_annullamento_FALLITO_nessuna_lay_nuova_e_si_ritenta
+K1 KG1 cieco                                                   ROSSO come atteso | rossi: test_kg1_rosso_sull_annullo_del_parziale_a_29_secondi, test_kg1_rosso_sulla_copertura_dentro_la_finestra, test_kg1_rosso_sulla_copertura_dimensionata_sullo_stake_lordo
+K2 KG1 accusa anche il riallineo legittimo                     ROSSO come atteso | rossi: test_kg1_tace_allo_scadere_col_gol_e_sul_riallineo
+K3 KG1 non guarda l'importo della copertura                    ROSSO come atteso | rossi: test_kg1_rosso_sulla_copertura_dimensionata_sullo_stake_lordo
+P1 il guasto colpisce ogni riga dal ref                        ROSSO come atteso | rossi: test_scenario_ko_green_parziale_riconosce_solo_la_banca_al_fischio
+P2 sul canale non si guarda l'importo                          ROSSO come atteso | rossi: test_scenario_ko_green_parziale_riconosce_solo_la_banca_al_fischio
+MUTAZIONE rimaste nei file: 0
+dopo il ripristino: 19 passed in 10.04s

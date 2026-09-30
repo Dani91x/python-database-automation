@@ -3418,17 +3418,20 @@ def finestra_uscita_scaduta(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any
 
 
 def piano_uscita_ko(ctx: MatchCtx, params: Dict[str, Any],
-                    prezzo_ingresso: Optional[float]) -> Optional[GreenupPlan]:
+                    prezzo_ingresso: Optional[float],
+                    legs: Optional[List[Leg]] = None) -> Optional[GreenupPlan]:
     """Lay di uscita a ``ko_green_ticks`` tick SOTTO il nostro prezzo d'ingresso.
 
     E' un LIMITE: se il mercato offre di meglio l'ordine si abbina meglio, mai
     peggio. Il prezzo di riferimento e' la MEDIA delle gambe Under abbinate e
     ancora a rischio, cioe' il punto di ingresso reale della posizione.
+    ``legs`` (di serie quelle del ctx) serve a calcolare il piano SENZA una
+    gamba: la banca viva, per vedere se la posizione e' cambiata per altro.
     """
     if not price_ok(prezzo_ingresso):
         return None
     target = green_target(round_to_tick(float(prezzo_ingresso)), int(params["ko_green_ticks"]))
-    w, l = exposure(ctx.legs, MARKET_OU35, SEL_UNDER)
+    w, l = exposure(ctx.legs if legs is None else legs, MARKET_OU35, SEL_UNDER)
     plan = compute_greenup(matched_if_win=w, matched_if_lose=l, best_back_price=None,
                            best_lay_price=None, fraction=1.0, target_price=target)
     return plan if plan.actionable else None
@@ -3468,7 +3471,15 @@ def _decide_ko_green(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
                                market=leg.market, selection=leg.selection))
 
     # -- A) uscita abbinata ---------------------------------------------------
-    if uscita is not None and float(uscita.matched) > 0 and not uscita.is_live:
+    # ORDINE DELL'UTENTE 30/09 15:40: "quell'ordine deve restare a mercato per
+    # 3 minuti come da progettazione, SOLO DOPO I 3 minuti [...] RITIRA IL RESTO".
+    # Un'uscita abbinata IN PARTE e non piu' viva (Betfair l'ha fatta scadere a
+    # una sospensione) con la finestra ancora aperta NON e' la fine dell'uscita:
+    # il parziale resta posizione e si riappoggia la banca per il residuo (giu',
+    # al piazzamento). Si copre solo a finestra scaduta.
+    if uscita is not None and float(uscita.matched) > 0 and not uscita.is_live \
+            and (not live_open_selections(ctx.legs, snap.goals)
+                 or finestra_uscita_scaduta(ctx, snap, params)):
         if not live_open_selections(ctx.legs, snap.goals):
             bloccato = locked_pnl(ctx.legs, c)
             tele = {"ko_green": {"esito": "abbinata", "prezzo": uscita.fill_price,
@@ -3505,9 +3516,17 @@ def _decide_ko_green(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
         _annulla(uscita)
         tele = {"ko_green": {"esito": "scaduta", "finestra_s": int(params["ko_green_window_s"]),
                              "ingresso": Pe, "minuto": snap.minute}}
-        return Decision("LIVE_UNCOVERED", acts,
-                        "uscita non abbinata in %d': copertura Over 4.5"
-                        % int(float(params["ko_green_window_s"]) // 60),
+        minuti = int(float(params["ko_green_window_s"]) // 60)
+        if uscita is not None and float(uscita.matched) > 0:
+            # 30/09: abbinata in parte nella finestra -> SOLO ADESSO si ritira il
+            # resto; la copertura vale il rischio residuo (``under_liability``)
+            tele["ko_green"]["abbinato"] = round(float(uscita.matched), 2)
+            motivo = ("uscita al fischio abbinata in parte (%.2f su %.2f) in %d': "
+                      "ritiro il resto, copro il residuo"
+                      % (float(uscita.matched), float(uscita.size), minuti))
+        else:
+            motivo = "uscita non abbinata in %d': copertura Over 4.5" % minuti
+        return Decision("LIVE_UNCOVERED", acts, motivo,
                         updates={"cover_forced": True, **base}, telemetry=tele)
 
     # ⚠️ 15/09 — PRIMA DI PIAZZARE SI GUARDA IL MERCATO.
@@ -3569,8 +3588,17 @@ def _decide_ko_green(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
                         updates=base)
     vivo = uscita if (uscita is not None and uscita.is_live) else None
     if vivo is not None:
-        if abs(float(vivo.price) - float(plan.price)) < 1e-9 and \
-                abs(float(vivo.size) - float(plan.size)) < 0.01:
+        # ORDINE DELL'UTENTE 30/09 15:40 (caso vero 36130526): la banca viva si
+        # confronta col piano calcolato SENZA il suo stesso abbinato. Prima il
+        # piano contava gia' il parziale della banca (5,10 -> 1,00 abbinato ->
+        # piano 4,10), la size viva 5,10 non tornava piu' e la banca si
+        # annullava dopo 29 s invece di restare per tutta la finestra. Un suo
+        # abbinamento parziale non e' un cambio di posizione: lo e' solo un
+        # fill di un'altra gamba (il residuo PERSIST), e li' si riallinea.
+        piano_vivo = piano_uscita_ko(ctx, params, Pe,
+                                     legs=[l for l in ctx.legs if l is not vivo]) or plan
+        if abs(float(vivo.price) - float(piano_vivo.price)) < 1e-9 and \
+                abs(float(vivo.size) - float(piano_vivo.size)) < 0.01:
             return Decision("LIVE_KO_GREEN", acts, "uscita a +%d tick sul book"
                             % int(params["ko_green_ticks"]), updates=base)
         # la posizione e' cambiata (fill del residuo PERSIST): il prezzo di uscita

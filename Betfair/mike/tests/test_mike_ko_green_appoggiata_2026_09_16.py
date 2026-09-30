@@ -540,13 +540,27 @@ def _conferma_annulli(ctx: E.MatchCtx, d: E.Decision) -> None:
                 l.status = "open" if l.matched > 0 else "cancelled"
 
 
+def _residuo_persist() -> E.Leg:
+    """Il residuo PERSIST abbinato a 1,60 dopo il fischio: la media sale a 1,55
+    e l'uscita al fischio va rifatta su quella (cambio VERO di posizione)."""
+    return E.Leg(role="under_last", market=E.MARKET_OU35, selection=E.SEL_UNDER,
+                 side="back", price=1.60, size=10.0, matched=10.0, avg_price=1.60,
+                 ref="under_last-0-2", status="open", placed_at=KO - 60)
+
+
 def test_sostituire_una_lay_viva_emette_SOLO_l_annullamento():
     """FALSIFICA il vecchio comportamento: `cancel` + `place` nello stesso giro.
     Il reperto e' del replay su 35777617 (J2: nuova ko_green mentre
-    ko_green-0-3 e' ancora viva, abbinato 8,15/10,14)."""
-    viva = gamba_uscita(matched=8.15, avg_price=1.48)     # la size del piano cambia
-    ctx = ctx_in_uscita(gambe=[viva])
-    d = E.decide(ctx, snap(KO + 30.0), PAR)
+    ko_green-0-3 e' ancora viva, abbinato 8,15/10,14).
+
+    30/09 (ordine dell'utente 15:40): il veicolo NON e' piu' il parziale della
+    stessa uscita (ora la lascia a mercato per tutta la finestra,
+    ``test_mike_ko_green_3_minuti_2026_09_30``) ma un cambio vero di posizione:
+    si abbina il residuo PERSIST e l'uscita va rifatta. La regola J5 provata e'
+    la stessa."""
+    viva = gamba_uscita(matched=8.15, avg_price=1.48)
+    ctx = ctx_in_uscita(gambe=[viva, _residuo_persist()])   # la size del piano cambia
+    d = E.decide(ctx, snap(KO + 30.0, u35=book(1.55)), PAR)
     assert [a.kind for a in d.actions] == ["cancel"]
     assert d.actions[0].ref == "ko_green-0-3"
     assert "mai due lay a mercato" in d.reason
@@ -592,14 +606,18 @@ def test_con_l_annullamento_IGNOTO_nessuna_lay_nuova():
 
 def test_con_l_annullamento_FALLITO_nessuna_lay_nuova_e_si_ritenta():
     """L'annullamento non e' confermato: la gamba resta VIVA. Nessuna lay nuova,
-    e al giro dopo si richiede l'annullamento."""
+    e al giro dopo si richiede l'annullamento.
+
+    30/09: stesso veicolo del test sopra (fill del residuo PERSIST), non piu' il
+    parziale dell'uscita, che ora resta a mercato per tutta la finestra."""
     viva = gamba_uscita(matched=8.15, avg_price=1.48)
-    ctx = ctx_in_uscita(gambe=[viva])
-    d1 = E.decide(ctx, snap(KO + 30.0), PAR)
+    ctx = ctx_in_uscita(gambe=[viva, _residuo_persist()])
+    d1 = E.decide(ctx, snap(KO + 30.0, u35=book(1.55)), PAR)
+    assert [a.kind for a in d1.actions] == ["cancel"]
     E.apply_decision(ctx, d1, KO + 30.0)
     # NESSUNA conferma da Betfair: la gamba resta 'pending'
     assert viva.is_live
-    d2 = E.decide(ctx, snap(KO + 31.0), PAR)
+    d2 = E.decide(ctx, snap(KO + 31.0, u35=book(1.55)), PAR)
     assert [a for a in d2.actions if a.kind == "place"] == []
     assert [a.kind for a in d2.actions] == ["cancel"]
 

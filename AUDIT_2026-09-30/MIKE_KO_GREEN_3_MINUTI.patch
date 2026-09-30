@@ -1,0 +1,1092 @@
+diff --git a/Betfair/mike/COSTITUZIONE_MIKE.md b/Betfair/mike/COSTITUZIONE_MIKE.md
+index 18c35c2..4b413f6 100644
+--- a/Betfair/mike/COSTITUZIONE_MIKE.md
++++ b/Betfair/mike/COSTITUZIONE_MIKE.md
+@@ -1184,6 +1184,11 @@ nostro prezzo di ingresso** — la media delle gambe Under abbinate e ancora a r
+ il prezzo di mercato. È un **limite**: se il mercato offre di meglio si abbina meglio, mai
+ peggio. L'ordine resta per `ko_green_window_s` **contati dal fischio visto in gioco**, non
+ dal `ko_at` di calendario.
++**Ordine dell'utente 30/09 15:40**: un abbinamento **parziale** non ferma niente — l'ordine
++resta a mercato per tutta la finestra (se Betfair lo fa scadere a una sospensione si
++riappoggia per il residuo); **solo allo scadere** si annulla il resto e si copre la linea
++4,5 per il rischio **residuo** dell'Under 3,5 (es. 5,00 puntati, 1,00 chiuso: 4,00 × 1,2 /
++0,95 = 5,05), controllo KG1 del banco, scenario `ko-green-parziale`.
+ 
+ | | Condizione | Cosa fa il bot | Stato |
+ |---|---|---|---|
+diff --git a/Betfair/mike/certificazione.py b/Betfair/mike/certificazione.py
+index f06afb0..bc98faa 100644
+--- a/Betfair/mike/certificazione.py
++++ b/Betfair/mike/certificazione.py
+@@ -1098,6 +1098,119 @@ def _r1(ctx, snap, d, params):
+             f"Betfair (sospeso a {r.get('ts')}): il bot le sta dando per vive")
+ 
+ 
++# ===========================================================================
++# KG. LA BANCA AL FISCHIO ABBINATA IN PARTE (ordine dell'utente, 30/09 15:40)
++#
++# Fatto: live, partita 36130526, banca al fischio 5,10 @ 2,08 abbinata 1,00 a
++# 29 s dal fischio e ANNULLATA nello stesso secondo, copertura a 37 s. L'utente:
++# "quell'ordine deve restare a mercato per 3 minuti come da progettazione, SOLO
++# DOPO I 3 minuti [...] RITIRA IL RESTO, e si copre [...] PER L'IMPORTO
++# RIMANENTE". Il controllo e' scritto con conti suoi (non con le funzioni del
++# motore che giudica): netto da chiudere e rischio residuo dalle sole gambe.
++# ===========================================================================
++def _banca_fischio_parziale(ctx: E.MatchCtx) -> Optional[E.Leg]:
++    """L'ultima uscita al fischio, se abbinata IN PARTE (viva o no)."""
++    ko = [l for l in ctx.legs if l.role == "ko_green"]
++    if not ko:
++        return None
++    u = ko[-1]
++    if float(u.matched) <= 0.005 or float(u.matched) >= float(u.size) - 0.005:
++        return None
++    return u
++
++
++def _qualche_banca_fischio_abbinata(ctx: E.MatchCtx) -> bool:
++    return any(l.role == "ko_green" and float(l.matched) > 0.005 for l in ctx.legs)
++
++
++def _netto_da_chiudere_senza(ctx: E.MatchCtx, esclusa: E.Leg) -> float:
++    """Netto (W - L) dell'Under 3,5 dalle gambe abbinate, SENZA ``esclusa``: la
++    banca giusta a prezzo p ha size netto / p (formula del green-up)."""
++    netto = 0.0
++    for l in ctx.legs:
++        if l is esclusa or l.market != E.MARKET_OU35 or l.archived or float(l.matched) <= 0:
++            continue
++        s, p = float(l.matched), float(l.avg_price or l.price)
++        pro_under = (l.selection == E.SEL_UNDER) == (l.side == "back")
++        netto += s * p if pro_under else -s * p
++    return netto
++
++
++def _rischio_under_residuo(ctx: E.MatchCtx) -> float:
++    """Euro persi sull'Under 3,5 se l'Under PERDE, dalle sole gambe abbinate."""
++    perdita = 0.0
++    for l in ctx.legs:
++        if l.market != E.MARKET_OU35 or l.archived or float(l.matched) <= 0:
++            continue
++        s, p = float(l.matched), float(l.avg_price or l.price)
++        if l.selection == E.SEL_UNDER:
++            perdita += s if l.side == "back" else -s
++        else:
++            perdita += -s * (p - 1.0) if l.side == "back" else s * (p - 1.0)
++    return max(0.0, perdita)
++
++
++def _eccezione_del_fischio(ctx: E.MatchCtx, snap: E.Snapshot) -> bool:
++    """Le strade che ritirano l'uscita prima dello scadere: gol dopo il fischio
++    (strada C) o mercato chiuso."""
++    gol = (snap.goals is not None and ctx.ko_goals is not None
++           and int(snap.goals) > int(ctx.ko_goals))
++    bk = _book(snap, E.MARKET_OU35, E.SEL_UNDER)
++    chiuso = bk is not None and str(bk.status or "").upper() == "CLOSED"
++    return gol or chiuso
++
++
++def _kg1_caso(ctx, snap, d, p) -> bool:
++    if ctx.state == "LIVE_KO_GREEN":
++        return _banca_fischio_parziale(ctx) is not None
++    return (ctx.state in ("LIVE_UNCOVERED", "LIVE_COVER_PENDING")
++            and _qualche_banca_fischio_abbinata(ctx)
++            and any(a.role == "over_cover" for a in _piazzamenti(d)))
++
++
++@_controllo("KG1", "la banca al fischio abbinata in parte resta a mercato fino allo "
++                   "scadere della finestra; il residuo si annulla solo dopo, e la "
++                   "copertura vale il rischio residuo (ordine dell'utente 30/09)",
++            quando=_kg1_caso)
++def _kg1(ctx, snap, d, params):
++    if ctx.state == "LIVE_KO_GREEN":
++        u = _banca_fischio_parziale(ctx)
++        if u is None or ctx.live_since is None:
++            return None
++        trascorsi = float(snap.now) - float(ctx.live_since)
++        if trascorsi >= float(params["ko_green_window_s"]) or _eccezione_del_fischio(ctx, snap):
++            return None
++        if d.state == "LIVE_UNCOVERED":
++            return (f"copertura a {trascorsi:.0f} s dal fischio con la banca '{u.ref}' "
++                    f"abbinata in parte ({float(u.matched):.2f} su {float(u.size):.2f}): "
++                    f"la finestra e' di {int(params['ko_green_window_s'])} s")
++        annullata = any(a.kind == "cancel" and a.ref == u.ref for a in d.actions)
++        if not annullata or not u.is_live:
++            return None
++        # riallineo legittimo: la posizione d'ingresso e' cambiata (un'altra
++        # gamba abbinata), e la banca viva non e' piu' quella giusta
++        giusta = _netto_da_chiudere_senza(ctx, u) / float(u.price)
++        if abs(giusta - float(u.size)) > 0.011 + 0.01 * float(u.size):
++            return None
++        return (f"residuo della banca '{u.ref}' ({float(u.matched):.2f} su "
++                f"{float(u.size):.2f}) annullato a {trascorsi:.0f} s dal fischio, "
++                f"prima dello scadere dei {int(params['ko_green_window_s'])} s")
++    # la copertura dopo una banca al fischio abbinata (in parte): vale il rischio
++    # RESIDUO dell'Under 3,5, mai lo stake lordo (forma di serie: banca Under 4,5)
++    if E.cover_form(params) != E.COVER_LAY_U45:
++        return None
++    c = float(params.get("commission_pct", 5.0)) / 100.0
++    fattore = float(params["cover_profit_factor"])
++    gia = E.cover_matched_value(ctx.legs, c)
++    massimo = max(0.0, (fattore * _rischio_under_residuo(ctx) - gia) / (1.0 - c))
++    for a in _piazzamenti(d):
++        if a.role == "over_cover" and a.side == "lay" and float(a.size) > massimo + 0.02:
++            return (f"copertura banca Under 4,5 da {float(a.size):.2f} quando il rischio "
++                    f"residuo dell'Under 3,5 ({_rischio_under_residuo(ctx):.2f}) ne "
++                    f"chiede al piu' {massimo:.2f}")
++    return None
++
++
+ # ===========================================================================
+ # S. IL FRENO DELLA COPERTURA E LO STATO DEL MERCATO (17/09, reperto 25)
+ #
+diff --git a/Betfair/mike/engine.py b/Betfair/mike/engine.py
+index f270415..203fc4a 100644
+--- a/Betfair/mike/engine.py
++++ b/Betfair/mike/engine.py
+@@ -3418,17 +3418,20 @@ def finestra_uscita_scaduta(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any
+ 
+ 
+ def piano_uscita_ko(ctx: MatchCtx, params: Dict[str, Any],
+-                    prezzo_ingresso: Optional[float]) -> Optional[GreenupPlan]:
++                    prezzo_ingresso: Optional[float],
++                    legs: Optional[List[Leg]] = None) -> Optional[GreenupPlan]:
+     """Lay di uscita a ``ko_green_ticks`` tick SOTTO il nostro prezzo d'ingresso.
+ 
+     E' un LIMITE: se il mercato offre di meglio l'ordine si abbina meglio, mai
+     peggio. Il prezzo di riferimento e' la MEDIA delle gambe Under abbinate e
+     ancora a rischio, cioe' il punto di ingresso reale della posizione.
++    ``legs`` (di serie quelle del ctx) serve a calcolare il piano SENZA una
++    gamba: la banca viva, per vedere se la posizione e' cambiata per altro.
+     """
+     if not price_ok(prezzo_ingresso):
+         return None
+     target = green_target(round_to_tick(float(prezzo_ingresso)), int(params["ko_green_ticks"]))
+-    w, l = exposure(ctx.legs, MARKET_OU35, SEL_UNDER)
++    w, l = exposure(ctx.legs if legs is None else legs, MARKET_OU35, SEL_UNDER)
+     plan = compute_greenup(matched_if_win=w, matched_if_lose=l, best_back_price=None,
+                            best_lay_price=None, fraction=1.0, target_price=target)
+     return plan if plan.actionable else None
+@@ -3468,7 +3471,15 @@ def _decide_ko_green(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
+                                market=leg.market, selection=leg.selection))
+ 
+     # -- A) uscita abbinata ---------------------------------------------------
+-    if uscita is not None and float(uscita.matched) > 0 and not uscita.is_live:
++    # ORDINE DELL'UTENTE 30/09 15:40: "quell'ordine deve restare a mercato per
++    # 3 minuti come da progettazione, SOLO DOPO I 3 minuti [...] RITIRA IL RESTO".
++    # Un'uscita abbinata IN PARTE e non piu' viva (Betfair l'ha fatta scadere a
++    # una sospensione) con la finestra ancora aperta NON e' la fine dell'uscita:
++    # il parziale resta posizione e si riappoggia la banca per il residuo (giu',
++    # al piazzamento). Si copre solo a finestra scaduta.
++    if uscita is not None and float(uscita.matched) > 0 and not uscita.is_live \
++            and (not live_open_selections(ctx.legs, snap.goals)
++                 or finestra_uscita_scaduta(ctx, snap, params)):
+         if not live_open_selections(ctx.legs, snap.goals):
+             bloccato = locked_pnl(ctx.legs, c)
+             tele = {"ko_green": {"esito": "abbinata", "prezzo": uscita.fill_price,
+@@ -3505,9 +3516,17 @@ def _decide_ko_green(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
+         _annulla(uscita)
+         tele = {"ko_green": {"esito": "scaduta", "finestra_s": int(params["ko_green_window_s"]),
+                              "ingresso": Pe, "minuto": snap.minute}}
+-        return Decision("LIVE_UNCOVERED", acts,
+-                        "uscita non abbinata in %d': copertura Over 4.5"
+-                        % int(float(params["ko_green_window_s"]) // 60),
++        minuti = int(float(params["ko_green_window_s"]) // 60)
++        if uscita is not None and float(uscita.matched) > 0:
++            # 30/09: abbinata in parte nella finestra -> SOLO ADESSO si ritira il
++            # resto; la copertura vale il rischio residuo (``under_liability``)
++            tele["ko_green"]["abbinato"] = round(float(uscita.matched), 2)
++            motivo = ("uscita al fischio abbinata in parte (%.2f su %.2f) in %d': "
++                      "ritiro il resto, copro il residuo"
++                      % (float(uscita.matched), float(uscita.size), minuti))
++        else:
++            motivo = "uscita non abbinata in %d': copertura Over 4.5" % minuti
++        return Decision("LIVE_UNCOVERED", acts, motivo,
+                         updates={"cover_forced": True, **base}, telemetry=tele)
+ 
+     # ⚠️ 15/09 — PRIMA DI PIAZZARE SI GUARDA IL MERCATO.
+@@ -3569,8 +3588,17 @@ def _decide_ko_green(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
+                         updates=base)
+     vivo = uscita if (uscita is not None and uscita.is_live) else None
+     if vivo is not None:
+-        if abs(float(vivo.price) - float(plan.price)) < 1e-9 and \
+-                abs(float(vivo.size) - float(plan.size)) < 0.01:
++        # ORDINE DELL'UTENTE 30/09 15:40 (caso vero 36130526): la banca viva si
++        # confronta col piano calcolato SENZA il suo stesso abbinato. Prima il
++        # piano contava gia' il parziale della banca (5,10 -> 1,00 abbinato ->
++        # piano 4,10), la size viva 5,10 non tornava piu' e la banca si
++        # annullava dopo 29 s invece di restare per tutta la finestra. Un suo
++        # abbinamento parziale non e' un cambio di posizione: lo e' solo un
++        # fill di un'altra gamba (il residuo PERSIST), e li' si riallinea.
++        piano_vivo = piano_uscita_ko(ctx, params, Pe,
++                                     legs=[l for l in ctx.legs if l is not vivo]) or plan
++        if abs(float(vivo.price) - float(piano_vivo.price)) < 1e-9 and \
++                abs(float(vivo.size) - float(piano_vivo.size)) < 0.01:
+             return Decision("LIVE_KO_GREEN", acts, "uscita a +%d tick sul book"
+                             % int(params["ko_green_ticks"]), updates=base)
+         # la posizione e' cambiata (fill del residuo PERSIST): il prezzo di uscita
+diff --git a/Betfair/mike/tests/test_mike_flusso_fischio_2026_09_13.py b/Betfair/mike/tests/test_mike_flusso_fischio_2026_09_13.py
+index f4a3e3b..228a8b5 100644
+--- a/Betfair/mike/tests/test_mike_flusso_fischio_2026_09_13.py
++++ b/Betfair/mike/tests/test_mike_flusso_fischio_2026_09_13.py
+@@ -199,15 +199,21 @@ def test_strada_A_non_riapre_niente_al_giro_dopo():
+ 
+ def test_strada_A_fill_parziale_copre_solo_il_residuo():
+     """Meta' uscita abbinata: resta esposizione, quindi si copre -- ma sul residuo,
+-    non sullo stake pieno (``under_liability`` e' gia' al netto della lay abbinata)."""
++    non sullo stake pieno (``under_liability`` e' gia' al netto della lay abbinata).
++
++    30/09 (ordine dell'utente, 15:40): la copertura del residuo parte SOLO a
++    finestra scaduta. Prima questo test la voleva a 60 s dal fischio; dentro la
++    finestra un parziale non piu' vivo si riappoggia per il residuo
++    (``test_mike_ko_green_3_minuti_2026_09_30``). Qui si guarda allo scadere."""
+     ctx, p = posizione_portata_in_gioco(10.0, 1.50), params()
+     al_fischio(ctx, p)
+     uscita = [l for l in ctx.legs if l.role == "ko_green"][-1]
+     uscita.matched = round(uscita.size / 2.0, 2)
+     uscita.avg_price = uscita.price
+     uscita.status = "open"
+-    d = E.decide(ctx, snap(KO + 60, u35=book(1.47, inplay=True), o45=book(8.0),
+-                           minute=1, goals=0), p)
++    fine = KO + 1.0 + float(p["ko_green_window_s"]) + 5.0
++    d = E.decide(ctx, snap(fine, u35=book(1.47, inplay=True), o45=book(8.0),
++                           minute=4, goals=0), p)
+     assert d.state in ("LIVE_UNCOVERED", "LIVE_COVER_PENDING")
+     assert E.under_liability(ctx.legs) < 10.0
+ 
+diff --git a/Betfair/mike/tests/test_mike_ko_green_appoggiata_2026_09_16.py b/Betfair/mike/tests/test_mike_ko_green_appoggiata_2026_09_16.py
+index e10680e..c6eb31d 100644
+--- a/Betfair/mike/tests/test_mike_ko_green_appoggiata_2026_09_16.py
++++ b/Betfair/mike/tests/test_mike_ko_green_appoggiata_2026_09_16.py
+@@ -540,13 +540,27 @@ def _conferma_annulli(ctx: E.MatchCtx, d: E.Decision) -> None:
+                 l.status = "open" if l.matched > 0 else "cancelled"
+ 
+ 
++def _residuo_persist() -> E.Leg:
++    """Il residuo PERSIST abbinato a 1,60 dopo il fischio: la media sale a 1,55
++    e l'uscita al fischio va rifatta su quella (cambio VERO di posizione)."""
++    return E.Leg(role="under_last", market=E.MARKET_OU35, selection=E.SEL_UNDER,
++                 side="back", price=1.60, size=10.0, matched=10.0, avg_price=1.60,
++                 ref="under_last-0-2", status="open", placed_at=KO - 60)
++
++
+ def test_sostituire_una_lay_viva_emette_SOLO_l_annullamento():
+     """FALSIFICA il vecchio comportamento: `cancel` + `place` nello stesso giro.
+     Il reperto e' del replay su 35777617 (J2: nuova ko_green mentre
+-    ko_green-0-3 e' ancora viva, abbinato 8,15/10,14)."""
+-    viva = gamba_uscita(matched=8.15, avg_price=1.48)     # la size del piano cambia
+-    ctx = ctx_in_uscita(gambe=[viva])
+-    d = E.decide(ctx, snap(KO + 30.0), PAR)
++    ko_green-0-3 e' ancora viva, abbinato 8,15/10,14).
++
++    30/09 (ordine dell'utente 15:40): il veicolo NON e' piu' il parziale della
++    stessa uscita (ora la lascia a mercato per tutta la finestra,
++    ``test_mike_ko_green_3_minuti_2026_09_30``) ma un cambio vero di posizione:
++    si abbina il residuo PERSIST e l'uscita va rifatta. La regola J5 provata e'
++    la stessa."""
++    viva = gamba_uscita(matched=8.15, avg_price=1.48)
++    ctx = ctx_in_uscita(gambe=[viva, _residuo_persist()])   # la size del piano cambia
++    d = E.decide(ctx, snap(KO + 30.0, u35=book(1.55)), PAR)
+     assert [a.kind for a in d.actions] == ["cancel"]
+     assert d.actions[0].ref == "ko_green-0-3"
+     assert "mai due lay a mercato" in d.reason
+@@ -592,14 +606,18 @@ def test_con_l_annullamento_IGNOTO_nessuna_lay_nuova():
+ 
+ def test_con_l_annullamento_FALLITO_nessuna_lay_nuova_e_si_ritenta():
+     """L'annullamento non e' confermato: la gamba resta VIVA. Nessuna lay nuova,
+-    e al giro dopo si richiede l'annullamento."""
++    e al giro dopo si richiede l'annullamento.
++
++    30/09: stesso veicolo del test sopra (fill del residuo PERSIST), non piu' il
++    parziale dell'uscita, che ora resta a mercato per tutta la finestra."""
+     viva = gamba_uscita(matched=8.15, avg_price=1.48)
+-    ctx = ctx_in_uscita(gambe=[viva])
+-    d1 = E.decide(ctx, snap(KO + 30.0), PAR)
++    ctx = ctx_in_uscita(gambe=[viva, _residuo_persist()])
++    d1 = E.decide(ctx, snap(KO + 30.0, u35=book(1.55)), PAR)
++    assert [a.kind for a in d1.actions] == ["cancel"]
+     E.apply_decision(ctx, d1, KO + 30.0)
+     # NESSUNA conferma da Betfair: la gamba resta 'pending'
+     assert viva.is_live
+-    d2 = E.decide(ctx, snap(KO + 31.0), PAR)
++    d2 = E.decide(ctx, snap(KO + 31.0, u35=book(1.55)), PAR)
+     assert [a for a in d2.actions if a.kind == "place"] == []
+     assert [a.kind for a in d2.actions] == ["cancel"]
+ 
+diff --git a/Betfair/mike/tools/replay_registrazioni.py b/Betfair/mike/tools/replay_registrazioni.py
+index bf73cd7..d882fe1 100644
+--- a/Betfair/mike/tools/replay_registrazioni.py
++++ b/Betfair/mike/tools/replay_registrazioni.py
+@@ -69,10 +69,11 @@ from __future__ import annotations
+ 
+ import logging
+ import os
++import re
+ import sys
+ from bisect import bisect_right
+ from datetime import datetime, timedelta, timezone
+-from typing import Any, Dict, List, Optional, Tuple
++from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+ 
+ from .. import certificazione as CERT
+ from .. import config as C
+@@ -186,7 +187,13 @@ SCENARI: Dict[str, Dict[str, Any]] = {
+     # l'interruttore delle uscite su AUTOMATICO: le uscite in perdita le esegue
+     # il bot, G2 ha un caso (e tace)
+     "uscite-automatiche": {"uscite_automatiche": True},
++    # 30/09 (ordine dell'utente 15:40, caso vero 36130526): NON tocca un
++    # parametro. La BANCA AL FISCHIO (``ko_green``) trova il mercato sottile:
++    # il guasto comune `chiusura-abbinata-in-parte` colpisce SOLO lei (40 %
++    # abbinato con la spinta dichiarata, residuo vivo). Controllo KG1.
++    "ko-green-parziale": {},
+ }
++SCENARIO_KO_GREEN_PARZIALE = "ko-green-parziale"
+ SCENARIO_USCITE_FIRMATE = "uscite-in-perdita-firmate"
+ SCENARIO_USCITE_AUTOMATICHE = "uscite-automatiche"
+ # dopo quanti secondi di MERCATO dalla decisione l'utente firma la proposta
+@@ -1201,6 +1208,56 @@ def _crea_strategia():
+     return MikeCert
+ 
+ 
++_RE_RIGA_MIKE = re.compile(r"-t(\d+)$")
++
++
++def e_banca_al_fischio(righe: Callable[[], Sequence[Dict[str, Any]]]) -> Callable[[Any], bool]:
++    """30/09 (scenario ``ko-green-parziale``): l'ordine di flumine e' la BANCA AL
++    FISCHIO di Mike? Si legge dalla riga di ``mike_trades`` che lo ha chiesto
++    (colonna ``strategy`` = ruolo della gamba). Sulla CODA il ref dell'ordine e'
++    ``mike-t<id>`` (id della riga); sul CANALE l'ordine porta il ref interno del
++    runner (``awlq<id>``), e la riga si riconosce dalla STESSA domanda: mercato,
++    selezione, lato, prezzo e importo chiesti."""
++    def _ruolo(r: Dict[str, Any]) -> str:
++        return str(r.get("strategy") or r.get("role") or "")
++
++    def _e(ordine: Any) -> bool:
++        note = getattr(ordine, "notes", None) or {}
++        ref = str(note.get("bot_ref") or "")
++        m = _RE_RIGA_MIKE.search(ref)
++        tutte = list(righe() or [])
++        if m:
++            rid = int(m.group(1))
++            for r in tutte:
++                try:
++                    if int(r.get("id")) == rid:
++                        return _ruolo(r) == "ko_green"
++                except (TypeError, ValueError):
++                    continue
++            return False
++        ot = getattr(ordine, "order_type", None)
++        try:
++            prezzo = float(getattr(ot, "price", 0.0) or 0.0)
++            size = float(getattr(ot, "size", 0.0) or 0.0)
++            sel = int(getattr(ordine, "selection_id", 0))
++        except (TypeError, ValueError):
++            return False
++        lato = str(getattr(ordine, "side", "") or "").lower()
++        mid = str(getattr(ordine, "market_id", "") or "")
++        for r in tutte:
++            try:
++                if (_ruolo(r) == "ko_green" and str(r.get("market_id") or "") == mid
++                        and int(r.get("selection_id") or 0) == sel
++                        and str(r.get("side") or "").lower() == lato
++                        and abs(float(r.get("price") or 0.0) - prezzo) < 1e-9
++                        and abs(float(r.get("size") or 0.0) - size) < 0.005):
++                    return True
++            except (TypeError, ValueError):
++                continue
++        return False
++    return _e
++
++
+ # ---------------------------------------------------------------------------
+ # un evento
+ # ---------------------------------------------------------------------------
+@@ -1230,7 +1287,8 @@ def _certifica_evento(event_id: str, *, data_dir: str,
+                       cashout_dopo_copertura: bool = False,
+                       firma_dopo_gol: bool = False,
+                       chiusure_perse: bool = False,
+-                      firma_ogni_perdita: bool = False) -> CERT.Referto:
++                      firma_ogni_perdita: bool = False,
++                      solo_banca_fischio: bool = False) -> CERT.Referto:
+     """Fa rivivere a Mike una partita registrata e ritorna il referto."""
+     from flumine import FlumineSimulation
+ 
+@@ -1383,8 +1441,11 @@ def _certifica_evento(event_id: str, *, data_dir: str,
+         # contano SOLO dove il guasto ha avuto effetto. Prima le tre chiusure
+         # colpite erano banche al fischio SCADUTE (abbinato 0,00) e CP1 contava
+         # 12052 casi di una condizione mai accaduta.
++        # 30/09 (ko-green-parziale): il guasto colpisce SOLO la banca al fischio
+         guasto_cp = CP.GuastoChiusuraParziale(
+-            ruolo=CP.ruolo_da_righe(lambda: strategia.db.trades), spinta_prezzo=True)
++            ruolo=CP.ruolo_da_righe(lambda: strategia.db.trades), spinta_prezzo=True,
++            bersaglio=(e_banca_al_fischio(lambda: strategia.db.trades)
++                       if solo_banca_fischio else None))
+         motore.guasto_chiusure = guasto_cp
+         strategia.sorveglianza_cp = CP.Sorveglianza(guasto_cp, solo_con_effetto=True)
+     E.decide = decide_sorvegliata          # type: ignore[assignment]
+@@ -1731,6 +1792,12 @@ SCENARI_DESCRITTI: Dict[str, str] = {
+     # (`Betfair/stream/backtest/chiusura_parziale.py`): la prima gamba di
+     # chiusura su ogni selezione si abbina al piu' per il 40 %.
+     CP.SCENARIO: "come `base`, ma " + CP.DESCRIZIONE,
++    # 30/09 (ordine dell'utente 15:40, caso vero 36130526)
++    SCENARIO_KO_GREEN_PARZIALE: "come `base`, ma la BANCA AL FISCHIO (ko_green, in gioco) "
++                                "trova il mercato sottile: 40 % abbinato nei primi secondi, "
++                                "residuo vivo. Deve restare a mercato fino allo scadere "
++                                "della finestra; poi annullo del residuo e copertura sul "
++                                "rischio residuo (KG1, CP1-CP4)",
+     # P4 (29/09, M8.3)
+     SCENARIO_FERMO_COPERTURA: "freno d'emergenza acceso per 90 s all'ingresso nella fase "
+                               "della copertura: la copertura si ferma senza contare rifiuti "
+@@ -1930,6 +1997,12 @@ def causa_non_esercitato(scenario: str, ref: CERT.Referto) -> Optional[str]:
+     elif scenario == SCENARIO_USCITE_AUTOMATICHE:
+         if zero("G2"):
+             return "nessuna uscita in perdita eseguita dal bot: G2 senza un caso"
++    elif scenario == SCENARIO_KO_GREEN_PARZIALE:
++        if not c.get("chiusure_con_effetto"):
++            return ("la banca al fischio non si e' mai abbinata in parte: KG1 senza "
++                    "un caso vero")
++        if zero("KG1"):
++            return "banca al fischio abbinata in parte ma KG1 mai sollecitato"
+     elif scenario == CP.SCENARIO:
+         if not c.get("chiusure_con_effetto"):
+             return ("il guasto non ha mai avuto effetto (nessuna chiusura abbinata in "
+@@ -1972,7 +2045,8 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
+         cashout_utente=(scenario in (SCENARIO_CASHOUT_GLOBALE, SCENARIO_CASHOUT_DOPO_COPERTURA)),
+         cashout_dopo_copertura=(scenario == SCENARIO_CASHOUT_DOPO_COPERTURA),
+         chiuso_fuori_app=(scenario == SCENARIO_CHIUSO_FUORI_APP),
+-        chiusura_parziale=(scenario == CP.SCENARIO),
++        chiusura_parziale=(scenario in (CP.SCENARIO, SCENARIO_KO_GREEN_PARZIALE)),
++        solo_banca_fischio=(scenario == SCENARIO_KO_GREEN_PARZIALE),
+         fermo_copertura=(scenario == SCENARIO_FERMO_COPERTURA),
+         lettura_ko=(scenario == SCENARIO_LETTURA_KO),
+         punteggio_ko=(scenario == SCENARIO_PUNTEGGIO_KO),
+diff --git a/Betfair/stream/backtest/chiusura_parziale.py b/Betfair/stream/backtest/chiusura_parziale.py
+index b781f69..10fe9fa 100644
+--- a/Betfair/stream/backtest/chiusura_parziale.py
++++ b/Betfair/stream/backtest/chiusura_parziale.py
+@@ -405,10 +405,16 @@ class GuastoChiusuraParziale:
+     def __init__(self, *, frazione: float = FRAZIONE,
+                  tetto_ripiazzamenti: int = TETTO_RIPIAZZAMENTI,
+                  ruolo: Optional[Callable[[Any], Optional[str]]] = None,
+-                 spinta_prezzo: bool = False) -> None:
++                 spinta_prezzo: bool = False,
++                 bersaglio: Optional[Callable[[Any], bool]] = None) -> None:
+         self.frazione = float(frazione)
+         self.tetto_ripiazzamenti = int(tetto_ripiazzamenti)
+         self.ruolo = ruolo
++        # 30/09 (Mike, banca al fischio): se dato, il guasto colpisce SOLO le
++        # chiusure per cui ``bersaglio(ordine)`` e' vero; le altre passano sul
++        # libro vero, come se il guasto non ci fosse. Assente = come prima (la
++        # prima chiusura di ogni selezione): gli altri bot restano identici.
++        self.bersaglio = bersaglio
+         # 30/09 (ondata 2): la SPINTA dichiarata (``libro_con_spinta``) per la
+         # chiusura APPOGGIATA colpita che sul libro vero non troverebbe niente
+         # al suo prezzo. Spenta di serie: gli altri bot restano identici.
+@@ -529,6 +535,13 @@ class GuastoChiusuraParziale:
+                 # la sorveglianza CP4 di questa selezione si ferma qui
+                 st["nuovo_ciclo"] = True
+             return market_book
++        if self.bersaglio is not None:
++            try:
++                colpibile = bool(self.bersaglio(ordine))
++            except Exception:  # noqa: BLE001 - bersaglio illeggibile: non si colpisce
++                colpibile = False
++            if not colpibile:
++                return market_book
+ 
+         self.chiusure_viste += 1
+         if (st is not None and not st["nuovo_ciclo"] and not st["fok"]
+diff --git a/Betfair/mike/tests/test_mike_ko_green_3_minuti_2026_09_30.py b/Betfair/mike/tests/test_mike_ko_green_3_minuti_2026_09_30.py
+new file mode 100644
+index 0000000..d73a86f
+--- /dev/null
++++ b/Betfair/mike/tests/test_mike_ko_green_3_minuti_2026_09_30.py
+@@ -0,0 +1,353 @@
++"""LA BANCA AL FISCHIO RESTA A MERCATO PER TUTTA LA FINESTRA (ordine dell'utente, 30/09 15:40).
++
++Testuale: «quell'ordine deve restare a mercato per 3 minuti come da
++progettazione, SOLO DOPO I 3 minuti, controlla quando e' stato abbinato (se
++parziale come in questo caso) RITIRA IL RESTO, e si copre sulla selezione 4.5
++PER L'IMPORTO RIMANENTE SU UNDER 3.5».
++
++Il caso vero (live, partita 36130526 Vsetin-Bohemians): fischio 15:30:03, banca
++``ko_green`` 5,10 @ 2,08 appoggiata alle 15:30:04; alle 15:30:32 abbinata IN
++PARTE 1,00 (residuo 4,10 vivo) e nello stesso secondo Mike ha ANNULLATO il
++residuo («cancelled_by_engine»), perche' il riallineo di ``_decide_ko_green``
++confrontava la size VIVA (5,10) con il piano ricalcolato sulla posizione che
++comprendeva gia' l'abbinato della stessa banca (4,10): «la posizione e'
++cambiata» -> annullo; al giro dopo la gamba non viva con abbinato > 0 cadeva in
++«uscita al fischio parziale: copro il residuo». Dopo 29 secondi invece di 180.
++
++La regola nuova, provata qui sulla classe VERA del motore (``E.decide``) e sul
++ciclo vero del servizio (``S.run_once`` con ``FakeDB``/``FakeMarket`` di
++``test_mike_service`` e il runner finto che parla il protocollo vero):
++
++  1. dal fischio la banca resta a mercato per TUTTA ``ko_green_window_s``, anche
++     abbinata in parte: nessun annullo, nessuna copertura;
++  2. allo scadere: tutta abbinata -> FLAT (ma quella arriva appena si abbina);
++     in parte -> annullo del residuo e copertura banca Under 4,5 sul rischio
++     RESIDUO (5,00 puntati, 1,00 chiuso -> 4,00 x 1,2 / 0,95 = 5,05);
++     non abbinata -> annullo e copertura intera (5,00 x 1,2 / 0,95 = 6,32);
++  3. banca fatta scadere da Betfair dentro la finestra con un parziale: si
++     riappoggia per il RESIDUO finche' la finestra e' aperta;
++  4. gol precoce nella finestra: la strada C di oggi.
++
++File ASCII-only.
++"""
++from __future__ import annotations
++
++from datetime import timedelta
++from typing import List, Optional
++
++import pytest
++
++from Betfair.mike import certificazione as CERT
++from Betfair.mike import config as C
++from Betfair.mike import engine as E
++from Betfair.mike.tests.test_mike_feed import payload, row
++from Betfair.mike.tests.test_mike_service import NOW, FakeDB, FakeMarket, legs, run, state
++
++
++KO = 1_700_000_000.0
++PAR = C.merge_params(None)
++FINESTRA = float(PAR["ko_green_window_s"])
++
++# i numeri del caso vero: punta Under 3,5 5,00 @ 2,12 -> banca 2 tick sotto = 2,08
++STAKE, PE, P_BANCA, S_BANCA = 5.00, 2.12, 2.08, 5.10
++
++
++def book(bb: float, *, status: str = "OPEN", inplay: bool = True) -> E.Book:
++    return E.Book(best_back=bb, back_size=200.0, best_lay=round(bb + 0.02, 2), lay_size=200.0,
++                  status=status, inplay=inplay)
++
++
++def snap(now: float, *, goals: int = 0, minute: int = 1) -> E.Snapshot:
++    books = {(E.MARKET_OU35, E.SEL_UNDER): book(2.10),
++             (E.MARKET_OU45, E.SEL_UNDER): book(1.18),
++             (E.MARKET_OU45, E.SEL_OVER): book(6.0)}
++    return E.Snapshot(now=now, ko_at=KO, books=books, inplay=True, minute=minute,
++                      goals=goals, feed_fresh=True, order_fresh=True)
++
++
++def banca(**kw) -> E.Leg:
++    base = dict(role="ko_green", market=E.MARKET_OU35, selection=E.SEL_UNDER, side="lay",
++                price=P_BANCA, size=S_BANCA, ref="ko_green-0-3", status="pending",
++                placed_at=KO + 1.0)
++    base.update(kw)
++    return E.Leg(**base)
++
++
++def ctx_al_fischio(gambe: Optional[List[E.Leg]] = None) -> E.MatchCtx:
++    ingresso = E.Leg(role="under_entry", market=E.MARKET_OU35, selection=E.SEL_UNDER,
++                     side="back", price=PE, size=STAKE, matched=STAKE, avg_price=PE,
++                     ref="under_entry-0-1", status="open", placed_at=KO - 600)
++    return E.MatchCtx(state="LIVE_KO_GREEN", legs=[ingresso] + list(gambe or []),
++                      live_since=KO, ko_goals=0)
++
++
++def _annulli(d: E.Decision) -> List[str]:
++    return [a.ref for a in d.actions if a.kind == "cancel"]
++
++
++def _posati(d: E.Decision, ruolo: Optional[str] = None) -> List[E.Action]:
++    return [a for a in d.actions if a.kind == "place" and (ruolo is None or a.role == ruolo)]
++
++
++# ---------------------------------------------------------------------------
++def test_precondizione_la_banca_al_fischio_e_quella_del_caso_vero():
++    d = E.decide(ctx_al_fischio(), snap(KO + 1.0), PAR)
++    p = _posati(d, "ko_green")
++    assert len(p) == 1 and p[0].side == "lay"
++    assert p[0].price == pytest.approx(P_BANCA) and p[0].size == pytest.approx(S_BANCA)
++
++
++def test_parziale_a_30_secondi_resta_a_mercato():
++    """IL CASO VERO: 1,00 abbinato su 5,10, 29 s dopo il fischio. Nessun annullo,
++    nessuna copertura, nessuna banca nuova: la stessa resta sul book."""
++    ctx = ctx_al_fischio([banca(matched=1.0, avg_price=P_BANCA)])
++    d = E.decide(ctx, snap(KO + 30.0), PAR)
++    assert _annulli(d) == [], d.reason
++    assert _posati(d) == [], d.reason
++    assert d.state == "LIVE_KO_GREEN", d.reason
++    assert not d.updates.get("cover_forced")
++
++
++def test_parziale_abbinato_a_prezzo_migliore_resta_a_mercato():
++    """Un limite si abbina anche MEGLIO (banca a 2,06 invece di 2,08): il residuo
++    resta lo stesso ordine, non si riallinea."""
++    ctx = ctx_al_fischio([banca(matched=2.0, avg_price=2.06)])
++    d = E.decide(ctx, snap(KO + 90.0), PAR)
++    assert _annulli(d) == [] and _posati(d) == [], d.reason
++    assert d.state == "LIVE_KO_GREEN"
++
++
++def test_parziale_allo_scadere_annulla_il_residuo_e_copre_il_rischio_residuo():
++    """Allo scadere dei 180 s: annullo del residuo, poi (annullo confermato)
++    banca Under 4,5 = 4,00 x 1,2 / 0,95 = 5,05."""
++    viva = banca(matched=1.0, avg_price=P_BANCA)
++    ctx = ctx_al_fischio([viva])
++    fine = KO + FINESTRA + 1.0
++    d = E.decide(ctx, snap(fine), PAR)
++    assert _annulli(d) == ["ko_green-0-3"], d.reason
++    assert _posati(d) == []
++    assert d.state == "LIVE_UNCOVERED" and d.updates.get("cover_forced") is True
++    E.apply_decision(ctx, d, fine)
++    # annullo confermato da Betfair: la gamba resta con l'abbinato vero
++    viva.status = "open"
++    assert E.under_liability(ctx.legs) == pytest.approx(4.00)
++    d2 = E.decide(ctx, snap(fine + 2.0), PAR)
++    cop = _posati(d2, "over_cover")
++    assert len(cop) == 1, d2.reason
++    assert cop[0].market == E.MARKET_OU45 and cop[0].selection == E.SEL_UNDER
++    assert cop[0].side == "lay"
++    assert cop[0].size == pytest.approx(5.05)
++
++
++def test_non_abbinata_allo_scadere_annullo_e_copertura_intera():
++    viva = banca()
++    ctx = ctx_al_fischio([viva])
++    fine = KO + FINESTRA + 1.0
++    d = E.decide(ctx, snap(fine), PAR)
++    assert _annulli(d) == ["ko_green-0-3"] and d.state == "LIVE_UNCOVERED"
++    E.apply_decision(ctx, d, fine)
++    viva.status = "cancelled"
++    d2 = E.decide(ctx, snap(fine + 2.0), PAR)
++    cop = _posati(d2, "over_cover")
++    assert len(cop) == 1 and cop[0].size == pytest.approx(6.32), d2.reason
++
++
++def test_tutta_abbinata_a_60_secondi_e_flat_subito():
++    ctx = ctx_al_fischio([banca(matched=S_BANCA, avg_price=P_BANCA, status="open")])
++    d = E.decide(ctx, snap(KO + 60.0), PAR)
++    assert d.state == "FLAT", d.reason
++    assert _posati(d) == [] and _annulli(d) == []
++
++
++def test_parziale_scaduto_da_betfair_nella_finestra_si_riappoggia_il_residuo():
++    """Betfair ha fatto scadere il residuo (sospensione) con 1,00 gia' abbinato:
++    finestra aperta -> si riappoggia la banca per il RESIDUO, niente copertura."""
++    ctx = ctx_al_fischio([banca(matched=1.0, avg_price=P_BANCA, status="open")])
++    d = E.decide(ctx, snap(KO + 60.0), PAR)
++    assert d.state == "LIVE_KO_GREEN", d.reason
++    p = _posati(d, "ko_green")
++    assert len(p) == 1, d.reason
++    assert p[0].price == pytest.approx(P_BANCA) and p[0].size == pytest.approx(4.10)
++
++
++def test_parziale_scaduto_da_betfair_a_finestra_chiusa_si_copre():
++    ctx = ctx_al_fischio([banca(matched=1.0, avg_price=P_BANCA, status="open")])
++    d = E.decide(ctx, snap(KO + FINESTRA + 5.0), PAR)
++    assert d.state == "LIVE_UNCOVERED" and d.updates.get("cover_forced") is True
++    assert _posati(d) == [] and _annulli(d) == []
++
++
++def test_gol_nella_finestra_con_parziale_strada_c():
++    ctx = ctx_al_fischio([banca(matched=1.0, avg_price=P_BANCA)])
++    d = E.decide(ctx, snap(KO + 40.0, goals=1), PAR)
++    assert _annulli(d) == ["ko_green-0-3"]
++    assert d.state == "LIVE_SECOND_ENTRY", d.reason
++
++
++def test_se_cambia_la_posizione_d_ingresso_la_banca_si_riallinea():
++    """Il riallineo resta per cio' per cui era nato: un fill del residuo PERSIST
++    (l'Under e' cresciuto) cambia la banca giusta, e quella viva si annulla."""
++    persist = E.Leg(role="under_last", market=E.MARKET_OU35, selection=E.SEL_UNDER,
++                    side="back", price=PE, size=3.0, matched=3.0, avg_price=PE,
++                    ref="under_last-0-2", status="open", placed_at=KO - 60)
++    ctx = ctx_al_fischio([persist, banca(matched=1.0, avg_price=P_BANCA)])
++    d = E.decide(ctx, snap(KO + 30.0), PAR)
++    assert _annulli(d) == ["ko_green-0-3"], d.reason
++    assert d.state == "LIVE_KO_GREEN"
++
++
++# ---------------------------------------------------------------------------
++# il ciclo vero del servizio (paper sul runner finto, protocollo vero)
++# ---------------------------------------------------------------------------
++def _evento_al_fischio() -> dict:
++    return {
++        "event_id": "E1", "event_name": "Roma v Lazio", "state": "LIVE_KO_GREEN", "cycle_no": 0,
++        "entry_price_initial": PE,
++        "markets": {"OU35": {"market_id": "1.35"}, "OU45": {"market_id": "1.45"}},
++        "positions": [{"role": "under_entry", "market": "OU35", "selection": "UNDER",
++                       "side": "back", "price": PE, "size": STAKE, "matched": STAKE,
++                       "avg_price": PE, "ref": "under_entry-0-1", "status": "open",
++                       "placed_at": 0.0, "persistence": "LAPSE", "cycle_no": 0,
++                       "final": False, "archived": False}],
++        "dossier": {}, "live": {}, "ctx": {"ko_goals": 0}, "mode": "paper",
++        "ko_at": (NOW - timedelta(seconds=5)).isoformat(),
++    }
++
++
++def _p():
++    return payload(inplay=True, minute=1, sh=0, sa=0, ko=NOW - timedelta(seconds=5),
++                   u35=(2.10, 2.12, 200.0, 200.0), u45=(1.18, 1.19, 200.0, 200.0))
++
++
++def _gamba(db, ruolo):
++    return [g for g in legs(db) if g["role"] == ruolo]
++
++
++def test_servizio_parziale_al_fischio_resta_fino_allo_scadere(runner):
++    db = FakeDB(params={"stake": STAKE})
++    mk = FakeMarket()
++    db.events["E1"] = _evento_al_fischio()
++    run(db, mk, NOW, [row(_p(), updated=NOW)])
++    assert state(db) == "LIVE_KO_GREEN"
++    uscita = _gamba(db, "ko_green")
++    assert len(uscita) == 1, db.kinds()
++    ref = [c for c in runner.comandi if c["azione"] == "place"][-1]["ref"]
++    assert uscita[0]["price"] == pytest.approx(P_BANCA)
++    assert uscita[0]["size"] == pytest.approx(S_BANCA)
++    # 29 s dopo: il runner abbina IN PARTE 1,00
++    runner.abbina(ref, size=1.0)
++    for dt in (29, 31, 60, 120, 170):
++        t = NOW + timedelta(seconds=dt)
++        run(db, mk, t, [row(_p(), updated=t)])
++        assert state(db) == "LIVE_KO_GREEN", (dt, db.kinds()[-5:])
++        g = _gamba(db, "ko_green")
++        assert len(g) == 1 and g[0]["status"] == "pending", (dt, g)
++        assert g[0]["matched"] == pytest.approx(1.0)
++    assert [c for c in runner.comandi if c["azione"] == "cancel"] == [], \
++        "annullo del residuo prima dello scadere della finestra"
++    assert _gamba(db, "over_cover") == []
++    # allo scadere: annullo del residuo (confermato dal runner) ...
++    t = NOW + timedelta(seconds=FINESTRA + 2)
++    run(db, mk, t, [row(_p(), updated=t)])
++    assert len([c for c in runner.comandi if c["azione"] == "cancel"]) == 1
++    g = _gamba(db, "ko_green")[0]
++    assert g["status"] == "open" and g["matched"] == pytest.approx(1.0)
++    # ... e la copertura banca Under 4,5 sul rischio residuo 4,00
++    for k in range(1, 4):
++        t2 = t + timedelta(seconds=2 * k)
++        run(db, mk, t2, [row(_p(), updated=t2)])
++    cop = _gamba(db, "over_cover")
++    assert len(cop) == 1, (state(db), db.kinds()[-6:])
++    assert cop[0]["market"] == "OU45" and cop[0]["selection"] == "UNDER"
++    assert cop[0]["side"] == "lay" and cop[0]["size"] == pytest.approx(5.05)
++
++
++# ---------------------------------------------------------------------------
++# il controllo di condotta del banco: KG1 (certificazione.py)
++# ---------------------------------------------------------------------------
++def _kg1(ctx: E.MatchCtx, s: E.Snapshot, d: E.Decision) -> List[str]:
++    soll: dict = {}
++    out = [v.dettaglio for v in CERT.verifica(ctx, s, d, PAR, soll)
++           if v.codice.startswith("KG1")]
++    assert soll.get("KG1"), "KG1 non ha avuto il caso"
++    return out
++
++
++def _annullo(ref: str = "ko_green-0-3") -> E.Action:
++    return E.Action(kind="cancel", ref=ref, role="ko_green", market=E.MARKET_OU35,
++                    selection=E.SEL_UNDER)
++
++
++def test_kg1_rosso_sull_annullo_del_parziale_a_29_secondi():
++    """Il caso vero: annullo del residuo 29 s dopo il fischio."""
++    ctx = ctx_al_fischio([banca(matched=1.0, avg_price=P_BANCA)])
++    d = E.Decision("LIVE_KO_GREEN", [_annullo()], "uscita appoggiata a 2.08")
++    viol = _kg1(ctx, snap(KO + 29.0), d)
++    assert len(viol) == 1 and "29 s dal fischio" in viol[0]
++
++
++def test_kg1_rosso_sulla_copertura_dentro_la_finestra():
++    ctx = ctx_al_fischio([banca(matched=1.0, avg_price=P_BANCA, status="open")])
++    d = E.Decision("LIVE_UNCOVERED", [], "uscita al fischio parziale: copro il residuo")
++    viol = _kg1(ctx, snap(KO + 31.0), d)
++    assert len(viol) == 1 and "copertura a 31 s" in viol[0]
++
++
++def test_kg1_tace_allo_scadere_col_gol_e_sul_riallineo():
++    ctx = ctx_al_fischio([banca(matched=1.0, avg_price=P_BANCA)])
++    d = E.Decision("LIVE_UNCOVERED", [_annullo()], "scaduta")
++    assert _kg1(ctx, snap(KO + FINESTRA + 1.0), d) == []
++    assert _kg1(ctx, snap(KO + 40.0, goals=1),
++                E.Decision("LIVE_SECOND_ENTRY", [_annullo()], "gol")) == []
++    persist = E.Leg(role="under_last", market=E.MARKET_OU35, selection=E.SEL_UNDER,
++                    side="back", price=PE, size=3.0, matched=3.0, avg_price=PE,
++                    ref="under_last-0-2", status="open", placed_at=KO - 60)
++    ctx2 = ctx_al_fischio([persist, banca(matched=1.0, avg_price=P_BANCA)])
++    assert _kg1(ctx2, snap(KO + 30.0), E.Decision("LIVE_KO_GREEN", [_annullo()], "r")) == []
++
++
++def test_kg1_rosso_sulla_copertura_dimensionata_sullo_stake_lordo():
++    """Allo scadere la copertura vale il rischio RESIDUO (4,00 -> 5,05), mai lo
++    stake lordo (5,00 -> 6,32)."""
++    ctx = ctx_al_fischio([banca(matched=1.0, avg_price=P_BANCA, status="open")])
++    ctx.state = "LIVE_UNCOVERED"
++    giusta = E.Action(kind="place", role="over_cover", market=E.MARKET_OU45,
++                      selection=E.SEL_UNDER, side="lay", price=1.20, size=5.05)
++    lorda = E.Action(kind="place", role="over_cover", market=E.MARKET_OU45,
++                     selection=E.SEL_UNDER, side="lay", price=1.20, size=6.32)
++    s = snap(KO + FINESTRA + 5.0)
++    assert _kg1(ctx, s, E.Decision("LIVE_COVER_PENDING", [giusta], "cop")) == []
++    viol = _kg1(ctx, s, E.Decision("LIVE_COVER_PENDING", [lorda], "cop"))
++    assert len(viol) == 1 and "6.32" in viol[0]
++
++
++# ---------------------------------------------------------------------------
++# lo scenario del banco: il guasto colpisce SOLO la banca al fischio
++# ---------------------------------------------------------------------------
++def _ordine_flumine(*, ref: str, side: str = "LAY", price: float = P_BANCA,
++                    size: float = S_BANCA):
++    """Le sole cose che il banco legge di un ordine di flumine: ``notes`` (il
++    ``bot_ref`` sulla coda, il ``customer_order_ref`` del runner sul canale),
++    ``order_type.price/size``, ``side``, ``market_id``, ``selection_id``."""
++    from types import SimpleNamespace
++    note = {"bot_ref": ref} if ref.startswith("mike-") else {"customer_order_ref": ref}
++    return SimpleNamespace(notes=note, side=side, market_id="1.35", selection_id=1222344,
++                           order_type=SimpleNamespace(price=price, size=size))
++
++
++def test_scenario_ko_green_parziale_riconosce_solo_la_banca_al_fischio():
++    from Betfair.mike.tools import replay_registrazioni as R
++    righe = [
++        {"id": 2, "strategy": "under_green", "role": "under_green", "market_id": "1.35",
++         "selection_id": 1222344, "side": "lay", "price": P_BANCA, "size": S_BANCA},
++        {"id": 3, "strategy": "ko_green", "role": "ko_green", "market_id": "1.35",
++         "selection_id": 1222344, "side": "lay", "price": P_BANCA, "size": 4.10},
++    ]
++    e = R.e_banca_al_fischio(lambda: righe)
++    # coda: dal ref della riga
++    assert e(_ordine_flumine(ref="mike-t3")) is True
++    assert e(_ordine_flumine(ref="mike-t2")) is False
++    # canale: dalla STESSA domanda (la banca pre-partita ha un altro importo)
++    assert e(_ordine_flumine(ref="awlq17907", size=4.10)) is True
++    assert e(_ordine_flumine(ref="awlq17906", size=S_BANCA)) is False
++    assert "ko-green-parziale" in R.SCENARI and "ko-green-parziale" in R.SCENARI_DESCRITTI
+diff --git a/AUDIT_2026-09-30/ko_green_3_minuti/falsifica_ko_green_3_minuti.py b/AUDIT_2026-09-30/ko_green_3_minuti/falsifica_ko_green_3_minuti.py
+new file mode 100644
+index 0000000..143179f
+--- /dev/null
++++ b/AUDIT_2026-09-30/ko_green_3_minuti/falsifica_ko_green_3_minuti.py
+@@ -0,0 +1,162 @@
++"""Falsificazione dei test nuovi/aggiornati del cantiere «ko_green 3 minuti» (30/09).
++
++Per ogni mutazione: si scrive nel file la mutazione (marcata MUTAZIONE), si
++lanciano i test, si deve vedere ROSSO dove dichiarato, e si RIMETTE il file
++com'era (testo originale tenuto in memoria, scritto in un finally). Alla fine:
++nessun "MUTAZIONE" nei file, e il chiamante confronta `git diff --stat`.
++
++uso (dalla radice del worktree, ambiente neutro):
++    python AUDIT_2026-09-30/ko_green_3_minuti/falsifica_ko_green_3_minuti.py
++MAI interrompere a meta'.
++"""
++from __future__ import annotations
++
++import os
++import subprocess
++import sys
++
++RADICE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
++ENGINE = "Betfair/mike/engine.py"
++CERTF = "Betfair/mike/certificazione.py"
++REPLAY = "Betfair/mike/tools/replay_registrazioni.py"
++NUOVO = "Betfair/mike/tests/test_mike_ko_green_3_minuti_2026_09_30.py"
++FISCHIO = ("Betfair/mike/tests/test_mike_flusso_fischio_2026_09_13.py"
++           "::test_strada_A_fill_parziale_copre_solo_il_residuo")
++APPOGG = "Betfair/mike/tests/test_mike_ko_green_appoggiata_2026_09_16.py"
++J5 = [APPOGG + "::test_sostituire_una_lay_viva_emette_SOLO_l_annullamento",
++      APPOGG + "::test_con_l_annullamento_FALLITO_nessuna_lay_nuova_e_si_ritenta"]
++
++# (nome, file, vecchio, nuovo, test da lanciare, test che DEVONO diventare rossi)
++MUTAZIONI = [
++    ("M1 riallineo sul piano che conta il parziale (codice di oggi)", ENGINE,
++     "piano_vivo = piano_uscita_ko(ctx, params, Pe,\n"
++     "                                     legs=[l for l in ctx.legs if l is not vivo]) or plan",
++     "piano_vivo = plan  # MUTAZIONE", [NUOVO],
++     ["test_parziale_a_30_secondi_resta_a_mercato",
++      "test_parziale_abbinato_a_prezzo_migliore_resta_a_mercato",
++      "test_servizio_parziale_al_fischio_resta_fino_allo_scadere"]),
++    ("M2 parziale non vivo -> copertura subito (codice di oggi)", ENGINE,
++     "            and (not live_open_selections(ctx.legs, snap.goals)\n"
++     "                 or finestra_uscita_scaduta(ctx, snap, params)):",
++     "            and True:  # MUTAZIONE", [NUOVO],
++     ["test_parziale_scaduto_da_betfair_nella_finestra_si_riappoggia_il_residuo"]),
++    ("M3 allo scadere nessun annullo", ENGINE,
++     "    if finestra_uscita_scaduta(ctx, snap, params):\n        _annulla(uscita)",
++     "    if finestra_uscita_scaduta(ctx, snap, params):\n        pass  # MUTAZIONE",
++     [NUOVO],
++     ["test_parziale_allo_scadere_annulla_il_residuo_e_copre_il_rischio_residuo",
++      "test_non_abbinata_allo_scadere_annullo_e_copertura_intera",
++      "test_servizio_parziale_al_fischio_resta_fino_allo_scadere"]),
++    ("M4 la banca viva non si riallinea mai", ENGINE,
++     "        if abs(float(vivo.price) - float(piano_vivo.price)) < 1e-9 and \\",
++     "        # MUTAZIONE\n"
++     "        if True or abs(float(vivo.price) - float(piano_vivo.price)) < 1e-9 and \\",
++     [NUOVO],
++     ["test_se_cambia_la_posizione_d_ingresso_la_banca_si_riallinea"]),
++    ("M5 la finestra non scade mai", ENGINE,
++     "    return float(snap.now) - float(ctx.live_since) >= float(params[\"ko_green_window_s\"])",
++     "    return False  # MUTAZIONE", [NUOVO, FISCHIO],
++     ["test_parziale_allo_scadere_annulla_il_residuo_e_copre_il_rischio_residuo",
++      "test_non_abbinata_allo_scadere_annullo_e_copertura_intera",
++      "test_parziale_scaduto_da_betfair_a_finestra_chiusa_si_copre",
++      "test_servizio_parziale_al_fischio_resta_fino_allo_scadere",
++      "test_strada_A_fill_parziale_copre_solo_il_residuo"]),
++    ("M6 gol dopo il fischio ignorato", ENGINE,
++     "    if gol_dopo_il_fischio(ctx, snap):\n        _annulla(uscita)",
++     "    if False:  # MUTAZIONE\n        _annulla(uscita)", [NUOVO],
++     ["test_gol_nella_finestra_con_parziale_strada_c"]),
++    ("M7 tutta abbinata non e' FLAT", ENGINE,
++     "        if not live_open_selections(ctx.legs, snap.goals):\n            bloccato",
++     "        if live_open_selections(ctx.legs, snap.goals):  # MUTAZIONE\n            bloccato",
++     [NUOVO], ["test_tutta_abbinata_a_60_secondi_e_flat_subito"]),
++    ("M8 copertura sullo stake lordo", ENGINE,
++     "    _w, l = exposure(legs, MARKET_OU35, SEL_UNDER)\n"
++     "    return round(max(0.0, -float(l)), 2)",
++     "    return round(sum(float(x.matched) for x in legs if x.side == 'back' and "
++     "x.market == MARKET_OU35), 2)  # MUTAZIONE", [NUOVO, FISCHIO],
++     ["test_parziale_allo_scadere_annulla_il_residuo_e_copre_il_rischio_residuo",
++      "test_servizio_parziale_al_fischio_resta_fino_allo_scadere",
++      "test_strada_A_fill_parziale_copre_solo_il_residuo"]),
++    ("M9 due lay nello stesso giro (J5 spento)", ENGINE,
++     "    fermate = [(a, g) for a, g in fermate if g is not None]\n    if not fermate:\n"
++     "        return d\n    tolte = {id(a) for a, _ in fermate}\n    kept = [a for a in d.actions if id(a) not in tolte]\n"
++     "    a0, g0 = fermate[0]\n    come = \"a esito ignoto\" if g0.needs_reconcile else \"ancora viva\"\n"
++     "    perche = (f\"lay '",
++     "    fermate = []  # MUTAZIONE\n    if not fermate:\n"
++     "        return d\n    tolte = {id(a) for a, _ in fermate}\n    kept = [a for a in d.actions if id(a) not in tolte]\n"
++     "    a0, g0 = fermate[0]\n    come = \"a esito ignoto\" if g0.needs_reconcile else \"ancora viva\"\n"
++     "    perche = (f\"lay '", J5,
++     ["test_sostituire_una_lay_viva_emette_SOLO_l_annullamento",
++      "test_con_l_annullamento_FALLITO_nessuna_lay_nuova_e_si_ritenta"]),
++    ("K1 KG1 cieco", CERTF,
++     "def _kg1(ctx, snap, d, params):\n    if ctx.state == \"LIVE_KO_GREEN\":",
++     "def _kg1(ctx, snap, d, params):\n    return None  # MUTAZIONE\n    if ctx.state == \"LIVE_KO_GREEN\":",
++     [NUOVO],
++     ["test_kg1_rosso_sull_annullo_del_parziale_a_29_secondi",
++      "test_kg1_rosso_sulla_copertura_dentro_la_finestra",
++      "test_kg1_rosso_sulla_copertura_dimensionata_sullo_stake_lordo"]),
++    ("K2 KG1 accusa anche il riallineo legittimo", CERTF,
++     "        if abs(giusta - float(u.size)) > 0.011 + 0.01 * float(u.size):\n            return None",
++     "        pass  # MUTAZIONE", [NUOVO],
++     ["test_kg1_tace_allo_scadere_col_gol_e_sul_riallineo"]),
++    ("K3 KG1 non guarda l'importo della copertura", CERTF,
++     "    if E.cover_form(params) != E.COVER_LAY_U45:\n        return None",
++     "    return None  # MUTAZIONE", [NUOVO],
++     ["test_kg1_rosso_sulla_copertura_dimensionata_sullo_stake_lordo"]),
++    ("P1 il guasto colpisce ogni riga dal ref", REPLAY,
++     "                        return _ruolo(r) == \"ko_green\"",
++     "                        return True  # MUTAZIONE", [NUOVO],
++     ["test_scenario_ko_green_parziale_riconosce_solo_la_banca_al_fischio"]),
++    ("P2 sul canale non si guarda l'importo", REPLAY,
++     "\n                        and abs(float(r.get(\"size\") or 0.0) - size) < 0.005):",
++     "):  # MUTAZIONE", [NUOVO],
++     ["test_scenario_ko_green_parziale_riconosce_solo_la_banca_al_fischio"]),
++]
++
++
++def _pytest(bersagli):
++    cmd = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-rf",
++           "--no-header"] + list(bersagli)
++    p = subprocess.run(cmd, cwd=RADICE, capture_output=True, text=True, timeout=600)
++    return p.returncode, p.stdout + p.stderr
++
++
++def main() -> int:
++    esiti = []
++    for nome, rel, vecchio, nuovo, bersagli, rossi_attesi in MUTAZIONI:
++        path = os.path.join(RADICE, rel)
++        with open(path, "r", encoding="utf-8", newline="") as fh:
++            originale = fh.read()
++        # la copia di lavoro puo' avere CRLF (autocrlf): le ancore si adeguano
++        nl = "\r\n" if "\r\n" in originale else "\n"
++        vecchio, nuovo = vecchio.replace("\n", nl), nuovo.replace("\n", nl)
++        if originale.count(vecchio) != 1:
++            esiti.append((nome, "ANCORA NON TROVATA (%d)" % originale.count(vecchio), []))
++            continue
++        try:
++            with open(path, "w", encoding="utf-8", newline="") as fh:
++                fh.write(originale.replace(vecchio, nuovo))
++            rc, out = _pytest(bersagli)
++        finally:
++            with open(path, "w", encoding="utf-8", newline="") as fh:
++                fh.write(originale)
++        falliti = [r.split("::")[-1].split(" ")[0] for r in out.splitlines()
++                   if r.startswith("FAILED ")]
++        mancano = [t for t in rossi_attesi if t not in falliti]
++        ok = rc != 0 and not mancano
++        esiti.append((nome, "ROSSO come atteso" if ok else "NON ROSSO: mancano %s" % mancano,
++                      falliti))
++    for nome, esito, falliti in esiti:
++        print("%-62s %s | rossi: %s" % (nome, esito, ", ".join(falliti)))
++    residui = 0
++    for rel in (ENGINE, CERTF, REPLAY):
++        with open(os.path.join(RADICE, rel), "r", encoding="utf-8") as fh:
++            residui += fh.read().count("MUTAZIONE")
++    print("MUTAZIONE rimaste nei file:", residui)
++    rc, out = _pytest([NUOVO, FISCHIO] + J5)
++    print("dopo il ripristino:", out.strip().splitlines()[-1])
++    return 0 if all(e[1] == "ROSSO come atteso" for e in esiti) and residui == 0 and rc == 0 else 1
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/AUDIT_2026-09-30/ko_green_3_minuti/sonda_guasto_banca_fischio.py b/AUDIT_2026-09-30/ko_green_3_minuti/sonda_guasto_banca_fischio.py
+new file mode 100644
+index 0000000..c4c095b
+--- /dev/null
++++ b/AUDIT_2026-09-30/ko_green_3_minuti/sonda_guasto_banca_fischio.py
+@@ -0,0 +1,36 @@
++"""Sonda di debug (NON certificazione): dove il guasto dello scenario
++``ko-green-parziale`` vede passare gli ordini di Mike, e che cosa ne pensa.
++
++uso: python AUDIT_2026-09-30/ko_green_3_minuti/sonda_guasto_banca_fischio.py <data-dir>
++"""
++import os
++import sys
++
++sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
++
++from Betfair.stream.backtest import chiusura_parziale as CP
++from Betfair.mike.tools import replay_registrazioni as R
++
++orig = CP.GuastoChiusuraParziale._al_piazzamento
++
++
++def spia(self, ordine, sim, market_book, instruction):
++    note = getattr(ordine, "notes", None) or {}
++    pt = getattr(market_book, "publish_time", None)
++    b = self.bersaglio(ordine) if self.bersaglio else None
++    print("PLACE", pt, dict(note), dict(getattr(ordine, "context", None) or {}),
++          getattr(ordine, "side", None),
++          self._ruolo_di(ordine), "bersaglio=", b,
++          "prezzo", getattr(ordine.order_type, "price", None),
++          "size", getattr(ordine.order_type, "size", None), file=sys.stderr, flush=True)
++    out = orig(self, ordine, sim, market_book, instruction)
++    print("   colpiti", len(self.colpiti), "viste", self.chiusure_viste,
++          file=sys.stderr, flush=True)
++    return out
++
++
++CP.GuastoChiusuraParziale._al_piazzamento = spia
++from Betfair.stream.backtest.certifica import main  # noqa: E402
++
++main(["mike", "35760084", "--scenari", "ko-green-parziale", "--trasporto", "canale",
++      "--worker", "0", "--data-dir", sys.argv[1]])
+diff --git a/AUDIT_2026-09-30/ko_green_3_minuti/sonda_fine_riga.py b/AUDIT_2026-09-30/ko_green_3_minuti/sonda_fine_riga.py
+new file mode 100644
+index 0000000..28249d9
+--- /dev/null
++++ b/AUDIT_2026-09-30/ko_green_3_minuti/sonda_fine_riga.py
+@@ -0,0 +1,21 @@
++"""Sonda: fine riga (CRLF/LF) e caratteri non ASCII dei file toccati, contro HEAD."""
++import subprocess
++
++FILES = ["Betfair/mike/engine.py", "Betfair/mike/certificazione.py",
++         "Betfair/mike/tools/replay_registrazioni.py",
++         "Betfair/stream/backtest/chiusura_parziale.py",
++         "Betfair/mike/tests/test_mike_ko_green_3_minuti_2026_09_30.py",
++         "Betfair/mike/tests/test_mike_flusso_fischio_2026_09_13.py",
++         "Betfair/mike/tests/test_mike_ko_green_appoggiata_2026_09_16.py",
++         "Betfair/mike/COSTITUZIONE_MIKE.md"]
++for f in FILES:
++    b = open(f, "rb").read()
++    crlf = b.count(b"\r\n")
++    lf = b.count(b"\n") - crlf
++    try:
++        h = subprocess.run(["git", "show", "HEAD:" + f], capture_output=True).stdout
++        hcr = h.count(b"\r\n")
++        hlf = h.count(b"\n") - hcr
++    except Exception:
++        hcr = hlf = -1
++    print(f, "ora crlf", crlf, "lf", lf, "| HEAD crlf", hcr, "lf", hlf)

@@ -405,10 +405,16 @@ class GuastoChiusuraParziale:
     def __init__(self, *, frazione: float = FRAZIONE,
                  tetto_ripiazzamenti: int = TETTO_RIPIAZZAMENTI,
                  ruolo: Optional[Callable[[Any], Optional[str]]] = None,
-                 spinta_prezzo: bool = False) -> None:
+                 spinta_prezzo: bool = False,
+                 bersaglio: Optional[Callable[[Any], bool]] = None) -> None:
         self.frazione = float(frazione)
         self.tetto_ripiazzamenti = int(tetto_ripiazzamenti)
         self.ruolo = ruolo
+        # 30/09 (Mike, banca al fischio): se dato, il guasto colpisce SOLO le
+        # chiusure per cui ``bersaglio(ordine)`` e' vero; le altre passano sul
+        # libro vero, come se il guasto non ci fosse. Assente = come prima (la
+        # prima chiusura di ogni selezione): gli altri bot restano identici.
+        self.bersaglio = bersaglio
         # 30/09 (ondata 2): la SPINTA dichiarata (``libro_con_spinta``) per la
         # chiusura APPOGGIATA colpita che sul libro vero non troverebbe niente
         # al suo prezzo. Spenta di serie: gli altri bot restano identici.
@@ -529,6 +535,13 @@ class GuastoChiusuraParziale:
                 # la sorveglianza CP4 di questa selezione si ferma qui
                 st["nuovo_ciclo"] = True
             return market_book
+        if self.bersaglio is not None:
+            try:
+                colpibile = bool(self.bersaglio(ordine))
+            except Exception:  # noqa: BLE001 - bersaglio illeggibile: non si colpisce
+                colpibile = False
+            if not colpibile:
+                return market_book
 
         self.chiusure_viste += 1
         if (st is not None and not st["nuovo_ciclo"] and not st["fok"]

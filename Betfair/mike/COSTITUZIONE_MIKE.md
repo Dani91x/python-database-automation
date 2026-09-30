@@ -1184,6 +1184,11 @@ nostro prezzo di ingresso** — la media delle gambe Under abbinate e ancora a r
 il prezzo di mercato. È un **limite**: se il mercato offre di meglio si abbina meglio, mai
 peggio. L'ordine resta per `ko_green_window_s` **contati dal fischio visto in gioco**, non
 dal `ko_at` di calendario.
+**Ordine dell'utente 30/09 15:40**: un abbinamento **parziale** non ferma niente — l'ordine
+resta a mercato per tutta la finestra (se Betfair lo fa scadere a una sospensione si
+riappoggia per il residuo); **solo allo scadere** si annulla il resto e si copre la linea
+4,5 per il rischio **residuo** dell'Under 3,5 (es. 5,00 puntati, 1,00 chiuso: 4,00 × 1,2 /
+0,95 = 5,05), controllo KG1 del banco, scenario `ko-green-parziale`.
 
 | | Condizione | Cosa fa il bot | Stato |
 |---|---|---|---|

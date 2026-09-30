@@ -199,15 +199,21 @@ def test_strada_A_non_riapre_niente_al_giro_dopo():
 
 def test_strada_A_fill_parziale_copre_solo_il_residuo():
     """Meta' uscita abbinata: resta esposizione, quindi si copre -- ma sul residuo,
-    non sullo stake pieno (``under_liability`` e' gia' al netto della lay abbinata)."""
+    non sullo stake pieno (``under_liability`` e' gia' al netto della lay abbinata).
+
+    30/09 (ordine dell'utente, 15:40): la copertura del residuo parte SOLO a
+    finestra scaduta. Prima questo test la voleva a 60 s dal fischio; dentro la
+    finestra un parziale non piu' vivo si riappoggia per il residuo
+    (``test_mike_ko_green_3_minuti_2026_09_30``). Qui si guarda allo scadere."""
     ctx, p = posizione_portata_in_gioco(10.0, 1.50), params()
     al_fischio(ctx, p)
     uscita = [l for l in ctx.legs if l.role == "ko_green"][-1]
     uscita.matched = round(uscita.size / 2.0, 2)
     uscita.avg_price = uscita.price
     uscita.status = "open"
-    d = E.decide(ctx, snap(KO + 60, u35=book(1.47, inplay=True), o45=book(8.0),
-                           minute=1, goals=0), p)
+    fine = KO + 1.0 + float(p["ko_green_window_s"]) + 5.0
+    d = E.decide(ctx, snap(fine, u35=book(1.47, inplay=True), o45=book(8.0),
+                           minute=4, goals=0), p)
     assert d.state in ("LIVE_UNCOVERED", "LIVE_COVER_PENDING")
     assert E.under_liability(ctx.legs) < 10.0
 
