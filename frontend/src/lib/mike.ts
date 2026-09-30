@@ -428,7 +428,7 @@ export type MikeParamField =
     | { key: string; label: string; kind: 'text'; hint: string; group: MikeParamGroup };
 
 export const MIKE_PARAM_GROUP_LABEL: Record<MikeParamGroup, string> = {
-    generale: 'Generale', pre: 'Pre-match', fischio: 'Dal fischio d’inizio', cover: 'Copertura Over 4.5', cashout: 'Cash-out globale',
+    generale: 'Generale', pre: 'Pre-match', fischio: 'Dal fischio d’inizio', cover: 'Copertura (linea 4.5)', cashout: 'Cash-out globale',
     uscite: 'Uscite HT / 2T', reentry: 'Re-ingresso (gol + 3.5)', rischio: 'Rischio',
 };
 
@@ -500,10 +500,10 @@ export const MIKE_PARAM_FIELDS: readonly MikeParamField[] = [
     // copertura. Specchio di Betfair/mike/config.py PARAM_SPEC.
     { key: 'cover_rifiuti_max', label: 'Copertura: rifiuti max prima di fermarsi', kind: 'number', step: 1, min: 1, max: 20, hint: 'rifiuti CONSECUTIVI di Betfair con lo stesso codice d’errore prima di fermare la copertura (stato bloccato): serve «Riprendi», oppure un codice diverso, che è una notizia nuova e riapre il tentativo', group: 'cover' },
     { key: 'cover_retry_min_s', label: 'Copertura: attesa minima fra tentativi (s)', kind: 'number', step: 1, min: 1, max: 300, hint: 'ritmo minimo fra due tentativi di copertura: il bet delay in gioco è 5 s, ritentare più spesso vuol dire chiedere a Betfair prima di sapere l’esito della volta prima', group: 'cover' },
-    { key: 'cashout_profit_pct', label: 'Chiudi tutto a profitto ≥ %', kind: 'number', step: 0.5, min: 0.5, max: 50, hint: 'somma dei P&L bloccabili di Under 3.5 + Over 4.5', group: 'cashout' },
-    { key: 'cashout_base', label: 'Base della %', kind: 'choice', choices: ['total', 'under'], hint: 'total = stake Under + copertura; under = solo stake Under', group: 'cashout' },
+    { key: 'cashout_profit_pct', label: 'Chiudi tutto a profitto ≥ %', kind: 'number', step: 0.5, min: 0.5, max: 50, hint: 'somma dei P&L bloccabili di Under 3.5 + copertura sulla linea 4.5', group: 'cashout' },
+    { key: 'cashout_base', label: 'Base della %', kind: 'choice', choices: ['total', 'under'], hint: 'total = stake Under + capitale della copertura (per una banca conta il RISCHIO: importo x (quota - 1)); under = solo stake Under', group: 'cashout' },
     { key: 'cashout_place_at_ticks', label: 'Chiusura N tick oltre il best', kind: 'number', step: 1, min: 0, max: 3, hint: 'fill più sicuro, P&L leggermente peggiore', group: 'cashout' },
-    { key: 'cover_place_at_ticks', label: 'Copertura N tick sotto il best', kind: 'number', step: 1, min: 0, max: 6, hint: 'cuscinetto perché la copertura entri davvero: con il ritardo di piazzamento un ordine al prezzo esatto muore (misurato: 93% di coperture non abbinate). Costa qualche tick, evita di restare scoperti', group: 'cover' },
+    { key: 'cover_place_at_ticks', label: 'Copertura: cuscinetto di N tick', kind: 'number', step: 1, min: 0, max: 6, hint: 'banca Under 4,5: limite N tick SOPRA il miglior prezzo lay; punta Over 4,5 (forma vecchia): N tick SOTTO il miglior prezzo. Cuscinetto perché la copertura entri davvero: con il ritardo di piazzamento un ordine al prezzo esatto muore (misurato: 93% di coperture non abbinate). Costa qualche tick, evita di restare scoperti', group: 'cover' },
     { key: 'cashout_smart_enabled', label: 'Cash-out intelligente', kind: 'bool', hint: 'chiude prima della soglia se tenere non vale il rischio (punteggio, hazard, pressione, valore atteso)', group: 'cashout' },
     // 25/09 — ordine dell'utente: chi esegue le uscite. Specchio di
     // Betfair/mike/config.py PARAM_SPEC['uscite_automatiche']. 25/09 sera:
@@ -583,7 +583,7 @@ export const MIKE_PARAM_DEFAULTS: Record<string, number | boolean | string> = {
     cover_enabled: true, cover_profit_factor: 1.2, cover_policy: 'auto', cover_wait_hazard_max: 0.06,
     cover_wait_max_min: 10, cover_wait_p4_max: 0.16, cover_good_price: 7, cover_wait_min_gain_pct: 8,
     cover_wait_step_min: 5, cover_postgoal_delay_s: 45, cover_max_goals: 2,
-    cover_rounding: 'ceil', cover_max_overshoot_pct: 30, cover_form: 'back_over45', exact_sizes: true,
+    cover_rounding: 'ceil', cover_max_overshoot_pct: 30, cover_form: 'lay_under45', exact_sizes: true,
     cover_rifiuti_max: 3, cover_retry_min_s: 15,
     cashout_profit_pct: 5, cashout_base: 'total', cashout_place_at_ticks: 0, cover_place_at_ticks: 2, close_retry_s: 10, close_max_attempts: 20,
     uscite_automatiche: false,
@@ -648,9 +648,9 @@ export const MIKE_PHASE_META: Record<MikeState, PhaseMeta> = {
     IDLE_LIVE: { label: 'IN GIOCO · NESSUNA POSIZIONE', what: 'partita iniziata senza posizione: Mike non opera più su questa partita', cls: 'bg-slate-600/30 text-slate-300 border-slate-500/40', dot: 'bg-white/30', group: 'live' },
     LIVE_KO_GREEN: { label: 'USCITA AL FISCHIO', what: 'lay appoggiata a +N tick dal nostro ingresso: se si abbina si esce in profitto senza coprire', cls: 'bg-emerald-500/20 text-emerald-200 border-emerald-400/50 animate-pulse', dot: 'bg-emerald-400 animate-pulse', group: 'live' },
     LIVE_SECOND_ENTRY: { label: 'GOL PRECOCE · SECONDA PUNTATA', what: 'gol dentro la finestra: seconda puntata sull’Under 3.5 al miglior prezzo, poi copertura a tranche', cls: 'bg-amber-500/20 text-amber-200 border-amber-400/50 animate-pulse', dot: 'bg-amber-400 animate-pulse', group: 'live' },
-    LIVE_UNCOVERED: { label: 'IN GIOCO · SCOPERTO', what: 'Under 3.5 aperto senza copertura: valuta quando comprare l’Over 4.5', cls: 'bg-sky-500/20 text-sky-200 border-sky-400/50', dot: 'bg-sky-400', group: 'live' },
-    LIVE_COVER_PENDING: { label: 'COPERTURA IN CORSO', what: 'ordine Over 4.5 sul book: aspetta l’abbinamento della copertura', cls: 'bg-violet-500/20 text-violet-200 border-violet-400/50 animate-pulse', dot: 'bg-violet-400 animate-pulse', group: 'live' },
-    LIVE_COVERED: { label: 'IN GIOCO · COPERTO', what: 'Under 3.5 + Over 4.5 abbinati: aspetta la soglia di cash out o il fischio finale', cls: 'bg-violet-500/25 text-violet-100 border-violet-300/60', dot: 'bg-violet-300', group: 'live' },
+    LIVE_UNCOVERED: { label: 'IN GIOCO · SCOPERTO', what: 'Under 3.5 aperto senza copertura: valuta quando coprirsi sulla linea 4.5', cls: 'bg-sky-500/20 text-sky-200 border-sky-400/50', dot: 'bg-sky-400', group: 'live' },
+    LIVE_COVER_PENDING: { label: 'COPERTURA IN CORSO', what: 'ordine di copertura sulla linea 4.5 sul book: aspetta l’abbinamento', cls: 'bg-violet-500/20 text-violet-200 border-violet-400/50 animate-pulse', dot: 'bg-violet-400 animate-pulse', group: 'live' },
+    LIVE_COVERED: { label: 'IN GIOCO · COPERTO', what: 'Under 3.5 + copertura sulla linea 4.5 abbinati: aspetta la soglia di cash out o il fischio finale', cls: 'bg-violet-500/25 text-violet-100 border-violet-300/60', dot: 'bg-violet-300', group: 'live' },
     LIVE_CLOSING: { label: 'CHIUSURA IN CORSO', what: 'sta chiudendo tutte le posizioni della partita a mercato', cls: 'bg-rose-500/20 text-rose-200 border-rose-400/50 animate-pulse', dot: 'bg-rose-400 animate-pulse', group: 'live' },
     FLAT: { label: 'PIATTA', what: 'nessuna esposizione aperta: il risultato della partita è già bloccato', cls: 'bg-emerald-500/20 text-emerald-200 border-emerald-400/50', dot: 'bg-emerald-400', group: 'flat' },
     REENTRY_PENDING: { label: 'RE-INGRESSO IN CORSO', what: 'dopo il gol: ordine Under 4.5 sul book, aspetta l’abbinamento', cls: 'bg-teal-500/20 text-teal-200 border-teal-400/50 animate-pulse', dot: 'bg-teal-400 animate-pulse', group: 'live' },
@@ -1077,20 +1077,77 @@ export function activeLegs(ev: MikeEvent): MikeLeg[] {
     return (ev.positions ?? []).filter((l) => !l.archived && (l.matched > 0 || l.status === 'pending'));
 }
 
+/**
+ * Capitale impegnato = le PUNTATE di apertura abbinate + il RISCHIO delle
+ * BANCHE di apertura (importo x (quota - 1)). P5 (29/09, M3.1): la copertura
+ * puo' essere una banca sull'Under 4,5 (12,63 a 1,18 = 2,27 di rischio, non 12,63):
+ * stessa cifra della puntata sull'Over che sostituisce. Specchio di `engine.invested`.
+ */
 export function investedOf(ev: MikeEvent): number {
     const roles = new Set(['under_entry', 'under_last', 'under_second', 'over_cover', 'reentry']);
-    return activeLegs(ev).filter((l) => l.side === 'back' && roles.has(l.role)).reduce((s, l) => s + Number(l.matched || 0), 0);
+    return activeLegs(ev).filter((l) => roles.has(l.role)).reduce((s, l) => {
+        const m = Number(l.matched || 0);
+        if (l.side === 'back') return s + m;
+        const p = Number(l.avg_price ?? l.price);
+        return Number.isFinite(p) && p > 1 ? s + m * (p - 1) : s;
+    }, 0);
 }
 
 export const MIKE_ROLE_LABEL: Record<string, string> = {
     under_entry: 'Ingresso Under 3.5', under_green: 'Green-up Under 3.5', under_last: 'Ultimo ingresso (PERSIST)',
     under_second: 'Seconda puntata Under 3.5', ko_green: 'Uscita al fischio',
-    over_cover: 'Copertura Over 4.5', under_close: 'Chiusura Under 3.5', over_close: 'Chiusura Over 4.5',
+    // P5 (29/09): la copertura puo' essere in due forme; il ruolo non basta a
+    // dirla (vedi `roleLabelGamba`, che guarda lato e selezione)
+    over_cover: 'Copertura linea 4.5', under_close: 'Chiusura Under 3.5', over_close: 'Chiusura Over 4.5',
     reentry: 'Re-ingresso Under 4.5', reentry_green: 'Green re-ingresso', manual_close: 'Chiusura manuale',
 };
 
 export function roleLabel(role: string | null | undefined): string {
     return (role && MIKE_ROLE_LABEL[role]) || role || '—';
+}
+
+/** P5 (29/09): valori del parametro `cover_form` (specchio di config.py) */
+export const MIKE_COVER_FORM_LABEL: Record<string, string> = {
+    lay_under45: 'banca Under 4.5',
+    back_over45: 'punta Over 4.5 (forma vecchia)',
+};
+
+/** Nome della copertura da un payload di attivita': lato+selezione, poi `cover_form`, poi generico. */
+function coperturaDa(p: Record<string, unknown>): string {
+    const g = roleLabelGamba({
+        role: 'over_cover', side: p.side == null ? null : String(p.side),
+        selection: p.selection == null ? null : String(p.selection),
+    });
+    if (g !== roleLabel('over_cover')) return g;
+    const f = MIKE_COVER_FORM_LABEL[String(p.cover_form ?? '')];
+    return f ? `Copertura: ${f.replace(' (forma vecchia)', '')}` : g;
+}
+
+/** «UNDER»/«OVER» da una selezione del bot o da un nome Betfair («Under 4.5 Goals»). */
+function selezioneDa(sel: string | null | undefined): 'UNDER' | 'OVER' | null {
+    const s = String(sel ?? '').trim().toUpperCase();
+    if (s.startsWith('UNDER')) return 'UNDER';
+    if (s.startsWith('OVER')) return 'OVER';
+    return null;
+}
+
+/**
+ * P5 (29/09, M3.1-M3.3) - il nome di una gamba guardando LATO e SELEZIONE, non
+ * solo il ruolo: il ruolo `over_cover` resta per le due forme della copertura
+ * (vecchia: punta Over 4,5; nuova: banca Under 4,5), e `over_close` per le loro
+ * chiusure. Lato o selezione ignoti = il nome del ruolo, mai una forma indovinata.
+ */
+export function roleLabelGamba(g: { role: string | null | undefined; side?: string | null; selection?: string | null }): string {
+    const sel = selezioneDa(g.selection);
+    const lato = g.side === 'back' ? 'punta' : g.side === 'lay' ? 'banca' : null;
+    if (g.role === 'over_cover' && sel && lato) {
+        return `Copertura: ${lato} ${sel === 'UNDER' ? 'Under' : 'Over'} 4.5`;
+    }
+    // la chiusura della copertura e' una banca Over 4,5 in tutte e due le forme
+    // («Chiusura Over 4.5», come oggi); solo il ripiego sotto 0,50 EUR (M3.3) la
+    // fa diventare una punta sull'Under 4,5, e va detto
+    if (g.role === 'over_close' && sel === 'UNDER' && lato) return `Chiusura copertura: ${lato} Under 4.5`;
+    return roleLabel(g.role);
 }
 
 /** Esposizione netta di una selezione dalle gambe abbinate (stessa matematica di engine.exposure):
@@ -1140,14 +1197,40 @@ export function positionRows(ev: MikeEvent): PositionRow[] {
     const keys = Array.from(new Set(legs.map((l) => `${l.market}|${l.selection}`)));
     const sels = ((ev.ctx as { selections?: Record<string, number> } | null)?.selections) ?? {};
     const out: PositionRow[] = [];
+    const fatti = new Set<string>();
     for (const key of keys) {
         const [market, selection] = key.split('|');
-        const mine = legs.filter((l) => l.market === market && l.selection === selection);
-        const { w, l } = selectionExposure(mine, market, selection);
+        let mine = legs.filter((l) => l.market === market && l.selection === selection);
+        let { w, l } = selectionExposure(mine, market, selection);
+        // P5 (29/09, M3.4): gambe sulle DUE selezioni dello stesso mercato
+        // (copertura banca Under 4,5 + chiusura banca Over 4,5) si pareggiano
+        // solo INSIEME: una riga per MERCATO, vista dalla selezione di questa
+        // chiave (banca Over = punta Under per quel mercato). Un mercato con una
+        // selezione sola resta identico a prima.
+        const altra = selection === 'UNDER' ? 'OVER' : 'UNDER';
+        const gambeAltra = legs.filter((x) => x.market === market && x.selection === altra);
+        if (gambeAltra.length) {
+            if (fatti.has(market)) continue;
+            fatti.add(market);
+            // conti SENZA arrotondare (vista dalla selezione di questa chiave)
+            w = 0; l = 0;
+            for (const g of [...mine, ...gambeAltra]) {
+                const p = Number(g.avg_price ?? g.price);
+                const m = Number(g.matched);
+                const vince = g.side === 'back' ? m * (p - 1) : -m * (p - 1);
+                const perde = g.side === 'back' ? -m : m;
+                if (g.selection === selection) { w += vince; l += perde; } else { w += perde; l += vince; }
+            }
+            // piatto come nel motore (`_FLAT_EPS` 0,01): la chiusura arrotondata al
+            // centesimo lascia un resto di pochi millesimi (0,71 x 21)
+            if (Math.abs(w - l) < 0.01) continue;
+            w = Math.round(w * 100) / 100; l = Math.round(l * 100) / 100;
+            mine = [...mine, ...gambeAltra];
+        }
         if (Math.abs(w - l) < 0.005) continue;             // gia' piatta (green completato)
         const netSide: 'BACK' | 'LAY' = w > l ? 'BACK' : 'LAY';
         const side = netSide === 'BACK' ? 'back' : 'lay';
-        const sameSide = mine.filter((x) => x.side === side);
+        const sameSide = mine.filter((x) => x.side === side && x.selection === selection);
         const matched = sameSide.reduce((s, x) => s + Number(x.matched), 0);
         const wsum = sameSide.reduce((s, x) => s + Number(x.matched) * Number(x.avg_price ?? x.price), 0);
         out.push({
@@ -1329,7 +1412,7 @@ export const MIKE_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
     flusso_interrotto_senza_rest: { label: 'FLUSSO FERMO E REST MUTO: POSIZIONE SCOPERTA', cls: 'bg-red-500/15 text-red-300 border-red-500/40', critical: true },
     mercato_deciso: { label: 'LINEA DECISA DAI GOL', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/40' },
     schema_warn: { label: 'SCHEMA DB', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
-    cover: { label: 'COPERTURA OVER 4.5', cls: 'bg-teal-500/15 text-teal-300 border-teal-500/40' },
+    cover: { label: 'COPERTURA LINEA 4.5', cls: 'bg-teal-500/15 text-teal-300 border-teal-500/40' },
     skip: { label: 'SALTO', cls: 'bg-white/5 text-slate-400 border-white/10' },
 };
 
@@ -1343,7 +1426,11 @@ export function mikeActivityLine(kind: string, payload: Record<string, unknown> 
     const n = (k: string) => Number(p[k]);
     const money = (k: string, signed = false) => fmtMoney(n(k), { signed });
     const odds = (k: string) => fmtOdds(n(k));
-    const role = () => roleLabel(p.role == null ? null : String(p.role));
+    const role = () => roleLabelGamba({
+        role: p.role == null ? null : String(p.role),
+        side: p.side == null ? null : String(p.side),
+        selection: p.selection == null ? null : String(p.selection),
+    });
     const side = () => sideMeta(p.side == null ? '' : String(p.side)).label;
     switch (kind) {
         case 'armed':
@@ -1480,7 +1567,7 @@ export function mikeActivityLine(kind: string, payload: Record<string, unknown> 
         }
         case 'uscita_proposta': {
             const ordini = Array.isArray(p.ordini) ? p.ordini as Record<string, unknown>[] : [];
-            const cosa = ordini.map((o) => `${roleLabel(o.ruolo == null ? null : String(o.ruolo))} ${String(o.lato ?? '')} @ ${fmtOdds(Number(o.prezzo))}`).join(' + ');
+            const cosa = ordini.map((o) => `${roleLabelGamba({ role: o.ruolo == null ? null : String(o.ruolo), side: o.lato == null ? null : String(o.lato), selection: o.selezione == null ? null : String(o.selezione) })} ${String(o.lato ?? '')} @ ${fmtOdds(Number(o.prezzo))}`).join(' + ');
             const blocca = Number.isFinite(n('bloccabile')) ? ` · chiudendo ora ${money('bloccabile', true)}` : '';
             return `il bot vorrebbe uscire (${String(p.motivo ?? 'motivo non dichiarato')}): ${cosa || 'ordine non dichiarato'}${blocca} — aspetta la tua approvazione`;
         }
@@ -1514,7 +1601,8 @@ export function mikeActivityLine(kind: string, payload: Record<string, unknown> 
             // il servizio conta i cicli da 0; per il trader il primo ciclo è "1"
             return `ciclo ${cycleLabel(p.cycle)} chiuso: ${odds('entry')} → ${odds('exit')} · ${T.lockedPnl} ${money('locked', true)}`;
         case 'cover':
-            return `copertura Over 4.5 ${money('size')} @ ${odds('price')} · ${String(p.x ?? '?')}× · minuto ${String(p.minute ?? '?')}${Number.isFinite(n('overshoot_pct')) ? ` · sovracopertura ${fmtPct(n('overshoot_pct') / 100)}` : ''}`;
+            // P5 (29/09): la forma della copertura dal payload (lato/selezione o `cover_form`)
+            return `${coperturaDa(p).toLowerCase()} ${money('size')} @ ${odds('price')} · ${String(p.x ?? '?')}× · minuto ${String(p.minute ?? '?')}${Number.isFinite(n('overshoot_pct')) ? ` · sovracopertura ${fmtPct(n('overshoot_pct') / 100)}` : ''}`;
         case 'close_retries_exhausted':
             return `chiusura bloccata dopo ${String(p.value ?? '?')} tentativi: serve una chiusura manuale`;
         case 'settled':

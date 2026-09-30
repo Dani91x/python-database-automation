@@ -303,7 +303,10 @@ def test_il_riprezzo_della_copertura_emette_SOLO_lannullamento():
     }
     snap = E.Snapshot(now=KO + 600, ko_at=KO, books=books, inplay=True, minute=30,
                       goals=1, feed_fresh=True, order_fresh=True)
-    d = E.decide(ctx, snap, PAR)
+    # 29/09 (P5 blocco 5): FISSATO sulla forma di prima (punta Over 4,5), che e'
+    # quella che questo test descrive. ``PAR`` si calcola all'import: la fixture
+    # ``forma_di_prima`` non lo raggiunge, quindi il parametro va scritto qui.
+    d = E.decide(ctx, snap, dict(PAR, cover_form="back_over45"))
     piazzati = [a for a in d.actions if a.kind == "place" and a.role == "over_cover"]
     assert piazzati == [], "la copertura nuova non deve uscire nello stesso giro"
     assert any(a.kind == "cancel" for a in d.actions)

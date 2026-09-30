@@ -66,6 +66,7 @@ def under_back(size=20.0, price=1.50, ref="e1", role="under_last"):
 # ---------------------------------------------------------------------------
 # 1. Copertura Over 4.5: liability NETTA, non stake lordo (COSTITUZIONE 4.1)
 # ---------------------------------------------------------------------------
+@pytest.mark.usefixtures("forma_di_prima")
 def test_copertura_dimensionata_sulla_liability_netta_non_sullo_stake_lordo():
     """Con una lay di green ABBINATA in parte la liability Under e' minore dello
     stake: coprire lo stake intero compra Over di troppo e peggiora ogni finale 0-4."""
@@ -116,6 +117,7 @@ def test_nessuna_copertura_se_la_liability_netta_e_zero():
 # ---------------------------------------------------------------------------
 # 2. Riprezzo copertura: contano TUTTE le gambe gia' abbinate, non solo l'ultima
 # ---------------------------------------------------------------------------
+@pytest.mark.usefixtures("forma_di_prima")
 def test_riprezzo_copertura_conta_tutte_le_coperture_gia_abbinate():
     """Due gambe over_cover (fill parziale + riprezzo): dimensionare il residuo
     sulla sola ultima gamba ricompra Over gia' comprato."""
@@ -385,6 +387,7 @@ def test_chiusura_ciclo_annulla_gli_ordini_ancora_vivi():
 # ---------------------------------------------------------------------------
 # 10. Contratto UI: i campi letti dalla card esistono davvero
 # ---------------------------------------------------------------------------
+@pytest.mark.usefixtures("forma_di_prima")
 def test_telemetria_cover_wait_ha_i_campi_letti_dalla_card():
     """``coverWaitLabel`` legge hazard, p4/p4_market e until_min/max_min."""
     ctx = E.MatchCtx(state="LIVE_UNCOVERED", legs=[under_back(20.0, 1.50, ref="e1")])
@@ -519,6 +522,7 @@ def test_dopo_una_uscita_in_perdita_niente_re_ingresso():
 # ---------------------------------------------------------------------------
 # 14. Ordine a esito ignoto: si tolgono le APERTURE, restano le riduzioni
 # ---------------------------------------------------------------------------
+@pytest.mark.usefixtures("forma_di_prima")
 def test_ordine_a_esito_ignoto_blocca_solo_le_aperture():
     p = params(stake=10.0)
     ctx = E.MatchCtx(state="LIVE_UNCOVERED")

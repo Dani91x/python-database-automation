@@ -28,7 +28,7 @@
 //   4. i dati della partita non sono vecchi.
 // ============================================================================
 import { fmtMoney, fmtOdds } from '@/lib/format';
-import { MIKE_PARAM_DEFAULTS, roleLabel, type MikeEvent, type MikeLeg } from '@/lib/mike';
+import { MIKE_PARAM_DEFAULTS, roleLabel, roleLabelGamba, type MikeEvent, type MikeLeg } from '@/lib/mike';
 
 export type TipoEsitoChiusura = 'in_corso' | 'chiusa' | 'non_completa' | 'da_verificare';
 
@@ -195,7 +195,7 @@ export function esitoChiusuraMike(
         .filter((l) => l.status !== 'cancelled' || Number(l.matched || 0) > 0)
         .sort((a, b) => Number(a.placed_at) - Number(b.placed_at))
         .map((l) => ({
-            ref: l.ref, ruolo: roleLabel(l.role), lato: l.side === 'back' ? 'punta' : 'banca',
+            ref: l.ref, ruolo: roleLabelGamba(l), lato: l.side === 'back' ? 'punta' : 'banca',
             chiesto: Number(l.size), abbinato: Number(l.matched || 0),
             prezzo: num(l.avg_price) ?? num(l.price), stato: statoOrdine(l),
         }));

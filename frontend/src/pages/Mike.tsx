@@ -717,7 +717,7 @@ export default function Mike() {
                         nota={
                             <>Tutto quello che è successo a partita iniziata: la posizione portata in
                             gioco, l'uscita al fischio, la seconda puntata dopo un gol precoce, la
-                            copertura sull'Over 4.5 e le chiusure.</>
+                            copertura sulla linea 4.5 e le chiusure.</>
                         }
                         vuoto={<>Nessuna operazione in gioco nella {T.operatingDay}.</>}
                     />

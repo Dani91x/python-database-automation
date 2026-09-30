@@ -384,15 +384,35 @@ class _Livello:
 class _VistaEx:
     """`runner.ex` con i tre ladder nella forma di produzione."""
 
-    __slots__ = ("available_to_back", "available_to_lay", "traded_volume")
+    __slots__ = ("available_to_back", "available_to_lay", "_tv_grezzo", "_tv")
 
     def __init__(self, ex: Any) -> None:
         self.available_to_back = _livelli_di_produzione(
             getattr(ex, "available_to_back", None) if ex is not None else None)
         self.available_to_lay = _livelli_di_produzione(
             getattr(ex, "available_to_lay", None) if ex is not None else None)
-        self.traded_volume = _livelli_di_produzione(
-            getattr(ex, "traded_volume", None) if ex is not None else None)
+        # 30/09 (banco veloce): il traded volume si converte SOLO se qualcuno
+        # lo legge (lo scanner vero oggi non lo legge mai, ed era la scala piu'
+        # lunga del libro). Si tiene la lista presa ADESSO, non si rilegge `ex`
+        # dopo: chi lo legge vede gli stessi livelli di prima.
+        self._tv_grezzo = getattr(ex, "traded_volume", None) if ex is not None else None
+        self._tv = _NON_CONVERTITO
+
+    @property
+    def traded_volume(self) -> Any:
+        if self._tv is _NON_CONVERTITO:
+            self._tv = _livelli_di_produzione(self._tv_grezzo)
+            self._tv_grezzo = None
+        return self._tv
+
+    @traded_volume.setter
+    def traded_volume(self, valore: Any) -> None:
+        # chi assegna (come faceva col campo semplice) trova cio' che ha messo
+        self._tv, self._tv_grezzo = valore, None
+
+
+# marcatore di `_VistaEx._tv`: traded volume non ancora convertito
+_NON_CONVERTITO = object()
 
 
 class _VistaRunner:
@@ -1172,6 +1192,43 @@ def orologio_monotono():
 
 
 @contextmanager
+def info_flumine_solo_se_loggata():
+    """`BaseFlumine.info` si calcola SOLO se il suo log INFO e' acceso.
+
+    MISURATO IL 30/09 (profilo di `certifica mike 35760084 --scenari base`):
+    `BaseFlumine.info` (`baseflumine.py:475`) valeva ~11 % del replay, 417.428
+    chiamate. Serve SOLO come `extra=` dei `logger.info(...)` di chiusura e
+    rimozione del mercato (`baseflumine.py:230, 399, 450`), e Python valuta
+    l'argomento anche quando il livello INFO e' spento: a ogni giro si
+    rifacevano `clients.info`, `open_market_ids` su tutti i mercati e
+    `threading.enumerate()` per un record che non nasceva mai.
+
+    Qui: log INFO di flumine acceso -> la `info` VERA, identica; spento (il
+    banco gira a WARNING, `certifica.py`) -> un dict vuoto. Nessun numero del
+    replay passa di li': `info` non e' letta da nessun codice fuori dai log. Il
+    solo record che nasce comunque e' il WARNING "Market ... not present when
+    closing/clearing", col TESTO identico: perde solo gli attributi extra, che
+    il formato del banco (`basicConfig`, `%(levelname)s:%(name)s:%(message)s`)
+    non stampa. Si rimette a posto all'uscita, come `orologio_monotono`.
+    """
+    from flumine.baseflumine import BaseFlumine
+
+    originale = BaseFlumine.__dict__["info"]
+    log_flumine = logging.getLogger("flumine.baseflumine")
+
+    def info(self):
+        if log_flumine.isEnabledFor(logging.INFO):
+            return originale.fget(self)
+        return {}
+
+    BaseFlumine.info = property(info)
+    try:
+        yield
+    finally:
+        BaseFlumine.info = originale
+
+
+@contextmanager
 def simulazione_flumine():
     """Accende la simulazione di flumine e RIMETTE A POSTO i flag globali.
 
@@ -1190,7 +1247,7 @@ def simulazione_flumine():
     }
     fconf.simulated = True
     try:
-        with orologio_monotono() as stato:
+        with orologio_monotono() as stato, info_flumine_solo_se_loggata():
             fconf._orologio_banco = stato       # diagnostica del giro corrente
             yield fconf
     finally:
@@ -1796,6 +1853,8 @@ class ScannerReplay:
         # per mercato alla stessa cadenza del vero. A 0 si applica tutto.
         self.conflate_ms = int(conflate_ms)
         self._ultimo_book_ms: Dict[str, int] = {}
+        # 30/09 (banco veloce): market_id -> (book, sua vista). Vedi `_vista_di`.
+        self._viste: Dict[str, Tuple[Any, Any]] = {}
         # ritardo AGGIUNTIVO dei punteggi (vedi la testa del modulo: quello vero
         # e' gia' dentro `ts_ms` del sidecar). In secondi, 0 = nessuna aggiunta.
         self.ritardo_punteggi_s = float(ritardo_punteggi_s)
@@ -1967,8 +2026,36 @@ class ScannerReplay:
             if adesso_ms - self._ultimo_book_ms.get(mid, -10 ** 12) < self.conflate_ms:
                 return False
             self._ultimo_book_ms[mid] = adesso_ms
-        self.scan._apply_market_book(libro_di_produzione(market_book))
+        self.scan._apply_market_book(self._vista_di(market_book))
         return True
+
+    def _vista_di(self, market_book: Any) -> Any:
+        """`libro_di_produzione(market_book)`, rifatta SOLO se il book e' nuovo.
+
+        30/09 (banco veloce). `GeneratoreLibri` RIEMETTE lo stesso oggetto
+        `MarketBook` finche' il suo mercato non cambia: lo scanner riceveva
+        decine di volte la stessa vista, ricostruita ogni volta da capo (il 5 %
+        del replay di Mike). Qui la si riusa, ma solo quando e' certo che
+        sarebbe uguale:
+          * STESSO oggetto (`is`, e il book resta in memoria qui: il suo id non
+            puo' passare a un altro oggetto);
+          * book GIA' CONVERTITO in EUR (`size_gbp_convertite`): la conversione
+            (`valuta.converti_libro`) e' l'unica cosa che modifica un book dopo
+            la sua nascita, sostituisce le scale e non le tocca piu' (le cache
+            di betfairlightweight fanno oggetti NUOVI, non modificano i vecchi).
+            Un book non ancora convertito si rifa' sempre, come prima.
+        Lo scanner LEGGE la vista e non la tiene: consegnarla due volte o due
+        viste uguali e' la stessa cosa.
+        """
+        if getattr(market_book, "size_gbp_convertite", False) is not True:
+            return libro_di_produzione(market_book)
+        mid = str(getattr(market_book, "market_id", "") or "")
+        prec = self._viste.get(mid)
+        if prec is not None and prec[0] is market_book:
+            return prec[1]
+        vista = libro_di_produzione(market_book)
+        self._viste[mid] = (market_book, vista)
+        return vista
 
     # ------------------------------------------------------------ punteggi
     def applica_punteggio(self, event_id: str, record: Dict[str, Any]) -> bool:

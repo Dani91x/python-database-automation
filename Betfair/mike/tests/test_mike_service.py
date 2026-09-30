@@ -289,6 +289,7 @@ def _evento_scoperto():
     }
 
 
+@pytest.mark.usefixtures("forma_di_prima")
 def test_inplay_cover_in_paper_va_al_runner_senza_differita_in_casa(runner):
     """D1 (29/09): prima la copertura paper in gioco veniva DIFFERITA da Mike
     di ``bet_delay`` secondi e poi riempita in casa. Ora va SUBITO al runner,

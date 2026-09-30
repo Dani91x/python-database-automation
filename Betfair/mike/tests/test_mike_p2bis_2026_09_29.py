@@ -109,6 +109,7 @@ def test_b_cash_out_intelligente_non_scatta_senza_punteggio():
     assert d.telemetry["cashout"]["smart"]["punteggio_assente"] is True
 
 
+@pytest.mark.usefixtures("forma_di_prima")
 @pytest.mark.parametrize("forzata", [False, True])
 def test_b_copertura_aspetta_senza_punteggio(forzata):
     ctx, p = _live_uncovered()

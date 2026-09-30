@@ -70,7 +70,9 @@ def _posti(d):
 def test_cover_form_sconosciuto_e_la_forma_di_prima(valore):
     assert E.cover_form({"cover_form": valore}) == E.COVER_BACK_O45
     assert E.cover_form({}) == E.COVER_BACK_O45
-    assert C.merge_params({"cover_form": valore})["cover_form"] == E.COVER_BACK_O45
+    # i parametri passano da ``merge_params``: un valore non previsto torna al
+    # valore di SERIE (dal blocco 5 la banca), mai a un valore inventato
+    assert C.merge_params({"cover_form": valore})["cover_form"] == C.DEFAULTS["cover_form"]
 
 
 # ---------------------------------------------------------------------------

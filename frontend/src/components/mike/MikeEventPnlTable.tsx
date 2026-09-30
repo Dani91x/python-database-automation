@@ -33,7 +33,7 @@ import { fmtMoney } from '@/lib/format';
 import { pnlClass } from '@/lib/tradeStatus';
 import { exitInfo } from '@/lib/dailyHistory';
 import {
-    fasePerCiclo, marketLabel, roleLabel, isManualTrade, esitoOrdineMike, notaRegolamentoMike,
+    fasePerCiclo, marketLabel, roleLabelGamba, isManualTrade, esitoOrdineMike, notaRegolamentoMike,
     type MikeFase, type MikeTradeGroup, type MikeTrade,
 } from '@/lib/mike';
 
@@ -59,7 +59,8 @@ function pnlTitle(t: MikeTrade): string {
 
 /** Etichette ITALIANE delle righe di Mike: ruoli, linee, badge manuale/uscita. */
 const ETICHETTE_MIKE: RigheLabels<MikeTrade> = {
-    ruolo: (t) => roleLabel(t.role),
+    // P5 (29/09): la copertura si dice dal lato e dalla selezione, non dal ruolo
+    ruolo: (t) => roleLabelGamba({ role: t.role, side: t.side, selection: t.selection_name }),
     selezione: (t) => t.selection_name ?? marketLabel(t.market_type),
     badge: (t) => (isManualTrade(t)
         ? <Badge variant="outline" className="ml-1 px-1 py-0 text-[9px]">manuale</Badge>

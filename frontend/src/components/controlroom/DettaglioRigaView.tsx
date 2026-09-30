@@ -230,7 +230,7 @@ const STRATEGIA_LABEL: Record<string, string> = {
     punta: 'punta',
     tennis: 'tennis',
     under_entry: 'ingresso Under 3.5',
-    over_cover: 'copertura Over 4.5',
+    over_cover: 'copertura linea 4.5',
     under_green: 'green-up Under',
     ko_green: 'green-up al fischio',
 };

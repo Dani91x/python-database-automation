@@ -42,7 +42,7 @@ const SAFE_STRATEGY_LABEL: Record<string, string> = {
 };
 const MIKE_ROLE_LABEL: Record<string, string> = {
     under_entry: 'Ingresso Under 3.5', under_green: 'Green-up Under 3.5', under_last: 'Ultimo ingresso (PERSIST)',
-    over_cover: 'Copertura Over 4.5', under_close: 'Chiusura Under 3.5', over_close: 'Chiusura Over 4.5',
+    over_cover: 'Copertura linea 4.5', under_close: 'Chiusura Under 3.5', over_close: 'Chiusura Over 4.5',
     reentry: 'Re-ingresso Under 4.5', reentry_green: 'Green re-ingresso', manual_close: 'Chiusura manuale',
 };
 const STRATEGY_LABELS: Record<HistoryVariant, Record<string, string>> = {

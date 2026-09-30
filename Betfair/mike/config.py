@@ -209,7 +209,7 @@ PARAM_SPEC: dict[str, Spec] = {
     # PUNTA Over 4,5 (la forma di prima, soggetta a minimo 2,00 e passi 0,50).
     # Interruttore di sicurezza: si torna alla forma vecchia dall'app, dal giro
     # successivo.
-    "cover_form": ("back_over45", str, None, None, ("lay_under45", "back_over45")),
+    "cover_form": ("lay_under45", str, None, None, ("lay_under45", "back_over45")),
     # importi ESATTI al centesimo (copertura 3.61, stake 1.23): sotto-minimo / fuori passo via
     # Betfair/stream/trading/submin.py (place-and-trim, come Bet Angel/Fairbot). False = legalizza .it
     "exact_sizes": (True, bool, None, None, None),

@@ -206,6 +206,7 @@ def test_spento_il_cap_perdita_partita_non_chiude_piu():
     assert not isinstance(d.updates.get("uscita_proposta"), dict)
 
 
+@pytest.mark.usefixtures("forma_di_prima")
 def test_spento_la_copertura_over_45_parte_lo_stesso():
     ctx, p = _live_uncovered()
     p["uscite_automatiche"] = False

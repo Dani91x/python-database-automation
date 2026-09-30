@@ -56,7 +56,7 @@ const STRATEGY_LABEL: Record<string, string> = {
 const PHASE_LABEL: Record<string, string> = { ht_cs: '1T', ft_cs: '2T', scalp: 'SCALP' };
 const MIKE_ROLE_LABEL: Record<string, string> = {
     under_entry: 'INGRESSO U3.5', under_green: 'GREEN U3.5', under_last: 'ULTIMO (PERSIST)',
-    over_cover: 'COPERTURA O4.5', under_close: 'CHIUSURA U3.5', over_close: 'CHIUSURA O4.5',
+    over_cover: 'COPERTURA 4.5', under_close: 'CHIUSURA U3.5', over_close: 'CHIUSURA O4.5',
     reentry: 'RE-INGRESSO U4.5', reentry_green: 'GREEN RE-INGRESSO', manual_close: 'MANUALE',
 };
 

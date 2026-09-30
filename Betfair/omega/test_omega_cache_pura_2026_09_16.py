@@ -48,6 +48,9 @@ def argomenti_reali(quanti: int = 200):
 
     memo = M._poisson_grid_memo
     M._poisson_grid_memo = spia
+    # 30/09: anche la catena in cima e' memoizzata (`_lambdas_da_quote_1x2`):
+    # senza svuotarla la seconda raccolta non arriverebbe mai al fondo
+    M._lambdas_da_quote_1x2.cache_clear()
     try:
         # tre partite con favoriti diversi: il pre-KO congelato e' il dato vero
         for pre in ({"home": 1.75, "draw": 3.6, "away": 4.8},

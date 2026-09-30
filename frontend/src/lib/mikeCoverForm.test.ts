@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import { mergeMikeParams, MIKE_PARAM_DEFAULTS, MIKE_PARAM_FIELDS } from '@/lib/mike';
 
-const SERIE = 'back_over45';
+const SERIE = 'lay_under45';
 
 describe('P6 blocco 6A - forma della copertura nel pannello', () => {
     it('due scelte, gruppo della copertura, stesso ordine di config.py', () => {

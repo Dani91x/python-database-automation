@@ -23,7 +23,7 @@
 import { useContext, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { fmtMoney, fmtOdds, DASH } from '@/lib/format';
-import { etaPubblicazioneS, etaQuoteS, feedFreshness, requestMike, roleLabel, type MikeBook, type MikeEvent } from '@/lib/mike';
+import { etaPubblicazioneS, etaQuoteS, feedFreshness, requestMike, roleLabelGamba, type MikeBook, type MikeEvent } from '@/lib/mike';
 import { useSecondTick } from '@/components/mike/useMikeClock';
 import { useMikeEventoAlMs, type CanaleEventiMike } from '@/components/mike/useMikeEventoAlMs';
 
@@ -133,7 +133,7 @@ function OrdineMikeRiga({ o, prezzo, testId }: { o: OrdineProposto; prezzo: Prez
     const fonte = prezzo.fonte === 'canale' || prezzo.fonte === 'db' ? 'al ms' : 'feed della partita';
     return (
         <span data-testid={testId} data-fonte={prezzo.fonte ?? ''}>
-            {`${roleLabel(o.ruolo)} ${o.lato} ${o.size == null ? DASH : fmtMoney(o.size)} @ ${fmtOdds(o.prezzo)}`
+            {`${roleLabelGamba({ role: o.ruolo, side: o.lato, selection: o.selezione })} ${o.lato} ${o.size == null ? DASH : fmtMoney(o.size)} @ ${fmtOdds(o.prezzo)}`
                 + ` (ora ${prezzo.back == null && prezzo.lay == null ? DASH
                     : `${fmtOdds(prezzo.back)} / ${fmtOdds(prezzo.lay)}`}, ${fonte})`}
         </span>

@@ -439,6 +439,7 @@ def _live_uncovered():
     return ctx, p
 
 
+@pytest.mark.usefixtures("forma_di_prima")
 def test_live_cover_wait_then_cover():
     ctx, p = _live_uncovered()
     s = snap(KO + 300, u35=book(1.45, inplay=True), o45=book(6.0, bs=50, inplay=True),
@@ -727,6 +728,7 @@ def test_archived_cycles_do_not_inflate_open_capital():
     assert r.net == pytest.approx(E.locked_pnl_back(20, 1.5, 1.48) + 20 * 0.46, abs=0.03)
 
 
+@pytest.mark.usefixtures("forma_di_prima")
 def test_liability_cap_blocks_entry_cover_and_reentry():
     p = params(max_liability_per_match=25.0, stake=20.0)
     # ingresso ok (20 <= 25)
@@ -821,6 +823,7 @@ def test_last_entry_with_partial_green_uses_net_exposure():
     assert d.actions[0].size < 20.0                     # solo il residuo (stake 20, 5 gia' coperti)
 
 
+@pytest.mark.usefixtures("forma_di_prima")
 def test_partial_cover_reprice_uses_exact_residual():
     ctx, p = _live_uncovered()
     s = snap(KO + 20 * 60, u35=book(1.35, inplay=True), o45=book(8.0, bs=50, inplay=True),

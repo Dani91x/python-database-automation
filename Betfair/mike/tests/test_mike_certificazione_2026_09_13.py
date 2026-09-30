@@ -245,6 +245,7 @@ def test_flatten_non_archivia_una_perdita_gia_certa():
 # ===========================================================================
 # 7 — la copertura ordinata aspetta comunque il riprezzo dopo il gol
 # ===========================================================================
+@pytest.mark.usefixtures("forma_di_prima")
 def test_la_copertura_ordinata_non_compra_nei_secondi_del_gol():
     """Misurato: 3,16 EUR invece di ~2,10 su 10 di stake. Nei secondi del gol la
     quota dell'Over crolla: comprare li' paga il differenziale pieno."""

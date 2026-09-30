@@ -129,6 +129,7 @@ def test_senza_codice_il_rifiuto_si_conta_lo_stesso():
 # ===========================================================================
 # 2. IL FRENO NELLA DECISIONE — nessun ordine nuovo, mai
 # ===========================================================================
+@pytest.mark.usefixtures("forma_di_prima")
 def test_a_copertura_bloccata_il_motore_NON_emette_piu_nessuna_copertura():
     p = params(cover_rifiuti_max=3, cover_retry_min_s=1)
     ctx = _ctx_scoperto()
@@ -199,6 +200,7 @@ def test_con_la_copertura_bloccata_il_cash_out_globale_parte_lo_stesso():
     assert uscite, "la copertura bloccata non deve poter bloccare un'uscita"
 
 
+@pytest.mark.usefixtures("forma_di_prima")
 def test_riprendi_dell_utente_riapre_la_copertura():
     p = params(cover_rifiuti_max=1, cover_retry_min_s=1)
     ctx = _ctx_scoperto()
@@ -213,6 +215,7 @@ def test_riprendi_dell_utente_riapre_la_copertura():
 # ===========================================================================
 # 3. IL RITMO MINIMO — 104 tentativi in un'ora sono anche un limite Betfair
 # ===========================================================================
+@pytest.mark.usefixtures("forma_di_prima")
 def test_fra_due_tentativi_di_copertura_passa_almeno_cover_retry_min_s():
     p = params(cover_retry_min_s=15)
     ctx = _ctx_scoperto()
@@ -268,6 +271,7 @@ def test_a_freno_scattato_il_riprezzo_NON_annulla_la_copertura_gia_sul_book():
 # ===========================================================================
 # 4. LO STATO DEL MERCATO DURANTE LA COPERTURA (ordine 5)
 # ===========================================================================
+@pytest.mark.usefixtures("forma_di_prima")
 def test_a_mercato_Over45_SOSPESO_la_copertura_non_parte_e_si_ASPETTA():
     p = params()
     ctx = _ctx_scoperto()
@@ -293,6 +297,7 @@ def test_senza_il_book_Over45_la_copertura_non_parte():
     assert _place_cop(d) == []
 
 
+@pytest.mark.usefixtures("forma_di_prima")
 def test_alla_RIAPERTURA_la_copertura_riparte_da_dove_era_rimasta():
     p = params()
     ctx = _ctx_scoperto()
@@ -302,6 +307,7 @@ def test_alla_RIAPERTURA_la_copertura_riparte_da_dove_era_rimasta():
     assert d.state == "LIVE_COVER_PENDING"
 
 
+@pytest.mark.usefixtures("forma_di_prima")
 def test_a_mercato_sospeso_il_RIPREZZO_non_annulla_e_non_ripiazza():
     """Il riprezzo di ``_decide_cover_pending`` non guardava il mercato: il
     cancel sarebbe partito e il place no."""

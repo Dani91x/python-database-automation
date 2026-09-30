@@ -475,6 +475,7 @@ def test_h7_la_partita_mike_e_candidata_anche_al_primo_minuto():
 # ===========================================================================
 # H-8 — throttle della riconciliazione e riduzione del rischio
 # ===========================================================================
+@pytest.mark.usefixtures("forma_di_prima")
 def test_h8_con_esito_ignoto_il_ciclo_continua_e_riduce_il_rischio():
     """Le APERTURE sono bloccate, le chiusure NO: prima il ciclo usciva prima di
     copertura, cash-out, uscite e cap di perdita."""

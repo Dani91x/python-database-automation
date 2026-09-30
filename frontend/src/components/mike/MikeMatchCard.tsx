@@ -41,7 +41,7 @@ import {
     etaQuoteS, hasModel,
     legSelectionLabel, legStatusLabel,
     lineLabel, marketLabel, marketStatusMeta, phaseMeta, pnlByTotalCells, positionRows, requestOutcome,
-    roleLabel, rigaOrdineDaGamba, VOID_ALL, MIKE_AWAITING_KICKOFF_NOTE,
+    roleLabel, roleLabelGamba, rigaOrdineDaGamba, VOID_ALL, MIKE_AWAITING_KICKOFF_NOTE,
     MIKE_TERMINAL_STATES, type MikeBook, type MikeCashoutSmart, type MikeEvent, type MikeLossExit,
     type MikeParams, type MikeRequest, type MikeRequestKind, type PositionRow,
 } from '@/lib/mike';
@@ -932,7 +932,7 @@ function MikeMatchCardBase({
                             return (
                                 <div key={l.ref} className="flex items-center gap-2 flex-wrap text-slate-300" data-testid="mike-order-row">
                                     <Badge variant="outline" className={`text-[9px] ${sideMeta(l.side).cls}`}>{sideMeta(l.side).label}</Badge>
-                                    <span>{roleLabel(l.role)} <span className="text-slate-500">({legSelectionLabel(l)})</span></span>
+                                    <span>{roleLabelGamba(l)} <span className="text-slate-500">({legSelectionLabel(l)})</span></span>
                                     {/* C.12b (16/09) — chiesto / abbinato col prezzo MEDIO /
                                         residuo: gli stessi tre numeri, con le stesse parole,
                                         che ora vedono anche Omega, Safe e la Control Room.

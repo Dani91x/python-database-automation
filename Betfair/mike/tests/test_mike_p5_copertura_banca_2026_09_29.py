@@ -201,8 +201,10 @@ def test_interruttore_back_over45_ordine_identico_alla_forma_di_prima():
     assert (a.selection, a.side) == (E.SEL_OVER, "back")
     assert a.price == float(E.ticks_away(9.0, -2))
     assert a.size == round(E.cover_size(20, 9.0, 0.05, 1.2), 2)
-    # di serie (blocco 2) la forma resta quella di prima
-    assert d_serie.actions == d_vecchia.actions
+    # di serie (dal blocco 5) la forma e' la BANCA Under 4,5
+    [b] = [x for x in d_serie.actions if x.kind == "place"]
+    assert (b.selection, b.side) == (E.SEL_UNDER, "lay")
+    assert C.DEFAULTS["cover_form"] == E.COVER_LAY_U45
 
 
 # ---------------------------------------------------------------------------

@@ -215,6 +215,7 @@ def test_strada_A_fill_parziale_copre_solo_il_residuo():
 # ---------------------------------------------------------------------------
 # STRADA B - finestra scaduta senza gol: copertura piena
 # ---------------------------------------------------------------------------
+@pytest.mark.usefixtures("forma_di_prima")
 def test_strada_B_finestra_scaduta_annulla_e_compra_la_copertura_piena():
     ctx, p = posizione_portata_in_gioco(10.0, 1.50), params()
     al_fischio(ctx, p)
@@ -248,6 +249,7 @@ def test_strada_B_un_secondo_prima_della_scadenza_non_si_muove():
     assert [a for a in d.actions if a.kind == "cancel"] == []
 
 
+@pytest.mark.usefixtures("forma_di_prima")
 def test_strada_B_la_copertura_ordinata_non_passa_dall_attesa_intelligente():
     """Senza ``cover_forced`` ``cover_timing`` potrebbe decidere di ASPETTARE
     (0 gol, minuto basso, hazard e P(4) bassi): la finestra scaduta e' un ordine
@@ -377,6 +379,7 @@ def test_prima_tranche_non_prima_dei_due_minuti_dal_gol():
     assert d1.telemetry["cover_staged"]["stage"] == 1
 
 
+@pytest.mark.usefixtures("forma_di_prima")
 def test_prima_tranche_compra_meta_copertura_al_minuto_giusto():
     """Over a 4,00: la meta' esatta vale 3,16 EUR, sopra il minimo piazzabile,
     quindi la divisione in due tempi si fa davvero."""
@@ -394,6 +397,7 @@ def test_prima_tranche_compra_meta_copertura_al_minuto_giusto():
     assert tele["stage"] == 1 and tele["split_declassato"] is False
 
 
+@pytest.mark.usefixtures("forma_di_prima")
 def test_la_divisione_si_fa_a_qualunque_quota():
     """Il vecchio limite (meta' copertura sotto i 2,00 EUR di Betfair) NON esiste
     piu': col place-and-trim si piazza qualunque cifra fino al centesimo, quindi
@@ -407,6 +411,7 @@ def test_la_divisione_si_fa_a_qualunque_quota():
         assert round(x * frazione, 2) >= E.SUBMIN_FLOOR
 
 
+@pytest.mark.usefixtures("forma_di_prima")
 def test_con_importi_esatti_spenti_la_divisione_si_ferma_al_minimo():
     """Se dalla UI si spengono gli "importi esatti", gli ordini tornano
     legalizzati al minimo .it: li' dividere avrebbe senso solo se ciascuna meta'
@@ -434,6 +439,7 @@ def test_finestra_uscita_parte_dal_terzo_gol():
     assert E.loss_exit_ok(-2.0, 24.0, 25.0, goals=5, gmin=3, gmax=4) is False
 
 
+@pytest.mark.usefixtures("forma_di_prima")
 def test_seconda_tranche_si_ricalcola_sulla_quota_del_momento():
     """IL PUNTO CHIAVE: la seconda tranche NON e' l'altra meta' dello stesso
     importo. Con l'Over salito da 8,00 a 11,00 la seconda parte costa meno, e la
@@ -491,6 +497,7 @@ def test_la_protezione_totale_regge_a_qualunque_quota_della_seconda_tranche(prez
     assert ((x1 + x2) > 2.71) is piu_caro
 
 
+@pytest.mark.usefixtures("forma_di_prima")
 def test_la_tranche_sotto_il_minimo_si_piazza_lo_stesso():
     """Il caso che prima bloccava tutto: meta' copertura = 1,35 EUR, sotto i 2,00
     di Betfair. Col place-and-trim si piazza per quello che vale."""
@@ -513,6 +520,7 @@ def test_la_tranche_sotto_il_minimo_si_piazza_lo_stesso():
     assert ordine.size == pytest.approx(1.35, abs=0.02)
 
 
+@pytest.mark.usefixtures("forma_di_prima")
 def test_split_attivo_quando_la_tranche_e_piazzabile():
     """Simmetrico del precedente: con l'Over basso la meta' supera il minimo e
     la divisione in due tempi si fa davvero."""
@@ -524,6 +532,7 @@ def test_split_attivo_quando_la_tranche_e_piazzabile():
     assert tele["x"] == pytest.approx(9.0 / (3.5 * 0.95), abs=0.01)
 
 
+@pytest.mark.usefixtures("forma_di_prima")
 def test_il_riprezzo_della_prima_tranche_resta_sulla_frazione():
     """Riprezzando, la prima tranche non deve comprare la copertura PIENA:
     altrimenti la seconda non avrebbe piu' ragione di esistere."""
@@ -550,6 +559,7 @@ def test_il_riprezzo_della_prima_tranche_resta_sulla_frazione():
 # ---------------------------------------------------------------------------
 # Uscite GLOBALI appena entrambe le gambe sono a mercato
 # ---------------------------------------------------------------------------
+@pytest.mark.usefixtures("forma_di_prima")
 def test_fra_le_due_tranche_valgono_le_uscite_globali_non_la_singola_gamba():
     """Richiesta esplicita dell'utente: con Under 3.5 e Over 4.5 entrambi a
     mercato la decisione e' sulla POSIZIONE intera. Se il cash-out globale
@@ -573,6 +583,7 @@ def test_fra_le_due_tranche_valgono_le_uscite_globali_non_la_singola_gamba():
     assert (E.MARKET_OU45, E.SEL_OVER) in mercati
 
 
+@pytest.mark.usefixtures("forma_di_prima")
 def test_la_chiusura_globale_ha_la_precedenza_sulla_seconda_tranche():
     """Anche con l'attesa gia' scaduta: se si chiude tutto non c'e' piu' niente
     da coprire."""
@@ -609,6 +620,7 @@ def test_feed_muto_al_fischio_non_inventa_gol():
     assert E.gol_dopo_il_fischio(ctx, snap(KO + 60, goals=1)) is True
 
 
+@pytest.mark.usefixtures("forma_di_prima")
 def test_riavvio_a_meta_strada_non_lascia_la_partita_scoperta():
     """Se il momento del gol si perde (contesto ripreso male) la copertura a
     tranche non ha piu' un orologio: si copre in una volta invece di aspettare

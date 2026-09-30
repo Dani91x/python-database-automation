@@ -20,8 +20,8 @@ const GROUPS: MikeParamGroup[] = ['generale', 'pre', 'fischio', 'cover', 'cashou
 const GROUP_NOTE: Partial<Record<MikeParamGroup, string>> = {
     generale: 'finestra di lavoro, importo e commissione: valgono per tutte le partite.',
     pre: 'ingresso Under 3.5 e green-up ciclico prima del calcio d’inizio.',
-    cover: 'copertura Over 4.5 in gioco: "intelligente ma non lenta".',
-    cashout: 'chiusura globale a profitto (Under 3.5 + Over 4.5), soglia e cash out intelligente.',
+    cover: 'copertura sulla linea 4.5 in gioco (di serie banca Under 4,5): "intelligente ma non lenta".',
+    cashout: 'chiusura globale a profitto (Under 3.5 + copertura 4.5), soglia e cash out intelligente.',
     uscite: 'uscite in perdita all’intervallo e nel secondo tempo (a modello o regola fissa).',
     reentry: 're-ingresso sull’Under 4.5 dopo un gol e una chiusura in profitto.',
     rischio: 'tetti e stop: sono l’ultima barriera prima dei soldi veri.',

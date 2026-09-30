@@ -732,6 +732,7 @@ def test_m3_skip_log_interval_s_deduplica_i_log():
     assert db.kinds().count("skip") == 2
 
 
+@pytest.mark.usefixtures("forma_di_prima")
 def test_m3_cover_max_overshoot_pct_evita_coperture_gonfiate():
     ctx = E.MatchCtx(state="LIVE_UNCOVERED", legs=[under_leg(size=10.0, price=1.5)], cycle_no=1)
     snap = E.Snapshot(now=NOW.timestamp(), ko_at=NOW.timestamp() - 600, inplay=True, minute=10,

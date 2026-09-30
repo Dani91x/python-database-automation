@@ -135,7 +135,23 @@ def lambdas_from_pre_ko(pre_ko: Optional[dict], total_goals: float = DEFAULT_TOT
     proporzionale alle P sottostimava λ_trasferta fino a 3× col favorito netto)."""
     if not isinstance(pre_ko, dict):
         return None
-    probs = devig_1x2(pre_ko.get("home"), pre_ko.get("draw"), pre_ko.get("away"))
+    chiave = (pre_ko.get("home"), pre_ko.get("draw"), pre_ko.get("away"), total_goals, rho)
+    try:
+        hash(chiave)
+    except TypeError:  # quota non hashabile (forma insolita): si calcola e basta
+        return _lambdas_da_quote_1x2.__wrapped__(*chiave)
+    return _lambdas_da_quote_1x2(*chiave)
+
+
+@functools.lru_cache(maxsize=CACHE_GRIGLIE, typed=True)
+def _lambdas_da_quote_1x2(home: Any, draw: Any, away: Any, total_goals: float,
+                          rho: float) -> Optional[Tuple[float, float]]:
+    """MEMOIZZATA (pura, 30/09, banco veloce): le quote pre-KO sono CONGELATE
+    dallo scanner, quindi Mike la chiedeva migliaia di volte con lo stesso
+    ingresso (4.732 chiamate, due bisezioni annidate ciascuna: l'11 % del replay
+    di `base`). Stesso ingresso -> stesso numero; il risultato e' una tupla
+    (immutabile) o None. `typed=True`: 2 e 2.0 restano chiavi distinte."""
+    probs = devig_1x2(home, draw, away)
     if probs is None:
         return None
     total = total_goals_from_1x2(probs[0], probs[2], rho, fallback=total_goals)

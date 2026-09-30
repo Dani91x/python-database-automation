@@ -155,7 +155,7 @@ export function MikeCashOutButton({
                         </DialogTitle>
                         <DialogDescription>
                             Chiusura di <b className="text-white">{eventName}</b>: il servizio annulla gli ordini sul
-                            book e chiude le posizioni nette di Under 3.5 e Over 4.5. La chiusura è intera: Mike non
+                            book e chiude le posizioni nette di Under 3.5 e della copertura sulla linea 4.5. La chiusura è intera: Mike non
                             accetta cash out parziali.
                         </DialogDescription>
                     </DialogHeader>

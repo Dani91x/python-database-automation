@@ -1,0 +1,495 @@
+diff --git a/Betfair/omega/omega_model.py b/Betfair/omega/omega_model.py
+index 7459b50..c34f986 100644
+--- a/Betfair/omega/omega_model.py
++++ b/Betfair/omega/omega_model.py
+@@ -135,7 +135,23 @@ def lambdas_from_pre_ko(pre_ko: Optional[dict], total_goals: float = DEFAULT_TOT
+     proporzionale alle P sottostimava λ_trasferta fino a 3× col favorito netto)."""
+     if not isinstance(pre_ko, dict):
+         return None
+-    probs = devig_1x2(pre_ko.get("home"), pre_ko.get("draw"), pre_ko.get("away"))
++    chiave = (pre_ko.get("home"), pre_ko.get("draw"), pre_ko.get("away"), total_goals, rho)
++    try:
++        hash(chiave)
++    except TypeError:  # quota non hashabile (forma insolita): si calcola e basta
++        return _lambdas_da_quote_1x2.__wrapped__(*chiave)
++    return _lambdas_da_quote_1x2(*chiave)
++
++
++@functools.lru_cache(maxsize=CACHE_GRIGLIE, typed=True)
++def _lambdas_da_quote_1x2(home: Any, draw: Any, away: Any, total_goals: float,
++                          rho: float) -> Optional[Tuple[float, float]]:
++    """MEMOIZZATA (pura, 30/09, banco veloce): le quote pre-KO sono CONGELATE
++    dallo scanner, quindi Mike la chiedeva migliaia di volte con lo stesso
++    ingresso (4.732 chiamate, due bisezioni annidate ciascuna: l'11 % del replay
++    di `base`). Stesso ingresso -> stesso numero; il risultato e' una tupla
++    (immutabile) o None. `typed=True`: 2 e 2.0 restano chiavi distinte."""
++    probs = devig_1x2(home, draw, away)
+     if probs is None:
+         return None
+     total = total_goals_from_1x2(probs[0], probs[2], rho, fallback=total_goals)
+diff --git a/Betfair/omega/test_omega_cache_pura_2026_09_16.py b/Betfair/omega/test_omega_cache_pura_2026_09_16.py
+index b2300f8..723d175 100644
+--- a/Betfair/omega/test_omega_cache_pura_2026_09_16.py
++++ b/Betfair/omega/test_omega_cache_pura_2026_09_16.py
+@@ -48,6 +48,9 @@ def argomenti_reali(quanti: int = 200):
+ 
+     memo = M._poisson_grid_memo
+     M._poisson_grid_memo = spia
++    # 30/09: anche la catena in cima e' memoizzata (`_lambdas_da_quote_1x2`):
++    # senza svuotarla la seconda raccolta non arriverebbe mai al fondo
++    M._lambdas_da_quote_1x2.cache_clear()
+     try:
+         # tre partite con favoriti diversi: il pre-KO congelato e' il dato vero
+         for pre in ({"home": 1.75, "draw": 3.6, "away": 4.8},
+diff --git a/Betfair/stream/backtest/banco_comune.py b/Betfair/stream/backtest/banco_comune.py
+index f0fecec..1d9616b 100644
+--- a/Betfair/stream/backtest/banco_comune.py
++++ b/Betfair/stream/backtest/banco_comune.py
+@@ -384,15 +384,35 @@ class _Livello:
+ class _VistaEx:
+     """`runner.ex` con i tre ladder nella forma di produzione."""
+ 
+-    __slots__ = ("available_to_back", "available_to_lay", "traded_volume")
++    __slots__ = ("available_to_back", "available_to_lay", "_tv_grezzo", "_tv")
+ 
+     def __init__(self, ex: Any) -> None:
+         self.available_to_back = _livelli_di_produzione(
+             getattr(ex, "available_to_back", None) if ex is not None else None)
+         self.available_to_lay = _livelli_di_produzione(
+             getattr(ex, "available_to_lay", None) if ex is not None else None)
+-        self.traded_volume = _livelli_di_produzione(
+-            getattr(ex, "traded_volume", None) if ex is not None else None)
++        # 30/09 (banco veloce): il traded volume si converte SOLO se qualcuno
++        # lo legge (lo scanner vero oggi non lo legge mai, ed era la scala piu'
++        # lunga del libro). Si tiene la lista presa ADESSO, non si rilegge `ex`
++        # dopo: chi lo legge vede gli stessi livelli di prima.
++        self._tv_grezzo = getattr(ex, "traded_volume", None) if ex is not None else None
++        self._tv = _NON_CONVERTITO
++
++    @property
++    def traded_volume(self) -> Any:
++        if self._tv is _NON_CONVERTITO:
++            self._tv = _livelli_di_produzione(self._tv_grezzo)
++            self._tv_grezzo = None
++        return self._tv
++
++    @traded_volume.setter
++    def traded_volume(self, valore: Any) -> None:
++        # chi assegna (come faceva col campo semplice) trova cio' che ha messo
++        self._tv, self._tv_grezzo = valore, None
++
++
++# marcatore di `_VistaEx._tv`: traded volume non ancora convertito
++_NON_CONVERTITO = object()
+ 
+ 
+ class _VistaRunner:
+@@ -1152,6 +1172,43 @@ def orologio_monotono():
+         SimulatedDateTime.__call__ = originale
+ 
+ 
++@contextmanager
++def info_flumine_solo_se_loggata():
++    """`BaseFlumine.info` si calcola SOLO se il suo log INFO e' acceso.
++
++    MISURATO IL 30/09 (profilo di `certifica mike 35760084 --scenari base`):
++    `BaseFlumine.info` (`baseflumine.py:475`) valeva ~11 % del replay, 417.428
++    chiamate. Serve SOLO come `extra=` dei `logger.info(...)` di chiusura e
++    rimozione del mercato (`baseflumine.py:230, 399, 450`), e Python valuta
++    l'argomento anche quando il livello INFO e' spento: a ogni giro si
++    rifacevano `clients.info`, `open_market_ids` su tutti i mercati e
++    `threading.enumerate()` per un record che non nasceva mai.
++
++    Qui: log INFO di flumine acceso -> la `info` VERA, identica; spento (il
++    banco gira a WARNING, `certifica.py`) -> un dict vuoto. Nessun numero del
++    replay passa di li': `info` non e' letta da nessun codice fuori dai log. Il
++    solo record che nasce comunque e' il WARNING "Market ... not present when
++    closing/clearing", col TESTO identico: perde solo gli attributi extra, che
++    il formato del banco (`basicConfig`, `%(levelname)s:%(name)s:%(message)s`)
++    non stampa. Si rimette a posto all'uscita, come `orologio_monotono`.
++    """
++    from flumine.baseflumine import BaseFlumine
++
++    originale = BaseFlumine.__dict__["info"]
++    log_flumine = logging.getLogger("flumine.baseflumine")
++
++    def info(self):
++        if log_flumine.isEnabledFor(logging.INFO):
++            return originale.fget(self)
++        return {}
++
++    BaseFlumine.info = property(info)
++    try:
++        yield
++    finally:
++        BaseFlumine.info = originale
++
++
+ @contextmanager
+ def simulazione_flumine():
+     """Accende la simulazione di flumine e RIMETTE A POSTO i flag globali.
+@@ -1171,7 +1228,7 @@ def simulazione_flumine():
+     }
+     fconf.simulated = True
+     try:
+-        with orologio_monotono() as stato:
++        with orologio_monotono() as stato, info_flumine_solo_se_loggata():
+             fconf._orologio_banco = stato       # diagnostica del giro corrente
+             yield fconf
+     finally:
+@@ -1777,6 +1834,8 @@ class ScannerReplay:
+         # per mercato alla stessa cadenza del vero. A 0 si applica tutto.
+         self.conflate_ms = int(conflate_ms)
+         self._ultimo_book_ms: Dict[str, int] = {}
++        # 30/09 (banco veloce): market_id -> (book, sua vista). Vedi `_vista_di`.
++        self._viste: Dict[str, Tuple[Any, Any]] = {}
+         # ritardo AGGIUNTIVO dei punteggi (vedi la testa del modulo: quello vero
+         # e' gia' dentro `ts_ms` del sidecar). In secondi, 0 = nessuna aggiunta.
+         self.ritardo_punteggi_s = float(ritardo_punteggi_s)
+@@ -1948,9 +2007,37 @@ class ScannerReplay:
+             if adesso_ms - self._ultimo_book_ms.get(mid, -10 ** 12) < self.conflate_ms:
+                 return False
+             self._ultimo_book_ms[mid] = adesso_ms
+-        self.scan._apply_market_book(libro_di_produzione(market_book))
++        self.scan._apply_market_book(self._vista_di(market_book))
+         return True
+ 
++    def _vista_di(self, market_book: Any) -> Any:
++        """`libro_di_produzione(market_book)`, rifatta SOLO se il book e' nuovo.
++
++        30/09 (banco veloce). `GeneratoreLibri` RIEMETTE lo stesso oggetto
++        `MarketBook` finche' il suo mercato non cambia: lo scanner riceveva
++        decine di volte la stessa vista, ricostruita ogni volta da capo (il 5 %
++        del replay di Mike). Qui la si riusa, ma solo quando e' certo che
++        sarebbe uguale:
++          * STESSO oggetto (`is`, e il book resta in memoria qui: il suo id non
++            puo' passare a un altro oggetto);
++          * book GIA' CONVERTITO in EUR (`size_gbp_convertite`): la conversione
++            (`valuta.converti_libro`) e' l'unica cosa che modifica un book dopo
++            la sua nascita, sostituisce le scale e non le tocca piu' (le cache
++            di betfairlightweight fanno oggetti NUOVI, non modificano i vecchi).
++            Un book non ancora convertito si rifa' sempre, come prima.
++        Lo scanner LEGGE la vista e non la tiene: consegnarla due volte o due
++        viste uguali e' la stessa cosa.
++        """
++        if getattr(market_book, "size_gbp_convertite", False) is not True:
++            return libro_di_produzione(market_book)
++        mid = str(getattr(market_book, "market_id", "") or "")
++        prec = self._viste.get(mid)
++        if prec is not None and prec[0] is market_book:
++            return prec[1]
++        vista = libro_di_produzione(market_book)
++        self._viste[mid] = (market_book, vista)
++        return vista
++
+     # ------------------------------------------------------------ punteggi
+     def applica_punteggio(self, event_id: str, record: Dict[str, Any]) -> bool:
+         """Lo stato IPS grezzo del sidecar entra da `Scanner.apply_score_state`,
+diff --git a/Betfair/stream/backtest/porta_banco.py b/Betfair/stream/backtest/porta_banco.py
+index 7fc04d8..7451f37 100644
+--- a/Betfair/stream/backtest/porta_banco.py
++++ b/Betfair/stream/backtest/porta_banco.py
+@@ -80,6 +80,8 @@ from ..local_channel import ComandoCanale, LocalRequest
+ 
+ #: il token del canale nel banco (il client vero lo manda nell'header)
+ TOKEN_BANCO = "banco-token-di-prova-0123456789"
++# `LiveTradingStrategy`, presa una volta sola da `_specchio` (import pigro)
++_LTS: Any = None
+ 
+ 
+ class _ScrittoreNullo:
+@@ -703,7 +705,13 @@ class PortaBanco:
+         if self.sessione is not None:
+             self._specchio_tennis()
+             return
+-        from ..engine.live_trading_strategy import LiveTradingStrategy
++        # 30/09 (banco veloce): la classe si prende UNA volta (l'import relativo
++        # dentro una funzione chiamata a ogni book costava); stesso oggetto
++        global _LTS
++        LiveTradingStrategy = _LTS
++        if LiveTradingStrategy is None:
++            from ..engine.live_trading_strategy import LiveTradingStrategy
++            _LTS = LiveTradingStrategy
+ 
+         if self._sporco:
+             self._sporco = False
+diff --git a/Betfair/stream/tests/test_banco_prestazioni_2026_09_30.py b/Betfair/stream/tests/test_banco_prestazioni_2026_09_30.py
+new file mode 100644
+index 0000000..be7c599
+--- /dev/null
++++ b/Betfair/stream/tests/test_banco_prestazioni_2026_09_30.py
+@@ -0,0 +1,274 @@
++# -*- coding: utf-8 -*-
++"""BANCO VELOCE (30/09): ogni risparmio di tempo ha la sua prova di equivalenza.
++
++Standard dell'utente del 29/09 (`PROCESSO_STANDARD_BOT.md` par. 6.9): un replay piu'
++veloce si accetta solo se il referto esce identico numero per numero e se ogni
++struttura messa in memoria ha un test di equivalenza con la versione lenta. Le
++quattro ottimizzazioni del 30/09, e per ognuna la versione lenta come metro:
++
++1. `omega_model.lambdas_from_pre_ko` memoizzata (`_lambdas_da_quote_1x2`):
++   stesso numero della catena senza cache, e la chiave usa TUTTI gli argomenti.
++2. `BaseFlumine.info` calcolata solo se il log INFO di flumine e' acceso
++   (`banco_comune.info_flumine_solo_se_loggata`): con INFO acceso e' la vera,
++   all'uscita dal banco torna la vera, il testo dei WARNING non cambia.
++3. `_VistaEx.traded_volume` convertita solo se letta: stessi livelli, presi
++   all'istante della vista.
++4. `ScannerReplay._vista_di`: la vista di un book GIA' CONVERTITO si riusa per
++   lo stesso oggetto; un book non convertito, o convertito dopo, si rifa'.
++
++I finti sono oggetti VERI: `MarketBook` di betfairlightweight (con le scale nella
++forma di flumine), `FlumineSimulation`, `ClearedOrders`, `valuta.converti_libro`.
++
++ASCII-only nel codice; i commenti sono in italiano.
++"""
++from __future__ import annotations
++
++import logging
++
++import flumine  # noqa: F401 - come nel banco: le scale del book diventano dict
++import pytest
++from betfairlightweight import resources
++from betfairlightweight.resources.bettingresources import MarketBook
++
++from flumine.events import events as fevents
++
++from Betfair.omega import omega_model as M
++from Betfair.stream import valuta
++from Betfair.stream.backtest import banco_comune as BC
++
++
++# ---------------------------------------------------------------------------
++# 1. la catena dei lambda pre-KO memoizzata
++# ---------------------------------------------------------------------------
++_PRE_KO = [
++    {"home": 1.75, "draw": 3.6, "away": 4.8},
++    {"home": 2.9, "draw": 3.2, "away": 2.5},
++    {"home": 1.25, "draw": 6.0, "away": 12.0},
++    {"home": "2.1", "draw": "3.3", "away": "3.9"},      # stringhe: come arrivano da JSON
++    {"home": None, "draw": 3.4, "away": 4.5},             # quota assente
++    {"home": 0, "draw": 3.4, "away": 4.5},                # quota nulla
++    {"home": 2, "draw": 3, "away": 4},                    # interi
++    {"home": 2.0, "draw": 3.0, "away": 4.0},              # gli stessi, float
++]
++
++
++def _senza_cache(pre, total_goals=M.DEFAULT_TOTAL_GOALS, rho=M.DEFAULT_RHO):
++    return M._lambdas_da_quote_1x2.__wrapped__(
++        pre.get("home"), pre.get("draw"), pre.get("away"), total_goals, rho)
++
++
++def test_lambda_pre_ko_con_cache_identici_a_senza():
++    M._lambdas_da_quote_1x2.cache_clear()
++    for pre in _PRE_KO:
++        atteso = _senza_cache(pre)
++        for _ in range(3):                       # vuota, poi piena, poi piena
++            assert M.lambdas_from_pre_ko(dict(pre)) == atteso, pre
++    assert M._lambdas_da_quote_1x2.cache_info().hits >= 2 * len(_PRE_KO)
++
++
++def test_lambda_pre_ko_forme_insolite_come_prima():
++    assert M.lambdas_from_pre_ko(None) is None
++    assert M.lambdas_from_pre_ko("x") is None
++    # una quota NON hashabile non rompe niente: si calcola senza cache
++    assert M.lambdas_from_pre_ko({"home": [2.0], "draw": 3.0, "away": 4.0}) is None
++
++
++@pytest.mark.parametrize("argomento", ["home", "draw", "away", "total_goals", "rho"])
++def test_la_chiave_usa_ogni_argomento(argomento):
++    """FALSIFICAZIONE incorporata: cambiando UN solo argomento il risultato vero
++    cambia, quindi una chiave che lo ignorasse darebbe il numero sbagliato. Si
++    controlla che la cache dia quello vero anche alla seconda chiamata."""
++    M._lambdas_da_quote_1x2.cache_clear()
++    base = {"home": 1.75, "draw": 3.6, "away": 4.8}
++    kw_a = {"total_goals": 2.4, "rho": M.DEFAULT_RHO}
++    pre_b, kw_b = dict(base), dict(kw_a)
++    if argomento in base:
++        pre_b[argomento] = base[argomento] * 1.2
++    elif argomento == "total_goals":
++        # il ripiego conta solo se il pareggio e' fuori banda: quota X altissima
++        base = {"home": 1.9, "draw": 60.0, "away": 2.1}
++        pre_b = dict(base)
++        kw_b["total_goals"] = 3.1
++    else:
++        kw_b["rho"] = -0.05
++    a = M.lambdas_from_pre_ko(dict(base), **kw_a)
++    b = M.lambdas_from_pre_ko(dict(pre_b), **kw_b)
++    assert _senza_cache(base, **kw_a) != _senza_cache(pre_b, **kw_b), (
++        f"cambiare {argomento} non cambia il risultato: il campione non falsifica")
++    assert a == _senza_cache(base, **kw_a)
++    assert b == _senza_cache(pre_b, **kw_b)
++
++
++# ---------------------------------------------------------------------------
++# 2. BaseFlumine.info solo se il suo log e' acceso
++# ---------------------------------------------------------------------------
++@pytest.fixture
++def livello_flumine():
++    log = logging.getLogger("flumine.baseflumine")
++    prima = log.level
++    yield log
++    log.setLevel(prima)
++
++
++def _quadro():
++    from flumine import FlumineSimulation
++
++    return FlumineSimulation(client=BC.cliente_simulato())
++
++
++def test_info_vera_se_il_log_info_e_acceso(livello_flumine):
++    from flumine.baseflumine import BaseFlumine
++
++    vera = BaseFlumine.__dict__["info"]
++    q = _quadro()
++    livello_flumine.setLevel(logging.INFO)
++    with BC.simulazione_flumine():
++        dentro = q.info
++    atteso = vera.fget(q)
++    assert set(dentro) == set(atteso) == {"clients", "markets", "streams",
++                                          "logging_controls", "threads"}
++    for k in ("clients", "markets", "streams", "logging_controls"):
++        assert dentro[k] == atteso[k], k
++
++
++def test_info_vuota_se_il_log_info_e_spento_e_ripristino(livello_flumine):
++    from flumine.baseflumine import BaseFlumine
++
++    vera = BaseFlumine.__dict__["info"]
++    q = _quadro()
++    livello_flumine.setLevel(logging.WARNING)
++    with BC.simulazione_flumine():
++        assert q.info == {}
++        assert BaseFlumine.__dict__["info"] is not vera
++    assert BaseFlumine.__dict__["info"] is vera, "la info vera non e' tornata"
++    assert q.info["markets"] == {"market_count": 0, "open_market_count": 0}
++
++
++class _Raccolta(logging.Handler):
++    def __init__(self):
++        super().__init__()
++        self.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
++        self.righe = []
++
++    def emit(self, record):
++        self.righe.append(self.format(record))
++
++
++def _warning_di_flumine(livello_flumine, dentro_il_banco: bool):
++    """Il solo record che nasce a WARNING: il mercato assente alla pulizia."""
++    q = _quadro()
++    raccolta = _Raccolta()
++    livello_flumine.addHandler(raccolta)
++    livello_flumine.setLevel(logging.WARNING)
++    try:
++        cleared = resources.ClearedOrders(moreAvailable=False, clearedOrders=[])
++        cleared.market_id = "1.999"
++        evento = fevents.ClearedOrdersEvent(cleared)
++        if dentro_il_banco:
++            with BC.simulazione_flumine():
++                q._process_cleared_orders(evento)
++        else:
++            q._process_cleared_orders(evento)
++    finally:
++        livello_flumine.removeHandler(raccolta)
++    return raccolta.righe
++
++
++def test_il_testo_dei_warning_non_cambia(livello_flumine):
++    fuori = _warning_di_flumine(livello_flumine, dentro_il_banco=False)
++    dentro = _warning_di_flumine(livello_flumine, dentro_il_banco=True)
++    assert fuori == dentro
++    assert fuori == ["WARNING:flumine.baseflumine:Market 1.999 not present when clearing"]
++
++
++# ---------------------------------------------------------------------------
++# 3 e 4. le viste del book per lo scanner
++# ---------------------------------------------------------------------------
++def _book(back=2.0, size=10.0, tv=((2.0, 50.0), (2.02, 7.5)), mid="1.500"):
++    return MarketBook(
++        marketId=mid, isMarketDataDelayed=False, status="OPEN", betDelay=5,
++        bspReconciled=False, complete=True, inplay=True, numberOfWinners=1,
++        numberOfRunners=2, numberOfActiveRunners=2, totalMatched=123.4,
++        totalAvailable=0, crossMatching=False, runnersVoidable=False, version=1,
++        runners=[{"selectionId": sid, "status": "ACTIVE", "handicap": 0.0,
++                  "totalMatched": 11.0 * (i + 1), "lastPriceTraded": back + i,
++                  "ex": {"availableToBack": [{"price": back + i, "size": size},
++                                             {"price": back + i - 0.02, "size": 3.0}],
++                         "availableToLay": [{"price": back + i + 0.02, "size": size / 2}],
++                         "tradedVolume": [{"price": p, "size": s} for p, s in tv]}}
++                 for i, sid in enumerate((101, 102))])
++
++
++def _livelli(xs):
++    return [(x.price, x.size) for x in xs]
++
++
++def _impronta(v):
++    """Tutti i campi della vista, nella forma che si confronta."""
++    return (v.market_id, v.inplay, v.status, v.total_matched, v.bet_delay,
++            v.market_definition, v.publish_time,
++            [(r.selection_id, r.status, r.last_price_traded, r.total_matched,
++              _livelli(r.ex.available_to_back), _livelli(r.ex.available_to_lay),
++              _livelli(r.ex.traded_volume)) for r in v.runners])
++
++
++def test_traded_volume_pigro_uguale_a_quello_di_prima():
++    mb = _book()
++    for r in mb.runners:
++        vista = BC._VistaEx(r.ex)
++        assert _livelli(vista.traded_volume) == _livelli(
++            BC._livelli_di_produzione(r.ex.traded_volume))
++        assert _livelli(vista.traded_volume) == [(2.0, 50.0), (2.02, 7.5)]
++        assert vista.traded_volume is vista.traded_volume     # convertito una volta
++    assert BC._VistaEx(None).traded_volume == []
++
++
++def test_traded_volume_preso_all_istante_della_vista():
++    """La vista legge la scala quando nasce, come prima: se dopo il book cambia
++    scala (la conversione ne mette una NUOVA), la vista vecchia non cambia."""
++    mb = _book()
++    ex = mb.runners[0].ex
++    vista = BC._VistaEx(ex)
++    ex.traded_volume = [{"price": 9.0, "size": 1.0}]
++    assert _livelli(vista.traded_volume) == [(2.0, 50.0), (2.02, 7.5)]
++
++
++def test_traded_volume_assegnabile_come_un_campo():
++    vista = BC._VistaEx(_book().runners[0].ex)
++    vista.traded_volume = None
++    assert vista.traded_volume is None
++    vista.traded_volume = [1]
++    assert vista.traded_volume == [1]
++
++
++@pytest.fixture
++def scanner():
++    return BC.ScannerReplay()
++
++
++def test_vista_riusata_solo_per_lo_stesso_book_convertito(scanner):
++    cambio = valuta.CambioGbpEur(fisso=1.2)
++    mb = valuta.converti_libro(_book(), cambio)
++    a = scanner._vista_di(mb)
++    b = scanner._vista_di(mb)
++    assert a is b, "stesso book convertito: la vista si riusa"
++    assert _impronta(a) == _impronta(BC.libro_di_produzione(mb))
++    altro = valuta.converti_libro(_book(back=2.5), cambio)
++    c = scanner._vista_di(altro)
++    assert c is not a and _impronta(c) == _impronta(BC.libro_di_produzione(altro))
++    # di nuovo il primo (non piu' l'ultimo del mercato): vista rifatta, uguale
++    assert _impronta(scanner._vista_di(mb)) == _impronta(a)
++
++
++def test_book_non_convertito_si_rifa_sempre_e_la_conversione_si_vede(scanner):
++    """FALSIFICAZIONE incorporata: la vista presa PRIMA della conversione ha le
++    size in GBP; se la cache la tenesse anche dopo, lo scanner leggerebbe GBP."""
++    mb = _book(size=10.0)
++    a = scanner._vista_di(mb)
++    b = scanner._vista_di(mb)
++    assert a is not b
++    assert _livelli(a.runners[0].ex.available_to_back)[0] == (2.0, 10.0)
++    valuta.converti_libro(mb, valuta.CambioGbpEur(fisso=1.2))
++    c = scanner._vista_di(mb)
++    assert _livelli(c.runners[0].ex.available_to_back)[0] == (2.0, 12.0)
++    assert _impronta(c) == _impronta(BC.libro_di_produzione(mb))

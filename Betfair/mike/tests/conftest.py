@@ -38,6 +38,22 @@ def runner():
         MP.installa(None)
 
 
+@pytest.fixture
+def forma_di_prima():
+    """29/09 (piano Mike P5, blocco 5): il valore di serie di ``cover_form`` e'
+    diventato ``lay_under45`` (copertura come BANCA Under 4,5). I test scritti per
+    la forma di prima (PUNTA Over 4,5) si FISSANO su ``back_over45`` con questa
+    fixture: restano a provare che l'interruttore di sicurezza dell'utente
+    funziona ancora, con le stesse asserzioni di prima. Elenco nel referto
+    ``AUDIT_2026-09-29/MIKE_P5_5.md``."""
+    prima = C.DEFAULTS.get("cover_form")
+    C.DEFAULTS["cover_form"] = "back_over45"
+    try:
+        yield
+    finally:
+        C.DEFAULTS["cover_form"] = prima
+
+
 @pytest.fixture(autouse=True)
 def _servizio_senza_memoria():
     originali = {k: C.DEFAULTS[k] for k in _CACHE_KEYS if k in C.DEFAULTS}

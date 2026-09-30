@@ -1034,7 +1034,7 @@ const EXIT_REASON_TEXT: Record<string, string> = {
     under_green: 'green-up sull’Under 3.5',
     under_last: 'ultimo ingresso (ordine che resta a book)',
     under_close: 'chiusura dell’Under 3.5',
-    over_cover: 'copertura con l’Over 4.5',
+    over_cover: 'copertura sulla linea 4.5',
     over_close: 'chiusura dell’Over 4.5',
     reentry: 're-ingresso sull’Under 4.5',
     reentry_green: 'green-up del re-ingresso',

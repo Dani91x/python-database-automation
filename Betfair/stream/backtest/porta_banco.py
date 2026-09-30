@@ -80,6 +80,8 @@ from ..local_channel import ComandoCanale, LocalRequest
 
 #: il token del canale nel banco (il client vero lo manda nell'header)
 TOKEN_BANCO = "banco-token-di-prova-0123456789"
+# `LiveTradingStrategy`, presa una volta sola da `_specchio` (import pigro)
+_LTS: Any = None
 
 
 class _ScrittoreNullo:
@@ -703,7 +705,13 @@ class PortaBanco:
         if self.sessione is not None:
             self._specchio_tennis()
             return
-        from ..engine.live_trading_strategy import LiveTradingStrategy
+        # 30/09 (banco veloce): la classe si prende UNA volta (l'import relativo
+        # dentro una funzione chiamata a ogni book costava); stesso oggetto
+        global _LTS
+        LiveTradingStrategy = _LTS
+        if LiveTradingStrategy is None:
+            from ..engine.live_trading_strategy import LiveTradingStrategy
+            _LTS = LiveTradingStrategy
 
         if self._sporco:
             self._sporco = False
