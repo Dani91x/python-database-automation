@@ -1,0 +1,918 @@
+diff --git a/Betfair/mike/certificazione.py b/Betfair/mike/certificazione.py
+index 0433cdd..50fe0a6 100644
+--- a/Betfair/mike/certificazione.py
++++ b/Betfair/mike/certificazione.py
+@@ -542,6 +542,23 @@ def _g2(ctx, snap, d, params):
+     return None
+ 
+ 
++def _bloccato_uscita_rientro(ctx, snap) -> Optional[float]:
++    """P&L (lordo) che la chiusura al mercato del rientro bloccherebbe adesso:
++    esposizione della selezione Under 4,5 chiusa al miglior prezzo del libro.
++    None = non calcolabile (libro o prezzo assente)."""
++    from Betfair.stream.trading.greenup import compute_greenup
++
++    w, l = E.exposure(ctx.legs, E.MARKET_OU45, E.SEL_UNDER)
++    bk = snap.book(E.MARKET_OU45, E.SEL_UNDER)
++    if bk is None:
++        return None
++    plan = compute_greenup(matched_if_win=w, matched_if_lose=l, best_back_price=bk.best_back,
++                           best_lay_price=bk.best_lay, fraction=1.0)
++    if not plan.actionable:
++        return None
++    return round(float(min(plan.expected_if_win, plan.expected_if_lose)), 2)
++
++
+ @_controllo("G3", "un'uscita in PROFITTO non resta mai una proposta: la esegue il bot "
+                   "anche a uscite manuali (piano Mike 29/09, M1.1, M4.1-M4.4)",
+             quando=lambda ctx, snap, d, p: isinstance(d.updates.get("uscita_proposta"), dict))
+@@ -550,8 +567,18 @@ def _g3(ctx, snap, d, params):
+     if not isinstance(prop, dict):
+         return None
+     motivo = str(prop.get("close_reason") or "")
+-    if motivo.startswith("loss") or motivo == "reentry_time":
++    if motivo.startswith("loss"):
+         return None
++    if motivo == "reentry_time":
++        # 30/09 (decisione dell'utente): la chiusura a tempo del rientro resta
++        # proposta SOLO in perdita. Il P&L si ricalcola qui dalle gambe e dal
++        # libro (non dalla telemetria del motore): chiudere al miglior prezzo
++        # la selezione del rientro.
++        bloccato = _bloccato_uscita_rientro(ctx, snap)
++        if bloccato is None or bloccato < 0:
++            return None
++        return (f"uscita a tempo del rientro in profitto ({bloccato:+.2f}) lasciata come "
++                f"proposta: {prop.get('motivo')}")
+     if isinstance(d.updates.get("veto_u35"), dict):
+         return None                      # chiusura del veto pre-partita: in perdita
+     return (f"uscita in profitto ({prop.get('categoria')}, motivo {motivo or '-'}) lasciata "
+diff --git a/Betfair/mike/engine.py b/Betfair/mike/engine.py
+index 295497b..ca3e481 100644
+--- a/Betfair/mike/engine.py
++++ b/Betfair/mike/engine.py
+@@ -2606,10 +2606,22 @@ def uscita_in_perdita(d: Decision) -> bool:
+     chiusura a tempo del rientro (``reentry_time``: al mercato a un minuto fisso,
+     puo' essere in perdita) e la chiusura del veto pre-partita (nota
+     ``VETO_U35_NOTE``). Il seguito di un'uscita gia' partita (riprezzo, residuo:
+-    la decisione non riscrive il motivo) passa comunque, come prima."""
++    la decisione non riscrive il motivo) passa comunque, come prima.
++
++    30/09 (decisione dell'utente): ``reentry_time`` e' in perdita solo se il P&L
++    che blocca e' negativo (telemetria ``uscita_a_tempo`` della decisione); in
++    PROFITTO parte da sola. Senza quel numero resta in perdita (fail-closed)."""
+     motivo = str(d.updates.get("close_reason") or "")
+-    if motivo.startswith("loss") or motivo == "reentry_time":
++    if motivo.startswith("loss"):
+         return True
++    if motivo == "reentry_time":
++        t = d.telemetry.get("uscita_a_tempo") if isinstance(d.telemetry, dict) else None
++        if not isinstance(t, dict) or t.get("bloccato") is None:
++            return True
++        try:
++            return float(t["bloccato"]) < 0.0
++        except (TypeError, ValueError):
++            return True
+     return any(a.kind == "place" and a.note == VETO_U35_NOTE for a in d.actions)
+ 
+ 
+@@ -3000,6 +3012,14 @@ def _decide_prematch(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
+             if leg.persistence == "PERSIST" and leg.role == "under_last":
+                 if snap.now - snap.ko_at < float(params["cancel_unmatched_after_ko_s"]):
+                     continue           # grazia: il residuo PERSIST puo' ancora abbinarsi
++            if leg.role == "under_green" and leg.persistence != "PERSIST":
++                # 30/09 (decisione dell'utente, piano M2.1 "Mike non la ritira"):
++                # la banca pre-partita LAPSE NON si annulla al fischio. Betfair
++                # la fa scadere da se' al passaggio in gioco; Mike ne LEGGE
++                # l'esito (scaduta, abbinata, in parte: M2.3/M6.2) e decide da
++                # li' (``_decide_ko_green`` aspetta finche' non lo sa). Una banca
++                # PERSIST (non prevista) resta annullata come prima.
++                continue
+             acts.append(Action(kind="cancel", ref=leg.ref, role=leg.role, market=leg.market,
+                                selection=leg.selection))
+         if S > 0:
+@@ -4375,8 +4395,15 @@ def _decide_reentry_open(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any],
+                                    best_lay_price=bk.best_lay, fraction=1.0)
+             if plan.actionable:
+                 acts.append(_place("reentry_green", MARKET_OU45, SEL_UNDER, plan.side, plan.price, plan.size))
++                # 30/09 (decisione dell'utente): la chiusura a tempo del rientro in
++                # PROFITTO (P&L bloccato >= 0, al netto della commissione ha lo
++                # stesso segno) parte da sola come le altre uscite in profitto; in
++                # PERDITA resta una proposta da firmare (``uscita_in_perdita``).
++                bloccato = round(float(min(plan.expected_if_win, plan.expected_if_lose)), 2)
+                 return Decision("REENTRY_GREEN_PENDING", acts, "re-ingresso: chiusura a mercato",
+-                                updates={"close_reason": "reentry_time"})
++                                updates={"close_reason": "reentry_time"},
++                                telemetry={"uscita_a_tempo": {"bloccato": bloccato,
++                                                              "in_perdita": bloccato < 0}})
+         return Decision("REENTRY_OPEN", acts, "re-ingresso: prezzo assente")
+     if green is None or not green.is_live:
+         S, Pe = position(ctx.legs, MARKET_OU45, SEL_UNDER, ("reentry",))
+diff --git a/Betfair/mike/service.py b/Betfair/mike/service.py
+index 5e6d2e4..9671621 100644
+--- a/Betfair/mike/service.py
++++ b/Betfair/mike/service.py
+@@ -2198,12 +2198,23 @@ def _aggiorna_riga_resting(db: Any, event_id: str, leg: E.Leg, come: str,
+         return
+     if residuo is None:
+         residuo = round(max(0.0, float(leg.size) - float(leg.matched)), 2)
++    campi: Dict[str, Any] = {"status": ("open" if leg.status == "open" else "pending"),
++                             "price": leg.avg_price or leg.price,
++                             "meta": {**(r.get("meta") or {}), "phase": "open", "fill": come}}
++    if leg.status == "open":
++        # 30/09 (parita' coda/canale, residuo del banco punto 3): ``size`` diventa
++        # l'ABBINATO solo quando l'ordine e' finito abbinato, come sul runner
++        # (``_segui_ordini_paper_su_runner``) e in ogni altra chiusura di riga.
++        # Prima qui si scriveva ``size = abbinato`` anche a 0 o in parte: la riga
++        # LIVE di una lay appoggiata mai abbinata portava size 0,00 (la paper
++        # 10,12, il chiesto), e una riga 'pending' ricostruita in gamba
++        # (``_gamba_dalla_riga``) nasceva da 0. Chiesto/abbinato/residuo restano
++        # nelle colonne di consapevolezza qui sotto.
++        campi["size"] = leg.matched
+     try:
+         X.aggiorna_trade(
+             db, int(r["id"]),
+-            campi={"status": ("open" if leg.status == "open" else "pending"),
+-                   "price": leg.avg_price or leg.price, "size": leg.matched,
+-                   "meta": {**(r.get("meta") or {}), "phase": "open", "fill": come}},
++            campi=campi,
+             consapevolezza={"size_requested": round(float(leg.size), 2),
+                             "size_matched": round(float(leg.matched), 2),
+                             "size_remaining": round(float(residuo), 2),
+@@ -4244,6 +4255,63 @@ def _sorveglia_senza_dati(*, db: Any, market: Any, ctx: E.MatchCtx, ev: Dict[str
+                      mode=mode, now=now, cache=cache)
+ 
+ 
++def _registra_resti(db: Any, extra: Dict[str, Any], d: Any, ctx: E.MatchCtx,
++                    event_id: str) -> None:
++    """30/09 (decisione 26 del piano, M3.5; revisione M4): i RESTI che Mike non
++    rincorre (copertura: resto sotto il minimo di una bancata; mercato 4,5
++    piatto con uno sbilancio non piazzabile) diventano righe di ``mike_activity``.
++    UNA riga per episodio (firma: tipo, ciclo, importo), con i numeri della
++    telemetria del motore piu' ``state`` e ``ciclo`` come le altre righe."""
++    tele = d.telemetry if isinstance(getattr(d, "telemetry", None), dict) else {}
++    scritti = [str(x) for x in (extra.get("resti_scritti") or [])]
++    nuovi = False
++    for kind, chiave in (("cover_resto_sotto_minimo", "resto"),
++                         ("residuo_non_piazzabile", "sbilancio")):
++        v = tele.get(kind)
++        if not isinstance(v, dict):
++            continue
++        try:
++            importo = round(float(v.get(chiave) or 0.0), 2)
++        except (TypeError, ValueError):
++            importo = None
++        firma = f"{kind}|{int(ctx.cycle_no or 0)}|{importo}"
++        if firma in scritti:
++            continue
++        scritti.append(firma)
++        nuovi = True
++        riga = {**v, "state": d.state, "ciclo": int(ctx.cycle_no or 0)}
++        if kind == "cover_resto_sotto_minimo":
++            db.log("cover_resto_sotto_minimo", riga, event_id)
++        else:
++            db.log("residuo_non_piazzabile", riga, event_id)
++    if nuovi:
++        extra["resti_scritti"] = scritti[-10:]
++
++
++def _esegui_annulli(*, db: Any, market: Any, ev: Dict[str, Any], ctx: E.MatchCtx,
++                    extra: Dict[str, Any], actions: List[Any],
++                    cache: Optional[Dict[str, List[Dict[str, Any]]]] = None) -> int:
++    """Gli annulli decisi dal motore arrivano a Betfair (o al runner in paper).
++    Una sola strada per il giro normale e per il regolamento (30/09, revisione
++    critica C1-aggiunta: il ramo del regolamento decideva gli annulli e non li
++    eseguiva). Codice identico a quello che stava in ``_run_event``."""
++    n = 0
++    for a in actions:
++        if a.kind == "cancel":
++            leg = next((l for l in ctx.legs if l.ref == a.ref), None)
++            if leg is not None and leg.is_live:
++                extra["deferred"] = [x for x in (extra.get("deferred") or [])
++                                     if x["ref"] != leg.ref]
++                # C.12a - l'engine decide QUANDO annullare (strategia, invariata):
++                # qui l'annullamento arriva finalmente a Betfair.
++                esito = _mark_trade_cancelled(db, ev["event_id"], leg, "cancelled_by_engine",
++                                              cache, market=market)
++                db.log("cancel", {"leg": leg.ref, "role": leg.role, "esito": esito},
++                       ev["event_id"])
++                n += 1
++    return n
++
++
+ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[str, Any]],
+                params: Dict[str, Any], mode: str, now: datetime, scanner_age: Optional[float],
+                atlas: Optional[Dict[str, Any]], dry: bool,
+@@ -4336,6 +4404,13 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
+         db.log("settling_reverted", {"to": back_to, "reason": "riga tornata nel feed, mercato aperto"}, ev["event_id"])
+         E.apply_decision(ctx, E.Decision(state=back_to, actions=[], reason="falso regolamento annullato"), now_ts)
+     if closed and ctx.state not in E.TERMINAL_STATES:
++        # 30/09 (revisione critica, C1-aggiunta): anche col mercato chiuso gli
++        # ordini ancora vivi o a esito ignoto si SEGUONO a ogni giro (esiti del
++        # runner, riconciliazione, lay appoggiate), come negli altri giri: prima
++        # il ramo del regolamento usciva prima di ``_sorveglia_gambe``.
++        if any(l.is_live or l.needs_reconcile for l in ctx.legs):
++            _sorveglia_senza_dati(db=db, market=market, ctx=ctx, ev=ev, extra=extra,
++                                  params=params, mode=mode, now=now, cache=cache)
+         # throttle delle letture REST di regolamento (review F1 #3): mai un poll
+         # stretto su un mercato chiuso; dopo troppo tempo si ripiega sull'ultimo
+         # punteggio noto o si va in ERROR (mai SETTLING per sempre)
+@@ -4348,6 +4423,20 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
+         # M3: ``settle_confirm_s`` CABLATO come intervallo fra due letture REST
+         extra["settle_next_ts"] = now_ts + max(5.0, float(params.get("settle_confirm_s") or _SETTLE_RETRY_S))
+         extra["settle_first_ts"] = float(extra.get("settle_first_ts") or now_ts)
++        # 30/09 (C1-aggiunta): gli annulli della decisione SETTLING del motore
++        # (``_cancel_live``: ogni gamba ancora viva) si ESEGUONO, con la stessa
++        # strada del giro normale; se una gamba torna viva dalla riconciliazione
++        # si riannulla al giro di regolamento dopo. Nessuna riga si regola
++        # finche' un ordine e' vivo o senza esito letto: si aspetta in SETTLING.
++        n_annulli = _esegui_annulli(db=db, market=market, ev=ev, ctx=ctx, extra=extra,
++                                    actions=E._cancel_live(ctx), cache=cache)
++        if any(l.is_live or l.needs_reconcile for l in ctx.legs):
++            if ctx.state != "SETTLING":
++                E.apply_decision(ctx, E.Decision("SETTLING", [], "mercato chiuso: attesa "
++                                                 "dell'esito degli ordini ancora aperti"), now_ts)
++            ev.update(_row_from_ctx(ev, ctx, extra))
++            _persist(db, ev, before_sig, now_ts=now_ts, params=params, lotto=lotto)
++            return (n_annulli, 0)
+         mkts = ev.get("markets") or {}
+         names: Dict[int, str] = {}
+         b35 = market.read_book(str((mkts.get(E.MARKET_OU35) or {}).get("market_id") or ""), names) \
+@@ -4719,18 +4808,8 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
+         _log_throttled(db, extra, params, now_ts, "tetto_partite",
+                        {"reason": "max_open_matches", "cap": int(params["max_open_matches"]),
+                         "state": ctx.state}, ev["event_id"])
+-    for a in d.actions:
+-        if a.kind == "cancel":
+-            leg = next((l for l in ctx.legs if l.ref == a.ref), None)
+-            if leg is not None and leg.is_live:
+-                extra["deferred"] = [x for x in extra["deferred"] if x["ref"] != leg.ref]
+-                # C.12a — l'engine decide QUANDO annullare (strategia, invariata):
+-                # qui l'annullamento arriva finalmente a Betfair.
+-                esito = _mark_trade_cancelled(db, ev["event_id"], leg, "cancelled_by_engine",
+-                                              cache, market=market)
+-                db.log("cancel", {"leg": leg.ref, "role": leg.role, "esito": esito},
+-                       ev["event_id"])
+-                n_actions += 1
++    n_actions += _esegui_annulli(db=db, market=market, ev=ev, ctx=ctx, extra=extra,
++                                 actions=d.actions, cache=cache)
+     new_legs = E.apply_decision(ctx, d, now_ts)
+     for leg in new_legs:
+         book = snap.book(leg.market, leg.selection)
+@@ -4852,6 +4931,9 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
+                         db.log(k, v if isinstance(v, dict) else {"value": v}, ev["event_id"])
+                 else:
+                     db.log(k, v if isinstance(v, dict) else {"value": v}, ev["event_id"])
++        # 30/09 (decisione 26 del piano, M3.5 "lo scrive nel registro"): il resto
++        # sotto minimo non si perde nella telemetria, va in ``mike_activity``
++        _registra_resti(db, extra, d, ctx, ev["event_id"])
+     # H5 — il log 'state' si scrive SOLO quando lo stato cambia davvero: prima
+     # bastava un motivo con numeri diversi (prezzi, minuti) per riscriverlo a
+     # ogni tick e riempire mike_activity.
+diff --git a/Betfair/mike/tests/test_mike_audit_2026_09_11.py b/Betfair/mike/tests/test_mike_audit_2026_09_11.py
+index bc90fc2..bbbd91f 100644
+--- a/Betfair/mike/tests/test_mike_audit_2026_09_11.py
++++ b/Betfair/mike/tests/test_mike_audit_2026_09_11.py
+@@ -1123,6 +1123,9 @@ def test_l5_tutti_i_kind_di_attivita_sono_dichiarati():
+         # 30/09 (mercato deciso, ordine dell'utente): una linea superata dai
+         # gol e' DECISA e Betfair la chiude: Mike lo scrive UNA volta per linea
+         "mercato_deciso",
++        # 30/09 (decisione 26 del piano, M3.5 "lo scrive nel registro"): il resto
++        # sotto minimo della copertura e lo sbilancio non piazzabile del 4,5
++        "cover_resto_sotto_minimo", "residuo_non_piazzabile",
+     }
+     assert found - declared == set(), f"kind non dichiarati: {sorted(found - declared)}"
+ 
+diff --git a/Betfair/mike/tests/test_mike_engine.py b/Betfair/mike/tests/test_mike_engine.py
+index f095676..d872950 100644
+--- a/Betfair/mike/tests/test_mike_engine.py
++++ b/Betfair/mike/tests/test_mike_engine.py
+@@ -376,7 +376,11 @@ def test_last_entry_in_profit_keeps_the_green_until_ko():
+     d3 = E.decide(ctx, snap(KO + 30, u35=book(1.44, inplay=True), inplay=True, minute=0, goals=0), p)
+     # dal 13/09 la posizione portata in gioco prova PRIMA a uscire a +N tick
+     assert d3.state == "LIVE_KO_GREEN"
+-    assert [(a.kind, a.role) for a in d3.actions] == [("cancel", "under_green")]
++    # 30/09 (decisione dell'utente, M2.1 "Mike non la ritira"): al fischio la
++    # banca LAPSE NON si annulla (prima: [("cancel", "under_green")]); la fa
++    # scadere Betfair e Mike ne legge l'esito.
++    assert d3.actions == []
++    assert any(l.role == "under_green" and l.is_live for l in ctx.legs)
+ 
+ 
+ def test_last_entry_in_loss_holds_into_live():
+diff --git a/Betfair/mike/tests/test_mike_ondata2_2026_09_30.py b/Betfair/mike/tests/test_mike_ondata2_2026_09_30.py
+new file mode 100644
+index 0000000..b191595
+--- /dev/null
++++ b/Betfair/mike/tests/test_mike_ondata2_2026_09_30.py
+@@ -0,0 +1,539 @@
++"""30/09/2026 - Mike, seconda ondata di correzioni (ordini dell'utente del 30/09).
++
++1. Il REGOLAMENTO esegue gli annulli che decide (revisione critica, C1-aggiunta):
++   con la partita chiusa (linea in gioco CLOSED, o riga assente oltre la grazia)
++   gli ordini ancora vivi si annullano davvero, si seguono finche' non hanno un
++   esito letto, e solo dopo si regolano le righe.
++2. Al fischio Mike NON annulla la banca pre-partita LAPSE (M2.1 "Mike non la
++   ritira"): ne legge l'esito (scaduta / abbinata) e decide da li'.
++3. ``reentry_time`` in PROFITTO parte da sola; in perdita resta proposta.
++4. Il resto sotto minimo (M3.5) va nel registro ``mike_activity``.
++5. Due prove mancanti: M6.2 ramo ABBINATO (B-6) e tetto al prezzo LIMITE (B-10).
++6. Righe ``ko_green`` scadute: stessa scrittura della size sui due trasporti.
++
++Finti: ``FakeDB``/``FakeMarket`` di ``test_mike_service`` (le firme di
++``mike/db.py``), ``payload``/``row`` di ``test_mike_feed`` (chiavi dello scanner),
++runner finto sul protocollo vero (``runner_finto``), gambe serializzate con
++``dataclasses.asdict`` come fa ``_row_from_ctx``. ASCII-only.
++"""
++from __future__ import annotations
++
++import dataclasses
++from datetime import timedelta
++from typing import Any, Dict, List
++
++import pytest
++
++from Betfair.mike import config as C
++from Betfair.mike import engine as E
++from Betfair.mike import feed as F
++from Betfair.mike import service as S
++from Betfair.mike.tests.test_mike_feed import KO_IN_FINESTRA, payload, row
++from Betfair.mike.tests.test_mike_indagine_mercato_deciso_2026_09_29 import (
++    OU35, OU45, SEL_O35, SEL_O45, SEL_U35, SEL_U45, _evento_coperto, _payload)
++from Betfair.mike.tests.test_mike_service import NOW, FakeDB, FakeMarket, legs, run, state
++
++
++# ===========================================================================
++# 1) il regolamento esegue gli annulli decisi
++# ===========================================================================
++def _libri_chiusi_4_gol(mk: FakeMarket) -> None:
++    """Partita finita 4-0: Over 3,5 e Under 4,5 vincenti (runner come ``read_book``)."""
++    mk.books[OU35] = {"market_id": OU35, "status": "CLOSED", "inplay": True,
++                      "runners": [{"selection_id": SEL_U35, "status": "LOSER"},
++                                  {"selection_id": SEL_O35, "status": "WINNER"}]}
++    mk.books[OU45] = {"market_id": OU45, "status": "CLOSED", "inplay": True,
++                      "runners": [{"selection_id": SEL_U45, "status": "WINNER"},
++                                  {"selection_id": SEL_O45, "status": "LOSER"}]}
++
++
++def _copertura_in_volo(db: FakeDB, runner) -> str:
++    """Posizione di ``_evento_coperto`` + una banca Under 4,5 di copertura
++    APPOGGIATA sul runner (strada vera ``_piazza_resting_paper``), non abbinata.
++    Ritorna il ref del comando sul runner."""
++    _evento_coperto(db)
++    leg = E.Leg(role="over_cover", market=E.MARKET_OU45, selection=E.SEL_UNDER, side="lay",
++                price=4.9, size=3.0, ref="over_cover-0-7", cycle_no=0,
++                placed_at=NOW.timestamp() - 30.0)
++    info = F.event_info("E1", _payload([]))
++    S._piazza_resting_paper(db=db, market=FakeMarket(), info=info, leg=leg,
++                            params=C.merge_params(None), minuto=64, score="4-0", chiude=None,
++                            motivo=None, ev={"event_id": "E1"}, now=NOW)
++    assert leg.status == "pending", "precondizione: la banca e' sul book del runner"
++    db.events["E1"]["positions"].append(dataclasses.asdict(leg))
++    riga = [t for t in db.trades if t.get("signal_key") == leg.ref][0]
++    assert riga["status"] == "pending" and riga["meta"]["canale_ref"]
++    return str(riga["meta"]["canale_ref"])
++
++
++def _annulli_al_runner(runner) -> List[Dict[str, Any]]:
++    return [c for c in runner.comandi if c.get("azione") == "cancel"]
++
++
++def _gamba(db: FakeDB, ref: str) -> Dict[str, Any]:
++    return [l for l in legs(db) if l["ref"] == ref][0]
++
++
++def _payload_finita() -> Dict[str, Any]:
++    p = _payload([], stato35="CLOSED")
++    p["ou"][1]["status"] = "CLOSED"            # anche la linea in gioco (4,5) e' chiusa
++    return p
++
++
++def test_c1_linea_in_gioco_chiusa_la_copertura_in_volo_si_annulla_poi_si_regola(runner):
++    db = FakeDB(params={"stake": 10})
++    ref = _copertura_in_volo(db, runner)
++    mk = FakeMarket()
++    _libri_chiusi_4_gol(mk)
++    run(db, mk, NOW, [row(_payload_finita())])
++    annulli = _annulli_al_runner(runner)
++    assert len(annulli) == 1, (runner.comandi, db.kinds())
++    assert str(annulli[0]["bet_id"]) == str(runner.ordine(ref)["bet_id"])
++    assert _gamba(db, "over_cover-0-7")["status"] == "cancelled"
++    assert any(k == "cancel" and p.get("leg") == "over_cover-0-7" for k, p, _e in db.activity)
++    # annullo confermato dal runner: la partita si regola nello stesso giro
++    assert state(db) == "SETTLED"
++    riga = [t for t in db.trades if t.get("signal_key") == "over_cover-0-7"][0]
++    assert riga["status"] not in ("pending", "open")
++
++
++def test_c1_riga_assente_oltre_la_grazia_la_copertura_in_volo_si_annulla(runner):
++    """Il ramo ``absent_closed``: la riga manca da >= grazia e i libri non dicono
++    ancora il risultato. La gamba viva si annulla lo stesso (decisione SETTLING
++    del motore), non resta sul book creduta viva."""
++    db = FakeDB(params={"stake": 10})
++    _copertura_in_volo(db, runner)
++    db.events["E1"]["ctx"]["row_missing_since"] = NOW.timestamp() - S._ROW_MISSING_GRACE_S - 1
++    run(db, FakeMarket(), NOW, [])
++    assert len(_annulli_al_runner(runner)) == 1, (runner.comandi, db.kinds())
++    assert _gamba(db, "over_cover-0-7")["status"] == "cancelled"
++    assert state(db) == "SETTLING"
++
++
++def test_c1_annullo_senza_esito_il_regolamento_aspetta_e_la_sorveglianza_continua(runner):
++    """Il runner non conferma l'annullo (evento trattenuto): la gamba va in
++    riconciliazione, la partita resta SETTLING (nessuna riga regolata con un
++    ordine forse vivo); quando l'esito arriva, la sorveglianza lo legge e la
++    partita si regola."""
++    db = FakeDB(params={"stake": 10})
++    _copertura_in_volo(db, runner)
++    mk = FakeMarket()
++    _libri_chiusi_4_gol(mk)
++    runner.trattieni = True
++    run(db, mk, NOW, [row(_payload_finita())])
++    assert len(_annulli_al_runner(runner)) == 1
++    assert _gamba(db, "over_cover-0-7")["status"] == E.STATUS_RECONCILE
++    assert state(db) == "SETTLING"
++    riga = [t for t in db.trades if t.get("signal_key") == "over_cover-0-7"][0]
++    assert riga["status"] == "pending"
++    righe_aperte = [t for t in db.trades if t["status"] in ("open", "pending")]
++    assert righe_aperte, "nessuna riga regolata finche' un ordine e' senza esito"
++    runner.trattieni = False
++    runner.rilascia()
++    t = NOW + timedelta(seconds=90)
++    run(db, mk, t, [row(_payload_finita(), updated=t)])
++    assert _gamba(db, "over_cover-0-7")["status"] == "cancelled", db.kinds()
++    assert state(db) == "SETTLED"
++
++
++def test_c1_mercato_annullato_non_si_regola_con_un_ordine_senza_esito(runner):
++    """Il ramo del mercato ANNULLATO (void per mercato) regolava le righe senza
++    guardare gli esiti ignoti: con la copertura in volo il cui annullo non e'
++    confermato, niente regolamento finche' l'esito non e' letto."""
++    db = FakeDB(params={"stake": 10})
++    _copertura_in_volo(db, runner)
++    mk = FakeMarket()
++    _libri_chiusi_4_gol(mk)
++    mk.books[OU45] = {"market_id": OU45, "status": "VOIDED", "inplay": True, "runners": []}
++    runner.trattieni = True
++    run(db, mk, NOW, [row(_payload_finita())])
++    assert _gamba(db, "over_cover-0-7")["status"] == E.STATUS_RECONCILE
++    assert state(db) == "SETTLING", db.kinds()
++    assert "settled" not in db.kinds()
++
++
++def test_c1_confine_senza_ordini_vivi_il_regolamento_e_quello_di_prima(runner):
++    """Confine: nessuna gamba viva -> nessun annullo, regolamento nello stesso
++    giro come prima della correzione."""
++    db = FakeDB(params={"stake": 10})
++    _evento_coperto(db)
++    mk = FakeMarket()
++    _libri_chiusi_4_gol(mk)
++    run(db, mk, NOW, [row(_payload_finita())])
++    assert _annulli_al_runner(runner) == []
++    assert state(db) == "SETTLED"
++
++
++# ===========================================================================
++# 2) al fischio nessun annullo della banca LAPSE: se ne legge l'esito
++# ===========================================================================
++def _banca_appoggiata(db: FakeDB, mk: FakeMarket, runner) -> str:
++    """Ciclo pre-partita vero: ingresso abbinato dal runner e banca Under 3,5
++    appoggiata sul runner (LAPSE). Ritorna il ref del comando della banca."""
++    run(db, mk, NOW, [row(payload())])
++    run(db, mk, NOW + timedelta(seconds=2), [row(payload())])
++    banca = [l for l in legs(db) if l["role"] == "under_green"][0]
++    assert banca["status"] == "pending" and banca["persistence"] == "LAPSE"
++    lay = runner.comandi[-1]
++    assert lay["side"] == "LAY" and lay["persistence"] == "LAPSE"
++    return str(lay["ref"])
++
++
++def _fischio_riga(sec: int = 30) -> Dict[str, Any]:
++    t = KO_IN_FINESTRA + timedelta(seconds=sec)
++    return row(payload(inplay=True, minute=0, sh=0, sa=0), updated=t)
++
++
++def _banca_leg(db: FakeDB) -> Dict[str, Any]:
++    return [l for l in legs(db) if l["role"] == "under_green"][0]
++
++
++def test_m2_al_fischio_nessun_annullo_della_banca_lapse(runner):
++    db, mk = FakeDB(params={"stake": 10}), FakeMarket()
++    _banca_appoggiata(db, mk, runner)
++    run(db, mk, KO_IN_FINESTRA + timedelta(seconds=30), [_fischio_riga(30)])
++    assert _annulli_al_runner(runner) == [], runner.comandi
++    assert "cancel" not in db.kinds() and "cancel_richiesto" not in db.kinds()
++    assert state(db) == "LIVE_KO_GREEN"
++    assert _banca_leg(db)["status"] == "pending", "Mike aspetta di LEGGERE l'esito"
++
++
++def test_m2_banca_abbinata_letta_dopo_il_fischio_posizione_chiusa(runner):
++    db, mk = FakeDB(params={"stake": 10}), FakeMarket()
++    ref = _banca_appoggiata(db, mk, runner)
++    n_comandi = len(runner.comandi)
++    run(db, mk, KO_IN_FINESTRA + timedelta(seconds=30), [_fischio_riga(30)])
++    runner.abbina(ref)                               # abbinata al passaggio in gioco
++    run(db, mk, KO_IN_FINESTRA + timedelta(seconds=32), [_fischio_riga(32)])
++    assert _banca_leg(db)["status"] == "open"
++    assert state(db) == "IDLE_LIVE", db.kinds()
++    w, l = E.exposure(S._ctx_from_row(db.events["E1"]).legs, E.MARKET_OU35, E.SEL_UNDER)
++    assert abs(w - l) < 0.05, "banca abbinata = piatto: nessuna esposizione"
++    assert runner.comandi[n_comandi:] == [], "nessun ordine su una posizione chiusa"
++
++
++def test_m2_banca_scaduta_letta_dopo_il_fischio_si_va_al_ko_green(runner):
++    db, mk = FakeDB(params={"stake": 10}), FakeMarket()
++    ref = _banca_appoggiata(db, mk, runner)
++    run(db, mk, KO_IN_FINESTRA + timedelta(seconds=30), [_fischio_riga(30)])
++    runner.scadi(ref)                                # LAPSE di Betfair al passaggio in gioco
++    run(db, mk, KO_IN_FINESTRA + timedelta(seconds=32), [_fischio_riga(32)])
++    assert _banca_leg(db)["status"] == "cancelled" and float(_banca_leg(db)["matched"]) == 0.0
++    assert state(db) == "LIVE_KO_GREEN"
++    assert _annulli_al_runner(runner) == []
++
++
++def test_m2_confine_banca_persist_si_annulla_ancora():
++    """Confine (non previsto dal piano): una banca PERSIST al fischio si
++    annulla come prima, perche' Betfair non la farebbe scadere."""
++    ctx = E.MatchCtx(state="HOLD", legs=[
++        E.Leg(role="under_entry", market=E.MARKET_OU35, selection=E.SEL_UNDER, side="back",
++              price=1.5, size=20.0, matched=20.0, avg_price=1.5, ref="under_entry-0-1",
++              status="open", cycle_no=0),
++        E.Leg(role="under_green", market=E.MARKET_OU35, selection=E.SEL_UNDER, side="lay",
++              price=1.48, size=20.27, ref="under_green-0-2", status="pending", cycle_no=0,
++              persistence="PERSIST")])
++    p = C.merge_params(None)
++    ko = KO_IN_FINESTRA.timestamp()
++    snap = E.Snapshot(now=ko + 30, ko_at=ko, inplay=True, minute=0, goals=0, books={
++        (E.MARKET_OU35, E.SEL_UNDER): E.Book(status="OPEN", best_back=1.54, back_size=50.0,
++                                             best_lay=1.55, lay_size=50.0, inplay=True)})
++    d = E.decide(ctx, snap, p)
++    assert [(a.kind, a.role) for a in d.actions] == [("cancel", "under_green")]
++    ctx.legs[1].persistence = "LAPSE"
++    d2 = E.decide(ctx, snap, p)
++    assert [a for a in d2.actions if a.kind == "cancel"] == []
++
++
++# ===========================================================================
++# 3) uscita a tempo del rientro: in profitto parte da sola, in perdita proposta
++# ===========================================================================
++from Betfair.mike import certificazione as CERT  # noqa: E402
++from Betfair.mike.tests.test_mike_engine import KO as KO_E  # noqa: E402
++from Betfair.mike.tests.test_mike_engine import book as book_e  # noqa: E402
++from Betfair.mike.tests.test_mike_engine import fill as fill_e  # noqa: E402
++from Betfair.mike.tests.test_mike_engine import params as params_e  # noqa: E402
++from Betfair.mike.tests.test_mike_engine import snap as snap_e  # noqa: E402
++
++
++def _rientro_aperto(prezzo_ingresso: float = 1.60):
++    ctx = E.MatchCtx(state="REENTRY_OPEN", entry_price_initial=1.50, reentry_allowed=True)
++    ctx.legs.append(fill_e(E.Leg(role="reentry", market=E.MARKET_OU45, selection=E.SEL_UNDER,
++                                 side="back", price=prezzo_ingresso, size=10.0)))
++    return ctx
++
++
++def _al_minuto(bb: float, bl: float):
++    return snap_e(KO_E + 81 * 60, u45=book_e(bb, bl=bl, inplay=True), inplay=True, minute=81,
++                  goals=1)
++
++
++def _posti_e(d):
++    return [(a.role, a.side, a.price, a.size) for a in d.actions if a.kind == "place"]
++
++
++def test_m3_reentry_time_in_profitto_parte_da_sola_in_manuale():
++    """Ingresso 10 a 1,60, al 81' il libro e' 1,40/1,42: chiudere blocca un
++    profitto -> la chiusura parte anche a uscite MANUALI, nessuna proposta, ed
++    e' identica a quella in automatico."""
++    s = _al_minuto(1.40, 1.42)
++    dm = E.decide(_rientro_aperto(), s, params_e(uscite_automatiche=False,
++                                                 reentry_exit_until_min=80))
++    da = E.decide(_rientro_aperto(), s, params_e(uscite_automatiche=True,
++                                                 reentry_exit_until_min=80))
++    assert _posti_e(dm) and _posti_e(dm) == _posti_e(da)
++    assert dm.state == "REENTRY_GREEN_PENDING" and dm.updates["close_reason"] == "reentry_time"
++    assert not isinstance(dm.updates.get("uscita_proposta"), dict)
++    t = dm.telemetry["uscita_a_tempo"]
++    assert t["bloccato"] > 0 and t["in_perdita"] is False and isinstance(t["bloccato"], float)
++
++
++def test_m3_reentry_time_in_perdita_resta_proposta():
++    s = _al_minuto(1.70, 1.72)
++    d = E.decide(_rientro_aperto(), s, params_e(uscite_automatiche=False,
++                                                reentry_exit_until_min=80))
++    assert _posti_e(d) == []
++    assert d.updates["uscita_proposta"]["close_reason"] == "reentry_time"
++    assert d.telemetry["uscita_a_tempo"]["bloccato"] < 0
++
++
++def test_m3_reentry_time_senza_numero_resta_in_perdita():
++    """Fail-closed: una decisione ``reentry_time`` senza il P&L bloccato e'
++    trattata come in perdita (proposta)."""
++    d = E.Decision("REENTRY_GREEN_PENDING", [], "x", {"close_reason": "reentry_time"})
++    assert E.uscita_in_perdita(d) is True
++    d.telemetry["uscita_a_tempo"] = {"bloccato": 0.0}
++    assert E.uscita_in_perdita(d) is False
++
++
++def test_m3_banco_g3_coerente_con_reentry_time():
++    """G3: una proposta ``reentry_time`` con la chiusura IN PROFITTO al libro e'
++    una violazione; in perdita no. Il motore vero non la produce (tace)."""
++    p = params_e(uscite_automatiche=False, reentry_exit_until_min=80)
++    prop = E.Decision("REENTRY_OPEN", [], "proposta", {"uscita_proposta": {
++        "chiave": "rientro|c0", "categoria": "rientro", "close_reason": "reentry_time",
++        "motivo": "re-ingresso: chiusura a mercato"}})
++    cod = [v.codice for v in CERT.verifica(_rientro_aperto(), _al_minuto(1.40, 1.42), prop, p)]
++    assert "G3" in cod
++    cod = [v.codice for v in CERT.verifica(_rientro_aperto(), _al_minuto(1.70, 1.72), prop, p)]
++    assert "G3" not in cod
++    for bb, bl in ((1.40, 1.42), (1.70, 1.72)):
++        ctx, s = _rientro_aperto(), _al_minuto(bb, bl)
++        d = E.decide(ctx, s, p)
++        assert "G3" not in [v.codice for v in CERT.verifica(ctx, s, d, p)], d.reason
++
++
++# ===========================================================================
++# 4) il resto sotto minimo va nel registro (mike_activity)
++# ===========================================================================
++def _scoperta_con_copertura_quasi_piena() -> Dict[str, Any]:
++    """Punta Under 3,5 10,00 a 1,50 e banca Under 4,5 di copertura abbinata
++    12,30 su 12,63 (numeri di ``test_mike_p5_copertura_banca``): resta 0,33,
++    sotto il minimo di una bancata."""
++    ko = NOW - timedelta(minutes=20)
++    ctx = E.MatchCtx(state="LIVE_UNCOVERED", entry_price_initial=1.50, legs=[
++        E.Leg(role="under_entry", market=E.MARKET_OU35, selection=E.SEL_UNDER, side="back",
++              price=1.50, size=10.0, matched=10.0, avg_price=1.50, ref="under_entry-0-1",
++              status="open", placed_at=ko.timestamp() - 3600),
++        E.Leg(role="over_cover", market=E.MARKET_OU45, selection=E.SEL_UNDER, side="lay",
++              price=1.18, size=12.63, matched=12.30, avg_price=1.18, ref="over_cover-0-2",
++              status="open", placed_at=ko.timestamp() + 600)])
++    return {
++        "event_id": "E1", "event_name": "Roma v Lazio", "state": ctx.state, "cycle_no": 0,
++        "entry_price_initial": 1.50,
++        "markets": {"OU35": {"market_id": "1.35"}, "OU45": {"market_id": "1.45"}},
++        "positions": [dataclasses.asdict(l) for l in ctx.legs],
++        "dossier": {}, "live": {}, "mode": "paper", "ko_at": ko.isoformat(),
++        "ctx": {"seen_inplay": True, "last_goals": 0}}
++
++
++def test_m4_resto_sotto_minimo_della_copertura_e_una_riga_del_registro(runner):
++    db = FakeDB(params={"stake": 10, "cover_form": E.COVER_LAY_U45,
++                        "cover_policy": "immediate"})
++    db.events["E1"] = _scoperta_con_copertura_quasi_piena()
++    db.trades = [
++        {"id": 1, "event_id": "E1", "signal_key": "under_entry-0-1", "status": "open", "pnl": 0},
++        {"id": 2, "event_id": "E1", "signal_key": "over_cover-0-2", "status": "open", "pnl": 0},
++    ]
++    ko = NOW - timedelta(minutes=20)
++    p = payload(inplay=True, minute=20, sh=0, sa=0, ko=ko, u45=(1.17, 1.18, 500.0, 500.0))
++    run(db, FakeMarket(), NOW, [row(p)])
++    t = NOW + timedelta(seconds=3)
++    run(db, FakeMarket(), t, [row(p, updated=t)])
++    righe = [(pl, e) for k, pl, e in db.activity if k == "cover_resto_sotto_minimo"]
++    assert len(righe) == 1, db.kinds()
++    pl, eid = righe[0]
++    assert eid == "E1" and state(db) == "LIVE_COVERED"
++    assert pl["resto"] == 0.33 and isinstance(pl["resto"], float)
++    assert pl["minimo"] == E.IT_LAY_MIN and pl["form"] == E.COVER_LAY_U45
++    assert pl["state"] == "LIVE_COVERED" and pl["ciclo"] == 0 and isinstance(pl["ciclo"], int)
++    assert runner.comandi == [], "nessun secondo ordine per il resto"
++
++
++def test_m4_una_riga_per_episodio_e_residuo_non_piazzabile():
++    """``_registra_resti`` scrive UNA volta per episodio (stessa decisione due
++    volte = una riga), e un episodio nuovo (altro importo) ne scrive un'altra.
++    Il residuo del 4,5 ha le sue chiavi (``sbilancio``, ``tolleranza``)."""
++    db = FakeDB()
++    extra: Dict[str, Any] = {}
++    ctx = E.MatchCtx(state="LIVE_CLOSING", cycle_no=1)
++    r = {"mercato": "OU45", "sbilancio": 0.09, "tolleranza": 0.105, "se_vince_under": 1.0,
++         "se_vince_over": 0.91, "nota": "x"}
++    d = E.Decision("FLAT", [], "chiuso", telemetry={"residuo_non_piazzabile": r})
++    S._registra_resti(db, extra, d, ctx, "E1")
++    S._registra_resti(db, extra, d, ctx, "E1")
++    righe = [pl for k, pl, _e in db.activity if k == "residuo_non_piazzabile"]
++    assert len(righe) == 1
++    assert righe[0]["sbilancio"] == 0.09 and righe[0]["state"] == "FLAT" and righe[0]["ciclo"] == 1
++    d2 = E.Decision("FLAT", [], "chiuso", telemetry={"residuo_non_piazzabile": {**r, "sbilancio": 0.07}})
++    S._registra_resti(db, extra, d2, ctx, "E1")
++    assert len([1 for k, _p, _e in db.activity if k == "residuo_non_piazzabile"]) == 2
++    # senza telemetria: niente
++    S._registra_resti(db, extra, E.Decision("FLAT", [], "x"), ctx, "E1")
++    assert len(db.activity) == 2
++
++
++# ===========================================================================
++# 5) due prove mancanti (revisione M3: B-6 e B-10)
++# ===========================================================================
++def test_m5_b6_banca_uscita_dai_correnti_letta_abbinata_per_bet_id(monkeypatch):
++    """M6.2 ramo ABBINATO: la lay appoggiata non e' piu' fra i correnti e
++    Betfair (sportello di PRODUZIONE ``omega_market``, client con le chiavi
++    grezze) la dice regolata per intero: la gamba e' ABBINATA (posizione), non
++    ignota, e niente riconciliazione."""
++    from Betfair.mike.tests.test_mike_ko_green_appoggiata_2026_09_16 import (
++        DbFinto, gamba_uscita)
++    from Betfair.mike.tests.test_mike_ko_green_appoggiata_2026_09_16 import KO as KO_G
++    from Betfair.mike.tests.test_mike_p4_ordini_2026_09_29 import (
++        ClientBetfair, _collega, regolato)
++    monkeypatch.setattr(
++        S, "_trade_row_for_leg",
++        lambda db, eid, leg, cache=None: {
++            "id": 1, "meta": {}, "status": "pending", "bet_id": "B1", "mode": "live",
++            "signal_key": leg.ref, "market_id": "1.234", "selection_id": 47999})
++    _collega(monkeypatch, ClientBetfair(regolati={"SETTLED": [
++        regolato(stato="SETTLED", regolato_eur=10.14, prezzo=1.47)]}))
++    leg = gamba_uscita()
++    db = DbFinto()
++    S._segui_resting_live(db=db, market=S._real_market, leg=leg, extra={},
++                          params=C.merge_params({"ko_green_retry_s": 60}),
++                          now_ts=KO_G + 10.0, ev={"event_id": "E1"})
++    assert leg.status == "open", "abbinata per bet_id: e' una posizione, non ignota"
++    assert leg.matched == pytest.approx(10.14) and leg.avg_price == pytest.approx(1.47)
++    p = db.payload("rilettura_alla_riapertura")
++    assert p["esito"] == "abbinato" and p["fonte"] == "fuori_dai_correnti"
++    assert "reconcile_pending" not in db.kinds()
++    assert "ordine_scaduto_alla_sospensione" not in db.kinds()
++
++
++def test_m5_b10_tetto_per_partita_sul_rischio_al_prezzo_LIMITE():
++    """La banca Under 4,5 (12,63, miglior prezzo 1,18, limite 1,20) con uno
++    spazio di 2,40 sotto il tetto: al miglior prezzo rischierebbe 2,27 (ci
++    starebbe), al LIMITE 2,53 (no). Il tetto conta il limite: la size scende a
++    12,00 (rischio 2,40 al limite)."""
++    from Betfair.mike.tests.test_mike_p5_copertura_banca_2026_09_29 import (
++        fotografia, params as params_p5, scoperta)
++    ctx = scoperta()
++    spazio = 2.40
++    p = params_p5(max_liability_per_match=E.invested(ctx.legs) + spazio)
++    assert E.liability_room(ctx, p) == pytest.approx(spazio)
++    d = E.decide(ctx, fotografia(), p)
++    [a] = [x for x in d.actions if x.kind == "place"]
++    assert (a.role, a.side, a.price) == ("over_cover", "lay", 1.20)
++    assert a.size == 12.00
++    assert a.size * (a.price - 1.0) <= spazio + 1e-9
++    # confine: con spazio sufficiente al limite resta l'importo pieno
++    p2 = params_p5(max_liability_per_match=E.invested(ctx.legs) + 2.60)
++    [b] = [x for x in E.decide(scoperta(), fotografia(), p2).actions if x.kind == "place"]
++    assert b.size == 12.63
++
++
++# ===========================================================================
++# 6) righe ``ko_green`` appoggiate e scadute: stessa scrittura in live e paper
++# ===========================================================================
++def _uscita_al_fischio() -> E.Leg:
++    return E.Leg(role="ko_green", market=E.MARKET_OU35, selection=E.SEL_UNDER, side="lay",
++                 price=1.69, size=10.12, ref="ko_green-0-4", cycle_no=0,
++                 placed_at=NOW.timestamp())
++
++
++def _riga(db: FakeDB, ref: str) -> Dict[str, Any]:
++    return [t for t in db.trades if t.get("signal_key") == ref][-1]
++
++
++def _riga_live_scaduta(monkeypatch) -> Dict[str, Any]:
++    from Betfair.mike.tests.test_mike_ko_green_appoggiata_2026_09_16 import MercatoFinto
++    from Betfair.safe_strategy import execution as X
++    monkeypatch.setattr(X, "_freno_aperture", lambda: None)
++    monkeypatch.setattr(X, "_live_brake", lambda: None)
++    monkeypatch.setattr(S, "_freno_aperture_rest", lambda: None)
++    monkeypatch.setattr(S, "mike_live_abilitato", lambda: True)
++    db = FakeDB(mode="live")
++    mk = MercatoFinto()
++    leg = _uscita_al_fischio()
++    info = F.event_info("E1", payload(inplay=True, minute=1, sh=0, sa=0))
++    params = C.merge_params(None)
++    S._piazza_resting_live(db=db, market=mk, info=info, leg=leg, mode="live", params=params,
++                           minuto=1, score="0-0", chiude=None, motivo=None,
++                           ev={"event_id": "E1"})
++    assert leg.status == "pending" and _riga(db, leg.ref)["status"] == "pending"
++    assert _riga(db, leg.ref)["size"] == pytest.approx(10.12), "pending: size = chiesto"
++    # uscita dai correnti, Betfair per bet_id: scaduta senza abbinato (LAPSE)
++    mk.per_bet_id["B1"] = {"found": True, "size_matched": 0.0, "avg_price_matched": None,
++                           "size_remaining": 0.0, "matched_date": None, "placed_date": None}
++    S._segui_resting_live(db=db, market=mk, leg=leg, extra={}, params=params,
++                          now_ts=NOW.timestamp() + 60, ev={"event_id": "E1"})
++    assert leg.status == "cancelled"
++    return _riga(db, leg.ref)
++
++
++def _riga_paper_scaduta(runner) -> Dict[str, Any]:
++    db = FakeDB()
++    leg = _uscita_al_fischio()
++    info = F.event_info("E1", payload(inplay=True, minute=1, sh=0, sa=0))
++    params = C.merge_params(None)
++    S._piazza_resting_paper(db=db, market=FakeMarket(), info=info, leg=leg, params=params,
++                            minuto=1, score="0-0", chiude=None, motivo=None,
++                            ev={"event_id": "E1"}, now=NOW)
++    assert leg.status == "pending"
++    runner.scadi(str(_riga(db, leg.ref)["meta"]["canale_ref"]))
++    S._segui_ordini_paper_su_runner(db=db, ctx=E.MatchCtx(legs=[leg]), ev={"event_id": "E1"},
++                                    now_ts=NOW.timestamp() + 60, params=params)
++    assert leg.status == "cancelled"
++    return _riga(db, leg.ref)
++
++
++def test_m6_ko_green_scaduta_stessa_riga_in_live_e_in_paper(monkeypatch, runner):
++    live = _riga_live_scaduta(monkeypatch)
++    paper = _riga_paper_scaduta(runner)
++    campi = ("status", "side", "price", "size")
++    assert {k: live[k] for k in campi} == {k: paper[k] for k in campi}, (live, paper)
++    assert live["size"] == pytest.approx(10.12), "size = CHIESTO su una riga mai abbinata"
++    assert live["status"] == "error"
++    assert live.get("size_matched") == 0.0 and live.get("size_requested") == pytest.approx(10.12)
++
++
++def test_m6_confine_abbinata_per_intero_size_e_l_abbinato(monkeypatch):
++    """Confine: la lay appoggiata live che si abbina per intero porta ``size`` =
++    abbinato (come la riga paper chiusa dal runner con un abbinato)."""
++    from Betfair.mike.tests.test_mike_ko_green_appoggiata_2026_09_16 import MercatoFinto
++    from Betfair.safe_strategy import execution as X
++    monkeypatch.setattr(X, "_freno_aperture", lambda: None)
++    monkeypatch.setattr(X, "_live_brake", lambda: None)
++    monkeypatch.setattr(S, "_freno_aperture_rest", lambda: None)
++    monkeypatch.setattr(S, "mike_live_abilitato", lambda: True)
++    db, mk, leg = FakeDB(mode="live"), MercatoFinto(), _uscita_al_fischio()
++    info = F.event_info("E1", payload(inplay=True, minute=1, sh=0, sa=0))
++    S._piazza_resting_live(db=db, market=mk, info=info, leg=leg, mode="live",
++                           params=C.merge_params(None), minuto=1, score="0-0", chiude=None,
++                           motivo=None, ev={"event_id": "E1"})
++    mk.correnti = [{"bet_id": "B1", "customer_order_ref": f"mike-t{_riga(db, leg.ref)['id']}",
++                    "market_id": info.market_id(E.MARKET_OU35),
++                    "selection_id": info.selection_id(E.MARKET_OU35, E.SEL_UNDER),
++                    "side": "LAY", "status": "EXECUTION_COMPLETE", "size_matched": 10.12,
++                    "size_remaining": 0.0, "avg_price_matched": 1.69}]
++    S._segui_resting_live(db=db, market=mk, leg=leg, extra={}, params=C.merge_params(None),
++                          now_ts=NOW.timestamp() + 60, ev={"event_id": "E1"})
++    r = _riga(db, leg.ref)
++    assert leg.status == "open" and r["status"] == "open"
++    assert r["size"] == pytest.approx(10.12) and r["size_matched"] == pytest.approx(10.12)
+diff --git a/Betfair/mike/tests/test_mike_p2_prepartita_2026_09_29.py b/Betfair/mike/tests/test_mike_p2_prepartita_2026_09_29.py
+index 1ed2898..31b3797 100644
+--- a/Betfair/mike/tests/test_mike_p2_prepartita_2026_09_29.py
++++ b/Betfair/mike/tests/test_mike_p2_prepartita_2026_09_29.py
+@@ -274,9 +274,11 @@ def test_m2_3_banca_abbinata_per_intero_prima_del_fischio_piatto_col_profitto():
+ def test_m2_3_banca_non_abbinata_cancellata_da_betfair_parte_il_flusso_del_gioco():
+     ctx, p = _al_segno()
+     d = E.decide(ctx, _fischio(), p)
+-    # la banca era ancora viva per Mike: si chiede l'annullamento, e si aspetta
+-    # di SAPERE come e' finita prima di appoggiare l'uscita al fischio
+-    assert _annulli(d) == ["under_green"] and d.state == "LIVE_KO_GREEN"
++    # la banca era ancora viva per Mike: 30/09 (decisione dell'utente, M2.1
++    # "Mike non la ritira") NESSUN annullo (prima: ["under_green"]); la fa
++    # scadere Betfair e si aspetta di SAPERE come e' finita prima di appoggiare
++    # l'uscita al fischio
++    assert _annulli(d) == [] and d.state == "LIVE_KO_GREEN"
+     E.apply_decision(ctx, d, KO + 30)
+     d2 = E.decide(ctx, _fischio(KO + 32), p)
+     assert _posti(d2) == [] and "banca" in d2.reason
+diff --git a/Betfair/mike/tests/test_mike_resting_live_2026_09_14.py b/Betfair/mike/tests/test_mike_resting_live_2026_09_14.py
+index 0bb63c0..2e37347 100644
+--- a/Betfair/mike/tests/test_mike_resting_live_2026_09_14.py
++++ b/Betfair/mike/tests/test_mike_resting_live_2026_09_14.py
+@@ -191,7 +191,10 @@ def test_l_uscita_appoggiata_SENZA_abbinamento_scrive_subito_chiesto_e_residuo()
+     assert r["size_requested"] == pytest.approx(10.14)
+     assert r["size_matched"] == pytest.approx(0.0)
+     assert r["size_remaining"] == pytest.approx(10.14)
+-    assert r["size"] == pytest.approx(0.0)
++    # 30/09 (parita' coda/canale): prima qui ``size`` veniva riscritta a 0,00
++    # (l'abbinato); ora ``size`` resta il CHIESTO della riserva finche' l'ordine
++    # non finisce abbinato, come sul runner paper. L'abbinato e' in size_matched.
++    assert "size" not in r
+     assert r["status"] == "pending"
+ 
+ 
+diff --git a/frontend/src/lib/mike.ts b/frontend/src/lib/mike.ts
+index 4ea2cbb..68accf1 100644
+--- a/frontend/src/lib/mike.ts
++++ b/frontend/src/lib/mike.ts
+@@ -1282,6 +1282,10 @@ export const MIKE_ACTIVITY_KINDS = [
+     // 30/09 (mercato deciso): una linea superata dai gol è DECISA e Betfair la
+     // chiude; Mike lo scrive una volta per linea e continua sull'altra.
+     'mercato_deciso',
++    // 30/09 (decisione 26 del piano, M3.5 "lo scrive nel registro"): il resto
++    // sotto il minimo che Mike non rincorre (copertura) e lo sbilancio non
++    // piazzabile del mercato 4,5 considerato piatto. Una riga per episodio.
++    'cover_resto_sotto_minimo', 'residuo_non_piazzabile',
+ ] as const;
+ 
+ /** kind specifici di Mike che si aggiungono ad ACTIVITY_BASE (design system §6). */
+@@ -1328,6 +1332,8 @@ export const MIKE_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
+     ripiego_rest: { label: 'PREZZI DAL RIPIEGO REST', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
+     flusso_interrotto_senza_rest: { label: 'FLUSSO FERMO E REST MUTO: POSIZIONE SCOPERTA', cls: 'bg-red-500/15 text-red-300 border-red-500/40', critical: true },
+     mercato_deciso: { label: 'LINEA DECISA DAI GOL', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/40' },
++    cover_resto_sotto_minimo: { label: 'COPERTURA: RESTO SOTTO IL MINIMO', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/40' },
++    residuo_non_piazzabile: { label: 'RESTO NON PIAZZABILE', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/40' },
+     schema_warn: { label: 'SCHEMA DB', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
+     cover: { label: 'COPERTURA OVER 4.5', cls: 'bg-teal-500/15 text-teal-300 border-teal-500/40' },
+     skip: { label: 'SALTO', cls: 'bg-white/5 text-slate-400 border-white/10' },
+@@ -1547,6 +1553,12 @@ export function mikeActivityLine(kind: string, payload: Record<string, unknown>
+             return `linee assenti nel feed: ${[...(Array.isArray(p.markets) ? p.markets : []), ...(Array.isArray(p.selections) ? p.selections : [])].map((x) => lineLabel(String(x))).join(', ') || reasonLabel(p.reason)} · fase ${stateLabel(p.state)}`;
+         case 'flusso_interrotto':
+             return `${String(p.testo ?? 'flusso prezzi interrotto')} · nessuna apertura né chiusura a mercato su quei prezzi · fase ${stateLabel(p.state)}`;
++        case 'cover_resto_sotto_minimo':
++            // 30/09 (M3.5): chiavi del servizio: resto, minimo, state, ciclo
++            return `copertura: resta da coprire ${money('resto')}, sotto il minimo di ${money('minimo')} · si considera coperta, nessun secondo ordine · fase ${stateLabel(p.state)}`;
++        case 'residuo_non_piazzabile':
++            // 30/09 (M3.5): chiavi del servizio: sbilancio, tolleranza, state, ciclo
++            return `mercato 4,5 piatto: sbilancio di ${money('sbilancio')} non piazzabile (chiusura arrotondata al centesimo = 0,00), resta nel risultato bloccato · fase ${stateLabel(p.state)}`;
+         case 'config_warn':
+             return `${String(p.message ?? '')} (finestra ${String(p.entry_hours_before_ko ?? '?')} h · scanner ${String(p.scanner_pre_ko_hours ?? '?')} h)`;
+         case 'schema_warn':

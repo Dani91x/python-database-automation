@@ -1365,6 +1365,10 @@ export const MIKE_ACTIVITY_KINDS = [
     // 30/09 (mercato deciso): una linea superata dai gol è DECISA e Betfair la
     // chiude; Mike lo scrive una volta per linea e continua sull'altra.
     'mercato_deciso',
+    // 30/09 (decisione 26 del piano, M3.5 "lo scrive nel registro"): il resto
+    // sotto il minimo che Mike non rincorre (copertura) e lo sbilancio non
+    // piazzabile del mercato 4,5 considerato piatto. Una riga per episodio.
+    'cover_resto_sotto_minimo', 'residuo_non_piazzabile',
 ] as const;
 
 /** kind specifici di Mike che si aggiungono ad ACTIVITY_BASE (design system §6). */
@@ -1411,6 +1415,8 @@ export const MIKE_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
     ripiego_rest: { label: 'PREZZI DAL RIPIEGO REST', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
     flusso_interrotto_senza_rest: { label: 'FLUSSO FERMO E REST MUTO: POSIZIONE SCOPERTA', cls: 'bg-red-500/15 text-red-300 border-red-500/40', critical: true },
     mercato_deciso: { label: 'LINEA DECISA DAI GOL', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/40' },
+    cover_resto_sotto_minimo: { label: 'COPERTURA: RESTO SOTTO IL MINIMO', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/40' },
+    residuo_non_piazzabile: { label: 'RESTO NON PIAZZABILE', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/40' },
     schema_warn: { label: 'SCHEMA DB', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
     cover: { label: 'COPERTURA LINEA 4.5', cls: 'bg-teal-500/15 text-teal-300 border-teal-500/40' },
     skip: { label: 'SALTO', cls: 'bg-white/5 text-slate-400 border-white/10' },
@@ -1635,6 +1641,12 @@ export function mikeActivityLine(kind: string, payload: Record<string, unknown> 
             return `linee assenti nel feed: ${[...(Array.isArray(p.markets) ? p.markets : []), ...(Array.isArray(p.selections) ? p.selections : [])].map((x) => lineLabel(String(x))).join(', ') || reasonLabel(p.reason)} · fase ${stateLabel(p.state)}`;
         case 'flusso_interrotto':
             return `${String(p.testo ?? 'flusso prezzi interrotto')} · nessuna apertura né chiusura a mercato su quei prezzi · fase ${stateLabel(p.state)}`;
+        case 'cover_resto_sotto_minimo':
+            // 30/09 (M3.5): chiavi del servizio: resto, minimo, state, ciclo
+            return `copertura: resta da coprire ${money('resto')}, sotto il minimo di ${money('minimo')} · si considera coperta, nessun secondo ordine · fase ${stateLabel(p.state)}`;
+        case 'residuo_non_piazzabile':
+            // 30/09 (M3.5): chiavi del servizio: sbilancio, tolleranza, state, ciclo
+            return `mercato 4,5 piatto: sbilancio di ${money('sbilancio')} non piazzabile (chiusura arrotondata al centesimo = 0,00), resta nel risultato bloccato · fase ${stateLabel(p.state)}`;
         case 'config_warn':
             return `${String(p.message ?? '')} (finestra ${String(p.entry_hours_before_ko ?? '?')} h · scanner ${String(p.scanner_pre_ko_hours ?? '?')} h)`;
         case 'schema_warn':

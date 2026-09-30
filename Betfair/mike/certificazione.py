@@ -542,6 +542,23 @@ def _g2(ctx, snap, d, params):
     return None
 
 
+def _bloccato_uscita_rientro(ctx, snap) -> Optional[float]:
+    """P&L (lordo) che la chiusura al mercato del rientro bloccherebbe adesso:
+    esposizione della selezione Under 4,5 chiusa al miglior prezzo del libro.
+    None = non calcolabile (libro o prezzo assente)."""
+    from Betfair.stream.trading.greenup import compute_greenup
+
+    w, l = E.exposure(ctx.legs, E.MARKET_OU45, E.SEL_UNDER)
+    bk = snap.book(E.MARKET_OU45, E.SEL_UNDER)
+    if bk is None:
+        return None
+    plan = compute_greenup(matched_if_win=w, matched_if_lose=l, best_back_price=bk.best_back,
+                           best_lay_price=bk.best_lay, fraction=1.0)
+    if not plan.actionable:
+        return None
+    return round(float(min(plan.expected_if_win, plan.expected_if_lose)), 2)
+
+
 @_controllo("G3", "un'uscita in PROFITTO non resta mai una proposta: la esegue il bot "
                   "anche a uscite manuali (piano Mike 29/09, M1.1, M4.1-M4.4)",
             quando=lambda ctx, snap, d, p: isinstance(d.updates.get("uscita_proposta"), dict))
@@ -550,8 +567,18 @@ def _g3(ctx, snap, d, params):
     if not isinstance(prop, dict):
         return None
     motivo = str(prop.get("close_reason") or "")
-    if motivo.startswith("loss") or motivo == "reentry_time":
+    if motivo.startswith("loss"):
         return None
+    if motivo == "reentry_time":
+        # 30/09 (decisione dell'utente): la chiusura a tempo del rientro resta
+        # proposta SOLO in perdita. Il P&L si ricalcola qui dalle gambe e dal
+        # libro (non dalla telemetria del motore): chiudere al miglior prezzo
+        # la selezione del rientro.
+        bloccato = _bloccato_uscita_rientro(ctx, snap)
+        if bloccato is None or bloccato < 0:
+            return None
+        return (f"uscita a tempo del rientro in profitto ({bloccato:+.2f}) lasciata come "
+                f"proposta: {prop.get('motivo')}")
     if isinstance(d.updates.get("veto_u35"), dict):
         return None                      # chiusura del veto pre-partita: in perdita
     return (f"uscita in profitto ({prop.get('categoria')}, motivo {motivo or '-'}) lasciata "

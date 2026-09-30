@@ -191,7 +191,10 @@ def test_l_uscita_appoggiata_SENZA_abbinamento_scrive_subito_chiesto_e_residuo()
     assert r["size_requested"] == pytest.approx(10.14)
     assert r["size_matched"] == pytest.approx(0.0)
     assert r["size_remaining"] == pytest.approx(10.14)
-    assert r["size"] == pytest.approx(0.0)
+    # 30/09 (parita' coda/canale): prima qui ``size`` veniva riscritta a 0,00
+    # (l'abbinato); ora ``size`` resta il CHIESTO della riserva finche' l'ordine
+    # non finisce abbinato, come sul runner paper. L'abbinato e' in size_matched.
+    assert "size" not in r
     assert r["status"] == "pending"
 
 

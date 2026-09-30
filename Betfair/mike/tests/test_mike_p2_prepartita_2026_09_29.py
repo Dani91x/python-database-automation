@@ -274,9 +274,11 @@ def test_m2_3_banca_abbinata_per_intero_prima_del_fischio_piatto_col_profitto():
 def test_m2_3_banca_non_abbinata_cancellata_da_betfair_parte_il_flusso_del_gioco():
     ctx, p = _al_segno()
     d = E.decide(ctx, _fischio(), p)
-    # la banca era ancora viva per Mike: si chiede l'annullamento, e si aspetta
-    # di SAPERE come e' finita prima di appoggiare l'uscita al fischio
-    assert _annulli(d) == ["under_green"] and d.state == "LIVE_KO_GREEN"
+    # la banca era ancora viva per Mike: 30/09 (decisione dell'utente, M2.1
+    # "Mike non la ritira") NESSUN annullo (prima: ["under_green"]); la fa
+    # scadere Betfair e si aspetta di SAPERE come e' finita prima di appoggiare
+    # l'uscita al fischio
+    assert _annulli(d) == [] and d.state == "LIVE_KO_GREEN"
     E.apply_decision(ctx, d, KO + 30)
     d2 = E.decide(ctx, _fischio(KO + 32), p)
     assert _posti(d2) == [] and "banca" in d2.reason

@@ -376,7 +376,11 @@ def test_last_entry_in_profit_keeps_the_green_until_ko():
     d3 = E.decide(ctx, snap(KO + 30, u35=book(1.44, inplay=True), inplay=True, minute=0, goals=0), p)
     # dal 13/09 la posizione portata in gioco prova PRIMA a uscire a +N tick
     assert d3.state == "LIVE_KO_GREEN"
-    assert [(a.kind, a.role) for a in d3.actions] == [("cancel", "under_green")]
+    # 30/09 (decisione dell'utente, M2.1 "Mike non la ritira"): al fischio la
+    # banca LAPSE NON si annulla (prima: [("cancel", "under_green")]); la fa
+    # scadere Betfair e Mike ne legge l'esito.
+    assert d3.actions == []
+    assert any(l.role == "under_green" and l.is_live for l in ctx.legs)
 
 
 def test_last_entry_in_loss_holds_into_live():

@@ -1,0 +1,40 @@
+﻿BASE: 0 147 passed in 2.53s []
+M1a regolamento: annulli decisi NON eseguiti: ROSSA | 4 failed, 143 passed in 2.93s
+      test_c1_annullo_senza_esito_il_regolamento_aspetta_e_la_sorveglianza_continua
+      test_c1_linea_in_gioco_chiusa_la_copertura_in_volo_si_annulla_poi_si_regola
+      test_c1_mercato_annullato_non_si_regola_con_un_ordine_senza_esito
+      test_c1_riga_assente_oltre_la_grazia_la_copertura_in_volo_si_annulla
+M1b regolamento: nessuna attesa degli esiti prima di regolare: ROSSA | 1 failed, 146 passed in 3.05s
+      test_c1_mercato_annullato_non_si_regola_con_un_ordine_senza_esito
+M1c regolamento: nessuna sorveglianza degli ordini: ROSSA | 1 failed, 146 passed in 3.01s
+      test_c1_annullo_senza_esito_il_regolamento_aspetta_e_la_sorveglianza_continua
+M2a fischio: la banca LAPSE si annulla di nuovo: ROSSA | 6 failed, 141 passed in 3.34s
+      test_last_entry_in_profit_keeps_the_green_until_ko
+      test_m2_3_banca_non_abbinata_cancellata_da_betfair_parte_il_flusso_del_gioco
+      test_m2_al_fischio_nessun_annullo_della_banca_lapse
+      test_m2_banca_abbinata_letta_dopo_il_fischio_posizione_chiusa
+      test_m2_banca_scaduta_letta_dopo_il_fischio_si_va_al_ko_green
+      test_m2_confine_banca_persist_si_annulla_ancora
+M2b fischio: anche la banca PERSIST non si annulla: ROSSA | 1 failed, 146 passed in 3.45s
+      test_m2_confine_banca_persist_si_annulla_ancora
+M3a reentry_time sempre in perdita: ROSSA | 3 failed, 144 passed in 3.39s
+      test_m3_banco_g3_coerente_con_reentry_time
+      test_m3_reentry_time_in_profitto_parte_da_sola_in_manuale
+      test_m3_reentry_time_senza_numero_resta_in_perdita
+M3b reentry_time sempre in profitto: ROSSA | 2 failed, 145 passed in 3.80s
+      test_chiusura_a_tempo_del_rientro_resta_governata
+      test_m3_reentry_time_in_perdita_resta_proposta
+M3c G3 muto su reentry_time: ROSSA | 1 failed, 146 passed in 3.40s
+      test_m3_banco_g3_coerente_con_reentry_time
+M4a resti non scritti nel registro: ROSSA | 1 failed, 146 passed in 3.02s
+      test_m4_resto_sotto_minimo_della_copertura_e_una_riga_del_registro
+M4b resti scritti a ogni emissione: ROSSA | 1 failed, 146 passed in 3.33s
+      test_m4_una_riga_per_episodio_e_residuo_non_piazzabile
+M5a B-6 esito ABBINATO non applicato: ROSSA | 1 failed, 146 passed in 3.08s
+      test_m5_b6_banca_uscita_dai_correnti_letta_abbinata_per_bet_id
+M5b B-10 tetto sul rischio al miglior prezzo: ROSSA | 1 failed, 146 passed in 3.21s
+      test_m5_b10_tetto_per_partita_sul_rischio_al_prezzo_LIMITE
+M6 size = abbinato anche a 0 (live): ROSSA | 2 failed, 145 passed in 4.22s
+      test_l_uscita_appoggiata_SENZA_abbinamento_scrive_subito_chiesto_e_residuo
+      test_m6_ko_green_scaduta_stessa_riga_in_live_e_in_paper
+BASE DOPO: 0 147 passed in 2.59s []

@@ -2198,12 +2198,23 @@ def _aggiorna_riga_resting(db: Any, event_id: str, leg: E.Leg, come: str,
         return
     if residuo is None:
         residuo = round(max(0.0, float(leg.size) - float(leg.matched)), 2)
+    campi: Dict[str, Any] = {"status": ("open" if leg.status == "open" else "pending"),
+                             "price": leg.avg_price or leg.price,
+                             "meta": {**(r.get("meta") or {}), "phase": "open", "fill": come}}
+    if leg.status == "open":
+        # 30/09 (parita' coda/canale, residuo del banco punto 3): ``size`` diventa
+        # l'ABBINATO solo quando l'ordine e' finito abbinato, come sul runner
+        # (``_segui_ordini_paper_su_runner``) e in ogni altra chiusura di riga.
+        # Prima qui si scriveva ``size = abbinato`` anche a 0 o in parte: la riga
+        # LIVE di una lay appoggiata mai abbinata portava size 0,00 (la paper
+        # 10,12, il chiesto), e una riga 'pending' ricostruita in gamba
+        # (``_gamba_dalla_riga``) nasceva da 0. Chiesto/abbinato/residuo restano
+        # nelle colonne di consapevolezza qui sotto.
+        campi["size"] = leg.matched
     try:
         X.aggiorna_trade(
             db, int(r["id"]),
-            campi={"status": ("open" if leg.status == "open" else "pending"),
-                   "price": leg.avg_price or leg.price, "size": leg.matched,
-                   "meta": {**(r.get("meta") or {}), "phase": "open", "fill": come}},
+            campi=campi,
             consapevolezza={"size_requested": round(float(leg.size), 2),
                             "size_matched": round(float(leg.matched), 2),
                             "size_remaining": round(float(residuo), 2),
@@ -4244,6 +4255,63 @@ def _sorveglia_senza_dati(*, db: Any, market: Any, ctx: E.MatchCtx, ev: Dict[str
                      mode=mode, now=now, cache=cache)
 
 
+def _registra_resti(db: Any, extra: Dict[str, Any], d: Any, ctx: E.MatchCtx,
+                    event_id: str) -> None:
+    """30/09 (decisione 26 del piano, M3.5; revisione M4): i RESTI che Mike non
+    rincorre (copertura: resto sotto il minimo di una bancata; mercato 4,5
+    piatto con uno sbilancio non piazzabile) diventano righe di ``mike_activity``.
+    UNA riga per episodio (firma: tipo, ciclo, importo), con i numeri della
+    telemetria del motore piu' ``state`` e ``ciclo`` come le altre righe."""
+    tele = d.telemetry if isinstance(getattr(d, "telemetry", None), dict) else {}
+    scritti = [str(x) for x in (extra.get("resti_scritti") or [])]
+    nuovi = False
+    for kind, chiave in (("cover_resto_sotto_minimo", "resto"),
+                         ("residuo_non_piazzabile", "sbilancio")):
+        v = tele.get(kind)
+        if not isinstance(v, dict):
+            continue
+        try:
+            importo = round(float(v.get(chiave) or 0.0), 2)
+        except (TypeError, ValueError):
+            importo = None
+        firma = f"{kind}|{int(ctx.cycle_no or 0)}|{importo}"
+        if firma in scritti:
+            continue
+        scritti.append(firma)
+        nuovi = True
+        riga = {**v, "state": d.state, "ciclo": int(ctx.cycle_no or 0)}
+        if kind == "cover_resto_sotto_minimo":
+            db.log("cover_resto_sotto_minimo", riga, event_id)
+        else:
+            db.log("residuo_non_piazzabile", riga, event_id)
+    if nuovi:
+        extra["resti_scritti"] = scritti[-10:]
+
+
+def _esegui_annulli(*, db: Any, market: Any, ev: Dict[str, Any], ctx: E.MatchCtx,
+                    extra: Dict[str, Any], actions: List[Any],
+                    cache: Optional[Dict[str, List[Dict[str, Any]]]] = None) -> int:
+    """Gli annulli decisi dal motore arrivano a Betfair (o al runner in paper).
+    Una sola strada per il giro normale e per il regolamento (30/09, revisione
+    critica C1-aggiunta: il ramo del regolamento decideva gli annulli e non li
+    eseguiva). Codice identico a quello che stava in ``_run_event``."""
+    n = 0
+    for a in actions:
+        if a.kind == "cancel":
+            leg = next((l for l in ctx.legs if l.ref == a.ref), None)
+            if leg is not None and leg.is_live:
+                extra["deferred"] = [x for x in (extra.get("deferred") or [])
+                                     if x["ref"] != leg.ref]
+                # C.12a - l'engine decide QUANDO annullare (strategia, invariata):
+                # qui l'annullamento arriva finalmente a Betfair.
+                esito = _mark_trade_cancelled(db, ev["event_id"], leg, "cancelled_by_engine",
+                                              cache, market=market)
+                db.log("cancel", {"leg": leg.ref, "role": leg.role, "esito": esito},
+                       ev["event_id"])
+                n += 1
+    return n
+
+
 def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[str, Any]],
                params: Dict[str, Any], mode: str, now: datetime, scanner_age: Optional[float],
                atlas: Optional[Dict[str, Any]], dry: bool,
@@ -4336,6 +4404,13 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
         db.log("settling_reverted", {"to": back_to, "reason": "riga tornata nel feed, mercato aperto"}, ev["event_id"])
         E.apply_decision(ctx, E.Decision(state=back_to, actions=[], reason="falso regolamento annullato"), now_ts)
     if closed and ctx.state not in E.TERMINAL_STATES:
+        # 30/09 (revisione critica, C1-aggiunta): anche col mercato chiuso gli
+        # ordini ancora vivi o a esito ignoto si SEGUONO a ogni giro (esiti del
+        # runner, riconciliazione, lay appoggiate), come negli altri giri: prima
+        # il ramo del regolamento usciva prima di ``_sorveglia_gambe``.
+        if any(l.is_live or l.needs_reconcile for l in ctx.legs):
+            _sorveglia_senza_dati(db=db, market=market, ctx=ctx, ev=ev, extra=extra,
+                                  params=params, mode=mode, now=now, cache=cache)
         # throttle delle letture REST di regolamento (review F1 #3): mai un poll
         # stretto su un mercato chiuso; dopo troppo tempo si ripiega sull'ultimo
         # punteggio noto o si va in ERROR (mai SETTLING per sempre)
@@ -4348,6 +4423,20 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
         # M3: ``settle_confirm_s`` CABLATO come intervallo fra due letture REST
         extra["settle_next_ts"] = now_ts + max(5.0, float(params.get("settle_confirm_s") or _SETTLE_RETRY_S))
         extra["settle_first_ts"] = float(extra.get("settle_first_ts") or now_ts)
+        # 30/09 (C1-aggiunta): gli annulli della decisione SETTLING del motore
+        # (``_cancel_live``: ogni gamba ancora viva) si ESEGUONO, con la stessa
+        # strada del giro normale; se una gamba torna viva dalla riconciliazione
+        # si riannulla al giro di regolamento dopo. Nessuna riga si regola
+        # finche' un ordine e' vivo o senza esito letto: si aspetta in SETTLING.
+        n_annulli = _esegui_annulli(db=db, market=market, ev=ev, ctx=ctx, extra=extra,
+                                    actions=E._cancel_live(ctx), cache=cache)
+        if any(l.is_live or l.needs_reconcile for l in ctx.legs):
+            if ctx.state != "SETTLING":
+                E.apply_decision(ctx, E.Decision("SETTLING", [], "mercato chiuso: attesa "
+                                                 "dell'esito degli ordini ancora aperti"), now_ts)
+            ev.update(_row_from_ctx(ev, ctx, extra))
+            _persist(db, ev, before_sig, now_ts=now_ts, params=params, lotto=lotto)
+            return (n_annulli, 0)
         mkts = ev.get("markets") or {}
         names: Dict[int, str] = {}
         b35 = market.read_book(str((mkts.get(E.MARKET_OU35) or {}).get("market_id") or ""), names) \
@@ -4719,18 +4808,8 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
         _log_throttled(db, extra, params, now_ts, "tetto_partite",
                        {"reason": "max_open_matches", "cap": int(params["max_open_matches"]),
                         "state": ctx.state}, ev["event_id"])
-    for a in d.actions:
-        if a.kind == "cancel":
-            leg = next((l for l in ctx.legs if l.ref == a.ref), None)
-            if leg is not None and leg.is_live:
-                extra["deferred"] = [x for x in extra["deferred"] if x["ref"] != leg.ref]
-                # C.12a — l'engine decide QUANDO annullare (strategia, invariata):
-                # qui l'annullamento arriva finalmente a Betfair.
-                esito = _mark_trade_cancelled(db, ev["event_id"], leg, "cancelled_by_engine",
-                                              cache, market=market)
-                db.log("cancel", {"leg": leg.ref, "role": leg.role, "esito": esito},
-                       ev["event_id"])
-                n_actions += 1
+    n_actions += _esegui_annulli(db=db, market=market, ev=ev, ctx=ctx, extra=extra,
+                                 actions=d.actions, cache=cache)
     new_legs = E.apply_decision(ctx, d, now_ts)
     for leg in new_legs:
         book = snap.book(leg.market, leg.selection)
@@ -4852,6 +4931,9 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                         db.log(k, v if isinstance(v, dict) else {"value": v}, ev["event_id"])
                 else:
                     db.log(k, v if isinstance(v, dict) else {"value": v}, ev["event_id"])
+        # 30/09 (decisione 26 del piano, M3.5 "lo scrive nel registro"): il resto
+        # sotto minimo non si perde nella telemetria, va in ``mike_activity``
+        _registra_resti(db, extra, d, ctx, ev["event_id"])
     # H5 — il log 'state' si scrive SOLO quando lo stato cambia davvero: prima
     # bastava un motivo con numeri diversi (prezzi, minuti) per riscriverlo a
     # ogni tick e riempire mike_activity.

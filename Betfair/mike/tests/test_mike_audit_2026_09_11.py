@@ -1124,6 +1124,9 @@ def test_l5_tutti_i_kind_di_attivita_sono_dichiarati():
         # 30/09 (mercato deciso, ordine dell'utente): una linea superata dai
         # gol e' DECISA e Betfair la chiude: Mike lo scrive UNA volta per linea
         "mercato_deciso",
+        # 30/09 (decisione 26 del piano, M3.5 "lo scrive nel registro"): il resto
+        # sotto minimo della copertura e lo sbilancio non piazzabile del 4,5
+        "cover_resto_sotto_minimo", "residuo_non_piazzabile",
     }
     assert found - declared == set(), f"kind non dichiarati: {sorted(found - declared)}"
 

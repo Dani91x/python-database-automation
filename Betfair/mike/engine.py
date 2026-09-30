@@ -2606,10 +2606,22 @@ def uscita_in_perdita(d: Decision) -> bool:
     chiusura a tempo del rientro (``reentry_time``: al mercato a un minuto fisso,
     puo' essere in perdita) e la chiusura del veto pre-partita (nota
     ``VETO_U35_NOTE``). Il seguito di un'uscita gia' partita (riprezzo, residuo:
-    la decisione non riscrive il motivo) passa comunque, come prima."""
+    la decisione non riscrive il motivo) passa comunque, come prima.
+
+    30/09 (decisione dell'utente): ``reentry_time`` e' in perdita solo se il P&L
+    che blocca e' negativo (telemetria ``uscita_a_tempo`` della decisione); in
+    PROFITTO parte da sola. Senza quel numero resta in perdita (fail-closed)."""
     motivo = str(d.updates.get("close_reason") or "")
-    if motivo.startswith("loss") or motivo == "reentry_time":
+    if motivo.startswith("loss"):
         return True
+    if motivo == "reentry_time":
+        t = d.telemetry.get("uscita_a_tempo") if isinstance(d.telemetry, dict) else None
+        if not isinstance(t, dict) or t.get("bloccato") is None:
+            return True
+        try:
+            return float(t["bloccato"]) < 0.0
+        except (TypeError, ValueError):
+            return True
     return any(a.kind == "place" and a.note == VETO_U35_NOTE for a in d.actions)
 
 
@@ -3000,6 +3012,14 @@ def _decide_prematch(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
             if leg.persistence == "PERSIST" and leg.role == "under_last":
                 if snap.now - snap.ko_at < float(params["cancel_unmatched_after_ko_s"]):
                     continue           # grazia: il residuo PERSIST puo' ancora abbinarsi
+            if leg.role == "under_green" and leg.persistence != "PERSIST":
+                # 30/09 (decisione dell'utente, piano M2.1 "Mike non la ritira"):
+                # la banca pre-partita LAPSE NON si annulla al fischio. Betfair
+                # la fa scadere da se' al passaggio in gioco; Mike ne LEGGE
+                # l'esito (scaduta, abbinata, in parte: M2.3/M6.2) e decide da
+                # li' (``_decide_ko_green`` aspetta finche' non lo sa). Una banca
+                # PERSIST (non prevista) resta annullata come prima.
+                continue
             acts.append(Action(kind="cancel", ref=leg.ref, role=leg.role, market=leg.market,
                                selection=leg.selection))
         if S > 0:
@@ -4375,8 +4395,15 @@ def _decide_reentry_open(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], 
                                    best_lay_price=bk.best_lay, fraction=1.0)
             if plan.actionable:
                 acts.append(_place("reentry_green", MARKET_OU45, SEL_UNDER, plan.side, plan.price, plan.size))
+                # 30/09 (decisione dell'utente): la chiusura a tempo del rientro in
+                # PROFITTO (P&L bloccato >= 0, al netto della commissione ha lo
+                # stesso segno) parte da sola come le altre uscite in profitto; in
+                # PERDITA resta una proposta da firmare (``uscita_in_perdita``).
+                bloccato = round(float(min(plan.expected_if_win, plan.expected_if_lose)), 2)
                 return Decision("REENTRY_GREEN_PENDING", acts, "re-ingresso: chiusura a mercato",
-                                updates={"close_reason": "reentry_time"})
+                                updates={"close_reason": "reentry_time"},
+                                telemetry={"uscita_a_tempo": {"bloccato": bloccato,
+                                                              "in_perdita": bloccato < 0}})
         return Decision("REENTRY_OPEN", acts, "re-ingresso: prezzo assente")
     if green is None or not green.is_live:
         S, Pe = position(ctx.legs, MARKET_OU45, SEL_UNDER, ("reentry",))
