@@ -225,6 +225,28 @@ describe('P11: stessa gamba in utile, ramo al ms = ramo scanner al centesimo', (
         expect(result.current?.bloccabile).toBe(ch.bloccabile);
     });
 
+    it('colonna commission = 0,02 (senza meta): scheda (operazioni) = colonna posizioni = ms, 0,77', async () => {
+        // P12a (via libera del coordinatore): prima `operazioni` non passava la
+        // colonna `commission` a `chiusuraViva` -> la scheda usava il 5 % (0,75)
+        // e la colonna posizioni il 2 % (0,77) per la STESSA gamba.
+        vi.mocked(fetchScanRows).mockResolvedValue([scanRow('E2', payloadOU('1.2', 2, 1.68, 1.70))]);
+        vi.mocked(fetchMikeState).mockResolvedValue({
+            ...MIKE_VUOTO,
+            trades: [tradeMike({ id: 815, price: 1.85, commission: 0.02 } as Partial<MikeTrade>)],
+        } as never);
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        const pos = result.current.posizioni.find((x) => x.bot === 'mike' && x.id === 815);
+        const op = result.current.operazioni.get('E2')?.find((x) => x.bot === 'mike' && x.id === 815);
+        expect(pos?.chiusura?.bloccabile).toBe(0.77);
+        expect(op?.chiusura?.bloccabile).toBe(0.77);
+        expect(op?.chiusura?.alMs?.aliquota).toBe(0.02);
+        const f = sorgenteFinta();
+        const { result: ms } = renderHook(() => useChiusuraAlMs(op!.chiusura, f.sorgente));
+        f.spingi('1.2', 2, 1.68, 1.70);
+        expect(ms.current?.bloccabile).toBe(0.77);
+    });
+
     it('in perdita nessuna commissione: lay 2,10 -> ms = scanner', async () => {
         const ch = await chiusuraScanner(tradeMike({ id: 814, price: 1.85 }), 2.08, 2.10);
         const f = sorgenteFinta();

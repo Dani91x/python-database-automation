@@ -1,5 +1,11 @@
 // ============================================================================
-// CashOutPartita.tsx — «CASH OUT GLOBALE DELLA PARTITA» e «RIPRENDI».
+// CashOutPartita.tsx — «CASH OUT SAFE» (della partita) e «RIPRENDI».
+//
+// 30/09 (P12a) - i TESTI dicono quello che il pulsante fa davvero: chiude le
+// posizioni di SAFE (la richiesta la esegue solo il servizio Safe). Prima si
+// chiamava «Cash out globale della partita» e, con due gambe di Mike vive,
+// diceva «nessuna posizione viva del bot». La cifra di TUTTI i bot e' nel
+// riquadro `CashOutGlobale`. Comportamento e `data-testid` invariati.
 //
 // Ordine dell'utente del 16/09 sera: «se chiudo io il bot deve saperlo e non
 // fare altro». Questo e' il gesto con cui glielo si dice, e il gesto opposto
@@ -123,7 +129,7 @@ export function CashOutPartita({
                         className={`${dim} rounded bg-orange-500 text-black hover:bg-orange-400 font-bold uppercase tracking-wider`}
                         data-testid="cr-cashout-partita-conferma"
                     >
-                        {inCorso ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Confermo: chiudi tutta la partita'}
+                        {inCorso ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Confermo: chiudi le posizioni di Safe'}
                     </Button>
                 ) : (
                     <Button
@@ -132,11 +138,11 @@ export function CashOutPartita({
                         variant="outline"
                         className={`${dim} rounded border-rose-500/40 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20 font-semibold uppercase tracking-wider disabled:opacity-40`}
                         data-testid="cr-cashout-partita-avvia"
-                        title={bloccoCashout ?? 'chiude TUTTE le posizioni del bot su questa partita e gli dice di non fare altro'}
+                        title={bloccoCashout ?? 'chiude TUTTE le posizioni di SAFE su questa partita (non quelle degli altri bot) e gli dice di non fare altro'}
                     >
                         {inCorso
                             ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            : <><XOctagon className="w-3 h-3 mr-1" />Cash out globale della partita</>}
+                            : <><XOctagon className="w-3 h-3 mr-1" />Cash out Safe</>}
                     </Button>
                 )
             )}
@@ -144,7 +150,7 @@ export function CashOutPartita({
             {armato && (
                 <span className="text-[10px] text-orange-300" data-testid="cr-cashout-partita-armato">
                     {modalita === 'live'
-                        ? 'Sono soldi veri: conferma per chiudere tutta la partita.'
+                        ? 'Sono soldi veri: conferma per chiudere le posizioni di Safe su questa partita.'
                         : 'Modalita’ non dichiarata: si chiede conferma comunque.'}
                     {' '}
                     <button type="button" className="underline" onClick={() => setArmato(false)}

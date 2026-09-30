@@ -17,6 +17,8 @@ import { fmtMoney, DASH } from '@/lib/format';
 import { pnlClass } from '@/lib/tradeStatus';
 import type { ComposizioneObiettivo } from '@/lib/composizioneObiettivo';
 import type { ManualeSitoBetfair } from '@/lib/manualeSitoBetfair';
+import { etichettaArretrati, type ProvaGiornata, type VoceProva } from '@/lib/provaGiornata';
+import { MarchioSoldi } from './MarchioSoldi';
 
 export interface ObiettivoHeroProps {
     dayBar: DayBarProps;
@@ -25,11 +27,13 @@ export interface ObiettivoHeroProps {
     onSalvaObiettivo: (valore: number) => Promise<void>;
     /** avviso onesto: Omega in corsa → il target del servizio cambia subito */
     avvisoMotore?: string | null;
+    /** 30/09 (P8): la corsia PROVA per bot (oggi / arretrati). Assente = riga «in prova» di prima. */
+    prova?: ProvaGiornata | null;
     testId?: string;
 }
 
 export function ObiettivoHero({
-    dayBar, composizione, manualeSito, onSalvaObiettivo, avvisoMotore, testId = 'cr-obiettivo',
+    dayBar, composizione, manualeSito, onSalvaObiettivo, avvisoMotore, prova = null, testId = 'cr-obiettivo',
 }: ObiettivoHeroProps) {
     return (
         <Card className="glass-card border-white/10 p-0 overflow-hidden" data-testid={testId}>
@@ -83,7 +87,9 @@ export function ObiettivoHero({
                     </div>
                 )}
 
-                {composizione.provaPaper != null && (
+                {prova != null ? (
+                    <CorsiaProva prova={prova} />
+                ) : composizione.provaPaper != null && (
                     <div
                         className="mt-1.5 pt-1.5 border-t border-white/10 flex items-baseline gap-2 text-[11px] text-white/40"
                         data-testid="cr-composizione-prova"
@@ -97,6 +103,61 @@ export function ObiettivoHero({
                 )}
             </div>
         </Card>
+    );
+}
+
+/**
+ * 30/09 (P8) — LA CORSIA PROVA, una riga per bot: «oggi» = partite di OGGI;
+ * «arretrati regolati oggi» = partite di giorni precedenti regolate oggi (es.
+ * al riavvio), con la data e da dove viene la data. Simulato, MAI sommato
+ * all'obiettivo; gli arretrati MAI sommati a oggi. Un dato non letto si dice.
+ */
+function CorsiaProva({ prova }: { prova: ProvaGiornata }) {
+    return (
+        <div className="mt-2 pt-1.5 border-t border-dashed border-white/15 text-[11px] text-white/45"
+            data-testid="cr-composizione-prova">
+            <div className="flex items-baseline gap-2 mb-1">
+                <span className="uppercase tracking-wider text-[9.5px] px-1.5 py-0.5 rounded border border-dashed border-white/20 text-white/55">
+                    in prova (simulato)
+                </span>
+                <span className="text-white/30">— mai sommato all&apos;obiettivo; gli arretrati mai sommati a oggi</span>
+            </div>
+            <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1.4fr)] gap-x-3 gap-y-0.5">
+                <span className="text-[9.5px] uppercase tracking-wider text-white/30">bot</span>
+                <span className="text-[9.5px] uppercase tracking-wider text-white/30 text-right">partite di oggi</span>
+                <span className="text-[9.5px] uppercase tracking-wider text-white/30">arretrati regolati oggi</span>
+                {prova.voci.map((v) => (
+                    <RigaProvaBot key={v.chiave} v={v} />
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function RigaProvaBot({ v }: { v: VoceProva }) {
+    return (
+        <>
+            <span className="text-white/55 truncate" data-testid={`cr-prova-${v.chiave}`}>{v.etichetta}</span>
+            <span className="font-mono text-right" data-testid={`cr-prova-${v.chiave}-oggi`}>
+                {v.oggi == null ? <span className="text-white/30">{DASH}</span>
+                    : <span className={`${pnlClass(v.oggi.pnl)} opacity-80`}>{fmtMoney(v.oggi.pnl, { signed: true })}</span>}
+                {v.oggi != null && <MarchioSoldi fonte="prova" className="ml-1" testId={`cr-prova-${v.chiave}-fonte`} />}
+            </span>
+            <span data-testid={`cr-prova-${v.chiave}-arretrati`}>
+                {v.arretrati == null ? (
+                    <span className="text-amber-300/80">{v.nota ?? 'non letti'}</span>
+                ) : v.perRegolamento ? (
+                    <span className="text-white/35">per giorno di regolamento: non separabili</span>
+                ) : v.arretrati.length === 0 ? (
+                    <span className="text-white/30">nessuno</span>
+                ) : v.arretrati.map((g) => (
+                    <span key={`${g.giorno}|${g.origine}`} className="block">
+                        <span className={`font-mono ${pnlClass(g.pnl)} opacity-70`}>{fmtMoney(g.pnl, { signed: true })}</span>
+                        <span className="text-white/40"> ({etichettaArretrati(g)})</span>
+                    </span>
+                ))}
+            </span>
+        </>
     );
 }
 

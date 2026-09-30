@@ -35,6 +35,8 @@ vi.mock('@/lib/liveOrders', async (orig) => ({
 import ControlRoom from './ControlRoom';
 import { useControlRoom } from '@/components/controlroom/useControlRoom';
 import type { GruppoCampionato, PartitaGiornata } from '@/lib/controlRoom';
+// T_P3 (30/09): il campo `soldiVeri` dei finti si costruisce con le funzioni VERE
+import { contoAdesso, rischioBotLive, scartoContoBot } from '@/components/controlroom/testata/soldiVeri';
 
 const mVm = vi.mocked(useControlRoom);
 
@@ -909,13 +911,99 @@ describe('la pagina non mostra MAI un numero che somma paper e live', () => {
         expect(barra.textContent).toContain('0,44');
         // il numero misto (-4,39) non deve comparire da nessuna parte
         expect(barra.textContent).not.toContain('4,39');
-        // il paper si vede, ma fuori dalla barra e dichiarato tale
-        const riga = s.getByTestId('cr-riga-paper');
-        expect(riga.textContent).toMatch(/4,83/);
-        expect(riga.textContent).toMatch(/non entra nell/i);
+        // il paper si vede, ma fuori dalla barra e dichiarato tale.
+        // 30/09 (P8): la riga duplicata `cr-riga-paper` e' tolta; la prova vive
+        // nella corsia PROVA del riquadro (per bot) e delle tessere.
+        expect(s.queryByTestId('cr-riga-paper')).toBeNull();
+        const prova = s.getByTestId('cr-sport-calcio-prova');
+        expect(prova.textContent).toMatch(/4,83/);
+        expect(barra.contains(prova)).toBe(false);
     });
 
-    it('L’ESPOSIZIONE in testata e’ quella VERA; la prova e’ una nota separata', () => {
+    // 30/09 (P8) — il caso vero di oggi: Safe paper +7,60 su 4 partite del
+    // 26/09 e Mike paper -18,29 su 2 partite del 26/09, regolati oggi al
+    // riavvio. «Oggi» in prova = 0,00; gli arretrati a parte, con la data, mai
+    // sommati fra loro ne' a oggi.
+    const provaOggi = (mike: 'letti' | 'non letti') => ({
+        voci: [
+            { chiave: 'omega' as const, etichetta: 'Omega', sport: 'calcio' as const,
+                oggi: { pnl: 0, operazioni: 0, vinte: 0, perse: 0, partite: 0 }, arretrati: [], nota: null },
+            { chiave: 'safe_calcio' as const, etichetta: 'Safe calcio', sport: 'calcio' as const,
+                oggi: { pnl: 0, operazioni: 0, vinte: 0, perse: 0, partite: 0 },
+                arretrati: [{ giorno: '2026-09-26', origine: 'apertura' as const, pnl: 7.6, operazioni: 4, vinte: 4, perse: 0, partite: 4 }],
+                nota: null },
+            { chiave: 'mike' as const, etichetta: 'Mike', sport: 'calcio' as const,
+                oggi: { pnl: 0, operazioni: 0, vinte: 0, perse: 0, partite: 0 },
+                arretrati: mike === 'letti'
+                    ? [{ giorno: '2026-09-26', origine: 'fischio' as const, pnl: -18.29, operazioni: 5, vinte: 1, perse: 4, partite: 2 }]
+                    : null,
+                nota: mike === 'letti' ? null : 'arretrati di Mike: non letti' },
+        ],
+        oggiPerSport: { calcio: { pnl: 0, operazioni: 0, vinte: 0, perse: 0, partite: 0 }, tennis: null },
+        arretratiPerSport: {
+            calcio: [
+                { giorno: '2026-09-26', origine: 'apertura' as const, pnl: 7.6, operazioni: 4, vinte: 4, perse: 0, partite: 4 },
+                ...(mike === 'letti'
+                    ? [{ giorno: '2026-09-26', origine: 'fischio' as const, pnl: -18.29, operazioni: 5, vinte: 1, perse: 4, partite: 2 }]
+                    : []),
+            ],
+            tennis: [],
+        },
+        arretratiNonLetti: { calcio: mike === 'letti' ? [] : ['Mike'], tennis: [] },
+        perRegolamento: { calcio: [], tennis: ['Bot tennis (Scalper · Pro · FLB · Swing)'] },
+    });
+    const soldiP8 = () => ({
+        ...vm().soldiGiornata,
+        realizzato: 0, perSport: { calcio: { n: 0, pnl: 0, won: 0, lost: 0 } },
+        perSportPaper: { calcio: { n: 0, pnl: 0, won: 0, lost: 0 }, tennis: { n: 0, pnl: 0, won: 0, lost: 0 } },
+        realizzatoPaper: 7.6, operazioniPaper: 4,
+    });
+
+    it('P8: la prova di OGGI e\' 0,00; Safe +7,60 e Mike -18,29 sono arretrati del 26/09, separati e mai uniti', () => {
+        mVm.mockReturnValue(vm({ soldiGiornata: soldiP8(), provaGiornata: provaOggi('letti') }));
+        const s = mostra();
+        const prova = s.getByTestId('cr-composizione-prova');
+        expect(s.getByTestId('cr-prova-safe_calcio-oggi').textContent).toContain('+0,00');
+        expect(s.getByTestId('cr-prova-safe_calcio-arretrati').textContent).toBe('+7,60 € (4 operazioni aperte il 26/09)');
+        expect(s.getByTestId('cr-prova-mike-arretrati').textContent).toBe('−18,29 € (2 partite del 26/09)');
+        // il totale che li unirebbe (-10,69) non esiste da nessuna parte
+        expect(s.container.textContent ?? '').not.toContain('10,69');
+        expect(prova.textContent).toMatch(/mai sommat/);
+        // tessera: «oggi» 0,00 e gli arretrati su due righe (origini diverse)
+        const calcio = s.getByTestId('cr-sport-calcio');
+        expect(within(calcio).getByTestId('cr-sport-calcio-prova-pnl').textContent).toBe('+0,00 €');
+        const arr = within(calcio).getAllByTestId('cr-sport-calcio-arretrati').map((x) => x.textContent);
+        expect(arr).toHaveLength(2);
+        expect(arr[0]).toContain('+7,60 €');
+        expect(arr[0]).toContain('4 operazioni aperte il 26/09');
+        expect(arr[1]).toContain('2 partite del 26/09');
+        // e la riga doppia «in prova +7,60» non c'e' piu'
+        expect(s.queryByTestId('cr-riga-paper')).toBeNull();
+        // tennis: la prova dei bot tennis e' per giorno di regolamento, detto A SCHERMO
+        expect(within(s.getByTestId('cr-sport-tennis')).getByTestId('cr-sport-tennis-per-regolamento').textContent)
+            .toMatch(/per giorno di regolamento/);
+    });
+
+    it('P8: arretrati di Mike non letti -> lo dice, mai 0,00 e mai silenzio', () => {
+        mVm.mockReturnValue(vm({ soldiGiornata: soldiP8(), provaGiornata: provaOggi('non letti') }));
+        const s = mostra();
+        expect(s.getByTestId('cr-prova-mike-arretrati').textContent).toBe('arretrati di Mike: non letti');
+        expect(within(s.getByTestId('cr-sport-calcio')).getByTestId('cr-sport-calcio-arretrati-non-letti').textContent)
+            .toBe('arretrati di Mike: non letti');
+    });
+
+    // T_P3 (30/09) - CAMBIATO PERCHE' CAMBIA IL TESTO VOLUTO: la testata non
+    // mostra piu' la somma LORDA per riga (77,71 qui; 39,15 il 30/09 contro
+    // 9,95 del conto) ne' «2 / 59» (59 era il programma dello scanner).
+    // L'esposizione e' quella del CONTO; le partite con soldi veri restano 2,
+    // il programma dello scanner e' etichettato a parte. Il totale mischiato
+    // (393,68) continua a non esistere in nessun punto della pagina.
+    it('L’ESPOSIZIONE in testata e’ quella del CONTO; la somma lorda e la prova non ci sono', () => {
+        const conto = contoAdesso({
+            riga: { available: 30.61, exposure: -9.95, updated_at: '2026-09-14T14:59:57Z' },
+            canale: null, etaRunnerS: 30, nowMs: Date.parse('2026-09-14T15:00:00Z'),
+        });
+        const rischioBot = rischioBotLive({ letti: true, stati: {}, aperte: [] });
         mVm.mockReturnValue(vm({
             totali: {
                 letti: true,
@@ -924,14 +1012,66 @@ describe('la pagina non mostra MAI un numero che somma paper e live', () => {
                 liability: 77.71, liabilityPaper: 315.97,
                 netPnl: 0.44, netPnlPaper: -4.83,
             },
+            soldiVeri: {
+                conto, rischioBot, etaBotS: 5, scarto: null,
+                partite: { live: 2, prova: 12, ignota: 0 }, programmaScanner: 59,
+            },
         }));
         const s = mostra();
         const testo = s.container.textContent ?? '';
-        expect(testo).toContain('77,71');
         // 393,68 = 77,71 + 315,97: il totale mischiato non deve esistere
         expect(testo).not.toContain('393,68');
-        // e le partite con soldi veri sono 2, non 14
-        expect(testo).toContain('2 / 59');
+        const testata = s.getByTestId('cr-testata').textContent ?? '';
+        expect(testata).toContain('9,95');
+        expect(testata).not.toContain('77,71');
+        expect(testata).not.toContain('315,97');
+        // le partite con soldi veri sono 2, non 14; il 59 e' il programma
+        const partite = s.getByTestId('cr-partite-posizione').textContent ?? '';
+        expect(partite).toMatch(/2 partite/);
+        expect(partite).toMatch(/programma scanner 59/);
+        expect(testata).not.toContain('2 / 59');
+    });
+
+    it('T_P3: i numeri del 30/09 - conto 9,95, bot 16,22, NON TORNANO 6,27; la lorda 39,15 non compare in testata', () => {
+        const conto = contoAdesso({
+            riga: { available: 30.61, exposure: -9.95, updated_at: '2026-09-14T14:59:57Z' },
+            canale: null, etaRunnerS: 30, nowMs: Date.parse('2026-09-14T15:00:00Z'),
+        });
+        const rischioBot = rischioBotLive({
+            letti: true,
+            stati: { mike: { aggregates: { mode: 'live', open_liability: 16.22, liability_stale: false } } },
+            aperte: [
+                { bot: 'mike', modalita: 'live' }, { bot: 'mike', modalita: 'live' }, { bot: 'mike', modalita: 'live' },
+            ],
+        });
+        mVm.mockReturnValue(vm({
+            totali: { ...vm().totali, liability: 39.15, conPosizioneLive: 3, conPosizione: 3, partite: 28 },
+            soldiVeri: {
+                conto, rischioBot, etaBotS: 5, scarto: scartoContoBot(conto.esposizione, rischioBot),
+                partite: { live: 3, prova: 0, ignota: 0 }, programmaScanner: 28,
+            },
+        }));
+        const s = mostra();
+        const testata = s.getByTestId('cr-testata').textContent ?? '';
+        expect(testata).toContain('9,95');
+        expect(testata).toContain('16,22');
+        expect(s.getByTestId('cr-scarto-conto-bot').textContent).toMatch(/NON TORNANO: 6,27/);
+        expect(testata).not.toContain('39,15');
+        expect(testata).not.toContain('3 / 28');
+    });
+
+    it('T_P3: conto non letto -> in testata nessuna cifra dell\'esposizione, «conto non letto»', () => {
+        mVm.mockReturnValue(vm({
+            soldiVeri: {
+                conto: contoAdesso({ riga: null, canale: null, etaRunnerS: null, nowMs: Date.parse('2026-09-14T15:00:00Z') }),
+                rischioBot: rischioBotLive({ letti: true, stati: {}, aperte: [] }),
+                etaBotS: 5, scarto: null, partite: { live: 0, prova: 0, ignota: 0 }, programmaScanner: 1,
+            },
+        }));
+        const s = mostra();
+        const el = s.getByTestId('cr-esposizione-conto');
+        expect(el.textContent).toMatch(/conto non letto/);
+        expect(el.textContent).not.toMatch(/\d,\d\d/);
     });
 
     it('quando server e pagina non concordano la pagina LO DICE', () => {
@@ -1456,8 +1596,9 @@ describe('la partita si chiude TUTTA, e il bot lo sa', () => {
         const s = mostra();
         await apri(s, 'live');
         expect((s.getByTestId('cr-cashout-partita-avvia') as HTMLButtonElement).disabled).toBe(true);
+        // 30/09 (P12a): il pulsante chiude solo Safe e lo dice
         expect(s.getByTestId('cr-cashout-partita-bloccato').textContent)
-            .toMatch(/nessuna posizione viva/);
+            .toMatch(/nessuna posizione viva di Safe su questa partita/);
     });
 
     it('il gesto chiama il servizio con l’event_id della partita', async () => {

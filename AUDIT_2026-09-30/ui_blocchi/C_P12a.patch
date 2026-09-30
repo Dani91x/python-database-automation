@@ -1,0 +1,1605 @@
+diff --git a/frontend/src/components/controlroom/CashOutGlobale.test.tsx b/frontend/src/components/controlroom/CashOutGlobale.test.tsx
+new file mode 100644
+index 0000000..43db824
+--- /dev/null
++++ b/frontend/src/components/controlroom/CashOutGlobale.test.tsx
+@@ -0,0 +1,181 @@
++// ============================================================================
++// CashOutGlobale.test.tsx - 30/09 (P12a): il riquadro del cash out della
++// partita, e il suo montaggio isolato con `useCashOutPartita` (righe VERE della
++// scheda, `OperazionePartita`, e ladder al ms finto con le chiavi del vero).
++// Il montaggio dentro `SchedaPartita` e' P12b (non qui).
++// ============================================================================
++import { describe, it, expect } from 'vitest';
++import { render, screen, renderHook, act } from '@testing-library/react';
++import { CashOutGlobale } from './CashOutGlobale';
++import { useCashOutPartita } from './useCashOutPartita';
++import { cashOutPartita, type GambaViva } from '@/lib/cashOutPartita';
++import { PREZZO_VUOTO, type PrezzoScheda } from '@/lib/schedaAlMs';
++import type { OperazionePartita } from './useControlRoom';
++
++const NOW = 1_800_000_000_000;
++
++const FOLLO: GambaViva[] = [
++    { id: 5085, bot: 'mike', modalita: 'live', marketId: '1.35', selectionId: 11, selezione: 'Under 3.5 Goals',
++        lato: 'back', abbinato: 5, prezzoMedio: 2.4, aliquota: 0.05 },
++    { id: 5094, bot: 'mike', modalita: 'live', marketId: '1.45', selectionId: 21, selezione: 'Under 4.5 Goals',
++        lato: 'lay', abbinato: 6.32, prezzoMedio: 1.76, aliquota: 0.05 },
++];
++const LIBRO: Record<string, Partial<PrezzoScheda>> = {
++    '1.35|11': { back: 2.46, backSize: 80, lay: 2.56, laySize: 60 },
++    '1.45|21': { back: 1.63, backSize: 90, lay: 1.68, laySize: 70 },
++};
++const prezzo = (libro: Record<string, Partial<PrezzoScheda>>) => (m: string, s: number): PrezzoScheda | null => {
++    const p = libro[`${m}|${s}`];
++    return p ? { ...PREZZO_VUOTO, fonte: 'canale', istanteMs: NOW - 300, statoMercato: 'OPEN', ...p } : null;
++};
++
++describe('CashOutGlobale: la cifra della partita, netta, con fonte ed eta\'', () => {
++    it('Follo: -0,82 netto commissione, due righe, STIMA della pagina, e accanto il bot -0,84 spiegato', () => {
++        const r = cashOutPartita(FOLLO, { prezzo: prezzo(LIBRO), nowMs: NOW });
++        render(<CashOutGlobale risultato={r} valoriBot={[{ bot: 'mike', netto: -0.84, completo: true, etaS: 1.2 }]} />);
++        expect(screen.getByTestId('cr-cashout-globale-live-netto').textContent).toBe('−0,82 €');
++        expect(screen.getByTestId('cr-cashout-globale-live').textContent).toContain('netto commissione');
++        expect(screen.getByTestId('cr-cashout-globale-live').textContent)
++            .toContain('Cash out della partita (se chiudo TUTTO adesso)');
++        const marchio = screen.getByTestId('cr-cashout-globale-live-marchio');
++        expect(marchio.getAttribute('data-fonte')).toBe('pagina');
++        // MarchioSoldi: «STIMA» + «· <eta'> fa» in due span (eta' del prezzo piu' vecchio, 0,3 s)
++        expect(marchio.textContent).toBe('STIMA· 0 s fa');
++        const righe = screen.getAllByTestId('cr-cashout-globale-live-gamba');
++        expect(righe).toHaveLength(2);
++        expect(righe[0].textContent).toContain('punta Under 3.5 Goals 5,00 € @ 2,40');
++        expect(screen.getAllByTestId('cr-cashout-globale-live-gamba-chiudo').map((e) => e.textContent))
++            .toEqual(['chiudo banca 4,69 € @ 2,56', 'chiudo punta 6,82 € @ 1,63']);
++        expect(screen.getAllByTestId('cr-cashout-globale-live-gamba-pnl').map((e) => e.textContent))
++            .toEqual(['−0,32 €', '−0,50 €']);
++        expect(screen.getByTestId('cr-cashout-globale-live-bot-mike-netto').textContent).toBe('−0,84 €');
++        expect(screen.getByTestId('cr-cashout-globale-live-bot-mike-marchio').getAttribute('data-fonte')).toBe('bot');
++        expect(screen.getByTestId('cr-cashout-globale-live-bot-mike-differenza').textContent)
++            .toMatch(/^differenza 0,02 €: prezzi letti in istanti diversi/);
++        expect(screen.queryByTestId('cr-cashout-globale-prova')).toBeNull();
++    });
++
++    it('manca un prezzo: «NON CALCOLABILE: manca il prezzo di ...» e NESSUNA cifra', () => {
++        const r = cashOutPartita(FOLLO, { prezzo: prezzo({ '1.35|11': LIBRO['1.35|11'] }), nowMs: NOW });
++        render(<CashOutGlobale risultato={r} />);
++        expect(screen.getByTestId('cr-cashout-globale-live-non-calcolabile').textContent)
++            .toBe('NON CALCOLABILE: manca il prezzo di Under 4.5 Goals (punta)');
++        expect(screen.queryByTestId('cr-cashout-globale-live-netto')).toBeNull();
++    });
++
++    it('gambe PROVA: riga PROVA separata, mai sommata al live', () => {
++        const prova: GambaViva = { id: 900, bot: 'safe', modalita: 'paper', marketId: '1.35', selectionId: 11,
++            selezione: 'Under 3.5 Goals', lato: 'back', abbinato: 10, prezzoMedio: 2.2, aliquota: 0.05 };
++        const r = cashOutPartita([...FOLLO, prova], { prezzo: prezzo(LIBRO), nowMs: NOW });
++        render(<CashOutGlobale risultato={r} />);
++        expect(screen.getByTestId('cr-cashout-globale-live-netto').textContent).toBe('−0,82 €');
++        expect(screen.getByTestId('cr-cashout-globale-prova-netto').textContent).toBe('−1,41 €');
++        expect(screen.getByTestId('cr-cashout-globale-prova-marchio').getAttribute('data-fonte')).toBe('prova');
++        expect(screen.getByTestId('cr-cashout-globale-prova').textContent).toContain('Prova (simulato, mai sommato ai soldi veri)');
++    });
++
++    it('liquidita\' insufficiente: la cifra resta, «e\' il caso migliore»', () => {
++        const r = cashOutPartita(FOLLO, { prezzo: prezzo({ ...LIBRO, '1.35|11': { lay: 2.56, laySize: 3 } }), nowMs: NOW });
++        render(<CashOutGlobale risultato={r} />);
++        expect(screen.getByTestId('cr-cashout-globale-live-netto').textContent).toBe('−0,82 €');
++        expect(screen.getByTestId('cr-cashout-globale-live-caso-migliore').textContent)
++            .toBe('liquidita\' insufficiente al miglior prezzo: e\' il caso migliore');
++        expect(screen.getByTestId('cr-cashout-globale-live-gamba-liquidita').textContent)
++            .toBe('solo 3,00 € al miglior prezzo: caso migliore');
++    });
++
++    it('nessuna gamba abbinata di nessun bot: lo dice, senza cifre', () => {
++        render(<CashOutGlobale risultato={null} />);
++        expect(screen.getByTestId('cr-cashout-globale').textContent)
++            .toBe('Cash out della partita: nessuna gamba abbinata di nessun bot su questa partita');
++    });
++});
++
++// ======================================== montaggio isolato con l'hook
++function sorgenteFinta() {
++    const cbs = new Map<string, (row: unknown) => void>();
++    const src = {
++        fetch: async () => null,
++        subscribe: (mid: string, cb: (row: unknown) => void) => {
++            cbs.set(mid, cb);
++            return () => { cbs.delete(mid); };
++        },
++        fonte: () => 'canale' as const,
++    };
++    const spingi = (mid: string, sid: number, back: number, lay: number) => act(() => {
++        const ms = Date.now() - 200;
++        cbs.get(mid)?.({
++            event_id: '35001', market_id: mid, market_type: 'OVER_UNDER', market_name: 'OU',
++            status: 'OPEN', updated_at: new Date(ms).toISOString(),
++            ladder: { updated_ms: ms, selections: [
++                { selection_id: sid, name: 'X', ltp: back, tv: 0, back: [[back, 80]], lay: [[lay, 60]],
++                    trd: [], wom: { back_pct: 50, lay_pct: 50 } },
++            ] },
++        });
++    });
++    return { sorgente: () => src as never, spingi, iscritti: () => [...cbs.keys()].sort() };
++}
++
++function op(p: Partial<OperazionePartita> & Pick<OperazionePartita, 'id' | 'bot'>): OperazionePartita {
++    return {
++        selezione: null, lato: 'back', prezzo: 2, size: 5, stato: 'open', pnl: null, modalita: 'live',
++        at: '2026-09-30T14:00:00.000Z', quale: null,
++        ordine: { status: 'open', side: 'back', price: 2, size: 5, size_requested: 5, size_matched: 5,
++            size_remaining: 0, avg_price_matched: 2, betfair_updated_at: null, meta: null },
++        dettaglio: null, marketId: null, selectionId: null, liability: null, vivo: null, etaQuoteS: null,
++        chiusura: null, chiusureOrdini: [], eventId: '35001', chiudeId: null,
++        ...p,
++    };
++}
++
++function opsFollo(): OperazionePartita[] {
++    const alMs = (marketId: string, selectionId: number, scanner: { back: number; lay: number }): OperazionePartita['chiusura'] => ({
++        lato: 'lay', prezzo: null, abbinabile: null, bloccabile: null,
++        alMs: { win: 0, lose: 0, marketId, selectionId, sport: 'calcio', istanteScannerMs: Date.now() - 4300,
++            scanner: { back: scanner.back, backSize: 50, lay: scanner.lay, laySize: 50 }, aliquota: 0.05 },
++    });
++    return [
++        op({ id: 5085, bot: 'mike', selezione: 'Under 3.5 Goals', lato: 'back', marketId: '1.35', selectionId: 11,
++            ordine: { status: 'open', side: 'back', price: 2.4, size: 5, size_requested: 5, size_matched: 5,
++                size_remaining: 0, avg_price_matched: 2.4, betfair_updated_at: null, meta: null },
++            chiusura: alMs('1.35', 11, { back: 2.46, lay: 2.56 }) }),
++        op({ id: 5094, bot: 'mike', selezione: 'Under 4.5 Goals', lato: 'lay', marketId: '1.45', selectionId: 21,
++            ordine: { status: 'open', side: 'lay', price: 1.76, size: 6.32, size_requested: 6.32, size_matched: 6.32,
++                size_remaining: 0, avg_price_matched: 1.76, betfair_updated_at: null, meta: null },
++            chiusura: alMs('1.45', 21, { back: 1.63, lay: 1.68 }) }),
++    ];
++}
++
++describe('useCashOutPartita: prezzi al ms, ripiego dichiarato, nessuna sottoscrizione a vuoto', () => {
++    it('una sottoscrizione per mercato; senza ladder il prezzo dello scanner, poi il ladder al tick', () => {
++        const f = sorgenteFinta();
++        const ops = opsFollo();
++        const { result } = renderHook(() => useCashOutPartita({ operazioni: ops, sorgente: f.sorgente, sport: 'calcio' }));
++        expect(f.iscritti()).toEqual(['1.35', '1.45']);
++        // ripiego dello scanner (stessi prezzi): -0,82, fonte scanner dichiarata
++        expect(result.current?.live.netto).toBe(-0.82);
++        expect(result.current?.live.gambe.map((p) => p.fontePrezzo)).toEqual(['scanner', 'scanner']);
++        // il ladder al ms: banca Under 3,5 a 2,50 -> 12/2,50 = 4,80; 4,80 x 1,50 = 7,20 -> -0,20
++        f.spingi('1.35', 11, 2.44, 2.5);
++        expect(result.current?.live.gambe[0]).toMatchObject({ fontePrezzo: 'canale', importoChiusura: 4.8, pnl: -0.2 });
++        expect(result.current?.live.netto).toBe(-0.7);
++    });
++    it('partita senza gambe: null e NESSUNA sottoscrizione', () => {
++        const f = sorgenteFinta();
++        const { result } = renderHook(() => useCashOutPartita({ operazioni: [], sorgente: f.sorgente, sport: 'calcio' }));
++        expect(result.current).toBeNull();
++        expect(f.iscritti()).toEqual([]);
++    });
++    it('montaggio: hook + riquadro, la cifra segue il tick', () => {
++        const f = sorgenteFinta();
++        const ops = opsFollo();
++        function Riquadro() {
++            const r = useCashOutPartita({ operazioni: ops, sorgente: f.sorgente, sport: 'calcio' });
++            return <CashOutGlobale risultato={r} />;
++        }
++        render(<Riquadro />);
++        expect(screen.getByTestId('cr-cashout-globale-live-netto').textContent).toBe('−0,82 €');
++        f.spingi('1.35', 11, 2.44, 2.5);
++        expect(screen.getByTestId('cr-cashout-globale-live-netto').textContent).toBe('−0,70 €');
++    });
++});
+diff --git a/frontend/src/components/controlroom/CashOutGlobale.tsx b/frontend/src/components/controlroom/CashOutGlobale.tsx
+new file mode 100644
+index 0000000..f1b7901
+--- /dev/null
++++ b/frontend/src/components/controlroom/CashOutGlobale.tsx
+@@ -0,0 +1,210 @@
++// ============================================================================
++// CashOutGlobale.tsx - 30/09 (P12a): il riquadro «CASH OUT DELLA PARTITA (se
++// chiudo TUTTO adesso)». SOLO presentazione: la cifra arriva gia' calcolata
++// da `lib/cashOutPartita.ts` (via `useCashOutPartita`).
++//
++// Ordine dell'utente (30/09): «DEVE FARE LA SOMMA DI TUTTE LE OPERAZIONI CHE
++// CI SONO ORA E DARMI IL VALORE ESATTO DI QUANDO GUADAGNO/PERDO CHIUDENDO
++// TUTTO IN QUELLO SPECIFICO MOMENTO».
++//
++// Regole a schermo:
++//   * LIVE e PROVA in due righe separate, mai una somma sola;
++//   * NETTO di commissione, scritto; fonte (STIMA della pagina) ed eta' del
++//     prezzo piu' vecchio usato;
++//   * se manca anche UN prezzo: «NON CALCOLABILE: manca il prezzo di ...» e
++//     NESSUNA cifra (una somma monca e' una bugia);
++//   * accanto, la cifra del servizio del bot (Mike) con la SUA fonte ed eta':
++//     due cifre diverse per la stessa cosa si spiegano, non si nascondono;
++//   * liquidita' insufficiente al miglior prezzo: la cifra resta, marcata
++//     «caso migliore».
++// Nessun pulsante qui: chiudere e' un altro gesto (P16, su richiesta).
++// ============================================================================
++import { MarchioSoldi } from '@/components/controlroom/MarchioSoldi';
++import { fmtMoney, fmtNum, fmtOdds } from '@/lib/format';
++import { pnlClass } from '@/lib/tradeStatus';
++import { BOT_LABEL, type Bot } from '@/lib/controlRoom';
++import type {
++    CashOutModalita, CashOutPartitaRisultato, PosizioneCashOut,
++} from '@/lib/cashOutPartita';
++import type { FontePrezzo } from '@/lib/schedaAlMs';
++
++/** La cifra che il SERVIZIO di un bot pubblica per la stessa partita. */
++export interface ValoreBotCashOut {
++    bot: string;
++    /** netto dichiarato dal servizio; null = il servizio non lo da' */
++    netto: number | null;
++    /** il servizio dichiara la cifra completa (tutti i prezzi presenti)? */
++    completo: boolean;
++    /** eta' del book con cui il servizio ha calcolato (s); null = ignota */
++    etaS: number | null;
++    /** perche' puo' differire (es. «chiude la copertura bancando l'Over 4,5») */
++    nota?: string | null;
++}
++
++export interface CashOutGlobaleProps {
++    /** null = nessuna gamba abbinata di nessun bot sulla partita */
++    risultato: CashOutPartitaRisultato | null;
++    /** le cifre dei servizi dei bot (Mike: `live.cashout.net`) */
++    valoriBot?: readonly ValoreBotCashOut[];
++    testId?: string;
++}
++
++const nomeBot = (b: string) => (BOT_LABEL as Record<string, string>)[b as Bot] ?? b;
++
++function testoFontePrezzo(f: FontePrezzo | null): string {
++    if (f === 'canale') return 'ladder al ms';
++    if (f === 'db') return 'ladder al ms (DB, il canale tace)';
++    if (f === 'scanner') return 'prezzo dello scanner';
++    return 'prezzo non disponibile';
++}
++
++function testoEtaBreve(s: number | null): string {
++    return s == null ? 'eta\' ignota' : `${fmtNum(s, s < 10 ? 1 : 0)} s fa`;
++}
++
++const lato = (l: 'back' | 'lay' | null) => (l === 'lay' ? 'banca' : l === 'back' ? 'punta' : '');
++
++function RigaGamba({ p, modo, testId }: { p: PosizioneCashOut; modo: 'LIVE' | 'PROVA'; testId: string }) {
++    const ingresso = p.componenti.length === 1
++        ? `${lato(p.lato)} ${p.selezione ?? `selezione ${p.selectionId}`} ${fmtMoney(p.abbinato)} @ ${fmtOdds(p.prezzoIngresso)}`
++        : `${p.selezione ?? `selezione ${p.selectionId}`}: ${p.componenti.length} gambe (${p.componenti
++            .map((c) => `${lato(c.lato)} ${fmtMoney(c.abbinato)} @ ${fmtOdds(c.prezzo)}`).join(', ')})`;
++    let chiusura: string;
++    if (p.stato === 'decisa') chiusura = 'esito gia\' deciso: nessuna chiusura';
++    else if (p.stato === 'piatta') {
++        chiusura = p.residuoNonPiazzabile
++            ? 'chiusura sotto il centesimo: non si piazza, resta il bloccato'
++            : 'gia\' pareggiata: niente da chiudere';
++    } else if (p.stato === 'senza_prezzo') chiusura = `chiudo ${lato(p.latoChiusura)}: prezzo assente`;
++    else if (p.stato === 'mercato_non_aperto') chiusura = 'mercato non aperto: adesso non si chiude';
++    else chiusura = `chiudo ${lato(p.latoChiusura)} ${fmtMoney(p.importoChiusura)} @ ${fmtOdds(p.prezzoChiusura)}`;
++    return (
++        <div className="flex items-baseline gap-1.5 flex-wrap text-[11px]" data-testid={testId}
++            data-chiave={p.chiave} data-stato={p.stato}>
++            <span className="text-white/70">{p.bot.map(nomeBot).join(' + ')}</span>
++            <span className={`text-[9px] font-bold uppercase px-1 rounded ${modo === 'LIVE'
++                ? 'bg-red-500/15 text-red-300' : 'bg-sky-500/10 text-sky-300'}`}>{modo}</span>
++            <span className="text-white/60 font-mono">{ingresso}</span>
++            <span className="text-white/45 font-mono" data-testid={`${testId}-chiudo`}>{chiusura}</span>
++            <span className={`font-mono font-semibold ${pnlClass(p.pnl)}`} data-testid={`${testId}-pnl`}>
++                {fmtMoney(p.pnl, { signed: true })}
++            </span>
++            {p.fontePrezzo && (
++                <span className="text-[9px] text-white/30">
++                    {testoFontePrezzo(p.fontePrezzo)} · {testoEtaBreve(p.etaPrezzoS)}
++                </span>
++            )}
++            {p.liquiditaSufficiente === false && (
++                <span className="text-[9px] text-amber-300" data-testid={`${testId}-liquidita`}>
++                    solo {fmtMoney(p.abbinabile)} al miglior prezzo: caso migliore
++                </span>
++            )}
++        </div>
++    );
++}
++
++function Blocco({ r, modo, testId, valoriBot }: {
++    r: CashOutModalita; modo: 'LIVE' | 'PROVA'; testId: string; valoriBot: readonly ValoreBotCashOut[];
++}) {
++    const eta = r.etaIgnota ? null : r.etaPrezziS;
++    return (
++        <div className="flex flex-col gap-1" data-testid={testId}>
++            <div className="flex items-baseline gap-2 flex-wrap">
++                <span className={`text-[10px] font-bold uppercase tracking-wider ${modo === 'LIVE' ? 'text-white/80' : 'text-sky-300/80'}`}>
++                    {modo === 'LIVE'
++                        ? 'Cash out della partita (se chiudo TUTTO adesso)'
++                        : 'Prova (simulato, mai sommato ai soldi veri)'}
++                </span>
++                {r.netto != null ? (
++                    <>
++                        <span className={`font-mono text-[15px] font-bold ${pnlClass(r.netto)}`} data-testid={`${testId}-netto`}>
++                            {fmtMoney(r.netto, { signed: true })}
++                        </span>
++                        <span className="text-[10px] text-white/50">netto commissione</span>
++                        {r.commissione != null && r.commissione > 0 && (
++                            <span className="text-[9px] text-white/35" data-testid={`${testId}-commissione`}>
++                                (lordo {fmtMoney(r.lordo, { signed: true })}, commissione {fmtMoney(r.commissione)} sul netto di ogni mercato)
++                            </span>
++                        )}
++                        {r.gambe.some((p) => p.fontePrezzo != null) || modo === 'PROVA' ? (
++                            <MarchioSoldi fonte={modo === 'LIVE' ? 'pagina' : 'prova'} etaS={eta}
++                                dettaglio={modo === 'LIVE'
++                                    ? 'somma per mercato e selezione di tutte le gambe abbinate dei bot LIVE, chiuse al miglior prezzo di adesso; eta\' = il prezzo piu\' vecchio usato'
++                                    : 'stessa somma sulle gambe PROVA'}
++                                testId={`${testId}-marchio`} />
++                        ) : (
++                            <MarchioSoldi fonte={modo === 'LIVE' ? 'pagina' : 'prova'}
++                                dettaglio="nessun prezzo serve: posizioni gia' pareggiate o decise"
++                                testId={`${testId}-marchio`} />
++                        )}
++                        {r.liquiditaInsufficiente && (
++                            <span className="text-[10px] text-amber-300" data-testid={`${testId}-caso-migliore`}>
++                                liquidita' insufficiente al miglior prezzo: e' il caso migliore
++                            </span>
++                        )}
++                    </>
++                ) : (
++                    <span className="text-[11px] font-semibold text-orange-400" data-testid={`${testId}-non-calcolabile`}>
++                        NON CALCOLABILE: {r.mancanti.join('; ')}
++                    </span>
++                )}
++            </div>
++            {r.gambe.map((p) => (
++                <RigaGamba key={p.chiave} p={p} modo={modo} testId={`${testId}-gamba`} />
++            ))}
++            {r.avvisi.filter((a) => !/liquidita' insufficiente/.test(a)).map((a) => (
++                <div key={a} className="text-[9px] text-amber-300/80" data-testid={`${testId}-avviso`}>{a}</div>
++            ))}
++            {modo === 'LIVE' && valoriBot.map((v) => {
++                const diff = v.netto != null && r.netto != null ? Math.round((r.netto - v.netto) * 100) / 100 : null;
++                return (
++                    <div key={v.bot} className="flex items-baseline gap-1.5 flex-wrap text-[10px] text-white/50"
++                        data-testid={`${testId}-bot-${v.bot}`}>
++                        <span>il bot {nomeBot(v.bot)} calcola:</span>
++                        <span className={`font-mono ${pnlClass(v.netto)}`} data-testid={`${testId}-bot-${v.bot}-netto`}>
++                            {v.netto == null ? 'non pubblicato' : fmtMoney(v.netto, { signed: true })}
++                        </span>
++                        {!v.completo && v.netto != null && <span className="text-orange-400">(incompleto per il bot)</span>}
++                        <MarchioSoldi fonte="bot" etaS={v.etaS} dettaglio="book letto dal servizio del bot"
++                            testId={`${testId}-bot-${v.bot}-marchio`} />
++                        {diff != null && diff !== 0 && (
++                            <span className="text-white/40" data-testid={`${testId}-bot-${v.bot}-differenza`}>
++                                differenza {fmtMoney(Math.abs(diff))}: prezzi letti in istanti diversi
++                                (pagina {testoEtaBreve(eta)}, bot {testoEtaBreve(v.etaS)})
++                                {v.nota ? `; ${v.nota}` : ''}
++                            </span>
++                        )}
++                    </div>
++                );
++            })}
++        </div>
++    );
++}
++
++export function CashOutGlobale({ risultato, valoriBot = [], testId = 'cr-cashout-globale' }: CashOutGlobaleProps) {
++    if (risultato == null) {
++        return (
++            <div className="text-[10px] text-white/40" data-testid={testId} data-vuoto="1">
++                Cash out della partita: nessuna gamba abbinata di nessun bot su questa partita
++            </div>
++        );
++    }
++    const haLive = risultato.live.nGambe > 0 || risultato.live.mancanti.length > 0;
++    const haProva = risultato.paper.nGambe > 0 || risultato.paper.mancanti.length > 0;
++    return (
++        <div className="flex flex-col gap-1.5 rounded border border-white/10 px-2 py-1.5" data-testid={testId}>
++            {haLive ? (
++                <Blocco r={risultato.live} modo="LIVE" testId={`${testId}-live`} valoriBot={valoriBot} />
++            ) : (
++                <div className="text-[10px] text-white/40" data-testid={`${testId}-live-vuoto`}>
++                    Cash out della partita: nessuna gamba LIVE abbinata su questa partita
++                </div>
++            )}
++            {haProva && (
++                <Blocco r={risultato.paper} modo="PROVA" testId={`${testId}-prova`} valoriBot={[]} />
++            )}
++        </div>
++    );
++}
++
++export default CashOutGlobale;
+diff --git a/frontend/src/components/controlroom/CashOutPartita.test.tsx b/frontend/src/components/controlroom/CashOutPartita.test.tsx
+index 720e376..64fe21f 100644
+--- a/frontend/src/components/controlroom/CashOutPartita.test.tsx
++++ b/frontend/src/components/controlroom/CashOutPartita.test.tsx
+@@ -106,6 +106,25 @@ describe('il badge lo accende il SERVIZIO, non la pagina', () => {
+     });
+ });
+ 
++describe('30/09 (P12a): i testi dicono che il pulsante chiude SOLO Safe', () => {
++    it('etichetta, titolo, conferma e motivo nominano Safe (mai «globale», mai «del bot»)', () => {
++        monta({ modalita: 'live' });
++        const b = screen.getByTestId('cr-cashout-partita-avvia');
++        expect(b.textContent).toBe('Cash out Safe');
++        expect(b.getAttribute('title'))
++            .toBe('chiude TUTTE le posizioni di SAFE su questa partita (non quelle degli altri bot) e gli dice di non fare altro');
++        fireEvent.click(b);
++        expect(screen.getByTestId('cr-cashout-partita-conferma').textContent).toBe('Confermo: chiudi le posizioni di Safe');
++        expect(screen.getByTestId('cr-cashout-partita-armato').textContent)
++            .toBe('Sono soldi veri: conferma per chiudere le posizioni di Safe su questa partita. annulla');
++    });
++    it('senza posizioni di Safe: «nessuna posizione viva di Safe su questa partita»', () => {
++        monta({ posizioniVive: 0 });
++        expect(screen.getByTestId('cr-cashout-partita-bloccato').textContent)
++            .toBe('nessuna posizione viva di Safe su questa partita');
++    });
++});
++
+ describe('un pulsante spento dice PERCHE', () => {
+     it('nessuna posizione viva: spento, col motivo scritto', () => {
+         monta({ posizioniVive: 0 });
+diff --git a/frontend/src/components/controlroom/CashOutPartita.tsx b/frontend/src/components/controlroom/CashOutPartita.tsx
+index 576753b..2d03281 100644
+--- a/frontend/src/components/controlroom/CashOutPartita.tsx
++++ b/frontend/src/components/controlroom/CashOutPartita.tsx
+@@ -1,5 +1,11 @@
+ // ============================================================================
+-// CashOutPartita.tsx — «CASH OUT GLOBALE DELLA PARTITA» e «RIPRENDI».
++// CashOutPartita.tsx — «CASH OUT SAFE» (della partita) e «RIPRENDI».
++//
++// 30/09 (P12a) - i TESTI dicono quello che il pulsante fa davvero: chiude le
++// posizioni di SAFE (la richiesta la esegue solo il servizio Safe). Prima si
++// chiamava «Cash out globale della partita» e, con due gambe di Mike vive,
++// diceva «nessuna posizione viva del bot». La cifra di TUTTI i bot e' nel
++// riquadro `CashOutGlobale`. Comportamento e `data-testid` invariati.
+ //
+ // Ordine dell'utente del 16/09 sera: «se chiudo io il bot deve saperlo e non
+ // fare altro». Questo e' il gesto con cui glielo si dice, e il gesto opposto
+@@ -123,7 +129,7 @@ export function CashOutPartita({
+                         className={`${dim} rounded bg-orange-500 text-black hover:bg-orange-400 font-bold uppercase tracking-wider`}
+                         data-testid="cr-cashout-partita-conferma"
+                     >
+-                        {inCorso ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Confermo: chiudi tutta la partita'}
++                        {inCorso ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Confermo: chiudi le posizioni di Safe'}
+                     </Button>
+                 ) : (
+                     <Button
+@@ -132,11 +138,11 @@ export function CashOutPartita({
+                         variant="outline"
+                         className={`${dim} rounded border-rose-500/40 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20 font-semibold uppercase tracking-wider disabled:opacity-40`}
+                         data-testid="cr-cashout-partita-avvia"
+-                        title={bloccoCashout ?? 'chiude TUTTE le posizioni del bot su questa partita e gli dice di non fare altro'}
++                        title={bloccoCashout ?? 'chiude TUTTE le posizioni di SAFE su questa partita (non quelle degli altri bot) e gli dice di non fare altro'}
+                     >
+                         {inCorso
+                             ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+-                            : <><XOctagon className="w-3 h-3 mr-1" />Cash out globale della partita</>}
++                            : <><XOctagon className="w-3 h-3 mr-1" />Cash out Safe</>}
+                     </Button>
+                 )
+             )}
+@@ -144,7 +150,7 @@ export function CashOutPartita({
+             {armato && (
+                 <span className="text-[10px] text-orange-300" data-testid="cr-cashout-partita-armato">
+                     {modalita === 'live'
+-                        ? 'Sono soldi veri: conferma per chiudere tutta la partita.'
++                        ? 'Sono soldi veri: conferma per chiudere le posizioni di Safe su questa partita.'
+                         : 'Modalita’ non dichiarata: si chiede conferma comunque.'}
+                     {' '}
+                     <button type="button" className="underline" onClick={() => setArmato(false)}
+diff --git a/frontend/src/components/controlroom/useCashOutPartita.ts b/frontend/src/components/controlroom/useCashOutPartita.ts
+new file mode 100644
+index 0000000..4255047
+--- /dev/null
++++ b/frontend/src/components/controlroom/useCashOutPartita.ts
+@@ -0,0 +1,81 @@
++// ============================================================================
++// useCashOutPartita.ts - 30/09 (P12a): il cash out della partita con i prezzi
++// AL MS. Collega le righe della scheda (`OperazionePartita`, di TUTTI i bot)
++// alla matematica pura di `lib/cashOutPartita.ts`.
++//
++// Prezzi: `usePrezziAlMs` (UNA sottoscrizione per mercato, staccate allo
++// smontaggio), per le sole selezioni che vanno chiuse; dove il canale non
++// porta il mercato, il prezzo dello scanner gia' in pagina (`chiusura.alMs.
++// scanner` della riga), DICHIARATO come tale. Nessuna sottoscrizione per una
++// partita senza gambe abbinate: la lista delle selezioni e' vuota.
++// ============================================================================
++import { useMemo } from 'react';
++import { usePrezziAlMs, type SelezioneAlMs, type SorgenteLadder } from './usePrezzoAlMs';
++import {
++    cashOutPartita, gambeDaOperazioni,
++    type CashOutPartitaRisultato, type OperazionePerCashOut,
++} from '@/lib/cashOutPartita';
++import { ripiegoScanner, type DatiChiusuraAlMs } from '@/lib/chiusuraAlMs';
++import type { PrezzoScheda } from '@/lib/schedaAlMs';
++
++export interface ArgsCashOutPartita {
++    /** le righe della partita (tutte: live, prova, di ogni bot) */
++    operazioni: readonly (OperazionePerCashOut & {
++        chiusura: { alMs?: DatiChiusuraAlMs | undefined } | null;
++    })[] | null | undefined;
++    sorgente: SorgenteLadder | null | undefined;
++    sport: 'calcio' | 'tennis';
++    /** mercato a due esiti (Over/Under, testa a testa) */
++    dueEsiti?: (marketId: string) => boolean;
++    /** esito gia' certo della selezione (linea superata dai gol) */
++    esitoDeciso?: (marketId: string, selectionId: number) => boolean | null;
++    /** l'istante di calcolo (test); di serie Date.now() a ogni render */
++    nowMs?: number;
++}
++
++const chiave = (m: string, s: number) => `${m}|${s}`;
++
++export function useCashOutPartita(args: ArgsCashOutPartita): CashOutPartitaRisultato | null {
++    const { operazioni, sorgente, sport, dueEsiti, esitoDeciso } = args;
++    const gambe = useMemo(
++        () => gambeDaOperazioni(operazioni ?? [], { dueEsiti }),
++        [operazioni, dueEsiti],
++    );
++    // i prezzi di ripiego (scanner) per (mercato, selezione), dalle righe
++    const ripieghi = useMemo(() => {
++        const m = new Map<string, PrezzoScheda>();
++        for (const o of operazioni ?? []) {
++            const d = o.chiusura?.alMs;
++            if (!d?.marketId || d.selectionId == null) continue;
++            const p = ripiegoScanner(d);
++            if (p) m.set(chiave(d.marketId, d.selectionId), p);
++        }
++        return m;
++    }, [operazioni]);
++    // quali selezioni vanno chiuse (e da che lato): un primo giro senza prezzi
++    const daSeguire = useMemo<SelezioneAlMs[]>(() => {
++        const r = cashOutPartita(gambe, { prezzo: () => null, nowMs: 0, esitoDeciso });
++        const out: SelezioneAlMs[] = [];
++        const visti = new Set<string>();
++        for (const p of [...r.live.gambe, ...r.paper.gambe]) {
++            if (p.latoChiusura == null) continue;
++            const k = chiave(p.marketId, p.selectionId);
++            if (visti.has(k)) continue;
++            visti.add(k);
++            out.push({ marketId: p.marketId, selectionId: p.selectionId, lato: p.latoChiusura,
++                ripiego: ripieghi.get(k) ?? null });
++        }
++        return out;
++    }, [gambe, ripieghi, esitoDeciso]);
++    const prezzi = usePrezziAlMs({ sorgente, sport, selezioni: daSeguire });
++    if (gambe.length === 0) return null;
++    const perChiave = new Map<string, PrezzoScheda>();
++    daSeguire.forEach((s, i) => {
++        if (s.marketId && s.selectionId != null) perChiave.set(chiave(String(s.marketId), Number(s.selectionId)), prezzi[i]);
++    });
++    return cashOutPartita(gambe, {
++        prezzo: (m, s) => perChiave.get(chiave(m, s)) ?? null,
++        nowMs: args.nowMs ?? Date.now(),
++        esitoDeciso,
++    });
++}
+diff --git a/frontend/src/components/controlroom/useChiusuraAlMs.parita.test.tsx b/frontend/src/components/controlroom/useChiusuraAlMs.parita.test.tsx
+index 7e7aa1f..b87cfbf 100644
+--- a/frontend/src/components/controlroom/useChiusuraAlMs.parita.test.tsx
++++ b/frontend/src/components/controlroom/useChiusuraAlMs.parita.test.tsx
+@@ -225,6 +225,28 @@ describe('P11: stessa gamba in utile, ramo al ms = ramo scanner al centesimo', (
+         expect(result.current?.bloccabile).toBe(ch.bloccabile);
+     });
+ 
++    it('colonna commission = 0,02 (senza meta): scheda (operazioni) = colonna posizioni = ms, 0,77', async () => {
++        // P12a (via libera del coordinatore): prima `operazioni` non passava la
++        // colonna `commission` a `chiusuraViva` -> la scheda usava il 5 % (0,75)
++        // e la colonna posizioni il 2 % (0,77) per la STESSA gamba.
++        vi.mocked(fetchScanRows).mockResolvedValue([scanRow('E2', payloadOU('1.2', 2, 1.68, 1.70))]);
++        vi.mocked(fetchMikeState).mockResolvedValue({
++            ...MIKE_VUOTO,
++            trades: [tradeMike({ id: 815, price: 1.85, commission: 0.02 } as Partial<MikeTrade>)],
++        } as never);
++        const { result } = renderHook(() => useControlRoom());
++        await waitFor(() => expect(result.current.caricamento).toBe(false));
++        const pos = result.current.posizioni.find((x) => x.bot === 'mike' && x.id === 815);
++        const op = result.current.operazioni.get('E2')?.find((x) => x.bot === 'mike' && x.id === 815);
++        expect(pos?.chiusura?.bloccabile).toBe(0.77);
++        expect(op?.chiusura?.bloccabile).toBe(0.77);
++        expect(op?.chiusura?.alMs?.aliquota).toBe(0.02);
++        const f = sorgenteFinta();
++        const { result: ms } = renderHook(() => useChiusuraAlMs(op!.chiusura, f.sorgente));
++        f.spingi('1.2', 2, 1.68, 1.70);
++        expect(ms.current?.bloccabile).toBe(0.77);
++    });
++
+     it('in perdita nessuna commissione: lay 2,10 -> ms = scanner', async () => {
+         const ch = await chiusuraScanner(tradeMike({ id: 814, price: 1.85 }), 2.08, 2.10);
+         const f = sorgenteFinta();
+diff --git a/frontend/src/components/controlroom/useControlRoom.ts b/frontend/src/components/controlroom/useControlRoom.ts
+index 725a08d..98211b4 100644
+--- a/frontend/src/components/controlroom/useControlRoom.ts
++++ b/frontend/src/components/controlroom/useControlRoom.ts
+@@ -2844,6 +2844,7 @@ export function useControlRoom(): ControlRoomVM {
+             side: t.side, price: t.price, size: t.size,
+             meta: (t.meta ?? null) as Record<string, unknown> | null,
+             event_id: t.event_id, market_id: t.market_id, selection_id: t.selection_id,
++            commission: t.commission,
+         })?.bloccabile ?? null) : null;
+         return { proposta: pr, vivo, etaQuoteS, bloccabileOra };
+     }), [proposte, feedPerEvento, nowMs, safe?.trades, chiusuraViva]);
+@@ -3118,6 +3119,7 @@ export function useControlRoom(): ControlRoomVM {
+                 side: t.side ?? null, price: t.price ?? null, size: t.size ?? null,
+                 meta: t.meta ?? null, event_id: t.event_id,
+                 market_id: t.market_id ?? null, selection_id: t.selection_id ?? null,
++                commission: (t as { commission?: number | null }).commission ?? null,
+             });
+             const riga: OperazionePartita = {
+                 bot, id: t.id,
+diff --git a/frontend/src/lib/cashOutPartita.test.ts b/frontend/src/lib/cashOutPartita.test.ts
+new file mode 100644
+index 0000000..e3166ad
+--- /dev/null
++++ b/frontend/src/lib/cashOutPartita.test.ts
+@@ -0,0 +1,368 @@
++// ============================================================================
++// cashOutPartita.test.ts - 30/09 (P12a): il cash out della partita, tabellare.
++//
++// Casi: Follo v Sarpsborg di oggi (-0,82), partita pareggiata (~+0,05, una
++// cifra sola), gamba senza prezzo (NON CALCOLABILE), gamba PROVA (mai nel
++// live), utile e perdita sullo stesso mercato (commissione sul netto del
++// mercato), parita' numerica con `Betfair/mike/engine.py::cashout_value` su 4
++// casi presi dai test Python (file:riga nel titolo del test).
++//
++// FALSIFICAZIONE (script `AUDIT_2026-09-30/ui_blocchi/falsifica_c_p12a.sh`):
++// somma per riga invece che per selezione, commissione per gamba, gamba senza
++// prezzo contata 0, paper sommato al live, rovescio dell'altra selezione tolto
++// -> rossi.
++// ============================================================================
++import { describe, it, expect } from 'vitest';
++import { cashOutPartita, gambeDaOperazioni, r2, type GambaViva, type OpzioniCashOut } from './cashOutPartita';
++import { PREZZO_VUOTO, type PrezzoScheda } from './schedaAlMs';
++import type { OperazionePartita } from '@/components/controlroom/useControlRoom';
++
++const NOW = 1_800_000_000_000;
++
++function gamba(p: Partial<GambaViva> & Pick<GambaViva, 'id' | 'marketId' | 'selectionId' | 'lato' | 'abbinato' | 'prezzoMedio'>): GambaViva {
++    return {
++        bot: 'mike', modalita: 'live', selezione: null, aliquota: 0.05, ...p,
++    };
++}
++
++type Libro = Record<string, Partial<PrezzoScheda>>;
++function opz(libro: Libro, extra: Partial<OpzioniCashOut> = {}): OpzioniCashOut {
++    return {
++        prezzo: (m, s) => {
++            const p = libro[`${m}|${s}`];
++            return p ? { ...PREZZO_VUOTO, fonte: 'canale', istanteMs: NOW - 300, statoMercato: 'OPEN', ...p } : null;
++        },
++        nowMs: NOW,
++        ...extra,
++    };
++}
++
++// ------------------------------------------------ Follo v Sarpsborg (30/09)
++// punta Under 3,5 5,00 @ 2,40 (OU35, sel 11) + banca Under 4,5 6,32 @ 1,76
++// (copertura, OU45, sel 21). Ladder: Under 3,5 B 2,46 / L 2,56; Under 4,5
++// B 1,63 / L 1,68.
++const FOLLO: GambaViva[] = [
++    gamba({ id: 5085, marketId: '1.35', selectionId: 11, selezione: 'Under 3.5 Goals', lato: 'back',
++        abbinato: 5.0, prezzoMedio: 2.4, dueEsiti: true }),
++    gamba({ id: 5094, marketId: '1.45', selectionId: 21, selezione: 'Under 4.5 Goals', lato: 'lay',
++        abbinato: 6.32, prezzoMedio: 1.76, dueEsiti: true }),
++];
++const LIBRO_FOLLO: Libro = {
++    '1.35|11': { back: 2.46, backSize: 80, lay: 2.56, laySize: 60 },
++    '1.45|21': { back: 1.63, backSize: 90, lay: 1.68, laySize: 70 },
++};
++
++describe('Follo v Sarpsborg: -0,32 e -0,50, totale -0,82', () => {
++    const r = cashOutPartita(FOLLO, opz(LIBRO_FOLLO));
++    it('la cifra della partita e\' la somma esatta delle due gambe', () => {
++        expect(r.live.netto).toBe(-0.82);
++        expect(r.live.lordo).toBe(-0.82);
++        expect(r.live.commissione).toBe(0);
++        expect(r.live.completo).toBe(true);
++        expect(r.live.mancanti).toEqual([]);
++        expect(r.live.nGambe).toBe(2);
++    });
++    it('scomposizione: chiudo banca 4,69 @ 2,56 (-0,32) e punta 6,82 @ 1,63 (-0,50)', () => {
++        const [u35, u45] = r.live.gambe;
++        expect(u35).toMatchObject({ selezione: 'Under 3.5 Goals', lato: 'back', abbinato: 5, prezzoIngresso: 2.4,
++            latoChiusura: 'lay', importoChiusura: 4.69, prezzoChiusura: 2.56, pnl: -0.32, pnlLordo: -0.32,
++            fontePrezzo: 'canale', liquiditaSufficiente: true, stato: 'da_chiudere', bot: ['mike'] });
++        expect(u45).toMatchObject({ selezione: 'Under 4.5 Goals', lato: 'lay', abbinato: 6.32, prezzoIngresso: 1.76,
++            latoChiusura: 'back', importoChiusura: 6.82, prezzoChiusura: 1.63, pnl: -0.5, stato: 'da_chiudere' });
++        expect(u35.etaPrezzoS).toBeCloseTo(0.3, 5);
++        expect(r.live.etaPrezziS).toBeCloseTo(0.3, 5);
++    });
++    it('il paper e\' vuoto e vale 0 (nessuna gamba PROVA)', () => {
++        expect(r.paper.netto).toBe(0);
++        expect(r.paper.nGambe).toBe(0);
++    });
++});
++
++describe('partita PAREGGIATA: una cifra sola ~ +0,05, non due gambe in perdita', () => {
++    // Farul: punta Under 3,5 5,00 @ 2,87 + banca 5,06 @ 2,84 sulla STESSA selezione
++    const g = [
++        gamba({ id: 5091, marketId: '1.9', selectionId: 5, selezione: 'Under 3.5 Goals', lato: 'back', abbinato: 5, prezzoMedio: 2.87 }),
++        gamba({ id: 5092, marketId: '1.9', selectionId: 5, selezione: 'Under 3.5 Goals', lato: 'lay', abbinato: 5.06, prezzoMedio: 2.84 }),
++    ];
++    it('W = 9,35 - 9,31 = 0,04, L = 0,06: chiusura 0,01 @ 2,84 -> +0,05', () => {
++        const r = cashOutPartita(g, opz({ '1.9|5': { back: 2.84, backSize: 30, lay: 2.9, laySize: 30 } }));
++        expect(r.live.gambe).toHaveLength(1);
++        expect(r.live.gambe[0]).toMatchObject({ seVince: 0.04, sePerde: 0.06, importoChiusura: 0.01, pnlLordo: 0.05 });
++        expect(r.live.netto).toBe(0.05);
++        expect(r.live.gambe[0].componenti.map((c) => c.id)).toEqual([5091, 5092]);
++    });
++    it('perfettamente piatta: vale il bloccato senza pretendere un prezzo', () => {
++        const piatta = [
++            gamba({ id: 1, marketId: '1.9', selectionId: 5, lato: 'back', abbinato: 10, prezzoMedio: 2.0 }),
++            gamba({ id: 2, marketId: '1.9', selectionId: 5, lato: 'lay', abbinato: 10, prezzoMedio: 2.0 }),
++        ];
++        const r = cashOutPartita(piatta, opz({}));
++        expect(r.live.gambe[0].stato).toBe('piatta');
++        expect(r.live.netto).toBe(0);
++        expect(r.live.completo).toBe(true);
++    });
++});
++
++describe('FAIL-CLOSED: una gamba viva senza prezzo -> nessuna cifra', () => {
++    it('manca il prezzo di Under 4,5: netto null, completo false, la selezione in mancanti', () => {
++        const r = cashOutPartita(FOLLO, opz({ '1.35|11': LIBRO_FOLLO['1.35|11'] }));
++        expect(r.live.netto).toBeNull();
++        expect(r.live.lordo).toBeNull();
++        expect(r.live.completo).toBe(false);
++        expect(r.live.mancanti).toEqual(['manca il prezzo di Under 4.5 Goals (punta)']);
++        // la gamba che il prezzo ce l'ha resta scomposta, quella senza no
++        expect(r.live.gambe[0].pnl).toBe(-0.32);
++        expect(r.live.gambe[1].stato).toBe('senza_prezzo');
++        expect(r.live.gambe[1].pnl).toBeNull();
++    });
++    it('c\'e\' il lato opposto ma non quello di chiusura: non si inventa', () => {
++        const r = cashOutPartita(FOLLO, opz({ ...LIBRO_FOLLO, '1.45|21': { lay: 1.68, laySize: 50 } }));
++        expect(r.live.netto).toBeNull();
++    });
++    it('mercato SOSPESO: adesso non si chiude, nessuna cifra', () => {
++        const r = cashOutPartita(FOLLO, opz({ ...LIBRO_FOLLO, '1.35|11': { ...LIBRO_FOLLO['1.35|11'], statoMercato: 'SUSPENDED' } }));
++        expect(r.live.netto).toBeNull();
++        expect(r.live.mancanti).toEqual(['mercato SOSPESO per Under 3.5 Goals: adesso non si chiude']);
++    });
++    it('gamba abbinata senza mercato/selezione (riga storica): nessuna cifra', () => {
++        const r = cashOutPartita([...FOLLO, gamba({ id: 77, marketId: null, selectionId: null, selezione: 'Over 4.5',
++            lato: 'back', abbinato: 2, prezzoMedio: 5 })], opz(LIBRO_FOLLO));
++        expect(r.live.netto).toBeNull();
++        expect(r.live.mancanti).toEqual(['mercato/selezione non pubblicati: mike #77 (Over 4.5)']);
++    });
++    it('importo abbinato NON dichiarato: nessuna cifra (non e\' zero)', () => {
++        const r = cashOutPartita([gamba({ id: 9, marketId: '1.9', selectionId: 5, selezione: 'X', lato: 'back',
++            abbinato: null, prezzoMedio: 2 })], opz({}));
++        expect(r.live.netto).toBeNull();
++    });
++    it('gamba NON scomponibile (sessione scalper) abbinata: nessuna cifra, col motivo', () => {
++        const r = cashOutPartita([...FOLLO, gamba({ id: 3, bot: 'scalper', marketId: null, selectionId: null, lato: null,
++            abbinato: 4, prezzoMedio: null, nonScomponibile: 'sessione scalper: esposizioni per selezione non pubblicate alla scheda' })],
++        opz(LIBRO_FOLLO));
++        expect(r.live.netto).toBeNull();
++        expect(r.live.mancanti).toEqual(['scalper #3: sessione scalper: esposizioni per selezione non pubblicate alla scheda']);
++    });
++});
++
++describe('solo l\'ABBINATO e\' una posizione', () => {
++    it('residuo sul book (abbinato 0) non entra; parziale 2 su 5 conta 2', () => {
++        const r = cashOutPartita([
++            gamba({ id: 1, marketId: '1.9', selectionId: 5, selezione: 'U', lato: 'back', abbinato: 0, prezzoMedio: 2.0 }),
++            gamba({ id: 2, marketId: '1.9', selectionId: 6, selezione: 'O', lato: 'back', abbinato: 2, prezzoMedio: 3.0 }),
++        ], opz({ '1.9|6': { back: 2.9, lay: 3.0, laySize: 50 } }));
++        expect(r.live.nGambe).toBe(1);
++        expect(r.live.gambe).toHaveLength(1);
++        // W 4, L -2: banca 2,00 @ 3,00 -> 0,00 / 0,00
++        expect(r.live.gambe[0]).toMatchObject({ importoChiusura: 2, pnlLordo: 0 });
++    });
++});
++
++describe('LIVE e PROVA: due somme, mai una', () => {
++    const prova = gamba({ id: 900, bot: 'safe', modalita: 'paper', marketId: '1.35', selectionId: 11,
++        selezione: 'Under 3.5 Goals', lato: 'back', abbinato: 10, prezzoMedio: 2.2 });
++    const r = cashOutPartita([...FOLLO, prova], opz(LIBRO_FOLLO));
++    it('la gamba PROVA sulla stessa selezione NON tocca il live', () => {
++        expect(r.live.netto).toBe(-0.82);
++        expect(r.live.gambe.flatMap((p) => p.componenti.map((c) => c.id))).toEqual([5085, 5094]);
++    });
++    it('il paper ha la sua cifra: back 10 @ 2,20 chiuso banca 8,59 @ 2,56 -> -1,41', () => {
++        // W 12, L -10: importo 22/2,56 = 8,59; 8,59 x 1,56 = 13,40 -> W2 = -1,40; L2 = -10 + 8,59 = -1,41
++        expect(r.paper.gambe[0]).toMatchObject({ importoChiusura: 8.59, bot: ['safe'] });
++        expect(r.paper.netto).toBe(r2(Math.min(12 - 13.4, -10 + 8.59)));
++        expect(r.paper.netto).toBe(-1.41);
++    });
++    it('modalita\' NON dichiarata: il LIVE non si calcola (potrebbero essere soldi veri)', () => {
++        const x = cashOutPartita([...FOLLO, { ...prova, modalita: null }], opz(LIBRO_FOLLO));
++        expect(x.live.netto).toBeNull();
++        expect(x.live.mancanti).toEqual(['modalita\' non dichiarata: safe #900 (Under 3.5 Goals)']);
++        expect(x.paper.netto).toBe(0);
++    });
++});
++
++describe('commissione per MERCATO sul netto, non per gamba', () => {
++    // mercato a piu' esiti (risultato esatto): A back 10 @ 3,0 -> +2,00;
++    // B back 10 @ 4,0 -> -0,91. Netto mercato 1,09 -> commissione 0,05 -> 1,04.
++    // Per gamba sarebbe 2,00 x 0,95 - 0,91 = 0,99.
++    const g = [
++        gamba({ id: 1, bot: 'omega', marketId: '1.7', selectionId: 1, selezione: '1 - 0', lato: 'back', abbinato: 10, prezzoMedio: 3.0 }),
++        gamba({ id: 2, bot: 'omega', marketId: '1.7', selectionId: 2, selezione: '2 - 1', lato: 'back', abbinato: 10, prezzoMedio: 4.0 }),
++    ];
++    const r = cashOutPartita(g, opz({ '1.7|1': { lay: 2.5, laySize: 100 }, '1.7|2': { lay: 4.4, laySize: 100 } }));
++    it('lordo 1,09, commissione 0,05, netto 1,04', () => {
++        expect(r.live.gambe.map((p) => p.pnlLordo)).toEqual([2, -0.91]);
++        expect(r.live.lordo).toBe(1.09);
++        expect(r.live.commissione).toBe(0.05);
++        expect(r.live.netto).toBe(1.04);
++        expect(r.live.perMercato).toEqual([{ marketId: '1.7', lordo: 1.09, aliquota: 0.05, commissione: 0.05, netto: 1.04 }]);
++    });
++    it('le righe sommano il netto (commissione ripartita sulle selezioni in utile)', () => {
++        expect(r.live.gambe.map((p) => p.pnl)).toEqual([1.95, -0.91]);
++        expect(r2(r.live.gambe.reduce((s, p) => s + (p.pnl ?? 0), 0))).toBe(r.live.netto);
++    });
++    it('aliquote diverse fra le righe: la piu\' alta, dichiarata', () => {
++        const x = cashOutPartita([g[0], { ...g[1], aliquota: 0.02 }],
++            opz({ '1.7|1': { lay: 2.5, laySize: 100 }, '1.7|2': { lay: 4.4, laySize: 100 } }));
++        expect(x.live.commissione).toBe(0.05);
++        expect(x.live.avvisi[0]).toMatch(/aliquote diverse/);
++    });
++});
++
++describe('liquidita\' al miglior prezzo', () => {
++    it('meno dell\'importo di chiusura: la cifra resta, con l\'avviso «caso migliore»', () => {
++        const r = cashOutPartita(FOLLO, opz({ ...LIBRO_FOLLO, '1.35|11': { back: 2.46, lay: 2.56, laySize: 3 } }));
++        expect(r.live.netto).toBe(-0.82);
++        expect(r.live.liquiditaInsufficiente).toBe(true);
++        expect(r.live.gambe[0].liquiditaSufficiente).toBe(false);
++        expect(r.live.avvisi.some((a) => /liquidita' insufficiente.*Under 3.5 Goals.*caso migliore/.test(a))).toBe(true);
++    });
++    it('eta\' ignota di un prezzo: dichiarata', () => {
++        const o = opz(LIBRO_FOLLO);
++        const r = cashOutPartita(FOLLO, { ...o, prezzo: (m, s) => {
++            const p = o.prezzo(m, s);
++            return p && s === 21 ? { ...p, istanteMs: null } : p;
++        } });
++        expect(r.live.etaIgnota).toBe(true);
++        expect(r.live.netto).toBe(-0.82);
++    });
++});
++
++// ===================================================================
++// PARITA' con Betfair/mike/engine.py::cashout_value (commissione 0,05)
++// ===================================================================
++describe('parita\' numerica con engine.cashout_value (test Python, sola lettura)', () => {
++    it('test_mike_engine.py:167-180 - back Under 3,5 20 @ 1,50, lay 1,40: net 1,36; senza libro incompleto', () => {
++        // Python: w,l = (10, -20); locked = -20 + 30/1,40; net = locked * 0,95 (approx 0,02)
++        // engine esatto: size 21,43 -> esiti 1,43 / 1,43 -> gross 1,43, net round(1,3585) = 1,36
++        const g = [gamba({ id: 'e1', marketId: 'OU35', selectionId: 1, selezione: 'Under 3.5', lato: 'back', abbinato: 20, prezzoMedio: 1.5 })];
++        const r = cashOutPartita(g, opz({ 'OU35|1': { back: 1.39, lay: 1.4, laySize: 100 } }));
++        expect(r.live.lordo).toBe(1.43);
++        expect(r.live.netto).toBe(1.36);
++        expect(r.live.completo).toBe(true);
++        const r2x = cashOutPartita(g, opz({}));
++        expect(r2x.live.completo).toBe(false);
++        expect(r2x.live.netto).toBeNull();
++    });
++    it('test_mike_engine_cert_2026_09_12.py:178-187 - Under 3,5 + Over 4,5 (un mercato ciascuno): net 1,31', () => {
++        // engine: OU35 banca 22,90 @ 1,31 -> 2,90; OU45 Over banca 2,56 @ 12,5 -> -1,44;
++        // net = round(2,90 x 0,95 - 1,44) = 1,31
++        const g = [
++            gamba({ id: 'e1', marketId: 'OU35', selectionId: 1, selezione: 'Under 3.5', lato: 'back', abbinato: 20, prezzoMedio: 1.5, dueEsiti: true }),
++            gamba({ id: 'c1', marketId: 'OU45', selectionId: 2, selezione: 'Over 4.5', lato: 'back', abbinato: 4, prezzoMedio: 8.0, dueEsiti: true }),
++        ];
++        const r = cashOutPartita(g, opz({ 'OU35|1': { back: 1.3, lay: 1.31, laySize: 100 }, 'OU45|2': { back: 12.0, lay: 12.5, laySize: 100 } }));
++        expect(r.live.gambe.map((p) => [p.importoChiusura, p.pnlLordo])).toEqual([[22.9, 2.9], [2.56, -1.44]]);
++        expect(r.live.netto).toBe(1.31);
++    });
++    it('test_mike_engine_cert_2026_09_12.py:164-174 - Over 4,5 + Under 4,5 sullo STESSO mercato: una chiave, net 1,81', () => {
++        // engine P5: exposure(UNDER) = (0, 18) -> chiave OVER (18, 0), banca 1,91 @ 9,4
++        // -> esiti 1,96 / 1,91 -> gross 1,91 -> net round(1,91 x 0,95) = 1,81
++        const g = [
++            gamba({ id: 'c1', marketId: 'OU45', selectionId: 2, selezione: 'Over 4.5', lato: 'back', abbinato: 4, prezzoMedio: 8.0, dueEsiti: true }),
++            gamba({ id: 'r1', marketId: 'OU45', selectionId: 1, selezione: 'Under 4.5', lato: 'back', abbinato: 10, prezzoMedio: 1.4, dueEsiti: true }),
++        ];
++        const r = cashOutPartita(g, opz({ 'OU45|2': { back: 9.0, lay: 9.4, laySize: 100 }, 'OU45|1': { back: 1.3, lay: 1.32, laySize: 100 } }));
++        expect(r.live.gambe).toHaveLength(1);
++        expect(r.live.gambe[0]).toMatchObject({ selectionId: 2, seVince: 18, sePerde: 0, latoChiusura: 'lay',
++            importoChiusura: 1.91, prezzoChiusura: 9.4, pnlLordo: 1.91 });
++        expect(r.live.netto).toBe(1.81);
++    });
++    it('test_mike_engine_cert_2026_09_12.py:303-316 - Under 3,5 gia\' PERSA (4 gol, linea potata): completo, net -8,75', () => {
++        // engine C2: Under 3,5 decisa = -20 senza prezzo; Over banca 15,84 @ 2,02 -> 11,84;
++        // net = -20 + 11,84 x 0,95 = -8,752 -> -8,75
++        const g = [
++            gamba({ id: 'e1', marketId: 'OU35', selectionId: 1, selezione: 'Under 3.5', lato: 'back', abbinato: 20, prezzoMedio: 1.5 }),
++            gamba({ id: 'c1', marketId: 'OU45', selectionId: 2, selezione: 'Over 4.5', lato: 'back', abbinato: 4, prezzoMedio: 8.0 }),
++        ];
++        const r = cashOutPartita(g, opz({ 'OU45|2': { back: 2.0, lay: 2.02, laySize: 100 } }, {
++            esitoDeciso: (m, s) => (m === 'OU35' && s === 1 ? false : null),
++        }));
++        expect(r.live.completo).toBe(true);
++        expect(r.live.gambe[0]).toMatchObject({ stato: 'decisa', pnlLordo: -20 });
++        expect(r.live.gambe[1]).toMatchObject({ importoChiusura: 15.84, pnlLordo: 11.84 });
++        expect(r.live.netto).toBe(-8.75);
++    });
++});
++
++// ===================================================================
++// DALLE RIGHE DELLA SCHEDA (OperazionePartita VERA, stesse chiavi)
++// ===================================================================
++function op(p: Partial<OperazionePartita> & Pick<OperazionePartita, 'id' | 'bot'>): OperazionePartita {
++    return {
++        selezione: null, lato: 'back', prezzo: 2, size: 5, stato: 'open', pnl: null, modalita: 'live',
++        at: '2026-09-30T14:00:00.000Z', quale: null,
++        ordine: { status: 'open', side: 'back', price: 2, size: 5, size_requested: 5, size_matched: 5,
++            size_remaining: 0, avg_price_matched: 2, betfair_updated_at: null, meta: null },
++        dettaglio: null, marketId: null, selectionId: null, liability: null, vivo: null, etaQuoteS: null,
++        chiusura: null, chiusureOrdini: [], eventId: '35001', chiudeId: null,
++        ...p,
++    };
++}
++const ordine = (side: 'back' | 'lay', price: number, chiesto: number, abbinato: number | null, status = 'open'): OperazionePartita['ordine'] => ({
++    status, side, price, size: chiesto, size_requested: chiesto, size_matched: abbinato,
++    size_remaining: abbinato == null ? null : Math.max(0, chiesto - abbinato),
++    avg_price_matched: abbinato ? price : null, betfair_updated_at: null, meta: null,
++});
++const alMs = (aliquota: number): OperazionePartita['chiusura'] => ({
++    lato: 'lay', prezzo: null, abbinabile: null, bloccabile: null,
++    alMs: { win: 0, lose: 0, marketId: null, selectionId: null, sport: 'calcio', istanteScannerMs: null,
++        scanner: { back: null, backSize: null, lay: null, laySize: null }, aliquota },
++});
++
++describe('gambeDaOperazioni: le righe della scheda di TUTTI i bot', () => {
++    // Follo: la punta Under 3,5 con due tentativi di green-up MAI abbinati
++    // (righe `error`, ritirate da Mike) + la banca Under 4,5 di copertura
++    const follo: OperazionePartita[] = [
++        op({ id: 5085, bot: 'mike', selezione: 'Under 3.5 Goals', lato: 'back', marketId: '1.35', selectionId: 11,
++            ordine: ordine('back', 2.4, 5, 5), chiusura: alMs(0.05),
++            chiusureOrdini: [ordine('lay', 2.36, 5.08, 0, 'error'), ordine('lay', 2.36, 5.08, null, 'error')] }),
++        op({ id: 5094, bot: 'mike', selezione: 'Under 4.5 Goals', lato: 'lay', marketId: '1.45', selectionId: 21,
++            ordine: ordine('lay', 1.76, 6.32, 6.32), chiusura: alMs(0.05) }),
++    ];
++    it('Follo: i tentativi mai abbinati non contano, cifra -0,82', () => {
++        const g = gambeDaOperazioni(follo);
++        expect(g.map((x) => x.id)).toEqual([5085, 5094]);
++        expect(cashOutPartita(g, opz(LIBRO_FOLLO)).live.netto).toBe(-0.82);
++    });
++    it('Farul: la chiusura (green) con i SUOI id netta l\'apertura: +0,05', () => {
++        const farul = op({ id: 5091, bot: 'mike', selezione: 'Under 3.5 Goals', lato: 'back', marketId: '1.9', selectionId: 5,
++            ordine: ordine('back', 2.87, 5, 5), chiusura: alMs(0.05),
++            chiusureOrdini: [ordine('lay', 2.84, 5.06, 5.06)] });
++        const conId = { ...farul, chiusureGambe: [{ id: 5092, marketId: '1.9', selectionId: 5 }] };
++        const r = cashOutPartita(gambeDaOperazioni([conId]), opz({ '1.9|5': { back: 2.84, lay: 2.9, laySize: 30 } }));
++        expect(r.live.netto).toBe(0.05);
++        expect(r.live.gambe[0].componenti.map((c) => c.id)).toEqual([5091, 5092]);
++    });
++    it('Farul SENZA gli id della chiusura (oggi la pagina non li porta): NON calcolabile, lo dice', () => {
++        const farul = op({ id: 5091, bot: 'mike', selezione: 'Under 3.5 Goals', lato: 'back', marketId: '1.9', selectionId: 5,
++            ordine: ordine('back', 2.87, 5, 5), chiusureOrdini: [ordine('lay', 2.84, 5.06, 5.06)] });
++        const r = cashOutPartita(gambeDaOperazioni([farul]), opz({ '1.9|5': { back: 2.84, lay: 2.9, laySize: 30 } }));
++        expect(r.live.netto).toBeNull();
++        expect(r.live.mancanti).toEqual(['mercato/selezione non pubblicati: mike #5091/chiusura 1 (selezione ignota)']);
++    });
++    it('riga REGOLATA fuori; parziale conta l\'abbinato; PROVA nella sua somma; scalper dichiarato', () => {
++        const g = gambeDaOperazioni([
++            op({ id: 1, bot: 'safe', marketId: '1.9', selectionId: 5, ordine: ordine('back', 2, 5, 5, 'won') }),
++            op({ id: 2, bot: 'omega', marketId: '1.7', selectionId: 1, ordine: ordine('back', 3, 5, 2, 'pending') }),
++            op({ id: 3, bot: 'safe', modalita: 'paper', marketId: '1.9', selectionId: 5, ordine: ordine('back', 2, 5, 5) }),
++            op({ id: 4, bot: 'scalper', lato: null, ordine: { ...ordine('back', 2, 5, 5), side: null } }),
++        ]);
++        expect(g.map((x) => x.id)).toEqual([2, 3, 4]);
++        expect(g[0].abbinato).toBe(2);
++        expect(g[1].modalita).toBe('paper');
++        expect(g[2].nonScomponibile).toMatch(/scalper/);
++    });
++    it('aliquota dalla riga (P11: chiusura.alMs.aliquota) e mercato a due esiti dal chiamante', () => {
++        const g = gambeDaOperazioni(follo, { dueEsiti: (m) => m === '1.45' });
++        expect(g.map((x) => [x.aliquota, x.dueEsiti])).toEqual([[0.05, false], [0.05, true]]);
++    });
++});
++
++describe('r2: il centesimo come Betfair', () => {
++    it('meta\' centesimo e segni', () => {
++        expect(r2(0.145)).toBe(0.15);
++        expect(r2(-0.5066)).toBe(-0.51);
++        expect(r2(0.0025)).toBe(0);
++        expect(r2(7.3164)).toBe(7.32);
++        expect(r2(-4.8032)).toBe(-4.8);
++    });
++});
+diff --git a/frontend/src/lib/cashOutPartita.ts b/frontend/src/lib/cashOutPartita.ts
+new file mode 100644
+index 0000000..f6fa9da
+--- /dev/null
++++ b/frontend/src/lib/cashOutPartita.ts
+@@ -0,0 +1,546 @@
++// ============================================================================
++// cashOutPartita.ts - 30/09 (P12a, blocco B12 del monitor veritiero).
++// IL CASH OUT DELLA PARTITA: quanto guadagno/perdo SE CHIUDO TUTTO ADESSO.
++// Parte PURA: niente React, niente I/O.
++//
++// Ordine dell'utente (30/09): «deve fare la somma di tutte le operazioni che
++// ci sono ora e darmi il valore esatto di quando guadagno/perdo chiudendo
++// tutto in quello specifico momento». Prima la scheda diceva «nessuna
++// posizione viva del bot» (contava solo Safe) con due gambe vive di Mike.
++//
++// MATEMATICA: porting di `Betfair/mike/engine.py::cashout_value` (:933-1005)
++// e di `Betfair/stream/trading/greenup.py::compute_greenup` (:118-247), la
++// stessa gia' rispecchiata in `components/trading/CashOutButton.tsx`
++// (`hedgeSide`/`partialLockedPnl`). Nessuna terza formula:
++//   1. solo l'ABBINATO e' una posizione (il residuo sul book no);
++//   2. l'esposizione si raggruppa per (mercato, selezione), NON per riga, e
++//      per TUTTI i bot della stessa modalita': gambe che si compensano si
++//      nettano (una partita pareggiata vale ~0, non due gambe in perdita);
++//      su un mercato a DUE esiti con gambe su entrambe le selezioni la gamba
++//      sull'altra selezione pesa rovesciata (engine.exposure :680-715) e la
++//      chiave e' la selezione LUNGA (engine._chiave_ou45 :795-798);
++//   3. green-up PIENO al miglior prezzo corrente del lato opposto:
++//      W > L -> banca al miglior lay, W <= L -> punta al miglior back;
++//      importo = round(|W - L| / p, 2) (greenup._hedge_size :109-111);
++//      esiti dopo la chiusura, P&L bloccato = il peggiore dei due;
++//   4. commissione per MERCATO sul netto positivo (engine :978-992), ripartita
++//      pro-rata sulle selezioni in utile, residuo di arrotondamento sulla
++//      selezione di peso maggiore (engine :993-1002);
++//   5. FAIL-CLOSED (engine `complete=false` :966-968): se anche UNA selezione
++//      viva non ha prezzo -> nessuna cifra (`netto: null`), `mancanti` dice
++//      quale. Una somma monca sarebbe una bugia.
++// Arrotondamenti come Betfair: profitto di OGNI scommessa al centesimo
++// (anche l'ordine di chiusura), commissione = round(aliquota x netto del
++// mercato, 2). Sulle cifre dei test Python i numeri coincidono con l'engine
++// (tabella nel referto C_P12a.md).
++//
++// LIVE e PAPER sono due somme separate, mai una: una gamba PROVA non entra
++// mai nel live, e una gamba con modalita' NON dichiarata rende il live non
++// calcolabile (non si sa se sono soldi veri).
++//
++// DIFFERENZE DICHIARATE rispetto all'engine di Mike (nel referto):
++//   * una selezione PIATTA (|W - L| < 0,01) qui vale il suo bloccato
++//     min(W, L) (l'engine la esclude: per lui non c'e' niente da chiudere; per
++//     il trader quel +0,05 e' denaro della partita);
++//   * una chiusura che arrotondata al centesimo varrebbe 0,00 (|W-L|/p <
++//     0,005): qui vale min(W, L) con `residuoNonPiazzabile` (l'engine la
++//     rende incompleta);
++//   * la copertura come BANCA di apertura su una sola selezione (Mike, banca
++//     Under 4,5) qui si chiude PUNTANDO la stessa selezione (come il «chiudi
++//     ora» della riga); Mike la chiude bancando l'Over 4,5 (engine
++//     _chiave_ou45 :788-792). Stesso rischio tolto, prezzo di un altro libro:
++//     le due cifre possono differire di qualche centesimo.
++// ============================================================================
++import type { FontePrezzo, PrezzoScheda } from '@/lib/schedaAlMs';
++import { statoOrdine, type RigaOrdine } from '@/lib/statoOrdine';
++
++/** Sotto 1 centesimo di sbilancio la selezione e' piatta (greenup.FLAT_EPS). */
++export const PIATTO_EPS = 0.01;
++/** Sotto mezzo centesimo un abbinato non esiste (statoOrdine.EPS). */
++const ABBINATO_EPS = 0.005;
++/** L'aliquota quando la gamba non la porta (`useControlRoom.aliquotaDi`). */
++export const ALIQUOTA_DI_RIPIEGO_PARTITA = 0.05;
++
++/** Arrotondamento al centesimo, simmetrico sul segno, robusto sui float
++ *  (0,145 -> 0,15; -0,5066 -> -0,51). */
++export function r2(x: number): number {
++    const s = x < 0 ? -1 : 1;
++    return (s * Math.round(Math.abs(x) * 100 + 1e-7)) / 100;
++}
++
++/** Una gamba ABBINATA (o parzialmente abbinata) di un bot sulla partita. */
++export interface GambaViva {
++    /** id della riga del bot (per la scomposizione) */
++    id: number | string;
++    bot: string;
++    /** null = non dichiarata: rende il LIVE non calcolabile (fail-closed) */
++    modalita: 'live' | 'paper' | null;
++    marketId: string | null;
++    selectionId: number | null;
++    /** nome della selezione, per il trader */
++    selezione: string | null;
++    lato: 'back' | 'lay' | null;
++    /** importo ABBINATO (null = non dichiarato) */
++    abbinato: number | null;
++    /** prezzo MEDIO abbinato (null = non dichiarato) */
++    prezzoMedio: number | null;
++    /** aliquota della riga (0,05 o 5); null = ripiego 5 % */
++    aliquota: number | null;
++    /** true = mercato a DUE esiti (Over/Under, testa a testa tennis) */
++    dueEsiti?: boolean;
++    /** una gamba che la pagina NON sa scomporre (es. sessione scalper): il
++     *  motivo va in `mancanti` se e' abbinata */
++    nonScomponibile?: string | null;
++}
++
++/** Una componente della posizione (la gamba come la ha fatta il bot). */
++export interface ComponenteCashOut {
++    id: number | string;
++    bot: string;
++    lato: 'back' | 'lay';
++    abbinato: number;
++    prezzo: number;
++    selectionId: number;
++    selezione: string | null;
++}
++
++export type StatoPosizione = 'da_chiudere' | 'piatta' | 'decisa' | 'senza_prezzo' | 'mercato_non_aperto';
++
++/** Una posizione per (mercato, selezione): cio' che si chiude con UN ordine. */
++export interface PosizioneCashOut {
++    chiave: string;
++    marketId: string;
++    selectionId: number;
++    selezione: string | null;
++    /** bot presenti nella posizione (uno o piu') */
++    bot: string[];
++    componenti: ComponenteCashOut[];
++    /** lato/abbinato/prezzo d'ingresso quando la posizione e' UNA gamba sola */
++    lato: 'back' | 'lay' | null;
++    abbinato: number | null;
++    prezzoIngresso: number | null;
++    /** P&L se la selezione vince / perde (al centesimo, come Betfair) */
++    seVince: number;
++    sePerde: number;
++    latoChiusura: 'back' | 'lay' | null;
++    importoChiusura: number | null;
++    prezzoChiusura: number | null;
++    /** P&L bloccato LORDO; null = non calcolabile */
++    pnlLordo: number | null;
++    /** P&L bloccato NETTO (quota della commissione del suo mercato) */
++    pnl: number | null;
++    fontePrezzo: FontePrezzo | null;
++    etaPrezzoS: number | null;
++    /** euro disponibili al prezzo di chiusura */
++    abbinabile: number | null;
++    /** il miglior prezzo copre l'importo di chiusura? null = non si sa */
++    liquiditaSufficiente: boolean | null;
++    residuoNonPiazzabile: boolean;
++    stato: StatoPosizione;
++}
++
++export interface MercatoCashOut {
++    marketId: string;
++    lordo: number | null;
++    aliquota: number;
++    commissione: number | null;
++    netto: number | null;
++}
++
++export interface CashOutModalita {
++    /** NETTO di commissione se chiudo TUTTO adesso; null = NON CALCOLABILE */
++    netto: number | null;
++    lordo: number | null;
++    commissione: number | null;
++    completo: boolean;
++    /** perche' non e' calcolabile, una frase per selezione/gamba */
++    mancanti: string[];
++    /** avvisi che NON tolgono la cifra (liquidita', aliquote diverse) */
++    avvisi: string[];
++    gambe: PosizioneCashOut[];
++    perMercato: MercatoCashOut[];
++    /** eta' del prezzo PIU' VECCHIO usato (s); null = ignota o nessun prezzo */
++    etaPrezziS: number | null;
++    /** almeno un prezzo usato ha eta' ignota */
++    etaIgnota: boolean;
++    /** almeno una chiusura supera la liquidita' al miglior prezzo */
++    liquiditaInsufficiente: boolean;
++    /** quante gambe ABBINATE (righe dei bot) sono entrate */
++    nGambe: number;
++}
++
++export interface CashOutPartitaRisultato {
++    live: CashOutModalita;
++    paper: CashOutModalita;
++}
++
++export interface OpzioniCashOut {
++    /** prezzo corrente della selezione (ladder al ms o scanner, dichiarato) */
++    prezzo: (marketId: string, selectionId: number) => PrezzoScheda | null;
++    nowMs: number;
++    /** esito GIA' certo della selezione (linea superata dai gol, engine C2):
++     *  true vinta, false persa, null in gioco. Assente = nessuna decisa. */
++    esitoDeciso?: (marketId: string, selectionId: number) => boolean | null;
++}
++
++const valido = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
++const quotaValida = (v: unknown): number | null => (valido(v) && v > 1 ? v : null);
++
++function aliquotaDi(g: GambaViva): number {
++    const a = g.aliquota;
++    if (!valido(a) || a <= 0) return ALIQUOTA_DI_RIPIEGO_PARTITA;
++    return a > 1 ? a / 100 : a;
++}
++
++function nomeSel(g: { selezione: string | null; selectionId: number | null }): string {
++    return g.selezione ?? (g.selectionId != null ? `selezione ${g.selectionId}` : 'selezione ignota');
++}
++
++/** Profitto della scommessa quando VINCE la selezione su cui e' fatta, al
++ *  centesimo (Betfair regola ogni scommessa al centesimo). */
++const vincitaPunta = (s: number, p: number) => r2(s * (p - 1));
++
++/** Esposizione (W, L) della selezione `sel` dalle componenti del mercato:
++ *  una gamba sull'ALTRA selezione (mercato a due esiti) pesa rovesciata. */
++function esposizione(componenti: readonly ComponenteCashOut[], sel: number): { w: number; l: number } {
++    let w = 0;
++    let l = 0;
++    for (const c of componenti) {
++        const vinc = vincitaPunta(c.abbinato, c.prezzo);
++        if (c.selectionId === sel) {
++            if (c.lato === 'back') { w += vinc; l -= c.abbinato; } else { w -= vinc; l += c.abbinato; }
++        } else if (c.lato === 'back') {
++            w -= c.abbinato; l += vinc;
++        } else {
++            w += c.abbinato; l -= vinc;
++        }
++    }
++    return { w: r2(w), l: r2(l) };
++}
++
++function vuoto(): CashOutModalita {
++    return {
++        netto: 0, lordo: 0, commissione: 0, completo: true, mancanti: [], avvisi: [], gambe: [],
++        perMercato: [], etaPrezziS: null, etaIgnota: false, liquiditaInsufficiente: false, nGambe: 0,
++    };
++}
++
++/** Il cash out di UNA modalita' (le gambe sono gia' filtrate per modalita'). */
++function calcolaModalita(gambe: readonly GambaViva[], o: OpzioniCashOut, extraMancanti: string[]): CashOutModalita {
++    const out = vuoto();
++    out.mancanti.push(...extraMancanti);
++    // 1. solo l'ABBINATO, con mercato, selezione, lato e prezzo medio dichiarati
++    const perMercato = new Map<string, { componenti: ComponenteCashOut[]; aliquote: Set<number>; dueEsiti: boolean }>();
++    for (const g of gambe) {
++        const a = g.abbinato;
++        if (g.nonScomponibile) {
++            if (a == null || a > ABBINATO_EPS) out.mancanti.push(`${g.bot} #${g.id}: ${g.nonScomponibile}`);
++            continue;
++        }
++        if (a == null || !valido(a)) {
++            out.mancanti.push(`importo abbinato non dichiarato: ${g.bot} #${g.id} (${nomeSel(g)})`);
++            continue;
++        }
++        if (a <= ABBINATO_EPS) continue;      // residuo sul book: non e' una posizione
++        const p = quotaValida(g.prezzoMedio);
++        if (p == null) {
++            out.mancanti.push(`prezzo abbinato non dichiarato: ${g.bot} #${g.id} (${nomeSel(g)})`);
++            continue;
++        }
++        if (!g.marketId || g.selectionId == null || !valido(Number(g.selectionId))) {
++            out.mancanti.push(`mercato/selezione non pubblicati: ${g.bot} #${g.id} (${nomeSel(g)})`);
++            continue;
++        }
++        if (g.lato !== 'back' && g.lato !== 'lay') {
++            out.mancanti.push(`lato non dichiarato: ${g.bot} #${g.id} (${nomeSel(g)})`);
++            continue;
++        }
++        out.nGambe += 1;
++        const m = perMercato.get(g.marketId) ?? { componenti: [], aliquote: new Set<number>(), dueEsiti: false };
++        m.componenti.push({
++            id: g.id, bot: g.bot, lato: g.lato, abbinato: r2(a), prezzo: p,
++            selectionId: Number(g.selectionId), selezione: g.selezione,
++        });
++        m.aliquote.add(aliquotaDi(g));
++        m.dueEsiti = m.dueEsiti || g.dueEsiti === true;
++        perMercato.set(g.marketId, m);
++    }
++
++    let lordoTot = 0;
++    let commTot = 0;
++    let nettoTot = 0;
++    let etaMax: number | null = null;
++    for (const [marketId, m] of perMercato) {
++        // aliquota del mercato: se le righe non concordano si usa la PIU' ALTA
++        // (prudente: la cifra non si gonfia) e lo si dice
++        const aliquote = Array.from(m.aliquote);
++        const aliquota = Math.max(...aliquote);
++        if (aliquote.length > 1) {
++            out.avvisi.push(`mercato ${marketId}: aliquote diverse fra le righe (${aliquote.map((x) => `${r2(x * 100)} %`).join(', ')}), usata la piu' alta`);
++        }
++        // 2. le chiavi del mercato: una per selezione; su un mercato a due
++        //    esiti con gambe su entrambe, UNA chiave (la selezione lunga)
++        const selezioni = Array.from(new Set(m.componenti.map((c) => c.selectionId))).sort((x, y) => x - y);
++        const chiavi: { sel: number; w: number; l: number; comp: ComponenteCashOut[] }[] = [];
++        if (m.dueEsiti && selezioni.length === 2) {
++            const [a, b] = selezioni;
++            const ea = esposizione(m.componenti, a);
++            // W_b = L_a, L_b = W_a: in un mercato a due esiti b vince se a perde
++            if (ea.w - ea.l >= 0) chiavi.push({ sel: a, w: ea.w, l: ea.l, comp: m.componenti });
++            else chiavi.push({ sel: b, w: ea.l, l: ea.w, comp: m.componenti });
++        } else {
++            for (const s of selezioni) {
++                const comp = m.componenti.filter((c) => c.selectionId === s);
++                const e = esposizione(comp, s);
++                chiavi.push({ sel: s, w: e.w, l: e.l, comp });
++            }
++        }
++        const posizioni: PosizioneCashOut[] = [];
++        let lordoMercato: number | null = 0;
++        for (const k of chiavi) {
++            const uno = k.comp.length === 1 ? k.comp[0] : null;
++            const pos: PosizioneCashOut = {
++                chiave: `${marketId}|${k.sel}`, marketId, selectionId: k.sel,
++                // il nome della selezione CHIAVE; se nessuna gamba e' su quella
++                // (mercato a due esiti) il nome non si inventa: null
++                selezione: k.comp.find((c) => c.selectionId === k.sel)?.selezione ?? null,
++                bot: Array.from(new Set(k.comp.map((c) => c.bot))),
++                componenti: k.comp,
++                lato: uno ? uno.lato : null, abbinato: uno ? uno.abbinato : null,
++                prezzoIngresso: uno ? uno.prezzo : null,
++                seVince: k.w, sePerde: k.l,
++                latoChiusura: null, importoChiusura: null, prezzoChiusura: null,
++                pnlLordo: null, pnl: null, fontePrezzo: null, etaPrezzoS: null,
++                abbinabile: null, liquiditaSufficiente: null, residuoNonPiazzabile: false,
++                stato: 'da_chiudere',
++            };
++            const nomeTrader = pos.selezione ?? `selezione ${k.sel}`;
++            const deciso = o.esitoDeciso?.(marketId, k.sel) ?? null;
++            const d = k.w - k.l;
++            if (deciso !== null) {
++                // engine C2: esito gia' certo, vale W o L senza prezzo
++                pos.stato = 'decisa';
++                pos.pnlLordo = deciso ? k.w : k.l;
++            } else if (Math.abs(d) < PIATTO_EPS) {
++                pos.stato = 'piatta';
++                pos.pnlLordo = r2(Math.min(k.w, k.l));
++            } else {
++                const lato: 'back' | 'lay' = d > 0 ? 'lay' : 'back';
++                pos.latoChiusura = lato;
++                const pz = o.prezzo(marketId, k.sel);
++                const prezzo = pz ? quotaValida(lato === 'lay' ? pz.lay : pz.back) : null;
++                const statoM = pz?.statoMercato ? String(pz.statoMercato).toUpperCase() : null;
++                if (statoM && statoM !== 'OPEN') {
++                    pos.stato = 'mercato_non_aperto';
++                    out.mancanti.push(`mercato ${statoM === 'SUSPENDED' ? 'SOSPESO' : statoM === 'CLOSED' ? 'CHIUSO' : statoM} per ${nomeTrader}: adesso non si chiude`);
++                } else if (prezzo == null || !pz) {
++                    pos.stato = 'senza_prezzo';
++                    out.mancanti.push(`manca il prezzo di ${nomeTrader} (${lato === 'lay' ? 'banca' : 'punta'})`);
++                } else {
++                    const importo = r2(Math.abs(d) / prezzo);
++                    pos.prezzoChiusura = prezzo;
++                    pos.fontePrezzo = pz.fonte;
++                    pos.etaPrezzoS = pz.istanteMs == null ? null : Math.max(0, (o.nowMs - pz.istanteMs) / 1000);
++                    if (pos.etaPrezzoS == null) out.etaIgnota = true;
++                    else etaMax = etaMax == null ? pos.etaPrezzoS : Math.max(etaMax, pos.etaPrezzoS);
++                    if (importo <= 0) {
++                        // la chiusura arrotondata al centesimo vale 0,00: non si piazza
++                        pos.stato = 'piatta';
++                        pos.residuoNonPiazzabile = true;
++                        pos.pnlLordo = r2(Math.min(k.w, k.l));
++                    } else {
++                        pos.importoChiusura = importo;
++                        const vinc = vincitaPunta(importo, prezzo);
++                        const w2 = lato === 'lay' ? r2(k.w - vinc) : r2(k.w + vinc);
++                        const l2 = lato === 'lay' ? r2(k.l + importo) : r2(k.l - importo);
++                        pos.pnlLordo = Math.min(w2, l2);
++                        const abb = lato === 'lay' ? pz.laySize : pz.backSize;
++                        pos.abbinabile = valido(abb) ? abb : null;
++                        pos.liquiditaSufficiente = pos.abbinabile == null ? null : pos.abbinabile + 1e-9 >= importo;
++                        if (pos.liquiditaSufficiente === false) {
++                            out.liquiditaInsufficiente = true;
++                            out.avvisi.push(`liquidita' insufficiente al miglior prezzo per ${nomeTrader}: ${r2(pos.abbinabile ?? 0)} disponibili su ${importo} da chiudere - la cifra e' il caso migliore`);
++                        }
++                    }
++                }
++            }
++            if (pos.pnlLordo == null) lordoMercato = null;
++            else if (lordoMercato != null) lordoMercato = r2(lordoMercato + pos.pnlLordo);
++            posizioni.push(pos);
++        }
++        // 4. commissione per MERCATO sul netto positivo, ripartita pro-rata
++        const merc: MercatoCashOut = { marketId, lordo: lordoMercato, aliquota, commissione: null, netto: null };
++        if (lordoMercato != null) {
++            const comm = lordoMercato > 0 ? r2(aliquota * lordoMercato) : 0;
++            merc.commissione = comm;
++            merc.netto = r2(lordoMercato - comm);
++            const positivi = posizioni.reduce((s, p) => s + (p.pnlLordo != null && p.pnlLordo > 0 ? p.pnlLordo : 0), 0);
++            for (const p of posizioni) {
++                const quota = p.pnlLordo != null && p.pnlLordo > 0 && positivi > 0 ? comm * (p.pnlLordo / positivi) : 0;
++                p.pnl = p.pnlLordo == null ? null : r2(p.pnlLordo - quota);
++            }
++            // il residuo di arrotondamento sulla posizione di peso maggiore:
++            // la somma delle righe fa il netto del mercato (engine :993-1002)
++            const somma = r2(posizioni.reduce((s, p) => s + (p.pnl ?? 0), 0));
++            const scarto = r2(merc.netto - somma);
++            if (scarto !== 0 && posizioni.length > 0) {
++                const pesante = posizioni.reduce((a, b) => (Math.abs(b.pnl ?? 0) > Math.abs(a.pnl ?? 0) ? b : a));
++                pesante.pnl = r2((pesante.pnl ?? 0) + scarto);
++            }
++            lordoTot += lordoMercato;
++            commTot += comm;
++            nettoTot += merc.netto;
++        }
++        out.perMercato.push(merc);
++        out.gambe.push(...posizioni);
++    }
++    out.etaPrezziS = etaMax;
++    out.completo = out.mancanti.length === 0;
++    if (out.completo) {
++        out.lordo = r2(lordoTot);
++        out.commissione = r2(commTot);
++        out.netto = r2(nettoTot);
++    } else {
++        out.lordo = null;
++        out.commissione = null;
++        out.netto = null;
++    }
++    return out;
++}
++
++/**
++ * IL CASH OUT DELLA PARTITA, separato per LIVE e PAPER. `gambe` = tutte le
++ * gambe dei bot sulla partita (aperture E chiusure non ancora regolate, di
++ * qualunque bot); qui si tengono solo quelle abbinate.
++ */
++export function cashOutPartita(gambe: readonly GambaViva[], o: OpzioniCashOut): CashOutPartitaRisultato {
++    const live = gambe.filter((g) => g.modalita === 'live');
++    const paper = gambe.filter((g) => g.modalita === 'paper');
++    const ignote = gambe.filter((g) => g.modalita !== 'live' && g.modalita !== 'paper'
++        && !(g.abbinato != null && valido(g.abbinato) && g.abbinato <= ABBINATO_EPS));
++    // fail-closed: una gamba abbinata senza modalita' potrebbe essere di soldi
++    // veri: il LIVE non si calcola finche' non e' dichiarata
++    const manc = ignote.map((g) => `modalita' non dichiarata: ${g.bot} #${g.id} (${nomeSel(g)})`);
++    return {
++        live: calcolaModalita(live, o, manc),
++        paper: calcolaModalita(paper, o, []),
++    };
++}
++
++// ============================================================================
++// DALLE RIGHE DELLA SCHEDA ALLE GAMBE. Forma strutturale di `OperazionePartita`
++// (`components/controlroom/useControlRoom.ts`): solo i campi che servono, cosi'
++// questo file resta puro e senza dipendenze dal modello di vista.
++// ============================================================================
++
++/** Gli identificativi di una gamba di CHIUSURA (`closes_trade_id`), nello
++ *  stesso ordine di `chiusureOrdini`. OGGI la pagina NON li riceve
++ *  (`useControlRoom.agg` tiene solo `ordineDi(c)`): senza, una chiusura
++ *  abbinata rende la partita NON CALCOLABILE (non si indovina la selezione:
++ *  la chiusura di Mike della copertura banca Under 4,5 sta sull'OVER 4,5). */
++export interface IdGambaChiusura {
++    id: number | null;
++    marketId: string | null;
++    selectionId: number | null;
++}
++
++export interface OperazionePerCashOut {
++    bot: string;
++    id: number;
++    selezione: string | null;
++    lato: 'back' | 'lay' | null;
++    modalita: 'live' | 'paper' | null;
++    marketId: string | null;
++    selectionId: number | null;
++    ordine: RigaOrdine;
++    chiusureOrdini: RigaOrdine[];
++    chiusura: { alMs?: { aliquota?: number | null } | undefined } | null;
++    /** opzionale finche' la pagina non lo porta (v. `IdGambaChiusura`) */
++    chiusureGambe?: (IdGambaChiusura | null)[];
++}
++
++function latoDi(side: unknown): 'back' | 'lay' | null {
++    const s = String(side ?? '').toLowerCase();
++    return s === 'back' ? 'back' : s === 'lay' ? 'lay' : null;
++}
++
++/** Una riga (o una sua chiusura) come gamba; null = regolata (non e' viva). */
++function gambaDaOrdine(args: {
++    id: number | string; bot: string; modalita: 'live' | 'paper' | null;
++    marketId: string | null; selectionId: number | null; selezione: string | null;
++    lato: 'back' | 'lay' | null; ordine: RigaOrdine; aliquota: number | null;
++    dueEsiti: boolean;
++}): GambaViva | null {
++    const so = statoOrdine(args.ordine);
++    if (so.esito === 'regolato') return null;
++    // una riga `error` (tentativo mai abbinato: ritirato dal bot, rifiutato da
++    // Betfair) o un rifiuto non e' una posizione: SOLO se non ha abbinato
++    // niente. Con abbinato > 0 dichiarato conta: e' denaro sul mercato.
++    const stato = String(args.ordine.status ?? '').toLowerCase();
++    const abb = so.abbinato.valore;
++    if ((stato === 'error' || so.esito === 'rifiutato') && !(abb != null && abb > ABBINATO_EPS)) return null;
++    const g: GambaViva = {
++        id: args.id, bot: args.bot, modalita: args.modalita,
++        marketId: args.marketId, selectionId: args.selectionId, selezione: args.selezione,
++        lato: args.lato, abbinato: so.abbinato.valore, prezzoMedio: so.prezzoMedio.valore,
++        aliquota: args.aliquota, dueEsiti: args.dueEsiti,
++    };
++    // esito IGNOTO su Betfair: l'ordine potrebbe essere abbinato per intero
++    if (so.esito === 'riconciliazione') {
++        g.nonScomponibile = 'esito dell\'ordine ignoto su Betfair (in riconciliazione)';
++        g.abbinato = null;
++    }
++    return g;
++}
++
++/**
++ * Le gambe della partita dalle righe della scheda, di TUTTI i bot:
++ *  - l'apertura con l'abbinato e il prezzo medio dichiarati (`statoOrdine`);
++ *  - le sue chiusure (`chiusureOrdini`), che la NETTANO (partita pareggiata
++ *    ~0), con i LORO mercato/selezione (`chiusureGambe`); assenti -> la gamba
++ *    resta senza mercato e, se abbinata, rende la cifra NON calcolabile;
++ *  - la sessione dello SCALPER: non scomponibile per selezione dalla scheda
++ *    (la riga porta solo l'abbinato totale) -> dichiarato;
++ *  - le righe REGOLATE non entrano.
++ * `dueEsiti(marketId)` = mercato a due esiti (Over/Under, testa a testa).
++ */
++export function gambeDaOperazioni(
++    ops: readonly OperazionePerCashOut[],
++    opzioni: { dueEsiti?: (marketId: string) => boolean } = {},
++): GambaViva[] {
++    const out: GambaViva[] = [];
++    const due = (m: string | null) => (m ? opzioni.dueEsiti?.(m) === true : false);
++    for (const op of ops) {
++        const aliquota = op.chiusura?.alMs?.aliquota ?? null;
++        if (op.bot === 'scalper') {
++            const so = statoOrdine(op.ordine);
++            if (so.esito === 'regolato') continue;
++            out.push({
++                id: op.id, bot: op.bot, modalita: op.modalita, marketId: null, selectionId: null,
++                selezione: op.selezione, lato: null, abbinato: so.abbinato.valore, prezzoMedio: null,
++                aliquota,
++                nonScomponibile: 'sessione dello scalper: le esposizioni per selezione non arrivano alla scheda',
++            });
++            continue;
++        }
++        const ap = gambaDaOrdine({
++            id: op.id, bot: op.bot, modalita: op.modalita, marketId: op.marketId, selectionId: op.selectionId,
++            selezione: op.selezione, lato: op.lato ?? latoDi(op.ordine.side), ordine: op.ordine,
++            aliquota, dueEsiti: due(op.marketId),
++        });
++        if (ap == null) continue;           // regolata: nemmeno le sue chiusure sono vive
++        out.push(ap);
++        op.chiusureOrdini.forEach((c, i) => {
++            const ids = op.chiusureGambe?.[i] ?? null;
++            const g = gambaDaOrdine({
++                id: ids?.id ?? `${op.id}/chiusura ${i + 1}`, bot: op.bot, modalita: op.modalita,
++                marketId: ids?.marketId ?? null, selectionId: ids?.selectionId ?? null,
++                selezione: ids && ids.marketId === op.marketId && ids.selectionId === op.selectionId
++                    ? op.selezione : null,
++                lato: latoDi(c.side), ordine: c, aliquota, dueEsiti: due(ids?.marketId ?? null),
++            });
++            if (g) out.push(g);
++        });
++    }
++    return out;
++}
+diff --git a/frontend/src/lib/chiusuraUtente.test.ts b/frontend/src/lib/chiusuraUtente.test.ts
+index 5f2d4cd..fafe45f 100644
+--- a/frontend/src/lib/chiusuraUtente.test.ts
++++ b/frontend/src/lib/chiusuraUtente.test.ts
+@@ -145,6 +145,11 @@ describe('un pulsante spento dice PERCHE (mai un disabled muto)', () => {
+         expect(motivoCashoutSpento({ eventId: 'e1', posizioniVive: 0, chiusa: false }))
+             .toMatch(/nessuna posizione viva/);
+     });
++    it('30/09 (P12a): il motivo nomina Safe, il bot che il gesto chiude davvero', () => {
++        expect(motivoCashoutSpento({ eventId: 'e1', posizioniVive: 0, chiusa: false }))
++            .toBe('nessuna posizione viva di Safe su questa partita');
++        expect(() => payloadCashoutEvento('')).toThrow('cash out Safe: manca l’identificativo della partita, la richiesta non parte');
++    });
+     it('cash out: partita gia chiusa da te', () => {
+         expect(motivoCashoutSpento({ eventId: 'e1', posizioniVive: 2, chiusa: true }))
+             .toMatch(/gia/);
+diff --git a/frontend/src/lib/chiusuraUtente.ts b/frontend/src/lib/chiusuraUtente.ts
+index 4537c08..434f5e8 100644
+--- a/frontend/src/lib/chiusuraUtente.ts
++++ b/frontend/src/lib/chiusuraUtente.ts
+@@ -163,7 +163,7 @@ export class EventoMancante extends Error {
+  *  righe chiudere lo decide il servizio leggendo le SUE tabelle. */
+ export function payloadCashoutEvento(eventId: string | null | undefined): { event_id: string } {
+     const eid = testo(eventId);
+-    if (!eid) throw new EventoMancante('cash out globale');
++    if (!eid) throw new EventoMancante('cash out Safe');
+     return { event_id: eid };
+ }
+ 
+@@ -192,7 +192,11 @@ export function motivoCashoutSpento(args: {
+     if (!testo(args.eventId)) return 'partita senza identificativo: non si puo’ chiedere niente al servizio';
+     if (args.inCorso) return 'richiesta gia’ in corso: si aspetta la risposta del servizio';
+     if (args.chiusa) return 'partita gia’ chiusa da te: non c’e’ altro da chiudere';
+-    if (args.posizioniVive <= 0) return 'nessuna posizione viva del bot su questa partita';
++    // 30/09 (P12a): il gesto chiude SOLO le posizioni di Safe (`safe_request
++    // ('cashout_event')`, eseguito dal solo servizio Safe) e il conteggio e'
++    // quello di Safe: «del bot» faceva leggere «nessuna posizione» con due
++    // gambe vive di Mike sulla stessa partita.
++    if (args.posizioniVive <= 0) return 'nessuna posizione viva di Safe su questa partita';
+     return null;
+ }
+ 
+diff --git a/frontend/src/pages/ControlRoom.test.tsx b/frontend/src/pages/ControlRoom.test.tsx
+index 0daeca6..c431823 100644
+--- a/frontend/src/pages/ControlRoom.test.tsx
++++ b/frontend/src/pages/ControlRoom.test.tsx
+@@ -1521,8 +1521,9 @@ describe('la partita si chiude TUTTA, e il bot lo sa', () => {
+         const s = mostra();
+         await apri(s, 'live');
+         expect((s.getByTestId('cr-cashout-partita-avvia') as HTMLButtonElement).disabled).toBe(true);
++        // 30/09 (P12a): il pulsante chiude solo Safe e lo dice
+         expect(s.getByTestId('cr-cashout-partita-bloccato').textContent)
+-            .toMatch(/nessuna posizione viva/);
++            .toMatch(/nessuna posizione viva di Safe su questa partita/);
+     });
+ 
+     it('il gesto chiama il servizio con l’event_id della partita', async () => {

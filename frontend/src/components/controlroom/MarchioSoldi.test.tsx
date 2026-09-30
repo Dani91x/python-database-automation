@@ -4,7 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MarchioSoldi } from './MarchioSoldi';
-import { testoEta, type FonteSoldi } from '@/lib/fonteSoldi';
+import { testoEta, FONTE_SOLDI, type FonteSoldi } from '@/lib/fonteSoldi';
 
 const CASI: Array<[FonteSoldi, string]> = [
     ['conto', 'CONTO BETFAIR'],
@@ -54,6 +54,38 @@ describe('MarchioSoldi', () => {
         render(<MarchioSoldi fonte="conto" />);
         expect(screen.getByTestId('marchio-soldi').getAttribute('title'))
             .toBe('cifra letta dal conto Betfair: comprende tutti gli ordini (bot, app e sito)');
+    });
+});
+
+// T_P3 (30/09, decisione del coordinatore): a 9 px BOT e PROVA erano quasi
+// uguali (slate-400 / slate-300). PROVA = il tono del badge PAPER con bordo
+// TRATTEGGIATO (tratteggio = simulato); BOT = indaco tenue. Nessun colore gia'
+// preso da un altro significato: rosso (LIVE, perdite), verde (esiti), sky (BACK).
+describe('FONTE_SOLDI - i quattro marchi si distinguono a colpo d\'occhio', () => {
+    const cls = (Object.keys(FONTE_SOLDI) as FonteSoldi[]).map((f) => FONTE_SOLDI[f].cls);
+
+    it('le quattro classi colore sono tutte diverse fra loro', () => {
+        expect(new Set(cls).size).toBe(4);
+        expect(cls.length).toBe(4);
+    });
+
+    it('PROVA ha il bordo tratteggiato; nessun altro marchio lo ha', () => {
+        expect(FONTE_SOLDI.prova.cls).toContain('border-dashed');
+        for (const f of ['conto', 'bot', 'pagina'] as const) {
+            expect(FONTE_SOLDI[f].cls).not.toContain('border-dashed');
+        }
+    });
+
+    it('nessun marchio usa rosso, verde o sky (colori gia\' di LIVE/perdite, esiti, BACK)', () => {
+        for (const c of cls) {
+            expect(c).not.toMatch(/red|emerald|sky/);
+        }
+    });
+
+    it('BOT e PROVA non condividono il colore del testo', () => {
+        const testo = (c: string) => c.split(/\s+/).filter((x) => x.startsWith('text-'));
+        const comuni = testo(FONTE_SOLDI.bot.cls).filter((t) => testo(FONTE_SOLDI.prova.cls).includes(t));
+        expect(comuni).toEqual([]);
     });
 });
 

@@ -20,12 +20,15 @@ export const FONTE_SOLDI: Record<FonteSoldi, { label: string; title: string; cls
     bot: {
         label: 'BOT',
         title: 'cifra attribuita al bot dalle sue righe o dal suo servizio: non comprende gli ordini fatti fuori dal bot',
-        cls: 'bg-white/5 text-slate-400 border-white/10',
+        // T_P3 (30/09): indaco tenue, mai sky (BACK), rosso (LIVE) o verde
+        cls: 'bg-indigo-400/10 text-indigo-200 border-indigo-400/30',
     },
     prova: {
         label: 'PROVA',
         title: 'simulato (paper): non sono soldi veri e non si somma mai ai soldi veri',
-        cls: 'bg-white/5 text-slate-300 border-white/15',
+        // T_P3 (30/09): il tono del badge PAPER (`MODE_META.paper`) con bordo
+        // TRATTEGGIATO: il tratteggio = simulato
+        cls: 'bg-white/5 text-slate-300 border-white/15 border-dashed',
     },
     pagina: {
         label: 'STIMA',

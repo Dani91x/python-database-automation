@@ -58,6 +58,7 @@ import { RigaOrdiniReali } from '@/components/controlroom/RigaOrdiniReali';
 import { RigaFreno } from '@/components/controlroom/RigaFreno';
 import { ProposteUsciteFlusso } from '@/components/controlroom/ProposteUsciteFlusso';
 import { RigaCapacitaMercati } from '@/components/controlroom/RigaCapacitaMercati';
+import { FasciaSoldiVeri } from '@/components/controlroom/testata/FasciaSoldiVeri';
 import {
     STAKE_TENNIS, differenzeSoloTennis, altreInLiveAdesso,
 } from '@/components/controlroom/soloTennis';
@@ -543,6 +544,7 @@ export default function ControlRoom() {
                     } satisfies DayBarProps}
                     composizione={vm.composizioneOggi}
                     manualeSito={vm.manualeSitoBetfair}
+                    prova={vm.provaGiornata ?? null}
                     onSalvaObiettivo={vm.salvaObiettivo}
                     avvisoMotore={
                         vm.bots.find((b) => b.bot === 'omega')?.inCorsa
@@ -563,24 +565,13 @@ export default function ControlRoom() {
                 <StoricoLink sport={sport} testId="cr-storico" />
             </div>
 
-            {/* LA PROVA, SEPARATA. La barra sopra misura l'obiettivo con soldi
-                veri; il paper e' esercitazione e non deve spostarla di un
-                pixel — il 14/09 la spostava all'indietro. Ma nemmeno si
-                nasconde: se il calcio sta perdendo in prova, il trader lo deve
-                vedere, in un riquadro che non somma niente. */}
-            {(vm.soldiGiornata.realizzatoPaper != null || vm.soldiGiornata.operazioniPaper) && (
-                <div className="flex items-baseline gap-2 text-[11px] text-white/45 px-1"
-                    data-testid="cr-riga-paper">
-                    <span className="uppercase tracking-wider text-[9.5px] px-1.5 py-0.5 rounded bg-white/10">in prova</span>
-                    <span className={pnlClass(vm.soldiGiornata.realizzatoPaper)}>
-                        {fmtMoney(vm.soldiGiornata.realizzatoPaper, { signed: true })}
-                    </span>
-                    {vm.soldiGiornata.operazioniPaper != null && (
-                        <span>su {vm.soldiGiornata.operazioniPaper} operazioni simulate</span>
-                    )}
-                    <span className="text-white/25">— non entra nell&apos;obiettivo</span>
-                </div>
-            )}
+            {/* LA PROVA, SEPARATA. 30/09 (P8): la riga «in prova» che stava
+                qui (`cr-riga-paper`) e' TOLTA: ripeteva la riga della
+                composizione e metteva fra le cifre di oggi partite di giorni
+                precedenti regolate oggi (+7,60 = 4 partite di Safe del 26/09).
+                La prova vive ora nella corsia PROVA del riquadro Obiettivo
+                (per bot: partite di oggi / arretrati regolati oggi) e nella
+                corsia PROVA delle tessere sport, mai sommata ai soldi veri. */}
 
             {/* Due conti sullo stesso denaro che non coincidono: si DICHIARA.
                 Scegliere il piu' bello sarebbe la bugia peggiore della pagina. */}
@@ -600,6 +591,7 @@ export default function ControlRoom() {
                 perSportPaper={vm.soldiGiornata.perSportPaper}
                 corsie={corsiePerSport(vm.bots)}
                 aperte={apertePerSport(vm)}
+                prova={vm.provaGiornata ?? null}
                 selezionato={sport}
                 onSeleziona={setSport}
             />
@@ -936,27 +928,13 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
                     <span className="text-xs text-white/50">{dayLabel(romeDay(new Date(vm.nowMs)))}</span>
                 </div>
 
-                {/* ESPOSIZIONE = SOLDI VERI IMPEGNATI. Prima sommava anche la
-                    responsabilità delle posizioni simulate: dichiarava un
-                    rischio che non esisteva (393,68 € contro 77,71 € reali).
-                    Su un banco vero è il numero più pericoloso della pagina. */}
-                {/* ⚠️ REVIEW 15/09 — finché i trade non sono letti questi numeri
-                    NON sono zero: sono ignoti. Scrivere «0,00 €» sul numero
-                    più pericoloso della pagina, durante il caricamento o dopo
-                    una lettura fallita, è un'assenza travestita da sicurezza. */}
-                <Dato etichetta="Esposizione"
-                    valore={vm.totali.letti ? fmtMoney(vm.totali.liability) : DASH}
-                    nota={!vm.totali.letti ? 'posizioni non ancora lette'
-                        : vm.totali.liabilityPaper > 0
-                            ? `+ ${fmtMoney(vm.totali.liabilityPaper)} in prova, non sono soldi veri`
-                            : undefined} />
-                <Dato etichetta="Con posizione"
-                    valore={vm.totali.letti
-                        ? `${vm.totali.conPosizioneLive} / ${vm.totali.partite}`
-                        : `${DASH} / ${vm.totali.partite}`}
-                    nota={vm.totali.letti && vm.totali.conPosizione > vm.totali.conPosizioneLive
-                        ? `${vm.totali.conPosizione - vm.totali.conPosizioneLive} in prova`
-                        : undefined} />
+                {/* P3 (30/09) - SOLDI VERI ADESSO: l'esposizione e' quella del
+                    CONTO (getAccountFunds, con fonte ed eta'), accanto il rischio
+                    LIVE secondo i bot (stima netta dei servizi) e lo scarto se
+                    non tornano. La somma LORDA per riga (39,15 contro 9,95 del
+                    conto, 30/09) non compare piu'. Mai 0,00 per un dato non
+                    letto: «—» e il motivo. */}
+                <FasciaSoldiVeri s={vm.soldiVeri} />
                 <Freni freni={vm.freni} />
                 <Runner r={vm.runner} fonte={vm.fonteRunner} />
                 <Runner r={vm.runnerTennis} fonte={vm.fonteRunnerTennis} tennis />
@@ -1100,20 +1078,6 @@ function ParametriNonLetti({ bot }: { bot: string }) {
                 + 'quelli veri con i valori predefiniti'}>
             <SlidersHorizontal className="w-3 h-3" />parametri non letti
         </span>
-    );
-}
-
-function Dato({ etichetta, valore, nota }: {
-    etichetta: string; valore: string;
-    /** seconda riga, per quello che NON va sommato al valore principale */
-    nota?: string;
-}) {
-    return (
-        <div className="flex flex-col">
-            <span className="text-[10px] uppercase tracking-wider text-white/40">{etichetta}</span>
-            <span className="font-mono text-sm font-semibold tabular-nums">{valore}</span>
-            {nota && <span className="text-[9.5px] text-white/30 leading-tight">{nota}</span>}
-        </div>
     );
 }
 

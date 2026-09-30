@@ -163,7 +163,7 @@ export class EventoMancante extends Error {
  *  righe chiudere lo decide il servizio leggendo le SUE tabelle. */
 export function payloadCashoutEvento(eventId: string | null | undefined): { event_id: string } {
     const eid = testo(eventId);
-    if (!eid) throw new EventoMancante('cash out globale');
+    if (!eid) throw new EventoMancante('cash out Safe');
     return { event_id: eid };
 }
 
@@ -192,7 +192,11 @@ export function motivoCashoutSpento(args: {
     if (!testo(args.eventId)) return 'partita senza identificativo: non si puo’ chiedere niente al servizio';
     if (args.inCorso) return 'richiesta gia’ in corso: si aspetta la risposta del servizio';
     if (args.chiusa) return 'partita gia’ chiusa da te: non c’e’ altro da chiudere';
-    if (args.posizioniVive <= 0) return 'nessuna posizione viva del bot su questa partita';
+    // 30/09 (P12a): il gesto chiude SOLO le posizioni di Safe (`safe_request
+    // ('cashout_event')`, eseguito dal solo servizio Safe) e il conteggio e'
+    // quello di Safe: «del bot» faceva leggere «nessuna posizione» con due
+    // gambe vive di Mike sulla stessa partita.
+    if (args.posizioniVive <= 0) return 'nessuna posizione viva di Safe su questa partita';
     return null;
 }
 

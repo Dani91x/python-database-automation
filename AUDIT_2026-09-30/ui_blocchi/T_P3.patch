@@ -1,0 +1,1306 @@
+diff --git a/frontend/src/components/controlroom/MarchioSoldi.test.tsx b/frontend/src/components/controlroom/MarchioSoldi.test.tsx
+index 4b7e8f5..492c865 100644
+--- a/frontend/src/components/controlroom/MarchioSoldi.test.tsx
++++ b/frontend/src/components/controlroom/MarchioSoldi.test.tsx
+@@ -4,7 +4,7 @@
+ import { describe, it, expect } from 'vitest';
+ import { render, screen } from '@testing-library/react';
+ import { MarchioSoldi } from './MarchioSoldi';
+-import { testoEta, type FonteSoldi } from '@/lib/fonteSoldi';
++import { testoEta, FONTE_SOLDI, type FonteSoldi } from '@/lib/fonteSoldi';
+ 
+ const CASI: Array<[FonteSoldi, string]> = [
+     ['conto', 'CONTO BETFAIR'],
+@@ -57,6 +57,38 @@ describe('MarchioSoldi', () => {
+     });
+ });
+ 
++// T_P3 (30/09, decisione del coordinatore): a 9 px BOT e PROVA erano quasi
++// uguali (slate-400 / slate-300). PROVA = il tono del badge PAPER con bordo
++// TRATTEGGIATO (tratteggio = simulato); BOT = indaco tenue. Nessun colore gia'
++// preso da un altro significato: rosso (LIVE, perdite), verde (esiti), sky (BACK).
++describe('FONTE_SOLDI - i quattro marchi si distinguono a colpo d\'occhio', () => {
++    const cls = (Object.keys(FONTE_SOLDI) as FonteSoldi[]).map((f) => FONTE_SOLDI[f].cls);
++
++    it('le quattro classi colore sono tutte diverse fra loro', () => {
++        expect(new Set(cls).size).toBe(4);
++        expect(cls.length).toBe(4);
++    });
++
++    it('PROVA ha il bordo tratteggiato; nessun altro marchio lo ha', () => {
++        expect(FONTE_SOLDI.prova.cls).toContain('border-dashed');
++        for (const f of ['conto', 'bot', 'pagina'] as const) {
++            expect(FONTE_SOLDI[f].cls).not.toContain('border-dashed');
++        }
++    });
++
++    it('nessun marchio usa rosso, verde o sky (colori gia\' di LIVE/perdite, esiti, BACK)', () => {
++        for (const c of cls) {
++            expect(c).not.toMatch(/red|emerald|sky/);
++        }
++    });
++
++    it('BOT e PROVA non condividono il colore del testo', () => {
++        const testo = (c: string) => c.split(/\s+/).filter((x) => x.startsWith('text-'));
++        const comuni = testo(FONTE_SOLDI.bot.cls).filter((t) => testo(FONTE_SOLDI.prova.cls).includes(t));
++        expect(comuni).toEqual([]);
++    });
++});
++
+ describe('testoEta', () => {
+     it('undefined = null; null/NaN/negativa = ignota; numero = fmtAge + fa', () => {
+         expect(testoEta(undefined)).toBeNull();
+diff --git a/frontend/src/components/controlroom/testata/FasciaSoldiVeri.test.tsx b/frontend/src/components/controlroom/testata/FasciaSoldiVeri.test.tsx
+new file mode 100644
+index 0000000..46d9056
+--- /dev/null
++++ b/frontend/src/components/controlroom/testata/FasciaSoldiVeri.test.tsx
+@@ -0,0 +1,119 @@
++// ============================================================================
++// FasciaSoldiVeri.test.tsx - P3 (30/09): cosa legge il trader nella testata.
++// Il campo `soldiVeri` e' costruito con le funzioni VERE (soldiVeri.ts) sui
++// finti dei produttori veri (vedi soldiVeri.test.ts): nessun oggetto a mano
++// piu' comodo del vero.
++// ============================================================================
++import { describe, it, expect, beforeEach } from 'vitest';
++import { render, screen, cleanup } from '@testing-library/react';
++import { FasciaSoldiVeri, CHIAVE_SALDO_NASCOSTO } from './FasciaSoldiVeri';
++import {
++    contoAdesso, rischioBotLive, scartoContoBot, partiteConPosizione, type SoldiVeriTestata,
++} from './soldiVeri';
++
++const NOW = Date.parse('2026-09-30T14:05:00Z');
++const RIGA = { available: 30.61, exposure: -9.95, updated_at: '2026-09-30T14:04:57+00:00' };
++const APERTE = [
++    { bot: 'mike' as const, modalita: 'live' as const, eventId: 'Follo' },
++    { bot: 'mike' as const, modalita: 'live' as const, eventId: 'Vsetin' },
++    { bot: 'mike' as const, modalita: 'live' as const, eventId: 'Farul' },
++    { bot: 'safe' as const, modalita: 'paper' as const, eventId: 'Z' },
++];
++const STATI = {
++    omega: { aggregates: { mode: 'paper', open_liability: 0 }, aggregates_by_mode: { paper: { open_liability: 0 }, live: { open_liability: 0 } } },
++    safe: { aggregates: { mode: null, open_liability: 0 } },
++    mike: { aggregates: { mode: 'live', open_liability: 16.22, liability_stale: false } },
++};
++
++function soldi(over: { riga?: typeof RIGA | null; letti?: boolean; stati?: typeof STATI } = {}): SoldiVeriTestata {
++    const conto = contoAdesso({ riga: over.riga === undefined ? RIGA : over.riga, canale: null, etaRunnerS: 4, nowMs: NOW });
++    const letti = over.letti ?? true;
++    const rischioBot = rischioBotLive({ letti, stati: over.stati ?? STATI, aperte: APERTE });
++    return {
++        conto, rischioBot, etaBotS: 7,
++        scarto: scartoContoBot(conto.esposizione, rischioBot),
++        partite: letti ? partiteConPosizione(APERTE) : null,
++        programmaScanner: 28,
++    };
++}
++
++beforeEach(() => {
++    cleanup();
++    try { window.localStorage.removeItem(CHIAVE_SALDO_NASCOSTO); } catch { /* niente */ }
++});
++
++describe('FasciaSoldiVeri - i numeri di oggi', () => {
++    it('esposizione del CONTO 9,95 col marchio CONTO BETFAIR e l\'eta\'; rischio dei bot 16,22 col marchio BOT', () => {
++        render(<FasciaSoldiVeri s={soldi()} />);
++        expect(screen.getByTestId('cr-esposizione-conto-valore').textContent).toMatch(/9,95/);
++        const m = screen.getByTestId('cr-esposizione-conto-marchio');
++        expect(m.getAttribute('data-fonte')).toBe('conto');
++        expect(m.textContent).toMatch(/CONTO BETFAIR/);
++        expect(m.textContent).toMatch(/3 s fa/);
++        expect(screen.getByTestId('cr-rischio-bot-valore').textContent).toMatch(/16,22/);
++        expect(screen.getByTestId('cr-rischio-bot-marchio').getAttribute('data-fonte')).toBe('bot');
++        expect(screen.getByTestId('cr-disponibile-conto').textContent).toMatch(/30,61/);
++    });
++
++    it('conto e bot non tornano: lo dice in ambra con la differenza (6,27), marchio STIMA', () => {
++        render(<FasciaSoldiVeri s={soldi()} />);
++        const el = screen.getByTestId('cr-scarto-conto-bot');
++        expect(el.textContent).toMatch(/NON TORNANO/);
++        expect(el.textContent).toMatch(/6,27/);
++        expect(el.textContent).toMatch(/il conto rischia meno dei bot/);
++        expect(screen.getByTestId('cr-scarto-marchio').getAttribute('data-fonte')).toBe('pagina');
++    });
++
++    it('la somma LORDA per riga (39,15 / 37,04) non compare', () => {
++        const { container } = render(<FasciaSoldiVeri s={soldi()} />);
++        expect(container.textContent).not.toMatch(/39,15|37,04/);
++    });
++
++    it('partite con posizione LIVE (3), in prova a parte, programma dello scanner (28) etichettato', () => {
++        render(<FasciaSoldiVeri s={soldi()} />);
++        const el = screen.getByTestId('cr-partite-posizione');
++        expect(el.textContent).toMatch(/3 partite/);
++        expect(el.textContent).toMatch(/in prova 1/);
++        expect(el.textContent).toMatch(/programma scanner 28/);
++        expect(el.textContent).not.toMatch(/3 \/ 28/);
++    });
++});
++
++describe('FasciaSoldiVeri - dati mancanti: mai una cifra inventata', () => {
++    it('conto NON letto: nessuna cifra, "conto non letto", niente scarto, niente disponibile', () => {
++        render(<FasciaSoldiVeri s={soldi({ riga: null })} />);
++        const el = screen.getByTestId('cr-esposizione-conto');
++        expect(screen.getByTestId('cr-esposizione-conto-valore').textContent).toBe('—');
++        expect(el.textContent).toMatch(/conto non letto/);
++        expect(el.textContent).not.toMatch(/0,00/);
++        expect(screen.queryByTestId('cr-scarto-conto-bot')).toBeNull();
++        expect(screen.queryByTestId('cr-disponibile-conto')).toBeNull();
++    });
++
++    it('campo assente dal modello di vista (finto di prima): tutto "non letto", nessuna cifra', () => {
++        const { container } = render(<FasciaSoldiVeri s={undefined} />);
++        expect(container.textContent).toMatch(/conto non letto/);
++        expect(container.textContent).not.toMatch(/\d,\d\d/);
++    });
++
++    it('posizioni non ancora lette: rischio dei bot "-" e partite "-"', () => {
++        render(<FasciaSoldiVeri s={soldi({ letti: false })} />);
++        expect(screen.getByTestId('cr-rischio-bot-valore').textContent).toBe('—');
++        expect(screen.getByTestId('cr-rischio-bot').textContent).toMatch(/posizioni non ancora lette/);
++        expect(screen.getByTestId('cr-partite-posizione').textContent).toMatch(/posizioni non ancora lette/);
++        expect(screen.getByTestId('cr-partite-posizione').textContent).not.toMatch(/\d+ partit/);
++    });
++
++    it('un bot con posizioni LIVE che non dichiara il rischio live: stima PARZIALE, nomina il bot, nessuno scarto', () => {
++        render(<FasciaSoldiVeri s={soldi({ stati: { ...STATI, mike: { aggregates: { mode: 'paper', open_liability: 30, liability_stale: false } } } })} />);
++        expect(screen.getByTestId('cr-rischio-bot-nota').textContent).toMatch(/parziale: manca Mike/);
++        expect(screen.queryByTestId('cr-scarto-conto-bot')).toBeNull();
++    });
++
++    it('saldo nascosto con l\'occhio della card: nascosto anche qui', () => {
++        window.localStorage.setItem(CHIAVE_SALDO_NASCOSTO, '1');
++        render(<FasciaSoldiVeri s={soldi()} />);
++        expect(screen.getByTestId('cr-esposizione-conto-valore').textContent).not.toMatch(/9,95/);
++        expect(screen.getByTestId('cr-disponibile-conto').textContent).not.toMatch(/30,61/);
++    });
++});
+diff --git a/frontend/src/components/controlroom/testata/FasciaSoldiVeri.tsx b/frontend/src/components/controlroom/testata/FasciaSoldiVeri.tsx
+new file mode 100644
+index 0000000..952d2d6
+--- /dev/null
++++ b/frontend/src/components/controlroom/testata/FasciaSoldiVeri.tsx
+@@ -0,0 +1,162 @@
++// ============================================================================
++// FasciaSoldiVeri.tsx - P3 (30/09): "SOLDI VERI ADESSO" nella testata.
++//
++// Al posto di "Esposizione 39,15" (somma LORDA per riga, 4 volte il conto) e
++// di "Con posizione 3 / 28" (il 28 era il programma dello scanner):
++//   * Esposizione del CONTO, con fonte ed eta' (la stessa cifra della card del
++//     saldo, stessa regola, stesso segno);
++//   * disponibile, se gia' letto;
++//   * rischio LIVE secondo i bot (liability netta DICHIARATA dai servizi),
++//     marchio BOT; se un bot con posizioni live non la dichiara separata dal
++//     paper lo si scrive, e la somma e' "parziale";
++//   * scarto conto <-> bot in ambra quando non tornano (calcolo della pagina,
++//     marchio STIMA; mai una causa inventata);
++//   * partite con posizione LIVE; piccolo e a parte: in prova e programma
++//     dello scanner.
++// Conto non letto = "-" con "conto non letto", mai 0,00. Ogni cifra in euro
++// porta il suo `MarchioSoldi`.
++// Solo presentazione: i numeri arrivano da `vm.soldiVeri` (testata/soldiVeri.ts).
++// ============================================================================
++import type { ReactNode } from 'react';
++import { fmtMoney, DASH } from '@/lib/format';
++import { BOT_LABEL } from '@/lib/controlRoom';
++import { MarchioSoldi } from '@/components/controlroom/MarchioSoldi';
++import type { SoldiVeriTestata } from './soldiVeri';
++
++/** La STESSA preferenza dell'occhio di `SaldoBetfairCard` (chiave privata di
++ *  quel file, qui ripetuta): chi ha nascosto il saldo nella card non deve
++ *  ritrovarlo in chiaro nella testata. */
++export const CHIAVE_SALDO_NASCOSTO = 'cr-saldo-nascosto';
++
++function saldoNascosto(): boolean {
++    try { return window.localStorage.getItem(CHIAVE_SALDO_NASCOSTO) === '1'; } catch { return false; }
++}
++
++const NASCOSTO = '\u2022\u2022\u2022\u2022,\u2022\u2022 \u20ac';
++const PUNTO = ' \u00b7 ';
++
++function Etichetta({ children }: { children: ReactNode }) {
++    return <span className="text-[10px] uppercase tracking-wider text-white/40">{children}</span>;
++}
++
++export function FasciaSoldiVeri({ s }: { s: SoldiVeriTestata | undefined }) {
++    const nascosto = saldoNascosto();
++    const conto = s?.conto ?? null;
++    const letto = conto?.letto === true;
++    const rischio = s?.rischioBot ?? null;
++    const partite = s?.partite ?? null;
++
++    // --- esposizione del conto
++    const valoreConto = !letto || conto?.esposizione == null
++        ? DASH : nascosto ? NASCOSTO : fmtMoney(conto.esposizione);
++
++    // --- rischio dei bot (perdita massima: col segno del conto, cosi' le due
++    //     cifre si leggono nello stesso verso)
++    const totale = rischio?.totale ?? null;
++    const valoreBot = totale == null ? DASH : fmtMoney(totale === 0 ? 0 : -totale);
++    const voci = rischio?.voci ?? [];
++    const mancanti = voci.filter((v) => v.valore == null);
++    const dettaglioBot = voci
++        .map((v) => `${BOT_LABEL[v.bot]}: ${v.valore == null
++            ? `non inclusa (${v.nota ?? 'non dichiarata'})`
++            : `${fmtMoney(v.valore)}${v.aperteLive ? ` su ${v.aperteLive} posizioni LIVE` : ''}${v.nota ? ` - ${v.nota}` : ''}`}`)
++        .join('; ');
++    const notaBot = (rischio == null || (totale == null && mancanti.length === 0))
++        ? 'posizioni non ancora lette'
++        : mancanti.length
++            ? `stima parziale: manca ${mancanti.map((v) => BOT_LABEL[v.bot]).join(', ')}`
++            : 'solo LIVE, per partita';
++
++    const scarto = s?.scarto ?? null;
++
++    return (
++        <div className="flex items-stretch gap-x-5 gap-y-1 flex-wrap" data-testid="cr-soldi-veri">
++            <div className="flex flex-col gap-0.5" data-testid="cr-esposizione-conto"
++                title={letto
++                    ? `rischio massimo del conto adesso, calcolato da Betfair (tutti i mercati: bot, sito e app). ${conto?.messaggio ?? ''}`
++                    : 'il saldo del conto Betfair non e\' ancora stato letto'}>
++                <Etichetta>Esposizione conto</Etichetta>
++                <span className="font-mono text-sm font-semibold tabular-nums text-orange-400"
++                    data-testid="cr-esposizione-conto-valore">{valoreConto}</span>
++                <span className="flex items-center gap-1 text-[9.5px] leading-tight" data-testid="cr-esposizione-conto-fonte">
++                    {letto ? (
++                        <>
++                            <MarchioSoldi fonte="conto" etaS={conto?.etaS ?? null}
++                                testId="cr-esposizione-conto-marchio"
++                                dettaglio={conto?.fonte === 'canale'
++                                    ? 'eta\' = ultimo controllo del conto (canale locale)'
++                                    : 'eta\' = ultimo CAMBIO della riga del database (scritta solo al cambio)'} />
++                            {conto?.fonte === 'database' && <span className="text-white/35">ultimo cambio</span>}
++                            {conto?.attenzione && <span className="text-orange-300">non verificato di recente</span>}
++                        </>
++                    ) : (
++                        <>
++                            <MarchioSoldi fonte="conto" testId="cr-esposizione-conto-marchio" />
++                            <span className="text-orange-300">conto non letto</span>
++                        </>
++                    )}
++                </span>
++            </div>
++
++            {letto && conto?.disponibile != null && (
++                <div className="flex flex-col gap-0.5" data-testid="cr-disponibile-conto" title="saldo giocabile del conto Betfair">
++                    <Etichetta>Disponibile</Etichetta>
++                    <span className="font-mono text-sm font-semibold tabular-nums">
++                        {nascosto ? NASCOSTO : fmtMoney(conto.disponibile)}
++                    </span>
++                    <span className="text-[9.5px] leading-tight"><MarchioSoldi fonte="conto" testId="cr-disponibile-conto-marchio" /></span>
++                </div>
++            )}
++
++            <div className="flex flex-col gap-0.5" data-testid="cr-rischio-bot"
++                title={`perdita massima LIVE secondo i bot (per partita, nettata dal servizio): non e' il conto. ${dettaglioBot}`}>
++                <Etichetta>Rischio secondo i bot</Etichetta>
++                <span className="font-mono text-sm font-semibold tabular-nums text-white/80"
++                    data-testid="cr-rischio-bot-valore">{valoreBot}</span>
++                <span className="flex items-center gap-1 text-[9.5px] leading-tight">
++                    <MarchioSoldi fonte="bot" etaS={s == null ? undefined : s.etaBotS}
++                        testId="cr-rischio-bot-marchio"
++                        dettaglio="eta' = ultima lettura degli aggregati dei servizi" />
++                    <span className={mancanti.length ? 'text-amber-300' : 'text-white/35'}
++                        data-testid="cr-rischio-bot-nota">{notaBot}</span>
++                </span>
++            </div>
++
++            {scarto && (
++                <div className="flex flex-col gap-0.5" data-testid="cr-scarto-conto-bot"
++                    title="il conto e i bot non dicono la stessa cosa: possono esserci ordini fuori dai bot o bot non allineati. Controlla le posizioni sul conto.">
++                    <Etichetta>Conto e bot</Etichetta>
++                    <span className="font-mono text-sm font-semibold tabular-nums text-amber-300">
++                        NON TORNANO: {fmtMoney(scarto.differenza)}
++                    </span>
++                    <span className="flex items-center gap-1 text-[9.5px] leading-tight text-amber-300/80">
++                        <MarchioSoldi fonte="pagina" testId="cr-scarto-marchio"
++                            dettaglio="differenza fra l'esposizione del conto e il rischio dichiarato dai bot" />
++                        {scarto.contoPiuAlto ? 'il conto rischia piu\' dei bot' : 'il conto rischia meno dei bot'}
++                    </span>
++                </div>
++            )}
++
++            <div className="flex flex-col gap-0.5" data-testid="cr-partite-posizione"
++                title="partite distinte con almeno una posizione aperta, secondo le righe dei bot">
++                <Etichetta>Posizioni LIVE</Etichetta>
++                <span className="font-mono text-sm font-semibold tabular-nums">
++                    {partite == null ? DASH : `${partite.live} ${partite.live === 1 ? 'partita' : 'partite'}`}
++                </span>
++                <span className="text-[9.5px] leading-tight text-white/35" data-testid="cr-partite-posizione-nota">
++                    {partite == null ? `posizioni non ancora lette${PUNTO}` : (
++                        <>
++                            {partite.prova > 0 && <>in prova {partite.prova}{PUNTO}</>}
++                            {partite.ignota > 0 && (
++                                <span className="text-orange-300">modalita' non dichiarata {partite.ignota}{PUNTO}</span>
++                            )}
++                        </>
++                    )}
++                    programma scanner {s?.programmaScanner ?? DASH}
++                </span>
++            </div>
++        </div>
++    );
++}
++
++export default FasciaSoldiVeri;
+diff --git a/frontend/src/components/controlroom/testata/soldiVeri.test.ts b/frontend/src/components/controlroom/testata/soldiVeri.test.ts
+new file mode 100644
+index 0000000..4eb935d
+--- /dev/null
++++ b/frontend/src/components/controlroom/testata/soldiVeri.test.ts
+@@ -0,0 +1,184 @@
++// ============================================================================
++// soldiVeri.test.ts - P3 (30/09): la fascia "SOLDI VERI ADESSO", moduli puri.
++//
++// Finti con le chiavi e i tipi dei produttori veri:
++//  - riga `betfair_live_account` (lib/liveOrders LiveAccountRow: available,
++//    exposure, updated_at), exposure NEGATIVA come la scrive Betfair
++//    (reconcile_worker.py:147-150, getAccountFunds);
++//  - messaggio `account` del canale (reconcile_worker.py:161-167:
++//    {available, exposure, checked_at}), letto da `leggiSaldoDalCanale`;
++//  - aggregati SQL: Mike `mike_aggregates_sql` ('mode' = modalita' del bot,
++//    open_liability netta, liability_stale), Omega `aggregates_by_mode`
++//    {paper, live} (omega_state_per_modalita_2026-09-26.sql), Safe
++//    `get_safe_state()` senza p_mode ('mode': null = tutte le modalita').
++// Numeri di oggi (PROGETTO_UI_MONITOR_VERITIERO.md par. 0): conto -9,95;
++// Mike 9,80 + 6,42 + 0 = 16,22; la lorda 39,15/37,04 non e' una di queste.
++// ============================================================================
++import { describe, it, expect } from 'vitest';
++import {
++    contoAdesso, liabilityLiveDichiarata, rischioBotLive, scartoContoBot, partiteConPosizione,
++} from './soldiVeri';
++import { leggiSaldoDalCanale } from '@/lib/saldoBetfair';
++
++const NOW = Date.parse('2026-09-30T14:05:00Z');
++const RIGA = { available: 30.61, exposure: -9.95, updated_at: '2026-09-30T14:04:00+00:00' };
++
++const mikeLive = { aggregates: { mode: 'live', open_liability: 16.22, liability_source: 'net_positions', liability_stale: false } };
++const omegaPaper = {
++    aggregates: { mode: 'paper', open_liability: 0 },
++    aggregates_by_mode: { paper: { mode: 'paper', open_liability: 0 }, live: { mode: 'live', open_liability: 0 } },
++};
++const safeTutte = { aggregates: { mode: null, open_liability: 0 } };
++
++const APERTE_OGGI = [
++    { bot: 'mike' as const, modalita: 'live' as const, eventId: 'Follo' },
++    { bot: 'mike' as const, modalita: 'live' as const, eventId: 'Follo' },
++    { bot: 'mike' as const, modalita: 'live' as const, eventId: 'Vsetin' },
++    { bot: 'mike' as const, modalita: 'live' as const, eventId: 'Vsetin' },
++    { bot: 'mike' as const, modalita: 'live' as const, eventId: 'Farul' },
++];
++
++describe('contoAdesso - la stessa catena di SaldoBetfairCard', () => {
++    it('riga del database sola: esposizione e disponibile come li scrive Betfair, eta\' dell\'ultimo cambio', () => {
++        const c = contoAdesso({ riga: RIGA, canale: null, etaRunnerS: 5, nowMs: NOW });
++        expect(c.letto).toBe(true);
++        expect(c.esposizione).toBe(-9.95);
++        expect(c.disponibile).toBe(30.61);
++        expect(c.fonte).toBe('database');
++        expect(c.etaS).toBe(60);
++        expect(c.attenzione).toBe(false);
++    });
++
++    it('il canale piu\' recente vince (checked_at contro updated_at)', () => {
++        const canale = leggiSaldoDalCanale({ available: 30.41, exposure: -10.15, checked_at: '2026-09-30T14:04:57+00:00' });
++        const c = contoAdesso({ riga: RIGA, canale, etaRunnerS: 5, nowMs: NOW });
++        expect(c.esposizione).toBe(-10.15);
++        expect(c.fonte).toBe('canale');
++        expect(c.etaS).toBe(3);
++    });
++
++    it('conto MAI letto: nessuna cifra (null), mai 0', () => {
++        const c = contoAdesso({ riga: null, canale: null, etaRunnerS: null, nowMs: NOW });
++        expect(c.letto).toBe(false);
++        expect(c.esposizione).toBeNull();
++        expect(c.disponibile).toBeNull();
++        expect(c.attenzione).toBe(true);
++    });
++
++    it('battito del runner vecchio: il valore c\'e\' ma e\' "non verificato di recente"', () => {
++        const c = contoAdesso({ riga: RIGA, canale: null, etaRunnerS: 600, nowMs: NOW });
++        expect(c.esposizione).toBe(-9.95);
++        expect(c.attenzione).toBe(true);
++    });
++});
++
++describe('liabilityLiveDichiarata - solo il rischio che il servizio dichiara LIVE', () => {
++    it('Omega: aggregates_by_mode.live', () => {
++        expect(liabilityLiveDichiarata({ ...omegaPaper, aggregates_by_mode: { paper: { open_liability: 7 }, live: { open_liability: 3.5 } } }, 4).valore).toBe(3.5);
++    });
++    it('Mike: aggregato con mode live', () => {
++        expect(liabilityLiveDichiarata(mikeLive, 0).valore).toBe(16.22);
++    });
++    it('aggregato PAPER: mai rischio vero', () => {
++        expect(liabilityLiveDichiarata({ aggregates: { mode: 'paper', open_liability: 25 } }, 0).valore).toBeNull();
++    });
++    it('aggregato di TUTTE le modalita\' (Safe): valido solo senza posizioni paper aperte', () => {
++        expect(liabilityLiveDichiarata({ aggregates: { mode: null, open_liability: 12 } }, 0).valore).toBe(12);
++        expect(liabilityLiveDichiarata({ aggregates: { mode: null, open_liability: 12 } }, 1).valore).toBeNull();
++    });
++    it('stantio dichiarato dal servizio (Mike liability_stale)', () => {
++        expect(liabilityLiveDichiarata({ aggregates: { mode: 'live', open_liability: 1, liability_stale: true } }, 0).stantio).toBe(true);
++    });
++    it('stato non letto / open_liability non numerica: null', () => {
++        expect(liabilityLiveDichiarata(null, 0).valore).toBeNull();
++        expect(liabilityLiveDichiarata({ aggregates: { mode: 'live', open_liability: '16.22' } }, 0).valore).toBeNull();
++    });
++});
++
++describe('rischioBotLive - i numeri di oggi', () => {
++    it('Mike 16,22 (9,80 + 6,42 + 0), Omega 0, Safe 0: totale 16,22, completo', () => {
++        const r = rischioBotLive({ letti: true, stati: { omega: omegaPaper, safe: safeTutte, mike: mikeLive }, aperte: APERTE_OGGI });
++        expect(r.totale).toBe(16.22);
++        expect(r.completo).toBe(true);
++        expect(r.voci.find((v) => v.bot === 'mike')).toMatchObject({ valore: 16.22, aperteLive: 5 });
++        // la somma LORDA delle righe non entra da nessuna parte
++        expect(r.totale).not.toBe(39.15);
++        expect(r.totale).not.toBe(37.04);
++    });
++
++    it('posizioni non ancora lette: nessuna cifra', () => {
++        const r = rischioBotLive({ letti: false, stati: { mike: mikeLive }, aperte: [] });
++        expect(r.totale).toBeNull();
++        expect(r.completo).toBe(false);
++    });
++
++    it('Mike con aggregato PAPER ma posizioni LIVE: non incluso, somma parziale dichiarata', () => {
++        const r = rischioBotLive({
++            letti: true,
++            stati: { omega: omegaPaper, safe: safeTutte, mike: { aggregates: { mode: 'paper', open_liability: 30 } } },
++            aperte: APERTE_OGGI,
++        });
++        expect(r.completo).toBe(false);
++        const mike = r.voci.find((v) => v.bot === 'mike');
++        expect(mike?.valore).toBeNull();
++        expect(mike?.nota).toMatch(/non dichiara/);
++        expect(r.totale).toBe(0);
++    });
++
++    it('Safe con posizioni paper e live e aggregato misto: non separabile', () => {
++        const r = rischioBotLive({
++            letti: true,
++            stati: { omega: omegaPaper, safe: { aggregates: { mode: null, open_liability: 40 } }, mike: mikeLive },
++            aperte: [...APERTE_OGGI, { bot: 'safe', modalita: 'live' }, { bot: 'safe', modalita: 'paper' }],
++        });
++        expect(r.voci.find((v) => v.bot === 'safe')?.valore).toBeNull();
++        expect(r.completo).toBe(false);
++        expect(r.totale).toBe(16.22);
++    });
++
++    it('bot senza liability netta (tennis, scalper) con posizioni LIVE: dichiarato fuori dalla somma', () => {
++        const r = rischioBotLive({
++            letti: true,
++            stati: { omega: omegaPaper, safe: safeTutte, mike: mikeLive },
++            aperte: [...APERTE_OGGI, { bot: 'tennis_pro', modalita: 'live' }],
++        });
++        const t = r.voci.find((v) => v.bot === 'tennis_pro');
++        expect(t).toMatchObject({ valore: null, aperteLive: 1 });
++        expect(r.completo).toBe(false);
++    });
++
++    it('bot senza posizioni LIVE e senza aggregato: 0 (noto), non "mancante"', () => {
++        const r = rischioBotLive({ letti: true, stati: {}, aperte: [] });
++        expect(r.totale).toBe(0);
++        expect(r.completo).toBe(true);
++    });
++});
++
++describe('scartoContoBot', () => {
++    const rOggi = rischioBotLive({ letti: true, stati: { omega: omegaPaper, safe: safeTutte, mike: mikeLive }, aperte: APERTE_OGGI });
++
++    it('oggi: conto 9,95 contro bot 16,22 -> non tornano di 6,27, il conto rischia MENO', () => {
++        expect(scartoContoBot(-9.95, rOggi)).toEqual({ differenza: 6.27, contoPiuAlto: false });
++    });
++    it('tornano al centesimo: nessuno scarto', () => {
++        expect(scartoContoBot(-16.22, rOggi)).toBeNull();
++        expect(scartoContoBot(-16.23, rOggi)).toBeNull();
++    });
++    it('conto che rischia piu\' dei bot', () => {
++        expect(scartoContoBot(-20, rOggi)).toEqual({ differenza: 3.78, contoPiuAlto: true });
++    });
++    it('conto non letto o rischio incompleto: non si puo\' dire', () => {
++        expect(scartoContoBot(null, rOggi)).toBeNull();
++        expect(scartoContoBot(-9.95, { ...rOggi, completo: false })).toBeNull();
++    });
++});
++
++describe('partiteConPosizione', () => {
++    it('partite DISTINTE, live e prova separati', () => {
++        expect(partiteConPosizione([
++            ...APERTE_OGGI,
++            { eventId: 'Z', modalita: 'paper' }, { eventId: 'Z', modalita: 'paper' },
++            { eventId: 'W', modalita: null },
++        ])).toEqual({ live: 3, prova: 1, ignota: 1 });
++    });
++});
+diff --git a/frontend/src/components/controlroom/testata/soldiVeri.ts b/frontend/src/components/controlroom/testata/soldiVeri.ts
+new file mode 100644
+index 0000000..dd4f309
+--- /dev/null
++++ b/frontend/src/components/controlroom/testata/soldiVeri.ts
+@@ -0,0 +1,273 @@
++// ============================================================================
++// soldiVeri.ts - P3 (30/09): la fascia "SOLDI VERI ADESSO" della testata.
++//
++// Ordine dell'utente (30/09, sezione 1): "esposizione incoerente [...] deve
++// essere un monitor veritiero". La testata scriveva "Esposizione 39,15": la
++// somma LORDA della colonna `liability` di ogni riga live non regolata (conta
++// le posizioni pareggiate, quelle chiuse dal sito, la richiesta invece
++// dell'abbinato). Il conto, nello stesso istante, rischiava 9,95.
++//
++// Da qui:
++//   * ESPOSIZIONE = quella del CONTO (getAccountFunds), la stessa catena di
++//     `SaldoBetfairCard`: riga `betfair_live_account` + topic `account` dei
++//     canali locali, vince il piu' recente (`saldoDaMostrare`), stessa regola
++//     di freschezza (`statoSaldoBetfair`). Nessuna lettura nuova.
++//   * RISCHIO SECONDO I BOT = la liability NETTA che i servizi pubblicano
++//     (`aggregates.open_liability`), SOLO quando il servizio la dichiara per la
++//     modalita' LIVE. Un aggregato paper o misto non e' rischio vero: se non si
++//     puo' separare lo si DICE, mai lo si somma.
++//   * SCARTO conto <-> bot: se non tornano oltre il centesimo, lo si scrive,
++//     senza inventare la causa.
++// Funzioni PURE: la presentazione sta in `FasciaSoldiVeri.tsx`.
++// ============================================================================
++import type { Bot } from '@/lib/controlRoom';
++import {
++    saldoDaMostrare, statoSaldoBetfair, type SaldoDalCanale,
++} from '@/lib/saldoBetfair';
++
++// --------------------------------------------------------------------- conto
++
++export interface ContoAdesso {
++    /** true = almeno una lettura del conto (database o canale) */
++    letto: boolean;
++    /** come la scrive Betfair (negativa = perdita massima del conto); null = non letta */
++    esposizione: number | null;
++    disponibile: number | null;
++    /** istante del dato mostrato (ISO) */
++    istante: string | null;
++    /** 'canale' = lettura REST pubblicata dal processo (checked_at); 'database' = riga
++     *  `betfair_live_account` (scritta SOLO al cambio: l'eta' e' dell'ultimo CAMBIO) */
++    fonte: 'canale' | 'database' | null;
++    etaS: number | null;
++    /** true = non verificato di recente (stessa regola di `SaldoBetfairCard`) */
++    attenzione: boolean;
++    /** la frase della regola di freschezza, per il tooltip */
++    messaggio: string;
++}
++
++function etaDa(iso: string | null, nowMs: number): number | null {
++    if (iso == null) return null;
++    const ms = Date.parse(iso);
++    if (!Number.isFinite(ms)) return null;
++    return Math.max(0, Math.round((nowMs - ms) / 1000));
++}
++
++/**
++ * Il conto, adesso. `riga` = `betfair_live_account` gia' in memoria del hook;
++ * `canale` = l'ultimo saldo arrivato dal topic `account` (il piu' recente fra
++ * i canali); `etaRunnerS` = eta' del battito del runner calcio (la stessa
++ * notizia che la card legge da `betfair_live_heartbeat`).
++ */
++export function contoAdesso(input: {
++    riga: { available: number | null; exposure: number | null; updated_at: string } | null;
++    canale: SaldoDalCanale | null;
++    etaRunnerS: number | null;
++    nowMs: number;
++}): ContoAdesso {
++    const { riga, canale, etaRunnerS, nowMs } = input;
++    const mostrato = saldoDaMostrare(riga, canale);
++    const etaS = etaDa(mostrato.istante, nowMs);
++    const letto = mostrato.istante != null;
++    const stato = statoSaldoBetfair({
++        etaSaldoS: etaS,
++        etaHeartbeatS: etaRunnerS,
++        etaCanaleS: canale ? etaDa(canale.checkedAt, nowMs) : null,
++    });
++    return {
++        letto,
++        esposizione: letto ? mostrato.exposure : null,
++        disponibile: letto ? mostrato.available : null,
++        istante: mostrato.istante,
++        fonte: letto ? mostrato.fonte : null,
++        etaS,
++        attenzione: stato.attenzione,
++        messaggio: stato.messaggio,
++    };
++}
++
++// ------------------------------------------------------ rischio dei bot LIVE
++
++/** La forma minima di un aggregato di servizio (Omega/Safe/Mike, SQL). */
++interface AggregatoLike {
++    open_liability?: unknown;
++    /** modalita' filtrata dalla RPC: 'live' | 'paper' | null (= tutte) */
++    mode?: unknown;
++    /** solo Mike: battito del servizio vecchio di oltre 60 s */
++    liability_stale?: unknown;
++}
++
++export interface StatoServizioLike {
++    aggregates?: unknown;
++    /** Omega (FIX-A 26/09): aggregati per modalita' */
++    aggregates_by_mode?: unknown;
++}
++
++function comeAggregato(v: unknown): AggregatoLike | null {
++    return v != null && typeof v === 'object' && !Array.isArray(v) ? v as AggregatoLike : null;
++}
++
++function numeroFinito(v: unknown): number | null {
++    return typeof v === 'number' && Number.isFinite(v) ? v : null;
++}
++
++/**
++ * La liability NETTA che il servizio DICHIARA per la modalita' LIVE, o null
++ * se non la dichiara separata:
++ *   1. `aggregates_by_mode.live.open_liability` (Omega);
++ *   2. `aggregates.open_liability` se `aggregates.mode === 'live'` (Mike, che
++ *      filtra sulla modalita' del bot);
++ *   3. `aggregates.open_liability` di un aggregato di TUTTE le modalita'
++ *      (`mode` nullo: Safe senza `p_mode`) SOLO se il bot non ha nessuna
++ *      posizione paper aperta: allora e' tutto live. Altrimenti null.
++ * Un aggregato `mode: 'paper'` non e' mai rischio vero.
++ */
++export function liabilityLiveDichiarata(
++    stato: StatoServizioLike | null | undefined,
++    apertePaper: number,
++): { valore: number | null; stantio: boolean } {
++    const agg = comeAggregato(stato?.aggregates);
++    const perModo = comeAggregato(stato?.aggregates_by_mode);
++    const live = comeAggregato(perModo ? (perModo as Record<string, unknown>).live : null);
++    const stantio = agg?.liability_stale === true;
++    const daLive = numeroFinito(live?.open_liability);
++    if (daLive != null) return { valore: daLive, stantio };
++    if (agg == null) return { valore: null, stantio };
++    const v = numeroFinito(agg.open_liability);
++    if (v == null) return { valore: null, stantio };
++    if (agg.mode === 'live') return { valore: v, stantio };
++    if ((agg.mode == null) && apertePaper === 0) return { valore: v, stantio };
++    return { valore: null, stantio };
++}
++
++export interface VoceRischio {
++    bot: Bot;
++    /** perdita massima LIVE secondo il bot (positiva); null = non separabile / non pubblicata */
++    valore: number | null;
++    /** perche' manca, o perche' va letta con cautela */
++    nota: string | null;
++    /** posizioni LIVE aperte del bot secondo le sue righe */
++    aperteLive: number;
++}
++
++export interface RischioBotLive {
++    /** somma delle voci note (arrotondata al centesimo); null = nessuna voce nota */
++    totale: number | null;
++    /** true = ogni bot con posizioni LIVE ha una voce nota */
++    completo: boolean;
++    voci: VoceRischio[];
++}
++
++/** i tre servizi che pubblicano una liability netta */
++const SERVIZI_CON_LIABILITY = ['omega', 'safe', 'mike'] as const;
++
++const r2 = (x: number) => Math.round(x * 100) / 100;
++
++export function rischioBotLive(input: {
++    /** false = righe dei bot non ancora lette: nessuna cifra */
++    letti: boolean;
++    stati: Partial<Record<'omega' | 'safe' | 'mike', StatoServizioLike | null>>;
++    /** posizioni APERTE (aperture non regolate) come le vede il hook */
++    aperte: ReadonlyArray<{ bot: Bot; modalita: 'paper' | 'live' | null }>;
++}): RischioBotLive {
++    if (!input.letti) return { totale: null, completo: false, voci: [] };
++    const conta = (bot: Bot, modo: 'paper' | 'live') =>
++        input.aperte.filter((p) => p.bot === bot && p.modalita === modo).length;
++    const voci: VoceRischio[] = [];
++    for (const bot of SERVIZI_CON_LIABILITY) {
++        const aperteLive = conta(bot, 'live');
++        const d = liabilityLiveDichiarata(input.stati[bot], conta(bot, 'paper'));
++        if (d.valore != null) {
++            voci.push({
++                bot, valore: r2(d.valore), aperteLive,
++                nota: d.stantio ? 'numero del servizio stantio (battito oltre 60 s)' : null,
++            });
++        } else if (aperteLive === 0) {
++            voci.push({ bot, valore: 0, aperteLive, nota: null });
++        } else {
++            voci.push({
++                bot, valore: null, aperteLive,
++                nota: 'il servizio non dichiara il rischio LIVE separato dal paper',
++            });
++        }
++    }
++    // gli altri bot (4 tennis, scalper calcio) non pubblicano una liability
++    // netta: con posizioni LIVE aperte il loro rischio NON e' nella somma.
++    const altri = new Set<Bot>();
++    for (const p of input.aperte) {
++        if (p.modalita === 'live' && !(SERVIZI_CON_LIABILITY as readonly string[]).includes(p.bot)) altri.add(p.bot);
++    }
++    for (const bot of altri) {
++        voci.push({
++            bot, valore: null, aperteLive: conta(bot, 'live'),
++            nota: 'il bot non pubblica un rischio netto',
++        });
++    }
++    const note = voci.filter((v) => v.valore != null);
++    return {
++        totale: note.length ? r2(note.reduce((s, v) => s + (v.valore as number), 0)) : null,
++        completo: voci.every((v) => v.valore != null),
++        voci,
++    };
++}
++
++// ------------------------------------------------------------- scarto
++
++export interface ScartoContoBot {
++    /** |esposizione del conto| - rischio dei bot, in valore assoluto (> 0,01) */
++    differenza: number;
++    /** true = il conto rischia PIU' di quanto dicono i bot */
++    contoPiuAlto: boolean;
++}
++
++/**
++ * Conto e bot tornano? null = tornano (entro il centesimo) OPPURE non si puo'
++ * dire (conto non letto, rischio dei bot incompleto). Chi chiama distingue i
++ * due casi con `conto.esposizione` e `rischio.completo`.
++ */
++export function scartoContoBot(esposizione: number | null, rischio: RischioBotLive): ScartoContoBot | null {
++    if (esposizione == null || !rischio.completo || rischio.totale == null) return null;
++    const d = r2(Math.abs(esposizione) - rischio.totale);
++    if (Math.abs(d) <= 0.01) return null;
++    return { differenza: Math.abs(d), contoPiuAlto: d > 0 };
++}
++
++// ------------------------------------------------------------- partite
++
++export interface PartiteConPosizione {
++    /** partite distinte con almeno una posizione LIVE aperta */
++    live: number;
++    /** partite distinte con almeno una posizione in PROVA aperta */
++    prova: number;
++    /** partite con posizioni la cui modalita' non e' dichiarata */
++    ignota: number;
++}
++
++export function partiteConPosizione(
++    aperte: ReadonlyArray<{ eventId: string; modalita: 'paper' | 'live' | null }>,
++): PartiteConPosizione {
++    const live = new Set<string>();
++    const prova = new Set<string>();
++    const ignota = new Set<string>();
++    for (const p of aperte) {
++        if (p.modalita === 'live') live.add(p.eventId);
++        else if (p.modalita === 'paper') prova.add(p.eventId);
++        else ignota.add(p.eventId);
++    }
++    return { live: live.size, prova: prova.size, ignota: ignota.size };
++}
++
++// ------------------------------------------------------------- insieme
++
++/** Il campo del modello di vista che la testata legge (additivo). */
++export interface SoldiVeriTestata {
++    conto: ContoAdesso;
++    rischioBot: RischioBotLive;
++    /** eta' della lettura degli aggregati dei servizi (giro del database della
++     *  pagina, `lettoAlle`); null = mai letti */
++    etaBotS: number | null;
++    scarto: ScartoContoBot | null;
++    /** null = righe dei bot non ancora lette */
++    partite: PartiteConPosizione | null;
++    /** righe del programma dello scanner (calcio + tennis): NON partite operate */
++    programmaScanner: number;
++}
+diff --git a/frontend/src/components/controlroom/useControlRoom.soldiVeri.test.tsx b/frontend/src/components/controlroom/useControlRoom.soldiVeri.test.tsx
+new file mode 100644
+index 0000000..7ffe26a
+--- /dev/null
++++ b/frontend/src/components/controlroom/useControlRoom.soldiVeri.test.tsx
+@@ -0,0 +1,191 @@
++// ============================================================================
++// useControlRoom.soldiVeri.test.tsx - P3 (30/09) sul hook VERO: il campo
++// `soldiVeri` della testata.
++//
++//  * l'esposizione e' quella del CONTO: riga `betfair_live_account` (gia' letta
++//    dal hook) e, se piu' recente, il topic `account` di QUALSIASI canale che
++//    lo pubblica (runner calcio/tennis, Mike, Omega, Safe - `CANALI_SALDO`);
++//  * NESSUNA lettura nuova: `fetchLiveAccount`/`subscribeLiveAccount` restano
++//    una volta sola (quelle che il hook faceva gia');
++//  * il rischio dei bot e' la liability dichiarata LIVE dal servizio.
++//
++// Finti (chiavi e tipi dei produttori veri):
++//  - account  Betfair/stream/reconcile_worker.py:161 {available, exposure, checked_at}
++//             e Betfair/stream/saldo_evento.py (stesso messaggio dagli altri processi)
++//  - riga     betfair_live_account (lib/liveOrders LiveAccountRow)
++//  - aggregati Mike: migrations/mike_aggregati_per_modalita_2026-09-13.sql ('mode',
++//             'open_liability', 'liability_source', 'liability_stale')
++// ============================================================================
++import { describe, it, expect, vi, beforeEach } from 'vitest';
++import { renderHook, waitFor, act } from '@testing-library/react';
++
++type Cb = (d: unknown) => void;
++const iscritti = new Map<string, Set<Cb>>();
++function spingi(sport: string, topic: string, d: unknown): void {
++    for (const cb of iscritti.get(`${sport}:${topic}`) ?? []) cb(d);
++}
++
++vi.mock('@/lib/localChannel', async (orig) => ({
++    ...(await orig() as object),
++    getLocalChannel: vi.fn((sport: string) => ({
++        getStatus: () => 'connected',
++        getHello: () => null,
++        onStatus: () => () => { /* niente */ },
++        subscribe: (topic: string, cb: Cb) => {
++            const k = `${sport}:${topic}`;
++            let s = iscritti.get(k);
++            if (!s) { s = new Set(); iscritti.set(k, s); }
++            s.add(cb);
++            return () => { s.delete(cb); };
++        },
++        request: async () => ({ ok: true }),
++    })),
++}));
++vi.mock('@/lib/safeStrategyScan', async (orig) => ({
++    ...(await orig() as object),
++    fetchScanRows: vi.fn(async () => []),
++    fetchScanStatus: vi.fn(async () => null),
++    subscribeScanRows: vi.fn(() => () => { /* nessun evento */ }),
++    subscribeScanStatus: vi.fn(() => () => { /* nessun evento */ }),
++}));
++vi.mock('@/lib/omega', async (orig) => ({
++    ...(await orig() as object),
++    fetchOmegaState: vi.fn(async () => ({ control: null, aggregates: null, activity: [] })),
++    fetchOmegaTrades: vi.fn(async () => []),
++    fetchOmegaEvents: vi.fn(async () => []),
++    updateOmegaParams: vi.fn(async () => ({})),
++}));
++vi.mock('@/lib/safeBot', async (orig) => ({
++    ...(await orig() as object),
++    fetchSafeState: vi.fn(async () => ({ control: null, trades: [], aggregates: null })),
++    fetchRunnerState: vi.fn(async () => ({ ts: null, mode: null, ageS: null, up: false })),
++}));
++vi.mock('@/lib/mike', async (orig) => ({
++    ...(await orig() as object),
++    fetchMikeState: vi.fn(async () => ({ control: null, events: [], trades: [], activity: [], aggregates: null, requests: [], day_start: null, day_by: null })),
++}));
++vi.mock('@/lib/controlRoomProposte', async (orig) => ({
++    ...(await orig() as object),
++    fetchProposte: vi.fn(async () => []),
++    subscribeProposte: vi.fn(() => () => { /* nessun evento */ }),
++}));
++vi.mock('@/lib/omegaProposte', async (orig) => ({
++    ...(await orig() as object),
++    fetchProposteOmega: vi.fn(async () => []),
++    subscribeProposteOmega: vi.fn(() => () => { /* nessun evento */ }),
++}));
++vi.mock('@/lib/omegaMissions', async (orig) => ({
++    ...(await orig() as object),
++    fetchMissions: vi.fn(async () => ({ missions: [] })),
++}));
++vi.mock('@/lib/live', async (orig) => ({
++    ...(await orig() as object),
++    fetchLiveFollows: vi.fn(async () => []),
++}));
++vi.mock('@/lib/dailyHistory', async (orig) => ({
++    ...(await orig() as object),
++    fetchSafeDaily: vi.fn(async () => []),
++}));
++vi.mock('@/lib/tennis', async (orig) => ({
++    ...(await orig() as object),
++    fetchTennisFollows: vi.fn(async () => []),
++    fetchTennisBotServices: vi.fn(async () => []),
++    fetchTennisBotDaily: vi.fn(async () => []),
++    fetchTennisBotOrdersToday: vi.fn(async () => []),
++}));
++vi.mock('@/lib/liveOrders', async (orig) => ({
++    ...(await orig() as object),
++    fetchLiveAccount: vi.fn(async () => null),
++    subscribeLiveAccount: vi.fn(() => () => { /* nessuna spinta */ }),
++}));
++vi.mock('@/lib/scalperControlRoom', async (orig) => ({
++    ...(await orig() as object),
++    fetchScalperControlRoom: vi.fn(async () => ({ sessioni: [], ordini: [], lettoAt: null, servizio: null, servizioLetto: false })),
++}));
++
++import { fetchMikeState } from '@/lib/mike';
++import { fetchLiveAccount, subscribeLiveAccount } from '@/lib/liveOrders';
++import { useControlRoom } from '@/components/controlroom/useControlRoom';
++
++// la riga del database: scritta al cambio, un minuto fa
++const riga = () => ({
++    id: 1, available: 30.61, exposure: -9.95,
++    updated_at: new Date(Date.now() - 60_000).toISOString(),
++});
++
++beforeEach(() => {
++    iscritti.clear();
++    vi.mocked(fetchLiveAccount).mockReset();
++    vi.mocked(fetchLiveAccount).mockResolvedValue(riga() as never);
++    vi.mocked(subscribeLiveAccount).mockClear();
++    vi.mocked(fetchMikeState).mockResolvedValue({
++        control: null, events: [], trades: [], activity: [],
++        aggregates: {
++            mode: 'live', realized_total: 0, realized_today: 0, open_liability: 16.22, open_count: 5,
++            won: 0, lost: 0, liability_source: 'net_positions', liability_stale: false,
++        },
++        requests: [], day_start: null, day_by: null,
++    } as never);
++});
++
++async function montato() {
++    const h = renderHook(() => useControlRoom());
++    await waitFor(() => expect(h.result.current.caricamento).toBe(false));
++    return h;
++}
++
++describe('soldiVeri - l\'esposizione e\' quella del CONTO', () => {
++    it('dalla riga del database: -9,95, fonte database', async () => {
++        const h = await montato();
++        await waitFor(() => expect(h.result.current.soldiVeri.conto.esposizione).toBe(-9.95));
++        expect(h.result.current.soldiVeri.conto.fonte).toBe('database');
++        expect(h.result.current.soldiVeri.conto.disponibile).toBe(30.61);
++    });
++
++    it('un saldo piu\' recente dal canale di MIKE (non solo dal runner calcio) vince', async () => {
++        const h = await montato();
++        await waitFor(() => expect(h.result.current.soldiVeri.conto.esposizione).toBe(-9.95));
++        act(() => spingi('mike', 'account', {
++            available: 30.41, exposure: -10.15, checked_at: new Date().toISOString(),
++        }));
++        await waitFor(() => expect(h.result.current.soldiVeri.conto.esposizione).toBe(-10.15));
++        expect(h.result.current.soldiVeri.conto.fonte).toBe('canale');
++    });
++
++    it('il messaggio del P&L manuale (senza available) sullo stesso topic NON e\' un saldo', async () => {
++        const h = await montato();
++        await waitFor(() => expect(h.result.current.soldiVeri.conto.esposizione).toBe(-9.95));
++        act(() => spingi('calcio', 'account', {
++            manual_pnl_eur: 1.2, pnl_reale_oggi: null, checked_at: new Date().toISOString(),
++        }));
++        await act(async () => { await new Promise((r) => setTimeout(r, 30)); });
++        expect(h.result.current.soldiVeri.conto.esposizione).toBe(-9.95);
++        expect(h.result.current.soldiVeri.conto.fonte).toBe('database');
++    });
++
++    it('conto mai letto: nessuna cifra', async () => {
++        vi.mocked(fetchLiveAccount).mockResolvedValue(null as never);
++        const h = await montato();
++        await act(async () => { await new Promise((r) => setTimeout(r, 30)); });
++        expect(h.result.current.soldiVeri.conto.letto).toBe(false);
++        expect(h.result.current.soldiVeri.conto.esposizione).toBeNull();
++    });
++
++    it('NESSUNA lettura nuova del conto: una sola fetch e una sola sottoscrizione (quelle di prima)', async () => {
++        const h = await montato();
++        await waitFor(() => expect(h.result.current.soldiVeri.conto.esposizione).toBe(-9.95));
++        expect(vi.mocked(fetchLiveAccount)).toHaveBeenCalledTimes(1);
++        expect(vi.mocked(subscribeLiveAccount)).toHaveBeenCalledTimes(1);
++    });
++});
++
++describe('soldiVeri - il rischio secondo i bot', () => {
++    it('Mike dichiara 16,22 LIVE: totale 16,22; scarto col conto 6,27', async () => {
++        const h = await montato();
++        await waitFor(() => expect(h.result.current.soldiVeri.rischioBot.totale).toBe(16.22));
++        expect(h.result.current.soldiVeri.scarto).toEqual({ differenza: 6.27, contoPiuAlto: false });
++        // la vecchia somma lorda per riga resta dov'era, per chi la usa: la
++        // testata non la legge piu'
++        expect(h.result.current.totali).toBeDefined();
++    });
++});
+diff --git a/frontend/src/components/controlroom/useControlRoom.ts b/frontend/src/components/controlroom/useControlRoom.ts
+index 6f5fad0..454f37b 100644
+--- a/frontend/src/components/controlroom/useControlRoom.ts
++++ b/frontend/src/components/controlroom/useControlRoom.ts
+@@ -112,6 +112,13 @@ import { prezzoVivoPerGamba } from '@/lib/comboPrezzoVivo';
+ import { updateOmegaParams } from '@/lib/omega';
+ import { applicaLottoScan, type ScanRowEvent } from '@/lib/scanEventBuffer';
+ import { fetchLiveAccount, subscribeLiveAccount, type LiveAccountRow } from '@/lib/liveOrders';
++// P3 (30/09) - la fascia «SOLDI VERI ADESSO» della testata (campo additivo)
++import { leggiSaldoDalCanale, saldoPiuRecente, type SaldoDalCanale } from '@/lib/saldoBetfair';
++import { CANALI_SALDO } from './SaldoBetfairCard';
++import {
++    contoAdesso, rischioBotLive, scartoContoBot, partiteConPosizione,
++    type SoldiVeriTestata,
++} from './testata/soldiVeri';
+ import {
+     fetchScalperControlRoom, statoBotScalper, ordiniDellaSessione, esposizioneScalper,
+     chiusuraScalper, pnlRealeOrdini, modalitaSessione, sessioneViva, idSessione,
+@@ -843,6 +850,15 @@ export interface ControlRoomVM {
+      */
+     freni: SafeRiskStats | null;
+ 
++    /**
++     * P3 (30/09) - LA FASCIA «SOLDI VERI ADESSO» della testata: esposizione
++     * del CONTO (stessa catena di `SaldoBetfairCard`, nessuna lettura nuova),
++     * rischio LIVE secondo i bot (liability netta dichiarata dai servizi),
++     * scarto fra i due, partite con posizione LIVE e in prova. Campo NUOVO:
++     * `totali` (somma lorda per riga) resta com'era per chi lo usa.
++     */
++    soldiVeri: SoldiVeriTestata;
++
+     /**
+      * Stato del runner flumine. 14/09 — il battito diceva «2 settembre» mentre
+      * il processo girava: `heartbeat_worker` vive dentro il framework e non
+@@ -1226,6 +1242,9 @@ export function useControlRoom(): ControlRoomVM {
+     const [liveAccount, setLiveAccount] = useState<LiveAccountRow | null>(null);
+     /** 24/09 - l'ultimo P&L reale del conto arrivato dal canale del runner (grezzo) */
+     const [pnlRealeCanale, setPnlRealeCanale] = useState<unknown>(null);
++    /** P3 (30/09) - l'ultimo SALDO arrivato dal topic `account` dei canali
++     *  (il piu' recente vince, stessa regola di `SaldoBetfairCard`) */
++    const [saldoCanaleConto, setSaldoCanaleConto] = useState<SaldoDalCanale | null>(null);
+     /** avviso onesto: PIAZZA ha dovuto ripiegare sul solo `p_id` perché la
+      *  RPC non accetta ancora il prezzo visto (migrazione non applicata). */
+     const [avvisoOpportunita, setAvvisoOpportunita] = useState<string | null>(null);
+@@ -1796,6 +1815,20 @@ export function useControlRoom(): ControlRoomVM {
+         return () => { vivo = false; off(); offCanale(); };
+     }, []);
+ 
++    // P3 (30/09) - IL SALDO DAI CANALI, per la testata. Solo ASCOLTO sui
++    // canali singleton gia' aperti dalla pagina (`CANALI_SALDO`, gli stessi di
++    // `SaldoBetfairCard`): nessuna lettura del database, nessuna porta nuova,
++    // nessun poll. La riga del database e' `liveAccount`, gia' qui sopra.
++    useEffect(() => {
++        let vivo = true;
++        const off = CANALI_SALDO.map((s) => getLocalChannel(s).subscribe('account', (d) => {
++            if (!vivo) return;
++            const saldo = leggiSaldoDalCanale(d);
++            if (saldo) setSaldoCanaleConto((prev) => saldoPiuRecente(prev, saldo));
++        }));
++        return () => { vivo = false; off.forEach((f) => f()); };
++    }, []);
++
+     // -------------------------------------------------- proposte in realtime
+     // Una proposta di chiusura che comparisse 30 s dopo sarebbe inutile: il
+     // prezzo su cui il bot ha deciso non c'e' piu'.
+@@ -3660,6 +3693,28 @@ export function useControlRoom(): ControlRoomVM {
+         (bot: Bot, id: number) => etaRigaDi(righePos, bot, id, nowMs),
+         [righePos, nowMs]);
+ 
++    // P3 (30/09) - la fascia «SOLDI VERI ADESSO» (moduli puri in testata/soldiVeri)
++    const soldiVeri = useMemo<SoldiVeriTestata>(() => {
++        const conto = contoAdesso({
++            riga: liveAccount, canale: saldoCanaleConto,
++            etaRunnerS: runnerVista.runner?.ageS ?? null, nowMs,
++        });
++        const rischioBot = rischioBotLive({
++            letti: soldiLetti,
++            stati: { omega, safe, mike },
++            aperte: posizioni,
++        });
++        return {
++            conto,
++            rischioBot,
++            etaBotS: lettoAlle == null ? null : Math.max(0, Math.round((nowMs - lettoAlle) / 1000)),
++            scarto: scartoContoBot(conto.esposizione, rischioBot),
++            partite: soldiLetti ? partiteConPosizione(posizioni) : null,
++            programmaScanner: totali.partite,
++        };
++    }, [liveAccount, saldoCanaleConto, runnerVista.runner, nowMs, soldiLetti,
++        omega, safe, mike, posizioni, totali.partite, lettoAlle]);
++
+     return {
+         caricamento, errore, nowMs,
+         giornata, totali,
+@@ -3672,6 +3727,7 @@ export function useControlRoom(): ControlRoomVM {
+         composizioneOggi, manualeSitoBetfair, salvaObiettivo,
+         bots: botsConPnl, posizioni, chiuse, righeChiuse, registrazioni, copertura,
+         freni: safe?.control?.stats?.risk ?? null,
++        soldiVeri,
+         runner: runnerVista.runner,
+         fonteRunner: { fonte: runnerVista.fonte, etaS: runnerVista.etaS },
+         runnerTennis: runnerTennisVista.runner,
+diff --git a/frontend/src/lib/fonteSoldi.ts b/frontend/src/lib/fonteSoldi.ts
+index 97f753b..15832e4 100644
+--- a/frontend/src/lib/fonteSoldi.ts
++++ b/frontend/src/lib/fonteSoldi.ts
+@@ -20,12 +20,15 @@ export const FONTE_SOLDI: Record<FonteSoldi, { label: string; title: string; cls
+     bot: {
+         label: 'BOT',
+         title: 'cifra attribuita al bot dalle sue righe o dal suo servizio: non comprende gli ordini fatti fuori dal bot',
+-        cls: 'bg-white/5 text-slate-400 border-white/10',
++        // T_P3 (30/09): indaco tenue, mai sky (BACK), rosso (LIVE) o verde
++        cls: 'bg-indigo-400/10 text-indigo-200 border-indigo-400/30',
+     },
+     prova: {
+         label: 'PROVA',
+         title: 'simulato (paper): non sono soldi veri e non si somma mai ai soldi veri',
+-        cls: 'bg-white/5 text-slate-300 border-white/15',
++        // T_P3 (30/09): il tono del badge PAPER (`MODE_META.paper`) con bordo
++        // TRATTEGGIATO: il tratteggio = simulato
++        cls: 'bg-white/5 text-slate-300 border-white/15 border-dashed',
+     },
+     pagina: {
+         label: 'STIMA',
+diff --git a/frontend/src/pages/ControlRoom.test.tsx b/frontend/src/pages/ControlRoom.test.tsx
+index 94c1fc5..57738fe 100644
+--- a/frontend/src/pages/ControlRoom.test.tsx
++++ b/frontend/src/pages/ControlRoom.test.tsx
+@@ -35,6 +35,8 @@ vi.mock('@/lib/liveOrders', async (orig) => ({
+ import ControlRoom from './ControlRoom';
+ import { useControlRoom } from '@/components/controlroom/useControlRoom';
+ import type { GruppoCampionato, PartitaGiornata } from '@/lib/controlRoom';
++// T_P3 (30/09): il campo `soldiVeri` dei finti si costruisce con le funzioni VERE
++import { contoAdesso, rischioBotLive, scartoContoBot } from '@/components/controlroom/testata/soldiVeri';
+ 
+ const mVm = vi.mocked(useControlRoom);
+ 
+@@ -855,7 +857,18 @@ describe('la pagina non mostra MAI un numero che somma paper e live', () => {
+         expect(riga.textContent).toMatch(/non entra nell/i);
+     });
+ 
+-    it('L’ESPOSIZIONE in testata e’ quella VERA; la prova e’ una nota separata', () => {
++    // T_P3 (30/09) - CAMBIATO PERCHE' CAMBIA IL TESTO VOLUTO: la testata non
++    // mostra piu' la somma LORDA per riga (77,71 qui; 39,15 il 30/09 contro
++    // 9,95 del conto) ne' «2 / 59» (59 era il programma dello scanner).
++    // L'esposizione e' quella del CONTO; le partite con soldi veri restano 2,
++    // il programma dello scanner e' etichettato a parte. Il totale mischiato
++    // (393,68) continua a non esistere in nessun punto della pagina.
++    it('L’ESPOSIZIONE in testata e’ quella del CONTO; la somma lorda e la prova non ci sono', () => {
++        const conto = contoAdesso({
++            riga: { available: 30.61, exposure: -9.95, updated_at: '2026-09-14T14:59:57Z' },
++            canale: null, etaRunnerS: 30, nowMs: Date.parse('2026-09-14T15:00:00Z'),
++        });
++        const rischioBot = rischioBotLive({ letti: true, stati: {}, aperte: [] });
+         mVm.mockReturnValue(vm({
+             totali: {
+                 letti: true,
+@@ -864,14 +877,66 @@ describe('la pagina non mostra MAI un numero che somma paper e live', () => {
+                 liability: 77.71, liabilityPaper: 315.97,
+                 netPnl: 0.44, netPnlPaper: -4.83,
+             },
++            soldiVeri: {
++                conto, rischioBot, etaBotS: 5, scarto: null,
++                partite: { live: 2, prova: 12, ignota: 0 }, programmaScanner: 59,
++            },
+         }));
+         const s = mostra();
+         const testo = s.container.textContent ?? '';
+-        expect(testo).toContain('77,71');
+         // 393,68 = 77,71 + 315,97: il totale mischiato non deve esistere
+         expect(testo).not.toContain('393,68');
+-        // e le partite con soldi veri sono 2, non 14
+-        expect(testo).toContain('2 / 59');
++        const testata = s.getByTestId('cr-testata').textContent ?? '';
++        expect(testata).toContain('9,95');
++        expect(testata).not.toContain('77,71');
++        expect(testata).not.toContain('315,97');
++        // le partite con soldi veri sono 2, non 14; il 59 e' il programma
++        const partite = s.getByTestId('cr-partite-posizione').textContent ?? '';
++        expect(partite).toMatch(/2 partite/);
++        expect(partite).toMatch(/programma scanner 59/);
++        expect(testata).not.toContain('2 / 59');
++    });
++
++    it('T_P3: i numeri del 30/09 - conto 9,95, bot 16,22, NON TORNANO 6,27; la lorda 39,15 non compare in testata', () => {
++        const conto = contoAdesso({
++            riga: { available: 30.61, exposure: -9.95, updated_at: '2026-09-14T14:59:57Z' },
++            canale: null, etaRunnerS: 30, nowMs: Date.parse('2026-09-14T15:00:00Z'),
++        });
++        const rischioBot = rischioBotLive({
++            letti: true,
++            stati: { mike: { aggregates: { mode: 'live', open_liability: 16.22, liability_stale: false } } },
++            aperte: [
++                { bot: 'mike', modalita: 'live' }, { bot: 'mike', modalita: 'live' }, { bot: 'mike', modalita: 'live' },
++            ],
++        });
++        mVm.mockReturnValue(vm({
++            totali: { ...vm().totali, liability: 39.15, conPosizioneLive: 3, conPosizione: 3, partite: 28 },
++            soldiVeri: {
++                conto, rischioBot, etaBotS: 5, scarto: scartoContoBot(conto.esposizione, rischioBot),
++                partite: { live: 3, prova: 0, ignota: 0 }, programmaScanner: 28,
++            },
++        }));
++        const s = mostra();
++        const testata = s.getByTestId('cr-testata').textContent ?? '';
++        expect(testata).toContain('9,95');
++        expect(testata).toContain('16,22');
++        expect(s.getByTestId('cr-scarto-conto-bot').textContent).toMatch(/NON TORNANO: 6,27/);
++        expect(testata).not.toContain('39,15');
++        expect(testata).not.toContain('3 / 28');
++    });
++
++    it('T_P3: conto non letto -> in testata nessuna cifra dell\'esposizione, «conto non letto»', () => {
++        mVm.mockReturnValue(vm({
++            soldiVeri: {
++                conto: contoAdesso({ riga: null, canale: null, etaRunnerS: null, nowMs: Date.parse('2026-09-14T15:00:00Z') }),
++                rischioBot: rischioBotLive({ letti: true, stati: {}, aperte: [] }),
++                etaBotS: 5, scarto: null, partite: { live: 0, prova: 0, ignota: 0 }, programmaScanner: 1,
++            },
++        }));
++        const s = mostra();
++        const el = s.getByTestId('cr-esposizione-conto');
++        expect(el.textContent).toMatch(/conto non letto/);
++        expect(el.textContent).not.toMatch(/\d,\d\d/);
+     });
+ 
+     it('quando server e pagina non concordano la pagina LO DICE', () => {
+diff --git a/frontend/src/pages/ControlRoom.tsx b/frontend/src/pages/ControlRoom.tsx
+index 626056a..30b8383 100644
+--- a/frontend/src/pages/ControlRoom.tsx
++++ b/frontend/src/pages/ControlRoom.tsx
+@@ -57,6 +57,7 @@ import { RigaOrdiniReali } from '@/components/controlroom/RigaOrdiniReali';
+ import { RigaFreno } from '@/components/controlroom/RigaFreno';
+ import { ProposteUsciteFlusso } from '@/components/controlroom/ProposteUsciteFlusso';
+ import { RigaCapacitaMercati } from '@/components/controlroom/RigaCapacitaMercati';
++import { FasciaSoldiVeri } from '@/components/controlroom/testata/FasciaSoldiVeri';
+ import {
+     STAKE_TENNIS, differenzeSoloTennis, altreInLiveAdesso,
+ } from '@/components/controlroom/soloTennis';
+@@ -947,27 +948,13 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
+                     <span className="text-xs text-white/50">{dayLabel(romeDay(new Date(vm.nowMs)))}</span>
+                 </div>
+ 
+-                {/* ESPOSIZIONE = SOLDI VERI IMPEGNATI. Prima sommava anche la
+-                    responsabilità delle posizioni simulate: dichiarava un
+-                    rischio che non esisteva (393,68 € contro 77,71 € reali).
+-                    Su un banco vero è il numero più pericoloso della pagina. */}
+-                {/* ⚠️ REVIEW 15/09 — finché i trade non sono letti questi numeri
+-                    NON sono zero: sono ignoti. Scrivere «0,00 €» sul numero
+-                    più pericoloso della pagina, durante il caricamento o dopo
+-                    una lettura fallita, è un'assenza travestita da sicurezza. */}
+-                <Dato etichetta="Esposizione"
+-                    valore={vm.totali.letti ? fmtMoney(vm.totali.liability) : DASH}
+-                    nota={!vm.totali.letti ? 'posizioni non ancora lette'
+-                        : vm.totali.liabilityPaper > 0
+-                            ? `+ ${fmtMoney(vm.totali.liabilityPaper)} in prova, non sono soldi veri`
+-                            : undefined} />
+-                <Dato etichetta="Con posizione"
+-                    valore={vm.totali.letti
+-                        ? `${vm.totali.conPosizioneLive} / ${vm.totali.partite}`
+-                        : `${DASH} / ${vm.totali.partite}`}
+-                    nota={vm.totali.letti && vm.totali.conPosizione > vm.totali.conPosizioneLive
+-                        ? `${vm.totali.conPosizione - vm.totali.conPosizioneLive} in prova`
+-                        : undefined} />
++                {/* P3 (30/09) - SOLDI VERI ADESSO: l'esposizione e' quella del
++                    CONTO (getAccountFunds, con fonte ed eta'), accanto il rischio
++                    LIVE secondo i bot (stima netta dei servizi) e lo scarto se
++                    non tornano. La somma LORDA per riga (39,15 contro 9,95 del
++                    conto, 30/09) non compare piu'. Mai 0,00 per un dato non
++                    letto: «—» e il motivo. */}
++                <FasciaSoldiVeri s={vm.soldiVeri} />
+                 <Freni freni={vm.freni} />
+                 <Runner r={vm.runner} fonte={vm.fonteRunner} />
+                 <Runner r={vm.runnerTennis} fonte={vm.fonteRunnerTennis} tennis />
+@@ -1114,20 +1101,6 @@ function ParametriNonLetti({ bot }: { bot: string }) {
+     );
+ }
+ 
+-function Dato({ etichetta, valore, nota }: {
+-    etichetta: string; valore: string;
+-    /** seconda riga, per quello che NON va sommato al valore principale */
+-    nota?: string;
+-}) {
+-    return (
+-        <div className="flex flex-col">
+-            <span className="text-[10px] uppercase tracking-wider text-white/40">{etichetta}</span>
+-            <span className="font-mono text-sm font-semibold tabular-nums">{valore}</span>
+-            {nota && <span className="text-[9.5px] text-white/30 leading-tight">{nota}</span>}
+-        </div>
+-    );
+-}
+-
+ /**
+  * Il chip di un bot dice tre cose che devono stare insieme: **modalità**
+  * (soldi veri o simulati), **se sta girando**, e **quanto è vecchio** il suo

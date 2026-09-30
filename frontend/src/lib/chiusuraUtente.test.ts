@@ -145,6 +145,11 @@ describe('un pulsante spento dice PERCHE (mai un disabled muto)', () => {
         expect(motivoCashoutSpento({ eventId: 'e1', posizioniVive: 0, chiusa: false }))
             .toMatch(/nessuna posizione viva/);
     });
+    it('30/09 (P12a): il motivo nomina Safe, il bot che il gesto chiude davvero', () => {
+        expect(motivoCashoutSpento({ eventId: 'e1', posizioniVive: 0, chiusa: false }))
+            .toBe('nessuna posizione viva di Safe su questa partita');
+        expect(() => payloadCashoutEvento('')).toThrow('cash out Safe: manca l’identificativo della partita, la richiesta non parte');
+    });
     it('cash out: partita gia chiusa da te', () => {
         expect(motivoCashoutSpento({ eventId: 'e1', posizioniVive: 2, chiusa: true }))
             .toMatch(/gia/);

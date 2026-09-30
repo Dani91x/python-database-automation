@@ -49,6 +49,37 @@ describe('ObiettivoHero', () => {
         expect(prova.textContent).toMatch(/mai sommato/i);
     });
 
+    it('30/09 (P8): con la prova per bot, oggi e arretrati in colonne separate; la vecchia riga unica sparisce', () => {
+        const zero = { pnl: 0, operazioni: 0, vinte: 0, perse: 0, partite: 0 };
+        const s = render(
+            <ObiettivoHero
+                dayBar={dayBar()}
+                composizione={composizioneVuota}
+                manualeSito={{ pnlOggi: null, fonte: 'non-disponibile' }}
+                onSalvaObiettivo={vi.fn()}
+                prova={{
+                    voci: [
+                        { chiave: 'safe_calcio', etichetta: 'Safe calcio', sport: 'calcio', oggi: zero,
+                            arretrati: [{ giorno: '2026-09-26', origine: 'apertura', pnl: 7.6, operazioni: 4, vinte: 4, perse: 0, partite: 4 }] },
+                        { chiave: 'mike', etichetta: 'Mike', sport: 'calcio', oggi: zero, arretrati: null,
+                            nota: 'arretrati di Mike: non letti' },
+                        { chiave: 'bot_tennis', etichetta: 'Bot tennis', sport: 'tennis', oggi: zero, arretrati: [], perRegolamento: true },
+                    ],
+                    oggiPerSport: { calcio: zero, tennis: zero },
+                    arretratiPerSport: { calcio: [], tennis: [] },
+                    arretratiNonLetti: { calcio: ['Mike'], tennis: [] },
+                    perRegolamento: { calcio: [], tennis: ['Bot tennis'] },
+                }}
+            />,
+        );
+        expect(s.getByTestId('cr-prova-safe_calcio-oggi').textContent).toContain('+0,00 €');
+        expect(s.getByTestId('cr-prova-safe_calcio-arretrati').textContent).toBe('+7,60 € (4 operazioni aperte il 26/09)');
+        expect(s.getByTestId('cr-prova-mike-arretrati').textContent).toBe('arretrati di Mike: non letti');
+        expect(s.getByTestId('cr-prova-bot_tennis-arretrati').textContent).toMatch(/per giorno di regolamento/);
+        // la cifra unica di prima (provaPaper -1,20) non compare piu'
+        expect(s.getByTestId('cr-composizione-prova').textContent).not.toMatch(/1,20/);
+    });
+
     it('il sito Betfair dichiara "non ancora collegate" quando assente', () => {
         const s = render(
             <ObiettivoHero

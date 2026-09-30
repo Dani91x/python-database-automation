@@ -106,6 +106,25 @@ describe('il badge lo accende il SERVIZIO, non la pagina', () => {
     });
 });
 
+describe('30/09 (P12a): i testi dicono che il pulsante chiude SOLO Safe', () => {
+    it('etichetta, titolo, conferma e motivo nominano Safe (mai «globale», mai «del bot»)', () => {
+        monta({ modalita: 'live' });
+        const b = screen.getByTestId('cr-cashout-partita-avvia');
+        expect(b.textContent).toBe('Cash out Safe');
+        expect(b.getAttribute('title'))
+            .toBe('chiude TUTTE le posizioni di SAFE su questa partita (non quelle degli altri bot) e gli dice di non fare altro');
+        fireEvent.click(b);
+        expect(screen.getByTestId('cr-cashout-partita-conferma').textContent).toBe('Confermo: chiudi le posizioni di Safe');
+        expect(screen.getByTestId('cr-cashout-partita-armato').textContent)
+            .toBe('Sono soldi veri: conferma per chiudere le posizioni di Safe su questa partita. annulla');
+    });
+    it('senza posizioni di Safe: «nessuna posizione viva di Safe su questa partita»', () => {
+        monta({ posizioniVive: 0 });
+        expect(screen.getByTestId('cr-cashout-partita-bloccato').textContent)
+            .toBe('nessuna posizione viva di Safe su questa partita');
+    });
+});
+
 describe('un pulsante spento dice PERCHE', () => {
     it('nessuna posizione viva: spento, col motivo scritto', () => {
         monta({ posizioniVive: 0 });

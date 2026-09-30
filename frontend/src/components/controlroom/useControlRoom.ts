@@ -108,10 +108,20 @@ import {
     type PnlRealeOggi,
 } from '@/lib/composizioneObiettivo';
 import { leggiManualeSitoBetfair, type ManualeSitoBetfair } from '@/lib/manualeSitoBetfair';
+import {
+    breakdownProva, leggiArretratiProva, provaGiornata, type ProvaGiornata, type RigaTradeProva,
+} from '@/lib/provaGiornata';
 import { prezzoVivoPerGamba } from '@/lib/comboPrezzoVivo';
 import { updateOmegaParams } from '@/lib/omega';
 import { applicaLottoScan, type ScanRowEvent } from '@/lib/scanEventBuffer';
 import { fetchLiveAccount, subscribeLiveAccount, type LiveAccountRow } from '@/lib/liveOrders';
+// P3 (30/09) - la fascia «SOLDI VERI ADESSO» della testata (campo additivo)
+import { leggiSaldoDalCanale, saldoPiuRecente, type SaldoDalCanale } from '@/lib/saldoBetfair';
+import { CANALI_SALDO } from './SaldoBetfairCard';
+import {
+    contoAdesso, rischioBotLive, scartoContoBot, partiteConPosizione,
+    type SoldiVeriTestata,
+} from './testata/soldiVeri';
 import {
     fetchScalperControlRoom, statoBotScalper, ordiniDellaSessione, esposizioneScalper,
     chiusuraScalper, pnlRealeOrdini, modalitaSessione, sessioneViva, idSessione,
@@ -811,6 +821,12 @@ export interface ControlRoomVM {
      * `realizzatoOggi`: nessuna lettura nuova.
      */
     composizioneOggi: ComposizioneObiettivo;
+    /**
+     * 30/09 (P8) — la corsia PROVA per bot: partite di OGGI contro arretrati
+     * regolati oggi (`lib/provaGiornata.ts`). Facoltativo per i fixture di
+     * prima; `null` = trade non ancora letti.
+     */
+    provaGiornata?: ProvaGiornata | null;
     /** punto d'aggancio isolato per le scommesse manuali dal SITO Betfair
      *  (fuori app): oggi sempre "non disponibile" (`lib/manualeSitoBetfair.ts`). */
     manualeSitoBetfair: ManualeSitoBetfair;
@@ -842,6 +858,15 @@ export interface ControlRoomVM {
      * scrive assente — non zero.
      */
     freni: SafeRiskStats | null;
+
+    /**
+     * P3 (30/09) - LA FASCIA «SOLDI VERI ADESSO» della testata: esposizione
+     * del CONTO (stessa catena di `SaldoBetfairCard`, nessuna lettura nuova),
+     * rischio LIVE secondo i bot (liability netta dichiarata dai servizi),
+     * scarto fra i due, partite con posizione LIVE e in prova. Campo NUOVO:
+     * `totali` (somma lorda per riga) resta com'era per chi lo usa.
+     */
+    soldiVeri: SoldiVeriTestata;
 
     /**
      * Stato del runner flumine. 14/09 — il battito diceva «2 settembre» mentre
@@ -1226,6 +1251,9 @@ export function useControlRoom(): ControlRoomVM {
     const [liveAccount, setLiveAccount] = useState<LiveAccountRow | null>(null);
     /** 24/09 - l'ultimo P&L reale del conto arrivato dal canale del runner (grezzo) */
     const [pnlRealeCanale, setPnlRealeCanale] = useState<unknown>(null);
+    /** P3 (30/09) - l'ultimo SALDO arrivato dal topic `account` dei canali
+     *  (il piu' recente vince, stessa regola di `SaldoBetfairCard`) */
+    const [saldoCanaleConto, setSaldoCanaleConto] = useState<SaldoDalCanale | null>(null);
     /** avviso onesto: PIAZZA ha dovuto ripiegare sul solo `p_id` perché la
      *  RPC non accetta ancora il prezzo visto (migrazione non applicata). */
     const [avvisoOpportunita, setAvvisoOpportunita] = useState<string | null>(null);
@@ -1796,6 +1824,20 @@ export function useControlRoom(): ControlRoomVM {
         return () => { vivo = false; off(); offCanale(); };
     }, []);
 
+    // P3 (30/09) - IL SALDO DAI CANALI, per la testata. Solo ASCOLTO sui
+    // canali singleton gia' aperti dalla pagina (`CANALI_SALDO`, gli stessi di
+    // `SaldoBetfairCard`): nessuna lettura del database, nessuna porta nuova,
+    // nessun poll. La riga del database e' `liveAccount`, gia' qui sopra.
+    useEffect(() => {
+        let vivo = true;
+        const off = CANALI_SALDO.map((s) => getLocalChannel(s).subscribe('account', (d) => {
+            if (!vivo) return;
+            const saldo = leggiSaldoDalCanale(d);
+            if (saldo) setSaldoCanaleConto((prev) => saldoPiuRecente(prev, saldo));
+        }));
+        return () => { vivo = false; off.forEach((f) => f()); };
+    }, []);
+
     // -------------------------------------------------- proposte in realtime
     // Una proposta di chiusura che comparisse 30 s dopo sarebbe inutile: il
     // prezzo su cui il bot ha deciso non c'e' piu'.
@@ -2175,6 +2217,31 @@ export function useControlRoom(): ControlRoomVM {
         altro: oggiRighe.altroRighe,
         scalper: oggiRighe.scalperRighe,
     }), [oggiRighe]);
+
+    /**
+     * 30/09 (P8) — LA CORSIA PROVA per bot: partite di OGGI contro ARRETRATI
+     * (partite di giorni precedenti regolate oggi, es. al riavvio). Stesse
+     * righe gia' lette, nessuna lettura nuova; gli arretrati di Mike arrivano
+     * dalla chiave `arretrati_prova` di `get_mike_state` (backend): assente =
+     * «non letti», dichiarato. `null` = trade non ancora letti.
+     */
+    const provaOggi = useMemo<ProvaGiornata | null>(() => {
+        if (!soldiLetti) return null;
+        const oggi = romeDay(new Date(nowMs));
+        const giornoDi = (iso: string | null | undefined): string => {
+            const ms = iso ? Date.parse(iso) : NaN;
+            return Number.isFinite(ms) ? romeDay(new Date(ms)) : '';
+        };
+        return provaGiornata({
+            oggi, giornoDi,
+            omega: omegaTrades as unknown as RigaTradeProva[],
+            safe: (safe?.trades ?? []) as unknown as RigaTradeProva[],
+            mike: (mike?.trades ?? []) as unknown as RigaTradeProva[],
+            mikeArretrati: leggiArretratiProva(
+                (mike as { arretrati_prova?: unknown } | null)?.arretrati_prova, oggi),
+            tennisPaper: tennisOggiPaper,
+        });
+    }, [soldiLetti, nowMs, omegaTrades, safe?.trades, mike, tennisOggiPaper]);
 
     /** Task 2 — salva l'obiettivo di oggi (RPC gia' pronta, verificata: fa
      *  `coalesce` su `params`/`mode`, non li tocca). */
@@ -2811,6 +2878,7 @@ export function useControlRoom(): ControlRoomVM {
             side: t.side, price: t.price, size: t.size,
             meta: (t.meta ?? null) as Record<string, unknown> | null,
             event_id: t.event_id, market_id: t.market_id, selection_id: t.selection_id,
+            commission: t.commission,
         })?.bloccabile ?? null) : null;
         return { proposta: pr, vivo, etaQuoteS, bloccabileOra };
     }), [proposte, feedPerEvento, nowMs, safe?.trades, chiusuraViva]);
@@ -3085,6 +3153,7 @@ export function useControlRoom(): ControlRoomVM {
                 side: t.side ?? null, price: t.price ?? null, size: t.size ?? null,
                 meta: t.meta ?? null, event_id: t.event_id,
                 market_id: t.market_id ?? null, selection_id: t.selection_id ?? null,
+                commission: (t as { commission?: number | null }).commission ?? null,
             });
             const riga: OperazionePartita = {
                 bot, id: t.id,
@@ -3579,8 +3648,16 @@ export function useControlRoom(): ControlRoomVM {
             // (piazzamento, solo Safe). `null` = trade non ancora letti.
             /** per sport, SOLDI VERI */
             perSport: soldiLetti ? tesseraSport('live') : null,
-            /** per sport, in PROVA. Mai sommato al precedente. */
-            perSportPaper: soldiLetti ? tesseraSport('paper') : null,
+            /** per sport, in PROVA. Mai sommato al precedente.
+             *  30/09 (P8): SOLO le partite di OGGI (giorno della partita, vedi
+             *  `lib/provaGiornata.ts`); gli arretrati regolati oggi stanno in
+             *  `provaGiornata.arretratiPerSport`, mai qui. Prima: giorno di
+             *  regolamento (F-2 del 26/09), che il 30/09 metteva fra le cifre
+             *  di oggi 4 partite di Safe del 26/09. */
+            perSportPaper: soldiLetti && provaOggi ? {
+                calcio: breakdownProva(provaOggi.oggiPerSport.calcio),
+                tennis: breakdownProva(provaOggi.oggiPerSport.tennis),
+            } : null,
             // ⚠️ REVIEW 15/09 — QUI C'ERANO I CONTATORI DI `get_safe_daily`,
             // che legge la SOLA tabella di Safe, accanto a un realizzato
             // calcolato sulle righe dei TRE bot. Le operazioni di Omega e Mike
@@ -3623,7 +3700,7 @@ export function useControlRoom(): ControlRoomVM {
         };
     }, [omega?.aggregates, safe?.aggregates, mike?.aggregates, safeOggi,
         tennisOggi, tennisOggiPaper, realizzatoOggi, oggiRighe, composizioneOggi, posizioni,
-        pnlRealeOggi, scalperVista, soldiLetti]);
+        pnlRealeOggi, scalperVista, soldiLetti, provaOggi]);
 
     const feedEtaS = etaSecondi(scanStatus?.updated_at, nowMs);
     // 25/09 (voce 6): i due runner, canale prima e database come ripiego
@@ -3661,6 +3738,28 @@ export function useControlRoom(): ControlRoomVM {
         (bot: Bot, id: number) => etaRigaDi(righePos, bot, id, nowMs),
         [righePos, nowMs]);
 
+    // P3 (30/09) - la fascia «SOLDI VERI ADESSO» (moduli puri in testata/soldiVeri)
+    const soldiVeri = useMemo<SoldiVeriTestata>(() => {
+        const conto = contoAdesso({
+            riga: liveAccount, canale: saldoCanaleConto,
+            etaRunnerS: runnerVista.runner?.ageS ?? null, nowMs,
+        });
+        const rischioBot = rischioBotLive({
+            letti: soldiLetti,
+            stati: { omega, safe, mike },
+            aperte: posizioni,
+        });
+        return {
+            conto,
+            rischioBot,
+            etaBotS: lettoAlle == null ? null : Math.max(0, Math.round((nowMs - lettoAlle) / 1000)),
+            scarto: scartoContoBot(conto.esposizione, rischioBot),
+            partite: soldiLetti ? partiteConPosizione(posizioni) : null,
+            programmaScanner: totali.partite,
+        };
+    }, [liveAccount, saldoCanaleConto, runnerVista.runner, nowMs, soldiLetti,
+        omega, safe, mike, posizioni, totali.partite, lettoAlle]);
+
     return {
         caricamento, errore, nowMs,
         giornata, totali,
@@ -3671,8 +3770,10 @@ export function useControlRoom(): ControlRoomVM {
         soldiGiornata: giornataSoldi,
         targetServizio,
         composizioneOggi, manualeSitoBetfair, salvaObiettivo,
+        provaGiornata: provaOggi,
         bots: botsConPnl, posizioni, chiuse, righeChiuse, registrazioni, copertura,
         freni: safe?.control?.stats?.risk ?? null,
+        soldiVeri,
         runner: runnerVista.runner,
         fonteRunner: { fonte: runnerVista.fonte, etaS: runnerVista.etaS },
         runnerTennis: runnerTennisVista.runner,

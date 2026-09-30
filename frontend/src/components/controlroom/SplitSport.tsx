@@ -28,6 +28,8 @@ import { pnlClass } from '@/lib/tradeStatus';
 import type { DailyBreakdown } from '@/lib/dailyHistory';
 import type { CorsieSport, VoceCorsia } from '@/lib/giornataCorsie';
 import { MarchioSoldi } from '@/components/controlroom/MarchioSoldi';
+import { etichettaArretrati, type ProvaGiornata } from '@/lib/provaGiornata';
+import type { ReactNode } from 'react';
 
 /** Identità fissa per sport: il colore segue l'entità, non il rango. */
 const SPORT = {
@@ -55,11 +57,17 @@ export interface SplitSportProps {
     /** posizioni aperte per sport, **divise per modalità**: «2 aperte» senza
      *  dire con che soldi non è un'informazione, è un'ambiguità */
     aperte?: Record<SportKey, { live: number; paper: number }>;
+    /**
+     * 30/09 (P8) — la prova per bot con gli ARRETRATI (partite di giorni
+     * precedenti regolate oggi), mostrati sotto la corsia PROVA, a parte.
+     * Assente = nessuna riga di arretrati (comportamento di prima).
+     */
+    prova?: ProvaGiornata | null;
     testId?: string;
 }
 
 export function SplitSport({
-    perSport, perSportPaper = null, corsie = null, aperte, selezionato, onSeleziona,
+    perSport, perSportPaper = null, corsie = null, aperte, prova = null, selezionato, onSeleziona,
     testId = 'cr-split-sport',
 }: SplitSportProps) {
     return (
@@ -72,6 +80,7 @@ export function SplitSport({
                     datoPaper={perSportPaper?.[k] ?? null}
                     corsie={corsie?.[k] ?? null}
                     aperte={aperte?.[k] ?? { live: 0, paper: 0 }}
+                    prova={prova}
                     letto={perSport != null}
                     scelto={selezionato === k}
                     spento={selezionato != null && selezionato !== k}
@@ -82,12 +91,13 @@ export function SplitSport({
     );
 }
 
-function Tessera({ sport, dato, datoPaper, corsie, aperte, letto, scelto, spento, onClick }: {
+function Tessera({ sport, dato, datoPaper, corsie, aperte, prova, letto, scelto, spento, onClick }: {
     sport: SportKey;
     dato: DailyBreakdown | null;
     datoPaper: DailyBreakdown | null;
     corsie: CorsieSport | null;
     aperte: { live: number; paper: number };
+    prova: ProvaGiornata | null;
     letto: boolean;
     scelto: boolean;
     spento: boolean;
@@ -138,7 +148,9 @@ function Tessera({ sport, dato, datoPaper, corsie, aperte, letto, scelto, spento
             <Corsia
                 sport={sport} tipo="prova" voci={corsie?.prova ?? null} dato={datoPaper} letto={letto}
                 aperte={aperte.paper} principale={!principaleLive}
-            />
+            >
+                {prova != null && <ArretratiSport sport={sport} prova={prova} />}
+            </Corsia>
             {corsie != null && corsie.ignote.length > 0 && (
                 <div className="mt-1 text-[10px] text-amber-300/80" data-testid={`cr-sport-${sport}-ignote`}
                     title="il servizio non dichiara con che soldi opera: non si conta ne' come live ne' come prova">
@@ -159,7 +171,44 @@ function statoVoce(v: VoceCorsia): string {
     return v.acceso === false ? ' (spento)' : ' (non letto)';
 }
 
-function Corsia({ sport, tipo, voci, dato, letto, aperte, principale }: {
+/**
+ * 30/09 (P8) — gli ARRETRATI della prova: partite di giorni precedenti
+ * regolate oggi (es. al riavvio). Righe a parte, ciascuna con la sua data e
+ * l'origine della data; mai dentro il numero di oggi, mai sommate a lui.
+ * Arretrati non letti: detto, mai taciuti. Bot per regolamento: detto a schermo.
+ */
+function ArretratiSport({ sport, prova }: { sport: SportKey; prova: ProvaGiornata }) {
+    const gruppi = prova.arretratiPerSport[sport];
+    const nonLetti = prova.arretratiNonLetti[sport];
+    const regol = prova.perRegolamento[sport];
+    if (gruppi.length === 0 && nonLetti.length === 0 && regol.length === 0) return null;
+    return (
+        <div className="mt-1 space-y-0.5 text-[10px] text-white/45">
+            {gruppi.map((g) => (
+                <div key={`${g.giorno}|${g.origine}`} className="flex items-baseline gap-1.5 flex-wrap"
+                    data-testid={`cr-sport-${sport}-arretrati`}>
+                    <span className="text-white/55">arretrati regolati oggi</span>
+                    <span className={`font-mono ${pnlClass(g.pnl)} opacity-70`}>{fmtMoney(g.pnl, { signed: true })}</span>
+                    <MarchioSoldi fonte="prova" testId={`cr-sport-${sport}-arretrati-fonte`} />
+                    <span>({etichettaArretrati(g)})</span>
+                    <span className="text-white/30">— fuori dalle cifre di oggi</span>
+                </div>
+            ))}
+            {nonLetti.length > 0 && (
+                <div className="text-amber-300/80" data-testid={`cr-sport-${sport}-arretrati-non-letti`}>
+                    arretrati di {nonLetti.join(', ')}: non letti
+                </div>
+            )}
+            {regol.length > 0 && (
+                <div data-testid={`cr-sport-${sport}-per-regolamento`}>
+                    {regol.join(', ')}: per giorno di regolamento (la fonte non porta il giorno della partita)
+                </div>
+            )}
+        </div>
+    );
+}
+
+function Corsia({ sport, tipo, voci, dato, letto, aperte, principale, children }: {
     sport: SportKey;
     tipo: 'live' | 'prova';
     voci: VoceCorsia[] | null;
@@ -167,6 +216,7 @@ function Corsia({ sport, tipo, voci, dato, letto, aperte, principale }: {
     letto: boolean;
     aperte: number;
     principale: boolean;
+    children?: ReactNode;
 }) {
     const live = tipo === 'live';
     // «non ancora letto» e «nessuna operazione» sono due cose diverse: la prima
@@ -210,6 +260,7 @@ function Corsia({ sport, tipo, voci, dato, letto, aperte, principale }: {
                 )}
             </div>
             <div className="flex items-baseline gap-2 flex-wrap mt-0.5">
+                {!live && <span className="text-[9.5px] uppercase tracking-wider text-white/40">partite di oggi</span>}
                 {principale ? <span data-testid={`cr-sport-${sport}-pnl`}>{numero}</span> : numero}
                 {/* la FONTE della cifra: LIVE = righe dei bot regolate oggi (la
                     parte regolata e' quella del conto Betfair, il resto e' la
@@ -219,7 +270,7 @@ function Corsia({ sport, tipo, voci, dato, letto, aperte, principale }: {
                     testId={`cr-sport-${sport}-${tipo}-fonte`}
                     dettaglio={live
                         ? 'somma delle operazioni con soldi veri regolate oggi, dalle righe dei bot'
-                        : 'somma delle operazioni simulate regolate oggi: non entra nell\'obiettivo'}
+                        : 'operazioni simulate sulle partite di OGGI, regolate oggi: non entra nell\'obiettivo'}
                 />
                 <span className="text-[10.5px] text-white/45 flex items-baseline gap-2 flex-wrap">
                     {!letto ? null : !dato || dato.n === 0 ? (
@@ -236,6 +287,7 @@ function Corsia({ sport, tipo, voci, dato, letto, aperte, principale }: {
                     )}
                 </span>
             </div>
+            {children}
         </div>
     );
 }
