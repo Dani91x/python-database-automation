@@ -32,7 +32,7 @@ import FlussoBadge, { FlussoLineeMikeBadge } from '@/components/controlroom/Flus
 import { CashOutPartita } from '@/components/controlroom/CashOutPartita';
 import { NomiPartita } from '@/components/controlroom/NomiPartita';
 import {
-    QuoteMercato, EtaQuote, LineeOu, celleMatchOdds, MAX_LINEE_OU, QUOTE_CLS, QUOTE_TESTO,
+    QuoteMercato, EtaQuote, LineeOu, celleMatchOdds, QUOTE_CLS, QUOTE_TESTO,
 } from '@/components/controlroom/QuoteMercato';
 import { fmtMoney, fmtAge, fmtTime, DASH } from '@/lib/format';
 import { isErrorRow, isSettled } from '@/lib/eventGroups';
@@ -47,6 +47,7 @@ import type { OperazionePartita } from '@/components/controlroom/useControlRoom'
 import { SchedaMike } from '@/components/controlroom/SchedaMike';
 import { marketStatusMeta, type MikeEvent } from '@/lib/mike';
 import { useTennisVivo, nomeSelezioneTennis } from '@/components/controlroom/useTennisVivo';
+import { CashOutGlobalePartita } from '@/components/controlroom/CashOutGlobale';
 
 const BOT_SIGLA: Record<Bot, string> = {
     omega: 'Ω', safe: 'S', mike: 'M', scalper: 'Sc',
@@ -295,8 +296,16 @@ export function SchedaPartita({
     const calcioVivo = p.sport === 'calcio' && p.stato === 'live';
     const celleCalcio = calcioVivo ? celleMatchOdds('calcio', p.odds) : null;
     const lineeOu = p.lineeOu ?? [];
-    const haLineeOu = calcioVivo && lineeOu.length > 0 && lineeOu.length <= MAX_LINEE_OU;
-    const latenzaAccantoQuote = celleCalcio != null;
+    // B1bis: nessuna guardia sul numero di linee qui, la regola vive in `LineeOu`
+    const haLineeOu = calcioVivo && lineeOu.length > 0;
+    // B1bis — tennis in gioco SENZA posizione: le celle P1/P2 dello SCANNER,
+    // come la pre-partita. Con una posizione aperta si monta la barra del
+    // runner (`TennisVivoBar`, altra fonte): allora resta SOLO quella, mai due
+    // prezzi da due fonti sulla stessa scheda. Stesso cancello della barra.
+    const barraTennis = p.sport === 'tennis' && (apertaLive || apertaPaper);
+    const celleTennis = p.sport === 'tennis' && p.stato === 'live' && !barraTennis
+        ? celleMatchOdds('tennis', p.odds) : null;
+    const latenzaAccantoQuote = celleCalcio != null || celleTennis != null;
 
     return (
         <div className={`rounded border border-white/10 border-l-[3px] ${bordo} bg-white/[0.02]`}
@@ -383,8 +392,15 @@ export function SchedaPartita({
             {/* ── tennis vivo: AGGIUNGE punto/servizio/tie-break/stato mercato/età
                 a quello che la testata mostra già (set/game, dal feed scanner
                 tennis-nativo — vedi il commento di TennisVivoBar) ── */}
+            {celleTennis && (
+                <div className="px-2.5 pt-1 flex items-center gap-2 flex-wrap text-[11px]" data-testid="cr-tennis-quote">
+                    <QuoteMercato testId="cr-tennis-quote-mo" celle={celleTennis}
+                        titolo="Match Odds dallo scanner: miglior BACK / miglior LAY di adesso" />
+                    <EtaQuote testId="cr-latenza" latenzaS={p.latenzaQuoteS} stato={p.statoQuote} />
+                </div>
+            )}
             {p.sport === 'tennis' && (
-                <TennisVivoBar eventId={p.event_id} abilitato={apertaLive || apertaPaper}
+                <TennisVivoBar eventId={p.event_id} abilitato={barraTennis}
                     giocatori={p.giocatori} />
             )}
 
@@ -403,6 +419,10 @@ export function SchedaPartita({
                     />
                 </div>
             )}
+
+            {/* 30/09 (P12b) - il CASH OUT DELLA PARTITA: somma esatta delle gambe
+                abbinate di TUTTI i bot, LIVE e PROVA separati; niente se non ce ne sono */}
+            <CashOutGlobalePartita sport={p.sport} operazioni={operazioni} mike={mike} />
 
             {/* ── riga 2: il METRO — target, fatto, quanto manca ── */}
             <div className="px-2.5 pt-2">

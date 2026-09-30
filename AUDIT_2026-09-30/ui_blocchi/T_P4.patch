@@ -1,0 +1,728 @@
+diff --git a/frontend/src/components/controlroom/testata/FasciaSoldiVeri.test.tsx b/frontend/src/components/controlroom/testata/FasciaSoldiVeri.test.tsx
+index 46d9056..47701b2 100644
+--- a/frontend/src/components/controlroom/testata/FasciaSoldiVeri.test.tsx
++++ b/frontend/src/components/controlroom/testata/FasciaSoldiVeri.test.tsx
+@@ -83,7 +83,7 @@ describe('FasciaSoldiVeri - dati mancanti: mai una cifra inventata', () => {
+     it('conto NON letto: nessuna cifra, "conto non letto", niente scarto, niente disponibile', () => {
+         render(<FasciaSoldiVeri s={soldi({ riga: null })} />);
+         const el = screen.getByTestId('cr-esposizione-conto');
+-        expect(screen.getByTestId('cr-esposizione-conto-valore').textContent).toBe('—');
++        expect(screen.getByTestId('cr-esposizione-conto-valore').textContent).toBe('\u2014');
+         expect(el.textContent).toMatch(/conto non letto/);
+         expect(el.textContent).not.toMatch(/0,00/);
+         expect(screen.queryByTestId('cr-scarto-conto-bot')).toBeNull();
+@@ -98,7 +98,7 @@ describe('FasciaSoldiVeri - dati mancanti: mai una cifra inventata', () => {
+ 
+     it('posizioni non ancora lette: rischio dei bot "-" e partite "-"', () => {
+         render(<FasciaSoldiVeri s={soldi({ letti: false })} />);
+-        expect(screen.getByTestId('cr-rischio-bot-valore').textContent).toBe('—');
++        expect(screen.getByTestId('cr-rischio-bot-valore').textContent).toBe('\u2014');
+         expect(screen.getByTestId('cr-rischio-bot').textContent).toMatch(/posizioni non ancora lette/);
+         expect(screen.getByTestId('cr-partite-posizione').textContent).toMatch(/posizioni non ancora lette/);
+         expect(screen.getByTestId('cr-partite-posizione').textContent).not.toMatch(/\d+ partit/);
+diff --git a/frontend/src/components/controlroom/testata/FasciaStop.test.tsx b/frontend/src/components/controlroom/testata/FasciaStop.test.tsx
+new file mode 100644
+index 0000000..ceda46c
+--- /dev/null
++++ b/frontend/src/components/controlroom/testata/FasciaStop.test.tsx
+@@ -0,0 +1,149 @@
++// ============================================================================
++// StopPerdita.test.tsx - P4 (30/09): gli stop di perdita in testata.
++// Finti con le chiavi dei produttori veri:
++//  - riga `betfair_live_risk_state` scritta da `daily_stop_worker._publish_state`
++//    (Betfair/stream/daily_stop_worker.py:334-347): mode, day, realized,
++//    open_mtm, total, limit_value, stop_fired, detail{reason, degraded, kill_switch}
++//    + id, updated_at della tabella (migrations/betfair_live_pnl_journal.sql:51-62);
++//  - Safe `stats.risk` (lib/safeBot SafeRiskStats: daily_loss_stop, loss_stop_active);
++//  - Mike `control.params.daily_loss_stop` (mike/config.py:318) e `stats.daily_stop`
++//    (mike/service.py:4107);
++//  - Omega `control.params` strategy_version / v3_daily_loss_cap / daily_loss_cap.
++// Oggi (progetto par. 0): stop del conto SPENTO (limit_value null, reason limit_off).
++// ============================================================================
++import { describe, it, expect, vi } from 'vitest';
++import { render, screen, fireEvent } from '@testing-library/react';
++import { MemoryRouter } from 'react-router-dom';
++import { StopPerdita, vaiAllaRigaDelBot } from './FasciaStop';
++import { stopDelConto, stopDeiBot, type StopPerditaTestata } from './stopPerdita';
++import type { LiveRiskState } from '@/lib/liveOrders';
++
++const NOW = Date.parse('2026-09-30T14:20:00Z');
++const RIGA_OGGI: LiveRiskState = {
++    id: 1, mode: 'live', day: '2026-09-30', realized: 0, open_mtm: -0.74, total: -0.74,
++    limit_value: null, stop_fired: false,
++    detail: { reason: 'limit_off', degraded: false, kill_switch: false },
++    updated_at: '2026-09-30T14:19:00+00:00',
++};
++
++function bot(over: Partial<Parameters<typeof stopDeiBot>[0]> = {}) {
++    return stopDeiBot({
++        safe: { modalita: 'paper', risk: { daily_loss_stop: -50, loss_stop_active: false } },
++        mike: { modalita: 'live', params: { daily_loss_stop: 50, max_open_matches: 10 }, stats: { daily_stop: false } },
++        omega: { modalita: 'paper', params: { strategy_version: 3, v3_daily_loss_cap: 300 } },
++        ...over,
++    });
++}
++
++function mostra(stop: StopPerditaTestata | undefined, vai = vi.fn(() => true)) {
++    render(<MemoryRouter><StopPerdita stop={stop} vai={vai} /></MemoryRouter>);
++    return vai;
++}
++
++describe('stopDelConto', () => {
++    it('oggi: limit_value null -> SPENTO, motivo limit_off, eta\' dell\'ultimo cambio', () => {
++        const c = stopDelConto(RIGA_OGGI, NOW);
++        expect(c).toMatchObject({ letto: true, soglia: null, scattato: false, motivo: 'limit_off', etaS: 60 });
++    });
++    it('soglia attiva e P&L di giornata', () => {
++        const c = stopDelConto({ ...RIGA_OGGI, limit_value: 40, total: -12.5, detail: { reason: 'under_limit' } }, NOW);
++        expect(c.soglia).toBe(40);
++        expect(c.oggi).toBe(-12.5);
++    });
++    it('riga mai letta: non letto (mai "spento")', () => {
++        expect(stopDelConto(null, NOW)).toMatchObject({ letto: false, soglia: null });
++    });
++});
++
++describe('stopDeiBot', () => {
++    it('Safe dal servizio (segno normalizzato), Mike dal parametro, Omega dal motore v3', () => {
++        const [s, m, o] = bot();
++        expect(s).toMatchObject({ bot: 'safe', modalita: 'paper', soglia: 50, letto: true });
++        expect(m).toMatchObject({ bot: 'mike', modalita: 'live', soglia: 50, letto: true });
++        expect(o).toMatchObject({ bot: 'omega', modalita: 'paper', soglia: 300, letto: true });
++        expect(o.fonte).toMatch(/v3_daily_loss_cap/);
++    });
++    it('Safe con stop positivo nel servizio (50): stessa soglia (il segno non conta)', () => {
++        expect(bot({ safe: { modalita: 'paper', risk: { daily_loss_stop: 50 } } })[0].soglia).toBe(50);
++    });
++    it('Omega motore v2: daily_loss_cap (0 = spento)', () => {
++        const o = bot({ omega: { modalita: 'paper', params: { strategy_version: 2, daily_loss_cap: 0, v3_daily_loss_cap: 300 } } })[2];
++        expect(o.soglia).toBe(0);
++        expect(o.fonte).toMatch(/daily_loss_cap/);
++        expect(o.fonte).not.toMatch(/v3_/);
++    });
++    it('parametri non letti: nessun numero (mai il predefinito spacciato per vero)', () => {
++        const [s, m, o] = bot({
++            safe: { modalita: null, risk: null },
++            mike: { modalita: null, params: null, stats: null },
++            omega: { modalita: null, params: {} },
++        });
++        expect(s.soglia).toBeNull();
++        expect(m.soglia).toBeNull();
++        expect(o.soglia).toBeNull();
++    });
++    it('Mike: stop scattato dichiarato dal servizio', () => {
++        expect(bot({ mike: { modalita: 'live', params: { daily_loss_stop: 50 }, stats: { daily_stop: true } } })[1].scattato).toBe(true);
++    });
++});
++
++describe('StopPerdita - a schermo', () => {
++    it('oggi: \u00abConto: SPENTO\u00bb e ogni bot col SUO nome, la SUA modalita\' e il suo valore', () => {
++        mostra({ conto: stopDelConto(RIGA_OGGI, NOW), bot: bot() });
++        expect(screen.getByTestId('cr-stop-conto-valore').textContent).toBe('SPENTO');
++        const safe = screen.getByTestId('cr-stop-safe');
++        expect(safe.textContent).toMatch(/Safe/);
++        expect(safe.textContent).toMatch(/PAPER/);
++        expect(safe.textContent).toMatch(/50,00/);
++        const mike = screen.getByTestId('cr-stop-mike');
++        expect(mike.textContent).toMatch(/Mike/);
++        expect(mike.textContent).toMatch(/LIVE/);
++        expect(mike.textContent).toMatch(/50,00/);
++        expect(screen.getByTestId('cr-stop-omega').textContent).toMatch(/300,00/);
++    });
++
++    it('stop del conto attivo: soglia e P&L di giornata', () => {
++        mostra({ conto: stopDelConto({ ...RIGA_OGGI, limit_value: 40, total: -12.5 }, NOW), bot: bot() });
++        expect(screen.getByTestId('cr-stop-conto-valore').textContent).toMatch(/40,00/);
++        expect(screen.getByTestId('cr-stop-conto-oggi').textContent).toMatch(/12,50/);
++    });
++
++    it('stop del conto scattato: lo dice, freno generale', () => {
++        mostra({ conto: stopDelConto({ ...RIGA_OGGI, limit_value: 40, stop_fired: true }, NOW), bot: bot() });
++        expect(screen.getByTestId('cr-stop-conto-valore').textContent).toMatch(/SCATTATO/);
++    });
++
++    it('stop del conto non letto: \u00abnon letto\u00bb, mai \u00abSPENTO\u00bb ne\' 0,00', () => {
++        mostra({ conto: stopDelConto(null, NOW), bot: bot() });
++        expect(screen.getByTestId('cr-stop-conto-valore').textContent).toBe('non letto');
++        expect(screen.getByTestId('cr-stop-conto').textContent).not.toMatch(/0,00/);
++    });
++
++    it('ogni stop porta al SUO editor: il conto a Segui Live, i bot alla loro riga', () => {
++        const vai = mostra({ conto: stopDelConto(RIGA_OGGI, NOW), bot: bot() });
++        expect(screen.getByTestId('cr-stop-conto-modifica').getAttribute('href')).toBe('/segui-live');
++        fireEvent.click(screen.getByTestId('cr-stop-mike-modifica'));
++        expect(vai).toHaveBeenCalledWith('mike');
++        fireEvent.click(screen.getByTestId('cr-stop-omega-modifica'));
++        expect(vai).toHaveBeenCalledWith('omega');
++        expect(screen.getByTestId('cr-stop-safe').getAttribute('title')).toMatch(/Stop perdita giornaliera/);
++    });
++});
++
++describe('vaiAllaRigaDelBot - porta alla riga, mette il fuoco sul foglio, non lo apre', () => {
++    it('riga presente: fuoco sul primo pulsante del foglio parametri del bot, nessun clic', () => {
++        document.body.innerHTML = `
++            <div data-testid="cr-pannello-bot"></div>
++            <div data-testid="cr-parametri-mike"><button id="foglio">parametri</button></div>`;
++        const b = document.getElementById('foglio') as HTMLButtonElement;
++        const clic = vi.fn();
++        b.addEventListener('click', clic);
++        expect(vaiAllaRigaDelBot('mike')).toBe(true);
++        expect(document.activeElement).toBe(b);
++        expect(clic).not.toHaveBeenCalled();
++    });
++    it('riga non visibile (filtro sport): porta al pannello e lo dice (false)', () => {
++        document.body.innerHTML = '<div data-testid="cr-pannello-bot"></div>';
++        expect(vaiAllaRigaDelBot('omega')).toBe(false);
++    });
++});
+diff --git a/frontend/src/components/controlroom/testata/FasciaStop.tsx b/frontend/src/components/controlroom/testata/FasciaStop.tsx
+new file mode 100644
+index 0000000..b077ebe
+--- /dev/null
++++ b/frontend/src/components/controlroom/testata/FasciaStop.tsx
+@@ -0,0 +1,105 @@
++// ============================================================================
++// StopPerdita.tsx - P4 (30/09): gli stop di perdita nella testata, dentro il
++// contenitore storico `cr-freni`.
++//
++//   Stop conto: SPENTO  [si modifica: Segui Live]
++//   Safe PAPER -50,00  Mike LIVE -50,00  Omega PAPER -300,00   [modifica]
++//
++// Ogni stop col NOME del proprietario, la sua MODALITA' e il posto dove si
++// modifica. Nessun nuovo punto di salvataggio: il conto rimanda a
++// `LiveControlsPanel` (pagina Segui Live, "Controlli runner - limiti - audit"),
++// ogni bot porta alla SUA riga di "Comando dei bot", dove c'e' il foglio
++// parametri gia' montato col suo cancello "parametri non letti". Il pulsante
++// scorre fino alla riga e mette il fuoco sul foglio: non lo apre e non salva
++// niente da solo.
++// Assente si scrive "assente", mai 0,00; scattato si scrive "SCATTATO".
++// ============================================================================
++import { Link } from 'react-router-dom';
++import { Pencil } from 'lucide-react';
++import { fmtMoney, fmtAge } from '@/lib/format';
++import { BOT_LABEL } from '@/lib/controlRoom';
++import type { StopPerditaTestata, StopBot } from './stopPerdita';
++
++/** Porta il trader alla riga del bot in "Comando dei bot" (il foglio
++ *  parametri esistente), o al pannello se la riga non e' visibile. */
++export function vaiAllaRigaDelBot(bot: string, doc: Document = document): boolean {
++    const riga = doc.querySelector<HTMLElement>(`[data-testid="cr-parametri-${bot}"]`);
++    const bersaglio = riga ?? doc.querySelector<HTMLElement>('[data-testid="cr-pannello-bot"]');
++    if (!bersaglio) return false;
++    if (typeof bersaglio.scrollIntoView === 'function') bersaglio.scrollIntoView({ block: 'center', behavior: 'smooth' });
++    const pulsante = riga?.querySelector<HTMLElement>('button');
++    if (pulsante) pulsante.focus();
++    return riga != null;
++}
++
++function Modo({ m }: { m: StopBot['modalita'] }) {
++    if (m === 'live') return <span className="text-[9px] font-bold px-1 rounded bg-red-500/20 text-red-300">LIVE</span>;
++    if (m === 'paper') return <span className="text-[9px] px-1 rounded border border-white/15 text-slate-300">PAPER</span>;
++    return <span className="text-[9px] px-1 rounded text-orange-300">modo ?</span>;
++}
++
++function ValoreBot({ s }: { s: StopBot }) {
++    if (s.scattato) return <span className="text-red-400 font-semibold">SCATTATO</span>;
++    // Safe: lo stop lo DICHIARA il servizio, se manca e' assente; Mike e
++    // Omega: e' un parametro, se la riga non e' letta non si sa
++    if (!s.letto || s.soglia == null) {
++        return <span className="text-orange-400">{s.bot === 'safe' ? 'assente' : 'non letto'}</span>;
++    }
++    if (s.soglia === 0) return <span className="text-white/50">spento</span>;
++    return <span className="text-white/90">{fmtMoney(-s.soglia)}</span>;
++}
++
++export function StopPerdita({ stop, vai = vaiAllaRigaDelBot }: {
++    stop: StopPerditaTestata | undefined;
++    /** iniettabile per i test */
++    vai?: (bot: string) => boolean;
++}) {
++    const c = stop?.conto ?? null;
++    let contoTesto: string;
++    let contoCls = 'text-white/90';
++    if (c == null || !c.letto) { contoTesto = 'non letto'; contoCls = 'text-orange-400'; }
++    else if (c.scattato) { contoTesto = 'SCATTATO: freno generale tirato'; contoCls = 'text-red-400'; }
++    else if (c.soglia == null) { contoTesto = 'SPENTO'; contoCls = 'text-white/60'; }
++    else contoTesto = fmtMoney(-c.soglia);
++
++    return (
++        <div className="flex flex-col gap-0.5" data-testid="cr-stop-perdita">
++            <span className="text-[10px] uppercase tracking-wider text-white/40">Stop perdita</span>
++            <span className="flex items-center gap-1.5 text-[11px] font-mono tabular-nums" data-testid="cr-stop-conto"
++                title={c?.letto
++                    ? `stop del CONTO (betfair_live_settings.daily_loss_limit, applicato dal runner): raggiunto, tira il freno generale.${c.motivo ? ` Stato del runner: ${c.motivo}.` : ''} Riga aggiornata al cambio, ultimo cambio ${fmtAge(c.etaS)} fa.`
++                    : 'stato dello stop del conto (betfair_live_risk_state) non ancora letto'}>
++                <span className="text-white/45 font-sans">Conto:</span>
++                <span className={`font-semibold ${contoCls}`} data-testid="cr-stop-conto-valore">{contoTesto}</span>
++                {c?.letto && c.soglia != null && c.oggi != null && (
++                    <span className={c.oggi < 0 ? 'text-red-300' : 'text-white/50'} data-testid="cr-stop-conto-oggi"
++                        title="P&L di giornata secondo il runner (regolato dal conto + aperto stimato)">
++                        oggi {fmtMoney(c.oggi, { signed: true })}{c.degradato ? ' (stima degradata)' : ''}
++                    </span>
++                )}
++                <Link to="/segui-live" data-testid="cr-stop-conto-modifica"
++                    className="text-white/40 hover:text-white/80"
++                    title="si modifica in Segui Live, pannello 'Controlli runner - limiti - audit', campo 'Stop giornaliero' (lo stesso controllo di sempre)">
++                    <Pencil className="w-3 h-3" aria-label="modifica lo stop del conto" />
++                </Link>
++            </span>
++            <span className="flex items-center gap-x-2 gap-y-0.5 flex-wrap text-[11px] font-mono tabular-nums">
++                {(stop?.bot ?? []).map((s) => (
++                    <span key={s.bot} className="flex items-center gap-1" data-testid={`cr-stop-${s.bot}`}
++                        title={`stop di ${BOT_LABEL[s.bot]}: ${s.fonte}. Si modifica in ${s.dove}. Vale solo per le aperture di ${BOT_LABEL[s.bot]}.`}>
++                        <span className="text-white/55 font-sans">{BOT_LABEL[s.bot]}</span>
++                        <Modo m={s.modalita} />
++                        <ValoreBot s={s} />
++                        <button type="button" onClick={() => vai(s.bot)} data-testid={`cr-stop-${s.bot}-modifica`}
++                            className="text-white/40 hover:text-white/80"
++                            aria-label={`modifica lo stop di ${BOT_LABEL[s.bot]}`}>
++                            <Pencil className="w-3 h-3" />
++                        </button>
++                    </span>
++                ))}
++            </span>
++        </div>
++    );
++}
++
++export default StopPerdita;
+diff --git a/frontend/src/components/controlroom/testata/stopPerdita.ts b/frontend/src/components/controlroom/testata/stopPerdita.ts
+new file mode 100644
+index 0000000..05448c3
+--- /dev/null
++++ b/frontend/src/components/controlroom/testata/stopPerdita.ts
+@@ -0,0 +1,155 @@
++// ============================================================================
++// stopPerdita.ts - P4 (30/09): gli STOP DI PERDITA in testata, ciascuno col
++// suo nome, la sua modalita' e il posto dove si modifica.
++//
++// Ordine dell'utente (30/09, sezione 1): "Stop perdita non modificabile". La
++// testata scriveva "Stop perdita -50,00" senza dire di chi: era lo stop di
++// SAFE (in paper), non quello del conto. Gli stop sono QUATTRO e diversi:
++//   * CONTO  - `betfair_live_settings.daily_loss_limit`, applicato dal runner
++//              (`Betfair/stream/daily_stop_worker.py:124-137`) che pubblica lo
++//              stato in `betfair_live_risk_state` (`:318-354`): raggiunto, tira
++//              il FRENO generale. Oggi `limit_value = null`, `reason = limit_off`.
++//   * SAFE   - `risk.daily_loss_stop` (negativo, 0 = spento; `safe_strategy/
++//              risk.py:43/:84-88`), dichiarato dal servizio in `stats.risk`.
++//   * MIKE   - `daily_loss_stop` (positivo, 0 = spento; `mike/config.py:318`,
++//              applicato in `mike/service.py:3916-3917`), stato in `stats.daily_stop`.
++//   * OMEGA  - motore v3 (default): `v3_daily_loss_cap` (default 300); motore
++//              v2: `daily_loss_cap` (default 0 = spento). `omega_service.py:
++//              1847-1849`, `omega_config.py:221/:262/:434`.
++// Funzioni PURE; la presentazione e' `StopPerdita.tsx`.
++// ============================================================================
++import type { LiveRiskState } from '@/lib/liveOrders';
++import { normalizeLossStop, type SafeRiskStats } from '@/lib/safeBot';
++import { mergeMikeParams } from '@/lib/mike';
++import { OMEGA_PARAM_DEFAULTS } from '@/lib/omega';
++import type { Modalita } from '../useControlRoom';
++
++// ---------------------------------------------------------------- conto
++
++export interface StopConto {
++    /** false = riga `betfair_live_risk_state` mai letta */
++    letto: boolean;
++    /** soglia di perdita in EUR (positiva); null = stop SPENTO (o non letto) */
++    soglia: number | null;
++    /** P&L di giornata secondo il runner (regolato + aperto); null = ignoto */
++    oggi: number | null;
++    scattato: boolean;
++    /** `detail.reason` del runner (es. 'limit_off') */
++    motivo: string | null;
++    /** true = il runner ha stimato il P&L in modo degradato (posizioni illeggibili) */
++    degradato: boolean;
++    /** eta' dell'ultimo CAMBIO della riga (scritta solo al cambio) */
++    etaS: number | null;
++}
++
++export function stopDelConto(riga: LiveRiskState | null, nowMs: number): StopConto {
++    if (riga == null) {
++        return { letto: false, soglia: null, oggi: null, scattato: false, motivo: null, degradato: false, etaS: null };
++    }
++    const ms = Date.parse(riga.updated_at);
++    const soglia = typeof riga.limit_value === 'number' && Number.isFinite(riga.limit_value) && riga.limit_value > 0
++        ? riga.limit_value : null;
++    const oggi = typeof riga.total === 'number' && Number.isFinite(riga.total) ? riga.total : null;
++    return {
++        letto: true,
++        soglia,
++        oggi,
++        scattato: riga.stop_fired === true,
++        motivo: typeof riga.detail?.reason === 'string' ? riga.detail.reason : null,
++        degradato: riga.detail?.degraded === true,
++        etaS: Number.isFinite(ms) ? Math.max(0, Math.round((nowMs - ms) / 1000)) : null,
++    };
++}
++
++// ---------------------------------------------------------------- bot
++
++export type BotConStop = 'safe' | 'mike' | 'omega';
++
++export interface StopBot {
++    bot: BotConStop;
++    modalita: Modalita | null;
++    /** false = il dato non c'e' (servizio non letto / stop non dichiarato) */
++    letto: boolean;
++    /** soglia di perdita in EUR (positiva); 0 = SPENTO; null = non letto */
++    soglia: number | null;
++    scattato: boolean;
++    /** da dove viene il numero (per il tooltip) */
++    fonte: string;
++    /** dove si modifica (per il tooltip) */
++    dove: string;
++}
++
++function numero(v: unknown): number | null {
++    return typeof v === 'number' && Number.isFinite(v) ? v : null;
++}
++
++function letti(p: Record<string, unknown> | null | undefined): p is Record<string, unknown> {
++    return p != null && Object.keys(p).length > 0;
++}
++
++export function stopDeiBot(input: {
++    safe: { modalita: Modalita | null; risk: SafeRiskStats | null };
++    mike: { modalita: Modalita | null; params: Record<string, unknown> | null; stats: Record<string, unknown> | null };
++    omega: { modalita: Modalita | null; params: Record<string, unknown> | null };
++}): StopBot[] {
++    const out: StopBot[] = [];
++
++    // SAFE: il valore EFFETTIVO dichiarato dal servizio (stats.risk)
++    const s = input.safe.risk;
++    const sStop = normalizeLossStop(numero(s?.daily_loss_stop));
++    out.push({
++        bot: 'safe', modalita: input.safe.modalita,
++        letto: sStop != null,
++        soglia: sStop == null ? null : Math.abs(sStop),
++        scattato: s?.loss_stop_active === true,
++        fonte: 'dichiarato dal servizio di Safe (stats.risk.daily_loss_stop)',
++        dove: 'Comando dei bot, riga Safe: parametri, \u00abStop perdita giornaliera \u20ac\u00bb',
++    });
++
++    // MIKE: parametro della riga di control (default del servizio se assente)
++    const mp = input.mike.params;
++    const mikeLetto = letti(mp);
++    const mStop = mikeLetto ? numero(mergeMikeParams(mp).daily_loss_stop) : null;
++    out.push({
++        bot: 'mike', modalita: input.mike.modalita,
++        letto: mStop != null,
++        soglia: mStop == null ? null : Math.max(0, mStop),
++        scattato: input.mike.stats?.daily_stop === true,
++        fonte: mikeLetto && mp.daily_loss_stop == null
++            ? 'parametro daily_loss_stop non scritto: valore predefinito del servizio'
++            : 'parametro daily_loss_stop di Mike',
++        dove: 'Comando dei bot, riga Mike: parametri, gruppo rischio, \u00abStop perdita giornaliera (\u20ac)\u00bb',
++    });
++
++    // OMEGA: la stessa scelta del servizio (motore v3 -> v3_daily_loss_cap)
++    const op = input.omega.params;
++    const omegaLetto = letti(op);
++    let oStop: number | null = null;
++    let chiave = 'v3_daily_loss_cap';
++    if (omegaLetto) {
++        const versione = numero(op.strategy_version) ?? OMEGA_PARAM_DEFAULTS.strategy_version;
++        if (versione >= 3) {
++            oStop = numero(op.v3_daily_loss_cap) ?? OMEGA_PARAM_DEFAULTS.v3_daily_loss_cap;
++        } else {
++            chiave = 'daily_loss_cap';
++            oStop = numero(op.daily_loss_cap) ?? OMEGA_PARAM_DEFAULTS.daily_loss_cap;
++        }
++    }
++    out.push({
++        bot: 'omega', modalita: input.omega.modalita,
++        letto: oStop != null,
++        soglia: oStop == null ? null : Math.max(0, oStop),
++        scattato: false,
++        fonte: `parametro ${chiave} di Omega (motore ${chiave === 'daily_loss_cap' ? 'v2' : 'v3'})`,
++        dove: chiave === 'daily_loss_cap'
++            ? 'Comando dei bot, riga Omega: parametri, \u00abStop-loss giornaliero (\u20ac)\u00bb'
++            : 'Comando dei bot, riga Omega: parametri, \u00abv3: stop-loss giornaliero (\u20ac)\u00bb',
++    });
++    return out;
++}
++
++/** Il campo del modello di vista (additivo). */
++export interface StopPerditaTestata {
++    conto: StopConto;
++    bot: StopBot[];
++}
+diff --git a/frontend/src/components/controlroom/useControlRoom.soldiVeri.test.tsx b/frontend/src/components/controlroom/useControlRoom.soldiVeri.test.tsx
+index 7ffe26a..19600ae 100644
+--- a/frontend/src/components/controlroom/useControlRoom.soldiVeri.test.tsx
++++ b/frontend/src/components/controlroom/useControlRoom.soldiVeri.test.tsx
+@@ -97,6 +97,9 @@ vi.mock('@/lib/liveOrders', async (orig) => ({
+     ...(await orig() as object),
+     fetchLiveAccount: vi.fn(async () => null),
+     subscribeLiveAccount: vi.fn(() => () => { /* nessuna spinta */ }),
++    // T_P4: lo stop del conto (betfair_live_risk_state)
++    fetchLiveRiskState: vi.fn(async () => null),
++    subscribeLiveRiskState: vi.fn(() => () => { /* nessuna spinta */ }),
+ }));
+ vi.mock('@/lib/scalperControlRoom', async (orig) => ({
+     ...(await orig() as object),
+@@ -104,7 +107,9 @@ vi.mock('@/lib/scalperControlRoom', async (orig) => ({
+ }));
+ 
+ import { fetchMikeState } from '@/lib/mike';
+-import { fetchLiveAccount, subscribeLiveAccount } from '@/lib/liveOrders';
++import {
++    fetchLiveAccount, subscribeLiveAccount, fetchLiveRiskState, subscribeLiveRiskState,
++} from '@/lib/liveOrders';
+ import { useControlRoom } from '@/components/controlroom/useControlRoom';
+ 
+ // la riga del database: scritta al cambio, un minuto fa
+@@ -179,6 +184,40 @@ describe('soldiVeri - l\'esposizione e\' quella del CONTO', () => {
+     });
+ });
+ 
++describe('stopPerdita (T_P4) - lo stop del CONTO dal runner, una lettura sola', () => {
++    // riga come la scrive daily_stop_worker._publish_state (daily_stop_worker.py:334-347)
++    const RIGA_RISCHIO = {
++        id: 1, mode: 'live', day: '2026-09-30', realized: 0, open_mtm: -0.74, total: -0.74,
++        limit_value: null, stop_fired: false,
++        detail: { reason: 'limit_off', degraded: false, kill_switch: false },
++        updated_at: new Date(Date.now() - 30_000).toISOString(),
++    };
++
++    it('oggi: stop del conto SPENTO (limit_off), letto con UNA fetch e UNA sottoscrizione', async () => {
++        vi.mocked(fetchLiveRiskState).mockClear();
++        vi.mocked(subscribeLiveRiskState).mockClear();
++        vi.mocked(fetchLiveRiskState).mockResolvedValue(RIGA_RISCHIO as never);
++        const h = await montato();
++        await waitFor(() => expect(h.result.current.stopPerdita.conto.letto).toBe(true));
++        expect(h.result.current.stopPerdita.conto.soglia).toBeNull();
++        expect(h.result.current.stopPerdita.conto.motivo).toBe('limit_off');
++        expect(vi.mocked(fetchLiveRiskState)).toHaveBeenCalledTimes(1);
++        expect(vi.mocked(subscribeLiveRiskState)).toHaveBeenCalledTimes(1);
++    });
++
++    it('il push realtime della riga aggiorna lo stop (soglia attivata dall\'utente)', async () => {
++        vi.mocked(fetchLiveRiskState).mockResolvedValue(RIGA_RISCHIO as never);
++        let spinta: ((r: unknown) => void) | null = null;
++        vi.mocked(subscribeLiveRiskState).mockImplementation(((cb: (r: unknown) => void) => {
++            spinta = cb; return () => { /* niente */ };
++        }) as never);
++        const h = await montato();
++        await waitFor(() => expect(h.result.current.stopPerdita.conto.letto).toBe(true));
++        act(() => spinta?.({ ...RIGA_RISCHIO, limit_value: 40, detail: { reason: 'under_limit' } }));
++        await waitFor(() => expect(h.result.current.stopPerdita.conto.soglia).toBe(40));
++    });
++});
++
+ describe('soldiVeri - il rischio secondo i bot', () => {
+     it('Mike dichiara 16,22 LIVE: totale 16,22; scarto col conto 6,27', async () => {
+         const h = await montato();
+diff --git a/frontend/src/components/controlroom/useControlRoom.ts b/frontend/src/components/controlroom/useControlRoom.ts
+index 6621c7b..5cb0c75 100644
+--- a/frontend/src/components/controlroom/useControlRoom.ts
++++ b/frontend/src/components/controlroom/useControlRoom.ts
+@@ -114,7 +114,11 @@ import {
+ import { prezzoVivoPerGamba } from '@/lib/comboPrezzoVivo';
+ import { updateOmegaParams } from '@/lib/omega';
+ import { applicaLottoScan, type ScanRowEvent } from '@/lib/scanEventBuffer';
+-import { fetchLiveAccount, subscribeLiveAccount, type LiveAccountRow } from '@/lib/liveOrders';
++import {
++    fetchLiveAccount, subscribeLiveAccount, type LiveAccountRow,
++    // P4 (30/09) - lo stop del conto
++    fetchLiveRiskState, subscribeLiveRiskState, type LiveRiskState,
++} from '@/lib/liveOrders';
+ // P3 (30/09) - la fascia «SOLDI VERI ADESSO» della testata (campo additivo)
+ import { leggiSaldoDalCanale, saldoPiuRecente, type SaldoDalCanale } from '@/lib/saldoBetfair';
+ import { CANALI_SALDO } from './SaldoBetfairCard';
+@@ -122,6 +126,8 @@ import {
+     contoAdesso, rischioBotLive, scartoContoBot, partiteConPosizione,
+     type SoldiVeriTestata,
+ } from './testata/soldiVeri';
++// P4 (30/09) - gli stop di perdita in testata (campo additivo)
++import { stopDelConto, stopDeiBot, type StopPerditaTestata } from './testata/stopPerdita';
+ import {
+     fetchScalperControlRoom, statoBotScalper, ordiniDellaSessione, esposizioneScalper,
+     chiusuraScalper, pnlRealeOrdini, modalitaSessione, sessioneViva, idSessione,
+@@ -868,6 +874,13 @@ export interface ControlRoomVM {
+      */
+     soldiVeri: SoldiVeriTestata;
+ 
++    /**
++     * P4 (30/09) - GLI STOP DI PERDITA, ciascuno col suo nome: quello del
++     * CONTO (`betfair_live_risk_state`, applicato dal runner, tira il freno
++     * generale) e quelli di Safe, Mike e Omega. Campo NUOVO: `freni` resta.
++     */
++    stopPerdita: StopPerditaTestata;
++
+     /**
+      * Stato del runner flumine. 14/09 — il battito diceva «2 settembre» mentre
+      * il processo girava: `heartbeat_worker` vive dentro il framework e non
+@@ -1254,6 +1267,8 @@ export function useControlRoom(): ControlRoomVM {
+     /** P3 (30/09) - l'ultimo SALDO arrivato dal topic `account` dei canali
+      *  (il piu' recente vince, stessa regola di `SaldoBetfairCard`) */
+     const [saldoCanaleConto, setSaldoCanaleConto] = useState<SaldoDalCanale | null>(null);
++    /** P4 (30/09) - la riga singleton `betfair_live_risk_state` (stop del conto) */
++    const [statoRischioConto, setStatoRischioConto] = useState<LiveRiskState | null>(null);
+     /** avviso onesto: PIAZZA ha dovuto ripiegare sul solo `p_id` perché la
+      *  RPC non accetta ancora il prezzo visto (migrazione non applicata). */
+     const [avvisoOpportunita, setAvvisoOpportunita] = useState<string | null>(null);
+@@ -1838,6 +1853,19 @@ export function useControlRoom(): ControlRoomVM {
+         return () => { vivo = false; off.forEach((f) => f()); };
+     }, []);
+ 
++    // P4 (30/09) - LO STOP DEL CONTO. Nessuna lettura della Control Room lo
++    // portava (`RigaFreno` legge `get_live_settings` per il freno, non lo
++    // stato dello stop). Stesso schema del conto qui sopra: UNA lettura
++    // one-shot della riga singleton + push Realtime; NESSUN poll, niente nel
++    // giro dei 30 s. La riga la scrive il runner al cambio.
++    useEffect(() => {
++        let vivo = true;
++        fetchLiveRiskState().then((r) => { if (vivo) setStatoRischioConto(r); })
++            .catch(() => { /* resta null: la testata dice «stop del conto non letto» */ });
++        const off = subscribeLiveRiskState((r) => { if (vivo && r) setStatoRischioConto(r); });
++        return () => { vivo = false; off(); };
++    }, []);
++
+     // -------------------------------------------------- proposte in realtime
+     // Una proposta di chiusura che comparisse 30 s dopo sarebbe inutile: il
+     // prezzo su cui il bot ha deciso non c'e' piu'.
+@@ -3760,6 +3788,27 @@ export function useControlRoom(): ControlRoomVM {
+     }, [liveAccount, saldoCanaleConto, runnerVista.runner, nowMs, soldiLetti,
+         omega, safe, mike, posizioni, totali.partite, lettoAlle]);
+ 
++    // P4 (30/09) - gli stop di perdita (moduli puri in testata/stopPerdita)
++    const stopPerdita = useMemo<StopPerditaTestata>(() => {
++        const modo = (b: Bot) => bots.find((x) => x.bot === b)?.modalita ?? null;
++        return {
++            conto: stopDelConto(statoRischioConto, nowMs),
++            bot: stopDeiBot({
++                safe: { modalita: modo('safe'), risk: safe?.control?.stats?.risk ?? null },
++                mike: {
++                    modalita: modo('mike'),
++                    params: (mike?.control?.params ?? null) as Record<string, unknown> | null,
++                    stats: (mike?.control?.stats ?? null) as Record<string, unknown> | null,
++                },
++                omega: {
++                    modalita: modo('omega'),
++                    params: (omega?.control?.params ?? null) as Record<string, unknown> | null,
++                },
++            }),
++        };
++    }, [statoRischioConto, nowMs, bots, safe?.control?.stats?.risk, mike?.control?.params,
++        mike?.control?.stats, omega?.control?.params]);
++
+     return {
+         caricamento, errore, nowMs,
+         giornata, totali,
+@@ -3774,6 +3823,7 @@ export function useControlRoom(): ControlRoomVM {
+         bots: botsConPnl, posizioni, chiuse, righeChiuse, registrazioni, copertura,
+         freni: safe?.control?.stats?.risk ?? null,
+         soldiVeri,
++        stopPerdita,
+         runner: runnerVista.runner,
+         fonteRunner: { fonte: runnerVista.fonte, etaS: runnerVista.etaS },
+         runnerTennis: runnerTennisVista.runner,
+diff --git a/frontend/src/pages/ControlRoom.test.tsx b/frontend/src/pages/ControlRoom.test.tsx
+index 30e1b84..48759eb 100644
+--- a/frontend/src/pages/ControlRoom.test.tsx
++++ b/frontend/src/pages/ControlRoom.test.tsx
+@@ -37,6 +37,7 @@ import { useControlRoom } from '@/components/controlroom/useControlRoom';
+ import type { GruppoCampionato, PartitaGiornata } from '@/lib/controlRoom';
+ // T_P3 (30/09): il campo `soldiVeri` dei finti si costruisce con le funzioni VERE
+ import { contoAdesso, rischioBotLive, scartoContoBot } from '@/components/controlroom/testata/soldiVeri';
++import { stopDelConto, stopDeiBot } from '@/components/controlroom/testata/stopPerdita';
+ 
+ const mVm = vi.mocked(useControlRoom);
+ 
+@@ -64,7 +65,19 @@ function gruppo(partite: PartitaGiornata[]): GruppoCampionato[] {
+ }
+ 
+ function vm(over: Partial<ReturnType<typeof useControlRoom>> = {}): ReturnType<typeof useControlRoom> {
++    // T_P4 (30/09): `stopPerdita` si costruisce con le funzioni VERE dagli stessi
++    // `freni` del finto (anche quando un test li sovrascrive), come fa il hook
++    const freniFinto = 'freni' in over ? (over.freni ?? null) : { daily_loss_stop: -50, loss_stop_active: false };
++    const stopPerditaFinto = {
++        conto: stopDelConto(null, Date.parse('2026-09-14T15:00:00Z')),
++        bot: stopDeiBot({
++            safe: { modalita: 'paper', risk: freniFinto },
++            mike: { modalita: 'paper', params: null, stats: null },
++            omega: { modalita: 'paper', params: null },
++        }),
++    };
+     return {
++        stopPerdita: stopPerditaFinto,
+         caricamento: false, errore: null, nowMs: Date.parse('2026-09-14T15:00:00Z'),
+         giornata: gruppo([partita()]),
+         totali: {
+@@ -224,6 +237,29 @@ describe('freni — un freno che nessuno vede non è un freno', () => {
+         expect(el.textContent).not.toMatch(/0,00/);
+     });
+ 
++    it('T_P4: lo stop del CONTO e quello di OGNI bot, col nome e la modalita\' (non piu\' «Stop perdita −50,00» di chi?)', () => {
++        mVm.mockReturnValue(vm({
++            stopPerdita: {
++                conto: stopDelConto({
++                    id: 1, mode: 'live', day: '2026-09-14', realized: 0, open_mtm: 0, total: 0,
++                    limit_value: null, stop_fired: false, detail: { reason: 'limit_off' },
++                    updated_at: '2026-09-14T14:59:00Z',
++                }, Date.parse('2026-09-14T15:00:00Z')),
++                bot: stopDeiBot({
++                    safe: { modalita: 'paper', risk: { daily_loss_stop: -50, loss_stop_active: false } },
++                    mike: { modalita: 'live', params: { daily_loss_stop: 50 }, stats: { daily_stop: false } },
++                    omega: { modalita: 'paper', params: { strategy_version: 3, v3_daily_loss_cap: 0 } },
++                }),
++            },
++        }));
++        const el = mostra().getByTestId('cr-freni');
++        expect(within(el).getByTestId('cr-stop-conto-valore').textContent).toBe('SPENTO');
++        expect(within(el).getByTestId('cr-stop-safe').textContent).toMatch(/Safe.*PAPER.*50,00/);
++        expect(within(el).getByTestId('cr-stop-mike').textContent).toMatch(/Mike.*LIVE.*50,00/);
++        expect(within(el).getByTestId('cr-stop-omega').textContent).toMatch(/Omega.*PAPER.*spento/);
++        expect(within(el).getByTestId('cr-stop-conto-modifica').getAttribute('href')).toBe('/segui-live');
++    });
++
+     it('stop già scattato: lo dice, non mostra solo un numero', () => {
+         mVm.mockReturnValue(vm({ freni: { daily_loss_stop: -50, loss_stop_active: true } }));
+         expect(within(mostra().getByTestId('cr-freni')).getByText('SCATTATO')).toBeTruthy();
+diff --git a/frontend/src/pages/ControlRoom.tsx b/frontend/src/pages/ControlRoom.tsx
+index 729d7e7..c098d4e 100644
+--- a/frontend/src/pages/ControlRoom.tsx
++++ b/frontend/src/pages/ControlRoom.tsx
+@@ -59,6 +59,7 @@ import { RigaFreno } from '@/components/controlroom/RigaFreno';
+ import { ProposteUsciteFlusso } from '@/components/controlroom/ProposteUsciteFlusso';
+ import { RigaCapacitaMercati } from '@/components/controlroom/RigaCapacitaMercati';
+ import { FasciaSoldiVeri } from '@/components/controlroom/testata/FasciaSoldiVeri';
++import { StopPerdita } from '@/components/controlroom/testata/FasciaStop';
+ import {
+     STAKE_TENNIS, differenzeSoloTennis, altreInLiveAdesso,
+ } from '@/components/controlroom/soloTennis';
+@@ -935,7 +936,7 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
+                     conto, 30/09) non compare piu'. Mai 0,00 per un dato non
+                     letto: «—» e il motivo. */}
+                 <FasciaSoldiVeri s={vm.soldiVeri} />
+-                <Freni freni={vm.freni} />
++                <Freni stop={vm.stopPerdita} />
+                 <Runner r={vm.runner} fonte={vm.fonteRunner} />
+                 <Runner r={vm.runnerTennis} fonte={vm.fonteRunnerTennis} tennis />
+ 
+@@ -1050,18 +1051,13 @@ function Runner({ r, fonte, tennis = false }: {
+  * e il conto. Sta in testata perché un freno che nessuno vede non è un freno.
+  * Assente si scrive «assente», non «0,00 €».
+  */
+-function Freni({ freni }: { freni: ReturnType<typeof useControlRoom>['freni'] }) {
+-    const soglia = freni?.daily_loss_stop;
+-    const scattato = freni?.loss_stop_active === true;
+-    const noto = typeof soglia === 'number' && Number.isFinite(soglia);
++// P4 (30/09) - «Stop perdita −50,00» era lo stop di SAFE presentato come se
++// fosse l'unico: adesso il contenitore `cr-freni` porta lo stop del CONTO e
++// quello di ogni bot, con modalita' e punto dove si modifica (`StopPerdita`).
++function Freni({ stop }: { stop: ReturnType<typeof useControlRoom>['stopPerdita'] | undefined }) {
+     return (
+-        <div className="flex flex-col" data-testid="cr-freni" title="stop per perdita giornaliera: oltre questa soglia il bot non apre più">
+-            <span className="text-[10px] uppercase tracking-wider text-white/40">Stop perdita</span>
+-            <span className={`font-mono text-sm font-semibold tabular-nums ${
+-                scattato ? 'text-red-400' : noto ? 'text-white/90' : 'text-orange-400'
+-            }`}>
+-                {scattato ? 'SCATTATO' : noto ? fmtMoney(soglia) : 'assente'}
+-            </span>
++        <div className="flex flex-col" data-testid="cr-freni">
++            <StopPerdita stop={stop} />
+         </div>
+     );
+ }

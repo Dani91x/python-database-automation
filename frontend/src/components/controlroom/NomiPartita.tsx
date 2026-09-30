@@ -9,9 +9,9 @@
 // Adesso UN componente per pre-partita, in gioco e aperte:
 //   · casa sopra, ospite sotto (`dividiNomi`, la stessa divisione dei pulsanti);
 //   · il logo dove c'e' (`teamLogo`, gli URL di Omega). Dove manca, solo il
-//     nome: nessun segnaposto che sembri un logo rotto. Se UNA sola squadra ha
-//     il logo, l'altra riga ha uno spazio vuoto invisibile (niente bordo, niente
-//     fondo) perche' i due nomi restino allineati;
+//     nome: nessun segnaposto che sembri un logo rotto. Lo spazio del logo e'
+//     sempre riservato e invisibile (niente bordo, niente fondo), perche' i nomi
+//     restino allineati anche fra partite con e senza loghi (B1bis);
 //   · un logo che non carica sparisce (stessa regola di prima);
 //   · il nome COMPLETO resta accessibile: `title` per chi passa col mouse sopra
 //     un nome troncato, e un testo `sr-only` per i lettori di schermo (le due
@@ -33,21 +33,22 @@ export function NomiPartita({ nome, homeTeamId = null, awayTeamId = null }: Nomi
     const [casa, ospite] = dividiNomi(nome);
     const srcCasa = homeTeamId != null ? teamLogo(homeTeamId) : '';
     const srcOspite = ospite && awayTeamId != null ? teamLogo(awayTeamId) : '';
-    // lo spazio del logo esiste solo se almeno UNA squadra ha un logo
-    const conLoghi = Boolean(srcCasa || srcOspite);
     return (
         <div className="flex-1 min-w-0" title={nome} data-testid="cr-nomi-partita">
             <span className="sr-only">{nome}</span>
             <div aria-hidden="true">
-                <Squadra nome={casa} src={srcCasa} conLoghi={conLoghi} />
-                {ospite && <Squadra nome={ospite} src={srcOspite} conLoghi={conLoghi} />}
+                <Squadra nome={casa} src={srcCasa} />
+                {ospite && <Squadra nome={ospite} src={srcOspite} />}
             </div>
         </div>
     );
 }
 
-/** Una squadra: logo se c'e', nome sempre. */
-function Squadra({ nome, src, conLoghi }: { nome: string; src: string; conLoghi: boolean }) {
+/** Una squadra: logo se c'e', nome sempre. B1bis (30/09): lo spazio del logo
+ *  e' SEMPRE riservato (invisibile, niente bordo ne' fondo), anche quando
+ *  nessuna delle due squadre ha il logo: in una lista mista i nomi partono
+ *  tutti dallo stesso punto, come nella pre-partita prima di B1. */
+function Squadra({ nome, src }: { nome: string; src: string }) {
     const [rotto, setRotto] = useState(false);
     return (
         <div className="flex items-center gap-1.5 leading-tight min-w-0">
@@ -57,9 +58,9 @@ function Squadra({ nome, src, conLoghi }: { nome: string; src: string; conLoghi:
                     onError={() => setRotto(true)}
                     className="w-4 h-4 object-contain shrink-0"
                 />
-            ) : conLoghi ? (
+            ) : (
                 <span className="w-4 shrink-0" aria-hidden="true" data-testid="cr-logo-vuoto" />
-            ) : null}
+            )}
             <span className="text-[13px] font-medium leading-tight truncate" data-testid="cr-nome-squadra">{nome}</span>
         </div>
     );

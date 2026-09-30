@@ -50,6 +50,33 @@ describe('pannello parametri di Mike: riscontro del salvataggio', () => {
         expect(screen.getByLabelText('Filtro competizioni')).toHaveValue('serie a');
     });
 
+    it('M1 (review incrociata 30/09): rilettura NON aspettata: la bozza resta sui valori SALVATI, mai i vecchi', async () => {
+        // Control Room: `onSave` risolve senza cambiare `params` (la rilettura
+        // arriva dopo, o non arriva). La bozza deve restare 12, non tornare 5.
+        const salvati = vi.fn(async () => { await Promise.resolve(); });
+        const pagina = (stake: number) => (
+            <MikeParamsSheet params={{ ...MIKE_PARAM_DEFAULTS, stake }} busy={false} onSave={salvati} />
+        );
+        const user = userEvent.setup();
+        const { rerender } = render(pagina(5));
+        await user.click(screen.getByTestId('mike-params-trigger'));
+        await screen.findByTestId('params-sheet');
+        const stake = screen.getByLabelText('Stake Under 3.5 (€)');
+        await user.clear(stake);
+        await user.type(stake, '12');
+        await user.click(screen.getByTestId('params-save'));
+        const esito = await screen.findByTestId('params-esito');
+        expect(esito.getAttribute('data-esito')).toBe('ok');
+        // la bozza NON e' tornata a 5; il pallino dice onestamente che il
+        // servizio non ha ancora ripubblicato
+        expect(screen.getByLabelText('Stake Under 3.5 (€)')).toHaveValue(12);
+        expect(screen.getByTestId('params-dirty')).toBeInTheDocument();
+        // quando il servizio ripubblica, si riallinea e il pallino si spegne
+        rerender(pagina(12));
+        await waitFor(() => expect(screen.queryByTestId('params-dirty')).toBeNull());
+        expect(screen.getByLabelText('Stake Under 3.5 (€)')).toHaveValue(12);
+    });
+
     it('salvataggio fallito: l’errore testuale e le modifiche restano da salvare', async () => {
         const user = await apri(<Pagina fallisce="non autorizzato (owner-only)" />);
         const stake = screen.getByLabelText('Stake Under 3.5 (€)');

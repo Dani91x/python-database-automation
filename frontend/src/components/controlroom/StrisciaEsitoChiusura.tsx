@@ -109,7 +109,12 @@ export function StrisciaEsitoChiusura({
                 {PASSO[r.stato]}
             </span>
             {r.coperturaFrazione != null && r.coperturaFrazione < 1 && (
-                <span className="font-mono tabular-nums">{Math.round(r.coperturaFrazione * 100)}% abbinato</span>
+                // 30/09 (P13): la percentuale e' della CHIUSURA (quanto della
+                // posizione le gambe di chiusura hanno abbinato), non della posizione
+                <span className="font-mono tabular-nums" data-testid={`${testId}-copertura`}
+                    title="quota della posizione che le gambe di chiusura hanno abbinato">
+                    chiusura abbinata {Math.round(r.coperturaFrazione * 100)}%
+                </span>
             )}
             {esposta && (
                 <span className="font-mono tabular-nums font-bold" data-testid={`${testId}-esposizione`}>

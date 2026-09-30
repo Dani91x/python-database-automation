@@ -139,9 +139,23 @@ export function EtaQuote({ latenzaS, stato, testId }: {
     );
 }
 
-/** Oltre questo numero di linee la scheda non le mostra: scegliere QUALI
- *  mostrare sarebbe una decisione inventata (vedi il referto B1). */
+/** Fino a questo numero di linee sono TUTTE in vista. Oltre (B1bis, decisione
+ *  del coordinatore del 30/09) restano in vista solo quelle di `lineaInVista`,
+ *  e tutte le altre stanno nel riquadro chiuso «altre N linee»: nessuna linea
+ *  del payload resta fuori dalla scheda. La regola vive SOLO qui. */
 export const MAX_LINEE_OU = 4;
+
+/** Le linee su cui operano i bot (Mike: Under/Over 3,5 e 4,5). */
+export const LINEE_BOT_OU: readonly number[] = [3.5, 4.5];
+
+/** Regola fissa, scritta: 3,5 e 4,5, piu' ogni linea che il blocco marca
+ *  `for_mike` (tenuta per una posizione di Mike) o `decided` (decisa dai gol). */
+export function lineaInVista(l: LineaOuScheda): boolean {
+    return LINEE_BOT_OU.includes(l.linea) || l.perMike || l.decisa;
+}
+
+const REGOLA_LINEE = 'in vista le linee 3,5 e 4,5 (quelle su cui operano i bot: Mike) e ogni linea che lo scanner '
+    + 'marca per una posizione di Mike o come decisa dai gol; tutte le altre linee del feed sono in «altre N linee»';
 
 /**
  * Le linee Under/Over della riga (`PartitaGiornata.lineeOu`), con lo stesso
@@ -152,39 +166,54 @@ export const MAX_LINEE_OU = 4;
  * (quel giudizio lo dà il badge del flusso).
  */
 export function LineeOu({ linee, testId }: { linee: readonly LineaOuScheda[]; testId: string }) {
-    if (linee.length === 0 || linee.length > MAX_LINEE_OU) return null;
+    if (linee.length === 0) return null;
+    const tutteInVista = linee.length <= MAX_LINEE_OU;
+    const inVista = tutteInVista ? linee : linee.filter(lineaInVista);
+    const altre = tutteInVista ? [] : linee.filter((l) => !lineaInVista(l));
     return (
-        <div className="space-y-1" data-testid={testId}>
-            {linee.map((l) => {
-                const stato = marketStatusMeta(l.stato);
-                const nome = fmtNum(l.linea, 1);
-                return (
-                    <div key={l.marketId} className="flex items-center gap-2 flex-wrap" data-testid="cr-quote-ou-linea">
-                        <span className="text-[11px] font-semibold text-white/50 w-12 shrink-0"
-                            title={`mercato Under/Over ${nome} gol`}>U/O {nome}</span>
-                        {stato && (
-                            <span className={`text-[9px] font-bold uppercase tracking-wider px-1 rounded border ${stato.cls} border-current/40`}
-                                data-testid="cr-quote-ou-mercato" title="stato del mercato Under/Over, da Betfair">
-                                {stato.label}
-                            </span>
-                        )}
-                        {l.decisa && (
-                            <span className="text-[10px] text-amber-300" data-testid="cr-quote-ou-decisa"
-                                title="i gol hanno già superato la linea: esito certo, è nel feed solo per una posizione di Mike">
-                                decisa dai gol
-                            </span>
-                        )}
-                        <QuoteMercato testId="cr-quote-ou-prezzi" celle={[
-                            { chiave: 'under', etichetta: 'Under', back: l.under?.back, lay: l.under?.lay },
-                            { chiave: 'over', etichetta: 'Over', back: l.over?.back, lay: l.over?.lay },
-                        ]} />
-                        <span className="font-mono text-[11px] text-white/40 whitespace-nowrap" data-testid="cr-quote-ou-eta"
-                            title="ultimo book ricevuto per questa linea (seen_ms): non dice se il prezzo è cambiato">
-                            ultimo book: {l.etaBookS == null ? 'età ignota' : `${fmtAge(l.etaBookS)} fa`}
-                        </span>
+        <div className="space-y-1" data-testid={testId} title={tutteInVista ? undefined : REGOLA_LINEE}>
+            {inVista.map((l) => <RigaLineaOu key={l.marketId} l={l} />)}
+            {altre.length > 0 && (
+                <details data-testid="cr-quote-ou-altre">
+                    <summary className="cursor-pointer text-[11px] text-white/45 select-none">
+                        {altre.length === 1 ? 'altra 1 linea' : `altre ${altre.length} linee`}
+                    </summary>
+                    <div className="space-y-1 mt-1">
+                        {altre.map((l) => <RigaLineaOu key={l.marketId} l={l} />)}
                     </div>
-                );
-            })}
+                </details>
+            )}
+        </div>
+    );
+}
+
+function RigaLineaOu({ l }: { l: LineaOuScheda }) {
+    const stato = marketStatusMeta(l.stato);
+    const nome = fmtNum(l.linea, 1);
+    return (
+        <div className="flex items-center gap-2 flex-wrap" data-testid="cr-quote-ou-linea">
+            <span className="text-[11px] font-semibold text-white/50 w-12 shrink-0"
+                title={`mercato Under/Over ${nome} gol`}>U/O {nome}</span>
+            {stato && (
+                <span className={`text-[9px] font-bold uppercase tracking-wider px-1 rounded border ${stato.cls} border-current/40`}
+                    data-testid="cr-quote-ou-mercato" title="stato del mercato Under/Over, da Betfair">
+                    {stato.label}
+                </span>
+            )}
+            {l.decisa && (
+                <span className="text-[10px] text-amber-300" data-testid="cr-quote-ou-decisa"
+                    title="i gol hanno già superato la linea: esito certo, è nel feed solo per una posizione di Mike">
+                    decisa dai gol
+                </span>
+            )}
+            <QuoteMercato testId="cr-quote-ou-prezzi" celle={[
+                { chiave: 'under', etichetta: 'Under', back: l.under?.back, lay: l.under?.lay },
+                { chiave: 'over', etichetta: 'Over', back: l.over?.back, lay: l.over?.lay },
+            ]} />
+            <span className="font-mono text-[11px] text-white/40 whitespace-nowrap" data-testid="cr-quote-ou-eta"
+                title="ultimo book ricevuto per questa linea (seen_ms): non dice se il prezzo è cambiato">
+                ultimo book: {l.etaBookS == null ? 'età ignota' : `${fmtAge(l.etaBookS)} fa`}
+            </span>
         </div>
     );
 }

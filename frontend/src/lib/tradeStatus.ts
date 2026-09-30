@@ -216,6 +216,97 @@ export function unknownStatusMeta(status: string | null | undefined): Meta {
     };
 }
 
+// ------------------------------------------------ esito di un ordine non abbinato
+/**
+ * 30/09 (blocco P13 del monitor veritiero) - COME E' FINITO un ordine rimasto
+ * senza abbinamento, quando il servizio lo SCRIVE. Lo `status` del DB resta
+ * 'error' (vincolo CHECK delle tabelle): «ERRORE» faceva credere a un guasto
+ * anche per una banca di green-up che il bot aveva semplicemente ritirato.
+ *
+ * Chi lo scrive (verificato nel codice, 30/09):
+ *   · Mike `meta.esito_ordine` (Betfair/mike/service.py:639-653, :974,
+ *     :1703-1706, :2660, :5534-5536) e i due `meta.reason` del servizio che
+ *     vengono prima di quel campo: 'cancelled_by_engine' (:4307, ritiro del
+ *     motore) e 'reconciled_not_placed' (:5422-5424, riconciliazione: su
+ *     Betfair nessun ordine abbinato con quel riferimento, `reconcile_decision`
+ *     in safe_strategy/execution.py:1056-1101).
+ *   · Omega e Safe NON scrivono nessuno dei due: per loro questa funzione
+ *     ritorna sempre null e resta `statusMetaOf` (STATUS_META e il suo
+ *     significato di 'error' non cambiano per nessuno).
+ * Esito sconosciuto o assente = null: il chiamante mostra «ERRORE» come prima
+ * (fail-closed: mai un'etichetta tranquillizzante su un esito che non si sa).
+ */
+export interface EsitoOrdineMeta extends Meta {
+    /** chiave stabile dell'esito (per raggruppare e per i test) */
+    chiave: 'ritirato' | 'non_abbinato_verificato' | 'rifiutato' | 'non_abbinato_fok'
+        | 'cancellato_da_betfair' | 'fermato';
+    /** una riga di spiegazione (title) */
+    title: string;
+    /** la stessa parola, al singolare e al plurale, per il riepilogo dei tentativi */
+    uno: string;
+    molti: string;
+}
+
+const NEUTRO_ESITO = 'bg-slate-500/15 text-slate-300 border-slate-500/40';
+const ATTENZIONE_ESITO = 'bg-amber-500/15 text-amber-300 border-amber-500/40';
+
+export function esitoOrdineMeta(
+    row: { status: string | null | undefined; meta?: MetaObj },
+    /** codice di rifiuto gia' estratto dal chiamante (`statoOrdine().errorCode`) */
+    codice: string | null = null,
+): EsitoOrdineMeta | null {
+    if (String(row.status ?? '').toLowerCase() !== 'error') return null;
+    const m = (row.meta ?? {}) as Record<string, unknown>;
+    const esito = typeof m['esito_ordine'] === 'string' ? String(m['esito_ordine']) : '';
+    const reason = typeof m['reason'] === 'string' ? String(m['reason']) : '';
+    if (esito === 'ritirato_da_noi' || (!esito && reason === 'cancelled_by_engine')) {
+        return {
+            chiave: 'ritirato', label: 'RITIRATO dal bot', cls: NEUTRO_ESITO,
+            title: 'ordine annullato dal bot prima di abbinarsi (annullo confermato; in live da Betfair): 0,00 € abbinati, nessun errore',
+            uno: 'ritirato dal bot', molti: 'ritirati dal bot',
+        };
+    }
+    if (!esito && reason === 'reconciled_not_placed') {
+        return {
+            chiave: 'non_abbinato_verificato', label: 'NON ABBINATO (verificato su Betfair)', cls: NEUTRO_ESITO,
+            title: 'la riconciliazione con Betfair non ha trovato nessun ordine abbinato con il riferimento di questa gamba: 0,00 € a mercato',
+            uno: 'non abbinato (verificato su Betfair)', molti: 'non abbinati (verificato su Betfair)',
+        };
+    }
+    if (esito === 'rifiutato') {
+        const c = codice && codice !== 'SENZA_CODICE' ? codice : null;
+        return {
+            chiave: 'rifiutato',
+            label: c ? `RIFIUTATO da Betfair: ${c}` : 'RIFIUTATO da Betfair (codice non dichiarato)',
+            cls: 'bg-red-500/15 text-red-300 border-red-500/40',
+            title: 'Betfair (o il runner) ha rifiutato l’ordine: nessun ordine a mercato',
+            uno: 'rifiutato da Betfair', molti: 'rifiutati da Betfair',
+        };
+    }
+    if (esito === 'non_abbinato_fok') {
+        return {
+            chiave: 'non_abbinato_fok', label: 'NON ABBINATO (tutto o niente)', cls: NEUTRO_ESITO,
+            title: 'ordine «tutto o niente» che il mercato non ha abbinato: nessun ordine a mercato',
+            uno: 'non abbinato (tutto o niente)', molti: 'non abbinati (tutto o niente)',
+        };
+    }
+    if (esito === 'cancellato_da_betfair') {
+        return {
+            chiave: 'cancellato_da_betfair', label: 'CANCELLATO da Betfair', cls: ATTENZIONE_ESITO,
+            title: 'ordine sul book cancellato da Betfair (sospensione del mercato o passaggio in gioco) prima di abbinarsi',
+            uno: 'cancellato da Betfair', molti: 'cancellati da Betfair',
+        };
+    }
+    if (esito === 'fermato_da_noi') {
+        return {
+            chiave: 'fermato', label: 'FERMATO dal bot (mai inviato)', cls: ATTENZIONE_ESITO,
+            title: 'ordine mai partito: fermato da un nostro blocco (freno, modalità ordini, runner)',
+            uno: 'fermato dal bot', molti: 'fermati dal bot',
+        };
+    }
+    return null;
+}
+
 // ----------------------------------------------------------------- bot status
 export type BotStatus = 'idle' | 'running' | 'stopping' | 'stopped' | 'error';
 

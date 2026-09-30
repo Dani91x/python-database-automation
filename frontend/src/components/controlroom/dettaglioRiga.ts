@@ -24,7 +24,8 @@
 // ============================================================================
 import { legPnl, type LegPnl, type MatchTradeLike } from '@/lib/omegaMatches';
 import { greenupBadge, hedgeInfo, tradeModelOf, type GreenupBadge } from '@/lib/omega';
-import { statusMetaOf, type Meta } from '@/lib/tradeStatus';
+import { esitoOrdineMeta, statusMetaOf, type EsitoOrdineMeta, type Meta } from '@/lib/tradeStatus';
+import { statoOrdine, type RigaOrdine } from '@/lib/statoOrdine';
 import { tickAFavore } from '@/lib/riskMath';
 import { isSettled } from '@/lib/eventGroups';
 
@@ -73,6 +74,15 @@ export interface ChiusuraRiga {
     /** tipo di uscita dichiarato dal servizio su QUESTA gamba (`meta.exit_kind`) */
     uscita: string | null;
     at: string;
+    /** 30/09 (P13) - come e' finito un ordine rimasto senza abbinamento, se il
+     *  servizio lo scrive (`esitoOrdineMeta`); null = esito non dichiarato */
+    esito: EsitoOrdineMeta | null;
+    /** 30/09 (P13) - la gamba e' in stato 'error': nessun ordine abbinato. I
+     *  servizi scrivono 'error' SOLO senza abbinato (Mike service.py:5537-5548,
+     *  :972; Safe/condiviso execution.py:905-925): con un abbinato la riga e' 'open' */
+    nonAbbinata: boolean;
+    /** euro abbinati dichiarati (`statoOrdine`); null = non dichiarati */
+    abbinato: number | null;
 }
 
 export interface DettaglioRiga {
@@ -190,7 +200,10 @@ export function dettaglioDi<T extends RigaDettagliabile>(
         };
     const pnl = legPnl(t, closes);
     return {
-        stato: statusMetaOf({ status: t.status, meta }),
+        // 30/09 (P13): l'esito vero di un ordine non abbinato, se il servizio lo
+        // scrive; altrimenti il badge di sempre
+        stato: esitoOrdineMeta({ status: t.status, meta }, statoOrdine(t as RigaOrdine).errorCode)
+            ?? statusMetaOf({ status: t.status, meta }),
         ingresso: {
             minuto: num(t.minute_at_entry),
             punteggio: punteggioIngresso(t.score_at_entry),
@@ -225,14 +238,19 @@ function chiusureDi<T extends RigaDettagliabile>(closes: readonly T[]): Chiusura
         .sort((a, b) => Date.parse(a.placed_at) - Date.parse(b.placed_at))
         .map((c) => {
             const cMeta = (c.meta ?? null) as Record<string, unknown> | null;
+            const so = statoOrdine(c as RigaOrdine);
+            const esito = esitoOrdineMeta({ status: c.status, meta: cMeta }, so.errorCode);
             return {
                 lato: latoDiChiusura(c.side),
                 prezzo: num(c.price),
                 size: num(c.size),
                 pnl: isSettled(c.status) ? num(c.pnl) : null,
-                stato: statusMetaOf({ status: c.status, meta: cMeta }),
+                stato: esito ?? statusMetaOf({ status: c.status, meta: cMeta }),
                 uscita: str((cMeta ?? {})['exit_kind']),
                 at: c.placed_at,
+                esito,
+                nonAbbinata: String(c.status ?? '').toLowerCase() === 'error',
+                abbinato: so.abbinato.valore,
             };
         });
 }

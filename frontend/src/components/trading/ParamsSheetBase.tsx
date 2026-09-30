@@ -10,7 +10,7 @@
 // I pannelli esistenti (Omega/Safe/Mike) verranno migrati dagli agenti di
 // sezione: questo file è la base, già testata.
 // ============================================================================
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import {
     Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger,
@@ -121,6 +121,10 @@ export function ParamsSheetBase({
     // solo se l'utente non ha modifiche in corso (non si perde l'editing).
     const serverKey = useMemo(() => JSON.stringify(values), [values]);
     const [lastServerKey, setLastServerKey] = useState(serverKey);
+    // ultimi valori del servizio, leggibili DOPO un `await` (la chiusura di
+    // `save` vedrebbe quelli del render in cui e' partita)
+    const ultimiDelServizio = useRef({ key: serverKey, values });
+    ultimiDelServizio.current = { key: serverKey, values };
     if (serverKey !== lastServerKey) {
         setLastServerKey(serverKey);
         if (!touched) setDraft(values);
@@ -165,13 +169,21 @@ export function ParamsSheetBase({
         }
         setSalvando(true);
         setEsito(null);
+        const keyPrima = ultimiDelServizio.current.key;
         try {
             await onSave(r.values);
             setEsito({ ok: true, ms: Date.now() });
             setTouched(false);
-            // la bozza torna quella del SERVIZIO: al render dopo
-            // (`serverKey !== lastServerKey`, touched falso) si riallinea
-            setLastServerKey('');
+            // review incrociata 30/09 (M1): la bozza resta sui valori SALVATI.
+            // Prima si forzava il riallineo (`setLastServerKey('')`) e, dove la
+            // rilettura non e' aspettata (Control Room: `vm.ricarica()` non
+            // attesa), la bozza tornava ai valori VECCHI finche' non arrivava
+            // la rilettura; se falliva restavano i vecchi e un secondo «Salva»
+            // li riscriveva nel servizio. Ora si riallinea SOLO quando il
+            // servizio ripubblica (`serverKey` cambia, touched falso), o subito
+            // se e' gia' cambiato durante il salvataggio.
+            const dopo = ultimiDelServizio.current;
+            setDraft(dopo.key !== keyPrima ? dopo.values : r.values);
         } catch (e) {
             // la bozza resta: le modifiche NON sono salvate e il pallino lo dice
             setEsito({ ok: false, errore: String((e as Error)?.message ?? e) });

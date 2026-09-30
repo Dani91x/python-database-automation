@@ -768,7 +768,9 @@ export default function Mike() {
                         onGoLive={() => setTab('partite')}
                         fonteNota={mode === 'paper'
                             ? `P&L: ${FONTE_PNL_TESTO.simulato}`
-                            : `P&L: ${FONTE_PNL_TESTO.conto} per le partite regolate dal 30/09/2026; prima: ${FONTE_PNL_BREVE.stima}`}
+                            // review incrociata 30/09 (M4): niente data fissa. La fonte vera
+                            // e' per riga (`meta.fonte`, DayDetail): qui si dice solo la regola.
+                            : `P&L: ${FONTE_PNL_TESTO.conto} dove Betfair ha regolato e il bot l'ha letto; altrimenti ${FONTE_PNL_BREVE.stima} (ogni riga dice la sua fonte)`}
                     />
                 </TabsContent>
             </Tabs>

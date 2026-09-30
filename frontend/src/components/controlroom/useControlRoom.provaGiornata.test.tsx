@@ -108,6 +108,7 @@ vi.mock('@/lib/scalper', async (orig) => ({
 
 import { fetchSafeState, type SafeTrade } from '@/lib/safeBot';
 import { fetchMikeState } from '@/lib/mike';
+import { fetchLiveAccount } from '@/lib/liveOrders';
 import { useControlRoom } from '@/components/controlroom/useControlRoom';
 
 const SAFE_VUOTO = { control: null, trades: [], aggregates: null };
@@ -200,5 +201,68 @@ describe('P8 - la prova di oggi non contiene partite di giorni precedenti', () =
         vi.mocked(fetchMikeState).mockResolvedValue(MIKE_VUOTO as never);
         const v = await vista();
         expect(v.soldiGiornata.perSportPaper?.calcio).toEqual({ n: 1, pnl: 0.95, won: 1, lost: 0 });
+    });
+});
+
+// ============================================================================
+// P7 (30/09) - la composizione LIVE per bot dal CONTO (`pnl_reale_oggi.per_fonte`).
+// Una posizione LIVE di Mike piazzata IERI e regolata OGGI: `get_mike_state` non
+// la porta (solo righe piazzate oggi o aperte), il conto si'. Deve stare sotto
+// Mike, non in «Altro sul conto Betfair». Finto del conto con le chiavi della
+// colonna JSONB `betfair_live_account.pnl_reale_oggi`.
+// ============================================================================
+function contoConMike(netto: number) {
+    const zero = { netto: 0, ordini: 0 };
+    return {
+        pnl_reale_oggi: {
+            day: OGGI, netto, ordini: 1,
+            per_fonte: {
+                omega: zero, safe_calcio: zero, safe_tennis: zero, mike: { netto, ordini: 1 },
+                bot_tennis: zero, manuale_app: zero, manuale_sito: zero, altri_bot: zero, scalper: zero,
+            },
+            bet_ids: ['3900001'], senza_commissione: 0, sospetti_sito: 0,
+            letto_at: `${OGGI}T12:41:00+00:00`,
+        },
+    };
+}
+
+describe('P8bis - la plancia dei bot: prova di oggi e arretrati a parte', () => {
+    it('Safe base in prova: +7,60 di partite vecchie regolate oggi NON e\' la cifra di oggi; arretrati a parte', async () => {
+        vi.mocked(fetchSafeState).mockResolvedValue({ ...SAFE_VUOTO, trades: SAFE_ARRETRATI } as never);
+        vi.mocked(fetchMikeState).mockResolvedValue(MIKE_VUOTO as never);
+        const v = await vista();
+        const safe = v.bots.find((b) => b.bot === 'safe')!;
+        const base = safe.pnlOggiPerStrategia!.base;
+        expect(base.paper).toBeNull();
+        expect(base.arretratiPaper!.map((g) => [g.giorno, g.origine, g.pnl, g.operazioni])).toEqual([[PRIMA, 'apertura', 7.6, 4]]);
+        // le altre strategie non ereditano gli arretrati della base
+        expect(safe.pnlOggiPerStrategia!.esatto.arretratiPaper).toEqual([]);
+    });
+
+    it('Mike: gli arretrati della plancia vengono dalla chiave del backend', async () => {
+        vi.mocked(fetchSafeState).mockResolvedValue(SAFE_VUOTO as never);
+        vi.mocked(fetchMikeState).mockResolvedValue({ ...MIKE_VUOTO, arretrati_prova: arretratiMike('piene') } as never);
+        const v = await vista();
+        const mike = v.bots.find((b) => b.bot === 'mike')!;
+        expect(mike.pnlOggiPaper).toBeNull();
+        expect(mike.arretratiPaper!.map((g) => g.pnl)).toEqual([-18.29]);
+    });
+});
+
+describe('P7 - la voce di ogni bot dal conto Betfair', () => {
+    it('Mike: posizione di ieri regolata oggi (riga non letta) -> sotto Mike dal CONTO, «Altro» vuoto', async () => {
+        vi.mocked(fetchSafeState).mockResolvedValue(SAFE_VUOTO as never);
+        vi.mocked(fetchMikeState).mockResolvedValue(MIKE_VUOTO as never);
+        vi.mocked(fetchLiveAccount).mockResolvedValue(contoConMike(2.0) as never);
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        await waitFor(() => expect(result.current.contoLettoAt).toBe(`${OGGI}T12:41:00+00:00`));
+        const righe = result.current.composizioneOggi.righe;
+        const mike = righe.find((r) => r.chiave === 'mike')!;
+        expect(mike.valore).toBe(2);
+        expect((mike as { fonte?: string }).fonte).toBe('conto');
+        expect(righe.find((r) => r.chiave === 'altro')!.valore).toBeNull();
+        // stessi soldi: il realizzato live della barra non cambia
+        expect(result.current.soldiGiornata.realizzato).toBe(2);
     });
 });

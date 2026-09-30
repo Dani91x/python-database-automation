@@ -109,12 +109,18 @@ import {
 } from '@/lib/composizioneObiettivo';
 import { leggiManualeSitoBetfair, type ManualeSitoBetfair } from '@/lib/manualeSitoBetfair';
 import {
-    breakdownProva, leggiArretratiProva, provaGiornata, type ProvaGiornata, type RigaTradeProva,
+    breakdownProva, leggiArretratiProva, provaDellaRiga, provaGiornata, provaPerGiornoPartita,
+    type GruppoArretrati, type ProvaGiornata, type RigaTradeProva,
 } from '@/lib/provaGiornata';
+import { composizioneDalConto } from '@/lib/composizioneConto';
 import { prezzoVivoPerGamba } from '@/lib/comboPrezzoVivo';
 import { updateOmegaParams } from '@/lib/omega';
 import { applicaLottoScan, type ScanRowEvent } from '@/lib/scanEventBuffer';
-import { fetchLiveAccount, subscribeLiveAccount, type LiveAccountRow } from '@/lib/liveOrders';
+import {
+    fetchLiveAccount, subscribeLiveAccount, type LiveAccountRow,
+    // P4 (30/09) - lo stop del conto
+    fetchLiveRiskState, subscribeLiveRiskState, type LiveRiskState,
+} from '@/lib/liveOrders';
 // P3 (30/09) - la fascia «SOLDI VERI ADESSO» della testata (campo additivo)
 import { leggiSaldoDalCanale, saldoPiuRecente, type SaldoDalCanale } from '@/lib/saldoBetfair';
 import { CANALI_SALDO } from './SaldoBetfairCard';
@@ -122,6 +128,8 @@ import {
     contoAdesso, rischioBotLive, scartoContoBot, partiteConPosizione,
     type SoldiVeriTestata,
 } from './testata/soldiVeri';
+// P4 (30/09) - gli stop di perdita in testata (campo additivo)
+import { stopDelConto, stopDeiBot, type StopPerditaTestata } from './testata/stopPerdita';
 import {
     fetchScalperControlRoom, statoBotScalper, ordiniDellaSessione, esposizioneScalper,
     chiusuraScalper, pnlRealeOrdini, modalitaSessione, sessioneViva, idSessione,
@@ -306,7 +314,15 @@ export interface StatoBot {
      */
     pnlOggi: number | null;
     pnlOggiPaper: number | null;
-    pnlOggiPerStrategia?: Record<string, { live: number | null; paper: number | null }> | null;
+    pnlOggiPerStrategia?: Record<string, {
+        live: number | null; paper: number | null; arretratiPaper?: GruppoArretrati[] | null;
+    }> | null;
+    /**
+     * 30/09 (P8bis) - IN PROVA `pnlOggiPaper` (Omega/Mike) e `paper` per
+     * strategia (Safe) contano le sole partite di OGGI; gli arretrati regolati
+     * oggi (partite di giorni precedenti) stanno qui, mai sommati.
+     */
+    arretratiPaper?: GruppoArretrati[] | null;
     /** 24/09 - scalper calcio: quante sessioni, in che modalita', fonte ed eta' */
     nota?: string | null;
     /** 25/09 - i 4 bot tennis: l'auto-mode dichiarato dal ponte (`stats.auto`),
@@ -390,6 +406,9 @@ export interface OperazionePartita {
      * feed non porta quella selezione.
      */
     chiusura: PosizioneAperta['chiusura'];
+    /** 30/09 (P12b) - mercato/selezione di ogni gamba di chiusura, stesso ordine di
+     *  `chiusureOrdini`: servono al cash out della PARTITA per nettarle. */
+    chiusureGambe?: { id: number | null; marketId: string | null; selectionId: number | null }[];
     /**
      * 18/09 (raccordo, R3) — le righe GREZZE (`RigaOrdine`) delle chiusure
      * collegate (`closes_trade_id`), nello stesso ordine di `dettaglio.
@@ -827,6 +846,13 @@ export interface ControlRoomVM {
      * prima; `null` = trade non ancora letti.
      */
     provaGiornata?: ProvaGiornata | null;
+    /**
+     * 30/09 (P7) — quando il runner ha letto il P&L reale del conto
+     * (`pnl_reale_oggi.letto_at`, ISO). `null` = conto non letto oggi.
+     * NB: il runner scrive solo al CAMBIO del dato, quindi e' l'eta' dell'ultima
+     * scrittura, non necessariamente dell'ultima lettura (progetto §2.C punto 4).
+     */
+    contoLettoAt?: string | null;
     /** punto d'aggancio isolato per le scommesse manuali dal SITO Betfair
      *  (fuori app): oggi sempre "non disponibile" (`lib/manualeSitoBetfair.ts`). */
     manualeSitoBetfair: ManualeSitoBetfair;
@@ -867,6 +893,13 @@ export interface ControlRoomVM {
      * `totali` (somma lorda per riga) resta com'era per chi lo usa.
      */
     soldiVeri: SoldiVeriTestata;
+
+    /**
+     * P4 (30/09) - GLI STOP DI PERDITA, ciascuno col suo nome: quello del
+     * CONTO (`betfair_live_risk_state`, applicato dal runner, tira il freno
+     * generale) e quelli di Safe, Mike e Omega. Campo NUOVO: `freni` resta.
+     */
+    stopPerdita: StopPerditaTestata;
 
     /**
      * Stato del runner flumine. 14/09 — il battito diceva «2 settembre» mentre
@@ -1254,6 +1287,8 @@ export function useControlRoom(): ControlRoomVM {
     /** P3 (30/09) - l'ultimo SALDO arrivato dal topic `account` dei canali
      *  (il piu' recente vince, stessa regola di `SaldoBetfairCard`) */
     const [saldoCanaleConto, setSaldoCanaleConto] = useState<SaldoDalCanale | null>(null);
+    /** P4 (30/09) - la riga singleton `betfair_live_risk_state` (stop del conto) */
+    const [statoRischioConto, setStatoRischioConto] = useState<LiveRiskState | null>(null);
     /** avviso onesto: PIAZZA ha dovuto ripiegare sul solo `p_id` perché la
      *  RPC non accetta ancora il prezzo visto (migrazione non applicata). */
     const [avvisoOpportunita, setAvvisoOpportunita] = useState<string | null>(null);
@@ -1838,6 +1873,19 @@ export function useControlRoom(): ControlRoomVM {
         return () => { vivo = false; off.forEach((f) => f()); };
     }, []);
 
+    // P4 (30/09) - LO STOP DEL CONTO. Nessuna lettura della Control Room lo
+    // portava (`RigaFreno` legge `get_live_settings` per il freno, non lo
+    // stato dello stop). Stesso schema del conto qui sopra: UNA lettura
+    // one-shot della riga singleton + push Realtime; NESSUN poll, niente nel
+    // giro dei 30 s. La riga la scrive il runner al cambio.
+    useEffect(() => {
+        let vivo = true;
+        fetchLiveRiskState().then((r) => { if (vivo) setStatoRischioConto(r); })
+            .catch(() => { /* resta null: la testata dice «stop del conto non letto» */ });
+        const off = subscribeLiveRiskState((r) => { if (vivo && r) setStatoRischioConto(r); });
+        return () => { vivo = false; off(); };
+    }, []);
+
     // -------------------------------------------------- proposte in realtime
     // Una proposta di chiusura che comparisse 30 s dopo sarebbe inutile: il
     // prezzo su cui il bot ha deciso non c'e' piu'.
@@ -2207,7 +2255,13 @@ export function useControlRoom(): ControlRoomVM {
 
     /** Task 2 — la SCOMPOSIZIONE dell'obiettivo: stesse righe di sopra,
      *  raggruppate per bot invece che sommate tutte insieme. */
-    const composizioneOggi = useMemo<ComposizioneObiettivo>(() => componiObiettivo({
+    // 30/09 (P7): con il conto letto, la voce di ogni bot e' quella del CONTO
+    // (`pnl_reale_oggi.per_fonte`, attribuita dal backend per bet_id) piu' la
+    // parte stimata delle sue righe: una posizione di ieri regolata oggi, che
+    // la RPC del bot non porta, resta sotto il SUO bot e non in «Altro sul
+    // conto». Senza conto: la composizione di prima, invariata. Il totale e'
+    // lo stesso (`lib/composizioneConto.ts`).
+    const composizioneOggi = useMemo<ComposizioneObiettivo>(() => composizioneDalConto(componiObiettivo({
         omega: oggiRighe.omegaRighe,
         safe: oggiRighe.safeRighe,
         mike: oggiRighe.mikeRighe,
@@ -2216,7 +2270,9 @@ export function useControlRoom(): ControlRoomVM {
         manualeApp: oggiRighe.manualeAppRighe,
         altro: oggiRighe.altroRighe,
         scalper: oggiRighe.scalperRighe,
-    }), [oggiRighe]);
+    }), pnlRealeOggi, {
+        omega: oggiRighe.omegaRighe, safe: oggiRighe.safeRighe, mike: oggiRighe.mikeRighe,
+    }), [oggiRighe, pnlRealeOggi]);
 
     /**
      * 30/09 (P8) — LA CORSIA PROVA per bot: partite di OGGI contro ARRETRATI
@@ -2598,20 +2654,45 @@ export function useControlRoom(): ControlRoomVM {
         const giorno = romeDay(new Date(nowMs));
         const di = (bot: Bot, modo: 'live' | 'paper', strategia?: string) =>
             pnlChiuseDelGiorno(chiuse, { giorno, bot, modo, strategia });
+        // 30/09 (P8bis): IN PROVA la cifra di oggi e' per partite di OGGI; gli
+        // arretrati (partite di giorni precedenti regolate oggi) a parte, con la
+        // STESSA regola e fonte della corsia PROVA (`lib/provaGiornata.ts`). Il
+        // LIVE resta per giorno di regolamento (Posizioni chiuse), invariato.
+        const giornoDi = (iso: string | null | undefined): string => {
+            const ms = iso ? Date.parse(iso) : NaN;
+            return Number.isFinite(ms) ? romeDay(new Date(ms)) : '';
+        };
+        const opz = { oggi: giorno, giornoDi };
+        const pOmega = provaPerGiornoPartita(omegaTrades as unknown as RigaTradeProva[], { ...opz, sport: 'calcio' });
+        const pMike = provaPerGiornoPartita((mike?.trades ?? []) as unknown as RigaTradeProva[], { ...opz, sport: 'calcio' });
+        const pSafe = provaPerGiornoPartita((safe?.trades ?? []) as unknown as RigaTradeProva[], opz);
+        // Mike: gli arretrati SOLO dalla chiave del backend (vedi `provaOggi`);
+        // non letti = nessuna riga di arretrati nella plancia (lo dice la corsia PROVA)
+        const arretratiMike = provaOggi?.voci.find((v) => v.chiave === 'mike')?.arretrati ?? null;
         return bots.map((b) => {
-            if (b.bot === 'omega' || b.bot === 'mike') {
-                return { ...b, pnlOggi: di(b.bot, 'live'), pnlOggiPaper: di(b.bot, 'paper') };
+            if (b.bot === 'omega') {
+                const p = provaDellaRiga(pOmega);
+                return { ...b, pnlOggi: di(b.bot, 'live'), pnlOggiPaper: p.oggi, arretratiPaper: p.arretrati };
+            }
+            if (b.bot === 'mike') {
+                return {
+                    ...b, pnlOggi: di(b.bot, 'live'), pnlOggiPaper: provaDellaRiga(pMike).oggi,
+                    arretratiPaper: arretratiMike,
+                };
             }
             if (b.bot === 'safe') {
-                const perStr: Record<string, { live: number | null; paper: number | null }> = {};
+                const perStr: Record<string, {
+                    live: number | null; paper: number | null; arretratiPaper?: GruppoArretrati[] | null;
+                }> = {};
                 for (const k of ['base', 'esatto', 'punta', 'model', 'manual', 'tennis']) {
-                    perStr[k] = { live: di('safe', 'live', k), paper: di('safe', 'paper', k) };
+                    const p = provaDellaRiga(pSafe, (r) => r.strategia === k);
+                    perStr[k] = { live: di('safe', 'live', k), paper: p.oggi, arretratiPaper: p.arretrati };
                 }
                 return { ...b, pnlOggiPerStrategia: perStr };
             }
             return b;
         });
-    }, [bots, chiuse, nowMs]);
+    }, [bots, chiuse, nowMs, omegaTrades, mike?.trades, safe?.trades, provaOggi]);
 
     /**
      * Quanto vale chiudere ADESSO, con la matematica condivisa del green-up.
@@ -3206,6 +3287,7 @@ export function useControlRoom(): ControlRoomVM {
                 vivo, etaQuoteS: etaSecondi(feedPerEvento.get(k)?.updated_at ?? null, nowMs),
                 chiusura: chius,
                 chiusureOrdini: closes.map((c) => ordineDi(c)),
+                chiusureGambe: closes.map((c) => { const g = c as { market_id?: string | null; selection_id?: number | null }; return { id: Number(c.id), marketId: g.market_id ?? null, selectionId: g.selection_id == null ? null : Number(g.selection_id) }; }),
                 eventId: k,
                 chiudeId: t.closes_trade_id ?? null,
             };
@@ -3760,6 +3842,27 @@ export function useControlRoom(): ControlRoomVM {
     }, [liveAccount, saldoCanaleConto, runnerVista.runner, nowMs, soldiLetti,
         omega, safe, mike, posizioni, totali.partite, lettoAlle]);
 
+    // P4 (30/09) - gli stop di perdita (moduli puri in testata/stopPerdita)
+    const stopPerdita = useMemo<StopPerditaTestata>(() => {
+        const modo = (b: Bot) => bots.find((x) => x.bot === b)?.modalita ?? null;
+        return {
+            conto: stopDelConto(statoRischioConto, nowMs),
+            bot: stopDeiBot({
+                safe: { modalita: modo('safe'), risk: safe?.control?.stats?.risk ?? null },
+                mike: {
+                    modalita: modo('mike'),
+                    params: (mike?.control?.params ?? null) as Record<string, unknown> | null,
+                    stats: (mike?.control?.stats ?? null) as Record<string, unknown> | null,
+                },
+                omega: {
+                    modalita: modo('omega'),
+                    params: (omega?.control?.params ?? null) as Record<string, unknown> | null,
+                },
+            }),
+        };
+    }, [statoRischioConto, nowMs, bots, safe?.control?.stats?.risk, mike?.control?.params,
+        mike?.control?.stats, omega?.control?.params]);
+
     return {
         caricamento, errore, nowMs,
         giornata, totali,
@@ -3771,9 +3874,11 @@ export function useControlRoom(): ControlRoomVM {
         targetServizio,
         composizioneOggi, manualeSitoBetfair, salvaObiettivo,
         provaGiornata: provaOggi,
+        contoLettoAt: pnlRealeOggi?.letto_at ?? null,
         bots: botsConPnl, posizioni, chiuse, righeChiuse, registrazioni, copertura,
         freni: safe?.control?.stats?.risk ?? null,
         soldiVeri,
+        stopPerdita,
         runner: runnerVista.runner,
         fonteRunner: { fonte: runnerVista.fonte, etaS: runnerVista.etaS },
         runnerTennis: runnerTennisVista.runner,

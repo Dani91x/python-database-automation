@@ -782,10 +782,15 @@ describe('lineeOuScheda — le linee Under/Over come le scrive lo scanner, senza
         const l = lineeOuScheda(feed({ ou: [bloccoOu(4.5, '1.45', 3), bloccoOu(3.5, '1.35', 36)] }), T0);
         expect(l.map((x) => x.linea)).toEqual([3.5, 4.5]);          // ordinate per linea
         expect(l[0]).toEqual({
-            marketId: '1.35', linea: 3.5, stato: 'OPEN', decisa: false,
+            marketId: '1.35', linea: 3.5, stato: 'OPEN', decisa: false, perMike: false,
             under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaBookS: 36,
         });
         expect(l[1].etaBookS).toBe(3);
+    });
+
+    it('B1bis: la linea tenuta nel feed per una posizione di Mike (for_mike) si dichiara', () => {
+        const [l] = lineeOuScheda(feed({ ou: [bloccoOu(2.5, '1.25', 1, { for_mike: true })] }), T0);
+        expect(l.perMike).toBe(true);
     });
 
     it('seen_ms assente: età null (mai 0 inventato); selezione assente: null', () => {

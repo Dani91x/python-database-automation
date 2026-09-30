@@ -22,7 +22,7 @@ import { isBotTennis } from '@/lib/controlRoom';
 import { useContext } from 'react';
 import { BottoneChiudiRiga, ChiusuraRigaContext } from '@/components/controlroom/BottoneChiudiRiga';
 import { prezzoAlClic, useChiusuraAlMs } from '@/components/controlroom/useChiusuraAlMs';
-import type { DettaglioRiga, QuotaViva } from '@/components/controlroom/dettaglioRiga';
+import type { ChiusuraRiga, DettaglioRiga, QuotaViva } from '@/components/controlroom/dettaglioRiga';
 import type { OperazionePartita } from '@/components/controlroom/useControlRoom';
 
 /** Badge di stato ricco: lo stesso di Omega e Safe, stessa etichetta italiana. */
@@ -175,32 +175,89 @@ const ETICHETTA_USCITA: Record<string, string> = {
  * a rischio Y"); qui si vede CON QUALE ordine — lato, prezzo, size, quando —
  * la copertura è avvenuta, una riga per gamba di chiusura.
  */
+/**
+ * 30/09 (P13) - I TENTATIVI DI CHIUSURA RIMASTI SENZA ABBINAMENTO, raggruppati
+ * per tipo di uscita quando sono piu' d'uno: una riga «green-up: 2 tentativi,
+ * 0,00 € abbinati · 1 ritirato dal bot, 1 non abbinato (verificato su
+ * Betfair)» al posto di due «ERRORE» uguali. Le righe restano sotto,
+ * attenuate, con l'esito vero di ciascuna. Solo presentazione: stesse righe.
+ */
+function chiaveGruppo(c: ChiusuraRiga): string | null {
+    return c.nonAbbinata ? (c.uscita ?? '') : null;
+}
+
+function riepilogoTentativi(gruppo: readonly ChiusuraRiga[]): string {
+    const tipo = gruppo[0].uscita ? (ETICHETTA_USCITA[gruppo[0].uscita] ?? gruppo[0].uscita.replace(/_/g, ' ')) : 'chiusura';
+    // 'error' = nessun abbinato (vedi `ChiusuraRiga.nonAbbinata`): un abbinato
+    // non dichiarato vale zero SOLO qui, su righe che il servizio ha chiuso in errore
+    const abbinati = gruppo.reduce((s, c) => s + (c.abbinato ?? 0), 0);
+    const conteggi = new Map<string, { n: number; uno: string; molti: string }>();
+    for (const c of gruppo) {
+        const k = c.esito?.chiave ?? 'errore';
+        const v = conteggi.get(k) ?? { n: 0, uno: c.esito?.uno ?? c.stato.label, molti: c.esito?.molti ?? c.stato.label };
+        v.n += 1;
+        conteggi.set(k, v);
+    }
+    const esiti = [...conteggi.values()].map((v) => `${v.n} ${v.n === 1 ? v.uno : v.molti}`).join(', ');
+    return `${tipo}: ${gruppo.length} tentativi, ${fmtMoney(abbinati)} abbinati · ${esiti}`;
+}
+
+function RigaChiusura({ c, testId, attenuata }: { c: ChiusuraRiga; testId: string; attenuata: boolean }) {
+    return (
+        <div className={`flex items-baseline gap-1.5 text-[10px] flex-wrap ${attenuata ? 'pl-3 opacity-60' : ''}`}
+            data-testid={`${testId}-riga`}>
+            <span className="text-white/25">↳</span>
+            <span className={`text-[9px] font-bold uppercase tracking-wider px-1 rounded ${
+                c.lato === 'lay' ? 'bg-rose-500/15 text-rose-300' : 'bg-sky-500/15 text-sky-300'
+            }`}>{c.lato === 'lay' ? 'banca' : c.lato === 'back' ? 'punta' : DASH}</span>
+            <span className="font-mono text-white/60">{fmtOdds(c.prezzo)}</span>
+            <span className="font-mono text-white/45">{c.size == null ? DASH : fmtMoney(c.size)}</span>
+            <span className={`text-[9px] font-bold uppercase tracking-wider px-1 rounded border ${c.stato.cls}`}
+                title={c.esito?.title}>
+                {c.stato.label}
+            </span>
+            {c.uscita && (
+                <span className="text-[9px] uppercase tracking-wider px-1 rounded bg-teal-500/15 text-teal-300">
+                    {ETICHETTA_USCITA[c.uscita] ?? c.uscita.replace(/_/g, ' ')}
+                </span>
+            )}
+            <span className={`ml-auto font-mono font-semibold ${pnlClass(c.pnl)}`}>
+                {c.pnl == null ? DASH : fmtMoney(c.pnl, { signed: true })}
+            </span>
+        </div>
+    );
+}
+
 export function Chiusure({ d, testId = 'cr-chiusure' }: { d: DettaglioRiga; testId?: string }) {
     if (!d.chiusure.length) return null;
+    const gruppi = new Map<string, ChiusuraRiga[]>();
+    for (const c of d.chiusure) {
+        const k = chiaveGruppo(c);
+        if (k != null) gruppi.set(k, [...(gruppi.get(k) ?? []), c]);
+    }
+    const mostrato = new Set<string>();
     return (
         <div className="basis-full pl-4 mt-0.5 space-y-0.5 border-l border-white/8" data-testid={testId}>
-            {d.chiusure.map((c, i) => (
-                <div key={i} className="flex items-baseline gap-1.5 text-[10px] flex-wrap"
-                    data-testid={`${testId}-riga`}>
-                    <span className="text-white/25">↳</span>
-                    <span className={`text-[9px] font-bold uppercase tracking-wider px-1 rounded ${
-                        c.lato === 'lay' ? 'bg-pink-500/15 text-pink-300' : 'bg-sky-500/15 text-sky-300'
-                    }`}>{c.lato === 'lay' ? 'banca' : c.lato === 'back' ? 'punta' : DASH}</span>
-                    <span className="font-mono text-white/60">{fmtOdds(c.prezzo)}</span>
-                    <span className="font-mono text-white/45">{c.size == null ? DASH : fmtMoney(c.size)}</span>
-                    <span className={`text-[9px] font-bold uppercase tracking-wider px-1 rounded border ${c.stato.cls}`}>
-                        {c.stato.label}
-                    </span>
-                    {c.uscita && (
-                        <span className="text-[9px] uppercase tracking-wider px-1 rounded bg-teal-500/15 text-teal-300">
-                            {ETICHETTA_USCITA[c.uscita] ?? c.uscita.replace(/_/g, ' ')}
-                        </span>
-                    )}
-                    <span className={`ml-auto font-mono font-semibold ${pnlClass(c.pnl)}`}>
-                        {c.pnl == null ? DASH : fmtMoney(c.pnl, { signed: true })}
-                    </span>
-                </div>
-            ))}
+            {d.chiusure.map((c, i) => {
+                const k = chiaveGruppo(c);
+                const gruppo = k != null ? (gruppi.get(k) ?? []) : [];
+                if (k == null || gruppo.length < 2) {
+                    return <RigaChiusura key={i} c={c} testId={testId} attenuata={false} />;
+                }
+                if (mostrato.has(k)) return null;
+                mostrato.add(k);
+                return (
+                    <div key={i} className="space-y-0.5">
+                        <div className="flex items-baseline gap-1.5 text-[10px] text-white/60"
+                            data-testid={`${testId}-gruppo`}
+                            title="tentativi di chiusura rimasti senza abbinamento: il dettaglio di ciascuno è qui sotto">
+                            <span className="text-white/25">↳</span>
+                            <span>{riepilogoTentativi(gruppo)}</span>
+                        </div>
+                        {gruppo.map((g, j) => <RigaChiusura key={j} c={g} testId={testId} attenuata />)}
+                    </div>
+                );
+            })}
         </div>
     );
 }
@@ -283,7 +340,7 @@ export function RigaOperazione({ o, testId = 'cr-op', nomeSelezioneRisolto = nul
         <div className="flex items-baseline gap-1.5 text-[11px] flex-wrap" data-testid={`${testId}-riga`}>
             <ChevronRight className="w-2.5 h-2.5 text-white/25 shrink-0" />
             <span className={`text-[9px] font-bold uppercase tracking-wider px-1 rounded ${
-                o.lato === 'lay' ? 'bg-pink-500/15 text-pink-300' : 'bg-sky-500/15 text-sky-300'
+                o.lato === 'lay' ? 'bg-rose-500/15 text-rose-300' : 'bg-sky-500/15 text-sky-300'
             }`}>{o.lato === 'lay' ? 'banca' : 'punta'}</span>
             <span className="text-white/75 truncate max-w-[9rem]"
                 title={nome != null ? undefined
@@ -324,7 +381,7 @@ export function RigaOperazione({ o, testId = 'cr-op', nomeSelezioneRisolto = nul
             {ch && (
                 <span className="text-[10px] text-white/40 flex items-baseline gap-1" data-testid={`${testId}-chiudo-ora`}
                     data-fonte={ch.fonte ?? ''}
-                    title={`quanto varrebbe chiudere ADESSO, per intero, al prezzo corrente · ${ch.testoFonte}`}>
+                    title={`P&L netto di commissione chiudendo ADESSO, per intero, al prezzo corrente · ${ch.testoFonte}`}>
                     chiudi ora
                     {ch.prezzo == null ? (
                         <span className="text-orange-400">{DASH}</span>
@@ -334,7 +391,8 @@ export function RigaOperazione({ o, testId = 'cr-op', nomeSelezioneRisolto = nul
                                 {fmtOdds(ch.prezzo)}
                             </span>
                             <span className={`font-mono font-semibold ${pnlClass(ch.bloccabile)}`}
-                                data-testid={`${testId}-chiudo-ora-pnl`}>
+                                data-testid={`${testId}-chiudo-ora-pnl`}
+                                title="P&L netto di commissione se chiudi per intero adesso">
                                 {fmtMoney(ch.bloccabile, { signed: true })}
                             </span>
                         </>

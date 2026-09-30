@@ -314,9 +314,9 @@ describe('SchedaPartita — B1: quote da trader in gioco', () => {
     it('le linee Under/Over (anche quella decisa dai gol) si vedono nel blocco in gioco', () => {
         monta(partitaCalcio({
             lineeOu: [
-                { marketId: '1.35', linea: 3.5, stato: 'OPEN', decisa: false,
+                { marketId: '1.35', linea: 3.5, stato: 'OPEN', decisa: false, perMike: false,
                     under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaBookS: 1 },
-                { marketId: '1.45', linea: 4.5, stato: 'SUSPENDED', decisa: true,
+                { marketId: '1.45', linea: 4.5, stato: 'SUSPENDED', decisa: true, perMike: true,
                     under: null, over: { back: 1.01, lay: null }, etaBookS: null },
             ],
         }));
@@ -326,6 +326,20 @@ describe('SchedaPartita — B1: quote da trader in gioco', () => {
         expect(righe[1]).toHaveTextContent('Under —/—');
         expect(righe[1]).toHaveTextContent('decisa dai gol');
         expect(righe[1]).toHaveTextContent('SOSPESO');
+    });
+});
+
+describe('SchedaPartita — B1bis: linee oltre 4 in gioco', () => {
+    it('sei linee a inizio partita: tutte nella scheda (nessuna guardia che le nasconda)', () => {
+        monta(partitaCalcio({
+            lineeOu: [0.5, 1.5, 2.5, 3.5, 4.5, 5.5].map((l) => ({
+                marketId: `1.${l * 10}`, linea: l, stato: 'OPEN', decisa: false, perMike: false,
+                under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaBookS: 1,
+            })),
+        }));
+        const ou = screen.getByTestId('cr-calcio-vivo-ou');
+        expect(within(ou).getAllByTestId('cr-quote-ou-linea')).toHaveLength(6);
+        expect(within(within(ou).getByTestId('cr-quote-ou-altre')).getAllByTestId('cr-quote-ou-linea')).toHaveLength(4);
     });
 });
 
@@ -343,6 +357,38 @@ describe('SchedaPartita — B1: tennis, quote della barra con lo stesso componen
         const celle = within(q).getAllByTestId('cr-quota-cella');
         expect(celle.map((c) => c.textContent)).toEqual(['Federer R. 1,50/1,52', 'Nadal R. 2,94/—']);
         expect(within(celle[0]).getByTestId('cr-quota-back').className).toMatch(/text-sky-/);
+    });
+
+    // B1bis: tennis in gioco SENZA posizione = celle P1/P2 dello scanner con la
+    // loro età; CON posizione = solo la barra del runner (una fonte per scheda).
+    it('tennis in gioco SENZA posizione: celle P1/P2 dello scanner e l’età accanto, nessuna sottoscrizione', () => {
+        monta(partita({
+            soldi: SOLDI_CHIUSI, latenzaQuoteS: 4, statoQuote: 'fresco',
+            odds: { p1: { back: 1.5, lay: 1.52 }, p2: { back: 2.6, lay: 2.66 } },
+        }));
+        expect(hoisted.subCalls).toBe(0);
+        const riga = screen.getByTestId('cr-tennis-quote');
+        const celle = within(riga).getAllByTestId('cr-quota-cella');
+        expect(celle.map((c) => c.textContent)).toEqual(['P1 1,50/1,52', 'P2 2,60/2,66']);
+        expect(within(riga).getByTestId('cr-latenza')).toHaveTextContent('ultimo cambio: 4 s');
+        expect(screen.getAllByTestId('cr-latenza')).toHaveLength(1);
+        expect(screen.queryByTestId('cr-tennis-vivo')).toBeNull();
+    });
+
+    it('tennis in gioco CON posizione: solo la barra del runner, MAI anche le quote dello scanner', async () => {
+        hoisted.row = tennisRow();
+        monta(partita({
+            soldi: SOLDI_APERTI, latenzaQuoteS: 4, statoQuote: 'fresco',
+            odds: { p1: { back: 1.5, lay: 1.52 }, p2: { back: 2.6, lay: 2.66 } },
+        }));
+        await screen.findByTestId('cr-tennis-vivo');
+        expect(screen.queryByTestId('cr-tennis-quote')).toBeNull();
+        expect(screen.queryByText('P1 1,50/1,52')).toBeNull();
+    });
+
+    it('tennis NON in gioco (conclusa) senza posizione: nessuna fila di quote dello scanner', () => {
+        monta(partita({ soldi: SOLDI_CHIUSI, stato: 'chiusa', odds: { p1: { back: 1.5, lay: 1.52 }, p2: null } }));
+        expect(screen.queryByTestId('cr-tennis-quote')).toBeNull();
     });
 
     it('l’età della barra dice che è quella del PUNTEGGIO', async () => {

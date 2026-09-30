@@ -84,7 +84,7 @@ describe('SchedaPreMatch — quote pre-match vive (secondo giro)', () => {
 // ============================================================================
 function lineaOu(linea: number, over: Partial<NonNullable<PartitaGiornata['lineeOu']>[number]> = {}) {
     return {
-        marketId: `1.${linea * 10}`, linea, stato: 'OPEN', decisa: false,
+        marketId: `1.${linea * 10}`, linea, stato: 'OPEN', decisa: false, perMike: false,
         under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaBookS: 2, ...over,
     };
 }
@@ -133,9 +133,13 @@ describe('SchedaPreMatch — B1: nomi e quote da trader', () => {
         expect(righe[1]).toHaveTextContent('ultimo book: 7 s fa');
     });
 
-    it('più di quattro linee: non si mostrano (nessuna scelta inventata)', () => {
+    // B1bis (decisione del coordinatore): sostituisce il test B1 «più di quattro
+    // linee: non si mostrano». Nessuna linea del payload resta fuori.
+    it('più di quattro linee: si mostrano tutte, 3,5 e 4,5 in vista, le altre nel riquadro', () => {
         monta(partita({ lineeOu: [0.5, 1.5, 2.5, 3.5, 4.5].map((l) => lineaOu(l)) }));
-        expect(screen.queryByTestId('cr-pre-quote-ou')).toBeNull();
+        const ou = screen.getByTestId('cr-pre-quote-ou');
+        expect(within(ou).getAllByTestId('cr-quote-ou-linea')).toHaveLength(5);
+        expect(within(within(ou).getByTestId('cr-quote-ou-altre')).getAllByTestId('cr-quote-ou-linea')).toHaveLength(3);
     });
 });
 

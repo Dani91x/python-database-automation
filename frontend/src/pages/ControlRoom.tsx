@@ -32,6 +32,7 @@ import type { DayBarProps } from '@/components/trading/DayBar';
 import { ModeBanner } from '@/components/trading/ModeBanner';
 import { SplitSport, type SportKey } from '@/components/controlroom/SplitSport';
 import { corsiePerSport } from '@/lib/giornataCorsie';
+import { etaContoS } from '@/lib/composizioneConto';
 import { SchedaPartita } from '@/components/controlroom/SchedaPartita';
 import { ObiettivoHero } from '@/components/controlroom/ObiettivoHero';
 import { SaldoBetfairCard } from '@/components/controlroom/SaldoBetfairCard';
@@ -59,6 +60,7 @@ import { RigaFreno } from '@/components/controlroom/RigaFreno';
 import { ProposteUsciteFlusso } from '@/components/controlroom/ProposteUsciteFlusso';
 import { RigaCapacitaMercati } from '@/components/controlroom/RigaCapacitaMercati';
 import { FasciaSoldiVeri } from '@/components/controlroom/testata/FasciaSoldiVeri';
+import { StopPerdita } from '@/components/controlroom/testata/FasciaStop';
 import {
     STAKE_TENNIS, differenzeSoloTennis, altreInLiveAdesso,
 } from '@/components/controlroom/soloTennis';
@@ -545,6 +547,7 @@ export default function ControlRoom() {
                     composizione={vm.composizioneOggi}
                     manualeSito={vm.manualeSitoBetfair}
                     prova={vm.provaGiornata ?? null}
+                    contoEtaS={etaContoS(vm.contoLettoAt, vm.nowMs)}
                     onSalvaObiettivo={vm.salvaObiettivo}
                     avvisoMotore={
                         vm.bots.find((b) => b.bot === 'omega')?.inCorsa
@@ -935,7 +938,7 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
                     conto, 30/09) non compare piu'. Mai 0,00 per un dato non
                     letto: «—» e il motivo. */}
                 <FasciaSoldiVeri s={vm.soldiVeri} />
-                <Freni freni={vm.freni} />
+                <Freni stop={vm.stopPerdita} />
                 <Runner r={vm.runner} fonte={vm.fonteRunner} />
                 <Runner r={vm.runnerTennis} fonte={vm.fonteRunnerTennis} tennis />
 
@@ -1050,18 +1053,13 @@ function Runner({ r, fonte, tennis = false }: {
  * e il conto. Sta in testata perché un freno che nessuno vede non è un freno.
  * Assente si scrive «assente», non «0,00 €».
  */
-function Freni({ freni }: { freni: ReturnType<typeof useControlRoom>['freni'] }) {
-    const soglia = freni?.daily_loss_stop;
-    const scattato = freni?.loss_stop_active === true;
-    const noto = typeof soglia === 'number' && Number.isFinite(soglia);
+// P4 (30/09) - «Stop perdita −50,00» era lo stop di SAFE presentato come se
+// fosse l'unico: adesso il contenitore `cr-freni` porta lo stop del CONTO e
+// quello di ogni bot, con modalita' e punto dove si modifica (`StopPerdita`).
+function Freni({ stop }: { stop: ReturnType<typeof useControlRoom>['stopPerdita'] | undefined }) {
     return (
-        <div className="flex flex-col" data-testid="cr-freni" title="stop per perdita giornaliera: oltre questa soglia il bot non apre più">
-            <span className="text-[10px] uppercase tracking-wider text-white/40">Stop perdita</span>
-            <span className={`font-mono text-sm font-semibold tabular-nums ${
-                scattato ? 'text-red-400' : noto ? 'text-white/90' : 'text-orange-400'
-            }`}>
-                {scattato ? 'SCATTATO' : noto ? fmtMoney(soglia) : 'assente'}
-            </span>
+        <div className="flex flex-col" data-testid="cr-freni">
+            <StopPerdita stop={stop} />
         </div>
     );
 }

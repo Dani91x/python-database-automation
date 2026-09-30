@@ -19,7 +19,12 @@
 //     «caso migliore».
 // Nessun pulsante qui: chiudere e' un altro gesto (P16, su richiesta).
 // ============================================================================
+import { useContext, useMemo } from 'react';
 import { MarchioSoldi } from '@/components/controlroom/MarchioSoldi';
+import { ChiusuraRigaContext } from '@/components/controlroom/BottoneChiudiRiga';
+import { useCashOutPartita, type ArgsCashOutPartita } from '@/components/controlroom/useCashOutPartita';
+import { dueEsitiMike, esitoDecisoMike, valoreBotMike } from '@/lib/cashOutPartita';
+import type { MikeEvent } from '@/lib/mike';
 import { fmtMoney, fmtNum, fmtOdds } from '@/lib/format';
 import { pnlClass } from '@/lib/tradeStatus';
 import { BOT_LABEL, type Bot } from '@/lib/controlRoom';
@@ -31,6 +36,8 @@ import type { FontePrezzo } from '@/lib/schedaAlMs';
 /** La cifra che il SERVIZIO di un bot pubblica per la stessa partita. */
 export interface ValoreBotCashOut {
     bot: string;
+    /** la cifra va accanto alla somma della STESSA modalita'; assente = live */
+    modalita?: 'live' | 'paper';
     /** netto dichiarato dal servizio; null = il servizio non lo da' */
     netto: number | null;
     /** il servizio dichiara la cifra completa (tutti i prezzi presenti)? */
@@ -155,16 +162,18 @@ function Blocco({ r, modo, testId, valoriBot }: {
             {r.avvisi.filter((a) => !/liquidita' insufficiente/.test(a)).map((a) => (
                 <div key={a} className="text-[9px] text-amber-300/80" data-testid={`${testId}-avviso`}>{a}</div>
             ))}
-            {modo === 'LIVE' && valoriBot.map((v) => {
-                const diff = v.netto != null && r.netto != null ? Math.round((r.netto - v.netto) * 100) / 100 : null;
+            {valoriBot.map((v) => {
+                // una cifra che il bot stesso dichiara incompleta non si mostra
+                const cifra = v.completo ? v.netto : null;
+                const diff = cifra != null && r.netto != null ? Math.round((r.netto - cifra) * 100) / 100 : null;
                 return (
                     <div key={v.bot} className="flex items-baseline gap-1.5 flex-wrap text-[10px] text-white/50"
                         data-testid={`${testId}-bot-${v.bot}`}>
                         <span>il bot {nomeBot(v.bot)} calcola:</span>
-                        <span className={`font-mono ${pnlClass(v.netto)}`} data-testid={`${testId}-bot-${v.bot}-netto`}>
-                            {v.netto == null ? 'non pubblicato' : fmtMoney(v.netto, { signed: true })}
+                        <span className={`font-mono ${cifra == null ? 'text-orange-400' : pnlClass(cifra)}`}
+                            data-testid={`${testId}-bot-${v.bot}-netto`}>
+                            {!v.completo ? 'non calcolabile' : cifra == null ? 'non pubblicato' : fmtMoney(cifra, { signed: true })}
                         </span>
-                        {!v.completo && v.netto != null && <span className="text-orange-400">(incompleto per il bot)</span>}
                         <MarchioSoldi fonte="bot" etaS={v.etaS} dettaglio="book letto dal servizio del bot"
                             testId={`${testId}-bot-${v.bot}-marchio`} />
                         {diff != null && diff !== 0 && (
@@ -191,18 +200,48 @@ export function CashOutGlobale({ risultato, valoriBot = [], testId = 'cr-cashout
     }
     const haLive = risultato.live.nGambe > 0 || risultato.live.mancanti.length > 0;
     const haProva = risultato.paper.nGambe > 0 || risultato.paper.mancanti.length > 0;
+    const botLive = valoriBot.filter((v) => (v.modalita ?? 'live') === 'live');
+    const botProva = valoriBot.filter((v) => v.modalita === 'paper');
     return (
         <div className="flex flex-col gap-1.5 rounded border border-white/10 px-2 py-1.5" data-testid={testId}>
             {haLive ? (
-                <Blocco r={risultato.live} modo="LIVE" testId={`${testId}-live`} valoriBot={valoriBot} />
+                <Blocco r={risultato.live} modo="LIVE" testId={`${testId}-live`} valoriBot={botLive} />
             ) : (
                 <div className="text-[10px] text-white/40" data-testid={`${testId}-live-vuoto`}>
                     Cash out della partita: nessuna gamba LIVE abbinata su questa partita
                 </div>
             )}
             {haProva && (
-                <Blocco r={risultato.paper} modo="PROVA" testId={`${testId}-prova`} valoriBot={[]} />
+                <Blocco r={risultato.paper} modo="PROVA" testId={`${testId}-prova`} valoriBot={botProva} />
             )}
+        </div>
+    );
+}
+
+/**
+ * P12b - IL RIQUADRO NELLA SCHEDA DELLA PARTITA: le righe della partita (di
+ * TUTTI i bot) -> `useCashOutPartita` (ladder al ms dal contesto della
+ * Control Room, ripiego scanner dichiarato) -> `CashOutGlobale`, con accanto
+ * la cifra del servizio di Mike. Una partita senza gambe abbinate non mostra
+ * niente e non apre sottoscrizioni.
+ */
+export function CashOutGlobalePartita({ sport, operazioni, mike = null }: {
+    sport: 'calcio' | 'tennis';
+    operazioni: NonNullable<ArgsCashOutPartita['operazioni']>;
+    /** la partita di Mike come il servizio la pubblica (gia' in pagina) */
+    mike?: MikeEvent | null;
+}) {
+    const sorgente = useContext(ChiusuraRigaContext)?.sorgenteLadder ?? null;
+    const dueEsiti = useMemo(() => dueEsitiMike(mike), [mike]);
+    const esitoDeciso = useMemo(() => esitoDecisoMike(mike, operazioni), [mike, operazioni]);
+    const r = useCashOutPartita({ operazioni, sorgente, sport, dueEsiti, esitoDeciso });
+    if (r == null) return null;
+    if (r.live.nGambe === 0 && r.paper.nGambe === 0
+        && r.live.mancanti.length === 0 && r.paper.mancanti.length === 0) return null;
+    const vb = valoreBotMike(mike, Date.now());
+    return (
+        <div className="px-2.5 pt-1.5">
+            <CashOutGlobale risultato={r} valoriBot={vb ? [vb] : []} />
         </div>
     );
 }

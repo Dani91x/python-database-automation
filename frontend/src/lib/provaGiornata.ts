@@ -33,6 +33,8 @@ export interface RigaTradeProva extends RigaTradeReale {
     kickoff?: string | null;
     /** `mike_events.ko_at` (arretrati di Mike dal backend) */
     ko_at?: string | null;
+    /** `safe_strategy_trades.strategy` (base/esatto/punta/tennis/...) */
+    strategy?: string | null;
 }
 
 /** Da dove viene il giorno della partita. */
@@ -43,6 +45,8 @@ export interface RigaProva extends RigaComponente {
     eventId: string;
     giornoPartita: string;
     origineGiorno: OrigineGiorno;
+    /** strategia dell'APERTURA del ciclo (Safe), null se la riga non la porta */
+    strategia: string | null;
 }
 
 export interface OpzioniProva {
@@ -74,6 +78,7 @@ export function provaPerGiornoPartita<T extends RigaTradeProva>(
         for (const r of righe) {
             const riga: RigaProva = {
                 ...r, eventId: String(a.event_id), giornoPartita: giorno, origineGiorno: origine,
+                strategia: typeof a.strategy === 'string' ? a.strategy : null,
             };
             // giorno illeggibile: mai spacciato per «oggi», va negli arretrati
             if (giorno === opts.oggi) oggi.push(riga); else arretrati.push(riga);
@@ -131,6 +136,22 @@ export function gruppiArretrati(righe: readonly RigaProva[]): GruppoArretrati[] 
             const [giorno, origine] = k.split('|') as [string, OrigineGiorno];
             return { ...riassumiProva(rr), giorno, origine };
         });
+}
+
+/**
+ * 30/09 (P8bis) - la cifra PROVA di una riga della PLANCIA dei bot: le sole
+ * partite di OGGI (null = niente regolato oggi, la plancia scrive «—») e gli
+ * arretrati a parte, per gruppo (data, origine). Mai sommati.
+ */
+export function provaDellaRiga(
+    p: { oggi: readonly RigaProva[]; arretrati: readonly RigaProva[] },
+    filtro: (r: RigaProva) => boolean = () => true,
+): { oggi: number | null; arretrati: GruppoArretrati[] } {
+    const oggi = p.oggi.filter(filtro);
+    return {
+        oggi: oggi.length === 0 ? null : riassumiProva(oggi).pnl,
+        arretrati: gruppiArretrati(p.arretrati.filter(filtro)),
+    };
 }
 
 /** Fonde i gruppi di piu' voci: somma SOLO gruppi con stessa data e stessa origine. */

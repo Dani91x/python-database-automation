@@ -37,6 +37,7 @@ import { useControlRoom } from '@/components/controlroom/useControlRoom';
 import type { GruppoCampionato, PartitaGiornata } from '@/lib/controlRoom';
 // T_P3 (30/09): il campo `soldiVeri` dei finti si costruisce con le funzioni VERE
 import { contoAdesso, rischioBotLive, scartoContoBot } from '@/components/controlroom/testata/soldiVeri';
+import { stopDelConto, stopDeiBot } from '@/components/controlroom/testata/stopPerdita';
 
 const mVm = vi.mocked(useControlRoom);
 
@@ -64,7 +65,19 @@ function gruppo(partite: PartitaGiornata[]): GruppoCampionato[] {
 }
 
 function vm(over: Partial<ReturnType<typeof useControlRoom>> = {}): ReturnType<typeof useControlRoom> {
+    // T_P4 (30/09): `stopPerdita` si costruisce con le funzioni VERE dagli stessi
+    // `freni` del finto (anche quando un test li sovrascrive), come fa il hook
+    const freniFinto = 'freni' in over ? (over.freni ?? null) : { daily_loss_stop: -50, loss_stop_active: false };
+    const stopPerditaFinto = {
+        conto: stopDelConto(null, Date.parse('2026-09-14T15:00:00Z')),
+        bot: stopDeiBot({
+            safe: { modalita: 'paper', risk: freniFinto },
+            mike: { modalita: 'paper', params: null, stats: null },
+            omega: { modalita: 'paper', params: null },
+        }),
+    };
     return {
+        stopPerdita: stopPerditaFinto,
         caricamento: false, errore: null, nowMs: Date.parse('2026-09-14T15:00:00Z'),
         giornata: gruppo([partita()]),
         totali: {
@@ -222,6 +235,29 @@ describe('freni — un freno che nessuno vede non è un freno', () => {
         const el = mostra().getByTestId('cr-freni');
         expect(within(el).getByText('assente')).toBeTruthy();
         expect(el.textContent).not.toMatch(/0,00/);
+    });
+
+    it('T_P4: lo stop del CONTO e quello di OGNI bot, col nome e la modalita\' (non piu\' «Stop perdita −50,00» di chi?)', () => {
+        mVm.mockReturnValue(vm({
+            stopPerdita: {
+                conto: stopDelConto({
+                    id: 1, mode: 'live', day: '2026-09-14', realized: 0, open_mtm: 0, total: 0,
+                    limit_value: null, stop_fired: false, detail: { reason: 'limit_off' },
+                    updated_at: '2026-09-14T14:59:00Z',
+                }, Date.parse('2026-09-14T15:00:00Z')),
+                bot: stopDeiBot({
+                    safe: { modalita: 'paper', risk: { daily_loss_stop: -50, loss_stop_active: false } },
+                    mike: { modalita: 'live', params: { daily_loss_stop: 50 }, stats: { daily_stop: false } },
+                    omega: { modalita: 'paper', params: { strategy_version: 3, v3_daily_loss_cap: 0 } },
+                }),
+            },
+        }));
+        const el = mostra().getByTestId('cr-freni');
+        expect(within(el).getByTestId('cr-stop-conto-valore').textContent).toBe('SPENTO');
+        expect(within(el).getByTestId('cr-stop-safe').textContent).toMatch(/Safe.*PAPER.*50,00/);
+        expect(within(el).getByTestId('cr-stop-mike').textContent).toMatch(/Mike.*LIVE.*50,00/);
+        expect(within(el).getByTestId('cr-stop-omega').textContent).toMatch(/Omega.*PAPER.*spento/);
+        expect(within(el).getByTestId('cr-stop-conto-modifica').getAttribute('href')).toBe('/segui-live');
     });
 
     it('stop già scattato: lo dice, non mostra solo un numero', () => {
@@ -1785,6 +1821,10 @@ describe('TAB APERTE: stessa scheda di Live, comando di chiusura ancora raggiung
         // 30/09 (decisione dell utente, 16:20): Safe in LIVE chiede la conferma
         // (prima un clic); la richiesta inviata resta identica.
         expect(chiudi).not.toHaveBeenCalled();
+        // review incrociata 30/09 (M2): il «Conferma» e' inerte per 400 ms.
+        expect(within(col).getByTestId('cr-chiudi-conferma')).toBeDisabled();
+        await waitFor(() => expect(within(col).getByTestId('cr-chiudi-conferma')).not.toBeDisabled(),
+            { timeout: 1500 });
         fireEvent.click(within(col).getByTestId('cr-chiudi-conferma'));
         // B16 (24/09): non piu' il solo id (che andava a Safe per ogni bot), ma
         // l'identita' della riga: il bot la instrada sulla SUA coda.

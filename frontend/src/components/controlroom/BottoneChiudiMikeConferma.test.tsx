@@ -8,7 +8,8 @@
 // Il finto dell'API ha la forma di `ChiusuraRigaApi` (stessa del vero).
 // ============================================================================
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { ATTESA_CONFERMA_USCITE_MS } from './InterruttoreUscite';
 import { BottoneChiudiRiga, ChiusuraRigaContext, type ChiusuraRigaApi } from './BottoneChiudiRiga';
 import type { RigaDaChiudere } from './chiudiRiga';
 
@@ -32,6 +33,12 @@ function monta(r: RigaDaChiudere, stimaOra?: number | null) {
     return api;
 }
 
+/** review incrociata 30/09 (M2): il «Conferma» e' inerte nei primi ATTESA_CONFERMA_USCITE_MS */
+const attesaConferma = () => waitFor(
+    () => expect(screen.getByTestId('cr-op-chiudi-conferma')).not.toBeDisabled(),
+    { timeout: ATTESA_CONFERMA_USCITE_MS + 1000 },
+);
+
 describe('D5 - Chiudi di Mike: un clic in paper, conferma in live', () => {
     it('PAPER: il primo clic chiude, senza conferma', () => {
         const api = monta(riga({ modalita: 'paper' }));
@@ -49,10 +56,14 @@ describe('D5 - Chiudi di Mike: un clic in paper, conferma in live', () => {
         expect(screen.getByTestId('cr-op-chiudi-armato').textContent).toMatch(/4[.,]75/);
     });
 
-    it('LIVE: la conferma manda la STESSA richiesta di sempre, una volta sola', () => {
+    it('LIVE: la conferma manda la STESSA richiesta di sempre, una volta sola', async () => {
         const r = riga({ modalita: 'live' });
         const api = monta(r);
         fireEvent.click(screen.getByTestId('cr-op-chiudi'));
+        // review incrociata 30/09 (M2): «Conferma» inerte per ATTESA_CONFERMA_USCITE_MS
+        fireEvent.click(screen.getByTestId('cr-op-chiudi-conferma'));
+        expect(api.chiudi).not.toHaveBeenCalled();
+        await attesaConferma();
         fireEvent.click(screen.getByTestId('cr-op-chiudi-conferma'));
         expect(api.chiudi).toHaveBeenCalledTimes(1);
         expect(api.chiudi).toHaveBeenCalledWith(r);
@@ -84,7 +95,7 @@ describe('D5 - Chiudi di Mike: un clic in paper, conferma in live', () => {
     // Sostituisce «Omega live chiude ancora al primo clic» (superato dalla decisione).
     it.each(['omega', 'tennis_scalper', 'tennis_pro', 'safe'] as const)(
         'TUTTI i bot - %s: LIVE arma al primo clic, conferma manda la STESSA richiesta, annulla non manda; PAPER un clic',
-        (bot) => {
+        async (bot) => {
             const rl = riga({ bot, modalita: 'live' });
             const api = monta(rl);
             fireEvent.click(screen.getByTestId('cr-op-chiudi'));
@@ -92,6 +103,7 @@ describe('D5 - Chiudi di Mike: un clic in paper, conferma in live', () => {
             fireEvent.click(screen.getByTestId('cr-op-chiudi-annulla'));
             expect(api.chiudi).not.toHaveBeenCalled();
             fireEvent.click(screen.getByTestId('cr-op-chiudi'));
+            await attesaConferma();
             fireEvent.click(screen.getByTestId('cr-op-chiudi-conferma'));
             expect(api.chiudi).toHaveBeenCalledTimes(1);
             expect(api.chiudi).toHaveBeenCalledWith(rl);

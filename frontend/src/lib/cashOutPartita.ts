@@ -53,6 +53,7 @@
 // ============================================================================
 import type { FontePrezzo, PrezzoScheda } from '@/lib/schedaAlMs';
 import { statoOrdine, type RigaOrdine } from '@/lib/statoOrdine';
+import { etaQuoteS, type MikeEvent } from '@/lib/mike';
 
 /** Sotto 1 centesimo di sbilancio la selezione e' piatta (greenup.FLAT_EPS). */
 export const PIATTO_EPS = 0.01;
@@ -513,7 +514,7 @@ export function gambeDaOperazioni(
     for (const op of ops) {
         const aliquota = op.chiusura?.alMs?.aliquota ?? null;
         if (op.bot === 'scalper') {
-            const so = statoOrdine(op.ordine);
+            const so = statoOrdine(op.ordine ?? {});
             if (so.esito === 'regolato') continue;
             out.push({
                 id: op.id, bot: op.bot, modalita: op.modalita, marketId: null, selectionId: null,
@@ -525,12 +526,13 @@ export function gambeDaOperazioni(
         }
         const ap = gambaDaOrdine({
             id: op.id, bot: op.bot, modalita: op.modalita, marketId: op.marketId, selectionId: op.selectionId,
-            selezione: op.selezione, lato: op.lato ?? latoDi(op.ordine.side), ordine: op.ordine,
+            selezione: op.selezione, lato: op.lato ?? latoDi(op.ordine?.side), ordine: op.ordine ?? {},
             aliquota, dueEsiti: due(op.marketId),
         });
         if (ap == null) continue;           // regolata: nemmeno le sue chiusure sono vive
         out.push(ap);
-        op.chiusureOrdini.forEach((c, i) => {
+        // righe costruite a mano (test storici) possono non avere la catena
+        (op.chiusureOrdini ?? []).forEach((c, i) => {
             const ids = op.chiusureGambe?.[i] ?? null;
             const g = gambaDaOrdine({
                 id: ids?.id ?? `${op.id}/chiusura ${i + 1}`, bot: op.bot, modalita: op.modalita,
@@ -543,4 +545,63 @@ export function gambeDaOperazioni(
         });
     }
     return out;
+}
+
+// ============================================================================
+// P12b - I PONTI CON MIKE (dati gia' in pagina: `MikeEvent` di `get_mike_state`
+// / canale, nessuna lettura nuova).
+// ============================================================================
+
+/** Linea dei mercati di Mike (engine.LINE, `Betfair/mike/engine.py:35`). */
+const LINEA_MIKE: Record<string, number> = { OU35: 3.5, OU45: 4.5 };
+
+/** I mercati di Mike sono Over/Under: DUE esiti. `null` = nessun mercato noto. */
+export function dueEsitiMike(mike: MikeEvent | null | undefined): ((marketId: string) => boolean) | undefined {
+    const ids = new Set(Object.values(mike?.markets ?? {})
+        .map((m) => m?.market_id).filter((x): x is string => typeof x === 'string' && x !== ''));
+    return ids.size === 0 ? undefined : (marketId: string) => ids.has(marketId);
+}
+
+/**
+ * ESITO GIA' CERTO (engine.selection_decided, `engine.py:666-677`): con piu'
+ * gol della linea l'Over ha VINTO e l'Under ha PERSO, qualunque cosa faccia il
+ * mercato (la linea viene potata dal feed). Il lato della selezione (Under/
+ * Over) si legge dal NOME della selezione sulle righe: se non si riconosce, la
+ * selezione resta «in gioco» e senza prezzo la cifra e' NON calcolabile.
+ */
+export function esitoDecisoMike(
+    mike: MikeEvent | null | undefined,
+    nomi: readonly { marketId: string | null; selectionId: number | null; selezione: string | null }[],
+): ((marketId: string, selectionId: number) => boolean | null) | undefined {
+    const gol = mike?.live?.goals;
+    if (mike == null || gol == null || !Number.isFinite(Number(gol))) return undefined;
+    const lineaDi = new Map<string, number>();
+    for (const [k, m] of Object.entries(mike.markets ?? {})) {
+        if (m?.market_id && LINEA_MIKE[k] != null) lineaDi.set(m.market_id, LINEA_MIKE[k]);
+    }
+    return (marketId: string, selectionId: number) => {
+        const linea = lineaDi.get(marketId);
+        if (linea == null || Number(gol) <= linea) return null;
+        const n = nomi.find((x) => x.marketId === marketId && x.selectionId === selectionId && x.selezione)?.selezione ?? '';
+        if (/\bunder\b/i.test(n)) return false;
+        if (/\bover\b/i.test(n)) return true;
+        return null;
+    };
+}
+
+/** La cifra che il SERVIZIO di Mike pubblica per la partita (`live.cashout`),
+ *  con l'eta' del SUO book (`etaQuoteS`: feed + tempo dalla pubblicazione). */
+export function valoreBotMike(mike: MikeEvent | null | undefined, nowMs: number): {
+    bot: string; modalita: 'live' | 'paper'; netto: number | null; completo: boolean; etaS: number | null; nota: string;
+} | null {
+    const c = mike?.live?.cashout;
+    if (!mike || !c) return null;
+    const n = Number(c.net);
+    return {
+        bot: 'mike', modalita: mike.mode === 'live' ? 'live' : 'paper',
+        netto: c.net == null || !Number.isFinite(n) ? null : n,
+        completo: c.complete === true,
+        etaS: etaQuoteS(mike.live, nowMs),
+        nota: 'il bot conta solo le gambe di Mike, sul suo book; una copertura in banca Under 4,5 la chiude bancando l\'Over 4,5',
+    };
 }

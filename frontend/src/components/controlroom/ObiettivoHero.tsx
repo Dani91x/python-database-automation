@@ -19,21 +19,37 @@ import type { ComposizioneObiettivo } from '@/lib/composizioneObiettivo';
 import type { ManualeSitoBetfair } from '@/lib/manualeSitoBetfair';
 import { etichettaArretrati, type ProvaGiornata, type VoceProva } from '@/lib/provaGiornata';
 import { MarchioSoldi } from './MarchioSoldi';
+import type { ComposizioneConto, RigaComposizioneConto } from '@/lib/composizioneConto';
+import type { RigaComposizione } from '@/lib/composizioneObiettivo';
 
 export interface ObiettivoHeroProps {
     dayBar: DayBarProps;
-    composizione: ComposizioneObiettivo;
+    /** 30/09 (P7): anche la composizione ricomposta dal conto (`ComposizioneConto`) */
+    composizione: ComposizioneObiettivo | ComposizioneConto;
     manualeSito: ManualeSitoBetfair;
     onSalvaObiettivo: (valore: number) => Promise<void>;
     /** avviso onesto: Omega in corsa → il target del servizio cambia subito */
     avvisoMotore?: string | null;
     /** 30/09 (P8): la corsia PROVA per bot (oggi / arretrati). Assente = riga «in prova» di prima. */
     prova?: ProvaGiornata | null;
+    /** 30/09 (P7): eta' in secondi della lettura del conto Betfair (`pnl_reale_oggi.letto_at`); null = ignota */
+    contoEtaS?: number | null;
     testId?: string;
 }
 
+/** 30/09 (P7): da dove viene la cifra della voce (solo se la composizione lo dichiara) */
+function fonteDi(r: RigaComposizione): 'conto' | 'bot' | null {
+    return (r as RigaComposizioneConto).fonte ?? null;
+}
+
+/** 30/09 (P7): la composizione e' stata ricomposta dal conto Betfair */
+function dalConto(c: ComposizioneObiettivo): boolean | null {
+    const v = (c as ComposizioneConto).dalConto;
+    return typeof v === 'boolean' ? v : null;
+}
+
 export function ObiettivoHero({
-    dayBar, composizione, manualeSito, onSalvaObiettivo, avvisoMotore, prova = null, testId = 'cr-obiettivo',
+    dayBar, composizione, manualeSito, onSalvaObiettivo, avvisoMotore, prova = null, contoEtaS, testId = 'cr-obiettivo',
 }: ObiettivoHeroProps) {
     return (
         <Card className="glass-card border-white/10 p-0 overflow-hidden" data-testid={testId}>
@@ -55,6 +71,16 @@ export function ObiettivoHero({
             <div className="px-4 pb-3 pt-1" data-testid="cr-composizione">
                 <div className="text-[10px] uppercase tracking-wider text-white/40 mb-1.5">
                     composizione — solo soldi veri, entra nell&apos;obiettivo
+                    {/* 30/09 (P7): da dove vengono le voci dei bot */}
+                    {dalConto(composizione) == null ? null : dalConto(composizione) ? (
+                        <span className="normal-case tracking-normal text-white/35" data-testid="cr-composizione-fonte">
+                            {' '}· realizzato di ogni bot dal conto Betfair (attribuito da Betfair), la parte non ancora regolata stimata dal bot
+                        </span>
+                    ) : (
+                        <span className="normal-case tracking-normal text-amber-300/70" data-testid="cr-composizione-fonte">
+                            {' '}· conto Betfair non letto: dalle righe dei bot
+                        </span>
+                    )}
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-0.5">
                     {composizione.righe.map((r) => (
@@ -73,6 +99,12 @@ export function ObiettivoHero({
                                         title="calcolo del bot: Betfair non ha ancora regolato">
                                         {r.stimato === r.valore ? 'stimato' : `di cui stimato ${fmtMoney(r.stimato, { signed: true })}`}
                                     </span>
+                                )}
+                                {/* 30/09 (P7) - la FONTE della cifra della voce */}
+                                {r.valore != null && fonteDi(r) != null && (
+                                    <MarchioSoldi fonte={fonteDi(r) === 'conto' ? 'conto' : 'bot'} className="ml-1"
+                                        etaS={fonteDi(r) === 'conto' ? contoEtaS : undefined}
+                                        testId={`cr-composizione-${r.chiave}-fonte`} />
                                 )}
                             </span>
                         </div>

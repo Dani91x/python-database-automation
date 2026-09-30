@@ -44,6 +44,7 @@ import { Power, Square, SlidersHorizontal, AlertTriangle, Loader2, Ban } from 'l
 import { fmtMoney, fmtAge, DASH } from '@/lib/format';
 import { BOT_LABEL, type Bot } from '@/lib/controlRoom';
 import { interruttoreDi } from '@/lib/interruttori';
+import { etichettaArretrati, type GruppoArretrati } from '@/lib/provaGiornata';
 import { InterruttoreUscite } from './InterruttoreUscite';
 import type {
     CampoImporto, InterruttoreId, Modalita, ComandiInterruttori, SportBot, StatoUscite,
@@ -199,6 +200,11 @@ export interface RigaInterruttore {
      * scrive «—», mai «0,00 €», che vorrebbe dire «ho chiuso in pari».
      */
     pnlOggi?: number | null;
+    /**
+     * 30/09 (P8bis) - IN PROVA: le partite di giorni precedenti regolate oggi
+     * (es. al riavvio), accanto a `pnlOggi` e MAI dentro. Assente = nessuna.
+     */
+    arretratiProva?: GruppoArretrati[] | null;
     /** true sulla PRIMA riga di ciascun bot: lì va il foglio parametri, che è
      *  del servizio e non della singola strategia */
     primaDelBot: boolean;
@@ -599,6 +605,18 @@ function RigaBot({
                             : r.pnlOggi < 0 ? 'text-red-400' : 'text-emerald-400'}>
                             {r.pnlOggi == null ? DASH : fmtMoney(r.pnlOggi)}
                         </span>
+                    </span>
+                )}
+                {/* 30/09 (P8bis): gli arretrati IN PROVA, a parte, con la data:
+                    mai dentro la cifra di oggi, mai sommati fra loro */}
+                {r.arretratiProva != null && r.arretratiProva.length > 0 && (
+                    <span className="text-[10px] font-mono text-white/40" data-testid={`cr-bot-arretrati-${r.id}`}
+                        title="partite di giorni precedenti regolate oggi (es. al riavvio): simulato, fuori dalla cifra di oggi">
+                        {r.arretratiProva.map((g, i) => (
+                            <span key={`${g.giorno}|${g.origine}`}>
+                                {i > 0 ? ' · ' : ''}arretrati regolati oggi: {fmtMoney(g.pnl, { signed: true })} ({etichettaArretrati(g)})
+                            </span>
+                        ))}
                     </span>
                 )}
 

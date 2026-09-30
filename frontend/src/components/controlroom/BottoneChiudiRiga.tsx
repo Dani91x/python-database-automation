@@ -22,7 +22,8 @@
 // la conosce) e solo la conferma manda la richiesta. La richiesta e' la stessa
 // di prima. Stesso gesto di `CashOutPartita` (primo clic arma, secondo manda).
 // ============================================================================
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
+import { ATTESA_CONFERMA_USCITE_MS } from './InterruttoreUscite';
 import { BOT_LABEL } from '@/lib/controlRoom';
 import { fmtMoney } from '@/lib/format';
 import {
@@ -85,7 +86,21 @@ export function BottoneChiudiRiga({ riga, testId = 'cr-op-chiudi', variante = 'r
 }) {
     const api = useContext(ChiusuraRigaContext);
     const [inVolo, setInVolo] = useState(false);
-    const [armato, setArmato] = useState(false);
+    // review incrociata 30/09 (M2): «Conferma» compare nello stesso punto del
+    // «Chiudi», quindi un doppio clic mandava soldi veri senza una conferma
+    // voluta. Come per gli interruttori delle uscite (review 15/09), il
+    // «Conferma» resta INERTE per ATTESA_CONFERMA_USCITE_MS dall'armamento.
+    /** istante in cui la conferma e' comparsa; null = non armata */
+    const [armatoDa, setArmatoDa] = useState<number | null>(null);
+    const [, setTic] = useState(0);
+    useEffect(() => {
+        if (armatoDa == null) return;
+        const t = window.setTimeout(() => setTic((n) => n + 1), ATTESA_CONFERMA_USCITE_MS + 20);
+        return () => window.clearTimeout(t);
+    }, [armatoDa]);
+    const armato = armatoDa != null;
+    const troppoPresto = armatoDa != null && Date.now() - armatoDa < ATTESA_CONFERMA_USCITE_MS;
+    const setArmato = (v: boolean) => setArmatoDa(v ? Date.now() : null);
     if (!api) return null;
     const c = chiudibile(riga);
     if (c == null) return null;
@@ -119,7 +134,8 @@ export function BottoneChiudiRiga({ riga, testId = 'cr-op-chiudi', variante = 'r
                         title="conferma la chiusura: sono soldi veri"
                         data-testid={`${testId}-conferma`}
                         data-bot={riga.bot}
-                        onClick={manda}
+                        disabled={troppoPresto}
+                        onClick={() => { if (!troppoPresto) manda(); }}
                     >Conferma</button>
                     <span className="text-[9px] text-orange-300" data-testid={`${testId}-armato`}>
                         Live, soldi veri: confermi la chiusura?

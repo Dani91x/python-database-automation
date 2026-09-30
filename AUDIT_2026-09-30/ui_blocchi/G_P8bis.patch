@@ -1,0 +1,322 @@
+diff --git a/frontend/src/components/controlroom/PannelloBot.tsx b/frontend/src/components/controlroom/PannelloBot.tsx
+index 9c20fa6..98d4e4f 100644
+--- a/frontend/src/components/controlroom/PannelloBot.tsx
++++ b/frontend/src/components/controlroom/PannelloBot.tsx
+@@ -44,6 +44,7 @@ import { Power, Square, SlidersHorizontal, AlertTriangle, Loader2, Ban } from 'l
+ import { fmtMoney, fmtAge, DASH } from '@/lib/format';
+ import { BOT_LABEL, type Bot } from '@/lib/controlRoom';
+ import { interruttoreDi } from '@/lib/interruttori';
++import { etichettaArretrati, type GruppoArretrati } from '@/lib/provaGiornata';
+ import { InterruttoreUscite } from './InterruttoreUscite';
+ import type {
+     CampoImporto, InterruttoreId, Modalita, ComandiInterruttori, SportBot, StatoUscite,
+@@ -199,6 +200,11 @@ export interface RigaInterruttore {
+      * scrive «—», mai «0,00 €», che vorrebbe dire «ho chiuso in pari».
+      */
+     pnlOggi?: number | null;
++    /**
++     * 30/09 (P8bis) - IN PROVA: le partite di giorni precedenti regolate oggi
++     * (es. al riavvio), accanto a `pnlOggi` e MAI dentro. Assente = nessuna.
++     */
++    arretratiProva?: GruppoArretrati[] | null;
+     /** true sulla PRIMA riga di ciascun bot: lì va il foglio parametri, che è
+      *  del servizio e non della singola strategia */
+     primaDelBot: boolean;
+@@ -601,6 +607,18 @@ function RigaBot({
+                         </span>
+                     </span>
+                 )}
++                {/* 30/09 (P8bis): gli arretrati IN PROVA, a parte, con la data:
++                    mai dentro la cifra di oggi, mai sommati fra loro */}
++                {r.arretratiProva != null && r.arretratiProva.length > 0 && (
++                    <span className="text-[10px] font-mono text-white/40" data-testid={`cr-bot-arretrati-${r.id}`}
++                        title="partite di giorni precedenti regolate oggi (es. al riavvio): simulato, fuori dalla cifra di oggi">
++                        {r.arretratiProva.map((g, i) => (
++                            <span key={`${g.giorno}|${g.origine}`}>
++                                {i > 0 ? ' · ' : ''}arretrati regolati oggi: {fmtMoney(g.pnl, { signed: true })} ({etichettaArretrati(g)})
++                            </span>
++                        ))}
++                    </span>
++                )}
+ 
+                 {(parametriRiga != null || (mostraParametri && parametri != null)) ? (
+                     <span className="ml-auto flex items-center gap-1.5"
+diff --git a/frontend/src/components/controlroom/righeBot.provaArretrati.test.tsx b/frontend/src/components/controlroom/righeBot.provaArretrati.test.tsx
+new file mode 100644
+index 0000000..38e3233
+--- /dev/null
++++ b/frontend/src/components/controlroom/righeBot.provaArretrati.test.tsx
+@@ -0,0 +1,57 @@
++// ============================================================================
++// righeBot.provaArretrati.test.tsx - P8bis (30/09): nella PLANCIA dei bot la
++// cifra «oggi» in prova e' per partite di OGGI; gli arretrati (partite di
++// giorni precedenti regolate oggi) stanno accanto, a parte, mai sommati.
++// Il caso vero: Safe base in prova, 4 partite del 26/09 regolate oggi al
++// riavvio (+7,60): la riga diceva «oggi +7,60», ora «oggi —» e, a parte,
++// «arretrati regolati oggi: +7,60 € (4 operazioni aperte il 26/09)».
++//
++// Finti con le chiavi di `StatoBotPlancia` (come in fixPagine2609.giornata).
++// FALSIFICAZIONE: in righeBot togliendo `arretratiProva` dalla riga, o
++// rimettendo gli arretrati dentro `pnlOggi`, questi test diventano rossi.
++// ============================================================================
++import { describe, expect, it, vi } from 'vitest';
++import { render } from '@testing-library/react';
++import type { ComandiInterruttori } from '@/lib/interruttori';
++import { righeInterruttori, type StatoBotPlancia } from './righeBot';
++import { PannelloBot } from './PannelloBot';
++
++const ARR = [{ giorno: '2026-09-26', origine: 'apertura' as const, pnl: 7.6, operazioni: 4, vinte: 4, perse: 0, partite: 4 }];
++
++function safe(modo: 'paper' | 'live'): StatoBotPlancia {
++    return {
++        bot: 'safe', inCorsa: true, modalita: modo, varianti: ['base'],
++        modiStrategia: { base: modo }, stato: 'running', etaPushS: 1, motivoBlocco: null,
++        tettoPartite: null, partiteEsposte: null, stopFermaSoloAperture: false, fermatoAllAvvioAt: null,
++        pnlOggi: null, pnlOggiPaper: null,
++        pnlOggiPerStrategia: { base: { live: 0.44, paper: null, arretratiPaper: ARR } },
++    };
++}
++
++describe('plancia: prova di oggi e arretrati a parte', () => {
++    it('Safe base in prova: oggi «—» (niente di oggi), arretrati +7,60 accanto e mai dentro', () => {
++        const [r] = righeInterruttori([safe('paper')], 'calcio').filter((x) => x.id === 'safe-base');
++        expect(r.pnlOggi).toBeNull();
++        expect(r.arretratiProva).toEqual(ARR);
++    });
++
++    it('in LIVE la riga mostra il suo live e NESSUN arretrato di prova', () => {
++        const [r] = righeInterruttori([safe('live')], 'calcio').filter((x) => x.id === 'safe-base');
++        expect(r.pnlOggi).toBe(0.44);
++        expect(r.arretratiProva).toBeUndefined();
++    });
++
++    it('a schermo: «oggi —» e la riga degli arretrati con la data', () => {
++        const righe = righeInterruttori([safe('paper')], 'calcio');
++        const comandi: ComandiInterruttori = {
++            accendi: vi.fn(async () => {}), spegni: vi.fn(async () => {}),
++            cambiaModalita: vi.fn(async () => {}), cambiaImporto: vi.fn(async () => {}),
++            fermaBot: vi.fn(async () => {}), scriviAccensioni: vi.fn(async () => {}),
++            cambiaModalitaServizio: vi.fn(async () => {}),
++        };
++        const s = render(<PannelloBot righe={righe} importi={{}} comandi={comandi} />);
++        expect(s.getByTestId('cr-bot-pnl-safe-base').textContent).toBe('oggi —');
++        expect(s.getByTestId('cr-bot-arretrati-safe-base').textContent)
++            .toBe('arretrati regolati oggi: +7,60 € (4 operazioni aperte il 26/09)');
++    });
++});
+diff --git a/frontend/src/components/controlroom/righeBot.ts b/frontend/src/components/controlroom/righeBot.ts
+index 95213e0..72da9ae 100644
+--- a/frontend/src/components/controlroom/righeBot.ts
++++ b/frontend/src/components/controlroom/righeBot.ts
+@@ -14,6 +14,7 @@ import {
+ } from '@/lib/interruttori';
+ import type { RigaInterruttore } from '@/components/controlroom/PannelloBot';
+ import type { Bot, Modalita } from '@/lib/interruttori';
++import type { GruppoArretrati } from '@/lib/provaGiornata';
+ 
+ /**
+  * Il minimo che serve per disegnare le righe di un bot. `StatoBot` della
+@@ -41,7 +42,17 @@ export interface StatoBotPlancia {
+     /** 26/09 (F-1) - Safe: il P&L di oggi PER STRATEGIA (chiave = strategia
+      *  dell'interruttore). Un numero del bot intero ripetuto su ogni riga di
+      *  strategia sarebbe sommato N volte nel riassunto del gruppo. */
+-    pnlOggiPerStrategia?: Record<string, { live: number | null; paper: number | null }> | null;
++    pnlOggiPerStrategia?: Record<string, {
++        live: number | null; paper: number | null;
++        /** 30/09 (P8bis): arretrati IN PROVA della strategia, mai in `paper` */
++        arretratiPaper?: GruppoArretrati[] | null;
++    }> | null;
++    /**
++     * 30/09 (P8bis) - IN PROVA: `pnlOggiPaper` conta le sole partite di OGGI;
++     * le partite di giorni precedenti regolate oggi stanno qui, a parte, mai
++     * sommate (stessa regola e fonte della corsia PROVA, `lib/provaGiornata.ts`).
++     */
++    arretratiPaper?: GruppoArretrati[] | null;
+     /** 24/09 - una frase del servizio da mostrare accanto allo stato (lo
+      *  scalper: quante sessioni, in che modalita', da dove e quanto vecchio) */
+     nota?: string | null;
+@@ -101,7 +112,14 @@ export function righeInterruttori(
+                     ? (b.pnlOggiPerStrategia[i.strategia] ?? { live: null, paper: null }) : null;
+                 const live = perStr ? perStr.live : (b.pnlOggi ?? null);
+                 const paper = perStr ? perStr.paper : (b.pnlOggiPaper ?? null);
+-                return { pnlOggi: st.modalita === 'live' ? live : st.modalita === 'paper' ? paper : null };
++                // 30/09 (P8bis): in prova, gli arretrati regolati oggi accanto
++                // alla cifra di oggi, mai dentro; in live non si mostrano
++                const arretrati = perStr ? (perStr.arretratiPaper ?? null) : (b.arretratiPaper ?? null);
++                return {
++                    pnlOggi: st.modalita === 'live' ? live : st.modalita === 'paper' ? paper : null,
++                    ...(st.modalita === 'paper' && arretrati && arretrati.length > 0
++                        ? { arretratiProva: arretrati } : {}),
++                };
+             })(),
+             primaDelBot,
+         });
+diff --git a/frontend/src/components/controlroom/useControlRoom.provaGiornata.test.tsx b/frontend/src/components/controlroom/useControlRoom.provaGiornata.test.tsx
+index 6abacfd..5b952ce 100644
+--- a/frontend/src/components/controlroom/useControlRoom.provaGiornata.test.tsx
++++ b/frontend/src/components/controlroom/useControlRoom.provaGiornata.test.tsx
+@@ -226,6 +226,29 @@ function contoConMike(netto: number) {
+     };
+ }
+ 
++describe('P8bis - la plancia dei bot: prova di oggi e arretrati a parte', () => {
++    it('Safe base in prova: +7,60 di partite vecchie regolate oggi NON e\' la cifra di oggi; arretrati a parte', async () => {
++        vi.mocked(fetchSafeState).mockResolvedValue({ ...SAFE_VUOTO, trades: SAFE_ARRETRATI } as never);
++        vi.mocked(fetchMikeState).mockResolvedValue(MIKE_VUOTO as never);
++        const v = await vista();
++        const safe = v.bots.find((b) => b.bot === 'safe')!;
++        const base = safe.pnlOggiPerStrategia!.base;
++        expect(base.paper).toBeNull();
++        expect(base.arretratiPaper!.map((g) => [g.giorno, g.origine, g.pnl, g.operazioni])).toEqual([[PRIMA, 'apertura', 7.6, 4]]);
++        // le altre strategie non ereditano gli arretrati della base
++        expect(safe.pnlOggiPerStrategia!.esatto.arretratiPaper).toEqual([]);
++    });
++
++    it('Mike: gli arretrati della plancia vengono dalla chiave del backend', async () => {
++        vi.mocked(fetchSafeState).mockResolvedValue(SAFE_VUOTO as never);
++        vi.mocked(fetchMikeState).mockResolvedValue({ ...MIKE_VUOTO, arretrati_prova: arretratiMike('piene') } as never);
++        const v = await vista();
++        const mike = v.bots.find((b) => b.bot === 'mike')!;
++        expect(mike.pnlOggiPaper).toBeNull();
++        expect(mike.arretratiPaper!.map((g) => g.pnl)).toEqual([-18.29]);
++    });
++});
++
+ describe('P7 - la voce di ogni bot dal conto Betfair', () => {
+     it('Mike: posizione di ieri regolata oggi (riga non letta) -> sotto Mike dal CONTO, «Altro» vuoto', async () => {
+         vi.mocked(fetchSafeState).mockResolvedValue(SAFE_VUOTO as never);
+diff --git a/frontend/src/components/controlroom/useControlRoom.ts b/frontend/src/components/controlroom/useControlRoom.ts
+index ef2268e..981b667 100644
+--- a/frontend/src/components/controlroom/useControlRoom.ts
++++ b/frontend/src/components/controlroom/useControlRoom.ts
+@@ -109,7 +109,8 @@ import {
+ } from '@/lib/composizioneObiettivo';
+ import { leggiManualeSitoBetfair, type ManualeSitoBetfair } from '@/lib/manualeSitoBetfair';
+ import {
+-    breakdownProva, leggiArretratiProva, provaGiornata, type ProvaGiornata, type RigaTradeProva,
++    breakdownProva, leggiArretratiProva, provaDellaRiga, provaGiornata, provaPerGiornoPartita,
++    type GruppoArretrati, type ProvaGiornata, type RigaTradeProva,
+ } from '@/lib/provaGiornata';
+ import { composizioneDalConto } from '@/lib/composizioneConto';
+ import { prezzoVivoPerGamba } from '@/lib/comboPrezzoVivo';
+@@ -313,7 +314,15 @@ export interface StatoBot {
+      */
+     pnlOggi: number | null;
+     pnlOggiPaper: number | null;
+-    pnlOggiPerStrategia?: Record<string, { live: number | null; paper: number | null }> | null;
++    pnlOggiPerStrategia?: Record<string, {
++        live: number | null; paper: number | null; arretratiPaper?: GruppoArretrati[] | null;
++    }> | null;
++    /**
++     * 30/09 (P8bis) - IN PROVA `pnlOggiPaper` (Omega/Mike) e `paper` per
++     * strategia (Safe) contano le sole partite di OGGI; gli arretrati regolati
++     * oggi (partite di giorni precedenti) stanno qui, mai sommati.
++     */
++    arretratiPaper?: GruppoArretrati[] | null;
+     /** 24/09 - scalper calcio: quante sessioni, in che modalita', fonte ed eta' */
+     nota?: string | null;
+     /** 25/09 - i 4 bot tennis: l'auto-mode dichiarato dal ponte (`stats.auto`),
+@@ -2642,20 +2651,45 @@ export function useControlRoom(): ControlRoomVM {
+         const giorno = romeDay(new Date(nowMs));
+         const di = (bot: Bot, modo: 'live' | 'paper', strategia?: string) =>
+             pnlChiuseDelGiorno(chiuse, { giorno, bot, modo, strategia });
++        // 30/09 (P8bis): IN PROVA la cifra di oggi e' per partite di OGGI; gli
++        // arretrati (partite di giorni precedenti regolate oggi) a parte, con la
++        // STESSA regola e fonte della corsia PROVA (`lib/provaGiornata.ts`). Il
++        // LIVE resta per giorno di regolamento (Posizioni chiuse), invariato.
++        const giornoDi = (iso: string | null | undefined): string => {
++            const ms = iso ? Date.parse(iso) : NaN;
++            return Number.isFinite(ms) ? romeDay(new Date(ms)) : '';
++        };
++        const opz = { oggi: giorno, giornoDi };
++        const pOmega = provaPerGiornoPartita(omegaTrades as unknown as RigaTradeProva[], { ...opz, sport: 'calcio' });
++        const pMike = provaPerGiornoPartita((mike?.trades ?? []) as unknown as RigaTradeProva[], { ...opz, sport: 'calcio' });
++        const pSafe = provaPerGiornoPartita((safe?.trades ?? []) as unknown as RigaTradeProva[], opz);
++        // Mike: gli arretrati SOLO dalla chiave del backend (vedi `provaOggi`);
++        // non letti = nessuna riga di arretrati nella plancia (lo dice la corsia PROVA)
++        const arretratiMike = provaOggi?.voci.find((v) => v.chiave === 'mike')?.arretrati ?? null;
+         return bots.map((b) => {
+-            if (b.bot === 'omega' || b.bot === 'mike') {
+-                return { ...b, pnlOggi: di(b.bot, 'live'), pnlOggiPaper: di(b.bot, 'paper') };
++            if (b.bot === 'omega') {
++                const p = provaDellaRiga(pOmega);
++                return { ...b, pnlOggi: di(b.bot, 'live'), pnlOggiPaper: p.oggi, arretratiPaper: p.arretrati };
++            }
++            if (b.bot === 'mike') {
++                return {
++                    ...b, pnlOggi: di(b.bot, 'live'), pnlOggiPaper: provaDellaRiga(pMike).oggi,
++                    arretratiPaper: arretratiMike,
++                };
+             }
+             if (b.bot === 'safe') {
+-                const perStr: Record<string, { live: number | null; paper: number | null }> = {};
++                const perStr: Record<string, {
++                    live: number | null; paper: number | null; arretratiPaper?: GruppoArretrati[] | null;
++                }> = {};
+                 for (const k of ['base', 'esatto', 'punta', 'model', 'manual', 'tennis']) {
+-                    perStr[k] = { live: di('safe', 'live', k), paper: di('safe', 'paper', k) };
++                    const p = provaDellaRiga(pSafe, (r) => r.strategia === k);
++                    perStr[k] = { live: di('safe', 'live', k), paper: p.oggi, arretratiPaper: p.arretrati };
+                 }
+                 return { ...b, pnlOggiPerStrategia: perStr };
+             }
+             return b;
+         });
+-    }, [bots, chiuse, nowMs]);
++    }, [bots, chiuse, nowMs, omegaTrades, mike?.trades, safe?.trades, provaOggi]);
+ 
+     /**
+      * Quanto vale chiudere ADESSO, con la matematica condivisa del green-up.
+diff --git a/frontend/src/lib/provaGiornata.ts b/frontend/src/lib/provaGiornata.ts
+index edff2ed..78dab3d 100644
+--- a/frontend/src/lib/provaGiornata.ts
++++ b/frontend/src/lib/provaGiornata.ts
+@@ -33,6 +33,8 @@ export interface RigaTradeProva extends RigaTradeReale {
+     kickoff?: string | null;
+     /** `mike_events.ko_at` (arretrati di Mike dal backend) */
+     ko_at?: string | null;
++    /** `safe_strategy_trades.strategy` (base/esatto/punta/tennis/...) */
++    strategy?: string | null;
+ }
+ 
+ /** Da dove viene il giorno della partita. */
+@@ -43,6 +45,8 @@ export interface RigaProva extends RigaComponente {
+     eventId: string;
+     giornoPartita: string;
+     origineGiorno: OrigineGiorno;
++    /** strategia dell'APERTURA del ciclo (Safe), null se la riga non la porta */
++    strategia: string | null;
+ }
+ 
+ export interface OpzioniProva {
+@@ -74,6 +78,7 @@ export function provaPerGiornoPartita<T extends RigaTradeProva>(
+         for (const r of righe) {
+             const riga: RigaProva = {
+                 ...r, eventId: String(a.event_id), giornoPartita: giorno, origineGiorno: origine,
++                strategia: typeof a.strategy === 'string' ? a.strategy : null,
+             };
+             // giorno illeggibile: mai spacciato per «oggi», va negli arretrati
+             if (giorno === opts.oggi) oggi.push(riga); else arretrati.push(riga);
+@@ -133,6 +138,22 @@ export function gruppiArretrati(righe: readonly RigaProva[]): GruppoArretrati[]
+         });
+ }
+ 
++/**
++ * 30/09 (P8bis) - la cifra PROVA di una riga della PLANCIA dei bot: le sole
++ * partite di OGGI (null = niente regolato oggi, la plancia scrive «—») e gli
++ * arretrati a parte, per gruppo (data, origine). Mai sommati.
++ */
++export function provaDellaRiga(
++    p: { oggi: readonly RigaProva[]; arretrati: readonly RigaProva[] },
++    filtro: (r: RigaProva) => boolean = () => true,
++): { oggi: number | null; arretrati: GruppoArretrati[] } {
++    const oggi = p.oggi.filter(filtro);
++    return {
++        oggi: oggi.length === 0 ? null : riassumiProva(oggi).pnl,
++        arretrati: gruppiArretrati(p.arretrati.filter(filtro)),
++    };
++}
++
+ /** Fonde i gruppi di piu' voci: somma SOLO gruppi con stessa data e stessa origine. */
+ export function fondiGruppi(gruppi: readonly GruppoArretrati[]): GruppoArretrati[] {
+     const per = new Map<string, GruppoArretrati>();

@@ -38,7 +38,7 @@ import FlussoBadge, { FlussoLineeMikeBadge } from '@/components/controlroom/Flus
 import { AzioniPartita } from '@/components/controlroom/AzioniPartita';
 import { NomiPartita } from '@/components/controlroom/NomiPartita';
 import {
-    QuoteMercato, EtaQuote, LineeOu, celleMatchOdds, MAX_LINEE_OU,
+    QuoteMercato, EtaQuote, LineeOu, celleMatchOdds,
 } from '@/components/controlroom/QuoteMercato';
 import { RigaOperazione } from '@/components/controlroom/DettaglioRigaView';
 import type { PartitaGiornata } from '@/lib/controlRoom';
@@ -71,7 +71,8 @@ export function SchedaPreMatch({
     const celle = celleMatchOdds(p.sport, p.odds);
     const haQuote = celle != null;
     const linee = p.lineeOu ?? [];
-    const haLinee = linee.length > 0 && linee.length <= MAX_LINEE_OU;
+    // B1bis: nessuna guardia qui, la regola delle linee vive in `LineeOu`
+    const haLinee = linee.length > 0;
 
     return (
         <div

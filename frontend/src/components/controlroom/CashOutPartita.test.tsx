@@ -12,8 +12,9 @@
 //   · errore della RPC inghiottito → rosso.
 // ============================================================================
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { CashOutPartita } from './CashOutPartita';
+import { ATTESA_CONFERMA_USCITE_MS } from './InterruttoreUscite';
 import type { StatoChiusuraEvento } from '@/lib/chiusuraUtente';
 
 const APERTA: StatoChiusuraEvento = { chiusa: false, fonte: null, marcatore: null };
@@ -50,10 +51,45 @@ describe('cash out globale — il gesto', () => {
     });
 
     it('in LIVE il SECONDO clic manda', async () => {
-        const { onCashOut } = monta({ modalita: 'live' });
-        fireEvent.click(screen.getByTestId('cr-cashout-partita-avvia'));
-        fireEvent.click(screen.getByTestId('cr-cashout-partita-conferma'));
-        await waitFor(() => expect(onCashOut).toHaveBeenCalledWith('35797769'));
+        // 30/09 (P12b): il secondo clic vale solo dopo l'attesa anti doppio clic
+        vi.useFakeTimers();
+        try {
+            const { onCashOut } = monta({ modalita: 'live' });
+            fireEvent.click(screen.getByTestId('cr-cashout-partita-avvia'));
+            await act(async () => { vi.advanceTimersByTime(ATTESA_CONFERMA_USCITE_MS + 50); });
+            await act(async () => { fireEvent.click(screen.getByTestId('cr-cashout-partita-conferma')); });
+            expect(onCashOut).toHaveBeenCalledWith('35797769');
+        } finally { vi.useRealTimers(); }
+    });
+
+    it('30/09: in LIVE un DOPPIO clic non manda (conferma inerte per 400 ms), dopo l\'attesa si', async () => {
+        vi.useFakeTimers();
+        try {
+            vi.setSystemTime(new Date('2026-09-30T16:00:00Z'));
+            const { onCashOut } = monta({ modalita: 'live' });
+            fireEvent.click(screen.getByTestId('cr-cashout-partita-avvia'));
+            const conferma = screen.getByTestId('cr-cashout-partita-conferma') as HTMLButtonElement;
+            expect(conferma.disabled).toBe(true);
+            fireEvent.click(conferma);
+            await act(async () => { vi.advanceTimersByTime(ATTESA_CONFERMA_USCITE_MS - 100); });
+            fireEvent.click(screen.getByTestId('cr-cashout-partita-conferma'));
+            expect(onCashOut).not.toHaveBeenCalled();
+            await act(async () => { vi.advanceTimersByTime(150); });
+            expect((screen.getByTestId('cr-cashout-partita-conferma') as HTMLButtonElement).disabled).toBe(false);
+            await act(async () => { fireEvent.click(screen.getByTestId('cr-cashout-partita-conferma')); });
+            expect(onCashOut).toHaveBeenCalledTimes(1);
+            expect(onCashOut).toHaveBeenCalledWith('35797769');
+        } finally { vi.useRealTimers(); }
+    });
+
+    it('30/09: in PAPER nulla cambia, un clic manda subito', async () => {
+        vi.useFakeTimers();
+        try {
+            const { onCashOut } = monta({ modalita: 'paper' });
+            await act(async () => { fireEvent.click(screen.getByTestId('cr-cashout-partita-avvia')); });
+            expect(onCashOut).toHaveBeenCalledWith('35797769');
+            expect(screen.queryByTestId('cr-cashout-partita-conferma')).toBeNull();
+        } finally { vi.useRealTimers(); }
     });
 
     it('modalita NON dichiarata = si chiede conferma comunque (fail-closed)', () => {

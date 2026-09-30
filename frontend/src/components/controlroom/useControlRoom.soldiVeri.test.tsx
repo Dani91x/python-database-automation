@@ -97,6 +97,9 @@ vi.mock('@/lib/liveOrders', async (orig) => ({
     ...(await orig() as object),
     fetchLiveAccount: vi.fn(async () => null),
     subscribeLiveAccount: vi.fn(() => () => { /* nessuna spinta */ }),
+    // T_P4: lo stop del conto (betfair_live_risk_state)
+    fetchLiveRiskState: vi.fn(async () => null),
+    subscribeLiveRiskState: vi.fn(() => () => { /* nessuna spinta */ }),
 }));
 vi.mock('@/lib/scalperControlRoom', async (orig) => ({
     ...(await orig() as object),
@@ -104,7 +107,9 @@ vi.mock('@/lib/scalperControlRoom', async (orig) => ({
 }));
 
 import { fetchMikeState } from '@/lib/mike';
-import { fetchLiveAccount, subscribeLiveAccount } from '@/lib/liveOrders';
+import {
+    fetchLiveAccount, subscribeLiveAccount, fetchLiveRiskState, subscribeLiveRiskState,
+} from '@/lib/liveOrders';
 import { useControlRoom } from '@/components/controlroom/useControlRoom';
 
 // la riga del database: scritta al cambio, un minuto fa
@@ -176,6 +181,40 @@ describe('soldiVeri - l\'esposizione e\' quella del CONTO', () => {
         await waitFor(() => expect(h.result.current.soldiVeri.conto.esposizione).toBe(-9.95));
         expect(vi.mocked(fetchLiveAccount)).toHaveBeenCalledTimes(1);
         expect(vi.mocked(subscribeLiveAccount)).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('stopPerdita (T_P4) - lo stop del CONTO dal runner, una lettura sola', () => {
+    // riga come la scrive daily_stop_worker._publish_state (daily_stop_worker.py:334-347)
+    const RIGA_RISCHIO = {
+        id: 1, mode: 'live', day: '2026-09-30', realized: 0, open_mtm: -0.74, total: -0.74,
+        limit_value: null, stop_fired: false,
+        detail: { reason: 'limit_off', degraded: false, kill_switch: false },
+        updated_at: new Date(Date.now() - 30_000).toISOString(),
+    };
+
+    it('oggi: stop del conto SPENTO (limit_off), letto con UNA fetch e UNA sottoscrizione', async () => {
+        vi.mocked(fetchLiveRiskState).mockClear();
+        vi.mocked(subscribeLiveRiskState).mockClear();
+        vi.mocked(fetchLiveRiskState).mockResolvedValue(RIGA_RISCHIO as never);
+        const h = await montato();
+        await waitFor(() => expect(h.result.current.stopPerdita.conto.letto).toBe(true));
+        expect(h.result.current.stopPerdita.conto.soglia).toBeNull();
+        expect(h.result.current.stopPerdita.conto.motivo).toBe('limit_off');
+        expect(vi.mocked(fetchLiveRiskState)).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(subscribeLiveRiskState)).toHaveBeenCalledTimes(1);
+    });
+
+    it('il push realtime della riga aggiorna lo stop (soglia attivata dall\'utente)', async () => {
+        vi.mocked(fetchLiveRiskState).mockResolvedValue(RIGA_RISCHIO as never);
+        let spinta: ((r: unknown) => void) | null = null;
+        vi.mocked(subscribeLiveRiskState).mockImplementation(((cb: (r: unknown) => void) => {
+            spinta = cb; return () => { /* niente */ };
+        }) as never);
+        const h = await montato();
+        await waitFor(() => expect(h.result.current.stopPerdita.conto.letto).toBe(true));
+        act(() => spinta?.({ ...RIGA_RISCHIO, limit_value: 40, detail: { reason: 'under_limit' } }));
+        await waitFor(() => expect(h.result.current.stopPerdita.conto.soglia).toBe(40));
     });
 });
 

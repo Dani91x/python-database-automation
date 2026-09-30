@@ -118,6 +118,8 @@ import { fetchScanRows } from '@/lib/safeStrategyScan';
 import { fetchMikeState } from '@/lib/mike';
 import { useControlRoom } from '@/components/controlroom/useControlRoom';
 import { useChiusuraAlMs } from '@/components/controlroom/useChiusuraAlMs';
+import { cashOutPartita, gambeDaOperazioni } from '@/lib/cashOutPartita';
+import { ripiegoScanner } from '@/lib/chiusuraAlMs';
 
 const OGGI = romeDay(new Date());
 const PIAZZATO = `${OGGI}T12:00:00.000Z`;
@@ -245,6 +247,34 @@ describe('P11: stessa gamba in utile, ramo al ms = ramo scanner al centesimo', (
         const { result: ms } = renderHook(() => useChiusuraAlMs(op!.chiusura, f.sorgente));
         f.spingi('1.2', 2, 1.68, 1.70);
         expect(ms.current?.bloccabile).toBe(0.77);
+    });
+
+    it('P12b: apertura + chiusura (green) abbinate sulla stessa selezione -> cash out della partita +0,05, UNA riga', async () => {
+        // Farul (30/09): punta Under 3,5 5,00 @ 2,87 + banca 5,06 @ 2,84 (closes_trade_id).
+        // Senza `chiusureGambe` (mercato/selezione della chiusura) la cifra era
+        // NON CALCOLABILE: falsificato togliendo il campo in `agg`.
+        vi.mocked(fetchScanRows).mockResolvedValue([scanRow('E2', payloadOU('1.2', 2, 2.84, 2.9))]);
+        vi.mocked(fetchMikeState).mockResolvedValue({
+            ...MIKE_VUOTO,
+            trades: [
+                tradeMike({ id: 821, side: 'back', price: 2.87, size: 5,
+                    size_matched: 5, size_remaining: 0, avg_price_matched: 2.87 } as Partial<MikeTrade>),
+                tradeMike({ id: 822, side: 'lay', price: 2.84, size: 5.06, closes_trade_id: 821,
+                    size_matched: 5.06, size_remaining: 0, avg_price_matched: 2.84 } as Partial<MikeTrade>),
+            ],
+        } as never);
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        const ops = result.current.operazioni.get('E2') ?? [];
+        expect(ops.map((o) => o.id)).toEqual([821]);
+        expect(ops[0].chiusureGambe).toEqual([{ id: 822, marketId: '1.2', selectionId: 2 }]);
+        const r = cashOutPartita(gambeDaOperazioni(ops), {
+            prezzo: (m, s) => (m === '1.2' && s === 2 ? ripiegoScanner(ops[0].chiusura?.alMs) : null),
+            nowMs: Date.now(),
+        });
+        expect(r.live.mancanti).toEqual([]);
+        expect(r.live.gambe).toHaveLength(1);
+        expect(r.live.netto).toBe(0.05);
     });
 
     it('in perdita nessuna commissione: lay 2,10 -> ms = scanner', async () => {

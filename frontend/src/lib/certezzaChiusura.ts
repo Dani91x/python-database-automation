@@ -190,9 +190,12 @@ export function certezzaChiusura(pos: PosizioneDaGiudicare): RisultatoCertezzaCh
     if (abbinatoTotale <= EPS && tutteFallite) {
         const nRifiutate = gambe.filter((g) => g.s.esito === 'rifiutato').length;
         const nAnnullate = gambe.filter((g) => g.s.esito === 'annullato').length;
+        // 30/09 (P13): il plurale era «annullatae» / «rifiutatae» («tutte le
+        // gambe di chiusura sono 2 annullatae», scheda di Follo v Sarpsborg)
+        const uno = gambe.length === 1;
         const dettaglio = [
-            nRifiutate > 0 ? `${nRifiutate} rifiutata${nRifiutate > 1 ? 'e' : ''} da Betfair` : null,
-            nAnnullate > 0 ? `${nAnnullate} annullata${nAnnullate > 1 ? 'e' : ''}` : null,
+            nRifiutate > 0 ? `${uno ? '' : `${nRifiutate} `}${nRifiutate > 1 ? 'rifiutate' : 'rifiutata'} da Betfair` : null,
+            nAnnullate > 0 ? `${uno ? '' : `${nAnnullate} `}${nAnnullate > 1 ? 'annullate' : 'annullata'}` : null,
         ].filter(Boolean).join(' e ');
         return {
             stato: 'CHIUSURA_FALLITA',
@@ -201,8 +204,8 @@ export function certezzaChiusura(pos: PosizioneDaGiudicare): RisultatoCertezzaCh
                 liability: liabilityDiLato(latoApertura, abbApertura, prezzoApertura),
             },
             coperturaFrazione: 0,
-            motivo: `${gambe.length === 1 ? 'la gamba di chiusura è' : 'tutte le gambe di chiusura sono'} `
-                + `${dettaglio}: la posizione è ANCORA APERTA, nessuna contropartita è stata trovata.`,
+            motivo: `${uno ? 'la gamba di chiusura è finita' : `le ${gambe.length} gambe di chiusura sono finite`} `
+                + `senza abbinare nulla (${dettaglio}): la posizione è ANCORA APERTA, nessuna contropartita è stata trovata.`,
         };
     }
 

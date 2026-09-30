@@ -1,0 +1,471 @@
+diff --git a/frontend/src/components/controlroom/CashOutGlobale.montaggio.test.tsx b/frontend/src/components/controlroom/CashOutGlobale.montaggio.test.tsx
+new file mode 100644
+index 0000000..cce1d8c
+--- /dev/null
++++ b/frontend/src/components/controlroom/CashOutGlobale.montaggio.test.tsx
+@@ -0,0 +1,154 @@
++// ============================================================================
++// CashOutGlobale.montaggio.test.tsx - 30/09 (P12b): il riquadro del cash out
++// della PARTITA montato nella scheda VERA (`SchedaPartita`), accanto al
++// pulsante «Cash out Safe» che resta com'e'.
++//
++// FALSIFICAZIONE (`falsifica_c_p12b.sh`): togliendo il montaggio, `dueEsiti`,
++// `esitoDeciso` o il filtro «nessuna sottoscrizione senza gambe» -> rossi.
++// ============================================================================
++import { describe, it, expect, vi } from 'vitest';
++import { render, screen } from '@testing-library/react';
++import { MemoryRouter } from 'react-router-dom';
++import { SchedaPartita } from './SchedaPartita';
++import { ChiusuraRigaContext } from './BottoneChiudiRiga';
++import type { OperazionePartita } from './useControlRoom';
++import type { PartitaGiornata } from '@/lib/controlRoom';
++import type { MikeEvent } from '@/lib/mike';
++
++function partitaCalcio(over: Partial<PartitaGiornata> = {}): PartitaGiornata {
++    return {
++        event_id: '35001', sport: 'calcio', nome: 'Follo – Sarpsborg', campionato: 'Coppa',
++        koMs: Date.now() - 3600_000, stato: 'live', minuto: 63, punteggio: '0-0',
++        controlloDisponibile: false, etaFeedS: null, freschezza: 'ignota',
++        latenzaQuoteS: null, freschezzaQuote: 'ignota', statoQuote: 'ignoto',
++        media: null, extra: null, marketId: null,
++        soldi: null, target: null, avanzamento: null,
++        ...over,
++    };
++}
++
++function op(p: Partial<OperazionePartita> & Pick<OperazionePartita, 'id' | 'bot'>): OperazionePartita {
++    return {
++        selezione: null, lato: 'back', prezzo: 2, size: 5, stato: 'open', pnl: null, modalita: 'live',
++        at: '2026-09-30T14:00:00.000Z', quale: null,
++        ordine: { status: 'open', side: 'back', price: 2, size: 5, size_requested: 5, size_matched: 5,
++            size_remaining: 0, avg_price_matched: 2, betfair_updated_at: null, meta: null },
++        dettaglio: null, marketId: null, selectionId: null, liability: null, vivo: null, etaQuoteS: null,
++        chiusura: null, chiusureOrdini: [], eventId: '35001', chiudeId: null,
++        ...p,
++    };
++}
++
++/** una gamba di Mike abbinata per intero, col prezzo dello scanner come ripiego */
++function gambaMike(id: number, selezione: string, lato: 'back' | 'lay', prezzo: number, importo: number,
++    marketId: string, selectionId: number, scanner: { back: number | null; lay: number | null }): OperazionePartita {
++    return op({
++        id, bot: 'mike', selezione, lato, marketId, selectionId, prezzo, size: importo,
++        ordine: { status: 'open', side: lato, price: prezzo, size: importo, size_requested: importo,
++            size_matched: importo, size_remaining: 0, avg_price_matched: prezzo, betfair_updated_at: null, meta: null },
++        chiusura: {
++            lato: lato === 'back' ? 'lay' : 'back', prezzo: null, abbinabile: null, bloccabile: null,
++            alMs: { win: 0, lose: 0, marketId, selectionId, sport: 'calcio', istanteScannerMs: Date.now() - 4300,
++                scanner: { back: scanner.back, backSize: 50, lay: scanner.lay, laySize: 50 }, aliquota: 0.05 },
++        },
++    });
++}
++
++function mikeEvento(over: Partial<MikeEvent> = {}, live: Partial<NonNullable<MikeEvent['live']>> = {}): MikeEvent {
++    return {
++        event_id: '35001', fixture_id: null, event_name: 'Follo v Sarpsborg', competition: null, league_id: null,
++        ko_at: null, mode: 'live', markets: { OU35: { market_id: '1.35' }, OU45: { market_id: '1.45' } },
++        state: 'LIVE_COVERED', cycle_no: 0, entry_price_initial: null, dossier: null,
++        live: {
++            goals: 0, published_ts: Date.now() / 1000 - 1, feed_age_s: 0.2,
++            cashout: { net: -0.84, gross: -0.84, base: 9.8, complete: true, pct: -8.6 },
++            ...live,
++        },
++        positions: [], ctx: null, skipped: false, settled_pnl: null, updated_at: new Date().toISOString(),
++        ...over,
++    } as MikeEvent;
++}
++
++const FOLLO = (): OperazionePartita[] => [
++    gambaMike(5085, 'Under 3.5 Goals', 'back', 2.4, 5, '1.35', 11, { back: 2.46, lay: 2.56 }),
++    gambaMike(5094, 'Under 4.5 Goals', 'lay', 1.76, 6.32, '1.45', 21, { back: 1.63, lay: 1.68 }),
++];
++
++const SAFE = {
++    modalita: 'paper' as const, chiusa: { chiusa: false, fonte: null, marcatore: null },
++    onCashOut: vi.fn(async () => undefined), onRiprendi: vi.fn(async () => undefined),
++};
++
++function monta(operazioni: OperazionePartita[], mike: MikeEvent | null, sorgente?: () => never) {
++    const scheda = (
++        <MemoryRouter>
++            <SchedaPartita p={partitaCalcio()} operazioni={operazioni} mike={mike} safe={SAFE} />
++        </MemoryRouter>
++    );
++    return render(sorgente
++        ? <ChiusuraRigaContext.Provider value={{ chiudi: vi.fn(), stato: () => null, sorgenteLadder: sorgente }}>{scheda}</ChiusuraRigaContext.Provider>
++        : scheda);
++}
++
++describe('P12b: il cash out della PARTITA dentro la scheda', () => {
++    it('Follo, due gambe di Mike: −0,82 netto, accanto «il bot Mike calcola −0,84 [BOT]»; il pulsante Safe resta', () => {
++        monta(FOLLO(), mikeEvento());
++        expect(screen.getByTestId('cr-cashout-globale-live-netto').textContent).toBe('−0,82 €');
++        expect(screen.getAllByTestId('cr-cashout-globale-live-gamba')).toHaveLength(2);
++        expect(screen.getByTestId('cr-cashout-globale-live-bot-mike-netto').textContent).toBe('−0,84 €');
++        expect(screen.getByTestId('cr-cashout-globale-live-bot-mike-marchio').getAttribute('data-fonte')).toBe('bot');
++        // prezzi dello scanner (nessun ladder al ms): dichiarato riga per riga
++        expect(screen.getAllByTestId('cr-cashout-globale-live-gamba')[0].textContent).toContain('prezzo dello scanner');
++        // il pulsante di Safe c'e' ancora, con il suo nome vero
++        expect(screen.getByTestId('cr-cashout-partita-avvia').textContent).toBe('Cash out Safe');
++        expect(screen.getByTestId('cr-cashout-partita-bloccato').textContent)
++            .toBe('nessuna posizione viva di Safe su questa partita');
++    });
++
++    it('Mike dichiara la SUA cifra incompleta: «il bot: non calcolabile», nessun numero', () => {
++        monta(FOLLO(), mikeEvento({}, { cashout: { net: -0.1, gross: -0.1, base: 9.8, complete: false, pct: null } }));
++        expect(screen.getByTestId('cr-cashout-globale-live-bot-mike-netto').textContent).toBe('non calcolabile');
++        expect(screen.queryByTestId('cr-cashout-globale-live-bot-mike-differenza')).toBeNull();
++    });
++
++    it('senza gambe: nessun riquadro e NESSUNA sorgente toccata (le card del giorno non aprono niente)', () => {
++        const subscribe = vi.fn(() => () => undefined);
++        const sorgente = vi.fn(() => ({ fetch: async () => null, subscribe, fonte: () => 'canale' as const }) as never);
++        monta([], null, sorgente as unknown as () => never);
++        expect(screen.queryByTestId('cr-cashout-globale')).toBeNull();
++        expect(sorgente).not.toHaveBeenCalled();
++        expect(subscribe).not.toHaveBeenCalled();
++        // il pulsante Safe e' indipendente dal riquadro
++        expect(screen.getByTestId('cr-cashout-partita-avvia')).toBeTruthy();
++    });
++
++    it('con gambe: UNA sottoscrizione per mercato dal contesto della Control Room', () => {
++        const subscribe = vi.fn(() => () => undefined);
++        const sorgente = vi.fn(() => ({ fetch: async () => null, subscribe, fonte: () => 'canale' as const }) as never);
++        monta(FOLLO(), null, sorgente as unknown as () => never);
++        expect(subscribe.mock.calls.map((c) => (c as unknown[])[0]).sort()).toEqual(['1.35', '1.45']);
++    });
++
++    it('Mike, 4 gol: l\'Under 3,5 e\' PERSA (engine.selection_decided): vale −stake senza prezzo, cifra completa −8,75', () => {
++        // engine.py:666-677 - gol > linea: Over vinto, Under perso. Parita' con
++        // test_mike_engine_cert_2026_09_12.py:303-316 (net -8,75)
++        const ops = [
++            gambaMike(1, 'Under 3.5 Goals', 'back', 1.5, 20, '1.35', 11, { back: null, lay: null }),
++            gambaMike(2, 'Over 4.5 Goals', 'back', 8.0, 4, '1.45', 22, { back: 2.0, lay: 2.02 }),
++        ];
++        monta(ops, mikeEvento({}, { goals: 4, cashout: null }));
++        expect(screen.getByTestId('cr-cashout-globale-live-netto').textContent).toBe('−8,75 €');
++        expect(screen.getAllByTestId('cr-cashout-globale-live-gamba')[0].getAttribute('data-stato')).toBe('decisa');
++    });
++
++    it('Mike, Over 4,5 + Under 4,5 sullo stesso mercato O/U (due esiti): UNA riga, +1,81', () => {
++        // parita' con test_mike_engine_cert_2026_09_12.py:164-174
++        const ops = [
++            gambaMike(3, 'Over 4.5 Goals', 'back', 8.0, 4, '1.45', 22, { back: 9.0, lay: 9.4 }),
++            gambaMike(4, 'Under 4.5 Goals', 'back', 1.4, 10, '1.45', 21, { back: 1.3, lay: 1.32 }),
++        ];
++        monta(ops, mikeEvento({}, { cashout: null }));
++        expect(screen.getAllByTestId('cr-cashout-globale-live-gamba')).toHaveLength(1);
++        expect(screen.getByTestId('cr-cashout-globale-live-netto').textContent).toBe('+1,81 €');
++    });
++});
+diff --git a/frontend/src/components/controlroom/CashOutGlobale.tsx b/frontend/src/components/controlroom/CashOutGlobale.tsx
+index f1b7901..1a857d1 100644
+--- a/frontend/src/components/controlroom/CashOutGlobale.tsx
++++ b/frontend/src/components/controlroom/CashOutGlobale.tsx
+@@ -19,7 +19,12 @@
+ //     «caso migliore».
+ // Nessun pulsante qui: chiudere e' un altro gesto (P16, su richiesta).
+ // ============================================================================
++import { useContext, useMemo } from 'react';
+ import { MarchioSoldi } from '@/components/controlroom/MarchioSoldi';
++import { ChiusuraRigaContext } from '@/components/controlroom/BottoneChiudiRiga';
++import { useCashOutPartita, type ArgsCashOutPartita } from '@/components/controlroom/useCashOutPartita';
++import { dueEsitiMike, esitoDecisoMike, valoreBotMike } from '@/lib/cashOutPartita';
++import type { MikeEvent } from '@/lib/mike';
+ import { fmtMoney, fmtNum, fmtOdds } from '@/lib/format';
+ import { pnlClass } from '@/lib/tradeStatus';
+ import { BOT_LABEL, type Bot } from '@/lib/controlRoom';
+@@ -31,6 +36,8 @@ import type { FontePrezzo } from '@/lib/schedaAlMs';
+ /** La cifra che il SERVIZIO di un bot pubblica per la stessa partita. */
+ export interface ValoreBotCashOut {
+     bot: string;
++    /** la cifra va accanto alla somma della STESSA modalita'; assente = live */
++    modalita?: 'live' | 'paper';
+     /** netto dichiarato dal servizio; null = il servizio non lo da' */
+     netto: number | null;
+     /** il servizio dichiara la cifra completa (tutti i prezzi presenti)? */
+@@ -155,16 +162,18 @@ function Blocco({ r, modo, testId, valoriBot }: {
+             {r.avvisi.filter((a) => !/liquidita' insufficiente/.test(a)).map((a) => (
+                 <div key={a} className="text-[9px] text-amber-300/80" data-testid={`${testId}-avviso`}>{a}</div>
+             ))}
+-            {modo === 'LIVE' && valoriBot.map((v) => {
+-                const diff = v.netto != null && r.netto != null ? Math.round((r.netto - v.netto) * 100) / 100 : null;
++            {valoriBot.map((v) => {
++                // una cifra che il bot stesso dichiara incompleta non si mostra
++                const cifra = v.completo ? v.netto : null;
++                const diff = cifra != null && r.netto != null ? Math.round((r.netto - cifra) * 100) / 100 : null;
+                 return (
+                     <div key={v.bot} className="flex items-baseline gap-1.5 flex-wrap text-[10px] text-white/50"
+                         data-testid={`${testId}-bot-${v.bot}`}>
+                         <span>il bot {nomeBot(v.bot)} calcola:</span>
+-                        <span className={`font-mono ${pnlClass(v.netto)}`} data-testid={`${testId}-bot-${v.bot}-netto`}>
+-                            {v.netto == null ? 'non pubblicato' : fmtMoney(v.netto, { signed: true })}
++                        <span className={`font-mono ${cifra == null ? 'text-orange-400' : pnlClass(cifra)}`}
++                            data-testid={`${testId}-bot-${v.bot}-netto`}>
++                            {!v.completo ? 'non calcolabile' : cifra == null ? 'non pubblicato' : fmtMoney(cifra, { signed: true })}
+                         </span>
+-                        {!v.completo && v.netto != null && <span className="text-orange-400">(incompleto per il bot)</span>}
+                         <MarchioSoldi fonte="bot" etaS={v.etaS} dettaglio="book letto dal servizio del bot"
+                             testId={`${testId}-bot-${v.bot}-marchio`} />
+                         {diff != null && diff !== 0 && (
+@@ -191,20 +200,50 @@ export function CashOutGlobale({ risultato, valoriBot = [], testId = 'cr-cashout
+     }
+     const haLive = risultato.live.nGambe > 0 || risultato.live.mancanti.length > 0;
+     const haProva = risultato.paper.nGambe > 0 || risultato.paper.mancanti.length > 0;
++    const botLive = valoriBot.filter((v) => (v.modalita ?? 'live') === 'live');
++    const botProva = valoriBot.filter((v) => v.modalita === 'paper');
+     return (
+         <div className="flex flex-col gap-1.5 rounded border border-white/10 px-2 py-1.5" data-testid={testId}>
+             {haLive ? (
+-                <Blocco r={risultato.live} modo="LIVE" testId={`${testId}-live`} valoriBot={valoriBot} />
++                <Blocco r={risultato.live} modo="LIVE" testId={`${testId}-live`} valoriBot={botLive} />
+             ) : (
+                 <div className="text-[10px] text-white/40" data-testid={`${testId}-live-vuoto`}>
+                     Cash out della partita: nessuna gamba LIVE abbinata su questa partita
+                 </div>
+             )}
+             {haProva && (
+-                <Blocco r={risultato.paper} modo="PROVA" testId={`${testId}-prova`} valoriBot={[]} />
++                <Blocco r={risultato.paper} modo="PROVA" testId={`${testId}-prova`} valoriBot={botProva} />
+             )}
+         </div>
+     );
+ }
+ 
++/**
++ * P12b - IL RIQUADRO NELLA SCHEDA DELLA PARTITA: le righe della partita (di
++ * TUTTI i bot) -> `useCashOutPartita` (ladder al ms dal contesto della
++ * Control Room, ripiego scanner dichiarato) -> `CashOutGlobale`, con accanto
++ * la cifra del servizio di Mike. Una partita senza gambe abbinate non mostra
++ * niente e non apre sottoscrizioni.
++ */
++export function CashOutGlobalePartita({ sport, operazioni, mike = null }: {
++    sport: 'calcio' | 'tennis';
++    operazioni: NonNullable<ArgsCashOutPartita['operazioni']>;
++    /** la partita di Mike come il servizio la pubblica (gia' in pagina) */
++    mike?: MikeEvent | null;
++}) {
++    const sorgente = useContext(ChiusuraRigaContext)?.sorgenteLadder ?? null;
++    const dueEsiti = useMemo(() => dueEsitiMike(mike), [mike]);
++    const esitoDeciso = useMemo(() => esitoDecisoMike(mike, operazioni), [mike, operazioni]);
++    const r = useCashOutPartita({ operazioni, sorgente, sport, dueEsiti, esitoDeciso });
++    if (r == null) return null;
++    if (r.live.nGambe === 0 && r.paper.nGambe === 0
++        && r.live.mancanti.length === 0 && r.paper.mancanti.length === 0) return null;
++    const vb = valoreBotMike(mike, Date.now());
++    return (
++        <div className="px-2.5 pt-1.5">
++            <CashOutGlobale risultato={r} valoriBot={vb ? [vb] : []} />
++        </div>
++    );
++}
++
+ export default CashOutGlobale;
+diff --git a/frontend/src/components/controlroom/SchedaPartita.tsx b/frontend/src/components/controlroom/SchedaPartita.tsx
+index bae1069..0b47279 100644
+--- a/frontend/src/components/controlroom/SchedaPartita.tsx
++++ b/frontend/src/components/controlroom/SchedaPartita.tsx
+@@ -47,6 +47,7 @@ import type { OperazionePartita } from '@/components/controlroom/useControlRoom'
+ import { SchedaMike } from '@/components/controlroom/SchedaMike';
+ import { marketStatusMeta, type MikeEvent } from '@/lib/mike';
+ import { useTennisVivo, nomeSelezioneTennis } from '@/components/controlroom/useTennisVivo';
++import { CashOutGlobalePartita } from '@/components/controlroom/CashOutGlobale';
+ 
+ const BOT_SIGLA: Record<Bot, string> = {
+     omega: 'Ω', safe: 'S', mike: 'M', scalper: 'Sc',
+@@ -419,6 +420,10 @@ export function SchedaPartita({
+                 </div>
+             )}
+ 
++            {/* 30/09 (P12b) - il CASH OUT DELLA PARTITA: somma esatta delle gambe
++                abbinate di TUTTI i bot, LIVE e PROVA separati; niente se non ce ne sono */}
++            <CashOutGlobalePartita sport={p.sport} operazioni={operazioni} mike={mike} />
++
+             {/* ── riga 2: il METRO — target, fatto, quanto manca ── */}
+             <div className="px-2.5 pt-2">
+                 <div className="flex items-baseline justify-between gap-2 text-[11px]">
+diff --git a/frontend/src/components/controlroom/useCashOutPartita.ts b/frontend/src/components/controlroom/useCashOutPartita.ts
+index 4255047..43531a5 100644
+--- a/frontend/src/components/controlroom/useCashOutPartita.ts
++++ b/frontend/src/components/controlroom/useCashOutPartita.ts
+@@ -67,7 +67,9 @@ export function useCashOutPartita(args: ArgsCashOutPartita): CashOutPartitaRisul
+         }
+         return out;
+     }, [gambe, ripieghi, esitoDeciso]);
+-    const prezzi = usePrezziAlMs({ sorgente, sport, selezioni: daSeguire });
++    // nessuna selezione da chiudere = nessuna sorgente toccata (le card del
++    // giorno senza gambe non aprono niente)
++    const prezzi = usePrezziAlMs({ sorgente: daSeguire.length > 0 ? sorgente : null, sport, selezioni: daSeguire });
+     if (gambe.length === 0) return null;
+     const perChiave = new Map<string, PrezzoScheda>();
+     daSeguire.forEach((s, i) => {
+diff --git a/frontend/src/components/controlroom/useChiusuraAlMs.parita.test.tsx b/frontend/src/components/controlroom/useChiusuraAlMs.parita.test.tsx
+index b87cfbf..29b7148 100644
+--- a/frontend/src/components/controlroom/useChiusuraAlMs.parita.test.tsx
++++ b/frontend/src/components/controlroom/useChiusuraAlMs.parita.test.tsx
+@@ -118,6 +118,8 @@ import { fetchScanRows } from '@/lib/safeStrategyScan';
+ import { fetchMikeState } from '@/lib/mike';
+ import { useControlRoom } from '@/components/controlroom/useControlRoom';
+ import { useChiusuraAlMs } from '@/components/controlroom/useChiusuraAlMs';
++import { cashOutPartita, gambeDaOperazioni } from '@/lib/cashOutPartita';
++import { ripiegoScanner } from '@/lib/chiusuraAlMs';
+ 
+ const OGGI = romeDay(new Date());
+ const PIAZZATO = `${OGGI}T12:00:00.000Z`;
+@@ -247,6 +249,34 @@ describe('P11: stessa gamba in utile, ramo al ms = ramo scanner al centesimo', (
+         expect(ms.current?.bloccabile).toBe(0.77);
+     });
+ 
++    it('P12b: apertura + chiusura (green) abbinate sulla stessa selezione -> cash out della partita +0,05, UNA riga', async () => {
++        // Farul (30/09): punta Under 3,5 5,00 @ 2,87 + banca 5,06 @ 2,84 (closes_trade_id).
++        // Senza `chiusureGambe` (mercato/selezione della chiusura) la cifra era
++        // NON CALCOLABILE: falsificato togliendo il campo in `agg`.
++        vi.mocked(fetchScanRows).mockResolvedValue([scanRow('E2', payloadOU('1.2', 2, 2.84, 2.9))]);
++        vi.mocked(fetchMikeState).mockResolvedValue({
++            ...MIKE_VUOTO,
++            trades: [
++                tradeMike({ id: 821, side: 'back', price: 2.87, size: 5,
++                    size_matched: 5, size_remaining: 0, avg_price_matched: 2.87 } as Partial<MikeTrade>),
++                tradeMike({ id: 822, side: 'lay', price: 2.84, size: 5.06, closes_trade_id: 821,
++                    size_matched: 5.06, size_remaining: 0, avg_price_matched: 2.84 } as Partial<MikeTrade>),
++            ],
++        } as never);
++        const { result } = renderHook(() => useControlRoom());
++        await waitFor(() => expect(result.current.caricamento).toBe(false));
++        const ops = result.current.operazioni.get('E2') ?? [];
++        expect(ops.map((o) => o.id)).toEqual([821]);
++        expect(ops[0].chiusureGambe).toEqual([{ id: 822, marketId: '1.2', selectionId: 2 }]);
++        const r = cashOutPartita(gambeDaOperazioni(ops), {
++            prezzo: (m, s) => (m === '1.2' && s === 2 ? ripiegoScanner(ops[0].chiusura?.alMs) : null),
++            nowMs: Date.now(),
++        });
++        expect(r.live.mancanti).toEqual([]);
++        expect(r.live.gambe).toHaveLength(1);
++        expect(r.live.netto).toBe(0.05);
++    });
++
+     it('in perdita nessuna commissione: lay 2,10 -> ms = scanner', async () => {
+         const ch = await chiusuraScanner(tradeMike({ id: 814, price: 1.85 }), 2.08, 2.10);
+         const f = sorgenteFinta();
+diff --git a/frontend/src/components/controlroom/useControlRoom.ts b/frontend/src/components/controlroom/useControlRoom.ts
+index 981b667..17c7ec2 100644
+--- a/frontend/src/components/controlroom/useControlRoom.ts
++++ b/frontend/src/components/controlroom/useControlRoom.ts
+@@ -406,6 +406,9 @@ export interface OperazionePartita {
+      * feed non porta quella selezione.
+      */
+     chiusura: PosizioneAperta['chiusura'];
++    /** 30/09 (P12b) - mercato/selezione di ogni gamba di chiusura, stesso ordine di
++     *  `chiusureOrdini`: servono al cash out della PARTITA per nettarle. */
++    chiusureGambe?: { id: number | null; marketId: string | null; selectionId: number | null }[];
+     /**
+      * 18/09 (raccordo, R3) — le righe GREZZE (`RigaOrdine`) delle chiusure
+      * collegate (`closes_trade_id`), nello stesso ordine di `dettaglio.
+@@ -3284,6 +3287,7 @@ export function useControlRoom(): ControlRoomVM {
+                 vivo, etaQuoteS: etaSecondi(feedPerEvento.get(k)?.updated_at ?? null, nowMs),
+                 chiusura: chius,
+                 chiusureOrdini: closes.map((c) => ordineDi(c)),
++                chiusureGambe: closes.map((c) => { const g = c as { market_id?: string | null; selection_id?: number | null }; return { id: Number(c.id), marketId: g.market_id ?? null, selectionId: g.selection_id == null ? null : Number(g.selection_id) }; }),
+                 eventId: k,
+                 chiudeId: t.closes_trade_id ?? null,
+             };
+diff --git a/frontend/src/lib/cashOutPartita.ts b/frontend/src/lib/cashOutPartita.ts
+index f6fa9da..1bb0e53 100644
+--- a/frontend/src/lib/cashOutPartita.ts
++++ b/frontend/src/lib/cashOutPartita.ts
+@@ -53,6 +53,7 @@
+ // ============================================================================
+ import type { FontePrezzo, PrezzoScheda } from '@/lib/schedaAlMs';
+ import { statoOrdine, type RigaOrdine } from '@/lib/statoOrdine';
++import { etaQuoteS, type MikeEvent } from '@/lib/mike';
+ 
+ /** Sotto 1 centesimo di sbilancio la selezione e' piatta (greenup.FLAT_EPS). */
+ export const PIATTO_EPS = 0.01;
+@@ -513,7 +514,7 @@ export function gambeDaOperazioni(
+     for (const op of ops) {
+         const aliquota = op.chiusura?.alMs?.aliquota ?? null;
+         if (op.bot === 'scalper') {
+-            const so = statoOrdine(op.ordine);
++            const so = statoOrdine(op.ordine ?? {});
+             if (so.esito === 'regolato') continue;
+             out.push({
+                 id: op.id, bot: op.bot, modalita: op.modalita, marketId: null, selectionId: null,
+@@ -525,12 +526,13 @@ export function gambeDaOperazioni(
+         }
+         const ap = gambaDaOrdine({
+             id: op.id, bot: op.bot, modalita: op.modalita, marketId: op.marketId, selectionId: op.selectionId,
+-            selezione: op.selezione, lato: op.lato ?? latoDi(op.ordine.side), ordine: op.ordine,
++            selezione: op.selezione, lato: op.lato ?? latoDi(op.ordine?.side), ordine: op.ordine ?? {},
+             aliquota, dueEsiti: due(op.marketId),
+         });
+         if (ap == null) continue;           // regolata: nemmeno le sue chiusure sono vive
+         out.push(ap);
+-        op.chiusureOrdini.forEach((c, i) => {
++        // righe costruite a mano (test storici) possono non avere la catena
++        (op.chiusureOrdini ?? []).forEach((c, i) => {
+             const ids = op.chiusureGambe?.[i] ?? null;
+             const g = gambaDaOrdine({
+                 id: ids?.id ?? `${op.id}/chiusura ${i + 1}`, bot: op.bot, modalita: op.modalita,
+@@ -544,3 +546,62 @@ export function gambeDaOperazioni(
+     }
+     return out;
+ }
++
++// ============================================================================
++// P12b - I PONTI CON MIKE (dati gia' in pagina: `MikeEvent` di `get_mike_state`
++// / canale, nessuna lettura nuova).
++// ============================================================================
++
++/** Linea dei mercati di Mike (engine.LINE, `Betfair/mike/engine.py:35`). */
++const LINEA_MIKE: Record<string, number> = { OU35: 3.5, OU45: 4.5 };
++
++/** I mercati di Mike sono Over/Under: DUE esiti. `null` = nessun mercato noto. */
++export function dueEsitiMike(mike: MikeEvent | null | undefined): ((marketId: string) => boolean) | undefined {
++    const ids = new Set(Object.values(mike?.markets ?? {})
++        .map((m) => m?.market_id).filter((x): x is string => typeof x === 'string' && x !== ''));
++    return ids.size === 0 ? undefined : (marketId: string) => ids.has(marketId);
++}
++
++/**
++ * ESITO GIA' CERTO (engine.selection_decided, `engine.py:666-677`): con piu'
++ * gol della linea l'Over ha VINTO e l'Under ha PERSO, qualunque cosa faccia il
++ * mercato (la linea viene potata dal feed). Il lato della selezione (Under/
++ * Over) si legge dal NOME della selezione sulle righe: se non si riconosce, la
++ * selezione resta «in gioco» e senza prezzo la cifra e' NON calcolabile.
++ */
++export function esitoDecisoMike(
++    mike: MikeEvent | null | undefined,
++    nomi: readonly { marketId: string | null; selectionId: number | null; selezione: string | null }[],
++): ((marketId: string, selectionId: number) => boolean | null) | undefined {
++    const gol = mike?.live?.goals;
++    if (mike == null || gol == null || !Number.isFinite(Number(gol))) return undefined;
++    const lineaDi = new Map<string, number>();
++    for (const [k, m] of Object.entries(mike.markets ?? {})) {
++        if (m?.market_id && LINEA_MIKE[k] != null) lineaDi.set(m.market_id, LINEA_MIKE[k]);
++    }
++    return (marketId: string, selectionId: number) => {
++        const linea = lineaDi.get(marketId);
++        if (linea == null || Number(gol) <= linea) return null;
++        const n = nomi.find((x) => x.marketId === marketId && x.selectionId === selectionId && x.selezione)?.selezione ?? '';
++        if (/\bunder\b/i.test(n)) return false;
++        if (/\bover\b/i.test(n)) return true;
++        return null;
++    };
++}
++
++/** La cifra che il SERVIZIO di Mike pubblica per la partita (`live.cashout`),
++ *  con l'eta' del SUO book (`etaQuoteS`: feed + tempo dalla pubblicazione). */
++export function valoreBotMike(mike: MikeEvent | null | undefined, nowMs: number): {
++    bot: string; modalita: 'live' | 'paper'; netto: number | null; completo: boolean; etaS: number | null; nota: string;
++} | null {
++    const c = mike?.live?.cashout;
++    if (!mike || !c) return null;
++    const n = Number(c.net);
++    return {
++        bot: 'mike', modalita: mike.mode === 'live' ? 'live' : 'paper',
++        netto: c.net == null || !Number.isFinite(n) ? null : n,
++        completo: c.complete === true,
++        etaS: etaQuoteS(mike.live, nowMs),
++        nota: 'il bot conta solo le gambe di Mike, sul suo book; una copertura in banca Under 4,5 la chiude bancando l\'Over 4,5',
++    };
++}

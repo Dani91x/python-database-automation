@@ -351,6 +351,9 @@ export interface LineaOuScheda {
     linea: number;
     stato: string | null;
     decisa: boolean;
+    /** B1bis: marker `for_mike` del blocco (linea tenuta nel feed per una
+     *  posizione di Mike, `scanner.is_opp_market_live`/`_prune_opp_blocks`) */
+    perMike: boolean;
     under: LatiOu | null;
     over: LatiOu | null;
     /** secondi dall'ultimo book ricevuto (`seen_ms`); null = non dichiarato */
@@ -381,7 +384,7 @@ export function lineeOuScheda(p: PartitaFeedLike | null | undefined, nowMs: numb
     for (const b of blocchi) {
         if (!b || typeof b !== 'object') continue;
         const r = b as {
-            market_id?: unknown; line?: unknown; status?: unknown; decided?: unknown;
+            market_id?: unknown; line?: unknown; status?: unknown; decided?: unknown; for_mike?: unknown;
             selections?: unknown; seen_ms?: unknown;
         };
         const linea = typeof r.line === 'number' && Number.isFinite(r.line) ? r.line : null;
@@ -393,6 +396,7 @@ export function lineeOuScheda(p: PartitaFeedLike | null | undefined, nowMs: numb
             linea,
             stato: typeof r.status === 'string' ? r.status : null,
             decisa: r.decided === true,
+            perMike: r.for_mike === true,
             under: latoOu(r.selections, 'under'),
             over: latoOu(r.selections, 'over'),
             etaBookS: seen == null ? null : Math.max(0, Math.round((nowMs - seen) / 1000)),

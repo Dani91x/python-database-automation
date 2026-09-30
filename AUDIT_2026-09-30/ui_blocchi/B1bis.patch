@@ -1,0 +1,494 @@
+diff --git a/frontend/src/components/controlroom/NomiPartita.test.tsx b/frontend/src/components/controlroom/NomiPartita.test.tsx
+index acc8512..83b263c 100644
+--- a/frontend/src/components/controlroom/NomiPartita.test.tsx
++++ b/frontend/src/components/controlroom/NomiPartita.test.tsx
+@@ -40,10 +40,29 @@ describe('NomiPartita — gli stessi nomi in ogni scheda', () => {
+         expect(img[1].getAttribute('src')).toContain('487');
+     });
+ 
+-    it('senza loghi: solo i nomi, nessun segnaposto che sembri un logo rotto', () => {
++    // B1bis (decisione del coordinatore, 30/09): lo spazio del logo e' SEMPRE
++    // riservato, invisibile, anche senza nessun logo, perche' in una lista mista
++    // i nomi restino allineati. Sostituisce l'asserzione B1 «nessuno spazio».
++    it('senza loghi: solo i nomi, con lo spazio del logo riservato e INVISIBILE (niente logo rotto)', () => {
+         const { container } = render(<NomiPartita nome="Seychelles v Sri Lanka" />);
+         expect(container.querySelectorAll('img')).toHaveLength(0);
+-        expect(screen.queryAllByTestId('cr-logo-vuoto')).toHaveLength(0);
++        const vuoti = screen.getAllByTestId('cr-logo-vuoto');
++        expect(vuoti).toHaveLength(2);
++        for (const v of vuoti) {
++            expect(v.className).toMatch(/w-4/);
++            expect(v.className).not.toMatch(/border|bg-/);
++            expect(v.getAttribute('aria-hidden')).toBe('true');
++            expect(v.textContent).toBe('');
++        }
++    });
++
++    it('allineamento: con e senza loghi i nomi partono dallo stesso punto (stessa struttura di riga)', () => {
++        const { container: a } = render(<NomiPartita nome="Roma v Lazio" homeTeamId={497} awayTeamId={487} />);
++        const { container: b } = render(<NomiPartita nome="Seychelles v Sri Lanka" />);
++        const primo = (c: HTMLElement) => Array.from(c.querySelectorAll('[data-testid="cr-nome-squadra"]'))
++            .map((n) => n.previousElementSibling?.className ?? 'NESSUNO');
++        expect(primo(a).every((cls) => /w-4/.test(cls))).toBe(true);
++        expect(primo(b).every((cls) => /w-4/.test(cls))).toBe(true);
+     });
+ 
+     it('un logo solo (l’altro manca): l’altra riga ha lo spazio vuoto per restare allineata, senza bordo né fondo', () => {
+diff --git a/frontend/src/components/controlroom/NomiPartita.tsx b/frontend/src/components/controlroom/NomiPartita.tsx
+index b2e2a64..f6dc4f5 100644
+--- a/frontend/src/components/controlroom/NomiPartita.tsx
++++ b/frontend/src/components/controlroom/NomiPartita.tsx
+@@ -9,9 +9,9 @@
+ // Adesso UN componente per pre-partita, in gioco e aperte:
+ //   · casa sopra, ospite sotto (`dividiNomi`, la stessa divisione dei pulsanti);
+ //   · il logo dove c'e' (`teamLogo`, gli URL di Omega). Dove manca, solo il
+-//     nome: nessun segnaposto che sembri un logo rotto. Se UNA sola squadra ha
+-//     il logo, l'altra riga ha uno spazio vuoto invisibile (niente bordo, niente
+-//     fondo) perche' i due nomi restino allineati;
++//     nome: nessun segnaposto che sembri un logo rotto. Lo spazio del logo e'
++//     sempre riservato e invisibile (niente bordo, niente fondo), perche' i nomi
++//     restino allineati anche fra partite con e senza loghi (B1bis);
+ //   · un logo che non carica sparisce (stessa regola di prima);
+ //   · il nome COMPLETO resta accessibile: `title` per chi passa col mouse sopra
+ //     un nome troncato, e un testo `sr-only` per i lettori di schermo (le due
+@@ -33,21 +33,22 @@ export function NomiPartita({ nome, homeTeamId = null, awayTeamId = null }: Nomi
+     const [casa, ospite] = dividiNomi(nome);
+     const srcCasa = homeTeamId != null ? teamLogo(homeTeamId) : '';
+     const srcOspite = ospite && awayTeamId != null ? teamLogo(awayTeamId) : '';
+-    // lo spazio del logo esiste solo se almeno UNA squadra ha un logo
+-    const conLoghi = Boolean(srcCasa || srcOspite);
+     return (
+         <div className="flex-1 min-w-0" title={nome} data-testid="cr-nomi-partita">
+             <span className="sr-only">{nome}</span>
+             <div aria-hidden="true">
+-                <Squadra nome={casa} src={srcCasa} conLoghi={conLoghi} />
+-                {ospite && <Squadra nome={ospite} src={srcOspite} conLoghi={conLoghi} />}
++                <Squadra nome={casa} src={srcCasa} />
++                {ospite && <Squadra nome={ospite} src={srcOspite} />}
+             </div>
+         </div>
+     );
+ }
+ 
+-/** Una squadra: logo se c'e', nome sempre. */
+-function Squadra({ nome, src, conLoghi }: { nome: string; src: string; conLoghi: boolean }) {
++/** Una squadra: logo se c'e', nome sempre. B1bis (30/09): lo spazio del logo
++ *  e' SEMPRE riservato (invisibile, niente bordo ne' fondo), anche quando
++ *  nessuna delle due squadre ha il logo: in una lista mista i nomi partono
++ *  tutti dallo stesso punto, come nella pre-partita prima di B1. */
++function Squadra({ nome, src }: { nome: string; src: string }) {
+     const [rotto, setRotto] = useState(false);
+     return (
+         <div className="flex items-center gap-1.5 leading-tight min-w-0">
+@@ -57,9 +58,9 @@ function Squadra({ nome, src, conLoghi }: { nome: string; src: string; conLoghi:
+                     onError={() => setRotto(true)}
+                     className="w-4 h-4 object-contain shrink-0"
+                 />
+-            ) : conLoghi ? (
++            ) : (
+                 <span className="w-4 shrink-0" aria-hidden="true" data-testid="cr-logo-vuoto" />
+-            ) : null}
++            )}
+             <span className="text-[13px] font-medium leading-tight truncate" data-testid="cr-nome-squadra">{nome}</span>
+         </div>
+     );
+diff --git a/frontend/src/components/controlroom/QuoteMercato.test.tsx b/frontend/src/components/controlroom/QuoteMercato.test.tsx
+index 9c3a1c5..a0cf217 100644
+--- a/frontend/src/components/controlroom/QuoteMercato.test.tsx
++++ b/frontend/src/components/controlroom/QuoteMercato.test.tsx
+@@ -92,7 +92,7 @@ describe('EtaQuote — l’età del prezzo con l’etichetta di cosa misura', ()
+ 
+ function linea(over: Partial<LineaOuScheda> = {}): LineaOuScheda {
+     return {
+-        marketId: '1.35', linea: 3.5, stato: 'OPEN', decisa: false,
++        marketId: '1.35', linea: 3.5, stato: 'OPEN', decisa: false, perMike: false,
+         under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaBookS: 3, ...over,
+     };
+ }
+@@ -123,13 +123,33 @@ describe('LineeOu — le linee Under/Over con lo stesso componente', () => {
+         expect(screen.queryByTestId('cr-quote-ou-decisa')).toBeNull();
+     });
+ 
+-    it(`nessuna linea, o più di ${MAX_LINEE_OU}: non si monta (nessuna scelta inventata di quali mostrare)`, () => {
++    // B1bis (decisione del coordinatore, 30/09): oltre 4 linee NON si nasconde
++    // piu' niente. Sostituisce il test B1 «più di 4: non si monta».
++    it('nessuna linea: non si monta; fino a 4: tutte in vista, nessun riquadro «altre»', () => {
+         const { container, rerender } = render(<LineeOu testId="ou" linee={[]} />);
+         expect(container.innerHTML).toBe('');
+-        const tante = Array.from({ length: MAX_LINEE_OU + 1 }, (_, i) => linea({ marketId: `1.${i}`, linea: i + 0.5 }));
+-        rerender(<LineeOu testId="ou" linee={tante} />);
+-        expect(container.innerHTML).toBe('');
+-        rerender(<LineeOu testId="ou" linee={tante.slice(0, MAX_LINEE_OU)} />);
++        const quattro = [0.5, 1.5, 2.5, 5.5].map((l, i) => linea({ marketId: `1.${i}`, linea: l }));
++        rerender(<LineeOu testId="ou" linee={quattro} />);
+         expect(screen.getAllByTestId('cr-quote-ou-linea')).toHaveLength(MAX_LINEE_OU);
++        expect(screen.queryByTestId('cr-quote-ou-altre')).toBeNull();
++    });
++
++    it('più di 4: in vista 3,5 · 4,5 e le linee marcate (Mike / decise), TUTTE le altre nel riquadro chiuso', () => {
++        const otto = [0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5].map((l, i) => linea({
++            marketId: `1.${i}`, linea: l, perMike: l === 1.5, decisa: l === 0.5,
++        }));
++        render(<LineeOu testId="ou" linee={otto} />);
++        const tutte = screen.getAllByTestId('cr-quote-ou-linea');
++        expect(tutte).toHaveLength(8);                                   // nessuna linea fuori dalla scheda
++        const altre = screen.getByTestId('cr-quote-ou-altre') as HTMLDetailsElement;
++        expect(altre.tagName).toBe('DETAILS');
++        expect(altre.open).toBe(false);                                  // chiuso di default
++        expect(within(altre).getByText('altre 4 linee')).toBeTruthy();
++        const inAltre = within(altre).getAllByTestId('cr-quote-ou-linea').map((r) => r.textContent ?? '');
++        expect(inAltre.map((t) => t.slice(0, 7))).toEqual(['U/O 2,5', 'U/O 5,5', 'U/O 6,5', 'U/O 7,5']);
++        const inVista = tutte.filter((r) => !altre.contains(r)).map((r) => (r.textContent ?? '').slice(0, 7));
++        expect(inVista).toEqual(['U/O 0,5', 'U/O 1,5', 'U/O 3,5', 'U/O 4,5']);
++        // la regola e' scritta, non intuita
++        expect(screen.getByTestId('ou').getAttribute('title')).toMatch(/3,5 e 4,5/);
+     });
+ });
+diff --git a/frontend/src/components/controlroom/QuoteMercato.tsx b/frontend/src/components/controlroom/QuoteMercato.tsx
+index f54af96..bac7b40 100644
+--- a/frontend/src/components/controlroom/QuoteMercato.tsx
++++ b/frontend/src/components/controlroom/QuoteMercato.tsx
+@@ -139,10 +139,24 @@ export function EtaQuote({ latenzaS, stato, testId }: {
+     );
+ }
+ 
+-/** Oltre questo numero di linee la scheda non le mostra: scegliere QUALI
+- *  mostrare sarebbe una decisione inventata (vedi il referto B1). */
++/** Fino a questo numero di linee sono TUTTE in vista. Oltre (B1bis, decisione
++ *  del coordinatore del 30/09) restano in vista solo quelle di `lineaInVista`,
++ *  e tutte le altre stanno nel riquadro chiuso «altre N linee»: nessuna linea
++ *  del payload resta fuori dalla scheda. La regola vive SOLO qui. */
+ export const MAX_LINEE_OU = 4;
+ 
++/** Le linee su cui operano i bot (Mike: Under/Over 3,5 e 4,5). */
++export const LINEE_BOT_OU: readonly number[] = [3.5, 4.5];
++
++/** Regola fissa, scritta: 3,5 e 4,5, piu' ogni linea che il blocco marca
++ *  `for_mike` (tenuta per una posizione di Mike) o `decided` (decisa dai gol). */
++export function lineaInVista(l: LineaOuScheda): boolean {
++    return LINEE_BOT_OU.includes(l.linea) || l.perMike || l.decisa;
++}
++
++const REGOLA_LINEE = 'in vista le linee 3,5 e 4,5 (quelle su cui operano i bot: Mike) e ogni linea che lo scanner '
++    + 'marca per una posizione di Mike o come decisa dai gol; tutte le altre linee del feed sono in «altre N linee»';
++
+ /**
+  * Le linee Under/Over della riga (`PartitaGiornata.lineeOu`), con lo stesso
+  * componente delle quote. Lo stato del mercato si traduce con
+@@ -152,39 +166,54 @@ export const MAX_LINEE_OU = 4;
+  * (quel giudizio lo dà il badge del flusso).
+  */
+ export function LineeOu({ linee, testId }: { linee: readonly LineaOuScheda[]; testId: string }) {
+-    if (linee.length === 0 || linee.length > MAX_LINEE_OU) return null;
++    if (linee.length === 0) return null;
++    const tutteInVista = linee.length <= MAX_LINEE_OU;
++    const inVista = tutteInVista ? linee : linee.filter(lineaInVista);
++    const altre = tutteInVista ? [] : linee.filter((l) => !lineaInVista(l));
+     return (
+-        <div className="space-y-1" data-testid={testId}>
+-            {linee.map((l) => {
+-                const stato = marketStatusMeta(l.stato);
+-                const nome = fmtNum(l.linea, 1);
+-                return (
+-                    <div key={l.marketId} className="flex items-center gap-2 flex-wrap" data-testid="cr-quote-ou-linea">
+-                        <span className="text-[11px] font-semibold text-white/50 w-12 shrink-0"
+-                            title={`mercato Under/Over ${nome} gol`}>U/O {nome}</span>
+-                        {stato && (
+-                            <span className={`text-[9px] font-bold uppercase tracking-wider px-1 rounded border ${stato.cls} border-current/40`}
+-                                data-testid="cr-quote-ou-mercato" title="stato del mercato Under/Over, da Betfair">
+-                                {stato.label}
+-                            </span>
+-                        )}
+-                        {l.decisa && (
+-                            <span className="text-[10px] text-amber-300" data-testid="cr-quote-ou-decisa"
+-                                title="i gol hanno già superato la linea: esito certo, è nel feed solo per una posizione di Mike">
+-                                decisa dai gol
+-                            </span>
+-                        )}
+-                        <QuoteMercato testId="cr-quote-ou-prezzi" celle={[
+-                            { chiave: 'under', etichetta: 'Under', back: l.under?.back, lay: l.under?.lay },
+-                            { chiave: 'over', etichetta: 'Over', back: l.over?.back, lay: l.over?.lay },
+-                        ]} />
+-                        <span className="font-mono text-[11px] text-white/40 whitespace-nowrap" data-testid="cr-quote-ou-eta"
+-                            title="ultimo book ricevuto per questa linea (seen_ms): non dice se il prezzo è cambiato">
+-                            ultimo book: {l.etaBookS == null ? 'età ignota' : `${fmtAge(l.etaBookS)} fa`}
+-                        </span>
++        <div className="space-y-1" data-testid={testId} title={tutteInVista ? undefined : REGOLA_LINEE}>
++            {inVista.map((l) => <RigaLineaOu key={l.marketId} l={l} />)}
++            {altre.length > 0 && (
++                <details data-testid="cr-quote-ou-altre">
++                    <summary className="cursor-pointer text-[11px] text-white/45 select-none">
++                        {altre.length === 1 ? 'altra 1 linea' : `altre ${altre.length} linee`}
++                    </summary>
++                    <div className="space-y-1 mt-1">
++                        {altre.map((l) => <RigaLineaOu key={l.marketId} l={l} />)}
+                     </div>
+-                );
+-            })}
++                </details>
++            )}
++        </div>
++    );
++}
++
++function RigaLineaOu({ l }: { l: LineaOuScheda }) {
++    const stato = marketStatusMeta(l.stato);
++    const nome = fmtNum(l.linea, 1);
++    return (
++        <div className="flex items-center gap-2 flex-wrap" data-testid="cr-quote-ou-linea">
++            <span className="text-[11px] font-semibold text-white/50 w-12 shrink-0"
++                title={`mercato Under/Over ${nome} gol`}>U/O {nome}</span>
++            {stato && (
++                <span className={`text-[9px] font-bold uppercase tracking-wider px-1 rounded border ${stato.cls} border-current/40`}
++                    data-testid="cr-quote-ou-mercato" title="stato del mercato Under/Over, da Betfair">
++                    {stato.label}
++                </span>
++            )}
++            {l.decisa && (
++                <span className="text-[10px] text-amber-300" data-testid="cr-quote-ou-decisa"
++                    title="i gol hanno già superato la linea: esito certo, è nel feed solo per una posizione di Mike">
++                    decisa dai gol
++                </span>
++            )}
++            <QuoteMercato testId="cr-quote-ou-prezzi" celle={[
++                { chiave: 'under', etichetta: 'Under', back: l.under?.back, lay: l.under?.lay },
++                { chiave: 'over', etichetta: 'Over', back: l.over?.back, lay: l.over?.lay },
++            ]} />
++            <span className="font-mono text-[11px] text-white/40 whitespace-nowrap" data-testid="cr-quote-ou-eta"
++                title="ultimo book ricevuto per questa linea (seen_ms): non dice se il prezzo è cambiato">
++                ultimo book: {l.etaBookS == null ? 'età ignota' : `${fmtAge(l.etaBookS)} fa`}
++            </span>
+         </div>
+     );
+ }
+diff --git a/frontend/src/components/controlroom/SchedaPartita.test.tsx b/frontend/src/components/controlroom/SchedaPartita.test.tsx
+index ffb1e00..53e5a46 100644
+--- a/frontend/src/components/controlroom/SchedaPartita.test.tsx
++++ b/frontend/src/components/controlroom/SchedaPartita.test.tsx
+@@ -314,9 +314,9 @@ describe('SchedaPartita — B1: quote da trader in gioco', () => {
+     it('le linee Under/Over (anche quella decisa dai gol) si vedono nel blocco in gioco', () => {
+         monta(partitaCalcio({
+             lineeOu: [
+-                { marketId: '1.35', linea: 3.5, stato: 'OPEN', decisa: false,
++                { marketId: '1.35', linea: 3.5, stato: 'OPEN', decisa: false, perMike: false,
+                     under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaBookS: 1 },
+-                { marketId: '1.45', linea: 4.5, stato: 'SUSPENDED', decisa: true,
++                { marketId: '1.45', linea: 4.5, stato: 'SUSPENDED', decisa: true, perMike: true,
+                     under: null, over: { back: 1.01, lay: null }, etaBookS: null },
+             ],
+         }));
+@@ -329,6 +329,20 @@ describe('SchedaPartita — B1: quote da trader in gioco', () => {
+     });
+ });
+ 
++describe('SchedaPartita — B1bis: linee oltre 4 in gioco', () => {
++    it('sei linee a inizio partita: tutte nella scheda (nessuna guardia che le nasconda)', () => {
++        monta(partitaCalcio({
++            lineeOu: [0.5, 1.5, 2.5, 3.5, 4.5, 5.5].map((l) => ({
++                marketId: `1.${l * 10}`, linea: l, stato: 'OPEN', decisa: false, perMike: false,
++                under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaBookS: 1,
++            })),
++        }));
++        const ou = screen.getByTestId('cr-calcio-vivo-ou');
++        expect(within(ou).getAllByTestId('cr-quote-ou-linea')).toHaveLength(6);
++        expect(within(within(ou).getByTestId('cr-quote-ou-altre')).getAllByTestId('cr-quote-ou-linea')).toHaveLength(4);
++    });
++});
++
+ describe('SchedaPartita — B1: tennis, quote della barra con lo stesso componente', () => {
+     it('le selezioni del Match Odds col loro nome, BACK sky / LAY rose', async () => {
+         hoisted.row = tennisRow({
+@@ -345,6 +359,38 @@ describe('SchedaPartita — B1: tennis, quote della barra con lo stesso componen
+         expect(within(celle[0]).getByTestId('cr-quota-back').className).toMatch(/text-sky-/);
+     });
+ 
++    // B1bis: tennis in gioco SENZA posizione = celle P1/P2 dello scanner con la
++    // loro età; CON posizione = solo la barra del runner (una fonte per scheda).
++    it('tennis in gioco SENZA posizione: celle P1/P2 dello scanner e l’età accanto, nessuna sottoscrizione', () => {
++        monta(partita({
++            soldi: SOLDI_CHIUSI, latenzaQuoteS: 4, statoQuote: 'fresco',
++            odds: { p1: { back: 1.5, lay: 1.52 }, p2: { back: 2.6, lay: 2.66 } },
++        }));
++        expect(hoisted.subCalls).toBe(0);
++        const riga = screen.getByTestId('cr-tennis-quote');
++        const celle = within(riga).getAllByTestId('cr-quota-cella');
++        expect(celle.map((c) => c.textContent)).toEqual(['P1 1,50/1,52', 'P2 2,60/2,66']);
++        expect(within(riga).getByTestId('cr-latenza')).toHaveTextContent('ultimo cambio: 4 s');
++        expect(screen.getAllByTestId('cr-latenza')).toHaveLength(1);
++        expect(screen.queryByTestId('cr-tennis-vivo')).toBeNull();
++    });
++
++    it('tennis in gioco CON posizione: solo la barra del runner, MAI anche le quote dello scanner', async () => {
++        hoisted.row = tennisRow();
++        monta(partita({
++            soldi: SOLDI_APERTI, latenzaQuoteS: 4, statoQuote: 'fresco',
++            odds: { p1: { back: 1.5, lay: 1.52 }, p2: { back: 2.6, lay: 2.66 } },
++        }));
++        await screen.findByTestId('cr-tennis-vivo');
++        expect(screen.queryByTestId('cr-tennis-quote')).toBeNull();
++        expect(screen.queryByText('P1 1,50/1,52')).toBeNull();
++    });
++
++    it('tennis NON in gioco (conclusa) senza posizione: nessuna fila di quote dello scanner', () => {
++        monta(partita({ soldi: SOLDI_CHIUSI, stato: 'chiusa', odds: { p1: { back: 1.5, lay: 1.52 }, p2: null } }));
++        expect(screen.queryByTestId('cr-tennis-quote')).toBeNull();
++    });
++
+     it('l’età della barra dice che è quella del PUNTEGGIO', async () => {
+         hoisted.row = tennisRow();
+         monta(partita({ soldi: SOLDI_APERTI }));
+diff --git a/frontend/src/components/controlroom/SchedaPartita.tsx b/frontend/src/components/controlroom/SchedaPartita.tsx
+index 53f8ab6..bae1069 100644
+--- a/frontend/src/components/controlroom/SchedaPartita.tsx
++++ b/frontend/src/components/controlroom/SchedaPartita.tsx
+@@ -32,7 +32,7 @@ import FlussoBadge, { FlussoLineeMikeBadge } from '@/components/controlroom/Flus
+ import { CashOutPartita } from '@/components/controlroom/CashOutPartita';
+ import { NomiPartita } from '@/components/controlroom/NomiPartita';
+ import {
+-    QuoteMercato, EtaQuote, LineeOu, celleMatchOdds, MAX_LINEE_OU, QUOTE_CLS, QUOTE_TESTO,
++    QuoteMercato, EtaQuote, LineeOu, celleMatchOdds, QUOTE_CLS, QUOTE_TESTO,
+ } from '@/components/controlroom/QuoteMercato';
+ import { fmtMoney, fmtAge, fmtTime, DASH } from '@/lib/format';
+ import { isErrorRow, isSettled } from '@/lib/eventGroups';
+@@ -295,8 +295,16 @@ export function SchedaPartita({
+     const calcioVivo = p.sport === 'calcio' && p.stato === 'live';
+     const celleCalcio = calcioVivo ? celleMatchOdds('calcio', p.odds) : null;
+     const lineeOu = p.lineeOu ?? [];
+-    const haLineeOu = calcioVivo && lineeOu.length > 0 && lineeOu.length <= MAX_LINEE_OU;
+-    const latenzaAccantoQuote = celleCalcio != null;
++    // B1bis: nessuna guardia sul numero di linee qui, la regola vive in `LineeOu`
++    const haLineeOu = calcioVivo && lineeOu.length > 0;
++    // B1bis — tennis in gioco SENZA posizione: le celle P1/P2 dello SCANNER,
++    // come la pre-partita. Con una posizione aperta si monta la barra del
++    // runner (`TennisVivoBar`, altra fonte): allora resta SOLO quella, mai due
++    // prezzi da due fonti sulla stessa scheda. Stesso cancello della barra.
++    const barraTennis = p.sport === 'tennis' && (apertaLive || apertaPaper);
++    const celleTennis = p.sport === 'tennis' && p.stato === 'live' && !barraTennis
++        ? celleMatchOdds('tennis', p.odds) : null;
++    const latenzaAccantoQuote = celleCalcio != null || celleTennis != null;
+ 
+     return (
+         <div className={`rounded border border-white/10 border-l-[3px] ${bordo} bg-white/[0.02]`}
+@@ -383,8 +391,15 @@ export function SchedaPartita({
+             {/* ── tennis vivo: AGGIUNGE punto/servizio/tie-break/stato mercato/età
+                 a quello che la testata mostra già (set/game, dal feed scanner
+                 tennis-nativo — vedi il commento di TennisVivoBar) ── */}
++            {celleTennis && (
++                <div className="px-2.5 pt-1 flex items-center gap-2 flex-wrap text-[11px]" data-testid="cr-tennis-quote">
++                    <QuoteMercato testId="cr-tennis-quote-mo" celle={celleTennis}
++                        titolo="Match Odds dallo scanner: miglior BACK / miglior LAY di adesso" />
++                    <EtaQuote testId="cr-latenza" latenzaS={p.latenzaQuoteS} stato={p.statoQuote} />
++                </div>
++            )}
+             {p.sport === 'tennis' && (
+-                <TennisVivoBar eventId={p.event_id} abilitato={apertaLive || apertaPaper}
++                <TennisVivoBar eventId={p.event_id} abilitato={barraTennis}
+                     giocatori={p.giocatori} />
+             )}
+ 
+diff --git a/frontend/src/components/controlroom/SchedaPreMatch.test.tsx b/frontend/src/components/controlroom/SchedaPreMatch.test.tsx
+index 733c3c1..117193a 100644
+--- a/frontend/src/components/controlroom/SchedaPreMatch.test.tsx
++++ b/frontend/src/components/controlroom/SchedaPreMatch.test.tsx
+@@ -84,7 +84,7 @@ describe('SchedaPreMatch — quote pre-match vive (secondo giro)', () => {
+ // ============================================================================
+ function lineaOu(linea: number, over: Partial<NonNullable<PartitaGiornata['lineeOu']>[number]> = {}) {
+     return {
+-        marketId: `1.${linea * 10}`, linea, stato: 'OPEN', decisa: false,
++        marketId: `1.${linea * 10}`, linea, stato: 'OPEN', decisa: false, perMike: false,
+         under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaBookS: 2, ...over,
+     };
+ }
+@@ -133,9 +133,13 @@ describe('SchedaPreMatch — B1: nomi e quote da trader', () => {
+         expect(righe[1]).toHaveTextContent('ultimo book: 7 s fa');
+     });
+ 
+-    it('più di quattro linee: non si mostrano (nessuna scelta inventata)', () => {
++    // B1bis (decisione del coordinatore): sostituisce il test B1 «più di quattro
++    // linee: non si mostrano». Nessuna linea del payload resta fuori.
++    it('più di quattro linee: si mostrano tutte, 3,5 e 4,5 in vista, le altre nel riquadro', () => {
+         monta(partita({ lineeOu: [0.5, 1.5, 2.5, 3.5, 4.5].map((l) => lineaOu(l)) }));
+-        expect(screen.queryByTestId('cr-pre-quote-ou')).toBeNull();
++        const ou = screen.getByTestId('cr-pre-quote-ou');
++        expect(within(ou).getAllByTestId('cr-quote-ou-linea')).toHaveLength(5);
++        expect(within(within(ou).getByTestId('cr-quote-ou-altre')).getAllByTestId('cr-quote-ou-linea')).toHaveLength(3);
+     });
+ });
+ 
+diff --git a/frontend/src/components/controlroom/SchedaPreMatch.tsx b/frontend/src/components/controlroom/SchedaPreMatch.tsx
+index 4923f4b..2ff79a3 100644
+--- a/frontend/src/components/controlroom/SchedaPreMatch.tsx
++++ b/frontend/src/components/controlroom/SchedaPreMatch.tsx
+@@ -38,7 +38,7 @@ import FlussoBadge, { FlussoLineeMikeBadge } from '@/components/controlroom/Flus
+ import { AzioniPartita } from '@/components/controlroom/AzioniPartita';
+ import { NomiPartita } from '@/components/controlroom/NomiPartita';
+ import {
+-    QuoteMercato, EtaQuote, LineeOu, celleMatchOdds, MAX_LINEE_OU,
++    QuoteMercato, EtaQuote, LineeOu, celleMatchOdds,
+ } from '@/components/controlroom/QuoteMercato';
+ import { RigaOperazione } from '@/components/controlroom/DettaglioRigaView';
+ import type { PartitaGiornata } from '@/lib/controlRoom';
+@@ -71,7 +71,8 @@ export function SchedaPreMatch({
+     const celle = celleMatchOdds(p.sport, p.odds);
+     const haQuote = celle != null;
+     const linee = p.lineeOu ?? [];
+-    const haLinee = linee.length > 0 && linee.length <= MAX_LINEE_OU;
++    // B1bis: nessuna guardia qui, la regola delle linee vive in `LineeOu`
++    const haLinee = linee.length > 0;
+ 
+     return (
+         <div
+diff --git a/frontend/src/lib/controlRoom.test.ts b/frontend/src/lib/controlRoom.test.ts
+index f39bc68..9301401 100644
+--- a/frontend/src/lib/controlRoom.test.ts
++++ b/frontend/src/lib/controlRoom.test.ts
+@@ -782,12 +782,17 @@ describe('lineeOuScheda — le linee Under/Over come le scrive lo scanner, senza
+         const l = lineeOuScheda(feed({ ou: [bloccoOu(4.5, '1.45', 3), bloccoOu(3.5, '1.35', 36)] }), T0);
+         expect(l.map((x) => x.linea)).toEqual([3.5, 4.5]);          // ordinate per linea
+         expect(l[0]).toEqual({
+-            marketId: '1.35', linea: 3.5, stato: 'OPEN', decisa: false,
++            marketId: '1.35', linea: 3.5, stato: 'OPEN', decisa: false, perMike: false,
+             under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaBookS: 36,
+         });
+         expect(l[1].etaBookS).toBe(3);
+     });
+ 
++    it('B1bis: la linea tenuta nel feed per una posizione di Mike (for_mike) si dichiara', () => {
++        const [l] = lineeOuScheda(feed({ ou: [bloccoOu(2.5, '1.25', 1, { for_mike: true })] }), T0);
++        expect(l.perMike).toBe(true);
++    });
++
+     it('seen_ms assente: età null (mai 0 inventato); selezione assente: null', () => {
+         const b = bloccoOu(2.5, '1.25', null, {
+             selections: [{ selection_id: 1, name: 'Over 2.5 Goals', runner_status: 'ACTIVE', back: 1.8, lay: null }],
+diff --git a/frontend/src/lib/controlRoom.ts b/frontend/src/lib/controlRoom.ts
+index e809046..69ddd4a 100644
+--- a/frontend/src/lib/controlRoom.ts
++++ b/frontend/src/lib/controlRoom.ts
+@@ -351,6 +351,9 @@ export interface LineaOuScheda {
+     linea: number;
+     stato: string | null;
+     decisa: boolean;
++    /** B1bis: marker `for_mike` del blocco (linea tenuta nel feed per una
++     *  posizione di Mike, `scanner.is_opp_market_live`/`_prune_opp_blocks`) */
++    perMike: boolean;
+     under: LatiOu | null;
+     over: LatiOu | null;
+     /** secondi dall'ultimo book ricevuto (`seen_ms`); null = non dichiarato */
+@@ -381,7 +384,7 @@ export function lineeOuScheda(p: PartitaFeedLike | null | undefined, nowMs: numb
+     for (const b of blocchi) {
+         if (!b || typeof b !== 'object') continue;
+         const r = b as {
+-            market_id?: unknown; line?: unknown; status?: unknown; decided?: unknown;
++            market_id?: unknown; line?: unknown; status?: unknown; decided?: unknown; for_mike?: unknown;
+             selections?: unknown; seen_ms?: unknown;
+         };
+         const linea = typeof r.line === 'number' && Number.isFinite(r.line) ? r.line : null;
+@@ -393,6 +396,7 @@ export function lineeOuScheda(p: PartitaFeedLike | null | undefined, nowMs: numb
+             linea,
+             stato: typeof r.status === 'string' ? r.status : null,
+             decisa: r.decided === true,
++            perMike: r.for_mike === true,
+             under: latoOu(r.selections, 'under'),
+             over: latoOu(r.selections, 'over'),
+             etaBookS: seen == null ? null : Math.max(0, Math.round((nowMs - seen) / 1000)),

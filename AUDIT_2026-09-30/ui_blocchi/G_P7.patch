@@ -1,0 +1,492 @@
+diff --git a/frontend/src/components/controlroom/ObiettivoHero.test.tsx b/frontend/src/components/controlroom/ObiettivoHero.test.tsx
+index 0b08cac..df50f7a 100644
+--- a/frontend/src/components/controlroom/ObiettivoHero.test.tsx
++++ b/frontend/src/components/controlroom/ObiettivoHero.test.tsx
+@@ -80,6 +80,34 @@ describe('ObiettivoHero', () => {
+         expect(s.getByTestId('cr-composizione-prova').textContent).not.toMatch(/1,20/);
+     });
+ 
++    it('30/09 (P7): ogni voce dichiara la fonte (CONTO con l\'eta\' della lettura, o BOT); conto non letto detto', () => {
++        const dalConto = {
++            ...composizioneVuota, dalConto: true,
++            righe: [
++                { chiave: 'mike' as const, etichetta: 'Mike', valore: 2, reale: 2, stimato: null, fonte: 'conto' as const },
++                { chiave: 'omega' as const, etichetta: 'Omega', valore: 0.4, reale: null, stimato: 0.4, fonte: 'bot' as const },
++                { chiave: 'altro' as const, etichetta: 'Altro sul conto Betfair', valore: null, fonte: null },
++            ],
++        };
++        const s = render(
++            <ObiettivoHero dayBar={dayBar()} composizione={dalConto} contoEtaS={180}
++                manualeSito={{ pnlOggi: null, fonte: 'non-disponibile' }} onSalvaObiettivo={vi.fn()} />,
++        );
++        const mike = s.getByTestId('cr-composizione-mike-fonte');
++        expect(mike.getAttribute('data-fonte')).toBe('conto');
++        expect(mike.textContent).toBe('CONTO BETFAIR· 3 min fa');
++        expect(s.getByTestId('cr-composizione-omega-fonte').getAttribute('data-fonte')).toBe('bot');
++        // voce vuota: nessun marchio, resta «—»
++        expect(s.queryByTestId('cr-composizione-altro-fonte')).toBeNull();
++        expect(s.getByTestId('cr-composizione-fonte').textContent).toMatch(/dal conto Betfair/);
++        s.unmount();
++        const s2 = render(
++            <ObiettivoHero dayBar={dayBar()} composizione={{ ...dalConto, dalConto: false }}
++                manualeSito={{ pnlOggi: null, fonte: 'non-disponibile' }} onSalvaObiettivo={vi.fn()} />,
++        );
++        expect(s2.getByTestId('cr-composizione-fonte').textContent).toMatch(/conto Betfair non letto/);
++    });
++
+     it('il sito Betfair dichiara "non ancora collegate" quando assente', () => {
+         const s = render(
+             <ObiettivoHero
+diff --git a/frontend/src/components/controlroom/ObiettivoHero.tsx b/frontend/src/components/controlroom/ObiettivoHero.tsx
+index 967784c..08df5e2 100644
+--- a/frontend/src/components/controlroom/ObiettivoHero.tsx
++++ b/frontend/src/components/controlroom/ObiettivoHero.tsx
+@@ -19,21 +19,37 @@ import type { ComposizioneObiettivo } from '@/lib/composizioneObiettivo';
+ import type { ManualeSitoBetfair } from '@/lib/manualeSitoBetfair';
+ import { etichettaArretrati, type ProvaGiornata, type VoceProva } from '@/lib/provaGiornata';
+ import { MarchioSoldi } from './MarchioSoldi';
++import type { ComposizioneConto, RigaComposizioneConto } from '@/lib/composizioneConto';
++import type { RigaComposizione } from '@/lib/composizioneObiettivo';
+ 
+ export interface ObiettivoHeroProps {
+     dayBar: DayBarProps;
+-    composizione: ComposizioneObiettivo;
++    /** 30/09 (P7): anche la composizione ricomposta dal conto (`ComposizioneConto`) */
++    composizione: ComposizioneObiettivo | ComposizioneConto;
+     manualeSito: ManualeSitoBetfair;
+     onSalvaObiettivo: (valore: number) => Promise<void>;
+     /** avviso onesto: Omega in corsa → il target del servizio cambia subito */
+     avvisoMotore?: string | null;
+     /** 30/09 (P8): la corsia PROVA per bot (oggi / arretrati). Assente = riga «in prova» di prima. */
+     prova?: ProvaGiornata | null;
++    /** 30/09 (P7): eta' in secondi della lettura del conto Betfair (`pnl_reale_oggi.letto_at`); null = ignota */
++    contoEtaS?: number | null;
+     testId?: string;
+ }
+ 
++/** 30/09 (P7): da dove viene la cifra della voce (solo se la composizione lo dichiara) */
++function fonteDi(r: RigaComposizione): 'conto' | 'bot' | null {
++    return (r as RigaComposizioneConto).fonte ?? null;
++}
++
++/** 30/09 (P7): la composizione e' stata ricomposta dal conto Betfair */
++function dalConto(c: ComposizioneObiettivo): boolean | null {
++    const v = (c as ComposizioneConto).dalConto;
++    return typeof v === 'boolean' ? v : null;
++}
++
+ export function ObiettivoHero({
+-    dayBar, composizione, manualeSito, onSalvaObiettivo, avvisoMotore, prova = null, testId = 'cr-obiettivo',
++    dayBar, composizione, manualeSito, onSalvaObiettivo, avvisoMotore, prova = null, contoEtaS, testId = 'cr-obiettivo',
+ }: ObiettivoHeroProps) {
+     return (
+         <Card className="glass-card border-white/10 p-0 overflow-hidden" data-testid={testId}>
+@@ -55,6 +71,16 @@ export function ObiettivoHero({
+             <div className="px-4 pb-3 pt-1" data-testid="cr-composizione">
+                 <div className="text-[10px] uppercase tracking-wider text-white/40 mb-1.5">
+                     composizione — solo soldi veri, entra nell&apos;obiettivo
++                    {/* 30/09 (P7): da dove vengono le voci dei bot */}
++                    {dalConto(composizione) == null ? null : dalConto(composizione) ? (
++                        <span className="normal-case tracking-normal text-white/35" data-testid="cr-composizione-fonte">
++                            {' '}· realizzato di ogni bot dal conto Betfair (attribuito da Betfair), la parte non ancora regolata stimata dal bot
++                        </span>
++                    ) : (
++                        <span className="normal-case tracking-normal text-amber-300/70" data-testid="cr-composizione-fonte">
++                            {' '}· conto Betfair non letto: dalle righe dei bot
++                        </span>
++                    )}
+                 </div>
+                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-0.5">
+                     {composizione.righe.map((r) => (
+@@ -74,6 +100,12 @@ export function ObiettivoHero({
+                                         {r.stimato === r.valore ? 'stimato' : `di cui stimato ${fmtMoney(r.stimato, { signed: true })}`}
+                                     </span>
+                                 )}
++                                {/* 30/09 (P7) - la FONTE della cifra della voce */}
++                                {r.valore != null && fonteDi(r) != null && (
++                                    <MarchioSoldi fonte={fonteDi(r) === 'conto' ? 'conto' : 'bot'} className="ml-1"
++                                        etaS={fonteDi(r) === 'conto' ? contoEtaS : undefined}
++                                        testId={`cr-composizione-${r.chiave}-fonte`} />
++                                )}
+                             </span>
+                         </div>
+                     ))}
+diff --git a/frontend/src/components/controlroom/useControlRoom.provaGiornata.test.tsx b/frontend/src/components/controlroom/useControlRoom.provaGiornata.test.tsx
+index c3da859..6abacfd 100644
+--- a/frontend/src/components/controlroom/useControlRoom.provaGiornata.test.tsx
++++ b/frontend/src/components/controlroom/useControlRoom.provaGiornata.test.tsx
+@@ -108,6 +108,7 @@ vi.mock('@/lib/scalper', async (orig) => ({
+ 
+ import { fetchSafeState, type SafeTrade } from '@/lib/safeBot';
+ import { fetchMikeState } from '@/lib/mike';
++import { fetchLiveAccount } from '@/lib/liveOrders';
+ import { useControlRoom } from '@/components/controlroom/useControlRoom';
+ 
+ const SAFE_VUOTO = { control: null, trades: [], aggregates: null };
+@@ -202,3 +203,43 @@ describe('P8 - la prova di oggi non contiene partite di giorni precedenti', () =
+         expect(v.soldiGiornata.perSportPaper?.calcio).toEqual({ n: 1, pnl: 0.95, won: 1, lost: 0 });
+     });
+ });
++
++// ============================================================================
++// P7 (30/09) - la composizione LIVE per bot dal CONTO (`pnl_reale_oggi.per_fonte`).
++// Una posizione LIVE di Mike piazzata IERI e regolata OGGI: `get_mike_state` non
++// la porta (solo righe piazzate oggi o aperte), il conto si'. Deve stare sotto
++// Mike, non in «Altro sul conto Betfair». Finto del conto con le chiavi della
++// colonna JSONB `betfair_live_account.pnl_reale_oggi`.
++// ============================================================================
++function contoConMike(netto: number) {
++    const zero = { netto: 0, ordini: 0 };
++    return {
++        pnl_reale_oggi: {
++            day: OGGI, netto, ordini: 1,
++            per_fonte: {
++                omega: zero, safe_calcio: zero, safe_tennis: zero, mike: { netto, ordini: 1 },
++                bot_tennis: zero, manuale_app: zero, manuale_sito: zero, altri_bot: zero, scalper: zero,
++            },
++            bet_ids: ['3900001'], senza_commissione: 0, sospetti_sito: 0,
++            letto_at: `${OGGI}T12:41:00+00:00`,
++        },
++    };
++}
++
++describe('P7 - la voce di ogni bot dal conto Betfair', () => {
++    it('Mike: posizione di ieri regolata oggi (riga non letta) -> sotto Mike dal CONTO, «Altro» vuoto', async () => {
++        vi.mocked(fetchSafeState).mockResolvedValue(SAFE_VUOTO as never);
++        vi.mocked(fetchMikeState).mockResolvedValue(MIKE_VUOTO as never);
++        vi.mocked(fetchLiveAccount).mockResolvedValue(contoConMike(2.0) as never);
++        const { result } = renderHook(() => useControlRoom());
++        await waitFor(() => expect(result.current.caricamento).toBe(false));
++        await waitFor(() => expect(result.current.contoLettoAt).toBe(`${OGGI}T12:41:00+00:00`));
++        const righe = result.current.composizioneOggi.righe;
++        const mike = righe.find((r) => r.chiave === 'mike')!;
++        expect(mike.valore).toBe(2);
++        expect((mike as { fonte?: string }).fonte).toBe('conto');
++        expect(righe.find((r) => r.chiave === 'altro')!.valore).toBeNull();
++        // stessi soldi: il realizzato live della barra non cambia
++        expect(result.current.soldiGiornata.realizzato).toBe(2);
++    });
++});
+diff --git a/frontend/src/components/controlroom/useControlRoom.ts b/frontend/src/components/controlroom/useControlRoom.ts
+index 5cb0c75..ef2268e 100644
+--- a/frontend/src/components/controlroom/useControlRoom.ts
++++ b/frontend/src/components/controlroom/useControlRoom.ts
+@@ -111,6 +111,7 @@ import { leggiManualeSitoBetfair, type ManualeSitoBetfair } from '@/lib/manualeS
+ import {
+     breakdownProva, leggiArretratiProva, provaGiornata, type ProvaGiornata, type RigaTradeProva,
+ } from '@/lib/provaGiornata';
++import { composizioneDalConto } from '@/lib/composizioneConto';
+ import { prezzoVivoPerGamba } from '@/lib/comboPrezzoVivo';
+ import { updateOmegaParams } from '@/lib/omega';
+ import { applicaLottoScan, type ScanRowEvent } from '@/lib/scanEventBuffer';
+@@ -833,6 +834,13 @@ export interface ControlRoomVM {
+      * prima; `null` = trade non ancora letti.
+      */
+     provaGiornata?: ProvaGiornata | null;
++    /**
++     * 30/09 (P7) — quando il runner ha letto il P&L reale del conto
++     * (`pnl_reale_oggi.letto_at`, ISO). `null` = conto non letto oggi.
++     * NB: il runner scrive solo al CAMBIO del dato, quindi e' l'eta' dell'ultima
++     * scrittura, non necessariamente dell'ultima lettura (progetto §2.C punto 4).
++     */
++    contoLettoAt?: string | null;
+     /** punto d'aggancio isolato per le scommesse manuali dal SITO Betfair
+      *  (fuori app): oggi sempre "non disponibile" (`lib/manualeSitoBetfair.ts`). */
+     manualeSitoBetfair: ManualeSitoBetfair;
+@@ -2235,7 +2243,13 @@ export function useControlRoom(): ControlRoomVM {
+ 
+     /** Task 2 — la SCOMPOSIZIONE dell'obiettivo: stesse righe di sopra,
+      *  raggruppate per bot invece che sommate tutte insieme. */
+-    const composizioneOggi = useMemo<ComposizioneObiettivo>(() => componiObiettivo({
++    // 30/09 (P7): con il conto letto, la voce di ogni bot e' quella del CONTO
++    // (`pnl_reale_oggi.per_fonte`, attribuita dal backend per bet_id) piu' la
++    // parte stimata delle sue righe: una posizione di ieri regolata oggi, che
++    // la RPC del bot non porta, resta sotto il SUO bot e non in «Altro sul
++    // conto». Senza conto: la composizione di prima, invariata. Il totale e'
++    // lo stesso (`lib/composizioneConto.ts`).
++    const composizioneOggi = useMemo<ComposizioneObiettivo>(() => composizioneDalConto(componiObiettivo({
+         omega: oggiRighe.omegaRighe,
+         safe: oggiRighe.safeRighe,
+         mike: oggiRighe.mikeRighe,
+@@ -2244,7 +2258,9 @@ export function useControlRoom(): ControlRoomVM {
+         manualeApp: oggiRighe.manualeAppRighe,
+         altro: oggiRighe.altroRighe,
+         scalper: oggiRighe.scalperRighe,
+-    }), [oggiRighe]);
++    }), pnlRealeOggi, {
++        omega: oggiRighe.omegaRighe, safe: oggiRighe.safeRighe, mike: oggiRighe.mikeRighe,
++    }), [oggiRighe, pnlRealeOggi]);
+ 
+     /**
+      * 30/09 (P8) — LA CORSIA PROVA per bot: partite di OGGI contro ARRETRATI
+@@ -3820,6 +3836,7 @@ export function useControlRoom(): ControlRoomVM {
+         targetServizio,
+         composizioneOggi, manualeSitoBetfair, salvaObiettivo,
+         provaGiornata: provaOggi,
++        contoLettoAt: pnlRealeOggi?.letto_at ?? null,
+         bots: botsConPnl, posizioni, chiuse, righeChiuse, registrazioni, copertura,
+         freni: safe?.control?.stats?.risk ?? null,
+         soldiVeri,
+diff --git a/frontend/src/lib/composizioneConto.test.ts b/frontend/src/lib/composizioneConto.test.ts
+new file mode 100644
+index 0000000..8d1d46d
+--- /dev/null
++++ b/frontend/src/lib/composizioneConto.test.ts
+@@ -0,0 +1,102 @@
++// ============================================================================
++// composizioneConto.test.ts - P7 (30/09): con il conto letto, il realizzato
++// LIVE di ogni bot viene da `pnl_reale_oggi.per_fonte` (attribuzione del
++// backend), non dalle righe che la pagina ha caricato. Una posizione LIVE di
++// Mike piazzata IERI e regolata OGGI (che `get_mike_state` non porta) finisce
++// sotto Mike, non in «Altro sul conto Betfair».
++//
++// Il finto del conto ha la forma di `leggiPnlRealeOggi` (colonna JSONB
++// `betfair_live_account.pnl_reale_oggi`: day, netto, ordini, per_fonte{9 voci
++// {netto, ordini}}, bet_ids, senza_commissione, sospetti_sito, letto_at).
++// ============================================================================
++import { describe, expect, it } from 'vitest';
++import {
++    componiObiettivo, differenzaContoRighe, leggiPnlRealeOggi, rigaSintetica,
++    type PnlRealeOggi, type RigaComponente,
++} from './composizioneObiettivo';
++import { composizioneDalConto } from './composizioneConto';
++
++const OGGI = '2026-09-30';
++
++function conto(perFonte: Partial<Record<string, { netto: number; ordini: number }>>): PnlRealeOggi {
++    const zero = { netto: 0, ordini: 0 };
++    const pf = {
++        omega: zero, safe_calcio: zero, safe_tennis: zero, mike: zero, bot_tennis: zero,
++        manuale_app: zero, manuale_sito: zero, altri_bot: zero, scalper: zero, ...perFonte,
++    };
++    const netto = Object.values(pf).reduce((s, v) => s + (v?.netto ?? 0), 0);
++    return leggiPnlRealeOggi({
++        day: OGGI, netto, ordini: 1, per_fonte: pf, bet_ids: ['3900001'],
++        senza_commissione: 0, sospetti_sito: 0, letto_at: `${OGGI}T12:41:00+00:00`,
++    }, OGGI)!;
++}
++
++/** come fa il hook con il conto letto: «Altro» = altri_bot + differenza conto-righe */
++function composizioneDiOggi(c: PnlRealeOggi, righe: { omega: RigaComponente[]; safe: RigaComponente[]; mike: RigaComponente[] }) {
++    const diff = differenzaContoRighe(c, [...righe.omega, ...righe.safe, ...righe.mike]);
++    const altri = c.per_fonte.altri_bot.ordini > 0 ? c.per_fonte.altri_bot.netto : null;
++    const altro = (altri != null || Math.abs(diff) >= 0.005) ? Math.round(((altri ?? 0) + diff) * 100) / 100 : null;
++    const r = altro == null ? null : rigaSintetica(altro, null, { sport: 'calcio' });
++    return componiObiettivo({ ...righe, tennisBot: [], altro: r ? [r] : [] });
++}
++
++describe('composizioneDalConto - la voce del bot dal conto', () => {
++    it('Mike: posizione di IERI regolata OGGI (riga non caricata) -> sotto Mike, non in «Altro»', () => {
++        const c = conto({ mike: { netto: 2.0, ordini: 1 } });
++        const righe = { omega: [], safe: [], mike: [] };
++        const base = composizioneDiOggi(c, righe);
++        // PRIMA: la voce di Mike vuota e i 2,00 in «Altro sul conto»
++        expect(base.righe.find((r) => r.chiave === 'mike')!.valore).toBeNull();
++        expect(base.righe.find((r) => r.chiave === 'altro')!.valore).toBe(2);
++        const dopo = composizioneDalConto(base, c, righe);
++        const mike = dopo.righe.find((r) => r.chiave === 'mike')!;
++        expect(mike.valore).toBe(2);
++        expect(mike.fonte).toBe('conto');
++        expect(dopo.righe.find((r) => r.chiave === 'altro')!.valore).toBeNull();
++        // il totale non cambia: stessi soldi, voce giusta
++        expect(dopo.totale).toBe(base.totale);
++    });
++
++    it('reale dal conto + stimato del bot (chiuso dal bot, Betfair non ha regolato), dichiarato', () => {
++        const c = conto({ mike: { netto: 1.5, ordini: 1 } });
++        const stimata: RigaComponente = {
++            status: 'won', pnl: 0.4, mode: 'live', sport: 'calcio', origin: 'auto', pnlReale: null, pnlStimato: 0.4,
++        };
++        const regolata: RigaComponente = {
++            status: 'won', pnl: 1.5, mode: 'live', sport: 'calcio', origin: 'auto', pnlReale: 1.5, pnlStimato: null,
++        };
++        const righe = { omega: [], safe: [], mike: [regolata, stimata] };
++        const base = composizioneDiOggi(c, righe);
++        const dopo = composizioneDalConto(base, c, righe);
++        const mike = dopo.righe.find((r) => r.chiave === 'mike')!;
++        expect(mike).toMatchObject({ valore: 1.9, reale: 1.5, stimato: 0.4, fonte: 'conto' });
++        expect(dopo.totale).toBe(base.totale);
++    });
++
++    it('Safe calcio e tennis separati per voce del conto; paper mai dentro', () => {
++        const c = conto({ safe_calcio: { netto: -0.9, ordini: 2 }, safe_tennis: { netto: 0.41, ordini: 1 } });
++        const paper: RigaComponente = { status: 'won', pnl: 7.6, mode: 'paper', sport: 'calcio', origin: 'auto' };
++        const righe = { omega: [], safe: [paper], mike: [] };
++        const dopo = composizioneDalConto(composizioneDiOggi(c, righe), c, righe);
++        expect(dopo.righe.find((r) => r.chiave === 'safe_calcio')!.valore).toBe(-0.9);
++        expect(dopo.righe.find((r) => r.chiave === 'safe_tennis')!.valore).toBe(0.41);
++        expect(dopo.totale).toBe(-0.49);
++    });
++
++    it('0 ordini sul conto e nessuna riga: la voce resta «—» (null), mai 0,00 inventato', () => {
++        const c = conto({});
++        const righe = { omega: [], safe: [], mike: [] };
++        const dopo = composizioneDalConto(composizioneDiOggi(c, righe), c, righe);
++        expect(dopo.righe.find((r) => r.chiave === 'omega')!.valore).toBeNull();
++        expect(dopo.dalConto).toBe(true);
++    });
++
++    it('conto NON letto: la composizione di prima, invariata (ripiego dichiarato sulle righe)', () => {
++        const regolata: RigaComponente = { status: 'won', pnl: 1.5, mode: 'live', sport: 'calcio', origin: 'auto' };
++        const base = componiObiettivo({ omega: [], safe: [], mike: [regolata], tennisBot: [] });
++        const dopo = composizioneDalConto(base, null, { omega: [], safe: [], mike: [regolata] });
++        expect(dopo.dalConto).toBe(false);
++        expect(dopo.righe.map((r) => r.valore)).toEqual(base.righe.map((r) => r.valore));
++        expect(dopo.righe.find((r) => r.chiave === 'mike')!.fonte).toBe('bot');
++    });
++});
+diff --git a/frontend/src/lib/composizioneConto.ts b/frontend/src/lib/composizioneConto.ts
+new file mode 100644
+index 0000000..9a17734
+--- /dev/null
++++ b/frontend/src/lib/composizioneConto.ts
+@@ -0,0 +1,129 @@
++// ============================================================================
++// composizioneConto.ts - LA COMPOSIZIONE LIVE PER BOT DAL CONTO BETFAIR.
++//
++// 30/09 (blocco P7, progetto monitor veritiero §2.C punto 1-3): con il conto
++// letto, il realizzato LIVE di ogni bot e' `pnl_reale_oggi.per_fonte[bot]`
++// (attribuzione del backend per bet_id, poi customerOrderRef: qui NON si
++// rifa'), piu' la parte ancora STIMATA delle righe del bot (chiusa dal bot,
++// Betfair non ha ancora regolato, bet_id non contato dal conto).
++//
++// Prima la voce del bot era il reale delle SUE RIGHE lette dalla pagina, e la
++// differenza col conto finiva in «Altro sul conto Betfair». Ma le RPC dei bot
++// non portano tutte le righe regolate oggi (`get_mike_state`: solo righe
++// piazzate oggi o aperte; `get_safe_state`: ultime 200): una posizione LIVE di
++// ieri regolata oggi spariva dal suo bot e compariva in «Altro». Ora resta
++// sotto il SUO bot, perche' il conto la attribuisce comunque.
++//
++// Il TOTALE non cambia (stesse fonti, spostate di voce): conto(omega+safe+
++// mike) + altri_bot + stimati = righe(reale) + [altri_bot + differenza] +
++// stimati. Il paper non passa di qui.
++// Senza conto (`reale == null`) la composizione di prima resta INVARIATA.
++// ============================================================================
++import type {
++    ComposizioneObiettivo, PnlRealeOggi, RigaComponente, RigaComposizione,
++} from './composizioneObiettivo';
++import { isErrorRow, isSettled } from './eventGroups';
++
++/** Da dove viene la cifra di una voce. */
++export type FonteVoce = 'conto' | 'bot';
++
++export interface RigaComposizioneConto extends RigaComposizione {
++    /** di `valore`, la parte REGOLATA dal conto Betfair (per_fonte); null = nessuna */
++    reale?: number | null;
++    /** 'conto' = c'e' una parte letta dal conto; 'bot' = solo righe del bot */
++    fonte?: FonteVoce | null;
++}
++
++export interface ComposizioneConto extends ComposizioneObiettivo {
++    righe: RigaComposizioneConto[];
++    /** true = le voci dei bot vengono dal conto (`per_fonte`) */
++    dalConto: boolean;
++}
++
++function somma(a: number | null, b: number | null): number | null {
++    if (a == null && b == null) return null;
++    return Math.round(((a ?? 0) + (b ?? 0)) * 100) / 100;
++}
++
++function finito(v: unknown): number | null {
++    return typeof v === 'number' && Number.isFinite(v) ? v : null;
++}
++
++/** La parte STIMATA delle righe LIVE regolate dal bot (stessa regola della barra). */
++function stimatoDi(righe: readonly RigaComponente[]): number | null {
++    let s: number | null = null;
++    for (const r of righe) {
++        if (String(r.mode ?? '').toLowerCase() !== 'live') continue;
++        if (!isSettled(r.status) || isErrorRow(r.status)) continue;
++        // riga senza reale/stimato dichiarati: tutta stimata (come `parti`)
++        const v = r.pnlReale === undefined && r.pnlStimato === undefined ? finito(r.pnl) : finito(r.pnlStimato);
++        if (v != null) s = somma(s, v);
++    }
++    return s;
++}
++
++const manuale = (r: RigaComponente) => String(r.origin ?? '').toLowerCase() === 'manual';
++const diSport = (s: string) => (r: RigaComponente) => String(r.sport ?? '').toLowerCase() === s;
++
++/**
++ * Ricompone le voci dei bot (Omega, Safe calcio, Safe tennis, Mike, e la voce
++ * «Manuale» delle righe dei bot) e «Altro sul conto Betfair» dal CONTO. Le
++ * altre voci (scalper, bot tennis, manuale sito/app) vengono gia' dal conto e
++ * restano come sono. `reale == null` = conto non letto: tutto invariato.
++ */
++export function composizioneDalConto(
++    base: ComposizioneObiettivo,
++    reale: PnlRealeOggi | null,
++    righe: {
++        omega: readonly RigaComponente[];
++        safe: readonly RigaComponente[];
++        mike: readonly RigaComponente[];
++    },
++): ComposizioneConto {
++    if (!reale) {
++        return {
++            ...base,
++            dalConto: false,
++            righe: base.righe.map((r) => ({ ...r, fonte: r.valore == null ? null : 'bot' })),
++        };
++    }
++    const pf = reale.per_fonte;
++    const conto = (f: keyof PnlRealeOggi['per_fonte']) => (pf[f].ordini > 0 ? pf[f].netto : null);
++    const auto = (xs: readonly RigaComponente[]) => xs.filter((r) => !manuale(r));
++    const perBot: Partial<Record<RigaComposizione['chiave'], { reale: number | null; stimato: number | null }>> = {
++        omega: { reale: conto('omega'), stimato: stimatoDi(auto(righe.omega)) },
++        safe_calcio: { reale: conto('safe_calcio'), stimato: stimatoDi(auto(righe.safe).filter(diSport('calcio'))) },
++        safe_tennis: { reale: conto('safe_tennis'), stimato: stimatoDi(auto(righe.safe).filter(diSport('tennis'))) },
++        mike: { reale: conto('mike'), stimato: stimatoDi(auto(righe.mike)) },
++        // i cicli aperti a mano dentro i bot: il conto li attribuisce al BOT
++        // (per bet_id), qui resta solo la parte non ancora regolata
++        manuale: { reale: null, stimato: stimatoDi([...righe.omega, ...righe.safe, ...righe.mike].filter(manuale)) },
++        // solo gli ordini di altri bot: la «differenza» conto-righe non esiste piu'
++        altro: { reale: conto('altri_bot'), stimato: null },
++    };
++    const out: RigaComposizioneConto[] = base.righe.map((r) => {
++        const p = perBot[r.chiave];
++        if (!p) {
++            // voci gia' dal conto (scalper, bot tennis, manuale sito/app)
++            return { ...r, fonte: r.valore == null ? null : 'conto' };
++        }
++        const valore = somma(p.reale, p.stimato);
++        return {
++            ...r,
++            valore,
++            reale: p.reale,
++            stimato: p.stimato,
++            fonte: p.reale != null ? 'conto' : valore != null ? 'bot' : null,
++        };
++    });
++    const totale = out.reduce<number | null>((acc, r) => somma(acc, r.valore), null);
++    return { ...base, righe: out, totale, dalConto: true };
++}
++
++/** Eta' in secondi della lettura del conto (letto_at); undefined = conto non letto; null = istante illeggibile. */
++export function etaContoS(lettoAt: string | null | undefined, nowMs: number): number | null | undefined {
++    if (lettoAt == null) return undefined;
++    const ms = Date.parse(lettoAt);
++    if (!Number.isFinite(ms)) return null;
++    return Math.max(0, Math.round((nowMs - ms) / 1000));
++}
+diff --git a/frontend/src/pages/ControlRoom.tsx b/frontend/src/pages/ControlRoom.tsx
+index c098d4e..ef85cdb 100644
+--- a/frontend/src/pages/ControlRoom.tsx
++++ b/frontend/src/pages/ControlRoom.tsx
+@@ -32,6 +32,7 @@ import type { DayBarProps } from '@/components/trading/DayBar';
+ import { ModeBanner } from '@/components/trading/ModeBanner';
+ import { SplitSport, type SportKey } from '@/components/controlroom/SplitSport';
+ import { corsiePerSport } from '@/lib/giornataCorsie';
++import { etaContoS } from '@/lib/composizioneConto';
+ import { SchedaPartita } from '@/components/controlroom/SchedaPartita';
+ import { ObiettivoHero } from '@/components/controlroom/ObiettivoHero';
+ import { SaldoBetfairCard } from '@/components/controlroom/SaldoBetfairCard';
+@@ -546,6 +547,7 @@ export default function ControlRoom() {
+                     composizione={vm.composizioneOggi}
+                     manualeSito={vm.manualeSitoBetfair}
+                     prova={vm.provaGiornata ?? null}
++                    contoEtaS={etaContoS(vm.contoLettoAt, vm.nowMs)}
+                     onSalvaObiettivo={vm.salvaObiettivo}
+                     avvisoMotore={
+                         vm.bots.find((b) => b.bot === 'omega')?.inCorsa

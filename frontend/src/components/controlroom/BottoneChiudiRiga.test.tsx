@@ -15,7 +15,8 @@
 // rosso; (5) il rifiuto per i bot tennis rimesso in `chiudibile` -> rosso.
 // ============================================================================
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { ATTESA_CONFERMA_USCITE_MS } from './InterruttoreUscite';
 import { RigaOperazione } from './DettaglioRigaView';
 import { ChiusuraRigaContext, type ChiusuraRigaApi } from './BottoneChiudiRiga';
 import type { RigaOrdine } from '@/lib/statoOrdine';
@@ -59,7 +60,7 @@ describe('B16 - il bottone chiama il SUO bot', () => {
         ['omega', 900, 'E1', 'live'],
         ['mike', 801, 'E2', 'paper'],
         ['safe', 321, '36061420', 'paper'],
-    ] as const)('riga %s: chiudi con bot/id/partita/modalita\' DELLA RIGA', (bot, id, ev, modo) => {
+    ] as const)('riga %s: chiudi con bot/id/partita/modalita\' DELLA RIGA', async (bot, id, ev, modo) => {
         const api = monta(op({ bot, id, eventId: ev, modalita: modo }));
         const b = screen.getByTestId('cr-op-chiudi');
         expect(b).not.toBeDisabled();
@@ -69,11 +70,30 @@ describe('B16 - il bottone chiama il SUO bot', () => {
         // la richiesta e' la STESSA, parte dopo il secondo clic. Paper: un clic.
         if (modo === 'live') {
             expect(api.chiudi).not.toHaveBeenCalled();
+            // review incrociata 30/09 (M2): il «Conferma» e' inerte nei primi
+            // ATTESA_CONFERMA_USCITE_MS: un doppio clic non manda soldi veri.
+            const conferma = screen.getByTestId('cr-op-chiudi-conferma');
+            expect(conferma).toBeDisabled();
+            fireEvent.click(conferma);
+            expect(api.chiudi).not.toHaveBeenCalled();
+            await waitFor(() => expect(screen.getByTestId('cr-op-chiudi-conferma')).not.toBeDisabled(),
+                { timeout: ATTESA_CONFERMA_USCITE_MS + 1000 });
             fireEvent.click(screen.getByTestId('cr-op-chiudi-conferma'));
         }
         expect(api.chiudi).toHaveBeenCalledWith({
             bot, id, eventId: ev, marketId: '1.9', modalita: modo, stato: 'open', chiudeId: null, regolata: false,
         });
+    });
+
+    it('M2 (30/09) - live: «annulla» disarma, e un nuovo «Chiudi» riparte con l\'attesa', () => {
+        const api = monta(op({ bot: 'mike', id: 7, eventId: 'E7', modalita: 'live' }));
+        fireEvent.click(screen.getByTestId('cr-op-chiudi'));
+        expect(screen.getByTestId('cr-op-chiudi-conferma')).toBeDisabled();
+        fireEvent.click(screen.getByTestId('cr-op-chiudi-annulla'));
+        expect(screen.queryByTestId('cr-op-chiudi-conferma')).toBeNull();
+        expect(api.chiudi).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByTestId('cr-op-chiudi'));
+        expect(screen.getByTestId('cr-op-chiudi-conferma')).toBeDisabled();
     });
 
     it.each(['tennis_scalper', 'tennis_pro', 'tennis_flb', 'tennis_swing'] as const)(

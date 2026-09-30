@@ -92,7 +92,7 @@ describe('EtaQuote — l’età del prezzo con l’etichetta di cosa misura', ()
 
 function linea(over: Partial<LineaOuScheda> = {}): LineaOuScheda {
     return {
-        marketId: '1.35', linea: 3.5, stato: 'OPEN', decisa: false,
+        marketId: '1.35', linea: 3.5, stato: 'OPEN', decisa: false, perMike: false,
         under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaBookS: 3, ...over,
     };
 }
@@ -123,13 +123,33 @@ describe('LineeOu — le linee Under/Over con lo stesso componente', () => {
         expect(screen.queryByTestId('cr-quote-ou-decisa')).toBeNull();
     });
 
-    it(`nessuna linea, o più di ${MAX_LINEE_OU}: non si monta (nessuna scelta inventata di quali mostrare)`, () => {
+    // B1bis (decisione del coordinatore, 30/09): oltre 4 linee NON si nasconde
+    // piu' niente. Sostituisce il test B1 «più di 4: non si monta».
+    it('nessuna linea: non si monta; fino a 4: tutte in vista, nessun riquadro «altre»', () => {
         const { container, rerender } = render(<LineeOu testId="ou" linee={[]} />);
         expect(container.innerHTML).toBe('');
-        const tante = Array.from({ length: MAX_LINEE_OU + 1 }, (_, i) => linea({ marketId: `1.${i}`, linea: i + 0.5 }));
-        rerender(<LineeOu testId="ou" linee={tante} />);
-        expect(container.innerHTML).toBe('');
-        rerender(<LineeOu testId="ou" linee={tante.slice(0, MAX_LINEE_OU)} />);
+        const quattro = [0.5, 1.5, 2.5, 5.5].map((l, i) => linea({ marketId: `1.${i}`, linea: l }));
+        rerender(<LineeOu testId="ou" linee={quattro} />);
         expect(screen.getAllByTestId('cr-quote-ou-linea')).toHaveLength(MAX_LINEE_OU);
+        expect(screen.queryByTestId('cr-quote-ou-altre')).toBeNull();
+    });
+
+    it('più di 4: in vista 3,5 · 4,5 e le linee marcate (Mike / decise), TUTTE le altre nel riquadro chiuso', () => {
+        const otto = [0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5].map((l, i) => linea({
+            marketId: `1.${i}`, linea: l, perMike: l === 1.5, decisa: l === 0.5,
+        }));
+        render(<LineeOu testId="ou" linee={otto} />);
+        const tutte = screen.getAllByTestId('cr-quote-ou-linea');
+        expect(tutte).toHaveLength(8);                                   // nessuna linea fuori dalla scheda
+        const altre = screen.getByTestId('cr-quote-ou-altre') as HTMLDetailsElement;
+        expect(altre.tagName).toBe('DETAILS');
+        expect(altre.open).toBe(false);                                  // chiuso di default
+        expect(within(altre).getByText('altre 4 linee')).toBeTruthy();
+        const inAltre = within(altre).getAllByTestId('cr-quote-ou-linea').map((r) => r.textContent ?? '');
+        expect(inAltre.map((t) => t.slice(0, 7))).toEqual(['U/O 2,5', 'U/O 5,5', 'U/O 6,5', 'U/O 7,5']);
+        const inVista = tutte.filter((r) => !altre.contains(r)).map((r) => (r.textContent ?? '').slice(0, 7));
+        expect(inVista).toEqual(['U/O 0,5', 'U/O 1,5', 'U/O 3,5', 'U/O 4,5']);
+        // la regola e' scritta, non intuita
+        expect(screen.getByTestId('ou').getAttribute('title')).toMatch(/3,5 e 4,5/);
     });
 });

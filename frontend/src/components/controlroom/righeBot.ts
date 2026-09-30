@@ -14,6 +14,7 @@ import {
 } from '@/lib/interruttori';
 import type { RigaInterruttore } from '@/components/controlroom/PannelloBot';
 import type { Bot, Modalita } from '@/lib/interruttori';
+import type { GruppoArretrati } from '@/lib/provaGiornata';
 
 /**
  * Il minimo che serve per disegnare le righe di un bot. `StatoBot` della
@@ -41,7 +42,17 @@ export interface StatoBotPlancia {
     /** 26/09 (F-1) - Safe: il P&L di oggi PER STRATEGIA (chiave = strategia
      *  dell'interruttore). Un numero del bot intero ripetuto su ogni riga di
      *  strategia sarebbe sommato N volte nel riassunto del gruppo. */
-    pnlOggiPerStrategia?: Record<string, { live: number | null; paper: number | null }> | null;
+    pnlOggiPerStrategia?: Record<string, {
+        live: number | null; paper: number | null;
+        /** 30/09 (P8bis): arretrati IN PROVA della strategia, mai in `paper` */
+        arretratiPaper?: GruppoArretrati[] | null;
+    }> | null;
+    /**
+     * 30/09 (P8bis) - IN PROVA: `pnlOggiPaper` conta le sole partite di OGGI;
+     * le partite di giorni precedenti regolate oggi stanno qui, a parte, mai
+     * sommate (stessa regola e fonte della corsia PROVA, `lib/provaGiornata.ts`).
+     */
+    arretratiPaper?: GruppoArretrati[] | null;
     /** 24/09 - una frase del servizio da mostrare accanto allo stato (lo
      *  scalper: quante sessioni, in che modalita', da dove e quanto vecchio) */
     nota?: string | null;
@@ -101,7 +112,14 @@ export function righeInterruttori(
                     ? (b.pnlOggiPerStrategia[i.strategia] ?? { live: null, paper: null }) : null;
                 const live = perStr ? perStr.live : (b.pnlOggi ?? null);
                 const paper = perStr ? perStr.paper : (b.pnlOggiPaper ?? null);
-                return { pnlOggi: st.modalita === 'live' ? live : st.modalita === 'paper' ? paper : null };
+                // 30/09 (P8bis): in prova, gli arretrati regolati oggi accanto
+                // alla cifra di oggi, mai dentro; in live non si mostrano
+                const arretrati = perStr ? (perStr.arretratiPaper ?? null) : (b.arretratiPaper ?? null);
+                return {
+                    pnlOggi: st.modalita === 'live' ? live : st.modalita === 'paper' ? paper : null,
+                    ...(st.modalita === 'paper' && arretrati && arretrati.length > 0
+                        ? { arretratiProva: arretrati } : {}),
+                };
             })(),
             primaDelBot,
         });

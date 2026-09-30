@@ -27,7 +27,7 @@
 // non e' un clic solo. Stessa forma del cancelletto delle uscite
 // (`SchedaChiusura`): primo clic arma, secondo manda.
 // ============================================================================
-import { useContext, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import { Loader2, Undo2, XOctagon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { fmtTime } from '@/lib/format';
@@ -39,6 +39,7 @@ import { chiaveCashOutPartita } from '@/lib/esitoAbbinamento';
 import { StrisciaEsitoChiusura, type StrisciaEsitoChiusuraProps } from '@/components/controlroom/StrisciaEsitoChiusura';
 import { ChiusuraRigaContext } from '@/components/controlroom/BottoneChiudiRiga';
 import { EsitoOrdiniCashOut } from '@/components/controlroom/EsitoAbbinamentoStriscia';
+import { ATTESA_CONFERMA_USCITE_MS } from '@/components/controlroom/InterruttoreUscite';
 
 export interface CashOutPartitaProps {
     eventId: string;
@@ -65,6 +66,18 @@ export function CashOutPartita({
     eventId, modalita, posizioniVive, stato, onCashOut, onRiprendi, compatto = false, esito,
 }: CashOutPartitaProps) {
     const [armato, setArmato] = useState(false);
+    // 30/09 (P12b, review) - ANTI DOPPIO CLIC: la conferma compare nello stesso
+    // punto del pulsante; per ATTESA_CONFERMA_USCITE_MS dall'armamento e'
+    // inerte (stesso schema di `InterruttoreUscite`), cosi' un doppio clic non
+    // manda un cash out con soldi veri senza una conferma voluta.
+    const [armatoDa, setArmatoDa] = useState<number | null>(null);
+    const [, setTic] = useState(0);
+    useEffect(() => {
+        if (armatoDa == null) return undefined;
+        const t = window.setTimeout(() => setTic((n) => n + 1), ATTESA_CONFERMA_USCITE_MS + 20);
+        return () => window.clearTimeout(t);
+    }, [armatoDa]);
+    const troppoPresto = armato && armatoDa != null && Date.now() - armatoDa < ATTESA_CONFERMA_USCITE_MS;
     const [inCorso, setInCorso] = useState(false);
     const [errore, setErrore] = useState<string | null>(null);
     // 25/09 (residui B17) - dopo il clic, OGNI ordine del cash out globale fino
@@ -125,7 +138,8 @@ export function CashOutPartita({
             {!stato.chiusa && (
                 armato ? (
                     <Button
-                        onClick={() => void esegui(onCashOut)} disabled={inCorso}
+                        onClick={() => { if (!troppoPresto) void esegui(onCashOut); }}
+                        disabled={inCorso || troppoPresto}
                         className={`${dim} rounded bg-orange-500 text-black hover:bg-orange-400 font-bold uppercase tracking-wider`}
                         data-testid="cr-cashout-partita-conferma"
                     >
@@ -133,7 +147,9 @@ export function CashOutPartita({
                     </Button>
                 ) : (
                     <Button
-                        onClick={() => (chiedeConferma ? setArmato(true) : void esegui(onCashOut))}
+                        onClick={() => {
+                            if (chiedeConferma) { setArmatoDa(Date.now()); setArmato(true); } else void esegui(onCashOut);
+                        }}
                         disabled={!!bloccoCashout}
                         variant="outline"
                         className={`${dim} rounded border-rose-500/40 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20 font-semibold uppercase tracking-wider disabled:opacity-40`}

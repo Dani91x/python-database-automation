@@ -80,6 +80,34 @@ describe('ObiettivoHero', () => {
         expect(s.getByTestId('cr-composizione-prova').textContent).not.toMatch(/1,20/);
     });
 
+    it('30/09 (P7): ogni voce dichiara la fonte (CONTO con l\'eta\' della lettura, o BOT); conto non letto detto', () => {
+        const dalConto = {
+            ...composizioneVuota, dalConto: true,
+            righe: [
+                { chiave: 'mike' as const, etichetta: 'Mike', valore: 2, reale: 2, stimato: null, fonte: 'conto' as const },
+                { chiave: 'omega' as const, etichetta: 'Omega', valore: 0.4, reale: null, stimato: 0.4, fonte: 'bot' as const },
+                { chiave: 'altro' as const, etichetta: 'Altro sul conto Betfair', valore: null, fonte: null },
+            ],
+        };
+        const s = render(
+            <ObiettivoHero dayBar={dayBar()} composizione={dalConto} contoEtaS={180}
+                manualeSito={{ pnlOggi: null, fonte: 'non-disponibile' }} onSalvaObiettivo={vi.fn()} />,
+        );
+        const mike = s.getByTestId('cr-composizione-mike-fonte');
+        expect(mike.getAttribute('data-fonte')).toBe('conto');
+        expect(mike.textContent).toBe('CONTO BETFAIR· 3 min fa');
+        expect(s.getByTestId('cr-composizione-omega-fonte').getAttribute('data-fonte')).toBe('bot');
+        // voce vuota: nessun marchio, resta «—»
+        expect(s.queryByTestId('cr-composizione-altro-fonte')).toBeNull();
+        expect(s.getByTestId('cr-composizione-fonte').textContent).toMatch(/dal conto Betfair/);
+        s.unmount();
+        const s2 = render(
+            <ObiettivoHero dayBar={dayBar()} composizione={{ ...dalConto, dalConto: false }}
+                manualeSito={{ pnlOggi: null, fonte: 'non-disponibile' }} onSalvaObiettivo={vi.fn()} />,
+        );
+        expect(s2.getByTestId('cr-composizione-fonte').textContent).toMatch(/conto Betfair non letto/);
+    });
+
     it('il sito Betfair dichiara "non ancora collegate" quando assente', () => {
         const s = render(
             <ObiettivoHero

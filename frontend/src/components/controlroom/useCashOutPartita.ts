@@ -67,7 +67,9 @@ export function useCashOutPartita(args: ArgsCashOutPartita): CashOutPartitaRisul
         }
         return out;
     }, [gambe, ripieghi, esitoDeciso]);
-    const prezzi = usePrezziAlMs({ sorgente, sport, selezioni: daSeguire });
+    // nessuna selezione da chiudere = nessuna sorgente toccata (le card del
+    // giorno senza gambe non aprono niente)
+    const prezzi = usePrezziAlMs({ sorgente: daSeguire.length > 0 ? sorgente : null, sport, selezioni: daSeguire });
     if (gambe.length === 0) return null;
     const perChiave = new Map<string, PrezzoScheda>();
     daSeguire.forEach((s, i) => {

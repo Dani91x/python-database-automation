@@ -40,10 +40,29 @@ describe('NomiPartita — gli stessi nomi in ogni scheda', () => {
         expect(img[1].getAttribute('src')).toContain('487');
     });
 
-    it('senza loghi: solo i nomi, nessun segnaposto che sembri un logo rotto', () => {
+    // B1bis (decisione del coordinatore, 30/09): lo spazio del logo e' SEMPRE
+    // riservato, invisibile, anche senza nessun logo, perche' in una lista mista
+    // i nomi restino allineati. Sostituisce l'asserzione B1 «nessuno spazio».
+    it('senza loghi: solo i nomi, con lo spazio del logo riservato e INVISIBILE (niente logo rotto)', () => {
         const { container } = render(<NomiPartita nome="Seychelles v Sri Lanka" />);
         expect(container.querySelectorAll('img')).toHaveLength(0);
-        expect(screen.queryAllByTestId('cr-logo-vuoto')).toHaveLength(0);
+        const vuoti = screen.getAllByTestId('cr-logo-vuoto');
+        expect(vuoti).toHaveLength(2);
+        for (const v of vuoti) {
+            expect(v.className).toMatch(/w-4/);
+            expect(v.className).not.toMatch(/border|bg-/);
+            expect(v.getAttribute('aria-hidden')).toBe('true');
+            expect(v.textContent).toBe('');
+        }
+    });
+
+    it('allineamento: con e senza loghi i nomi partono dallo stesso punto (stessa struttura di riga)', () => {
+        const { container: a } = render(<NomiPartita nome="Roma v Lazio" homeTeamId={497} awayTeamId={487} />);
+        const { container: b } = render(<NomiPartita nome="Seychelles v Sri Lanka" />);
+        const primo = (c: HTMLElement) => Array.from(c.querySelectorAll('[data-testid="cr-nome-squadra"]'))
+            .map((n) => n.previousElementSibling?.className ?? 'NESSUNO');
+        expect(primo(a).every((cls) => /w-4/.test(cls))).toBe(true);
+        expect(primo(b).every((cls) => /w-4/.test(cls))).toBe(true);
     });
 
     it('un logo solo (l’altro manca): l’altra riga ha lo spazio vuoto per restare allineata, senza bordo né fondo', () => {

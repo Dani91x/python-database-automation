@@ -83,7 +83,7 @@ describe('FasciaSoldiVeri - dati mancanti: mai una cifra inventata', () => {
     it('conto NON letto: nessuna cifra, "conto non letto", niente scarto, niente disponibile', () => {
         render(<FasciaSoldiVeri s={soldi({ riga: null })} />);
         const el = screen.getByTestId('cr-esposizione-conto');
-        expect(screen.getByTestId('cr-esposizione-conto-valore').textContent).toBe('—');
+        expect(screen.getByTestId('cr-esposizione-conto-valore').textContent).toBe('\u2014');
         expect(el.textContent).toMatch(/conto non letto/);
         expect(el.textContent).not.toMatch(/0,00/);
         expect(screen.queryByTestId('cr-scarto-conto-bot')).toBeNull();
@@ -98,7 +98,7 @@ describe('FasciaSoldiVeri - dati mancanti: mai una cifra inventata', () => {
 
     it('posizioni non ancora lette: rischio dei bot "-" e partite "-"', () => {
         render(<FasciaSoldiVeri s={soldi({ letti: false })} />);
-        expect(screen.getByTestId('cr-rischio-bot-valore').textContent).toBe('—');
+        expect(screen.getByTestId('cr-rischio-bot-valore').textContent).toBe('\u2014');
         expect(screen.getByTestId('cr-rischio-bot').textContent).toMatch(/posizioni non ancora lette/);
         expect(screen.getByTestId('cr-partite-posizione').textContent).toMatch(/posizioni non ancora lette/);
         expect(screen.getByTestId('cr-partite-posizione').textContent).not.toMatch(/\d+ partit/);
