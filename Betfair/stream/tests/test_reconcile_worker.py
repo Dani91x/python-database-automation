@@ -1243,3 +1243,96 @@ def test_external_balance_read_forces_next_settled_round(env, monkeypatch):
     clock["t"] += 20.1
     rw.run_account_sync_if_due(session)          # stessa firma, ma il segnale c'e'
     assert len(_chiamate_mercato(betting)) == 2
+
+
+# ---------------------------------------------------------------------------
+# 30/09 (reperto 23514 del coordinatore): gli ordini di un bot con la SUA
+# tabella (Mike/Omega/Safe) NON si riscrivono nello specchio: la riga
+# ``source='bot:mike'`` era RIFIUTATA dal CHECK betfair_live_orders_source_check.
+# Il finto e' il ``CurrentOrder`` VERO di betfairlightweight, costruito con le
+# chiavi camelCase di ``listCurrentOrders``.
+# ---------------------------------------------------------------------------
+def _current_order_vero(bet_id: str, strategy_ref: Optional[str]) -> Any:
+    from betfairlightweight.resources.bettingresources import CurrentOrder
+    return CurrentOrder(
+        betId=bet_id, averagePriceMatched=0.0, bspLiability=0.0, handicap=0.0,
+        marketId="1.250000001", orderType="LIMIT", persistenceType="LAPSE",
+        placedDate="2026-09-30T13:05:11.000Z", selectionId=47972,
+        side="LAY", sizeCancelled=0.0, sizeLapsed=0.0, sizeMatched=0.0,
+        sizeRemaining=2.0, sizeVoided=0.0, status="EXECUTABLE",
+        priceSize={"price": 1.5, "size": 2.0},
+        customerStrategyRef=strategy_ref,
+        customerOrderRef=(f"{strategy_ref}-t9" if strategy_ref else None),
+    )
+
+
+def test_sync_manual_pnl_porta_pnl_letto_at_istante_della_lettura(env, monkeypatch):
+    """30/09 (UI): ``pnl_letto_at`` = istante della LETTURA degli ordini
+    regolati (subito dopo la risposta REST), sia sul canale ``account`` sia in
+    ``pnl_reale_oggi``; stringa ISO UTC. Il tempo scorre fra lettura e invio:
+    la chiave deve portare quello della lettura."""
+    import Betfair.stream.local_channel as lc
+
+    published: List[Any] = []
+    monkeypatch.setattr(lc, "publish", lambda topic, payload: published.append((topic, dict(payload))))
+    import Betfair.stream.db as dbmod
+
+    ora = {"t": datetime(2026, 9, 30, 17, 59, 50, tzinfo=timezone.utc)}
+
+    class _Orologio(datetime):
+        @classmethod
+        def now(cls, tz=None):  # noqa: D401 - finto orologio del modulo
+            return ora["t"] if tz is None else ora["t"].astimezone(tz)
+
+    class _BettingCheLegge(_FakeBetting):
+        def list_cleared_orders(self, from_record=0, record_count=1000, **kw):
+            res = super().list_cleared_orders(from_record, record_count, **kw)
+            if kw.get("group_by") is None:          # la lettura per ORDINE
+                ora["t"] = datetime(2026, 9, 30, 18, 0, 0, tzinfo=timezone.utc)
+            return res
+
+    def _scrittura_lenta(**kw):
+        env["manual_pnl_writes"].append(dict(kw))
+        ora["t"] = datetime(2026, 9, 30, 18, 0, 7, tzinfo=timezone.utc)
+
+    monkeypatch.setattr(dbmod, "upsert_live_account_manual_pnl", _scrittura_lenta)
+    monkeypatch.setattr(rw, "datetime", _Orologio)
+    betting = _BettingCheLegge(cleared_pages=[[_cleared("90", profit=6.0)]])
+    rw._sync_manual_pnl(_session(betting=betting))
+    assert len(published) == 1
+    msg = published[0][1]
+    assert msg["pnl_letto_at"] == "2026-09-30T18:00:00+00:00"
+    assert msg["checked_at"] == "2026-09-30T18:00:07+00:00"      # invariato
+    assert msg["pnl_reale_oggi"]["pnl_letto_at"] == "2026-09-30T18:00:00+00:00"
+    assert env["pnl_reale_writes"][0]["pnl_letto_at"] == "2026-09-30T18:00:00+00:00"
+    assert datetime.fromisoformat(msg["pnl_letto_at"]).utcoffset().total_seconds() == 0
+
+
+@pytest.mark.parametrize("ref", ["mike", "omega", "safe"])
+def test_ordine_di_bot_con_tabella_non_scritto_nello_specchio(env, ref, caplog):
+    import logging as _lg
+    current = {"445036548091": _current_order_vero("445036548091", ref)}
+    sb = _FakeSb()
+    with caplog.at_level(_lg.DEBUG, logger=rw.logger.name):
+        externals = rw._reconcile_orders(sb, current, [])
+    assert sb.orders.upserts == []          # nessuna scrittura (prima: 23514)
+    assert externals == 0
+    assert not [m for m in _warns(env) if "445036548091" in m]
+    assert any("1 ordini dei bot con tabella propria" in r.getMessage()
+               and r.levelno == _lg.DEBUG for r in caplog.records)
+
+
+def test_ordine_del_sito_e_altri_ref_restano_come_prima(env):
+    """Il sito (nessun ref, o ref 'live' del terminale) entra ancora con
+    source='account'; un ref di bot SENZA tabella propria resta invariato."""
+    current = {
+        "1": _current_order_vero("1", None),
+        "2": _current_order_vero("2", "live"),
+        "3": _current_order_vero("3", "watchlist"),
+        "4": _current_order_vero("4", "mike"),
+    }
+    sb = _FakeSb()
+    externals = rw._reconcile_orders(sb, current, [])
+    scritti = {p["bet_id"]: p["source"] for (p, _oc) in sb.orders.upserts}
+    assert scritti == {"1": "account", "2": "account", "3": "bot:watchlist"}
+    assert externals == 2

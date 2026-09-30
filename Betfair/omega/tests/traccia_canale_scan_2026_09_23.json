@@ -432,6 +432,11 @@
      "realized_today_bot": 0.0,
      "reconciling_liability": 0.0,
      "stop_ferma_solo_aperture": true,
+     "stop_perdita": {
+      "chiave": "daily_loss_cap",
+      "scattato": false,
+      "soglia": 0.0
+     },
      "sveglia": null,
      "target_leg": 0.0,
      "target_match": 0.0,
@@ -564,6 +569,11 @@
      "realized_today_bot": 0.0,
      "reconciling_liability": 0.0,
      "stop_ferma_solo_aperture": true,
+     "stop_perdita": {
+      "chiave": "daily_loss_cap",
+      "scattato": false,
+      "soglia": 0.0
+     },
      "sveglia": null,
      "target_leg": 0.0,
      "target_match": 0.0,
@@ -696,6 +706,11 @@
      "realized_today_bot": 0.0,
      "reconciling_liability": 0.0,
      "stop_ferma_solo_aperture": true,
+     "stop_perdita": {
+      "chiave": "daily_loss_cap",
+      "scattato": false,
+      "soglia": 0.0
+     },
      "sveglia": null,
      "target_leg": 0.0,
      "target_match": 0.0,

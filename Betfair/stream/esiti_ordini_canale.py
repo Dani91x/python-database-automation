@@ -713,6 +713,12 @@ def _market_id_di(ordini_mercato: Any, ordini: list) -> Optional[str]:
     return None
 
 
+def _iso_ms(ms: int) -> str:
+    """Epoch in millisecondi -> ISO-8601 UTC al millisecondo con la ``Z``."""
+    dt = datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc)
+    return dt.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
 def payload_conto(ordini_mercato: Any, *, ricevuto_ms: int) -> Optional[Dict[str, Any]]:
     """Il messaggio ``conto`` per UN mercato (un ``CurrentOrders`` dello stream
     ordini). ``None`` se non si sa di che mercato si tratta."""
@@ -723,6 +729,11 @@ def payload_conto(ordini_mercato: Any, *, ricevuto_ms: int) -> Optional[Dict[str
     pt = getattr(ordini_mercato, "publish_time", None)
     return {"market_id": market_id, "ordini": ordini, "fonte": FONTE_CONTO,
             "ricevuto_ms": int(ricevuto_ms),
+            # 30/09 (UI), chiave ADDITIVA: l'istante in cui abbiamo LETTO gli
+            # ordini del conto (= ``ricevuto_ms``, arrivo del messaggio dello
+            # stream ordini; la pubblicazione segue nella stessa chiamata),
+            # ISO-8601 UTC al millisecondo con la ``Z``
+            "pnl_letto_at": _iso_ms(int(ricevuto_ms)),
             "publish_time_ms": (int(pt) if isinstance(pt, (int, float))
                                 and not isinstance(pt, bool) else None),
             "snap": bool(getattr(ordini_mercato, "streaming_snap", False))}

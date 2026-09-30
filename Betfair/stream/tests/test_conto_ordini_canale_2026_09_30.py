@@ -288,5 +288,38 @@ def test_il_client_esiti_di_serie_resta_sul_topic_order():
     assert c.incassa(json.dumps({"t": "conto", "d": {"market_id": "1.1", "ordini": []}})) is False
 
 
+# ===========================================================================
+# 30/09 sera (backend per la UI): ``pnl_letto_at`` sul topic ``conto``
+# ===========================================================================
+def test_payload_conto_porta_pnl_letto_at_iso_utc_uguale_a_ricevuto_ms():
+    """Il payload VERO (CurrentOrders della cache dello stream) porta
+    ``pnl_letto_at``: ISO-8601 UTC al millisecondo con la ``Z``, lo STESSO
+    istante di ``ricevuto_ms`` (la lettura), non il publishTime di Betfair."""
+    from datetime import datetime, timezone
+    import re
+
+    co = _ordini_dello_stream(_chiusura_dal_sito())
+    ric = 1_759_255_768_231            # 2025-09-30T18:09:28.231Z
+    p = EO.payload_conto(co, ricevuto_ms=ric)
+    assert p["pnl_letto_at"] == "2025-09-30T18:09:28.231Z"
+    assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z", p["pnl_letto_at"])
+    letto = datetime.fromisoformat(p["pnl_letto_at"].replace("Z", "+00:00"))
+    assert letto.tzinfo is not None and letto.utcoffset() == timezone.utc.utcoffset(None)
+    assert int(letto.timestamp() * 1000) == p["ricevuto_ms"] == ric
+    assert p["publish_time_ms"] == PT       # il tempo di Betfair resta a parte
+    # le chiavi di prima ci sono tutte (chiave ADDITIVA)
+    assert {"market_id", "ordini", "fonte", "ricevuto_ms", "publish_time_ms",
+            "snap"} <= set(p)
+    json.dumps(p)
+
+
+def test_la_memoria_conto_accetta_il_payload_con_pnl_letto_at():
+    """Il consumatore esistente (``MemoriaConto``, usato da Mike) non cambia."""
+    m = EO.MemoriaConto()
+    p = EO.payload_conto(_ordini_dello_stream(_chiusura_dal_sito()), ricevuto_ms=PT + 5)
+    assert m.ricevi(p) is True
+    assert m.mercato(MERCATO)["ricevuto_ms"] == PT + 5
+
+
 if __name__ == "__main__":  # pragma: no cover
     pytest.main([__file__, "-q"])

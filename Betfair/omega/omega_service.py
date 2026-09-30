@@ -7545,6 +7545,23 @@ def _cadenza_battito(params: Any) -> float:
     return round(max(1.0, passo), 1)
 
 
+def _stop_perdita(params: dict[str, Any], aggregati_bot: dict[str, Any],
+                  legs_engine: bool) -> dict[str, Any]:
+    """30/09 (UI), chiave ADDITIVA ``stats.stop_perdita``: il tetto di PERDITA
+    giornaliera che il bot usa DAVVERO, con la stessa regola delle aperture
+    (``scan_and_place_legs``: ``daily_loss_cap``, in V3 ``v3_daily_loss_cap``;
+    ``scan_and_place`` v1: ``daily_loss_cap``) e lo stesso R
+    (``E.realized_effective`` dei numeri DEL BOT). ``scattato`` = oggi il R e'
+    sceso fino a ``-soglia`` (soglia > 0): le aperture sono ferme. Solo
+    lettura: nessuna decisione passa di qui."""
+    chiave = "daily_loss_cap"
+    if legs_engine and int(params.get("strategy_version") or 2) >= 3:
+        chiave = "v3_daily_loss_cap"
+    soglia = float(params.get(chiave) or 0.0)
+    scattato = soglia > 0 and E.realized_effective(aggregati_bot) <= -soglia
+    return {"soglia": soglia, "chiave": chiave, "scattato": bool(scattato)}
+
+
 def _idle_stats(db, control: dict[str, Any], now: datetime) -> dict[str, Any]:
     """``stats`` da scrivere a bot FERMO (AUDIT 11/09 L-03).
 
@@ -7557,15 +7574,24 @@ def _idle_stats(db, control: dict[str, Any], now: datetime) -> dict[str, Any]:
     prev = dict(control.get("stats") or {})
     goal = float(control.get("daily_goal") or omega_config.DEFAULT_DAILY_GOAL)
     agg: dict[str, Any] = {}
+    agg_bot: Optional[dict[str, Any]] = None
     try:
         # §18: stessa RPC, stessa cache del ciclo attivo. A bot fermo non si apre
         # niente: questi numeri servono solo a non far mentire la pagina.
         # a bot fermo la pagina mostra i TOTALI DI CONTO (il primo della coppia):
         # il trader vuole vedere tutto quello che c'e', comprese le sue manuali
-        agg = dict(_aggregati_cached(db, E.day_start_utc(now), now.timestamp(),
-                                     mode=str(control.get("mode") or "paper"))[0] or {})
+        coppia = _aggregati_cached(db, E.day_start_utc(now), now.timestamp(),
+                                   mode=str(control.get("mode") or "paper"))
+        agg = dict(coppia[0] or {})
+        agg_bot = dict(coppia[1] or {})
     except Exception as ex:  # noqa: BLE001 — si tengono i valori precedenti
         logger.debug("[omega] aggregati a bot fermo KO: %s", str(ex)[:100])
+    # 30/09 (UI): il freno di perdita anche a bot fermo, con gli ultimi
+    # parametri del ciclo; senza parametri o aggregati resta il precedente
+    extra_stop: dict[str, Any] = {}
+    if _ULTIMI_PARAMS is not None and agg_bot is not None:
+        extra_stop["stop_perdita"] = _stop_perdita(
+            _ULTIMI_PARAMS, agg_bot, str(_ULTIMI_PARAMS.get("engine", "legs")) == "legs")
     def _v(key: str, default: Any = 0) -> Any:
         return agg.get(key, prev.get(key, default))
     realized_today = float(_v("realized_today", 0.0) or 0.0)
@@ -7601,6 +7627,7 @@ def _idle_stats(db, control: dict[str, Any], now: datetime) -> dict[str, Any]:
         "live_now": int(_v("live_now", _v("matches_open")) or 0),
         "goal": goal,
         "goal_pct": round(min(realized_today / goal * 100.0, 100.0), 1) if goal > 0 else 0.0,
+        **extra_stop,
         "last_cycle": now.isoformat(),
     })
 
@@ -8183,6 +8210,8 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
         # chiusure manuali e missioni continuano anche a bot fermo (vedi il
         # ramo `status != "running"` di `run_once`). Il pulsante deve dirlo.
         "stop_ferma_solo_aperture": True,
+        # 30/09 (UI), chiave ADDITIVA: il freno di perdita giornaliera
+        "stop_perdita": _stop_perdita(params, agg_bot, legs_engine),
         "last_cycle": now.isoformat(),
     }
     # 23/09: da dove sono arrivate le righe del feed di QUESTO giro (solo a

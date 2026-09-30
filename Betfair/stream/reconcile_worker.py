@@ -345,14 +345,35 @@ def _account_order_row(order: Any) -> Dict[str, Any]:
     }
 
 
+#: 30/09: i ``customerStrategyRef`` dei bot che hanno la LORO tabella
+#: (``Betfair/mike/config.py`` "mike", ``Betfair/omega/omega_config.py``
+#: "omega", ``Betfair/safe_strategy/bot_service.py`` SAFE_STRATEGY_REF "safe").
+_REF_BOT_CON_TABELLA = frozenset({"mike", "omega", "safe"})
+
+
+def _ref_bot_con_tabella(order: Any) -> bool:
+    csr = low._val(order, "customer_strategy_ref")
+    return bool(csr) and str(csr).strip().lower() in _REF_BOT_CON_TABELLA
+
+
 def _reconcile_orders(sb: Any, current: Dict[str, Any], mirror: List[Dict[str, Any]]) -> int:
     """Confronto conto ↔ specchio. Ritorna il numero di ordini ESTERNI trovati."""
     by_bet = {str(r["bet_id"]): r for r in mirror if r.get("bet_id")}
 
     # b) ordini ESTERNI: sul conto ma NON nello specchio → entrano nello specchio.
     externals = 0
+    saltati_bot = 0
     for bet_id, order in current.items():
         if bet_id in by_bet:
+            continue
+        # 30/09 (reperto 23514 del coordinatore): un ordine piazzato via REST
+        # da un bot che ha la SUA tabella (Mike/Omega/Safe) NON si copia nello
+        # specchio: la riga ``source='bot:<ref>'`` e' RIFIUTATA dal CHECK
+        # ``betfair_live_orders_source_check`` (errore 23514 a ogni giro) e,
+        # se entrasse, il terminale manuale la mostrerebbe come «esterna».
+        # Il bot ha gia' la sua riga nella sua tabella: qui solo un contatore.
+        if _ref_bot_con_tabella(order):
+            saltati_bot += 1
             continue
         row = _account_order_row(order)
         try:
@@ -369,6 +390,11 @@ def _reconcile_orders(sb: Any, current: Dict[str, Any], mirror: List[Dict[str, A
             f"ext:{bet_id}",
             f"ordine ESTERNO sul conto (dal sito?): bet {bet_id} "
             f"mercato {low._val(order, 'market_id')} — aggiunto allo specchio.",
+        )
+    if saltati_bot:
+        logger.debug(
+            "[reconcile] %d ordini dei bot con tabella propria (%s) non copiati nello specchio",
+            saltati_bot, ",".join(sorted(_REF_BOT_CON_TABELLA)),
         )
 
     # c) DIVERGENZE: bet in entrambi ma con fill/status diversi → il CONTO vince.
@@ -1001,6 +1027,9 @@ def _sync_manual_pnl(session: Any, *, max_eta_s: float = _MERCATI_CACHE_FORZATO_
     except Exception as ex:  # noqa: BLE001 - REST KO: i totali restano quelli di prima
         logger.warning("[reconcile] listClearedOrders (ordini) KO: %s", str(ex)[:200])
         return
+    # 30/09 (UI), chiave ADDITIVA: l'istante della LETTURA degli ordini
+    # regolati del conto (subito dopo la risposta REST), non quello d'invio
+    pnl_letto_at = datetime.now(timezone.utc).isoformat()
     try:
         _proprietari(_client_db(), orders, day)
     except Exception as ex:  # noqa: BLE001 - DB KO: mai un "sito" dedotto da un guasto
@@ -1039,7 +1068,7 @@ def _sync_manual_pnl(session: Any, *, max_eta_s: float = _MERCATI_CACHE_FORZATO_
                 "applicata?): %s", str(ex)[:200],
             )
     letto_at = datetime.now(timezone.utc).isoformat()
-    reale = dict(totali, letto_at=letto_at)
+    reale = dict(totali, letto_at=letto_at, pnl_letto_at=pnl_letto_at)
     reale_sig = (day, totali["netto"], totali["ordini"], totali["senza_commissione"],
                  tuple(totali["bet_ids"]),
                  tuple((f, v["netto"], v["ordini"]) for f, v in sorted(totali["per_fonte"].items())))
@@ -1073,6 +1102,7 @@ def _sync_manual_pnl(session: Any, *, max_eta_s: float = _MERCATI_CACHE_FORZATO_
                 "manual_app_pnl_orders": n_app,
                 "pnl_reale_oggi": reale,
                 "checked_at": letto_at,
+                "pnl_letto_at": pnl_letto_at,
             },
         )
     except Exception:  # noqa: BLE001 - canale opzionale, mai bloccare il dato
