@@ -1,0 +1,172 @@
+diff --git a/frontend/src/components/controlroom/MarchioSoldi.test.tsx b/frontend/src/components/controlroom/MarchioSoldi.test.tsx
+new file mode 100644
+index 0000000..4b7e8f5
+--- /dev/null
++++ b/frontend/src/components/controlroom/MarchioSoldi.test.tsx
+@@ -0,0 +1,68 @@
++// ============================================================================
++// MarchioSoldi.test.tsx - 30/09, P1_MARCHIO_FONTE: etichetta della fonte dei soldi.
++// ============================================================================
++import { describe, it, expect } from 'vitest';
++import { render, screen } from '@testing-library/react';
++import { MarchioSoldi } from './MarchioSoldi';
++import { testoEta, type FonteSoldi } from '@/lib/fonteSoldi';
++
++const CASI: Array<[FonteSoldi, string]> = [
++    ['conto', 'CONTO BETFAIR'],
++    ['bot', 'BOT'],
++    ['prova', 'PROVA'],
++    ['pagina', 'STIMA'],
++];
++
++describe('MarchioSoldi', () => {
++    it.each(CASI)('fonte %s: etichetta e data-fonte, nessuna età', (fonte, label) => {
++        render(<MarchioSoldi fonte={fonte} />);
++        const el = screen.getByTestId('marchio-soldi');
++        expect(el.getAttribute('data-fonte')).toBe(fonte);
++        expect(el.textContent).toBe(label);
++        expect(screen.queryByTestId('marchio-soldi-eta')).toBeNull();
++    });
++
++    it('età presente: «CONTO BETFAIR · 3 s fa», non arancione', () => {
++        render(<MarchioSoldi fonte="conto" etaS={3} />);
++        expect(screen.getByTestId('marchio-soldi-eta').textContent).toBe('· 3 s fa');
++        expect(screen.getByTestId('marchio-soldi-eta').className).not.toContain('orange');
++    });
++
++    it('età 0 è un\'età vera: «0 s fa», non ignota', () => {
++        render(<MarchioSoldi fonte="bot" etaS={0} />);
++        const eta = screen.getByTestId('marchio-soldi-eta');
++        expect(eta.textContent).toBe('· 0 s fa');
++        expect(eta.className).not.toContain('orange');
++    });
++
++    it('età null: «età ignota» in arancione, mai «0 s»', () => {
++        render(<MarchioSoldi fonte="conto" etaS={null} />);
++        const eta = screen.getByTestId('marchio-soldi-eta');
++        expect(eta.textContent).toContain('età ignota');
++        expect(eta.textContent).not.toContain('0 s');
++        expect(eta.className).toContain('text-orange-400');
++    });
++
++    it('dettaglio nel title, dopo il testo della fonte; testId personalizzato', () => {
++        render(<MarchioSoldi fonte="prova" dettaglio="ultimo ciclo 12:00" testId="x" />);
++        const t = screen.getByTestId('x').getAttribute('title') ?? '';
++        expect(t).toContain('simulato (paper)');
++        expect(t).toContain('ultimo ciclo 12:00');
++    });
++
++    it('title = solo il testo della fonte senza dettaglio', () => {
++        render(<MarchioSoldi fonte="conto" />);
++        expect(screen.getByTestId('marchio-soldi').getAttribute('title'))
++            .toBe('cifra letta dal conto Betfair: comprende tutti gli ordini (bot, app e sito)');
++    });
++});
++
++describe('testoEta', () => {
++    it('undefined = null; null/NaN/negativa = ignota; numero = fmtAge + fa', () => {
++        expect(testoEta(undefined)).toBeNull();
++        expect(testoEta(null)).toBe('età ignota');
++        expect(testoEta(Number.NaN)).toBe('età ignota');
++        expect(testoEta(-1)).toBe('età ignota');
++        expect(testoEta(125)).toBe('2 min fa');
++    });
++});
+diff --git a/frontend/src/components/controlroom/MarchioSoldi.tsx b/frontend/src/components/controlroom/MarchioSoldi.tsx
+new file mode 100644
+index 0000000..c4e1629
+--- /dev/null
++++ b/frontend/src/components/controlroom/MarchioSoldi.tsx
+@@ -0,0 +1,44 @@
++// ============================================================================
++// MarchioSoldi.tsx - 30/09, P1_MARCHIO_FONTE. Etichetta in linea che dice DA
++// DOVE viene una cifra in euro: «CONTO BETFAIR · 3 s fa». Un'età che non si
++// conosce (null) è scritta «età ignota» in arancione: non è zero.
++// ============================================================================
++import { FONTE_SOLDI, testoEta, type FonteSoldi } from '@/lib/fonteSoldi';
++
++export function MarchioSoldi({
++    fonte, etaS, dettaglio, testId, className = '',
++}: {
++    fonte: FonteSoldi;
++    /** undefined = nessuna età mostrata; null = età ignota (in arancione) */
++    etaS?: number | null;
++    /** si aggiunge al tooltip della fonte */
++    dettaglio?: string;
++    testId?: string;
++    className?: string;
++}) {
++    const m = FONTE_SOLDI[fonte];
++    const eta = testoEta(etaS);
++    const ignota = etaS !== undefined && (etaS === null || !Number.isFinite(etaS) || etaS < 0);
++    return (
++        <span
++            data-testid={testId ?? 'marchio-soldi'}
++            data-fonte={fonte}
++            className={[
++                'inline-flex items-center gap-1 rounded border px-1 py-0 font-heading',
++                'text-[9px] font-medium uppercase tracking-wide whitespace-nowrap',
++                m.cls,
++                className,
++            ].filter(Boolean).join(' ')}
++            title={dettaglio ? `${m.title} — ${dettaglio}` : m.title}
++        >
++            <span>{m.label}</span>
++            {eta !== null && (
++                <span data-testid="marchio-soldi-eta" className={ignota ? 'text-orange-400' : ''}>
++                    {`· ${eta}`}
++                </span>
++            )}
++        </span>
++    );
++}
++
++export default MarchioSoldi;
+diff --git a/frontend/src/lib/fonteSoldi.ts b/frontend/src/lib/fonteSoldi.ts
+new file mode 100644
+index 0000000..97f753b
+--- /dev/null
++++ b/frontend/src/lib/fonteSoldi.ts
+@@ -0,0 +1,42 @@
++// ============================================================================
++// fonteSoldi.ts - 30/09, P1_MARCHIO_FONTE. Ogni cifra in euro a schermo porta
++// l'etichetta della sua FONTE, con la stessa grammatica per tutti i bot:
++//   conto  = letta dal conto Betfair (bot + app + sito)
++//   bot    = attribuita al bot dalle sue righe o dal suo servizio
++//   prova  = simulata (paper), mai sommata ai soldi veri
++//   pagina = stima calcolata dalla pagina ai prezzi di adesso
++// Puro, niente React. Nessun rosso: il rosso e' del LIVE e delle perdite.
++// ============================================================================
++import { fmtAge } from '@/lib/format';
++
++export type FonteSoldi = 'conto' | 'bot' | 'prova' | 'pagina';
++
++export const FONTE_SOLDI: Record<FonteSoldi, { label: string; title: string; cls: string }> = {
++    conto: {
++        label: 'CONTO BETFAIR',
++        title: 'cifra letta dal conto Betfair: comprende tutti gli ordini (bot, app e sito)',
++        cls: 'bg-white/10 text-slate-100 border-white/25',
++    },
++    bot: {
++        label: 'BOT',
++        title: 'cifra attribuita al bot dalle sue righe o dal suo servizio: non comprende gli ordini fatti fuori dal bot',
++        cls: 'bg-white/5 text-slate-400 border-white/10',
++    },
++    prova: {
++        label: 'PROVA',
++        title: 'simulato (paper): non sono soldi veri e non si somma mai ai soldi veri',
++        cls: 'bg-white/5 text-slate-300 border-white/15',
++    },
++    pagina: {
++        label: 'STIMA',
++        title: "stima calcolata dalla pagina ai prezzi di adesso: non è un dato di Betfair",
++        cls: 'bg-amber-500/10 text-amber-300/80 border-amber-500/25',
++    },
++};
++
++/** `undefined` = nessuna età (null); `null`/NaN/negativa = «età ignota»; altrimenti «<età> fa». */
++export function testoEta(etaS: number | null | undefined): string | null {
++    if (etaS === undefined) return null;
++    if (etaS === null || !Number.isFinite(etaS) || etaS < 0) return 'età ignota';
++    return `${fmtAge(etaS)} fa`;
++}
