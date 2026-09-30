@@ -507,6 +507,18 @@ def _crea_strategia():
             # flumine con un ref che non e' del bot.
             self.chiuso_fuori_app = bool(kw.pop("chiuso_fuori_app", False))
             self.chiusura_utente: Optional[Dict[str, Any]] = None
+            # 30/09: la chiusura arriva ANCHE dal canale del conto, come in
+            # produzione (runner LIVE -> stream ordini -> topic ``conto`` ->
+            # client di Mike). Memoria e client VERI, senza socket.
+            self._client_conto: Optional[Any] = None
+            self._giro_dopo_conto: Optional[int] = None
+            # solo in LIVE (coda): in paper la posizione di conto non si legge
+            if self.chiuso_fuori_app and modo_del_banco() == "live":
+                from ...stream import esiti_ordini_canale as _EO
+
+                memoria = _EO.MemoriaConto()
+                S.installa_conto_canale(memoria)
+                self._client_conto = _EO.ClientEsiti(memoria, topic=_EO.TOPIC_CONTO)
             # P4 (29/09, M8.3): il freno d'emergenza acceso durante la copertura
             self.fermo_copertura = bool(kw.pop("fermo_copertura", False))
             self.fermo: Dict[str, Any] = {}
@@ -661,6 +673,14 @@ def _crea_strategia():
 
         # ------------------------------------------------------------ Mike
         def _un_giro(self, pt_ms: int) -> None:
+            # 30/09: il PRIMO giro del servizio dopo che la chiusura dell'utente
+            # e' arrivata sul canale del conto (il metro della latenza nel banco:
+            # qui il giro lo danno i book delle linee di Mike, in produzione il
+            # timer del servizio)
+            if (self.chiusura_utente is not None and self.chiusura_utente.get("sul_canale")
+                    and self._giro_dopo_conto is None
+                    and int(pt_ms) > int(self.chiusura_utente["ms"])):
+                self._giro_dopo_conto = int(pt_ms)
             self._installa_attesa_col_mercato()
             # 1) i punteggi fino a questo istante, dal record IPS grezzo e dal
             #    parser vero (`Scanner.apply_score_state`)
@@ -1161,8 +1181,43 @@ def _crea_strategia():
                                     "posizione_del_bot": round(netto, 2),
                                     "back_dell_utente": round(suo_abbinato, 2),
                                     "lay_di_chiusura_abbinata": round(abb, 2)}
+            # 30/09: il runner LIVE riceve dallo stream ordini gli ordini del
+            # conto su quel mercato e li pubblica sul canale; Mike li incassa
+            self.chiusura_utente["sul_canale"] = self._pubblica_conto(market_id, pt_ms)
             self.db.log("replay_chiusura_fuori_app", dict(self.chiusura_utente),
                         self.event_id)
+
+        def _pubblica_conto(self, market_id: str, pt_ms: int) -> int:
+            """30/09 - Cio' che fa il runner LIVE quando lo stream ordini porta un
+            cambio del conto: la cache VERA dello stream (``OrderBookCache`` di
+            ``betfairlightweight``) riceve gli ordini del mercato nella grafia
+            di Betfair, il produttore VERO (``pubblica_conto_da_evento``) ne fa
+            il messaggio ``conto``, serializzato come ``local_channel``, e il
+            client VERO di Mike lo incassa. Torna quanti messaggi sono entrati."""
+            if self._client_conto is None:
+                return 0
+            import json
+            from types import SimpleNamespace
+
+            from betfairlightweight.streaming.cache import OrderBookCache
+
+            from ...stream import esiti_ordini_canale as _EO
+
+            per_sel = self.mercato.ordini_conto_come_stream(market_id, int(pt_ms))
+            if not per_sel:
+                return 0
+            cache = OrderBookCache(str(market_id), int(pt_ms), False)
+            cache.update_cache({"id": str(market_id),
+                                "orc": [{"id": sid, "uo": uo} for sid, uo in per_sel.items()]},
+                               int(pt_ms))
+            co = cache.create_resource(0)
+            co.client = SimpleNamespace(paper_trade=False)     # il client REALE
+            testi: List[str] = []
+            _EO.pubblica_conto_da_evento(
+                SimpleNamespace(event=[co]),
+                lambda t, d: testi.append(json.dumps({"t": t, "d": d}, default=str)),
+                adesso_ms=int(pt_ms))
+            return sum(1 for t in testi if self._client_conto.incassa(t))
 
         def coda_dopo_la_registrazione(self) -> int:
             """30/09 (ondata 2, revisione A6): IL SERVIZIO NON SI FERMA CON LO
@@ -1241,6 +1296,9 @@ def _certifica_evento(event_id: str, *, data_dir: str,
     # Misurato il 16/09 sera: `chiuso-fuori-app` dentro `--scenari tutti
     # --worker 3` non leggeva mai la posizione di conto e dava R1/R3 a zero.
     S.azzera_cache_di_processo()
+    # 30/09: il canale del conto lo monta SOLO lo scenario che lo esercita
+    # (``chiuso-fuori-app``); nessun replay lo eredita da quello prima.
+    S.installa_conto_canale(None)
     par = dict(params or C.merge_params(None))
     raw = os.path.join(data_dir, str(event_id), f"{event_id}.raw.jsonl")
     ref = CERT.Referto(event_id=str(event_id))
@@ -1501,6 +1559,34 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                 f"scenario chiuso-fuori-app: ordini VERI dell'utente su flumine con un ref "
                 f"non di Mike ({strategia.chiusura_utente}); il controllo R3 «se ha chiuso "
                 f"l'utente il bot non fa piu' niente» e' stato sollecitato {quante} volte")
+            # 30/09: la chiusura e' arrivata ANCHE dal canale del conto (stream
+            # ordini del runner LIVE): quando e da dove Mike l'ha vista
+            chiusi = [p_ for k, p_, _e in strategia.db.attivita if k == "chiuso_dall_utente"]
+            visto = chiusi[0] if chiusi else {}
+            lat = (visto.get("latenza_ms") or {}).get("dal_runner")
+            sul_canale = strategia.chiusura_utente.get("sul_canale")
+            giro = strategia._giro_dopo_conto
+            attesa_giro = (int(giro) - int(strategia.chiusura_utente["ms"])
+                           if giro is not None else None)
+            out.note.append(
+                f"scenario chiuso-fuori-app, canale del conto: messaggi {sul_canale} | "
+                f"verdetto '{visto.get('dove')}' | latenza dallo stream al verdetto {lat} "
+                f"ms, di cui {attesa_giro} ms di attesa del primo giro del servizio (nel "
+                f"banco il giro lo danno i book delle linee di Mike, cadenza minima "
+                f"{int(strategia.ogni_ms)} ms) | REST a cadenza "
+                f"{float(strategia.params.get('reconcile_every_s') or 0.0):.0f} s")
+            # il verdetto deve arrivare AL PRIMO giro dopo il canale: la sola
+            # differenza ammessa e' il tempo delle due letture REST di conferma
+            if sul_canale and (
+                    visto.get("dove") != "fuori dall'app (stream ordini)"
+                    or not isinstance(lat, (int, float)) or attesa_giro is None
+                    or lat > attesa_giro + 1000):
+                out.violazioni.append(CERT.Violazione(
+                    "R3-CANALE", "la chiusura dell'utente arrivata dallo stream ordini si "
+                                 "vede al primo giro del servizio, confermata dal conto "
+                                 "(30/09)",
+                    f"verdetto {visto.get('dove')!r} latenza {lat} ms, primo giro dopo "
+                    f"il canale a {attesa_giro} ms", "LIVE"))
     if strategia.fermo_copertura:
         # P4 (M8.3): che cosa e' successo alla copertura durante e dopo il fermo
         ferme = sum(1 for k, p_, _e in strategia.db.attivita

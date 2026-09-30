@@ -969,6 +969,47 @@ class MercatoFlumine:
         sid = int(selection_id)
         return [r for r in righe if int(r.get("selection_id") or -1) == sid]
 
+    def ordini_conto_come_stream(self, market_id: str, ora_ms: int) -> Dict[int, List[Dict[str, Any]]]:
+        """30/09 - GLI ORDINI DEL CONTO sul mercato (bot E utente) come li porta
+        lo STREAM ORDINI di Betfair: per selezione, la lista ``uo`` con le
+        abbreviazioni della Exchange Stream API (``id p s side status pt ot pd md
+        avp sm sr sl sc sv rfo rfs``), quelle che la cache VERA di
+        ``betfairlightweight`` (``OrderBookCache``) sa leggere. Serve al banco
+        per fare cio' che fa il runner LIVE: pubblicare il conto sul canale
+        (``esiti_ordini_canale.pubblica_conto_da_evento``).
+
+        Dall'ordine flumine: prezzo e size chiesti, lato, stato (vivo ``E``,
+        altrimenti ``EC``), abbinato/residuo/annullato/scaduto/annullato dal
+        mercato, ref. ``pd`` e' l'ora del replay (``ora_ms``: flumine tiene
+        l'ora di parete, non quella di mercato) e ``md`` non c'e': Mike non li
+        legge. ``rfs`` e' ``None`` per tutti: il banco non conosce il
+        ``customerStrategyRef`` (Mike riconosce i suoi per ``rfo``)."""
+        _pt = {"LAPSE": "L", "PERSIST": "P", "MARKET_ON_CLOSE": "MOC"}
+        per_sel: Dict[int, List[Dict[str, Any]]] = {}
+        for cassetto in (self.ordini, self.ordini_utente):
+            for ref, o in cassetto.items():
+                if str(getattr(o, "market_id", "")) != str(market_id):
+                    continue
+                sim = getattr(o, "simulated", None)
+                ot = getattr(o, "order_type", None)
+                persistenza = str(getattr(ot, "persistence_type", None) or "LAPSE").upper()
+                per_sel.setdefault(int(getattr(o, "selection_id", 0) or 0), []).append({
+                    "id": str(getattr(o, "bet_id", None) or getattr(o, "id", "")),
+                    "p": float(getattr(ot, "price", 0.0) or 0.0),
+                    "s": float(getattr(ot, "size", 0.0) or 0.0),
+                    "side": "B" if str(getattr(o, "side", "")).upper() == "BACK" else "L",
+                    "status": "E" if self._vivo(o) else "EC",
+                    "pt": _pt.get(persistenza, "L"), "ot": "L", "pd": int(ora_ms),
+                    "md": None,
+                    "avp": getattr(sim, "average_price_matched", None) or None,
+                    "sm": float(getattr(sim, "size_matched", 0.0) or 0.0),
+                    "sr": float(getattr(o, "size_remaining", 0.0) or 0.0),
+                    "sl": float(getattr(o, "size_lapsed", 0.0) or 0.0),
+                    "sc": float(getattr(o, "size_cancelled", 0.0) or 0.0),
+                    "sv": float(getattr(o, "size_voided", 0.0) or 0.0),
+                    "rfo": str(ref), "rfs": None})
+        return per_sel
+
     def place_order_utente(self, *, market_id: str, selection_id: int, price: float,
                            size: float, side: str = "lay",
                            customer_ref: str = "utente-1") -> Optional[Any]:

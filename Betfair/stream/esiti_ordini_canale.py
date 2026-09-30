@@ -55,6 +55,7 @@ import json
 import logging
 import os
 import threading
+import time
 from contextlib import nullcontext
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Iterable, Optional, Tuple
@@ -68,6 +69,9 @@ __all__ = [
     "PERCORSO", "STATI_TERMINALI", "MemoriaEsiti", "ClientEsiti", "EsitiOrdini",
     "DbConSpecchioDalCanale", "porta", "terminale", "istanza", "attiva",
     "ricorda_richiesta",
+    # 30/09: la posizione di conto dallo stream ordini del runner LIVE
+    "TOPIC_CONTO", "PERCORSO_CONTO", "FONTE_CONTO", "ordine_del_conto", "payload_conto",
+    "pubblica_conto_da_evento", "osserva_conto_su_flumine", "MemoriaConto",
 ]
 
 #: L'interruttore. Assente = SPENTO, sempre.
@@ -79,7 +83,8 @@ PORTA = 47331
 #: Il topic che il runner gia' pubblica (``db.upsert_live_order``).
 TOPIC = "order"
 #: Il percorso da LETTORE: solo ``order``, mai comandi, non conta come desktop.
-PERCORSO = "/lettore/" + TOPIC
+_PREFISSO_LETTORE = "/lettore/"
+PERCORSO = _PREFISSO_LETTORE + TOPIC
 #: Gli stati TERMINALI di un ordine flumine. Gli stessi di
 #: ``omega_service._FLUMINE_TERMINAL``: un test di contratto verifica che non
 #: divergano (una stringa scritta due volte diverge sempre, prima o poi).
@@ -230,11 +235,15 @@ class ClientEsiti:
     """Client LETTORE del canale del runner (``/lettore/order``), in un thread
     daemon. Non solleva mai verso il bot; riconnette con attesa crescente."""
 
-    def __init__(self, memoria: MemoriaEsiti, *,
+    def __init__(self, memoria: Any, *,
                  su_terminale: Optional[Callable[[Dict[str, Any]], None]] = None,
                  porta_ws: Optional[int] = None, host: str = "127.0.0.1",
-                 connetti: Optional[Callable[[str], Any]] = None) -> None:
+                 connetti: Optional[Callable[[str], Any]] = None,
+                 topic: str = TOPIC) -> None:
         self.memoria = memoria
+        # 30/09: lo stesso client legge anche la POSIZIONE DI CONTO (``conto``,
+        # Mike). Di serie ``order``: Omega e Safe non cambiano di una riga.
+        self.topic = str(topic)
         self._su_terminale = su_terminale
         self.porta = int(porta_ws) if porta_ws is not None else porta()
         self.host = host
@@ -250,13 +259,14 @@ class ClientEsiti:
 
     @property
     def url(self) -> str:
-        return "ws://%s:%d%s" % (self.host, self.porta, PERCORSO)
+        return "ws://%s:%d%s%s" % (self.host, self.porta, _PREFISSO_LETTORE, self.topic)
 
     def avvia(self) -> None:
         if self._thread is not None:
             return
         self._thread = threading.Thread(target=self._gira, daemon=True,
-                                        name="esiti-ordini-ws")
+                                        name=("esiti-ordini-ws" if self.topic == TOPIC
+                                              else "conto-ordini-ws"))
         self._thread.start()
 
     def ferma(self) -> None:
@@ -307,7 +317,7 @@ class ClientEsiti:
             msg = json.loads(grezzo) if isinstance(grezzo, (str, bytes, bytearray)) else grezzo
         except (ValueError, TypeError):
             return False
-        if not isinstance(msg, dict) or msg.get("t") != TOPIC:
+        if not isinstance(msg, dict) or msg.get("t") != self.topic:
             return False                    # hello e altro: non sono righe
         riga = msg.get("d")
         if not self.memoria.ricevi(riga):
@@ -613,3 +623,217 @@ def ciclo() -> Any:
     vuoto: a interruttore spento ``run_once`` gira come oggi."""
     e = attiva()
     return e.ciclo() if e is not None else nullcontext()
+
+
+# ===========================================================================
+# LA POSIZIONE DI CONTO DALLO STREAM ORDINI (30/09, ordine dell'utente)
+# ===========================================================================
+# Fatto del 30/09 (live, 36130526): l'utente chiude la posizione di Mike dal
+# sito Betfair verso le 15:30:45, Mike se ne accorge alle 15:32:13. Mike
+# rilegge la posizione di conto via REST al piu' ogni ``reconcile_every_s``
+# (30 s) dentro il suo giro. Eppure il runner LIVE e' iscritto allo STREAM
+# ORDINI del conto SENZA filtro di strategia (flumine
+# ``streams/orderstream.py``: ``customer_strategy_refs=None`` perche'
+# ``flumine.config.customer_strategy_ref`` e' ``None``): riceve al millisecondo
+# OGNI ordine del conto, anche quelli piazzati a mano dal sito. Poi pero'
+# flumine li SCARTA (``order/process.py`` ``process_current_orders``: salta gli
+# ordini senza ``customer_order_ref`` e quelli il cui ref non e' di una sua
+# strategia, "Strategy not available to create order") e nessuna strategia li
+# vede in ``process_orders``.
+#
+# Qui il runner li PUBBLICA sul canale locale (topic ``conto``, lettori su
+# ``/lettore/conto``): per ogni mercato toccato dall'evento dello stream, TUTTI
+# gli ordini del conto che la cache dello stream conosce su quel mercato, nella
+# grafia di Betfair (camelCase, le stesse chiavi di ``listCurrentOrders``: chi
+# legge li normalizza con la STESSA funzione che usa per la REST). Nessuna
+# decisione qui: la prende il bot.
+#
+# REGOLE:
+# * solo gli eventi del client REALE (``client.paper_trade`` falso): il client
+#   PAPER affiancato non ha ordini del conto, e il runner PAPER non monta nulla;
+# * l'osservatore avvolge ``Flumine._process_current_orders`` DOPO flumine
+#   (flumine lavora identico) e non solleva mai;
+# * Omega e Safe leggono ``/lettore/order``: un topic in piu' non arriva a loro
+#   (``local_channel``: un lettore riceve solo i topic che ha chiesto).
+TOPIC_CONTO = "conto"
+PERCORSO_CONTO = _PREFISSO_LETTORE + TOPIC_CONTO
+FONTE_CONTO = "stream_ordini"
+
+#: (grafia Betfair di ``listCurrentOrders``, attributo di ``CurrentOrder``)
+_CAMPI_ORDINE_CONTO: Tuple[Tuple[str, str], ...] = (
+    ("betId", "bet_id"), ("marketId", "market_id"), ("selectionId", "selection_id"),
+    ("handicap", "handicap"), ("side", "side"), ("status", "status"),
+    ("orderType", "order_type"), ("persistenceType", "persistence_type"),
+    ("sizeMatched", "size_matched"), ("sizeRemaining", "size_remaining"),
+    ("sizeCancelled", "size_cancelled"), ("sizeLapsed", "size_lapsed"),
+    ("sizeVoided", "size_voided"), ("averagePriceMatched", "average_price_matched"),
+    ("customerOrderRef", "customer_order_ref"),
+    ("customerStrategyRef", "customer_strategy_ref"),
+    ("placedDate", "placed_date"), ("matchedDate", "matched_date"),
+)
+
+
+def _in_json(v: Any) -> Any:
+    """Un valore che viaggia sul canale: le date in ISO-8601 UTC con la ``Z``
+    (come le scrive Betfair), il resto com'e'."""
+    if isinstance(v, datetime):
+        dt = v if v.tzinfo is not None else v.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return v
+
+
+def ordine_del_conto(ordine: Any) -> Dict[str, Any]:
+    """UN ordine dello stream (``betfairlightweight`` ``CurrentOrder``, o il suo
+    dict camelCase) nella grafia di ``listCurrentOrders``. Nessun campo
+    dedotto: cio' che lo stream non porta resta ``None``."""
+    out: Dict[str, Any] = {}
+    for camel, snake in _CAMPI_ORDINE_CONTO:
+        v = ordine.get(camel) if isinstance(ordine, dict) else getattr(ordine, snake, None)
+        out[camel] = _in_json(v)
+    ps = (ordine.get("priceSize") if isinstance(ordine, dict)
+          else getattr(ordine, "price_size", None))
+    if isinstance(ps, dict):
+        out["priceSize"] = {"price": ps.get("price"), "size": ps.get("size")}
+    elif ps is not None:
+        out["priceSize"] = {"price": getattr(ps, "price", None),
+                            "size": getattr(ps, "size", None)}
+    else:
+        out["priceSize"] = None
+    return out
+
+
+def _market_id_di(ordini_mercato: Any, ordini: list) -> Optional[str]:
+    for o in ordini:
+        mid = o.get("marketId")
+        if mid:
+            return str(mid)
+    agg = getattr(ordini_mercato, "streaming_update", None)
+    if isinstance(agg, dict) and agg.get("id"):
+        return str(agg["id"])
+    return None
+
+
+def payload_conto(ordini_mercato: Any, *, ricevuto_ms: int) -> Optional[Dict[str, Any]]:
+    """Il messaggio ``conto`` per UN mercato (un ``CurrentOrders`` dello stream
+    ordini). ``None`` se non si sa di che mercato si tratta."""
+    ordini = [ordine_del_conto(o) for o in (getattr(ordini_mercato, "orders", None) or [])]
+    market_id = _market_id_di(ordini_mercato, ordini)
+    if not market_id:
+        return None
+    pt = getattr(ordini_mercato, "publish_time", None)
+    return {"market_id": market_id, "ordini": ordini, "fonte": FONTE_CONTO,
+            "ricevuto_ms": int(ricevuto_ms),
+            "publish_time_ms": (int(pt) if isinstance(pt, (int, float))
+                                and not isinstance(pt, bool) else None),
+            "snap": bool(getattr(ordini_mercato, "streaming_snap", False))}
+
+
+def pubblica_conto_da_evento(evento: Any, pubblica: Callable[[str, Any], None], *,
+                             adesso_ms: Optional[int] = None) -> int:
+    """Un ``CurrentOrdersEvent`` di flumine -> un messaggio ``conto`` per ogni
+    mercato del client REALE. Ritorna quanti ne ha pubblicati."""
+    quando = int(adesso_ms if adesso_ms is not None else time.time() * 1000)
+    n = 0
+    for ordini_mercato in (getattr(evento, "event", None) or []):
+        client = getattr(ordini_mercato, "client", None)
+        if client is None or getattr(client, "paper_trade", True) is not False:
+            continue        # client simulato (o ignoto): non e' il conto
+        p = payload_conto(ordini_mercato, ricevuto_ms=quando)
+        if p is None:
+            continue
+        pubblica(TOPIC_CONTO, p)
+        n += 1
+    return n
+
+
+def osserva_conto_su_flumine(framework: Any, pubblica: Callable[[str, Any], None]) -> bool:
+    """Monta l'osservatore sul framework flumine del runner LIVE. Idempotente;
+    ``False`` se non montato (gia' montato, framework simulato, niente hook)."""
+    if framework is None or getattr(framework, "SIMULATED", False):
+        return False
+    if getattr(framework, "_conto_osservato", False):
+        return False
+    originale = getattr(framework, "_process_current_orders", None)
+    if not callable(originale):
+        return False
+
+    def _con_conto(evento: Any) -> None:
+        originale(evento)           # flumine per primo, identico a prima
+        try:
+            pubblica_conto_da_evento(evento, pubblica)
+        except Exception as ex:  # noqa: BLE001 - il canale non ferma mai flumine
+            logger.debug("[conto-ws] pubblicazione KO: %s", str(ex)[:160])
+
+    framework._process_current_orders = _con_conto
+    framework._conto_osservato = True
+    logger.info("[conto-ws] ordini del conto dallo stream pubblicati sul canale "
+                "(topic %s)", TOPIC_CONTO)
+    return True
+
+
+class MemoriaConto:
+    """L'ULTIMA fotografia degli ordini del conto per mercato (dal canale).
+
+    Thread-safe: scrive il thread del client, legge il giro del bot. Ogni
+    fotografia nuova alza la ``versione`` del mercato: chi legge sa se c'e'
+    qualcosa di nuovo senza confrontare le righe."""
+
+    def __init__(self, max_mercati: int = 500,
+                 orologio: Optional[Callable[[], float]] = None) -> None:
+        self._mercati: Dict[str, Dict[str, Any]] = {}
+        self._lock = threading.Lock()
+        self._max = max(1, int(max_mercati))
+        self._orologio = orologio or time.time
+        self._versione = 0
+        self._conti: Dict[str, int] = {"ricevute": 0, "tenute": 0, "scartate": 0,
+                                       "vecchie": 0}
+
+    def ricevi(self, payload: Any) -> bool:
+        """Un messaggio ``conto``. NON SOLLEVA MAI."""
+        with self._lock:
+            self._conti["ricevute"] += 1
+            if not isinstance(payload, dict):
+                self._conti["scartate"] += 1
+                return False
+            mid = payload.get("market_id")
+            ordini = payload.get("ordini")
+            if not mid or not isinstance(ordini, list):
+                self._conti["scartate"] += 1
+                return False
+            prima = self._mercati.get(str(mid))
+            pt = payload.get("publish_time_ms")
+            pt_prima = prima.get("publish_time_ms") if prima is not None else None
+            if (isinstance(pt, (int, float)) and isinstance(pt_prima, (int, float))
+                    and pt < pt_prima):
+                # una fotografia piu' vecchia di quella che c'e' non la sostituisce
+                self._conti["vecchie"] += 1
+                return False
+            self._versione += 1
+            self._mercati.pop(str(mid), None)
+            self._mercati[str(mid)] = {
+                "ordini": [dict(o) for o in ordini if isinstance(o, dict)],
+                "ricevuto_ms": payload.get("ricevuto_ms"),
+                "publish_time_ms": pt, "arrivato_s": float(self._orologio()),
+                "versione": self._versione}
+            while len(self._mercati) > self._max:
+                self._mercati.pop(next(iter(self._mercati)))
+            self._conti["tenute"] += 1
+            return True
+
+    def mercato(self, market_id: Any) -> Optional[Dict[str, Any]]:
+        """La fotografia del mercato (copia), o ``None``."""
+        with self._lock:
+            f = self._mercati.get(str(market_id))
+            if f is None:
+                return None
+            return {**f, "ordini": [dict(o) for o in f["ordini"]]}
+
+    def azzera(self) -> bool:
+        with self._lock:
+            c_era = bool(self._mercati)
+            self._mercati.clear()
+            return c_era
+
+    def stato(self) -> Dict[str, Any]:
+        with self._lock:
+            return {**self._conti, "mercati": len(self._mercati)}

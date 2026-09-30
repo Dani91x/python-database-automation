@@ -1,0 +1,1644 @@
+diff --git a/Betfair/mike/service.py b/Betfair/mike/service.py
+index 9671621..a420246 100644
+--- a/Betfair/mike/service.py
++++ b/Betfair/mike/service.py
+@@ -2756,6 +2756,30 @@ def _applica_esito_riapertura(*, db: Any, event_id: str, leg: E.Leg, esito: str,
+ # mercato per volta, e solo con una posizione aperta da difendere.
+ _CONTO_LETTO_A: Dict[str, float] = {}
+ 
++# 30/09 (ordine dell'utente, live 36130526: chiusura dal sito alle 15:30:45,
++# vista da Mike alle 15:32:13) - LA POSIZIONE DI CONTO DAL CANALE. Il runner
++# LIVE pubblica sul canale 47331 (topic ``conto``) gli ordini del conto che lo
++# STREAM ORDINI di Betfair gli porta al millisecondo, compresi quelli fatti a
++# mano dal sito (``esiti_ordini_canale.osserva_conto_su_flumine``). Mike li
++# ascolta (``/lettore/conto``) e a ogni giro, se su un mercato dove ha una
++# posizione e' arrivata una fotografia NUOVA, calcola il verdetto con la STESSA
++# aritmetica della REST (``_verdetto_di_conto``). Se il canale dice "chiusa"
++# (o ridotta, o un ordine altrui che il canale non sa confrontare) la REST si
++# rilegge SUBITO, fuori cadenza, e decide lei: il canale sveglia, il conto
++# conferma. Canale giu' o assente = la REST ogni ``reconcile_every_s``, come
++# prima. In PAPER niente di tutto questo (non c'e' un conto da leggere).
++ENV_MIKE_CONTO_CANALE = "MIKE_CONTO_CANALE"
++_CONTO_CANALE: Dict[str, Any] = {"memoria": None, "client": None}
++#: "event_id|market_id" -> versione della fotografia gia' valutata
++_CONTO_VISTO: Dict[str, int] = {}
++#: event_id -> il segnale del canale in attesa della conferma REST
++_CONTO_SEGNALE: Dict[str, Dict[str, Any]] = {}
++#: event_id -> la firma dell'ultimo verdetto del canale gia' mandato alla REST.
++#: Lo stream ordini ripubblica la STESSA fotografia (snap ogni 3 s di flumine
++#: con ordini vivi): una riduzione parziale gia' confermata non deve far
++#: rileggere la REST a ogni snap.
++_CONTO_FIRMA: Dict[str, tuple] = {}
++
+ 
+ # ---------------------------------------------------------------------------
+ # LE CACHE DI PROCESSO, IN UN ELENCO SOLO
+@@ -2786,7 +2810,10 @@ _CACHE_DI_PROCESSO = ("_DAILY_STOP_LOGGED", "_LAST_HEARTBEAT", "_CONFIG_WARNED",
+                       # secondo scenario sulla stessa partita ereditava l'ora di
+                       # fine del primo e non leggeva MAI (150 letture REST nei
+                       # primi scenari, 0 negli altri).
+-                      "_RIPIEGO_REST_ULTIMO", "_ULTIMO_STATO_SCANNER")
++                      "_RIPIEGO_REST_ULTIMO", "_ULTIMO_STATO_SCANNER",
++                      # 30/09: la posizione di conto dal canale (versioni viste
++                      # e segnale in attesa di conferma REST)
++                      "_CONTO_VISTO", "_CONTO_SEGNALE", "_CONTO_FIRMA")
+ # 30/09 (banco): i due promemoria del flusso fermo (per partita, con l'ora del
+ # giro) non sono dizionari: si azzerano col loro ``azzera`` qui sotto.
+ _PROMEMORIA_DI_PROCESSO = ("_FLUSSO_CRITICO", "_FLUSSO_RIPIEGO")
+@@ -2831,6 +2858,15 @@ def azzera_cache_di_processo() -> List[str]:
+             azzerati.append("_CANALE_FEED")
+     except Exception:  # noqa: BLE001 - mai far fallire un azzeramento
+         pass
++    # 30/09: le fotografie del conto arrivate dal canale sono memoria di
++    # PROCESSO (un riavvio le perde e il client le riceve di nuovo). Citato
++    # solo se c'era qualcosa.
++    try:
++        mem = _CONTO_CANALE.get("memoria")
++        if mem is not None and mem.azzera():
++            azzerati.append("_CONTO_CANALE")
++    except Exception:  # noqa: BLE001 - mai far fallire un azzeramento
++        pass
+     return azzerati
+ 
+ # tolleranza sotto la quale una differenza di posizione e' rumore di
+@@ -2902,6 +2938,147 @@ def _refs_di_mike(ctx: E.MatchCtx, mercato: str, selezione: str,
+     return refs
+ 
+ 
++class _ContoNonLetto(Exception):
++    """La REST della posizione di conto non ha risposto (rete): si riprova al
++    giro dopo, non si decide niente."""
++
++    def __init__(self, market_id: str, causa: Exception) -> None:
++        super().__init__(str(causa))
++        self.market_id = market_id
++        self.causa = causa
++
++
++def _verdetto_di_conto(*, ctx: E.MatchCtx, ev: Dict[str, Any], extra: Dict[str, Any],
++                       db: Any, eid: str,
++                       cache: Optional[Dict[str, List[Dict[str, Any]]]],
++                       righe_di: Callable[[str], Optional[List[Dict[str, Any]]]],
++                       su_non_ritrovata: Optional[Callable[[Dict[str, Any]], None]] = None,
++                       ) -> "tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]":
++    """L'ARITMETICA del verdetto sulla posizione di conto, UNA sola (30/09).
++
++    La usano la rilettura REST (``righe_di`` = vivi + regolati del mercato via
++    ``listCurrentOrders``/``listClearedOrders``) e il canale del conto
++    (``righe_di`` = la fotografia dello stream ordini, normalizzata con la
++    stessa ``omega_market._riga_corrente``). ``righe_di`` torna ``None`` per un
++    mercato che la fonte non conosce: quella selezione non si giudica. Ritorna
++    ``(chiuse, parziali, non_ritrovate)`` e non scrive niente
++    (``su_non_ritrovata`` e' la dichiarazione della REST, riga per riga,
++    nell'ordine di sempre)."""
++    mkts = ev.get("markets") or {}
++    selezioni = dict(extra.get("selections") or {})
++    chiuse: List[Dict[str, Any]] = []
++    parziali: List[Dict[str, Any]] = []
++    non_ritrovate: List[Dict[str, Any]] = []
++    # 29/09 (M3.4): ogni selezione con gambe di un mercato NON piatto, non solo la
++    # chiave: con la copertura come banca Under 4,5 la chiave e' l'Over (atteso 0)
++    # e l'Under, dove stanno i soldi, non verrebbe mai controllato sul conto.
++    for (mercato, selezione) in E.selezioni_da_sorvegliare(ctx.legs):
++        atteso = _posizione_attesa(ctx, mercato, selezione)
++        if abs(atteso) <= _CONTO_EPS:
++            continue
++        market_id = str((mkts.get(mercato) or {}).get("market_id") or "")
++        sel = selezioni.get(f"{mercato}|{selezione}")
++        if not market_id or sel is None:
++            continue
++        righe = righe_di(market_id)
++        if righe is None:
++            continue
++        refs = _refs_di_mike(ctx, mercato, selezione, db, eid, cache)
++        mio = _netto_su_selezione(righe, market_id, int(sel), solo_refs=refs)
++        conto = _netto_su_selezione(righe, market_id, int(sel))
++        dettaglio = {"mercato": mercato, "selezione": selezione, "market_id": market_id,
++                     "selection_id": int(sel), "atteso": atteso, "mio_sul_conto": mio,
++                     "netto_di_conto": conto, "altrui": round(conto - mio, 2)}
++        if abs(mio) + _CONTO_EPS < abs(atteso):
++            # le SUE gambe non si ritrovano: e' un problema di riconciliazione,
++            # non una chiusura dell'utente. Non si spegne niente su un dubbio.
++            non_ritrovate.append(dettaglio)
++            if su_non_ritrovata is not None:
++                su_non_ritrovata(dettaglio)
++            continue
++        # quanto della posizione di Mike SOPRAVVIVE dentro il netto di conto
++        vivo = (min(atteso, max(0.0, conto)) if atteso > 0
++                else max(atteso, min(0.0, conto)))
++        if abs(vivo) <= _CONTO_EPS:
++            chiuse.append({**dettaglio, "verdetto": "chiusa_dall_utente"})
++        elif abs(vivo) + _CONTO_EPS < abs(atteso):
++            parziali.append({**dettaglio, "verdetto": "ridotta_dall_utente",
++                             "ancora_viva": round(vivo, 2)})
++    return chiuse, parziali, non_ritrovate
++
++
++def _segnale_conto_dal_canale(*, db: Any, ctx: E.MatchCtx, ev: Dict[str, Any],
++                              extra: Dict[str, Any], eid: str,
++                              cache: Optional[Dict[str, List[Dict[str, Any]]]] = None,
++                              ) -> Optional[Dict[str, Any]]:
++    """30/09 - Il canale del conto (stream ordini del runner LIVE) ha portato
++    una fotografia NUOVA di un mercato dove Mike ha una posizione e, con la
++    STESSA aritmetica della REST (``_verdetto_di_conto``), quella posizione non
++    e' piu' intera? Allora torna il SEGNALE (la REST si rilegge subito e
++    conferma); altrimenti ``None``.
++
++    Segnale anche quando le gambe di Mike non sono nella fotografia (lo stream
++    conosce solo gli ordini visti dalla sua iscrizione) ma sulla selezione c'e'
++    un ordine ALTRUI abbinato: il canale non sa confrontare, la REST si'. Mai
++    una decisione dal solo canale: una fotografia parziale (ordini dell'utente
++    precedenti all'iscrizione dello stream) potrebbe far sembrare chiusa una
++    posizione che non lo e'."""
++    mem = _CONTO_CANALE.get("memoria")
++    if mem is None:
++        return None
++    mkts = ev.get("markets") or {}
++    fotografie: Dict[str, Dict[str, Any]] = {}
++    nuove = False
++    for (mercato, _selezione) in E.selezioni_da_sorvegliare(ctx.legs):
++        mid = str((mkts.get(mercato) or {}).get("market_id") or "")
++        if not mid or mid in fotografie:
++            continue
++        f = mem.mercato(mid)
++        if f is None:
++            continue
++        fotografie[mid] = f
++        chiave = f"{eid}|{mid}"
++        versione = int(f.get("versione") or 0)
++        if versione > int(_CONTO_VISTO.get(chiave) or 0):
++            nuove = True
++            _CONTO_VISTO[chiave] = versione
++    if not nuove:
++        return None
++    from Betfair.omega import omega_market as _OM
++
++    righe = {mid: [_OM._riga_corrente(o) for o in (f.get("ordini") or [])]
++             for mid, f in fotografie.items()}
++    chiuse, parziali, non_ritrovate = _verdetto_di_conto(
++        ctx=ctx, ev=ev, extra=extra, db=db, eid=eid, cache=cache, righe_di=righe.get)
++    dubbi = [d for d in non_ritrovate if abs(float(d.get("altrui") or 0.0)) > _CONTO_EPS]
++    if chiuse:
++        verdetto, selezioni = "chiusa", chiuse
++    elif parziali:
++        verdetto, selezioni = "ridotta", parziali
++    elif dubbi:
++        verdetto, selezioni = "da_confrontare", dubbi
++    else:
++        _CONTO_FIRMA.pop(eid, None)
++        return None
++    # la stessa situazione gia' mandata alla REST (snap ripetuti dello stream):
++    # nessun segnale nuovo, resta la cadenza
++    firma = (verdetto,) + tuple(sorted(
++        (str(d.get("market_id")), int(d.get("selection_id") or 0),
++         float(d.get("netto_di_conto") or 0.0), float(d.get("altrui") or 0.0))
++        for d in selezioni))
++    if _CONTO_FIRMA.get(eid) == firma:
++        return None
++    _CONTO_FIRMA[eid] = firma
++    ricevuti = [f.get("ricevuto_ms") for f in fotografie.values()
++                if isinstance(f.get("ricevuto_ms"), (int, float))]
++    pubblicati = [f.get("publish_time_ms") for f in fotografie.values()
++                  if isinstance(f.get("publish_time_ms"), (int, float))]
++    return {"fonte": "stream ordini", "verdetto_dal_canale": verdetto,
++            "selezioni": selezioni,
++            "ricevuto_ms": int(max(ricevuti)) if ricevuti else None,
++            "publish_time_ms": int(max(pubblicati)) if pubblicati else None}
++
++
+ def _sorveglia_posizione_di_conto(*, db: Any, market: Any, ctx: E.MatchCtx,
+                                   ev: Dict[str, Any], extra: Dict[str, Any],
+                                   params: Dict[str, Any], mode: str, now_ts: float,
+@@ -2910,7 +3087,9 @@ def _sorveglia_posizione_di_conto(*, db: Any, market: Any, ctx: E.MatchCtx,
+     l'utente, ed e' la prima volta che lo si scopre).
+ 
+     In PAPER non esiste nessun conto da leggere: si dichiara e si esce. In LIVE
+-    si legge alla cadenza di ``reconcile_every_s``. Il verdetto e' conservativo:
++    si legge alla cadenza di ``reconcile_every_s`` e, dal 30/09, SUBITO quando
++    il canale del conto (stream ordini) segnala che la posizione non e' piu'
++    intera (``_segnale_conto_dal_canale``). Il verdetto e' conservativo:
+     * se le gambe di Mike NON si ritrovano sul conto (per ref e size), il caso
+       e' una riconciliazione, non una chiusura dell'utente: si dichiara e basta;
+     * se si ritrovano ma il NETTO di conto non contiene piu' la sua posizione,
+@@ -2920,88 +3099,100 @@ def _sorveglia_posizione_di_conto(*, db: Any, market: Any, ctx: E.MatchCtx,
+     """
+     if str(mode) == "paper":
+         return False
++    eid = str(ev["event_id"])
+     if ctx.chiuso_dall_utente:
++        _CONTO_SEGNALE.pop(eid, None)
+         return False
++    # 30/09: il canale del conto, PRIMA della cadenza (e' li' per saltarla)
++    nuovo = _segnale_conto_dal_canale(db=db, ctx=ctx, ev=ev, extra=extra, eid=eid,
++                                      cache=cache)
++    if nuovo is not None and eid not in _CONTO_SEGNALE:
++        _CONTO_SEGNALE[eid] = nuovo
++    segnale = _CONTO_SEGNALE.get(eid)
+     ogni = float(params.get("reconcile_every_s") or 0.0)
+-    eid = str(ev["event_id"])
+-    if now_ts - float(_CONTO_LETTO_A.get(eid) or 0.0) < ogni:
++    if segnale is None and now_ts - float(_CONTO_LETTO_A.get(eid) or 0.0) < ogni:
+         return False
+     aperte = E.open_selections(ctx.legs)
+     if not aperte:
++        _CONTO_SEGNALE.pop(eid, None)
+         return False
+     _CONTO_LETTO_A[eid] = now_ts
+     leggi_vivi = getattr(market, "list_account_orders", None)
+     leggi_morti = getattr(market, "list_account_cleared_orders", None)
+     if not callable(leggi_vivi) or not callable(leggi_morti):
++        _CONTO_SEGNALE.pop(eid, None)
+         _log_throttled(db, extra, params, now_ts, "posizione_di_conto_non_letta",
+                        {"reason": "il mercato non espone la posizione di conto",
+                         "nota": "senza questa lettura una chiusura fatta FUORI "
+                                 "dall'app resta invisibile"}, eid)
+         return False
+-    mkts = ev.get("markets") or {}
+-    selezioni = dict(extra.get("selections") or {})
+     per_mercato: Dict[str, List[Dict[str, Any]]] = {}
+-    chiuse: List[Dict[str, Any]] = []
+-    parziali: List[Dict[str, Any]] = []
+-    # 29/09 (M3.4): ogni selezione con gambe di un mercato NON piatto, non solo la
+-    # chiave: con la copertura come banca Under 4,5 la chiave e' l'Over (atteso 0)
+-    # e l'Under, dove stanno i soldi, non verrebbe mai controllato sul conto.
+-    for (mercato, selezione) in E.selezioni_da_sorvegliare(ctx.legs):
+-        atteso = _posizione_attesa(ctx, mercato, selezione)
+-        if abs(atteso) <= _CONTO_EPS:
+-            continue
+-        market_id = str((mkts.get(mercato) or {}).get("market_id") or "")
+-        sel = selezioni.get(f"{mercato}|{selezione}")
+-        if not market_id or sel is None:
+-            continue
++
++    def _leggi(market_id: str) -> List[Dict[str, Any]]:
+         if market_id not in per_mercato:
+             try:
+                 per_mercato[market_id] = (list(leggi_vivi(market_id) or [])
+                                           + list(leggi_morti(market_id) or []))
+             except Exception as ex:  # noqa: BLE001 - rete: si riprova, non si inventa
+-                logger.warning("[mike] %s: posizione di conto non letta su %s: %s",
+-                               eid, market_id, str(ex)[:120])
+-                _CONTO_LETTO_A[eid] = 0.0
+-                return False
+-        righe = per_mercato[market_id]
+-        refs = _refs_di_mike(ctx, mercato, selezione, db, eid, cache)
+-        mio = _netto_su_selezione(righe, market_id, int(sel), solo_refs=refs)
+-        conto = _netto_su_selezione(righe, market_id, int(sel))
+-        dettaglio = {"mercato": mercato, "selezione": selezione, "market_id": market_id,
+-                     "selection_id": int(sel), "atteso": atteso, "mio_sul_conto": mio,
+-                     "netto_di_conto": conto, "altrui": round(conto - mio, 2)}
+-        if abs(mio) + _CONTO_EPS < abs(atteso):
+-            # le SUE gambe non si ritrovano: e' un problema di riconciliazione,
+-            # non una chiusura dell'utente. Non si spegne niente su un dubbio.
+-            db.log("posizione_di_conto", {**dettaglio, "verdetto": "gambe_non_ritrovate",
+-                                          "critical": True,
+-                                          "nota": "gli ordini di Mike non si ritrovano sul "
+-                                                  "conto: e' riconciliazione, non una "
+-                                                  "chiusura dell'utente"}, eid)
+-            continue
+-        # quanto della posizione di Mike SOPRAVVIVE dentro il netto di conto
+-        vivo = (min(atteso, max(0.0, conto)) if atteso > 0
+-                else max(atteso, min(0.0, conto)))
+-        if abs(vivo) <= _CONTO_EPS:
+-            chiuse.append({**dettaglio, "verdetto": "chiusa_dall_utente"})
+-        elif abs(vivo) + _CONTO_EPS < abs(atteso):
+-            parziali.append({**dettaglio, "verdetto": "ridotta_dall_utente",
+-                             "ancora_viva": round(vivo, 2)})
++                raise _ContoNonLetto(market_id, ex) from ex
++        return per_mercato[market_id]
++
++    def _dichiara_non_ritrovata(dettaglio: Dict[str, Any]) -> None:
++        db.log("posizione_di_conto", {**dettaglio, "verdetto": "gambe_non_ritrovate",
++                                      "critical": True,
++                                      "nota": "gli ordini di Mike non si ritrovano sul "
++                                              "conto: e' riconciliazione, non una "
++                                              "chiusura dell'utente"}, eid)
++
++    try:
++        chiuse, parziali, _non_ritrovate = _verdetto_di_conto(
++            ctx=ctx, ev=ev, extra=extra, db=db, eid=eid, cache=cache, righe_di=_leggi,
++            su_non_ritrovata=_dichiara_non_ritrovata)
++    except _ContoNonLetto as ex:
++        logger.warning("[mike] %s: posizione di conto non letta su %s: %s",
++                       eid, ex.market_id, str(ex.causa)[:120])
++        _CONTO_LETTO_A[eid] = 0.0
++        return False
++    # la REST ha risposto: il segnale del canale (se c'era) e' stato giudicato
++    _CONTO_SEGNALE.pop(eid, None)
+     for d in parziali:
+         db.log("posizione_di_conto", {**d, "critical": True,
+                                       "nota": "il conto contiene solo in PARTE la posizione "
+                                               "di Mike: si dichiara, il bot continua a "
+                                               "proteggere quello che resta"}, eid)
+     if not chiuse:
++        if segnale is not None and segnale.get("verdetto_dal_canale") == "chiusa":
++            db.log("posizione_di_conto",
++                   {"verdetto": "canale_non_confermato", "segnale": segnale,
++                    "nota": "lo stream ordini diceva la posizione chiusa, la posizione "
++                            "di CONTO riletta via REST no: vince il conto, Mike continua "
++                            "a gestire la partita"}, eid)
+         return False
+-    db.log("chiuso_dall_utente",
+-           {"dove": "fuori dall'app", "selezioni": chiuse, "critical": True,
+-            "nota": "la posizione di CONTO sul mercato non contiene piu' la posizione di "
+-                    "Mike: l'ha chiusa l'utente con un ordine suo. Da qui in poi Mike non "
+-                    "gestisce piu' questa partita (niente coperture, green-up, "
+-                    "re-ingressi); il P&L lo contabilizza il regolamento vero."}, eid)
+-    logger.critical("[mike] %s: posizione chiusa DALL'UTENTE fuori dall'app -> "
+-                    "il bot non gestisce piu' questa partita", eid)
++    dettaglio_chiusura: Dict[str, Any] = {
++        "dove": "fuori dall'app", "selezioni": chiuse, "critical": True,
++        "nota": "la posizione di CONTO sul mercato non contiene piu' la posizione di "
++                "Mike: l'ha chiusa l'utente con un ordine suo. Da qui in poi Mike non "
++                "gestisce piu' questa partita (niente coperture, green-up, "
++                "re-ingressi); il P&L lo contabilizza il regolamento vero."}
++    if segnale is not None:
++        # 30/09: vista dallo stream ordini, confermata dalla REST nello stesso giro
++        ora_ms = float(now_ts) * 1000.0
++        ric = segnale.get("ricevuto_ms")
++        pub = segnale.get("publish_time_ms")
++        dettaglio_chiusura.update({
++            "dove": "fuori dall'app (stream ordini)",
++            "conferma": "posizione di conto riletta via REST",
++            "segnale": {k: segnale.get(k) for k in ("fonte", "verdetto_dal_canale",
++                                                     "ricevuto_ms", "publish_time_ms")},
++            "latenza_ms": {
++                "dal_runner": (int(round(ora_ms - float(ric)))
++                               if isinstance(ric, (int, float)) else None),
++                "da_betfair": (int(round(ora_ms - float(pub)))
++                               if isinstance(pub, (int, float)) else None)}})
++    db.log("chiuso_dall_utente", dettaglio_chiusura, eid)
++    logger.critical("[mike] %s: posizione chiusa DALL'UTENTE fuori dall'app (%s) -> "
++                    "il bot non gestisce piu' questa partita", eid,
++                    dettaglio_chiusura["dove"])
+     # le gambe ancora VIVE (ordini appoggiati) vanno tolte dal mercato: se si
+     # abbinassero aprirebbero una posizione nuova su una partita che non e' piu'
+     # del bot. Annullare RIDUCE il rischio: e' sempre permesso.
+@@ -5943,6 +6134,50 @@ def _svuota_lotto(db: Any, lotto: Dict[str, Dict[str, Any]], params: Dict[str, A
+ _PORTA_CANALE = 47333
+ 
+ 
++def installa_conto_canale(memoria: Any) -> None:
++    """La memoria delle fotografie del conto dal canale (``MemoriaConto``), o
++    ``None`` per toglierla. La usano ``avvia_conto_dal_canale``, il banco e i
++    test (senza socket)."""
++    _CONTO_CANALE["memoria"] = memoria
++    _CONTO_VISTO.clear()
++    _CONTO_SEGNALE.clear()
++    _CONTO_FIRMA.clear()
++
++
++def avvia_conto_dal_canale() -> bool:
++    """30/09 - accende il lettore del conto sul canale del runner calcio
++    (``/lettore/conto``, stessa porta degli esiti: ``LIVE_LOCAL_WS_PORT`` o
++    47331). ACCESO di serie (regola dell'utente del 25/09: i canali al
++    millisecondo sono la via principale); ``MIKE_CONTO_CANALE=0`` lo spegne.
++    Non solleva MAI: senza ``websockets`` o senza runner resta la REST a
++    cadenza, come prima."""
++    import os
++
++    grezzo = (os.environ.get(ENV_MIKE_CONTO_CANALE) or "").strip().lower()
++    if grezzo in ("0", "false", "no", "off"):
++        logger.info("[mike] conto dal canale SPENTO (%s=%s): chiusure dell'utente "
++                    "viste dalla REST ogni reconcile_every_s.", ENV_MIKE_CONTO_CANALE, grezzo)
++        return False
++    if _CONTO_CANALE.get("client") is not None:
++        return True
++    try:
++        import websockets  # noqa: F401  - solo per sapere se c'e'
++        from Betfair.stream import esiti_ordini_canale as _EO
++
++        memoria = _EO.MemoriaConto()
++        client = _EO.ClientEsiti(memoria, topic=_EO.TOPIC_CONTO)
++        installa_conto_canale(memoria)
++        _CONTO_CANALE["client"] = client
++        client.avvia()
++        logger.info("[mike] posizione di conto dallo stream ordini del runner: %s "
++                    "(la REST resta la conferma e il ripiego)", client.url)
++        return True
++    except Exception as ex:  # noqa: BLE001 - il canale e' un'accelerazione
++        logger.warning("[mike] conto dal canale NON avviato (%s): chiusure dell'utente "
++                       "viste dalla REST ogni reconcile_every_s.", str(ex)[:160])
++        return False
++
++
+ def _avvia_canale() -> None:
+     """Accende il canale locale. Non solleva MAI: senza canale il bot lavora."""
+     import os
+@@ -6458,6 +6693,9 @@ def main() -> None:
+         # Spento: nessun client, la lettura del feed resta quella di oggi. Con
+         # MIKE_SVEGLIA_CANALE ANCHE acceso questo client alza pure la sveglia.
+         avvia_client_scan()
++        # 30/09: la posizione di CONTO dallo stream ordini del runner LIVE
++        # (canale 47331, /lettore/conto). Senza canale: la REST a cadenza.
++        avvia_conto_dal_canale()
+     # FASE A — PRIMA di qualunque ciclo: se l'app e' stata riaperta, Mike si
+     # ferma. Da qui in poi la guardia e' attiva: finche' il controllo non
+     # riesce, ``run_once`` non apre niente (le protezioni girano).
+diff --git a/Betfair/mike/tests/test_mike_conto_dal_canale_2026_09_30.py b/Betfair/mike/tests/test_mike_conto_dal_canale_2026_09_30.py
+new file mode 100644
+index 0000000..9a76bf3
+--- /dev/null
++++ b/Betfair/mike/tests/test_mike_conto_dal_canale_2026_09_30.py
+@@ -0,0 +1,400 @@
++"""30/09 - MIKE VEDE LA CHIUSURA DELL'UTENTE DALLO STREAM ORDINI, non dopo 30 s.
++
++Fatto del 30/09 (live, 36130526 Vsetin-Bohemians): l'utente chiude la posizione
++di Mike dal sito Betfair verso le 15:30:45, Mike se ne accorge alle 15:32:13
++(``chiuso_dall_utente``, R3): la posizione di conto si rileggeva via REST al piu'
++ogni ``reconcile_every_s`` (30 s). Da oggi il runner LIVE pubblica sul canale gli
++ordini del conto che lo stream ordini gli porta (``esiti_ordini_canale``, topic
++``conto``) e Mike, al primo giro dopo la fotografia nuova, calcola il verdetto
++con la STESSA aritmetica (``service._verdetto_di_conto``) e, se la posizione non
++e' piu' intera, rilegge SUBITO la REST, che conferma e decide.
++
++I finti parlano come il vero:
++  * la fotografia del canale esce dalla cache VERA dello stream ordini di
++    ``betfairlightweight`` (messaggio ``oc`` nella grafia di Betfair) e dal
++    produttore VERO del runner (``payload_conto``), serializzata come la
++    serializza ``local_channel`` e incassata dal client VERO (``ClientEsiti``);
++  * la REST e' ``MercatoConto`` del test del 16/09 (le chiavi di
++    ``omega_market.list_current_orders_account``).
++
++Ogni test nuovo e' stato FALSIFICATO: mutazioni nel referto
++``AUDIT_2026-09-30/MIKE_CHIUSURA_UTENTE_TEMPO_REALE.md``. ASCII-only.
++"""
++from __future__ import annotations
++
++import json
++import socket
++import time
++from typing import Any, Dict, List, Optional
++
++import pytest
++
++from Betfair.mike import config as C
++from Betfair.mike import engine as E
++from Betfair.mike import service as S
++from Betfair.mike.tests.test_mike_conto_e_sovracopertura_2026_09_16 import (
++    KO,
++    MERCATO_35,
++    SEL_UNDER_35,
++    DbFinto,
++    MercatoConto,
++    evento,
++    gamba_ingresso,
++    ordine_conto,
++)
++from Betfair.stream import esiti_ordini_canale as EO
++
++#: la cadenza VERA della REST (i test di Mike la azzerano di serie in conftest)
++PAR = dict(C.merge_params(None), reconcile_every_s=30.0)
++MIKE_BACK = ordine_conto(ref="mike-t1", side="back", abbinato=10.0, bet_id="B1")
++LAY_UTENTE = ordine_conto(ref=None, side="lay", abbinato=10.0, bet_id="U1", prezzo=1.45)
++
++
++@pytest.fixture(autouse=True)
++def _pulito(monkeypatch):
++    """La riga di ``mike_trades`` della gamba (ref di piazzamento ``mike-t1``) e le
++    memorie del conto azzerate fra un test e l'altro."""
++    monkeypatch.setattr(
++        S, "_trade_row_for_leg",
++        lambda db, eid, leg, cache=None: {
++            "id": 1, "meta": {}, "status": "open", "bet_id": "B1", "mode": "live",
++            "signal_key": leg.ref, "market_id": MERCATO_35,
++            "selection_id": SEL_UNDER_35})
++    S._CONTO_LETTO_A.clear()
++    S.installa_conto_canale(None)
++    yield
++    S._CONTO_LETTO_A.clear()
++    S.installa_conto_canale(None)
++
++
++# ---------------------------------------------------------------------------
++# il runner, VERO: stream ordini -> payload -> canale -> client di Mike
++# ---------------------------------------------------------------------------
++def _uo(bet_id: str, *, side: str, sm: float, rfo: Any, rfs: Any,
++        p: float = 1.5) -> Dict[str, Any]:
++    return {"id": bet_id, "p": p, "s": sm, "side": side, "status": "EC", "pt": "L",
++            "ot": "L", "pd": 1_700_000_000_000, "md": 1_700_000_000_500, "avp": p,
++            "sm": sm, "sr": 0.0, "sl": 0.0, "sc": 0.0, "sv": 0.0, "rfo": rfo, "rfs": rfs}
++
++
++UO_MIKE = _uo("B1", side="B", sm=10.0, rfo="mike-t1", rfs="mike")
++UO_UTENTE = _uo("U1", side="L", sm=10.0, rfo=None, rfs=None, p=1.45)
++
++
++def _dal_runner(client_mike: EO.ClientEsiti, uo: List[Dict[str, Any]], *,
++                ricevuto_ms: int, publish_time_ms: int = 1_700_000_001_000) -> None:
++    """Il runner LIVE riceve dallo stream ordini questi ``uo`` sul mercato 3,5 e
++    li pubblica; il client di Mike li incassa (come dal socket)."""
++    from betfairlightweight.streaming.cache import OrderBookCache
++    from types import SimpleNamespace
++
++    cache = OrderBookCache(MERCATO_35, publish_time_ms, False)
++    cache.update_cache({"id": MERCATO_35, "orc": [{"id": SEL_UNDER_35, "uo": uo}]},
++                       publish_time_ms)
++    co = cache.create_resource(0)
++    co.client = SimpleNamespace(paper_trade=False)     # il client REALE del runner
++    testi: List[str] = []
++    n = EO.pubblica_conto_da_evento(
++        SimpleNamespace(event=[co]),
++        lambda t, d: testi.append(json.dumps({"t": t, "d": d}, default=str)),
++        adesso_ms=ricevuto_ms)
++    assert n == 1
++    for testo in testi:
++        assert client_mike.incassa(testo) is True
++
++
++def _mike_col_canale() -> EO.ClientEsiti:
++    memoria = EO.MemoriaConto()
++    S.installa_conto_canale(memoria)
++    return EO.ClientEsiti(memoria, topic=EO.TOPIC_CONTO, porta_ws=1)
++
++
++def _giro(mercato: Any, ctx: E.MatchCtx, now: float, *, db: Optional[DbFinto] = None,
++          mode: str = "live") -> bool:
++    return S._sorveglia_posizione_di_conto(
++        db=db or DbFinto(), market=mercato, ctx=ctx, ev=evento(),
++        extra=dict(evento()["ctx"]), params=PAR, mode=mode, now_ts=now)
++
++
++# ===========================================================================
++# 1. LA CHIUSURA DAL SITO SI VEDE AL GIRO DOPO, NON DOPO LA CADENZA
++# ===========================================================================
++def test_la_chiusura_dal_sito_si_vede_al_primo_giro_dopo_lo_stream():
++    client = _mike_col_canale()
++    db = DbFinto()
++    mercato = MercatoConto(morti=[dict(MIKE_BACK)])
++    ctx = E.MatchCtx(state="LIVE_COVERED", legs=[gamba_ingresso()])
++    t0 = KO + 1000.0
++    assert _giro(mercato, ctx, t0, db=db) is False           # REST a cadenza: intatta
++    letture = len(mercato.letture)
++    # l'utente chiude dal sito: il conto lo sa, lo stream ordini lo porta
++    mercato.morti.append(dict(LAY_UTENTE))
++    _dal_runner(client, [UO_MIKE, UO_UTENTE], ricevuto_ms=int((t0 + 0.4) * 1000))
++    # giro successivo, un secondo dopo: la cadenza (30 s) NON e' passata
++    assert _giro(mercato, ctx, t0 + 1.0, db=db) is True
++    assert ctx.chiuso_dall_utente is True and ctx.no_reentry is True
++    assert len(mercato.letture) == letture + 2, "la REST riletta SUBITO, a conferma"
++    p = db.payload("chiuso_dall_utente")
++    assert p["dove"] == "fuori dall'app (stream ordini)"
++    assert p["conferma"] == "posizione di conto riletta via REST"
++    assert p["segnale"]["verdetto_dal_canale"] == "chiusa"
++    assert p["latenza_ms"]["dal_runner"] == 600
++    assert p["selezioni"][0]["netto_di_conto"] == 0.0
++
++
++def test_senza_canale_la_stessa_chiusura_aspetta_la_cadenza_come_prima():
++    """Il fatto del 30/09 riprodotto: senza canale il giro dopo NON la vede;
++    la vede la REST alla cadenza (``reconcile_every_s``), con ``dove`` di sempre."""
++    db = DbFinto()
++    mercato = MercatoConto(morti=[dict(MIKE_BACK)])
++    ctx = E.MatchCtx(state="LIVE_COVERED", legs=[gamba_ingresso()])
++    t0 = KO + 1000.0
++    assert _giro(mercato, ctx, t0, db=db) is False
++    mercato.morti.append(dict(LAY_UTENTE))
++    letture = len(mercato.letture)
++    assert _giro(mercato, ctx, t0 + 1.0, db=db) is False
++    assert len(mercato.letture) == letture
++    assert _giro(mercato, ctx, t0 + 31.0, db=db) is True
++    assert db.payload("chiuso_dall_utente")["dove"] == "fuori dall'app"
++
++
++# ===========================================================================
++# 2. NESSUN FALSO ALLARME
++# ===========================================================================
++def test_un_ordine_del_bot_sullo_stream_non_fa_rileggere_niente():
++    client = _mike_col_canale()
++    mercato = MercatoConto(morti=[dict(MIKE_BACK)])
++    ctx = E.MatchCtx(state="LIVE_COVERED", legs=[gamba_ingresso()])
++    t0 = KO + 1000.0
++    _giro(mercato, ctx, t0)
++    letture = len(mercato.letture)
++    _dal_runner(client, [UO_MIKE], ricevuto_ms=int((t0 + 0.2) * 1000))
++    assert _giro(mercato, ctx, t0 + 1.0) is False
++    assert len(mercato.letture) == letture, "posizione intera: nessuna REST fuori cadenza"
++    assert ctx.chiuso_dall_utente is False
++
++
++def test_il_canale_dice_chiusa_ma_il_conto_no_vince_il_conto():
++    """Lo stream conosce solo gli ordini visti dalla sua iscrizione: un back
++    dell'utente di PRIMA non c'e'. Col solo canale la posizione sembrerebbe
++    chiusa (10 - 10); il conto vero (con il back da 10 dell'utente) dice che la
++    posizione di Mike e' ancora tutta viva. Mike non si spegne."""
++    client = _mike_col_canale()
++    db = DbFinto()
++    back_utente_vecchio = ordine_conto(ref=None, side="back", abbinato=10.0, bet_id="U0")
++    mercato = MercatoConto(morti=[dict(MIKE_BACK), back_utente_vecchio])
++    ctx = E.MatchCtx(state="LIVE_COVERED", legs=[gamba_ingresso()])
++    t0 = KO + 1000.0
++    _giro(mercato, ctx, t0, db=db)
++    mercato.morti.append(dict(LAY_UTENTE))
++    _dal_runner(client, [UO_MIKE, UO_UTENTE], ricevuto_ms=int((t0 + 0.3) * 1000))
++    assert _giro(mercato, ctx, t0 + 1.0, db=db) is False
++    assert ctx.chiuso_dall_utente is False
++    assert "chiuso_dall_utente" not in db.kinds()
++    nc = [p for k, p in db.log_scritti
++          if k == "posizione_di_conto" and p.get("verdetto") == "canale_non_confermato"]
++    assert len(nc) == 1 and nc[0]["segnale"]["verdetto_dal_canale"] == "chiusa"
++
++
++def test_in_PAPER_il_canale_del_conto_non_conta():
++    client = _mike_col_canale()
++    mercato = MercatoConto(morti=[dict(MIKE_BACK), dict(LAY_UTENTE)])
++    ctx = E.MatchCtx(state="LIVE_COVERED", legs=[gamba_ingresso()])
++    _dal_runner(client, [UO_MIKE, UO_UTENTE], ricevuto_ms=1)
++    assert _giro(mercato, ctx, KO + 1000.0, mode="paper") is False
++    assert mercato.letture == [] and ctx.chiuso_dall_utente is False
++
++
++# ===========================================================================
++# 3. FAIL-CLOSED: rete giu' alla conferma, fotografia gia' vista
++# ===========================================================================
++def test_la_rete_giu_alla_conferma_non_decide_e_riprova_al_giro_dopo():
++    client = _mike_col_canale()
++    db = DbFinto()
++    mercato = MercatoConto(morti=[dict(MIKE_BACK)])
++    ctx = E.MatchCtx(state="LIVE_COVERED", legs=[gamba_ingresso()])
++    t0 = KO + 1000.0
++    _giro(mercato, ctx, t0, db=db)
++    mercato.morti.append(dict(LAY_UTENTE))
++    _dal_runner(client, [UO_MIKE, UO_UTENTE], ricevuto_ms=int((t0 + 0.5) * 1000))
++    mercato.esplode = True
++    assert _giro(mercato, ctx, t0 + 1.0, db=db) is False
++    assert ctx.chiuso_dall_utente is False, "senza la conferma del conto non si decide"
++    assert "E1" in S._CONTO_SEGNALE, "il segnale resta in attesa di conferma"
++    mercato.esplode = False
++    assert _giro(mercato, ctx, t0 + 2.0, db=db) is True
++    assert db.payload("chiuso_dall_utente")["dove"] == "fuori dall'app (stream ordini)"
++    assert db.payload("chiuso_dall_utente")["latenza_ms"]["dal_runner"] == 1500
++
++
++def test_la_stessa_fotografia_non_fa_rileggere_la_REST_due_volte():
++    """Una riduzione PARZIALE dell'utente: il canale la segnala, la REST la
++    conferma e la dichiara (come sempre). Al giro dopo, senza fotografie nuove,
++    nessuna REST fuori cadenza."""
++    client = _mike_col_canale()
++    db = DbFinto()
++    mercato = MercatoConto(morti=[dict(MIKE_BACK)])
++    ctx = E.MatchCtx(state="LIVE_COVERED", legs=[gamba_ingresso()])
++    t0 = KO + 1000.0
++    _giro(mercato, ctx, t0, db=db)
++    parziale = ordine_conto(ref=None, side="lay", abbinato=4.0, bet_id="U1")
++    mercato.morti.append(parziale)
++    _dal_runner(client, [UO_MIKE, _uo("U1", side="L", sm=4.0, rfo=None, rfs=None)],
++                ricevuto_ms=int((t0 + 0.5) * 1000))
++    letture = len(mercato.letture)
++    assert _giro(mercato, ctx, t0 + 1.0, db=db) is False
++    assert len(mercato.letture) == letture + 2
++    assert db.payload("posizione_di_conto")["verdetto"] == "ridotta_dall_utente"
++    assert _giro(mercato, ctx, t0 + 2.0, db=db) is False
++    assert len(mercato.letture) == letture + 2, "nessuna fotografia nuova: niente REST"
++
++
++def test_lo_snap_ripetuto_dello_stream_non_fa_rileggere_la_REST():
++    """flumine rifa' la fotografia di ogni mercato aperto ogni 3 s quando ha
++    ordini vivi (``OrderStream.handle_output``, ``SNAP_DELTA``): la STESSA
++    riduzione parziale ripubblicata (versione nuova, stesso contenuto) non deve
++    far rileggere la REST a ogni snap. Una riduzione DIVERSA si'."""
++    client = _mike_col_canale()
++    db = DbFinto()
++    mercato = MercatoConto(morti=[dict(MIKE_BACK)])
++    ctx = E.MatchCtx(state="LIVE_COVERED", legs=[gamba_ingresso()])
++    t0 = KO + 1000.0
++    _giro(mercato, ctx, t0, db=db)
++    mercato.morti.append(ordine_conto(ref=None, side="lay", abbinato=4.0, bet_id="U1"))
++    uo = [UO_MIKE, _uo("U1", side="L", sm=4.0, rfo=None, rfs=None)]
++    _dal_runner(client, uo, ricevuto_ms=int((t0 + 0.5) * 1000))
++    _giro(mercato, ctx, t0 + 1.0, db=db)
++    letture = len(mercato.letture)
++    for i in range(3):                       # tre snap identici, 3 s l'uno dall'altro
++        _dal_runner(client, uo, ricevuto_ms=int((t0 + 3.0 * (i + 1)) * 1000))
++        assert _giro(mercato, ctx, t0 + 3.0 * (i + 1) + 0.5, db=db) is False
++    assert len(mercato.letture) == letture, "snap identici: nessuna REST fuori cadenza"
++    # l'utente riduce ancora (da 4 a 6): situazione nuova -> REST subito
++    mercato.morti[-1] = ordine_conto(ref=None, side="lay", abbinato=6.0, bet_id="U1")
++    _dal_runner(client, [UO_MIKE, _uo("U1", side="L", sm=6.0, rfo=None, rfs=None)],
++                ricevuto_ms=int((t0 + 12.0) * 1000))
++    _giro(mercato, ctx, t0 + 12.5, db=db)
++    assert len(mercato.letture) == letture + 2
++
++
++def test_gambe_di_mike_fuori_dalla_fotografia_ma_ordine_altrui_si_rilegge_la_REST():
++    """Il runner e' ripartito dopo gli ordini di Mike: nella fotografia c'e' solo
++    la lay dell'utente. Il canale non sa confrontare ('da_confrontare'): la REST
++    si rilegge subito e decide lei."""
++    client = _mike_col_canale()
++    db = DbFinto()
++    mercato = MercatoConto(morti=[dict(MIKE_BACK)])
++    ctx = E.MatchCtx(state="LIVE_COVERED", legs=[gamba_ingresso()])
++    t0 = KO + 1000.0
++    _giro(mercato, ctx, t0, db=db)
++    mercato.morti.append(dict(LAY_UTENTE))
++    _dal_runner(client, [UO_UTENTE], ricevuto_ms=int((t0 + 0.5) * 1000))
++    assert _giro(mercato, ctx, t0 + 1.0, db=db) is True
++    p = db.payload("chiuso_dall_utente")
++    assert p["segnale"]["verdetto_dal_canale"] == "da_confrontare"
++    assert not [x for k, x in db.log_scritti
++                if k == "posizione_di_conto" and x.get("verdetto") == "gambe_non_ritrovate"], \
++        "la REST ritrova le gambe: nessuna riconciliazione dichiarata"
++
++
++def test_senza_posizione_aperta_il_canale_non_fa_leggere_niente():
++    client = _mike_col_canale()
++    mercato = MercatoConto(morti=[dict(LAY_UTENTE)])
++    ctx = E.MatchCtx(state="WATCH", legs=[])
++    _dal_runner(client, [UO_UTENTE], ricevuto_ms=1)
++    assert _giro(mercato, ctx, KO + 1000.0) is False
++    assert mercato.letture == []
++
++
++def test_lazzeramento_del_banco_svuota_la_memoria_del_conto():
++    client = _mike_col_canale()
++    _dal_runner(client, [UO_MIKE], ricevuto_ms=1)
++    S._CONTO_VISTO["E1|1.35"] = 3
++    azzerati = S.azzera_cache_di_processo()
++    assert "_CONTO_CANALE" in azzerati and "_CONTO_VISTO" in azzerati
++    assert S._CONTO_CANALE["memoria"].mercato(MERCATO_35) is None
++    assert S._CONTO_VISTO == {}
++
++
++def test_linterruttore_spegne_il_lettore(monkeypatch):
++    monkeypatch.setenv(S.ENV_MIKE_CONTO_CANALE, "0")
++    assert S.avvia_conto_dal_canale() is False
++    assert S._CONTO_CANALE["client"] is None and S._CONTO_CANALE["memoria"] is None
++
++
++# ===========================================================================
++# 4. DAL CAPO ALLA CODA: flumine vero, canale vero, client vero di Mike
++# ===========================================================================
++def _porta_libera() -> int:
++    s = socket.socket()
++    s.bind(("127.0.0.1", 0))
++    p = s.getsockname()[1]
++    s.close()
++    return p
++
++
++def _aspetta(cond, secondi: float = 5.0) -> bool:
++    fine = time.time() + secondi
++    while time.time() < fine:
++        if cond():
++            return True
++        time.sleep(0.005)
++    return cond()
++
++
++def test_capo_coda_dallo_stream_del_runner_al_verdetto_di_mike(monkeypatch):
++    from betfairlightweight import APIClient
++    from betfairlightweight.streaming.cache import OrderBookCache
++    from flumine import Flumine, clients
++    from flumine.events.events import CurrentOrdersEvent
++
++    from Betfair.stream import local_channel as LC
++    from Betfair.stream.engine.live_trading_strategy import LiveTradingStrategy
++
++    porta = _porta_libera()
++    ch = LC.LocalChannel(porta, "calcio")
++    assert ch.start()
++    monkeypatch.setattr(LC, "_CHANNEL", ch)               # il canale del runner
++    monkeypatch.setenv("LIVE_LOCAL_WS_PORT", str(porta))
++    monkeypatch.delenv(S.ENV_MIKE_CONTO_CANALE, raising=False)
++    monkeypatch.setitem(S._CONTO_CANALE, "client", None)
++    # il runner LIVE: flumine vero, strategia LIVE vera, montata da ``start``
++    client = clients.BetfairClient(APIClient("u", "p", app_key="k"), paper_trade=False,
++                                   order_stream=True)
++    fw = Flumine(client=client)
++    LiveTradingStrategy(market_filter={}, mode="live").start(fw)
++    # Mike accende il suo lettore (il client VERO, thread e socket veri)
++    assert S.avvia_conto_dal_canale() is True
++    lettore = S._CONTO_CANALE["client"]
++    try:
++        assert _aspetta(lambda: lettore.collegato and ch._n_clients == 1)
++        db = DbFinto()
++        mercato = MercatoConto(morti=[dict(MIKE_BACK)])
++        ctx = E.MatchCtx(state="LIVE_COVERED", legs=[gamba_ingresso()])
++        adesso = time.time()
++        _giro(mercato, ctx, adesso, db=db)
++        mercato.morti.append(dict(LAY_UTENTE))
++        cache = OrderBookCache(MERCATO_35, int(adesso * 1000), False)
++        cache.update_cache({"id": MERCATO_35, "orc": [{"id": SEL_UNDER_35,
++                                                       "uo": [UO_MIKE, UO_UTENTE]}]},
++                           int(adesso * 1000))
++        co = cache.create_resource(0)
++        co.client = client
++        t0 = time.time()
++        fw._process_current_orders(CurrentOrdersEvent([co]))    # lo stream ordini
++        memoria = S._CONTO_CANALE["memoria"]
++        assert _aspetta(lambda: memoria.mercato(MERCATO_35) is not None, 5.0)
++        # il giro di Mike subito dopo l'arrivo (in produzione: il giro successivo)
++        assert _giro(mercato, ctx, time.time(), db=db) is True
++        ms = (time.time() - t0) * 1000.0
++        p = db.payload("chiuso_dall_utente")
++        assert p["dove"] == "fuori dall'app (stream ordini)"
++        assert 0 <= p["latenza_ms"]["dal_runner"] < 1000
++        assert ms < 1000.0, "dallo stream al verdetto: %.1f ms" % ms
++    finally:
++        lettore.ferma()
++        S._CONTO_CANALE["client"] = None
++
++
++if __name__ == "__main__":  # pragma: no cover
++    pytest.main([__file__, "-q"])
+diff --git a/Betfair/mike/tools/replay_registrazioni.py b/Betfair/mike/tools/replay_registrazioni.py
+index bf73cd7..1357e10 100644
+--- a/Betfair/mike/tools/replay_registrazioni.py
++++ b/Betfair/mike/tools/replay_registrazioni.py
+@@ -507,6 +507,18 @@ def _crea_strategia():
+             # flumine con un ref che non e' del bot.
+             self.chiuso_fuori_app = bool(kw.pop("chiuso_fuori_app", False))
+             self.chiusura_utente: Optional[Dict[str, Any]] = None
++            # 30/09: la chiusura arriva ANCHE dal canale del conto, come in
++            # produzione (runner LIVE -> stream ordini -> topic ``conto`` ->
++            # client di Mike). Memoria e client VERI, senza socket.
++            self._client_conto: Optional[Any] = None
++            self._giro_dopo_conto: Optional[int] = None
++            # solo in LIVE (coda): in paper la posizione di conto non si legge
++            if self.chiuso_fuori_app and modo_del_banco() == "live":
++                from ...stream import esiti_ordini_canale as _EO
++
++                memoria = _EO.MemoriaConto()
++                S.installa_conto_canale(memoria)
++                self._client_conto = _EO.ClientEsiti(memoria, topic=_EO.TOPIC_CONTO)
+             # P4 (29/09, M8.3): il freno d'emergenza acceso durante la copertura
+             self.fermo_copertura = bool(kw.pop("fermo_copertura", False))
+             self.fermo: Dict[str, Any] = {}
+@@ -661,6 +673,14 @@ def _crea_strategia():
+ 
+         # ------------------------------------------------------------ Mike
+         def _un_giro(self, pt_ms: int) -> None:
++            # 30/09: il PRIMO giro del servizio dopo che la chiusura dell'utente
++            # e' arrivata sul canale del conto (il metro della latenza nel banco:
++            # qui il giro lo danno i book delle linee di Mike, in produzione il
++            # timer del servizio)
++            if (self.chiusura_utente is not None and self.chiusura_utente.get("sul_canale")
++                    and self._giro_dopo_conto is None
++                    and int(pt_ms) > int(self.chiusura_utente["ms"])):
++                self._giro_dopo_conto = int(pt_ms)
+             self._installa_attesa_col_mercato()
+             # 1) i punteggi fino a questo istante, dal record IPS grezzo e dal
+             #    parser vero (`Scanner.apply_score_state`)
+@@ -1161,9 +1181,44 @@ def _crea_strategia():
+                                     "posizione_del_bot": round(netto, 2),
+                                     "back_dell_utente": round(suo_abbinato, 2),
+                                     "lay_di_chiusura_abbinata": round(abb, 2)}
++            # 30/09: il runner LIVE riceve dallo stream ordini gli ordini del
++            # conto su quel mercato e li pubblica sul canale; Mike li incassa
++            self.chiusura_utente["sul_canale"] = self._pubblica_conto(market_id, pt_ms)
+             self.db.log("replay_chiusura_fuori_app", dict(self.chiusura_utente),
+                         self.event_id)
+ 
++        def _pubblica_conto(self, market_id: str, pt_ms: int) -> int:
++            """30/09 - Cio' che fa il runner LIVE quando lo stream ordini porta un
++            cambio del conto: la cache VERA dello stream (``OrderBookCache`` di
++            ``betfairlightweight``) riceve gli ordini del mercato nella grafia
++            di Betfair, il produttore VERO (``pubblica_conto_da_evento``) ne fa
++            il messaggio ``conto``, serializzato come ``local_channel``, e il
++            client VERO di Mike lo incassa. Torna quanti messaggi sono entrati."""
++            if self._client_conto is None:
++                return 0
++            import json
++            from types import SimpleNamespace
++
++            from betfairlightweight.streaming.cache import OrderBookCache
++
++            from ...stream import esiti_ordini_canale as _EO
++
++            per_sel = self.mercato.ordini_conto_come_stream(market_id, int(pt_ms))
++            if not per_sel:
++                return 0
++            cache = OrderBookCache(str(market_id), int(pt_ms), False)
++            cache.update_cache({"id": str(market_id),
++                                "orc": [{"id": sid, "uo": uo} for sid, uo in per_sel.items()]},
++                               int(pt_ms))
++            co = cache.create_resource(0)
++            co.client = SimpleNamespace(paper_trade=False)     # il client REALE
++            testi: List[str] = []
++            _EO.pubblica_conto_da_evento(
++                SimpleNamespace(event=[co]),
++                lambda t, d: testi.append(json.dumps({"t": t, "d": d}, default=str)),
++                adesso_ms=int(pt_ms))
++            return sum(1 for t in testi if self._client_conto.incassa(t))
++
+         def coda_dopo_la_registrazione(self) -> int:
+             """30/09 (ondata 2, revisione A6): IL SERVIZIO NON SI FERMA CON LO
+             STREAM. In produzione Mike gira a timer; nel replay il giro lo danno
+@@ -1241,6 +1296,9 @@ def _certifica_evento(event_id: str, *, data_dir: str,
+     # Misurato il 16/09 sera: `chiuso-fuori-app` dentro `--scenari tutti
+     # --worker 3` non leggeva mai la posizione di conto e dava R1/R3 a zero.
+     S.azzera_cache_di_processo()
++    # 30/09: il canale del conto lo monta SOLO lo scenario che lo esercita
++    # (``chiuso-fuori-app``); nessun replay lo eredita da quello prima.
++    S.installa_conto_canale(None)
+     par = dict(params or C.merge_params(None))
+     raw = os.path.join(data_dir, str(event_id), f"{event_id}.raw.jsonl")
+     ref = CERT.Referto(event_id=str(event_id))
+@@ -1501,6 +1559,34 @@ def _certifica_evento(event_id: str, *, data_dir: str,
+                 f"scenario chiuso-fuori-app: ordini VERI dell'utente su flumine con un ref "
+                 f"non di Mike ({strategia.chiusura_utente}); il controllo R3 «se ha chiuso "
+                 f"l'utente il bot non fa piu' niente» e' stato sollecitato {quante} volte")
++            # 30/09: la chiusura e' arrivata ANCHE dal canale del conto (stream
++            # ordini del runner LIVE): quando e da dove Mike l'ha vista
++            chiusi = [p_ for k, p_, _e in strategia.db.attivita if k == "chiuso_dall_utente"]
++            visto = chiusi[0] if chiusi else {}
++            lat = (visto.get("latenza_ms") or {}).get("dal_runner")
++            sul_canale = strategia.chiusura_utente.get("sul_canale")
++            giro = strategia._giro_dopo_conto
++            attesa_giro = (int(giro) - int(strategia.chiusura_utente["ms"])
++                           if giro is not None else None)
++            out.note.append(
++                f"scenario chiuso-fuori-app, canale del conto: messaggi {sul_canale} | "
++                f"verdetto '{visto.get('dove')}' | latenza dallo stream al verdetto {lat} "
++                f"ms, di cui {attesa_giro} ms di attesa del primo giro del servizio (nel "
++                f"banco il giro lo danno i book delle linee di Mike, cadenza minima "
++                f"{int(strategia.ogni_ms)} ms) | REST a cadenza "
++                f"{float(strategia.params.get('reconcile_every_s') or 0.0):.0f} s")
++            # il verdetto deve arrivare AL PRIMO giro dopo il canale: la sola
++            # differenza ammessa e' il tempo delle due letture REST di conferma
++            if sul_canale and (
++                    visto.get("dove") != "fuori dall'app (stream ordini)"
++                    or not isinstance(lat, (int, float)) or attesa_giro is None
++                    or lat > attesa_giro + 1000):
++                out.violazioni.append(CERT.Violazione(
++                    "R3-CANALE", "la chiusura dell'utente arrivata dallo stream ordini si "
++                                 "vede al primo giro del servizio, confermata dal conto "
++                                 "(30/09)",
++                    f"verdetto {visto.get('dove')!r} latenza {lat} ms, primo giro dopo "
++                    f"il canale a {attesa_giro} ms", "LIVE"))
+     if strategia.fermo_copertura:
+         # P4 (M8.3): che cosa e' successo alla copertura durante e dopo il fermo
+         ferme = sum(1 for k, p_, _e in strategia.db.attivita
+diff --git a/Betfair/stream/backtest/banco_comune.py b/Betfair/stream/backtest/banco_comune.py
+index 546f716..5d4ff6e 100644
+--- a/Betfair/stream/backtest/banco_comune.py
++++ b/Betfair/stream/backtest/banco_comune.py
+@@ -969,6 +969,47 @@ class MercatoFlumine:
+         sid = int(selection_id)
+         return [r for r in righe if int(r.get("selection_id") or -1) == sid]
+ 
++    def ordini_conto_come_stream(self, market_id: str, ora_ms: int) -> Dict[int, List[Dict[str, Any]]]:
++        """30/09 - GLI ORDINI DEL CONTO sul mercato (bot E utente) come li porta
++        lo STREAM ORDINI di Betfair: per selezione, la lista ``uo`` con le
++        abbreviazioni della Exchange Stream API (``id p s side status pt ot pd md
++        avp sm sr sl sc sv rfo rfs``), quelle che la cache VERA di
++        ``betfairlightweight`` (``OrderBookCache``) sa leggere. Serve al banco
++        per fare cio' che fa il runner LIVE: pubblicare il conto sul canale
++        (``esiti_ordini_canale.pubblica_conto_da_evento``).
++
++        Dall'ordine flumine: prezzo e size chiesti, lato, stato (vivo ``E``,
++        altrimenti ``EC``), abbinato/residuo/annullato/scaduto/annullato dal
++        mercato, ref. ``pd`` e' l'ora del replay (``ora_ms``: flumine tiene
++        l'ora di parete, non quella di mercato) e ``md`` non c'e': Mike non li
++        legge. ``rfs`` e' ``None`` per tutti: il banco non conosce il
++        ``customerStrategyRef`` (Mike riconosce i suoi per ``rfo``)."""
++        _pt = {"LAPSE": "L", "PERSIST": "P", "MARKET_ON_CLOSE": "MOC"}
++        per_sel: Dict[int, List[Dict[str, Any]]] = {}
++        for cassetto in (self.ordini, self.ordini_utente):
++            for ref, o in cassetto.items():
++                if str(getattr(o, "market_id", "")) != str(market_id):
++                    continue
++                sim = getattr(o, "simulated", None)
++                ot = getattr(o, "order_type", None)
++                persistenza = str(getattr(ot, "persistence_type", None) or "LAPSE").upper()
++                per_sel.setdefault(int(getattr(o, "selection_id", 0) or 0), []).append({
++                    "id": str(getattr(o, "bet_id", None) or getattr(o, "id", "")),
++                    "p": float(getattr(ot, "price", 0.0) or 0.0),
++                    "s": float(getattr(ot, "size", 0.0) or 0.0),
++                    "side": "B" if str(getattr(o, "side", "")).upper() == "BACK" else "L",
++                    "status": "E" if self._vivo(o) else "EC",
++                    "pt": _pt.get(persistenza, "L"), "ot": "L", "pd": int(ora_ms),
++                    "md": None,
++                    "avp": getattr(sim, "average_price_matched", None) or None,
++                    "sm": float(getattr(sim, "size_matched", 0.0) or 0.0),
++                    "sr": float(getattr(o, "size_remaining", 0.0) or 0.0),
++                    "sl": float(getattr(o, "size_lapsed", 0.0) or 0.0),
++                    "sc": float(getattr(o, "size_cancelled", 0.0) or 0.0),
++                    "sv": float(getattr(o, "size_voided", 0.0) or 0.0),
++                    "rfo": str(ref), "rfs": None})
++        return per_sel
++
+     def place_order_utente(self, *, market_id: str, selection_id: int, price: float,
+                            size: float, side: str = "lay",
+                            customer_ref: str = "utente-1") -> Optional[Any]:
+diff --git a/Betfair/stream/engine/live_trading_strategy.py b/Betfair/stream/engine/live_trading_strategy.py
+index 1bc1683..d925c2f 100644
+--- a/Betfair/stream/engine/live_trading_strategy.py
++++ b/Betfair/stream/engine/live_trading_strategy.py
+@@ -159,6 +159,24 @@ class LiveTradingStrategy(BaseStrategy):
+         # HIGH-4: cache bet_id → client_order_ref dello specchio (riconciliazione post-riavvio).
+         self._ref_by_bet: Dict[str, str] = {}
+ 
++    def start(self, flumine: Any) -> None:
++        """30/09 (ordine dell'utente, chiusura fatta dal sito vista da Mike al
++        millisecondo). SOLO la strategia LIVE: lo stream ordini REALE del conto
++        porta anche gli ordini che non sono del runner (quelli dell'utente dal
++        sito, quelli di Mike in REST), che flumine scarta; qui li si pubblica sul
++        canale locale (topic ``conto``, ``esiti_ordini_canale``). La strategia
++        PAPER (runner PAPER o client affiancato) non monta niente. Mai solleva."""
++        super().start(flumine)
++        if self.mode != "live":
++            return
++        try:
++            from .. import esiti_ordini_canale as _EO
++            from .. import local_channel as _LC
++
++            _EO.osserva_conto_su_flumine(flumine, _LC.publish)
++        except Exception as ex:  # noqa: BLE001 - il canale e' un'accelerazione
++            logger.warning("[live-strategy] conto sul canale NON montato: %s", str(ex)[:160])
++
+     # ------------------------------------------------------------------
+     # NO auto-trading: nessun ordine viene mai generato dai dati di mercato.
+     # ------------------------------------------------------------------
+diff --git a/Betfair/stream/esiti_ordini_canale.py b/Betfair/stream/esiti_ordini_canale.py
+index 6847563..fd430f1 100644
+--- a/Betfair/stream/esiti_ordini_canale.py
++++ b/Betfair/stream/esiti_ordini_canale.py
+@@ -55,6 +55,7 @@ import json
+ import logging
+ import os
+ import threading
++import time
+ from contextlib import nullcontext
+ from datetime import datetime, timezone
+ from typing import Any, Callable, Dict, Iterable, Optional, Tuple
+@@ -68,6 +69,9 @@ __all__ = [
+     "PERCORSO", "STATI_TERMINALI", "MemoriaEsiti", "ClientEsiti", "EsitiOrdini",
+     "DbConSpecchioDalCanale", "porta", "terminale", "istanza", "attiva",
+     "ricorda_richiesta",
++    # 30/09: la posizione di conto dallo stream ordini del runner LIVE
++    "TOPIC_CONTO", "PERCORSO_CONTO", "FONTE_CONTO", "ordine_del_conto", "payload_conto",
++    "pubblica_conto_da_evento", "osserva_conto_su_flumine", "MemoriaConto",
+ ]
+ 
+ #: L'interruttore. Assente = SPENTO, sempre.
+@@ -79,7 +83,8 @@ PORTA = 47331
+ #: Il topic che il runner gia' pubblica (``db.upsert_live_order``).
+ TOPIC = "order"
+ #: Il percorso da LETTORE: solo ``order``, mai comandi, non conta come desktop.
+-PERCORSO = "/lettore/" + TOPIC
++_PREFISSO_LETTORE = "/lettore/"
++PERCORSO = _PREFISSO_LETTORE + TOPIC
+ #: Gli stati TERMINALI di un ordine flumine. Gli stessi di
+ #: ``omega_service._FLUMINE_TERMINAL``: un test di contratto verifica che non
+ #: divergano (una stringa scritta due volte diverge sempre, prima o poi).
+@@ -230,11 +235,15 @@ class ClientEsiti:
+     """Client LETTORE del canale del runner (``/lettore/order``), in un thread
+     daemon. Non solleva mai verso il bot; riconnette con attesa crescente."""
+ 
+-    def __init__(self, memoria: MemoriaEsiti, *,
++    def __init__(self, memoria: Any, *,
+                  su_terminale: Optional[Callable[[Dict[str, Any]], None]] = None,
+                  porta_ws: Optional[int] = None, host: str = "127.0.0.1",
+-                 connetti: Optional[Callable[[str], Any]] = None) -> None:
++                 connetti: Optional[Callable[[str], Any]] = None,
++                 topic: str = TOPIC) -> None:
+         self.memoria = memoria
++        # 30/09: lo stesso client legge anche la POSIZIONE DI CONTO (``conto``,
++        # Mike). Di serie ``order``: Omega e Safe non cambiano di una riga.
++        self.topic = str(topic)
+         self._su_terminale = su_terminale
+         self.porta = int(porta_ws) if porta_ws is not None else porta()
+         self.host = host
+@@ -250,13 +259,14 @@ class ClientEsiti:
+ 
+     @property
+     def url(self) -> str:
+-        return "ws://%s:%d%s" % (self.host, self.porta, PERCORSO)
++        return "ws://%s:%d%s%s" % (self.host, self.porta, _PREFISSO_LETTORE, self.topic)
+ 
+     def avvia(self) -> None:
+         if self._thread is not None:
+             return
+         self._thread = threading.Thread(target=self._gira, daemon=True,
+-                                        name="esiti-ordini-ws")
++                                        name=("esiti-ordini-ws" if self.topic == TOPIC
++                                              else "conto-ordini-ws"))
+         self._thread.start()
+ 
+     def ferma(self) -> None:
+@@ -307,7 +317,7 @@ class ClientEsiti:
+             msg = json.loads(grezzo) if isinstance(grezzo, (str, bytes, bytearray)) else grezzo
+         except (ValueError, TypeError):
+             return False
+-        if not isinstance(msg, dict) or msg.get("t") != TOPIC:
++        if not isinstance(msg, dict) or msg.get("t") != self.topic:
+             return False                    # hello e altro: non sono righe
+         riga = msg.get("d")
+         if not self.memoria.ricevi(riga):
+@@ -613,3 +623,217 @@ def ciclo() -> Any:
+     vuoto: a interruttore spento ``run_once`` gira come oggi."""
+     e = attiva()
+     return e.ciclo() if e is not None else nullcontext()
++
++
++# ===========================================================================
++# LA POSIZIONE DI CONTO DALLO STREAM ORDINI (30/09, ordine dell'utente)
++# ===========================================================================
++# Fatto del 30/09 (live, 36130526): l'utente chiude la posizione di Mike dal
++# sito Betfair verso le 15:30:45, Mike se ne accorge alle 15:32:13. Mike
++# rilegge la posizione di conto via REST al piu' ogni ``reconcile_every_s``
++# (30 s) dentro il suo giro. Eppure il runner LIVE e' iscritto allo STREAM
++# ORDINI del conto SENZA filtro di strategia (flumine
++# ``streams/orderstream.py``: ``customer_strategy_refs=None`` perche'
++# ``flumine.config.customer_strategy_ref`` e' ``None``): riceve al millisecondo
++# OGNI ordine del conto, anche quelli piazzati a mano dal sito. Poi pero'
++# flumine li SCARTA (``order/process.py`` ``process_current_orders``: salta gli
++# ordini senza ``customer_order_ref`` e quelli il cui ref non e' di una sua
++# strategia, "Strategy not available to create order") e nessuna strategia li
++# vede in ``process_orders``.
++#
++# Qui il runner li PUBBLICA sul canale locale (topic ``conto``, lettori su
++# ``/lettore/conto``): per ogni mercato toccato dall'evento dello stream, TUTTI
++# gli ordini del conto che la cache dello stream conosce su quel mercato, nella
++# grafia di Betfair (camelCase, le stesse chiavi di ``listCurrentOrders``: chi
++# legge li normalizza con la STESSA funzione che usa per la REST). Nessuna
++# decisione qui: la prende il bot.
++#
++# REGOLE:
++# * solo gli eventi del client REALE (``client.paper_trade`` falso): il client
++#   PAPER affiancato non ha ordini del conto, e il runner PAPER non monta nulla;
++# * l'osservatore avvolge ``Flumine._process_current_orders`` DOPO flumine
++#   (flumine lavora identico) e non solleva mai;
++# * Omega e Safe leggono ``/lettore/order``: un topic in piu' non arriva a loro
++#   (``local_channel``: un lettore riceve solo i topic che ha chiesto).
++TOPIC_CONTO = "conto"
++PERCORSO_CONTO = _PREFISSO_LETTORE + TOPIC_CONTO
++FONTE_CONTO = "stream_ordini"
++
++#: (grafia Betfair di ``listCurrentOrders``, attributo di ``CurrentOrder``)
++_CAMPI_ORDINE_CONTO: Tuple[Tuple[str, str], ...] = (
++    ("betId", "bet_id"), ("marketId", "market_id"), ("selectionId", "selection_id"),
++    ("handicap", "handicap"), ("side", "side"), ("status", "status"),
++    ("orderType", "order_type"), ("persistenceType", "persistence_type"),
++    ("sizeMatched", "size_matched"), ("sizeRemaining", "size_remaining"),
++    ("sizeCancelled", "size_cancelled"), ("sizeLapsed", "size_lapsed"),
++    ("sizeVoided", "size_voided"), ("averagePriceMatched", "average_price_matched"),
++    ("customerOrderRef", "customer_order_ref"),
++    ("customerStrategyRef", "customer_strategy_ref"),
++    ("placedDate", "placed_date"), ("matchedDate", "matched_date"),
++)
++
++
++def _in_json(v: Any) -> Any:
++    """Un valore che viaggia sul canale: le date in ISO-8601 UTC con la ``Z``
++    (come le scrive Betfair), il resto com'e'."""
++    if isinstance(v, datetime):
++        dt = v if v.tzinfo is not None else v.replace(tzinfo=timezone.utc)
++        return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
++    return v
++
++
++def ordine_del_conto(ordine: Any) -> Dict[str, Any]:
++    """UN ordine dello stream (``betfairlightweight`` ``CurrentOrder``, o il suo
++    dict camelCase) nella grafia di ``listCurrentOrders``. Nessun campo
++    dedotto: cio' che lo stream non porta resta ``None``."""
++    out: Dict[str, Any] = {}
++    for camel, snake in _CAMPI_ORDINE_CONTO:
++        v = ordine.get(camel) if isinstance(ordine, dict) else getattr(ordine, snake, None)
++        out[camel] = _in_json(v)
++    ps = (ordine.get("priceSize") if isinstance(ordine, dict)
++          else getattr(ordine, "price_size", None))
++    if isinstance(ps, dict):
++        out["priceSize"] = {"price": ps.get("price"), "size": ps.get("size")}
++    elif ps is not None:
++        out["priceSize"] = {"price": getattr(ps, "price", None),
++                            "size": getattr(ps, "size", None)}
++    else:
++        out["priceSize"] = None
++    return out
++
++
++def _market_id_di(ordini_mercato: Any, ordini: list) -> Optional[str]:
++    for o in ordini:
++        mid = o.get("marketId")
++        if mid:
++            return str(mid)
++    agg = getattr(ordini_mercato, "streaming_update", None)
++    if isinstance(agg, dict) and agg.get("id"):
++        return str(agg["id"])
++    return None
++
++
++def payload_conto(ordini_mercato: Any, *, ricevuto_ms: int) -> Optional[Dict[str, Any]]:
++    """Il messaggio ``conto`` per UN mercato (un ``CurrentOrders`` dello stream
++    ordini). ``None`` se non si sa di che mercato si tratta."""
++    ordini = [ordine_del_conto(o) for o in (getattr(ordini_mercato, "orders", None) or [])]
++    market_id = _market_id_di(ordini_mercato, ordini)
++    if not market_id:
++        return None
++    pt = getattr(ordini_mercato, "publish_time", None)
++    return {"market_id": market_id, "ordini": ordini, "fonte": FONTE_CONTO,
++            "ricevuto_ms": int(ricevuto_ms),
++            "publish_time_ms": (int(pt) if isinstance(pt, (int, float))
++                                and not isinstance(pt, bool) else None),
++            "snap": bool(getattr(ordini_mercato, "streaming_snap", False))}
++
++
++def pubblica_conto_da_evento(evento: Any, pubblica: Callable[[str, Any], None], *,
++                             adesso_ms: Optional[int] = None) -> int:
++    """Un ``CurrentOrdersEvent`` di flumine -> un messaggio ``conto`` per ogni
++    mercato del client REALE. Ritorna quanti ne ha pubblicati."""
++    quando = int(adesso_ms if adesso_ms is not None else time.time() * 1000)
++    n = 0
++    for ordini_mercato in (getattr(evento, "event", None) or []):
++        client = getattr(ordini_mercato, "client", None)
++        if client is None or getattr(client, "paper_trade", True) is not False:
++            continue        # client simulato (o ignoto): non e' il conto
++        p = payload_conto(ordini_mercato, ricevuto_ms=quando)
++        if p is None:
++            continue
++        pubblica(TOPIC_CONTO, p)
++        n += 1
++    return n
++
++
++def osserva_conto_su_flumine(framework: Any, pubblica: Callable[[str, Any], None]) -> bool:
++    """Monta l'osservatore sul framework flumine del runner LIVE. Idempotente;
++    ``False`` se non montato (gia' montato, framework simulato, niente hook)."""
++    if framework is None or getattr(framework, "SIMULATED", False):
++        return False
++    if getattr(framework, "_conto_osservato", False):
++        return False
++    originale = getattr(framework, "_process_current_orders", None)
++    if not callable(originale):
++        return False
++
++    def _con_conto(evento: Any) -> None:
++        originale(evento)           # flumine per primo, identico a prima
++        try:
++            pubblica_conto_da_evento(evento, pubblica)
++        except Exception as ex:  # noqa: BLE001 - il canale non ferma mai flumine
++            logger.debug("[conto-ws] pubblicazione KO: %s", str(ex)[:160])
++
++    framework._process_current_orders = _con_conto
++    framework._conto_osservato = True
++    logger.info("[conto-ws] ordini del conto dallo stream pubblicati sul canale "
++                "(topic %s)", TOPIC_CONTO)
++    return True
++
++
++class MemoriaConto:
++    """L'ULTIMA fotografia degli ordini del conto per mercato (dal canale).
++
++    Thread-safe: scrive il thread del client, legge il giro del bot. Ogni
++    fotografia nuova alza la ``versione`` del mercato: chi legge sa se c'e'
++    qualcosa di nuovo senza confrontare le righe."""
++
++    def __init__(self, max_mercati: int = 500,
++                 orologio: Optional[Callable[[], float]] = None) -> None:
++        self._mercati: Dict[str, Dict[str, Any]] = {}
++        self._lock = threading.Lock()
++        self._max = max(1, int(max_mercati))
++        self._orologio = orologio or time.time
++        self._versione = 0
++        self._conti: Dict[str, int] = {"ricevute": 0, "tenute": 0, "scartate": 0,
++                                       "vecchie": 0}
++
++    def ricevi(self, payload: Any) -> bool:
++        """Un messaggio ``conto``. NON SOLLEVA MAI."""
++        with self._lock:
++            self._conti["ricevute"] += 1
++            if not isinstance(payload, dict):
++                self._conti["scartate"] += 1
++                return False
++            mid = payload.get("market_id")
++            ordini = payload.get("ordini")
++            if not mid or not isinstance(ordini, list):
++                self._conti["scartate"] += 1
++                return False
++            prima = self._mercati.get(str(mid))
++            pt = payload.get("publish_time_ms")
++            pt_prima = prima.get("publish_time_ms") if prima is not None else None
++            if (isinstance(pt, (int, float)) and isinstance(pt_prima, (int, float))
++                    and pt < pt_prima):
++                # una fotografia piu' vecchia di quella che c'e' non la sostituisce
++                self._conti["vecchie"] += 1
++                return False
++            self._versione += 1
++            self._mercati.pop(str(mid), None)
++            self._mercati[str(mid)] = {
++                "ordini": [dict(o) for o in ordini if isinstance(o, dict)],
++                "ricevuto_ms": payload.get("ricevuto_ms"),
++                "publish_time_ms": pt, "arrivato_s": float(self._orologio()),
++                "versione": self._versione}
++            while len(self._mercati) > self._max:
++                self._mercati.pop(next(iter(self._mercati)))
++            self._conti["tenute"] += 1
++            return True
++
++    def mercato(self, market_id: Any) -> Optional[Dict[str, Any]]:
++        """La fotografia del mercato (copia), o ``None``."""
++        with self._lock:
++            f = self._mercati.get(str(market_id))
++            if f is None:
++                return None
++            return {**f, "ordini": [dict(o) for o in f["ordini"]]}
++
++    def azzera(self) -> bool:
++        with self._lock:
++            c_era = bool(self._mercati)
++            self._mercati.clear()
++            return c_era
++
++    def stato(self) -> Dict[str, Any]:
++        with self._lock:
++            return {**self._conti, "mercati": len(self._mercati)}
+diff --git a/Betfair/stream/tests/test_conto_ordini_canale_2026_09_30.py b/Betfair/stream/tests/test_conto_ordini_canale_2026_09_30.py
+new file mode 100644
+index 0000000..83eecb1
+--- /dev/null
++++ b/Betfair/stream/tests/test_conto_ordini_canale_2026_09_30.py
+@@ -0,0 +1,292 @@
++"""30/09 - LA POSIZIONE DI CONTO DALLO STREAM ORDINI, lato RUNNER.
++
++Fatto del 30/09 (live, 36130526): l'utente chiude dal sito Betfair alle 15:30:45
++circa, Mike se ne accorge alle 15:32:13 (REST ogni ``reconcile_every_s``). Il
++runner LIVE riceve lo STREAM ORDINI di tutto il conto (flumine: nessun filtro
++``customerStrategyRefs``), ma flumine scarta gli ordini che non sono di una sua
++strategia. Da oggi il runner li pubblica sul canale (topic ``conto``).
++
++Tutto con oggetti VERI:
++  * la cache VERA dello stream ordini di ``betfairlightweight``
++    (``OrderBookCache.update_cache`` con un messaggio ``oc`` nella grafia di
++    Betfair, ``create_resource`` -> ``CurrentOrders`` di ``CurrentOrder``);
++  * il ``Flumine`` VERO con un ``BetfairClient`` VERO (nessun login: il costruttore
++    non tocca la rete), il suo ``_process_current_orders`` e il suo
++    ``CurrentOrdersEvent``;
++  * ``LiveTradingStrategy`` VERA (``start`` come la chiama flumine);
++  * ``LocalChannel`` VERO su una porta libera e client ``websockets`` veri.
++
++Ogni test e' stato FALSIFICATO (referto
++``AUDIT_2026-09-30/MIKE_CHIUSURA_UTENTE_TEMPO_REALE.md``). ASCII-only.
++"""
++from __future__ import annotations
++
++import json
++import socket
++import time
++from typing import Any, Dict, List
++
++import pytest
++
++from Betfair.omega import omega_market as OM
++from Betfair.stream import esiti_ordini_canale as EO
++from Betfair.stream import local_channel as LC
++from Betfair.stream.engine import live_trading_strategy as LTS
++
++MERCATO = "1.35"
++SEL = 47999
++PT = 1_700_000_100_000
++
++
++def _uo(bet_id: str, *, side: str, sm: float, rfo: Any, rfs: Any, stato: str = "EC",
++        p: float = 1.5, pd: int = PT - 60_000) -> Dict[str, Any]:
++    """Un ordine nella grafia dello STREAM di Betfair (``uo``)."""
++    return {"id": bet_id, "p": p, "s": sm, "side": side, "status": stato, "pt": "L",
++            "ot": "L", "pd": pd, "md": pd + 500, "avp": p, "sm": sm,
++            "sr": 0.0 if stato == "EC" else 1.0, "sl": 0.0, "sc": 0.0, "sv": 0.0,
++            "rfo": rfo, "rfs": rfs}
++
++
++def _ordini_dello_stream(uo: List[Dict[str, Any]], *, market_id: str = MERCATO) -> Any:
++    """La cache VERA dello stream ordini -> ``CurrentOrders`` VERO."""
++    from betfairlightweight.streaming.cache import OrderBookCache
++
++    cache = OrderBookCache(market_id, PT, False)
++    cache.update_cache({"id": market_id, "orc": [{"id": SEL, "uo": uo}]}, PT)
++    return cache.create_resource(0)
++
++
++def _client(paper: bool) -> Any:
++    from betfairlightweight import APIClient
++    from flumine import clients
++
++    return clients.BetfairClient(APIClient("u", "p", app_key="k"), paper_trade=paper,
++                                 order_stream=True)
++
++
++def _framework(client: Any) -> Any:
++    from flumine import Flumine
++
++    return Flumine(client=client)
++
++
++def _evento(*ordini_mercato: Any) -> Any:
++    from flumine.events.events import CurrentOrdersEvent
++
++    return CurrentOrdersEvent(list(ordini_mercato))
++
++
++def _chiusura_dal_sito() -> List[Dict[str, Any]]:
++    """Il back di Mike (ref ``mike-t1``, strategia ``mike``) e la lay con cui
++    l'utente chiude dal sito (nessun ref)."""
++    return [_uo("B1", side="B", sm=10.0, rfo="mike-t1", rfs="mike"),
++            _uo("U1", side="L", sm=10.0, rfo=None, rfs=None, p=1.45, pd=PT)]
++
++
++def _porta_libera() -> int:
++    s = socket.socket()
++    s.bind(("127.0.0.1", 0))
++    p = s.getsockname()[1]
++    s.close()
++    return p
++
++
++def _aspetta(cond, secondi: float = 5.0) -> bool:
++    fine = time.time() + secondi
++    while time.time() < fine:
++        if cond():
++            return True
++        time.sleep(0.01)
++    return cond()
++
++
++# ===========================================================================
++# 1. FLUMINE SCARTA GLI ORDINI NON SUOI: la prova del perche'
++# ===========================================================================
++def test_flumine_scarta_lordine_dal_sito_e_nessuna_strategia_lo_vede():
++    """La lay dell'utente (nessun ``customerOrderRef``) e il back di Mike (ref
++    non di una strategia flumine) arrivano nell'evento dello stream, ma dopo
++    ``process_current_orders`` il blotter non ne contiene nessuno."""
++    client = _client(paper=False)
++    fw = _framework(client)
++    co = _ordini_dello_stream(_chiusura_dal_sito())
++    co.client = client
++    assert {o.bet_id for o in co.orders} == {"B1", "U1"}, "lo stream porta tutto il conto"
++    fw._process_current_orders(_evento(co))
++    assert fw.markets.markets == {} or all(
++        not m.blotter._orders for m in fw.markets.markets.values()), \
++        "flumine non crea ordini per chi non e' una sua strategia"
++
++
++# ===========================================================================
++# 2. IL RUNNER LIVE PUBBLICA IL CONTO; IL PAPER NO
++# ===========================================================================
++def _monta(monkeypatch, mode: str, paper_client: bool):
++    pubblicati: List[tuple] = []
++    monkeypatch.setattr(LC, "publish", lambda t, d: pubblicati.append((t, d)))
++    client = _client(paper=paper_client)
++    fw = _framework(client)
++    strat = LTS.LiveTradingStrategy(market_filter={}, mode=mode,
++                                    name="LTS-%s-%d" % (mode, id(fw)))
++    strat.start(fw)
++    return fw, client, pubblicati
++
++
++def test_la_strategia_LIVE_pubblica_gli_ordini_del_conto(monkeypatch):
++    fw, client, pubblicati = _monta(monkeypatch, "live", paper_client=False)
++    co = _ordini_dello_stream(_chiusura_dal_sito())
++    co.client = client
++    fw._process_current_orders(_evento(co))
++    assert len(pubblicati) == 1
++    topic, p = pubblicati[0]
++    assert topic == EO.TOPIC_CONTO == "conto"
++    assert p["market_id"] == MERCATO and p["fonte"] == "stream_ordini"
++    assert p["publish_time_ms"] == PT and isinstance(p["ricevuto_ms"], int)
++    per_id = {o["betId"]: o for o in p["ordini"]}
++    assert set(per_id) == {"B1", "U1"}, "anche l'ordine SENZA ref (dal sito) viaggia"
++    assert per_id["U1"]["customerOrderRef"] is None and per_id["U1"]["side"] == "LAY"
++    assert per_id["B1"]["customerOrderRef"] == "mike-t1"
++    json.dumps({"t": topic, "d": p})      # viaggia sul canale senza ``default=str``
++
++
++def test_la_riga_del_canale_normalizzata_e_quella_della_REST(monkeypatch):
++    """Il contratto che tiene UNA sola aritmetica: la riga del canale, passata
++    per ``omega_market._riga_corrente`` (la normalizzazione della REST), ha le
++    STESSE chiavi, gli stessi tipi e gli stessi valori della riga che la REST
++    produce per lo stesso ordine (``listCurrentOrders``, camelCase)."""
++    fw, client, pubblicati = _monta(monkeypatch, "live", paper_client=False)
++    co = _ordini_dello_stream(_chiusura_dal_sito())
++    co.client = client
++    fw._process_current_orders(_evento(co))
++    dal_canale = {r["bet_id"]: r for r in
++                  (OM._riga_corrente(o) for o in pubblicati[0][1]["ordini"])}
++    # la stessa lay come la scrive listCurrentOrders (JSON di Betfair)
++    rest = OM._riga_corrente({
++        "betId": "U1", "marketId": MERCATO, "selectionId": SEL, "side": "LAY",
++        "status": "EXECUTION_COMPLETE", "sizeMatched": 10.0, "averagePriceMatched": 1.45,
++        "sizeRemaining": 0.0, "sizeCancelled": 0.0, "sizeLapsed": 0.0, "sizeVoided": 0.0,
++        "placedDate": "2023-11-14T22:15:00.000Z", "matchedDate": "2023-11-14T22:15:00.500Z",
++        "priceSize": {"price": 1.45, "size": 10.0}})
++    canale = dal_canale["U1"]
++    assert set(canale) == set(rest)
++    for k in rest:
++        if k in ("placed_date", "matched_date"):
++            continue    # stesso istante, grafia ISO diversa (millisecondi)
++        assert canale[k] == rest[k] and type(canale[k]) is type(rest[k]), k
++
++
++def test_gli_eventi_del_client_PAPER_affiancato_non_si_pubblicano(monkeypatch):
++    """Nel runner LIVE c'e' anche il client PAPER affiancato: i suoi eventi
++    (``SimulatedOrderStream``) non sono il conto e non si pubblicano."""
++    fw, _client_vero, pubblicati = _monta(monkeypatch, "live", paper_client=False)
++    finto = _client(paper=True)
++    co = _ordini_dello_stream(_chiusura_dal_sito())
++    co.client = finto
++    fw._process_current_orders(_evento(co))
++    assert pubblicati == []
++
++
++def test_la_strategia_PAPER_non_monta_niente(monkeypatch):
++    fw, client, pubblicati = _monta(monkeypatch, "paper", paper_client=True)
++    assert not getattr(fw, "_conto_osservato", False)
++    co = _ordini_dello_stream(_chiusura_dal_sito())
++    co.client = _client(paper=False)
++    fw._process_current_orders(_evento(co))
++    assert pubblicati == [], "il runner PAPER non ha un conto da pubblicare"
++
++
++def test_il_montaggio_e_idempotente_e_non_cambia_flumine(monkeypatch):
++    fw, client, pubblicati = _monta(monkeypatch, "live", paper_client=False)
++    assert EO.osserva_conto_su_flumine(fw, LC.publish) is False, "gia' montato"
++    chiamate: List[Any] = []
++    fw2 = _framework(client)
++    originale = fw2._process_current_orders
++    fw2._process_current_orders = lambda ev: (chiamate.append(ev), originale(ev))
++    assert EO.osserva_conto_su_flumine(fw2, lambda t, d: None) is True
++    ev = _evento()
++    fw2._process_current_orders(ev)
++    assert chiamate == [ev], "flumine riceve lo STESSO evento, una volta"
++
++
++def test_una_pubblicazione_che_esplode_non_ferma_flumine():
++    client = _client(paper=False)
++    fw = _framework(client)
++
++    def esplode(_t, _d):
++        raise RuntimeError("canale rotto")
++
++    assert EO.osserva_conto_su_flumine(fw, esplode)
++    co = _ordini_dello_stream(_chiusura_dal_sito())
++    co.client = client
++    fw._process_current_orders(_evento(co))      # nessuna eccezione
++
++
++def test_il_framework_simulato_non_si_monta():
++    from types import SimpleNamespace
++
++    fw = SimpleNamespace(SIMULATED=True, _process_current_orders=lambda ev: None)
++    assert EO.osserva_conto_su_flumine(fw, lambda t, d: None) is False
++
++
++# ===========================================================================
++# 3. IL CANALE: il lettore del conto riceve il conto, Omega e Safe no
++# ===========================================================================
++def test_canale_vero_il_conto_arriva_al_lettore_del_conto_e_non_a_quello_degli_esiti():
++    from websockets.sync.client import connect
++
++    porta = _porta_libera()
++    ch = LC.LocalChannel(porta, "calcio")
++    assert ch.start()
++    memoria = EO.MemoriaConto()
++    client_conto = EO.ClientEsiti(memoria, topic=EO.TOPIC_CONTO, porta_ws=porta)
++    assert client_conto.url.endswith("/lettore/conto")
++    client_conto.avvia()
++    try:
++        with connect("ws://127.0.0.1:%d%s" % (porta, EO.PERCORSO), open_timeout=5) as esiti:
++            assert json.loads(esiti.recv(timeout=5))["t"] == "hello"
++            assert _aspetta(lambda: ch._n_clients == 2 and client_conto.collegato)
++            assert ch.is_active() is False, "due lettori non sono un desktop"
++            fw = _framework(_client(paper=False))
++            assert EO.osserva_conto_su_flumine(fw, ch.publish)
++            co = _ordini_dello_stream(_chiusura_dal_sito())
++            co.client = _client(paper=False)
++            t0 = time.time()
++            fw._process_current_orders(_evento(co))
++            assert _aspetta(lambda: memoria.mercato(MERCATO) is not None, 5.0)
++            ritardo_ms = (time.time() - t0) * 1000.0
++            f = memoria.mercato(MERCATO)
++            assert {o["betId"] for o in f["ordini"]} == {"B1", "U1"}
++            assert ritardo_ms < 1000.0, ritardo_ms
++            ch.publish("order", {"client_order_ref": "awlq1"})
++            msg = json.loads(esiti.recv(timeout=5))
++            assert msg["t"] == "order", "il lettore degli esiti NON riceve il conto"
++    finally:
++        client_conto.ferma()
++
++
++# ===========================================================================
++# 4. LA MEMORIA DEL CONTO
++# ===========================================================================
++def test_memoria_conto_versione_e_fotografia_piu_vecchia():
++    m = EO.MemoriaConto(orologio=lambda: 5.0)
++    assert m.ricevi({"market_id": "1.1", "ordini": [], "publish_time_ms": 10}) is True
++    v1 = m.mercato("1.1")["versione"]
++    assert m.ricevi({"market_id": "1.1", "ordini": [], "publish_time_ms": 9}) is False
++    assert m.ricevi({"market_id": "1.1", "ordini": [{"betId": "X"}],
++                     "publish_time_ms": 11}) is True
++    f = m.mercato("1.1")
++    assert f["versione"] > v1 and f["ordini"] == [{"betId": "X"}] and f["arrivato_s"] == 5.0
++    assert m.ricevi("rotto") is False and m.ricevi({"ordini": []}) is False
++    assert m.azzera() is True and m.mercato("1.1") is None
++
++
++def test_il_client_esiti_di_serie_resta_sul_topic_order():
++    """Omega e Safe costruiscono ``ClientEsiti`` senza ``topic``: stesso URL e
++    stesso filtro di prima."""
++    c = EO.ClientEsiti(EO.MemoriaEsiti(), porta_ws=47331)
++    assert c.url == "ws://127.0.0.1:47331/lettore/order"
++    assert c.incassa(json.dumps({"t": "conto", "d": {"market_id": "1.1", "ordini": []}})) is False
++
++
++if __name__ == "__main__":  # pragma: no cover
++    pytest.main([__file__, "-q"])

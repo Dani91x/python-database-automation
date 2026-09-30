@@ -159,6 +159,24 @@ class LiveTradingStrategy(BaseStrategy):
         # HIGH-4: cache bet_id → client_order_ref dello specchio (riconciliazione post-riavvio).
         self._ref_by_bet: Dict[str, str] = {}
 
+    def start(self, flumine: Any) -> None:
+        """30/09 (ordine dell'utente, chiusura fatta dal sito vista da Mike al
+        millisecondo). SOLO la strategia LIVE: lo stream ordini REALE del conto
+        porta anche gli ordini che non sono del runner (quelli dell'utente dal
+        sito, quelli di Mike in REST), che flumine scarta; qui li si pubblica sul
+        canale locale (topic ``conto``, ``esiti_ordini_canale``). La strategia
+        PAPER (runner PAPER o client affiancato) non monta niente. Mai solleva."""
+        super().start(flumine)
+        if self.mode != "live":
+            return
+        try:
+            from .. import esiti_ordini_canale as _EO
+            from .. import local_channel as _LC
+
+            _EO.osserva_conto_su_flumine(flumine, _LC.publish)
+        except Exception as ex:  # noqa: BLE001 - il canale e' un'accelerazione
+            logger.warning("[live-strategy] conto sul canale NON montato: %s", str(ex)[:160])
+
     # ------------------------------------------------------------------
     # NO auto-trading: nessun ordine viene mai generato dai dati di mercato.
     # ------------------------------------------------------------------
