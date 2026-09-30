@@ -19,6 +19,7 @@ import type { ComposizioneObiettivo } from '@/lib/composizioneObiettivo';
 import type { ManualeSitoBetfair } from '@/lib/manualeSitoBetfair';
 import { etichettaArretrati, type ChiaveProva, type ProvaGiornata, type VoceProva } from '@/lib/provaGiornata';
 import { MarchioSoldi } from './MarchioSoldi';
+import type { ApertoPerBot } from '@/lib/apertoAdesso';
 import type { ComposizioneConto, RigaComposizioneConto } from '@/lib/composizioneConto';
 import type { RigaComposizione } from '@/lib/composizioneObiettivo';
 
@@ -36,12 +37,50 @@ export interface ObiettivoHeroProps {
     contoEtaS?: number | null;
     /** 30/09 (R_G): la modalita' CORRENTE di ogni voce della prova (live = «— (ora in LIVE)» se non ha prova di oggi) */
     modalitaBot?: Partial<Record<ChiaveProva, 'paper' | 'live' | null>> | null;
+    // 30/09 (W_G): l'aperto per bot (somma per partita delle sue gambe LIVE)
+    apertoPerBot?: Record<string, ApertoPerBot> | null;
     testId?: string;
 }
 
 /** 30/09 (P7): da dove viene la cifra della voce (solo se la composizione lo dichiara) */
 function fonteDi(r: RigaComposizione): 'conto' | 'bot' | null {
     return (r as RigaComposizioneConto).fonte ?? null;
+}
+
+/** 30/09 (W_G): quali bot dell'aperto compongono una voce della composizione */
+const BOT_DELLA_VOCE: Partial<Record<string, string[]>> = {
+    omega: ['omega'], mike: ['mike'], scalper: ['scalper'],
+    safe_calcio: ['safe_calcio'], safe_tennis: ['safe_tennis'],
+    bot_tennis: ['tennis_scalper', 'tennis_pro', 'tennis_flb', 'tennis_swing'],
+};
+
+/** L'aperto di una voce (somma dei suoi bot); null = nessuna partita LIVE di quei bot. */
+function apertoDi(per: Record<string, ApertoPerBot> | null | undefined, chiave: string): ApertoPerBot | null {
+    const bots = BOT_DELLA_VOCE[chiave];
+    if (!per || !bots) return null;
+    let out: ApertoPerBot | null = null;
+    for (const b of bots) {
+        const v = per[b];
+        if (!v) continue;
+        out = out ?? { netto: null, partite: 0, nonCalcolabili: 0 };
+        if (v.netto != null) out.netto = Math.round(((out.netto ?? 0) + v.netto) * 100) / 100;
+        out.partite += v.partite;
+        out.nonCalcolabili += v.nonCalcolabili;
+    }
+    return out;
+}
+
+function ApertoVoce({ chiave, a }: { chiave: string; a: ApertoPerBot }) {
+    return (
+        <span className="text-[10px] ml-1 text-white/50" data-testid={`cr-composizione-${chiave}-aperto`}
+            title="aperto adesso: cash out LIVE delle partite di questo bot, per partita, ai prezzi dello scanner (stima)">
+            · aperto{' '}
+            <span className={a.netto == null ? 'text-white/40' : pnlClass(a.netto)}>
+                {a.netto == null ? DASH : fmtMoney(a.netto, { signed: true })}
+            </span>
+            {a.nonCalcolabili > 0 && <span className="text-amber-300"> + {a.nonCalcolabili} non calcolabili</span>}
+        </span>
+    );
 }
 
 /** 30/09 (P7): la composizione e' stata ricomposta dal conto Betfair */
@@ -51,7 +90,7 @@ function dalConto(c: ComposizioneObiettivo): boolean | null {
 }
 
 export function ObiettivoHero({
-    dayBar, composizione, manualeSito, onSalvaObiettivo, avvisoMotore, prova = null, contoEtaS, modalitaBot = null, testId = 'cr-obiettivo',
+    dayBar, composizione, manualeSito, onSalvaObiettivo, avvisoMotore, prova = null, contoEtaS, modalitaBot = null, apertoPerBot = null, testId = 'cr-obiettivo',
 }: ObiettivoHeroProps) {
     return (
         <Card className="glass-card border-white/10 p-0 overflow-hidden" data-testid={testId}>
@@ -101,6 +140,10 @@ export function ObiettivoHero({
                                         title="calcolo del bot: Betfair non ha ancora regolato">
                                         {r.stimato === r.valore ? 'stimato' : `di cui stimato ${fmtMoney(r.stimato, { signed: true })}`}
                                     </span>
+                                )}
+                                {/* 30/09 (W_G) - l'APERTO del bot (somma per partita delle SUE gambe LIVE) */}
+                                {apertoDi(apertoPerBot, r.chiave) != null && (
+                                    <ApertoVoce chiave={r.chiave} a={apertoDi(apertoPerBot, r.chiave) as ApertoPerBot} />
                                 )}
                                 {/* 30/09 (P7) - la FONTE della cifra della voce */}
                                 {r.valore != null && fonteDi(r) != null && (

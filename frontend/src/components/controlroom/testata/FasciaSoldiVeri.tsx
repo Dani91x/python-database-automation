@@ -146,11 +146,32 @@ export function FasciaSoldiVeri({ s }: { s: SoldiVeriTestata | undefined }) {
                 </div>
             )}
 
+            {/* W_T/P14: ordini del conto fuori dai bot (sito/app), per partita */}
+            {s?.ordiniFuori && (
+                <div className="flex flex-col gap-0.5" data-testid="cr-ordini-fuori-bot"
+                    title="ordini sul conto Betfair non piazzati dai bot (sito, app): i bot non li vedono">
+                    <Etichetta>Ordini fuori dai bot</Etichetta>
+                    {s.ordiniFuori.letto ? (
+                        <span className={`text-[11px] font-mono ${s.ordiniFuori.n + s.ordiniFuori.senzaPartita > 0 ? 'text-amber-300' : 'text-white/50'}`}>
+                            partite con ordini fuori dai bot: {s.ordiniFuori.n}
+                            {s.ordiniFuori.nomi.length > 0 && ` (${s.ordiniFuori.nomi.join(', ')})`}
+                            {s.ordiniFuori.senzaPartita > 0 && ` + ${s.ordiniFuori.senzaPartita} senza partita`}
+                        </span>
+                    ) : (
+                        <span className="text-[10px] text-white/40">
+                            ordini del conto: non letti ({s.ordiniFuori.motivo ?? 'motivo ignoto'})
+                        </span>
+                    )}
+                </div>
+            )}
+
             <div className="flex flex-col gap-0.5" data-testid="cr-partite-posizione"
                 title="partite distinte con almeno una posizione aperta, secondo le righe dei bot">
-                <Etichetta>Posizioni LIVE</Etichetta>
+                <Etichetta>Posizione LIVE</Etichetta>
+                {/* W_T/P15: partite e gambe mai con la stessa parola */}
                 <span className="font-mono text-sm font-semibold tabular-nums">
-                    {partite == null ? DASH : `${partite.live} ${partite.live === 1 ? 'partita' : 'partite'}`}
+                    {partite == null ? DASH
+                        : `${partite.live} ${partite.live === 1 ? 'partita' : 'partite'} con posizione LIVE (${partite.gambeLive ?? DASH} ${partite.gambeLive === 1 ? 'gamba' : 'gambe'})`}
                 </span>
                 <span className="text-[9.5px] leading-tight text-white/35" data-testid="cr-partite-posizione-nota">
                     {partite == null ? `posizioni non ancora lette${PUNTO}` : (

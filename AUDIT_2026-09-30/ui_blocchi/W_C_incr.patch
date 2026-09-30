@@ -1,0 +1,910 @@
+diff --git a/frontend/src/components/controlroom/CashOutGlobale.chiudiTutte.test.tsx b/frontend/src/components/controlroom/CashOutGlobale.chiudiTutte.test.tsx
+new file mode 100644
+index 0000000..f21fe39
+--- /dev/null
++++ b/frontend/src/components/controlroom/CashOutGlobale.chiudiTutte.test.tsx
+@@ -0,0 +1,167 @@
++// ============================================================================
++// CashOutGlobale.chiudiTutte.test.tsx - 30/09 sera (W_C, P16): «Chiudi tutte le
++// gambe dei bot». Si orchestrano IN SEQUENZA i comandi GIA' esistenti del
++// pulsante di riga (`ChiusuraRigaContext.chiudi`): Mike una volta per partita,
++// Safe/Omega/tennis per riga, scalper per sessione con firma.
++//
++// FALSIFICAZIONE (`falsifica_w_c.sh`): comandi in parallelo, Mike una volta
++// per gamba, guardia dei 400 ms tolta, gamba senza comando taciuta -> rossi.
++// ============================================================================
++import { describe, it, expect, vi, afterEach } from 'vitest';
++import { render, screen, fireEvent, act } from '@testing-library/react';
++import { CashOutGlobale, pianoChiusuraPartita, testoPiano, type OperazionePerChiusura } from './CashOutGlobale';
++import { ChiusuraRigaContext } from './BottoneChiudiRiga';
++import { ATTESA_CONFERMA_USCITE_MS } from './InterruttoreUscite';
++import type { RigaDaChiudere, StatoChiusuraRiga } from './chiudiRiga';
++import { cashOutPartita, type GambaViva } from '@/lib/cashOutPartita';
++import { PREZZO_VUOTO } from '@/lib/schedaAlMs';
++import type { Bot } from '@/lib/controlRoom';
++
++const NOW = Date.now();
++
++function op(p: Partial<OperazionePerChiusura> & Pick<OperazionePerChiusura, 'bot' | 'id'>): OperazionePerChiusura {
++    return { eventId: '35001', marketId: '1.35', modalita: 'live', stato: 'open', chiudeId: null, pnl: null, ...p };
++}
++
++// Follo: due gambe di Mike + una di Safe (live), la sessione dello scalper senza firma
++const OPS: OperazionePerChiusura[] = [
++    op({ bot: 'mike', id: 5085 }),
++    op({ bot: 'mike', id: 5094, marketId: '1.45' }),
++    op({ bot: 'safe', id: 9 }),
++    op({ bot: 'scalper', id: 7, marketId: null, stato: 'running', firma: null }),
++];
++
++const GAMBE: GambaViva[] = [
++    { id: 5085, bot: 'mike', modalita: 'live', marketId: '1.35', selectionId: 11, selezione: 'Under 3.5 Goals',
++        lato: 'back', abbinato: 5, prezzoMedio: 2.4, aliquota: 0.05 },
++    { id: 5094, bot: 'mike', modalita: 'live', marketId: '1.45', selectionId: 21, selezione: 'Under 4.5 Goals',
++        lato: 'lay', abbinato: 6.32, prezzoMedio: 1.76, aliquota: 0.05 },
++];
++function risultato(etaMs = 300) {
++    const libro: Record<string, { back: number; lay: number }> = {
++        '1.35|11': { back: 2.46, lay: 2.56 }, '1.45|21': { back: 1.63, lay: 1.68 },
++    };
++    return cashOutPartita(GAMBE, {
++        prezzo: (m, s) => {
++            const p = libro[`${m}|${s}`];
++            return p ? { ...PREZZO_VUOTO, ...p, backSize: 90, laySize: 90, fonte: 'canale', istanteMs: NOW - etaMs, statoMercato: 'OPEN' } : null;
++        },
++        nowMs: NOW,
++    });
++}
++
++function contesto(stati: Record<string, Partial<StatoChiusuraRiga>> = {}) {
++    const chiamate: RigaDaChiudere[] = [];
++    const attese: (() => void)[] = [];
++    const chiudi = vi.fn((riga: RigaDaChiudere) => {
++        chiamate.push(riga);
++        return new Promise<void>((ok) => { attese.push(ok); });
++    });
++    const stato = (bot: Bot, id: number): StatoChiusuraRiga | null => {
++        const s = stati[`${bot}:${id}`];
++        return s ? {
++            bot, id, requestId: 1, faseRichiesta: 'inviata', richiestaChiusa: false, motivo: null,
++            rigaCambiata: false, inviataMs: NOW, ...s,
++        } : null;
++    };
++    return { chiudi, stato, chiamate, attese };
++}
++
++function monta(c: ReturnType<typeof contesto>, ops = OPS, r = risultato()) {
++    return render(
++        <ChiusuraRigaContext.Provider value={{ chiudi: c.chiudi, stato: c.stato }}>
++            <CashOutGlobale risultato={r} operazioni={ops} />
++        </ChiusuraRigaContext.Provider>,
++    );
++}
++
++afterEach(() => { vi.useRealTimers(); });
++
++describe('P16: il piano (quali comandi, in che ordine)', () => {
++    it('Mike UNA volta per partita (copre le 2 gambe), Safe per riga, scalper senza firma dichiarato', () => {
++        const p = pianoChiusuraPartita(OPS, 'live');
++        expect(p.comandi.map((c) => [c.bot, c.riga.id, c.gambe])).toEqual([['mike', 5085, 2], ['safe', 9, 1]]);
++        expect(p.senzaComando.map((s) => [s.bot, s.id])).toEqual([['scalper', 7]]);
++        expect(testoPiano(p)).toBe('2 gambe di Mike, 1 di Safe; Scalper calcio #7 non ha un comando adesso: resta aperta '
++            + '(firma della sessione assente (requested_at): non si ferma alla cieca)');
++    });
++    it('le righe PROVA non entrano nel piano LIVE (e viceversa); il tennis regolato non e\' una posizione', () => {
++        const ops = [op({ bot: 'safe', id: 1, modalita: 'paper' }),
++            op({ bot: 'tennis_pro', id: 2, marketId: '1.9', pnl: 3.1 }), op({ bot: 'omega', id: 3 })];
++        expect(pianoChiusuraPartita(ops, 'live').comandi.map((c) => c.riga.id)).toEqual([3]);
++        expect(pianoChiusuraPartita(ops, 'paper').comandi.map((c) => c.riga.id)).toEqual([1]);
++    });
++});
++
++describe('P16: il pulsante nel riquadro', () => {
++    it('il piano si legge PRIMA del clic, con la gamba senza comando', () => {
++        monta(contesto());
++        expect(screen.getByTestId('cr-cashout-globale-live-chiudi-tutte-piano').textContent)
++            .toMatch(/^2 gambe di Mike, 1 di Safe; Scalper calcio #7 non ha un comando adesso: resta aperta/);
++    });
++
++    it('LIVE: il primo clic arma («Sono soldi veri: 2 comandi a 2 bot»), la conferma e\' inerte 400 ms', async () => {
++        vi.useFakeTimers();
++        const c = contesto();
++        monta(c);
++        fireEvent.click(screen.getByTestId('cr-cashout-globale-live-chiudi-tutte-avvia'));
++        expect(c.chiudi).not.toHaveBeenCalled();
++        expect(screen.getByTestId('cr-cashout-globale-live-chiudi-tutte-armato').textContent)
++            .toBe('Sono soldi veri: 2 comandi a 2 bot. annulla');
++        const conf = screen.getByTestId('cr-cashout-globale-live-chiudi-tutte-conferma') as HTMLButtonElement;
++        expect(conf.disabled).toBe(true);
++        fireEvent.click(conf);
++        expect(c.chiudi).not.toHaveBeenCalled();
++        await act(async () => { vi.advanceTimersByTime(ATTESA_CONFERMA_USCITE_MS + 50); });
++        await act(async () => { fireEvent.click(screen.getByTestId('cr-cashout-globale-live-chiudi-tutte-conferma')); });
++        expect(c.chiudi).toHaveBeenCalledTimes(1);
++    });
++
++    it('IN SEQUENZA: il secondo comando parte solo dopo l\'esito del primo; Mike una volta sola', async () => {
++        vi.useFakeTimers();
++        const c = contesto();
++        monta(c);
++        fireEvent.click(screen.getByTestId('cr-cashout-globale-live-chiudi-tutte-avvia'));
++        await act(async () => { vi.advanceTimersByTime(ATTESA_CONFERMA_USCITE_MS + 50); });
++        await act(async () => { fireEvent.click(screen.getByTestId('cr-cashout-globale-live-chiudi-tutte-conferma')); });
++        expect(c.chiamate.map((r) => [r.bot, r.id])).toEqual([['mike', 5085]]);
++        await act(async () => { c.attese[0](); });
++        expect(c.chiamate.map((r) => [r.bot, r.id])).toEqual([['mike', 5085], ['safe', 9]]);
++        await act(async () => { c.attese[1](); });
++        expect(c.chiudi).toHaveBeenCalledTimes(2);
++        // la riga passata e' quella del pulsante di riga: stessa identita', stessa modalita'
++        expect(c.chiamate[0]).toMatchObject({ bot: 'mike', id: 5085, eventId: '35001', modalita: 'live', stato: 'open' });
++    });
++
++    it('riscontro per bot A SCHERMO: «Mike (partita, 2 gambe): presa in carico», «Safe #9: rifiutata: <motivo>»', async () => {
++        const c = contesto({
++            'mike:5085': { faseRichiesta: 'presa_in_carico' },
++            'safe:9': { faseRichiesta: 'rifiutata', motivo: 'kind non valido', richiestaChiusa: true },
++        });
++        monta(c, OPS.map((o) => ({ ...o, modalita: 'paper' as const })),
++            cashOutPartita(GAMBE.map((g) => ({ ...g, modalita: 'paper' as const })), {
++                prezzo: () => ({ ...PREZZO_VUOTO, back: 2.46, lay: 2.56, backSize: 90, laySize: 90, fonte: 'canale', istanteMs: NOW, statoMercato: 'OPEN' }),
++                nowMs: NOW,
++            }));
++        // PAPER: un clic, nessuna conferma
++        fireEvent.click(screen.getByTestId('cr-cashout-globale-prova-chiudi-tutte-avvia'));
++        expect(screen.queryByTestId('cr-cashout-globale-prova-chiudi-tutte-conferma')).toBeNull();
++        await act(async () => { c.attese[0](); });
++        await act(async () => { c.attese[1](); });
++        expect(screen.getAllByTestId('cr-cashout-globale-prova-chiudi-tutte-esito').map((e) => e.textContent))
++            .toEqual(['Mike (partita, 2 gambe): presa in carico', 'Safe #9: rifiutata: kind non valido']);
++    });
++
++    it('prezzi FERMI (oltre 20 s): il pulsante e\' spento e dice perche\'', () => {
++        monta(contesto(), OPS, risultato(30_000));
++        const b = screen.getByTestId('cr-cashout-globale-live-chiudi-tutte-avvia') as HTMLButtonElement;
++        expect(b.disabled).toBe(true);
++        expect(screen.getByTestId('cr-cashout-globale-live-chiudi-tutte-bloccato').textContent)
++            .toBe('prezzi fermi da 30 s: non si chiude su prezzi vecchi');
++    });
++
++    it('senza il contesto della Control Room (altre pagine) il pulsante non c\'e\'', () => {
++        render(<CashOutGlobale risultato={risultato()} operazioni={OPS} />);
++        expect(screen.queryByTestId('cr-cashout-globale-live-chiudi-tutte')).toBeNull();
++    });
++});
+diff --git a/frontend/src/components/controlroom/CashOutGlobale.montaggio.test.tsx b/frontend/src/components/controlroom/CashOutGlobale.montaggio.test.tsx
+index cce1d8c..0e1adee 100644
+--- a/frontend/src/components/controlroom/CashOutGlobale.montaggio.test.tsx
++++ b/frontend/src/components/controlroom/CashOutGlobale.montaggio.test.tsx
+@@ -141,6 +141,29 @@ describe('P12b: il cash out della PARTITA dentro la scheda', () => {
+         expect(screen.getAllByTestId('cr-cashout-globale-live-gamba')[0].getAttribute('data-stato')).toBe('decisa');
+     });
+ 
++    it('W_C: TENNIS, punta P1 e punta P2 sul Match Odds (due esiti): si nettano in UNA riga pareggiata', () => {
++        // back 10 @ 2,0 su entrambi: qualunque vinca, +10 -10 = 0. Senza i due esiti
++        // sarebbero due posizioni in perdita da chiudere separatamente.
++        const tennis = (id: number, sel: number) => gambaMike(id, `Giocatore ${sel}`, 'back', 2.0, 10, '1.9', sel, { back: 1.98, lay: 2.02 });
++        const ops = [tennis(11, 1), tennis(12, 2)].map((o) => ({ ...o, bot: 'tennis_scalper' as const }));
++        const conMo = render(
++            <MemoryRouter>
++                <SchedaPartita p={partitaCalcio({ sport: 'tennis', marketId: '1.9' })} operazioni={ops} />
++            </MemoryRouter>,
++        );
++        expect(conMo.getAllByTestId('cr-cashout-globale-live-gamba')).toHaveLength(1);
++        expect(conMo.getAllByTestId('cr-cashout-globale-live-gamba')[0].getAttribute('data-stato')).toBe('piatta');
++        expect(conMo.getByTestId('cr-cashout-globale-live-netto').textContent).toBe('+0,00 €');
++        conMo.unmount();
++        // un altro mercato tennis (non il Match Odds): resta per selezione
++        render(
++            <MemoryRouter>
++                <SchedaPartita p={partitaCalcio({ sport: 'tennis', marketId: '1.55' })} operazioni={ops} />
++            </MemoryRouter>,
++        );
++        expect(screen.getAllByTestId('cr-cashout-globale-live-gamba')).toHaveLength(2);
++    });
++
+     it('Mike, Over 4,5 + Under 4,5 sullo stesso mercato O/U (due esiti): UNA riga, +1,81', () => {
+         // parita' con test_mike_engine_cert_2026_09_12.py:164-174
+         const ops = [
+diff --git a/frontend/src/components/controlroom/CashOutGlobale.tsx b/frontend/src/components/controlroom/CashOutGlobale.tsx
+index cd79e69..e191125 100644
+--- a/frontend/src/components/controlroom/CashOutGlobale.tsx
++++ b/frontend/src/components/controlroom/CashOutGlobale.tsx
+@@ -17,13 +17,24 @@
+ //     due cifre diverse per la stessa cosa si spiegano, non si nascondono;
+ //   * liquidita' insufficiente al miglior prezzo: la cifra resta, marcata
+ //     «caso migliore».
+-// Nessun pulsante qui: chiudere e' un altro gesto (P16, su richiesta).
++// 30/09 sera (W_C, P16): «Chiudi tutte le gambe dei bot». NESSUN comando
++// backend nuovo: si ORCHESTRANO in sequenza i comandi per-bot GIA' esistenti,
++// con la STESSA funzione dei pulsanti di riga (`ChiusuraRigaContext.chiudi`,
++// `chiudiRiga.ts`): Mike una volta per PARTITA (chiude il ciclo intero), Safe,
++// Omega e i 4 bot tennis per riga, lo scalper per sessione (con la firma). Una
++// gamba senza comando si DICE prima del clic e resta aperta.
+ // ============================================================================
+-import { useContext, useMemo } from 'react';
++import { useContext, useEffect, useMemo, useState } from 'react';
+ import { MarchioSoldi } from '@/components/controlroom/MarchioSoldi';
+ import { ChiusuraRigaContext } from '@/components/controlroom/BottoneChiudiRiga';
++import {
++    chiudibile, faseMostrata, TESTO_FASE, type RigaDaChiudere,
++} from '@/components/controlroom/chiudiRiga';
++import { ATTESA_CONFERMA_USCITE_MS } from '@/components/controlroom/InterruttoreUscite';
++import { feedFreshness } from '@/lib/mike';
++import { isBotTennis } from '@/lib/controlRoom';
+ import { useCashOutPartita, type ArgsCashOutPartita } from '@/components/controlroom/useCashOutPartita';
+-import { dueEsitiMike, esitoDecisoMike, valoreBotMike } from '@/lib/cashOutPartita';
++import { dueEsitiMike, dueEsitiPartita, esitoDecisoMike, valoreBotMike } from '@/lib/cashOutPartita';
+ import type { MikeEvent } from '@/lib/mike';
+ import { fmtMoney, fmtNum, fmtOdds } from '@/lib/format';
+ import { pnlClass } from '@/lib/tradeStatus';
+@@ -54,6 +65,8 @@ export interface CashOutGlobaleProps {
+     /** le cifre dei servizi dei bot (Mike: `live.cashout.net`) */
+     valoriBot?: readonly ValoreBotCashOut[];
+     testId?: string;
++    /** P16: le righe della partita; assenti = nessun «Chiudi tutte le gambe» */
++    operazioni?: readonly OperazionePerChiusura[];
+ }
+ 
+ const nomeBot = (b: string) => (BOT_LABEL as Record<string, string>)[b as Bot] ?? b;
+@@ -71,11 +84,188 @@ function testoEtaBreve(s: number | null): string {
+ 
+ const lato = (l: 'back' | 'lay' | null) => (l === 'lay' ? 'banca' : l === 'back' ? 'punta' : '');
+ 
++// ============================================================================
++// P16 - «CHIUDI TUTTE LE GAMBE DEI BOT» (piano puro + pulsante)
++// ============================================================================
++
++/** La riga della scheda come serve al piano (forma strutturale di `OperazionePartita`). */
++export interface OperazionePerChiusura {
++    bot: Bot;
++    id: number;
++    eventId?: string;
++    marketId: string | null;
++    modalita: 'paper' | 'live' | null;
++    stato: string;
++    chiudeId?: number | null;
++    /** tennis: `pnl` valorizzato = ordine regolato (non e' una posizione) */
++    pnl: number | null;
++    firma?: string | null;
++    residuo?: boolean;
++}
++
++export interface ComandoChiusura {
++    bot: Bot;
++    riga: RigaDaChiudere;
++    /** quante posizioni del bot il comando chiude (Mike: tutte quelle della partita) */
++    gambe: number;
++}
++
++export interface PianoChiusura {
++    comandi: ComandoChiusura[];
++    /** posizioni per cui NON esiste un comando adesso, col motivo del bot */
++    senzaComando: { bot: Bot; id: number; motivo: string }[];
++}
++
++/** La riga come la vede il «Chiudi» di riga (stessi campi di `DettaglioRigaView`). */
++function rigaDa(o: OperazionePerChiusura): RigaDaChiudere {
++    return {
++        bot: o.bot, id: o.id, eventId: o.eventId ?? null, marketId: o.marketId ?? null,
++        modalita: o.modalita, stato: o.stato, chiudeId: o.chiudeId ?? null,
++        regolata: isBotTennis(o.bot) && o.pnl != null,
++        ...(o.firma != null ? { firma: o.firma } : {}),
++        ...(o.residuo ? { residuo: true } : {}),
++    };
++}
++
++/**
++ * IL PIANO, per UNA modalita': quali comandi partono e in che ordine.
++ *  - la regola di chi e' una posizione e chi e' chiudibile e' `chiudiRiga.
++ *    chiudibile` (la stessa del pulsante di riga): nessuna seconda regola;
++ *  - Mike: UN comando per partita (con la prima riga chiudibile; `mike_request
++ *    ('cashout')` chiude l'intero ciclo), che copre tutte le sue gambe;
++ *  - Safe, Omega, 4 bot tennis: un comando per riga; scalper: per sessione;
++ *  - una posizione non chiudibile adesso va in `senzaComando` col motivo.
++ */
++export function pianoChiusuraPartita(
++    ops: readonly OperazionePerChiusura[], modalita: 'paper' | 'live',
++): PianoChiusura {
++    const comandi: ComandoChiusura[] = [];
++    const senzaComando: PianoChiusura['senzaComando'] = [];
++    const mike: { riga: RigaDaChiudere; ok: boolean; motivo: string | null }[] = [];
++    for (const o of ops) {
++        if (o.modalita !== modalita) continue;
++        const riga = rigaDa(o);
++        const c = chiudibile(riga);
++        if (c == null) continue;                        // non e' una posizione
++        if (o.bot === 'mike') { mike.push({ riga, ok: c.ok, motivo: c.ok ? null : c.motivo }); continue; }
++        if (c.ok) comandi.push({ bot: o.bot, riga, gambe: 1 });
++        else senzaComando.push({ bot: o.bot, id: o.id, motivo: c.motivo });
++    }
++    const primaOk = mike.find((m) => m.ok);
++    if (primaOk) comandi.unshift({ bot: 'mike', riga: primaOk.riga, gambe: mike.length });
++    else for (const m of mike) senzaComando.push({ bot: 'mike', id: m.riga.id, motivo: m.motivo ?? '' });
++    return { comandi, senzaComando };
++}
++
++/** «2 gambe di Mike, 1 di Safe; Scalper calcio #7 non ha un comando: resta aperto (motivo)» */
++export function testoPiano(p: PianoChiusura): string {
++    const perBot = new Map<string, number>();
++    for (const c of p.comandi) perBot.set(c.bot, (perBot.get(c.bot) ?? 0) + c.gambe);
++    const parti = Array.from(perBot.entries()).map(([b, n], i) =>
++        (i === 0 ? `${n} ${n === 1 ? 'gamba' : 'gambe'} di ${nomeBot(b)}` : `${n} di ${nomeBot(b)}`));
++    const senza = p.senzaComando.map((s) => `${nomeBot(s.bot)} #${s.id} non ha un comando adesso: resta aperta (${s.motivo})`);
++    return [parti.join(', ') || 'nessuna gamba chiudibile', ...senza].join('; ');
++}
++
++function ChiudiTutteLeGambe({ piano, modalita, spentoPerche, testId }: {
++    piano: PianoChiusura; modalita: 'paper' | 'live'; spentoPerche: string | null; testId: string;
++}) {
++    const api = useContext(ChiusuraRigaContext);
++    const [armatoDa, setArmatoDa] = useState<number | null>(null);
++    const [inVolo, setInVolo] = useState(false);
++    const [inviati, setInviati] = useState<ComandoChiusura[]>([]);
++    const [, setTic] = useState(0);
++    useEffect(() => {
++        if (armatoDa == null) return undefined;
++        const t = window.setTimeout(() => setTic((n) => n + 1), ATTESA_CONFERMA_USCITE_MS + 20);
++        return () => window.clearTimeout(t);
++    }, [armatoDa]);
++    if (!api) return null;
++    if (piano.comandi.length === 0 && piano.senzaComando.length === 0) return null;
++    const troppoPresto = armatoDa != null && Date.now() - armatoDa < ATTESA_CONFERMA_USCITE_MS;
++    const nBot = new Set(piano.comandi.map((c) => c.bot)).size;
++    const blocco = piano.comandi.length === 0 ? 'nessuna gamba chiudibile adesso' : spentoPerche;
++    // IN SEQUENZA: il comando successivo parte solo quando il precedente ha
++    // avuto il suo esito d'invio (`chiudi` scrive lo stato e non lancia)
++    const esegui = async () => {
++        setArmatoDa(null);
++        setInVolo(true);
++        const mandati: ComandoChiusura[] = [];
++        try {
++            for (const c of piano.comandi) {
++                await api.chiudi(c.riga);
++                mandati.push(c);
++                setInviati([...mandati]);
++            }
++        } finally {
++            setInVolo(false);
++        }
++    };
++    return (
++        <div className="flex flex-col gap-0.5" data-testid={testId}>
++            <div className="text-[10px] text-white/50" data-testid={`${testId}-piano`}>{testoPiano(piano)}</div>
++            <div className="flex items-baseline gap-1.5 flex-wrap">
++                {armatoDa != null ? (
++                    <>
++                        <button type="button" data-testid={`${testId}-conferma`}
++                            disabled={troppoPresto || inVolo}
++                            onClick={() => { if (!troppoPresto) void esegui(); }}
++                            className="h-6 px-2 text-[10px] rounded bg-orange-500 text-black font-bold uppercase disabled:opacity-40">
++                            Confermo: chiudi tutte le gambe
++                        </button>
++                        <span className="text-[10px] text-orange-300" data-testid={`${testId}-armato`}>
++                            Sono soldi veri: {piano.comandi.length} {piano.comandi.length === 1 ? 'comando' : 'comandi'} a {nBot} {nBot === 1 ? 'bot' : 'bot'}.{' '}
++                            <button type="button" className="underline" onClick={() => setArmatoDa(null)}
++                                data-testid={`${testId}-annulla`}>annulla</button>
++                        </span>
++                    </>
++                ) : (
++                    <button type="button" data-testid={`${testId}-avvia`}
++                        disabled={blocco != null || inVolo}
++                        title={blocco ?? 'manda in sequenza, bot per bot, gli stessi comandi dei pulsanti «Chiudi» di riga'}
++                        onClick={() => { if (modalita === 'live') setArmatoDa(Date.now()); else void esegui(); }}
++                        className="h-6 px-2 text-[10px] rounded border border-rose-500/40 bg-rose-500/10 text-rose-200 font-semibold uppercase disabled:opacity-40">
++                        Chiudi tutte le gambe dei bot
++                    </button>
++                )}
++                {blocco != null && armatoDa == null && (
++                    <span className="text-[10px] text-white/40" data-testid={`${testId}-bloccato`}>{blocco}</span>
++                )}
++            </div>
++            {inviati.map((c) => {
++                const s = api.stato(c.bot, c.riga.id);
++                const fase = s ? TESTO_FASE[faseMostrata(s)] : 'in invio';
++                const chi = c.bot === 'mike' ? `Mike (partita, ${c.gambe} ${c.gambe === 1 ? 'gamba' : 'gambe'})` : `${nomeBot(c.bot)} #${c.riga.id}`;
++                return (
++                    <div key={`${c.bot}:${c.riga.id}`} className="text-[10px] text-white/60"
++                        data-testid={`${testId}-esito`} data-bot={c.bot}>
++                        {chi}: {fase}{s?.motivo ? `: ${s.motivo}` : ''}
++                    </div>
++                );
++            })}
++        </div>
++    );
++}
++
++/** Pulsanti di soldi spenti con prezzi fermi/ignoti (`feedFreshness`: oltre 20 s = fermo). */
++function motivoPrezziFermi(r: CashOutModalita): string | null {
++    if (r.etaIgnota) return 'prezzi di eta\' ignota: non si chiude alla cieca';
++    if (r.etaPrezziS != null && feedFreshness(r.etaPrezziS).tone === 'stale') {
++        return `prezzi fermi da ${Math.round(r.etaPrezziS)} s: non si chiude su prezzi vecchi`;
++    }
++    return null;
++}
++
+ function RigaGamba({ p, modo, testId }: { p: PosizioneCashOut; modo: 'LIVE' | 'PROVA'; testId: string }) {
++    // W_C: una componente «esposizione» (sessione scalper) si scrive coi suoi W/L
++    const pezzo = (c: PosizioneCashOut['componenti'][number]) => (c.esposizione
++        ? `esposizione ${nomeBot(c.bot)}: se vince ${fmtMoney(c.esposizione.win, { signed: true })} / se perde ${fmtMoney(c.esposizione.lose, { signed: true })}`
++        : `${lato(c.lato)} ${fmtMoney(c.abbinato)} @ ${fmtOdds(c.prezzo)}`);
++    const nome = p.selezione ?? `selezione ${p.selectionId}`;
+     const ingresso = p.componenti.length === 1
+-        ? `${lato(p.lato)} ${p.selezione ?? `selezione ${p.selectionId}`} ${fmtMoney(p.abbinato)} @ ${fmtOdds(p.prezzoIngresso)}`
+-        : `${p.selezione ?? `selezione ${p.selectionId}`}: ${p.componenti.length} gambe (${p.componenti
+-            .map((c) => `${lato(c.lato)} ${fmtMoney(c.abbinato)} @ ${fmtOdds(c.prezzo)}`).join(', ')})`;
++        ? (p.componenti[0].esposizione ? `${nome}: ${pezzo(p.componenti[0])}`
++            : `${lato(p.lato)} ${nome} ${fmtMoney(p.abbinato)} @ ${fmtOdds(p.prezzoIngresso)}`)
++        : `${nome}: ${p.componenti.length} gambe (${p.componenti.map(pezzo).join(', ')})`;
+     let chiusura: string;
+     if (p.stato === 'decisa') chiusura = 'esito gia\' deciso: nessuna chiusura';
+     else if (p.stato === 'piatta') {
+@@ -110,10 +300,16 @@ function RigaGamba({ p, modo, testId }: { p: PosizioneCashOut; modo: 'LIVE' | 'P
+     );
+ }
+ 
+-function Blocco({ r, modo, testId, valoriBot }: {
++function Blocco({ r, modo, testId, valoriBot, operazioni }: {
+     r: CashOutModalita; modo: 'LIVE' | 'PROVA'; testId: string; valoriBot: readonly ValoreBotCashOut[];
++    operazioni?: readonly OperazionePerChiusura[];
+ }) {
+     const eta = r.etaIgnota ? null : r.etaPrezziS;
++    const modalita = modo === 'LIVE' ? 'live' : 'paper';
++    const piano = operazioni ? pianoChiusuraPartita(operazioni, modalita) : null;
++    // pulsante di soldi: spento su prezzi fermi/ignoti e se la cifra non e' calcolabile
++    const spentoPerche = motivoPrezziFermi(r)
++        ?? (r.netto == null ? 'cifra della partita non calcolabile: non si chiude alla cieca' : null);
+     return (
+         <div className="flex flex-col gap-1" data-testid={testId}>
+             <div className="flex items-baseline gap-2 flex-wrap">
+@@ -193,11 +389,15 @@ function Blocco({ r, modo, testId, valoriBot }: {
+                     </div>
+                 );
+             })}
++            {piano && (
++                <ChiudiTutteLeGambe piano={piano} modalita={modalita} spentoPerche={spentoPerche}
++                    testId={`${testId}-chiudi-tutte`} />
++            )}
+         </div>
+     );
+ }
+ 
+-export function CashOutGlobale({ risultato, valoriBot = [], testId = 'cr-cashout-globale' }: CashOutGlobaleProps) {
++export function CashOutGlobale({ risultato, valoriBot = [], testId = 'cr-cashout-globale', operazioni }: CashOutGlobaleProps) {
+     if (risultato == null) {
+         return (
+             <div className="text-[10px] text-white/40" data-testid={testId} data-vuoto="1">
+@@ -212,14 +412,14 @@ export function CashOutGlobale({ risultato, valoriBot = [], testId = 'cr-cashout
+     return (
+         <div className="flex flex-col gap-1.5 rounded border border-white/10 px-2 py-1.5" data-testid={testId}>
+             {haLive ? (
+-                <Blocco r={risultato.live} modo="LIVE" testId={`${testId}-live`} valoriBot={botLive} />
++                <Blocco r={risultato.live} modo="LIVE" testId={`${testId}-live`} valoriBot={botLive} operazioni={operazioni} />
+             ) : (
+                 <div className="text-[10px] text-white/40" data-testid={`${testId}-live-vuoto`}>
+                     Cash out della partita: nessuna gamba LIVE abbinata su questa partita
+                 </div>
+             )}
+             {haProva && (
+-                <Blocco r={risultato.paper} modo="PROVA" testId={`${testId}-prova`} valoriBot={botProva} />
++                <Blocco r={risultato.paper} modo="PROVA" testId={`${testId}-prova`} valoriBot={botProva} operazioni={operazioni} />
+             )}
+         </div>
+     );
+@@ -232,14 +432,17 @@ export function CashOutGlobale({ risultato, valoriBot = [], testId = 'cr-cashout
+  * la cifra del servizio di Mike. Una partita senza gambe abbinate non mostra
+  * niente e non apre sottoscrizioni.
+  */
+-export function CashOutGlobalePartita({ sport, operazioni, mike = null }: {
++export function CashOutGlobalePartita({ sport, operazioni, mike = null, moMarketId = null }: {
+     sport: 'calcio' | 'tennis';
+-    operazioni: NonNullable<ArgsCashOutPartita['operazioni']>;
++    /** W_C: il Match Odds della partita (`p.marketId` = `mo_market_id`); nel
++     *  TENNIS e' a due esiti (P1/P2): le gambe sui due giocatori si nettano */
++    moMarketId?: string | null;
++    operazioni: readonly (NonNullable<ArgsCashOutPartita['operazioni']>[number] & OperazionePerChiusura)[];
+     /** la partita di Mike come il servizio la pubblica (gia' in pagina) */
+     mike?: MikeEvent | null;
+ }) {
+     const sorgente = useContext(ChiusuraRigaContext)?.sorgenteLadder ?? null;
+-    const dueEsiti = useMemo(() => dueEsitiMike(mike), [mike]);
++    const dueEsiti = useMemo(() => dueEsitiPartita(sport, moMarketId, dueEsitiMike(mike)), [sport, moMarketId, mike]);
+     const esitoDeciso = useMemo(() => esitoDecisoMike(mike, operazioni), [mike, operazioni]);
+     const r = useCashOutPartita({ operazioni, sorgente, sport, dueEsiti, esitoDeciso });
+     if (r == null) return null;
+@@ -248,7 +451,7 @@ export function CashOutGlobalePartita({ sport, operazioni, mike = null }: {
+     const vb = valoreBotMike(mike, Date.now());
+     return (
+         <div className="px-2.5 pt-1.5">
+-            <CashOutGlobale risultato={r} valoriBot={vb ? [vb] : []} />
++            <CashOutGlobale risultato={r} valoriBot={vb ? [vb] : []} operazioni={operazioni} />
+         </div>
+     );
+ }
+diff --git a/frontend/src/components/controlroom/SchedaPartita.tsx b/frontend/src/components/controlroom/SchedaPartita.tsx
+index 0b47279..77b9d9b 100644
+--- a/frontend/src/components/controlroom/SchedaPartita.tsx
++++ b/frontend/src/components/controlroom/SchedaPartita.tsx
+@@ -422,7 +422,7 @@ export function SchedaPartita({
+ 
+             {/* 30/09 (P12b) - il CASH OUT DELLA PARTITA: somma esatta delle gambe
+                 abbinate di TUTTI i bot, LIVE e PROVA separati; niente se non ce ne sono */}
+-            <CashOutGlobalePartita sport={p.sport} operazioni={operazioni} mike={mike} />
++            <CashOutGlobalePartita sport={p.sport} operazioni={operazioni} mike={mike} moMarketId={p.marketId} />
+ 
+             {/* ── riga 2: il METRO — target, fatto, quanto manca ── */}
+             <div className="px-2.5 pt-2">
+diff --git a/frontend/src/components/controlroom/useChiusuraAlMs.parita.test.tsx b/frontend/src/components/controlroom/useChiusuraAlMs.parita.test.tsx
+index 29b7148..62deb18 100644
+--- a/frontend/src/components/controlroom/useChiusuraAlMs.parita.test.tsx
++++ b/frontend/src/components/controlroom/useChiusuraAlMs.parita.test.tsx
+@@ -116,6 +116,7 @@ vi.mock('@/lib/scalper', async (orig) => ({
+ 
+ import { fetchScanRows } from '@/lib/safeStrategyScan';
+ import { fetchMikeState } from '@/lib/mike';
++import { fetchScalperControlRoom, esposizioneScalper } from '@/lib/scalperControlRoom';
+ import { useControlRoom } from '@/components/controlroom/useControlRoom';
+ import { useChiusuraAlMs } from '@/components/controlroom/useChiusuraAlMs';
+ import { cashOutPartita, gambeDaOperazioni } from '@/lib/cashOutPartita';
+@@ -277,6 +278,33 @@ describe('P11: stessa gamba in utile, ramo al ms = ramo scanner al centesimo', (
+         expect(r.live.netto).toBe(0.05);
+     });
+ 
++    it('W_C: la riga della sessione SCALPER porta le esposizioni per selezione (= esposizioneScalper)', async () => {
++        const ordini = [
++            { id: 1, bet_id: null, client_order_ref: 'a', mode: 'live', event_id: '35800001', market_id: '1.7', selection_id: 1,
++                side: 'BACK', order_type: 'LIMIT', price: 2.0, size: 10, size_matched: 10, size_remaining: 0, size_cancelled: 0,
++                size_lapsed: 0, size_voided: 0, average_price_matched: 2.0, status: 'EXECUTION_COMPLETE', placed_at: PIAZZATO,
++                matched_at: PIAZZATO, updated_at: PIAZZATO, source: 'scalper' },
++            { id: 2, bet_id: null, client_order_ref: 'b', mode: 'live', event_id: '35800001', market_id: '1.7', selection_id: 2,
++                side: 'BACK', order_type: 'LIMIT', price: 3.0, size: 5, size_matched: 5, size_remaining: 0, size_cancelled: 0,
++                size_lapsed: 0, size_voided: 0, average_price_matched: 3.0, status: 'EXECUTION_COMPLETE', placed_at: PIAZZATO,
++                matched_at: PIAZZATO, updated_at: PIAZZATO, source: 'scalper' },
++        ];
++        vi.mocked(fetchScalperControlRoom).mockResolvedValue({
++            sessioni: [{ event_id: '35800001', status: 'running', mode: 'live', dry_run: false, stake: 10, params: null,
++                bias: null, bias_meta: null, stats: null, error: null, requested_at: PIAZZATO, started_at: PIAZZATO,
++                stopped_at: null, heartbeat_at: PIAZZATO, updated_at: PIAZZATO, event_name: 'A v B', league_name: null,
++                kickoff: null, ultima_attivita_at: null, ultima_attivita_kind: null }],
++            ordini, lettoAt: PIAZZATO,
++        } as never);
++        const { result } = renderHook(() => useControlRoom());
++        await waitFor(() => expect(result.current.caricamento).toBe(false));
++        const riga = (result.current.operazioni.get('35800001') ?? []).find((o) => o.bot === 'scalper');
++        const atteso = esposizioneScalper(ordini as never).selezioni
++            .map((e) => ({ marketId: e.marketId, selectionId: e.selectionId, selezione: null, win: e.win, lose: e.lose }));
++        expect(riga?.esposizioneSelezioni).toEqual(atteso);
++        expect(atteso.map((e) => [e.selectionId, e.win, e.lose])).toEqual([[1, 10, -10], [2, 10, -5]]);
++    });
++
+     it('in perdita nessuna commissione: lay 2,10 -> ms = scanner', async () => {
+         const ch = await chiusuraScanner(tradeMike({ id: 814, price: 1.85 }), 2.08, 2.10);
+         const f = sorgenteFinta();
+diff --git a/frontend/src/components/controlroom/useControlRoom.ts b/frontend/src/components/controlroom/useControlRoom.ts
+index 0def87e..37eab66 100644
+--- a/frontend/src/components/controlroom/useControlRoom.ts
++++ b/frontend/src/components/controlroom/useControlRoom.ts
+@@ -415,6 +415,9 @@ export interface OperazionePartita {
+     /** 30/09 (P12b) - mercato/selezione di ogni gamba di chiusura, stesso ordine di
+      *  `chiusureOrdini`: servono al cash out della PARTITA per nettarle. */
+     chiusureGambe?: { id: number | null; marketId: string | null; selectionId: number | null }[];
++    /** 30/09 sera (W_C) - SOLO la sessione scalper: le esposizioni ABBINATE per
++     *  selezione (`esposizioneScalper`), per il cash out della PARTITA. */
++    esposizioneSelezioni?: { marketId: string; selectionId: number; selezione: string | null; win: number; lose: number }[];
+     /**
+      * 18/09 (raccordo, R3) — le righe GREZZE (`RigaOrdine`) delle chiusure
+      * collegate (`closes_trade_id`), nello stesso ordine di `dettaglio.
+@@ -3408,6 +3411,7 @@ export function useControlRoom(): ControlRoomVM {
+                 etaQuoteS: etaSecondi(feedPerEvento.get(k)?.updated_at ?? null, nowMs),
+                 chiusura: v.chiusura,
+                 chiusureOrdini: [],
++                esposizioneSelezioni: v.esp.selezioni.map((e) => ({ marketId: e.marketId, selectionId: e.selectionId, selezione: null, win: e.win, lose: e.lose })),
+                 eventId: k,
+                 chiudeId: null,
+                 firma: v.s.requested_at,
+diff --git a/frontend/src/lib/cashOutPartita.test.ts b/frontend/src/lib/cashOutPartita.test.ts
+index abd606c..e3accf5 100644
+--- a/frontend/src/lib/cashOutPartita.test.ts
++++ b/frontend/src/lib/cashOutPartita.test.ts
+@@ -13,9 +13,10 @@
+ // -> rossi.
+ // ============================================================================
+ import { describe, it, expect } from 'vitest';
+-import { cashOutPartita, gambeDaOperazioni, r2, type GambaViva, type OpzioniCashOut } from './cashOutPartita';
++import { cashOutPartita, dueEsitiPartita, gambeDaOperazioni, r2, type GambaViva, type OpzioniCashOut } from './cashOutPartita';
+ import { PREZZO_VUOTO, type PrezzoScheda } from './schedaAlMs';
+ import type { OperazionePartita } from '@/components/controlroom/useControlRoom';
++import { esposizioneScalper, type OrdineScalper } from './scalperControlRoom';
+ 
+ const NOW = 1_800_000_000_000;
+ 
+@@ -371,6 +372,91 @@ describe('gambeDaOperazioni: le righe della scheda di TUTTI i bot', () => {
+     });
+ });
+ 
++// ===================================================================
++// W_C (30/09 sera): LO SCALPER SCOMPONIBILE - esposizioni per selezione
++// ===================================================================
++function ordineScalper(p: Partial<OrdineScalper> & Pick<OrdineScalper, 'id' | 'selection_id' | 'side' | 'price' | 'size_matched'>): OrdineScalper {
++    return {
++        bet_id: null, client_order_ref: `sc-${p.id}`, mode: 'live', event_id: '35001', market_id: '1.7',
++        order_type: 'LIMIT', size: p.size_matched, size_remaining: 0, size_cancelled: 0, size_lapsed: 0,
++        size_voided: 0, average_price_matched: p.price, status: 'EXECUTION_COMPLETE', placed_at: null,
++        matched_at: null, updated_at: null, source: 'scalper', ...p,
++    } as OrdineScalper;
++}
++
++describe('W_C: la sessione scalper nel cash out (esposizioni per selezione)', () => {
++    // sessione: A back 10 @ 2,0 + lay 6 @ 2,2; B back 5 @ 3,0 (stesso Match Odds, 3 esiti)
++    const esp = esposizioneScalper([
++        ordineScalper({ id: 1, selection_id: 1, side: 'BACK', price: 2.0, size_matched: 10 }),
++        ordineScalper({ id: 2, selection_id: 1, side: 'LAY', price: 2.2, size_matched: 6 }),
++        ordineScalper({ id: 3, selection_id: 2, side: 'BACK', price: 3.0, size_matched: 5 }),
++    ]);
++    const sessione = op({
++        id: 7, bot: 'scalper', lato: null, stato: 'running', modalita: 'live',
++        esposizioneSelezioni: esp.selezioni.map((e) => ({ marketId: e.marketId, selectionId: e.selectionId, selezione: null, win: e.win, lose: e.lose })),
++    });
++    it('parita\' con esposizioneScalper: A (2,80 / -4,00), B (10,00 / -5,00)', () => {
++        expect(esp.selezioni.map((e) => [e.selectionId, e.win, e.lose])).toEqual([[1, 2.8, -4], [2, 10, -5]]);
++        const g = gambeDaOperazioni([sessione]);
++        expect(g.map((x) => [x.selectionId, x.esposizione])).toEqual([[1, { win: 2.8, lose: -4 }], [2, { win: 10, lose: -5 }]]);
++    });
++    it('la CIFRA c\'e\' (non piu\' NON CALCOLABILE): A banca 3,24 @ 2,10 -> -0,76; B banca 4,69 @ 3,20 -> -0,32; totale -1,08', () => {
++        const r = cashOutPartita(gambeDaOperazioni([sessione]),
++            opz({ '1.7|1': { back: 2.08, lay: 2.1, laySize: 100 }, '1.7|2': { back: 3.15, lay: 3.2, laySize: 100 } }));
++        expect(r.live.mancanti).toEqual([]);
++        expect(r.live.gambe.map((p) => [p.importoChiusura, p.pnlLordo])).toEqual([[3.24, -0.76], [4.69, -0.32]]);
++        expect(r.live.netto).toBe(-1.08);
++    });
++    it('sessione ferma senza residuo, o regolata (pnl): non entra; senza esposizioni: dichiarata non scomponibile', () => {
++        expect(gambeDaOperazioni([{ ...sessione, stato: 'stopped' }])).toEqual([]);
++        expect(gambeDaOperazioni([{ ...sessione, stato: 'stopped', residuo: true }])).toHaveLength(2);
++        expect(gambeDaOperazioni([{ ...sessione, pnl: 1.2 }])).toEqual([]);
++        const vecchia = gambeDaOperazioni([{ ...sessione, esposizioneSelezioni: undefined }]);
++        expect(vecchia[0].nonScomponibile).toMatch(/scalper/);
++    });
++});
++
++describe('W_C: dueEsitiPartita (Match Odds del tennis + mercati O/U di Mike)', () => {
++    it('tennis: solo il Match Odds; calcio: il Match Odds NO (3 esiti); gli altri (Mike) restano', () => {
++        const mike = (m: string) => m === 'OU45';
++        expect(dueEsitiPartita('tennis', '1.9', undefined)?.('1.9')).toBe(true);
++        expect(dueEsitiPartita('tennis', '1.9', undefined)?.('1.55')).toBe(false);
++        expect(dueEsitiPartita('calcio', '1.9', undefined)).toBeUndefined();
++        expect(dueEsitiPartita('calcio', '1.9', mike)?.('1.9')).toBe(false);
++        expect(dueEsitiPartita('tennis', null, mike)?.('OU45')).toBe(true);
++        expect(dueEsitiPartita('tennis', '1.9', mike)?.('OU45')).toBe(true);
++    });
++});
++
++describe('W_C (bassi del revisore)', () => {
++    it('pareggiata con sbilancio < 2 centesimi e SENZA prezzo: «pareggiata (±0,01)», non NON CALCOLABILE', () => {
++        // back 3 @ 2,00 (+3 / -3) + lay 3,01 @ 1,99 (liability 2,98): W 0,02, L 0,01
++        const g = [
++            gamba({ id: 1, marketId: '1.9', selectionId: 5, selezione: 'Under 3.5', lato: 'back', abbinato: 3, prezzoMedio: 2.0 }),
++            gamba({ id: 2, marketId: '1.9', selectionId: 5, selezione: 'Under 3.5', lato: 'lay', abbinato: 3.01, prezzoMedio: 1.99 }),
++        ];
++        const r = cashOutPartita(g, opz({}));
++        expect(r.live.gambe[0]).toMatchObject({ seVince: 0.02, sePerde: 0.01, stato: 'piatta', pnlLordo: 0.01 });
++        expect(r.live.netto).toBe(0.01);
++        expect(r.live.avvisi).toContain('Under 3.5: pareggiata (±0,01), prezzo assente: vale il bloccato');
++        // da 2 centesimi in su senza prezzo resta NON CALCOLABILE (Farul: 0,02)
++        const farul = [
++            gamba({ id: 3, marketId: '1.9', selectionId: 5, selezione: 'U', lato: 'back', abbinato: 5, prezzoMedio: 2.87 }),
++            gamba({ id: 4, marketId: '1.9', selectionId: 5, selezione: 'U', lato: 'lay', abbinato: 5.06, prezzoMedio: 2.84 }),
++        ];
++        expect(cashOutPartita(farul, opz({})).live.netto).toBeNull();
++    });
++    it('nome della selezione dalle altre gambe dello stesso mercato prima dell\'id grezzo', () => {
++        const g = [
++            gamba({ id: 1, bot: 'tennis_pro', marketId: '1.9', selectionId: 47972, selezione: null, lato: 'back', abbinato: 5, prezzoMedio: 2.0 }),
++            gamba({ id: 2, bot: 'safe', modalita: 'paper', marketId: '1.9', selectionId: 47972, selezione: 'Sinner J.', lato: 'back', abbinato: 2, prezzoMedio: 2.0 }),
++        ];
++        const r = cashOutPartita(g, opz({}));
++        expect(r.live.gambe[0].selezione).toBe('Sinner J.');
++        expect(r.live.mancanti).toEqual(['manca il prezzo di Sinner J. (banca)']);
++    });
++});
++
+ describe('r2: il centesimo come Betfair', () => {
+     it('meta\' centesimo e segni', () => {
+         expect(r2(0.145)).toBe(0.15);
+diff --git a/frontend/src/lib/cashOutPartita.ts b/frontend/src/lib/cashOutPartita.ts
+index 784e9a3..2f861cf 100644
+--- a/frontend/src/lib/cashOutPartita.ts
++++ b/frontend/src/lib/cashOutPartita.ts
+@@ -57,6 +57,10 @@ import { etaQuoteS, type MikeEvent } from '@/lib/mike';
+ 
+ /** Sotto 1 centesimo di sbilancio la selezione e' piatta (greenup.FLAT_EPS). */
+ export const PIATTO_EPS = 0.01;
++/** W_C: sotto 2 centesimi e SENZA prezzo, la selezione e' «pareggiata». */
++export const PAREGGIATA_EPS = 0.02;
++
++const fmtCent = (v: number) => `${r2(v).toFixed(2).replace('.', ',')}`;
+ /** Sotto mezzo centesimo un abbinato non esiste (statoOrdine.EPS). */
+ const ABBINATO_EPS = 0.005;
+ /** L'aliquota quando la gamba non la porta (`useControlRoom.aliquotaDi`). */
+@@ -92,17 +96,23 @@ export interface GambaViva {
+     /** una gamba che la pagina NON sa scomporre (es. sessione scalper): il
+      *  motivo va in `mancanti` se e' abbinata */
+     nonScomponibile?: string | null;
++    /** W_C (30/09 sera): esposizione GIA' calcolata dal bot per la selezione
++     *  (sessione scalper, `esposizioneScalper`): P&L se vince / se perde
++     *  dell'ABBINATO. Se c'e', `lato`/`abbinato`/`prezzoMedio` non servono. */
++    esposizione?: { win: number; lose: number } | null;
+ }
+ 
+ /** Una componente della posizione (la gamba come la ha fatta il bot). */
+ export interface ComponenteCashOut {
+     id: number | string;
+     bot: string;
+-    lato: 'back' | 'lay';
+-    abbinato: number;
+-    prezzo: number;
++    /** null = componente «esposizione» (W/L gia' calcolati dal bot) */
++    lato: 'back' | 'lay' | null;
++    abbinato: number | null;
++    prezzo: number | null;
+     selectionId: number;
+     selezione: string | null;
++    esposizione?: { win: number; lose: number };
+ }
+ 
+ export type StatoPosizione = 'da_chiudere' | 'piatta' | 'decisa' | 'senza_prezzo' | 'mercato_non_aperto';
+@@ -207,6 +217,13 @@ function esposizione(componenti: readonly ComponenteCashOut[], sel: number): { w
+     let w = 0;
+     let l = 0;
+     for (const c of componenti) {
++        if (c.esposizione) {
++            // W/L gia' della selezione della componente; sull'ALTRA selezione di
++            // un mercato a due esiti si scambiano (vince l'una = perde l'altra)
++            if (c.selectionId === sel) { w += c.esposizione.win; l += c.esposizione.lose; } else { w += c.esposizione.lose; l += c.esposizione.win; }
++            continue;
++        }
++        if (c.abbinato == null || c.prezzo == null) continue;
+         const vinc = vincitaPunta(c.abbinato, c.prezzo);
+         if (c.selectionId === sel) {
+             if (c.lato === 'back') { w += vinc; l -= c.abbinato; } else { w -= vinc; l += c.abbinato; }
+@@ -227,7 +244,10 @@ function vuoto(): CashOutModalita {
+ }
+ 
+ /** Il cash out di UNA modalita' (le gambe sono gia' filtrate per modalita'). */
+-function calcolaModalita(gambe: readonly GambaViva[], o: OpzioniCashOut, extraMancanti: string[]): CashOutModalita {
++function calcolaModalita(
++    gambe: readonly GambaViva[], o: OpzioniCashOut, extraMancanti: string[],
++    nomi: ReadonlyMap<string, string> = new Map(),
++): CashOutModalita {
+     const out = vuoto();
+     out.mancanti.push(...extraMancanti);
+     // 1. solo l'ABBINATO, con mercato, selezione, lato e prezzo medio dichiarati
+@@ -238,6 +258,23 @@ function calcolaModalita(gambe: readonly GambaViva[], o: OpzioniCashOut, extraMa
+             if (a == null || a > ABBINATO_EPS) out.mancanti.push(`${g.bot} #${g.id}: ${g.nonScomponibile}`);
+             continue;
+         }
++        if (g.esposizione) {
++            const e = g.esposizione;
++            if (!g.marketId || g.selectionId == null || !valido(e.win) || !valido(e.lose)) {
++                out.mancanti.push(`esposizione incompleta: ${g.bot} #${g.id} (${nomeSel(g)})`);
++                continue;
++            }
++            out.nGambe += 1;
++            const me = perMercato.get(g.marketId) ?? { componenti: [], aliquote: new Set<number>(), dueEsiti: false };
++            me.componenti.push({
++                id: g.id, bot: g.bot, lato: null, abbinato: null, prezzo: null,
++                selectionId: Number(g.selectionId), selezione: g.selezione, esposizione: { win: r2(e.win), lose: r2(e.lose) },
++            });
++            me.aliquote.add(aliquotaDi(g));
++            me.dueEsiti = me.dueEsiti || g.dueEsiti === true;
++            perMercato.set(g.marketId, me);
++            continue;
++        }
+         if (a == null || !valido(a)) {
+             out.mancanti.push(`importo abbinato non dichiarato: ${g.bot} #${g.id} (${nomeSel(g)})`);
+             continue;
+@@ -304,7 +341,10 @@ function calcolaModalita(gambe: readonly GambaViva[], o: OpzioniCashOut, extraMa
+                 chiave: `${marketId}|${k.sel}`, marketId, selectionId: k.sel,
+                 // il nome della selezione CHIAVE; se nessuna gamba e' su quella
+                 // (mercato a due esiti) il nome non si inventa: null
+-                selezione: k.comp.find((c) => c.selectionId === k.sel)?.selezione ?? null,
++                // W_C: prima dell'id grezzo, il nome dalle altre gambe della
++                // stessa (mercato, selezione) di qualunque bot/modalita'
++                selezione: k.comp.find((c) => c.selectionId === k.sel)?.selezione
++                    ?? nomi.get(`${marketId}|${k.sel}`) ?? null,
+                 bot: Array.from(new Set(k.comp.map((c) => c.bot))),
+                 componenti: k.comp,
+                 lato: uno ? uno.lato : null, abbinato: uno ? uno.abbinato : null,
+@@ -334,6 +374,12 @@ function calcolaModalita(gambe: readonly GambaViva[], o: OpzioniCashOut, extraMa
+                 if (statoM && statoM !== 'OPEN') {
+                     pos.stato = 'mercato_non_aperto';
+                     out.mancanti.push(`mercato ${statoM === 'SUSPENDED' ? 'SOSPESO' : statoM === 'CLOSED' ? 'CHIUSO' : statoM} per ${nomeTrader}: adesso non si chiude`);
++                } else if ((prezzo == null || !pz) && r2(Math.abs(d)) < PAREGGIATA_EPS) {
++                    // W_C (basso del revisore): sbilancio sotto 2 centesimi e
++                    // prezzo assente: e' una partita PAREGGIATA, vale il bloccato
++                    pos.stato = 'piatta';
++                    pos.pnlLordo = r2(Math.min(k.w, k.l));
++                    out.avvisi.push(`${nomeTrader}: pareggiata (±${fmtCent(Math.abs(d))}), prezzo assente: vale il bloccato`);
+                 } else if (prezzo == null || !pz) {
+                     pos.stato = 'senza_prezzo';
+                     out.mancanti.push(`manca il prezzo di ${nomeTrader} (${lato === 'lay' ? 'banca' : 'punta'})`);
+@@ -422,9 +468,16 @@ export function cashOutPartita(gambe: readonly GambaViva[], o: OpzioniCashOut):
+     // fail-closed: una gamba abbinata senza modalita' potrebbe essere di soldi
+     // veri: il LIVE non si calcola finche' non e' dichiarata
+     const manc = ignote.map((g) => `modalita' non dichiarata: ${g.bot} #${g.id} (${nomeSel(g)})`);
++    // i nomi delle selezioni noti a QUALUNQUE gamba (per non stampare l'id grezzo)
++    const nomi = new Map<string, string>();
++    for (const g of gambe) {
++        if (g.marketId && g.selectionId != null && g.selezione && !nomi.has(`${g.marketId}|${g.selectionId}`)) {
++            nomi.set(`${g.marketId}|${g.selectionId}`, g.selezione);
++        }
++    }
+     return {
+-        live: calcolaModalita(live, o, manc),
+-        paper: calcolaModalita(paper, o, []),
++        live: calcolaModalita(live, o, manc, nomi),
++        paper: calcolaModalita(paper, o, [], nomi),
+     };
+ }
+ 
+@@ -461,8 +514,16 @@ export interface OperazionePerCashOut {
+     pnl?: number | null;
+     /** opzionale finche' la pagina non lo porta (v. `IdGambaChiusura`) */
+     chiusureGambe?: (IdGambaChiusura | null)[];
++    /** W_C: solo la sessione scalper, esposizioni per selezione dell'abbinato */
++    esposizioneSelezioni?: { marketId: string; selectionId: number; selezione: string | null; win: number; lose: number }[];
++    /** stato della riga (scalper: stato della SESSIONE) e residuo scoperto */
++    stato?: string;
++    residuo?: boolean;
+ }
+ 
++/** Sessione scalper ferma (`chiudiRiga.SCALPER_FERMABILE` e' il complemento). */
++const SESSIONE_FERMA = new Set(['stopped', 'done', 'error']);
++
+ function latoDi(side: unknown): 'back' | 'lay' | null {
+     const s = String(side ?? '').toLowerCase();
+     return s === 'back' ? 'back' : s === 'lay' ? 'lay' : null;
+@@ -522,6 +583,23 @@ export function gambeDaOperazioni(
+         if (op.bot === 'scalper') {
+             const so = statoOrdine(op.ordine ?? {});
+             if (so.esito === 'regolato') continue;
++            // P&L reale del conto = sessione chiusa e regolata: non e' viva;
++            // sessione ferma senza residuo scoperto: niente da chiudere
++            if (op.pnl != null && Number.isFinite(Number(op.pnl))) continue;
++            if (SESSIONE_FERMA.has(String(op.stato ?? '').toLowerCase()) && !op.residuo) continue;
++            // W_C: le esposizioni ABBINATE per selezione della sessione
++            // (`esposizioneScalper`): una gamba «esposizione» per selezione
++            if (op.esposizioneSelezioni) {
++                for (const e of op.esposizioneSelezioni) {
++                    out.push({
++                        id: `${op.id}/${e.selectionId}`, bot: op.bot, modalita: op.modalita,
++                        marketId: e.marketId, selectionId: e.selectionId, selezione: e.selezione,
++                        lato: null, abbinato: null, prezzoMedio: null, aliquota,
++                        dueEsiti: due(e.marketId), esposizione: { win: e.win, lose: e.lose },
++                    });
++                }
++                continue;
++            }
+             out.push({
+                 id: op.id, bot: op.bot, modalita: op.modalita, marketId: null, selectionId: null,
+                 selezione: op.selezione, lato: null, abbinato: so.abbinato.valore, prezzoMedio: null,
+@@ -568,6 +646,21 @@ export function dueEsitiMike(mike: MikeEvent | null | undefined): ((marketId: st
+     return ids.size === 0 ? undefined : (marketId: string) => ids.has(marketId);
+ }
+ 
++/**
++ * W_C - i mercati a DUE esiti della partita: quelli di Mike (O/U) e, nel
++ * TENNIS, il Match Odds (`mo_market_id` della scheda: due giocatori). Solo il
++ * Match Odds del tennis: set betting e altri mercati tennis hanno piu' esiti e
++ * restano per selezione.
++ */
++export function dueEsitiPartita(
++    sport: 'calcio' | 'tennis', moMarketId: string | null | undefined,
++    altri?: ((marketId: string) => boolean) | undefined,
++): ((marketId: string) => boolean) | undefined {
++    const mo = sport === 'tennis' && moMarketId ? String(moMarketId) : null;
++    if (mo == null) return altri;
++    return (m: string) => m === mo || (altri ? altri(m) : false);
++}
++
+ /**
+  * ESITO GIA' CERTO (engine.selection_decided, `engine.py:666-677`): con piu'
+  * gol della linea l'Over ha VINTO e l'Under ha PERSO, qualunque cosa faccia il

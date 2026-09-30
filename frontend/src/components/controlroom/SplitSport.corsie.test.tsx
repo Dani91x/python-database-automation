@@ -29,6 +29,31 @@ function tessera(perSport: Record<string, typeof LIVE>, perSportPaper: Record<st
     };
 }
 
+describe('W_G (30/09): la corsia LIVE dal CONTO quando letto', () => {
+    it('conto letto: LIVE = voce del conto (non le righe), marchio CONTO con eta\'; 0 ordini = 0,00 dichiarato', () => {
+        const s = render(<SplitSport selezionato={null} onSeleziona={() => undefined}
+            perSport={{ calcio: LIVE }} perSportPaper={{}} contoEtaS={180}
+            perSportConto={{ calcio: { pnl: 2, ordini: 1 }, tennis: { pnl: 0, ordini: 0 } }} />);
+        const calcio = s.getByTestId('cr-sport-calcio');
+        expect(within(calcio).getByTestId('cr-sport-calcio-live-pnl').textContent).toBe('+2,00 €');
+        expect(within(calcio).getByTestId('cr-sport-calcio-live-fonte').getAttribute('data-fonte')).toBe('conto');
+        expect(within(calcio).getByTestId('cr-sport-calcio-live-fonte').textContent).toContain('3 min fa');
+        expect(within(calcio).getByTestId('cr-sport-calcio-live-conto').textContent).toBe('1 ordine regolato oggi');
+        // le righe dei bot (1,50) non sono la cifra LIVE quando c'e' il conto
+        expect(within(calcio).getByTestId('cr-sport-calcio-live').textContent).not.toContain('1,50');
+        const tennis = s.getByTestId('cr-sport-tennis');
+        expect(within(tennis).getByTestId('cr-sport-tennis-live-pnl').textContent).toBe('+0,00 €');
+        expect(within(tennis).getByTestId('cr-sport-tennis-live-conto').textContent).toBe('nessuna operazione regolata oggi');
+    });
+
+    it('conto NON letto: le righe dei bot col marchio BOT (come prima)', () => {
+        const s = render(<SplitSport selezionato={null} onSeleziona={() => undefined}
+            perSport={{ calcio: LIVE }} perSportPaper={{}} perSportConto={null} />);
+        expect(s.getByTestId('cr-sport-calcio-live-pnl').textContent).toBe('+1,50 €');
+        expect(s.getByTestId('cr-sport-calcio-live-fonte').getAttribute('data-fonte')).toBe('bot');
+    });
+});
+
 describe('tessera sport: ogni corsia legge SOLO il suo dato', () => {
     it('live e paper diversi: LIVE mostra solo il live, PROVA solo il paper, contatori compresi', () => {
         const t = tessera({ calcio: LIVE }, { calcio: PAPER });

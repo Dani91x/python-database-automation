@@ -100,6 +100,8 @@ vi.mock('@/lib/liveOrders', async (orig) => ({
     // T_P4: lo stop del conto (betfair_live_risk_state)
     fetchLiveRiskState: vi.fn(async () => null),
     subscribeLiveRiskState: vi.fn(() => () => { /* nessuna spinta */ }),
+    // W_T/P14: gli ordini del conto fuori dai bot (contratto get_live_orders_account_open)
+    fetchLiveOrdersAccountOpen: vi.fn(async () => { throw new Error('Could not find the function public.get_live_orders_account_open'); }),
 }));
 vi.mock('@/lib/scalperControlRoom', async (orig) => ({
     ...(await orig() as object),
@@ -109,6 +111,7 @@ vi.mock('@/lib/scalperControlRoom', async (orig) => ({
 import { fetchMikeState } from '@/lib/mike';
 import {
     fetchLiveAccount, subscribeLiveAccount, fetchLiveRiskState, subscribeLiveRiskState,
+    fetchLiveOrdersAccountOpen,
 } from '@/lib/liveOrders';
 import { useControlRoom } from '@/components/controlroom/useControlRoom';
 
@@ -215,6 +218,42 @@ describe('stopPerdita (T_P4) - lo stop del CONTO dal runner, una lettura sola', 
         await waitFor(() => expect(h.result.current.stopPerdita.conto.letto).toBe(true));
         act(() => spinta?.({ ...RIGA_RISCHIO, limit_value: 40, detail: { reason: 'under_limit' } }));
         await waitFor(() => expect(h.result.current.stopPerdita.conto.soglia).toBe(40));
+    });
+});
+
+describe('ordiniConto (W_T/P14) - ordini del conto fuori dai bot, nel giro dei 30 s', () => {
+    const RIGA = {
+        bet_id: '351001', market_id: '1.OU35V', selection_id: 1222347, event_id: 'VSETIN',
+        event_name: 'FC Vsetin v Bohemians', market_name: 'Over/Under 3.5 Goals', selection_name: 'Over 3.5 Goals',
+        side: 'BACK', price_matched: 1.92, size_matched: 4.43, size_remaining: 0,
+        status: 'EXECUTION_COMPLETE', source: 'account', placed_at: '2026-09-30T13:31:02Z',
+    };
+
+    it('RPC non ancora applicata: «non letti (RPC non disponibile)», e NON fra le «fonti non raggiunte»', async () => {
+        vi.mocked(fetchLiveOrdersAccountOpen).mockRejectedValue(new Error('Could not find the function public.get_live_orders_account_open'));
+        const h = await montato();
+        await waitFor(() => expect(h.result.current.ordiniConto.motivo).toBe('RPC non disponibile'));
+        expect(h.result.current.ordiniConto.stato).toBe('non-letti');
+        expect(h.result.current.soldiVeri.ordiniFuori).toMatchObject({ letto: false, motivo: 'RPC non disponibile' });
+        expect(h.result.current.errore ?? '').not.toMatch(/ordini/);
+    });
+
+    it('letti: per partita, e in testata «1 partita (FC Vsetin v Bohemians)»', async () => {
+        vi.mocked(fetchLiveOrdersAccountOpen).mockResolvedValue({ rows: [RIGA], letto_at: new Date().toISOString() } as never);
+        const h = await montato();
+        await waitFor(() => expect(h.result.current.ordiniConto.stato).toBe('letti'));
+        expect(h.result.current.ordiniConto.perEvento.get('VSETIN')?.[0].bet_id).toBe('351001');
+        expect(h.result.current.soldiVeri.ordiniFuori).toMatchObject({ letto: true, n: 1, nomi: ['FC Vsetin v Bohemians'] });
+    });
+
+    it('una lettura per giro (dentro la ricarica), nessuna lettura in piu\' al montaggio', async () => {
+        vi.mocked(fetchLiveOrdersAccountOpen).mockClear();
+        vi.mocked(fetchLiveOrdersAccountOpen).mockResolvedValue({ rows: [], letto_at: new Date().toISOString() } as never);
+        const h = await montato();
+        await waitFor(() => expect(h.result.current.ordiniConto.stato).toBe('letti'));
+        expect(vi.mocked(fetchLiveOrdersAccountOpen)).toHaveBeenCalledTimes(1);
+        act(() => h.result.current.ricarica());
+        await waitFor(() => expect(vi.mocked(fetchLiveOrdersAccountOpen)).toHaveBeenCalledTimes(2));
     });
 });
 

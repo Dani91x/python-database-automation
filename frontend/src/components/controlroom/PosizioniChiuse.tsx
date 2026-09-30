@@ -39,6 +39,7 @@ import {
 import { chiuseGiornata, type ChiuseGiornata } from '@/lib/chiuseGiornata';
 import type { ComposizioneObiettivo, RigaComposizione } from '@/lib/composizioneObiettivo';
 import type { FontePnl } from '@/lib/eventGroups';
+import { FONTE_PNL_BREVE, FONTE_PNL_TESTO } from '@/lib/fontePnl';
 import { eCertezzaVerde, type StatoCertezzaChiusura } from '@/lib/certezzaChiusura';
 
 const CERTEZZA_LABEL: Record<StatoCertezzaChiusura, string> = {
@@ -268,12 +269,12 @@ export function PosizioniChiuse({
             {modo === 'live' && r.totale != null && (
                 <div className="px-3 py-1 border-b border-white/10 text-[10.5px] text-white/45 flex flex-wrap gap-x-3"
                     data-testid="cr-chiuse-composizione">
-                    <span>regolato da Betfair{' '}
+                    <span>{FONTE_PNL_BREVE.conto} (regolato){' '}
                         <b className={`font-mono ${pnlClass(r.reale ?? null)}`} data-testid="cr-chiuse-reale">
                             {r.reale == null ? DASH : fmtMoney(r.reale, { signed: true })}
                         </b>
                     </span>
-                    <span>stimato (calcolo del bot, Betfair non ha ancora regolato){' '}
+                    <span>{FONTE_PNL_TESTO.stima}{' '}
                         <b className={`font-mono ${r.stimato == null ? 'text-white/45' : 'text-amber-300'}`}
                             data-testid="cr-chiuse-stimato">
                             {r.stimato == null ? DASH : fmtMoney(r.stimato, { signed: true })}
@@ -471,17 +472,21 @@ function fonteDiRiepilogo(modo: Modo, r: RiepilogoChiuse): FontePnl | 'misto' {
     return 'misto';
 }
 
+// 30/09 (ordine dell'utente: «massima coerenza»): le STESSE parole della
+// pagina di Mike e dello Storico (`lib/fontePnl.ts`)
 const FONTE_TESTO: Record<FontePnl | 'misto', string> = {
-    betfair: 'Betfair', stimato: 'stimato', paper: 'prova', misto: 'Betfair + stimato',
+    betfair: FONTE_PNL_BREVE.conto, stimato: FONTE_PNL_BREVE.stima, paper: FONTE_PNL_BREVE.simulato,
+    misto: `${FONTE_PNL_BREVE.conto} + ${FONTE_PNL_BREVE.stima}`,
 };
 const FONTE_CLS: Record<FontePnl | 'misto', string> = {
     betfair: 'text-emerald-300/80', stimato: 'text-amber-300/90', paper: 'text-white/40', misto: 'text-amber-300/90',
 };
 const FONTE_TITOLO: Record<FontePnl | 'misto', string> = {
-    betfair: 'netto regolato da Betfair (profit meno la commissione del mercato)',
-    stimato: 'calcolo del bot: Betfair non ha ancora regolato. Diventa il netto di Betfair al regolamento',
-    paper: 'simulazione: su Betfair non esiste, e\' sempre il calcolo',
-    misto: 'in parte regolato da Betfair e in parte stimato (calcolo del bot)',
+    betfair: 'netto regolato sul conto Betfair (profit meno la commissione del mercato); per Mike: '
+        + FONTE_PNL_TESTO.conto,
+    stimato: `${FONTE_PNL_TESTO.stima}. Diventa il netto di Betfair al regolamento`,
+    paper: `${FONTE_PNL_TESTO.simulato}: su Betfair non esiste, e' sempre il calcolo`,
+    misto: `in parte ${FONTE_PNL_BREVE.conto} e in parte ${FONTE_PNL_TESTO.stima}`,
 };
 
 /** LA FONTE DI UNA CIFRA, sempre accanto alla cifra. */
@@ -688,8 +693,8 @@ const RigaCiclo = memo(function RigaCiclo({ p, aperta, onToggle }: {
                     )}
                     <span>{PUNTO} entrata <span className="font-mono text-white/55">{s.ingresso.at ? fmtTime(s.ingresso.at) : DASH}</span></span>
                     {p.pnlReale != null && p.pnlStimato != null && (
-                        <span>{PUNTO} di cui Betfair <span className="font-mono text-white/55">{fmtMoney(p.pnlReale, { signed: true })}</span>{' '}
-                            e stimato <span className="font-mono text-amber-300/80">{fmtMoney(p.pnlStimato, { signed: true })}</span></span>
+                        <span>{PUNTO} di cui {FONTE_PNL_BREVE.conto} <span className="font-mono text-white/55">{fmtMoney(p.pnlReale, { signed: true })}</span>{' '}
+                            e {FONTE_PNL_BREVE.stima} <span className="font-mono text-amber-300/80">{fmtMoney(p.pnlStimato, { signed: true })}</span></span>
                     )}
                 </div>
 

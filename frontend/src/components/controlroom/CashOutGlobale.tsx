@@ -17,13 +17,24 @@
 //     due cifre diverse per la stessa cosa si spiegano, non si nascondono;
 //   * liquidita' insufficiente al miglior prezzo: la cifra resta, marcata
 //     «caso migliore».
-// Nessun pulsante qui: chiudere e' un altro gesto (P16, su richiesta).
+// 30/09 sera (W_C, P16): «Chiudi tutte le gambe dei bot». NESSUN comando
+// backend nuovo: si ORCHESTRANO in sequenza i comandi per-bot GIA' esistenti,
+// con la STESSA funzione dei pulsanti di riga (`ChiusuraRigaContext.chiudi`,
+// `chiudiRiga.ts`): Mike una volta per PARTITA (chiude il ciclo intero), Safe,
+// Omega e i 4 bot tennis per riga, lo scalper per sessione (con la firma). Una
+// gamba senza comando si DICE prima del clic e resta aperta.
 // ============================================================================
-import { useContext, useMemo } from 'react';
+import { useContext, useEffect, useMemo, useState } from 'react';
 import { MarchioSoldi } from '@/components/controlroom/MarchioSoldi';
 import { ChiusuraRigaContext } from '@/components/controlroom/BottoneChiudiRiga';
+import {
+    chiudibile, faseMostrata, TESTO_FASE, type RigaDaChiudere,
+} from '@/components/controlroom/chiudiRiga';
+import { ATTESA_CONFERMA_USCITE_MS } from '@/components/controlroom/InterruttoreUscite';
+import { feedFreshness } from '@/lib/mike';
+import { isBotTennis } from '@/lib/controlRoom';
 import { useCashOutPartita, type ArgsCashOutPartita } from '@/components/controlroom/useCashOutPartita';
-import { dueEsitiMike, esitoDecisoMike, valoreBotMike } from '@/lib/cashOutPartita';
+import { dueEsitiMike, dueEsitiPartita, esitoDecisoMike, valoreBotMike } from '@/lib/cashOutPartita';
 import type { MikeEvent } from '@/lib/mike';
 import { fmtMoney, fmtNum, fmtOdds } from '@/lib/format';
 import { pnlClass } from '@/lib/tradeStatus';
@@ -54,6 +65,8 @@ export interface CashOutGlobaleProps {
     /** le cifre dei servizi dei bot (Mike: `live.cashout.net`) */
     valoriBot?: readonly ValoreBotCashOut[];
     testId?: string;
+    /** P16: le righe della partita; assenti = nessun «Chiudi tutte le gambe» */
+    operazioni?: readonly OperazionePerChiusura[];
 }
 
 const nomeBot = (b: string) => (BOT_LABEL as Record<string, string>)[b as Bot] ?? b;
@@ -71,11 +84,188 @@ function testoEtaBreve(s: number | null): string {
 
 const lato = (l: 'back' | 'lay' | null) => (l === 'lay' ? 'banca' : l === 'back' ? 'punta' : '');
 
+// ============================================================================
+// P16 - «CHIUDI TUTTE LE GAMBE DEI BOT» (piano puro + pulsante)
+// ============================================================================
+
+/** La riga della scheda come serve al piano (forma strutturale di `OperazionePartita`). */
+export interface OperazionePerChiusura {
+    bot: Bot;
+    id: number;
+    eventId?: string;
+    marketId: string | null;
+    modalita: 'paper' | 'live' | null;
+    stato: string;
+    chiudeId?: number | null;
+    /** tennis: `pnl` valorizzato = ordine regolato (non e' una posizione) */
+    pnl: number | null;
+    firma?: string | null;
+    residuo?: boolean;
+}
+
+export interface ComandoChiusura {
+    bot: Bot;
+    riga: RigaDaChiudere;
+    /** quante posizioni del bot il comando chiude (Mike: tutte quelle della partita) */
+    gambe: number;
+}
+
+export interface PianoChiusura {
+    comandi: ComandoChiusura[];
+    /** posizioni per cui NON esiste un comando adesso, col motivo del bot */
+    senzaComando: { bot: Bot; id: number; motivo: string }[];
+}
+
+/** La riga come la vede il «Chiudi» di riga (stessi campi di `DettaglioRigaView`). */
+function rigaDa(o: OperazionePerChiusura): RigaDaChiudere {
+    return {
+        bot: o.bot, id: o.id, eventId: o.eventId ?? null, marketId: o.marketId ?? null,
+        modalita: o.modalita, stato: o.stato, chiudeId: o.chiudeId ?? null,
+        regolata: isBotTennis(o.bot) && o.pnl != null,
+        ...(o.firma != null ? { firma: o.firma } : {}),
+        ...(o.residuo ? { residuo: true } : {}),
+    };
+}
+
+/**
+ * IL PIANO, per UNA modalita': quali comandi partono e in che ordine.
+ *  - la regola di chi e' una posizione e chi e' chiudibile e' `chiudiRiga.
+ *    chiudibile` (la stessa del pulsante di riga): nessuna seconda regola;
+ *  - Mike: UN comando per partita (con la prima riga chiudibile; `mike_request
+ *    ('cashout')` chiude l'intero ciclo), che copre tutte le sue gambe;
+ *  - Safe, Omega, 4 bot tennis: un comando per riga; scalper: per sessione;
+ *  - una posizione non chiudibile adesso va in `senzaComando` col motivo.
+ */
+export function pianoChiusuraPartita(
+    ops: readonly OperazionePerChiusura[], modalita: 'paper' | 'live',
+): PianoChiusura {
+    const comandi: ComandoChiusura[] = [];
+    const senzaComando: PianoChiusura['senzaComando'] = [];
+    const mike: { riga: RigaDaChiudere; ok: boolean; motivo: string | null }[] = [];
+    for (const o of ops) {
+        if (o.modalita !== modalita) continue;
+        const riga = rigaDa(o);
+        const c = chiudibile(riga);
+        if (c == null) continue;                        // non e' una posizione
+        if (o.bot === 'mike') { mike.push({ riga, ok: c.ok, motivo: c.ok ? null : c.motivo }); continue; }
+        if (c.ok) comandi.push({ bot: o.bot, riga, gambe: 1 });
+        else senzaComando.push({ bot: o.bot, id: o.id, motivo: c.motivo });
+    }
+    const primaOk = mike.find((m) => m.ok);
+    if (primaOk) comandi.unshift({ bot: 'mike', riga: primaOk.riga, gambe: mike.length });
+    else for (const m of mike) senzaComando.push({ bot: 'mike', id: m.riga.id, motivo: m.motivo ?? '' });
+    return { comandi, senzaComando };
+}
+
+/** «2 gambe di Mike, 1 di Safe; Scalper calcio #7 non ha un comando: resta aperto (motivo)» */
+export function testoPiano(p: PianoChiusura): string {
+    const perBot = new Map<string, number>();
+    for (const c of p.comandi) perBot.set(c.bot, (perBot.get(c.bot) ?? 0) + c.gambe);
+    const parti = Array.from(perBot.entries()).map(([b, n], i) =>
+        (i === 0 ? `${n} ${n === 1 ? 'gamba' : 'gambe'} di ${nomeBot(b)}` : `${n} di ${nomeBot(b)}`));
+    const senza = p.senzaComando.map((s) => `${nomeBot(s.bot)} #${s.id} non ha un comando adesso: resta aperta (${s.motivo})`);
+    return [parti.join(', ') || 'nessuna gamba chiudibile', ...senza].join('; ');
+}
+
+function ChiudiTutteLeGambe({ piano, modalita, spentoPerche, testId }: {
+    piano: PianoChiusura; modalita: 'paper' | 'live'; spentoPerche: string | null; testId: string;
+}) {
+    const api = useContext(ChiusuraRigaContext);
+    const [armatoDa, setArmatoDa] = useState<number | null>(null);
+    const [inVolo, setInVolo] = useState(false);
+    const [inviati, setInviati] = useState<ComandoChiusura[]>([]);
+    const [, setTic] = useState(0);
+    useEffect(() => {
+        if (armatoDa == null) return undefined;
+        const t = window.setTimeout(() => setTic((n) => n + 1), ATTESA_CONFERMA_USCITE_MS + 20);
+        return () => window.clearTimeout(t);
+    }, [armatoDa]);
+    if (!api) return null;
+    if (piano.comandi.length === 0 && piano.senzaComando.length === 0) return null;
+    const troppoPresto = armatoDa != null && Date.now() - armatoDa < ATTESA_CONFERMA_USCITE_MS;
+    const nBot = new Set(piano.comandi.map((c) => c.bot)).size;
+    const blocco = piano.comandi.length === 0 ? 'nessuna gamba chiudibile adesso' : spentoPerche;
+    // IN SEQUENZA: il comando successivo parte solo quando il precedente ha
+    // avuto il suo esito d'invio (`chiudi` scrive lo stato e non lancia)
+    const esegui = async () => {
+        setArmatoDa(null);
+        setInVolo(true);
+        const mandati: ComandoChiusura[] = [];
+        try {
+            for (const c of piano.comandi) {
+                await api.chiudi(c.riga);
+                mandati.push(c);
+                setInviati([...mandati]);
+            }
+        } finally {
+            setInVolo(false);
+        }
+    };
+    return (
+        <div className="flex flex-col gap-0.5" data-testid={testId}>
+            <div className="text-[10px] text-white/50" data-testid={`${testId}-piano`}>{testoPiano(piano)}</div>
+            <div className="flex items-baseline gap-1.5 flex-wrap">
+                {armatoDa != null ? (
+                    <>
+                        <button type="button" data-testid={`${testId}-conferma`}
+                            disabled={troppoPresto || inVolo}
+                            onClick={() => { if (!troppoPresto) void esegui(); }}
+                            className="h-6 px-2 text-[10px] rounded bg-orange-500 text-black font-bold uppercase disabled:opacity-40">
+                            Confermo: chiudi tutte le gambe
+                        </button>
+                        <span className="text-[10px] text-orange-300" data-testid={`${testId}-armato`}>
+                            Sono soldi veri: {piano.comandi.length} {piano.comandi.length === 1 ? 'comando' : 'comandi'} a {nBot} {nBot === 1 ? 'bot' : 'bot'}.{' '}
+                            <button type="button" className="underline" onClick={() => setArmatoDa(null)}
+                                data-testid={`${testId}-annulla`}>annulla</button>
+                        </span>
+                    </>
+                ) : (
+                    <button type="button" data-testid={`${testId}-avvia`}
+                        disabled={blocco != null || inVolo}
+                        title={blocco ?? 'manda in sequenza, bot per bot, gli stessi comandi dei pulsanti «Chiudi» di riga'}
+                        onClick={() => { if (modalita === 'live') setArmatoDa(Date.now()); else void esegui(); }}
+                        className="h-6 px-2 text-[10px] rounded border border-rose-500/40 bg-rose-500/10 text-rose-200 font-semibold uppercase disabled:opacity-40">
+                        Chiudi tutte le gambe dei bot
+                    </button>
+                )}
+                {blocco != null && armatoDa == null && (
+                    <span className="text-[10px] text-white/40" data-testid={`${testId}-bloccato`}>{blocco}</span>
+                )}
+            </div>
+            {inviati.map((c) => {
+                const s = api.stato(c.bot, c.riga.id);
+                const fase = s ? TESTO_FASE[faseMostrata(s)] : 'in invio';
+                const chi = c.bot === 'mike' ? `Mike (partita, ${c.gambe} ${c.gambe === 1 ? 'gamba' : 'gambe'})` : `${nomeBot(c.bot)} #${c.riga.id}`;
+                return (
+                    <div key={`${c.bot}:${c.riga.id}`} className="text-[10px] text-white/60"
+                        data-testid={`${testId}-esito`} data-bot={c.bot}>
+                        {chi}: {fase}{s?.motivo ? `: ${s.motivo}` : ''}
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
+/** Pulsanti di soldi spenti con prezzi fermi/ignoti (`feedFreshness`: oltre 20 s = fermo). */
+function motivoPrezziFermi(r: CashOutModalita): string | null {
+    if (r.etaIgnota) return 'prezzi di eta\' ignota: non si chiude alla cieca';
+    if (r.etaPrezziS != null && feedFreshness(r.etaPrezziS).tone === 'stale') {
+        return `prezzi fermi da ${Math.round(r.etaPrezziS)} s: non si chiude su prezzi vecchi`;
+    }
+    return null;
+}
+
 function RigaGamba({ p, modo, testId }: { p: PosizioneCashOut; modo: 'LIVE' | 'PROVA'; testId: string }) {
+    // W_C: una componente «esposizione» (sessione scalper) si scrive coi suoi W/L
+    const pezzo = (c: PosizioneCashOut['componenti'][number]) => (c.esposizione
+        ? `esposizione ${nomeBot(c.bot)}: se vince ${fmtMoney(c.esposizione.win, { signed: true })} / se perde ${fmtMoney(c.esposizione.lose, { signed: true })}`
+        : `${lato(c.lato)} ${fmtMoney(c.abbinato)} @ ${fmtOdds(c.prezzo)}`);
+    const nome = p.selezione ?? `selezione ${p.selectionId}`;
     const ingresso = p.componenti.length === 1
-        ? `${lato(p.lato)} ${p.selezione ?? `selezione ${p.selectionId}`} ${fmtMoney(p.abbinato)} @ ${fmtOdds(p.prezzoIngresso)}`
-        : `${p.selezione ?? `selezione ${p.selectionId}`}: ${p.componenti.length} gambe (${p.componenti
-            .map((c) => `${lato(c.lato)} ${fmtMoney(c.abbinato)} @ ${fmtOdds(c.prezzo)}`).join(', ')})`;
+        ? (p.componenti[0].esposizione ? `${nome}: ${pezzo(p.componenti[0])}`
+            : `${lato(p.lato)} ${nome} ${fmtMoney(p.abbinato)} @ ${fmtOdds(p.prezzoIngresso)}`)
+        : `${nome}: ${p.componenti.length} gambe (${p.componenti.map(pezzo).join(', ')})`;
     let chiusura: string;
     if (p.stato === 'decisa') chiusura = 'esito gia\' deciso: nessuna chiusura';
     else if (p.stato === 'piatta') {
@@ -110,10 +300,16 @@ function RigaGamba({ p, modo, testId }: { p: PosizioneCashOut; modo: 'LIVE' | 'P
     );
 }
 
-function Blocco({ r, modo, testId, valoriBot }: {
+function Blocco({ r, modo, testId, valoriBot, operazioni }: {
     r: CashOutModalita; modo: 'LIVE' | 'PROVA'; testId: string; valoriBot: readonly ValoreBotCashOut[];
+    operazioni?: readonly OperazionePerChiusura[];
 }) {
     const eta = r.etaIgnota ? null : r.etaPrezziS;
+    const modalita = modo === 'LIVE' ? 'live' : 'paper';
+    const piano = operazioni ? pianoChiusuraPartita(operazioni, modalita) : null;
+    // pulsante di soldi: spento su prezzi fermi/ignoti e se la cifra non e' calcolabile
+    const spentoPerche = motivoPrezziFermi(r)
+        ?? (r.netto == null ? 'cifra della partita non calcolabile: non si chiude alla cieca' : null);
     return (
         <div className="flex flex-col gap-1" data-testid={testId}>
             <div className="flex items-baseline gap-2 flex-wrap">
@@ -193,11 +389,15 @@ function Blocco({ r, modo, testId, valoriBot }: {
                     </div>
                 );
             })}
+            {piano && (
+                <ChiudiTutteLeGambe piano={piano} modalita={modalita} spentoPerche={spentoPerche}
+                    testId={`${testId}-chiudi-tutte`} />
+            )}
         </div>
     );
 }
 
-export function CashOutGlobale({ risultato, valoriBot = [], testId = 'cr-cashout-globale' }: CashOutGlobaleProps) {
+export function CashOutGlobale({ risultato, valoriBot = [], testId = 'cr-cashout-globale', operazioni }: CashOutGlobaleProps) {
     if (risultato == null) {
         return (
             <div className="text-[10px] text-white/40" data-testid={testId} data-vuoto="1">
@@ -212,14 +412,14 @@ export function CashOutGlobale({ risultato, valoriBot = [], testId = 'cr-cashout
     return (
         <div className="flex flex-col gap-1.5 rounded border border-white/10 px-2 py-1.5" data-testid={testId}>
             {haLive ? (
-                <Blocco r={risultato.live} modo="LIVE" testId={`${testId}-live`} valoriBot={botLive} />
+                <Blocco r={risultato.live} modo="LIVE" testId={`${testId}-live`} valoriBot={botLive} operazioni={operazioni} />
             ) : (
                 <div className="text-[10px] text-white/40" data-testid={`${testId}-live-vuoto`}>
                     Cash out della partita: nessuna gamba LIVE abbinata su questa partita
                 </div>
             )}
             {haProva && (
-                <Blocco r={risultato.paper} modo="PROVA" testId={`${testId}-prova`} valoriBot={botProva} />
+                <Blocco r={risultato.paper} modo="PROVA" testId={`${testId}-prova`} valoriBot={botProva} operazioni={operazioni} />
             )}
         </div>
     );
@@ -232,14 +432,17 @@ export function CashOutGlobale({ risultato, valoriBot = [], testId = 'cr-cashout
  * la cifra del servizio di Mike. Una partita senza gambe abbinate non mostra
  * niente e non apre sottoscrizioni.
  */
-export function CashOutGlobalePartita({ sport, operazioni, mike = null }: {
+export function CashOutGlobalePartita({ sport, operazioni, mike = null, moMarketId = null }: {
     sport: 'calcio' | 'tennis';
-    operazioni: NonNullable<ArgsCashOutPartita['operazioni']>;
+    /** W_C: il Match Odds della partita (`p.marketId` = `mo_market_id`); nel
+     *  TENNIS e' a due esiti (P1/P2): le gambe sui due giocatori si nettano */
+    moMarketId?: string | null;
+    operazioni: readonly (NonNullable<ArgsCashOutPartita['operazioni']>[number] & OperazionePerChiusura)[];
     /** la partita di Mike come il servizio la pubblica (gia' in pagina) */
     mike?: MikeEvent | null;
 }) {
     const sorgente = useContext(ChiusuraRigaContext)?.sorgenteLadder ?? null;
-    const dueEsiti = useMemo(() => dueEsitiMike(mike), [mike]);
+    const dueEsiti = useMemo(() => dueEsitiPartita(sport, moMarketId, dueEsitiMike(mike)), [sport, moMarketId, mike]);
     const esitoDeciso = useMemo(() => esitoDecisoMike(mike, operazioni), [mike, operazioni]);
     const r = useCashOutPartita({ operazioni, sorgente, sport, dueEsiti, esitoDeciso });
     if (r == null) return null;
@@ -248,7 +451,7 @@ export function CashOutGlobalePartita({ sport, operazioni, mike = null }: {
     const vb = valoreBotMike(mike, Date.now());
     return (
         <div className="px-2.5 pt-1.5">
-            <CashOutGlobale risultato={r} valoriBot={vb ? [vb] : []} />
+            <CashOutGlobale risultato={r} valoriBot={vb ? [vb] : []} operazioni={operazioni} />
         </div>
     );
 }

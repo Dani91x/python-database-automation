@@ -17,6 +17,22 @@ import type { Bot, Modalita } from '@/lib/interruttori';
 import type { GruppoArretrati } from '@/lib/provaGiornata';
 
 /**
+ * W_B2 (30/09, M15) - DA DOVE viene la cifra LIVE «oggi» di una riga della
+ * plancia. `conto` = `pnl_reale_oggi.per_fonte[...]` (attribuzione del backend,
+ * con l'eta' della lettura); `bot` = le posizioni chiuse del bot (righe).
+ * `vuoto` = dato LETTO e nessuna operazione regolata oggi: si scrive 0,00 €
+ * con «nessuna regolata oggi», mai «—» (che vuol dire «non letto»).
+ */
+export interface FonteOggiLive {
+    fonte: 'conto' | 'bot';
+    vuoto: boolean;
+    /** eta' della lettura del conto in secondi (solo `conto`); null = ignota */
+    etaS?: number | null;
+    /** una frase in piu' (es. «le strategie del calcio restano dalle righe») */
+    nota?: string | null;
+}
+
+/**
  * Il minimo che serve per disegnare le righe di un bot. `StatoBot` della
  * Control Room lo soddisfa per costruzione; le PAGINE DEI SINGOLI BOT, che
  * hanno il loro stato e non `useControlRoom`, possono costruirlo dalla propria
@@ -39,6 +55,8 @@ export interface StatoBotPlancia {
      *  singoli bot che non li leggono non devono inventarli. */
     pnlOggi?: number | null;
     pnlOggiPaper?: number | null;
+    /** W_B2 (M15): la fonte della cifra LIVE di `pnlOggi` */
+    fonteOggiLive?: FonteOggiLive | null;
     /** 26/09 (F-1) - Safe: il P&L di oggi PER STRATEGIA (chiave = strategia
      *  dell'interruttore). Un numero del bot intero ripetuto su ogni riga di
      *  strategia sarebbe sommato N volte nel riassunto del gruppo. */
@@ -46,6 +64,8 @@ export interface StatoBotPlancia {
         live: number | null; paper: number | null;
         /** 30/09 (P8bis): arretrati IN PROVA della strategia, mai in `paper` */
         arretratiPaper?: GruppoArretrati[] | null;
+        /** W_B2 (M15): la fonte della cifra LIVE della strategia */
+        fonteLive?: FonteOggiLive | null;
     }> | null;
     /**
      * 30/09 (P8bis) - IN PROVA: `pnlOggiPaper` conta le sole partite di OGGI;
@@ -115,8 +135,12 @@ export function righeInterruttori(
                 // 30/09 (P8bis): in prova, gli arretrati regolati oggi accanto
                 // alla cifra di oggi, mai dentro; in live non si mostrano
                 const arretrati = perStr ? (perStr.arretratiPaper ?? null) : (b.arretratiPaper ?? null);
+                // W_B2 (M15): da dove viene la cifra LIVE (solo in live: la prova
+                // non passa mai dal conto)
+                const fonteLive = perStr ? (perStr.fonteLive ?? null) : (b.fonteOggiLive ?? null);
                 return {
                     pnlOggi: st.modalita === 'live' ? live : st.modalita === 'paper' ? paper : null,
+                    ...(st.modalita === 'live' && fonteLive ? { fonteOggi: fonteLive } : {}),
                     ...(st.modalita === 'paper' && arretrati && arretrati.length > 0
                         ? { arretratiProva: arretrati } : {}),
                 };

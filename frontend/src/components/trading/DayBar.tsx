@@ -9,6 +9,7 @@
 // Tutte le props sono opzionali: un bot senza obiettivo (Safe, Mike) mostra
 // solo i contatori; Omega mostra anche obiettivo, barra, "resta"/"CENTRATO".
 // ============================================================================
+import type { ReactNode } from 'react';
 import { Target } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { fmtMoney, fmtPctPoints } from '@/lib/format';
@@ -59,12 +60,29 @@ export interface DayBarProps {
     testId?: string;
     /** override dei data-testid interni (le pagine conservano i loro storici) */
     ids?: Partial<Record<'day' | 'line' | 'counts' | 'remaining' | 'goalHit', string>>;
+    // ---- 30/09 (W_G/P6, Control Room) - TUTTI OPZIONALI: assenti = DayBar di prima ----
+    /** con `realized` nullo: al posto del numero, «—» e questa frase (perche' manca) */
+    realizedMissing?: string;
+    /** accanto al numero grande del realizzato (fonte, «nessun ordine regolato oggi»...) */
+    realizedNote?: ReactNode;
+    /**
+     * «aperto adesso (se chiudo tutto)»: entra nell'avanzamento della barra come
+     * parte TRATTEGGIATA (mai nel realizzato, mai in «obiettivo centrato»).
+     */
+    openNow?: number | null;
+    /** come si scrive l'aperto nella riga (etichetta, fonte, partite non calcolabili) */
+    openNowNode?: ReactNode;
+    /** una voce di rischio nella riga (es. esposizione del conto) */
+    riskNode?: ReactNode;
+    /** parola del contatore `live` (di serie quella del glossario) */
+    liveLabel?: string;
 }
 
 export function DayBar({
     dayLabel, realized, realizedTotal, goal, matches, operations, won, lost, live,
     openLiability, lockedPnl, note, labels, countsNote, testId = 'day-bar', ids,
     realizedEstimated, inProgress,
+    realizedMissing, realizedNote, openNow, openNowNode, riskNode, liveLabel,
 }: DayBarProps) {
     const matchesLabel = labels?.matches?.trim() || T.matches;
     const operationsLabel = labels?.operations?.trim() || T.operations;
@@ -92,8 +110,13 @@ export function DayBar({
     const hasGoal = g > 0;
     // 24/09: l'avanzamento = realizzato + in corso (se passato); senza
     // `inProgress` e' identico a prima
-    const avanz = real !== null ? real + (inCorso ?? 0) : null;
+    // W_G: l'aperto (se passato) entra nell'avanzamento come parte tratteggiata
+    const aperto = numero(openNow);
+    const avanz = real !== null ? real + (inCorso ?? 0) + (aperto ?? 0) : null;
     const pct = hasGoal && avanz !== null ? Math.max(0, Math.min(100, (avanz / g) * 100)) : 0;
+    // la parte PIENA e' il solo realizzato (+ in corso); il tratteggio va fino all'avanzamento
+    const pctPieno = aperto == null ? pct : hasGoal && real !== null
+        ? Math.max(0, Math.min(100, ((real + (inCorso ?? 0)) / g) * 100)) : 0;
     const remaining = hasGoal && avanz !== null ? Math.max(0, g - avanz) : 0;
     const centrato = hasGoal && real !== null && real >= g;
     // §5: UNA sola forma per le percentuali (lib/format), mai un replace locale
@@ -114,8 +137,20 @@ export function DayBar({
                 </div>
                 {real !== null && (
                     <div className="font-display font-black text-2xl tabular-nums">
-                        <span className={pnlClass(real)}>{fmtMoney(real, { signed: true })}</span>
+                        <span className={pnlClass(real)} data-testid="day-bar-realizzato">{fmtMoney(real, { signed: true })}</span>
                         {hasGoal && <span className="text-slate-500 text-lg"> · {pctText}</span>}
+                        {realizedNote != null && (
+                            <div className="text-[10.5px] font-sans font-normal text-slate-400 text-right"
+                                data-testid="day-bar-realizzato-nota">{realizedNote}</div>
+                        )}
+                    </div>
+                )}
+                {/* W_G: un realizzato che manca si DICE (prima il numero spariva) */}
+                {real === null && realizedMissing != null && (
+                    <div className="font-display font-black text-2xl tabular-nums text-slate-500 text-right">
+                        <span data-testid="day-bar-realizzato">—</span>
+                        <div className="text-[10.5px] font-sans font-normal text-amber-300/80"
+                            data-testid="day-bar-realizzato-nota">{realizedMissing}</div>
                     </div>
                 )}
             </div>
@@ -135,7 +170,7 @@ export function DayBar({
                             {(won != null || lost != null) && (
                                 <> · <span title={TIP.winLoss}><b className="text-emerald-400">{won ?? 0}V</b> <b className="text-red-400">{lost ?? 0}P</b></span></>
                             )}
-                            {live != null && live > 0 && <> · <span title={TIP.liveCount}><b className="text-sky-300">{live}</b> {T.live}</span></>}
+                            {live != null && live > 0 && <> · <span title={TIP.liveCount}><b className="text-sky-300">{live}</b> {liveLabel?.trim() || T.live}</span></>}
                         </span>
                         <span className="text-slate-600" aria-hidden>·</span>
                     </>
@@ -157,6 +192,18 @@ export function DayBar({
                             title="posizioni ancora aperte con soldi veri: quanto varrebbe chiuderle adesso. Stimato, entra nell'avanzamento della barra, non nel realizzato">
                             in corso (stimato) <b className={pnlClass(inCorso)}>{fmtMoney(inCorso, { signed: true })}</b>
                         </span>
+                    </>
+                )}
+                {openNowNode != null && (
+                    <>
+                        <span className="text-slate-600" aria-hidden>&middot;</span>
+                        <span data-testid="day-bar-aperto">{openNowNode}</span>
+                    </>
+                )}
+                {riskNode != null && (
+                    <>
+                        <span className="text-slate-600" aria-hidden>&middot;</span>
+                        <span data-testid="day-bar-rischio">{riskNode}</span>
                     </>
                 )}
                 {hasGoal && real !== null && <span className="text-slate-600" aria-hidden>·</span>}
@@ -207,8 +254,16 @@ export function DayBar({
                 >
                     <div
                         className="absolute inset-y-0 left-0 bg-gradient-to-r from-emerald-500 to-secondary transition-all duration-700"
-                        style={{ width: `${pct}%` }}
+                        style={{ width: `${aperto == null ? pct : pctPieno}%` }}
                     />
+                    {/* W_G: l'aperto (stima) TRATTEGGIATO, mai confuso col realizzato */}
+                    {aperto != null && pct !== pctPieno && (
+                        <div
+                            className="absolute inset-y-0 border-2 border-dashed border-secondary/70 bg-secondary/10"
+                            data-testid="day-bar-aperto-barra"
+                            style={{ left: `${Math.min(pct, pctPieno)}%`, width: `${Math.abs(pct - pctPieno)}%` }}
+                        />
+                    )}
                     <div className="absolute inset-0 flex items-center justify-center text-[11px] font-bold text-white/90 tabular-nums">
                         {pctText}
                     </div>

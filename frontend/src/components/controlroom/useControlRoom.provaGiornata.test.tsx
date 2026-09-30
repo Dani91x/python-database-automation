@@ -260,9 +260,13 @@ describe('R_G - prestazioni: la prova non si ricalcola a ogni secondo', () => {
             await waitFor(() => expect(result.current.caricamento).toBe(false));
             await waitFor(() => expect(result.current.provaGiornata).toBeTruthy());
             const primo = result.current.provaGiornata;
+            const apertoPrimo = result.current.apertoAdesso;
             const t0 = result.current.nowMs;
             await waitFor(() => expect(result.current.nowMs).toBeGreaterThan(t0), { timeout: 3000 });
             expect(result.current.provaGiornata).toBe(primo);
+            // W_G: anche l'«aperto adesso» non si ricalcola a ogni secondo (dipende dai dati)
+            expect(result.current.apertoAdesso).toBeTruthy();
+            expect(result.current.apertoAdesso).toBe(apertoPrimo);
             // il giorno dopo: la prova si ricalcola (gli arretrati di ieri non sono piu' «di oggi»)
             vi.setSystemTime(new Date(Date.parse(`${OGGI}T10:00:00+00:00`) + 24 * 3600 * 1000));
             await waitFor(() => expect(result.current.provaGiornata).not.toBe(primo), { timeout: 3000 });
@@ -289,3 +293,50 @@ describe('P7 - la voce di ogni bot dal conto Betfair', () => {
         expect(result.current.soldiGiornata.realizzato).toBe(2);
     });
 });
+
+// ============================================================================
+// W_B2 (30/09 sera, M15) - la plancia: la cifra LIVE «oggi» di ogni bot e la
+// sua FONTE. Con il conto letto: `pnl_reale_oggi.per_fonte[bot].netto` (fonte
+// CONTO, con l'eta' della lettura); letto e vuoto = 0 «nessuna regolata oggi».
+// Safe per strategia: il conto separa solo per sport -> calcio dalle righe (BOT).
+// ============================================================================
+describe('W_B2 - plancia: fonte della cifra LIVE di oggi', () => {
+    it('conto letto: Mike 2,00 dal CONTO; Omega letto e vuoto = 0 «nessuna regolata»; Safe calcio dalle righe', async () => {
+        vi.mocked(fetchSafeState).mockResolvedValue(SAFE_VUOTO as never);
+        vi.mocked(fetchMikeState).mockResolvedValue(MIKE_VUOTO as never);
+        vi.mocked(fetchLiveAccount).mockResolvedValue(contoConMike(2.0) as never);
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        await waitFor(() => expect(result.current.contoLettoAt).toBe(`${OGGI}T12:41:00+00:00`));
+        const mike = result.current.bots.find((b) => b.bot === 'mike')!;
+        expect(mike.pnlOggi).toBe(2);
+        expect(mike.fonteOggiLive).toMatchObject({ fonte: 'conto', vuoto: false });
+        expect(typeof mike.fonteOggiLive!.etaS).toBe('number');
+        const omega = result.current.bots.find((b) => b.bot === 'omega');
+        if (omega) {
+            expect(omega.pnlOggi).toBe(0);
+            expect(omega.fonteOggiLive).toMatchObject({ fonte: 'conto', vuoto: true });
+        }
+        const safe = result.current.bots.find((b) => b.bot === 'safe');
+        if (safe) {
+            expect(safe.pnlOggiPerStrategia!.base.fonteLive).toMatchObject({ fonte: 'bot' });
+            expect(safe.pnlOggiPerStrategia!.base.fonteLive!.nota).toMatch(/solo per sport/);
+            expect(safe.pnlOggiPerStrategia!.tennis.fonteLive).toMatchObject({ fonte: 'conto', vuoto: true });
+            // la prova non passa mai dal conto
+            expect(safe.pnlOggiPerStrategia!.base.paper).toBeNull();
+        }
+    });
+
+    it('senza conto: la cifra dalle righe del bot (fonte BOT); letto e vuoto = 0, mai inventato dal conto', async () => {
+        vi.mocked(fetchSafeState).mockResolvedValue(SAFE_VUOTO as never);
+        vi.mocked(fetchMikeState).mockResolvedValue(MIKE_VUOTO as never);
+        vi.mocked(fetchLiveAccount).mockResolvedValue(null as never);
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        await waitFor(() => expect(result.current.bots.find((b) => b.bot === 'mike')?.fonteOggiLive).toBeTruthy());
+        const mike = result.current.bots.find((b) => b.bot === 'mike')!;
+        expect(mike.pnlOggi).toBe(0);
+        expect(mike.fonteOggiLive).toMatchObject({ fonte: 'bot', vuoto: true });
+    });
+});
+

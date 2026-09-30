@@ -19,10 +19,11 @@
 // gli ORDINI/POSIZIONI pre-match già piazzati, STESSA riga (`RigaOperazione`,
 // `DettaglioRigaView.tsx`) e STESSO ordine dei campi della scheda Live/Aperte
 // (mai due scritture della stessa riga in due file, vedi il commento di
-// `RigaOperazione`). `operazioni` è OPZIONALE: `ControlRoom.tsx` (fuori dal
-// mio perimetro) oggi non la passa a questo componente — vedi il referto per
-// la riga esatta da cambiare — ma la scheda è pronta a riceverla, e senza non
-// si rompe (nessuna sezione ordini, non un errore).
+// `RigaOperazione`). `operazioni` è OPZIONALE e senza non si rompe (nessuna
+// sezione ordini, non un errore). W_B1 (30/09, P10): `ControlRoom.tsx`
+// (`ElencoPartite`, ramo `pre`) ORA la passa, insieme a `mike`: sotto le
+// operazioni si monta il CASH OUT DELLA PARTITA (`CashOutGlobalePartita`, lo
+// stesso della scheda in gioco) e, se Mike ha una posizione, `SchedaMike`.
 // ============================================================================
 //
 // B1 (30/09) — «rendere le quote in tempo reale piu' visibili e da "trader"»
@@ -41,6 +42,9 @@ import {
     QuoteMercato, EtaQuote, LineeOu, celleMatchOdds,
 } from '@/components/controlroom/QuoteMercato';
 import { RigaOperazione } from '@/components/controlroom/DettaglioRigaView';
+import { CashOutGlobalePartita } from '@/components/controlroom/CashOutGlobale';
+import { SchedaMike } from '@/components/controlroom/SchedaMike';
+import type { MikeEvent } from '@/lib/mike';
 import type { PartitaGiornata } from '@/lib/controlRoom';
 import type { OperazionePartita } from '@/components/controlroom/useControlRoom';
 
@@ -58,17 +62,27 @@ export interface SchedaPreMatchProps {
      * 18/09 (secondo giro) — ordini/posizioni GIÀ piazzati pre-match su
      * questa partita (ingresso pre-KO, stato dell'ordine). `undefined`/`[]` =
      * nessuna posizione ancora, la sezione non si monta: non è un errore, è
-     * la verità di una partita non ancora cominciata. `ControlRoom.tsx` non
-     * la passa ancora (fuori perimetro): vedi CHECKPOINT per la riga esatta.
+     * la verità di una partita non ancora cominciata. La passa
+     * `ControlRoom.tsx` (`ElencoPartite`, ramo `pre`, W_B1).
      */
     operazioni?: OperazionePartita[];
+    /**
+     * W_B1 (P10) — la partita di Mike come il servizio la pubblica (gia'
+     * letta dalla pagina: nessuna lettura in piu'). Assente = Mike non lavora
+     * questa partita.
+     */
+    mike?: MikeEvent | null;
 }
 
 export function SchedaPreMatch({
-    p, scheda, mancaS, registra, registratoreVivo = null, onRegistrazione, operazioni = [],
+    p, scheda, mancaS, registra, registratoreVivo = null, onRegistrazione, operazioni = [], mike = null,
 }: SchedaPreMatchProps) {
+    // Mike «ha una posizione» qui se ha righe su questa partita o se il suo
+    // servizio ne dichiara (`positions`): allora si mostra la sua scheda.
+    const mikeConPosizione = mike != null
+        && (operazioni.some((o) => o.bot === 'mike') || (mike.positions?.length ?? 0) > 0);
     const imminente = mancaS != null && mancaS <= 15 * 60;
-    const celle = celleMatchOdds(p.sport, p.odds);
+    const celle = celleMatchOdds(p.sport, p.odds, p.giocatori);
     const haQuote = celle != null;
     const linee = p.lineeOu ?? [];
     // B1bis: nessuna guardia qui, la regola delle linee vive in `LineeOu`
@@ -136,6 +150,18 @@ export function SchedaPreMatch({
                         <RigaOperazione key={`${o.bot}-${o.id}`} o={o} />
                     ))}
                 </div>
+            )}
+
+            {/* W_B1 (P10): il CASH OUT DELLA PARTITA, lo stesso riquadro della
+                scheda in gioco (somma delle gambe abbinate di TUTTI i bot, LIVE e
+                PROVA separati). Senza gambe non si monta e non apre niente. */}
+            {operazioni.length > 0 && (
+                <div className="-mx-2.5">
+                    <CashOutGlobalePartita sport={p.sport} operazioni={operazioni} mike={mike} />
+                </div>
+            )}
+            {mikeConPosizione && mike && (
+                <div className="mt-1.5" data-testid="cr-pre-mike"><SchedaMike ev={mike} /></div>
             )}
         </div>
     );

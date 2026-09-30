@@ -188,3 +188,25 @@ describe('i quattro bot tennis sono QUATTRO RIGHE INDIPENDENTI', () => {
             .toBeNull();
     });
 });
+
+// W_B2 (30/09 sera, M15): la fonte della cifra LIVE passa SOLO sulle righe in live
+describe('W_B2 - fonte della cifra LIVE di oggi', () => {
+    it('riga LIVE: porta la fonte; riga in PROVA: nessuna fonte del conto', () => {
+        const fonte = { fonte: 'conto' as const, vuoto: false, etaS: 5 };
+        const r = righeInterruttori([
+            bot({ bot: 'omega', inCorsa: true, modalita: 'live', stato: 'running', pnlOggi: 2, fonteOggiLive: fonte }),
+            bot({
+                bot: 'safe', inCorsa: true, modalita: 'live', stato: 'running', varianti: ['punta', 'tennis'],
+                modiStrategia: { punta: 'paper', tennis: 'live' },
+                pnlOggiPerStrategia: {
+                    punta: { live: 1, paper: 7.6, fonteLive: { fonte: 'bot', vuoto: false } },
+                    tennis: { live: 0, paper: null, fonteLive: { fonte: 'conto', vuoto: true, etaS: 5 } },
+                },
+            }),
+        ], null);
+        expect(r.find((x) => x.id === 'omega')!.fonteOggi).toEqual(fonte);
+        expect(r.find((x) => x.id === 'safe-punta')!.pnlOggi).toBe(7.6);
+        expect(r.find((x) => x.id === 'safe-punta')!.fonteOggi).toBeUndefined();
+        expect(r.find((x) => x.id === 'safe-tennis')!.fonteOggi).toEqual({ fonte: 'conto', vuoto: true, etaS: 5 });
+    });
+});

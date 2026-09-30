@@ -91,3 +91,14 @@ describe('RigaOperazione: liability della posizione', () => {
         expect(`${container.textContent}\n${titoli.join('\n')}`).not.toMatch(/responsabilit|resp\./i);
     });
 });
+
+// W_B2 (30/09 sera, punto 5): l'ordine dell'UTENTE sui mercati di Mike (riga
+// con strategia «utente», scritta da Mike al regolamento) si dice per quello
+// che e', mai «utente» grezzo ne' come un'operazione del bot
+describe('RigaOperazione: la riga «utente» di Mike', () => {
+    it('«ordine tuo (non del bot)»', () => {
+        render(<RigaOperazione o={riga(null, { bot: 'mike', quale: 'utente', lato: 'lay' })} />);
+        expect(screen.getByText('ordine tuo (non del bot)')).toBeTruthy();
+        expect(screen.queryByText('utente')).toBeNull();
+    });
+});

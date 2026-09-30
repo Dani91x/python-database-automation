@@ -104,6 +104,28 @@ describe('vistaTennisVivo — funzione pura, senza React', () => {
         expect(v.etaS).toBeNull();
         expect(v.freschezza).toBe('ignota');
     });
+
+    // W_B1 (30/09): l'eta' delle QUOTE della barra = `state.updated_ms`, istante
+    // in cui il runner ha costruito lo stato mercati (`tennis_runner.py:1498-1501`,
+    // scritto a ogni giro da `upsert_tennis_now`): distinta dall'eta' del punteggio.
+    it('etaQuoteS viene da state.updated_ms, NON dal punteggio, e cresce col tempo', () => {
+        const t0 = Date.parse('2026-09-30T20:00:00Z');
+        const r = row({
+            score: score({ updated_ms: t0 - 1_000 }),
+            state: { ...row().state!, updated_ms: t0 - 30_000 },
+        });
+        const v = vistaTennisVivo(r, true, t0);
+        expect(v.etaQuoteS).toBe(30);
+        expect(v.freschezzaQuote).toBe('vecchia');
+        expect(v.etaS).toBe(1);
+        expect(vistaTennisVivo(r, true, t0 + 1_000).etaQuoteS).toBe(31);
+    });
+
+    it('state o updated_ms assenti: etaQuoteS null, mai 0 e mai l’eta’ del punteggio', () => {
+        const senza = row({ state: { markets: [], order_mode: 'LIVE' } });
+        expect(vistaTennisVivo(senza, true, Date.now()).etaQuoteS).toBeNull();
+        expect(vistaTennisVivo(row({ state: null }), true, Date.now()).freschezzaQuote).toBe('ignota');
+    });
 });
 
 describe('nomeSelezioneTennis — correlazione selection_id -> nome', () => {

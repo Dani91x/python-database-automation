@@ -120,6 +120,33 @@ export function composizioneDalConto(
     return { ...base, righe: out, totale, dalConto: true };
 }
 
+/** La corsia LIVE di uno sport dal conto: netto regolato oggi e numero di ordini regolati. */
+export interface SportDalConto {
+    pnl: number;
+    ordini: number;
+}
+
+/**
+ * 30/09 (W_G) - il LIVE per SPORT dal CONTO (`per_fonte`): calcio = Mike +
+ * Omega + Safe calcio + Scalper; tennis = Safe tennis + bot tennis. Le voci
+ * manuali (app/sito) e «altri bot» non hanno uno sport: restano fuori dalle
+ * tessere (sono nella composizione). `null` = conto non letto.
+ */
+export function perSportDalConto(reale: PnlRealeOggi | null): Record<'calcio' | 'tennis', SportDalConto> | null {
+    if (!reale) return null;
+    const pf = reale.per_fonte;
+    const somma = (fonti: (keyof PnlRealeOggi['per_fonte'])[]): SportDalConto => {
+        let cent = 0;
+        let ordini = 0;
+        for (const f of fonti) { cent += Math.round(pf[f].netto * 100); ordini += pf[f].ordini; }
+        return { pnl: cent / 100, ordini };
+    };
+    return {
+        calcio: somma(['mike', 'omega', 'safe_calcio', 'scalper']),
+        tennis: somma(['safe_tennis', 'bot_tennis']),
+    };
+}
+
 /** Eta' in secondi della lettura del conto (letto_at); undefined = conto non letto; null = istante illeggibile. */
 export function etaContoS(lettoAt: string | null | undefined, nowMs: number): number | null | undefined {
     if (lettoAt == null) return undefined;

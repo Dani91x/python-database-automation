@@ -157,6 +157,15 @@ describe('la fonte di ogni cifra: Betfair / stimato', () => {
         expect(screen.getByTestId('cr-chiusa-fonte-2').dataset.fonte).toBe('stimato');
     });
 
+    it('W_B2 (punto 5): le parole delle fonti sono quelle di lib/fontePnl.ts (stesse della pagina di Mike)', () => {
+        monta(righe);
+        const riga = screen.getByTestId('cr-chiuse-composizione').textContent ?? '';
+        expect(riga).toContain('conto Betfair (regolato)');
+        expect(riga).toContain('stima del bot (Betfair non ha ancora regolato)');
+        expect(screen.getByTestId('cr-chiusa-fonte-1').textContent).toContain('conto Betfair');
+        expect(screen.getByTestId('cr-chiusa-fonte-2').textContent).toContain('stima');
+    });
+
     it('"solo Betfair" lascia solo cio\' che Betfair ha regolato', () => {
         monta(righe);
         fireEvent.click(screen.getByTestId('cr-f-fonte-betfair'));

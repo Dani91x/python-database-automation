@@ -42,6 +42,7 @@ import { useSecondTick } from '@/components/mike/useMikeClock';
 import { cycleText } from '@/components/mike/MikeMatchCard';
 import { PropostaUscitaMike } from './PropostaUscitaMike';
 import { EsitoChiusuraMike } from './EsitoChiusuraMike';
+import { MarchioSoldi } from './MarchioSoldi';
 
 /** Una coppia «etichetta / valore», il mattone di tutta la scheda. */
 function Voce({ label, children, title, testId }: {
@@ -222,9 +223,12 @@ export function SchedaMike({ ev, testId = 'cr-mike' }: { ev: MikeEvent; testId?:
             {/* ── soldi: liability, bloccato, cash out (30/09 B2, M10: la parola
                 del glossario, `T.openLiability`, come la card e i KPI) ── */}
             <div className="flex items-baseline gap-x-3 gap-y-1 flex-wrap">
-                <Voce label={T.openLiability} testId={`${testId}-liability`}
-                    title="liability netta impegnata sulla partita">
+                {/* W_B2 (30/09, M1): la NETTA del servizio, detta tale e marcata
+                    BOT (la scheda della partita mostra accanto la LORDA delle righe) */}
+                <Voce label={`${T.openLiability} (netta)`} testId={`${testId}-liability`}
+                    title="liability NETTA della partita calcolata dal servizio di Mike: le gambe che si compensano (copertura, green-up) sono già nettate">
                     {fmtMoney(num(live.liability))}
+                    {num(live.liability) != null && <>{' '}<MarchioSoldi fonte="bot" testId={`${testId}-liability-fonte`} /></>}
                 </Voce>
                 <Voce label="bloccato" testId={`${testId}-locked`} title="P&L già bloccato sulla partita">
                     <span className={pnlClass(num(live.locked))}>

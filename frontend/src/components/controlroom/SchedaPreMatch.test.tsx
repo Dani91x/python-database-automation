@@ -65,6 +65,16 @@ describe('SchedaPreMatch — quote pre-match vive (secondo giro)', () => {
         expect(riga).toHaveTextContent('P2 2,60/2,65');
     });
 
+    it('W_B1 tennis: coi nomi dello scanner le celle dicono il giocatore, non P1/P2', () => {
+        monta(partita({
+            sport: 'tennis', odds: { p1: { back: 1.5, lay: 1.52 }, p2: { back: 2.6, lay: 2.65 } },
+            giocatori: { p1: 'Sinner J.', p2: 'Alcaraz C.' },
+        }));
+        const celle = within(screen.getByTestId('cr-pre-quote')).getAllByTestId('cr-quota-cella');
+        expect(celle.map((c) => c.textContent)).toEqual(['Sinner J. 1,50/1,52', 'Alcaraz C. 2,60/2,65']);
+        expect(celle[0].getAttribute('title')).toMatch(/sortPriority/);
+    });
+
     // FALSIFICAZIONE
     it('senza quote e senza età: nessun blocco montato', () => {
         monta(partita({ odds: null, latenzaQuoteS: null }));

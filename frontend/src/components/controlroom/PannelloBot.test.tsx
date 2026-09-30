@@ -244,9 +244,18 @@ describe('importi — si salva solo ciò che si è potuto leggere', () => {
 });
 
 describe('quello che il pannello DICE dello stato', () => {
-    it('«sta fermandosi» non è «fermo»', () => {
+    // W_B2 (30/09): cambiato di proposito - le parole sono quelle di botStatusMeta
+    it('«IN ARRESTO» non è «FERMO» (parole di botStatusMeta)', () => {
         const s = mostra([riga({ acceso: true, stato: 'stopping' })], comandiFinti());
-        expect(s.getByTestId('cr-bot-stato-safe-base').textContent).toMatch(/sta fermandosi/i);
+        expect(s.getByTestId('cr-bot-stato-safe-base').textContent).toBe('IN ARRESTO');
+    });
+
+    it('W_B2: ogni stato con la parola di botStatusMeta, «stato non letto» per l’ignoto', () => {
+        for (const [stato, parola] of [['running', 'IN CORSA'], ['stopped', 'FERMO'], ['idle', 'INATTIVO'], ['error', 'ERRORE'], ['ignoto', 'stato non letto']] as const) {
+            const s = mostra([riga({ acceso: stato === 'running', stato })], comandiFinti());
+            expect(s.getByTestId('cr-bot-stato-safe-base').textContent).toBe(parola);
+            s.unmount();
+        }
     });
 
     it('conta i SERVIZI che usano soldi veri', () => {
@@ -572,5 +581,58 @@ describe('24/09 — Safe modello e Safe a mano nella plancia', () => {
         expect(s.getByTestId('cr-bot-modalita-safe-model').textContent).toBe('soldi veri');
         fireEvent.click(s.getByTestId('cr-a-paper-safe-model'));
         expect(c.cambiaModalita).toHaveBeenCalledWith('safe-model', 'paper');
+    });
+});
+
+// ===========================================================================
+// W_B2 (30/09 sera, M15) - la cifra LIVE «oggi» dice la sua FONTE; il riassunto
+// del gruppo non mescola mai soldi veri e prova (R_G, mutazione del coordinatore).
+// ===========================================================================
+describe('W_B2 - plancia: fonte del P&L LIVE di oggi e riassunto LIVE/PROVA separati', () => {
+    beforeEach(() => { window.localStorage.clear(); });
+
+    it('riga LIVE dal CONTO: cifra, marchio CONTO BETFAIR con l’età', () => {
+        const s = mostra([riga({ acceso: true, modalita: 'live', stato: 'running', pnlOggi: 3.5,
+            fonteOggi: { fonte: 'conto', vuoto: false, etaS: 12 } })], comandiFinti());
+        const pnl = s.getByTestId('cr-bot-pnl-safe-base');
+        expect(pnl.textContent).toContain('3,50 €');
+        const m = s.getByTestId('cr-bot-pnl-fonte-safe-base');
+        expect(m.getAttribute('data-fonte')).toBe('conto');
+        expect(m.textContent).toContain('12 s fa');
+        expect(s.queryByTestId('cr-bot-pnl-vuoto-safe-base')).toBeNull();
+    });
+
+    it('LETTO e vuoto: 0,00 € «nessuna regolata oggi», mai «—»', () => {
+        const s = mostra([riga({ acceso: true, modalita: 'live', stato: 'running', pnlOggi: 0,
+            fonteOggi: { fonte: 'bot', vuoto: true, nota: 'il conto separa Safe solo per sport: per strategia la cifra viene dalle righe del bot' } })], comandiFinti());
+        const pnl = s.getByTestId('cr-bot-pnl-safe-base');
+        expect(pnl.textContent).toContain('0,00 €');
+        expect(pnl.textContent).not.toContain('—');
+        expect(s.getByTestId('cr-bot-pnl-vuoto-safe-base').textContent).toContain('nessuna regolata oggi');
+        expect(s.getByTestId('cr-bot-pnl-fonte-safe-base').getAttribute('data-fonte')).toBe('bot');
+        expect(pnl.getAttribute('title')).toContain('solo per sport');
+    });
+
+    it('NON letto: «—» e nessun marchio; riga in PROVA: nessun marchio del conto', () => {
+        const s = mostra([riga({ acceso: true, modalita: 'live', stato: 'running', pnlOggi: null })], comandiFinti());
+        expect(s.getByTestId('cr-bot-pnl-safe-base').textContent).toContain('—');
+        expect(s.queryByTestId('cr-bot-pnl-fonte-safe-base')).toBeNull();
+        s.unmount();
+        const p = mostra([riga({ acceso: true, modalita: 'paper', stato: 'running', pnlOggi: 7.6 })], comandiFinti());
+        expect(p.queryByTestId('cr-bot-pnl-fonte-safe-base')).toBeNull();
+    });
+
+    it('R_G: nello stesso gruppo LIVE +2,00 e PROVA +7,60 restano separati, mai 9,60', () => {
+        const s = mostra([
+            riga({ id: 'safe-base', acceso: true, modalita: 'live', stato: 'running', pnlOggi: 2 }),
+            riga({ id: 'safe-punta', etichetta: 'Safe punta', acceso: true, modalita: 'paper', stato: 'running', pnlOggi: 7.6, primaDelBot: false }),
+            riga({ id: 'tennis_scalper', bot: 'tennis_scalper', etichetta: 'Scalper tennis' }),
+        ], comandiFinti());
+        const live = s.getByTestId('cr-pannello-bot-gruppo-calcio-oggi-live');
+        const prova = s.getByTestId('cr-pannello-bot-gruppo-calcio-oggi-prova');
+        expect(live.textContent).toBe('oggi LIVE 2,00 €');
+        expect(prova.textContent).toBe('prova 7,60 €');
+        const intestazione = s.getByTestId('cr-pannello-bot-gruppo-calcio-trigger').textContent ?? '';
+        expect(intestazione).not.toContain('9,60');
     });
 });

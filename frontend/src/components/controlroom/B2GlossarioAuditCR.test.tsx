@@ -154,6 +154,9 @@ describe('M10 - una parola sola: Liability', () => {
         const voce = screen.getByTestId('cr-mike-liability');
         expect(voce.textContent).toContain('Liability aperta');
         expect(voce.textContent).toContain('5,00 €');
+        // W_B2 (M1): la netta del servizio, detta tale e marcata BOT
+        expect(voce.textContent).toContain('Liability aperta (netta)');
+        expect(screen.getByTestId('cr-mike-liability-fonte').getAttribute('data-fonte')).toBe('bot');
         expect(testiVisibili(container)).not.toMatch(/responsabilit/i);
     });
 });

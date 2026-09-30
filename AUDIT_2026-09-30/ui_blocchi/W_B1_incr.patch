@@ -1,0 +1,643 @@
+diff --git a/frontend/src/components/controlroom/QuoteMercato.test.tsx b/frontend/src/components/controlroom/QuoteMercato.test.tsx
+index 6911ceb..a0e186c 100644
+--- a/frontend/src/components/controlroom/QuoteMercato.test.tsx
++++ b/frontend/src/components/controlroom/QuoteMercato.test.tsx
+@@ -7,7 +7,7 @@
+ import { describe, it, expect } from 'vitest';
+ import { render, screen, within } from '@testing-library/react';
+ import {
+-    QuoteMercato, EtaQuote, LineeOu, celleMatchOdds, MAX_LINEE_OU, QUOTE_CLS, QUOTE_TESTO,
++    QuoteMercato, EtaQuote, LineeOu, celleMatchOdds, MAX_LINEE_OU, QUOTE_CLS, QUOTE_TESTO, SOGLIA_SPREAD_TICK,
+ } from './QuoteMercato';
+ import type { LineaOuScheda } from '@/lib/controlRoom';
+ 
+@@ -49,6 +49,20 @@ describe('QuoteMercato — una cella per selezione, BACK e LAY distinti', () =>
+         expect(tennis?.map((c) => c.etichetta)).toEqual(['P1', 'P2']);
+     });
+ 
++    it('W_B1 tennis: con i nomi dello scanner le celle portano il NOME, e il title dichiara l’ordine (sortPriority)', () => {
++        const odds = { p1: { back: 1.5, lay: 1.52 }, p2: { back: 2.6, lay: 2.66 } };
++        const c = celleMatchOdds('tennis', odds, { p1: 'Sinner J.', p2: 'Alcaraz C.' });
++        expect(c?.map((x) => x.etichetta)).toEqual(['Sinner J.', 'Alcaraz C.']);
++        expect(c?.[0].titolo).toMatch(/sortPriority/);
++        expect(c?.[0].titolo).toMatch(/scanner/);
++        // un nome mancante o vuoto: si resta su P1/P2 (mai un nome solo, mai un nome indovinato)
++        expect(celleMatchOdds('tennis', odds, { p1: 'Sinner J.', p2: '  ' })?.map((x) => x.etichetta)).toEqual(['P1', 'P2']);
++        expect(celleMatchOdds('tennis', odds, null)?.map((x) => x.etichetta)).toEqual(['P1', 'P2']);
++        // il calcio non usa i nomi dei giocatori
++        expect(celleMatchOdds('calcio', { home: { back: 2, lay: 2.02 } }, { p1: 'A', p2: 'B' })?.map((x) => x.etichetta))
++            .toEqual(['1', 'X', '2']);
++    });
++
+     it('celleMatchOdds: nessun prezzo nel blocco = null (non si monta una fila di trattini)', () => {
+         expect(celleMatchOdds('calcio', null)).toBeNull();
+         expect(celleMatchOdds('calcio', { home: null, draw: null, away: null })).toBeNull();
+@@ -57,6 +71,49 @@ describe('QuoteMercato — una cella per selezione, BACK e LAY distinti', () =>
+     });
+ });
+ 
++describe('W_B1: spread largo = «poco liquido», nota grigia accanto alla cella', () => {
++    // l'esempio dell'utente: «1 40,00/50,00 · X 15,00/18,00». 40 -> 50 sono 5 tick
++    // (passo 2 fra 30 e 50: alla soglia, nessuna nota); 15 -> 18 sono 6 tick (passo 0,50)
++    it('X 15,00/18,00 (6 tick; soglia 5): «spread 6 tick · poco liquido», grigia, fuori dalla cella', () => {
++        render(<QuoteMercato testId="q" celle={[{ chiave: 'draw', etichetta: 'X', back: 15, lay: 18 }]} />);
++        const nota = screen.getByTestId('cr-quota-spread');
++        expect(nota).toHaveTextContent('spread 6 tick · poco liquido');
++        expect(nota.className).not.toMatch(/orange|red|amber|rose/);
++        expect(nota.getAttribute('title')).toMatch(/soglia 5 tick/);
++        expect(screen.getByTestId('cr-quota-cella').textContent).toBe('X 15,00/18,00');
++        expect(SOGLIA_SPREAD_TICK).toBe(5);
++    });
++
++    it('spread entro la soglia (2 1,08/1,10 = 2 tick; 6 tick esatti = 5 no, 6 sì): nessuna nota o nota al posto giusto', () => {
++        const { rerender } = render(<QuoteMercato testId="q" celle={[{ chiave: 'away', etichetta: '2', back: 1.08, lay: 1.1 }]} />);
++        expect(screen.queryByTestId('cr-quota-spread')).toBeNull();
++        // 2,00 -> 2,10 = 5 tick (passo 0,02): alla soglia, nessuna nota
++        rerender(<QuoteMercato testId="q" celle={[{ chiave: 'x', etichetta: 'X', back: 2, lay: 2.1 }]} />);
++        expect(screen.queryByTestId('cr-quota-spread')).toBeNull();
++        // 2,00 -> 2,12 = 6 tick: sopra la soglia
++        rerender(<QuoteMercato testId="q" celle={[{ chiave: 'x', etichetta: 'X', back: 2, lay: 2.12 }]} />);
++        expect(screen.getByTestId('cr-quota-spread')).toHaveTextContent('spread 6 tick · poco liquido');
++        // 40,00 -> 50,00 = 5 tick: alla soglia, nessuna nota
++        rerender(<QuoteMercato testId="q" celle={[{ chiave: 'home', etichetta: '1', back: 40, lay: 50 }]} />);
++        expect(screen.queryByTestId('cr-quota-spread')).toBeNull();
++    });
++
++    it('anche nelle linee Under/Over (stesso componente): Under 3,00/4,00 = 20 tick', () => {
++        render(<LineeOu testId="ou" linee={[{
++            marketId: '1.35', linea: 3.5, stato: 'OPEN', decisa: false, perMike: false,
++            under: { back: 3, lay: 4 }, over: { back: 1.33, lay: 1.34 }, etaCambioS: 2,
++        }]} />);
++        const note = screen.getAllByTestId('cr-quota-spread');
++        expect(note).toHaveLength(1);
++        expect(note[0]).toHaveTextContent('spread 20 tick · poco liquido');
++    });
++
++    it('un lato assente: nessuno spread inventato', () => {
++        render(<QuoteMercato testId="q" celle={[{ chiave: 'draw', etichetta: 'X', back: 15, lay: null }]} />);
++        expect(screen.queryByTestId('cr-quota-spread')).toBeNull();
++    });
++});
++
+ describe('EtaQuote — l’età del prezzo con l’etichetta di cosa misura', () => {
+     it('dice che è l’ULTIMO CAMBIO (odds_ts_ms), non l’ultima lettura', () => {
+         render(<EtaQuote testId="e" latenzaS={4} stato="fresco" />);
+diff --git a/frontend/src/components/controlroom/QuoteMercato.tsx b/frontend/src/components/controlroom/QuoteMercato.tsx
+index 5de2e49..75ffdfc 100644
+--- a/frontend/src/components/controlroom/QuoteMercato.tsx
++++ b/frontend/src/components/controlroom/QuoteMercato.tsx
+@@ -29,6 +29,7 @@
+ // ============================================================================
+ import { fmtOdds, fmtAge, fmtNum, DASH } from '@/lib/format';
+ import { marketStatusMeta } from '@/lib/mike';
++import { ticksBetween } from '@/lib/riskMath';
+ import type { LineaOuScheda, PartitaFeedLike, Sport, StatoQuote } from '@/lib/controlRoom';
+ 
+ /** «fermo» NON è un allarme: è un mercato che non si muove, e quel prezzo è
+@@ -65,8 +66,26 @@ export interface CellaQuota {
+ }
+ 
+ /** Una quota Betfair valida è > 1: tutto il resto è «assente», mai `0,00`. */
++function valida(v: number | null | undefined): v is number {
++    return typeof v === 'number' && Number.isFinite(v) && v > 1;
++}
++
+ function quota(v: number | null | undefined): string {
+-    return typeof v === 'number' && Number.isFinite(v) && v > 1 ? fmtOdds(v) : DASH;
++    return valida(v) ? fmtOdds(v) : DASH;
++}
++
++/**
++ * W_B1 (30/09, progetto §4.C) — SPREAD «POCO LIQUIDO». Oltre questa distanza in
++ * tick (scala Betfair, `ticksBetween` di `lib/riskMath.ts`) fra miglior BACK e
++ * miglior LAY la cella porta accanto una nota GRIGIA: e' un'informazione, non
++ * un allarme (entrare e uscire costa quella distanza). Soglia fissa, dichiarata.
++ */
++export const SOGLIA_SPREAD_TICK = 5;
++
++/** Tick fra BACK e LAY; null se manca un lato (nessuno spread inventato). */
++export function spreadTick(back: number | null | undefined, lay: number | null | undefined): number | null {
++    if (!valida(back) || !valida(lay)) return null;
++    return Math.abs(ticksBetween(back, lay));
+ }
+ 
+ export function QuoteMercato({ celle, testId, titolo }: {
+@@ -76,17 +95,28 @@ export function QuoteMercato({ celle, testId, titolo }: {
+ }) {
+     return (
+         <span className="inline-flex items-center gap-1 flex-wrap" data-testid={testId} title={titolo}>
+-            {celle.map((c) => (
+-                <span key={c.chiave} data-testid="cr-quota-cella" title={c.titolo}
+-                    className="inline-flex items-baseline gap-1 rounded border border-white/10 bg-white/[0.03] px-1.5 py-0.5">
+-                    <span className="text-[11px] font-semibold text-white/60 max-w-[9rem] truncate">{c.etichetta}</span>{' '}
+-                    <span className="font-mono tabular-nums text-[12.5px] font-semibold text-sky-300"
+-                        data-testid="cr-quota-back" title="miglior BACK (punta)">{quota(c.back)}</span>
+-                    <span className="text-white/25 text-[11px]">/</span>
+-                    <span className="font-mono tabular-nums text-[12.5px] font-semibold text-rose-300"
+-                        data-testid="cr-quota-lay" title="miglior LAY (banca)">{quota(c.lay)}</span>
+-                </span>
+-            ))}
++            {celle.map((c) => {
++                const spread = spreadTick(c.back, c.lay);
++                return (
++                    <span key={c.chiave} className="inline-flex items-baseline gap-1">
++                        <span data-testid="cr-quota-cella" title={c.titolo}
++                            className="inline-flex items-baseline gap-1 rounded border border-white/10 bg-white/[0.03] px-1.5 py-0.5">
++                            <span className="text-[11px] font-semibold text-white/60 max-w-[9rem] truncate">{c.etichetta}</span>{' '}
++                            <span className="font-mono tabular-nums text-[12.5px] font-semibold text-sky-300"
++                                data-testid="cr-quota-back" title="miglior BACK (punta)">{quota(c.back)}</span>
++                            <span className="text-white/25 text-[11px]">/</span>
++                            <span className="font-mono tabular-nums text-[12.5px] font-semibold text-rose-300"
++                                data-testid="cr-quota-lay" title="miglior LAY (banca)">{quota(c.lay)}</span>
++                        </span>
++                        {spread != null && spread > SOGLIA_SPREAD_TICK && (
++                            <span className="text-[10px] text-white/40 whitespace-nowrap" data-testid="cr-quota-spread"
++                                title={`fra miglior BACK e miglior LAY ci sono ${spread} tick (soglia ${SOGLIA_SPREAD_TICK} tick): mercato poco liquido, entrare e uscire costa questa distanza`}>
++                                spread {spread} tick · poco liquido
++                            </span>
++                        )}
++                    </span>
++                );
++            })}
+         </span>
+     );
+ }
+@@ -104,15 +134,31 @@ function haPrezzo(l: Lato): boolean {
+  * Odds (`scanner.tennis_sides`): nessun codice lega quell'ordine all'ordine dei
+  * nomi nell'`event_name`, quindi qui non si scrive un nome che potrebbe essere
+  * quello sbagliato. `null` = nessun prezzo nel blocco: la fila non si monta.
++ *
++ * W_B1 (30/09, decisione del coordinatore): se lo scanner porta i DUE nomi
++ * (`PartitaGiornata.giocatori`, `p1`/`p2` del payload, `scanner.split_event_name`)
++ * le celle portano il nome (P1 = `giocatori.p1`) e il title DICHIARA che
++ * l'ordine e' quello dello scanner (`sortPriority` del Match Odds), la stessa
++ * assunzione gia' dichiarata dalla barra tennis. Un nome mancante: P1/P2.
+  */
+-export function celleMatchOdds(sport: Sport, odds: PartitaFeedLike['odds'] | undefined): CellaQuota[] | null {
++export function celleMatchOdds(
++    sport: Sport,
++    odds: PartitaFeedLike['odds'] | undefined,
++    giocatori?: { p1: string | null; p2: string | null } | null,
++): CellaQuota[] | null {
+     if (!odds) return null;
+     if (sport === 'tennis') {
+         if (!haPrezzo(odds.p1) && !haPrezzo(odds.p2)) return null;
+         const t = 'selezione del Match Odds con ordine Betfair (sortPriority)';
++        const n1 = giocatori?.p1?.trim() ?? '';
++        const n2 = giocatori?.p2?.trim() ?? '';
++        const conNomi = n1 !== '' && n2 !== '';
++        const nota = ': nome dallo scanner (event_name diviso), abbinato per ordine — P1 = primo nome = sortPriority 1';
+         return [
+-            { chiave: 'p1', etichetta: 'P1', back: odds.p1?.back ?? null, lay: odds.p1?.lay ?? null, titolo: `P1 = ${t} 1` },
+-            { chiave: 'p2', etichetta: 'P2', back: odds.p2?.back ?? null, lay: odds.p2?.lay ?? null, titolo: `P2 = ${t} 2` },
++            { chiave: 'p1', etichetta: conNomi ? n1 : 'P1', back: odds.p1?.back ?? null, lay: odds.p1?.lay ?? null,
++                titolo: conNomi ? `${n1} = ${t} 1${nota}` : `P1 = ${t} 1` },
++            { chiave: 'p2', etichetta: conNomi ? n2 : 'P2', back: odds.p2?.back ?? null, lay: odds.p2?.lay ?? null,
++                titolo: conNomi ? `${n2} = ${t} 2${nota}` : `P2 = ${t} 2` },
+         ];
+     }
+     if (!haPrezzo(odds.home) && !haPrezzo(odds.draw) && !haPrezzo(odds.away)) return null;
+diff --git a/frontend/src/components/controlroom/SchedaPartita.test.tsx b/frontend/src/components/controlroom/SchedaPartita.test.tsx
+index 87ba497..f567424 100644
+--- a/frontend/src/components/controlroom/SchedaPartita.test.tsx
++++ b/frontend/src/components/controlroom/SchedaPartita.test.tsx
+@@ -375,6 +375,17 @@ describe('SchedaPartita — B1: tennis, quote della barra con lo stesso componen
+         expect(screen.queryByTestId('cr-tennis-vivo')).toBeNull();
+     });
+ 
++    it('W_B1: tennis in gioco senza posizione, coi nomi dello scanner le celle dicono il giocatore', () => {
++        monta(partita({
++            soldi: SOLDI_CHIUSI, latenzaQuoteS: 4, statoQuote: 'fresco',
++            odds: { p1: { back: 1.5, lay: 1.52 }, p2: { back: 2.6, lay: 2.66 } },
++            giocatori: { p1: 'Federer R.', p2: 'Nadal R.' },
++        }));
++        const celle = within(screen.getByTestId('cr-tennis-quote')).getAllByTestId('cr-quota-cella');
++        expect(celle.map((c) => c.textContent)).toEqual(['Federer R. 1,50/1,52', 'Nadal R. 2,60/2,66']);
++        expect(celle[1].getAttribute('title')).toMatch(/sortPriority\) 2/);
++    });
++
+     it('tennis in gioco CON posizione: solo la barra del runner, MAI anche le quote dello scanner', async () => {
+         hoisted.row = tennisRow();
+         monta(partita({
+@@ -391,6 +402,47 @@ describe('SchedaPartita — B1: tennis, quote della barra con lo stesso componen
+         expect(screen.queryByTestId('cr-tennis-quote')).toBeNull();
+     });
+ 
++    // W_B1: accanto alle celle della barra, l'eta' delle QUOTE del runner
++    it('accanto alle quote della barra: «ultimo aggiornamento del runner: N s» da state.updated_ms', async () => {
++        hoisted.row = tennisRow({
++            state: { markets: [{ market_id: '1.9', market_type: 'MATCH_ODDS', market_name: 'Match Odds', status: 'OPEN',
++                selections: [{ selection_id: 11, name: 'Federer R.', back: 1.5, lay: 1.52, ltp: 1.5 }] }],
++            order_mode: 'LIVE', updated_ms: Date.now() - 7_000 },
++        });
++        monta(partita({ soldi: SOLDI_APERTI }));
++        const e = await screen.findByTestId('cr-tennis-vivo-eta-quote');
++        expect(e).toHaveTextContent(/^ultimo aggiornamento del runner: [78] s$/);
++        expect(e.getAttribute('title')).toMatch(/LETTURA/);
++        expect(e.getAttribute('title')).toMatch(/non .* cambio/);
++        expect(within(e).getByTestId('cr-tennis-vivo-eta-quote-valore').className).toContain('text-white/50');
++    });
++
++    // una LETTURA recente del runner non prova che i prezzi siano freschi (la
++    // cache puo' essere vecchia): mai il verde di «fresco», grigio neutro
++    it('lettura recentissima (1 s): grigio neutro, mai il verde di «fresco»', async () => {
++        hoisted.row = tennisRow({
++            state: { markets: [{ market_id: '1.9', market_type: 'MATCH_ODDS', market_name: 'Match Odds', status: 'OPEN',
++                selections: [{ selection_id: 11, name: 'Federer R.', back: 1.5, lay: 1.52, ltp: 1.5 }] }],
++            order_mode: 'LIVE', updated_ms: Date.now() - 1_000 },
++        });
++        monta(partita({ soldi: SOLDI_APERTI }));
++        const v = within(await screen.findByTestId('cr-tennis-vivo-eta-quote')).getByTestId('cr-tennis-vivo-eta-quote-valore');
++        expect(v.className).toContain('text-white/50');
++        expect(v.className).not.toMatch(/emerald/);
++    });
++
++    it('stato senza updated_ms: «ultimo aggiornamento del runner: età ignota» in arancione', async () => {
++        hoisted.row = tennisRow({
++            state: { markets: [{ market_id: '1.9', market_type: 'MATCH_ODDS', market_name: 'Match Odds', status: 'OPEN',
++                selections: [{ selection_id: 11, name: 'Federer R.', back: 1.5, lay: 1.52, ltp: 1.5 }] }],
++            order_mode: 'LIVE' },
++        });
++        monta(partita({ soldi: SOLDI_APERTI }));
++        const e = await screen.findByTestId('cr-tennis-vivo-eta-quote');
++        expect(e).toHaveTextContent('ultimo aggiornamento del runner: età ignota');
++        expect(within(e).getByTestId('cr-tennis-vivo-eta-quote-valore').className).toContain('text-orange-400');
++    });
++
+     it('l’età della barra dice che è quella del PUNTEGGIO', async () => {
+         hoisted.row = tennisRow();
+         monta(partita({ soldi: SOLDI_APERTI }));
+diff --git a/frontend/src/components/controlroom/SchedaPartita.tsx b/frontend/src/components/controlroom/SchedaPartita.tsx
+index ab74f55..1ce14ec 100644
+--- a/frontend/src/components/controlroom/SchedaPartita.tsx
++++ b/frontend/src/components/controlroom/SchedaPartita.tsx
+@@ -94,6 +94,17 @@ const FRESCHEZZA_CLS: Record<Freschezza, string> = {
+     ignota: 'text-orange-400',
+ };
+ 
++/** W_B1 (30/09): colori dell'eta' di una LETTURA del runner (`state.updated_ms`).
++ *  Una lettura recente NON prova che i prezzi siano freschi (la cache del runner
++ *  puo' essere vecchia): niente verde. Una lettura vecchia o ignota invece prova
++ *  che qualcosa non va: arancione, come `FRESCHEZZA_CLS`. */
++const LETTURA_CLS: Record<Freschezza, string> = {
++    fresca: 'text-white/50',
++    lenta: 'text-white/50',
++    vecchia: 'text-orange-400',
++    ignota: 'text-orange-400',
++};
++
+ /**
+  * TASK 2 (18/09) — IL TENNIS VIVO della partita: punto, chi serve, tie-break,
+  * stato del mercato e l'età del dato, dalla STESSA `tennis_live_now` che la
+@@ -202,6 +213,19 @@ function TennisVivoBar({ eventId, abilitato, giocatori }: {
+                         back: s.back, lay: s.lay,
+                     }))} />
+             )}
++            {/* W_B1 (30/09): l'eta' delle QUOTE della barra, accanto alle celle.
++                E' una LETTURA del runner (`state.updated_ms`), non un cambio di
++                prezzo: parole e colori della freschezza (5 s / 20 s), non quelli
++                di `EtaQuote` («ultimo cambio»), che misura un'altra cosa. */}
++            {(vivo.row?.state?.markets ?? []).flatMap((m) => m.selections ?? []).length > 0 && (
++                <span className="font-mono text-[11px] whitespace-nowrap" data-testid="cr-tennis-vivo-eta-quote"
++                    title="età delle quote della barra: ultima LETTURA dello stato mercati da parte del runner tennis (state.updated_ms), non l’ultimo cambio di prezzo. Sopra 20 s il dato è vecchio">
++                    <span className="text-white/35">ultimo aggiornamento del runner: </span>
++                    <span className={LETTURA_CLS[vivo.freschezzaQuote]} data-testid="cr-tennis-vivo-eta-quote-valore">
++                        {vivo.etaQuoteS == null ? 'età ignota' : fmtAge(vivo.etaQuoteS)}
++                    </span>
++                </span>
++            )}
+             {vivo.row && (
+                 <span className={`ml-auto font-mono text-[10px] ${FRESCHEZZA_CLS[vivo.freschezza]}`}
+                     data-testid="cr-tennis-vivo-eta"
+@@ -304,7 +328,7 @@ export function SchedaPartita({
+     // prezzi da due fonti sulla stessa scheda. Stesso cancello della barra.
+     const barraTennis = p.sport === 'tennis' && (apertaLive || apertaPaper);
+     const celleTennis = p.sport === 'tennis' && p.stato === 'live' && !barraTennis
+-        ? celleMatchOdds('tennis', p.odds) : null;
++        ? celleMatchOdds('tennis', p.odds, p.giocatori) : null;
+     const latenzaAccantoQuote = celleCalcio != null || celleTennis != null;
+ 
+     return (
+diff --git a/frontend/src/components/controlroom/SchedaPreMatch.cashout.test.tsx b/frontend/src/components/controlroom/SchedaPreMatch.cashout.test.tsx
+new file mode 100644
+index 0000000..c6dc6e9
+--- /dev/null
++++ b/frontend/src/components/controlroom/SchedaPreMatch.cashout.test.tsx
+@@ -0,0 +1,85 @@
++// ============================================================================
++// SchedaPreMatch.cashout.test.tsx - W_B1 (30/09, P10): la scheda PRE-PARTITA
++// riceve le operazioni e mostra il cash out della partita e la scheda di Mike,
++// come la scheda in gioco. Finti con le STESSE chiavi di
++// `CashOutGlobale.montaggio.test.tsx` (riga `OperazionePartita` e `MikeEvent`).
++// ============================================================================
++import { describe, it, expect } from 'vitest';
++import { render, screen, within } from '@testing-library/react';
++import { MemoryRouter } from 'react-router-dom';
++import { SchedaPreMatch } from './SchedaPreMatch';
++import type { OperazionePartita } from './useControlRoom';
++import type { PartitaGiornata } from '@/lib/controlRoom';
++import type { MikeEvent } from '@/lib/mike';
++
++function partitaPre(over: Partial<PartitaGiornata> = {}): PartitaGiornata {
++    return {
++        event_id: '36132117', sport: 'calcio', nome: 'Roma – Lazio', campionato: 'Serie A',
++        koMs: Date.now() + 1800_000, stato: 'pre', minuto: null, punteggio: null,
++        controlloDisponibile: false, etaFeedS: null, freschezza: 'ignota',
++        latenzaQuoteS: null, freschezzaQuote: 'ignota', statoQuote: 'ignoto',
++        media: null, extra: null, marketId: null,
++        soldi: null, target: null, avanzamento: null,
++        ...over,
++    };
++}
++
++/** una punta di Mike pre-fischio, abbinata per intero, prezzo dello scanner come ripiego */
++function puntaMike(): OperazionePartita {
++    return {
++        id: 7001, bot: 'mike', selezione: 'Under 3.5 Goals', lato: 'back', prezzo: 1.5, size: 10,
++        stato: 'open', pnl: null, modalita: 'live', at: '2026-09-30T18:00:00.000Z', quale: null,
++        ordine: { status: 'open', side: 'back', price: 1.5, size: 10, size_requested: 10, size_matched: 10,
++            size_remaining: 0, avg_price_matched: 1.5, betfair_updated_at: null, meta: null },
++        dettaglio: null, marketId: '1.35', selectionId: 11, liability: null, vivo: null, etaQuoteS: null,
++        chiusura: {
++            lato: 'lay', prezzo: null, abbinabile: null, bloccabile: null,
++            alMs: { win: 0, lose: 0, marketId: '1.35', selectionId: 11, sport: 'calcio', istanteScannerMs: Date.now() - 2000,
++                scanner: { back: 1.52, backSize: 50, lay: 1.54, laySize: 50 }, aliquota: 0.05 },
++        },
++        chiusureOrdini: [], eventId: '36132117', chiudeId: null,
++    };
++}
++
++function mikeEvento(): MikeEvent {
++    return {
++        event_id: '36132117', fixture_id: null, event_name: 'Roma v Lazio', competition: null, league_id: null,
++        ko_at: new Date(Date.now() + 1800_000).toISOString(), mode: 'live',
++        markets: { OU35: { market_id: '1.35' }, OU45: { market_id: '1.45' } },
++        state: 'PRE_OPEN', cycle_no: 0, entry_price_initial: 1.5, dossier: null,
++        live: { goals: 0, published_ts: Date.now() / 1000 - 1, feed_age_s: 0.2 },
++        positions: [], ctx: null, skipped: false, settled_pnl: null, updated_at: new Date().toISOString(),
++    } as MikeEvent;
++}
++
++function monta(operazioni: OperazionePartita[] | undefined, mike: MikeEvent | null = null) {
++    return render(
++        <MemoryRouter>
++            <SchedaPreMatch p={partitaPre()} scheda="pre" mancaS={1800} operazioni={operazioni} mike={mike} />
++        </MemoryRouter>,
++    );
++}
++
++describe('W_B1 P10: la scheda pre-partita con le operazioni e il cash out', () => {
++    it('una punta di Mike pre-fischio: la riga dell’operazione, il riquadro del cash out e la scheda di Mike', () => {
++        monta([puntaMike()], mikeEvento());
++        const ops = screen.getByTestId('cr-pre-operazioni');
++        expect(within(ops).getByTestId('cr-op-riga')).toHaveTextContent('Under 3.5');
++        const co = screen.getByTestId('cr-cashout-globale');
++        expect(within(co).getAllByTestId('cr-cashout-globale-live-gamba')).toHaveLength(1);
++        expect(screen.getByTestId('cr-pre-mike')).toBeTruthy();
++    });
++
++    it('senza operazioni: niente riquadro del cash out, niente scheda di Mike', () => {
++        monta([], mikeEvento());
++        expect(screen.queryByTestId('cr-pre-operazioni')).toBeNull();
++        expect(screen.queryByTestId('cr-cashout-globale')).toBeNull();
++        expect(screen.queryByTestId('cr-pre-mike')).toBeNull();
++    });
++
++    it('operazioni di un altro bot, Mike che non lavora la partita: cash out sì, scheda di Mike no', () => {
++        monta([{ ...puntaMike(), bot: 'omega', id: 8001 }], null);
++        expect(screen.getByTestId('cr-cashout-globale')).toBeTruthy();
++        expect(screen.queryByTestId('cr-pre-mike')).toBeNull();
++    });
++});
+diff --git a/frontend/src/components/controlroom/SchedaPreMatch.test.tsx b/frontend/src/components/controlroom/SchedaPreMatch.test.tsx
+index 69c17b8..5fe7e3d 100644
+--- a/frontend/src/components/controlroom/SchedaPreMatch.test.tsx
++++ b/frontend/src/components/controlroom/SchedaPreMatch.test.tsx
+@@ -65,6 +65,16 @@ describe('SchedaPreMatch — quote pre-match vive (secondo giro)', () => {
+         expect(riga).toHaveTextContent('P2 2,60/2,65');
+     });
+ 
++    it('W_B1 tennis: coi nomi dello scanner le celle dicono il giocatore, non P1/P2', () => {
++        monta(partita({
++            sport: 'tennis', odds: { p1: { back: 1.5, lay: 1.52 }, p2: { back: 2.6, lay: 2.65 } },
++            giocatori: { p1: 'Sinner J.', p2: 'Alcaraz C.' },
++        }));
++        const celle = within(screen.getByTestId('cr-pre-quote')).getAllByTestId('cr-quota-cella');
++        expect(celle.map((c) => c.textContent)).toEqual(['Sinner J. 1,50/1,52', 'Alcaraz C. 2,60/2,65']);
++        expect(celle[0].getAttribute('title')).toMatch(/sortPriority/);
++    });
++
+     // FALSIFICAZIONE
+     it('senza quote e senza età: nessun blocco montato', () => {
+         monta(partita({ odds: null, latenzaQuoteS: null }));
+diff --git a/frontend/src/components/controlroom/SchedaPreMatch.tsx b/frontend/src/components/controlroom/SchedaPreMatch.tsx
+index 2ff79a3..ba5ec81 100644
+--- a/frontend/src/components/controlroom/SchedaPreMatch.tsx
++++ b/frontend/src/components/controlroom/SchedaPreMatch.tsx
+@@ -19,10 +19,11 @@
+ // gli ORDINI/POSIZIONI pre-match già piazzati, STESSA riga (`RigaOperazione`,
+ // `DettaglioRigaView.tsx`) e STESSO ordine dei campi della scheda Live/Aperte
+ // (mai due scritture della stessa riga in due file, vedi il commento di
+-// `RigaOperazione`). `operazioni` è OPZIONALE: `ControlRoom.tsx` (fuori dal
+-// mio perimetro) oggi non la passa a questo componente — vedi il referto per
+-// la riga esatta da cambiare — ma la scheda è pronta a riceverla, e senza non
+-// si rompe (nessuna sezione ordini, non un errore).
++// `RigaOperazione`). `operazioni` è OPZIONALE e senza non si rompe (nessuna
++// sezione ordini, non un errore). W_B1 (30/09, P10): `ControlRoom.tsx`
++// (`ElencoPartite`, ramo `pre`) ORA la passa, insieme a `mike`: sotto le
++// operazioni si monta il CASH OUT DELLA PARTITA (`CashOutGlobalePartita`, lo
++// stesso della scheda in gioco) e, se Mike ha una posizione, `SchedaMike`.
+ // ============================================================================
+ //
+ // B1 (30/09) — «rendere le quote in tempo reale piu' visibili e da "trader"»
+@@ -41,6 +42,9 @@ import {
+     QuoteMercato, EtaQuote, LineeOu, celleMatchOdds,
+ } from '@/components/controlroom/QuoteMercato';
+ import { RigaOperazione } from '@/components/controlroom/DettaglioRigaView';
++import { CashOutGlobalePartita } from '@/components/controlroom/CashOutGlobale';
++import { SchedaMike } from '@/components/controlroom/SchedaMike';
++import type { MikeEvent } from '@/lib/mike';
+ import type { PartitaGiornata } from '@/lib/controlRoom';
+ import type { OperazionePartita } from '@/components/controlroom/useControlRoom';
+ 
+@@ -58,17 +62,27 @@ export interface SchedaPreMatchProps {
+      * 18/09 (secondo giro) — ordini/posizioni GIÀ piazzati pre-match su
+      * questa partita (ingresso pre-KO, stato dell'ordine). `undefined`/`[]` =
+      * nessuna posizione ancora, la sezione non si monta: non è un errore, è
+-     * la verità di una partita non ancora cominciata. `ControlRoom.tsx` non
+-     * la passa ancora (fuori perimetro): vedi CHECKPOINT per la riga esatta.
++     * la verità di una partita non ancora cominciata. La passa
++     * `ControlRoom.tsx` (`ElencoPartite`, ramo `pre`, W_B1).
+      */
+     operazioni?: OperazionePartita[];
++    /**
++     * W_B1 (P10) — la partita di Mike come il servizio la pubblica (gia'
++     * letta dalla pagina: nessuna lettura in piu'). Assente = Mike non lavora
++     * questa partita.
++     */
++    mike?: MikeEvent | null;
+ }
+ 
+ export function SchedaPreMatch({
+-    p, scheda, mancaS, registra, registratoreVivo = null, onRegistrazione, operazioni = [],
++    p, scheda, mancaS, registra, registratoreVivo = null, onRegistrazione, operazioni = [], mike = null,
+ }: SchedaPreMatchProps) {
++    // Mike «ha una posizione» qui se ha righe su questa partita o se il suo
++    // servizio ne dichiara (`positions`): allora si mostra la sua scheda.
++    const mikeConPosizione = mike != null
++        && (operazioni.some((o) => o.bot === 'mike') || (mike.positions?.length ?? 0) > 0);
+     const imminente = mancaS != null && mancaS <= 15 * 60;
+-    const celle = celleMatchOdds(p.sport, p.odds);
++    const celle = celleMatchOdds(p.sport, p.odds, p.giocatori);
+     const haQuote = celle != null;
+     const linee = p.lineeOu ?? [];
+     // B1bis: nessuna guardia qui, la regola delle linee vive in `LineeOu`
+@@ -137,6 +151,18 @@ export function SchedaPreMatch({
+                     ))}
+                 </div>
+             )}
++
++            {/* W_B1 (P10): il CASH OUT DELLA PARTITA, lo stesso riquadro della
++                scheda in gioco (somma delle gambe abbinate di TUTTI i bot, LIVE e
++                PROVA separati). Senza gambe non si monta e non apre niente. */}
++            {operazioni.length > 0 && (
++                <div className="-mx-2.5">
++                    <CashOutGlobalePartita sport={p.sport} operazioni={operazioni} mike={mike} />
++                </div>
++            )}
++            {mikeConPosizione && mike && (
++                <div className="mt-1.5" data-testid="cr-pre-mike"><SchedaMike ev={mike} /></div>
++            )}
+         </div>
+     );
+ }
+diff --git a/frontend/src/components/controlroom/useTennisVivo.test.ts b/frontend/src/components/controlroom/useTennisVivo.test.ts
+index 519355f..89dbae7 100644
+--- a/frontend/src/components/controlroom/useTennisVivo.test.ts
++++ b/frontend/src/components/controlroom/useTennisVivo.test.ts
+@@ -104,6 +104,28 @@ describe('vistaTennisVivo — funzione pura, senza React', () => {
+         expect(v.etaS).toBeNull();
+         expect(v.freschezza).toBe('ignota');
+     });
++
++    // W_B1 (30/09): l'eta' delle QUOTE della barra = `state.updated_ms`, istante
++    // in cui il runner ha costruito lo stato mercati (`tennis_runner.py:1498-1501`,
++    // scritto a ogni giro da `upsert_tennis_now`): distinta dall'eta' del punteggio.
++    it('etaQuoteS viene da state.updated_ms, NON dal punteggio, e cresce col tempo', () => {
++        const t0 = Date.parse('2026-09-30T20:00:00Z');
++        const r = row({
++            score: score({ updated_ms: t0 - 1_000 }),
++            state: { ...row().state!, updated_ms: t0 - 30_000 },
++        });
++        const v = vistaTennisVivo(r, true, t0);
++        expect(v.etaQuoteS).toBe(30);
++        expect(v.freschezzaQuote).toBe('vecchia');
++        expect(v.etaS).toBe(1);
++        expect(vistaTennisVivo(r, true, t0 + 1_000).etaQuoteS).toBe(31);
++    });
++
++    it('state o updated_ms assenti: etaQuoteS null, mai 0 e mai l’eta’ del punteggio', () => {
++        const senza = row({ state: { markets: [], order_mode: 'LIVE' } });
++        expect(vistaTennisVivo(senza, true, Date.now()).etaQuoteS).toBeNull();
++        expect(vistaTennisVivo(row({ state: null }), true, Date.now()).freschezzaQuote).toBe('ignota');
++    });
+ });
+ 
+ describe('nomeSelezioneTennis — correlazione selection_id -> nome', () => {
+diff --git a/frontend/src/components/controlroom/useTennisVivo.ts b/frontend/src/components/controlroom/useTennisVivo.ts
+index c32b8af..2f11f41 100644
+--- a/frontend/src/components/controlroom/useTennisVivo.ts
++++ b/frontend/src/components/controlroom/useTennisVivo.ts
+@@ -153,6 +153,17 @@ export interface TennisVivo {
+     /** 25/09 (voce 5): da dove viene la riga (canale 47332 o realtime del
+      *  database); null = nessuna riga */
+     fonte: FonteTennisVivo | null;
++    /**
++     * W_B1 (30/09) — eta' delle QUOTE della barra: secondi da `state.updated_ms`,
++     * l'istante in cui il runner ha COSTRUITO lo stato mercati dal suo ultimo
++     * book (`Betfair/stream/tennis_live/tennis_runner.py:1498-1501`), riscritto
++     * a ogni giro del worker (`upsert_tennis_now`, `tennis_db.py:266-292`).
++     * E' l'eta' di una LETTURA del runner, non di un cambio di prezzo.
++     * null = la riga non lo dice (mai 0, mai l'eta' del punteggio).
++     */
++    etaQuoteS: number | null;
++    /** giudizio sull'eta' delle quote, stesse soglie 5 s / 20 s */
++    freschezzaQuote: Freschezza;
+ }
+ 
+ /** Il timestamp più recente della riga: il punteggio (`score.updated_ms`) se
+@@ -179,11 +190,16 @@ export function vistaTennisVivo(
+ ): TennisVivo {
+     const ms = istantePiuRecenteMs(row);
+     const etaS = ms == null ? null : Math.max(0, Math.round((nowMs - ms) / 1000));
++    const statoMs = row?.state?.updated_ms;
++    const etaQuoteS = typeof statoMs === 'number' && Number.isFinite(statoMs) && statoMs > 0
++        ? Math.max(0, Math.round((nowMs - statoMs) / 1000)) : null;
+     return {
+         row, loaded, etaS,
+         freschezza: freschezza(etaS),
+         statoMercato: marketStatusMeta(row?.status ?? null),
+         fonte: row == null ? null : fonte,
++        etaQuoteS,
++        freschezzaQuote: freschezza(etaQuoteS),
+     };
+ }
+ 
+diff --git a/frontend/src/pages/ControlRoom.test.tsx b/frontend/src/pages/ControlRoom.test.tsx
+index b4a0c19..1224556 100644
+--- a/frontend/src/pages/ControlRoom.test.tsx
++++ b/frontend/src/pages/ControlRoom.test.tsx
+@@ -1924,3 +1924,27 @@ describe('C6 b - la testata dice da dove arrivano le righe dei bot, e quanto son
+         expect(screen.getByTestId('cr-fonte-righe-mike').textContent).not.toMatch(/\d/);
+     });
+ });
++
++// ========================================================================
++// W_B1 (30/09, P10): la pagina passa le operazioni alla scheda PRE-PARTITA.
++// ========================================================================
++describe('W_B1 P10: le operazioni pre-fischio arrivano alla scheda pre-partita', () => {
++    it('una punta di Mike su una partita non ancora cominciata compare nella sua scheda pre-match', async () => {
++        const pre = partita({ event_id: 'P1', nome: 'Girona – Betis', stato: 'pre', koMs: Date.now() + 3600_000, soldi: null });
++        const punta = {
++            bot: 'mike' as const, id: 9, selezione: 'Under 3.5 Goals', lato: 'back' as const,
++            prezzo: 1.5, size: 10, stato: 'open', pnl: null, modalita: 'live' as const,
++            at: '2026-09-30T18:00:00Z', quale: null,
++            ordine: {
++                status: 'open', side: 'back', price: 1.5, size: 10,
++                size_requested: 10, size_matched: 10, size_remaining: 0,
++                avg_price_matched: 1.5, betfair_updated_at: null, meta: null,
++            },
++            dettaglio: null,
++        };
++        mVm.mockReturnValue(vm({ giornata: gruppo([pre]), operazioni: new Map([['P1', [punta]]]) as never }));
++        const elenco = (await apri(mostra(), 'pre')).getByTestId('cr-elenco-pre');
++        const ops = within(elenco).getByTestId('cr-pre-operazioni');
++        expect(within(ops).getByTestId('cr-op-riga')).toHaveTextContent('Under 3.5');
++    });
++});
+\ No newline at end of file
+diff --git a/frontend/src/pages/ControlRoom.tsx b/frontend/src/pages/ControlRoom.tsx
+index 9b62c62..7b56a3a 100644
+--- a/frontend/src/pages/ControlRoom.tsx
++++ b/frontend/src/pages/ControlRoom.tsx
+@@ -18,6 +18,10 @@
+ //
+ // LAYOUT: testata con la giornata · partite per campionato in ordine
+ // cronologico · nastro dei segnali · posizioni aperte.
++//
++// W_B1 (30/09, P10): anche la scheda PRE-PARTITA riceve le operazioni della
++// partita e la partita di Mike (`ElencoPartite`, ramo `pre`): ordini pre-fischio,
++// cash out della partita e scheda di Mike come nella scheda in gioco.
+ // ============================================================================
+ import { useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+ import { Link } from 'react-router-dom';
+@@ -1302,6 +1306,9 @@ function ElencoPartite({
+                                     mancaS={p.koMs == null ? null : Math.max(0, Math.round((p.koMs - nowMs) / 1000))}
+                                     registra={registrazioni.has(p.event_id)}
+                                     registratoreVivo={registratori[p.sport === 'tennis' ? 'tennis' : 'calcio']}
++                                    /* W_B1 (P10): le operazioni pre-fischio e Mike, come la scheda in gioco */
++                                    operazioni={operazioni.get(p.event_id) ?? []}
++                                    mike={mikeEventi?.get(p.event_id) ?? null}
+                                 />
+                             ) : (
+                                 <SchedaPartita

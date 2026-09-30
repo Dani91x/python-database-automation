@@ -124,19 +124,18 @@ describe('esitoOrdineMeta - l’esito VERO di un ordine non abbinato', () => {
         expect(esitoOrdineMeta({ status: 'open', meta: { esito_ordine: 'ritirato_da_noi' } })).toBeNull();
     });
 
-    it('Omega e Safe (che non scrivono esito_ordine): nulla cambia', () => {
-        // Omega: riga terminale (omega_service.py `_leg_certain_failure`, reason live_not_matched)
+    // W_B2 (30/09): cambiato di proposito - Omega e Safe ora hanno i LORO esiti
+    // (W_B2EsitiOmegaSafe.test.tsx); qui resta la regola: statusMetaOf non cambia,
+    // e cio' che non si classifica resta ERRORE col motivo scritto accanto
+    it('Omega e Safe: statusMetaOf invariato; il non classificabile resta ERRORE col motivo', () => {
         const omega = { status: 'error', meta: { error_final: true, leg_failed: true, reason: 'live_not_matched', error_at: '2026-09-30T10:00:00Z' } };
-        // Safe: rifiuto certo (execution.py `_esito_rifiuto_certo`)
-        const safe = { status: 'error', meta: { error_final: true, reason: 'live_rifiutato:INSUFFICIENT_FUNDS', error_at: '2026-09-30T10:00:00Z' } };
-        const safeSemplice = { status: 'error', meta: { reason: 'live_not_matched:EXPIRED' } };
-        for (const r of [omega, safe, safeSemplice]) {
-            expect(esitoOrdineMeta(r)).toBeNull();
-            expect(dettaglioDi({ id: 1, event_id: 'E', side: 'lay', status: 'error', pnl: 0, placed_at: '2026-09-30T10:00:00Z', meta: r.meta }).stato)
-                .toEqual(statusMetaOf(r));
-        }
+        expect(esitoOrdineMeta(omega)).toBeNull();
         expect(statusMetaOf(omega).label).toBe('ERRORE (definitivo)');
+        expect(dettaglioDi({ id: 1, event_id: 'E', side: 'lay', status: 'error', pnl: 0, placed_at: '2026-09-30T10:00:00Z', meta: omega.meta }).stato.label)
+            .toBe('ERRORE (definitivo) · non abbinato o rifiutato da Betfair (codice non scritto sulla riga)');
+        const safeSemplice = { status: 'error', meta: { reason: 'live_not_matched:EXPIRED' } };
         expect(statusMetaOf(safeSemplice).label).toBe('ERRORE');
+        expect(esitoOrdineMeta(safeSemplice)?.label).toBe('NON ABBINATO (tutto o niente)');
     });
 });
 

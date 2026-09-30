@@ -38,6 +38,7 @@ import type { GruppoCampionato, PartitaGiornata } from '@/lib/controlRoom';
 // T_P3 (30/09): il campo `soldiVeri` dei finti si costruisce con le funzioni VERE
 import { contoAdesso, rischioBotLive, scartoContoBot } from '@/components/controlroom/testata/soldiVeri';
 import { stopDelConto, stopDeiBot } from '@/components/controlroom/testata/stopPerdita';
+import { raggruppaOrdiniConto, ORDINI_CONTO_NON_LETTI } from '@/components/controlroom/ordiniConto';
 
 const mVm = vi.mocked(useControlRoom);
 
@@ -422,7 +423,10 @@ describe('posizioni aperte', () => {
             operazioni: new Map([['E1', [OPERAZIONE_E1]]]) as never,
         }));
         const col = (await apri(mostra(), 'aperte')).getByTestId('cr-posizioni');
-        expect(within(col).getByText(/1 posizione con soldi veri/)).toBeTruthy();
+        // W_T/P15 - CAMBIATO PERCHE' CAMBIA IL TESTO VOLUTO: partite e gambe mai
+        // con la stessa parola («1 posizione» era una riga, cioe' una gamba)
+        expect(within(col).getByTestId('cr-aperte-banner-live').textContent)
+            .toMatch(/1 partita con posizione LIVE · 1 gamba con soldi veri/);
         // 18/09 (Task 5) — "Aperte" monta ORA `SchedaPartita` (stessa card di
         // "Live"), che tiene il dettaglio per bot CHIUSO finché non ci si
         // clicca sopra (stessa UX di "Live", nessuna regressione lì): si apre
@@ -851,7 +855,9 @@ describe('onestà sulle fonti', () => {
     it('obiettivo non storicizzato: la pagina lo dice invece di spacciarlo per quello del giorno', () => {
         mVm.mockReturnValue(vm({ obiettivoStoricizzato: false }));
         mostra();
-        expect(screen.getAllByText(/non ancora storicizzato/).length).toBeGreaterThan(0);
+        // W_G (30/09): detto in parole da trader, non piu' «non ancora storicizzato»
+        expect(screen.getAllByText(/Omega oggi non ha ancora girato: l'obiettivo e' quello corrente del servizio/).length)
+            .toBeGreaterThan(0);
     });
 });
 
@@ -1090,8 +1096,73 @@ describe('la pagina non mostra MAI un numero che somma paper e live', () => {
         expect(hero.textContent).not.toMatch(/in corso \(stimato\)/);
         expect(within(hero).queryByTestId('day-bar-in-corso')).toBeNull();
         expect(within(hero).getByRole('progressbar').getAttribute('aria-valuenow')).toBe('50');
-        expect(hero.textContent).toMatch(/rischio adesso: vedi «Esposizione conto» in testata/);
-        expect(hero.textContent).toMatch(/Cash out della partita/);
+        // W_G (30/09): la nota «rischio adesso: vedi in testata» e' sostituita dal
+        // rischio del CONTO nel riquadro (test P6 sotto); senza conto nel VM, nessuna cifra
+        expect(within(hero).queryByTestId('cr-giornata-rischio')).toBeNull();
+    });
+
+    // ========== W_G / P6 (30/09): il riquadro Obiettivo coi fatti di oggi ==========
+    const contoOggi = (letto: boolean) => ({
+        conto: {
+            letto, esposizione: letto ? -9.95 : null, disponibile: letto ? 30.61 : null,
+            istante: letto ? '2026-09-30T14:04:00Z' : null, fonte: letto ? 'canale' : null,
+            etaS: letto ? 3 : null, attenzione: false, messaggio: '',
+        },
+        rischioBot: { totale: null, completo: false, voci: [] },
+        etaBotS: 4, scarto: null, partite: { live: 1, prova: 0, ignota: 0 }, programmaScanner: 28,
+    });
+    const apertoFollo = {
+        netto: -0.82, partite: 1, nonCalcolabili: 0,
+        perBot: { mike: { netto: -0.82, partite: 1, nonCalcolabili: 0 } },
+    };
+
+    it('P6: conto letto e 0 ordini -> «+0,00 €» con CONTO e «nessun ordine regolato oggi»; aperto -0,82 per partita; rischio 9,95 dal conto', () => {
+        mVm.mockReturnValue(vm({
+            obiettivo: 100,
+            soldiGiornata: { ...vm().soldiGiornata, realizzato: null, fonteReale: 'conto', operazioni: 0, vinte: 0, perse: 0 },
+            contoLettoAt: new Date(Date.parse('2026-09-14T15:00:00Z') - 180_000).toISOString(),
+            apertoAdesso: apertoFollo,
+            soldiVeri: contoOggi(true) as never,
+        }));
+        const s = mostra();
+        const hero = s.getByTestId('cr-obiettivo');
+        expect(within(hero).getByTestId('day-bar-realizzato').textContent).toBe('+0,00 €');
+        const fonte = within(hero).getByTestId('cr-giornata-realizzato-fonte');
+        expect(fonte.textContent).toContain('nessun ordine regolato oggi');
+        expect(within(fonte).getByTestId('marchio-soldi').getAttribute('data-fonte')).toBe('conto');
+        expect(fonte.textContent).toContain('3 min fa');
+        expect(within(hero).getByTestId('cr-giornata-aperto-valore').textContent).toBe('−0,82 €');
+        expect(within(hero).getByTestId('cr-giornata-aperto').textContent).toContain('su 1 partita');
+        expect(within(hero).getByTestId('cr-giornata-aperto-marchio').getAttribute('data-fonte')).toBe('pagina');
+        expect(within(hero).getByTestId('cr-giornata-rischio-valore').textContent).toBe('−9,95 €');
+        expect(within(hero).getByTestId('cr-giornata-rischio-marchio').getAttribute('data-fonte')).toBe('conto');
+        // composizione: aperto di Mike (il tratteggio nella barra: DayBar.aperto.test)
+        expect(within(hero).getByTestId('cr-composizione-mike-aperto').textContent).toContain('−0,82 €');
+        // etichette da trader
+        expect(hero.textContent).toMatch(/operazioni regolate oggi/);
+        expect(hero.textContent).toMatch(/1 partita con posizione LIVE/);
+        expect(hero.textContent).toMatch(/programma dello scanner: 1 partita/);
+    });
+
+    it('P6: una partita NON calcolabile si dice («+ 1 partita non calcolabili»), mai una somma spacciata per completa', () => {
+        mVm.mockReturnValue(vm({
+            apertoAdesso: { ...apertoFollo, nonCalcolabili: 1 },
+            soldiVeri: contoOggi(true) as never,
+        }));
+        const s = mostra();
+        expect(s.getByTestId('cr-giornata-aperto-non-calcolabili').textContent).toBe('+ 1 partita non calcolabili');
+    });
+
+    it('P6: conto NON letto e nessuna riga -> «—» e «conto non letto: P&L dalle righe dei bot»; rischio «—»', () => {
+        mVm.mockReturnValue(vm({
+            soldiGiornata: { ...vm().soldiGiornata, realizzato: null, fonteReale: 'righe' },
+            soldiVeri: contoOggi(false) as never,
+        }));
+        const s = mostra();
+        const hero = s.getByTestId('cr-obiettivo');
+        expect(within(hero).getByTestId('day-bar-realizzato').textContent).toBe('—');
+        expect(within(hero).getByTestId('day-bar-realizzato-nota').textContent).toBe('conto non letto: P&L dalle righe dei bot');
+        expect(within(hero).getByTestId('cr-giornata-rischio-valore').textContent).toBe('—');
     });
 
     it('R_G: Mike ORA in LIVE senza prova di oggi -> «— (ora in LIVE)», mai «+0,00 [PROVA]»; arretrati invariati', () => {
@@ -1136,7 +1207,7 @@ describe('la pagina non mostra MAI un numero che somma paper e live', () => {
             },
             soldiVeri: {
                 conto, rischioBot, etaBotS: 5, scarto: null,
-                partite: { live: 2, prova: 12, ignota: 0 }, programmaScanner: 59,
+                partite: { live: 2, prova: 12, ignota: 0, gambeLive: 3 }, programmaScanner: 59,
             },
         }));
         const s = mostra();
@@ -1170,7 +1241,7 @@ describe('la pagina non mostra MAI un numero che somma paper e live', () => {
             totali: { ...vm().totali, liability: 39.15, conPosizioneLive: 3, conPosizione: 3, partite: 28 },
             soldiVeri: {
                 conto, rischioBot, etaBotS: 5, scarto: scartoContoBot(conto.esposizione, rischioBot),
-                partite: { live: 3, prova: 0, ignota: 0 }, programmaScanner: 28,
+                partite: { live: 3, prova: 0, ignota: 0, gambeLive: 5 }, programmaScanner: 28,
             },
         }));
         const s = mostra();
@@ -1187,7 +1258,7 @@ describe('la pagina non mostra MAI un numero che somma paper e live', () => {
             soldiVeri: {
                 conto: contoAdesso({ riga: null, canale: null, etaRunnerS: null, nowMs: Date.parse('2026-09-14T15:00:00Z') }),
                 rischioBot: rischioBotLive({ letti: true, stati: {}, aperte: [] }),
-                etaBotS: 5, scarto: null, partite: { live: 0, prova: 0, ignota: 0 }, programmaScanner: 1,
+                etaBotS: 5, scarto: null, partite: { live: 0, prova: 0, ignota: 0, gambeLive: 0 }, programmaScanner: 1,
             },
         }));
         const s = mostra();
@@ -1258,8 +1329,9 @@ describe('la pagina non mostra MAI un numero che somma paper e live', () => {
             ]),
         }));
         const s = mostra();
-        expect(within(s.getByTestId('cr-sport-tennis')).getByText(/1 aperta/)).toBeTruthy();
-        expect(within(s.getByTestId('cr-sport-calcio')).getByText(/1 in prova/)).toBeTruthy();
+        // W_G (30/09): si contano PARTITE, e lo si dice
+        expect(within(s.getByTestId('cr-sport-tennis')).getByText(/1 partita con posizione LIVE/)).toBeTruthy();
+        expect(within(s.getByTestId('cr-sport-calcio')).getByText(/1 partita con posizione in prova/)).toBeTruthy();
     });
 
     // 30/09 (P2) — il caso vero di oggi: Mike LIVE, Safe e Omega in paper.
@@ -1342,7 +1414,8 @@ describe('comando dei bot', () => {
                 varianti: ['base', 'esatto', 'punta', 'tennis'],
             })] as never,
         }));
-        expect(mostra().getByTestId('cr-bot-stato-safe-base').textContent).toMatch(/sta fermandosi/i);
+        // W_B2 (30/09): cambiato di proposito - parola di botStatusMeta
+        expect(mostra().getByTestId('cr-bot-stato-safe-base').textContent).toBe('IN ARRESTO');
     });
 
     it('FERMA TUTTI e’ spento se non c’e’ niente da fermare', () => {
@@ -1863,6 +1936,104 @@ describe('ZONA 5 — la Catena è richiudibile, chiusa di default (Task 1)', () 
     });
 });
 
+// ========================================================================
+// W_T/P15 (30/09) - «Posizioni aperte»: LIVE sopra, PROVA sotto, lo stato di
+// ogni partita LIVE in una parola, le fuori programma con la stessa grafica.
+// I fatti di oggi: Follo A RISCHIO (-9,80), Farul PAREGGIATA.
+// ========================================================================
+describe('W_T/P15 - Posizioni aperte da trader', () => {
+    const ord = (side: 'back' | 'lay', price: number, size: number) => ({
+        status: 'open', side, price, size, size_requested: size, size_matched: size, size_remaining: 0,
+        avg_price_matched: price, betfair_updated_at: null, meta: null,
+    });
+    const opz = (o: Record<string, unknown>) => ({
+        bot: 'mike', stato: 'open', pnl: null, modalita: 'live', at: '2026-09-30T13:04:00Z', quale: null,
+        dettaglio: null, vivo: null, etaQuoteS: null, liability: null, chiusura: null,
+        chiusureOrdini: [], marketId: null, selectionId: null, ...o,
+    });
+    const pos = (o: Record<string, unknown>) => ({
+        bot: 'mike', lato: 'back', prezzo: 2, size: 5, liability: 5, modalita: 'live',
+        piazzataAt: '2026-09-30T13:04:00Z', chiusura: null, dettaglio: null, vivo: null, ...o,
+    });
+    function vmOggi() {
+        return vm({
+            giornata: gruppo([
+                partita({ event_id: 'FOLLO', nome: 'Follo v Sarpsborg' }),
+                partita({ event_id: 'E1', nome: 'Milan – Inter' }),
+            ]),
+            posizioni: [
+                pos({ id: 5085, eventId: 'FOLLO', partita: 'Follo v Sarpsborg', selezione: 'Under 3.5 Goals', ordine: ord('back', 2.4, 5) }),
+                pos({ id: 5094, eventId: 'FOLLO', partita: 'Follo v Sarpsborg', selezione: 'Under 4.5 Goals', lato: 'lay', ordine: ord('lay', 1.76, 6.32) }),
+                pos({ id: 5091, eventId: 'FARUL', partita: 'Farul (W) v Sparta Prague (W)', selezione: 'Under 3.5 Goals', ordine: ord('back', 2.87, 5) }),
+                pos({ id: 9, bot: 'safe', eventId: 'E1', partita: 'Milan – Inter', selezione: 'Milan', modalita: 'paper', ordine: ord('back', 1.9, 2) }),
+            ] as never,
+            operazioni: new Map([
+                ['FOLLO', [
+                    opz({ id: 5085, selezione: 'Under 3.5 Goals', lato: 'back', prezzo: 2.4, size: 5, marketId: '1.OU35', selectionId: 35, ordine: ord('back', 2.4, 5) }),
+                    opz({ id: 5094, selezione: 'Under 4.5 Goals', lato: 'lay', prezzo: 1.76, size: 6.32, marketId: '1.OU45', selectionId: 45, ordine: ord('lay', 1.76, 6.32) }),
+                ]],
+                ['FARUL', [
+                    opz({ id: 5091, selezione: 'Under 3.5 Goals', lato: 'back', prezzo: 2.87, size: 5, marketId: '1.F35', selectionId: 35,
+                        ordine: ord('back', 2.87, 5), chiusureOrdini: [ord('lay', 2.84, 5.06)],
+                        chiusureGambe: [{ id: 5092, marketId: '1.F35', selectionId: 35 }] }),
+                ]],
+            ]) as never,
+        });
+    }
+
+    it('due elenchi: LIVE sopra (Follo, Farul) e PROVA sotto (Milan-Inter); linguetta «2 LIVE · 1 prova»', async () => {
+        mVm.mockReturnValue(vmOggi());
+        const s = mostra();
+        expect(s.getByTestId('cr-tab-aperte-conta').textContent).toMatch(/2 LIVE · 1 prova/);
+        const col = (await apri(s, 'aperte')).getByTestId('cr-posizioni');
+        const live = within(col).getByTestId('cr-aperte-live');
+        const prova = within(col).getByTestId('cr-aperte-prova');
+        expect(within(live).getByTestId('cr-aperta-FOLLO')).toBeTruthy();
+        expect(within(live).getByTestId('cr-aperta-FARUL')).toBeTruthy();
+        expect(within(prova).getByTestId('cr-aperta-E1')).toBeTruthy();
+        expect(within(prova).queryByTestId('cr-aperta-stato-E1')).toBeNull();
+        expect(within(col).getByTestId('cr-aperte-banner-live').textContent).toMatch(/2 partite con posizione LIVE · 3 gambe con soldi veri/);
+    });
+
+    it('Follo A RISCHIO (caso peggiore −9,80), Farul PAREGGIATA', async () => {
+        mVm.mockReturnValue(vmOggi());
+        const col = (await apri(mostra(), 'aperte')).getByTestId('cr-posizioni');
+        const f = within(col).getByTestId('cr-aperta-stato-FOLLO');
+        expect(f.textContent).toBe('A RISCHIO');
+        expect(f.getAttribute('title')).toMatch(/caso peggiore −9,80 €/); // title con fmtMoney (DESIGN_SYSTEM §1)
+        expect(within(col).getByTestId('cr-aperta-FOLLO').textContent).toMatch(/caso peggiore −9,80/);
+        expect(within(col).getByTestId('cr-aperta-stato-FARUL').textContent).toBe('PAREGGIATA');
+    });
+
+    it('fuori programma con la stessa grafica: nomi, riquadro della partita, righe; «chiudi ora» per gamba sotto', async () => {
+        mVm.mockReturnValue(vmOggi());
+        const col = (await apri(mostra(), 'aperte')).getByTestId('cr-posizioni');
+        const fp = within(within(col).getByTestId('cr-aperta-FARUL')).getByTestId('cr-scheda-fuori-programma');
+        expect(within(fp).getByTestId('cr-nomi-partita').getAttribute('title')).toBe('Farul (W) v Sparta Prague (W)');
+        expect(within(fp).getByTestId('cr-posizione')).toBeTruthy();
+    });
+});
+
+describe('W_T/P14 - ordini del conto fuori dai bot nella scheda della partita', () => {
+    const RIGA = {
+        bet_id: '351001', market_id: '1.OU35V', selection_id: 1222347, event_id: 'E1',
+        event_name: 'Milan – Inter', market_name: 'Over/Under 3.5 Goals', selection_name: 'Over 3.5 Goals',
+        side: 'BACK' as const, price_matched: 1.92, size_matched: 4.43, size_remaining: 0,
+        status: 'EXECUTION_COMPLETE', source: 'account' as const, placed_at: '2026-09-14T14:31:02Z',
+    };
+    it('letti: la scheda live della partita mostra l\'ordine del sito e l\'avviso ambra', async () => {
+        mVm.mockReturnValue(vm({ ordiniConto: raggruppaOrdiniConto([RIGA], '2026-09-14T14:59:50Z') }));
+        const el = (await apri(mostra(), 'live')).getByTestId('cr-ordini-conto');
+        expect(el.textContent).toMatch(/BACK Over 3\.5 Goals 4,43 € @ 1,92/);
+        expect(el.textContent).toMatch(/il bot non li vede/);
+    });
+    it('non letti (RPC assente): la scheda lo dice', async () => {
+        mVm.mockReturnValue(vm({ ordiniConto: { ...ORDINI_CONTO_NON_LETTI, motivo: 'RPC non disponibile' } }));
+        const s = await apri(mostra(), 'live');
+        expect(s.getByTestId('cr-ordini-conto-non-letti').textContent).toMatch(/RPC non disponibile/);
+    });
+});
+
 describe('TAB APERTE: stessa scheda di Live, comando di chiusura ancora raggiungibile (Task 5)', () => {
     it('una posizione su un evento sconosciuto resta con la sua riga compatta e il bottone Chiudi', async () => {
         mVm.mockReturnValue(vm({
@@ -1951,5 +2122,29 @@ describe('C6 b - la testata dice da dove arrivano le righe dei bot, e quanto son
         expect(screen.getByTestId('cr-fonte-righe-tennis').textContent).toMatch(/Tennis canale\s+2 s/);
         expect(screen.getByTestId('cr-fonte-righe-omega').textContent).toMatch(/db\s+12 s/);
         expect(screen.getByTestId('cr-fonte-righe-mike').textContent).not.toMatch(/\d/);
+    });
+});
+
+// ========================================================================
+// W_B1 (30/09, P10): la pagina passa le operazioni alla scheda PRE-PARTITA.
+// ========================================================================
+describe('W_B1 P10: le operazioni pre-fischio arrivano alla scheda pre-partita', () => {
+    it('una punta di Mike su una partita non ancora cominciata compare nella sua scheda pre-match', async () => {
+        const pre = partita({ event_id: 'P1', nome: 'Girona – Betis', stato: 'pre', koMs: Date.now() + 3600_000, soldi: null });
+        const punta = {
+            bot: 'mike' as const, id: 9, selezione: 'Under 3.5 Goals', lato: 'back' as const,
+            prezzo: 1.5, size: 10, stato: 'open', pnl: null, modalita: 'live' as const,
+            at: '2026-09-30T18:00:00Z', quale: null,
+            ordine: {
+                status: 'open', side: 'back', price: 1.5, size: 10,
+                size_requested: 10, size_matched: 10, size_remaining: 0,
+                avg_price_matched: 1.5, betfair_updated_at: null, meta: null,
+            },
+            dettaglio: null,
+        };
+        mVm.mockReturnValue(vm({ giornata: gruppo([pre]), operazioni: new Map([['P1', [punta]]]) as never }));
+        const elenco = (await apri(mostra(), 'pre')).getByTestId('cr-elenco-pre');
+        const ops = within(elenco).getByTestId('cr-pre-operazioni');
+        expect(within(ops).getByTestId('cr-op-riga')).toHaveTextContent('Under 3.5');
     });
 });

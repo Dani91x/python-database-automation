@@ -1,0 +1,635 @@
+diff --git a/frontend/src/components/controlroom/OrdiniContoPartita.test.tsx b/frontend/src/components/controlroom/OrdiniContoPartita.test.tsx
+new file mode 100644
+index 0000000..ba61c57
+--- /dev/null
++++ b/frontend/src/components/controlroom/OrdiniContoPartita.test.tsx
+@@ -0,0 +1,100 @@
++// ============================================================================
++// OrdiniContoPartita.test.tsx - P14 (30/09): ordini del conto fuori dai bot.
++// Finti nella forma ESATTA del contratto di `get_live_orders_account_open()`:
++// { rows: [{ bet_id, market_id, selection_id, event_id, event_name,
++// market_name, selection_name, side: 'BACK'|'LAY', price_matched,
++// size_matched, size_remaining, status, source, placed_at }], letto_at }.
++// Il caso di oggi: FC Vsetin, due punte dal sito (~13:31 UTC).
++// ============================================================================
++import { describe, it, expect } from 'vitest';
++import { render, screen } from '@testing-library/react';
++import { OrdiniContoPartita, OrdiniContoContext } from './OrdiniContoPartita';
++import {
++    raggruppaOrdiniConto, motivoNonLetti, partiteConOrdiniFuori, ORDINI_CONTO_NON_LETTI, type OrdiniContoStato,
++} from './ordiniConto';
++import type { OrdineContoFuoriBot } from '@/lib/liveOrders';
++
++const NOW = Date.parse('2026-09-30T14:20:00Z');
++export const VSETIN: OrdineContoFuoriBot[] = [
++    {
++        bet_id: '351001', market_id: '1.OU35V', selection_id: 1222347, event_id: 'VSETIN',
++        event_name: 'FC Vsetin v Bohemians', market_name: 'Over/Under 3.5 Goals', selection_name: 'Over 3.5 Goals',
++        side: 'BACK', price_matched: 1.92, size_matched: 4.43, size_remaining: 0,
++        status: 'EXECUTION_COMPLETE', source: 'account', placed_at: '2026-09-30T13:31:02Z',
++    },
++    {
++        bet_id: '351002', market_id: '1.OU45V', selection_id: 1222346, event_id: 'VSETIN',
++        event_name: 'FC Vsetin v Bohemians', market_name: 'Over/Under 4.5 Goals', selection_name: 'Under 4.5 Goals',
++        side: 'BACK', price_matched: 1.44, size_matched: 5.18, size_remaining: 0,
++        status: 'EXECUTION_COMPLETE', source: 'account', placed_at: '2026-09-30T13:31:40Z',
++    },
++];
++
++function mostra(stato: OrdiniContoStato, eventId: string) {
++    return render(
++        <OrdiniContoContext.Provider value={{ stato, nowMs: NOW }}>
++            <OrdiniContoPartita eventId={eventId} />
++        </OrdiniContoContext.Provider>,
++    );
++}
++
++describe('ordiniConto - puro', () => {
++    it('raggruppa per partita; senza event_id a parte', () => {
++        const s = raggruppaOrdiniConto([...VSETIN, { ...VSETIN[0], bet_id: '9', event_id: null }], '2026-09-30T14:19:48Z');
++        expect(s.stato).toBe('letti');
++        expect(s.perEvento.get('VSETIN')).toHaveLength(2);
++        expect(s.senzaEvento).toHaveLength(1);
++        expect(partiteConOrdiniFuori(s)).toEqual({ n: 1, nomi: ['FC Vsetin v Bohemians'] });
++    });
++    it('RPC assente: \u00abRPC non disponibile\u00bb', () => {
++        expect(motivoNonLetti(new Error('Could not find the function public.get_live_orders_account_open'))).toBe('RPC non disponibile');
++        expect(motivoNonLetti(new Error('timeout'))).toMatch(/lettura fallita: timeout/);
++    });
++});
++
++describe('OrdiniContoPartita', () => {
++    it('Vsetin: i due ordini del sito con lato, selezione, importo e quota; marchio CONTO; avviso ambra', () => {
++        mostra(raggruppaOrdiniConto(VSETIN, '2026-09-30T14:19:48Z'), 'VSETIN');
++        const el = screen.getByTestId('cr-ordini-conto');
++        expect(el.textContent).toMatch(/BACK Over 3\.5 Goals 4,43 \u20ac @ 1,92/);
++        expect(el.textContent).toMatch(/BACK Under 4\.5 Goals 5,18 \u20ac @ 1,44/);
++        expect(screen.getByTestId('cr-ordini-conto-marchio').textContent).toMatch(/CONTO BETFAIR\s*\u00b7 12 s fa/);
++        const avviso = screen.getByTestId('cr-ordini-conto-avviso');
++        expect(avviso.textContent).toMatch(/il bot non li vede/);
++        expect(avviso.className).toMatch(/amber/);
++    });
++    it('contratto 2a5cbba: price_matched null = \u00abnon abbinato\u00bb, MAI \u00ab0,00\u00bb ne\' una quota', () => {
++        const nulla: OrdineContoFuoriBot = { ...VSETIN[0], bet_id: '351009', price_matched: null, size_matched: 0, size_remaining: 3, status: 'EXECUTABLE' };
++        mostra(raggruppaOrdiniConto([nulla], '2026-09-30T14:19:48Z'), 'VSETIN');
++        const el = screen.getByTestId('cr-ordine-conto');
++        expect(el.textContent).toMatch(/non abbinato/);
++        expect(el.textContent).not.toMatch(/0,00/);
++        expect(el.textContent).not.toMatch(/@/);
++        expect(el.textContent).toMatch(/\+3,00 \u20ac sul book/);
++    });
++    it('limite del backend: \u00abaperto per il conto letto alle HH:MM:SS\u00bb (ora di Roma)', () => {
++        mostra(raggruppaOrdiniConto(VSETIN, '2026-09-30T14:19:48Z'), 'VSETIN');
++        expect(screen.getByTestId('cr-ordini-conto-letto').textContent).toBe('aperto per il conto letto alle 16:19:48');
++    });
++    it('scheda TENNIS: niente (gli ordini manuali tennis non sono in questa fonte)', () => {
++        const { container } = render(
++            <OrdiniContoContext.Provider value={{ stato: raggruppaOrdiniConto(VSETIN, '2026-09-30T14:19:48Z'), nowMs: NOW }}>
++                <OrdiniContoPartita eventId="VSETIN" sport="tennis" />
++            </OrdiniContoContext.Provider>,
++        );
++        expect(container.textContent).toBe('');
++    });
++
++    it('partita senza ordini fuori dai bot (letti): niente', () => {
++        const { container } = mostra(raggruppaOrdiniConto(VSETIN, '2026-09-30T14:19:48Z'), 'FOLLO');
++        expect(container.textContent).toBe('');
++    });
++    it('non letti: lo dice (mai \u00abnessun ordine\u00bb)', () => {
++        mostra({ ...ORDINI_CONTO_NON_LETTI, motivo: 'RPC non disponibile' }, 'VSETIN');
++        expect(screen.getByTestId('cr-ordini-conto-non-letti').textContent).toBe('ordini del conto: non letti (RPC non disponibile)');
++    });
++    it('fuori dalla Control Room (nessun contesto): niente', () => {
++        const { container } = render(<OrdiniContoPartita eventId="VSETIN" />);
++        expect(container.textContent).toBe('');
++    });
++});
+diff --git a/frontend/src/components/controlroom/OrdiniContoPartita.tsx b/frontend/src/components/controlroom/OrdiniContoPartita.tsx
+new file mode 100644
+index 0000000..08e8477
+--- /dev/null
++++ b/frontend/src/components/controlroom/OrdiniContoPartita.tsx
+@@ -0,0 +1,73 @@
++// ============================================================================
++// OrdiniContoPartita.tsx - P14 (30/09): gli ordini del CONTO fuori dai bot su
++// UNA partita, sotto il riquadro del cash out della partita.
++//
++//   Ordini dal sito/app (conto Betfair): BACK Over 3,5 4,43 EUR @ 1,92 - ...
++//   [CONTO BETFAIR - 12 s fa]
++//   il bot non li vede: la cifra del cash out delle gambe dei bot non e' la
++//   posizione del conto                                              (ambra)
++//
++// Dati dal contesto `OrdiniContoContext` (lo fornisce la Control Room col
++// campo `vm.ordiniConto`): fuori dalla Control Room non disegna niente.
++// Ordini non letti (RPC assente o errore): lo dice, mai "nessun ordine".
++// ============================================================================
++import { createContext, useContext } from 'react';
++import { fmtMoney, fmtOdds, fmtTime, DASH } from '@/lib/format';
++import { MarchioSoldi } from '@/components/controlroom/MarchioSoldi';
++import type { OrdiniContoStato } from './ordiniConto';
++
++export const OrdiniContoContext = createContext<{ stato: OrdiniContoStato; nowMs: number } | null>(null);
++
++export function OrdiniContoPartita({ eventId, sport = 'calcio' }: {
++    eventId: string;
++    /** gli ordini manuali TENNIS dell'app stanno in `tennis_live_orders`, non
++     *  in questa RPC: la scheda tennis non promette "ordini del conto" */
++    sport?: 'calcio' | 'tennis';
++}) {
++    const ctx = useContext(OrdiniContoContext);
++    if (ctx == null || sport === 'tennis') return null;
++    const { stato, nowMs } = ctx;
++    if (stato.stato !== 'letti') {
++        return (
++            <div className="px-2.5 pt-1 text-[10px] text-white/35" data-testid="cr-ordini-conto-non-letti"
++                title="gli ordini fatti sul conto fuori dai bot (sito, app) non sono stati letti: la scheda mostra solo le gambe dei bot">
++                ordini del conto: non letti ({stato.motivo ?? 'motivo ignoto'})
++            </div>
++        );
++    }
++    const righe = stato.perEvento.get(String(eventId)) ?? [];
++    if (righe.length === 0) return null;
++    const ms = stato.lettoAt ? Date.parse(stato.lettoAt) : NaN;
++    const etaS = Number.isFinite(ms) ? Math.max(0, Math.round((nowMs - ms) / 1000)) : null;
++    return (
++        <div className="px-2.5 pt-1.5 space-y-0.5" data-testid="cr-ordini-conto">
++            <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
++                <span className="text-white/55">Ordini dal sito/app (conto Betfair):</span>
++                {righe.map((r, i) => (
++                    <span key={r.bet_id} className="font-mono tabular-nums" data-testid="cr-ordine-conto">
++                        {i > 0 && <span className="text-white/30">{' \u00b7 '}</span>}
++                        <span className={r.side === 'LAY' ? 'text-rose-300' : 'text-sky-300'}>{r.side}</span>
++                        {' '}{r.selection_name ?? `selezione ${r.selection_id}`}
++                        {/* price_matched null = nulla abbinato: mai "0,00", mai una quota */}
++                        {r.price_matched == null
++                            ? <span className="text-white/50"> non abbinato</span>
++                            : <>{' '}{fmtMoney(r.size_matched)} @ {fmtOdds(r.price_matched)}</>}
++                        {r.size_remaining > 0 && <span className="text-white/40"> (+{fmtMoney(r.size_remaining)} sul book)</span>}
++                    </span>
++                ))}
++                <MarchioSoldi fonte="conto" etaS={etaS} testId="cr-ordini-conto-marchio"
++                    dettaglio="ordini sul conto non piazzati dai bot (get_live_orders_account_open)" />
++            </div>
++            {/* limite dichiarato dal backend: ad app chiusa il "regolato" non si
++                aggiorna, quindi "aperto" vale per il conto letto a quell'ora */}
++            <div className="text-[10px] text-white/40" data-testid="cr-ordini-conto-letto">
++                aperto per il conto letto alle {Number.isFinite(ms) ? fmtTime(ms, { seconds: true }) : DASH}
++            </div>
++            <div className="text-[10.5px] text-amber-300" data-testid="cr-ordini-conto-avviso">
++                il bot non li vede: la cifra del cash out delle gambe dei bot non e&apos; la posizione del conto
++            </div>
++        </div>
++    );
++}
++
++export default OrdiniContoPartita;
+diff --git a/frontend/src/components/controlroom/SchedaPartita.tsx b/frontend/src/components/controlroom/SchedaPartita.tsx
+index 0b47279..63e7f65 100644
+--- a/frontend/src/components/controlroom/SchedaPartita.tsx
++++ b/frontend/src/components/controlroom/SchedaPartita.tsx
+@@ -48,6 +48,7 @@ import { SchedaMike } from '@/components/controlroom/SchedaMike';
+ import { marketStatusMeta, type MikeEvent } from '@/lib/mike';
+ import { useTennisVivo, nomeSelezioneTennis } from '@/components/controlroom/useTennisVivo';
+ import { CashOutGlobalePartita } from '@/components/controlroom/CashOutGlobale';
++import { OrdiniContoPartita } from '@/components/controlroom/OrdiniContoPartita';
+ 
+ const BOT_SIGLA: Record<Bot, string> = {
+     omega: 'Ω', safe: 'S', mike: 'M', scalper: 'Sc',
+@@ -423,6 +424,7 @@ export function SchedaPartita({
+             {/* 30/09 (P12b) - il CASH OUT DELLA PARTITA: somma esatta delle gambe
+                 abbinate di TUTTI i bot, LIVE e PROVA separati; niente se non ce ne sono */}
+             <CashOutGlobalePartita sport={p.sport} operazioni={operazioni} mike={mike} />
++            <OrdiniContoPartita eventId={p.event_id} sport={p.sport === 'tennis' ? 'tennis' : 'calcio'} />{/* W_T/P14: ordini del conto fuori dai bot */}
+ 
+             {/* ── riga 2: il METRO — target, fatto, quanto manca ── */}
+             <div className="px-2.5 pt-2">
+diff --git a/frontend/src/components/controlroom/ordiniConto.ts b/frontend/src/components/controlroom/ordiniConto.ts
+new file mode 100644
+index 0000000..c4f4153
+--- /dev/null
++++ b/frontend/src/components/controlroom/ordiniConto.ts
+@@ -0,0 +1,61 @@
++// ============================================================================
++// ordiniConto.ts - P14 (30/09): gli ordini del CONTO fuori dai bot, per partita.
++//
++// Stasera su FC Vsetin l'utente ha puntato Over 3,5 e Under 4,5 dal sito:
++// sul conto la partita era chiusa (rischio 0,15), Mike credeva 6,42 e il suo
++// cash out non vedeva quegli ordini. Da qui la pagina li mostra per partita.
++//
++// Fonte: RPC `get_live_orders_account_open()` (contratto concordato 30/09):
++// `{ rows: [{ bet_id, market_id, selection_id, event_id, event_name,
++// market_name, selection_name, side: 'BACK'|'LAY', price_matched,
++// size_matched, size_remaining, status, source, placed_at }], letto_at }`,
++// solo live, solo ordini NON dei bot, solo mercati non regolati.
++// Letta nel giro dei 30 s della pagina (nessun poll nuovo). Se la RPC non
++// esiste ancora (migrazione non applicata) o fallisce: "non letti", MAI
++// "nessun ordine".
++// ============================================================================
++import type { OrdineContoFuoriBot } from '@/lib/liveOrders';
++
++export interface OrdiniContoStato {
++    /** 'letti' = risposta valida della RPC; 'non-letti' = mai letti o errore */
++    stato: 'letti' | 'non-letti';
++    /** perche' non letti (per lo schermo) */
++    motivo: string | null;
++    /** istante della lettura dichiarato dalla RPC (`letto_at`) */
++    lettoAt: string | null;
++    /** ordini per event_id */
++    perEvento: Map<string, OrdineContoFuoriBot[]>;
++    /** ordini senza event_id (la RPC non ha saputo dire la partita) */
++    senzaEvento: OrdineContoFuoriBot[];
++}
++
++export const ORDINI_CONTO_NON_LETTI: OrdiniContoStato = {
++    stato: 'non-letti', motivo: 'non ancora letti', lettoAt: null, perEvento: new Map(), senzaEvento: [],
++};
++
++export function raggruppaOrdiniConto(righe: readonly OrdineContoFuoriBot[], lettoAt: string | null): OrdiniContoStato {
++    const perEvento = new Map<string, OrdineContoFuoriBot[]>();
++    const senzaEvento: OrdineContoFuoriBot[] = [];
++    for (const r of righe) {
++        if (r.event_id == null || r.event_id === '') { senzaEvento.push(r); continue; }
++        const k = String(r.event_id);
++        perEvento.set(k, [...(perEvento.get(k) ?? []), r]);
++    }
++    return { stato: 'letti', motivo: null, lettoAt, perEvento, senzaEvento };
++}
++
++/** Il motivo a schermo di una lettura fallita: la RPC che non c'e' ancora si dice. */
++export function motivoNonLetti(errore: unknown): string {
++    const m = errore instanceof Error ? errore.message : String(errore ?? '');
++    if (/get_live_orders_account_open|does not exist|PGRST202|404|Could not find the function/i.test(m)) {
++        return 'RPC non disponibile';
++    }
++    return m ? `lettura fallita: ${m.slice(0, 120)}` : 'lettura fallita';
++}
++
++/** Le partite con ordini fuori dai bot, coi loro nomi (per la testata). */
++export function partiteConOrdiniFuori(s: OrdiniContoStato): { n: number; nomi: string[] } {
++    const nomi: string[] = [];
++    for (const [id, righe] of s.perEvento) nomi.push(righe.find((r) => r.event_name)?.event_name ?? id);
++    return { n: s.perEvento.size, nomi };
++}
+diff --git a/frontend/src/components/controlroom/testata/FasciaSoldiVeri.test.tsx b/frontend/src/components/controlroom/testata/FasciaSoldiVeri.test.tsx
+index 8b7c694..1ae6a2d 100644
+--- a/frontend/src/components/controlroom/testata/FasciaSoldiVeri.test.tsx
++++ b/frontend/src/components/controlroom/testata/FasciaSoldiVeri.test.tsx
+@@ -117,6 +117,17 @@ describe('FasciaSoldiVeri - dati mancanti: mai una cifra inventata', () => {
+         expect(el.className).toMatch(/amber/);
+     });
+ 
++    it('W_T/P14: partite con ordini fuori dai bot, coi nomi, in ambra; non letti = lo dice', () => {
++        render(<FasciaSoldiVeri s={{ ...soldi(), ordiniFuori: { letto: true, n: 1, nomi: ['FC Vsetin v Bohemians'], senzaPartita: 0, motivo: null } }} />);
++        const el = screen.getByTestId('cr-ordini-fuori-bot');
++        expect(el.textContent).toMatch(/partite con ordini fuori dai bot: 1 \(FC Vsetin v Bohemians\)/);
++        expect(el.innerHTML).toMatch(/amber/);
++        cleanup();
++        render(<FasciaSoldiVeri s={{ ...soldi(), ordiniFuori: { letto: false, n: 0, nomi: [], senzaPartita: 0, motivo: 'RPC non disponibile' } }} />);
++        expect(screen.getByTestId('cr-ordini-fuori-bot').textContent).toMatch(/ordini del conto: non letti \(RPC non disponibile\)/);
++        expect(screen.getByTestId('cr-ordini-fuori-bot').textContent).not.toMatch(/: 0/);
++    });
++
+     it('R_T: numero fresco: nessun avviso di stantio', () => {
+         render(<FasciaSoldiVeri s={soldi()} />);
+         expect(screen.queryByTestId('cr-rischio-bot-stantio')).toBeNull();
+diff --git a/frontend/src/components/controlroom/testata/FasciaSoldiVeri.tsx b/frontend/src/components/controlroom/testata/FasciaSoldiVeri.tsx
+index 5845f0d..f121b03 100644
+--- a/frontend/src/components/controlroom/testata/FasciaSoldiVeri.tsx
++++ b/frontend/src/components/controlroom/testata/FasciaSoldiVeri.tsx
+@@ -146,6 +146,25 @@ export function FasciaSoldiVeri({ s }: { s: SoldiVeriTestata | undefined }) {
+                 </div>
+             )}
+ 
++            {/* W_T/P14: ordini del conto fuori dai bot (sito/app), per partita */}
++            {s?.ordiniFuori && (
++                <div className="flex flex-col gap-0.5" data-testid="cr-ordini-fuori-bot"
++                    title="ordini sul conto Betfair non piazzati dai bot (sito, app): i bot non li vedono">
++                    <Etichetta>Ordini fuori dai bot</Etichetta>
++                    {s.ordiniFuori.letto ? (
++                        <span className={`text-[11px] font-mono ${s.ordiniFuori.n + s.ordiniFuori.senzaPartita > 0 ? 'text-amber-300' : 'text-white/50'}`}>
++                            partite con ordini fuori dai bot: {s.ordiniFuori.n}
++                            {s.ordiniFuori.nomi.length > 0 && ` (${s.ordiniFuori.nomi.join(', ')})`}
++                            {s.ordiniFuori.senzaPartita > 0 && ` + ${s.ordiniFuori.senzaPartita} senza partita`}
++                        </span>
++                    ) : (
++                        <span className="text-[10px] text-white/40">
++                            ordini del conto: non letti ({s.ordiniFuori.motivo ?? 'motivo ignoto'})
++                        </span>
++                    )}
++                </div>
++            )}
++
+             <div className="flex flex-col gap-0.5" data-testid="cr-partite-posizione"
+                 title="partite distinte con almeno una posizione aperta, secondo le righe dei bot">
+                 <Etichetta>Posizione LIVE</Etichetta>
+diff --git a/frontend/src/components/controlroom/testata/soldiVeri.ts b/frontend/src/components/controlroom/testata/soldiVeri.ts
+index 75cc549..9339360 100644
+--- a/frontend/src/components/controlroom/testata/soldiVeri.ts
++++ b/frontend/src/components/controlroom/testata/soldiVeri.ts
+@@ -277,4 +277,9 @@ export interface SoldiVeriTestata {
+     partite: PartiteConPosizione | null;
+     /** righe del programma dello scanner (calcio + tennis): NON partite operate */
+     programmaScanner: number;
++    /** W_T/P14: partite con ordini del CONTO fuori dai bot (sito/app).
++     *  Assente = finto di prima: non si dice niente. */
++    ordiniFuori?: {
++        letto: boolean; n: number; nomi: string[]; senzaPartita: number; motivo: string | null;
++    };
+ }
+diff --git a/frontend/src/components/controlroom/useControlRoom.soldiVeri.test.tsx b/frontend/src/components/controlroom/useControlRoom.soldiVeri.test.tsx
+index 19600ae..459f7d8 100644
+--- a/frontend/src/components/controlroom/useControlRoom.soldiVeri.test.tsx
++++ b/frontend/src/components/controlroom/useControlRoom.soldiVeri.test.tsx
+@@ -100,6 +100,8 @@ vi.mock('@/lib/liveOrders', async (orig) => ({
+     // T_P4: lo stop del conto (betfair_live_risk_state)
+     fetchLiveRiskState: vi.fn(async () => null),
+     subscribeLiveRiskState: vi.fn(() => () => { /* nessuna spinta */ }),
++    // W_T/P14: gli ordini del conto fuori dai bot (contratto get_live_orders_account_open)
++    fetchLiveOrdersAccountOpen: vi.fn(async () => { throw new Error('Could not find the function public.get_live_orders_account_open'); }),
+ }));
+ vi.mock('@/lib/scalperControlRoom', async (orig) => ({
+     ...(await orig() as object),
+@@ -109,6 +111,7 @@ vi.mock('@/lib/scalperControlRoom', async (orig) => ({
+ import { fetchMikeState } from '@/lib/mike';
+ import {
+     fetchLiveAccount, subscribeLiveAccount, fetchLiveRiskState, subscribeLiveRiskState,
++    fetchLiveOrdersAccountOpen,
+ } from '@/lib/liveOrders';
+ import { useControlRoom } from '@/components/controlroom/useControlRoom';
+ 
+@@ -218,6 +221,42 @@ describe('stopPerdita (T_P4) - lo stop del CONTO dal runner, una lettura sola',
+     });
+ });
+ 
++describe('ordiniConto (W_T/P14) - ordini del conto fuori dai bot, nel giro dei 30 s', () => {
++    const RIGA = {
++        bet_id: '351001', market_id: '1.OU35V', selection_id: 1222347, event_id: 'VSETIN',
++        event_name: 'FC Vsetin v Bohemians', market_name: 'Over/Under 3.5 Goals', selection_name: 'Over 3.5 Goals',
++        side: 'BACK', price_matched: 1.92, size_matched: 4.43, size_remaining: 0,
++        status: 'EXECUTION_COMPLETE', source: 'account', placed_at: '2026-09-30T13:31:02Z',
++    };
++
++    it('RPC non ancora applicata: «non letti (RPC non disponibile)», e NON fra le «fonti non raggiunte»', async () => {
++        vi.mocked(fetchLiveOrdersAccountOpen).mockRejectedValue(new Error('Could not find the function public.get_live_orders_account_open'));
++        const h = await montato();
++        await waitFor(() => expect(h.result.current.ordiniConto.motivo).toBe('RPC non disponibile'));
++        expect(h.result.current.ordiniConto.stato).toBe('non-letti');
++        expect(h.result.current.soldiVeri.ordiniFuori).toMatchObject({ letto: false, motivo: 'RPC non disponibile' });
++        expect(h.result.current.errore ?? '').not.toMatch(/ordini/);
++    });
++
++    it('letti: per partita, e in testata «1 partita (FC Vsetin v Bohemians)»', async () => {
++        vi.mocked(fetchLiveOrdersAccountOpen).mockResolvedValue({ rows: [RIGA], letto_at: new Date().toISOString() } as never);
++        const h = await montato();
++        await waitFor(() => expect(h.result.current.ordiniConto.stato).toBe('letti'));
++        expect(h.result.current.ordiniConto.perEvento.get('VSETIN')?.[0].bet_id).toBe('351001');
++        expect(h.result.current.soldiVeri.ordiniFuori).toMatchObject({ letto: true, n: 1, nomi: ['FC Vsetin v Bohemians'] });
++    });
++
++    it('una lettura per giro (dentro la ricarica), nessuna lettura in piu\' al montaggio', async () => {
++        vi.mocked(fetchLiveOrdersAccountOpen).mockClear();
++        vi.mocked(fetchLiveOrdersAccountOpen).mockResolvedValue({ rows: [], letto_at: new Date().toISOString() } as never);
++        const h = await montato();
++        await waitFor(() => expect(h.result.current.ordiniConto.stato).toBe('letti'));
++        expect(vi.mocked(fetchLiveOrdersAccountOpen)).toHaveBeenCalledTimes(1);
++        act(() => h.result.current.ricarica());
++        await waitFor(() => expect(vi.mocked(fetchLiveOrdersAccountOpen)).toHaveBeenCalledTimes(2));
++    });
++});
++
+ describe('soldiVeri - il rischio secondo i bot', () => {
+     it('Mike dichiara 16,22 LIVE: totale 16,22; scarto col conto 6,27', async () => {
+         const h = await montato();
+diff --git a/frontend/src/components/controlroom/useControlRoom.ts b/frontend/src/components/controlroom/useControlRoom.ts
+index 0def87e..4b061ea 100644
+--- a/frontend/src/components/controlroom/useControlRoom.ts
++++ b/frontend/src/components/controlroom/useControlRoom.ts
+@@ -120,7 +120,13 @@ import {
+     fetchLiveAccount, subscribeLiveAccount, type LiveAccountRow,
+     // P4 (30/09) - lo stop del conto
+     fetchLiveRiskState, subscribeLiveRiskState, type LiveRiskState,
++    // W_T/P14 - ordini del conto fuori dai bot
++    fetchLiveOrdersAccountOpen,
+ } from '@/lib/liveOrders';
++import {
++    ORDINI_CONTO_NON_LETTI, raggruppaOrdiniConto, motivoNonLetti, partiteConOrdiniFuori,
++    type OrdiniContoStato,
++} from './ordiniConto';
+ // P3 (30/09) - la fascia «SOLDI VERI ADESSO» della testata (campo additivo)
+ import { leggiSaldoDalCanale, saldoPiuRecente, type SaldoDalCanale } from '@/lib/saldoBetfair';
+ import { CANALI_SALDO } from './SaldoBetfairCard';
+@@ -907,6 +913,10 @@ export interface ControlRoomVM {
+      */
+     stopPerdita: StopPerditaTestata;
+ 
++    /** W_T/P14 (30/09) - gli ordini del CONTO fuori dai bot, per partita
++     *  (`get_live_orders_account_open`); "non-letti" finche' la RPC non c'e' */
++    ordiniConto: OrdiniContoStato;
++
+     /**
+      * Stato del runner flumine. 14/09 — il battito diceva «2 settembre» mentre
+      * il processo girava: `heartbeat_worker` vive dentro il framework e non
+@@ -1143,6 +1153,23 @@ export function useControlRoom(): ControlRoomVM {
+     /** numero del giro di ricarica in corso: una risposta vecchia non
+      *  sovrascrive una piu' nuova (review 15/09) */
+     const giroCorrente = useRef(0);
++    // W_T/P14 (30/09) - gli ordini del CONTO fuori dai bot (RPC
++    // `get_live_orders_account_open`): letti nel giro dei 30 s (dentro
++    // `ricarica`, nessun poll nuovo) e dopo un clic di chiusura. Errore o RPC
++    // assente = "non letti", mai una lista vuota; NON entra nel messaggio
++    // «fonti non raggiunte» (finche' la migrazione non e' applicata lo
++    // sarebbe a ogni giro).
++    const [ordiniConto, setOrdiniConto] = useState<OrdiniContoStato>(ORDINI_CONTO_NON_LETTI);
++    const giroOrdiniConto = useRef(0);
++    const leggiOrdiniConto = useCallback(() => {
++        giroOrdiniConto.current += 1;
++        const mio = giroOrdiniConto.current;
++        fetchLiveOrdersAccountOpen()
++            .then((r) => { if (mio === giroOrdiniConto.current) setOrdiniConto(raggruppaOrdiniConto(r.rows, r.letto_at)); })
++            .catch((e) => {
++                if (mio === giroOrdiniConto.current) setOrdiniConto({ ...ORDINI_CONTO_NON_LETTI, motivo: motivoNonLetti(e) });
++            });
++    }, []);
+     /** partite che stanno REGISTRANDO adesso. Senza questo il pulsante REC
+      *  ripartirebbe spento dopo un ricaricamento su una partita che registra:
+      *  una spia che mente e peggio di una spia assente. */
+@@ -1314,6 +1341,8 @@ export function useControlRoom(): ControlRoomVM {
+         // pubblicato prima e' gia' dentro il blocco (il bot pubblica DOPO la
+         // scrittura), uno pubblicato dopo puo' essere piu' fresco del blocco.
+         const lettoMs = Date.now();
++        // W_T/P14: stesso giro, esito gestito a parte (vedi `leggiOrdiniConto`)
++        leggiOrdiniConto();
+         Promise.allSettled([
+             fetchScanRows(), fetchScanStatus(),
+             fetchOmegaState(1), fetchOmegaTrades(2000),
+@@ -1430,7 +1459,7 @@ export function useControlRoom(): ControlRoomVM {
+             setCaricamento(false);
+         });
+         return () => { vivo = false; };
+-    }, [bloccoNuovo]);
++    }, [bloccoNuovo, leggiOrdiniConto]);
+ 
+     useEffect(() => {
+         const stop = ricarica();
+@@ -1631,7 +1660,9 @@ export function useControlRoom(): ControlRoomVM {
+             ...clic,
+             idsNotiAlClic: idsNotiSullaPartita(righePosRef.current as MappaRighe<unknown>, clic.bot, clic.eventId),
+         });
+-    }, [seguiInterno]);
++        // W_T/P14: dopo un clic di chiusura si rileggono anche gli ordini del conto
++        leggiOrdiniConto();
++    }, [seguiInterno, leggiOrdiniConto]);
+ 
+     /** Un messaggio per riga di una POSIZIONE: rilettura se serve, poi overlay. */
+     const suRigaPosizione = useCallback((
+@@ -3846,9 +3877,13 @@ export function useControlRoom(): ControlRoomVM {
+             scarto: scartoContoBot(conto.esposizione, rischioBot),
+             partite: soldiLetti ? partiteConPosizione(posizioni) : null,
+             programmaScanner: totali.partite,
++            // W_T/P14: le partite con ordini del conto fuori dai bot
++            ordiniFuori: ordiniConto.stato === 'letti'
++                ? { letto: true, ...partiteConOrdiniFuori(ordiniConto), senzaPartita: ordiniConto.senzaEvento.length, motivo: null }
++                : { letto: false, n: 0, nomi: [], senzaPartita: 0, motivo: ordiniConto.motivo },
+         };
+     }, [liveAccount, saldoCanaleConto, runnerVista.runner, nowMs, soldiLetti,
+-        omega, safe, mike, posizioni, totali.partite, lettoAlle]);
++        omega, safe, mike, posizioni, totali.partite, lettoAlle, ordiniConto]);
+ 
+     // P4 (30/09) - gli stop di perdita (moduli puri in testata/stopPerdita)
+     const stopPerdita = useMemo<StopPerditaTestata>(() => {
+@@ -3887,6 +3922,7 @@ export function useControlRoom(): ControlRoomVM {
+         freni: safe?.control?.stats?.risk ?? null,
+         soldiVeri,
+         stopPerdita,
++        ordiniConto,
+         runner: runnerVista.runner,
+         fonteRunner: { fonte: runnerVista.fonte, etaS: runnerVista.etaS },
+         runnerTennis: runnerTennisVista.runner,
+diff --git a/frontend/src/lib/liveOrders.ts b/frontend/src/lib/liveOrders.ts
+index 28f3f52..79c4edb 100644
+--- a/frontend/src/lib/liveOrders.ts
++++ b/frontend/src/lib/liveOrders.ts
+@@ -818,6 +818,45 @@ export function subscribeLiveRiskState(cb: (row: LiveRiskState | null) => void):
+     return () => { supabase.removeChannel(channel); };
+ }
+ 
++// ---------- W_T/P14 (30/09): ordini del CONTO fuori dai bot ----------
++// RPC `get_live_orders_account_open()` (contratto concordato col backend il
++// 30/09, migrazione applicata dall'utente): solo live, solo ordini NON dei
++// bot (sito/app), solo mercati non regolati. Chiavi IDENTICHE al contratto.
++export interface OrdineContoFuoriBot {
++    bet_id: string;
++    market_id: string;
++    selection_id: number;
++    event_id: string | null;
++    event_name: string | null;
++    market_name: string | null;
++    selection_name: string | null;
++    side: 'BACK' | 'LAY';
++    /** null = nulla abbinato (lo specchio scrive 0, che NON e' un prezzo) */
++    price_matched: number | null;
++    size_matched: number;
++    size_remaining: number;
++    status: string;
++    source: 'runner' | 'account';
++    placed_at: string;
++}
++
++export interface OrdiniContoFuoriBot {
++    rows: OrdineContoFuoriBot[];
++    letto_at: string;
++}
++
++/** Lettura degli ordini del conto fuori dai bot. Errore (anche RPC assente) =
++ *  eccezione: il chiamante scrive "non letti", MAI una lista vuota. */
++export async function fetchLiveOrdersAccountOpen(): Promise<OrdiniContoFuoriBot> {
++    const { data, error } = await supabase.rpc('get_live_orders_account_open', {});
++    if (error) throw new Error(error.message);
++    const d = (data ?? null) as Partial<OrdiniContoFuoriBot> | null;
++    if (!d || !Array.isArray(d.rows) || typeof d.letto_at !== 'string') {
++        throw new Error('risposta di get_live_orders_account_open senza rows/letto_at');
++    }
++    return { rows: d.rows, letto_at: d.letto_at };
++}
++
+ // ---------- posizioni aggregate (dashboard P&L D33 + esposizione evento E35) ----------
+ export async function fetchLivePositionsAll(): Promise<LivePositionRow[]> {
+     const { data, error } = await supabase.rpc('get_live_positions_all', {});
+diff --git a/frontend/src/pages/ControlRoom.test.tsx b/frontend/src/pages/ControlRoom.test.tsx
+index b6640f5..955b361 100644
+--- a/frontend/src/pages/ControlRoom.test.tsx
++++ b/frontend/src/pages/ControlRoom.test.tsx
+@@ -38,6 +38,7 @@ import type { GruppoCampionato, PartitaGiornata } from '@/lib/controlRoom';
+ // T_P3 (30/09): il campo `soldiVeri` dei finti si costruisce con le funzioni VERE
+ import { contoAdesso, rischioBotLive, scartoContoBot } from '@/components/controlroom/testata/soldiVeri';
+ import { stopDelConto, stopDeiBot } from '@/components/controlroom/testata/stopPerdita';
++import { raggruppaOrdiniConto, ORDINI_CONTO_NON_LETTI } from '@/components/controlroom/ordiniConto';
+ 
+ const mVm = vi.mocked(useControlRoom);
+ 
+@@ -1915,6 +1916,26 @@ describe('W_T/P15 - Posizioni aperte da trader', () => {
+     });
+ });
+ 
++describe('W_T/P14 - ordini del conto fuori dai bot nella scheda della partita', () => {
++    const RIGA = {
++        bet_id: '351001', market_id: '1.OU35V', selection_id: 1222347, event_id: 'E1',
++        event_name: 'Milan – Inter', market_name: 'Over/Under 3.5 Goals', selection_name: 'Over 3.5 Goals',
++        side: 'BACK' as const, price_matched: 1.92, size_matched: 4.43, size_remaining: 0,
++        status: 'EXECUTION_COMPLETE', source: 'account' as const, placed_at: '2026-09-14T14:31:02Z',
++    };
++    it('letti: la scheda live della partita mostra l\'ordine del sito e l\'avviso ambra', async () => {
++        mVm.mockReturnValue(vm({ ordiniConto: raggruppaOrdiniConto([RIGA], '2026-09-14T14:59:50Z') }));
++        const el = (await apri(mostra(), 'live')).getByTestId('cr-ordini-conto');
++        expect(el.textContent).toMatch(/BACK Over 3\.5 Goals 4,43 € @ 1,92/);
++        expect(el.textContent).toMatch(/il bot non li vede/);
++    });
++    it('non letti (RPC assente): la scheda lo dice', async () => {
++        mVm.mockReturnValue(vm({ ordiniConto: { ...ORDINI_CONTO_NON_LETTI, motivo: 'RPC non disponibile' } }));
++        const s = await apri(mostra(), 'live');
++        expect(s.getByTestId('cr-ordini-conto-non-letti').textContent).toMatch(/RPC non disponibile/);
++    });
++});
++
+ describe('TAB APERTE: stessa scheda di Live, comando di chiusura ancora raggiungibile (Task 5)', () => {
+     it('una posizione su un evento sconosciuto resta con la sua riga compatta e il bottone Chiudi', async () => {
+         mVm.mockReturnValue(vm({
+diff --git a/frontend/src/pages/ControlRoom.tsx b/frontend/src/pages/ControlRoom.tsx
+index 6bfb8c0..36d84db 100644
+--- a/frontend/src/pages/ControlRoom.tsx
++++ b/frontend/src/pages/ControlRoom.tsx
+@@ -39,6 +39,8 @@ import { NomiPartita } from '@/components/controlroom/NomiPartita';
+ import { CashOutGlobalePartita } from '@/components/controlroom/CashOutGlobale';
+ import { RigaOperazione } from '@/components/controlroom/DettaglioRigaView';
+ import { dueEsitiMike } from '@/lib/cashOutPartita';
++// W_T/P14 - ordini del conto fuori dai bot, per partita (contesto per le schede)
++import { OrdiniContoPartita, OrdiniContoContext } from '@/components/controlroom/OrdiniContoPartita';
+ import type { MikeEvent } from '@/lib/mike';
+ import {
+     statoPartitaAperta, type StatoPartitaAperta, type EsitoStatoPartita,
+@@ -721,6 +723,9 @@ export default function ControlRoom() {
+                 {/* B16 (24/09) — il «Chiudi» di ogni riga, cablato sul SUO bot:
+                     il contesto non disegna niente, porta solo il comando. */}
+                 <ChiusuraRigaContext.Provider value={chiusuraRiga}>
++                {/* W_T/P14: gli ordini del conto fuori dai bot per le schede
++                    (assenti dal modello di vista = nessun contesto, niente a schermo) */}
++                <OrdiniContoContext.Provider value={vm.ordiniConto ? { stato: vm.ordiniConto, nowMs: vm.nowMs } : null}>
+                 <Tabs value={scheda} onValueChange={setScheda} className="min-w-0 xl:[grid-column:1]">
+                     <TabsList className="w-full justify-start flex-wrap h-auto gap-1 bg-white/[0.03] p-1">
+                         <Scheda valore="pre" conta={contaPre} testId="cr-tab-pre">Pre-match</Scheda>
+@@ -785,6 +790,7 @@ export default function ControlRoom() {
+                             giorno={giornoOperativo} barra={vm.composizioneOggi} />
+                     </TabsContent>
+                 </Tabs>
++                </OrdiniContoContext.Provider>
+                 </ChiusuraRigaContext.Provider>
+ 
+                 {/* le due colonne di decisione: su schermi < xl si impilano in
+@@ -1563,6 +1569,7 @@ function SchedaFuoriProgramma({ posizioni, operazioni, mike }: {
+                 </span>
+             </div>
+             <CashOutGlobalePartita sport={tennis ? 'tennis' : 'calcio'} operazioni={operazioni} mike={mike} />
++            {posizioni[0] && <OrdiniContoPartita eventId={posizioni[0].eventId} sport={tennis ? 'tennis' : 'calcio'} />}
+             {operazioni.length > 0 && (
+                 <div className="px-2.5 pt-1.5 space-y-1">
+                     {operazioni.map((o) => <RigaOperazione key={`${o.bot}-${o.id}`} o={o} />)}

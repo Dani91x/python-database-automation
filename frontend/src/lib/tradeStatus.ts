@@ -239,7 +239,7 @@ export function unknownStatusMeta(status: string | null | undefined): Meta {
 export interface EsitoOrdineMeta extends Meta {
     /** chiave stabile dell'esito (per raggruppare e per i test) */
     chiave: 'ritirato' | 'non_abbinato_verificato' | 'rifiutato' | 'non_abbinato_fok'
-        | 'cancellato_da_betfair' | 'fermato';
+        | 'cancellato_da_betfair' | 'fermato' | 'scaduto' | 'annullato';
     /** una riga di spiegazione (title) */
     title: string;
     /** la stessa parola, al singolare e al plurale, per il riepilogo dei tentativi */
@@ -258,54 +258,172 @@ export function esitoOrdineMeta(
     if (String(row.status ?? '').toLowerCase() !== 'error') return null;
     const m = (row.meta ?? {}) as Record<string, unknown>;
     const esito = typeof m['esito_ordine'] === 'string' ? String(m['esito_ordine']) : '';
-    const reason = typeof m['reason'] === 'string' ? String(m['reason']) : '';
-    if (esito === 'ritirato_da_noi' || (!esito && reason === 'cancelled_by_engine')) {
-        return {
-            chiave: 'ritirato', label: 'RITIRATO dal bot', cls: NEUTRO_ESITO,
-            title: 'ordine annullato dal bot prima di abbinarsi (annullo confermato; in live da Betfair): 0,00 € abbinati, nessun errore',
-            uno: 'ritirato dal bot', molti: 'ritirati dal bot',
-        };
+    const reasonGrezza = typeof m['reason'] === 'string' ? String(m['reason']) : '';
+    // W_B2 (30/09): Omega scrive `flumine_<motivo>` (omega_service.py:3551,
+    // `_flumine_no_fill_error`): stesso motivo, stessa lettura
+    const reason = reasonGrezza.startsWith('flumine_') ? reasonGrezza.slice('flumine_'.length) : reasonGrezza;
+    const c = codice && codice !== 'SENZA_CODICE' ? codice : null;
+    // il codice si legge dalla FORMA della nota (`live_rifiutato:<C>`,
+    // `live_not_matched:<stato>:<C>`), non dal secondo campo: in
+    // `live_not_matched:EXPIRED` EXPIRED e' lo STATO dell'ordine, non un codice
+    const parti = reason.split(':');
+    const codiceNota = typeof m['error_code'] === 'string' && m['error_code'] ? String(m['error_code'])
+        : reason.startsWith('live_rifiutato:') ? (parti[1] && parti[1].toLowerCase() !== 'senza_codice' ? parti[1] : null)
+            : reason.startsWith('live_not_matched:') ? (parti[2] || null) : null;
+
+    // --- Mike: l'esito scritto per nome (M8.13) -----------------------------
+    if (esito === 'ritirato_da_noi') return ESITO_RITIRATO;
+    if (esito === 'rifiutato') return esitoRifiutatoBetfair(codiceNota ?? c);
+    if (esito === 'non_abbinato_fok') return ESITO_FOK;
+    if (esito === 'cancellato_da_betfair') return ESITO_CANCELLATO_BETFAIR;
+    if (esito === 'fermato_da_noi') return ESITO_FERMATO;
+    if (esito) return null;                  // esito nuovo, non conosciuto: fail-closed
+
+    // --- dal motivo scritto dal servizio (Mike prima del 29/09, Omega, Safe) ---
+    // ritirato dal bot: annullo nostro (Mike service.py:4307; Omega annullo
+    // dopo il TTL senza abbinato, omega_service.py:3701-3703)
+    if (reason === 'cancelled_by_engine' || reason === 'cancelled_no_fill') return ESITO_RITIRATO;
+    // riconciliazione contro Betfair: nessun ordine abbinato (Mike :5422-5424;
+    // Omega :3811, :3825, :3192, :3214, :3218; Safe bot_service.py:1236, :1481)
+    if (['reconciled_not_placed', 'live_rest_no_fill', 'live_rest_not_found', 'canale_rest_no_fill',
+        'canale_rest_not_found', 'canale_mai_visto_su_betfair', 'reconcile_ordine_assente',
+        'reconcile_ordine_senza_fill'].includes(reason)) return ESITO_NON_ABBINATO_VERIFICATO;
+    // rifiuto dichiarato da Betfair (Safe/condiviso execution.py:985-987 e
+    // :919-921 col codice; Omega paper `terminal_violation`, :3643)
+    if (reason.startsWith('live_rifiutato:')) return esitoRifiutatoBetfair(codiceNota);
+    if (reason.startsWith('live_not_matched:') && codiceNota) return esitoRifiutatoBetfair(codiceNota);
+    if (reason === 'terminal_violation') return esitoRifiutatoBetfair(c ?? 'VIOLATION');
+    // FOK non abbinato: `live_not_matched[:stato]` SENZA codice (stessa regola
+    // di Mike `_esito_del_rifiuto`, service.py:646-653; Omega manuale :5546;
+    // Omega coda `live_fok_<stato>`, :3780)
+    // (la forma nuda `live_not_matched` di Omega manuale NON porta il codice
+    // anche quando c'era: resta ERRORE col motivo, mai un'etichetta senza prova)
+    if (reason.startsWith('live_not_matched:') || reason.startsWith('live_fok_')) return ESITO_FOK;
+    // scaduto su Betfair senza abbinato (fase `scaduto` del motore ordini,
+    // stream/motore_ordini.py:503-509; Omega paper `terminal_expired/lapsed`)
+    if (reason === 'canale_scaduto' || reason === 'terminal_expired' || reason === 'terminal_lapsed') {
+        return ESITO_SCADUTO;
     }
-    if (!esito && reason === 'reconciled_not_placed') {
-        return {
-            chiave: 'non_abbinato_verificato', label: 'NON ABBINATO (verificato su Betfair)', cls: NEUTRO_ESITO,
-            title: 'la riconciliazione con Betfair non ha trovato nessun ordine abbinato con il riferimento di questa gamba: 0,00 € a mercato',
-            uno: 'non abbinato (verificato su Betfair)', molti: 'non abbinati (verificato su Betfair)',
-        };
+    // fase `annullato` del canale: cancellato senza abbinato, CHI l'ha
+    // annullato la riga non lo dice (motore_ordini.py:505-512)
+    if (reason === 'canale_annullato') return ESITO_ANNULLATO;
+    // il runner (nostro) ha rifiutato il comando: nessun ordine a Betfair
+    // (Safe execution.py:590 `canale_rifiutato:<motivo>`; Omega fase
+    // `rifiutato` del canale, omega_service.py:3082)
+    if (reason === 'canale_rifiutato' || reason.startsWith('canale_rifiutato:')) {
+        return esitoRifiutatoCanale(reason.slice('canale_rifiutato:'.length) || null);
     }
-    if (esito === 'rifiutato') {
-        const c = codice && codice !== 'SENZA_CODICE' ? codice : null;
-        return {
-            chiave: 'rifiutato',
-            label: c ? `RIFIUTATO da Betfair: ${c}` : 'RIFIUTATO da Betfair (codice non dichiarato)',
-            cls: 'bg-red-500/15 text-red-300 border-red-500/40',
-            title: 'Betfair (o il runner) ha rifiutato l’ordine: nessun ordine a mercato',
-            uno: 'rifiutato da Betfair', molti: 'rifiutati da Betfair',
-        };
-    }
-    if (esito === 'non_abbinato_fok') {
-        return {
-            chiave: 'non_abbinato_fok', label: 'NON ABBINATO (tutto o niente)', cls: NEUTRO_ESITO,
-            title: 'ordine «tutto o niente» che il mercato non ha abbinato: nessun ordine a mercato',
-            uno: 'non abbinato (tutto o niente)', molti: 'non abbinati (tutto o niente)',
-        };
-    }
-    if (esito === 'cancellato_da_betfair') {
-        return {
-            chiave: 'cancellato_da_betfair', label: 'CANCELLATO da Betfair', cls: ATTENZIONE_ESITO,
-            title: 'ordine sul book cancellato da Betfair (sospensione del mercato o passaggio in gioco) prima di abbinarsi',
-            uno: 'cancellato da Betfair', molti: 'cancellati da Betfair',
-        };
-    }
-    if (esito === 'fermato_da_noi') {
-        return {
-            chiave: 'fermato', label: 'FERMATO dal bot (mai inviato)', cls: ATTENZIONE_ESITO,
-            title: 'ordine mai partito: fermato da un nostro blocco (freno, modalità ordini, runner)',
-            uno: 'fermato dal bot', molti: 'fermati dal bot',
-        };
+    // mai inviato: freno, modalita' ordini, runner o canale giu', controlli
+    // prima dell'invio (Omega :5500, :5582-5587, :3855, :3667; Safe
+    // execution.py:180-214, :506-556, :703-730, :846, :851; controls.py:107-140)
+    if (MOTIVI_MAI_INVIATO.has(reason) || PREFISSI_MAI_INVIATO.some((p) => reason.startsWith(p))) {
+        return ESITO_FERMATO;
     }
     return null;
 }
+
+const MOTIVI_MAI_INVIATO = new Set([
+    'kill_switch', 'live_kill_switch_attivo', 'db_kill_switch_attivo', 'kill_switch_illeggibile',
+    'freni_live_non_letti', 'paper_runner_non_disponibile', 'live_revoked_deadline',
+    'paper_revoked_deadline', 'canale_senza_trade_id', 'canale_premarcatura_fallita',
+    'prezzo_non_disponibile', 'size_non_valida', 'liquidita_insufficiente',
+]);
+const PREFISSI_MAI_INVIATO = [
+    'live_order_mode_non_live:', 'paper_senza_runner', 'canale_giu:', 'submin_non_disponibile:',
+    'canale_comando_non_valido:', 'mode_non_valido:', 'side_non_valido:',
+];
+
+const ESITO_RITIRATO: EsitoOrdineMeta = {
+    chiave: 'ritirato', label: 'RITIRATO dal bot', cls: NEUTRO_ESITO,
+    title: 'ordine annullato dal bot prima di abbinarsi (annullo confermato; in live da Betfair): 0,00 € abbinati, nessun errore',
+    uno: 'ritirato dal bot', molti: 'ritirati dal bot',
+};
+const ESITO_NON_ABBINATO_VERIFICATO: EsitoOrdineMeta = {
+    chiave: 'non_abbinato_verificato', label: 'NON ABBINATO (verificato su Betfair)', cls: NEUTRO_ESITO,
+    title: 'la verifica su Betfair non ha trovato nessun ordine abbinato con il riferimento di questa gamba: 0,00 € a mercato',
+    uno: 'non abbinato (verificato su Betfair)', molti: 'non abbinati (verificato su Betfair)',
+};
+const ESITO_FOK: EsitoOrdineMeta = {
+    chiave: 'non_abbinato_fok', label: 'NON ABBINATO (tutto o niente)', cls: NEUTRO_ESITO,
+    title: 'ordine «tutto o niente» che il mercato non ha abbinato: nessun ordine a mercato',
+    uno: 'non abbinato (tutto o niente)', molti: 'non abbinati (tutto o niente)',
+};
+const ESITO_CANCELLATO_BETFAIR: EsitoOrdineMeta = {
+    chiave: 'cancellato_da_betfair', label: 'CANCELLATO da Betfair', cls: ATTENZIONE_ESITO,
+    title: 'ordine sul book cancellato da Betfair (sospensione del mercato o passaggio in gioco) prima di abbinarsi',
+    uno: 'cancellato da Betfair', molti: 'cancellati da Betfair',
+};
+const ESITO_SCADUTO: EsitoOrdineMeta = {
+    chiave: 'scaduto', label: 'NON ABBINATO (scaduto su Betfair)', cls: NEUTRO_ESITO,
+    title: 'Betfair ha chiuso l’ordine (scaduto o decaduto) senza abbinare nulla: nessun ordine a mercato',
+    uno: 'scaduto su Betfair', molti: 'scaduti su Betfair',
+};
+const ESITO_ANNULLATO: EsitoOrdineMeta = {
+    chiave: 'annullato', label: 'ANNULLATO senza abbinamento', cls: NEUTRO_ESITO,
+    title: 'ordine annullato prima di abbinarsi (la riga non dice da chi): 0,00 € abbinati',
+    uno: 'annullato', molti: 'annullati',
+};
+const ESITO_FERMATO: EsitoOrdineMeta = {
+    chiave: 'fermato', label: 'FERMATO dal bot (mai inviato)', cls: ATTENZIONE_ESITO,
+    title: 'ordine mai partito: fermato da un nostro blocco (freno, modalità ordini, runner o canale giù, controlli prima dell’invio)',
+    uno: 'fermato dal bot', molti: 'fermati dal bot',
+};
+
+function esitoRifiutatoBetfair(c: string | null): EsitoOrdineMeta {
+    return {
+        chiave: 'rifiutato',
+        label: c ? `RIFIUTATO da Betfair: ${c}` : 'RIFIUTATO da Betfair (codice non dichiarato)',
+        cls: 'bg-red-500/15 text-red-300 border-red-500/40',
+        title: 'Betfair (o il runner) ha rifiutato l’ordine: nessun ordine a mercato',
+        uno: 'rifiutato da Betfair', molti: 'rifiutati da Betfair',
+    };
+}
+
+function esitoRifiutatoCanale(motivo: string | null): EsitoOrdineMeta {
+    return {
+        chiave: 'rifiutato',
+        label: motivo ? `RIFIUTATO dal runner: ${motivo.replace(/_/g, ' ')}` : 'RIFIUTATO dal runner',
+        cls: 'bg-red-500/15 text-red-300 border-red-500/40',
+        title: 'il runner degli ordini ha rifiutato il comando: nessun ordine è arrivato a Betfair',
+        uno: 'rifiutato dal runner', molti: 'rifiutati dal runner',
+    };
+}
+
+/**
+ * W_B2 (30/09) - per una riga 'error' che `esitoOrdineMeta` NON sa classificare:
+ * il motivo scritto dal servizio, tradotto dove si sa, altrimenti grezzo (mai
+ * inventato). null = la riga non e' in errore o non porta un motivo.
+ */
+export function motivoErroreTesto(row: { status: string | null | undefined; meta?: MetaObj }): string | null {
+    if (String(row.status ?? '').toLowerCase() !== 'error') return null;
+    const m = (row.meta ?? {}) as Record<string, unknown>;
+    const grezzo = typeof m['reason'] === 'string' ? String(m['reason']).trim() : '';
+    if (!grezzo) return null;
+    const r = grezzo.startsWith('flumine_') ? grezzo.slice('flumine_'.length) : grezzo;
+    const noto = MOTIVI_ERRORE[r];
+    if (noto) return noto;
+    for (const [pref, testo] of PREFISSI_ERRORE) {
+        if (r.startsWith(pref)) return `${testo}${r.slice(pref.length) ? `: ${r.slice(pref.length)}` : ''}`;
+    }
+    return r.replace(/_/g, ' ');
+}
+
+const MOTIVI_ERRORE: Record<string, string> = {
+    no_mirror_after_ttl: 'nessuna traccia dell’ordine dopo il tempo massimo',
+    ttl_no_fill_no_cancel: 'tempo scaduto senza abbinato, annullo non eseguito',
+    no_mirror_after_cancel: 'nessuna traccia dell’ordine dopo l’annullo',
+    request_missing: 'richiesta d’ordine mai creata',
+    request_unreadable: 'richiesta d’ordine illeggibile',
+    canale_senza_esito: 'nessun esito dal canale ordini, nessun abbinato dichiarato',
+    canale_errore: 'errore del canale ordini',
+    canale_no_fill: 'nessun abbinato dal canale ordini',
+    reconcile_orphan_old: 'riga orfana da oltre 24 ore, nessun ordine trovato',
+    live_not_matched: 'non abbinato o rifiutato da Betfair (codice non scritto sulla riga)',
+};
+const PREFISSI_ERRORE: [string, string][] = [
+    ['live_request_error:', 'errore della richiesta prima dell’invio'],
+    ['request_error:', 'errore della richiesta'],
+];
 
 // ----------------------------------------------------------------- bot status
 export type BotStatus = 'idle' | 'running' | 'stopping' | 'stopped' | 'error';

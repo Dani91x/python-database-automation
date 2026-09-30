@@ -14,7 +14,7 @@ import {
     componiObiettivo, differenzaContoRighe, leggiPnlRealeOggi, rigaSintetica,
     type PnlRealeOggi, type RigaComponente,
 } from './composizioneObiettivo';
-import { composizioneDalConto } from './composizioneConto';
+import { composizioneDalConto, perSportDalConto } from './composizioneConto';
 
 const OGGI = '2026-09-30';
 
@@ -39,6 +39,24 @@ function composizioneDiOggi(c: PnlRealeOggi, righe: { omega: RigaComponente[]; s
     const r = altro == null ? null : rigaSintetica(altro, null, { sport: 'calcio' });
     return componiObiettivo({ ...righe, tennisBot: [], altro: r ? [r] : [] });
 }
+
+describe('W_G: perSportDalConto - il LIVE per sport dalle voci del conto', () => {
+    it('calcio = Mike+Omega+Safe calcio+Scalper; tennis = Safe tennis+bot tennis; manuali/altri fuori', () => {
+        const c = conto({
+            mike: { netto: 2, ordini: 1 }, omega: { netto: -0.5, ordini: 1 }, scalper: { netto: 0.1, ordini: 2 },
+            safe_calcio: { netto: 0.3, ordini: 1 }, safe_tennis: { netto: 0.41, ordini: 1 },
+            bot_tennis: { netto: -0.2, ordini: 3 }, manuale_sito: { netto: 5, ordini: 1 }, altri_bot: { netto: 1, ordini: 1 },
+        });
+        expect(perSportDalConto(c)).toEqual({ calcio: { pnl: 1.9, ordini: 5 }, tennis: { pnl: 0.21, ordini: 4 } });
+    });
+    it('Safe TENNIS di ieri regolato oggi: nel tennis, non nel calcio (il difetto della «differenza» nel calcio)', () => {
+        const c = conto({ safe_tennis: { netto: 0.41, ordini: 1 } });
+        expect(perSportDalConto(c)).toEqual({ calcio: { pnl: 0, ordini: 0 }, tennis: { pnl: 0.41, ordini: 1 } });
+    });
+    it('conto non letto: null', () => {
+        expect(perSportDalConto(null)).toBeNull();
+    });
+});
 
 describe('composizioneDalConto - la voce del bot dal conto', () => {
     it('Mike: posizione di IERI regolata OGGI (riga non caricata) -> sotto Mike, non in «Altro»', () => {

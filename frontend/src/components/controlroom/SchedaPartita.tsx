@@ -48,6 +48,8 @@ import { SchedaMike } from '@/components/controlroom/SchedaMike';
 import { marketStatusMeta, type MikeEvent } from '@/lib/mike';
 import { useTennisVivo, nomeSelezioneTennis } from '@/components/controlroom/useTennisVivo';
 import { CashOutGlobalePartita } from '@/components/controlroom/CashOutGlobale';
+import { MarchioSoldi } from '@/components/controlroom/MarchioSoldi';
+import { OrdiniContoPartita } from '@/components/controlroom/OrdiniContoPartita';
 
 const BOT_SIGLA: Record<Bot, string> = {
     omega: 'Ω', safe: 'S', mike: 'M', scalper: 'Sc',
@@ -89,6 +91,17 @@ export { QUOTE_CLS, QUOTE_TESTO };
  *  `fresca` non merita nessun accento, `lenta`/`vecchia`/`ignota` sì. */
 const FRESCHEZZA_CLS: Record<Freschezza, string> = {
     fresca: 'text-emerald-400',
+    lenta: 'text-white/50',
+    vecchia: 'text-orange-400',
+    ignota: 'text-orange-400',
+};
+
+/** W_B1 (30/09): colori dell'eta' di una LETTURA del runner (`state.updated_ms`).
+ *  Una lettura recente NON prova che i prezzi siano freschi (la cache del runner
+ *  puo' essere vecchia): niente verde. Una lettura vecchia o ignota invece prova
+ *  che qualcosa non va: arancione, come `FRESCHEZZA_CLS`. */
+const LETTURA_CLS: Record<Freschezza, string> = {
+    fresca: 'text-white/50',
     lenta: 'text-white/50',
     vecchia: 'text-orange-400',
     ignota: 'text-orange-400',
@@ -202,6 +215,19 @@ function TennisVivoBar({ eventId, abilitato, giocatori }: {
                         back: s.back, lay: s.lay,
                     }))} />
             )}
+            {/* W_B1 (30/09): l'eta' delle QUOTE della barra, accanto alle celle.
+                E' una LETTURA del runner (`state.updated_ms`), non un cambio di
+                prezzo: parole e colori della freschezza (5 s / 20 s), non quelli
+                di `EtaQuote` («ultimo cambio»), che misura un'altra cosa. */}
+            {(vivo.row?.state?.markets ?? []).flatMap((m) => m.selections ?? []).length > 0 && (
+                <span className="font-mono text-[11px] whitespace-nowrap" data-testid="cr-tennis-vivo-eta-quote"
+                    title="età delle quote della barra: ultima LETTURA dello stato mercati da parte del runner tennis (state.updated_ms), non l’ultimo cambio di prezzo. Sopra 20 s il dato è vecchio">
+                    <span className="text-white/35">ultimo aggiornamento del runner: </span>
+                    <span className={LETTURA_CLS[vivo.freschezzaQuote]} data-testid="cr-tennis-vivo-eta-quote-valore">
+                        {vivo.etaQuoteS == null ? 'età ignota' : fmtAge(vivo.etaQuoteS)}
+                    </span>
+                </span>
+            )}
             {vivo.row && (
                 <span className={`ml-auto font-mono text-[10px] ${FRESCHEZZA_CLS[vivo.freschezza]}`}
                     data-testid="cr-tennis-vivo-eta"
@@ -273,6 +299,11 @@ export function SchedaPartita({
     ).length;
 
     const soldi = p.soldi;
+    // W_B2 (30/09, M1): la liability NETTA che il servizio di Mike pubblica per
+    // questa partita (`live.liability`), solo se Mike e' in LIVE: mai la prova
+    // accanto ai soldi veri
+    const mikeNettaRaw = mike?.mode === 'live' ? mike?.live?.liability : null;
+    const mikeNettaLive = typeof mikeNettaRaw === 'number' && Number.isFinite(mikeNettaRaw) && mikeNettaRaw > 0 ? mikeNettaRaw : null;
     // IL NUMERO GRANDE E' QUELLO DEI SOLDI VERI. Il paper esiste, si vede, ma
     // sta sotto e non si somma: sul tennis la stessa partita può avere righe
     // di entrambe le modalità, e un solo numero sarebbe la media di due mondi.
@@ -304,7 +335,7 @@ export function SchedaPartita({
     // prezzi da due fonti sulla stessa scheda. Stesso cancello della barra.
     const barraTennis = p.sport === 'tennis' && (apertaLive || apertaPaper);
     const celleTennis = p.sport === 'tennis' && p.stato === 'live' && !barraTennis
-        ? celleMatchOdds('tennis', p.odds) : null;
+        ? celleMatchOdds('tennis', p.odds, p.giocatori) : null;
     const latenzaAccantoQuote = celleCalcio != null || celleTennis != null;
 
     return (
@@ -422,7 +453,8 @@ export function SchedaPartita({
 
             {/* 30/09 (P12b) - il CASH OUT DELLA PARTITA: somma esatta delle gambe
                 abbinate di TUTTI i bot, LIVE e PROVA separati; niente se non ce ne sono */}
-            <CashOutGlobalePartita sport={p.sport} operazioni={operazioni} mike={mike} />
+            <CashOutGlobalePartita sport={p.sport} operazioni={operazioni} mike={mike} moMarketId={p.marketId} />
+            <OrdiniContoPartita eventId={p.event_id} sport={p.sport === 'tennis' ? 'tennis' : 'calcio'} />{/* W_T/P14: ordini del conto fuori dai bot */}
 
             {/* ── riga 2: il METRO — target, fatto, quanto manca ── */}
             <div className="px-2.5 pt-2">
@@ -487,14 +519,25 @@ export function SchedaPartita({
                     <span className="ml-auto text-[10px] text-white/40 flex items-baseline gap-1.5"
                         data-testid="cr-liability-partita">
                         {/* B1 (30/09): glossario (DESIGN_SYSTEM §3), «liability», mai «responsabilità» */}
+                        {/* W_B2 (30/09, M1): due numeri, due parole. La NETTA la
+                            pubblica il servizio di Mike (`live.liability`, la
+                            stessa di SchedaMike); la LORDA e' la somma delle
+                            righe aperte, non compensata (`soldiPerPartita`). */}
+                        {mikeNettaLive != null && (
+                            <span title="Liability aperta di Mike NETTA, calcolata dal suo servizio: le gambe che si compensano (copertura, green-up) sono già nettate"
+                                data-testid="cr-liability-netta-mike">
+                                Liability aperta (netta, Mike) <span className="font-mono text-white/80">{fmtMoney(mikeNettaLive)}</span>
+                                {' '}<MarchioSoldi fonte="bot" testId="cr-liability-netta-mike-fonte" />
+                            </span>
+                        )}
                         {soldi.live.liability > 0 && (
-                            <span title="liability impegnata con SOLDI VERI">
-                                liability <span className="font-mono text-white/65">{fmtMoney(soldi.live.liability)}</span>
+                            <span title="liability delle righe aperte con SOLDI VERI, sommate riga per riga senza compensare (una copertura o un green-up non la riducono): è il massimo che le righe impegnano, non il rischio netto">
+                                liability delle righe (lorda) <span className="font-mono text-white/65">{fmtMoney(soldi.live.liability)}</span>
                             </span>
                         )}
                         {soldi.paper.liability > 0 && (
-                            <span className="text-white/30" title="liability impegnata in PROVA: non sono soldi veri e non si sommano">
-                                prova <span className="font-mono">{fmtMoney(soldi.paper.liability)}</span>
+                            <span className="text-white/30" title="liability delle righe aperte in PROVA, sommate senza compensare: non sono soldi veri e non si sommano">
+                                prova (lorda) <span className="font-mono">{fmtMoney(soldi.paper.liability)}</span>
                             </span>
                         )}
                     </span>

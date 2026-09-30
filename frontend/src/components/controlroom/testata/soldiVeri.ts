@@ -242,6 +242,8 @@ export interface PartiteConPosizione {
     prova: number;
     /** partite con posizioni la cui modalita' non e' dichiarata */
     ignota: number;
+    /** W_T/P15 (30/09): le GAMBE (righe) LIVE aperte: mai chiamate "partite" */
+    gambeLive: number;
 }
 
 export function partiteConPosizione(
@@ -255,7 +257,10 @@ export function partiteConPosizione(
         else if (p.modalita === 'paper') prova.add(p.eventId);
         else ignota.add(p.eventId);
     }
-    return { live: live.size, prova: prova.size, ignota: ignota.size };
+    return {
+        live: live.size, prova: prova.size, ignota: ignota.size,
+        gambeLive: aperte.filter((p) => p.modalita === 'live').length,
+    };
 }
 
 // ------------------------------------------------------------- insieme
@@ -272,4 +277,9 @@ export interface SoldiVeriTestata {
     partite: PartiteConPosizione | null;
     /** righe del programma dello scanner (calcio + tennis): NON partite operate */
     programmaScanner: number;
+    /** W_T/P14: partite con ordini del CONTO fuori dai bot (sito/app).
+     *  Assente = finto di prima: non si dice niente. */
+    ordiniFuori?: {
+        letto: boolean; n: number; nomi: string[]; senzaPartita: number; motivo: string | null;
+    };
 }

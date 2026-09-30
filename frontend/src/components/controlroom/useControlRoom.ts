@@ -105,14 +105,17 @@ import {
     componiObiettivo, righeRealizzatoPerCiclo, righeGiornataPerCiclo, rigaSintetica,
     leggiPnlRealeOggi, pnlRealePiuRecente, differenzaContoRighe,
     type ComposizioneObiettivo, type RigaComponente, type RigaTradeCiclo, type RigaTradeReale,
-    type PnlRealeOggi,
+    type PnlRealeOggi, type FonteReale,
 } from '@/lib/composizioneObiettivo';
 import { leggiManualeSitoBetfair, type ManualeSitoBetfair } from '@/lib/manualeSitoBetfair';
 import {
     breakdownProva, leggiArretratiProva, provaDellaRiga, provaGiornata, provaPerGiornoPartita,
     type GruppoArretrati, type ProvaGiornata, type RigaTradeProva,
 } from '@/lib/provaGiornata';
-import { composizioneDalConto } from '@/lib/composizioneConto';
+import { composizioneDalConto, etaContoS, perSportDalConto, type SportDalConto } from '@/lib/composizioneConto';
+import { apertoAdesso, type ApertoAdesso } from '@/lib/apertoAdesso';
+import { dueEsitiMike, esitoDecisoMike } from '@/lib/cashOutPartita';
+import type { FonteOggiLive } from '@/components/controlroom/righeBot';
 import { prezzoVivoPerGamba } from '@/lib/comboPrezzoVivo';
 import { updateOmegaParams } from '@/lib/omega';
 import { applicaLottoScan, type ScanRowEvent } from '@/lib/scanEventBuffer';
@@ -120,7 +123,13 @@ import {
     fetchLiveAccount, subscribeLiveAccount, type LiveAccountRow,
     // P4 (30/09) - lo stop del conto
     fetchLiveRiskState, subscribeLiveRiskState, type LiveRiskState,
+    // W_T/P14 - ordini del conto fuori dai bot
+    fetchLiveOrdersAccountOpen,
 } from '@/lib/liveOrders';
+import {
+    ORDINI_CONTO_NON_LETTI, raggruppaOrdiniConto, motivoNonLetti, partiteConOrdiniFuori,
+    type OrdiniContoStato,
+} from './ordiniConto';
 // P3 (30/09) - la fascia «SOLDI VERI ADESSO» della testata (campo additivo)
 import { leggiSaldoDalCanale, saldoPiuRecente, type SaldoDalCanale } from '@/lib/saldoBetfair';
 import { CANALI_SALDO } from './SaldoBetfairCard';
@@ -148,6 +157,7 @@ import { leggiAutoTennis, notaAutoTennis, type AutoTennis } from './tennisAuto';
 import { leggiProposteFlusso, type PropostaFlusso } from '@/lib/proposteUscite';
 // 25/09 — interruttore «uscite automatiche» dello scalper (aggregato sessioni)
 import { usciteSessioniScalper } from '@/lib/interruttori';
+import { isRigaUtente, type RigaPnl } from '@/lib/fontePnl';
 
 /** una proposta di OPPORTUNITA' con i numeri vivi che la scheda mostra */
 export interface PropostaOppVista {
@@ -314,8 +324,11 @@ export interface StatoBot {
      */
     pnlOggi: number | null;
     pnlOggiPaper: number | null;
+    /** W_B2 (M15): da dove viene la cifra LIVE di `pnlOggi` (conto o righe del bot) */
+    fonteOggiLive?: FonteOggiLive | null;
     pnlOggiPerStrategia?: Record<string, {
         live: number | null; paper: number | null; arretratiPaper?: GruppoArretrati[] | null;
+        fonteLive?: FonteOggiLive | null;
     }> | null;
     /**
      * 30/09 (P8bis) - IN PROVA `pnlOggiPaper` (Omega/Mike) e `paper` per
@@ -415,6 +428,9 @@ export interface OperazionePartita {
     /** 30/09 (P12b) - mercato/selezione di ogni gamba di chiusura, stesso ordine di
      *  `chiusureOrdini`: servono al cash out della PARTITA per nettarle. */
     chiusureGambe?: { id: number | null; marketId: string | null; selectionId: number | null }[];
+    /** 30/09 sera (W_C) - SOLO la sessione scalper: le esposizioni ABBINATE per
+     *  selezione (`esposizioneScalper`), per il cash out della PARTITA. */
+    esposizioneSelezioni?: { marketId: string; selectionId: number; selezione: string | null; win: number; lose: number }[];
     /**
      * 18/09 (raccordo, R3) — le righe GREZZE (`RigaOrdine`) delle chiusure
      * collegate (`closes_trade_id`), nello stesso ordine di `dettaglio.
@@ -821,6 +837,8 @@ export interface ControlRoomVM {
         perSport: Record<string, DailyBreakdown> | null;
         /** P&L per SPORT in PROVA. Mai sommato al precedente. */
         perSportPaper: Record<string, DailyBreakdown> | null;
+        /** 30/09 (W_G): il LIVE per sport dal CONTO (per_fonte); null = conto non letto. Facoltativo per i fixture. */
+        perSportConto?: Record<'calcio' | 'tennis', SportDalConto> | null;
         operazioni: number | null;
         vinte: number | null;
         perse: number | null;
@@ -859,6 +877,8 @@ export interface ControlRoomVM {
      * scrittura, non necessariamente dell'ultima lettura (progetto §2.C punto 4).
      */
     contoLettoAt?: string | null;
+    /** 30/09 (W_G/P6): aperto adesso = somma PER PARTITA del cash out LIVE (prezzi dello scanner). Facoltativo per i fixture. */
+    apertoAdesso?: ApertoAdesso | null;
     /** punto d'aggancio isolato per le scommesse manuali dal SITO Betfair
      *  (fuori app): oggi sempre "non disponibile" (`lib/manualeSitoBetfair.ts`). */
     manualeSitoBetfair: ManualeSitoBetfair;
@@ -906,6 +926,10 @@ export interface ControlRoomVM {
      * generale) e quelli di Safe, Mike e Omega. Campo NUOVO: `freni` resta.
      */
     stopPerdita: StopPerditaTestata;
+
+    /** W_T/P14 (30/09) - gli ordini del CONTO fuori dai bot, per partita
+     *  (`get_live_orders_account_open`); "non-letti" finche' la RPC non c'e' */
+    ordiniConto: OrdiniContoStato;
 
     /**
      * Stato del runner flumine. 14/09 — il battito diceva «2 settembre» mentre
@@ -1143,6 +1167,23 @@ export function useControlRoom(): ControlRoomVM {
     /** numero del giro di ricarica in corso: una risposta vecchia non
      *  sovrascrive una piu' nuova (review 15/09) */
     const giroCorrente = useRef(0);
+    // W_T/P14 (30/09) - gli ordini del CONTO fuori dai bot (RPC
+    // `get_live_orders_account_open`): letti nel giro dei 30 s (dentro
+    // `ricarica`, nessun poll nuovo) e dopo un clic di chiusura. Errore o RPC
+    // assente = "non letti", mai una lista vuota; NON entra nel messaggio
+    // «fonti non raggiunte» (finche' la migrazione non e' applicata lo
+    // sarebbe a ogni giro).
+    const [ordiniConto, setOrdiniConto] = useState<OrdiniContoStato>(ORDINI_CONTO_NON_LETTI);
+    const giroOrdiniConto = useRef(0);
+    const leggiOrdiniConto = useCallback(() => {
+        giroOrdiniConto.current += 1;
+        const mio = giroOrdiniConto.current;
+        fetchLiveOrdersAccountOpen()
+            .then((r) => { if (mio === giroOrdiniConto.current) setOrdiniConto(raggruppaOrdiniConto(r.rows, r.letto_at)); })
+            .catch((e) => {
+                if (mio === giroOrdiniConto.current) setOrdiniConto({ ...ORDINI_CONTO_NON_LETTI, motivo: motivoNonLetti(e) });
+            });
+    }, []);
     /** partite che stanno REGISTRANDO adesso. Senza questo il pulsante REC
      *  ripartirebbe spento dopo un ricaricamento su una partita che registra:
      *  una spia che mente e peggio di una spia assente. */
@@ -1314,6 +1355,8 @@ export function useControlRoom(): ControlRoomVM {
         // pubblicato prima e' gia' dentro il blocco (il bot pubblica DOPO la
         // scrittura), uno pubblicato dopo puo' essere piu' fresco del blocco.
         const lettoMs = Date.now();
+        // W_T/P14: stesso giro, esito gestito a parte (vedi `leggiOrdiniConto`)
+        leggiOrdiniConto();
         Promise.allSettled([
             fetchScanRows(), fetchScanStatus(),
             fetchOmegaState(1), fetchOmegaTrades(2000),
@@ -1430,7 +1473,7 @@ export function useControlRoom(): ControlRoomVM {
             setCaricamento(false);
         });
         return () => { vivo = false; };
-    }, [bloccoNuovo]);
+    }, [bloccoNuovo, leggiOrdiniConto]);
 
     useEffect(() => {
         const stop = ricarica();
@@ -1631,7 +1674,9 @@ export function useControlRoom(): ControlRoomVM {
             ...clic,
             idsNotiAlClic: idsNotiSullaPartita(righePosRef.current as MappaRighe<unknown>, clic.bot, clic.eventId),
         });
-    }, [seguiInterno]);
+        // W_T/P14: dopo un clic di chiusura si rileggono anche gli ordini del conto
+        leggiOrdiniConto();
+    }, [seguiInterno, leggiOrdiniConto]);
 
     /** Un messaggio per riga di una POSIZIONE: rilettura se serve, poi overlay. */
     const suRigaPosizione = useCallback((
@@ -2124,8 +2169,15 @@ export function useControlRoom(): ControlRoomVM {
             omegaTrades as unknown as RigaTradeReale[], { ...opz, sport: 'calcio' });
         const safeRighe: RigaComponente[] = righeGiornataPerCiclo(
             (safe?.trades ?? []) as unknown as RigaTradeReale[], opz);
+        // 30/09: le righe «utente» (ordini dell'UTENTE sui mercati di Mike,
+        // scritte da Mike al regolamento per il P&L della PARTITA) qui NON
+        // entrano: nella composizione del conto quegli ordini sono gia' nel
+        // «Manuale · sito» (il runner li attribuisce all'utente,
+        // `reconcile_worker._proprietari`). Contarli anche sotto Mike li
+        // conterebbe due volte.
         const mikeRighe: RigaComponente[] = righeGiornataPerCiclo(
-            (mike?.trades ?? []) as unknown as RigaTradeReale[], { ...opz, sport: 'calcio' });
+            (mike?.trades ?? []).filter((t) => !isRigaUtente(t as unknown as RigaPnl)) as unknown as RigaTradeReale[],
+            { ...opz, sport: 'calcio' });
         // la controprova col servizio di Safe (`discordanza`) confronta il
         // calcolo del bot col calcolo del bot, con la regola di SEMPRE
         // (giornata del piazzamento): non si confronta un reale con uno stimato
@@ -2684,30 +2736,61 @@ export function useControlRoom(): ControlRoomVM {
         // Mike: gli arretrati SOLO dalla chiave del backend (vedi `provaOggi`);
         // non letti = nessuna riga di arretrati nella plancia (lo dice la corsia PROVA)
         const arretratiMike = provaOggi?.voci.find((v) => v.chiave === 'mike')?.arretrati ?? null;
+        // W_B2 (30/09, M15): la cifra LIVE «oggi». Con il conto letto e' quella
+        // che il BACKEND attribuisce al bot (`pnl_reale_oggi.per_fonte`, la
+        // stessa di `composizioneDalConto`: qui non si rifa' l'attribuzione);
+        // senza conto, le posizioni chiuse del bot (fonte BOT). Letto e vuoto =
+        // 0,00 € «nessuna regolata oggi»; non letto = null («—»). Il paper non
+        // passa mai di qui.
+        const etaConto = etaContoS(pnlRealeOggi?.letto_at, nowMs);
+        const liveDi = (fonte: FonteReale | null, dalleRighe: number | null, nota: string | null = null):
+            { valore: number | null; f: FonteOggiLive | null } => {
+            if (pnlRealeOggi && fonte) {
+                const pf = pnlRealeOggi.per_fonte[fonte];
+                const vuoto = !pf || !(pf.ordini > 0);
+                return {
+                    valore: vuoto ? 0 : pf.netto,
+                    f: { fonte: 'conto', vuoto, etaS: etaConto === undefined ? null : etaConto, nota },
+                };
+            }
+            if (dalleRighe != null) return { valore: dalleRighe, f: { fonte: 'bot', vuoto: false, nota } };
+            if (soldiLetti) return { valore: 0, f: { fonte: 'bot', vuoto: true, nota } };
+            return { valore: null, f: null };
+        };
         return bots.map((b) => {
             if (b.bot === 'omega') {
                 const p = provaDellaRiga(pOmega);
-                return { ...b, pnlOggi: di(b.bot, 'live'), pnlOggiPaper: p.oggi, arretratiPaper: p.arretrati };
+                const l = liveDi('omega', di(b.bot, 'live'));
+                return { ...b, pnlOggi: l.valore, fonteOggiLive: l.f, pnlOggiPaper: p.oggi, arretratiPaper: p.arretrati };
             }
             if (b.bot === 'mike') {
+                const l = liveDi('mike', di(b.bot, 'live'));
                 return {
-                    ...b, pnlOggi: di(b.bot, 'live'), pnlOggiPaper: provaDellaRiga(pMike).oggi,
+                    ...b, pnlOggi: l.valore, fonteOggiLive: l.f, pnlOggiPaper: provaDellaRiga(pMike).oggi,
                     arretratiPaper: arretratiMike,
                 };
             }
             if (b.bot === 'safe') {
                 const perStr: Record<string, {
                     live: number | null; paper: number | null; arretratiPaper?: GruppoArretrati[] | null;
+                    fonteLive?: FonteOggiLive | null;
                 }> = {};
                 for (const k of ['base', 'esatto', 'punta', 'model', 'manual', 'tennis']) {
                     const p = provaDellaRiga(pSafe, (r) => r.strategia === k);
-                    perStr[k] = { live: di('safe', 'live', k), paper: p.oggi, arretratiPaper: p.arretrati };
+                    // il conto separa Safe solo per SPORT (safe_calcio / safe_tennis):
+                    // la strategia tennis e' tutto il tennis di Safe; quelle del calcio
+                    // restano dalle righe del bot, e lo si dice
+                    const l = k === 'tennis'
+                        ? liveDi('safe_tennis', di('safe', 'live', k))
+                        : liveDi(null, di('safe', 'live', k),
+                            pnlRealeOggi ? 'il conto separa Safe solo per sport: per strategia la cifra viene dalle righe del bot' : null);
+                    perStr[k] = { live: l.valore, fonteLive: l.f, paper: p.oggi, arretratiPaper: p.arretrati };
                 }
                 return { ...b, pnlOggiPerStrategia: perStr };
             }
             return b;
         });
-    }, [bots, chiuse, nowMs, provaPerBot, provaOggi]);
+    }, [bots, chiuse, nowMs, provaPerBot, provaOggi, pnlRealeOggi, soldiLetti]);
 
     /**
      * Quanto vale chiudere ADESSO, con la matematica condivisa del green-up.
@@ -3415,6 +3498,7 @@ export function useControlRoom(): ControlRoomVM {
                 etaQuoteS: etaSecondi(feedPerEvento.get(k)?.updated_at ?? null, nowMs),
                 chiusura: v.chiusura,
                 chiusureOrdini: [],
+                esposizioneSelezioni: v.esp.selezioni.map((e) => ({ marketId: e.marketId, selectionId: e.selectionId, selezione: null, win: e.win, lose: e.lose })),
                 eventId: k,
                 chiudeId: null,
                 firma: v.s.requested_at,
@@ -3429,6 +3513,49 @@ export function useControlRoom(): ControlRoomVM {
         return m;
     }, [omegaTrades, safe?.trades, mike?.trades, tennisOrdini, feedPerEvento, nowMs, libroVivo, chiusuraViva,
         scalperVista, scalperEtaLetturaS, scalperOv, scalperLetturaMs]);
+
+    // ── W_G/P6 (30/09): «APERTO ADESSO (se chiudo tutto)» per il riquadro ────
+    // SOMMA PER PARTITA del cash out LIVE (`lib/apertoAdesso.ts` ->
+    // `cashOutPartita`), ai prezzi dello SCANNER gia' in memoria (payload del
+    // feed, `prezzoVivo`): nessuna sottoscrizione nuova. `operazioni` cambia a
+    // ogni secondo (dipende da `nowMs`): il calcolo si rifa' solo quando cambia
+    // la FIRMA dei dati (righe LIVE, riga del feed, partita di Mike).
+    const firmaAperto = useMemo(() => {
+        const parti: string[] = [];
+        for (const [eventId, ops] of operazioni) {
+            if (!ops.some((o) => o.modalita === 'live')) continue;
+            parti.push(JSON.stringify([
+                eventId, feedPerEvento.get(eventId)?.updated_at ?? null,
+                mikeEventi.get(eventId)?.updated_at ?? null,
+                ops.map((o) => [o.id, o.bot, o.modalita, o.marketId, o.selectionId, o.lato,
+                    o.ordine, o.chiusureOrdini, o.chiusureGambe ?? null, o.chiusura?.alMs?.aliquota ?? null]),
+            ]));
+        }
+        return parti.join('\n');
+    }, [operazioni, feedPerEvento, mikeEventi]);
+    const apertoOggi = useMemo<ApertoAdesso>(() => apertoAdesso({
+        operazioni,
+        prezzo: (eventId, marketId, selectionId) => {
+            const payload = (feedPerEvento.get(eventId)?.payload ?? null) as Parameters<typeof prezzoVivo>[0];
+            const b = prezzoVivo(payload, marketId, selectionId, 'back');
+            const l = prezzoVivo(payload, marketId, selectionId, 'lay');
+            if (b.prezzo == null && l.prezzo == null) return null;
+            const ts = (payload as { odds_ts_ms?: number | null } | null)?.odds_ts_ms;
+            return {
+                back: b.prezzo, backSize: b.abbinabile, lay: l.prezzo, laySize: l.abbinabile,
+                istanteMs: typeof ts === 'number' && Number.isFinite(ts) && ts > 0 ? ts : null,
+                fonte: 'scanner', statoMercato: b.statoMercato ?? l.statoMercato ?? null,
+            };
+        },
+        dueEsiti: (eventId) => dueEsitiMike(mikeEventi.get(eventId)),
+        esitoDeciso: (eventId) => esitoDecisoMike(mikeEventi.get(eventId), operazioni.get(eventId) ?? []),
+        // lo sport della partita dalle sue righe (lo porta la riga al ms)
+        sportDi: (eventId) => (operazioni.get(eventId) ?? [])
+            .map((o) => o.chiusura?.alMs?.sport ?? null).find((s) => s != null) ?? null,
+        nowMs: Date.now(),
+    // la firma contiene tutto cio' che il calcolo legge (righe LIVE, feed, Mike)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }), [firmaAperto]);
 
     // ── B16 (24/09): IL «CHIUDI» DI UNA RIGA, PER SINGOLO BOT ───────────────
     // Prima: `requestSafe('cashout', {trade_id})` per QUALUNQUE bot - su una
@@ -3751,6 +3878,7 @@ export function useControlRoom(): ControlRoomVM {
              *  `provaGiornata.arretratiPerSport`, mai qui. Prima: giorno di
              *  regolamento (F-2 del 26/09), che il 30/09 metteva fra le cifre
              *  di oggi 4 partite di Safe del 26/09. */
+            perSportConto: perSportDalConto(pnlRealeOggi),
             perSportPaper: soldiLetti && provaOggi ? {
                 calcio: breakdownProva(provaOggi.oggiPerSport.calcio),
                 tennis: breakdownProva(provaOggi.oggiPerSport.tennis),
@@ -3853,9 +3981,13 @@ export function useControlRoom(): ControlRoomVM {
             scarto: scartoContoBot(conto.esposizione, rischioBot),
             partite: soldiLetti ? partiteConPosizione(posizioni) : null,
             programmaScanner: totali.partite,
+            // W_T/P14: le partite con ordini del conto fuori dai bot
+            ordiniFuori: ordiniConto.stato === 'letti'
+                ? { letto: true, ...partiteConOrdiniFuori(ordiniConto), senzaPartita: ordiniConto.senzaEvento.length, motivo: null }
+                : { letto: false, n: 0, nomi: [], senzaPartita: 0, motivo: ordiniConto.motivo },
         };
     }, [liveAccount, saldoCanaleConto, runnerVista.runner, nowMs, soldiLetti,
-        omega, safe, mike, posizioni, totali.partite, lettoAlle]);
+        omega, safe, mike, posizioni, totali.partite, lettoAlle, ordiniConto]);
 
     // P4 (30/09) - gli stop di perdita (moduli puri in testata/stopPerdita)
     const stopPerdita = useMemo<StopPerditaTestata>(() => {
@@ -3890,10 +4022,12 @@ export function useControlRoom(): ControlRoomVM {
         composizioneOggi, manualeSitoBetfair, salvaObiettivo,
         provaGiornata: provaOggi,
         contoLettoAt: pnlRealeOggi?.letto_at ?? null,
+        apertoAdesso: soldiLetti ? apertoOggi : null,
         bots: botsConPnl, posizioni, chiuse, righeChiuse, registrazioni, copertura,
         freni: safe?.control?.stats?.risk ?? null,
         soldiVeri,
         stopPerdita,
+        ordiniConto,
         runner: runnerVista.runner,
         fonteRunner: { fonte: runnerVista.fonte, etaS: runnerVista.etaS },
         runnerTennis: runnerTennisVista.runner,

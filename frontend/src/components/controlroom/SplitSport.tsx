@@ -63,11 +63,20 @@ export interface SplitSportProps {
      * Assente = nessuna riga di arretrati (comportamento di prima).
      */
     prova?: ProvaGiornata | null;
+    /**
+     * 30/09 (W_G) - la corsia LIVE dal CONTO Betfair (`per_fonte`): calcio =
+     * Mike + Omega + Safe calcio + Scalper, tennis = Safe tennis + bot tennis.
+     * Assente/null = conto non letto: le righe dei bot (marchio BOT), come prima.
+     */
+    perSportConto?: Record<SportKey, { pnl: number; ordini: number }> | null;
+    /** eta' della lettura del conto (s) per il marchio CONTO */
+    contoEtaS?: number | null;
     testId?: string;
 }
 
 export function SplitSport({
     perSport, perSportPaper = null, corsie = null, aperte, prova = null, selezionato, onSeleziona,
+    perSportConto = null, contoEtaS,
     testId = 'cr-split-sport',
 }: SplitSportProps) {
     return (
@@ -81,6 +90,7 @@ export function SplitSport({
                     corsie={corsie?.[k] ?? null}
                     aperte={aperte?.[k] ?? { live: 0, paper: 0 }}
                     prova={prova}
+                    conto={perSportConto?.[k] ? { ...perSportConto[k], etaS: contoEtaS } : null}
                     letto={perSport != null}
                     scelto={selezionato === k}
                     spento={selezionato != null && selezionato !== k}
@@ -91,13 +101,14 @@ export function SplitSport({
     );
 }
 
-function Tessera({ sport, dato, datoPaper, corsie, aperte, prova, letto, scelto, spento, onClick }: {
+function Tessera({ sport, dato, datoPaper, corsie, aperte, prova, conto, letto, scelto, spento, onClick }: {
     sport: SportKey;
     dato: DailyBreakdown | null;
     datoPaper: DailyBreakdown | null;
     corsie: CorsieSport | null;
     aperte: { live: number; paper: number };
     prova: ProvaGiornata | null;
+    conto: { pnl: number; ordini: number; etaS: number | null | undefined } | null;
     letto: boolean;
     scelto: boolean;
     spento: boolean;
@@ -143,7 +154,7 @@ function Tessera({ sport, dato, datoPaper, corsie, aperte, prova, letto, scelto,
 
             <Corsia
                 sport={sport} tipo="live" voci={corsie?.live ?? null} dato={dato} letto={letto}
-                aperte={aperte.live} principale={principaleLive}
+                aperte={aperte.live} principale={principaleLive} conto={conto}
             />
             <Corsia
                 sport={sport} tipo="prova" voci={corsie?.prova ?? null} dato={datoPaper} letto={letto}
@@ -209,7 +220,7 @@ function ArretratiSport({ sport, prova }: { sport: SportKey; prova: ProvaGiornat
     );
 }
 
-function Corsia({ sport, tipo, voci, dato, letto, aperte, principale, children }: {
+function Corsia({ sport, tipo, voci, dato, letto, aperte, principale, conto = null, children }: {
     sport: SportKey;
     tipo: 'live' | 'prova';
     voci: VoceCorsia[] | null;
@@ -217,12 +228,15 @@ function Corsia({ sport, tipo, voci, dato, letto, aperte, principale, children }
     letto: boolean;
     aperte: number;
     principale: boolean;
+    // W_G: la corsia LIVE dal CONTO (per_fonte), quando letto; null = righe dei bot
+    conto?: { pnl: number; ordini: number; etaS: number | null | undefined } | null;
     children?: ReactNode;
 }) {
     const live = tipo === 'live';
+    const dalConto = live && conto != null;
     // «non ancora letto» e «nessuna operazione» sono due cose diverse: la prima
     // e' un trattino, la seconda uno zero legittimo (26/09, F-3).
-    const pnl = dato ? dato.pnl : (letto ? 0 : null);
+    const pnl = dalConto ? conto!.pnl : dato ? dato.pnl : (letto ? 0 : null);
     const esiti = dato ? dato.won + dato.lost : 0;
     const winRate = dato && esiti > 0 ? dato.won / esiti : null;
     // la PROVA non deve somigliare ai soldi veri nemmeno a colpo d'occhio:
@@ -230,7 +244,7 @@ function Corsia({ sport, tipo, voci, dato, letto, aperte, principale, children }
     const numero = (
         <span className={`font-mono font-bold tabular-nums ${live ? 'text-xl' : 'text-base opacity-70'} ${pnlClass(pnl)}`}
             data-testid={`cr-sport-${sport}-${tipo}-pnl`}>
-            {!letto ? DASH : fmtMoney(pnl, { signed: true })}
+            {!letto && !dalConto ? DASH : fmtMoney(pnl, { signed: true })}
         </span>
     );
     return (
@@ -256,7 +270,7 @@ function Corsia({ sport, tipo, voci, dato, letto, aperte, principale, children }
                 {aperte > 0 && (
                     <span className={`ml-auto text-[10px] ${live ? 'text-red-300' : 'text-white/35'}`}
                         title={live ? 'posizioni con soldi veri' : 'posizioni simulate'}>
-                        {live ? `${aperte} ${aperte === 1 ? 'aperta' : 'aperte'}` : `${aperte} in prova`}
+                        {`${aperte} ${aperte === 1 ? 'partita' : 'partite'} con posizione ${live ? 'LIVE' : 'in prova'}`}
                     </span>
                 )}
             </div>
@@ -267,14 +281,21 @@ function Corsia({ sport, tipo, voci, dato, letto, aperte, principale, children }
                     parte regolata e' quella del conto Betfair, il resto e' la
                     chiusura dichiarata dal bot); PROVA = simulato */}
                 <MarchioSoldi
-                    fonte={live ? 'bot' : 'prova'}
+                    fonte={dalConto ? 'conto' : live ? 'bot' : 'prova'}
+                    etaS={dalConto ? conto!.etaS : undefined}
                     testId={`cr-sport-${sport}-${tipo}-fonte`}
-                    dettaglio={live
+                    dettaglio={dalConto
+                        ? 'netto regolato oggi dal conto Betfair (voci dei bot di questo sport)'
+                        : live
                         ? 'somma delle operazioni con soldi veri regolate oggi, dalle righe dei bot'
                         : 'operazioni simulate sulle partite di OGGI, regolate oggi: non entra nell\'obiettivo'}
                 />
                 <span className="text-[10.5px] text-white/45 flex items-baseline gap-2 flex-wrap">
-                    {!letto ? null : !dato || dato.n === 0 ? (
+                    {dalConto ? (
+                        <span data-testid={`cr-sport-${sport}-live-conto`}>{conto!.ordini > 0
+                            ? `${conto!.ordini} ${conto!.ordini === 1 ? 'ordine regolato' : 'ordini regolati'} oggi`
+                            : 'nessuna operazione regolata oggi'}</span>
+                    ) : !letto ? null : !dato || dato.n === 0 ? (
                         <span>nessuna operazione {live ? 'con soldi veri' : 'in prova'} oggi</span>
                     ) : (
                         <>

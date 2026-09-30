@@ -141,6 +141,29 @@ describe('P12b: il cash out della PARTITA dentro la scheda', () => {
         expect(screen.getAllByTestId('cr-cashout-globale-live-gamba')[0].getAttribute('data-stato')).toBe('decisa');
     });
 
+    it('W_C: TENNIS, punta P1 e punta P2 sul Match Odds (due esiti): si nettano in UNA riga pareggiata', () => {
+        // back 10 @ 2,0 su entrambi: qualunque vinca, +10 -10 = 0. Senza i due esiti
+        // sarebbero due posizioni in perdita da chiudere separatamente.
+        const tennis = (id: number, sel: number) => gambaMike(id, `Giocatore ${sel}`, 'back', 2.0, 10, '1.9', sel, { back: 1.98, lay: 2.02 });
+        const ops = [tennis(11, 1), tennis(12, 2)].map((o) => ({ ...o, bot: 'tennis_scalper' as const }));
+        const conMo = render(
+            <MemoryRouter>
+                <SchedaPartita p={partitaCalcio({ sport: 'tennis', marketId: '1.9' })} operazioni={ops} />
+            </MemoryRouter>,
+        );
+        expect(conMo.getAllByTestId('cr-cashout-globale-live-gamba')).toHaveLength(1);
+        expect(conMo.getAllByTestId('cr-cashout-globale-live-gamba')[0].getAttribute('data-stato')).toBe('piatta');
+        expect(conMo.getByTestId('cr-cashout-globale-live-netto').textContent).toBe('+0,00 €');
+        conMo.unmount();
+        // un altro mercato tennis (non il Match Odds): resta per selezione
+        render(
+            <MemoryRouter>
+                <SchedaPartita p={partitaCalcio({ sport: 'tennis', marketId: '1.55' })} operazioni={ops} />
+            </MemoryRouter>,
+        );
+        expect(screen.getAllByTestId('cr-cashout-globale-live-gamba')).toHaveLength(2);
+    });
+
     it('Mike, Over 4,5 + Under 4,5 sullo stesso mercato O/U (due esiti): UNA riga, +1,81', () => {
         // parita' con test_mike_engine_cert_2026_09_12.py:164-174
         const ops = [

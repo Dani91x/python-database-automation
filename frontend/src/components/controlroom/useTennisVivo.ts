@@ -153,6 +153,17 @@ export interface TennisVivo {
     /** 25/09 (voce 5): da dove viene la riga (canale 47332 o realtime del
      *  database); null = nessuna riga */
     fonte: FonteTennisVivo | null;
+    /**
+     * W_B1 (30/09) — eta' delle QUOTE della barra: secondi da `state.updated_ms`,
+     * l'istante in cui il runner ha COSTRUITO lo stato mercati dal suo ultimo
+     * book (`Betfair/stream/tennis_live/tennis_runner.py:1498-1501`), riscritto
+     * a ogni giro del worker (`upsert_tennis_now`, `tennis_db.py:266-292`).
+     * E' l'eta' di una LETTURA del runner, non di un cambio di prezzo.
+     * null = la riga non lo dice (mai 0, mai l'eta' del punteggio).
+     */
+    etaQuoteS: number | null;
+    /** giudizio sull'eta' delle quote, stesse soglie 5 s / 20 s */
+    freschezzaQuote: Freschezza;
 }
 
 /** Il timestamp più recente della riga: il punteggio (`score.updated_ms`) se
@@ -179,11 +190,16 @@ export function vistaTennisVivo(
 ): TennisVivo {
     const ms = istantePiuRecenteMs(row);
     const etaS = ms == null ? null : Math.max(0, Math.round((nowMs - ms) / 1000));
+    const statoMs = row?.state?.updated_ms;
+    const etaQuoteS = typeof statoMs === 'number' && Number.isFinite(statoMs) && statoMs > 0
+        ? Math.max(0, Math.round((nowMs - statoMs) / 1000)) : null;
     return {
         row, loaded, etaS,
         freschezza: freschezza(etaS),
         statoMercato: marketStatusMeta(row?.status ?? null),
         fonte: row == null ? null : fonte,
+        etaQuoteS,
+        freschezzaQuote: freschezza(etaQuoteS),
     };
 }
 

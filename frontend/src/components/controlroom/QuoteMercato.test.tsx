@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import {
-    QuoteMercato, EtaQuote, LineeOu, celleMatchOdds, MAX_LINEE_OU, QUOTE_CLS, QUOTE_TESTO,
+    QuoteMercato, EtaQuote, LineeOu, celleMatchOdds, MAX_LINEE_OU, QUOTE_CLS, QUOTE_TESTO, SOGLIA_SPREAD_TICK,
 } from './QuoteMercato';
 import type { LineaOuScheda } from '@/lib/controlRoom';
 
@@ -49,11 +49,68 @@ describe('QuoteMercato — una cella per selezione, BACK e LAY distinti', () => 
         expect(tennis?.map((c) => c.etichetta)).toEqual(['P1', 'P2']);
     });
 
+    it('W_B1 tennis: con i nomi dello scanner le celle portano il NOME, e il title dichiara l’ordine (sortPriority)', () => {
+        const odds = { p1: { back: 1.5, lay: 1.52 }, p2: { back: 2.6, lay: 2.66 } };
+        const c = celleMatchOdds('tennis', odds, { p1: 'Sinner J.', p2: 'Alcaraz C.' });
+        expect(c?.map((x) => x.etichetta)).toEqual(['Sinner J.', 'Alcaraz C.']);
+        expect(c?.[0].titolo).toMatch(/sortPriority/);
+        expect(c?.[0].titolo).toMatch(/scanner/);
+        // un nome mancante o vuoto: si resta su P1/P2 (mai un nome solo, mai un nome indovinato)
+        expect(celleMatchOdds('tennis', odds, { p1: 'Sinner J.', p2: '  ' })?.map((x) => x.etichetta)).toEqual(['P1', 'P2']);
+        expect(celleMatchOdds('tennis', odds, null)?.map((x) => x.etichetta)).toEqual(['P1', 'P2']);
+        // il calcio non usa i nomi dei giocatori
+        expect(celleMatchOdds('calcio', { home: { back: 2, lay: 2.02 } }, { p1: 'A', p2: 'B' })?.map((x) => x.etichetta))
+            .toEqual(['1', 'X', '2']);
+    });
+
     it('celleMatchOdds: nessun prezzo nel blocco = null (non si monta una fila di trattini)', () => {
         expect(celleMatchOdds('calcio', null)).toBeNull();
         expect(celleMatchOdds('calcio', { home: null, draw: null, away: null })).toBeNull();
         expect(celleMatchOdds('calcio', { home: { back: null, lay: null } })).toBeNull();
         expect(celleMatchOdds('tennis', { home: { back: 1.9, lay: 2 } })).toBeNull();
+    });
+});
+
+describe('W_B1: spread largo = «poco liquido», nota grigia accanto alla cella', () => {
+    // l'esempio dell'utente: «1 40,00/50,00 · X 15,00/18,00». 40 -> 50 sono 5 tick
+    // (passo 2 fra 30 e 50: alla soglia, nessuna nota); 15 -> 18 sono 6 tick (passo 0,50)
+    it('X 15,00/18,00 (6 tick; soglia 5): «spread 6 tick · poco liquido», grigia, fuori dalla cella', () => {
+        render(<QuoteMercato testId="q" celle={[{ chiave: 'draw', etichetta: 'X', back: 15, lay: 18 }]} />);
+        const nota = screen.getByTestId('cr-quota-spread');
+        expect(nota).toHaveTextContent('spread 6 tick · poco liquido');
+        expect(nota.className).not.toMatch(/orange|red|amber|rose/);
+        expect(nota.getAttribute('title')).toMatch(/soglia 5 tick/);
+        expect(screen.getByTestId('cr-quota-cella').textContent).toBe('X 15,00/18,00');
+        expect(SOGLIA_SPREAD_TICK).toBe(5);
+    });
+
+    it('spread entro la soglia (2 1,08/1,10 = 2 tick; 6 tick esatti = 5 no, 6 sì): nessuna nota o nota al posto giusto', () => {
+        const { rerender } = render(<QuoteMercato testId="q" celle={[{ chiave: 'away', etichetta: '2', back: 1.08, lay: 1.1 }]} />);
+        expect(screen.queryByTestId('cr-quota-spread')).toBeNull();
+        // 2,00 -> 2,10 = 5 tick (passo 0,02): alla soglia, nessuna nota
+        rerender(<QuoteMercato testId="q" celle={[{ chiave: 'x', etichetta: 'X', back: 2, lay: 2.1 }]} />);
+        expect(screen.queryByTestId('cr-quota-spread')).toBeNull();
+        // 2,00 -> 2,12 = 6 tick: sopra la soglia
+        rerender(<QuoteMercato testId="q" celle={[{ chiave: 'x', etichetta: 'X', back: 2, lay: 2.12 }]} />);
+        expect(screen.getByTestId('cr-quota-spread')).toHaveTextContent('spread 6 tick · poco liquido');
+        // 40,00 -> 50,00 = 5 tick: alla soglia, nessuna nota
+        rerender(<QuoteMercato testId="q" celle={[{ chiave: 'home', etichetta: '1', back: 40, lay: 50 }]} />);
+        expect(screen.queryByTestId('cr-quota-spread')).toBeNull();
+    });
+
+    it('anche nelle linee Under/Over (stesso componente): Under 3,00/4,00 = 20 tick', () => {
+        render(<LineeOu testId="ou" linee={[{
+            marketId: '1.35', linea: 3.5, stato: 'OPEN', decisa: false, perMike: false,
+            under: { back: 3, lay: 4 }, over: { back: 1.33, lay: 1.34 }, etaCambioS: 2,
+        }]} />);
+        const note = screen.getAllByTestId('cr-quota-spread');
+        expect(note).toHaveLength(1);
+        expect(note[0]).toHaveTextContent('spread 20 tick · poco liquido');
+    });
+
+    it('un lato assente: nessuno spread inventato', () => {
+        render(<QuoteMercato testId="q" celle={[{ chiave: 'draw', etichetta: 'X', back: 15, lay: null }]} />);
+        expect(screen.queryByTestId('cr-quota-spread')).toBeNull();
     });
 });
 

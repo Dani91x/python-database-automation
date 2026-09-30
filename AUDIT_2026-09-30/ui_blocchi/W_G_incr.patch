@@ -1,0 +1,1054 @@
+diff --git a/frontend/src/components/controlroom/ObiettivoHero.tsx b/frontend/src/components/controlroom/ObiettivoHero.tsx
+index f3067e6..72c1f4f 100644
+--- a/frontend/src/components/controlroom/ObiettivoHero.tsx
++++ b/frontend/src/components/controlroom/ObiettivoHero.tsx
+@@ -19,6 +19,7 @@ import type { ComposizioneObiettivo } from '@/lib/composizioneObiettivo';
+ import type { ManualeSitoBetfair } from '@/lib/manualeSitoBetfair';
+ import { etichettaArretrati, type ChiaveProva, type ProvaGiornata, type VoceProva } from '@/lib/provaGiornata';
+ import { MarchioSoldi } from './MarchioSoldi';
++import type { ApertoPerBot } from '@/lib/apertoAdesso';
+ import type { ComposizioneConto, RigaComposizioneConto } from '@/lib/composizioneConto';
+ import type { RigaComposizione } from '@/lib/composizioneObiettivo';
+ 
+@@ -36,6 +37,8 @@ export interface ObiettivoHeroProps {
+     contoEtaS?: number | null;
+     /** 30/09 (R_G): la modalita' CORRENTE di ogni voce della prova (live = «— (ora in LIVE)» se non ha prova di oggi) */
+     modalitaBot?: Partial<Record<ChiaveProva, 'paper' | 'live' | null>> | null;
++    // 30/09 (W_G): l'aperto per bot (somma per partita delle sue gambe LIVE)
++    apertoPerBot?: Record<string, ApertoPerBot> | null;
+     testId?: string;
+ }
+ 
+@@ -44,6 +47,42 @@ function fonteDi(r: RigaComposizione): 'conto' | 'bot' | null {
+     return (r as RigaComposizioneConto).fonte ?? null;
+ }
+ 
++/** 30/09 (W_G): quali bot dell'aperto compongono una voce della composizione */
++const BOT_DELLA_VOCE: Partial<Record<string, string[]>> = {
++    omega: ['omega'], mike: ['mike'], scalper: ['scalper'],
++    safe_calcio: ['safe_calcio'], safe_tennis: ['safe_tennis'],
++    bot_tennis: ['tennis_scalper', 'tennis_pro', 'tennis_flb', 'tennis_swing'],
++};
++
++/** L'aperto di una voce (somma dei suoi bot); null = nessuna partita LIVE di quei bot. */
++function apertoDi(per: Record<string, ApertoPerBot> | null | undefined, chiave: string): ApertoPerBot | null {
++    const bots = BOT_DELLA_VOCE[chiave];
++    if (!per || !bots) return null;
++    let out: ApertoPerBot | null = null;
++    for (const b of bots) {
++        const v = per[b];
++        if (!v) continue;
++        out = out ?? { netto: null, partite: 0, nonCalcolabili: 0 };
++        if (v.netto != null) out.netto = Math.round(((out.netto ?? 0) + v.netto) * 100) / 100;
++        out.partite += v.partite;
++        out.nonCalcolabili += v.nonCalcolabili;
++    }
++    return out;
++}
++
++function ApertoVoce({ chiave, a }: { chiave: string; a: ApertoPerBot }) {
++    return (
++        <span className="text-[10px] ml-1 text-white/50" data-testid={`cr-composizione-${chiave}-aperto`}
++            title="aperto adesso: cash out LIVE delle partite di questo bot, per partita, ai prezzi dello scanner (stima)">
++            · aperto{' '}
++            <span className={a.netto == null ? 'text-white/40' : pnlClass(a.netto)}>
++                {a.netto == null ? DASH : fmtMoney(a.netto, { signed: true })}
++            </span>
++            {a.nonCalcolabili > 0 && <span className="text-amber-300"> + {a.nonCalcolabili} non calcolabili</span>}
++        </span>
++    );
++}
++
+ /** 30/09 (P7): la composizione e' stata ricomposta dal conto Betfair */
+ function dalConto(c: ComposizioneObiettivo): boolean | null {
+     const v = (c as ComposizioneConto).dalConto;
+@@ -51,7 +90,7 @@ function dalConto(c: ComposizioneObiettivo): boolean | null {
+ }
+ 
+ export function ObiettivoHero({
+-    dayBar, composizione, manualeSito, onSalvaObiettivo, avvisoMotore, prova = null, contoEtaS, modalitaBot = null, testId = 'cr-obiettivo',
++    dayBar, composizione, manualeSito, onSalvaObiettivo, avvisoMotore, prova = null, contoEtaS, modalitaBot = null, apertoPerBot = null, testId = 'cr-obiettivo',
+ }: ObiettivoHeroProps) {
+     return (
+         <Card className="glass-card border-white/10 p-0 overflow-hidden" data-testid={testId}>
+@@ -102,6 +141,10 @@ export function ObiettivoHero({
+                                         {r.stimato === r.valore ? 'stimato' : `di cui stimato ${fmtMoney(r.stimato, { signed: true })}`}
+                                     </span>
+                                 )}
++                                {/* 30/09 (W_G) - l'APERTO del bot (somma per partita delle SUE gambe LIVE) */}
++                                {apertoDi(apertoPerBot, r.chiave) != null && (
++                                    <ApertoVoce chiave={r.chiave} a={apertoDi(apertoPerBot, r.chiave) as ApertoPerBot} />
++                                )}
+                                 {/* 30/09 (P7) - la FONTE della cifra della voce */}
+                                 {r.valore != null && fonteDi(r) != null && (
+                                     <MarchioSoldi fonte={fonteDi(r) === 'conto' ? 'conto' : 'bot'} className="ml-1"
+diff --git a/frontend/src/components/controlroom/ObiettivoVoci.tsx b/frontend/src/components/controlroom/ObiettivoVoci.tsx
+new file mode 100644
+index 0000000..9049695
+--- /dev/null
++++ b/frontend/src/components/controlroom/ObiettivoVoci.tsx
+@@ -0,0 +1,56 @@
++// ============================================================================
++// ObiettivoVoci.tsx - 30/09 (W_G/P6): le due voci di soldi del riquadro
++// Obiettivo che la DayBar riceve come nodi (parametri opzionali):
++//   * «aperto adesso (se chiudo tutto)»: somma PER PARTITA del cash out LIVE
++//     (`lib/apertoAdesso.ts`), STIMA ai prezzi dello scanner; le partite non
++//     calcolabili si dicono, mai una somma spacciata per completa;
++//   * «rischio massimo»: l'esposizione del CONTO Betfair (una cifra sola, la
++//     stessa della testata, `vm.soldiVeri.conto`), con l'eta' della lettura.
++// ============================================================================
++import type { ReactNode } from 'react';
++import { fmtMoney, DASH } from '@/lib/format';
++import { pnlClass } from '@/lib/tradeStatus';
++import type { ApertoAdesso } from '@/lib/apertoAdesso';
++import type { ContoAdesso } from './testata/soldiVeri';
++import { MarchioSoldi } from './MarchioSoldi';
++
++const partite = (n: number) => `${n} ${n === 1 ? 'partita' : 'partite'}`;
++
++export function apertoNode(a: ApertoAdesso | null): ReactNode {
++    if (a == null || (a.partite === 0 && a.nonCalcolabili === 0)) return undefined;
++    return (
++        <span className="inline-flex items-center gap-1 flex-wrap" data-testid="cr-giornata-aperto"
++            title="se chiudo TUTTO adesso: somma per partita del cash out delle posizioni LIVE, netto commissione, ai prezzi dello scanner">
++            aperto adesso (se chiudo tutto){' '}
++            {a.netto != null ? (
++                <b className={pnlClass(a.netto)} data-testid="cr-giornata-aperto-valore">{fmtMoney(a.netto, { signed: true })}</b>
++            ) : (
++                <b className="text-slate-400" data-testid="cr-giornata-aperto-valore">{DASH}</b>
++            )}
++            <MarchioSoldi fonte="pagina" dettaglio="prezzi dello scanner, cash out per partita" testId="cr-giornata-aperto-marchio" />
++            {a.partite > 0 && <span className="text-slate-400">su {partite(a.partite)}</span>}
++            {a.nonCalcolabili > 0 && (
++                <span className="text-amber-300" data-testid="cr-giornata-aperto-non-calcolabili">
++                    + {partite(a.nonCalcolabili)} non calcolabili
++                </span>
++            )}
++        </span>
++    );
++}
++
++export function rischioNode(c: ContoAdesso | null): ReactNode {
++    if (c == null) return undefined;
++    return (
++        <span className="inline-flex items-center gap-1" data-testid="cr-giornata-rischio"
++            title="rischio massimo del conto adesso, calcolato da Betfair (tutti i mercati: bot, sito e app)">
++            rischio massimo{' '}
++            {c.letto && c.esposizione != null ? (
++                <b className="text-orange-400" data-testid="cr-giornata-rischio-valore">{fmtMoney(c.esposizione)}</b>
++            ) : (
++                <b className="text-slate-400" data-testid="cr-giornata-rischio-valore">{DASH}</b>
++            )}
++            <MarchioSoldi fonte="conto" etaS={c.etaS} testId="cr-giornata-rischio-marchio" />
++            {!c.letto && <span className="text-amber-300">conto non letto</span>}
++        </span>
++    );
++}
+diff --git a/frontend/src/components/controlroom/SplitSport.corsie.test.tsx b/frontend/src/components/controlroom/SplitSport.corsie.test.tsx
+index e6d4c35..97a410e 100644
+--- a/frontend/src/components/controlroom/SplitSport.corsie.test.tsx
++++ b/frontend/src/components/controlroom/SplitSport.corsie.test.tsx
+@@ -29,6 +29,31 @@ function tessera(perSport: Record<string, typeof LIVE>, perSportPaper: Record<st
+     };
+ }
+ 
++describe('W_G (30/09): la corsia LIVE dal CONTO quando letto', () => {
++    it('conto letto: LIVE = voce del conto (non le righe), marchio CONTO con eta\'; 0 ordini = 0,00 dichiarato', () => {
++        const s = render(<SplitSport selezionato={null} onSeleziona={() => undefined}
++            perSport={{ calcio: LIVE }} perSportPaper={{}} contoEtaS={180}
++            perSportConto={{ calcio: { pnl: 2, ordini: 1 }, tennis: { pnl: 0, ordini: 0 } }} />);
++        const calcio = s.getByTestId('cr-sport-calcio');
++        expect(within(calcio).getByTestId('cr-sport-calcio-live-pnl').textContent).toBe('+2,00 €');
++        expect(within(calcio).getByTestId('cr-sport-calcio-live-fonte').getAttribute('data-fonte')).toBe('conto');
++        expect(within(calcio).getByTestId('cr-sport-calcio-live-fonte').textContent).toContain('3 min fa');
++        expect(within(calcio).getByTestId('cr-sport-calcio-live-conto').textContent).toBe('1 ordine regolato oggi');
++        // le righe dei bot (1,50) non sono la cifra LIVE quando c'e' il conto
++        expect(within(calcio).getByTestId('cr-sport-calcio-live').textContent).not.toContain('1,50');
++        const tennis = s.getByTestId('cr-sport-tennis');
++        expect(within(tennis).getByTestId('cr-sport-tennis-live-pnl').textContent).toBe('+0,00 €');
++        expect(within(tennis).getByTestId('cr-sport-tennis-live-conto').textContent).toBe('nessuna operazione regolata oggi');
++    });
++
++    it('conto NON letto: le righe dei bot col marchio BOT (come prima)', () => {
++        const s = render(<SplitSport selezionato={null} onSeleziona={() => undefined}
++            perSport={{ calcio: LIVE }} perSportPaper={{}} perSportConto={null} />);
++        expect(s.getByTestId('cr-sport-calcio-live-pnl').textContent).toBe('+1,50 €');
++        expect(s.getByTestId('cr-sport-calcio-live-fonte').getAttribute('data-fonte')).toBe('bot');
++    });
++});
++
+ describe('tessera sport: ogni corsia legge SOLO il suo dato', () => {
+     it('live e paper diversi: LIVE mostra solo il live, PROVA solo il paper, contatori compresi', () => {
+         const t = tessera({ calcio: LIVE }, { calcio: PAPER });
+diff --git a/frontend/src/components/controlroom/SplitSport.tsx b/frontend/src/components/controlroom/SplitSport.tsx
+index 5998291..488644f 100644
+--- a/frontend/src/components/controlroom/SplitSport.tsx
++++ b/frontend/src/components/controlroom/SplitSport.tsx
+@@ -63,11 +63,20 @@ export interface SplitSportProps {
+      * Assente = nessuna riga di arretrati (comportamento di prima).
+      */
+     prova?: ProvaGiornata | null;
++    /**
++     * 30/09 (W_G) - la corsia LIVE dal CONTO Betfair (`per_fonte`): calcio =
++     * Mike + Omega + Safe calcio + Scalper, tennis = Safe tennis + bot tennis.
++     * Assente/null = conto non letto: le righe dei bot (marchio BOT), come prima.
++     */
++    perSportConto?: Record<SportKey, { pnl: number; ordini: number }> | null;
++    /** eta' della lettura del conto (s) per il marchio CONTO */
++    contoEtaS?: number | null;
+     testId?: string;
+ }
+ 
+ export function SplitSport({
+     perSport, perSportPaper = null, corsie = null, aperte, prova = null, selezionato, onSeleziona,
++    perSportConto = null, contoEtaS,
+     testId = 'cr-split-sport',
+ }: SplitSportProps) {
+     return (
+@@ -81,6 +90,7 @@ export function SplitSport({
+                     corsie={corsie?.[k] ?? null}
+                     aperte={aperte?.[k] ?? { live: 0, paper: 0 }}
+                     prova={prova}
++                    conto={perSportConto?.[k] ? { ...perSportConto[k], etaS: contoEtaS } : null}
+                     letto={perSport != null}
+                     scelto={selezionato === k}
+                     spento={selezionato != null && selezionato !== k}
+@@ -91,13 +101,14 @@ export function SplitSport({
+     );
+ }
+ 
+-function Tessera({ sport, dato, datoPaper, corsie, aperte, prova, letto, scelto, spento, onClick }: {
++function Tessera({ sport, dato, datoPaper, corsie, aperte, prova, conto, letto, scelto, spento, onClick }: {
+     sport: SportKey;
+     dato: DailyBreakdown | null;
+     datoPaper: DailyBreakdown | null;
+     corsie: CorsieSport | null;
+     aperte: { live: number; paper: number };
+     prova: ProvaGiornata | null;
++    conto: { pnl: number; ordini: number; etaS: number | null | undefined } | null;
+     letto: boolean;
+     scelto: boolean;
+     spento: boolean;
+@@ -143,7 +154,7 @@ function Tessera({ sport, dato, datoPaper, corsie, aperte, prova, letto, scelto,
+ 
+             <Corsia
+                 sport={sport} tipo="live" voci={corsie?.live ?? null} dato={dato} letto={letto}
+-                aperte={aperte.live} principale={principaleLive}
++                aperte={aperte.live} principale={principaleLive} conto={conto}
+             />
+             <Corsia
+                 sport={sport} tipo="prova" voci={corsie?.prova ?? null} dato={datoPaper} letto={letto}
+@@ -209,7 +220,7 @@ function ArretratiSport({ sport, prova }: { sport: SportKey; prova: ProvaGiornat
+     );
+ }
+ 
+-function Corsia({ sport, tipo, voci, dato, letto, aperte, principale, children }: {
++function Corsia({ sport, tipo, voci, dato, letto, aperte, principale, conto = null, children }: {
+     sport: SportKey;
+     tipo: 'live' | 'prova';
+     voci: VoceCorsia[] | null;
+@@ -217,12 +228,15 @@ function Corsia({ sport, tipo, voci, dato, letto, aperte, principale, children }
+     letto: boolean;
+     aperte: number;
+     principale: boolean;
++    // W_G: la corsia LIVE dal CONTO (per_fonte), quando letto; null = righe dei bot
++    conto?: { pnl: number; ordini: number; etaS: number | null | undefined } | null;
+     children?: ReactNode;
+ }) {
+     const live = tipo === 'live';
++    const dalConto = live && conto != null;
+     // «non ancora letto» e «nessuna operazione» sono due cose diverse: la prima
+     // e' un trattino, la seconda uno zero legittimo (26/09, F-3).
+-    const pnl = dato ? dato.pnl : (letto ? 0 : null);
++    const pnl = dalConto ? conto!.pnl : dato ? dato.pnl : (letto ? 0 : null);
+     const esiti = dato ? dato.won + dato.lost : 0;
+     const winRate = dato && esiti > 0 ? dato.won / esiti : null;
+     // la PROVA non deve somigliare ai soldi veri nemmeno a colpo d'occhio:
+@@ -230,7 +244,7 @@ function Corsia({ sport, tipo, voci, dato, letto, aperte, principale, children }
+     const numero = (
+         <span className={`font-mono font-bold tabular-nums ${live ? 'text-xl' : 'text-base opacity-70'} ${pnlClass(pnl)}`}
+             data-testid={`cr-sport-${sport}-${tipo}-pnl`}>
+-            {!letto ? DASH : fmtMoney(pnl, { signed: true })}
++            {!letto && !dalConto ? DASH : fmtMoney(pnl, { signed: true })}
+         </span>
+     );
+     return (
+@@ -256,7 +270,7 @@ function Corsia({ sport, tipo, voci, dato, letto, aperte, principale, children }
+                 {aperte > 0 && (
+                     <span className={`ml-auto text-[10px] ${live ? 'text-red-300' : 'text-white/35'}`}
+                         title={live ? 'posizioni con soldi veri' : 'posizioni simulate'}>
+-                        {live ? `${aperte} ${aperte === 1 ? 'aperta' : 'aperte'}` : `${aperte} in prova`}
++                        {`${aperte} ${aperte === 1 ? 'partita' : 'partite'} con posizione ${live ? 'LIVE' : 'in prova'}`}
+                     </span>
+                 )}
+             </div>
+@@ -267,14 +281,21 @@ function Corsia({ sport, tipo, voci, dato, letto, aperte, principale, children }
+                     parte regolata e' quella del conto Betfair, il resto e' la
+                     chiusura dichiarata dal bot); PROVA = simulato */}
+                 <MarchioSoldi
+-                    fonte={live ? 'bot' : 'prova'}
++                    fonte={dalConto ? 'conto' : live ? 'bot' : 'prova'}
++                    etaS={dalConto ? conto!.etaS : undefined}
+                     testId={`cr-sport-${sport}-${tipo}-fonte`}
+-                    dettaglio={live
++                    dettaglio={dalConto
++                        ? 'netto regolato oggi dal conto Betfair (voci dei bot di questo sport)'
++                        : live
+                         ? 'somma delle operazioni con soldi veri regolate oggi, dalle righe dei bot'
+                         : 'operazioni simulate sulle partite di OGGI, regolate oggi: non entra nell\'obiettivo'}
+                 />
+                 <span className="text-[10.5px] text-white/45 flex items-baseline gap-2 flex-wrap">
+-                    {!letto ? null : !dato || dato.n === 0 ? (
++                    {dalConto ? (
++                        <span data-testid={`cr-sport-${sport}-live-conto`}>{conto!.ordini > 0
++                            ? `${conto!.ordini} ${conto!.ordini === 1 ? 'ordine regolato' : 'ordini regolati'} oggi`
++                            : 'nessuna operazione regolata oggi'}</span>
++                    ) : !letto ? null : !dato || dato.n === 0 ? (
+                         <span>nessuna operazione {live ? 'con soldi veri' : 'in prova'} oggi</span>
+                     ) : (
+                         <>
+diff --git a/frontend/src/components/controlroom/useControlRoom.provaGiornata.test.tsx b/frontend/src/components/controlroom/useControlRoom.provaGiornata.test.tsx
+index f79e4b7..88ef8b7 100644
+--- a/frontend/src/components/controlroom/useControlRoom.provaGiornata.test.tsx
++++ b/frontend/src/components/controlroom/useControlRoom.provaGiornata.test.tsx
+@@ -260,9 +260,13 @@ describe('R_G - prestazioni: la prova non si ricalcola a ogni secondo', () => {
+             await waitFor(() => expect(result.current.caricamento).toBe(false));
+             await waitFor(() => expect(result.current.provaGiornata).toBeTruthy());
+             const primo = result.current.provaGiornata;
++            const apertoPrimo = result.current.apertoAdesso;
+             const t0 = result.current.nowMs;
+             await waitFor(() => expect(result.current.nowMs).toBeGreaterThan(t0), { timeout: 3000 });
+             expect(result.current.provaGiornata).toBe(primo);
++            // W_G: anche l'«aperto adesso» non si ricalcola a ogni secondo (dipende dai dati)
++            expect(result.current.apertoAdesso).toBeTruthy();
++            expect(result.current.apertoAdesso).toBe(apertoPrimo);
+             // il giorno dopo: la prova si ricalcola (gli arretrati di ieri non sono piu' «di oggi»)
+             vi.setSystemTime(new Date(Date.parse(`${OGGI}T10:00:00+00:00`) + 24 * 3600 * 1000));
+             await waitFor(() => expect(result.current.provaGiornata).not.toBe(primo), { timeout: 3000 });
+diff --git a/frontend/src/components/controlroom/useControlRoom.ts b/frontend/src/components/controlroom/useControlRoom.ts
+index c088893..3a28e7f 100644
+--- a/frontend/src/components/controlroom/useControlRoom.ts
++++ b/frontend/src/components/controlroom/useControlRoom.ts
+@@ -112,7 +112,9 @@ import {
+     breakdownProva, leggiArretratiProva, provaDellaRiga, provaGiornata, provaPerGiornoPartita,
+     type GruppoArretrati, type ProvaGiornata, type RigaTradeProva,
+ } from '@/lib/provaGiornata';
+-import { composizioneDalConto } from '@/lib/composizioneConto';
++import { composizioneDalConto, perSportDalConto, type SportDalConto } from '@/lib/composizioneConto';
++import { apertoAdesso, type ApertoAdesso } from '@/lib/apertoAdesso';
++import { dueEsitiMike, esitoDecisoMike } from '@/lib/cashOutPartita';
+ import { prezzoVivoPerGamba } from '@/lib/comboPrezzoVivo';
+ import { updateOmegaParams } from '@/lib/omega';
+ import { applicaLottoScan, type ScanRowEvent } from '@/lib/scanEventBuffer';
+@@ -821,6 +823,8 @@ export interface ControlRoomVM {
+         perSport: Record<string, DailyBreakdown> | null;
+         /** P&L per SPORT in PROVA. Mai sommato al precedente. */
+         perSportPaper: Record<string, DailyBreakdown> | null;
++        /** 30/09 (W_G): il LIVE per sport dal CONTO (per_fonte); null = conto non letto. Facoltativo per i fixture. */
++        perSportConto?: Record<'calcio' | 'tennis', SportDalConto> | null;
+         operazioni: number | null;
+         vinte: number | null;
+         perse: number | null;
+@@ -859,6 +863,8 @@ export interface ControlRoomVM {
+      * scrittura, non necessariamente dell'ultima lettura (progetto §2.C punto 4).
+      */
+     contoLettoAt?: string | null;
++    /** 30/09 (W_G/P6): aperto adesso = somma PER PARTITA del cash out LIVE (prezzi dello scanner). Facoltativo per i fixture. */
++    apertoAdesso?: ApertoAdesso | null;
+     /** punto d'aggancio isolato per le scommesse manuali dal SITO Betfair
+      *  (fuori app): oggi sempre "non disponibile" (`lib/manualeSitoBetfair.ts`). */
+     manualeSitoBetfair: ManualeSitoBetfair;
+@@ -3430,6 +3436,49 @@ export function useControlRoom(): ControlRoomVM {
+     }, [omegaTrades, safe?.trades, mike?.trades, tennisOrdini, feedPerEvento, nowMs, libroVivo, chiusuraViva,
+         scalperVista, scalperEtaLetturaS, scalperOv, scalperLetturaMs]);
+ 
++    // ── W_G/P6 (30/09): «APERTO ADESSO (se chiudo tutto)» per il riquadro ────
++    // SOMMA PER PARTITA del cash out LIVE (`lib/apertoAdesso.ts` ->
++    // `cashOutPartita`), ai prezzi dello SCANNER gia' in memoria (payload del
++    // feed, `prezzoVivo`): nessuna sottoscrizione nuova. `operazioni` cambia a
++    // ogni secondo (dipende da `nowMs`): il calcolo si rifa' solo quando cambia
++    // la FIRMA dei dati (righe LIVE, riga del feed, partita di Mike).
++    const firmaAperto = useMemo(() => {
++        const parti: string[] = [];
++        for (const [eventId, ops] of operazioni) {
++            if (!ops.some((o) => o.modalita === 'live')) continue;
++            parti.push(JSON.stringify([
++                eventId, feedPerEvento.get(eventId)?.updated_at ?? null,
++                mikeEventi.get(eventId)?.updated_at ?? null,
++                ops.map((o) => [o.id, o.bot, o.modalita, o.marketId, o.selectionId, o.lato,
++                    o.ordine, o.chiusureOrdini, o.chiusureGambe ?? null, o.chiusura?.alMs?.aliquota ?? null]),
++            ]));
++        }
++        return parti.join('\n');
++    }, [operazioni, feedPerEvento, mikeEventi]);
++    const apertoOggi = useMemo<ApertoAdesso>(() => apertoAdesso({
++        operazioni,
++        prezzo: (eventId, marketId, selectionId) => {
++            const payload = (feedPerEvento.get(eventId)?.payload ?? null) as Parameters<typeof prezzoVivo>[0];
++            const b = prezzoVivo(payload, marketId, selectionId, 'back');
++            const l = prezzoVivo(payload, marketId, selectionId, 'lay');
++            if (b.prezzo == null && l.prezzo == null) return null;
++            const ts = (payload as { odds_ts_ms?: number | null } | null)?.odds_ts_ms;
++            return {
++                back: b.prezzo, backSize: b.abbinabile, lay: l.prezzo, laySize: l.abbinabile,
++                istanteMs: typeof ts === 'number' && Number.isFinite(ts) && ts > 0 ? ts : null,
++                fonte: 'scanner', statoMercato: b.statoMercato ?? l.statoMercato ?? null,
++            };
++        },
++        dueEsiti: (eventId) => dueEsitiMike(mikeEventi.get(eventId)),
++        esitoDeciso: (eventId) => esitoDecisoMike(mikeEventi.get(eventId), operazioni.get(eventId) ?? []),
++        // lo sport della partita dalle sue righe (lo porta la riga al ms)
++        sportDi: (eventId) => (operazioni.get(eventId) ?? [])
++            .map((o) => o.chiusura?.alMs?.sport ?? null).find((s) => s != null) ?? null,
++        nowMs: Date.now(),
++    // la firma contiene tutto cio' che il calcolo legge (righe LIVE, feed, Mike)
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++    }), [firmaAperto]);
++
+     // ── B16 (24/09): IL «CHIUDI» DI UNA RIGA, PER SINGOLO BOT ───────────────
+     // Prima: `requestSafe('cashout', {trade_id})` per QUALUNQUE bot - su una
+     // riga di Omega o di Mike non chiudeva niente, o chiudeva la riga di Safe
+@@ -3751,6 +3800,7 @@ export function useControlRoom(): ControlRoomVM {
+              *  `provaGiornata.arretratiPerSport`, mai qui. Prima: giorno di
+              *  regolamento (F-2 del 26/09), che il 30/09 metteva fra le cifre
+              *  di oggi 4 partite di Safe del 26/09. */
++            perSportConto: perSportDalConto(pnlRealeOggi),
+             perSportPaper: soldiLetti && provaOggi ? {
+                 calcio: breakdownProva(provaOggi.oggiPerSport.calcio),
+                 tennis: breakdownProva(provaOggi.oggiPerSport.tennis),
+@@ -3890,6 +3940,7 @@ export function useControlRoom(): ControlRoomVM {
+         composizioneOggi, manualeSitoBetfair, salvaObiettivo,
+         provaGiornata: provaOggi,
+         contoLettoAt: pnlRealeOggi?.letto_at ?? null,
++        apertoAdesso: soldiLetti ? apertoOggi : null,
+         bots: botsConPnl, posizioni, chiuse, righeChiuse, registrazioni, copertura,
+         freni: safe?.control?.stats?.risk ?? null,
+         soldiVeri,
+diff --git a/frontend/src/components/trading/DayBar.aperto.test.tsx b/frontend/src/components/trading/DayBar.aperto.test.tsx
+new file mode 100644
+index 0000000..a738d24
+--- /dev/null
++++ b/frontend/src/components/trading/DayBar.aperto.test.tsx
+@@ -0,0 +1,39 @@
++// ============================================================================
++// DayBar.aperto.test.tsx - W_G/P6 (30/09): i parametri NUOVI e OPZIONALI della
++// DayBar (usata anche da Mike/Omega/Safe). Senza di loro la barra e' quella di
++// prima; con loro: realizzato che manca detto, aperto tratteggiato nella barra.
++// ============================================================================
++import { describe, expect, it } from 'vitest';
++import { render, within } from '@testing-library/react';
++import { DayBar } from './DayBar';
++
++describe('DayBar - parametri opzionali di W_G', () => {
++    it('senza i parametri nuovi: niente aperto, niente nota, niente «—» inventato (le altre pagine non cambiano)', () => {
++        const s = render(<DayBar dayLabel="mercoledì 30 settembre" realized={null} goal={100} operations={0} live={2} />);
++        expect(s.queryByTestId('day-bar-aperto')).toBeNull();
++        expect(s.queryByTestId('day-bar-aperto-barra')).toBeNull();
++        expect(s.queryByTestId('day-bar-realizzato')).toBeNull();
++        expect(s.queryByTestId('day-bar-rischio')).toBeNull();
++        expect(s.getByTestId('day-bar-counts').textContent).toContain('2 vive');
++    });
++
++    it('realizzato mancante con `realizedMissing`: «—» e il perche\'', () => {
++        const s = render(<DayBar dayLabel="x" realized={null} realizedMissing="conto non letto: P&L dalle righe dei bot" />);
++        expect(s.getByTestId('day-bar-realizzato').textContent).toBe('—');
++        expect(s.getByTestId('day-bar-realizzato-nota').textContent).toBe('conto non letto: P&L dalle righe dei bot');
++    });
++
++    it('aperto +10 su realizzato +20 e obiettivo 100: barra al 30 %, tratteggio dal 20 % largo 10 %', () => {
++        const s = render(<DayBar dayLabel="x" realized={20} goal={100} openNow={10}
++            openNowNode={<span>aperto adesso +10</span>} liveLabel="partite con posizione LIVE" operations={0} live={1} />);
++        const barra = s.getByRole('progressbar');
++        expect(barra.getAttribute('aria-valuenow')).toBe('30');
++        const t = within(barra).getByTestId('day-bar-aperto-barra');
++        expect(t.style.left).toBe('20%');
++        expect(t.style.width).toBe('10%');
++        expect(s.getByTestId('day-bar-aperto').textContent).toBe('aperto adesso +10');
++        expect(s.getByTestId('day-bar-counts').textContent).toContain('1 partite con posizione LIVE');
++        // «obiettivo centrato» resta sul SOLO realizzato
++        expect(s.queryByTestId('day-bar-goal-hit')).toBeNull();
++    });
++});
+diff --git a/frontend/src/components/trading/DayBar.tsx b/frontend/src/components/trading/DayBar.tsx
+index e26ff35..166de1c 100644
+--- a/frontend/src/components/trading/DayBar.tsx
++++ b/frontend/src/components/trading/DayBar.tsx
+@@ -9,6 +9,7 @@
+ // Tutte le props sono opzionali: un bot senza obiettivo (Safe, Mike) mostra
+ // solo i contatori; Omega mostra anche obiettivo, barra, "resta"/"CENTRATO".
+ // ============================================================================
++import type { ReactNode } from 'react';
+ import { Target } from 'lucide-react';
+ import { Card } from '@/components/ui/card';
+ import { fmtMoney, fmtPctPoints } from '@/lib/format';
+@@ -59,12 +60,29 @@ export interface DayBarProps {
+     testId?: string;
+     /** override dei data-testid interni (le pagine conservano i loro storici) */
+     ids?: Partial<Record<'day' | 'line' | 'counts' | 'remaining' | 'goalHit', string>>;
++    // ---- 30/09 (W_G/P6, Control Room) - TUTTI OPZIONALI: assenti = DayBar di prima ----
++    /** con `realized` nullo: al posto del numero, «—» e questa frase (perche' manca) */
++    realizedMissing?: string;
++    /** accanto al numero grande del realizzato (fonte, «nessun ordine regolato oggi»...) */
++    realizedNote?: ReactNode;
++    /**
++     * «aperto adesso (se chiudo tutto)»: entra nell'avanzamento della barra come
++     * parte TRATTEGGIATA (mai nel realizzato, mai in «obiettivo centrato»).
++     */
++    openNow?: number | null;
++    /** come si scrive l'aperto nella riga (etichetta, fonte, partite non calcolabili) */
++    openNowNode?: ReactNode;
++    /** una voce di rischio nella riga (es. esposizione del conto) */
++    riskNode?: ReactNode;
++    /** parola del contatore `live` (di serie quella del glossario) */
++    liveLabel?: string;
+ }
+ 
+ export function DayBar({
+     dayLabel, realized, realizedTotal, goal, matches, operations, won, lost, live,
+     openLiability, lockedPnl, note, labels, countsNote, testId = 'day-bar', ids,
+     realizedEstimated, inProgress,
++    realizedMissing, realizedNote, openNow, openNowNode, riskNode, liveLabel,
+ }: DayBarProps) {
+     const matchesLabel = labels?.matches?.trim() || T.matches;
+     const operationsLabel = labels?.operations?.trim() || T.operations;
+@@ -92,8 +110,13 @@ export function DayBar({
+     const hasGoal = g > 0;
+     // 24/09: l'avanzamento = realizzato + in corso (se passato); senza
+     // `inProgress` e' identico a prima
+-    const avanz = real !== null ? real + (inCorso ?? 0) : null;
++    // W_G: l'aperto (se passato) entra nell'avanzamento come parte tratteggiata
++    const aperto = numero(openNow);
++    const avanz = real !== null ? real + (inCorso ?? 0) + (aperto ?? 0) : null;
+     const pct = hasGoal && avanz !== null ? Math.max(0, Math.min(100, (avanz / g) * 100)) : 0;
++    // la parte PIENA e' il solo realizzato (+ in corso); il tratteggio va fino all'avanzamento
++    const pctPieno = aperto == null ? pct : hasGoal && real !== null
++        ? Math.max(0, Math.min(100, ((real + (inCorso ?? 0)) / g) * 100)) : 0;
+     const remaining = hasGoal && avanz !== null ? Math.max(0, g - avanz) : 0;
+     const centrato = hasGoal && real !== null && real >= g;
+     // §5: UNA sola forma per le percentuali (lib/format), mai un replace locale
+@@ -114,8 +137,20 @@ export function DayBar({
+                 </div>
+                 {real !== null && (
+                     <div className="font-display font-black text-2xl tabular-nums">
+-                        <span className={pnlClass(real)}>{fmtMoney(real, { signed: true })}</span>
++                        <span className={pnlClass(real)} data-testid="day-bar-realizzato">{fmtMoney(real, { signed: true })}</span>
+                         {hasGoal && <span className="text-slate-500 text-lg"> · {pctText}</span>}
++                        {realizedNote != null && (
++                            <div className="text-[10.5px] font-sans font-normal text-slate-400 text-right"
++                                data-testid="day-bar-realizzato-nota">{realizedNote}</div>
++                        )}
++                    </div>
++                )}
++                {/* W_G: un realizzato che manca si DICE (prima il numero spariva) */}
++                {real === null && realizedMissing != null && (
++                    <div className="font-display font-black text-2xl tabular-nums text-slate-500 text-right">
++                        <span data-testid="day-bar-realizzato">—</span>
++                        <div className="text-[10.5px] font-sans font-normal text-amber-300/80"
++                            data-testid="day-bar-realizzato-nota">{realizedMissing}</div>
+                     </div>
+                 )}
+             </div>
+@@ -135,7 +170,7 @@ export function DayBar({
+                             {(won != null || lost != null) && (
+                                 <> · <span title={TIP.winLoss}><b className="text-emerald-400">{won ?? 0}V</b> <b className="text-red-400">{lost ?? 0}P</b></span></>
+                             )}
+-                            {live != null && live > 0 && <> · <span title={TIP.liveCount}><b className="text-sky-300">{live}</b> {T.live}</span></>}
++                            {live != null && live > 0 && <> · <span title={TIP.liveCount}><b className="text-sky-300">{live}</b> {liveLabel?.trim() || T.live}</span></>}
+                         </span>
+                         <span className="text-slate-600" aria-hidden>·</span>
+                     </>
+@@ -159,6 +194,18 @@ export function DayBar({
+                         </span>
+                     </>
+                 )}
++                {openNowNode != null && (
++                    <>
++                        <span className="text-slate-600" aria-hidden>&middot;</span>
++                        <span data-testid="day-bar-aperto">{openNowNode}</span>
++                    </>
++                )}
++                {riskNode != null && (
++                    <>
++                        <span className="text-slate-600" aria-hidden>&middot;</span>
++                        <span data-testid="day-bar-rischio">{riskNode}</span>
++                    </>
++                )}
+                 {hasGoal && real !== null && <span className="text-slate-600" aria-hidden>·</span>}
+                 {hasGoal && real !== null && (!centrato ? (
+                     <span>{T.remaining} <b className="text-amber-300" data-testid={tid.remaining}>{fmtMoney(remaining)}</b></span>
+@@ -207,8 +254,16 @@ export function DayBar({
+                 >
+                     <div
+                         className="absolute inset-y-0 left-0 bg-gradient-to-r from-emerald-500 to-secondary transition-all duration-700"
+-                        style={{ width: `${pct}%` }}
++                        style={{ width: `${aperto == null ? pct : pctPieno}%` }}
+                     />
++                    {/* W_G: l'aperto (stima) TRATTEGGIATO, mai confuso col realizzato */}
++                    {aperto != null && pct !== pctPieno && (
++                        <div
++                            className="absolute inset-y-0 border-2 border-dashed border-secondary/70 bg-secondary/10"
++                            data-testid="day-bar-aperto-barra"
++                            style={{ left: `${Math.min(pct, pctPieno)}%`, width: `${Math.abs(pct - pctPieno)}%` }}
++                        />
++                    )}
+                     <div className="absolute inset-0 flex items-center justify-center text-[11px] font-bold text-white/90 tabular-nums">
+                         {pctText}
+                     </div>
+diff --git a/frontend/src/lib/apertoAdesso.test.ts b/frontend/src/lib/apertoAdesso.test.ts
+new file mode 100644
+index 0000000..8742250
+--- /dev/null
++++ b/frontend/src/lib/apertoAdesso.test.ts
+@@ -0,0 +1,83 @@
++// ============================================================================
++// apertoAdesso.test.ts - W_G/P6 (30/09): «aperto adesso» = SOMMA PER PARTITA
++// del cash out LIVE (matematica di `cashOutPartita`), mai per riga; partite non
++// calcolabili contate a parte, mai sommate in silenzio; paper mai dentro.
++// Righe finte con la forma di `OperazionePartita` (come CashOutGlobale.test).
++// Fatti del 30/09 (progetto §0/§5): Follo -0,82 (Mike, due gambe); Farul
++// PAREGGIATA (punta Under 3,5 5,00 @2,87 + banca green 5,06 @2,84 abbinata).
++// ============================================================================
++import { describe, expect, it } from 'vitest';
++import { apertoAdesso } from './apertoAdesso';
++import type { OperazionePerCashOut } from './cashOutPartita';
++import { PREZZO_VUOTO, type PrezzoScheda } from './schedaAlMs';
++
++type Op = OperazionePerCashOut;
++const ordine = (side: string, price: number, size: number) => ({
++    status: 'open', side, price, size, size_requested: size, size_matched: size,
++    size_remaining: 0, avg_price_matched: price, betfair_updated_at: null, meta: null,
++});
++function op(p: Partial<Op> & Pick<Op, 'id' | 'bot'>): Op {
++    return {
++        selezione: null, lato: 'back', modalita: 'live', marketId: null, selectionId: null,
++        ordine: ordine('back', 2, 5), chiusureOrdini: [], chiusura: { alMs: { aliquota: 0.05 } },
++        ...p,
++    } as Op;
++}
++const FOLLO: Op[] = [
++    op({ id: 5085, bot: 'mike', selezione: 'Under 3.5 Goals', lato: 'back', marketId: '1.35', selectionId: 11,
++        ordine: ordine('back', 2.4, 5) }),
++    op({ id: 5094, bot: 'mike', selezione: 'Under 4.5 Goals', lato: 'lay', marketId: '1.45', selectionId: 21,
++        ordine: ordine('lay', 1.76, 6.32) }),
++];
++const FARUL: Op[] = [
++    op({ id: 5091, bot: 'mike', selezione: 'Under 3.5 Goals', lato: 'back', marketId: '1.91', selectionId: 31,
++        ordine: ordine('back', 2.87, 5),
++        chiusureOrdini: [ordine('lay', 2.84, 5.06)],
++        chiusureGambe: [{ id: 5092, marketId: '1.91', selectionId: 31 }] }),
++];
++const LIBRO: Record<string, Partial<PrezzoScheda>> = {
++    '1.35|11': { back: 2.46, backSize: 80, lay: 2.56, laySize: 60 },
++    '1.45|21': { back: 1.63, backSize: 90, lay: 1.68, laySize: 70 },
++    '1.91|31': { back: 2.8, backSize: 90, lay: 2.9, laySize: 70 },
++};
++const prezzo = (libro: Record<string, Partial<PrezzoScheda>>) =>
++    (_e: string, m: string, s: number): PrezzoScheda | null => {
++        const p = libro[`${m}|${s}`];
++        return p ? { ...PREZZO_VUOTO, fonte: 'scanner', istanteMs: 1, statoMercato: 'OPEN', ...p } : null;
++    };
++
++describe('apertoAdesso - somma PER PARTITA del cash out LIVE', () => {
++    it('Follo -0,82 (due gambe di Mike, una partita)', () => {
++        const a = apertoAdesso({ operazioni: new Map([['E1', FOLLO]]), prezzo: prezzo(LIBRO), nowMs: 2 });
++        expect(a).toEqual({ netto: -0.82, partite: 1, nonCalcolabili: 0,
++            perBot: { mike: { netto: -0.82, partite: 1, nonCalcolabili: 0 } } });
++    });
++
++    it('Farul PAREGGIATA: la chiusura abbinata netta la punta (quasi 0), non la si conta aperta', () => {
++        const a = apertoAdesso({ operazioni: new Map([['E3', FARUL]]), prezzo: prezzo(LIBRO), nowMs: 2 });
++        expect(a.partite).toBe(1);
++        expect(Math.abs(a.netto as number)).toBeLessThan(0.1);
++        // pareggiata in utile su entrambi gli esiti: >= 0. La sola punta (per RIGA,
++        // senza la chiusura che la netta) darebbe una perdita (~ -0,05)
++        expect(a.netto as number).toBeGreaterThanOrEqual(0);
++    });
++
++    it('partita NON calcolabile (manca un prezzo): contata a parte, fuori dalla somma', () => {
++        const senza = { ...LIBRO };
++        delete senza['1.45|21'];
++        const a = apertoAdesso({
++            operazioni: new Map([['E1', FOLLO], ['E3', FARUL]]), prezzo: prezzo(senza), nowMs: 2,
++        });
++        expect(a.nonCalcolabili).toBe(1);
++        expect(a.partite).toBe(1);
++        expect(Math.abs(a.netto as number)).toBeLessThan(0.1);   // solo Farul
++    });
++
++    it('solo paper: nessuna partita LIVE, cifra null', () => {
++        const a = apertoAdesso({
++            operazioni: new Map([['E1', FOLLO.map((o) => ({ ...o, modalita: 'paper' as const }))]]),
++            prezzo: prezzo(LIBRO), nowMs: 2,
++        });
++        expect(a).toEqual({ netto: null, partite: 0, nonCalcolabili: 0, perBot: {} });
++    });
++});
+diff --git a/frontend/src/lib/apertoAdesso.ts b/frontend/src/lib/apertoAdesso.ts
+new file mode 100644
+index 0000000..750bf3d
+--- /dev/null
++++ b/frontend/src/lib/apertoAdesso.ts
+@@ -0,0 +1,89 @@
++// ============================================================================
++// apertoAdesso.ts - «APERTO ADESSO (se chiudo tutto)» per il riquadro Obiettivo.
++//
++// 30/09 (W_G, P6, progetto monitor veritiero §2.C): la vecchia «in corso
++// (stimato)» sommava per RIGA il «chiudi ora» delle sole aperture: una partita
++// pareggiata contava come aperta e le righe senza prezzo sparivano in silenzio.
++// Qui la cifra e' la SOMMA PER PARTITA del cash out LIVE, con la matematica
++// certificata di `lib/cashOutPartita.ts` (esposizione per selezione, chiusure
++// che nettano, commissione per mercato), ai prezzi dello SCANNER gia' in
++// memoria. Una partita non calcolabile NON entra nella somma e si CONTA a
++// parte: mai una somma spacciata per completa. Il paper non entra mai.
++// Funzione pura.
++// ============================================================================
++import {
++    cashOutPartita, gambeDaOperazioni, r2,
++    type GambaViva, type OperazionePerCashOut,
++} from './cashOutPartita';
++import type { PrezzoScheda } from './schedaAlMs';
++
++export interface ApertoPerBot {
++    /** somma delle partite calcolabili del bot; null = nessuna calcolabile */
++    netto: number | null;
++    partite: number;
++    nonCalcolabili: number;
++}
++
++export interface ApertoAdesso {
++    /** somma dei cash out LIVE delle partite CALCOLABILI; null = nessuna */
++    netto: number | null;
++    /** partite con gambe LIVE abbinate e cifra calcolata */
++    partite: number;
++    /** partite con gambe LIVE ma cifra NON calcolabile (prezzo mancante, gamba non scomponibile...) */
++    nonCalcolabili: number;
++    /** per bot: le SOLE gambe di quel bot, partita per partita */
++    perBot: Record<string, ApertoPerBot>;
++}
++
++export interface IngressoAperto {
++    /** righe della scheda per partita (tutte: live e prova, di ogni bot) */
++    operazioni: ReadonlyMap<string, readonly OperazionePerCashOut[]>;
++    /** prezzo dello scanner di una selezione della partita; null = assente */
++    prezzo: (eventId: string, marketId: string, selectionId: number) => PrezzoScheda | null;
++    dueEsiti?: (eventId: string) => ((marketId: string) => boolean) | undefined;
++    esitoDeciso?: (eventId: string) => ((marketId: string, selectionId: number) => boolean | null) | undefined;
++    /** sport della partita: Safe ha una voce per sport (`safe_calcio` / `safe_tennis`) */
++    sportDi?: (eventId: string) => 'calcio' | 'tennis' | null;
++    nowMs: number;
++}
++
++/** Il cash out LIVE di un insieme di gambe di UNA partita: netto o null (non calcolabile), o 'vuoto'. */
++function liveDi(
++    gambe: readonly GambaViva[], eventId: string, i: IngressoAperto,
++): number | null | 'vuoto' {
++    const r = cashOutPartita(gambe, {
++        prezzo: (m, s) => i.prezzo(eventId, m, s),
++        nowMs: i.nowMs,
++        esitoDeciso: i.esitoDeciso?.(eventId),
++    }).live;
++    if (r.nGambe === 0 && r.mancanti.length === 0) return 'vuoto';
++    return r.completo && r.netto != null ? r.netto : null;
++}
++
++export function apertoAdesso(i: IngressoAperto): ApertoAdesso {
++    const out: ApertoAdesso = { netto: null, partite: 0, nonCalcolabili: 0, perBot: {} };
++    let cent = 0;
++    for (const [eventId, ops] of i.operazioni) {
++        if (!ops.some((o) => o.modalita === 'live')) continue;
++        const gambe = gambeDaOperazioni(ops, { dueEsiti: i.dueEsiti?.(eventId) });
++        const tot = liveDi(gambe, eventId, i);
++        if (tot === 'vuoto') continue;
++        if (tot == null) out.nonCalcolabili += 1;
++        else { out.partite += 1; cent += Math.round(tot * 100); }
++        // per bot: le gambe di quel bot sulla partita
++        const bots = [...new Set(gambe.filter((g) => g.modalita === 'live').map((g) => g.bot))];
++        for (const b of bots) {
++            const v = liveDi(gambe.filter((g) => g.bot === b), eventId, i);
++            if (v === 'vuoto') continue;
++            // Safe ha una voce per sport; sport ignoto = 'safe' (mai indovinato)
++            const sp = b === 'safe' ? i.sportDi?.(eventId) ?? null : null;
++            const k = b === 'safe' && sp ? `safe_${sp}` : b;
++            const pb = out.perBot[k] ?? { netto: null, partite: 0, nonCalcolabili: 0 };
++            if (v == null) pb.nonCalcolabili += 1;
++            else { pb.partite += 1; pb.netto = r2((pb.netto ?? 0) + v); }
++            out.perBot[k] = pb;
++        }
++    }
++    out.netto = out.partite > 0 ? cent / 100 : null;
++    return out;
++}
+diff --git a/frontend/src/lib/composizioneConto.test.ts b/frontend/src/lib/composizioneConto.test.ts
+index 8d1d46d..812fdf3 100644
+--- a/frontend/src/lib/composizioneConto.test.ts
++++ b/frontend/src/lib/composizioneConto.test.ts
+@@ -14,7 +14,7 @@ import {
+     componiObiettivo, differenzaContoRighe, leggiPnlRealeOggi, rigaSintetica,
+     type PnlRealeOggi, type RigaComponente,
+ } from './composizioneObiettivo';
+-import { composizioneDalConto } from './composizioneConto';
++import { composizioneDalConto, perSportDalConto } from './composizioneConto';
+ 
+ const OGGI = '2026-09-30';
+ 
+@@ -40,6 +40,24 @@ function composizioneDiOggi(c: PnlRealeOggi, righe: { omega: RigaComponente[]; s
+     return componiObiettivo({ ...righe, tennisBot: [], altro: r ? [r] : [] });
+ }
+ 
++describe('W_G: perSportDalConto - il LIVE per sport dalle voci del conto', () => {
++    it('calcio = Mike+Omega+Safe calcio+Scalper; tennis = Safe tennis+bot tennis; manuali/altri fuori', () => {
++        const c = conto({
++            mike: { netto: 2, ordini: 1 }, omega: { netto: -0.5, ordini: 1 }, scalper: { netto: 0.1, ordini: 2 },
++            safe_calcio: { netto: 0.3, ordini: 1 }, safe_tennis: { netto: 0.41, ordini: 1 },
++            bot_tennis: { netto: -0.2, ordini: 3 }, manuale_sito: { netto: 5, ordini: 1 }, altri_bot: { netto: 1, ordini: 1 },
++        });
++        expect(perSportDalConto(c)).toEqual({ calcio: { pnl: 1.9, ordini: 5 }, tennis: { pnl: 0.21, ordini: 4 } });
++    });
++    it('Safe TENNIS di ieri regolato oggi: nel tennis, non nel calcio (il difetto della «differenza» nel calcio)', () => {
++        const c = conto({ safe_tennis: { netto: 0.41, ordini: 1 } });
++        expect(perSportDalConto(c)).toEqual({ calcio: { pnl: 0, ordini: 0 }, tennis: { pnl: 0.41, ordini: 1 } });
++    });
++    it('conto non letto: null', () => {
++        expect(perSportDalConto(null)).toBeNull();
++    });
++});
++
+ describe('composizioneDalConto - la voce del bot dal conto', () => {
+     it('Mike: posizione di IERI regolata OGGI (riga non caricata) -> sotto Mike, non in «Altro»', () => {
+         const c = conto({ mike: { netto: 2.0, ordini: 1 } });
+diff --git a/frontend/src/lib/composizioneConto.ts b/frontend/src/lib/composizioneConto.ts
+index 9a17734..9c5c676 100644
+--- a/frontend/src/lib/composizioneConto.ts
++++ b/frontend/src/lib/composizioneConto.ts
+@@ -120,6 +120,33 @@ export function composizioneDalConto(
+     return { ...base, righe: out, totale, dalConto: true };
+ }
+ 
++/** La corsia LIVE di uno sport dal conto: netto regolato oggi e numero di ordini regolati. */
++export interface SportDalConto {
++    pnl: number;
++    ordini: number;
++}
++
++/**
++ * 30/09 (W_G) - il LIVE per SPORT dal CONTO (`per_fonte`): calcio = Mike +
++ * Omega + Safe calcio + Scalper; tennis = Safe tennis + bot tennis. Le voci
++ * manuali (app/sito) e «altri bot» non hanno uno sport: restano fuori dalle
++ * tessere (sono nella composizione). `null` = conto non letto.
++ */
++export function perSportDalConto(reale: PnlRealeOggi | null): Record<'calcio' | 'tennis', SportDalConto> | null {
++    if (!reale) return null;
++    const pf = reale.per_fonte;
++    const somma = (fonti: (keyof PnlRealeOggi['per_fonte'])[]): SportDalConto => {
++        let cent = 0;
++        let ordini = 0;
++        for (const f of fonti) { cent += Math.round(pf[f].netto * 100); ordini += pf[f].ordini; }
++        return { pnl: cent / 100, ordini };
++    };
++    return {
++        calcio: somma(['mike', 'omega', 'safe_calcio', 'scalper']),
++        tennis: somma(['safe_tennis', 'bot_tennis']),
++    };
++}
++
+ /** Eta' in secondi della lettura del conto (letto_at); undefined = conto non letto; null = istante illeggibile. */
+ export function etaContoS(lettoAt: string | null | undefined, nowMs: number): number | null | undefined {
+     if (lettoAt == null) return undefined;
+diff --git a/frontend/src/pages/ControlRoom.test.tsx b/frontend/src/pages/ControlRoom.test.tsx
+index 7858c7b..9716faf 100644
+--- a/frontend/src/pages/ControlRoom.test.tsx
++++ b/frontend/src/pages/ControlRoom.test.tsx
+@@ -851,7 +851,9 @@ describe('onestà sulle fonti', () => {
+     it('obiettivo non storicizzato: la pagina lo dice invece di spacciarlo per quello del giorno', () => {
+         mVm.mockReturnValue(vm({ obiettivoStoricizzato: false }));
+         mostra();
+-        expect(screen.getAllByText(/non ancora storicizzato/).length).toBeGreaterThan(0);
++        // W_G (30/09): detto in parole da trader, non piu' «non ancora storicizzato»
++        expect(screen.getAllByText(/Omega oggi non ha ancora girato: l'obiettivo e' quello corrente del servizio/).length)
++            .toBeGreaterThan(0);
+     });
+ });
+ 
+@@ -1090,8 +1092,73 @@ describe('la pagina non mostra MAI un numero che somma paper e live', () => {
+         expect(hero.textContent).not.toMatch(/in corso \(stimato\)/);
+         expect(within(hero).queryByTestId('day-bar-in-corso')).toBeNull();
+         expect(within(hero).getByRole('progressbar').getAttribute('aria-valuenow')).toBe('50');
+-        expect(hero.textContent).toMatch(/rischio adesso: vedi «Esposizione conto» in testata/);
+-        expect(hero.textContent).toMatch(/Cash out della partita/);
++        // W_G (30/09): la nota «rischio adesso: vedi in testata» e' sostituita dal
++        // rischio del CONTO nel riquadro (test P6 sotto); senza conto nel VM, nessuna cifra
++        expect(within(hero).queryByTestId('cr-giornata-rischio')).toBeNull();
++    });
++
++    // ========== W_G / P6 (30/09): il riquadro Obiettivo coi fatti di oggi ==========
++    const contoOggi = (letto: boolean) => ({
++        conto: {
++            letto, esposizione: letto ? -9.95 : null, disponibile: letto ? 30.61 : null,
++            istante: letto ? '2026-09-30T14:04:00Z' : null, fonte: letto ? 'canale' : null,
++            etaS: letto ? 3 : null, attenzione: false, messaggio: '',
++        },
++        rischioBot: { totale: null, completo: false, voci: [] },
++        etaBotS: 4, scarto: null, partite: { live: 1, prova: 0, ignota: 0 }, programmaScanner: 28,
++    });
++    const apertoFollo = {
++        netto: -0.82, partite: 1, nonCalcolabili: 0,
++        perBot: { mike: { netto: -0.82, partite: 1, nonCalcolabili: 0 } },
++    };
++
++    it('P6: conto letto e 0 ordini -> «+0,00 €» con CONTO e «nessun ordine regolato oggi»; aperto -0,82 per partita; rischio 9,95 dal conto', () => {
++        mVm.mockReturnValue(vm({
++            obiettivo: 100,
++            soldiGiornata: { ...vm().soldiGiornata, realizzato: null, fonteReale: 'conto', operazioni: 0, vinte: 0, perse: 0 },
++            contoLettoAt: new Date(Date.parse('2026-09-14T15:00:00Z') - 180_000).toISOString(),
++            apertoAdesso: apertoFollo,
++            soldiVeri: contoOggi(true) as never,
++        }));
++        const s = mostra();
++        const hero = s.getByTestId('cr-obiettivo');
++        expect(within(hero).getByTestId('day-bar-realizzato').textContent).toBe('+0,00 €');
++        const fonte = within(hero).getByTestId('cr-giornata-realizzato-fonte');
++        expect(fonte.textContent).toContain('nessun ordine regolato oggi');
++        expect(within(fonte).getByTestId('marchio-soldi').getAttribute('data-fonte')).toBe('conto');
++        expect(fonte.textContent).toContain('3 min fa');
++        expect(within(hero).getByTestId('cr-giornata-aperto-valore').textContent).toBe('−0,82 €');
++        expect(within(hero).getByTestId('cr-giornata-aperto').textContent).toContain('su 1 partita');
++        expect(within(hero).getByTestId('cr-giornata-aperto-marchio').getAttribute('data-fonte')).toBe('pagina');
++        expect(within(hero).getByTestId('cr-giornata-rischio-valore').textContent).toBe('−9,95 €');
++        expect(within(hero).getByTestId('cr-giornata-rischio-marchio').getAttribute('data-fonte')).toBe('conto');
++        // composizione: aperto di Mike (il tratteggio nella barra: DayBar.aperto.test)
++        expect(within(hero).getByTestId('cr-composizione-mike-aperto').textContent).toContain('−0,82 €');
++        // etichette da trader
++        expect(hero.textContent).toMatch(/operazioni regolate oggi/);
++        expect(hero.textContent).toMatch(/1 partita con posizione LIVE/);
++        expect(hero.textContent).toMatch(/programma dello scanner: 1 partita/);
++    });
++
++    it('P6: una partita NON calcolabile si dice («+ 1 partita non calcolabili»), mai una somma spacciata per completa', () => {
++        mVm.mockReturnValue(vm({
++            apertoAdesso: { ...apertoFollo, nonCalcolabili: 1 },
++            soldiVeri: contoOggi(true) as never,
++        }));
++        const s = mostra();
++        expect(s.getByTestId('cr-giornata-aperto-non-calcolabili').textContent).toBe('+ 1 partita non calcolabili');
++    });
++
++    it('P6: conto NON letto e nessuna riga -> «—» e «conto non letto: P&L dalle righe dei bot»; rischio «—»', () => {
++        mVm.mockReturnValue(vm({
++            soldiGiornata: { ...vm().soldiGiornata, realizzato: null, fonteReale: 'righe' },
++            soldiVeri: contoOggi(false) as never,
++        }));
++        const s = mostra();
++        const hero = s.getByTestId('cr-obiettivo');
++        expect(within(hero).getByTestId('day-bar-realizzato').textContent).toBe('—');
++        expect(within(hero).getByTestId('day-bar-realizzato-nota').textContent).toBe('conto non letto: P&L dalle righe dei bot');
++        expect(within(hero).getByTestId('cr-giornata-rischio-valore').textContent).toBe('—');
+     });
+ 
+     it('R_G: Mike ORA in LIVE senza prova di oggi -> «— (ora in LIVE)», mai «+0,00 [PROVA]»; arretrati invariati', () => {
+@@ -1258,8 +1325,9 @@ describe('la pagina non mostra MAI un numero che somma paper e live', () => {
+             ]),
+         }));
+         const s = mostra();
+-        expect(within(s.getByTestId('cr-sport-tennis')).getByText(/1 aperta/)).toBeTruthy();
+-        expect(within(s.getByTestId('cr-sport-calcio')).getByText(/1 in prova/)).toBeTruthy();
++        // W_G (30/09): si contano PARTITE, e lo si dice
++        expect(within(s.getByTestId('cr-sport-tennis')).getByText(/1 partita con posizione LIVE/)).toBeTruthy();
++        expect(within(s.getByTestId('cr-sport-calcio')).getByText(/1 partita con posizione in prova/)).toBeTruthy();
+     });
+ 
+     // 30/09 (P2) — il caso vero di oggi: Mike LIVE, Safe e Omega in paper.
+diff --git a/frontend/src/pages/ControlRoom.tsx b/frontend/src/pages/ControlRoom.tsx
+index 6bfdada..5d4e1c7 100644
+--- a/frontend/src/pages/ControlRoom.tsx
++++ b/frontend/src/pages/ControlRoom.tsx
+@@ -33,6 +33,8 @@ import { ModeBanner } from '@/components/trading/ModeBanner';
+ import { SplitSport, type SportKey } from '@/components/controlroom/SplitSport';
+ import { corsiePerSport, modalitaVociProva } from '@/lib/giornataCorsie';
+ import { etaContoS } from '@/lib/composizioneConto';
++import { apertoNode, rischioNode } from '@/components/controlroom/ObiettivoVoci';
++import { MarchioSoldi } from '@/components/controlroom/MarchioSoldi';
+ import { SchedaPartita } from '@/components/controlroom/SchedaPartita';
+ import { ObiettivoHero } from '@/components/controlroom/ObiettivoHero';
+ import { SaldoBetfairCard } from '@/components/controlroom/SaldoBetfairCard';
+@@ -525,31 +527,52 @@ export default function ControlRoom() {
+                 <ObiettivoHero
+                     dayBar={{
+                         dayLabel: etichettaGiorno(giornoOperativo),
+-                        realized: vm.soldiGiornata.realizzato,
+-                        // 24/09 - parte stimata del realizzato e posizioni vive ("se chiudo ora")
++                        // 30/09 (W_G/P6) - IL REALIZZATO LIVE SEMPRE VISIBILE: conto
++                        // letto e 0 ordini regolati = 0,00 € dichiarato; conto non
++                        // letto e nessuna riga = «—» col perche'. Prima spariva.
++                        realized: vm.soldiGiornata.realizzato
++                            ?? (vm.soldiGiornata.fonteReale === 'conto' ? 0 : null),
++                        realizedNote: vm.soldiGiornata.fonteReale === 'conto' ? (
++                            <span className="inline-flex items-center gap-1" data-testid="cr-giornata-realizzato-fonte">
++                                <MarchioSoldi fonte="conto" etaS={etaContoS(vm.contoLettoAt, vm.nowMs)}
++                                    dettaglio="netto di commissione, tutto il conto (bot, app e sito), ordini regolati oggi" />
++                                {vm.soldiGiornata.realizzato == null ? 'nessun ordine regolato oggi' : 'netto di commissione, tutto il conto'}
++                            </span>
++                        ) : vm.soldiGiornata.realizzato != null ? (
++                            <span className="inline-flex items-center gap-1" data-testid="cr-giornata-realizzato-fonte">
++                                <MarchioSoldi fonte="bot" dettaglio="conto Betfair non letto: dalle righe dei bot" />
++                                conto non letto: P&amp;L dalle righe dei bot
++                            </span>
++                        ) : undefined,
++                        realizedMissing: 'conto non letto: P&L dalle righe dei bot',
++                        // 24/09 - parte stimata del realizzato
+                         realizedEstimated: vm.soldiGiornata.realizzatoStimato,
++                        // W_G: al posto della stima per riga, l'«aperto adesso» PER PARTITA
++                        openNow: vm.apertoAdesso?.netto ?? null,
++                        openNowNode: apertoNode(vm.apertoAdesso ?? null),
++                        riskNode: rischioNode(vm.soldiVeri?.conto ?? null),
++                        labels: { operations: 'operazioni regolate oggi' },
++                        liveLabel: (vm.soldiVeri?.partite?.live ?? vm.totali.conPosizioneLive) === 1
++                            ? 'partita con posizione LIVE' : 'partite con posizione LIVE',
+                         // 30/09 (R_G): la stima per RIGA («in corso») non si mostra:
+                         // contava da aperte partite gia' pareggiate e taceva le righe
+                         // senza prezzo. Il valore vero e' per partita, nella scheda.
+                         inProgress: null,
+                         goal: vm.obiettivo,
+-                        matches: vm.totali.partite,
++                        // il programma dello scanner non e' un conteggio di soldi: va nella nota
++                        matches: null,
+                         operations: vm.soldiGiornata.operazioni,
+                         won: vm.soldiGiornata.vinte,
+                         lost: vm.soldiGiornata.perse,
+-                        live: vm.totali.conPosizioneLive,
++                        live: vm.soldiVeri?.partite?.live ?? vm.totali.conPosizioneLive,
+                         // 30/09 (R_G): la «Liability aperta» LORDA (somma per riga) non
+                         // e' il rischio vero: il rischio si legge dal conto, in testata
+                         openLiability: null,
+                         note: [
+-                            vm.obiettivoStoricizzato ? null : 'obiettivo non ancora storicizzato per oggi: \u00e8 quello corrente del servizio',
+-                            vm.soldiGiornata.fonteReale === 'conto'
+-                                ? 'P&L netto di commissione da Betfair, tutto il conto (bot, manuale app e sito)'
+-                                : vm.soldiGiornata.fonteReale === 'righe'
+-                                    ? 'conto Betfair non letto: P&L dalle righe dei bot'
+-                                    : null,
+-                            'rischio adesso: vedi «Esposizione conto» in testata',
+-                            'valore delle posizioni aperte: per partita, nel riquadro «Cash out della partita» di ogni scheda',
++                            vm.obiettivoStoricizzato ? null : 'Omega oggi non ha ancora girato: l\'obiettivo e\' quello corrente del servizio',
++                            // W_G: fonte del realizzato accanto al numero; rischio e aperto
++                            // nella riga; qui resta il programma dello scanner (fuori dai soldi)
++                            `programma dello scanner: ${vm.totali.partite} ${vm.totali.partite === 1 ? 'partita' : 'partite'}`,
+                         ].filter(Boolean).join(' - '),
+                         countsNote: ['Operazioni, vinte e perse: SOLO SOLDI VERI, sui tre bot e sui 4 bot tennis (conteggi reali). «Partite» invece è tutto il programma di oggi, comprese quelle su cui non si è operato.', vm.soldiGiornata.notaContatori].filter(Boolean).join(' '),
+                         ids: { day: 'cr-giornata-giorno', line: 'cr-giornata-riga' },
+@@ -559,6 +582,7 @@ export default function ControlRoom() {
+                     prova={vm.provaGiornata ?? null}
+                     contoEtaS={etaContoS(vm.contoLettoAt, vm.nowMs)}
+                     modalitaBot={modalitaVociProva(vm.bots)}
++                    apertoPerBot={vm.apertoAdesso?.perBot ?? null}
+                     onSalvaObiettivo={vm.salvaObiettivo}
+                     avvisoMotore={
+                         vm.bots.find((b) => b.bot === 'omega')?.inCorsa
+@@ -606,6 +630,8 @@ export default function ControlRoom() {
+                 corsie={corsiePerSport(vm.bots)}
+                 aperte={apertePerSport(vm)}
+                 prova={vm.provaGiornata ?? null}
++                perSportConto={vm.soldiGiornata.perSportConto ?? null}
++                contoEtaS={etaContoS(vm.contoLettoAt, vm.nowMs) ?? null}
+                 selezionato={sport}
+                 onSeleziona={setSport}
+             />

@@ -116,6 +116,7 @@ vi.mock('@/lib/scalper', async (orig) => ({
 
 import { fetchScanRows } from '@/lib/safeStrategyScan';
 import { fetchMikeState } from '@/lib/mike';
+import { fetchScalperControlRoom, esposizioneScalper } from '@/lib/scalperControlRoom';
 import { useControlRoom } from '@/components/controlroom/useControlRoom';
 import { useChiusuraAlMs } from '@/components/controlroom/useChiusuraAlMs';
 import { cashOutPartita, gambeDaOperazioni } from '@/lib/cashOutPartita';
@@ -275,6 +276,33 @@ describe('P11: stessa gamba in utile, ramo al ms = ramo scanner al centesimo', (
         expect(r.live.mancanti).toEqual([]);
         expect(r.live.gambe).toHaveLength(1);
         expect(r.live.netto).toBe(0.05);
+    });
+
+    it('W_C: la riga della sessione SCALPER porta le esposizioni per selezione (= esposizioneScalper)', async () => {
+        const ordini = [
+            { id: 1, bet_id: null, client_order_ref: 'a', mode: 'live', event_id: '35800001', market_id: '1.7', selection_id: 1,
+                side: 'BACK', order_type: 'LIMIT', price: 2.0, size: 10, size_matched: 10, size_remaining: 0, size_cancelled: 0,
+                size_lapsed: 0, size_voided: 0, average_price_matched: 2.0, status: 'EXECUTION_COMPLETE', placed_at: PIAZZATO,
+                matched_at: PIAZZATO, updated_at: PIAZZATO, source: 'scalper' },
+            { id: 2, bet_id: null, client_order_ref: 'b', mode: 'live', event_id: '35800001', market_id: '1.7', selection_id: 2,
+                side: 'BACK', order_type: 'LIMIT', price: 3.0, size: 5, size_matched: 5, size_remaining: 0, size_cancelled: 0,
+                size_lapsed: 0, size_voided: 0, average_price_matched: 3.0, status: 'EXECUTION_COMPLETE', placed_at: PIAZZATO,
+                matched_at: PIAZZATO, updated_at: PIAZZATO, source: 'scalper' },
+        ];
+        vi.mocked(fetchScalperControlRoom).mockResolvedValue({
+            sessioni: [{ event_id: '35800001', status: 'running', mode: 'live', dry_run: false, stake: 10, params: null,
+                bias: null, bias_meta: null, stats: null, error: null, requested_at: PIAZZATO, started_at: PIAZZATO,
+                stopped_at: null, heartbeat_at: PIAZZATO, updated_at: PIAZZATO, event_name: 'A v B', league_name: null,
+                kickoff: null, ultima_attivita_at: null, ultima_attivita_kind: null }],
+            ordini, lettoAt: PIAZZATO,
+        } as never);
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        const riga = (result.current.operazioni.get('35800001') ?? []).find((o) => o.bot === 'scalper');
+        const atteso = esposizioneScalper(ordini as never).selezioni
+            .map((e) => ({ marketId: e.marketId, selectionId: e.selectionId, selezione: null, win: e.win, lose: e.lose }));
+        expect(riga?.esposizioneSelezioni).toEqual(atteso);
+        expect(atteso.map((e) => [e.selectionId, e.win, e.lose])).toEqual([[1, 10, -10], [2, 10, -5]]);
     });
 
     it('in perdita nessuna commissione: lay 2,10 -> ms = scanner', async () => {

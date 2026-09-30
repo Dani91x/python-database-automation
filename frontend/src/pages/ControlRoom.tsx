@@ -18,6 +18,10 @@
 //
 // LAYOUT: testata con la giornata · partite per campionato in ordine
 // cronologico · nastro dei segnali · posizioni aperte.
+//
+// W_B1 (30/09, P10): anche la scheda PRE-PARTITA riceve le operazioni della
+// partita e la partita di Mike (`ElencoPartite`, ramo `pre`): ordini pre-fischio,
+// cash out della partita e scheda di Mike come nella scheda in gioco.
 // ============================================================================
 import { useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
@@ -33,7 +37,20 @@ import { ModeBanner } from '@/components/trading/ModeBanner';
 import { SplitSport, type SportKey } from '@/components/controlroom/SplitSport';
 import { corsiePerSport, modalitaVociProva } from '@/lib/giornataCorsie';
 import { etaContoS } from '@/lib/composizioneConto';
+import { apertoNode, rischioNode } from '@/components/controlroom/ObiettivoVoci';
+import { MarchioSoldi } from '@/components/controlroom/MarchioSoldi';
 import { SchedaPartita } from '@/components/controlroom/SchedaPartita';
+// W_T/P15 (30/09) - scheda «Posizioni aperte»: stato per partita e fuori programma
+import { NomiPartita } from '@/components/controlroom/NomiPartita';
+import { CashOutGlobalePartita } from '@/components/controlroom/CashOutGlobale';
+import { RigaOperazione } from '@/components/controlroom/DettaglioRigaView';
+import { dueEsitiMike } from '@/lib/cashOutPartita';
+// W_T/P14 - ordini del conto fuori dai bot, per partita (contesto per le schede)
+import { OrdiniContoPartita, OrdiniContoContext } from '@/components/controlroom/OrdiniContoPartita';
+import type { MikeEvent } from '@/lib/mike';
+import {
+    statoPartitaAperta, type StatoPartitaAperta, type EsitoStatoPartita,
+} from '@/components/controlroom/aperte/statoPartitaAperta';
 import { ObiettivoHero } from '@/components/controlroom/ObiettivoHero';
 import { SaldoBetfairCard } from '@/components/controlroom/SaldoBetfairCard';
 import { UsciteColonna } from '@/components/controlroom/UsciteColonna';
@@ -51,7 +68,7 @@ import { fmtMs, totaleCatena, totaleNostro, colloDiBottiglia } from '@/lib/contr
 import type { StatoChiusuraEvento } from '@/lib/chiusuraUtente';
 import {
     useControlRoom,
-    type StatoBot, type PosizioneAperta,
+    type StatoBot, type PosizioneAperta, type OperazionePartita,
 } from '@/components/controlroom/useControlRoom';
 import { righeInterruttori } from '@/components/controlroom/righeBot';
 import { PannelloBot } from '@/components/controlroom/PannelloBot';
@@ -525,31 +542,52 @@ export default function ControlRoom() {
                 <ObiettivoHero
                     dayBar={{
                         dayLabel: etichettaGiorno(giornoOperativo),
-                        realized: vm.soldiGiornata.realizzato,
-                        // 24/09 - parte stimata del realizzato e posizioni vive ("se chiudo ora")
+                        // 30/09 (W_G/P6) - IL REALIZZATO LIVE SEMPRE VISIBILE: conto
+                        // letto e 0 ordini regolati = 0,00 € dichiarato; conto non
+                        // letto e nessuna riga = «—» col perche'. Prima spariva.
+                        realized: vm.soldiGiornata.realizzato
+                            ?? (vm.soldiGiornata.fonteReale === 'conto' ? 0 : null),
+                        realizedNote: vm.soldiGiornata.fonteReale === 'conto' ? (
+                            <span className="inline-flex items-center gap-1" data-testid="cr-giornata-realizzato-fonte">
+                                <MarchioSoldi fonte="conto" etaS={etaContoS(vm.contoLettoAt, vm.nowMs)}
+                                    dettaglio="netto di commissione, tutto il conto (bot, app e sito), ordini regolati oggi" />
+                                {vm.soldiGiornata.realizzato == null ? 'nessun ordine regolato oggi' : 'netto di commissione, tutto il conto'}
+                            </span>
+                        ) : vm.soldiGiornata.realizzato != null ? (
+                            <span className="inline-flex items-center gap-1" data-testid="cr-giornata-realizzato-fonte">
+                                <MarchioSoldi fonte="bot" dettaglio="conto Betfair non letto: dalle righe dei bot" />
+                                conto non letto: P&amp;L dalle righe dei bot
+                            </span>
+                        ) : undefined,
+                        realizedMissing: 'conto non letto: P&L dalle righe dei bot',
+                        // 24/09 - parte stimata del realizzato
                         realizedEstimated: vm.soldiGiornata.realizzatoStimato,
+                        // W_G: al posto della stima per riga, l'«aperto adesso» PER PARTITA
+                        openNow: vm.apertoAdesso?.netto ?? null,
+                        openNowNode: apertoNode(vm.apertoAdesso ?? null),
+                        riskNode: rischioNode(vm.soldiVeri?.conto ?? null),
+                        labels: { operations: 'operazioni regolate oggi' },
+                        liveLabel: (vm.soldiVeri?.partite?.live ?? vm.totali.conPosizioneLive) === 1
+                            ? 'partita con posizione LIVE' : 'partite con posizione LIVE',
                         // 30/09 (R_G): la stima per RIGA («in corso») non si mostra:
                         // contava da aperte partite gia' pareggiate e taceva le righe
                         // senza prezzo. Il valore vero e' per partita, nella scheda.
                         inProgress: null,
                         goal: vm.obiettivo,
-                        matches: vm.totali.partite,
+                        // il programma dello scanner non e' un conteggio di soldi: va nella nota
+                        matches: null,
                         operations: vm.soldiGiornata.operazioni,
                         won: vm.soldiGiornata.vinte,
                         lost: vm.soldiGiornata.perse,
-                        live: vm.totali.conPosizioneLive,
+                        live: vm.soldiVeri?.partite?.live ?? vm.totali.conPosizioneLive,
                         // 30/09 (R_G): la «Liability aperta» LORDA (somma per riga) non
                         // e' il rischio vero: il rischio si legge dal conto, in testata
                         openLiability: null,
                         note: [
-                            vm.obiettivoStoricizzato ? null : 'obiettivo non ancora storicizzato per oggi: \u00e8 quello corrente del servizio',
-                            vm.soldiGiornata.fonteReale === 'conto'
-                                ? 'P&L netto di commissione da Betfair, tutto il conto (bot, manuale app e sito)'
-                                : vm.soldiGiornata.fonteReale === 'righe'
-                                    ? 'conto Betfair non letto: P&L dalle righe dei bot'
-                                    : null,
-                            'rischio adesso: vedi «Esposizione conto» in testata',
-                            'valore delle posizioni aperte: per partita, nel riquadro «Cash out della partita» di ogni scheda',
+                            vm.obiettivoStoricizzato ? null : 'Omega oggi non ha ancora girato: l\'obiettivo e\' quello corrente del servizio',
+                            // W_G: fonte del realizzato accanto al numero; rischio e aperto
+                            // nella riga; qui resta il programma dello scanner (fuori dai soldi)
+                            `programma dello scanner: ${vm.totali.partite} ${vm.totali.partite === 1 ? 'partita' : 'partite'}`,
                         ].filter(Boolean).join(' - '),
                         countsNote: ['Operazioni, vinte e perse: SOLO SOLDI VERI, sui tre bot e sui 4 bot tennis (conteggi reali). «Partite» invece è tutto il programma di oggi, comprese quelle su cui non si è operato.', vm.soldiGiornata.notaContatori].filter(Boolean).join(' '),
                         ids: { day: 'cr-giornata-giorno', line: 'cr-giornata-riga' },
@@ -559,6 +597,7 @@ export default function ControlRoom() {
                     prova={vm.provaGiornata ?? null}
                     contoEtaS={etaContoS(vm.contoLettoAt, vm.nowMs)}
                     modalitaBot={modalitaVociProva(vm.bots)}
+                    apertoPerBot={vm.apertoAdesso?.perBot ?? null}
                     onSalvaObiettivo={vm.salvaObiettivo}
                     avvisoMotore={
                         vm.bots.find((b) => b.bot === 'omega')?.inCorsa
@@ -606,6 +645,8 @@ export default function ControlRoom() {
                 corsie={corsiePerSport(vm.bots)}
                 aperte={apertePerSport(vm)}
                 prova={vm.provaGiornata ?? null}
+                perSportConto={vm.soldiGiornata.perSportConto ?? null}
+                contoEtaS={etaContoS(vm.contoLettoAt, vm.nowMs) ?? null}
                 selezionato={sport}
                 onSeleziona={setSport}
             />
@@ -720,12 +761,16 @@ export default function ControlRoom() {
                 {/* B16 (24/09) — il «Chiudi» di ogni riga, cablato sul SUO bot:
                     il contesto non disegna niente, porta solo il comando. */}
                 <ChiusuraRigaContext.Provider value={chiusuraRiga}>
+                {/* W_T/P14: gli ordini del conto fuori dai bot per le schede
+                    (assenti dal modello di vista = nessun contesto, niente a schermo) */}
+                <OrdiniContoContext.Provider value={vm.ordiniConto ? { stato: vm.ordiniConto, nowMs: vm.nowMs } : null}>
                 <Tabs value={scheda} onValueChange={setScheda} className="min-w-0 xl:[grid-column:1]">
                     <TabsList className="w-full justify-start flex-wrap h-auto gap-1 bg-white/[0.03] p-1">
                         <Scheda valore="pre" conta={contaPre} testId="cr-tab-pre">Pre-match</Scheda>
                         <Scheda valore="live" conta={contaLive} testId="cr-tab-live">Live</Scheda>
+                        {/* W_T/P15: mai un contatore unico: partite LIVE e in prova */}
                         <Scheda valore="aperte" conta={posizioni.length} testId="cr-tab-aperte"
-                            evidenzia={posizioni.some((x) => x.modalita === 'live')}>Posizioni aperte</Scheda>
+                            contaTesto={<ContaAperte posizioni={posizioni} />}>Posizioni aperte</Scheda>
                         <Scheda valore="chiuse" conta={contaChiuse} testId="cr-tab-chiuse">Posizioni chiuse</Scheda>
                     </TabsList>
 
@@ -783,6 +828,7 @@ export default function ControlRoom() {
                             giorno={giornoOperativo} barra={vm.composizioneOggi} />
                     </TabsContent>
                 </Tabs>
+                </OrdiniContoContext.Provider>
                 </ChiusuraRigaContext.Provider>
 
                 {/* le due colonne di decisione: su schermi < xl si impilano in
@@ -1202,17 +1248,21 @@ function descriviModalita(b: StatoBot): string {
 
 /** Una linguetta con il suo conteggio: si vede quale scheda ha qualcosa
  *  dentro senza doverle aprire tutte. */
-function Scheda({ valore, conta, children, testId, evidenzia = false }: {
+function Scheda({ valore, conta, children, testId, evidenzia = false, contaTesto }: {
     valore: string; conta: number; children: React.ReactNode;
     testId: string; evidenzia?: boolean;
+    /** W_T/P15: al posto del numero unico (es. «3 LIVE · 2 prova») */
+    contaTesto?: React.ReactNode;
 }) {
     return (
         <TabsTrigger value={valore} data-testid={testId}
             className="text-[11px] uppercase tracking-wider data-[state=active]:bg-white/10">
             {children}
-            <span className={`ml-1.5 font-mono text-[10px] ${
-                evidenzia ? 'text-red-300 font-bold' : 'text-white/40'
-            }`}>{conta}</span>
+            {contaTesto ?? (
+                <span className={`ml-1.5 font-mono text-[10px] ${
+                    evidenzia ? 'text-red-300 font-bold' : 'text-white/40'
+                }`}>{conta}</span>
+            )}
         </TabsTrigger>
     );
 }
@@ -1313,6 +1363,9 @@ function ElencoPartite({
                                     mancaS={p.koMs == null ? null : Math.max(0, Math.round((p.koMs - nowMs) / 1000))}
                                     registra={registrazioni.has(p.event_id)}
                                     registratoreVivo={registratori[p.sport === 'tennis' ? 'tennis' : 'calcio']}
+                                    /* W_B1 (P10): le operazioni pre-fischio e Mike, come la scheda in gioco */
+                                    operazioni={operazioni.get(p.event_id) ?? []}
+                                    mike={mikeEventi?.get(p.event_id) ?? null}
                                 />
                             ) : (
                                 <SchedaPartita
@@ -1373,21 +1426,46 @@ function AperteTab({
     // riga compatta di sempre. Derivarla da `giornata.soldi.aperta` invece
     // di `posizioni` creerebbe una SECONDA fonte di verità, che può
     // divergere (es. la riga cambia prima che il programma la rilegga).
-    const { partiteConPosizione, orfane } = useMemo(() => {
-        const partiteMap = new Map<string, PartitaGiornata>();
-        for (const g of giornata) for (const p of g.partite) partiteMap.set(p.event_id, p);
-        const eventiUnici = Array.from(new Set(posizioni.map((p) => p.eventId)));
-        const partite = eventiUnici
-            .map((id) => partiteMap.get(id))
-            .filter((p): p is PartitaGiornata => p != null);
-        // posizioni «orfane»: non su nessuna partita nota al programma di
-        // oggi — MAI nascoste (una con soldi veri su un evento sconosciuto è
-        // comunque una posizione vera, fail-open).
-        const senzaScheda = posizioni.filter((p) => !partiteMap.has(p.eventId));
-        return { partiteConPosizione: partite, orfane: senzaScheda };
-    }, [giornata, posizioni]);
-    const live = posizioni.filter((p) => p.modalita === 'live');
-    const vuoto = partiteConPosizione.length === 0 && orfane.length === 0;
+    // W_T/P15 (30/09): per PARTITA (evento), con la sua scheda se e' nel
+    // programma, altrimenti la scheda "fuori programma" con la stessa grafica.
+    // Una partita va fra le LIVE se ha almeno una gamba NON paper (una
+    // modalita' non dichiarata potrebbe essere soldi veri: fail-safe).
+    const eventi = useMemo(() => raggruppaAperte(giornata, posizioni), [giornata, posizioni]);
+    const liveEv = eventi.filter((e) => e.live);
+    const provaEv = eventi.filter((e) => !e.live);
+    const gambeLive = posizioni.filter((p) => p.modalita === 'live').length;
+    const vuoto = eventi.length === 0;
+
+    const scheda = (e: EventoAperto, conStato: boolean) => {
+        const ops = operazioni.get(e.eventId) ?? [];
+        const mike = mikeEventi?.get(e.eventId) ?? null;
+        return (
+            <div key={e.eventId} className="space-y-1" data-testid={`cr-aperta-${e.eventId}`}>
+                {conStato && (
+                    <StatoPartitaRiga
+                        esito={statoPartitaAperta(ops, { chiusa: e.partita?.stato === 'chiusa', dueEsiti: dueEsitiMike(mike) })}
+                        testId={`cr-aperta-stato-${e.eventId}`} />
+                )}
+                {e.partita ? (
+                    <SchedaPartita
+                        p={e.partita} scheda="aperte"
+                        operazioni={ops}
+                        mike={mike}
+                        registra={registrazioni.has(e.eventId)}
+                        registratoreVivo={registratori[e.partita.sport === 'tennis' ? 'tennis' : 'calcio']}
+                        safe={{
+                            modalita: safe.modalita,
+                            chiusa: safe.statoChiusura(e.eventId),
+                            onCashOut: safe.onCashOut,
+                            onRiprendi: safe.onRiprendi,
+                        }}
+                    />
+                ) : (
+                    <SchedaFuoriProgramma posizioni={e.posizioni} operazioni={ops} mike={mike} />
+                )}
+            </div>
+        );
+    };
 
     return (
         <Card className="glass-card border-white/10 p-0 overflow-hidden" data-testid="cr-posizioni">
@@ -1395,51 +1473,151 @@ function AperteTab({
                 <span className="text-[11px] uppercase tracking-wider text-white/60">
                     Posizioni aperte{sport && <span className="text-white/35 normal-case tracking-normal"> · solo {sport}</span>}
                 </span>
-                <span className="text-[11px] text-white/40">{posizioni.length}</span>
+                <span className="text-[11px] text-white/40" data-testid="cr-aperte-conteggi">
+                    <span className={liveEv.length ? 'text-red-300 font-semibold' : ''}>{liveEv.length} LIVE</span>
+                    {' · '}{provaEv.length} prova
+                </span>
             </div>
 
-            {live.length > 0 && (
-                <div className="px-3 py-1.5 border-b border-orange-500/30 bg-orange-500/10 text-[11px] text-orange-300">
-                    {live.length} {live.length === 1 ? 'posizione' : 'posizioni'} con soldi veri
+            {gambeLive > 0 && (
+                <div className="px-3 py-1.5 border-b border-orange-500/30 bg-orange-500/10 text-[11px] text-orange-300"
+                    data-testid="cr-aperte-banner-live">
+                    {liveEv.length} {liveEv.length === 1 ? 'partita' : 'partite'} con posizione LIVE
+                    {' · '}{gambeLive} {gambeLive === 1 ? 'gamba' : 'gambe'} con soldi veri
                 </div>
             )}
 
-            <div className="max-h-[calc(100vh-240px)] overflow-y-auto p-3 space-y-2">
+            <div className="max-h-[calc(100vh-240px)] overflow-y-auto p-3 space-y-3">
                 {vuoto && (
                     <EmptyState>{sport
                         ? `Nessuna posizione aperta sul ${sport}. Clicca di nuovo la tessera per rivedere tutti gli sport.`
                         : 'Nessuna posizione aperta. Quando un bot va a mercato, compare qui.'}</EmptyState>
                 )}
 
-                {partiteConPosizione.map((p) => (
-                    <SchedaPartita
-                        key={p.event_id} p={p} scheda="aperte"
-                        operazioni={operazioni.get(p.event_id) ?? []}
-                        mike={mikeEventi?.get(p.event_id) ?? null}
-                        registra={registrazioni.has(p.event_id)}
-                        registratoreVivo={registratori[p.sport === 'tennis' ? 'tennis' : 'calcio']}
-                        safe={{
-                            modalita: safe.modalita,
-                            chiusa: safe.statoChiusura(p.event_id),
-                            onCashOut: safe.onCashOut,
-                            onRiprendi: safe.onRiprendi,
-                        }}
-                    />
-                ))}
-
-                {orfane.length > 0 && (
-                    <div className="pt-1">
-                        <div className="text-[10px] uppercase tracking-wider text-white/35 px-0.5 pb-1"
-                            title="una posizione su un evento non presente nel programma di oggi: mai nascosta">
-                            posizioni su una partita fuori dal programma di oggi
-                        </div>
-                        <div className="space-y-2">
-                            {orfane.map((p) => (
-                                <RigaPosizioneOrfana key={`${p.bot}-${p.id}`} p={p} />
-                            ))}
-                        </div>
-                    </div>
+                {liveEv.length > 0 && (
+                    <section className="space-y-2" data-testid="cr-aperte-live">
+                        <h3 className="text-[10px] uppercase tracking-wider font-bold text-red-300 flex items-center gap-2">
+                            LIVE: soldi veri
+                            <span className="font-mono px-1 rounded bg-red-500/20" data-testid="cr-aperte-live-conta">{liveEv.length}</span>
+                        </h3>
+                        {liveEv.map((e) => scheda(e, true))}
+                    </section>
                 )}
+
+                {provaEv.length > 0 && (
+                    <section className="space-y-2" data-testid="cr-aperte-prova">
+                        <h3 className="text-[10px] uppercase tracking-wider text-white/40 flex items-center gap-2">
+                            PROVA: simulato, mai sommato
+                            <span className="font-mono px-1 rounded bg-white/10" data-testid="cr-aperte-prova-conta">{provaEv.length}</span>
+                        </h3>
+                        {provaEv.map((e) => scheda(e, false))}
+                    </section>
+                )}
+            </div>
+        </Card>
+    );
+}
+
+/** W_T/P15: la linguetta «Posizioni aperte · 3 LIVE · 2 prova» (partite). */
+function ContaAperte({ posizioni }: { posizioni: readonly PosizioneAperta[] }) {
+    const live = new Set<string>();
+    const tutte = new Set<string>();
+    for (const p of posizioni) {
+        tutte.add(p.eventId);
+        if (p.modalita !== 'paper') live.add(p.eventId);
+    }
+    const prova = tutte.size - live.size;
+    return (
+        <span className="ml-1.5 font-mono text-[10px] normal-case" data-testid="cr-tab-aperte-conta"
+            title="partite con posizione aperta: LIVE (soldi veri) e in prova, mai sommate">
+            <span className={live.size ? 'text-red-300 font-bold' : 'text-white/40'}>{live.size} LIVE</span>
+            <span className="text-white/40">{' · '}{prova} prova</span>
+        </span>
+    );
+}
+
+/** W_T/P15: una partita con posizione (evento), dalla lista UNICA `vm.posizioni`. */
+interface EventoAperto {
+    eventId: string;
+    /** la partita del programma di oggi; null = fuori programma (mai nascosta) */
+    partita: PartitaGiornata | null;
+    posizioni: PosizioneAperta[];
+    /** almeno una gamba non paper (live o modalita' non dichiarata) */
+    live: boolean;
+}
+
+function raggruppaAperte(giornata: GruppoCampionato[], posizioni: readonly PosizioneAperta[]): EventoAperto[] {
+    const partiteMap = new Map<string, PartitaGiornata>();
+    for (const g of giornata) for (const p of g.partite) partiteMap.set(p.event_id, p);
+    const out = new Map<string, EventoAperto>();
+    for (const p of posizioni) {
+        const e = out.get(p.eventId) ?? {
+            eventId: p.eventId, partita: partiteMap.get(p.eventId) ?? null, posizioni: [], live: false,
+        };
+        e.posizioni.push(p);
+        if (p.modalita !== 'paper') e.live = true;
+        out.set(p.eventId, e);
+    }
+    // prima quelle del programma (ordine delle posizioni), poi le fuori programma
+    const tutte = Array.from(out.values());
+    return [...tutte.filter((e) => e.partita), ...tutte.filter((e) => !e.partita)];
+}
+
+const STATO_APERTA_CLS: Record<StatoPartitaAperta, string> = {
+    'A RISCHIO': 'bg-red-500/20 text-red-300 border-red-500/40',
+    PAREGGIATA: 'bg-teal-500/15 text-teal-300 border-teal-500/40',
+    'DA REGOLARE': 'bg-amber-500/15 text-amber-300 border-amber-500/40',
+    'NON CALCOLABILE': 'bg-orange-500/15 text-orange-300 border-orange-500/40',
+};
+
+/** Lo stato della partita LIVE in una parola; i numeri nel title. */
+function StatoPartitaRiga({ esito, testId }: { esito: EsitoStatoPartita; testId: string }) {
+    return (
+        <div className="flex items-center gap-2 text-[10.5px]">
+            <span className={`px-1.5 py-0.5 rounded border font-bold uppercase tracking-wider text-[9.5px] ${STATO_APERTA_CLS[esito.stato]}`}
+                data-testid={testId} title={esito.dettaglio}>
+                {esito.stato}
+            </span>
+            {esito.casoPeggiore != null && (
+                <span className="text-white/45 font-mono tabular-nums" title="caso peggiore fra gli esiti, gambe LIVE dei bot (non i soldi fuori dai bot)">
+                    caso peggiore {fmtMoney(esito.casoPeggiore, { signed: true })}
+                </span>
+            )}
+        </div>
+    );
+}
+
+/**
+ * W_T/P15: una partita FUORI dal programma di oggi con la STESSA grafica delle
+ * altre: nomi (`NomiPartita`, dal nome della riga del bot), riquadro del cash
+ * out della partita (`CashOutGlobalePartita`, con le sue operazioni), le righe
+ * (`RigaOperazione`); sotto, per gamba, il «chiudi ora» di sempre.
+ */
+function SchedaFuoriProgramma({ posizioni, operazioni, mike }: {
+    posizioni: PosizioneAperta[];
+    operazioni: OperazionePartita[];
+    mike: MikeEvent | null;
+}) {
+    const nome = posizioni[0]?.partita ?? DASH;
+    const tennis = posizioni.some((p) => isBotTennis(p.bot));
+    return (
+        <Card className="glass-card border-white/10 p-0 overflow-hidden" data-testid="cr-scheda-fuori-programma">
+            <div className="px-2.5 pt-2 flex items-start gap-2">
+                <NomiPartita nome={nome} />
+                <span className="text-[9.5px] uppercase tracking-wider text-white/35"
+                    title="una posizione su un evento non presente nel programma di oggi: mai nascosta">
+                    fuori dal programma di oggi
+                </span>
+            </div>
+            <CashOutGlobalePartita sport={tennis ? 'tennis' : 'calcio'} operazioni={operazioni} mike={mike} />
+            {posizioni[0] && <OrdiniContoPartita eventId={posizioni[0].eventId} sport={tennis ? 'tennis' : 'calcio'} />}
+            {operazioni.length > 0 && (
+                <div className="px-2.5 pt-1.5 space-y-1">
+                    {operazioni.map((o) => <RigaOperazione key={`${o.bot}-${o.id}`} o={o} />)}
+                </div>
+            )}
+            <div className="p-2.5 space-y-2">
+                {posizioni.map((p) => <RigaPosizioneOrfana key={`${p.bot}-${p.id}`} p={p} />)}
             </div>
         </Card>
     );
@@ -1463,7 +1641,8 @@ function RigaPosizioneOrfana({ p }: {
                     : <Badge variant="outline" className="h-4 px-1 text-[9px] border-white/20 text-white/40">paper</Badge>}
                 <span className="ml-auto font-mono text-[11px] text-white/40">{fmtTime(p.piazzataAt)}</span>
             </div>
-            <div className="text-[12px] mt-1 leading-tight">{p.partita}</div>
+            {/* W_T/P15: il nome della partita sta ora nella testata della scheda
+                fuori programma (`NomiPartita`), non ripetuto per gamba */}
             <div className="flex items-baseline gap-2 mt-1 text-[11px] text-white/60">
                 {p.lato && (
                     <span className={`px-1.5 py-0.5 rounded border text-[9px] font-bold uppercase tracking-wider ${LATO_CLS[p.lato]}`}>

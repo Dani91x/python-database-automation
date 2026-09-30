@@ -179,6 +179,7 @@ describe('partiteConPosizione', () => {
             ...APERTE_OGGI,
             { eventId: 'Z', modalita: 'paper' }, { eventId: 'Z', modalita: 'paper' },
             { eventId: 'W', modalita: null },
-        ])).toEqual({ live: 3, prova: 1, ignota: 1 });
+        // W_T/P15: in piu' le GAMBE live (5 righe su 3 partite)
+        ])).toEqual({ live: 3, prova: 1, ignota: 1, gambeLive: 5 });
     });
 });

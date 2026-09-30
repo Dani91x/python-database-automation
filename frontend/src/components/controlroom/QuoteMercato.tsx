@@ -29,6 +29,7 @@
 // ============================================================================
 import { fmtOdds, fmtAge, fmtNum, DASH } from '@/lib/format';
 import { marketStatusMeta } from '@/lib/mike';
+import { ticksBetween } from '@/lib/riskMath';
 import type { LineaOuScheda, PartitaFeedLike, Sport, StatoQuote } from '@/lib/controlRoom';
 
 /** «fermo» NON è un allarme: è un mercato che non si muove, e quel prezzo è
@@ -65,8 +66,26 @@ export interface CellaQuota {
 }
 
 /** Una quota Betfair valida è > 1: tutto il resto è «assente», mai `0,00`. */
+function valida(v: number | null | undefined): v is number {
+    return typeof v === 'number' && Number.isFinite(v) && v > 1;
+}
+
 function quota(v: number | null | undefined): string {
-    return typeof v === 'number' && Number.isFinite(v) && v > 1 ? fmtOdds(v) : DASH;
+    return valida(v) ? fmtOdds(v) : DASH;
+}
+
+/**
+ * W_B1 (30/09, progetto §4.C) — SPREAD «POCO LIQUIDO». Oltre questa distanza in
+ * tick (scala Betfair, `ticksBetween` di `lib/riskMath.ts`) fra miglior BACK e
+ * miglior LAY la cella porta accanto una nota GRIGIA: e' un'informazione, non
+ * un allarme (entrare e uscire costa quella distanza). Soglia fissa, dichiarata.
+ */
+export const SOGLIA_SPREAD_TICK = 5;
+
+/** Tick fra BACK e LAY; null se manca un lato (nessuno spread inventato). */
+export function spreadTick(back: number | null | undefined, lay: number | null | undefined): number | null {
+    if (!valida(back) || !valida(lay)) return null;
+    return Math.abs(ticksBetween(back, lay));
 }
 
 export function QuoteMercato({ celle, testId, titolo }: {
@@ -76,17 +95,28 @@ export function QuoteMercato({ celle, testId, titolo }: {
 }) {
     return (
         <span className="inline-flex items-center gap-1 flex-wrap" data-testid={testId} title={titolo}>
-            {celle.map((c) => (
-                <span key={c.chiave} data-testid="cr-quota-cella" title={c.titolo}
-                    className="inline-flex items-baseline gap-1 rounded border border-white/10 bg-white/[0.03] px-1.5 py-0.5">
-                    <span className="text-[11px] font-semibold text-white/60 max-w-[9rem] truncate">{c.etichetta}</span>{' '}
-                    <span className="font-mono tabular-nums text-[12.5px] font-semibold text-sky-300"
-                        data-testid="cr-quota-back" title="miglior BACK (punta)">{quota(c.back)}</span>
-                    <span className="text-white/25 text-[11px]">/</span>
-                    <span className="font-mono tabular-nums text-[12.5px] font-semibold text-rose-300"
-                        data-testid="cr-quota-lay" title="miglior LAY (banca)">{quota(c.lay)}</span>
-                </span>
-            ))}
+            {celle.map((c) => {
+                const spread = spreadTick(c.back, c.lay);
+                return (
+                    <span key={c.chiave} className="inline-flex items-baseline gap-1">
+                        <span data-testid="cr-quota-cella" title={c.titolo}
+                            className="inline-flex items-baseline gap-1 rounded border border-white/10 bg-white/[0.03] px-1.5 py-0.5">
+                            <span className="text-[11px] font-semibold text-white/60 max-w-[9rem] truncate">{c.etichetta}</span>{' '}
+                            <span className="font-mono tabular-nums text-[12.5px] font-semibold text-sky-300"
+                                data-testid="cr-quota-back" title="miglior BACK (punta)">{quota(c.back)}</span>
+                            <span className="text-white/25 text-[11px]">/</span>
+                            <span className="font-mono tabular-nums text-[12.5px] font-semibold text-rose-300"
+                                data-testid="cr-quota-lay" title="miglior LAY (banca)">{quota(c.lay)}</span>
+                        </span>
+                        {spread != null && spread > SOGLIA_SPREAD_TICK && (
+                            <span className="text-[10px] text-white/40 whitespace-nowrap" data-testid="cr-quota-spread"
+                                title={`fra miglior BACK e miglior LAY ci sono ${spread} tick (soglia ${SOGLIA_SPREAD_TICK} tick): mercato poco liquido, entrare e uscire costa questa distanza`}>
+                                spread {spread} tick · poco liquido
+                            </span>
+                        )}
+                    </span>
+                );
+            })}
         </span>
     );
 }
@@ -104,15 +134,31 @@ function haPrezzo(l: Lato): boolean {
  * Odds (`scanner.tennis_sides`): nessun codice lega quell'ordine all'ordine dei
  * nomi nell'`event_name`, quindi qui non si scrive un nome che potrebbe essere
  * quello sbagliato. `null` = nessun prezzo nel blocco: la fila non si monta.
+ *
+ * W_B1 (30/09, decisione del coordinatore): se lo scanner porta i DUE nomi
+ * (`PartitaGiornata.giocatori`, `p1`/`p2` del payload, `scanner.split_event_name`)
+ * le celle portano il nome (P1 = `giocatori.p1`) e il title DICHIARA che
+ * l'ordine e' quello dello scanner (`sortPriority` del Match Odds), la stessa
+ * assunzione gia' dichiarata dalla barra tennis. Un nome mancante: P1/P2.
  */
-export function celleMatchOdds(sport: Sport, odds: PartitaFeedLike['odds'] | undefined): CellaQuota[] | null {
+export function celleMatchOdds(
+    sport: Sport,
+    odds: PartitaFeedLike['odds'] | undefined,
+    giocatori?: { p1: string | null; p2: string | null } | null,
+): CellaQuota[] | null {
     if (!odds) return null;
     if (sport === 'tennis') {
         if (!haPrezzo(odds.p1) && !haPrezzo(odds.p2)) return null;
         const t = 'selezione del Match Odds con ordine Betfair (sortPriority)';
+        const n1 = giocatori?.p1?.trim() ?? '';
+        const n2 = giocatori?.p2?.trim() ?? '';
+        const conNomi = n1 !== '' && n2 !== '';
+        const nota = ': nome dallo scanner (event_name diviso), abbinato per ordine — P1 = primo nome = sortPriority 1';
         return [
-            { chiave: 'p1', etichetta: 'P1', back: odds.p1?.back ?? null, lay: odds.p1?.lay ?? null, titolo: `P1 = ${t} 1` },
-            { chiave: 'p2', etichetta: 'P2', back: odds.p2?.back ?? null, lay: odds.p2?.lay ?? null, titolo: `P2 = ${t} 2` },
+            { chiave: 'p1', etichetta: conNomi ? n1 : 'P1', back: odds.p1?.back ?? null, lay: odds.p1?.lay ?? null,
+                titolo: conNomi ? `${n1} = ${t} 1${nota}` : `P1 = ${t} 1` },
+            { chiave: 'p2', etichetta: conNomi ? n2 : 'P2', back: odds.p2?.back ?? null, lay: odds.p2?.lay ?? null,
+                titolo: conNomi ? `${n2} = ${t} 2${nota}` : `P2 = ${t} 2` },
         ];
     }
     if (!haPrezzo(odds.home) && !haPrezzo(odds.draw) && !haPrezzo(odds.away)) return null;

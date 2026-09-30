@@ -24,7 +24,7 @@
 // ============================================================================
 import { legPnl, type LegPnl, type MatchTradeLike } from '@/lib/omegaMatches';
 import { greenupBadge, hedgeInfo, tradeModelOf, type GreenupBadge } from '@/lib/omega';
-import { esitoOrdineMeta, statusMetaOf, type EsitoOrdineMeta, type Meta } from '@/lib/tradeStatus';
+import { esitoOrdineMeta, motivoErroreTesto, statusMetaOf, type EsitoOrdineMeta, type Meta } from '@/lib/tradeStatus';
 import { statoOrdine, type RigaOrdine } from '@/lib/statoOrdine';
 import { tickAFavore } from '@/lib/riskMath';
 import { isSettled } from '@/lib/eventGroups';
@@ -203,7 +203,7 @@ export function dettaglioDi<T extends RigaDettagliabile>(
         // 30/09 (P13): l'esito vero di un ordine non abbinato, se il servizio lo
         // scrive; altrimenti il badge di sempre
         stato: esitoOrdineMeta({ status: t.status, meta }, statoOrdine(t as RigaOrdine).errorCode)
-            ?? statusMetaOf({ status: t.status, meta }),
+            ?? statoConMotivo({ status: t.status, meta }),
         ingresso: {
             minuto: num(t.minute_at_entry),
             punteggio: punteggioIngresso(t.score_at_entry),
@@ -220,6 +220,18 @@ export function dettaglioDi<T extends RigaDettagliabile>(
         gamba: str(opts.gamba) ?? str(t.phase),
         chiusure: chiusureDi(closes),
     };
+}
+
+/**
+ * W_B2 (30/09): una riga 'error' senza esito classificabile resta «ERRORE»
+ * (stesso badge di `statusMetaOf`), con accanto il motivo scritto dal servizio
+ * (`motivoErroreTesto`: tradotto dove si sa, grezzo altrimenti). Mai
+ * un'etichetta rassicurante senza prova.
+ */
+function statoConMotivo(r: { status: string | null | undefined; meta: Record<string, unknown> | null }): Meta {
+    const base = statusMetaOf(r);
+    const motivo = motivoErroreTesto(r);
+    return motivo ? { ...base, label: `${base.label} · ${motivo}` } : base;
 }
 
 function latoDiChiusura(v: unknown): 'back' | 'lay' | null {
@@ -245,7 +257,7 @@ function chiusureDi<T extends RigaDettagliabile>(closes: readonly T[]): Chiusura
                 prezzo: num(c.price),
                 size: num(c.size),
                 pnl: isSettled(c.status) ? num(c.pnl) : null,
-                stato: esito ?? statusMetaOf({ status: c.status, meta: cMeta }),
+                stato: esito ?? statoConMotivo({ status: c.status, meta: cMeta }),
                 uscita: str((cMeta ?? {})['exit_kind']),
                 at: c.placed_at,
                 esito,

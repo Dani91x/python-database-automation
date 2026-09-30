@@ -42,26 +42,27 @@ import {
 } from '@/components/ui/accordion';
 import { Power, Square, SlidersHorizontal, AlertTriangle, Loader2, Ban } from 'lucide-react';
 import { fmtMoney, fmtAge, DASH } from '@/lib/format';
+import { BOT_STATUS_META, botStatusMeta } from '@/lib/tradeStatus';
 import { BOT_LABEL, type Bot } from '@/lib/controlRoom';
 import { interruttoreDi } from '@/lib/interruttori';
 import { etichettaArretrati, type GruppoArretrati } from '@/lib/provaGiornata';
 import { InterruttoreUscite } from './InterruttoreUscite';
+import { MarchioSoldi } from './MarchioSoldi';
+import type { FonteOggiLive } from './righeBot';
 import type {
     CampoImporto, InterruttoreId, Modalita, ComandiInterruttori, SportBot, StatoUscite,
 } from '@/lib/interruttori';
 
 export type { CampoImporto, Modalita } from '@/lib/interruttori';
 
-/** Le parole dello stato del servizio. Ogni stato che i servizi scrivono ha
- *  una frase sua: «sta fermandosi» e «fermo» non sono la stessa cosa. */
-const STATO_TESTO: Record<string, string> = {
-    running: 'in esecuzione',
-    stopping: 'sta fermandosi',
-    stopped: 'fermo',
-    idle: 'fermo',
-    error: 'in errore',
-    ignoto: 'stato non letto',
-};
+/** Le parole dello stato del servizio: ogni stato ha la sua («IN ARRESTO» non e'
+ *  «FERMO»). W_B2 (30/09): UNA parola per stato, quella di `botStatusMeta` (lib/tradeStatus.ts:
+ *  IN CORSA / IN ARRESTO / FERMO / INATTIVO / ERRORE), la stessa dei chip della
+ *  testata e delle pagine dei bot. «stato non letto» resta: non e' uno stato del bot. */
+function statoTesto(stato: string): string {
+    if (stato in BOT_STATUS_META) return botStatusMeta(stato).label;
+    return stato === 'ignoto' ? 'stato non letto' : stato;
+}
 
 const STATO_CLS: Record<string, string> = {
     running: 'text-emerald-400',
@@ -209,6 +210,8 @@ export interface RigaInterruttore {
      * scrive «—», mai «0,00 €», che vorrebbe dire «ho chiuso in pari».
      */
     pnlOggi?: number | null;
+    /** W_B2 (M15): SOLO sulle righe LIVE, da dove viene `pnlOggi` (conto Betfair o righe del bot) */
+    fonteOggi?: FonteOggiLive | null;
     /**
      * 30/09 (P8bis) - IN PROVA: le partite di giorni precedenti regolate oggi
      * (es. al riavvio), accanto a `pnlOggi` e MAI dentro. Assente = nessuna.
@@ -412,7 +415,7 @@ export function PannelloBot({
                                             <span className="flex items-center gap-1" aria-hidden>
                                                 {righeG.map((r) => (
                                                     <span key={r.id} className={`h-1.5 w-1.5 rounded-full ${colorePuntoStato(r)}`}
-                                                        title={`${r.etichetta}: ${STATO_TESTO[r.stato] ?? r.stato}`} />
+                                                        title={`${r.etichetta}: ${statoTesto(r.stato)}`} />
                                                 ))}
                                             </span>
                                             {riassunto.live && (
@@ -587,7 +590,7 @@ function RigaBot({
 
                 <span className={`text-[11px] ${STATO_CLS[r.stato] ?? 'text-white/40'}`}
                     data-testid={`cr-bot-stato-${r.id}`}>
-                    {STATO_TESTO[r.stato] ?? r.stato}
+                    {statoTesto(r.stato)}
                 </span>
 
                 {r.modalita == null ? (
@@ -619,12 +622,24 @@ function RigaBot({
                     <span className="text-[10px] font-mono" data-testid={`cr-bot-pnl-${r.id}`}
                         title={r.pnlOggi == null
                             ? "oggi non c'e' ancora niente di regolato per questo bot"
-                            : `P&L di oggi ${live ? 'con soldi veri' : 'in prova'}, netto di commissione`}>
+                            : `P&L di oggi ${live ? 'con soldi veri' : 'in prova'}, netto di commissione${r.fonteOggi?.nota ? ` · ${r.fonteOggi.nota}` : ''}`}>
                         <span className="text-white/30">oggi </span>
                         <span className={r.pnlOggi == null ? 'text-white/40'
                             : r.pnlOggi < 0 ? 'text-red-400' : 'text-emerald-400'}>
                             {r.pnlOggi == null ? DASH : fmtMoney(r.pnlOggi)}
                         </span>
+                        {/* W_B2 (M15): la FONTE della cifra LIVE, e «letto e vuoto» detto tale */}
+                        {r.fonteOggi && r.pnlOggi != null && (
+                            <>
+                                {r.fonteOggi.vuoto && (
+                                    <span className="text-white/40" data-testid={`cr-bot-pnl-vuoto-${r.id}`}> · nessuna regolata oggi</span>
+                                )}
+                                {' '}<MarchioSoldi fonte={r.fonteOggi.fonte}
+                                    etaS={r.fonteOggi.fonte === 'conto' ? (r.fonteOggi.etaS ?? null) : undefined}
+                                    dettaglio={r.fonteOggi.nota ?? undefined}
+                                    testId={`cr-bot-pnl-fonte-${r.id}`} />
+                            </>
+                        )}
                     </span>
                 )}
                 {/* 30/09 (P8bis): gli arretrati IN PROVA, a parte, con la data:

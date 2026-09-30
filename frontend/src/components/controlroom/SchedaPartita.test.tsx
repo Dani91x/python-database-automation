@@ -10,6 +10,7 @@ import { SchedaPartita } from './SchedaPartita';
 import { SchedaPreMatch } from './SchedaPreMatch';
 import type { PartitaGiornata, PartitaSoldi } from '@/lib/controlRoom';
 import type { TennisLiveNowRow, TennisScoreState } from '@/lib/tennis';
+import type { MikeEvent } from '@/lib/mike';
 
 const hoisted = vi.hoisted(() => ({
     row: null as unknown,
@@ -375,6 +376,17 @@ describe('SchedaPartita — B1: tennis, quote della barra con lo stesso componen
         expect(screen.queryByTestId('cr-tennis-vivo')).toBeNull();
     });
 
+    it('W_B1: tennis in gioco senza posizione, coi nomi dello scanner le celle dicono il giocatore', () => {
+        monta(partita({
+            soldi: SOLDI_CHIUSI, latenzaQuoteS: 4, statoQuote: 'fresco',
+            odds: { p1: { back: 1.5, lay: 1.52 }, p2: { back: 2.6, lay: 2.66 } },
+            giocatori: { p1: 'Federer R.', p2: 'Nadal R.' },
+        }));
+        const celle = within(screen.getByTestId('cr-tennis-quote')).getAllByTestId('cr-quota-cella');
+        expect(celle.map((c) => c.textContent)).toEqual(['Federer R. 1,50/1,52', 'Nadal R. 2,60/2,66']);
+        expect(celle[1].getAttribute('title')).toMatch(/sortPriority\) 2/);
+    });
+
     it('tennis in gioco CON posizione: solo la barra del runner, MAI anche le quote dello scanner', async () => {
         hoisted.row = tennisRow();
         monta(partita({
@@ -389,6 +401,47 @@ describe('SchedaPartita — B1: tennis, quote della barra con lo stesso componen
     it('tennis NON in gioco (conclusa) senza posizione: nessuna fila di quote dello scanner', () => {
         monta(partita({ soldi: SOLDI_CHIUSI, stato: 'chiusa', odds: { p1: { back: 1.5, lay: 1.52 }, p2: null } }));
         expect(screen.queryByTestId('cr-tennis-quote')).toBeNull();
+    });
+
+    // W_B1: accanto alle celle della barra, l'eta' delle QUOTE del runner
+    it('accanto alle quote della barra: «ultimo aggiornamento del runner: N s» da state.updated_ms', async () => {
+        hoisted.row = tennisRow({
+            state: { markets: [{ market_id: '1.9', market_type: 'MATCH_ODDS', market_name: 'Match Odds', status: 'OPEN',
+                selections: [{ selection_id: 11, name: 'Federer R.', back: 1.5, lay: 1.52, ltp: 1.5 }] }],
+            order_mode: 'LIVE', updated_ms: Date.now() - 7_000 },
+        });
+        monta(partita({ soldi: SOLDI_APERTI }));
+        const e = await screen.findByTestId('cr-tennis-vivo-eta-quote');
+        expect(e).toHaveTextContent(/^ultimo aggiornamento del runner: [78] s$/);
+        expect(e.getAttribute('title')).toMatch(/LETTURA/);
+        expect(e.getAttribute('title')).toMatch(/non .* cambio/);
+        expect(within(e).getByTestId('cr-tennis-vivo-eta-quote-valore').className).toContain('text-white/50');
+    });
+
+    // una LETTURA recente del runner non prova che i prezzi siano freschi (la
+    // cache puo' essere vecchia): mai il verde di «fresco», grigio neutro
+    it('lettura recentissima (1 s): grigio neutro, mai il verde di «fresco»', async () => {
+        hoisted.row = tennisRow({
+            state: { markets: [{ market_id: '1.9', market_type: 'MATCH_ODDS', market_name: 'Match Odds', status: 'OPEN',
+                selections: [{ selection_id: 11, name: 'Federer R.', back: 1.5, lay: 1.52, ltp: 1.5 }] }],
+            order_mode: 'LIVE', updated_ms: Date.now() - 1_000 },
+        });
+        monta(partita({ soldi: SOLDI_APERTI }));
+        const v = within(await screen.findByTestId('cr-tennis-vivo-eta-quote')).getByTestId('cr-tennis-vivo-eta-quote-valore');
+        expect(v.className).toContain('text-white/50');
+        expect(v.className).not.toMatch(/emerald/);
+    });
+
+    it('stato senza updated_ms: «ultimo aggiornamento del runner: età ignota» in arancione', async () => {
+        hoisted.row = tennisRow({
+            state: { markets: [{ market_id: '1.9', market_type: 'MATCH_ODDS', market_name: 'Match Odds', status: 'OPEN',
+                selections: [{ selection_id: 11, name: 'Federer R.', back: 1.5, lay: 1.52, ltp: 1.5 }] }],
+            order_mode: 'LIVE' },
+        });
+        monta(partita({ soldi: SOLDI_APERTI }));
+        const e = await screen.findByTestId('cr-tennis-vivo-eta-quote');
+        expect(e).toHaveTextContent('ultimo aggiornamento del runner: età ignota');
+        expect(within(e).getByTestId('cr-tennis-vivo-eta-quote-valore').className).toContain('text-orange-400');
     });
 
     it('l’età della barra dice che è quella del PUNTEGGIO', async () => {
@@ -423,10 +476,51 @@ describe('SchedaPartita — B1: glossario, «liability» e mai «responsabilità
             },
         }));
         const riga = screen.getByTestId('cr-liability-partita');
-        expect(riga).toHaveTextContent('liability 9,80 €');
-        expect(riga).toHaveTextContent('prova 4,00 €');
+        // W_B2 (30/09, M1): cambiato di proposito - la somma delle righe si dice LORDA
+        expect(riga).toHaveTextContent('liability delle righe (lorda) 9,80 €');
+        expect(riga).toHaveTextContent('prova (lorda) 4,00 €');
         expect(container.innerHTML).not.toMatch(/resp\.|responsabilit/i);
-        expect(riga.innerHTML).toContain('liability impegnata con SOLDI VERI');
-        expect(riga.innerHTML).toContain('liability impegnata in PROVA: non sono soldi veri e non si sommano');
+        expect(riga.innerHTML).toContain('liability delle righe aperte con SOLDI VERI, sommate riga per riga senza compensare');
+        expect(riga.innerHTML).toContain('non sono soldi veri e non si sommano');
+    });
+});
+
+describe('SchedaPartita — W_B2 (M1): mai la stessa parola per due numeri diversi', () => {
+    const SOLDI_FOLLO = {
+        live: { netPnl: null, liability: 12.93, investito: 11.32, aperta: true },
+        paper: { netPnl: null, liability: 0, investito: 0, aperta: false },
+        modi: ['live'], bots: ['mike'],
+    } as unknown as PartitaSoldi;
+    function mikeEv(mode: 'live' | 'paper', liability: number | null): MikeEvent {
+        return {
+            event_id: 'C1', fixture_id: null, event_name: 'Roma v Lazio', competition: 'Serie A', league_id: null,
+            ko_at: new Date().toISOString(), mode, markets: {}, state: 'LIVE_COVERED', cycle_no: 0,
+            entry_price_initial: 2.4, dossier: null,
+            live: { liability, feed_age_s: 1 } as unknown as MikeEvent['live'],
+            positions: [], ctx: null, skipped: false, settled_pnl: null, updated_at: new Date().toISOString(),
+        };
+    }
+    function montaConMike(ev: MikeEvent | null) {
+        return render(<MemoryRouter><SchedaPartita p={partitaCalcio({ soldi: SOLDI_FOLLO })} operazioni={[]} mike={ev} /></MemoryRouter>);
+    }
+
+    it('Mike LIVE: «Liability aperta (netta, Mike)» dal servizio con marchio BOT, e la lorda delle righe detta tale', () => {
+        montaConMike(mikeEv('live', 9.8));
+        const netta = screen.getByTestId('cr-liability-netta-mike');
+        expect(netta).toHaveTextContent('Liability aperta (netta, Mike) 9,80 €');
+        expect(screen.getByTestId('cr-liability-netta-mike-fonte').getAttribute('data-fonte')).toBe('bot');
+        const riga = screen.getByTestId('cr-liability-partita');
+        expect(riga).toHaveTextContent('liability delle righe (lorda) 12,93 €');
+        // nessuna cifra con la parola nuda «liability» senza dire quale
+        expect(riga.textContent).not.toMatch(/(^|[^(])liability \d/);
+    });
+
+    it('Mike in PAPER o senza dato: nessuna netta accanto ai soldi veri', () => {
+        const { unmount } = montaConMike(mikeEv('paper', 9.8));
+        expect(screen.queryByTestId('cr-liability-netta-mike')).toBeNull();
+        unmount();
+        montaConMike(mikeEv('live', null));
+        expect(screen.queryByTestId('cr-liability-netta-mike')).toBeNull();
+        expect(screen.getByTestId('cr-liability-partita')).toHaveTextContent('liability delle righe (lorda) 12,93 €');
     });
 });

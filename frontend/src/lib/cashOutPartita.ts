@@ -57,6 +57,10 @@ import { etaQuoteS, type MikeEvent } from '@/lib/mike';
 
 /** Sotto 1 centesimo di sbilancio la selezione e' piatta (greenup.FLAT_EPS). */
 export const PIATTO_EPS = 0.01;
+/** W_C: sotto 2 centesimi e SENZA prezzo, la selezione e' «pareggiata». */
+export const PAREGGIATA_EPS = 0.02;
+
+const fmtCent = (v: number) => `${r2(v).toFixed(2).replace('.', ',')}`;
 /** Sotto mezzo centesimo un abbinato non esiste (statoOrdine.EPS). */
 const ABBINATO_EPS = 0.005;
 /** L'aliquota quando la gamba non la porta (`useControlRoom.aliquotaDi`). */
@@ -92,17 +96,23 @@ export interface GambaViva {
     /** una gamba che la pagina NON sa scomporre (es. sessione scalper): il
      *  motivo va in `mancanti` se e' abbinata */
     nonScomponibile?: string | null;
+    /** W_C (30/09 sera): esposizione GIA' calcolata dal bot per la selezione
+     *  (sessione scalper, `esposizioneScalper`): P&L se vince / se perde
+     *  dell'ABBINATO. Se c'e', `lato`/`abbinato`/`prezzoMedio` non servono. */
+    esposizione?: { win: number; lose: number } | null;
 }
 
 /** Una componente della posizione (la gamba come la ha fatta il bot). */
 export interface ComponenteCashOut {
     id: number | string;
     bot: string;
-    lato: 'back' | 'lay';
-    abbinato: number;
-    prezzo: number;
+    /** null = componente «esposizione» (W/L gia' calcolati dal bot) */
+    lato: 'back' | 'lay' | null;
+    abbinato: number | null;
+    prezzo: number | null;
     selectionId: number;
     selezione: string | null;
+    esposizione?: { win: number; lose: number };
 }
 
 export type StatoPosizione = 'da_chiudere' | 'piatta' | 'decisa' | 'senza_prezzo' | 'mercato_non_aperto';
@@ -207,6 +217,13 @@ function esposizione(componenti: readonly ComponenteCashOut[], sel: number): { w
     let w = 0;
     let l = 0;
     for (const c of componenti) {
+        if (c.esposizione) {
+            // W/L gia' della selezione della componente; sull'ALTRA selezione di
+            // un mercato a due esiti si scambiano (vince l'una = perde l'altra)
+            if (c.selectionId === sel) { w += c.esposizione.win; l += c.esposizione.lose; } else { w += c.esposizione.lose; l += c.esposizione.win; }
+            continue;
+        }
+        if (c.abbinato == null || c.prezzo == null) continue;
         const vinc = vincitaPunta(c.abbinato, c.prezzo);
         if (c.selectionId === sel) {
             if (c.lato === 'back') { w += vinc; l -= c.abbinato; } else { w -= vinc; l += c.abbinato; }
@@ -227,7 +244,10 @@ function vuoto(): CashOutModalita {
 }
 
 /** Il cash out di UNA modalita' (le gambe sono gia' filtrate per modalita'). */
-function calcolaModalita(gambe: readonly GambaViva[], o: OpzioniCashOut, extraMancanti: string[]): CashOutModalita {
+function calcolaModalita(
+    gambe: readonly GambaViva[], o: OpzioniCashOut, extraMancanti: string[],
+    nomi: ReadonlyMap<string, string> = new Map(),
+): CashOutModalita {
     const out = vuoto();
     out.mancanti.push(...extraMancanti);
     // 1. solo l'ABBINATO, con mercato, selezione, lato e prezzo medio dichiarati
@@ -236,6 +256,23 @@ function calcolaModalita(gambe: readonly GambaViva[], o: OpzioniCashOut, extraMa
         const a = g.abbinato;
         if (g.nonScomponibile) {
             if (a == null || a > ABBINATO_EPS) out.mancanti.push(`${g.bot} #${g.id}: ${g.nonScomponibile}`);
+            continue;
+        }
+        if (g.esposizione) {
+            const e = g.esposizione;
+            if (!g.marketId || g.selectionId == null || !valido(e.win) || !valido(e.lose)) {
+                out.mancanti.push(`esposizione incompleta: ${g.bot} #${g.id} (${nomeSel(g)})`);
+                continue;
+            }
+            out.nGambe += 1;
+            const me = perMercato.get(g.marketId) ?? { componenti: [], aliquote: new Set<number>(), dueEsiti: false };
+            me.componenti.push({
+                id: g.id, bot: g.bot, lato: null, abbinato: null, prezzo: null,
+                selectionId: Number(g.selectionId), selezione: g.selezione, esposizione: { win: r2(e.win), lose: r2(e.lose) },
+            });
+            me.aliquote.add(aliquotaDi(g));
+            me.dueEsiti = me.dueEsiti || g.dueEsiti === true;
+            perMercato.set(g.marketId, me);
             continue;
         }
         if (a == null || !valido(a)) {
@@ -304,7 +341,10 @@ function calcolaModalita(gambe: readonly GambaViva[], o: OpzioniCashOut, extraMa
                 chiave: `${marketId}|${k.sel}`, marketId, selectionId: k.sel,
                 // il nome della selezione CHIAVE; se nessuna gamba e' su quella
                 // (mercato a due esiti) il nome non si inventa: null
-                selezione: k.comp.find((c) => c.selectionId === k.sel)?.selezione ?? null,
+                // W_C: prima dell'id grezzo, il nome dalle altre gambe della
+                // stessa (mercato, selezione) di qualunque bot/modalita'
+                selezione: k.comp.find((c) => c.selectionId === k.sel)?.selezione
+                    ?? nomi.get(`${marketId}|${k.sel}`) ?? null,
                 bot: Array.from(new Set(k.comp.map((c) => c.bot))),
                 componenti: k.comp,
                 lato: uno ? uno.lato : null, abbinato: uno ? uno.abbinato : null,
@@ -334,6 +374,12 @@ function calcolaModalita(gambe: readonly GambaViva[], o: OpzioniCashOut, extraMa
                 if (statoM && statoM !== 'OPEN') {
                     pos.stato = 'mercato_non_aperto';
                     out.mancanti.push(`mercato ${statoM === 'SUSPENDED' ? 'SOSPESO' : statoM === 'CLOSED' ? 'CHIUSO' : statoM} per ${nomeTrader}: adesso non si chiude`);
+                } else if ((prezzo == null || !pz) && r2(Math.abs(d)) < PAREGGIATA_EPS) {
+                    // W_C (basso del revisore): sbilancio sotto 2 centesimi e
+                    // prezzo assente: e' una partita PAREGGIATA, vale il bloccato
+                    pos.stato = 'piatta';
+                    pos.pnlLordo = r2(Math.min(k.w, k.l));
+                    out.avvisi.push(`${nomeTrader}: pareggiata (±${fmtCent(Math.abs(d))}), prezzo assente: vale il bloccato`);
                 } else if (prezzo == null || !pz) {
                     pos.stato = 'senza_prezzo';
                     out.mancanti.push(`manca il prezzo di ${nomeTrader} (${lato === 'lay' ? 'banca' : 'punta'})`);
@@ -422,9 +468,16 @@ export function cashOutPartita(gambe: readonly GambaViva[], o: OpzioniCashOut): 
     // fail-closed: una gamba abbinata senza modalita' potrebbe essere di soldi
     // veri: il LIVE non si calcola finche' non e' dichiarata
     const manc = ignote.map((g) => `modalita' non dichiarata: ${g.bot} #${g.id} (${nomeSel(g)})`);
+    // i nomi delle selezioni noti a QUALUNQUE gamba (per non stampare l'id grezzo)
+    const nomi = new Map<string, string>();
+    for (const g of gambe) {
+        if (g.marketId && g.selectionId != null && g.selezione && !nomi.has(`${g.marketId}|${g.selectionId}`)) {
+            nomi.set(`${g.marketId}|${g.selectionId}`, g.selezione);
+        }
+    }
     return {
-        live: calcolaModalita(live, o, manc),
-        paper: calcolaModalita(paper, o, []),
+        live: calcolaModalita(live, o, manc, nomi),
+        paper: calcolaModalita(paper, o, [], nomi),
     };
 }
 
@@ -461,7 +514,15 @@ export interface OperazionePerCashOut {
     pnl?: number | null;
     /** opzionale finche' la pagina non lo porta (v. `IdGambaChiusura`) */
     chiusureGambe?: (IdGambaChiusura | null)[];
+    /** W_C: solo la sessione scalper, esposizioni per selezione dell'abbinato */
+    esposizioneSelezioni?: { marketId: string; selectionId: number; selezione: string | null; win: number; lose: number }[];
+    /** stato della riga (scalper: stato della SESSIONE) e residuo scoperto */
+    stato?: string;
+    residuo?: boolean;
 }
+
+/** Sessione scalper ferma (`chiudiRiga.SCALPER_FERMABILE` e' il complemento). */
+const SESSIONE_FERMA = new Set(['stopped', 'done', 'error']);
 
 function latoDi(side: unknown): 'back' | 'lay' | null {
     const s = String(side ?? '').toLowerCase();
@@ -522,6 +583,23 @@ export function gambeDaOperazioni(
         if (op.bot === 'scalper') {
             const so = statoOrdine(op.ordine ?? {});
             if (so.esito === 'regolato') continue;
+            // P&L reale del conto = sessione chiusa e regolata: non e' viva;
+            // sessione ferma senza residuo scoperto: niente da chiudere
+            if (op.pnl != null && Number.isFinite(Number(op.pnl))) continue;
+            if (SESSIONE_FERMA.has(String(op.stato ?? '').toLowerCase()) && !op.residuo) continue;
+            // W_C: le esposizioni ABBINATE per selezione della sessione
+            // (`esposizioneScalper`): una gamba «esposizione» per selezione
+            if (op.esposizioneSelezioni) {
+                for (const e of op.esposizioneSelezioni) {
+                    out.push({
+                        id: `${op.id}/${e.selectionId}`, bot: op.bot, modalita: op.modalita,
+                        marketId: e.marketId, selectionId: e.selectionId, selezione: e.selezione,
+                        lato: null, abbinato: null, prezzoMedio: null, aliquota,
+                        dueEsiti: due(e.marketId), esposizione: { win: e.win, lose: e.lose },
+                    });
+                }
+                continue;
+            }
             out.push({
                 id: op.id, bot: op.bot, modalita: op.modalita, marketId: null, selectionId: null,
                 selezione: op.selezione, lato: null, abbinato: so.abbinato.valore, prezzoMedio: null,
@@ -566,6 +644,21 @@ export function dueEsitiMike(mike: MikeEvent | null | undefined): ((marketId: st
     const ids = new Set(Object.values(mike?.markets ?? {})
         .map((m) => m?.market_id).filter((x): x is string => typeof x === 'string' && x !== ''));
     return ids.size === 0 ? undefined : (marketId: string) => ids.has(marketId);
+}
+
+/**
+ * W_C - i mercati a DUE esiti della partita: quelli di Mike (O/U) e, nel
+ * TENNIS, il Match Odds (`mo_market_id` della scheda: due giocatori). Solo il
+ * Match Odds del tennis: set betting e altri mercati tennis hanno piu' esiti e
+ * restano per selezione.
+ */
+export function dueEsitiPartita(
+    sport: 'calcio' | 'tennis', moMarketId: string | null | undefined,
+    altri?: ((marketId: string) => boolean) | undefined,
+): ((marketId: string) => boolean) | undefined {
+    const mo = sport === 'tennis' && moMarketId ? String(moMarketId) : null;
+    if (mo == null) return altri;
+    return (m: string) => m === mo || (altri ? altri(m) : false);
 }
 
 /**

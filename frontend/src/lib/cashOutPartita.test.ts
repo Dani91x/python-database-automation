@@ -13,9 +13,10 @@
 // -> rossi.
 // ============================================================================
 import { describe, it, expect } from 'vitest';
-import { cashOutPartita, gambeDaOperazioni, r2, type GambaViva, type OpzioniCashOut } from './cashOutPartita';
+import { cashOutPartita, dueEsitiPartita, gambeDaOperazioni, r2, type GambaViva, type OpzioniCashOut } from './cashOutPartita';
 import { PREZZO_VUOTO, type PrezzoScheda } from './schedaAlMs';
 import type { OperazionePartita } from '@/components/controlroom/useControlRoom';
+import { esposizioneScalper, type OrdineScalper } from './scalperControlRoom';
 
 const NOW = 1_800_000_000_000;
 
@@ -368,6 +369,91 @@ describe('gambeDaOperazioni: le righe della scheda di TUTTI i bot', () => {
     it('aliquota dalla riga (P11: chiusura.alMs.aliquota) e mercato a due esiti dal chiamante', () => {
         const g = gambeDaOperazioni(follo, { dueEsiti: (m) => m === '1.45' });
         expect(g.map((x) => [x.aliquota, x.dueEsiti])).toEqual([[0.05, false], [0.05, true]]);
+    });
+});
+
+// ===================================================================
+// W_C (30/09 sera): LO SCALPER SCOMPONIBILE - esposizioni per selezione
+// ===================================================================
+function ordineScalper(p: Partial<OrdineScalper> & Pick<OrdineScalper, 'id' | 'selection_id' | 'side' | 'price' | 'size_matched'>): OrdineScalper {
+    return {
+        bet_id: null, client_order_ref: `sc-${p.id}`, mode: 'live', event_id: '35001', market_id: '1.7',
+        order_type: 'LIMIT', size: p.size_matched, size_remaining: 0, size_cancelled: 0, size_lapsed: 0,
+        size_voided: 0, average_price_matched: p.price, status: 'EXECUTION_COMPLETE', placed_at: null,
+        matched_at: null, updated_at: null, source: 'scalper', ...p,
+    } as OrdineScalper;
+}
+
+describe('W_C: la sessione scalper nel cash out (esposizioni per selezione)', () => {
+    // sessione: A back 10 @ 2,0 + lay 6 @ 2,2; B back 5 @ 3,0 (stesso Match Odds, 3 esiti)
+    const esp = esposizioneScalper([
+        ordineScalper({ id: 1, selection_id: 1, side: 'BACK', price: 2.0, size_matched: 10 }),
+        ordineScalper({ id: 2, selection_id: 1, side: 'LAY', price: 2.2, size_matched: 6 }),
+        ordineScalper({ id: 3, selection_id: 2, side: 'BACK', price: 3.0, size_matched: 5 }),
+    ]);
+    const sessione = op({
+        id: 7, bot: 'scalper', lato: null, stato: 'running', modalita: 'live',
+        esposizioneSelezioni: esp.selezioni.map((e) => ({ marketId: e.marketId, selectionId: e.selectionId, selezione: null, win: e.win, lose: e.lose })),
+    });
+    it('parita\' con esposizioneScalper: A (2,80 / -4,00), B (10,00 / -5,00)', () => {
+        expect(esp.selezioni.map((e) => [e.selectionId, e.win, e.lose])).toEqual([[1, 2.8, -4], [2, 10, -5]]);
+        const g = gambeDaOperazioni([sessione]);
+        expect(g.map((x) => [x.selectionId, x.esposizione])).toEqual([[1, { win: 2.8, lose: -4 }], [2, { win: 10, lose: -5 }]]);
+    });
+    it('la CIFRA c\'e\' (non piu\' NON CALCOLABILE): A banca 3,24 @ 2,10 -> -0,76; B banca 4,69 @ 3,20 -> -0,32; totale -1,08', () => {
+        const r = cashOutPartita(gambeDaOperazioni([sessione]),
+            opz({ '1.7|1': { back: 2.08, lay: 2.1, laySize: 100 }, '1.7|2': { back: 3.15, lay: 3.2, laySize: 100 } }));
+        expect(r.live.mancanti).toEqual([]);
+        expect(r.live.gambe.map((p) => [p.importoChiusura, p.pnlLordo])).toEqual([[3.24, -0.76], [4.69, -0.32]]);
+        expect(r.live.netto).toBe(-1.08);
+    });
+    it('sessione ferma senza residuo, o regolata (pnl): non entra; senza esposizioni: dichiarata non scomponibile', () => {
+        expect(gambeDaOperazioni([{ ...sessione, stato: 'stopped' }])).toEqual([]);
+        expect(gambeDaOperazioni([{ ...sessione, stato: 'stopped', residuo: true }])).toHaveLength(2);
+        expect(gambeDaOperazioni([{ ...sessione, pnl: 1.2 }])).toEqual([]);
+        const vecchia = gambeDaOperazioni([{ ...sessione, esposizioneSelezioni: undefined }]);
+        expect(vecchia[0].nonScomponibile).toMatch(/scalper/);
+    });
+});
+
+describe('W_C: dueEsitiPartita (Match Odds del tennis + mercati O/U di Mike)', () => {
+    it('tennis: solo il Match Odds; calcio: il Match Odds NO (3 esiti); gli altri (Mike) restano', () => {
+        const mike = (m: string) => m === 'OU45';
+        expect(dueEsitiPartita('tennis', '1.9', undefined)?.('1.9')).toBe(true);
+        expect(dueEsitiPartita('tennis', '1.9', undefined)?.('1.55')).toBe(false);
+        expect(dueEsitiPartita('calcio', '1.9', undefined)).toBeUndefined();
+        expect(dueEsitiPartita('calcio', '1.9', mike)?.('1.9')).toBe(false);
+        expect(dueEsitiPartita('tennis', null, mike)?.('OU45')).toBe(true);
+        expect(dueEsitiPartita('tennis', '1.9', mike)?.('OU45')).toBe(true);
+    });
+});
+
+describe('W_C (bassi del revisore)', () => {
+    it('pareggiata con sbilancio < 2 centesimi e SENZA prezzo: «pareggiata (±0,01)», non NON CALCOLABILE', () => {
+        // back 3 @ 2,00 (+3 / -3) + lay 3,01 @ 1,99 (liability 2,98): W 0,02, L 0,01
+        const g = [
+            gamba({ id: 1, marketId: '1.9', selectionId: 5, selezione: 'Under 3.5', lato: 'back', abbinato: 3, prezzoMedio: 2.0 }),
+            gamba({ id: 2, marketId: '1.9', selectionId: 5, selezione: 'Under 3.5', lato: 'lay', abbinato: 3.01, prezzoMedio: 1.99 }),
+        ];
+        const r = cashOutPartita(g, opz({}));
+        expect(r.live.gambe[0]).toMatchObject({ seVince: 0.02, sePerde: 0.01, stato: 'piatta', pnlLordo: 0.01 });
+        expect(r.live.netto).toBe(0.01);
+        expect(r.live.avvisi).toContain('Under 3.5: pareggiata (±0,01), prezzo assente: vale il bloccato');
+        // da 2 centesimi in su senza prezzo resta NON CALCOLABILE (Farul: 0,02)
+        const farul = [
+            gamba({ id: 3, marketId: '1.9', selectionId: 5, selezione: 'U', lato: 'back', abbinato: 5, prezzoMedio: 2.87 }),
+            gamba({ id: 4, marketId: '1.9', selectionId: 5, selezione: 'U', lato: 'lay', abbinato: 5.06, prezzoMedio: 2.84 }),
+        ];
+        expect(cashOutPartita(farul, opz({})).live.netto).toBeNull();
+    });
+    it('nome della selezione dalle altre gambe dello stesso mercato prima dell\'id grezzo', () => {
+        const g = [
+            gamba({ id: 1, bot: 'tennis_pro', marketId: '1.9', selectionId: 47972, selezione: null, lato: 'back', abbinato: 5, prezzoMedio: 2.0 }),
+            gamba({ id: 2, bot: 'safe', modalita: 'paper', marketId: '1.9', selectionId: 47972, selezione: 'Sinner J.', lato: 'back', abbinato: 2, prezzoMedio: 2.0 }),
+        ];
+        const r = cashOutPartita(g, opz({}));
+        expect(r.live.gambe[0].selezione).toBe('Sinner J.');
+        expect(r.live.mancanti).toEqual(['manca il prezzo di Sinner J. (banca)']);
     });
 });
 

@@ -818,6 +818,45 @@ export function subscribeLiveRiskState(cb: (row: LiveRiskState | null) => void):
     return () => { supabase.removeChannel(channel); };
 }
 
+// ---------- W_T/P14 (30/09): ordini del CONTO fuori dai bot ----------
+// RPC `get_live_orders_account_open()` (contratto concordato col backend il
+// 30/09, migrazione applicata dall'utente): solo live, solo ordini NON dei
+// bot (sito/app), solo mercati non regolati. Chiavi IDENTICHE al contratto.
+export interface OrdineContoFuoriBot {
+    bet_id: string;
+    market_id: string;
+    selection_id: number;
+    event_id: string | null;
+    event_name: string | null;
+    market_name: string | null;
+    selection_name: string | null;
+    side: 'BACK' | 'LAY';
+    /** null = nulla abbinato (lo specchio scrive 0, che NON e' un prezzo) */
+    price_matched: number | null;
+    size_matched: number;
+    size_remaining: number;
+    status: string;
+    source: 'runner' | 'account';
+    placed_at: string;
+}
+
+export interface OrdiniContoFuoriBot {
+    rows: OrdineContoFuoriBot[];
+    letto_at: string;
+}
+
+/** Lettura degli ordini del conto fuori dai bot. Errore (anche RPC assente) =
+ *  eccezione: il chiamante scrive "non letti", MAI una lista vuota. */
+export async function fetchLiveOrdersAccountOpen(): Promise<OrdiniContoFuoriBot> {
+    const { data, error } = await supabase.rpc('get_live_orders_account_open', {});
+    if (error) throw new Error(error.message);
+    const d = (data ?? null) as Partial<OrdiniContoFuoriBot> | null;
+    if (!d || !Array.isArray(d.rows) || typeof d.letto_at !== 'string') {
+        throw new Error('risposta di get_live_orders_account_open senza rows/letto_at');
+    }
+    return { rows: d.rows, letto_at: d.letto_at };
+}
+
 // ---------- posizioni aggregate (dashboard P&L D33 + esposizione evento E35) ----------
 export async function fetchLivePositionsAll(): Promise<LivePositionRow[]> {
     const { data, error } = await supabase.rpc('get_live_positions_all', {});

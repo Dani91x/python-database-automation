@@ -117,6 +117,17 @@ describe('FasciaSoldiVeri - dati mancanti: mai una cifra inventata', () => {
         expect(el.className).toMatch(/amber/);
     });
 
+    it('W_T/P14: partite con ordini fuori dai bot, coi nomi, in ambra; non letti = lo dice', () => {
+        render(<FasciaSoldiVeri s={{ ...soldi(), ordiniFuori: { letto: true, n: 1, nomi: ['FC Vsetin v Bohemians'], senzaPartita: 0, motivo: null } }} />);
+        const el = screen.getByTestId('cr-ordini-fuori-bot');
+        expect(el.textContent).toMatch(/partite con ordini fuori dai bot: 1 \(FC Vsetin v Bohemians\)/);
+        expect(el.innerHTML).toMatch(/amber/);
+        cleanup();
+        render(<FasciaSoldiVeri s={{ ...soldi(), ordiniFuori: { letto: false, n: 0, nomi: [], senzaPartita: 0, motivo: 'RPC non disponibile' } }} />);
+        expect(screen.getByTestId('cr-ordini-fuori-bot').textContent).toMatch(/ordini del conto: non letti \(RPC non disponibile\)/);
+        expect(screen.getByTestId('cr-ordini-fuori-bot').textContent).not.toMatch(/: 0/);
+    });
+
     it('R_T: numero fresco: nessun avviso di stantio', () => {
         render(<FasciaSoldiVeri s={soldi()} />);
         expect(screen.queryByTestId('cr-rischio-bot-stantio')).toBeNull();

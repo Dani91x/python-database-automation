@@ -290,6 +290,8 @@ const STRATEGIA_LABEL: Record<string, string> = {
     over_cover: 'copertura linea 4.5',
     under_green: 'green-up Under',
     ko_green: 'green-up al fischio',
+    // 30/09: l'ordine dell'UTENTE sui mercati di Mike, entrato nel conto della partita
+    utente: 'ordine tuo (non del bot)',
 };
 
 function etichettaStrategia(k: string): string {

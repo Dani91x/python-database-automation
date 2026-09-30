@@ -655,6 +655,26 @@ describe('composizioneOggi separa Omega/Safe calcio/Safe tennis/Mike/bot tennis/
         expect(result.current.composizioneOggi.totale).toBeCloseTo(result.current.realizzatoOggi.live.totale ?? 0, 2);
     });
 
+    it('30/09: la riga «utente» di Mike NON entra nella voce Mike (e\' gia\' nel manuale del conto)', async () => {
+        // la riga che Mike scrive al regolamento per un ordine dell'UTENTE sul
+        // suo mercato (`Betfair/mike/regolato_conto.py`): chiusura della 800
+        vi.mocked(fetchMikeState).mockResolvedValue({
+            ...MIKE_VUOTO,
+            trades: [tradeMike(), tradeMike({
+                id: 801, role: 'utente', strategy: 'manual_close', origin: 'manual', side: 'lay',
+                status: 'lost', pnl: -0.5, closes_trade_id: 800,
+                meta: { fonte: 'utente', pnl_fonte: 'betfair' },
+            } as Partial<MikeTrade>)],
+        });
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        const per = Object.fromEntries(result.current.composizioneOggi.righe.map((r) => [r.chiave, r.valore]));
+        expect(per.mike).toBe(0.8);            // solo gli ordini del bot
+        // ...ma la POSIZIONE chiusa della partita resta intera (Mike + utente)
+        const c = result.current.chiuse.find((x) => x.bot === 'mike' && x.id === 800);
+        expect(c?.pnlGlobale).toBeCloseTo(0.3, 2);
+    });
+
     it('manualeSitoBetfair è sempre "non disponibile" oggi, mai un numero inventato', async () => {
         const { result } = renderHook(() => useControlRoom());
         await waitFor(() => expect(result.current.caricamento).toBe(false));
@@ -1250,7 +1270,10 @@ describe('26/09 correzioni fase 3 sul modello di vista', () => {
         await waitFor(() => expect(result.current.caricamento).toBe(false));
         const omega = result.current.bots.find((b) => b.bot === 'omega')!;
         expect(omega.pnlOggiPaper).toBe(0.95);
-        expect(omega.pnlOggi).toBeNull();
+        // W_B2 (30/09, M15): cambiato di proposito - le righe sono LETTE e nessuna
+        // LIVE e' regolata oggi: 0 «nessuna regolata oggi» (fonte BOT), non «—»
+        expect(omega.pnlOggi).toBe(0);
+        expect(omega.fonteOggiLive).toMatchObject({ fonte: 'bot', vuoto: true });
     });
 });
 
