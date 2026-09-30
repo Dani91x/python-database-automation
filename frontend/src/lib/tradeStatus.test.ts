@@ -101,6 +101,11 @@ describe('glossario T', () => {
         expect(all).not.toMatch(/Cash-out/);
         expect(all).not.toMatch(/Capitale a rischio/);
     });
+    it('30/09 (B2, M10): la barra dei totali dice «Liability aperta» e il glossario non si contraddice', () => {
+        expect(T.totLiability).toBe(T.openLiability);
+        const tutto = [...Object.values(T), ...Object.values(TIP)].join(' | ');
+        expect(tutto).not.toMatch(/responsabilit/i);
+    });
 });
 
 describe('activityMeta', () => {

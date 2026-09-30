@@ -24,14 +24,22 @@
 // la riga esatta da cambiare — ma la scheda è pronta a riceverla, e senza non
 // si rompe (nessuna sezione ordini, non un errore).
 // ============================================================================
-import { useState } from 'react';
+//
+// B1 (30/09) — «rendere le quote in tempo reale piu' visibili e da "trader"»
+// e «nomi partita diversi [...] uniformare lo stile» (utente, sezioni 4-5):
+// i nomi passano da `NomiPartita` e le quote da `QuoteMercato`, gli STESSI
+// componenti della scheda in gioco/aperte (`SchedaPartita.tsx`). La funzione
+// locale `Squadra` e' traslocata dentro `NomiPartita.tsx` con le stesse regole
+// (logo dove c'e', mai un segnaposto che sembri un logo rotto).
+// ============================================================================
 import { Clock } from 'lucide-react';
-import { fmtTime, fmtAge, fmtOdds, DASH } from '@/lib/format';
-import { teamLogo } from '@/lib/sportsLogos';
-import { dividiNomi } from '@/components/controlroom/AzioniPartita';
+import { fmtTime, fmtAge, DASH } from '@/lib/format';
 import FlussoBadge, { FlussoLineeMikeBadge } from '@/components/controlroom/FlussoBadge';
 import { AzioniPartita } from '@/components/controlroom/AzioniPartita';
-import { QUOTE_CLS, QUOTE_TESTO } from '@/components/controlroom/SchedaPartita';
+import { NomiPartita } from '@/components/controlroom/NomiPartita';
+import {
+    QuoteMercato, EtaQuote, LineeOu, celleMatchOdds, MAX_LINEE_OU,
+} from '@/components/controlroom/QuoteMercato';
 import { RigaOperazione } from '@/components/controlroom/DettaglioRigaView';
 import type { PartitaGiornata } from '@/lib/controlRoom';
 import type { OperazionePartita } from '@/components/controlroom/useControlRoom';
@@ -59,10 +67,11 @@ export interface SchedaPreMatchProps {
 export function SchedaPreMatch({
     p, scheda, mancaS, registra, registratoreVivo = null, onRegistrazione, operazioni = [],
 }: SchedaPreMatchProps) {
-    const [casa, ospite] = dividiNomi(p.nome);
     const imminente = mancaS != null && mancaS <= 15 * 60;
-    const odds = p.odds;
-    const haQuote = Boolean(odds?.home || odds?.draw || odds?.away || odds?.p1 || odds?.p2);
+    const celle = celleMatchOdds(p.sport, p.odds);
+    const haQuote = celle != null;
+    const linee = p.lineeOu ?? [];
+    const haLinee = linee.length > 0 && linee.length <= MAX_LINEE_OU;
 
     return (
         <div
@@ -78,10 +87,8 @@ export function SchedaPreMatch({
                     {p.koMs == null ? DASH : fmtTime(p.koMs)}
                 </span>
 
-                <div className="flex-1 min-w-0">
-                    <Squadra nome={casa} teamId={p.extra?.homeTeamId ?? null} />
-                    {ospite && <Squadra nome={ospite} teamId={p.extra?.awayTeamId ?? null} />}
-                </div>
+                <NomiPartita nome={p.nome}
+                    homeTeamId={p.extra?.homeTeamId ?? null} awayTeamId={p.extra?.awayTeamId ?? null} />
 
                 {mancaS != null && (
                     <span className={`shrink-0 text-[10px] font-mono flex items-center gap-1 ${
@@ -94,33 +101,25 @@ export function SchedaPreMatch({
             </div>
 
             {/* ── quote pre-match vive, con età (18/09, secondo giro) ── */}
-            {(haQuote || p.latenzaQuoteS != null || p.flussoMike?.stato === 'fermo') && (
-                <div className="flex items-center gap-2 flex-wrap mt-1 pl-[52px] text-[10px]"
-                    data-testid="cr-pre-quote">
-                    {haQuote && (
-                        <span className="font-mono tabular-nums text-white/55"
-                            title="miglior BACK / miglior LAY di adesso">
-                            {odds?.home && <>1 {fmtOdds(odds.home.back)}/{fmtOdds(odds.home.lay)}</>}
-                            {odds?.draw && <><span className="text-white/25"> · </span>X {fmtOdds(odds.draw.back)}/{fmtOdds(odds.draw.lay)}</>}
-                            {odds?.away && <><span className="text-white/25"> · </span>2 {fmtOdds(odds.away.back)}/{fmtOdds(odds.away.lay)}</>}
-                            {odds?.p1 && <>P1 {fmtOdds(odds.p1.back)}/{fmtOdds(odds.p1.lay)}</>}
-                            {odds?.p2 && <><span className="text-white/25"> · </span>P2 {fmtOdds(odds.p2.back)}/{fmtOdds(odds.p2.lay)}</>}
-                        </span>
-                    )}
-                    {/* cantiere J (28/09): il flusso dei prezzi della partita.
-                        30/09: il Match Odds non ancora seguito prima del fischio
-                        e' una nota grigia, non un rosso; le linee di Mike
-                        (Under/Over 3,5 e 4,5) hanno il loro giudizio. */}
-                    <FlussoBadge flusso={p.flusso} prePartita />
-                    <FlussoLineeMikeBadge flusso={p.flussoMike} />
-                    {p.latenzaQuoteS != null && (
-                        <span className={`font-mono ml-auto ${QUOTE_CLS[p.statoQuote]}`}
-                            title={p.statoQuote === 'fermo'
-                                ? 'il prezzo non cambia da questo tempo, ma lo scanner sta guardando: è il prezzo CORRENTE'
-                                : 'da quando il prezzo è cambiato l’ultima volta'}>
-                            {QUOTE_TESTO[p.statoQuote](fmtAge(p.latenzaQuoteS))}
-                        </span>
-                    )}
+            {(haQuote || haLinee || p.latenzaQuoteS != null || p.flussoMike?.stato === 'fermo') && (
+                <div className="mt-1 pl-[52px] text-[10px] space-y-1" data-testid="cr-pre-quote">
+                    <div className="flex items-center gap-2 flex-wrap">
+                        {celle && (
+                            <QuoteMercato testId="cr-pre-quote-mo" celle={celle}
+                                titolo="Match Odds: miglior BACK / miglior LAY di adesso" />
+                        )}
+                        {/* l'età sta ACCANTO alle quote, sempre, e dice cosa misura */}
+                        {(haQuote || p.latenzaQuoteS != null) && (
+                            <EtaQuote testId="cr-pre-latenza" latenzaS={p.latenzaQuoteS} stato={p.statoQuote} />
+                        )}
+                        {/* cantiere J (28/09): il flusso dei prezzi della partita.
+                            30/09: il Match Odds non ancora seguito prima del fischio
+                            e' una nota grigia, non un rosso; le linee di Mike
+                            (Under/Over 3,5 e 4,5) hanno il loro giudizio. */}
+                        <FlussoBadge flusso={p.flusso} prePartita />
+                        <FlussoLineeMikeBadge flusso={p.flussoMike} />
+                    </div>
+                    {haLinee && <LineeOu testId="cr-pre-quote-ou" linee={linee} />}
                 </div>
             )}
 
@@ -137,27 +136,6 @@ export function SchedaPreMatch({
                     ))}
                 </div>
             )}
-        </div>
-    );
-}
-
-/** Una squadra: logo se c'è, nome sempre. Un logo che non carica sparisce —
- *  non lascia un quadrato grigio che sembra un errore della pagina. */
-function Squadra({ nome, teamId }: { nome: string; teamId: number | null }) {
-    const [rotto, setRotto] = useState(false);
-    const src = teamId != null ? teamLogo(teamId) : '';
-    return (
-        <div className="flex items-center gap-1.5 leading-tight">
-            {src && !rotto ? (
-                <img
-                    src={src} alt="" width={16} height={16} loading="lazy"
-                    onError={() => setRotto(true)}
-                    className="w-4 h-4 object-contain shrink-0"
-                />
-            ) : (
-                <span className="w-4 shrink-0" aria-hidden="true" />
-            )}
-            <span className="text-[12.5px] truncate">{nome}</span>
         </div>
     );
 }

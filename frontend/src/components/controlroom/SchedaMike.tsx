@@ -36,9 +36,10 @@
 // (`freshness.tone === 'stale' || 'unknown'`), mai una condizione nuova.
 // ============================================================================
 import { fmtMoney, fmtNum, fmtOdds, fmtPct, DASH } from '@/lib/format';
-import { pnlClass } from '@/lib/tradeStatus';
-import { etaQuoteS, feedFreshness, MIKE_TERMINAL_STATES, type MikeEvent } from '@/lib/mike';
+import { pnlClass, T } from '@/lib/tradeStatus';
+import { etaQuoteS, feedFreshness, MIKE_TERMINAL_STATES, roleLabelGamba, type MikeEvent } from '@/lib/mike';
 import { useSecondTick } from '@/components/mike/useMikeClock';
+import { cycleText } from '@/components/mike/MikeMatchCard';
 import { PropostaUscitaMike } from './PropostaUscitaMike';
 import { EsitoChiusuraMike } from './EsitoChiusuraMike';
 
@@ -77,6 +78,15 @@ export function SchedaMike({ ev, testId = 'cr-mike' }: { ev: MikeEvent; testId?:
     const books = live.books ?? {};
     const u35 = books['OU35|UNDER'] ?? books['OU35'] ?? null;
     const o45 = books['OU45|OVER'] ?? books['OU45'] ?? null;
+    // 30/09 (B2, A3) - la banca della copertura di serie e il re-ingresso stanno
+    // sull'Under 4,5 (`engine.py` `_place("over_cover", OU45, UNDER, "lay")`,
+    // `_place("reentry", OU45, UNDER, "back")`): chiave vera del servizio
+    const u45 = books['OU45|UNDER'] ?? null;
+    // la forma della copertura la scheda la conosce solo se la partita ha gia'
+    // una gamba di copertura (i parametri non arrivano qui): altrimenti non la dice
+    const gambaCopertura = (ev.positions ?? []).find((g) => g.role === 'over_cover' && !g.archived) ?? null;
+    const coperturaDiQuesta = gambaCopertura
+        ? ` · su questa partita: ${roleLabelGamba(gambaCopertura)}` : '';
     const cash = live.cashout ?? null;
     const perGol = live.pnl_totale_by_total ?? live.pnl_by_total ?? null;
     const lamHome = num(dos.lambda_home);
@@ -124,7 +134,7 @@ export function SchedaMike({ ev, testId = 'cr-mike' }: { ev: MikeEvent; testId?:
                 letto come «4 o più» sottostimava il rischio dell'Under 3.5. ── */}
             <div className="flex items-baseline gap-x-3 gap-y-1 flex-wrap">
                 <Voce label="P(4 gol esatti) mercato" testId={`${testId}-p4-mercato`}
-                    title="probabilità di ESATTAMENTE 4 gol (perdono sia Under 3.5 sia Over 4.5) implicita nelle quote di adesso: P(Over 3.5) − P(Over 4.5)">
+                    title="probabilità di ESATTAMENTE 4 gol (perdono l’Under 3,5 e la copertura) implicita nelle quote di adesso: P(Over 3.5) − P(Over 4.5)">
                     {fmtPct(num(live.p4_market))}
                 </Voce>
                 <Voce label="modello" testId={`${testId}-p4-modello`}
@@ -162,8 +172,12 @@ export function SchedaMike({ ev, testId = 'cr-mike' }: { ev: MikeEvent; testId?:
                     {fmtOdds(u35?.best_back ?? null)}<span className="text-white/25"> / </span>{fmtOdds(u35?.best_lay ?? null)}
                 </Voce>
                 <Voce label="Over 4.5" testId={`${testId}-o45`}
-                    title="miglior BACK / miglior LAY di adesso sulla linea 4.5 (la copertura)">
+                    title={`miglior BACK / miglior LAY di adesso sull’Over 4.5 (linea 4,5): qui va la copertura solo nella forma «punta Over 4.5»; la chiusura della copertura è una banca Over 4.5${coperturaDiQuesta}`}>
                     {fmtOdds(o45?.best_back ?? null)}<span className="text-white/25"> / </span>{fmtOdds(o45?.best_lay ?? null)}
+                </Voce>
+                <Voce label="Under 4.5" testId={`${testId}-u45`}
+                    title={`miglior BACK / miglior LAY di adesso sull’Under 4.5 (linea 4,5): qui va la copertura nella forma «banca Under 4.5» e il re-ingresso dopo un gol${coperturaDiQuesta}`}>
+                    {fmtOdds(u45?.best_back ?? null)}<span className="text-white/25"> / </span>{fmtOdds(u45?.best_lay ?? null)}
                 </Voce>
                 {num(live.total_matched) != null && (
                     <Voce label="volume" testId={`${testId}-volume`} title="euro già scambiati sul mercato">
@@ -190,16 +204,26 @@ export function SchedaMike({ ev, testId = 'cr-mike' }: { ev: MikeEvent; testId?:
                         {fmtNum(num(live.ko_drift_ticks), 0)} tick
                     </span>
                 )}
+                {/* 30/09 (B2, M9) - numerato come la pagina di Mike (`cycleText`
+                    della card: `cycle_no` = cicli gia' chiusi, il ciclo in corso
+                    e' il successivo). Il massimo per partita e' un parametro
+                    che la scheda non riceve: non lo si scrive. */}
                 <Voce label="ciclo" testId={`${testId}-cicli`}
-                    title="ciclo in corso e cicli già chiusi sulla partita">
-                    {ev.cycle_no}{live.cicli_chiusi != null && <span className="text-white/35"> · {live.cicli_chiusi} chiusi</span>}
+                    title={terminal
+                        ? 'partita chiusa: cicli completati sulla partita'
+                        : 'ciclo in corso (il primo è 1, come nella pagina di Mike) e cicli già chiusi sulla partita'}>
+                    {cycleText(ev.cycle_no, null, terminal).value}
+                    {terminal
+                        ? <span className="text-white/35"> usati</span>
+                        : live.cicli_chiusi != null && <span className="text-white/35"> · {live.cicli_chiusi} chiusi</span>}
                 </Voce>
             </div>
 
-            {/* ── soldi: responsabilità, bloccato, cash out ── */}
+            {/* ── soldi: liability, bloccato, cash out (30/09 B2, M10: la parola
+                del glossario, `T.openLiability`, come la card e i KPI) ── */}
             <div className="flex items-baseline gap-x-3 gap-y-1 flex-wrap">
-                <Voce label="responsabilità" testId={`${testId}-liability`}
-                    title="responsabilità netta impegnata sulla partita">
+                <Voce label={T.openLiability} testId={`${testId}-liability`}
+                    title="liability netta impegnata sulla partita">
                     {fmtMoney(num(live.liability))}
                 </Voce>
                 <Voce label="bloccato" testId={`${testId}-locked`} title="P&L già bloccato sulla partita">
@@ -207,7 +231,11 @@ export function SchedaMike({ ev, testId = 'cr-mike' }: { ev: MikeEvent; testId?:
                         {num(live.locked) == null ? DASH : fmtMoney(num(live.locked), { signed: true })}
                     </span>
                 </Voce>
-                {cash && (
+                {/* 30/09 (B2, A9) - `complete=false` = una selezione ancora VIVA
+                    non ha prezzo e il netto del servizio la ESCLUDE
+                    (`engine.cashout_value`): la cifra sarebbe una somma monca.
+                    Come la card di Mike: nessuna cifra. */}
+                {cash && (cash.complete ? (
                     <Voce label="cash out" testId={`${testId}-cashout`}
                         title="valore NETTO di chiusura pubblicato dal servizio, con la soglia oltre la quale chiude da solo">
                         <span className={pnlClass(cash.net)}>{fmtMoney(cash.net, { signed: true })}</span>
@@ -215,12 +243,15 @@ export function SchedaMike({ ev, testId = 'cr-mike' }: { ev: MikeEvent; testId?:
                         {cash.target_pct != null && (
                             <span className="text-white/25" title="soglia di chiusura automatica"> / soglia {fmtPct(cash.target_pct / 100)}</span>
                         )}
-                        {!cash.complete && (
-                            <span className="text-amber-300" data-testid={`${testId}-cashout-parziale`}
-                                title="il book non copre l'intera chiusura: sarebbe PARZIALE"> · parziale</span>
-                        )}
                     </Voce>
-                )}
+                ) : (
+                    <Voce label="cash out" testId={`${testId}-cashout`}
+                        title="una linea ancora in gioco non ha prezzo sul book: il valore di chiusura di tutta la partita non si può calcolare">
+                        <span className="text-amber-300" data-testid={`${testId}-cashout-parziale`}>
+                            non calcolabile (manca il prezzo di una linea)
+                        </span>
+                    </Voce>
+                ))}
             </div>
 
             {/* ── come finisce, per numero di gol ── */}

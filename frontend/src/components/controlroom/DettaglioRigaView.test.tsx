@@ -79,3 +79,15 @@ describe('RigaOperazione: colore di "se chiudo ora" (o.chiusura.bloccabile)', ()
         expect(screen.queryByTestId('cr-op-chiudo-ora')).not.toBeInTheDocument();
     });
 });
+
+// 30/09 (B2, M10) - la liability della riga con la parola del glossario
+describe('RigaOperazione: liability della posizione', () => {
+    it('«liability 5,00 €», mai «resp.» / «responsabilità» (testo e title)', () => {
+        const { container } = render(<RigaOperazione o={riga(null, { lato: 'lay', liability: 5 })} />);
+        const l = screen.getByTestId('cr-op-liability');
+        expect(l.textContent).toBe('liability 5,00 €');
+        expect(l.getAttribute('title')).toBe('liability impegnata da questa posizione');
+        const titoli = [...container.querySelectorAll('[title]')].map((n) => n.getAttribute('title') ?? '');
+        expect(`${container.textContent}\n${titoli.join('\n')}`).not.toMatch(/responsabilit|resp\./i);
+    });
+});

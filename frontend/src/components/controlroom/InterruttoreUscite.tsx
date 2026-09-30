@@ -39,6 +39,23 @@ export function testoStatoUscite(u: StatoUscite): string {
     return `${TESTO_USCITE_MANUALI}${aperte}${u.nota ? ` (${u.nota})` : ''}`;
 }
 
+/**
+ * 30/09 (B2, A12) - i tooltip dei pulsanti, guidati dallo STATO: dove
+ * l'interruttore governa solo le uscite in perdita (Mike, `soloUsciteInPerdita`)
+ * non si puo' dire «in profitto e in perdita». Per gli altri bot: le parole di sempre.
+ */
+export function titoloPassaAManuali(u: StatoUscite): string {
+    return u.soloUsciteInPerdita
+        ? 'le uscite in PERDITA della strategia diventano PROPOSTE nella scheda: le approvi tu. Le uscite in profitto (green-up, uscita al fischio, cash out in profitto) le esegue sempre il bot; le protezioni restano automatiche'
+        : 'le uscite della strategia (in profitto e in perdita) diventano PROPOSTE nella scheda: le approvi tu. Le protezioni restano automatiche';
+}
+
+export function titoloConfermaAutomatiche(u: StatoUscite): string {
+    return u.soloUsciteInPerdita
+        ? 'confermi? da qui il bot esegue da solo anche le uscite in PERDITA secondo la sua strategia (quelle in profitto le esegue gia’ da solo)'
+        : 'confermi? da qui il bot chiude da solo secondo la sua strategia, in profitto e in perdita';
+}
+
 export interface InterruttoreUsciteProps {
     /** id della riga (test id stabili: cr-uscite-<id>, cr-uscite-stato-<id>, ...) */
     id: string;
@@ -77,7 +94,7 @@ export function InterruttoreUscite({ id, uscite, cambia, occupato = false }: Int
                     disabled={occupato}
                     onClick={() => void cambia(false)}
                     data-testid={`cr-uscite-cambia-${id}`}
-                    title="le uscite della strategia (in profitto e in perdita) diventano PROPOSTE nella scheda: le approvi tu. Le protezioni restano automatiche"
+                    title={titoloPassaAManuali(uscite)}
                     className="h-6 px-2 text-[10px]"
                 >passa a manuali</Button>
             )}
@@ -88,7 +105,7 @@ export function InterruttoreUscite({ id, uscite, cambia, occupato = false }: Int
                         disabled={occupato || troppoPresto}
                         onClick={() => { setArmataDa(null); void cambia(true); }}
                         data-testid={`cr-uscite-conferma-${id}`}
-                        title="confermi? da qui il bot chiude da solo secondo la sua strategia, in profitto e in perdita"
+                        title={titoloConfermaAutomatiche(uscite)}
                         className="h-6 px-2 text-[10px] bg-amber-600/70 hover:bg-amber-600 text-white"
                     >confermi? passa ad automatiche</Button>
                     <Button

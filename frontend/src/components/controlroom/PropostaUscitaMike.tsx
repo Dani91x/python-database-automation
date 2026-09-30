@@ -233,14 +233,17 @@ export function PropostaUscitaMike({
         } finally { setInVolo(false); }
     };
 
+    // 30/09 (B2, M11) - dal 29/09 Mike propone SOLO le uscite che possono
+    // chiudere in perdita (`engine.gate_uscite` / `uscita_in_perdita`): le altre
+    // le esegue da solo. `urgente` (= `close_reason` `loss*`) e' un'uscita in
+    // perdita; le altre (chiusura a tempo del re-ingresso, veto) POSSONO esserlo.
     return (
-        <div className={`rounded border px-2.5 py-2 space-y-1 ${prop.urgente
-            ? 'border-red-500/40 bg-red-500/10' : 'border-amber-400/40 bg-amber-400/10'}`}
+        <div className="rounded border px-2.5 py-2 space-y-1 border-red-500/40 bg-red-500/10"
             data-testid={testId}>
             <div className="flex items-center justify-between gap-2">
-                <span className="text-[10.5px] font-semibold text-amber-200" data-testid={`${testId}-titolo`}>
+                <span className="text-[10.5px] font-semibold text-red-200" data-testid={`${testId}-titolo`}>
                     Mike vorrebbe uscire: {CATEGORIA[prop.categoria] ?? prop.categoria}
-                    {prop.urgente ? ' (in perdita)' : ''}
+                    {prop.urgente ? ' (IN PERDITA)' : ' (può chiudere IN PERDITA)'}
                 </span>
                 <span className={`text-[10px] px-1.5 py-0.5 rounded border ${fresh.cls}`}>{fresh.label}</span>
             </div>
@@ -262,7 +265,8 @@ export function PropostaUscitaMike({
                 momento), come la strategia la vuole; dopo il clic qui sotto il prezzo reale di abbinamento
             </div>
             <div className="text-[10.5px] text-white/60" data-testid={`${testId}-numeri`}>
-                chiudendo ora <span className={cifraVecchia ? 'line-through text-amber-300/80' : ''}
+                {/* 30/09 (B2, M12): `live.cashout.net` = TUTTA la partita */}
+                chiudendo tutta la partita ora <span className={cifraVecchia ? 'line-through text-amber-300/80' : ''}
                     data-testid={`${testId}-cifra`}>{bloccabileOra == null ? DASH : fmtMoney(bloccabileOra, { signed: true })}</span>
                 {' '}<span className={cifraVecchia ? 'text-amber-300 font-semibold' : 'text-white/45'}
                     data-testid={`${testId}-eta-cifra`} data-vecchia={cifraVecchia ? '1' : '0'}>

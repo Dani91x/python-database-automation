@@ -347,7 +347,8 @@ export const T = {
     totRealizzato: 'P&L realizzato',
     totAperto: 'Se chiudo ora',
     totInvestito: 'Investito',
-    totLiability: 'Responsabilità',
+    // 30/09 (B2, M10): una parola sola con i KPI e le card (`openLiability`)
+    totLiability: 'Liability aperta',
     // modalita'
     modePaper: 'MODALITÀ PAPER',
     modeLive: 'MODALITÀ LIVE',
@@ -401,7 +402,7 @@ export const TIP = {
     totOperazioni: 'quante POSIZIONI (aperture) rientrano in questa vista: le gambe di chiusura stanno dentro la posizione che chiudono, non si contano due volte',
     totRealizzato: 'somma dei P&L NETTI delle sole righe GIÀ REGOLATE di questa vista. Le posizioni ancora vive NON sono qui dentro: il loro valore è in «Se chiudo ora».',
     totAperto: 'quanto si bloccherebbe chiudendo ADESSO a mercato tutte le posizioni ancora vive, al netto della commissione. È una STIMA sui prezzi del feed, non un incasso.',
-    totInvestito: 'capitale impegnato nelle aperture di questa vista (lo stake, non la responsabilità di una banca)',
+    totInvestito: 'capitale impegnato nelle aperture di questa vista (lo stake, non la liability di una banca)',
     totLiability: 'quanto è ancora a rischio ADESSO sulle posizioni vive di questa vista',
     equity: 'P&L cumulato realizzato, un gradino per giornata: parte da 0 il primo giorno del periodo',
     feed: 'FEED dello scanner (fonte unica delle quote): da quanti secondi non si aggiorna',

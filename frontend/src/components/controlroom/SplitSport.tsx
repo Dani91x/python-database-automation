@@ -7,19 +7,27 @@
 //
 // DISEGNO — due entità, quindi due identità fisse: ogni sport tiene **sempre**
 // lo stesso colore, anche quando uno dei due è a zero (il colore segue
-// l'entità, mai il suo rango). La modalità è la cosa più importante della
-// tessera e sta in alto: un numero in euro veri e uno simulato non possono
-// somigliarsi.
+// l'entità, mai il suo rango).
 //
 // 26/09 (F-2, e2e fase 3): i numeri arrivano dalle STESSE righe della barra e
 // delle Posizioni chiuse (`perSportGiornata`, giorno di REGOLAMENTO, tutti i
 // bot). Prima venivano da `get_safe_daily.by_sport` (giorno di PIAZZAMENTO,
 // sola tabella di Safe): stesso denaro, due giornate diverse sulla pagina.
+//
+// 30/09 (P2, progetto monitor veritiero §3) — DUE CORSIE FISSE, LIVE sopra e
+// PROVA sotto. La tessera aveva UNA «modalita' dello sport» presa dal solo
+// Safe: con Mike in LIVE sul calcio scriveva «MODALITA' PAPER», ed era falso.
+// Ora ogni bot dello sport e' elencato nella corsia della SUA modalita'
+// (`lib/giornataCorsie.ts`), i due numeri stanno ciascuno nella sua corsia e
+// non si sommano mai; con un bot LIVE acceso (o una posizione LIVE aperta) la
+// tessera lo grida: «SOLDI VERI».
 // ============================================================================
 import { Card } from '@/components/ui/card';
 import { fmtMoney, fmtPct, DASH } from '@/lib/format';
-import { pnlClass, T } from '@/lib/tradeStatus';
+import { pnlClass } from '@/lib/tradeStatus';
 import type { DailyBreakdown } from '@/lib/dailyHistory';
+import type { CorsieSport, VoceCorsia } from '@/lib/giornataCorsie';
+import { MarchioSoldi } from '@/components/controlroom/MarchioSoldi';
 
 /** Identità fissa per sport: il colore segue l'entità, non il rango. */
 const SPORT = {
@@ -34,19 +42,16 @@ export interface SplitSportProps {
     selezionato: SportKey | null;
     /** clic sulla tessera: seleziona, o deseleziona se già selezionata */
     onSeleziona: (s: SportKey | null) => void;
-    /** aggregati per sport dal server con i SOLDI VERI; `null` = non letti */
+    /** aggregati per sport con i SOLDI VERI; `null` = non letti */
     perSport: Record<string, DailyBreakdown> | null;
-    /**
-     * Gli stessi aggregati IN PROVA.
-     *
-     * ⚠️ REVIEW 15/09 — la tessera del calcio scriveva «MODALITÀ PAPER» e
-     * sotto un P&L costruito escludendo tutte le righe paper: l'etichetta
-     * diceva una cosa e il numero un'altra. Il numero grande deve essere
-     * quello della modalità DICHIARATA. I due non si sommano mai.
-     */
+    /** Gli stessi aggregati IN PROVA. I due non si sommano mai. */
     perSportPaper?: Record<string, DailyBreakdown> | null;
-    /** modalità con cui quello sport sta operando ADESSO (dal servizio) */
-    modalita: Record<SportKey, 'paper' | 'live' | null>;
+    /**
+     * 30/09 (P2) — i bot di ogni sport divisi per modalita' dichiarata
+     * (`corsiePerSport`). `null`/assente = righe dei bot non lette: la
+     * tessera lo dice, non inventa una modalita'.
+     */
+    corsie?: Record<SportKey, CorsieSport> | null;
     /** posizioni aperte per sport, **divise per modalità**: «2 aperte» senza
      *  dire con che soldi non è un'informazione, è un'ambiguità */
     aperte?: Record<SportKey, { live: number; paper: number }>;
@@ -54,7 +59,7 @@ export interface SplitSportProps {
 }
 
 export function SplitSport({
-    perSport, perSportPaper = null, modalita, aperte, selezionato, onSeleziona,
+    perSport, perSportPaper = null, corsie = null, aperte, selezionato, onSeleziona,
     testId = 'cr-split-sport',
 }: SplitSportProps) {
     return (
@@ -65,7 +70,7 @@ export function SplitSport({
                     sport={k}
                     dato={perSport?.[k] ?? null}
                     datoPaper={perSportPaper?.[k] ?? null}
-                    modalita={modalita[k]}
+                    corsie={corsie?.[k] ?? null}
                     aperte={aperte?.[k] ?? { live: 0, paper: 0 }}
                     letto={perSport != null}
                     scelto={selezionato === k}
@@ -77,11 +82,11 @@ export function SplitSport({
     );
 }
 
-function Tessera({ sport, dato, datoPaper, modalita, aperte, letto, scelto, spento, onClick }: {
+function Tessera({ sport, dato, datoPaper, corsie, aperte, letto, scelto, spento, onClick }: {
     sport: SportKey;
     dato: DailyBreakdown | null;
     datoPaper: DailyBreakdown | null;
-    modalita: 'paper' | 'live' | null;
+    corsie: CorsieSport | null;
     aperte: { live: number; paper: number };
     letto: boolean;
     scelto: boolean;
@@ -89,23 +94,16 @@ function Tessera({ sport, dato, datoPaper, modalita, aperte, letto, scelto, spen
     onClick: () => void;
 }) {
     const s = SPORT[sport];
-    const live = modalita === 'live';
-    // IL NUMERO GRANDE E' QUELLO DELLA MODALITA' DICHIARATA dalla tessera:
-    // «paper» sopra un P&L che esclude le righe paper era una contraddizione
-    // a due centimetri di distanza.
-    const mio = live ? dato : datoPaper;
-    const altro = live ? datoPaper : dato;
-    // «non ancora letto» e «nessuna operazione» sono due cose diverse: la prima
-    // e' un trattino, la seconda uno zero legittimo.
-    // 26/09 (F-3): giornata LETTA e senza righe per questa modalita' = 0,00 €
-    // (prima «—» + «non ancora letta» anche con la lettura riuscita e vuota)
-    const pnl = mio ? mio.pnl : (letto ? 0 : null);
-    const esiti = mio ? mio.won + mio.lost : 0;
-    const winRate = mio && esiti > 0 ? mio.won / esiti : null;
+    // SOLDI VERI: un bot LIVE che sta operando, o una posizione LIVE ancora
+    // aperta (anche a bot fermo, i soldi sono sul mercato)
+    const soldiVeri = (corsie?.liveAcceso ?? false) || aperte.live > 0;
+    // la corsia «principale» (quella che porta `cr-sport-<sport>-pnl`, il testid
+    // storico) e' la LIVE se nello sport c'e' un bot LIVE o una posizione LIVE
+    const principaleLive = soldiVeri || (corsie?.live.length ?? 0) > 0;
 
     return (
         <Card
-            className={`glass-card p-2.5 transition-all ${s.bordo} ${live ? s.fondo : 'bg-white/[0.02]'} ${
+            className={`glass-card p-2.5 transition-all ${soldiVeri ? 'border-red-500/50' : s.bordo} ${soldiVeri ? s.fondo : 'bg-white/[0.02]'} ${
                 scelto ? 'ring-2 ring-white/50' : spento ? 'opacity-45' : 'hover:brightness-125'
             }`}
             data-testid={`cr-sport-${sport}`}
@@ -123,64 +121,122 @@ function Tessera({ sport, dato, datoPaper, modalita, aperte, letto, scelto, spen
             <div className="flex items-baseline gap-2">
                 <span aria-hidden="true">{s.icona}</span>
                 <span className={`text-[12px] font-bold uppercase tracking-wider ${s.accento}`}>{s.nome}</span>
-                {modalita == null ? (
-                    <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-400/15 text-amber-300"
-                        title="il servizio non dichiara la modalità per questo sport">modalità n/d</span>
-                ) : live ? (
-                    <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-red-500/20 text-red-300"
-                        title="soldi veri: ordine reale su Betfair">{T.modeLive}</span>
-                ) : (
-                    <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/10 text-white/45">{T.modePaper}</span>
-                )}
-                {(aperte.live > 0 || aperte.paper > 0) && (
-                    <span className="ml-auto text-[10px] flex items-baseline gap-1.5">
-                        {aperte.live > 0 && (
-                            <span className="text-red-300" title="posizioni con soldi veri">
-                                {aperte.live} {aperte.live === 1 ? 'aperta' : 'aperte'}
-                            </span>
-                        )}
-                        {aperte.paper > 0 && (
-                            <span className="text-white/35" title="posizioni simulate">
-                                {aperte.paper} in prova
-                            </span>
-                        )}
+                {soldiVeri && (
+                    <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-red-500/25 text-red-200"
+                        data-testid={`cr-sport-${sport}-soldi-veri`}
+                        title="almeno un bot opera con soldi veri su questo sport, o c'e' una posizione con soldi veri aperta">
+                        soldi veri
                     </span>
                 )}
+                {!letto && <span className="ml-auto text-[10px] text-white/40">giornata non ancora letta</span>}
             </div>
 
-            <div className={`font-mono text-2xl font-bold tabular-nums mt-1 ${pnlClass(pnl)}`}
-                data-testid={`cr-sport-${sport}-pnl`}>
-                {!letto ? DASH : fmtMoney(pnl, { signed: true })}
-            </div>
-
-            <div className="text-[10.5px] text-white/45 mt-0.5 flex items-baseline gap-2 flex-wrap">
-                {!letto ? (
-                    <span>giornata non ancora letta</span>
-                ) : !mio || mio.n === 0 ? (
-                    <span>
-                        nessuna operazione {live ? 'con soldi veri' : 'in prova'} oggi
-                        {altro && altro.n > 0 && (
-                            <span className="text-white/25">
-                                {' '}· {altro.n} {live ? 'in prova' : 'con soldi veri'}
-                            </span>
-                        )}
-                    </span>
-                ) : (
-                    <>
-                        <span><span className="font-mono text-white/70">{mio.n}</span> {mio.n === 1 ? 'operazione' : 'operazioni'}</span>
-                        <span className="text-emerald-400/80 font-mono">{mio.won} V</span>
-                        <span className="text-red-400/80 font-mono">{mio.lost} P</span>
-                        {winRate != null && (
-                            <span title="vinte su vinte+perse">{fmtPct(winRate, 0)}</span>
-                        )}
-                    </>
-                )}
-            </div>
+            <Corsia
+                sport={sport} tipo="live" voci={corsie?.live ?? null} dato={dato} letto={letto}
+                aperte={aperte.live} principale={principaleLive}
+            />
+            <Corsia
+                sport={sport} tipo="prova" voci={corsie?.prova ?? null} dato={datoPaper} letto={letto}
+                aperte={aperte.paper} principale={!principaleLive}
+            />
+            {corsie != null && corsie.ignote.length > 0 && (
+                <div className="mt-1 text-[10px] text-amber-300/80" data-testid={`cr-sport-${sport}-ignote`}
+                    title="il servizio non dichiara con che soldi opera: non si conta ne' come live ne' come prova">
+                    modalità non dichiarata: {corsie.ignote.map((v) => `${v.nome}${statoVoce(v)}`).join(' · ')}
+                </div>
+            )}
             <div className="text-[9.5px] uppercase tracking-wider mt-1.5 text-white/30">
                 {scelto ? 'stai vedendo solo questo — clicca per tutti' : 'clicca per vedere solo questo sport'}
             </div>
             </button>
         </Card>
+    );
+}
+
+/** « (spento)» / « (non letto)» / «» accanto al nome del bot. */
+function statoVoce(v: VoceCorsia): string {
+    if (v.acceso === true) return '';
+    return v.acceso === false ? ' (spento)' : ' (non letto)';
+}
+
+function Corsia({ sport, tipo, voci, dato, letto, aperte, principale }: {
+    sport: SportKey;
+    tipo: 'live' | 'prova';
+    voci: VoceCorsia[] | null;
+    dato: DailyBreakdown | null;
+    letto: boolean;
+    aperte: number;
+    principale: boolean;
+}) {
+    const live = tipo === 'live';
+    // «non ancora letto» e «nessuna operazione» sono due cose diverse: la prima
+    // e' un trattino, la seconda uno zero legittimo (26/09, F-3).
+    const pnl = dato ? dato.pnl : (letto ? 0 : null);
+    const esiti = dato ? dato.won + dato.lost : 0;
+    const winRate = dato && esiti > 0 ? dato.won / esiti : null;
+    // la PROVA non deve somigliare ai soldi veri nemmeno a colpo d'occhio:
+    // piu' piccola, attenuata, bordo tratteggiato, sempre SOTTO la LIVE
+    const numero = (
+        <span className={`font-mono font-bold tabular-nums ${live ? 'text-xl' : 'text-base opacity-70'} ${pnlClass(pnl)}`}
+            data-testid={`cr-sport-${sport}-${tipo}-pnl`}>
+            {!letto ? DASH : fmtMoney(pnl, { signed: true })}
+        </span>
+    );
+    return (
+        <div className={`mt-1.5 rounded px-1.5 py-1 ${live
+            ? 'bg-red-500/[0.07] border border-red-500/30'
+            : 'bg-transparent border border-dashed border-white/15'}`}
+            data-testid={`cr-sport-${sport}-${tipo}`}>
+            <div className="flex items-baseline gap-2 flex-wrap">
+                <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                    live ? 'bg-red-500/20 text-red-300' : 'bg-white/10 text-white/55'}`}
+                    title={live ? 'soldi veri: ordini reali su Betfair' : 'simulato sui prezzi veri: mai sommato ai soldi veri'}>
+                    {live ? 'LIVE' : 'PROVA'}
+                </span>
+                <span className="text-[10.5px] text-white/70 min-w-0" data-testid={`cr-sport-${sport}-${tipo}-bot`}>
+                    {voci == null ? <span className="text-white/35">bot non letti</span>
+                        : voci.length === 0 ? <span className="text-white/35">{live ? 'nessun bot in live' : 'nessun bot in prova'}</span>
+                            : voci.map((v, i) => (
+                                <span key={v.chiave} className={v.acceso === true ? '' : 'text-white/35'}>
+                                    {i > 0 ? ' · ' : ''}{v.nome}{statoVoce(v)}
+                                </span>
+                            ))}
+                </span>
+                {aperte > 0 && (
+                    <span className={`ml-auto text-[10px] ${live ? 'text-red-300' : 'text-white/35'}`}
+                        title={live ? 'posizioni con soldi veri' : 'posizioni simulate'}>
+                        {live ? `${aperte} ${aperte === 1 ? 'aperta' : 'aperte'}` : `${aperte} in prova`}
+                    </span>
+                )}
+            </div>
+            <div className="flex items-baseline gap-2 flex-wrap mt-0.5">
+                {principale ? <span data-testid={`cr-sport-${sport}-pnl`}>{numero}</span> : numero}
+                {/* la FONTE della cifra: LIVE = righe dei bot regolate oggi (la
+                    parte regolata e' quella del conto Betfair, il resto e' la
+                    chiusura dichiarata dal bot); PROVA = simulato */}
+                <MarchioSoldi
+                    fonte={live ? 'bot' : 'prova'}
+                    testId={`cr-sport-${sport}-${tipo}-fonte`}
+                    dettaglio={live
+                        ? 'somma delle operazioni con soldi veri regolate oggi, dalle righe dei bot'
+                        : 'somma delle operazioni simulate regolate oggi: non entra nell\'obiettivo'}
+                />
+                <span className="text-[10.5px] text-white/45 flex items-baseline gap-2 flex-wrap">
+                    {!letto ? null : !dato || dato.n === 0 ? (
+                        <span>nessuna operazione {live ? 'con soldi veri' : 'in prova'} oggi</span>
+                    ) : (
+                        <>
+                            <span><span className="font-mono text-white/70">{dato.n}</span> {dato.n === 1 ? 'operazione' : 'operazioni'}</span>
+                            <span className="text-emerald-400/80 font-mono">{dato.won} V</span>
+                            <span className="text-red-400/80 font-mono">{dato.lost} P</span>
+                            {winRate != null && (
+                                <span title="vinte su vinte+perse">{fmtPct(winRate, 0)}</span>
+                            )}
+                        </>
+                    )}
+                </span>
+            </div>
+        </div>
     );
 }
 

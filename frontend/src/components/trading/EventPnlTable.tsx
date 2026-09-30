@@ -447,7 +447,7 @@ export function EventPnlTable<T extends PnlTradeLike>({
                                 <th className="px-2 pb-1 font-heading">Partita</th>
                                 <th className="px-2 pb-1 text-right font-heading">{unita.molti}</th>
                                 <th className="px-2 pb-1 text-right font-heading" title={TIP.totInvestito}>Investito</th>
-                                <th className="px-2 pb-1 text-right font-heading" title={TIP.totLiability}>Responsabilità</th>
+                                <th className="px-2 pb-1 text-right font-heading" title={TIP.totLiability}>{T.totLiability}</th>
                                 <th className="px-2 pb-1 font-heading">Stato</th>
                                 <th className="px-2 pb-1 text-right font-heading">P&amp;L netto</th>
                             </tr>

@@ -4,9 +4,10 @@
 // nessuna barra tennis sul calcio.
 // ============================================================================
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { SchedaPartita } from './SchedaPartita';
+import { SchedaPreMatch } from './SchedaPreMatch';
 import type { PartitaGiornata, PartitaSoldi } from '@/lib/controlRoom';
 import type { TennisLiveNowRow, TennisScoreState } from '@/lib/tennis';
 
@@ -233,5 +234,138 @@ describe('SchedaPartita — calcio vivo (REPERTO 3, secondo giro)', () => {
     it('su tennis non compare mai il blocco "calcio vivo"', () => {
         monta(partita({ soldi: SOLDI_CHIUSI, statoMercato: 'SUSPENDED' } as Partial<PartitaGiornata>));
         expect(screen.queryByTestId('cr-calcio-vivo')).toBeNull();
+    });
+});
+
+// ============================================================================
+// B1 (30/09) — «Seychelles v Sri Lanka, nomi partita diversi dalla scheda
+// "pre-match", uniformare lo stile»; «stessa visibilita' migliorata delle
+// quote»; glossario: «liability», mai «responsabilità».
+// ============================================================================
+const ODDS_VIVE = { home: { back: 40, lay: 50 }, draw: { back: 15, lay: 18 }, away: { back: 1.08, lay: 1.1 } };
+
+describe('SchedaPartita — B1: nomi uguali alla pre-partita', () => {
+    it('i nomi passano dallo STESSO componente della scheda pre-partita (markup identico)', () => {
+        const p = partitaCalcio({ nome: 'Seychelles v Sri Lanka' });
+        const { unmount } = monta(p);
+        const inGioco = screen.getByTestId('cr-nomi-partita').outerHTML;
+        unmount();
+        render(<MemoryRouter><SchedaPreMatch p={{ ...p, stato: 'pre' }} scheda="pre" mancaS={60} /></MemoryRouter>);
+        expect(screen.getByTestId('cr-nomi-partita').outerHTML).toBe(inGioco);
+        expect(screen.getAllByTestId('cr-nome-squadra').map((n) => n.textContent)).toEqual(['Seychelles', 'Sri Lanka']);
+    });
+
+    it('il nome intero resta leggibile una volta (title + testo accessibile)', () => {
+        monta(partitaCalcio({ nome: 'Seychelles v Sri Lanka' }));
+        expect(screen.getByTestId('cr-nomi-partita').getAttribute('title')).toBe('Seychelles v Sri Lanka');
+        expect(screen.getAllByText('Seychelles v Sri Lanka')).toHaveLength(1);
+    });
+
+    it('tennis: stessi nomi su due righe', () => {
+        monta(partita({ soldi: SOLDI_CHIUSI }));
+        expect(screen.getAllByTestId('cr-nome-squadra').map((n) => n.textContent)).toEqual(['Federer R.', 'Nadal R.']);
+    });
+});
+
+describe('SchedaPartita — B1: quote da trader in gioco', () => {
+    it('calcio in gioco: celle 1 · X · 2 con BACK sky / LAY rose, uguali alla pre-partita', () => {
+        const p = partitaCalcio({ odds: ODDS_VIVE, latenzaQuoteS: 2, statoQuote: 'fresco' });
+        const { unmount } = monta(p);
+        const celle = within(screen.getByTestId('cr-calcio-vivo-quote')).getAllByTestId('cr-quota-cella');
+        expect(celle.map((c) => c.textContent)).toEqual(['1 40,00/50,00', 'X 15,00/18,00', '2 1,08/1,10']);
+        const html = celle.map((c) => c.outerHTML);
+        unmount();
+        render(<MemoryRouter><SchedaPreMatch p={{ ...p, stato: 'pre' }} scheda="pre" mancaS={60} /></MemoryRouter>);
+        expect(within(screen.getByTestId('cr-pre-quote')).getAllByTestId('cr-quota-cella').map((c) => c.outerHTML)).toEqual(html);
+    });
+
+    it('l’età delle quote sta ACCANTO alle quote, con l’etichetta di cosa misura', () => {
+        monta(partitaCalcio({ odds: ODDS_VIVE, latenzaQuoteS: 40, statoQuote: 'fermo', etaFeedS: 3, freschezza: 'fresca' }));
+        const vivo = screen.getByTestId('cr-calcio-vivo');
+        const lat = within(vivo).getByTestId('cr-latenza');
+        expect(lat).toHaveTextContent('ultimo cambio: fermo 40 s');
+        // «fermo» non è un allarme; il punteggio ha la SUA età, distinta
+        expect(lat.querySelector('.text-orange-400')).toBeNull();
+        expect(within(vivo).getByTestId('cr-calcio-vivo-eta-punteggio')).toHaveTextContent('punteggio 3 s');
+        expect(screen.getAllByTestId('cr-latenza')).toHaveLength(1);
+    });
+
+    it('prezzo vecchio ed età ignota restano arancioni', () => {
+        const { unmount } = monta(partitaCalcio({ odds: ODDS_VIVE, latenzaQuoteS: 130, statoQuote: 'vecchio' }));
+        expect(screen.getByTestId('cr-latenza')).toHaveTextContent('vecchio 2 min');
+        expect(screen.getByTestId('cr-latenza-valore').className).toContain('text-orange-400');
+        unmount();
+        monta(partitaCalcio({ odds: ODDS_VIVE, latenzaQuoteS: null, statoQuote: 'ignoto' }));
+        expect(screen.getByTestId('cr-latenza')).toHaveTextContent('ultimo cambio: età ignota');
+    });
+
+    it('mercato SOSPESO: badge e quote insieme', () => {
+        monta(partitaCalcio({ odds: ODDS_VIVE, statoMercato: 'SUSPENDED' }));
+        expect(screen.getByTestId('cr-calcio-vivo-mercato')).toHaveTextContent('SOSPESO');
+        expect(within(screen.getByTestId('cr-calcio-vivo-quote')).getAllByTestId('cr-quota-cella')).toHaveLength(3);
+    });
+
+    it('senza quote l’età resta nella riga dei pulsanti, con la stessa etichetta', () => {
+        monta(partitaCalcio({ latenzaQuoteS: 3, statoQuote: 'fresco' }));
+        expect(screen.queryByTestId('cr-calcio-vivo')).toBeNull();
+        expect(screen.getByTestId('cr-latenza')).toHaveTextContent('ultimo cambio: 3 s');
+    });
+
+    it('le linee Under/Over (anche quella decisa dai gol) si vedono nel blocco in gioco', () => {
+        monta(partitaCalcio({
+            lineeOu: [
+                { marketId: '1.35', linea: 3.5, stato: 'OPEN', decisa: false,
+                    under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaBookS: 1 },
+                { marketId: '1.45', linea: 4.5, stato: 'SUSPENDED', decisa: true,
+                    under: null, over: { back: 1.01, lay: null }, etaBookS: null },
+            ],
+        }));
+        const ou = within(screen.getByTestId('cr-calcio-vivo')).getByTestId('cr-calcio-vivo-ou');
+        const righe = within(ou).getAllByTestId('cr-quote-ou-linea');
+        expect(righe[0]).toHaveTextContent('Over 2,60/2,70');
+        expect(righe[1]).toHaveTextContent('Under —/—');
+        expect(righe[1]).toHaveTextContent('decisa dai gol');
+        expect(righe[1]).toHaveTextContent('SOSPESO');
+    });
+});
+
+describe('SchedaPartita — B1: tennis, quote della barra con lo stesso componente', () => {
+    it('le selezioni del Match Odds col loro nome, BACK sky / LAY rose', async () => {
+        hoisted.row = tennisRow({
+            state: { markets: [{ market_id: '1.9', market_type: 'MATCH_ODDS', market_name: 'Match Odds', status: 'OPEN',
+                selections: [
+                    { selection_id: 11, name: 'Federer R.', back: 1.5, lay: 1.52, ltp: 1.5 },
+                    { selection_id: 22, name: 'Nadal R.', back: 2.94, lay: null, ltp: 2.9 },
+                ] }], order_mode: 'LIVE', updated_ms: Date.now() },
+        });
+        monta(partita({ soldi: SOLDI_APERTI }));
+        const q = await screen.findByTestId('cr-tennis-vivo-quote');
+        const celle = within(q).getAllByTestId('cr-quota-cella');
+        expect(celle.map((c) => c.textContent)).toEqual(['Federer R. 1,50/1,52', 'Nadal R. 2,94/—']);
+        expect(within(celle[0]).getByTestId('cr-quota-back').className).toMatch(/text-sky-/);
+    });
+
+    it('l’età della barra dice che è quella del PUNTEGGIO', async () => {
+        hoisted.row = tennisRow();
+        monta(partita({ soldi: SOLDI_APERTI }));
+        expect(await screen.findByTestId('cr-tennis-vivo-eta')).toHaveTextContent(/^punteggio /);
+    });
+});
+
+describe('SchedaPartita — B1: glossario, «liability» e mai «responsabilità»', () => {
+    it('soldi veri e prova: «liability», nessun «resp.» ne’ «responsabilità»', () => {
+        const { container } = monta(partitaCalcio({
+            soldi: {
+                live: { netPnl: null, liability: 9.8, investito: 5, aperta: true },
+                paper: { netPnl: null, liability: 4, investito: 4, aperta: true },
+                modi: ['live', 'paper'], bots: ['mike'],
+            },
+        }));
+        const riga = screen.getByTestId('cr-liability-partita');
+        expect(riga).toHaveTextContent('liability 9,80 €');
+        expect(riga).toHaveTextContent('prova 4,00 €');
+        expect(container.innerHTML).not.toMatch(/resp\.|responsabilit/i);
+        expect(riga.innerHTML).toContain('liability impegnata con SOLDI VERI');
+        expect(riga.innerHTML).toContain('liability impegnata in PROVA: non sono soldi veri e non si sommano');
     });
 });

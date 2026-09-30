@@ -494,7 +494,7 @@ export class ObiettivoOmegaIgnoto extends Error {
 export class ParametriOmegaIgnoti extends Error {
     constructor() {
         super('non conosco i parametri di Omega: avviarlo adesso azzererebbe i suoi '
-            + 'tetti di rischio (perdita giornaliera, responsabilita’ aperta, per partita). '
+            + 'tetti di rischio (perdita giornaliera, liability aperta, per partita). '
             + 'Apri la pagina di Omega, controlla i parametri, e riprova.');
         this.name = 'ParametriOmegaIgnoti';
     }
@@ -1077,6 +1077,9 @@ export interface StatoUscite {
     /** posizioni aperte di questa riga e da quanti minuti la piu' vecchia */
     aperte?: number | null;
     daMin?: number | null;
+    /** 30/09 (B2, A12): l'interruttore governa SOLO le uscite in perdita (Mike,
+     *  `engine.gate_uscite`); assente = governa tutte le uscite della strategia */
+    soloUsciteInPerdita?: boolean;
 }
 
 /** Le strategie di Safe che hanno uscite decise dal bot (`bot_service.STRATEGIE_CON_USCITE`). */
@@ -1137,7 +1140,7 @@ export function statoUscite(i: Interruttore, params: Record<string, unknown> | n
     }
     // 29/09 (piano Mike P1): per Mike l'interruttore governa SOLO le uscite in
     // perdita; lo si dice accanto allo stato, con le stesse parole per sempre
-    if (i.bot === 'mike') return { automatiche: usciteMikeDi(params), nota: NOTA_USCITE_MIKE };
+    if (i.bot === 'mike') return { automatiche: usciteMikeDi(params), nota: NOTA_USCITE_MIKE, soloUsciteInPerdita: true };
     return { automatiche: usciteSafeDi(params, String(i.strategia)) };
 }
 

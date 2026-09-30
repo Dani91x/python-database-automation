@@ -1,0 +1,1302 @@
+diff --git a/frontend/src/components/controlroom/NomiPartita.test.tsx b/frontend/src/components/controlroom/NomiPartita.test.tsx
+new file mode 100644
+index 0000000..acc8512
+--- /dev/null
++++ b/frontend/src/components/controlroom/NomiPartita.test.tsx
+@@ -0,0 +1,62 @@
++// ============================================================================
++// NomiPartita.test.tsx — B1 (30/09), «Seychelles v Sri Lanka, nomi partita
++// diversi dalla scheda "pre-match", uniformare lo stile» (utente, sezione 5).
++// Un solo componente per pre-partita, in gioco e aperte.
++// ============================================================================
++import { describe, it, expect } from 'vitest';
++import { render, screen, fireEvent } from '@testing-library/react';
++import { NomiPartita } from './NomiPartita';
++
++describe('NomiPartita — gli stessi nomi in ogni scheda', () => {
++    it('due righe (casa, ospite), stesso corpo, troncate, nome completo accessibile', () => {
++        render(<NomiPartita nome="Seychelles v Sri Lanka" />);
++        const blocco = screen.getByTestId('cr-nomi-partita');
++        expect(blocco.getAttribute('title')).toBe('Seychelles v Sri Lanka');
++        const righe = screen.getAllByTestId('cr-nome-squadra');
++        expect(righe.map((r) => r.textContent)).toEqual(['Seychelles', 'Sri Lanka']);
++        for (const r of righe) {
++            expect(r.className).toMatch(/truncate/);
++            expect(r.className).toMatch(/text-\[13px\]/);
++        }
++        // il nome intero resta leggibile dagli strumenti di accessibilita', una volta sola
++        expect(screen.getByText('Seychelles v Sri Lanka').className).toMatch(/sr-only/);
++    });
++
++    it('i nomi del trattino lungo e del tennis si dividono allo stesso modo', () => {
++        render(<NomiPartita nome="Federer R. – Nadal R." />);
++        expect(screen.getAllByTestId('cr-nome-squadra').map((r) => r.textContent)).toEqual(['Federer R.', 'Nadal R.']);
++    });
++
++    it('un nome che non si divide resta intero su una riga', () => {
++        render(<NomiPartita nome="1.234567" />);
++        expect(screen.getAllByTestId('cr-nome-squadra').map((r) => r.textContent)).toEqual(['1.234567']);
++    });
++
++    it('con i loghi (id squadra noti): un logo per squadra', () => {
++        const { container } = render(<NomiPartita nome="Roma v Lazio" homeTeamId={497} awayTeamId={487} />);
++        const img = container.querySelectorAll('img');
++        expect(img).toHaveLength(2);
++        expect(img[0].getAttribute('src')).toContain('497');
++        expect(img[1].getAttribute('src')).toContain('487');
++    });
++
++    it('senza loghi: solo i nomi, nessun segnaposto che sembri un logo rotto', () => {
++        const { container } = render(<NomiPartita nome="Seychelles v Sri Lanka" />);
++        expect(container.querySelectorAll('img')).toHaveLength(0);
++        expect(screen.queryAllByTestId('cr-logo-vuoto')).toHaveLength(0);
++    });
++
++    it('un logo solo (l’altro manca): l’altra riga ha lo spazio vuoto per restare allineata, senza bordo né fondo', () => {
++        const { container } = render(<NomiPartita nome="Roma v Lazio" homeTeamId={497} awayTeamId={null} />);
++        expect(container.querySelectorAll('img')).toHaveLength(1);
++        const vuoto = screen.getByTestId('cr-logo-vuoto');
++        expect(vuoto.className).not.toMatch(/border|bg-/);
++        expect(vuoto.getAttribute('aria-hidden')).toBe('true');
++    });
++
++    it('un logo che non carica sparisce (niente quadrato rotto)', () => {
++        const { container } = render(<NomiPartita nome="Roma v Lazio" homeTeamId={497} awayTeamId={487} />);
++        fireEvent.error(container.querySelectorAll('img')[0]);
++        expect(container.querySelectorAll('img')).toHaveLength(1);
++    });
++});
+diff --git a/frontend/src/components/controlroom/NomiPartita.tsx b/frontend/src/components/controlroom/NomiPartita.tsx
+new file mode 100644
+index 0000000..b2e2a64
+--- /dev/null
++++ b/frontend/src/components/controlroom/NomiPartita.tsx
+@@ -0,0 +1,68 @@
++// ============================================================================
++// NomiPartita.tsx — I NOMI DELLA PARTITA, uguali in ogni scheda (B1, 30/09).
++//
++// «Seychelles v Sri Lanka, nomi partita diversi dalla scheda "pre-match",
++// uniformare lo stile» (utente, sezione 5). Prima la pre-partita mostrava due
++// righe con i loghi e la scheda in gioco/aperte il nome intero su una riga,
++// con corpo e peso diversi: la stessa partita sembrava due cose.
++//
++// Adesso UN componente per pre-partita, in gioco e aperte:
++//   · casa sopra, ospite sotto (`dividiNomi`, la stessa divisione dei pulsanti);
++//   · il logo dove c'e' (`teamLogo`, gli URL di Omega). Dove manca, solo il
++//     nome: nessun segnaposto che sembri un logo rotto. Se UNA sola squadra ha
++//     il logo, l'altra riga ha uno spazio vuoto invisibile (niente bordo, niente
++//     fondo) perche' i due nomi restino allineati;
++//   · un logo che non carica sparisce (stessa regola di prima);
++//   · il nome COMPLETO resta accessibile: `title` per chi passa col mouse sopra
++//     un nome troncato, e un testo `sr-only` per i lettori di schermo (le due
++//     righe visibili sono `aria-hidden`, cosi' il nome si legge una volta sola).
++// ============================================================================
++import { useState } from 'react';
++import { teamLogo } from '@/lib/sportsLogos';
++import { dividiNomi } from '@/components/controlroom/AzioniPartita';
++
++export interface NomiPartitaProps {
++    /** il nome intero della partita (`PartitaGiornata.nome`) */
++    nome: string;
++    /** id squadra per il logo (`PartitaGiornata.extra.homeTeamId`); null = nessun logo */
++    homeTeamId?: number | null;
++    awayTeamId?: number | null;
++}
++
++export function NomiPartita({ nome, homeTeamId = null, awayTeamId = null }: NomiPartitaProps) {
++    const [casa, ospite] = dividiNomi(nome);
++    const srcCasa = homeTeamId != null ? teamLogo(homeTeamId) : '';
++    const srcOspite = ospite && awayTeamId != null ? teamLogo(awayTeamId) : '';
++    // lo spazio del logo esiste solo se almeno UNA squadra ha un logo
++    const conLoghi = Boolean(srcCasa || srcOspite);
++    return (
++        <div className="flex-1 min-w-0" title={nome} data-testid="cr-nomi-partita">
++            <span className="sr-only">{nome}</span>
++            <div aria-hidden="true">
++                <Squadra nome={casa} src={srcCasa} conLoghi={conLoghi} />
++                {ospite && <Squadra nome={ospite} src={srcOspite} conLoghi={conLoghi} />}
++            </div>
++        </div>
++    );
++}
++
++/** Una squadra: logo se c'e', nome sempre. */
++function Squadra({ nome, src, conLoghi }: { nome: string; src: string; conLoghi: boolean }) {
++    const [rotto, setRotto] = useState(false);
++    return (
++        <div className="flex items-center gap-1.5 leading-tight min-w-0">
++            {src && !rotto ? (
++                <img
++                    src={src} alt="" width={16} height={16} loading="lazy"
++                    onError={() => setRotto(true)}
++                    className="w-4 h-4 object-contain shrink-0"
++                />
++            ) : conLoghi ? (
++                <span className="w-4 shrink-0" aria-hidden="true" data-testid="cr-logo-vuoto" />
++            ) : null}
++            <span className="text-[13px] font-medium leading-tight truncate" data-testid="cr-nome-squadra">{nome}</span>
++        </div>
++    );
++}
++
++export default NomiPartita;
+diff --git a/frontend/src/components/controlroom/QuoteMercato.test.tsx b/frontend/src/components/controlroom/QuoteMercato.test.tsx
+new file mode 100644
+index 0000000..9c3a1c5
+--- /dev/null
++++ b/frontend/src/components/controlroom/QuoteMercato.test.tsx
+@@ -0,0 +1,135 @@
++// ============================================================================
++// QuoteMercato.test.tsx — B1 (30/09), «rendere le quote in tempo reale piu'
++// visibili e da trader» (utente, sezioni 4-5-6). Un solo componente per le
++// schede pre-partita, in gioco e aperte: BACK sky, LAY rose, cifre mono, `—`
++// per un prezzo assente, e l'eta' con l'etichetta di COSA misura.
++// ============================================================================
++import { describe, it, expect } from 'vitest';
++import { render, screen, within } from '@testing-library/react';
++import {
++    QuoteMercato, EtaQuote, LineeOu, celleMatchOdds, MAX_LINEE_OU, QUOTE_CLS, QUOTE_TESTO,
++} from './QuoteMercato';
++import type { LineaOuScheda } from '@/lib/controlRoom';
++
++describe('QuoteMercato — una cella per selezione, BACK e LAY distinti', () => {
++    it('etichetta, BACK sky, LAY rose, cifre mono e tabulari, formato «1 1,90/1,92»', () => {
++        render(<QuoteMercato testId="q" celle={[{ chiave: 'home', etichetta: '1', back: 1.9, lay: 1.92 }]} />);
++        const cella = screen.getByTestId('cr-quota-cella');
++        expect(cella).toHaveTextContent('1 1,90/1,92');
++        const back = within(cella).getByTestId('cr-quota-back');
++        const lay = within(cella).getByTestId('cr-quota-lay');
++        expect(back).toHaveTextContent('1,90');
++        expect(lay).toHaveTextContent('1,92');
++        expect(back.className).toMatch(/text-sky-/);
++        expect(lay.className).toMatch(/text-rose-/);
++        for (const el of [back, lay]) {
++            expect(el.className).toMatch(/font-mono/);
++            expect(el.className).toMatch(/tabular-nums/);
++            // corpo leggibile: non piu' i 10 px grigi di prima
++            expect(el.className).not.toMatch(/text-\[10px\]/);
++        }
++    });
++
++    it('prezzo assente, zero o non valido: «—», mai «0,00», mai una cella muta', () => {
++        render(<QuoteMercato testId="q" celle={[
++            { chiave: 'home', etichetta: '1', back: null, lay: 0 },
++            { chiave: 'draw', etichetta: 'X', back: 1, lay: undefined },
++        ]} />);
++        const [c1, c2] = screen.getAllByTestId('cr-quota-cella');
++        expect(c1).toHaveTextContent('1 —/—');
++        expect(c2).toHaveTextContent('X —/—');
++        expect(screen.getByTestId('q').textContent).not.toContain('0,00');
++    });
++
++    it('celleMatchOdds: calcio sempre 1 · X · 2 (anche con un lato assente), tennis P1 · P2', () => {
++        const calcio = celleMatchOdds('calcio', { home: { back: 1.9, lay: 1.92 }, away: null });
++        expect(calcio?.map((c) => c.etichetta)).toEqual(['1', 'X', '2']);
++        expect(calcio?.[1]).toMatchObject({ back: null, lay: null });
++        const tennis = celleMatchOdds('tennis', { p1: { back: 1.5, lay: 1.52 }, p2: { back: 2.6, lay: 2.65 } });
++        expect(tennis?.map((c) => c.etichetta)).toEqual(['P1', 'P2']);
++    });
++
++    it('celleMatchOdds: nessun prezzo nel blocco = null (non si monta una fila di trattini)', () => {
++        expect(celleMatchOdds('calcio', null)).toBeNull();
++        expect(celleMatchOdds('calcio', { home: null, draw: null, away: null })).toBeNull();
++        expect(celleMatchOdds('calcio', { home: { back: null, lay: null } })).toBeNull();
++        expect(celleMatchOdds('tennis', { home: { back: 1.9, lay: 2 } })).toBeNull();
++    });
++});
++
++describe('EtaQuote — l’età del prezzo con l’etichetta di cosa misura', () => {
++    it('dice che è l’ULTIMO CAMBIO (odds_ts_ms), non l’ultima lettura', () => {
++        render(<EtaQuote testId="e" latenzaS={4} stato="fresco" />);
++        const e = screen.getByTestId('e');
++        expect(e).toHaveTextContent('ultimo cambio: 4 s');
++        expect(e.getAttribute('title')).toMatch(/ultimo CAMBIO/);
++        expect(e.getAttribute('title')).toMatch(/non l.ultima lettura/i);
++    });
++
++    it('le quattro parole restano quelle: fresco / fermo / vecchio / età ignota, con i loro colori', () => {
++        const casi = [
++            ['fresco', 4, '4 s'], ['fermo', 40, 'fermo 40 s'], ['vecchio', 130, 'vecchio 2 min'], ['ignoto', null, 'età ignota'],
++        ] as const;
++        for (const [stato, lat, testo] of casi) {
++            const { unmount } = render(<EtaQuote testId="e" latenzaS={lat} stato={stato} />);
++            const v = screen.getByTestId('e-valore');
++            expect(v).toHaveTextContent(testo);
++            expect(v.className).toContain(QUOTE_CLS[stato]);
++            unmount();
++        }
++        // «fermo» NON è un allarme
++        expect(QUOTE_CLS.fermo).not.toMatch(/orange|red|amber/);
++        expect(QUOTE_TESTO.ignoto('')).toBe('età ignota');
++    });
++
++    it('l’età cambia a schermo quando cambia il dato (il tic lo dà la pagina)', () => {
++        const { rerender } = render(<EtaQuote testId="e" latenzaS={5} stato="fresco" />);
++        expect(screen.getByTestId('e')).toHaveTextContent('5 s');
++        rerender(<EtaQuote testId="e" latenzaS={6} stato="fresco" />);
++        expect(screen.getByTestId('e')).toHaveTextContent('6 s');
++    });
++});
++
++function linea(over: Partial<LineaOuScheda> = {}): LineaOuScheda {
++    return {
++        marketId: '1.35', linea: 3.5, stato: 'OPEN', decisa: false,
++        under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaBookS: 3, ...over,
++    };
++}
++
++describe('LineeOu — le linee Under/Over con lo stesso componente', () => {
++    it('linea, Under B/L, Over B/L e l’età dell’ultimo book, neutra', () => {
++        render(<LineeOu testId="ou" linee={[linea(), linea({ marketId: '1.45', linea: 4.5, etaBookS: null })]} />);
++        const righe = screen.getAllByTestId('cr-quote-ou-linea');
++        expect(righe).toHaveLength(2);
++        expect(righe[0]).toHaveTextContent('U/O 3,5');
++        expect(righe[0]).toHaveTextContent('Under 1,50/1,52');
++        expect(righe[0]).toHaveTextContent('Over 2,60/2,70');
++        expect(righe[0]).toHaveTextContent('ultimo book: 3 s fa');
++        expect(righe[1]).toHaveTextContent('ultimo book: età ignota');
++        // seen_ms non distingue fermo da non osservato: nessun colore di allarme
++        expect(screen.getByTestId('ou').querySelector('.text-orange-400')).toBeNull();
++    });
++
++    it('mercato SOSPESO e linea DECISA dai gol: si vedono', () => {
++        render(<LineeOu testId="ou" linee={[linea({ stato: 'SUSPENDED', decisa: true })]} />);
++        expect(screen.getByTestId('cr-quote-ou-mercato')).toHaveTextContent('SOSPESO');
++        expect(screen.getByTestId('cr-quote-ou-decisa')).toHaveTextContent('decisa dai gol');
++    });
++
++    it('mercato OPEN: nessun badge di stato', () => {
++        render(<LineeOu testId="ou" linee={[linea()]} />);
++        expect(screen.queryByTestId('cr-quote-ou-mercato')).toBeNull();
++        expect(screen.queryByTestId('cr-quote-ou-decisa')).toBeNull();
++    });
++
++    it(`nessuna linea, o più di ${MAX_LINEE_OU}: non si monta (nessuna scelta inventata di quali mostrare)`, () => {
++        const { container, rerender } = render(<LineeOu testId="ou" linee={[]} />);
++        expect(container.innerHTML).toBe('');
++        const tante = Array.from({ length: MAX_LINEE_OU + 1 }, (_, i) => linea({ marketId: `1.${i}`, linea: i + 0.5 }));
++        rerender(<LineeOu testId="ou" linee={tante} />);
++        expect(container.innerHTML).toBe('');
++        rerender(<LineeOu testId="ou" linee={tante.slice(0, MAX_LINEE_OU)} />);
++        expect(screen.getAllByTestId('cr-quote-ou-linea')).toHaveLength(MAX_LINEE_OU);
++    });
++});
+diff --git a/frontend/src/components/controlroom/QuoteMercato.tsx b/frontend/src/components/controlroom/QuoteMercato.tsx
+new file mode 100644
+index 0000000..f54af96
+--- /dev/null
++++ b/frontend/src/components/controlroom/QuoteMercato.tsx
+@@ -0,0 +1,192 @@
++// ============================================================================
++// QuoteMercato.tsx — LE QUOTE «DA TRADER», uguali in ogni scheda (B1, 30/09).
++//
++// «1 40,00/50,00 · X 15,00/18,00 · 2 1,08/1,10, rendere le quote in tempo
++// reale piu' visibili e da "trader"» (utente, sezione 4); «stessa visibilita'
++// migliorata delle quote» (sezione 5, scheda in gioco); «uniformare la
++// visibilita' delle schede» (sezione 6, aperte). Prima erano una riga di testo
++// grigio da 10 px, scritta in tre modi diversi in tre punti.
++//
++// Adesso UN componente:
++//   · una cella per selezione: etichetta, miglior BACK in `sky`, miglior LAY
++//     in `rose` (DESIGN_SYSTEM §4, nessun altro colore per i lati), cifre
++//     `font-mono tabular-nums` in corpo leggibile, `fmtOdds`;
++//   · prezzo assente (o non valido: una quota Betfair e' sempre > 1) = `—`,
++//     mai `0,00`, mai una cella vuota;
++//   · il testo resta «1 1,90/1,92» (la barra fra BACK e LAY e' un carattere
++//     vero): chi copia o cerca legge la stessa cosa di prima.
++//
++// L'ETA' (`EtaQuote`) dice COSA misura: e' l'ULTIMO CAMBIO del Match Odds
++// (`odds_ts_ms`), non l'ultima lettura (vedi il commento di `odds_ts_ms` in
++// `lib/controlRoom.ts`, con le righe del Python). Le quattro parole e i loro
++// colori sono quelli di sempre (`QUOTE_CLS`/`QUOTE_TESTO`, qui spostati da
++// `SchedaPartita.tsx` che li riesporta): «fermo» non e' un allarme, «vecchio» e
++// «eta' ignota» si'.
++//
++// Nessuna lettura nuova: tutto arriva da `PartitaGiornata`, gia' in memoria.
++// L'eta' cresce al secondo perche' la pagina ricostruisce la giornata a ogni
++// tic del suo orologio (`useControlRoom.ts`, `TICK_MS = 1000`): nessun timer qui.
++// ============================================================================
++import { fmtOdds, fmtAge, fmtNum, DASH } from '@/lib/format';
++import { marketStatusMeta } from '@/lib/mike';
++import type { LineaOuScheda, PartitaFeedLike, Sport, StatoQuote } from '@/lib/controlRoom';
++
++/** «fermo» NON è un allarme: è un mercato che non si muove, e quel prezzo è
++ *  quello corrente. Solo «vecchio» e «ignoto» meritano l'arancione. */
++export const QUOTE_CLS: Record<StatoQuote, string> = {
++    fresco: 'text-emerald-400',
++    fermo: 'text-white/50',
++    vecchio: 'text-orange-400',
++    ignoto: 'text-orange-400',
++};
++export const QUOTE_TESTO: Record<StatoQuote, (s: string) => string> = {
++    fresco: (s) => s,
++    fermo: (s) => `fermo ${s}`,
++    vecchio: (s) => `vecchio ${s}`,
++    ignoto: () => 'età ignota',
++};
++
++/** Il titolo dell'età del Match Odds: la verità su cosa misura. */
++export const TITOLO_ETA_QUOTE: Record<StatoQuote, string> = {
++    fresco: 'da quando lo scanner ha visto cambiare il Match Odds l’ultima volta (ultimo CAMBIO di prezzo o di importo al meglio, non l’ultima lettura)',
++    fermo: 'il prezzo non cambia da questo tempo, ma lo scanner sta guardando: è il prezzo CORRENTE (ultimo CAMBIO, non l’ultima lettura)',
++    vecchio: 'il prezzo non cambia da questo tempo e anche lo scanner è fermo: non sappiamo cosa fa il mercato (ultimo CAMBIO, non l’ultima lettura)',
++    ignoto: 'lo scanner non ha dichiarato l’istante dell’ultimo cambio di prezzo: età sconosciuta, non è un prezzo su cui fidarsi (non l’ultima lettura)',
++};
++
++export interface CellaQuota {
++    /** chiave stabile della selezione (home/draw/away, p1/p2, selection_id) */
++    chiave: string;
++    etichetta: string;
++    back: number | null | undefined;
++    lay: number | null | undefined;
++    /** spiegazione dell'etichetta (es. cosa vuol dire P1) */
++    titolo?: string;
++}
++
++/** Una quota Betfair valida è > 1: tutto il resto è «assente», mai `0,00`. */
++function quota(v: number | null | undefined): string {
++    return typeof v === 'number' && Number.isFinite(v) && v > 1 ? fmtOdds(v) : DASH;
++}
++
++export function QuoteMercato({ celle, testId, titolo }: {
++    celle: readonly CellaQuota[];
++    testId: string;
++    titolo?: string;
++}) {
++    return (
++        <span className="inline-flex items-center gap-1 flex-wrap" data-testid={testId} title={titolo}>
++            {celle.map((c) => (
++                <span key={c.chiave} data-testid="cr-quota-cella" title={c.titolo}
++                    className="inline-flex items-baseline gap-1 rounded border border-white/10 bg-white/[0.03] px-1.5 py-0.5">
++                    <span className="text-[11px] font-semibold text-white/60 max-w-[9rem] truncate">{c.etichetta}</span>{' '}
++                    <span className="font-mono tabular-nums text-[12.5px] font-semibold text-sky-300"
++                        data-testid="cr-quota-back" title="miglior BACK (punta)">{quota(c.back)}</span>
++                    <span className="text-white/25 text-[11px]">/</span>
++                    <span className="font-mono tabular-nums text-[12.5px] font-semibold text-rose-300"
++                        data-testid="cr-quota-lay" title="miglior LAY (banca)">{quota(c.lay)}</span>
++                </span>
++            ))}
++        </span>
++    );
++}
++
++type Lato = { back: number | null; lay: number | null } | null | undefined;
++
++function haPrezzo(l: Lato): boolean {
++    return Boolean(l && (l.back != null || l.lay != null));
++}
++
++/**
++ * Le celle del Match Odds dalla riga dello scanner (`PartitaGiornata.odds`).
++ * Calcio: sempre 1 · X · 2 (un lato assente è `—`, non una cella che manca).
++ * Tennis: P1 · P2. P1/P2 sono le selezioni con `sortPriority` 1 e 2 del Match
++ * Odds (`scanner.tennis_sides`): nessun codice lega quell'ordine all'ordine dei
++ * nomi nell'`event_name`, quindi qui non si scrive un nome che potrebbe essere
++ * quello sbagliato. `null` = nessun prezzo nel blocco: la fila non si monta.
++ */
++export function celleMatchOdds(sport: Sport, odds: PartitaFeedLike['odds'] | undefined): CellaQuota[] | null {
++    if (!odds) return null;
++    if (sport === 'tennis') {
++        if (!haPrezzo(odds.p1) && !haPrezzo(odds.p2)) return null;
++        const t = 'selezione del Match Odds con ordine Betfair (sortPriority)';
++        return [
++            { chiave: 'p1', etichetta: 'P1', back: odds.p1?.back ?? null, lay: odds.p1?.lay ?? null, titolo: `P1 = ${t} 1` },
++            { chiave: 'p2', etichetta: 'P2', back: odds.p2?.back ?? null, lay: odds.p2?.lay ?? null, titolo: `P2 = ${t} 2` },
++        ];
++    }
++    if (!haPrezzo(odds.home) && !haPrezzo(odds.draw) && !haPrezzo(odds.away)) return null;
++    return [
++        { chiave: 'home', etichetta: '1', back: odds.home?.back ?? null, lay: odds.home?.lay ?? null, titolo: '1 = vittoria della squadra di casa' },
++        { chiave: 'draw', etichetta: 'X', back: odds.draw?.back ?? null, lay: odds.draw?.lay ?? null, titolo: 'X = pareggio' },
++        { chiave: 'away', etichetta: '2', back: odds.away?.back ?? null, lay: odds.away?.lay ?? null, titolo: '2 = vittoria della squadra ospite' },
++    ];
++}
++
++/** L'età del Match Odds, con l'etichetta di COSA misura. */
++export function EtaQuote({ latenzaS, stato, testId }: {
++    latenzaS: number | null;
++    stato: StatoQuote;
++    testId: string;
++}) {
++    return (
++        <span className="font-mono text-[11px] whitespace-nowrap" data-testid={testId} title={TITOLO_ETA_QUOTE[stato]}>
++            <span className="text-white/35">ultimo cambio: </span>
++            <span className={QUOTE_CLS[stato]} data-testid={`${testId}-valore`}>
++                {QUOTE_TESTO[stato](latenzaS == null ? '' : fmtAge(latenzaS))}
++            </span>
++        </span>
++    );
++}
++
++/** Oltre questo numero di linee la scheda non le mostra: scegliere QUALI
++ *  mostrare sarebbe una decisione inventata (vedi il referto B1). */
++export const MAX_LINEE_OU = 4;
++
++/**
++ * Le linee Under/Over della riga (`PartitaGiornata.lineeOu`), con lo stesso
++ * componente delle quote. Lo stato del mercato si traduce con
++ * `marketStatusMeta` (lo stesso vocabolario del Match Odds); la linea decisa
++ * dai gol si dichiara. L'età è quella dell'ultimo book RICEVUTO (`seen_ms`),
++ * grigia: da sola non distingue un mercato fermo da uno non più osservato
++ * (quel giudizio lo dà il badge del flusso).
++ */
++export function LineeOu({ linee, testId }: { linee: readonly LineaOuScheda[]; testId: string }) {
++    if (linee.length === 0 || linee.length > MAX_LINEE_OU) return null;
++    return (
++        <div className="space-y-1" data-testid={testId}>
++            {linee.map((l) => {
++                const stato = marketStatusMeta(l.stato);
++                const nome = fmtNum(l.linea, 1);
++                return (
++                    <div key={l.marketId} className="flex items-center gap-2 flex-wrap" data-testid="cr-quote-ou-linea">
++                        <span className="text-[11px] font-semibold text-white/50 w-12 shrink-0"
++                            title={`mercato Under/Over ${nome} gol`}>U/O {nome}</span>
++                        {stato && (
++                            <span className={`text-[9px] font-bold uppercase tracking-wider px-1 rounded border ${stato.cls} border-current/40`}
++                                data-testid="cr-quote-ou-mercato" title="stato del mercato Under/Over, da Betfair">
++                                {stato.label}
++                            </span>
++                        )}
++                        {l.decisa && (
++                            <span className="text-[10px] text-amber-300" data-testid="cr-quote-ou-decisa"
++                                title="i gol hanno già superato la linea: esito certo, è nel feed solo per una posizione di Mike">
++                                decisa dai gol
++                            </span>
++                        )}
++                        <QuoteMercato testId="cr-quote-ou-prezzi" celle={[
++                            { chiave: 'under', etichetta: 'Under', back: l.under?.back, lay: l.under?.lay },
++                            { chiave: 'over', etichetta: 'Over', back: l.over?.back, lay: l.over?.lay },
++                        ]} />
++                        <span className="font-mono text-[11px] text-white/40 whitespace-nowrap" data-testid="cr-quote-ou-eta"
++                            title="ultimo book ricevuto per questa linea (seen_ms): non dice se il prezzo è cambiato">
++                            ultimo book: {l.etaBookS == null ? 'età ignota' : `${fmtAge(l.etaBookS)} fa`}
++                        </span>
++                    </div>
++                );
++            })}
++        </div>
++    );
++}
++
++export default QuoteMercato;
+diff --git a/frontend/src/components/controlroom/SchedaPartita.test.tsx b/frontend/src/components/controlroom/SchedaPartita.test.tsx
+index 565859c..ffb1e00 100644
+--- a/frontend/src/components/controlroom/SchedaPartita.test.tsx
++++ b/frontend/src/components/controlroom/SchedaPartita.test.tsx
+@@ -4,9 +4,10 @@
+ // nessuna barra tennis sul calcio.
+ // ============================================================================
+ import { describe, it, expect, vi, beforeEach } from 'vitest';
+-import { render, screen, waitFor } from '@testing-library/react';
++import { render, screen, waitFor, within } from '@testing-library/react';
+ import { MemoryRouter } from 'react-router-dom';
+ import { SchedaPartita } from './SchedaPartita';
++import { SchedaPreMatch } from './SchedaPreMatch';
+ import type { PartitaGiornata, PartitaSoldi } from '@/lib/controlRoom';
+ import type { TennisLiveNowRow, TennisScoreState } from '@/lib/tennis';
+ 
+@@ -235,3 +236,136 @@ describe('SchedaPartita — calcio vivo (REPERTO 3, secondo giro)', () => {
+         expect(screen.queryByTestId('cr-calcio-vivo')).toBeNull();
+     });
+ });
++
++// ============================================================================
++// B1 (30/09) — «Seychelles v Sri Lanka, nomi partita diversi dalla scheda
++// "pre-match", uniformare lo stile»; «stessa visibilita' migliorata delle
++// quote»; glossario: «liability», mai «responsabilità».
++// ============================================================================
++const ODDS_VIVE = { home: { back: 40, lay: 50 }, draw: { back: 15, lay: 18 }, away: { back: 1.08, lay: 1.1 } };
++
++describe('SchedaPartita — B1: nomi uguali alla pre-partita', () => {
++    it('i nomi passano dallo STESSO componente della scheda pre-partita (markup identico)', () => {
++        const p = partitaCalcio({ nome: 'Seychelles v Sri Lanka' });
++        const { unmount } = monta(p);
++        const inGioco = screen.getByTestId('cr-nomi-partita').outerHTML;
++        unmount();
++        render(<MemoryRouter><SchedaPreMatch p={{ ...p, stato: 'pre' }} scheda="pre" mancaS={60} /></MemoryRouter>);
++        expect(screen.getByTestId('cr-nomi-partita').outerHTML).toBe(inGioco);
++        expect(screen.getAllByTestId('cr-nome-squadra').map((n) => n.textContent)).toEqual(['Seychelles', 'Sri Lanka']);
++    });
++
++    it('il nome intero resta leggibile una volta (title + testo accessibile)', () => {
++        monta(partitaCalcio({ nome: 'Seychelles v Sri Lanka' }));
++        expect(screen.getByTestId('cr-nomi-partita').getAttribute('title')).toBe('Seychelles v Sri Lanka');
++        expect(screen.getAllByText('Seychelles v Sri Lanka')).toHaveLength(1);
++    });
++
++    it('tennis: stessi nomi su due righe', () => {
++        monta(partita({ soldi: SOLDI_CHIUSI }));
++        expect(screen.getAllByTestId('cr-nome-squadra').map((n) => n.textContent)).toEqual(['Federer R.', 'Nadal R.']);
++    });
++});
++
++describe('SchedaPartita — B1: quote da trader in gioco', () => {
++    it('calcio in gioco: celle 1 · X · 2 con BACK sky / LAY rose, uguali alla pre-partita', () => {
++        const p = partitaCalcio({ odds: ODDS_VIVE, latenzaQuoteS: 2, statoQuote: 'fresco' });
++        const { unmount } = monta(p);
++        const celle = within(screen.getByTestId('cr-calcio-vivo-quote')).getAllByTestId('cr-quota-cella');
++        expect(celle.map((c) => c.textContent)).toEqual(['1 40,00/50,00', 'X 15,00/18,00', '2 1,08/1,10']);
++        const html = celle.map((c) => c.outerHTML);
++        unmount();
++        render(<MemoryRouter><SchedaPreMatch p={{ ...p, stato: 'pre' }} scheda="pre" mancaS={60} /></MemoryRouter>);
++        expect(within(screen.getByTestId('cr-pre-quote')).getAllByTestId('cr-quota-cella').map((c) => c.outerHTML)).toEqual(html);
++    });
++
++    it('l’età delle quote sta ACCANTO alle quote, con l’etichetta di cosa misura', () => {
++        monta(partitaCalcio({ odds: ODDS_VIVE, latenzaQuoteS: 40, statoQuote: 'fermo', etaFeedS: 3, freschezza: 'fresca' }));
++        const vivo = screen.getByTestId('cr-calcio-vivo');
++        const lat = within(vivo).getByTestId('cr-latenza');
++        expect(lat).toHaveTextContent('ultimo cambio: fermo 40 s');
++        // «fermo» non è un allarme; il punteggio ha la SUA età, distinta
++        expect(lat.querySelector('.text-orange-400')).toBeNull();
++        expect(within(vivo).getByTestId('cr-calcio-vivo-eta-punteggio')).toHaveTextContent('punteggio 3 s');
++        expect(screen.getAllByTestId('cr-latenza')).toHaveLength(1);
++    });
++
++    it('prezzo vecchio ed età ignota restano arancioni', () => {
++        const { unmount } = monta(partitaCalcio({ odds: ODDS_VIVE, latenzaQuoteS: 130, statoQuote: 'vecchio' }));
++        expect(screen.getByTestId('cr-latenza')).toHaveTextContent('vecchio 2 min');
++        expect(screen.getByTestId('cr-latenza-valore').className).toContain('text-orange-400');
++        unmount();
++        monta(partitaCalcio({ odds: ODDS_VIVE, latenzaQuoteS: null, statoQuote: 'ignoto' }));
++        expect(screen.getByTestId('cr-latenza')).toHaveTextContent('ultimo cambio: età ignota');
++    });
++
++    it('mercato SOSPESO: badge e quote insieme', () => {
++        monta(partitaCalcio({ odds: ODDS_VIVE, statoMercato: 'SUSPENDED' }));
++        expect(screen.getByTestId('cr-calcio-vivo-mercato')).toHaveTextContent('SOSPESO');
++        expect(within(screen.getByTestId('cr-calcio-vivo-quote')).getAllByTestId('cr-quota-cella')).toHaveLength(3);
++    });
++
++    it('senza quote l’età resta nella riga dei pulsanti, con la stessa etichetta', () => {
++        monta(partitaCalcio({ latenzaQuoteS: 3, statoQuote: 'fresco' }));
++        expect(screen.queryByTestId('cr-calcio-vivo')).toBeNull();
++        expect(screen.getByTestId('cr-latenza')).toHaveTextContent('ultimo cambio: 3 s');
++    });
++
++    it('le linee Under/Over (anche quella decisa dai gol) si vedono nel blocco in gioco', () => {
++        monta(partitaCalcio({
++            lineeOu: [
++                { marketId: '1.35', linea: 3.5, stato: 'OPEN', decisa: false,
++                    under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaBookS: 1 },
++                { marketId: '1.45', linea: 4.5, stato: 'SUSPENDED', decisa: true,
++                    under: null, over: { back: 1.01, lay: null }, etaBookS: null },
++            ],
++        }));
++        const ou = within(screen.getByTestId('cr-calcio-vivo')).getByTestId('cr-calcio-vivo-ou');
++        const righe = within(ou).getAllByTestId('cr-quote-ou-linea');
++        expect(righe[0]).toHaveTextContent('Over 2,60/2,70');
++        expect(righe[1]).toHaveTextContent('Under —/—');
++        expect(righe[1]).toHaveTextContent('decisa dai gol');
++        expect(righe[1]).toHaveTextContent('SOSPESO');
++    });
++});
++
++describe('SchedaPartita — B1: tennis, quote della barra con lo stesso componente', () => {
++    it('le selezioni del Match Odds col loro nome, BACK sky / LAY rose', async () => {
++        hoisted.row = tennisRow({
++            state: { markets: [{ market_id: '1.9', market_type: 'MATCH_ODDS', market_name: 'Match Odds', status: 'OPEN',
++                selections: [
++                    { selection_id: 11, name: 'Federer R.', back: 1.5, lay: 1.52, ltp: 1.5 },
++                    { selection_id: 22, name: 'Nadal R.', back: 2.94, lay: null, ltp: 2.9 },
++                ] }], order_mode: 'LIVE', updated_ms: Date.now() },
++        });
++        monta(partita({ soldi: SOLDI_APERTI }));
++        const q = await screen.findByTestId('cr-tennis-vivo-quote');
++        const celle = within(q).getAllByTestId('cr-quota-cella');
++        expect(celle.map((c) => c.textContent)).toEqual(['Federer R. 1,50/1,52', 'Nadal R. 2,94/—']);
++        expect(within(celle[0]).getByTestId('cr-quota-back').className).toMatch(/text-sky-/);
++    });
++
++    it('l’età della barra dice che è quella del PUNTEGGIO', async () => {
++        hoisted.row = tennisRow();
++        monta(partita({ soldi: SOLDI_APERTI }));
++        expect(await screen.findByTestId('cr-tennis-vivo-eta')).toHaveTextContent(/^punteggio /);
++    });
++});
++
++describe('SchedaPartita — B1: glossario, «liability» e mai «responsabilità»', () => {
++    it('soldi veri e prova: «liability», nessun «resp.» ne’ «responsabilità»', () => {
++        const { container } = monta(partitaCalcio({
++            soldi: {
++                live: { netPnl: null, liability: 9.8, investito: 5, aperta: true },
++                paper: { netPnl: null, liability: 4, investito: 4, aperta: true },
++                modi: ['live', 'paper'], bots: ['mike'],
++            },
++        }));
++        const riga = screen.getByTestId('cr-liability-partita');
++        expect(riga).toHaveTextContent('liability 9,80 €');
++        expect(riga).toHaveTextContent('prova 4,00 €');
++        expect(container.innerHTML).not.toMatch(/resp\.|responsabilit/i);
++        expect(riga.innerHTML).toContain('liability impegnata con SOLDI VERI');
++        expect(riga.innerHTML).toContain('liability impegnata in PROVA: non sono soldi veri e non si sommano');
++    });
++});
+diff --git a/frontend/src/components/controlroom/SchedaPartita.tsx b/frontend/src/components/controlroom/SchedaPartita.tsx
+index 157b751..53f8ab6 100644
+--- a/frontend/src/components/controlroom/SchedaPartita.tsx
++++ b/frontend/src/components/controlroom/SchedaPartita.tsx
+@@ -19,20 +19,29 @@
+ // REGOLE DEL DESIGN SYSTEM rispettate alla lettera: i soldi passano da
+ // `fmtMoney`, le quote da `fmtOdds`, nessuno stato in inglese sotto gli occhi
+ // del trader, e un valore che non c'è è `—`, mai `0,00 €`.
++//
++// B1 (30/09) — nomi e quote UGUALI alla scheda pre-partita: i nomi passano da
++// `NomiPartita`, le quote (Match Odds, linee Under/Over, barra tennis) da
++// `QuoteMercato`, con l'età del prezzo ACCANTO alle quote e con l'etichetta
++// di cosa misura. Glossario: «liability», mai «responsabilità» (§3).
+ // ============================================================================
+ import { useState } from 'react';
+ import { Circle } from 'lucide-react';
+ import { AzioniPartita } from '@/components/controlroom/AzioniPartita';
+ import FlussoBadge, { FlussoLineeMikeBadge } from '@/components/controlroom/FlussoBadge';
+ import { CashOutPartita } from '@/components/controlroom/CashOutPartita';
+-import { fmtMoney, fmtOdds, fmtAge, fmtTime, DASH } from '@/lib/format';
++import { NomiPartita } from '@/components/controlroom/NomiPartita';
++import {
++    QuoteMercato, EtaQuote, LineeOu, celleMatchOdds, MAX_LINEE_OU, QUOTE_CLS, QUOTE_TESTO,
++} from '@/components/controlroom/QuoteMercato';
++import { fmtMoney, fmtAge, fmtTime, DASH } from '@/lib/format';
+ import { isErrorRow, isSettled } from '@/lib/eventGroups';
+ import type { StatoChiusuraEvento } from '@/lib/chiusuraUtente';
+ import { pnlClass } from '@/lib/tradeStatus';
+ import { RigaOperazione } from '@/components/controlroom/DettaglioRigaView';
+ import { trovaEsitoCashOut } from '@/components/controlroom/trovaEsitoUscita';
+ import {
+-    BOT_LABEL, BOT_TENNIS, isBotTennis, type Bot, type Freschezza, type PartitaGiornata, type Sport, type StatoQuote,
++    BOT_LABEL, BOT_TENNIS, isBotTennis, type Bot, type Freschezza, type PartitaGiornata, type Sport,
+ } from '@/lib/controlRoom';
+ import type { OperazionePartita } from '@/components/controlroom/useControlRoom';
+ import { SchedaMike } from '@/components/controlroom/SchedaMike';
+@@ -70,20 +79,10 @@ export function botDiSport(sport: Sport): Bot[] {
+ 
+ /** «fermo» NON è un allarme: è un mercato che non si muove, e quel prezzo è
+  *  quello corrente. Solo «vecchio» e «ignoto» meritano l'arancione.
+- *  Esportate (18/09, secondo giro): `SchedaPreMatch.tsx` le riusa per le
+- *  quote pre-match — stesso concetto, stessa parola, stesso colore. */
+-export const QUOTE_CLS: Record<StatoQuote, string> = {
+-    fresco: 'text-emerald-400',
+-    fermo: 'text-white/50',
+-    vecchio: 'text-orange-400',
+-    ignoto: 'text-orange-400',
+-};
+-export const QUOTE_TESTO: Record<StatoQuote, (s: string) => string> = {
+-    fresco: (s) => s,
+-    fermo: (s) => `fermo ${s}`,
+-    vecchio: (s) => `vecchio ${s}`,
+-    ignoto: () => 'età ignota',
+-};
++ *  B1 (30/09): definite in `QuoteMercato.tsx` (il componente delle quote le
++ *  usa, e importarle da qui creerebbe un giro di import); riesportate qui
++ *  identiche, perche' chi le importava da questo modulo continui a trovarle. */
++export { QUOTE_CLS, QUOTE_TESTO };
+ 
+ /** Stessa palette di `QUOTE_CLS` (colore solo come segnale, §3.3 regola 5):
+  *  `fresca` non merita nessun accento, `lenta`/`vecchia`/`ignota` sì. */
+@@ -192,21 +191,22 @@ function TennisVivoBar({ eventId, abilitato, giocatori }: {
+                 (`TennisNowSelection`), quindi qui non serve nessuna assunzione
+                 sull'ordine p1/p2 — a differenza del servizio sopra, dove
+                 l'assunzione è dichiarata e circoscritta. */}
++            {/* B1 (30/09): le stesse celle BACK/LAY delle altre schede */}
+             {(vivo.row?.state?.markets ?? []).flatMap((m) => m.selections ?? []).length > 0 && (
+-                <span className="font-mono tabular-nums text-[10px] text-white/50"
+-                    data-testid="cr-tennis-vivo-quote" title="Match Odds: miglior BACK / miglior LAY di adesso, per selezione">
+-                    {(vivo.row?.state?.markets ?? []).flatMap((m) => m.selections ?? []).map((s, i) => (
+-                        <span key={s.selection_id}>
+-                            {i > 0 && <span className="text-white/25"> · </span>}
+-                            {s.name ?? `#${s.selection_id}`} {fmtOdds(s.back)}/{fmtOdds(s.lay)}
+-                        </span>
+-                    ))}
+-                </span>
++                <QuoteMercato testId="cr-tennis-vivo-quote"
++                    titolo="Match Odds dal runner tennis: miglior BACK / miglior LAY di adesso, per selezione"
++                    celle={(vivo.row?.state?.markets ?? []).flatMap((m) => m.selections ?? []).map((s) => ({
++                        chiave: String(s.selection_id),
++                        etichetta: s.name ?? `#${s.selection_id}`,
++                        back: s.back, lay: s.lay,
++                    }))} />
+             )}
+             {vivo.row && (
+                 <span className={`ml-auto font-mono text-[10px] ${FRESCHEZZA_CLS[vivo.freschezza]}`}
+                     data-testid="cr-tennis-vivo-eta"
+-                    title="età del punteggio/mercato tennis: sopra 20 s il dato è vecchio">
++                    title="età del PUNTEGGIO tennis (istante del punteggio del runner; senza punteggio, ultima scrittura della riga): non è l’età delle quote. Sopra 20 s il dato è vecchio">
++                    {/* B1 (30/09): l'etichetta dice COSA misura (`useTennisVivo::istantePiuRecenteMs`) */}
++                    <span className="text-white/35">{score ? 'punteggio ' : 'riga '}</span>
+                     {vivo.etaS == null ? 'età ignota' : fmtAge(vivo.etaS)}
+                     {/* 25/09 (voce 5): la FONTE accanto all'eta' */}
+                     <span className="text-white/30" data-testid="cr-tennis-vivo-fonte"
+@@ -288,6 +288,16 @@ export function SchedaPartita({
+ 
+     const perBot = (b: Bot) => operazioni.filter((o) => o.bot === b);
+ 
++    // B1 (30/09) — le quote del calcio in gioco, con lo stesso componente della
++    // pre-partita. Quando la fila delle quote c'e', l'età del prezzo
++    // (`cr-latenza`) sta ACCANTO alle quote; altrimenti resta nella riga dei
++    // pulsanti come prima (tennis, calcio senza prezzi). Un solo `cr-latenza`.
++    const calcioVivo = p.sport === 'calcio' && p.stato === 'live';
++    const celleCalcio = calcioVivo ? celleMatchOdds('calcio', p.odds) : null;
++    const lineeOu = p.lineeOu ?? [];
++    const haLineeOu = calcioVivo && lineeOu.length > 0 && lineeOu.length <= MAX_LINEE_OU;
++    const latenzaAccantoQuote = celleCalcio != null;
++
+     return (
+         <div className={`rounded border border-white/10 border-l-[3px] ${bordo} bg-white/[0.02]`}
+             data-testid="cr-partita" data-event-id={p.event_id}>
+@@ -297,7 +307,9 @@ export function SchedaPartita({
+                     aria-label={p.sport === 'tennis' ? 'tennis' : 'calcio'}>
+                     {p.sport === 'tennis' ? '🎾' : '⚽'}
+                 </span>
+-                <span className="text-[13px] font-medium leading-tight flex-1 min-w-0">{p.nome}</span>
++                {/* B1 (30/09): gli stessi nomi (e loghi) della scheda pre-partita */}
++                <NomiPartita nome={p.nome}
++                    homeTeamId={p.extra?.homeTeamId ?? null} awayTeamId={p.extra?.awayTeamId ?? null} />
+                 <StatoPill p={p} />
+             </div>
+ 
+@@ -311,15 +323,9 @@ export function SchedaPartita({
+                 <FlussoBadge flusso={p.flusso} />
+                 {/* 30/09: le linee di Mike (Under/Over 3,5 e 4,5) col loro flusso */}
+                 <FlussoLineeMikeBadge flusso={p.flussoMike} />
+-                {p.stato === 'live' && (
+-                    <span className={`text-[10px] font-mono ml-auto ${QUOTE_CLS[p.statoQuote]}`}
+-                        data-testid="cr-latenza"
+-                        title={p.statoQuote === 'fermo'
+-                            ? 'il prezzo non cambia da questo tempo, ma lo scanner sta guardando: è il prezzo CORRENTE'
+-                            : 'da quando il prezzo è cambiato l’ultima volta'}>
+-                        {p.latenzaQuoteS == null
+-                            ? QUOTE_TESTO[p.statoQuote]('')
+-                            : QUOTE_TESTO[p.statoQuote](fmtAge(p.latenzaQuoteS))}
++                {p.stato === 'live' && !latenzaAccantoQuote && (
++                    <span className="ml-auto">
++                        <EtaQuote testId="cr-latenza" latenzaS={p.latenzaQuoteS} stato={p.statoQuote} />
+                     </span>
+                 )}
+             </div>
+@@ -334,45 +340,42 @@ export function SchedaPartita({
+                 nuova. NON sommato nessun +3 s a mano: `IPS_SCORE_LAG_SEC`
+                 (`scan_feed.py:67`) è una costante SOLO lato Python, mai
+                 scritta nella riga — dichiarato come limite noto, non stimato. */}
+-            {p.sport === 'calcio' && p.stato === 'live' && (() => {
++            {calcioVivo && (() => {
+                 const statoMercato = marketStatusMeta(p.statoMercato ?? null);
+                 const volume = p.volumeMercato ?? null;
+-                const odds = p.odds;
+-                const haQuote = Boolean(odds?.home || odds?.draw || odds?.away);
+-                if (!statoMercato && volume == null && p.etaFeedS == null && !haQuote) return null;
++                if (!statoMercato && volume == null && p.etaFeedS == null && !celleCalcio && !haLineeOu) return null;
+                 return (
+-                    <div className="px-2.5 pt-1 flex items-center gap-2 flex-wrap text-[11px]"
+-                        data-testid="cr-calcio-vivo">
+-                        {statoMercato && (
+-                            <span className={`text-[9px] font-bold uppercase tracking-wider px-1 rounded border ${statoMercato.cls} border-current/40`}
+-                                data-testid="cr-calcio-vivo-mercato" title="stato del mercato Match Odds, da Betfair">
+-                                {statoMercato.label}
+-                            </span>
+-                        )}
+-                        {haQuote && (
+-                            <span className="font-mono tabular-nums text-[10px] text-white/60"
+-                                data-testid="cr-calcio-vivo-quote"
+-                                title="Match Odds: miglior BACK / miglior LAY di adesso, 1 · X · 2">
+-                                1 {fmtOdds(odds?.home?.back ?? null)}/{fmtOdds(odds?.home?.lay ?? null)}
+-                                <span className="text-white/25"> · </span>
+-                                X {fmtOdds(odds?.draw?.back ?? null)}/{fmtOdds(odds?.draw?.lay ?? null)}
+-                                <span className="text-white/25"> · </span>
+-                                2 {fmtOdds(odds?.away?.back ?? null)}/{fmtOdds(odds?.away?.lay ?? null)}
+-                            </span>
+-                        )}
+-                        {volume != null && (
+-                            <span className="text-[10px] text-white/40 font-mono tabular-nums"
+-                                data-testid="cr-calcio-vivo-volume" title="euro già scambiati sul Match Odds">
+-                                vol. {fmtMoney(volume)}
+-                            </span>
+-                        )}
+-                        {p.etaFeedS != null && (
+-                            <span className={`ml-auto font-mono text-[10px] ${FRESCHEZZA_CLS[p.freschezza]}`}
+-                                data-testid="cr-calcio-vivo-eta-punteggio"
+-                                title="età del PUNTEGGIO (non delle quote): quanto è vecchia la riga del feed. Nota: non include il ritardo IPS dichiarato (2-3 s), che qui non si somma a mano">
+-                                punteggio {fmtAge(p.etaFeedS)}
+-                            </span>
+-                        )}
++                    <div className="px-2.5 pt-1 space-y-1 text-[11px]" data-testid="cr-calcio-vivo">
++                        <div className="flex items-center gap-2 flex-wrap">
++                            {statoMercato && (
++                                <span className={`text-[9px] font-bold uppercase tracking-wider px-1 rounded border ${statoMercato.cls} border-current/40`}
++                                    data-testid="cr-calcio-vivo-mercato" title="stato del mercato Match Odds, da Betfair">
++                                    {statoMercato.label}
++                                </span>
++                            )}
++                            {celleCalcio && (
++                                <QuoteMercato testId="cr-calcio-vivo-quote" celle={celleCalcio}
++                                    titolo="Match Odds: miglior BACK / miglior LAY di adesso, 1 · X · 2" />
++                            )}
++                            {latenzaAccantoQuote && (
++                                <EtaQuote testId="cr-latenza" latenzaS={p.latenzaQuoteS} stato={p.statoQuote} />
++                            )}
++                            {volume != null && (
++                                <span className="text-[10px] text-white/40 font-mono tabular-nums"
++                                    data-testid="cr-calcio-vivo-volume" title="euro già scambiati sul Match Odds">
++                                    vol. {fmtMoney(volume)}
++                                </span>
++                            )}
++                            {p.etaFeedS != null && (
++                                <span className={`ml-auto font-mono text-[10px] ${FRESCHEZZA_CLS[p.freschezza]}`}
++                                    data-testid="cr-calcio-vivo-eta-punteggio"
++                                    title="età del PUNTEGGIO (non delle quote): quanto è vecchia la riga del feed. Nota: non include il ritardo IPS dichiarato (2-3 s), che qui non si somma a mano">
++                                    punteggio {fmtAge(p.etaFeedS)}
++                                </span>
++                            )}
++                        </div>
++                        {/* B1 (30/09): le linee Under/Over della riga, stesso componente */}
++                        {haLineeOu && <LineeOu testId="cr-calcio-vivo-ou" linee={lineeOu} />}
+                     </div>
+                 );
+             })()}
+@@ -457,14 +460,16 @@ export function SchedaPartita({
+                     );
+                 })}
+                 {soldi && (soldi.live.liability > 0 || soldi.paper.liability > 0) ? (
+-                    <span className="ml-auto text-[10px] text-white/40 flex items-baseline gap-1.5">
++                    <span className="ml-auto text-[10px] text-white/40 flex items-baseline gap-1.5"
++                        data-testid="cr-liability-partita">
++                        {/* B1 (30/09): glossario (DESIGN_SYSTEM §3), «liability», mai «responsabilità» */}
+                         {soldi.live.liability > 0 && (
+-                            <span title="responsabilità impegnata con SOLDI VERI">
+-                                resp. <span className="font-mono text-white/65">{fmtMoney(soldi.live.liability)}</span>
++                            <span title="liability impegnata con SOLDI VERI">
++                                liability <span className="font-mono text-white/65">{fmtMoney(soldi.live.liability)}</span>
+                             </span>
+                         )}
+                         {soldi.paper.liability > 0 && (
+-                            <span className="text-white/30" title="responsabilità impegnata in PROVA: non sono soldi veri e non si sommano">
++                            <span className="text-white/30" title="liability impegnata in PROVA: non sono soldi veri e non si sommano">
+                                 prova <span className="font-mono">{fmtMoney(soldi.paper.liability)}</span>
+                             </span>
+                         )}
+diff --git a/frontend/src/components/controlroom/SchedaPreMatch.test.tsx b/frontend/src/components/controlroom/SchedaPreMatch.test.tsx
+index 4c0b51d..733c3c1 100644
+--- a/frontend/src/components/controlroom/SchedaPreMatch.test.tsx
++++ b/frontend/src/components/controlroom/SchedaPreMatch.test.tsx
+@@ -4,7 +4,7 @@
+ // Live/Aperte (`RigaOperazione`).
+ // ============================================================================
+ import { describe, it, expect } from 'vitest';
+-import { render, screen } from '@testing-library/react';
++import { render, screen, within } from '@testing-library/react';
+ import { MemoryRouter } from 'react-router-dom';
+ import { SchedaPreMatch } from './SchedaPreMatch';
+ import type { PartitaGiornata } from '@/lib/controlRoom';
+@@ -79,6 +79,66 @@ describe('SchedaPreMatch — quote pre-match vive (secondo giro)', () => {
+     });
+ });
+ 
++// ============================================================================
++// B1 (30/09) — nomi e quote «da trader», uguali alla scheda in gioco.
++// ============================================================================
++function lineaOu(linea: number, over: Partial<NonNullable<PartitaGiornata['lineeOu']>[number]> = {}) {
++    return {
++        marketId: `1.${linea * 10}`, linea, stato: 'OPEN', decisa: false,
++        under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaBookS: 2, ...over,
++    };
++}
++
++describe('SchedaPreMatch — B1: nomi e quote da trader', () => {
++    it('i nomi passano dal componente condiviso, col nome intero nel title', () => {
++        monta(partita({ extra: { campionato: 'Serie A', leagueId: 135, homeTeamId: 497, awayTeamId: 487, fixtureId: 1 } }));
++        const nomi = screen.getByTestId('cr-nomi-partita');
++        expect(nomi.getAttribute('title')).toBe('Roma – Lazio');
++        expect(screen.getAllByTestId('cr-nome-squadra').map((n) => n.textContent)).toEqual(['Roma', 'Lazio']);
++        expect(nomi.querySelectorAll('img')).toHaveLength(2);
++    });
++
++    it('le quote sono celle: BACK sky, LAY rose, non più il testo grigio da 10 px', () => {
++        monta(partita({
++            odds: { home: { back: 40, lay: 50 }, draw: { back: 15, lay: 18 }, away: { back: 1.08, lay: 1.1 } },
++            latenzaQuoteS: 2, statoQuote: 'fresco',
++        }));
++        const riga = screen.getByTestId('cr-pre-quote');
++        const celle = within(riga).getAllByTestId('cr-quota-cella');
++        expect(celle.map((c) => c.textContent)).toEqual(['1 40,00/50,00', 'X 15,00/18,00', '2 1,08/1,10']);
++        expect(within(celle[2]).getByTestId('cr-quota-back').className).toMatch(/text-sky-/);
++        expect(within(celle[2]).getByTestId('cr-quota-lay').className).toMatch(/text-rose-/);
++    });
++
++    it('un lato del 1X2 assente: la cella c’è e dice «—»', () => {
++        monta(partita({ odds: { home: { back: 1.9, lay: 1.92 }, draw: null, away: { back: 4.2, lay: null } } }));
++        const celle = within(screen.getByTestId('cr-pre-quote')).getAllByTestId('cr-quota-cella');
++        expect(celle.map((c) => c.textContent)).toEqual(['1 1,90/1,92', 'X —/—', '2 4,20/—']);
++    });
++
++    it('accanto alle quote l’età c’è SEMPRE, con cosa misura (anche quando è ignota)', () => {
++        monta(partita({ odds: { home: { back: 1.9, lay: 1.92 } }, latenzaQuoteS: null, statoQuote: 'ignoto' }));
++        const eta = within(screen.getByTestId('cr-pre-quote')).getByTestId('cr-pre-latenza');
++        expect(eta).toHaveTextContent('ultimo cambio: età ignota');
++        expect(within(eta).getByTestId('cr-pre-latenza-valore').className).toContain('text-orange-400');
++    });
++
++    it('le linee Under/Over della riga si vedono con lo stesso componente', () => {
++        monta(partita({ lineeOu: [lineaOu(3.5), lineaOu(4.5, { etaBookS: 7 })] }));
++        const ou = within(screen.getByTestId('cr-pre-quote')).getByTestId('cr-pre-quote-ou');
++        const righe = within(ou).getAllByTestId('cr-quote-ou-linea');
++        expect(righe).toHaveLength(2);
++        expect(righe[0]).toHaveTextContent('U/O 3,5');
++        expect(righe[0]).toHaveTextContent('Under 1,50/1,52');
++        expect(righe[1]).toHaveTextContent('ultimo book: 7 s fa');
++    });
++
++    it('più di quattro linee: non si mostrano (nessuna scelta inventata)', () => {
++        monta(partita({ lineeOu: [0.5, 1.5, 2.5, 3.5, 4.5].map((l) => lineaOu(l)) }));
++        expect(screen.queryByTestId('cr-pre-quote-ou')).toBeNull();
++    });
++});
++
+ describe('SchedaPreMatch — ordini pre-match già piazzati (secondo giro)', () => {
+     it('senza operazioni (default): nessuna sezione montata', () => {
+         monta(partita());
+diff --git a/frontend/src/components/controlroom/SchedaPreMatch.tsx b/frontend/src/components/controlroom/SchedaPreMatch.tsx
+index eae8187..4923f4b 100644
+--- a/frontend/src/components/controlroom/SchedaPreMatch.tsx
++++ b/frontend/src/components/controlroom/SchedaPreMatch.tsx
+@@ -24,14 +24,22 @@
+ // la riga esatta da cambiare — ma la scheda è pronta a riceverla, e senza non
+ // si rompe (nessuna sezione ordini, non un errore).
+ // ============================================================================
+-import { useState } from 'react';
++//
++// B1 (30/09) — «rendere le quote in tempo reale piu' visibili e da "trader"»
++// e «nomi partita diversi [...] uniformare lo stile» (utente, sezioni 4-5):
++// i nomi passano da `NomiPartita` e le quote da `QuoteMercato`, gli STESSI
++// componenti della scheda in gioco/aperte (`SchedaPartita.tsx`). La funzione
++// locale `Squadra` e' traslocata dentro `NomiPartita.tsx` con le stesse regole
++// (logo dove c'e', mai un segnaposto che sembri un logo rotto).
++// ============================================================================
+ import { Clock } from 'lucide-react';
+-import { fmtTime, fmtAge, fmtOdds, DASH } from '@/lib/format';
+-import { teamLogo } from '@/lib/sportsLogos';
+-import { dividiNomi } from '@/components/controlroom/AzioniPartita';
++import { fmtTime, fmtAge, DASH } from '@/lib/format';
+ import FlussoBadge, { FlussoLineeMikeBadge } from '@/components/controlroom/FlussoBadge';
+ import { AzioniPartita } from '@/components/controlroom/AzioniPartita';
+-import { QUOTE_CLS, QUOTE_TESTO } from '@/components/controlroom/SchedaPartita';
++import { NomiPartita } from '@/components/controlroom/NomiPartita';
++import {
++    QuoteMercato, EtaQuote, LineeOu, celleMatchOdds, MAX_LINEE_OU,
++} from '@/components/controlroom/QuoteMercato';
+ import { RigaOperazione } from '@/components/controlroom/DettaglioRigaView';
+ import type { PartitaGiornata } from '@/lib/controlRoom';
+ import type { OperazionePartita } from '@/components/controlroom/useControlRoom';
+@@ -59,10 +67,11 @@ export interface SchedaPreMatchProps {
+ export function SchedaPreMatch({
+     p, scheda, mancaS, registra, registratoreVivo = null, onRegistrazione, operazioni = [],
+ }: SchedaPreMatchProps) {
+-    const [casa, ospite] = dividiNomi(p.nome);
+     const imminente = mancaS != null && mancaS <= 15 * 60;
+-    const odds = p.odds;
+-    const haQuote = Boolean(odds?.home || odds?.draw || odds?.away || odds?.p1 || odds?.p2);
++    const celle = celleMatchOdds(p.sport, p.odds);
++    const haQuote = celle != null;
++    const linee = p.lineeOu ?? [];
++    const haLinee = linee.length > 0 && linee.length <= MAX_LINEE_OU;
+ 
+     return (
+         <div
+@@ -78,10 +87,8 @@ export function SchedaPreMatch({
+                     {p.koMs == null ? DASH : fmtTime(p.koMs)}
+                 </span>
+ 
+-                <div className="flex-1 min-w-0">
+-                    <Squadra nome={casa} teamId={p.extra?.homeTeamId ?? null} />
+-                    {ospite && <Squadra nome={ospite} teamId={p.extra?.awayTeamId ?? null} />}
+-                </div>
++                <NomiPartita nome={p.nome}
++                    homeTeamId={p.extra?.homeTeamId ?? null} awayTeamId={p.extra?.awayTeamId ?? null} />
+ 
+                 {mancaS != null && (
+                     <span className={`shrink-0 text-[10px] font-mono flex items-center gap-1 ${
+@@ -94,33 +101,25 @@ export function SchedaPreMatch({
+             </div>
+ 
+             {/* ── quote pre-match vive, con età (18/09, secondo giro) ── */}
+-            {(haQuote || p.latenzaQuoteS != null || p.flussoMike?.stato === 'fermo') && (
+-                <div className="flex items-center gap-2 flex-wrap mt-1 pl-[52px] text-[10px]"
+-                    data-testid="cr-pre-quote">
+-                    {haQuote && (
+-                        <span className="font-mono tabular-nums text-white/55"
+-                            title="miglior BACK / miglior LAY di adesso">
+-                            {odds?.home && <>1 {fmtOdds(odds.home.back)}/{fmtOdds(odds.home.lay)}</>}
+-                            {odds?.draw && <><span className="text-white/25"> · </span>X {fmtOdds(odds.draw.back)}/{fmtOdds(odds.draw.lay)}</>}
+-                            {odds?.away && <><span className="text-white/25"> · </span>2 {fmtOdds(odds.away.back)}/{fmtOdds(odds.away.lay)}</>}
+-                            {odds?.p1 && <>P1 {fmtOdds(odds.p1.back)}/{fmtOdds(odds.p1.lay)}</>}
+-                            {odds?.p2 && <><span className="text-white/25"> · </span>P2 {fmtOdds(odds.p2.back)}/{fmtOdds(odds.p2.lay)}</>}
+-                        </span>
+-                    )}
+-                    {/* cantiere J (28/09): il flusso dei prezzi della partita.
+-                        30/09: il Match Odds non ancora seguito prima del fischio
+-                        e' una nota grigia, non un rosso; le linee di Mike
+-                        (Under/Over 3,5 e 4,5) hanno il loro giudizio. */}
+-                    <FlussoBadge flusso={p.flusso} prePartita />
+-                    <FlussoLineeMikeBadge flusso={p.flussoMike} />
+-                    {p.latenzaQuoteS != null && (
+-                        <span className={`font-mono ml-auto ${QUOTE_CLS[p.statoQuote]}`}
+-                            title={p.statoQuote === 'fermo'
+-                                ? 'il prezzo non cambia da questo tempo, ma lo scanner sta guardando: è il prezzo CORRENTE'
+-                                : 'da quando il prezzo è cambiato l’ultima volta'}>
+-                            {QUOTE_TESTO[p.statoQuote](fmtAge(p.latenzaQuoteS))}
+-                        </span>
+-                    )}
++            {(haQuote || haLinee || p.latenzaQuoteS != null || p.flussoMike?.stato === 'fermo') && (
++                <div className="mt-1 pl-[52px] text-[10px] space-y-1" data-testid="cr-pre-quote">
++                    <div className="flex items-center gap-2 flex-wrap">
++                        {celle && (
++                            <QuoteMercato testId="cr-pre-quote-mo" celle={celle}
++                                titolo="Match Odds: miglior BACK / miglior LAY di adesso" />
++                        )}
++                        {/* l'età sta ACCANTO alle quote, sempre, e dice cosa misura */}
++                        {(haQuote || p.latenzaQuoteS != null) && (
++                            <EtaQuote testId="cr-pre-latenza" latenzaS={p.latenzaQuoteS} stato={p.statoQuote} />
++                        )}
++                        {/* cantiere J (28/09): il flusso dei prezzi della partita.
++                            30/09: il Match Odds non ancora seguito prima del fischio
++                            e' una nota grigia, non un rosso; le linee di Mike
++                            (Under/Over 3,5 e 4,5) hanno il loro giudizio. */}
++                        <FlussoBadge flusso={p.flusso} prePartita />
++                        <FlussoLineeMikeBadge flusso={p.flussoMike} />
++                    </div>
++                    {haLinee && <LineeOu testId="cr-pre-quote-ou" linee={linee} />}
+                 </div>
+             )}
+ 
+@@ -141,25 +140,4 @@ export function SchedaPreMatch({
+     );
+ }
+ 
+-/** Una squadra: logo se c'è, nome sempre. Un logo che non carica sparisce —
+- *  non lascia un quadrato grigio che sembra un errore della pagina. */
+-function Squadra({ nome, teamId }: { nome: string; teamId: number | null }) {
+-    const [rotto, setRotto] = useState(false);
+-    const src = teamId != null ? teamLogo(teamId) : '';
+-    return (
+-        <div className="flex items-center gap-1.5 leading-tight">
+-            {src && !rotto ? (
+-                <img
+-                    src={src} alt="" width={16} height={16} loading="lazy"
+-                    onError={() => setRotto(true)}
+-                    className="w-4 h-4 object-contain shrink-0"
+-                />
+-            ) : (
+-                <span className="w-4 shrink-0" aria-hidden="true" />
+-            )}
+-            <span className="text-[12.5px] truncate">{nome}</span>
+-        </div>
+-    );
+-}
+-
+ export default SchedaPreMatch;
+diff --git a/frontend/src/lib/controlRoom.test.ts b/frontend/src/lib/controlRoom.test.ts
+index 717f9ad..f39bc68 100644
+--- a/frontend/src/lib/controlRoom.test.ts
++++ b/frontend/src/lib/controlRoom.test.ts
+@@ -10,7 +10,7 @@ import {
+     freschezza, freschezzaBattito, affidabilePerPiazzare, statoPartita, koMs, punteggio, nomePartita, campionato,
+     haControlloGioco, coperturaControllo, targetPartita, avanzamentoPartita, soldiPerPartita, latenzaQuoteS,
+     marca, marcaTennis, costruisciGiornata, totaliGiornata, etaSecondi, statoQuote, quoteAffidabili, realizzatoGiornata,
+-    SENZA_CAMPIONATO, TARGET_MIN_EUR,
++    SENZA_CAMPIONATO, TARGET_MIN_EUR, lineeOuScheda,
+     type PartitaFeedLike, type RigaTennisPerSoldi,
+ } from './controlRoom';
+ import type { PnlTradeLike } from './eventGroups';
+@@ -757,3 +757,67 @@ describe('freschezzaBattito — il passo lo dichiara chi batte', () => {
+         expect(freschezzaBattito(-1, 20)).toBe('ignota');
+     });
+ });
++
++// ----------------------------------------------- B1 (30/09): linee Under/Over
++// La riga finta ha le chiavi e i tipi del blocco vero `ou` dello scanner
++// (`scanner.build_market_block` + `ts_ms`/`seen_ms` di `service.py:1309,1319`,
++// marker `decided`/`for_mike`), come la riga 36132117 del 30/09.
++function bloccoOu(line: number, marketId: string, seenFaS: number | null, over: Record<string, unknown> = {}) {
++    return {
++        market_id: marketId, status: 'OPEN', inplay: false, total_matched: 812.4,
++        market_type: `OVER_UNDER_${String(line).replace('.', '')}`, line, ts_ms: T0 - 60_000,
++        bet_delay: 0, ...(seenFaS == null ? {} : { seen_ms: T0 - seenFaS * 1000 }),
++        selections: [
++            { selection_id: 1222344, name: `Under ${line} Goals`, runner_status: 'ACTIVE',
++                back: 1.5, lay: 1.52, back_size: 30, lay_size: 25 },
++            { selection_id: 1222345, name: `Over ${line} Goals`, runner_status: 'ACTIVE',
++                back: 2.6, lay: 2.7, back_size: 20, lay_size: 15 },
++        ],
++        ...over,
++    };
++}
++
++describe('lineeOuScheda — le linee Under/Over come le scrive lo scanner, senza inventare', () => {
++    it('Under e Over col loro BACK/LAY, lo stato e l’età dell’ultimo book (seen_ms)', () => {
++        const l = lineeOuScheda(feed({ ou: [bloccoOu(4.5, '1.45', 3), bloccoOu(3.5, '1.35', 36)] }), T0);
++        expect(l.map((x) => x.linea)).toEqual([3.5, 4.5]);          // ordinate per linea
++        expect(l[0]).toEqual({
++            marketId: '1.35', linea: 3.5, stato: 'OPEN', decisa: false,
++            under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaBookS: 36,
++        });
++        expect(l[1].etaBookS).toBe(3);
++    });
++
++    it('seen_ms assente: età null (mai 0 inventato); selezione assente: null', () => {
++        const b = bloccoOu(2.5, '1.25', null, {
++            selections: [{ selection_id: 1, name: 'Over 2.5 Goals', runner_status: 'ACTIVE', back: 1.8, lay: null }],
++        });
++        const [l] = lineeOuScheda(feed({ ou: [b] }), T0);
++        expect(l.etaBookS).toBeNull();
++        expect(l.under).toBeNull();
++        expect(l.over).toEqual({ back: 1.8, lay: null });
++    });
++
++    it('linea DECISA dai gol (marker decided) e mercato SOSPESO: si dichiarano', () => {
++        const [l] = lineeOuScheda(feed({ ou: [bloccoOu(3.5, '1.35', 1, { decided: true, status: 'SUSPENDED' })] }), T0);
++        expect(l.decisa).toBe(true);
++        expect(l.stato).toBe('SUSPENDED');
++    });
++
++    it('niente ou, ou nullo o blocchi malformati: lista vuota, nessun crash', () => {
++        expect(lineeOuScheda(feed(), T0)).toEqual([]);
++        expect(lineeOuScheda(feed({ ou: null }), T0)).toEqual([]);
++        expect(lineeOuScheda(null, T0)).toEqual([]);
++        expect(lineeOuScheda(feed({ ou: [null, { line: 2.5 }, { market_id: '1.9' }] as never }), T0)).toEqual([]);
++    });
++
++    it('costruisciGiornata espone le linee, e la loro età CRESCE col tempo (nessun timer proprio)', () => {
++        const riga = { event_id: 'E1', payload: feed({ ou: [bloccoOu(3.5, '1.35', 5)], odds_ts_ms: T0 - 5_000 }) };
++        const g0 = costruisciGiornata({ righe: [riga], soldi: new Map(), nowMs: T0 })[0].partite[0];
++        const g1 = costruisciGiornata({ righe: [riga], soldi: new Map(), nowMs: T0 + 1_000 })[0].partite[0];
++        expect(g0.lineeOu?.[0].etaBookS).toBe(5);
++        expect(g1.lineeOu?.[0].etaBookS).toBe(6);
++        expect(g0.latenzaQuoteS).toBe(5);
++        expect(g1.latenzaQuoteS).toBe(6);
++    });
++});
+diff --git a/frontend/src/lib/controlRoom.ts b/frontend/src/lib/controlRoom.ts
+index 50f4645..e809046 100644
+--- a/frontend/src/lib/controlRoom.ts
++++ b/frontend/src/lib/controlRoom.ts
+@@ -215,11 +215,17 @@ export interface PartitaFeedLike {
+     /** mercato Match Odds: serve al pulsante che apre il terminale di trading */
+     mo_market_id?: string | null;
+     /**
+-     * Istante (ms epoch) in cui lo scanner ha LETTO le quote di questa partita.
+-     * È la LATENZA VERA del prezzo, e non è la stessa cosa dell'`updated_at`
+-     * della riga: quello dice «quando è cambiato qualcosa», questo dice
+-     * «quanto è vecchio il prezzo su cui sto per operare». Due fatti diversi,
+-     * due etichette diverse — non due verità sulla stessa cosa.
++     * Istante (ms epoch, orologio dello SCANNER) dell'ultimo CAMBIO del blocco
++     * `odds` del Match Odds: miglior back/lay, importi al meglio o ultimo
++     * abbinato. NON e' l'ultima lettura: lo scanner lo avanza solo se il blocco
++     * e' diverso dal precedente (`Betfair/safe_strategy/service.py:1180-1183`,
++     * `if ev.get("odds") != odds: ev["odds_ts_ms"] = ora_ms`) e mai su un book
++     * senza prezzi (`:1165-1179`); pubblicato in `:1903` (calcio) e `:1958`
++     * (tennis). L'istante dell'ultima lettura (`odds_seen_ms`, `:1197`) NON e'
++     * nel payload. B1 (30/09): corretto il commento precedente («istante in cui
++     * lo scanner ha LETTO le quote»), che contraddiceva `latenzaQuoteS` qui
++     * sotto e il codice Python. Resta diverso dall'`updated_at` della riga
++     * (quello dice quando e' cambiato QUALSIASI campo della riga).
+      */
+     odds_ts_ms?: number | null;
+     /**
+@@ -322,6 +328,80 @@ export function latenzaQuoteS(p: PartitaFeedLike | null | undefined, nowMs: numb
+     return Math.max(0, Math.round((nowMs - t) / 1000));
+ }
+ 
++/**
++ * B1 (30/09) — UNA LINEA UNDER/OVER della riga, pronta per la scheda.
++ *
++ * Viene dal blocco `ou` che lo scanner scrive GIA' nella riga
++ * (`scanner.build_market_block`, `Betfair/safe_strategy/scanner.py:629-679`):
++ * nessuna lettura nuova. Si prendono solo i fatti del blocco:
++ *   · `status` grezzo di Betfair (la traduzione la fa chi mostra, con
++ *     `lib/mike.ts::marketStatusMeta`, mai un secondo vocabolario);
++ *   · `decided` = linea gia' decisa dai gol, tenuta nel feed solo per una
++ *     posizione di Mike (`scanner.ou_block_decided`);
++ *   · miglior BACK/LAY di Under e Over, riconosciuti dal NOME della selezione
++ *     («Under 3.5 Goals» / «Over 3.5 Goals»); una selezione che non si
++ *     riconosce resta `null` (mai un prezzo attribuito a caso);
++ *   · `seen_ms` = ultimo book RICEVUTO per quella linea (`service.py:1285,1319`),
++ *     che NON distingue «mercato fermo» da «mercato non piu' osservato»:
++ *     l'eta' si mostra senza giudizio (il giudizio lo da' il flusso).
++ */
++export interface LatiOu { back: number | null; lay: number | null }
++export interface LineaOuScheda {
++    marketId: string;
++    linea: number;
++    stato: string | null;
++    decisa: boolean;
++    under: LatiOu | null;
++    over: LatiOu | null;
++    /** secondi dall'ultimo book ricevuto (`seen_ms`); null = non dichiarato */
++    etaBookS: number | null;
++}
++
++function prezzoOu(v: unknown): number | null {
++    return typeof v === 'number' && Number.isFinite(v) ? v : null;
++}
++
++function latoOu(sel: unknown, verso: 'under' | 'over'): LatiOu | null {
++    if (!Array.isArray(sel)) return null;
++    const re = verso === 'under' ? /^under\b/i : /^over\b/i;
++    for (const s of sel) {
++        if (!s || typeof s !== 'object') continue;
++        const r = s as { name?: unknown; back?: unknown; lay?: unknown };
++        if (typeof r.name === 'string' && re.test(r.name.trim())) {
++            return { back: prezzoOu(r.back), lay: prezzoOu(r.lay) };
++        }
++    }
++    return null;
++}
++
++export function lineeOuScheda(p: PartitaFeedLike | null | undefined, nowMs: number): LineaOuScheda[] {
++    const blocchi: unknown = p?.ou;
++    if (!Array.isArray(blocchi)) return [];
++    const out: LineaOuScheda[] = [];
++    for (const b of blocchi) {
++        if (!b || typeof b !== 'object') continue;
++        const r = b as {
++            market_id?: unknown; line?: unknown; status?: unknown; decided?: unknown;
++            selections?: unknown; seen_ms?: unknown;
++        };
++        const linea = typeof r.line === 'number' && Number.isFinite(r.line) ? r.line : null;
++        if (r.market_id == null || r.market_id === '' || linea == null) continue;
++        const seen = typeof r.seen_ms === 'number' && Number.isFinite(r.seen_ms) && r.seen_ms > 0
++            ? r.seen_ms : null;
++        out.push({
++            marketId: String(r.market_id),
++            linea,
++            stato: typeof r.status === 'string' ? r.status : null,
++            decisa: r.decided === true,
++            under: latoOu(r.selections, 'under'),
++            over: latoOu(r.selections, 'over'),
++            etaBookS: seen == null ? null : Math.max(0, Math.round((nowMs - seen) / 1000)),
++        });
++    }
++    out.sort((a, b) => a.linea - b.linea);
++    return out;
++}
++
+ /** Nome leggibile: `event_name`, altrimenti i due contendenti (calcio o
+  *  tennis), altrimenti l'id. Non resta mai vuoto. */
+ export function nomePartita(p: PartitaFeedLike | null | undefined, eventId: string): string {
+@@ -792,6 +872,10 @@ export interface PartitaGiornata {
+      *  stessa regola di Mike (`giudizioFlussoMike`). Il `flusso` sopra è il
+      *  Match Odds. Opzionale per lo stesso motivo di `statoMercato`. */
+     flussoMike?: GiudizioFlussoMike | null;
++    /** B1 (30/09) — le linee Under/Over della riga (`lineeOuScheda`), gia'
++     *  lette dal payload in memoria. Opzionale per lo stesso motivo di
++     *  `statoMercato`. */
++    lineeOu?: LineaOuScheda[];
+ }
+ 
+ export interface GruppoCampionato {
+@@ -871,6 +955,7 @@ export function costruisciGiornata(args: {
+             odds: p?.odds ?? null,
+             flusso: giudizioFlusso(p?.flusso, nowMs),
+             flussoMike: giudizioFlussoMike(p, nowMs),
++            lineeOu: lineeOuScheda(p, nowMs),
+         };
+     });
+ 

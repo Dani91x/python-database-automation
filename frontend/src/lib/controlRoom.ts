@@ -215,11 +215,17 @@ export interface PartitaFeedLike {
     /** mercato Match Odds: serve al pulsante che apre il terminale di trading */
     mo_market_id?: string | null;
     /**
-     * Istante (ms epoch) in cui lo scanner ha LETTO le quote di questa partita.
-     * È la LATENZA VERA del prezzo, e non è la stessa cosa dell'`updated_at`
-     * della riga: quello dice «quando è cambiato qualcosa», questo dice
-     * «quanto è vecchio il prezzo su cui sto per operare». Due fatti diversi,
-     * due etichette diverse — non due verità sulla stessa cosa.
+     * Istante (ms epoch, orologio dello SCANNER) dell'ultimo CAMBIO del blocco
+     * `odds` del Match Odds: miglior back/lay, importi al meglio o ultimo
+     * abbinato. NON e' l'ultima lettura: lo scanner lo avanza solo se il blocco
+     * e' diverso dal precedente (`Betfair/safe_strategy/service.py:1180-1183`,
+     * `if ev.get("odds") != odds: ev["odds_ts_ms"] = ora_ms`) e mai su un book
+     * senza prezzi (`:1165-1179`); pubblicato in `:1903` (calcio) e `:1958`
+     * (tennis). L'istante dell'ultima lettura (`odds_seen_ms`, `:1197`) NON e'
+     * nel payload. B1 (30/09): corretto il commento precedente («istante in cui
+     * lo scanner ha LETTO le quote»), che contraddiceva `latenzaQuoteS` qui
+     * sotto e il codice Python. Resta diverso dall'`updated_at` della riga
+     * (quello dice quando e' cambiato QUALSIASI campo della riga).
      */
     odds_ts_ms?: number | null;
     /**
@@ -320,6 +326,80 @@ export function latenzaQuoteS(p: PartitaFeedLike | null | undefined, nowMs: numb
     const t = p?.odds_ts_ms;
     if (typeof t !== 'number' || !Number.isFinite(t) || t <= 0) return null;
     return Math.max(0, Math.round((nowMs - t) / 1000));
+}
+
+/**
+ * B1 (30/09) — UNA LINEA UNDER/OVER della riga, pronta per la scheda.
+ *
+ * Viene dal blocco `ou` che lo scanner scrive GIA' nella riga
+ * (`scanner.build_market_block`, `Betfair/safe_strategy/scanner.py:629-679`):
+ * nessuna lettura nuova. Si prendono solo i fatti del blocco:
+ *   · `status` grezzo di Betfair (la traduzione la fa chi mostra, con
+ *     `lib/mike.ts::marketStatusMeta`, mai un secondo vocabolario);
+ *   · `decided` = linea gia' decisa dai gol, tenuta nel feed solo per una
+ *     posizione di Mike (`scanner.ou_block_decided`);
+ *   · miglior BACK/LAY di Under e Over, riconosciuti dal NOME della selezione
+ *     («Under 3.5 Goals» / «Over 3.5 Goals»); una selezione che non si
+ *     riconosce resta `null` (mai un prezzo attribuito a caso);
+ *   · `seen_ms` = ultimo book RICEVUTO per quella linea (`service.py:1285,1319`),
+ *     che NON distingue «mercato fermo» da «mercato non piu' osservato»:
+ *     l'eta' si mostra senza giudizio (il giudizio lo da' il flusso).
+ */
+export interface LatiOu { back: number | null; lay: number | null }
+export interface LineaOuScheda {
+    marketId: string;
+    linea: number;
+    stato: string | null;
+    decisa: boolean;
+    under: LatiOu | null;
+    over: LatiOu | null;
+    /** secondi dall'ultimo book ricevuto (`seen_ms`); null = non dichiarato */
+    etaBookS: number | null;
+}
+
+function prezzoOu(v: unknown): number | null {
+    return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+
+function latoOu(sel: unknown, verso: 'under' | 'over'): LatiOu | null {
+    if (!Array.isArray(sel)) return null;
+    const re = verso === 'under' ? /^under\b/i : /^over\b/i;
+    for (const s of sel) {
+        if (!s || typeof s !== 'object') continue;
+        const r = s as { name?: unknown; back?: unknown; lay?: unknown };
+        if (typeof r.name === 'string' && re.test(r.name.trim())) {
+            return { back: prezzoOu(r.back), lay: prezzoOu(r.lay) };
+        }
+    }
+    return null;
+}
+
+export function lineeOuScheda(p: PartitaFeedLike | null | undefined, nowMs: number): LineaOuScheda[] {
+    const blocchi: unknown = p?.ou;
+    if (!Array.isArray(blocchi)) return [];
+    const out: LineaOuScheda[] = [];
+    for (const b of blocchi) {
+        if (!b || typeof b !== 'object') continue;
+        const r = b as {
+            market_id?: unknown; line?: unknown; status?: unknown; decided?: unknown;
+            selections?: unknown; seen_ms?: unknown;
+        };
+        const linea = typeof r.line === 'number' && Number.isFinite(r.line) ? r.line : null;
+        if (r.market_id == null || r.market_id === '' || linea == null) continue;
+        const seen = typeof r.seen_ms === 'number' && Number.isFinite(r.seen_ms) && r.seen_ms > 0
+            ? r.seen_ms : null;
+        out.push({
+            marketId: String(r.market_id),
+            linea,
+            stato: typeof r.status === 'string' ? r.status : null,
+            decisa: r.decided === true,
+            under: latoOu(r.selections, 'under'),
+            over: latoOu(r.selections, 'over'),
+            etaBookS: seen == null ? null : Math.max(0, Math.round((nowMs - seen) / 1000)),
+        });
+    }
+    out.sort((a, b) => a.linea - b.linea);
+    return out;
 }
 
 /** Nome leggibile: `event_name`, altrimenti i due contendenti (calcio o
@@ -792,6 +872,10 @@ export interface PartitaGiornata {
      *  stessa regola di Mike (`giudizioFlussoMike`). Il `flusso` sopra è il
      *  Match Odds. Opzionale per lo stesso motivo di `statoMercato`. */
     flussoMike?: GiudizioFlussoMike | null;
+    /** B1 (30/09) — le linee Under/Over della riga (`lineeOuScheda`), gia'
+     *  lette dal payload in memoria. Opzionale per lo stesso motivo di
+     *  `statoMercato`. */
+    lineeOu?: LineaOuScheda[];
 }
 
 export interface GruppoCampionato {
@@ -871,6 +955,7 @@ export function costruisciGiornata(args: {
             odds: p?.odds ?? null,
             flusso: giudizioFlusso(p?.flusso, nowMs),
             flussoMike: giudizioFlussoMike(p, nowMs),
+            lineeOu: lineeOuScheda(p, nowMs),
         };
     });
 

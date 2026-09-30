@@ -393,6 +393,30 @@ describe('posizioni aperte', () => {
         expect(within(col).getByText('punta')).toBeTruthy();
     });
 
+    it('30/09 (B2): posizione ORFANA - «liability», mai «responsabilità»; chip «banca» rose come il lato LAY', async () => {
+        mVm.mockReturnValue(vm({
+            posizioni: [{
+                bot: 'safe', id: 7, eventId: 'FUORI-PROGRAMMA', partita: 'Tizio – Caio', selezione: 'Tizio',
+                lato: 'back', prezzo: 1.5, size: 4, liability: 4, modalita: 'paper',
+                piazzataAt: '2026-09-14T14:50:00Z',
+                chiusura: { lato: 'lay', prezzo: 1.45, abbinabile: 50, bloccabile: 0.12 },
+                ordine: {
+                    status: 'open', side: 'back', price: 1.5, size: 4,
+                    size_requested: 4, size_matched: 4, size_remaining: 0,
+                    avg_price_matched: 1.5, betfair_updated_at: null, meta: null,
+                },
+                dettaglio: null, vivo: null,
+            }] as never,
+        }));
+        const col = (await apri(mostra(), 'aperte')).getByTestId('cr-posizioni');
+        const riga = within(col).getByTestId('cr-posizione');
+        expect(riga.textContent).toContain('liability 4,00 €');
+        expect(riga.textContent).not.toMatch(/responsabilit/i);
+        const chip = within(within(riga).getByTestId('cr-chiusura-viva')).getByText('banca');
+        expect(chip.className).toMatch(/rose/);
+        expect(chip.className).not.toMatch(/pink/);
+    });
+
     it('senza posizioni lo dice invece di mostrare una tabella vuota', async () => {
         mVm.mockReturnValue(vm());
         expect(within((await apri(mostra(), 'aperte')).getByTestId('cr-posizioni')).getByText(/Nessuna posizione aperta/)).toBeTruthy();
@@ -663,6 +687,42 @@ describe('Mike: uscita appoggiata in live', () => {
         const avviso = mostra().getByTestId('cr-mike-resting');
         expect(avviso.textContent).toMatch(/diversa/);
         expect(avviso.textContent).toMatch(/perdita/);
+    });
+
+    // 30/09 (B2, B4): l'avviso resta visibile in entrambe le modalita' (chi
+    // passa Mike a LIVE deve averlo gia' letto), ma dice la verita' sul modo
+    it('SPENTA con Mike in PAPER: resta, e dice che vale solo in LIVE', () => {
+        const base = vm();
+        mVm.mockReturnValue(vm({
+            mikeRestingLive: false,
+            bots: base.bots.map((b) => (b.bot === 'mike' ? { ...b, modalita: 'paper' as const } : b)),
+        }));
+        const avviso = mostra().getByTestId('cr-mike-resting');
+        const modo = within(avviso).getByTestId('cr-mike-resting-modo');
+        expect(modo.textContent).toContain('Mike ora è in PAPER');
+        expect(modo.textContent).toContain('vale solo quando Mike è in LIVE');
+    });
+
+    it('SPENTA con Mike in LIVE: dice che riguarda i soldi veri adesso', () => {
+        const base = vm();
+        mVm.mockReturnValue(vm({
+            mikeRestingLive: false,
+            bots: base.bots.map((b) => (b.bot === 'mike' ? { ...b, modalita: 'live' as const } : b)),
+        }));
+        const modo = within(mostra().getByTestId('cr-mike-resting')).getByTestId('cr-mike-resting-modo');
+        expect(modo.textContent).toContain('Mike è in LIVE adesso');
+        expect(modo.textContent).not.toContain('PAPER');
+    });
+
+    it('SPENTA con la modalita’ di Mike ignota: dice solo quando vale', () => {
+        const base = vm();
+        mVm.mockReturnValue(vm({
+            mikeRestingLive: false,
+            bots: base.bots.map((b) => (b.bot === 'mike' ? { ...b, modalita: null } : b)),
+        }));
+        const modo = within(mostra().getByTestId('cr-mike-resting')).getByTestId('cr-mike-resting-modo');
+        expect(modo.textContent).toContain('vale solo quando Mike è in LIVE');
+        expect(modo.textContent).not.toContain('adesso');
     });
 
     it('accesa: nessun allarme', () => {
@@ -938,6 +998,60 @@ describe('la pagina non mostra MAI un numero che somma paper e live', () => {
         const s = mostra();
         expect(within(s.getByTestId('cr-sport-tennis')).getByText(/1 aperta/)).toBeTruthy();
         expect(within(s.getByTestId('cr-sport-calcio')).getByText(/1 in prova/)).toBeTruthy();
+    });
+
+    // 30/09 (P2) — il caso vero di oggi: Mike LIVE, Safe e Omega in paper.
+    // La tessera del calcio guardava il solo Safe e scriveva «MODALITA' PAPER».
+    const botOggi = () => {
+        const b = vm().bots;
+        return [
+            { ...b[0], inCorsa: false },                                   // Omega paper, fermo
+            { ...b[1], varianti: ['base', 'esatto', 'tennis'],             // Safe paper
+                modiStrategia: { base: 'paper', esatto: 'paper', punta: 'paper', tennis: 'paper' } },
+            { ...b[2], modalita: 'live' },                                 // Mike LIVE, acceso
+            { ...b[2], bot: 'scalper', modalita: null, inCorsa: false },   // scalper calcio spento
+        ] as ReturnType<typeof useControlRoom>['bots'];
+    };
+
+    it('LE TESSERE: Mike LIVE + Safe paper -> corsia LIVE con Mike, PROVA con Safe e Omega, scalper spento elencato', () => {
+        mVm.mockReturnValue(vm({ bots: botOggi() }));
+        const s = mostra();
+        const calcio = s.getByTestId('cr-sport-calcio');
+        expect(within(calcio).getByTestId('cr-sport-calcio-live-bot').textContent).toBe('Mike');
+        const prova = within(calcio).getByTestId('cr-sport-calcio-prova-bot').textContent ?? '';
+        expect(prova).toContain('Omega (spento)');
+        expect(prova).toContain('Safe base');
+        expect(prova).not.toContain('Mike');
+        expect(within(calcio).getByTestId('cr-sport-calcio-ignote').textContent).toContain('Scalper calcio (spento)');
+        expect(within(calcio).getByTestId('cr-sport-calcio-soldi-veri')).toBeTruthy();
+        // la modalita' «dello sport» non esiste piu': niente MODALITA' PAPER sul calcio
+        expect(calcio.textContent).not.toMatch(/MODALIT/);
+        // i soldi veri e la prova ciascuno nella sua corsia, mai sommati
+        expect(within(calcio).getByTestId('cr-sport-calcio-live-pnl').textContent).toBe('+1,50 €');
+        // ogni cifra porta la sua fonte: LIVE dai bot, PROVA simulata
+        expect(within(calcio).getByTestId('cr-sport-calcio-live-fonte').getAttribute('data-fonte')).toBe('bot');
+        expect(within(calcio).getByTestId('cr-sport-calcio-prova-fonte').getAttribute('data-fonte')).toBe('prova');
+        // il tennis non ha bot LIVE: nessun «soldi veri»
+        expect(within(s.getByTestId('cr-sport-tennis')).queryByTestId('cr-sport-tennis-soldi-veri')).toBeNull();
+    });
+
+    it('LE TESSERE: nessun bot LIVE -> nessun «soldi veri» su nessuna tessera', () => {
+        mVm.mockReturnValue(vm({
+            bots: botOggi().map((b) => (b.bot === 'mike' ? { ...b, modalita: 'paper' as const } : b)),
+            // nessuna posizione LIVE aperta (una posizione LIVE aperta basterebbe a dire «soldi veri»)
+            giornata: gruppo([partita({
+                soldi: {
+                    live: { netPnl: null, liability: 0, investito: 0, aperta: false },
+                    paper: { netPnl: null, liability: 5, investito: 5, aperta: true },
+                    modi: ['paper'], bots: ['mike'],
+                } as never,
+            })]),
+        }));
+        const s = mostra();
+        expect(s.queryByTestId('cr-sport-calcio-soldi-veri')).toBeNull();
+        expect(s.queryByTestId('cr-sport-tennis-soldi-veri')).toBeNull();
+        expect(within(s.getByTestId('cr-sport-calcio')).getByTestId('cr-sport-calcio-live-bot').textContent)
+            .toBe('nessun bot in live');
     });
 });
 

@@ -189,6 +189,63 @@ describe('design system — una sola mappa per le etichette (§19)', () => {
     });
 });
 
+// 30/09 (blocco B2, audit M10) — «Liability» e' la parola del glossario (§3):
+// «responsabilita'»/«resp.» non devono piu' comparire in cio' che il trader
+// LEGGE (testo, etichette, title) nei file della Control Room di Mike e della
+// tabella delle operazioni; il pulsante si chiama «Chiudi a mercato», mai
+// «Flatten». I COMMENTI non contano (li si toglie prima di cercare), i nomi di
+// campo nemmeno (`responsabilita` come chiave resta fuori da questi file).
+// Le altre pagine (live, safestrategy, watchlist, report) sono di altri blocchi:
+// quando le si uniforma, si aggiungono qui.
+const FILE_GLOSSARIO_LIABILITY = [
+    'pages/ControlRoom.tsx',
+    'components/controlroom/SchedaMike.tsx',
+    'components/controlroom/PropostaUscitaMike.tsx',
+    'components/controlroom/InterruttoreUscite.tsx',
+    'components/controlroom/DettaglioRigaView.tsx',
+    'components/controlroom/SchedaPropostaOpportunita.tsx',
+    'components/trading/EventPnlTable.tsx',
+    'lib/tradeStatus.ts',
+    'lib/interruttori.ts',
+];
+
+/** il sorgente senza commenti (a blocco, JSX compresi, e di riga), righe conservate */
+function senzaCommenti(text: string): string {
+    const blocchi = text.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, ' '));
+    // `//` di riga, ma non dentro un indirizzo («https://»)
+    // (i sorgenti hanno fine riga CRLF: `.` non passa il `\r`, si divide su `\r?\n`)
+    return blocchi.split(/\r?\n/).map((l) => l.replace(/(^|[^:])\/\/.*$/, '$1')).join('\n');
+}
+
+/** `file:riga` di ogni riga NON commento che contiene una parola vietata */
+function paroleVietate(text: string, path: string): string[] {
+    const out: string[] = [];
+    senzaCommenti(text).split('\n').forEach((line, i) => {
+        if (/responsabilit/i.test(line) || /(^|[^\w.])resp\.(\s|$)/i.test(line) || /\bFlatten\b/.test(line)) {
+            out.push(`${path}:${i + 1} → ${line.trim().slice(0, 120)}`);
+        }
+    });
+    return out;
+}
+
+describe('glossario Liability nei file della Control Room (B2, 30/09)', () => {
+    it('nessun «responsabilità», «resp.» o «Flatten» in un testo visibile', () => {
+        const found = FILE_GLOSSARIO_LIABILITY.flatMap((f) => paroleVietate(readFileSync(join(SRC, f), 'utf-8'), f));
+        expect(found, `parole fuori glossario:\n${found.join('\n')}`).toEqual([]);
+    });
+
+    it('la guardia vede la parola vietata nel testo e ignora i commenti', () => {
+        expect(paroleVietate('<Voce label="responsabilità">', 'x')).toHaveLength(1);
+        expect(paroleVietate("title=\"responsabilita' impegnata\"", 'x')).toHaveLength(1);
+        expect(paroleVietate('                    resp. {fmtMoney(o.liability)}', 'x')).toHaveLength(1);
+        expect(paroleVietate("label: 'Flatten'", 'x')).toHaveLength(1);
+        expect(paroleVietate('// la responsabilità di una banca', 'x')).toHaveLength(0);
+        expect(paroleVietate('// la responsabilità\r\n<b>responsabilità</b>\r\n', 'x')).toEqual(['x:2 → <b>responsabilità</b>']);
+        expect(paroleVietate('{/* responsabilità\n   delle posizioni */}', 'x')).toHaveLength(0);
+        expect(paroleVietate('const ok = resp.ok; flatten_pending: true', 'x')).toHaveLength(0);
+    });
+});
+
 describe('la guardia guarda davvero', () => {
     it('ha raccolto i sorgenti delle tre sezioni e del guscio', () => {
         expect(FILES.length).toBeGreaterThan(30);

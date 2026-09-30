@@ -110,7 +110,7 @@ export function Copertura({ d, testId = 'cr-copertura-riga' }: { d: DettaglioRig
     return (
         <span className="text-[10px] text-white/40" data-testid={testId}
             data-completa={d.copertura.completa ? '1' : undefined}
-            title="quota di stake già coperta e responsabilità ancora a rischio">
+            title="quota di stake già coperta e liability ancora a rischio">
             coperta <span className="text-white/65">{pct == null ? DASH : `${pct} %`}</span>
             {d.copertura.residua != null && (
                 <span className="text-white/30"> · a rischio <span className="font-mono">{fmtMoney(d.copertura.residua)}</span></span>
@@ -311,8 +311,8 @@ export function RigaOperazione({ o, testId = 'cr-op', nomeSelezioneRisolto = nul
                 nessuna seconda formula. */}
             {o.liability != null && (
                 <span className="font-mono text-orange-400 text-[10px]"
-                    title="responsabilita' impegnata da questa posizione">
-                    resp. {fmtMoney(o.liability)}
+                    title="liability impegnata da questa posizione" data-testid={`${testId}-liability`}>
+                    liability {fmtMoney(o.liability)}
                 </span>
             )}
             {o.vivo && <QuotaOra v={o.vivo} testId={`${testId}-quota-viva`} />}

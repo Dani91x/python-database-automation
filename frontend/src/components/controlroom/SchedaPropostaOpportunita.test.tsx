@@ -60,6 +60,8 @@ describe('SchedaPropostaOpportunita', () => {
         expect(screen.getByTestId('cr-opp-prezzo').textContent).toContain('1,28');
         expect(screen.getByTestId('cr-opp-stake').textContent).toMatch(/5/);
         expect(screen.getByTestId('cr-opp-liability').textContent).toMatch(/5/);
+        // 30/09 (B2, M10): l'etichetta della cella e' la parola del glossario
+        expect(screen.getByTestId('cr-opp-liability').previousElementSibling?.textContent).toBe('Liability');
         expect(screen.getByTestId('cr-opp-abbinabile').textContent).toMatch(/500/);
         expect(screen.getByTestId('cr-opp-pmodel').textContent).toBe('77,0 %');
         // 26/09 (F-7): senza criteri (nessun «al prezzo di adesso") la P del

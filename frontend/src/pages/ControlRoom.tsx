@@ -31,6 +31,7 @@ import { EmptyState } from '@/components/trading/EmptyState';
 import type { DayBarProps } from '@/components/trading/DayBar';
 import { ModeBanner } from '@/components/trading/ModeBanner';
 import { SplitSport, type SportKey } from '@/components/controlroom/SplitSport';
+import { corsiePerSport } from '@/lib/giornataCorsie';
 import { SchedaPartita } from '@/components/controlroom/SchedaPartita';
 import { ObiettivoHero } from '@/components/controlroom/ObiettivoHero';
 import { SaldoBetfairCard } from '@/components/controlroom/SaldoBetfairCard';
@@ -597,7 +598,7 @@ export default function ControlRoom() {
             <SplitSport
                 perSport={vm.soldiGiornata.perSport}
                 perSportPaper={vm.soldiGiornata.perSportPaper}
-                modalita={modalitaPerSport(vm)}
+                corsie={corsiePerSport(vm.bots)}
                 aperte={apertePerSport(vm)}
                 selezionato={sport}
                 onSeleziona={setSport}
@@ -677,6 +678,19 @@ export default function ControlRoom() {
                         <div className="text-white/70">
                             In live l'uscita torna «a mercato»: Mike esegue una strategia <strong>diversa</strong> da
                             quella provata in paper, e il ciclo che in demo chiude in profitto lì chiude in perdita.
+                        </div>
+                        {/* 30/09 (B2, B4): la valvola agisce solo in live
+                            (`service._live_exit_override`); l'avviso NON sparisce
+                            in paper (va letto prima di passare a LIVE), dice il modo */}
+                        <div className="text-orange-200/90 mt-0.5" data-testid="cr-mike-resting-modo">
+                            {(() => {
+                                const modo = vm.bots.find((b) => b.bot === 'mike')?.modalita ?? null;
+                                return modo === 'live'
+                                    ? 'Mike è in LIVE adesso: riguarda i soldi veri di questo momento.'
+                                    : modo === 'paper'
+                                        ? 'Mike ora è in PAPER: in paper non cambia niente, vale solo quando Mike è in LIVE.'
+                                        : 'Modalità di Mike non letta: vale solo quando Mike è in LIVE.';
+                            })()}
                         </div>
                     </div>
                 </Card>
@@ -792,36 +806,11 @@ export default function ControlRoom() {
     );
 }
 
-/** Con che soldi opera ciascuno sport ADESSO. Il tennis segue la modalità
- *  della strategia `tennis` di Safe; il calcio quella delle sue tre varianti —
- *  se anche una sola è in live, il calcio è in live. */
-function modalitaPerSport(vm: ReturnType<typeof useControlRoom>): Record<SportKey, 'paper' | 'live' | null> {
-    const safe = vm.bots.find((b) => b.bot === 'safe') ?? null;
-    const servizio = safe?.modalita ?? null;
-    if (servizio == null) return { calcio: null, tennis: null };
-
-    // ⚠️ `strategy_modes` dice CON CHE SOLDI, `varianti` dice CHI PUÒ APRIRE.
-    // Confonderle scriveva «LIVE» accanto al calcio mentre il calcio era in
-    // prova — la bugia peggiore che questa tessera possa dire.
-    const modi = safe?.modiStrategia ?? null;
-    const varianti = safe?.varianti ?? null;
-    const apre = (v: string) => varianti == null || varianti.includes(v);
-
-    // il `mode` del servizio e' un TETTO: in paper nessuna voce puo' far
-    // uscire un euro vero. E una strategia non dichiarata vale PAPER: ai soldi
-    // veri si arriva scrivendolo, mai ereditandolo.
-    const con = (v: string): 'paper' | 'live' => {
-        if (servizio !== 'live') return 'paper';
-        if (!apre(v)) return 'paper';
-        return modi?.[v] === 'live' ? 'live' : 'paper';
-    };
-
-    return {
-        tennis: con('tennis'),
-        // il calcio e' in live solo se ALMENO UNA delle sue tre varianti lo e'
-        calcio: (['base', 'esatto', 'punta'] as const).some((v) => con(v) === 'live') ? 'live' : 'paper',
-    };
-}
+// 30/09 (P2) — `modalitaPerSport` (una modalita' per sport, presa dal SOLO
+// Safe) e' stata tolta: con Mike in LIVE la tessera del calcio diceva PAPER.
+// Le tessere ricevono ora le corsie di TUTTI i bot (`corsiePerSport`,
+// `lib/giornataCorsie.ts`), con la stessa regola di Safe per strategia
+// (`mode` del servizio = tetto, `strategy_modes` = con che soldi).
 
 /** Posizioni aperte per sport, **separate per modalità**: la tessera dice
  *  «2 aperte» e il trader deve sapere se sono soldi veri o una prova. */
@@ -1453,7 +1442,7 @@ function RigaPosizioneOrfana({ p }: {
             </div>
             <div className="text-[11px] text-white/40 mt-0.5">
                 importo <span className="font-mono">{fmtMoney(p.size)}</span>
-                {p.liability != null && <> · responsabilità <span className="font-mono">{fmtMoney(p.liability)}</span></>}
+                {p.liability != null && <> · liability <span className="font-mono">{fmtMoney(p.liability)}</span></>}
             </div>
             {/* ── IL DETTAGLIO CHE LA SCHEDA DEL BOT MOSTRA GIÀ (17/09) ──
                 chiesto/abbinato/residuo, quota di adesso e tick, minuto e
@@ -1488,7 +1477,7 @@ function RigaPosizioneOrfana({ p }: {
                     ) : (
                         <>
                             <span className={`text-[9px] font-bold uppercase tracking-wider px-1 rounded ${
-                                ch.lato === 'lay' ? 'bg-pink-500/15 text-pink-300' : 'bg-sky-500/15 text-sky-300'
+                                ch.lato === 'lay' ? 'bg-rose-500/15 text-rose-300' : 'bg-sky-500/15 text-sky-300'
                             }`}>{ch.lato === 'lay' ? 'banca' : 'punta'}</span>
                             <span className="font-mono text-[12px]" data-testid="cr-chiusura-prezzo">{fmtOdds(ch.prezzo)}</span>
                             <span className={`font-mono text-[13px] tabular-nums ${pnlClass(ch.bloccabile)}`}

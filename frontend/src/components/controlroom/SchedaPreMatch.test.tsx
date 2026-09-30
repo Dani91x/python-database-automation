@@ -4,7 +4,7 @@
 // Live/Aperte (`RigaOperazione`).
 // ============================================================================
 import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { SchedaPreMatch } from './SchedaPreMatch';
 import type { PartitaGiornata } from '@/lib/controlRoom';
@@ -76,6 +76,66 @@ describe('SchedaPreMatch — quote pre-match vive (secondo giro)', () => {
         const riga = screen.getByTestId('cr-pre-quote');
         expect(riga).toHaveTextContent('fermo');
         expect(riga.querySelector('.text-orange-400')).toBeNull();
+    });
+});
+
+// ============================================================================
+// B1 (30/09) — nomi e quote «da trader», uguali alla scheda in gioco.
+// ============================================================================
+function lineaOu(linea: number, over: Partial<NonNullable<PartitaGiornata['lineeOu']>[number]> = {}) {
+    return {
+        marketId: `1.${linea * 10}`, linea, stato: 'OPEN', decisa: false,
+        under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaBookS: 2, ...over,
+    };
+}
+
+describe('SchedaPreMatch — B1: nomi e quote da trader', () => {
+    it('i nomi passano dal componente condiviso, col nome intero nel title', () => {
+        monta(partita({ extra: { campionato: 'Serie A', leagueId: 135, homeTeamId: 497, awayTeamId: 487, fixtureId: 1 } }));
+        const nomi = screen.getByTestId('cr-nomi-partita');
+        expect(nomi.getAttribute('title')).toBe('Roma – Lazio');
+        expect(screen.getAllByTestId('cr-nome-squadra').map((n) => n.textContent)).toEqual(['Roma', 'Lazio']);
+        expect(nomi.querySelectorAll('img')).toHaveLength(2);
+    });
+
+    it('le quote sono celle: BACK sky, LAY rose, non più il testo grigio da 10 px', () => {
+        monta(partita({
+            odds: { home: { back: 40, lay: 50 }, draw: { back: 15, lay: 18 }, away: { back: 1.08, lay: 1.1 } },
+            latenzaQuoteS: 2, statoQuote: 'fresco',
+        }));
+        const riga = screen.getByTestId('cr-pre-quote');
+        const celle = within(riga).getAllByTestId('cr-quota-cella');
+        expect(celle.map((c) => c.textContent)).toEqual(['1 40,00/50,00', 'X 15,00/18,00', '2 1,08/1,10']);
+        expect(within(celle[2]).getByTestId('cr-quota-back').className).toMatch(/text-sky-/);
+        expect(within(celle[2]).getByTestId('cr-quota-lay').className).toMatch(/text-rose-/);
+    });
+
+    it('un lato del 1X2 assente: la cella c’è e dice «—»', () => {
+        monta(partita({ odds: { home: { back: 1.9, lay: 1.92 }, draw: null, away: { back: 4.2, lay: null } } }));
+        const celle = within(screen.getByTestId('cr-pre-quote')).getAllByTestId('cr-quota-cella');
+        expect(celle.map((c) => c.textContent)).toEqual(['1 1,90/1,92', 'X —/—', '2 4,20/—']);
+    });
+
+    it('accanto alle quote l’età c’è SEMPRE, con cosa misura (anche quando è ignota)', () => {
+        monta(partita({ odds: { home: { back: 1.9, lay: 1.92 } }, latenzaQuoteS: null, statoQuote: 'ignoto' }));
+        const eta = within(screen.getByTestId('cr-pre-quote')).getByTestId('cr-pre-latenza');
+        expect(eta).toHaveTextContent('ultimo cambio: età ignota');
+        expect(within(eta).getByTestId('cr-pre-latenza-valore').className).toContain('text-orange-400');
+    });
+
+    it('le linee Under/Over della riga si vedono con lo stesso componente', () => {
+        monta(partita({ lineeOu: [lineaOu(3.5), lineaOu(4.5, { etaBookS: 7 })] }));
+        const ou = within(screen.getByTestId('cr-pre-quote')).getByTestId('cr-pre-quote-ou');
+        const righe = within(ou).getAllByTestId('cr-quote-ou-linea');
+        expect(righe).toHaveLength(2);
+        expect(righe[0]).toHaveTextContent('U/O 3,5');
+        expect(righe[0]).toHaveTextContent('Under 1,50/1,52');
+        expect(righe[1]).toHaveTextContent('ultimo book: 7 s fa');
+    });
+
+    it('più di quattro linee: non si mostrano (nessuna scelta inventata)', () => {
+        monta(partita({ lineeOu: [0.5, 1.5, 2.5, 3.5, 4.5].map((l) => lineaOu(l)) }));
+        expect(screen.queryByTestId('cr-pre-quote-ou')).toBeNull();
     });
 });
 

@@ -143,7 +143,9 @@ describe('i totali delle operazioni, in testa e sempre visibili', () => {
         expect(barra).toHaveTextContent('P&L realizzato');
         expect(barra).toHaveTextContent('Se chiudo ora');
         expect(barra).toHaveTextContent('Investito');
-        expect(barra).toHaveTextContent('Responsabilità');
+        // 30/09 (B2, M10): la parola del glossario, come i KPI e la card
+        expect(barra).toHaveTextContent('Liability aperta');
+        expect(barra).not.toHaveTextContent(/responsabilit/i);
         expect(screen.getByTestId('event-pnl-totali-realizzato')).toHaveTextContent('+0,13');
         expect(screen.getByTestId('event-pnl-totali-investito')).toHaveTextContent('17,00');
         expect(screen.getByTestId('event-pnl-totali-liability')).toHaveTextContent('21,00');
@@ -228,6 +230,15 @@ describe('una riga per PARTITA', () => {
         const riga = screen.getByTestId('partita-E1');
         expect(riga).toHaveTextContent('12,00');
         expect(screen.getByTestId('liability-E1')).toHaveTextContent('36,00');
+    });
+
+    it('30/09 (B2, M10): intestazione di colonna e tooltip dicono «Liability», mai «responsabilità»', () => {
+        monta([t({ status: 'open', pnl: null, size: 12, liability: 36 })]);
+        const card = screen.getByTestId('event-pnl');
+        const intestazioni = [...card.querySelectorAll('th')].map((th) => th.textContent ?? '');
+        expect(intestazioni).toContain('Liability aperta');
+        const titoli = [...card.querySelectorAll('[title]')].map((n) => n.getAttribute('title') ?? '');
+        expect(`${card.textContent}\n${titoli.join('\n')}`).not.toMatch(/responsabilit/i);
     });
 
     it('dichiara «ancora aperta» e marca il netto come parziale', () => {
@@ -339,7 +350,7 @@ describe('la barra dei totali usata da sola (Omega)', () => {
         render(<TotaliBar tot={tot} modalita="live" testId="omega-tot" />);
         const barra = screen.getByTestId('omega-tot');
         expect(barra).toHaveTextContent('P&L realizzato · LIVE');
-        expect(barra).toHaveTextContent('Responsabilità · LIVE');
+        expect(barra).toHaveTextContent('Liability aperta · LIVE');
         expect(screen.getByTestId('omega-tot-realizzato')).toHaveTextContent(`${MINUS}5,00`);
     });
 });

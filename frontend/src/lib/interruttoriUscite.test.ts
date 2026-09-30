@@ -42,11 +42,13 @@ describe('lettura: specchio del servizio', () => {
         // 29/09 (piano Mike P1, decisioni 13 e 16): lo stato porta la nota di
         // cosa governa l'interruttore (solo le uscite in perdita)
         const nota = 'governa solo le uscite in perdita; le uscite in profitto le esegue Mike';
-        expect(statoUscite(m, { stake: 10 })).toEqual({ automatiche: false, nota });
-        expect(statoUscite(m, { uscite_automatiche: false })).toEqual({ automatiche: false, nota });
-        expect(statoUscite(m, { uscite_automatiche: true })).toEqual({ automatiche: true, nota });
-        expect(statoUscite(m, { uscite_automatiche: 'false' })).toEqual({ automatiche: false, nota });
-        expect(statoUscite(m, { uscite_automatiche: 'true' })).toEqual({ automatiche: true, nota });
+        // 30/09 (B2, A12): e il campo esplicito che guida i tooltip del pulsante
+        const soloUsciteInPerdita = true;
+        expect(statoUscite(m, { stake: 10 })).toEqual({ automatiche: false, nota, soloUsciteInPerdita });
+        expect(statoUscite(m, { uscite_automatiche: false })).toEqual({ automatiche: false, nota, soloUsciteInPerdita });
+        expect(statoUscite(m, { uscite_automatiche: true })).toEqual({ automatiche: true, nota, soloUsciteInPerdita });
+        expect(statoUscite(m, { uscite_automatiche: 'false' })).toEqual({ automatiche: false, nota, soloUsciteInPerdita });
+        expect(statoUscite(m, { uscite_automatiche: 'true' })).toEqual({ automatiche: true, nota, soloUsciteInPerdita });
         // parametri non letti: nessuna nota, nessun pulsante (fail-closed invariato)
         expect(statoUscite(m, null)).toEqual({ automatiche: null });
     });

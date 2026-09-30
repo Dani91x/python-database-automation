@@ -1,0 +1,904 @@
+diff --git a/frontend/src/components/controlroom/B2GlossarioAuditCR.test.tsx b/frontend/src/components/controlroom/B2GlossarioAuditCR.test.tsx
+new file mode 100644
+index 0000000..9f8ac83
+--- /dev/null
++++ b/frontend/src/components/controlroom/B2GlossarioAuditCR.test.tsx
+@@ -0,0 +1,230 @@
++// ============================================================================
++// B2GlossarioAuditCR.test.tsx - 30/09 (blocco B2 dell'audit di veridicita'
++// della UI, `AUDIT_2026-09-30/AUDIT_UI_VERIDICITA.md`): i testi della Control
++// Room che dicevano una cosa diversa da quella che fa il codice.
++//
++//   A9  cash out con un prezzo mancante: il netto del servizio ESCLUDE la linea
++//       senza prezzo (`engine.cashout_value`, `complete=False`): nessuna cifra.
++//   M9  «ciclo 0 · 0 chiusi»: il ciclo si numera come nella pagina di Mike.
++//   A3  linea 4,5: c'e' anche l'Under 4,5 (la banca della copertura di serie e
++//       il re-ingresso), e l'Over 4,5 non si chiama piu' «la copertura».
++//   M10 una parola sola: «Liability», mai «responsabilita'».
++//   M11 ogni proposta d'uscita di Mike e' un'uscita che puo' chiudere IN
++//       PERDITA (`engine.gate_uscite` / `uscita_in_perdita`): titolo e rosso.
++//   M12 «chiudendo ora X»: X e' il cash out di TUTTA la partita.
++//   A12 per Mike l'interruttore governa SOLO le uscite in perdita: il tooltip
++//       non deve dire «in profitto e in perdita». Gli altri bot: identico.
++//
++// Finti con le chiavi VERE: `MikeEvent` (lib/mike.ts), `live.cashout` =
++// `MikeCashout`, `live.books` con chiavi «MERCATO|SELEZIONE» come le scrive
++// `service.py` (`f"{m}|{s}"`), la proposta come la scrive `engine.gate_uscite`,
++// `StatoUscite` di lib/interruttori.ts.
++// ============================================================================
++import { describe, it, expect, vi } from 'vitest';
++import { render, screen, fireEvent } from '@testing-library/react';
++import type { MikeEvent } from '@/lib/mike';
++import { statoUscite, interruttoreDi, NOTA_USCITE_MIKE, type StatoUscite } from '@/lib/interruttori';
++import { SchedaMike } from './SchedaMike';
++import { PropostaUscitaMike } from './PropostaUscitaMike';
++import { InterruttoreUscite } from './InterruttoreUscite';
++
++const ORA_S = Math.floor(Date.now() / 1000);
++
++function ev(over: Partial<MikeEvent> = {}, live: Record<string, unknown> = {}): MikeEvent {
++    return {
++        event_id: 'E1', fixture_id: null, event_name: 'Roma v Lazio', competition: 'Serie A', league_id: null,
++        ko_at: new Date().toISOString(), mode: 'live', markets: {}, state: 'LIVE_COVERED',
++        cycle_no: 0, entry_price_initial: 1.5, dossier: null,
++        live: {
++            feed_age_s: 2,
++            published_ts: ORA_S,
++            liability: 5,
++            books: {
++                'OU35|UNDER': { best_back: 1.30, best_lay: 1.31, back_size: 100, lay_size: 80, status: 'OPEN' },
++                'OU45|OVER': { best_back: 12.0, best_lay: 12.5, back_size: 10, lay_size: 8, status: 'OPEN' },
++                'OU45|UNDER': { best_back: 1.08, best_lay: 1.09, back_size: 300, lay_size: 250, status: 'OPEN' },
++            },
++            ...live,
++        } as unknown as MikeEvent['live'],
++        positions: [], ctx: null, skipped: false, settled_pnl: null, updated_at: new Date().toISOString(),
++        ...over,
++    };
++}
++
++function cashout(over: Record<string, unknown> = {}) {
++    return { net: -0.84, gross: -0.84, base: 9.8, complete: true, pct: -8.6, target_pct: 5, ...over };
++}
++
++function proposta(over: Record<string, unknown> = {}) {
++    return {
++        chiave: 'chiusura|c0', categoria: 'chiusura', ciclo: 0, stato: 'LIVE_COVERED',
++        stato_voluto: 'LIVE_CLOSING', motivo: 'uscita a modello', close_reason: 'loss_model',
++        ordini: [
++            { ruolo: 'under_close', mercato: 'OU35', selezione: 'UNDER', lato: 'lay', prezzo: 1.31, size: 22.9 },
++        ],
++        bloccabile: -1.31, urgente: true, minuto: 60, gol: 2,
++        decided_at: ORA_S - 3, proposed_at: ORA_S - 3,
++        sostanza: ['chiusura|c0', [['under_close', 'lay']], 'loss_model'],
++        ...over,
++    };
++}
++
++/** tutti i testi che il trader LEGGE: contenuto e tooltip */
++function testiVisibili(el: HTMLElement): string {
++    const titoli = [...el.querySelectorAll('[title]')].map((n) => n.getAttribute('title') ?? '');
++    return `${el.textContent ?? ''}\n${titoli.join('\n')}`;
++}
++
++// ------------------------------------------------------------------ A9
++describe('A9 - cash out con una linea senza prezzo: nessuna cifra', () => {
++    it('complete=false: «non calcolabile (manca il prezzo di una linea)», nessun euro', () => {
++        render(<SchedaMike ev={ev({}, { cashout: cashout({ complete: false, net: 1.23 }) })} />);
++        const voce = screen.getByTestId('cr-mike-cashout');
++        expect(voce.textContent).toContain('non calcolabile (manca il prezzo di una linea)');
++        expect(voce.textContent).not.toContain('1,23');
++        expect(voce.textContent).not.toContain('€');
++        expect(voce.textContent).not.toContain('parziale');
++        // il vecchio aggancio resta
++        expect(screen.getByTestId('cr-mike-cashout-parziale')).toBeTruthy();
++    });
++
++    it('complete=true: la cifra del servizio, col suo segno', () => {
++        render(<SchedaMike ev={ev({}, { cashout: cashout() })} />);
++        const voce = screen.getByTestId('cr-mike-cashout');
++        expect(voce.textContent).toContain('−0,84 €');
++        expect(screen.queryByTestId('cr-mike-cashout-parziale')).toBeNull();
++    });
++});
++
++// ------------------------------------------------------------------ M9
++describe('M9 - il ciclo si numera come nella pagina di Mike', () => {
++    it('cycle_no 0 in gioco = «ciclo 1» (mai «ciclo 0»)', () => {
++        render(<SchedaMike ev={ev({ cycle_no: 0 }, { cicli_chiusi: 0 })} />);
++        const voce = screen.getByTestId('cr-mike-cicli');
++        expect(voce.textContent).toMatch(/^ciclo\s*1 · 0 chiusi$/);
++    });
++
++    it('cycle_no 2 in gioco = «ciclo 3 · 2 chiusi»', () => {
++        render(<SchedaMike ev={ev({ cycle_no: 2 }, { cicli_chiusi: 2 })} />);
++        expect(screen.getByTestId('cr-mike-cicli').textContent).toMatch(/^ciclo\s*3 · 2 chiusi$/);
++    });
++
++    it('partita chiusa: i cicli USATI, nessun ciclo «in corso»', () => {
++        render(<SchedaMike ev={ev({ cycle_no: 3, state: 'SETTLED', settled_pnl: 1 }, { cicli_chiusi: 3 })} />);
++        expect(screen.getByTestId('cr-mike-cicli').textContent).toMatch(/^ciclo\s*3 usati$/);
++    });
++});
++
++// ------------------------------------------------------------------ A3
++describe('A3 - linea 4,5: Under 4,5 presente, Over 4,5 senza «(la copertura)»', () => {
++    it('mostra l’Under 4.5 dai book veri («OU45|UNDER»)', () => {
++        render(<SchedaMike ev={ev()} />);
++        const u45 = screen.getByTestId('cr-mike-u45');
++        expect(u45.textContent).toContain('Under 4.5');
++        expect(u45.textContent).toContain('1,08');
++        expect(u45.textContent).toContain('1,09');
++    });
++
++    it('nessun title promette che l’Over 4.5 sia la copertura', () => {
++        render(<SchedaMike ev={ev()} />);
++        const o45 = screen.getByTestId('cr-mike-o45');
++        expect(o45.getAttribute('title')).not.toContain('(la copertura)');
++        const p4 = screen.getByTestId('cr-mike-p4-mercato').getAttribute('title') ?? '';
++        expect(p4).toContain('perdono l’Under 3,5 e la copertura');
++        expect(p4).not.toContain('sia Over 4.5');
++        // la formula resta quella
++        expect(p4).toContain('P(Over 3.5) − P(Over 4.5)');
++    });
++
++    it('se la partita ha una gamba di copertura, il title dice QUALE (banca Under 4.5)', () => {
++        const cop = {
++            role: 'over_cover', market: 'OU45', selection: 'UNDER', side: 'lay', price: 1.09, size: 6.32,
++            matched: 6.32, avg_price: 1.09, ref: 'r1', status: 'open', placed_at: ORA_S, persistence: 'LAPSE',
++            cycle_no: 0, final: false, archived: false,
++        } as MikeEvent['positions'][number];
++        render(<SchedaMike ev={ev({ positions: [cop] })} />);
++        expect(screen.getByTestId('cr-mike-u45').getAttribute('title')).toContain('Copertura: banca Under 4.5');
++    });
++});
++
++// ------------------------------------------------------------------ M10
++describe('M10 - una parola sola: Liability', () => {
++    it('SchedaMike: «Liability aperta», mai «responsabilità» in testo o tooltip', () => {
++        const { container } = render(<SchedaMike ev={ev({}, { cashout: cashout() })} />);
++        const voce = screen.getByTestId('cr-mike-liability');
++        expect(voce.textContent).toContain('Liability aperta');
++        expect(voce.textContent).toContain('5,00 €');
++        expect(testiVisibili(container)).not.toMatch(/responsabilit/i);
++    });
++});
++
++// ------------------------------------------------------------------ M11, M12
++describe('M11/M12 - proposta d’uscita di Mike', () => {
++    it('in perdita (loss_*): titolo «IN PERDITA», riquadro rosso', () => {
++        render(<PropostaUscitaMike ev={ev({ ctx: { uscita_proposta: proposta() } })} />);
++        const t = screen.getByTestId('cr-mike-proposta-titolo').textContent ?? '';
++        expect(t).toContain('IN PERDITA');
++        expect(screen.getByTestId('cr-mike-proposta').className).toMatch(/border-red-500\/40/);
++    });
++
++    it('non urgente (chiusura a tempo del re-ingresso): comunque «IN PERDITA» e rosso', () => {
++        render(<PropostaUscitaMike ev={ev({ ctx: { uscita_proposta: proposta({
++            urgente: false, close_reason: 'reentry_time', categoria: 'reentry_green',
++            chiave: 'reentry_green|c0' }) } })} />);
++        const t = screen.getByTestId('cr-mike-proposta-titolo').textContent ?? '';
++        expect(t).toContain('IN PERDITA');
++        expect(t).toContain('uscita del re-ingresso');
++        const box = screen.getByTestId('cr-mike-proposta');
++        expect(box.className).toMatch(/border-red-500\/40/);
++        expect(box.className).not.toMatch(/amber/);
++    });
++
++    it('la cifra «chiudendo ora» dice che e’ TUTTA la partita', () => {
++        render(<PropostaUscitaMike ev={ev({ ctx: { uscita_proposta: proposta() } }, { cashout: cashout() })} />);
++        const numeri = screen.getByTestId('cr-mike-proposta-numeri').textContent ?? '';
++        expect(numeri).toMatch(/^chiudendo tutta la partita ora −0,84 €/);
++        expect(screen.getByTestId('cr-mike-proposta-cifra').textContent).toBe('−0,84 €');
++    });
++});
++
++// ------------------------------------------------------------------ A12
++const TITOLO_MANUALI_DI_SEMPRE = 'le uscite della strategia (in profitto e in perdita) diventano PROPOSTE nella scheda: le approvi tu. Le protezioni restano automatiche';
++const TITOLO_CONFERMA_DI_SEMPRE = 'confermi? da qui il bot chiude da solo secondo la sua strategia, in profitto e in perdita';
++
++describe('A12 - tooltip dell’interruttore delle uscite', () => {
++    it('Mike (stato del servizio): il tooltip parla SOLO delle uscite in perdita', () => {
++        const st = statoUscite(interruttoreDi('mike'), { uscite_automatiche: true }) as StatoUscite;
++        expect(st.nota).toBe(NOTA_USCITE_MIKE);
++        expect(st.soloUsciteInPerdita).toBe(true);
++        const cambia = vi.fn();
++        const { unmount } = render(<InterruttoreUscite id="mike" uscite={st} cambia={cambia} />);
++        const manuali = screen.getByTestId('cr-uscite-cambia-mike').getAttribute('title') ?? '';
++        expect(manuali).toContain('PERDITA');
++        expect(manuali).not.toContain('in profitto e in perdita');
++        expect(manuali).toMatch(/profitto .*le esegue sempre il bot/);
++        unmount();
++
++        const spente = statoUscite(interruttoreDi('mike'), { uscite_automatiche: false }) as StatoUscite;
++        render(<InterruttoreUscite id="mike" uscite={spente} cambia={cambia} />);
++        fireEvent.click(screen.getByTestId('cr-uscite-cambia-mike'));
++        const conferma = screen.getByTestId('cr-uscite-conferma-mike').getAttribute('title') ?? '';
++        expect(conferma).toContain('PERDITA');
++        expect(conferma).not.toContain('in profitto e in perdita');
++    });
++
++    it('gli altri bot: testo IDENTICO a prima', () => {
++        for (const id of ['omega', 'safe-base', 'scalper'] as const) {
++            const params = id === 'omega' ? { uscite_protezione: 'automatico' }
++                : id === 'scalper' ? { uscite_automatiche: true }
++                    : { uscite_automatiche: { base: true } };
++            const st = statoUscite(interruttoreDi(id), params) as StatoUscite;
++            expect(st.soloUsciteInPerdita).toBeUndefined();
++            const { unmount } = render(<InterruttoreUscite id={id} uscite={st} cambia={vi.fn()} />);
++            expect(screen.getByTestId(`cr-uscite-cambia-${id}`).getAttribute('title')).toBe(TITOLO_MANUALI_DI_SEMPRE);
++            unmount();
++        }
++        render(<InterruttoreUscite id="omega" uscite={{ automatiche: false }} cambia={vi.fn()} />);
++        fireEvent.click(screen.getByTestId('cr-uscite-cambia-omega'));
++        expect(screen.getByTestId('cr-uscite-conferma-omega').getAttribute('title')).toBe(TITOLO_CONFERMA_DI_SEMPRE);
++    });
++});
+diff --git a/frontend/src/components/controlroom/DettaglioRigaView.test.tsx b/frontend/src/components/controlroom/DettaglioRigaView.test.tsx
+index b0e8554..a38ed7f 100644
+--- a/frontend/src/components/controlroom/DettaglioRigaView.test.tsx
++++ b/frontend/src/components/controlroom/DettaglioRigaView.test.tsx
+@@ -79,3 +79,15 @@ describe('RigaOperazione: colore di "se chiudo ora" (o.chiusura.bloccabile)', ()
+         expect(screen.queryByTestId('cr-op-chiudo-ora')).not.toBeInTheDocument();
+     });
+ });
++
++// 30/09 (B2, M10) - la liability della riga con la parola del glossario
++describe('RigaOperazione: liability della posizione', () => {
++    it('«liability 5,00 €», mai «resp.» / «responsabilità» (testo e title)', () => {
++        const { container } = render(<RigaOperazione o={riga(null, { lato: 'lay', liability: 5 })} />);
++        const l = screen.getByTestId('cr-op-liability');
++        expect(l.textContent).toBe('liability 5,00 €');
++        expect(l.getAttribute('title')).toBe('liability impegnata da questa posizione');
++        const titoli = [...container.querySelectorAll('[title]')].map((n) => n.getAttribute('title') ?? '');
++        expect(`${container.textContent}\n${titoli.join('\n')}`).not.toMatch(/responsabilit|resp\./i);
++    });
++});
+diff --git a/frontend/src/components/controlroom/DettaglioRigaView.tsx b/frontend/src/components/controlroom/DettaglioRigaView.tsx
+index a74ac79..891b866 100644
+--- a/frontend/src/components/controlroom/DettaglioRigaView.tsx
++++ b/frontend/src/components/controlroom/DettaglioRigaView.tsx
+@@ -110,7 +110,7 @@ export function Copertura({ d, testId = 'cr-copertura-riga' }: { d: DettaglioRig
+     return (
+         <span className="text-[10px] text-white/40" data-testid={testId}
+             data-completa={d.copertura.completa ? '1' : undefined}
+-            title="quota di stake già coperta e responsabilità ancora a rischio">
++            title="quota di stake già coperta e liability ancora a rischio">
+             coperta <span className="text-white/65">{pct == null ? DASH : `${pct} %`}</span>
+             {d.copertura.residua != null && (
+                 <span className="text-white/30"> · a rischio <span className="font-mono">{fmtMoney(d.copertura.residua)}</span></span>
+@@ -311,8 +311,8 @@ export function RigaOperazione({ o, testId = 'cr-op', nomeSelezioneRisolto = nul
+                 nessuna seconda formula. */}
+             {o.liability != null && (
+                 <span className="font-mono text-orange-400 text-[10px]"
+-                    title="responsabilita' impegnata da questa posizione">
+-                    resp. {fmtMoney(o.liability)}
++                    title="liability impegnata da questa posizione" data-testid={`${testId}-liability`}>
++                    liability {fmtMoney(o.liability)}
+                 </span>
+             )}
+             {o.vivo && <QuotaOra v={o.vivo} testId={`${testId}-quota-viva`} />}
+diff --git a/frontend/src/components/controlroom/InterruttoreUscite.tsx b/frontend/src/components/controlroom/InterruttoreUscite.tsx
+index 1701639..28a9ab9 100644
+--- a/frontend/src/components/controlroom/InterruttoreUscite.tsx
++++ b/frontend/src/components/controlroom/InterruttoreUscite.tsx
+@@ -39,6 +39,23 @@ export function testoStatoUscite(u: StatoUscite): string {
+     return `${TESTO_USCITE_MANUALI}${aperte}${u.nota ? ` (${u.nota})` : ''}`;
+ }
+ 
++/**
++ * 30/09 (B2, A12) - i tooltip dei pulsanti, guidati dallo STATO: dove
++ * l'interruttore governa solo le uscite in perdita (Mike, `soloUsciteInPerdita`)
++ * non si puo' dire «in profitto e in perdita». Per gli altri bot: le parole di sempre.
++ */
++export function titoloPassaAManuali(u: StatoUscite): string {
++    return u.soloUsciteInPerdita
++        ? 'le uscite in PERDITA della strategia diventano PROPOSTE nella scheda: le approvi tu. Le uscite in profitto (green-up, uscita al fischio, cash out in profitto) le esegue sempre il bot; le protezioni restano automatiche'
++        : 'le uscite della strategia (in profitto e in perdita) diventano PROPOSTE nella scheda: le approvi tu. Le protezioni restano automatiche';
++}
++
++export function titoloConfermaAutomatiche(u: StatoUscite): string {
++    return u.soloUsciteInPerdita
++        ? 'confermi? da qui il bot esegue da solo anche le uscite in PERDITA secondo la sua strategia (quelle in profitto le esegue gia’ da solo)'
++        : 'confermi? da qui il bot chiude da solo secondo la sua strategia, in profitto e in perdita';
++}
++
+ export interface InterruttoreUsciteProps {
+     /** id della riga (test id stabili: cr-uscite-<id>, cr-uscite-stato-<id>, ...) */
+     id: string;
+@@ -77,7 +94,7 @@ export function InterruttoreUscite({ id, uscite, cambia, occupato = false }: Int
+                     disabled={occupato}
+                     onClick={() => void cambia(false)}
+                     data-testid={`cr-uscite-cambia-${id}`}
+-                    title="le uscite della strategia (in profitto e in perdita) diventano PROPOSTE nella scheda: le approvi tu. Le protezioni restano automatiche"
++                    title={titoloPassaAManuali(uscite)}
+                     className="h-6 px-2 text-[10px]"
+                 >passa a manuali</Button>
+             )}
+@@ -88,7 +105,7 @@ export function InterruttoreUscite({ id, uscite, cambia, occupato = false }: Int
+                         disabled={occupato || troppoPresto}
+                         onClick={() => { setArmataDa(null); void cambia(true); }}
+                         data-testid={`cr-uscite-conferma-${id}`}
+-                        title="confermi? da qui il bot chiude da solo secondo la sua strategia, in profitto e in perdita"
++                        title={titoloConfermaAutomatiche(uscite)}
+                         className="h-6 px-2 text-[10px] bg-amber-600/70 hover:bg-amber-600 text-white"
+                     >confermi? passa ad automatiche</Button>
+                     <Button
+diff --git a/frontend/src/components/controlroom/PropostaUscitaMike.test.tsx b/frontend/src/components/controlroom/PropostaUscitaMike.test.tsx
+index fc4df28..331d8bb 100644
+--- a/frontend/src/components/controlroom/PropostaUscitaMike.test.tsx
++++ b/frontend/src/components/controlroom/PropostaUscitaMike.test.tsx
+@@ -61,8 +61,9 @@ describe('25/09 proposta d’uscita di Mike', () => {
+ 
+     it('mostra categoria, motivo, ordini con il prezzo di adesso e i due P&L', () => {
+         render(<PropostaUscitaMike ev={ev({ uscita_proposta: proposta() })} />);
++        // 30/09 (B2, M11): Mike propone solo uscite che possono chiudere in perdita
+         expect(screen.getByTestId('cr-mike-proposta-titolo').textContent)
+-            .toBe('Mike vorrebbe uscire: cash out della posizione');
++            .toBe('Mike vorrebbe uscire: cash out della posizione (può chiudere IN PERDITA)');
+         expect(screen.getByTestId('cr-mike-proposta-motivo').textContent).toBe('profit: 1.31 >= 5% di 24.00');
+         // D7 (25/09): la riga dice da dove viene il prezzo di adesso (qui:
+         // nessun id vero sulla riga -> il feed della partita, dichiarato)
+@@ -70,7 +71,8 @@ describe('25/09 proposta d’uscita di Mike', () => {
+             'Chiusura Under 3.5 lay 22,90 € @ 1,31 (ora 1,30 / 1,31, feed della partita)'
+             + ' + Chiusura Over 4.5 lay 2,56 € @ 12,50 (ora 12,00 / 12,50, feed della partita)');
+         const numeri = screen.getByTestId('cr-mike-proposta-numeri').textContent ?? '';
+-        expect(numeri).toMatch(/^chiudendo ora \+1,28 €/);
++        // 30/09 (B2, M12): la cifra e' il cash out di TUTTA la partita
++        expect(numeri).toMatch(/^chiudendo tutta la partita ora \+1,28 €/);
+         expect(numeri).toContain('alla decisione +1,31 €');
+         expect(numeri).toMatch(/deciso 1[2-4] s fa/);
+         expect(numeri).toContain('30′');
+@@ -79,7 +81,7 @@ describe('25/09 proposta d’uscita di Mike', () => {
+     it('uscita in perdita: marcata', () => {
+         render(<PropostaUscitaMike ev={ev({ uscita_proposta: proposta({ urgente: true }) })} />);
+         expect(screen.getByTestId('cr-mike-proposta-titolo').textContent)
+-            .toBe('Mike vorrebbe uscire: cash out della posizione (in perdita)');
++            .toBe('Mike vorrebbe uscire: cash out della posizione (IN PERDITA)');
+     });
+ 
+     it('APPROVA manda approva_uscita con la chiave e il contesto del clic', async () => {
+diff --git a/frontend/src/components/controlroom/PropostaUscitaMike.tsx b/frontend/src/components/controlroom/PropostaUscitaMike.tsx
+index b887c89..11b0db7 100644
+--- a/frontend/src/components/controlroom/PropostaUscitaMike.tsx
++++ b/frontend/src/components/controlroom/PropostaUscitaMike.tsx
+@@ -233,14 +233,17 @@ export function PropostaUscitaMike({
+         } finally { setInVolo(false); }
+     };
+ 
++    // 30/09 (B2, M11) - dal 29/09 Mike propone SOLO le uscite che possono
++    // chiudere in perdita (`engine.gate_uscite` / `uscita_in_perdita`): le altre
++    // le esegue da solo. `urgente` (= `close_reason` `loss*`) e' un'uscita in
++    // perdita; le altre (chiusura a tempo del re-ingresso, veto) POSSONO esserlo.
+     return (
+-        <div className={`rounded border px-2.5 py-2 space-y-1 ${prop.urgente
+-            ? 'border-red-500/40 bg-red-500/10' : 'border-amber-400/40 bg-amber-400/10'}`}
++        <div className="rounded border px-2.5 py-2 space-y-1 border-red-500/40 bg-red-500/10"
+             data-testid={testId}>
+             <div className="flex items-center justify-between gap-2">
+-                <span className="text-[10.5px] font-semibold text-amber-200" data-testid={`${testId}-titolo`}>
++                <span className="text-[10.5px] font-semibold text-red-200" data-testid={`${testId}-titolo`}>
+                     Mike vorrebbe uscire: {CATEGORIA[prop.categoria] ?? prop.categoria}
+-                    {prop.urgente ? ' (in perdita)' : ''}
++                    {prop.urgente ? ' (IN PERDITA)' : ' (può chiudere IN PERDITA)'}
+                 </span>
+                 <span className={`text-[10px] px-1.5 py-0.5 rounded border ${fresh.cls}`}>{fresh.label}</span>
+             </div>
+@@ -262,7 +265,8 @@ export function PropostaUscitaMike({
+                 momento), come la strategia la vuole; dopo il clic qui sotto il prezzo reale di abbinamento
+             </div>
+             <div className="text-[10.5px] text-white/60" data-testid={`${testId}-numeri`}>
+-                chiudendo ora <span className={cifraVecchia ? 'line-through text-amber-300/80' : ''}
++                {/* 30/09 (B2, M12): `live.cashout.net` = TUTTA la partita */}
++                chiudendo tutta la partita ora <span className={cifraVecchia ? 'line-through text-amber-300/80' : ''}
+                     data-testid={`${testId}-cifra`}>{bloccabileOra == null ? DASH : fmtMoney(bloccabileOra, { signed: true })}</span>
+                 {' '}<span className={cifraVecchia ? 'text-amber-300 font-semibold' : 'text-white/45'}
+                     data-testid={`${testId}-eta-cifra`} data-vecchia={cifraVecchia ? '1' : '0'}>
+diff --git a/frontend/src/components/controlroom/SchedaMike.tsx b/frontend/src/components/controlroom/SchedaMike.tsx
+index c4851c7..0d4dd55 100644
+--- a/frontend/src/components/controlroom/SchedaMike.tsx
++++ b/frontend/src/components/controlroom/SchedaMike.tsx
+@@ -36,9 +36,10 @@
+ // (`freshness.tone === 'stale' || 'unknown'`), mai una condizione nuova.
+ // ============================================================================
+ import { fmtMoney, fmtNum, fmtOdds, fmtPct, DASH } from '@/lib/format';
+-import { pnlClass } from '@/lib/tradeStatus';
+-import { etaQuoteS, feedFreshness, MIKE_TERMINAL_STATES, type MikeEvent } from '@/lib/mike';
++import { pnlClass, T } from '@/lib/tradeStatus';
++import { etaQuoteS, feedFreshness, MIKE_TERMINAL_STATES, roleLabelGamba, type MikeEvent } from '@/lib/mike';
+ import { useSecondTick } from '@/components/mike/useMikeClock';
++import { cycleText } from '@/components/mike/MikeMatchCard';
+ import { PropostaUscitaMike } from './PropostaUscitaMike';
+ import { EsitoChiusuraMike } from './EsitoChiusuraMike';
+ 
+@@ -77,6 +78,15 @@ export function SchedaMike({ ev, testId = 'cr-mike' }: { ev: MikeEvent; testId?:
+     const books = live.books ?? {};
+     const u35 = books['OU35|UNDER'] ?? books['OU35'] ?? null;
+     const o45 = books['OU45|OVER'] ?? books['OU45'] ?? null;
++    // 30/09 (B2, A3) - la banca della copertura di serie e il re-ingresso stanno
++    // sull'Under 4,5 (`engine.py` `_place("over_cover", OU45, UNDER, "lay")`,
++    // `_place("reentry", OU45, UNDER, "back")`): chiave vera del servizio
++    const u45 = books['OU45|UNDER'] ?? null;
++    // la forma della copertura la scheda la conosce solo se la partita ha gia'
++    // una gamba di copertura (i parametri non arrivano qui): altrimenti non la dice
++    const gambaCopertura = (ev.positions ?? []).find((g) => g.role === 'over_cover' && !g.archived) ?? null;
++    const coperturaDiQuesta = gambaCopertura
++        ? ` · su questa partita: ${roleLabelGamba(gambaCopertura)}` : '';
+     const cash = live.cashout ?? null;
+     const perGol = live.pnl_totale_by_total ?? live.pnl_by_total ?? null;
+     const lamHome = num(dos.lambda_home);
+@@ -124,7 +134,7 @@ export function SchedaMike({ ev, testId = 'cr-mike' }: { ev: MikeEvent; testId?:
+                 letto come «4 o più» sottostimava il rischio dell'Under 3.5. ── */}
+             <div className="flex items-baseline gap-x-3 gap-y-1 flex-wrap">
+                 <Voce label="P(4 gol esatti) mercato" testId={`${testId}-p4-mercato`}
+-                    title="probabilità di ESATTAMENTE 4 gol (perdono sia Under 3.5 sia Over 4.5) implicita nelle quote di adesso: P(Over 3.5) − P(Over 4.5)">
++                    title="probabilità di ESATTAMENTE 4 gol (perdono l’Under 3,5 e la copertura) implicita nelle quote di adesso: P(Over 3.5) − P(Over 4.5)">
+                     {fmtPct(num(live.p4_market))}
+                 </Voce>
+                 <Voce label="modello" testId={`${testId}-p4-modello`}
+@@ -162,9 +172,13 @@ export function SchedaMike({ ev, testId = 'cr-mike' }: { ev: MikeEvent; testId?:
+                     {fmtOdds(u35?.best_back ?? null)}<span className="text-white/25"> / </span>{fmtOdds(u35?.best_lay ?? null)}
+                 </Voce>
+                 <Voce label="Over 4.5" testId={`${testId}-o45`}
+-                    title="miglior BACK / miglior LAY di adesso sulla linea 4.5 (la copertura)">
++                    title={`miglior BACK / miglior LAY di adesso sull’Over 4.5 (linea 4,5): qui va la copertura solo nella forma «punta Over 4.5»; la chiusura della copertura è una banca Over 4.5${coperturaDiQuesta}`}>
+                     {fmtOdds(o45?.best_back ?? null)}<span className="text-white/25"> / </span>{fmtOdds(o45?.best_lay ?? null)}
+                 </Voce>
++                <Voce label="Under 4.5" testId={`${testId}-u45`}
++                    title={`miglior BACK / miglior LAY di adesso sull’Under 4.5 (linea 4,5): qui va la copertura nella forma «banca Under 4.5» e il re-ingresso dopo un gol${coperturaDiQuesta}`}>
++                    {fmtOdds(u45?.best_back ?? null)}<span className="text-white/25"> / </span>{fmtOdds(u45?.best_lay ?? null)}
++                </Voce>
+                 {num(live.total_matched) != null && (
+                     <Voce label="volume" testId={`${testId}-volume`} title="euro già scambiati sul mercato">
+                         {fmtMoney(num(live.total_matched))}
+@@ -190,16 +204,26 @@ export function SchedaMike({ ev, testId = 'cr-mike' }: { ev: MikeEvent; testId?:
+                         {fmtNum(num(live.ko_drift_ticks), 0)} tick
+                     </span>
+                 )}
++                {/* 30/09 (B2, M9) - numerato come la pagina di Mike (`cycleText`
++                    della card: `cycle_no` = cicli gia' chiusi, il ciclo in corso
++                    e' il successivo). Il massimo per partita e' un parametro
++                    che la scheda non riceve: non lo si scrive. */}
+                 <Voce label="ciclo" testId={`${testId}-cicli`}
+-                    title="ciclo in corso e cicli già chiusi sulla partita">
+-                    {ev.cycle_no}{live.cicli_chiusi != null && <span className="text-white/35"> · {live.cicli_chiusi} chiusi</span>}
++                    title={terminal
++                        ? 'partita chiusa: cicli completati sulla partita'
++                        : 'ciclo in corso (il primo è 1, come nella pagina di Mike) e cicli già chiusi sulla partita'}>
++                    {cycleText(ev.cycle_no, null, terminal).value}
++                    {terminal
++                        ? <span className="text-white/35"> usati</span>
++                        : live.cicli_chiusi != null && <span className="text-white/35"> · {live.cicli_chiusi} chiusi</span>}
+                 </Voce>
+             </div>
+ 
+-            {/* ── soldi: responsabilità, bloccato, cash out ── */}
++            {/* ── soldi: liability, bloccato, cash out (30/09 B2, M10: la parola
++                del glossario, `T.openLiability`, come la card e i KPI) ── */}
+             <div className="flex items-baseline gap-x-3 gap-y-1 flex-wrap">
+-                <Voce label="responsabilità" testId={`${testId}-liability`}
+-                    title="responsabilità netta impegnata sulla partita">
++                <Voce label={T.openLiability} testId={`${testId}-liability`}
++                    title="liability netta impegnata sulla partita">
+                     {fmtMoney(num(live.liability))}
+                 </Voce>
+                 <Voce label="bloccato" testId={`${testId}-locked`} title="P&L già bloccato sulla partita">
+@@ -207,7 +231,11 @@ export function SchedaMike({ ev, testId = 'cr-mike' }: { ev: MikeEvent; testId?:
+                         {num(live.locked) == null ? DASH : fmtMoney(num(live.locked), { signed: true })}
+                     </span>
+                 </Voce>
+-                {cash && (
++                {/* 30/09 (B2, A9) - `complete=false` = una selezione ancora VIVA
++                    non ha prezzo e il netto del servizio la ESCLUDE
++                    (`engine.cashout_value`): la cifra sarebbe una somma monca.
++                    Come la card di Mike: nessuna cifra. */}
++                {cash && (cash.complete ? (
+                     <Voce label="cash out" testId={`${testId}-cashout`}
+                         title="valore NETTO di chiusura pubblicato dal servizio, con la soglia oltre la quale chiude da solo">
+                         <span className={pnlClass(cash.net)}>{fmtMoney(cash.net, { signed: true })}</span>
+@@ -215,12 +243,15 @@ export function SchedaMike({ ev, testId = 'cr-mike' }: { ev: MikeEvent; testId?:
+                         {cash.target_pct != null && (
+                             <span className="text-white/25" title="soglia di chiusura automatica"> / soglia {fmtPct(cash.target_pct / 100)}</span>
+                         )}
+-                        {!cash.complete && (
+-                            <span className="text-amber-300" data-testid={`${testId}-cashout-parziale`}
+-                                title="il book non copre l'intera chiusura: sarebbe PARZIALE"> · parziale</span>
+-                        )}
+                     </Voce>
+-                )}
++                ) : (
++                    <Voce label="cash out" testId={`${testId}-cashout`}
++                        title="una linea ancora in gioco non ha prezzo sul book: il valore di chiusura di tutta la partita non si può calcolare">
++                        <span className="text-amber-300" data-testid={`${testId}-cashout-parziale`}>
++                            non calcolabile (manca il prezzo di una linea)
++                        </span>
++                    </Voce>
++                ))}
+             </div>
+ 
+             {/* ── come finisce, per numero di gol ── */}
+diff --git a/frontend/src/components/controlroom/SchedaPropostaOpportunita.test.tsx b/frontend/src/components/controlroom/SchedaPropostaOpportunita.test.tsx
+index 8e8cca0..897dc76 100644
+--- a/frontend/src/components/controlroom/SchedaPropostaOpportunita.test.tsx
++++ b/frontend/src/components/controlroom/SchedaPropostaOpportunita.test.tsx
+@@ -60,6 +60,8 @@ describe('SchedaPropostaOpportunita', () => {
+         expect(screen.getByTestId('cr-opp-prezzo').textContent).toContain('1,28');
+         expect(screen.getByTestId('cr-opp-stake').textContent).toMatch(/5/);
+         expect(screen.getByTestId('cr-opp-liability').textContent).toMatch(/5/);
++        // 30/09 (B2, M10): l'etichetta della cella e' la parola del glossario
++        expect(screen.getByTestId('cr-opp-liability').previousElementSibling?.textContent).toBe('Liability');
+         expect(screen.getByTestId('cr-opp-abbinabile').textContent).toMatch(/500/);
+         expect(screen.getByTestId('cr-opp-pmodel').textContent).toBe('77,0 %');
+         // 26/09 (F-7): senza criteri (nessun «al prezzo di adesso") la P del
+diff --git a/frontend/src/components/controlroom/SchedaPropostaOpportunita.tsx b/frontend/src/components/controlroom/SchedaPropostaOpportunita.tsx
+index 19b9516..bc44f10 100644
+--- a/frontend/src/components/controlroom/SchedaPropostaOpportunita.tsx
++++ b/frontend/src/components/controlroom/SchedaPropostaOpportunita.tsx
+@@ -521,7 +521,7 @@ export function SchedaPropostaOpportunita({
+             {/* ---- i numeri dei soldi ---- */}
+             <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-white/5 mt-2 border-t border-white/5">
+                 <Cella etichetta="Stake previsto" valore={fmtMoney(p.size)} testId="cr-opp-stake" />
+-                <Cella etichetta="Responsabilità"
++                <Cella etichetta="Liability"
+                     valore={(ap?.liability ?? p.liability) == null ? DASH : fmtMoney(ap?.liability ?? p.liability)}
+                     tono="cattivo" testId="cr-opp-liability" />
+                 <Cella etichetta="Abbinabile ora"
+@@ -633,7 +633,7 @@ export function SchedaPropostaOpportunita({
+             {live && (
+                 <div className="px-3 py-1.5 flex items-start gap-2 text-[11px] text-orange-300 bg-orange-500/5">
+                     <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+-                    <span>Apertura con soldi veri: la responsabilità qui sopra è quella che rischi.</span>
++                    <span>Apertura con soldi veri: la liability qui sopra è quella che rischi.</span>
+                 </div>
+             )}
+         </article>
+diff --git a/frontend/src/components/controlroom/dettaglioRiga.test.tsx b/frontend/src/components/controlroom/dettaglioRiga.test.tsx
+index a029024..545d861 100644
+--- a/frontend/src/components/controlroom/dettaglioRiga.test.tsx
++++ b/frontend/src/components/controlroom/dettaglioRiga.test.tsx
+@@ -258,7 +258,9 @@ describe('SchedaMike — i dati di MODELLO di Mike, dalla lettura gia fatta', ()
+         expect(screen.getByTestId('cr-mike-entry')).toHaveTextContent('1,42');
+         expect(screen.getByTestId('cr-mike-ko')).toHaveTextContent('1,38');
+         expect(screen.getByTestId('cr-mike-ko-drift')).toHaveTextContent('4 tick');
+-        expect(screen.getByTestId('cr-mike-cicli')).toHaveTextContent('2');
++        // 30/09 (B2, M9): cycle_no 2 = due cicli chiusi, il ciclo in corso e' il 3
++        // (numerazione della pagina di Mike, `cycleText`)
++        expect(screen.getByTestId('cr-mike-cicli')).toHaveTextContent(/^ciclo\s*3 · /);
+         expect(screen.getByTestId('cr-mike-cashout')).toHaveTextContent('soglia');
+         // il segno «meno» del design system e' il MENO tipografico (U+2212)
+         expect(screen.getByTestId('cr-mike-gol-4')).toHaveTextContent('4,65 €');
+diff --git a/frontend/src/components/trading/EventPnlTable.test.tsx b/frontend/src/components/trading/EventPnlTable.test.tsx
+index d2fc056..b158309 100644
+--- a/frontend/src/components/trading/EventPnlTable.test.tsx
++++ b/frontend/src/components/trading/EventPnlTable.test.tsx
+@@ -143,7 +143,9 @@ describe('i totali delle operazioni, in testa e sempre visibili', () => {
+         expect(barra).toHaveTextContent('P&L realizzato');
+         expect(barra).toHaveTextContent('Se chiudo ora');
+         expect(barra).toHaveTextContent('Investito');
+-        expect(barra).toHaveTextContent('Responsabilità');
++        // 30/09 (B2, M10): la parola del glossario, come i KPI e la card
++        expect(barra).toHaveTextContent('Liability aperta');
++        expect(barra).not.toHaveTextContent(/responsabilit/i);
+         expect(screen.getByTestId('event-pnl-totali-realizzato')).toHaveTextContent('+0,13');
+         expect(screen.getByTestId('event-pnl-totali-investito')).toHaveTextContent('17,00');
+         expect(screen.getByTestId('event-pnl-totali-liability')).toHaveTextContent('21,00');
+@@ -230,6 +232,15 @@ describe('una riga per PARTITA', () => {
+         expect(screen.getByTestId('liability-E1')).toHaveTextContent('36,00');
+     });
+ 
++    it('30/09 (B2, M10): intestazione di colonna e tooltip dicono «Liability», mai «responsabilità»', () => {
++        monta([t({ status: 'open', pnl: null, size: 12, liability: 36 })]);
++        const card = screen.getByTestId('event-pnl');
++        const intestazioni = [...card.querySelectorAll('th')].map((th) => th.textContent ?? '');
++        expect(intestazioni).toContain('Liability aperta');
++        const titoli = [...card.querySelectorAll('[title]')].map((n) => n.getAttribute('title') ?? '');
++        expect(`${card.textContent}\n${titoli.join('\n')}`).not.toMatch(/responsabilit/i);
++    });
++
+     it('dichiara «ancora aperta» e marca il netto come parziale', () => {
+         monta([t({ status: 'lost', pnl: -10 }), t({ status: 'open', pnl: null })]);
+         expect(screen.getByTestId('partita-E1')).toHaveTextContent('ancora aperta');
+@@ -339,7 +350,7 @@ describe('la barra dei totali usata da sola (Omega)', () => {
+         render(<TotaliBar tot={tot} modalita="live" testId="omega-tot" />);
+         const barra = screen.getByTestId('omega-tot');
+         expect(barra).toHaveTextContent('P&L realizzato · LIVE');
+-        expect(barra).toHaveTextContent('Responsabilità · LIVE');
++        expect(barra).toHaveTextContent('Liability aperta · LIVE');
+         expect(screen.getByTestId('omega-tot-realizzato')).toHaveTextContent(`${MINUS}5,00`);
+     });
+ });
+diff --git a/frontend/src/components/trading/EventPnlTable.tsx b/frontend/src/components/trading/EventPnlTable.tsx
+index 8a89561..891b780 100644
+--- a/frontend/src/components/trading/EventPnlTable.tsx
++++ b/frontend/src/components/trading/EventPnlTable.tsx
+@@ -447,7 +447,7 @@ export function EventPnlTable<T extends PnlTradeLike>({
+                                 <th className="px-2 pb-1 font-heading">Partita</th>
+                                 <th className="px-2 pb-1 text-right font-heading">{unita.molti}</th>
+                                 <th className="px-2 pb-1 text-right font-heading" title={TIP.totInvestito}>Investito</th>
+-                                <th className="px-2 pb-1 text-right font-heading" title={TIP.totLiability}>Responsabilità</th>
++                                <th className="px-2 pb-1 text-right font-heading" title={TIP.totLiability}>{T.totLiability}</th>
+                                 <th className="px-2 pb-1 font-heading">Stato</th>
+                                 <th className="px-2 pb-1 text-right font-heading">P&amp;L netto</th>
+                             </tr>
+diff --git a/frontend/src/components/trading/designGuard.test.ts b/frontend/src/components/trading/designGuard.test.ts
+index 059bdea..be1a92d 100644
+--- a/frontend/src/components/trading/designGuard.test.ts
++++ b/frontend/src/components/trading/designGuard.test.ts
+@@ -189,6 +189,63 @@ describe('design system — una sola mappa per le etichette (§19)', () => {
+     });
+ });
+ 
++// 30/09 (blocco B2, audit M10) — «Liability» e' la parola del glossario (§3):
++// «responsabilita'»/«resp.» non devono piu' comparire in cio' che il trader
++// LEGGE (testo, etichette, title) nei file della Control Room di Mike e della
++// tabella delle operazioni; il pulsante si chiama «Chiudi a mercato», mai
++// «Flatten». I COMMENTI non contano (li si toglie prima di cercare), i nomi di
++// campo nemmeno (`responsabilita` come chiave resta fuori da questi file).
++// Le altre pagine (live, safestrategy, watchlist, report) sono di altri blocchi:
++// quando le si uniforma, si aggiungono qui.
++const FILE_GLOSSARIO_LIABILITY = [
++    'pages/ControlRoom.tsx',
++    'components/controlroom/SchedaMike.tsx',
++    'components/controlroom/PropostaUscitaMike.tsx',
++    'components/controlroom/InterruttoreUscite.tsx',
++    'components/controlroom/DettaglioRigaView.tsx',
++    'components/controlroom/SchedaPropostaOpportunita.tsx',
++    'components/trading/EventPnlTable.tsx',
++    'lib/tradeStatus.ts',
++    'lib/interruttori.ts',
++];
++
++/** il sorgente senza commenti (a blocco, JSX compresi, e di riga), righe conservate */
++function senzaCommenti(text: string): string {
++    const blocchi = text.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, ' '));
++    // `//` di riga, ma non dentro un indirizzo («https://»)
++    // (i sorgenti hanno fine riga CRLF: `.` non passa il `\r`, si divide su `\r?\n`)
++    return blocchi.split(/\r?\n/).map((l) => l.replace(/(^|[^:])\/\/.*$/, '$1')).join('\n');
++}
++
++/** `file:riga` di ogni riga NON commento che contiene una parola vietata */
++function paroleVietate(text: string, path: string): string[] {
++    const out: string[] = [];
++    senzaCommenti(text).split('\n').forEach((line, i) => {
++        if (/responsabilit/i.test(line) || /(^|[^\w.])resp\.(\s|$)/i.test(line) || /\bFlatten\b/.test(line)) {
++            out.push(`${path}:${i + 1} → ${line.trim().slice(0, 120)}`);
++        }
++    });
++    return out;
++}
++
++describe('glossario Liability nei file della Control Room (B2, 30/09)', () => {
++    it('nessun «responsabilità», «resp.» o «Flatten» in un testo visibile', () => {
++        const found = FILE_GLOSSARIO_LIABILITY.flatMap((f) => paroleVietate(readFileSync(join(SRC, f), 'utf-8'), f));
++        expect(found, `parole fuori glossario:\n${found.join('\n')}`).toEqual([]);
++    });
++
++    it('la guardia vede la parola vietata nel testo e ignora i commenti', () => {
++        expect(paroleVietate('<Voce label="responsabilità">', 'x')).toHaveLength(1);
++        expect(paroleVietate("title=\"responsabilita' impegnata\"", 'x')).toHaveLength(1);
++        expect(paroleVietate('                    resp. {fmtMoney(o.liability)}', 'x')).toHaveLength(1);
++        expect(paroleVietate("label: 'Flatten'", 'x')).toHaveLength(1);
++        expect(paroleVietate('// la responsabilità di una banca', 'x')).toHaveLength(0);
++        expect(paroleVietate('// la responsabilità\r\n<b>responsabilità</b>\r\n', 'x')).toEqual(['x:2 → <b>responsabilità</b>']);
++        expect(paroleVietate('{/* responsabilità\n   delle posizioni */}', 'x')).toHaveLength(0);
++        expect(paroleVietate('const ok = resp.ok; flatten_pending: true', 'x')).toHaveLength(0);
++    });
++});
++
+ describe('la guardia guarda davvero', () => {
+     it('ha raccolto i sorgenti delle tre sezioni e del guscio', () => {
+         expect(FILES.length).toBeGreaterThan(30);
+diff --git a/frontend/src/lib/interruttori.ts b/frontend/src/lib/interruttori.ts
+index dabc542..10654e1 100644
+--- a/frontend/src/lib/interruttori.ts
++++ b/frontend/src/lib/interruttori.ts
+@@ -494,7 +494,7 @@ export class ObiettivoOmegaIgnoto extends Error {
+ export class ParametriOmegaIgnoti extends Error {
+     constructor() {
+         super('non conosco i parametri di Omega: avviarlo adesso azzererebbe i suoi '
+-            + 'tetti di rischio (perdita giornaliera, responsabilita’ aperta, per partita). '
++            + 'tetti di rischio (perdita giornaliera, liability aperta, per partita). '
+             + 'Apri la pagina di Omega, controlla i parametri, e riprova.');
+         this.name = 'ParametriOmegaIgnoti';
+     }
+@@ -1077,6 +1077,9 @@ export interface StatoUscite {
+     /** posizioni aperte di questa riga e da quanti minuti la piu' vecchia */
+     aperte?: number | null;
+     daMin?: number | null;
++    /** 30/09 (B2, A12): l'interruttore governa SOLO le uscite in perdita (Mike,
++     *  `engine.gate_uscite`); assente = governa tutte le uscite della strategia */
++    soloUsciteInPerdita?: boolean;
+ }
+ 
+ /** Le strategie di Safe che hanno uscite decise dal bot (`bot_service.STRATEGIE_CON_USCITE`). */
+@@ -1137,7 +1140,7 @@ export function statoUscite(i: Interruttore, params: Record<string, unknown> | n
+     }
+     // 29/09 (piano Mike P1): per Mike l'interruttore governa SOLO le uscite in
+     // perdita; lo si dice accanto allo stato, con le stesse parole per sempre
+-    if (i.bot === 'mike') return { automatiche: usciteMikeDi(params), nota: NOTA_USCITE_MIKE };
++    if (i.bot === 'mike') return { automatiche: usciteMikeDi(params), nota: NOTA_USCITE_MIKE, soloUsciteInPerdita: true };
+     return { automatiche: usciteSafeDi(params, String(i.strategia)) };
+ }
+ 
+diff --git a/frontend/src/lib/interruttoriUscite.test.ts b/frontend/src/lib/interruttoriUscite.test.ts
+index 7b6f270..eefeed2 100644
+--- a/frontend/src/lib/interruttoriUscite.test.ts
++++ b/frontend/src/lib/interruttoriUscite.test.ts
+@@ -42,11 +42,13 @@ describe('lettura: specchio del servizio', () => {
+         // 29/09 (piano Mike P1, decisioni 13 e 16): lo stato porta la nota di
+         // cosa governa l'interruttore (solo le uscite in perdita)
+         const nota = 'governa solo le uscite in perdita; le uscite in profitto le esegue Mike';
+-        expect(statoUscite(m, { stake: 10 })).toEqual({ automatiche: false, nota });
+-        expect(statoUscite(m, { uscite_automatiche: false })).toEqual({ automatiche: false, nota });
+-        expect(statoUscite(m, { uscite_automatiche: true })).toEqual({ automatiche: true, nota });
+-        expect(statoUscite(m, { uscite_automatiche: 'false' })).toEqual({ automatiche: false, nota });
+-        expect(statoUscite(m, { uscite_automatiche: 'true' })).toEqual({ automatiche: true, nota });
++        // 30/09 (B2, A12): e il campo esplicito che guida i tooltip del pulsante
++        const soloUsciteInPerdita = true;
++        expect(statoUscite(m, { stake: 10 })).toEqual({ automatiche: false, nota, soloUsciteInPerdita });
++        expect(statoUscite(m, { uscite_automatiche: false })).toEqual({ automatiche: false, nota, soloUsciteInPerdita });
++        expect(statoUscite(m, { uscite_automatiche: true })).toEqual({ automatiche: true, nota, soloUsciteInPerdita });
++        expect(statoUscite(m, { uscite_automatiche: 'false' })).toEqual({ automatiche: false, nota, soloUsciteInPerdita });
++        expect(statoUscite(m, { uscite_automatiche: 'true' })).toEqual({ automatiche: true, nota, soloUsciteInPerdita });
+         // parametri non letti: nessuna nota, nessun pulsante (fail-closed invariato)
+         expect(statoUscite(m, null)).toEqual({ automatiche: null });
+     });
+diff --git a/frontend/src/lib/tradeStatus.test.ts b/frontend/src/lib/tradeStatus.test.ts
+index 8be9d7e..82554f9 100644
+--- a/frontend/src/lib/tradeStatus.test.ts
++++ b/frontend/src/lib/tradeStatus.test.ts
+@@ -101,6 +101,11 @@ describe('glossario T', () => {
+         expect(all).not.toMatch(/Cash-out/);
+         expect(all).not.toMatch(/Capitale a rischio/);
+     });
++    it('30/09 (B2, M10): la barra dei totali dice «Liability aperta» e il glossario non si contraddice', () => {
++        expect(T.totLiability).toBe(T.openLiability);
++        const tutto = [...Object.values(T), ...Object.values(TIP)].join(' | ');
++        expect(tutto).not.toMatch(/responsabilit/i);
++    });
+ });
+ 
+ describe('activityMeta', () => {
+diff --git a/frontend/src/lib/tradeStatus.ts b/frontend/src/lib/tradeStatus.ts
+index 60adbb2..bae823d 100644
+--- a/frontend/src/lib/tradeStatus.ts
++++ b/frontend/src/lib/tradeStatus.ts
+@@ -347,7 +347,8 @@ export const T = {
+     totRealizzato: 'P&L realizzato',
+     totAperto: 'Se chiudo ora',
+     totInvestito: 'Investito',
+-    totLiability: 'Responsabilità',
++    // 30/09 (B2, M10): una parola sola con i KPI e le card (`openLiability`)
++    totLiability: 'Liability aperta',
+     // modalita'
+     modePaper: 'MODALITÀ PAPER',
+     modeLive: 'MODALITÀ LIVE',
+@@ -401,7 +402,7 @@ export const TIP = {
+     totOperazioni: 'quante POSIZIONI (aperture) rientrano in questa vista: le gambe di chiusura stanno dentro la posizione che chiudono, non si contano due volte',
+     totRealizzato: 'somma dei P&L NETTI delle sole righe GIÀ REGOLATE di questa vista. Le posizioni ancora vive NON sono qui dentro: il loro valore è in «Se chiudo ora».',
+     totAperto: 'quanto si bloccherebbe chiudendo ADESSO a mercato tutte le posizioni ancora vive, al netto della commissione. È una STIMA sui prezzi del feed, non un incasso.',
+-    totInvestito: 'capitale impegnato nelle aperture di questa vista (lo stake, non la responsabilità di una banca)',
++    totInvestito: 'capitale impegnato nelle aperture di questa vista (lo stake, non la liability di una banca)',
+     totLiability: 'quanto è ancora a rischio ADESSO sulle posizioni vive di questa vista',
+     equity: 'P&L cumulato realizzato, un gradino per giornata: parte da 0 il primo giorno del periodo',
+     feed: 'FEED dello scanner (fonte unica delle quote): da quanti secondi non si aggiorna',
+diff --git a/frontend/src/pages/ControlRoom.test.tsx b/frontend/src/pages/ControlRoom.test.tsx
+index d10d482..d2b31b4 100644
+--- a/frontend/src/pages/ControlRoom.test.tsx
++++ b/frontend/src/pages/ControlRoom.test.tsx
+@@ -393,6 +393,30 @@ describe('posizioni aperte', () => {
+         expect(within(col).getByText('punta')).toBeTruthy();
+     });
+ 
++    it('30/09 (B2): posizione ORFANA - «liability», mai «responsabilità»; chip «banca» rose come il lato LAY', async () => {
++        mVm.mockReturnValue(vm({
++            posizioni: [{
++                bot: 'safe', id: 7, eventId: 'FUORI-PROGRAMMA', partita: 'Tizio – Caio', selezione: 'Tizio',
++                lato: 'back', prezzo: 1.5, size: 4, liability: 4, modalita: 'paper',
++                piazzataAt: '2026-09-14T14:50:00Z',
++                chiusura: { lato: 'lay', prezzo: 1.45, abbinabile: 50, bloccabile: 0.12 },
++                ordine: {
++                    status: 'open', side: 'back', price: 1.5, size: 4,
++                    size_requested: 4, size_matched: 4, size_remaining: 0,
++                    avg_price_matched: 1.5, betfair_updated_at: null, meta: null,
++                },
++                dettaglio: null, vivo: null,
++            }] as never,
++        }));
++        const col = (await apri(mostra(), 'aperte')).getByTestId('cr-posizioni');
++        const riga = within(col).getByTestId('cr-posizione');
++        expect(riga.textContent).toContain('liability 4,00 €');
++        expect(riga.textContent).not.toMatch(/responsabilit/i);
++        const chip = within(within(riga).getByTestId('cr-chiusura-viva')).getByText('banca');
++        expect(chip.className).toMatch(/rose/);
++        expect(chip.className).not.toMatch(/pink/);
++    });
++
+     it('senza posizioni lo dice invece di mostrare una tabella vuota', async () => {
+         mVm.mockReturnValue(vm());
+         expect(within((await apri(mostra(), 'aperte')).getByTestId('cr-posizioni')).getByText(/Nessuna posizione aperta/)).toBeTruthy();
+@@ -665,6 +689,42 @@ describe('Mike: uscita appoggiata in live', () => {
+         expect(avviso.textContent).toMatch(/perdita/);
+     });
+ 
++    // 30/09 (B2, B4): l'avviso resta visibile in entrambe le modalita' (chi
++    // passa Mike a LIVE deve averlo gia' letto), ma dice la verita' sul modo
++    it('SPENTA con Mike in PAPER: resta, e dice che vale solo in LIVE', () => {
++        const base = vm();
++        mVm.mockReturnValue(vm({
++            mikeRestingLive: false,
++            bots: base.bots.map((b) => (b.bot === 'mike' ? { ...b, modalita: 'paper' as const } : b)),
++        }));
++        const avviso = mostra().getByTestId('cr-mike-resting');
++        const modo = within(avviso).getByTestId('cr-mike-resting-modo');
++        expect(modo.textContent).toContain('Mike ora è in PAPER');
++        expect(modo.textContent).toContain('vale solo quando Mike è in LIVE');
++    });
++
++    it('SPENTA con Mike in LIVE: dice che riguarda i soldi veri adesso', () => {
++        const base = vm();
++        mVm.mockReturnValue(vm({
++            mikeRestingLive: false,
++            bots: base.bots.map((b) => (b.bot === 'mike' ? { ...b, modalita: 'live' as const } : b)),
++        }));
++        const modo = within(mostra().getByTestId('cr-mike-resting')).getByTestId('cr-mike-resting-modo');
++        expect(modo.textContent).toContain('Mike è in LIVE adesso');
++        expect(modo.textContent).not.toContain('PAPER');
++    });
++
++    it('SPENTA con la modalita’ di Mike ignota: dice solo quando vale', () => {
++        const base = vm();
++        mVm.mockReturnValue(vm({
++            mikeRestingLive: false,
++            bots: base.bots.map((b) => (b.bot === 'mike' ? { ...b, modalita: null } : b)),
++        }));
++        const modo = within(mostra().getByTestId('cr-mike-resting')).getByTestId('cr-mike-resting-modo');
++        expect(modo.textContent).toContain('vale solo quando Mike è in LIVE');
++        expect(modo.textContent).not.toContain('adesso');
++    });
++
+     it('accesa: nessun allarme', () => {
+         mVm.mockReturnValue(vm({ mikeRestingLive: true }));
+         mostra();
+diff --git a/frontend/src/pages/ControlRoom.tsx b/frontend/src/pages/ControlRoom.tsx
+index 626056a..3d2281f 100644
+--- a/frontend/src/pages/ControlRoom.tsx
++++ b/frontend/src/pages/ControlRoom.tsx
+@@ -678,6 +678,19 @@ export default function ControlRoom() {
+                             In live l'uscita torna «a mercato»: Mike esegue una strategia <strong>diversa</strong> da
+                             quella provata in paper, e il ciclo che in demo chiude in profitto lì chiude in perdita.
+                         </div>
++                        {/* 30/09 (B2, B4): la valvola agisce solo in live
++                            (`service._live_exit_override`); l'avviso NON sparisce
++                            in paper (va letto prima di passare a LIVE), dice il modo */}
++                        <div className="text-orange-200/90 mt-0.5" data-testid="cr-mike-resting-modo">
++                            {(() => {
++                                const modo = vm.bots.find((b) => b.bot === 'mike')?.modalita ?? null;
++                                return modo === 'live'
++                                    ? 'Mike è in LIVE adesso: riguarda i soldi veri di questo momento.'
++                                    : modo === 'paper'
++                                        ? 'Mike ora è in PAPER: in paper non cambia niente, vale solo quando Mike è in LIVE.'
++                                        : 'Modalità di Mike non letta: vale solo quando Mike è in LIVE.';
++                            })()}
++                        </div>
+                     </div>
+                 </Card>
+             )}
+@@ -1453,7 +1466,7 @@ function RigaPosizioneOrfana({ p }: {
+             </div>
+             <div className="text-[11px] text-white/40 mt-0.5">
+                 importo <span className="font-mono">{fmtMoney(p.size)}</span>
+-                {p.liability != null && <> · responsabilità <span className="font-mono">{fmtMoney(p.liability)}</span></>}
++                {p.liability != null && <> · liability <span className="font-mono">{fmtMoney(p.liability)}</span></>}
+             </div>
+             {/* ── IL DETTAGLIO CHE LA SCHEDA DEL BOT MOSTRA GIÀ (17/09) ──
+                 chiesto/abbinato/residuo, quota di adesso e tick, minuto e
+@@ -1488,7 +1501,7 @@ function RigaPosizioneOrfana({ p }: {
+                     ) : (
+                         <>
+                             <span className={`text-[9px] font-bold uppercase tracking-wider px-1 rounded ${
+-                                ch.lato === 'lay' ? 'bg-pink-500/15 text-pink-300' : 'bg-sky-500/15 text-sky-300'
++                                ch.lato === 'lay' ? 'bg-rose-500/15 text-rose-300' : 'bg-sky-500/15 text-sky-300'
+                             }`}>{ch.lato === 'lay' ? 'banca' : 'punta'}</span>
+                             <span className="font-mono text-[12px]" data-testid="cr-chiusura-prezzo">{fmtOdds(ch.prezzo)}</span>
+                             <span className={`font-mono text-[13px] tabular-nums ${pnlClass(ch.bloccabile)}`}

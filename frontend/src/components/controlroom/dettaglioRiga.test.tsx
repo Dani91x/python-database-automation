@@ -258,7 +258,9 @@ describe('SchedaMike — i dati di MODELLO di Mike, dalla lettura gia fatta', ()
         expect(screen.getByTestId('cr-mike-entry')).toHaveTextContent('1,42');
         expect(screen.getByTestId('cr-mike-ko')).toHaveTextContent('1,38');
         expect(screen.getByTestId('cr-mike-ko-drift')).toHaveTextContent('4 tick');
-        expect(screen.getByTestId('cr-mike-cicli')).toHaveTextContent('2');
+        // 30/09 (B2, M9): cycle_no 2 = due cicli chiusi, il ciclo in corso e' il 3
+        // (numerazione della pagina di Mike, `cycleText`)
+        expect(screen.getByTestId('cr-mike-cicli')).toHaveTextContent(/^ciclo\s*3 · /);
         expect(screen.getByTestId('cr-mike-cashout')).toHaveTextContent('soglia');
         // il segno «meno» del design system e' il MENO tipografico (U+2212)
         expect(screen.getByTestId('cr-mike-gol-4')).toHaveTextContent('4,65 €');

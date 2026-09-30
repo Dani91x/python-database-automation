@@ -19,20 +19,29 @@
 // REGOLE DEL DESIGN SYSTEM rispettate alla lettera: i soldi passano da
 // `fmtMoney`, le quote da `fmtOdds`, nessuno stato in inglese sotto gli occhi
 // del trader, e un valore che non c'è è `—`, mai `0,00 €`.
+//
+// B1 (30/09) — nomi e quote UGUALI alla scheda pre-partita: i nomi passano da
+// `NomiPartita`, le quote (Match Odds, linee Under/Over, barra tennis) da
+// `QuoteMercato`, con l'età del prezzo ACCANTO alle quote e con l'etichetta
+// di cosa misura. Glossario: «liability», mai «responsabilità» (§3).
 // ============================================================================
 import { useState } from 'react';
 import { Circle } from 'lucide-react';
 import { AzioniPartita } from '@/components/controlroom/AzioniPartita';
 import FlussoBadge, { FlussoLineeMikeBadge } from '@/components/controlroom/FlussoBadge';
 import { CashOutPartita } from '@/components/controlroom/CashOutPartita';
-import { fmtMoney, fmtOdds, fmtAge, fmtTime, DASH } from '@/lib/format';
+import { NomiPartita } from '@/components/controlroom/NomiPartita';
+import {
+    QuoteMercato, EtaQuote, LineeOu, celleMatchOdds, MAX_LINEE_OU, QUOTE_CLS, QUOTE_TESTO,
+} from '@/components/controlroom/QuoteMercato';
+import { fmtMoney, fmtAge, fmtTime, DASH } from '@/lib/format';
 import { isErrorRow, isSettled } from '@/lib/eventGroups';
 import type { StatoChiusuraEvento } from '@/lib/chiusuraUtente';
 import { pnlClass } from '@/lib/tradeStatus';
 import { RigaOperazione } from '@/components/controlroom/DettaglioRigaView';
 import { trovaEsitoCashOut } from '@/components/controlroom/trovaEsitoUscita';
 import {
-    BOT_LABEL, BOT_TENNIS, isBotTennis, type Bot, type Freschezza, type PartitaGiornata, type Sport, type StatoQuote,
+    BOT_LABEL, BOT_TENNIS, isBotTennis, type Bot, type Freschezza, type PartitaGiornata, type Sport,
 } from '@/lib/controlRoom';
 import type { OperazionePartita } from '@/components/controlroom/useControlRoom';
 import { SchedaMike } from '@/components/controlroom/SchedaMike';
@@ -70,20 +79,10 @@ export function botDiSport(sport: Sport): Bot[] {
 
 /** «fermo» NON è un allarme: è un mercato che non si muove, e quel prezzo è
  *  quello corrente. Solo «vecchio» e «ignoto» meritano l'arancione.
- *  Esportate (18/09, secondo giro): `SchedaPreMatch.tsx` le riusa per le
- *  quote pre-match — stesso concetto, stessa parola, stesso colore. */
-export const QUOTE_CLS: Record<StatoQuote, string> = {
-    fresco: 'text-emerald-400',
-    fermo: 'text-white/50',
-    vecchio: 'text-orange-400',
-    ignoto: 'text-orange-400',
-};
-export const QUOTE_TESTO: Record<StatoQuote, (s: string) => string> = {
-    fresco: (s) => s,
-    fermo: (s) => `fermo ${s}`,
-    vecchio: (s) => `vecchio ${s}`,
-    ignoto: () => 'età ignota',
-};
+ *  B1 (30/09): definite in `QuoteMercato.tsx` (il componente delle quote le
+ *  usa, e importarle da qui creerebbe un giro di import); riesportate qui
+ *  identiche, perche' chi le importava da questo modulo continui a trovarle. */
+export { QUOTE_CLS, QUOTE_TESTO };
 
 /** Stessa palette di `QUOTE_CLS` (colore solo come segnale, §3.3 regola 5):
  *  `fresca` non merita nessun accento, `lenta`/`vecchia`/`ignota` sì. */
@@ -192,21 +191,22 @@ function TennisVivoBar({ eventId, abilitato, giocatori }: {
                 (`TennisNowSelection`), quindi qui non serve nessuna assunzione
                 sull'ordine p1/p2 — a differenza del servizio sopra, dove
                 l'assunzione è dichiarata e circoscritta. */}
+            {/* B1 (30/09): le stesse celle BACK/LAY delle altre schede */}
             {(vivo.row?.state?.markets ?? []).flatMap((m) => m.selections ?? []).length > 0 && (
-                <span className="font-mono tabular-nums text-[10px] text-white/50"
-                    data-testid="cr-tennis-vivo-quote" title="Match Odds: miglior BACK / miglior LAY di adesso, per selezione">
-                    {(vivo.row?.state?.markets ?? []).flatMap((m) => m.selections ?? []).map((s, i) => (
-                        <span key={s.selection_id}>
-                            {i > 0 && <span className="text-white/25"> · </span>}
-                            {s.name ?? `#${s.selection_id}`} {fmtOdds(s.back)}/{fmtOdds(s.lay)}
-                        </span>
-                    ))}
-                </span>
+                <QuoteMercato testId="cr-tennis-vivo-quote"
+                    titolo="Match Odds dal runner tennis: miglior BACK / miglior LAY di adesso, per selezione"
+                    celle={(vivo.row?.state?.markets ?? []).flatMap((m) => m.selections ?? []).map((s) => ({
+                        chiave: String(s.selection_id),
+                        etichetta: s.name ?? `#${s.selection_id}`,
+                        back: s.back, lay: s.lay,
+                    }))} />
             )}
             {vivo.row && (
                 <span className={`ml-auto font-mono text-[10px] ${FRESCHEZZA_CLS[vivo.freschezza]}`}
                     data-testid="cr-tennis-vivo-eta"
-                    title="età del punteggio/mercato tennis: sopra 20 s il dato è vecchio">
+                    title="età del PUNTEGGIO tennis (istante del punteggio del runner; senza punteggio, ultima scrittura della riga): non è l’età delle quote. Sopra 20 s il dato è vecchio">
+                    {/* B1 (30/09): l'etichetta dice COSA misura (`useTennisVivo::istantePiuRecenteMs`) */}
+                    <span className="text-white/35">{score ? 'punteggio ' : 'riga '}</span>
                     {vivo.etaS == null ? 'età ignota' : fmtAge(vivo.etaS)}
                     {/* 25/09 (voce 5): la FONTE accanto all'eta' */}
                     <span className="text-white/30" data-testid="cr-tennis-vivo-fonte"
@@ -288,6 +288,16 @@ export function SchedaPartita({
 
     const perBot = (b: Bot) => operazioni.filter((o) => o.bot === b);
 
+    // B1 (30/09) — le quote del calcio in gioco, con lo stesso componente della
+    // pre-partita. Quando la fila delle quote c'e', l'età del prezzo
+    // (`cr-latenza`) sta ACCANTO alle quote; altrimenti resta nella riga dei
+    // pulsanti come prima (tennis, calcio senza prezzi). Un solo `cr-latenza`.
+    const calcioVivo = p.sport === 'calcio' && p.stato === 'live';
+    const celleCalcio = calcioVivo ? celleMatchOdds('calcio', p.odds) : null;
+    const lineeOu = p.lineeOu ?? [];
+    const haLineeOu = calcioVivo && lineeOu.length > 0 && lineeOu.length <= MAX_LINEE_OU;
+    const latenzaAccantoQuote = celleCalcio != null;
+
     return (
         <div className={`rounded border border-white/10 border-l-[3px] ${bordo} bg-white/[0.02]`}
             data-testid="cr-partita" data-event-id={p.event_id}>
@@ -297,7 +307,9 @@ export function SchedaPartita({
                     aria-label={p.sport === 'tennis' ? 'tennis' : 'calcio'}>
                     {p.sport === 'tennis' ? '🎾' : '⚽'}
                 </span>
-                <span className="text-[13px] font-medium leading-tight flex-1 min-w-0">{p.nome}</span>
+                {/* B1 (30/09): gli stessi nomi (e loghi) della scheda pre-partita */}
+                <NomiPartita nome={p.nome}
+                    homeTeamId={p.extra?.homeTeamId ?? null} awayTeamId={p.extra?.awayTeamId ?? null} />
                 <StatoPill p={p} />
             </div>
 
@@ -311,15 +323,9 @@ export function SchedaPartita({
                 <FlussoBadge flusso={p.flusso} />
                 {/* 30/09: le linee di Mike (Under/Over 3,5 e 4,5) col loro flusso */}
                 <FlussoLineeMikeBadge flusso={p.flussoMike} />
-                {p.stato === 'live' && (
-                    <span className={`text-[10px] font-mono ml-auto ${QUOTE_CLS[p.statoQuote]}`}
-                        data-testid="cr-latenza"
-                        title={p.statoQuote === 'fermo'
-                            ? 'il prezzo non cambia da questo tempo, ma lo scanner sta guardando: è il prezzo CORRENTE'
-                            : 'da quando il prezzo è cambiato l’ultima volta'}>
-                        {p.latenzaQuoteS == null
-                            ? QUOTE_TESTO[p.statoQuote]('')
-                            : QUOTE_TESTO[p.statoQuote](fmtAge(p.latenzaQuoteS))}
+                {p.stato === 'live' && !latenzaAccantoQuote && (
+                    <span className="ml-auto">
+                        <EtaQuote testId="cr-latenza" latenzaS={p.latenzaQuoteS} stato={p.statoQuote} />
                     </span>
                 )}
             </div>
@@ -334,45 +340,42 @@ export function SchedaPartita({
                 nuova. NON sommato nessun +3 s a mano: `IPS_SCORE_LAG_SEC`
                 (`scan_feed.py:67`) è una costante SOLO lato Python, mai
                 scritta nella riga — dichiarato come limite noto, non stimato. */}
-            {p.sport === 'calcio' && p.stato === 'live' && (() => {
+            {calcioVivo && (() => {
                 const statoMercato = marketStatusMeta(p.statoMercato ?? null);
                 const volume = p.volumeMercato ?? null;
-                const odds = p.odds;
-                const haQuote = Boolean(odds?.home || odds?.draw || odds?.away);
-                if (!statoMercato && volume == null && p.etaFeedS == null && !haQuote) return null;
+                if (!statoMercato && volume == null && p.etaFeedS == null && !celleCalcio && !haLineeOu) return null;
                 return (
-                    <div className="px-2.5 pt-1 flex items-center gap-2 flex-wrap text-[11px]"
-                        data-testid="cr-calcio-vivo">
-                        {statoMercato && (
-                            <span className={`text-[9px] font-bold uppercase tracking-wider px-1 rounded border ${statoMercato.cls} border-current/40`}
-                                data-testid="cr-calcio-vivo-mercato" title="stato del mercato Match Odds, da Betfair">
-                                {statoMercato.label}
-                            </span>
-                        )}
-                        {haQuote && (
-                            <span className="font-mono tabular-nums text-[10px] text-white/60"
-                                data-testid="cr-calcio-vivo-quote"
-                                title="Match Odds: miglior BACK / miglior LAY di adesso, 1 · X · 2">
-                                1 {fmtOdds(odds?.home?.back ?? null)}/{fmtOdds(odds?.home?.lay ?? null)}
-                                <span className="text-white/25"> · </span>
-                                X {fmtOdds(odds?.draw?.back ?? null)}/{fmtOdds(odds?.draw?.lay ?? null)}
-                                <span className="text-white/25"> · </span>
-                                2 {fmtOdds(odds?.away?.back ?? null)}/{fmtOdds(odds?.away?.lay ?? null)}
-                            </span>
-                        )}
-                        {volume != null && (
-                            <span className="text-[10px] text-white/40 font-mono tabular-nums"
-                                data-testid="cr-calcio-vivo-volume" title="euro già scambiati sul Match Odds">
-                                vol. {fmtMoney(volume)}
-                            </span>
-                        )}
-                        {p.etaFeedS != null && (
-                            <span className={`ml-auto font-mono text-[10px] ${FRESCHEZZA_CLS[p.freschezza]}`}
-                                data-testid="cr-calcio-vivo-eta-punteggio"
-                                title="età del PUNTEGGIO (non delle quote): quanto è vecchia la riga del feed. Nota: non include il ritardo IPS dichiarato (2-3 s), che qui non si somma a mano">
-                                punteggio {fmtAge(p.etaFeedS)}
-                            </span>
-                        )}
+                    <div className="px-2.5 pt-1 space-y-1 text-[11px]" data-testid="cr-calcio-vivo">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            {statoMercato && (
+                                <span className={`text-[9px] font-bold uppercase tracking-wider px-1 rounded border ${statoMercato.cls} border-current/40`}
+                                    data-testid="cr-calcio-vivo-mercato" title="stato del mercato Match Odds, da Betfair">
+                                    {statoMercato.label}
+                                </span>
+                            )}
+                            {celleCalcio && (
+                                <QuoteMercato testId="cr-calcio-vivo-quote" celle={celleCalcio}
+                                    titolo="Match Odds: miglior BACK / miglior LAY di adesso, 1 · X · 2" />
+                            )}
+                            {latenzaAccantoQuote && (
+                                <EtaQuote testId="cr-latenza" latenzaS={p.latenzaQuoteS} stato={p.statoQuote} />
+                            )}
+                            {volume != null && (
+                                <span className="text-[10px] text-white/40 font-mono tabular-nums"
+                                    data-testid="cr-calcio-vivo-volume" title="euro già scambiati sul Match Odds">
+                                    vol. {fmtMoney(volume)}
+                                </span>
+                            )}
+                            {p.etaFeedS != null && (
+                                <span className={`ml-auto font-mono text-[10px] ${FRESCHEZZA_CLS[p.freschezza]}`}
+                                    data-testid="cr-calcio-vivo-eta-punteggio"
+                                    title="età del PUNTEGGIO (non delle quote): quanto è vecchia la riga del feed. Nota: non include il ritardo IPS dichiarato (2-3 s), che qui non si somma a mano">
+                                    punteggio {fmtAge(p.etaFeedS)}
+                                </span>
+                            )}
+                        </div>
+                        {/* B1 (30/09): le linee Under/Over della riga, stesso componente */}
+                        {haLineeOu && <LineeOu testId="cr-calcio-vivo-ou" linee={lineeOu} />}
                     </div>
                 );
             })()}
@@ -457,14 +460,16 @@ export function SchedaPartita({
                     );
                 })}
                 {soldi && (soldi.live.liability > 0 || soldi.paper.liability > 0) ? (
-                    <span className="ml-auto text-[10px] text-white/40 flex items-baseline gap-1.5">
+                    <span className="ml-auto text-[10px] text-white/40 flex items-baseline gap-1.5"
+                        data-testid="cr-liability-partita">
+                        {/* B1 (30/09): glossario (DESIGN_SYSTEM §3), «liability», mai «responsabilità» */}
                         {soldi.live.liability > 0 && (
-                            <span title="responsabilità impegnata con SOLDI VERI">
-                                resp. <span className="font-mono text-white/65">{fmtMoney(soldi.live.liability)}</span>
+                            <span title="liability impegnata con SOLDI VERI">
+                                liability <span className="font-mono text-white/65">{fmtMoney(soldi.live.liability)}</span>
                             </span>
                         )}
                         {soldi.paper.liability > 0 && (
-                            <span className="text-white/30" title="responsabilità impegnata in PROVA: non sono soldi veri e non si sommano">
+                            <span className="text-white/30" title="liability impegnata in PROVA: non sono soldi veri e non si sommano">
                                 prova <span className="font-mono">{fmtMoney(soldi.paper.liability)}</span>
                             </span>
                         )}

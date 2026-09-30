@@ -61,8 +61,9 @@ describe('25/09 proposta d’uscita di Mike', () => {
 
     it('mostra categoria, motivo, ordini con il prezzo di adesso e i due P&L', () => {
         render(<PropostaUscitaMike ev={ev({ uscita_proposta: proposta() })} />);
+        // 30/09 (B2, M11): Mike propone solo uscite che possono chiudere in perdita
         expect(screen.getByTestId('cr-mike-proposta-titolo').textContent)
-            .toBe('Mike vorrebbe uscire: cash out della posizione');
+            .toBe('Mike vorrebbe uscire: cash out della posizione (può chiudere IN PERDITA)');
         expect(screen.getByTestId('cr-mike-proposta-motivo').textContent).toBe('profit: 1.31 >= 5% di 24.00');
         // D7 (25/09): la riga dice da dove viene il prezzo di adesso (qui:
         // nessun id vero sulla riga -> il feed della partita, dichiarato)
@@ -70,7 +71,8 @@ describe('25/09 proposta d’uscita di Mike', () => {
             'Chiusura Under 3.5 lay 22,90 € @ 1,31 (ora 1,30 / 1,31, feed della partita)'
             + ' + Chiusura Over 4.5 lay 2,56 € @ 12,50 (ora 12,00 / 12,50, feed della partita)');
         const numeri = screen.getByTestId('cr-mike-proposta-numeri').textContent ?? '';
-        expect(numeri).toMatch(/^chiudendo ora \+1,28 €/);
+        // 30/09 (B2, M12): la cifra e' il cash out di TUTTA la partita
+        expect(numeri).toMatch(/^chiudendo tutta la partita ora \+1,28 €/);
         expect(numeri).toContain('alla decisione +1,31 €');
         expect(numeri).toMatch(/deciso 1[2-4] s fa/);
         expect(numeri).toContain('30′');
@@ -79,7 +81,7 @@ describe('25/09 proposta d’uscita di Mike', () => {
     it('uscita in perdita: marcata', () => {
         render(<PropostaUscitaMike ev={ev({ uscita_proposta: proposta({ urgente: true }) })} />);
         expect(screen.getByTestId('cr-mike-proposta-titolo').textContent)
-            .toBe('Mike vorrebbe uscire: cash out della posizione (in perdita)');
+            .toBe('Mike vorrebbe uscire: cash out della posizione (IN PERDITA)');
     });
 
     it('APPROVA manda approva_uscita con la chiave e il contesto del clic', async () => {

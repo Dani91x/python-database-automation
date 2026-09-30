@@ -521,7 +521,7 @@ export function SchedaPropostaOpportunita({
             {/* ---- i numeri dei soldi ---- */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-white/5 mt-2 border-t border-white/5">
                 <Cella etichetta="Stake previsto" valore={fmtMoney(p.size)} testId="cr-opp-stake" />
-                <Cella etichetta="Responsabilità"
+                <Cella etichetta="Liability"
                     valore={(ap?.liability ?? p.liability) == null ? DASH : fmtMoney(ap?.liability ?? p.liability)}
                     tono="cattivo" testId="cr-opp-liability" />
                 <Cella etichetta="Abbinabile ora"
@@ -633,7 +633,7 @@ export function SchedaPropostaOpportunita({
             {live && (
                 <div className="px-3 py-1.5 flex items-start gap-2 text-[11px] text-orange-300 bg-orange-500/5">
                     <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                    <span>Apertura con soldi veri: la responsabilità qui sopra è quella che rischi.</span>
+                    <span>Apertura con soldi veri: la liability qui sopra è quella che rischi.</span>
                 </div>
             )}
         </article>

@@ -138,14 +138,14 @@ describe('F-3: letta e vuota = 0,00 € oggi, non «non ancora letta»', () => {
     });
     it('la tessera con la giornata letta e vuota scrive 0,00 € e «nessuna operazione»', () => {
         render(<SplitSport selezionato={null} onSeleziona={() => undefined}
-            perSport={{}} perSportPaper={{}} modalita={{ calcio: 'paper', tennis: 'paper' }} />);
+            perSport={{}} perSportPaper={{}} />);
         expect(screen.queryAllByText('giornata non ancora letta')).toHaveLength(0);
         expect(screen.getByTestId('cr-sport-calcio-pnl').textContent).toBe('+0,00 €');
         expect(screen.getByTestId('cr-sport-tennis').textContent).toContain('nessuna operazione in prova oggi');
     });
     it('non letta (null) resta «—» e «giornata non ancora letta»', () => {
         render(<SplitSport selezionato={null} onSeleziona={() => undefined}
-            perSport={null} modalita={{ calcio: 'paper', tennis: 'paper' }} />);
+            perSport={null} />);
         expect(screen.getAllByText('giornata non ancora letta')).toHaveLength(2);
     });
 });
