@@ -1565,6 +1565,7 @@ function raggruppaAperte(giornata: GruppoCampionato[], posizioni: readonly Posiz
 
 const STATO_APERTA_CLS: Record<StatoPartitaAperta, string> = {
     'A RISCHIO': 'bg-red-500/20 text-red-300 border-red-500/40',
+    'IN VERDE': 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40',
     PAREGGIATA: 'bg-teal-500/15 text-teal-300 border-teal-500/40',
     'DA REGOLARE': 'bg-amber-500/15 text-amber-300 border-amber-500/40',
     'NON CALCOLABILE': 'bg-orange-500/15 text-orange-300 border-orange-500/40',

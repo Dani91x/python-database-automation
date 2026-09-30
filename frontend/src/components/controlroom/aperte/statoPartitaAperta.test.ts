@@ -42,6 +42,13 @@ const FARUL = [
         chiusureOrdini: [ordine('lay', 2.84, 5.06)],
         chiusureGambe: [{ id: 5092, marketId: '1.OU35', selectionId: 35 }] }),
 ];
+// punta e banca uguali alla stessa quota: ogni esito vale esattamente 0
+const PARI = [
+    op({ id: 5201, selezione: 'Under 3.5 Goals', lato: 'back', marketId: '1.OU35', selectionId: 35,
+        ordine: ordine('back', 2.00, 5.00),
+        chiusureOrdini: [ordine('lay', 2.00, 5.00)],
+        chiusureGambe: [{ id: 5202, marketId: '1.OU35', selectionId: 35 }] }),
+];
 
 describe('statoPartitaAperta - i fatti del 30/09', () => {
     it('Follo: A RISCHIO, caso peggiore -9,80 (4 gol esatti)', () => {
@@ -51,10 +58,16 @@ describe('statoPartitaAperta - i fatti del 30/09', () => {
         // fmtMoney: meno tipografico, virgola, euro (DESIGN_SYSTEM §1, mai toFixed)
         expect(r.dettaglio).toMatch(/caso peggiore −9,80 €/);
     });
-    it('Farul: PAREGGIATA (nessun esito perde)', () => {
+    it('Farul: IN VERDE (ogni esito guadagna: caso peggiore > 0)', () => {
         const r = statoPartitaAperta(FARUL, { chiusa: false, dueEsiti: DUE });
+        expect(r.stato).toBe('IN VERDE');
+        expect(r.casoPeggiore).toBeGreaterThan(0);
+    });
+    it('caso peggiore esattamente 0: PAREGGIATA (nessuno perde, nessuno guadagna)', () => {
+        // due gambe che si annullano al centesimo: punta e banca uguali sulla stessa selezione
+        const r = statoPartitaAperta(PARI, { chiusa: false, dueEsiti: DUE });
         expect(r.stato).toBe('PAREGGIATA');
-        expect(r.casoPeggiore).toBeGreaterThanOrEqual(0);
+        expect(r.casoPeggiore).toBe(0);
     });
     it('partita chiusa col bot non ancora regolato: DA REGOLARE', () => {
         expect(statoPartitaAperta(FOLLO, { chiusa: true, dueEsiti: DUE }).stato).toBe('DA REGOLARE');
@@ -69,7 +82,7 @@ describe('statoPartitaAperta - i fatti del 30/09', () => {
     it('le gambe PROVA non entrano nello stato LIVE', () => {
         const r = statoPartitaAperta([...FOLLO.map((o) => ({ ...o, modalita: 'paper' as const })), ...FARUL],
             { chiusa: false, dueEsiti: DUE });
-        expect(r.stato).toBe('PAREGGIATA');
+        expect(r.stato).toBe('IN VERDE');
     });
     it('nessun abbinato LIVE: NON CALCOLABILE (non "pareggiata")', () => {
         const r = statoPartitaAperta([op({ id: 1, marketId: '1.OU35', selectionId: 35, ordine: ordine('back', 2, 5, 0) })],

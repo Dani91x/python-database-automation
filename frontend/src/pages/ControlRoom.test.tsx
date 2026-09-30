@@ -1939,7 +1939,7 @@ describe('ZONA 5 — la Catena è richiudibile, chiusa di default (Task 1)', () 
 // ========================================================================
 // W_T/P15 (30/09) - «Posizioni aperte»: LIVE sopra, PROVA sotto, lo stato di
 // ogni partita LIVE in una parola, le fuori programma con la stessa grafica.
-// I fatti di oggi: Follo A RISCHIO (-9,80), Farul PAREGGIATA.
+// I fatti di oggi: Follo A RISCHIO (-9,80), Farul IN VERDE (+0,04 nel caso peggiore).
 // ========================================================================
 describe('W_T/P15 - Posizioni aperte da trader', () => {
     const ord = (side: 'back' | 'lay', price: number, size: number) => ({
@@ -1995,14 +1995,14 @@ describe('W_T/P15 - Posizioni aperte da trader', () => {
         expect(within(col).getByTestId('cr-aperte-banner-live').textContent).toMatch(/2 partite con posizione LIVE · 3 gambe con soldi veri/);
     });
 
-    it('Follo A RISCHIO (caso peggiore −9,80), Farul PAREGGIATA', async () => {
+    it('Follo A RISCHIO (caso peggiore −9,80), Farul IN VERDE', async () => {
         mVm.mockReturnValue(vmOggi());
         const col = (await apri(mostra(), 'aperte')).getByTestId('cr-posizioni');
         const f = within(col).getByTestId('cr-aperta-stato-FOLLO');
         expect(f.textContent).toBe('A RISCHIO');
         expect(f.getAttribute('title')).toMatch(/caso peggiore −9,80 €/); // title con fmtMoney (DESIGN_SYSTEM §1)
         expect(within(col).getByTestId('cr-aperta-FOLLO').textContent).toMatch(/caso peggiore −9,80/);
-        expect(within(col).getByTestId('cr-aperta-stato-FARUL').textContent).toBe('PAREGGIATA');
+        expect(within(col).getByTestId('cr-aperta-stato-FARUL').textContent).toBe('IN VERDE');
     });
 
     it('fuori programma con la stessa grafica: nomi, riquadro della partita, righe; «chiudi ora» per gamba sotto', async () => {

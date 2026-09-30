@@ -1,0 +1,119 @@
+diff --git a/frontend/src/components/controlroom/aperte/statoPartitaAperta.test.ts b/frontend/src/components/controlroom/aperte/statoPartitaAperta.test.ts
+index f523cbf..b5e9cd1 100644
+--- a/frontend/src/components/controlroom/aperte/statoPartitaAperta.test.ts
++++ b/frontend/src/components/controlroom/aperte/statoPartitaAperta.test.ts
+@@ -42,6 +42,13 @@ const FARUL = [
+         chiusureOrdini: [ordine('lay', 2.84, 5.06)],
+         chiusureGambe: [{ id: 5092, marketId: '1.OU35', selectionId: 35 }] }),
+ ];
++// punta e banca uguali alla stessa quota: ogni esito vale esattamente 0
++const PARI = [
++    op({ id: 5201, selezione: 'Under 3.5 Goals', lato: 'back', marketId: '1.OU35', selectionId: 35,
++        ordine: ordine('back', 2.00, 5.00),
++        chiusureOrdini: [ordine('lay', 2.00, 5.00)],
++        chiusureGambe: [{ id: 5202, marketId: '1.OU35', selectionId: 35 }] }),
++];
+ 
+ describe('statoPartitaAperta - i fatti del 30/09', () => {
+     it('Follo: A RISCHIO, caso peggiore -9,80 (4 gol esatti)', () => {
+@@ -51,10 +58,16 @@ describe('statoPartitaAperta - i fatti del 30/09', () => {
+         // fmtMoney: meno tipografico, virgola, euro (DESIGN_SYSTEM §1, mai toFixed)
+         expect(r.dettaglio).toMatch(/caso peggiore −9,80 €/);
+     });
+-    it('Farul: PAREGGIATA (nessun esito perde)', () => {
++    it('Farul: IN VERDE (ogni esito guadagna: caso peggiore > 0)', () => {
+         const r = statoPartitaAperta(FARUL, { chiusa: false, dueEsiti: DUE });
++        expect(r.stato).toBe('IN VERDE');
++        expect(r.casoPeggiore).toBeGreaterThan(0);
++    });
++    it('caso peggiore esattamente 0: PAREGGIATA (nessuno perde, nessuno guadagna)', () => {
++        // due gambe che si annullano al centesimo: punta e banca uguali sulla stessa selezione
++        const r = statoPartitaAperta(PARI, { chiusa: false, dueEsiti: DUE });
+         expect(r.stato).toBe('PAREGGIATA');
+-        expect(r.casoPeggiore).toBeGreaterThanOrEqual(0);
++        expect(r.casoPeggiore).toBe(0);
+     });
+     it('partita chiusa col bot non ancora regolato: DA REGOLARE', () => {
+         expect(statoPartitaAperta(FOLLO, { chiusa: true, dueEsiti: DUE }).stato).toBe('DA REGOLARE');
+@@ -69,7 +82,7 @@ describe('statoPartitaAperta - i fatti del 30/09', () => {
+     it('le gambe PROVA non entrano nello stato LIVE', () => {
+         const r = statoPartitaAperta([...FOLLO.map((o) => ({ ...o, modalita: 'paper' as const })), ...FARUL],
+             { chiusa: false, dueEsiti: DUE });
+-        expect(r.stato).toBe('PAREGGIATA');
++        expect(r.stato).toBe('IN VERDE');
+     });
+     it('nessun abbinato LIVE: NON CALCOLABILE (non "pareggiata")', () => {
+         const r = statoPartitaAperta([op({ id: 1, marketId: '1.OU35', selectionId: 35, ordine: ordine('back', 2, 5, 0) })],
+diff --git a/frontend/src/components/controlroom/aperte/statoPartitaAperta.ts b/frontend/src/components/controlroom/aperte/statoPartitaAperta.ts
+index 5258dd3..55b9087 100644
+--- a/frontend/src/components/controlroom/aperte/statoPartitaAperta.ts
++++ b/frontend/src/components/controlroom/aperte/statoPartitaAperta.ts
+@@ -8,7 +8,9 @@
+ // adesso. Nessuna sottoscrizione, nessuna lettura.
+ //
+ //   A RISCHIO        il caso peggiore della partita e' < 0
+-//   PAREGGIATA       nessun esito perde soldi (green fatto, anche in utile)
++//   IN VERDE         ogni esito guadagna (caso peggiore > 0, al centesimo)
++//   PAREGGIATA       nessun esito perde e nessuno guadagna (caso peggiore = 0)
++//                    (decisione dell'utente, 30/09 21:45: le due parole distinte)
+ //   DA REGOLARE      la partita e' chiusa (programma dello scanner) e la
+ //                    posizione non e' ancora regolata
+ //   NON CALCOLABILE  manca un dato della gamba (abbinato, prezzo medio,
+@@ -26,7 +28,7 @@ import {
+ } from '@/lib/cashOutPartita';
+ import { fmtMoney } from '@/lib/format';
+ 
+-export type StatoPartitaAperta = 'A RISCHIO' | 'PAREGGIATA' | 'DA REGOLARE' | 'NON CALCOLABILE';
++export type StatoPartitaAperta = 'A RISCHIO' | 'IN VERDE' | 'PAREGGIATA' | 'DA REGOLARE' | 'NON CALCOLABILE';
+ 
+ export interface EsitoStatoPartita {
+     stato: StatoPartitaAperta;
+@@ -74,5 +76,5 @@ export function statoPartitaAperta(
+     }
+     const dettaglio = `caso peggiore ${fmtMoney(peggiore, { signed: true })}. ${righe.join('; ')}`;
+     if (opz.chiusa) return { stato: 'DA REGOLARE', casoPeggiore: peggiore, dettaglio: `partita chiusa, in attesa di regolamento. ${dettaglio}` };
+-    return { stato: peggiore < 0 ? 'A RISCHIO' : 'PAREGGIATA', casoPeggiore: peggiore, dettaglio };
++    return { stato: peggiore < 0 ? 'A RISCHIO' : peggiore > 0 ? 'IN VERDE' : 'PAREGGIATA', casoPeggiore: peggiore, dettaglio };
+ }
+diff --git a/frontend/src/pages/ControlRoom.test.tsx b/frontend/src/pages/ControlRoom.test.tsx
+index 4ebad34..46d2ad5 100644
+--- a/frontend/src/pages/ControlRoom.test.tsx
++++ b/frontend/src/pages/ControlRoom.test.tsx
+@@ -1939,7 +1939,7 @@ describe('ZONA 5 — la Catena è richiudibile, chiusa di default (Task 1)', ()
+ // ========================================================================
+ // W_T/P15 (30/09) - «Posizioni aperte»: LIVE sopra, PROVA sotto, lo stato di
+ // ogni partita LIVE in una parola, le fuori programma con la stessa grafica.
+-// I fatti di oggi: Follo A RISCHIO (-9,80), Farul PAREGGIATA.
++// I fatti di oggi: Follo A RISCHIO (-9,80), Farul IN VERDE (+0,04 nel caso peggiore).
+ // ========================================================================
+ describe('W_T/P15 - Posizioni aperte da trader', () => {
+     const ord = (side: 'back' | 'lay', price: number, size: number) => ({
+@@ -1995,14 +1995,14 @@ describe('W_T/P15 - Posizioni aperte da trader', () => {
+         expect(within(col).getByTestId('cr-aperte-banner-live').textContent).toMatch(/2 partite con posizione LIVE · 3 gambe con soldi veri/);
+     });
+ 
+-    it('Follo A RISCHIO (caso peggiore −9,80), Farul PAREGGIATA', async () => {
++    it('Follo A RISCHIO (caso peggiore −9,80), Farul IN VERDE', async () => {
+         mVm.mockReturnValue(vmOggi());
+         const col = (await apri(mostra(), 'aperte')).getByTestId('cr-posizioni');
+         const f = within(col).getByTestId('cr-aperta-stato-FOLLO');
+         expect(f.textContent).toBe('A RISCHIO');
+         expect(f.getAttribute('title')).toMatch(/caso peggiore −9,80 €/); // title con fmtMoney (DESIGN_SYSTEM §1)
+         expect(within(col).getByTestId('cr-aperta-FOLLO').textContent).toMatch(/caso peggiore −9,80/);
+-        expect(within(col).getByTestId('cr-aperta-stato-FARUL').textContent).toBe('PAREGGIATA');
++        expect(within(col).getByTestId('cr-aperta-stato-FARUL').textContent).toBe('IN VERDE');
+     });
+ 
+     it('fuori programma con la stessa grafica: nomi, riquadro della partita, righe; «chiudi ora» per gamba sotto', async () => {
+diff --git a/frontend/src/pages/ControlRoom.tsx b/frontend/src/pages/ControlRoom.tsx
+index 67cb32a..05ff359 100644
+--- a/frontend/src/pages/ControlRoom.tsx
++++ b/frontend/src/pages/ControlRoom.tsx
+@@ -1565,6 +1565,7 @@ function raggruppaAperte(giornata: GruppoCampionato[], posizioni: readonly Posiz
+ 
+ const STATO_APERTA_CLS: Record<StatoPartitaAperta, string> = {
+     'A RISCHIO': 'bg-red-500/20 text-red-300 border-red-500/40',
++    'IN VERDE': 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40',
+     PAREGGIATA: 'bg-teal-500/15 text-teal-300 border-teal-500/40',
+     'DA REGOLARE': 'bg-amber-500/15 text-amber-300 border-amber-500/40',
+     'NON CALCOLABILE': 'bg-orange-500/15 text-orange-300 border-orange-500/40',

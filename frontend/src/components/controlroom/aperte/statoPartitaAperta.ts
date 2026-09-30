@@ -8,7 +8,9 @@
 // adesso. Nessuna sottoscrizione, nessuna lettura.
 //
 //   A RISCHIO        il caso peggiore della partita e' < 0
-//   PAREGGIATA       nessun esito perde soldi (green fatto, anche in utile)
+//   IN VERDE         ogni esito guadagna (caso peggiore > 0, al centesimo)
+//   PAREGGIATA       nessun esito perde e nessuno guadagna (caso peggiore = 0)
+//                    (decisione dell'utente, 30/09 21:45: le due parole distinte)
 //   DA REGOLARE      la partita e' chiusa (programma dello scanner) e la
 //                    posizione non e' ancora regolata
 //   NON CALCOLABILE  manca un dato della gamba (abbinato, prezzo medio,
@@ -26,7 +28,7 @@ import {
 } from '@/lib/cashOutPartita';
 import { fmtMoney } from '@/lib/format';
 
-export type StatoPartitaAperta = 'A RISCHIO' | 'PAREGGIATA' | 'DA REGOLARE' | 'NON CALCOLABILE';
+export type StatoPartitaAperta = 'A RISCHIO' | 'IN VERDE' | 'PAREGGIATA' | 'DA REGOLARE' | 'NON CALCOLABILE';
 
 export interface EsitoStatoPartita {
     stato: StatoPartitaAperta;
@@ -74,5 +76,5 @@ export function statoPartitaAperta(
     }
     const dettaglio = `caso peggiore ${fmtMoney(peggiore, { signed: true })}. ${righe.join('; ')}`;
     if (opz.chiusa) return { stato: 'DA REGOLARE', casoPeggiore: peggiore, dettaglio: `partita chiusa, in attesa di regolamento. ${dettaglio}` };
-    return { stato: peggiore < 0 ? 'A RISCHIO' : 'PAREGGIATA', casoPeggiore: peggiore, dettaglio };
+    return { stato: peggiore < 0 ? 'A RISCHIO' : peggiore > 0 ? 'IN VERDE' : 'PAREGGIATA', casoPeggiore: peggiore, dettaglio };
 }
