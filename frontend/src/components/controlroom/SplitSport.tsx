@@ -168,6 +168,7 @@ function Tessera({ sport, dato, datoPaper, corsie, aperte, prova, letto, scelto,
 /** « (spento)» / « (non letto)» / «» accanto al nome del bot. */
 function statoVoce(v: VoceCorsia): string {
     if (v.acceso === true) return '';
+    if (v.acceso === false && v.ultimoModo) return ' (spento · ultimo modo)';
     return v.acceso === false ? ' (spento)' : ' (non letto)';
 }
 

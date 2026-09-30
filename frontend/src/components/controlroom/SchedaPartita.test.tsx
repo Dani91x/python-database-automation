@@ -315,9 +315,9 @@ describe('SchedaPartita — B1: quote da trader in gioco', () => {
         monta(partitaCalcio({
             lineeOu: [
                 { marketId: '1.35', linea: 3.5, stato: 'OPEN', decisa: false, perMike: false,
-                    under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaBookS: 1 },
+                    under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaCambioS: 1 },
                 { marketId: '1.45', linea: 4.5, stato: 'SUSPENDED', decisa: true, perMike: true,
-                    under: null, over: { back: 1.01, lay: null }, etaBookS: null },
+                    under: null, over: { back: 1.01, lay: null }, etaCambioS: null },
             ],
         }));
         const ou = within(screen.getByTestId('cr-calcio-vivo')).getByTestId('cr-calcio-vivo-ou');
@@ -334,7 +334,7 @@ describe('SchedaPartita — B1bis: linee oltre 4 in gioco', () => {
         monta(partitaCalcio({
             lineeOu: [0.5, 1.5, 2.5, 3.5, 4.5, 5.5].map((l) => ({
                 marketId: `1.${l * 10}`, linea: l, stato: 'OPEN', decisa: false, perMike: false,
-                under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaBookS: 1,
+                under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaCambioS: 1,
             })),
         }));
         const ou = screen.getByTestId('cr-calcio-vivo-ou');
@@ -395,6 +395,21 @@ describe('SchedaPartita — B1: tennis, quote della barra con lo stesso componen
         hoisted.row = tennisRow();
         monta(partita({ soldi: SOLDI_APERTI }));
         expect(await screen.findByTestId('cr-tennis-vivo-eta')).toHaveTextContent(/^punteggio /);
+    });
+});
+
+describe('SchedaPartita — R_B1: il target calcolato dalla pagina lo dice in chiaro', () => {
+    it('fonte ripiego: «target (media della pagina)», non solo un asterisco nel tooltip', () => {
+        monta(partitaCalcio({ target: { valore: 4.17, fonte: 'ripiego' } }));
+        const t = screen.getByTestId('cr-target');
+        expect(t).toHaveTextContent('target (media della pagina) 4,17 €');
+    });
+
+    it('fonte servizio: resta «target», senza la dicitura della media', () => {
+        monta(partitaCalcio({ target: { valore: 4.17, fonte: 'servizio' } }));
+        const t = screen.getByTestId('cr-target');
+        expect(t).toHaveTextContent('target 4,17 €');
+        expect(t.textContent).not.toMatch(/media/);
     });
 });
 

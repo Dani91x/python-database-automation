@@ -134,6 +134,25 @@ _SCORES_PERIOD_SEC = 2.0
 _IPS_REQ_DELAY = 0.1
 # timeline calcio (gol/cartellini col minuto) in batch: cambia a eventi discreti
 _TIMELINE_PERIOD_SEC = 30.0
+# 30/09 - FINESTRA DEL FISCHIO (decisione dell'utente: «timeline consolidata,
+# zero chiamate in piu'»). Nei primi _FINESTRA_FISCHIO_SEC dopo il primo
+# in-play visto, finche' il punteggio non c'e', la partita di calcio si legge
+# con ``eventTimelines`` AL POSTO di ``scoresAndBroadcast``: sulla storia
+# (30 registrazioni, INDAGINE_PUNTEGGI_AL_FISCHIO.md §3) il KickOff della
+# timeline compare prima del primo punteggio in 24 casi su 30, mediana ~80 s.
+# Il record della timeline ha la stessa forma di quello dei punteggi (``score``,
+# ``timeElapsed``, ``status``) piu' ``updateDetails``: passa dallo stesso
+# ``apply_score_state``. Se il record NON porta un punteggio numerico, la
+# partita torna nel lotto dei punteggi dello stesso giro: mai un giro senza
+# nessuna lettura per una partita in gioco.
+_FINESTRA_FISCHIO_SEC = 300.0
+# 30/09 - SVEGLIA dallo stream: quando una partita passa in gioco o il suo
+# MATCH_ODDS in gioco cambia stato (OPEN <-> SUSPENDED, cioe' un gol o un
+# fischio arrivato al ms dallo stream) il giro punteggi parte subito invece di
+# aspettare la cadenza. Solo per il calcio. Pavimento fra due giri: mai piu' di
+# 2 GIRI al secondo (ogni giro = un lotto di 50 per chiamata), qualunque cosa
+# faccia lo stream.
+_SVEGLIA_PAVIMENTO_SEC = 0.5
 # throttle di scrittura per-evento: con lo STREAM le quote cambiano ogni secondo
 # (conflate 1s) — mai inondare Supabase: max 1 riga/evento ogni 2.5s (e comunque
 # solo write-on-change).
@@ -482,6 +501,15 @@ class Scanner:
         self.written_crit: Dict[str, str] = {}
         self.scores_ts = 0.0
         self.timelines_ts = 0.0
+        # 30/09 - sveglia del giro punteggi (alzata dallo stream, consumata dal
+        # ScoreFeedWorker) e CONTO delle chiamate al fornitore dei punteggi:
+        # le chiamate si contano prima e dopo ogni modifica, e il conto viaggia
+        # sulla riga di stato che si scrive comunque.
+        self.sveglia_punteggi = threading.Event()
+        self.ips_chiamate: Dict[str, int] = {
+            "scores": 0, "timelines": 0, "timelines_fischio": 0,
+            "sveglie": 0, "punteggi_dalla_timeline": 0,
+        }
         self.orphan_purge_ts = -1e9  # prima pulizia subito al primo publish
         # CERT. 13/09 — reidratazione del riferimento 1X2 pre-KO dal DB.
         # ``pre_ko`` viveva SOLO qui dentro: a ogni riavvio (app chiusa, crash +
@@ -736,6 +764,19 @@ class Scanner:
             n += 1
         return n
 
+    def _ultima_conferma_mono(self, mid: str) -> Optional[float]:
+        """Istante monotono dell'ultima volta in cui il mercato e' stato VIVO:
+        l'ultimo book CON prezzi (stream o REST) o l'ultima conferma di
+        heartbeat, il piu' recente. None se mai visto con prezzi."""
+        cand: List[float] = []
+        for m in (self.flusso_stream.get(mid), self.flusso_rest.get(mid)):
+            if m is not None and m[0]:
+                cand.append(float(m[1]))
+        c = self.flusso_conferma.get(mid)
+        if c is not None:
+            cand.append(float(c))
+        return max(cand) if cand else None
+
     def _flusso_ultimo(self, mid: str) -> Optional["tuple[bool, float]"]:
         s = self.flusso_stream.get(mid)
         r = self.flusso_rest.get(mid)
@@ -825,7 +866,24 @@ class Scanner:
             dal_ms = prec.get("dal_ms")
         else:
             dal_ms = int(self._ora() * 1000)
-        blk = {"vivo": bool(vivo), "motivo": motivo, "dal_ms": dal_ms, "mercati_fermi": fermi}
+        # 30/09 - DA QUANDO ogni mercato fermo e' fermo: epoch ms dell'ultima
+        # conferma con prezzi (memoria dello scanner, fresca). ``seen_ms`` della
+        # riga non lo dice: e' fuori firma e la riga non si riscrive se cambia
+        # solo lui, quindi «ultimo book N s fa» a schermo era l'eta' dell'ultima
+        # riscrittura. Qui il valore e' ESATTO e STABILE: si calcola quando il
+        # mercato entra fra i fermi e si conserva finche' ci resta (un mercato
+        # fermo non riceve conferme: il numero non cambia, la firma nemmeno).
+        prec_da = (prec or {}).get("fermi_da_ms") or {}
+        fermi_da_ms: Dict[str, int] = {}
+        for mid in fermi:
+            if mid in prec_da:
+                fermi_da_ms[mid] = int(prec_da[mid])
+                continue
+            ultima = self._ultima_conferma_mono(mid)
+            if ultima is not None:
+                fermi_da_ms[mid] = int((self._ora() - (adesso - ultima)) * 1000)
+        blk = {"vivo": bool(vivo), "motivo": motivo, "dal_ms": dal_ms,
+               "mercati_fermi": fermi, "fermi_da_ms": fermi_da_ms}
         self.flusso_eventi[eid] = blk
         return blk
 
@@ -1132,8 +1190,12 @@ class Scanner:
         ev["sport"] = sport
         # la DEFINIZIONE si applica SEMPRE: e' l'unica cosa che un book di sola
         # marketDefinition porta di sicuro, ed e' informazione buona
+        precedente = (ev.get("inplay"), ev.get("mo_status"))
         ev["inplay"] = bool(getattr(book, "inplay", False))
         ev["mo_status"] = getattr(book, "status", None)
+        # 30/09: DOPO le due assegnazioni (revisione: la sveglia alzata prima
+        # poteva far leggere al worker uno stato ancora vecchio)
+        self._transizione_gioco(ev, ev["inplay"], ev["mo_status"], precedente=precedente)
         # 26/09 (F-8, e2e fase 3): lo STREAM dello scanner si iscrive a
         # EX_BEST_OFFERS + EX_MARKET_DEF (stream.py), senza EX_TRADED_VOL: il
         # campo ``tv`` non arriva mai e betfairlightweight lascia
@@ -1209,6 +1271,54 @@ class Scanner:
             # si aggiunge una formattazione di data per ogni book.
             adesso_iso=(None if self.orologio is None else self._ora_iso()),
         )
+
+    def _transizione_gioco(self, ev: Dict[str, Any], inplay: bool,
+                           status: Optional[str],
+                           precedente: "tuple[Any, Any]") -> None:
+        """30/09 - Un book del MATCH_ODDS ha cambiato lo stato della partita.
+
+        · pre-partita -> in gioco: si segna QUANDO lo si e' visto
+          (``inplay_visto_mono``, orologio monotono, mai sovrascritto) e si
+          sveglia il giro punteggi;
+        · in gioco, OPEN <-> SUSPENDED: e' il segnale al ms di un gol o di un
+          fischio; si sveglia il giro punteggi.
+        Nessun'altra scrittura: ``inplay`` e ``mo_status`` li scrive chi chiama.
+        """
+        era_inplay, era_status = precedente
+        # SOLO calcio (revisione 30/09): il tennis si sospende a ogni punto e
+        # sveglierebbe il giro di continuo per un punteggio che a 2 s va bene.
+        if ev.get("sport") != "calcio":
+            return
+        if inplay and era_inplay is False:
+            # visto PRIMA fuori gioco e ORA in gioco: e' il fischio. Un evento
+            # nato gia' in gioco (riavvio a partita iniziata, ``era_inplay`` None)
+            # NON e' un fischio: niente istante, niente finestra, niente sveglia.
+            ev.setdefault("inplay_visto_mono", self._ora_mono())
+            self._sveglia_punteggi()
+            return
+        if inplay and era_inplay and era_status != status and {era_status, status} <= {"OPEN", "SUSPENDED"}:
+            self._sveglia_punteggi()
+
+    def _sveglia_punteggi(self) -> None:
+        self.ips_chiamate["sveglie"] += 1
+        self.sveglia_punteggi.set()
+
+    def finestra_fischio_ids(self, now_mono: Optional[float] = None) -> List[str]:
+        """Partite di CALCIO in gioco da meno di ``_FINESTRA_FISCHIO_SEC`` e
+        ancora SENZA punteggio: sono quelle da leggere con la timeline."""
+        t = self._ora_mono() if now_mono is None else now_mono
+        out: List[str] = []
+        # copia: lo stream aggiunge eventi mentre il worker itera
+        for eid, ev in list(self.events.items()):
+            if ev.get("sport") != "calcio" or not ev.get("inplay"):
+                continue
+            if ev.get("score_home") is not None:
+                continue
+            visto = ev.get("inplay_visto_mono")
+            if visto is None or t - float(visto) > _FINESTRA_FISCHIO_SEC:
+                continue
+            out.append(eid)
+        return out
 
     def _apply_cs_book(self, meta: Dict[str, Any], book: Any,
                        dallo_stream: bool = False) -> None:
@@ -1393,10 +1503,21 @@ class Scanner:
         if not inplay_ids:
             self.scores_ts = time.monotonic()
             return
+        # 30/09 - FINESTRA DEL FISCHIO: prima la timeline per chi e' appena
+        # partito e non ha punteggio; chi ne esce con un punteggio non entra
+        # nel lotto dei punteggi di questo giro (consolidata: una lettura sola),
+        # chi ne esce senza punteggio ci resta (mai una partita senza lettura).
+        letti_dalla_timeline = self._poll_timelines_fischio(self.finestra_fischio_ids())
+        if letti_dalla_timeline:
+            inplay_ids = [e for e in inplay_ids if e not in letti_dalla_timeline]
+        if not inplay_ids:
+            self.scores_ts = time.monotonic()
+            return
         raw_by_event: Dict[str, Dict[str, Any]] = {}
         for i in range(0, len(inplay_ids), _SCORES_CHUNK):
             chunk = inplay_ids[i:i + _SCORES_CHUNK]
             try:
+                self.ips_chiamate["scores"] += 1
                 batch = self._ips_batch(chunk)
             except Exception as e:  # noqa: BLE001 - IPS non ufficiale: best-effort
                 logger.warning("[safe-scan] punteggi IPS KO: %s", str(e)[:120])
@@ -1414,7 +1535,8 @@ class Scanner:
             self.apply_score_state(eid, rec)
         self.scores_ts = time.monotonic()
 
-    def apply_score_state(self, eid: str, rec: Dict[str, Any]) -> bool:
+    def apply_score_state(self, eid: str, rec: Dict[str, Any],
+                          fonte: str = "scores") -> bool:
         """Lo STATO IPS GREZZO di un evento entra nello stato-evento.
 
         Corpo estratto da ``poll_scores`` senza cambiarne una riga: da qui
@@ -1454,10 +1576,68 @@ class Scanner:
         # UN solo update (atomico sotto il GIL): il tick, che pubblica da un
         # altro thread, vede sempre punteggio e stato grezzo COERENTI, mai
         # un gol a metà (score_home nuovo con score_away vecchio)
+        primo = ev.get("score_home") is None and upd.get("score_home") is not None
         ev.update(upd)
+        if primo and ev.get("inplay_visto_mono") is not None:
+            # una riga per partita: quanto ha aspettato il trader e da chi e'
+            # arrivato il primo punteggio (misura, non decisione)
+            logger.info(
+                "[safe-scan] primo punteggio %s dopo %.1f s dal primo in-play, fonte %s",
+                eid, self._ora_mono() - float(ev["inplay_visto_mono"]),
+                fonte)
         return True
 
     # ------------------------------------------------------------- timeline IPS
+    def _poll_timelines_fischio(self, ids: List[str]) -> "set[str]":
+        """Timeline per le partite nella finestra del fischio (30/09).
+
+        Torna gli event_id per cui il record ha PORTATO un punteggio (letti,
+        da non rileggere coi punteggi in questo giro). Il record entra in
+        ``apply_score_state`` cosi' com'e' (stessa forma del record dei
+        punteggi) e aggiorna anche ``timeline``. Errori: loggati, si torna
+        insieme vuoto = tutto al lotto dei punteggi, come prima del 30/09.
+        """
+        letti: "set[str]" = set()
+        if not ids:
+            return letti
+        for i in range(0, len(ids), _SCORES_CHUNK):
+            chunk = ids[i:i + _SCORES_CHUNK]
+            try:
+                self.ips_chiamate["timelines_fischio"] += 1
+                res = self.client.in_play_service.get_event_timelines(
+                    event_ids=[int(e) for e in chunk], lightweight=True
+                )
+            except Exception as e:  # noqa: BLE001 - endpoint non ufficiale: best-effort
+                logger.warning("[safe-scan] eventTimelines (fischio) KO: %s", str(e)[:120])
+                continue
+            for rec in res or []:
+                letto = self.applica_timeline_fischio(rec)
+                if letto is not None:
+                    letti.add(letto)
+        return letti
+
+    def applica_timeline_fischio(self, rec: Any) -> Optional[str]:
+        """UN record ``eventTimelines`` nella finestra del fischio: aggiorna
+        ``timeline`` e, se il record porta un punteggio numerico, lo stato del
+        punteggio per la stessa via dei punteggi. Torna l'event_id se il
+        punteggio c'era (consolidata), None altrimenti."""
+        if not isinstance(rec, dict) or rec.get("eventId") is None:
+            return None
+        eid = str(rec["eventId"])
+        ev = self.events.get(eid)
+        if ev is None:
+            return None
+        ev["timeline"] = normalize_timeline(rec)
+        snap = parse_score_dict(eid, rec)
+        if snap.score_home is None or snap.score_away is None:
+            return None
+        self.ips_chiamate["punteggi_dalla_timeline"] += 1
+        # lo stato del punteggio SENZA la cronologia: ``timeline`` e' gia' sopra
+        # e ``score_raw`` deve restare leggero e della stessa forma di sempre
+        self.apply_score_state(eid, {k: v for k, v in rec.items() if k != "updateDetails"},
+                               fonte="timeline")
+        return eid
+
     def poll_timelines(self) -> None:
         """Cronologia eventi (gol/cartellini/kickoff) di TUTTI gli in-play CALCIO
         in batch (``eventTimelines``, chunk 20) ogni _TIMELINE_PERIOD_SEC: prima
@@ -1470,6 +1650,7 @@ class Scanner:
         for i in range(0, len(ids), _SCORES_CHUNK):
             chunk = ids[i:i + _SCORES_CHUNK]
             try:
+                self.ips_chiamate["timelines"] += 1
                 res = self.client.in_play_service.get_event_timelines(
                     event_ids=[int(e) for e in chunk], lightweight=True
                 )
@@ -1908,6 +2089,12 @@ class Scanner:
                         # mano. Nessuna chiave storica tolta.
                         "odds_pt_ms": ev.get("odds_pt_ms"),
                         "bet_delay": ev.get("bet_delay"),
+                        # 30/09, chiave ADDITIVA, FUORI FIRMA come ``seen_ms``:
+                        # ultima LETTURA del Match Odds con prezzi (epoch ms).
+                        # Viaggia alla prima riscrittura vera: a schermo vale
+                        # come «riga scritta N s fa», non come eta' dell'ultimo
+                        # book (per quella c'e' ``flusso.fermi_da_ms``).
+                        "odds_seen_ms": ev.get("odds_seen_ms"),
                         # MERCATI A GOL del motore opportunità (chiavi ADDITIVE):
                         # ou = [{line, market_id, status, selections…}], btts, ht_result
                         **scanner.split_opportunity_blocks(self._prune_opp_blocks(ev, eid, now)),
@@ -1963,6 +2150,7 @@ class Scanner:
                         # a quale ritardo era soggetto (3 s, 5 s su alcuni ITF).
                         "odds_pt_ms": ev.get("odds_pt_ms"),
                         "bet_delay": ev.get("bet_delay"),
+                        "odds_seen_ms": ev.get("odds_seen_ms"),  # 30/09, additiva, fuori firma
                         # Q12 (25/09), chiave ADDITIVA: quota pre-partita
                         # congelata {p1, p2} (stesso nome e schema del calcio)
                         "pre_ko": ev.get("pre_ko"),
@@ -2208,6 +2396,10 @@ class Scanner:
             # scrive comunque: zero scritture in piu'. ``calcolato_ms`` vecchio =
             # giro bloccato = nessun prezzo confermato (``flusso_prezzi``).
             "flusso": dict(self.flusso_istantanea),
+            # 30/09 - conto delle chiamate al fornitore dei punteggi dall'avvio
+            # (scores, timelines a cadenza, timelines nella finestra del
+            # fischio, sveglie dallo stream, punteggi arrivati dalla timeline).
+            "ips": dict(self.ips_chiamate),
         }
         self._scarica_avvisi()
         # lo STESSO payload che va (o andrebbe) sul database: nessuna proiezione,
@@ -2547,10 +2739,13 @@ class ScoreFeedWorker(threading.Thread):
 
     def stop(self) -> None:
         self._stop.set()
+        # anche la sveglia: l'attesa lunga e' su di lei, lo stop deve vincere subito
+        self.scan.sveglia_punteggi.set()
 
     def run(self) -> None:
         while not self._stop.is_set():
             started = time.monotonic()
+            self.scan.sveglia_punteggi.clear()
             try:
                 self.scan.poll_scores()
                 if time.monotonic() - self.scan.timelines_ts > _TIMELINE_PERIOD_SEC:
@@ -2567,8 +2762,26 @@ class ScoreFeedWorker(threading.Thread):
                     self.scan.publish_status(len(self.scan.written_sig))
             except Exception as e:  # noqa: BLE001
                 logger.warning("[safe-scan] battito KO: %s", str(e)[:140])
-            # cadenza fissa: attesa = periodo meno il tempo speso (mai negativa)
-            self._stop.wait(max(0.2, _SCORES_PERIOD_SEC - (time.monotonic() - started)))
+            # cadenza: attesa = periodo meno il tempo speso (mai negativa), MA
+            # una sveglia dallo stream (30/09: in gioco, gol, fischio) la
+            # interrompe; fra due giri passa comunque il pavimento.
+            self._attendi(started)
+
+    def _attendi(self, started: float) -> None:
+        """Attesa fra due giri: PRIMA il pavimento (``_SVEGLIA_PAVIMENTO_SEC``
+        dall'inizio del giro, sordo alle sveglie), POI il resto del periodo,
+        che una sveglia dallo stream interrompe. ``_stop`` vince sempre."""
+        speso = time.monotonic() - started
+        pavimento = max(0.0, _SVEGLIA_PAVIMENTO_SEC - speso)
+        if pavimento > 0:
+            self._stop.wait(pavimento)
+        if self._stop.is_set():
+            return
+        if self.scan.sveglia_punteggi.is_set():
+            return
+        # senza sveglia: la cadenza di sempre, col respiro minimo di 0,2 s
+        # anche dopo un giro piu' lungo del periodo (identico a prima del 30/09)
+        self.scan.sveglia_punteggi.wait(max(0.2, _SCORES_PERIOD_SEC - (time.monotonic() - started)))
 
 
 def _ciclo_una_volta(scan: "Scanner") -> bool:

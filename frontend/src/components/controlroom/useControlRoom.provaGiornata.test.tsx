@@ -249,6 +249,29 @@ describe('P8bis - la plancia dei bot: prova di oggi e arretrati a parte', () => 
     });
 });
 
+describe('R_G - prestazioni: la prova non si ricalcola a ogni secondo', () => {
+    it('nowMs avanza nello stesso giorno: provaGiornata e\' LO STESSO oggetto; al cambio di giorno cambia', async () => {
+        vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true });
+        try {
+            vi.setSystemTime(new Date(`${OGGI}T10:00:00+00:00`));
+            vi.mocked(fetchSafeState).mockResolvedValue({ ...SAFE_VUOTO, trades: SAFE_ARRETRATI } as never);
+            vi.mocked(fetchMikeState).mockResolvedValue(MIKE_VUOTO as never);
+            const { result } = renderHook(() => useControlRoom());
+            await waitFor(() => expect(result.current.caricamento).toBe(false));
+            await waitFor(() => expect(result.current.provaGiornata).toBeTruthy());
+            const primo = result.current.provaGiornata;
+            const t0 = result.current.nowMs;
+            await waitFor(() => expect(result.current.nowMs).toBeGreaterThan(t0), { timeout: 3000 });
+            expect(result.current.provaGiornata).toBe(primo);
+            // il giorno dopo: la prova si ricalcola (gli arretrati di ieri non sono piu' «di oggi»)
+            vi.setSystemTime(new Date(Date.parse(`${OGGI}T10:00:00+00:00`) + 24 * 3600 * 1000));
+            await waitFor(() => expect(result.current.provaGiornata).not.toBe(primo), { timeout: 3000 });
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+});
+
 describe('P7 - la voce di ogni bot dal conto Betfair', () => {
     it('Mike: posizione di ieri regolata oggi (riga non letta) -> sotto Mike dal CONTO, «Altro» vuoto', async () => {
         vi.mocked(fetchSafeState).mockResolvedValue(SAFE_VUOTO as never);

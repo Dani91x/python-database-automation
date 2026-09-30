@@ -132,3 +132,27 @@ def test_ciclo_vero_diario_dice_la_linea_e_i_suoi_secondi(runner):
     assert len(crit) == 1, db.activity
     assert crit[0]["da_secondi"] == 36.0
     assert "Under/Over 3,5" in crit[0]["testo"]
+
+
+# ---------------------------------------------------------------------------
+# 30/09 sera (review incrociata): ``seen_ms`` e' FUORI FIRMA, la riga non si
+# riscrive se cambia solo lui, quindi «ultimo book N s fa» era l'eta' dell'ultima
+# riscrittura. Lo scanner ora scrive ``flusso.fermi_da_ms`` (istante vero
+# dell'ultima conferma con prezzi, calcolato quando la linea diventa ferma):
+# Mike lo legge PRIMA di ``seen_ms``.
+# ---------------------------------------------------------------------------
+def test_fermi_da_ms_vince_su_seen_ms():
+    r = _riga(["1.35"], seen35_s=300.0)  # seen_ms stantio: 300 s
+    r["payload"]["flusso"]["fermi_da_ms"] = {"1.35": _ms(NOW - timedelta(seconds=41.0))}
+    linee = F.linee_ferme_mike(r["payload"], _adesso_ms())
+    assert linee == [("1.35", "Under/Over 3,5", 41.0)]
+    es = F.flusso_esito(r, None, NOW.timestamp())
+    assert "41 s" in es.testo and "300 s" not in es.testo, es.testo
+
+
+def test_senza_fermi_da_ms_resta_seen_ms():
+    r = _riga(["1.35"], seen35_s=36.0)
+    r["payload"]["flusso"]["fermi_da_ms"] = {}  # scanner nuovo, ma senza istante per quella linea
+    assert F.linee_ferme_mike(r["payload"], _adesso_ms()) == [("1.35", "Under/Over 3,5", 36.0)]
+    r["payload"]["flusso"].pop("fermi_da_ms")  # scanner precedente
+    assert F.linee_ferme_mike(r["payload"], _adesso_ms()) == [("1.35", "Under/Over 3,5", 36.0)]

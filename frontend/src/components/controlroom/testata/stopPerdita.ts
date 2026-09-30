@@ -73,6 +73,10 @@ export interface StopBot {
     /** soglia di perdita in EUR (positiva); 0 = SPENTO; null = non letto */
     soglia: number | null;
     scattato: boolean;
+    /** R_T (30/09): false = il servizio NON pubblica se lo stop e' scattato
+     *  (Omega: solo l'attivita' `loss_stop`, non letta qui). `scattato` allora
+     *  non vale "armato": a schermo si dice "scatto non pubblicato". */
+    scattoPubblicato: boolean;
     /** da dove viene il numero (per il tooltip) */
     fonte: string;
     /** dove si modifica (per il tooltip) */
@@ -102,6 +106,7 @@ export function stopDeiBot(input: {
         letto: sStop != null,
         soglia: sStop == null ? null : Math.abs(sStop),
         scattato: s?.loss_stop_active === true,
+        scattoPubblicato: true,
         fonte: 'dichiarato dal servizio di Safe (stats.risk.daily_loss_stop)',
         dove: 'Comando dei bot, riga Safe: parametri, \u00abStop perdita giornaliera \u20ac\u00bb',
     });
@@ -115,6 +120,7 @@ export function stopDeiBot(input: {
         letto: mStop != null,
         soglia: mStop == null ? null : Math.max(0, mStop),
         scattato: input.mike.stats?.daily_stop === true,
+        scattoPubblicato: true,
         fonte: mikeLetto && mp.daily_loss_stop == null
             ? 'parametro daily_loss_stop non scritto: valore predefinito del servizio'
             : 'parametro daily_loss_stop di Mike',
@@ -139,7 +145,10 @@ export function stopDeiBot(input: {
         bot: 'omega', modalita: input.omega.modalita,
         letto: oStop != null,
         soglia: oStop == null ? null : Math.max(0, oStop),
+        // Omega non pubblica lo stato dello scatto (omega_service.py:1850-1851
+        // scrive solo l'attivita' `loss_stop`): non si afferma "armato"
         scattato: false,
+        scattoPubblicato: false,
         fonte: `parametro ${chiave} di Omega (motore ${chiave === 'daily_loss_cap' ? 'v2' : 'v3'})`,
         dove: chiave === 'daily_loss_cap'
             ? 'Comando dei bot, riga Omega: parametri, \u00abStop-loss giornaliero (\u20ac)\u00bb'

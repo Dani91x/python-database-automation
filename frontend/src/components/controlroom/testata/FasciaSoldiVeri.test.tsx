@@ -110,6 +110,18 @@ describe('FasciaSoldiVeri - dati mancanti: mai una cifra inventata', () => {
         expect(screen.queryByTestId('cr-scarto-conto-bot')).toBeNull();
     });
 
+    it('R_T: numero del bot stantio (liability_stale del servizio): detto A SCHERMO in ambra, non solo nel title', () => {
+        render(<FasciaSoldiVeri s={soldi({ stati: { ...STATI, mike: { aggregates: { mode: 'live', open_liability: 16.22, liability_stale: true } } } })} />);
+        const el = screen.getByTestId('cr-rischio-bot-stantio');
+        expect(el.textContent).toMatch(/dato del bot non aggiornato \(Mike\)/);
+        expect(el.className).toMatch(/amber/);
+    });
+
+    it('R_T: numero fresco: nessun avviso di stantio', () => {
+        render(<FasciaSoldiVeri s={soldi()} />);
+        expect(screen.queryByTestId('cr-rischio-bot-stantio')).toBeNull();
+    });
+
     it('saldo nascosto con l\'occhio della card: nascosto anche qui', () => {
         window.localStorage.setItem(CHIAVE_SALDO_NASCOSTO, '1');
         render(<FasciaSoldiVeri s={soldi()} />);

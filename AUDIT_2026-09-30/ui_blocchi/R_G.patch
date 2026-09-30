@@ -1,0 +1,526 @@
+diff --git a/frontend/src/components/controlroom/ObiettivoHero.tsx b/frontend/src/components/controlroom/ObiettivoHero.tsx
+index 08df5e2..f3067e6 100644
+--- a/frontend/src/components/controlroom/ObiettivoHero.tsx
++++ b/frontend/src/components/controlroom/ObiettivoHero.tsx
+@@ -17,7 +17,7 @@ import { fmtMoney, DASH } from '@/lib/format';
+ import { pnlClass } from '@/lib/tradeStatus';
+ import type { ComposizioneObiettivo } from '@/lib/composizioneObiettivo';
+ import type { ManualeSitoBetfair } from '@/lib/manualeSitoBetfair';
+-import { etichettaArretrati, type ProvaGiornata, type VoceProva } from '@/lib/provaGiornata';
++import { etichettaArretrati, type ChiaveProva, type ProvaGiornata, type VoceProva } from '@/lib/provaGiornata';
+ import { MarchioSoldi } from './MarchioSoldi';
+ import type { ComposizioneConto, RigaComposizioneConto } from '@/lib/composizioneConto';
+ import type { RigaComposizione } from '@/lib/composizioneObiettivo';
+@@ -34,6 +34,8 @@ export interface ObiettivoHeroProps {
+     prova?: ProvaGiornata | null;
+     /** 30/09 (P7): eta' in secondi della lettura del conto Betfair (`pnl_reale_oggi.letto_at`); null = ignota */
+     contoEtaS?: number | null;
++    /** 30/09 (R_G): la modalita' CORRENTE di ogni voce della prova (live = «— (ora in LIVE)» se non ha prova di oggi) */
++    modalitaBot?: Partial<Record<ChiaveProva, 'paper' | 'live' | null>> | null;
+     testId?: string;
+ }
+ 
+@@ -49,7 +51,7 @@ function dalConto(c: ComposizioneObiettivo): boolean | null {
+ }
+ 
+ export function ObiettivoHero({
+-    dayBar, composizione, manualeSito, onSalvaObiettivo, avvisoMotore, prova = null, contoEtaS, testId = 'cr-obiettivo',
++    dayBar, composizione, manualeSito, onSalvaObiettivo, avvisoMotore, prova = null, contoEtaS, modalitaBot = null, testId = 'cr-obiettivo',
+ }: ObiettivoHeroProps) {
+     return (
+         <Card className="glass-card border-white/10 p-0 overflow-hidden" data-testid={testId}>
+@@ -120,7 +122,7 @@ export function ObiettivoHero({
+                 )}
+ 
+                 {prova != null ? (
+-                    <CorsiaProva prova={prova} />
++                    <CorsiaProva prova={prova} modalitaBot={modalitaBot} />
+                 ) : composizione.provaPaper != null && (
+                     <div
+                         className="mt-1.5 pt-1.5 border-t border-white/10 flex items-baseline gap-2 text-[11px] text-white/40"
+@@ -144,7 +146,9 @@ export function ObiettivoHero({
+  * al riavvio), con la data e da dove viene la data. Simulato, MAI sommato
+  * all'obiettivo; gli arretrati MAI sommati a oggi. Un dato non letto si dice.
+  */
+-function CorsiaProva({ prova }: { prova: ProvaGiornata }) {
++function CorsiaProva({ prova, modalitaBot }: {
++    prova: ProvaGiornata; modalitaBot?: Partial<Record<ChiaveProva, 'paper' | 'live' | null>> | null;
++}) {
+     return (
+         <div className="mt-2 pt-1.5 border-t border-dashed border-white/15 text-[11px] text-white/45"
+             data-testid="cr-composizione-prova">
+@@ -159,21 +163,26 @@ function CorsiaProva({ prova }: { prova: ProvaGiornata }) {
+                 <span className="text-[9.5px] uppercase tracking-wider text-white/30 text-right">partite di oggi</span>
+                 <span className="text-[9.5px] uppercase tracking-wider text-white/30">arretrati regolati oggi</span>
+                 {prova.voci.map((v) => (
+-                    <RigaProvaBot key={v.chiave} v={v} />
++                    <RigaProvaBot key={v.chiave} v={v} modalita={modalitaBot?.[v.chiave] ?? null} />
+                 ))}
+             </div>
+         </div>
+     );
+ }
+ 
+-function RigaProvaBot({ v }: { v: VoceProva }) {
++function RigaProvaBot({ v, modalita }: { v: VoceProva; modalita: 'paper' | 'live' | null }) {
++    // 30/09 (R_G): un bot ORA in LIVE senza operazioni in prova di oggi non ha
++    // una «prova di oggi» da mostrare: «+0,00 [PROVA]» accanto a un bot che
++    // sta usando soldi veri si leggeva come un risultato. Gli arretrati restano.
++    const oraLive = modalita === 'live' && (v.oggi == null || v.oggi.operazioni === 0);
+     return (
+         <>
+             <span className="text-white/55 truncate" data-testid={`cr-prova-${v.chiave}`}>{v.etichetta}</span>
+             <span className="font-mono text-right" data-testid={`cr-prova-${v.chiave}-oggi`}>
+-                {v.oggi == null ? <span className="text-white/30">{DASH}</span>
++                {oraLive ? <span className="text-white/40">{DASH} <span className="text-red-300/80">(ora in LIVE)</span></span>
++                    : v.oggi == null ? <span className="text-white/30">{DASH}</span>
+                     : <span className={`${pnlClass(v.oggi.pnl)} opacity-80`}>{fmtMoney(v.oggi.pnl, { signed: true })}</span>}
+-                {v.oggi != null && <MarchioSoldi fonte="prova" className="ml-1" testId={`cr-prova-${v.chiave}-fonte`} />}
++                {!oraLive && v.oggi != null && <MarchioSoldi fonte="prova" className="ml-1" testId={`cr-prova-${v.chiave}-fonte`} />}
+             </span>
+             <span data-testid={`cr-prova-${v.chiave}-arretrati`}>
+                 {v.arretrati == null ? (
+diff --git a/frontend/src/components/controlroom/PannelloBot.tsx b/frontend/src/components/controlroom/PannelloBot.tsx
+index 98d4e4f..aaec5a8 100644
+--- a/frontend/src/components/controlroom/PannelloBot.tsx
++++ b/frontend/src/components/controlroom/PannelloBot.tsx
+@@ -151,18 +151,27 @@ function colorePuntoStato(r: RigaInterruttore): string {
+  *  quello che le righe gia' dichiarano (§ Task 3, «se gia' disponibile nei
+  *  dati del pannello»). */
+ function riassuntoGruppo(righeG: RigaInterruttore[]): {
+-    live: boolean; paper: boolean; pnlOggi: number | null; anomalia: boolean;
++    live: boolean; paper: boolean; pnlOggiLive: number | null; pnlOggiProva: number | null; anomalia: boolean;
+ } {
+-    let pnlOggi: number | null = null;
+-    let vistoUnPnl = false;
++    // 30/09 (R_G): DUE somme, mai una. Prima il riassunto sommava il P&L delle
++    // righe live e di quelle in prova in un numero solo (+2 live e +7,60 prova
++    // = «oggi 9,60»): soldi veri ed esercitazione nello stesso numero.
++    let cLive = 0, cProva = 0;
++    let vistoLive = false, vistoProva = false;
+     let live = false, paper = false, anomalia = false;
+     for (const r of righeG) {
+         if (r.acceso && r.modalita === 'live') live = true;
+         if (r.acceso && r.modalita === 'paper') paper = true;
+         if (!r.statoNoto || r.stato === 'error' || (r.acceso && r.motivoBlocco)) anomalia = true;
+-        if (r.pnlOggi != null) { pnlOggi = (pnlOggi ?? 0) + r.pnlOggi; vistoUnPnl = true; }
++        if (r.pnlOggi == null) continue;
++        if (r.modalita === 'live') { cLive += Math.round(r.pnlOggi * 100); vistoLive = true; }
++        else if (r.modalita === 'paper') { cProva += Math.round(r.pnlOggi * 100); vistoProva = true; }
+     }
+-    return { live, paper, pnlOggi: vistoUnPnl ? pnlOggi : null, anomalia };
++    return {
++        live, paper, anomalia,
++        pnlOggiLive: vistoLive ? cLive / 100 : null,
++        pnlOggiProva: vistoProva ? cProva / 100 : null,
++    };
+ }
+ 
+ /**
+@@ -416,12 +425,23 @@ export function PannelloBot({
+                                                     prova
+                                                 </span>
+                                             )}
+-                                            {riassunto.pnlOggi !== null && (
++                                            {riassunto.pnlOggiLive !== null && (
+                                                 <span className="text-[10px] font-mono normal-case"
+-                                                    title="somma del P&L di oggi delle righe che lo dichiarano">
+-                                                    <span className="text-white/30">oggi </span>
+-                                                    <span className={riassunto.pnlOggi < 0 ? 'text-red-400' : 'text-emerald-400'}>
+-                                                        {fmtMoney(riassunto.pnlOggi)}
++                                                    data-testid={`${testId}-gruppo-${g}-oggi-live`}
++                                                    title="somma del P&L di oggi delle righe con SOLDI VERI">
++                                                    <span className="text-white/30">oggi LIVE </span>
++                                                    <span className={riassunto.pnlOggiLive < 0 ? 'text-red-400' : 'text-emerald-400'}>
++                                                        {fmtMoney(riassunto.pnlOggiLive)}
++                                                    </span>
++                                                </span>
++                                            )}
++                                            {riassunto.pnlOggiProva !== null && (
++                                                <span className="text-[10px] font-mono normal-case opacity-60"
++                                                    data-testid={`${testId}-gruppo-${g}-oggi-prova`}
++                                                    title="somma del P&L di oggi delle righe IN PROVA: simulato, mai sommato ai soldi veri">
++                                                    <span className="text-white/30">prova </span>
++                                                    <span className={riassunto.pnlOggiProva < 0 ? 'text-red-400' : 'text-emerald-400'}>
++                                                        {fmtMoney(riassunto.pnlOggiProva)}
+                                                     </span>
+                                                 </span>
+                                             )}
+diff --git a/frontend/src/components/controlroom/SplitSport.tsx b/frontend/src/components/controlroom/SplitSport.tsx
+index 83cde95..5998291 100644
+--- a/frontend/src/components/controlroom/SplitSport.tsx
++++ b/frontend/src/components/controlroom/SplitSport.tsx
+@@ -168,6 +168,7 @@ function Tessera({ sport, dato, datoPaper, corsie, aperte, prova, letto, scelto,
+ /** « (spento)» / « (non letto)» / «» accanto al nome del bot. */
+ function statoVoce(v: VoceCorsia): string {
+     if (v.acceso === true) return '';
++    if (v.acceso === false && v.ultimoModo) return ' (spento · ultimo modo)';
+     return v.acceso === false ? ' (spento)' : ' (non letto)';
+ }
+ 
+diff --git a/frontend/src/components/controlroom/righeBot.provaArretrati.test.tsx b/frontend/src/components/controlroom/righeBot.provaArretrati.test.tsx
+index 38e3233..961f139 100644
+--- a/frontend/src/components/controlroom/righeBot.provaArretrati.test.tsx
++++ b/frontend/src/components/controlroom/righeBot.provaArretrati.test.tsx
+@@ -28,6 +28,34 @@ function safe(modo: 'paper' | 'live'): StatoBotPlancia {
+     };
+ }
+ 
++describe('R_G: il riassunto del gruppo non somma LIVE e PROVA', () => {
++    it('una riga live +2 e una paper +7,60: «oggi LIVE 2,00» e «prova 7,60», mai 9,60', () => {
++        const base = {
++            bot: 'safe' as const, acceso: true, statoNoto: true, stato: 'running', etaPushS: 1,
++            motivoBlocco: null, tettoPartite: null, partiteEsposte: null,
++            stopFermaSoloAperture: false, fermatoAllAvvioAt: null,
++        };
++        const righe = [
++            { ...base, id: 'safe-base' as const, etichetta: 'Safe base', modalita: 'live' as const, pnlOggi: 2, primaDelBot: true },
++            { ...base, id: 'safe-esatto' as const, etichetta: 'Safe esatto', modalita: 'paper' as const, pnlOggi: 7.6, primaDelBot: false },
++            // un gruppo tennis perche' la plancia divida in tendine
++            { ...base, id: 'tennis_scalper' as const, bot: 'tennis_scalper' as const, etichetta: 'Scalper', modalita: 'paper' as const, pnlOggi: null, primaDelBot: true },
++        ];
++        const comandi: ComandiInterruttori = {
++            accendi: vi.fn(async () => {}), spegni: vi.fn(async () => {}),
++            cambiaModalita: vi.fn(async () => {}), cambiaImporto: vi.fn(async () => {}),
++            fermaBot: vi.fn(async () => {}), scriviAccensioni: vi.fn(async () => {}),
++            cambiaModalitaServizio: vi.fn(async () => {}),
++        };
++        const s = render(<PannelloBot righe={righe} importi={{}} comandi={comandi} />);
++        const trigger = s.getByTestId('cr-pannello-bot-gruppo-calcio-trigger');
++        expect(s.getByTestId('cr-pannello-bot-gruppo-calcio-oggi-live').textContent).toBe('oggi LIVE 2,00 €');
++        expect(s.getByTestId('cr-pannello-bot-gruppo-calcio-oggi-prova').textContent).toBe('prova 7,60 €');
++        expect(trigger.textContent).not.toContain('9,60');
++        expect(s.container.textContent ?? '').not.toContain('9,60');
++    });
++});
++
+ describe('plancia: prova di oggi e arretrati a parte', () => {
+     it('Safe base in prova: oggi «—» (niente di oggi), arretrati +7,60 accanto e mai dentro', () => {
+         const [r] = righeInterruttori([safe('paper')], 'calcio').filter((x) => x.id === 'safe-base');
+diff --git a/frontend/src/components/controlroom/useControlRoom.provaGiornata.test.tsx b/frontend/src/components/controlroom/useControlRoom.provaGiornata.test.tsx
+index 5b952ce..f79e4b7 100644
+--- a/frontend/src/components/controlroom/useControlRoom.provaGiornata.test.tsx
++++ b/frontend/src/components/controlroom/useControlRoom.provaGiornata.test.tsx
+@@ -249,6 +249,29 @@ describe('P8bis - la plancia dei bot: prova di oggi e arretrati a parte', () =>
+     });
+ });
+ 
++describe('R_G - prestazioni: la prova non si ricalcola a ogni secondo', () => {
++    it('nowMs avanza nello stesso giorno: provaGiornata e\' LO STESSO oggetto; al cambio di giorno cambia', async () => {
++        vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true });
++        try {
++            vi.setSystemTime(new Date(`${OGGI}T10:00:00+00:00`));
++            vi.mocked(fetchSafeState).mockResolvedValue({ ...SAFE_VUOTO, trades: SAFE_ARRETRATI } as never);
++            vi.mocked(fetchMikeState).mockResolvedValue(MIKE_VUOTO as never);
++            const { result } = renderHook(() => useControlRoom());
++            await waitFor(() => expect(result.current.caricamento).toBe(false));
++            await waitFor(() => expect(result.current.provaGiornata).toBeTruthy());
++            const primo = result.current.provaGiornata;
++            const t0 = result.current.nowMs;
++            await waitFor(() => expect(result.current.nowMs).toBeGreaterThan(t0), { timeout: 3000 });
++            expect(result.current.provaGiornata).toBe(primo);
++            // il giorno dopo: la prova si ricalcola (gli arretrati di ieri non sono piu' «di oggi»)
++            vi.setSystemTime(new Date(Date.parse(`${OGGI}T10:00:00+00:00`) + 24 * 3600 * 1000));
++            await waitFor(() => expect(result.current.provaGiornata).not.toBe(primo), { timeout: 3000 });
++        } finally {
++            vi.useRealTimers();
++        }
++    });
++});
++
+ describe('P7 - la voce di ogni bot dal conto Betfair', () => {
+     it('Mike: posizione di ieri regolata oggi (riga non letta) -> sotto Mike dal CONTO, «Altro» vuoto', async () => {
+         vi.mocked(fetchSafeState).mockResolvedValue(SAFE_VUOTO as never);
+diff --git a/frontend/src/components/controlroom/useControlRoom.ts b/frontend/src/components/controlroom/useControlRoom.ts
+index 079c663..1421d62 100644
+--- a/frontend/src/components/controlroom/useControlRoom.ts
++++ b/frontend/src/components/controlroom/useControlRoom.ts
+@@ -2217,23 +2217,36 @@ export function useControlRoom(): ControlRoomVM {
+      * dalla chiave `arretrati_prova` di `get_mike_state` (backend): assente =
+      * «non letti», dichiarato. `null` = trade non ancora letti.
+      */
+-    const provaOggi = useMemo<ProvaGiornata | null>(() => {
+-        if (!soldiLetti) return null;
+-        const oggi = romeDay(new Date(nowMs));
++    // 30/09 (R_G, prestazioni): i memo della prova dipendono dalla STRINGA del
++    // giorno (identica per tutto il giorno), non da `nowMs` che cambia ogni
++    // secondo; e il raggruppamento per bot si fa UNA volta, riusato dalla
++    // corsia PROVA e dalla plancia (`botsConPnl`).
++    const giornoProva = romeDay(new Date(nowMs));
++    const mikeArretratiGrezzo = (mike as { arretrati_prova?: unknown } | null)?.arretrati_prova;
++    const provaPerBot = useMemo(() => {
+         const giornoDi = (iso: string | null | undefined): string => {
+             const ms = iso ? Date.parse(iso) : NaN;
+             return Number.isFinite(ms) ? romeDay(new Date(ms)) : '';
+         };
++        const opz = { oggi: giornoProva, giornoDi };
++        return {
++            giornoDi,
++            omega: provaPerGiornoPartita(omegaTrades as unknown as RigaTradeProva[], { ...opz, sport: 'calcio' }),
++            safe: provaPerGiornoPartita((safe?.trades ?? []) as unknown as RigaTradeProva[], opz),
++            mike: provaPerGiornoPartita((mike?.trades ?? []) as unknown as RigaTradeProva[], { ...opz, sport: 'calcio' }),
++            mikeArretrati: leggiArretratiProva(mikeArretratiGrezzo, giornoProva),
++        };
++    }, [giornoProva, omegaTrades, safe?.trades, mike?.trades, mikeArretratiGrezzo]);
++    const provaOggi = useMemo<ProvaGiornata | null>(() => {
++        if (!soldiLetti) return null;
+         return provaGiornata({
+-            oggi, giornoDi,
+-            omega: omegaTrades as unknown as RigaTradeProva[],
+-            safe: (safe?.trades ?? []) as unknown as RigaTradeProva[],
+-            mike: (mike?.trades ?? []) as unknown as RigaTradeProva[],
+-            mikeArretrati: leggiArretratiProva(
+-                (mike as { arretrati_prova?: unknown } | null)?.arretrati_prova, oggi),
++            oggi: giornoProva, giornoDi: provaPerBot.giornoDi,
++            omega: [], safe: [], mike: [],
++            precalcolati: { omega: provaPerBot.omega, safe: provaPerBot.safe, mike: provaPerBot.mike },
++            mikeArretrati: provaPerBot.mikeArretrati,
+             tennisPaper: tennisOggiPaper,
+         });
+-    }, [soldiLetti, nowMs, omegaTrades, safe?.trades, mike, tennisOggiPaper]);
++    }, [soldiLetti, giornoProva, provaPerBot, tennisOggiPaper]);
+ 
+     /** Task 2 — salva l'obiettivo di oggi (RPC gia' pronta, verificata: fa
+      *  `coalesce` su `params`/`mode`, non li tocca). */
+@@ -2594,14 +2607,8 @@ export function useControlRoom(): ControlRoomVM {
+         // arretrati (partite di giorni precedenti regolate oggi) a parte, con la
+         // STESSA regola e fonte della corsia PROVA (`lib/provaGiornata.ts`). Il
+         // LIVE resta per giorno di regolamento (Posizioni chiuse), invariato.
+-        const giornoDi = (iso: string | null | undefined): string => {
+-            const ms = iso ? Date.parse(iso) : NaN;
+-            return Number.isFinite(ms) ? romeDay(new Date(ms)) : '';
+-        };
+-        const opz = { oggi: giorno, giornoDi };
+-        const pOmega = provaPerGiornoPartita(omegaTrades as unknown as RigaTradeProva[], { ...opz, sport: 'calcio' });
+-        const pMike = provaPerGiornoPartita((mike?.trades ?? []) as unknown as RigaTradeProva[], { ...opz, sport: 'calcio' });
+-        const pSafe = provaPerGiornoPartita((safe?.trades ?? []) as unknown as RigaTradeProva[], opz);
++        // R_G: i gruppi per bot calcolati UNA volta per giorno/dato (`provaPerBot`)
++        const { omega: pOmega, mike: pMike, safe: pSafe } = provaPerBot;
+         // Mike: gli arretrati SOLO dalla chiave del backend (vedi `provaOggi`);
+         // non letti = nessuna riga di arretrati nella plancia (lo dice la corsia PROVA)
+         const arretratiMike = provaOggi?.voci.find((v) => v.chiave === 'mike')?.arretrati ?? null;
+@@ -2628,7 +2635,7 @@ export function useControlRoom(): ControlRoomVM {
+             }
+             return b;
+         });
+-    }, [bots, chiuse, nowMs, omegaTrades, mike?.trades, safe?.trades, provaOggi]);
++    }, [bots, chiuse, nowMs, provaPerBot, provaOggi]);
+ 
+     /**
+      * Quanto vale chiudere ADESSO, con la matematica condivisa del green-up.
+diff --git a/frontend/src/lib/giornataCorsie.test.ts b/frontend/src/lib/giornataCorsie.test.ts
+index 6df2140..7041585 100644
+--- a/frontend/src/lib/giornataCorsie.test.ts
++++ b/frontend/src/lib/giornataCorsie.test.ts
+@@ -71,6 +71,20 @@ describe('corsiePerSport - ogni bot nella corsia della sua modalita\'', () => {
+         expect(cp.calcio.live).toEqual([]);
+     });
+ 
++    it('R_G: scalper spento con `modalitaUltima`: nella corsia di quell\'ultimo modo, dichiarato; null resta ignota', () => {
++        const conUltimo = OGGI.map((b) => (b.bot === 'scalper' ? { ...b, modalitaUltima: 'paper' as const } : b));
++        const c = corsiePerSport(conUltimo);
++        expect(c.calcio.prova.find((v) => v.chiave === 'scalper')).toEqual(
++            { chiave: 'scalper', nome: 'Scalper calcio', modalita: 'paper', acceso: false, ultimoModo: true });
++        expect(c.calcio.ignote).toEqual([]);
++        // senza ultimo modo resta fra le ignote
++        const senza = corsiePerSport(OGGI.map((b) => (b.bot === 'scalper' ? { ...b, modalitaUltima: null } : b)));
++        expect(senza.calcio.ignote.map((v) => v.chiave)).toEqual(['scalper']);
++        // una modalita' dichiarata vince sempre sull'ultima
++        const dich = corsiePerSport(OGGI.map((b) => (b.bot === 'mike' ? { ...b, modalitaUltima: 'paper' as const } : b)));
++        expect(dich.calcio.live.map((v) => v.chiave)).toEqual(['mike']);
++    });
++
+     it('modalita\' non dichiarata o riga assente: ignota, MAI prova', () => {
+         const c = corsiePerSport([{ bot: 'omega', modalita: null, inCorsa: true, varianti: null, modiStrategia: null }]);
+         expect(c.calcio.ignote.map((v) => v.chiave)).toEqual(['omega', 'safe-base', 'safe-esatto', 'safe-punta', 'mike', 'scalper']);
+diff --git a/frontend/src/lib/giornataCorsie.ts b/frontend/src/lib/giornataCorsie.ts
+index 32d6db6..2b839aa 100644
+--- a/frontend/src/lib/giornataCorsie.ts
++++ b/frontend/src/lib/giornataCorsie.ts
+@@ -22,6 +22,8 @@ export interface BotPerCorsie {
+     inCorsa: boolean;
+     varianti?: string[] | null;
+     modiStrategia?: Record<string, 'paper' | 'live'> | null;
++    /** 30/09 (R_G): la modalita' dell'interruttore da SPENTO (solo lo scalper calcio la valorizza) */
++    modalitaUltima?: 'paper' | 'live' | null;
+ }
+ 
+ /** Una voce della tessera: un bot (o una strategia di Safe). */
+@@ -33,6 +35,8 @@ export interface VoceCorsia {
+     modalita: 'paper' | 'live' | null;
+     /** true = sta operando; false = fermo/spento; null = riga del bot non letta */
+     acceso: boolean | null;
++    /** 30/09 (R_G): la modalita' e' l'ULTIMA dell'interruttore (bot spento), non quella in corso */
++    ultimoModo?: boolean;
+ }
+ 
+ export interface CorsieSport {
+@@ -87,7 +91,10 @@ function corsieDi(elenco: typeof CALCIO, bots: readonly BotPerCorsie[]): CorsieS
+         const b = bots.find((x) => x.bot === d.bot) ?? null;
+         const stato = d.variante != null
+             ? voceSafe(b, d.variante)
+-            : b == null ? { modalita: null, acceso: null } : { modalita: b.modalita, acceso: b.inCorsa };
++            : b == null ? { modalita: null, acceso: null }
++                : b.modalita == null && b.modalitaUltima != null
++                    ? { modalita: b.modalitaUltima, acceso: b.inCorsa, ultimoModo: true }
++                    : { modalita: b.modalita, acceso: b.inCorsa };
+         const voce: VoceCorsia = { chiave: d.chiave, nome: d.nome, ...stato };
+         if (voce.modalita === 'live') {
+             out.live.push(voce);
+@@ -105,3 +112,26 @@ function corsieDi(elenco: typeof CALCIO, bots: readonly BotPerCorsie[]): CorsieS
+ export function corsiePerSport(bots: readonly BotPerCorsie[]): Record<SportCorsie, CorsieSport> {
+     return { calcio: corsieDi(CALCIO, bots), tennis: corsieDi(TENNIS, bots) };
+ }
++
++/**
++ * 30/09 (R_G) - la modalita' CORRENTE di ogni voce della corsia PROVA del
++ * riquadro (chiavi di `lib/provaGiornata.ts`): 'live' solo se TUTTE le sue
++ * strategie sono in LIVE adesso; mista o ignota = null (nessuna scritta).
++ */
++export function modalitaVociProva(bots: readonly BotPerCorsie[]):
++    Record<'omega' | 'mike' | 'safe_calcio' | 'safe_tennis', 'paper' | 'live' | null> {
++    const c = corsiePerSport(bots);
++    const tutte = [...c.calcio.live, ...c.calcio.prova, ...c.calcio.ignote,
++        ...c.tennis.live, ...c.tennis.prova, ...c.tennis.ignote];
++    const di = (chiavi: string[]): 'paper' | 'live' | null => {
++        const v = tutte.filter((x) => chiavi.includes(x.chiave));
++        if (v.length === 0) return null;
++        if (v.every((x) => x.modalita === 'live' && !x.ultimoModo)) return 'live';
++        if (v.every((x) => x.modalita === 'paper')) return 'paper';
++        return null;
++    };
++    return {
++        omega: di(['omega']), mike: di(['mike']),
++        safe_calcio: di(['safe-base', 'safe-esatto', 'safe-punta']), safe_tennis: di(['safe-tennis']),
++    };
++}
+diff --git a/frontend/src/lib/provaGiornata.ts b/frontend/src/lib/provaGiornata.ts
+index 78dab3d..157663c 100644
+--- a/frontend/src/lib/provaGiornata.ts
++++ b/frontend/src/lib/provaGiornata.ts
+@@ -288,11 +288,21 @@ export function provaGiornata(input: {
+     mike: readonly RigaTradeProva[] | null;
+     mikeArretrati: readonly RigaTradeProva[] | null;
+     tennisPaper: readonly TennisProvaGiorno[] | null;
++    /**
++     * 30/09 (R_G) - i gruppi per bot GIA' calcolati con `provaPerGiornoPartita`
++     * (stesso giorno): se presenti si usano al posto di ricalcolarli dalle righe.
++     */
++    precalcolati?: {
++        omega: ReturnType<typeof provaPerGiornoPartita>;
++        safe: ReturnType<typeof provaPerGiornoPartita>;
++        mike: ReturnType<typeof provaPerGiornoPartita>;
++    };
+ }): ProvaGiornata {
+     const o = { oggi: input.oggi, giornoDi: input.giornoDi };
+-    const omega = input.omega ? provaPerGiornoPartita(input.omega, { ...o, sport: 'calcio' }) : null;
+-    const safe = input.safe ? provaPerGiornoPartita(input.safe, o) : null;
+-    const mike = input.mike ? provaPerGiornoPartita(input.mike, { ...o, sport: 'calcio' }) : null;
++    const pre = input.precalcolati;
++    const omega = pre ? pre.omega : input.omega ? provaPerGiornoPartita(input.omega, { ...o, sport: 'calcio' }) : null;
++    const safe = pre ? pre.safe : input.safe ? provaPerGiornoPartita(input.safe, o) : null;
++    const mike = pre ? pre.mike : input.mike ? provaPerGiornoPartita(input.mike, { ...o, sport: 'calcio' }) : null;
+     const di = (s: SportProva) => (r: RigaProva) => String(r.sport ?? '').toLowerCase() === s;
+ 
+     // Mike: la RPC principale porta solo le righe di oggi (o aperte): i suoi
+diff --git a/frontend/src/pages/ControlRoom.test.tsx b/frontend/src/pages/ControlRoom.test.tsx
+index 00fdd49..3b5c569 100644
+--- a/frontend/src/pages/ControlRoom.test.tsx
++++ b/frontend/src/pages/ControlRoom.test.tsx
+@@ -922,6 +922,35 @@ describe('la pagina non mostra MAI un numero che somma paper e live', () => {
+             .toMatch(/per giorno di regolamento/);
+     });
+ 
++    it('R_G: nel riquadro Obiettivo niente liability LORDA e niente «in corso (stimato)»; la barra avanza col solo realizzato', () => {
++        mVm.mockReturnValue(vm({
++            obiettivo: 100,
++            totali: { ...vm().totali, liability: 39.15 },
++            soldiGiornata: { ...vm().soldiGiornata, realizzato: 50, inCorso: 30 },
++        }));
++        const s = mostra();
++        const hero = s.getByTestId('cr-obiettivo');
++        expect(hero.textContent).not.toContain('39,15');
++        expect(hero.textContent).not.toMatch(/Liability aperta/);
++        expect(hero.textContent).not.toMatch(/in corso \(stimato\)/);
++        expect(within(hero).queryByTestId('day-bar-in-corso')).toBeNull();
++        expect(within(hero).getByRole('progressbar').getAttribute('aria-valuenow')).toBe('50');
++        expect(hero.textContent).toMatch(/rischio adesso: vedi «Esposizione conto» in testata/);
++        expect(hero.textContent).toMatch(/Cash out della partita/);
++    });
++
++    it('R_G: Mike ORA in LIVE senza prova di oggi -> «— (ora in LIVE)», mai «+0,00 [PROVA]»; arretrati invariati', () => {
++        const bots = vm().bots.map((b) => (b.bot === 'mike' ? { ...b, modalita: 'live' as const } : b));
++        mVm.mockReturnValue(vm({ bots, soldiGiornata: soldiP8(), provaGiornata: provaOggi('letti') }));
++        const s = mostra();
++        const oggi = s.getByTestId('cr-prova-mike-oggi').textContent ?? '';
++        expect(oggi).toContain('(ora in LIVE)');
++        expect(oggi).not.toContain('0,00');
++        expect(s.getByTestId('cr-prova-mike-arretrati').textContent).toBe('−18,29 € (2 partite del 26/09)');
++        // Safe resta in prova: la sua cifra di oggi resta
++        expect(s.getByTestId('cr-prova-safe_calcio-oggi').textContent).toContain('+0,00');
++    });
++
+     it('P8: arretrati di Mike non letti -> lo dice, mai 0,00 e mai silenzio', () => {
+         mVm.mockReturnValue(vm({ soldiGiornata: soldiP8(), provaGiornata: provaOggi('non letti') }));
+         const s = mostra();
+diff --git a/frontend/src/pages/ControlRoom.tsx b/frontend/src/pages/ControlRoom.tsx
+index 6e33223..a56c845 100644
+--- a/frontend/src/pages/ControlRoom.tsx
++++ b/frontend/src/pages/ControlRoom.tsx
+@@ -31,7 +31,7 @@ import { EmptyState } from '@/components/trading/EmptyState';
+ import type { DayBarProps } from '@/components/trading/DayBar';
+ import { ModeBanner } from '@/components/trading/ModeBanner';
+ import { SplitSport, type SportKey } from '@/components/controlroom/SplitSport';
+-import { corsiePerSport } from '@/lib/giornataCorsie';
++import { corsiePerSport, modalitaVociProva } from '@/lib/giornataCorsie';
+ import { etaContoS } from '@/lib/composizioneConto';
+ import { SchedaPartita } from '@/components/controlroom/SchedaPartita';
+ import { ObiettivoHero } from '@/components/controlroom/ObiettivoHero';
+@@ -486,7 +486,7 @@ export default function ControlRoom() {
+         <PageShell
+             title="Control Room"
+             header={<Testata vm={vm} inLive={inLive} />}
+-            footer="I numeri vengono dai tre servizi: il P&L è il netto di commissione che scrive il servizio, il target per partita lo calcola Omega. Questa pagina non ricalcola nulla."
++            footer="Fonti: esposizione e realizzato con soldi veri dal conto Betfair; righe, posizioni e prova dai servizi dei bot; le cifre calcolate dalla pagina (cash out ai prezzi di adesso, scarto conto/bot, target di ripiego) sono marcate STIMA."
+         >
+             {/* MODALITA' — role="alert" e le parole del design system, non un
+                 riquadro fatto a mano. Dice QUALI strategie usano soldi veri. */}
+@@ -523,14 +523,19 @@ export default function ControlRoom() {
+                         realized: vm.soldiGiornata.realizzato,
+                         // 24/09 - parte stimata del realizzato e posizioni vive ("se chiudo ora")
+                         realizedEstimated: vm.soldiGiornata.realizzatoStimato,
+-                        inProgress: vm.soldiGiornata.inCorso,
++                        // 30/09 (R_G): la stima per RIGA («in corso») non si mostra:
++                        // contava da aperte partite gia' pareggiate e taceva le righe
++                        // senza prezzo. Il valore vero e' per partita, nella scheda.
++                        inProgress: null,
+                         goal: vm.obiettivo,
+                         matches: vm.totali.partite,
+                         operations: vm.soldiGiornata.operazioni,
+                         won: vm.soldiGiornata.vinte,
+                         lost: vm.soldiGiornata.perse,
+                         live: vm.totali.conPosizioneLive,
+-                        openLiability: vm.totali.letti ? vm.totali.liability : null,
++                        // 30/09 (R_G): la «Liability aperta» LORDA (somma per riga) non
++                        // e' il rischio vero: il rischio si legge dal conto, in testata
++                        openLiability: null,
+                         note: [
+                             vm.obiettivoStoricizzato ? null : 'obiettivo non ancora storicizzato per oggi: \u00e8 quello corrente del servizio',
+                             vm.soldiGiornata.fonteReale === 'conto'
+@@ -538,6 +543,8 @@ export default function ControlRoom() {
+                                 : vm.soldiGiornata.fonteReale === 'righe'
+                                     ? 'conto Betfair non letto: P&L dalle righe dei bot'
+                                     : null,
++                            'rischio adesso: vedi «Esposizione conto» in testata',
++                            'valore delle posizioni aperte: per partita, nel riquadro «Cash out della partita» di ogni scheda',
+                         ].filter(Boolean).join(' - '),
+                         countsNote: ['Operazioni, vinte e perse: SOLO SOLDI VERI, sui tre bot e sui 4 bot tennis (conteggi reali). «Partite» invece è tutto il programma di oggi, comprese quelle su cui non si è operato.', vm.soldiGiornata.notaContatori].filter(Boolean).join(' '),
+                         ids: { day: 'cr-giornata-giorno', line: 'cr-giornata-riga' },
+@@ -546,6 +553,7 @@ export default function ControlRoom() {
+                     manualeSito={vm.manualeSitoBetfair}
+                     prova={vm.provaGiornata ?? null}
+                     contoEtaS={etaContoS(vm.contoLettoAt, vm.nowMs)}
++                    modalitaBot={modalitaVociProva(vm.bots)}
+                     onSalvaObiettivo={vm.salvaObiettivo}
+                     avvisoMotore={
+                         vm.bots.find((b) => b.bot === 'omega')?.inCorsa

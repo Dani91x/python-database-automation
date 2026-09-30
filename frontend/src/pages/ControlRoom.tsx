@@ -31,7 +31,7 @@ import { EmptyState } from '@/components/trading/EmptyState';
 import type { DayBarProps } from '@/components/trading/DayBar';
 import { ModeBanner } from '@/components/trading/ModeBanner';
 import { SplitSport, type SportKey } from '@/components/controlroom/SplitSport';
-import { corsiePerSport } from '@/lib/giornataCorsie';
+import { corsiePerSport, modalitaVociProva } from '@/lib/giornataCorsie';
 import { etaContoS } from '@/lib/composizioneConto';
 import { SchedaPartita } from '@/components/controlroom/SchedaPartita';
 import { ObiettivoHero } from '@/components/controlroom/ObiettivoHero';
@@ -491,7 +491,7 @@ export default function ControlRoom() {
         <PageShell
             title="Control Room"
             header={<Testata vm={vm} inLive={inLive} />}
-            footer="I numeri vengono dai tre servizi: il P&L è il netto di commissione che scrive il servizio, il target per partita lo calcola Omega. Questa pagina non ricalcola nulla."
+            footer="Fonti: esposizione e realizzato con soldi veri dal conto Betfair; righe, posizioni e prova dai servizi dei bot; le cifre calcolate dalla pagina (cash out ai prezzi di adesso, scarto conto/bot, target di ripiego) sono marcate STIMA."
         >
             {/* MODALITA' — role="alert" e le parole del design system, non un
                 riquadro fatto a mano. Dice QUALI strategie usano soldi veri. */}
@@ -528,14 +528,19 @@ export default function ControlRoom() {
                         realized: vm.soldiGiornata.realizzato,
                         // 24/09 - parte stimata del realizzato e posizioni vive ("se chiudo ora")
                         realizedEstimated: vm.soldiGiornata.realizzatoStimato,
-                        inProgress: vm.soldiGiornata.inCorso,
+                        // 30/09 (R_G): la stima per RIGA («in corso») non si mostra:
+                        // contava da aperte partite gia' pareggiate e taceva le righe
+                        // senza prezzo. Il valore vero e' per partita, nella scheda.
+                        inProgress: null,
                         goal: vm.obiettivo,
                         matches: vm.totali.partite,
                         operations: vm.soldiGiornata.operazioni,
                         won: vm.soldiGiornata.vinte,
                         lost: vm.soldiGiornata.perse,
                         live: vm.totali.conPosizioneLive,
-                        openLiability: vm.totali.letti ? vm.totali.liability : null,
+                        // 30/09 (R_G): la «Liability aperta» LORDA (somma per riga) non
+                        // e' il rischio vero: il rischio si legge dal conto, in testata
+                        openLiability: null,
                         note: [
                             vm.obiettivoStoricizzato ? null : 'obiettivo non ancora storicizzato per oggi: \u00e8 quello corrente del servizio',
                             vm.soldiGiornata.fonteReale === 'conto'
@@ -543,6 +548,8 @@ export default function ControlRoom() {
                                 : vm.soldiGiornata.fonteReale === 'righe'
                                     ? 'conto Betfair non letto: P&L dalle righe dei bot'
                                     : null,
+                            'rischio adesso: vedi «Esposizione conto» in testata',
+                            'valore delle posizioni aperte: per partita, nel riquadro «Cash out della partita» di ogni scheda',
                         ].filter(Boolean).join(' - '),
                         countsNote: ['Operazioni, vinte e perse: SOLO SOLDI VERI, sui tre bot e sui 4 bot tennis (conteggi reali). «Partite» invece è tutto il programma di oggi, comprese quelle su cui non si è operato.', vm.soldiGiornata.notaContatori].filter(Boolean).join(' '),
                         ids: { day: 'cr-giornata-giorno', line: 'cr-giornata-riga' },
@@ -551,6 +558,7 @@ export default function ControlRoom() {
                     manualeSito={vm.manualeSitoBetfair}
                     prova={vm.provaGiornata ?? null}
                     contoEtaS={etaContoS(vm.contoLettoAt, vm.nowMs)}
+                    modalitaBot={modalitaVociProva(vm.bots)}
                     onSalvaObiettivo={vm.salvaObiettivo}
                     avvisoMotore={
                         vm.bots.find((b) => b.bot === 'omega')?.inCorsa
@@ -950,7 +958,7 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
                     conto, 30/09) non compare piu'. Mai 0,00 per un dato non
                     letto: «—» e il motivo. */}
                 <FasciaSoldiVeri s={vm.soldiVeri} />
-                <Freni stop={vm.stopPerdita} />
+                <Freni stop={vm.stopPerdita} qualcheBotLive={vm.bots.some((b) => b.modalita === 'live')} />
                 <Runner r={vm.runner} fonte={vm.fonteRunner} />
                 <Runner r={vm.runnerTennis} fonte={vm.fonteRunnerTennis} tennis />
 
@@ -1087,10 +1095,13 @@ function Runner({ r, fonte, tennis = false }: {
 // P4 (30/09) - «Stop perdita −50,00» era lo stop di SAFE presentato come se
 // fosse l'unico: adesso il contenitore `cr-freni` porta lo stop del CONTO e
 // quello di ogni bot, con modalita' e punto dove si modifica (`StopPerdita`).
-function Freni({ stop }: { stop: ReturnType<typeof useControlRoom>['stopPerdita'] | undefined }) {
+function Freni({ stop, qualcheBotLive }: {
+    stop: ReturnType<typeof useControlRoom>['stopPerdita'] | undefined;
+    qualcheBotLive: boolean;
+}) {
     return (
         <div className="flex flex-col" data-testid="cr-freni">
-            <StopPerdita stop={stop} />
+            <StopPerdita stop={stop} qualcheBotLive={qualcheBotLive} />
         </div>
     );
 }

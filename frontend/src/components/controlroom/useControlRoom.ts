@@ -2287,23 +2287,36 @@ export function useControlRoom(): ControlRoomVM {
      * dalla chiave `arretrati_prova` di `get_mike_state` (backend): assente =
      * «non letti», dichiarato. `null` = trade non ancora letti.
      */
-    const provaOggi = useMemo<ProvaGiornata | null>(() => {
-        if (!soldiLetti) return null;
-        const oggi = romeDay(new Date(nowMs));
+    // 30/09 (R_G, prestazioni): i memo della prova dipendono dalla STRINGA del
+    // giorno (identica per tutto il giorno), non da `nowMs` che cambia ogni
+    // secondo; e il raggruppamento per bot si fa UNA volta, riusato dalla
+    // corsia PROVA e dalla plancia (`botsConPnl`).
+    const giornoProva = romeDay(new Date(nowMs));
+    const mikeArretratiGrezzo = (mike as { arretrati_prova?: unknown } | null)?.arretrati_prova;
+    const provaPerBot = useMemo(() => {
         const giornoDi = (iso: string | null | undefined): string => {
             const ms = iso ? Date.parse(iso) : NaN;
             return Number.isFinite(ms) ? romeDay(new Date(ms)) : '';
         };
+        const opz = { oggi: giornoProva, giornoDi };
+        return {
+            giornoDi,
+            omega: provaPerGiornoPartita(omegaTrades as unknown as RigaTradeProva[], { ...opz, sport: 'calcio' }),
+            safe: provaPerGiornoPartita((safe?.trades ?? []) as unknown as RigaTradeProva[], opz),
+            mike: provaPerGiornoPartita((mike?.trades ?? []) as unknown as RigaTradeProva[], { ...opz, sport: 'calcio' }),
+            mikeArretrati: leggiArretratiProva(mikeArretratiGrezzo, giornoProva),
+        };
+    }, [giornoProva, omegaTrades, safe?.trades, mike?.trades, mikeArretratiGrezzo]);
+    const provaOggi = useMemo<ProvaGiornata | null>(() => {
+        if (!soldiLetti) return null;
         return provaGiornata({
-            oggi, giornoDi,
-            omega: omegaTrades as unknown as RigaTradeProva[],
-            safe: (safe?.trades ?? []) as unknown as RigaTradeProva[],
-            mike: (mike?.trades ?? []) as unknown as RigaTradeProva[],
-            mikeArretrati: leggiArretratiProva(
-                (mike as { arretrati_prova?: unknown } | null)?.arretrati_prova, oggi),
+            oggi: giornoProva, giornoDi: provaPerBot.giornoDi,
+            omega: [], safe: [], mike: [],
+            precalcolati: { omega: provaPerBot.omega, safe: provaPerBot.safe, mike: provaPerBot.mike },
+            mikeArretrati: provaPerBot.mikeArretrati,
             tennisPaper: tennisOggiPaper,
         });
-    }, [soldiLetti, nowMs, omegaTrades, safe?.trades, mike, tennisOggiPaper]);
+    }, [soldiLetti, giornoProva, provaPerBot, tennisOggiPaper]);
 
     /** Task 2 — salva l'obiettivo di oggi (RPC gia' pronta, verificata: fa
      *  `coalesce` su `params`/`mode`, non li tocca). */
@@ -2666,14 +2679,8 @@ export function useControlRoom(): ControlRoomVM {
         // arretrati (partite di giorni precedenti regolate oggi) a parte, con la
         // STESSA regola e fonte della corsia PROVA (`lib/provaGiornata.ts`). Il
         // LIVE resta per giorno di regolamento (Posizioni chiuse), invariato.
-        const giornoDi = (iso: string | null | undefined): string => {
-            const ms = iso ? Date.parse(iso) : NaN;
-            return Number.isFinite(ms) ? romeDay(new Date(ms)) : '';
-        };
-        const opz = { oggi: giorno, giornoDi };
-        const pOmega = provaPerGiornoPartita(omegaTrades as unknown as RigaTradeProva[], { ...opz, sport: 'calcio' });
-        const pMike = provaPerGiornoPartita((mike?.trades ?? []) as unknown as RigaTradeProva[], { ...opz, sport: 'calcio' });
-        const pSafe = provaPerGiornoPartita((safe?.trades ?? []) as unknown as RigaTradeProva[], opz);
+        // R_G: i gruppi per bot calcolati UNA volta per giorno/dato (`provaPerBot`)
+        const { omega: pOmega, mike: pMike, safe: pSafe } = provaPerBot;
         // Mike: gli arretrati SOLO dalla chiave del backend (vedi `provaOggi`);
         // non letti = nessuna riga di arretrati nella plancia (lo dice la corsia PROVA)
         const arretratiMike = provaOggi?.voci.find((v) => v.chiave === 'mike')?.arretrati ?? null;
@@ -2700,7 +2707,7 @@ export function useControlRoom(): ControlRoomVM {
             }
             return b;
         });
-    }, [bots, chiuse, nowMs, omegaTrades, mike?.trades, safe?.trades, provaOggi]);
+    }, [bots, chiuse, nowMs, provaPerBot, provaOggi]);
 
     /**
      * Quanto vale chiudere ADESSO, con la matematica condivisa del green-up.

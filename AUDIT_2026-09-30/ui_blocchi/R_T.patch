@@ -1,0 +1,241 @@
+diff --git a/frontend/src/components/controlroom/testata/FasciaSoldiVeri.test.tsx b/frontend/src/components/controlroom/testata/FasciaSoldiVeri.test.tsx
+index 47701b2..8b7c694 100644
+--- a/frontend/src/components/controlroom/testata/FasciaSoldiVeri.test.tsx
++++ b/frontend/src/components/controlroom/testata/FasciaSoldiVeri.test.tsx
+@@ -110,6 +110,18 @@ describe('FasciaSoldiVeri - dati mancanti: mai una cifra inventata', () => {
+         expect(screen.queryByTestId('cr-scarto-conto-bot')).toBeNull();
+     });
+ 
++    it('R_T: numero del bot stantio (liability_stale del servizio): detto A SCHERMO in ambra, non solo nel title', () => {
++        render(<FasciaSoldiVeri s={soldi({ stati: { ...STATI, mike: { aggregates: { mode: 'live', open_liability: 16.22, liability_stale: true } } } })} />);
++        const el = screen.getByTestId('cr-rischio-bot-stantio');
++        expect(el.textContent).toMatch(/dato del bot non aggiornato \(Mike\)/);
++        expect(el.className).toMatch(/amber/);
++    });
++
++    it('R_T: numero fresco: nessun avviso di stantio', () => {
++        render(<FasciaSoldiVeri s={soldi()} />);
++        expect(screen.queryByTestId('cr-rischio-bot-stantio')).toBeNull();
++    });
++
+     it('saldo nascosto con l\'occhio della card: nascosto anche qui', () => {
+         window.localStorage.setItem(CHIAVE_SALDO_NASCOSTO, '1');
+         render(<FasciaSoldiVeri s={soldi()} />);
+diff --git a/frontend/src/components/controlroom/testata/FasciaSoldiVeri.tsx b/frontend/src/components/controlroom/testata/FasciaSoldiVeri.tsx
+index 952d2d6..a116163 100644
+--- a/frontend/src/components/controlroom/testata/FasciaSoldiVeri.tsx
++++ b/frontend/src/components/controlroom/testata/FasciaSoldiVeri.tsx
+@@ -67,6 +67,9 @@ export function FasciaSoldiVeri({ s }: { s: SoldiVeriTestata | undefined }) {
+             ? `stima parziale: manca ${mancanti.map((v) => BOT_LABEL[v.bot]).join(', ')}`
+             : 'solo LIVE, per partita';
+ 
++    // R_T (30/09): un numero stantio (dichiarato dal servizio) si dice A SCHERMO
++    const stantii = voci.filter((v) => v.stantio === true && v.valore != null);
++
+     const scarto = s?.scarto ?? null;
+ 
+     return (
+@@ -113,6 +116,12 @@ export function FasciaSoldiVeri({ s }: { s: SoldiVeriTestata | undefined }) {
+                 <Etichetta>Rischio secondo i bot</Etichetta>
+                 <span className="font-mono text-sm font-semibold tabular-nums text-white/80"
+                     data-testid="cr-rischio-bot-valore">{valoreBot}</span>
++                {stantii.length > 0 && (
++                    <span className="text-[9.5px] leading-tight text-amber-300" data-testid="cr-rischio-bot-stantio"
++                        title={`il servizio dichiara il numero stantio (battito oltre 60 s): ${stantii.map((v) => BOT_LABEL[v.bot]).join(', ')}`}>
++                        dato del bot non aggiornato ({stantii.map((v) => BOT_LABEL[v.bot]).join(', ')})
++                    </span>
++                )}
+                 <span className="flex items-center gap-1 text-[9.5px] leading-tight">
+                     <MarchioSoldi fonte="bot" etaS={s == null ? undefined : s.etaBotS}
+                         testId="cr-rischio-bot-marchio"
+diff --git a/frontend/src/components/controlroom/testata/FasciaStop.test.tsx b/frontend/src/components/controlroom/testata/FasciaStop.test.tsx
+index ceda46c..66ea8d2 100644
+--- a/frontend/src/components/controlroom/testata/FasciaStop.test.tsx
++++ b/frontend/src/components/controlroom/testata/FasciaStop.test.tsx
+@@ -130,6 +130,35 @@ describe('StopPerdita - a schermo', () => {
+     });
+ });
+ 
++describe('R_T (30/09) - review finale', () => {
++    it('Omega: la soglia NON e\' presentata come armata: "scatto non pubblicato"; Safe e Mike no', () => {
++        mostra({ conto: stopDelConto(RIGA_OGGI, NOW), bot: bot() });
++        expect(screen.getByTestId('cr-stop-omega').textContent).toMatch(/scatto non pubblicato/);
++        expect(screen.queryByTestId('cr-stop-safe-scatto')).toBeNull();
++        expect(screen.queryByTestId('cr-stop-mike-scatto')).toBeNull();
++    });
++    it('conto SPENTO con un bot in LIVE: ambra; tutti in paper: grigio (testo invariato)', () => {
++        mostra({ conto: stopDelConto(RIGA_OGGI, NOW), bot: bot() }); // Mike LIVE
++        const v = screen.getByTestId('cr-stop-conto-valore');
++        expect(v.textContent).toBe('SPENTO');
++        expect(v.className).toMatch(/amber/);
++    });
++    it('conto SPENTO, tutti in paper: nessuna ambra', () => {
++        render(<MemoryRouter><StopPerdita stop={{ conto: stopDelConto(RIGA_OGGI, NOW), bot: bot({ mike: { modalita: 'paper', params: { daily_loss_stop: 50 }, stats: null } }) }} qualcheBotLive={false} /></MemoryRouter>);
++        expect(screen.getByTestId('cr-stop-conto-valore').className).not.toMatch(/amber/);
++    });
++    it('un bot LIVE fuori dai tre (tennis) accende l\'ambra tramite qualcheBotLive', () => {
++        render(<MemoryRouter><StopPerdita stop={{ conto: stopDelConto(RIGA_OGGI, NOW), bot: bot({ mike: { modalita: 'paper', params: { daily_loss_stop: 50 }, stats: null } }) }} qualcheBotLive /></MemoryRouter>);
++        expect(screen.getByTestId('cr-stop-conto-valore').className).toMatch(/amber/);
++    });
++    it('tennis e scalper: "stop proprio non pubblicato", mai "nessuno stop"', () => {
++        mostra({ conto: stopDelConto(RIGA_OGGI, NOW), bot: bot() });
++        const el = screen.getByTestId('cr-stop-altri');
++        expect(el.textContent).toMatch(/Tennis, Scalper: stop proprio non pubblicato/);
++        expect(el.textContent).not.toMatch(/nessuno/);
++    });
++});
++
+ describe('vaiAllaRigaDelBot - porta alla riga, mette il fuoco sul foglio, non lo apre', () => {
+     it('riga presente: fuoco sul primo pulsante del foglio parametri del bot, nessun clic', () => {
+         document.body.innerHTML = `
+diff --git a/frontend/src/components/controlroom/testata/FasciaStop.tsx b/frontend/src/components/controlroom/testata/FasciaStop.tsx
+index b077ebe..e1b3b2e 100644
+--- a/frontend/src/components/controlroom/testata/FasciaStop.tsx
++++ b/frontend/src/components/controlroom/testata/FasciaStop.tsx
+@@ -46,20 +46,37 @@ function ValoreBot({ s }: { s: StopBot }) {
+         return <span className="text-orange-400">{s.bot === 'safe' ? 'assente' : 'non letto'}</span>;
+     }
+     if (s.soglia === 0) return <span className="text-white/50">spento</span>;
+-    return <span className="text-white/90">{fmtMoney(-s.soglia)}</span>;
++    return (
++        <>
++            <span className="text-white/90">{fmtMoney(-s.soglia)}</span>
++            {/* R_T (30/09): Omega non pubblica lo scatto: mai presentare la
++                soglia come "armata" */}
++            {!s.scattoPubblicato && (
++                <span className="text-white/40 font-sans text-[9.5px]" data-testid={`cr-stop-${s.bot}-scatto`}
++                    title={`${BOT_LABEL[s.bot]} non pubblica se il suo stop e' scattato (lo scrive solo nella sua attivita'): la soglia c'e', lo stato no`}>
++                    scatto non pubblicato
++                </span>
++            )}
++        </>
++    );
+ }
+ 
+-export function StopPerdita({ stop, vai = vaiAllaRigaDelBot }: {
++export function StopPerdita({ stop, vai = vaiAllaRigaDelBot, qualcheBotLive }: {
+     stop: StopPerditaTestata | undefined;
+     /** iniettabile per i test */
+     vai?: (bot: string) => boolean;
++    /** R_T (30/09): almeno un bot (qualunque, acceso o fermo) dichiara LIVE.
++     *  Assente = si guarda solo Safe/Mike/Omega. */
++    qualcheBotLive?: boolean;
+ }) {
+     const c = stop?.conto ?? null;
++    const live = qualcheBotLive ?? (stop?.bot ?? []).some((b) => b.modalita === 'live');
+     let contoTesto: string;
+     let contoCls = 'text-white/90';
+     if (c == null || !c.letto) { contoTesto = 'non letto'; contoCls = 'text-orange-400'; }
+     else if (c.scattato) { contoTesto = 'SCATTATO: freno generale tirato'; contoCls = 'text-red-400'; }
+-    else if (c.soglia == null) { contoTesto = 'SPENTO'; contoCls = 'text-white/60'; }
++    // R_T (30/09): nessun freno di conto con soldi veri in gioco = ambra
++    else if (c.soglia == null) { contoTesto = 'SPENTO'; contoCls = live ? 'text-amber-300' : 'text-white/60'; }
+     else contoTesto = fmtMoney(-c.soglia);
+ 
+     return (
+@@ -97,6 +114,12 @@ export function StopPerdita({ stop, vai = vaiAllaRigaDelBot }: {
+                         </button>
+                     </span>
+                 ))}
++                {/* R_T (30/09): tennis e scalper non pubblicano uno stop proprio
++                    che la pagina conosca: non si dice "nessuno stop" */}
++                <span className="text-white/35 font-sans text-[9.5px]" data-testid="cr-stop-altri"
++                    title="i 4 bot tennis e lo scalper calcio non pubblicano uno stop di perdita giornaliera che questa pagina possa leggere: non sappiamo se ne hanno uno">
++                    Tennis, Scalper: stop proprio non pubblicato
++                </span>
+             </span>
+         </div>
+     );
+diff --git a/frontend/src/components/controlroom/testata/soldiVeri.ts b/frontend/src/components/controlroom/testata/soldiVeri.ts
+index dd4f309..f95e0f4 100644
+--- a/frontend/src/components/controlroom/testata/soldiVeri.ts
++++ b/frontend/src/components/controlroom/testata/soldiVeri.ts
+@@ -147,6 +147,8 @@ export interface VoceRischio {
+     nota: string | null;
+     /** posizioni LIVE aperte del bot secondo le sue righe */
+     aperteLive: number;
++    /** R_T (30/09): il servizio dichiara il numero stantio (battito vecchio) */
++    stantio?: boolean;
+ }
+ 
+ export interface RischioBotLive {
+@@ -178,7 +180,7 @@ export function rischioBotLive(input: {
+         const d = liabilityLiveDichiarata(input.stati[bot], conta(bot, 'paper'));
+         if (d.valore != null) {
+             voci.push({
+-                bot, valore: r2(d.valore), aperteLive,
++                bot, valore: r2(d.valore), aperteLive, stantio: d.stantio,
+                 nota: d.stantio ? 'numero del servizio stantio (battito oltre 60 s)' : null,
+             });
+         } else if (aperteLive === 0) {
+diff --git a/frontend/src/components/controlroom/testata/stopPerdita.ts b/frontend/src/components/controlroom/testata/stopPerdita.ts
+index 05448c3..9dec396 100644
+--- a/frontend/src/components/controlroom/testata/stopPerdita.ts
++++ b/frontend/src/components/controlroom/testata/stopPerdita.ts
+@@ -73,6 +73,10 @@ export interface StopBot {
+     /** soglia di perdita in EUR (positiva); 0 = SPENTO; null = non letto */
+     soglia: number | null;
+     scattato: boolean;
++    /** R_T (30/09): false = il servizio NON pubblica se lo stop e' scattato
++     *  (Omega: solo l'attivita' `loss_stop`, non letta qui). `scattato` allora
++     *  non vale "armato": a schermo si dice "scatto non pubblicato". */
++    scattoPubblicato: boolean;
+     /** da dove viene il numero (per il tooltip) */
+     fonte: string;
+     /** dove si modifica (per il tooltip) */
+@@ -102,6 +106,7 @@ export function stopDeiBot(input: {
+         letto: sStop != null,
+         soglia: sStop == null ? null : Math.abs(sStop),
+         scattato: s?.loss_stop_active === true,
++        scattoPubblicato: true,
+         fonte: 'dichiarato dal servizio di Safe (stats.risk.daily_loss_stop)',
+         dove: 'Comando dei bot, riga Safe: parametri, \u00abStop perdita giornaliera \u20ac\u00bb',
+     });
+@@ -115,6 +120,7 @@ export function stopDeiBot(input: {
+         letto: mStop != null,
+         soglia: mStop == null ? null : Math.max(0, mStop),
+         scattato: input.mike.stats?.daily_stop === true,
++        scattoPubblicato: true,
+         fonte: mikeLetto && mp.daily_loss_stop == null
+             ? 'parametro daily_loss_stop non scritto: valore predefinito del servizio'
+             : 'parametro daily_loss_stop di Mike',
+@@ -139,7 +145,10 @@ export function stopDeiBot(input: {
+         bot: 'omega', modalita: input.omega.modalita,
+         letto: oStop != null,
+         soglia: oStop == null ? null : Math.max(0, oStop),
++        // Omega non pubblica lo stato dello scatto (omega_service.py:1850-1851
++        // scrive solo l'attivita' `loss_stop`): non si afferma "armato"
+         scattato: false,
++        scattoPubblicato: false,
+         fonte: `parametro ${chiave} di Omega (motore ${chiave === 'daily_loss_cap' ? 'v2' : 'v3'})`,
+         dove: chiave === 'daily_loss_cap'
+             ? 'Comando dei bot, riga Omega: parametri, \u00abStop-loss giornaliero (\u20ac)\u00bb'
+diff --git a/frontend/src/pages/ControlRoom.tsx b/frontend/src/pages/ControlRoom.tsx
+index 278ab76..5bb4bdc 100644
+--- a/frontend/src/pages/ControlRoom.tsx
++++ b/frontend/src/pages/ControlRoom.tsx
+@@ -968,7 +968,7 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
+                     conto, 30/09) non compare piu'. Mai 0,00 per un dato non
+                     letto: «—» e il motivo. */}
+                 <FasciaSoldiVeri s={vm.soldiVeri} />
+-                <Freni stop={vm.stopPerdita} />
++                <Freni stop={vm.stopPerdita} qualcheBotLive={vm.bots.some((b) => b.modalita === 'live')} />
+                 <Runner r={vm.runner} fonte={vm.fonteRunner} />
+                 <Runner r={vm.runnerTennis} fonte={vm.fonteRunnerTennis} tennis />
+ 
+@@ -1105,10 +1105,13 @@ function Runner({ r, fonte, tennis = false }: {
+ // P4 (30/09) - «Stop perdita −50,00» era lo stop di SAFE presentato come se
+ // fosse l'unico: adesso il contenitore `cr-freni` porta lo stop del CONTO e
+ // quello di ogni bot, con modalita' e punto dove si modifica (`StopPerdita`).
+-function Freni({ stop }: { stop: ReturnType<typeof useControlRoom>['stopPerdita'] | undefined }) {
++function Freni({ stop, qualcheBotLive }: {
++    stop: ReturnType<typeof useControlRoom>['stopPerdita'] | undefined;
++    qualcheBotLive: boolean;
++}) {
+     return (
+         <div className="flex flex-col" data-testid="cr-freni">
+-            <StopPerdita stop={stop} />
++            <StopPerdita stop={stop} qualcheBotLive={qualcheBotLive} />
+         </div>
+     );
+ }

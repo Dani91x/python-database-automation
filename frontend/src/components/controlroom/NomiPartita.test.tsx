@@ -73,6 +73,17 @@ describe('NomiPartita — gli stessi nomi in ogni scheda', () => {
         expect(vuoto.getAttribute('aria-hidden')).toBe('true');
     });
 
+    // R_B1: la stessa riga riusata per un'altra squadra non eredita il «rotto»
+    it('logo rotto, poi la riga passa a un’altra squadra: il nuovo logo si mostra', () => {
+        const { container, rerender } = render(<NomiPartita nome="Roma v Lazio" homeTeamId={497} awayTeamId={487} />);
+        fireEvent.error(container.querySelectorAll('img')[0]);
+        expect(container.querySelectorAll('img')).toHaveLength(1);
+        rerender(<NomiPartita nome="Milan v Lazio" homeTeamId={489} awayTeamId={487} />);
+        const img = container.querySelectorAll('img');
+        expect(img).toHaveLength(2);
+        expect(img[0].getAttribute('src')).toContain('489');
+    });
+
     it('un logo che non carica sparisce (niente quadrato rotto)', () => {
         const { container } = render(<NomiPartita nome="Roma v Lazio" homeTeamId={497} awayTeamId={487} />);
         fireEvent.error(container.querySelectorAll('img')[0]);

@@ -88,15 +88,24 @@ MIKE_OU_MARKET_TYPES = PRE_KO_OU_MARKET_TYPES
 # posizione aperta — ma dal 13/09 il taglio non e' piu' casuale: le partite
 # arrivano ordinate per SOLDI A RISCHIO decrescente (``select_opp_candidates``),
 # quindi se il tetto morde restano fuori quelle con meno denaro sopra.
+# 30/09 (decisione dell'utente): 80. Il 30/09 lo scanner ha gridato per ore
+# «partite seguite da Mike OLTRE il tetto 40» con DUE partite di Mike in tutto:
+# non era il tetto a mordere, era il conto sbagliato (vedi
+# ``select_opp_candidates``). Il tetto sale comunque a 80 (160 mercati su 720
+# slot) perche' con ``max_open_matches`` alzato dall'utente e le partite in
+# regolamento che restano esposte, 40 era vicino al limite nei weekend pieni.
 # Override: MIKE_MAX_FOLLOWED (env vuota = default, mai `??`).
+MIKE_MAX_FOLLOWED_DEFAULT = 80
+
+
 def _mike_max_followed() -> int:
     import os
 
-    raw = os.environ.get("MIKE_MAX_FOLLOWED", "").strip() or "40"
+    raw = os.environ.get("MIKE_MAX_FOLLOWED", "").strip() or str(MIKE_MAX_FOLLOWED_DEFAULT)
     try:
         return max(1, int(float(raw)))
     except ValueError:
-        return 40
+        return MIKE_MAX_FOLLOWED_DEFAULT
 
 
 MIKE_MAX_FOLLOWED = _mike_max_followed()
@@ -137,7 +146,6 @@ def select_opp_candidates(
     """
     cap = OPP_MAX_EVENTS if max_events is None else int(max_events)
     cap_f = MIKE_MAX_FOLLOWED if max_followed is None else int(max_followed)
-    keep_set = {str(e) for e in (followed or ())}
     # CERT. 13/09 — quando il tetto MORDE, l'ordine che conta e' quello di
     # ``followed`` (le partite arrivano gia' ordinate per SOLDI A RISCHIO
     # decrescente, ``db.list_mike_followed_event_ids``), NON quello dei
@@ -146,9 +154,16 @@ def select_opp_candidates(
     # cioe' proprio quelle dove la copertura Over 4.5 serve di piu'.
     # Alzare il numero non basterebbe: sposterebbe il problema piu' in la'.
     in_gioco = {str(e) for e in candidates}
-    keep = [str(e) for e in (followed or ()) if str(e) in in_gioco][: max(0, cap_f)]
+    # 30/09 - POTATURA: il tetto si confronta SOLO con le partite di Mike che
+    # sono fra i candidati (in gioco, mercato non chiuso). Prima si contava
+    # tutto ``followed``: una partita pre-partita o finita e in attesa di
+    # regolamento risultava «tagliata dal tetto» e lo scanner lo gridava due
+    # volte al secondo (10.348 righe il 30/09 con due sole partite di Mike),
+    # nascondendo l'avviso vero nel giorno in cui servira'.
+    seguite_in_gioco = [str(e) for e in (followed or ()) if str(e) in in_gioco]
+    keep = seguite_in_gioco[: max(0, cap_f)]
     kept = set(keep)
-    if len(keep_set) > len(keep):
+    if len(seguite_in_gioco) > len(keep):
         # una partita con SOLDI A RISCHIO tagliata dal tetto resta senza quote:
         # niente copertura, niente uscita. Non si tace: si grida nel log, cosi'
         # il tetto si alza prima che costi una perdita piena.
@@ -157,7 +172,7 @@ def select_opp_candidates(
             "quote in gioco (nessuna copertura ne' uscita). Fuori restano quelle con "
             "MENO denaro sopra (ordine per esposizione), ma il tetto va alzato: "
             "MIKE_MAX_FOLLOWED.",
-            len(keep_set) - len(keep), cap_f)
+            len(seguite_in_gioco) - len(keep), cap_f)
     rest = [e for e in candidates if e not in kept]
     return keep + rest[: max(0, cap)]
 
@@ -492,7 +507,8 @@ def books_period_tennis(any_inplay: bool) -> float:
 # ogni poll per costruzione: sta nel payload perche' chi legge deve poter
 # distinguere "prezzo fermo" da "mercato non piu' osservato", ma nella firma
 # riscriverebbe la riga a ogni giro.
-_FUORI_FIRMA = ("total_matched", "mo_total_matched", "seen_ms")
+# ``odds_seen_ms`` (30/09): ultima lettura del Match Odds, stessa natura di ``seen_ms``.
+_FUORI_FIRMA = ("total_matched", "mo_total_matched", "seen_ms", "odds_seen_ms")
 
 
 def _senza_campi_rumorosi(value: Any) -> Any:

@@ -205,7 +205,7 @@ export function certezzaChiusura(pos: PosizioneDaGiudicare): RisultatoCertezzaCh
             },
             coperturaFrazione: 0,
             motivo: `${uno ? 'la gamba di chiusura è finita' : `le ${gambe.length} gambe di chiusura sono finite`} `
-                + `senza abbinare nulla (${dettaglio}): la posizione è ANCORA APERTA, nessuna contropartita è stata trovata.`,
+                + `senza abbinare nulla (${dettaglio}): la posizione è ANCORA APERTA.`,
         };
     }
 

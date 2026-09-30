@@ -62,6 +62,26 @@ describe('SchedaMike — freschezza del feed (cert. 13/09)', () => {
         expect(screen.getByTestId('cr-mike-feed-age')).toHaveTextContent('partita chiusa');
     });
 
+    it('30/09 A3: la linea 4.5 mostra l\'Under (copertura di serie, banca) E l\'Over (chiusura), senza "(la copertura)" sull\'Over', () => {
+        const live = {
+            books: {
+                'OU45|UNDER': { best_back: 1.17, best_lay: 1.18 },
+                'OU45|OVER': { best_back: 9.4, best_lay: 10 },
+            },
+        } as unknown as MikeEvent['live'];
+        render(<SchedaMike ev={ev({ live })} />);
+        const u45 = screen.getByTestId('cr-mike-u45');
+        const o45 = screen.getByTestId('cr-mike-o45');
+        expect(u45).toHaveTextContent('Under 4.5');
+        expect(u45).toHaveTextContent('1,17');
+        expect(u45.getAttribute('title')).toMatch(/banca Under 4.5/);
+        expect(o45).toHaveTextContent('Over 4.5');
+        expect(o45.getAttribute('title')).toContain('chiusura della copertura');
+        expect(o45.getAttribute('title')).not.toContain('(la copertura)');
+        expect(screen.getByTestId('cr-mike-p4-mercato').getAttribute('title'))
+            .toMatch(/perdono l.Under 3,5 e la copertura/);
+    });
+
     it('testId personalizzato si propaga al badge di eta', () => {
         render(<SchedaMike ev={ev({ live: { feed_age_s: 1 } as MikeEvent['live'] })} testId="foo" />);
         expect(screen.getByTestId('foo-feed-age')).toBeInTheDocument();

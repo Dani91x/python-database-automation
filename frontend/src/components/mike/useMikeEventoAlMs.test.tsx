@@ -46,7 +46,7 @@ function evDb(): MikeEvent {
         event_id: 'E1', fixture_id: null, event_name: 'Roma v Lazio', competition: 'Serie A', league_id: null,
         ko_at: new Date().toISOString(), mode: 'paper', markets: {}, state: 'LIVE_COVERED',
         cycle_no: 0, entry_price_initial: 1.5, dossier: null,
-        live: { feed_age_s: 1, published_ts: ORA_S - 20, cashout: { net: -2.1 }, books: {}, goals: 2 } as unknown as MikeEvent['live'],
+        live: { feed_age_s: 1, published_ts: ORA_S - 20, cashout: { net: -2.1, complete: true }, books: {}, goals: 2 } as unknown as MikeEvent['live'],
         positions: [], ctx: { uscita_proposta: proposta(), close_reason: null }, skipped: false, settled_pnl: null,
         updated_at: new Date().toISOString(),
     };
@@ -57,7 +57,7 @@ function push(net: number, pubTs: number, over: Record<string, unknown> = {}) {
     return {
         event_id: 'E1', state: 'LIVE_COVERED', mode: 'paper', positions: [],
         live: { feed_age_s: 0.4, published_ts: pubTs, published_at: new Date(pubTs * 1000).toISOString(),
-            cashout: { net }, books: {}, goals: 2 },
+            cashout: { net, complete: true }, books: {}, goals: 2 },
         ...over,
     };
 }

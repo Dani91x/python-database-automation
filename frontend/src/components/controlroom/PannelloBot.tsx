@@ -151,18 +151,27 @@ function colorePuntoStato(r: RigaInterruttore): string {
  *  quello che le righe gia' dichiarano (§ Task 3, «se gia' disponibile nei
  *  dati del pannello»). */
 function riassuntoGruppo(righeG: RigaInterruttore[]): {
-    live: boolean; paper: boolean; pnlOggi: number | null; anomalia: boolean;
+    live: boolean; paper: boolean; pnlOggiLive: number | null; pnlOggiProva: number | null; anomalia: boolean;
 } {
-    let pnlOggi: number | null = null;
-    let vistoUnPnl = false;
+    // 30/09 (R_G): DUE somme, mai una. Prima il riassunto sommava il P&L delle
+    // righe live e di quelle in prova in un numero solo (+2 live e +7,60 prova
+    // = «oggi 9,60»): soldi veri ed esercitazione nello stesso numero.
+    let cLive = 0, cProva = 0;
+    let vistoLive = false, vistoProva = false;
     let live = false, paper = false, anomalia = false;
     for (const r of righeG) {
         if (r.acceso && r.modalita === 'live') live = true;
         if (r.acceso && r.modalita === 'paper') paper = true;
         if (!r.statoNoto || r.stato === 'error' || (r.acceso && r.motivoBlocco)) anomalia = true;
-        if (r.pnlOggi != null) { pnlOggi = (pnlOggi ?? 0) + r.pnlOggi; vistoUnPnl = true; }
+        if (r.pnlOggi == null) continue;
+        if (r.modalita === 'live') { cLive += Math.round(r.pnlOggi * 100); vistoLive = true; }
+        else if (r.modalita === 'paper') { cProva += Math.round(r.pnlOggi * 100); vistoProva = true; }
     }
-    return { live, paper, pnlOggi: vistoUnPnl ? pnlOggi : null, anomalia };
+    return {
+        live, paper, anomalia,
+        pnlOggiLive: vistoLive ? cLive / 100 : null,
+        pnlOggiProva: vistoProva ? cProva / 100 : null,
+    };
 }
 
 /**
@@ -416,12 +425,23 @@ export function PannelloBot({
                                                     prova
                                                 </span>
                                             )}
-                                            {riassunto.pnlOggi !== null && (
+                                            {riassunto.pnlOggiLive !== null && (
                                                 <span className="text-[10px] font-mono normal-case"
-                                                    title="somma del P&L di oggi delle righe che lo dichiarano">
-                                                    <span className="text-white/30">oggi </span>
-                                                    <span className={riassunto.pnlOggi < 0 ? 'text-red-400' : 'text-emerald-400'}>
-                                                        {fmtMoney(riassunto.pnlOggi)}
+                                                    data-testid={`${testId}-gruppo-${g}-oggi-live`}
+                                                    title="somma del P&L di oggi delle righe con SOLDI VERI">
+                                                    <span className="text-white/30">oggi LIVE </span>
+                                                    <span className={riassunto.pnlOggiLive < 0 ? 'text-red-400' : 'text-emerald-400'}>
+                                                        {fmtMoney(riassunto.pnlOggiLive)}
+                                                    </span>
+                                                </span>
+                                            )}
+                                            {riassunto.pnlOggiProva !== null && (
+                                                <span className="text-[10px] font-mono normal-case opacity-60"
+                                                    data-testid={`${testId}-gruppo-${g}-oggi-prova`}
+                                                    title="somma del P&L di oggi delle righe IN PROVA: simulato, mai sommato ai soldi veri">
+                                                    <span className="text-white/30">prova </span>
+                                                    <span className={riassunto.pnlOggiProva < 0 ? 'text-red-400' : 'text-emerald-400'}>
+                                                        {fmtMoney(riassunto.pnlOggiProva)}
                                                     </span>
                                                 </span>
                                             )}

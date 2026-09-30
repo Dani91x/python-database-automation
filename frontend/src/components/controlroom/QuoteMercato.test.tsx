@@ -93,20 +93,24 @@ describe('EtaQuote — l’età del prezzo con l’etichetta di cosa misura', ()
 function linea(over: Partial<LineaOuScheda> = {}): LineaOuScheda {
     return {
         marketId: '1.35', linea: 3.5, stato: 'OPEN', decisa: false, perMike: false,
-        under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaBookS: 3, ...over,
+        under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaCambioS: 3, ...over,
     };
 }
 
 describe('LineeOu — le linee Under/Over con lo stesso componente', () => {
     it('linea, Under B/L, Over B/L e l’età dell’ultimo book, neutra', () => {
-        render(<LineeOu testId="ou" linee={[linea(), linea({ marketId: '1.45', linea: 4.5, etaBookS: null })]} />);
+        render(<LineeOu testId="ou" linee={[linea(), linea({ marketId: '1.45', linea: 4.5, etaCambioS: null })]} />);
         const righe = screen.getAllByTestId('cr-quote-ou-linea');
         expect(righe).toHaveLength(2);
         expect(righe[0]).toHaveTextContent('U/O 3,5');
         expect(righe[0]).toHaveTextContent('Under 1,50/1,52');
         expect(righe[0]).toHaveTextContent('Over 2,60/2,70');
-        expect(righe[0]).toHaveTextContent('ultimo book: 3 s fa');
-        expect(righe[1]).toHaveTextContent('ultimo book: età ignota');
+        expect(righe[0]).toHaveTextContent('ultimo cambio: 3 s');
+        expect(righe[1]).toHaveTextContent('ultimo cambio: età ignota');
+        // R_B1: e' l'ultimo CAMBIO della linea (ts_ms), non l'ultimo book ne' l'ultima lettura
+        expect(righe[0].textContent).not.toMatch(/ultimo book/);
+        expect(screen.getAllByTestId('cr-quote-ou-eta')[0].getAttribute('title'))
+            .toMatch(/ultimo cambio di prezzo o di importo di questa linea: non è l.ultima lettura/);
         // seen_ms non distingue fermo da non osservato: nessun colore di allarme
         expect(screen.getByTestId('ou').querySelector('.text-orange-400')).toBeNull();
     });

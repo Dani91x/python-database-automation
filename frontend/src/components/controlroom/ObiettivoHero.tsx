@@ -17,7 +17,7 @@ import { fmtMoney, DASH } from '@/lib/format';
 import { pnlClass } from '@/lib/tradeStatus';
 import type { ComposizioneObiettivo } from '@/lib/composizioneObiettivo';
 import type { ManualeSitoBetfair } from '@/lib/manualeSitoBetfair';
-import { etichettaArretrati, type ProvaGiornata, type VoceProva } from '@/lib/provaGiornata';
+import { etichettaArretrati, type ChiaveProva, type ProvaGiornata, type VoceProva } from '@/lib/provaGiornata';
 import { MarchioSoldi } from './MarchioSoldi';
 import type { ComposizioneConto, RigaComposizioneConto } from '@/lib/composizioneConto';
 import type { RigaComposizione } from '@/lib/composizioneObiettivo';
@@ -34,6 +34,8 @@ export interface ObiettivoHeroProps {
     prova?: ProvaGiornata | null;
     /** 30/09 (P7): eta' in secondi della lettura del conto Betfair (`pnl_reale_oggi.letto_at`); null = ignota */
     contoEtaS?: number | null;
+    /** 30/09 (R_G): la modalita' CORRENTE di ogni voce della prova (live = «— (ora in LIVE)» se non ha prova di oggi) */
+    modalitaBot?: Partial<Record<ChiaveProva, 'paper' | 'live' | null>> | null;
     testId?: string;
 }
 
@@ -49,7 +51,7 @@ function dalConto(c: ComposizioneObiettivo): boolean | null {
 }
 
 export function ObiettivoHero({
-    dayBar, composizione, manualeSito, onSalvaObiettivo, avvisoMotore, prova = null, contoEtaS, testId = 'cr-obiettivo',
+    dayBar, composizione, manualeSito, onSalvaObiettivo, avvisoMotore, prova = null, contoEtaS, modalitaBot = null, testId = 'cr-obiettivo',
 }: ObiettivoHeroProps) {
     return (
         <Card className="glass-card border-white/10 p-0 overflow-hidden" data-testid={testId}>
@@ -120,7 +122,7 @@ export function ObiettivoHero({
                 )}
 
                 {prova != null ? (
-                    <CorsiaProva prova={prova} />
+                    <CorsiaProva prova={prova} modalitaBot={modalitaBot} />
                 ) : composizione.provaPaper != null && (
                     <div
                         className="mt-1.5 pt-1.5 border-t border-white/10 flex items-baseline gap-2 text-[11px] text-white/40"
@@ -144,7 +146,9 @@ export function ObiettivoHero({
  * al riavvio), con la data e da dove viene la data. Simulato, MAI sommato
  * all'obiettivo; gli arretrati MAI sommati a oggi. Un dato non letto si dice.
  */
-function CorsiaProva({ prova }: { prova: ProvaGiornata }) {
+function CorsiaProva({ prova, modalitaBot }: {
+    prova: ProvaGiornata; modalitaBot?: Partial<Record<ChiaveProva, 'paper' | 'live' | null>> | null;
+}) {
     return (
         <div className="mt-2 pt-1.5 border-t border-dashed border-white/15 text-[11px] text-white/45"
             data-testid="cr-composizione-prova">
@@ -159,21 +163,26 @@ function CorsiaProva({ prova }: { prova: ProvaGiornata }) {
                 <span className="text-[9.5px] uppercase tracking-wider text-white/30 text-right">partite di oggi</span>
                 <span className="text-[9.5px] uppercase tracking-wider text-white/30">arretrati regolati oggi</span>
                 {prova.voci.map((v) => (
-                    <RigaProvaBot key={v.chiave} v={v} />
+                    <RigaProvaBot key={v.chiave} v={v} modalita={modalitaBot?.[v.chiave] ?? null} />
                 ))}
             </div>
         </div>
     );
 }
 
-function RigaProvaBot({ v }: { v: VoceProva }) {
+function RigaProvaBot({ v, modalita }: { v: VoceProva; modalita: 'paper' | 'live' | null }) {
+    // 30/09 (R_G): un bot ORA in LIVE senza operazioni in prova di oggi non ha
+    // una «prova di oggi» da mostrare: «+0,00 [PROVA]» accanto a un bot che
+    // sta usando soldi veri si leggeva come un risultato. Gli arretrati restano.
+    const oraLive = modalita === 'live' && (v.oggi == null || v.oggi.operazioni === 0);
     return (
         <>
             <span className="text-white/55 truncate" data-testid={`cr-prova-${v.chiave}`}>{v.etichetta}</span>
             <span className="font-mono text-right" data-testid={`cr-prova-${v.chiave}-oggi`}>
-                {v.oggi == null ? <span className="text-white/30">{DASH}</span>
+                {oraLive ? <span className="text-white/40">{DASH} <span className="text-red-300/80">(ora in LIVE)</span></span>
+                    : v.oggi == null ? <span className="text-white/30">{DASH}</span>
                     : <span className={`${pnlClass(v.oggi.pnl)} opacity-80`}>{fmtMoney(v.oggi.pnl, { signed: true })}</span>}
-                {v.oggi != null && <MarchioSoldi fonte="prova" className="ml-1" testId={`cr-prova-${v.chiave}-fonte`} />}
+                {!oraLive && v.oggi != null && <MarchioSoldi fonte="prova" className="ml-1" testId={`cr-prova-${v.chiave}-fonte`} />}
             </span>
             <span data-testid={`cr-prova-${v.chiave}-arretrati`}>
                 {v.arretrati == null ? (

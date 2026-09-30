@@ -182,6 +182,8 @@ def linee_ferme_mike(payload: Dict[str, Any],
     fermi = mercati_fermi(payload)
     usati = set(mercati_di_mike(payload))
     adesso = _adesso_ms(adesso_ms)
+    fl = payload.get(_flusso.CHIAVE)
+    fl_da_ms = fl.get("fermi_da_ms") if isinstance(fl, dict) else None
     out: List[Tuple[str, str, Optional[float]]] = []
     for blk in payload.get("ou") or []:
         if not isinstance(blk, dict):
@@ -191,7 +193,12 @@ def linee_ferme_mike(payload: Dict[str, Any],
             continue
         line = _num(blk.get("line"))
         nome = _NOME_LINEA.get(_LINE_TO_MARKET.get(line), mid) if line is not None else mid
-        seen = _num(blk.get("seen_ms"))
+        # 30/09: PRIMA ``flusso.fermi_da_ms`` (l'istante VERO dell'ultima
+        # conferma con prezzi, scritto dallo scanner quando la linea diventa
+        # ferma); ``seen_ms`` solo come ripiego (scanner precedente): e' fuori
+        # firma, la riga non si riscrive se cambia solo lui, quindi sovrastima.
+        da = _num((fl_da_ms or {}).get(mid))
+        seen = da if da is not None and da > 0 else _num(blk.get("seen_ms"))
         eta = round(max(0.0, (adesso - seen) / 1000.0), 1) if seen is not None and seen > 0 else None
         out.append((mid, nome, eta))
     return out
@@ -278,10 +285,19 @@ def ou_blocks(payload: Dict[str, Any], *, now: Optional[float] = None,
     # stesso trattamento del blocco non piu' osservato. ``event_info`` (senza
     # ``now``) non filtra: gli id servono per annullare ordini vivi.
     fermi = mercati_fermi(payload) if now is not None else frozenset()
+    # 30/09 sera (review incrociata): ``seen_ms`` e' FUORI FIRMA: la riga non si
+    # riscrive se cambia solo lui, quindi su una linea col prezzo FERMO (ma
+    # osservata, book ogni secondo) ``seen_ms`` invecchia e dopo 90 s la linea
+    # spariva come «morta» anche se lo scanner la dichiarava viva. Con il
+    # blocco ``flusso`` nella riga (scanner dal 28/09) la vita di una linea la
+    # dice LO SCANNER (``mercati_fermi``, fresco a ogni riscrittura, e il
+    # tetto assoluto di ``feed_fresh``): il controllo su ``seen_ms`` resta SOLO
+    # per le righe di uno scanner precedente, senza ``flusso``.
+    scanner_dichiara = isinstance(payload.get(_flusso.CHIAVE), dict)
     for blk in payload.get("ou") or []:
         if not isinstance(blk, dict):
             continue
-        if (now is not None and seen_max_s is not None
+        if (now is not None and seen_max_s is not None and not scanner_dichiara
                 and not blocco_osservato(blk, now, seen_max_s)):
             continue
         if fermi and str(blk.get("market_id") or "") in fermi:

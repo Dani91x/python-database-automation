@@ -318,6 +318,13 @@ describe('MikeMatchCard — stato del mercato Betfair in ITALIANO', () => {
         },
     };
 
+    it('30/09 A3: le etichette delle linee 4.5 dicono chi e\' la copertura (banca Under) e chi la chiude (Over)', () => {
+        render(<MikeMatchCard ev={ev({ state: 'LIVE_COVERED', live })} params={params} />);
+        expect(screen.getByTestId('mike-quote-ou45-under')).toHaveTextContent('Under 4.5 · copertura (banca) e re-ingresso');
+        expect(screen.getByTestId('mike-quote-ou45')).toHaveTextContent('Over 4.5 · chiusura della copertura');
+        expect(screen.getByTestId('mike-quote-ou45').textContent).not.toContain('back / lay');
+    });
+
     it('SUSPENDED/CLOSED diventano SOSPESO/CHIUSO, OPEN non si dice', () => {
         render(<MikeMatchCard ev={ev({ state: 'LIVE_COVERED', live })} params={params} />);
         expect(within(screen.getByTestId('mike-quote-ou35')).getByTestId('mike-market-status'))

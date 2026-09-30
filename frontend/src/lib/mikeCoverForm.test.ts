@@ -23,6 +23,19 @@ describe('P6 blocco 6A - forma della copertura nel pannello', () => {
         expect(h).toContain('punta Over 4,5, la forma di prima (minimo 2,00 EUR a passi di 0,50)');
     });
 
+    it('30/09 M17: gli hint non dicono piu’ «Over 4.5» come copertura, ne’ «chiude comunque», e i gol HT sono quelli di serie (3-4)', () => {
+        const hint = (k: string) => MIKE_PARAM_FIELDS.find((x) => x.key === k)!.hint;
+        expect(hint('ko_green_window_s')).toContain('copertura piena sulla linea 4,5');
+        expect(hint('ko_green_window_s')).not.toContain('Over 4.5');
+        expect(hint('early_goal_cover2_delay_s')).toContain('prezzo della copertura di quel momento');
+        expect(hint('early_goal_cover2_delay_s')).not.toContain('quota Over');
+        expect(hint('ht_loss_exit_enabled')).toBe('a fine 1T con 3-4 gol (vedi gol min/max)');
+        expect(MIKE_PARAM_DEFAULTS.ht_loss_goals_min).toBe(3);
+        expect(MIKE_PARAM_DEFAULTS.ht_loss_goals_max).toBe(4);
+        expect(hint('ht_loss_pct')).toContain('propone (o esegue, se le uscite automatiche sono accese)');
+        expect(hint('ht_loss_pct')).not.toContain('chiude comunque');
+    });
+
     it('valore di serie come config.py; un valore salvato valido resta, uno ignoto torna al valore di serie', () => {
         expect(MIKE_PARAM_DEFAULTS.cover_form).toBe(SERIE);
         expect(mergeMikeParams({ cover_form: 'lay_under45' }).cover_form).toBe('lay_under45');

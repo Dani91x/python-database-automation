@@ -456,6 +456,9 @@ export interface OperazionePerCashOut {
     ordine: RigaOrdine;
     chiusureOrdini: RigaOrdine[];
     chiusura: { alMs?: { aliquota?: number | null } | undefined } | null;
+    /** P&L dell'operazione; per i 4 bot tennis non nullo = ordine REGOLATO
+     *  (`useControlRoom`: `pnl` solo con `settled_at`): non e' una gamba viva */
+    pnl?: number | null;
     /** opzionale finche' la pagina non lo porta (v. `IdGambaChiusura`) */
     chiusureGambe?: (IdGambaChiusura | null)[];
 }
@@ -513,6 +516,9 @@ export function gambeDaOperazioni(
     const due = (m: string | null) => (m ? opzioni.dueEsiti?.(m) === true : false);
     for (const op of ops) {
         const aliquota = op.chiusura?.alMs?.aliquota ?? null;
+        // R_C (review): i 4 bot tennis non scrivono won/lost/void (lo stato
+        // flumine resta EXECUTION_COMPLETE): regolato = `pnl` valorizzato
+        if (op.bot.startsWith('tennis_') && op.pnl != null && Number.isFinite(Number(op.pnl))) continue;
         if (op.bot === 'scalper') {
             const so = statoOrdine(op.ordine ?? {});
             if (so.esito === 'regolato') continue;

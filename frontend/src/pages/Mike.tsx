@@ -781,7 +781,7 @@ export default function Mike() {
                 onConfirm={() => { void applyLive(); }}
                 busy={bot.busy}
                 intro={<>Da questo momento gli ordini del bot Mike usano <b>denaro reale</b>.</>}
-                warning="La struttura Under 3.5 / Over 4.5 perde con esattamente 4 gol: il live va attivato solo dopo il GO della certificazione paper (Costituzione §0)."
+                warning="La struttura Under 3,5 + copertura 4,5 perde con esattamente 4 gol: il live va attivato solo dopo il GO della certificazione paper (Costituzione §0)."
             />
         </PageShell>
     );

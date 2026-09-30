@@ -49,13 +49,17 @@ export function NomiPartita({ nome, homeTeamId = null, awayTeamId = null }: Nomi
  *  nessuna delle due squadre ha il logo: in una lista mista i nomi partono
  *  tutti dallo stesso punto, come nella pre-partita prima di B1. */
 function Squadra({ nome, src }: { nome: string; src: string }) {
-    const [rotto, setRotto] = useState(false);
+    // R_B1: il «rotto» vale per QUEL logo. Se la riga viene riusata per
+    // un'altra squadra (src diverso) si riparte da capo: si ricorda l'URL
+    // rotto, non un sì/no che resterebbe appiccicato alla riga.
+    const [rottoSrc, setRottoSrc] = useState<string | null>(null);
+    const rotto = rottoSrc === src;
     return (
         <div className="flex items-center gap-1.5 leading-tight min-w-0">
             {src && !rotto ? (
                 <img
                     src={src} alt="" width={16} height={16} loading="lazy"
-                    onError={() => setRotto(true)}
+                    onError={() => setRottoSrc(src)}
                     className="w-4 h-4 object-contain shrink-0"
                 />
             ) : (

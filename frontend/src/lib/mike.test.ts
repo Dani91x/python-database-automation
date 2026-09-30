@@ -344,6 +344,10 @@ describe('mike esito richieste (M1)', () => {
             expect(MIKE_REQUEST_CODE_MESSAGE[code], code).toBeTruthy();
         }
         expect(MIKE_REQUEST_KIND_LABEL.cashout).toBe('Cash out');
+        // 30/09: niente «Flatten» a schermo, e il femminile concorda (armata/eseguita)
+        expect(MIKE_REQUEST_KIND_LABEL.flatten).toBe('Chiusura a mercato');
+        expect(requestOutcome(req({ kind: 'flatten', result: { code: 'ok' } })).label).toBe('Chiusura a mercato eseguita');
+        expect(requestOutcome(req({ kind: 'cashout', result: { code: 'ok' } })).label).toBe('Cash out eseguito');
     });
     it('rifiuto, errore, in corso ed esito positivo hanno riga e tono propri', () => {
         const rejected = requestOutcome(req({ status: 'rejected', result: { code: 'feed_stantio', message: 'Feed stantio: cash out rifiutato.' } }));
@@ -375,7 +379,7 @@ describe('mike esito richieste (M1)', () => {
             kind: 'flatten',
             result: { code: 'ok', phase: 'armed', cancelled: 0, cashout_net: -1.2, complete: false, warning: 'reconcile' },
         }));
-        expect(partial.label).toBe('Flatten armato: chiusura in corso · netto stimato −1,20 € · prezzi incompleti su una selezione · ordini in verifica');
+        expect(partial.label).toBe('Chiusura a mercato armata: chiusura in corso · netto stimato −1,20 € · prezzi incompleti su una selezione · ordini in verifica');
     });
     it('lastRequestFor prende la piu recente per evento e kind', () => {
         const reqs = [req({ id: 1 }), req({ id: 7, kind: 'skip_event' }), req({ id: 9 }),

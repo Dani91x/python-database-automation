@@ -1,0 +1,122 @@
+diff --git a/frontend/src/components/controlroom/PropostaUscitaMike.test.tsx b/frontend/src/components/controlroom/PropostaUscitaMike.test.tsx
+index 331d8bb..6b6e9f3 100644
+--- a/frontend/src/components/controlroom/PropostaUscitaMike.test.tsx
++++ b/frontend/src/components/controlroom/PropostaUscitaMike.test.tsx
+@@ -40,7 +40,8 @@ function ev(ctx: Record<string, unknown> | null, feedAge = 2): MikeEvent {
+         cycle_no: 0, entry_price_initial: 1.5, dossier: null,
+         live: {
+             feed_age_s: feedAge,
+-            cashout: { net: 1.28 },
++            // R-B2 (30/09): il finto parla come il vero (`MikeCashout`, engine.py:4144)
++            cashout: { net: 1.28, gross: 1.35, base: 24, complete: true, pct: 5.3 },
+             books: {
+                 'OU35|UNDER': { best_back: 1.30, best_lay: 1.31 },
+                 'OU45|OVER': { best_back: 12.0, best_lay: 12.5 },
+@@ -78,6 +79,26 @@ describe('25/09 proposta d’uscita di Mike', () => {
+         expect(numeri).toContain('30′');
+     });
+ 
++    it('R-B2: cash out INCOMPLETO (una linea senza prezzo): nessuna cifra, «non calcolabile»', () => {
++        const e = ev({ uscita_proposta: proposta() });
++        const live = { ...(e.live ?? {}), cashout: { net: 1.28, gross: 1.35, base: 24, complete: false, pct: 5.3 } };
++        render(<PropostaUscitaMike ev={{ ...e, live: live as MikeEvent['live'] }} />);
++        const numeri = screen.getByTestId('cr-mike-proposta-numeri').textContent ?? '';
++        expect(numeri).toMatch(/^chiudendo tutta la partita ora: non calcolabile \(manca il prezzo di una linea\)/);
++        expect(numeri).not.toContain('1,28');
++        expect(screen.queryByTestId('cr-mike-proposta-cifra')).toBeNull();
++        // il resto non cambia: alla decisione, e l'approva resta acceso col feed vivo
++        expect(numeri).toContain('alla decisione +1,31 €');
++        expect(screen.getByTestId('cr-mike-proposta-approva')).toHaveProperty('disabled', false);
++    });
++
++    it('R-B2: cash out completo: la cifra, marcata come calcolo del bot', () => {
++        render(<PropostaUscitaMike ev={ev({ uscita_proposta: proposta() })} />);
++        expect(screen.getByTestId('cr-mike-proposta-cifra').textContent).toBe('+1,28 €');
++        expect(screen.getByTestId('cr-mike-proposta-fonte-cifra').textContent).toBe(' (calcolo del bot)');
++        expect(screen.queryByTestId('cr-mike-proposta-cifra-non-calcolabile')).toBeNull();
++    });
++
+     it('uscita in perdita: marcata', () => {
+         render(<PropostaUscitaMike ev={ev({ uscita_proposta: proposta({ urgente: true }) })} />);
+         expect(screen.getByTestId('cr-mike-proposta-titolo').textContent)
+diff --git a/frontend/src/components/controlroom/PropostaUscitaMike.tsx b/frontend/src/components/controlroom/PropostaUscitaMike.tsx
+index 11b0db7..f400d2b 100644
+--- a/frontend/src/components/controlroom/PropostaUscitaMike.tsx
++++ b/frontend/src/components/controlroom/PropostaUscitaMike.tsx
+@@ -185,7 +185,11 @@ export function PropostaUscitaMike({
+     const fresh = feedFreshness(eta);
+     const spento = fresh.tone === 'stale' || fresh.tone === 'unknown' || inVolo;
+     const daDecisioneS = Math.max(0, Math.round(adesso / 1000 - Number(prop.decided_at)));
+-    const bloccabileOra = typeof live.cashout?.net === 'number' ? live.cashout.net : null;
++    // R-B2 (30/09): come SchedaMike (A9) - con `complete` diverso da true una linea
++    // viva non ha prezzo e il netto del servizio la ESCLUDE (engine.cashout_value):
++    // nessuna cifra monca nella scheda dove si approva un'uscita
++    const cashCompleto = live.cashout?.complete === true;
++    const bloccabileOra = cashCompleto && typeof live.cashout?.net === 'number' ? live.cashout.net : null;
+     // 29/09 (M7.1): l'ETA' della cifra «chiudendo ora» = da quanto il bot l'ha
+     // calcolata (`live.published_ts`); oltre CIFRA_VECCHIA_S e' dichiarata vecchia
+     const etaCifra = etaPubblicazioneS(live, adesso);
+@@ -266,8 +270,11 @@ export function PropostaUscitaMike({
+             </div>
+             <div className="text-[10.5px] text-white/60" data-testid={`${testId}-numeri`}>
+                 {/* 30/09 (B2, M12): `live.cashout.net` = TUTTA la partita */}
+-                chiudendo tutta la partita ora <span className={cifraVecchia ? 'line-through text-amber-300/80' : ''}
+-                    data-testid={`${testId}-cifra`}>{bloccabileOra == null ? DASH : fmtMoney(bloccabileOra, { signed: true })}</span>
++                chiudendo tutta la partita ora{live.cashout != null && !cashCompleto
++                    ? <span className="text-amber-300" data-testid={`${testId}-cifra-non-calcolabile`}>: non calcolabile (manca il prezzo di una linea)</span>
++                    : <>{' '}<span className={cifraVecchia ? 'line-through text-amber-300/80' : ''}
++                        data-testid={`${testId}-cifra`}>{bloccabileOra == null ? DASH : fmtMoney(bloccabileOra, { signed: true })}</span>
++                        <span className="text-white/35" data-testid={`${testId}-fonte-cifra`}> (calcolo del bot)</span></>}
+                 {' '}<span className={cifraVecchia ? 'text-amber-300 font-semibold' : 'text-white/45'}
+                     data-testid={`${testId}-eta-cifra`} data-vecchia={cifraVecchia ? '1' : '0'}>
+                     {etaCifra == null ? '(VECCHIA: eta’ del dato sconosciuta)'
+diff --git a/frontend/src/components/mike/useMikeEventoAlMs.test.tsx b/frontend/src/components/mike/useMikeEventoAlMs.test.tsx
+index 30112ef..94bd409 100644
+--- a/frontend/src/components/mike/useMikeEventoAlMs.test.tsx
++++ b/frontend/src/components/mike/useMikeEventoAlMs.test.tsx
+@@ -46,7 +46,7 @@ function evDb(): MikeEvent {
+         event_id: 'E1', fixture_id: null, event_name: 'Roma v Lazio', competition: 'Serie A', league_id: null,
+         ko_at: new Date().toISOString(), mode: 'paper', markets: {}, state: 'LIVE_COVERED',
+         cycle_no: 0, entry_price_initial: 1.5, dossier: null,
+-        live: { feed_age_s: 1, published_ts: ORA_S - 20, cashout: { net: -2.1 }, books: {}, goals: 2 } as unknown as MikeEvent['live'],
++        live: { feed_age_s: 1, published_ts: ORA_S - 20, cashout: { net: -2.1, complete: true }, books: {}, goals: 2 } as unknown as MikeEvent['live'],
+         positions: [], ctx: { uscita_proposta: proposta(), close_reason: null }, skipped: false, settled_pnl: null,
+         updated_at: new Date().toISOString(),
+     };
+@@ -57,7 +57,7 @@ function push(net: number, pubTs: number, over: Record<string, unknown> = {}) {
+     return {
+         event_id: 'E1', state: 'LIVE_COVERED', mode: 'paper', positions: [],
+         live: { feed_age_s: 0.4, published_ts: pubTs, published_at: new Date(pubTs * 1000).toISOString(),
+-            cashout: { net }, books: {}, goals: 2 },
++            cashout: { net, complete: true }, books: {}, goals: 2 },
+         ...over,
+     };
+ }
+diff --git a/frontend/src/lib/certezzaChiusura.test.ts b/frontend/src/lib/certezzaChiusura.test.ts
+index aa0f572..ac99420 100644
+--- a/frontend/src/lib/certezzaChiusura.test.ts
++++ b/frontend/src/lib/certezzaChiusura.test.ts
+@@ -209,6 +209,10 @@ describe('CHIUSURA_FALLITA: rifiutata, nessuna contropartita — posizione ANCOR
+         expect(r.esposizione.stake).toBe(10);
+         expect(eCertezzaAllarme(r.stato)).toBe(true);
+         expect(eCertezzaVerde(r.stato)).toBe(false);
++        // R-B2 (30/09): nessuna causa inventata («nessuna contropartita trovata»):
++        // la frase dice solo cosa e' successo alle gambe e che la posizione e' aperta
++        expect(r.motivo).toBe('la gamba di chiusura è finita senza abbinare nulla (rifiutata da Betfair): la posizione è ANCORA APERTA.');
++        expect(r.motivo).not.toMatch(/contropartita/);
+     });
+ });
+ 
+diff --git a/frontend/src/lib/certezzaChiusura.ts b/frontend/src/lib/certezzaChiusura.ts
+index 66e793e..7b21049 100644
+--- a/frontend/src/lib/certezzaChiusura.ts
++++ b/frontend/src/lib/certezzaChiusura.ts
+@@ -205,7 +205,7 @@ export function certezzaChiusura(pos: PosizioneDaGiudicare): RisultatoCertezzaCh
+             },
+             coperturaFrazione: 0,
+             motivo: `${uno ? 'la gamba di chiusura è finita' : `le ${gambe.length} gambe di chiusura sono finite`} `
+-                + `senza abbinare nulla (${dettaglio}): la posizione è ANCORA APERTA, nessuna contropartita è stata trovata.`,
++                + `senza abbinare nulla (${dettaglio}): la posizione è ANCORA APERTA.`,
+         };
+     }
+ 

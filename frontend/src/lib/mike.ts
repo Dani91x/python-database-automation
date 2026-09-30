@@ -475,7 +475,7 @@ export const MIKE_PARAM_FIELDS: readonly MikeParamField[] = [
     { key: 'cancel_unmatched_after_ko_s', label: 'Cancella residuo PERSIST dopo KO (s)', kind: 'number', step: 10, min: 0, max: 900, hint: 'evita fill su spike dopo un gol', group: 'pre' },
     { key: 'ko_green_enabled', label: 'Uscita al fischio attiva', kind: 'bool', hint: 'la posizione portata in gioco prova PRIMA a uscire in profitto; off = si copre e basta', group: 'fischio' },
     { key: 'ko_green_ticks', label: 'Uscita a (+tick dall’ingresso)', kind: 'number', step: 1, min: 1, max: 10, hint: 'lay N tick sotto il nostro prezzo d’ingresso: è un limite, se il mercato offre meglio si abbina meglio', group: 'fischio' },
-    { key: 'ko_green_window_s', label: 'Finestra dell’uscita (s dal fischio)', kind: 'number', step: 30, min: 0, max: 900, hint: 'scaduta senza abbinamento: ordine annullato e copertura piena sull’Over 4.5', group: 'fischio' },
+    { key: 'ko_green_window_s', label: 'Finestra dell’uscita (s dal fischio)', kind: 'number', step: 30, min: 0, max: 900, hint: 'scaduta senza abbinamento: ordine annullato e copertura piena sulla linea 4,5', group: 'fischio' },
     // 16/09 (ordine dell’utente): l’uscita al fischio è APPOGGIATA in ogni
     // modalità, quindi non si ri-presenta più e questo parametro non ha alcun
     // effetto. Resta in pagina perché il valore è salvato sul DB, ma lo dichiara.
@@ -484,7 +484,7 @@ export const MIKE_PARAM_FIELDS: readonly MikeParamField[] = [
     { key: 'second_entry_stake_pct', label: 'Seconda puntata: % dello stake', kind: 'number', step: 5, min: 0, max: 200, hint: '50 = metà dello stake iniziale, al miglior prezzo disponibile: alza la quota media', group: 'fischio' },
     { key: 'early_goal_cover_delay_s', label: 'Prima tranche dopo (s dal gol)', kind: 'number', step: 15, min: 0, max: 900, hint: 'tempo lasciato al mercato per riprezzare prima di comprare la prima parte di copertura', group: 'fischio' },
     { key: 'early_goal_cover_pct', label: 'Prima tranche: % della copertura', kind: 'number', step: 5, min: 0, max: 100, hint: 'sotto il minimo piazzabile non si divide: si copre in una volta (dividere costerebbe di più)', group: 'fischio' },
-    { key: 'early_goal_cover2_delay_s', label: 'Seconda tranche dopo (s dalla prima abbinata)', kind: 'number', step: 15, min: 0, max: 900, hint: 'il residuo si ricalcola sulla quota Over di quel momento e su quanto la prima ha già garantito', group: 'fischio' },
+    { key: 'early_goal_cover2_delay_s', label: 'Seconda tranche dopo (s dalla prima abbinata)', kind: 'number', step: 15, min: 0, max: 900, hint: 'il residuo si ricalcola sul prezzo della copertura di quel momento e su quanto la prima ha già garantito', group: 'fischio' },
     { key: 'cover_enabled', label: 'Copertura attiva', kind: 'bool', hint: 'off = Under nudo in live', group: 'cover' },
     { key: 'cover_profit_factor', label: 'Fattore copertura', kind: 'number', step: 0.05, min: 1, max: 3, hint: '1.2 = se vince l’Over 4.5 il netto è +20% dello stake Under', group: 'cover' },
     { key: 'cover_policy', label: 'Quando coprire', kind: 'choice', choices: ['auto', 'immediate', 'wait'], hint: 'auto = subito o attesa secondo hazard/P(4); immediate = subito; wait = fino al minuto max', group: 'cover' },
@@ -525,8 +525,8 @@ export const MIKE_PARAM_FIELDS: readonly MikeParamField[] = [
     { key: 'cashout_smart_ev_margin_pct', label: 'Chiudi se aspettare vale meno di (punti %)', kind: 'number', step: 0.5, min: 0, max: 50, hint: 'valore atteso dell\'attesa (modello) sotto il valore attuale di questo margine', group: 'cashout' },
     { key: 'close_retry_s', label: 'Riprezzo chiusura ogni (s)', kind: 'number', step: 5, min: 1, max: 600, hint: 'residuo non abbinato', group: 'cashout' },
     { key: 'close_max_attempts', label: 'Tentativi max chiusura', kind: 'number', step: 1, min: 1, max: 100, hint: 'poi resta in attesa (chiusura manuale)', group: 'cashout' },
-    { key: 'ht_loss_exit_enabled', label: 'Uscita HT attiva', kind: 'bool', hint: 'a fine 1T con 2-4 gol', group: 'uscite' },
-    { key: 'ht_loss_pct', label: 'HT: perdita tollerata %', kind: 'number', step: 1, min: 0, max: 100, hint: 'chiude comunque se la perdita è entro questa % del capitale', group: 'uscite' },
+    { key: 'ht_loss_exit_enabled', label: 'Uscita HT attiva', kind: 'bool', hint: 'a fine 1T con 3-4 gol (vedi gol min/max)', group: 'uscite' },
+    { key: 'ht_loss_pct', label: 'HT: perdita tollerata %', kind: 'number', step: 1, min: 0, max: 100, hint: 'propone (o esegue, se le uscite automatiche sono accese) l’uscita se la perdita è entro questa % del capitale', group: 'uscite' },
     { key: 'loss_exit_mode', label: 'Decisione di uscita', kind: 'choice', choices: ['model', 'fixed'], hint: 'model = chiudi se il valore certo batte il valore atteso a fine gara meno il premio al rischio sui 4 gol; fixed = solo la regola "perdita ≤ %"', group: 'uscite' },
     { key: 'loss_exit_risk_premium_pct', label: 'Premio al rischio (% capitale × P(4))', kind: 'number', step: 5, min: 0, max: 300, hint: 'più alto = esce prima quando i 4 gol sono probabili. Attenzione: il caso 4 gol è già dentro il valore atteso, quindi alzarlo lo conta due volte e chiude in anticipo', group: 'uscite' },
     { key: 'loss_exit_p4_prudent', label: 'P(4) prudente (max modello/mercato)', kind: 'bool', hint: 'usa la stima più pessimista fra modello, tabella HT→FT e mercato', group: 'uscite' },
@@ -1811,7 +1811,7 @@ export function reasonLabel(raw: unknown): string {
 
 // ------------------------------------------------ esito richieste della UI
 export const MIKE_REQUEST_KIND_LABEL: Record<MikeRequestKind, string> = {
-    cashout: 'Cash out', flatten: 'Flatten', skip_event: 'Salta partita',
+    cashout: 'Cash out', flatten: 'Chiusura a mercato', skip_event: 'Salta partita',
     resume_event: 'Riprendi partita', cancel: 'Annulla ordini',
     approva_uscita: 'Approva uscita',
 };
@@ -1861,6 +1861,7 @@ export interface MikeRequestOutcome {
 /** Esito di UNA richiesta, in italiano, pronto per toast e riga nella card (M1). */
 export function requestOutcome(r: MikeRequest): MikeRequestOutcome {
     const kindLabel = MIKE_REQUEST_KIND_LABEL[r.kind] ?? String(r.kind);
+    const o = r.kind === 'flatten' ? 'a' : 'o'; // «Chiusura a mercato» è femminile: armata, eseguita, rifiutata
     const code = String(r.result?.code ?? '');
     const fromCode = code ? (MIKE_REQUEST_CODE_MESSAGE[code] ?? code.replace(/_/g, ' ')) : '';
     const message = String(r.result?.message ?? '').trim() || fromCode;
@@ -1870,7 +1871,7 @@ export function requestOutcome(r: MikeRequest): MikeRequestOutcome {
     if (r.status === 'pending' || r.status === 'processing') {
         return { ...base, tone: 'pending', label: `${kindLabel} in corso…`, message: message || 'inviato al servizio' };
     }
-    if (r.status === 'rejected') return { ...base, tone: 'warn', label: `${kindLabel} rifiutato: ${message || '—'}` };
+    if (r.status === 'rejected') return { ...base, tone: 'warn', label: `${kindLabel} rifiutat${o}: ${message || '—'}` };
     if (r.status === 'error') return { ...base, tone: 'bad', label: `${kindLabel} in errore: ${message || '—'}` };
     const warn = r.result?.warning === 'reconcile' ? ' · ordini in verifica' : '';
     // CHIUSURA ARMATA (`phase:'armed'`): gli ordini sul book sono stati annullati
@@ -1892,10 +1893,10 @@ export function requestOutcome(r: MikeRequest): MikeRequestOutcome {
             tone: 'ok',
             armed: true,
             net: Number.isFinite(net) ? net : null,
-            label: `${kindLabel} armato: ${parts.join(' · ')}${warn}`,
+            label: `${kindLabel} armat${o}: ${parts.join(' · ')}${warn}`,
         };
     }
-    return { ...base, tone: 'ok', label: `${kindLabel} eseguito${message && code !== 'ok' ? `: ${message}` : ''}${warn}` };
+    return { ...base, tone: 'ok', label: `${kindLabel} eseguit${o}${message && code !== 'ok' ? `: ${message}` : ''}${warn}` };
 }
 
 /** ultima richiesta (per evento, eventualmente per kind): la più recente per id. */

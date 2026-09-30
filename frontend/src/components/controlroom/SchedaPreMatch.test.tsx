@@ -85,7 +85,7 @@ describe('SchedaPreMatch — quote pre-match vive (secondo giro)', () => {
 function lineaOu(linea: number, over: Partial<NonNullable<PartitaGiornata['lineeOu']>[number]> = {}) {
     return {
         marketId: `1.${linea * 10}`, linea, stato: 'OPEN', decisa: false, perMike: false,
-        under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaBookS: 2, ...over,
+        under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaCambioS: 2, ...over,
     };
 }
 
@@ -124,13 +124,13 @@ describe('SchedaPreMatch — B1: nomi e quote da trader', () => {
     });
 
     it('le linee Under/Over della riga si vedono con lo stesso componente', () => {
-        monta(partita({ lineeOu: [lineaOu(3.5), lineaOu(4.5, { etaBookS: 7 })] }));
+        monta(partita({ lineeOu: [lineaOu(3.5), lineaOu(4.5, { etaCambioS: 7 })] }));
         const ou = within(screen.getByTestId('cr-pre-quote')).getByTestId('cr-pre-quote-ou');
         const righe = within(ou).getAllByTestId('cr-quote-ou-linea');
         expect(righe).toHaveLength(2);
         expect(righe[0]).toHaveTextContent('U/O 3,5');
         expect(righe[0]).toHaveTextContent('Under 1,50/1,52');
-        expect(righe[1]).toHaveTextContent('ultimo book: 7 s fa');
+        expect(righe[1]).toHaveTextContent('ultimo cambio: 7 s');
     });
 
     // B1bis (decisione del coordinatore): sostituisce il test B1 «più di quattro

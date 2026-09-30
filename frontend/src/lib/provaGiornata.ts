@@ -288,11 +288,21 @@ export function provaGiornata(input: {
     mike: readonly RigaTradeProva[] | null;
     mikeArretrati: readonly RigaTradeProva[] | null;
     tennisPaper: readonly TennisProvaGiorno[] | null;
+    /**
+     * 30/09 (R_G) - i gruppi per bot GIA' calcolati con `provaPerGiornoPartita`
+     * (stesso giorno): se presenti si usano al posto di ricalcolarli dalle righe.
+     */
+    precalcolati?: {
+        omega: ReturnType<typeof provaPerGiornoPartita>;
+        safe: ReturnType<typeof provaPerGiornoPartita>;
+        mike: ReturnType<typeof provaPerGiornoPartita>;
+    };
 }): ProvaGiornata {
     const o = { oggi: input.oggi, giornoDi: input.giornoDi };
-    const omega = input.omega ? provaPerGiornoPartita(input.omega, { ...o, sport: 'calcio' }) : null;
-    const safe = input.safe ? provaPerGiornoPartita(input.safe, o) : null;
-    const mike = input.mike ? provaPerGiornoPartita(input.mike, { ...o, sport: 'calcio' }) : null;
+    const pre = input.precalcolati;
+    const omega = pre ? pre.omega : input.omega ? provaPerGiornoPartita(input.omega, { ...o, sport: 'calcio' }) : null;
+    const safe = pre ? pre.safe : input.safe ? provaPerGiornoPartita(input.safe, o) : null;
+    const mike = pre ? pre.mike : input.mike ? provaPerGiornoPartita(input.mike, { ...o, sport: 'calcio' }) : null;
     const di = (s: SportProva) => (r: RigaProva) => String(r.sport ?? '').toLowerCase() === s;
 
     // Mike: la RPC principale porta solo le righe di oggi (o aperte): i suoi

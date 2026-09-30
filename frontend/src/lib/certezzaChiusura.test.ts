@@ -209,6 +209,10 @@ describe('CHIUSURA_FALLITA: rifiutata, nessuna contropartita — posizione ANCOR
         expect(r.esposizione.stake).toBe(10);
         expect(eCertezzaAllarme(r.stato)).toBe(true);
         expect(eCertezzaVerde(r.stato)).toBe(false);
+        // R-B2 (30/09): nessuna causa inventata («nessuna contropartita trovata»):
+        // la frase dice solo cosa e' successo alle gambe e che la posizione e' aperta
+        expect(r.motivo).toBe('la gamba di chiusura è finita senza abbinare nulla (rifiutata da Betfair): la posizione è ANCORA APERTA.');
+        expect(r.motivo).not.toMatch(/contropartita/);
     });
 });
 

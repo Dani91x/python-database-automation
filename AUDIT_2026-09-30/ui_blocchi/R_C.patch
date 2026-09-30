@@ -1,0 +1,132 @@
+diff --git a/frontend/src/components/controlroom/CashOutGlobale.test.tsx b/frontend/src/components/controlroom/CashOutGlobale.test.tsx
+index 43db824..660d162 100644
+--- a/frontend/src/components/controlroom/CashOutGlobale.test.tsx
++++ b/frontend/src/components/controlroom/CashOutGlobale.test.tsx
+@@ -36,7 +36,10 @@ describe('CashOutGlobale: la cifra della partita, netta, con fonte ed eta\'', ()
+         expect(screen.getByTestId('cr-cashout-globale-live-netto').textContent).toBe('−0,82 €');
+         expect(screen.getByTestId('cr-cashout-globale-live').textContent).toContain('netto commissione');
+         expect(screen.getByTestId('cr-cashout-globale-live').textContent)
+-            .toContain('Cash out della partita (se chiudo TUTTO adesso)');
++            .toContain('Cash out della partita: gambe dei bot (se le chiudo tutte adesso)');
++        // R_C: sempre scritto, sotto la cifra: gli ordini del sito/app NON sono inclusi
++        expect(screen.getByTestId('cr-cashout-globale-live-solo-bot').textContent)
++            .toBe('solo ordini dei bot: gli ordini fatti dal sito o dall\'app Betfair non sono inclusi');
+         const marchio = screen.getByTestId('cr-cashout-globale-live-marchio');
+         expect(marchio.getAttribute('data-fonte')).toBe('pagina');
+         // MarchioSoldi: «STIMA» + «· <eta'> fa» in due span (eta' del prezzo piu' vecchio, 0,3 s)
+@@ -51,7 +54,7 @@ describe('CashOutGlobale: la cifra della partita, netta, con fonte ed eta\'', ()
+         expect(screen.getByTestId('cr-cashout-globale-live-bot-mike-netto').textContent).toBe('−0,84 €');
+         expect(screen.getByTestId('cr-cashout-globale-live-bot-mike-marchio').getAttribute('data-fonte')).toBe('bot');
+         expect(screen.getByTestId('cr-cashout-globale-live-bot-mike-differenza').textContent)
+-            .toMatch(/^differenza 0,02 €: prezzi letti in istanti diversi/);
++            .toMatch(/^differenza 0,02 € · cause possibili: prezzi letti in istanti diversi .*; il bot chiude la copertura su un altro libro; il bot conta solo le sue gambe$/);
+         expect(screen.queryByTestId('cr-cashout-globale-prova')).toBeNull();
+     });
+ 
+@@ -61,6 +64,8 @@ describe('CashOutGlobale: la cifra della partita, netta, con fonte ed eta\'', ()
+         expect(screen.getByTestId('cr-cashout-globale-live-non-calcolabile').textContent)
+             .toBe('NON CALCOLABILE: manca il prezzo di Under 4.5 Goals (punta)');
+         expect(screen.queryByTestId('cr-cashout-globale-live-netto')).toBeNull();
++        // R_C: anche senza cifra si dice che gli ordini fuori dai bot non ci sono
++        expect(screen.getByTestId('cr-cashout-globale-live-solo-bot')).toBeTruthy();
+     });
+ 
+     it('gambe PROVA: riga PROVA separata, mai sommata al live', () => {
+@@ -72,6 +77,8 @@ describe('CashOutGlobale: la cifra della partita, netta, con fonte ed eta\'', ()
+         expect(screen.getByTestId('cr-cashout-globale-prova-netto').textContent).toBe('−1,41 €');
+         expect(screen.getByTestId('cr-cashout-globale-prova-marchio').getAttribute('data-fonte')).toBe('prova');
+         expect(screen.getByTestId('cr-cashout-globale-prova').textContent).toContain('Prova (simulato, mai sommato ai soldi veri)');
++        // R_C: nel blocco PROVA la riga «solo ordini dei bot» non serve
++        expect(screen.queryByTestId('cr-cashout-globale-prova-solo-bot')).toBeNull();
+     });
+ 
+     it('liquidita\' insufficiente: la cifra resta, «e\' il caso migliore»', () => {
+diff --git a/frontend/src/components/controlroom/CashOutGlobale.tsx b/frontend/src/components/controlroom/CashOutGlobale.tsx
+index 1a857d1..cd79e69 100644
+--- a/frontend/src/components/controlroom/CashOutGlobale.tsx
++++ b/frontend/src/components/controlroom/CashOutGlobale.tsx
+@@ -119,7 +119,7 @@ function Blocco({ r, modo, testId, valoriBot }: {
+             <div className="flex items-baseline gap-2 flex-wrap">
+                 <span className={`text-[10px] font-bold uppercase tracking-wider ${modo === 'LIVE' ? 'text-white/80' : 'text-sky-300/80'}`}>
+                     {modo === 'LIVE'
+-                        ? 'Cash out della partita (se chiudo TUTTO adesso)'
++                        ? 'Cash out della partita: gambe dei bot (se le chiudo tutte adesso)'
+                         : 'Prova (simulato, mai sommato ai soldi veri)'}
+                 </span>
+                 {r.netto != null ? (
+@@ -156,6 +156,13 @@ function Blocco({ r, modo, testId, valoriBot }: {
+                     </span>
+                 )}
+             </div>
++            {/* R_C (review): la cifra NON vede gli ordini fatti fuori dai bot:
++                sempre scritto, non nel tooltip (su FC Vsetin il sito ha chiuso) */}
++            {modo === 'LIVE' && (
++                <div className="text-[10px] text-amber-300/70" data-testid={`${testId}-solo-bot`}>
++                    solo ordini dei bot: gli ordini fatti dal sito o dall&apos;app Betfair non sono inclusi
++                </div>
++            )}
+             {r.gambe.map((p) => (
+                 <RigaGamba key={p.chiave} p={p} modo={modo} testId={`${testId}-gamba`} />
+             ))}
+@@ -178,9 +185,9 @@ function Blocco({ r, modo, testId, valoriBot }: {
+                             testId={`${testId}-bot-${v.bot}-marchio`} />
+                         {diff != null && diff !== 0 && (
+                             <span className="text-white/40" data-testid={`${testId}-bot-${v.bot}-differenza`}>
+-                                differenza {fmtMoney(Math.abs(diff))}: prezzi letti in istanti diversi
+-                                (pagina {testoEtaBreve(eta)}, bot {testoEtaBreve(v.etaS)})
+-                                {v.nota ? `; ${v.nota}` : ''}
++                                differenza {fmtMoney(Math.abs(diff))} · cause possibili: prezzi letti in istanti
++                                diversi (pagina {testoEtaBreve(eta)}, bot {testoEtaBreve(v.etaS)}); il bot chiude la
++                                copertura su un altro libro; il bot conta solo le sue gambe
+                             </span>
+                         )}
+                     </div>
+diff --git a/frontend/src/lib/cashOutPartita.test.ts b/frontend/src/lib/cashOutPartita.test.ts
+index e3166ad..abd606c 100644
+--- a/frontend/src/lib/cashOutPartita.test.ts
++++ b/frontend/src/lib/cashOutPartita.test.ts
+@@ -351,6 +351,20 @@ describe('gambeDaOperazioni: le righe della scheda di TUTTI i bot', () => {
+         expect(g[1].modalita).toBe('paper');
+         expect(g[2].nonScomponibile).toMatch(/scalper/);
+     });
++    it('R_C: ordine TENNIS regolato (EXECUTION_COMPLETE + pnl) NON e\' una gamba; senza pnl e abbinato lo e\'', () => {
++        // forma vera delle righe tennis in `useControlRoom.operazioni`: stato
++        // flumine EXECUTION_COMPLETE, `pnl` valorizzato solo con `settled_at`
++        const tennis = (id: number, pnl: number | null) => op({
++            id, bot: 'tennis_scalper', marketId: '1.77', selectionId: 9, stato: 'EXECUTION_COMPLETE', pnl,
++            ordine: { status: 'EXECUTION_COMPLETE', side: 'back', price: 1.8, size: 10, size_requested: 10,
++                size_matched: 10, size_remaining: 0, avg_price_matched: 1.8, betfair_updated_at: null, meta: null },
++        });
++        expect(gambeDaOperazioni([tennis(1, 3.2), tennis(2, null)]).map((g) => g.id)).toEqual([2]);
++        // un regolato non rende la partita NON CALCOLABILE (mercato chiuso, prezzo assente)
++        const r = cashOutPartita(gambeDaOperazioni([tennis(1, -10)]), opz({}));
++        expect(r.live.nGambe).toBe(0);
++        expect(r.live.completo).toBe(true);
++    });
+     it('aliquota dalla riga (P11: chiusura.alMs.aliquota) e mercato a due esiti dal chiamante', () => {
+         const g = gambeDaOperazioni(follo, { dueEsiti: (m) => m === '1.45' });
+         expect(g.map((x) => [x.aliquota, x.dueEsiti])).toEqual([[0.05, false], [0.05, true]]);
+diff --git a/frontend/src/lib/cashOutPartita.ts b/frontend/src/lib/cashOutPartita.ts
+index 1bb0e53..784e9a3 100644
+--- a/frontend/src/lib/cashOutPartita.ts
++++ b/frontend/src/lib/cashOutPartita.ts
+@@ -456,6 +456,9 @@ export interface OperazionePerCashOut {
+     ordine: RigaOrdine;
+     chiusureOrdini: RigaOrdine[];
+     chiusura: { alMs?: { aliquota?: number | null } | undefined } | null;
++    /** P&L dell'operazione; per i 4 bot tennis non nullo = ordine REGOLATO
++     *  (`useControlRoom`: `pnl` solo con `settled_at`): non e' una gamba viva */
++    pnl?: number | null;
+     /** opzionale finche' la pagina non lo porta (v. `IdGambaChiusura`) */
+     chiusureGambe?: (IdGambaChiusura | null)[];
+ }
+@@ -513,6 +516,9 @@ export function gambeDaOperazioni(
+     const due = (m: string | null) => (m ? opzioni.dueEsiti?.(m) === true : false);
+     for (const op of ops) {
+         const aliquota = op.chiusura?.alMs?.aliquota ?? null;
++        // R_C (review): i 4 bot tennis non scrivono won/lost/void (lo stato
++        // flumine resta EXECUTION_COMPLETE): regolato = `pnl` valorizzato
++        if (op.bot.startsWith('tennis_') && op.pnl != null && Number.isFinite(Number(op.pnl))) continue;
+         if (op.bot === 'scalper') {
+             const so = statoOrdine(op.ordine ?? {});
+             if (so.esito === 'regolato') continue;

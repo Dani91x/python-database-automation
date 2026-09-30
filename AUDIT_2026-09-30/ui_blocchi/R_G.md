@@ -1,0 +1,23 @@
+# R_G - correzioni della review finale (G_GIORNATA)
+
+Worktree `C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-ad6a40b65633ea777`, base `1d058a7`, nessun merge.
+Patch: `AUDIT_2026-09-30/ui_blocchi/R_G.patch` = diff CUMULATIVO `frontend/` vs `1d058a7` (P2 + P8 + P7 + P8bis + R_G). Nessun commit. `DayBar.tsx` NON toccato.
+
+| # | Correzione | Dove | Test (falsificazione) |
+|---|---|---|---|
+| 1 | Riquadro Obiettivo: niente piu' «Liability aperta» LORDA (`openLiability: null`, in `DayBar` con null la voce sparisce); nota «rischio adesso: vedi «Esposizione conto» in testata» | `ControlRoom.tsx` blocco `dayBar` | pagina «R_G: ... niente liability LORDA ...» (39,15 lorda assente da `cr-obiettivo`) - M1 rosso |
+| 2 | «in corso (stimato)» non mostrato (`inProgress: null`), calcolo del hook INVARIATO (resta per P6); nota «valore delle posizioni aperte: per partita, nel riquadro «Cash out della partita» di ogni scheda»; la barra avanza col solo realizzato | idem | stesso test (niente `day-bar-in-corso`, `aria-valuenow` 50 con realizzato 50 e inCorso 30 su 100) - M2 rosso |
+| 3 | Plancia: riassunto di gruppo con DUE somme (`pnlOggiLive`, `pnlOggiProva`), a schermo «oggi LIVE x» e, attenuata, «prova y»; testid nuovi `cr-pannello-bot-gruppo-<g>-oggi-live` / `-oggi-prova` | `PannelloBot.tsx` `riassuntoGruppo` + stampa | `righeBot.provaArretrati.test.tsx` «live +2 e paper +7,60 -> mai 9,60» - M3 rosso |
+| 4 | Prestazioni: memo comune `provaPerBot` (raggruppamento per bot UNA volta) dipendente dalla stringa del giorno `giornoProva`, non da `nowMs`; `provaOggi` usa i gruppi precalcolati (`provaGiornata({ precalcolati })`, parametro opzionale nuovo); `botsConPnl` li riusa | `useControlRoom.ts`, `lib/provaGiornata.ts` | hook: con `nowMs` che avanza nello stesso giorno `provaGiornata` e' lo STESSO oggetto, al giorno dopo cambia - M4 (dipendenza da `nowMs`) rosso |
+| 5 | Scalper spento: `BotPerCorsie.modalitaUltima?` usato SOLO se `modalita` e' null -> corsia di quel modo, scritto «(spento · ultimo modo)»; null resta fra le ignote | `lib/giornataCorsie.ts`, `SplitSport.tsx` (`statoVoce`) | `giornataCorsie.test.ts` R_G - M5 rosso |
+| 6 | Corsia PROVA del riquadro: voce il cui bot e' ORA in LIVE e senza prova di oggi -> «— (ora in LIVE)» al posto di «+0,00 [PROVA]»; arretrati invariati. Modalita' passata come dato opzionale (`ObiettivoHero.modalitaBot`, da `modalitaVociProva(vm.bots)`: 'live' solo se TUTTE le strategie della voce sono in LIVE); `provaGiornata()` invariata per gli altri | `ObiettivoHero.tsx`, `lib/giornataCorsie.ts`, `ControlRoom.tsx` | pagina «R_G: Mike ORA in LIVE ...» - M6 rosso |
+| 7 | Footer vero: «Fonti: esposizione e realizzato con soldi veri dal conto Betfair; righe, posizioni e prova dai servizi dei bot; le cifre calcolate dalla pagina (cash out ai prezzi di adesso, scarto conto/bot, target di ripiego) sono marcate STIMA.» | `ControlRoom.tsx` `footer` | - (testo) |
+
+Numeri: test mirati `useControlRoom.provaGiornata`, `righeBot.provaArretrati`, `giornataCorsie`, `provaGiornata`, `ObiettivoHero`, `PannelloBot` = 78 verdi; `pages/ControlRoom.test.tsx` = 118 verdi; tsc = 0 (una volta alla fine). Falsificazioni: `falsifica_R_G.ps1`, 6 mutazioni tutte rosse, ripristino da copia, 0 `MUTAZIONE`, `git diff --stat` identico.
+
+Non fatto / non verificato: il run largo di fine blocco (PC sotto replay: solo mirati + pagina); l'app a schermo; il test di SplitSport sulla scritta «(spento · ultimo modo)» non c'e' (coperta solo la logica in `giornataCorsie.test.ts`); su master `StatoBot.modalitaUltima` esiste, nella mia base no: `BotPerCorsie` la dichiara opzionale, compila in entrambi i casi.
+
+## Verifica del coordinatore UI (admin-07), 30/09 20:35
+- Giro 6 dell'albero integrato (tutti i blocchi + R_C, R_B2, R_T, R_B1): tsc 0 errori; vitest controlroom + trading + ControlRoom.test + lib toccate = 90 file, 1455 test verdi. R_G impilata dopo: test mirati di pagina/plancia/prova 185 verdi (tsc del giro 7 sul master + R1: vedi messaggio di consegna).
+- La patch in QUESTA cartella e l INCREMENTALE della corsia; applica pulita sul master `d4b4f6b` (verificato con indice temporaneo). Ordine consigliato: R_C → R_B2 → R_T → R_B1 → R_G.
+- Mutazioni MIE: la lorda torna nel riquadro Obiettivo -> 1 rosso (pagina). **SOPRAVVISSUTA**: nel riassunto di gruppo della plancia le righe PROVA contate nel LIVE (`if (r.modalita === 'live' || r.modalita === 'paper')`) -> nessun test rosso: il codice e' giusto ma la separazione live/prova del gruppo NON e' fissata da un test. Rimandato al delegato che ha in mano `PannelloBot.tsx` nella seconda ondata (W_B2): test con una riga live e una paper nello stesso gruppo, falsificato con questa mutazione.

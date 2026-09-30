@@ -1077,6 +1077,35 @@ describe('la pagina non mostra MAI un numero che somma paper e live', () => {
             .toMatch(/per giorno di regolamento/);
     });
 
+    it('R_G: nel riquadro Obiettivo niente liability LORDA e niente «in corso (stimato)»; la barra avanza col solo realizzato', () => {
+        mVm.mockReturnValue(vm({
+            obiettivo: 100,
+            totali: { ...vm().totali, liability: 39.15 },
+            soldiGiornata: { ...vm().soldiGiornata, realizzato: 50, inCorso: 30 },
+        }));
+        const s = mostra();
+        const hero = s.getByTestId('cr-obiettivo');
+        expect(hero.textContent).not.toContain('39,15');
+        expect(hero.textContent).not.toMatch(/Liability aperta/);
+        expect(hero.textContent).not.toMatch(/in corso \(stimato\)/);
+        expect(within(hero).queryByTestId('day-bar-in-corso')).toBeNull();
+        expect(within(hero).getByRole('progressbar').getAttribute('aria-valuenow')).toBe('50');
+        expect(hero.textContent).toMatch(/rischio adesso: vedi «Esposizione conto» in testata/);
+        expect(hero.textContent).toMatch(/Cash out della partita/);
+    });
+
+    it('R_G: Mike ORA in LIVE senza prova di oggi -> «— (ora in LIVE)», mai «+0,00 [PROVA]»; arretrati invariati', () => {
+        const bots = vm().bots.map((b) => (b.bot === 'mike' ? { ...b, modalita: 'live' as const } : b));
+        mVm.mockReturnValue(vm({ bots, soldiGiornata: soldiP8(), provaGiornata: provaOggi('letti') }));
+        const s = mostra();
+        const oggi = s.getByTestId('cr-prova-mike-oggi').textContent ?? '';
+        expect(oggi).toContain('(ora in LIVE)');
+        expect(oggi).not.toContain('0,00');
+        expect(s.getByTestId('cr-prova-mike-arretrati').textContent).toBe('−18,29 € (2 partite del 26/09)');
+        // Safe resta in prova: la sua cifra di oggi resta
+        expect(s.getByTestId('cr-prova-safe_calcio-oggi').textContent).toContain('+0,00');
+    });
+
     it('P8: arretrati di Mike non letti -> lo dice, mai 0,00 e mai silenzio', () => {
         mVm.mockReturnValue(vm({ soldiGiornata: soldiP8(), provaGiornata: provaOggi('non letti') }));
         const s = mostra();

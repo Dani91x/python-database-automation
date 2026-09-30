@@ -119,7 +119,7 @@ function Blocco({ r, modo, testId, valoriBot }: {
             <div className="flex items-baseline gap-2 flex-wrap">
                 <span className={`text-[10px] font-bold uppercase tracking-wider ${modo === 'LIVE' ? 'text-white/80' : 'text-sky-300/80'}`}>
                     {modo === 'LIVE'
-                        ? 'Cash out della partita (se chiudo TUTTO adesso)'
+                        ? 'Cash out della partita: gambe dei bot (se le chiudo tutte adesso)'
                         : 'Prova (simulato, mai sommato ai soldi veri)'}
                 </span>
                 {r.netto != null ? (
@@ -156,6 +156,13 @@ function Blocco({ r, modo, testId, valoriBot }: {
                     </span>
                 )}
             </div>
+            {/* R_C (review): la cifra NON vede gli ordini fatti fuori dai bot:
+                sempre scritto, non nel tooltip (su FC Vsetin il sito ha chiuso) */}
+            {modo === 'LIVE' && (
+                <div className="text-[10px] text-amber-300/70" data-testid={`${testId}-solo-bot`}>
+                    solo ordini dei bot: gli ordini fatti dal sito o dall&apos;app Betfair non sono inclusi
+                </div>
+            )}
             {r.gambe.map((p) => (
                 <RigaGamba key={p.chiave} p={p} modo={modo} testId={`${testId}-gamba`} />
             ))}
@@ -178,9 +185,9 @@ function Blocco({ r, modo, testId, valoriBot }: {
                             testId={`${testId}-bot-${v.bot}-marchio`} />
                         {diff != null && diff !== 0 && (
                             <span className="text-white/40" data-testid={`${testId}-bot-${v.bot}-differenza`}>
-                                differenza {fmtMoney(Math.abs(diff))}: prezzi letti in istanti diversi
-                                (pagina {testoEtaBreve(eta)}, bot {testoEtaBreve(v.etaS)})
-                                {v.nota ? `; ${v.nota}` : ''}
+                                differenza {fmtMoney(Math.abs(diff))} · cause possibili: prezzi letti in istanti
+                                diversi (pagina {testoEtaBreve(eta)}, bot {testoEtaBreve(v.etaS)}); il bot chiude la
+                                copertura su un altro libro; il bot conta solo le sue gambe
                             </span>
                         )}
                     </div>

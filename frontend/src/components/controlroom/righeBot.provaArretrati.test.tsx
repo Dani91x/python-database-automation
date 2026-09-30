@@ -28,6 +28,34 @@ function safe(modo: 'paper' | 'live'): StatoBotPlancia {
     };
 }
 
+describe('R_G: il riassunto del gruppo non somma LIVE e PROVA', () => {
+    it('una riga live +2 e una paper +7,60: «oggi LIVE 2,00» e «prova 7,60», mai 9,60', () => {
+        const base = {
+            bot: 'safe' as const, acceso: true, statoNoto: true, stato: 'running', etaPushS: 1,
+            motivoBlocco: null, tettoPartite: null, partiteEsposte: null,
+            stopFermaSoloAperture: false, fermatoAllAvvioAt: null,
+        };
+        const righe = [
+            { ...base, id: 'safe-base' as const, etichetta: 'Safe base', modalita: 'live' as const, pnlOggi: 2, primaDelBot: true },
+            { ...base, id: 'safe-esatto' as const, etichetta: 'Safe esatto', modalita: 'paper' as const, pnlOggi: 7.6, primaDelBot: false },
+            // un gruppo tennis perche' la plancia divida in tendine
+            { ...base, id: 'tennis_scalper' as const, bot: 'tennis_scalper' as const, etichetta: 'Scalper', modalita: 'paper' as const, pnlOggi: null, primaDelBot: true },
+        ];
+        const comandi: ComandiInterruttori = {
+            accendi: vi.fn(async () => {}), spegni: vi.fn(async () => {}),
+            cambiaModalita: vi.fn(async () => {}), cambiaImporto: vi.fn(async () => {}),
+            fermaBot: vi.fn(async () => {}), scriviAccensioni: vi.fn(async () => {}),
+            cambiaModalitaServizio: vi.fn(async () => {}),
+        };
+        const s = render(<PannelloBot righe={righe} importi={{}} comandi={comandi} />);
+        const trigger = s.getByTestId('cr-pannello-bot-gruppo-calcio-trigger');
+        expect(s.getByTestId('cr-pannello-bot-gruppo-calcio-oggi-live').textContent).toBe('oggi LIVE 2,00 €');
+        expect(s.getByTestId('cr-pannello-bot-gruppo-calcio-oggi-prova').textContent).toBe('prova 7,60 €');
+        expect(trigger.textContent).not.toContain('9,60');
+        expect(s.container.textContent ?? '').not.toContain('9,60');
+    });
+});
+
 describe('plancia: prova di oggi e arretrati a parte', () => {
     it('Safe base in prova: oggi «—» (niente di oggi), arretrati +7,60 accanto e mai dentro', () => {
         const [r] = righeInterruttori([safe('paper')], 'calcio').filter((x) => x.id === 'safe-base');

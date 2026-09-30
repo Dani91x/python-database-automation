@@ -238,7 +238,7 @@ def condizioni() -> List[Cond]:
              lambda a: a.attivita_con("cancel", "under_last")),
         # ---- blocco 5 --------------------------------------------------
         Cond(33, B5, "finestra scaduta: compra la copertura piena",
-             lambda a: a.motivo_contiene("copertura Over 4.5")),
+             lambda a: a.motivo_contiene("copertura sulla linea 4,5")),
         Cond(34, B5, "ASPETTA per coprire (hazard e P(4) bassi)",
              lambda a: a.attivita_con("cover_wait") + a.motivo_contiene("attendo per coprire")),
         Cond(35, B5, "copre subito perche' la quota Over e' gia' buona",

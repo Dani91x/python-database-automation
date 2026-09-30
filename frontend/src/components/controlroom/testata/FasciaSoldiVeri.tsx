@@ -67,6 +67,9 @@ export function FasciaSoldiVeri({ s }: { s: SoldiVeriTestata | undefined }) {
             ? `stima parziale: manca ${mancanti.map((v) => BOT_LABEL[v.bot]).join(', ')}`
             : 'solo LIVE, per partita';
 
+    // R_T (30/09): un numero stantio (dichiarato dal servizio) si dice A SCHERMO
+    const stantii = voci.filter((v) => v.stantio === true && v.valore != null);
+
     const scarto = s?.scarto ?? null;
 
     return (
@@ -113,6 +116,12 @@ export function FasciaSoldiVeri({ s }: { s: SoldiVeriTestata | undefined }) {
                 <Etichetta>Rischio secondo i bot</Etichetta>
                 <span className="font-mono text-sm font-semibold tabular-nums text-white/80"
                     data-testid="cr-rischio-bot-valore">{valoreBot}</span>
+                {stantii.length > 0 && (
+                    <span className="text-[9.5px] leading-tight text-amber-300" data-testid="cr-rischio-bot-stantio"
+                        title={`il servizio dichiara il numero stantio (battito oltre 60 s): ${stantii.map((v) => BOT_LABEL[v.bot]).join(', ')}`}>
+                        dato del bot non aggiornato ({stantii.map((v) => BOT_LABEL[v.bot]).join(', ')})
+                    </span>
+                )}
                 <span className="flex items-center gap-1 text-[9.5px] leading-tight">
                     <MarchioSoldi fonte="bot" etaS={s == null ? undefined : s.etaBotS}
                         testId="cr-rischio-bot-marchio"

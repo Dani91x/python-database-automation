@@ -130,6 +130,35 @@ describe('StopPerdita - a schermo', () => {
     });
 });
 
+describe('R_T (30/09) - review finale', () => {
+    it('Omega: la soglia NON e\' presentata come armata: "scatto non pubblicato"; Safe e Mike no', () => {
+        mostra({ conto: stopDelConto(RIGA_OGGI, NOW), bot: bot() });
+        expect(screen.getByTestId('cr-stop-omega').textContent).toMatch(/scatto non pubblicato/);
+        expect(screen.queryByTestId('cr-stop-safe-scatto')).toBeNull();
+        expect(screen.queryByTestId('cr-stop-mike-scatto')).toBeNull();
+    });
+    it('conto SPENTO con un bot in LIVE: ambra; tutti in paper: grigio (testo invariato)', () => {
+        mostra({ conto: stopDelConto(RIGA_OGGI, NOW), bot: bot() }); // Mike LIVE
+        const v = screen.getByTestId('cr-stop-conto-valore');
+        expect(v.textContent).toBe('SPENTO');
+        expect(v.className).toMatch(/amber/);
+    });
+    it('conto SPENTO, tutti in paper: nessuna ambra', () => {
+        render(<MemoryRouter><StopPerdita stop={{ conto: stopDelConto(RIGA_OGGI, NOW), bot: bot({ mike: { modalita: 'paper', params: { daily_loss_stop: 50 }, stats: null } }) }} qualcheBotLive={false} /></MemoryRouter>);
+        expect(screen.getByTestId('cr-stop-conto-valore').className).not.toMatch(/amber/);
+    });
+    it('un bot LIVE fuori dai tre (tennis) accende l\'ambra tramite qualcheBotLive', () => {
+        render(<MemoryRouter><StopPerdita stop={{ conto: stopDelConto(RIGA_OGGI, NOW), bot: bot({ mike: { modalita: 'paper', params: { daily_loss_stop: 50 }, stats: null } }) }} qualcheBotLive /></MemoryRouter>);
+        expect(screen.getByTestId('cr-stop-conto-valore').className).toMatch(/amber/);
+    });
+    it('tennis e scalper: "stop proprio non pubblicato", mai "nessuno stop"', () => {
+        mostra({ conto: stopDelConto(RIGA_OGGI, NOW), bot: bot() });
+        const el = screen.getByTestId('cr-stop-altri');
+        expect(el.textContent).toMatch(/Tennis, Scalper: stop proprio non pubblicato/);
+        expect(el.textContent).not.toMatch(/nessuno/);
+    });
+});
+
 describe('vaiAllaRigaDelBot - porta alla riga, mette il fuoco sul foglio, non lo apre', () => {
     it('riga presente: fuoco sul primo pulsante del foglio parametri del bot, nessun clic', () => {
         document.body.innerHTML = `

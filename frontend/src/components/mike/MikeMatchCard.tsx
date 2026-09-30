@@ -754,7 +754,7 @@ function MikeMatchCardBase({
                     testId="mike-quote-ou35"
                 />
                 <QuoteLine
-                    label={terminal ? 'Over 4.5 · ultime quote viste' : 'Over 4.5 back / lay'}
+                    label={terminal ? 'Over 4.5 · ultime quote viste' : 'Over 4.5 · chiusura della copertura'}
                     book={books['OU45|OVER']}
                     frozen={terminal}
                     prev={terminal ? undefined : prevSnapshot['OU45|OVER']}
@@ -762,11 +762,11 @@ function MikeMatchCardBase({
                     testId="mike-quote-ou45"
                 />
                 <QuoteLine
-                    label={terminal ? 'Under 4.5 · ultime quote viste' : 'Under 4.5 (re-ingresso)'}
+                    label={terminal ? 'Under 4.5 · ultime quote viste' : 'Under 4.5 · copertura (banca) e re-ingresso'}
                     book={books['OU45|UNDER']}
                     frozen={terminal}
                     prev={terminal ? undefined : prevSnapshot['OU45|UNDER']}
-                    title={`Under 4.5 · market ${marketIds.OU45?.market_id ?? '—'} · selection ${sels['OU45|UNDER'] ?? '—'} · linea del re-ingresso dopo un gol`}
+                    title={`Under 4.5 · market ${marketIds.OU45?.market_id ?? '—'} · selection ${sels['OU45|UNDER'] ?? '—'} · su questa linea Mike banca la copertura (di serie) e rientra dopo un gol`}
                     testId="mike-quote-ou45-under"
                 />
             </div>

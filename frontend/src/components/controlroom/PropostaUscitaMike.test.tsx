@@ -40,7 +40,8 @@ function ev(ctx: Record<string, unknown> | null, feedAge = 2): MikeEvent {
         cycle_no: 0, entry_price_initial: 1.5, dossier: null,
         live: {
             feed_age_s: feedAge,
-            cashout: { net: 1.28 },
+            // R-B2 (30/09): il finto parla come il vero (`MikeCashout`, engine.py:4144)
+            cashout: { net: 1.28, gross: 1.35, base: 24, complete: true, pct: 5.3 },
             books: {
                 'OU35|UNDER': { best_back: 1.30, best_lay: 1.31 },
                 'OU45|OVER': { best_back: 12.0, best_lay: 12.5 },
@@ -76,6 +77,26 @@ describe('25/09 proposta d’uscita di Mike', () => {
         expect(numeri).toContain('alla decisione +1,31 €');
         expect(numeri).toMatch(/deciso 1[2-4] s fa/);
         expect(numeri).toContain('30′');
+    });
+
+    it('R-B2: cash out INCOMPLETO (una linea senza prezzo): nessuna cifra, «non calcolabile»', () => {
+        const e = ev({ uscita_proposta: proposta() });
+        const live = { ...(e.live ?? {}), cashout: { net: 1.28, gross: 1.35, base: 24, complete: false, pct: 5.3 } };
+        render(<PropostaUscitaMike ev={{ ...e, live: live as MikeEvent['live'] }} />);
+        const numeri = screen.getByTestId('cr-mike-proposta-numeri').textContent ?? '';
+        expect(numeri).toMatch(/^chiudendo tutta la partita ora: non calcolabile \(manca il prezzo di una linea\)/);
+        expect(numeri).not.toContain('1,28');
+        expect(screen.queryByTestId('cr-mike-proposta-cifra')).toBeNull();
+        // il resto non cambia: alla decisione, e l'approva resta acceso col feed vivo
+        expect(numeri).toContain('alla decisione +1,31 €');
+        expect(screen.getByTestId('cr-mike-proposta-approva')).toHaveProperty('disabled', false);
+    });
+
+    it('R-B2: cash out completo: la cifra, marcata come calcolo del bot', () => {
+        render(<PropostaUscitaMike ev={ev({ uscita_proposta: proposta() })} />);
+        expect(screen.getByTestId('cr-mike-proposta-cifra').textContent).toBe('+1,28 €');
+        expect(screen.getByTestId('cr-mike-proposta-fonte-cifra').textContent).toBe(' (calcolo del bot)');
+        expect(screen.queryByTestId('cr-mike-proposta-cifra-non-calcolabile')).toBeNull();
     });
 
     it('uscita in perdita: marcata', () => {

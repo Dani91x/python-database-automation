@@ -71,6 +71,20 @@ describe('corsiePerSport - ogni bot nella corsia della sua modalita\'', () => {
         expect(cp.calcio.live).toEqual([]);
     });
 
+    it('R_G: scalper spento con `modalitaUltima`: nella corsia di quell\'ultimo modo, dichiarato; null resta ignota', () => {
+        const conUltimo = OGGI.map((b) => (b.bot === 'scalper' ? { ...b, modalitaUltima: 'paper' as const } : b));
+        const c = corsiePerSport(conUltimo);
+        expect(c.calcio.prova.find((v) => v.chiave === 'scalper')).toEqual(
+            { chiave: 'scalper', nome: 'Scalper calcio', modalita: 'paper', acceso: false, ultimoModo: true });
+        expect(c.calcio.ignote).toEqual([]);
+        // senza ultimo modo resta fra le ignote
+        const senza = corsiePerSport(OGGI.map((b) => (b.bot === 'scalper' ? { ...b, modalitaUltima: null } : b)));
+        expect(senza.calcio.ignote.map((v) => v.chiave)).toEqual(['scalper']);
+        // una modalita' dichiarata vince sempre sull'ultima
+        const dich = corsiePerSport(OGGI.map((b) => (b.bot === 'mike' ? { ...b, modalitaUltima: 'paper' as const } : b)));
+        expect(dich.calcio.live.map((v) => v.chiave)).toEqual(['mike']);
+    });
+
     it('modalita\' non dichiarata o riga assente: ignota, MAI prova', () => {
         const c = corsiePerSport([{ bot: 'omega', modalita: null, inCorsa: true, varianti: null, modiStrategia: null }]);
         expect(c.calcio.ignote.map((v) => v.chiave)).toEqual(['omega', 'safe-base', 'safe-esatto', 'safe-punta', 'mike', 'scalper']);

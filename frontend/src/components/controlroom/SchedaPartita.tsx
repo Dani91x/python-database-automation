@@ -427,8 +427,12 @@ export function SchedaPartita({
             {/* ── riga 2: il METRO — target, fatto, quanto manca ── */}
             <div className="px-2.5 pt-2">
                 <div className="flex items-baseline justify-between gap-2 text-[11px]">
-                    <span className="text-white/40">
-                        target <span className="font-mono text-white/70">{target == null ? DASH : fmtMoney(target)}</span>
+                    <span className="text-white/40" data-testid="cr-target">
+                        {/* R_B1: il target di ripiego e' una MEDIA calcolata dalla pagina
+                            ((obiettivo - realizzato) / partite utili, `targetPartita`),
+                            uguale su tutte le schede: si dice in chiaro, non solo nel tooltip */}
+                        target{p.target?.fonte === 'ripiego' && ' (media della pagina)'}{' '}
+                        <span className="font-mono text-white/70">{target == null ? DASH : fmtMoney(target)}</span>
                         {p.target?.fonte === 'ripiego' && <span className="text-white/30" title="calcolato dalla pagina: il servizio non lo pubblica"> *</span>}
                     </span>
                     <span className="flex items-baseline gap-2">

@@ -56,7 +56,7 @@ COLONNE_VERE = {"event_id", "payload", "sport", "updated_at"}
 PAYLOAD_VERO_CALCIO = {
     "away", "btts", "competition", "cs", "event_name", "home", "ht", "ht_result",
     "inplay", "media", "minute", "mo_market_id", "mo_status", "mo_total_matched",
-    "odds", "odds_ts_ms", "open_date", "ou", "pre_ko", "pressure_index",
+    "odds", "odds_ts_ms", "odds_seen_ms", "open_date", "ou", "pre_ko", "pressure_index",
     "red_away", "red_home", "score_away", "score_home", "score_raw",
     # SPEC §2 «Selezione aggiuntiva» (16/09): scontri diretti + gol subiti,
     # calcolati dallo scanner e pubblicati nella riga come `pressure_index`
@@ -84,7 +84,7 @@ PAYLOAD_VERO_TENNIS = {
     # ``odds_pt_ms`` il salto fra la pubblicazione di Betfair e la nostra
     # lavorazione non era misurabile, e senza ``bet_delay`` il bot non sapeva a
     # quale ritardo era soggetto (3 s, 5 s su alcuni ITF).
-    "odds_pt_ms", "bet_delay",
+    "odds_pt_ms", "bet_delay", "odds_seen_ms",
     # Q12 (ordine dell'utente 25/09), chiave ADDITIVA: quota pre-partita
     # congelata al primo tick in-play (`scanner.freeze_pre_ko_tennis`), stesso
     # nome e schema del `pre_ko` calcio (coppia p1/p2 invece della tripla).

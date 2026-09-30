@@ -156,3 +156,32 @@ def test_senza_il_book_di_ingresso_il_bot_non_entra():
     d = E.decide(E.MatchCtx(), s, C.merge_params(None))
     assert not [a for a in d.actions if a.kind == "place"], \
         "nessun ordine su una linea che nessuno sta guardando"
+
+
+# ---------------------------------------------------------------------------
+# 30/09 sera: con il blocco ``flusso`` nella riga (scanner dal 28/09) la vita
+# di una linea la dice lo scanner, non un ``seen_ms`` che la riga non
+# riscrive (fuori firma). Senza ``flusso``: comportamento di sopra, identico.
+# ---------------------------------------------------------------------------
+def _con_flusso(riga, fermi=()):
+    riga["payload"]["flusso"] = {"vivo": True, "motivo": None, "dal_ms": int((ORA - 900) * 1000),
+                                 "mercati_fermi": list(fermi), "fermi_da_ms": {}}
+    return riga
+
+
+def test_con_flusso_una_linea_col_prezzo_fermo_ma_viva_per_lo_scanner_RESTA():
+    """Il caso vero del 30/09: Under 4,5 a prezzo fermo da 5 minuti (nessuna
+    riscrittura, ``seen_ms`` vecchio), ma lo scanner riceve i book e non la
+    mette fra i fermi: la copertura DEVE poterci andare."""
+    s = _snap(_con_flusso(_riga(seen35=ORA * 1000, seen45=(ORA - 600) * 1000)))
+    assert s is not None
+    assert s.book(E.MARKET_OU45, E.SEL_OVER) is not None, "linea viva per lo scanner: resta"
+    assert s.book(E.MARKET_OU45, E.SEL_UNDER) is not None
+
+
+def test_con_flusso_una_linea_che_lo_scanner_dichiara_ferma_SPARISCE():
+    blk45 = _riga()["payload"]["ou"][1]["market_id"]
+    s = _snap(_con_flusso(_riga(seen35=ORA * 1000, seen45=ORA * 1000), fermi=[blk45]))
+    assert s is not None
+    assert s.book(E.MARKET_OU35, E.SEL_UNDER) is not None
+    assert s.book(E.MARKET_OU45, E.SEL_OVER) is None, "ferma per lo scanner: sparisce anche con seen_ms fresco"

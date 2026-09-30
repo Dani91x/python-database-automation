@@ -161,9 +161,10 @@ const REGOLA_LINEE = 'in vista le linee 3,5 e 4,5 (quelle su cui operano i bot: 
  * Le linee Under/Over della riga (`PartitaGiornata.lineeOu`), con lo stesso
  * componente delle quote. Lo stato del mercato si traduce con
  * `marketStatusMeta` (lo stesso vocabolario del Match Odds); la linea decisa
- * dai gol si dichiara. L'età è quella dell'ultimo book RICEVUTO (`seen_ms`),
- * grigia: da sola non distingue un mercato fermo da uno non più osservato
- * (quel giudizio lo dà il badge del flusso).
+ * dai gol si dichiara. L'età è quella dell'ultimo CAMBIO della linea
+ * (`ts_ms`, R_B1: `seen_ms` è fuori dalla firma della riga e non arriva a
+ * ogni book), grigia: da sola non distingue un mercato fermo da uno non più
+ * osservato (quel giudizio lo dà il badge del flusso).
  */
 export function LineeOu({ linee, testId }: { linee: readonly LineaOuScheda[]; testId: string }) {
     if (linee.length === 0) return null;
@@ -210,9 +211,11 @@ function RigaLineaOu({ l }: { l: LineaOuScheda }) {
                 { chiave: 'under', etichetta: 'Under', back: l.under?.back, lay: l.under?.lay },
                 { chiave: 'over', etichetta: 'Over', back: l.over?.back, lay: l.over?.lay },
             ]} />
+            {/* R_B1: ultimo CAMBIO (`ts_ms`), stesso testo dell'età del Match
+                Odds, grigio neutro: per la linea non c'è il giudizio dello scanner */}
             <span className="font-mono text-[11px] text-white/40 whitespace-nowrap" data-testid="cr-quote-ou-eta"
-                title="ultimo book ricevuto per questa linea (seen_ms): non dice se il prezzo è cambiato">
-                ultimo book: {l.etaBookS == null ? 'età ignota' : `${fmtAge(l.etaBookS)} fa`}
+                title="ultimo cambio di prezzo o di importo di questa linea: non è l’ultima lettura (ts_ms del blocco)">
+                ultimo cambio: {l.etaCambioS == null ? 'età ignota' : fmtAge(l.etaCambioS)}
             </span>
         </div>
     );

@@ -46,20 +46,37 @@ function ValoreBot({ s }: { s: StopBot }) {
         return <span className="text-orange-400">{s.bot === 'safe' ? 'assente' : 'non letto'}</span>;
     }
     if (s.soglia === 0) return <span className="text-white/50">spento</span>;
-    return <span className="text-white/90">{fmtMoney(-s.soglia)}</span>;
+    return (
+        <>
+            <span className="text-white/90">{fmtMoney(-s.soglia)}</span>
+            {/* R_T (30/09): Omega non pubblica lo scatto: mai presentare la
+                soglia come "armata" */}
+            {!s.scattoPubblicato && (
+                <span className="text-white/40 font-sans text-[9.5px]" data-testid={`cr-stop-${s.bot}-scatto`}
+                    title={`${BOT_LABEL[s.bot]} non pubblica se il suo stop e' scattato (lo scrive solo nella sua attivita'): la soglia c'e', lo stato no`}>
+                    scatto non pubblicato
+                </span>
+            )}
+        </>
+    );
 }
 
-export function StopPerdita({ stop, vai = vaiAllaRigaDelBot }: {
+export function StopPerdita({ stop, vai = vaiAllaRigaDelBot, qualcheBotLive }: {
     stop: StopPerditaTestata | undefined;
     /** iniettabile per i test */
     vai?: (bot: string) => boolean;
+    /** R_T (30/09): almeno un bot (qualunque, acceso o fermo) dichiara LIVE.
+     *  Assente = si guarda solo Safe/Mike/Omega. */
+    qualcheBotLive?: boolean;
 }) {
     const c = stop?.conto ?? null;
+    const live = qualcheBotLive ?? (stop?.bot ?? []).some((b) => b.modalita === 'live');
     let contoTesto: string;
     let contoCls = 'text-white/90';
     if (c == null || !c.letto) { contoTesto = 'non letto'; contoCls = 'text-orange-400'; }
     else if (c.scattato) { contoTesto = 'SCATTATO: freno generale tirato'; contoCls = 'text-red-400'; }
-    else if (c.soglia == null) { contoTesto = 'SPENTO'; contoCls = 'text-white/60'; }
+    // R_T (30/09): nessun freno di conto con soldi veri in gioco = ambra
+    else if (c.soglia == null) { contoTesto = 'SPENTO'; contoCls = live ? 'text-amber-300' : 'text-white/60'; }
     else contoTesto = fmtMoney(-c.soglia);
 
     return (
@@ -97,6 +114,12 @@ export function StopPerdita({ stop, vai = vaiAllaRigaDelBot }: {
                         </button>
                     </span>
                 ))}
+                {/* R_T (30/09): tennis e scalper non pubblicano uno stop proprio
+                    che la pagina conosca: non si dice "nessuno stop" */}
+                <span className="text-white/35 font-sans text-[9.5px]" data-testid="cr-stop-altri"
+                    title="i 4 bot tennis e lo scalper calcio non pubblicano uno stop di perdita giornaliera che questa pagina possa leggere: non sappiamo se ne hanno uno">
+                    Tennis, Scalper: stop proprio non pubblicato
+                </span>
             </span>
         </div>
     );

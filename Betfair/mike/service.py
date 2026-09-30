@@ -1312,8 +1312,39 @@ def _scanner_stato() -> Optional[Dict[str, Any]]:
     return v if isinstance(v, dict) else None
 
 
+# 30/09 - lo stato dello scanner dal CANALE: il battito arriva ogni 10 s sul
+# 47336 (lo stesso payload che va su ``safe_strategy_status``). Piu' vecchio di
+# cosi' (o mai arrivato, o socket caduto) = si rilegge il DB come prima.
+_CANALE_STATO_ETA_MAX_S = 30.0
+
+
+def _stato_scanner_dal_canale() -> Optional["tuple[Dict[str, Any], float]"]:
+    """(payload, eta_s) dell'ultimo battito dello scanner ricevuto sul canale
+    locale, se il client c'e' ed e' fresco; None in ogni altro caso (= DB)."""
+    client = _CANALE_FEED.get("client")
+    if client is None:
+        return None
+    try:
+        eta = client.eta_stato_s()
+        payload = client.stato_payload
+    except Exception:  # noqa: BLE001 - il canale non ferma mai il giro
+        return None
+    if eta is None or eta > _CANALE_STATO_ETA_MAX_S or not isinstance(payload, dict):
+        return None
+    return payload, float(eta)
+
+
 def _scanner_age(db: Any, now: float) -> Optional[float]:
-    st = db.scanner_status()
+    # 30/09 (d-1): prima il canale (zero letture DB), poi il DB come ripiego.
+    # Le due vie portano lo STESSO payload; l'eta' e' quella del battito.
+    dal_canale = _stato_scanner_dal_canale()
+    if dal_canale is not None:
+        payload, eta = dal_canale
+        st: Any = {"payload": payload, "updated_at": None}
+        _ULTIMO_STATO_SCANNER["fonte"] = "canale"
+    else:
+        st = db.scanner_status()
+        _ULTIMO_STATO_SCANNER["fonte"] = "db"
     # cantiere J: il payload dello stato porta il blocco ``flusso`` (giro dello
     # scanner bloccato / partite coi prezzi fermi); si tiene quello di questo giro
     _ULTIMO_STATO_SCANNER["v"] = (st.get("payload") if isinstance(st, dict)
@@ -1327,6 +1358,8 @@ def _scanner_age(db: Any, now: float) -> Optional[float]:
             pass
     if not st:
         return None
+    if dal_canale is not None:
+        return dal_canale[1]
     ts = F.parse_iso_epoch(st.get("updated_at"))
     return None if ts is None else max(0.0, now - ts)
 

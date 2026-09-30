@@ -22,6 +22,8 @@ export interface BotPerCorsie {
     inCorsa: boolean;
     varianti?: string[] | null;
     modiStrategia?: Record<string, 'paper' | 'live'> | null;
+    /** 30/09 (R_G): la modalita' dell'interruttore da SPENTO (solo lo scalper calcio la valorizza) */
+    modalitaUltima?: 'paper' | 'live' | null;
 }
 
 /** Una voce della tessera: un bot (o una strategia di Safe). */
@@ -33,6 +35,8 @@ export interface VoceCorsia {
     modalita: 'paper' | 'live' | null;
     /** true = sta operando; false = fermo/spento; null = riga del bot non letta */
     acceso: boolean | null;
+    /** 30/09 (R_G): la modalita' e' l'ULTIMA dell'interruttore (bot spento), non quella in corso */
+    ultimoModo?: boolean;
 }
 
 export interface CorsieSport {
@@ -87,7 +91,10 @@ function corsieDi(elenco: typeof CALCIO, bots: readonly BotPerCorsie[]): CorsieS
         const b = bots.find((x) => x.bot === d.bot) ?? null;
         const stato = d.variante != null
             ? voceSafe(b, d.variante)
-            : b == null ? { modalita: null, acceso: null } : { modalita: b.modalita, acceso: b.inCorsa };
+            : b == null ? { modalita: null, acceso: null }
+                : b.modalita == null && b.modalitaUltima != null
+                    ? { modalita: b.modalitaUltima, acceso: b.inCorsa, ultimoModo: true }
+                    : { modalita: b.modalita, acceso: b.inCorsa };
         const voce: VoceCorsia = { chiave: d.chiave, nome: d.nome, ...stato };
         if (voce.modalita === 'live') {
             out.live.push(voce);
@@ -104,4 +111,27 @@ function corsieDi(elenco: typeof CALCIO, bots: readonly BotPerCorsie[]): CorsieS
 /** Le due corsie di calcio e tennis dalla riga `control` di TUTTI i bot. */
 export function corsiePerSport(bots: readonly BotPerCorsie[]): Record<SportCorsie, CorsieSport> {
     return { calcio: corsieDi(CALCIO, bots), tennis: corsieDi(TENNIS, bots) };
+}
+
+/**
+ * 30/09 (R_G) - la modalita' CORRENTE di ogni voce della corsia PROVA del
+ * riquadro (chiavi di `lib/provaGiornata.ts`): 'live' solo se TUTTE le sue
+ * strategie sono in LIVE adesso; mista o ignota = null (nessuna scritta).
+ */
+export function modalitaVociProva(bots: readonly BotPerCorsie[]):
+    Record<'omega' | 'mike' | 'safe_calcio' | 'safe_tennis', 'paper' | 'live' | null> {
+    const c = corsiePerSport(bots);
+    const tutte = [...c.calcio.live, ...c.calcio.prova, ...c.calcio.ignote,
+        ...c.tennis.live, ...c.tennis.prova, ...c.tennis.ignote];
+    const di = (chiavi: string[]): 'paper' | 'live' | null => {
+        const v = tutte.filter((x) => chiavi.includes(x.chiave));
+        if (v.length === 0) return null;
+        if (v.every((x) => x.modalita === 'live' && !x.ultimoModo)) return 'live';
+        if (v.every((x) => x.modalita === 'paper')) return 'paper';
+        return null;
+    };
+    return {
+        omega: di(['omega']), mike: di(['mike']),
+        safe_calcio: di(['safe-base', 'safe-esatto', 'safe-punta']), safe_tennis: di(['safe-tennis']),
+    };
 }

@@ -351,6 +351,20 @@ describe('gambeDaOperazioni: le righe della scheda di TUTTI i bot', () => {
         expect(g[1].modalita).toBe('paper');
         expect(g[2].nonScomponibile).toMatch(/scalper/);
     });
+    it('R_C: ordine TENNIS regolato (EXECUTION_COMPLETE + pnl) NON e\' una gamba; senza pnl e abbinato lo e\'', () => {
+        // forma vera delle righe tennis in `useControlRoom.operazioni`: stato
+        // flumine EXECUTION_COMPLETE, `pnl` valorizzato solo con `settled_at`
+        const tennis = (id: number, pnl: number | null) => op({
+            id, bot: 'tennis_scalper', marketId: '1.77', selectionId: 9, stato: 'EXECUTION_COMPLETE', pnl,
+            ordine: { status: 'EXECUTION_COMPLETE', side: 'back', price: 1.8, size: 10, size_requested: 10,
+                size_matched: 10, size_remaining: 0, avg_price_matched: 1.8, betfair_updated_at: null, meta: null },
+        });
+        expect(gambeDaOperazioni([tennis(1, 3.2), tennis(2, null)]).map((g) => g.id)).toEqual([2]);
+        // un regolato non rende la partita NON CALCOLABILE (mercato chiuso, prezzo assente)
+        const r = cashOutPartita(gambeDaOperazioni([tennis(1, -10)]), opz({}));
+        expect(r.live.nGambe).toBe(0);
+        expect(r.live.completo).toBe(true);
+    });
     it('aliquota dalla riga (P11: chiusura.alMs.aliquota) e mercato a due esiti dal chiamante', () => {
         const g = gambeDaOperazioni(follo, { dueEsiti: (m) => m === '1.45' });
         expect(g.map((x) => [x.aliquota, x.dueEsiti])).toEqual([[0.05, false], [0.05, true]]);

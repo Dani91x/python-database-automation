@@ -341,9 +341,14 @@ export function latenzaQuoteS(p: PartitaFeedLike | null | undefined, nowMs: numb
  *   · miglior BACK/LAY di Under e Over, riconosciuti dal NOME della selezione
  *     («Under 3.5 Goals» / «Over 3.5 Goals»); una selezione che non si
  *     riconosce resta `null` (mai un prezzo attribuito a caso);
- *   · `seen_ms` = ultimo book RICEVUTO per quella linea (`service.py:1285,1319`),
- *     che NON distingue «mercato fermo» da «mercato non piu' osservato»:
- *     l'eta' si mostra senza giudizio (il giudizio lo da' il flusso).
+ *   · `ts_ms` = ultimo CAMBIO del blocco (prezzi o importi al meglio,
+ *     `service.py:1298-1309`), che sta DENTRO la firma del write-on-change:
+ *     un suo cambio riscrive la riga, quindi la pagina lo riceve davvero.
+ *     R_B1 (review, 30/09): prima si mostrava `seen_ms` come «ultimo book», ma
+ *     `seen_ms` e' FUORI firma (`scanner._FUORI_FIRMA`, `scanner.py:495`): un
+ *     book che non cambia i prezzi non riscrive la riga (`service.py:1975-1977`),
+ *     e la pagina riceveva il `seen_ms` dell'ultima RISCRITTURA, non dell'ultimo
+ *     book. L'eta' si mostra senza giudizio (il giudizio lo da' il flusso).
  */
 export interface LatiOu { back: number | null; lay: number | null }
 export interface LineaOuScheda {
@@ -356,8 +361,8 @@ export interface LineaOuScheda {
     perMike: boolean;
     under: LatiOu | null;
     over: LatiOu | null;
-    /** secondi dall'ultimo book ricevuto (`seen_ms`); null = non dichiarato */
-    etaBookS: number | null;
+    /** secondi dall'ultimo CAMBIO della linea (`ts_ms`); null = non dichiarato */
+    etaCambioS: number | null;
 }
 
 function prezzoOu(v: unknown): number | null {
@@ -385,12 +390,12 @@ export function lineeOuScheda(p: PartitaFeedLike | null | undefined, nowMs: numb
         if (!b || typeof b !== 'object') continue;
         const r = b as {
             market_id?: unknown; line?: unknown; status?: unknown; decided?: unknown; for_mike?: unknown;
-            selections?: unknown; seen_ms?: unknown;
+            selections?: unknown; ts_ms?: unknown;
         };
         const linea = typeof r.line === 'number' && Number.isFinite(r.line) ? r.line : null;
         if (r.market_id == null || r.market_id === '' || linea == null) continue;
-        const seen = typeof r.seen_ms === 'number' && Number.isFinite(r.seen_ms) && r.seen_ms > 0
-            ? r.seen_ms : null;
+        const cambio = typeof r.ts_ms === 'number' && Number.isFinite(r.ts_ms) && r.ts_ms > 0
+            ? r.ts_ms : null;
         out.push({
             marketId: String(r.market_id),
             linea,
@@ -399,7 +404,7 @@ export function lineeOuScheda(p: PartitaFeedLike | null | undefined, nowMs: numb
             perMike: r.for_mike === true,
             under: latoOu(r.selections, 'under'),
             over: latoOu(r.selections, 'over'),
-            etaBookS: seen == null ? null : Math.max(0, Math.round((nowMs - seen) / 1000)),
+            etaCambioS: cambio == null ? null : Math.max(0, Math.round((nowMs - cambio) / 1000)),
         });
     }
     out.sort((a, b) => a.linea - b.linea);

@@ -1,0 +1,333 @@
+diff --git a/frontend/src/components/controlroom/NomiPartita.test.tsx b/frontend/src/components/controlroom/NomiPartita.test.tsx
+index 83b263c..f1a6b48 100644
+--- a/frontend/src/components/controlroom/NomiPartita.test.tsx
++++ b/frontend/src/components/controlroom/NomiPartita.test.tsx
+@@ -73,6 +73,17 @@ describe('NomiPartita — gli stessi nomi in ogni scheda', () => {
+         expect(vuoto.getAttribute('aria-hidden')).toBe('true');
+     });
+ 
++    // R_B1: la stessa riga riusata per un'altra squadra non eredita il «rotto»
++    it('logo rotto, poi la riga passa a un’altra squadra: il nuovo logo si mostra', () => {
++        const { container, rerender } = render(<NomiPartita nome="Roma v Lazio" homeTeamId={497} awayTeamId={487} />);
++        fireEvent.error(container.querySelectorAll('img')[0]);
++        expect(container.querySelectorAll('img')).toHaveLength(1);
++        rerender(<NomiPartita nome="Milan v Lazio" homeTeamId={489} awayTeamId={487} />);
++        const img = container.querySelectorAll('img');
++        expect(img).toHaveLength(2);
++        expect(img[0].getAttribute('src')).toContain('489');
++    });
++
+     it('un logo che non carica sparisce (niente quadrato rotto)', () => {
+         const { container } = render(<NomiPartita nome="Roma v Lazio" homeTeamId={497} awayTeamId={487} />);
+         fireEvent.error(container.querySelectorAll('img')[0]);
+diff --git a/frontend/src/components/controlroom/NomiPartita.tsx b/frontend/src/components/controlroom/NomiPartita.tsx
+index f6dc4f5..a42f954 100644
+--- a/frontend/src/components/controlroom/NomiPartita.tsx
++++ b/frontend/src/components/controlroom/NomiPartita.tsx
+@@ -49,13 +49,17 @@ export function NomiPartita({ nome, homeTeamId = null, awayTeamId = null }: Nomi
+  *  nessuna delle due squadre ha il logo: in una lista mista i nomi partono
+  *  tutti dallo stesso punto, come nella pre-partita prima di B1. */
+ function Squadra({ nome, src }: { nome: string; src: string }) {
+-    const [rotto, setRotto] = useState(false);
++    // R_B1: il «rotto» vale per QUEL logo. Se la riga viene riusata per
++    // un'altra squadra (src diverso) si riparte da capo: si ricorda l'URL
++    // rotto, non un sì/no che resterebbe appiccicato alla riga.
++    const [rottoSrc, setRottoSrc] = useState<string | null>(null);
++    const rotto = rottoSrc === src;
+     return (
+         <div className="flex items-center gap-1.5 leading-tight min-w-0">
+             {src && !rotto ? (
+                 <img
+                     src={src} alt="" width={16} height={16} loading="lazy"
+-                    onError={() => setRotto(true)}
++                    onError={() => setRottoSrc(src)}
+                     className="w-4 h-4 object-contain shrink-0"
+                 />
+             ) : (
+diff --git a/frontend/src/components/controlroom/QuoteMercato.test.tsx b/frontend/src/components/controlroom/QuoteMercato.test.tsx
+index a0cf217..6911ceb 100644
+--- a/frontend/src/components/controlroom/QuoteMercato.test.tsx
++++ b/frontend/src/components/controlroom/QuoteMercato.test.tsx
+@@ -93,20 +93,24 @@ describe('EtaQuote — l’età del prezzo con l’etichetta di cosa misura', ()
+ function linea(over: Partial<LineaOuScheda> = {}): LineaOuScheda {
+     return {
+         marketId: '1.35', linea: 3.5, stato: 'OPEN', decisa: false, perMike: false,
+-        under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaBookS: 3, ...over,
++        under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaCambioS: 3, ...over,
+     };
+ }
+ 
+ describe('LineeOu — le linee Under/Over con lo stesso componente', () => {
+     it('linea, Under B/L, Over B/L e l’età dell’ultimo book, neutra', () => {
+-        render(<LineeOu testId="ou" linee={[linea(), linea({ marketId: '1.45', linea: 4.5, etaBookS: null })]} />);
++        render(<LineeOu testId="ou" linee={[linea(), linea({ marketId: '1.45', linea: 4.5, etaCambioS: null })]} />);
+         const righe = screen.getAllByTestId('cr-quote-ou-linea');
+         expect(righe).toHaveLength(2);
+         expect(righe[0]).toHaveTextContent('U/O 3,5');
+         expect(righe[0]).toHaveTextContent('Under 1,50/1,52');
+         expect(righe[0]).toHaveTextContent('Over 2,60/2,70');
+-        expect(righe[0]).toHaveTextContent('ultimo book: 3 s fa');
+-        expect(righe[1]).toHaveTextContent('ultimo book: età ignota');
++        expect(righe[0]).toHaveTextContent('ultimo cambio: 3 s');
++        expect(righe[1]).toHaveTextContent('ultimo cambio: età ignota');
++        // R_B1: e' l'ultimo CAMBIO della linea (ts_ms), non l'ultimo book ne' l'ultima lettura
++        expect(righe[0].textContent).not.toMatch(/ultimo book/);
++        expect(screen.getAllByTestId('cr-quote-ou-eta')[0].getAttribute('title'))
++            .toMatch(/ultimo cambio di prezzo o di importo di questa linea: non è l.ultima lettura/);
+         // seen_ms non distingue fermo da non osservato: nessun colore di allarme
+         expect(screen.getByTestId('ou').querySelector('.text-orange-400')).toBeNull();
+     });
+diff --git a/frontend/src/components/controlroom/QuoteMercato.tsx b/frontend/src/components/controlroom/QuoteMercato.tsx
+index bac7b40..5de2e49 100644
+--- a/frontend/src/components/controlroom/QuoteMercato.tsx
++++ b/frontend/src/components/controlroom/QuoteMercato.tsx
+@@ -161,9 +161,10 @@ const REGOLA_LINEE = 'in vista le linee 3,5 e 4,5 (quelle su cui operano i bot:
+  * Le linee Under/Over della riga (`PartitaGiornata.lineeOu`), con lo stesso
+  * componente delle quote. Lo stato del mercato si traduce con
+  * `marketStatusMeta` (lo stesso vocabolario del Match Odds); la linea decisa
+- * dai gol si dichiara. L'età è quella dell'ultimo book RICEVUTO (`seen_ms`),
+- * grigia: da sola non distingue un mercato fermo da uno non più osservato
+- * (quel giudizio lo dà il badge del flusso).
++ * dai gol si dichiara. L'età è quella dell'ultimo CAMBIO della linea
++ * (`ts_ms`, R_B1: `seen_ms` è fuori dalla firma della riga e non arriva a
++ * ogni book), grigia: da sola non distingue un mercato fermo da uno non più
++ * osservato (quel giudizio lo dà il badge del flusso).
+  */
+ export function LineeOu({ linee, testId }: { linee: readonly LineaOuScheda[]; testId: string }) {
+     if (linee.length === 0) return null;
+@@ -210,9 +211,11 @@ function RigaLineaOu({ l }: { l: LineaOuScheda }) {
+                 { chiave: 'under', etichetta: 'Under', back: l.under?.back, lay: l.under?.lay },
+                 { chiave: 'over', etichetta: 'Over', back: l.over?.back, lay: l.over?.lay },
+             ]} />
++            {/* R_B1: ultimo CAMBIO (`ts_ms`), stesso testo dell'età del Match
++                Odds, grigio neutro: per la linea non c'è il giudizio dello scanner */}
+             <span className="font-mono text-[11px] text-white/40 whitespace-nowrap" data-testid="cr-quote-ou-eta"
+-                title="ultimo book ricevuto per questa linea (seen_ms): non dice se il prezzo è cambiato">
+-                ultimo book: {l.etaBookS == null ? 'età ignota' : `${fmtAge(l.etaBookS)} fa`}
++                title="ultimo cambio di prezzo o di importo di questa linea: non è l’ultima lettura (ts_ms del blocco)">
++                ultimo cambio: {l.etaCambioS == null ? 'età ignota' : fmtAge(l.etaCambioS)}
+             </span>
+         </div>
+     );
+diff --git a/frontend/src/components/controlroom/SchedaPartita.test.tsx b/frontend/src/components/controlroom/SchedaPartita.test.tsx
+index 53e5a46..87ba497 100644
+--- a/frontend/src/components/controlroom/SchedaPartita.test.tsx
++++ b/frontend/src/components/controlroom/SchedaPartita.test.tsx
+@@ -315,9 +315,9 @@ describe('SchedaPartita — B1: quote da trader in gioco', () => {
+         monta(partitaCalcio({
+             lineeOu: [
+                 { marketId: '1.35', linea: 3.5, stato: 'OPEN', decisa: false, perMike: false,
+-                    under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaBookS: 1 },
++                    under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaCambioS: 1 },
+                 { marketId: '1.45', linea: 4.5, stato: 'SUSPENDED', decisa: true, perMike: true,
+-                    under: null, over: { back: 1.01, lay: null }, etaBookS: null },
++                    under: null, over: { back: 1.01, lay: null }, etaCambioS: null },
+             ],
+         }));
+         const ou = within(screen.getByTestId('cr-calcio-vivo')).getByTestId('cr-calcio-vivo-ou');
+@@ -334,7 +334,7 @@ describe('SchedaPartita — B1bis: linee oltre 4 in gioco', () => {
+         monta(partitaCalcio({
+             lineeOu: [0.5, 1.5, 2.5, 3.5, 4.5, 5.5].map((l) => ({
+                 marketId: `1.${l * 10}`, linea: l, stato: 'OPEN', decisa: false, perMike: false,
+-                under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaBookS: 1,
++                under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaCambioS: 1,
+             })),
+         }));
+         const ou = screen.getByTestId('cr-calcio-vivo-ou');
+@@ -398,6 +398,21 @@ describe('SchedaPartita — B1: tennis, quote della barra con lo stesso componen
+     });
+ });
+ 
++describe('SchedaPartita — R_B1: il target calcolato dalla pagina lo dice in chiaro', () => {
++    it('fonte ripiego: «target (media della pagina)», non solo un asterisco nel tooltip', () => {
++        monta(partitaCalcio({ target: { valore: 4.17, fonte: 'ripiego' } }));
++        const t = screen.getByTestId('cr-target');
++        expect(t).toHaveTextContent('target (media della pagina) 4,17 €');
++    });
++
++    it('fonte servizio: resta «target», senza la dicitura della media', () => {
++        monta(partitaCalcio({ target: { valore: 4.17, fonte: 'servizio' } }));
++        const t = screen.getByTestId('cr-target');
++        expect(t).toHaveTextContent('target 4,17 €');
++        expect(t.textContent).not.toMatch(/media/);
++    });
++});
++
+ describe('SchedaPartita — B1: glossario, «liability» e mai «responsabilità»', () => {
+     it('soldi veri e prova: «liability», nessun «resp.» ne’ «responsabilità»', () => {
+         const { container } = monta(partitaCalcio({
+diff --git a/frontend/src/components/controlroom/SchedaPartita.tsx b/frontend/src/components/controlroom/SchedaPartita.tsx
+index bae1069..6be81d8 100644
+--- a/frontend/src/components/controlroom/SchedaPartita.tsx
++++ b/frontend/src/components/controlroom/SchedaPartita.tsx
+@@ -422,8 +422,12 @@ export function SchedaPartita({
+             {/* ── riga 2: il METRO — target, fatto, quanto manca ── */}
+             <div className="px-2.5 pt-2">
+                 <div className="flex items-baseline justify-between gap-2 text-[11px]">
+-                    <span className="text-white/40">
+-                        target <span className="font-mono text-white/70">{target == null ? DASH : fmtMoney(target)}</span>
++                    <span className="text-white/40" data-testid="cr-target">
++                        {/* R_B1: il target di ripiego e' una MEDIA calcolata dalla pagina
++                            ((obiettivo - realizzato) / partite utili, `targetPartita`),
++                            uguale su tutte le schede: si dice in chiaro, non solo nel tooltip */}
++                        target{p.target?.fonte === 'ripiego' && ' (media della pagina)'}{' '}
++                        <span className="font-mono text-white/70">{target == null ? DASH : fmtMoney(target)}</span>
+                         {p.target?.fonte === 'ripiego' && <span className="text-white/30" title="calcolato dalla pagina: il servizio non lo pubblica"> *</span>}
+                     </span>
+                     <span className="flex items-baseline gap-2">
+diff --git a/frontend/src/components/controlroom/SchedaPreMatch.test.tsx b/frontend/src/components/controlroom/SchedaPreMatch.test.tsx
+index 117193a..69c17b8 100644
+--- a/frontend/src/components/controlroom/SchedaPreMatch.test.tsx
++++ b/frontend/src/components/controlroom/SchedaPreMatch.test.tsx
+@@ -85,7 +85,7 @@ describe('SchedaPreMatch — quote pre-match vive (secondo giro)', () => {
+ function lineaOu(linea: number, over: Partial<NonNullable<PartitaGiornata['lineeOu']>[number]> = {}) {
+     return {
+         marketId: `1.${linea * 10}`, linea, stato: 'OPEN', decisa: false, perMike: false,
+-        under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaBookS: 2, ...over,
++        under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaCambioS: 2, ...over,
+     };
+ }
+ 
+@@ -124,13 +124,13 @@ describe('SchedaPreMatch — B1: nomi e quote da trader', () => {
+     });
+ 
+     it('le linee Under/Over della riga si vedono con lo stesso componente', () => {
+-        monta(partita({ lineeOu: [lineaOu(3.5), lineaOu(4.5, { etaBookS: 7 })] }));
++        monta(partita({ lineeOu: [lineaOu(3.5), lineaOu(4.5, { etaCambioS: 7 })] }));
+         const ou = within(screen.getByTestId('cr-pre-quote')).getByTestId('cr-pre-quote-ou');
+         const righe = within(ou).getAllByTestId('cr-quote-ou-linea');
+         expect(righe).toHaveLength(2);
+         expect(righe[0]).toHaveTextContent('U/O 3,5');
+         expect(righe[0]).toHaveTextContent('Under 1,50/1,52');
+-        expect(righe[1]).toHaveTextContent('ultimo book: 7 s fa');
++        expect(righe[1]).toHaveTextContent('ultimo cambio: 7 s');
+     });
+ 
+     // B1bis (decisione del coordinatore): sostituisce il test B1 «più di quattro
+diff --git a/frontend/src/lib/controlRoom.test.ts b/frontend/src/lib/controlRoom.test.ts
+index 9301401..a66e67e 100644
+--- a/frontend/src/lib/controlRoom.test.ts
++++ b/frontend/src/lib/controlRoom.test.ts
+@@ -762,11 +762,17 @@ describe('freschezzaBattito — il passo lo dichiara chi batte', () => {
+ // La riga finta ha le chiavi e i tipi del blocco vero `ou` dello scanner
+ // (`scanner.build_market_block` + `ts_ms`/`seen_ms` di `service.py:1309,1319`,
+ // marker `decided`/`for_mike`), come la riga 36132117 del 30/09.
+-function bloccoOu(line: number, marketId: string, seenFaS: number | null, over: Record<string, unknown> = {}) {
++// R_B1 (review, 30/09): il terzo parametro e' l'eta' di `ts_ms` (ultimo CAMBIO,
++// dentro la firma del write-on-change). `seen_ms` e' FUORI firma
++// (`scanner._FUORI_FIRMA`): la pagina lo riceve solo alla riscrittura della
++// riga, quindi non e' «l'ultimo book». Qui vale sempre 1 s: se la scheda
++// tornasse a leggerlo, i test lo vedrebbero.
++function bloccoOu(line: number, marketId: string, cambioFaS: number | null, over: Record<string, unknown> = {}) {
+     return {
+         market_id: marketId, status: 'OPEN', inplay: false, total_matched: 812.4,
+-        market_type: `OVER_UNDER_${String(line).replace('.', '')}`, line, ts_ms: T0 - 60_000,
+-        bet_delay: 0, ...(seenFaS == null ? {} : { seen_ms: T0 - seenFaS * 1000 }),
++        market_type: `OVER_UNDER_${String(line).replace('.', '')}`, line,
++        ...(cambioFaS == null ? {} : { ts_ms: T0 - cambioFaS * 1000 }),
++        bet_delay: 0, seen_ms: T0 - 1_000,
+         selections: [
+             { selection_id: 1222344, name: `Under ${line} Goals`, runner_status: 'ACTIVE',
+                 back: 1.5, lay: 1.52, back_size: 30, lay_size: 25 },
+@@ -778,14 +784,14 @@ function bloccoOu(line: number, marketId: string, seenFaS: number | null, over:
+ }
+ 
+ describe('lineeOuScheda — le linee Under/Over come le scrive lo scanner, senza inventare', () => {
+-    it('Under e Over col loro BACK/LAY, lo stato e l’età dell’ultimo book (seen_ms)', () => {
++    it('Under e Over col loro BACK/LAY, lo stato e l’età dell’ultimo CAMBIO (ts_ms, non seen_ms)', () => {
+         const l = lineeOuScheda(feed({ ou: [bloccoOu(4.5, '1.45', 3), bloccoOu(3.5, '1.35', 36)] }), T0);
+         expect(l.map((x) => x.linea)).toEqual([3.5, 4.5]);          // ordinate per linea
+         expect(l[0]).toEqual({
+             marketId: '1.35', linea: 3.5, stato: 'OPEN', decisa: false, perMike: false,
+-            under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaBookS: 36,
++            under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaCambioS: 36,
+         });
+-        expect(l[1].etaBookS).toBe(3);
++        expect(l[1].etaCambioS).toBe(3);
+     });
+ 
+     it('B1bis: la linea tenuta nel feed per una posizione di Mike (for_mike) si dichiara', () => {
+@@ -793,12 +799,12 @@ describe('lineeOuScheda — le linee Under/Over come le scrive lo scanner, senza
+         expect(l.perMike).toBe(true);
+     });
+ 
+-    it('seen_ms assente: età null (mai 0 inventato); selezione assente: null', () => {
++    it('ts_ms assente: età null (mai 0 inventato, mai seen_ms); selezione assente: null', () => {
+         const b = bloccoOu(2.5, '1.25', null, {
+             selections: [{ selection_id: 1, name: 'Over 2.5 Goals', runner_status: 'ACTIVE', back: 1.8, lay: null }],
+         });
+         const [l] = lineeOuScheda(feed({ ou: [b] }), T0);
+-        expect(l.etaBookS).toBeNull();
++        expect(l.etaCambioS).toBeNull();
+         expect(l.under).toBeNull();
+         expect(l.over).toEqual({ back: 1.8, lay: null });
+     });
+@@ -820,8 +826,8 @@ describe('lineeOuScheda — le linee Under/Over come le scrive lo scanner, senza
+         const riga = { event_id: 'E1', payload: feed({ ou: [bloccoOu(3.5, '1.35', 5)], odds_ts_ms: T0 - 5_000 }) };
+         const g0 = costruisciGiornata({ righe: [riga], soldi: new Map(), nowMs: T0 })[0].partite[0];
+         const g1 = costruisciGiornata({ righe: [riga], soldi: new Map(), nowMs: T0 + 1_000 })[0].partite[0];
+-        expect(g0.lineeOu?.[0].etaBookS).toBe(5);
+-        expect(g1.lineeOu?.[0].etaBookS).toBe(6);
++        expect(g0.lineeOu?.[0].etaCambioS).toBe(5);
++        expect(g1.lineeOu?.[0].etaCambioS).toBe(6);
+         expect(g0.latenzaQuoteS).toBe(5);
+         expect(g1.latenzaQuoteS).toBe(6);
+     });
+diff --git a/frontend/src/lib/controlRoom.ts b/frontend/src/lib/controlRoom.ts
+index 69ddd4a..a27268d 100644
+--- a/frontend/src/lib/controlRoom.ts
++++ b/frontend/src/lib/controlRoom.ts
+@@ -341,9 +341,14 @@ export function latenzaQuoteS(p: PartitaFeedLike | null | undefined, nowMs: numb
+  *   · miglior BACK/LAY di Under e Over, riconosciuti dal NOME della selezione
+  *     («Under 3.5 Goals» / «Over 3.5 Goals»); una selezione che non si
+  *     riconosce resta `null` (mai un prezzo attribuito a caso);
+- *   · `seen_ms` = ultimo book RICEVUTO per quella linea (`service.py:1285,1319`),
+- *     che NON distingue «mercato fermo» da «mercato non piu' osservato»:
+- *     l'eta' si mostra senza giudizio (il giudizio lo da' il flusso).
++ *   · `ts_ms` = ultimo CAMBIO del blocco (prezzi o importi al meglio,
++ *     `service.py:1298-1309`), che sta DENTRO la firma del write-on-change:
++ *     un suo cambio riscrive la riga, quindi la pagina lo riceve davvero.
++ *     R_B1 (review, 30/09): prima si mostrava `seen_ms` come «ultimo book», ma
++ *     `seen_ms` e' FUORI firma (`scanner._FUORI_FIRMA`, `scanner.py:495`): un
++ *     book che non cambia i prezzi non riscrive la riga (`service.py:1975-1977`),
++ *     e la pagina riceveva il `seen_ms` dell'ultima RISCRITTURA, non dell'ultimo
++ *     book. L'eta' si mostra senza giudizio (il giudizio lo da' il flusso).
+  */
+ export interface LatiOu { back: number | null; lay: number | null }
+ export interface LineaOuScheda {
+@@ -356,8 +361,8 @@ export interface LineaOuScheda {
+     perMike: boolean;
+     under: LatiOu | null;
+     over: LatiOu | null;
+-    /** secondi dall'ultimo book ricevuto (`seen_ms`); null = non dichiarato */
+-    etaBookS: number | null;
++    /** secondi dall'ultimo CAMBIO della linea (`ts_ms`); null = non dichiarato */
++    etaCambioS: number | null;
+ }
+ 
+ function prezzoOu(v: unknown): number | null {
+@@ -385,12 +390,12 @@ export function lineeOuScheda(p: PartitaFeedLike | null | undefined, nowMs: numb
+         if (!b || typeof b !== 'object') continue;
+         const r = b as {
+             market_id?: unknown; line?: unknown; status?: unknown; decided?: unknown; for_mike?: unknown;
+-            selections?: unknown; seen_ms?: unknown;
++            selections?: unknown; ts_ms?: unknown;
+         };
+         const linea = typeof r.line === 'number' && Number.isFinite(r.line) ? r.line : null;
+         if (r.market_id == null || r.market_id === '' || linea == null) continue;
+-        const seen = typeof r.seen_ms === 'number' && Number.isFinite(r.seen_ms) && r.seen_ms > 0
+-            ? r.seen_ms : null;
++        const cambio = typeof r.ts_ms === 'number' && Number.isFinite(r.ts_ms) && r.ts_ms > 0
++            ? r.ts_ms : null;
+         out.push({
+             marketId: String(r.market_id),
+             linea,
+@@ -399,7 +404,7 @@ export function lineeOuScheda(p: PartitaFeedLike | null | undefined, nowMs: numb
+             perMike: r.for_mike === true,
+             under: latoOu(r.selections, 'under'),
+             over: latoOu(r.selections, 'over'),
+-            etaBookS: seen == null ? null : Math.max(0, Math.round((nowMs - seen) / 1000)),
++            etaCambioS: cambio == null ? null : Math.max(0, Math.round((nowMs - cambio) / 1000)),
+         });
+     }
+     out.sort((a, b) => a.linea - b.linea);

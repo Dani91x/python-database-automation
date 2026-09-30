@@ -147,6 +147,8 @@ export interface VoceRischio {
     nota: string | null;
     /** posizioni LIVE aperte del bot secondo le sue righe */
     aperteLive: number;
+    /** R_T (30/09): il servizio dichiara il numero stantio (battito vecchio) */
+    stantio?: boolean;
 }
 
 export interface RischioBotLive {
@@ -178,7 +180,7 @@ export function rischioBotLive(input: {
         const d = liabilityLiveDichiarata(input.stati[bot], conta(bot, 'paper'));
         if (d.valore != null) {
             voci.push({
-                bot, valore: r2(d.valore), aperteLive,
+                bot, valore: r2(d.valore), aperteLive, stantio: d.stantio,
                 nota: d.stantio ? 'numero del servizio stantio (battito oltre 60 s)' : null,
             });
         } else if (aperteLive === 0) {

@@ -3508,7 +3508,7 @@ def _decide_ko_green(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
                             "gol precoce: seconda puntata sull'Under 3.5",
                             updates=upd, telemetry=tele)
         upd["cover_forced"] = True
-        return Decision("LIVE_UNCOVERED", acts, "gol precoce: copertura Over 4.5",
+        return Decision("LIVE_UNCOVERED", acts, "gol precoce: copertura sulla linea 4,5",
                         updates=upd, telemetry=tele)
 
     # -- B) finestra scaduta --------------------------------------------------
@@ -3525,7 +3525,7 @@ def _decide_ko_green(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
                       "ritiro il resto, copro il residuo"
                       % (float(uscita.matched), float(uscita.size), minuti))
         else:
-            motivo = "uscita non abbinata in %d': copertura Over 4.5" % minuti
+            motivo = "uscita non abbinata in %d': copertura sulla linea 4,5" % minuti
         return Decision("LIVE_UNCOVERED", acts, motivo,
                         updates={"cover_forced": True, **base}, telemetry=tele)
 
@@ -3838,7 +3838,7 @@ def _decide_uncovered(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: 
     # False), si aspetta e si riprende alla riapertura.
     if not operabile(bk):
         return Decision("LIVE_UNCOVERED", acts,
-                        "copertura: mercato Over 4.5 %s, si aspetta la riapertura"
+                        "copertura: mercato della linea 4,5 %s, si aspetta la riapertura"
                         % stato_mercato(bk),
                         telemetry={"cover_wait": {"minute": snap.minute, "goals": snap.goals,
                                                   "x_now": x_now, "reason": "mercato_non_aperto",
@@ -3885,10 +3885,10 @@ def _decide_uncovered(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: 
     acts.append(_place("over_cover", MARKET_OU45, SEL_OVER, "back",
                        price_limite if price_limite is not None else price_over, size,
                        note=f"X={x_now:.2f} legal={size:.2f} over={over:.1f}% buf={n_buf}t"))
-    etichetta = {1: "copertura Over 4.5: prima tranche",
-                 3: "copertura Over 4.5: seconda tranche (residuo)"}.get(stage, "copertura Over 4.5")
+    etichetta = {1: "copertura sulla linea 4,5: prima tranche",
+                 3: "copertura sulla linea 4,5: seconda tranche (residuo)"}.get(stage, "copertura sulla linea 4,5")
     if split_declassato:
-        etichetta = "copertura Over 4.5 in una volta (la tranche sarebbe sotto il minimo)"
+        etichetta = "copertura sulla linea 4,5 in una volta (la tranche sarebbe sotto il minimo)"
     return Decision("LIVE_COVER_PENDING", acts, etichetta,
                     updates={"cover_stage": stage},
                     telemetry={"cover": {"x": round(x_now, 2), "size": size, "overshoot_pct": over,
@@ -4078,7 +4078,7 @@ def _decide_cover_pending(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any],
         # aspetta, e si riprende alla riapertura.
         if bk is not None and not operabile(bk):
             return Decision("LIVE_COVER_PENDING", [],
-                            "copertura: mercato Over 4.5 %s, nessun riprezzo"
+                            "copertura: mercato della linea 4,5 %s, nessun riprezzo"
                             % stato_mercato(bk))
         if bk is not None and price_ok(bk.best_back) and leg.remaining > 0:
             # RESIDUO ESATTO sull'esposizione NETTA: la liability Under e' al netto

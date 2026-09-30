@@ -36,7 +36,10 @@ describe('CashOutGlobale: la cifra della partita, netta, con fonte ed eta\'', ()
         expect(screen.getByTestId('cr-cashout-globale-live-netto').textContent).toBe('−0,82 €');
         expect(screen.getByTestId('cr-cashout-globale-live').textContent).toContain('netto commissione');
         expect(screen.getByTestId('cr-cashout-globale-live').textContent)
-            .toContain('Cash out della partita (se chiudo TUTTO adesso)');
+            .toContain('Cash out della partita: gambe dei bot (se le chiudo tutte adesso)');
+        // R_C: sempre scritto, sotto la cifra: gli ordini del sito/app NON sono inclusi
+        expect(screen.getByTestId('cr-cashout-globale-live-solo-bot').textContent)
+            .toBe('solo ordini dei bot: gli ordini fatti dal sito o dall\'app Betfair non sono inclusi');
         const marchio = screen.getByTestId('cr-cashout-globale-live-marchio');
         expect(marchio.getAttribute('data-fonte')).toBe('pagina');
         // MarchioSoldi: «STIMA» + «· <eta'> fa» in due span (eta' del prezzo piu' vecchio, 0,3 s)
@@ -51,7 +54,7 @@ describe('CashOutGlobale: la cifra della partita, netta, con fonte ed eta\'', ()
         expect(screen.getByTestId('cr-cashout-globale-live-bot-mike-netto').textContent).toBe('−0,84 €');
         expect(screen.getByTestId('cr-cashout-globale-live-bot-mike-marchio').getAttribute('data-fonte')).toBe('bot');
         expect(screen.getByTestId('cr-cashout-globale-live-bot-mike-differenza').textContent)
-            .toMatch(/^differenza 0,02 €: prezzi letti in istanti diversi/);
+            .toMatch(/^differenza 0,02 € · cause possibili: prezzi letti in istanti diversi .*; il bot chiude la copertura su un altro libro; il bot conta solo le sue gambe$/);
         expect(screen.queryByTestId('cr-cashout-globale-prova')).toBeNull();
     });
 
@@ -61,6 +64,8 @@ describe('CashOutGlobale: la cifra della partita, netta, con fonte ed eta\'', ()
         expect(screen.getByTestId('cr-cashout-globale-live-non-calcolabile').textContent)
             .toBe('NON CALCOLABILE: manca il prezzo di Under 4.5 Goals (punta)');
         expect(screen.queryByTestId('cr-cashout-globale-live-netto')).toBeNull();
+        // R_C: anche senza cifra si dice che gli ordini fuori dai bot non ci sono
+        expect(screen.getByTestId('cr-cashout-globale-live-solo-bot')).toBeTruthy();
     });
 
     it('gambe PROVA: riga PROVA separata, mai sommata al live', () => {
@@ -72,6 +77,8 @@ describe('CashOutGlobale: la cifra della partita, netta, con fonte ed eta\'', ()
         expect(screen.getByTestId('cr-cashout-globale-prova-netto').textContent).toBe('−1,41 €');
         expect(screen.getByTestId('cr-cashout-globale-prova-marchio').getAttribute('data-fonte')).toBe('prova');
         expect(screen.getByTestId('cr-cashout-globale-prova').textContent).toContain('Prova (simulato, mai sommato ai soldi veri)');
+        // R_C: nel blocco PROVA la riga «solo ordini dei bot» non serve
+        expect(screen.queryByTestId('cr-cashout-globale-prova-solo-bot')).toBeNull();
     });
 
     it('liquidita\' insufficiente: la cifra resta, «e\' il caso migliore»', () => {

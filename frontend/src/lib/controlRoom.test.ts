@@ -762,11 +762,17 @@ describe('freschezzaBattito — il passo lo dichiara chi batte', () => {
 // La riga finta ha le chiavi e i tipi del blocco vero `ou` dello scanner
 // (`scanner.build_market_block` + `ts_ms`/`seen_ms` di `service.py:1309,1319`,
 // marker `decided`/`for_mike`), come la riga 36132117 del 30/09.
-function bloccoOu(line: number, marketId: string, seenFaS: number | null, over: Record<string, unknown> = {}) {
+// R_B1 (review, 30/09): il terzo parametro e' l'eta' di `ts_ms` (ultimo CAMBIO,
+// dentro la firma del write-on-change). `seen_ms` e' FUORI firma
+// (`scanner._FUORI_FIRMA`): la pagina lo riceve solo alla riscrittura della
+// riga, quindi non e' «l'ultimo book». Qui vale sempre 1 s: se la scheda
+// tornasse a leggerlo, i test lo vedrebbero.
+function bloccoOu(line: number, marketId: string, cambioFaS: number | null, over: Record<string, unknown> = {}) {
     return {
         market_id: marketId, status: 'OPEN', inplay: false, total_matched: 812.4,
-        market_type: `OVER_UNDER_${String(line).replace('.', '')}`, line, ts_ms: T0 - 60_000,
-        bet_delay: 0, ...(seenFaS == null ? {} : { seen_ms: T0 - seenFaS * 1000 }),
+        market_type: `OVER_UNDER_${String(line).replace('.', '')}`, line,
+        ...(cambioFaS == null ? {} : { ts_ms: T0 - cambioFaS * 1000 }),
+        bet_delay: 0, seen_ms: T0 - 1_000,
         selections: [
             { selection_id: 1222344, name: `Under ${line} Goals`, runner_status: 'ACTIVE',
                 back: 1.5, lay: 1.52, back_size: 30, lay_size: 25 },
@@ -778,14 +784,14 @@ function bloccoOu(line: number, marketId: string, seenFaS: number | null, over: 
 }
 
 describe('lineeOuScheda — le linee Under/Over come le scrive lo scanner, senza inventare', () => {
-    it('Under e Over col loro BACK/LAY, lo stato e l’età dell’ultimo book (seen_ms)', () => {
+    it('Under e Over col loro BACK/LAY, lo stato e l’età dell’ultimo CAMBIO (ts_ms, non seen_ms)', () => {
         const l = lineeOuScheda(feed({ ou: [bloccoOu(4.5, '1.45', 3), bloccoOu(3.5, '1.35', 36)] }), T0);
         expect(l.map((x) => x.linea)).toEqual([3.5, 4.5]);          // ordinate per linea
         expect(l[0]).toEqual({
             marketId: '1.35', linea: 3.5, stato: 'OPEN', decisa: false, perMike: false,
-            under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaBookS: 36,
+            under: { back: 1.5, lay: 1.52 }, over: { back: 2.6, lay: 2.7 }, etaCambioS: 36,
         });
-        expect(l[1].etaBookS).toBe(3);
+        expect(l[1].etaCambioS).toBe(3);
     });
 
     it('B1bis: la linea tenuta nel feed per una posizione di Mike (for_mike) si dichiara', () => {
@@ -793,12 +799,12 @@ describe('lineeOuScheda — le linee Under/Over come le scrive lo scanner, senza
         expect(l.perMike).toBe(true);
     });
 
-    it('seen_ms assente: età null (mai 0 inventato); selezione assente: null', () => {
+    it('ts_ms assente: età null (mai 0 inventato, mai seen_ms); selezione assente: null', () => {
         const b = bloccoOu(2.5, '1.25', null, {
             selections: [{ selection_id: 1, name: 'Over 2.5 Goals', runner_status: 'ACTIVE', back: 1.8, lay: null }],
         });
         const [l] = lineeOuScheda(feed({ ou: [b] }), T0);
-        expect(l.etaBookS).toBeNull();
+        expect(l.etaCambioS).toBeNull();
         expect(l.under).toBeNull();
         expect(l.over).toEqual({ back: 1.8, lay: null });
     });
@@ -820,8 +826,8 @@ describe('lineeOuScheda — le linee Under/Over come le scrive lo scanner, senza
         const riga = { event_id: 'E1', payload: feed({ ou: [bloccoOu(3.5, '1.35', 5)], odds_ts_ms: T0 - 5_000 }) };
         const g0 = costruisciGiornata({ righe: [riga], soldi: new Map(), nowMs: T0 })[0].partite[0];
         const g1 = costruisciGiornata({ righe: [riga], soldi: new Map(), nowMs: T0 + 1_000 })[0].partite[0];
-        expect(g0.lineeOu?.[0].etaBookS).toBe(5);
-        expect(g1.lineeOu?.[0].etaBookS).toBe(6);
+        expect(g0.lineeOu?.[0].etaCambioS).toBe(5);
+        expect(g1.lineeOu?.[0].etaCambioS).toBe(6);
         expect(g0.latenzaQuoteS).toBe(5);
         expect(g1.latenzaQuoteS).toBe(6);
     });

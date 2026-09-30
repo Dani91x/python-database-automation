@@ -185,7 +185,11 @@ export function PropostaUscitaMike({
     const fresh = feedFreshness(eta);
     const spento = fresh.tone === 'stale' || fresh.tone === 'unknown' || inVolo;
     const daDecisioneS = Math.max(0, Math.round(adesso / 1000 - Number(prop.decided_at)));
-    const bloccabileOra = typeof live.cashout?.net === 'number' ? live.cashout.net : null;
+    // R-B2 (30/09): come SchedaMike (A9) - con `complete` diverso da true una linea
+    // viva non ha prezzo e il netto del servizio la ESCLUDE (engine.cashout_value):
+    // nessuna cifra monca nella scheda dove si approva un'uscita
+    const cashCompleto = live.cashout?.complete === true;
+    const bloccabileOra = cashCompleto && typeof live.cashout?.net === 'number' ? live.cashout.net : null;
     // 29/09 (M7.1): l'ETA' della cifra «chiudendo ora» = da quanto il bot l'ha
     // calcolata (`live.published_ts`); oltre CIFRA_VECCHIA_S e' dichiarata vecchia
     const etaCifra = etaPubblicazioneS(live, adesso);
@@ -266,8 +270,11 @@ export function PropostaUscitaMike({
             </div>
             <div className="text-[10.5px] text-white/60" data-testid={`${testId}-numeri`}>
                 {/* 30/09 (B2, M12): `live.cashout.net` = TUTTA la partita */}
-                chiudendo tutta la partita ora <span className={cifraVecchia ? 'line-through text-amber-300/80' : ''}
-                    data-testid={`${testId}-cifra`}>{bloccabileOra == null ? DASH : fmtMoney(bloccabileOra, { signed: true })}</span>
+                chiudendo tutta la partita ora{live.cashout != null && !cashCompleto
+                    ? <span className="text-amber-300" data-testid={`${testId}-cifra-non-calcolabile`}>: non calcolabile (manca il prezzo di una linea)</span>
+                    : <>{' '}<span className={cifraVecchia ? 'line-through text-amber-300/80' : ''}
+                        data-testid={`${testId}-cifra`}>{bloccabileOra == null ? DASH : fmtMoney(bloccabileOra, { signed: true })}</span>
+                        <span className="text-white/35" data-testid={`${testId}-fonte-cifra`}> (calcolo del bot)</span></>}
                 {' '}<span className={cifraVecchia ? 'text-amber-300 font-semibold' : 'text-white/45'}
                     data-testid={`${testId}-eta-cifra`} data-vecchia={cifraVecchia ? '1' : '0'}>
                     {etaCifra == null ? '(VECCHIA: eta’ del dato sconosciuta)'
