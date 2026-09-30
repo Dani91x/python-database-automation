@@ -19,7 +19,7 @@
 //     INFERIORE certo del profitto bloccato per euro al prezzo di adesso.
 // Nessuna funzione qui spegne un bottone e nessuna cambia cio' che parte.
 // ============================================================================
-import { greenPrice, partialLockedPnl } from '@/components/trading/CashOutButton';
+import { greenPrice, netAfterCommission, partialLockedPnl } from '@/components/trading/CashOutButton';
 import { fmtNum } from '@/lib/format';
 import { ticksBetween } from '@/lib/riskMath';
 import type { PrezzoScheda } from '@/lib/schedaAlMs';
@@ -36,6 +36,24 @@ export interface DatiChiusuraAlMs {
     istanteScannerMs: number | null;
     /** i due lati dello scanner (il ripiego), con l'abbinabile */
     scanner: { back: number | null; backSize: number | null; lay: number | null; laySize: number | null };
+    /**
+     * 30/09 (P11) - l'aliquota di commissione della RIGA, la stessa del ramo
+     * dello scanner (`useControlRoom.aliquotaDi`: colonna, poi
+     * `meta.commission`, poi 5 %). Frazione (0,05) o percentuale (5), come
+     * `netAfterCommission`. Assente sulle righe costruite a mano: si usa
+     * `ALIQUOTA_DI_RIPIEGO`, lo stesso default di `aliquotaDi`.
+     */
+    aliquota?: number | null;
+}
+
+/** 30/09 (P11) - l'aliquota quando la riga non la porta: il 5 % di
+ *  `useControlRoom.aliquotaDi` (default Betfair usato dai servizi). */
+export const ALIQUOTA_DI_RIPIEGO = 0.05;
+
+/** L'aliquota di una riga al ms: la sua, se e' un numero > 0, se no il ripiego. */
+export function aliquotaAlMs(d: Pick<DatiChiusuraAlMs, 'aliquota'> | null | undefined): number {
+    const v = d?.aliquota;
+    return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : ALIQUOTA_DI_RIPIEGO;
 }
 
 export interface ChiusuraAlPrezzo {
@@ -58,18 +76,27 @@ export function ripiegoScanner(d: DatiChiusuraAlMs | null | undefined): PrezzoSc
 
 /**
  * Il «se chiudo ora» al prezzo mostrato: il lato di copertura dall'esposizione,
- * il miglior prezzo di quel lato, il P&L garantito chiudendo per intero.
- * Stesse funzioni di `useControlRoom.chiusuraViva`: nessuna seconda formula.
+ * il miglior prezzo di quel lato, il P&L garantito chiudendo per intero,
+ * NETTO di commissione. Stesse funzioni di `useControlRoom.chiusuraViva`
+ * (`partialLockedPnl` + `netAfterCommission` con l'aliquota della riga):
+ * nessuna seconda formula.
+ *
+ * 30/09 (P11) - prima questo ramo (ladder al ms) dava il LORDO e quello dello
+ * scanner il NETTO: in utile due cifre diverse per la stessa gamba. La
+ * commissione di Betfair e' per MERCATO sul netto vincente; per la singola
+ * gamba «netto» = commissione sul suo utile bloccato, come il ramo scanner.
+ * Il prezzo (`prezzo`, quello che parte al clic) NON cambia.
  */
 export function chiusuraAlPrezzo(
-    win: number, lose: number, lato: 'back' | 'lay', p: PrezzoScheda,
+    win: number, lose: number, lato: 'back' | 'lay', p: PrezzoScheda, aliquota: number,
 ): ChiusuraAlPrezzo {
     const prezzo = greenPrice(win, lose, lato === 'back' ? p.back : null, lato === 'lay' ? p.lay : null);
     const abbinabile = lato === 'back' ? p.backSize : p.laySize;
     return {
         lato, prezzo,
         abbinabile: prezzo == null ? null : abbinabile,
-        bloccabile: prezzo == null ? null : partialLockedPnl(prezzo, win, lose, 1),
+        bloccabile: prezzo == null ? null
+            : netAfterCommission(partialLockedPnl(prezzo, win, lose, 1), aliquota),
     };
 }
 

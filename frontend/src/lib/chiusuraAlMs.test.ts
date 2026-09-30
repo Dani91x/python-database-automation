@@ -4,6 +4,7 @@
 // ============================================================================
 import { describe, it, expect } from 'vitest';
 import {
+    ALIQUOTA_DI_RIPIEGO, aliquotaAlMs,
     chiusuraAlPrezzo, ripiegoScanner, testoFonte, valutaComboAlMs, type DatiChiusuraAlMs,
 } from './chiusuraAlMs';
 import { PREZZO_VUOTO, type PrezzoScheda } from './schedaAlMs';
@@ -16,17 +17,41 @@ function prezzo(p: Partial<PrezzoScheda>): PrezzoScheda {
 
 describe('chiusuraAlPrezzo: stessa matematica del green-up, al prezzo di adesso', () => {
     // back 10 € a 2,00: +10 se vince, -10 se perde -> si chiude BANCANDO
-    it('lay a 1,80: P&L bloccato +1,11 sui due esiti', () => {
-        const c = chiusuraAlPrezzo(10, -10, 'lay', prezzo({ lay: 1.8, laySize: 50 }));
-        expect(c).toEqual({ lato: 'lay', prezzo: 1.8, abbinabile: 50, bloccabile: 1.11 });
+    // 30/09 (P11): il P&L e' NETTO di commissione (prima lordo +1,11): lordo
+    // 1,11 x (1 - 0,05) = 1,0545 -> +1,05, come il ramo dello scanner.
+    it('lay a 1,80: P&L bloccato +1,05 netto (lordo 1,11, commissione 5 %)', () => {
+        const c = chiusuraAlPrezzo(10, -10, 'lay', prezzo({ lay: 1.8, laySize: 50 }), 0.05);
+        expect(c).toEqual({ lato: 'lay', prezzo: 1.8, abbinabile: 50, bloccabile: 1.05 });
     });
-    it('lay a 2,20: P&L bloccato -0,91', () => {
-        const c = chiusuraAlPrezzo(10, -10, 'lay', prezzo({ lay: 2.2, laySize: 50 }));
+    it('lay a 2,20: P&L bloccato -0,91 (in perdita la commissione non c\'e\')', () => {
+        const c = chiusuraAlPrezzo(10, -10, 'lay', prezzo({ lay: 2.2, laySize: 50 }), 0.05);
         expect(c.bloccabile).toBe(-0.91);
     });
     it('il lato che manca non si inventa: prezzo e P&L null', () => {
-        const c = chiusuraAlPrezzo(10, -10, 'lay', prezzo({ back: 1.9, backSize: 20 }));
+        const c = chiusuraAlPrezzo(10, -10, 'lay', prezzo({ back: 1.9, backSize: 20 }), 0.05);
         expect(c).toEqual({ lato: 'lay', prezzo: null, abbinabile: null, bloccabile: null });
+    });
+});
+
+describe('P11 (30/09): «chiudi ora» NETTO con l\'aliquota della riga', () => {
+    it('aliquota 2 %: 1,11 x 0,98 = 1,0878 -> +1,09 (non +1,05 del 5 %)', () => {
+        expect(chiusuraAlPrezzo(10, -10, 'lay', prezzo({ lay: 1.8, laySize: 50 }), 0.02).bloccabile).toBe(1.09);
+    });
+    it('aliquota in percentuale (5) = frazione (0,05), come netAfterCommission', () => {
+        expect(chiusuraAlPrezzo(10, -10, 'lay', prezzo({ lay: 1.8, laySize: 50 }), 5).bloccabile).toBe(1.05);
+    });
+    it('il PREZZO non cambia (e\' quello che parte al clic): solo la cifra', () => {
+        const lordo = chiusuraAlPrezzo(10, -10, 'lay', prezzo({ lay: 1.8, laySize: 50 }), 0.02);
+        const netto = chiusuraAlPrezzo(10, -10, 'lay', prezzo({ lay: 1.8, laySize: 50 }), 0.05);
+        expect(lordo.prezzo).toBe(1.8);
+        expect(netto.prezzo).toBe(1.8);
+    });
+    it('aliquotaAlMs: quella della riga, altrimenti il 5 % di aliquotaDi', () => {
+        expect(aliquotaAlMs({ aliquota: 0.02 })).toBe(0.02);
+        expect(aliquotaAlMs({ aliquota: null })).toBe(ALIQUOTA_DI_RIPIEGO);
+        expect(aliquotaAlMs({})).toBe(0.05);
+        expect(aliquotaAlMs({ aliquota: 0 })).toBe(0.05);
+        expect(aliquotaAlMs(null)).toBe(0.05);
     });
 });
 

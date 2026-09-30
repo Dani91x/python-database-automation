@@ -214,7 +214,9 @@ describe('2a. «Chiudi» di riga: prezzo e P&L al ms prima del clic', () => {
         expect(f.iscritti()).toEqual(['1.23']);
         f.spingi('1.23', 7, 1.79, 1.8, Date.now() - 400);
         expect(screen.getByTestId('cr-op-chiudo-ora-prezzo').textContent).toBe('1,80');
-        expect(screen.getByTestId('cr-op-chiudo-ora-pnl').textContent).toBe('+1,11 €');
+        // 30/09 (P11): NETTO di commissione (5 %, la riga non porta l'aliquota):
+        // lordo 1,11 -> 1,05. Prima +1,11 (lordo accanto al netto dello scanner).
+        expect(screen.getByTestId('cr-op-chiudo-ora-pnl').textContent).toBe('+1,05 €');
         expect(screen.getByTestId('cr-op-chiudo-ora-fonte').textContent).toMatch(/^ladder al ms, 0,\d s fa$/);
         expect(screen.getByTestId('cr-op-chiudo-ora').getAttribute('data-fonte')).toBe('canale');
         // un tick dopo il P&L si ricalcola
@@ -237,7 +239,8 @@ describe('2a. «Chiudi» di riga: prezzo e P&L al ms prima del clic', () => {
         );
         expect(screen.getByTestId('cr-op-chiudo-ora-prezzo').textContent).toBe('1,90');
         // P&L ricalcolato allo stesso prezzo con la stessa matematica
-        expect(screen.getByTestId('cr-op-chiudo-ora-pnl').textContent).toBe('+0,52 €');
+        // 30/09 (P11): netto 5 %: lordo 0,52 -> 0,494 -> +0,49 (prima +0,52 lordo)
+        expect(screen.getByTestId('cr-op-chiudo-ora-pnl').textContent).toBe('+0,49 €');
         expect(screen.getByTestId('cr-op-chiudo-ora-fonte').textContent)
             .toBe('prezzo dello scanner, 12 s fa (il canale non porta questo mercato)');
         expect(screen.getByTestId('cr-op-chiudo-ora').getAttribute('data-fonte')).toBe('scanner');

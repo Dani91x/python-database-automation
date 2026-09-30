@@ -1,0 +1,458 @@
+diff --git a/frontend/src/components/controlroom/ResiduiB17.schede.test.tsx b/frontend/src/components/controlroom/ResiduiB17.schede.test.tsx
+index 43c7a07..cd64c50 100644
+--- a/frontend/src/components/controlroom/ResiduiB17.schede.test.tsx
++++ b/frontend/src/components/controlroom/ResiduiB17.schede.test.tsx
+@@ -214,7 +214,9 @@ describe('2a. «Chiudi» di riga: prezzo e P&L al ms prima del clic', () => {
+         expect(f.iscritti()).toEqual(['1.23']);
+         f.spingi('1.23', 7, 1.79, 1.8, Date.now() - 400);
+         expect(screen.getByTestId('cr-op-chiudo-ora-prezzo').textContent).toBe('1,80');
+-        expect(screen.getByTestId('cr-op-chiudo-ora-pnl').textContent).toBe('+1,11 €');
++        // 30/09 (P11): NETTO di commissione (5 %, la riga non porta l'aliquota):
++        // lordo 1,11 -> 1,05. Prima +1,11 (lordo accanto al netto dello scanner).
++        expect(screen.getByTestId('cr-op-chiudo-ora-pnl').textContent).toBe('+1,05 €');
+         expect(screen.getByTestId('cr-op-chiudo-ora-fonte').textContent).toMatch(/^ladder al ms, 0,\d s fa$/);
+         expect(screen.getByTestId('cr-op-chiudo-ora').getAttribute('data-fonte')).toBe('canale');
+         // un tick dopo il P&L si ricalcola
+@@ -237,7 +239,8 @@ describe('2a. «Chiudi» di riga: prezzo e P&L al ms prima del clic', () => {
+         );
+         expect(screen.getByTestId('cr-op-chiudo-ora-prezzo').textContent).toBe('1,90');
+         // P&L ricalcolato allo stesso prezzo con la stessa matematica
+-        expect(screen.getByTestId('cr-op-chiudo-ora-pnl').textContent).toBe('+0,52 €');
++        // 30/09 (P11): netto 5 %: lordo 0,52 -> 0,494 -> +0,49 (prima +0,52 lordo)
++        expect(screen.getByTestId('cr-op-chiudo-ora-pnl').textContent).toBe('+0,49 €');
+         expect(screen.getByTestId('cr-op-chiudo-ora-fonte').textContent)
+             .toBe('prezzo dello scanner, 12 s fa (il canale non porta questo mercato)');
+         expect(screen.getByTestId('cr-op-chiudo-ora').getAttribute('data-fonte')).toBe('scanner');
+diff --git a/frontend/src/components/controlroom/useChiusuraAlMs.parita.test.tsx b/frontend/src/components/controlroom/useChiusuraAlMs.parita.test.tsx
+new file mode 100644
+index 0000000..7e7aa1f
+--- /dev/null
++++ b/frontend/src/components/controlroom/useChiusuraAlMs.parita.test.tsx
+@@ -0,0 +1,237 @@
++// ============================================================================
++// useChiusuraAlMs.parita.test.tsx - 30/09 (P11): «chiudi ora» SEMPRE NETTO.
++//
++// La stessa gamba ha due strade per il «chiudi ora»:
++//   * ramo SCANNER: `useControlRoom.chiusuraViva` -> `chiusura.bloccabile`
++//     (NETTO dal 26/09, F-12, aliquota della riga via `aliquotaDi`);
++//   * ramo AL MS: `useChiusuraAlMs` -> `chiusuraAlPrezzo` sul ladder al ms.
++// Fino al 30/09 il ramo al ms era LORDO: in utile due cifre diverse per la
++// stessa gamba (Mike back 9 @ 1,85, lay 1,70: scanner 0,75, ms 0,79).
++// Qui si usa il modello di vista VERO (useControlRoom con i finti delle
++// letture, chiavi identiche al vero) e lo si confronta al centesimo col ramo
++// al ms allo STESSO prezzo.
++//
++// FALSIFICAZIONE (30/09): togliendo `netAfterCommission` in `chiusuraAlPrezzo`
++// i test 1-2 tornano 0,79 (rossi); togliendo la riga `aliquota:` in
++// `chiusuraViva` il test 2 da' 0,75 invece di 0,77 (rosso).
++// ============================================================================
++import { describe, it, expect, vi, beforeEach } from 'vitest';
++import { renderHook, waitFor, act } from '@testing-library/react';
++import type { ScanRow, CalcioScanPayload } from '@/lib/safeStrategyScan';
++import type { MikeTrade } from '@/lib/mike';
++import { romeDay } from '@/lib/dailyHistory';
++
++// ------------------------------------------------------------------- finti
++// Copia dei finti di `useControlRoom.test.tsx`: stesse chiavi e tipi del vero.
++vi.mock('@/lib/safeStrategyScan', async (orig) => ({
++    ...(await orig() as object),
++    fetchScanRows: vi.fn(async () => []),
++    fetchScanStatus: vi.fn(async () => null),
++    subscribeScanRows: vi.fn(() => () => { /* nessun evento */ }),
++    subscribeScanStatus: vi.fn(() => () => { /* nessun evento */ }),
++}));
++vi.mock('@/lib/omega', async (orig) => ({
++    ...(await orig() as object),
++    fetchOmegaState: vi.fn(async () => ({ control: null, aggregates: null, activity: [] })),
++    fetchOmegaTrades: vi.fn(async () => []),
++    fetchOmegaEvents: vi.fn(async () => []),
++    updateOmegaParams: vi.fn(async () => ({})),
++    requestManual: vi.fn(async () => 7001),
++    fetchManualRequests: vi.fn(async () => []),
++}));
++vi.mock('@/lib/safeBot', async (orig) => ({
++    ...(await orig() as object),
++    fetchSafeState: vi.fn(async () => ({ control: null, trades: [], aggregates: null })),
++    fetchRunnerState: vi.fn(async () => ({ ts: null, mode: null, ageS: null, up: false })),
++    requestSafe: vi.fn(async () => 7002),
++    fetchSafeRequests: vi.fn(async () => []),
++    cashOutEvento: vi.fn(async () => undefined),
++    riprendiEventoSafe: vi.fn(async () => undefined),
++    approvaPropostaOpportunita: vi.fn(async () => undefined),
++    fetchEsitiApprovazioni: vi.fn(async () => []),
++    fetchRichiestaSafe: vi.fn(async () => null),
++}));
++vi.mock('@/lib/mike', async (orig) => ({
++    ...(await orig() as object),
++    fetchMikeState: vi.fn(async () => ({ control: null, events: [], trades: [], activity: [], aggregates: null, requests: [], day_start: null, day_by: null })),
++    requestMike: vi.fn(async () => 7003),
++    fetchMikeRequests: vi.fn(async () => []),
++}));
++vi.mock('@/lib/controlRoomProposte', async (orig) => ({
++    ...(await orig() as object),
++    fetchProposte: vi.fn(async () => []),
++    subscribeProposte: vi.fn(() => () => { /* nessun evento */ }),
++    approvaProposta: vi.fn(async () => undefined),
++    ignoraProposta: vi.fn(async () => undefined),
++}));
++vi.mock('@/lib/omegaProposte', async (orig) => ({
++    ...(await orig() as object),
++    fetchProposteOmega: vi.fn(async () => []),
++    subscribeProposteOmega: vi.fn(() => () => { /* nessun evento */ }),
++    approvaPropostaOmega: vi.fn(async () => undefined),
++    ignoraPropostaOmega: vi.fn(async () => undefined),
++}));
++vi.mock('@/lib/omegaMissions', async (orig) => ({
++    ...(await orig() as object),
++    fetchMissions: vi.fn(async () => ({ missions: [] })),
++}));
++vi.mock('@/lib/live', async (orig) => ({
++    ...(await orig() as object),
++    fetchLiveFollows: vi.fn(async () => []),
++}));
++vi.mock('@/lib/dailyHistory', async (orig) => ({
++    ...(await orig() as object),
++    fetchSafeDaily: vi.fn(async () => []),
++}));
++vi.mock('@/lib/tennis', async (orig) => ({
++    ...(await orig() as object),
++    fetchTennisFollows: vi.fn(async () => []),
++    fetchTennisBotServices: vi.fn(async () => []),
++    fetchTennisBotDaily: vi.fn(async () => []),
++    fetchTennisBotOrdersToday: vi.fn(async () => []),
++}));
++vi.mock('@/lib/localChannel', async (orig) => ({
++    ...(await orig() as object),
++    getLocalChannel: vi.fn(() => ({
++        getStatus: () => 'off' as const,
++        onStatus: () => () => { /* nessun cambio */ },
++        subscribe: () => () => { /* nessuna spinta */ },
++    })),
++    svegliaBot: vi.fn(),
++}));
++vi.mock('@/lib/liveOrders', async (orig) => ({
++    ...(await orig() as object),
++    fetchLiveAccount: vi.fn(async () => null),
++    subscribeLiveAccount: vi.fn(() => () => { /* nessuna spinta */ }),
++}));
++vi.mock('@/lib/scalperControlRoom', async (orig) => ({
++    ...(await orig() as object),
++    fetchScalperControlRoom: vi.fn(async () => ({ sessioni: [], ordini: [], lettoAt: null })),
++    stopScalperSessione: vi.fn(async () => ({})),
++}));
++vi.mock('@/lib/scalper', async (orig) => ({
++    ...(await orig() as object),
++    fetchScalperState: vi.fn(async () => ({ control: null, activity: [] })),
++}));
++
++import { fetchScanRows } from '@/lib/safeStrategyScan';
++import { fetchMikeState } from '@/lib/mike';
++import { useControlRoom } from '@/components/controlroom/useControlRoom';
++import { useChiusuraAlMs } from '@/components/controlroom/useChiusuraAlMs';
++
++const OGGI = romeDay(new Date());
++const PIAZZATO = `${OGGI}T12:00:00.000Z`;
++const MIKE_VUOTO = {
++    control: null, events: [], trades: [], activity: [], aggregates: null,
++    requests: [], day_start: null, day_by: null,
++};
++
++function tradeMike(over: Partial<MikeTrade> = {}): MikeTrade {
++    return {
++        id: 800, event_id: 'E2', market_id: '1.2', selection_id: 2, side: 'back',
++        mode: 'live', price: 2, size: 9, liability: 0, status: 'open', pnl: null,
++        placed_at: PIAZZATO, settled_at: null, origin: 'auto',
++        ...over,
++    } as MikeTrade;
++}
++
++function payloadOU(marketId: string, selectionId: number, back: number, lay: number): CalcioScanPayload {
++    return {
++        event_name: 'Finto v Finto', home: 'Finto', away: 'Finto', competition: null,
++        open_date: null, inplay: true, mo_market_id: null, mo_status: null, odds: null,
++        minute: 10, score_home: 0, score_away: 0, red_home: 0, red_away: 0, pre_ko: null,
++        cs: null, ht: null,
++        ou: [{
++            market_id: marketId, status: 'OPEN',
++            selections: [{ selection_id: selectionId, name: 'Under 3.5', back, lay, back_size: 50, lay_size: 40 }],
++        }],
++    };
++}
++
++function scanRow(eventId: string, payload: CalcioScanPayload): ScanRow {
++    return { event_id: eventId, sport: 'calcio', payload, updated_at: PIAZZATO };
++}
++
++/** Sorgente del ladder al ms finta: stessa forma di `ResiduiB17.schede.test.tsx`. */
++function sorgenteFinta() {
++    const cbs = new Map<string, (row: unknown) => void>();
++    const src = {
++        fetch: async () => null,
++        subscribe: (mid: string, cb: (row: unknown) => void) => {
++            cbs.set(mid, cb);
++            return () => { cbs.delete(mid); };
++        },
++        fonte: () => 'canale' as const,
++    };
++    const spingi = (mid: string, sid: number, back: number, lay: number) => act(() => {
++        const ms = Date.now();
++        cbs.get(mid)?.({
++            event_id: 'E2', market_id: mid, market_type: 'OVER_UNDER_35', market_name: 'OU 3.5',
++            status: 'OPEN', updated_at: new Date(ms).toISOString(),
++            ladder: { updated_ms: ms, selections: [
++                { selection_id: sid, name: 'Under 3.5', ltp: back, tv: 0, back: [[back, 50]], lay: [[lay, 40]],
++                    trd: [], wom: { back_pct: 50, lay_pct: 50 } },
++            ] },
++        });
++    });
++    return { sorgente: () => src as never, spingi };
++}
++
++async function chiusuraScanner(trade: MikeTrade, back: number, lay: number) {
++    vi.mocked(fetchScanRows).mockResolvedValue([scanRow('E2', payloadOU('1.2', 2, back, lay))]);
++    vi.mocked(fetchMikeState).mockResolvedValue({ ...MIKE_VUOTO, trades: [trade] } as never);
++    const { result } = renderHook(() => useControlRoom());
++    await waitFor(() => expect(result.current.caricamento).toBe(false));
++    const p = result.current.posizioni.find((x) => x.bot === 'mike' && x.id === trade.id);
++    expect(p?.chiusura?.alMs).toBeDefined();
++    return p!.chiusura!;
++}
++
++beforeEach(() => {
++    vi.clearAllMocks();
++});
++
++describe('P11: stessa gamba in utile, ramo al ms = ramo scanner al centesimo', () => {
++    it('Mike back 9 @ 1,85, lay 1,70: scanner 0,75 netto = ms 0,75 (prima ms 0,79 lordo)', async () => {
++        const ch = await chiusuraScanner(tradeMike({ id: 811, price: 1.85 }), 1.68, 1.70);
++        expect(ch.bloccabile).toBe(0.75);
++        const f = sorgenteFinta();
++        const { result } = renderHook(() => useChiusuraAlMs(ch, f.sorgente));
++        f.spingi('1.2', 2, 1.68, 1.70);
++        expect(result.current?.alMs).toBe(true);
++        expect(result.current?.prezzo).toBe(ch.prezzo);
++        expect(result.current?.bloccabile).toBe(ch.bloccabile);
++        expect(result.current?.aliquota).toBe(0.05);
++    });
++
++    it('aliquota della riga 2 % (meta.commission): entrambi 0,77, non 0,75 del 5 %', async () => {
++        const ch = await chiusuraScanner(
++            tradeMike({ id: 812, price: 1.85, meta: { commission: 0.02 } } as Partial<MikeTrade>), 1.68, 1.70);
++        // lordo 0,79 x 0,98 = 0,7742 -> 0,77
++        expect(ch.bloccabile).toBe(0.77);
++        expect(ch.alMs?.aliquota).toBe(0.02);
++        const f = sorgenteFinta();
++        const { result } = renderHook(() => useChiusuraAlMs(ch, f.sorgente));
++        f.spingi('1.2', 2, 1.68, 1.70);
++        expect(result.current?.bloccabile).toBe(0.77);
++        expect(result.current?.aliquotaDiRipiego).toBe(false);
++    });
++
++    it('ripiego sullo scanner (il canale non porta il mercato): stessa cifra netta', async () => {
++        const ch = await chiusuraScanner(tradeMike({ id: 813, price: 1.85 }), 1.68, 1.70);
++        const f = sorgenteFinta();
++        const { result } = renderHook(() => useChiusuraAlMs(ch, f.sorgente));
++        expect(result.current?.fonte).toBe('scanner');
++        expect(result.current?.bloccabile).toBe(ch.bloccabile);
++    });
++
++    it('in perdita nessuna commissione: lay 2,10 -> ms = scanner', async () => {
++        const ch = await chiusuraScanner(tradeMike({ id: 814, price: 1.85 }), 2.08, 2.10);
++        const f = sorgenteFinta();
++        const { result } = renderHook(() => useChiusuraAlMs(ch, f.sorgente));
++        f.spingi('1.2', 2, 2.08, 2.10);
++        expect(ch.bloccabile).not.toBeNull();
++        expect(ch.bloccabile!).toBeLessThan(0);
++        expect(result.current?.bloccabile).toBe(ch.bloccabile);
++    });
++});
+diff --git a/frontend/src/components/controlroom/useChiusuraAlMs.ts b/frontend/src/components/controlroom/useChiusuraAlMs.ts
+index 197b9c8..2f1e239 100644
+--- a/frontend/src/components/controlroom/useChiusuraAlMs.ts
++++ b/frontend/src/components/controlroom/useChiusuraAlMs.ts
+@@ -17,7 +17,7 @@
+ // ============================================================================
+ import { usePrezzoAlMs, type SorgenteLadder } from './usePrezzoAlMs';
+ import {
+-    chiusuraAlPrezzo, ripiegoScanner, testoFonte,
++    aliquotaAlMs, chiusuraAlPrezzo, ripiegoScanner, testoFonte,
+ } from '@/lib/chiusuraAlMs';
+ import type { ContestoPrezzoVisto, FontePrezzo } from '@/lib/schedaAlMs';
+ import type { PosizioneAperta } from './useControlRoom';
+@@ -34,6 +34,14 @@ export interface ChiusuraMostrata {
+     testoFonte: string;
+     /** true = il prezzo viene dal ladder al ms (canale o DB) */
+     alMs: boolean;
++    /**
++     * 30/09 (P11) - l'aliquota con cui `bloccabile` e' NETTO (solo ramo al ms;
++     * nel ramo senza dati del ms `bloccabile` e' quello dello scanner, gia'
++     * netto con la stessa aliquota: qui `null`). `aliquotaDiRipiego` = la riga
++     * non la portava e si e' usato il 5 % di `aliquotaDi`.
++     */
++    aliquota?: number | null;
++    aliquotaDiRipiego?: boolean;
+ }
+ 
+ /** Il prezzo e il contesto che partono col clic (solo per la scheda). */
+@@ -74,10 +82,15 @@ export function useChiusuraAlMs(
+             alMs: false,
+         };
+     }
+-    const c = chiusuraAlPrezzo(d.win, d.lose, chiusura.lato, p);
++    // 30/09 (P11) - NETTO di commissione con l'aliquota della riga, come il
++    // ramo dello scanner (`chiusuraViva`): stessa gamba, stessa cifra.
++    const aliquota = aliquotaAlMs(d);
++    const c = chiusuraAlPrezzo(d.win, d.lose, chiusura.lato, p, aliquota);
+     const nowMs = Date.now();
+     return {
+         ...c,
++        aliquota,
++        aliquotaDiRipiego: !(typeof d.aliquota === 'number' && Number.isFinite(d.aliquota) && d.aliquota > 0),
+         fonte: c.prezzo == null ? null : p.fonte,
+         istanteMs: c.prezzo == null ? null : p.istanteMs,
+         testoFonte: c.prezzo == null ? 'prezzo non disponibile' : testoFonte(p, nowMs),
+diff --git a/frontend/src/components/controlroom/useControlRoom.ts b/frontend/src/components/controlroom/useControlRoom.ts
+index 6f5fad0..4f8b6a8 100644
+--- a/frontend/src/components/controlroom/useControlRoom.ts
++++ b/frontend/src/components/controlroom/useControlRoom.ts
+@@ -2600,6 +2600,7 @@ export function useControlRoom(): ControlRoomVM {
+                 selectionId: sid != null && Number.isFinite(sid) ? sid : null,
+                 sport: String(t.sport ?? '').toLowerCase() === 'tennis' ? 'tennis' : 'calcio',
+                 istanteScannerMs,
++                aliquota: aliquotaDi(t.commission, (t.meta ?? {})['commission']),
+                 scanner: lato === 'back'
+                     ? { back: vivo.prezzo, backSize: vivo.abbinabile, lay: altro.prezzo, laySize: altro.abbinabile }
+                     : { back: altro.prezzo, backSize: altro.abbinabile, lay: vivo.prezzo, laySize: vivo.abbinabile },
+diff --git a/frontend/src/lib/chiusuraAlMs.test.ts b/frontend/src/lib/chiusuraAlMs.test.ts
+index c6f1f47..cc707b1 100644
+--- a/frontend/src/lib/chiusuraAlMs.test.ts
++++ b/frontend/src/lib/chiusuraAlMs.test.ts
+@@ -4,6 +4,7 @@
+ // ============================================================================
+ import { describe, it, expect } from 'vitest';
+ import {
++    ALIQUOTA_DI_RIPIEGO, aliquotaAlMs,
+     chiusuraAlPrezzo, ripiegoScanner, testoFonte, valutaComboAlMs, type DatiChiusuraAlMs,
+ } from './chiusuraAlMs';
+ import { PREZZO_VUOTO, type PrezzoScheda } from './schedaAlMs';
+@@ -16,20 +17,44 @@ function prezzo(p: Partial<PrezzoScheda>): PrezzoScheda {
+ 
+ describe('chiusuraAlPrezzo: stessa matematica del green-up, al prezzo di adesso', () => {
+     // back 10 € a 2,00: +10 se vince, -10 se perde -> si chiude BANCANDO
+-    it('lay a 1,80: P&L bloccato +1,11 sui due esiti', () => {
+-        const c = chiusuraAlPrezzo(10, -10, 'lay', prezzo({ lay: 1.8, laySize: 50 }));
+-        expect(c).toEqual({ lato: 'lay', prezzo: 1.8, abbinabile: 50, bloccabile: 1.11 });
++    // 30/09 (P11): il P&L e' NETTO di commissione (prima lordo +1,11): lordo
++    // 1,11 x (1 - 0,05) = 1,0545 -> +1,05, come il ramo dello scanner.
++    it('lay a 1,80: P&L bloccato +1,05 netto (lordo 1,11, commissione 5 %)', () => {
++        const c = chiusuraAlPrezzo(10, -10, 'lay', prezzo({ lay: 1.8, laySize: 50 }), 0.05);
++        expect(c).toEqual({ lato: 'lay', prezzo: 1.8, abbinabile: 50, bloccabile: 1.05 });
+     });
+-    it('lay a 2,20: P&L bloccato -0,91', () => {
+-        const c = chiusuraAlPrezzo(10, -10, 'lay', prezzo({ lay: 2.2, laySize: 50 }));
++    it('lay a 2,20: P&L bloccato -0,91 (in perdita la commissione non c\'e\')', () => {
++        const c = chiusuraAlPrezzo(10, -10, 'lay', prezzo({ lay: 2.2, laySize: 50 }), 0.05);
+         expect(c.bloccabile).toBe(-0.91);
+     });
+     it('il lato che manca non si inventa: prezzo e P&L null', () => {
+-        const c = chiusuraAlPrezzo(10, -10, 'lay', prezzo({ back: 1.9, backSize: 20 }));
++        const c = chiusuraAlPrezzo(10, -10, 'lay', prezzo({ back: 1.9, backSize: 20 }), 0.05);
+         expect(c).toEqual({ lato: 'lay', prezzo: null, abbinabile: null, bloccabile: null });
+     });
+ });
+ 
++describe('P11 (30/09): «chiudi ora» NETTO con l\'aliquota della riga', () => {
++    it('aliquota 2 %: 1,11 x 0,98 = 1,0878 -> +1,09 (non +1,05 del 5 %)', () => {
++        expect(chiusuraAlPrezzo(10, -10, 'lay', prezzo({ lay: 1.8, laySize: 50 }), 0.02).bloccabile).toBe(1.09);
++    });
++    it('aliquota in percentuale (5) = frazione (0,05), come netAfterCommission', () => {
++        expect(chiusuraAlPrezzo(10, -10, 'lay', prezzo({ lay: 1.8, laySize: 50 }), 5).bloccabile).toBe(1.05);
++    });
++    it('il PREZZO non cambia (e\' quello che parte al clic): solo la cifra', () => {
++        const lordo = chiusuraAlPrezzo(10, -10, 'lay', prezzo({ lay: 1.8, laySize: 50 }), 0.02);
++        const netto = chiusuraAlPrezzo(10, -10, 'lay', prezzo({ lay: 1.8, laySize: 50 }), 0.05);
++        expect(lordo.prezzo).toBe(1.8);
++        expect(netto.prezzo).toBe(1.8);
++    });
++    it('aliquotaAlMs: quella della riga, altrimenti il 5 % di aliquotaDi', () => {
++        expect(aliquotaAlMs({ aliquota: 0.02 })).toBe(0.02);
++        expect(aliquotaAlMs({ aliquota: null })).toBe(ALIQUOTA_DI_RIPIEGO);
++        expect(aliquotaAlMs({})).toBe(0.05);
++        expect(aliquotaAlMs({ aliquota: 0 })).toBe(0.05);
++        expect(aliquotaAlMs(null)).toBe(0.05);
++    });
++});
++
+ describe('ripiegoScanner e testoFonte', () => {
+     const d: DatiChiusuraAlMs = {
+         win: 10, lose: -10, marketId: '1.23', selectionId: 7, sport: 'calcio',
+diff --git a/frontend/src/lib/chiusuraAlMs.ts b/frontend/src/lib/chiusuraAlMs.ts
+index 0cfacab..72d2f36 100644
+--- a/frontend/src/lib/chiusuraAlMs.ts
++++ b/frontend/src/lib/chiusuraAlMs.ts
+@@ -19,7 +19,7 @@
+ //     INFERIORE certo del profitto bloccato per euro al prezzo di adesso.
+ // Nessuna funzione qui spegne un bottone e nessuna cambia cio' che parte.
+ // ============================================================================
+-import { greenPrice, partialLockedPnl } from '@/components/trading/CashOutButton';
++import { greenPrice, netAfterCommission, partialLockedPnl } from '@/components/trading/CashOutButton';
+ import { fmtNum } from '@/lib/format';
+ import { ticksBetween } from '@/lib/riskMath';
+ import type { PrezzoScheda } from '@/lib/schedaAlMs';
+@@ -36,6 +36,24 @@ export interface DatiChiusuraAlMs {
+     istanteScannerMs: number | null;
+     /** i due lati dello scanner (il ripiego), con l'abbinabile */
+     scanner: { back: number | null; backSize: number | null; lay: number | null; laySize: number | null };
++    /**
++     * 30/09 (P11) - l'aliquota di commissione della RIGA, la stessa del ramo
++     * dello scanner (`useControlRoom.aliquotaDi`: colonna, poi
++     * `meta.commission`, poi 5 %). Frazione (0,05) o percentuale (5), come
++     * `netAfterCommission`. Assente sulle righe costruite a mano: si usa
++     * `ALIQUOTA_DI_RIPIEGO`, lo stesso default di `aliquotaDi`.
++     */
++    aliquota?: number | null;
++}
++
++/** 30/09 (P11) - l'aliquota quando la riga non la porta: il 5 % di
++ *  `useControlRoom.aliquotaDi` (default Betfair usato dai servizi). */
++export const ALIQUOTA_DI_RIPIEGO = 0.05;
++
++/** L'aliquota di una riga al ms: la sua, se e' un numero > 0, se no il ripiego. */
++export function aliquotaAlMs(d: Pick<DatiChiusuraAlMs, 'aliquota'> | null | undefined): number {
++    const v = d?.aliquota;
++    return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : ALIQUOTA_DI_RIPIEGO;
+ }
+ 
+ export interface ChiusuraAlPrezzo {
+@@ -58,18 +76,27 @@ export function ripiegoScanner(d: DatiChiusuraAlMs | null | undefined): PrezzoSc
+ 
+ /**
+  * Il «se chiudo ora» al prezzo mostrato: il lato di copertura dall'esposizione,
+- * il miglior prezzo di quel lato, il P&L garantito chiudendo per intero.
+- * Stesse funzioni di `useControlRoom.chiusuraViva`: nessuna seconda formula.
++ * il miglior prezzo di quel lato, il P&L garantito chiudendo per intero,
++ * NETTO di commissione. Stesse funzioni di `useControlRoom.chiusuraViva`
++ * (`partialLockedPnl` + `netAfterCommission` con l'aliquota della riga):
++ * nessuna seconda formula.
++ *
++ * 30/09 (P11) - prima questo ramo (ladder al ms) dava il LORDO e quello dello
++ * scanner il NETTO: in utile due cifre diverse per la stessa gamba. La
++ * commissione di Betfair e' per MERCATO sul netto vincente; per la singola
++ * gamba «netto» = commissione sul suo utile bloccato, come il ramo scanner.
++ * Il prezzo (`prezzo`, quello che parte al clic) NON cambia.
+  */
+ export function chiusuraAlPrezzo(
+-    win: number, lose: number, lato: 'back' | 'lay', p: PrezzoScheda,
++    win: number, lose: number, lato: 'back' | 'lay', p: PrezzoScheda, aliquota: number,
+ ): ChiusuraAlPrezzo {
+     const prezzo = greenPrice(win, lose, lato === 'back' ? p.back : null, lato === 'lay' ? p.lay : null);
+     const abbinabile = lato === 'back' ? p.backSize : p.laySize;
+     return {
+         lato, prezzo,
+         abbinabile: prezzo == null ? null : abbinabile,
+-        bloccabile: prezzo == null ? null : partialLockedPnl(prezzo, win, lose, 1),
++        bloccabile: prezzo == null ? null
++            : netAfterCommission(partialLockedPnl(prezzo, win, lose, 1), aliquota),
+     };
+ }
+ 

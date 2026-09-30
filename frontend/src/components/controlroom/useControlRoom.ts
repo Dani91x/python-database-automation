@@ -2600,6 +2600,7 @@ export function useControlRoom(): ControlRoomVM {
                 selectionId: sid != null && Number.isFinite(sid) ? sid : null,
                 sport: String(t.sport ?? '').toLowerCase() === 'tennis' ? 'tennis' : 'calcio',
                 istanteScannerMs,
+                aliquota: aliquotaDi(t.commission, (t.meta ?? {})['commission']),
                 scanner: lato === 'back'
                     ? { back: vivo.prezzo, backSize: vivo.abbinabile, lay: altro.prezzo, laySize: altro.abbinabile }
                     : { back: altro.prezzo, backSize: altro.abbinabile, lay: vivo.prezzo, laySize: vivo.abbinabile },

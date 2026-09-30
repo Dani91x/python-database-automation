@@ -17,7 +17,7 @@
 // ============================================================================
 import { usePrezzoAlMs, type SorgenteLadder } from './usePrezzoAlMs';
 import {
-    chiusuraAlPrezzo, ripiegoScanner, testoFonte,
+    aliquotaAlMs, chiusuraAlPrezzo, ripiegoScanner, testoFonte,
 } from '@/lib/chiusuraAlMs';
 import type { ContestoPrezzoVisto, FontePrezzo } from '@/lib/schedaAlMs';
 import type { PosizioneAperta } from './useControlRoom';
@@ -34,6 +34,14 @@ export interface ChiusuraMostrata {
     testoFonte: string;
     /** true = il prezzo viene dal ladder al ms (canale o DB) */
     alMs: boolean;
+    /**
+     * 30/09 (P11) - l'aliquota con cui `bloccabile` e' NETTO (solo ramo al ms;
+     * nel ramo senza dati del ms `bloccabile` e' quello dello scanner, gia'
+     * netto con la stessa aliquota: qui `null`). `aliquotaDiRipiego` = la riga
+     * non la portava e si e' usato il 5 % di `aliquotaDi`.
+     */
+    aliquota?: number | null;
+    aliquotaDiRipiego?: boolean;
 }
 
 /** Il prezzo e il contesto che partono col clic (solo per la scheda). */
@@ -74,10 +82,15 @@ export function useChiusuraAlMs(
             alMs: false,
         };
     }
-    const c = chiusuraAlPrezzo(d.win, d.lose, chiusura.lato, p);
+    // 30/09 (P11) - NETTO di commissione con l'aliquota della riga, come il
+    // ramo dello scanner (`chiusuraViva`): stessa gamba, stessa cifra.
+    const aliquota = aliquotaAlMs(d);
+    const c = chiusuraAlPrezzo(d.win, d.lose, chiusura.lato, p, aliquota);
     const nowMs = Date.now();
     return {
         ...c,
+        aliquota,
+        aliquotaDiRipiego: !(typeof d.aliquota === 'number' && Number.isFinite(d.aliquota) && d.aliquota > 0),
         fonte: c.prezzo == null ? null : p.fonte,
         istanteMs: c.prezzo == null ? null : p.istanteMs,
         testoFonte: c.prezzo == null ? 'prezzo non disponibile' : testoFonte(p, nowMs),
