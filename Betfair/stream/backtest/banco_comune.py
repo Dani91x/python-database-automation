@@ -544,6 +544,8 @@ class MercatoFlumine:
         # tempo di mercato): il referto lo dichiara, perche' l'assunzione pesa
         # in proporzione a questo numero
         self.letture: int = 0
+        # 30/09: market_id -> libro finale (``registra_libro_chiuso``)
+        self.libri_chiusi: Dict[str, Dict[str, Any]] = {}
 
     # ------------------------------------------------------------- rifiuto
     def rifiuto_provocato(self, *, market_id: Any, side: Any, size: Any,
@@ -1055,11 +1057,99 @@ class MercatoFlumine:
                 "netto": round(lordo - comm, 2), "aliquota": float(commissione),
                 "mercati": {k: round(v, 2) for k, v in per_mercato.items()}}
 
-    def read_book(self, market_id: str, *_a: Any, **_k: Any) -> Optional[Dict[str, Any]]:
-        # il book a mercato chiuso serve al regolamento: nel replay lo stato
-        # finale arriva dalla registrazione stessa (`process_closed_market`).
+    # ------------------------------------------- IL LIBRO DI UN MERCATO CHIUSO
+    # 30/09 (ondata 2 del banco, revisione A6): il regolamento di un bot legge
+    # il libro FINALE del mercato con una REST (``omega_market.read_book`` ->
+    # ``listMarketBook``): mercato ``CLOSED`` e runner ``WINNER``/``LOSER``.
+    # Prima il banco rispondeva sempre None (limite 8): Mike restava in attesa
+    # del regolamento per sempre, ``SETTLING`` non si vedeva mai e il P&L del
+    # referto lo calcolava solo il banco. Adesso chi riceve la chiusura dalla
+    # registrazione (``process_closed_market`` del replay) la consegna qui, e
+    # ``read_book`` risponde con la STESSA forma della produzione. Senza
+    # consegna (Omega, Safe, lo scenario che perde le chiusure) nulla cambia.
+    def registra_libro_chiuso(self, market_book: Any) -> Optional[Dict[str, Any]]:
+        """Il libro finale di un mercato CHIUSO dalla registrazione grezza
+        (``marketDefinition`` con ``status: CLOSED`` e lo stato dei runner),
+        nella forma di ``omega_market.read_book``. None se il book non e' chiuso."""
+        from ...omega import omega_market as OM
+
+        stato = str(getattr(market_book, "status", "") or "").upper()
+        if stato != "CLOSED":
+            return None
+
+        def _livelli(xs: Any) -> List[Dict[str, Any]]:
+            # i livelli nella forma di ``listMarketBook`` ({price, size}): la
+            # lettura dei migliori prezzi e' quella di PRODUZIONE
+            # (``omega_market._best_lay``/``_best_back``, stessi filtri)
+            return [{"price": _offer_price(x), "size": _offer_size(x)} for x in list(xs or [])]
+
+        runners = []
+        for r in list(getattr(market_book, "runners", None) or []):
+            sid = getattr(r, "selection_id", None)
+            if sid is None:
+                continue
+            ex = getattr(r, "ex", None)
+            lay_price, lay_size, ladder = OM._best_lay(
+                _livelli(getattr(ex, "available_to_lay", None) if ex is not None else None))
+            back_price, back_size = OM._best_back(
+                _livelli(getattr(ex, "available_to_back", None) if ex is not None else None))
+            runners.append({
+                "selection_id": int(sid),
+                "name": "?",
+                "status": getattr(r, "status", None),
+                "lay_price": lay_price,
+                "lay_size": lay_size,
+                "back_price": back_price,
+                "back_size": back_size,
+                "lay_ladder": [list(x) for x in ladder],
+            })
+        libro = {"market_id": str(getattr(market_book, "market_id", "") or ""),
+                 "status": str(getattr(market_book, "status", "") or "CLOSED"),
+                 "inplay": bool(getattr(market_book, "inplay", False)),
+                 "runners": runners}
+        self.libri_chiusi[libro["market_id"]] = libro
+        return libro
+
+    def pnl_betfair(self, commissione: float) -> Dict[str, Any]:
+        """30/09 (banco RG1): il P&L come lo REGOLA Betfair, al centesimo.
+        ``listClearedOrders`` (``Betfair_api_documentation.pdf`` pag. 54-55) da'
+        ``profit`` e ``commission`` per scommessa a due decimali: il lordo del
+        mercato e' la somma dei ``profit`` al centesimo (flumine li arrotonda gia'
+        per ordine, ``simulatedorder.profit``) e la commissione e'
+        round(aliquota x netto vincente del MERCATO, 2). ``pnl`` qui sopra
+        arrotondava solo il TOTALE delle commissioni (0,0065 + 0,166 -> 0,17
+        invece di 0,01 + 0,17): resta com'e' per la nota storica del referto."""
+        per_mercato: Dict[str, float] = {}
+        for o in self.ordini.values():
+            sim = getattr(o, "simulated", None)
+            if sim is None:
+                continue
+            mid = str(getattr(o, "market_id", "") or "_ignoto")
+            per_mercato[mid] = round(per_mercato.get(mid, 0.0)
+                                     + round(float(getattr(sim, "profit", 0.0) or 0.0), 2), 2)
+        comm = {m: (round(v * float(commissione), 2) if v > 0 else 0.0)
+                for m, v in per_mercato.items()}
+        netti = {m: round(v - comm[m], 2) for m, v in per_mercato.items()}
+        return {"lordo": round(sum(per_mercato.values()), 2),
+                "commissione": round(sum(comm.values()), 2),
+                "netto": round(sum(netti.values()), 2), "aliquota": float(commissione),
+                "mercati": per_mercato, "commissione_mercati": comm, "netto_mercati": netti}
+
+    def read_book(self, market_id: str, runner_names: Optional[Dict[int, str]] = None,
+                  *_a: Any, **_k: Any) -> Optional[Dict[str, Any]]:
+        """``omega_market.read_book``: un mercato CHIUSO nella registrazione
+        risponde col suo libro finale (runner WINNER/LOSER, nomi dal
+        dizionario del chiamante come in produzione); un mercato ancora aperto
+        o mai chiuso risponde None, come prima (limite dichiarato: il libro
+        vivo per REST non serve a nessun bot certificato)."""
         self._costa_una_lettura()
-        return None
+        libro = self.libri_chiusi.get(str(market_id))
+        if libro is None:
+            return None
+        nomi = runner_names or {}
+        return {**libro, "runners": [dict(r, name=nomi.get(int(r["selection_id"]), "?"),
+                                          lay_ladder=[list(x) for x in r["lay_ladder"]])
+                                     for r in libro["runners"]]}
 
 
 
@@ -1652,7 +1742,7 @@ class MotoreReplay:
         return self._coda.popleft()
 
     # ------------------------------------------------------------- attesa
-    def attendi_esecuzione(self, market_id: str) -> int:
+    def attendi_esecuzione(self, market_id: str, tipi: Optional[Sequence[Any]] = None) -> int:
         """Fa scorrere ESATTAMENTE il tempo per cui Betfair trattiene la
         chiamata, poi esegue. Torna quanti book sono passati.
 
@@ -1690,12 +1780,21 @@ class MotoreReplay:
 
         `ATTESA_ESATTA = False` rimette la vecchia attesa: serve solo al test di
         falsificazione.
+
+        30/09 (M1, annullo sul canale) - ``tipi``: se dato, si aspettano SOLO i
+        pacchetti di quei tipi (``OrderPackageType``). Serve all'annullo che il
+        bot manda sul CANALE (``PortaBanco.attendi_esecuzione``): li' un PLACE
+        dello stesso mercato puo' essere ancora in volo col suo bet delay (sul
+        canale il bot non resta fermo sul piazzamento) e l'annullo NON deve
+        aspettarlo; quel PLACE si esegue quando tocca, al book suo. ``None`` =
+        tutti i pacchetti del mercato, come sempre (la coda).
         """
         mid = str(market_id)
         passati = 0
         while True:
             pacchi = [p for p in self.quadro.handler_queue
-                      if str(getattr(p, "market_id", "")) == mid]
+                      if str(getattr(p, "market_id", "")) == mid
+                      and (tipi is None or getattr(p, "package_type", None) in tipi)]
             if not pacchi:
                 break
             if ATTESA_ESATTA and all(
@@ -1746,6 +1845,21 @@ class MotoreReplay:
         self.tempo_letture += float(secondi)
         self.book_letture += passati
         return passati
+
+    def avanza_un_book(self) -> Optional[Any]:
+        """30/09 (ondata 2): UN book di mercato che passa mentre il bot e'
+        fermo ad ASPETTARE (l'esito di un ordine, sul canale del runner): va a
+        flumine e allo SCANNER come nelle altre attese, NON al giro del bot.
+        Torna il book, o None se la registrazione e' finita. Lo usa il replay
+        di Mike per l'attesa dell'esito taker a tempo di mercato
+        (``service.ATTESA_ESITO_TAKER_MAX_S``, M8.11)."""
+        mb = self._prossimo()
+        if mb is None:
+            return None
+        mercato, _nuovo = self._a_flumine(mb)
+        if mercato is not None and self.su_book is not None:
+            self.su_book(mb)
+        return mb
 
     def _esegui_adesso(self, pacchi: Sequence[Any]) -> None:
         """Esegue i pacchetti e li toglie dalla coda, come farebbe

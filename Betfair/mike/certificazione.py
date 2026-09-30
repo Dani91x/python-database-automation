@@ -365,6 +365,75 @@ def _b6(ctx, snap, d, params):
     return None
 
 
+def _ultimo_ingresso_dovuto(ctx, snap, d, params) -> bool:
+    """30/09 (ondata 2, revisione BASSO): al segno dei 10 minuti Mike e' PIATTO
+    (``WATCH``, nessuna gamba nata dopo il segno) e TUTTE le condizioni
+    d'ingresso sono vere, lette qui dalla regola del piano (M2.4) e non dal
+    motore: bot acceso, nessuna chiusura manuale, prezzi vivi, prima del
+    fischio, cicli sotto il massimo, pausa dopo il giro chiuso passata, libro
+    dell'Under 3,5 aperto con la quota nella banda, liquidita' al miglior back,
+    spread nel massimo, rischio della puntata dentro il tetto, veto spento,
+    nessun ordine a esito ignoto, aperture non ferme. Conservativo: se una
+    sola condizione manca, nessun caso."""
+    if snap.inplay or ctx.state != "WATCH":
+        return False
+    segno = _segno_ultimo_ingresso(snap, params)
+    if not (segno <= float(snap.now) < float(snap.ko_at)):
+        return False
+    if any(float(l.placed_at or 0.0) >= segno for l in ctx.legs):
+        return False
+    if (params.get("pre_enabled") is not True or ctx.no_reentry or ctx.flatten_pending
+            or getattr(ctx, "chiuso_dall_utente", False)):
+        return False
+    if not (snap.feed_fresh and snap.order_fresh):
+        return False
+    if E.has_unknown_orders(ctx) or isinstance(getattr(ctx, "aperture_ferme", None), dict):
+        return False
+    if int(ctx.cycle_no or 0) >= int(params.get("pre_max_cycles") or 0):
+        return False
+    pausa = float(params.get("pre_reentry_cooldown_s") or 0.0)
+    if ctx.last_green_at is not None and float(snap.now) - float(ctx.last_green_at) < pausa:
+        return False
+    bk = _book(snap, E.MARKET_OU35, E.SEL_UNDER)
+    if bk is None or not E.operabile(bk) or bk.inplay or not E.price_ok(bk.best_back):
+        return False
+    lo = float(params.get("pre_entry_price_min") or 0.0)
+    hi = float(params.get("pre_entry_price_max") or 0.0)
+    if not (lo - 1e-9 <= float(bk.best_back) <= hi + 1e-9):
+        return False
+    stake = float(params.get("stake") or 0.0)
+    if float(bk.back_size or 0.0) < stake * float(params.get("pre_min_back_size_factor") or 1.0):
+        return False
+    if bk.best_lay is not None:
+        t = E.ticks_between(bk.best_back, bk.best_lay)
+        if t is None or t > int(params.get("pre_max_spread_ticks") or 0):
+            return False
+    if stake > E.liability_room(ctx, params) + 1e-9:
+        return False
+    # il veto sulla P calibrata (acceso di serie) e' una rinuncia prevista: con
+    # un veto gia' scattato, o che scatta su questo libro, nessun caso
+    if E.veto_u35_acceso(params):
+        if isinstance(getattr(ctx, "veto_u35", None), dict):
+            return False
+        veto = E.valuta_veto_under35(snap, params, float(bk.best_back), "persist")
+        if veto is not None and veto.get("esito") == "veto":
+            return False
+    return True
+
+
+@_controllo("B7", "al segno dei 10 minuti, da PIATTO e con tutte le condizioni d'ingresso "
+                  "vere, l'ultimo ingresso AVVIENE (piano Mike 29/09, M2.4; decisione "
+                  "dell'utente 30/09: riprova fino al fischio)",
+            quando=lambda ctx, snap, d, p: _ultimo_ingresso_dovuto(ctx, snap, d, p))
+def _b7(ctx, snap, d, params):
+    if not _ultimo_ingresso_dovuto(ctx, snap, d, params):
+        return None
+    if any(a.role == "under_entry" for a in _piazzamenti(d)):
+        return None
+    return (f"piatto al segno con libro Under 3,5 buono e nessun ingresso: "
+            f"{d.state} - {d.reason}")
+
+
 # ===========================================================================
 # E. LA COPERTURA (§3 Fase 3, §4.3)
 # ===========================================================================
@@ -419,23 +488,49 @@ def _e2(ctx, snap, d, params):
                     f"{round(frazione, 3)})")
         if a.side != "back":
             continue
-        S = sum(float(l.matched or 0.0) for l in ctx.legs
-                if not l.archived and l.market == E.MARKET_OU35
-                and l.selection == E.SEL_UNDER and l.side == "back")
-        S -= sum(float(l.matched or 0.0) for l in ctx.legs
-                 if not l.archived and l.market == E.MARKET_OU35
-                 and l.selection == E.SEL_UNDER and l.side == "lay")
-        if S <= 0:
+        # 30/09 (ondata 2, revisione M8): la forma di serie (PUNTA Over 4,5).
+        # Prima leggeva ``params["commission"]`` e ``params["cover_factor"]``,
+        # che non esistono (valevano sempre 0,05 e 1,2), e segnalava solo un
+        # ordine oltre il 135 % del pieno. Adesso: parametri VERI e importo
+        # VERIFICATO come per la banca (residuo sui fill x frazione della
+        # tranche, dimensionato sul miglior back del libro), piu' piccolo solo
+        # se il tetto per partita lo riduce, piu' grande solo entro
+        # l'arrotondamento legale dichiarato (``cover_max_overshoot_pct``).
+        liab = E.under_liability(ctx.legs)
+        if liab <= 0:
             return f"copertura da {a.size} senza nessun Under abbinato"
-        Po = float(a.price)
-        c = float(params.get("commission") or 0.05)
-        factor = float(params.get("cover_factor") or 1.2)
-        atteso = factor * S / max((Po - 1.0) * (1.0 - c), 1e-9)
-        # la copertura entra anche a TRANCHE (frazione) e a residuo: si segnala
-        # solo un ordine piu' GRANDE del pieno, che e' l'errore pericoloso.
-        if float(a.size) > atteso * 1.35 + 0.05:
-            return (f"copertura {a.size} > pieno {round(atteso, 2)} "
-                    f"(S={round(S, 2)} Po={Po})")
+        bk = _book(snap, E.MARKET_OU45, E.SEL_OVER)
+        best = getattr(bk, "best_back", None) if bk is not None else None
+        if not best or not E.price_ok(best):
+            continue                          # senza prezzo non si giudica
+        c_b = float(params.get("commission_pct", 5.0)) / 100.0
+        f_b = float(params.get("cover_profit_factor", 1.2))
+        gia = E.cover_matched_value(ctx.legs, c_b)
+        pieno = E.cover_residual(liab, float(best), c_b, f_b, gia)
+        stadio = int(ctx.cover_stage or 0)
+        if stadio in (1, 2) and ctx.early_goal_at is None:
+            stadio = 0
+        frazione, _decl = E.frazione_copertura(stadio, params, pieno)
+        x = round(pieno * frazione, 2)
+        size = float(a.size)
+        if params.get("exact_sizes", True):
+            # importi esatti (il default): la copertura va al centesimo
+            lo, hi = x - 0.011, x + 0.011
+        else:
+            # legalizzata .it (min 2,00 / passo 0,50): per eccesso entro il
+            # tetto dichiarato, oppure per difetto (il ripiego ``floor``)
+            margine = 1.0 + max(0.0, float(params.get("cover_max_overshoot_pct") or 0.0)) / 100.0
+            lo = E.legalize_back_size(x, "floor")[0] - 0.011
+            hi = x * margine + 0.011
+        if lo <= size <= hi:
+            continue
+        spazio = E.liability_room(ctx, params)
+        if size < x and spazio != float("inf") and size <= spazio + 0.011 \
+                and x > spazio + 0.011:
+            continue                          # ridotta dal tetto per partita
+        return (f"copertura {a.size} diversa dall'importo previsto {x} (liability {liab}, "
+                f"gia' coperto {round(gia, 2)}, frazione {round(frazione, 3)}, best "
+                f"{best}, commissione {c_b}, fattore {f_b})")
     return None
 
 
@@ -500,46 +595,128 @@ def _g1(ctx, snap, d, params):
 
 # 29/09 (PIANO_MODIFICHE_MIKE, pacchetto P1): il cancello delle uscite. Le
 # uscite che bloccano un PROFITTO partono da sole; resta da firmare SOLO
-# l'uscita che puo' chiudere IN PERDITA (motivo ``loss_*``, chiusura a tempo del
-# rientro ``reentry_time``, chiusura del veto pre-partita), e ognuna chiede la
-# SUA firma (M8.1). Il tetto di perdita partita (``loss_cap``) non esiste piu'
-# (M4.5). Regola letta dal piano, non dal cancello del motore.
-def _motivo_perdita(d: E.Decision) -> str:
-    motivo = str(d.updates.get("close_reason") or "")
-    if motivo.startswith("loss") or motivo == "reentry_time":
-        return motivo
-    if any(a.note == E.VETO_U35_NOTE for a in _piazzamenti(d)):
-        return "veto_u35"
-    return ""
+# l'uscita che puo' chiudere IN PERDITA, e ognuna chiede la SUA firma (M8.1).
+# Il tetto di perdita partita (``loss_cap``) non esiste piu' (M4.5).
+#
+# 30/09 (ondata 2 del banco, revisione A1): G2 riconosceva la "perdita" con la
+# STESSA regola del motore (il ``close_reason`` ``loss_*``): un'uscita in
+# perdita classificata male dal motore (motivo ``profit`` su una chiusura che
+# blocca un negativo) passava muta. Adesso la perdita la dice il NUMERO: il
+# netto che la chiusura blocca, calcolato qui sulle gambe abbinate piu' gli
+# ordini di chiusura come se si abbinassero (``valore_uscita``). Il motivo del
+# motore serve solo a riconoscere la firma (la firma vale per QUEL motivo).
+_SOGLIA_PERDITA = 0.05          # euro: sotto e' arrotondamento, non una perdita
+_RUOLI_USCITA = ("under_green", "ko_green", "under_close", "over_close", "reentry_green")
 
 
-def _nasce_uscita_in_perdita(ctx, d) -> bool:
-    """Un'uscita in perdita NASCE in questa decisione: ordini piazzati col
-    motivo di perdita, partendo da uno stato che non e' gia' una chiusura in
-    corso (il riprezzo/residuo di un'uscita firmata e' la stessa uscita)."""
-    return (bool(_piazzamenti(d)) and bool(_motivo_perdita(d))
-            and ctx.state not in E.STATI_USCITA_IN_CORSO)
+def _categoria(d: E.Decision) -> Optional[str]:
+    """La categoria dell'uscita dai RUOLI degli ordini (la chiave della firma e'
+    ``categoria|c<ciclo>``, piano 29/09 M8.1). Scritta qui, non presa dal
+    cancello del motore."""
+    ruoli = {a.role for a in _piazzamenti(d)}
+    if ruoli & {"under_close", "over_close"}:
+        return "chiusura"
+    if "ko_green" in ruoli:
+        return "ko_green"
+    if "under_green" in ruoli:
+        return "green_pre"
+    if "reentry_green" in ruoli:
+        return "reentry_green"
+    return None
 
 
-@_controllo("G2", "a uscite MANUALI nessuna uscita IN PERDITA parte senza la SUA firma "
-                  "dell'utente, e il tetto di perdita partita non chiude mai "
-                  "(piano Mike 29/09, M4.5, M8.1)",
-            quando=lambda ctx, snap, d, p: _nasce_uscita_in_perdita(ctx, d))
-def _g2(ctx, snap, d, params):
-    if not _nasce_uscita_in_perdita(ctx, d):
+def _prezzo_di_abbinamento(a: Any, snap: E.Snapshot) -> float:
+    """A che prezzo si abbina la chiusura: una banca al piu' al suo limite, e
+    prima al miglior lay se e' meglio (piu' basso); una punta almeno al suo
+    limite, e prima al miglior back se e' meglio (piu' alto). E' cio' che il
+    mercato darebbe adesso, non il limite peggiore."""
+    p = float(a.price)
+    bk = _book(snap, a.market, a.selection)
+    if str(a.side) == "lay":
+        migliore = getattr(bk, "best_lay", None) if bk is not None else None
+        return min(p, float(migliore)) if migliore and E.price_ok(migliore) else p
+    migliore = getattr(bk, "best_back", None) if bk is not None else None
+    return max(p, float(migliore)) if migliore and E.price_ok(migliore) else p
+
+
+def valore_uscita(ctx: E.MatchCtx, snap: E.Snapshot, d: E.Decision,
+                  params: Dict[str, Any]) -> Optional[float]:
+    """Il netto (commissione compresa) che la chiusura di questa decisione
+    BLOCCA, nel caso MIGLIORE: le gambe abbinate piu' gli ordini di chiusura
+    come se si abbinassero per intero, e il P&L di ogni totale gol ancora
+    possibile (quelli gia' segnati non si tolgono). Il migliore dei casi:
+    un'uscita che anche nel caso migliore chiude in negativo e' certamente in
+    perdita (controllo conservativo: una chiusura parziale non viene accusata).
+    None = nessun ordine di chiusura."""
+    chiusure = [a for a in _piazzamenti(d) if a.role in _RUOLI_USCITA]
+    if not chiusure:
         return None
-    motivo = _motivo_perdita(d)
-    if motivo == "loss_cap":
+    gambe = [l for l in ctx.legs if not l.archived and float(l.matched or 0.0) > 0]
+    for i, a in enumerate(chiusure):
+        prezzo = _prezzo_di_abbinamento(a, snap)
+        gambe.append(E.Leg(role=str(a.role), market=str(a.market), selection=str(a.selection),
+                           side=str(a.side), price=prezzo, size=float(a.size),
+                           matched=float(a.size), avg_price=prezzo,
+                           ref=f"_ipotesi_uscita_{i}", status="open"))
+    c = float(params.get("commission_pct", 5.0)) / 100.0
+    per_totale = E.net_pnl_by_total(gambe, c)
+    gia = int(snap.goals) if snap.goals is not None else 0
+    possibili = [v for t, v in per_totale.items() if t >= gia]
+    return max(possibili) if possibili else None
+
+
+def _nasce_chiusura_in_perdita(ctx, snap, d, params) -> bool:
+    """Una chiusura in perdita NASCE in questa decisione: ordini di uscita che,
+    dal numero, bloccano un netto negativo, partendo da uno stato che non e'
+    gia' una chiusura in corso (il riprezzo/residuo di un'uscita firmata e' la
+    stessa uscita). Il cash out dell'utente (``flatten_pending``, ruolo
+    ``manual_close``) E' la sua firma e non e' un caso."""
+    if ctx.state in E.STATI_USCITA_IN_CORSO or ctx.flatten_pending:
+        return False
+    if str(d.updates.get("close_reason") or "") == "loss_cap":
+        return True
+    v = valore_uscita(ctx, snap, d, params)
+    return v is not None and v < -_SOGLIA_PERDITA
+
+
+def firma_valida(ctx: E.MatchCtx, d: E.Decision, now: float) -> bool:
+    """La firma dell'utente vale per QUESTA chiusura: proposta viva e firma
+    con la STESSA chiave, che e' la chiave di questa uscita (categoria dai
+    ruoli, ciclo corrente), lo STESSO motivo, e non scaduta
+    (``APPROVAZIONE_TTL_S``)."""
+    prop = ctx.uscita_proposta if isinstance(ctx.uscita_proposta, dict) else None
+    firma = ctx.uscita_approvata if isinstance(ctx.uscita_approvata, dict) else None
+    if prop is None or firma is None:
+        return False
+    cat = _categoria(d)
+    chiave = f"{cat}|c{int(ctx.cycle_no or 0)}" if cat else None
+    if firma.get("chiave") != prop.get("chiave") or prop.get("chiave") != chiave:
+        return False
+    if str(prop.get("close_reason") or "") != str(d.updates.get("close_reason") or ""):
+        return False
+    try:
+        return float(now) - float(firma.get("at")) <= float(E.APPROVAZIONE_TTL_S)
+    except (TypeError, ValueError):
+        return False
+
+
+@_controllo("G2", "a uscite MANUALI nessuna chiusura che blocca un netto NEGATIVO parte "
+                  "senza la SUA firma (stessa chiave, stesso motivo, non scaduta), e il "
+                  "tetto di perdita partita non chiude mai (piano Mike 29/09, M4.5, M8.1)",
+            quando=lambda ctx, snap, d, p: _nasce_chiusura_in_perdita(ctx, snap, d, p))
+def _g2(ctx, snap, d, params):
+    if not _nasce_chiusura_in_perdita(ctx, snap, d, params):
+        return None
+    if str(d.updates.get("close_reason") or "") == "loss_cap":
         return "chiusura per tetto di perdita partita: tolto il 29/09 (M4.5)"
     if params.get("uscite_automatiche") is True:
         return None
-    prop = ctx.uscita_proposta if isinstance(ctx.uscita_proposta, dict) else None
-    firma = ctx.uscita_approvata if isinstance(ctx.uscita_approvata, dict) else None
-    if (prop is None or firma is None or firma.get("chiave") != prop.get("chiave")
-            or str(prop.get("close_reason") or "") != str(d.updates.get("close_reason") or "")):
-        return (f"uscita in perdita ({motivo}) partita senza la sua firma: "
-                f"{[a.role for a in _piazzamenti(d)]}")
-    return None
+    if firma_valida(ctx, d, snap.now):
+        return None
+    valore = valore_uscita(ctx, snap, d, params)
+    return (f"chiusura che blocca {valore:+.2f} (motivo del motore "
+            f"'{d.updates.get('close_reason') or '-'}') partita senza la sua firma: "
+            f"{[a.role for a in _piazzamenti(d)]}")
 
 
 def _bloccato_uscita_rientro(ctx, snap) -> Optional[float]:
@@ -1323,6 +1500,154 @@ def verifica_mercato_deciso(payload: Optional[Dict[str, Any]], flusso_vivo_per_i
 
 
 # ===========================================================================
+# G4 e RG1: LA FIRMA ESEGUITA E IL REGOLAMENTO (30/09, ondata 2 del banco)
+#
+# Non guardano UNA decisione: G4 segue una firma dell'utente fino al mercato
+# (come UF1/UF2 di ``Betfair/stream/backtest/uscite_manuali.py``), RG1 confronta
+# alla fine della partita il regolamento che Mike scrive con quello del banco.
+# Li chiama il replay; stanno nell'elenco dei controlli per la copertura.
+# ===========================================================================
+_REGISTRO_REPLAY: List[Tuple[str, str]] = [
+    ("G4", "dopo una firma VALIDA dell'utente gli ordini di chiusura arrivano al "
+           "mercato entro FIRMA_ESEGUITA_ENTRO_S secondi di mercato (il 29/09 la "
+           "firma passava e la chiusura moriva in `no_fill feed_stantio`)"),
+    ("RG1", "al regolamento il P&L della partita e l'esito di OGNI riga di "
+            "mike_trades (won/lost/void, lordo) coincidono con quelli del banco "
+            "(flumine sui runner WINNER/LOSER della registrazione)"),
+]
+#: secondi di MERCATO entro cui una firma eseguita deve portare un ordine al
+#: mercato: giro successivo (<= 2 s) + bet delay (5 s) + un'eventuale attesa
+#: della riapertura dopo un gol (Betfair sospende ~40-60 s)
+FIRMA_ESEGUITA_ENTRO_S = 90.0
+
+
+class SorveglianzaFirme:
+    """G4: ogni firma dell'utente, dal clic al mercato.
+
+    ``firma`` = il replay ha visto nascere una firma (``ctx.uscita_approvata``
+    nuova); ``esecuzione`` = il cancello del motore ha fatto passare una
+    chiusura con una firma valida (la decisione porta ordini di uscita);
+    ``ordine`` = un ordine NUOVO del bot e' arrivato al mercato (letto dal
+    banco, non dalle righe del bot). ``giro`` giudica: una firma consumata
+    senza nessun ordine al mercato entro ``FIRMA_ESEGUITA_ENTRO_S``, o una
+    firma rimasta viva e mai eseguita oltre quel tempo, e' una violazione. Una
+    proposta decaduta (la strategia non vuole piu' uscire: la firma cade con
+    lei) non lo e', e si conta a parte."""
+
+    def __init__(self, entro_s: float = FIRMA_ESEGUITA_ENTRO_S) -> None:
+        self.entro_s = float(entro_s)
+        self._aperte: List[Dict[str, Any]] = []
+        self._ordini: List[float] = []
+        self.firme = 0
+        self.eseguite = 0
+        self.decadute = 0
+        self.violate = 0
+
+    def firma(self, chiave: str, at: float) -> None:
+        self.firme += 1
+        self._aperte.append({"chiave": str(chiave), "at": float(at), "eseguita_at": None})
+
+    def esecuzione(self, now: float) -> None:
+        for f in self._aperte:
+            if f["eseguita_at"] is None and float(now) >= f["at"]:
+                f["eseguita_at"] = float(now)
+
+    def ordine(self, now: float, market_id: str = "", side: str = "") -> None:
+        self._ordini.append(float(now))
+
+    def giro(self, now: float, *, proposta_viva: bool, firma_viva: bool,
+             sollecitati: Optional[Dict[str, int]] = None) -> List["Violazione"]:
+        codice, regola = _REGISTRO_REPLAY[0]
+        out: List[Violazione] = []
+        resta: List[Dict[str, Any]] = []
+        for f in self._aperte:
+            if sollecitati is not None:
+                sollecitati[codice] = sollecitati.get(codice, 0) + 1
+            dal = f["eseguita_at"] if f["eseguita_at"] is not None else f["at"]
+            if any(t >= f["at"] for t in self._ordini):
+                self.eseguite += 1
+                continue
+            if f["eseguita_at"] is None and not firma_viva and not proposta_viva:
+                self.decadute += 1           # la strategia non esce piu': legittimo
+                continue
+            if float(now) - dal > self.entro_s:
+                self.violate += 1
+                come = ("consumata dal cancello ma nessun ordine al mercato"
+                        if f["eseguita_at"] is not None else "mai eseguita")
+                out.append(Violazione(codice, regola,
+                                      f"firma {f['chiave']} delle {f['at']:.0f}: {come} "
+                                      f"dopo {float(now) - dal:.0f} s di mercato"))
+                continue
+            resta.append(f)
+        self._aperte = resta
+        return out
+
+
+def confronta_regolamento(stato: str, settled_pnl: Optional[float],
+                          righe: List[Dict[str, Any]], esiti: Dict[str, Dict[str, Any]],
+                          pnl_banco: Optional[float],
+                          sollecitati: Optional[Dict[str, int]] = None,
+                          tolleranza: float = 0.005) -> List["Violazione"]:
+    """RG1 a fine partita. ``esiti`` = {bet_id: {"esito", "lordo"}} dagli ORDINI
+    del banco (flumine: ``runner_status`` dopo la chiusura del mercato e
+    ``simulated.profit`` lordo); ``pnl_banco`` = il netto del banco secondo la
+    regola di Betfair (``MercatoFlumine.pnl_betfair``: scommessa al centesimo,
+    commissione del mercato al centesimo). 30/09: il confronto e' AL CENTESIMO
+    (``tolleranza`` 0,005 = solo il rumore dei float fra due cifre a due
+    decimali; prima 0,02 nascondeva lo scarto 3,30 contro 3,28). Nessun caso se
+    la partita non e' SETTLED."""
+    if str(stato) != "SETTLED":
+        return []
+    codice, regola = _REGISTRO_REPLAY[1]
+    if sollecitati is not None:
+        sollecitati[codice] = sollecitati.get(codice, 0) + 1
+    out: List[Violazione] = []
+    if settled_pnl is None or pnl_banco is None \
+            or abs(float(settled_pnl) - float(pnl_banco)) > tolleranza:
+        out.append(Violazione(codice, regola, f"P&L della partita: Mike {settled_pnl} contro "
+                                              f"{pnl_banco} del banco", "SETTLED"))
+    for r in righe or []:
+        bet = str(r.get("bet_id") or "")
+        stato_r = str(r.get("status") or "")
+        e = esiti.get(bet) if bet else None
+        if e is None:
+            if stato_r not in ("won", "lost", "void", "error"):
+                out.append(Violazione(codice, regola, f"riga #{r.get('id')} ancora "
+                                                      f"'{stato_r}' a partita regolata",
+                                      "SETTLED"))
+            continue
+        # una riga 'error' (ordine rifiutato/mai abbinato: ``_settle_trades`` non
+        # la tocca) vale un 'void' del banco se non porta P&L
+        if stato_r == "error" and e.get("esito") == "void" \
+                and abs(float(r.get("pnl") or 0.0)) <= tolleranza:
+            continue
+        if stato_r != str(e.get("esito")):
+            out.append(Violazione(codice, regola,
+                                  f"riga #{r.get('id')} (bet {bet}) '{stato_r}' contro "
+                                  f"'{e.get('esito')}' del banco", "SETTLED"))
+            continue
+        lordo = (r.get("meta") or {}).get("pnl_gross")
+        if lordo is None:
+            lordo = r.get("pnl") if stato_r == "void" else None
+        if lordo is not None and abs(float(lordo) - float(e.get("lordo") or 0.0)) > tolleranza:
+            out.append(Violazione(codice, regola,
+                                  f"riga #{r.get('id')} (bet {bet}) lordo {lordo} contro "
+                                  f"{e.get('lordo')} del banco", "SETTLED"))
+    return out
+
+
+def elenco_stati() -> Tuple[str, ...]:
+    """Gli stati della macchina (PROCESSO_STANDARD_BOT par. 6.3): i mai visti
+    si elencano per nome nel referto."""
+    return tuple(E.STATES)
+
+
+def stati_mai_visti(visti: List[str]) -> List[str]:
+    v = set(visti or [])
+    return [s for s in elenco_stati() if s not in v]
+
+
+# ===========================================================================
 # il giro completo
 # ===========================================================================
 def verifica(ctx: E.MatchCtx, snap: E.Snapshot, d: E.Decision,
@@ -1359,7 +1684,8 @@ def elenco_controlli() -> List[Tuple[str, str]]:
     la memoria del bot e il mercato: se non fossero in questo elenco non
     comparirebbero nella copertura, e un controllo che non si conta non esiste.
     """
-    return [(c, r) for c, r, _fn, _q in _REGISTRO] + list(_REGISTRO_BANCO) + list(_REGISTRO_RIGA)
+    return ([(c, r) for c, r, _fn, _q in _REGISTRO] + list(_REGISTRO_BANCO)
+            + list(_REGISTRO_RIGA) + list(_REGISTRO_REPLAY))
 
 
 def mai_sollecitati(sollecitati: Dict[str, int]) -> List[Tuple[str, str]]:
@@ -1522,6 +1848,16 @@ class Referto:
     sollecitati: Dict[str, int] = field(default_factory=dict)
     violazioni: List[Violazione] = field(default_factory=list)
     note: List[str] = field(default_factory=list)
+    # 30/09 (ondata 2): lo scenario NON ha esercitato cio' per cui esiste (il
+    # suo contatore-chiave e' rimasto a zero): il referto dice NON ESERCITATO,
+    # non OK. Ogni voce e' la causa, in una riga.
+    non_esercitato: List[str] = field(default_factory=list)
+    # controlli NON APPLICABILI a questo bot (codice -> causa): nella tabella
+    # della copertura escono marcati, non come «non lo so»
+    non_applicabili: Dict[str, str] = field(default_factory=dict)
+    # contatori dello scenario (rifiuti provocati, firme, chiusure colpite con
+    # effetto, giri dell'attesa dell'esito...) per la regola del NON ESERCITATO
+    contatori: Dict[str, int] = field(default_factory=dict)
 
     @property
     def pulita(self) -> bool:

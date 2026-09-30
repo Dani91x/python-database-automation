@@ -89,6 +89,11 @@ class BotRegistrato:
     # perche' i controlli non ci sono ancora (obbligatorio se controlli is None)
     motivo_senza_controlli: str = ""
     cartella: Callable[[], str] = _cartella_calcio
+    # 30/09 (ondata 2): "modulo:DIZIONARIO" scenario -> trasporto su cui lo
+    # scenario si esercita davvero (None = nessun obbligo). Con
+    # ``--trasporto canale`` quello scenario gira sul trasporto dichiarato e il
+    # referto lo scrive nell'etichetta.
+    trasporti_scenari: Optional[str] = None
 
     # ------------------------------------------------------------- comodita'
     @property
@@ -105,6 +110,10 @@ class BotRegistrato:
     def elenco_scenari(self) -> Dict[str, str]:
         sc = _risolvi(self.scenari)
         return dict(sc or {"base": "come gira in produzione"})
+
+    def trasporto_obbligato(self) -> Dict[str, str]:
+        """scenario -> trasporto obbligato (vuoto se il bot non ne dichiara)."""
+        return dict(_risolvi(self.trasporti_scenari) or {})
 
 
 # ---------------------------------------------------------------------------
@@ -193,6 +202,10 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
         scenari="Betfair.mike.tools.replay_registrazioni:SCENARI_DESCRITTI",
         controlli="Betfair.mike.certificazione",
         spec="Betfair/mike/COSTITUZIONE_MIKE.md",
+        # 30/09 (ondata 2, revisione A2): gli scenari che si esercitano SOLO su
+        # un trasporto (``chiuso-fuori-app``: la posizione di conto si legge in
+        # live, sulla coda; sul canale Mike gira in paper e non legge il conto)
+        trasporti_scenari="Betfair.mike.tools.replay_registrazioni:TRASPORTO_OBBLIGATO",
     ),
     BotRegistrato(
         nome="omega",

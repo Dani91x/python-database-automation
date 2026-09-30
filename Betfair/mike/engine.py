@@ -1525,6 +1525,10 @@ def settle_legs_by_market(legs: List[Leg], winners: Dict[str, Optional[str]],
         else:
             pnl = -s * (p - 1.0) if win else s
             status = "lost" if win else "won"
+        # 30/09 (banco RG1): come Betfair (``listClearedOrders``: ``profit`` per
+        # scommessa a due decimali) il P&L di OGNI scommessa e' in centesimi, e il
+        # lordo del mercato e' la somma di quei centesimi
+        pnl = round(pnl, 2)
         raw.append((leg, status, pnl))
         gross_market[leg.market] = gross_market.get(leg.market, 0.0) + pnl
         if pnl > 0:
@@ -1544,7 +1548,11 @@ def settle_legs_by_market(legs: List[Leg], winners: Dict[str, Optional[str]],
         per_leg.append((leg.ref, status, round(pnl - share, 2)))
         if leg.market in gross_market and leg.matched > 0:
             by_market.setdefault(leg.market, []).append(len(per_leg) - 1)
-    per_market = {m: round(_net(v, commission), 2) for m, v in gross_market.items()}
+    # 30/09 (banco RG1): il netto del mercato e' il lordo MENO la commissione
+    # addebitata (``commission`` di ``listClearedOrders``, al centesimo), non il
+    # lordo per (1 - c) arrotondato: con 0,10 di lordo Betfair addebita 0,01 e
+    # accredita 0,09; il vecchio calcolo scriveva 0,10 (e la sua commissione 0,01)
+    per_market = {m: round(v - comm_market.get(m, 0.0), 2) for m, v in gross_market.items()}
     # §4.15 — la somma dei P&L delle RIGHE deve fare ESATTAMENTE il P&L della
     # partita: arrotondare ogni riga al centesimo in modo indipendente lasciava
     # fino a 0,02 EUR di scarto fra ``sum(mike_trades.pnl)`` e ``settled_pnl``

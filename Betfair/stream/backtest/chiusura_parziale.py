@@ -291,6 +291,58 @@ def libro_assottigliato(market_book: Any, selection_id: int, handicap: float,
     return _Vista(market_book, runners=runners)
 
 
+def libro_con_spinta(market_book: Any, selection_id: int, handicap: float,
+                     lato_ordine: str, prezzo: float, tetto: float) -> Any:
+    """30/09 (ondata 2, revisione M2) - LA SPINTA DICHIARATA. Il MarketBook come
+    lo vedrebbe l'ordine APPOGGIATO colpito se il prezzo fosse sceso (o salito)
+    fino al suo limite con ``tetto`` di liquidita': sul lato con cui si abbina
+    (LAY contro ``available_to_lay``, BACK contro ``available_to_back``) c'e' in
+    testa un livello al prezzo dell'ordine per ``tetto``. E' l'unica aggiunta
+    di liquidita' del banco, dichiarata nel referto: serve a far ABBINARE IN
+    PARTE una chiusura appoggiata che sulla registrazione non si abbinerebbe
+    mai (la banca pre-partita di Mike, 2 tick sotto l'ingresso). L'abbinamento
+    resta di flumine (``_process_price_matched``), e il resto dell'ordine resta
+    VIVO a mercato con la sua coda (``_piq``) calcolata sul libro vero."""
+    livello = {"price": float(prezzo), "size": round(float(tetto), 2)}
+    runners = []
+    for r in list(getattr(market_book, "runners", []) or []):
+        if (int(getattr(r, "selection_id", -1)) == int(selection_id)
+                and float(getattr(r, "handicap", 0.0) or 0.0) == float(handicap or 0.0)):
+            ex = r.ex
+            if lato_ordine == "BACK":
+                resto = [lv for lv in list(ex.available_to_back or [])
+                         if float(lv["price"]) < float(prezzo)]
+                ex2 = _Vista(ex, available_to_back=[livello] + resto)
+            else:
+                resto = [lv for lv in list(ex.available_to_lay or [])
+                         if float(lv["price"]) > float(prezzo)]
+                ex2 = _Vista(ex, available_to_lay=[livello] + resto)
+            runners.append(_Vista(r, ex=ex2))
+        else:
+            runners.append(r)
+    return _Vista(market_book, runners=runners)
+
+
+def _liquidita_al_prezzo(market_book: Any, selection_id: int, lato_ordine: str,
+                         prezzo: float) -> float:
+    """Quanto l'ordine troverebbe SUBITO sul libro vero al suo prezzo o meglio."""
+    for r in list(getattr(market_book, "runners", []) or []):
+        if int(getattr(r, "selection_id", -1)) != int(selection_id):
+            continue
+        ex = r.ex
+        tot = 0.0
+        if lato_ordine == "BACK":
+            for lv in list(ex.available_to_back or []):
+                if float(lv["price"]) >= float(prezzo) - 1e-9:
+                    tot += float(lv["size"])
+        else:
+            for lv in list(ex.available_to_lay or []):
+                if float(lv["price"]) <= float(prezzo) + 1e-9:
+                    tot += float(lv["size"])
+        return tot
+    return 0.0
+
+
 def _tetto(size: float, frazione: float) -> float:
     return max(0.01, math.floor(float(size) * float(frazione) * 100.0 + 1e-9) / 100.0)
 
@@ -352,10 +404,18 @@ class GuastoChiusuraParziale:
 
     def __init__(self, *, frazione: float = FRAZIONE,
                  tetto_ripiazzamenti: int = TETTO_RIPIAZZAMENTI,
-                 ruolo: Optional[Callable[[Any], Optional[str]]] = None) -> None:
+                 ruolo: Optional[Callable[[Any], Optional[str]]] = None,
+                 spinta_prezzo: bool = False) -> None:
         self.frazione = float(frazione)
         self.tetto_ripiazzamenti = int(tetto_ripiazzamenti)
         self.ruolo = ruolo
+        # 30/09 (ondata 2): la SPINTA dichiarata (``libro_con_spinta``) per la
+        # chiusura APPOGGIATA colpita che sul libro vero non troverebbe niente
+        # al suo prezzo. Spenta di serie: gli altri bot restano identici.
+        self.spinta_prezzo = bool(spinta_prezzo)
+        # CP4 sollecitati PER CHIAVE (market_id, selection_id): servono alla
+        # regola «si conta solo dove il guasto ha avuto effetto»
+        self._soll_chiave: Dict[Tuple[str, int], int] = {}
         self.quadro: Any = None
         self.colpiti: List[Dict[str, Any]] = []
         # (market_id, selection_id) -> sorveglianza CP4
@@ -492,10 +552,16 @@ class GuastoChiusuraParziale:
             tetto = _tetto(size, self.frazione)
             fok = _e_fok(instruction)
             pt = getattr(market_book, "publish_time", None)
+            prezzo_o = _f(getattr(getattr(ordine, "order_type", None), "price", None))
+            # 30/09: il guasto ha EFFETTO su un FOK solo se il libro vero lo
+            # avrebbe abbinato per intero (altrimenti moriva lo stesso)
+            vero = (_liquidita_al_prezzo(market_book, sel, la, prezzo_o)
+                    if prezzo_o is not None else 0.0)
             rec = {"ordine": ordine, "chiave": chiave, "lato": la, "chiesto": size,
-                   "prezzo": _f(getattr(getattr(ordine, "order_type", None), "price", None)),
+                   "prezzo": prezzo_o,
                    "tetto": tetto, "fok": fok, "segno": 1.0 if d > 0 else -1.0,
-                   "quando": pt.isoformat() if pt is not None else ""}
+                   "quando": pt.isoformat() if pt is not None else "",
+                   "effetto_fok": bool(fok and vero + EPS >= size), "spinta": False}
             self.colpiti.append(rec)
             self.per_chiave[chiave] = {"colpito": ordine, "dopo": 0, "fok": fok,
                                        "nuovo_ciclo": False, "segno": rec["segno"],
@@ -505,12 +571,18 @@ class GuastoChiusuraParziale:
                                            float(getattr(ordine, "handicap", 0.0) or 0.0),
                                            la, tetto)
             self._tetta_abbinato(sim, tetto)
+            if self.spinta_prezzo and prezzo_o is not None and vero + EPS < tetto:
+                rec["spinta"] = True
+                return libro_con_spinta(market_book, sel,
+                                        float(getattr(ordine, "handicap", 0.0) or 0.0),
+                                        la, prezzo_o, tetto)
             return market_book
 
         if st["nuovo_ciclo"]:
             return market_book
         # CP4: una chiusura DOPO quella colpita, sulla stessa selezione
         self.sollecitati["CP4"] = self.sollecitati.get("CP4", 0) + 1
+        self._soll_chiave[chiave] = self._soll_chiave.get(chiave, 0) + 1
         st["dopo"] += 1
         ref = self._ref(ordine)
         vive = [o for o in altri if lato(o) == la and vivo(o)]
@@ -577,6 +649,25 @@ class GuastoChiusuraParziale:
         st["emesse"].add(tipo)
         self._da_consegnare.append(("CP4", dettaglio))
 
+    # ------------------------------------------------------------ effetto
+    @staticmethod
+    def con_effetto(rec: Dict[str, Any]) -> bool:
+        """30/09 (ondata 2, revisione M2): il guasto ha AVUTO EFFETTO su questa
+        chiusura? Appoggiata: si e' abbinata (in parte: il tetto e' il 40 %).
+        FOK: il libro vero l'avrebbe abbinata per intero e il guasto l'ha uccisa.
+        Una chiusura appoggiata mai abbinata (la banca al fischio scaduta) non e'
+        una chiusura abbinata in parte: i controlli CP non hanno un caso."""
+        if rec.get("fok"):
+            return bool(rec.get("effetto_fok"))
+        return abbinato(rec["ordine"]) > EPS
+
+    def colpiti_con_effetto(self) -> List[Dict[str, Any]]:
+        return [r for r in self.colpiti if self.con_effetto(r)]
+
+    def chiave_con_effetto(self, chiave: Tuple[str, int]) -> bool:
+        return any(tuple(r["chiave"]) == tuple(chiave) and self.con_effetto(r)
+                   for r in self.colpiti)
+
     # ---------------------------------------------------------- riepilogo
     def riepilogo(self) -> str:
         if not self.colpiti:
@@ -591,6 +682,7 @@ class GuastoChiusuraParziale:
                 f"{residuo(o):.2f} lapsed {float(getattr(o, 'size_lapsed', 0.0) or 0.0):.2f} "
                 f"annullato {float(getattr(o, 'size_cancelled', 0.0) or 0.0):.2f}"
                 f"{' (FOK: tutto o niente)' if c['fok'] else ''}"
+                f"{' [SPINTA dichiarata: livello al prezzo della chiusura per il tetto]' if c.get('spinta') else ''}"
                 f"{' [SENZA EFFETTO: mai abbinata, guasto riarmato]' if c.get('senza_effetto') else ''}")
         return (f"scenario {SCENARIO}: {len(self.colpiti)} chiusura/e colpita/e, "
                 f"{self.chiusure_viste} chiusure viste: " + "; ".join(parti))
@@ -654,9 +746,15 @@ class Sorveglianza:
     """
 
     def __init__(self, guasto: GuastoChiusuraParziale,
-                 giri: int = GIRI_DI_TOLLERANZA) -> None:
+                 giri: int = GIRI_DI_TOLLERANZA, solo_con_effetto: bool = False) -> None:
         self.g = guasto
         self.giri = int(giri)
+        # 30/09 (ondata 2, revisione M2): CP1/CP3/CP4 si contano SOLO sulle
+        # chiusure (e le selezioni) dove il guasto ha avuto effetto. Prima il
+        # referto di Mike contava CP1 x12052 su tre banche al fischio SCADUTE
+        # senza un centesimo abbinato. Acceso da Mike; spento di serie (gli
+        # altri bot restano identici finche' il coordinatore non lo estende).
+        self.solo_con_effetto = bool(solo_con_effetto)
         self._conta: Dict[Tuple[str, str], int] = {}
         self._emesse: set = set()
 
@@ -702,10 +800,17 @@ class Sorveglianza:
         for codice, det in self.g._da_consegnare:
             out.append((codice, regola(codice), det))
         self.g._da_consegnare = []
-        for cod, n in self.g.sollecitati.items():
-            if n:
-                self._sollecita_n(sollecitati, cod, n)
+        if self.solo_con_effetto:
+            # CP4 all'esecuzione: solo sulle selezioni dove il guasto ha agito
+            for chiave, n in self.g._soll_chiave.items():
+                if n and self.g.chiave_con_effetto(chiave):
+                    self._sollecita_n(sollecitati, "CP4", n)
+        else:
+            for cod, n in self.g.sollecitati.items():
+                if n:
+                    self._sollecita_n(sollecitati, cod, n)
         self.g.sollecitati = {}
+        self.g._soll_chiave = {}
         if not self.g.colpiti:
             return out
         credute = list(credute or [])
@@ -716,6 +821,8 @@ class Sorveglianza:
         for rec in self.g.colpiti:
             o = rec["ordine"]
             if self.g.mercato_chiuso(rec["chiave"][0]):
+                continue
+            if self.solo_con_effetto and not self.g.con_effetto(rec):
                 continue
             self._sollecita(sollecitati, "CP1")
             m, rem, avg = abbinato(o), (residuo(o) if vivo(o) else 0.0), prezzo_medio(o)
@@ -768,6 +875,8 @@ class Sorveglianza:
             self._persiste("CP1", str(getattr(o, "id", "")), problema, out)
 
         colpite = set(self.g.per_chiave)
+        if self.solo_con_effetto:
+            colpite = {k for k in colpite if self.g.chiave_con_effetto(k)}
         for b in credute:
             chiave = tuple(b.get("chiave") or ())
             if chiave not in colpite or self.g.mercato_chiuso(chiave[0]):
@@ -836,6 +945,8 @@ class Sorveglianza:
         # ---- CP4 (sovracopertura): le chiusure hanno RIBALTATO la posizione --
         for chiave, st in self.g.per_chiave.items():
             if st["nuovo_ciclo"] or self.g.mercato_chiuso(chiave[0]):
+                continue
+            if self.solo_con_effetto and not self.g.chiave_con_effetto(chiave):
                 continue
             self._sollecita(sollecitati, "CP4")
             ordini_k = self.g.ordini_del_bot(chiave[0], chiave[1])

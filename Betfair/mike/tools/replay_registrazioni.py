@@ -71,7 +71,7 @@ import logging
 import os
 import sys
 from bisect import bisect_right
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from .. import certificazione as CERT
@@ -179,7 +179,19 @@ SCENARI: Dict[str, Dict[str, Any]] = {
     # fermo sulla linea decisa), che col banco che vede le chiusure non capita
     # piu' da solo. Senza questo scenario la correzione 1 non avrebbe un caso.
     "firma-dopo-gol-decisivo-senza-chiusura": {},
+    # 30/09 (ondata 2, revisione A1): l'utente FIRMA ogni proposta di uscita in
+    # perdita dopo ``FIRMA_DOPO_S`` secondi di mercato (richiesta VERA
+    # ``approva_uscita``): G2 (sul numero) e G4 (firma eseguita) hanno un caso
+    "uscite-in-perdita-firmate": {},
+    # l'interruttore delle uscite su AUTOMATICO: le uscite in perdita le esegue
+    # il bot, G2 ha un caso (e tace)
+    "uscite-automatiche": {"uscite_automatiche": True},
 }
+SCENARIO_USCITE_FIRMATE = "uscite-in-perdita-firmate"
+SCENARIO_USCITE_AUTOMATICHE = "uscite-automatiche"
+# dopo quanti secondi di MERCATO dalla decisione l'utente firma la proposta
+# (stesso numero di ``uscite_manuali.FIRMA_DOPO_S`` del banco comune)
+FIRMA_DOPO_S = 5.0
 SCENARIO_GOL_PRECOCE = "gol-precoce"
 SCENARIO_FIRMA_GOL_DECISIVO = "firma-dopo-gol-decisivo"
 SCENARIO_FIRMA_SENZA_CHIUSURA = "firma-dopo-gol-decisivo-senza-chiusura"
@@ -196,6 +208,11 @@ SCENARIO_CASHOUT_GLOBALE = "cashout-globale"
 # accorgersi che la sua posizione non e' piu' sul conto e non fare piu' niente
 # su quella partita (controllo R3).
 SCENARIO_CHIUSO_FUORI_APP = "chiuso-fuori-app"
+# 30/09 (ondata 2, revisione A2): sul canale Mike gira in PAPER, e in paper la
+# posizione di conto non si legge (``service._sorveglia_posizione_di_conto``
+# esce subito): lo scenario lo si esercita sulla CODA (Mike in live, la REST
+# servita da flumine), anche dentro ``--scenari tutti --trasporto canale``.
+TRASPORTO_OBBLIGATO: Dict[str, str] = {SCENARIO_CHIUSO_FUORI_APP: "coda"}
 
 # RIFIUTO DICHIARATO DI BETFAIR (`ok=False`). Non tocca un parametro: i primi N
 # piazzamenti tornano con un report NEGATIVO, come quando Betfair rifiuta
@@ -273,6 +290,12 @@ LETTURA_KO_S = 720.0
 # a Mike SENZA punteggio (``score_home``/``score_away`` = None, come quando l'IPS
 # tace). Mike deve dirlo UNA volta, non contarlo come zero gol, e dirlo quando torna.
 SCENARIO_PUNTEGGIO_KO = "punteggio-ko"
+
+# 30/09 (ondata 2, revisione A6): secondi di MERCATO in cui il servizio continua
+# a girare dopo l'ultimo messaggio dello stream, se una linea di Mike e' chiusa
+# (``coda_dopo_la_registrazione``): il regolamento legge la REST ogni
+# ``settle_confirm_s`` (60 s di serie), qui c'e' spazio per piu' letture.
+CODA_S = 900.0
 PUNTEGGIO_KO_S = 300.0
 
 
@@ -509,6 +532,8 @@ def _crea_strategia():
             # che ne sono uscite (devono essere zero).
             self.giri_terminali: int = 0
             self.azioni_dopo_terminale: int = 0
+            # 30/09 (ondata 2): giri del servizio dopo la fine dello stream
+            self.giri_di_coda: int = 0
             # scenario `chiusura-abbinata-in-parte`: la sorveglianza CP del
             # banco comune (None in tutti gli altri scenari)
             self.sorveglianza_cp: Optional[CP.Sorveglianza] = None
@@ -525,8 +550,24 @@ def _crea_strategia():
             # ``modo_del_banco``). Sul canale il bot non aspetta in tempo vero
             # l'esito di un taker: nel replay arriva col book successivo.
             self.mode = modo_del_banco()
-            if self.mode == "paper":
-                S.ATTESA_ESITO_TAKER_MAX_S = 0.0
+            # 30/09 (ondata 2, M8.11 / decisione 23, D11): prima qui c'era
+            # ``S.ATTESA_ESITO_TAKER_MAX_S = 0``: il replay non aspettava
+            # l'esito di un taker paper e la riga si chiudeva al giro dopo.
+            # Adesso il bot ASPETTA come in produzione (bet delay + 3 s al
+            # massimo), e l'attesa la fa il TEMPO DI MERCATO del banco
+            # (``_installa_attesa_col_mercato``): i book passano a flumine e
+            # allo scanner, non al giro del bot.
+            self.attese: Dict[str, float] = {"chiamate": 0, "esiti": 0, "scadute": 0,
+                                             "libri": 0, "secondi": 0.0}
+            self._attesa_installata = False
+            # G4 (ondata 2): ogni firma, dal clic al mercato
+            self.firme = CERT.SorveglianzaFirme()
+            self._firme_viste: set = set()
+            self._ordini_visti: set = set()
+            # scenario ``uscite-in-perdita-firmate``: firma OGNI proposta
+            self.firma_ogni_perdita = bool(kw.pop("firma_ogni_perdita", False))
+            self._proposte_firmate: set = set()
+            self.firme_mandate: int = 0
             self.db = DbMemoria({"status": "running", "mode": self.mode, "params": params})
             self.mercato = MercatoFlumine(self)
             self.referto = CERT.Referto(event_id=str(event_id))
@@ -560,6 +601,11 @@ def _crea_strategia():
             mid = str(getattr(market_book, "market_id", "") or "")
             if self.chiusure_perse:
                 return      # guasto dello scenario: la chiusura non arriva
+            # 30/09 (ondata 2, revisione A6): il libro FINALE del mercato
+            # (``CLOSED``, runner WINNER/LOSER) e' quello che la REST di
+            # regolamento (``read_book``) risponde in produzione. Si aggiorna a
+            # ogni consegna: lo stato dei runner puo' arrivare con l'ultima.
+            self.mercato.registra_libro_chiuso(market_book)
             if mid not in self.banco.scan.market_meta or any(m == mid for m, _ms in self.mercati_chiusi):
                 # una volta sola per mercato: Betfair dichiara la chiusura una
                 # volta; flumine la ripete a ogni aggiornamento successivo
@@ -615,6 +661,7 @@ def _crea_strategia():
 
         # ------------------------------------------------------------ Mike
         def _un_giro(self, pt_ms: int) -> None:
+            self._installa_attesa_col_mercato()
             # 1) i punteggi fino a questo istante, dal record IPS grezzo e dal
             #    parser vero (`Scanner.apply_score_state`)
             i = bisect_right(self._ts_punteggi, int(pt_ms))
@@ -696,12 +743,19 @@ def _crea_strategia():
             # dal 16/09 sera, la POSIZIONE DI CONTO — non veniva mai esercitato.
             # E' un buco del banco, non del bot: qui si chiude, con la stessa
             # funzione di produzione.
-            if row is not None and not ev.get("markets"):
+            # 30/09 (ondata 2): in produzione una partita si ARMA solo con le DUE
+            # linee nel feed (``feed.is_candidate`` -> ``info.complete``), quindi
+            # ``ev["markets"]`` le ha sempre tutte e due. Il replay la scriveva
+            # al primo giro anche con la sola 3,5 nella riga, e non la
+            # completava piu': il regolamento (``read_book`` del 4,5) non
+            # trovava il mercato e con 4 gol aspettava 2 ore. Si completa
+            # appena la riga porta la linea che manca.
+            if row is not None and len(ev.get("markets") or {}) < len(_LINEE):
                 try:
                     _info = S.F.event_info(self.event_id, row.get("payload") or {})
                     mkts = {m: {"market_id": _info.market_id(m)} for m in _info.markets}
                     if mkts:
-                        ev["markets"] = mkts
+                        ev["markets"] = {**mkts, **(ev.get("markets") or {})}
                 except Exception:  # noqa: BLE001 - senza catalogo si prosegue
                     pass
             self.db.upsert_event(ev)
@@ -781,6 +835,13 @@ def _crea_strategia():
             if self.firma_dopo_gol and self.firma_fatta is None:
                 self._firma_dopo_gol(row, pt_ms)
 
+            # -- OGNI PROPOSTA IN PERDITA FIRMATA (30/09, ondata 2) ---------
+            if self.firma_ogni_perdita:
+                self._firma_ogni_proposta(row, pt_ms)
+
+            # -- G4: LA FIRMA ESEGUITA, dal clic al mercato (ondata 2) -------
+            self._sorveglia_firme(pt_ms)
+
             # -- M1: IL MERCATO DECISO (30/09) ------------------------------
             # La riga dice se una linea e' decisa e l'altra viva; il feed di Mike
             # (`feed.flusso_esito`, lo stesso di `_run_event`) non deve dichiarare
@@ -843,6 +904,112 @@ def _crea_strategia():
                     "SERVIZIO", "la firma dell'uscita non deve mai sollevare",
                     f"{type(ex).__name__}: {ex}", str(ev.get("state") or "")))
                 self.firma_fatta = {"errore": str(ex)[:120]}
+
+        def _firma_ogni_proposta(self, row: Optional[Dict[str, Any]], pt_ms: int) -> None:
+            """30/09 (ondata 2): l'utente firma OGNI proposta di uscita in
+            perdita dopo ``FIRMA_DOPO_S`` secondi di mercato dalla decisione, con
+            la richiesta VERA della UI (``approva_uscita`` in
+            ``service.process_requests``), una volta per proposta."""
+            ev = self.db.events.get(self.event_id)
+            if not ev:
+                return
+            ctx = S._ctx_from_row(ev, self.db)
+            prop = ctx.uscita_proposta if isinstance(ctx.uscita_proposta, dict) else None
+            if prop is None or isinstance(ctx.uscita_approvata, dict):
+                return
+            chi = (str(prop.get("chiave") or ""), float(prop.get("decided_at") or 0.0))
+            if chi in self._proposte_firmate:
+                return
+            if pt_ms / 1000.0 - chi[1] < FIRMA_DOPO_S:
+                return
+            self._proposte_firmate.add(chi)
+            now = datetime.fromtimestamp(pt_ms / 1000.0, tz=timezone.utc)
+            try:
+                S.process_requests(
+                    db=self.db, market=self.mercato,
+                    events={self.event_id: self.db.events[self.event_id]},
+                    rows_by_event={self.event_id: row} if row is not None else {},
+                    params=self.params, now=now, dry=False,
+                    scanner_age=self.invecchia_s, eff=self.params,
+                    reqs=[{"id": 100 + self.firme_mandate, "kind": "approva_uscita",
+                           "payload": {"event_id": self.event_id, "chiave": chi[0]}}])
+                self.firme_mandate += 1
+                self.db.log("replay_firma_utente", {"chiave": chi[0], "ms": int(pt_ms),
+                                                    "bloccabile": prop.get("bloccabile"),
+                                                    "gol": prop.get("gol")}, self.event_id)
+            except Exception as ex:  # noqa: BLE001 - e' un referto, non un crash
+                self.referto.violazioni.append(CERT.Violazione(
+                    "SERVIZIO", "la firma dell'uscita non deve mai sollevare",
+                    f"{type(ex).__name__}: {ex}", str(ev.get("state") or "")))
+
+        def _sorveglia_firme(self, pt_ms: int) -> None:
+            """G4: le firme nuove (``ctx.uscita_approvata`` mai vista), gli
+            ordini NUOVI del bot al mercato (vista di conto del banco, non le
+            righe del bot) e il giudizio del giro."""
+            ev = self.db.events.get(self.event_id)
+            if not ev:
+                return
+            now = pt_ms / 1000.0
+            ctx = S._ctx_from_row(ev, self.db)
+            firma = ctx.uscita_approvata if isinstance(ctx.uscita_approvata, dict) else None
+            if firma is not None:
+                chi = (str(firma.get("chiave") or ""), float(firma.get("at") or 0.0))
+                if chi not in self._firme_viste:
+                    self._firme_viste.add(chi)
+                    self.firme.firma(chi[0], chi[1])
+            for ref, o in list(self.mercato.ordini.items()):
+                if ref in self._ordini_visti:
+                    continue
+                self._ordini_visti.add(ref)
+                self.firme.ordine(now, str(getattr(o, "market_id", "") or ""),
+                                  str(getattr(o, "side", "") or ""))
+            self.referto.violazioni.extend(self.firme.giro(
+                now, proposta_viva=isinstance(ctx.uscita_proposta, dict),
+                firma_viva=firma is not None, sollecitati=self.referto.sollecitati))
+
+        def _installa_attesa_col_mercato(self) -> None:
+            """M8.11 (ondata 2): sul canale (Mike in paper) l'attesa dell'esito
+            terminale di un taker (``service._attendi_terminale`` ->
+            ``memoria.attendi``) scorre sul TEMPO DI MERCATO del banco: un
+            primo sguardo in tempo vero (50 ms, il tempo di consegna del client:
+            le conferme arrivano cosi'), poi i book passano uno a uno a flumine
+            e allo scanner (``MotoreReplay.avanza_un_book``) e allo specchio del
+            runner (``trasporto.specchio_canale``) finche' l'esito arriva o
+            scade il tempo chiesto dal servizio (bet delay + 3 s). Il bot non
+            vede quei book: e' fermo ad aspettare, come in produzione."""
+            if self._attesa_installata or self.mode != "paper":
+                return
+            self._attesa_installata = True
+            from ...stream.backtest import trasporto as TRA
+
+            client = TRA.client_del_canale()
+            mem = getattr(client, "memoria", None)
+            motore = getattr(self.mercato, "motore", None)
+            if mem is None or not hasattr(mem, "attendi") or motore is None:
+                return
+            originale = mem.attendi
+            attese = self.attese
+
+            def attendi(pred: Any, timeout_s: float) -> Any:
+                v = originale(pred, min(0.05, max(0.0, float(timeout_s))))
+                if v or motore._ora_mercato is None or float(timeout_s) <= 0.05:
+                    return v
+                attese["chiamate"] += 1
+                inizio = motore._ora_mercato
+                scadenza = inizio + timedelta(seconds=float(timeout_s))
+                while motore._ora_mercato < scadenza:
+                    if motore.avanza_un_book() is None:
+                        break
+                    attese["libri"] += 1
+                    TRA.specchio_canale()
+                    v = pred()
+                    if v:
+                        break
+                attese["secondi"] += (motore._ora_mercato - inizio).total_seconds()
+                attese["esiti" if v else "scadute"] += 1
+                return v or None
+
+            mem.attendi = attendi
 
         def _verifica_mercato_deciso(self, row: Dict[str, Any], now: float,
                                      n_attivita: int) -> None:
@@ -997,6 +1164,36 @@ def _crea_strategia():
             self.db.log("replay_chiusura_fuori_app", dict(self.chiusura_utente),
                         self.event_id)
 
+        def coda_dopo_la_registrazione(self) -> int:
+            """30/09 (ondata 2, revisione A6): IL SERVIZIO NON SI FERMA CON LO
+            STREAM. In produzione Mike gira a timer; nel replay il giro lo danno
+            i book delle sue linee, e flumine NON consegna i book CLOSED a
+            ``process_market_book``: dopo la chiusura dei mercati il bot non
+            girava piu' e il regolamento non arrivava mai. Qui, solo se almeno
+            una linea di Mike e' CHIUSA nella registrazione, il servizio fa i suoi
+            giri alla sua cadenza sul tempo di mercato per ``CODA_S`` secondi (o
+            finche' la partita diventa terminale). Nessun book nuovo: e' il tempo
+            dopo l'ultimo messaggio dello stream. Torna quanti giri."""
+            ev = self.db.events.get(self.event_id) or {}
+            linee = {str((v or {}).get("market_id") or "")
+                     for v in (ev.get("markets") or {}).values()}
+            if not (linee & set(self.mercato.libri_chiusi)) or self._ultimo_ms <= 0:
+                return 0
+            giri = 0
+            ms = int(max(self._ultimo_ms, int(self.banco.ora * 1000)))
+            fine = ms + int(CODA_S * 1000)
+            while ms < fine:
+                ms += int(self.ogni_ms)
+                if str((self.db.events.get(self.event_id) or {}).get("state") or "") \
+                        in E.TERMINAL_STATES:
+                    break
+                self.banco.imposta_ora(ms / 1000.0)
+                self._ultimo_ms = ms
+                self._un_giro(ms)
+                giri += 1
+            self.giri_di_coda = giri
+            return giri
+
         def chiudi(self) -> CERT.Referto:
             self.referto.stati_visti = list(self._stati)
             return self.referto
@@ -1032,7 +1229,8 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                       punteggio_ko: bool = False,
                       cashout_dopo_copertura: bool = False,
                       firma_dopo_gol: bool = False,
-                      chiusure_perse: bool = False) -> CERT.Referto:
+                      chiusure_perse: bool = False,
+                      firma_ogni_perdita: bool = False) -> CERT.Referto:
     """Fa rivivere a Mike una partita registrata e ritorna il referto."""
     from flumine import FlumineSimulation
 
@@ -1075,10 +1273,22 @@ def _certifica_evento(event_id: str, *, data_dir: str,
     # punto: si certifica cio' che il bot decide davvero, coi dati che ha
     # davvero.
     referti_vivi: List[CERT.Referto] = []
+    strategie_vive: List[Any] = []
     decide_vero = E.decide
 
     def decide_sorvegliata(ctx, snap, params):
         d = decide_vero(ctx, snap, params)
+        if strategie_vive:
+            st = strategie_vive[0]
+            # G4 (ondata 2): il cancello ha fatto passare una chiusura con una
+            # firma valida -> da qui gli ordini devono arrivare al mercato
+            if (any(a.kind == "place" and a.role in CERT._RUOLI_USCITA for a in d.actions)
+                    and CERT.firma_valida(ctx, d, snap.now)):
+                st.firme.esecuzione(float(snap.now))
+            # gli stati che le DECISIONI producono (SETTLING -> SETTLED nello
+            # stesso giro: dopo il giro si vedrebbe solo il secondo)
+            if d.state and d.state not in st._stati:
+                st._stati.append(str(d.state))
         if referti_vivi:
             r = referti_vivi[0]
             r.violazioni.extend(CERT.verifica(ctx, snap, d, params, r.sollecitati))
@@ -1104,6 +1314,7 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                           fermo_copertura=fermo_copertura, lettura_ko=lettura_ko,
                           punteggio_ko=punteggio_ko, firma_dopo_gol=firma_dopo_gol,
                           chiusure_perse=chiusure_perse,
+                          firma_ogni_perdita=firma_ogni_perdita,
                           market_filter={"markets": [raw]},
                           max_order_exposure=1e9, max_selection_exposure=1e9,
                           max_trade_count=int(1e9), max_live_trade_count=int(1e9))
@@ -1140,6 +1351,7 @@ def _certifica_evento(event_id: str, *, data_dir: str,
         # nascono le gambe `pending_reconcile` che altrimenti non si vedono mai
         strategia.mercato.guasti["place_exception"] = int(guasti)
     referti_vivi.append(strategia.referto)
+    strategie_vive.append(strategia)
     # i tetti di flumine aperti anche sul CLIENT (min bet size/payout GBP):
     # il minimo che conta e' quello del bot, non quello di flumine
     quadro = FlumineSimulation(client=cliente_simulato())
@@ -1165,13 +1377,21 @@ def _certifica_evento(event_id: str, *, data_dir: str,
     if chiusura_parziale:
         # il RUOLO dell'ordine si legge dalla riga di `mike_trades` che lo ha
         # chiesto (ref `mike-t<id>`, `closes_trade_id` sulle chiusure, H4)
+        # 30/09 (ondata 2, revisione M2): la chiusura APPOGGIATA colpita trova
+        # la SPINTA dichiarata (il prezzo arriva al suo limite con il 40 % di
+        # liquidita': si abbina IN PARTE, il resto resta vivo), e CP1/CP3/CP4 si
+        # contano SOLO dove il guasto ha avuto effetto. Prima le tre chiusure
+        # colpite erano banche al fischio SCADUTE (abbinato 0,00) e CP1 contava
+        # 12052 casi di una condizione mai accaduta.
         guasto_cp = CP.GuastoChiusuraParziale(
-            ruolo=CP.ruolo_da_righe(lambda: strategia.db.trades))
+            ruolo=CP.ruolo_da_righe(lambda: strategia.db.trades), spinta_prezzo=True)
         motore.guasto_chiusure = guasto_cp
-        strategia.sorveglianza_cp = CP.Sorveglianza(guasto_cp)
+        strategia.sorveglianza_cp = CP.Sorveglianza(guasto_cp, solo_con_effetto=True)
     E.decide = decide_sorvegliata          # type: ignore[assignment]
     try:
         motore.esegui(strategia)
+        # 30/09 (ondata 2): il servizio continua a girare dopo l'ultimo book
+        strategia.coda_dopo_la_registrazione()
     finally:
         E.decide = decide_vero             # type: ignore[assignment]
         strategia.spegni_fermo()           # P4: il freno torna com'era, sempre
@@ -1179,10 +1399,18 @@ def _certifica_evento(event_id: str, *, data_dir: str,
     out = strategia.chiudi()
     if guasto_cp is not None:
         out.note.append(guasto_cp.riepilogo())
-        out.note.append("CP2 (copertura dichiarata sull'abbinato) NON APPLICABILE a "
-                        "Mike: non scrive una copertura per riga (`meta.hedged_size`), "
-                        "la posizione la ricalcola dalle gambe; la consapevolezza "
-                        "dell'abbinato la guardano CP1 e i controlli K")
+        con_effetto = guasto_cp.colpiti_con_effetto()
+        out.contatori["chiusure_con_effetto"] = len(con_effetto)
+        out.note.append(
+            f"chiusure colpite con EFFETTO (abbinate in parte, o FOK uccisa che il libro "
+            f"vero avrebbe abbinato): {len(con_effetto)} su {len(guasto_cp.colpiti)}; "
+            f"CP1/CP3/CP4 contati SOLO su quelle")
+        causa_cp2 = ("Mike non scrive una copertura per riga (`meta.hedged_size`, "
+                     "`execution.apply_hedge_state`): la posizione la ricalcola dalle "
+                     "gambe; la consapevolezza dell'abbinato la guardano CP1 e i controlli K")
+        out.non_applicabili["CP2"] = causa_cp2
+        out.note.append("CP2 (copertura dichiarata sull'abbinato) NON APPLICABILE a Mike: "
+                        + causa_cp2)
     if strategia.db.mancanti:
         out.note.append("metodi di database chiamati dal servizio e assenti dal banco: "
                         f"{sorted(strategia.db.mancanti)}")
@@ -1350,8 +1578,11 @@ def _certifica_evento(event_id: str, *, data_dir: str,
             f"gia' chiusa, azioni prodotte {strategia.azioni_dopo_terminale} (devono essere 0). "
             f"Il controllo A2 resta a zero casi per COSTRUZIONE: `service._run_event` esce "
             f"prima di chiamare `decide` su uno stato terminale, quindi A2 e' la SECONDA "
-            f"linea di difesa e la si mette alla prova togliendo quel return "
-            f"(falsificazione dichiarata nel checkpoint), non con una registrazione")
+            f"linea di difesa. FALSIFICAZIONE di A2 (30/09): "
+            f"`Betfair/mike/tests/test_mike_banco_ondata2_2026_09_30.py::"
+            f"test_a2_falsificato_decisione_da_stato_terminale` (una decisione con azioni "
+            f"da SETTLED/ERROR/SKIPPED e' rossa); la guardia del servizio la misura questa "
+            f"nota (azioni dopo il terminale, devono essere 0)")
     else:
         out.note.append("stato TERMINALE: la partita non ci e' mai arrivata in questo "
                         "scenario, quindi A2 non ha avuto nemmeno un giro da guardare")
@@ -1363,6 +1594,69 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                     f"{conto['commissione']:.2f} ({conto['aliquota'] * 100:.1f}%) | "
                     f"NETTO {conto['netto']:+.2f} EUR (non e' il metro della "
                     f"certificazione: il metro e' la condotta)")
+    # -- 30/09 (ondata 2, revisione A6): IL REGOLAMENTO DI MIKE ---------------
+    # Col libro finale dei mercati chiusi (``read_book``) Mike arriva al
+    # regolamento con le SUE righe: il suo P&L e l'esito di ogni riga si
+    # confrontano con il banco (RG1).
+    ev_fine = strategia.db.events.get(str(event_id)) or {}
+    stato_fine = str(ev_fine.get("state") or "")
+    ctx_fine = S._ctx_from_row(ev_fine, strategia.db) if ev_fine else None
+    esiti_banco = esiti_del_banco(strategia.mercato)
+    conto_bf = strategia.mercato.pnl_betfair(C.commission_rate(par))
+    righe_fine = strategia.db.trades_for_event(str(event_id)) or []
+    out.violazioni.extend(CERT.confronta_regolamento(
+        stato_fine, getattr(ctx_fine, "settled_pnl", None), righe_fine, esiti_banco,
+        conto_bf["netto"], out.sollecitati))
+    out.note.append(
+        f"regolamento: giri del servizio DOPO l'ultimo book (linee chiuse, tempo di "
+        f"mercato, nessun book nuovo) {strategia.giri_di_coda} | "
+        f"stato finale {stato_fine or '-'} | P&L scritto da Mike "
+        f"{getattr(ctx_fine, 'settled_pnl', None)} | P&L del banco (regola Betfair: scommessa e commissione di mercato al centesimo) {conto_bf['netto']:+.2f}, commissioni {conto_bf['commissione_mercati']} | "
+        f"motivi del regolamento {[f'{m} x{n}' for m, n in out.motivi.items() if 'regol' in m or 'punteggio finale' in m or 'mercato chiuso' in m]} | "
+        f"libri chiusi nel banco {len(strategia.mercato.libri_chiusi)}, delle linee di Mike "
+        + str({m: [(r['selection_id'], r['status']) for r in (strategia.mercato.libri_chiusi
+                                                               .get(str((v or {}).get('market_id'))) or {})
+                   .get('runners', [])]
+               for m, v in (ev_fine.get('markets') or {}).items()})
+        + f" (selezioni del bot {(ev_fine.get('ctx') or {}).get('selections')}) | righe "
+        + ", ".join(f"#{r.get('id')} {r.get('status')} {r.get('pnl')} (lordo "
+                    f"{(r.get('meta') or {}).get('pnl_gross')}, bet {r.get('bet_id')}, "
+                    f"mercato {r.get('market_id')})" for r in righe_fine)
+        + f" | banco per mercato (lordo) {conto['mercati']} | esiti del banco {esiti_banco}")
+    # -- G4 (ondata 2): le firme, dal clic al mercato ---------------------------
+    f_ = strategia.firme
+    out.contatori["firme"] = int(f_.firme)
+    out.contatori["firme_mandate"] = int(strategia.firme_mandate)
+    if f_.firme:
+        out.note.append(f"firme dell'utente: {f_.firme} viste | eseguite al mercato "
+                        f"{f_.eseguite} | decadute (la strategia non esce piu') "
+                        f"{f_.decadute} | violate (G4) {f_.violate}")
+    # -- M8.11 (ondata 2): l'attesa dell'esito taker a tempo di mercato ---------
+    at = strategia.attese
+    out.contatori["attese_esito"] = int(at["chiamate"])
+    out.note.append(
+        f"attesa dell'esito taker sul canale (M8.11, come in produzione: bet delay + 3 s): "
+        f"{int(at['chiamate'])} attese | esito arrivato {int(at['esiti'])} | scadute "
+        f"{int(at['scadute'])} | {int(at['libri'])} book passati mentre il bot aspettava "
+        f"({at['secondi']:.1f} s di mercato)"
+        + ("" if strategia.mode == "paper" else " | NON APPLICABILE: Mike gira in live "
+                                                "(coda), l'esito lo da' la REST sincrona"))
+    # i contatori-chiave degli scenari (regola del NON ESERCITATO)
+    out.contatori.update({
+        "rifiuti": len(strategia.mercato.rifiutati),
+        "riavvio": int(strategia.riavvio_fatto is not None),
+        "cashout_utente": int(bool(strategia.cashout_fatto)
+                              and "errore" not in (strategia.cashout_fatto or {})),
+        "chiusura_utente": int(strategia.chiusura_utente is not None),
+        "fermo": int("dal" in strategia.fermo),
+        "lettura_ko": int("dal" in strategia.ko),
+        "punteggio_ko": int("dal" in strategia.pko),
+        "firma_dopo_gol": int(strategia.firma_fatta is not None
+                              and "errore" not in (strategia.firma_fatta or {})),
+    })
+    # -- par. 6.3: gli stati mai visti, per nome --------------------------------
+    out.note.append("stati mai visti in questo scenario: "
+                    + (", ".join(CERT.stati_mai_visti(out.stati_visti)) or "nessuno"))
     out.note.append(f"bet delay: {motore.pompati} book passati mentre i piazzamenti "
                     f"aspettavano Betfair | book arrivati in ritardo (orologio fermo): "
                     f"{motore.book_in_ritardo} | ordini appoggiati uccisi dal "
@@ -1455,11 +1749,45 @@ SCENARI_DESCRITTI: Dict[str, str] = {
                                    "deciso non arriva allo scanner (guasto): il 3,5 resta "
                                    "sospeso e FERMO per lo scanner; la linea decisa non deve "
                                    "fermare la partita ne' la chiusura dell'Over 4,5 (M1)",
+    # 30/09 (ondata 2, revisione A1)
+    SCENARIO_USCITE_FIRMATE: "l'utente FIRMA ogni proposta di uscita in perdita dopo 5 s di "
+                             "mercato (richiesta `approva_uscita` vera): G2 sul NUMERO e G4 "
+                             "(la firma arriva al mercato) hanno un caso",
+    SCENARIO_USCITE_AUTOMATICHE: "interruttore delle uscite su AUTOMATICO: le uscite in "
+                                 "perdita le esegue il bot (G2 ha il caso e tace)",
     # P4 (29/09, M8.4)
     SCENARIO_PUNTEGGIO_KO: "per 5 minuti dal primo giro in gioco la riga arriva senza "
                            "punteggio (IPS muto): Mike lo dichiara una volta, non lo conta "
                            "come zero gol, e dichiara quando torna (M8.4)",
 }
+
+
+def esiti_del_banco(mercato: Any) -> Dict[str, Dict[str, Any]]:
+    """RG1 (30/09, ondata 2): l'esito di OGNI ordine del bot secondo il BANCO,
+    per bet_id: flumine scrive ``runner_status`` (WINNER/LOSER/REMOVED) sugli
+    ordini alla chiusura del mercato (``blotter.process_closed_market``) e ne
+    calcola il lordo (``simulated.profit``). Non abbinato = void; mercato non
+    ancora regolato = esito ``?`` (il confronto lo dira')."""
+    out: Dict[str, Dict[str, Any]] = {}
+    for _ref, o in list(getattr(mercato, "ordini", {}).items()):
+        bet = str(getattr(o, "bet_id", None) or getattr(o, "id", "") or "")
+        sim = getattr(o, "simulated", None)
+        abbinato = float(getattr(sim, "size_matched", 0.0) or 0.0)
+        stato = str(getattr(o, "runner_status", None) or "").upper()
+        lato = str(getattr(o, "side", "") or "").upper()
+        if abbinato <= 0.0:
+            esito = "void"
+        elif stato in ("WINNER", "LOSER"):
+            vince = (stato == "WINNER") == (lato == "BACK")
+            esito = "won" if vince else "lost"
+        elif stato in ("REMOVED", "REMOVED_VACANT"):
+            esito = "void"
+        else:
+            esito = "?"
+        out[bet] = {"esito": esito,
+                    "lordo": round(float(getattr(sim, "profit", 0.0) or 0.0), 2)
+                    if esito != "?" else None}
+    return out
 
 
 def credenze_mike(db: Any, event_id: str) -> List[Dict[str, Any]]:
@@ -1526,6 +1854,89 @@ def cadenza_ms(params: Dict[str, Any]) -> int:
     return int(max(1.0, float(params.get("decide_min_interval_ms", 500)) / 1000.0 * 2.0) * 1000)
 
 
+def causa_non_esercitato(scenario: str, ref: CERT.Referto) -> Optional[str]:
+    """30/09 (ondata 2, revisione A2/A3/M2): lo scenario ha esercitato cio' per
+    cui esiste? Ogni scenario speciale ha il suo CONTATORE-CHIAVE (un controllo
+    sollecitato, o il guasto che ha avuto effetto): a zero lo scenario e' NON
+    ESERCITATO e questa funzione ne torna la causa (None = esercitato, o
+    scenario senza contatore: base, taker, senza-seconda-puntata,
+    copertura-legacy, che cambiano solo parametri)."""
+    s = ref.sollecitati
+    c = ref.contatori
+
+    def zero(*codici: str) -> bool:
+        return not any(int(s.get(k) or 0) for k in codici)
+
+    if scenario == SCENARIO_CHIUSO_FUORI_APP:
+        if not c.get("chiusura_utente"):
+            return "l'utente non ha avuto una posizione del bot da chiudere"
+        if zero("R3"):
+            return ("R3 mai sollecitato: la chiusura dell'utente non e' stata vista. Se il "
+                    "trasporto e' il canale, Mike gira in PAPER e in paper la posizione di "
+                    "conto non si legge (`service._sorveglia_posizione_di_conto`): lo "
+                    "scenario si esercita sulla coda (`TRASPORTO_OBBLIGATO`)")
+    elif scenario in (SCENARIO_COVER_RIFIUTATA, SCENARIO_COVER_RIFIUTATA_LEGACY):
+        if not c.get("rifiuti"):
+            return ("la leva del rifiuto non ha MAI colpito (0 rifiuti provocati): e' "
+                    "`base` con un parametro diverso")
+        if zero("S1", "S3"):
+            return "rifiuti provocati ma il freno della copertura (S1/S3) mai sollecitato"
+    elif scenario == SCENARIO_RIFIUTI:
+        if not c.get("rifiuti"):
+            return "nessun piazzamento rifiutato: K2 senza un caso vero"
+    elif scenario == SCENARIO_GOL_PRECOCE:
+        if zero("R1"):
+            return ("R1 mai sollecitato: su questa registrazione la sospensione con una "
+                    "lay appoggiata viva non e' capitata (serve 35777617)")
+    elif scenario in (SCENARIO_CASHOUT_GLOBALE, SCENARIO_CASHOUT_DOPO_COPERTURA):
+        if not c.get("cashout_utente"):
+            return "la richiesta di cash out dell'utente non e' mai partita"
+        if zero("R2"):
+            return "R2 mai sollecitato dopo il cash out"
+    elif scenario in (SCENARIO_ESITI_IGNOTI, SCENARIO_TAKER_IGNOTI):
+        if zero("B3", "J4"):
+            return "nessuna gamba a esito ignoto: B3/J4 senza un caso"
+    elif scenario == SCENARIO_RIAVVIO:
+        if not c.get("riavvio"):
+            return "nessuna posizione aperta: il riavvio non e' mai scattato"
+    elif scenario == "cap-stretto":
+        if zero("F1"):
+            return "il tetto di rischio (F1) non ha mai avuto un caso"
+    elif scenario == "bot-fermo":
+        if zero("F2"):
+            return "F2 mai sollecitato"
+    elif scenario == SCENARIO_FEED_STANTIO:
+        if zero("B2"):
+            return "B2 mai sollecitato: il feed non e' mai risultato stantio"
+    elif scenario == SCENARIO_FERMO_COPERTURA:
+        if not c.get("fermo"):
+            return "il freno non e' mai scattato (la partita non e' arrivata alla copertura)"
+    elif scenario == SCENARIO_LETTURA_KO:
+        if not c.get("lettura_ko"):
+            return "il guasto della lettura non e' mai partito"
+    elif scenario == SCENARIO_PUNTEGGIO_KO:
+        if not c.get("punteggio_ko"):
+            return "il guasto del punteggio non e' mai partito"
+    elif scenario in (SCENARIO_FIRMA_GOL_DECISIVO, SCENARIO_FIRMA_SENZA_CHIUSURA):
+        if not c.get("firma_dopo_gol"):
+            return "nessuna proposta di uscita dopo il gol decisivo: la firma non e' partita"
+        if zero("M1"):
+            return "M1 mai sollecitato"
+    elif scenario == SCENARIO_USCITE_FIRMATE:
+        if not c.get("firme_mandate"):
+            return "nessuna proposta di uscita in perdita da firmare"
+        if zero("G2", "G4"):
+            return "firme mandate ma G2/G4 mai sollecitati"
+    elif scenario == SCENARIO_USCITE_AUTOMATICHE:
+        if zero("G2"):
+            return "nessuna uscita in perdita eseguita dal bot: G2 senza un caso"
+    elif scenario == CP.SCENARIO:
+        if not c.get("chiusure_con_effetto"):
+            return ("il guasto non ha mai avuto effetto (nessuna chiusura abbinata in "
+                    "parte): CP1/CP3/CP4 senza un caso vero")
+    return None
+
+
 def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
                        ogni_ms: int = 0, campioni_diff: int = 0) -> CERT.Referto:
     """ADATTATORE PER IL BANCO — dal NOME dello scenario ai parametri di Mike.
@@ -1566,7 +1977,13 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
         lettura_ko=(scenario == SCENARIO_LETTURA_KO),
         punteggio_ko=(scenario == SCENARIO_PUNTEGGIO_KO),
         firma_dopo_gol=(scenario in (SCENARIO_FIRMA_GOL_DECISIVO, SCENARIO_FIRMA_SENZA_CHIUSURA)),
-        chiusure_perse=(scenario == SCENARIO_FIRMA_SENZA_CHIUSURA))
+        chiusure_perse=(scenario == SCENARIO_FIRMA_SENZA_CHIUSURA),
+        firma_ogni_perdita=(scenario == SCENARIO_USCITE_FIRMATE))
+    # 30/09 (ondata 2): uno scenario il cui contatore-chiave resta a zero NON
+    # e' OK: il referto lo scrive NON ESERCITATO, con la causa
+    causa = causa_non_esercitato(scenario, ref)
+    if causa:
+        ref.non_esercitato.append(causa)
     if scenario == SCENARIO_GOL_PRECOCE:
         # Lo scenario DICHIARA se il caso e' capitato davvero. Un referto
         # "zero violazioni" su una registrazione senza gol precoce non dice

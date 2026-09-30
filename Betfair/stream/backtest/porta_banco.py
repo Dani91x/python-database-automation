@@ -500,6 +500,11 @@ class PortaBanco:
         # 25/09 (F8): l'aggancio a comando del runner tennis (None = come prima)
         self.aggancio_tennis: Any = None
         self.tennis_db_nullo = _TennisDbNullo()
+        # 30/09 (M1) - l'ATTESA DELL'ANNULLO: ``MotoreReplay.attendi_esecuzione``
+        # del replay (la aggancia ``trasporto._monta_canale``). None = fuori dal
+        # replay (test del motore): nessuna attesa, come prima. Vedi
+        # ``_attendi_annulli``.
+        self.attendi_esecuzione: Optional[Callable[..., int]] = None
 
     # ------------------------------------------------------------ interfaccia
     def disponibile(self) -> bool:
@@ -663,7 +668,47 @@ class PortaBanco:
         if tipo == "comando":
             self._registra(c)
         self.motore._gestisci(c)
+        if tipo == "comando" and d.get("azione") == "cancel":
+            self._attendi_annulli()
         self.aggiorna()
+
+    def _attendi_annulli(self) -> None:
+        """30/09 (M1) - L'ANNULLO SUL CANALE SI ESEGUE COME NEL RUNNER VERO.
+
+        Nel runner di produzione (``Flumine`` live, client ``paper_trade`` in
+        paper) ``Market.cancel_order`` manda il pacchetto SUBITO all'esecuzione
+        (``BaseFlumine.process_order_package``): dopo ``cancel_latency`` flumine
+        annulla sul book CORRENTE e lo stream ordini lo porta allo specchio,
+        mentre il bot aspetta l'esito (``execution._annulla_via_canale`` ->
+        ``attendi_esito_bet``, 3 s). Nel banco il pacchetto resta in
+        ``handler_queue`` finche' non arriva un book di quel mercato
+        (``FlumineSimulation.process_order_package``), e il book non arriva
+        mai: il thread del bot E' il thread del replay, fermo nell'attesa.
+        Risultato (reperto M1): OGNI annullo sul canale tornava a esito IGNOTO
+        e la gamba finiva in riconciliazione.
+
+        Qui, subito dopo il ``cancel``, si fa scorrere il tempo di mercato che
+        Betfair impiega per un annullo con la STESSA regola della coda
+        (``MotoreReplay.attendi_esecuzione``: finche' ``elapsed_seconds`` supera
+        ``simulated_delay`` = ``cancel_latency``, poi si esegue sul book di quel
+        momento). Solo i pacchetti CANCEL: un piazzamento in volo sullo stesso
+        mercato resta col suo bet delay. I book che passano vanno a flumine e
+        allo scanner, non al giro del bot (e' fermo ad aspettare), come sulla
+        coda. Esito e rilettura restano quelli di flumine e del motore: un
+        annullo che flumine rifiuta resta rifiutato."""
+        if self.attendi_esecuzione is None:
+            return
+        from flumine.order.orderpackage import OrderPackageType
+
+        coda = getattr(self.framework, "handler_queue", None) or []
+        mercati = []
+        for pacco in list(coda):
+            mid = str(getattr(pacco, "market_id", "") or "")
+            if (getattr(pacco, "package_type", None) == OrderPackageType.CANCEL
+                    and mid and mid not in mercati):
+                mercati.append(mid)
+        for mid in mercati:
+            self.attendi_esecuzione(mid, tipi=(OrderPackageType.CANCEL,))
 
     # ----------------------------------------------------------------- interno
     def _registra(self, c: ComandoCanale) -> None:

@@ -96,6 +96,30 @@ _NOTE_DI_REGISTRAZIONE_MANCANTE = ("registrazione assente", "non si e' istanziat
                                    "nessun MATCH_ODDS nel raw")
 
 
+# ---------------------------------------------------------------------------
+# 30/09 (ondata 2 del banco): NON ESERCITATO, NON APPLICABILE, TRASPORTO
+# ---------------------------------------------------------------------------
+def trasporto_dello_scenario(obbligati: Dict[str, str], scenario: str,
+                             tr: Optional[str], richiesto: Optional[str]) -> Optional[str]:
+    """Il trasporto su cui gira lo scenario: quello richiesto, salvo che il bot
+    dichiari per quello scenario un trasporto obbligato e si sia chiesto il solo
+    ``canale`` (con ``entrambi`` la coda c'e' gia', e il canale resta per la
+    parita')."""
+    if richiesto == "canale" and scenario in (obbligati or {}):
+        return str(obbligati[scenario])
+    return tr
+
+
+def segno_referto(r: Any) -> str:
+    """OK / KO / NE: un referto pulito il cui scenario NON ha esercitato cio'
+    per cui esiste (contatore-chiave a zero) non e' OK, e' «non lo so»."""
+    if not r.pulita:
+        return "KO "
+    if getattr(r, "non_esercitato", None):
+        return "NE "
+    return "OK "
+
+
 def diagnosi_esplosione(r: Any) -> Optional[str]:
     """Il MOTIVO per cui un referto e' di un replay esploso, o None."""
     note = [str(n) for n in (getattr(r, "note", None) or [])]
@@ -725,8 +749,19 @@ def main(argv: Optional[List[str]] = None) -> int:
     trasporti: List[Optional[str]] = (
         [None] if not a.trasporto else
         (["coda", "canale"] if a.trasporto == "entrambi" else [a.trasporto]))
-    compiti = [(scheda.nome, ev, data_dir, sc, a.ogni_ms, int(a.diff or 0), tr)
+    # 30/09 (ondata 2): uno scenario che si esercita solo su un trasporto
+    # (registro: ``trasporti_scenari``) sul canale gira sul SUO trasporto, e
+    # l'etichetta del referto lo dice
+    obbligati = scheda.trasporto_obbligato()
+    compiti = [(scheda.nome, ev, data_dir, sc, a.ogni_ms, int(a.diff or 0),
+                trasporto_dello_scenario(obbligati, sc, tr, a.trasporto))
                for tr in trasporti for sc in scelti for ev in eventi]
+    if obbligati and a.trasporto == "canale":
+        spostati = sorted(sc for sc in scelti if sc in obbligati)
+        if spostati:
+            print("scenari sul loro trasporto: "
+                  + ", ".join(f"{sc} -> {obbligati[sc]}" for sc in spostati))
+            print()
     per_coppia: Dict[Tuple[str, str], Dict[str, Any]] = {}
     processi = quanti_processi(int(a.worker or 0), len(compiti))
     if processi > 1:
@@ -741,8 +776,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     tempi_scenari: List[Tuple[str, float]] = []
     risultati = _esegui_compiti(compiti, processi, picchi)
     n_letti = 0
-    for tr in trasporti:
+    for tr_scelto in trasporti:
         for sc, ev in [(sc, ev) for sc in scelti for ev in eventi]:
+            tr = trasporto_dello_scenario(obbligati, sc, tr_scelto, a.trasporto)
             r = next(risultati)
             n_letti += 1
             # il tempo di QUESTO replay (0 se chi esegue non lo misura)
@@ -765,19 +801,22 @@ def main(argv: Optional[List[str]] = None) -> int:
                 # dice niente finche' non finisce non e' osservabile, e un lavoro
                 # non osservabile non si sa nemmeno se sta andando bene.
                 with io.open(a.diario, "a", encoding="utf-8") as f:
-                    f.write(f"{'OK' if r.pulita else 'KO'} {ev} tick={r.tick} "
+                    f.write(f"{segno_referto(r).strip()} {ev} tick={r.tick} "
                             f"decisioni={r.decisioni} azioni={r.azioni} "
                             f"ordini={r.ordini_piazzati} "
                             f"stati={','.join(r.stati_visti)}" + chr(10))
                     for v in r.violazioni[:6]:
                         f.write(f"    {v.codice}: {v.dettaglio}" + chr(10))
                     f.flush()
-            segno = "OK " if r.pulita else "KO "
+            segno = segno_referto(r)
             print(f"{segno} {r.event_id}  tick={r.tick:>6} decisioni={r.decisioni:>5} "
                   f"azioni={r.azioni:>4} stati={','.join(r.stati_visti) or '-'} "
                   f"[{verdetti.get(ev, '?')}]")
             for nota in r.note:
                 print(f"      nota: {nota}")
+            # 30/09 (ondata 2): lo scenario non ha esercitato cio' per cui esiste
+            for causa in (getattr(r, "non_esercitato", None) or []):
+                print(f"      NON ESERCITATO: {causa}")
             for motivo, n in sorted(r.motivi.items(), key=lambda x: -x[1])[:6]:
                 print(f"      motivo x{n}: {motivo}")
             for cod, n in sorted(r.per_codice().items()):
@@ -818,6 +857,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     print(f"ESITO: {pulite} partite senza violazioni, "
           f"{len(referti) - pulite - mute} con violazioni, {mute} senza decisioni")
     print(f"       {tot} violazioni totali")
+    non_es = [r for r in referti if r.pulita and getattr(r, "non_esercitato", None)]
+    if non_es:
+        # 30/09 (ondata 2): uno scenario pulito ma NON ESERCITATO non e' un OK
+        print(f"NE: {len(non_es)} scenari senza violazioni ma NON ESERCITATI "
+              f"(contatore-chiave a zero): {', '.join(str(r.event_id) for r in non_es)}")
     if esplosi:
         print(f"!! REPLAY ESPLOSI: {len(esplosi)} (contati come violazioni "
               f"{CODICE_ESPLOSO}, exit code 1):")
@@ -825,11 +869,17 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(f"     {riga}")
     print()
     print("COPERTURA DEI CONTROLLI — quante volte ognuno ha avuto un caso:")
+    # 30/09 (ondata 2): i controlli NON APPLICABILI al bot (dichiarati dal suo
+    # replay con la causa) escono «NA», non «??», e non sono fra i mai sollecitati
+    non_applicabili: Dict[str, str] = {}
+    for r in referti:
+        non_applicabili.update(getattr(r, "non_applicabili", None) or {})
     for cod, reg in CERT.elenco_controlli():
         n = sollecitati_tot.get(cod, 0)
-        segno = "  " if n else "??"
+        segno = "  " if n else ("NA" if cod in non_applicabili else "??")
         print(f"  {segno} {cod:3} x{n:<7} {reg[:66]}")
-    mai = list(CERT.mai_sollecitati(sollecitati_tot))
+    mai = [(c, g) for c, g in CERT.mai_sollecitati(sollecitati_tot)
+           if c not in non_applicabili]
     # I CONTROLLI DEL BANCO COMUNE (famiglia CP, scenario
     # `chiusura-abbinata-in-parte`): non stanno nel modulo di controlli del bot
     # perche' valgono per TUTTI; si contano qui, con la stessa regola del «non
@@ -841,9 +891,9 @@ def main(argv: Optional[List[str]] = None) -> int:
               f"{CPZ.SCENARIO}:")
         for cod, reg in CPZ.elenco_controlli():
             n = sollecitati_tot.get(cod, 0)
-            segno = "  " if n else "??"
+            segno = "  " if n else ("NA" if cod in non_applicabili else "??")
             print(f"  {segno} {cod:3} x{n:<7} {reg[:66]}")
-            if not n:
+            if not n and cod not in non_applicabili:
                 mai.append((cod, reg))
     # I CONTROLLI DEL MODELLO MONTATO (famiglia PM, scenari delle proposte di
     # Safe, C6 e): stessa regola, contati solo se almeno uno di quegli scenari
@@ -877,6 +927,21 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(f"  {segno} {cod:3} x{n:<7} {reg[:66]}")
             if not n:
                 mai.append((cod, reg))
+    if non_applicabili:
+        print()
+        print("NA NON APPLICABILI (dichiarati dal replay del bot, con la causa):")
+        for cod, causa in sorted(non_applicabili.items()):
+            print(f"     {cod}: {causa}")
+    # 30/09 (ondata 2, PROCESSO_STANDARD_BOT par. 6.3): gli stati MAI VISTI in
+    # nessuno scenario, per nome
+    if hasattr(CERT, "stati_mai_visti"):
+        visti: List[str] = []
+        for r in referti:
+            visti.extend(r.stati_visti or [])
+        mai_visti = CERT.stati_mai_visti(visti)
+        print()
+        print("STATI MAI VISTI (par. 6.3): " + (", ".join(mai_visti) if mai_visti
+                                             else "nessuno, tutti visti"))
     if mai:
         print()
         print(f"?? MAI SOLLECITATI: {len(mai)} controlli su "

@@ -392,7 +392,10 @@ def test_banco_g2_vede_un_uscita_in_perdita_senza_firma():
     assert "G2" not in _codici(ctx, _perdita_ht(), d, pa)
     # con la SUA firma sulla SUA proposta: tace
     ctx.uscita_proposta = {"chiave": "chiusura|c0", "close_reason": d.updates["close_reason"]}
-    ctx.uscita_approvata = {"chiave": "chiusura|c0", "at": KO}
+    # 30/09 (ondata 2 del banco): la firma vale se NON e' scaduta
+    # (``APPROVAZIONE_TTL_S``, la stessa regola del cancello). Prima qui c'era
+    # ``at: KO``, una firma di 46 minuti prima che il motore rifiuterebbe.
+    ctx.uscita_approvata = {"chiave": "chiusura|c0", "at": _perdita_ht().now - 5.0}
     assert "G2" not in _codici(ctx, _perdita_ht(), d, pm)
     # firma su un'altra uscita in perdita: parla
     ctx.uscita_proposta = {"chiave": "chiusura|c0", "close_reason": "loss_2t"}

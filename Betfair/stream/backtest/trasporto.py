@@ -188,6 +188,9 @@ def _monta_canale(st: Dict[str, Any], motore: Any, strategia: Any) -> None:
     pb = PortaBanco(motore.quadro, strategia, attore=st["attore"], modo_processo=modo,
                     sport=sport)
     pb.orologio_mercato = lambda: _ora_mercato(motore)
+    # 30/09 (M1): l'annullo sul canale aspetta il tempo di Betfair con la regola
+    # della coda (``PortaBanco._attendi_annulli``), sul motore di QUESTO replay
+    pb.attendi_esecuzione = getattr(motore, "attendi_esecuzione", None)
     st["porta_banco"] = pb
     if st["attore"] == "omega":
         from ...omega import porta_ordini as OPO
@@ -236,6 +239,32 @@ def _monta_canale(st: Dict[str, Any], motore: Any, strategia: Any) -> None:
         st["book"] += 1
         vero(market, market_book)
     strategia.process_market_book = _process_market_book
+
+
+def specchio_canale() -> bool:
+    """30/09 (ondata 2): cio' che il wrapper di ``_monta_canale`` fa a OGNI book
+    (specchio del blotter -> eventi ``order`` al client vero, ordini nuovi nella
+    vista di conto), chiamabile anche per i book che passano mentre il bot
+    ASPETTA un esito (``MotoreReplay.avanza_un_book``). False fuori dal canale."""
+    st = _STATO
+    if not st or st.get("trasporto") != "canale":
+        return False
+    pb = st.get("porta_banco")
+    strategia = st.get("strategia")
+    if pb is None or strategia is None:
+        return False
+    t0 = time.perf_counter()
+    pb.aggiorna()
+    _adotta(st, pb, strategia)
+    pb.attendi_client()
+    st["costo_banco_s"] = float(st.get("costo_banco_s") or 0.0) + time.perf_counter() - t0
+    return True
+
+
+def client_del_canale() -> Optional[Any]:
+    """Il client VERO del canale montato per il bot (None fuori dal canale)."""
+    st = _STATO
+    return st.get("client") if st and st.get("trasporto") == "canale" else None
 
 
 #: i ref interni degli ordini nati da un COMANDO al motore del runner

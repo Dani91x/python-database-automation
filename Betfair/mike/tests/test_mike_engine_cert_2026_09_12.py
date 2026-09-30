@@ -621,8 +621,13 @@ def test_fuzz_somma_righe_uguale_al_settled_pnl_al_centesimo():
             somma = round(sum(p for _ref, _st, p in r.per_leg), 2)
             peggiore = max(peggiore, abs(somma - r.net))
             assert somma == pytest.approx(r.net, abs=0.0001), (caso, totale, comm, somma, r.net)
-            # coerenza con la distribuzione per totale gol
-            assert r.net == pytest.approx(E.net_pnl_by_total(legs, comm, 8)[totale], abs=0.02)
+            # coerenza con la distribuzione per totale gol (il MODELLO, senza
+            # arrotondamenti). 30/09 (banco RG1): il regolamento ora e' quello di
+            # Betfair, ogni scommessa al centesimo (<= 0,005 l'una) e la
+            # commissione al centesimo per mercato (<= 0,005 per mercato): lo
+            # scarto dal modello e' al piu' 0,005 x gambe + 0,005 x 2 mercati.
+            assert r.net == pytest.approx(E.net_pnl_by_total(legs, comm, 8)[totale],
+                                          abs=0.005 * len(legs) + 0.01 + 1e-9)
     assert peggiore < 0.0001
 
 

@@ -283,6 +283,9 @@ class BancoRapido:
         self.pb = self._PortaBanco(self.quadro, self.strat, attore=self.attore,
                                    modo_processo="LIVE", sport=self.sport)
         self.pb.orologio_mercato = lambda: TRA._ora_mercato(self.motore)
+        # 30/09 (M1): come ``trasporto._monta_canale``: l'annullo sul canale
+        # aspetta il tempo di Betfair sul motore di questo banco
+        self.pb.attendi_esecuzione = self.motore.attendi_esecuzione
         if self.attore == "omega":
             from ...omega import porta_ordini as OPO
 
