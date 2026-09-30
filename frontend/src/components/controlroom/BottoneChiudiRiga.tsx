@@ -16,8 +16,8 @@
 //   · dopo il clic → «richiesta inviata / presa in carico / eseguita /
 //     rifiutata: motivo / esito ignoto» accanto al bottone.
 //
-// 30/09 (decisione dell'utente, difetto D5): per MIKE «un clic in paper,
-// conferma in live». In PAPER il primo clic chiude; in LIVE il primo clic
+// 30/09 (decisione dell'utente, difetto D5; estesa a TUTTI i bot alle 16:20):
+// «un clic in paper, conferma in live». In PAPER il primo clic chiude; in LIVE il primo clic
 // ARMA (compare «Conferma»: soldi veri, con la stima di chiusura se la scheda
 // la conosce) e solo la conferma manda la richiesta. La richiesta e' la stessa
 // di prima. Stesso gesto di `CashOutPartita` (primo clic arma, secondo manda).
@@ -69,9 +69,6 @@ const CLS_BOTTONE: Record<'riga' | 'orfana', string> = {
         + 'hover:text-white hover:border-emerald-500/50 disabled:opacity-40 disabled:cursor-not-allowed',
 };
 
-/** Bot che in LIVE chiedono la conferma prima di piazzare la chiusura (30/09, D5). */
-const BOT_CON_CONFERMA_LIVE: ReadonlySet<Bot> = new Set<Bot>(['mike']);
-
 export function BottoneChiudiRiga({ riga, testId = 'cr-op-chiudi', variante = 'riga', prezzoAlClic, stimaOra }: {
     riga: RigaDaChiudere;
     testId?: string;
@@ -104,7 +101,7 @@ export function BottoneChiudiRiga({ riga, testId = 'cr-op-chiudi', variante = 'r
     // B17 (25/09) — dopo la richiesta, l'ORDINE: a che prezzo e quanto abbinato
     const es = api.esito?.(riga.bot, riga.id) ?? null;
     // FAIL-CLOSED: una modalita' non paper (live o ignota) chiede la conferma.
-    const chiedeConferma = BOT_CON_CONFERMA_LIVE.has(riga.bot) && riga.modalita !== 'paper';
+    const chiedeConferma = riga.modalita !== 'paper';
     const manda = () => {
         setArmato(false);
         setInVolo(true);

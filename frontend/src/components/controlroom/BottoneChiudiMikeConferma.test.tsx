@@ -4,7 +4,7 @@
 //   - PAPER: il primo clic manda la richiesta.
 //   - LIVE: il primo clic NON manda nulla, arma («Conferma»); solo la conferma
 //     manda; «annulla» disarma senza inviare. La richiesta e' identica.
-//   - Gli altri bot restano a un clic (nessun cambiamento fuori perimetro).
+//   - 30/09 16:20 (decisione dell utente): la conferma live vale per TUTTI i bot.
 // Il finto dell'API ha la forma di `ChiusuraRigaApi` (stessa del vero).
 // ============================================================================
 import { describe, it, expect, vi } from 'vitest';
@@ -80,9 +80,28 @@ describe('D5 - Chiudi di Mike: un clic in paper, conferma in live', () => {
         expect(screen.queryByTestId('cr-op-chiudi-armato')).toBeNull();
     });
 
-    it('gli altri bot non cambiano: Omega live chiude ancora al primo clic', () => {
-        const api = monta(riga({ bot: 'omega', modalita: 'live' }));
+    // 30/09 16:20 - decisione dell utente: la conferma live vale per TUTTI i bot.
+    // Sostituisce «Omega live chiude ancora al primo clic» (superato dalla decisione).
+    it.each(['omega', 'tennis_scalper', 'tennis_pro', 'safe'] as const)(
+        'TUTTI i bot - %s: LIVE arma al primo clic, conferma manda la STESSA richiesta, annulla non manda; PAPER un clic',
+        (bot) => {
+            const rl = riga({ bot, modalita: 'live' });
+            const api = monta(rl);
+            fireEvent.click(screen.getByTestId('cr-op-chiudi'));
+            expect(api.chiudi).not.toHaveBeenCalled();
+            fireEvent.click(screen.getByTestId('cr-op-chiudi-annulla'));
+            expect(api.chiudi).not.toHaveBeenCalled();
+            fireEvent.click(screen.getByTestId('cr-op-chiudi'));
+            fireEvent.click(screen.getByTestId('cr-op-chiudi-conferma'));
+            expect(api.chiudi).toHaveBeenCalledTimes(1);
+            expect(api.chiudi).toHaveBeenCalledWith(rl);
+        },
+    );
+
+    it.each(['omega', 'tennis_flb'] as const)('%s in PAPER: un clic, nessuna conferma', (bot) => {
+        const api = monta(riga({ bot, modalita: 'paper' }));
         fireEvent.click(screen.getByTestId('cr-op-chiudi'));
         expect(api.chiudi).toHaveBeenCalledTimes(1);
+        expect(screen.queryByTestId('cr-op-chiudi-conferma')).toBeNull();
     });
 });

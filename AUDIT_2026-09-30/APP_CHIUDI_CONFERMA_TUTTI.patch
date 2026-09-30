@@ -1,0 +1,110 @@
+﻿diff --git a/frontend/src/components/controlroom/BottoneChiudiMikeConferma.test.tsx b/frontend/src/components/controlroom/BottoneChiudiMikeConferma.test.tsx
+index 9b6fbf2..3990ff5 100644
+--- a/frontend/src/components/controlroom/BottoneChiudiMikeConferma.test.tsx
++++ b/frontend/src/components/controlroom/BottoneChiudiMikeConferma.test.tsx
+@@ -4,7 +4,7 @@
+ //   - PAPER: il primo clic manda la richiesta.
+ //   - LIVE: il primo clic NON manda nulla, arma («Conferma»); solo la conferma
+ //     manda; «annulla» disarma senza inviare. La richiesta e' identica.
+-//   - Gli altri bot restano a un clic (nessun cambiamento fuori perimetro).
++//   - 30/09 16:20 (decisione dell utente): la conferma live vale per TUTTI i bot.
+ // Il finto dell'API ha la forma di `ChiusuraRigaApi` (stessa del vero).
+ // ============================================================================
+ import { describe, it, expect, vi } from 'vitest';
+@@ -80,9 +80,28 @@ describe('D5 - Chiudi di Mike: un clic in paper, conferma in live', () => {
+         expect(screen.queryByTestId('cr-op-chiudi-armato')).toBeNull();
+     });
+ 
+-    it('gli altri bot non cambiano: Omega live chiude ancora al primo clic', () => {
+-        const api = monta(riga({ bot: 'omega', modalita: 'live' }));
++    // 30/09 16:20 - decisione dell utente: la conferma live vale per TUTTI i bot.
++    // Sostituisce «Omega live chiude ancora al primo clic» (superato dalla decisione).
++    it.each(['omega', 'tennis_scalper', 'tennis_pro', 'safe'] as const)(
++        'TUTTI i bot - %s: LIVE arma al primo clic, conferma manda la STESSA richiesta, annulla non manda; PAPER un clic',
++        (bot) => {
++            const rl = riga({ bot, modalita: 'live' });
++            const api = monta(rl);
++            fireEvent.click(screen.getByTestId('cr-op-chiudi'));
++            expect(api.chiudi).not.toHaveBeenCalled();
++            fireEvent.click(screen.getByTestId('cr-op-chiudi-annulla'));
++            expect(api.chiudi).not.toHaveBeenCalled();
++            fireEvent.click(screen.getByTestId('cr-op-chiudi'));
++            fireEvent.click(screen.getByTestId('cr-op-chiudi-conferma'));
++            expect(api.chiudi).toHaveBeenCalledTimes(1);
++            expect(api.chiudi).toHaveBeenCalledWith(rl);
++        },
++    );
++
++    it.each(['omega', 'tennis_flb'] as const)('%s in PAPER: un clic, nessuna conferma', (bot) => {
++        const api = monta(riga({ bot, modalita: 'paper' }));
+         fireEvent.click(screen.getByTestId('cr-op-chiudi'));
+         expect(api.chiudi).toHaveBeenCalledTimes(1);
++        expect(screen.queryByTestId('cr-op-chiudi-conferma')).toBeNull();
+     });
+ });
+diff --git a/frontend/src/components/controlroom/BottoneChiudiRiga.test.tsx b/frontend/src/components/controlroom/BottoneChiudiRiga.test.tsx
+index 08059b3..4c06b10 100644
+--- a/frontend/src/components/controlroom/BottoneChiudiRiga.test.tsx
++++ b/frontend/src/components/controlroom/BottoneChiudiRiga.test.tsx
+@@ -65,6 +65,12 @@ describe('B16 - il bottone chiama il SUO bot', () => {
+         expect(b).not.toBeDisabled();
+         expect(b.getAttribute('data-bot')).toBe(bot);
+         fireEvent.click(b);
++        // 30/09 (decisione dell utente, 16:20): in LIVE ogni bot chiede la conferma;
++        // la richiesta e' la STESSA, parte dopo il secondo clic. Paper: un clic.
++        if (modo === 'live') {
++            expect(api.chiudi).not.toHaveBeenCalled();
++            fireEvent.click(screen.getByTestId('cr-op-chiudi-conferma'));
++        }
+         expect(api.chiudi).toHaveBeenCalledWith({
+             bot, id, eventId: ev, marketId: '1.9', modalita: modo, stato: 'open', chiudeId: null, regolata: false,
+         });
+diff --git a/frontend/src/components/controlroom/BottoneChiudiRiga.tsx b/frontend/src/components/controlroom/BottoneChiudiRiga.tsx
+index 83d61b6..6ec3944 100644
+--- a/frontend/src/components/controlroom/BottoneChiudiRiga.tsx
++++ b/frontend/src/components/controlroom/BottoneChiudiRiga.tsx
+@@ -16,8 +16,8 @@
+ //   · dopo il clic → «richiesta inviata / presa in carico / eseguita /
+ //     rifiutata: motivo / esito ignoto» accanto al bottone.
+ //
+-// 30/09 (decisione dell'utente, difetto D5): per MIKE «un clic in paper,
+-// conferma in live». In PAPER il primo clic chiude; in LIVE il primo clic
++// 30/09 (decisione dell'utente, difetto D5; estesa a TUTTI i bot alle 16:20):
++// «un clic in paper, conferma in live». In PAPER il primo clic chiude; in LIVE il primo clic
+ // ARMA (compare «Conferma»: soldi veri, con la stima di chiusura se la scheda
+ // la conosce) e solo la conferma manda la richiesta. La richiesta e' la stessa
+ // di prima. Stesso gesto di `CashOutPartita` (primo clic arma, secondo manda).
+@@ -69,9 +69,6 @@ const CLS_BOTTONE: Record<'riga' | 'orfana', string> = {
+         + 'hover:text-white hover:border-emerald-500/50 disabled:opacity-40 disabled:cursor-not-allowed',
+ };
+ 
+-/** Bot che in LIVE chiedono la conferma prima di piazzare la chiusura (30/09, D5). */
+-const BOT_CON_CONFERMA_LIVE: ReadonlySet<Bot> = new Set<Bot>(['mike']);
+-
+ export function BottoneChiudiRiga({ riga, testId = 'cr-op-chiudi', variante = 'riga', prezzoAlClic, stimaOra }: {
+     riga: RigaDaChiudere;
+     testId?: string;
+@@ -104,7 +101,7 @@ export function BottoneChiudiRiga({ riga, testId = 'cr-op-chiudi', variante = 'r
+     // B17 (25/09) — dopo la richiesta, l'ORDINE: a che prezzo e quanto abbinato
+     const es = api.esito?.(riga.bot, riga.id) ?? null;
+     // FAIL-CLOSED: una modalita' non paper (live o ignota) chiede la conferma.
+-    const chiedeConferma = BOT_CON_CONFERMA_LIVE.has(riga.bot) && riga.modalita !== 'paper';
++    const chiedeConferma = riga.modalita !== 'paper';
+     const manda = () => {
+         setArmato(false);
+         setInVolo(true);
+diff --git a/frontend/src/pages/ControlRoom.test.tsx b/frontend/src/pages/ControlRoom.test.tsx
+index d10d482..94c1fc5 100644
+--- a/frontend/src/pages/ControlRoom.test.tsx
++++ b/frontend/src/pages/ControlRoom.test.tsx
+@@ -1527,6 +1527,10 @@ describe('TAB APERTE: stessa scheda di Live, comando di chiusura ancora raggiung
+         }));
+         const col = (await apri(mostra(), 'aperte')).getByTestId('cr-posizioni');
+         fireEvent.click(within(col).getByTestId('cr-chiudi'));
++        // 30/09 (decisione dell utente, 16:20): Safe in LIVE chiede la conferma
++        // (prima un clic); la richiesta inviata resta identica.
++        expect(chiudi).not.toHaveBeenCalled();
++        fireEvent.click(within(col).getByTestId('cr-chiudi-conferma'));
+         // B16 (24/09): non piu' il solo id (che andava a Safe per ogni bot), ma
+         // l'identita' della riga: il bot la instrada sulla SUA coda.
+         // 25/09 (residui B17): in piu' il prezzo «se chiudo ora» A VIDEO e il

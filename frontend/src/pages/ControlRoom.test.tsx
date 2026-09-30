@@ -1527,6 +1527,10 @@ describe('TAB APERTE: stessa scheda di Live, comando di chiusura ancora raggiung
         }));
         const col = (await apri(mostra(), 'aperte')).getByTestId('cr-posizioni');
         fireEvent.click(within(col).getByTestId('cr-chiudi'));
+        // 30/09 (decisione dell utente, 16:20): Safe in LIVE chiede la conferma
+        // (prima un clic); la richiesta inviata resta identica.
+        expect(chiudi).not.toHaveBeenCalled();
+        fireEvent.click(within(col).getByTestId('cr-chiudi-conferma'));
         // B16 (24/09): non piu' il solo id (che andava a Safe per ogni bot), ma
         // l'identita' della riga: il bot la instrada sulla SUA coda.
         // 25/09 (residui B17): in piu' il prezzo «se chiudo ora» A VIDEO e il

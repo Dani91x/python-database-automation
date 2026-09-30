@@ -65,6 +65,12 @@ describe('B16 - il bottone chiama il SUO bot', () => {
         expect(b).not.toBeDisabled();
         expect(b.getAttribute('data-bot')).toBe(bot);
         fireEvent.click(b);
+        // 30/09 (decisione dell utente, 16:20): in LIVE ogni bot chiede la conferma;
+        // la richiesta e' la STESSA, parte dopo il secondo clic. Paper: un clic.
+        if (modo === 'live') {
+            expect(api.chiudi).not.toHaveBeenCalled();
+            fireEvent.click(screen.getByTestId('cr-op-chiudi-conferma'));
+        }
         expect(api.chiudi).toHaveBeenCalledWith({
             bot, id, eventId: ev, marketId: '1.9', modalita: modo, stato: 'open', chiudeId: null, regolata: false,
         });
