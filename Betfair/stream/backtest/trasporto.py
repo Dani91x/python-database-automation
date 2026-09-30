@@ -212,6 +212,7 @@ def _monta_canale(st: Dict[str, Any], motore: Any, strategia: Any) -> None:
         st["_ripristina"] = ("safe:" + sport, SPO._PORTE.get(sport))
         SPO._PORTE[sport] = client
     st["client"] = client
+    _monta_rifiuti_canale(st, motore, strategia)
     client.avvia()
     fine = time.monotonic() + 5.0
     while not client.disponibile() and time.monotonic() < fine:
@@ -235,6 +236,128 @@ def _monta_canale(st: Dict[str, Any], motore: Any, strategia: Any) -> None:
         st["book"] += 1
         vero(market, market_book)
     strategia.process_market_book = _process_market_book
+
+
+#: i ref interni degli ordini nati da un COMANDO al motore del runner
+#: (``live_order_worker._cust_ref`` calcio, ``tennis_live_order_worker._cust_ref``)
+PREFISSI_ORDINI_MOTORE = ("awlq", "awtq")
+
+
+def _ref_ordine_motore(ordine: Any) -> Optional[str]:
+    """Il ref interno ``awlq``/``awtq`` di un ordine flumine nato dal motore,
+    letto come lo legge lo specchio (``live_trading_strategy._client_order_ref``);
+    None per gli ordini della REST del banco (ripiego D5) e dell'utente, che la
+    leva l'hanno gia' attraversata in ``MercatoFlumine.place_order_live``."""
+    from ..engine.live_trading_strategy import _client_order_ref
+
+    ref = _client_order_ref(ordine)
+    return ref if isinstance(ref, str) and ref.startswith(PREFISSI_ORDINI_MOTORE) else None
+
+
+def _fallisci_su_betfair(ordine: Any, codice: str) -> None:
+    """Il piazzamento di QUESTO ordine torna FAILURE col codice di Betfair, come
+    risponderebbe l'Exchange al runner: stessa strada di flumine per un place
+    fallito (``simulatedorder.place`` -> ``status="FAILURE"``, la size esce dal
+    residuo come in ``ERROR_IN_ORDER``; ``SimulatedExecution.execute_place`` ->
+    ``order.execution_complete()``). Nessun abbinato, nessun ordine vivo."""
+    sim = ordine.simulated
+
+    def _place(*_a: Any, **_k: Any) -> Any:
+        sim.size_voided += sim.size_remaining
+        return sim._create_place_response(None, status="FAILURE", error_code=str(codice))
+
+    sim.place = _place
+
+
+@contextlib.contextmanager
+def _sostituzione_fallita(ordine: Any, codice: str) -> Iterator[None]:
+    """Per la durata di UN ``execute_replace``: l'ordine NUOVO del replace
+    (``Trade.create_order_replacement``) torna FAILURE al piazzamento. E' la
+    forma del rifiuto di Betfair su un replace (codice esterno
+    ``CANCELLED_NOT_PLACED``: annullo riuscito, piazzamento rifiutato), la
+    stessa che il banco scrive sulla coda (``instructionReports``)."""
+    trade = ordine.trade
+    vero = trade.create_order_replacement
+
+    def _crea(*a: Any, **kw: Any) -> Any:
+        nuovo = vero(*a, **kw)
+        _fallisci_su_betfair(nuovo, codice)
+        return nuovo
+
+    trade.create_order_replacement = _crea
+    try:
+        yield
+    finally:
+        try:
+            del trade.create_order_replacement     # torna il metodo della classe
+        except AttributeError:
+            pass
+
+
+def _monta_rifiuti_canale(st: Dict[str, Any], motore: Any, strategia: Any) -> None:
+    """30/09 - LA LEVA DEL RIFIUTO PROVOCATO VALE ANCHE SUL CANALE.
+
+    Sulla coda la leva (``MercatoFlumine.rifiuto_provocato``: lato, mercato,
+    sotto minimo, contatore) sta dentro ``place_order_live``. Sul canale
+    l'ordine NON passa da li': il client vero -> ``WsBanco`` -> ``MotoreOrdini``
+    -> ``live_order_worker._dispatch`` -> ``Market.place_order`` di flumine.
+    Negli scenari ``copertura-rifiutata`` / ``-legacy`` di Mike la copertura
+    sul canale si ABBINAVA (P&L -14,17 / -14,00 contro -10,00 della coda) e la
+    parita' non era raggiunta: la guardia del bot non veniva mai sollecitata.
+
+    Qui la STESSA leva si consulta quando flumine esegue il pacchetto di un
+    ordine nato dal motore (``SimulatedExecution.execute_place``, dopo il bet
+    delay come per Betfair): se la leva dice no, il place di quell'ordine torna
+    FAILURE e il resto (specchio, eventi ``order``, esito del bot) e' il codice
+    di produzione. Nessun bot toccato; senza leva armata nulla cambia.
+
+    SOTTO IL MINIMO (``copertura-rifiutata-legacy``): sulla coda il banco piazza
+    diretto l'importo sotto minimo (il sotto minimo di ``MercatoFlumine`` passa
+    da ``place_order_live``: e' li' che la leva lo vede). Sul canale il motore fa
+    il place-and-trim VERO: parcheggio al minimo, taglio, poi il REPLACE alla
+    quota voluta con l'importo sotto minimo. L'ordine che corrisponde a quello
+    della coda e' quindi il NUOVO ordine di quel replace: la leva si consulta
+    li' (con l'importo che resta), SOLO per un replace di una sequenza
+    place-and-trim in corso nel motore (``MotoreOrdini._submin``)."""
+    mercato = getattr(strategia, "mercato", None)
+    leva = getattr(mercato, "rifiuto_provocato", None)
+    esecuzione = getattr(getattr(motore, "quadro", None), "simulated_execution", None)
+    if not callable(leva) or esecuzione is None:
+        return
+    vero = esecuzione.execute_place
+    vero_replace = esecuzione.execute_replace
+
+    def _rifiuto(ordine: Any, ref: str, size: Any) -> Optional[tuple]:
+        return leva(market_id=getattr(ordine, "market_id", None),
+                    side=getattr(ordine, "side", None), size=size, customer_ref=ref)
+
+    def _execute_place(order_package: Any, http_session: Any = None) -> Any:
+        for ordine in order_package:
+            ref = _ref_ordine_motore(ordine)
+            if ref is None:
+                continue
+            rifiuto = _rifiuto(ordine, ref,
+                               getattr(getattr(ordine, "order_type", None), "size", 0.0))
+            if rifiuto is not None:
+                _fallisci_su_betfair(ordine, rifiuto[0])
+        return vero(order_package, http_session)
+
+    def _execute_replace(order_package: Any, http_session: Any = None) -> Any:
+        pb = st.get("porta_banco")
+        in_corso = getattr(getattr(pb, "motore", None), "_submin", None) or {}
+        with contextlib.ExitStack() as pila:
+            for ordine in order_package:
+                ref = _ref_ordine_motore(ordine)
+                if ref is None or ref not in in_corso:
+                    continue
+                rifiuto = _rifiuto(ordine, ref, getattr(ordine, "size_remaining", 0.0))
+                if rifiuto is not None:
+                    pila.enter_context(_sostituzione_fallita(ordine, rifiuto[0]))
+            return vero_replace(order_package, http_session)
+
+    esecuzione.execute_place = _execute_place
+    esecuzione.execute_replace = _execute_replace
+    st["_rifiuti_canale"] = (esecuzione, vero)
 
 
 def _adotta(st: Dict[str, Any], pb: Any, strategia: Any) -> None:
@@ -264,6 +387,14 @@ def _smonta(st: Dict[str, Any]) -> None:
     pb = st.get("porta_banco")
     if pb is not None:
         pb.metti_giu()
+    leva = st.pop("_rifiuti_canale", None)
+    if leva is not None:
+        esecuzione, _vero = leva
+        for nome in ("execute_place", "execute_replace"):
+            try:
+                delattr(esecuzione, nome)          # torna il metodo della classe
+            except AttributeError:
+                pass
     rip = st.pop("_ripristina", None)
     if rip is not None:
         chi, prima = rip

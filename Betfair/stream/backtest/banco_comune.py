@@ -525,6 +525,35 @@ class MercatoFlumine:
         # in proporzione a questo numero
         self.letture: int = 0
 
+    # ------------------------------------------------------------- rifiuto
+    def rifiuto_provocato(self, *, market_id: Any, side: Any, size: Any,
+                          customer_ref: Any) -> Optional[Tuple[str, Optional[str]]]:
+        """LA LEVA DEL RIFIUTO PROVOCATO, in un posto solo per i due trasporti.
+
+        None = l'ordine passa. Altrimenti (codice esterno, codice interno): il
+        rifiuto e' contato (``guasti["place_rifiuto"]`` si consuma, -1 = non
+        finisce) e scritto in ``rifiutati``. La usa ``place_order_live`` (coda)
+        e, dal 30/09, l'esecuzione simulata degli ordini nati dal MOTORE del
+        runner (trasporto ``canale``, ``trasporto._monta_rifiuti_canale``):
+        prima la leva viveva solo qui dentro e sul canale non passava mai
+        (``copertura-rifiutata``: coda -10,00, canale -14,17, parita' NON
+        RAGGIUNTA)."""
+        _quanti = int(self.guasti.get("place_rifiuto", 0))
+        if not ((_quanti > 0 or _quanti == -1)
+                and (self.rifiuta_lato is None
+                     or str(side).lower() == str(self.rifiuta_lato).lower())
+                and (self.rifiuta_market_id is None
+                     or str(market_id) == str(self.rifiuta_market_id))
+                and (self.rifiuta_sotto_minimo is None
+                     or float(size) < float(self.rifiuta_sotto_minimo) - 1e-9)):
+            return None
+        if _quanti > 0:                       # -1 = rifiuto che non finisce
+            self.guasti["place_rifiuto"] = _quanti - 1
+        codice = str(self.rifiuto_codice)
+        self.rifiutati.append({"ref": str(customer_ref or ""),
+                               "err": f"{codice} (rifiuto provocato)"})
+        return codice, self.rifiuto_codice_interno
+
     # ------------------------------------------------------------- place
     def place_order_live(self, *, market_id: str, selection_id: int, price: float,
                          size: float, event_id: str, side: str = "lay",
@@ -538,26 +567,16 @@ class MercatoFlumine:
         if self.guasti.get("place_exception", 0) > 0:
             self.guasti["place_exception"] -= 1
             raise RuntimeError("guasto provocato: esito IGNOTO dal place")
-        _quanti = int(self.guasti.get("place_rifiuto", 0))
-        if ((_quanti > 0 or _quanti == -1)
-                and (self.rifiuta_lato is None
-                     or str(side).lower() == str(self.rifiuta_lato).lower())
-                and (self.rifiuta_market_id is None
-                     or str(market_id) == str(self.rifiuta_market_id))
-                and (self.rifiuta_sotto_minimo is None
-                     or float(size) < float(self.rifiuta_sotto_minimo) - 1e-9)):
+        rifiuto = self.rifiuto_provocato(market_id=market_id, side=side, size=size,
+                                         customer_ref=customer_ref)
+        if rifiuto is not None:
             # IL RIFIUTO DICHIARATO DI BETFAIR (`ok=False`): l'istruzione torna
             # con un report negativo e NESSUN ordine esiste. E' il difetto 2 del
             # catalogo del 15/09 («`res.ok` mai letto: un rifiuto trattato come
             # copertura esistente»), e senza provocarlo il replay non ha MAI un
             # caso in cui `ok` valga False — quindi non puo' accorgersi se
             # qualcuno smettesse di leggerlo. Le parole sono quelle di Betfair.
-            if _quanti > 0:                       # -1 = rifiuto che non finisce
-                self.guasti["place_rifiuto"] = _quanti - 1
-            codice = str(self.rifiuto_codice)
-            interno = self.rifiuto_codice_interno
-            self.rifiutati.append({"ref": str(customer_ref or ""),
-                                   "err": f"{codice} (rifiuto provocato)"})
+            codice, interno = rifiuto
             # Le parole e la FORMA sono quelle di Betfair: su un replace
             # rifiutato il codice esterno e' ``CANCELLED_NOT_PLACED`` e il
             # motivo vero sta in ``placeInstructionReport.errorCode``.

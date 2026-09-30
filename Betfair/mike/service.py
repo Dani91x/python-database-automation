@@ -2768,7 +2768,17 @@ _CONTO_LETTO_A: Dict[str, float] = {}
 _CACHE_DI_PROCESSO = ("_DAILY_STOP_LOGGED", "_LAST_HEARTBEAT", "_CONFIG_WARNED",
                       "_CACHE_EVENTI", "_RICONCILIATO_A", "_SCRITTO_A",
                       "_MALFORMED_LOGGED", "_LAST_AGG", "_CONTO_LETTO_A",
-                      "_FEED_KO")   # M8.7 (29/09)
+                      "_FEED_KO",   # M8.7 (29/09)
+                      # 30/09 (banco): memorie dei cantieri J/J2 (28/09), gia'
+                      # azzerate da ``svuota_le_cache`` ma non qui. Il tetto del
+                      # ripiego REST e' per mercato con l'ora del REPLAY: un
+                      # secondo scenario sulla stessa partita ereditava l'ora di
+                      # fine del primo e non leggeva MAI (150 letture REST nei
+                      # primi scenari, 0 negli altri).
+                      "_RIPIEGO_REST_ULTIMO", "_ULTIMO_STATO_SCANNER")
+# 30/09 (banco): i due promemoria del flusso fermo (per partita, con l'ora del
+# giro) non sono dizionari: si azzerano col loro ``azzera`` qui sotto.
+_PROMEMORIA_DI_PROCESSO = ("_FLUSSO_CRITICO", "_FLUSSO_RIPIEGO")
 
 
 def azzera_cache_di_processo() -> List[str]:
@@ -2787,6 +2797,9 @@ def azzera_cache_di_processo() -> List[str]:
         if isinstance(valore, dict):
             valore.clear()
             azzerati.append(nome)
+    for nome in _PROMEMORIA_DI_PROCESSO:
+        globals()[nome].azzera()
+        azzerati.append(nome)
     if _ULTIMI_PARAMS is not None:
         _ULTIMI_PARAMS = None
         azzerati.append("_ULTIMI_PARAMS")

@@ -1,0 +1,1050 @@
+diff --git a/Betfair/mike/service.py b/Betfair/mike/service.py
+index f389058..e4f3aed 100644
+--- a/Betfair/mike/service.py
++++ b/Betfair/mike/service.py
+@@ -2764,7 +2764,17 @@ _CONTO_LETTO_A: Dict[str, float] = {}
+ _CACHE_DI_PROCESSO = ("_DAILY_STOP_LOGGED", "_LAST_HEARTBEAT", "_CONFIG_WARNED",
+                       "_CACHE_EVENTI", "_RICONCILIATO_A", "_SCRITTO_A",
+                       "_MALFORMED_LOGGED", "_LAST_AGG", "_CONTO_LETTO_A",
+-                      "_FEED_KO")   # M8.7 (29/09)
++                      "_FEED_KO",   # M8.7 (29/09)
++                      # 30/09 (banco): memorie dei cantieri J/J2 (28/09), gia'
++                      # azzerate da ``svuota_le_cache`` ma non qui. Il tetto del
++                      # ripiego REST e' per mercato con l'ora del REPLAY: un
++                      # secondo scenario sulla stessa partita ereditava l'ora di
++                      # fine del primo e non leggeva MAI (150 letture REST nei
++                      # primi scenari, 0 negli altri).
++                      "_RIPIEGO_REST_ULTIMO", "_ULTIMO_STATO_SCANNER")
++# 30/09 (banco): i due promemoria del flusso fermo (per partita, con l'ora del
++# giro) non sono dizionari: si azzerano col loro ``azzera`` qui sotto.
++_PROMEMORIA_DI_PROCESSO = ("_FLUSSO_CRITICO", "_FLUSSO_RIPIEGO")
+ 
+ 
+ def azzera_cache_di_processo() -> List[str]:
+@@ -2783,6 +2793,9 @@ def azzera_cache_di_processo() -> List[str]:
+         if isinstance(valore, dict):
+             valore.clear()
+             azzerati.append(nome)
++    for nome in _PROMEMORIA_DI_PROCESSO:
++        globals()[nome].azzera()
++        azzerati.append(nome)
+     if _ULTIMI_PARAMS is not None:
+         _ULTIMI_PARAMS = None
+         azzerati.append("_ULTIMI_PARAMS")
+diff --git a/Betfair/stream/backtest/banco_comune.py b/Betfair/stream/backtest/banco_comune.py
+index f0fecec..d70f5cb 100644
+--- a/Betfair/stream/backtest/banco_comune.py
++++ b/Betfair/stream/backtest/banco_comune.py
+@@ -525,6 +525,35 @@ class MercatoFlumine:
+         # in proporzione a questo numero
+         self.letture: int = 0
+ 
++    # ------------------------------------------------------------- rifiuto
++    def rifiuto_provocato(self, *, market_id: Any, side: Any, size: Any,
++                          customer_ref: Any) -> Optional[Tuple[str, Optional[str]]]:
++        """LA LEVA DEL RIFIUTO PROVOCATO, in un posto solo per i due trasporti.
++
++        None = l'ordine passa. Altrimenti (codice esterno, codice interno): il
++        rifiuto e' contato (``guasti["place_rifiuto"]`` si consuma, -1 = non
++        finisce) e scritto in ``rifiutati``. La usa ``place_order_live`` (coda)
++        e, dal 30/09, l'esecuzione simulata degli ordini nati dal MOTORE del
++        runner (trasporto ``canale``, ``trasporto._monta_rifiuti_canale``):
++        prima la leva viveva solo qui dentro e sul canale non passava mai
++        (``copertura-rifiutata``: coda -10,00, canale -14,17, parita' NON
++        RAGGIUNTA)."""
++        _quanti = int(self.guasti.get("place_rifiuto", 0))
++        if not ((_quanti > 0 or _quanti == -1)
++                and (self.rifiuta_lato is None
++                     or str(side).lower() == str(self.rifiuta_lato).lower())
++                and (self.rifiuta_market_id is None
++                     or str(market_id) == str(self.rifiuta_market_id))
++                and (self.rifiuta_sotto_minimo is None
++                     or float(size) < float(self.rifiuta_sotto_minimo) - 1e-9)):
++            return None
++        if _quanti > 0:                       # -1 = rifiuto che non finisce
++            self.guasti["place_rifiuto"] = _quanti - 1
++        codice = str(self.rifiuto_codice)
++        self.rifiutati.append({"ref": str(customer_ref or ""),
++                               "err": f"{codice} (rifiuto provocato)"})
++        return codice, self.rifiuto_codice_interno
++
+     # ------------------------------------------------------------- place
+     def place_order_live(self, *, market_id: str, selection_id: int, price: float,
+                          size: float, event_id: str, side: str = "lay",
+@@ -538,26 +567,16 @@ class MercatoFlumine:
+         if self.guasti.get("place_exception", 0) > 0:
+             self.guasti["place_exception"] -= 1
+             raise RuntimeError("guasto provocato: esito IGNOTO dal place")
+-        _quanti = int(self.guasti.get("place_rifiuto", 0))
+-        if ((_quanti > 0 or _quanti == -1)
+-                and (self.rifiuta_lato is None
+-                     or str(side).lower() == str(self.rifiuta_lato).lower())
+-                and (self.rifiuta_market_id is None
+-                     or str(market_id) == str(self.rifiuta_market_id))
+-                and (self.rifiuta_sotto_minimo is None
+-                     or float(size) < float(self.rifiuta_sotto_minimo) - 1e-9)):
++        rifiuto = self.rifiuto_provocato(market_id=market_id, side=side, size=size,
++                                         customer_ref=customer_ref)
++        if rifiuto is not None:
+             # IL RIFIUTO DICHIARATO DI BETFAIR (`ok=False`): l'istruzione torna
+             # con un report negativo e NESSUN ordine esiste. E' il difetto 2 del
+             # catalogo del 15/09 («`res.ok` mai letto: un rifiuto trattato come
+             # copertura esistente»), e senza provocarlo il replay non ha MAI un
+             # caso in cui `ok` valga False — quindi non puo' accorgersi se
+             # qualcuno smettesse di leggerlo. Le parole sono quelle di Betfair.
+-            if _quanti > 0:                       # -1 = rifiuto che non finisce
+-                self.guasti["place_rifiuto"] = _quanti - 1
+-            codice = str(self.rifiuto_codice)
+-            interno = self.rifiuto_codice_interno
+-            self.rifiutati.append({"ref": str(customer_ref or ""),
+-                                   "err": f"{codice} (rifiuto provocato)"})
++            codice, interno = rifiuto
+             # Le parole e la FORMA sono quelle di Betfair: su un replace
+             # rifiutato il codice esterno e' ``CANCELLED_NOT_PLACED`` e il
+             # motivo vero sta in ``placeInstructionReport.errorCode``.
+diff --git a/Betfair/stream/backtest/registro_bot.py b/Betfair/stream/backtest/registro_bot.py
+index c5ae8ab..678f7ee 100644
+--- a/Betfair/stream/backtest/registro_bot.py
++++ b/Betfair/stream/backtest/registro_bot.py
+@@ -107,6 +107,71 @@ class BotRegistrato:
+         return dict(sc or {"base": "come gira in produzione"})
+ 
+ 
++# ---------------------------------------------------------------------------
++# I MODULI CHE DECIDONO IL COMPORTAMENTO (impronta del referto, 30/09)
++# ---------------------------------------------------------------------------
++# L'impronta del referto (``certifica.impronta``) e' lo sha1 dei file elencati
++# in ``moduli_produzione`` piu' i controlli. Con UN solo modulo per bot
++# l'impronta non cambiava quando cambiava il motore (reperto del 29/09 su Mike,
++# esteso il 30/09 a tutti i bot). Qui c'e' la CHIUSURA degli import del servizio
++# di produzione DENTRO il pacchetto del bot (moduli condivisi di
++# ``Betfair/stream/`` e librerie esclusi). Il test di contratto
++# ``Betfair/stream/tests/test_registro_impronta_2026_09_30.py`` ricalcola la
++# chiusura dal sorgente e diventa ROSSO se un modulo importato manca qui.
++_MODULI_OMEGA: Tuple[str, ...] = (
++    "Betfair.omega.omega_service", "Betfair.omega.omega_advisor",
++    "Betfair.omega.omega_config", "Betfair.omega.omega_db",
++    "Betfair.omega.omega_empirical", "Betfair.omega.omega_engine",
++    "Betfair.omega.omega_market", "Betfair.omega.omega_model",
++    "Betfair.omega.omega_proposte", "Betfair.omega.omega_v3",
++    "Betfair.omega.porta_ordini", "Betfair.omega.tools.misura_k",
++)
++# un solo servizio (``bot_service``) per le quattro varianti Safe; ``combos`` e
++# ``tennis_opportunity`` li importa per nome (``bot_service.OPTIONAL_MODULES``)
++_MODULI_SAFE: Tuple[str, ...] = (
++    "Betfair.safe_strategy.bot_service", "Betfair.safe_strategy.anomaly",
++    "Betfair.safe_strategy.bot_db", "Betfair.safe_strategy.calibration",
++    "Betfair.safe_strategy.canale_scan", "Betfair.safe_strategy.combos",
++    "Betfair.safe_strategy.engine", "Betfair.safe_strategy.execution",
++    "Betfair.safe_strategy.exits", "Betfair.safe_strategy.opportunity",
++    "Betfair.safe_strategy.porta_ordini", "Betfair.safe_strategy.pressure",
++    "Betfair.safe_strategy.proposte_opportunita", "Betfair.safe_strategy.risk",
++    "Betfair.safe_strategy.selezione", "Betfair.safe_strategy.tennis_opportunity",
++    "Betfair.safe_strategy.veto_campionati",
++)
++_MODULI_SCALPER_CALCIO: Tuple[str, ...] = (
++    "Betfair.stream.scalper.scalper_service", "Betfair.stream.scalper.scalper_session",
++    "Betfair.stream.scalper.scalper_bot", "Betfair.stream.scalper.auto_mode",
++    "Betfair.stream.scalper.bias_resolver", "Betfair.stream.scalper.habitat_scan",
++    "Betfair.stream.scalper.hazard_atlas", "Betfair.stream.scalper.risk_semaphore",
++    "Betfair.stream.scalper.sniper_bot", "Betfair.stream.scalper.theta_bot",
++)
++# i quattro bot tennis girano nello STESSO processo (``tennis_runner``, stato
++# e tetti condivisi): ciascuno porta l'intera chiusura del runner, strategie
++# sorelle comprese (impronta prudente: cambia anche se cambia una sorella).
++_MODULI_TENNIS: Tuple[str, ...] = (
++    "Betfair.stream.tennis_live.tennis_runner", "Betfair.stream.tennis_live.auto_mode",
++    "Betfair.stream.tennis_live.canale_bot_tennis",
++    "Betfair.stream.tennis_live.chiusura_manuale",
++    "Betfair.stream.tennis_live.esecutore_tennis",
++    "Betfair.stream.tennis_live.guardie_tennis",
++    "Betfair.stream.tennis_live.iscrizione_a_caldo",
++    "Betfair.stream.tennis_live.paper_execution",
++    "Betfair.stream.tennis_live.tennis_bot_service", "Betfair.stream.tennis_live.tennis_db",
++    "Betfair.stream.tennis_live.tennis_live_order_worker",
++    "Betfair.stream.tennis_live.tennis_recorder",
++    "Betfair.stream.tennis_scalper.condotta_ordini",
++    "Betfair.stream.tennis_scalper.run_tennis_scalper",
++    "Betfair.stream.tennis_scalper.superficie",
++    "Betfair.stream.tennis_scalper.tennis_flb_bot",
++    "Betfair.stream.tennis_scalper.tennis_pro_bot",
++    "Betfair.stream.tennis_scalper.tennis_scalper_bot",
++    "Betfair.stream.tennis_scalper.tennis_score",
++    "Betfair.stream.tennis_scalper.tennis_swing_bot",
++    "Betfair.stream.tennis_scalper.tennis_winprob",
++)
++
++
+ # ---------------------------------------------------------------------------
+ # I BOT
+ # ---------------------------------------------------------------------------
+@@ -133,7 +198,7 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
+         nome="omega",
+         sport="calcio",
+         descrizione="due gambe sul Correct Score (1T + FT) con green-up",
+-        moduli_produzione=("Betfair.omega.omega_service",),
++        moduli_produzione=_MODULI_OMEGA,
+         mercati=("CORRECT_SCORE", "HALF_TIME_SCORE", "MATCH_ODDS"),
+         replay="Betfair.omega.tools.replay_registrazioni:certifica_scenario",
+         scenari="Betfair.omega.tools.replay_registrazioni:SCENARI_DESCRITTI",
+@@ -144,7 +209,7 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
+         nome="safe_base",
+         sport="calcio",
+         descrizione="Safe Strategy, variante BASE (riferimento 1X2 pre-KO)",
+-        moduli_produzione=("Betfair.safe_strategy.bot_service",),
++        moduli_produzione=_MODULI_SAFE,
+         mercati=("MATCH_ODDS", "CORRECT_SCORE"),
+         replay="Betfair.safe_strategy.tools.replay_registrazioni:certifica_scenario",
+         scenari="Betfair.safe_strategy.tools.replay_registrazioni:SCENARI_DESCRITTI",
+@@ -155,7 +220,7 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
+         nome="safe_esatto",
+         sport="calcio",
+         descrizione="Safe Strategy, variante ESATTO (Correct Score)",
+-        moduli_produzione=("Betfair.safe_strategy.bot_service",),
++        moduli_produzione=_MODULI_SAFE,
+         mercati=("CORRECT_SCORE",),
+         replay="Betfair.safe_strategy.tools.replay_registrazioni:certifica_scenario",
+         scenari="Betfair.safe_strategy.tools.replay_registrazioni:SCENARI_DESCRITTI",
+@@ -166,7 +231,7 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
+         nome="safe_punta",
+         sport="calcio",
+         descrizione="Safe Strategy, variante PUNTA",
+-        moduli_produzione=("Betfair.safe_strategy.bot_service",),
++        moduli_produzione=_MODULI_SAFE,
+         mercati=("MATCH_ODDS",),
+         replay="Betfair.safe_strategy.tools.replay_registrazioni:certifica_scenario",
+         scenari="Betfair.safe_strategy.tools.replay_registrazioni:SCENARI_DESCRITTI",
+@@ -177,7 +242,7 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
+         nome="safe_tennis",
+         sport="tennis",
+         descrizione="Safe Strategy sul tennis (take profit / stop, uscite approvate)",
+-        moduli_produzione=("Betfair.safe_strategy.bot_service",),
++        moduli_produzione=_MODULI_SAFE,
+         mercati=("MATCH_ODDS",),
+         replay="Betfair.safe_strategy.tools.replay_tennis:certifica_scenario",
+         scenari="Betfair.safe_strategy.tools.replay_tennis:SCENARI_DESCRITTI",
+@@ -195,9 +260,9 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
+         # (`scalper_bot.ScalperStrategy`) sul banco comune; i finti iniettati
+         # sono elencati in testa al modulo del replay. `scalper_bot` sta qui
+         # perche' l'impronta del referto deve cambiare se cambia la strategia.
+-        moduli_produzione=("Betfair.stream.scalper.scalper_service",
+-                           "Betfair.stream.scalper.scalper_session",
+-                           "Betfair.stream.scalper.scalper_bot"),
++        # 30/09: piu' tutta la chiusura degli import del servizio (sniper,
++        # theta, auto_mode, ...): vedi ``_MODULI_SCALPER_CALCIO``.
++        moduli_produzione=_MODULI_SCALPER_CALCIO,
+         # 28/09 (cantiere D2): con lo SNIPER (scenari `sniper*`, acceso di
+         # default in produzione dal 25/09) servono TUTTE le linee Under/Over
+         # (la linea segue i gol: `SNIPER_MARKET_TYPES` della sessione)
+@@ -222,7 +287,7 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
+         nome="tennis_scalper",
+         sport="tennis",
+         descrizione="scalper tennis: market-making a due gambe sul MATCH_ODDS",
+-        moduli_produzione=("Betfair.stream.tennis_live.tennis_runner",),
++        moduli_produzione=_MODULI_TENNIS,
+         mercati=("MATCH_ODDS",),
+         replay="Betfair.stream.tennis_live.tools.replay_bot:certifica_scenario_tennis_scalper",
+         scenari="Betfair.stream.tennis_live.tools.replay_bot:SCENARI_DESCRITTI",
+@@ -234,7 +299,7 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
+         nome="tennis_pro",
+         sport="tennis",
+         descrizione="tennis PRO: direzionale score-driven, sei setup sul punteggio IPS",
+-        moduli_produzione=("Betfair.stream.tennis_live.tennis_runner",),
++        moduli_produzione=_MODULI_TENNIS,
+         mercati=("MATCH_ODDS",),
+         replay="Betfair.stream.tennis_live.tools.replay_bot:certifica_scenario_tennis_pro",
+         scenari="Betfair.stream.tennis_live.tools.replay_bot:SCENARI_DESCRITTI",
+@@ -246,7 +311,7 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
+         nome="tennis_flb",
+         sport="tennis",
+         descrizione="tennis FLB: lay del favorito estremo, senza stop (favourite-longshot bias)",
+-        moduli_produzione=("Betfair.stream.tennis_live.tennis_runner",),
++        moduli_produzione=_MODULI_TENNIS,
+         mercati=("MATCH_ODDS",),
+         replay="Betfair.stream.tennis_live.tools.replay_bot:certifica_scenario_tennis_flb",
+         scenari="Betfair.stream.tennis_live.tools.replay_bot:SCENARI_DESCRITTI",
+@@ -258,7 +323,7 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
+         nome="tennis_swing",
+         sport="tennis",
+         descrizione="tennis SWING: fade degli estremi del favorito (z robusto + ER + RSI)",
+-        moduli_produzione=("Betfair.stream.tennis_live.tennis_runner",),
++        moduli_produzione=_MODULI_TENNIS,
+         mercati=("MATCH_ODDS",),
+         replay="Betfair.stream.tennis_live.tools.replay_bot:certifica_scenario_tennis_swing",
+         scenari="Betfair.stream.tennis_live.tools.replay_bot:SCENARI_DESCRITTI",
+diff --git a/Betfair/stream/backtest/trasporto.py b/Betfair/stream/backtest/trasporto.py
+index a947c24..6d8973b 100644
+--- a/Betfair/stream/backtest/trasporto.py
++++ b/Betfair/stream/backtest/trasporto.py
+@@ -212,6 +212,7 @@ def _monta_canale(st: Dict[str, Any], motore: Any, strategia: Any) -> None:
+         st["_ripristina"] = ("safe:" + sport, SPO._PORTE.get(sport))
+         SPO._PORTE[sport] = client
+     st["client"] = client
++    _monta_rifiuti_canale(st, motore, strategia)
+     client.avvia()
+     fine = time.monotonic() + 5.0
+     while not client.disponibile() and time.monotonic() < fine:
+@@ -237,6 +238,128 @@ def _monta_canale(st: Dict[str, Any], motore: Any, strategia: Any) -> None:
+     strategia.process_market_book = _process_market_book
+ 
+ 
++#: i ref interni degli ordini nati da un COMANDO al motore del runner
++#: (``live_order_worker._cust_ref`` calcio, ``tennis_live_order_worker._cust_ref``)
++PREFISSI_ORDINI_MOTORE = ("awlq", "awtq")
++
++
++def _ref_ordine_motore(ordine: Any) -> Optional[str]:
++    """Il ref interno ``awlq``/``awtq`` di un ordine flumine nato dal motore,
++    letto come lo legge lo specchio (``live_trading_strategy._client_order_ref``);
++    None per gli ordini della REST del banco (ripiego D5) e dell'utente, che la
++    leva l'hanno gia' attraversata in ``MercatoFlumine.place_order_live``."""
++    from ..engine.live_trading_strategy import _client_order_ref
++
++    ref = _client_order_ref(ordine)
++    return ref if isinstance(ref, str) and ref.startswith(PREFISSI_ORDINI_MOTORE) else None
++
++
++def _fallisci_su_betfair(ordine: Any, codice: str) -> None:
++    """Il piazzamento di QUESTO ordine torna FAILURE col codice di Betfair, come
++    risponderebbe l'Exchange al runner: stessa strada di flumine per un place
++    fallito (``simulatedorder.place`` -> ``status="FAILURE"``, la size esce dal
++    residuo come in ``ERROR_IN_ORDER``; ``SimulatedExecution.execute_place`` ->
++    ``order.execution_complete()``). Nessun abbinato, nessun ordine vivo."""
++    sim = ordine.simulated
++
++    def _place(*_a: Any, **_k: Any) -> Any:
++        sim.size_voided += sim.size_remaining
++        return sim._create_place_response(None, status="FAILURE", error_code=str(codice))
++
++    sim.place = _place
++
++
++@contextlib.contextmanager
++def _sostituzione_fallita(ordine: Any, codice: str) -> Iterator[None]:
++    """Per la durata di UN ``execute_replace``: l'ordine NUOVO del replace
++    (``Trade.create_order_replacement``) torna FAILURE al piazzamento. E' la
++    forma del rifiuto di Betfair su un replace (codice esterno
++    ``CANCELLED_NOT_PLACED``: annullo riuscito, piazzamento rifiutato), la
++    stessa che il banco scrive sulla coda (``instructionReports``)."""
++    trade = ordine.trade
++    vero = trade.create_order_replacement
++
++    def _crea(*a: Any, **kw: Any) -> Any:
++        nuovo = vero(*a, **kw)
++        _fallisci_su_betfair(nuovo, codice)
++        return nuovo
++
++    trade.create_order_replacement = _crea
++    try:
++        yield
++    finally:
++        try:
++            del trade.create_order_replacement     # torna il metodo della classe
++        except AttributeError:
++            pass
++
++
++def _monta_rifiuti_canale(st: Dict[str, Any], motore: Any, strategia: Any) -> None:
++    """30/09 - LA LEVA DEL RIFIUTO PROVOCATO VALE ANCHE SUL CANALE.
++
++    Sulla coda la leva (``MercatoFlumine.rifiuto_provocato``: lato, mercato,
++    sotto minimo, contatore) sta dentro ``place_order_live``. Sul canale
++    l'ordine NON passa da li': il client vero -> ``WsBanco`` -> ``MotoreOrdini``
++    -> ``live_order_worker._dispatch`` -> ``Market.place_order`` di flumine.
++    Negli scenari ``copertura-rifiutata`` / ``-legacy`` di Mike la copertura
++    sul canale si ABBINAVA (P&L -14,17 / -14,00 contro -10,00 della coda) e la
++    parita' non era raggiunta: la guardia del bot non veniva mai sollecitata.
++
++    Qui la STESSA leva si consulta quando flumine esegue il pacchetto di un
++    ordine nato dal motore (``SimulatedExecution.execute_place``, dopo il bet
++    delay come per Betfair): se la leva dice no, il place di quell'ordine torna
++    FAILURE e il resto (specchio, eventi ``order``, esito del bot) e' il codice
++    di produzione. Nessun bot toccato; senza leva armata nulla cambia.
++
++    SOTTO IL MINIMO (``copertura-rifiutata-legacy``): sulla coda il banco piazza
++    diretto l'importo sotto minimo (il sotto minimo di ``MercatoFlumine`` passa
++    da ``place_order_live``: e' li' che la leva lo vede). Sul canale il motore fa
++    il place-and-trim VERO: parcheggio al minimo, taglio, poi il REPLACE alla
++    quota voluta con l'importo sotto minimo. L'ordine che corrisponde a quello
++    della coda e' quindi il NUOVO ordine di quel replace: la leva si consulta
++    li' (con l'importo che resta), SOLO per un replace di una sequenza
++    place-and-trim in corso nel motore (``MotoreOrdini._submin``)."""
++    mercato = getattr(strategia, "mercato", None)
++    leva = getattr(mercato, "rifiuto_provocato", None)
++    esecuzione = getattr(getattr(motore, "quadro", None), "simulated_execution", None)
++    if not callable(leva) or esecuzione is None:
++        return
++    vero = esecuzione.execute_place
++    vero_replace = esecuzione.execute_replace
++
++    def _rifiuto(ordine: Any, ref: str, size: Any) -> Optional[tuple]:
++        return leva(market_id=getattr(ordine, "market_id", None),
++                    side=getattr(ordine, "side", None), size=size, customer_ref=ref)
++
++    def _execute_place(order_package: Any, http_session: Any = None) -> Any:
++        for ordine in order_package:
++            ref = _ref_ordine_motore(ordine)
++            if ref is None:
++                continue
++            rifiuto = _rifiuto(ordine, ref,
++                               getattr(getattr(ordine, "order_type", None), "size", 0.0))
++            if rifiuto is not None:
++                _fallisci_su_betfair(ordine, rifiuto[0])
++        return vero(order_package, http_session)
++
++    def _execute_replace(order_package: Any, http_session: Any = None) -> Any:
++        pb = st.get("porta_banco")
++        in_corso = getattr(getattr(pb, "motore", None), "_submin", None) or {}
++        with contextlib.ExitStack() as pila:
++            for ordine in order_package:
++                ref = _ref_ordine_motore(ordine)
++                if ref is None or ref not in in_corso:
++                    continue
++                rifiuto = _rifiuto(ordine, ref, getattr(ordine, "size_remaining", 0.0))
++                if rifiuto is not None:
++                    pila.enter_context(_sostituzione_fallita(ordine, rifiuto[0]))
++            return vero_replace(order_package, http_session)
++
++    esecuzione.execute_place = _execute_place
++    esecuzione.execute_replace = _execute_replace
++    st["_rifiuti_canale"] = (esecuzione, vero)
++
++
+ def _adotta(st: Dict[str, Any], pb: Any, strategia: Any) -> None:
+     """Gli ordini piazzati dal MOTORE esistono sul conto come quelli della REST:
+     la vista di conto del banco (``MercatoFlumine.ordini``, da cui leggono
+@@ -264,6 +387,14 @@ def _smonta(st: Dict[str, Any]) -> None:
+     pb = st.get("porta_banco")
+     if pb is not None:
+         pb.metti_giu()
++    leva = st.pop("_rifiuti_canale", None)
++    if leva is not None:
++        esecuzione, _vero = leva
++        for nome in ("execute_place", "execute_replace"):
++            try:
++                delattr(esecuzione, nome)          # torna il metodo della classe
++            except AttributeError:
++                pass
+     rip = st.pop("_ripristina", None)
+     if rip is not None:
+         chi, prima = rip
+diff --git a/Betfair/mike/tests/test_mike_banco_e2_2026_09_30.py b/Betfair/mike/tests/test_mike_banco_e2_2026_09_30.py
+new file mode 100644
+index 0000000..936fba6
+--- /dev/null
++++ b/Betfair/mike/tests/test_mike_banco_e2_2026_09_30.py
+@@ -0,0 +1,69 @@
++"""BANCO 30/09 - le due prove che mancavano sul controllo E2 (copertura come
++BANCA Under 4,5), dalle mutazioni del coordinatore del 29/09
++(``AUDIT_2026-09-29/mutazioni_coordinatore/mutazioni_coordinatore_mike_p5_4.py``):
++
++  * T2 - "banca senza Under abbinato non vista" (``if liab <= 0`` -> ``if False``)
++    era SOPRAVVISSUTA: nessun test metteva una banca di copertura davanti a una
++    posizione Under 3,5 nulla. Con la mutazione E2 parla lo stesso, ma dice una
++    cosa FALSA ("diversa dall'importo previsto 0.0"): il referto deve citare la
++    causa vera (PROCESSO_STANDARD_BOT par. 6.8, violazioni con la regola
++    citata). I test qui sotto la chiedono per nome, in tre forme reali;
++  * T3 - "banca piu' piccola accettata anche senza tetto" (tolto
++    ``spazio != float("inf")``) e' una mutazione EQUIVALENTE: senza tetto
++    ``liability_room`` vale ``inf`` e la clausola successiva
++    ``x*(q-1) > spazio + 0.011`` e' falsa per ogni x finito, quindi il ramo di
++    tolleranza non si apre comunque. Il comportamento (banca ridotta senza tetto
++    = violazione) e' gia' inchiodato da
++    ``test_mike_p5_banco_2026_09_29.test_E2_banca_ridotta_dal_tetto_e_giusta``;
++    qui lo si riprova su tutte le tranche e quote tipiche, e il test diventa
++    ROSSO se la tolleranza si apre senza tetto (mutazione T3-bis del referto:
++    ``spazio != float("inf")`` -> ``True`` e confronto senza ``spazio``).
++
++Finti: oggetti veri dell'engine; ``CERT.verifica`` vero; aiuti di
++``test_mike_p5_banco_2026_09_29`` (stesse gambe, stessi libri). ASCII-only.
++"""
++from __future__ import annotations
++
++import pytest
++
++from Betfair.mike import engine as E
++from Betfair.mike.tests.test_mike_p5_banco_2026_09_29 import (_viola, banca, gamba, ingresso,
++                                                             params)
++
++_CAUSA = "senza nessun Under abbinato"
++
++
++def _posizioni_nulle():
++    """Tre modi reali di avere l'Under 3,5 a zero: nessuna gamba; ingresso
++    chiesto e non abbinato; ingresso abbinato e poi chiuso per intero (green)."""
++    pendente = gamba("under_entry", E.MARKET_OU35, E.SEL_UNDER, "back", 1.50, 0.0,
++                     ref="under_entry-0-1", status="pending", size=10.0)
++    chiusura = gamba("under_green", E.MARKET_OU35, E.SEL_UNDER, "lay", 1.50, 10.0,
++                     ref="under_green-0-2")
++    return {"nessuna_gamba": [], "ingresso_non_abbinato": [pendente],
++            "ingresso_chiuso": [ingresso(), chiusura]}
++
++
++@pytest.mark.parametrize("caso", sorted(_posizioni_nulle()))
++def test_E2_banca_senza_under_abbinato_parla_e_dice_perche(caso):
++    legs = _posizioni_nulle()[caso]
++    assert E.under_liability(legs) == 0.0, "precondizione: nessuna liability Under"
++    ctx = E.MatchCtx(state="LIVE_UNCOVERED", legs=legs)
++    n, v = _viola(ctx, E.Decision("LIVE_COVER_PENDING", [banca(12.63)], "cop"), "E2")
++    assert n == 1 and len(v) == 1, (caso, v)
++    assert _CAUSA in v[0].dettaglio, v[0].dettaglio
++
++
++@pytest.mark.parametrize("prezzo", (1.05, 1.20, 1.50, 3.00))
++@pytest.mark.parametrize("frazione_di_x", (0.25, 0.5, 0.99))
++def test_E2_banca_piu_piccola_senza_tetto_e_sempre_un_errore(prezzo, frazione_di_x):
++    """Senza tetto per partita nessuna banca piu' piccola dell'importo previsto
++    (12,63 con 10 EUR di Under a 1,50) e' tollerata, a nessuna quota."""
++    ctx = E.MatchCtx(state="LIVE_UNCOVERED", legs=[ingresso()])
++    p = params(max_liability_per_match=0.0)
++    assert E.liability_room(ctx, p) == float("inf")
++    piccola = round(12.63 * frazione_di_x, 2)
++    n, v = _viola(ctx, E.Decision("LIVE_COVER_PENDING", [banca(piccola, price=prezzo)],
++                                  "cop"), "E2", p=p)
++    assert n == 1 and len(v) == 1, (piccola, prezzo)
++    assert "12.63" in v[0].dettaglio
+diff --git a/Betfair/mike/tests/test_mike_banco_memorie_processo_2026_09_30.py b/Betfair/mike/tests/test_mike_banco_memorie_processo_2026_09_30.py
+new file mode 100644
+index 0000000..bb42814
+--- /dev/null
++++ b/Betfair/mike/tests/test_mike_banco_memorie_processo_2026_09_30.py
+@@ -0,0 +1,73 @@
++"""BANCO 30/09 - MEMORIE DI PROCESSO NON AZZERATE fra due replay.
++
++Il banco (``replay_registrazioni._certifica_evento``) fa girare piu' scenari
++della STESSA partita nello stesso processo, uno dopo l'altro, e fra l'uno e
++l'altro chiama SOLO ``service.azzera_cache_di_processo``. Quella funzione non
++azzerava le quattro memorie dei cantieri J/J2 (28/09): ``_RIPIEGO_REST_ULTIMO``
++(tetto del ripiego REST, per mercato, con l'ora del giro),
++``_ULTIMO_STATO_SCANNER``, ``_FLUSSO_CRITICO``, ``_FLUSSO_RIPIEGO``. Il secondo
++scenario ripartiva dall'ora d'inizio con l'ora di fine del primo gia' scritta:
++il tetto "al piu' una lettura ogni 10 s" non si apriva mai (referti del 29/09:
++150 letture REST nei primi scenari, 0 negli altri).
++
++Qui si riproduce il riuso con due "partite" identiche nello stesso processo,
++sul ciclo VERO (``run_once`` via ``run`` di ``test_mike_service``), con
++``azzera_cache_di_processo`` in mezzo come fa il banco (NON ``svuota_le_cache``,
++che la conftest usa e che nasconderebbe il difetto).
++
++Finti: ``FakeDB``/``FakeMarket`` di ``test_mike_service``, righe del feed di
++``test_mike_feed``, blocco ``flusso`` e book REST come in
++``test_mike_flusso_cantiere_j2_2026_09_28`` (chiavi vere). ASCII-only.
++"""
++from __future__ import annotations
++
++from datetime import timedelta
++
++from Betfair.mike import service as S
++from Betfair.mike.tests.test_mike_feed import payload, row
++from Betfair.mike.tests.test_mike_flusso_cantiere_j2_2026_09_28 import (
++    _con_flusso, _rest_vivo, _scanner_nuovo)
++from Betfair.mike.tests.test_mike_service import NOW, FakeDB, FakeMarket, legs, run
++
++
++def _una_partita():
++    """Posizione aperta coi prezzi vivi, poi le linee si fermano: il servizio
++    legge il ripiego REST (una lettura per mercato). Torna il mercato finto."""
++    db = FakeDB(params={"stake": 10})
++    _scanner_nuovo(db)
++    mk = FakeMarket()
++    run(db, mk, NOW, [row(_con_flusso(payload(), []))])
++    assert legs(db)[0]["status"] == "open", "precondizione: ingresso abbinato"
++    _rest_vivo(mk)
++    dopo = NOW + timedelta(seconds=2)
++    _scanner_nuovo(db, calcolato=dopo)
++    run(db, mk, dopo, [row(_con_flusso(payload(), ["1.35", "1.45"], dopo), updated=dopo)])
++    return db, mk
++
++
++def test_due_partite_nello_stesso_processo_leggono_lo_stesso_ripiego_rest():
++    db1, mk1 = _una_partita()
++    assert "1.35" in mk1.calls, "precondizione: la prima partita legge il REST"
++    S.azzera_cache_di_processo()          # come il banco fra uno scenario e l'altro
++    db2, mk2 = _una_partita()
++    assert mk2.calls.count("1.35") == mk1.calls.count("1.35"), (
++        f"seconda partita: letture REST {mk2.calls} contro {mk1.calls} della prima "
++        "(tetto del ripiego ereditato dal replay precedente)")
++    rip1 = [p for k, p, _e in db1.activity if k == "ripiego_rest"]
++    rip2 = [p for k, p, _e in db2.activity if k == "ripiego_rest"]
++    assert rip1 and len(rip2) == len(rip1), (rip1, rip2)
++
++
++def test_l_azzeramento_nomina_le_quattro_memorie_e_le_svuota():
++    S._RIPIEGO_REST_ULTIMO["1.35"] = 999.0
++    S._ULTIMO_STATO_SCANNER["v"] = {"flusso": {}}
++    assert S._FLUSSO_CRITICO.dovuto("E1", 1000.0)
++    assert S._FLUSSO_RIPIEGO.dovuto("E1", 1000.0)
++    azzerati = S.azzera_cache_di_processo()
++    for nome in ("_RIPIEGO_REST_ULTIMO", "_ULTIMO_STATO_SCANNER",
++                 "_FLUSSO_CRITICO", "_FLUSSO_RIPIEGO"):
++        assert nome in azzerati, nome
++    assert S._RIPIEGO_REST_ULTIMO == {} and S._scanner_stato() is None
++    # un'ora PRIMA di quella memorizzata (secondo replay che riparte da capo)
++    assert S._FLUSSO_CRITICO.dovuto("E1", 10.0)
++    assert S._FLUSSO_RIPIEGO.dovuto("E1", 10.0)
+diff --git a/Betfair/stream/tests/test_banco_rifiuto_sul_canale_2026_09_30.py b/Betfair/stream/tests/test_banco_rifiuto_sul_canale_2026_09_30.py
+new file mode 100644
+index 0000000..76924e3
+--- /dev/null
++++ b/Betfair/stream/tests/test_banco_rifiuto_sul_canale_2026_09_30.py
+@@ -0,0 +1,294 @@
++"""BANCO 30/09 - LA LEVA DEL RIFIUTO PROVOCATO VALE ANCHE SUL TRASPORTO CANALE.
++
++Reperto (``AUDIT_2026-09-29/replay/mike_coperture_P5_4C.txt``): negli scenari
++``copertura-rifiutata`` / ``-legacy`` di Mike la leva del banco
++(``MercatoFlumine``: ``guasti["place_rifiuto"]``, ``rifiuta_lato``,
++``rifiuta_market_id``, ``rifiuta_sotto_minimo``) funzionava sulla CODA (la
++copertura rifiutata, P&L -10,00) ma non sul CANALE (copertura abbinata,
++-14,17 / -14,00; motore ``rifiutati: 0``; parita' NON RAGGIUNTA). Causa: la
++leva stava solo dentro ``MercatoFlumine.place_order_live``; sul canale l'ordine
++va client vero -> ``WsBanco`` -> ``MotoreOrdini`` -> ``live_order_worker._dispatch``
++-> ``Market.place_order`` di flumine, e da ``place_order_live`` non passa mai.
++
++Qui si prova, con oggetti VERI di flumine (``FlumineSimulation`` del banco,
++``SimulatedExecution``, ``Trade``/``LimitOrder``/``BetfairOrderPackage``, la
++strategia ``BaseStrategy``) e con la leva VERA (``MercatoFlumine``), che:
++  1. un ordine nato dal motore (ref ``awlq``) che la leva colpisce torna
++     FAILURE da flumine: nessun abbinato, nessun residuo, EXECUTION_COMPLETE,
++     rifiuto contato in ``rifiutati``; lo specchio di produzione
++     (``LiveTradingStrategy._order_row`` + ``motore_ordini.fase_da_riga``) lo
++     vede terminale senza abbinato;
++  2. la leva conta come sulla coda (contatore che si consuma, lato, mercato);
++  3. gli ordini della REST del banco (ripiego D5, gia' passati dalla leva) e
++     quelli che la leva non colpisce NON sono toccati;
++  4. a fine replay l'esecuzione torna quella della classe;
++  5. SOTTO IL MINIMO (``copertura-rifiutata-legacy``): sul canale il motore fa
++     il place-and-trim vero e l'ordine che corrisponde a quello della coda e'
++     il NUOVO ordine del replace finale; la leva lo colpisce li' (e solo per
++     un replace di una sequenza place-and-trim in corso nel motore).
++Unico finto: il ``market_book`` del replace, di cui ``simulated.cancel`` legge
++solo ``status`` (stesso nome e stesso valore del vero). ASCII-only.
++"""
++from __future__ import annotations
++
++from types import SimpleNamespace
++from typing import Any, List
++
++import pytest
++
++from flumine import BaseStrategy
++from flumine.markets.market import Market
++from flumine.order.orderpackage import BetfairOrderPackage, OrderPackageType
++from flumine.order.ordertype import LimitOrder
++from flumine.order.trade import Trade
++
++from Betfair.stream import motore_ordini as MO
++from Betfair.stream.backtest import banco_comune as B
++from Betfair.stream.backtest import trasporto as TRA
++from Betfair.stream.engine.live_trading_strategy import LiveTradingStrategy
++
++OU45, OU35 = "1.259475534", "1.259475537"
++
++
++@pytest.fixture(autouse=True)
++def _dentro_la_simulazione(monkeypatch):
++    """Come ``FlumineSimulation.__enter__`` (``baseflumine.py:493``): dentro il
++    replay ``config.simulated`` e' vero e gli ordini leggono ``simulated``."""
++    from flumine import config
++
++    monkeypatch.setattr(config, "simulated", True)
++
++
++class _Strategia(BaseStrategy):
++    """La classe VERA: ``Order.execution_complete`` passa dalla strategia."""
++
++    def check_market_book(self, market, market_book):  # pragma: no cover
++        return False
++
++    def process_market_book(self, market, market_book):  # pragma: no cover
++        return None
++
++
++class _StrategiaBanco:
++    """Il minimo che ``MercatoFlumine`` legge dalla strategia del banco."""
++
++    mercati: dict = {}
++
++
++def _banco():
++    from flumine import FlumineSimulation
++
++    cliente = B.cliente_simulato()
++    quadro = FlumineSimulation(client=cliente)
++    assert cliente.execution is quadro.simulated_execution
++    mercato = B.MercatoFlumine(_StrategiaBanco())
++    strategia = SimpleNamespace(mercato=mercato)
++    motore = SimpleNamespace(quadro=quadro)
++    return quadro, cliente, mercato, strategia, motore
++
++
++def _ordine(cliente: Any, market_id: str, side: str, size: float, ref_motore: Any):
++    trade = Trade(market_id=market_id, selection_id=1222347, handicap=0.0,
++                  strategy=_Strategia(market_filter={}))
++    o = trade.create_order(side=side, order_type=LimitOrder(
++        price=1.35, size=size, persistence_type="LAPSE", time_in_force="FILL_OR_KILL"))
++    o.update_client(cliente)
++    if ref_motore is not None:
++        # come ``live_order_build``: il ref interno nelle note dell'ordine
++        o.notes["customer_order_ref"] = ref_motore
++    else:
++        o.notes["bot_ref"] = "mike-t9"      # ordine della REST del banco
++    return o
++
++
++def _pacchetto(cliente: Any, market_id: str, ordini: List[Any]) -> BetfairOrderPackage:
++    return BetfairOrderPackage(client=cliente, market_id=market_id, orders=ordini,
++                               package_type=OrderPackageType.PLACE, bet_delay=0)
++
++
++def _leva_copertura(mercato: Any) -> None:
++    """La leva di ``copertura-rifiutata`` (``replay_registrazioni``): ogni BANCA
++    sul mercato 4,5, rifiuto che non finisce, codice vero."""
++    mercato.guasti["place_rifiuto"] = -1
++    mercato.rifiuta_lato = "lay"
++    mercato.rifiuta_market_id = OU45
++    mercato.rifiuto_codice = "CANCELLED_NOT_PLACED"
++    mercato.rifiuto_codice_interno = "INVALID_ODDS"
++
++
++def test_ordine_del_motore_colpito_dalla_leva_torna_failure_da_flumine():
++    quadro, cliente, mercato, strategia, motore = _banco()
++    quadro.markets._markets[OU45] = Market(quadro, OU45, None)
++    _leva_copertura(mercato)
++    st: dict = {}
++    TRA._monta_rifiuti_canale(st, motore, strategia)
++    o = _ordine(cliente, OU45, "LAY", 12.63, "awlq5")
++    quadro.simulated_execution.handler(_pacchetto(cliente, OU45, [o]))
++    assert o.simulated.size_matched == 0.0
++    assert o.size_remaining == 0.0, "un ordine rifiutato non resta vivo"
++    assert o.status.name == "EXECUTION_COMPLETE"
++    assert mercato.rifiutati == [{"ref": "awlq5",
++                                  "err": "CANCELLED_NOT_PLACED (rifiuto provocato)"}]
++    # lo specchio di PRODUZIONE lo vede terminale senza abbinato
++    riga = LiveTradingStrategy._order_row(SimpleNamespace(mode="paper"), o,
++                                          event_id="35760084", market_id=OU45)
++    assert riga["client_order_ref"] == "awlq5"
++    assert riga["size_matched"] == 0.0 and riga["status"] == "EXECUTION_COMPLETE"
++    assert MO.fase_da_riga(riga) == "annullato"
++    TRA._smonta(st)
++    assert "execute_place" not in vars(quadro.simulated_execution)
++
++
++def test_la_leva_sul_canale_conta_come_sulla_coda_e_colpisce_solo_chi_deve():
++    quadro, cliente, mercato, strategia, motore = _banco()
++    passati: List[Any] = []
++    # l'esecuzione "vera" qui e' una spia: registra i pacchetti che le arrivano
++    # (il matching di flumine non serve per sapere CHI la leva ha colpito)
++    quadro.simulated_execution.execute_place = \
++        lambda pkg, http_session=None: passati.extend(list(pkg))
++    mercato.guasti["place_rifiuto"] = 1              # UN rifiuto, poi si consuma
++    mercato.rifiuta_lato = "lay"
++    mercato.rifiuta_market_id = OU45
++    st: dict = {}
++    TRA._monta_rifiuti_canale(st, motore, strategia)
++    back45 = _ordine(cliente, OU45, "BACK", 5.0, "awlq1")     # lato sbagliato
++    lay35 = _ordine(cliente, OU35, "LAY", 5.0, "awlq2")       # mercato sbagliato
++    rest45 = _ordine(cliente, OU45, "LAY", 5.0, None)         # REST: leva gia' passata
++    lay45 = _ordine(cliente, OU45, "LAY", 5.0, "awlq3")       # colpito
++    lay45b = _ordine(cliente, OU45, "LAY", 5.0, "awlq4")      # contatore consumato
++    originali = {id(x): x.simulated.place for x in (back45, lay35, rest45, lay45, lay45b)}
++    for mid, o in ((OU45, back45), (OU35, lay35), (OU45, rest45), (OU45, lay45),
++                   (OU45, lay45b)):
++        quadro.simulated_execution.execute_place(_pacchetto(cliente, mid, [o]), None)
++    assert [x for x in passati] == [back45, lay35, rest45, lay45, lay45b]
++    toccati = [o for o in passati if o.simulated.place != originali[id(o)]]
++    assert toccati == [lay45]
++    assert [r["ref"] for r in mercato.rifiutati] == ["awlq3"]
++    assert mercato.guasti["place_rifiuto"] == 0
++    TRA._smonta(st)
++
++
++def test_la_coda_resta_identica_con_la_leva_estratta():
++    """``place_order_live`` usa la STESSA ``rifiuto_provocato``: stesso esito di
++    prima (ok False, nessun ordine, codice e report interno di Betfair)."""
++    mercato = B.MercatoFlumine(_StrategiaBanco())
++    _leva_copertura(mercato)
++    res = mercato.place_order_live(market_id=OU45, selection_id=1222347, price=1.35,
++                                   size=12.63, event_id="35760084", side="lay",
++                                   customer_ref="mike-t5")
++    assert res.ok is False and res.bet_id is None and res.error_code == "CANCELLED_NOT_PLACED"
++    assert res.raw["instructionReports"][0]["placeInstructionReport"]["errorCode"] == \
++        "INVALID_ODDS"
++    assert mercato.rifiutati == [{"ref": "mike-t5",
++                                  "err": "CANCELLED_NOT_PLACED (rifiuto provocato)"}]
++    assert mercato.guasti["place_rifiuto"] == -1     # -1 non si consuma
++    # un BACK sullo stesso mercato passa la leva (e va a flumine: mercato assente)
++    res2 = mercato.place_order_live(market_id=OU45, selection_id=1222347, price=1.35,
++                                    size=12.63, event_id="35760084", side="back",
++                                    customer_ref="mike-t6")
++    assert res2.raw == {"motivo": "mercato non in replay"}
++
++
++def test_il_montaggio_del_canale_arma_la_leva_e_lo_smontaggio_la_toglie():
++    """La strada VERA del banco: ``trasporto.contesto("mike", "canale")`` +
++    ``su_esegui`` (primo passo di ``MotoreReplay.esegui``) montano porta del
++    banco, client VERO di Mike e leva; all'uscita dal contesto tutto torna."""
++    quadro, cliente, mercato, _s, _m = _banco()
++    motore = SimpleNamespace(quadro=quadro, _ora_mercato=None)
++    strategia = SimpleNamespace(mercato=mercato, mode="paper",
++                                process_market_book=lambda market, market_book: None)
++    with TRA.contesto("mike", "canale") as st:
++        TRA.su_esegui(motore, strategia)
++        assert st["client"] is not None
++        assert "execute_place" in vars(quadro.simulated_execution), \
++            "sul canale la leva del rifiuto non e' armata"
++        _leva_copertura(mercato)
++        quadro.markets._markets[OU45] = Market(quadro, OU45, None)
++        o = _ordine(cliente, OU45, "LAY", 12.63, "awlq8")
++        quadro.simulated_execution.handler(_pacchetto(cliente, OU45, [o]))
++        assert o.size_matched == 0.0 and o.size_remaining == 0.0
++        assert [r["ref"] for r in mercato.rifiutati] == ["awlq8"]
++    assert "execute_place" not in vars(quadro.simulated_execution)
++    assert "execute_replace" not in vars(quadro.simulated_execution)
++
++
++# ---------------------------------------------------------------------------
++# 5. sotto il minimo: il replace finale del place-and-trim
++# ---------------------------------------------------------------------------
++def _leva_sotto_minimo(mercato: Any) -> None:
++    """La leva di ``copertura-rifiutata-legacy`` (``replay_registrazioni``)."""
++    mercato.guasti["place_rifiuto"] = -1
++    mercato.rifiuta_lato = "back"
++    mercato.rifiuta_sotto_minimo = 2.00
++    mercato.rifiuto_codice = "CANCELLED_NOT_PLACED"
++    mercato.rifiuto_codice_interno = "BET_TAKEN_OR_LAPSED"
++
++
++def _parcheggio_tagliato(cliente: Any, ref: str):
++    """Il gradino 2 del place-and-trim: parcheggio da 2,00 a quota non
++    abbinabile, tagliato a 1,26 (resta la size voluta), poi il replace alla
++    quota vera (``market.replace_order`` -> ``order.replace``)."""
++    o = _ordine(cliente, OU45, "BACK", 2.00, ref)
++    o.bet_id = "900001"          # il parcheggio e' stato piazzato (``_order_logger``)
++    o.executable()
++    o.simulated.size_cancelled = 0.74
++    assert o.size_remaining == 1.26
++    o.replace(4.1)
++    return o
++
++
++def _pacchetto_replace(cliente: Any, ordini: List[Any]) -> BetfairOrderPackage:
++    return BetfairOrderPackage(client=cliente, market_id=OU45, orders=ordini,
++                               package_type=OrderPackageType.REPLACE, bet_delay=0)
++
++
++def test_sotto_minimo_il_replace_del_place_and_trim_torna_failure(monkeypatch):
++    quadro, cliente, mercato, strategia, motore = _banco()
++    quadro.markets._markets[OU45] = Market(quadro, OU45, SimpleNamespace(status="OPEN"))
++    _leva_sotto_minimo(mercato)
++    st: dict = {"porta_banco": SimpleNamespace(metti_giu=lambda: None, motore=SimpleNamespace(
++        _submin={"awlq9": {"step": "trimmed"}}))}
++    TRA._monta_rifiuti_canale(st, motore, strategia)
++    o = _parcheggio_tagliato(cliente, "awlq9")
++    # spia sulla CLASSE (il metodo vero resta quello che esegue): chi nasce dal replace
++    nati: List[Any] = []
++    vero_crea = Trade.create_order_replacement
++
++    def _spia(self, *a, **k):
++        nati.append(vero_crea(self, *a, **k))
++        return nati[-1]
++
++    monkeypatch.setattr(Trade, "create_order_replacement", _spia)
++    quadro.simulated_execution.handler(_pacchetto_replace(cliente, [o]))
++    # l'annullo e' riuscito (1,26 tolti), il NUOVO ordine e' stato rifiutato
++    assert o.size_remaining == 0.0 and o.simulated.size_cancelled == 2.00
++    assert len(nati) == 1
++    nuovo = nati[0]
++    assert nuovo.order_type.size == 1.26 and nuovo.order_type.price == 4.1
++    assert nuovo.size_matched == 0.0 and nuovo.size_remaining == 0.0
++    assert nuovo not in list(quadro.markets._markets[OU45].blotter), "nessun ordine nuovo"
++    assert [r["ref"] for r in mercato.rifiutati] == ["awlq9"]
++    # il trucco sul Trade vale UN replace: poi torna il metodo della classe
++    assert "create_order_replacement" not in vars(o.trade)
++    TRA._smonta(st)
++    assert "execute_replace" not in vars(quadro.simulated_execution)
++
++
++def test_sotto_minimo_un_replace_fuori_dal_place_and_trim_non_si_tocca():
++    quadro, cliente, mercato, strategia, motore = _banco()
++    arrivati: List[Any] = []
++    quadro.simulated_execution.execute_replace = \
++        lambda pkg, http_session=None: arrivati.append(
++            [("patch" if "create_order_replacement" in vars(x.trade) else "vero") for x in pkg])
++    _leva_sotto_minimo(mercato)
++    st: dict = {"porta_banco": SimpleNamespace(metti_giu=lambda: None, motore=SimpleNamespace(
++        _submin={"awlq9": {"step": "trimmed"}}))}
++    TRA._monta_rifiuti_canale(st, motore, strategia)
++    fuori = _parcheggio_tagliato(cliente, "awlq7")     # nessuna sequenza in corso
++    rest = _parcheggio_tagliato(cliente, None)        # ordine della REST del banco
++    dentro = _parcheggio_tagliato(cliente, "awlq9")   # sequenza in corso: colpito
++    for o in (fuori, rest, dentro):
++        quadro.simulated_execution.execute_replace(_pacchetto_replace(cliente, [o]), None)
++    assert arrivati == [["vero"], ["vero"], ["patch"]]
++    assert [r["ref"] for r in mercato.rifiutati] == ["awlq9"]
++    TRA._smonta(st)
+diff --git a/Betfair/stream/tests/test_registro_impronta_2026_09_30.py b/Betfair/stream/tests/test_registro_impronta_2026_09_30.py
+new file mode 100644
+index 0000000..75bee3c
+--- /dev/null
++++ b/Betfair/stream/tests/test_registro_impronta_2026_09_30.py
+@@ -0,0 +1,160 @@
++"""IMPRONTA DEL REFERTO PER TUTTI I BOT (banco, 30/09/2026).
++
++``certifica.impronta`` fa lo sha1 dei file in ``moduli_produzione`` piu' i
++controlli. Fino al 29/09 Omega, le quattro Safe, lo scalper calcio e i bot
++tennis avevano UN solo modulo: cambiando il motore l'impronta restava uguale e
++due referti di codice diverso sembravano dello stesso codice.
++
++Contratto (stesso stile di ``Betfair/mike/tests/test_mike_p5_4b_2026_09_29.py``,
++esteso alla chiusura TRANSITIVA degli import):
++
++  A. ogni modulo elencato nel registro esiste come file;
++  B. ogni modulo del pacchetto del bot raggiunto dagli import del servizio di
++     produzione (anche dentro le funzioni, anche per nome come gli opzionali
++     della Safe) sta nei ``moduli_produzione`` della scheda;
++  C. l'impronta conta tutti i file e cambia se cambia un modulo che NON e' il
++     servizio (copia in una cartella temporanea).
++
++Finti: nessuno; registro vero, sorgenti veri.
++"""
++from __future__ import annotations
++
++import ast
++import os
++from typing import Dict, List, Set, Tuple
++
++import pytest
++
++from Betfair.stream.backtest import registro_bot as REG
++
++_RADICE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
++
++# bot -> (servizio di produzione, pacchetti del bot)
++_SERVIZI: Dict[str, Tuple[str, Tuple[str, ...]]] = {
++    "mike": ("Betfair.mike.service", ("Betfair.mike",)),
++    "omega": ("Betfair.omega.omega_service", ("Betfair.omega",)),
++    "safe_base": ("Betfair.safe_strategy.bot_service", ("Betfair.safe_strategy",)),
++    "safe_esatto": ("Betfair.safe_strategy.bot_service", ("Betfair.safe_strategy",)),
++    "safe_punta": ("Betfair.safe_strategy.bot_service", ("Betfair.safe_strategy",)),
++    "safe_tennis": ("Betfair.safe_strategy.bot_service", ("Betfair.safe_strategy",)),
++    "scalper_calcio": ("Betfair.stream.scalper.scalper_service", ("Betfair.stream.scalper",)),
++    "tennis_scalper": ("Betfair.stream.tennis_live.tennis_runner",
++                       ("Betfair.stream.tennis_live", "Betfair.stream.tennis_scalper")),
++    "tennis_pro": ("Betfair.stream.tennis_live.tennis_runner",
++                   ("Betfair.stream.tennis_live", "Betfair.stream.tennis_scalper")),
++    "tennis_flb": ("Betfair.stream.tennis_live.tennis_runner",
++                   ("Betfair.stream.tennis_live", "Betfair.stream.tennis_scalper")),
++    "tennis_swing": ("Betfair.stream.tennis_live.tennis_runner",
++                     ("Betfair.stream.tennis_live", "Betfair.stream.tennis_scalper")),
++}
++
++
++def _file_di(modulo: str) -> str:
++    return os.path.join(_RADICE, *modulo.split(".")) + ".py"
++
++
++def _esiste(modulo: str) -> bool:
++    return os.path.isfile(_file_di(modulo))
++
++
++def _nomi_importati(modulo: str, albero: ast.AST) -> List[str]:
++    """Tutti i nomi assoluti che un modulo importa (``from . import x`` da'
++    sia il pacchetto sia ``pacchetto.x``: chi non e' un file si scarta dopo)."""
++    fuori: List[str] = []
++    for nodo in ast.walk(albero):
++        if isinstance(nodo, ast.ImportFrom):
++            if nodo.level:
++                parti = modulo.split(".")[:-nodo.level]
++                base = ".".join(parti + ([nodo.module] if nodo.module else []))
++            else:
++                base = nodo.module or ""
++            fuori.append(base)
++            fuori.extend(f"{base}.{a.name}" for a in nodo.names)
++        elif isinstance(nodo, ast.Import):
++            fuori.extend(a.name for a in nodo.names)
++        elif isinstance(nodo, ast.Assign):
++            # import PER NOME: ``OPTIONAL_MODULES = ("anomaly", ...)`` della Safe,
++            # caricati con ``importlib.import_module(f"<pacchetto>.{name}")``
++            nomi = [t.id for t in nodo.targets if isinstance(t, ast.Name)]
++            if "OPTIONAL_MODULES" in nomi and isinstance(nodo.value, ast.Tuple):
++                pacchetto = modulo.rsplit(".", 1)[0]
++                fuori.extend(f"{pacchetto}.{c.value}" for c in nodo.value.elts
++                             if isinstance(c, ast.Constant) and isinstance(c.value, str))
++    return fuori
++
++
++def _chiusura(servizio: str, pacchetti: Tuple[str, ...]) -> Set[str]:
++    visti: Set[str] = set()
++    coda = [servizio]
++    while coda:
++        m = coda.pop()
++        if m in visti:
++            continue
++        visti.add(m)
++        with open(_file_di(m), encoding="utf-8") as fh:
++            albero = ast.parse(fh.read())
++        for nome in _nomi_importati(m, albero):
++            if any(nome == p or nome.startswith(p + ".") for p in pacchetti) and _esiste(nome):
++                coda.append(nome)
++    return visti
++
++
++def test_ogni_bot_del_registro_ha_il_suo_servizio_qui():
++    """Un bot nuovo nel registro senza riga qui non sfugge al contratto."""
++    assert set(_SERVIZI) == set(REG.REGISTRO)
++
++
++@pytest.mark.parametrize("nome", sorted(_SERVIZI))
++def test_ogni_modulo_elencato_esiste(nome):
++    scheda = REG.bot(nome)
++    assert len(set(scheda.moduli_produzione)) == len(scheda.moduli_produzione), "doppioni"
++    mancanti = [m for m in scheda.moduli_produzione if not _esiste(m)]
++    assert mancanti == [], f"{nome}: moduli elencati che non esistono: {mancanti}"
++
++
++@pytest.mark.parametrize("nome", sorted(_SERVIZI))
++def test_ogni_modulo_importato_dal_servizio_e_nell_impronta(nome):
++    servizio, pacchetti = _SERVIZI[nome]
++    scheda = REG.bot(nome)
++    chiusura = _chiusura(servizio, pacchetti)
++    assert servizio in scheda.moduli_produzione
++    # il test guarda davvero qualcosa: oltre al servizio c'e' almeno il motore
++    assert len(chiusura) >= 5, f"{nome}: chiusura sospetta {sorted(chiusura)}"
++    mancanti = sorted(chiusura - set(scheda.moduli_produzione))
++    assert mancanti == [], f"{nome}: moduli fuori dall'impronta del referto: {mancanti}"
++
++
++def test_la_chiusura_segue_gli_import_per_nome_della_safe():
++    """I moduli opzionali della Safe (importati per nome) sono nella chiusura."""
++    chiusura = _chiusura("Betfair.safe_strategy.bot_service", ("Betfair.safe_strategy",))
++    assert {"Betfair.safe_strategy.combos",
++            "Betfair.safe_strategy.tennis_opportunity"} <= chiusura
++    # lo scanner di produzione NON e' del bot: non ci deve finire
++    assert "Betfair.safe_strategy.service" not in chiusura
++
++
++@pytest.mark.parametrize("nome", sorted(_SERVIZI))
++def test_l_impronta_cambia_se_cambia_un_modulo_che_non_e_il_servizio(nome, monkeypatch, tmp_path):
++    from Betfair.stream.backtest import certifica as CE
++
++    scheda = REG.bot(nome)
++    servizio = _SERVIZI[nome][0]
++    monkeypatch.chdir(_RADICE)
++    prima = CE.impronta(scheda)["codice_bot"]
++    attesi = len(scheda.moduli_produzione) + 1
++    assert prima.endswith(f"({attesi} file)"), prima
++    # l'ULTIMO modulo elencato che non e' il servizio: e' cambiato solo lui
++    toccato = [m for m in scheda.moduli_produzione if m != servizio][-1]
++    for m in list(scheda.moduli_produzione) + [scheda.controlli]:
++        rel = os.path.join(*m.split(".")) + ".py"
++        with open(os.path.join(_RADICE, rel), "rb") as fh:
++            testo = fh.read()
++        if m == toccato:
++            testo += b"\n# modulo cambiato\n"
++        dest = tmp_path / rel
++        dest.parent.mkdir(parents=True, exist_ok=True)
++        dest.write_bytes(testo)
++    monkeypatch.chdir(tmp_path)
++    dopo = CE.impronta(scheda)["codice_bot"]
++    assert dopo.endswith(f"({attesi} file)"), dopo
++    assert prima != dopo, f"{nome}: l'impronta non vede il cambio di {toccato}"

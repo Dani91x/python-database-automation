@@ -108,6 +108,71 @@ class BotRegistrato:
 
 
 # ---------------------------------------------------------------------------
+# I MODULI CHE DECIDONO IL COMPORTAMENTO (impronta del referto, 30/09)
+# ---------------------------------------------------------------------------
+# L'impronta del referto (``certifica.impronta``) e' lo sha1 dei file elencati
+# in ``moduli_produzione`` piu' i controlli. Con UN solo modulo per bot
+# l'impronta non cambiava quando cambiava il motore (reperto del 29/09 su Mike,
+# esteso il 30/09 a tutti i bot). Qui c'e' la CHIUSURA degli import del servizio
+# di produzione DENTRO il pacchetto del bot (moduli condivisi di
+# ``Betfair/stream/`` e librerie esclusi). Il test di contratto
+# ``Betfair/stream/tests/test_registro_impronta_2026_09_30.py`` ricalcola la
+# chiusura dal sorgente e diventa ROSSO se un modulo importato manca qui.
+_MODULI_OMEGA: Tuple[str, ...] = (
+    "Betfair.omega.omega_service", "Betfair.omega.omega_advisor",
+    "Betfair.omega.omega_config", "Betfair.omega.omega_db",
+    "Betfair.omega.omega_empirical", "Betfair.omega.omega_engine",
+    "Betfair.omega.omega_market", "Betfair.omega.omega_model",
+    "Betfair.omega.omega_proposte", "Betfair.omega.omega_v3",
+    "Betfair.omega.porta_ordini", "Betfair.omega.tools.misura_k",
+)
+# un solo servizio (``bot_service``) per le quattro varianti Safe; ``combos`` e
+# ``tennis_opportunity`` li importa per nome (``bot_service.OPTIONAL_MODULES``)
+_MODULI_SAFE: Tuple[str, ...] = (
+    "Betfair.safe_strategy.bot_service", "Betfair.safe_strategy.anomaly",
+    "Betfair.safe_strategy.bot_db", "Betfair.safe_strategy.calibration",
+    "Betfair.safe_strategy.canale_scan", "Betfair.safe_strategy.combos",
+    "Betfair.safe_strategy.engine", "Betfair.safe_strategy.execution",
+    "Betfair.safe_strategy.exits", "Betfair.safe_strategy.opportunity",
+    "Betfair.safe_strategy.porta_ordini", "Betfair.safe_strategy.pressure",
+    "Betfair.safe_strategy.proposte_opportunita", "Betfair.safe_strategy.risk",
+    "Betfair.safe_strategy.selezione", "Betfair.safe_strategy.tennis_opportunity",
+    "Betfair.safe_strategy.veto_campionati",
+)
+_MODULI_SCALPER_CALCIO: Tuple[str, ...] = (
+    "Betfair.stream.scalper.scalper_service", "Betfair.stream.scalper.scalper_session",
+    "Betfair.stream.scalper.scalper_bot", "Betfair.stream.scalper.auto_mode",
+    "Betfair.stream.scalper.bias_resolver", "Betfair.stream.scalper.habitat_scan",
+    "Betfair.stream.scalper.hazard_atlas", "Betfair.stream.scalper.risk_semaphore",
+    "Betfair.stream.scalper.sniper_bot", "Betfair.stream.scalper.theta_bot",
+)
+# i quattro bot tennis girano nello STESSO processo (``tennis_runner``, stato
+# e tetti condivisi): ciascuno porta l'intera chiusura del runner, strategie
+# sorelle comprese (impronta prudente: cambia anche se cambia una sorella).
+_MODULI_TENNIS: Tuple[str, ...] = (
+    "Betfair.stream.tennis_live.tennis_runner", "Betfair.stream.tennis_live.auto_mode",
+    "Betfair.stream.tennis_live.canale_bot_tennis",
+    "Betfair.stream.tennis_live.chiusura_manuale",
+    "Betfair.stream.tennis_live.esecutore_tennis",
+    "Betfair.stream.tennis_live.guardie_tennis",
+    "Betfair.stream.tennis_live.iscrizione_a_caldo",
+    "Betfair.stream.tennis_live.paper_execution",
+    "Betfair.stream.tennis_live.tennis_bot_service", "Betfair.stream.tennis_live.tennis_db",
+    "Betfair.stream.tennis_live.tennis_live_order_worker",
+    "Betfair.stream.tennis_live.tennis_recorder",
+    "Betfair.stream.tennis_scalper.condotta_ordini",
+    "Betfair.stream.tennis_scalper.run_tennis_scalper",
+    "Betfair.stream.tennis_scalper.superficie",
+    "Betfair.stream.tennis_scalper.tennis_flb_bot",
+    "Betfair.stream.tennis_scalper.tennis_pro_bot",
+    "Betfair.stream.tennis_scalper.tennis_scalper_bot",
+    "Betfair.stream.tennis_scalper.tennis_score",
+    "Betfair.stream.tennis_scalper.tennis_swing_bot",
+    "Betfair.stream.tennis_scalper.tennis_winprob",
+)
+
+
+# ---------------------------------------------------------------------------
 # I BOT
 # ---------------------------------------------------------------------------
 _REGISTRO: Tuple[BotRegistrato, ...] = (
@@ -133,7 +198,7 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
         nome="omega",
         sport="calcio",
         descrizione="due gambe sul Correct Score (1T + FT) con green-up",
-        moduli_produzione=("Betfair.omega.omega_service",),
+        moduli_produzione=_MODULI_OMEGA,
         mercati=("CORRECT_SCORE", "HALF_TIME_SCORE", "MATCH_ODDS"),
         replay="Betfair.omega.tools.replay_registrazioni:certifica_scenario",
         scenari="Betfair.omega.tools.replay_registrazioni:SCENARI_DESCRITTI",
@@ -144,7 +209,7 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
         nome="safe_base",
         sport="calcio",
         descrizione="Safe Strategy, variante BASE (riferimento 1X2 pre-KO)",
-        moduli_produzione=("Betfair.safe_strategy.bot_service",),
+        moduli_produzione=_MODULI_SAFE,
         mercati=("MATCH_ODDS", "CORRECT_SCORE"),
         replay="Betfair.safe_strategy.tools.replay_registrazioni:certifica_scenario",
         scenari="Betfair.safe_strategy.tools.replay_registrazioni:SCENARI_DESCRITTI",
@@ -155,7 +220,7 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
         nome="safe_esatto",
         sport="calcio",
         descrizione="Safe Strategy, variante ESATTO (Correct Score)",
-        moduli_produzione=("Betfair.safe_strategy.bot_service",),
+        moduli_produzione=_MODULI_SAFE,
         mercati=("CORRECT_SCORE",),
         replay="Betfair.safe_strategy.tools.replay_registrazioni:certifica_scenario",
         scenari="Betfair.safe_strategy.tools.replay_registrazioni:SCENARI_DESCRITTI",
@@ -166,7 +231,7 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
         nome="safe_punta",
         sport="calcio",
         descrizione="Safe Strategy, variante PUNTA",
-        moduli_produzione=("Betfair.safe_strategy.bot_service",),
+        moduli_produzione=_MODULI_SAFE,
         mercati=("MATCH_ODDS",),
         replay="Betfair.safe_strategy.tools.replay_registrazioni:certifica_scenario",
         scenari="Betfair.safe_strategy.tools.replay_registrazioni:SCENARI_DESCRITTI",
@@ -177,7 +242,7 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
         nome="safe_tennis",
         sport="tennis",
         descrizione="Safe Strategy sul tennis (take profit / stop, uscite approvate)",
-        moduli_produzione=("Betfair.safe_strategy.bot_service",),
+        moduli_produzione=_MODULI_SAFE,
         mercati=("MATCH_ODDS",),
         replay="Betfair.safe_strategy.tools.replay_tennis:certifica_scenario",
         scenari="Betfair.safe_strategy.tools.replay_tennis:SCENARI_DESCRITTI",
@@ -195,9 +260,9 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
         # (`scalper_bot.ScalperStrategy`) sul banco comune; i finti iniettati
         # sono elencati in testa al modulo del replay. `scalper_bot` sta qui
         # perche' l'impronta del referto deve cambiare se cambia la strategia.
-        moduli_produzione=("Betfair.stream.scalper.scalper_service",
-                           "Betfair.stream.scalper.scalper_session",
-                           "Betfair.stream.scalper.scalper_bot"),
+        # 30/09: piu' tutta la chiusura degli import del servizio (sniper,
+        # theta, auto_mode, ...): vedi ``_MODULI_SCALPER_CALCIO``.
+        moduli_produzione=_MODULI_SCALPER_CALCIO,
         # 28/09 (cantiere D2): con lo SNIPER (scenari `sniper*`, acceso di
         # default in produzione dal 25/09) servono TUTTE le linee Under/Over
         # (la linea segue i gol: `SNIPER_MARKET_TYPES` della sessione)
@@ -222,7 +287,7 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
         nome="tennis_scalper",
         sport="tennis",
         descrizione="scalper tennis: market-making a due gambe sul MATCH_ODDS",
-        moduli_produzione=("Betfair.stream.tennis_live.tennis_runner",),
+        moduli_produzione=_MODULI_TENNIS,
         mercati=("MATCH_ODDS",),
         replay="Betfair.stream.tennis_live.tools.replay_bot:certifica_scenario_tennis_scalper",
         scenari="Betfair.stream.tennis_live.tools.replay_bot:SCENARI_DESCRITTI",
@@ -234,7 +299,7 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
         nome="tennis_pro",
         sport="tennis",
         descrizione="tennis PRO: direzionale score-driven, sei setup sul punteggio IPS",
-        moduli_produzione=("Betfair.stream.tennis_live.tennis_runner",),
+        moduli_produzione=_MODULI_TENNIS,
         mercati=("MATCH_ODDS",),
         replay="Betfair.stream.tennis_live.tools.replay_bot:certifica_scenario_tennis_pro",
         scenari="Betfair.stream.tennis_live.tools.replay_bot:SCENARI_DESCRITTI",
@@ -246,7 +311,7 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
         nome="tennis_flb",
         sport="tennis",
         descrizione="tennis FLB: lay del favorito estremo, senza stop (favourite-longshot bias)",
-        moduli_produzione=("Betfair.stream.tennis_live.tennis_runner",),
+        moduli_produzione=_MODULI_TENNIS,
         mercati=("MATCH_ODDS",),
         replay="Betfair.stream.tennis_live.tools.replay_bot:certifica_scenario_tennis_flb",
         scenari="Betfair.stream.tennis_live.tools.replay_bot:SCENARI_DESCRITTI",
@@ -258,7 +323,7 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
         nome="tennis_swing",
         sport="tennis",
         descrizione="tennis SWING: fade degli estremi del favorito (z robusto + ER + RSI)",
-        moduli_produzione=("Betfair.stream.tennis_live.tennis_runner",),
+        moduli_produzione=_MODULI_TENNIS,
         mercati=("MATCH_ODDS",),
         replay="Betfair.stream.tennis_live.tools.replay_bot:certifica_scenario_tennis_swing",
         scenari="Betfair.stream.tennis_live.tools.replay_bot:SCENARI_DESCRITTI",
