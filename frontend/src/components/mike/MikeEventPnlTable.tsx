@@ -32,6 +32,7 @@ import { EventPnlTable, type RigheLabels } from '@/components/trading/EventPnlTa
 import { fmtMoney } from '@/lib/format';
 import { pnlClass } from '@/lib/tradeStatus';
 import { exitInfo } from '@/lib/dailyHistory';
+import { FONTE_PNL_TESTO, fontePnlRiga, isRigaUtente } from '@/lib/fontePnl';
 import {
     fasePerCiclo, marketLabel, roleLabelGamba, isManualTrade, esitoOrdineMike, notaRegolamentoMike,
     type MikeFase, type MikeTradeGroup, type MikeTrade,
@@ -52,9 +53,12 @@ function pnlTitle(t: MikeTrade): string {
     const parts: string[] = [];
     if (Number.isFinite(gross)) parts.push(`lordo ${fmtMoney(gross, { signed: true })}`);
     if (Number.isFinite(comm)) parts.push(`commissione ${fmtMoney(comm)}`);
+    // 30/09 (ordine dell'utente): da dove viene il numero
+    const fonte = ['won', 'lost', 'void'].includes(String(t.status))
+        ? ` · fonte: ${FONTE_PNL_TESTO[fontePnlRiga(t)]}` : '';
     return parts.length
-        ? `${parts.join(' · ')} — in pagina il NETTO`
-        : 'P&L netto della commissione';
+        ? `${parts.join(' · ')} — in pagina il NETTO${fonte}`
+        : `P&L netto della commissione${fonte}`;
 }
 
 /** Etichette ITALIANE delle righe di Mike: ruoli, linee, badge manuale/uscita. */
@@ -63,7 +67,8 @@ const ETICHETTE_MIKE: RigheLabels<MikeTrade> = {
     ruolo: (t) => roleLabelGamba({ role: t.role, side: t.side, selection: t.selection_name }),
     selezione: (t) => t.selection_name ?? marketLabel(t.market_type),
     badge: (t) => (isManualTrade(t)
-        ? <Badge variant="outline" className="ml-1 px-1 py-0 text-[9px]">manuale</Badge>
+        // 30/09: un ordine dell'UTENTE sui mercati di Mike si dice «tuo»
+        ? <Badge variant="outline" className="ml-1 px-1 py-0 text-[9px]">{isRigaUtente(t) ? 'tuo' : 'manuale'}</Badge>
         : null),
     statoExtra: (t) => {
         const uscita = exitInfo(t.meta ?? {});

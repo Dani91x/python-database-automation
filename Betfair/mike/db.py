@@ -212,6 +212,43 @@ def trades_for_event(event_id: str) -> list[dict[str, Any]]:
             .order("placed_at", desc=False).execute().data or [])
 
 
+def proprietari_bet(bet_ids: list[str]) -> dict[str, str]:
+    """30/09 (P&L REALE DEL CONTO) - bet_id -> chi l'ha piazzato, per le
+    scommesse regolate sui mercati di Mike che NON sono righe di Mike. Stessa
+    regola del runner (``reconcile_worker._proprietari``): conta la riga LIVE
+    con quel ``bet_id`` nelle tabelle dei bot e dello specchio. Una copia
+    ``source='account'`` (ordine trovato sul conto), ``runner``/``manual``
+    (terminale manuale dell'app) o nessuna riga = UTENTE. SOLA LETTURA; solleva
+    se una lettura fallisce (chi chiama aspetta, mai un "utente" dedotto da
+    un guasto)."""
+    ids = sorted({str(b) for b in bet_ids or [] if b})
+    out: dict[str, str] = {}
+    if not ids:
+        return out
+    sb = _sb()
+    for tabella, chi in (("omega_trades", "omega"), ("safe_strategy_trades", "safe")):
+        for r in (sb.table(tabella).select("bet_id").eq("mode", "live")
+                  .in_("bet_id", ids).execute().data or []):
+            out.setdefault(str(r.get("bet_id")), chi)
+    for r in (sb.table("betfair_live_orders").select("bet_id,source").eq("mode", "live")
+              .in_("bet_id", ids).execute().data or []):
+        b = str(r.get("bet_id"))
+        if b in out:
+            continue
+        src = str(r.get("source") or "").strip().lower()
+        if src in ("", "runner", "manual", "account"):
+            out[b] = "utente"
+        elif src == "scalper":
+            out[b] = "scalper"
+        elif src in ("omega", "mike"):
+            out[b] = src
+        elif src in ("safe", "safe_tennis"):
+            out[b] = "safe"
+        else:
+            out[b] = "altri_bot"
+    return out
+
+
 def live_trades(since_iso: Optional[str] = None) -> list[dict[str, Any]]:
     """Righe che il ciclo deve davvero guardare (H5): quelle NON terminali
     (pending/open/hedged) piu' quelle regolate DOPO ``since_iso``. Niente piu'

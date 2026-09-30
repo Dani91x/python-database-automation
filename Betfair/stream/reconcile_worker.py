@@ -828,7 +828,8 @@ def _proprietari(sb: Any, ordini: List[Any], day: str) -> None:
     ids = sorted({str(low._val(o, "bet_id")) for o in nuovi})
     trovati: Dict[str, Tuple[str, Any, Dict[str, Any]]] = {}
     for tabella in _TABELLE_BOT + _TABELLE_SPECCHIO:
-        colonne = "id,bet_id" if tabella in _TABELLE_BOT else "id,bet_id,source"
+        colonne = ("id,bet_id,role" if tabella == "mike_trades"
+                   else "id,bet_id" if tabella in _TABELLE_BOT else "id,bet_id,source")
         for i in range(0, len(ids), _BLOCCO_IN):
             blocco = [b for b in ids[i:i + _BLOCCO_IN] if b not in trovati]
             if not blocco:
@@ -842,6 +843,12 @@ def _proprietari(sb: Any, ordini: List[Any], day: str) -> None:
                 if tabella == "betfair_live_orders" and \
                         str(r.get("source") or "").strip().lower() == "account":
                     continue  # copia di un ordine del SITO, non nostra
+                if tabella == "mike_trades" and str(r.get("role") or "") == "utente":
+                    # 30/09: la riga "utente" che Mike scrive al regolamento per
+                    # un ordine dell'UTENTE sul suo mercato (``mike.regolato_conto``)
+                    # non fa di quell'ordine un ordine di Mike: resta dell'utente
+                    # (sito o terminale manuale), come prima
+                    continue
                 trovati[b] = (tabella, r.get("id"), {"source": r.get("source")})
     # in subordine: customerOrderRef <bot>-t<id>, se quella riga esiste
     per_tabella: Dict[str, Dict[str, List[str]]] = {}

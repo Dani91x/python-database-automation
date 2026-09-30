@@ -26,7 +26,7 @@ from datetime import timedelta as _timedelta
 from datetime import timezone
 import re as _re
 import time as _time
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from Betfair.safe_strategy import execution as X
 from Betfair.stream import arresto_ordinato as _AO  # 28/09 (cantiere K): spegnimento ordinato
@@ -41,6 +41,7 @@ from . import dossier as D
 from . import engine as E
 from . import feed as F
 from . import porta_ordini as MP
+from . import regolato_conto as RC
 
 logger = logging.getLogger("mike")
 
@@ -230,6 +231,54 @@ class _RealMarket:
         from Betfair.omega import omega_market
 
         return list(omega_market.list_cleared_orders_account([str(market_id)]) or [])
+
+    @staticmethod
+    def list_account_cleared_bets(market_ids: List[str], stato: str = "SETTLED") -> List[dict]:
+        """30/09 (P&L REALE DEL CONTO) - le scommesse REGOLATE del CONTO sui
+        mercati della partita (di chiunque: bot e utente), in UNA chiamata per
+        tutti i mercati (``listClearedOrders`` con ``marketIds``, un solo
+        ``betStatus``: SETTLED, oppure VOIDED se ne manca qualcuna). Forma di
+        ``omega_market._riga_regolata`` (stessa normalizzazione della posizione
+        di conto: difetto 1 del catalogo). Solo al regolamento, a ritmo lento
+        (``_leggi_regolato_conto``). Solleva sugli errori di rete."""
+        from Betfair.omega import omega_market
+
+        settled_from = (datetime.now(timezone.utc) - _timedelta(hours=72)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ")
+        ids = [str(m) for m in market_ids if m]
+        resp = omega_market.call(lambda c: c.list_cleared_orders(
+            bet_status=str(stato), market_ids=ids, settled_from=settled_from)) or {}
+        return [omega_market._riga_regolata(o) for o in (resp.get("clearedOrders", []) or [])]
+
+    @staticmethod
+    def list_account_cleared_markets(market_ids: List[str]) -> List[dict]:
+        """30/09 (P&L REALE DEL CONTO) - i mercati REGOLATI del conto, letti per
+        MERCATO (``listClearedOrders`` con ``groupBy=MARKET``, SETTLED): e'
+        l'UNICO livello che porta ``commission`` (docs Betfair,
+        "listClearedOrders - Roll-up Fields Available"; stessa lettura del
+        runner, ``reconcile_worker._fetch_cleared_markets_today``). Una chiamata
+        REST, solo al regolamento di una partita live con posizioni. Solleva
+        sugli errori di rete (chi chiama riprova, non inventa)."""
+        from Betfair.omega import omega_market
+
+        settled_from = (datetime.now(timezone.utc) - _timedelta(hours=72)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ")
+        params = {"betStatus": "SETTLED", "groupBy": "MARKET",
+                  "marketIds": [str(m) for m in market_ids if m],
+                  "settledDateRange": {"from": settled_from},
+                  "fromRecord": 0, "recordCount": 1000}
+        resp = omega_market.call(lambda c: c.betting_rpc(
+            "SportsAPING/v1.0/listClearedOrders", params)) or {}
+        out: List[dict] = []
+        for g in resp.get("clearedOrders", []) or []:
+            if not g.get("marketId"):
+                continue
+            out.append({"market_id": str(g.get("marketId")),
+                        "profit": g.get("profit"),
+                        "commission": g.get("commission"),
+                        "bet_count": g.get("betCount"),
+                        "settled_date": g.get("settledDate")})
+        return out
 
     @staticmethod
     def market_profit_and_loss(market_id: str) -> Dict[str, Any]:
@@ -4628,6 +4677,22 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
             ev.update(_row_from_ctx(ev, ctx, extra))
             _persist(db, ev, before_sig, now_ts=now_ts, params=params, lotto=lotto)
             return (n_annulli, 0)
+        # 30/09 (ORDINE DELL'UTENTE: "IL PNL DEVE ESSERE REALE"): in LIVE il P&L
+        # si regola dagli ordini REGOLATI del conto (Betfair), ordini
+        # dell'utente compresi. Finche' Betfair non ha regolato TUTTE le
+        # scommesse abbinate di Mike (e la commissione dei loro mercati) si
+        # aspetta in SETTLING: nessun regolamento cieco. ``None`` = conto non
+        # applicabile (paper, nessuna gamba abbinata, lettura non esposta):
+        # regola il calcolo interno di sempre.
+        conto = _leggi_regolato_conto(db=db, market=market, ev=ev, ctx=ctx, extra=extra,
+                                      mode=mode, now_ts=now_ts, params=params, cache=cache)
+        if conto is not None and not conto.get("pronto"):
+            if ctx.state != "SETTLING":
+                E.apply_decision(ctx, E.Decision("SETTLING", [], "mercato chiuso: attesa del "
+                                                 "regolamento di Betfair"), now_ts)
+            ev.update(_row_from_ctx(ev, ctx, extra))
+            _persist(db, ev, before_sig, now_ts=now_ts, params=params, lotto=lotto)
+            return (n_annulli, 0)
         mkts = ev.get("markets") or {}
         names: Dict[int, str] = {}
         b35 = market.read_book(str((mkts.get(E.MARKET_OU35) or {}).get("market_id") or ""), names) \
@@ -4661,7 +4726,7 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                       "void": True}
             E.apply_decision(ctx, E.Decision("SETTLED", [], "regolamento per mercato (void parziale)",
                                              updates={"settled_pnl": res.net}), now_ts)
-            ok = _settle_trades(db, ev["event_id"], ctx, settle, params)
+            ok = _settle_trades(db, ev["event_id"], ctx, settle, params, conto=conto, extra=extra)
             if not ok and _retry_settle_rows(db, ev["event_id"], ctx, extra, now_ts):
                 ev.update(_row_from_ctx(ev, ctx, extra))
                 _persist(db, ev, before_sig, now_ts=now_ts, params=params, lotto=lotto)
@@ -4669,7 +4734,8 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
             extra.pop("settle_rows_attempts", None)
             db.log("settled", {"void": True, "reason": "mercato_annullato",
                                "voided": tele.get("voided"), "winners": tele.get("winners"),
-                               "pnl": res.net, "legs": len(res.per_leg)}, ev["event_id"])
+                               "pnl": ctx.settled_pnl, "legs": len(res.per_leg),
+                               **_riepilogo_conto(extra, conto)}, ev["event_id"])
             ev.update(_row_from_ctx(ev, ctx, extra))
             _persist(db, ev, before_sig, now_ts=now_ts, params=params, lotto=lotto)
             return (0, 1)
@@ -4697,16 +4763,23 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                                          {"per_leg": res0.per_leg,
                                           "per_leg_gross": res0.per_leg_gross,
                                           "commission_by_market": res0.commission_by_market,
-                                          "senza_punteggio": True}, params)
+                                          "senza_punteggio": True}, params,
+                                         conto=conto, extra=extra)
                     if not ok0 and _retry_settle_rows(db, ev["event_id"], ctx, extra, now_ts):
                         ev.update(_row_from_ctx(ev, ctx, extra))
                         _persist(db, ev, before_sig, now_ts=now_ts, params=params, lotto=lotto)
                         return (0, 0)
                     extra.pop("settle_rows_attempts", None)
+                    if conto is not None and (extra.get("pnl_conto") or {}).get("fonte") \
+                            == RC.PNL_FONTE_BETFAIR:
+                        # 30/09: in live il netto e' quello REGOLATO da Betfair
+                        # (``_settle_trades`` l'ha appena scritto)
+                        netto = float(extra["pnl_conto"]["conto"])
                     db.log("settled", {"reason": "punteggio non recuperabile, ma il risultato "
                                                  "non dipende dal punteggio",
                                        "pnl": netto, "gambe_abbinate":
-                                           sum(1 for l in ctx.legs if float(l.matched or 0) > 0)},
+                                           sum(1 for l in ctx.legs if float(l.matched or 0) > 0),
+                                       **_riepilogo_conto(extra, conto)},
                            ev["event_id"])
                     E.apply_decision(ctx, E.Decision("SETTLED", [], "nessuna esposizione: chiusa a %+.2f" % netto,
                                                      updates={"settled_pnl": netto}), now_ts)
@@ -4736,14 +4809,16 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
             d = E.decide(ctx, snap, s_params)    # stesso ciclo: SETTLING -> SETTLED
             E.apply_decision(ctx, d, now_ts)
         if d.state == "SETTLED":
-            ok = _settle_trades(db, ev["event_id"], ctx, d.telemetry.get("settle") or {}, s_params)
+            ok = _settle_trades(db, ev["event_id"], ctx, d.telemetry.get("settle") or {}, s_params,
+                                conto=conto, extra=extra)
             if not ok and _retry_settle_rows(db, ev["event_id"], ctx, extra, now_ts):
                 ev.update(_row_from_ctx(ev, ctx, extra))
                 _persist(db, ev, before_sig, now_ts=now_ts, params=params, lotto=lotto)
                 return (0, 0)
             extra.pop("settle_rows_attempts", None)
             settled = 1
-            db.log("settled", {"total": total, "pnl": ctx.settled_pnl, **(d.telemetry.get("settle") or {})},
+            db.log("settled", {"total": total, "pnl": ctx.settled_pnl, **(d.telemetry.get("settle") or {}),
+                               **_riepilogo_conto(extra, conto)},
                    ev["event_id"])
         ev.update(_row_from_ctx(ev, ctx, extra))
         _persist(db, ev, before_sig, now_ts=now_ts, params=params, lotto=lotto)
@@ -5303,6 +5378,8 @@ def _open_refs_by_event(db: Any) -> Optional[Dict[str, set]]:
     for r in rows:
         eid = str(r.get("event_id") or "")
         key = r.get("signal_key")
+        if RC.e_riga_utente(r):
+            continue         # 30/09: le righe dell'utente non sono gambe da riconciliare
         if eid and key:
             out.setdefault(eid, set()).add(str(key))
     return out
@@ -5329,6 +5406,8 @@ def _gamba_dalla_riga(r: Dict[str, Any], info: Optional[F.EventInfo]) -> Optiona
     gamba (potata da ``prune_dead_legs`` o persa in un crash). ``None`` se la
     riga non dice abbastanza (mercato o selezione illeggibili): allora resta la
     regola storica della riga orfana."""
+    if RC.e_riga_utente(r):
+        return None          # 30/09: un ordine dell'UTENTE non e' mai una gamba di Mike
     mt = str(r.get("market_type") or "")
     mercato = E.MARKET_OU35 if mt == C.OU35 else E.MARKET_OU45 if mt == C.OU45 else None
     if mercato is None or not r.get("signal_key"):
@@ -5834,8 +5913,289 @@ def _settle_params(db: Any, event_id: str, params: Dict[str, Any]) -> Dict[str, 
     return {**params, "commission_pct": round(rate * 100.0, 6)}
 
 
+# ---------------------------------------------------------------------------
+# 30/09 - IL P&L REALE DEL CONTO (ordine dell'utente: "IL PNL DEVE ESSERE REALE
+# CON TUTTO QUELLO CHE FANNO I BOT E IO MANUALMENTE"). Composizione pura in
+# ``regolato_conto``; qui le letture (REST al regolamento, a ritmo) e le scritture.
+# ---------------------------------------------------------------------------
+#: VINCOLO DELL'UTENTE (30/09): "non voglio spammare i server Betfair". Il
+#: regolato del conto si legge UNA volta per partita al regolamento (di norma
+#: DUE chiamate REST: le scommesse SETTLED dei due mercati insieme, poi la
+#: commissione per MERCATO; una terza, VOIDED, solo se manca una scommessa di
+#: Mike). Si ritenta SOLO se Betfair non ha ancora regolato, a cadenza lenta
+#: (1, 2, 4, 8 minuti, poi ogni 15) e con un TETTO di tentativi: oltre il tetto
+#: si regola col calcolo interno dichiarato STIMA (il runner scrivera' comunque
+#: ``pnl_betfair`` sulle righe quando Betfair regola: ``reconcile_worker``).
+_CONTO_ATTESA_MIN_S = 60.0
+_CONTO_ATTESA_MAX_S = 900.0
+_CONTO_TENTATIVI_MAX = 20
+#: dopo questo tempo di attesa il diario lo dice come CRITICO
+_CONTO_ATTESA_CRITICA_S = 1800.0
+
+
+def _leggi_regolato_conto(*, db: Any, market: Any, ev: Dict[str, Any], ctx: E.MatchCtx,
+                          extra: Dict[str, Any], mode: str, now_ts: float,
+                          params: Optional[Dict[str, Any]] = None,
+                          cache: Optional[Dict[str, List[Dict[str, Any]]]] = None
+                          ) -> Optional[Dict[str, Any]]:
+    """Il regolamento del CONTO per questa partita (``regolato_conto``).
+
+    ``None`` = il conto non si applica e regola il calcolo interno: PAPER (non
+    esiste un conto), nessuna riga live abbinata (niente da regolare), lo
+    sportello del mercato non espone le letture (solo nei finti: la produzione
+    le ha sempre, e lo si scrive nel diario), oppure il TETTO dei tentativi e'
+    superato (lo si scrive: P&L = STIMA). ``{"pronto": False}`` = si ASPETTA in
+    SETTLING (letture fallite, o Betfair non ha ancora regolato tutto): la
+    prossima lettura non prima di ``conto_next_ts``."""
+    if str(mode) != "live":
+        return None
+    params = params or {}
+    eid = str(ev["event_id"])
+    righe = _event_rows(db, eid, cache)
+    if righe is None:
+        return {"pronto": False, "motivo": "righe della partita non lette"}
+    righe_bot = [r for r in righe if not RC.e_riga_utente(r)]
+    if not any(str(r.get("mode") or "") == "live" and RC._abbinato(r) > 0 for r in righe_bot):
+        return None
+    leggi_b = getattr(market, "list_account_cleared_bets", None)
+    leggi_m = getattr(market, "list_account_cleared_markets", None)
+    if not callable(leggi_b) or not callable(leggi_m):
+        _log_throttled(db, extra, params, now_ts, "regolato_conto_non_leggibile",
+                       {"reason": "il mercato non espone gli ordini regolati del conto: "
+                                  "P&L dal calcolo interno (STIMA)", "critical": True}, eid)
+        return None
+    if extra.get("conto_rinuncia"):
+        return None
+    if now_ts < float(extra.get("conto_next_ts") or 0.0):
+        return {"pronto": False, "motivo": "attesa fra due letture"}
+    attesa_dal = float(extra.get("conto_attesa_dal") or now_ts)
+    extra["conto_attesa_dal"] = attesa_dal
+    tentativi = int(extra.get("conto_tentativi") or 0) + 1
+    extra["conto_tentativi"] = tentativi
+    chiamate = 0
+
+    def _aspetta(esito: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        attesa = round(now_ts - attesa_dal)
+        extra["conto_chiamate"] = int(extra.get("conto_chiamate") or 0) + chiamate
+        if tentativi >= _CONTO_TENTATIVI_MAX:
+            # TETTO: niente piu' chiamate. Si regola col calcolo interno e lo si
+            # DICHIARA (P&L = stima); nessuna cifra inventata.
+            extra["conto_rinuncia"] = True
+            db.log("attesa_regolato_betfair",
+                   {"reason": "regolato di Betfair non arrivato: P&L dal calcolo interno (STIMA)",
+                    "mancano": esito.get("mancano") or esito.get("mercati"),
+                    "attesa_s": attesa, "tentativo": tentativi, "tetto": True,
+                    "chiamate_rest": extra["conto_chiamate"], "critical": True,
+                    "nota": "tetto dei tentativi raggiunto: il P&L scritto e' una STIMA del "
+                            "bot; il runner scrivera' il P&L reale sulle righe quando "
+                            "Betfair regola"}, eid)
+            return None
+        extra["conto_next_ts"] = now_ts + min(_CONTO_ATTESA_MAX_S,
+                                              _CONTO_ATTESA_MIN_S * (2 ** min(tentativi - 1, 4)))
+        db.log("attesa_regolato_betfair",
+               {"reason": str(esito.get("motivo") or "regolato non disponibile"),
+                "mancano": esito.get("mancano") or esito.get("mercati"),
+                "attesa_s": attesa, "tentativo": tentativi,
+                "prossima_lettura_s": round(float(extra["conto_next_ts"]) - now_ts),
+                "chiamate_rest": extra["conto_chiamate"],
+                "critical": attesa >= _CONTO_ATTESA_CRITICA_S,
+                "nota": "la partita resta IN REGOLAMENTO finche' Betfair non ha regolato "
+                        "tutte le scommesse: il P&L scritto sara' quello del conto"}, eid)
+        return esito
+
+    mkts = ev.get("markets") or {}
+    market_ids = [str(v.get("market_id")) for v in mkts.values() if (v or {}).get("market_id")]
+    refs = {str(l.ref) for l in ctx.legs} | {ref_ordine_di_riga(r) for r in righe_bot}
+    try:
+        # 1. le scommesse SETTLED dei mercati della partita: UNA chiamata
+        chiamate += 1
+        ordini: List[Dict[str, Any]] = list(leggi_b(market_ids, "SETTLED") or [])
+        esito = RC.componi_regolato(righe, ordini, [], market_ids, refs)
+        if esito.get("mancano") and (ordini or tentativi >= 3):
+            # 2. solo se manca una scommessa di Mike E il mercato risulta gia'
+            #    regolato (altre scommesse ci sono) o l'attesa si allunga: le
+            #    VOIDED (mercato annullato). Finche' Betfair non ha regolato
+            #    niente, UNA chiamata per tentativo.
+            chiamate += 1
+            ordini += list(leggi_b(market_ids, "VOIDED") or [])
+            esito = RC.componi_regolato(righe, ordini, [], market_ids, refs)
+        if esito.get("mancano"):
+            return _aspetta(esito)
+    except Exception as ex:  # noqa: BLE001 - rete: si riprova, non si inventa
+        logger.warning("[mike] %s: regolato del conto non letto: %s", eid, str(ex)[:160])
+        return _aspetta({"pronto": False, "motivo": "lettura del regolato fallita: "
+                                                    + str(ex)[:80]})
+    proprietari: Dict[str, str] = {}
+    leggi_p = getattr(db, "proprietari_bet", None)
+    if callable(leggi_p):
+        noti = {str(r.get("bet_id")) for r in righe_bot if r.get("bet_id")}
+        altri = sorted({str(o.get("bet_id")) for o in ordini
+                        if o.get("bet_id") is not None and str(o.get("bet_id")) not in noti})
+        if altri:
+            try:
+                proprietari = dict(leggi_p(altri) or {})
+            except Exception as ex:  # noqa: BLE001 - mai un "utente" dedotto da un guasto
+                logger.warning("[mike] %s: proprietari dei bet non letti: %s", eid, str(ex)[:120])
+                return _aspetta({"pronto": False, "motivo": "proprietari degli ordini non letti"})
+    mercati: List[Dict[str, Any]] = []
+    esito = RC.componi_regolato(righe, ordini, mercati, market_ids, refs, proprietari)
+    if not esito.get("pronto") and esito.get("mercati"):
+        # 3. la commissione del MERCATO: UNA chiamata, solo se qualcuno ha un profit
+        try:
+            chiamate += 1
+            mercati = list(leggi_m(market_ids) or [])
+        except Exception as ex:  # noqa: BLE001
+            logger.warning("[mike] %s: commissione per mercato non letta: %s", eid, str(ex)[:160])
+            return _aspetta({"pronto": False, "motivo": "commissione per mercato non letta"})
+        esito = RC.componi_regolato(righe, ordini, mercati, market_ids, refs, proprietari)
+    if not esito.get("pronto"):
+        return _aspetta(esito)
+    esito["chiamate_rest"] = int(extra.get("conto_chiamate") or 0) + chiamate
+    esito["tentativi"] = tentativi
+    for k in ("conto_next_ts", "conto_attesa_dal", "conto_tentativi", "conto_chiamate"):
+        extra.pop(k, None)
+    return esito
+
+
+def scrivi_riga_utente_in_corso(*, db: Any, ev: Dict[str, Any], ctx: E.MatchCtx,
+                                extra: Dict[str, Any], params: Dict[str, Any],
+                                ordine: Dict[str, Any], strategy_ref: Optional[str] = None,
+                                cache: Optional[Dict[str, List[Dict[str, Any]]]] = None) -> bool:
+    """30/09 - IL PUNTO D'INGRESSO PER IL VERDETTO IN TEMPO REALE (chiusura
+    dell'utente vista dallo stream ordini, topic ``conto``, o dalla rilettura
+    della posizione di conto): scrive o aggiorna la riga "utente" di UN ordine
+    del conto ABBINATO sui mercati di questa partita, se non e' di Mike (ne' di
+    un altro bot). ``ordine`` nella grafia di ``omega_market._riga_corrente``
+    (snake_case: il messaggio ``conto`` e' camelCase di ``listCurrentOrders``,
+    si normalizza con quella funzione); ``strategy_ref`` = la sua
+    ``customerStrategyRef``, se nota. Nessuna chiamata a Betfair. Idempotente
+    (``signal_key`` = ``utente-<bet_id>``); una riga gia' regolata non si
+    tocca. Il regolamento la ritrova e la aggiorna coi numeri di Betfair.
+    Solo LIVE. Torna True se ha scritto."""
+    if str(ev.get("mode") or "") != "live":
+        return False
+    eid = str(ev["event_id"])
+    mids = {str(v.get("market_id")) for v in (ev.get("markets") or {}).values()
+            if (v or {}).get("market_id")}
+    if str(ordine.get("market_id") or "") not in mids:
+        return False
+    rows = _event_rows(db, eid, cache)
+    if rows is None:
+        return False
+    righe_bot = [r for r in rows if not RC.e_riga_utente(r)]
+    refs = {str(l.ref) for l in ctx.legs} | {ref_ordine_di_riga(r) for r in righe_bot}
+    if not RC.ordine_non_di_mike(ordine, rows, refs, strategy_ref):
+        return False
+    nuova = RC.riga_utente_in_corso(
+        ordine, ev=ev, righe=rows, commission_rate=C.commission_rate(params),
+        nomi=RC.nomi_da_selezioni(extra.get("selections")))
+    if nuova is None:
+        return False
+    esistente = next((r for r in rows if str(r.get("signal_key") or "") == nuova["signal_key"]),
+                     None)
+    try:
+        if esistente is None:
+            _insert_trade_row(db, nuova, eid)
+        else:
+            if str(esistente.get("status") or "") in ("won", "lost", "void", "error"):
+                return False
+            campi = {k: nuova[k] for k in ("size", "size_matched", "size_remaining",
+                                           "avg_price_matched", "price", "liability")
+                     if esistente.get(k) != nuova[k]}
+            if not campi:
+                return False
+            db.update_trade(int(esistente["id"]), **campi)
+    except Exception as ex:  # noqa: BLE001 - la riga si riscrive al prossimo segnale
+        logger.warning("[mike] %s: riga utente in corso non scritta: %s", eid, str(ex)[:120])
+        return False
+    if cache is not None:
+        cache.pop(eid, None)
+    return True
+
+
+def _riepilogo_conto(extra: Optional[Dict[str, Any]], conto: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Le chiavi del P&L del conto per il diario ``settled`` (vuoto se il conto
+    non si applica: paper o calcolo interno)."""
+    if not conto or not conto.get("pronto"):
+        return {}
+    pc = dict((extra or {}).get("pnl_conto") or {})
+    return {"pnl_fonte": RC.PNL_FONTE_BETFAIR, "pnl_mike": pc.get("mike"),
+            "pnl_utente": pc.get("utente"), "pnl_interno_mike": pc.get("interno_mike"),
+            "ordini_utente": pc.get("ordini_utente"),
+            "altri_bot_esclusi": pc.get("altri_bot_esclusi"),
+            "chiamate_rest": pc.get("chiamate_rest")}
+
+
+def _applica_conto(db: Any, event_id: str, rows: List[Dict[str, Any]],
+                   conto: Dict[str, Any], per_leg: Dict[str, Any], scritte: Dict[str, Any],
+                   params: Optional[Dict[str, Any]], now_iso: str,
+                   selezioni: Optional[Dict[str, Any]] = None) -> Tuple[bool, List[Dict[str, Any]]]:
+    """Dopo le righe della strategia: (1) le righe di Mike che il motore non ha
+    regolato ma Betfair si' (gamba potata, o riga creduta non eseguita che
+    Betfair ha abbinato) prendono il P&L di Betfair; (2) le scommesse
+    dell'UTENTE diventano righe ``utente`` (inserite o aggiornate per
+    ``signal_key``). Torna (tutto scritto?, differenze per il diario)."""
+    ok = True
+    diff: List[Dict[str, Any]] = []
+    per_bet = conto.get("per_bet") or {}
+    bet_scritti = {str(v) for v in scritte.values() if v}
+    for r in sorted(rows, key=lambda x: int(x.get("id") or 0)):
+        if RC.e_riga_utente(r) or r.get("id") in scritte:
+            continue
+        bet = str(r.get("bet_id") or "")
+        b = per_bet.get(bet) if bet else None
+        if b is None or b.get("chi") != "mike" or bet in bet_scritti:
+            continue
+        stato = str(r.get("status") or "")
+        if stato in ("won", "lost", "void"):
+            continue                       # gia' regolata (giro precedente)
+        if stato == "error" and abs(float(b.get("lordo") or 0.0)) < 0.005:
+            continue                       # Betfair non ha niente da dire su questa riga
+        meta = dict(r.get("meta") or {})
+        meta.update({"pnl_fonte": RC.PNL_FONTE_BETFAIR, "pnl_gross": b["lordo"],
+                     "commission_paid": b["commissione"], "corretto_da_betfair": True,
+                     "stato_prima": stato})
+        try:
+            db.update_trade(int(r["id"]), status=b["esito"], pnl=b["netto"], settled_at=now_iso,
+                            meta=meta, pnl_betfair=b["netto"],
+                            commissione_betfair=b["commissione"], pnl_betfair_settled_at=now_iso)
+            bet_scritti.add(bet)
+        except Exception as ex:  # noqa: BLE001
+            ok = False
+            db.log("error", {"reason": "settle_update_failed", "trade_id": r.get("id"),
+                             "err": str(ex)[:120], "critical": True}, event_id)
+            continue
+        diff.append({"riga": r.get("id"), "bet_id": bet, "interno": None, "betfair": b["netto"],
+                     "motivo": ("riga creduta '%s' ma Betfair l'ha regolata: vince Betfair" % stato)})
+    rate = C.commission_rate(params or {})
+    nome = next((r.get("event_name") for r in rows if r.get("event_name")), None)
+    for bet in conto.get("utente") or []:
+        b = per_bet[bet]
+        nuova = RC.riga_utente(b, ev={"event_id": event_id, "event_name": nome}, righe=rows,
+                               commission_rate=rate, settled_at=now_iso,
+                               nomi=RC.nomi_da_selezioni(selezioni))
+        esistente = next((r for r in rows if str(r.get("signal_key") or "") == nuova["signal_key"]),
+                         None)
+        try:
+            if esistente is None:
+                _insert_trade_row(db, nuova, event_id)
+            else:
+                campi = {k: nuova[k] for k in ("status", "pnl", "settled_at", "pnl_betfair",
+                                               "commissione_betfair", "pnl_betfair_settled_at",
+                                               "size_matched", "avg_price_matched", "bet_id")}
+                campi["meta"] = {**(esistente.get("meta") or {}), **nuova["meta"]}
+                db.update_trade(int(esistente["id"]), **campi)
+        except Exception as ex:  # noqa: BLE001
+            ok = False
+            db.log("error", {"reason": "riga_utente_non_scritta", "bet_id": bet,
+                             "err": str(ex)[:120], "critical": True}, event_id)
+    return ok, diff
+
+
 def _settle_trades(db: Any, event_id: str, ctx: E.MatchCtx, settle: Dict[str, Any],
-                   params: Optional[Dict[str, Any]] = None) -> bool:
+                   params: Optional[Dict[str, Any]] = None,
+                   conto: Optional[Dict[str, Any]] = None,
+                   extra: Optional[Dict[str, Any]] = None) -> bool:
     """Riporta l'esito per gamba sulle righe mike_trades (signal_key = leg.ref).
 
     H4 — il ``pnl`` scritto su ogni riga e' NETTO commissione (la somma delle
@@ -5858,6 +6218,12 @@ def _settle_trades(db: Any, event_id: str, ctx: E.MatchCtx, settle: Dict[str, An
         return False
     ok = True
     now_iso = _now().isoformat()
+    # 30/09 - il regolato del CONTO (solo live, solo se Betfair ha regolato
+    # tutto: vedi ``_leggi_regolato_conto``). Vuoto = calcolo interno di sempre.
+    per_bet: Dict[str, Dict[str, Any]] = dict((conto or {}).get("per_bet") or {}) \
+        if (conto or {}).get("pronto") else {}
+    scritte: Dict[Any, str] = {}           # id riga -> bet_id scritto con i numeri di Betfair
+    differenze: List[Dict[str, Any]] = []
     # C1 — DEDUP per signal_key: se per qualunque motivo esistono due righe per
     # la stessa gamba, il P&L si scrive UNA volta sola (sulla piu' vecchia) e le
     # altre vengono chiuse in errore. Senza, realized/stop/storico raddoppiano.
@@ -5903,13 +6269,86 @@ def _settle_trades(db: Any, event_id: str, ctx: E.MatchCtx, settle: Dict[str, An
             # M8.6 (29/09): regolata senza punteggio perche' il risultato non
             # cambia il conto; esito della singola riga calcolato su 0 gol
             meta["settle_reason"] = "risultato_indipendente_dal_punteggio"
+        if extra is not None and extra.get("conto_rinuncia"):
+            meta["pnl_fonte"] = "stima"      # 30/09: Betfair non ha regolato entro il tetto
+        campi_bf: Dict[str, Any] = {}
+        bet = str(r.get("bet_id") or "")
+        b = per_bet.get(bet) if bet else None
+        if b is not None and b.get("chi") == "mike" and bet not in scritte.values():
+            # 30/09 - VINCE BETFAIR: esito, lordo, commissione e netto della
+            # riga sono quelli regolati sul conto; il calcolo interno resta
+            # nel meta come confronto, e se differisce lo dice il diario
+            interno = round(float(pnl), 2)
+            lordo_int = meta.get("pnl_gross")
+            meta["pnl_interno"] = interno
+            if lordo_int is not None:
+                meta["pnl_gross_interno"] = lordo_int
+            meta.update({"pnl_gross": b["lordo"], "commission_paid": b["commissione"],
+                         "pnl_fonte": RC.PNL_FONTE_BETFAIR})
+            # per RIGA si confrontano esito e LORDO (il netto per riga dipende
+            # da come si ripartisce la commissione del mercato: si confronta
+            # sul totale, qui sotto)
+            if str(st) != str(b["esito"]) or (
+                    lordo_int is not None and abs(float(lordo_int) - float(b["lordo"])) > 0.005):
+                differenze.append({"riga": r.get("id"), "bet_id": bet, "ruolo": r.get("role"),
+                                   "interno": interno, "betfair": b["netto"],
+                                   "lordo_interno": lordo_int, "lordo_betfair": b["lordo"],
+                                   "esito_interno": st, "esito_betfair": b["esito"]})
+            st, pnl = b["esito"], b["netto"]
+            campi_bf = {"pnl_betfair": b["netto"], "commissione_betfair": b["commissione"],
+                        "pnl_betfair_settled_at": now_iso}
         try:
             db.update_trade(int(r["id"]), status=st, pnl=round(float(pnl), 2), settled_at=now_iso,
-                            meta=meta)
+                            meta=meta, **campi_bf)
+            if campi_bf:
+                scritte[r.get("id")] = bet
         except Exception as ex:  # noqa: BLE001
             ok = False
             db.log("error", {"reason": "settle_update_failed", "trade_id": r.get("id"),
                              "err": str(ex)[:120], "critical": True}, event_id)
+    if per_bet:
+        ok_c, diff_c = _applica_conto(db, str(event_id), rows, conto or {}, per_leg, scritte,
+                                      params, now_iso, (extra or {}).get("selections"))
+        ok = ok and ok_c
+        differenze.extend(diff_c)
+        # il P&L del bot secondo il MOTORE (tutte le sue gambe): il confronto
+        interno_mike = round(sum(float(v[1] or 0.0) for v in per_leg.values()), 2)
+        if differenze or abs(interno_mike - float(conto["netto_mike"])) > 0.005:
+            logger.warning("[mike] %s: P&L interno %+.2f contro Betfair %+.2f: vince Betfair",
+                           event_id, interno_mike, float(conto["netto_mike"]))
+            db.log("pnl_differenza_betfair",
+                   {"reason": "il calcolo del bot differisce dal regolato di Betfair",
+                    "interno_mike": interno_mike, "betfair_mike": conto["netto_mike"],
+                    "differenza": round(float(conto["netto_mike"]) - interno_mike, 2),
+                    "righe": differenze[:20], "vince": "betfair", "critical": True}, event_id)
+        if conto.get("utente"):
+            db.log("ordini_utente_nel_conto",
+                   {"ordini": len(conto["utente"]), "netto_utente": conto["netto_utente"],
+                    "bet_ids": list(conto["utente"])[:20],
+                    "nota": "ordini dell'utente sui mercati di Mike: entrano nel P&L della "
+                            "partita (righe 'utente', numeri regolati da Betfair)"}, event_id)
+        if ok:
+            ctx.settled_pnl = float(conto["netto_conto"])
+            if extra is not None:
+                extra["pnl_conto"] = {
+                    "fonte": RC.PNL_FONTE_BETFAIR, "conto": conto["netto_conto"],
+                    "mike": conto["netto_mike"], "utente": conto["netto_utente"],
+                    "interno_mike": interno_mike,
+                    "commissione_mike": conto.get("commissione_mike"),
+                    "commissione_utente": conto.get("commissione_utente"),
+                    "ordini_utente": len(conto.get("utente") or []),
+                    "altri_bot_esclusi": len(conto.get("altri_bot") or []),
+                    "netto_altri_bot": conto.get("netto_altri_bot"),
+                    "senza_bet_id": list(conto.get("senza_bet_id") or []),
+                    "chiamate_rest": conto.get("chiamate_rest"),
+                    "letto_at": now_iso}
+    elif ok and extra is not None and extra.get("conto_rinuncia"):
+        # 30/09: tetto dei tentativi superato, Betfair non ha regolato: il P&L
+        # scritto e' la STIMA del bot, e lo si dice
+        extra["pnl_conto"] = {"fonte": "stima", "conto": ctx.settled_pnl,
+                              "motivo": "regolato di Betfair non arrivato entro il tetto",
+                              "chiamate_rest": extra.get("conto_chiamate"),
+                              "letto_at": now_iso}
     # H4 — la somma dei ``pnl`` delle righe DEVE fare ``settled_pnl``: una gamba
     # regolata senza riga specchio (riserva mai scritta e mai ricostruita perche'
     # il feed era incompleto) rompe quella garanzia. Non si puo' riparare qui

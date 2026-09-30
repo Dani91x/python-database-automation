@@ -79,6 +79,9 @@ function selectionOf(t: DayTradeLeg): string {
 }
 function kindOf(t: DayTradeLeg, variant: HistoryVariant): string {
     if (variant === 'omega') return PHASE_LABEL[t.phase ?? ''] ?? '—';
+    // 30/09: l'ordine dell'UTENTE sui mercati di Mike (strategy 'manual_close'
+    // per il vincolo del DB, `meta.fonte = 'utente'`): si dice di chi e'
+    if (variant === 'mike' && (t.meta ?? {})['fonte'] === 'utente') return 'TUO (non del bot)';
     if (variant === 'mike') return MIKE_ROLE_LABEL[t.strategy ?? ''] ?? (t.strategy ?? '—');
     return STRATEGY_LABEL[t.strategy ?? ''] ?? (t.strategy ?? '—');
 }

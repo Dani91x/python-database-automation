@@ -197,4 +197,5 @@ def test_l_impronta_cambia_se_cambia_il_motore(monkeypatch, tmp_path):
         (tmp_path / rel).write_bytes(testo)
     monkeypatch.chdir(tmp_path)
     dopo = CE.impronta(scheda)["codice_bot"]
-    assert prima != dopo and prima.endswith("(8 file)") and dopo.endswith("(8 file)")
+    # 30/09: 9 file (si aggiunge ``Betfair.mike.regolato_conto``, P&L reale del conto)
+    assert prima != dopo and prima.endswith("(9 file)") and dopo.endswith("(9 file)")

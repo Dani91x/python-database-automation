@@ -115,7 +115,9 @@ describe('mike RPC: get_mike_state v1 (senza migrazione v2)', () => {
         okRpc(null);
         const s = await fetchMikeState();
         expect(s).toEqual({ control: null, events: [], trades: [], activity: [], aggregates: null,
-                            requests: [], day_start: null, day_by: null });
+                            requests: [], day_start: null, day_by: null,
+                            // 30/09: chiave additiva; assente = migrazione non applicata -> null
+                            arretrati_prova: null });
         okRpc({ events: 'non un array', trades: null, activity: 7, requests: {} });
         const s2 = await fetchMikeState();
         expect(s2.events).toEqual([]);

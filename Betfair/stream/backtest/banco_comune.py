@@ -341,6 +341,21 @@ class DbMemoria:
             self.senza_dato.append(voce)
         return []
 
+    def proprietari_bet(self, bet_ids: List[str]) -> Dict[str, str]:
+        """STESSA FIRMA E STESSO TIPO di ``Betfair/mike/db.py::proprietari_bet``
+        (30/09, P&L REALE DEL CONTO): bet_id -> bot proprietario, letto in
+        produzione dalle tabelle LIVE degli ALTRI bot (Omega, Safe, specchio del
+        runner). Nel replay quelle tabelle non esistono: dizionario VUOTO (il
+        vero con nessuna riga trovata), e chi regola decide dal riferimento
+        d'ordine. Il limite si dichiara nel referto."""
+        voce = ("proprietari_bet", "tabelle degli altri bot (omega_trades, "
+                                   "safe_strategy_trades, betfair_live_orders): non sono "
+                                   "nel replay, il proprietario di un ordine non di Mike "
+                                   "si decide dal riferimento d'ordine")
+        if bet_ids and voce not in self.senza_dato:
+            self.senza_dato.append(voce)
+        return {}
+
     def __getattr__(self, nome: str):
         # un metodo che il servizio chiama e che qui manca NON deve passare
         # inosservato: si registra e si risponde None.
@@ -546,6 +561,11 @@ class MercatoFlumine:
         self.letture: int = 0
         # 30/09: market_id -> libro finale (``registra_libro_chiuso``)
         self.libri_chiusi: Dict[str, Dict[str, Any]] = {}
+        # 30/09 (P&L REALE DEL CONTO): l'aliquota con cui il banco calcola la
+        # commissione del MERCATO nella lettura per mercato
+        # (``list_account_cleared_markets``). In produzione la applica Betfair;
+        # qui la fissa chi monta il replay (il parametro del bot).
+        self.aliquota_commissione: float = 0.05
 
     # ------------------------------------------------------------- rifiuto
     def rifiuto_provocato(self, *, market_id: Any, side: Any, size: Any,
@@ -942,6 +962,92 @@ class MercatoFlumine:
                 out.append(self._riga(ref, o))
         return out
 
+    def list_account_cleared_bets(self, market_ids: List[str],
+                                  stato: str = "SETTLED") -> List[Dict[str, Any]]:
+        """30/09 (P&L REALE DEL CONTO) - ``service._RealMarket.
+        list_account_cleared_bets``: le scommesse REGOLATE del conto (bot e
+        utente) sui mercati dati, UNA lettura. SETTLED = abbinate su un mercato
+        che il banco ha regolato (flumine ha scritto ``runner_status``), con le
+        chiavi di ``omega_market._riga_regolata`` (``profit`` lordo al
+        centesimo, ``bet_outcome``). VOIDED: nessuna nel replay (un mercato
+        annullato non e' nelle registrazioni), lista vuota col tipo vero."""
+        self._costa_una_lettura()
+        if str(stato).upper() != "SETTLED":
+            return []
+        voluti = {str(m) for m in market_ids or []}
+        out: List[Dict[str, Any]] = []
+        for cassetto in (self.ordini, self.ordini_utente):
+            for ref, o in cassetto.items():
+                if str(getattr(o, "market_id", "") or "") not in voluti:
+                    continue
+                reg = self._regolato(o)
+                sim = getattr(o, "simulated", None)
+                abbinato = float(getattr(sim, "size_matched", 0.0) or 0.0)
+                if not reg or abbinato <= 0:
+                    continue
+                riga = self._riga(ref, o)
+                out.append({"bet_id": riga["bet_id"], "market_id": riga["market_id"],
+                            "selection_id": riga["selection_id"], "side": riga["side"],
+                            "size_settled": abbinato, "size_matched": abbinato,
+                            "size_remaining": 0.0, "price": riga["avg_price_matched"],
+                            "avg_price_matched": riga["avg_price_matched"],
+                            "profit": reg["profit"], "commission": None,
+                            "bet_outcome": reg["bet_outcome"],
+                            "customer_order_ref": riga["customer_order_ref"]})
+        return out
+
+    @staticmethod
+    def _regolato(ordine: Any) -> Dict[str, Any]:
+        """30/09 (P&L REALE DEL CONTO) - le chiavi che ``omega_market.
+        _riga_regolata`` porta su una scommessa REGOLATA (``profit`` lordo al
+        centesimo, ``bet_outcome``), SOLO se il mercato e' regolato nel banco
+        (flumine ha scritto ``runner_status`` alla chiusura:
+        ``blotter.process_closed_market``). Prima di allora la scommessa non e'
+        regolata e il ``profit`` NON c'e': in produzione non comparirebbe
+        nemmeno fra i regolati, e chi regola deve aspettare."""
+        stato = str(getattr(ordine, "runner_status", None) or "").upper()
+        if not stato:
+            return {}
+        sim = getattr(ordine, "simulated", None)
+        abbinato = float(getattr(sim, "size_matched", 0.0) or 0.0)
+        profit = round(float(getattr(sim, "profit", 0.0) or 0.0), 2) if abbinato > 0 else 0.0
+        esito = None
+        if abbinato > 0 and stato in ("WINNER", "LOSER"):
+            vince = (stato == "WINNER") == (str(getattr(ordine, "side", "")).upper() == "BACK")
+            esito = "WON" if vince else "LOST"
+        return {"profit": profit, "bet_outcome": esito, "commission": None}
+
+    def list_account_cleared_markets(self, market_ids: List[str]) -> List[Dict[str, Any]]:
+        """30/09 (P&L REALE DEL CONTO) - ``listClearedOrders`` per MERCATO
+        (``service._RealMarket.list_account_cleared_markets``, stesse chiavi):
+        per ogni mercato REGOLATO nel banco, lordo del CONTO (bot + utente,
+        scommessa al centesimo) e commissione round(aliquota x netto vincente,
+        2) (la regola di ``pnl_betfair``). Un mercato non ancora regolato non
+        compare, come in produzione."""
+        self._costa_una_lettura()
+        voluti = {str(m) for m in market_ids or []}
+        per_mercato: Dict[str, List[float]] = {}
+        for cassetto in (self.ordini, self.ordini_utente):
+            for o in cassetto.values():
+                mid = str(getattr(o, "market_id", "") or "")
+                if mid not in voluti:
+                    continue
+                reg = self._regolato(o)
+                if not reg:
+                    continue
+                sim = getattr(o, "simulated", None)
+                if float(getattr(sim, "size_matched", 0.0) or 0.0) <= 0:
+                    continue
+                per_mercato.setdefault(mid, []).append(float(reg["profit"]))
+        out: List[Dict[str, Any]] = []
+        for mid, profitti in sorted(per_mercato.items()):
+            lordo = round(sum(profitti), 2)
+            out.append({"market_id": mid, "profit": lordo,
+                        "commission": round(lordo * float(self.aliquota_commissione), 2)
+                        if lordo > 0 else 0.0,
+                        "bet_count": len(profitti), "settled_date": None})
+        return out
+
     def list_account_orders(self, market_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """Ordini VIVI sul mercato, di CHIUNQUE (bot e utente)."""
         self._costa_una_lettura()
@@ -1151,7 +1257,7 @@ class MercatoFlumine:
         self.libri_chiusi[libro["market_id"]] = libro
         return libro
 
-    def pnl_betfair(self, commissione: float) -> Dict[str, Any]:
+    def pnl_betfair(self, commissione: float, con_utente: bool = False) -> Dict[str, Any]:
         """30/09 (banco RG1): il P&L come lo REGOLA Betfair, al centesimo.
         ``listClearedOrders`` (``Betfair_api_documentation.pdf`` pag. 54-55) da'
         ``profit`` e ``commission`` per scommessa a due decimali: il lordo del
@@ -1159,9 +1265,15 @@ class MercatoFlumine:
         per ordine, ``simulatedorder.profit``) e la commissione e'
         round(aliquota x netto vincente del MERCATO, 2). ``pnl`` qui sopra
         arrotondava solo il TOTALE delle commissioni (0,0065 + 0,166 -> 0,17
-        invece di 0,01 + 0,17): resta com'e' per la nota storica del referto."""
+        invece di 0,01 + 0,17): resta com'e' per la nota storica del referto.
+
+        ``con_utente`` (30/09, P&L REALE DEL CONTO): anche gli ordini
+        dell'UTENTE sui mercati del bot. In LIVE il bot regola la partita dal
+        conto (ordini dell'utente compresi): il metro del banco e' lo stesso."""
         per_mercato: Dict[str, float] = {}
-        for o in self.ordini.values():
+        cassetti = list(self.ordini.values()) + (list(self.ordini_utente.values())
+                                                 if con_utente else [])
+        for o in cassetti:
             sim = getattr(o, "simulated", None)
             if sim is None:
                 continue

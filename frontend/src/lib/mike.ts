@@ -9,6 +9,7 @@
 // ============================================================================
 import { supabase } from '@/integrations/supabase/client';
 import { fmtMoney, fmtOdds, fmtPct, fmtTime } from '@/lib/format';
+import { FONTE_PNL_TESTO, RUOLO_UTENTE, RUOLO_UTENTE_TESTO, scomposizioneConto } from '@/lib/fontePnl';
 import { sideMeta, T, type ActivityMeta } from '@/lib/tradeStatus';
 import type { RigaOrdine } from '@/lib/statoOrdine';
 
@@ -1107,6 +1108,10 @@ export const MIKE_ROLE_LABEL: Record<string, string> = {
 };
 
 export function roleLabel(role: string | null | undefined): string {
+    // 30/09: la riga di un ordine dell'UTENTE sui mercati di Mike (non e' un
+    // ruolo del motore: fuori da MIKE_ROLE_LABEL, che e' il contratto con
+    // `engine.ROLES`)
+    if (role === RUOLO_UTENTE) return RUOLO_UTENTE_TESTO;
     return (role && MIKE_ROLE_LABEL[role]) || role || '—';
 }
 
@@ -1373,6 +1378,12 @@ export const MIKE_ACTIVITY_KINDS = [
     // sotto il minimo che Mike non rincorre (copertura) e lo sbilancio non
     // piazzabile del mercato 4,5 considerato piatto. Una riga per episodio.
     'cover_resto_sotto_minimo', 'residuo_non_piazzabile',
+    // 30/09 (ordine dell'utente: «IL PNL DEVE ESSERE REALE»): in live il P&L
+    // della partita si regola dal CONTO Betfair (ordini dell'utente compresi).
+    // Attesa del regolato, differenza col calcolo del bot (vince Betfair),
+    // ordini dell'utente entrati nel conto, lettura non disponibile (stima).
+    'attesa_regolato_betfair', 'pnl_differenza_betfair', 'ordini_utente_nel_conto',
+    'regolato_conto_non_leggibile',
 ] as const;
 
 /** kind specifici di Mike che si aggiungono ad ACTIVITY_BASE (design system §6). */
@@ -1421,6 +1432,11 @@ export const MIKE_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
     mercato_deciso: { label: 'LINEA DECISA DAI GOL', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/40' },
     cover_resto_sotto_minimo: { label: 'COPERTURA: RESTO SOTTO IL MINIMO', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/40' },
     residuo_non_piazzabile: { label: 'RESTO NON PIAZZABILE', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/40' },
+    // 30/09 — P&L del conto Betfair al regolamento
+    attesa_regolato_betfair: { label: 'ATTESA DEL REGOLATO BETFAIR', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
+    pnl_differenza_betfair: { label: 'P&L: IL CALCOLO DEL BOT DIFFERISCE DA BETFAIR', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40', critical: true },
+    ordini_utente_nel_conto: { label: 'ORDINI TUOI NEL CONTO DELLA PARTITA', cls: 'bg-teal-500/15 text-teal-300 border-teal-500/40' },
+    regolato_conto_non_leggibile: { label: 'REGOLATO BETFAIR NON LEGGIBILE: STIMA', cls: 'bg-red-500/15 text-red-300 border-red-500/40', critical: true },
     schema_warn: { label: 'SCHEMA DB', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
     // 30/09: lo scrive `safe_strategy/execution.py::_place_via_canale` nel
     // diario di Mike quando l'ordine parte sul canale del runner (stessa
@@ -1627,7 +1643,28 @@ export function mikeActivityLine(kind: string, payload: Record<string, unknown> 
                 const which = voided.length ? voided.join(', ') : 'tutta la partita';
                 return `mercato annullato (${which}) · P&L ${fmtMoney(Number(p.pnl ?? 0), { signed: true })}`;
             }
+            if (p.pnl_fonte === 'betfair') {
+                // 30/09: in live il P&L della partita e' quello del CONTO
+                // (Betfair), non il calcolo del bot (`net`)
+                const di = scomposizioneConto(Number(p.pnl_mike), Number(p.pnl_utente));
+                return `totale gol ${String(p.total ?? '?')} · ${FONTE_PNL_TESTO.conto} ${fmtMoney(Number(p.pnl ?? 0), { signed: true })}`
+                    + `${di ? ` · ${di}` : ''}`;
+            }
             return `totale gol ${String(p.total ?? '?')} · P&L ${fmtMoney(Number(p.net ?? p.pnl ?? 0), { signed: true })}`;
+        // 30/09 — il P&L del conto Betfair al regolamento
+        case 'attesa_regolato_betfair':
+            return p.tetto === true
+                ? `Betfair non ha regolato entro il tetto dei tentativi: P&L scritto = ${FONTE_PNL_TESTO.stima}`
+                : `partita in regolamento: Betfair non ha ancora regolato (${String(p.reason ?? '')})`
+                    + `${Number.isFinite(n('prossima_lettura_s')) ? ` · prossima lettura fra ${Math.round(n('prossima_lettura_s') / 60)} min` : ''}`;
+        case 'pnl_differenza_betfair':
+            return `il calcolo del bot (${money('interno_mike', true)}) differisce da Betfair (${money('betfair_mike', true)}):`
+                + ` vale Betfair (differenza ${money('differenza', true)})`;
+        case 'ordini_utente_nel_conto':
+            return `${String(p.ordini ?? '?')} ordine/i tuoi sui mercati di Mike entrano nel P&L della partita`
+                + ` · ${money('netto_utente', true)} (regolato da Betfair)`;
+        case 'regolato_conto_non_leggibile':
+            return `regolato del conto non leggibile: P&L = ${FONTE_PNL_TESTO.stima}`;
         case 'settle_fallback':
             return `regolamento dal feed (${reasonLabel(p.reason)}) · totale gol ${String(p.total_from_feed ?? '?')}`;
         case 'settling_reverted':

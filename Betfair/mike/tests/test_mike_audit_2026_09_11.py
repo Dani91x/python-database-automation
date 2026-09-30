@@ -1127,6 +1127,12 @@ def test_l5_tutti_i_kind_di_attivita_sono_dichiarati():
         # 30/09 (decisione 26 del piano, M3.5 "lo scrive nel registro"): il resto
         # sotto minimo della copertura e lo sbilancio non piazzabile del 4,5
         "cover_resto_sotto_minimo", "residuo_non_piazzabile",
+        # 30/09 (P&L REALE DEL CONTO, ordine dell'utente): l'attesa del
+        # regolato di Betfair, la differenza col calcolo del bot (vince
+        # Betfair), gli ordini dell'utente entrati nel conto della partita,
+        # lo sportello senza le letture del regolato (solo nei finti)
+        "attesa_regolato_betfair", "pnl_differenza_betfair", "ordini_utente_nel_conto",
+        "regolato_conto_non_leggibile",
     }
     assert found - declared == set(), f"kind non dichiarati: {sorted(found - declared)}"
 

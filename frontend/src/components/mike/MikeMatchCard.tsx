@@ -33,6 +33,7 @@ import { fmtMoney, fmtNum, fmtOdds, fmtPct, fmtPctPoints, fmtTime } from '@/lib/
 // CERT. 13/09 — colore del P&L: la regola UNICA condivisa (verde/ROSSO in
 // grassetto, stessa dimensione), non piu' una copia locale per sezione.
 import { sideMeta, pnlClass, T } from '@/lib/tradeStatus';
+import { FONTE_PNL_BREVE, FONTE_PNL_TESTO, fontePnlPartita, scomposizionePartita } from '@/lib/fontePnl';
 import { MikeCashOutButton } from '@/components/mike/MikeCashOutButton';
 import { StatoOrdineCompatto } from '@/components/trading/StatoOrdine';
 import { useSecondTick } from '@/components/mike/useMikeClock';
@@ -505,6 +506,13 @@ function MikeMatchCardBase({
     const inplay = Boolean(live.inplay);
     const minuteLabel = formatMinute(live.minute ?? null);
     const terminal = MIKE_TERMINAL_STATES.includes(ev.state);
+    // 30/09 (ordine dell'utente): la FONTE del P&L regolato della partita
+    const fonteRegolato = (() => {
+        const f = fontePnlPartita({ mode: ev.mode ?? mode, ctx: ev.ctx });
+        const scomposizione = f === 'conto' ? scomposizionePartita(ev) : '';
+        return { breve: FONTE_PNL_BREVE[f], scomposizione,
+                 titolo: FONTE_PNL_TESTO[f] + (scomposizione ? ` — ${scomposizione}` : '') };
+    })();
     const hasPosition = legs.some((l) => l.matched > 0);
     const cells = pnlByTotalCells(live.pnl_by_total, live.goals);
     const books = live.books ?? {};
@@ -818,7 +826,12 @@ function MikeMatchCardBase({
                     </span>
                 )}
                 {ev.settled_pnl != null && (
-                    <span>regolato <span className={`tabular-nums font-semibold ${pnlClass(ev.settled_pnl)}`}>{fmtMoney(ev.settled_pnl, { signed: true })}</span></span>
+                    /* 30/09 (ordine dell'utente): la cifra DICE da dove viene —
+                       conto Betfair (Mike + utente), simulato o stima */
+                    <span data-testid="mike-regolato" title={fonteRegolato.titolo}>
+                        regolato <span className={`tabular-nums font-semibold ${pnlClass(ev.settled_pnl)}`}>{fmtMoney(ev.settled_pnl, { signed: true })}</span>
+                        <span className="text-slate-500" data-testid="mike-regolato-fonte"> · {fonteRegolato.breve}{fonteRegolato.scomposizione ? ` (${fonteRegolato.scomposizione})` : ''}</span>
+                    </span>
                 )}
             </div>
 
@@ -980,9 +993,10 @@ function MikeMatchCardBase({
                         <span className="text-slate-400" data-testid="mike-liability">
                             rischio chiuso <b className="text-slate-300">0,00 €</b>
                             <span className="text-slate-500"> · esito </span>
-                            <b className={`tabular-nums ${pnlClass(ev.settled_pnl)}`}>
+                            <b className={`tabular-nums ${pnlClass(ev.settled_pnl)}`} title={fonteRegolato.titolo}>
                                 {ev.settled_pnl != null ? fmtMoney(ev.settled_pnl, { signed: true }) : '—'}
                             </b>
+                            {ev.settled_pnl != null && <span className="text-slate-500"> ({fonteRegolato.breve})</span>}
                         </span>
                     ) : (
                         <>
@@ -1010,7 +1024,7 @@ function MikeMatchCardBase({
                         delle 17:00, scheda Regolate). Il terminale vince. */}
                     {terminal
                         ? <span className="text-slate-400" data-testid="mike-cashout-value">
-                            {`partita già chiusa${ev.settled_pnl != null ? ` · risultato ${fmtMoney(ev.settled_pnl, { signed: true })}` : ''}`}
+                            {`partita già chiusa${ev.settled_pnl != null ? ` · risultato ${fmtMoney(ev.settled_pnl, { signed: true })} (${fonteRegolato.breve})` : ''}`}
                         </span>
                         : cashout && cashout.complete
                         ? <span className={`tabular-nums font-heading font-bold ${pnlClass(cashout.net)}`} data-testid="mike-cashout-value">

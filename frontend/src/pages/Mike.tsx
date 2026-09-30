@@ -48,6 +48,7 @@ import { EquityCard } from '@/components/trading/EquityCard';
 import { ActivityFeed, type ActivityRow } from '@/components/trading/ActivityFeed';
 import { fmtMoney, fmtNum, fmtTime } from '@/lib/format';
 import { activityMeta, T } from '@/lib/tradeStatus';
+import { FONTE_PNL_BREVE, FONTE_PNL_TESTO, fontePnlRighe, scomposizioneConto, sommaPerChi } from '@/lib/fontePnl';
 import { toastSettlement } from '@/lib/toasts';
 import { romeDay, dayLabel, fetchMikeDaily, fetchMikeDayTrades } from '@/lib/dailyHistory';
 import {
@@ -210,6 +211,15 @@ export default function Mike() {
         () => groupsOfDay(tradeGroups, bot.dayStartMs),
         [tradeGroups, bot.dayStartMs],
     );
+    // 30/09 (ordine dell'utente: «il trader deve sapere cosa sta guardando»):
+    // da dove viene il P&L realizzato di oggi (conto Betfair / simulato / stima)
+    // e, in live, quanto e' di Mike e quanto degli ordini dell'utente
+    const fonteOggi = useMemo(() => {
+        const righe = gruppiOggi.flatMap((g) => [g.open, ...g.closes]);
+        const f = fontePnlRighe(righe) ?? (mode === 'paper' ? 'simulato' : 'conto');
+        const chi = sommaPerChi(righe);
+        return { f, scomposizione: f === 'simulato' ? '' : scomposizioneConto(chi.mike, chi.utente) };
+    }, [gruppiOggi, mode]);
     // le linguette contano PARTITE, non righe: è quello che si vede aprendole
     const partiteOperate = useMemo(
         () => groupMikeTradesByEvent(gruppiOggi).length, [gruppiOggi]);
@@ -530,6 +540,11 @@ export default function Mike() {
                         : <span data-testid="mike-pnl-today-sub">
                             {dayLabel(operatingDay, { year: false })} · Europe/Rome
                             {dailyStop > 0 && <> · stop a {fmtMoney(-dailyStop, { signed: true })}</>}
+                            <span className="block" data-testid="mike-pnl-today-fonte"
+                                  title={FONTE_PNL_TESTO[fonteOggi.f]}>
+                                {FONTE_PNL_TESTO[fonteOggi.f]}
+                                {fonteOggi.scomposizione && <> · {fonteOggi.scomposizione}</>}
+                            </span>
                         </span>}
                 />
                 <StatTile label={T.pnlTotal} value={fmtMoney(realizedTotal, { signed: true })} tone={toneOf(realizedTotal)} />
@@ -672,7 +687,8 @@ export default function Mike() {
                         avviso={avvisoRighe}
                         nota={
                             <>Una riga per PARTITA col netto delle sue operazioni, commissione già tolta.
-                            Clicca per aprire i cicli e gli ordini. {T.operatingDay}{' '}
+                            {' '}<span data-testid="mike-operazioni-fonte">P&L: {FONTE_PNL_TESTO[fonteOggi.f]}.</span>
+                            {' '}Clicca per aprire i cicli e gli ordini. {T.operatingDay}{' '}
                             {dayLabel(operatingDay, { weekday: true })} · {operationsToday}{' '}
                             {operationsToday === 1 ? 'ciclo' : 'cicli'} in totale.</>
                         }
@@ -750,6 +766,9 @@ export default function Mike() {
                         fetchDayTrades={fetchDayTradesReadable}
                         refreshToken={bot.trades.length}
                         onGoLive={() => setTab('partite')}
+                        fonteNota={mode === 'paper'
+                            ? `P&L: ${FONTE_PNL_TESTO.simulato}`
+                            : `P&L: ${FONTE_PNL_TESTO.conto} per le partite regolate dal 30/09/2026; prima: ${FONTE_PNL_BREVE.stima}`}
                     />
                 </TabsContent>
             </Tabs>

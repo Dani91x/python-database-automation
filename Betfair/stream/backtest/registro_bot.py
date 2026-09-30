@@ -196,7 +196,9 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
         # ``Betfair/mike/tests/test_mike_p5_4b_2026_09_29.py``.
         moduli_produzione=("Betfair.mike.service", "Betfair.mike.engine",
                            "Betfair.mike.config", "Betfair.mike.db", "Betfair.mike.dossier",
-                           "Betfair.mike.feed", "Betfair.mike.porta_ordini"),
+                           "Betfair.mike.feed", "Betfair.mike.porta_ordini",
+                           # 30/09: il regolamento dal conto Betfair (P&L reale)
+                           "Betfair.mike.regolato_conto"),
         mercati=("OVER_UNDER_35", "OVER_UNDER_45"),
         replay="Betfair.mike.tools.replay_registrazioni:certifica_scenario",
         scenari="Betfair.mike.tools.replay_registrazioni:SCENARI_DESCRITTI",

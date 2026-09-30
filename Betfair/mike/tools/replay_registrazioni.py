@@ -589,6 +589,9 @@ def _crea_strategia():
             self.firme_mandate: int = 0
             self.db = DbMemoria({"status": "running", "mode": self.mode, "params": params})
             self.mercato = MercatoFlumine(self)
+            # 30/09 (P&L REALE DEL CONTO): la commissione del MERCATO nella
+            # lettura per mercato del banco e' quella del parametro del bot
+            self.mercato.aliquota_commissione = C.commission_rate(params)
             self.referto = CERT.Referto(event_id=str(event_id))
             self._ultimo_ms: int = 0
             self._stati: List[str] = []
@@ -1748,12 +1751,32 @@ def _certifica_evento(event_id: str, *, data_dir: str,
     ev_fine = strategia.db.events.get(str(event_id)) or {}
     stato_fine = str(ev_fine.get("state") or "")
     ctx_fine = S._ctx_from_row(ev_fine, strategia.db) if ev_fine else None
-    esiti_banco = esiti_del_banco(strategia.mercato)
-    conto_bf = strategia.mercato.pnl_betfair(C.commission_rate(par))
+    # 30/09 (P&L REALE DEL CONTO): in LIVE Mike regola la partita dal CONTO,
+    # ordini dell'utente compresi (scenario ``chiuso-fuori-app``): il metro del
+    # banco conta anche quelli; in paper (canale) solo gli ordini del bot
+    con_utente = str(strategia.mode) == "live"
+    esiti_banco = esiti_del_banco(strategia.mercato, con_utente=con_utente)
+    conto_bf = strategia.mercato.pnl_betfair(C.commission_rate(par), con_utente=con_utente)
     righe_fine = strategia.db.trades_for_event(str(event_id)) or []
     out.violazioni.extend(CERT.confronta_regolamento(
         stato_fine, getattr(ctx_fine, "settled_pnl", None), righe_fine, esiti_banco,
         conto_bf["netto"], out.sollecitati))
+    pnl_conto = (ev_fine.get("ctx") or {}).get("pnl_conto")
+    if pnl_conto:
+        # 30/09 (P&L REALE DEL CONTO): in LIVE Mike regola dal conto del banco
+        # (``list_account_cleared_bets``/``_markets``): da dove viene il numero,
+        # quanto e' di Mike e quanto dell'utente, e quante chiamate REST
+        righe_utente = [r for r in righe_fine if str(r.get("role")) == "utente"]
+        out.note.append(
+            f"regolamento dal CONTO (live): fonte {pnl_conto.get('fonte')} | conto "
+            f"{pnl_conto.get('conto')} = Mike {pnl_conto.get('mike')} + utente "
+            f"{pnl_conto.get('utente')} | calcolo interno di Mike {pnl_conto.get('interno_mike')} | "
+            f"righe utente {len(righe_utente)} "
+            + str([(r.get('bet_id'), r.get('side'), r.get('status'), r.get('pnl'))
+                   for r in righe_utente])
+            + f" | chiamate REST del regolato {pnl_conto.get('chiamate_rest')} | differenze "
+              f"interno/Betfair nel diario "
+              f"{sum(1 for k, _p, _e in strategia.db.attivita if k == 'pnl_differenza_betfair')}")
     out.note.append(
         f"regolamento: giri del servizio DOPO l'ultimo book (linee chiuse, tempo di "
         f"mercato, nessun book nuovo) {strategia.giri_di_coda} | "
@@ -1915,14 +1938,18 @@ SCENARI_DESCRITTI: Dict[str, str] = {
 }
 
 
-def esiti_del_banco(mercato: Any) -> Dict[str, Dict[str, Any]]:
+def esiti_del_banco(mercato: Any, con_utente: bool = False) -> Dict[str, Dict[str, Any]]:
     """RG1 (30/09, ondata 2): l'esito di OGNI ordine del bot secondo il BANCO,
     per bet_id: flumine scrive ``runner_status`` (WINNER/LOSER/REMOVED) sugli
     ordini alla chiusura del mercato (``blotter.process_closed_market``) e ne
     calcola il lordo (``simulated.profit``). Non abbinato = void; mercato non
     ancora regolato = esito ``?`` (il confronto lo dira')."""
     out: Dict[str, Dict[str, Any]] = {}
-    for _ref, o in list(getattr(mercato, "ordini", {}).items()):
+    ordini = list(getattr(mercato, "ordini", {}).items())
+    if con_utente:
+        # 30/09: anche gli ordini dell'UTENTE (le righe 'utente' di Mike)
+        ordini += list(getattr(mercato, "ordini_utente", {}).items())
+    for _ref, o in ordini:
         bet = str(getattr(o, "bet_id", None) or getattr(o, "id", "") or "")
         sim = getattr(o, "simulated", None)
         abbinato = float(getattr(sim, "size_matched", 0.0) or 0.0)

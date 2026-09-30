@@ -33,6 +33,9 @@ export interface TradingHistoryProps {
     today?: string;
     /** contatore esterno: incrementalo per forzare un ricaricamento (es. realtime) */
     refreshToken?: number;
+    /** 30/09: da dove viene il P&L mostrato (conto Betfair / simulato / stima),
+     *  con le parole di `lib/fontePnl.ts`. Assente = nessuna riga in piu'. */
+    fonteNota?: string;
 }
 
 function monthBounds(year: number, month: number): { from: string; to: string } {
@@ -44,6 +47,7 @@ function monthBounds(year: number, month: number): { from: string; to: string } 
 
 export function TradingHistory({
     variant, fetchDaily, fetchDayTrades, onGoLive, filterKey = '', today, refreshToken = 0,
+    fonteNota,
 }: TradingHistoryProps) {
     const todayDay = today ?? romeDay();
     const [period, setPeriod] = useState<PeriodKind>('month');
@@ -116,6 +120,7 @@ export function TradingHistory({
                     {attributionOf(variant) === 'placed'
                         ? ' P&L realizzato = posizioni PIAZZATE nel giorno (chiusure incluse), anche se si regolano dopo'
                         : ' P&L realizzato = posizioni REGOLATE nel giorno (chiusure incluse), come in «Posizioni chiuse»'}
+                    {fonteNota && <span data-testid="history-fonte-pnl"> · {fonteNota}</span>}
                 </span>
                 <Button variant="ghost" size="sm" className="ml-auto h-7 text-xs" onClick={() => setManualRefresh((n) => n + 1)} disabled={loading}>
                     <RefreshCw className={`w-3.5 h-3.5 mr-1 ${loading ? 'animate-spin' : ''}`} />Aggiorna
