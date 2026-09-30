@@ -1494,10 +1494,16 @@ def _riga_regolata(o: dict) -> dict:
         "size_remaining": 0.0,
         "price": o.get("priceMatched") or o.get("priceRequested"),
         "avg_price_matched": o.get("priceMatched"),
+        # 30/09 (PNL REALE, correzione del commento del 17/09): il ``profit`` di
+        # una SCOMMESSA e' LORDO. Documentazione nel repo
+        # (``Betfair/Betfair_api_documentation.pdf`` pag. 54: back 2,00 @ 1,28
+        # WON -> profit 0,56 = 2 x 0,28, commission 0,03 A PARTE) e reperto
+        # del conto (safe #332: back 3,00 @ 1,16 WON -> profit 0,48 = 3 x
+        # 0,16). La commissione esiste SOLO raggruppando per MERCATO
+        # (``list_cleared_markets_account``): a livello di scommessa
+        # ``commission`` arriva None. Il netto si compone con
+        # ``reconcile_worker.commissioni_per_ordine``.
         "profit": float(o.get("profit") or 0.0),
-        # I3 (17/09) — Betfair applica gia' la commissione sul ``profit``: non
-        # serve a ricalcolare nulla, serve a DICHIARARE nel meta con che
-        # numero Betfair ha regolato, per il trader ("dati reali").
         "commission": o.get("commission"),
         "bet_outcome": o.get("betOutcome"),
         "customer_order_ref": o.get("customerOrderRef"),
@@ -1558,6 +1564,49 @@ def list_cleared_orders_account(market_ids: list, lookback_hours: int = 72) -> l
             )
         ) or {}
         out.extend(_riga_regolata(o) for o in (resp.get("clearedOrders", []) or []))
+    return out
+
+
+def list_cleared_bets_account(market_ids: list, stato: str = "SETTLED",
+                              lookback_hours: int = 72) -> list[dict]:
+    """30/09 (P&L REALE DEL CONTO) - le scommesse REGOLATE del CONTO su questi
+    mercati (di chiunque: bot e utente), UNA chiamata (``listClearedOrders``
+    con ``marketIds`` e un solo ``betStatus``). Forma di ``_riga_regolata``
+    (``profit`` LORDO). Stessa lettura di Mike
+    (``mike.service._RealMarket.list_account_cleared_bets``). Solleva sugli
+    errori di rete: chi regola ripiega, non inventa."""
+    settled_from = (datetime.now(timezone.utc) - timedelta(hours=lookback_hours)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ")
+    ids = [str(m) for m in market_ids or [] if m]
+    resp = call(lambda c: c.list_cleared_orders(
+        bet_status=str(stato), market_ids=ids, settled_from=settled_from)) or {}
+    return [_riga_regolata(o) for o in (resp.get("clearedOrders", []) or [])]
+
+
+def list_cleared_markets_account(market_ids: list, lookback_hours: int = 72) -> list[dict]:
+    """30/09 (P&L REALE DEL CONTO) - i mercati REGOLATI del conto letti per
+    MERCATO (``listClearedOrders`` con ``groupBy=MARKET``, SETTLED): e'
+    l'UNICO livello che porta ``commission`` (docs Betfair, "listClearedOrders
+    - Roll-up Fields Available"; stessa lettura del runner,
+    ``reconcile_worker._fetch_cleared_markets_today``, e di Mike,
+    ``mike.service._RealMarket.list_account_cleared_markets``, stesse chiavi).
+    UNA chiamata REST, solo al regolamento. Solleva sugli errori di rete."""
+    settled_from = (datetime.now(timezone.utc) - timedelta(hours=lookback_hours)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ")
+    params = {"betStatus": "SETTLED", "groupBy": "MARKET",
+              "marketIds": [str(m) for m in market_ids or [] if m],
+              "settledDateRange": {"from": settled_from},
+              "fromRecord": 0, "recordCount": 1000}
+    resp = call(lambda c: c.betting_rpc("SportsAPING/v1.0/listClearedOrders", params)) or {}
+    out: list[dict] = []
+    for g in resp.get("clearedOrders", []) or []:
+        if not g.get("marketId"):
+            continue
+        out.append({"market_id": str(g.get("marketId")),
+                    "profit": g.get("profit"),
+                    "commission": g.get("commission"),
+                    "bet_count": g.get("betCount"),
+                    "settled_date": g.get("settledDate")})
     return out
 
 

@@ -78,9 +78,18 @@ def _ordine_betfair(**kw) -> dict:
            "selectionId": kw["selection_id"], "side": kw["side"],
            "priceRequested": kw.get("price_requested"), "priceMatched": kw["price_matched"],
            "sizeSettled": kw["size_settled"], "profit": kw["profit"],
-           "commission": kw.get("commission", "0.05"), "betOutcome": kw["bet_outcome"],
-           "customerOrderRef": kw["ref"]}
+           "betOutcome": kw["bet_outcome"], "customerOrderRef": kw["ref"]}
+    # 30/09: a livello di SCOMMESSA Betfair non porta ``commission`` (esiste
+    # solo raggruppando per MERCATO: reperto del conto, safe #298..#337 tutti
+    # con commission null); prima il finto la metteva a "0.05" (difetto 27).
     return M._riga_regolata(raw)
+
+
+def _mercato(market_id: str, profit: float, commission) -> dict:
+    """La lettura per MERCATO (``groupBy=MARKET``) nella forma di
+    ``omega_market.list_cleared_markets_account``: l'unica con ``commission``."""
+    return {"market_id": market_id, "profit": profit, "commission": commission,
+            "bet_count": 2, "settled_date": "2026-09-17T09:00:00.000Z"}
 
 
 def _cleared_298_299() -> list[dict]:
@@ -113,16 +122,24 @@ def test_regolamento_legge_il_profit_di_betfair_quando_ce_su_tutte_le_gambe():
     trade, closing = _trade_298(), _closing_299()
     db.seed(trade)
     db.seed(closing)
+    # 30/09 (PNL REALE): il profit e' LORDO (+0,19 / -0,09 = +0,10 lordo di
+    # mercato). Commissione del mercato ASSUNTA 0,01 (5 % di 0,10 = 0,005: il
+    # valore vero di 1.262538841 non e' stato riletto, nessuna chiamata a
+    # Betfair): il netto e' 0,18 / -0,09, posizione +0,09.
     ok = X.settle_position(db=db, trade=trade, closings=[closing], snap=FakeSnap(),
                            commission=0.05, now=NOW, cleared_orders=_cleared_298_299(),
+                           cleared_markets=[_mercato("1.9999", 0.10, 0.01)],
                            table_prefix="safe")
     assert ok is True
-    assert db.rows[298]["pnl"] == 0.19 and db.rows[298]["status"] == "won"
+    assert db.rows[298]["pnl"] == 0.18 and db.rows[298]["status"] == "won"
     assert db.rows[299]["pnl"] == -0.09 and db.rows[299]["status"] == "lost"
-    assert db.rows[298]["meta"]["position_pnl"] == 0.10, db.rows[298]["meta"]
+    assert db.rows[298]["meta"]["position_pnl"] == 0.09, db.rows[298]["meta"]
     assert db.rows[298]["meta"]["pnl_source"]["kind"] == "betfair_cleared"
     assert db.rows[299]["meta"]["pnl_source"]["kind"] == "betfair_cleared"
-    assert db.rows[298]["meta"]["pnl_source"]["commission"] == "0.05"
+    assert db.rows[298]["meta"]["pnl_source"]["commission"] is None
+    assert db.rows[298]["meta"]["pnl_source"]["lordo"] == 0.19
+    assert db.rows[298]["meta"]["pnl_source"]["commissione_quota"] == 0.01
+    assert db.rows[298]["meta"]["pnl_source"]["netto"] == 0.18
 
 
 def test_senza_cleared_orders_si_ripiega_sul_calcolo_di_sempre():
@@ -170,7 +187,8 @@ def _trade_297() -> dict:
 
 
 def _cleared_297() -> list[dict]:
-    return [_ordine_betfair(bet_id="b297", selection_id=5, side="BACK", price_requested=1.02,
+    return [_ordine_betfair(bet_id="b297", market_id="1.8888", selection_id=5, side="BACK",
+                            price_requested=1.02,
                             price_matched=1.03, size_settled=3.0, profit=0.09,
                             bet_outcome="WON", ref="safe-t297")]
 
@@ -184,8 +202,10 @@ def test_riga_singola_senza_chiusura_legge_anch_essa_il_profit_di_betfair():
     db.seed(trade)
     snap = FakeSnap()
     snap.winner_selection_id = 5
+    # commissione del mercato: 5 % di 0,09 = 0,0045 -> 0,00 (assunta)
     ok = X.settle_position(db=db, trade=trade, closings=[], snap=snap,
                            commission=0.05, now=NOW, cleared_orders=_cleared_297(),
+                           cleared_markets=[_mercato("1.8888", 0.09, 0.0)],
                            table_prefix="safe")
     assert ok is True
     assert db.rows[297]["pnl"] == 0.09 and db.rows[297]["status"] == "won"

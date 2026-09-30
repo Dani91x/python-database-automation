@@ -2139,37 +2139,98 @@ def _cleared_match(row: dict[str, Any], by_bet: dict[str, dict], by_ref: dict[st
     return None
 
 
+def _lordo_per_bet(cleared_orders: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """bet_id -> {market_id, lordo}: Betfair puo' dare piu' record per la
+    stessa scommessa, i ``profit`` si SOMMANO (somma esatta al centesimo, come
+    ``mike.regolato_conto.componi_regolato``)."""
+    out: dict[str, dict[str, Any]] = {}
+    for o in cleared_orders or []:
+        bet = o.get("bet_id")
+        if bet is None or o.get("profit") is None:
+            continue
+        acc = out.setdefault(str(bet), {"market_id": str(o.get("market_id") or ""),
+                                        "lordo": 0.0})
+        acc["lordo"] = round(acc["lordo"] + float(o["profit"]), 2)
+    return out
+
+
+def _quote_commissione(lordi: dict[str, dict[str, Any]],
+                       cleared_markets: Optional[list[dict[str, Any]]]
+                       ) -> "dict[str, Optional[float]]":
+    """bet_id -> quota della commissione del SUO mercato (None = commissione
+    del mercato non letta). La regola e' UNA sola, quella del runner che
+    scrive ``pnl_betfair`` e di Mike: ``reconcile_worker.commissioni_per_ordine``
+    (commissione del MERCATO ripartita sui profit POSITIVI, somma esatta al
+    centesimo; mercato in perdita = commissione 0)."""
+    from types import SimpleNamespace
+
+    from Betfair.stream.reconcile_worker import commissioni_per_ordine
+
+    ordini = [SimpleNamespace(bet_id=b, market_id=v["market_id"], profit=v["lordo"])
+              for b, v in lordi.items()]
+    gruppi = [SimpleNamespace(market_id=str(g.get("market_id")), commission=g.get("commission"))
+              for g in (cleared_markets or []) if g.get("market_id")]
+    return commissioni_per_ordine(ordini, gruppi)
+
+
 def _posizione_da_cleared(trade: dict[str, Any], legs: list[dict[str, Any]],
                           cleared_orders: Optional[list[dict[str, Any]]], *,
-                          table_prefix: str
+                          table_prefix: str,
+                          cleared_markets: Optional[list[dict[str, Any]]] = None
                           ) -> "Optional[tuple[float, list[float], list[dict]]]":
-    """(pnl_open, [pnl_chiusure], [ordini_trovati]) letti DA BETFAIR se OGNI
-    gamba della posizione (apertura + tutte le chiusure) e' gia' nei cleared
-    orders con un ``profit`` numerico — altrimenti ``None``: si mischia un
-    numero VERO con uno STIMATO sulla stessa posizione mai, e' peggio che
-    dichiarare che non si sa ancora (si ripiega su ``settle_group``/
-    ``omega_engine.settle_pnl``, il calcolo di sempre).
+    """(pnl_open, [pnl_chiusure], [ordini_trovati]) NETTI letti DA BETFAIR se
+    OGNI gamba della posizione (apertura + tutte le chiusure) e' gia' nei
+    cleared orders con un ``profit`` numerico E la commissione del suo mercato
+    e' stata letta - altrimenti ``None``: si mischia un numero VERO con uno
+    STIMATO sulla stessa posizione mai, e' peggio che dichiarare che non si sa
+    ancora (si ripiega su ``settle_group``/``omega_engine.settle_pnl``, il
+    calcolo di sempre, gia' netto di commissione).
 
-    Il ``profit`` di Betfair e' GIA' netto di commissione (verificato sul
-    reperto: #298 +0,19 e #299 -0,09 sommano al netto vero +0,10): non si
-    riapplica ``commission`` sopra."""
+    30/09 (PNL REALE): il ``profit`` di una scommessa e' LORDO (docs Betfair
+    pag. 54: back 2,00 @ 1,28 WON -> profit 0,56, commission 0,03 a parte;
+    reperto del conto: safe #332 back 3,00 @ 1,16 WON -> profit 0,48 = 3 x
+    0,16). Il 17/09 lo si era creduto netto su #298/#299, dove la commissione
+    del mercato (+0,10 di vincita netta) arrotonda a un centesimo appena.
+    Netto della gamba = profit - quota della commissione del MERCATO
+    (``cleared_markets``, la lettura ``groupBy=MARKET``: l'unica che porta
+    ``commission``), ripartita come fa il runner. ``cleared_orders`` deve
+    contenere TUTTE le scommesse regolate del conto su quel mercato (la
+    ripartizione e' su tutte le scommesse in utile), non solo quelle del bot.
+    Gli ordini trovati tornano arricchiti di ``lordo``/``commissione_quota``/
+    ``netto`` (per ``meta.pnl_source``)."""
     if not cleared_orders:
         return None
     by_bet, by_ref = _cleared_index(cleared_orders)
     trovati: list[dict[str, Any]] = []
     for row in [trade] + list(legs):
         m = _cleared_match(row, by_bet, by_ref, table_prefix=table_prefix)
-        if m is None or m.get("profit") is None:
+        if m is None or m.get("profit") is None or m.get("bet_id") is None:
             return None
         trovati.append(m)
-    pnl_open = round(float(trovati[0]["profit"]), 2)
-    pnl_closes = [round(float(m["profit"]), 2) for m in trovati[1:]]
-    return pnl_open, pnl_closes, trovati
+    lordi = _lordo_per_bet(cleared_orders)
+    quote = _quote_commissione(lordi, cleared_markets)
+    netti: list[float] = []
+    arricchiti: list[dict[str, Any]] = []
+    for m in trovati:
+        bet = str(m["bet_id"])
+        q = quote.get(bet)
+        if q is None:
+            return None      # commissione del mercato non letta: nessun netto reale
+        lordo = float(lordi[bet]["lordo"])
+        netto = round(lordo - float(q), 2)
+        netti.append(netto)
+        arricchiti.append({**m, "lordo": round(lordo, 2),
+                           "commissione_quota": round(float(q), 2), "netto": netto})
+    return netti[0], netti[1:], arricchiti
 
 
 def _pnl_source_betfair(m: dict[str, Any]) -> dict[str, Any]:
+    """``profit`` = LORDO di Betfair per la scommessa; ``commissione_quota`` =
+    la sua parte della commissione del mercato; ``netto`` = il P&L scritto."""
     return {"kind": "betfair_cleared", "bet_id": m.get("bet_id"),
             "profit": m.get("profit"), "commission": m.get("commission"),
+            "lordo": m.get("lordo"), "commissione_quota": m.get("commissione_quota"),
+            "netto": m.get("netto"),
             "bet_outcome": m.get("bet_outcome"),
             "customer_order_ref": m.get("customer_order_ref")}
 
@@ -2180,7 +2241,8 @@ _PNL_SOURCE_CALCOLATO = {"kind": "calcolato"}
 def settle_position(*, db, trade: dict[str, Any], closings: list[dict[str, Any]],
                     snap: Any, commission: float, now: datetime,
                     cleared_orders: Optional[list[dict[str, Any]]] = None,
-                    table_prefix: str = "safe") -> bool:
+                    table_prefix: str = "safe",
+                    cleared_markets: Optional[list[dict[str, Any]]] = None) -> bool:
     """Regola un'apertura CON TUTTE le sue chiusure (o da sola se non ne ha),
     a mercato ``snap`` CHIUSO. Ritorna True se l'apertura è stata regolata.
 
@@ -2196,7 +2258,12 @@ def settle_position(*, db, trade: dict[str, Any], closings: list[dict[str, Any]]
     ``market.list_cleared_orders`` è stato letto in questo ciclo) e OGNI gamba
     della posizione ha gia' un ``profit`` di Betfair, si regola con QUEI
     numeri — non con prezzo medio × size. Nessun chiamante esistente (Omega)
-    li passa: default ``None``, comportamento IDENTICO a prima."""
+    li passa: default ``None``, comportamento IDENTICO a prima.
+
+    ``cleared_markets`` (30/09, PNL REALE): la lettura per MERCATO con la
+    ``commission`` di Betfair. Il ``profit`` della scommessa e' LORDO: senza
+    la commissione del mercato non c'e' un netto reale e si ripiega sul
+    calcolo (``_posizione_da_cleared``)."""
     legs = [c for c in closings or [] if str(c.get("status")) != "error"]
     if any(str(c.get("status")) == "pending" for c in legs):
         _log(db, "settle_wait", {"trade_id": trade.get("id"),
@@ -2226,7 +2293,8 @@ def settle_position(*, db, trade: dict[str, Any], closings: list[dict[str, Any]]
     won = int(snap.winner_selection_id) == int(trade["selection_id"])
     if legs:
         da_betfair = _posizione_da_cleared(trade, legs, cleared_orders,
-                                           table_prefix=table_prefix)
+                                           table_prefix=table_prefix,
+                                           cleared_markets=cleared_markets)
         if da_betfair is not None:
             pnl_open, pnl_closes, trovati = da_betfair
             fonte = "betfair_cleared"
@@ -2252,7 +2320,8 @@ def settle_position(*, db, trade: dict[str, Any], closings: list[dict[str, Any]]
                                      "legs": [c.get("id") for c in legs],
                                      "commission": commission, "pnl_source": fonte})
         return True
-    da_betfair = _posizione_da_cleared(trade, [], cleared_orders, table_prefix=table_prefix)
+    da_betfair = _posizione_da_cleared(trade, [], cleared_orders, table_prefix=table_prefix,
+                                       cleared_markets=cleared_markets)
     if da_betfair is not None:
         pnl, _vuoto, trovati = da_betfair
         status = "won" if pnl >= 0 else "lost"

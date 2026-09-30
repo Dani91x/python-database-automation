@@ -122,6 +122,17 @@ class _MercatoSafe:
         return _solo_ordini_di_safe(self._modulo.list_cleared_orders(
             [SAFE_STRATEGY_REF, *_SAFE_REFS_STORICI], **kw))
 
+    # 30/09 (PNL REALE) - il regolato del CONTO per il regolamento, con i NOMI
+    # dello sportello di Mike e del banco (``list_account_cleared_bets`` /
+    # ``list_account_cleared_markets``): SENZA filtro di strategia, perche' la
+    # commissione di Betfair e' del MERCATO (di tutto il conto) e si ripartisce
+    # su tutte le scommesse in utile di quel mercato.
+    def list_account_cleared_bets(self, market_ids: list, stato: str = "SETTLED") -> list:
+        return list(self._modulo.list_cleared_bets_account(list(market_ids), stato) or [])
+
+    def list_account_cleared_markets(self, market_ids: list) -> list:
+        return list(self._modulo.list_cleared_markets_account(list(market_ids)) or [])
+
 
 _real_market = _MercatoSafe(_omega_market)
 
@@ -1864,22 +1875,34 @@ def _completa_consapevolezza_mancante(*, db, market, rows: list[dict[str, Any]])
     return n
 
 
-def _cleared_orders_for_market(market, market_id: str) -> Optional[list[dict[str, Any]]]:
-    """I cleared orders di QUESTO mercato, per il settlement I3 (17/09):
-    ``execution.settle_position`` regola con il ``profit`` di Betfair quando
-    ce l'ha per OGNI gamba della posizione, e ripiega da solo sul calcolo di
-    sempre altrimenti. Una lettura per mercato, solo quando il mercato e' gia'
-    CHIUSO (il chiamante lo garantisce): stesso budget di un'altra lettura di
-    chiusura, non una lettura nuova per ciclo su una posizione ancora viva.
-    ``None`` se il mercato non sa farla (banco di replay senza questa lettura,
-    rete KO): mai un'eccezione qui deve bloccare il settlement."""
-    fn = getattr(market, "list_cleared_orders", None)
-    if not callable(fn):
+def _cleared_orders_for_market(market, market_id: str
+                               ) -> "Optional[tuple[list[dict[str, Any]], list[dict[str, Any]]]]":
+    """Il regolato del CONTO su QUESTO mercato, per il settlement I3 (17/09):
+    ``(scommesse, mercati)``. ``execution.settle_position`` regola con il
+    NETTO di Betfair (``profit`` LORDO della scommessa meno la sua quota della
+    commissione del MERCATO) quando ce l'ha per OGNI gamba della posizione, e
+    ripiega da solo sul calcolo di sempre altrimenti.
+
+    30/09 (PNL REALE): prima si leggevano solo le scommesse di Safe
+    (``list_cleared_orders``, SETTLED + VOIDED = 2 chiamate) e il ``profit``
+    si scriveva come NETTO: era LORDO. Ora, stesse 2 chiamate: le scommesse
+    SETTLED del CONTO sul mercato (1) e la lettura per MERCATO con la
+    commissione (1, solo se c'e' almeno una scommessa regolata). Una lettura
+    per mercato, solo quando il mercato e' gia' CHIUSO (il chiamante lo
+    garantisce), mai a ogni ciclo su una posizione viva. ``None`` se il
+    mercato non sa farla (sportello senza queste letture, rete KO) o Betfair
+    non ha ancora regolato nulla: mai un'eccezione qui blocca il settlement."""
+    leggi_b = getattr(market, "list_account_cleared_bets", None)
+    leggi_m = getattr(market, "list_account_cleared_markets", None)
+    if not callable(leggi_b) or not callable(leggi_m):
         return None
     try:
-        return fn(market_ids=[str(market_id)]) or None
+        ordini = list(leggi_b([str(market_id)]) or [])
+        if not ordini:
+            return None
+        return ordini, list(leggi_m([str(market_id)]) or [])
     except Exception as ex:  # noqa: BLE001 — senza cleared si ripiega, non si blocca
-        logger.debug("[safe.bot] list_cleared_orders KO (mercato %s): %s",
+        logger.debug("[safe.bot] regolato del conto KO (mercato %s): %s",
                      market_id, str(ex)[:120])
         return None
 
@@ -1938,7 +1961,7 @@ def settle_open(*, params: dict[str, Any], market, db, now: datetime,
             continue
         todo.append(tr)
     snaps = _read_markets_batch(market, todo, now_ts)
-    cleared_cache: dict[str, Optional[list[dict[str, Any]]]] = {}
+    cleared_cache: dict[str, Any] = {}
     for tr in todo:
         try:
             mid = str(tr.get("market_id") or "")
@@ -1960,9 +1983,11 @@ def settle_open(*, params: dict[str, Any], market, db, now: datetime,
             # F1 (25/09): table_prefix sport-aware ("safe_tennis" per il
             # tennis), coerente col ref che ``_execute``/``close_trade``
             # scrivono davvero (``porta_ordini.ref_ordine``).
+            ordini_mercati = cleared_cache[mid] or (None, None)
             if X.settle_position(db=db, trade=tr, closings=closings.get(int(tr["id"]), []),
                                  snap=snap, commission=comm, now=now,
-                                 cleared_orders=cleared_cache[mid],
+                                 cleared_orders=ordini_mercati[0],
+                                 cleared_markets=ordini_mercati[1],
                                  table_prefix=("safe_tennis" if XE.is_tennis(tr) else "safe")):
                 settled += 1
         except Exception as ex:  # noqa: BLE001 — una riga rotta non blocca le altre
