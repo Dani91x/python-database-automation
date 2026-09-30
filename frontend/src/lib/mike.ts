@@ -1418,6 +1418,11 @@ export const MIKE_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
     cover_resto_sotto_minimo: { label: 'COPERTURA: RESTO SOTTO IL MINIMO', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/40' },
     residuo_non_piazzabile: { label: 'RESTO NON PIAZZABILE', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/40' },
     schema_warn: { label: 'SCHEMA DB', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
+    // 30/09: lo scrive `safe_strategy/execution.py::_place_via_canale` nel
+    // diario di Mike quando l'ordine parte sul canale del runner (stessa
+    // etichetta di Omega). Non e' in MIKE_ACTIVITY_KINDS: il contratto pytest
+    // elenca solo i kind scritti da `mike/service.py`.
+    canale_inviato: { label: 'ORDINE INVIATO SUL CANALE · attesa esito', cls: 'bg-white/5 text-slate-300 border-white/10' },
     cover: { label: 'COPERTURA LINEA 4.5', cls: 'bg-teal-500/15 text-teal-300 border-teal-500/40' },
     skip: { label: 'SALTO', cls: 'bg-white/5 text-slate-400 border-white/10' },
 };
@@ -1641,6 +1646,16 @@ export function mikeActivityLine(kind: string, payload: Record<string, unknown> 
             return `linee assenti nel feed: ${[...(Array.isArray(p.markets) ? p.markets : []), ...(Array.isArray(p.selections) ? p.selections : [])].map((x) => lineLabel(String(x))).join(', ') || reasonLabel(p.reason)} · fase ${stateLabel(p.state)}`;
         case 'flusso_interrotto':
             return `${String(p.testo ?? 'flusso prezzi interrotto')} · nessuna apertura né chiusura a mercato su quei prezzi · fase ${stateLabel(p.state)}`;
+        case 'flusso_interrotto_senza_rest': {
+            // 30/09: chiavi del servizio (`mike/service.py`): testo (quale linea),
+            // da_secondi (della LINEA ferma), esposizione_eur, state
+            // null non e' zero: senza il dato non si scrive niente
+            const da = typeof p.da_secondi === 'number' && Number.isFinite(p.da_secondi)
+                ? ` · ultimo dato ${Math.round(p.da_secondi)} s fa` : '';
+            const esp = typeof p.esposizione_eur === 'number' && Number.isFinite(p.esposizione_eur)
+                ? ` · esposizione ${money('esposizione_eur')}` : '';
+            return `${String(p.testo ?? 'flusso prezzi fermo')} · book Betfair (REST) non leggibile: posizione senza chiusura né copertura finché un prezzo vivo non torna${da}${esp} · fase ${stateLabel(p.state)}`;
+        }
         case 'cover_resto_sotto_minimo':
             // 30/09 (M3.5): chiavi del servizio: resto, minimo, state, ciclo
             return `copertura: resta da coprire ${money('resto')}, sotto il minimo di ${money('minimo')} · si considera coperta, nessun secondo ordine · fase ${stateLabel(p.state)}`;

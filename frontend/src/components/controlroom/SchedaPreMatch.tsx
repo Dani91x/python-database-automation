@@ -29,7 +29,7 @@ import { Clock } from 'lucide-react';
 import { fmtTime, fmtAge, fmtOdds, DASH } from '@/lib/format';
 import { teamLogo } from '@/lib/sportsLogos';
 import { dividiNomi } from '@/components/controlroom/AzioniPartita';
-import FlussoBadge from '@/components/controlroom/FlussoBadge';
+import FlussoBadge, { FlussoLineeMikeBadge } from '@/components/controlroom/FlussoBadge';
 import { AzioniPartita } from '@/components/controlroom/AzioniPartita';
 import { QUOTE_CLS, QUOTE_TESTO } from '@/components/controlroom/SchedaPartita';
 import { RigaOperazione } from '@/components/controlroom/DettaglioRigaView';
@@ -94,7 +94,7 @@ export function SchedaPreMatch({
             </div>
 
             {/* ── quote pre-match vive, con età (18/09, secondo giro) ── */}
-            {(haQuote || p.latenzaQuoteS != null) && (
+            {(haQuote || p.latenzaQuoteS != null || p.flussoMike?.stato === 'fermo') && (
                 <div className="flex items-center gap-2 flex-wrap mt-1 pl-[52px] text-[10px]"
                     data-testid="cr-pre-quote">
                     {haQuote && (
@@ -107,8 +107,12 @@ export function SchedaPreMatch({
                             {odds?.p2 && <><span className="text-white/25"> · </span>P2 {fmtOdds(odds.p2.back)}/{fmtOdds(odds.p2.lay)}</>}
                         </span>
                     )}
-                    {/* cantiere J (28/09): il flusso dei prezzi della partita */}
-                    <FlussoBadge flusso={p.flusso} />
+                    {/* cantiere J (28/09): il flusso dei prezzi della partita.
+                        30/09: il Match Odds non ancora seguito prima del fischio
+                        e' una nota grigia, non un rosso; le linee di Mike
+                        (Under/Over 3,5 e 4,5) hanno il loro giudizio. */}
+                    <FlussoBadge flusso={p.flusso} prePartita />
+                    <FlussoLineeMikeBadge flusso={p.flussoMike} />
                     {p.latenzaQuoteS != null && (
                         <span className={`font-mono ml-auto ${QUOTE_CLS[p.statoQuote]}`}
                             title={p.statoQuote === 'fermo'

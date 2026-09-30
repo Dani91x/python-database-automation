@@ -4679,8 +4679,11 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                 "critical": True, "reason": esito_flusso.motivo, "state": ctx.state,
                 "mercati": list(esito_flusso.mercati),
                 "esposizione_eur": _esposizione_mike(ctx),
-                "da_secondi": F._flusso.secondi_fermo((row or {}).get("payload"),
-                                                      _scanner_stato(), int(now_ts * 1000)),
+                # 30/09: i secondi della LINEA ferma (non dal passaggio del
+                # MATCH ODDS) e il testo che dice quale linea
+                "da_secondi": F.secondi_fermo_mike((row or {}).get("payload"),
+                                                   _scanner_stato(), int(now_ts * 1000)),
+                "testo": esito_flusso.testo,
                 "selezioni": [f"{m}|{s}" for (m, s) in E.open_selections(ctx.legs)],
                 "message": "flusso prezzi FERMO e book REST non leggibile: la posizione "
                            "resta senza chiusura ne' copertura finche' un prezzo vivo non torna"},

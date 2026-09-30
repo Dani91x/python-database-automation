@@ -10,9 +10,10 @@ Nessuna chiamata Betfair: Mike legge SOLO il feed (regola dei processi).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from Betfair.stream import flusso_prezzi as _flusso
 from Betfair.stream.trading.xhedge import OVER_UNDER, canonical_selection
@@ -153,7 +154,81 @@ def flusso_esito(row: Dict[str, Any], scanner_stato: Optional[Dict[str, Any]] = 
     if not isinstance(payload, dict):
         return _flusso.NON_NOTO
     adesso_ms = None if now is None else int(float(now) * 1000)
-    return _flusso.valuta(payload, scanner_stato, None, mercati_di_mike(payload), adesso_ms)
+    esito = _flusso.valuta(payload, scanner_stato, None, mercati_di_mike(payload), adesso_ms)
+    if esito.vivo or esito.motivo != _flusso.MOTIVO_MERCATO_FERMO:
+        return esito
+    # 30/09: il testo dice QUALE linea e' ferma e da quanto e' arrivato il suo
+    # ultimo book (il "da N s" generico conta dal passaggio del MATCH ODDS)
+    testo = testo_flusso_mike(payload, adesso_ms)
+    return replace(esito, testo=testo) if testo else esito
+
+
+# 30/09 (revisione critica): nomi delle linee come li legge il trader
+_NOME_LINEA = {E.MARKET_OU35: "Under/Over 3,5", E.MARKET_OU45: "Under/Over 4,5"}
+
+
+def _adesso_ms(adesso_ms: Optional[int]) -> int:
+    return int(adesso_ms) if adesso_ms is not None else int(time.time() * 1000)
+
+
+def linee_ferme_mike(payload: Dict[str, Any],
+                     adesso_ms: Optional[int] = None) -> List[Tuple[str, str, Optional[float]]]:
+    """30/09: le linee di Mike ANCORA IN GIOCO (``mercati_di_mike``) che lo
+    scanner dichiara col flusso fermo (``flusso.mercati_fermi``), come
+    ``(market_id, nome, secondi dall'ultimo book ricevuto)``. I secondi vengono
+    da ``seen_ms`` del blocco ``ou`` (l'ultimo book RICEVUTO dallo scanner per
+    quella linea); None se la riga non lo porta (scanner precedente al 13/09).
+    Stessa regola di ``flusso_esito``, nessuna soglia nuova."""
+    fermi = mercati_fermi(payload)
+    usati = set(mercati_di_mike(payload))
+    adesso = _adesso_ms(adesso_ms)
+    out: List[Tuple[str, str, Optional[float]]] = []
+    for blk in payload.get("ou") or []:
+        if not isinstance(blk, dict):
+            continue
+        mid = str(blk.get("market_id") or "")
+        if not mid or mid not in usati or mid not in fermi:
+            continue
+        line = _num(blk.get("line"))
+        nome = _NOME_LINEA.get(_LINE_TO_MARKET.get(line), mid) if line is not None else mid
+        seen = _num(blk.get("seen_ms"))
+        eta = round(max(0.0, (adesso - seen) / 1000.0), 1) if seen is not None and seen > 0 else None
+        out.append((mid, nome, eta))
+    return out
+
+
+def testo_flusso_mike(payload: Dict[str, Any], adesso_ms: Optional[int] = None) -> Optional[str]:
+    """30/09: il testo dell'avviso di flusso fermo delle linee di Mike: quale
+    linea e da quanto e' arrivato il suo ultimo book. None se nessuna linea di
+    Mike e' ferma o se una non porta ``seen_ms`` (resta il testo di prima)."""
+    linee = linee_ferme_mike(payload, adesso_ms)
+    if not linee or any(eta is None for _m, _n, eta in linee):
+        return None
+    parti = [f"{nome} ({mid}) ferma, ultimo book ricevuto {eta:.0f} s fa"
+             for mid, nome, eta in linee]
+    return "flusso prezzi fermo sulle linee di Mike: " + "; ".join(parti)
+
+
+def secondi_fermo_mike(payload: Optional[Dict[str, Any]],
+                       stato: Optional[Dict[str, Any]] = None,
+                       adesso_ms: Optional[int] = None) -> Optional[float]:
+    """30/09: da quanti secondi i prezzi delle linee di Mike non arrivano: il
+    piu' vecchio fra gli ultimi book delle linee ferme e, col giro dello
+    scanner bloccato, l'eta' dell'ultimo calcolo. MAI ``flusso.dal_ms`` (e' il
+    passaggio del MATCH ODDS: contava dal fischio). Riga senza ``seen_ms``:
+    ``flusso_prezzi.secondi_fermo`` come prima."""
+    if not isinstance(payload, dict):
+        return _flusso.secondi_fermo(payload, stato, adesso_ms)
+    adesso = _adesso_ms(adesso_ms)
+    linee = linee_ferme_mike(payload, adesso)
+    if any(eta is None for _m, _n, eta in linee):
+        return _flusso.secondi_fermo(payload, stato, adesso)
+    candidati = [float(eta) for _m, _n, eta in linee if eta is not None]
+    if isinstance(stato, dict) and isinstance(stato.get(_flusso.CHIAVE), dict):
+        calc = _num(stato[_flusso.CHIAVE].get("calcolato_ms"))
+        if calc is not None and calc > 0 and (adesso - calc) / 1000.0 > _flusso.STATO_CALCOLO_MAX_S:
+            candidati.append((adesso - calc) / 1000.0)
+    return round(max(candidati), 1) if candidati else None
 
 
 def payload_blocchi_ou(payload: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:

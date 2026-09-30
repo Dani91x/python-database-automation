@@ -84,3 +84,99 @@ export function giudizioFlusso(flusso: unknown, nowMs: number): GiudizioFlusso {
         testo: `FLUSSO PREZZI INTERROTTO${quanto}: ${MOTIVO_IT[motivo] ?? motivo}. `
             + 'Nessun bot apre né chiude a mercato su questi prezzi.' };
 }
+
+// ---------------------------------------------------------------------------
+// 30/09 — IL FLUSSO DELLE LINEE DI MIKE (Under/Over 3,5 e 4,5).
+//
+// `flusso.vivo`/`motivo`/`dal_ms` riguardano il MATCH ODDS: prima del fischio
+// lo scanner non lo segue (motivo `mai_ricevuto`, contatore dalla creazione
+// della riga) mentre le linee di Mike arrivano al secondo. Mike giudica il SUO
+// flusso così (`Betfair/mike/feed.py::flusso_esito` + `mercati_di_mike`): le
+// linee 3,5 e 4,5 della riga ANCORA IN GIOCO (gol <= linea) che lo scanner
+// elenca in `flusso.mercati_fermi`. Qui la STESSA regola, in sola lettura,
+// senza soglie nuove. Il "da quanto" è l'età dell'ultimo book RICEVUTO della
+// linea (`seen_ms` del blocco `ou`), come nel diario di Mike
+// (`feed.linee_ferme_mike`). Lo STATO dello scanner (giro bloccato) non è
+// nella riga: la scheda non lo vede (lo dice il diario di Mike).
+// ---------------------------------------------------------------------------
+
+/** Un blocco `ou` della riga come lo scrive lo scanner (solo le chiavi lette qui). */
+export interface BloccoOuRiga {
+    market_id?: string | null;
+    line?: number | null;
+    status?: string | null;
+    /** epoch ms dell'ultimo book RICEVUTO per questa linea */
+    seen_ms?: number | null;
+}
+
+/** Il minimo della riga che serve al giudizio delle linee di Mike. */
+export interface RigaLineeMike {
+    ou?: BloccoOuRiga[] | null;
+    flusso?: FlussoRiga | null;
+    score_home?: number | null;
+    score_away?: number | null;
+}
+
+export interface LineaFermaMike {
+    marketId: string;
+    /** «Under/Over 3,5» */
+    nome: string;
+    /** secondi dall'ultimo book ricevuto; null = la riga non lo dice */
+    daS: number | null;
+}
+
+export interface GiudizioFlussoMike {
+    /** `senza_linee`: la riga non porta linee 3,5/4,5 ancora in gioco */
+    stato: 'vivo' | 'fermo' | 'non_dichiarato' | 'senza_linee';
+    linee: LineaFermaMike[];
+    testo: string;
+}
+
+const LINEE_MIKE: Record<string, string> = { '3.5': 'Under/Over 3,5', '4.5': 'Under/Over 4,5' };
+
+/** Le linee di Mike ancora in gioco (stessa regola di `feed.mercati_di_mike`). */
+function lineeInGioco(riga: RigaLineeMike): { marketId: string; nome: string; seenMs: number | null }[] {
+    const h = riga.score_home, a = riga.score_away;
+    const gol = h == null || a == null || !Number.isFinite(Number(h)) || !Number.isFinite(Number(a))
+        ? null : Math.trunc(Number(h)) + Math.trunc(Number(a));
+    const out: { marketId: string; nome: string; seenMs: number | null }[] = [];
+    for (const b of Array.isArray(riga.ou) ? riga.ou : []) {
+        if (!b || typeof b !== 'object' || !b.market_id) continue;
+        const linea = Number(b.line);
+        const nome = LINEE_MIKE[String(linea)];
+        if (b.line == null || !nome) continue;
+        if (gol != null && gol > linea) continue;          // linea gia' decisa dai gol
+        const seen = typeof b.seen_ms === 'number' && Number.isFinite(b.seen_ms) && b.seen_ms > 0
+            ? b.seen_ms : null;
+        out.push({ marketId: String(b.market_id), nome, seenMs: seen });
+    }
+    return out;
+}
+
+/** Il giudizio del flusso delle LINEE DI MIKE di questa riga. */
+export function giudizioFlussoMike(riga: RigaLineeMike | null | undefined, nowMs: number): GiudizioFlussoMike {
+    const linee = riga ? lineeInGioco(riga) : [];
+    if (!linee.length) return { stato: 'senza_linee', linee: [], testo: '' };
+    const flusso: unknown = riga?.flusso;
+    if (!eFlussoRiga(flusso)) {
+        return { stato: 'non_dichiarato', linee: [], testo: 'flusso prezzi non dichiarato dallo scanner' };
+    }
+    const fermi = new Set((Array.isArray(flusso.mercati_fermi) ? flusso.mercati_fermi : []).map(String));
+    const ferme: LineaFermaMike[] = linee
+        .filter((l) => fermi.has(l.marketId))
+        .map((l) => ({ marketId: l.marketId, nome: l.nome,
+            daS: l.seenMs == null ? null : Math.max(0, (nowMs - l.seenMs) / 1000) }));
+    if (!ferme.length) return { stato: 'vivo', linee: [], testo: 'prezzi vivi sulle linee di Mike' };
+    const parti = ferme.map((l) => `${l.nome} (${l.marketId}) ferma`
+        + (l.daS == null ? '' : `, ultimo book ricevuto ${durata(l.daS)} fa`));
+    return { stato: 'fermo', linee: ferme,
+        testo: `Flusso prezzi fermo per lo scanner: ${parti.join('; ')}. `
+            + 'Mike non apre su queste linee; con una posizione aperta chiude o copre solo '
+            + 'sui prezzi letti da Betfair (ripiego REST).' };
+}
+
+/** Il Match Odds PRIMA del fischio non ancora ricevuto: non è un flusso
+ *  interrotto (lo scanner lo segue solo in gioco o negli ultimi 20 minuti). */
+export function moNonAncoraRicevuto(g: GiudizioFlusso | null | undefined): boolean {
+    return g?.stato === 'interrotto' && g.motivo === 'mai_ricevuto';
+}

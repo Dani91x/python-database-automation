@@ -228,7 +228,22 @@ export function useMike(handlers: MikeHandlers = {}): MikeView {
             });
         }
     }, [wrap, running, control]);
-    const saveParams = useCallback(async (p: MikeParams) => { await wrap(() => updateMikeParams(p)); }, [wrap]);
+    // 30/09: il salvataggio dei parametri RIGETTA con il testo dell'errore
+    // (oltre alla notifica di `onError`): il pannello lo scrive sotto il
+    // pulsante e tiene le modifiche come non salvate. Prima `wrap` lo
+    // ingoiava e il pannello non poteva distinguere un errore da un successo.
+    const saveParams = useCallback(async (p: MikeParams) => {
+        const esito: { errore: string | null } = { errore: null };
+        await wrap(async () => {
+            try {
+                return await updateMikeParams(p);
+            } catch (e) {
+                esito.errore = String((e as Error)?.message ?? e);
+                throw e;
+            }
+        });
+        if (esito.errore != null) throw new Error(esito.errore);
+    }, [wrap]);
     const request = useCallback(async (kind: MikeRequestKind, eventId: string) => {
         const key = `${kind}:${eventId}`;
         setLocalReqs((prev) => new Set(prev).add(key));

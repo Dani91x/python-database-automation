@@ -70,6 +70,7 @@ export function MikeParamsSheet({ params, busy, onSave }: MikeParamsSheetProps) 
             values={params}
             busy={busy}
             triggerTestId="mike-params-trigger"
+            riscontroSalvataggio
             onSave={(v) => onSave(mergeMikeParams(v))}
             onReset={() => ({ ...MIKE_PARAM_DEFAULTS })}
             footer="La modalità (PAPER/LIVE) non è un parametro: si cambia solo dal toggle in alto, con conferma."

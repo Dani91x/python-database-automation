@@ -1,0 +1,1099 @@
+diff --git a/Betfair/mike/feed.py b/Betfair/mike/feed.py
+index d080fa4..75a148e 100644
+--- a/Betfair/mike/feed.py
++++ b/Betfair/mike/feed.py
+@@ -10,9 +10,10 @@ Nessuna chiamata Betfair: Mike legge SOLO il feed (regola dei processi).
+ """
+ from __future__ import annotations
+ 
+-from dataclasses import dataclass
++import time
++from dataclasses import dataclass, replace
+ from datetime import datetime, timezone
+-from typing import Any, Dict, Optional, Tuple
++from typing import Any, Dict, List, Optional, Tuple
+ 
+ from Betfair.stream import flusso_prezzi as _flusso
+ from Betfair.stream.trading.xhedge import OVER_UNDER, canonical_selection
+@@ -153,7 +154,81 @@ def flusso_esito(row: Dict[str, Any], scanner_stato: Optional[Dict[str, Any]] =
+     if not isinstance(payload, dict):
+         return _flusso.NON_NOTO
+     adesso_ms = None if now is None else int(float(now) * 1000)
+-    return _flusso.valuta(payload, scanner_stato, None, mercati_di_mike(payload), adesso_ms)
++    esito = _flusso.valuta(payload, scanner_stato, None, mercati_di_mike(payload), adesso_ms)
++    if esito.vivo or esito.motivo != _flusso.MOTIVO_MERCATO_FERMO:
++        return esito
++    # 30/09: il testo dice QUALE linea e' ferma e da quanto e' arrivato il suo
++    # ultimo book (il "da N s" generico conta dal passaggio del MATCH ODDS)
++    testo = testo_flusso_mike(payload, adesso_ms)
++    return replace(esito, testo=testo) if testo else esito
++
++
++# 30/09 (revisione critica): nomi delle linee come li legge il trader
++_NOME_LINEA = {E.MARKET_OU35: "Under/Over 3,5", E.MARKET_OU45: "Under/Over 4,5"}
++
++
++def _adesso_ms(adesso_ms: Optional[int]) -> int:
++    return int(adesso_ms) if adesso_ms is not None else int(time.time() * 1000)
++
++
++def linee_ferme_mike(payload: Dict[str, Any],
++                     adesso_ms: Optional[int] = None) -> List[Tuple[str, str, Optional[float]]]:
++    """30/09: le linee di Mike ANCORA IN GIOCO (``mercati_di_mike``) che lo
++    scanner dichiara col flusso fermo (``flusso.mercati_fermi``), come
++    ``(market_id, nome, secondi dall'ultimo book ricevuto)``. I secondi vengono
++    da ``seen_ms`` del blocco ``ou`` (l'ultimo book RICEVUTO dallo scanner per
++    quella linea); None se la riga non lo porta (scanner precedente al 13/09).
++    Stessa regola di ``flusso_esito``, nessuna soglia nuova."""
++    fermi = mercati_fermi(payload)
++    usati = set(mercati_di_mike(payload))
++    adesso = _adesso_ms(adesso_ms)
++    out: List[Tuple[str, str, Optional[float]]] = []
++    for blk in payload.get("ou") or []:
++        if not isinstance(blk, dict):
++            continue
++        mid = str(blk.get("market_id") or "")
++        if not mid or mid not in usati or mid not in fermi:
++            continue
++        line = _num(blk.get("line"))
++        nome = _NOME_LINEA.get(_LINE_TO_MARKET.get(line), mid) if line is not None else mid
++        seen = _num(blk.get("seen_ms"))
++        eta = round(max(0.0, (adesso - seen) / 1000.0), 1) if seen is not None and seen > 0 else None
++        out.append((mid, nome, eta))
++    return out
++
++
++def testo_flusso_mike(payload: Dict[str, Any], adesso_ms: Optional[int] = None) -> Optional[str]:
++    """30/09: il testo dell'avviso di flusso fermo delle linee di Mike: quale
++    linea e da quanto e' arrivato il suo ultimo book. None se nessuna linea di
++    Mike e' ferma o se una non porta ``seen_ms`` (resta il testo di prima)."""
++    linee = linee_ferme_mike(payload, adesso_ms)
++    if not linee or any(eta is None for _m, _n, eta in linee):
++        return None
++    parti = [f"{nome} ({mid}) ferma, ultimo book ricevuto {eta:.0f} s fa"
++             for mid, nome, eta in linee]
++    return "flusso prezzi fermo sulle linee di Mike: " + "; ".join(parti)
++
++
++def secondi_fermo_mike(payload: Optional[Dict[str, Any]],
++                       stato: Optional[Dict[str, Any]] = None,
++                       adesso_ms: Optional[int] = None) -> Optional[float]:
++    """30/09: da quanti secondi i prezzi delle linee di Mike non arrivano: il
++    piu' vecchio fra gli ultimi book delle linee ferme e, col giro dello
++    scanner bloccato, l'eta' dell'ultimo calcolo. MAI ``flusso.dal_ms`` (e' il
++    passaggio del MATCH ODDS: contava dal fischio). Riga senza ``seen_ms``:
++    ``flusso_prezzi.secondi_fermo`` come prima."""
++    if not isinstance(payload, dict):
++        return _flusso.secondi_fermo(payload, stato, adesso_ms)
++    adesso = _adesso_ms(adesso_ms)
++    linee = linee_ferme_mike(payload, adesso)
++    if any(eta is None for _m, _n, eta in linee):
++        return _flusso.secondi_fermo(payload, stato, adesso)
++    candidati = [float(eta) for _m, _n, eta in linee if eta is not None]
++    if isinstance(stato, dict) and isinstance(stato.get(_flusso.CHIAVE), dict):
++        calc = _num(stato[_flusso.CHIAVE].get("calcolato_ms"))
++        if calc is not None and calc > 0 and (adesso - calc) / 1000.0 > _flusso.STATO_CALCOLO_MAX_S:
++            candidati.append((adesso - calc) / 1000.0)
++    return round(max(candidati), 1) if candidati else None
+ 
+ 
+ def payload_blocchi_ou(payload: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+diff --git a/Betfair/mike/service.py b/Betfair/mike/service.py
+index 9671621..a18205f 100644
+--- a/Betfair/mike/service.py
++++ b/Betfair/mike/service.py
+@@ -4679,8 +4679,11 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
+                 "critical": True, "reason": esito_flusso.motivo, "state": ctx.state,
+                 "mercati": list(esito_flusso.mercati),
+                 "esposizione_eur": _esposizione_mike(ctx),
+-                "da_secondi": F._flusso.secondi_fermo((row or {}).get("payload"),
+-                                                      _scanner_stato(), int(now_ts * 1000)),
++                # 30/09: i secondi della LINEA ferma (non dal passaggio del
++                # MATCH ODDS) e il testo che dice quale linea
++                "da_secondi": F.secondi_fermo_mike((row or {}).get("payload"),
++                                                   _scanner_stato(), int(now_ts * 1000)),
++                "testo": esito_flusso.testo,
+                 "selezioni": [f"{m}|{s}" for (m, s) in E.open_selections(ctx.legs)],
+                 "message": "flusso prezzi FERMO e book REST non leggibile: la posizione "
+                            "resta senza chiusura ne' copertura finche' un prezzo vivo non torna"},
+diff --git a/frontend/src/components/controlroom/FlussoBadge.tsx b/frontend/src/components/controlroom/FlussoBadge.tsx
+index bf22efd..3ee661f 100644
+--- a/frontend/src/components/controlroom/FlussoBadge.tsx
++++ b/frontend/src/components/controlroom/FlussoBadge.tsx
+@@ -1,7 +1,9 @@
+ // Cantiere J (28/09/2026): la partita col FLUSSO PREZZI interrotto si vede
+ // accanto ai prezzi, in rosso, col motivo e da quanto. Componente proprio (il
+ // resto della scheda non cambia): lo montano Scheda partita e Scheda pre-match.
+-import type { GiudizioFlusso } from '../../lib/flussoPrezzi';
++import {
++    moNonAncoraRicevuto, type GiudizioFlusso, type GiudizioFlussoMike,
++} from '../../lib/flussoPrezzi';
+ 
+ const CLS: Record<GiudizioFlusso['stato'], string> = {
+     interrotto: 'bg-red-500/20 text-red-200 border-red-500/60 animate-pulse',
+@@ -10,10 +12,30 @@ const CLS: Record<GiudizioFlusso['stato'], string> = {
+     non_dichiarato: '',
+ };
+ 
+-/** Niente se i prezzi sono vivi su tutti i mercati o se il dato non c'e'. */
+-export default function FlussoBadge({ flusso }: { flusso: GiudizioFlusso | null | undefined }) {
++/** Niente se i prezzi sono vivi su tutti i mercati o se il dato non c'e'.
++ *  30/09 - `prePartita`: prima del fischio il Match Odds "mai ricevuto" non e'
++ *  un flusso interrotto (lo scanner non lo segue ancora): nota grigia, niente
++ *  rosso e niente contatore. Senza `prePartita` (scheda in gioco) identico. */
++export default function FlussoBadge({ flusso, prePartita = false }: {
++    flusso: GiudizioFlusso | null | undefined;
++    prePartita?: boolean;
++}) {
+     if (!flusso || flusso.stato === 'non_dichiarato') return null;
+     if (flusso.stato === 'vivo' && flusso.mercatiFermi === 0) return null;
++    if (prePartita && moNonAncoraRicevuto(flusso)) {
++        return (
++            <span
++                className="text-[10px] px-1.5 py-0.5 rounded border border-white/10 text-white/40"
++                data-testid="cr-flusso"
++                data-stato="mo_non_ricevuto"
++                title={'Prima del fischio lo scanner legge il Match Odds solo negli ultimi 20 minuti '
++                    + '(o in gioco): finora nessun prezzo ricevuto. Non riguarda le linee Under/Over '
++                    + 'di Mike, che hanno il loro flusso.'}
++            >
++                Match Odds: prezzi non ancora ricevuti
++            </span>
++        );
++    }
+     return (
+         <span
+             className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${CLS[flusso.stato]}`}
+@@ -28,3 +50,22 @@ export default function FlussoBadge({ flusso }: { flusso: GiudizioFlusso | null
+         </span>
+     );
+ }
++
++/** 30/09 - le LINEE DI MIKE (Under/Over 3,5 e 4,5) col flusso fermo: QUALE
++ *  linea e l'eta' del suo ultimo book. Niente se sono vive o se la riga non le
++ *  porta. */
++export function FlussoLineeMikeBadge({ flusso }: { flusso: GiudizioFlussoMike | null | undefined }) {
++    if (!flusso || flusso.stato !== 'fermo') return null;
++    return (
++        <span
++            className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${CLS.interrotto}`}
++            data-testid="cr-flusso-mike"
++            data-stato="fermo"
++            title={flusso.testo}
++        >
++            {'⚠ '}
++            {flusso.linee.map((l) => `${l.nome} ferma`
++                + (l.daS == null ? '' : ` · ultimo book ${Math.round(l.daS)} s fa`)).join(' · ')}
++        </span>
++    );
++}
+diff --git a/frontend/src/components/controlroom/SchedaPartita.tsx b/frontend/src/components/controlroom/SchedaPartita.tsx
+index 8ebd6b2..157b751 100644
+--- a/frontend/src/components/controlroom/SchedaPartita.tsx
++++ b/frontend/src/components/controlroom/SchedaPartita.tsx
+@@ -23,7 +23,7 @@
+ import { useState } from 'react';
+ import { Circle } from 'lucide-react';
+ import { AzioniPartita } from '@/components/controlroom/AzioniPartita';
+-import FlussoBadge from '@/components/controlroom/FlussoBadge';
++import FlussoBadge, { FlussoLineeMikeBadge } from '@/components/controlroom/FlussoBadge';
+ import { CashOutPartita } from '@/components/controlroom/CashOutPartita';
+ import { fmtMoney, fmtOdds, fmtAge, fmtTime, DASH } from '@/lib/format';
+ import { isErrorRow, isSettled } from '@/lib/eventGroups';
+@@ -309,6 +309,8 @@ export function SchedaPartita({
+                     registratoreVivo={registratoreVivo} />
+                 {/* cantiere J (28/09): il flusso dei prezzi, prima della latenza */}
+                 <FlussoBadge flusso={p.flusso} />
++                {/* 30/09: le linee di Mike (Under/Over 3,5 e 4,5) col loro flusso */}
++                <FlussoLineeMikeBadge flusso={p.flussoMike} />
+                 {p.stato === 'live' && (
+                     <span className={`text-[10px] font-mono ml-auto ${QUOTE_CLS[p.statoQuote]}`}
+                         data-testid="cr-latenza"
+diff --git a/frontend/src/components/controlroom/SchedaPreMatch.tsx b/frontend/src/components/controlroom/SchedaPreMatch.tsx
+index 350f780..eae8187 100644
+--- a/frontend/src/components/controlroom/SchedaPreMatch.tsx
++++ b/frontend/src/components/controlroom/SchedaPreMatch.tsx
+@@ -29,7 +29,7 @@ import { Clock } from 'lucide-react';
+ import { fmtTime, fmtAge, fmtOdds, DASH } from '@/lib/format';
+ import { teamLogo } from '@/lib/sportsLogos';
+ import { dividiNomi } from '@/components/controlroom/AzioniPartita';
+-import FlussoBadge from '@/components/controlroom/FlussoBadge';
++import FlussoBadge, { FlussoLineeMikeBadge } from '@/components/controlroom/FlussoBadge';
+ import { AzioniPartita } from '@/components/controlroom/AzioniPartita';
+ import { QUOTE_CLS, QUOTE_TESTO } from '@/components/controlroom/SchedaPartita';
+ import { RigaOperazione } from '@/components/controlroom/DettaglioRigaView';
+@@ -94,7 +94,7 @@ export function SchedaPreMatch({
+             </div>
+ 
+             {/* ── quote pre-match vive, con età (18/09, secondo giro) ── */}
+-            {(haQuote || p.latenzaQuoteS != null) && (
++            {(haQuote || p.latenzaQuoteS != null || p.flussoMike?.stato === 'fermo') && (
+                 <div className="flex items-center gap-2 flex-wrap mt-1 pl-[52px] text-[10px]"
+                     data-testid="cr-pre-quote">
+                     {haQuote && (
+@@ -107,8 +107,12 @@ export function SchedaPreMatch({
+                             {odds?.p2 && <><span className="text-white/25"> · </span>P2 {fmtOdds(odds.p2.back)}/{fmtOdds(odds.p2.lay)}</>}
+                         </span>
+                     )}
+-                    {/* cantiere J (28/09): il flusso dei prezzi della partita */}
+-                    <FlussoBadge flusso={p.flusso} />
++                    {/* cantiere J (28/09): il flusso dei prezzi della partita.
++                        30/09: il Match Odds non ancora seguito prima del fischio
++                        e' una nota grigia, non un rosso; le linee di Mike
++                        (Under/Over 3,5 e 4,5) hanno il loro giudizio. */}
++                    <FlussoBadge flusso={p.flusso} prePartita />
++                    <FlussoLineeMikeBadge flusso={p.flussoMike} />
+                     {p.latenzaQuoteS != null && (
+                         <span className={`font-mono ml-auto ${QUOTE_CLS[p.statoQuote]}`}
+                             title={p.statoQuote === 'fermo'
+diff --git a/frontend/src/components/mike/MikeParamsSheet.tsx b/frontend/src/components/mike/MikeParamsSheet.tsx
+index 1ea885f..de0fb43 100644
+--- a/frontend/src/components/mike/MikeParamsSheet.tsx
++++ b/frontend/src/components/mike/MikeParamsSheet.tsx
+@@ -70,6 +70,7 @@ export function MikeParamsSheet({ params, busy, onSave }: MikeParamsSheetProps)
+             values={params}
+             busy={busy}
+             triggerTestId="mike-params-trigger"
++            riscontroSalvataggio
+             onSave={(v) => onSave(mergeMikeParams(v))}
+             onReset={() => ({ ...MIKE_PARAM_DEFAULTS })}
+             footer="La modalità (PAPER/LIVE) non è un parametro: si cambia solo dal toggle in alto, con conferma."
+diff --git a/frontend/src/components/mike/useMike.ts b/frontend/src/components/mike/useMike.ts
+index 5420711..f427787 100644
+--- a/frontend/src/components/mike/useMike.ts
++++ b/frontend/src/components/mike/useMike.ts
+@@ -228,7 +228,22 @@ export function useMike(handlers: MikeHandlers = {}): MikeView {
+             });
+         }
+     }, [wrap, running, control]);
+-    const saveParams = useCallback(async (p: MikeParams) => { await wrap(() => updateMikeParams(p)); }, [wrap]);
++    // 30/09: il salvataggio dei parametri RIGETTA con il testo dell'errore
++    // (oltre alla notifica di `onError`): il pannello lo scrive sotto il
++    // pulsante e tiene le modifiche come non salvate. Prima `wrap` lo
++    // ingoiava e il pannello non poteva distinguere un errore da un successo.
++    const saveParams = useCallback(async (p: MikeParams) => {
++        const esito: { errore: string | null } = { errore: null };
++        await wrap(async () => {
++            try {
++                return await updateMikeParams(p);
++            } catch (e) {
++                esito.errore = String((e as Error)?.message ?? e);
++                throw e;
++            }
++        });
++        if (esito.errore != null) throw new Error(esito.errore);
++    }, [wrap]);
+     const request = useCallback(async (kind: MikeRequestKind, eventId: string) => {
+         const key = `${kind}:${eventId}`;
+         setLocalReqs((prev) => new Set(prev).add(key));
+diff --git a/frontend/src/components/trading/ParamsSheetBase.tsx b/frontend/src/components/trading/ParamsSheetBase.tsx
+index ff898ad..5277a05 100644
+--- a/frontend/src/components/trading/ParamsSheetBase.tsx
++++ b/frontend/src/components/trading/ParamsSheetBase.tsx
+@@ -16,7 +16,7 @@ import {
+     Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger,
+ } from '@/components/ui/sheet';
+ import { Settings } from 'lucide-react';
+-import { fmtNum } from '@/lib/format';
++import { fmtNum, fmtTime } from '@/lib/format';
+ import { T } from '@/lib/tradeStatus';
+ // 28/09 (CANTIERE N): l'interruttore delle uscite e' UNO per tutta l'app
+ import { InterruttoreUscite } from '@/components/controlroom/InterruttoreUscite';
+@@ -83,7 +83,7 @@ export function clampValues(groups: ParamGroup[], values: ParamValues): { values
+ 
+ export function ParamsSheetBase({
+     title, description, groups, values, onSave, onReset, busy, triggerLabel = 'Parametri',
+-    triggerTestId = 'params-trigger', footer, symbol,
++    triggerTestId = 'params-trigger', footer, symbol, riscontroSalvataggio = false,
+ }: {
+     title: string;
+     description?: ReactNode;
+@@ -98,10 +98,24 @@ export function ParamsSheetBase({
+     footer?: ReactNode;
+     /** simbolo del bot nel titolo dello sheet */
+     symbol?: ReactNode;
++    /**
++     * 30/09 (Mike, «il feedback visivo del pulsante non funziona»): con `true`
++     * il pannello DICE l'esito del salvataggio sotto il pulsante («Parametri
++     * salvati alle HH:MM:SS» oppure l'errore testuale di `onSave`, che per
++     * questo deve RIGETTARE in caso di errore), il pulsante scrive
++     * «Salvataggio…» mentre aspetta e, dopo un salvataggio riuscito, la bozza
++     * si riallinea ai valori del servizio (il pallino "modifiche non salvate"
++     * si spegne). Assente/false = comportamento di prima, identico (Safe,
++     * Omega, tennis).
++     */
++    riscontroSalvataggio?: boolean;
+ }) {
+     const [draft, setDraft] = useState<ParamValues>(values);
+     const [clamped, setClamped] = useState<Record<string, number>>({});
+     const [touched, setTouched] = useState(false);
++    // solo con `riscontroSalvataggio`: l'attesa e l'esito dell'ultimo salvataggio
++    const [salvando, setSalvando] = useState(false);
++    const [esito, setEsito] = useState<{ ok: true; ms: number } | { ok: false; errore: string } | null>(null);
+ 
+     // `values` cambia quando il servizio ripubblica i parametri: si riallinea
+     // solo se l'utente non ha modifiche in corso (non si perde l'editing).
+@@ -144,8 +158,26 @@ export function ParamsSheetBase({
+         const r = clampValues(groups, draft);
+         setClamped(r.clamped);
+         setDraft(r.values);
+-        await onSave(r.values);
+-        setTouched(false);
++        if (!riscontroSalvataggio) {
++            await onSave(r.values);
++            setTouched(false);
++            return;
++        }
++        setSalvando(true);
++        setEsito(null);
++        try {
++            await onSave(r.values);
++            setEsito({ ok: true, ms: Date.now() });
++            setTouched(false);
++            // la bozza torna quella del SERVIZIO: al render dopo
++            // (`serverKey !== lastServerKey`, touched falso) si riallinea
++            setLastServerKey('');
++        } catch (e) {
++            // la bozza resta: le modifiche NON sono salvate e il pallino lo dice
++            setEsito({ ok: false, errore: String((e as Error)?.message ?? e) });
++        } finally {
++            setSalvando(false);
++        }
+     }
+ 
+     return (
+@@ -291,8 +323,8 @@ export function ParamsSheetBase({
+                         </p>
+                     )}
+                     <div className="flex items-center gap-2">
+-                        <Button onClick={() => { void save(); }} disabled={busy} className="flex-1 bg-primary text-black hover:bg-primary/90" data-testid="params-save">
+-                            {T.saveParams}
++                        <Button onClick={() => { void save(); }} disabled={busy || salvando} className="flex-1 bg-primary text-black hover:bg-primary/90" data-testid="params-save">
++                            {salvando ? 'Salvataggio…' : T.saveParams}
+                         </Button>
+                         {onReset && (
+                             <Button
+@@ -303,6 +335,14 @@ export function ParamsSheetBase({
+                             >{T.resetParams}</Button>
+                         )}
+                     </div>
++                    {riscontroSalvataggio && esito && (
++                        <p className={`text-[11px] ${esito.ok ? 'text-emerald-300' : 'text-red-300'}`}
++                            data-testid="params-esito" data-esito={esito.ok ? 'ok' : 'errore'} role="status">
++                            {esito.ok
++                                ? `Parametri salvati alle ${fmtTime(esito.ms, { seconds: true })}`
++                                : `Salvataggio NON riuscito: ${esito.errore}`}
++                        </p>
++                    )}
+                     {footer && <div className="text-[11px] text-slate-500 pb-6">{footer}</div>}
+                 </div>
+             </SheetContent>
+diff --git a/frontend/src/lib/controlRoom.ts b/frontend/src/lib/controlRoom.ts
+index cc51ec1..ec75f3d 100644
+--- a/frontend/src/lib/controlRoom.ts
++++ b/frontend/src/lib/controlRoom.ts
+@@ -26,7 +26,10 @@ import {
+     groupTradesIntoCicli, groupCicliByEvent, isSettled, isErrorRow,
+     type PnlTradeLike,
+ } from './eventGroups';
+-import { giudizioFlusso, type FlussoRiga, type GiudizioFlusso } from './flussoPrezzi';
++import {
++    giudizioFlusso, giudizioFlussoMike,
++    type BloccoOuRiga, type FlussoRiga, type GiudizioFlusso, type GiudizioFlussoMike,
++} from './flussoPrezzi';
+ 
+ // ---------------------------------------------------------------- vocabolario
+ 
+@@ -253,6 +256,9 @@ export interface PartitaFeedLike {
+     } | null;
+     /** 28/09 (cantiere J) — i prezzi sono VIVI? (`lib/flussoPrezzi.ts`) */
+     flusso?: FlussoRiga | null;
++    /** 30/09 — le linee Over/Under della riga (stessa chiave `ou` del payload
++     *  vero): servono al giudizio del flusso delle linee di Mike */
++    ou?: BloccoOuRiga[] | null;
+ }
+ 
+ /**
+@@ -766,6 +772,10 @@ export interface PartitaGiornata {
+      *  giudicato (`giudizioFlusso`). Opzionale per lo stesso motivo di
+      *  `statoMercato`. */
+     flusso?: GiudizioFlusso | null;
++    /** 30/09 — il flusso delle LINEE DI MIKE (Under/Over 3,5 e 4,5), con la
++     *  stessa regola di Mike (`giudizioFlussoMike`). Il `flusso` sopra è il
++     *  Match Odds. Opzionale per lo stesso motivo di `statoMercato`. */
++    flussoMike?: GiudizioFlussoMike | null;
+ }
+ 
+ export interface GruppoCampionato {
+@@ -844,6 +854,7 @@ export function costruisciGiornata(args: {
+             giocatori: p ? { p1: p.p1 ?? null, p2: p.p2 ?? null } : null,
+             odds: p?.odds ?? null,
+             flusso: giudizioFlusso(p?.flusso, nowMs),
++            flussoMike: giudizioFlussoMike(p, nowMs),
+         };
+     });
+ 
+diff --git a/frontend/src/lib/flussoPrezzi.ts b/frontend/src/lib/flussoPrezzi.ts
+index ead1e7a..5cfd11b 100644
+--- a/frontend/src/lib/flussoPrezzi.ts
++++ b/frontend/src/lib/flussoPrezzi.ts
+@@ -84,3 +84,99 @@ export function giudizioFlusso(flusso: unknown, nowMs: number): GiudizioFlusso {
+         testo: `FLUSSO PREZZI INTERROTTO${quanto}: ${MOTIVO_IT[motivo] ?? motivo}. `
+             + 'Nessun bot apre né chiude a mercato su questi prezzi.' };
+ }
++
++// ---------------------------------------------------------------------------
++// 30/09 — IL FLUSSO DELLE LINEE DI MIKE (Under/Over 3,5 e 4,5).
++//
++// `flusso.vivo`/`motivo`/`dal_ms` riguardano il MATCH ODDS: prima del fischio
++// lo scanner non lo segue (motivo `mai_ricevuto`, contatore dalla creazione
++// della riga) mentre le linee di Mike arrivano al secondo. Mike giudica il SUO
++// flusso così (`Betfair/mike/feed.py::flusso_esito` + `mercati_di_mike`): le
++// linee 3,5 e 4,5 della riga ANCORA IN GIOCO (gol <= linea) che lo scanner
++// elenca in `flusso.mercati_fermi`. Qui la STESSA regola, in sola lettura,
++// senza soglie nuove. Il "da quanto" è l'età dell'ultimo book RICEVUTO della
++// linea (`seen_ms` del blocco `ou`), come nel diario di Mike
++// (`feed.linee_ferme_mike`). Lo STATO dello scanner (giro bloccato) non è
++// nella riga: la scheda non lo vede (lo dice il diario di Mike).
++// ---------------------------------------------------------------------------
++
++/** Un blocco `ou` della riga come lo scrive lo scanner (solo le chiavi lette qui). */
++export interface BloccoOuRiga {
++    market_id?: string | null;
++    line?: number | null;
++    status?: string | null;
++    /** epoch ms dell'ultimo book RICEVUTO per questa linea */
++    seen_ms?: number | null;
++}
++
++/** Il minimo della riga che serve al giudizio delle linee di Mike. */
++export interface RigaLineeMike {
++    ou?: BloccoOuRiga[] | null;
++    flusso?: FlussoRiga | null;
++    score_home?: number | null;
++    score_away?: number | null;
++}
++
++export interface LineaFermaMike {
++    marketId: string;
++    /** «Under/Over 3,5» */
++    nome: string;
++    /** secondi dall'ultimo book ricevuto; null = la riga non lo dice */
++    daS: number | null;
++}
++
++export interface GiudizioFlussoMike {
++    /** `senza_linee`: la riga non porta linee 3,5/4,5 ancora in gioco */
++    stato: 'vivo' | 'fermo' | 'non_dichiarato' | 'senza_linee';
++    linee: LineaFermaMike[];
++    testo: string;
++}
++
++const LINEE_MIKE: Record<string, string> = { '3.5': 'Under/Over 3,5', '4.5': 'Under/Over 4,5' };
++
++/** Le linee di Mike ancora in gioco (stessa regola di `feed.mercati_di_mike`). */
++function lineeInGioco(riga: RigaLineeMike): { marketId: string; nome: string; seenMs: number | null }[] {
++    const h = riga.score_home, a = riga.score_away;
++    const gol = h == null || a == null || !Number.isFinite(Number(h)) || !Number.isFinite(Number(a))
++        ? null : Math.trunc(Number(h)) + Math.trunc(Number(a));
++    const out: { marketId: string; nome: string; seenMs: number | null }[] = [];
++    for (const b of Array.isArray(riga.ou) ? riga.ou : []) {
++        if (!b || typeof b !== 'object' || !b.market_id) continue;
++        const linea = Number(b.line);
++        const nome = LINEE_MIKE[String(linea)];
++        if (b.line == null || !nome) continue;
++        if (gol != null && gol > linea) continue;          // linea gia' decisa dai gol
++        const seen = typeof b.seen_ms === 'number' && Number.isFinite(b.seen_ms) && b.seen_ms > 0
++            ? b.seen_ms : null;
++        out.push({ marketId: String(b.market_id), nome, seenMs: seen });
++    }
++    return out;
++}
++
++/** Il giudizio del flusso delle LINEE DI MIKE di questa riga. */
++export function giudizioFlussoMike(riga: RigaLineeMike | null | undefined, nowMs: number): GiudizioFlussoMike {
++    const linee = riga ? lineeInGioco(riga) : [];
++    if (!linee.length) return { stato: 'senza_linee', linee: [], testo: '' };
++    const flusso: unknown = riga?.flusso;
++    if (!eFlussoRiga(flusso)) {
++        return { stato: 'non_dichiarato', linee: [], testo: 'flusso prezzi non dichiarato dallo scanner' };
++    }
++    const fermi = new Set((Array.isArray(flusso.mercati_fermi) ? flusso.mercati_fermi : []).map(String));
++    const ferme: LineaFermaMike[] = linee
++        .filter((l) => fermi.has(l.marketId))
++        .map((l) => ({ marketId: l.marketId, nome: l.nome,
++            daS: l.seenMs == null ? null : Math.max(0, (nowMs - l.seenMs) / 1000) }));
++    if (!ferme.length) return { stato: 'vivo', linee: [], testo: 'prezzi vivi sulle linee di Mike' };
++    const parti = ferme.map((l) => `${l.nome} (${l.marketId}) ferma`
++        + (l.daS == null ? '' : `, ultimo book ricevuto ${durata(l.daS)} fa`));
++    return { stato: 'fermo', linee: ferme,
++        testo: `Flusso prezzi fermo per lo scanner: ${parti.join('; ')}. `
++            + 'Mike non apre su queste linee; con una posizione aperta chiude o copre solo '
++            + 'sui prezzi letti da Betfair (ripiego REST).' };
++}
++
++/** Il Match Odds PRIMA del fischio non ancora ricevuto: non è un flusso
++ *  interrotto (lo scanner lo segue solo in gioco o negli ultimi 20 minuti). */
++export function moNonAncoraRicevuto(g: GiudizioFlusso | null | undefined): boolean {
++    return g?.stato === 'interrotto' && g.motivo === 'mai_ricevuto';
++}
+diff --git a/frontend/src/lib/mike.ts b/frontend/src/lib/mike.ts
+index f42242d..c5379e8 100644
+--- a/frontend/src/lib/mike.ts
++++ b/frontend/src/lib/mike.ts
+@@ -1418,6 +1418,11 @@ export const MIKE_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
+     cover_resto_sotto_minimo: { label: 'COPERTURA: RESTO SOTTO IL MINIMO', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/40' },
+     residuo_non_piazzabile: { label: 'RESTO NON PIAZZABILE', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/40' },
+     schema_warn: { label: 'SCHEMA DB', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
++    // 30/09: lo scrive `safe_strategy/execution.py::_place_via_canale` nel
++    // diario di Mike quando l'ordine parte sul canale del runner (stessa
++    // etichetta di Omega). Non e' in MIKE_ACTIVITY_KINDS: il contratto pytest
++    // elenca solo i kind scritti da `mike/service.py`.
++    canale_inviato: { label: 'ORDINE INVIATO SUL CANALE · attesa esito', cls: 'bg-white/5 text-slate-300 border-white/10' },
+     cover: { label: 'COPERTURA LINEA 4.5', cls: 'bg-teal-500/15 text-teal-300 border-teal-500/40' },
+     skip: { label: 'SALTO', cls: 'bg-white/5 text-slate-400 border-white/10' },
+ };
+@@ -1641,6 +1646,16 @@ export function mikeActivityLine(kind: string, payload: Record<string, unknown>
+             return `linee assenti nel feed: ${[...(Array.isArray(p.markets) ? p.markets : []), ...(Array.isArray(p.selections) ? p.selections : [])].map((x) => lineLabel(String(x))).join(', ') || reasonLabel(p.reason)} · fase ${stateLabel(p.state)}`;
+         case 'flusso_interrotto':
+             return `${String(p.testo ?? 'flusso prezzi interrotto')} · nessuna apertura né chiusura a mercato su quei prezzi · fase ${stateLabel(p.state)}`;
++        case 'flusso_interrotto_senza_rest': {
++            // 30/09: chiavi del servizio (`mike/service.py`): testo (quale linea),
++            // da_secondi (della LINEA ferma), esposizione_eur, state
++            // null non e' zero: senza il dato non si scrive niente
++            const da = typeof p.da_secondi === 'number' && Number.isFinite(p.da_secondi)
++                ? ` · ultimo dato ${Math.round(p.da_secondi)} s fa` : '';
++            const esp = typeof p.esposizione_eur === 'number' && Number.isFinite(p.esposizione_eur)
++                ? ` · esposizione ${money('esposizione_eur')}` : '';
++            return `${String(p.testo ?? 'flusso prezzi fermo')} · book Betfair (REST) non leggibile: posizione senza chiusura né copertura finché un prezzo vivo non torna${da}${esp} · fase ${stateLabel(p.state)}`;
++        }
+         case 'cover_resto_sotto_minimo':
+             // 30/09 (M3.5): chiavi del servizio: resto, minimo, state, ciclo
+             return `copertura: resta da coprire ${money('resto')}, sotto il minimo di ${money('minimo')} · si considera coperta, nessun secondo ordine · fase ${stateLabel(p.state)}`;
+diff --git a/Betfair/mike/tests/test_mike_flusso_testo_linea_2026_09_30.py b/Betfair/mike/tests/test_mike_flusso_testo_linea_2026_09_30.py
+new file mode 100644
+index 0000000..528cf03
+--- /dev/null
++++ b/Betfair/mike/tests/test_mike_flusso_testo_linea_2026_09_30.py
+@@ -0,0 +1,134 @@
++"""30/09/2026 - IL "DA N S" DEGLI AVVISI DI FLUSSO FERMO DI MIKE (revisione critica).
++
++Difetto: il testo di ``flusso_interrotto`` (e il ``da_secondi`` di
++``flusso_interrotto_senza_rest``) contava da ``flusso.dal_ms``, che lo scanner
++(``safe_strategy/service.py::flusso_evento``) aggiorna al passaggio di stato del
++MATCH ODDS, non della linea: a partita in corso usciva "da 1628 s" (dal fischio)
++su una linea ferma da pochi secondi, e il testo diceva solo un market_id.
++
++Correzione: per le linee di Mike (``feed.mercati_di_mike``: 3,5 e 4,5 ancora in
++gioco) il testo dice QUALE linea e' ferma e da quanto e' arrivato il suo ultimo
++book (``seen_ms`` del blocco ``ou``, scritto dallo scanner a ogni book ricevuto);
++il ``da_secondi`` e' quello della linea. Riga senza ``seen_ms`` (scanner
++precedente al 13/09): comportamento di prima.
++
++Finti: ``payload``/``row`` di ``test_mike_feed`` (chiavi e tipi della riga vera
++dello scanner) con il blocco ``flusso`` di ``flusso_evento`` e il ``seen_ms``
++che lo scanner scrive su ogni blocco ``ou``. ASCII-only.
++"""
++from __future__ import annotations
++
++from datetime import timedelta
++
++from Betfair.mike import feed as F
++from Betfair.mike.tests.test_mike_feed import NOW, payload, row
++from Betfair.stream import flusso_prezzi as FP
++
++
++def _ms(dt) -> int:
++    return int(dt.timestamp() * 1000)
++
++
++def _riga(fermi, *, dal_s=1628.0, seen35_s=36.0, seen45_s=2.0, sh=None, sa=None):
++    """Riga in gioco: MATCH ODDS vivo dal fischio (``dal_ms`` 1628 s fa), linee
++    di Mike con l'ultimo book ricevuto ``seen*_s`` secondi fa."""
++    p = payload(inplay=True, minute=27, sh=sh, sa=sa)
++    for blk in p["ou"]:
++        age = seen35_s if blk["line"] == 3.5 else seen45_s
++        blk["seen_ms"] = _ms(NOW - timedelta(seconds=age))
++    p["flusso"] = {"vivo": True, "motivo": None,
++                   "dal_ms": _ms(NOW - timedelta(seconds=dal_s)),
++                   "mercati_fermi": list(fermi)}
++    return row(p)
++
++
++def _adesso_ms() -> int:
++    return _ms(NOW)
++
++
++def test_testo_dice_quale_linea_e_da_quanto_non_dal_fischio():
++    es = F.flusso_esito(_riga(["1.35"]), None, NOW.timestamp())
++    assert es.vivo is False and es.motivo == FP.MOTIVO_MERCATO_FERMO
++    assert "Under/Over 3,5" in es.testo, es.testo
++    assert "1.35" in es.testo
++    assert "36 s" in es.testo, es.testo
++    assert "1628" not in es.testo, es.testo
++
++
++def test_due_linee_ferme_ognuna_col_suo_tempo():
++    es = F.flusso_esito(_riga(["1.35", "1.45"], seen45_s=80.0), None, NOW.timestamp())
++    assert "Under/Over 3,5" in es.testo and "Under/Over 4,5" in es.testo, es.testo
++    assert "36 s" in es.testo and "80 s" in es.testo, es.testo
++    assert "1628" not in es.testo
++
++
++def test_da_secondi_della_linea_ferma_non_del_fischio():
++    r = _riga(["1.35"])
++    assert F.secondi_fermo_mike(r["payload"], None, _adesso_ms()) == 36.0
++    # confronto: la misura generica conta dal passaggio del MATCH ODDS
++    assert FP.secondi_fermo(r["payload"], None, _adesso_ms()) == 1628.0
++
++
++def test_linea_decisa_dai_gol_non_conta_ne_nel_testo_ne_nel_tempo():
++    # 4 gol: il 3,5 e' deciso (fuori da mercati_di_mike), fermo il 4,5
++    r = _riga(["1.35", "1.45"], seen35_s=500.0, seen45_s=12.0, sh=3, sa=1)
++    es = F.flusso_esito(r, None, NOW.timestamp())
++    assert "Under/Over 4,5" in es.testo and "Under/Over 3,5" not in es.testo, es.testo
++    assert F.secondi_fermo_mike(r["payload"], None, _adesso_ms()) == 12.0
++
++
++def test_giro_dello_scanner_bloccato_conta_dall_ultimo_calcolo():
++    r = _riga([])
++    stato = {"flusso": {"calcolato_ms": _ms(NOW - timedelta(seconds=90)), "eventi_fermi": {}}}
++    assert F.secondi_fermo_mike(r["payload"], stato, _adesso_ms()) == 90.0
++    es = F.flusso_esito(r, stato, NOW.timestamp())
++    assert es.motivo == FP.MOTIVO_SCANNER_BLOCCATO and "90 s" in es.testo
++
++
++def test_riga_senza_seen_ms_comportamento_di_prima():
++    r = _riga(["1.35"])
++    for blk in r["payload"]["ou"]:
++        blk.pop("seen_ms")
++    es = F.flusso_esito(r, None, NOW.timestamp())
++    assert es.testo == FP.valuta(r["payload"], None, None, F.mercati_di_mike(r["payload"]),
++                                 _adesso_ms()).testo
++    assert F.secondi_fermo_mike(r["payload"], None, _adesso_ms()) == 1628.0
++
++
++def test_linee_vive_nessun_cambio():
++    es = F.flusso_esito(_riga([]), None, NOW.timestamp())
++    assert es.vivo is True and es is FP.VIVO
++
++
++# ---------------------------------------------------------------------------
++# Sul ciclo VERO (``run_once``): le righe di diario che vede il trader
++# ---------------------------------------------------------------------------
++def test_ciclo_vero_diario_dice_la_linea_e_i_suoi_secondi(runner):
++    from Betfair.mike import service as S
++    from Betfair.mike.tests.test_mike_flusso_cantiere_j2_2026_09_28 import (
++        _posizione_aperta, _scanner_nuovo)
++    from Betfair.mike.tests.test_mike_service import run
++
++    db, mk = _posizione_aperta(runner)
++    S._FLUSSO_CRITICO.azzera()
++    dopo = NOW + timedelta(seconds=40)
++    _scanner_nuovo(db, calcolato=dopo)
++    p = payload()
++    for blk in p["ou"]:
++        age = 36.0 if blk["line"] == 3.5 else 20.0
++        blk["seen_ms"] = _ms(dopo - timedelta(seconds=age))
++    # il MATCH ODDS (mai ricevuto prima del fischio) e' "passato di stato" alla
++    # creazione della riga, 1628 s fa: e' il numero che usciva prima
++    p["flusso"] = {"vivo": False, "motivo": "mai_ricevuto",
++                   "dal_ms": _ms(dopo - timedelta(seconds=1628)),
++                   "mercati_fermi": ["1.35", "1.45"]}
++    run(db, mk, dopo, [row(p, updated=dopo)])
++    avvisi = [q for k, q, _e in db.activity if k == "flusso_interrotto"]
++    assert avvisi, db.activity
++    assert "Under/Over 3,5 (1.35) ferma, ultimo book ricevuto 36 s fa" in avvisi[-1]["testo"]
++    assert "Under/Over 4,5 (1.45) ferma, ultimo book ricevuto 20 s fa" in avvisi[-1]["testo"]
++    assert "1628" not in avvisi[-1]["testo"]
++    crit = [q for k, q, _e in db.activity if k == "flusso_interrotto_senza_rest"]
++    assert len(crit) == 1, db.activity
++    assert crit[0]["da_secondi"] == 36.0
++    assert "Under/Over 3,5" in crit[0]["testo"]
+diff --git a/frontend/src/components/mike/MikeParamsSheet.riscontro.test.tsx b/frontend/src/components/mike/MikeParamsSheet.riscontro.test.tsx
+new file mode 100644
+index 0000000..4a8aa57
+--- /dev/null
++++ b/frontend/src/components/mike/MikeParamsSheet.riscontro.test.tsx
+@@ -0,0 +1,91 @@
++// 30/09 - «il feedback visivo del pulsante Salva non funziona» (utente).
++// Il pannello di Mike DICE l'esito del salvataggio (ora o errore testuale),
++// il pulsante scrive «Salvataggio…» mentre aspetta, e il pallino delle
++// modifiche non salvate si spegne quando il servizio ha i valori salvati
++// (anche se il servizio li normalizza: il filtro competizioni arriva TRIMMATO,
++// `mergeMikeParams`). Il pannello condiviso SENZA l'opzione resta identico.
++import { useState } from 'react';
++import { describe, it, expect, vi } from 'vitest';
++import { render, screen, waitFor } from '@testing-library/react';
++import userEvent from '@testing-library/user-event';
++import { MikeParamsSheet } from './MikeParamsSheet';
++import { ParamsSheetBase } from '@/components/trading/ParamsSheetBase';
++import { MIKE_PARAM_DEFAULTS, mergeMikeParams, type MikeParams } from '@/lib/mike';
++
++/** La pagina vera: `onSave` scrive e poi RILEGGE dal servizio (useMike.wrap). */
++function Pagina({ fallisce }: { fallisce?: string }) {
++    const [params, setParams] = useState<MikeParams>({ ...MIKE_PARAM_DEFAULTS });
++    const onSave = async (p: MikeParams) => {
++        await Promise.resolve();
++        if (fallisce) throw new Error(fallisce);
++        // il servizio restituisce i parametri normalizzati (mergeMikeParams)
++        setParams(mergeMikeParams(p));
++        // la rilettura arriva a schermo PRIMA che il salvataggio finisca (poll
++        // o realtime durante la RPC): un render con la bozza ancora "toccata"
++        await new Promise((r) => setTimeout(r, 0));
++    };
++    return <MikeParamsSheet params={params} busy={false} onSave={onSave} />;
++}
++
++async function apri(ui: React.ReactElement, trigger = 'mike-params-trigger') {
++    const user = userEvent.setup();
++    render(ui);
++    await user.click(screen.getByTestId(trigger));
++    await screen.findByTestId('params-sheet');
++    return user;
++}
++
++describe('pannello parametri di Mike: riscontro del salvataggio', () => {
++    it('salvataggio riuscito: «Parametri salvati alle HH:MM:SS» e pallino spento', async () => {
++        const user = await apri(<Pagina />);
++        const filtro = screen.getByLabelText('Filtro competizioni');
++        await user.type(filtro, ' serie a ');
++        expect(screen.getByTestId('params-dirty')).toBeInTheDocument();
++        await user.click(screen.getByTestId('params-save'));
++        const esito = await screen.findByTestId('params-esito');
++        expect(esito.getAttribute('data-esito')).toBe('ok');
++        expect(esito.textContent).toMatch(/^Parametri salvati alle \d{2}:\d{2}:\d{2}$/);
++        // il servizio ha il valore trimmato: la bozza si riallinea, niente pallino
++        await waitFor(() => expect(screen.queryByTestId('params-dirty')).toBeNull());
++        expect(screen.getByLabelText('Filtro competizioni')).toHaveValue('serie a');
++    });
++
++    it('salvataggio fallito: l’errore testuale e le modifiche restano da salvare', async () => {
++        const user = await apri(<Pagina fallisce="non autorizzato (owner-only)" />);
++        const stake = screen.getByLabelText('Stake Under 3.5 (€)');
++        await user.clear(stake);
++        await user.type(stake, '12');
++        await user.click(screen.getByTestId('params-save'));
++        const esito = await screen.findByTestId('params-esito');
++        expect(esito.getAttribute('data-esito')).toBe('errore');
++        expect(esito.textContent).toBe('Salvataggio NON riuscito: non autorizzato (owner-only)');
++        expect(screen.getByTestId('params-dirty')).toBeInTheDocument();
++        expect(screen.getByLabelText('Stake Under 3.5 (€)')).toHaveValue(12);
++    });
++
++    it('mentre aspetta il pulsante dice «Salvataggio…» ed e’ disabilitato', async () => {
++        let libera: () => void = () => {};
++        const onSave = vi.fn(() => new Promise<void>((r) => { libera = r; }));
++        const user = await apri(<MikeParamsSheet params={{ ...MIKE_PARAM_DEFAULTS }} busy={false} onSave={onSave} />);
++        await user.click(screen.getByTestId('params-save'));
++        const btn = screen.getByTestId('params-save');
++        expect(btn.textContent).toBe('Salvataggio…');
++        expect(btn).toBeDisabled();
++        libera();
++        await screen.findByTestId('params-esito');
++        expect(screen.getByTestId('params-save').textContent).toBe('Salva parametri');
++    });
++
++    it('pannello condiviso SENZA l’opzione (Safe/Omega/tennis): nessun esito, come prima', async () => {
++        const onSave = vi.fn(async () => {});
++        const user = await apri(
++            <ParamsSheetBase title="t" groups={[{ label: 'g', fields: [{ key: 'x', label: 'X', type: 'number' }] }]}
++                values={{ x: 1 }} onSave={onSave} />,
++            'params-trigger',
++        );
++        await user.click(screen.getByTestId('params-save'));
++        await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
++        expect(screen.queryByTestId('params-esito')).toBeNull();
++        expect(screen.getByTestId('params-save').textContent).toBe('Salva parametri');
++    });
++});
+diff --git a/frontend/src/components/mike/useMike.saveParams.test.tsx b/frontend/src/components/mike/useMike.saveParams.test.tsx
+new file mode 100644
+index 0000000..564cc21
+--- /dev/null
++++ b/frontend/src/components/mike/useMike.saveParams.test.tsx
+@@ -0,0 +1,69 @@
++// 30/09 - `useMike().saveParams` RIGETTA con il testo dell'errore della RPC
++// (`mike_update_params`), oltre alla notifica `onError`: prima `wrap` lo
++// ingoiava e il pannello parametri non poteva dire che il salvataggio era
++// fallito. A salvataggio riuscito risolve e rilegge lo stato.
++import { describe, it, expect, vi, beforeEach } from 'vitest';
++import { renderHook, waitFor, act } from '@testing-library/react';
++
++const h = vi.hoisted(() => ({
++    update: vi.fn(),
++    fetchState: vi.fn(),
++}));
++
++vi.mock('@/lib/mike', async (orig) => ({
++    ...(await orig<typeof import('@/lib/mike')>()),
++    updateMikeParams: h.update,
++    fetchMikeState: h.fetchState,
++    fetchMikeRequests: vi.fn(async () => []),
++    subscribeMike: vi.fn(() => () => {}),
++}));
++
++vi.mock('@/lib/localChannel', () => ({
++    getLocalChannel: () => ({
++        getStatus: () => 'off',
++        onStatus: () => () => {},
++        on: () => () => {},
++        onMessage: () => () => {},
++        subscribe: () => () => {},
++    }),
++}));
++
++import { useMike } from './useMike';
++import { MIKE_PARAM_DEFAULTS } from '@/lib/mike';
++
++const STATO = {
++    control: null, events: [], trades: [], activity: [], aggregates: null,
++    requests: [], day_start: null, day_by: null,
++};
++
++describe('useMike.saveParams', () => {
++    beforeEach(() => {
++        h.update.mockReset();
++        h.fetchState.mockReset();
++        h.fetchState.mockResolvedValue(STATO);
++    });
++
++    it('errore della RPC: rigetta col testo e lo notifica', async () => {
++        h.update.mockRejectedValue(new Error('non autorizzato (owner-only)'));
++        const onError = vi.fn();
++        const { result } = renderHook(() => useMike({ onError }));
++        await waitFor(() => expect(h.fetchState).toHaveBeenCalled());
++        let errore: unknown = null;
++        await act(async () => {
++            try { await result.current.saveParams({ ...MIKE_PARAM_DEFAULTS }); } catch (e) { errore = e; }
++        });
++        expect((errore as Error | null)?.message).toBe('non autorizzato (owner-only)');
++        expect(onError).toHaveBeenCalledWith('non autorizzato (owner-only)');
++        expect(result.current.busy).toBe(false);
++    });
++
++    it('salvataggio riuscito: risolve e rilegge lo stato', async () => {
++        h.update.mockResolvedValue({});
++        const { result } = renderHook(() => useMike({}));
++        await waitFor(() => expect(h.fetchState).toHaveBeenCalled());
++        const letture = h.fetchState.mock.calls.length;
++        await act(async () => { await result.current.saveParams({ ...MIKE_PARAM_DEFAULTS }); });
++        expect(h.update).toHaveBeenCalledTimes(1);
++        expect(h.fetchState.mock.calls.length).toBeGreaterThan(letture);
++    });
++});
+diff --git a/frontend/src/lib/flussoLineeMike.test.tsx b/frontend/src/lib/flussoLineeMike.test.tsx
+new file mode 100644
+index 0000000..f2078cf
+--- /dev/null
++++ b/frontend/src/lib/flussoLineeMike.test.tsx
+@@ -0,0 +1,149 @@
++// 30/09 - «⚠ FLUSSO PREZZI INTERROTTO da 1628 s» sulla scheda PRE-PARTITA.
++// Il blocco `flusso` della riga riguarda il MATCH ODDS, che prima del fischio
++// lo scanner non segue (motivo `mai_ricevuto`, `dal_ms` = creazione della
++// riga), mentre le linee Under/Over 3,5 e 4,5 di Mike arrivano al secondo.
++// La scheda giudica le LINEE DI MIKE con la stessa regola di Mike
++// (`Betfair/mike/feed.py::flusso_esito` + `mercati_di_mike`) e il Match Odds
++// pre-partita non ricevuto e' una nota grigia. La riga finta ha le chiavi e i
++// tipi della riga vera di `safe_strategy_scan` (scanner: `flusso_evento`,
++// `build_market_block` + `seen_ms`), come la riga 36132117 del 30/09.
++import { describe, expect, it } from 'vitest';
++import { render, screen } from '@testing-library/react';
++import { MemoryRouter } from 'react-router-dom';
++import { giudizioFlussoMike, giudizioFlusso, type FlussoRiga } from './flussoPrezzi';
++import { costruisciGiornata, type PartitaFeedLike } from './controlRoom';
++import { mikeActivityLine, MIKE_ACTIVITY_EXTRA } from './mike';
++import { activityMeta } from './tradeStatus';
++import FlussoBadge from '@/components/controlroom/FlussoBadge';
++import { SchedaPreMatch } from '@/components/controlroom/SchedaPreMatch';
++import { SchedaPartita } from '@/components/controlroom/SchedaPartita';
++
++const ORA = Date.parse('2026-09-30T13:00:00Z');
++const KO = '2026-09-30T14:00:00.000Z';
++
++function blocco(line: number, marketId: string, seenFaS: number) {
++    return {
++        market_id: marketId, status: 'OPEN', inplay: false, total_matched: 812.4,
++        market_type: `OVER_UNDER_${String(line).replace('.', '')}`, line, ts_ms: ORA - 60_000,
++        bet_delay: 0, seen_ms: ORA - seenFaS * 1000,
++        selections: [
++            { selection_id: 1222344, name: `Under ${line} Goals`, runner_status: 'ACTIVE',
++                back: 1.5, lay: 1.52, back_size: 30, lay_size: 25 },
++            { selection_id: 1222345, name: `Over ${line} Goals`, runner_status: 'ACTIVE',
++                back: 2.6, lay: 2.7, back_size: 20, lay_size: 15 },
++        ],
++    };
++}
++
++/** La riga pre-partita del 30/09: Match Odds mai ricevuto da 1628 s, linee vive. */
++function riga(fermi: string[] = [], over: Partial<Record<string, unknown>> = {}) {
++    const flusso: FlussoRiga = { vivo: false, motivo: 'mai_ricevuto', dal_ms: ORA - 1_628_000, mercati_fermi: fermi };
++    return {
++        event_name: 'Roma v Lazio', home: 'Roma', away: 'Lazio', competition: 'Serie A',
++        open_date: KO, inplay: false, mo_market_id: '1.250', mo_status: 'OPEN',
++        odds: { home: { back: 1.9, lay: 1.92 }, draw: { back: 3.4, lay: 3.5 }, away: { back: 4.2, lay: 4.3 } },
++        odds_ts_ms: ORA - 5_000, minute: null, score_home: null, score_away: null,
++        ou: [blocco(3.5, '1.35', 36), blocco(4.5, '1.45', 1)],
++        flusso,
++        ...over,
++    };
++}
++
++function partita(payload: ReturnType<typeof riga>) {
++    const g = costruisciGiornata({
++        righe: [{ event_id: '36132117', sport: 'calcio', updated_at: new Date(ORA).toISOString(),
++            payload: payload as PartitaFeedLike }],
++        soldi: new Map(), nowMs: ORA,
++    });
++    return g[0].partite[0];
++}
++
++describe('giudizioFlussoMike: la stessa regola di Mike', () => {
++    it('pre-partita, Match Odds mai ricevuto, linee vive: le linee di Mike sono VIVE', () => {
++        expect(giudizioFlussoMike(riga(), ORA).stato).toBe('vivo');
++    });
++    it('linea 3,5 in mercati_fermi: QUALE linea e l’eta’ del suo ultimo book', () => {
++        const g = giudizioFlussoMike(riga(['1.35']), ORA);
++        expect(g.stato).toBe('fermo');
++        expect(g.linee).toEqual([{ marketId: '1.35', nome: 'Under/Over 3,5', daS: 36 }]);
++        expect(g.testo).toContain('Under/Over 3,5 (1.35) ferma, ultimo book ricevuto 36 s fa');
++    });
++    it('una linea gia’ decisa dai gol non conta (mercato_deciso, 30/09)', () => {
++        const g = giudizioFlussoMike(riga(['1.35'], { inplay: true, score_home: 3, score_away: 1 }), ORA);
++        expect(g.stato).toBe('vivo');
++    });
++    it('mercati fermi che non sono linee di Mike non contano', () => {
++        expect(giudizioFlussoMike(riga(['1.25', '1.CS']), ORA).stato).toBe('vivo');
++    });
++    it('riga senza linee di Mike o senza flusso: nessun giudizio', () => {
++        expect(giudizioFlussoMike(riga([], { ou: [] }), ORA).stato).toBe('senza_linee');
++        expect(giudizioFlussoMike(riga([], { flusso: undefined }), ORA).stato).toBe('non_dichiarato');
++    });
++});
++
++describe('scheda PRE-PARTITA', () => {
++    it('Match Odds non ancora seguito: nota grigia, niente rosso, niente 1628 s', () => {
++        render(<MemoryRouter><SchedaPreMatch p={partita(riga())} scheda="pre" mancaS={3600} /></MemoryRouter>);
++        const b = screen.getByTestId('cr-flusso');
++        expect(b.getAttribute('data-stato')).toBe('mo_non_ricevuto');
++        expect(b.textContent).toBe('Match Odds: prezzi non ancora ricevuti');
++        expect(screen.getByTestId('cr-pre-quote').textContent).not.toContain('INTERROTTO');
++        expect(screen.getByTestId('cr-pre-quote').textContent).not.toContain('1628');
++        expect(screen.queryByTestId('cr-flusso-mike')).toBeNull();
++    });
++    it('linea di Mike ferma: badge rosso con la linea e i secondi del suo ultimo book', () => {
++        render(<MemoryRouter><SchedaPreMatch p={partita(riga(['1.35']))} scheda="pre" mancaS={3600} /></MemoryRouter>);
++        const b = screen.getByTestId('cr-flusso-mike');
++        expect(b.textContent).toBe('⚠ Under/Over 3,5 ferma · ultimo book 36 s fa');
++        expect(b.getAttribute('title')).toContain('Mike non apre su queste linee');
++    });
++    it('linea ferma anche senza quote 1X2: la riga si monta lo stesso', () => {
++        render(<MemoryRouter><SchedaPreMatch p={partita(riga(['1.45'], { odds: null, odds_ts_ms: null }))}
++            scheda="pre" mancaS={3600} /></MemoryRouter>);
++        expect(screen.getByTestId('cr-flusso-mike').textContent).toContain('Under/Over 4,5 ferma');
++    });
++    it('Match Odds davvero interrotto prima del fischio (flusso_interrotto): resta rosso', () => {
++        const p = riga([], { flusso: { vivo: false, motivo: 'flusso_interrotto', dal_ms: ORA - 40_000, mercati_fermi: [] } });
++        render(<MemoryRouter><SchedaPreMatch p={partita(p)} scheda="pre" mancaS={600} /></MemoryRouter>);
++        expect(screen.getByTestId('cr-flusso').getAttribute('data-stato')).toBe('interrotto');
++    });
++});
++
++describe('scheda IN GIOCO (Safe/Omega: il Match Odds come prima)', () => {
++    it('senza prePartita il Match Odds mai ricevuto resta il rosso di prima', () => {
++        const g = giudizioFlusso({ vivo: false, motivo: 'mai_ricevuto', dal_ms: ORA - 1_628_000, mercati_fermi: [] }, ORA);
++        render(<FlussoBadge flusso={g} />);
++        expect(screen.getByTestId('cr-flusso').getAttribute('data-stato')).toBe('interrotto');
++        expect(screen.getByTestId('cr-flusso').textContent).toContain('FLUSSO PREZZI INTERROTTO');
++    });
++    it('la scheda in gioco mostra anche le linee di Mike ferme', () => {
++        const p = partita(riga(['1.45'], { inplay: true, minute: 27, score_home: 1, score_away: 0,
++            flusso: { vivo: true, motivo: null, dal_ms: ORA - 1_628_000, mercati_fermi: ['1.45'] } }));
++        render(<MemoryRouter><SchedaPartita p={p} operazioni={[]} /></MemoryRouter>);
++        expect(screen.getByTestId('cr-flusso-mike').textContent).toBe('⚠ Under/Over 4,5 ferma · ultimo book 1 s fa');
++    });
++});
++
++describe('diario di Mike', () => {
++    it('flusso_interrotto_senza_rest dice la linea (testo del servizio) e i secondi', () => {
++        const riga = mikeActivityLine('flusso_interrotto_senza_rest', {
++            critical: true, reason: 'mercato_fermo', state: 'LIVE_COVERED', mercati: ['1.35'],
++            esposizione_eur: 12.5, da_secondi: 36.0,
++            testo: 'flusso prezzi fermo sulle linee di Mike: Under/Over 3,5 (1.35) ferma, ultimo book ricevuto 36 s fa',
++            selezioni: ['OU35|UNDER'], message: 'flusso prezzi FERMO e book REST non leggibile',
++        });
++        expect(riga).toContain('Under/Over 3,5 (1.35) ferma');
++        expect(riga).toContain('ultimo dato 36 s fa');
++        expect(riga).toContain('esposizione 12,50 €');
++    });
++    it('da_secondi assente: nessun "0 s" inventato', () => {
++        const riga = mikeActivityLine('flusso_interrotto_senza_rest', {
++            critical: true, reason: 'mercato_fermo', state: 'LIVE_COVERED', da_secondi: null,
++        });
++        expect(riga).not.toContain('0 s');
++    });
++    it('canale_inviato ha la sua etichetta italiana', () => {
++        expect(MIKE_ACTIVITY_EXTRA.canale_inviato?.label).toBe('ORDINE INVIATO SUL CANALE · attesa esito');
++        expect(activityMeta('canale_inviato', MIKE_ACTIVITY_EXTRA).label).not.toMatch(/[a-z]+_[a-z]+/);
++    });
++});
+diff --git a/AUDIT_2026-09-30/falsifica_ui_mike_veritiera.sh b/AUDIT_2026-09-30/falsifica_ui_mike_veritiera.sh
+new file mode 100644
+index 0000000..3adfea1
+--- /dev/null
++++ b/AUDIT_2026-09-30/falsifica_ui_mike_veritiera.sh
+@@ -0,0 +1,54 @@
++#!/bin/bash
++# Falsificazione (30/09, UI Mike veritiera): ogni mutazione DEVE far diventare
++# rosso il test indicato. Ripristino SEMPRE dalla copia in bak/ (mai git
++# checkout). Uso: falsifica_ui_mike_veritiera.sh <cartella con bak/>
++SP="$1"
++W="$(cd "$(dirname "$0")/.." && pwd)"
++PY="$W/.venv/Scripts/python.exe"
++export SUPABASE_URL=http://127.0.0.1:9 SUPABASE_SERVICE_ROLE_KEY=x SUPABASE_KEY=x
++cd "$W" || exit 2
++
++muta() {  # nome file(relativo) sed-expr tipo(py|ts) test
++  local nome="$1" f="$2" expr="$3" tipo="$4" test="$5"
++  cp "$SP/bak/$(basename "$f")" "$W/$f"
++  sed -i "$expr" "$W/$f"
++  if cmp -s "$SP/bak/$(basename "$f")" "$W/$f"; then
++    echo "[$nome] MUTAZIONE NON APPLICATA"; return
++  fi
++  if [ "$tipo" = py ]; then
++    "$PY" -m pytest "$test" -q -p no:cacheprovider > "$SP/f_$nome.txt" 2>&1; rc=$?
++  else
++    (cd frontend && npx vitest run "$test" > "$SP/f_$nome.txt" 2>&1); rc=$?
++  fi
++  cp "$SP/bak/$(basename "$f")" "$W/$f"
++  if [ $rc -ne 0 ]; then echo "[$nome] ROSSO (ok) rc=$rc"; else echo "[$nome] VERDE: il test NON morde"; fi
++}
++
++muta M1_prepartita frontend/src/components/controlroom/SchedaPreMatch.tsx \
++  's/<FlussoBadge flusso={p.flusso} prePartita \/>/<FlussoBadge flusso={p.flusso} \/>/' ts src/lib/flussoLineeMike.test.tsx
++muta M2_linea_decisa frontend/src/lib/flussoPrezzi.ts \
++  's/if (gol != null \&\& gol > linea) continue;/void gol;/' ts src/lib/flussoLineeMike.test.tsx
++muta M3_badge_ingioco frontend/src/components/controlroom/SchedaPartita.tsx \
++  's/<FlussoLineeMikeBadge flusso={p.flussoMike} \/>//' ts src/lib/flussoLineeMike.test.tsx
++muta M4_testo_linea Betfair/mike/feed.py \
++  's/    return replace(esito, testo=testo) if testo else esito/    return esito/' py Betfair/mike/tests/test_mike_flusso_testo_linea_2026_09_30.py
++muta M5_da_secondi Betfair/mike/service.py \
++  's/"da_secondi": F.secondi_fermo_mike(/"da_secondi": F._flusso.secondi_fermo(/' py Betfair/mike/tests/test_mike_flusso_testo_linea_2026_09_30.py
++muta M6_riallinea frontend/src/components/trading/ParamsSheetBase.tsx \
++  "s/            setLastServerKey('');//" ts src/components/mike/MikeParamsSheet.riscontro.test.tsx
++muta M7_rilancia frontend/src/components/mike/useMike.ts \
++  's/        if (esito.errore != null) throw new Error(esito.errore);//' ts src/components/mike/useMike.saveParams.test.tsx
++muta M8_opzione frontend/src/components/mike/MikeParamsSheet.tsx \
++  's/^            riscontroSalvataggio\r\?$//' ts src/components/mike/MikeParamsSheet.riscontro.test.tsx
++muta M9_null_zero frontend/src/lib/mike.ts \
++  "s/typeof p.da_secondi === 'number' \&\& Number.isFinite(p.da_secondi)/Number.isFinite(n('da_secondi'))/" ts src/lib/flussoLineeMike.test.tsx
++muta M10_catch_errore frontend/src/components/trading/ParamsSheetBase.tsx \
++  "s/            setEsito({ ok: false, errore: String((e as Error)?.message ?? e) });/            setEsito({ ok: true, ms: Date.now() });/" ts src/components/mike/MikeParamsSheet.riscontro.test.tsx
++
++# verifica finale: nessuna mutazione rimasta
++for f in frontend/src/components/controlroom/SchedaPreMatch.tsx frontend/src/components/controlroom/SchedaPartita.tsx \
++         frontend/src/lib/flussoPrezzi.ts Betfair/mike/feed.py Betfair/mike/service.py \
++         frontend/src/components/trading/ParamsSheetBase.tsx frontend/src/components/mike/useMike.ts \
++         frontend/src/components/mike/MikeParamsSheet.tsx frontend/src/lib/mike.ts; do
++  cmp -s "$SP/bak/$(basename "$f")" "$W/$f" && echo "ripristinato $f" || echo "DIVERSO $f"
++done

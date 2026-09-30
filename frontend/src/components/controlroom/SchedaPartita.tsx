@@ -23,7 +23,7 @@
 import { useState } from 'react';
 import { Circle } from 'lucide-react';
 import { AzioniPartita } from '@/components/controlroom/AzioniPartita';
-import FlussoBadge from '@/components/controlroom/FlussoBadge';
+import FlussoBadge, { FlussoLineeMikeBadge } from '@/components/controlroom/FlussoBadge';
 import { CashOutPartita } from '@/components/controlroom/CashOutPartita';
 import { fmtMoney, fmtOdds, fmtAge, fmtTime, DASH } from '@/lib/format';
 import { isErrorRow, isSettled } from '@/lib/eventGroups';
@@ -309,6 +309,8 @@ export function SchedaPartita({
                     registratoreVivo={registratoreVivo} />
                 {/* cantiere J (28/09): il flusso dei prezzi, prima della latenza */}
                 <FlussoBadge flusso={p.flusso} />
+                {/* 30/09: le linee di Mike (Under/Over 3,5 e 4,5) col loro flusso */}
+                <FlussoLineeMikeBadge flusso={p.flussoMike} />
                 {p.stato === 'live' && (
                     <span className={`text-[10px] font-mono ml-auto ${QUOTE_CLS[p.statoQuote]}`}
                         data-testid="cr-latenza"

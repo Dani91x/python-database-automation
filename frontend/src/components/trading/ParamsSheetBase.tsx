@@ -16,7 +16,7 @@ import {
     Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger,
 } from '@/components/ui/sheet';
 import { Settings } from 'lucide-react';
-import { fmtNum } from '@/lib/format';
+import { fmtNum, fmtTime } from '@/lib/format';
 import { T } from '@/lib/tradeStatus';
 // 28/09 (CANTIERE N): l'interruttore delle uscite e' UNO per tutta l'app
 import { InterruttoreUscite } from '@/components/controlroom/InterruttoreUscite';
@@ -83,7 +83,7 @@ export function clampValues(groups: ParamGroup[], values: ParamValues): { values
 
 export function ParamsSheetBase({
     title, description, groups, values, onSave, onReset, busy, triggerLabel = 'Parametri',
-    triggerTestId = 'params-trigger', footer, symbol,
+    triggerTestId = 'params-trigger', footer, symbol, riscontroSalvataggio = false,
 }: {
     title: string;
     description?: ReactNode;
@@ -98,10 +98,24 @@ export function ParamsSheetBase({
     footer?: ReactNode;
     /** simbolo del bot nel titolo dello sheet */
     symbol?: ReactNode;
+    /**
+     * 30/09 (Mike, «il feedback visivo del pulsante non funziona»): con `true`
+     * il pannello DICE l'esito del salvataggio sotto il pulsante («Parametri
+     * salvati alle HH:MM:SS» oppure l'errore testuale di `onSave`, che per
+     * questo deve RIGETTARE in caso di errore), il pulsante scrive
+     * «Salvataggio…» mentre aspetta e, dopo un salvataggio riuscito, la bozza
+     * si riallinea ai valori del servizio (il pallino "modifiche non salvate"
+     * si spegne). Assente/false = comportamento di prima, identico (Safe,
+     * Omega, tennis).
+     */
+    riscontroSalvataggio?: boolean;
 }) {
     const [draft, setDraft] = useState<ParamValues>(values);
     const [clamped, setClamped] = useState<Record<string, number>>({});
     const [touched, setTouched] = useState(false);
+    // solo con `riscontroSalvataggio`: l'attesa e l'esito dell'ultimo salvataggio
+    const [salvando, setSalvando] = useState(false);
+    const [esito, setEsito] = useState<{ ok: true; ms: number } | { ok: false; errore: string } | null>(null);
 
     // `values` cambia quando il servizio ripubblica i parametri: si riallinea
     // solo se l'utente non ha modifiche in corso (non si perde l'editing).
@@ -144,8 +158,26 @@ export function ParamsSheetBase({
         const r = clampValues(groups, draft);
         setClamped(r.clamped);
         setDraft(r.values);
-        await onSave(r.values);
-        setTouched(false);
+        if (!riscontroSalvataggio) {
+            await onSave(r.values);
+            setTouched(false);
+            return;
+        }
+        setSalvando(true);
+        setEsito(null);
+        try {
+            await onSave(r.values);
+            setEsito({ ok: true, ms: Date.now() });
+            setTouched(false);
+            // la bozza torna quella del SERVIZIO: al render dopo
+            // (`serverKey !== lastServerKey`, touched falso) si riallinea
+            setLastServerKey('');
+        } catch (e) {
+            // la bozza resta: le modifiche NON sono salvate e il pallino lo dice
+            setEsito({ ok: false, errore: String((e as Error)?.message ?? e) });
+        } finally {
+            setSalvando(false);
+        }
     }
 
     return (
@@ -291,8 +323,8 @@ export function ParamsSheetBase({
                         </p>
                     )}
                     <div className="flex items-center gap-2">
-                        <Button onClick={() => { void save(); }} disabled={busy} className="flex-1 bg-primary text-black hover:bg-primary/90" data-testid="params-save">
-                            {T.saveParams}
+                        <Button onClick={() => { void save(); }} disabled={busy || salvando} className="flex-1 bg-primary text-black hover:bg-primary/90" data-testid="params-save">
+                            {salvando ? 'Salvataggio…' : T.saveParams}
                         </Button>
                         {onReset && (
                             <Button
@@ -303,6 +335,14 @@ export function ParamsSheetBase({
                             >{T.resetParams}</Button>
                         )}
                     </div>
+                    {riscontroSalvataggio && esito && (
+                        <p className={`text-[11px] ${esito.ok ? 'text-emerald-300' : 'text-red-300'}`}
+                            data-testid="params-esito" data-esito={esito.ok ? 'ok' : 'errore'} role="status">
+                            {esito.ok
+                                ? `Parametri salvati alle ${fmtTime(esito.ms, { seconds: true })}`
+                                : `Salvataggio NON riuscito: ${esito.errore}`}
+                        </p>
+                    )}
                     {footer && <div className="text-[11px] text-slate-500 pb-6">{footer}</div>}
                 </div>
             </SheetContent>

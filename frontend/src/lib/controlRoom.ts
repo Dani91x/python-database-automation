@@ -26,7 +26,10 @@ import {
     groupTradesIntoCicli, groupCicliByEvent, isSettled, isErrorRow,
     type PnlTradeLike,
 } from './eventGroups';
-import { giudizioFlusso, type FlussoRiga, type GiudizioFlusso } from './flussoPrezzi';
+import {
+    giudizioFlusso, giudizioFlussoMike,
+    type BloccoOuRiga, type FlussoRiga, type GiudizioFlusso, type GiudizioFlussoMike,
+} from './flussoPrezzi';
 import { TERMINALI_FLUMINE } from './esitoAbbinamento';
 
 // ---------------------------------------------------------------- vocabolario
@@ -254,6 +257,9 @@ export interface PartitaFeedLike {
     } | null;
     /** 28/09 (cantiere J) — i prezzi sono VIVI? (`lib/flussoPrezzi.ts`) */
     flusso?: FlussoRiga | null;
+    /** 30/09 — le linee Over/Under della riga (stessa chiave `ou` del payload
+     *  vero): servono al giudizio del flusso delle linee di Mike */
+    ou?: BloccoOuRiga[] | null;
 }
 
 /**
@@ -782,6 +788,10 @@ export interface PartitaGiornata {
      *  giudicato (`giudizioFlusso`). Opzionale per lo stesso motivo di
      *  `statoMercato`. */
     flusso?: GiudizioFlusso | null;
+    /** 30/09 — il flusso delle LINEE DI MIKE (Under/Over 3,5 e 4,5), con la
+     *  stessa regola di Mike (`giudizioFlussoMike`). Il `flusso` sopra è il
+     *  Match Odds. Opzionale per lo stesso motivo di `statoMercato`. */
+    flussoMike?: GiudizioFlussoMike | null;
 }
 
 export interface GruppoCampionato {
@@ -860,6 +870,7 @@ export function costruisciGiornata(args: {
             giocatori: p ? { p1: p.p1 ?? null, p2: p.p2 ?? null } : null,
             odds: p?.odds ?? null,
             flusso: giudizioFlusso(p?.flusso, nowMs),
+            flussoMike: giudizioFlussoMike(p, nowMs),
         };
     });
 
