@@ -22,6 +22,19 @@ describe('statoBotScalper - la riga della plancia dalle sessioni', () => {
         expect(s).toMatchObject({ inCorsa: false, stato: 'stopped', modalita: null, vive: 0 });
     });
 
+    // T_P5 (30/09): da spento l'interruttore dichiara con che modo ripartirebbe:
+    // si mostra come "ultimo modo", `modalita` resta null (niente opera)
+    it('spento, interruttore in paper: modalita null, ultimoModo paper', () => {
+        const servizio = {
+            id: 1, status: 'stopped', mode: 'paper', strategia: 'scalper', stake: 2, params: {}, stats: null,
+            started_at: null, stopped_at: '2026-09-30T10:00:00+00:00', updated_at: '2026-09-30T10:00:00+00:00',
+        };
+        const s = statoBotScalper([], servizio);
+        expect(s).toMatchObject({ inCorsa: false, modalita: null, ultimoModo: 'paper' });
+        expect(statoBotScalper([], { ...servizio, mode: 'live' }).ultimoModo).toBe('live');
+        expect(statoBotScalper([]).ultimoModo).toBeNull();
+    });
+
     it('una sessione running in prova: acceso, prova', () => {
         const s = statoBotScalper([sessione()]);
         expect(s).toMatchObject({ inCorsa: true, stato: 'running', modalita: 'paper', misto: false });

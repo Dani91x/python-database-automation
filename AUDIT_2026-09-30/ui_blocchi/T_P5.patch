@@ -1,0 +1,558 @@
+diff --git a/frontend/src/components/controlroom/testata/paroleImpianto.test.ts b/frontend/src/components/controlroom/testata/paroleImpianto.test.ts
+new file mode 100644
+index 0000000..fb896df
+--- /dev/null
++++ b/frontend/src/components/controlroom/testata/paroleImpianto.test.ts
+@@ -0,0 +1,86 @@
++// ============================================================================
++// paroleImpianto.test.ts - P5 (30/09): chip dei bot e impianto in parole vere.
++// Valori veri: `heartbeat_mode()` scrive 'LIVE+PAPER' o 'PAPER' (runner.py:2191-2192);
++// `safe_strategy_status.payload.source` = 'stream' | 'rest' (safe_strategy/service.py:2160);
++// freschezza = `freschezzaBattito` del hook ('fresca'|'lenta'|'vecchia'|'ignota').
++// ============================================================================
++import { describe, it, expect } from 'vitest';
++import { modoChip, statoChip, usciteChip, pallinoChip, aggiornatoChip, tettoRunner, sorgenteFeed, riassuntoDati } from './paroleImpianto';
++
++describe('modoChip - sempre il modo dichiarato (T_P5b)', () => {
++    it('LIVE resta LIVE col tono live anche a bot fermo; PAPER col suo tono', () => {
++        expect(modoChip({ modalita: 'live' })).toEqual({ testo: 'LIVE', tono: 'live' });
++        expect(modoChip({ modalita: 'paper' })).toEqual({ testo: 'PAPER', tono: 'paper' });
++        expect(modoChip({ modalita: null }).testo).toMatch(/ignota/);
++    });
++    it('"ultimo modo" SOLO dal ripiego modalitaUltima (scalper senza sessioni)', () => {
++        expect(modoChip({ modalita: null, modalitaUltima: 'paper' }).testo).toBe('ultimo modo paper');
++        expect(modoChip({ modalita: 'live', modalitaUltima: 'paper' }).testo).toBe('LIVE');
++    });
++});
++
++describe('statoChip / usciteChip / pallinoChip (T_P5b)', () => {
++    it('parole di botStatusMeta: FERMO, IN ARRESTO, INATTIVO, ERRORE (rosso); running nessuna parola', () => {
++        expect(statoChip('stopped')).toEqual({ testo: 'FERMO', tono: 'neutro' });
++        expect(statoChip('stopping')).toEqual({ testo: 'IN ARRESTO', tono: 'attenzione' });
++        expect(statoChip('idle')?.testo).toBe('INATTIVO');
++        expect(statoChip('error')).toEqual({ testo: 'ERRORE', tono: 'allarme' });
++        expect(statoChip('running')).toBeNull();
++    });
++    it('stato non letto: "stato non letto", mai "spento"; stato sconosciuto scritto com\'e\'', () => {
++        expect(statoChip(null)).toEqual({ testo: 'stato non letto', tono: 'attenzione' });
++        expect(statoChip('arming')?.testo).toBe('ARMING');
++    });
++    it('uscite attive SOLO se il servizio dichiara stop_ferma_solo_aperture e il bot non corre', () => {
++        expect(usciteChip({ stato: 'stopped', stopFermaSoloAperture: true })?.testo).toMatch(/uscite attive/);
++        expect(usciteChip({ stato: 'stopped', stopFermaSoloAperture: true })?.titolo).toMatch(/cash out e regolamento continuano/);
++        expect(usciteChip({ stato: 'stopped', stopFermaSoloAperture: false })).toBeNull();
++        expect(usciteChip({ stato: 'stopped' })).toBeNull();
++        expect(usciteChip({ stato: 'running', stopFermaSoloAperture: true })).toBeNull();
++    });
++    it('pallino: fermo in LIVE distinto dal fermo in paper', () => {
++        expect(pallinoChip({ inCorsa: false, muto: true, modalita: 'live' })).toBe('fermo-live');
++        expect(pallinoChip({ inCorsa: false, muto: true, modalita: 'paper' })).toBe('fermo');
++        expect(pallinoChip({ inCorsa: true, muto: true, modalita: 'paper' })).toBe('muto');
++        expect(pallinoChip({ inCorsa: true, muto: false, modalita: 'live' })).toBe('vivo');
++    });
++});
++
++describe('aggiornatoChip - niente piu\' \u00absenza spinta\u00bb', () => {
++    it('fermo che non invia: normale, grigio', () => {
++        const a = aggiornatoChip({ inCorsa: false, etaS: null, freschezza: 'ignota' });
++        expect(a).toEqual({ testo: 'fermo: non invia aggiornamenti', tono: 'neutro' });
++    });
++    it('acceso e muto oltre la cadenza: ACCESO MA MUTO da N s, rosso', () => {
++        expect(aggiornatoChip({ inCorsa: true, etaS: 95, freschezza: 'vecchia' }))
++            .toEqual({ testo: 'ACCESO MA MUTO da 1 min', tono: 'allarme' });
++        expect(aggiornatoChip({ inCorsa: true, etaS: null, freschezza: 'ignota' }).tono).toBe('allarme');
++    });
++    it('acceso e fresco: aggiornato N s fa', () => {
++        expect(aggiornatoChip({ inCorsa: true, etaS: 2, freschezza: 'fresca' }))
++            .toEqual({ testo: 'aggiornato 2 s fa', tono: 'ok' });
++    });
++    it('in nessun caso scrive \u00absenza spinta\u00bb', () => {
++        for (const inCorsa of [true, false]) for (const f of ['fresca', 'lenta', 'vecchia', 'ignota'] as const) {
++            expect(aggiornatoChip({ inCorsa, etaS: null, freschezza: f }).testo).not.toMatch(/spinta/);
++        }
++    });
++});
++
++describe('tettoRunner / sorgenteFeed / riassuntoDati', () => {
++    it('LIVE+PAPER = ordini veri consentiti; PAPER = solo simulati; mai "live+paper" a schermo', () => {
++        expect(tettoRunner('LIVE+PAPER')?.testo).toBe('ordini veri consentiti');
++        expect(tettoRunner('PAPER')?.testo).toBe('solo simulati');
++        expect(tettoRunner(null)).toBeNull();
++        expect(tettoRunner('LIVE+PAPER')?.testo).not.toMatch(/live\+paper/i);
++    });
++    it('rest = RIPIEGO in ambra; stream = verde', () => {
++        expect(sorgenteFeed('rest')).toEqual({ testo: 'RIPIEGO REST (stream fermo)', tono: 'attenzione' });
++        expect(sorgenteFeed('stream').tono).toBe('ok');
++    });
++    it('dati: tempo reale solo se TUTTO arriva dal canale; altrimenti nomina chi no', () => {
++        expect(riassuntoDati([{ nome: 'Omega', canale: true }]).testo).toBe('Dati: tempo reale');
++        const r = riassuntoDati([{ nome: 'Omega', canale: false }, { nome: 'Safe', canale: true }, { nome: 'Tennis', canale: false }]);
++        expect(r.testo).toBe('Dati: dal database (ogni 30 s) per: Omega, Tennis');
++    });
++});
+diff --git a/frontend/src/components/controlroom/testata/paroleImpianto.ts b/frontend/src/components/controlroom/testata/paroleImpianto.ts
+new file mode 100644
+index 0000000..ed13490
+--- /dev/null
++++ b/frontend/src/components/controlroom/testata/paroleImpianto.ts
+@@ -0,0 +1,134 @@
++// ============================================================================
++// paroleImpianto.ts - P5 (30/09): chip dei bot e impianto in parole da trader.
++//
++// Ordine dell'utente (30/09): "2 bot senza spinta. Distinzione "live-paper"
++// hardcoded, che significa??? mike e' in live! il trader cosa sta vedendo???".
++// Stessa grammatica per OGNI bot: MODO, STATO, AGGIORNATO.
++//   * "senza spinta" sparisce: un bot FERMO che per costruzione non invia =
++//     "fermo: non invia aggiornamenti" (grigio, normale); un bot ACCESO e muto
++//     oltre la sua cadenza (`freschezzaPush`, calcolata dal hook con la cadenza
++//     DICHIARATA dal servizio) = "ACCESO MA MUTO da N s" (rosso).
++//   * Runner: `heartbeat_mode()` (Betfair/stream/runner.py:2176-2192) scrive le
++//     modalita' che il runner PUO' servire secondo `LIVE_ORDER_MODE` del suo
++//     .env (il tetto): LIVE+PAPER = "ordini veri consentiti", PAPER = "solo
++//     simulati". Non dice in che modo opera un bot.
++//   * Feed: `rest` = lo scanner e' in RIPIEGO (stream fermo): ambra.
++// Funzioni PURE: la presentazione sta in `pages/ControlRoom.tsx` (Testata).
++// ============================================================================
++import { fmtAge } from '@/lib/format';
++import { botStatusMeta, BOT_STATUS_META } from '@/lib/tradeStatus';
++import type { Freschezza } from '@/lib/controlRoom';
++import type { Modalita } from '../useControlRoom';
++
++export type Tono = 'live' | 'paper' | 'neutro' | 'ok' | 'attenzione' | 'allarme';
++
++export interface ParolaChip { testo: string; tono: Tono }
++
++/**
++ * MODO del bot: SEMPRE quello dichiarato dal servizio (`control.mode`), anche a
++ * bot fermo: un Mike fermo in LIVE puo' avere posizioni vere aperte e ripartira'
++ * in LIVE, quindi resta "LIVE" col tono live. "ultimo modo <m>" SOLO quando il
++ * modo viene dal ripiego `modalitaUltima` (scalper calcio senza sessioni).
++ * (T_P5b, reperto del coordinatore: prima "SPENTO - ultimo modo live" in grigio.)
++ */
++export function modoChip(b: {
++    modalita: Modalita | null; modalitaUltima?: Modalita | null;
++}): ParolaChip {
++    if (b.modalita === 'live') return { testo: 'LIVE', tono: 'live' };
++    if (b.modalita === 'paper') return { testo: 'PAPER', tono: 'paper' };
++    if (b.modalitaUltima) return { testo: `ultimo modo ${b.modalitaUltima}`, tono: 'neutro' };
++    return { testo: 'modalit\u00e0 ignota', tono: 'attenzione' };
++}
++
++/**
++ * STATO del servizio con le parole del design system (`botStatusMeta`,
++ * `lib/tradeStatus.ts`): running = nessuna parola in piu' (il chip dice gia'
++ * il modo e l'aggiornamento); stopping = IN ARRESTO; stopped = FERMO; idle =
++ * INATTIVO; error = ERRORE (rosso). Stato non letto = "stato non letto", MAI
++ * "spento". Uno stato che la mappa non conosce si scrive com'e' (ambra).
++ */
++export function statoChip(stato: string | null | undefined): ParolaChip | null {
++    const k = String(stato ?? '').trim().toLowerCase();
++    if (!k) return { testo: 'stato non letto', tono: 'attenzione' };
++    if (k === 'running') return null;
++    if (!(k in BOT_STATUS_META)) return { testo: k.toUpperCase(), tono: 'attenzione' };
++    const label = botStatusMeta(k).label;
++    const tono: Tono = k === 'error' ? 'allarme' : k === 'stopping' ? 'attenzione' : 'neutro';
++    return { testo: label, tono };
++}
++
++/** La frase di `PannelloBot` sul pulsante "ferma" (stessa verita', stesse parole). */
++export const USCITE_ATTIVE_TITOLO = 'Le posizioni gi\u00e0 aperte restano sorvegliate: coperture, green-up, cash out e regolamento continuano';
++
++/**
++ * Bot NON in corsa che, per dichiarazione del servizio
++ * (`stats.stop_ferma_solo_aperture`), ha fermato solo le APERTURE: le uscite
++ * continuano. Non dichiarato = non si afferma nulla sulle uscite.
++ */
++export function usciteChip(b: { stato: string | null | undefined; stopFermaSoloAperture?: boolean }):
++    { testo: string; titolo: string } | null {
++    const k = String(b.stato ?? '').trim().toLowerCase();
++    if (k === 'running' || b.stopFermaSoloAperture !== true) return null;
++    return { testo: 'aperture ferme \u00b7 uscite attive', titolo: `aperture ferme. ${USCITE_ATTIVE_TITOLO}` };
++}
++
++/** Il pallino: acceso sano / acceso muto / fermo in LIVE (puo' avere posizioni vere) / fermo. */
++export function pallinoChip(b: { inCorsa: boolean; muto: boolean; modalita: Modalita | null }):
++    'vivo' | 'muto' | 'fermo-live' | 'fermo' {
++    if (b.inCorsa) return b.muto ? 'muto' : 'vivo';
++    return b.modalita === 'live' ? 'fermo-live' : 'fermo';
++}
++
++/**
++ * AGGIORNATO: eta' della notizia piu' recente (push del canale, altrimenti il
++ * battito del servizio). `freschezza` e' quella del hook (`freschezzaBattito`
++ * con la cadenza dichiarata dal servizio): nessuna soglia nuova qui.
++ */
++export function aggiornatoChip(b: {
++    inCorsa: boolean; etaS: number | null; freschezza: Freschezza;
++}): ParolaChip {
++    const eta = b.etaS == null ? null : Math.max(0, Math.round(b.etaS));
++    if (!b.inCorsa) {
++        return eta == null
++            ? { testo: 'fermo: non invia aggiornamenti', tono: 'neutro' }
++            : { testo: `aggiornato ${fmtAge(eta)} fa`, tono: 'neutro' };
++    }
++    if (b.freschezza === 'vecchia' || b.freschezza === 'ignota') {
++        return {
++            testo: eta == null ? 'ACCESO MA MUTO: nessun aggiornamento ricevuto' : `ACCESO MA MUTO da ${fmtAge(eta)}`,
++            tono: 'allarme',
++        };
++    }
++    return { testo: `aggiornato ${fmtAge(eta)} fa`, tono: b.freschezza === 'lenta' ? 'attenzione' : 'ok' };
++}
++
++/** Il tetto del runner (colonna `mode` del battito) in parole vere. */
++export function tettoRunner(mode: string | null | undefined): { testo: string; titolo: string } | null {
++    const m = String(mode ?? '').trim().toUpperCase();
++    if (!m) return null;
++    const titolo = 'tetto del file di configurazione del runner (LIVE_ORDER_MODE): cosa PUO\' servire. '
++        + 'Con che soldi opera ogni bot lo dicono i chip dei bot e la riga "Ordini reali".';
++    if (m === 'LIVE+PAPER' || m === 'LIVE') return { testo: 'ordini veri consentiti', titolo };
++    if (m === 'PAPER') return { testo: 'solo simulati', titolo };
++    if (m === 'OFF') return { testo: 'ordini spenti', titolo };
++    return { testo: `tetto ${m.toLowerCase()}`, titolo };
++}
++
++/** La sorgente delle quote dello scanner. */
++export function sorgenteFeed(sorgente: string | null | undefined): { testo: string; tono: Tono } {
++    const s = String(sorgente ?? '').trim().toLowerCase();
++    if (s === 'rest') return { testo: 'RIPIEGO REST (stream fermo)', tono: 'attenzione' };
++    if (s === 'stream') return { testo: 'stream', tono: 'ok' };
++    if (!s) return { testo: 'sorgente ignota', tono: 'attenzione' };
++    return { testo: s, tono: 'neutro' };
++}
++
++/**
++ * "Dati: tempo reale" oppure "Dati: dal database (ogni 30 s) per: ...".
++ * `fonti` = per ogni voce se arriva dal canale locale (true) o dal database.
++ */
++export function riassuntoDati(fonti: ReadonlyArray<{ nome: string; canale: boolean }>): { testo: string; tono: Tono } {
++    const lenti = fonti.filter((f) => !f.canale).map((f) => f.nome);
++    if (lenti.length === 0) return { testo: 'Dati: tempo reale', tono: 'ok' };
++    return { testo: `Dati: dal database (ogni 30 s) per: ${lenti.join(', ')}`, tono: 'attenzione' };
++}
+diff --git a/frontend/src/components/controlroom/useControlRoom.ts b/frontend/src/components/controlroom/useControlRoom.ts
+index 17c7ec2..0def87e 100644
+--- a/frontend/src/components/controlroom/useControlRoom.ts
++++ b/frontend/src/components/controlroom/useControlRoom.ts
+@@ -343,6 +343,12 @@ export interface StatoBot {
+      */
+     fonteStato?: 'canale' | 'database';
+     etaStatoS?: number | null;
++    /**
++     * T_P5 (30/09) - solo per i bot la cui `modalita` e' null quando sono
++     * spenti (scalper calcio): la modalita' con cui ripartirebbero, dichiarata
++     * dal servizio. Si mostra come "ultimo modo", mai come modalita' in uso.
++     */
++    modalitaUltima?: Modalita | null;
+ }
+ 
+ // ------------------------------------------------ operazioni per partita
+@@ -2521,6 +2527,8 @@ export function useControlRoom(): ControlRoomVM {
+                 // scalper e' solo LORDO nel bot: non si mostra come netto.
+                 pnlOggi: scalperVista.realeOggi,
+                 pnlOggiPaper: null,
++                // T_P5 (30/09): da spento, la modalita' dell'interruttore come "ultimo modo"
++                modalitaUltima: st.ultimoModo,
+                 nota: [notaAuto, `${quante} - ${fonte}`, senzaAuto].filter(Boolean).join(' - '),
+                 // 28/09 (CANTIERE N): le proposte d'uscita delle sessioni vive
+                 // (29/09: anche lo sniper della stessa sessione, `sniper_uscite_proposte`)
+diff --git a/frontend/src/lib/scalperControlRoom.test.ts b/frontend/src/lib/scalperControlRoom.test.ts
+index 95c5f09..447299d 100644
+--- a/frontend/src/lib/scalperControlRoom.test.ts
++++ b/frontend/src/lib/scalperControlRoom.test.ts
+@@ -22,6 +22,19 @@ describe('statoBotScalper - la riga della plancia dalle sessioni', () => {
+         expect(s).toMatchObject({ inCorsa: false, stato: 'stopped', modalita: null, vive: 0 });
+     });
+ 
++    // T_P5 (30/09): da spento l'interruttore dichiara con che modo ripartirebbe:
++    // si mostra come "ultimo modo", `modalita` resta null (niente opera)
++    it('spento, interruttore in paper: modalita null, ultimoModo paper', () => {
++        const servizio = {
++            id: 1, status: 'stopped', mode: 'paper', strategia: 'scalper', stake: 2, params: {}, stats: null,
++            started_at: null, stopped_at: '2026-09-30T10:00:00+00:00', updated_at: '2026-09-30T10:00:00+00:00',
++        };
++        const s = statoBotScalper([], servizio);
++        expect(s).toMatchObject({ inCorsa: false, modalita: null, ultimoModo: 'paper' });
++        expect(statoBotScalper([], { ...servizio, mode: 'live' }).ultimoModo).toBe('live');
++        expect(statoBotScalper([]).ultimoModo).toBeNull();
++    });
++
+     it('una sessione running in prova: acceso, prova', () => {
+         const s = statoBotScalper([sessione()]);
+         expect(s).toMatchObject({ inCorsa: true, stato: 'running', modalita: 'paper', misto: false });
+diff --git a/frontend/src/lib/scalperControlRoom.ts b/frontend/src/lib/scalperControlRoom.ts
+index 131a48b..f1382f0 100644
+--- a/frontend/src/lib/scalperControlRoom.ts
++++ b/frontend/src/lib/scalperControlRoom.ts
+@@ -354,6 +354,10 @@ export function statoBotScalper(
+     battitoAt: string | null; vive: number; attive: number;
+     /** 25/09 - l'interruttore globale e' acceso (auto-mode) */
+     autoAcceso: boolean;
++    /** T_P5 (30/09) - a bot SPENTO la modalita' con cui ripartirebbe, dichiarata
++     *  dall'interruttore (`servizio.mode`): da mostrare come "ultimo modo",
++     *  MAI come modalita' in uso (`modalita` resta null: niente opera). */
++    ultimoModo: ModalitaScalper | null;
+ } {
+     const vive = sessioni.filter(sessioneViva);
+     const attive = vive.filter(sessioneAttiva);
+@@ -378,6 +382,8 @@ export function statoBotScalper(
+         vive: vive.length,
+         attive: attive.length,
+         autoAcceso,
++        ultimoModo: modalita
++            ?? (servizio?.mode === 'live' ? 'live' : servizio?.mode === 'paper' ? 'paper' : null),
+     };
+ }
+ 
+diff --git a/frontend/src/pages/ControlRoom.test.tsx b/frontend/src/pages/ControlRoom.test.tsx
+index e6c4c62..b4a0c19 100644
+--- a/frontend/src/pages/ControlRoom.test.tsx
++++ b/frontend/src/pages/ControlRoom.test.tsx
+@@ -274,7 +274,10 @@ describe('bot muto — fail-closed dichiarato', () => {
+         v.bots[2] = { ...v.bots[2], canale: 'off', etaPushS: null, freschezzaPush: 'ignota' };
+         mVm.mockReturnValue(v);
+         mostra();
+-        expect(within(screen.getByTestId('cr-bot-mike')).getByText(/senza spinta/)).toBeTruthy();
++        // T_P5 (30/09) - CAMBIATO PERCHE' CAMBIA IL TESTO VOLUTO: «senza spinta»
++        // non distingueva fermo da guasto; un bot ACCESO muto e' «ACCESO MA MUTO»
++        expect(within(screen.getByTestId('cr-bot-mike')).getByText(/ACCESO MA MUTO/)).toBeTruthy();
++        expect(screen.getByTestId('cr-bot-mike').textContent).not.toMatch(/senza spinta/);
+         expect(within(screen.getByTestId('cr-bot-muti')).getByText(/Mike/)).toBeTruthy();
+         expect(screen.getByTestId('cr-bot-muti').textContent).toMatch(/non conosciamo l/);
+     });
+@@ -788,7 +791,61 @@ describe('onestà sulle fonti', () => {
+ 
+     it('la sorgente del feed è scritta: fra stream e rest c\'è un ordine di grandezza', () => {
+         mVm.mockReturnValue(vm({ feedSorgente: 'rest', feedEtaS: 40, feedFreschezza: 'vecchia' }));
+-        expect(within(mostra().getByTestId('cr-feed')).getByText('rest')).toBeTruthy();
++        // T_P5 (30/09) - CAMBIATO PERCHE' CAMBIA IL TESTO VOLUTO: «rest» grigio
++        // nascondeva che lo scanner e' in RIPIEGO; ora e' detto, in ambra
++        const s = within(mostra().getByTestId('cr-feed')).getByText('RIPIEGO REST (stream fermo)');
++        expect(s.className).toMatch(/amber/);
++    });
++
++    it('T_P5b: Mike FERMO in LIVE con stop che ferma solo le aperture: FERMO · LIVE (rosso) · uscite attive; mai SPENTO ne\' ultimo modo', () => {
++        const v = vm();
++        v.bots = [
++            { ...v.bots[0], stato: 'stopping', inCorsa: false } as never,
++            { ...v.bots[1], stato: 'stopped', inCorsa: false, modalita: 'paper', stopFermaSoloAperture: false } as never,
++            { ...v.bots[2], stato: 'stopped', inCorsa: false, modalita: 'live', stopFermaSoloAperture: true,
++                battitoAt: '2026-09-14T14:59:50Z', etaPushS: null } as never,
++            { bot: 'tennis_pro', modalita: 'paper', inCorsa: false, stato: 'error', battitoAt: null, canale: 'off',
++                etaPushS: null, freschezzaPush: 'ignota', varianti: null } as never,
++        ];
++        mVm.mockReturnValue(v);
++        const s = mostra();
++        const mike = s.getByTestId('cr-bot-mike');
++        expect(mike.textContent).toMatch(/FERMO/);
++        expect(mike.textContent).toMatch(/uscite attive/);
++        expect(mike.textContent).not.toMatch(/SPENTO|ultimo modo/);
++        expect(s.getByTestId('cr-bot-modo-mike').textContent).toBe('LIVE');
++        expect(s.getByTestId('cr-bot-modo-mike').className).toMatch(/red/);
++        // il battito c'e': l'eta', non "non invia aggiornamenti"
++        expect(mike.textContent).toMatch(/aggiornato 10 s fa/);
++        expect(mike.querySelector('[data-pallino]')?.getAttribute('data-pallino')).toBe('fermo-live');
++        expect(s.getByTestId('cr-bot-omega').textContent).toMatch(/IN ARRESTO/);
++        const safe = s.getByTestId('cr-bot-safe').textContent ?? '';
++        expect(safe).toMatch(/FERMO/);
++        expect(safe).not.toMatch(/uscite/);
++        expect(s.getByTestId('cr-bot-safe').querySelector('[data-pallino]')?.getAttribute('data-pallino')).toBe('fermo');
++        expect(s.getByTestId('cr-bot-statoservizio-tennis_pro').textContent).toBe('ERRORE');
++    });
++
++    it('T_P5: fermo senza aggiornamenti = normale; scalper spento = «SPENTO · ultimo modo paper»; runner in parole vere', () => {
++        const v = vm({ runner: { ts: '2026-09-14T14:59:30Z', mode: 'LIVE+PAPER', ageS: 30, up: true, streaming: 2 } });
++        v.bots = [
++            ...v.bots.slice(0, 2),
++            { ...v.bots[2], modalita: 'live' },
++            { bot: 'scalper', modalita: null, modalitaUltima: 'paper', inCorsa: false, stato: 'stopped', battitoAt: null, canale: 'off', etaPushS: null, freschezzaPush: 'ignota', varianti: null } as never,
++        ];
++        mVm.mockReturnValue(v);
++        const s = mostra();
++        const sc = s.getByTestId('cr-bot-scalper').textContent ?? '';
++        // T_P5b: la parola del design system (FERMO), non «SPENTO»
++        expect(sc).toMatch(/FERMO .*ultimo modo paper/);
++        expect(sc).not.toMatch(/SPENTO/);
++        expect(sc).toMatch(/fermo: non invia aggiornamenti/);
++        expect(sc).not.toMatch(/ignota|senza spinta/);
++        expect(s.getByTestId('cr-bot-modo-mike').textContent).toBe('LIVE');
++        const runner = s.getByTestId('cr-runner').textContent ?? '';
++        expect(runner).toMatch(/ordini veri consentiti/);
++        expect(runner).not.toMatch(/live\+paper/i);
++        expect(s.getByTestId('cr-dati-riassunto').textContent).toMatch(/Dati: dal database \(ogni 30 s\) per: quote scanner, stato scanner, Omega, Safe, Mike, Tennis/);
+     });
+ 
+     it('obiettivo non storicizzato: la pagina lo dice invece di spacciarlo per quello del giorno', () => {
+diff --git a/frontend/src/pages/ControlRoom.tsx b/frontend/src/pages/ControlRoom.tsx
+index ef85cdb..9b62c62 100644
+--- a/frontend/src/pages/ControlRoom.tsx
++++ b/frontend/src/pages/ControlRoom.tsx
+@@ -51,7 +51,7 @@ import { fmtMs, totaleCatena, totaleNostro, colloDiBottiglia } from '@/lib/contr
+ import type { StatoChiusuraEvento } from '@/lib/chiusuraUtente';
+ import {
+     useControlRoom,
+-    type StatoBot, type PosizioneAperta, type Modalita,
++    type StatoBot, type PosizioneAperta,
+ } from '@/components/controlroom/useControlRoom';
+ import { righeInterruttori } from '@/components/controlroom/righeBot';
+ import { PannelloBot } from '@/components/controlroom/PannelloBot';
+@@ -61,6 +61,9 @@ import { ProposteUsciteFlusso } from '@/components/controlroom/ProposteUsciteFlu
+ import { RigaCapacitaMercati } from '@/components/controlroom/RigaCapacitaMercati';
+ import { FasciaSoldiVeri } from '@/components/controlroom/testata/FasciaSoldiVeri';
+ import { StopPerdita } from '@/components/controlroom/testata/FasciaStop';
++import {
++    modoChip, statoChip, usciteChip, pallinoChip, aggiornatoChip, tettoRunner, sorgenteFeed, riassuntoDati, type Tono,
++} from '@/components/controlroom/testata/paroleImpianto';
+ import {
+     STAKE_TENNIS, differenzeSoloTennis, altreInLiveAdesso,
+ } from '@/components/controlroom/soloTennis';
+@@ -917,6 +920,15 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
+     // nella Zona 1 (`ObiettivoHero`, testid `cr-obiettivo`): qui restano SOLO
+     // identità, modalità, salute feed, runner, freni, ricarica — grigio se
+     // sano, colore solo per anomalie (checklist A5 §3.3 regole 1 e 5).
++    // T_P5 (30/09): chi arriva dal canale in tempo reale e chi dal database
++    const datiRiassunto = riassuntoDati([
++        { nome: 'quote scanner', canale: vm.fonteScan === 'locale' },
++        { nome: 'stato scanner', canale: vm.fonteStatoScanner === 'canale' },
++        ...(['omega', 'safe', 'mike', 'tennis'] as const).map((b) => ({
++            nome: b === 'tennis' ? 'Tennis' : BOT_LABEL[b],
++            canale: vm.fonteRighe[b].fonte === 'locale',
++        })),
++    ]);
+     return (
+         <header
+             className={`sticky top-0 z-30 border-b backdrop-blur ${inLive ? 'border-orange-500/40 bg-orange-950/30' : 'border-white/10 bg-background/80'}`}
+@@ -943,16 +955,27 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
+                 <Runner r={vm.runnerTennis} fonte={vm.fonteRunnerTennis} tennis />
+ 
+                 <div className="flex items-stretch gap-3" data-testid="cr-bots">
+-                    {vm.bots.map((b) => <ChipBot key={b.bot} b={b} />)}
++                    {vm.bots.map((b) => <ChipBot key={b.bot} b={b} nowMs={vm.nowMs} />)}
+                 </div>
+ 
+                 <div className="flex items-center gap-2 text-[11px]" data-testid="cr-feed">
+                     <Radio className={`w-3.5 h-3.5 ${FRESCHEZZA_CLS[vm.feedFreschezza]}`} />
+-                    <span className="text-white/50">feed</span>
+-                    <span className="font-mono">{vm.feedSorgente ?? DASH}</span>
++                    <span className="text-white/50">Quote dello scanner</span>
++                    {/* T_P5 (30/09): «rest» = RIPIEGO (stream fermo), in ambra;
++                        prima era grigio e il colore guardava solo l'eta' */}
++                    <span className={`font-mono ${TONO_CLS[sorgenteFeed(vm.feedSorgente).tono]}`}
++                        data-testid="cr-feed-sorgente">{sorgenteFeed(vm.feedSorgente).testo}</span>
+                     <span className={FRESCHEZZA_CLS[vm.feedFreschezza]}>
+                         {vm.feedEtaS == null ? FRESCHEZZA_TESTO.ignota : fmtAge(vm.feedEtaS)}
+                     </span>
++                    {/* T_P5 (30/09): UNA riga per il trader («Dati: tempo reale» o
++                        «dal database per: ...»); il dettaglio tecnico di prima resta
++                        tutto, dentro il <details> qui sotto (stessi data-testid). */}
++                    <span className={TONO_CLS[datiRiassunto.tono]} data-testid="cr-dati-riassunto">
++                        {datiRiassunto.testo}
++                    </span>
++                    <details className="inline" data-testid="cr-dati-dettaglio">
++                        <summary className="inline cursor-pointer text-white/30 list-none">dettaglio</summary>
+                     {/* STADIO B2c (18/09, raccordo) — sobrio, mai vistoso: quale
+                         canale sta parlando ADESSO: "canale locale" se l'ultima
+                         riga dello scanner (47336) e' arrivata da li' da poco,
+@@ -984,6 +1007,7 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
+                             );
+                         })}
+                     </span>
++                    </details>
+                 </div>
+ 
+                 <Button size="sm" variant="ghost" onClick={vm.ricarica} className="h-7 px-2 text-white/60" data-testid="cr-ricarica">
+@@ -1034,13 +1058,20 @@ function Runner({ r, fonte, tennis = false }: {
+     const fase: RunnerPhase = runnerPhase(r);
+     const testo = r.ageS == null ? 'mai avviato' : FASE_RUNNER[fase];
+     const cls = fase === 'streaming' ? 'text-emerald-400' : fase === 'idle' ? 'text-secondary' : 'text-orange-400';
++    const tetto = tettoRunner(r.mode);
+     return (
+         <div className="flex flex-col" data-testid={testid}
+             title={r.ageS != null ? `ultimo battito ${fmtAge(Math.round(r.ageS))} fa` : 'il runner non ha mai battuto'}>
+             <span className="text-[10px] uppercase tracking-wider text-white/40">{etichetta}</span>
+             <span className={`font-mono text-sm font-semibold ${cls}`}>
+                 {testo}
+-                {r.mode && <span className="text-white/40"> · {r.mode.toLowerCase()}</span>}
++                {/* T_P5 (30/09): «live+paper» era il TETTO del .env del runner
++                    (runner.py::heartbeat_mode), non il modo di un bot */}
++                {tetto && (
++                    <span className="text-white/40" data-testid={`${testid}-tetto`} title={tetto.titolo}>
++                        {' · '}{tetto.testo}
++                    </span>
++                )}
+             </span>
+             {notaFonte}
+         </div>
+@@ -1085,20 +1116,37 @@ function ParametriNonLetti({ bot }: { bot: string }) {
+  * ultimo messaggio. Un bot muto non è un bot fermo — e una pagina che non
+  * distingue i due casi mente.
+  */
+-function ChipBot({ b }: { b: StatoBot }) {
++function ChipBot({ b, nowMs }: { b: StatoBot; nowMs: number }) {
+     const muto = b.canale !== 'connected' || !affidabilePerPiazzare(b.freschezzaPush);
++    // T_P5 (30/09) - stessa grammatica per ogni bot: MODO · AGGIORNATO.
++    // «senza spinta» non c'e' piu': fermo = "fermo: non invia aggiornamenti"
++    // (normale), acceso e muto oltre la sua cadenza = "ACCESO MA MUTO da N s".
++    const etaBattito = b.battitoAt == null || !Number.isFinite(Date.parse(b.battitoAt))
++        ? null : Math.max(0, (nowMs - Date.parse(b.battitoAt)) / 1000);
++    // T_P5b: STATO con le parole del design system, MODO sempre quello
++    // dichiarato (LIVE resta rosso anche a bot fermo), uscite se il servizio
++    // dichiara che fermare toglie solo le aperture
++    const stato = statoChip(b.stato);
++    const modo = modoChip(b);
++    const uscite = usciteChip(b);
++    const pallino = pallinoChip({ inCorsa: b.inCorsa, muto, modalita: b.modalita });
++    const agg = aggiornatoChip({ inCorsa: b.inCorsa, etaS: b.etaPushS ?? etaBattito, freschezza: b.freschezzaPush });
+     return (
+         <div className="flex flex-col gap-0.5" data-testid={`cr-bot-${b.bot}`} title={descriviModalita(b)}>
+             <span className={`flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide ${BOT_CLS[b.bot]}`}>
+-                <Circle className={`w-2 h-2 ${b.inCorsa && !muto ? 'fill-emerald-400 text-emerald-400' : 'fill-orange-400 text-orange-400'}`} />
++                <Circle className={`w-2 h-2 ${PALLINO_CLS[pallino]}`} data-pallino={pallino} />
+                 {BOT_LABEL[b.bot]}
+             </span>
+             <span className="text-[10px] text-white/50">
+-                <EtichettaModalita modalita={b.modalita} />
++                {stato && (
++                    <><span className={TONO_CLS[stato.tono]} data-testid={`cr-bot-statoservizio-${b.bot}`}>{stato.testo}</span>{' · '}</>
++                )}
++                <span className={TONO_CLS[modo.tono]} data-testid={`cr-bot-modo-${b.bot}`}>{modo.testo}</span>
++                {uscite && (
++                    <>{' · '}<span className="text-teal-300" data-testid={`cr-bot-uscite-${b.bot}`} title={uscite.titolo}>{uscite.testo}</span></>
++                )}
+                 {' · '}
+-                {b.etaPushS == null
+-                    ? <span className="text-orange-400">senza spinta</span>
+-                    : <span className={FRESCHEZZA_CLS[b.freschezzaPush]}>{fmtAge(b.etaPushS)}</span>}
++                <span className={TONO_CLS[agg.tono]} data-testid={`cr-bot-aggiornato-${b.bot}`}>{agg.testo}</span>
+             </span>
+             {/* 25/09 (voce 4) - da dove viene lo STATO mostrato (modalita',
+                 stato, parametri): push del canale o riga del database */}
+@@ -1113,11 +1161,23 @@ function ChipBot({ b }: { b: StatoBot }) {
+     );
+ }
+ 
+-function EtichettaModalita({ modalita }: { modalita: Modalita | null }) {
+-    if (modalita === 'live') return <span className="text-orange-300 font-semibold">LIVE</span>;
+-    if (modalita === 'paper') return <span className="text-white/60">paper</span>;
+-    return <span className="text-orange-400">modalità ignota</span>;
+-}
++// T_P5 (30/09): `EtichettaModalita` sostituita da `modoChip` (testata/paroleImpianto)
++const TONO_CLS: Record<Tono, string> = {
++    live: 'text-red-300 font-semibold',
++    paper: 'text-slate-300',
++    neutro: 'text-white/40',
++    ok: 'text-emerald-400',
++    attenzione: 'text-amber-300',
++    allarme: 'text-red-400 font-semibold',
++};
++
++// T_P5b: un bot fermo in LIVE non e' grigio come un bot fermo in paper
++const PALLINO_CLS: Record<'vivo' | 'muto' | 'fermo-live' | 'fermo', string> = {
++    vivo: 'fill-emerald-400 text-emerald-400',
++    muto: 'fill-red-400 text-red-400',
++    'fermo-live': 'fill-red-400/40 text-red-400/70',
++    fermo: 'fill-white/30 text-white/30',
++};
+ 
+ /** «LIVE · solo tennis» invece di «LIVE»: con una parte del bot in soldi veri
+  *  e una in simulazione, la modalità da sola sarebbe fuorviante. */

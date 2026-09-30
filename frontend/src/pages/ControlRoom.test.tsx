@@ -274,7 +274,10 @@ describe('bot muto — fail-closed dichiarato', () => {
         v.bots[2] = { ...v.bots[2], canale: 'off', etaPushS: null, freschezzaPush: 'ignota' };
         mVm.mockReturnValue(v);
         mostra();
-        expect(within(screen.getByTestId('cr-bot-mike')).getByText(/senza spinta/)).toBeTruthy();
+        // T_P5 (30/09) - CAMBIATO PERCHE' CAMBIA IL TESTO VOLUTO: «senza spinta»
+        // non distingueva fermo da guasto; un bot ACCESO muto e' «ACCESO MA MUTO»
+        expect(within(screen.getByTestId('cr-bot-mike')).getByText(/ACCESO MA MUTO/)).toBeTruthy();
+        expect(screen.getByTestId('cr-bot-mike').textContent).not.toMatch(/senza spinta/);
         expect(within(screen.getByTestId('cr-bot-muti')).getByText(/Mike/)).toBeTruthy();
         expect(screen.getByTestId('cr-bot-muti').textContent).toMatch(/non conosciamo l/);
     });
@@ -788,7 +791,61 @@ describe('onestà sulle fonti', () => {
 
     it('la sorgente del feed è scritta: fra stream e rest c\'è un ordine di grandezza', () => {
         mVm.mockReturnValue(vm({ feedSorgente: 'rest', feedEtaS: 40, feedFreschezza: 'vecchia' }));
-        expect(within(mostra().getByTestId('cr-feed')).getByText('rest')).toBeTruthy();
+        // T_P5 (30/09) - CAMBIATO PERCHE' CAMBIA IL TESTO VOLUTO: «rest» grigio
+        // nascondeva che lo scanner e' in RIPIEGO; ora e' detto, in ambra
+        const s = within(mostra().getByTestId('cr-feed')).getByText('RIPIEGO REST (stream fermo)');
+        expect(s.className).toMatch(/amber/);
+    });
+
+    it('T_P5b: Mike FERMO in LIVE con stop che ferma solo le aperture: FERMO · LIVE (rosso) · uscite attive; mai SPENTO ne\' ultimo modo', () => {
+        const v = vm();
+        v.bots = [
+            { ...v.bots[0], stato: 'stopping', inCorsa: false } as never,
+            { ...v.bots[1], stato: 'stopped', inCorsa: false, modalita: 'paper', stopFermaSoloAperture: false } as never,
+            { ...v.bots[2], stato: 'stopped', inCorsa: false, modalita: 'live', stopFermaSoloAperture: true,
+                battitoAt: '2026-09-14T14:59:50Z', etaPushS: null } as never,
+            { bot: 'tennis_pro', modalita: 'paper', inCorsa: false, stato: 'error', battitoAt: null, canale: 'off',
+                etaPushS: null, freschezzaPush: 'ignota', varianti: null } as never,
+        ];
+        mVm.mockReturnValue(v);
+        const s = mostra();
+        const mike = s.getByTestId('cr-bot-mike');
+        expect(mike.textContent).toMatch(/FERMO/);
+        expect(mike.textContent).toMatch(/uscite attive/);
+        expect(mike.textContent).not.toMatch(/SPENTO|ultimo modo/);
+        expect(s.getByTestId('cr-bot-modo-mike').textContent).toBe('LIVE');
+        expect(s.getByTestId('cr-bot-modo-mike').className).toMatch(/red/);
+        // il battito c'e': l'eta', non "non invia aggiornamenti"
+        expect(mike.textContent).toMatch(/aggiornato 10 s fa/);
+        expect(mike.querySelector('[data-pallino]')?.getAttribute('data-pallino')).toBe('fermo-live');
+        expect(s.getByTestId('cr-bot-omega').textContent).toMatch(/IN ARRESTO/);
+        const safe = s.getByTestId('cr-bot-safe').textContent ?? '';
+        expect(safe).toMatch(/FERMO/);
+        expect(safe).not.toMatch(/uscite/);
+        expect(s.getByTestId('cr-bot-safe').querySelector('[data-pallino]')?.getAttribute('data-pallino')).toBe('fermo');
+        expect(s.getByTestId('cr-bot-statoservizio-tennis_pro').textContent).toBe('ERRORE');
+    });
+
+    it('T_P5: fermo senza aggiornamenti = normale; scalper spento = «SPENTO · ultimo modo paper»; runner in parole vere', () => {
+        const v = vm({ runner: { ts: '2026-09-14T14:59:30Z', mode: 'LIVE+PAPER', ageS: 30, up: true, streaming: 2 } });
+        v.bots = [
+            ...v.bots.slice(0, 2),
+            { ...v.bots[2], modalita: 'live' },
+            { bot: 'scalper', modalita: null, modalitaUltima: 'paper', inCorsa: false, stato: 'stopped', battitoAt: null, canale: 'off', etaPushS: null, freschezzaPush: 'ignota', varianti: null } as never,
+        ];
+        mVm.mockReturnValue(v);
+        const s = mostra();
+        const sc = s.getByTestId('cr-bot-scalper').textContent ?? '';
+        // T_P5b: la parola del design system (FERMO), non «SPENTO»
+        expect(sc).toMatch(/FERMO .*ultimo modo paper/);
+        expect(sc).not.toMatch(/SPENTO/);
+        expect(sc).toMatch(/fermo: non invia aggiornamenti/);
+        expect(sc).not.toMatch(/ignota|senza spinta/);
+        expect(s.getByTestId('cr-bot-modo-mike').textContent).toBe('LIVE');
+        const runner = s.getByTestId('cr-runner').textContent ?? '';
+        expect(runner).toMatch(/ordini veri consentiti/);
+        expect(runner).not.toMatch(/live\+paper/i);
+        expect(s.getByTestId('cr-dati-riassunto').textContent).toMatch(/Dati: dal database \(ogni 30 s\) per: quote scanner, stato scanner, Omega, Safe, Mike, Tennis/);
     });
 
     it('obiettivo non storicizzato: la pagina lo dice invece di spacciarlo per quello del giorno', () => {

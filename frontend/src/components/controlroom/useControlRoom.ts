@@ -343,6 +343,12 @@ export interface StatoBot {
      */
     fonteStato?: 'canale' | 'database';
     etaStatoS?: number | null;
+    /**
+     * T_P5 (30/09) - solo per i bot la cui `modalita` e' null quando sono
+     * spenti (scalper calcio): la modalita' con cui ripartirebbero, dichiarata
+     * dal servizio. Si mostra come "ultimo modo", mai come modalita' in uso.
+     */
+    modalitaUltima?: Modalita | null;
 }
 
 // ------------------------------------------------ operazioni per partita
@@ -2521,6 +2527,8 @@ export function useControlRoom(): ControlRoomVM {
                 // scalper e' solo LORDO nel bot: non si mostra come netto.
                 pnlOggi: scalperVista.realeOggi,
                 pnlOggiPaper: null,
+                // T_P5 (30/09): da spento, la modalita' dell'interruttore come "ultimo modo"
+                modalitaUltima: st.ultimoModo,
                 nota: [notaAuto, `${quante} - ${fonte}`, senzaAuto].filter(Boolean).join(' - '),
                 // 28/09 (CANTIERE N): le proposte d'uscita delle sessioni vive
                 // (29/09: anche lo sniper della stessa sessione, `sniper_uscite_proposte`)

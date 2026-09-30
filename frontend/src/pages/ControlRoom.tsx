@@ -51,7 +51,7 @@ import { fmtMs, totaleCatena, totaleNostro, colloDiBottiglia } from '@/lib/contr
 import type { StatoChiusuraEvento } from '@/lib/chiusuraUtente';
 import {
     useControlRoom,
-    type StatoBot, type PosizioneAperta, type Modalita,
+    type StatoBot, type PosizioneAperta,
 } from '@/components/controlroom/useControlRoom';
 import { righeInterruttori } from '@/components/controlroom/righeBot';
 import { PannelloBot } from '@/components/controlroom/PannelloBot';
@@ -61,6 +61,9 @@ import { ProposteUsciteFlusso } from '@/components/controlroom/ProposteUsciteFlu
 import { RigaCapacitaMercati } from '@/components/controlroom/RigaCapacitaMercati';
 import { FasciaSoldiVeri } from '@/components/controlroom/testata/FasciaSoldiVeri';
 import { StopPerdita } from '@/components/controlroom/testata/FasciaStop';
+import {
+    modoChip, statoChip, usciteChip, pallinoChip, aggiornatoChip, tettoRunner, sorgenteFeed, riassuntoDati, type Tono,
+} from '@/components/controlroom/testata/paroleImpianto';
 import {
     STAKE_TENNIS, differenzeSoloTennis, altreInLiveAdesso,
 } from '@/components/controlroom/soloTennis';
@@ -917,6 +920,15 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
     // nella Zona 1 (`ObiettivoHero`, testid `cr-obiettivo`): qui restano SOLO
     // identità, modalità, salute feed, runner, freni, ricarica — grigio se
     // sano, colore solo per anomalie (checklist A5 §3.3 regole 1 e 5).
+    // T_P5 (30/09): chi arriva dal canale in tempo reale e chi dal database
+    const datiRiassunto = riassuntoDati([
+        { nome: 'quote scanner', canale: vm.fonteScan === 'locale' },
+        { nome: 'stato scanner', canale: vm.fonteStatoScanner === 'canale' },
+        ...(['omega', 'safe', 'mike', 'tennis'] as const).map((b) => ({
+            nome: b === 'tennis' ? 'Tennis' : BOT_LABEL[b],
+            canale: vm.fonteRighe[b].fonte === 'locale',
+        })),
+    ]);
     return (
         <header
             className={`sticky top-0 z-30 border-b backdrop-blur ${inLive ? 'border-orange-500/40 bg-orange-950/30' : 'border-white/10 bg-background/80'}`}
@@ -943,16 +955,27 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
                 <Runner r={vm.runnerTennis} fonte={vm.fonteRunnerTennis} tennis />
 
                 <div className="flex items-stretch gap-3" data-testid="cr-bots">
-                    {vm.bots.map((b) => <ChipBot key={b.bot} b={b} />)}
+                    {vm.bots.map((b) => <ChipBot key={b.bot} b={b} nowMs={vm.nowMs} />)}
                 </div>
 
                 <div className="flex items-center gap-2 text-[11px]" data-testid="cr-feed">
                     <Radio className={`w-3.5 h-3.5 ${FRESCHEZZA_CLS[vm.feedFreschezza]}`} />
-                    <span className="text-white/50">feed</span>
-                    <span className="font-mono">{vm.feedSorgente ?? DASH}</span>
+                    <span className="text-white/50">Quote dello scanner</span>
+                    {/* T_P5 (30/09): «rest» = RIPIEGO (stream fermo), in ambra;
+                        prima era grigio e il colore guardava solo l'eta' */}
+                    <span className={`font-mono ${TONO_CLS[sorgenteFeed(vm.feedSorgente).tono]}`}
+                        data-testid="cr-feed-sorgente">{sorgenteFeed(vm.feedSorgente).testo}</span>
                     <span className={FRESCHEZZA_CLS[vm.feedFreschezza]}>
                         {vm.feedEtaS == null ? FRESCHEZZA_TESTO.ignota : fmtAge(vm.feedEtaS)}
                     </span>
+                    {/* T_P5 (30/09): UNA riga per il trader («Dati: tempo reale» o
+                        «dal database per: ...»); il dettaglio tecnico di prima resta
+                        tutto, dentro il <details> qui sotto (stessi data-testid). */}
+                    <span className={TONO_CLS[datiRiassunto.tono]} data-testid="cr-dati-riassunto">
+                        {datiRiassunto.testo}
+                    </span>
+                    <details className="inline" data-testid="cr-dati-dettaglio">
+                        <summary className="inline cursor-pointer text-white/30 list-none">dettaglio</summary>
                     {/* STADIO B2c (18/09, raccordo) — sobrio, mai vistoso: quale
                         canale sta parlando ADESSO: "canale locale" se l'ultima
                         riga dello scanner (47336) e' arrivata da li' da poco,
@@ -984,6 +1007,7 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
                             );
                         })}
                     </span>
+                    </details>
                 </div>
 
                 <Button size="sm" variant="ghost" onClick={vm.ricarica} className="h-7 px-2 text-white/60" data-testid="cr-ricarica">
@@ -1034,13 +1058,20 @@ function Runner({ r, fonte, tennis = false }: {
     const fase: RunnerPhase = runnerPhase(r);
     const testo = r.ageS == null ? 'mai avviato' : FASE_RUNNER[fase];
     const cls = fase === 'streaming' ? 'text-emerald-400' : fase === 'idle' ? 'text-secondary' : 'text-orange-400';
+    const tetto = tettoRunner(r.mode);
     return (
         <div className="flex flex-col" data-testid={testid}
             title={r.ageS != null ? `ultimo battito ${fmtAge(Math.round(r.ageS))} fa` : 'il runner non ha mai battuto'}>
             <span className="text-[10px] uppercase tracking-wider text-white/40">{etichetta}</span>
             <span className={`font-mono text-sm font-semibold ${cls}`}>
                 {testo}
-                {r.mode && <span className="text-white/40"> · {r.mode.toLowerCase()}</span>}
+                {/* T_P5 (30/09): «live+paper» era il TETTO del .env del runner
+                    (runner.py::heartbeat_mode), non il modo di un bot */}
+                {tetto && (
+                    <span className="text-white/40" data-testid={`${testid}-tetto`} title={tetto.titolo}>
+                        {' · '}{tetto.testo}
+                    </span>
+                )}
             </span>
             {notaFonte}
         </div>
@@ -1085,20 +1116,37 @@ function ParametriNonLetti({ bot }: { bot: string }) {
  * ultimo messaggio. Un bot muto non è un bot fermo — e una pagina che non
  * distingue i due casi mente.
  */
-function ChipBot({ b }: { b: StatoBot }) {
+function ChipBot({ b, nowMs }: { b: StatoBot; nowMs: number }) {
     const muto = b.canale !== 'connected' || !affidabilePerPiazzare(b.freschezzaPush);
+    // T_P5 (30/09) - stessa grammatica per ogni bot: MODO · AGGIORNATO.
+    // «senza spinta» non c'e' piu': fermo = "fermo: non invia aggiornamenti"
+    // (normale), acceso e muto oltre la sua cadenza = "ACCESO MA MUTO da N s".
+    const etaBattito = b.battitoAt == null || !Number.isFinite(Date.parse(b.battitoAt))
+        ? null : Math.max(0, (nowMs - Date.parse(b.battitoAt)) / 1000);
+    // T_P5b: STATO con le parole del design system, MODO sempre quello
+    // dichiarato (LIVE resta rosso anche a bot fermo), uscite se il servizio
+    // dichiara che fermare toglie solo le aperture
+    const stato = statoChip(b.stato);
+    const modo = modoChip(b);
+    const uscite = usciteChip(b);
+    const pallino = pallinoChip({ inCorsa: b.inCorsa, muto, modalita: b.modalita });
+    const agg = aggiornatoChip({ inCorsa: b.inCorsa, etaS: b.etaPushS ?? etaBattito, freschezza: b.freschezzaPush });
     return (
         <div className="flex flex-col gap-0.5" data-testid={`cr-bot-${b.bot}`} title={descriviModalita(b)}>
             <span className={`flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide ${BOT_CLS[b.bot]}`}>
-                <Circle className={`w-2 h-2 ${b.inCorsa && !muto ? 'fill-emerald-400 text-emerald-400' : 'fill-orange-400 text-orange-400'}`} />
+                <Circle className={`w-2 h-2 ${PALLINO_CLS[pallino]}`} data-pallino={pallino} />
                 {BOT_LABEL[b.bot]}
             </span>
             <span className="text-[10px] text-white/50">
-                <EtichettaModalita modalita={b.modalita} />
+                {stato && (
+                    <><span className={TONO_CLS[stato.tono]} data-testid={`cr-bot-statoservizio-${b.bot}`}>{stato.testo}</span>{' · '}</>
+                )}
+                <span className={TONO_CLS[modo.tono]} data-testid={`cr-bot-modo-${b.bot}`}>{modo.testo}</span>
+                {uscite && (
+                    <>{' · '}<span className="text-teal-300" data-testid={`cr-bot-uscite-${b.bot}`} title={uscite.titolo}>{uscite.testo}</span></>
+                )}
                 {' · '}
-                {b.etaPushS == null
-                    ? <span className="text-orange-400">senza spinta</span>
-                    : <span className={FRESCHEZZA_CLS[b.freschezzaPush]}>{fmtAge(b.etaPushS)}</span>}
+                <span className={TONO_CLS[agg.tono]} data-testid={`cr-bot-aggiornato-${b.bot}`}>{agg.testo}</span>
             </span>
             {/* 25/09 (voce 4) - da dove viene lo STATO mostrato (modalita',
                 stato, parametri): push del canale o riga del database */}
@@ -1113,11 +1161,23 @@ function ChipBot({ b }: { b: StatoBot }) {
     );
 }
 
-function EtichettaModalita({ modalita }: { modalita: Modalita | null }) {
-    if (modalita === 'live') return <span className="text-orange-300 font-semibold">LIVE</span>;
-    if (modalita === 'paper') return <span className="text-white/60">paper</span>;
-    return <span className="text-orange-400">modalità ignota</span>;
-}
+// T_P5 (30/09): `EtichettaModalita` sostituita da `modoChip` (testata/paroleImpianto)
+const TONO_CLS: Record<Tono, string> = {
+    live: 'text-red-300 font-semibold',
+    paper: 'text-slate-300',
+    neutro: 'text-white/40',
+    ok: 'text-emerald-400',
+    attenzione: 'text-amber-300',
+    allarme: 'text-red-400 font-semibold',
+};
+
+// T_P5b: un bot fermo in LIVE non e' grigio come un bot fermo in paper
+const PALLINO_CLS: Record<'vivo' | 'muto' | 'fermo-live' | 'fermo', string> = {
+    vivo: 'fill-emerald-400 text-emerald-400',
+    muto: 'fill-red-400 text-red-400',
+    'fermo-live': 'fill-red-400/40 text-red-400/70',
+    fermo: 'fill-white/30 text-white/30',
+};
 
 /** «LIVE · solo tennis» invece di «LIVE»: con una parte del bot in soldi veri
  *  e una in simulazione, la modalità da sola sarebbe fuorviante. */

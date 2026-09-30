@@ -354,6 +354,10 @@ export function statoBotScalper(
     battitoAt: string | null; vive: number; attive: number;
     /** 25/09 - l'interruttore globale e' acceso (auto-mode) */
     autoAcceso: boolean;
+    /** T_P5 (30/09) - a bot SPENTO la modalita' con cui ripartirebbe, dichiarata
+     *  dall'interruttore (`servizio.mode`): da mostrare come "ultimo modo",
+     *  MAI come modalita' in uso (`modalita` resta null: niente opera). */
+    ultimoModo: ModalitaScalper | null;
 } {
     const vive = sessioni.filter(sessioneViva);
     const attive = vive.filter(sessioneAttiva);
@@ -378,6 +382,8 @@ export function statoBotScalper(
         vive: vive.length,
         attive: attive.length,
         autoAcceso,
+        ultimoModo: modalita
+            ?? (servizio?.mode === 'live' ? 'live' : servizio?.mode === 'paper' ? 'paper' : null),
     };
 }
 
