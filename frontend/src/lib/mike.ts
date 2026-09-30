@@ -1279,6 +1279,9 @@ export const MIKE_ACTIVITY_KINDS = [
     // 28/09 (cantiere J2, regola unica): chiusura/copertura sui prezzi del
     // ripiego REST; flusso fermo E REST muto con posizione aperta (critico)
     'ripiego_rest', 'flusso_interrotto_senza_rest',
+    // 30/09 (mercato deciso): una linea superata dai gol è DECISA e Betfair la
+    // chiude; Mike lo scrive una volta per linea e continua sull'altra.
+    'mercato_deciso',
 ] as const;
 
 /** kind specifici di Mike che si aggiungono ad ACTIVITY_BASE (design system §6). */
@@ -1324,6 +1327,7 @@ export const MIKE_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
     flusso_interrotto: { label: 'FLUSSO PREZZI INTERROTTO', cls: 'bg-red-500/15 text-red-300 border-red-500/40', critical: true },
     ripiego_rest: { label: 'PREZZI DAL RIPIEGO REST', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
     flusso_interrotto_senza_rest: { label: 'FLUSSO FERMO E REST MUTO: POSIZIONE SCOPERTA', cls: 'bg-red-500/15 text-red-300 border-red-500/40', critical: true },
+    mercato_deciso: { label: 'LINEA DECISA DAI GOL', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/40' },
     schema_warn: { label: 'SCHEMA DB', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
     cover: { label: 'COPERTURA OVER 4.5', cls: 'bg-teal-500/15 text-teal-300 border-teal-500/40' },
     skip: { label: 'SALTO', cls: 'bg-white/5 text-slate-400 border-white/10' },

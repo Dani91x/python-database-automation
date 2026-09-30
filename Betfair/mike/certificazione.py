@@ -1190,6 +1190,112 @@ def verifica_consapevolezza(ctx: E.MatchCtx, ordini: Dict[str, Any],
 
 
 # ===========================================================================
+# M. IL MERCATO DECISO DAL PUNTEGGIO (30/09, ordine dell'utente)
+#
+# Il 29/09 (indagine su 35760084, 4-0) il banco dava 0 violazioni con un
+# difetto money-critical presente: dopo il quarto gol Betfair sospende e CHIUDE
+# l'Over/Under 3,5 (deciso), lo scanner lo mette fra i mercati fermi e Mike
+# dichiarava fermo il flusso di TUTTA la partita, rifiutando con
+# ``no_fill feed_stantio`` anche la chiusura dell'Over 4,5, che aveva prezzi
+# vivi. Nessun controllo guardava la RIGA dello scanner: i controlli A-J
+# vedono la decisione, i K le gambe contro gli ordini.
+#
+# M1 guarda la riga dopo ogni giro. Il caso lo decide la RIGA, non Mike: gol
+# dal punteggio, linee decise per regola (gol > linea), flusso della linea
+# ancora in gioco letto dal modulo condiviso (``stream.flusso_prezzi``).
+# Riga invecchiata dallo scenario (feed stantio vero) = nessun caso.
+# ===========================================================================
+_REGISTRO_RIGA: List[Tuple[str, str]] = [
+    ("M1", "con una linea DECISA dal punteggio e l'altra VIVA la partita non e' col "
+           "flusso fermo, e nessun ordine sulla linea viva e' rifiutato per "
+           "`feed_stantio` (30/09, ordine dell'utente)"),
+]
+
+
+def _linee_della_riga(payload: Dict[str, Any]) -> List[Tuple[float, str, str]]:
+    """(linea, market_id, stato) delle linee di Mike (3,5 e 4,5) nella riga."""
+    out = []
+    for blk in payload.get("ou") or []:
+        if not isinstance(blk, dict) or not blk.get("market_id"):
+            continue
+        try:
+            linea = float(blk.get("line"))
+        except (TypeError, ValueError):
+            continue
+        if linea in (3.5, 4.5):
+            out.append((linea, str(blk["market_id"]), str(blk.get("status") or "").upper()))
+    return out
+
+
+def caso_mercato_deciso(payload: Optional[Dict[str, Any]],
+                        stato_scanner: Optional[Dict[str, Any]] = None) -> List[str]:
+    """I market_id delle linee ANCORA IN GIOCO e VIVE quando almeno una linea
+    di Mike e' gia' decisa dal punteggio; vuoto = nessun caso per M1."""
+    from Betfair.stream import flusso_prezzi as FP
+
+    if not isinstance(payload, dict) or not payload.get("inplay"):
+        return []
+    try:
+        gol = int(payload.get("score_home")) + int(payload.get("score_away"))
+    except (TypeError, ValueError):
+        return []
+    linee = _linee_della_riga(payload)
+    decise = [mid for linea, mid, _st in linee if gol > linea]
+    # una linea in gioco CHIUSA da Betfair: la partita e' finita davvero
+    in_gioco = [mid for linea, mid, st in linee if gol < linea and st != "CLOSED"]
+    if not decise or not in_gioco:
+        return []
+    if FP.blocco_riga(payload) is None or not FP.valuta_stato(stato_scanner).vivo:
+        return []
+    if not FP.valuta_riga(payload, in_gioco).vivo:
+        return []           # la linea in gioco e' ferma davvero: blocca, giustamente
+    return in_gioco
+
+
+def verifica_mercato_deciso(payload: Optional[Dict[str, Any]], flusso_vivo_per_il_bot: bool,
+                            rifiuti_feed_stantio: List[str],
+                            stato_scanner: Optional[Dict[str, Any]] = None,
+                            riga_invecchiata: bool = False,
+                            sollecitati: Optional[Dict[str, int]] = None,
+                            stato: str = "",
+                            in_regolamento: bool = False) -> List[Violazione]:
+    """M1 su UN giro. ``flusso_vivo_per_il_bot``: l'esito del flusso secondo il
+    feed di Mike (``feed.flusso_esito``); ``rifiuti_feed_stantio``: i market_id
+    degli ordini rifiutati in questo giro con ``no_fill feed_stantio``;
+    ``in_regolamento``: il servizio ha preso la strada del regolamento della
+    partita (``settle_first_ts`` nel contesto) -- con una linea viva e' il ramo
+    di produzione del difetto (3,5 CHIUSO letto come partita finita)."""
+    if riga_invecchiata:
+        return []
+    vive = caso_mercato_deciso(payload, stato_scanner)
+    if not vive:
+        return []
+    codice, regola = _REGISTRO_RIGA[0]
+    if sollecitati is not None:
+        sollecitati[codice] = sollecitati.get(codice, 0) + 1
+    p = payload or {}
+    gol = int(p.get("score_home")) + int(p.get("score_away"))   # letti in caso_mercato_deciso
+    minuto = p.get("minute") if isinstance(p.get("minute"), int) else None
+    out: List[Violazione] = []
+    if not flusso_vivo_per_il_bot:
+        out.append(Violazione(codice, regola,
+                              f"linea viva {vive} ma il bot dichiara fermo il flusso della "
+                              f"partita (linea decisa scambiata per flusso fermo)",
+                              stato, minuto, gol))
+    rifiutati = sorted({m for m in rifiuti_feed_stantio if m in vive})
+    if rifiutati:
+        out.append(Violazione(codice, regola,
+                              f"ordini sulla linea viva {rifiutati} rifiutati per feed_stantio "
+                              f"x{len(rifiuti_feed_stantio)}", stato, minuto, gol))
+    if in_regolamento:
+        out.append(Violazione(codice, regola,
+                              f"linea viva {vive} ma il servizio e' in regolamento della partita "
+                              f"(linea decisa/chiusa letta come partita finita)",
+                              stato, minuto, gol))
+    return out
+
+
+# ===========================================================================
 # il giro completo
 # ===========================================================================
 def verifica(ctx: E.MatchCtx, snap: E.Snapshot, d: E.Decision,
@@ -1226,7 +1332,7 @@ def elenco_controlli() -> List[Tuple[str, str]]:
     la memoria del bot e il mercato: se non fossero in questo elenco non
     comparirebbero nella copertura, e un controllo che non si conta non esiste.
     """
-    return [(c, r) for c, r, _fn, _q in _REGISTRO] + list(_REGISTRO_BANCO)
+    return [(c, r) for c, r, _fn, _q in _REGISTRO] + list(_REGISTRO_BANCO) + list(_REGISTRO_RIGA)
 
 
 def mai_sollecitati(sollecitati: Dict[str, int]) -> List[Tuple[str, str]]:

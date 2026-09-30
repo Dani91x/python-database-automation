@@ -1,0 +1,5 @@
+﻿V1 valore di serie ancora la punta | ROSSO 3 failed, 3 passed in 0.62s | ['test_di_serie_la_copertura_e_la_banca', 'test_gemello_prima_tranche_a_meta', 'test_gemello_copertura_ordinata_non_aspetta[True]']
+V2 freno della copertura spento | ROSSO 1 failed, 5 passed in 0.46s | ['test_gemello_freno_banca_bloccata_nessun_ordine']
+V3 ritmo minimo spento | ROSSO 1 failed, 5 passed in 0.51s | ['test_gemello_ritmo_minimo_fra_due_banche']
+V4 la copertura ordinata aspetta anche nella banca | ROSSO 1 failed, 5 passed in 0.58s | ['test_gemello_copertura_ordinata_non_aspetta[True]']
+ripristino verificato: hash identici, nessuna MUTAZIONE nei file

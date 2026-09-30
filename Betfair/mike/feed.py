@@ -104,14 +104,42 @@ def mercati_fermi(payload: Dict[str, Any]) -> frozenset:
     return frozenset(str(m) for m in (blk.get("mercati_fermi") or []))
 
 
+def linea_decisa(market: str, goals: Optional[int]) -> bool:
+    """30/09 (mercato deciso): la linea ``market`` e' gia' DECISA dal punteggio
+    (gol > linea: Over vinto, Under perso)? Stessa regola di
+    ``engine.selection_decided``, non una copia."""
+    return E.selection_decided(market, E.SEL_OVER, goals) is not None
+
+
+def linea_di_riferimento(goals: Optional[int]) -> str:
+    """30/09 (mercato deciso): la PRIMA linea di Mike ancora in gioco col
+    punteggio ``goals`` (3,5 fino a 3 gol, 4,5 con 4 gol). Con tutte e due
+    decise (5+ gol) resta il 3,5: nulla e' piu' gestibile e il regolamento e'
+    la strada giusta (regola di prima)."""
+    for market in (E.MARKET_OU35, E.MARKET_OU45):
+        if not linea_decisa(market, goals):
+            return market
+    return E.MARKET_OU35
+
+
 def mercati_di_mike(payload: Dict[str, Any]) -> list:
-    """I market_id delle DUE linee di Mike (3.5 e 4.5) presenti nella riga."""
+    """I market_id delle linee di Mike (3.5 e 4.5) presenti nella riga e ANCORA
+    IN GIOCO.
+
+    30/09 (mercato deciso, ordine dell'utente): una linea gia' DECISA dal
+    punteggio della riga (gol > linea) non serve piu' a nessun ordine (il suo
+    esito e' certo, senza prezzo) e Betfair la sospende e la CHIUDE subito: il
+    suo flusso "fermo" non deve fermare la partita. Una linea ancora in gioco
+    col flusso fermo continua a bloccare (regola del 28/09)."""
+    goals = goals_from_payload(payload)
     out = []
     for blk in payload.get("ou") or []:
         if not isinstance(blk, dict) or not blk.get("market_id"):
             continue
         line = _num(blk.get("line"))
         if line is not None and line in _LINE_TO_MARKET:
+            if linea_decisa(_LINE_TO_MARKET[line], goals):
+                continue
             out.append(str(blk["market_id"]))
     return out
 
@@ -419,7 +447,11 @@ def snapshot_from_row(row: Dict[str, Any], info: EventInfo, *, now: float, param
             books[key] = bk
     blk35 = blocks.get(E.MARKET_OU35) or {}
     inplay = bool(payload.get("inplay")) or bool(blk35.get("inplay"))
-    status = market_status_override or str(blk35.get("status") or payload.get("mo_status") or "OPEN").upper()
+    # 30/09 (mercato deciso): lo stato del mercato si legge dalla prima linea
+    # ANCORA IN GIOCO (col 4-0 il 3,5 e' chiuso da Betfair ma il 4,5 e' aperto),
+    # non da una linea gia' decisa.
+    blk_stato = blocks.get(linea_di_riferimento(goals_from_payload(payload))) or {}
+    status = market_status_override or str(blk_stato.get("status") or payload.get("mo_status") or "OPEN").upper()
     return E.Snapshot(
         now=float(now), ko_at=float(info.ko_at), books=books, inplay=inplay,
         minute=payload.get("minute") if isinstance(payload.get("minute"), int) else None,

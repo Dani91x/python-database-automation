@@ -1,0 +1,8 @@
+﻿N3 forma ignota = banca | ROSSO 3 failed, 9 passed in 3.39s | ['test_cover_form_sconosciuto_e_la_forma_di_prima[qualunque]', 'test_cover_form_sconosciuto_e_la_forma_di_prima[LAY_UNDER45]', 'test_cover_form_sconosciuto_e_la_forma_di_prima[3]']
+N13 banca a mercato Under non aperto | ROSSO 1 failed, 11 passed in 3.72s | ['test_banca_con_under45_sospeso_non_parte']
+N14 troppi gol ignorati nella banca | ROSSO 1 failed, 11 passed in 3.61s | ['test_banca_troppi_gol_copertura_saltata']
+N15 tranche della banca col minimo della puntata | ROSSO 1 failed, 11 passed in 3.39s | ['test_tranche_della_banca_sotto_0_50_si_copre_in_una_volta']
+N17 riprezzo a mercato Under sospeso | ROSSO 1 failed, 11 passed in 3.20s | ['test_riprezzo_della_banca_a_mercato_sospeso_non_tocca_niente']
+N21 ripiego anche nella forma di prima | ROSSO 1 failed, 11 passed in 3.31s | ['test_forma_di_prima_chiusura_sotto_0_50_identica_a_prima']
+I1 motore fuori dall'impronta | ROSSO 2 failed, 10 passed in 4.07s | ['test_impronta_di_mike_contiene_ogni_modulo_importato_dal_servizio', 'test_l_impronta_cambia_se_cambia_il_motore']
+ripristino verificato: hash identici, nessuna MUTAZIONE nei file

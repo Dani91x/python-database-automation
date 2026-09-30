@@ -1,0 +1,6 @@
+﻿G1 guardia del punteggio assente tolta nel ramo banca | ROSSO 1 failed, 42 passed in 0.84s | ['test_punteggio_assente_con_copertura_ordinata_nessuna_banca']
+Q19 abbinato della riga per selezione | ROSSO 1 failed, 42 passed in 0.91s | ['test_riga_del_mercato_4_5_conta_la_banca_under']
+T1 tolleranza sulla PRIMA chiusura del mercato | ROSSO 1 failed, 42 passed in 0.86s | ['test_rientro_con_resto_vero_non_e_piatto_dopo_la_chiusura_a_quota_21']
+T2 tolleranza sulla chiusura a prezzo piu' alto | ROSSO 1 failed, 42 passed in 0.77s | ['test_rientro_con_resto_vero_non_e_piatto_dopo_la_chiusura_a_quota_21']
+A1 gia' coperto senza le banche | ROSSO 4 failed, 39 passed in 0.91s | ['test_cover_matched_value_banca_under_abbinata_in_parte', 'test_due_tranche_9_47_e_9_48', 'test_resto_sotto_0_50_si_considera_coperto_senza_secondo_ordine', 'test_riprezzo_con_resto_sotto_0_50_annulla_e_non_ripiazza']
+ripristino verificato: hash identici, nessuna MUTAZIONE nei file

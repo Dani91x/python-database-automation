@@ -166,8 +166,25 @@ SCENARI: Dict[str, Dict[str, Any]] = {
     # tasto. Da quel momento il bot non deve aprire piu' niente su quella
     # partita (controllo R2). Senza provocarla, quella regola non ha mai un caso.
     "cashout-globale": {},
+    # 30/09 (MERCATO DECISO, ordine dell'utente): NON tocca un parametro. Quando
+    # un gol DECIDE una linea (quarto gol: Betfair sospende e CHIUDE il 3,5)
+    # l'utente FIRMA la prima proposta di uscita in perdita nata dopo quel gol,
+    # con la richiesta VERA (`approva_uscita`, `service.process_requests`). La
+    # chiusura della linea ancora in gioco (Over 4,5) deve arrivare al mercato.
+    # Il 29/09 veniva rifiutata con `no_fill feed_stantio` (21 tentativi, -14,00).
+    "firma-dopo-gol-decisivo": {},
+    # 30/09: la STESSA firma, ma la CHIUSURA del mercato deciso non arriva allo
+    # scanner (guasto iniettato: lo stream la perde). Il 3,5 resta sospeso e
+    # senza prezzi e lo scanner lo dichiara FERMO: e' il ramo del 29/09 (flusso
+    # fermo sulla linea decisa), che col banco che vede le chiusure non capita
+    # piu' da solo. Senza questo scenario la correzione 1 non avrebbe un caso.
+    "firma-dopo-gol-decisivo-senza-chiusura": {},
 }
 SCENARIO_GOL_PRECOCE = "gol-precoce"
+SCENARIO_FIRMA_GOL_DECISIVO = "firma-dopo-gol-decisivo"
+SCENARIO_FIRMA_SENZA_CHIUSURA = "firma-dopo-gol-decisivo-senza-chiusura"
+# gol dal quale una linea di Mike e' decisa (4 gol: il 3,5)
+GOL_DECISIVO = 4
 SCENARIO_CASHOUT_GLOBALE = "cashout-globale"
 
 # CHIUSURA FATTA DALL'UTENTE **FUORI DALL'APP** (ordine 16/09 sera). Non tocca
@@ -476,6 +493,13 @@ def _crea_strategia():
             # P4 (29/09, M8.4): il punteggio che manca e torna
             self.punteggio_ko = bool(kw.pop("punteggio_ko", False))
             self.pko: Dict[str, Any] = {}
+            # 30/09 (mercato deciso): la firma dell'utente sulla prima proposta
+            # di uscita in perdita nata dopo il gol che decide una linea
+            self.firma_dopo_gol = bool(kw.pop("firma_dopo_gol", False))
+            # 30/09: guasto dello scenario ``...-senza-chiusura``: le chiusure di
+            # Betfair NON arrivano allo scanner (il banco di prima del 30/09)
+            self.chiusure_perse = bool(kw.pop("chiusure_perse", False))
+            self.firma_fatta: Optional[Dict[str, Any]] = None
             # A2 — I GIRI DEL SERVIZIO SU UNA PARTITA GIA' TERMINALE.
             # Il controllo A2 («da uno stato terminale non esce nessuna azione»)
             # non puo' avere un caso attraverso il servizio: `_run_event` esce
@@ -514,11 +538,37 @@ def _crea_strategia():
             self.diff_visti: List[str] = []
             self.diff_campionati: int = 0
             self.righe_assenti: int = 0
+            # 30/09: i mercati CHIUSI da Betfair passati allo scanner (id, ms)
+            self.mercati_chiusi: List[Tuple[str, int]] = []
             super().__init__(**kw)
 
         # ---------------------------------------------------------- flumine
         def check_market_book(self, market, market_book) -> bool:
             return True
+
+        def process_closed_market(self, market, market_book) -> None:
+            """30/09 (mercato deciso): il book CLOSED entra nello SCANNER VERO.
+
+            Flumine non consegna i book CLOSED a ``process_market_book``
+            (``baseflumine.py:157-159``): li passa qui. In produzione lo scanner
+            li riceve dallo stream e scrive ``status: CLOSED`` nel blocco della
+            linea (``safe_strategy/service.py`` ``_apply_opp_book``): senza
+            questo, dopo il quarto gol il replay mostrava a Mike il 3,5 per
+            sempre SOSPESO e il ramo di produzione (3,5 CHIUSO) non si vedeva
+            mai. Stessa funzione dello scanner di ``applica_book``, senza la
+            conflazione: lo stato finale di un mercato arriva sempre."""
+            mid = str(getattr(market_book, "market_id", "") or "")
+            if self.chiusure_perse:
+                return      # guasto dello scenario: la chiusura non arriva
+            if mid not in self.banco.scan.market_meta or any(m == mid for m, _ms in self.mercati_chiusi):
+                # una volta sola per mercato: Betfair dichiara la chiusura una
+                # volta; flumine la ripete a ogni aggiornamento successivo
+                return
+            pt = getattr(market_book, "publish_time", None)
+            if pt is not None:
+                self.banco.imposta_ora(pt.timestamp())
+            self.banco.scan._apply_market_book(BANCO.libro_di_produzione(market_book))
+            self.mercati_chiusi.append((mid, int(self.banco.ora * 1000)))
 
         def process_market_book(self, market, market_book) -> None:
             mtype = self.banco.registra_mercato(market_book)
@@ -671,6 +721,8 @@ def _crea_strategia():
             if self.fermo_copertura:
                 self._gestisci_fermo(pt_ms, str(ev.get("state") or ""))
             terminale = str(self.db.events[self.event_id].get("state") or "") in E.TERMINAL_STATES
+            # 30/09 (M1): le attivita' di QUESTO giro (rifiuti feed_stantio)
+            n_attivita = len(self.db.attivita)
             try:
                 azioni, _settled = S._run_event(
                     db=self.db, market=self.mercato, ev=self.db.events[self.event_id],
@@ -725,6 +777,18 @@ def _crea_strategia():
             if self.chiuso_fuori_app and self.chiusura_utente is None:
                 self._chiudi_come_utente(pt_ms)
 
+            # -- FIRMA DELL'UTENTE DOPO IL GOL DECISIVO (30/09) -------------
+            if self.firma_dopo_gol and self.firma_fatta is None:
+                self._firma_dopo_gol(row, pt_ms)
+
+            # -- M1: IL MERCATO DECISO (30/09) ------------------------------
+            # La riga dice se una linea e' decisa e l'altra viva; il feed di Mike
+            # (`feed.flusso_esito`, lo stesso di `_run_event`) non deve dichiarare
+            # fermo il flusso della partita, e nessun ordine sulla linea viva deve
+            # essere rifiutato per `feed_stantio` in questo giro.
+            if row is not None:
+                self._verifica_mercato_deciso(row, now, n_attivita)
+
             # -- I CONTROLLI K: LA MEMORIA DEL BOT CONTRO IL MERCATO -------
             # Si fanno QUI, dopo il giro del servizio, perche' solo qui
             # esistono insieme le gambe (nel ctx dell'evento) e gli ORDINI VERI
@@ -747,6 +811,60 @@ def _crea_strategia():
             stato = str(self.db.events[self.event_id].get("state") or "")
             if stato and stato not in self._stati:
                 self._stati.append(stato)
+
+        def _firma_dopo_gol(self, row: Optional[Dict[str, Any]], pt_ms: int) -> None:
+            """30/09: l'utente firma la prima proposta di uscita in perdita nata
+            con almeno ``GOL_DECISIVO`` gol, con la richiesta VERA della UI."""
+            ev = self.db.events.get(self.event_id)
+            if not ev:
+                return
+            ctx = S._ctx_from_row(ev, self.db)
+            prop = ctx.uscita_proposta if isinstance(ctx.uscita_proposta, dict) else None
+            if prop is None or int(prop.get("gol") or 0) < GOL_DECISIVO:
+                return
+            now = datetime.fromtimestamp(pt_ms / 1000.0, tz=timezone.utc)
+            try:
+                esito = S.process_requests(
+                    db=self.db, market=self.mercato,
+                    events={self.event_id: self.db.events[self.event_id]},
+                    rows_by_event={self.event_id: row} if row is not None else {},
+                    params=self.params, now=now, dry=False,
+                    scanner_age=self.invecchia_s, eff=self.params,
+                    reqs=[{"id": 2, "kind": "approva_uscita",
+                           "payload": {"event_id": self.event_id,
+                                       "chiave": prop.get("chiave")}}])
+                self.firma_fatta = {"richieste": int(esito or 0), "ms": int(pt_ms),
+                                    "chiave": prop.get("chiave"), "gol": prop.get("gol"),
+                                    "bloccabile": prop.get("bloccabile"),
+                                    "motivo": str(prop.get("motivo") or "")[:90]}
+                self.db.log("replay_firma_dopo_gol", dict(self.firma_fatta), self.event_id)
+            except Exception as ex:  # noqa: BLE001 - e' un referto, non un crash
+                self.referto.violazioni.append(CERT.Violazione(
+                    "SERVIZIO", "la firma dell'uscita non deve mai sollevare",
+                    f"{type(ex).__name__}: {ex}", str(ev.get("state") or "")))
+                self.firma_fatta = {"errore": str(ex)[:120]}
+
+        def _verifica_mercato_deciso(self, row: Dict[str, Any], now: float,
+                                     n_attivita: int) -> None:
+            """M1 (30/09) sul giro appena fatto."""
+            ev = self.db.events.get(self.event_id) or {}
+            gambe = [str((p_ or {}).get("leg") or "")
+                     for k, p_, _e in self.db.attivita[n_attivita:]
+                     if k == "no_fill" and (p_ or {}).get("reason") == "feed_stantio"]
+            rifiuti: List[str] = []
+            if gambe:
+                # il mercato di ogni gamba rifiutata, dalle gambe VERE del bot
+                ctx = S._ctx_from_row(ev, self.db)
+                mercato_di = {str(l.ref): str(((ev.get("markets") or {}).get(l.market) or {})
+                                              .get("market_id") or "") for l in ctx.legs}
+                rifiuti = [mercato_di.get(g, "") for g in gambe]
+            stato_sc = S._scanner_stato()
+            vivo = S.F.flusso_esito(row, stato_sc, now).vivo
+            self.referto.violazioni.extend(CERT.verifica_mercato_deciso(
+                row.get("payload"), vivo, rifiuti, stato_sc,
+                riga_invecchiata=self.invecchia_s > 0,
+                sollecitati=self.referto.sollecitati, stato=str(ev.get("state") or ""),
+                in_regolamento=bool((ev.get("ctx") or {}).get("settle_first_ts"))))
 
         def _gestisci_fermo(self, pt_ms: int, stato: str) -> None:
             """P4 (M8.3): il freno d'emergenza di PRODUZIONE (``LIVE_KILL_SWITCH``,
@@ -912,7 +1030,9 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                       fermo_copertura: bool = False,
                       lettura_ko: bool = False,
                       punteggio_ko: bool = False,
-                      cashout_dopo_copertura: bool = False) -> CERT.Referto:
+                      cashout_dopo_copertura: bool = False,
+                      firma_dopo_gol: bool = False,
+                      chiusure_perse: bool = False) -> CERT.Referto:
     """Fa rivivere a Mike una partita registrata e ritorna il referto."""
     from flumine import FlumineSimulation
 
@@ -982,7 +1102,8 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                           riavvia=riavvia, cashout_utente=cashout_utente,
                           chiuso_fuori_app=chiuso_fuori_app,
                           fermo_copertura=fermo_copertura, lettura_ko=lettura_ko,
-                          punteggio_ko=punteggio_ko,
+                          punteggio_ko=punteggio_ko, firma_dopo_gol=firma_dopo_gol,
+                          chiusure_perse=chiusure_perse,
                           market_filter={"markets": [raw]},
                           max_order_exposure=1e9, max_selection_exposure=1e9,
                           max_trade_count=int(1e9), max_live_trade_count=int(1e9))
@@ -1116,6 +1237,32 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                 f"scenario cashout-globale: richiesta `cashout` VERA mandata dall'utente "
                 f"({strategia.cashout_fatto}); il controllo R2 «dopo un cash-out globale "
                 f"il bot non apre piu' niente» e' stato sollecitato {quante} volte")
+    # 30/09 (mercato deciso): le chiusure di Betfair che lo scanner ha visto
+    out.note.append("mercati CHIUSI da Betfair passati allo scanner vero: "
+                    + ("NESSUNO (guasto dello scenario: le chiusure non arrivano)"
+                       if strategia.chiusure_perse else
+                       (", ".join(f"{m}@{_iso(ms)}" for m, ms in strategia.mercati_chiusi)
+                        or "nessuno")))
+    if strategia.firma_dopo_gol:
+        # 30/09: che fine ha fatto la firma dopo il gol decisivo
+        rifiuti = sum(1 for k, p_, _e in strategia.db.attivita
+                      if k == "no_fill" and (p_ or {}).get("reason") == "feed_stantio")
+        eseguite = sum(1 for k, _p, _e in strategia.db.attivita
+                       if k == "uscita_eseguita_su_approvazione")
+        out.note.append(
+            "scenario firma-dopo-gol-decisivo: "
+            + ("nessuna proposta di uscita con almeno %d gol: la firma non e' mai partita"
+               % GOL_DECISIVO if strategia.firma_fatta is None
+               else f"firma VERA ({strategia.firma_fatta}) | uscite eseguite su "
+                    f"approvazione {eseguite} | rifiuti feed_stantio {rifiuti} | M1 "
+                    f"sollecitato {int(out.sollecitati.get('M1') or 0)} volte"))
+        if strategia.firma_fatta is not None and (
+                "errore" in strategia.firma_fatta or eseguite < 1 or rifiuti > 0):
+            out.violazioni.append(CERT.Violazione(
+                "M1-FIRMA", "l'uscita firmata dall'utente dopo il gol che decide una linea "
+                            "arriva al mercato sulla linea ancora in gioco (30/09)",
+                f"firma {strategia.firma_fatta} | eseguite {eseguite} | rifiuti "
+                f"feed_stantio {rifiuti}", "LIVE"))
     if strategia.chiuso_fuori_app:
         quante = int(out.sollecitati.get("R3") or 0)
         if strategia.chiusura_utente is None:
@@ -1298,6 +1445,16 @@ SCENARI_DESCRITTI: Dict[str, str] = {
     SCENARIO_LETTURA_KO: "la lettura del feed dal database FALLISCE per 12 minuti dal primo "
                          "giro in gioco e poi torna: Mike ritenta, avvisa una volta, non "
                          "regola niente e continua a seguire gli ordini (M8.7, M8.8)",
+    # 30/09 (mercato deciso)
+    SCENARIO_FIRMA_GOL_DECISIVO: "quando un gol DECIDE una linea (4 gol: Betfair chiude il "
+                                 "3,5) l'utente firma la prima proposta di uscita in perdita "
+                                 "(richiesta `approva_uscita` vera): la chiusura della linea "
+                                 "ancora in gioco (Over 4,5) arriva al mercato, nessun "
+                                 "`no_fill feed_stantio` (M1)",
+    SCENARIO_FIRMA_SENZA_CHIUSURA: "come `firma-dopo-gol-decisivo`, ma la CHIUSURA del mercato "
+                                   "deciso non arriva allo scanner (guasto): il 3,5 resta "
+                                   "sospeso e FERMO per lo scanner; la linea decisa non deve "
+                                   "fermare la partita ne' la chiusura dell'Over 4,5 (M1)",
     # P4 (29/09, M8.4)
     SCENARIO_PUNTEGGIO_KO: "per 5 minuti dal primo giro in gioco la riga arriva senza "
                            "punteggio (IPS muto): Mike lo dichiara una volta, non lo conta "
@@ -1407,7 +1564,9 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
         chiusura_parziale=(scenario == CP.SCENARIO),
         fermo_copertura=(scenario == SCENARIO_FERMO_COPERTURA),
         lettura_ko=(scenario == SCENARIO_LETTURA_KO),
-        punteggio_ko=(scenario == SCENARIO_PUNTEGGIO_KO))
+        punteggio_ko=(scenario == SCENARIO_PUNTEGGIO_KO),
+        firma_dopo_gol=(scenario in (SCENARIO_FIRMA_GOL_DECISIVO, SCENARIO_FIRMA_SENZA_CHIUSURA)),
+        chiusure_perse=(scenario == SCENARIO_FIRMA_SENZA_CHIUSURA))
     if scenario == SCENARIO_GOL_PRECOCE:
         # Lo scenario DICHIARA se il caso e' capitato davvero. Un referto
         # "zero violazioni" su una registrazione senza gol precoce non dice

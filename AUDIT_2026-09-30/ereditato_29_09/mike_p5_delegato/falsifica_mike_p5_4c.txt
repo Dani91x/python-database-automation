@@ -1,0 +1,5 @@
+﻿D1 un mercato chiuso ferma tutto (la prima versione) | ROSSO 2 failed, 2 passed in 0.46s | ['test_un_mercato_chiuso_non_ferma_la_chiusura_dell_altro', 'test_tutti_chiusi_nessun_ordine_e_lo_si_dice']
+D2 la chiusura sul mercato chiuso parte lo stesso | ROSSO 2 failed, 2 passed in 0.41s | ['test_un_mercato_chiuso_non_ferma_la_chiusura_dell_altro', 'test_tutti_chiusi_nessun_ordine_e_lo_si_dice']
+D3 nessuna attesa a mercato sospeso | ROSSO 1 failed, 3 passed in 0.55s | ['test_sospeso_si_aspetta_tutto']
+D4 la selezione decisa finisce fra le chiusure | ROSSO 1 failed, 3 passed in 0.42s | ['test_selezione_gia_decisa_dai_gol_non_e_fra_le_chiusure']
+ripristino verificato: hash identici, nessuna MUTAZIONE nei file

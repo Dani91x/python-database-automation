@@ -1,0 +1,8 @@
+﻿C1 E2 muto sulla banca | ROSSO 2 failed, 11 passed in 0.54s | ['test_E2_banca_sbagliata_parla', 'test_E2_banca_ridotta_dal_tetto_e_giusta']
+C2 E2 accetta una banca ridotta anche se il tetto non la tiene fuori | ROSSO 1 failed, 12 passed in 0.57s | ['test_E2_banca_ridotta_dal_tetto_e_giusta']
+C3 J6 giudica la banca col residuo della punta | ROSSO 2 failed, 11 passed in 0.51s | ['test_J6_banca_intera_tace', 'test_J6_banca_oltre_il_residuo_e_sovracopertura']
+C4 S2 sempre sul libro Over | ROSSO 1 failed, 12 passed in 0.52s | ['test_S2_il_caso_segue_la_forma_scelta_senza_ordini']
+C5 S2 ignora l'ordine proposto | ROSSO 1 failed, 12 passed in 0.72s | ['test_S2_l_ordine_proposto_decide_il_libro']
+C6 J5B muto | ROSSO 2 failed, 11 passed in 0.51s | ['test_J5B_banca_over_mentre_la_banca_under_e_in_volo', 'test_J5B_due_banche_in_volo_sulle_due_selezioni']
+C7 chiusura manuale anche a mercato sospeso | ROSSO 1 failed, 12 passed in 0.50s | ['test_chiusura_manuale_in_gioco_aspetta_la_riapertura']
+ripristino verificato: hash identici, nessuna MUTAZIONE nei file

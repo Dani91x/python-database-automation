@@ -1120,6 +1120,9 @@ def test_l5_tutti_i_kind_di_attivita_sono_dichiarati():
         # cantiere J2 (regola unica): prezzi dal ripiego REST; flusso fermo e
         # REST muto con posizione aperta (critico, 1/min)
         "ripiego_rest", "flusso_interrotto_senza_rest",
+        # 30/09 (mercato deciso, ordine dell'utente): una linea superata dai
+        # gol e' DECISA e Betfair la chiude: Mike lo scrive UNA volta per linea
+        "mercato_deciso",
     }
     assert found - declared == set(), f"kind non dichiarati: {sorted(found - declared)}"
 

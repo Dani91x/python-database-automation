@@ -1207,17 +1207,21 @@ _FLUSSO_RIPIEGO = F._flusso.Promemoria()
 
 
 def _books_ripiego_rest(market: Any, info: Any, mercati: Any, now_ts: float,
-                        con_tetto: bool = True) -> Dict[str, Dict[str, Any]]:
+                        con_tetto: bool = True,
+                        goals: Optional[int] = None) -> Dict[str, Dict[str, Any]]:
     """{OU35/OU45: book REST} delle linee di Mike col flusso fermo, con la
     lettura REST GIA' esistente (``market.read_book``, la stessa del
     regolamento). ``con_tetto``: al piu' una lettura ogni ``_RIPIEGO_REST_MIN_S``
     per mercato (l'azione dell'utente non ha tetto: e' un clic). Vuoto = REST
-    muto o mercato non OPEN."""
+    muto o mercato non OPEN. ``goals``: 30/09 (mercato deciso) una linea gia'
+    DECISA dal punteggio non si cerca (nessun ordine le serve piu')."""
     out: Dict[str, Dict[str, Any]] = {}
     fermi = {str(m) for m in (mercati or [])}
     for mkey in (E.MARKET_OU35, E.MARKET_OU45):
         mid = info.market_id(mkey) if info is not None else None
         if not mid or (fermi and str(mid) not in fermi):
+            continue
+        if F.linea_decisa(mkey, goals):
             continue
         if con_tetto:
             prec = _RIPIEGO_REST_ULTIMO.get(str(mid))
@@ -3462,7 +3466,8 @@ def _request_flatten(db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dic
         # cantiere J2 (regola unica): la chiusura dell'utente prova il ripiego
         # REST (lettura del book che Mike gia' usa; un clic, niente tetto)
         books_rest = _books_ripiego_rest(market, info, esito_flusso.mercati, now.timestamp(),
-                                         con_tetto=False)
+                                         con_tetto=False,
+                                         goals=F.goals_from_payload((row or {}).get("payload") or {}))
         if not books_rest:
             return _result("flusso_interrotto",
                            "Flusso prezzi INTERROTTO su questa partita e book Betfair (REST) non "
@@ -4271,7 +4276,13 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
     # blocco pre-KO a quello in-play e la riga puo' sparire per qualche minuto
     # (refresh catalogo 300 s) — prima veniva scambiata per un regolamento.
     ko_ts = float(F.parse_iso_epoch(ev.get("ko_at")) or 0.0)
-    status_closed = row is not None and str((F.ou_blocks(payload).get(E.MARKET_OU35) or {}).get("status") or
+    # 30/09 (mercato deciso): "partita chiusa" solo se e' CLOSED la linea ANCORA
+    # IN GIOCO (con 4 gol il 4,5; con 5+ gol tutte e due sono decise e vale il
+    # 3,5 come prima), o il MATCH_ODDS quando il blocco non dice lo stato. Il
+    # 3,5 chiuso da Betfair dopo il quarto gol NON manda Mike al regolamento:
+    # l'Over 4,5 resta da gestire.
+    _linea_rif = F.linea_di_riferimento(F.goals_from_payload(payload))
+    status_closed = row is not None and str((F.ou_blocks(payload).get(_linea_rif) or {}).get("status") or
                                             payload.get("mo_status") or "").upper() == "CLOSED"
     if row is None and _feed_non_letto():
         # M8.7 (29/09): la LETTURA del feed sta fallendo: la riga non e'
@@ -4484,6 +4495,24 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
         extra["last_goals"] = goals
     if bool(payload.get("inplay")):
         extra["seen_inplay"] = True
+    # 30/09 (mercato deciso, ordine dell'utente: "il bot deve saperlo"): la
+    # linea superata dai gol e' DECISA (Betfair la sospende e la chiude); lo si
+    # scrive UNA volta per linea, con l'esito delle gambe di Mike su quella linea.
+    _linee_decise = list(extra.get("linee_decise") or [])
+    for _mk in (E.MARKET_OU35, E.MARKET_OU45):
+        if _mk in _linee_decise or not F.linea_decisa(_mk, goals):
+            continue
+        _linee_decise.append(_mk)
+        _blk_dec = F.payload_blocchi_ou(payload).get(_mk) or {}
+        db.log("mercato_deciso", {
+            "market": _mk, "market_id": info.market_id(_mk), "goals": int(goals),
+            "stato_mercato": (str(_blk_dec.get("status")).upper()
+                              if _blk_dec.get("status") else None),
+            "esito": {f"{m}|{s}": ("vinta" if E.selection_decided(m, s, goals) else "persa")
+                      for (m, s) in E.open_selections(ctx.legs) if m == _mk},
+            "state": ctx.state}, ev["event_id"])
+    if _linee_decise:
+        extra["linee_decise"] = _linee_decise
     # M8.4 (29/09): in gioco un punteggio che manca NON vale zero gol: lo si
     # dichiara (una volta per episodio, e una volta quando torna). Lo snapshot
     # porta ``goals=None``: chi decide sui gol deve saperlo (motore).
@@ -4521,7 +4550,7 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
     books_rest: Dict[str, Dict[str, Any]] = {}
     posizione = bool(E.open_selections(ctx.legs))
     if not esito_flusso.vivo and posizione and not dry:
-        books_rest = _books_ripiego_rest(market, info, esito_flusso.mercati, now_ts)
+        books_rest = _books_ripiego_rest(market, info, esito_flusso.mercati, now_ts, goals=goals)
     snap = F.snapshot_from_row(row, info, now=now_ts, params=params, scanner_age_s=scanner_age,
                                hazard=live.get("hazard"), p4_model=live.get("p4_model"),
                                last_goal_ts=extra.get("last_goal_ts"),

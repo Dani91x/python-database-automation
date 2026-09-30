@@ -1,0 +1,7 @@
+﻿S1 sorveglianza sempre sul libro Over | ROSSO 1 failed, 7 passed in 0.72s | ['test_forma_banca_la_sospensione_dell_under45_si_dice']
+S2 la copertura gia' sul book non decide il libro | ROSSO 1 failed, 7 passed in 0.69s | ['test_una_copertura_gia_sul_book_decide_il_libro']
+S3 meta.cover_form non scritto | ROSSO 1 failed, 7 passed in 0.71s | ['test_la_riga_della_copertura_porta_la_sua_forma']
+M1 riduzione solo per selezione (come prima) | ROSSO 1 failed, 7 passed in 0.80s | ['test_banca_over_che_annulla_la_banca_under_e_una_riduzione']
+M2 somma anche con tre esiti | ROSSO 2 failed, 6 passed in 0.85s | ['test_altro_runner_solo_con_due_esiti', 'test_con_tre_esiti_nessuna_somma_come_prima']
+M3 altra selezione non rovesciata | ROSSO 2 failed, 6 passed in 0.68s | ['test_banca_over_che_annulla_la_banca_under_e_una_riduzione', 'test_banca_over_che_AUMENTA_la_posizione_resta_rifiutata']
+ripristino verificato: hash identici, nessuna MUTAZIONE nei file

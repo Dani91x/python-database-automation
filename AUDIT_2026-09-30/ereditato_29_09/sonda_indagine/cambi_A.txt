@@ -1,0 +1,200 @@
+17:25:17 UTC min 63 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | prezzi incompleti
+    ff True of True ms SUSPENDED fonte feed flusso {'vivo': True, 'motivo': None, 'mercati': []} u35 [None, None, 'SUSPENDED'] o45 [None, None, 'OPEN'] u45 [1.56, None, 'OPEN']
+    cash net -10.0 gross -10.0 base 14.0 complete False per {'OU35|UNDER': -10.0} decided ['OU35|UNDER']
+17:25:18 UTC min 63 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | tengo
+    ff True of True ms SUSPENDED fonte feed flusso {'vivo': True, 'motivo': None, 'mercati': []} u35 [None, None, 'SUSPENDED'] o45 [None, 1.36, 'OPEN'] u45 [1.56, 5.5, 'OPEN']
+    cash net -2.63 gross -2.24 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': 7.76} decided ['OU35|UNDER']
+    loss {'mode': 'model', 'window': '2t', 'ev_hold': -2.12, 'p4': 0.2286, 'premium': 0.32, 'threshold': -2.44, 'missing': None, 'p4_market': None, 'sources': ['model']}
+17:25:25 UTC min 63 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | tengo
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [1.22, 1.36, 'OPEN'] u45 [3.8, 5.5, 'OPEN']
+    cash net -2.63 gross -2.24 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': 7.76} decided ['OU35|UNDER']
+    loss {'mode': 'model', 'window': '2t', 'ev_hold': -2.12, 'p4': 0.2286, 'premium': 0.32, 'threshold': -2.44, 'missing': None, 'p4_market': None, 'sources': ['model']}
+17:25:33 UTC min 64 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-2.54) vale piu' di tenere (-2.2
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [1.27, 1.35, 'OPEN'] u45 [3.85, 4.8, 'OPEN']
+    cash net -2.54 gross -2.15 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': 7.85} decided ['OU35|UNDER']
+    loss {'mode': 'model', 'window': '2t', 'ev_hold': -2.27, 'p4': 0.2384, 'premium': 0.33, 'threshold': -2.6, 'missing': None, 'p4_market': None, 'sources': ['model']}
+    PROPOSTA bloccabile -2.54
+17:25:34 UTC min 64 gol 4 ht False st LIVE_COVERED -> LIVE_CLOSING | uscita a modello (2t): chiudere (-2.54) vale piu' di tenere (-2.27 - premio 0.33, P4 24%)
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [1.27, 1.35, 'OPEN'] u45 [3.85, 4.8, 'OPEN']
+    cash net -2.54 gross -2.15 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': 7.85} decided ['OU35|UNDER']
+    loss {'mode': 'model', 'window': '2t', 'ev_hold': -2.27, 'p4': 0.2384, 'premium': 0.33, 'threshold': -2.6, 'missing': None, 'p4_market': None, 'sources': ['model']}
+17:25:36 UTC min 64 gol 4 ht False st LIVE_CLOSING -> LIVE_CLOSING | chiusura residuo
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [1.27, 1.35, 'OPEN'] u45 [3.9, 4.7, 'OPEN']
+17:26:03 UTC min 64 gol 4 ht False st LIVE_CLOSING -> FLAT | chiuso (loss_2t)
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [1.29, 1.34, 'OPEN'] u45 [3.95, 4.4, 'OPEN']
+17:26:04 UTC min 64 gol 4 ht False st FLAT -> LIVE_COVERED | esposizione residua
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [1.29, 1.34, 'OPEN'] u45 [3.95, 4.4, 'OPEN']
+17:26:05 UTC min 64 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-2.46) vale piu' di tenere (-2.2
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [1.3, 1.34, 'OPEN'] u45 [3.95, 4.4, 'OPEN']
+    cash net -2.46 gross -2.06 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': 7.94} decided ['OU35|UNDER']
+    loss {'mode': 'model', 'window': '2t', 'ev_hold': -2.27, 'p4': 0.2384, 'premium': 0.33, 'threshold': -2.6, 'missing': None, 'p4_market': None, 'sources': ['model']}
+    PROPOSTA bloccabile -2.46
+17:27:08 UTC min 64 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | tengo
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [1.33, 1.36, 'OPEN'] u45 [3.75, 4.1, 'OPEN']
+    cash net -2.63 gross -2.24 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': 7.76} decided ['OU35|UNDER']
+    loss {'mode': 'model', 'window': '2t', 'ev_hold': -2.27, 'p4': 0.2384, 'premium': 0.33, 'threshold': -2.6, 'missing': None, 'p4_market': None, 'sources': ['model']}
+    DECADUTA {'chiave': 'chiusura|c0', 'motivo': "la strategia non vuole piu' uscire: tengo"}
+17:27:20 UTC min 66 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-2.63) vale piu' di tenere (-2.6
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [1.33, 1.36, 'OPEN'] u45 [3.8, 4.0, 'OPEN']
+    cash net -2.63 gross -2.24 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': 7.76} decided ['OU35|UNDER']
+    loss {'mode': 'model', 'window': '2t', 'ev_hold': -2.61, 'p4': 0.2601, 'premium': 0.36, 'threshold': -2.97, 'missing': None, 'p4_market': None, 'sources': ['model']}
+    PROPOSTA bloccabile -2.63
+17:29:48 UTC min 67 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | tengo
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [1.39, 1.44, 'OPEN'] u45 [3.3, 3.55, 'OPEN']
+    cash net -3.25 gross -2.89 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': 7.11} decided ['OU35|UNDER']
+    loss {'mode': 'model', 'window': '2t', 'ev_hold': -2.79, 'p4': 0.2719, 'premium': 0.38, 'threshold': -3.17, 'missing': None, 'p4_market': None, 'sources': ['model']}
+    DECADUTA {'chiave': 'chiusura|c0', 'motivo': "la strategia non vuole piu' uscire: tengo"}
+17:30:38 UTC min 69 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-3.32) vale piu' di tenere (-3.1
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [1.42, 1.45, 'OPEN'] u45 [3.2, 3.35, 'OPEN']
+    cash net -3.32 gross -2.97 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': 7.03} decided ['OU35|UNDER']
+    loss {'mode': 'model', 'window': '2t', 'ev_hold': -3.17, 'p4': 0.2965, 'premium': 0.42, 'threshold': -3.58, 'missing': None, 'p4_market': None, 'sources': ['model']}
+    PROPOSTA bloccabile -3.32
+17:40:40 UTC min 78 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | tengo
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [1.78, 1.94, 'OPEN'] u45 [2.06, 2.22, 'OPEN']
+    cash net -5.96 gross -5.75 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': 4.25} decided ['OU35|UNDER']
+    loss {'mode': 'model', 'window': '2t', 'ev_hold': -5.34, 'p4': 0.4377, 'premium': 0.61, 'threshold': -5.95, 'missing': None, 'p4_market': None, 'sources': ['model']}
+    DECADUTA {'chiave': 'chiusura|c0', 'motivo': "la strategia non vuole piu' uscire: tengo"}
+17:41:04 UTC min 79 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-6.12) vale piu' di tenere (-5.6
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [1.93, 1.98, 'OPEN'] u45 [2.02, 2.08, 'OPEN']
+    cash net -6.12 gross -5.92 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': 4.08} decided ['OU35|UNDER']
+    loss {'mode': 'model', 'window': '2t', 'ev_hold': -5.65, 'p4': 0.4576, 'premium': 0.64, 'threshold': -6.29, 'missing': None, 'p4_market': None, 'sources': ['model']}
+    PROPOSTA bloccabile -6.12
+17:41:26 UTC min 79 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | tengo
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [1.91, 2.04, 'OPEN'] u45 [2.0, 2.1, 'OPEN']
+    cash net -6.35 gross -6.16 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': 3.84} decided ['OU35|UNDER']
+    loss {'mode': 'model', 'window': '2t', 'ev_hold': -5.65, 'p4': 0.4576, 'premium': 0.64, 'threshold': -6.29, 'missing': None, 'p4_market': None, 'sources': ['model']}
+    DECADUTA {'chiave': 'chiusura|c0', 'motivo': "la strategia non vuole piu' uscire: tengo"}
+17:41:34 UTC min 79 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-6.28) vale piu' di tenere (-5.6
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [1.92, 2.02, 'OPEN'] u45 [2.0, 2.08, 'OPEN']
+    cash net -6.28 gross -6.08 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': 3.92} decided ['OU35|UNDER']
+    loss {'mode': 'model', 'window': '2t', 'ev_hold': -5.65, 'p4': 0.4576, 'premium': 0.64, 'threshold': -6.29, 'missing': None, 'p4_market': None, 'sources': ['model']}
+    PROPOSTA bloccabile -6.28
+17:41:47 UTC min 79 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | tengo
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [1.95, 2.04, 'OPEN'] u45 [2.0, 2.04, 'OPEN']
+    cash net -6.35 gross -6.16 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': 3.84} decided ['OU35|UNDER']
+    loss {'mode': 'model', 'window': '2t', 'ev_hold': -5.65, 'p4': 0.4576, 'premium': 0.64, 'threshold': -6.29, 'missing': None, 'p4_market': None, 'sources': ['model']}
+    DECADUTA {'chiave': 'chiusura|c0', 'motivo': "la strategia non vuole piu' uscire: tengo"}
+17:45:07 UTC min 83 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | prezzi incompleti
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [None, None, 'OPEN'] u45 [1.54, 1.7, 'OPEN']
+    cash net -10.0 gross -10.0 base 14.0 complete False per {'OU35|UNDER': -10.0} decided ['OU35|UNDER']
+17:45:14 UTC min 83 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | tengo
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [1.86, 2.78, 'OPEN'] u45 [1.56, 1.72, 'OPEN']
+    cash net -8.34 gross -8.25 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': 1.75} decided ['OU35|UNDER']
+    loss {'mode': 'model', 'window': '2t', 'ev_hold': -7.02, 'p4': 0.5469, 'premium': 0.77, 'threshold': -7.79, 'missing': None, 'p4_market': None, 'sources': ['model']}
+17:45:46 UTC min 83 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | prezzi incompleti
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [None, None, 'OPEN'] u45 [1.3, None, 'OPEN']
+    cash net -10.0 gross -10.0 base 14.0 complete False per {'OU35|UNDER': -10.0} decided ['OU35|UNDER']
+17:45:50 UTC min 83 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | tengo
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [2.48, 3.25, 'OPEN'] u45 [1.45, 1.56, 'OPEN']
+    cash net -9.13 gross -9.08 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': 0.92} decided ['OU35|UNDER']
+    loss {'mode': 'model', 'window': '2t', 'ev_hold': -7.02, 'p4': 0.5469, 'premium': 0.77, 'threshold': -7.79, 'missing': None, 'p4_market': None, 'sources': ['model']}
+17:45:56 UTC min 83 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | prezzi incompleti
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [2.24, None, 'OPEN'] u45 [1.3, 1.56, 'OPEN']
+    cash net -10.0 gross -10.0 base 14.0 complete False per {'OU35|UNDER': -10.0} decided ['OU35|UNDER']
+17:46:05 UTC min 84 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | tengo
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [None, 4.4, 'OPEN'] u45 [1.3, 1.55, 'OPEN']
+    cash net -10.38 gross -10.38 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': -0.38} decided ['OU35|UNDER']
+    loss {'mode': 'model', 'window': '2t', 'ev_hold': -7.4, 'p4': 0.5715, 'premium': 0.8, 'threshold': -8.2, 'missing': None, 'p4_market': None, 'sources': ['model']}
+17:46:23 UTC min 84 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | prezzi incompleti
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [3.1, None, 'OPEN'] u45 [1.3, 1.4, 'OPEN']
+    cash net -10.0 gross -10.0 base 14.0 complete False per {'OU35|UNDER': -10.0} decided ['OU35|UNDER']
+17:46:26 UTC min 84 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | tengo
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [3.05, 4.6, 'OPEN'] u45 [1.3, 1.44, 'OPEN']
+    cash net -10.53 gross -10.53 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': -0.53} decided ['OU35|UNDER']
+    loss {'mode': 'model', 'window': '2t', 'ev_hold': -7.4, 'p4': 0.5715, 'premium': 0.8, 'threshold': -8.2, 'missing': None, 'p4_market': None, 'sources': ['model']}
+17:49:49 UTC min 86 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | prezzi incompleti
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [None, None, 'OPEN'] u45 [1.2, None, 'OPEN']
+    cash net -10.0 gross -10.0 base 14.0 complete False per {'OU35|UNDER': -10.0} decided ['OU35|UNDER']
+17:50:01 UTC min 86 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | tengo
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [3.3, 7.6, 'OPEN'] u45 [1.15, 1.23, 'OPEN']
+    cash net -11.93 gross -11.93 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': -1.93} decided ['OU35|UNDER']
+17:50:04 UTC min 86 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | prezzi incompleti
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [5.6, None, 'OPEN'] u45 [1.15, 1.21, 'OPEN']
+    cash net -10.0 gross -10.0 base 14.0 complete False per {'OU35|UNDER': -10.0} decided ['OU35|UNDER']
+17:50:07 UTC min 86 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | tengo
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [4.4, 13.0, 'OPEN'] u45 [1.15, 1.3, 'OPEN']
+    cash net -12.77 gross -12.77 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': -2.77} decided ['OU35|UNDER']
+17:50:14 UTC min 86 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | prezzi incompleti
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [None, None, 'OPEN'] u45 [1.1, 1.33, 'OPEN']
+    cash net -10.0 gross -10.0 base 14.0 complete False per {'OU35|UNDER': -10.0} decided ['OU35|UNDER']
+17:50:17 UTC min 86 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | tengo
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [4.8, 13.5, 'OPEN'] u45 [1.1, 1.24, 'OPEN']
+    cash net -12.88 gross -12.88 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': -2.88} decided ['OU35|UNDER']
+17:50:18 UTC min 86 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | prezzi incompleti
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [None, None, 'OPEN'] u45 [1.1, 1.33, 'OPEN']
+    cash net -10.0 gross -10.0 base 14.0 complete False per {'OU35|UNDER': -10.0} decided ['OU35|UNDER']
+17:50:21 UTC min 86 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | tengo
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [None, 6.6, 'OPEN'] u45 [1.1, 1.33, 'OPEN']
+    cash net -11.58 gross -11.58 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': -1.58} decided ['OU35|UNDER']
+17:50:25 UTC min 86 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | prezzi incompleti
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [6.8, None, 'OPEN'] u45 [1.1, 1.17, 'OPEN']
+    cash net -10.0 gross -10.0 base 14.0 complete False per {'OU35|UNDER': -10.0} decided ['OU35|UNDER']
+17:50:33 UTC min 86 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | tengo
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [6.6, 13.5, 'OPEN'] u45 [1.1, 1.18, 'OPEN']
+    cash net -12.88 gross -12.88 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': -2.88} decided ['OU35|UNDER']
+17:50:37 UTC min 86 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | prezzi incompleti
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [None, None, 'OPEN'] u45 [1.1, 1.33, 'OPEN']
+    cash net -10.0 gross -10.0 base 14.0 complete False per {'OU35|UNDER': -10.0} decided ['OU35|UNDER']
+17:50:39 UTC min 86 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | tengo
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [5.8, 8.0, 'OPEN'] u45 [1.14, 1.21, 'OPEN']
+    cash net -12.0 gross -12.0 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': -2.0} decided ['OU35|UNDER']
+17:50:43 UTC min 86 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | prezzi incompleti
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [None, None, 'OPEN'] u45 [1.1, 1.33, 'OPEN']
+    cash net -10.0 gross -10.0 base 14.0 complete False per {'OU35|UNDER': -10.0} decided ['OU35|UNDER']
+17:50:51 UTC min 86 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | tengo
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [None, 9.2, 'OPEN'] u45 [1.12, 1.17, 'OPEN']
+    cash net -12.27 gross -12.27 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': -2.27} decided ['OU35|UNDER']
+17:50:54 UTC min 86 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | prezzi incompleti
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [6.6, None, 'OPEN'] u45 [1.1, 1.33, 'OPEN']
+    cash net -10.0 gross -10.0 base 14.0 complete False per {'OU35|UNDER': -10.0} decided ['OU35|UNDER']
+17:50:55 UTC min 86 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | tengo
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [6.8, 10.0, 'OPEN'] u45 [1.11, 1.33, 'OPEN']
+    cash net -12.4 gross -12.4 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': -2.4} decided ['OU35|UNDER']
+17:51:08 UTC min 86 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | prezzi incompleti
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [8.0, None, 'OPEN'] u45 [1.1, 1.13, 'OPEN']
+    cash net -10.0 gross -10.0 base 14.0 complete False per {'OU35|UNDER': -10.0} decided ['OU35|UNDER']
+17:51:11 UTC min 86 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | tengo
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [None, 21.0, 'OPEN'] u45 [1.1, 1.33, 'OPEN']
+    cash net -13.24 gross -13.24 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': -3.24} decided ['OU35|UNDER']
+17:51:17 UTC min 90 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | prezzi incompleti
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [6.4, None, 'OPEN'] u45 [1.1, None, 'OPEN']
+    cash net -10.0 gross -10.0 base 14.0 complete False per {'OU35|UNDER': -10.0} decided ['OU35|UNDER']
+17:51:21 UTC min 90 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | tengo
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [10.0, 15.0, 'OPEN'] u45 [1.08, 1.11, 'OPEN']
+    cash net -12.98 gross -12.98 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': -2.98} decided ['OU35|UNDER']
+17:51:24 UTC min 90 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | prezzi incompleti
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [None, None, 'OPEN'] u45 [1.08, None, 'OPEN']
+    cash net -10.0 gross -10.0 base 14.0 complete False per {'OU35|UNDER': -10.0} decided ['OU35|UNDER']
+17:51:31 UTC min 90 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | tengo
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [11.5, 18.0, 'OPEN'] u45 [1.08, 1.13, 'OPEN']
+    cash net -13.13 gross -13.13 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': -3.13} decided ['OU35|UNDER']
+17:51:33 UTC min 90 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | prezzi incompleti
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [None, None, 'OPEN'] u45 [1.08, 1.13, 'OPEN']
+    cash net -10.0 gross -10.0 base 14.0 complete False per {'OU35|UNDER': -10.0} decided ['OU35|UNDER']
+17:51:40 UTC min 90 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | tengo
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [7.2, 14.5, 'OPEN'] u45 [1.08, 1.16, 'OPEN']
+    cash net -12.9 gross -12.9 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': -2.9} decided ['OU35|UNDER']
+17:51:45 UTC min 90 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | prezzi incompleti
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [None, None, 'OPEN'] u45 [1.05, None, 'OPEN']
+    cash net -10.0 gross -10.0 base 14.0 complete False per {'OU35|UNDER': -10.0} decided ['OU35|UNDER']
+17:51:46 UTC min 90 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | tengo
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [8.2, 19.5, 'OPEN'] u45 [1.05, 1.1, 'OPEN']
+    cash net -13.18 gross -13.18 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': -3.18} decided ['OU35|UNDER']
+17:51:49 UTC min 90 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | prezzi incompleti
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [None, None, 'OPEN'] u45 [1.05, None, 'OPEN']
+    cash net -10.0 gross -10.0 base 14.0 complete False per {'OU35|UNDER': -10.0} decided ['OU35|UNDER']
+17:52:02 UTC min 90 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | tengo
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [12.0, 25.0, 'OPEN'] u45 [1.05, 1.09, 'OPEN']
+    cash net -13.36 gross -13.36 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': -3.36} decided ['OU35|UNDER']
+17:52:07 UTC min 90 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | prezzi incompleti
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [15.5, None, 'OPEN'] u45 [1.05, None, 'OPEN']
+    cash net -10.0 gross -10.0 base 14.0 complete False per {'OU35|UNDER': -10.0} decided ['OU35|UNDER']
+17:52:20 UTC min 91 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | tengo
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [19.5, 38.0, 'OPEN'] u45 [1.03, 1.05, 'OPEN']
+    cash net -13.58 gross -13.58 base 14.0 complete True per {'OU35|UNDER': -10.0, 'OU45|OVER': -3.58} decided ['OU35|UNDER']
+17:52:30 UTC min 91 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | prezzi incompleti
+    ff False of False ms OPEN fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537']} u35 None o45 [None, None, 'OPEN'] u45 [1.03, None, 'OPEN']
+    cash net -10.0 gross -10.0 base 14.0 complete False per {'OU35|UNDER': -10.0} decided ['OU35|UNDER']
+17:53:04 UTC min 91 gol 4 ht False st LIVE_COVERED -> LIVE_COVERED | prezzi incompleti
+    ff False of False ms SUSPENDED fonte feed flusso {'vivo': False, 'motivo': 'mercato_fermo', 'mercati': ['1.259475537', '1.259475534']} u35 None o45 None u45 None
+    cash net -10.0 gross -10.0 base 14.0 complete False per {'OU35|UNDER': -10.0} decided ['OU35|UNDER']
