@@ -50,11 +50,29 @@ massimo 300 s per gruppo di fischi. Il conto reale sta nei contatori.
   giro ⇒ 2 test aggiunti, poi rosse).
 - Suite: `Betfair/safe_strategy Betfair/mike Betfair/stream/tests` nel worktree: **6586 verdi**,
   47 skip, 1 xfail (8:48).
-- Replay: _(sezione 4)_
+- Replay: sezione 4.
 
-## 4. Replay di certificazione (codice finale)
+## 4. Replay di certificazione (codice finale, commit `04b8d20`)
 
-_(compilato a fine replay)_
+| Replay | Comando | Esito | Confronto col riferimento |
+|---|---|---|---|
+| Mike, tutti gli scenari | `certifica mike 35760084 --scenari tutti --trasporto canale` | 25 OK, 0 KO, **0 violazioni** (`replay/mike_tutti_SCANNER_VELOCITA_v3.txt`) | **25 su 25 identici** (P&L, fill, ordini, attivita') al giro precedente `mike_tutti_SCANNER_VELOCITA.txt`, a sua volta identico a `mike_tutti_FINALE.txt` salvo le 2 differenze attese (riga «utente» del P&L reale `96a2189`; scenario nuovo `ko-green-parziale` di `a86b927`). Durata 994 s con la suite frontend di admin-07 in parallelo (394 s a PC libero il pomeriggio): tempo, non esito. |
+| Mike, base | `--scenari base` (codice v2) | 1 OK, 0 violazioni | identico |
+| Omega | `certifica omega 35760084 --scenari rapidi --trasporto entrambi` | 13 OK (`replay/omega_SCANNER_VELOCITA_v3.txt`) | identico a `omega_FINALE.txt` (differenze solo nei tempi dei controlli) |
+| Safe base | `certifica safe_base 35760084 --scenari rapidi --trasporto entrambi --worker 1` | 14 OK (`replay/safe_base_SCANNER_VELOCITA_v3.txt`) | identico a `safe_base_FINALE.txt` (solo tempi) |
+
+Nota onesta: il banco NON esercita ne' la finestra del fischio ne' la sveglia (i punteggi
+entrano dal sidecar in `apply_score_state`, il `ScoreFeedWorker` non gira): il replay certifica
+che NULLA e' regredito per i bot, non che le parti nuove funzionino dal vivo (per quello: §5).
+
+## 4b. Revisione indipendente (Sonnet, sola lettura) e correzioni
+
+0 ALTI, 2 MEDI, 4 BASSI: TUTTI corretti prima della fusione (sveglia solo per il calcio, non per
+il tennis che si sospende a ogni punto; un evento nato gia' in gioco al riavvio NON e' un
+fischio; transizione valutata dopo le assegnazioni; `stop()` sveglia il worker; copia dell'elenco
+eventi nell'iterazione dal thread). In piu' (review UI di admin-07): `flusso.fermi_da_ms`,
+`odds_seen_ms`, `ou_blocks` di Mike che non scarta piu' una linea viva per un `seen_ms` stantio.
+Falsificazione totale: 23 mutazioni, tutte rosse. Suite Python: 6586 + 4627 + 3459 verdi.
 
 ## 5. Cosa NON e' verificato e come si verifica domani
 

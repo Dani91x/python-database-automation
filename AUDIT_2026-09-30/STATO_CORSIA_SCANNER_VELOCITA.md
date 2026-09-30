@@ -20,13 +20,13 @@ Punto di ripresa in caso di interruzione (rete, sessione). Aggiornato a ogni pas
 2. [x] 21 test nuovi verdi; falsificazione: 12 mutazioni, tutte rosse (2 test aggiunti per
    le 2 sopravvissute al primo giro) — 19:10. ATTENZIONE: pulire `__pycache__` prima di
    rilanciare dopo una mutazione (un .pyc stantio ha dato un falso rosso su «tetto 80»).
-3. [ ] suite `Betfair/safe_strategy Betfair/mike Betfair/stream/tests` nel worktree (in corsa)
-4. [ ] replay Mike `--scenari base` 35760084 dal worktree, confronto con
+3. [x] suite `Betfair/safe_strategy Betfair/mike Betfair/stream/tests` nel worktree (in corsa)
+4. [x] replay Mike `--scenari base` 35760084 dal worktree, confronto con
    `AUDIT_2026-09-30/replay/mike_tutti_FINALE.txt` (identico numero per numero)
-5. [ ] referto `AUDIT_2026-09-30/VELOCITA_FEED_E_GIRI.md` (conto chiamate prima/dopo)
-6. [ ] fusione su master (`git diff HEAD` dal worktree → `git apply --3way`), commit a
+5. [x] referto `AUDIT_2026-09-30/VELOCITA_FEED_E_GIRI.md` (conto chiamate prima/dopo)
+6. [x] fusione (commit `04b8d20`, badge `c4fa7d9`) su master (`git diff HEAD` dal worktree → `git apply --3way`), commit a
    percorsi espliciti, revisore indipendente, cronostoria
-7. [ ] `.env`: NESSUNA riga necessaria (il tetto 80 e' nel codice; `MIKE_MAX_FOLLOWED` resta
+7. [x] `.env`: NESSUNA riga necessaria (il tetto 80 e' nel codice; `MIKE_MAX_FOLLOWED` resta
    un override)
 
 ## Cosa NON e' verificato (da dire all'utente)
