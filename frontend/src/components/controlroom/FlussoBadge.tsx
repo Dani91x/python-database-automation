@@ -65,7 +65,7 @@ export function FlussoLineeMikeBadge({ flusso }: { flusso: GiudizioFlussoMike | 
         >
             {'⚠ '}
             {flusso.linee.map((l) => `${l.nome} ferma`
-                + (l.daS == null ? '' : ` · ultimo book ${Math.round(l.daS)} s fa`)).join(' · ')}
+                + (l.daS == null ? '' : (l.esatto ? ` · ultimo prezzo ${Math.round(l.daS)} s fa` : ` · riga scritta ${Math.round(l.daS)} s fa`))).join(' · ')}
         </span>
     );
 }

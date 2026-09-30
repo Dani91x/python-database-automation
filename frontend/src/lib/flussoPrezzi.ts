@@ -121,8 +121,10 @@ export interface LineaFermaMike {
     marketId: string;
     /** «Under/Over 3,5» */
     nome: string;
-    /** secondi dall'ultimo book ricevuto; null = la riga non lo dice */
+    /** secondi dall'ultimo prezzo ricevuto (se `esatto`) o dall'ultima scrittura della riga; null = la riga non lo dice */
     daS: number | null;
+    /** true = da `flusso.fermi_da_ms` (istante vero); false = ripiego su `seen_ms` (eta' della riga) */
+    esatto: boolean;
 }
 
 export interface GiudizioFlussoMike {
@@ -162,13 +164,26 @@ export function giudizioFlussoMike(riga: RigaLineeMike | null | undefined, nowMs
         return { stato: 'non_dichiarato', linee: [], testo: 'flusso prezzi non dichiarato dallo scanner' };
     }
     const fermi = new Set((Array.isArray(flusso.mercati_fermi) ? flusso.mercati_fermi : []).map(String));
+    // 30/09 sera: «da quanto» VERO = `flusso.fermi_da_ms[market_id]` (istante
+    // dell'ultima conferma con prezzi, scritto dallo scanner quando la linea
+    // diventa ferma). `seen_ms` e' fuori firma: la riga non si riscrive se cambia
+    // solo lui, quindi da solo sovrastima l'eta'. Resta come ripiego (scanner
+    // precedente) e in quel caso si dice «riga scritta», non «ultimo book».
+    const daMs = (flusso as { fermi_da_ms?: unknown }).fermi_da_ms;
+    const fermiDa: Record<string, number> = daMs && typeof daMs === 'object' ? daMs as Record<string, number> : {};
     const ferme: LineaFermaMike[] = linee
         .filter((l) => fermi.has(l.marketId))
-        .map((l) => ({ marketId: l.marketId, nome: l.nome,
-            daS: l.seenMs == null ? null : Math.max(0, (nowMs - l.seenMs) / 1000) }));
+        .map((l) => {
+            const da = fermiDa[l.marketId];
+            const esatto = typeof da === 'number' && Number.isFinite(da) && da > 0;
+            const rif = esatto ? da : l.seenMs;
+            return { marketId: l.marketId, nome: l.nome, esatto,
+                daS: rif == null ? null : Math.max(0, (nowMs - rif) / 1000) };
+        });
     if (!ferme.length) return { stato: 'vivo', linee: [], testo: 'prezzi vivi sulle linee di Mike' };
     const parti = ferme.map((l) => `${l.nome} (${l.marketId}) ferma`
-        + (l.daS == null ? '' : `, ultimo book ricevuto ${durata(l.daS)} fa`));
+        + (l.daS == null ? '' : (l.esatto ? `, ultimo prezzo ricevuto ${durata(l.daS)} fa`
+            : `, riga scritta ${durata(l.daS)} fa`)));
     return { stato: 'fermo', linee: ferme,
         testo: `Flusso prezzi fermo per lo scanner: ${parti.join('; ')}. `
             + 'Mike non apre su queste linee; con una posizione aperta chiude o copre solo '

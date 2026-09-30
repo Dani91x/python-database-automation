@@ -65,8 +65,11 @@ describe('giudizioFlussoMike: la stessa regola di Mike', () => {
     it('linea 3,5 in mercati_fermi: QUALE linea e l’eta’ del suo ultimo book', () => {
         const g = giudizioFlussoMike(riga(['1.35']), ORA);
         expect(g.stato).toBe('fermo');
-        expect(g.linee).toEqual([{ marketId: '1.35', nome: 'Under/Over 3,5', daS: 36 }]);
-        expect(g.testo).toContain('Under/Over 3,5 (1.35) ferma, ultimo book ricevuto 36 s fa');
+        expect(g.linee).toEqual([{ marketId: '1.35', nome: 'Under/Over 3,5', daS: 36, esatto: false }]);
+        // 30/09 sera: senza `fermi_da_ms` (scanner precedente) l'eta' e' quella
+        // della RIGA (`seen_ms` e' fuori firma), e lo si dice
+        expect(g.testo).toContain('Under/Over 3,5 (1.35) ferma, riga scritta 36 s fa');
+        expect(g.linee[0].esatto).toBe(false);
     });
     it('una linea gia’ decisa dai gol non conta (mercato_deciso, 30/09)', () => {
         const g = giudizioFlussoMike(riga(['1.35'], { inplay: true, score_home: 3, score_away: 1 }), ORA);
@@ -94,7 +97,7 @@ describe('scheda PRE-PARTITA', () => {
     it('linea di Mike ferma: badge rosso con la linea e i secondi del suo ultimo book', () => {
         render(<MemoryRouter><SchedaPreMatch p={partita(riga(['1.35']))} scheda="pre" mancaS={3600} /></MemoryRouter>);
         const b = screen.getByTestId('cr-flusso-mike');
-        expect(b.textContent).toBe('⚠ Under/Over 3,5 ferma · ultimo book 36 s fa');
+        expect(b.textContent).toBe('⚠ Under/Over 3,5 ferma · riga scritta 36 s fa');
         expect(b.getAttribute('title')).toContain('Mike non apre su queste linee');
     });
     it('linea ferma anche senza quote 1X2: la riga si monta lo stesso', () => {
@@ -120,7 +123,19 @@ describe('scheda IN GIOCO (Safe/Omega: il Match Odds come prima)', () => {
         const p = partita(riga(['1.45'], { inplay: true, minute: 27, score_home: 1, score_away: 0,
             flusso: { vivo: true, motivo: null, dal_ms: ORA - 1_628_000, mercati_fermi: ['1.45'] } }));
         render(<MemoryRouter><SchedaPartita p={p} operazioni={[]} /></MemoryRouter>);
-        expect(screen.getByTestId('cr-flusso-mike').textContent).toBe('⚠ Under/Over 4,5 ferma · ultimo book 1 s fa');
+        expect(screen.getByTestId('cr-flusso-mike').textContent).toBe('⚠ Under/Over 4,5 ferma · riga scritta 1 s fa');
+    });
+    it('30/09 sera: con `flusso.fermi_da_ms` dello scanner l’eta’ e’ quella VERA dell’ultimo prezzo, non della riga', () => {
+        const p = partita(riga(['1.45'], { inplay: true, minute: 27, score_home: 1, score_away: 0,
+            flusso: { vivo: true, motivo: null, dal_ms: ORA - 1_628_000, mercati_fermi: ['1.45'],
+                fermi_da_ms: { '1.45': ORA - 41_000 } } as FlussoRiga }));
+        render(<MemoryRouter><SchedaPartita p={p} operazioni={[]} /></MemoryRouter>);
+        expect(screen.getByTestId('cr-flusso-mike').textContent).toBe('⚠ Under/Over 4,5 ferma · ultimo prezzo 41 s fa');
+        const g = giudizioFlussoMike(riga(['1.45'], { inplay: true, minute: 27, score_home: 1, score_away: 0,
+            flusso: { vivo: true, motivo: null, dal_ms: ORA - 1_628_000, mercati_fermi: ['1.45'],
+                fermi_da_ms: { '1.45': ORA - 41_000 } } as FlussoRiga }), ORA);
+        expect(g.linee).toEqual([{ marketId: '1.45', nome: 'Under/Over 4,5', daS: 41, esatto: true }]);
+        expect(g.testo).toContain('ultimo prezzo ricevuto 41 s fa');
     });
 });
 
