@@ -33,6 +33,20 @@ for (const [nome, url] of PAGINE) {
       }, stato);
       // nessuna rete esterna (font, texture): risposte vuote, deterministiche
       await ctx.route(/^https?:\/\/(?!127\.0\.0\.1)/, (r) => r.fulfill({ status: 200, body: '' }));
+      if (process.env.CANALE_FINTO === '1') {
+        // tabellone finto sul canale locale (solo anteprima): stesse chiavi del push 'board' vero
+        const ora = Date.parse('2026-10-01T08:00:00Z');
+        const riga = (i, sport) => ({
+          event_id: String(34000000 + i), event_name: sport === 'calcio' ? ['Squadra A v Squadra B', 'Squadra C v Squadra D', 'Squadra E v Squadra F', 'Squadra G v Squadra H'][i % 4] : ['Giocatore Uno v Giocatore Due', 'Giocatore Tre v Giocatore Quattro'][i % 2],
+          open_date: new Date(ora + (i - 1) * 2400e3).toISOString(), market_id: '1.25000000' + i, status: 'OPEN', inplay: i === 0,
+          total_matched: 12345 * (i + 1),
+          selections: (sport === 'calcio' ? ['Casa', 'Pareggio', 'Trasferta'] : ['Giocatore 1', 'Giocatore 2']).map((n, k) => ({ selection_id: k + 1, name: n, back: 1.8 + k + i / 10, lay: 1.82 + k + i / 10, ltp: null })),
+        });
+        await ctx.routeWebSocket(/:4733[12]/, (ws) => {
+          const sport = ws.url().includes('47331') ? 'calcio' : 'tennis';
+          setTimeout(() => ws.send(JSON.stringify({ t: 'board', d: { rows: [0, 1, 2, 3].map((i) => riga(i, sport)) } })), 300);
+        });
+      }
       const page = await ctx.newPage();
       const ws = [];
       page.on('websocket', (s) => ws.push(s.url().replace(/\?.*$/, '')));

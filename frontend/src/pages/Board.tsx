@@ -116,7 +116,7 @@ function SportBoard({ sport }: { sport: LocalSport }) {
 
     if (status === 'off') {
         return (
-            <Card className="glass-card border-white/10 bg-slate-900 p-8 text-center">
+            <Card className="glass-card border-white/10 bg-slate-900 p-8 text-center ds-v2-vuoto">
                 <Radio className="w-8 h-8 text-slate-600 mx-auto mb-2" />
                 <p className="text-[11px] text-slate-400">
                     Canale locale {sport} non attivo (ws://127.0.0.1:{sport === 'calcio' ? 47331 : 47332}).
@@ -128,7 +128,7 @@ function SportBoard({ sport }: { sport: LocalSport }) {
 
     if (!sorted) {
         return (
-            <Card className="glass-card border-white/10 bg-slate-900 p-8 text-center">
+            <Card className="glass-card border-white/10 bg-slate-900 p-8 text-center ds-v2-vuoto">
                 <p className="text-[11px] text-slate-400">Canale connesso: in attesa del primo tabellone…</p>
             </Card>
         );
@@ -136,14 +136,14 @@ function SportBoard({ sport }: { sport: LocalSport }) {
 
     if (sorted.length === 0) {
         return (
-            <Card className="glass-card border-white/10 bg-slate-900 p-8 text-center">
+            <Card className="glass-card border-white/10 bg-slate-900 p-8 text-center ds-v2-vuoto">
                 <p className="text-[11px] text-slate-400">Nessun evento nel programma di oggi.</p>
             </Card>
         );
     }
 
     return (
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 ds-v2-tabella">
             {sorted.map(row => {
                 const countdown = !row.inplay ? countdownToOff(row.open_date, nowTick) : null;
                 const p1 = row.selections[0]?.name ?? '';
@@ -154,7 +154,7 @@ function SportBoard({ sport }: { sport: LocalSport }) {
                 return (
                     <div
                         key={row.event_id}
-                        className="rounded-lg border border-white/10 bg-slate-900 px-3 py-2 flex items-center gap-3 flex-wrap text-[11px]"
+                        className="rounded-lg border border-white/10 bg-slate-900 px-3 py-2 flex items-center gap-3 flex-wrap text-[11px] ds-v2-riga"
                     >
                         {/* orario + countdown / badge in-play */}
                         <div className="flex flex-col min-w-[64px]">
@@ -227,7 +227,7 @@ export default function Board() {
     return (
         <div className="min-h-screen bg-background relative pb-16">
             <Helmet><title>Programma di oggi | Alpha Score</title></Helmet>
-            <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-30" />
+            <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-30 ds-v2-nascondi" />
 
             <nav className="border-b border-white/5 bg-black/50 backdrop-blur-xl sticky top-0 z-50">
                 <div className="container mx-auto px-6 h-16 flex items-center justify-between">
@@ -259,7 +259,7 @@ export default function Board() {
                 </div>
             </nav>
 
-            <main className="container mx-auto px-4 lg:px-6 py-8 relative z-10 max-w-5xl">
+            <main className="container mx-auto px-4 lg:px-6 py-8 relative z-10 max-w-5xl ds-v2-pagina">
                 <div className="mb-4">
                     <h1 className="font-display font-black text-2xl md:text-3xl tracking-tight">
                         Programma di <span className="text-primary">oggi</span>
@@ -270,7 +270,7 @@ export default function Board() {
                 </div>
 
                 {/* tab sport + stato canale per-sport */}
-                <div className="flex items-stretch gap-1 border-b border-white/5 mb-3">
+                <div className="flex items-stretch gap-1 border-b border-white/5 mb-3 ds-v2-tabbar">
                     {SPORT_TABS.map(t => {
                         const st = t.key === 'calcio' ? calcioStatus : tennisStatus;
                         return (
@@ -279,7 +279,7 @@ export default function Board() {
                                 type="button"
                                 onClick={() => setSport(t.key)}
                                 aria-pressed={sport === t.key}
-                                className={`px-3 py-1.5 -mb-px rounded-t-lg text-xs font-bold border-b-2 transition-colors ${
+                                className={`ds-v2-tab px-3 py-1.5 -mb-px rounded-t-lg text-xs font-bold border-b-2 transition-colors ${
                                     sport === t.key
                                         ? 'border-primary text-white bg-white/[0.06]'
                                         : 'border-transparent text-muted-foreground hover:text-white hover:bg-white/[0.03]'

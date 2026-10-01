@@ -746,3 +746,79 @@
 [data-shell="v2"] [data-nav-legacy] {
     display: none !important;
 }
+
+/* ============================================================================
+   GUSCIO V2 — veste delle PAGINE (fasi 2-7). Regola di casa: ogni regola qui
+   sotto vale SOLO dentro il guscio acceso ([data-shell="v2"]). Le classi
+   .ds-v2-* aggiunte alle pagine sono INERTI con ui.shell='off': l'app di oggi
+   resta identica anche a vista. Specificita' sopra le utility Tailwind delle
+   pagine; !important solo dove Tailwind usa selettori composti (space-y-*).
+   ============================================================================ */
+
+/* comuni */
+[data-shell="v2"] .ds-v2-nascondi {
+    display: none;
+}
+
+[data-shell="v2"] .ds-v2-pagina {
+    max-width: 1280px;
+    padding-top: 20px;
+}
+
+[data-shell="v2"] .ds-v2-vuoto {
+    background: hsl(var(--card));
+    border: 1px dashed hsl(var(--border));
+    border-radius: 10px;
+    box-shadow: none;
+    backdrop-filter: none;
+}
+
+[data-shell="v2"] .ds-v2-tabbar {
+    gap: 2px;
+    border-bottom-color: hsl(var(--border));
+}
+
+[data-shell="v2"] .ds-v2-tab {
+    border-radius: 0;
+    background: transparent;
+    padding: 8px 12px;
+    font-size: 12.5px;
+    font-weight: 600;
+}
+
+[data-shell="v2"] .ds-v2-tab[aria-pressed="true"],
+[data-shell="v2"] .ds-v2-tab[aria-selected="true"],
+[data-shell="v2"] .ds-v2-tab[data-state="active"] {
+    background: transparent;
+    color: hsl(var(--foreground));
+    border-bottom-color: hsl(var(--primary));
+}
+
+/* fase 2 — Programma del giorno: righe in tabella densa */
+[data-shell="v2"] .ds-v2-tabella {
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius);
+    background: hsl(var(--card));
+    overflow: hidden;
+}
+
+[data-shell="v2"] .ds-v2-tabella > * + * {
+    margin-top: 0 !important;
+}
+
+[data-shell="v2"] .ds-v2-riga {
+    border-width: 0 0 1px 0;
+    border-radius: 0;
+    border-color: hsl(var(--border) / 0.6);
+    background: transparent;
+    padding: 7px 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+[data-shell="v2"] .ds-v2-riga:last-child {
+    border-bottom-width: 0;
+}
+
+[data-shell="v2"] .ds-v2-riga:hover {
+    background: hsl(var(--glass) / 0.45);
+}
