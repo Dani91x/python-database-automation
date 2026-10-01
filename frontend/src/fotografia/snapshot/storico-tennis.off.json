@@ -19,8 +19,9 @@
     "Oggi",
     "7 giorni",
     "30 giorni",
+    "90 giorni",
     "Mese corrente",
-    "Ultimi 400 giorni",
+    "Tutto",
     "bot",
     "tutti",
     "Safe Strategy · tennis",
@@ -272,6 +273,7 @@
     "storico-periodo-oggi",
     "storico-periodo-7g",
     "storico-periodo-30g",
+    "storico-periodo-90g",
     "storico-periodo-mese",
     "storico-periodo-tutto",
     "storico-bot-tutti",
@@ -405,12 +407,17 @@
     },
     {
       "ruolo": "button",
+      "nome": "90 giorni",
+      "premuto": "false"
+    },
+    {
+      "ruolo": "button",
       "nome": "Mese corrente",
       "premuto": "false"
     },
     {
       "ruolo": "button",
-      "nome": "Ultimi 400 giorni",
+      "nome": "Tutto",
       "premuto": "false"
     },
     {
