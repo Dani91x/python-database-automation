@@ -259,5 +259,33 @@ def e_errore_di_rete(exc: BaseException) -> bool:
         if (isinstance(cur, RuntimeError)
                 and "RPC failed after" in str(cur) and "Network error" in str(cur)):
             return True
+        if _e_api_error_del_gateway(cur):
+            return True
         cur = cur.__cause__ or cur.__context__
     return False
+
+
+# 01/10 (runner calcio morto rc=1 alle 09:22:59): per ~3 minuti Supabase/
+# Cloudflare ha risposto con pagine HTML 520/525 ("SSL handshake failed").
+# postgrest non riesce a leggerle come JSON e solleva ``APIError`` con
+# ``code`` = codice HTTP del gateway e ``details`` = l'HTML: guasto di RETE,
+# non errore di programmazione. I codici PostgreSQL/PostgREST veri
+# (``PGRST202``, ``23514``, ``42501``, ``57014``...) restano NON di rete.
+_CODICI_GATEWAY = frozenset(range(500, 505)) | frozenset(range(520, 531))
+
+
+def _e_api_error_del_gateway(exc: BaseException) -> bool:
+    try:
+        from postgrest.exceptions import APIError
+    except Exception:  # noqa: BLE001 - libreria assente: non e' di rete
+        return False
+    if not isinstance(exc, APIError):
+        return False
+    try:
+        codice = int(str(getattr(exc, "code", "") or "").strip())
+    except ValueError:
+        codice = None
+    if codice in _CODICI_GATEWAY:
+        return True
+    return (str(getattr(exc, "message", "") or "") == "JSON could not be generated"
+            and "<!DOCTYPE html" in str(getattr(exc, "details", "") or ""))
