@@ -1,0 +1,206 @@
+﻿
+##### sintetiche
+[MASTER_ebfab2a] controlli attivi: 47 | flumine 2.13.11 | betfairlightweight 2.23.2 | codice bot 68702a0170e0 (9 file)
+[MASTER_ebfab2a] ESITO: 5 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+[MASTER_ebfab2a] TEMPO TOTALE: 26.6s (26.6 s) su 5 replay | obiettivo 300 s, tetto 600 s (CERTIFICA_TETTO_S)
+[CHIUSURA_COPERTURA] controlli attivi: 49 | flumine 2.13.11 | betfairlightweight 2.23.2 | codice bot 2715106f1526 (9 file)
+[CHIUSURA_COPERTURA] ESITO: 5 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+[CHIUSURA_COPERTURA] TEMPO TOTALE: 16.0s (16.0 s) su 5 replay | obiettivo 300 s, tetto 600 s (CERTIFICA_TETTO_S)
+('_synth_mike_prezzo_migliore', 'base', 'canale') CAMBIA:
+    P&L del replay           prima: P&L del replay: lordo +3.74 | commissione 0.19 (5.0%) | NETTO +3.55 EUR (non e' il metro della certificazione: il metro e' la condotta)
+                             dopo : P&L del replay: lordo +0.54 | commissione 0.03 (5.0%) | NETTO +0.51 EUR (non e' il metro della certificazione: il metro e' la condotta)
+    attivita' del servizio   prima: attivita' del servizio: canale_inviato x11, place_resting x9, state x8, fill_resting x8, place x2, no_fill x1, place_pending x1, settled x1
+                             dopo : attivita' del servizio: state x7, canale_inviato x3, place_resting x2, uscita_proposta x2, place x1, no_fill x1, fill_resting x1, ordine_sotto_minimo x1, uscita_proposta_decaduta x1, chiusura_parziale x1, settled x1
+    azioni                   prima: 11
+                             dopo : 3
+    decisioni                prima: 1617
+                             dopo : 1619
+    fill:                    prima: fill: 10 abbinamenti su 10 ordini per 43.74 EUR (prezzi [1.2, 1.44, 1.5, 1.6])
+                             dopo : fill: 2 abbinamenti su 2 ordini per 20.14 EUR (prezzi [1.44, 1.5])
+    ordini reali piazzati    prima: ordini reali piazzati: 11 | righe mike_trades scritte: 11
+                             dopo : ordini reali piazzati: 3 | righe mike_trades scritte: 3
+    righe per stato          prima: righe per stato: {'won': 2, 'error': 1, 'lost': 8}
+                             dopo : righe per stato: {'won': 1, 'error': 1, 'lost': 1}
+    stati                    prima: WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,FLAT,REENTRY_PENDING,REENTRY_OPEN,SETTLING,SETTLED
+                             dopo : WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVERED,LIVE_CLOSING,SETTLING,SETTLED
+    tick                     prima: 3236
+                             dopo : 3240
+('_synth_mike_reingresso', 'base', 'canale') CAMBIA:
+    P&L del replay           prima: P&L del replay: lordo +3.45 | commissione 0.17 (5.0%) | NETTO +3.28 EUR (non e' il metro della certificazione: il metro e' la condotta)
+                             dopo : P&L del replay: lordo +3.61 | commissione 0.18 (5.0%) | NETTO +3.43 EUR (non e' il metro della certificazione: il metro e' la condotta)
+    attivita' del servizio   prima: attivita' del servizio: canale_inviato x10, state x8, place_resting x8, fill_resting x7, place x2, no_fill x1, place_pending x1, settled x1
+                             dopo : attivita' del servizio: state x7, canale_inviato x6, place_resting x4, fill_resting x3, place x2, no_fill x1, place_pending x1, uscita_proposta x1, ordine_sotto_minimo x1, uscita_proposta_decaduta x1, settled x1
+    azioni                   prima: 10
+                             dopo : 6
+    fill:                    prima: fill: 9 abbinamenti su 9 ordini per 43.47 EUR (prezzi [1.2, 1.48, 1.5, 1.6])
+                             dopo : fill: 5 abbinamenti su 5 ordini per 42.7 EUR (prezzi [1.2, 1.48, 1.5, 1.6])
+    ordini reali piazzati    prima: ordini reali piazzati: 10 | righe mike_trades scritte: 10
+                             dopo : ordini reali piazzati: 6 | righe mike_trades scritte: 6
+    righe per stato          prima: righe per stato: {'won': 2, 'error': 1, 'lost': 7}
+                             dopo : righe per stato: {'won': 2, 'error': 1, 'lost': 3}
+('_synth_mike_reingresso_2gol', 'base', 'canale') CAMBIA:
+    P&L del replay           prima: P&L del replay: lordo +3.45 | commissione 0.17 (5.0%) | NETTO +3.28 EUR (non e' il metro della certificazione: il metro e' la condotta)
+                             dopo : P&L del replay: lordo +3.61 | commissione 0.18 (5.0%) | NETTO +3.43 EUR (non e' il metro della certificazione: il metro e' la condotta)
+    attivita' del servizio   prima: attivita' del servizio: canale_inviato x10, state x8, place_resting x8, fill_resting x7, place x2, no_fill x1, place_pending x1, settled x1
+                             dopo : attivita' del servizio: state x7, canale_inviato x6, place_resting x4, fill_resting x3, place x2, no_fill x1, place_pending x1, uscita_proposta x1, ordine_sotto_minimo x1, uscita_proposta_decaduta x1, settled x1
+    azioni                   prima: 10
+                             dopo : 6
+    fill:                    prima: fill: 9 abbinamenti su 9 ordini per 43.47 EUR (prezzi [1.2, 1.48, 1.5, 1.6])
+                             dopo : fill: 5 abbinamenti su 5 ordini per 42.7 EUR (prezzi [1.2, 1.48, 1.5, 1.6])
+    ordini reali piazzati    prima: ordini reali piazzati: 10 | righe mike_trades scritte: 10
+                             dopo : ordini reali piazzati: 6 | righe mike_trades scritte: 6
+    righe per stato          prima: righe per stato: {'won': 2, 'error': 1, 'lost': 7}
+                             dopo : righe per stato: {'won': 2, 'error': 1, 'lost': 3}
+('_synth_mike_ultimo_ingresso', 'base', 'canale') CAMBIA:
+    P&L del replay           prima: P&L del replay: lordo +0.33 | commissione 0.02 (5.0%) | NETTO +0.31 EUR (non e' il metro della certificazione: il metro e' la condotta)
+                             dopo : P&L del replay: lordo +0.36 | commissione 0.02 (5.0%) | NETTO +0.34 EUR (non e' il metro della certificazione: il metro e' la condotta)
+    attivita' del servizio   prima: attivita' del servizio: state x8, canale_inviato x6, place_resting x4, fill_resting x3, place x2, pre_cycle x1, veto_under_calibrata x1, no_fill x1, settled x1
+                             dopo : attivita' del servizio: state x9, canale_inviato x5, place_resting x3, place x2, fill_resting x2, pre_cycle x1, veto_under_calibrata x1, no_fill x1, uscita_proposta x1, ordine_sotto_minimo x1, uscita_proposta_decaduta x1, settled x1
+    azioni                   prima: 6
+                             dopo : 5
+    fill:                    prima: fill: 5 abbinamenti su 5 ordini per 40.34 EUR (prezzi [1.47, 1.48, 1.5])
+                             dopo : fill: 4 abbinamenti su 4 ordini per 40.28 EUR (prezzi [1.47, 1.48, 1.5])
+    ordini reali piazzati    prima: ordini reali piazzati: 6 | righe mike_trades scritte: 6
+                             dopo : ordini reali piazzati: 5 | righe mike_trades scritte: 5
+    righe per stato          prima: righe per stato: {'won': 2, 'lost': 3, 'error': 1}
+                             dopo : righe per stato: {'won': 2, 'lost': 2, 'error': 1}
+    stati                    prima: WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,FLAT,SETTLING,SETTLED
+                             dopo : WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVERED,SETTLING,SETTLED
+('_synth_mike_ultimo_ingresso_riprova', 'base', 'canale') CAMBIA:
+    P&L del replay           prima: P&L del replay: lordo +0.33 | commissione 0.02 (5.0%) | NETTO +0.31 EUR (non e' il metro della certificazione: il metro e' la condotta)
+                             dopo : P&L del replay: lordo +0.36 | commissione 0.02 (5.0%) | NETTO +0.34 EUR (non e' il metro della certificazione: il metro e' la condotta)
+    attivita' del servizio   prima: attivita' del servizio: state x8, canale_inviato x6, place_resting x4, fill_resting x3, place x2, pre_cycle x1, veto_under_calibrata x1, no_fill x1, settled x1
+                             dopo : attivita' del servizio: state x9, canale_inviato x5, place_resting x3, place x2, fill_resting x2, pre_cycle x1, veto_under_calibrata x1, no_fill x1, uscita_proposta x1, ordine_sotto_minimo x1, uscita_proposta_decaduta x1, settled x1
+    azioni                   prima: 6
+                             dopo : 5
+    fill:                    prima: fill: 5 abbinamenti su 5 ordini per 40.34 EUR (prezzi [1.47, 1.48, 1.5])
+                             dopo : fill: 4 abbinamenti su 4 ordini per 40.28 EUR (prezzi [1.47, 1.48, 1.5])
+    ordini reali piazzati    prima: ordini reali piazzati: 6 | righe mike_trades scritte: 6
+                             dopo : ordini reali piazzati: 5 | righe mike_trades scritte: 5
+    righe per stato          prima: righe per stato: {'won': 2, 'lost': 3, 'error': 1}
+                             dopo : righe per stato: {'won': 2, 'lost': 2, 'error': 1}
+    stati                    prima: WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,FLAT,SETTLING,SETTLED
+                             dopo : WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVERED,SETTLING,SETTLED
+##### tutti
+[MASTER_ebfab2a] controlli attivi: 47 | flumine 2.13.11 | betfairlightweight 2.23.2 | codice bot 68702a0170e0 (9 file)
+[MASTER_ebfab2a] ESITO: 26 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+[MASTER_ebfab2a] TEMPO TOTALE: 8m53.6s (533.6 s) su 26 replay | obiettivo 300 s, tetto 600 s (CERTIFICA_TETTO_S)
+[CHIUSURA_COPERTURA] controlli attivi: 49 | flumine 2.13.11 | betfairlightweight 2.23.2 | codice bot 2715106f1526 (9 file)
+[CHIUSURA_COPERTURA] ESITO: 26 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+[CHIUSURA_COPERTURA] TEMPO TOTALE: 11m59.8s (719.8 s) su 26 replay | obiettivo 300 s, tetto 600 s (CERTIFICA_TETTO_S)
+('35760084', 'base', 'canale') IDENTICO
+('35760084', 'bot-fermo', 'canale') IDENTICO
+('35760084', 'cap-stretto', 'canale') IDENTICO
+('35760084', 'cashout-dopo-copertura', 'canale') IDENTICO
+('35760084', 'cashout-globale', 'canale') IDENTICO
+('35760084', 'chiuso-fuori-app', 'coda') IDENTICO
+('35760084', 'chiusura-abbinata-in-parte', 'canale') CAMBIA:
+    attivita' del servizio   prima: attivita' del servizio: uscita_proposta x12, uscita_proposta_decaduta x10, state x7, canale_inviato x5, place_resting x3, flusso_interrotto x3, flusso_interrotto_senza_rest x3, loss_exit_deciso x3, place x2, feed_line_missing x2, fill_resting x1, skip x1, no_fill x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, mercato_deciso x1, settled x1
+                             dopo : attivita' del servizio: uscita_proposta x18, uscita_proposta_decaduta x10, state x7, canale_inviato x5, place_resting x3, flusso_interrotto x3, flusso_interrotto_senza_rest x3, loss_exit_deciso x3, place x2, feed_line_missing x2, fill_resting x1, skip x1, no_fill x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, mercato_deciso x1, settled x1
+('35760084', 'copertura-legacy', 'canale') IDENTICO
+('35760084', 'copertura-rifiutata', 'canale') IDENTICO
+('35760084', 'copertura-rifiutata-legacy', 'canale') CAMBIA:
+    attivita' del servizio   prima: attivita' del servizio: cover x1939, uscita_proposta x14, uscita_proposta_decaduta x13, state x9, canale_inviato x5, skip x5, mercato_sospeso x5, place_resting x3, no_fill x3, flusso_interrotto x3, flusso_interrotto_senza_rest x3, loss_exit_deciso x3, place x1, feed_line_missing x1, cancel_richiesto x1, cancel_esito x1, cancel x1, place_pending x1, error x1, mercato_deciso x1
+                             dopo : attivita' del servizio: cover x1939, uscita_proposta x15, uscita_proposta_decaduta x13, state x9, canale_inviato x5, skip x5, mercato_sospeso x5, place_resting x3, no_fill x3, flusso_interrotto x3, flusso_interrotto_senza_rest x3, loss_exit_deciso x3, place x1, feed_line_missing x1, cancel_richiesto x1, cancel_esito x1, cancel x1, place_pending x1, error x1, mercato_deciso x1
+('35760084', 'esiti-ignoti', 'canale') IDENTICO
+('35760084', 'feed-stantio', 'canale') IDENTICO
+('35760084', 'fermo-copertura', 'canale') IDENTICO
+('35760084', 'firma-dopo-gol-decisivo', 'canale') CAMBIA:
+    P&L del replay           prima: P&L del replay: lordo -1.73 | commissione 0.41 (5.0%) | NETTO -2.14 EUR (non e' il metro della certificazione: il metro e' la condotta)
+                             dopo : P&L del replay: lordo -1.63 | commissione 0.42 (5.0%) | NETTO -2.05 EUR (non e' il metro della certificazione: il metro e' la condotta)
+    attivita' del servizio   prima: attivita' del servizio: uscita_proposta x12, state x9, uscita_proposta_decaduta x9, canale_inviato x7, place x3, place_resting x3, no_fill x3, flusso_interrotto x3, flusso_interrotto_senza_rest x3, loss_exit_deciso x3, feed_line_missing x1, skip x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, mercato_deciso x1, uscita_approvata x1, replay_firma_dopo_gol x1, uscita_eseguita_su_approvazione x1
+                             dopo : attivita' del servizio: uscita_proposta x12, state x9, uscita_proposta_decaduta x9, canale_inviato x8, place x4, place_resting x3, no_fill x3, flusso_interrotto x3, flusso_interrotto_senza_rest x3, loss_exit_deciso x3, feed_line_missing x1, skip x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, mercato_deciso x1, uscita_approvata x1, replay_firma_dopo_gol x1, uscita_eseguita_su_approvazione x1
+    azioni                   prima: 8
+                             dopo : 9
+    decisioni                prima: 5853
+                             dopo : 5849
+    fill:                    prima: fill: 4 abbinamenti su 3 ordini per 35.07 EUR (prezzi [1.33, 1.34, 1.35, 1.71])
+                             dopo : fill: 4 abbinamenti su 4 ordini per 35.17 EUR (prezzi [1.33, 1.34, 1.71])
+    ordini reali piazzati    prima: ordini reali piazzati: 7 | righe mike_trades scritte: 7
+                             dopo : ordini reali piazzati: 8 | righe mike_trades scritte: 8
+    righe per stato          prima: righe per stato: {'lost': 2, 'error': 4, 'won': 1}
+                             dopo : righe per stato: {'lost': 2, 'error': 4, 'won': 2}
+    tick                     prima: 56117
+                             dopo : 56089
+('35760084', 'firma-dopo-gol-decisivo-senza-chiusura', 'canale') CAMBIA:
+    P&L del replay           prima: P&L del replay: lordo -1.73 | commissione 0.41 (5.0%) | NETTO -2.14 EUR (non e' il metro della certificazione: il metro e' la condotta)
+                             dopo : P&L del replay: lordo -1.63 | commissione 0.42 (5.0%) | NETTO -2.05 EUR (non e' il metro della certificazione: il metro e' la condotta)
+    attivita' del servizio   prima: attivita' del servizio: uscita_proposta x12, state x9, uscita_proposta_decaduta x9, canale_inviato x7, place x3, place_resting x3, no_fill x3, flusso_interrotto x3, flusso_interrotto_senza_rest x3, loss_exit_deciso x3, feed_line_missing x1, skip x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, mercato_deciso x1, uscita_approvata x1, replay_firma_dopo_gol x1, uscita_eseguita_su_approvazione x1
+                             dopo : attivita' del servizio: uscita_proposta x12, state x9, uscita_proposta_decaduta x9, canale_inviato x8, place x4, place_resting x3, no_fill x3, flusso_interrotto x3, flusso_interrotto_senza_rest x3, loss_exit_deciso x3, feed_line_missing x1, skip x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, mercato_deciso x1, uscita_approvata x1, replay_firma_dopo_gol x1, uscita_eseguita_su_approvazione x1
+    azioni                   prima: 8
+                             dopo : 9
+    decisioni                prima: 5851
+                             dopo : 5847
+    fill:                    prima: fill: 4 abbinamenti su 3 ordini per 35.07 EUR (prezzi [1.33, 1.34, 1.35, 1.71])
+                             dopo : fill: 4 abbinamenti su 4 ordini per 35.17 EUR (prezzi [1.33, 1.34, 1.71])
+    ordini reali piazzati    prima: ordini reali piazzati: 7 | righe mike_trades scritte: 7
+                             dopo : ordini reali piazzati: 8 | righe mike_trades scritte: 8
+    righe per stato          prima: righe per stato: {'open': 3, 'error': 4}
+                             dopo : righe per stato: {'open': 4, 'error': 4}
+    tick                     prima: 56117
+                             dopo : 56089
+('35760084', 'ko-green-parziale', 'canale') CAMBIA:
+    attivita' del servizio   prima: attivita' del servizio: uscita_proposta x12, uscita_proposta_decaduta x10, state x7, canale_inviato x5, place_resting x3, flusso_interrotto x3, flusso_interrotto_senza_rest x3, loss_exit_deciso x3, place x2, feed_line_missing x2, no_fill x1, skip x1, fill_resting x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, mercato_deciso x1, settled x1
+                             dopo : attivita' del servizio: uscita_proposta x18, uscita_proposta_decaduta x10, state x7, canale_inviato x5, place_resting x3, flusso_interrotto x3, flusso_interrotto_senza_rest x3, loss_exit_deciso x3, place x2, feed_line_missing x2, no_fill x1, skip x1, fill_resting x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, mercato_deciso x1, settled x1
+('35760084', 'lettura-dati-ko', 'canale') IDENTICO
+('35760084', 'punteggio-ko', 'canale') IDENTICO
+('35760084', 'riavvio', 'canale') IDENTICO
+('35760084', 'rifiuti-betfair', 'canale') IDENTICO
+('35760084', 'senza-seconda-puntata', 'canale') IDENTICO
+('35760084', 'taker', 'canale') IDENTICO
+('35760084', 'taker-esiti-ignoti', 'canale') IDENTICO
+('35760084', 'uscite-automatiche', 'canale') CAMBIA:
+    P&L del replay           prima: P&L del replay: lordo -1.99 | commissione 0.30 (5.0%) | NETTO -2.29 EUR (non e' il metro della certificazione: il metro e' la condotta)
+                             dopo : P&L del replay: lordo -2.15 | commissione 0.30 (5.0%) | NETTO -2.45 EUR (non e' il metro della certificazione: il metro e' la condotta)
+    attivita' del servizio   prima: attivita' del servizio: canale_inviato x13, state x9, place x6, no_fill x6, place_resting x3, flusso_interrotto x2, feed_line_missing x1, skip x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, flusso_interrotto_senza_rest x1, loss_exit_deciso x1, mercato_deciso x1, settled x1
+                             dopo : attivita' del servizio: state x8, canale_inviato x7, place x4, place_resting x3, flusso_interrotto x3, flusso_interrotto_senza_rest x3, no_fill x2, feed_line_missing x2, skip x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, loss_exit_deciso x1, uscita_proposta x1, chiusura_parziale x1, mercato_deciso x1, settled x1
+    azioni                   prima: 14
+                             dopo : 8
+    decisioni                prima: 5825
+                             dopo : 5852
+    fill:                    prima: fill: 7 abbinamenti su 6 ordini per 34.81 EUR (prezzi [1.33, 1.63, 1.64, 1.65, 1.71, 8.8, 9.6])
+                             dopo : fill: 5 abbinamenti su 4 ordini per 34.65 EUR (prezzi [1.33, 1.64, 1.65, 1.71, 8.8])
+    motivi dichiarati        prima: motivi dichiarati: runner_annullato x4 | runner_scaduto x2 | punteggio_assente_tornato x1
+                             dopo : motivi dichiarati: runner_scaduto x2 | punteggio_assente_tornato x1
+    ordini reali piazzati    prima: ordini reali piazzati: 13 | righe mike_trades scritte: 13
+                             dopo : ordini reali piazzati: 7 | righe mike_trades scritte: 7
+    righe per stato          prima: righe per stato: {'lost': 2, 'error': 7, 'won': 4}
+                             dopo : righe per stato: {'lost': 2, 'error': 3, 'won': 2}
+    stati                    prima: WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PENDING,LIVE_COVERED,LIVE_CLOSING,FLAT,SETTLING,SETTLED
+                             dopo : WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PENDING,LIVE_COVERED,LIVE_CLOSING,SETTLING,SETTLED
+    tick                     prima: 55589
+                             dopo : 56031
+('35760084', 'uscite-in-perdita-firmate', 'canale') CAMBIA:
+    P&L del replay           prima: P&L del replay: lordo -1.92 | commissione 0.31 (5.0%) | NETTO -2.23 EUR (non e' il metro della certificazione: il metro e' la condotta)
+                             dopo : P&L del replay: lordo -2.05 | commissione 0.30 (5.0%) | NETTO -2.35 EUR (non e' il metro della certificazione: il metro e' la condotta)
+    attivita' del servizio   prima: attivita' del servizio: state x11, canale_inviato x8, place x5, place_resting x3, flusso_interrotto x3, flusso_interrotto_senza_rest x3, no_fill x2, feed_line_missing x1, skip x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, loss_exit_deciso x1, uscita_proposta x1, uscita_approvata x1, replay_firma_utente x1, uscita_eseguita_su_approvazione x1, mercato_deciso x1, settled x1
+                             dopo : attivita' del servizio: state x8, canale_inviato x7, place x4, place_resting x3, flusso_interrotto x3, flusso_interrotto_senza_rest x3, no_fill x2, feed_line_missing x2, uscita_proposta x2, replay_firma_utente x2, skip x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, loss_exit_deciso x1, uscita_approvata x1, uscita_eseguita_su_approvazione x1, chiusura_parziale x1, mercato_deciso x1
+    azioni                   prima: 9
+                             dopo : 8
+    decisioni                prima: 5847
+                             dopo : 5852
+    fill:                    prima: fill: 5 abbinamenti su 5 ordini per 34.88 EUR (prezzi [1.33, 1.63, 1.71, 8.8])
+                             dopo : fill: 4 abbinamenti su 4 ordini per 34.75 EUR (prezzi [1.33, 1.63, 1.71, 8.8])
+    ordini reali piazzati    prima: ordini reali piazzati: 8 | righe mike_trades scritte: 8
+                             dopo : ordini reali piazzati: 7 | righe mike_trades scritte: 7
+    righe per stato          prima: righe per stato: {'lost': 2, 'error': 3, 'won': 3}
+                             dopo : righe per stato: {'lost': 2, 'error': 3, 'won': 2}
+    stati                    prima: WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PENDING,LIVE_COVERED,LIVE_CLOSING,FLAT,SETTLING,SETTLED
+                             dopo : WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PENDING,LIVE_COVERED,LIVE_CLOSING,SETTLING,SETTLED
+    tick                     prima: 55966
+                             dopo : 56023
+##### coperture
+[MASTER_ebfab2a] controlli attivi: 47 | flumine 2.13.11 | betfairlightweight 2.23.2 | codice bot 68702a0170e0 (9 file)
+[MASTER_ebfab2a] ESITO: 4 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+[MASTER_ebfab2a] TEMPO TOTALE: 1m40.9s (100.9 s) su 4 replay | obiettivo 300 s, tetto 600 s (CERTIFICA_TETTO_S)
+[CHIUSURA_COPERTURA] controlli attivi: 49 | flumine 2.13.11 | betfairlightweight 2.23.2 | codice bot 2715106f1526 (9 file)
+[CHIUSURA_COPERTURA] ESITO: 4 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+[CHIUSURA_COPERTURA] TEMPO TOTALE: 2m39.2s (159.2 s) su 4 replay | obiettivo 300 s, tetto 600 s (CERTIFICA_TETTO_S)
+('35760084', 'copertura-rifiutata', 'canale') IDENTICO
+('35760084', 'copertura-rifiutata', 'coda') IDENTICO
+('35760084', 'copertura-rifiutata-legacy', 'canale') CAMBIA:
+    attivita' del servizio   prima: attivita' del servizio: cover x1939, uscita_proposta x14, uscita_proposta_decaduta x13, state x9, canale_inviato x5, skip x5, mercato_sospeso x5, place_resting x3, no_fill x3, flusso_interrotto x3, flusso_interrotto_senza_rest x3, loss_exit_deciso x3, place x1, feed_line_missing x1, cancel_richiesto x1, cancel_esito x1, cancel x1, place_pending x1, error x1, mercato_deciso x1
+                             dopo : attivita' del servizio: cover x1939, uscita_proposta x15, uscita_proposta_decaduta x13, state x9, canale_inviato x5, skip x5, mercato_sospeso x5, place_resting x3, no_fill x3, flusso_interrotto x3, flusso_interrotto_senza_rest x3, loss_exit_deciso x3, place x1, feed_line_missing x1, cancel_richiesto x1, cancel_esito x1, cancel x1, place_pending x1, error x1, mercato_deciso x1
+('35760084', 'copertura-rifiutata-legacy', 'coda') CAMBIA:
+    attivita' del servizio   prima: attivita' del servizio: cover x1910, uscita_proposta x15, uscita_proposta_decaduta x14, state x9, skip x6, mercato_sospeso x6, place_resting x3, flusso_interrotto x3, flusso_interrotto_senza_rest x3, loss_exit_deciso x3, rilettura_alla_riapertura x2, ordine_scaduto_alla_sospensione x2, place_rifiutato x2, place x1, feed_line_missing x1, resting_in_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, error x1
+                             dopo : attivita' del servizio: cover x1910, uscita_proposta x16, uscita_proposta_decaduta x14, state x9, skip x6, mercato_sospeso x6, place_resting x3, flusso_interrotto x3, flusso_interrotto_senza_rest x3, loss_exit_deciso x3, rilettura_alla_riapertura x2, ordine_scaduto_alla_sospensione x2, place_rifiutato x2, place x1, feed_line_missing x1, resting_in_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, error x1
