@@ -1,0 +1,10 @@
+M1 esenzione reduces_liability rimessa: ROSSO (atteso)  1 failed, 20 passed in 2.25s
+M2 floor della punta a 0,50 rimesso: ROSSO (atteso)  3 failed, 18 passed in 3.05s
+M3 equivalente tick al piu' vicino (limite peggiore): ROSSO (atteso)  1 failed, 20 passed in 1.30s
+M4 eventi NON riportati al chiesto: ROSSO (atteso)  1 failed, 20 passed in 1.30s
+M5 nessun ripiego ai 0,50: ROSSO (atteso)  1 failed, 20 passed in 1.24s
+M6 taglia rifiutata ritentata identica: ROSSO (atteso)  1 failed, 20 passed in 1.27s
+M7 floor del trim tolto (0,50 non verificato): ROSSO (atteso)  3 failed, 18 passed in 1.33s
+M8 regola d'ingresso della macchina tolta: ROSSO (atteso)  1 failed, 20 passed in 1.33s
+ripristino: ['21 passed in 0.60s']
+ESITO: tutte rosse

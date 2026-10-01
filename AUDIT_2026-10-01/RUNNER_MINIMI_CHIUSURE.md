@@ -2,22 +2,40 @@
 
 Delegato Opus. Worktree da master `aa5749a` (il worktree era su `ebfab2a`: portato a
 `aa5749a` con fast-forward, nessun commit). Niente commit, niente DB, nessun ordine vero.
-Consegna: `RUNNER_MINIMI_CHIUSURE.patch` (diff da master + 3 file nuovi), questo referto,
-`RUNNER_MINIMI_CHIUSURE_test_rossi.txt`, `falsifica_runner_minimi.py` + `_out.txt`,
-`replay/*_RUNNER_MINIMI.txt`.
+Consegna:
+- `RUNNER_MINIMI_CHIUSURE.patch`: `git diff aa5749a` piu' i 3 file nuovi, 39 file e 4167 righe. Master oggi e' a `569d633`, ma dopo `aa5749a` ha solo commit di docs: nessun file sotto `Betfair/` e' toccato, quindi la patch si applica;
+- questo referto;
+- `RUNNER_MINIMI_CHIUSURE_xfail.txt`;
+- `RUNNER_MINIMI_REPERTO_3_DIVERGENZA_STRATEGIA.md`, da portare all'utente;
+- `falsifica_runner_minimi.py` con il suo `_out.txt`;
+- `replay/*_RUNNER_MINIMI.txt`.
 
 ## 0. Stato in una riga
 
 Il motore ordini del runner non manda piu' a Betfair un ordine sotto il minimo .it, chiusure
-comprese. Sotto il minimo fa, in quest'ordine: l'equivalente sull'altra selezione, poi il
-place-and-trim, altrimenti un rifiuto esplicito. I 21 test nuovi sono verdi e le 8
-falsificazioni sono tutte rosse. I replay di Omega e Safe sono identici ai referti
-precedenti.
+comprese. Sotto il minimo prova, in quest'ordine: l'equivalente sull'altra selezione, poi il
+place-and-trim; se nessuno dei due e' possibile rifiuta esplicitamente.
 
-**Restano 121 test vecchi ROSSI** (elenco in `RUNNER_MINIMI_CHIUSURE_test_rossi.txt`, cause
-al par. 6). Codificano i minimi superati: punta 2,00 col passo 0,50, banca 0,50,
-place-and-trim per importi fra 1 e 2 EUR. Su tua indicazione («Niente altro: consegna») non
-li ho riscritti.
+- **Suite ufficiale** (`Betfair/stream/tests Betfair/safe_strategy Betfair/omega`) piu'
+  tennis e Mike: **9089 passed, 0 failed, 9 xfailed** (8 del reperto 1 e uno che c'era gia').
+- **`Betfair/` intera**: 9221 passed e 9 xfailed. Resta **1 rosso che c'e' gia' su master**,
+  verificato su un export pulito di `aa5749a`: `omega/tests/test_ref_strategia_per_attore_
+  r1::test_omega_piazza_con_omega_come_prima`. Fallisce solo quando gira dopo `Betfair/mike`,
+  perche' un test di Mike lascia sporco un ref di strategia globale; da solo e nella suite
+  ufficiale e' verde. Ce n'e' poi uno dipendente dall'ordine, anche questo gia' su master:
+  `safe_strategy/tests/test_audit::test_l4_la_guardia_combo...`. Da solo fallisce anche su
+  master; nelle suite intere e' verde.
+- **Riallineamento dei test**: i 121 test che codificavano i minimi superati (punta 2,00 col
+  passo 0,50, banca 0,50, porta-al-minimo del tennis a 2,00) sono stati RIALLINEATI. Ho
+  cambiato solo i numeri del listino, e in ogni file c'e' la riga di motivo «minimi .it
+  definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50».
+- **Xfail del reperto 1**: le CONDOTTE diventate impossibili per legge (chiusure esatte con
+  resto sotto 0,50, nei bot tennis) sono xfail col motivo `XFAIL_REPERTO_1`, par. 8.
+- **Comportamento dei bot**: nessun bot cambia comportamento per far passare un test.
+- **Test nuovi e falsificazione**: i 21 test nuovi sono verdi; rifatta dopo il
+  riallineamento, le 8 mutazioni sono ancora tutte rosse.
+- **Replay**: Omega e Safe sono identici ai referti precedenti. I due profili rapidi sulla
+  registrazione vera sono verdi (`safe_base` e `safe_tennis`, scenario R8).
 
 ## 1. La causa
 
@@ -92,8 +110,7 @@ banca equivalente al tick in giu'. La size copre esatto l'esito sfavorevole del 
 | test aggiornati (vecchie regole) | `test_live_order_build`, `test_submin`, `test_submin_nucleo`, `test_submin_contratto_chiamanti`, `test_motore_ordini_2026_09_24`, `test_live_order_worker`, `test_cashout_pro`, Safe `test_audit`/`test_cert`/`test_execution`/`test_p_blocco3`/`test_safe_kill_switch_rest_o1`, Omega `test_place_and_trim`/`test_ref_strategia`. Nei test di LOGICA delle uscite con importi minuscoli (Safe `test_bot_service` x3, `test_audit` x1, Omega `test_omega_audit` x3, `test_omega_greenup` x2) ho isolato la logica dai minimi con la manopola esistente `SAFE_MIN_SIZE_LIVE=0.01` (commento in ogni test) |
 | `stream/tests/test_runner_minimi_chiusure_2026_10_01.py` (nuovo) | 21 test, par. 5 |
 
-NB: parte di questi aggiornamenti risale alla prima correzione (banca 1,00, punta 2,00).
-Dopo la terza alcuni sono di nuovo rossi e stanno nell'elenco del par. 6.
+NB: tutti i test della tabella sopra sono poi stati riallineati ai minimi definitivi (par. 6).
 
 ## 4. Ordine chiesto -> verdetto -> ordine mandato
 
@@ -139,37 +156,71 @@ Dopo la terza alcuni sono di nuovo rossi e stanno nell'elenco del par. 6.
   - M8: regola d'ingresso della macchina tolta.
 
   Al primo giro M3 e M7 erano VERDI: ho aggiunto il caso 0,30 @12 e corretto la mutazione M7.
-- **Suite ufficiale** (`Betfair/stream/tests Betfair/safe_strategy Betfair/omega`):
-  - prima: 6728 passed, 31 skipped, 1 xfailed;
-  - dopo i minimi intermedi (banca 1,00, punta 2,00): 6755 passed, 0 failed;
-  - stato finale coi minimi definitivi: 79 rossi qui.
-- **Tennis + Mike** (`tennis_live/tests`, `tennis_scalper/tests`, `mike`): prima 2337 passed;
-  finale 41 rossi tennis e 2 rossi Mike.
-- Totale ultimo giro completo: 131 failed su 9092. Di questi 10 erano miei (oggi verdi):
-  restano i **121 dell'elenco**.
+- **Suite ufficiale piu' tennis e Mike** (`Betfair/stream/tests Betfair/safe_strategy
+  Betfair/omega Betfair/stream/tennis_live/tests Betfair/stream/tennis_scalper/tests
+  Betfair/mike`):
+  - prima del lavoro: 6728 passed nella suite ufficiale e 2337 passed fra tennis e Mike;
+  - **finale: 9089 passed, 0 failed, 31 skipped, 9 xfailed.**
+- **`Betfair/` intera**: 9221 passed, 9 xfailed, 1 failed. Il rosso c'e' gia' su master
+  (par. 0).
 
-## 6. I 121 test rossi: perche' (nessuno e' un errore del codice nuovo, da confermare)
+## 6. Il riallineamento dei 121 test (fatto il 01/10 sera)
 
-Tutti codificano i minimi superati:
-1. **Punta minima 2,00 col passo 0,50.** Ci rientrano i test con punte da 1,20/1,35/1,50
-   usate come «sotto il minimo» per esercitare il place-and-trim: oggi sono ordini diretti.
-   Sono la gran parte di `omega/test_place_and_trim` (15), `test_motore_ordini` (8),
-   `test_motore_submin_fok` (5), `test_motore_ritiro_pendente` (5), `test_live_order_worker`
-   (5), `test_cashout_pro` (6), `test_submin*` (11), Safe `test_execution`/`test_audit`/
-   `test_p_blocco3`. Lo stesso vale per i parametri attesi 2,0 / 2,5 / 3,5 di
-   `test_live_order_build`, `tennis_scalper/test_condotta_ordini` (12) e tennis D2 (porta al
-   minimo 2,00 -> ora 1,00).
-2. **Banca minima 0,50.** Attese 0,5 in tennis D2/condotta/payload.
-3. **Profilo rapido sulla registrazione vera**: `test_strada_unica_banco[safe_base]` e
-   `test_motore_ordini_tennis` (profilo `safe_tennis`). Lo scenario R8 «sotto il minimo»
-   manda un importo che oggi e' diretto, quindi le fasi parcheggiato/ridotto non compaiono
-   (`['inviato','inviato','abbinato']`).
-4. **Mike** `test_mike_d1ter_submin_fok_parita` (2): il motore Mike ha costanti sue (fuori
-   perimetro).
+**Regola seguita** (tua): cambio SOLO i numeri e le attese dei test che descrivono il
+listino, con la riga di motivo «minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim
+>= 0,50». Il comportamento dei bot non cambia per far passare un test. Le condotte diventate
+impossibili per legge vanno in xfail (reperto 1).
 
-Correzione proposta: test per test, portare gli importi «sotto il minimo» sotto 1,00 (fra
-0,50 e 1,00 per il place-and-trim) e le attese ai nuovi minimi. E' meccanico, stimo 2-3 ore
-per un delegato, piu' la tua revisione. Non l'ho fatto.
+**Schema dei cambi:**
+- l'importo «sotto il minimo» usato per esercitare il place-and-trim passa da 1,20 / 1,35 /
+  1,50 a **0,70 / 0,72 / 0,75 / 0,76**;
+- il parcheggio passa da 2,00 a **1,00**;
+- le riduzioni attese vengono ricalcolate (per esempio 2,00 - 1,35 = 0,65 diventa
+  1,00 - 0,75 = 0,25);
+- «porta al minimo» del tennis da 2,00 / 0,50 a **1,00 / 1,00**;
+- la punta e' legale al centesimo: le attese 2,0 / 3,5 diventano 2,3 / 3,7;
+- banca minima 1,00: 0,93 diventa 1,93;
+- i rifiuti per importo vanno a **0,99** (sotto il diretto) o a **0,49** (sotto il trim).
+
+File toccati, con il numero di test riallineati:
+
+| file | test |
+|---|---|
+| `stream/tests/test_live_order_build.py` | 3 |
+| `test_submin.py` | 3 |
+| `test_submin_contratto_chiamanti_2026_09_17.py` | 2 |
+| `test_submin_nucleo_2026_09_17.py` | 6 |
+| `test_audit_fixes_2026_07.py` (dutch: stake 4,00 su 6 gambe, cioe' circa 0,67 a gamba) | 1 |
+| `test_live_order_worker.py` | 5 |
+| `test_cashout_pro_2026_09_10.py` | 6 |
+| `test_motore_ordini_2026_09_24.py` | 8 |
+| `test_motore_ritiro_pendente_d1ter_2026_09_28.py` | 5 |
+| `test_motore_submin_fok_caso_b_d1ter_2026_09_28.py` | 5 |
+| `test_porta_banco_f4_2026_09_24.py` | 1 |
+| `test_strada_unica_banco_2026_09_25.py` | 2, piu' lo scenario R8 del banco (sotto) |
+| Safe `test_audit_2026_09_11.py` | 3 |
+| Safe `test_cert_2026_09_13.py` | 1 |
+| Safe `test_execution.py` | 4 |
+| Safe `test_p_blocco3_2026_09_28.py` | 6 (due rinominati: `..._072_diventa_100`, `..._sotto_050_diventa_100`) |
+| Omega `test_place_and_trim_2026_09_13.py` | 15 |
+| Omega `tests/test_ref_strategia_per_attore_r1_2026_09_24.py` | 1 |
+| tennis `test_cantiere_d2_minimo_e_specchio_2026_09_28.py` | 10 |
+| tennis `test_motore_ordini_tennis_2026_09_25.py` | 1 |
+| tennis `test_tennis_order_payload.py` | 2 |
+| tennis `test_tennis_cashout_amount_2026_09_10.py` (hedge 0,80 sotto la banca minima: amount 1,20) | 1 |
+| tennis `test_cantiere_d2_chiusure_esatte_2026_09_28.py` | 4 riallineati, 5 xfail |
+| tennis `test_cantiere_d2_chiusure_via_bot_2026_09_28.py` | 3 xfail |
+| `tennis_scalper/tests/test_condotta_ordini_2026_09_17.py` | 12 |
+| Mike `tests/test_mike_d1ter_submin_fok_parita_2026_09_28.py` (usa `safe_strategy.execution`; il motore di Mike non e' toccato) | 2 |
+| `Betfair/tests/test_consapevolezza_ordine_2026_09_16.py` (fuori dalla suite ufficiale, trovato col giro intero) | 1 |
+
+**Profili rapidi e scenario R8.** Lo scenario R8 sta nel codice del banco,
+`stream/backtest/trasporto_rapido.py`, in `_r8` e `_r8_tennis`. Prima mandava una punta da
+1,50 come «sotto il minimo»; ora manda 0,70 (calcio: place-and-trim con parcheggio 1,00;
+tennis: portata al minimo 1,00), con la riga di motivo. Anche il testo N/A di Omega e' allineato
+(«stake 1,00 pari al minimo .it 1,00»). Sono cambiati solo i numeri del listino: i controlli
+sono gli stessi. Esito: `test_strada_unica_banco[safe_base]` e
+`test_profilo_rapido_safe_tennis_sulla_registrazione_vera` VERDI.
 
 ## 7. Replay (banco comune, registrazione 35760084, `--data-dir ..\_live_raw`)
 
@@ -177,9 +228,14 @@ Durata dichiarata prima del lancio: sotto i 10 minuti ciascuno.
 
 | replay | durata | esito | confronto |
 |---|---|---|---|
-| `omega 35760084 --scenari base` | 34 s (banco 43,3 s) | OK, decisioni 438, azioni 0 | **identico** a `omega_base_BOT_MAI_CIECHI.txt` riga per riga; sola differenza una riga `CRITICAL:omega.service` del logger (cattura di stderr, non del referto) |
-| `safe_base 35760084 --trasporto entrambi` | 49 s (banco 43,5 s) | OK coda e canale, PARITA' RAGGIUNTA, 0 ordini | non esiste un referto precedente con lo stesso comando; nello scenario base Safe non piazza, quindi i minimi qui non sono sollecitati |
-| `safe_base 35760084 --scenari ordini-manuali --trasporto coda` | 34 s | OK | **identico** (0 righe diverse su 211) a `safe_base_ordini_manuali_coda_BOT_MAI_CIECHI.txt` |
+I replay sono stati rilanciati DOPO il riallineamento:
+
+| replay | durata | esito | confronto |
+|---|---|---|---|
+| `omega 35760084 --scenari base` | 41 s | OK, decisioni 438, azioni 0 | **identico** a `omega_base_BOT_MAI_CIECHI.txt` riga per riga; sola differenza una riga `CRITICAL:omega.service` del logger (cattura di stderr, non del referto) |
+| `safe_base 35760084 --trasporto entrambi` | 65 s | OK coda e canale, PARITA' RAGGIUNTA, 0 ordini | non esiste un referto precedente con lo stesso comando; nello scenario base Safe non piazza, quindi i minimi qui non sono sollecitati |
+| `safe_base 35760084 --scenari ordini-manuali --trasporto coda` | 51 s | OK | **identico** (0 righe diverse su 211) a `safe_base_ordini_manuali_coda_BOT_MAI_CIECHI.txt` |
+| profilo rapido `safe_base` (R1-R9) e profilo rapido `safe_tennis` | dentro la suite | VERDI | R8 riallineato ai minimi definitivi (par. 6) |
 
 Mike non l'ho rilanciato: il suo motore non e' toccato e il suo trasporto e' il canale, che
 qui e' coperto dai test del motore.
@@ -201,21 +257,38 @@ qui e' coperto dai test del motore.
      (Match Odds tennis = 2 esiti, quindi quasi sempre possibile), poi il trim solo con
      finale >= 0,50, sotto il residuo dichiarato. La guardia andrebbe nel nucleo
      (`advance_submin`, solo .it), cosi' vale per tutti.
-   - Stima: mezza giornata di codice, piu' i ~179 test che con la guardia nel nucleo erano
-     rossi (misurati su questo worktree prima di toglierla). Con i minimi definitivi a
-     1,00/0,50 il numero va rimisurato.
+   - Stima: mezza giornata di codice, piu' i test di quei bot. Con la guardia nel nucleo e i
+     minimi intermedi erano 179 rossi: va rimisurato coi minimi definitivi.
+   - **Test in xfail del reperto 1** (motivo `XFAIL_REPERTO_1` nel file; elenco in
+     `RUNNER_MINIMI_CHIUSURE_xfail.txt`). Descrivono chiusure «esatte» di pro/flb/swing col
+     resto ridotto sotto 0,50, cioe' IMPOSSIBILI per legge su .it:
+     - `test_cantiere_d2_chiusure_esatte::test_copertura_esatta_al_centesimo_nel_runner_paper`
+       (flb, pro, swing): resto 0,15;
+     - `::test_copertura_tutta_sotto_il_minimo_esatta`: punta 1,05 col passo 0,50, quindi
+       1,00 diretti piu' 0,05 di resto;
+     - `::test_spezza_esatta_la_somma_e_sempre_la_size[1.98-BACK]`: 1,50 piu' 0,48 di resto;
+     - `test_cantiere_d2_chiusure_via_bot::test_chiusura_esatta_guidata_dai_book_del_bot`
+       (flb, pro, swing): resto 0,15.
+
+     Fanno 8 xfail; il nono xfail della suite c'era gia'
+     (`test_svuota_le_cache_d2::test_reperto_azzera_canale_scan...`).
+   - Altri test di quei bot descrivono resti sotto 0,50 ma oggi PASSANO, perche' la funzione
+     pura non e' cambiata. Restano verdi e vanno ripresi col reperto: per esempio
+     `spezza_esatta` 2,02 -> 2,00 + 0,02 e 3,15 -> 3,00 + 0,15, e le coperture 0,20 del FLB.
+     Lo stesso vale per scalper, sniper e scalper tennis, che non sono stati sollecitati
+     dai minimi nuovi.
 2. **Mike** (`mike/engine.py`: `IT_BACK_MIN=2.0`, `IT_LAY_MIN=0.50`, `IT_BACK_STEP`,
    `SUBMIN_FLOOR`) ha costanti sue, che sono duplicati. Il delegato di Mike deve importare
    `Betfair.stream.trading.minimi_it` (`IT_MIN_BACK`, `IT_MIN_LAY`,
    `SUBMIN_IMPORTO_FINALE_MIN`, `IT_FLOOR_LEGGE`, `SOTTO_MINIMO_NON_PIAZZABILE`). Altri
    duplicati: nessuno nel runner. In `omega_market` restano `SUBMIN_PARK_PRICE_BACK/LAY`,
    costanti non usate dal piano.
-3. **Omega e Safe, uscite a importi minuscoli.**
-   - Il take-profit di Omega chiude una banca 5 @55 puntando circa 0,28 @1000. Su un Risultato
-     Esatto (piu' di 2 esiti) non c'e' equivalente, quindi oggi e' un rifiuto certo.
-   - Lo stesso vale per i residui sotto 0,50 delle uscite di Safe.
-   - In live erano gia' impossibili (Betfair li rifiutava); in paper venivano «eseguiti».
-     E' una divergenza da portare all'utente: e' strategia, non l'ho toccata.
+3. **Omega e Safe, uscite a importi minuscoli: divergenza di STRATEGIA, segnalata a parte**
+   in `RUNNER_MINIMI_REPERTO_3_DIVERGENZA_STRATEGIA.md`, da portare all'utente domani.
+   - Il take-profit di Omega a 1000 vale circa 0,28 EUR e i residui di Safe stanno sotto 0,50:
+     in live Betfair li rifiutava gia'.
+   - Le strategie NON sono toccate. I 9 test di logica relativi isolano i minimi con la
+     manopola `SAFE_MIN_SIZE_LIVE`.
 4. **Arrotondamento al tick e cross-matching.** L'equivalente al tick «mai peggiore» (1,06)
    potrebbe non abbinarsi dove il libro dell'altra selezione mostra il prezzo virtuale
    arrotondato contro di noi (1,05). Con un FOK il bot vede «scaduto» e ripete secondo la sua
