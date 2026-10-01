@@ -95,11 +95,11 @@ export default function SelectSport() {
             </Helmet>
 
             {/* Grid pattern backdrop */}
-            <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-30" />
+            <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-30 ds-v2-nascondi" />
 
             {/* Minimal top bar */}
             <nav className="border-b border-white/5 bg-black/50 backdrop-blur-xl sticky ds-v2-non-sticky top-0 z-50">
-                <div className="container mx-auto px-6 h-16 flex items-center justify-between">
+                <div className="container mx-auto px-6 h-16 flex items-center justify-between ds-v2-largo">
                     <div className="font-display font-black text-xl tracking-tighter">
                         AI <span className="text-primary">TERMINAL</span>
                     </div>
