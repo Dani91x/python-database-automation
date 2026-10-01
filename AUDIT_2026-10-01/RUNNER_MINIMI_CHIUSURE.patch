@@ -1,0 +1,2990 @@
+diff --git a/Betfair/omega/omega_market.py b/Betfair/omega/omega_market.py
+index 01aa1c0..ea93731 100644
+--- a/Betfair/omega/omega_market.py
++++ b/Betfair/omega/omega_market.py
+@@ -820,9 +820,15 @@ from Betfair.stream.trading import submin as _SUBMIN  # nucleo unico
+ 
+ SUBMIN_PARK_PRICE_BACK = 1000.0
+ SUBMIN_PARK_PRICE_LAY = 1.01
+-SUBMIN_MIN_BACK = 2.00      # .it
+-SUBMIN_MIN_LAY = 0.50       # .it
+-SUBMIN_ABS_MIN = 0.01       # floor assoluto del residuo dopo il taglio
++# 01/10/2026 (RUNNER_MINIMI_CHIUSURE): i minimi .it sono UNA definizione per tutto il repo
++# (``Betfair.stream.trading.minimi_it``: punta e banca 1,00 al centesimo): il nucleo
++# ``pianifica_submin`` parcheggia al minimo di quella tabella, e il taglio qui deve
++# partire dallo STESSO numero (prima 2,00/0,50 fissi: parcheggio e taglio sfasati).
++from Betfair.stream.live_order_build import SUBMIN_ABS_MIN_SIZE as SUBMIN_ABS_MIN  # noqa: E402
++from Betfair.stream.trading.minimi_it import (  # noqa: E402
++    IT_MIN_BACK as SUBMIN_MIN_BACK,
++    IT_MIN_LAY as SUBMIN_MIN_LAY,
++)
+ 
+ 
+ def _submin_best_prices(market_id: str, selection_id: int) -> tuple:
+@@ -994,6 +1000,13 @@ def place_submin_live(
+         return place_order_live(market_id=market_id, selection_id=selection_id, price=price,
+                                 size=target, event_id=event_id, side=side_l,
+                                 customer_ref=customer_ref, **ref_kw)
++    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): mai una riduzione sotto 0,50 EUR (floor di legge,
++    # ``SUBMIN_IMPORTO_FINALE_MIN``; il minimo diretto e' 1,00). RIFIUTO CERTO, nulla e' partito:
++    # ``PlaceRifiutato`` (non un esito ignoto), col codice interno.
++    try:
++        _SUBMIN.verifica_importo_finale(side_l, target)
++    except ValueError as ex:
++        raise PlaceRifiutato(str(ex), error_code="SOTTO_MINIMO_NON_PIAZZABILE") from None
+     target_tick = E.round_to_tick(float(price))
+     if not (E.MIN_PRICE <= target_tick <= E.MAX_PRICE):
+         raise ValueError(f"prezzo fuori scala Betfair: {price!r}")
+diff --git a/Betfair/omega/test_omega_audit_2026_09_11.py b/Betfair/omega/test_omega_audit_2026_09_11.py
+index 632536d..f06a049 100644
+--- a/Betfair/omega/test_omega_audit_2026_09_11.py
++++ b/Betfair/omega/test_omega_audit_2026_09_11.py
+@@ -903,7 +903,12 @@ def test_rev_h3_chiusura_in_perdita_e_exit_kind_loss():
+     assert db.get_trade(tr["id"])["meta"]["greenup"]["state"] == "done"
+ 
+ 
+-def test_rev_h3_take_profit_integrale_e_greenup_vero():
++def test_rev_h3_take_profit_integrale_e_greenup_vero(monkeypatch):
++    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): test di LOGICA dell'uscita, non dei minimi.
++    # Le chiusure qui sono sotto 1,00 EUR: su .it fuori dal canale sono un rifiuto certo
++    # (test_runner_minimi_chiusure_2026_10_01). Qui il minimo si azzera con la manopola
++    # gia' esistente SAFE_MIN_SIZE_LIVE per isolare la logica dai minimi.
++    monkeypatch.setenv("SAFE_MIN_SIZE_LIVE", "0.01")
+     db = _GDB(_control(status="idle"))
+     tr = _trade(db, price=55.0, size=5.0, score="1-0")
+     p = _gparams(greenup_settle_delay_s=0)
+@@ -1009,7 +1014,12 @@ def test_rev_m2_allarme_stale_anche_sulle_hedged():
+ 
+ 
+ # --- M3/M4: cash out manuale parziale ---
+-def test_rev_m3_exit_profit_del_parziale_dal_valore_pianificato():
++def test_rev_m3_exit_profit_del_parziale_dal_valore_pianificato(monkeypatch):
++    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): test di LOGICA dell'uscita, non dei minimi.
++    # Le chiusure qui sono sotto 1,00 EUR: su .it fuori dal canale sono un rifiuto certo
++    # (test_runner_minimi_chiusure_2026_10_01). Qui il minimo si azzera con la manopola
++    # gia' esistente SAFE_MIN_SIZE_LIVE per isolare la logica dai minimi.
++    monkeypatch.setenv("SAFE_MIN_SIZE_LIVE", "0.01")
+     from Betfair.omega.test_omega_service import FakeMarket as FM
+ 
+     class _M(FM):
+@@ -1035,7 +1045,12 @@ def test_rev_m3_exit_profit_del_parziale_dal_valore_pianificato():
+     assert "parziale" in opened["meta"]["exit_reason"].lower()
+ 
+ 
+-def test_rev_m4_parziale_da_liquidita_riconosciuto():
++def test_rev_m4_parziale_da_liquidita_riconosciuto(monkeypatch):
++    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): test di LOGICA dell'uscita, non dei minimi.
++    # Le chiusure qui sono sotto 1,00 EUR: su .it fuori dal canale sono un rifiuto certo
++    # (test_runner_minimi_chiusure_2026_10_01). Qui il minimo si azzera con la manopola
++    # gia' esistente SAFE_MIN_SIZE_LIVE per isolare la logica dai minimi.
++    monkeypatch.setenv("SAFE_MIN_SIZE_LIVE", "0.01")
+     from Betfair.omega.test_omega_service import FakeMarket as FM
+ 
+     class _M(FM):
+diff --git a/Betfair/omega/test_omega_greenup_2026_09_10.py b/Betfair/omega/test_omega_greenup_2026_09_10.py
+index dc6120e..60f30bf 100644
+--- a/Betfair/omega/test_omega_greenup_2026_09_10.py
++++ b/Betfair/omega/test_omega_greenup_2026_09_10.py
+@@ -336,7 +336,12 @@ def test_trigger_quota_tiene_con_modello_a_margine_ampio(monkeypatch, lambdas):
+ # ---------------------------------------------------------------------------
+ # TAKE-PROFIT
+ # ---------------------------------------------------------------------------
+-def test_take_profit_blocca_il_profitto_quasi_pieno(lambdas):
++def test_take_profit_blocca_il_profitto_quasi_pieno(lambdas, monkeypatch):
++    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): test di LOGICA dell'uscita, non dei minimi.
++    # Le chiusure qui sono sotto 1,00 EUR: su .it fuori dal canale sono un rifiuto certo
++    # (test_runner_minimi_chiusure_2026_10_01). Qui il minimo si azzera con la manopola
++    # gia' esistente SAFE_MIN_SIZE_LIVE per isolare la logica dai minimi.
++    monkeypatch.setenv("SAFE_MIN_SIZE_LIVE", "0.01")
+     db = _db_with_model()
+     tr = _trade(db)                                  # stake 5 → serve locked ≥ 4.5
+     p = _params(greenup_settle_delay_s=0)
+@@ -355,9 +360,14 @@ def test_take_profit_blocca_il_profitto_quasi_pieno(lambdas):
+     assert _closings(db, tr["id"])[0]["meta"]["exit_kind"] == "greenup"
+ 
+ 
+-def test_p_o1_green_up_integrale_col_fill_in_volo_e_greenup(lambdas):
++def test_p_o1_green_up_integrale_col_fill_in_volo_e_greenup(lambdas, monkeypatch):
+     """CANTIERE P (28/09, P-O1): all'INVIO il fill e' in volo (``pending_fill``)
+     e l'uscita e' comunque INTEGRALE (fraction 1.0): etichetta 'greenup'."""
++    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): test di LOGICA dell'uscita, non dei minimi.
++    # Le chiusure qui sono sotto 1,00 EUR: su .it fuori dal canale sono un rifiuto certo
++    # (test_runner_minimi_chiusure_2026_10_01). Qui il minimo si azzera con la manopola
++    # gia' esistente SAFE_MIN_SIZE_LIVE per isolare la logica dai minimi.
++    monkeypatch.setenv("SAFE_MIN_SIZE_LIVE", "0.01")
+     db = _db_with_model()
+     tr = _trade(db)
+     p = _params(greenup_settle_delay_s=0)
+diff --git a/Betfair/omega/test_place_and_trim_2026_09_13.py b/Betfair/omega/test_place_and_trim_2026_09_13.py
+index 928f52b..8a237a0 100644
+--- a/Betfair/omega/test_place_and_trim_2026_09_13.py
++++ b/Betfair/omega/test_place_and_trim_2026_09_13.py
+@@ -176,22 +176,34 @@ def test_un_importo_da_1_35_si_piazza_in_tre_passi(client, monkeypatch):
+     assert res.ok and res.size_matched == 1.35 and res.bet_id == "bet-2"
+ 
+ 
+-def test_anche_cinque_centesimi(client):
++def test_cinque_centesimi_mai_tentati(client):
++    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): la riduzione sotto 1,00 EUR (minimo
++    # commerciale .it; floor di legge 0,50) non si tenta mai. RIFIUTO CERTO prima di
++    # qualunque chiamata a Betfair (prima: parcheggio 2,00 e taglio di 1,95).
++    from Betfair.omega.omega_market import PlaceRifiutato
++
+     client.matched_finale = 0.05
+-    piazza(size=0.05)
+-    _, _, taglio = client.chiamate[1]
+-    assert taglio["sizeReduction"] == pytest.approx(1.95)
+-    assert client.passi() == ["place", "cancelOrders", "replaceOrders"]
++    with pytest.raises(PlaceRifiutato) as exc:
++        piazza(size=0.05)
++    assert exc.value.error_code == "SOTTO_MINIMO_NON_PIAZZABILE"
++    assert client.passi() == []
+ 
+ 
+ def test_sul_lay_il_minimo_e_il_parcheggio_sono_altri(client):
++    # 01/10/2026: la banca minima .it e' 1,00 (costante condivisa) e un importo finale
++    # sotto 1,00 non si riduce mai: una banca da 0,20 e' un rifiuto certo, nessuna
++    # chiamata (prima: parcheggio 0,50 @1,01 -> INVALID_BET_SIZE, poi INVALID_PROFIT_RATIO)
++    from Betfair.omega.omega_market import PlaceRifiutato
++
+     client.matched_finale = 0.20
+-    piazza(side="lay", size=0.20, price=1.48)
+-    _, _, park = client.chiamate[0]
+-    assert park["side"] == "LAY"
+-    assert park["limitOrder"]["size"] == 0.50 and park["limitOrder"]["price"] == 1.01
+-    _, _, taglio = client.chiamate[1]
+-    assert taglio["sizeReduction"] == pytest.approx(0.30)
++    with pytest.raises(PlaceRifiutato) as exc:
++        piazza(side="lay", size=0.20, price=1.48)
++    assert exc.value.error_code == "SOTTO_MINIMO_NON_PIAZZABILE"
++    assert client.passi() == []
++    # una banca da 1,20 e' sopra il minimo: ordine normale, nessun trucco
++    client.matched_finale = 1.20
++    piazza(side="lay", size=1.20, price=1.48)
++    assert client.passi() == ["place"]
+ 
+ 
+ def test_sopra_il_minimo_non_si_usa_nessun_trucco(client):
+diff --git a/Betfair/omega/tests/test_ref_strategia_per_attore_r1_2026_09_24.py b/Betfair/omega/tests/test_ref_strategia_per_attore_r1_2026_09_24.py
+index 57e1043..c9cbb99 100644
+--- a/Betfair/omega/tests/test_ref_strategia_per_attore_r1_2026_09_24.py
++++ b/Betfair/omega/tests/test_ref_strategia_per_attore_r1_2026_09_24.py
+@@ -104,8 +104,9 @@ def test_safe_sotto_minimo_il_parcheggio_porta_safe(client, monkeypatch):
+                         client.place.append({"customer_strategy_ref": customer_strategy_ref,
+                                              "customer_ref": customer_ref}) or {})
+     with pytest.raises(RuntimeError, match="IGNOTO al parcheggio"):
++        # 01/10/2026: importo finale >= 1,00 (sotto non si tenta piu' il place-and-trim)
+         SB._real_market.place_submin_live(market_id="1.10", selection_id=7, price=2.5,
+-                                          size=0.73, event_id="E1", side="back",
++                                          size=1.73, event_id="E1", side="back",
+                                           customer_ref="safe-t24", fill_or_kill=False,
+                                           best_back=2.5, best_lay=2.52)
+     assert client.place == [{"customer_strategy_ref": "safe", "customer_ref": "safe-t24"}]
+diff --git a/Betfair/safe_strategy/execution.py b/Betfair/safe_strategy/execution.py
+index 9a4ce06..f642a87 100644
+--- a/Betfair/safe_strategy/execution.py
++++ b/Betfair/safe_strategy/execution.py
+@@ -86,7 +86,11 @@ def _min_size_live(side: str = "back") -> float:
+             return max(0.0, float(raw))
+         except ValueError:
+             pass
+-    return 0.50 if str(side).lower() == "lay" else 2.0
++    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): UNA definizione dei minimi .it per tutto il
++    # repo, ``Betfair.stream.trading.minimi_it`` (punta e banca 1,00 al centesimo).
++    from Betfair.stream.trading.minimi_it import IT_MIN_BACK, IT_MIN_LAY
++
++    return float(IT_MIN_LAY) if str(side).lower() == "lay" else float(IT_MIN_BACK)
+ 
+ 
+ #: CANTIERE P (28/09): ``porta_al_minimo_apertura`` arriva con il cantiere D2
+@@ -732,8 +736,9 @@ def place(
+     tid = trade_id if trade_id is not None else _trade_id_from_ref(client_ref)
+ 
+     # --- sotto il minimo di PIAZZAMENTO? allora place-and-trim -------------------
+-    # Le CHIUSURE non c'entrano: Betfair accetta gia' gli ordini sotto minimo che
+-    # RIDUCONO una posizione (review C2), quindi passano dal percorso normale.
++    # 01/10/2026: anche le CHIUSURE (vedi ``sotto_minimo_chiusura`` piu' sotto):
++    # l'idea che Betfair accetti gli ordini sotto minimo che RIDUCONO una posizione
++    # (review C2) e' stata smentita dal rifiuto INVALID_BET_SIZE del 01/10.
+     min_live = _min_size_live(side)
+     is_closing = bool(meta.get("cashout") or meta.get("closes_trade_id"))
+     # CANTIERE P (28/09) - DECISIONE DELL'UTENTE per il TENNIS: un'APERTURA
+@@ -766,6 +771,15 @@ def place(
+                                   "nota": "apertura tennis sotto il minimo di Betfair "
+                                           "portata al minimo (decisione dell'utente)"})
+     sotto_minimo = bool(min_live > 0 and size < min_live - 1e-9 and not is_closing)
++    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): l'ipotesi "Betfair accetta le chiusure sotto
++    # il minimo" (review C2) e' FALSA: una chiusura sotto il minimo viene rifiutata
++    # INVALID_BET_SIZE. Sul CANALE decide il motore del runner (equivalente / place-and-
++    # trim / rifiuto esplicito), quindi la chiusura parte come sempre (FOK compreso);
++    # sulla CODA e sul REST, che non hanno quel verdetto, la chiusura sotto il minimo va
++    # al place-and-trim (``place_submin`` / ``place_submin_live``), mai un place diretto
++    # che Betfair rifiuterebbe.
++    sotto_minimo_chiusura = bool(min_live > 0 and size < min_live - 1e-9 and is_closing)
++    submin_fuori_canale = sotto_minimo or sotto_minimo_chiusura
+ 
+     # --- F5 (24/09): PORTA A COMANDI sul canale del runner ----------------------
+     # Solo se il chiamante (Safe, interruttore acceso) la passa. ``None`` = il
+@@ -787,6 +801,29 @@ def place(
+         if esito_canale is not None:
+             return esito_canale
+ 
++    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): fuori dal canale non c'e' l'equivalente
++    # sull'altra selezione; il place-and-trim non riduce mai sotto 0,50 EUR (floor di
++    # legge, ``SUBMIN_IMPORTO_FINALE_MIN``; il minimo diretto e' 1,00). Un importo
++    # sotto il minimo E sotto 0,50 e' quindi un RIFIUTO CERTO, deciso qui, uguale in
++    # paper e in live (nessuna riga in coda, nessun REST): il residuo e' del trader.
++    from Betfair.stream.live_order_build import (
++        SOTTO_MINIMO_NON_PIAZZABILE,
++        SUBMIN_IMPORTO_FINALE_MIN,
++    )
++
++    if submin_fuori_canale and size < SUBMIN_IMPORTO_FINALE_MIN - 1e-9:
++        _log(db, "place_rifiutato", {
++            "trade_id": tid, "mode": mode, "side": side, "price": price, "size": size,
++            "error_code": SOTTO_MINIMO_NON_PIAZZABILE, "critical": True,
++            "percorso": "submin",
++            "nota": ("sotto il minimo .it e sotto %.2f EUR (place-and-trim mai sotto il floor di legge 0,50): "
++                     "nessun ordine; residuo %.2f da dichiarare al trader"
++                     % (SUBMIN_IMPORTO_FINALE_MIN, size))})
++        return PlaceOutcome("error", None, 0.0, None,
++                            f"{SOTTO_MINIMO_NON_PIAZZABILE.lower()}:{size:.2f}",
++                            size_requested=size, size_remaining=0.0,
++                            error_code=SOTTO_MINIMO_NON_PIAZZABILE)
++
+     # --- gate flumine (PAPER e LIVE): riuso 1:1 di omega_service._flumine_gate ---
+     # CERT. 13/09, difetto C-2: qui il gate veniva FORZATO ad 'auto' per gli
+     # ordini sotto-minimo, per mandarli sulla macchina place-and-trim della coda.
+@@ -802,10 +839,10 @@ def place(
+             db=db, trade_id=tid, client_ref=client_ref, event_id=event_id,
+             market_id=market_id, selection_id=selection_id, side=side,
+             price=price, size=size, base_meta=meta, now=now, mode=mode,
+-            action="place_submin" if sotto_minimo else "place",
++            action="place_submin" if submin_fuori_canale else "place",
+         )
+         if rid:
+-            nota = "submin" if sotto_minimo else mode
++            nota = "submin" if submin_fuori_canale else mode
+             return PlaceOutcome("pending", price, size, None,
+                                 f"flumine_{nota}:{rid if rid > 0 else 'unknown'}")
+         gate_reason = "enqueue_failed"
+@@ -845,7 +882,7 @@ def place(
+         # Mike lo riconosce dal prefisso (``_NOTE_SENZA_RUNNER``).
+         return PlaceOutcome("error", None, 0.0, None, f"paper_senza_runner:{gate_reason}",
+                             size_requested=size, size_remaining=0.0)
+-    if sotto_minimo and not hasattr(market, "place_submin_live"):
++    if submin_fuori_canale and not hasattr(market, "place_submin_live"):
+         # LIVE, nessuna coda E nessun place-and-trim su questo mercato: si
+         # dichiara il MOTIVO, non "l'importo e' troppo piccolo"
+         return PlaceOutcome("error", None, 0.0, None,
+@@ -878,7 +915,7 @@ def place(
+     # dipende da noi. Senza, "il bot e' lento" resta un'opinione.
+     t4 = _ora_ms()
+     try:
+-        if sotto_minimo:
++        if submin_fuori_canale:
+             res = market.place_submin_live(
+                 market_id=str(market_id), selection_id=int(selection_id), price=price,
+                 size=size, event_id=str(event_id), side=side, customer_ref=client_ref[:32],
+@@ -897,7 +934,7 @@ def place(
+         # restava bloccato dall'indice unico e la liability veniva contata piena.
+         # Un rifiuto certo e' una riga 'error', col codice di Betfair scritto.
+         return _esito_rifiuto_certo(db, ex, tid=tid, mode=mode, side=side, price=price,
+-                                    size=size, sotto_minimo=sotto_minimo)
++                                    size=size, sotto_minimo=submin_fuori_canale)
+     except Exception as ex:  # noqa: BLE001 — esito IGNOTO: MAI ripiazzare
+         return _reconciling(db, tid, meta=meta, mode=mode, price=price, size=size, ex=ex)
+     t5 = _ora_ms()
+@@ -915,7 +952,7 @@ def place(
+                                      "error_code": codice,
+                                      "order_status": res.order_status,
+                                      "critical": True,
+-                                     "percorso": "submin" if sotto_minimo else "rest"})
++                                     "percorso": "submin" if submin_fuori_canale else "rest"})
+         nota = f"live_not_matched:{res.order_status}"
+         if codice:
+             nota += f":{codice}"
+@@ -944,7 +981,7 @@ def place(
+                                              + ("vivo" if float(residuo) > 0 else "annullato"))})
+     return PlaceOutcome(
+         "open", medio, abbinato, res.bet_id,
+-        f"live_{'submin' if sotto_minimo else 'rest'}:{res.order_status}",
++        f"live_{'submin' if submin_fuori_canale else 'rest'}:{res.order_status}",
+         esecuzione={
+             "t4_inviato": t4, "t5_risposta": t5,
+             "betfair_ms": round(t5 - t4, 1),
+@@ -957,7 +994,7 @@ def place(
+             # QUELLA size sarebbe dovuta passare. Non e' la stessa cosa del
+             # fill reale, ed e' etichettata come previsione, non come fatto.
+             "livelli_previsti": livelli_attraversati(ladder, size, price, side),
+-            "percorso": "submin" if sotto_minimo else "rest",
++            "percorso": "submin" if submin_fuori_canale else "rest",
+             # C.12a — chiesto e residuo anche nella catena dei tempi
+             "size_richiesta": chiesto,
+             "size_abbinata": abbinato,
+@@ -1253,13 +1290,11 @@ def enqueue_place(*, db, trade_id: int, client_ref: str, event_id: str, market_i
+         "persistence": "LAPSE",
+         "params": {"source": "safe", "trade_id": int(trade_id)},
+     }
+-    # CERT. 13/09 — una CHIUSURA riduce la posizione: Betfair la accetta sotto
+-    # il minimo e senza il passo da 0,50 EUR sulle size BACK. Senza questo flag
+-    # ``live_order_build.min_stake_rules`` SOLLEVA per ogni BACK < 2,00 EUR e
+-    # tronca per difetto le altre: la gamba di uscita finiva in errore e la
+-    # posizione restava esposta fino al settlement, che e' esattamente cio' che
+-    # il manuale vieta ("si esce subito e si accetta"). ``_place_closing_leg``
+-    # del worker faceva gia' cosi' per l'azione ``greenup``: stesso trattamento.
++    # CERT. 13/09 — una CHIUSURA riduce la posizione: il flag la marca come tale
++    # (control di flusso, kill-switch). 01/10/2026: NON la esenta piu' dai minimi
++    # (ipotesi smentita da Betfair, INVALID_BET_SIZE): sotto il minimo la chiusura
++    # arriva qui come ``place_submin`` (vedi ``sotto_minimo_chiusura``); la punta
++    # e' legalizzata al centesimo (niente piu' floor a 0,50).
+     if base_meta and (base_meta.get("cashout") or base_meta.get("closes_trade_id")):
+         payload["params"]["reduces_liability"] = True
+     if action == "place_submin":
+diff --git a/Betfair/safe_strategy/tests/test_audit_2026_09_11.py b/Betfair/safe_strategy/tests/test_audit_2026_09_11.py
+index a645863..0c638fc 100644
+--- a/Betfair/safe_strategy/tests/test_audit_2026_09_11.py
++++ b/Betfair/safe_strategy/tests/test_audit_2026_09_11.py
+@@ -990,36 +990,45 @@ def test_m31_in_paper_qualsiasi_importo_si_abbina():
+     restare non abbinato. Ora il sotto-minimo paper va al RUNNER con l'azione
+     ``place_submin`` (stessa macchina del live, sul client simulato) e senza
+     FOK; la chiusura sotto il minimo resta un ``place`` FOK normale."""
++    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE, decisione del coordinatore dalle fonti .it): il
++    # place-and-trim NON riduce mai sotto 1,00 EUR (minimo commerciale betfair.it; il floor
++    # di legge e' 0,50). Fuori dal canale (dove il motore puo' tradurre nell'equivalente)
++    # un importo sotto il minimo E sotto 1,00 e' un RIFIUTO CERTO, uguale in paper e in
++    # live: nessuna riga in coda, nessun REST, codice SOTTO_MINIMO_NON_PIAZZABILE.
+     db = FakeDB(status="stopped")
+-    out = X.place(db=db, market=FakeMarket(), mode="paper", event_id="1.1",
+-                  market_id="m1", selection_id=7, side="back", price=3.0, size=0.5,
+-                  best_size=100.0, client_ref="safe-t1", trade_id=1, now=NOW, params={})
+-    assert out.status == "pending" and out.fill_note.startswith("flumine_submin")
+-    q = db.queue[-1]
+-    assert q["action"] == "place_submin" and q["params"]["target_size"] == 0.5
+-    assert "time_in_force" not in q
+-    # anche cinque centesimi
+-    out = X.place(db=db, market=FakeMarket(), mode="paper", event_id="1.1",
+-                  market_id="m1", selection_id=7, side="back", price=3.0, size=0.05,
+-                  best_size=100.0, client_ref="safe-t1b", trade_id=11, now=NOW, params={})
+-    assert out.status == "pending" and db.queue[-1]["params"]["target_size"] == 0.05
+-    # gamba di CHIUSURA: un place normale FOK che riduce la posizione
++    for size, ref, tid in ((0.5, "safe-t1", 1), (0.05, "safe-t1b", 11)):
++        prima = len(db.queue)
++        out = X.place(db=db, market=FakeMarket(), mode="paper", event_id="1.1",
++                      market_id="m1", selection_id=7, side="back", price=3.0, size=size,
++                      best_size=100.0, client_ref=ref, trade_id=tid, now=NOW, params={})
++        assert out.status == "error" and out.error_code == "SOTTO_MINIMO_NON_PIAZZABILE"
++        assert len(db.queue) == prima
++    # gamba di CHIUSURA sotto 1,00: stesso rifiuto certo (Betfair non accetta il sotto-
++    # minimo che riduce una posizione: INVALID_BET_SIZE del 01/10)
+     out = X.place(db=db, market=FakeMarket(), mode="paper", event_id="1.1",
+                   market_id="m1", selection_id=7, side="back", price=3.0, size=0.5,
+                   best_size=100.0, client_ref="safe-t2", trade_id=2, now=NOW, params={},
+                   meta={"cashout": True, "closes_trade_id": 1})
+-    assert out.status == "pending" and db.queue[-1]["action"] == "place"
+-    assert db.queue[-1]["time_in_force"] == "FILL_OR_KILL"
++    assert out.status == "error" and out.error_code == "SOTTO_MINIMO_NON_PIAZZABILE"
++    # gamba di CHIUSURA fra 1,00 e 2,00: place-and-trim sulla coda (senza FOK), flag
++    out = X.place(db=db, market=FakeMarket(), mode="paper", event_id="1.1",
++                  market_id="m1", selection_id=7, side="back", price=3.0, size=1.5,
++                  best_size=100.0, client_ref="safe-t2b", trade_id=12, now=NOW, params={},
++                  meta={"cashout": True, "closes_trade_id": 1})
++    assert out.status == "pending" and db.queue[-1]["action"] == "place_submin"
++    assert db.queue[-1]["params"]["target_size"] == 1.5
++    assert "time_in_force" not in db.queue[-1]
+     assert db.queue[-1]["params"]["reduces_liability"] is True
+     # size CAPPATA dalla liquidita' sotto il minimo: si accoda quella disponibile
+     out = X.place(db=db, market=FakeMarket(), mode="paper", event_id="1.1",
+                   market_id="m1", selection_id=7, side="back", price=3.0, size=5.0,
+                   best_size=1.2, client_ref="safe-t3", trade_id=3, now=NOW, params={})
+     assert out.status == "pending" and db.queue[-1]["params"]["target_size"] == 1.2
++    assert db.queue[-1]["action"] == "place_submin" and "time_in_force" not in db.queue[-1]
+     # runner giu': NESSUN fill di casa (prima: fill FOK diretto della size)
+     db.follow = "NONE"
+     out = X.place(db=db, market=FakeMarket(), mode="paper", event_id="1.1",
+-                  market_id="m1", selection_id=7, side="back", price=3.0, size=0.5,
++                  market_id="m1", selection_id=7, side="back", price=3.0, size=1.5,
+                   best_size=100.0, client_ref="safe-t4", trade_id=4, now=NOW, params={})
+     assert out.status == "error" and out.fill_note.startswith("paper_senza_runner:")
+ 
+@@ -1503,9 +1512,14 @@ def test_rev_m2_una_posizione_pre_ko_non_e_cieca():
+     assert _run(db2)["blind"] == 1
+ 
+ 
+-def test_rev_m3_green_up_in_coda_resta_greenup():
++def test_rev_m3_green_up_in_coda_resta_greenup(monkeypatch):
+     """Con la coda flumine il fill arriva dopo: ``residual_size`` e' ancora
+     pieno ma la chiusura e' INTEGRALE -> 'greenup', non 'profit'."""
++    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): test di LOGICA dell'uscita, non dei minimi.
++    # Le chiusure qui sono sotto 1,00 EUR: su .it fuori dal canale sono un rifiuto certo
++    # (test_runner_minimi_chiusure_2026_10_01). Qui il minimo si azzera con la manopola
++    # gia' esistente SAFE_MIN_SIZE_LIVE per isolare la logica dai minimi.
++    monkeypatch.setenv("SAFE_MIN_SIZE_LIVE", "0.01")
+     assert XE.ui_exit_kind("time", locked=1.0, integral=True) == "greenup"
+     db = FakeDB(status="running")
+     db.follow = "STREAMING"          # gate flumine aperto: fill differito
+diff --git a/Betfair/safe_strategy/tests/test_bot_service.py b/Betfair/safe_strategy/tests/test_bot_service.py
+index c665fb6..62973db 100644
+--- a/Betfair/safe_strategy/tests/test_bot_service.py
++++ b/Betfair/safe_strategy/tests/test_bot_service.py
+@@ -2058,7 +2058,12 @@ def _esatto_2_at_60(db):
+                        selection_id=501, price=60.0, size=2.0, minute_at_entry=50)
+ 
+ 
+-def test_exit_residuo_dopo_fill_cappato_viene_richiuso_dopo_il_cooldown():
++def test_exit_residuo_dopo_fill_cappato_viene_richiuso_dopo_il_cooldown(monkeypatch):
++    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): test di LOGICA dell'uscita, non dei minimi.
++    # Le chiusure qui sono sotto 1,00 EUR: su .it fuori dal canale sono un rifiuto certo
++    # (test_runner_minimi_chiusure_2026_10_01). Qui il minimo si azzera con la manopola
++    # gia' esistente SAFE_MIN_SIZE_LIVE per isolare la logica dai minimi.
++    monkeypatch.setenv("SAFE_MIN_SIZE_LIVE", "0.01")
+     db = FakeDB(status="running")
+     tid = _esatto_2_at_60(db)
+     _cycle(db, _cs_row(60))
+@@ -2118,7 +2123,12 @@ def test_exit_residuo_non_si_ritenta_con_gamba_di_chiusura_pending():
+     assert db.get_trade(tid)["meta"]["exit_requested"].get("residual_attempts", 0) == 0
+ 
+ 
+-def test_exit_residuo_si_ferma_al_cap_e_logga_una_volta():
++def test_exit_residuo_si_ferma_al_cap_e_logga_una_volta(monkeypatch):
++    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): test di LOGICA dell'uscita, non dei minimi.
++    # Le chiusure qui sono sotto 1,00 EUR: su .it fuori dal canale sono un rifiuto certo
++    # (test_runner_minimi_chiusure_2026_10_01). Qui il minimo si azzera con la manopola
++    # gia' esistente SAFE_MIN_SIZE_LIVE per isolare la logica dai minimi.
++    monkeypatch.setenv("SAFE_MIN_SIZE_LIVE", "0.01")
+     db = FakeDB(status="running", params={"exits": {"residual_max_attempts": 2,
+                                                     "residual_retry_s": 10}})
+     tid = _esatto_2_at_60(db)
+@@ -2424,7 +2434,12 @@ def test_uscita_obbligatoria_tennis_e_forced_per_la_ui():
+     assert _closings(db, tid)[0]["meta"]["exit_kind"] == "forced"
+ 
+ 
+-def test_residuo_di_uscita_a_tempo_usa_la_stessa_decisione():
++def test_residuo_di_uscita_a_tempo_usa_la_stessa_decisione(monkeypatch):
++    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): test di LOGICA dell'uscita, non dei minimi.
++    # Le chiusure qui sono sotto 1,00 EUR: su .it fuori dal canale sono un rifiuto certo
++    # (test_runner_minimi_chiusure_2026_10_01). Qui il minimo si azzera con la manopola
++    # gia' esistente SAFE_MIN_SIZE_LIVE per isolare la logica dai minimi.
++    monkeypatch.setenv("SAFE_MIN_SIZE_LIVE", "0.01")
+     db = FakeDB(status="running")
+     tid = _esatto_2_at_60(db)
+     _cycle(db, _cs_row(60))
+diff --git a/Betfair/safe_strategy/tests/test_cert_2026_09_13.py b/Betfair/safe_strategy/tests/test_cert_2026_09_13.py
+index 5b9e6ef..672b63f 100644
+--- a/Betfair/safe_strategy/tests/test_cert_2026_09_13.py
++++ b/Betfair/safe_strategy/tests/test_cert_2026_09_13.py
+@@ -160,15 +160,18 @@ def test_motore_dichiara_le_partite_senza_riferimento_pre_ko():
+ # 2. Esecuzione: place-and-trim, minimi per lato, direzione del tick
+ # ---------------------------------------------------------------------------
+ def test_minimo_di_piazzamento_dipende_dal_lato(monkeypatch):
+-    """Il minimo .it e' BACK 2,00 e LAY 0,50.
++    """Il minimo .it e' BACK 2,00 e LAY 1,00 (01/10/2026: banca minima commerciale di
++    betfair.it, UNA costante condivisa col motore, ``live_order_build.IT_LAY_MIN_SIZE``).
+ 
+-    Tornando 2,00 anche per il lay, ogni LAY fra 0,50 e 2,00 finiva sulla
+-    macchina place-and-trim, che pero' parcheggia a 0,50 e SOLLEVA: gamba persa
+-    su un ordine che Betfair avrebbe accettato al primo colpo.
++    Tornando 2,00 anche per il lay, ogni LAY fra 1,00 e 2,00 finiva sulla
++    macchina place-and-trim, che pero' parcheggia al minimo lay e SOLLEVA: gamba
++    persa su un ordine che Betfair avrebbe accettato al primo colpo.
+     """
++    from Betfair.stream.live_order_build import IT_LAY_MIN_SIZE
++
+     monkeypatch.delenv("SAFE_MIN_SIZE_LIVE", raising=False)
+     assert X._min_size_live("back") == 2.0
+-    assert X._min_size_live("lay") == 0.50
++    assert X._min_size_live("lay") == 1.00 == IT_LAY_MIN_SIZE
+     monkeypatch.setenv("SAFE_MIN_SIZE_LIVE", "1.25")
+     assert X._min_size_live("back") == X._min_size_live("lay") == 1.25
+ 
+diff --git a/Betfair/safe_strategy/tests/test_execution.py b/Betfair/safe_strategy/tests/test_execution.py
+index 3313cac..ab23347 100644
+--- a/Betfair/safe_strategy/tests/test_execution.py
++++ b/Betfair/safe_strategy/tests/test_execution.py
+@@ -1108,9 +1108,10 @@ def test_place_sotto_il_minimo_in_live_usa_il_place_and_trim():
+ 
+ 
+ def test_place_paper_minimo_non_blocca_la_gamba_di_chiusura():
+-    """Betfair ACCETTA il sotto-minimo che RIDUCE una posizione: un residuo da
+-    1,40 EUR deve poter essere chiuso, in paper come in live (review C2)."""
+-    # CANTIERE P (28/09): al runner, come place FOK che riduce (non place_submin)
++    """Un residuo da 1,40 EUR deve poter essere chiuso, in paper come in live.
++    01/10/2026: Betfair NON accetta il sotto-minimo che riduce una posizione (review
++    C2 smentita, INVALID_BET_SIZE): sulla coda la chiusura va al place-and-trim
++    (``place_submin``, importo finale 1,40 >= 1,00), size esatta, flag di chiusura."""
+     db, mk = FakeDB(), FakeMarket()
+     out = X.place(db=db, market=mk, mode="paper", event_id="1.1", market_id="m1",
+                   selection_id=7, side="back", price=3.0, size=1.4, best_size=100.0,
+@@ -1118,7 +1119,8 @@ def test_place_paper_minimo_non_blocca_la_gamba_di_chiusura():
+                   meta={"cashout": True, "closes_trade_id": 1})
+     assert out.status == "pending" and out.size == 1.4
+     q = db.queue[-1]
+-    assert q["action"] == "place" and q["size"] == 1.4
++    assert q["action"] == "place_submin" and q["size"] == 1.4
++    assert q["params"]["target_size"] == 1.4
+     assert q["params"]["reduces_liability"] is True
+ 
+ 
+diff --git a/Betfair/safe_strategy/tests/test_p_blocco3_2026_09_28.py b/Betfair/safe_strategy/tests/test_p_blocco3_2026_09_28.py
+index f6390e5..43819ed 100644
+--- a/Betfair/safe_strategy/tests/test_p_blocco3_2026_09_28.py
++++ b/Betfair/safe_strategy/tests/test_p_blocco3_2026_09_28.py
+@@ -315,10 +315,12 @@ def test_tennis_live_rest_back_122_diventa_200(con_d2, freni_aperti):
+ 
+ 
+ def test_tennis_lay_sotto_050_diventa_050(con_d2, freni_aperti):
++    # 01/10/2026: il minimo accettato della banca .it e' 1,00 (costante condivisa
++    # IT_LAY_MIN_SIZE): l'apertura tennis si porta AL minimo, cioe' 1,00
+     db, mk = FakeDB(mode="live"), _MercatoConSubmin()
+     db.follow = "NONE"
+     _place(db, mk, ref="safe_tennis-t6", size=0.3, side="lay")
+-    assert mk.placed[-1]["size"] == 0.5 and mk.submin == []
++    assert mk.placed[-1]["size"] == 1.0 and mk.submin == []
+ 
+ 
+ def test_tennis_paper_coda_al_minimo(con_d2):
+@@ -335,7 +337,9 @@ def test_tennis_chiusura_sotto_il_minimo_resta_esatta(con_d2, freni_aperti):
+     db.follow = "NONE"
+     _place(db, mk, ref="safe_tennis-t8", size=1.22,
+            meta={"cashout": True, "closes_trade_id": 1})
+-    assert mk.placed[-1]["size"] == 1.22
++    # 01/10/2026: la chiusura resta ESATTA (mai portata al minimo) ma non parte piu'
++    # come place diretto sotto il minimo (Betfair la rifiuterebbe): REST place-and-trim
++    assert mk.placed == [] and mk.submin[-1]["size"] == 1.22
+ 
+ 
+ def test_calcio_sotto_il_minimo_resta_place_and_trim(con_d2, freni_aperti):
+diff --git a/Betfair/safe_strategy/tests/test_safe_kill_switch_rest_o1_2026_09_24.py b/Betfair/safe_strategy/tests/test_safe_kill_switch_rest_o1_2026_09_24.py
+index fdcdaa8..a4f2879 100644
+--- a/Betfair/safe_strategy/tests/test_safe_kill_switch_rest_o1_2026_09_24.py
++++ b/Betfair/safe_strategy/tests/test_safe_kill_switch_rest_o1_2026_09_24.py
+@@ -139,7 +139,9 @@ def test_kill_attivo_la_chiusura_rest_passa(monkeypatch, meta):
+ def test_kill_attivo_anche_il_sotto_minimo_si_ferma(monkeypatch):
+     _kill_db(monkeypatch, True)
+     mk = _Mercato()
+-    out = _place(mk, size=0.73)
++    # 01/10/2026: 1,73 (sotto il minimo, sopra 1,00) va al place-and-trim REST: il
++    # kill-switch lo ferma. Sotto 1,00 il rifiuto e' gia' SOTTO_MINIMO_NON_PIAZZABILE.
++    out = _place(mk, size=1.73)
+     assert out.status == "error" and out.fill_note == "db_kill_switch_attivo"
+     assert mk.placed == []
+ 
+diff --git a/Betfair/stream/config_stream.py b/Betfair/stream/config_stream.py
+index d0d5891..5f7d3dc 100644
+--- a/Betfair/stream/config_stream.py
++++ b/Betfair/stream/config_stream.py
+@@ -220,7 +220,8 @@ ARCHIVE_BUCKET: str = os.getenv("LIVE_ARCHIVE_BUCKET", "")  # vuoto = solo local
+ LIVE_ORDER_MODE: str = os.getenv("LIVE_ORDER_MODE", "OFF").strip().upper()
+ 
+ # Giurisdizione del conto Betfair → regole di stake minimo (live_order_build.min_stake_rules).
+-# 'it' = Italian Exchange (back min EUR2.00 step EUR0.50; lay size min EUR0.50).
++# 'it' = Italian Exchange (01/10/2026: back min EUR2.00 al centesimo; lay size min EUR1.00;
++# nessuna esenzione per le chiusure: costanti in live_order_build).
+ BETFAIR_JURISDICTION: str = os.getenv("LIVE_BETFAIR_JURISDICTION", "it").strip().lower()
+ 
+ # Cadenza del BackgroundWorker che svuota la coda ordini (UN passo per giro): basso =
+diff --git a/Betfair/stream/live_order_build.py b/Betfair/stream/live_order_build.py
+index d3773c7..c619091 100644
+--- a/Betfair/stream/live_order_build.py
++++ b/Betfair/stream/live_order_build.py
+@@ -11,15 +11,24 @@ e delle classi ordine flumine (LimitOrder / LimitOnCloseOrder / MarketOnCloseOrd
+ Trade / BetfairOrder). Nessuna rete, nessun login: testabile a unità con mock del Market.
+ 
+ Giurisdizione conto = .it (Italian Exchange):
+-  - BACK: stake minimo €2,00, incrementi €0,50 (floor);
+-  - LAY : size minima €0,50 (no incrementi fissi);
++  - BACK: stake minimo 1,00 EUR, al CENTESIMO (01/10/2026, ``trading.minimi_it``);
++  - LAY : size (= stake del backer) minima 1,00 EUR; la liability NON conta;
+   - NESSUN Minimum Bet Payout;
+   - max vincita €10.000; vietato back+lay misti nello stesso ordine (ogni BuiltOrder = 1 lato).
+-Eccezione sotto-minimo: `reduces_liability=True` (green-up / hedge) consente size sotto
+-il minimo, soggetta alla guardia profit-ratio INVALID_PROFIT_RATIO (-20% / +25%).
++
++01/10/2026 (RUNNER_MINIMI_CHIUSURE, AUDIT_2026-10-01/RICERCA_STAKE_MINIMI_BETFAIR.md):
++NESSUNA eccezione per gli ordini che riducono l'esposizione. Fino a oggi
++``reduces_liability=True`` esentava chiusure/green-up/hedge dai minimi: ipotesi FALSA
++(nessuna fonte Betfair la prevede; il 01/10 una banca di chiusura da 0,43 @18 di Mike e'
++stata rifiutata ``INVALID_BET_SIZE`` 21 volte). ``reduces_liability`` resta SOLO come
++informazione (log, diario, ``order.context`` per i control di flusso). Sotto il minimo le
++vie legittime sono decise da ``verdetto_minimi``: (a) l'ordine EQUIVALENTE sul lato opposto
++dell'altra selezione di un mercato a due esiti; (b) il place-and-trim; (c) nessun ordine,
++con rifiuto esplicito ``SOTTO_MINIMO_NON_PIAZZABILE``.
+ """
+ from __future__ import annotations
+ 
++import bisect
+ import math
+ from dataclasses import dataclass
+ from decimal import Decimal, ROUND_FLOOR
+@@ -29,7 +38,13 @@ from flumine.order.order import BetfairOrder
+ from flumine.order.ordertype import LimitOnCloseOrder, LimitOrder, MarketOnCloseOrder
+ from flumine.order.trade import Trade
+ from flumine.strategy.strategy import BaseStrategy
+-from flumine.utils import MAX_PRICE, MIN_PRICE, get_nearest_price, price_ticks_away
++from flumine.utils import (
++    MAX_PRICE,
++    MIN_PRICE,
++    PRICES_FLOAT,
++    get_nearest_price,
++    price_ticks_away,
++)
+ 
+ # ---------------------------------------------------------------------------
+ # Costanti giurisdizione / guardie money-critical
+@@ -37,9 +52,34 @@ from flumine.utils import MAX_PRICE, MIN_PRICE, get_nearest_price, price_ticks_a
+ JURISDICTION_IT = "it"
+ JURISDICTION_COM = "com"
+ 
+-IT_BACK_MIN_STAKE = 2.00       # stake minimo BACK (€)
+-IT_BACK_STEP = 0.50            # incremento BACK (€)
+-IT_LAY_MIN_SIZE = 0.50         # size minima LAY (€)
++# 01/10/2026 - CORREZIONE DEFINITIVA (ordine dell'utente, Nota informativa betfair.it): i
++# minimi .it sono UNA definizione, in ``trading.minimi_it`` (senza dipendenze, importata da
++# motore, Safe, Omega e Mike con gli stessi nomi). Qui solo gli alias storici del modulo:
++#   punta >= 1,00 al CENTESIMO (nessun passo di 0,50), banca >= 1,00 sul size (puntata
++#   del backer, la liability non conta), nessuna esenzione per le chiusure, floor di legge
++#   0,50 mai tentato, place-and-trim solo con parcheggio e importo finale >= 1,00.
++from Betfair.stream.trading.minimi_it import (  # noqa: E402, F401 - riesportati
++    IT_FLOOR_LEGGE,
++    IT_MIN_BACK,
++    IT_MIN_LAY,
++    IT_PASSO_PUNTA_RIPIEGO,
++    SOTTO_MINIMO_NON_PIAZZABILE,
++    SUBMIN_IMPORTO_FINALE_MIN,
++)
++
++IT_BACK_MIN_STAKE = IT_MIN_BACK      # alias storico (submin, condotta tennis, worker)
++IT_LAY_MIN_SIZE = IT_MIN_LAY         # alias storico
++# Passo di 0,50 della documentazione: SOLO per il RIPIEGO (``size_ripiego_punta``) dopo un
++# ``INVALID_BET_SIZE`` reale su una punta non multipla di 0,50; mai un floor preventivo.
++IT_BACK_STEP = IT_PASSO_PUNTA_RIPIEGO
++
++# Floor MECCANICO della macchina place-and-trim (residuo > 0 dopo il taglio). La REGOLA
++# d'ingresso (importo finale >= ``SUBMIN_IMPORTO_FINALE_MIN``) la verificano il verdetto e
++# ogni ingresso reale nella macchina (``trading.submin.verifica_importo_finale``).
++SUBMIN_ABS_MIN_SIZE = 0.01
++# Tolleranza dell'equivalenza economica (EUR): l'ordine tradotto non puo' essere peggiore
++# di quello chiesto di piu' di un centesimo in nessuno dei due esiti.
++TOLLERANZA_EQUIVALENZA = 0.01
+ 
+ COM_MIN_STAKE = 2.00           # stake minimo generico .com (€)
+ COM_MIN_BET_PAYOUT = 20.0      # Min Bet Payout .com: ammesso sotto-minimo se size*price >= 20
+@@ -141,12 +181,17 @@ def min_stake_rules(
+ ) -> MinStakeVerdict:
+     """Verifica/legalizza la size secondo la giurisdizione.
+ 
+-    .it  -> BACK: min €2,00 + floor a €0,50; LAY: size floor €0,50; NO Min Bet Payout.
+-    .com -> min €2,00 oppure Min Bet Payout (size*price >= 20).
+-    `reduces_liability=True` (green-up/hedge) consente size sotto-minimo: in tal caso la
+-    size è accettata (round 2 decimali) e la guardia profit-ratio resta a carico del
+-    chiamante (banda INVALID_PROFIT_RATIO_MIN..MAX).
++    .it  -> BACK: size >= ``IT_MIN_BACK`` (1,00), legalizzata al CENTESIMO; LAY: size >=
++            ``IT_MIN_LAY`` (1,00; la liability non conta); NO Min Bet Payout.
++    .com -> min 2,00 EUR oppure Min Bet Payout (size*price >= 20).
++
++    ``reduces_liability`` e' SOLO informazione (01/10/2026): NON esenta piu' dai minimi.
++    Betfair non ha nessuna eccezione per chi riduce l'esposizione: un ordine sotto il
++    minimo, anche di chiusura, viene rifiutato ``INVALID_BET_SIZE``. La via legittima
++    sotto il minimo la decide ``verdetto_minimi``. Il parametro resta per i chiamanti
++    esistenti (tennis, condotta, worker) e non cambia il verdetto.
+     """
++    del reduces_liability  # informazione: mai un'esenzione dai minimi
+     j = (jurisdiction or "").lower()
+     s = (side or "").lower()
+     if s not in _VALID_SIDES:
+@@ -154,31 +199,24 @@ def min_stake_rules(
+     if size is None or not math.isfinite(size) or size <= 0:
+         return MinStakeVerdict(False, None, f"size non valida: {size!r}")
+ 
+-    # Sotto-minimo consentito quando si riduce la liability (hedge / green-up).
+-    if reduces_liability:
+-        return MinStakeVerdict(True, round(float(size), 2), None)
+-
+     if j == JURISDICTION_IT:
++        legal = round(float(size), 2)
+         if s == "back":
+-            if size < IT_BACK_MIN_STAKE - _EPS:
+-                return MinStakeVerdict(
+-                    False, None,
+-                    f"BACK size {size:.2f} < minimo €{IT_BACK_MIN_STAKE:.2f} (.it)",
+-                )
+-            legal = _floor_to_step(size, IT_BACK_STEP)
+             if legal < IT_BACK_MIN_STAKE - _EPS:
+                 return MinStakeVerdict(
+                     False, None,
+-                    f"BACK size legalizzata {legal:.2f} < minimo €{IT_BACK_MIN_STAKE:.2f} (.it)",
++                    f"{SOTTO_MINIMO_NON_PIAZZABILE}: BACK size {legal:.2f} < minimo "
++                    f"{IT_BACK_MIN_STAKE:.2f} EUR (.it)",
+                 )
+             return MinStakeVerdict(True, legal, None)
+-        # lay
+-        if size < IT_LAY_MIN_SIZE - _EPS:
++        # lay: conta il size (stake del backer), mai la liability
++        if legal < IT_LAY_MIN_SIZE - _EPS:
+             return MinStakeVerdict(
+                 False, None,
+-                f"LAY size {size:.2f} < minimo €{IT_LAY_MIN_SIZE:.2f} (.it)",
++                f"{SOTTO_MINIMO_NON_PIAZZABILE}: LAY size {legal:.2f} < minimo "
++                f"{IT_LAY_MIN_SIZE:.2f} EUR (.it, conta lo stake del backer)",
+             )
+-        return MinStakeVerdict(True, round(float(size), 2), None)
++        return MinStakeVerdict(True, legal, None)
+ 
+     if j == JURISDICTION_COM:
+         payout = float(size) * float(price) if price else 0.0
+@@ -193,6 +231,262 @@ def min_stake_rules(
+     return MinStakeVerdict(False, None, f"giurisdizione sconosciuta: {jurisdiction!r}")
+ 
+ 
++def size_ripiego_punta(size: float) -> Optional[float]:
++    """RIPIEGO dopo un ``INVALID_BET_SIZE`` REALE su una punta non multipla di 0,50.
++
++    Ritorna la size arrotondata PER DIFETTO al multiplo di ``IT_BACK_STEP`` se e' diversa
++    da quella rifiutata e resta >= ``IT_BACK_MIN_STAKE``; altrimenti None (nessun ripiego:
++    la punta era gia' un multiplo, oppure scenderebbe sotto il minimo). Pura: chi la usa
++    garantisce che il ripiego avvenga UNA sola volta e solo dopo il rifiuto vero di
++    Betfair, mai in via preventiva.
++    """
++    try:
++        s = round(float(size), 2)
++    except (TypeError, ValueError):
++        return None
++    if not math.isfinite(s) or s <= 0:
++        return None
++    ripiego = round(_floor_to_step(s, IT_BACK_STEP), 2)
++    if abs(ripiego - s) <= _EPS or ripiego < IT_BACK_MIN_STAKE - _EPS:
++        return None
++    return ripiego
++
++
++def punta_da_sorvegliare_per_ripiego(side: str, size: Optional[float]) -> bool:
++    """Una punta legale al centesimo ma NON multipla di 0,50 che, se Betfair la rifiutasse
++    ``INVALID_BET_SIZE``, avrebbe un ripiego possibile (``size_ripiego_punta``)."""
++    if str(side or "").lower() != "back" or size is None:
++        return False
++    return size_ripiego_punta(size) is not None
++
++
++# ---------------------------------------------------------------------------
++# Sotto il minimo: l'ordine EQUIVALENTE e il verdetto (01/10/2026)
++# ---------------------------------------------------------------------------
++def _tick_su(price: float) -> Optional[float]:
++    """Il tick Betfair piu' piccolo >= price (None oltre 1000)."""
++    i = bisect.bisect_left(PRICES_FLOAT, float(price) - 1e-9)
++    return PRICES_FLOAT[i] if i < len(PRICES_FLOAT) else None
++
++
++def _tick_giu(price: float) -> Optional[float]:
++    """Il tick Betfair piu' grande <= price (None sotto 1,01)."""
++    i = bisect.bisect_right(PRICES_FLOAT, float(price) + 1e-9) - 1
++    return PRICES_FLOAT[i] if i >= 0 else None
++
++
++@dataclass(frozen=True)
++class OrdineEquivalente:
++    """L'ordine sul lato OPPOSTO dell'altra selezione (mercato a due esiti) con lo stesso
++    effetto economico di quello chiesto.
++
++    ``scarto_*`` = P&L dell'equivalente MENO P&L dell'ordine chiesto (tutto abbinato al
++    limite) nei due esiti: ``_se_vince_chiesta`` = vince la selezione dell'ordine chiesto,
++    ``_se_vince_altra`` = vince l'altra. Positivo = l'equivalente rende di piu'.
++    """
++
++    side: str                 # 'back' | 'lay' (lato OPPOSTO a quello chiesto)
++    price: float              # al tick, arrotondata dal lato che non peggiora mai il limite
++    price_esatta: float       # q/(q-1), prima del tick
++    size: float               # size*(q-1) dell'ordine chiesto, al centesimo
++    scarto_se_vince_chiesta: float
++    scarto_se_vince_altra: float
++
++
++def equivalente_lato_opposto(side: str, price: float,
++                             size: float) -> Optional[OrdineEquivalente]:
++    """In un mercato a DUE esiti (X, Y): ``lay X S@q`` == ``back Y S(q-1) @ q/(q-1)`` e
++    ``back X B@p`` == ``lay Y B(p-1) @ p/(p-1)`` (stessa formula, lato opposto).
++
++    Prima della commissione, che Betfair applica sul netto del mercato. La quota esatta
++    raramente e' un tick: si arrotonda dal lato che NON peggiora mai il limite chiesto
++    (equivalente BACK -> tick in su, equivalente LAY -> tick in giu'), cosi' nessun
++    abbinamento puo' avvenire a un prezzo peggiore di quello che il bot ha accettato. La
++    size copre esattamente l'esito sfavorevole dell'ordine chiesto (liability di una
++    banca, stake di una punta), al centesimo. Pura. None = equivalente non costruibile.
++    """
++    s = (side or "").lower()
++    if s not in _VALID_SIDES:
++        return None
++    try:
++        q = float(price)
++        z = float(size)
++    except (TypeError, ValueError):
++        return None
++    if not (math.isfinite(q) and math.isfinite(z)) or q <= 1.0 + _EPS or z <= 0:
++        return None
++    esatta = q / (q - 1.0)
++    lato = "back" if s == "lay" else "lay"
++    tick = _tick_su(esatta) if lato == "back" else _tick_giu(esatta)
++    if tick is None or not (MIN_PRICE - _EPS <= tick <= MAX_PRICE + _EPS):
++        return None
++    size_eq = round(z * (q - 1.0), 2)
++    if size_eq <= 0:
++        return None
++    if s == "lay":
++        # chiesto: lay X z@q        -> X vince: -z(q-1)      ; Y vince: +z
++        # equivalente: back Y e@t   -> X vince: -e           ; Y vince: +e(t-1)
++        sc_x = -size_eq + z * (q - 1.0)
++        sc_y = size_eq * (tick - 1.0) - z
++    else:
++        # chiesto: back X z@q       -> X vince: +z(q-1)      ; Y vince: -z
++        # equivalente: lay Y e@t    -> X vince: +e           ; Y vince: -e(t-1)
++        sc_x = size_eq - z * (q - 1.0)
++        sc_y = -size_eq * (tick - 1.0) + z
++    return OrdineEquivalente(
++        side=lato, price=float(tick), price_esatta=round(esatta, 6), size=size_eq,
++        scarto_se_vince_chiesta=round(sc_x, 4), scarto_se_vince_altra=round(sc_y, 4),
++    )
++
++
++def riporta_abbinato_all_originale(
++    side_chiesto: str, price_chiesta: float, size_chiesta: float,
++    size_mandata: float, abbinato_mandato: float,
++) -> "tuple[float, Optional[float]]":
++    """L'abbinato dell'ordine EQUIVALENTE riportato nei termini dell'ordine CHIESTO.
++
++    Per il bot che ha chiesto (``side_chiesto`` ``size_chiesta`` @ ``price_chiesta``) e a
++    cui il runner ha mandato l'equivalente di ``size_mandata``: ritorna (abbinato, quota
++    media) come se avesse abbinato l'ordine chiesto. abbinato = size chiesta x frazione
++    abbinata dell'equivalente; quota = 1 + abbinato_mandato / abbinato, cioe':
++      - banca chiesta (equivalente PUNTA): la liability riportata e' ESATTA (= stake
++        abbinato della punta); la vincita reale e' >= quella riportata;
++      - punta chiesta (equivalente BANCA): la vincita riportata e' ESATTA (= stake del
++        backer abbinato); la perdita reale e' <= quella riportata.
++    In entrambi i casi il bot non sovrastima mai il suo esito (l'equivalente ha un limite
++    mai peggiore del chiesto). Quota None se l'abbinato riportato e' zero.
++    """
++    try:
++        q = float(price_chiesta)
++        mandata = float(size_mandata)
++        m = max(0.0, float(abbinato_mandato or 0.0))
++        chiesta = float(size_chiesta)
++    except (TypeError, ValueError):
++        return 0.0, None
++    if m <= 0 or mandata <= 0 or q <= 1.0:
++        return 0.0, None
++    frazione = min(1.0, m / mandata)
++    abbinato = round(chiesta * frazione, 2)
++    if abbinato <= 0 or str(side_chiesto or "").lower() not in _VALID_SIDES:
++        return 0.0, None
++    # banca chiesta: m (stake della punta equivalente) = liability = abbinato*(quota-1);
++    # punta chiesta: m (stake del backer della banca equivalente) = vincita = idem.
++    return abbinato, round(1.0 + m / abbinato, 4)
++
++
++VERDETTO_DIRETTO = "diretto"
++VERDETTO_EQUIVALENTE = "equivalente"
++VERDETTO_SUBMIN = "submin"
++VERDETTO_IMPOSSIBILE = "impossibile"
++
++
++@dataclass(frozen=True)
++class VerdettoMinimi:
++    """Cosa fare di un ordine rispetto ai minimi di giurisdizione.
++
++    - ``diretto``: piazzabile cosi' com'e' (``size`` = legalizzata al centesimo);
++    - ``equivalente``: sotto il minimo, ma l'ordine equivalente sull'altra selezione
++      (``altra_selezione``, ``equivalente``) e' piazzabile diretto;
++    - ``submin``: sotto il minimo, nessun equivalente diretto, importo >=
++      ``SUBMIN_IMPORTO_FINALE_MIN`` (0,50, floor di legge): va col place-and-trim (``place_submin``);
++    - ``impossibile``: nessuna via legittima; ``motivo`` comincia con
++      ``SOTTO_MINIMO_NON_PIAZZABILE``. MAI un ordine verso Betfair.
++    """
++
++    esito: str
++    size: Optional[float]
++    motivo: Optional[str]
++    equivalente: Optional[OrdineEquivalente] = None
++    altra_selezione: Optional[tuple] = None   # (selection_id, handicap)
++
++    @property
++    def sotto_minimo(self) -> bool:
++        return self.esito != VERDETTO_DIRETTO
++
++
++def verdetto_minimi(
++    jurisdiction: str,
++    side: str,
++    price: float,
++    size: float,
++    *,
++    altra_selezione: Optional[tuple] = None,
++    submin_disponibile: bool = True,
++) -> VerdettoMinimi:
++    """Traduce l'ordine chiesto in uno piazzabile con lo STESSO effetto economico, o dice
++    che non si puo'. Nessuna decisione di strategia: stesso rischio, limite di prezzo mai
++    peggiorato, importi entro ``TOLLERANZA_EQUIVALENZA``.
++
++    ``altra_selezione`` = (selection_id, handicap) dell'ALTRO esito, solo se il mercato ha
++    esattamente due esiti (chi chiama lo sa dal book; None = equivalente non applicabile).
++    ``submin_disponibile`` = l'esecutore ha il place-and-trim (il runner tennis no).
++    Pura: nessuna rete, nessuno stato.
++    """
++    v = min_stake_rules(jurisdiction, side, price, size)
++    if v.valid:
++        return VerdettoMinimi(VERDETTO_DIRETTO, v.legalized_size, None)
++    s = (side or "").lower()
++    j = (jurisdiction or "").lower()
++    valida = s in _VALID_SIDES and size is not None
++    try:
++        valida = valida and math.isfinite(float(size)) and float(size) > 0
++    except (TypeError, ValueError):
++        valida = False
++    if not valida or j not in (JURISDICTION_IT, JURISDICTION_COM):
++        motivo = v.reason or "ordine non valido"
++        if not motivo.startswith(SOTTO_MINIMO_NON_PIAZZABILE):
++            motivo = f"{SOTTO_MINIMO_NON_PIAZZABILE}: {motivo}"
++        return VerdettoMinimi(VERDETTO_IMPOSSIBILE, None, motivo)
++    chiesta = round(float(size), 2)
++    perche_no_eq = "mercato non a due esiti (equivalente non applicabile)"
++    if altra_selezione is not None:
++        eq = equivalente_lato_opposto(s, price, chiesta)
++        if eq is None:
++            perche_no_eq = "equivalente non costruibile (quota fuori scala)"
++        else:
++            v_eq = min_stake_rules(jurisdiction, eq.side, eq.price, eq.size)
++            peggiore = min(eq.scarto_se_vince_chiesta, eq.scarto_se_vince_altra)
++            vincita_eq = eq.size * (eq.price - 1.0) if eq.side == "back" else eq.size
++            if not v_eq.valid:
++                perche_no_eq = (f"equivalente {eq.side.upper()} {eq.size:.2f}@{eq.price} "
++                                f"anch'esso sotto il minimo")
++            elif peggiore < -TOLLERANZA_EQUIVALENZA - _EPS:
++                perche_no_eq = (f"equivalente peggiore del chiesto di {-peggiore:.4f} EUR "
++                                f"(oltre la tolleranza {TOLLERANZA_EQUIVALENZA:.2f})")
++            elif vincita_eq > MAX_PAYOUT_IT + _EPS:
++                perche_no_eq = "equivalente oltre la vincita massima"
++            else:
++                return VerdettoMinimi(
++                    VERDETTO_EQUIVALENTE, eq.size,
++                    (f"{s.upper()} {chiesta:.2f}@{price} sotto il minimo: equivalente "
++                     f"{eq.side.upper()} {eq.size:.2f}@{eq.price} sull'altra selezione "
++                     f"(quota esatta {eq.price_esatta}; scarti "
++                     f"{eq.scarto_se_vince_chiesta:+.4f} / {eq.scarto_se_vince_altra:+.4f} EUR)"),
++                    equivalente=eq,
++                    altra_selezione=(int(altra_selezione[0]),
++                                     float(altra_selezione[1] or 0.0)),
++                )
++    residuo = (f"residuo {s.upper()} {float(size):.2f}@{price} NON piazzato: va dichiarato "
++               f"al trader (scelta sua: lasciarlo, oppure aumentare e richiudere)")
++    if float(size) < SUBMIN_IMPORTO_FINALE_MIN - _EPS \
++            or chiesta < SUBMIN_IMPORTO_FINALE_MIN - _EPS:
++        return VerdettoMinimi(
++            VERDETTO_IMPOSSIBILE, None,
++            f"{SOTTO_MINIMO_NON_PIAZZABILE}: {s.upper()} {float(size):.2f} sotto il minimo "
++            f"(e sotto {SUBMIN_IMPORTO_FINALE_MIN:.2f}, importo minimo del place-and-trim: "
++            f"sotto il floor di legge di 0,50 non si tenta mai); {perche_no_eq}; {residuo}")
++    if not submin_disponibile:
++        return VerdettoMinimi(
++            VERDETTO_IMPOSSIBILE, None,
++            f"{v.reason}; {perche_no_eq}; place-and-trim non disponibile su questo "
++            f"esecutore; {residuo}")
++    return VerdettoMinimi(
++        VERDETTO_SUBMIN, chiesta,
++        f"{s.upper()} {chiesta:.2f}@{price} sotto il minimo: place-and-trim ({perche_no_eq}; "
++        f"in gioco su .it il bet delay si paga due volte, parcheggio e riprezzo: calcio "
++        f"circa 5 -> 10 s)")
++
++
+ # ---------------------------------------------------------------------------
+ # Costruzione ordine
+ # ---------------------------------------------------------------------------
+@@ -214,6 +508,7 @@ def build_order(
+     max_stake: Optional[float],
+     customer_order_ref: str,
+     reduces_liability: bool = False,
++    simulato_ammette_sotto_minimo: bool = False,
+ ) -> BuiltOrder:
+     """Valida e costruisce un BetfairOrder flumine pronto per `market.place_order`.
+ 
+@@ -222,9 +517,17 @@ def build_order(
+     cap `max_stake`, payout massimo. Solleva `ValueError` con motivo su input invalido.
+ 
+     ``reduces_liability=True`` (green-up / hedge / cash-out): l'ordine CHIUDE/riduce una
+-    posizione esistente → ``min_stake_rules`` consente la size SOTTO il minimo di
+-    giurisdizione (€2 back / €0,50 lay su .it), soggetta solo alla guardia Betfair
+-    INVALID_PROFIT_RATIO lato Exchange. Usato dall'azione ``greenup`` del worker.
++    posizione esistente. Dal 01/10/2026 e' SOLO informazione (``order.context`` per i
++    control di flusso, nota): NON esenta dai minimi. Un ordine sotto il minimo solleva
++    ``ValueError`` con ``SOTTO_MINIMO_NON_PIAZZABILE`` PRIMA di qualunque invio: la via
++    legittima (equivalente / place-and-trim) la sceglie il chiamante con
++    ``verdetto_minimi``.
++
++    ``simulato_ammette_sotto_minimo=True``: SOLO per un ordine che va al client SIMULATO
++    (paper) dalle gambe di chiusura di greenup/cash-out del worker, che in paper non
++    passano dal place-and-trim (la sequenza e' sincrona e il mercato simulato non
++    avanza mentre aspetta; comportamento di sempre, ``_place_closing_leg``). Mai per un
++    ordine che puo' raggiungere Betfair: chi chiama lo deriva dalla modalita' della riga.
+ 
+     MONEY-CRITICAL: ``strategy`` DEVE essere l'istanza ``LiveTradingStrategy`` registrata
+     nel framework via ``add_strategy``. Il Trade viene creato sotto questa istanza così che
+@@ -303,7 +606,7 @@ def build_order(
+ 
+     note_bits = []
+     if reduces_liability:
+-        note_bits.append("reduces_liability (green-up/hedge: sotto-minimo consentito)")
++        note_bits.append("reduces_liability (chiusura: minimi di giurisdizione invariati)")
+ 
+     # Derivazione size per LAY da liability
+     if side_l == "lay":
+@@ -318,7 +621,12 @@ def build_order(
+     raw_size = round(float(size), 2)
+ 
+     # Regole stake minimo
+-    verdict = min_stake_rules(jurisdiction, side_l, tick_price, raw_size, reduces_liability)
++    # Regole stake minimo: NESSUNA esenzione per le chiusure (01/10/2026). Solo il client
++    # SIMULATO delle gambe greenup/cash-out in paper lo ammette (vedi docstring).
++    verdict = min_stake_rules(jurisdiction, side_l, tick_price, raw_size)
++    if not verdict.valid and simulato_ammette_sotto_minimo and raw_size > 0:
++        verdict = MinStakeVerdict(True, raw_size, None)
++        note_bits.append("sotto il minimo ammesso SOLO sul client simulato (paper)")
+     if not verdict.valid:
+         raise ValueError(verdict.reason or "size non valida per la giurisdizione")
+     legal_size = verdict.legalized_size
+diff --git a/Betfair/stream/live_order_worker.py b/Betfair/stream/live_order_worker.py
+index af16a26..7f68ba3 100644
+--- a/Betfair/stream/live_order_worker.py
++++ b/Betfair/stream/live_order_worker.py
+@@ -43,6 +43,7 @@ import math
+ import os
+ import time
+ from datetime import datetime, timezone
++from types import SimpleNamespace
+ from typing import Any, Dict, List, Optional, Tuple
+ 
+ logger = logging.getLogger(__name__)
+@@ -1335,8 +1336,11 @@ def _place_sub_minimum(
+         SubminStep,
+         advance_submin,
+         start_submin,
++        verifica_importo_finale,
+     )
+ 
++    # 01/10/2026: mai una riduzione sotto 0,50 EUR, floor di legge (regola d'ingresso della macchina)
++    verifica_importo_finale(str(side), size)
+     juris = _jurisdiction()
+     state = start_submin(
+         side=str(side), target_price=float(price), target_size=float(size),
+@@ -1445,15 +1449,15 @@ def _do_place(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, str
+         jurisdiction=_jurisdiction(),
+         max_stake=_effective_cap(request_row),
+         customer_order_ref=cust_ref,
+-        # CERT. 13/09 — una gamba di CHIUSURA riduce la posizione: Betfair la
+-        # accetta sotto il minimo di giurisdizione e senza il passo da 0,50 EUR
+-        # sulle size BACK. Senza questo flag ``min_stake_rules`` SOLLEVAVA per
+-        # ogni BACK di chiusura < 2,00 EUR (e troncava per difetto le altre,
+-        # lasciando la posizione non pareggiata): l'uscita finiva in errore e la
+-        # liability restava esposta fino al settlement. Il flag lo mette chi
+-        # accoda (``safe_strategy.execution.enqueue_place``), come gia' fa
+-        # ``_place_closing_leg`` per l'azione ``greenup``; per un'APERTURA non
+-        # e' mai presente, quindi il minimo normale continua a valere.
++        # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): ``reduces_liability`` e' SOLO
++        # informazione (context per i control di flusso, nota). L'ipotesi del
++        # 13/09 ("Betfair accetta le chiusure sotto il minimo") e' FALSA: una
++        # chiusura sotto il minimo viene rifiutata INVALID_BET_SIZE. Qui un place
++        # sotto il minimo solleva SOTTO_MINIMO_NON_PIAZZABILE PRIMA dell'invio
++        # (nessuna chiamata a Betfair). Le vie legittime (equivalente sull'altra
++        # selezione, place-and-trim) le sceglie il motore del canale
++        # (``motore_ordini``) o chi accoda ``place_submin``. La punta e' al
++        # centesimo: niente piu' floor a 0,50 che lasciava residui scoperti.
+         reduces_liability=bool(isinstance(params, dict)
+                                and params.get("reduces_liability")),
+     )
+@@ -2116,42 +2120,75 @@ def _place_closing_leg(
+     """Piazza una gamba di CHIUSURA (greenup / cash-out). Ritorna lo SubminState se si e'
+     dovuti passare dal place-and-trim, altrimenti None.
+ 
+-    Percorso normale: place DIRETTO — Betfair consente la size sotto-minima quando l'ordine
+-    RIDUCE la liability (``reduces_liability=True`` in build_order), quindi nel caso tipico
+-    nessun trucco serve. Se pero' il place viene RIFIUTATO in modo PROVABILE (i trading
+-    control tornano False: ordine MAI inviato) e la size e' sotto il minimo di exchange, si
+-    ripiega sulla sequenza place-and-trim: una VIA D'USCITA non deve restare bloccata da un
+-    minimo. Opt-in ``params.allow_sub_minimum``, default TRUE per le chiusure.
+-    Un'eccezione sollevata DENTRO place_order (RuntimeError ``post_place:``) NON e' un
+-    rifiuto provabile e viene ri-propagata: l'ordine potrebbe essere gia' in volo.
++    01/10/2026 (RUNNER_MINIMI_CHIUSURE): Betfair NON consente la size sotto il minimo
++    quando l'ordine riduce la liability (ipotesi storica smentita: ``INVALID_BET_SIZE``).
++    Quindi in LIVE una gamba sotto il minimo di exchange va DIRETTAMENTE al place-and-trim,
++    decisa PRIMA di qualunque invio: mai un place diretto che Betfair rifiuterebbe. Opt-out
++    ``params.allow_sub_minimum=False`` -> rifiuto esplicito ``SOTTO_MINIMO_NON_PIAZZABILE``,
++    nessun ordine. In questo caso ``order`` puo' essere None (non costruito: build_order
++    lo rifiuterebbe). Sopra il minimo (o in PAPER, client simulato): place diretto; un
++    rifiuto dei control viene propagato. Un'eccezione sollevata DENTRO place_order
++    (RuntimeError ``post_place:``) NON e' un rifiuto provabile e viene ri-propagata.
+     """
+-    try:
++    sotto_minimo_live = (
++        _is_live_mode(mode)
++        and size is not None
++        and float(size) < _sub_minimum_floor(side) - 1e-9
++    )
++    if not sotto_minimo_live:
++        if order is None:
++            raise ValueError(f"{what}: ordine di chiusura non costruito")
+         _place_or_raise(market, order, what, client=client)
+         return None
+-    except ValueError as ex:
+-        if not (
+-            _param_bool(params, "allow_sub_minimum", True)
+-            and _is_live_mode(mode)
+-            and size is not None
+-            and float(size) < _sub_minimum_floor(side) - 1e-9
+-        ):
+-            raise
+-        logger.warning(
+-            "[live-order] %s: place diretto RIFIUTATO (%s) - ripiego sul place-and-trim "
+-            "(size %.2f < minimo %.2f)", what, str(ex)[:160], float(size),
+-            _sub_minimum_floor(side),
+-        )
+-        # MEDIUM-6 (review 10/09): la sequenza park/trim/replace e' un place REALE: la
+-        # capacita' rate va verificata PRIMA di toccare il mercato (come per place_submin),
+-        # mai scoprire il rate-limit con un ordine parcheggiato alla quota non abbinabile.
+-        _rate_guard()
+-        state, _order = _place_sub_minimum(
+-            flumine, market, market_id=market_id, strategy=strategy,
+-            selection_id=int(selection_id), handicap=float(handicap or 0.0), side=str(side),
+-            price=float(price), size=float(size), cust_ref=cust_ref, what=what,
+-            max_stake=max_stake, client=client,
+-        )
+-        return state
++    if not _param_bool(params, "allow_sub_minimum", True):
++        from .live_order_build import SOTTO_MINIMO_NON_PIAZZABILE
++        raise ValueError(
++            f"{SOTTO_MINIMO_NON_PIAZZABILE}: {what}: size {float(size):.2f} < minimo "
++            f"{_sub_minimum_floor(side):.2f} e place-and-trim escluso "
++            f"(params.allow_sub_minimum=False): nessun ordine inviato")
++    logger.warning(
++        "[live-order] %s: size %.2f < minimo %.2f - place-and-trim deciso PRIMA "
++        "dell'invio (nessun place diretto sotto il minimo)", what, float(size),
++        _sub_minimum_floor(side),
++    )
++    # MEDIUM-6 (review 10/09): la sequenza park/trim/replace e' un place REALE: la
++    # capacita' rate va verificata PRIMA di toccare il mercato (come per place_submin),
++    # mai scoprire il rate-limit con un ordine parcheggiato alla quota non abbinabile.
++    _rate_guard()
++    state, _order = _place_sub_minimum(
++        flumine, market, market_id=market_id, strategy=strategy,
++        selection_id=int(selection_id), handicap=float(handicap or 0.0), side=str(side),
++        price=float(price), size=float(size), cust_ref=cust_ref, what=what,
++        max_stake=max_stake, client=client,
++    )
++    return state
++
++
++def _costruisci_chiusura(market: Any, *, strategy: Any, selection_id: int, handicap: float,
++                         side: str, price: float, size: float, persistence: str,
++                         cust_ref: str, mode: str) -> "tuple[Any, float, float]":
++    """La gamba di CHIUSURA di greenup/cash-out: (ordine, quota al tick, size).
++
++    01/10/2026: in LIVE una size sotto il minimo NON si costruisce (build_order la
++    rifiuterebbe, e Betfair pure): ordine None, ``_place_closing_leg`` va al place-and-trim.
++    In PAPER (client simulato) l'ordine si costruisce anche sotto il minimo, come sempre
++    (``simulato_ammette_sotto_minimo``): la sequenza sincrona non si usa sul simulato."""
++    from .live_order_build import build_order, round_to_tick
++
++    live = _is_live_mode(mode)
++    if live and float(size) < _sub_minimum_floor(side) - 1e-9:
++        return None, float(round_to_tick(price)), round(float(size), 2)
++    built = build_order(
++        market, strategy=strategy, selection_id=selection_id, handicap=handicap,
++        side=str(side), order_type="LIMIT", price=price, size=size, liability=None,
++        persistence=persistence, time_in_force=None, min_fill_size=None,
++        jurisdiction=_jurisdiction(),
++        max_stake=None,                 # hedge self-bounded (liability < |W-L|): nessun cap
++        customer_order_ref=cust_ref,
++        reduces_liability=True,         # informazione: NON esenta dai minimi (01/10)
++        simulato_ammette_sotto_minimo=not live,
++    )
++    return built.order, float(built.price), float(built.size)
+ 
+ 
+ def _do_greenup(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any,
+@@ -2160,10 +2197,10 @@ def _do_greenup(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, s
+ 
+     Legge le esposizioni FRESCHE da flumine + il best price opposto dal book, calcola l'UNICO
+     ordine di hedge (trading/greenup.compute_greenup) e lo piazza con ``reduces_liability=True``
+-    (sotto-minimo consentito, hedge self-bounded → ``max_stake=None``). Se la posizione è già
+-    piatta / frazione nulla / prezzo assente → riga 'done' SENZA piazzare (no-op tracciato).
++    (hedge self-bounded → ``max_stake=None``; dal 01/10/2026 NESSUNA esenzione dai minimi:
++    in live sotto il minimo va al place-and-trim, ``_place_closing_leg``). Se la posizione
++    è già piatta / frazione nulla / prezzo assente → riga 'done' SENZA piazzare (no-op).
+     """
+-    from .live_order_build import build_order
+     from .trading.greenup import compute_greenup
+ 
+     rid = request_row["id"]
+@@ -2280,46 +2317,37 @@ def _do_greenup(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, s
+         _write_done(sb, rid, result)
+         return
+ 
+-    built = build_order(
+-        market,
+-        strategy=strategy,
+-        selection_id=selection_id,
+-        handicap=handicap,
+-        side=str(plan.side),
+-        order_type="LIMIT",
+-        price=plan.price,
+-        size=plan.size,
+-        liability=None,
+-        persistence=persistence,
+-        time_in_force=None,
+-        min_fill_size=None,
+-        jurisdiction=_jurisdiction(),
+-        max_stake=None,                 # hedge self-bounded (liability < |W−L|): nessun cap
+-        customer_order_ref=cust_ref,
+-        reduces_liability=True,         # green-up: sotto-minimo .it consentito
++    # 01/10/2026: la gamba si costruisce senza esenzione dai minimi; in LIVE sotto il
++    # minimo non si costruisce affatto e va al place-and-trim (``_place_closing_leg``).
++    # Niente equivalente sull'altra selezione qui: il follow-through del greenup rilegge
++    # le esposizioni della STESSA selezione e rifarebbe l'hedge (doppia chiusura).
++    hedge_order, hedge_price, hedge_size = _costruisci_chiusura(
++        market, strategy=strategy, selection_id=selection_id, handicap=handicap,
++        side=str(plan.side), price=plan.price, size=plan.size, persistence=persistence,
++        cust_ref=cust_ref, mode=mode,
+     )
+     submin_state = _place_closing_leg(
+-        flumine, market, order=built.order, strategy=strategy,
++        flumine, market, order=hedge_order, strategy=strategy,
+         market_id=request_row.get("market_id"), selection_id=selection_id, handicap=handicap,
+-        side=str(plan.side), price=float(built.price), size=float(built.size),
++        side=str(plan.side), price=hedge_price, size=hedge_size,
+         cust_ref=cust_ref, what="greenup", mode=mode, params=params,
+         max_stake=_effective_cap(request_row), client=client,
+     )
+-    # Se si e' passati dal place-and-trim l'ordine EFFETTIVO non e' ``built.order`` (che i
+-    # control avevano rifiutato): niente snapshot da un ordine VIOLATION nello specchio.
++    # Se si e' passati dal place-and-trim l'ordine EFFETTIVO non e' ``hedge_order`` (mai
++    # inviato): niente snapshot da un ordine non piazzato nello specchio.
+     sub_note = "" if submin_state is None else "; via place-and-trim (sotto-minimo)"
+     if cancel_failed:
+         # hedge PIAZZATO ma resting non annullati: esito INCOMPLETO esplicito
+         # (mai un done bugiardo — stessa semantica di _flatten_market).
+         raise ValueError(
+-            f"cash-out selezione INCOMPLETO: hedge {plan.side} {built.size}@{built.price} "
++            f"cash-out selezione INCOMPLETO: hedge {plan.side} {hedge_size}@{hedge_price} "
+             f"piazzato ma {len(cancel_failed)} resting NON annullati "
+             f"({cancel_failed[0].get('error')}) — ritentare il cash-out"
+         )
+     result = _result(
+         ok=True, action="greenup", mode=mode, request_row=request_row,
+-        cust_ref=cust_ref, order=(built.order if submin_state is None else None),
+-        price=built.price, size=built.size, side=plan.side,
++        cust_ref=cust_ref, order=(hedge_order if submin_state is None else None),
++        price=hedge_price, size=hedge_size, side=plan.side,
+         submin_step=(submin_state.step.value if submin_state is not None else None),
+         detail=f"{plan.note}; atteso vince={plan.expected_if_win} "
+                f"perde={plan.expected_if_lose}{cancel_note}{sub_note}",
+@@ -2639,17 +2667,18 @@ def _flatten_market(
+         leg_submin = None
+         try:
+             if closing:
+-                built = build_order(
++                # 01/10/2026: nessuna esenzione dai minimi; in LIVE sotto il minimo la
++                # gamba non si costruisce e va al place-and-trim (``_place_closing_leg``).
++                leg_order, leg_price, leg_size = _costruisci_chiusura(
+                     market, strategy=strategy, selection_id=sel, handicap=hcap,
+-                    side=side, order_type="LIMIT", price=plan.price, size=plan.size,
+-                    liability=None, persistence="LAPSE", time_in_force=None, min_fill_size=None,
+-                    jurisdiction=_jurisdiction(), max_stake=None,
+-                    customer_order_ref=ref, reduces_liability=True,
++                    side=side, price=plan.price, size=plan.size, persistence="LAPSE",
++                    cust_ref=ref, mode=mode,
+                 )
++                built = SimpleNamespace(order=leg_order, price=leg_price, size=leg_size)
+                 leg_submin = _place_closing_leg(
+-                    flumine, market, order=built.order, strategy=strategy, market_id=market_id,
+-                    selection_id=sel, handicap=hcap, side=side, price=float(built.price),
+-                    size=float(built.size), cust_ref=ref,
++                    flumine, market, order=leg_order, strategy=strategy, market_id=market_id,
++                    selection_id=sel, handicap=hcap, side=side, price=leg_price,
++                    size=leg_size, cust_ref=ref,
+                     what=f"cashout sel {sel}", mode=mode, params=params, client=client,
+                 )
+             else:
+@@ -2948,6 +2977,9 @@ def _start_submin(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str,
+     target_size = _f(ts) if ts is not None else _f(request_row.get("size"))
+     if target_size is None:
+         raise ValueError("place_submin richiede size (target sotto-minimo) o params.target_size")
++    # 01/10/2026: mai una riduzione sotto 0,50 EUR, floor di legge (regola d'ingresso della macchina)
++    from .trading.submin import verifica_importo_finale
++    verifica_importo_finale(str(request_row["side"]), target_size)
+ 
+     juris = _jurisdiction()
+     state = start_submin(
+diff --git a/Betfair/stream/motore_ordini.py b/Betfair/stream/motore_ordini.py
+index 2982999..b547ca0 100644
+--- a/Betfair/stream/motore_ordini.py
++++ b/Betfair/stream/motore_ordini.py
+@@ -40,14 +40,16 @@ ESTENSIONE DEL PROTOCOLLO (coordinatore, 24/09, dal referto della porta di Safe)
+   * ``time_in_force``: "FILL_OR_KILL" | null sul ``place`` (build_order lo valida
+     con la persistenza come per la coda DB; non abbinato -> l'evento ``order``
+     porta la fase "scaduto"/"annullato" con size_matched 0, mai un residuo);
+-  * ``reduces_liability``: bool del COMANDO (mai dai params: tolto sempre). Di
+-    serie passa come oggi (build_order consente la size sotto il minimo); con
++  * ``reduces_liability``: bool del COMANDO (mai dai params: tolto sempre). Con
+     kill-switch, guardia d'avvio o settings stantie scavalca SOLO se il runner lo
+     verifica sulle esposizioni abbinate del blotter, altrimenti rifiuto
+-    ``reduces_liability_non_verificabile``;
+-  * sotto il minimo di Betfair senza ``reduces_liability``: oggi rifiuto
+-    ``submin_non_percorribile`` (il place-and-trim dal canale e' il punto di
+-    ripresa 1 di STATO_RIPRESA.md);
++    ``reduces_liability_non_verificabile``. Dal 01/10/2026 NON esenta dai minimi;
++  * sotto il minimo di Betfair (aperture E chiusure, 01/10/2026,
++    ``_applica_minimi``): equivalente sul lato opposto dell'altra selezione di un
++    mercato a due esiti (eventi riportati al bot nei termini del chiesto), oppure
++    place-and-trim, oppure rifiuto ``SOTTO_MINIMO_NON_PIAZZABILE``; una punta
++    rifiutata ``INVALID_BET_SIZE`` ha UN solo ripiego ai 0,50 (``ripiego_050``) e una
++    taglia rifiutata non si ritenta identica;
+   * ``customerOrderRef`` = ref del comando: NON fattibile senza rompere il
+     riconoscimento degli ordini di flumine (vedi STATO_RIPRESA.md, punto 2); il
+     diario lega ogni ref al customerOrderRef VERO inviato (riga ``ordine``);
+@@ -103,6 +105,16 @@ M_SETTINGS = "settings_stantie"
+ M_DIARIO = "diario_non_scrivibile"
+ M_RIDUZIONE = "reduces_liability_non_verificabile"
+ M_SUBMIN = "submin_non_percorribile"
++# 01/10/2026 (RUNNER_MINIMI_CHIUSURE): ordine sotto il minimo di giurisdizione senza
++# nessuna via legittima (ne' equivalente ne' place-and-trim), oppure taglia gia'
++# rifiutata da Betfair: rifiuto esplicito al bot, MAI un REST verso Betfair.
++M_SOTTO_MINIMO = "SOTTO_MINIMO_NON_PIAZZABILE"
++#: chiavi della riga che il verdetto dei minimi puo' tradurre (equivalente)
++_CHIAVI_MINIMI = ("selection_id", "handicap", "side", "price", "size")
++#: secondi di sorveglianza di un place per il rifiuto INVALID_BET_SIZE di Betfair (la
++#: risposta di placeOrders puo' arrivare fino a 15 s dopo: Betting Enums, TIMEOUT)
++SORVEGLIANZA_TAGLIA_S = 20.0
++MAX_TAGLIE_RIFIUTATE = 500
+ # 25/09 AUTO-FOLLOW (``auto_follow.py``): il mercato non e' ancora sottoscritto.
+ # Sull'ACK (accettato) = "parcheggiato, aggancio al volo in corso"; sull'evento
+ # terminale (rifiutato) = "non arrivato entro MOTORE_AGGANCIO_MAX_MS: il bot
+@@ -574,6 +586,72 @@ def _ordine_eseguibile(ordine: Any) -> bool:
+     return _is_executable(ordine)
+ 
+ 
++def _codice_errore_place(ordine: Any) -> Optional[str]:
++    """Il codice d'errore di Betfair sulla risposta di placeOrders dell'ordine flumine
++    (``order.responses.place_response.error_code``), None se assente."""
++    resp = getattr(ordine, "responses", None)
++    pr = getattr(resp, "place_response", None) if resp is not None else None
++    codice = getattr(pr, "error_code", None) if pr is not None else None
++    return str(codice) if codice else None
++
++
++def _rifiutato_per_taglia(ordini: List[Any]) -> bool:
++    """Un ordine del comando e' stato RIFIUTATO da Betfair per la taglia: risposta
++    ``INVALID_BET_SIZE``, ordine terminale, niente abbinato. Solo RAM."""
++    for o in ordini or []:
++        try:
++            if (_codice_errore_place(o) == "INVALID_BET_SIZE" and _ordine_terminale(o)
++                    and float(getattr(o, "size_matched", 0.0) or 0.0) <= 0.0):
++                return True
++        except Exception:  # noqa: BLE001 - lettura difensiva
++            continue
++    return False
++
++
++def _ordine_ha_esito_positivo(ordine: Any) -> bool:
++    """L'ordine e' stato ACCETTATO da Betfair (bet_id o abbinato): nessun rifiuto di
++    taglia possibile, la sorveglianza si chiude."""
++    try:
++        return bool(getattr(ordine, "bet_id", None)) or \
++            float(getattr(ordine, "size_matched", 0.0) or 0.0) > 0.0
++    except Exception:  # noqa: BLE001 - lettura difensiva
++        return False
++
++
++def _riporta_tradotto(d: Dict[str, Any], tradotto: Dict[str, Any]) -> Dict[str, Any]:
++    """La riga dello specchio dell'ordine EQUIVALENTE riportata nei termini dell'ordine
++    CHIESTO dal bot (``live_order_build.riporta_abbinato_all_originale``). La riga vera
++    resta intera in ``riga_mandata``; ``tradotto`` dice chiesto e mandato."""
++    from . import live_order_build as LB
++
++    orig = tradotto["originale"]
++    mand = tradotto["mandato"]
++    out = dict(d)
++    out["riga_mandata"] = {k: d.get(k) for k in (
++        "selection_id", "handicap", "side", "price", "size", "size_matched",
++        "size_remaining", "average_price_matched", "size_cancelled", "size_lapsed",
++        "size_voided")}
++    mandata = float(mand["size"])
++    fattore = (float(orig["size"]) / mandata) if mandata > 0 else 0.0
++    abbinato, quota = LB.riporta_abbinato_all_originale(
++        orig["side"], orig["price"], orig["size"], mandata, d.get("size_matched"))
++    out.update({
++        "selection_id": orig["selection_id"], "handicap": orig.get("handicap", 0.0),
++        "side": orig["side"], "price": orig["price"], "size": orig["size"],
++        "size_matched": abbinato, "average_price_matched": (quota or 0.0),
++    })
++    for k in ("size_remaining", "size_cancelled", "size_lapsed", "size_voided"):
++        v = d.get(k)
++        if v is not None:
++            try:
++                out[k] = round(float(v) * fattore, 2)
++            except (TypeError, ValueError):
++                pass
++    out["tradotto"] = {k: (dict(v) if isinstance(v, dict) else v)
++                       for k, v in tradotto.items()}
++    return out
++
++
+ # ---------------------------------------------------------------------------
+ # Il motore
+ # ---------------------------------------------------------------------------
+@@ -623,6 +701,12 @@ class MotoreOrdini:
+         self._eta_settings = eta_settings or self._low.eta_settings_s
+         # place-and-trim in corso: ref interno awlq<rid> -> stato in RAM
+         self._submin: Dict[str, Dict[str, Any]] = {}
++        # 01/10/2026: place sorvegliati per il rifiuto INVALID_BET_SIZE di Betfair
++        # (ref interno -> {attore, ref, piano, ordini, t0, trattenuti}) e taglie gia'
++        # rifiutate ((mode, lato, size) -> ms): mai un secondo invio identico.
++        self._sorvegliati: Dict[str, Dict[str, Any]] = {}
++        self._taglie_rifiutate: "collections.OrderedDict[tuple, int]" = \
++            collections.OrderedDict()
+         self.canale = canale
+         self.diario = diario
+         self.scrittore = scrittore
+@@ -723,7 +807,7 @@ class MotoreOrdini:
+             # aspetta al massimo questo (mai il secondo del worker). Con un
+             # place-and-trim in corso il giro e' al passo della macchina
+             # (``_SUBMIN_POLL_SEC``): si avanza in RAM, mai un sonno sincrono.
+-            attesa = LOW._SUBMIN_POLL_SEC if self._submin else 0.5
++            attesa = LOW._SUBMIN_POLL_SEC if (self._submin or self._sorvegliati) else 0.5
+             if self._in_aggancio:
+                 attesa = min(attesa, 0.05)   # 25/09: il primo book si vede entro 50 ms
+             self._evento.wait(timeout=attesa)
+@@ -742,6 +826,10 @@ class MotoreOrdini:
+                 self.avanza_aggancio()
+             except Exception:  # noqa: BLE001
+                 logger.exception("[motore] avanzamento degli agganci KO")
++            try:
++                self.avanza_sorvegliati()
++            except Exception:  # noqa: BLE001
++                logger.exception("[motore] sorveglianza INVALID_BET_SIZE KO")
+ 
+     def drena(self, max_giri: int = 20) -> int:
+         """Serve tutto cio' che e' in coda sul canale. Ritorna i messaggi gestiti."""
+@@ -904,6 +992,9 @@ class MotoreOrdini:
+         """Le guardie del runner, TUTTE da RAM (zero IO). Ordine: eta', aggancio,
+         modalita' servibile, guardia d'avvio, kill-switch, freschezza settings."""
+         LOW = self._low  # 25/09: l'esecutore dello sport (calcio: live_order_worker)
++        # 01/10/2026: le guardie si fanno SEMPRE sull'ordine CHIESTO (mai su una
++        # traduzione di un giro precedente: aggancio al volo -> secondo giro)
++        self._ripristina_minimi(piano)
+         eta = ricevuto_ms - int(piano["creato_ms"])
+         if eta > int(piano["max_eta_ms"]):
+             raise Rifiuto(M_ETA, f"eta' {eta} ms > max_eta_ms {piano['max_eta_ms']}")
+@@ -1004,36 +1095,109 @@ class MotoreOrdini:
+                     riga["size"] = portata
+                     piano["portata_al_minimo"] = {"chiesto": round(chiesto, 2),
+                                                   "piazzato": round(portata, 2)}
+-        if azione == "place" and not riduce:
+-            # estensione 24/09 (3), decisione dell'utente: sotto il minimo di
+-            # Betfair il motore usa la STESSA macchina place-and-trim del worker
+-            # (``_start_submin`` + ``_advance_submin_row``), in paper E in live
+-            # (paper = stessa macchina sul client simulato). Qui SOLO la verifica
+-            # di percorribilita' (``start_submin``, pura): se la macchina non puo'
+-            # partire -> rifiuto ``submin_non_percorribile`` col motivo suo.
++        if azione == "place":
++            # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): i minimi valgono per OGNI place,
++            # aperture E chiusure (``reduces_liability`` non esenta piu'): il verdetto
++            # sceglie diretto / equivalente / place-and-trim / rifiuto esplicito.
++            self._applica_minimi(piano)
++
++    def _applica_minimi(self, piano: Dict[str, Any]) -> None:
++        """Il verdetto dei minimi di giurisdizione sul place del comando, PRIMA di
++        qualunque invio (zero IO: book e blotter in RAM).
++
++        - ``diretto``: nulla cambia;
++        - ``equivalente`` (mercato a due esiti): la riga diventa l'ordine equivalente sul
++          lato opposto dell'altra selezione (``piano["tradotto"]`` = originale e mandato,
++          per il diario e per riportare gli eventi al bot nei termini dell'ordine
++          chiesto, ``_riporta_tradotto``);
++        - ``submin``: la STESSA macchina place-and-trim del worker (``_start_submin`` +
++          ``_advance_submin_row``), in paper E in live; qui la verifica di
++          percorribilita' (``start_submin``, pura) -> altrimenti ``submin_non_percorribile``;
++        - ``impossibile``: ``Rifiuto(SOTTO_MINIMO_NON_PIAZZABILE)``, MAI un REST.
++
++        Un comando la cui taglia Betfair ha GIA' rifiutato (``INVALID_BET_SIZE`` visto da
++        questo motore) non si ritenta identico: rifiuto esplicito.
++        Idempotente: ``_controlla`` puo' girare due volte (aggancio al volo) e riparte
++        sempre dall'ordine chiesto (``minimi_originale``, ripristinato all'inizio)."""
++        from . import live_order_build as LB
++
++        LOW = self._low
++        riga = piano["riga"]
++        if piano.get("minimi_originale") is None:
++            piano["minimi_originale"] = {k: riga.get(k) for k in _CHIAVI_MINIMI}
++        lato = str(riga["side"]).lower()
++        try:
++            giurisdizione = LOW._jurisdiction()
++        except Exception as ex:  # noqa: BLE001 - minimo ignoto: fail-closed
++            raise Rifiuto(M_SUBMIN, f"minimo di giurisdizione non determinabile: "
++                                    f"{str(ex)[:120]}") from ex
++        altra = None
++        if self._flumine is not None and riga.get("market_id"):
+             try:
+-                minimo = float(LOW._sub_minimum_floor(str(riga["side"]).lower()))
+-            except Exception:  # noqa: BLE001 - minimo ignoto: fail-closed
+-                raise Rifiuto(M_SUBMIN, "minimo di giurisdizione non determinabile")
+-            if float(riga["size"]) < minimo - 1e-9:
+-                # D1-ter (28/09, caso B): un FILL_OR_KILL sotto il minimo era
+-                # RIFIUTATO qui, mentre il live REST (``place_submin_live``,
+-                # ``fill_or_kill=True``) lo esegue: parcheggio, taglio, rimpiazzo
+-                # alla quota target e residuo NON abbinato RITIRATO a fine
+-                # sequenza. Ora la stessa sequenza (la macchina parcheggia sempre
+-                # senza FOK: ``FlumineSubminOps.place``) e il ritiro del residuo
+-                # al passo ``done`` (``_ritira_residuo_fok``), in paper E in live.
+-                if riga.get("time_in_force") == "FILL_OR_KILL":
+-                    piano["submin_fok"] = True
+-                from .trading.submin import start_submin
+-                try:
+-                    start_submin(side=str(riga["side"]).lower(),
+-                                 target_price=float(riga["price"]),
+-                                 target_size=float(riga["size"]),
+-                                 jurisdiction=LOW._jurisdiction())  # come _start_submin
+-                except ValueError as ex:
+-                    raise Rifiuto(M_SUBMIN, str(ex)[:200]) from ex
+-                piano["submin"] = True
++                mercato = LOW._resolve_market(self._flumine, riga.get("market_id"))
++                altra = altro_runner_due_esiti(mercato, int(riga["selection_id"]))
++            except Exception:  # noqa: BLE001 - mercato non risolvibile: niente equivalente
++                altra = None
++        verdetto = LB.verdetto_minimi(
++            giurisdizione, lato, float(riga["price"]), float(riga["size"]),
++            altra_selezione=altra,
++            # il runner tennis non ha il place-and-trim (``esecutore_tennis.MOTIVO_SUBMIN``)
++            submin_disponibile=getattr(LOW, "MOTIVO_SUBMIN", None) is None)
++        piano["minimi"] = {"esito": verdetto.esito, "motivo": verdetto.motivo}
++        if verdetto.esito == LB.VERDETTO_IMPOSSIBILE:
++            dettaglio = str(verdetto.motivo or "")
++            if dettaglio.startswith(M_SOTTO_MINIMO + ":"):
++                dettaglio = dettaglio[len(M_SOTTO_MINIMO) + 1:].strip()
++            raise Rifiuto(M_SOTTO_MINIMO, dettaglio[:240])
++        if verdetto.esito == LB.VERDETTO_EQUIVALENTE:
++            eq = verdetto.equivalente
++            orig = dict(piano["minimi_originale"])
++            orig["side"] = lato
++            mandato = {"selection_id": int(verdetto.altra_selezione[0]),
++                       "handicap": float(verdetto.altra_selezione[1]),
++                       "side": eq.side, "price": float(eq.price), "size": float(eq.size)}
++            riga.update(mandato)
++            piano["tradotto"] = {
++                "originale": {"selection_id": int(orig["selection_id"]),
++                              "handicap": float(orig.get("handicap") or 0.0),
++                              "side": lato, "price": float(orig["price"]),
++                              "size": round(float(orig["size"]), 2)},
++                "mandato": dict(mandato),
++                "quota_esatta": eq.price_esatta,
++                "scarto_se_vince_chiesta": eq.scarto_se_vince_chiesta,
++                "scarto_se_vince_altra": eq.scarto_se_vince_altra,
++                "motivo": verdetto.motivo,
++            }
++        elif verdetto.esito == LB.VERDETTO_SUBMIN:
++            # D1-ter (28/09, caso B): un FILL_OR_KILL sotto il minimo fa la stessa
++            # sequenza del live REST (``place_submin_live``, ``fill_or_kill=True``):
++            # parcheggio, taglio, rimpiazzo e residuo NON abbinato RITIRATO a fine
++            # sequenza (``_ritira_residuo_fok``), in paper E in live.
++            if riga.get("time_in_force") == "FILL_OR_KILL":
++                piano["submin_fok"] = True
++            from .trading.submin import start_submin
++            try:
++                start_submin(side=lato, target_price=float(riga["price"]),
++                             target_size=float(riga["size"]),
++                             jurisdiction=giurisdizione)  # come _start_submin
++            except ValueError as ex:
++                raise Rifiuto(M_SUBMIN, str(ex)[:200]) from ex
++            piano["submin"] = True
++        # "un ordine rifiutato per taglia NON si ritenta identico" (01/10/2026)
++        chiave = (str(piano.get("mode")), str(riga["side"]).lower(),
++                  round(float(riga["size"]), 2))
++        if not piano.get("submin") and chiave in self._taglie_rifiutate:
++            raise Rifiuto(M_SOTTO_MINIMO, (
++                f"Betfair ha gia' rifiutato INVALID_BET_SIZE un {chiave[1].upper()} da "
++                f"{chiave[2]:.2f} EUR ({chiave[0]}): non si ritenta identico"))
++
++    def _ripristina_minimi(self, piano: Dict[str, Any]) -> None:
++        """Riporta la riga all'ordine CHIESTO prima di rifare le guardie (aggancio)."""
++        orig = piano.get("minimi_originale")
++        if orig is not None:
++            piano["riga"].update(orig)
++        for k in ("tradotto", "submin", "submin_fok", "minimi"):
++            piano.pop(k, None)
+ 
+     def _riduzione_verificata(self, flumine: Any, riga: Dict[str, Any], mode: str) -> bool:
+         """Il place riduce DAVVERO la posizione abbinata del runner? Legge le
+@@ -1096,7 +1260,14 @@ class MotoreOrdini:
+         cust = LOW._cust_ref(rid)
+         with self._lock_seq:
+             self._rif_interni[cust] = {"attore": attore, "ref": ref, "mode": mode,
+-                                       "pronto": False, "trattenuti": []}
++                                       "pronto": False, "trattenuti": [],
++                                       # 01/10: ordine tradotto nell'equivalente -> gli
++                                       # eventi tornano al bot nei termini del CHIESTO
++                                       "tradotto": piano.get("tradotto"),
++                                       "extra_fisso": ({"ripiego_050":
++                                                        dict(piano["ripiego_050"])}
++                                                       if piano.get("ripiego_050")
++                                                       else None)}
+             self._rif_ordine.append(cust)
+             while len(self._rif_ordine) > 5000:
+                 self._rif_interni.pop(self._rif_ordine.popleft(), None)
+@@ -1108,7 +1279,29 @@ class MotoreOrdini:
+             # la STESSA macchina del worker: azione place_submin (step INIT->PLACED
+             # qui, gli step successivi da ``avanza_submin`` a ogni giro)
+             riga["action"] = "place_submin"
+-        self._imposta_contesto(piano["strategy_ref"], self._pre_invio(ref))
++        if piano.get("tradotto") and errore_forzato is None:
++            # 01/10: il diario dice che l'ordine e' stato TRADOTTO, con il chiesto e il
++            # mandato, PRIMA dell'invio (la riga ``ordine`` del pre-invio ha il mandato)
++            try:
++                self.diario.scrivi({"tipo": "tradotto", "ref": ref, "rid": rid,
++                                    "ref_interno": cust, "ts_ms": self._ora_ms(),
++                                    **piano["tradotto"]})
++            except Exception as ex:  # noqa: BLE001 - fail-closed: senza diario niente ordine
++                errore_forzato = f"{M_DIARIO}: traduzione non scrivibile: {str(ex)[:120]}"
++        inviati: List[Any] = []
++        hook_diario = self._pre_invio(ref)
++
++        def _hook(order: Any, market: Any, what: str, info: Optional[Dict[str, Any]]) -> None:
++            hook_diario(order, market, what, info)
++            if order is not None:
++                inviati.append(order)       # per la sorveglianza INVALID_BET_SIZE
++        sorveglia = (errore_forzato is None and not submin and mode == "live"
++                     and riga.get("action") == "place")
++        if sorveglia:
++            # 01/10: registrato PRIMA dell'invio, cosi' una riga terminale dello specchio
++            # che arrivasse subito (rifiuto di Betfair) trova gia' la sorveglianza
++            self._sorveglia(cust, attore, ref, piano, inviati)
++        self._imposta_contesto(piano["strategy_ref"], _hook)
+         try:
+             if errore_forzato is not None:
+                 # 25/09: comando mai partito (aggancio scaduto o guardia
+@@ -1125,6 +1318,9 @@ class MotoreOrdini:
+         finally:
+             self._pulisci_contesto()
+         if LOW._tempi_on(): LOW._TEMPI.fine(cust, ok, errore)  # noqa: E701 - F0 misura
++        if not ok and sorveglia:
++            with self._lock_seq:
++                self._sorvegliati.pop(cust, None)   # niente e' partito: niente da sorvegliare
+         result = lsb.captured.get("result") or {"ok": ok, "action": riga["action"],
+                                                 "mode": mode, "error": errore}
+         if ok and submin:
+@@ -1158,7 +1354,7 @@ class MotoreOrdini:
+                 info["pronto"] = True
+                 trattenuti, info["trattenuti"] = info["trattenuti"], []
+                 for payload in trattenuti:
+-                    self._emetti(attore, ref, payload, fase_da_riga(payload))
++                    self._emetti_specchio(cust, attore, ref, payload)
+         contesto = None
+         if ok:
+             try:
+@@ -1487,6 +1683,17 @@ class MotoreOrdini:
+     def _emetti(self, attore: str, ref: str, riga: Dict[str, Any], fase: str,
+                 extra: Optional[Dict[str, Any]] = None) -> None:
+         d = dict(riga)
++        # 01/10/2026: un ordine TRADOTTO nell'equivalente torna al bot nei termini
++        # dell'ordine CHIESTO (selezione, lato, quota, size, abbinato); la riga vera
++        # mandata a Betfair viaggia intera in ``riga_mandata``. Un ripiego ai 0,50 porta
++        # sempre la sua dichiarazione (``ripiego_050``).
++        rif = self._rif_interno_di(d.get("client_order_ref"))
++        info = self._rif_interni.get(rif) if rif is not None else None
++        if info is not None:
++            if info.get("tradotto"):
++                d = _riporta_tradotto(d, info["tradotto"])
++            if info.get("extra_fisso"):
++                d.update(info["extra_fisso"])
+         if extra:
+             d.update(extra)
+         d.update({"ref": ref, "seq": self._prossimo_seq(attore), "fase": fase,
+@@ -1538,7 +1745,162 @@ class MotoreOrdini:
+             if not info["pronto"]:
+                 info["trattenuti"].append(dict(payload))
+                 return
+-            self._emetti(info["attore"], info["ref"], payload, fase_da_riga(payload))
++            self._emetti_specchio(rif, info["attore"], info["ref"], payload)
++
++    # ------------------------------------- 01/10 traduzione e ripiego INVALID_BET_SIZE
++    def _emetti_specchio(self, cust: str, attore: str, ref: str,
++                         payload: Dict[str, Any]) -> None:
++        """Una riga dello specchio diventa evento ``order``, TRANNE la riga terminale di
++        un place sorvegliato che Betfair ha rifiutato ``INVALID_BET_SIZE``: quella si
++        TRATTIENE (il bot non deve vedere "annullato" mentre il motore fa l'unico
++        ripiego ai 0,50); la emette ``avanza_sorvegliati`` se il ripiego non parte.
++        Chiamata sotto ``_lock_seq``."""
++        s = self._sorvegliati.get(cust)
++        if s is not None and not s.get("chiuso"):
++            if _rifiutato_per_taglia(s["ordini"]) and fase_da_riga(payload) in (
++                    "annullato", "scaduto", "rifiutato", "errore"):
++                s["trattenuto"] = dict(payload)
++                self.sveglia()
++                return
++        self._emetti(attore, ref, payload, fase_da_riga(payload))
++
++    def _sorveglia(self, cust: str, attore: str, ref: str, piano: Dict[str, Any],
++                   inviati: List[Any]) -> None:
++        with self._lock_seq:
++            ora = time.monotonic()
++            for k in [k for k, v in self._sorvegliati.items()
++                      if ora - v["t0"] > 3 * SORVEGLIANZA_TAGLIA_S]:
++                self._sorvegliati.pop(k, None)      # pulizia: niente crescita senza fine
++            self._sorvegliati[cust] = {"attore": attore, "ref": ref, "piano": piano,
++                                       "ordini": inviati, "t0": ora, "trattenuto": None,
++                                       "chiuso": False}
++
++    def avanza_sorvegliati(self) -> int:
++        """I place sorvegliati (live): se Betfair ha risposto ``INVALID_BET_SIZE`` la
++        taglia si ricorda (mai un secondo invio identico) e, per una PUNTA non multipla
++        di 0,50 al primo rifiuto, si fa UN solo nuovo tentativo arrotondato per difetto
++        ai 0,50 con il residuo DICHIARATO al bot (``ripiego_050``). Ogni altro esito
++        chiude la sorveglianza. Nessun sonno, solo RAM; ritorna i ripieghi partiti."""
++        from . import live_order_build as LB
++
++        if not self._sorvegliati:
++            return 0
++        n = 0
++        ora = time.monotonic()
++        for cust in list(self._sorvegliati):
++            with self._lock_seq:
++                s = self._sorvegliati.get(cust)
++                if s is None or s.get("chiuso"):
++                    self._sorvegliati.pop(cust, None)
++                    continue
++                ordini = list(s["ordini"])
++                rifiutato = _rifiutato_per_taglia(ordini)
++                vivo_o_abbinato = any(_ordine_ha_esito_positivo(o) for o in ordini)
++                finito = bool(ordini) and all(_ordine_terminale(o) for o in ordini)
++                if not rifiutato:
++                    if vivo_o_abbinato or finito or ora - s["t0"] > SORVEGLIANZA_TAGLIA_S:
++                        self._sorvegliati.pop(cust, None)
++                        if s.get("trattenuto") is not None:
++                            self._emetti(s["attore"], s["ref"], s["trattenuto"],
++                                         fase_da_riga(s["trattenuto"]))
++                    continue
++                s["chiuso"] = True
++                self._sorvegliati.pop(cust, None)
++            piano = s["piano"]
++            riga = piano["riga"]
++            lato = str(riga["side"]).lower()
++            size = round(float(riga["size"]), 2)
++            self._ricorda_taglia(str(piano.get("mode")), lato, size)
++            nuova = LB.size_ripiego_punta(size) if lato == "back" else None
++            motivo_no = None
++            if piano.get("ripiego_050"):
++                motivo_no = "ripiego ai 0,50 gia' fatto una volta"
++            elif nuova is None:
++                motivo_no = "nessun ripiego possibile (non e' una punta non multipla di 0,50)"
++            elif self._guardia_armata():
++                motivo_no = "guardia d'avvio armata"
++            elif not piano.get("riduce") and (self._low._kill_switch()
++                                              or self._low._db_kill_switch()):
++                motivo_no = "kill-switch ATTIVO (apertura)"
++            if motivo_no is not None:
++                logger.warning("[motore] %s rifiutato INVALID_BET_SIZE (%s %.2f): %s",
++                               s["ref"], lato, size, motivo_no)
++                self._emetti_rifiuto_taglia(s, motivo_no)
++                continue
++            self._ripiega(s, nuova)
++            n += 1
++        return n
++
++    def _ricorda_taglia(self, mode: str, lato: str, size: float) -> None:
++        with self._lock_seq:
++            self._taglie_rifiutate[(mode, lato, round(float(size), 2))] = self._ora_ms()
++            while len(self._taglie_rifiutate) > MAX_TAGLIE_RIFIUTATE:
++                self._taglie_rifiutate.popitem(last=False)
++
++    def _emetti_rifiuto_taglia(self, s: Dict[str, Any], motivo: str) -> None:
++        """L'esito terminale per il bot: la riga trattenuta (o una costruita) con il
++        codice di Betfair e il motivo per cui il ripiego non e' partito."""
++        piano = s["piano"]
++        riga = piano["riga"]
++        cust = self._low._cust_ref(riga["id"])
++        payload = s.get("trattenuto")
++        if payload is None:
++            payload = riga_specchio_da_esito(
++                {"status": "EXECUTION_COMPLETE", "size_matched": 0.0,
++                 "size_remaining": 0.0}, cust_ref=cust, rid=riga["id"],
++                mode=piano["mode"], riga=riga)
++        with self._lock_seq:
++            self._emetti(s["attore"], s["ref"], payload, "rifiutato",
++                         extra={"errore_betfair": "INVALID_BET_SIZE",
++                                "ripiego_050": {"eseguito": False, "motivo": motivo}})
++        try:
++            self.diario.scrivi({"tipo": "rifiuto_taglia", "ref": s["ref"],
++                                "ref_interno": cust, "side": riga.get("side"),
++                                "size": riga.get("size"), "motivo": motivo,
++                                "ts_ms": self._ora_ms()}, durevole=False)
++        except Exception:  # noqa: BLE001 - il rifiuto resta rifiuto
++            pass
++
++    def _ripiega(self, s: Dict[str, Any], nuova: float) -> None:
++        """UN solo nuovo tentativo della punta rifiutata, ai 0,50 per difetto, con il
++        residuo dichiarato. Nuovo ref interno (nuovo ordine), STESSO ref del bot."""
++        LOW = self._low
++        vecchio = s["piano"]
++        riga_v = vecchio["riga"]
++        chiesta = round(float(riga_v["size"]), 2)
++        riga = dict(riga_v)
++        riga["size"] = float(nuova)
++        riga["id"] = next(LOW._LOCAL_RID)
++        riga["action"] = "place"
++        piano = dict(vecchio)
++        piano["riga"] = riga
++        residuo = round(chiesta - float(nuova), 2)
++        piano["ripiego_050"] = {"eseguito": True, "motivo": "INVALID_BET_SIZE",
++                                "chiesto": chiesta, "piazzato": float(nuova),
++                                "residuo": residuo,
++                                "ref_interno_rifiutato": LOW._cust_ref(riga_v["id"])}
++        if vecchio.get("tradotto"):
++            t = {k: (dict(v) if isinstance(v, dict) else v)
++                 for k, v in vecchio["tradotto"].items()}
++            fattore = float(nuova) / chiesta if chiesta > 0 else 0.0
++            t["originale"]["size"] = round(float(t["originale"]["size"]) * fattore, 2)
++            t["mandato"]["size"] = float(nuova)
++            piano["tradotto"] = t
++            piano["ripiego_050"]["residuo_nei_termini_del_chiesto"] = round(
++                float(vecchio["tradotto"]["originale"]["size"]) - t["originale"]["size"], 2)
++        try:
++            self.diario.scrivi({
++                "tipo": "inviato", "canale": "ripiego_050", "ref": s["ref"],
++                "attore": s["attore"], "azione": "place", "mode": piano["mode"],
++                "rid": riga["id"], "ref_interno": LOW._cust_ref(riga["id"]),
++                "strategy_ref": piano.get("strategy_ref"), "parametri": dict(riga),
++                "ripiego_050": dict(piano["ripiego_050"]), "ts_ms": self._ora_ms()})
++        except Exception as ex:  # noqa: BLE001 - fail-closed: senza diario niente ordine
++            self._emetti_rifiuto_taglia(s, f"{M_DIARIO}: {str(ex)[:120]}")
++            return
++        logger.warning("[motore] %s: punta %.2f rifiutata INVALID_BET_SIZE -> UN ripiego a "
++                       "%.2f (residuo %.2f dichiarato)", s["ref"], chiesta, nuova, residuo)
++        self._esegui(s["attore"], s["ref"], piano)
+ 
+     def _rispondi_da_seq(self, c: Any, d: Dict[str, Any]) -> None:
+         dal = d.get("seq")
+diff --git a/Betfair/stream/tests/test_cashout_pro_2026_09_10.py b/Betfair/stream/tests/test_cashout_pro_2026_09_10.py
+index a3d8eeb..8cf49e2 100644
+--- a/Betfair/stream/tests/test_cashout_pro_2026_09_10.py
++++ b/Betfair/stream/tests/test_cashout_pro_2026_09_10.py
+@@ -493,20 +493,22 @@ def test_place_sub_minimum_sequenza_completa():
+     assert got is order
+ 
+ 
+-def test_place_sub_minimum_lato_lay_parcheggia_a_1_01():
++def test_place_sub_minimum_banca_sotto_un_euro_mai_tentata():
++    # 01/10/2026: banca minima .it 1,00 e importo finale minimo del place-and-trim 1,00:
++    # una banca da 0,30 NON si riduce (prima: parcheggio 0,50 @1,01 -> INVALID_BET_SIZE
++    # sul parcheggio e INVALID_PROFIT_RATIO sul residuo). Nessuna operazione.
+     market = _Market("1.1")
+     order = _sub_order()
+     order.side = "lay"
+     ops = _SubOps(order)
+-    wk._place_sub_minimum(
+-        None, market, market_id="1.1", strategy=_STRAT, selection_id=10, handicap=0.0,
+-        side="lay", price=2.50, size=0.30, cust_ref="awlq2x0", what="test",
+-        ops=ops, find_order=lambda _oid, _bid: order, sleep=lambda *_a: None,
+-        timeout_sec=5.0,
+-    )
+-    assert ops.calls[0][1] == pytest.approx(1.01)
+-    assert ops.calls[0][2] == pytest.approx(0.50)      # minimo LAY .it
+-    assert ops.calls[1][1] == pytest.approx(0.20)
++    with pytest.raises(ValueError, match="SOTTO_MINIMO_NON_PIAZZABILE"):
++        wk._place_sub_minimum(
++            None, market, market_id="1.1", strategy=_STRAT, selection_id=10, handicap=0.0,
++            side="lay", price=2.50, size=0.30, cust_ref="awlq2x0", what="test",
++            ops=ops, find_order=lambda _oid, _bid: order, sleep=lambda *_a: None,
++            timeout_sec=5.0,
++        )
++    assert ops.calls == []
+ 
+ 
+ def test_place_sub_minimum_abort_ritira_il_residuo_e_alza():
+@@ -685,27 +687,39 @@ def test_equalize_gamba_su_runner_piatto_e_apertura_non_chiusura():
+     legs = {leg["selection_id"]: leg for leg in row["result"]["legs"]}
+     # chiusura (sel 10, esposizione aperta): size libera al centesimo (reduces_liability)
+     assert legs[10]["size"] == pytest.approx(6.60) and not legs[10].get("opening")
+-    # APERTURA (sel 20, runner piatto): min-stake NORMALE .it -> BACK legalizzato allo
+-    # step 0.50 (6.58 -> 6.50): la prova che NON e' passata da reduces_liability=True
++    # APERTURA (sel 20, runner piatto): min-stake NORMALE .it. 01/10/2026: la punta e'
++    # legalizzata al CENTESIMO (niente floor a 0,50 che lasciava 0,08 scoperti): 6,58
+     assert legs[20]["opening"] is True
+-    assert legs[20]["size"] == pytest.approx(6.50)
++    assert legs[20]["size"] == pytest.approx(6.58)
+     assert row["result"]["equal"] is True and row["result"]["partial"] is False
+ 
+ 
+ def test_equalize_apertura_sotto_minimo_saltata_mai_submin_piano_parziale(monkeypatch):
+-    monkeypatch.setattr(wk, "_place_sub_minimum",
+-                        lambda *_a, **_k: pytest.fail("MAI place-and-trim su un'apertura"))
++    # 01/10/2026: la CHIUSURA LAY 0,66 (sel 10) e' sotto la banca minima .it (1,00): in
++    # LIVE va al place-and-trim deciso PRIMA dell'invio (mai un place diretto che Betfair
++    # rifiuterebbe). L'APERTURA (sel 20) non ci va MAI: resta saltata.
++    chiamate: List[Dict[str, Any]] = []
++
++    def _finto_submin(*_a, **kw):
++        assert kw["selection_id"] != 20, "MAI place-and-trim su un'apertura"
++        chiamate.append(kw)
++        return SimpleNamespace(step=SimpleNamespace(value="done")), None
++
++    monkeypatch.setattr(wk, "_place_sub_minimum", _finto_submin)
+     market = _market_small()
+     row = _row_eq(302)
+     wk._do_cashout_all(_Sb([row]), _fl(market), row, "live", _STRAT)
+     assert row["status"] == "done"
+     assert [leg["selection_id"] for leg in row["result"]["legs"]] == [10]   # solo la chiusura
++    assert row["result"]["legs"][0].get("submin") is True
++    assert [c["selection_id"] for c in chiamate] == [10]
++    assert chiamate[0]["size"] == pytest.approx(0.66)
+     skipped = row["result"]["skipped"]
+     assert len(skipped) == 1 and skipped[0]["selection_id"] == 20
+     assert skipped[0]["size"] == pytest.approx(0.66) and "minimo" in skipped[0]["note"]
+     assert row["result"]["partial"] is True and row["result"]["equal"] is False
+     assert "PARZIALE" in row["result"]["detail"]
+-    assert len(market.placed) == 1
++    assert len(market.placed) == 0       # nessun place diretto: la chiusura e' nel submin
+ 
+ 
+ def test_equalize_apertura_passa_dal_rate_guard():
+diff --git a/Betfair/stream/tests/test_live_order_build.py b/Betfair/stream/tests/test_live_order_build.py
+index d37451b..42c66b0 100644
+--- a/Betfair/stream/tests/test_live_order_build.py
++++ b/Betfair/stream/tests/test_live_order_build.py
+@@ -148,18 +148,21 @@ def test_lay_conversion_bad_price_raises():
+ 
+ 
+ # ===========================================================================
+-# min_stake_rules — .it BACK (min 2.00, floor 0.50)
++# min_stake_rules — .it BACK (min 2.00, al CENTESIMO dal 01/10/2026: l'API accetta
++# 7,47; il floor a 0,50 lasciava residui scoperti fino a 0,49)
+ # ===========================================================================
+ @pytest.mark.parametrize(
+     "size, ok, legal",
+     [
+         (1.5, False, None),
++        (1.99, False, None),
+         (2.0, True, 2.0),
+-        (2.3, True, 2.0),
++        (2.3, True, 2.3),
+         (2.5, True, 2.5),
+-        (2.7, True, 2.5),
++        (2.7, True, 2.7),
+         (3.0, True, 3.0),
+-        (4.99, True, 4.5),
++        (4.99, True, 4.99),
++        (7.47, True, 7.47),
+     ],
+ )
+ def test_min_stake_it_back(size, ok, legal):
+@@ -171,14 +174,18 @@ def test_min_stake_it_back(size, ok, legal):
+ 
+ 
+ # ===========================================================================
+-# min_stake_rules — .it LAY (min size 0.50, no floor a 0.50)
++# min_stake_rules — .it LAY (01/10/2026: minimo = IT_LAY_MIN_SIZE = 1,00, costante
++# condivisa e prudente: 0,50 nella doc, 1,00 per betfair.it 2023; nessun passo)
+ # ===========================================================================
+ @pytest.mark.parametrize(
+     "size, ok, legal",
+     [
+         (0.3, False, None),
+-        (0.5, True, 0.5),
+-        (0.75, True, 0.75),
++        (0.5, False, None),
++        (0.75, False, None),
++        (0.99, False, None),
++        (1.0, True, 1.0),
++        (1.37, True, 1.37),
+         (2.0, True, 2.0),
+     ],
+ )
+@@ -188,14 +195,16 @@ def test_min_stake_it_lay(size, ok, legal):
+     assert v.legalized_size == legal
+ 
+ 
+-def test_min_stake_reduces_liability_allows_submin():
+-    # green-up/hedge: sotto-minimo consentito (size accettata, round 2dp)
++def test_min_stake_reduces_liability_non_esenta_piu():
++    # 01/10/2026: Betfair NON ha eccezioni per chi riduce l'esposizione (banca di
++    # chiusura 0,43 @18 rifiutata INVALID_BET_SIZE 21 volte): il flag e' solo
++    # informazione, il verdetto e' identico a quello senza flag.
+     v = min_stake_rules("it", "back", 3.0, 0.37, reduces_liability=True)
+-    assert v.valid is True
+-    assert v.legalized_size == 0.37
+-    v2 = min_stake_rules("it", "lay", 5.0, 0.12, reduces_liability=True)
+-    assert v2.valid is True
+-    assert v2.legalized_size == 0.12
++    assert v.valid is False and v.legalized_size is None
++    assert v.reason.startswith("SOTTO_MINIMO_NON_PIAZZABILE")
++    v2 = min_stake_rules("it", "lay", 18.0, 0.43, reduces_liability=True)
++    assert v2.valid is False and v2.legalized_size is None
++    assert min_stake_rules("it", "lay", 18.0, 0.43, reduces_liability=True) ==         min_stake_rules("it", "lay", 18.0, 0.43)
+ 
+ 
+ def test_min_stake_invalid_inputs():
+@@ -267,10 +276,12 @@ def test_build_back_rounds_price_to_tick():
+     assert b.order.order_type.price == 3.05
+ 
+ 
+-def test_build_back_floors_size_to_step():
++def test_build_back_tiene_il_centesimo():
++    # 01/10/2026: niente piu' floor a 0,50 (residuo scoperto fino a 0,49)
+     b = build_order(_market(), **_base_kwargs(price=3.0, size=4.99))
+-    assert b.size == 4.5
+-    assert "legalize" in b.note
++    assert b.size == 4.99
++    assert b.order.order_type.size == 4.99
++    assert "legalize" not in b.note
+ 
+ 
+ def test_build_back_below_min_raises():
+diff --git a/Betfair/stream/tests/test_live_order_worker.py b/Betfair/stream/tests/test_live_order_worker.py
+index bfd4571..cb231e5 100644
+--- a/Betfair/stream/tests/test_live_order_worker.py
++++ b/Betfair/stream/tests/test_live_order_worker.py
+@@ -814,26 +814,40 @@ def test_config_helpers_reread_env(monkeypatch):
+ # place_submin (place-and-trim)
+ # ===========================================================================
+ def test_submin_start_places_step1_and_stays_processing():
+-    sb = _FakeSupabase([_row(1, action="place_submin", side="lay", price=5.0, size=0.30)])
++    # 01/10/2026: l'importo finale di un place-and-trim e' >= 1,00 (regola d'ingresso):
++    # il caso d'uso e' la PUNTA fra 1,00 e 2,00 (banca minima .it = 1,00).
++    sb = _FakeSupabase([_row(1, action="place_submin", side="back", price=5.0, size=1.50)])
+     market = _FakeMarket("1.1")
+     fl = _FakeFlumine({"1.1": market})
+ 
+     n = wk._process_once(sb, fl, strategy=_STRAT)
+ 
+     assert n == 1
+-    # step1: place size minima @ quota non abbinabile (lay 1.01), size 0.50
++    # step1: place size minima @ quota non abbinabile (back 1000), size 2.00
+     assert [c[0] for c in market.calls] == ["place_order"]
+     placed = market.calls[0][1]
+-    assert placed.order_type.price == 1.01
+-    assert placed.order_type.size == 0.50
++    assert placed.order_type.price == 1000.0
++    assert placed.order_type.size == 2.00
+     row = _by_id(sb, 1)
+     assert row["status"] == "processing"   # sequenza in corso
+     res = row["result"]
+     assert res["submin_step"] == "placed"
+-    assert res["submin_state"]["target_size"] == 0.30
++    assert res["submin_state"]["target_size"] == 1.50
+     assert res["submin_order_id"]  # id flumine persistito per i poll successivi
+ 
+ 
++def test_submin_start_sotto_un_euro_rifiutato_senza_ordini():
++    # 01/10/2026: la riduzione sotto 1,00 non si tenta mai (minimo commerciale .it)
++    sb = _FakeSupabase([_row(1, action="place_submin", side="lay", price=5.0, size=0.30)])
++    market = _FakeMarket("1.1")
++    fl = _FakeFlumine({"1.1": market})
++    wk._process_once(sb, fl, strategy=_STRAT)
++    row = _by_id(sb, 1)
++    assert row["status"] == "error"
++    assert "SOTTO_MINIMO_NON_PIAZZABILE" in row["error"]
++    assert market.calls == []
++
++
+ def test_submin_inflight_advance_to_trimmed():
+     order = _fake_order(bet_id="B1", market_id="1.1", side="LAY",
+                         status="EXECUTABLE", price=1.01, size=0.50, size_remaining=0.50)
+@@ -898,7 +912,7 @@ def test_submin_inflight_unexpected_match_aborts_to_error():
+ def test_submin_persists_init_state_before_real_place():
+     """Lo SubminState ATTESO (step=INIT) è persistito su DB PRIMA del market.place_order
+     REALE: un crash tra place e persistenza lascia comunque traccia (no ordine orfano)."""
+-    sb = _FakeSupabase([_row(1, action="place_submin", side="lay", price=5.0, size=0.30)])
++    sb = _FakeSupabase([_row(1, action="place_submin", side="back", price=5.0, size=1.50)])
+     seen: Dict[str, Any] = {}
+ 
+     class _PeekMarket(_FakeMarket):
+@@ -1034,7 +1048,7 @@ def test_find_order_by_cust_ref_scans_all_markets():
+ def test_submin_start_passes_customer_strategy_ref_to_place():
+     """Lo step1 submin passa il customer_strategy_ref NATIVO a market.place_order (come il
+     place normale), non solo l'ordine."""
+-    sb = _FakeSupabase([_row(1, action="place_submin", side="lay", price=5.0, size=0.30)])
++    sb = _FakeSupabase([_row(1, action="place_submin", side="back", price=5.0, size=1.50)])
+     market = _FakeMarket("1.1")
+     fl = _FakeFlumine({"1.1": market})
+ 
+diff --git a/Betfair/stream/tests/test_motore_ordini_2026_09_24.py b/Betfair/stream/tests/test_motore_ordini_2026_09_24.py
+index c6a0cec..0fdc4b0 100644
+--- a/Betfair/stream/tests/test_motore_ordini_2026_09_24.py
++++ b/Betfair/stream/tests/test_motore_ordini_2026_09_24.py
+@@ -718,7 +718,10 @@ def test_place_and_trim_timeout_ritira_il_residuo(amb, monkeypatch):
+ 
+ 
+ @pytest.mark.parametrize("modifica,parola", [
+-    ({"size": 0.005}, "floor"),                         # sotto il centesimo
++    # 01/10/2026: sotto 1,00 EUR il place-and-trim non si tenta (e senza equivalente
++    # su un mercato non a due esiti): rifiuto SOTTO_MINIMO_NON_PIAZZABILE, mai REST
++    ({"size": 0.005}, "1,00 non si tenta mai"),         # sotto il centesimo
++    ({"size": 0.50}, "1,00 non si tenta mai"),          # sotto il minimo commerciale
+     # D1-ter (28/09, caso B): il FOK sotto il minimo NON e' piu' rifiutato: fa
+     # la sequenza del live e ritira il residuo (test_motore_submin_fok_caso_b_*)
+ ])
+@@ -729,17 +732,18 @@ def test_place_and_trim_non_percorribile_rifiuto_con_motivo(amb, modifica, parol
+     d.update(modifica)
+     _manda(amb, ws, d)
+     ack = _ack(amb, ws)
+-    assert ack["accettato"] is False and ack["motivo"].startswith(MO.M_SUBMIN)
++    assert ack["accettato"] is False and ack["motivo"].startswith(MO.M_SOTTO_MINIMO)
+     assert parola in ack["motivo"]
+     assert amb.market.calls == []
+ 
+ 
+ def test_sopra_il_minimo_nessun_place_and_trim(amb):
+     ws = amb.ch.collega("safe")
+-    _manda(amb, ws, _cmd(n=2, side="LAY", size=0.6))     # LAY .it: minimo 0,50
++    # 01/10/2026: LAY .it minimo 1,00 (IT_LAY_MIN_SIZE); 1,20 e' sopra -> diretto
++    _manda(amb, ws, _cmd(n=2, side="LAY", size=1.2))
+     assert _ack(amb, ws)["accettato"] is True
+     assert amb.motore._submin == {} and len(amb.market.calls) == 1
+-    assert amb.market.calls[0][0].order_type.size == 0.6
++    assert amb.market.calls[0][0].order_type.size == 1.2
+ 
+ 
+ @pytest.mark.parametrize("win,lose,side,price,size,atteso", [
+diff --git a/Betfair/stream/tests/test_submin.py b/Betfair/stream/tests/test_submin.py
+index cf5e7fc..a9f8249 100644
+--- a/Betfair/stream/tests/test_submin.py
++++ b/Betfair/stream/tests/test_submin.py
+@@ -99,7 +99,8 @@ def test_initial_place_price_unmatchable_extremes():
+ 
+ def test_place_min_size_it():
+     assert place_min_size("it", "back") == 2.00
+-    assert place_min_size("it", "lay") == 0.50
++    # 01/10/2026: banca minima .it = 1,00 (costante condivisa IT_LAY_MIN_SIZE)
++    assert place_min_size("it", "lay") == 1.00
+     assert place_min_size("com", "back") == 2.00
+     with pytest.raises(ValueError):
+         place_min_size("zz", "back")
+@@ -109,14 +110,17 @@ def test_place_min_size_it():
+ # start_submin — costruzione e validazioni
+ # ===========================================================================
+ def test_start_submin_lay_below_floor_is_the_use_case():
+-    """Target LAY €0,30 (< floor €0,50): è ESATTAMENTE lo scopo del submin.
+-    placed_size = €0,50 (minimo lay .it), size_reduction = 0,20."""
++    """Macchina MECCANICA: target LAY 0,30 sotto il minimo lay .it (1,00 dal 01/10).
++    placed_size = 1,00, size_reduction = 0,70, parcheggio a 1,03 (>= 1 + 0,008/0,30:
++    INVALID_PROFIT_RATIO sul residuo). In produzione questo importo NON entra: la regola
++    d'ingresso ``verifica_importo_finale`` rifiuta ogni importo finale sotto 1,00."""
+     st = start_submin(side="lay", target_price=5.0, target_size=0.30, jurisdiction="it")
+     assert st.step is SubminStep.INIT
+-    assert st.placed_size == 0.50
++    assert st.placed_size == 1.00
+     assert st.target_size == 0.30
+     assert st.target_price == 5.0
+-    assert st.size_reduction == 0.20
++    assert st.size_reduction == 0.70
++    assert st.prezzo_parcheggio == 1.03
+ 
+ 
+ def test_start_submin_back_below_min():
+@@ -133,7 +137,7 @@ def test_start_submin_rejects_below_absolute_floor():
+ def test_start_submin_rejects_target_at_or_above_place_minimum():
+     # target >= minimo di piazzamento => non serve il submin (usa place normale)
+     with pytest.raises(ValueError):
+-        start_submin(side="lay", target_price=5.0, target_size=0.50, jurisdiction="it")
++        start_submin(side="lay", target_price=5.0, target_size=1.00, jurisdiction="it")
+     with pytest.raises(ValueError):
+         start_submin(side="back", target_price=3.0, target_size=2.00, jurisdiction="it")
+ 
+@@ -150,31 +154,32 @@ def test_happy_path_full_sequence():
+     ops = _RecordingOps(place_bet_id="BET-77")
+     st = start_submin(side="lay", target_price=5.0, target_size=0.30, jurisdiction="it")
+ 
+-    # step1: place min @ quota non abbinabile (1.01 lay), LAPSE
++    # step1: place min @ quota non abbinabile, LAPSE. 01/10/2026: banca minima 1,00 e
++    # parcheggio a 1,03 (residuo 0,30 -> 1 + 0,008/0,30, INVALID_PROFIT_RATIO)
+     st = _advance(st, ops)  # order=None
+     assert st.step is SubminStep.PLACED
+     assert st.bet_id == "BET-77"
+     assert ops.names() == ["place"]
+-    assert ops.calls[0][1]["price"] == 1.01
+-    assert ops.calls[0][1]["size"] == 0.50  # placed_size = min lay .it
++    assert ops.calls[0][1]["price"] == 1.03
++    assert ops.calls[0][1]["size"] == 1.00  # placed_size = min lay .it
+ 
+     # step2a: ordine a riposo (EXECUTABLE) con size piena → cancel RICHIESTO,
+     # ma NIENTE promozione sulla fiducia dell'API (fix bug live 10/07 21:43)
+-    resting = _order(bet_id="BET-77", status="EXECUTABLE", size_matched=0.0, size_remaining=0.50, price=1.01)
++    resting = _order(bet_id="BET-77", status="EXECUTABLE", size_matched=0.0, size_remaining=1.00, price=1.03)
+     st = _advance(st, ops, order=resting, now_ms=1_000_000)
+     assert st.step is SubminStep.PLACED          # ancora PLACED: attesa verifica
+     assert st.trim_requested_ms == 1_000_000
+     assert ops.names() == ["place", "cancel"]
+-    assert ops.calls[1][1]["size_reduction"] == 0.20  # 0.50 - 0.30
++    assert ops.calls[1][1]["size_reduction"] == 0.70  # 1.00 - 0.30
+ 
+     # step2b: il trim viene OSSERVATO (size_remaining ~ target) → TRIMMED
+-    observed = _order(bet_id="BET-77", status="EXECUTABLE", size_matched=0.0, size_remaining=0.30, price=1.01)
++    observed = _order(bet_id="BET-77", status="EXECUTABLE", size_matched=0.0, size_remaining=0.30, price=1.03)
+     st = _advance(st, ops, order=observed, now_ms=1_001_000)
+     assert st.step is SubminStep.TRIMMED
+     assert ops.names() == ["place", "cancel"]     # nessuna nuova operazione
+ 
+     # step3: ridotto a target → replace alla target_price reale (5.0)
+-    trimmed = _order(bet_id="BET-77", status="EXECUTABLE", size_matched=0.0, size_remaining=0.30, price=1.01)
++    trimmed = _order(bet_id="BET-77", status="EXECUTABLE", size_matched=0.0, size_remaining=0.30, price=1.03)
+     st = _advance(st, ops, order=trimmed)
+     assert st.step is SubminStep.REPRICED
+     assert ops.names() == ["place", "cancel", "replace"]
+@@ -529,11 +534,12 @@ def test_flumine_ops_calls_native_market_methods():
+         strategy=BaseStrategy(market_filter={}, name="live_trading"),
+     )
+ 
+-    order = ops.place(mkt, side="lay", price=1.01, size=0.50, customer_order_ref="awlq5")
++    # 01/10/2026: il parcheggio e' il minimo lay .it (1,00), mai 0,50
++    order = ops.place(mkt, side="lay", price=1.03, size=1.00, customer_order_ref="awlq5")
+     assert placed["order"] is order  # ordine NATIVO flumine passato a place_order
+ 
+-    ops.cancel(mkt, order, 0.20)
+-    assert placed["cancel"] == (order, 0.20)
++    ops.cancel(mkt, order, 0.70)
++    assert placed["cancel"] == (order, 0.70)
+ 
+     ops.replace(mkt, order, 5.0)
+     assert placed["replace"] == (order, 5.0)
+diff --git a/Betfair/stream/tests/test_submin_contratto_chiamanti_2026_09_17.py b/Betfair/stream/tests/test_submin_contratto_chiamanti_2026_09_17.py
+index 4e0ff3f..dba6643 100644
+--- a/Betfair/stream/tests/test_submin_contratto_chiamanti_2026_09_17.py
++++ b/Betfair/stream/tests/test_submin_contratto_chiamanti_2026_09_17.py
+@@ -125,7 +125,8 @@ def test_la_marca_submin_e_completa():
+     assert marca["steps"] == ["place", "cancel"]
+ 
+ 
+-@pytest.mark.parametrize("side,minimo", [("back", 2.00), ("lay", 0.50)])
++# 01/10/2026: banca minima .it 1,00 (minimo commerciale betfair.it, costante condivisa)
++@pytest.mark.parametrize("side,minimo", [("back", 2.00), ("lay", 1.00)])
+ def test_minimi_it_dalla_tabella_non_da_costanti_sparse(side, minimo):
+     assert S.place_min_size("it", side) == minimo
+ 
+diff --git a/Betfair/stream/tests/test_submin_nucleo_2026_09_17.py b/Betfair/stream/tests/test_submin_nucleo_2026_09_17.py
+index 4655f6b..e84e6b3 100644
+--- a/Betfair/stream/tests/test_submin_nucleo_2026_09_17.py
++++ b/Betfair/stream/tests/test_submin_nucleo_2026_09_17.py
+@@ -88,8 +88,10 @@ def test_sopra_il_minimo_nessun_trucco():
+ def test_lay_percorso_a():
+     p = S.pianifica_submin(side="lay", target_price=2.00, target_size=0.20,
+                            jurisdiction="it", best_back=1.9, best_lay=2.1)
+-    assert p.park_mode == S.PARK_TARGET and p.park_size == 0.50
+-    assert p.size_reduction == 0.30 and p.serve_replace is False
++    # 01/10/2026: banca minima .it 1,00 -> parcheggio 1,00, taglio 0,80 (nucleo
++    # meccanico; in produzione un importo finale < 1,00 non entra: verifica_importo_finale)
++    assert p.park_mode == S.PARK_TARGET and p.park_size == 1.00
++    assert p.size_reduction == 0.80 and p.serve_replace is False
+ 
+ 
+ def test_sotto_il_floor_assoluto_solleva():
+@@ -256,11 +258,13 @@ def test_liability_del_parcheggio_lay_alla_quota_target():
+ 
+ 
+ def test_lay_percorso_a_vietato_se_il_parcheggio_sfonda_il_cap():
+-    # LAY a 95: percorso A impegnerebbe 0,50*(95-1) = 47,00 EUR, cap 10,00.
++    # LAY a 95: percorso A impegnerebbe 1,00*(95-1) = 94,00 EUR, cap 10,00.
++    # 01/10/2026: il parcheggio lontano della banca e' a 1 + 0,008/0,20 = 1,04
++    # (INVALID_PROFIT_RATIO sul residuo), non piu' a 1,01.
+     p = S.pianifica_submin(side="lay", target_price=95.0, target_size=0.20,
+                            jurisdiction="it", best_back=90.0, best_lay=100.0,
+                            max_stake=10.0)
+-    assert p.park_mode == S.PARK_FAR and p.park_price == 1.01
++    assert p.park_mode == S.PARK_FAR and p.park_price == 1.04
+     assert p.serve_replace is True
+     assert "oltre il cap" in p.motivo
+ 
+diff --git a/Betfair/stream/trading/submin.py b/Betfair/stream/trading/submin.py
+index 62d749b..3e87d7a 100644
+--- a/Betfair/stream/trading/submin.py
++++ b/Betfair/stream/trading/submin.py
+@@ -44,6 +44,10 @@ from Betfair.stream.live_order_build import (
+     IT_LAY_MIN_SIZE,
+     JURISDICTION_COM,
+     JURISDICTION_IT,
++    SOTTO_MINIMO_NON_PIAZZABILE,
++    SUBMIN_ABS_MIN_SIZE,
++    SUBMIN_IMPORTO_FINALE_MIN,
++    _tick_su,
+     build_order,
+     round_to_tick,
+ )
+@@ -53,7 +57,17 @@ _TOL = 1e-6
+ 
+ # Floor ASSOLUTO della size residua dopo il trim: non si può ridurre a zero/negativo.
+ # Conservativo; il valore esatto su .it va verificato empiricamente (cert LIVE minimale).
+-SUBMIN_ABS_MIN_SIZE = 0.01
++# 01/10/2026: la definizione e' UNA, in ``live_order_build`` (importata qui sopra), cosi'
++# il verdetto dei minimi e la macchina usano lo stesso numero.
++
++# 01/10/2026 - quota di PARCHEGGIO di una BANCA piccola. Dal 19/06/2020 Betfair rifiuta
++# (``INVALID_PROFIT_RATIO``) place/cancel parziale/replace che lasciano un ordine il cui
++# guadagno, arrotondato al centesimo, devia di oltre -20 %/+25 %. Una banca residua di S
++# EUR a 1,01 ha liability S*0,01: per S < 0,80 l'arrotondamento la porta a 0,00 o la
++# gonfia oltre il +25 %. Misura empirica degli sviluppatori (forum Betfair 2020, vedi
++# AUDIT_2026-10-01/RICERCA_STAKE_MINIMI_BETFAIR.md par. 2): la liability residua deve
++# essere >= circa 0,008 -> quota di parcheggio >= 1 + 0,008/S, al tick superiore.
++LIABILITY_MIN_RESIDUO_LAY = 0.008
+ 
+ _VALID_SIDES = ("back", "lay")
+ 
+@@ -300,6 +314,49 @@ def initial_place_price(side: str) -> float:
+     raise ValueError(f"side non valido: {side!r} (atteso back|lay)")
+ 
+ 
++def verifica_importo_finale(side: str, target_size: Any) -> None:
++    """REGOLA d'ingresso nella macchina (01/10/2026): l'importo FINALE di un place-and-
++    trim e' almeno ``SUBMIN_IMPORTO_FINALE_MIN`` (0,50 EUR, floor di legge DM 47/2013;
++    il parcheggio, ordine diretto, e' >= 1,00). Sotto 0,50 non si tenta mai: solleva ``ValueError`` con ``SOTTO_MINIMO_NON_PIAZZABILE`` e il
++    residuo da dichiarare al trader. La chiamano TUTTI gli ingressi reali (coda e motore
++    ``_start_submin``, uscite sincrone ``_place_sub_minimum``, REST
++    ``omega_market.place_submin_live``); la macchina pura resta meccanica."""
++    try:
++        t = round(float(target_size), 2)
++    except (TypeError, ValueError):
++        raise ValueError(f"{SOTTO_MINIMO_NON_PIAZZABILE}: importo non numerico "
++                         f"{target_size!r}") from None
++    if t < SUBMIN_IMPORTO_FINALE_MIN - _TOL:
++        raise ValueError(
++            f"{SOTTO_MINIMO_NON_PIAZZABILE}: {str(side).upper()} {t:.2f} sotto "
++            f"{SUBMIN_IMPORTO_FINALE_MIN:.2f} EUR, importo minimo del place-and-trim su .it "
++            f"(sotto il floor di legge di 0,50 non si tenta mai): nessun ordine; residuo {t:.2f} "
++            f"da dichiarare al trader (lasciarlo, oppure aumentare e richiudere)")
++
++
++def quota_parcheggio_lontano(side: str, target_size: float) -> float:
++    """Quota del parcheggio LONTANO (percorso B) per il residuo ``target_size``.
++
++    BACK: 1000 (``initial_place_price``). LAY: la quota piu' bassa che lascia una
++    liability residua >= ``LIABILITY_MIN_RESIDUO_LAY`` dopo il taglio, cioe'
++    ``1 + 0,008/target_size`` al tick SUPERIORE, mai sotto 1,01 (01/10/2026: a 1,01 una
++    banca residua sotto 0,80 EUR viene rifiutata ``INVALID_PROFIT_RATIO``). Esempi:
++    0,43 -> 1,02; 0,30 -> 1,03; 0,80 -> 1,01.
++    """
++    s = (side or "").lower()
++    base = initial_place_price(s)
++    if s != "lay":
++        return base
++    t = round(float(target_size), 2)
++    if t <= 0:
++        raise ValueError(f"target_size non valida per il parcheggio: {target_size!r}")
++    minima = 1.0 + LIABILITY_MIN_RESIDUO_LAY / t
++    tick = _tick_su(minima)
++    if tick is None:
++        raise ValueError(f"nessun tick per il parcheggio LAY di {t:.2f}")
++    return max(base, float(tick))
++
++
+ # ---------------------------------------------------------------------------
+ # Costruttore di stato (valida e calcola placed_size)
+ # ---------------------------------------------------------------------------
+@@ -602,7 +659,23 @@ def pianifica_submin(
+     if riduzione < 0.01:
+         raise ValueError(f"riduzione nulla: minimo {minimo} target {tsize}")
+ 
++    # 01/10/2026: parcheggio lontano della BANCA alla quota che supera INVALID_PROFIT_RATIO
++    # sul residuo (``quota_parcheggio_lontano``), non piu' sempre a 1,01.
++    park_lontano = quota_parcheggio_lontano(s, tsize)
+     passiva = quota_non_abbinabile(s, tick, best_back=best_back, best_lay=best_lay)
++    if passiva is not True and quota_non_abbinabile(
++            s, park_lontano, best_back=best_back, best_lay=best_lay) is False:
++        # il parcheggio "lontano" si abbinerebbe SUBITO (book gia' a quella quota):
++        # mai un ordine del minimo pieno a una quota abbinabile (fail-closed)
++        return PianoSubmin(
++            serve_trucco=True, park_mode=PARK_FAR, park_price=park_lontano,
++            park_size=minimo, target_price=tick, target_size=tsize,
++            size_reduction=riduzione, serve_replace=True, chiamate_mutanti=0,
++            motivo="parcheggio lontano abbinabile",
++            rifiuto=("SUBMIN_PARCHEGGIO_ABBINABILE: il parcheggio del minimo a quota "
++                     "%s si abbinerebbe subito (best_back=%s, best_lay=%s); nessun ordine "
++                     "piazzato." % (park_lontano, best_back, best_lay)),
++        )
+     # GUARDIA money-critical: nel percorso A il parcheggio sta ALLA quota target,
+     # quindi per un LAY impegna size*(quota-1). Se sfonda il cap effettivo NON si
+     # usa il percorso A: si ripiega sul parcheggio lontano (1.01, liability
+@@ -615,7 +688,7 @@ def pianifica_submin(
+         if not consenti_replace:
+             return PianoSubmin(
+                 serve_trucco=True, park_mode=PARK_FAR,
+-                park_price=initial_place_price(s), park_size=minimo,
++                park_price=park_lontano, park_size=minimo,
+                 target_price=tick, target_size=tsize, size_reduction=riduzione,
+                 serve_replace=True, chiamate_mutanti=0,
+                 motivo="parcheggio oltre il cap e replace non consentito",
+@@ -627,7 +700,7 @@ def pianifica_submin(
+             )
+         return PianoSubmin(
+             serve_trucco=True, park_mode=PARK_FAR,
+-            park_price=initial_place_price(s), park_size=minimo,
++            park_price=park_lontano, park_size=minimo,
+             target_price=tick, target_size=tsize, size_reduction=riduzione,
+             serve_replace=True, chiamate_mutanti=3,
+             motivo=("percorso B forzato: il parcheggio alla quota target "
+@@ -653,7 +726,7 @@ def pianifica_submin(
+     if not consenti_replace:
+         return PianoSubmin(
+             serve_trucco=True, park_mode=PARK_FAR,
+-            park_price=initial_place_price(s), park_size=minimo,
++            park_price=park_lontano, park_size=minimo,
+             target_price=tick, target_size=tsize, size_reduction=riduzione,
+             serve_replace=True, chiamate_mutanti=0,
+             motivo="percorso B necessario ma replace non consentito",
+@@ -665,7 +738,7 @@ def pianifica_submin(
+         )
+     return PianoSubmin(
+         serve_trucco=True, park_mode=PARK_FAR,
+-        park_price=initial_place_price(s), park_size=minimo,
++        park_price=park_lontano, park_size=minimo,
+         target_price=tick, target_size=tsize, size_reduction=riduzione,
+         serve_replace=True, chiamate_mutanti=3,
+         motivo="percorso B (parcheggio lontano + replace): " + perche,
+@@ -843,6 +916,10 @@ def advance_submin(
+                     "NON ripiazzato"
+                 ),
+             )
++        # 01/10/2026: la regola "importo finale >= 1,00" e' applicata agli INGRESSI del
++        # motore ordini (``verifica_importo_finale``), non qui: i bot che costruiscono lo
++        # stato da se' (scalper, sniper, scalper tennis, uscite esatte tennis) sono un
++        # reperto aperto (RUNNER_MINIMI_CHIUSURE.md), da decidere con l'utente.
+         park = state.prezzo_parcheggio
+         # DIFESA IN PROFONDITA': il cap si ri-valida al momento del place, con
+         # il cap EFFETTIVO che porta l'adattatore (lo stato persistito potrebbe
+diff --git a/Betfair/stream/trading/minimi_it.py b/Betfair/stream/trading/minimi_it.py
+new file mode 100644
+index 0000000..b34c955
+--- /dev/null
++++ b/Betfair/stream/trading/minimi_it.py
+@@ -0,0 +1,48 @@
++"""Minimi di puntata di Betfair Exchange Italia: UNA definizione per tutto il repo.
++
++01/10/2026 - CORREZIONE DEFINITIVA (ordine dell'utente, confermato dalla Nota informativa di
++betfair.it: "L'importo minimo della scommesse nello Sport e su Exchange e' pari a Euro
++1,00"; blog ufficiale betfair.it del 30/10/2023: anche la bancata minima a 1 EUR):
++
++  * PUNTA minima 1,00 EUR, al centesimo (nessun passo di 0,50: la punta da 7,47 EUR del
++    01/10 e' stata accettata e abbinata);
++  * BANCA minima 1,00 EUR sulla PUNTATA DEL BACKER (il ``size`` di una LAY, mai la
++    liability), al centesimo;
++  * NESSUNA eccezione per gli ordini che riducono l'esposizione (chiusure, green-up,
++    hedge): il 01/10 una banca di chiusura da 0,43 @18 e' stata rifiutata
++    ``INVALID_BET_SIZE`` 21 volte;
++  * floor di legge (DM 18/03/2013 n. 47, art. 8): 0,50 EUR. Sotto non si va con nessun
++    trucco. Sotto il minimo diretto (1,00) le vie del motore ordini, in quest'ordine:
++    l'ordine EQUIVALENTE sul lato opposto dell'altra selezione di un mercato a due
++    esiti; il place-and-trim con parcheggio >= 1,00 e importo finale >= 0,50
++    (``SUBMIN_IMPORTO_FINALE_MIN``); altrimenti il rifiuto esplicito
++    ``SOTTO_MINIMO_NON_PIAZZABILE`` col residuo dichiarato al trader.
++
++Fonti: AUDIT_2026-10-01/RICERCA_STAKE_MINIMI_BETFAIR.md e
++AUDIT_2026-10-01/RICERCA_TOOL_ITALIA_STAKE_MINIMI.md. Modulo SENZA dipendenze (nemmeno
++flumine): lo importano il motore ordini (``live_order_build``, ``trading.submin``), Safe
++(``execution._min_size_live``), Omega (``omega_market.SUBMIN_MIN_*``) e Mike, con questi
++nomi esatti. Non ridefinire questi numeri altrove: un duplicato e' un difetto.
++"""
++from __future__ import annotations
++
++#: PUNTA minima .it (EUR), al centesimo
++IT_MIN_BACK = 1.00
++#: BANCA minima .it (EUR) sul size = puntata del backer (la liability non conta)
++IT_MIN_LAY = 1.00
++#: floor di legge (DM 47/2013 art. 8): sotto non si va MAI, con nessuna tecnica
++IT_FLOOR_LEGGE = 0.50
++#: passo della documentazione per sviluppatori ("multiples of 50 Euro Cents"), smentito
++#: dall'API il 01/10: usato SOLO per l'unico ripiego dopo un INVALID_BET_SIZE reale
++IT_PASSO_PUNTA_RIPIEGO = 0.50
++# TRE soglie, da non confondere (decisione del coordinatore, 01/10/2026):
++#   * ordine piazzato DIRETTO: >= 1,00 (``IT_MIN_BACK`` / ``IT_MIN_LAY``);
++#   * place-and-trim: parcheggio >= 1,00 (il parcheggio e' un ordine diretto) e importo
++#     FINALE dopo la riduzione >= 0,50, il floor di LEGGE (DM 47/2013 art. 8; le guide
++#     italiane 2014-2020 ottengono 0,50 / 1,00 / 1,50 riducendo);
++#   * sotto 0,50: MAI nessun ordine, con nessuna tecnica (nessuna testimonianza di
++#     riuscita; "rifiutato del tutto"): rifiuto esplicito, residuo dichiarato al trader.
++#: importo FINALE minimo di un place-and-trim su .it (= floor di legge)
++SUBMIN_IMPORTO_FINALE_MIN = IT_FLOOR_LEGGE
++#: codice INTERNO del rifiuto di un ordine sotto il minimo senza via legittima
++SOTTO_MINIMO_NON_PIAZZABILE = "SOTTO_MINIMO_NON_PIAZZABILE"
+diff --git a/Betfair/stream/tests/test_runner_minimi_chiusure_2026_10_01.py b/Betfair/stream/tests/test_runner_minimi_chiusure_2026_10_01.py
+new file mode 100644
+index 0000000..b901c0b
+--- /dev/null
++++ b/Betfair/stream/tests/test_runner_minimi_chiusure_2026_10_01.py
+@@ -0,0 +1,412 @@
++"""01/10/2026 - RUNNER_MINIMI_CHIUSURE: i minimi .it valgono per OGNI ordine del runner.
++
++Difetto (money-critical, tutti i bot): ``live_order_build.min_stake_rules`` esentava dai
++minimi gli ordini ``reduces_liability=True`` (chiusure, green-up, hedge). Ipotesi FALSA:
++Betfair .it non ha eccezioni per chi riduce l'esposizione; il 01/10 una banca di chiusura
++da 0,43 @18 di Mike e' stata rifiutata ``INVALID_BET_SIZE`` 21 volte. In piu' la punta
++era legalizzata PER DIFETTO ai 0,50 (residuo scoperto fino a 0,49), mentre l'API accetta
++il centesimo (punta 7,47 accettata dall'app Betfair, stessa API).
++
++Cosa certifica:
++  * i numeri di oggi: banca Over 0,43 @18 -> equivalente punta Under 7,31 @1,06 (tick in
++    su: 1,05 sarebbe un limite peggiore del chiesto), equivalenza economica +-0,01 su
++    entrambi gli esiti; nel motore l'ordine mandato e' l'equivalente, il diario lo dice,
++    gli eventi tornano al bot nei termini del CHIESTO;
++  * punta 7,47 accettata al centesimo;
++  * banca 0,30: su un mercato a due esiti -> equivalente; senza equivalente -> impossibile
++    (sotto 1,00 il place-and-trim non si tenta: regola del coordinatore dalle fonti .it);
++    la quota di parcheggio di una banca piccola supera INVALID_PROFIT_RATIO;
++  * punta 0,70 senza equivalente -> place-and-trim (parcheggio 1,00, finale >= 0,50);
++  * importo sotto 1,00 senza equivalente -> rifiuto ``SOTTO_MINIMO_NON_PIAZZABILE``, mai
++    un ordine;
++  * ``reduces_liability=True`` NON esenta piu';
++  * ripiego ai 0,50 SOLO dopo un ``INVALID_BET_SIZE`` reale e UNA sola volta; una taglia
++    rifiutata non si ritenta identica.
++
++Finti: il motore e il canale sono quelli VERI (fixture ``amb`` di
++``test_motore_ordini_2026_09_24``: LocalChannel vero, client e strategie VERI di flumine,
++ordini flumine VERI); il market_book ha le chiavi snake_case di betfairlightweight; la
++risposta di placeOrders e' una ``responses.place_response`` con ``status``/``error_code``
++come ``PlaceOrderInstructionReports``. Nessuna rete, nessun login, nessun ordine reale.
++"""
++from __future__ import annotations
++
++from types import SimpleNamespace
++from typing import Any, Dict, List
++
++import pytest
++from flumine import BaseStrategy
++
++from Betfair.stream import live_order_build as LB
++from Betfair.stream import live_order_worker as LOW
++from Betfair.stream import motore_ordini as MO
++from Betfair.stream.trading import submin as S
++from Betfair.stream.tests.test_motore_ordini_2026_09_24 import (  # noqa: F401 - fixture
++    _ack,
++    _cmd,
++    _manda,
++    amb,
++)
++
++OVER, UNDER = 47972, 47973
++_STRAT = BaseStrategy(market_filter={}, name="minimi_test")
++
++
++# ===========================================================================
++# Regole pure (live_order_build)
++# ===========================================================================
++def test_punta_al_centesimo_7_47_accettata():
++    v = LB.min_stake_rules("it", "back", 1.03, 7.47)
++    assert v.valid and v.legalized_size == 7.47
++    b = LB.build_order(SimpleNamespace(market_id="1.1"), strategy=_STRAT, selection_id=UNDER,
++                       handicap=0.0, side="back", order_type="LIMIT", price=1.03, size=7.47,
++                       liability=None, persistence="LAPSE", time_in_force=None,
++                       min_fill_size=None, jurisdiction="it", max_stake=None,
++                       customer_order_ref="awlq1")
++    assert b.size == 7.47 and b.order.order_type.size == 7.47
++
++
++def test_reduces_liability_non_esenta_piu():
++    for lato, prezzo, size in (("lay", 18.0, 0.43), ("back", 3.0, 0.70), ("lay", 2.0, 0.99)):
++        con = LB.min_stake_rules("it", lato, prezzo, size, reduces_liability=True)
++        senza = LB.min_stake_rules("it", lato, prezzo, size)
++        assert con == senza and con.valid is False
++        assert con.reason.startswith(LB.SOTTO_MINIMO_NON_PIAZZABILE)
++    with pytest.raises(ValueError, match=LB.SOTTO_MINIMO_NON_PIAZZABILE):
++        LB.build_order(SimpleNamespace(market_id="1.1"), strategy=_STRAT, selection_id=OVER,
++                       handicap=0.0, side="lay", order_type="LIMIT", price=18.0, size=0.43,
++                       liability=None, persistence="LAPSE", time_in_force=None,
++                       min_fill_size=None, jurisdiction="it", max_stake=None,
++                       customer_order_ref="awlq2", reduces_liability=True)
++
++
++def test_minimi_condivisi():
++    from Betfair.stream.trading import minimi_it as MI
++    # minimi definitivi .it (01/10/2026): diretto 1,00 / finale del trim 0,50 / mai sotto
++    assert MI.IT_MIN_BACK == MI.IT_MIN_LAY == 1.00
++    assert MI.SUBMIN_IMPORTO_FINALE_MIN == MI.IT_FLOOR_LEGGE == 0.50
++    assert LB.IT_BACK_MIN_STAKE == MI.IT_MIN_BACK
++    assert LB.IT_LAY_MIN_SIZE == MI.IT_MIN_LAY
++    assert LB.SUBMIN_IMPORTO_FINALE_MIN == 0.50
++    assert S.place_min_size("it", "lay") == LB.IT_LAY_MIN_SIZE
++    from Betfair.omega import omega_market as OMK
++    from Betfair.safe_strategy import execution as X
++    assert OMK.SUBMIN_MIN_LAY == LB.IT_LAY_MIN_SIZE
++    assert OMK.SUBMIN_MIN_BACK == LB.IT_BACK_MIN_STAKE
++    assert X._min_size_live("lay") == LB.IT_LAY_MIN_SIZE
++
++
++def test_numeri_di_oggi_equivalente_e_scarti():
++    eq = LB.equivalente_lato_opposto("lay", 18.0, 0.43)
++    assert eq.side == "back" and eq.size == 7.31
++    assert eq.price_esatta == pytest.approx(18 / 17, abs=1e-6)
++    assert eq.price == 1.06                    # tick IN SU: mai un limite peggiore
++    # equivalenza economica (tutto abbinato al limite), +-0,01 su entrambi gli esiti
++    over_vince_chiesto, under_vince_chiesto = -0.43 * 17, +0.43
++    over_vince_eq, under_vince_eq = -7.31, 7.31 * (1.06 - 1.0)
++    assert abs(over_vince_eq - over_vince_chiesto) <= 0.01
++    assert abs(under_vince_eq - under_vince_chiesto) <= 0.01
++    assert eq.scarto_se_vince_chiesta == pytest.approx(over_vince_eq - over_vince_chiesto,
++                                                       abs=1e-4)
++    assert eq.scarto_se_vince_altra == pytest.approx(under_vince_eq - under_vince_chiesto,
++                                                     abs=1e-4)
++    # 1,05 sarebbe stato peggiore del chiesto (equivale a bancare Over a 21)
++    assert 1.05 / 0.05 > 18.0
++    v = LB.verdetto_minimi("it", "lay", 18.0, 0.43, altra_selezione=(UNDER, 0.0))
++    assert v.esito == LB.VERDETTO_EQUIVALENTE and v.altra_selezione == (UNDER, 0.0)
++    assert v.equivalente == eq and v.size == 7.31
++
++
++def test_equivalente_tick_mai_peggiore_anche_quando_il_piu_vicino_e_sotto():
++    # banca 0,30 @12 -> quota esatta 12/11 = 1,0909: il tick piu' vicino (1,09) sarebbe
++    # una punta a un limite PEGGIORE del chiesto (= bancare a 12,11): si va a 1,10
++    eq = LB.equivalente_lato_opposto("lay", 12.0, 0.30)
++    assert eq.price == 1.10 and eq.size == 3.30
++    assert min(eq.scarto_se_vince_chiesta, eq.scarto_se_vince_altra) >= -0.01
++
++
++def test_equivalente_di_una_punta_e_una_banca_col_tick_in_giu():
++    eq = LB.equivalente_lato_opposto("back", 6.0, 0.80)
++    assert eq.side == "lay" and eq.size == 4.00 and eq.price == 1.20
++    assert eq.scarto_se_vince_chiesta == pytest.approx(0.0, abs=1e-9)
++    assert eq.scarto_se_vince_altra == pytest.approx(0.0, abs=1e-9)
++    eq2 = LB.equivalente_lato_opposto("back", 3.07, 0.90)      # 3.07/2.07 = 1.4831
++    assert eq2.price == 1.48                                      # tick IN GIU' per la banca
++    assert min(eq2.scarto_se_vince_chiesta, eq2.scarto_se_vince_altra) >= -0.01
++
++
++def test_banca_030_due_esiti_equivalente_altrimenti_impossibile():
++    v2 = LB.verdetto_minimi("it", "lay", 18.0, 0.30, altra_selezione=(UNDER, 0.0))
++    assert v2.esito == LB.VERDETTO_EQUIVALENTE and v2.equivalente.size == 5.10
++    v3 = LB.verdetto_minimi("it", "lay", 18.0, 0.30)
++    assert v3.esito == LB.VERDETTO_IMPOSSIBILE and v3.size is None
++    assert v3.motivo.startswith(LB.SOTTO_MINIMO_NON_PIAZZABILE)
++    assert "0,50 non si tenta mai" in v3.motivo and "trader" in v3.motivo
++    # 0,60 senza equivalente: place-and-trim (finale >= 0,50, parcheggio 1,00)
++    v4 = LB.verdetto_minimi("it", "lay", 18.0, 0.60)
++    assert v4.esito == LB.VERDETTO_SUBMIN
++
++
++def test_punta_sotto_un_euro_senza_equivalente_va_al_place_and_trim():
++    assert LB.verdetto_minimi("it", "back", 3.0, 1.50).esito == LB.VERDETTO_DIRETTO
++    v = LB.verdetto_minimi("it", "back", 3.0, 0.70)
++    assert v.esito == LB.VERDETTO_SUBMIN and v.size == 0.70
++    assert "bet delay" in v.motivo
++    # sotto 0,50 (floor di legge): impossibile
++    v2 = LB.verdetto_minimi("it", "back", 3.0, 0.49)
++    assert v2.esito == LB.VERDETTO_IMPOSSIBILE
++    # esecutore senza place-and-trim (tennis): impossibile anche a 0,70
++    v3 = LB.verdetto_minimi("it", "back", 3.0, 0.70, submin_disponibile=False)
++    assert v3.esito == LB.VERDETTO_IMPOSSIBILE
++
++
++def test_equivalente_anch_esso_sotto_il_minimo_non_si_usa():
++    # back 0,80 @1,30 -> banca 0,24 @4,33: sotto la banca minima -> place-and-trim
++    v = LB.verdetto_minimi("it", "back", 1.30, 0.80, altra_selezione=(UNDER, 0.0))
++    assert v.esito == LB.VERDETTO_SUBMIN
++    assert "anch'esso sotto il minimo" in v.motivo
++
++
++def test_riporta_abbinato_all_originale():
++    assert LB.riporta_abbinato_all_originale("lay", 18.0, 0.43, 7.31, 7.31) == (0.43, 18.0)
++    ab, q = LB.riporta_abbinato_all_originale("lay", 18.0, 0.43, 7.31, 3.66)
++    assert ab == 0.22 and ab * (q - 1.0) == pytest.approx(3.66, abs=1e-3)  # liability esatta
++    assert LB.riporta_abbinato_all_originale("lay", 18.0, 0.43, 7.31, 0.0) == (0.0, None)
++
++
++def test_ripiego_ai_050_puro():
++    assert LB.size_ripiego_punta(7.47) == 7.00
++    assert LB.size_ripiego_punta(2.20) == 2.00
++    assert LB.size_ripiego_punta(1.30) == 1.00
++    assert LB.size_ripiego_punta(7.50) is None          # gia' multiplo: niente ripiego
++    assert LB.size_ripiego_punta(0.90) is None          # sotto il minimo: niente ripiego
++    assert LB.punta_da_sorvegliare_per_ripiego("back", 7.47) is True
++    assert LB.punta_da_sorvegliare_per_ripiego("lay", 7.47) is False
++
++
++def test_parcheggio_della_banca_supera_invalid_profit_ratio():
++    assert S.quota_parcheggio_lontano("lay", 0.30) == 1.03
++    assert S.quota_parcheggio_lontano("lay", 0.43) == 1.02
++    assert S.quota_parcheggio_lontano("lay", 0.80) == 1.01
++    assert S.quota_parcheggio_lontano("back", 1.50) == 1000.0
++    for t in (0.30, 0.43, 0.80, 0.95):
++        q = S.quota_parcheggio_lontano("lay", t)
++        assert t * (q - 1.0) >= S.LIABILITY_MIN_RESIDUO_LAY - 1e-9
++    p = S.pianifica_submin(side="lay", target_price=18.0, target_size=0.30, jurisdiction="it")
++    assert p.park_price == 1.03 and p.park_size == LB.IT_LAY_MIN_SIZE
++    # parcheggio lontano che si abbinerebbe subito: rifiuto, nessun ordine
++    p2 = S.pianifica_submin(side="lay", target_price=18.0, target_size=0.30, jurisdiction="it",
++                            best_back=17.0, best_lay=1.02)
++    assert p2.rifiuto and p2.rifiuto.startswith("SUBMIN_PARCHEGGIO_ABBINABILE")
++
++
++def test_regola_d_ingresso_della_macchina():
++    with pytest.raises(ValueError, match=LB.SOTTO_MINIMO_NON_PIAZZABILE):
++        S.verifica_importo_finale("lay", 0.49)
++    S.verifica_importo_finale("back", 0.50)
++
++
++# ===========================================================================
++# Worker: chiusure di greenup/cash-out e place della coda
++# ===========================================================================
++class _MercatoSpia:
++    def __init__(self) -> None:
++        self.market_id = "1.1"
++        self.placed: List[Any] = []
++
++    def place_order(self, order: Any, **_k: Any) -> bool:
++        self.placed.append(order)
++        return True
++
++
++def test_chiusura_live_sotto_minimo_mai_un_place_diretto(monkeypatch):
++    chiamate: List[Dict[str, Any]] = []
++
++    def _finto(*_a: Any, **kw: Any) -> Any:
++        chiamate.append(kw)
++        return SimpleNamespace(step=SimpleNamespace(value="done")), None
++
++    monkeypatch.setattr(LOW, "_place_sub_minimum", _finto)
++    monkeypatch.setattr(LOW, "_jurisdiction", lambda: "it")
++    monkeypatch.setattr(LOW, "_rate_guard", lambda: None)
++    m = _MercatoSpia()
++    ordine, prezzo, size = LOW._costruisci_chiusura(
++        m, strategy=_STRAT, selection_id=10, handicap=0.0, side="back", price=3.0,
++        size=0.70, persistence="LAPSE", cust_ref="awlq9", mode="live")
++    assert ordine is None and size == 0.70          # non costruito: Betfair lo rifiuterebbe
++    stato = LOW._place_closing_leg(
++        None, m, order=ordine, strategy=_STRAT, market_id="1.1", selection_id=10,
++        handicap=0.0, side="back", price=prezzo, size=size, cust_ref="awlq9",
++        what="greenup", mode="live", params={})
++    assert stato is not None and len(chiamate) == 1 and chiamate[0]["size"] == 0.70
++    assert m.placed == []                            # nessun place diretto sotto il minimo
++
++
++def test_chiusura_live_opt_out_rifiuto_esplicito(monkeypatch):
++    monkeypatch.setattr(LOW, "_place_sub_minimum",
++                        lambda *_a, **_k: pytest.fail("opt-out: niente place-and-trim"))
++    monkeypatch.setattr(LOW, "_jurisdiction", lambda: "it")
++    m = _MercatoSpia()
++    with pytest.raises(ValueError, match=LB.SOTTO_MINIMO_NON_PIAZZABILE):
++        LOW._place_closing_leg(
++            None, m, order=None, strategy=_STRAT, market_id="1.1", selection_id=10,
++            handicap=0.0, side="back", price=3.0, size=0.70, cust_ref="awlq10",
++            what="greenup", mode="live", params={"allow_sub_minimum": False})
++    assert m.placed == []
++
++
++# ===========================================================================
++# Motore del canale (VERO): equivalente, eventi riportati, rifiuti, ripiego 0,50
++# ===========================================================================
++def _due_esiti(market: Any) -> None:
++    market.market_book = SimpleNamespace(
++        status="OPEN", inplay=True, bet_delay=5, complete=True,
++        runners=[SimpleNamespace(selection_id=OVER, handicap=0.0),
++                 SimpleNamespace(selection_id=UNDER, handicap=0.0)])
++
++
++def _riga_specchio(cust: str, **kw: Any) -> Dict[str, Any]:
++    r = {k: None for k in MO.CHIAVI_SPECCHIO}
++    r.update({"client_order_ref": cust, "mode": "live", "market_id": "1.234",
++              "handicap": 0.0, "order_type": "LIMIT", "persistence": "LAPSE"})
++    for k in MO._CHIAVI_ZERO:
++        r[k] = 0.0
++    r.update(kw)
++    return r
++
++
++def test_motore_banca_043_mandata_come_punta_731_e_riportata_al_bot(amb):
++    _due_esiti(amb.market)
++    ws = amb.ch.collega("mike")
++    _manda(amb, ws, _cmd("mike", 1, mode="live", selection_id=OVER, side="LAY",
++                         price=18.0, size=0.43, reduces_liability=True))
++    assert _ack(amb, ws)["accettato"] is True
++    assert len(amb.market.calls) == 1
++    ordine, _ref, client = amb.market.calls[0]
++    assert client is amb.reale
++    assert ordine.selection_id == UNDER and ordine.side == "BACK"
++    assert ordine.order_type.price == 1.06 and ordine.order_type.size == 7.31
++    assert ordine.context.get("reduces_liability") is True       # informazione, resta
++    # diario: la traduzione con chiesto e mandato, PRIMA della riga 'ordine'
++    righe = amb.diario.leggi([amb.diario._giorno()])
++    tipi = [r["tipo"] for r in righe]
++    assert "tradotto" in tipi and tipi.index("tradotto") < tipi.index("ordine")
++    tr = [r for r in righe if r["tipo"] == "tradotto"][0]
++    assert tr["originale"] == {"selection_id": OVER, "handicap": 0.0, "side": "lay",
++                               "price": 18.0, "size": 0.43}
++    assert tr["mandato"] == {"selection_id": UNDER, "handicap": 0.0, "side": "back",
++                             "price": 1.06, "size": 7.31}
++    # evento 'inviato': nei termini del CHIESTO
++    ev = amb.ch.per_ws(ws, "order")[-1]["d"]
++    assert ev["selection_id"] == OVER and ev["side"] == "lay"
++    assert ev["price"] == 18.0 and ev["size"] == 0.43
++    assert ev["riga_mandata"]["selection_id"] == UNDER and ev["riga_mandata"]["size"] == 7.31
++    cust = ev["client_order_ref"]
++    # specchio: punta Under abbinata 7,31 @1,06 -> il bot vede banca Over 0,43 @18
++    amb.motore._su_riga_specchio(_riga_specchio(
++        cust, selection_id=UNDER, side="back", price=1.06, size=7.31, size_matched=7.31,
++        average_price_matched=1.06, size_remaining=0.0, status="EXECUTION_COMPLETE",
++        bet_id="99"))
++    ev = amb.ch.per_ws(ws, "order")[-1]["d"]
++    assert ev["fase"] == "abbinato"
++    assert ev["selection_id"] == OVER and ev["side"] == "lay" and ev["size"] == 0.43
++    assert ev["size_matched"] == 0.43 and ev["average_price_matched"] == pytest.approx(18.0)
++    assert ev["size_remaining"] == 0.0
++    assert ev["tradotto"]["mandato"]["size"] == 7.31
++    assert ev["riga_mandata"]["size_matched"] == 7.31
++
++
++def test_motore_sotto_minimo_senza_vie_rifiuto_esplicito_mai_rest(amb):
++    # mercato NON a due esiti (nessun market_book): banca 0,43 -> impossibile
++    ws = amb.ch.collega("mike")
++    _manda(amb, ws, _cmd("mike", 2, mode="live", side="LAY", price=18.0, size=0.43,
++                         reduces_liability=True))
++    ack = _ack(amb, ws)
++    assert ack["accettato"] is False and ack["motivo"].startswith(MO.M_SOTTO_MINIMO)
++    assert "trader" in ack["motivo"]
++    assert amb.market.calls == []
++
++
++def test_motore_punta_070_senza_equivalente_va_al_place_and_trim(amb):
++    amb.market.borsa = True
++    ws = amb.ch.collega("safe")
++    _manda(amb, ws, _cmd("safe", 3, mode="live", price=3.0, size=0.70,
++                         reduces_liability=True))
++    assert _ack(amb, ws)["accettato"] is True
++    ordine = amb.market.calls[0][0]
++    assert ordine.order_type.size == 1.00 and ordine.order_type.price == 1000.0
++    assert amb.motore._submin
++
++
++def _rifiuta_betfair(ordine: Any, codice: str = "INVALID_BET_SIZE") -> None:
++    """Come ``BetfairExecution.execute_place`` su FAILURE: risposta registrata,
++    residuo azzerato, ordine completato (``order.execution_complete``)."""
++    ordine.responses.placed(SimpleNamespace(status="FAILURE", error_code=codice,
++                                            bet_id=None, order_status=None))
++    ordine.execution_complete()
++
++
++def test_motore_ripiego_050_solo_dopo_invalid_bet_size_e_una_volta(amb):
++    ws = amb.ch.collega("safe")
++    _manda(amb, ws, _cmd("safe", 4, mode="live", price=1.03, size=7.47))
++    assert _ack(amb, ws)["accettato"] is True
++    assert [c[0].order_type.size for c in amb.market.calls] == [7.47]   # al centesimo
++    primo = amb.market.calls[0][0]
++    cust1 = amb.ch.per_ws(ws, "order")[-1]["d"]["client_order_ref"]
++    # nessun rifiuto ancora: nessun ripiego preventivo
++    assert amb.motore.avanza_sorvegliati() == 0 and len(amb.market.calls) == 1
++    # Betfair risponde INVALID_BET_SIZE; la riga terminale dello specchio e' TRATTENUTA
++    _rifiuta_betfair(primo)
++    n_ev = len(amb.ch.per_ws(ws, "order"))
++    amb.motore._su_riga_specchio(_riga_specchio(
++        cust1, selection_id=47972, side="back", price=1.03, size=7.47,
++        status="EXECUTION_COMPLETE"))
++    assert len(amb.ch.per_ws(ws, "order")) == n_ev          # il bot non vede "annullato"
++    # UN ripiego ai 0,50 per difetto, residuo dichiarato
++    assert amb.motore.avanza_sorvegliati() == 1
++    assert [c[0].order_type.size for c in amb.market.calls] == [7.47, 7.00]
++    ev = amb.ch.per_ws(ws, "order")[-1]["d"]
++    assert ev["ref"] == "safe-t4" and ev["fase"] == "inviato" and ev["size"] == 7.00
++    assert ev["ripiego_050"] == {"eseguito": True, "motivo": "INVALID_BET_SIZE",
++                                 "chiesto": 7.47, "piazzato": 7.0, "residuo": 0.47,
++                                 "ref_interno_rifiutato": cust1}
++    # anche il ripiego rifiutato: NESSUN terzo tentativo, rifiuto dichiarato al bot
++    _rifiuta_betfair(amb.market.calls[1][0])
++    assert amb.motore.avanza_sorvegliati() == 0
++    assert len(amb.market.calls) == 2
++    ev = amb.ch.per_ws(ws, "order")[-1]["d"]
++    assert ev["fase"] == "rifiutato" and ev["errore_betfair"] == "INVALID_BET_SIZE"
++    assert ev["ripiego_050"]["eseguito"] is False
++    # la stessa taglia non si ritenta identica: rifiuto PRIMA di qualunque invio
++    _manda(amb, ws, _cmd("safe", 5, mode="live", price=1.03, size=7.47))
++    ack = _ack(amb, ws)
++    assert ack["accettato"] is False and ack["motivo"].startswith(MO.M_SOTTO_MINIMO)
++    assert "non si ritenta identico" in ack["motivo"]
++    assert len(amb.market.calls) == 2
++
++
++def test_motore_nessun_ripiego_senza_invalid_bet_size(amb):
++    ws = amb.ch.collega("safe")
++    _manda(amb, ws, _cmd("safe", 6, mode="live", price=1.03, size=7.47))
++    primo = amb.market.calls[0][0]
++    _rifiuta_betfair(primo, codice="BET_TAKEN_OR_LAPSED")
++    assert amb.motore.avanza_sorvegliati() == 0
++    assert len(amb.market.calls) == 1
++    assert amb.motore._sorvegliati == {}
++    # nessuna taglia ricordata: lo stesso importo si puo' mandare di nuovo
++    _manda(amb, ws, _cmd("safe", 7, mode="live", price=1.03, size=7.47))
++    assert _ack(amb, ws)["accettato"] is True and len(amb.market.calls) == 2
++
++
++def test_motore_aggancio_ripete_le_guardie_sull_ordine_chiesto(amb):
++    """Idempotenza: ``_controlla`` due volte sullo stesso piano (aggancio al volo) riparte
++    dall'ordine CHIESTO, mai dalla traduzione del giro prima."""
++    _due_esiti(amb.market)
++    piano = MO.valida_comando("mike", _cmd("mike", 8, mode="live", selection_id=OVER,
++                                           side="LAY", price=18.0, size=0.43,
++                                           reduces_liability=True))
++    amb.motore._controlla(piano, piano["creato_ms"])
++    assert piano["riga"]["selection_id"] == UNDER and piano["riga"]["size"] == 7.31
++    amb.motore._controlla(piano, piano["creato_ms"])
++    assert piano["riga"]["selection_id"] == UNDER and piano["riga"]["size"] == 7.31
++    assert piano["tradotto"]["originale"]["size"] == 0.43
+diff --git a/AUDIT_2026-10-01/falsifica_runner_minimi.py b/AUDIT_2026-10-01/falsifica_runner_minimi.py
+new file mode 100644
+index 0000000..d8ad41f
+--- /dev/null
++++ b/AUDIT_2026-10-01/falsifica_runner_minimi.py
+@@ -0,0 +1,61 @@
++"""Falsificazione di RUNNER_MINIMI_CHIUSURE: ogni mutazione rimette un difetto e i test
++nuovi DEVONO diventare rossi; poi il file si ripristina dal testo originale (in memoria,
++e comunque in un finally). Uso: python AUDIT_2026-10-01/falsifica_runner_minimi.py"""
++import subprocess
++import sys
++
++TEST = "Betfair/stream/tests/test_runner_minimi_chiusure_2026_10_01.py"
++LB = "Betfair/stream/live_order_build.py"
++MO = "Betfair/stream/motore_ordini.py"
++
++MUTAZIONI = [
++    ("M1 esenzione reduces_liability rimessa", LB,
++     "    del reduces_liability  # informazione: mai un'esenzione dai minimi\n",
++     "    if reduces_liability:\n        return MinStakeVerdict(True, round(float(size), 2), None)\n"),
++    ("M2 floor della punta a 0,50 rimesso", LB,
++     "        legal = round(float(size), 2)\n        if s == \"back\":\n",
++     "        legal = round(float(size), 2)\n        if s == \"back\":\n"
++     "            legal = _floor_to_step(legal, IT_BACK_STEP)\n"),
++    ("M3 equivalente tick al piu' vicino (limite peggiore)", LB,
++     "    tick = _tick_su(esatta) if lato == \"back\" else _tick_giu(esatta)\n",
++     "    tick = get_nearest_price(esatta) if lato == \"back\" else _tick_giu(esatta)\n"),
++    ("M4 eventi NON riportati al chiesto", MO,
++     "            if info.get(\"tradotto\"):\n                d = _riporta_tradotto(d, info[\"tradotto\"])\n",
++     "            pass\n"),
++    ("M5 nessun ripiego ai 0,50", MO,
++     "            self._ripiega(s, nuova)\n            n += 1\n",
++     "            pass\n"),
++    ("M6 taglia rifiutata ritentata identica", MO,
++     "        if not piano.get(\"submin\") and chiave in self._taglie_rifiutate:\n",
++     "        if False:\n"),
++    ("M7 floor del trim tolto (0,50 non verificato)", LB,
++     "    if float(size) < SUBMIN_IMPORTO_FINALE_MIN - _EPS \\\n"
++     "            or chiesta < SUBMIN_IMPORTO_FINALE_MIN - _EPS:\n",
++     "    if False:\n"),
++    ("M8 regola d'ingresso della macchina tolta", "Betfair/stream/trading/submin.py",
++     "    if t < SUBMIN_IMPORTO_FINALE_MIN - _TOL:\n",
++     "    if False:\n"),
++]
++
++ok = True
++for nome, path, vecchio, nuovo in MUTAZIONI:
++    testo = open(path, encoding="utf-8").read()
++    if vecchio not in testo:
++        print("%s: PUNTO DI MUTAZIONE NON TROVATO" % nome)
++        ok = False
++        continue
++    try:
++        open(path, "w", encoding="utf-8").write(testo.replace(vecchio, nuovo, 1))
++        r = subprocess.run([sys.executable, "-m", "pytest", TEST, "-q", "-p", "no:cacheprovider"],
++                           capture_output=True, text=True)
++        riga = [x for x in r.stdout.splitlines() if "passed" in x or "failed" in x][-1:]
++        rosso = r.returncode != 0
++        ok = ok and rosso
++        print("%s: %s  %s" % (nome, "ROSSO (atteso)" if rosso else "VERDE (DIFETTO NON VISTO)",
++                              riga[0] if riga else ""))
++    finally:
++        open(path, "w", encoding="utf-8").write(testo)
++r = subprocess.run([sys.executable, "-m", "pytest", TEST, "-q", "-p", "no:cacheprovider"],
++                   capture_output=True, text=True)
++print("ripristino:", [x for x in r.stdout.splitlines() if "passed" in x or "failed" in x][-1:])
++print("ESITO:", "tutte rosse" if ok else "QUALCOSA NON E' DIVENTATO ROSSO")

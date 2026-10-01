@@ -1,0 +1,265 @@
+diff --git a/frontend/src/components/controlroom/testata/salvaStop.test.ts b/frontend/src/components/controlroom/testata/salvaStop.test.ts
+index 4c266fe..278fa0e 100644
+--- a/frontend/src/components/controlroom/testata/salvaStop.test.ts
++++ b/frontend/src/components/controlroom/testata/salvaStop.test.ts
+@@ -112,18 +112,28 @@ describe('payloadStop - lo STESSO payload del foglio del proprietario', () => {
+             const p = mergeBotParams(SAFE_RAW);
+             const v = toValues(p, mergeExits(SAFE_RAW.exits), SAFE_RAW);
+             v['risk.daily_loss_stop'] = -40;
+-            // R-06 (01/10): cambiato di proposito. Il foglio scrive
+-            // `risk.max_open_trades: 0` (= nessun tetto) anche quando la chiave
+-            // manca; lo stop dalla testata no: la chiave assente resta assente.
+-            delete v['risk.max_open_trades'];
++            // R-06 (01/10): anche il foglio, ora, lascia ASSENTE la chiave
++            // `risk.max_open_trades` assente nel database: nessuna eccezione qui.
+             return fromValues(v, p.variants, SAFE_RAW);
+         })();
+         const payload = payloadStop('safe', 40, SAFE_RAW);
+         expect(payload).toEqual(atteso);
+         expect((payload.risk as Record<string, unknown>).daily_loss_stop).toBe(-40);
++        expect('max_open_trades' in (payload.risk as Record<string, unknown>)).toBe(false);
+         expect(payload.chiave_del_servizio_ignota).toBe(7);
+         expect(payload.strategy_modes).toEqual({ tennis: 'live' });
+     });
++    it('Safe: identico al foglio anche con il tetto delle posizioni nel database (5 e 0)', () => {
++        for (const n of [5, 0]) {
++            const raw: Record<string, unknown> = { ...SAFE_RAW, risk: { daily_loss_stop: -50, max_open_trades: n } };
++            const p = mergeBotParams(raw);
++            const v = toValues(p, mergeExits(raw.exits), raw);
++            v['risk.daily_loss_stop'] = -40;
++            const payload = payloadStop('safe', 40, raw);
++            expect(payload).toEqual(fromValues(v, p.variants, raw));
++            expect((payload.risk as Record<string, unknown>).max_open_trades).toBe(n);
++        }
++    });
+     it('Mike: mergeMikeParams del foglio con daily_loss_stop positivo', () => {
+         expect(payloadStop('mike', 40, MIKE_RAW)).toEqual(mergeMikeParams({ ...mergeMikeParams(MIKE_RAW), daily_loss_stop: 40 }));
+     });
+diff --git a/frontend/src/components/safestrategy/BotParamsSheet.test.tsx b/frontend/src/components/safestrategy/BotParamsSheet.test.tsx
+index 8b65162..21ad331 100644
+--- a/frontend/src/components/safestrategy/BotParamsSheet.test.tsx
++++ b/frontend/src/components/safestrategy/BotParamsSheet.test.tsx
+@@ -9,6 +9,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
+ import userEvent from '@testing-library/user-event';
+ import {
+     BotParamsSheet, mergeExits, EXITS_DEFAULTS, gruppiDellaStrategia,
++    toValues, fromValues,
+     type StrategiaFiltro,
+ } from './BotParamsSheet';
+ import type { ParamGroup } from '@/components/trading/ParamsSheetBase';
+@@ -530,3 +531,104 @@ describe('BotParamsSheet — `soloStrategia` nel foglio vero', () => {
+         expect(payload.unknown_key_from_service).toEqual({ keep: 'me' });
+     });
+ });
++
++// R-06 (rilievi bassi 01/10) - `risk.max_open_trades` di Safe ha TRE stati nel
++// servizio (`risk.py`: merge_risk_params / risk_params / check): chiave ASSENTE
++// (o null) = vale "Max trade aperti" del bot (`bot_service.py` resolve_params,
++// di serie 20); 0 = NESSUN tetto; N > 0 = tetto N. Il foglio scriveva 0 quando
++// la chiave mancava. FALSIFICAZIONE: rimettendo in `toValues` "assente -> 0"
++// e in `fromValues` la scrittura incondizionata, (a), (d), il Default e la
++// verifica pura diventano rossi.
++const TETTO = 'Max posizioni aperte (rischio)';
++function rischioSalvato(onSave: ReturnType<typeof vi.fn>): Record<string, unknown> {
++    return (onSave.mock.calls[0][0] as Record<string, unknown>).risk as Record<string, unknown>;
++}
++
++describe('BotParamsSheet - R-06 tetto delle posizioni aperte (risk.max_open_trades)', () => {
++    it('(a) chiave ASSENTE nel database + campo non toccato: il payload NON la porta', async () => {
++        const { user, onSave } = await openSheet(vi.fn(), RAW);
++        expect((screen.getByLabelText(TETTO) as HTMLInputElement).value).toBe('');
++        await user.click(screen.getByTestId('params-save'));
++        await waitFor(() => expect(onSave).toHaveBeenCalled());
++        const risk = rischioSalvato(onSave);
++        expect('max_open_trades' in risk).toBe(false);
++        // il resto del rischio resta quello di prima
++        expect(risk.daily_liability_cap).toBe(800);
++        expect(risk.daily_loss_stop).toBe(-30);
++    });
++
++    it('(b) chiave 5 nel database: si mostra 5 e si salva 5', async () => {
++        const raw = { ...RAW, risk: { ...RAW.risk, max_open_trades: 5 } };
++        const { user, onSave } = await openSheet(vi.fn(), raw);
++        expect((screen.getByLabelText(TETTO) as HTMLInputElement).value).toBe('5');
++        await user.click(screen.getByTestId('params-save'));
++        await waitFor(() => expect(onSave).toHaveBeenCalled());
++        expect(rischioSalvato(onSave).max_open_trades).toBe(5);
++    });
++
++    it("chiave 0 nel database e campo non toccato: resta 0 (non si decide per l'utente)", async () => {
++        const raw = { ...RAW, risk: { ...RAW.risk, max_open_trades: 0 } };
++        const { user, onSave } = await openSheet(vi.fn(), raw);
++        expect((screen.getByLabelText(TETTO) as HTMLInputElement).value).toBe('0');
++        await user.click(screen.getByTestId('params-save'));
++        await waitFor(() => expect(onSave).toHaveBeenCalled());
++        expect(rischioSalvato(onSave).max_open_trades).toBe(0);
++    });
++
++    it("(c) l'utente scrive 0 su una chiave assente: si salva 0 (= nessun tetto, scelto da lui)", async () => {
++        const { user, onSave } = await openSheet(vi.fn(), RAW);
++        await user.type(screen.getByLabelText(TETTO), '0');
++        await user.click(screen.getByTestId('params-save'));
++        await waitFor(() => expect(onSave).toHaveBeenCalled());
++        expect(rischioSalvato(onSave).max_open_trades).toBe(0);
++    });
++
++    it("(d) l'utente svuota il campo (era 5): la chiave sparisce dal payload", async () => {
++        const raw = { ...RAW, risk: { ...RAW.risk, max_open_trades: 5 } };
++        const { user, onSave } = await openSheet(vi.fn(), raw);
++        await user.clear(screen.getByLabelText(TETTO));
++        await user.click(screen.getByTestId('params-save'));
++        await waitFor(() => expect(onSave).toHaveBeenCalled());
++        const risk = rischioSalvato(onSave);
++        expect('max_open_trades' in risk).toBe(false);
++        expect(risk.daily_liability_cap).toBe(800);
++        // la riga letta non viene toccata
++        expect((raw.risk as Record<string, unknown>).max_open_trades).toBe(5);
++    });
++
++    it('il campo dice il significato vero di 0 e del vuoto, col tetto del bot in uso', async () => {
++        await openSheet(vi.fn(), { ...RAW, max_open_trades: 12 });
++        const testo = group('Rischio').textContent ?? '';
++        expect(testo).toContain('0 = NESSUN tetto (illimitato); vuoto = vale "Max trade aperti" del bot (ora 12; di serie 20)');
++    });
++
++    it('Default: il campo torna VUOTO (= tetto del bot), non 0', async () => {
++        const raw = { ...RAW, risk: { ...RAW.risk, max_open_trades: 5 } };
++        const { user, onSave } = await openSheet(vi.fn(), raw);
++        await user.click(screen.getByTestId('params-reset'));
++        expect((screen.getByLabelText(TETTO) as HTMLInputElement).value).toBe('');
++        await user.click(screen.getByTestId('params-save'));
++        await waitFor(() => expect(onSave).toHaveBeenCalled());
++        expect('max_open_trades' in rischioSalvato(onSave)).toBe(false);
++    });
++
++    it('toValues/fromValues puri: assente, null, non numerico -> campo vuoto -> chiave assente; numero -> numero', () => {
++        for (const valore of [undefined, null, 'x']) {
++            const raw: Record<string, unknown> = { ...RAW, risk: { ...RAW.risk } };
++            if (valore !== undefined) (raw.risk as Record<string, unknown>).max_open_trades = valore;
++            const p = mergeBotParams(raw);
++            const v = toValues(p, mergeExits(raw.exits), raw);
++            expect(v['risk.max_open_trades']).toBe('');
++            const out = fromValues(v, p.variants, raw) as Record<string, unknown>;
++            expect('max_open_trades' in (out.risk as Record<string, unknown>)).toBe(false);
++        }
++        for (const n of [0, 5]) {
++            const raw = { ...RAW, risk: { ...RAW.risk, max_open_trades: n } };
++            const p = mergeBotParams(raw);
++            const v = toValues(p, mergeExits(raw.exits), raw);
++            expect(v['risk.max_open_trades']).toBe(n);
++            const out = fromValues(v, p.variants, raw) as Record<string, unknown>;
++            expect((out.risk as Record<string, unknown>).max_open_trades).toBe(n);
++        }
++    });
++});
+diff --git a/frontend/src/components/safestrategy/BotParamsSheet.tsx b/frontend/src/components/safestrategy/BotParamsSheet.tsx
+index e4947e6..c4e8fe9 100644
+--- a/frontend/src/components/safestrategy/BotParamsSheet.tsx
++++ b/frontend/src/components/safestrategy/BotParamsSheet.tsx
+@@ -164,6 +164,20 @@ const OPPS_FIELDS: Num[] = [
+     { key: 'opps_min_edge', label: 'Edge minimo (0-1)', step: 0.01, min: -1, max: 1 },
+ ];
+ 
++/**
++ * R-06 (rilievi bassi 01/10) - `risk.max_open_trades` ha TRE stati nel servizio
++ * (`risk.py` merge_risk_params / risk_params / check):
++ *   - chiave ASSENTE (o null) -> vale `max_open_trades` del bot (resolve_params,
++ *     `bot_service.py`: di serie 20);
++ *   - 0 -> NESSUN tetto globale delle posizioni aperte (`if max_open and ...`);
++ *   - N > 0 -> tetto N, con la precedenza su "Max trade aperti".
++ * Il foglio la leggeva sempre come numero (assente -> 0) e al salvataggio la
++ * SCRIVEVA a 0: tetto tolto senza che nessuno lo chiedesse. Ora il campo VUOTO
++ * vuol dire chiave assente, e la chiave si scrive solo se nel campo c'e' un
++ * numero (stesso criterio di `salvaStop.payloadStop`).
++ */
++export const TETTO_RISCHIO_KEY = 'risk.max_open_trades';
++
+ const RISK_FIELDS: Num[] = [
+     { key: 'risk.daily_liability_cap', label: 'Cap liability giornaliera €', step: 50, min: 0, hint: 'raggiunto il cap nessun nuovo ingresso automatico fino a domani (0 = nessun cap)' },
+     { key: 'risk.per_event_liability_cap', label: 'Cap liability per evento €', step: 10, min: 0, hint: 'somma delle liability aperte sulla stessa partita' },
+@@ -177,9 +191,18 @@ const RISK_FIELDS: Num[] = [
+     // il "Max trade aperti" generale (risk.py:101): finora era un cap
+     // money-critical INVISIBILE, che l'utente non poteva ne' vedere ne'
+     // cambiare. Vuoto/assente = vale quello generale.
+-    { key: 'risk.max_open_trades', label: 'Max posizioni aperte (rischio)', step: 1, min: 0, hint: 'tetto sulle posizioni vive contemporanee: ha la PRECEDENZA su "Max trade aperti". 0 = illimitato' },
++    // R-06 (01/10): il testo del campo si compone con `hintTettoRischio` (dice
++    // anche il valore di "Max trade aperti" che vale a campo vuoto).
++    { key: TETTO_RISCHIO_KEY, label: 'Max posizioni aperte (rischio)', step: 1, min: 0, hint: '' },
+ ];
+ 
++function hintTettoRischio(maxTradeAperti: number): string {
++    const generale = maxTradeAperti > 0 ? String(maxTradeAperti) : "0, cioe' nessun tetto";
++    return 'tetto sulle posizioni vive contemporanee: ha la PRECEDENZA su "Max trade aperti". '
++        + '0 = NESSUN tetto (illimitato); vuoto = vale "Max trade aperti" del bot '
++        + `(ora ${generale}; di serie 20)`;
++}
++
+ const MODEL_STAKE_FIELDS: Num[] = [
+     { key: 'risk.model_stake', label: 'Stake auto-trade modello / anomalie / tennis €', step: 0.5, min: 0, hint: 'stake di ogni trade automatico di questi tipi (le combinazioni lo usano come stake TOTALE)' },
+     { key: 'opps_stake', label: 'Stake proposto sulle card €', step: 0.5, min: 0, hint: 'precompilato nel campo Stake delle opportunità (manuale)' },
+@@ -369,7 +392,10 @@ function numFields(
+         min: f.min,
+         max: f.max,
+         step: f.step,
+-        hint: hintWithEffective(f, values[f.key], eff, corrections),
++        // R-06: campo vuoto = chiave assente, non "salvato 0"
++        hint: f.key === TETTO_RISCHIO_KEY && String(values[f.key] ?? '').trim() === ''
++            ? f.hint
++            : hintWithEffective(f, values[f.key], eff, corrections),
+     }));
+ }
+ 
+@@ -534,7 +560,11 @@ export function BotParamsSheet({
+                     )}
+                 </>
+             ),
+-            fields: numFields(RISK_FIELDS, flat, effective, corrections),
++            fields: numFields(
++                RISK_FIELDS.map((f) => (f.key === TETTO_RISCHIO_KEY
++                    ? { ...f, hint: hintTettoRischio(params.max_open_trades) } : f)),
++                flat, effective, corrections,
++            ),
+         },
+         {
+             // 18/09 (decisione «B») — il vecchio gruppo «Auto-trade»
+@@ -771,6 +801,18 @@ export function toValues(
+         const v = Number(getPath(src, k));
+         out[k] = k in src && Number.isFinite(v) ? v : d;
+     }
++    // R-06: `risk.max_open_trades` NON e' fra i predefiniti di `mergeRiskParams`
++    // (e `p.risk` copre `raw.risk` in `src`): si legge dalla riga grezza. Numero
++    // -> quel numero (anche 0, che il servizio legge "nessun tetto"); assente,
++    // null o non numerico -> campo VUOTO (= tetto del bot), mai 0.
++    {
++        const rischioRaw = raw?.risk;
++        const daRaw = rischioRaw != null && typeof rischioRaw === 'object' && !Array.isArray(rischioRaw)
++            ? (rischioRaw as Record<string, unknown>).max_open_trades : undefined;
++        const daP = (p.risk as unknown as Record<string, unknown> | undefined)?.max_open_trades;
++        const tetto = typeof daRaw === 'number' ? daRaw : daP;
++        out[TETTO_RISCHIO_KEY] = typeof tetto === 'number' && Number.isFinite(tetto) ? tetto : '';
++    }
+     for (const t of AUTO_TRADE_TOGGLES) out[t.key] = Boolean(getPath(src, t.key));
+     // 18/09 — i rubinetti nascono TRUE: una chiave assente sul DB (mai
+     // salvata) deve mostrarsi ACCESA (comportamento di oggi), non spenta come
+@@ -814,6 +856,21 @@ export function fromValues(
+         }
+         setPath(out, key, value);
+     }
++    // R-06: `risk.max_open_trades` si scrive SOLO se nel campo c'e' un numero.
++    // Campo vuoto (o non numerico) = chiave ASSENTE nel payload (il servizio usa
++    // "Max trade aperti" del bot); mai 0, che per il servizio e' "nessun tetto".
++    // Se il campo non e' fra i valori (es. `salvaStop`, che lo toglie) la
++    // chiave della riga letta resta com'e'.
++    if (TETTO_RISCHIO_KEY in v) {
++        const grezzo = v[TETTO_RISCHIO_KEY];
++        const n = typeof grezzo === 'number' ? grezzo
++            : typeof grezzo === 'string' && grezzo.trim() !== '' ? Number(grezzo) : NaN;
++        const rischio = out.risk != null && typeof out.risk === 'object' && !Array.isArray(out.risk)
++            ? { ...(out.risk as Record<string, unknown>) } : {};
++        if (Number.isFinite(n)) rischio.max_open_trades = n;
++        else delete rischio.max_open_trades;
++        out.risk = rischio;
++    }
+     out.strategy_modes = modi;
+     out.variants = variants;
+     // 25/09 — UNA verita' per le uscite del tennis: il servizio fa vincere la

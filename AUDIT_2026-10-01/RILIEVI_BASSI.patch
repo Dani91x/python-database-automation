@@ -1,0 +1,2596 @@
+diff --git a/AUDIT_2026-10-01/REDESIGN/BRIEF_SESSIONE_CLOUD.md b/AUDIT_2026-10-01/REDESIGN/BRIEF_SESSIONE_CLOUD.md
+deleted file mode 100644
+index 5b7f0dc..0000000
+--- a/AUDIT_2026-10-01/REDESIGN/BRIEF_SESSIONE_CLOUD.md
++++ /dev/null
+@@ -1,133 +0,0 @@
+-# Brief per la sessione cloud — Redesign «guscio v2», parità 1:1
+-
+-Sei l'esecutore (sessione cloud) del coordinatore admin-01 sul repo `Dani91x/python-database-automation`
+-(ramo `master`, commit di partenza `fc5afbd` o successivo). Lingua: italiano in tutto (commit, PR, commenti,
+-testi a schermo). L'app è un software desktop (Electron) di trading sportivo su Betfair con bot calcio e
+-tennis; frontend React 18 + TypeScript + Vite + Tailwind + shadcn in `frontend/`; backend Python e Supabase
+-che NON toccherai mai.
+-
+-## Mandato
+-Realizzare il REDESIGN GRAFICO dell'intera app («guscio v2») con PARITÀ 1:1 di funzionalità rispetto a oggi:
+-stessi percorsi, stessi comandi, stessi testi, stessi dati, stessi identificativi dei test; cambia SOLO la
+-veste grafica. Il design approvato dall'utente è il prototipo in `AUDIT_2026-10-01/REDESIGN/prototipo/`
+-(index.html + js/*.js, dati finti) e il piano è `AUDIT_2026-10-01/REDESIGN/PIANO_INTEGRAZIONE.md`.
+-L'inventario di ogni pagina, blocco, comando, testo e testid è in
+-`AUDIT_2026-10-01/REDESIGN/INVENTARIO_FUNZIONALITA.md` e `inventario_parti/*.md`: è l'elenco di controllo,
+-da spuntare pagina per pagina. Leggi tutto questo PRIMA di scrivere una riga.
+-
+-## Ordini tassativi dell'utente (testuali)
+-«La nuova versione deve funzionare nello stesso identico modo e senza nessuna regressione; ci abbiamo messo
+-mesi; non voglio errori nascosti o perdite di dati nascoste. Il nuovo design deve includere ogni singola
+-funzionalità senza omettere nulla. Devo poter tornare alla vecchia app con un click. Lavorate sul guscio
+-usando esattamente le stesse identiche funzionalità e percorsi di ora, semplicemente con una veste grafica
+-nuova. Nessuna modifica a codice, bot e logiche di sistema: qui facciamo solo la parte di design.»
+-
+-Regole che ne derivano:
+-- VIETATO toccare: qualunque file Python, SQL, `migrations/`, `desktop/`, hook React (`use*.ts`), librerie di
+-  logica (`frontend/src/lib/**` salvo l'aggiunta di UN modulo nuovo per l'interruttore), chiamate
+-  RPC/Supabase, canali locali, testi a schermo esistenti, `data-testid` esistenti, ordine dei blocchi nelle
+-  pagine, conferme a due tempi, numeri e formattazioni. Nessuna RPC nuova, nessuna lettura in più.
+-- Bug o incongruenze che incontri: NON correggerli; elencali nel referto (file:riga, cosa, perché). Uniche
+-  correzioni ammesse: di sola grafica (es. il colore di PAPER che oggi varia fra pannelli, LAY ora `rose` ora
+-  `pink`), e vanno elencate anch'esse.
+-- Il guscio nuovo nasce SPENTO di default: l'app resta identica a oggi finché l'utente non lo accende.
+-
+-## Architettura (decisa dal coordinatore, non negoziabile)
+-1. **Interruttore `ui.shell`**: modulo nuovo `frontend/src/lib/uiShell.ts` che legge/scrive
+-   `localStorage['ui.shell']` ∈ {'v2','off'} (try/catch, default 'off'), con ripiego alla variabile di build
+-   `VITE_UI_SHELL` ('v2'|'off', default 'off'); la chiave locale vince. Due comandi visibili, un clic
+-   ciascuno, che scrivono la chiave e ricaricano la pagina: nella testata del guscio nuovo «Torna alla grafica
+-   attuale»; nell'app attuale un piccolo bottone discreto «Prova la nuova grafica» nello stesso punto in ogni
+-   pagina (accanto al brand nelle testate esistenti, o un elemento fisso in basso a destra se è l'unico modo di
+-   non toccare le pagine). Nessun altro stato persistito.
+-2. **AppShell come layout route** di React Router v6 in `frontend/src/App.tsx`: con `ui.shell='v2'` le rotte
+-   protette (`/board`, `/control-room`, `/dashboard`, `/omega`, `/safe-strategy`, `/mike`, `/segui-live`,
+-   `/multi-ladder`, `/market-watch`, `/live-pnl`, `/storico/calcio`, `/storico/tennis`, `/tennis`,
+-   `/tennis/terminal`, `/trade-journal`, `/report-personale`, `/watchlist`, `/analytics`, `/match-replay`,
+-   `/select-sport`) vengono rese dentro `<AppShell><Outlet/></AppShell>`; con `'off'` l'albero delle rotte è
+-   ESATTAMENTE quello di oggi. Fuori dal guscio sempre: `/ladder-popout` (finestra 560×860), landing `/`,
+-   `/check-email`, `/reset-password`, 404. Prima schermata dopo il login col guscio acceso: `/board`
+-   (Programma del giorno); verifica come oggi si atterra su `/select-sport` e NON cambiare quel comportamento
+-   con guscio spento.
+-3. **Sidebar** (componenti nuovi in `frontend/src/components/shell/`): gruppi e voci come nel prototipo
+-   (Programma del giorno; Control Room; Calcio: Cruscotto partite, Omega, Safe Strategy, Mike, Segui live ·
+-   Scalper, Storico calcio; Tennis: Dashboard tennis, Tennis Terminal, Bot tennis, Safe Strategy · Tennis,
+-   Storico tennis; Trading: Multi-ladder, Ladder pop-out, Market watch, Live P&L, Watchlist; Analisi: Match
+-   replay, Analytics, Report personale, Trade journal; Account: Scelta sport, Esci), comprimibile, filtro
+-   Tutti/Calcio/Tennis che nasconde solo voci di menu. Ogni voce porta a una rotta ESISTENTE (le voci «Bot
+-   tennis» e «Safe Strategy · Tennis» portano dove il prototipo e l'inventario indicano: Terminal tennis e tab
+-   tennis di Safe). Etichette di stato dei bot accanto alle voci (LIVE/PROVA/FERMO) SOLO se il dato è già
+-   disponibile in un provider/contesto esistente senza letture nuove; altrimenti ometti e dillo.
+-4. **Testata globale in sola lettura**: runner calcio/tennis, canali locali, ordini LIVE/PROVA, saldo CONTO
+-   con esposizione e occhio: SOLO da dati già letti da hook/provider esistenti (vedi §E del piano); se per
+-   averli nel guscio servirebbe una lettura nuova, NON farla: metti l'indicatore solo dove il dato esiste già
+-   (es. dentro Control Room) e dichiaralo. Conta le chiamate: con guscio acceso e spento il numero di
+-   connessioni WebSocket e di chiamate REST a schermo fermo deve essere uguale.
+-5. **Le testate delle pagine di oggi restano nel DOM**. Per evitare la doppia navigazione aggiungi
+-   l'attributo `data-nav-legacy` SOLO agli elementi di pura navigazione duplicati (link al brand, bottoni
+-   «Dashboard», «Cambia sport», «Watchlist», «Report», «Analytics» delle navbar inline e di `TennisNav`) e
+-   nascondili via CSS quando `[data-shell="v2"]`; MAI nascondere comandi (stato, salute, PAPER/LIVE,
+-   Parametri, Avvia/Ferma, Storico, KILL, cash out, conferme). I test jsdom non applicano i CSS: gli elementi
+-   restano trovabili.
+-6. **Stile**: token e font di `frontend/src/index.css` e `tailwind.config.js` (nessun colore nuovo; Sora
+-   titoli, Inter testo, numeri tabulari), classi `.ds-*` nuove in `index.css` usate dal guscio e, nelle fasi
+-   successive, dalle pagine SOLO via `className` e contenitori. Contenuto in un contenitore con scroll proprio
+-   sotto la testata globale (56 px) così gli `sticky top-0` delle pagine restano corretti; nessuno scroll
+-   orizzontale a 1280 px; verifica 1280/1600/1920.
+-7. **Control Room**: stessi blocchi, stesso ordine, stessi testi e testid; solo classi e griglie (§C del
+-   piano, elenco dei testid da preservare). `cr-riga-paper` deve restare ASSENTE (un test lo verifica).
+-   Nessun cambio a `useControlRoom.ts` e agli altri hook.
+-
+-## Fasi (nell'ordine; ogni fase = commit separati + push; PR in bozza aperta dopo la fase 1 e aggiornata a ogni fase)
+-- **Fase 0 — garanzia di parità**: (a) classi `.ds-*` in `index.css` non ancora usate; (b) il TEST
+-  «FOTOGRAFIA»: `frontend/src/fotografia/fotografia.test.tsx` che rende OGNI pagina protetta con finti
+-  deterministici (riusa i finti già presenti nei test di ciascuna pagina: `pages/*.test.tsx`; stesse chiavi e
+-  tipi del vero) in ENTRAMBI gli stati dell'interruttore e scrive, per pagina, l'elenco ordinato di: testi
+-  visibili (textContent dei nodi foglia, normalizzati), `data-testid`, bottoni/link/input (ruolo + nome
+-  accessibile + href/disabled), in `frontend/src/fotografia/snapshot/<pagina>.<stato>.json`. Il test fallisce
+-  se la fotografia con `off` cambia rispetto a quella salvata alla fase 0 (parità byte per byte con oggi) e
+-  se, con `v2`, l'insieme di testid/comandi/testi delle PAGINE (escluso ciò che il guscio aggiunge, elencato in
+-  una lista bianca esplicita) differisce da quello con `off`. Committa le fotografie di partenza PRIMA di
+-  qualunque altra modifica: sono la prova.
+-- **Fase 1 — guscio**: `uiShell.ts`, `AppShell`, sidebar, testata globale, interruttori a un clic, layout
+-  route in `App.tsx`, `data-nav-legacy`. Con `off` l'app è identica (fotografia identica); con `v2` solo la
+-  cornice cambia.
+-- **Fase 2 — Programma del giorno** (`pages/Board.tsx`): righe in tabella densa e tab con conteggio come nel
+-  prototipo; solo `className`.
+-- **Fase 3 — Control Room**: §C del piano.
+-- **Fase 4 — pagine bot** (Omega, Safe Strategy, Mike) e `components/trading/*`: solo `className`.
+-- **Fase 5 — tennis e live** (TennisMatchesList, TennisTerminal, TennisBotPanel, SeguiLive, LadderView e
+-  pannelli, Multi-ladder, Ladder pop-out).
+-- **Fase 6 — storici, Market watch, Live P&L, Trade journal, Report personale, Watchlist, Match replay,
+-  Analytics, Cruscotto partite (Dashboard)**.
+-- **Fase 7 — account** (Scelta sport, Accesso, Conferma email, Reimposta password, 404) e rifinitura;
+-  checklist finale pagina per pagina contro l'inventario.
+-Se il budget o il tempo finiscono prima della fase 7, FERMATI a fine fase con tutto pushato e la PR
+-aggiornata: un lavoro parziale ma pulito vale, uno a metà no. Dichiara nel referto a che fase sei arrivato.
+-
+-## Ambiente e verifiche
+-- `cd frontend && npm ci` (usa il lockfile). Comandi: `npx tsc -p tsconfig.app.json --noEmit` (deve dare 0
+-  errori: regola di casa dal 17/09, mai `@ts-ignore`/`any` per zittire), `npx vitest run` (suite intera, oggi
+-  310 file / 4764 test verdi, 10/50 saltati; circa 7 minuti), `npm run build`. Esistono guardie:
+-  `designGuard.test.ts`, `zeroPerAssente.test.ts` e altri: devono restare verdi senza eccezioni nuove.
+-- A OGNI fase: tsc 0; suite intera verde con lo stesso numero di test di prima + i nuovi; fotografia `off`
+-  identica; nessun test esistente modificato (se uno DEVE cambiare, motivo scritto nel test e nel referto, e
+-  deve essere un cambio di sola struttura DOM mai di testo/testid); FALSIFICAZIONE dei test nuovi (rimetti il
+-  comportamento vecchio, mostra il rosso, ripristina; output nel referto).
+-- Screenshot: prova a rendere l'app con un browser headless (Playwright/Chromium se installabile, oppure
+-  `vite preview` + chromium headless) con i finti della fotografia o con dati finti, a 1280 e 1600 px, per
+-  ogni pagina in `off` e in `v2`; salvali in `AUDIT_2026-10-01/REDESIGN/confronto/<pagina>.<stato>.<larghezza>.png`
+-  e linkali nella PR. Se non ci riesci, dillo chiaramente: l'utente verificherà a occhio con l'interruttore.
+-- Mai `git add -A`: aggiungi i percorsi espliciti. Commit in italiano, uno per unità di lavoro, messaggi che
+-  dicono cosa e come verificato. Ramo: `redesign/guscio-v2` da `master`. Push dopo ogni fase. PR verso
+-  `master` in bozza, titolo «Redesign guscio v2 — parità 1:1, interruttore ui.shell (spento di default)»,
+-  corpo = referto aggiornato.
+-- `.env` non c'è e non serve: nessun accesso al database. Non inventare dati veri.
+-
+-## Referto (nel corpo della PR e in `AUDIT_2026-10-01/REDESIGN/REFERTO_CLOUD.md`)
+-Per ogni fase: file toccati; checklist dell'inventario spuntata pagina per pagina (ogni blocco e comando:
+-«presente, invariato»); numeri di tsc, suite, fotografia; falsificazioni con output; screenshot; conteggio
+-WS/REST con guscio acceso/spento; elenco delle correzioni di sola grafica fatte; ELENCO DEI BUG E DELLE
+-INCONGRUENZE TROVATI E NON CORRETTI; «cosa non ho potuto verificare». Scrivi la verità: un «non verificato»
+-dichiarato vale più di un «fatto» non provato. Il coordinatore rileggerà il diff riga per riga, rilancerà
+-suite e fotografia e proverà mutazioni prima di qualunque fusione.
+diff --git a/frontend/src/components/controlroom/PosizioniChiuse.giornoPartita.test.tsx b/frontend/src/components/controlroom/PosizioniChiuse.giornoPartita.test.tsx
+index 333c1ab..4136e62 100644
+--- a/frontend/src/components/controlroom/PosizioniChiuse.giornoPartita.test.tsx
++++ b/frontend/src/components/controlroom/PosizioniChiuse.giornoPartita.test.tsx
+@@ -13,7 +13,7 @@
+ // I finti hanno le chiavi delle tabelle vere piu' quelle del contratto 01/10.
+ // ============================================================================
+ import { describe, it, expect } from 'vitest';
+-import { render, screen, waitFor } from '@testing-library/react';
++import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+ import { MemoryRouter } from 'react-router-dom';
+ import { PosizioniChiuse, MARGINE_LETTURA_MS, type LeggiGiornata } from './PosizioniChiuse';
+ import type { TradeChiudibile } from '@/lib/posizioniChiuse';
+@@ -147,3 +147,60 @@ describe('note fisse e testi del criterio', () => {
+         expect(screen.getByTestId('cr-chiuse-nota-piazzamento')).toHaveTextContent('1 operazione senza inizio partita noto');
+     });
+ });
++
++// C-08 (01/10, rilievi bassi): il badge «parziale» non aveva un test. Compare
++// SOLO per una giornata PASSATA letta in ripiego (bot tennis assenti) e quando
++// la scheda comprende il tennis. FALSIFICAZIONE: con `parziale` sempre falso il
++// primo caso diventa rosso; con la condizione su oggi o sullo sport tolta,
++// diventano rossi i casi negativi.
++describe('C-08: «parziale» sulla giornata passata letta in ripiego', () => {
++    const ieriDb = t({ id: 30, pnl: 1.5, event_id: 'E30', placed_at: `${IERI}T08:00:00.000Z`,
++        settled_at: `${IERI}T10:00:00.000Z` });
++    const leggiCon = (fonte: ChiuseGiornata['fonte']): LeggiGiornata => async (g, m) => ({
++        ...lettura(g, g === IERI ? [ieriDb] : [], { fonte, giornoPartita: false }), modo: m,
++    });
++    function montaSport(sport: 'calcio' | 'tennis' | null, leggi: LeggiGiornata) {
++        return render(
++            <MemoryRouter>
++                <PosizioniChiuse righe={[]} sport={sport} giorno={OGGI} leggiGiornata={leggi} />
++            </MemoryRouter>,
++        );
++    }
++    async function vaiAIeri() {
++        fireEvent.click(screen.getByTestId('cr-f-giorno-prima'));
++        await waitFor(() => expect(screen.getByTestId('cr-chiuse-totale')).toHaveTextContent('+1,50'));
++    }
++
++    it('ieri, lettura di ripiego, tutti gli sport: «parziale» col motivo', async () => {
++        montaSport(null, leggiCon('ripiego'));
++        await vaiAIeri();
++        const b = screen.getByTestId('cr-chiuse-parziale');
++        expect(b).toHaveTextContent('parziale');
++        expect(b.getAttribute('title')).toMatch(/bot tennis di questa giornata non sono letti/);
++    });
++
++    it('ieri, lettura di ripiego, scheda tennis: «parziale»', async () => {
++        montaSport('tennis', leggiCon('ripiego'));
++        fireEvent.click(screen.getByTestId('cr-f-giorno-prima'));
++        await waitFor(() => expect(screen.getByTestId('cr-chiuse-parziale')).toBeInTheDocument());
++    });
++
++    it('ieri, lettura completa: nessun «parziale»', async () => {
++        montaSport(null, leggiCon('rpc'));
++        await vaiAIeri();
++        expect(screen.queryByTestId('cr-chiuse-parziale')).toBeNull();
++    });
++
++    it('ieri, ripiego, scheda CALCIO: nessun «parziale» (il ripiego legge tutto il calcio)', async () => {
++        montaSport('calcio', leggiCon('ripiego'));
++        await vaiAIeri();
++        expect(screen.queryByTestId('cr-chiuse-parziale')).toBeNull();
++    });
++
++    it('OGGI in ripiego: nessun «parziale» (oggi i bot tennis arrivano dalla memoria)', async () => {
++        const leggi: LeggiGiornata = async (g, m) => ({ ...lettura(g, [diOggi], { fonte: 'ripiego' }), modo: m });
++        montaSport(null, leggi);
++        await waitFor(() => expect(screen.getByTestId('cr-chiuse-totale')).toHaveTextContent('+1,00'));
++        expect(screen.queryByTestId('cr-chiuse-parziale')).toBeNull();
++    });
++});
+diff --git a/frontend/src/components/controlroom/PosizioniChiuse.raggruppamento.test.tsx b/frontend/src/components/controlroom/PosizioniChiuse.raggruppamento.test.tsx
+index 381c41e..524185f 100644
+--- a/frontend/src/components/controlroom/PosizioniChiuse.raggruppamento.test.tsx
++++ b/frontend/src/components/controlroom/PosizioniChiuse.raggruppamento.test.tsx
+@@ -12,6 +12,8 @@
+ // I finti hanno le chiavi delle tabelle vere; le posizioni le costruisce la
+ // funzione VERA.
+ // ============================================================================
++// D-06 (01/10, rilievi bassi): UN solo tipo FontePnl (lib/fontePnl.ts): le
++// parole sono conto / stima / simulato (prima betfair / stimato / paper).
+ import { describe, it, expect, vi } from 'vitest';
+ import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
+ import { MemoryRouter } from 'react-router-dom';
+@@ -106,7 +108,7 @@ describe('una regola: giornata -> bot -> partita -> ciclo', () => {
+         expect(omega).toHaveTextContent('punta');
+         expect(omega).toHaveTextContent('vinta');
+         expect(within(omega).getByTestId('cr-chiusa-pnl-1')).toHaveTextContent('+1,00');
+-        expect(within(omega).getByTestId('cr-chiusa-fonte-1').dataset.fonte).toBe('stimato');
++        expect(within(omega).getByTestId('cr-chiusa-fonte-1').dataset.fonte).toBe('stima');
+     });
+ 
+     it('il totale in testa e\' la somma dei bot', () => {
+@@ -134,7 +136,7 @@ describe('paper e live: mai insieme', () => {
+         expect(screen.getByTestId('cr-chiuse-moneta')).toHaveTextContent('prova');
+         expect(screen.getByTestId('cr-chiuse-moneta').dataset.modo).toBe('paper');
+         expect(screen.getByTestId('cr-chiuse-totale')).toHaveTextContent('+50,00');
+-        expect(screen.getByTestId('cr-chiuse-totale-fonte').dataset.fonte).toBe('paper');
++        expect(screen.getByTestId('cr-chiuse-totale-fonte').dataset.fonte).toBe('simulato');
+         expect(screen.queryByText('Inter - Milan')).toBeNull();
+     });
+ 
+@@ -158,8 +160,8 @@ describe('la fonte di ogni cifra: Betfair / stimato', () => {
+         expect(screen.getByTestId('cr-chiuse-reale')).toHaveTextContent('+2,85');
+         expect(screen.getByTestId('cr-chiuse-stimato')).toHaveTextContent(`${MINUS}0,40`);
+         expect(screen.getByTestId('cr-chiuse-totale-fonte').dataset.fonte).toBe('misto');
+-        expect(screen.getByTestId('cr-chiusa-fonte-1').dataset.fonte).toBe('betfair');
+-        expect(screen.getByTestId('cr-chiusa-fonte-2').dataset.fonte).toBe('stimato');
++        expect(screen.getByTestId('cr-chiusa-fonte-1').dataset.fonte).toBe('conto');
++        expect(screen.getByTestId('cr-chiusa-fonte-2').dataset.fonte).toBe('stima');
+     });
+ 
+     it('W_B2 (punto 5): le parole delle fonti sono quelle di lib/fontePnl.ts (stesse della pagina di Mike)', () => {
+diff --git a/frontend/src/components/controlroom/PosizioniChiuse.tsx b/frontend/src/components/controlroom/PosizioniChiuse.tsx
+index a58cdd0..845cc02 100644
+--- a/frontend/src/components/controlroom/PosizioniChiuse.tsx
++++ b/frontend/src/components/controlroom/PosizioniChiuse.tsx
+@@ -33,16 +33,17 @@ import { StatoOrdineCompatto } from '@/components/trading/StatoOrdine';
+ import { BOT_LABEL, type Bot, type Modo } from '@/lib/controlRoom';
+ import { addDays, dayLabel, isValidDay } from '@/lib/dailyHistory';
+ import {
+-    filtraChiuse, fuoriGiornata, raggruppaGiornata, unisciRighe,
+-    posizioniChiuse, certezzaDiPosizione, gambeAnnullate, sintesiPosizione,
++    filtraChiuse, fuoriGiornata, raggruppaGiornata,
++    certezzaDiPosizione, gambeAnnullate, sintesiPosizione,
+     regolatoNelGiorno, aCavalloDellaMezzanotte,
+     type PosizioneChiusa, type Esito, type TradeChiudibile, type RiepilogoChiuse,
+     type GruppoBot, type GruppoPartita,
+ } from '@/lib/posizioniChiuse';
+-import { chiuseGiornata, type ChiuseGiornata } from '@/lib/chiuseGiornata';
++import {
++    chiuseGiornata, posizioniDellaGiornata, MARGINE_LETTURA_MS, type ChiuseGiornata,
++} from '@/lib/chiuseGiornata';
+ import type { ComposizioneObiettivo, RigaComposizione } from '@/lib/composizioneObiettivo';
+-import type { FontePnl } from '@/lib/eventGroups';
+-import { FONTE_PNL_BREVE, FONTE_PNL_TESTO } from '@/lib/fontePnl';
++import { FONTE_PNL_BREVE, FONTE_PNL_TESTO, type FontePnl } from '@/lib/fontePnl';
+ import { eCertezzaVerde, type StatoCertezzaChiusura } from '@/lib/certezzaChiusura';
+ 
+ const CERTEZZA_LABEL: Record<StatoCertezzaChiusura, string> = {
+@@ -83,13 +84,9 @@ const VOCI_BARRA: readonly RigaComposizione['chiave'][] = [
+     'omega', 'safe_calcio', 'safe_tennis', 'mike', 'bot_tennis', 'manuale',
+ ];
+ 
+-/**
+- * 01/10 - una riga regolata piu' di questo PRIMA che partisse la lettura del
+- * giorno, e che la lettura (col giorno della partita) non porta, NON e' di
+- * quella giornata: e' di una partita di un altro giorno. Il margine copre il
+- * ritardo fra il regolamento di Betfair e la scrittura della riga.
+- */
+-export const MARGINE_LETTURA_MS = 5 * 60_000;
++/** 01/10 - il margine vive in `lib/chiuseGiornata` (una regola sola con la
++ *  plancia «oggi per bot»); qui si riesporta per chi lo importava da qui. */
++export { MARGINE_LETTURA_MS };
+ 
+ /** oltre questo numero di operazioni le partite partono chiuse (velocita') */
+ export const SOGLIA_PARTITE_APERTE = 40;
+@@ -179,10 +176,13 @@ export function PosizioniChiuse({
+     const datiDb = lettura.chiave === chiaveLettura ? lettura.dati : null;
+ 
+     // -- LE POSIZIONI: memoria + giornata letta, costruite UNA volta ---------
+-    const posizioni = useMemo<readonly PosizioneChiusa[]>(() => {
+-        if (datiDb && datiDb.righe.length) return posizioniChiuse(unisciRighe(righe, datiDb.righe));
+-        return chiuse ?? posizioniChiuse(righe);
+-    }, [righe, chiuse, datiDb]);
++    // 01/10 (rilievi bassi, punto 1): la STESSA funzione della plancia «oggi
++    // per bot» (`posizioniDellaGiornata`), con l'esclusione qui sotto.
++    const giornata = useMemo(
++        () => posizioniDellaGiornata(righe, chiuse, datiDb, giornoScelto),
++        [righe, chiuse, datiDb, giornoScelto],
++    );
++    const posizioni = giornata.posizioni;
+ 
+     const filtroBase = useMemo(
+         () => ({ modo, sport: sport ?? 'tutti' as const }),
+@@ -194,17 +194,7 @@ export function PosizioniChiuse({
+      * porta): sono di partite di altri giorni, non di questa giornata. Prima
+      * una partita di ieri sera regolata stanotte compariva «oggi».
+      */
+-    const dialtroGiorno = useMemo(() => {
+-        const s = new Set<PosizioneChiusa>();
+-        if (!datiDb || datiDb.giornoPartita !== true || datiDb.chiestoAlle == null) return s;
+-        const limite = datiDb.chiestoAlle - MARGINE_LETTURA_MS;
+-        for (const p of posizioni) {
+-            if (p.giornoConfermato || p.giorno !== giornoScelto) continue;
+-            const ms = Date.parse(p.chiusaAt);
+-            if (Number.isFinite(ms) && ms < limite) s.add(p);
+-        }
+-        return s;
+-    }, [datiDb, posizioni, giornoScelto]);
++    const dialtroGiorno = giornata.escluse;
+     const visibili = useMemo(
+         () => filtraChiuse(posizioni, { ...filtroBase, esito, bot, fonte: modo === 'live' ? fonte : 'tutte', giorno: giornoScelto })
+             .filter((p) => !dialtroGiorno.has(p)),
+@@ -570,26 +560,27 @@ function etichettaGruppo(g: GruppoBot): string {
+ }
+ 
+ function fonteDiRiepilogo(modo: Modo, r: RiepilogoChiuse): FontePnl | 'misto' {
+-    if (modo === 'paper') return 'paper';
+-    if (r.stimato == null) return 'betfair';
+-    if (r.reale == null) return 'stimato';
++    if (modo === 'paper') return 'simulato';
++    if (r.stimato == null) return 'conto';
++    if (r.reale == null) return 'stima';
+     return 'misto';
+ }
+ 
+ // 30/09 (ordine dell'utente: «massima coerenza»): le STESSE parole della
+-// pagina di Mike e dello Storico (`lib/fontePnl.ts`)
++// pagina di Mike e dello Storico (`lib/fontePnl.ts`); D-06 (01/10): anche lo
++// STESSO tipo, nessuna rimappatura a mano
+ const FONTE_TESTO: Record<FontePnl | 'misto', string> = {
+-    betfair: FONTE_PNL_BREVE.conto, stimato: FONTE_PNL_BREVE.stima, paper: FONTE_PNL_BREVE.simulato,
++    conto: FONTE_PNL_BREVE.conto, stima: FONTE_PNL_BREVE.stima, simulato: FONTE_PNL_BREVE.simulato,
+     misto: `${FONTE_PNL_BREVE.conto} + ${FONTE_PNL_BREVE.stima}`,
+ };
+ const FONTE_CLS: Record<FontePnl | 'misto', string> = {
+-    betfair: 'text-emerald-300/80', stimato: 'text-amber-300/90', paper: 'text-white/40', misto: 'text-amber-300/90',
++    conto: 'text-emerald-300/80', stima: 'text-amber-300/90', simulato: 'text-white/40', misto: 'text-amber-300/90',
+ };
+ const FONTE_TITOLO: Record<FontePnl | 'misto', string> = {
+-    betfair: 'netto regolato sul conto Betfair (profit meno la commissione del mercato); per Mike: '
++    conto: 'netto regolato sul conto Betfair (profit meno la commissione del mercato); per Mike: '
+         + FONTE_PNL_TESTO.conto,
+-    stimato: `${FONTE_PNL_TESTO.stima}. Diventa il netto di Betfair al regolamento`,
+-    paper: `${FONTE_PNL_TESTO.simulato}: su Betfair non esiste, e' sempre il calcolo`,
++    stima: `${FONTE_PNL_TESTO.stima}. Diventa il netto di Betfair al regolamento`,
++    simulato: `${FONTE_PNL_TESTO.simulato}: su Betfair non esiste, e' sempre il calcolo`,
+     misto: `in parte ${FONTE_PNL_BREVE.conto} e in parte ${FONTE_PNL_TESTO.stima}`,
+ };
+ 
+@@ -597,7 +588,7 @@ const FONTE_TITOLO: Record<FontePnl | 'misto', string> = {
+ function FonteTag({ fonte, modo, riepilogo, testId }: {
+     fonte?: FontePnl; modo?: Modo; riepilogo?: RiepilogoChiuse; testId?: string;
+ }) {
+-    const f: FontePnl | 'misto' = fonte ?? (riepilogo && modo ? fonteDiRiepilogo(modo, riepilogo) : 'stimato');
++    const f: FontePnl | 'misto' = fonte ?? (riepilogo && modo ? fonteDiRiepilogo(modo, riepilogo) : 'stima');
+     return (
+         <span className={`text-[9px] font-normal uppercase tracking-wider ${FONTE_CLS[f]}`}
+             data-testid={testId} data-fonte={f} title={FONTE_TITOLO[f]}>
+@@ -776,7 +767,7 @@ const RigaCiclo = memo(function RigaCiclo({ p, aperta, onToggle }: {
+                             : "P&L dell'OPERAZIONE intera: apertura e coperture insieme"}>
+                         {fmtMoney(p.pnlGlobale, { signed: true })}
+                     </span>
+-                    <FonteTag fonte={p.fontePnl ?? (p.modo === 'paper' ? 'paper' : 'stimato')}
++                    <FonteTag fonte={p.fontePnl ?? (p.modo === 'paper' ? 'simulato' : 'stima')}
+                         testId={`cr-chiusa-fonte-${p.id}`} />
+ 
+                     <span className="text-[9px] text-white/35 font-mono w-10 text-right" title="ora di regolamento">
+diff --git a/frontend/src/components/controlroom/SaldoBetfairCard.test.tsx b/frontend/src/components/controlroom/SaldoBetfairCard.test.tsx
+deleted file mode 100644
+index d71e3b5..0000000
+--- a/frontend/src/components/controlroom/SaldoBetfairCard.test.tsx
++++ /dev/null
+@@ -1,269 +0,0 @@
+-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+-import { render, fireEvent, waitFor, act } from '@testing-library/react';
+-import { SaldoBetfairCard, checkedAtDiMessaggioAccount, CANALI_SALDO } from './SaldoBetfairCard';
+-import type { LiveAccountRow, LiveHeartbeatRow } from '@/lib/liveOrders';
+-import { getLocalChannel, type LocalChannel } from '@/lib/localChannel';
+-
+-// 23/09 — il singleton vero aprirebbe WebSocket su 127.0.0.1: qui un finto con
+-// la stessa firma (`subscribe(topic, cb) → off`), per verificare il DEFAULT.
+-vi.mock('@/lib/localChannel', async (orig) => ({
+-    ...(await orig<typeof import('@/lib/localChannel')>()),
+-    getLocalChannel: vi.fn(() => ({ subscribe: vi.fn(() => () => {}) })),
+-}));
+-
+-function account(over: Partial<LiveAccountRow> = {}): LiveAccountRow {
+-    return { id: 1, available: 1234.56, exposure: 18.4, updated_at: new Date().toISOString(), ...over };
+-}
+-function heartbeat(over: Partial<LiveHeartbeatRow> = {}): LiveHeartbeatRow {
+-    return {
+-        id: 1, ts: new Date().toISOString(), pid: 123, mode: 'LIVE',
+-        watchdog_ts: new Date().toISOString(), watchdog_pid: 124,
+-        updated_at: new Date().toISOString(), ...over,
+-    };
+-}
+-
+-/**
+- * 18/09 (raccordo) — canale locale FINTO: di default MUTO (mai un messaggio),
+- * cioè esattamente lo scenario da certificare per difetto ("il canale è
+- * un'accelerazione, mai l'unica fonte"). Chi vuole provare il canale ACCESO
+- * passa `onAccount` e lo invoca a mano.
+- */
+-function canaleFinto(onAccountRef?: { current: ((d: unknown) => void) | null }): LocalChannel {
+-    return {
+-        subscribe: vi.fn((topic: string, cb: (d: unknown) => void) => {
+-            if (topic === 'account' && onAccountRef) onAccountRef.current = cb;
+-            return () => { /* unsubscribe */ };
+-        }),
+-    } as unknown as LocalChannel;
+-}
+-
+-function depsDi(a: LiveAccountRow | null, h: LiveHeartbeatRow | null, onAccountRef?: { current: ((d: unknown) => void) | null }) {
+-    return {
+-        fetchAccount: vi.fn(async () => a),
+-        subscribeAccount: vi.fn(() => () => {}),
+-        fetchHeartbeat: vi.fn(async () => h),
+-        subscribeHeartbeat: vi.fn(() => () => {}),
+-        getCanale: vi.fn(() => canaleFinto(onAccountRef)),
+-    };
+-}
+-
+-beforeEach(() => {
+-    try { window.localStorage.clear(); } catch { /* jsdom sempre disponibile qui */ }
+-});
+-afterEach(() => vi.restoreAllMocks());
+-
+-describe('SaldoBetfairCard', () => {
+-    it('mostra il saldo e l’esposizione formattati', async () => {
+-        const deps = depsDi(account({ available: 1234.56, exposure: 18.4 }), heartbeat());
+-        const s = render(<SaldoBetfairCard deps={deps} />);
+-        await waitFor(() => expect(s.getByTestId('saldo-betfair-valore').textContent).toMatch(/1234,56/));
+-        expect(s.getByTestId('saldo-betfair-esposizione').textContent).toMatch(/18,40/);
+-    });
+-
+-    it('SALDO NASCOSTO non compare nel DOM: il testo diventa i pallini', async () => {
+-        const deps = depsDi(account({ available: 1234.56 }), heartbeat());
+-        const s = render(<SaldoBetfairCard deps={deps} />);
+-        await waitFor(() => expect(s.getByTestId('saldo-betfair-valore').textContent).toMatch(/1234,56/));
+-        fireEvent.click(s.getByTestId('saldo-betfair-occhio'));
+-        expect(s.getByTestId('saldo-betfair-valore').textContent).not.toMatch(/1234,56/);
+-        expect(s.getByTestId('saldo-betfair-valore').textContent).toMatch(/••••/);
+-        expect(s.container.textContent ?? '').not.toContain('1234,56');
+-    });
+-
+-    it('la preferenza nascosto si ricorda (localStorage)', async () => {
+-        window.localStorage.setItem('cr-saldo-nascosto', '1');
+-        const deps = depsDi(account({ available: 1234.56 }), heartbeat());
+-        const s = render(<SaldoBetfairCard deps={deps} />);
+-        await waitFor(() => expect(s.getByTestId('saldo-betfair-occhio').getAttribute('aria-pressed')).toBe('true'));
+-        expect(s.getByTestId('saldo-betfair-valore').textContent).toMatch(/••••/);
+-    });
+-
+-    it('SALDO VECCHIO (battito lontano) e canale MUTO → stato arancione', async () => {
+-        const vecchio = new Date(Date.now() - 10 * 60 * 1000).toISOString(); // 10 minuti fa
+-        const deps = depsDi(account(), heartbeat({ ts: vecchio }));
+-        const s = render(<SaldoBetfairCard deps={deps} />);
+-        await waitFor(() => expect(s.getByTestId('saldo-betfair-nota').textContent).toMatch(/non aggiornato da \d\d:\d\d/));
+-    });
+-
+-    it('errore di lettura: nessun numero inventato', async () => {
+-        const deps = {
+-            fetchAccount: vi.fn(async () => { throw new Error('rete'); }),
+-            subscribeAccount: vi.fn(() => () => {}),
+-            fetchHeartbeat: vi.fn(async () => null),
+-            subscribeHeartbeat: vi.fn(() => () => {}),
+-            getCanale: vi.fn(() => canaleFinto()),
+-        };
+-        const s = render(<SaldoBetfairCard deps={deps} />);
+-        await waitFor(() => expect(s.getByTestId('saldo-betfair-nota').textContent).toMatch(/non leggibile/));
+-        expect(s.getByTestId('saldo-betfair-valore').textContent).toBe('—');
+-    });
+-
+-    // ── 18/09 (raccordo) — canale locale 47331, topic "account" ──────────
+-    it('messaggio "account" recente dal canale locale → fresco, anche col battito vecchissimo', async () => {
+-        const onAccountRef: { current: ((d: unknown) => void) | null } = { current: null };
+-        const vecchissimo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+-        const deps = depsDi(account(), heartbeat({ ts: vecchissimo }), onAccountRef);
+-        const s = render(<SaldoBetfairCard deps={deps} />);
+-        await waitFor(() => expect(s.getByTestId('saldo-betfair-nota').textContent).toMatch(/non aggiornato da \d\d:\d\d/));
+-        // il canale locale parla ORA: deve VINCERE sul battito vecchio
+-        onAccountRef.current?.({ available: 100, exposure: 0, checked_at: new Date().toISOString() });
+-        await waitFor(() => expect(s.getByTestId('saldo-betfair-nota').getAttribute('title')).toMatch(/canale locale/i));
+-        expect(s.getByTestId('saldo-betfair-nota').textContent).not.toMatch(/non aggiornato da \d\d:\d\d/);
+-    });
+-
+-    it('un messaggio "manuale" (senza "available", ma CON un campo "checked_at" omonimo) NON viene letto come saldo', async () => {
+-        const onAccountRef: { current: ((d: unknown) => void) | null } = { current: null };
+-        const vecchissimo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+-        const deps = depsDi(account(), heartbeat({ ts: vecchissimo }), onAccountRef);
+-        const s = render(<SaldoBetfairCard deps={deps} />);
+-        await waitFor(() => expect(s.getByTestId('saldo-betfair-nota').textContent).toMatch(/non aggiornato da \d\d:\d\d/));
+-        // un messaggio manuale che (per ipotesi) portasse anche un `checked_at`
+-        // non deve MAI essere confuso col saldo: si distingue guardando
+-        // `available` (contratto B1 §6/§19), non la sola presenza di `checked_at`.
+-        onAccountRef.current?.({ manual_pnl_eur: 12.3, manual_pnl_day: '2026-09-18', checked_at: new Date().toISOString() });
+-        // nessun cambiamento: resta il ripiego sul battito vecchio (dato un
+-        // margine per un eventuale re-render fuori da `act`, si aspetta un
+-        // istante e si verifica che NON sia mai passato a "canale locale")
+-        await new Promise((r) => setTimeout(r, 50));
+-        expect(s.getByTestId('saldo-betfair-nota').textContent).toMatch(/non aggiornato da \d\d:\d\d/);
+-        expect(s.getByTestId('saldo-betfair-nota').getAttribute('title')).not.toMatch(/canale locale/i);
+-    });
+-});
+-
+-// ── 23/09 — il VALORE dal topic "account" (bug: saldo fermo in pagina) ─────
+-describe('SaldoBetfairCard — valore dal canale "account" (23/09)', () => {
+-    /** N canali finti: ognuno registra la sua callback "account". */
+-    function canaliFinti(n: number) {
+-        const cbs: Array<((d: unknown) => void) | null> = Array.from({ length: n }, () => null);
+-        const canali = cbs.map((_, i) => ({
+-            subscribe: vi.fn((topic: string, cb: (d: unknown) => void) => {
+-                if (topic === 'account') cbs[i] = cb;
+-                return () => { cbs[i] = null; };
+-            }),
+-        }) as unknown as LocalChannel);
+-        return { canali, invia: (i: number, d: unknown) => cbs[i]?.(d) };
+-    }
+-    function depsCanali(a: LiveAccountRow | null, h: LiveHeartbeatRow | null, canali: LocalChannel[]) {
+-        return {
+-            fetchAccount: vi.fn(async () => a),
+-            subscribeAccount: vi.fn(() => () => {}),
+-            fetchHeartbeat: vi.fn(async () => h),
+-            subscribeHeartbeat: vi.fn(() => () => {}),
+-            getCanali: vi.fn(() => canali),
+-        };
+-    }
+-    const vecchio = (s: number) => new Date(Date.now() - s * 1000).toISOString();
+-
+-    it('un saldo sul topic "account" più recente del database AGGIORNA il numero e l’età', async () => {
+-        const { canali, invia } = canaliFinti(1);
+-        const s = render(<SaldoBetfairCard deps={depsCanali(account({ available: 100, exposure: 0, updated_at: vecchio(600) }), heartbeat({ ts: vecchio(3600) }), canali)} />);
+-        await waitFor(() => expect(s.getByTestId('saldo-betfair-valore').textContent).toMatch(/100,00/));
+-        expect(s.getByTestId('saldo-betfair-nota').textContent).toMatch(/non aggiornato da \d\d:\d\d/);
+-        act(() => invia(0, { available: 250.5, exposure: -12, checked_at: new Date().toISOString() }));
+-        await waitFor(() => expect(s.getByTestId('saldo-betfair-valore').textContent).toMatch(/250,50/));
+-        expect(s.getByTestId('saldo-betfair-esposizione').textContent).toMatch(/12,00/);
+-        expect(s.getByTestId('saldo-betfair-nota').textContent).toMatch(/controllato: \d+ s/);
+-        expect(s.getByTestId('saldo-betfair-nota').textContent).not.toMatch(/non aggiornato/);
+-    });
+-
+-    it('un messaggio VECCHIO (checked_at precedente) è ignorato, anche se arriva dopo e da un altro canale', async () => {
+-        const { canali, invia } = canaliFinti(2);
+-        const s = render(<SaldoBetfairCard deps={depsCanali(account({ available: 100, updated_at: vecchio(600) }), heartbeat(), canali)} />);
+-        await waitFor(() => expect(s.getByTestId('saldo-betfair-valore').textContent).toMatch(/100,00/));
+-        act(() => invia(0, { available: 250, exposure: 0, checked_at: vecchio(5) }));
+-        await waitFor(() => expect(s.getByTestId('saldo-betfair-valore').textContent).toMatch(/250,00/));
+-        act(() => invia(1, { available: 90, exposure: 0, checked_at: vecchio(60) }));
+-        await new Promise((r) => setTimeout(r, 30));
+-        expect(s.getByTestId('saldo-betfair-valore').textContent).toMatch(/250,00/);
+-        // uno PIU' recente dall'altro canale invece vince
+-        act(() => invia(1, { available: 77, exposure: 0, checked_at: new Date().toISOString() }));
+-        await waitFor(() => expect(s.getByTestId('saldo-betfair-valore').textContent).toMatch(/77,00/));
+-    });
+-
+-    it('un messaggio del canale più vecchio della riga del database non scavalca il database', async () => {
+-        const { canali, invia } = canaliFinti(1);
+-        const s = render(<SaldoBetfairCard deps={depsCanali(account({ available: 100, updated_at: vecchio(2) }), heartbeat(), canali)} />);
+-        await waitFor(() => expect(s.getByTestId('saldo-betfair-valore').textContent).toMatch(/100,00/));
+-        act(() => invia(0, { available: 55, exposure: 0, checked_at: vecchio(300) }));
+-        await new Promise((r) => setTimeout(r, 30));
+-        expect(s.getByTestId('saldo-betfair-valore').textContent).toMatch(/100,00/);
+-    });
+-
+-    it('CANALI MUTI = comportamento di prima: numero del database, «ultimo cambio»', async () => {
+-        const { canali } = canaliFinti(3);
+-        const s = render(<SaldoBetfairCard deps={depsCanali(account({ available: 321.1, updated_at: vecchio(8) }), heartbeat(), canali)} />);
+-        await waitFor(() => expect(s.getByTestId('saldo-betfair-valore').textContent).toMatch(/321,10/));
+-        expect(s.getByTestId('saldo-betfair-nota').textContent).toMatch(/ultimo cambio: \d+ s/);
+-        // tutti e tre i canali sono stati ascoltati sul topic "account"
+-        for (const c of canali) expect((c.subscribe as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe('account');
+-    });
+-
+-    it('saldo non verificato: «non aggiornato da HH:MM» con l’ora dell’ultima lettura, mai un numero muto', async () => {
+-        const ora = new Date(Date.now() - 45 * 60 * 1000);
+-        const s = render(<SaldoBetfairCard deps={depsCanali(account({ updated_at: ora.toISOString() }), heartbeat({ ts: vecchio(3600) }), canaliFinti(1).canali)} />);
+-        const hhmm = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit', hour12: false }).format(ora);
+-        // F2: a cavallo della mezzanotte di Roma (fra le 00:00 e le 00:45) i 45
+-        // minuti fa sono di IERI e il testo porta anche la data.
+-        const giorno = (d: Date) => new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit' }).format(d);
+-        const atteso = giorno(ora) === giorno(new Date()) ? hhmm : `${giorno(ora)} ${hhmm}`;
+-        await waitFor(() => expect(s.getByTestId('saldo-betfair-nota').textContent).toContain(`non aggiornato da ${atteso}`));
+-    });
+-
+-    it('F2: ultimo controllo di un altro giorno -> "non aggiornato da GG/MM HH:MM", mai un\'ora che sembra di oggi', async () => {
+-        const ieri = new Date(Date.now() - 30 * 3600 * 1000);
+-        const s = render(<SaldoBetfairCard deps={depsCanali(account({ updated_at: ieri.toISOString() }), heartbeat({ ts: vecchio(3600) }), canaliFinti(1).canali)} />);
+-        const gm = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit' }).format(ieri);
+-        const hhmm = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit', hour12: false }).format(ieri);
+-        await waitFor(() => expect(s.getByTestId('saldo-betfair-nota').textContent).toContain(`non aggiornato da ${gm} ${hhmm}`));
+-    });
+-
+-    it('F2: ultimo controllo di oggi -> solo HH:MM, senza data', async () => {
+-        // 1 minuto fa (sempre oggi, salvo il minuto dopo la mezzanotte) e battito vecchio
+-        const ora = new Date(Date.now() - 60 * 1000);
+-        const s = render(<SaldoBetfairCard deps={depsCanali(account({ updated_at: ora.toISOString() }), heartbeat({ ts: vecchio(3600) }), canaliFinti(1).canali)} />);
+-        const giorno = (d: Date) => new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit' }).format(d);
+-        await waitFor(() => expect(s.getByTestId('saldo-betfair-nota').textContent).toMatch(/non aggiornato da /));
+-        if (giorno(ora) === giorno(new Date())) {
+-            expect(s.getByTestId('saldo-betfair-nota').textContent).toMatch(/non aggiornato da \d\d:\d\d$/);
+-        }
+-    });
+-
+-    it('di default ascolta i 5 canali dei processi che piazzano ordini veri (porte esistenti)', async () => {
+-        expect([...CANALI_SALDO]).toEqual(['calcio', 'tennis', 'mike', 'omega', 'safe']);
+-        const spia = getLocalChannel as unknown as ReturnType<typeof vi.fn>;
+-        spia.mockClear();
+-        const deps = {
+-            fetchAccount: vi.fn(async () => account()),
+-            subscribeAccount: vi.fn(() => () => {}),
+-            fetchHeartbeat: vi.fn(async () => heartbeat()),
+-            subscribeHeartbeat: vi.fn(() => () => {}),
+-        };
+-        const s = render(<SaldoBetfairCard deps={deps} />);
+-        await waitFor(() => expect(s.getByTestId('saldo-betfair-valore').textContent).toMatch(/1234,56/));
+-        expect(spia.mock.calls.map((c) => c[0])).toEqual(['calcio', 'tennis', 'mike', 'omega', 'safe']);
+-    });
+-});
+-
+-describe('checkedAtDiMessaggioAccount — funzione pura, testata direttamente', () => {
+-    it('un messaggio di saldo (con "available") ne estrae il checked_at', () => {
+-        expect(checkedAtDiMessaggioAccount({ available: 12, exposure: 0, checked_at: '2026-09-18T10:00:00Z' }))
+-            .toBe('2026-09-18T10:00:00Z');
+-    });
+-
+-    it('un messaggio "manuale" (senza "available"), anche con un checked_at omonimo, torna null', () => {
+-        expect(checkedAtDiMessaggioAccount({ manual_pnl_eur: 12.3, checked_at: '2026-09-18T10:00:00Z' })).toBeNull();
+-    });
+-
+-    it('messaggio vuoto/malformato: null, mai un crash', () => {
+-        expect(checkedAtDiMessaggioAccount(null)).toBeNull();
+-        expect(checkedAtDiMessaggioAccount(undefined)).toBeNull();
+-        expect(checkedAtDiMessaggioAccount('stringa')).toBeNull();
+-        expect(checkedAtDiMessaggioAccount({ available: 12 })).toBeNull(); // checked_at assente
+-    });
+-
+-    // ── FALSIFICAZIONE (eseguita, non solo dichiarata) ─────────────────────
+-    // mutazione manuale: tolto il controllo `typeof msg.available !== 'number'`
+-    // → il secondo test qui sopra diventa ROSSO (torna la stringa invece di
+-    // null). Ripristinato: md5 del file IDENTICO prima/dopo
+-    // (`6300559066ff5b72c382539c9ffd6715`).
+-});
+diff --git a/frontend/src/components/controlroom/SaldoBetfairCard.tsx b/frontend/src/components/controlroom/SaldoBetfairCard.tsx
+deleted file mode 100644
+index 61e2ace..0000000
+--- a/frontend/src/components/controlroom/SaldoBetfairCard.tsx
++++ /dev/null
+@@ -1,192 +0,0 @@
+-// ============================================================================
+-// SaldoBetfairCard.tsx — SALDO DEL CONTO BETFAIR nella Control Room (Task 3).
+-//
+-// Riusa `betfair_live_account`/`betfair_live_heartbeat` (`lib/liveOrders.ts`),
+-// stesso schema d'uso di `pages/SeguiLive.tsx`: NESSUNA lettura nuova, nessuna
+-// tabella nuova. Il componente è AUTOSUFFICIENTE (non passa da
+-// `useControlRoom`): apre le sue sottoscrizioni Realtime sulla stessa riga
+-// singleton già usata altrove — stesso pattern di pagina-per-pagina già in
+-// uso nel resto della piattaforma.
+-//
+-// ETÀ DEL DATO: la regola sta isolata e testata in `lib/saldoBetfair.ts`
+-// (`statoSaldoBetfair`) — qui solo presentazione.
+-// ============================================================================
+-import { useEffect, useRef, useState } from 'react';
+-import { Eye, EyeOff } from 'lucide-react';
+-import { Card } from '@/components/ui/card';
+-import { fmtMoney, fmtAge, ageSeconds, DASH } from '@/lib/format';
+-import {
+-    fetchLiveAccount, subscribeLiveAccount, fetchLiveHeartbeat, subscribeLiveHeartbeat,
+-    type LiveAccountRow, type LiveHeartbeatRow,
+-} from '@/lib/liveOrders';
+-import {
+-    statoSaldoBetfair, leggiSaldoDalCanale, saldoPiuRecente, saldoDaMostrare, testoUltimaVerifica, type SaldoDalCanale,
+-} from '@/lib/saldoBetfair';
+-import { getLocalChannel, type LocalChannel, type LocalSport } from '@/lib/localChannel';
+-
+-/** 23/09 — i canali dei processi che piazzano ordini VERI e pubblicano il
+- *  topic "account" dopo ogni ordine/regolazione (`stream/saldo_evento.py`):
+- *  runner calcio, runner tennis, Mike, Omega, Safe. Sono gli stessi singleton
+- *  già aperti dalla Control Room: nessuna porta nuova. */
+-export const CANALI_SALDO: readonly LocalSport[] = ['calcio', 'tennis', 'mike', 'omega', 'safe'] as const;
+-
+-const CHIAVE_NASCOSTO = 'cr-saldo-nascosto';
+-
+-function leggiPreferenzaNascosto(): boolean {
+-    try { return window.localStorage.getItem(CHIAVE_NASCOSTO) === '1'; } catch { return false; }
+-}
+-function scriviPreferenzaNascosto(v: boolean): void {
+-    try { window.localStorage.setItem(CHIAVE_NASCOSTO, v ? '1' : '0'); } catch { /* preferenza persa, non bloccante */ }
+-}
+-
+-export interface SaldoBetfairCardProps {
+-    testId?: string;
+-    /** dipendenze iniettabili per i test: di default le funzioni vere di `lib/liveOrders` */
+-    deps?: {
+-        fetchAccount?: typeof fetchLiveAccount;
+-        subscribeAccount?: typeof subscribeLiveAccount;
+-        fetchHeartbeat?: typeof fetchLiveHeartbeat;
+-        subscribeHeartbeat?: typeof subscribeLiveHeartbeat;
+-        /** 18/09 (raccordo) — il canale locale del runner calcio (porta
+-         *  47331): di default `getLocalChannel('calcio')`, iniettabile per i
+-         *  test senza aprire un vero WebSocket. */
+-        getCanale?: () => LocalChannel;
+-        /** 23/09 — tutti i canali che portano il topic "account" (di default
+-         *  `CANALI_SALDO`). Se il test passa solo `getCanale`, si usa quello. */
+-        getCanali?: () => LocalChannel[];
+-    };
+-}
+-
+-/** Il messaggio "account" del canale locale porta ENTRAMBI i tipi di push
+- *  (saldo e manuale): si distinguono guardando le chiavi presenti (B1 §6/§19).
+- *  Qui interessa SOLO `checked_at` — il valore del saldo resta quello del
+- *  database (write-on-change, ma corretto): il canale serve a dire "quando è
+- *  stato controllato l'ultima volta", non a sostituire il numero. */
+-export function checkedAtDiMessaggioAccount(d: unknown): string | null {
+-    const msg = d as { checked_at?: unknown; available?: unknown } | null;
+-    if (!msg || typeof msg !== 'object') return null;
+-    if (typeof msg.available !== 'number') return null; // messaggio "manuale", non "saldo"
+-    return typeof msg.checked_at === 'string' ? msg.checked_at : null;
+-}
+-
+-export function SaldoBetfairCard({ testId = 'saldo-betfair', deps }: SaldoBetfairCardProps) {
+-    const [conto, setConto] = useState<LiveAccountRow | null>(null);
+-    const [heartbeat, setHeartbeat] = useState<LiveHeartbeatRow | null>(null);
+-    const [erroreLettura, setErroreLettura] = useState(false);
+-    const [nowMs, setNowMs] = useState(() => Date.now());
+-    const [nascosto, setNascosto] = useState(leggiPreferenzaNascosto);
+-    /** ultimo "checked_at" ricevuto dal canale locale; null = mai ricevuto
+-     *  (app non desktop, o canale non connesso). */
+-    const [checkedAt, setCheckedAt] = useState<string | null>(null);
+-    /** 23/09 — ultimo SALDO ricevuto dai canali (il più recente vince). */
+-    const [saldoCanale, setSaldoCanale] = useState<SaldoDalCanale | null>(null);
+-
+-    const fnFetchAccount = deps?.fetchAccount ?? fetchLiveAccount;
+-    const fnSubscribeAccount = deps?.subscribeAccount ?? subscribeLiveAccount;
+-    const fnFetchHeartbeat = deps?.fetchHeartbeat ?? fetchLiveHeartbeat;
+-    const fnSubscribeHeartbeat = deps?.subscribeHeartbeat ?? subscribeLiveHeartbeat;
+-    const fnGetCanali = deps?.getCanali
+-        ?? (deps?.getCanale ? (() => [deps.getCanale!()]) : (() => CANALI_SALDO.map((s) => getLocalChannel(s))));
+-
+-    // ref: evita di ricreare le sottoscrizioni se qualcuno passa `deps` come
+-    // oggetto letterale nuovo a ogni render (comodo per i test)
+-    const depsRef = useRef({ fnFetchAccount, fnSubscribeAccount, fnFetchHeartbeat, fnSubscribeHeartbeat, fnGetCanali });
+-    depsRef.current = { fnFetchAccount, fnSubscribeAccount, fnFetchHeartbeat, fnSubscribeHeartbeat, fnGetCanali };
+-
+-    useEffect(() => {
+-        let vivo = true;
+-        depsRef.current.fnFetchAccount().then((r) => { if (vivo) setConto(r); })
+-            .catch(() => { if (vivo) setErroreLettura(true); });
+-        depsRef.current.fnFetchHeartbeat().then((r) => { if (vivo) setHeartbeat(r); }).catch(() => { /* non critico: si mostra "battito non letto" */ });
+-        const offAccount = depsRef.current.fnSubscribeAccount((r) => { if (vivo) setConto(r); });
+-        const offHeartbeat = depsRef.current.fnSubscribeHeartbeat((r) => { if (vivo) setHeartbeat(r); });
+-        // canali locali, topic "account" (23/09): la freschezza (`checked_at`)
+-        // E il valore. Il valore del canale è la STESSA lettura REST che il
+-        // processo scrive anche sul database: il socket la anticipa, non la
+-        // inventa. Vince il più recente; un messaggio vecchio è ignorato; a
+-        // canali muti resta il database, come prima.
+-        const offCanali = depsRef.current.fnGetCanali().map((canale) => canale.subscribe('account', (d) => {
+-            if (!vivo) return;
+-            const c = checkedAtDiMessaggioAccount(d);
+-            if (c) setCheckedAt((prev) => (prev && Date.parse(prev) >= Date.parse(c) ? prev : c));
+-            const s = leggiSaldoDalCanale(d);
+-            if (s) setSaldoCanale((prev) => saldoPiuRecente(prev, s));
+-        }));
+-        return () => { vivo = false; offAccount(); offHeartbeat(); offCanali.forEach((off) => off()); };
+-        // eslint-disable-next-line react-hooks/exhaustive-deps
+-    }, []);
+-
+-    useEffect(() => {
+-        const t = window.setInterval(() => setNowMs(Date.now()), 1000);
+-        return () => window.clearInterval(t);
+-    }, []);
+-
+-    // 23/09: il dato mostrato è il più recente fra riga del database e canale.
+-    const mostrato = saldoDaMostrare(conto, saldoCanale);
+-    const etaSaldoS = ageSeconds(mostrato.istante, nowMs);
+-    // l'ultimo istante in cui QUALCUNO ha davvero letto il conto (il più
+-    // recente fra `checked_at` del canale e l'istante del dato mostrato):
+-    // è l'ora del «non aggiornato da HH:MM», mai un numero muto.
+-    // F2 revisore A 23/09: GG/MM HH:MM se non e' di oggi (testoUltimaVerifica).
+-    const ultimaVerifica = [checkedAt, mostrato.istante]
+-        .filter((x): x is string => typeof x === 'string' && Number.isFinite(Date.parse(x)))
+-        .sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? null;
+-    // il battito RUNNER (non il watchdog): dice se qualcuno sta davvero
+-    // guardando il conto in questo momento.
+-    const etaHeartbeatS = ageSeconds(heartbeat?.ts ?? null, nowMs);
+-    const etaCanaleS = ageSeconds(checkedAt, nowMs);
+-    const stato = statoSaldoBetfair({
+-        etaSaldoS,
+-        etaHeartbeatS: heartbeat ? etaHeartbeatS : null,
+-        etaCanaleS: checkedAt ? etaCanaleS : null,
+-    });
+-
+-    const toggleNascosto = () => {
+-        setNascosto((prev) => { const next = !prev; scriviPreferenzaNascosto(next); return next; });
+-    };
+-
+-    const testoValore = nascosto ? '••••,•• €' : fmtMoney(mostrato.available);
+-    const testoEsposizione = nascosto ? '••••,•• €' : fmtMoney(mostrato.exposure);
+-
+-    return (
+-        <Card className="glass-card border-white/10 p-4 flex flex-col gap-2.5" data-testid={testId}>
+-            <div className="flex items-center justify-between">
+-                <span className="text-[11px] uppercase tracking-wider text-white/50">Saldo conto Betfair</span>
+-                <button
+-                    type="button"
+-                    onClick={toggleNascosto}
+-                    aria-pressed={nascosto}
+-                    title={nascosto ? 'mostra il saldo' : 'nascondi il saldo'}
+-                    data-testid={`${testId}-occhio`}
+-                    className="text-white/40 hover:text-white/80 p-1 rounded border border-white/10"
+-                >
+-                    {nascosto ? <EyeOff className="w-3.5 h-3.5" aria-hidden /> : <Eye className="w-3.5 h-3.5" aria-hidden />}
+-                </button>
+-            </div>
+-
+-            <div className="font-display font-extrabold text-2xl tabular-nums" data-testid={`${testId}-valore`}>
+-                {conto == null && saldoCanale == null && !erroreLettura ? DASH : testoValore}
+-            </div>
+-
+-            <div className="flex items-baseline justify-between text-[11.5px] pt-2 border-t border-white/10">
+-                <span className="text-white/50">Esposizione</span>
+-                <span className="font-mono text-orange-400" data-testid={`${testId}-esposizione`}>{testoEsposizione}</span>
+-            </div>
+-
+-            <div
+-                className={`text-[10.5px] flex items-center gap-1.5 ${stato.attenzione ? 'text-orange-400' : 'text-white/40'}`}
+-                data-testid={`${testId}-nota`}
+-                title={stato.messaggio}
+-            >
+-                <span className={`w-1.5 h-1.5 rounded-full ${stato.attenzione ? 'bg-orange-400' : 'bg-emerald-400'}`} aria-hidden />
+-                {etaSaldoS == null
+-                    ? (erroreLettura ? 'saldo non leggibile' : 'saldo non ancora letto')
+-                    : stato.attenzione
+-                        ? <>non aggiornato da {testoUltimaVerifica(ultimaVerifica, nowMs)}</>
+-                        : <>{mostrato.fonte === 'canale' ? 'controllato' : 'ultimo cambio'}: {fmtAge(etaSaldoS)}</>}
+-            </div>
+-        </Card>
+-    );
+-}
+-
+-export default SaldoBetfairCard;
+diff --git a/frontend/src/components/controlroom/testata/FasciaStop.test.tsx b/frontend/src/components/controlroom/testata/FasciaStop.test.tsx
+index 5512149..a25aa57 100644
+--- a/frontend/src/components/controlroom/testata/FasciaStop.test.tsx
++++ b/frontend/src/components/controlroom/testata/FasciaStop.test.tsx
+@@ -183,9 +183,17 @@ describe('R_T (30/09) + 01/10 - frasi chiare, mai criptiche', () => {
+         mostra({ conto: stopDelConto(RIGA_OGGI, NOW), bot: bot() });
+         const el = screen.getByTestId('cr-stop-altri');
+         expect(el.textContent).toBe(NOTA_TENNIS_SCALPER.testo);
+-        expect(el.textContent).toMatch(/Tennis e Scalper: nessuno stop proprio/);
++        // R-07 (rilievi bassi 01/10): «giornaliero» e i due tetti dello scalper.
++        // Cambiato di proposito: prima «nessuno stop proprio» faceva credere che
++        // lo scalper non avesse nessun limite.
++        expect(el.textContent).toMatch(/Tennis e Scalper: nessuno stop giornaliero proprio/);
+         expect(el.textContent).toMatch(/non lo fanno scattare/);
++        expect(el.textContent).toMatch(/perdita massima per partita/);
++        expect(el.textContent).toMatch(/esposizione massima per selezione/);
+         expect(el.getAttribute('title')).toMatch(/runner calcio/);
++        expect(el.getAttribute('title')).toMatch(/1,50 EUR/);
++        // nessun nome di tabella a schermo
++        expect(el.getAttribute('title')).not.toMatch(/betfair_live_settled/);
+     });
+ });
+ 
+diff --git a/frontend/src/components/controlroom/testata/FasciaStop.tsx b/frontend/src/components/controlroom/testata/FasciaStop.tsx
+index aee4a1b..a6322df 100644
+--- a/frontend/src/components/controlroom/testata/FasciaStop.tsx
++++ b/frontend/src/components/controlroom/testata/FasciaStop.tsx
+@@ -49,11 +49,22 @@ export function vaiAllaRigaDelBot(bot: string, doc: Document = document): boolea
+  *    che entrambi leggono (`guardie_tennis.kill_switch_attivo`,
+  *    `scalper_session.motivo_freno`): da li' solo chiusure.
+  */
++// R-07 (rilievi bassi 01/10): la verita' COMPLETA. Nessuno stop GIORNALIERO
++// proprio (nessun daily loss in `stream/tennis_live/` ne' in `stream/scalper/`),
++// ma lo scalper ha due tetti suoi, verificati nel codice: per PARTITA
++// `event_loss_cap` (scalper_session.py: 1,50 di serie, al massimo 1,00 nella
++// modalita' intervallo; scalper_bot.py: oltre il tetto chiude tutto su quella
++// partita) e per SELEZIONE il tetto di esposizione che la sessione passa alla
++// strategia (stake x (quota massima - 1) x 2).
+ export const NOTA_TENNIS_SCALPER = {
+-    testo: 'Tennis e Scalper: nessuno stop proprio. Li ferma lo stop del Conto quando scatta, ma le loro perdite non lo fanno scattare.',
++    testo: 'Tennis e Scalper: nessuno stop giornaliero proprio. Li ferma lo stop del Conto quando scatta, ma le loro perdite non lo fanno scattare. '
++        + 'Lo Scalper ha in piu\' due tetti suoi, nei parametri della sessione: perdita massima per partita ed esposizione massima per selezione.',
+     titolo: 'I 4 bot tennis e lo scalper calcio non hanno uno stop di perdita giornaliera. Lo stop del Conto e\' calcolato dal runner calcio '
+-        + 'sulle SUE operazioni (betfair_live_settled + posizioni aperte del runner calcio): quando scatta tira il freno generale, '
+-        + 'che tennis e scalper leggono (da quel momento solo chiusure), ma le perdite di tennis e scalper non entrano nel suo conteggio.',
++        + 'sulle SUE operazioni (regolate dal conto Betfair + posizioni aperte del runner calcio): quando scatta tira il freno generale, '
++        + 'che tennis e scalper leggono (da quel momento solo chiusure), ma le perdite di tennis e scalper non entrano nel suo conteggio. '
++        + 'Lo scalper calcio ha due tetti suoi, non giornalieri: per PARTITA una perdita massima (di serie 1,50 EUR, al massimo 1,00 EUR '
++        + 'nella modalita\' intervallo) oltre la quale chiude tutto su quella partita; per SELEZIONE un\'esposizione massima '
++        + '(stake x (quota massima - 1) x 2).',
+ };
+ 
+ const CONFERMA_SCADE_MS = 10_000;
+diff --git a/frontend/src/components/controlroom/testata/salvaStop.test.ts b/frontend/src/components/controlroom/testata/salvaStop.test.ts
+index 998e150..4c266fe 100644
+--- a/frontend/src/components/controlroom/testata/salvaStop.test.ts
++++ b/frontend/src/components/controlroom/testata/salvaStop.test.ts
+@@ -52,6 +52,20 @@ const OMEGA_RAW: Record<string, unknown> = { strategy_version: 3, v3_daily_loss_
+ 
+ beforeEach(() => { rpc.mockReset(); });
+ 
++/**
++ * R-05 (rilievi bassi 01/10): prima di scrivere lo stop di un bot si rilegge lo
++ * stato del servizio. Risposte con le chiavi delle RPC vere: `get_safe_state`
++ * e `get_mike_state` -> { control, trades, aggregates, activity, ... };
++ * `get_omega_state` -> { control, aggregates, activity, activity_more, ... }.
++ */
++function statoServizio(params: Record<string, unknown>) {
++    return {
++        control: control(params), trades: [], aggregates: null, activity: [],
++        activity_more: 0, activity_day: '2026-10-01', goal_today: null, goal_snapshot: false,
++        events: [], requests: [], day_start: null, day_by: null,
++    };
++}
++
+ describe('leggiImporto - euro al centesimo, negativo = perdita massima', () => {
+     it('-40, −40,5, 40 sono la stessa perdita; 3 decimali rifiutati', () => {
+         expect(leggiImporto('-40', 'mike')).toEqual({ ok: true, perdita: 40 });
+@@ -98,6 +112,10 @@ describe('payloadStop - lo STESSO payload del foglio del proprietario', () => {
+             const p = mergeBotParams(SAFE_RAW);
+             const v = toValues(p, mergeExits(SAFE_RAW.exits), SAFE_RAW);
+             v['risk.daily_loss_stop'] = -40;
++            // R-06 (01/10): cambiato di proposito. Il foglio scrive
++            // `risk.max_open_trades: 0` (= nessun tetto) anche quando la chiave
++            // manca; lo stop dalla testata no: la chiave assente resta assente.
++            delete v['risk.max_open_trades'];
+             return fromValues(v, p.variants, SAFE_RAW);
+         })();
+         const payload = payloadStop('safe', 40, SAFE_RAW);
+@@ -144,23 +162,30 @@ describe('salvaStop - RPC vere, chiavi vere, cifra dal database', () => {
+         rpc.mockResolvedValueOnce({ data: { ...RIGA_SETTINGS, daily_loss_limit: 25 }, error: null });
+         expect(await salvaStop('conto', null, null)).toBe(25);
+     });
++    // R-05: la scrittura e' la SECONDA chiamata (la prima rilegge lo stato)
+     it('Safe: safe_update_params({ p_params }) col payload del foglio; ritorna |risk.daily_loss_stop| della riga', async () => {
++        rpc.mockResolvedValueOnce({ data: statoServizio(SAFE_RAW), error: null });
+         rpc.mockResolvedValueOnce({ data: control({ ...SAFE_RAW, risk: { daily_loss_stop: -45 } }), error: null });
+         const v = await salvaStop('safe', 40, SAFE_RAW);
+-        expect(rpc.mock.calls[0][0]).toBe('safe_update_params');
+-        expect(rpc.mock.calls[0][1]).toEqual({ p_params: payloadStop('safe', 40, SAFE_RAW) });
++        expect(rpc.mock.calls[0][0]).toBe('get_safe_state');
++        expect(rpc.mock.calls[1][0]).toBe('safe_update_params');
++        expect(rpc.mock.calls[1][1]).toEqual({ p_params: payloadStop('safe', 40, SAFE_RAW) });
+         // la cifra e' quella RESTITUITA (45), non quella digitata (40)
+         expect(v).toBe(45);
+     });
+     it('Mike: mike_update_params({ p_params, p_mode: null }): la modalita\' non si tocca', async () => {
++        rpc.mockResolvedValueOnce({ data: statoServizio(MIKE_RAW), error: null });
+         rpc.mockResolvedValueOnce({ data: control({ ...MIKE_RAW, daily_loss_stop: 35 }), error: null });
+         expect(await salvaStop('mike', 40, MIKE_RAW)).toBe(35);
+-        expect(rpc.mock.calls[0][0]).toBe('mike_update_params');
+-        expect(rpc.mock.calls[0][1]).toEqual({ p_params: payloadStop('mike', 40, MIKE_RAW), p_mode: null });
++        expect(rpc.mock.calls[0][0]).toBe('get_mike_state');
++        expect(rpc.mock.calls[1][0]).toBe('mike_update_params');
++        expect(rpc.mock.calls[1][1]).toEqual({ p_params: payloadStop('mike', 40, MIKE_RAW), p_mode: null });
+     });
+     it('Omega: omega_update_params con p_daily_goal null (obiettivo intatto) e p_mode null', async () => {
++        rpc.mockResolvedValueOnce({ data: statoServizio(OMEGA_RAW), error: null });
+         rpc.mockResolvedValueOnce({ data: control({ ...OMEGA_RAW, v3_daily_loss_cap: 110 }, { daily_goal: 250 }), error: null });
+         expect(await salvaStop('omega', 120, OMEGA_RAW)).toBe(110);
++        expect(rpc.mock.calls[0][0]).toBe('get_omega_state');
+         expect(rpc).toHaveBeenCalledWith('omega_update_params', {
+             p_daily_goal: null, p_params: payloadStop('omega', 120, OMEGA_RAW), p_mode: null,
+         });
+@@ -174,3 +199,58 @@ describe('salvaStop - RPC vere, chiavi vere, cifra dal database', () => {
+         expect(rpc).not.toHaveBeenCalled();
+     });
+ });
++
++// R-06 (rilievi bassi 01/10): il confronto dei predefiniti frontend/Python ha
++// trovato UNA differenza che sovrascrive un valore vero: `risk.max_open_trades`
++// di Safe (frontend 0 = nessun tetto; Python assente = tetto del bot, 20).
++// FALSIFICAZIONE: togliendo la correzione in `payloadStop` i due test diventano
++// rossi (il payload porta `risk.max_open_trades: 0`).
++describe('R-06: salvare lo stop di Safe non tocca il tetto delle posizioni aperte', () => {
++    it('chiave ASSENTE nel database: resta assente (il servizio usa il tetto del bot)', () => {
++        const p = payloadStop('safe', 40, SAFE_RAW) as { risk: Record<string, unknown> };
++        expect('max_open_trades' in p.risk).toBe(false);
++        expect(p.risk.daily_loss_stop).toBe(-40);
++        expect(p.risk.daily_liability_cap).toBe(500);
++    });
++    it('chiave PRESENTE (5): resta 5, mai 0 (= nessun tetto)', () => {
++        const raw = { ...SAFE_RAW, risk: { daily_loss_stop: -50, max_open_trades: 5 } };
++        const p = payloadStop('safe', 40, raw) as { risk: Record<string, unknown> };
++        expect(p.risk.max_open_trades).toBe(5);
++        // e la riga letta non viene toccata
++        expect((raw.risk as Record<string, unknown>).daily_loss_stop).toBe(-50);
++    });
++});
++
++// R-05 (rilievi bassi 01/10). FALSIFICAZIONE: componendo il payload su `raw`
++// (i parametri della pagina) invece che sulla riga riletta, il primo test
++// diventa rosso; togliendo la rilettura, rossi anche gli altri due.
++describe('R-05: prima di scrivere si RILEGGONO i parametri del bot', () => {
++    it('Mike: un foglio ha cambiato max_open_matches (10 -> 12) dopo la lettura della pagina: il 12 resta', async () => {
++        const nelDb = { ...MIKE_RAW, max_open_matches: 12 };
++        rpc.mockResolvedValueOnce({ data: statoServizio(nelDb), error: null });
++        rpc.mockResolvedValueOnce({ data: control({ ...nelDb, daily_loss_stop: 40 }), error: null });
++        await salvaStop('mike', 40, MIKE_RAW);   // la pagina ha ancora 10
++        const scritto = rpc.mock.calls[1][1].p_params as Record<string, unknown>;
++        expect(scritto.max_open_matches).toBe(12);
++        expect(scritto.daily_loss_stop).toBe(40);
++        expect(scritto).toEqual(payloadStop('mike', 40, nelDb));
++    });
++    it('Safe: una strategia aggiunta nel frattempo (punta) non si perde', async () => {
++        const nelDb = { ...SAFE_RAW, variants: ['base', 'tennis', 'punta'] };
++        rpc.mockResolvedValueOnce({ data: statoServizio(nelDb), error: null });
++        rpc.mockResolvedValueOnce({ data: control({ ...nelDb, risk: { daily_loss_stop: -40 } }), error: null });
++        await salvaStop('safe', 40, SAFE_RAW);
++        const scritto = rpc.mock.calls[1][1].p_params as Record<string, unknown>;
++        expect(scritto.variants).toEqual(['base', 'tennis', 'punta']);
++    });
++    it('rilettura FALLITA o VUOTA: niente scrittura, e il motivo si legge', async () => {
++        rpc.mockResolvedValueOnce({ data: null, error: { message: 'rete giu' } });
++        await expect(salvaStop('omega', 120, OMEGA_RAW)).rejects.toThrow(/non riletti prima di salvare \(rete giu\)/);
++        expect(rpc).toHaveBeenCalledTimes(1);
++        rpc.mockReset();
++        rpc.mockResolvedValueOnce({ data: statoServizio({}), error: null });
++        await expect(salvaStop('safe', 40, SAFE_RAW)).rejects.toThrow(StopNonSalvabile);
++        expect(rpc).toHaveBeenCalledTimes(1);
++        expect(rpc.mock.calls[0][0]).toBe('get_safe_state');
++    });
++});
+diff --git a/frontend/src/components/controlroom/testata/salvaStop.ts b/frontend/src/components/controlroom/testata/salvaStop.ts
+index d8151b4..b3d57ff 100644
+--- a/frontend/src/components/controlroom/testata/salvaStop.ts
++++ b/frontend/src/components/controlroom/testata/salvaStop.ts
+@@ -33,11 +33,21 @@
+ //
+ // La cifra di ritorno e' quella della riga RESTITUITA dal database dopo la
+ // scrittura, mai quella digitata.
++//
++// R-05 (rilievi bassi 01/10): i parametri della Control Room possono avere
++// fino a 30 s, e le RPC di Safe e Mike SOSTITUISCONO l'intero oggetto. Prima
++// di scrivere si RILEGGONO i parametri del bot (la stessa lettura dello stato
++// del servizio da cui arrivano quelli della pagina: `get_safe_state`,
++// `get_mike_state`, `get_omega_state`) e il payload si compone sulla riga
++// appena letta: una modifica fatta nel frattempo da un foglio non si perde.
++// Se la rilettura fallisce o torna vuota NON si salva, e lo si dice.
+ // ============================================================================
+ import { setLiveSettings, type LiveSettings } from '@/lib/liveOrders';
+-import { mergeBotParams, updateSafeParams, normalizeLossStop, type SafeControl } from '@/lib/safeBot';
+-import { mergeMikeParams, updateMikeParams, type MikeControl, type MikeParams } from '@/lib/mike';
+-import { omegaParamsPatch, updateOmegaParams, OMEGA_PARAM_DEFAULTS, type OmegaControl, type OmegaParams } from '@/lib/omega';
++import { mergeBotParams, updateSafeParams, normalizeLossStop, fetchSafeState, type SafeControl } from '@/lib/safeBot';
++import { mergeMikeParams, updateMikeParams, fetchMikeState, type MikeControl, type MikeParams } from '@/lib/mike';
++import {
++    omegaParamsPatch, updateOmegaParams, fetchOmegaState, OMEGA_PARAM_DEFAULTS, type OmegaControl, type OmegaParams,
++} from '@/lib/omega';
+ import { toValues, fromValues, mergeExits } from '@/components/safestrategy/BotParamsSheet';
+ import type { BotConStop } from './stopPerdita';
+ 
+@@ -123,6 +133,18 @@ export function payloadStop(chi: ProprietarioStop, perdita: number | null, raw:
+         const v = toValues(params, mergeExits(raw.exits), raw);
+         // il servizio legge il valore assoluto; si scrive negativo (come il predefinito -50)
+         v['risk.daily_loss_stop'] = normalizeLossStop(p) ?? 0;
++        // R-06 (rilievi bassi 01/10): `risk.max_open_trades` NON e' fra i
++        // predefiniti di `mergeRiskParams`, quindi `toValues` lo legge sempre 0.
++        // Per il servizio 0 = NESSUN tetto, mentre la chiave assente (None) vuol
++        // dire «vale max_open_trades del bot» (di serie 20: `risk.py`
++        // DEFAULT_RISK_PARAMS e `risk_params`). Salvare lo stop scriveva 0:
++        // tetto delle posizioni aperte TOLTO (o un 5 del database riscritto a 0).
++        // Si riscrive il valore della riga letta; assente resta assente.
++        const rischioDb = raw.risk != null && typeof raw.risk === 'object' && !Array.isArray(raw.risk)
++            ? raw.risk as Record<string, unknown> : {};
++        const tettoDb = rischioDb.max_open_trades;
++        if (typeof tettoDb === 'number' && Number.isFinite(tettoDb)) v['risk.max_open_trades'] = tettoDb;
++        else delete v['risk.max_open_trades'];
+         // H-14 del foglio: mai una lista di strategie vuota
+         if (params.variants.length === 0) {
+             throw new StopNonSalvabile('nessuna strategia abilitata su Safe: il foglio rifiuta di salvare, aprilo e scegline almeno una');
+@@ -140,9 +162,20 @@ export interface DipendenzeSalvaStop {
+     updateSafeParams: typeof updateSafeParams;
+     updateMikeParams: typeof updateMikeParams;
+     updateOmegaParams: typeof updateOmegaParams;
++    /** R-05: la rilettura dei parametri del bot subito prima di scrivere */
++    leggiParams: (chi: BotConStop) => Promise<Record<string, unknown> | null>;
++}
++
++/** R-05: i parametri del bot dalla STESSA lettura dello stato del servizio. */
++async function leggiParamsVeri(chi: BotConStop): Promise<Record<string, unknown> | null> {
++    if (chi === 'safe') return ((await fetchSafeState()).control?.params ?? null) as Record<string, unknown> | null;
++    if (chi === 'mike') return ((await fetchMikeState()).control?.params ?? null) as unknown as Record<string, unknown> | null;
++    return ((await fetchOmegaState(1)).control?.params ?? null) as unknown as Record<string, unknown> | null;
+ }
+ 
+-const VERE: DipendenzeSalvaStop = { setLiveSettings, updateSafeParams, updateMikeParams, updateOmegaParams };
++const VERE: DipendenzeSalvaStop = {
++    setLiveSettings, updateSafeParams, updateMikeParams, updateOmegaParams, leggiParams: leggiParamsVeri,
++};
+ 
+ function numero(v: unknown): number | null {
+     return typeof v === 'number' && Number.isFinite(v) ? v : null;
+@@ -162,7 +195,20 @@ export async function salvaStop(
+         const v = numero(r.daily_loss_limit);
+         return v == null || v <= 0 ? null : v;
+     }
+-    const payload = payloadStop(chi, perdita, raw);
++    // cancello di prima (parametri della pagina non letti): nessuna lettura, nessuna scrittura
++    payloadStop(chi, perdita, raw);
++    // R-05: si rilegge e si compone sulla riga APPENA letta, mai su quella della pagina
++    let fresco: Record<string, unknown> | null;
++    try {
++        fresco = await deps.leggiParams(chi);
++    } catch (e) {
++        const msg = e instanceof Error ? e.message : String(e);
++        throw new StopNonSalvabile(`parametri di ${chi} non riletti prima di salvare (${msg}): nulla e' stato scritto, riprova`);
++    }
++    if (!letti(fresco)) {
++        throw new StopNonSalvabile(`parametri di ${chi} non riletti prima di salvare (risposta vuota): nulla e' stato scritto, riprova`);
++    }
++    const payload = payloadStop(chi, perdita, fresco);
+     if (chi === 'safe') {
+         const r: SafeControl = await deps.updateSafeParams(payload);
+         const v = numero((r?.params?.risk as Record<string, unknown> | undefined)?.daily_loss_stop);
+@@ -174,6 +220,6 @@ export async function salvaStop(
+         return v == null ? undefined : v <= 0 ? null : v;
+     }
+     const r: OmegaControl = await deps.updateOmegaParams({ params: payload as Partial<OmegaParams> });
+-    const v = numero(r?.params?.[chiaveStopOmega(raw as Record<string, unknown>)]);
++    const v = numero(r?.params?.[chiaveStopOmega(fresco)]);
+     return v == null ? undefined : v <= 0 ? null : v;
+ }
+diff --git a/frontend/src/components/controlroom/useControlRoom.test.tsx b/frontend/src/components/controlroom/useControlRoom.test.tsx
+index 2fbbc0c..5ba0f7b 100644
+--- a/frontend/src/components/controlroom/useControlRoom.test.tsx
++++ b/frontend/src/components/controlroom/useControlRoom.test.tsx
+@@ -19,6 +19,8 @@
+ //   · sommando il paper al live, o dimenticando di sottrarre la commissione,
+ //     l'assenza di somma e il netto diventano rossi.
+ // ============================================================================
++// D-06 (01/10, rilievi bassi): UN solo tipo FontePnl (lib/fontePnl.ts): le
++// parole sono conto / stima / simulato (prima betfair / stimato / paper).
+ import { describe, it, expect, vi, beforeEach } from 'vitest';
+ import { renderHook, waitFor, act } from '@testing-library/react';
+ import type { TennisBotOrderRow } from '@/lib/tennis';
+@@ -164,6 +166,8 @@ import {
+ import { fetchLiveAccount, subscribeLiveAccount } from '@/lib/liveOrders';
+ import { fetchScalperControlRoom } from '@/lib/scalperControlRoom';
+ import { useControlRoom, FONTI_RICARICA } from '@/components/controlroom/useControlRoom';
++import { getLocalChannel } from '@/lib/localChannel';
++import { CANALI_SALDO } from '@/lib/saldoBetfair';
+ 
+ /** tutte le letture del giro, nell'ORDINE in cui il hook le lancia */
+ function letture() {
+@@ -273,6 +277,31 @@ describe('«fonti non raggiunte»: ogni lettura si chiama per nome', () => {
+     });
+ });
+ 
++// 01/10 (rilievi bassi, punto 11): la card del saldo e' cancellata; la
++// testata ascolta il saldo dai canali di `CANALI_SALDO` (ora in
++// `lib/saldoBetfair`). FALSIFICAZIONE: togliendo un canale dalla costante o
++// la sottoscrizione dal hook questo test diventa rosso.
++describe('saldo del conto: il hook ascolta il topic «account» di TUTTI i canali del saldo', () => {
++    it('una sottoscrizione «account» per ciascuno dei 5 canali', async () => {
++        const visti: string[] = [];
++        vi.mocked(getLocalChannel).mockImplementation(((s: string) => ({
++            getStatus: () => 'off' as const,
++            onStatus: () => () => { /* nessun cambio */ },
++            subscribe: (topic: string) => { visti.push(`${s}:${topic}`); return () => { /* niente */ }; },
++        })) as never);
++        const { result } = renderHook(() => useControlRoom());
++        await waitFor(() => expect(result.current.caricamento).toBe(false));
++        expect(CANALI_SALDO.length).toBe(5);
++        for (const s of CANALI_SALDO) expect(visti).toContain(`${s}:account`);
++        // il finto di partenza torna com'era (stessa forma, nessun evento)
++        vi.mocked(getLocalChannel).mockImplementation((() => ({
++            getStatus: () => 'off' as const,
++            onStatus: () => () => { /* nessun cambio */ },
++            subscribe: () => () => { /* nessuna spinta */ },
++        })) as never);
++    });
++});
++
+ // ================================================ 2) LE CHIUSE DEL TENNIS
+ 
+ const OGGI = romeDay(new Date());
+@@ -1136,7 +1165,7 @@ describe('scalper calcio: riga, sessioni, posizioni, barra e Chiudi', () => {
+         await waitFor(() => expect(result.current.chiuse.some((c) => c.bot === 'scalper')).toBe(true));
+         const c = result.current.chiuse.filter((x) => x.bot === 'scalper');
+         expect(c).toHaveLength(1);   // la sessione PAPER non entra: il bot ha solo un lordo
+-        expect(c[0]).toMatchObject({ id: 101, pnlGlobale: 0.3, modo: 'live', fontePnl: 'betfair', esito: 'vinta' });
++        expect(c[0]).toMatchObject({ id: 101, pnlGlobale: 0.3, modo: 'live', fontePnl: 'conto', esito: 'vinta' });
+     });
+ 
+     it('barra: voce Scalper = reale di Betfair; il manuale app perde gli stessi euro (mai due volte)', async () => {
+diff --git a/frontend/src/components/controlroom/useControlRoom.ts b/frontend/src/components/controlroom/useControlRoom.ts
+index b0050d6..3c20360 100644
+--- a/frontend/src/components/controlroom/useControlRoom.ts
++++ b/frontend/src/components/controlroom/useControlRoom.ts
+@@ -65,9 +65,10 @@ import {
+ } from '@/lib/tennis';
+ import { fetchLiveFollows } from '@/lib/live';
+ import {
+-    posizioniChiuse, rigaDaOrdineTennis, SOGLIA_PARI, pnlChiuseDelGiorno,
++    posizioniChiuse, rigaDaOrdineTennis, statoDaNetto, pnlChiuseDelGiorno, chiuseDelBot,
+     type PosizioneChiusa, type TradeChiudibile,
+ } from '@/lib/posizioniChiuse';
++import { chiuseGiornata, posizioniDellaGiornata, type ChiuseGiornata } from '@/lib/chiuseGiornata';
+ import type { RigaOrdine } from '@/lib/statoOrdine';
+ import type { DatiChiusuraAlMs } from '@/lib/chiusuraAlMs';
+ import {
+@@ -131,8 +132,7 @@ import {
+     type OrdiniContoStato,
+ } from './ordiniConto';
+ // P3 (30/09) - la fascia «SOLDI VERI ADESSO» della testata (campo additivo)
+-import { leggiSaldoDalCanale, saldoPiuRecente, type SaldoDalCanale } from '@/lib/saldoBetfair';
+-import { CANALI_SALDO } from './SaldoBetfairCard';
++import { leggiSaldoDalCanale, saldoPiuRecente, CANALI_SALDO, type SaldoDalCanale } from '@/lib/saldoBetfair';
+ import {
+     contoAdesso, rischioBotLive, scartoContoBot, partiteConPosizione,
+     type SoldiVeriTestata,
+@@ -894,8 +894,14 @@ export interface ControlRoomVM {
+     bots: StatoBot[];
+     posizioni: PosizioneAperta[];
+     /** posizioni GIA' CHIUSE: apertura + coperture, con il P&L della posizione
+-     *  intera. Le gambe di copertura non sono posizioni proprie. */
+-    chiuse: PosizioneChiusa[];
++     *  intera. Le gambe di copertura non sono posizioni proprie.
++     *  01/10 (rilievi bassi, punto 1): unite alla lettura della giornata di
++     *  OGGI in soldi veri (`posizioniDellaGiornata`), quindi col giorno della
++     *  PARTITA quando il database lo porta, come nella scheda Posizioni chiuse. */
++    chiuse: readonly PosizioneChiusa[];
++    /** 01/10 - le posizioni che la lettura di oggi dice di partite di ALTRI
++     *  giorni (fuori da «oggi», come nella scheda). Assente = nessuna. */
++    chiuseEscluse?: ReadonlySet<PosizioneChiusa>;
+     /** 24/09 - le righe GREZZE da cui `chiuse` e' costruita (7 bot, stesso
+      *  contratto): la scheda le unisce alle giornate lette dal database */
+     righeChiuse: TradeChiudibile[];
+@@ -1890,8 +1896,8 @@ export function useControlRoom(): ControlRoomVM {
+     // --------------------------------------------------- conto Betfair (R4)
+     // NON entra nel poll dei 30 s (`FONTI_RICARICA`/`Promise.allSettled`): il
+     // 13/09 il database e' andato giu' per budget IO esaurito, ed e' vietato
+-    // aggiungere una lettura al giro pieno. Si riusa lo STESSO schema di
+-    // `SaldoBetfairCard.tsx` (autosufficiente, gia' in pagina): UNA lettura
++    // aggiungere una lettura al giro pieno. Si riusa lo STESSO schema della
++    // vecchia card del saldo (cancellata il 01/10, non era piu' montata): UNA lettura
+     // ONE-SHOT al montaggio + push Realtime sulla STESSA riga singleton
+     // `betfair_live_account` — nessuna tabella nuova, nessun polling in piu'.
+     useEffect(() => {
+@@ -1913,8 +1919,8 @@ export function useControlRoom(): ControlRoomVM {
+     }, []);
+ 
+     // P3 (30/09) - IL SALDO DAI CANALI, per la testata. Solo ASCOLTO sui
+-    // canali singleton gia' aperti dalla pagina (`CANALI_SALDO`, gli stessi di
+-    // `SaldoBetfairCard`): nessuna lettura del database, nessuna porta nuova,
++    // canali singleton gia' aperti dalla pagina (`CANALI_SALDO`, in
++    // `lib/saldoBetfair`): nessuna lettura del database, nessuna porta nuova,
+     // nessun poll. La riga del database e' `liveAccount`, gia' qui sopra.
+     useEffect(() => {
+         let vivo = true;
+@@ -2672,7 +2678,7 @@ export function useControlRoom(): ControlRoomVM {
+                 event_name: v.s.event_name ?? null,
+                 sport: 'calcio',
+                 mode: 'live',
+-                status: netto > SOGLIA_PARI ? 'won' : netto < -SOGLIA_PARI ? 'lost' : 'void',
++                status: statoDaNetto(netto),
+                 pnl: netto,
+                 pnl_betfair: netto,
+                 side: null, price: null, size: v.esp.abbinato,
+@@ -2719,16 +2725,64 @@ export function useControlRoom(): ControlRoomVM {
+         return righe;
+     }, [omegaTrades, safe?.trades, mike?.trades, tennisOrdini, nomiPartite, righeChiuseScalper]);
+ 
+-    const chiuse = useMemo<PosizioneChiusa[]>(() => posizioniChiuse(righeChiuse), [righeChiuse]);
++    const chiuseMemoria = useMemo<PosizioneChiusa[]>(() => posizioniChiuse(righeChiuse), [righeChiuse]);
++
++    // 01/10 (rilievi bassi, punto 1) - LA GIORNATA DI OGGI COME NELLA SCHEDA
++    // POSIZIONI CHIUSE. Le righe in memoria non portano il giorno della
++    // partita: si uniscono alla STESSA lettura della scheda (`chiuseGiornata`,
++    // memoria condivisa per giornata e modalita', scade dopo 60 s) con la
++    // STESSA funzione (`posizioniDellaGiornata`). Si legge SOLO soldi veri
++    // (la plancia usa queste posizioni solo per il LIVE) e SOLO quando c'e'
++    // almeno una posizione di oggi ancora senza il giorno del database:
++    // al massimo una lettura al minuto, nessuna se non c'e' niente da
++    // confermare. Senza lettura le posizioni restano sul giorno di
++    // REGOLAMENTO, provvisorie e dichiarate (nota della plancia).
++    const giornoOggi = useMemo(() => romeDay(new Date(nowMs)), [nowMs]);
++    const [letturaOggiLive, setLetturaOggiLive] = useState<ChiuseGiornata | null>(null);
++    const giornataLive = useMemo(() => posizioniDellaGiornata(
++        righeChiuse, chiuseMemoria,
++        letturaOggiLive && letturaOggiLive.giorno === giornoOggi && letturaOggiLive.modo === 'live'
++            ? letturaOggiLive : null,
++        giornoOggi,
++    ), [righeChiuse, chiuseMemoria, letturaOggiLive, giornoOggi]);
++    const chiuse = giornataLive.posizioni;
++    const daConfermare = useMemo(() => giornataLive.posizioni
++        .filter((p) => p.modo === 'live' && !p.giornoConfermato && p.giorno === giornoOggi
++            && !giornataLive.escluse.has(p))
++        .map((p) => `${p.bot}:${p.id}`).sort().join(','), [giornataLive, giornoOggi]);
++    const minutoLettura = daConfermare ? Math.floor(nowMs / 60_000) : 0;
++    useEffect(() => {
++        if (!daConfermare) return undefined;
++        let vivo = true;
++        chiuseGiornata(giornoOggi, 'live', { oggi: giornoOggi }).then(
++            (d) => { if (vivo) setLetturaOggiLive(d); },
++            () => { /* lettura fallita: resta il regolamento, provvisorio e dichiarato */ },
++        );
++        return () => { vivo = false; };
++    }, [giornoOggi, daConfermare, minutoLettura]);
+ 
+     // 26/09 (F-1, e2e fase 3) - IL P&L «OGGI» DI OMEGA/MIKE/SAFE nella plancia,
+     // dalle STESSE posizioni chiuse della scheda (giorno di REGOLAMENTO, una
+     // modalita' per volta, netto). Prima era `null` («oggi —») mentre le
+     // Chiuse della stessa pagina dicevano +0,95 / +0,79 €.
+     const botsConPnl = useMemo<StatoBot[]>(() => {
+-        const giorno = romeDay(new Date(nowMs));
++        const giorno = giornoOggi;
++        const escluse = giornataLive.escluse;
+         const di = (bot: Bot, modo: 'live' | 'paper', strategia?: string) =>
+-            pnlChiuseDelGiorno(chiuse, { giorno, bot, modo, strategia });
++            pnlChiuseDelGiorno(chiuse, { giorno, bot, modo, strategia, escluse });
++        // 01/10 (punto 1): quante chiuse di oggi del bot sono ancora sul giorno
++        // di REGOLAMENTO (il database non ha ancora detto il giorno della partita)
++        const provvisorie = (bot: Bot, strategia?: string): string | null => {
++            const n = chiuseDelBot(chiuse, { giorno, bot, modo: 'live', strategia, escluse })
++                .filter((p) => !p.giornoConfermato).length;
++            return n > 0
++                ? `${n} ${n === 1 ? 'chiusa' : 'chiuse'} senza il giorno della partita dal database: contate nel giorno di regolamento (provvisorie)`
++                : null;
++        };
++        const unisci = (...note: (string | null)[]): string | null => {
++            const v = note.filter((x): x is string => !!x);
++            return v.length ? v.join(' \u00b7 ') : null;
++        };
+         // 30/09 (P8bis): IN PROVA la cifra di oggi e' per partite di OGGI; gli
+         // arretrati (partite di giorni precedenti regolate oggi) a parte, con la
+         // STESSA regola e fonte della corsia PROVA (`lib/provaGiornata.ts`). Il
+@@ -2745,7 +2799,8 @@ export function useControlRoom(): ControlRoomVM {
+         // 0,00 € «nessuna regolata oggi»; non letto = null («—»). Il paper non
+         // passa mai di qui.
+         const etaConto = etaContoS(pnlRealeOggi?.letto_at, nowMs);
+-        const liveDi = (fonte: FonteReale | null, dalleRighe: number | null, nota: string | null = null):
++        const liveDi = (fonte: FonteReale | null, dalleRighe: number | null, nota: string | null = null,
++            notaRighe: string | null = null):
+             { valore: number | null; f: FonteOggiLive | null } => {
+             if (pnlRealeOggi && fonte) {
+                 const pf = pnlRealeOggi.per_fonte[fonte];
+@@ -2755,21 +2810,22 @@ export function useControlRoom(): ControlRoomVM {
+                     f: { fonte: 'conto', vuoto, etaS: etaConto === undefined ? null : etaConto, nota },
+                 };
+             }
+-            if (dalleRighe != null) return { valore: dalleRighe, f: { fonte: 'bot', vuoto: false, nota } };
++            if (dalleRighe != null) return { valore: dalleRighe, f: { fonte: 'bot', vuoto: false, nota: unisci(nota, notaRighe) } };
+             if (soldiLetti) return { valore: 0, f: { fonte: 'bot', vuoto: true, nota } };
+             return { valore: null, f: null };
+         };
+         return bots.map((b) => {
+             if (b.bot === 'omega') {
+                 const p = provaDellaRiga(pOmega);
+-                const l = liveDi('omega', di(b.bot, 'live'));
++                const l = liveDi('omega', di(b.bot, 'live'), null, provvisorie('omega'));
+                 return { ...b, pnlOggi: l.valore, fonteOggiLive: l.f, pnlOggiPaper: p.oggi, arretratiPaper: p.arretrati };
+             }
+             if (b.bot === 'mike') {
+                 // review incrociata 30/09 (M3): dalle RIGHE (conto non letto) la cifra
+                 // comprende anche gli ordini dell'utente sulle partite di Mike
+                 const l = liveDi('mike', di(b.bot, 'live'),
+-                    'righe di Mike: comprendono anche gli ordini fatti dall\'utente sulle sue partite');
++                    'righe di Mike: comprendono anche gli ordini fatti dall\'utente sulle sue partite',
++                    provvisorie('mike'));
+                 return {
+                     ...b, pnlOggi: l.valore, fonteOggiLive: l.f, pnlOggiPaper: provaDellaRiga(pMike).oggi,
+                     arretratiPaper: arretratiMike,
+@@ -2786,16 +2842,17 @@ export function useControlRoom(): ControlRoomVM {
+                     // la strategia tennis e' tutto il tennis di Safe; quelle del calcio
+                     // restano dalle righe del bot, e lo si dice
+                     const l = k === 'tennis'
+-                        ? liveDi('safe_tennis', di('safe', 'live', k))
++                        ? liveDi('safe_tennis', di('safe', 'live', k), null, provvisorie('safe', k))
+                         : liveDi(null, di('safe', 'live', k),
+-                            pnlRealeOggi ? 'il conto separa Safe solo per sport: per strategia la cifra viene dalle righe del bot' : null);
++                            pnlRealeOggi ? 'il conto separa Safe solo per sport: per strategia la cifra viene dalle righe del bot' : null,
++                            provvisorie('safe', k));
+                     perStr[k] = { live: l.valore, fonteLive: l.f, paper: p.oggi, arretratiPaper: p.arretrati };
+                 }
+                 return { ...b, pnlOggiPerStrategia: perStr };
+             }
+             return b;
+         });
+-    }, [bots, chiuse, nowMs, provaPerBot, provaOggi, pnlRealeOggi, soldiLetti]);
++    }, [bots, chiuse, giornataLive, giornoOggi, nowMs, provaPerBot, provaOggi, pnlRealeOggi, soldiLetti]);
+ 
+     /**
+      * Quanto vale chiudere ADESSO, con la matematica condivisa del green-up.
+@@ -4041,7 +4098,7 @@ export function useControlRoom(): ControlRoomVM {
+         provaGiornata: provaOggi,
+         contoLettoAt: pnlRealeOggi?.letto_at ?? null,
+         apertoAdesso: soldiLetti ? apertoOggi : null,
+-        bots: botsConPnl, posizioni, chiuse, righeChiuse, registrazioni, copertura,
++        bots: botsConPnl, posizioni, chiuse, chiuseEscluse: giornataLive.escluse, righeChiuse, registrazioni, copertura,
+         freni: safe?.control?.stats?.risk ?? null,
+         soldiVeri,
+         stopPerdita,
+diff --git a/frontend/src/components/trading/PerformancePanel.tsx b/frontend/src/components/trading/PerformancePanel.tsx
+index b698fdd..1f9acbc 100644
+--- a/frontend/src/components/trading/PerformancePanel.tsx
++++ b/frontend/src/components/trading/PerformancePanel.tsx
+@@ -10,7 +10,7 @@ import { EquityCurve } from '@/components/trading/EquityCurve';
+ import { EQUITY_TITLE, EQUITY_AXIS_NOTE_GIORNATE } from '@/components/trading/EquityCard';
+ import { StatTile, KpiRow } from '@/components/trading/StatTile';
+ import {
+-    equityByDay, summarizeRows, aggregateBreakdown, dayLabel, WIN_LOSS_TIP,
++    equityByDay, summarizeRows, coperturaTutto, aggregateBreakdown, dayLabel, WIN_LOSS_TIP,
+     PERIOD_LABEL, type DailyRow, type PeriodKind, type HistoryVariant, type DailyBreakdown,
+ } from '@/lib/dailyHistory';
+ import { fmtMoney, fmtPct as fmtPctFrac, fmtNum } from '@/lib/format';
+@@ -32,7 +32,9 @@ function fmtPct(v: number | null | undefined): string {
+     return fmtPctFrac(v, 1);
+ }
+ 
+-const PERIODS: PeriodKind[] = ['month', '30d', '90d', 'year'];
++// B-14 (01/10): gli stessi periodi dello Storico dello sport (7/30/90 giorni,
++// mese, «Tutto»), con le stesse etichette (`PERIOD_LABEL`); «Anno» resta qui
++const PERIODS: PeriodKind[] = ['7d', '30d', '90d', 'month', 'year', 'all'];
+ 
+ const OMEGA_PHASE_LABEL: Record<string, string> = {
+     ht_cs: 'Gamba 1T (Half Time Score)', ft_cs: 'Gamba 2T (Correct Score)', scalp: 'Scalp', none: 'Senza fase (v1/manuale)',
+@@ -146,6 +148,12 @@ export function PerformancePanel({ rows, period, onPeriodChange, variant, loadin
+                 )}
+             </div>
+ 
++            {period === 'all' && range && !loading && (
++                <div className="text-[11px] text-slate-500" data-testid="period-copertura-tutto">
++                    {coperturaTutto(rows, range)}
++                </div>
++            )}
++
+             {unavailable && (
+                 <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-200" data-testid="period-unavailable">
+                     {unavailable}
+diff --git a/frontend/src/components/trading/StatoOrdine.test.tsx b/frontend/src/components/trading/StatoOrdine.test.tsx
+index 0bab375..12d36de 100644
+--- a/frontend/src/components/trading/StatoOrdine.test.tsx
++++ b/frontend/src/components/trading/StatoOrdine.test.tsx
+@@ -65,6 +65,21 @@ describe('StatoOrdineRiga — i tre numeri e lo stato', () => {
+         expect(screen.getByTestId('stato-ordine')).toHaveAttribute('data-dalla-nota', '1');
+     });
+ 
++    // 01/10 (rilievi bassi, punto 10): il tooltip dell'asterisco parla al
++    // trader, senza nome di file SQL. FALSIFICAZIONE: rimettendo il vecchio
++    // title (col nome del file) questo test diventa rosso.
++    it('il tooltip «dalla nota» non nomina file SQL', () => {
++        render(<StatoOrdineRiga riga={{ status: 'open', side: 'back', price: 3, size: 1,
++            meta: { esecuzione: { size_richiesta: 2, size_abbinata: 1, size_residua: 1 } } }} nowMs={ORA} />);
++        const note = screen.getAllByTestId('stato-ordine-nota');
++        expect(note.length).toBeGreaterThan(0);
++        for (const n of note) {
++            const t = n.getAttribute('title') ?? '';
++            expect(t).not.toMatch(/\.sql|migrazione|meta\)/);
++            expect(t).toMatch(/nota scritta dal bot/);
++        }
++    });
++
+     it('⚠️ riga senza niente: «—» ovunque e MAI «0,00 €»', () => {
+         render(<StatoOrdineRiga riga={{ status: 'pending', price: 2.2, size: 5 }} nowMs={ORA} />);
+         const riga = screen.getByTestId('stato-ordine');
+diff --git a/frontend/src/components/trading/StatoOrdine.tsx b/frontend/src/components/trading/StatoOrdine.tsx
+index fb8febe..3811688 100644
+--- a/frontend/src/components/trading/StatoOrdine.tsx
++++ b/frontend/src/components/trading/StatoOrdine.tsx
+@@ -25,6 +25,10 @@ import {
+     type RigaOrdine, type StatoOrdine, type ValoreOrdine,
+ } from '@/lib/statoOrdine';
+ 
++/** 01/10 (rilievi bassi, punto 10): parole per il trader, nessun nome di file SQL */
++export const TITOLO_NOTA = 'numero preso dalla nota scritta dal bot, non dallo stato dell\'ordine letto da Betfair: '
++    + 'il database non ha ancora l\'aggiornamento che salva quello stato';
++
+ /** badge «dalla nota»: il numero c'e', ma non arriva dalle colonne di Betfair */
+ const CLS_NOTA = 'bg-white/5 text-slate-400 border-white/10';
+ 
+@@ -34,7 +38,7 @@ function Nota({ v }: { v: ValoreOrdine }) {
+         <span
+             className="ml-0.5 text-[9px] text-slate-500"
+             data-testid="stato-ordine-nota"
+-            title="numero preso dalla nota del servizio (meta), non dalle colonne di Betfair: la migrazione trades_consapevolezza_ordine_2026-09-16.sql non risulta applicata"
++            title={TITOLO_NOTA}
+         >*</span>
+     );
+ }
+diff --git a/frontend/src/lib/chiuseGiornata.test.ts b/frontend/src/lib/chiuseGiornata.test.ts
+index 48da751..9f05548 100644
+--- a/frontend/src/lib/chiuseGiornata.test.ts
++++ b/frontend/src/lib/chiuseGiornata.test.ts
+@@ -8,6 +8,8 @@
+ // la migrazione si ripiega sulle RPC di storico e lo si DICE.
+ // Le risposte finte hanno le chiavi di `to_jsonb(t.*)` delle tabelle vere.
+ // ============================================================================
++// D-06 (01/10, rilievi bassi): UN solo tipo FontePnl (lib/fontePnl.ts): le
++// parole sono conto / stima / simulato (prima betfair / stimato / paper).
+ import { describe, it, expect, vi, beforeEach } from 'vitest';
+ 
+ vi.mock('@/integrations/supabase/client', () => ({
+@@ -81,7 +83,7 @@ describe('la RPC della giornata', () => {
+         const pos = posizioniChiuse(righe);
+         const omega = pos.find((p) => p.bot === 'omega');
+         expect(omega?.pnlGlobale).toBe(0.9);        // 1,90 - 1,00 dal netto di Betfair
+-        expect(omega?.fontePnl).toBe('betfair');
++        expect(omega?.fontePnl).toBe('conto');
+     });
+ 
+     it('un errore vero della RPC si propaga (la pagina lo mostra)', async () => {
+diff --git a/frontend/src/lib/chiuseGiornata.ts b/frontend/src/lib/chiuseGiornata.ts
+index 547a37b..e8273db 100644
+--- a/frontend/src/lib/chiuseGiornata.ts
++++ b/frontend/src/lib/chiuseGiornata.ts
+@@ -29,7 +29,10 @@ import {
+     type DayTrade,
+ } from '@/lib/dailyHistory';
+ import type { TennisBotOrderRow } from '@/lib/tennis';
+-import { haGiornoDb, rigaDaOrdineTennis, type TradeChiudibile } from '@/lib/posizioniChiuse';
++import {
++    haGiornoDb, posizioniChiuse, rigaDaOrdineTennis, unisciRighe,
++    type PosizioneChiusa, type TradeChiudibile,
++} from '@/lib/posizioniChiuse';
+ 
+ export const RPC_CHIUSE_GIORNATA = 'get_posizioni_chiuse_giornata';
+ 
+@@ -154,6 +157,58 @@ export async function leggiChiuseGiornata(giorno: string, modo: Modo): Promise<C
+     };
+ }
+ 
++// ------------------------------------------- le posizioni di UNA giornata
++/**
++ * 01/10 - una riga regolata piu' di questo PRIMA che partisse la lettura del
++ * giorno, e che la lettura (col giorno della partita) non porta, NON e' di
++ * quella giornata: e' di una partita di un altro giorno. Il margine copre il
++ * ritardo fra il regolamento di Betfair e la scrittura della riga.
++ */
++export const MARGINE_LETTURA_MS = 5 * 60_000;
++
++export interface PosizioniDellaGiornata {
++    /** memoria + righe lette, con il giorno del database ereditato */
++    posizioni: readonly PosizioneChiusa[];
++    /** posizioni in memoria SENZA il giorno del database che la lettura dice
++     *  di un altro giorno (partite di altri giorni): fuori dal giorno e dal totale */
++    escluse: ReadonlySet<PosizioneChiusa>;
++}
++
++const NESSUNA = new Set<PosizioneChiusa>();
++
++/**
++ * 01/10 (rilievi bassi, punto 1) - LA REGOLA UNICA con cui la scheda
++ * Posizioni chiuse e la plancia «oggi per bot» fanno la giornata: le righe in
++ * memoria si uniscono alla lettura della giornata (`unisciRighe`: la memoria
++ * eredita `giorno_partita`/`giorno_da`/`in_day` dal database), le posizioni si
++ * costruiscono UNA volta e, se la lettura porta il giorno della partita, quelle
++ * in memoria ancora senza giorno, regolate ben prima della lettura e che la
++ * lettura non porta, si escludono (`MARGINE_LETTURA_MS`). Le righe senza il
++ * dato restano sul giorno di REGOLAMENTO, provvisorie (`giornoConfermato`
++ * false): il client non calcola mai il giorno della partita.
++ */
++export function posizioniDellaGiornata(
++    righe: readonly TradeChiudibile[],
++    chiuse: readonly PosizioneChiusa[] | undefined,
++    lettura: Pick<ChiuseGiornata, 'righe' | 'giornoPartita' | 'chiestoAlle'> | null,
++    giorno: string,
++): PosizioniDellaGiornata {
++    const posizioni = lettura && lettura.righe.length
++        ? posizioniChiuse(unisciRighe(righe, lettura.righe))
++        : (chiuse ?? posizioniChiuse(righe));
++    if (!lettura || lettura.giornoPartita !== true || lettura.chiestoAlle == null) {
++        return { posizioni, escluse: NESSUNA };
++    }
++    const escluse = new Set<PosizioneChiusa>();
++    const limite = lettura.chiestoAlle - MARGINE_LETTURA_MS;
++    for (const p of posizioni) {
++        if (p.giornoConfermato || p.giorno !== giorno) continue;
++        const ms = Date.parse(p.chiusaAt);
++        if (Number.isFinite(ms) && ms < limite) escluse.add(p);
++    }
++    return { posizioni, escluse };
++}
++
+ // ------------------------------------------------------------------ memoria
+ const memoria = new Map<string, Promise<ChiuseGiornata>>();
+ const lettaAlle = new Map<string, number>();
+diff --git a/frontend/src/lib/dailyHistory.ts b/frontend/src/lib/dailyHistory.ts
+index 396070f..4c78bfc 100644
+--- a/frontend/src/lib/dailyHistory.ts
++++ b/frontend/src/lib/dailyHistory.ts
+@@ -73,6 +73,13 @@ export interface DailyRow {
+     by_sport: Record<string, DailyBreakdown>;
+     by_origin: Record<string, DailyBreakdown>;
+     first_trade_at: string | null;
++    /**
++     * B-14 (01/10) - il database ha RIDOTTO la finestra chiesta (oltre 400
++     * giorni) e lo dichiara su ogni riga (`window_clamped`, `window_from`).
++     * Assente = finestra intera.
++     */
++    window_clamped?: boolean;
++    window_from?: string | null;
+     last_trade_at: string | null;
+ }
+ 
+@@ -198,6 +205,12 @@ export function normalizeDailyRow(raw: unknown): DailyRow | null {
+         by_origin: breakdown(r.by_origin),
+         first_trade_at: typeof r.first_trade_at === 'string' ? r.first_trade_at : null,
+         last_trade_at: typeof r.last_trade_at === 'string' ? r.last_trade_at : null,
++        // B-14 (01/10): la finestra ridotta dal database si porta solo se c'e'
++        ...(r.window_clamped === true ? {
++            window_clamped: true,
++            window_from: typeof r.window_from === 'string' && /^\d{4}-\d{2}-\d{2}/.test(r.window_from)
++                ? r.window_from.slice(0, 10) : null,
++        } : {}),
+     };
+ }
+ 
+@@ -483,9 +496,14 @@ export function monthLabel(year: number, month: number): string {
+ }
+ 
+ // ------------------------------------------------------------ periodi UI
+-export type PeriodKind = 'month' | '30d' | '90d' | 'year';
++// B-14 (01/10, rilievi bassi): UNA serie di periodi per lo Storico dello sport
++// e per gli storici dei bot (7 / 30 / 90 giorni e «Tutto»), con le STESSE
++// etichette e lo STESSO significato di «Tutto»: gli ultimi `MAX_HISTORY_DAYS`
++// giorni, il massimo che lo storico legge (detto a schermo, `coperturaTutto`).
++export type PeriodKind = '7d' | '30d' | '90d' | 'month' | 'year' | 'all';
+ export const PERIOD_LABEL: Record<PeriodKind, string> = {
+-    month: 'Mese corrente', '30d': '30 giorni', '90d': '90 giorni', year: 'Anno',
++    '7d': '7 giorni', '30d': '30 giorni', '90d': '90 giorni',
++    month: 'Mese corrente', year: 'Anno', all: 'Tutto',
+ };
+ 
+ /** Intervallo [from, to] (inclusivo) di un periodo rispetto a `today`. */
+@@ -495,10 +513,40 @@ export function periodRange(kind: PeriodKind, today: string): { from: string; to
+     const y = m[1], mo = m[2];
+     switch (kind) {
+         case 'month': return { from: `${y}-${mo}-01`, to: today };
++        case '7d': return { from: addDays(today, -6), to: today };
+         case '30d': return { from: addDays(today, -29), to: today };
+         case '90d': return { from: addDays(today, -89), to: today };
+         case 'year': return { from: `${y}-01-01`, to: today };
++        // «Tutto» = dentro il tetto dello storico (M-17): chiedere 10 anni per
++        // riceverne uno sarebbe una promessa non mantenuta
++        case 'all': return { from: addDays(today, -(MAX_HISTORY_DAYS - 1)), to: today };
++    }
++}
++
++/**
++ * B-14 (01/10) - che cosa copre DAVVERO «Tutto»: la finestra letta (al
++ * massimo `MAX_HISTORY_DAYS` giorni), il primo giorno con operazioni e, se il
++ * database l'ha ridotta (`window_clamped`), da quando. Mai «tutta la storia».
++ */
++export function coperturaTutto(rows: readonly DailyRow[], range: { from: string; to: string }): string {
++    const parti = [`«Tutto» = al massimo gli ultimi ${MAX_HISTORY_DAYS} giorni (dal ${dayLabel(range.from)}): oltre lo storico non legge`];
++    let primo: string | null = null;
++    for (const r of rows) {
++        if (r.day < range.from || r.day > range.to) continue;
++        if (!(r.trades_placed > 0 || r.settled > 0 || r.pnl_realized !== 0)) continue;
++        if (primo == null || r.day < primo) primo = r.day;
++    }
++    if (primo) {
++        const giorni = Math.round((dayToMs(range.to) - dayToMs(primo)) / 86_400_000) + 1;
++        parti.push(`primo giorno con operazioni: ${dayLabel(primo)}, quindi ${giorni} ${giorni === 1 ? 'giorno coperto' : 'giorni coperti'}`);
++    } else {
++        parti.push('nessun giorno con operazioni nella finestra');
++    }
++    const ridotta = rows.find((r) => r.window_clamped === true);
++    if (ridotta) {
++        parti.push(`il database ha ridotto la finestra${ridotta.window_from ? ` (dal ${dayLabel(ridotta.window_from)})` : ''}`);
+     }
++    return parti.join(' \u00b7 ');
+ }
+ 
+ export function filterRange(rows: DailyRow[], from: string, to: string): DailyRow[] {
+diff --git a/frontend/src/lib/eventGroups.ts b/frontend/src/lib/eventGroups.ts
+index 7e81b9e..befca48 100644
+--- a/frontend/src/lib/eventGroups.ts
++++ b/frontend/src/lib/eventGroups.ts
+@@ -53,12 +53,19 @@ export interface PnlTradeLike {
+ /**
+  * 24/09 - DA DOVE VIENE UN P&L (ordine dell'utente: "il P&L delle operazioni
+  * va preso DIRETTAMENTE da Betfair e non stimato, al netto di tutto"):
+- *   - `betfair` = il netto regolato da Betfair (`pnl_betfair`);
+- *   - `stimato` = soldi veri, ma Betfair non ha ancora regolato: e' il calcolo
+- *     del bot, e la pagina lo deve SCRIVERE ("stimato");
+- *   - `paper`   = simulazione: Betfair non esiste, e' sempre il calcolo.
++ *   - `conto`    = il netto regolato da Betfair (`pnl_betfair`);
++ *   - `stima`    = soldi veri, ma Betfair non ha ancora regolato: e' il calcolo
++ *     del bot, e la pagina lo deve SCRIVERE ("stima");
++ *   - `simulato` = prova: Betfair non esiste, e' sempre il calcolo.
++ *
++ * D-06 (01/10, rilievi bassi): UN SOLO tipo `FontePnl`, quello di
++ * `lib/fontePnl.ts` (le parole della pagina di Mike e dello Storico). Prima
++ * qui c'era un secondo tipo con altre parole (betfair/stimato/paper) che la
++ * scheda Posizioni chiuse rimappava a mano. Si riesporta per chi lo importava
++ * da qui.
+  */
+-export type FontePnl = 'betfair' | 'stimato' | 'paper';
++import type { FontePnl } from '@/lib/fontePnl';
++export type { FontePnl };
+ 
+ export interface RigaPnlReale {
+     pnl?: number | null;
+@@ -82,20 +89,20 @@ export function pnlDiRiga(r: RigaPnlReale): number | null {
+ 
+ /** La fonte del P&L di UNA riga. */
+ export function fonteDiRiga(r: RigaPnlReale): FontePnl {
+-    if (ePaper(r)) return 'paper';
+-    return num(r.pnl_betfair) != null ? 'betfair' : 'stimato';
++    if (ePaper(r)) return 'simulato';
++    return num(r.pnl_betfair) != null ? 'conto' : 'stima';
+ }
+ 
+ /**
+  * La fonte di un INSIEME di righe regolate (un'operazione, una partita):
+- * `betfair` solo se TUTTE hanno il reale; basta una stimata e l'insieme e'
+- * stimato (un totale mezzo reale e mezzo calcolato non e' "da Betfair").
+- * Una qualunque riga paper -> paper. Nessuna riga -> null.
++ * `conto` solo se TUTTE hanno il reale; basta una stimata e l'insieme e'
++ * una stima (un totale mezzo reale e mezzo calcolato non e' "da Betfair").
++ * Una qualunque riga paper -> simulato. Nessuna riga -> null.
+  */
+ export function fonteDiRighe(righe: readonly RigaPnlReale[]): FontePnl | null {
+     if (!righe.length) return null;
+-    if (righe.some(ePaper)) return 'paper';
+-    return righe.every((r) => num(r.pnl_betfair) != null) ? 'betfair' : 'stimato';
++    if (righe.some(ePaper)) return 'simulato';
++    return righe.every((r) => num(r.pnl_betfair) != null) ? 'conto' : 'stima';
+ }
+ 
+ /** Esiti CERTI: solo queste righe hanno un P&L da sommare. */
+diff --git a/frontend/src/lib/mike.test.ts b/frontend/src/lib/mike.test.ts
+index 4d6bf01..b2ccb2b 100644
+--- a/frontend/src/lib/mike.test.ts
++++ b/frontend/src/lib/mike.test.ts
+@@ -557,7 +557,10 @@ describe('mike KO passato ma partita non ancora in gioco', () => {
+ });
+ 
+ describe('mike storico: errore LEGGIBILE senza la migrazione (R2)', () => {
+-    it('gli errori di firma/RPC diventano "applica migrations/mike_history_v2.sql"', () => {
++    // 01/10 (rilievi bassi, punto 10): cambiato di proposito - il messaggio e'
++    // in parole per il trader, SENZA nome di file SQL ne' di funzione (prima
++    // diceva il file e ripeteva l'errore grezzo del database)
++    it('gli errori di firma/RPC diventano «aggiornamento dello storico da applicare», senza nomi del database', () => {
+         for (const raw of [
+             new Error('function public.trading_daily_history(unknown, unknown) is not unique'),
+             new Error('Could not find the function public.get_mike_daily(p_from, p_to)'),
+@@ -567,6 +570,7 @@ describe('mike storico: errore LEGGIBILE senza la migrazione (R2)', () => {
+         ]) {
+             expect(mikeHistoryErrorMessage(raw)).toContain(MIKE_HISTORY_MIGRATION_HINT);
+             expect(mikeHistoryErrorMessage(raw)).not.toBe(raw.message);
++            expect(mikeHistoryErrorMessage(raw)).not.toMatch(/\.sql|trading_|get_mike|mike_trades|migrations\//);
+         }
+     });
+ 
+diff --git a/frontend/src/lib/mike.ts b/frontend/src/lib/mike.ts
+index 2f539cb..9c0e2eb 100644
+--- a/frontend/src/lib/mike.ts
++++ b/frontend/src/lib/mike.ts
+@@ -831,7 +831,11 @@ export const MIKE_AWAITING_KICKOFF_NOTE = 'in attesa del fischio';
+  * «function public.trading_daily_history(...) is not unique» (42725): un codice
+  * nudo in una pagina vuota. Vedi audit R2.
+  */
+-export const MIKE_HISTORY_MIGRATION_HINT = 'storico Mike: applica migrations/mike_history_v2.sql';
++// 01/10 (rilievi bassi, punto 10): a schermo parole per il trader, mai il
++// nome di un file SQL o di una funzione del database (anche l'errore grezzo,
++// che li contiene, non si mostra: resta nella console per chi indaga).
++export const MIKE_HISTORY_MIGRATION_HINT =
++    'storico di Mike non disponibile: il database non ha ancora l\'aggiornamento dello storico (da applicare)';
+ 
+ export function mikeHistoryErrorMessage(raw: unknown): string {
+     const msg = String((raw as Error)?.message ?? raw ?? '').trim();
+@@ -842,7 +846,10 @@ export function mikeHistoryErrorMessage(raw: unknown): string {
+         || low.includes('could not find the function')
+         || low.includes('tabella non ammessa')
+         || low.includes('attribuzione non valida');
+-    if (broken) return `${MIKE_HISTORY_MIGRATION_HINT} (${msg || 'RPC assente'})`;
++    if (broken) {
++        console.warn('[storico Mike] errore del database:', msg || 'lettura assente');
++        return MIKE_HISTORY_MIGRATION_HINT;
++    }
+     return msg || 'storico Mike non disponibile';
+ }
+ 
+diff --git a/frontend/src/lib/pnlRealeBetfair.test.ts b/frontend/src/lib/pnlRealeBetfair.test.ts
+index 183686f..8236784 100644
+--- a/frontend/src/lib/pnlRealeBetfair.test.ts
++++ b/frontend/src/lib/pnlRealeBetfair.test.ts
+@@ -3,6 +3,8 @@
+ // `safe_strategy_trades`/`mike_trades` + le colonne della migrazione
+ // `pnl_betfair_reale_2026-09-24.sql`) e del JSONB `pnl_reale_oggi` scritto dal
+ // runner (`reconcile_worker.componi_regolati`).
++// D-06 (01/10, rilievi bassi): UN solo tipo FontePnl (lib/fontePnl.ts): le
++// parole sono conto / stima / simulato (prima betfair / stimato / paper).
+ import { describe, expect, it } from 'vitest';
+ import {
+     fonteDiRighe, nettoCicloChiuso, pnlDiRiga, groupTradesIntoCicli,
+@@ -53,9 +55,9 @@ describe('P&L di una riga: Betfair se c e, altrimenti stimato', () => {
+     });
+     it('un insieme e da Betfair solo se TUTTE le gambe lo sono', () => {
+         expect(fonteDiRighe([{ pnl_betfair: 1, mode: 'live' }, { pnl_betfair: null, mode: 'live' }]))
+-            .toBe('stimato');
+-        expect(fonteDiRighe([{ pnl_betfair: 1, mode: 'live' }])).toBe('betfair');
+-        expect(fonteDiRighe([{ pnl: 1, mode: 'paper' }])).toBe('paper');
++            .toBe('stima');
++        expect(fonteDiRighe([{ pnl_betfair: 1, mode: 'live' }])).toBe('conto');
++        expect(fonteDiRighe([{ pnl: 1, mode: 'paper' }])).toBe('simulato');
+     });
+     it('il netto di un cash out usa il netto di Betfair di ogni gamba', () => {
+         const open = { status: 'won', pnl: 0.45, pnl_betfair: 0.43, mode: 'live' };
+@@ -66,7 +68,7 @@ describe('P&L di una riga: Betfair se c e, altrimenti stimato', () => {
+             riga({ id: 2, pnl: -0.25, pnl_betfair: -0.25, status: 'lost', closes_trade_id: 1 }),
+         ]);
+         expect(c[0].netPnl).toBe(0.18);
+-        expect(c[0].fontePnl).toBe('betfair');
++        expect(c[0].fontePnl).toBe('conto');
+     });
+ });
+ 
+@@ -78,10 +80,10 @@ describe('posizioni chiuse: il reale e dichiarato, lo stimato pure', () => {
+         });
+         const [reale] = posizioniChiuse([t({ id: 1, pnl_betfair: 0.43 })]);
+         expect(reale.pnlGlobale).toBe(0.43);
+-        expect(reale.fontePnl).toBe('betfair');
++        expect(reale.fontePnl).toBe('conto');
+         const [stimata] = posizioniChiuse([t({ id: 2 })]);
+         expect(stimata.pnlGlobale).toBe(0.45);
+-        expect(stimata.fontePnl).toBe('stimato');
++        expect(stimata.fontePnl).toBe('stima');
+     });
+ });
+ 
+diff --git a/frontend/src/lib/posizioniChiuse.raggruppamento.test.ts b/frontend/src/lib/posizioniChiuse.raggruppamento.test.ts
+index 739ffb9..defd1bd 100644
+--- a/frontend/src/lib/posizioniChiuse.raggruppamento.test.ts
++++ b/frontend/src/lib/posizioniChiuse.raggruppamento.test.ts
+@@ -10,6 +10,8 @@
+ // I finti hanno le chiavi delle tabelle vere (`omega_trades`,
+ // `safe_strategy_trades`, `mike_trades`, `tennis_live_orders`).
+ // ============================================================================
++// D-06 (01/10, rilievi bassi): UN solo tipo FontePnl (lib/fontePnl.ts): le
++// parole sono conto / stima / simulato (prima betfair / stimato / paper).
+ import { describe, it, expect } from 'vitest';
+ import {
+     posizioniChiuse, filtraChiuse, riepilogoChiuse, raggruppaGiornata, unisciRighe,
+@@ -103,7 +105,7 @@ describe('fonte del P&L: Betfair / stimato / paper, sempre dichiarata', () => {
+             t({ id: 1, pnl: 3, pnl_betfair: 2.85, pnl_betfair_settled_at: `${G}T12:05:00.000Z` }),
+             t({ id: 2, pnl: -2, closes_trade_id: 1 }),
+         ]);
+-        expect(p.fontePnl).toBe('stimato');
++        expect(p.fontePnl).toBe('stima');
+         expect(p.pnlReale).toBe(2.85);
+         expect(p.pnlStimato).toBe(-2);
+         expect(p.pnlGlobale).toBe(0.85);
+@@ -114,7 +116,7 @@ describe('fonte del P&L: Betfair / stimato / paper, sempre dichiarata', () => {
+             t({ id: 1, pnl: 3, pnl_betfair: 2.85 }),
+             t({ id: 2, pnl: -2, pnl_betfair: -2, closes_trade_id: 1 }),
+         ]);
+-        expect(p.fontePnl).toBe('betfair');
++        expect(p.fontePnl).toBe('conto');
+         expect(p.pnlStimato).toBeNull();
+         expect(p.pnlReale).toBe(0.85);
+     });
+@@ -141,7 +143,7 @@ describe('fonte del P&L: Betfair / stimato / paper, sempre dichiarata', () => {
+ 
+     it('paper: fonte paper, il pnl_betfair (che non puo\' esistere) e\' ignorato', () => {
+         const [p] = posizioniChiuse([t({ id: 1, mode: 'paper', pnl: 1, pnl_betfair: 9 })]);
+-        expect(p.fontePnl).toBe('paper');
++        expect(p.fontePnl).toBe('simulato');
+         expect(p.pnlGlobale).toBe(1);
+         expect(p.pnlReale).toBeNull();
+         expect(p.pnlStimato).toBeNull();
+diff --git a/frontend/src/lib/posizioniChiuse.test.ts b/frontend/src/lib/posizioniChiuse.test.ts
+index 7ff12dc..e1ad6ec 100644
+--- a/frontend/src/lib/posizioniChiuse.test.ts
++++ b/frontend/src/lib/posizioniChiuse.test.ts
+@@ -8,7 +8,7 @@
+ // ============================================================================
+ import { describe, it, expect } from 'vitest';
+ import {
+-    posizioniChiuse, filtraChiuse, riepilogoChiuse, esitoDi, fuoriGiornata,
++    posizioniChiuse, filtraChiuse, riepilogoChiuse, esitoDi, statoDaNetto, fuoriGiornata,
+     unisciRighe, regolatoNelGiorno, aCavalloDellaMezzanotte, giornoDalDatabase, rigaDaOrdineTennis,
+     type TradeChiudibile,
+ } from './posizioniChiuse';
+@@ -108,6 +108,29 @@ describe('esito — un centesimo di arrotondamento non è una vittoria', () => {
+     });
+ });
+ 
++// C-05 (01/10, rilievi bassi): l'esito con la regola del DATABASE (zero esatto
++// al centesimo: `total_pnl > 0` vinta, `< 0` persa). FALSIFICAZIONE: rimettendo
++// la soglia di +/-0,005 (`pnl > 0.005`) i casi di mezzo centesimo diventano rossi.
++describe('C-05: «pari» = zero esatto al centesimo, come il database', () => {
++    it('mezzo centesimo si porta al centesimo, in modo simmetrico', () => {
++        expect(esitoDi(0.005)).toBe('vinta');
++        expect(esitoDi(-0.005)).toBe('persa');
++        expect(esitoDi(0.004)).toBe('pari');
++        expect(esitoDi(-0.004)).toBe('pari');
++    });
++    it('il residuo di un calcolo in virgola mobile non diventa una vinta', () => {
++        expect(0.1 + 0.2 - 0.3).toBeGreaterThan(0);
++        expect(esitoDi(0.1 + 0.2 - 0.3)).toBe('pari');
++    });
++    it('un centesimo basta per un esito; lo stato di una riga tennis segue la stessa regola', () => {
++        expect(esitoDi(0.01)).toBe('vinta');
++        expect(esitoDi(-0.01)).toBe('persa');
++        expect(statoDaNetto(0.005)).toBe('won');
++        expect(statoDaNetto(-0.005)).toBe('lost');
++        expect(statoDaNetto(0)).toBe('void');
++    });
++});
++
+ describe('paper e live restano posizioni DIVERSE', () => {
+     it('la modalità si legge dalla riga di apertura ed è fail-closed', () => {
+         const p = posizioniChiuse([
+diff --git a/frontend/src/lib/posizioniChiuse.ts b/frontend/src/lib/posizioniChiuse.ts
+index 6a62121..eeeaad4 100644
+--- a/frontend/src/lib/posizioniChiuse.ts
++++ b/frontend/src/lib/posizioniChiuse.ts
+@@ -55,7 +55,7 @@ export interface RigaChiusa {
+     /** netto di commissione; null = non regolata. 24/09: quello di Betfair
+      *  (`pnl_betfair`) se c'e', altrimenti il calcolo del bot (`fontePnl`). */
+     pnl: number | null;
+-    /** 24/09 - da dove viene `pnl`: Betfair, stimato (calcolo del bot), paper */
++    /** 24/09 - da dove viene `pnl`: conto Betfair, stima (calcolo del bot), simulato (D-06) */
+     fontePnl?: FontePnl;
+     stato: string;
+     at: string;
+@@ -104,8 +104,8 @@ export interface PosizioneChiusa {
+     /** P&L della posizione INTERA: apertura + coperture */
+     pnlGlobale: number;
+     /**
+-     * 24/09 - da dove viene `pnlGlobale`: `betfair` solo se TUTTE le gambe
+-     * regolate hanno il netto di Betfair; altrimenti `stimato` o `paper`.
++     * 24/09 - da dove viene `pnlGlobale`: `conto` solo se TUTTE le gambe
++     * regolate hanno il netto di Betfair; altrimenti `stima` o `simulato` (D-06).
+      * Opzionale nel tipo per i fixture scritti prima.
+      */
+     fontePnl?: FontePnl;
+@@ -227,16 +227,32 @@ export interface TradeChiudibile {
+     __senzaLegame?: boolean;
+ }
+ 
+-/** Sotto questa soglia in valore assoluto una posizione e' "pari": un
+- *  centesimo di arrotondamento non e' una vittoria ne' una sconfitta. */
++/** Mezzo centesimo: sotto questa soglia un IMPORTO (abbinato, residuo) non
++ *  esiste. NON decide piu' l'esito (C-05, sotto). */
+ export const SOGLIA_PARI = 0.005;
+ 
++/**
++ * C-05 (01/10, rilievi bassi) - L'ESITO con la STESSA regola del database
++ * (storico: `total_pnl > 0` vinta, `< 0` persa, `= 0` pari): ZERO ESATTO AL
++ * CENTESIMO. Le cifre sono gia' arrotondate al centesimo (`pnlGlobale`, netto
++ * tennis), quindi per loro e' lo zero esatto; un valore con piu' decimali si
++ * porta prima al centesimo (simmetrico: -0,005 e' -0,01 come +0,005 e' +0,01),
++ * cosi' un residuo di calcolo in virgola mobile (5e-17) non diventa una vinta.
++ * Prima: soglia di +/-0,005 (mezzo centesimo, non lo zero del database).
++ */
+ export function esitoDi(pnl: number): Esito {
+-    if (pnl > SOGLIA_PARI) return 'vinta';
+-    if (pnl < -SOGLIA_PARI) return 'persa';
++    const c = Math.sign(pnl) * Math.round(Math.abs(pnl) * 100);
++    if (c > 0) return 'vinta';
++    if (c < 0) return 'persa';
+     return 'pari';
+ }
+ 
++/** lo stato di regolamento dal segno al centesimo (stessa regola di `esitoDi`) */
++export function statoDaNetto(netto: number): 'won' | 'lost' | 'void' {
++    const e = esitoDi(netto);
++    return e === 'vinta' ? 'won' : e === 'persa' ? 'lost' : 'void';
++}
++
+ function testo(v: unknown): string | null {
+     return typeof v === 'string' && v.trim() ? v.trim() : null;
+ }
+@@ -407,7 +423,7 @@ function costruisci(
+         if (Number.isFinite(ms) && !(ms <= regMs)) { regMs = ms; regIso = iso; }
+     }
+     globale = cent(globale);
+-    const fontePnl = fonteDiRighe(regolate) ?? 'stimato';
++    const fontePnl = fonteDiRighe(regolate) ?? 'stima';
+ 
+     const conMs = tutte.map((r) => {
+         const riga = rigaChiusa(r, legame === 'catena' && numero(r.closes_trade_id) != null);
+@@ -609,7 +625,7 @@ export function rigaDaOrdineTennis(
+         event_name: nomePartita,
+         sport: 'tennis',
+         mode: o.mode,
+-        status: netto > SOGLIA_PARI ? 'won' : netto < -SOGLIA_PARI ? 'lost' : 'void',
++        status: statoDaNetto(netto),
+         pnl: netto,
+         pnl_betfair: o.pnl_betfair ?? null,
+         pnl_betfair_settled_at: o.pnl_betfair_settled_at ?? null,
+@@ -701,7 +717,7 @@ export function filtraChiuse(
+         if (f.sport && f.sport !== 'tutti' && p.sport !== f.sport) return false;
+         if (f.modo && f.modo !== 'tutte' && p.modo !== f.modo) return false;
+         if (f.bot && f.bot !== 'tutti' && p.bot !== f.bot) return false;
+-        if (f.fonte === 'betfair' && p.fontePnl !== 'betfair') return false;
++        if (f.fonte === 'betfair' && p.fontePnl !== 'conto') return false;
+         // una posizione SENZA giornata leggibile non e' "di oggi": lo dice la
+         // scheda con un avviso, invece di finire nel totale del giorno
+         if (giorno && p.giorno !== giorno) return false;
+@@ -712,24 +728,47 @@ export function filtraChiuse(
+ /**
+  * 26/09 (F-1, e2e fase 3) - IL P&L «OGGI» DI UN BOT nella plancia, con la
+  * STESSA fonte e la STESSA regola della scheda Posizioni chiuse: posizioni
+- * chiuse, giorno di REGOLAMENTO, UNA modalita', netto (`pnlGlobale`). Prima
+- * Omega/Mike/Safe avevano `null` («oggi —») mentre le Chiuse della stessa
+- * pagina dicevano +0,95 / +0,79 €. `strategia` (Safe) = quella dell'APERTURA
+- * del ciclo. `null` = nessuna posizione chiusa: «—», mai uno zero inventato.
++ * chiuse, UNA modalita', netto (`pnlGlobale`). Prima Omega/Mike/Safe avevano
++ * `null` («oggi —») mentre le Chiuse della stessa pagina dicevano +0,95 /
++ * +0,79 €. `strategia` (Safe) = quella dell'APERTURA del ciclo. `null` =
++ * nessuna posizione chiusa: «—», mai uno zero inventato.
++ *
++ * 01/10 (rilievi bassi, punto 1) - la giornata e' `p.giorno`, cioe' quella
++ * della scheda: giorno della PARTITA quando la riga porta il dato del database
++ * (`posizioniDellaGiornata` in `lib/chiuseGiornata`), altrimenti il giorno di
++ * REGOLAMENTO, provvisorio (`giornoConfermato` false). `escluse` = le posizioni
++ * che la scheda toglie dal giorno (partite di altri giorni): fuori anche qui.
+  */
+ export function pnlChiuseDelGiorno(
+     posizioni: readonly PosizioneChiusa[],
+-    f: { giorno: string; bot: Bot; modo: Modo; strategia?: string | null },
++    f: {
++        giorno: string; bot: Bot; modo: Modo; strategia?: string | null;
++        escluse?: ReadonlySet<PosizioneChiusa>;
++    },
+ ): number | null {
+     let tot: number | null = null;
++    for (const p of chiuseDelBot(posizioni, f)) tot = cent((tot ?? 0) + p.pnlGlobale);
++    return tot;
++}
++
++/** Le posizioni chiuse di un bot nel giorno: la base di `pnlChiuseDelGiorno`. */
++export function chiuseDelBot(
++    posizioni: readonly PosizioneChiusa[],
++    f: {
++        giorno: string; bot: Bot; modo: Modo; strategia?: string | null;
++        escluse?: ReadonlySet<PosizioneChiusa>;
++    },
++): PosizioneChiusa[] {
++    const out: PosizioneChiusa[] = [];
+     for (const p of filtraChiuse(posizioni, { giorno: f.giorno, bot: f.bot, modo: f.modo })) {
++        if (f.escluse?.has(p)) continue;
+         if (f.strategia != null) {
+             const apertura = p.righe.find((r) => !r.chiusura && String(r.id) === String(p.id));
+             if ((apertura?.quale ?? null) !== f.strategia) continue;
+         }
+-        tot = cent((tot ?? 0) + p.pnlGlobale);
++        out.push(p);
+     }
+-    return tot;
++    return out;
+ }
+ 
+ /** giorno di REGOLAMENTO (Roma) di una riga: quello del conto per il reale */
+@@ -760,7 +799,7 @@ export function regolatoNelGiorno(posizioni: readonly PosizioneChiusa[], giorno:
+         for (const r of p.righe) {
+             if (r.pnl == null || !isSettled(r.stato)) continue;
+             if (giornoRegolamentoRiga(r) !== giorno) continue;
+-            if (r.fontePnl === 'betfair') reale = cent((reale ?? 0) + r.pnl);
++            if (r.fontePnl === 'conto') reale = cent((reale ?? 0) + r.pnl);
+             else stimato = cent((stimato ?? 0) + r.pnl);
+         }
+     }
+diff --git a/frontend/src/lib/saldoBetfair.test.ts b/frontend/src/lib/saldoBetfair.test.ts
+index 07ac929..84e7db7 100644
+--- a/frontend/src/lib/saldoBetfair.test.ts
++++ b/frontend/src/lib/saldoBetfair.test.ts
+@@ -1,4 +1,13 @@
+ import { describe, it, expect } from 'vitest';
++import { CANALI_SALDO } from './saldoBetfair';
++
++// 01/10 (rilievi bassi, punto 11): la costante vive qui (la card del saldo e'
++// stata cancellata). Stessa asserzione che stava nel test della card.
++describe('CANALI_SALDO - i canali che portano il topic «account»', () => {
++    it('sono i 5 processi che piazzano ordini veri (porte esistenti)', () => {
++        expect([...CANALI_SALDO]).toEqual(['calcio', 'tennis', 'mike', 'omega', 'safe']);
++    });
++});
+ import {
+     statoSaldoBetfair, SALDO_HEARTBEAT_STALE_S, leggiSaldoDalCanale, saldoPiuRecente, saldoDaMostrare,
+     testoUltimaVerifica,
+diff --git a/frontend/src/lib/saldoBetfair.ts b/frontend/src/lib/saldoBetfair.ts
+index c554609..86203d3 100644
+--- a/frontend/src/lib/saldoBetfair.ts
++++ b/frontend/src/lib/saldoBetfair.ts
+@@ -14,6 +14,20 @@
+ // futuro aggancio (contratto nuovo) cambia SOLO l'input, mai questa funzione.
+ // ============================================================================
+ import { fmtTime, DASH } from './format';
++import type { LocalSport } from './localChannel';
++
++/**
++ * 23/09 - i canali dei processi che piazzano ordini VERI e pubblicano il
++ * topic "account" dopo ogni ordine/regolazione (`stream/saldo_evento.py`):
++ * runner calcio, runner tennis, Mike, Omega, Safe. Sono gli stessi singleton
++ * gia' aperti dalla Control Room: nessuna porta nuova.
++ *
++ * 01/10 (rilievi bassi, punto 11): spostato qui da `SaldoBetfairCard.tsx`, che
++ * dal 01/10 non era piu' montata da nessuna parte e restava nel codice solo
++ * per questa costante (la usa `useControlRoom`). La card e il suo test sono
++ * stati cancellati: nessun altro file li importava.
++ */
++export const CANALI_SALDO: readonly LocalSport[] = ['calcio', 'tennis', 'mike', 'omega', 'safe'] as const;
+ 
+ export type StatoSaldo = 'ok' | 'non-verificato' | 'ignoto';
+ 
+diff --git a/frontend/src/lib/storicoSport.test.ts b/frontend/src/lib/storicoSport.test.ts
+index 1ff8332..6441105 100644
+--- a/frontend/src/lib/storicoSport.test.ts
++++ b/frontend/src/lib/storicoSport.test.ts
+@@ -24,7 +24,7 @@ import {
+     rigaGiornalieraTennisBot,
+     type SerieBot, type ModoStorico, type BotStorico,
+ } from './storicoSport';
+-import { normalizeDailyRow, type DailyRow } from './dailyHistory';
++import { normalizeDailyRow, periodRange, PERIOD_LABEL, coperturaTutto, type DailyRow } from './dailyHistory';
+ import { posizioniChiuse, riepilogoChiuse, rigaDaOrdineTennis, nettoOrdineTennis, type TradeChiudibile } from './posizioniChiuse';
+ import type { TennisBotDailyRow, TennisBotOrderRow } from './tennis';
+ 
+@@ -105,12 +105,39 @@ describe('intervalli: oggi, 7 giorni, 30 giorni, mese, tutto', () => {
+         expect(() => intervalloRange('7g', '17/09/2026')).toThrow();
+     });
+     it('ogni intervallo ha un\'etichetta in italiano', () => {
+-        for (const k of ['oggi', '7g', '30g', 'mese', 'tutto'] as const) {
++        for (const k of ['oggi', '7g', '30g', '90g', 'mese', 'tutto'] as const) {
+             expect(INTERVALLO_LABEL[k]).toBeTruthy();
+         }
+     });
+-    it('B-14 (01/10): «tutto» dice quello che e\' (gli ultimi 400 giorni)', () => {
+-        expect(INTERVALLO_LABEL.tutto).toBe('Ultimi 400 giorni');
++    // B-14 rivisto (rilievi bassi 01/10): l'etichetta «Ultimi 400 giorni» e'
++    // diventata «Tutto», UGUALE agli storici dei bot; quanti giorni copre
++    // davvero lo dice la riga sotto i filtri (`coperturaTutto`), non l'etichetta.
++    it('B-14: STESSE etichette e STESSI intervalli degli storici dei bot', () => {
++        expect(INTERVALLO_LABEL['7g']).toBe(PERIOD_LABEL['7d']);
++        expect(INTERVALLO_LABEL['30g']).toBe(PERIOD_LABEL['30d']);
++        expect(INTERVALLO_LABEL['90g']).toBe(PERIOD_LABEL['90d']);
++        expect(INTERVALLO_LABEL.mese).toBe(PERIOD_LABEL.month);
++        expect(INTERVALLO_LABEL.tutto).toBe('Tutto');
++        expect(INTERVALLO_LABEL.tutto).toBe(PERIOD_LABEL.all);
++        const oggi = '2026-10-01';
++        expect(intervalloRange('7g', oggi)).toEqual(periodRange('7d', oggi));
++        expect(intervalloRange('90g', oggi)).toEqual({ from: '2026-07-04', to: oggi });
++        expect(intervalloRange('90g', oggi)).toEqual(periodRange('90d', oggi));
++        expect(intervalloRange('tutto', oggi)).toEqual(periodRange('all', oggi));
++    });
++    it('B-14: «Tutto» dice quanti giorni copre davvero, e la finestra ridotta dal database', () => {
++        const r = periodRange('all', '2026-10-01');
++        const righe = [normalizeDailyRow(rigaRpc('2026-09-20', 1)), normalizeDailyRow(rigaRpc('2026-09-30', -1))]
++            .filter((x): x is DailyRow => x != null);
++        const t = coperturaTutto(righe, r);
++        expect(t).toContain('al massimo gli ultimi 400 giorni');
++        expect(t).toContain('primo giorno con operazioni: 20 settembre 2026, quindi 12 giorni coperti');
++        expect(t).not.toContain('ridotto');
++        const ridotte = [normalizeDailyRow(rigaRpc('2026-09-20', 1, { window_clamped: true, window_from: '2025-08-27' }))]
++            .filter((x): x is DailyRow => x != null);
++        expect(ridotte[0].window_clamped).toBe(true);
++        expect(coperturaTutto(ridotte, r)).toContain('il database ha ridotto la finestra (dal 27 agosto 2025)');
++        expect(coperturaTutto([], r)).toContain('nessun giorno con operazioni');
+     });
+ });
+ 
+diff --git a/frontend/src/lib/storicoSport.ts b/frontend/src/lib/storicoSport.ts
+index d3bf32d..481d013 100644
+--- a/frontend/src/lib/storicoSport.ts
++++ b/frontend/src/lib/storicoSport.ts
+@@ -23,7 +23,7 @@
+ // ============================================================================
+ import type { EquityPoint } from '@/components/trading/EquityCurve';
+ import {
+-    equityByDay, addDays, romeDay, MAX_HISTORY_DAYS,
++    equityByDay, romeDay, periodRange, PERIOD_LABEL,
+     fetchSafeDaily, fetchMikeDaily, fetchOmegaDailyPerModo, fetchStakePerGiorno,
+     fetchSafeDayTrades, fetchMikeDayTrades, fetchOmegaDayTradesPerModo,
+     type DailyRow, type DayTrade, type HistoryVariant,
+@@ -113,15 +113,21 @@ export function rottaStorico(sport: SportStorico): string {
+ 
+ // ------------------------------------------------------------- intervalli
+ 
+-export type IntervalloKind = 'oggi' | '7g' | '30g' | 'mese' | 'tutto';
++export type IntervalloKind = 'oggi' | '7g' | '30g' | '90g' | 'mese' | 'tutto';
+ 
++/**
++ * B-14 (01/10, rilievi bassi): le STESSE etichette e lo STESSO significato
++ * degli storici dei bot (`PERIOD_LABEL`/`periodRange` in `lib/dailyHistory`):
++ * 7 / 30 / 90 giorni, mese corrente e «Tutto» (= gli ultimi 400 giorni, detto
++ * a schermo da `coperturaTutto`). «Oggi» resta solo qui.
++ */
+ export const INTERVALLO_LABEL: Record<IntervalloKind, string> = {
+     oggi: 'Oggi',
+-    '7g': '7 giorni',
+-    '30g': '30 giorni',
+-    mese: 'Mese corrente',
+-    // B-14 (01/10): «Tutto» era in realta' il tetto di 400 giorni, senza dirlo
+-    tutto: `Ultimi ${MAX_HISTORY_DAYS} giorni`,
++    '7g': PERIOD_LABEL['7d'],
++    '30g': PERIOD_LABEL['30d'],
++    '90g': PERIOD_LABEL['90d'],
++    mese: PERIOD_LABEL.month,
++    tutto: PERIOD_LABEL.all,
+ };
+ 
+ /** Intervallo [from, to] inclusivo di un ambito, rispetto alla giornata `oggi`. */
+@@ -129,13 +135,15 @@ export function intervalloRange(kind: IntervalloKind, oggi: string): { from: str
+     if (!/^\d{4}-\d{2}-\d{2}$/.test(oggi)) throw new RangeError(`giorno non valido: ${oggi}`);
+     switch (kind) {
+         case 'oggi': return { from: oggi, to: oggi };
+-        case '7g': return { from: addDays(oggi, -6), to: oggi };
+-        case '30g': return { from: addDays(oggi, -29), to: oggi };
+-        case 'mese': return { from: `${oggi.slice(0, 7)}-01`, to: oggi };
++        // B-14: gli stessi intervalli degli storici dei bot, dalla stessa funzione
++        case '7g': return periodRange('7d', oggi);
++        case '30g': return periodRange('30d', oggi);
++        case '90g': return periodRange('90d', oggi);
++        case 'mese': return periodRange('month', oggi);
+         // «tutto» dentro il tetto del motore condiviso (M-17: oltre 400 giorni
+         // la RPC restringe da sola e lo dichiara). Chiedere 10 anni per poi
+         // riceverne uno sarebbe una promessa non mantenuta.
+-        case 'tutto': return { from: addDays(oggi, -(MAX_HISTORY_DAYS - 1)), to: oggi };
++        case 'tutto': return periodRange('all', oggi);
+     }
+ }
+ 
+diff --git a/frontend/src/pages/ControlRoom.tsx b/frontend/src/pages/ControlRoom.tsx
+index f1a3c81..3210c62 100644
+--- a/frontend/src/pages/ControlRoom.tsx
++++ b/frontend/src/pages/ControlRoom.tsx
+@@ -253,10 +253,12 @@ export default function ControlRoom() {
+ 
+     // il contatore della scheda deve contare QUELLO CHE LA SCHEDA MOSTRA:
+     // soldi veri, dello sport scelto, e SOLO della giornata di oggi.
++    // 01/10 (rilievi bassi, punto 1): fuori anche le partite di altri giorni
++    // che la lettura di oggi esclude, come fa la scheda
+     const contaChiuse = useMemo(
+         () => vm.chiuse.filter((c) => (sport == null || c.sport === sport)
+-            && c.modo === 'live' && c.giorno === giornoOperativo).length,
+-        [vm.chiuse, sport, giornoOperativo],
++            && c.modo === 'live' && c.giorno === giornoOperativo && !vm.chiuseEscluse?.has(c)).length,
++        [vm.chiuse, vm.chiuseEscluse, sport, giornoOperativo],
+     );
+ 
+     // RITORNO AL PUNTO ESATTO: si consuma UNA volta sola, quando le righe ci
+diff --git a/frontend/src/pages/Mike.test.tsx b/frontend/src/pages/Mike.test.tsx
+index 86f5695..6e1d2d9 100644
+--- a/frontend/src/pages/Mike.test.tsx
++++ b/frontend/src/pages/Mike.test.tsx
+@@ -762,7 +762,10 @@ describe('Mike page — storico senza migrazione', () => {
+         renderPage();
+         await waitFor(() => expect(screen.getByTestId('mike-status')).toBeInTheDocument());
+         await userEvent.click(screen.getByRole('tab', { name: /Storico/ }));
+-        await waitFor(() => expect(screen.getByText(/mike_history_v2\.sql/)).toBeInTheDocument());
++        // 01/10 (rilievi bassi, punto 10): parole per il trader, nessun nome di file
++        await waitFor(() => expect(screen.getByText(/aggiornamento dello storico/)).toBeInTheDocument());
++        expect(screen.queryByText(/\.sql/)).toBeNull();
++        expect(screen.queryByText(/is not unique/)).toBeNull();
+     });
+ });
+ 
+diff --git a/frontend/src/pages/StoricoSport.tsx b/frontend/src/pages/StoricoSport.tsx
+index 5df8e9b..d9fb042 100644
+--- a/frontend/src/pages/StoricoSport.tsx
++++ b/frontend/src/pages/StoricoSport.tsx
+@@ -44,7 +44,7 @@ import { DayDetail } from '@/components/trading/DayDetail';
+ import { fmtMoney, fmtPct, fmtNum, DASH } from '@/lib/format';
+ import { pnlClass } from '@/lib/tradeStatus';
+ import {
+-    dayLabel, attributionOf, calendarGridBounds, historyWindow, filterRange,
++    dayLabel, attributionOf, coperturaTutto, calendarGridBounds, historyWindow, filterRange,
+     GIORNATA_RIPIEGO_TESTO, testoCriterioGiornata, type HistoryVariant,
+ } from '@/lib/dailyHistory';
+ import { FONTE_PNL_BREVE } from '@/lib/fontePnl';
+@@ -57,7 +57,8 @@ import {
+     type SerieBot, type AggregatoBot, type TradeGiornoBot,
+ } from '@/lib/storicoSport';
+ 
+-const INTERVALLI: IntervalloKind[] = ['oggi', '7g', '30g', 'mese', 'tutto'];
++// B-14 (01/10): gli stessi periodi degli storici dei bot (piu' «Oggi»)
++const INTERVALLI: IntervalloKind[] = ['oggi', '7g', '30g', '90g', 'mese', 'tutto'];
+ const ALTRO_SPORT: Record<SportStorico, SportStorico> = { calcio: 'tennis', tennis: 'calcio' };
+ 
+ export interface StoricoSportProps {
+@@ -250,6 +251,12 @@ export function StoricoSport({ sport, oggi }: StoricoSportProps) {
+                 <span className="ml-auto text-[10.5px] text-white/40" data-testid="storico-intervallo">
+                     {dayLabel(range.from)} → {dayLabel(range.to)}
+                 </span>
++                {/* B-14 (01/10): «Tutto» dice quanti giorni copre davvero */}
++                {intervallo === 'tutto' && !caricamento && (
++                    <span className="basis-full text-[10.5px] text-white/45" data-testid="storico-copertura-tutto">
++                        {coperturaTutto(serieModo.flatMap((s) => s.righe), range)}
++                    </span>
++                )}
+             </Card>
+ 
+             {errore && (
+diff --git a/frontend/src/components/controlroom/plancia.giornoPartita.test.tsx b/frontend/src/components/controlroom/plancia.giornoPartita.test.tsx
+new file mode 100644
+index 0000000..97e4606
+--- /dev/null
++++ b/frontend/src/components/controlroom/plancia.giornoPartita.test.tsx
+@@ -0,0 +1,275 @@
++// ============================================================================
++// plancia.giornoPartita.test.tsx - RILIEVI BASSI 01/10, punto 1.
++//
++// La plancia «oggi per bot» (cifra LIVE dalle righe dei bot), il riassunto del
++// gruppo della plancia («oggi» del gruppo BOT CALCIO) e la scheda Posizioni
++// chiuse devono dire LO STESSO NUMERO per lo stesso giorno e la stessa moneta.
++// Prima la plancia contava per giorno di REGOLAMENTO sulle sole righe in
++// memoria; la scheda per giorno della PARTITA (dal database). Una partita di
++// ieri sera regolata dopo mezzanotte finiva «oggi» nella plancia e «ieri»
++// nella scheda.
++//
++// Finti: righe con le chiavi di `omega_trades` / `mike_trades` (le stesse dei
++// test di `useControlRoom`), e la lettura della giornata con le chiavi del
++// contratto del 01/10 (`giorno_partita`, `giorno_da`, `in_day`), costruita con
++// la funzione VERA della scheda (`righeDaRisposta`). Le TRE viste ricevono gli
++// STESSI finti.
++//
++// La barra del CONTO (regolato Betfair per giorno di regolamento) NON e' qui:
++// resta com'e' (fonte CONTO). Il conto in questo test NON e' letto, quindi la
++// cifra LIVE della plancia viene dalle righe dei bot (fonte BOT).
++//
++// FALSIFICAZIONE: vedi il referto `AUDIT_2026-10-01/RILIEVI_BASSI.md` (punto 1).
++// ============================================================================
++import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
++import { renderHook, waitFor, render } from '@testing-library/react';
++import { MemoryRouter } from 'react-router-dom';
++import type { OmegaTrade } from '@/lib/omega';
++import type { MikeTrade } from '@/lib/mike';
++
++vi.mock('@/lib/safeStrategyScan', async (orig) => ({
++    ...(await orig() as object),
++    fetchScanRows: vi.fn(async () => []),
++    fetchScanStatus: vi.fn(async () => null),
++    subscribeScanRows: vi.fn(() => () => { /* nessun evento */ }),
++    subscribeScanStatus: vi.fn(() => () => { /* nessun evento */ }),
++}));
++vi.mock('@/lib/omega', async (orig) => ({
++    ...(await orig() as object),
++    fetchOmegaState: vi.fn(async () => ({ control: null, aggregates: null, activity: [] })),
++    fetchOmegaTrades: vi.fn(async () => []),
++    fetchOmegaEvents: vi.fn(async () => []),
++    fetchManualRequests: vi.fn(async () => []),
++}));
++vi.mock('@/lib/safeBot', async (orig) => ({
++    ...(await orig() as object),
++    fetchSafeState: vi.fn(async () => ({ control: null, trades: [], aggregates: null })),
++    fetchRunnerState: vi.fn(async () => ({ ts: null, mode: null, ageS: null, up: false })),
++    fetchSafeRequests: vi.fn(async () => []),
++}));
++vi.mock('@/lib/mike', async (orig) => ({
++    ...(await orig() as object),
++    fetchMikeState: vi.fn(async () => ({ control: null, events: [], trades: [], activity: [], aggregates: null, requests: [], day_start: null, day_by: null })),
++    fetchMikeRequests: vi.fn(async () => []),
++}));
++vi.mock('@/lib/controlRoomProposte', async (orig) => ({
++    ...(await orig() as object),
++    fetchProposte: vi.fn(async () => []),
++    subscribeProposte: vi.fn(() => () => { /* nessun evento */ }),
++}));
++vi.mock('@/lib/omegaProposte', async (orig) => ({
++    ...(await orig() as object),
++    fetchProposteOmega: vi.fn(async () => []),
++    subscribeProposteOmega: vi.fn(() => () => { /* nessun evento */ }),
++}));
++vi.mock('@/lib/omegaMissions', async (orig) => ({
++    ...(await orig() as object),
++    fetchMissions: vi.fn(async () => ({ missions: [] })),
++}));
++vi.mock('@/lib/live', async (orig) => ({
++    ...(await orig() as object),
++    fetchLiveFollows: vi.fn(async () => []),
++}));
++vi.mock('@/lib/dailyHistory', async (orig) => ({
++    ...(await orig() as object),
++    fetchSafeDaily: vi.fn(async () => []),
++}));
++vi.mock('@/lib/tennis', async (orig) => ({
++    ...(await orig() as object),
++    fetchTennisFollows: vi.fn(async () => []),
++    fetchTennisBotServices: vi.fn(async () => []),
++    fetchTennisBotDaily: vi.fn(async () => []),
++    fetchTennisBotOrdersToday: vi.fn(async () => []),
++}));
++vi.mock('@/lib/localChannel', async (orig) => ({
++    ...(await orig() as object),
++    getLocalChannel: vi.fn(() => ({
++        getStatus: () => 'off' as const,
++        onStatus: () => () => { /* nessun cambio */ },
++        subscribe: () => () => { /* nessuna spinta */ },
++    })),
++    svegliaBot: vi.fn(),
++}));
++vi.mock('@/lib/liveOrders', async (orig) => ({
++    ...(await orig() as object),
++    fetchLiveAccount: vi.fn(async () => null),
++    subscribeLiveAccount: vi.fn(() => () => { /* nessuna spinta */ }),
++}));
++vi.mock('@/lib/scalperControlRoom', async (orig) => ({
++    ...(await orig() as object),
++    fetchScalperControlRoom: vi.fn(async () => ({ sessioni: [], ordini: [], lettoAt: null })),
++}));
++vi.mock('@/lib/scalper', async (orig) => ({
++    ...(await orig() as object),
++    fetchScalperState: vi.fn(async () => ({ control: null, activity: [] })),
++}));
++// la lettura della giornata: SOLO il lettore e' finto; `posizioniDellaGiornata`
++// e `righeDaRisposta` restano le vere
++vi.mock('@/lib/chiuseGiornata', async (orig) => ({
++    ...(await orig() as object),
++    chiuseGiornata: vi.fn(async () => { throw new Error('non letta'); }),
++}));
++
++import { fetchOmegaTrades } from '@/lib/omega';
++import { fetchMikeState } from '@/lib/mike';
++import { chiuseGiornata, righeDaRisposta, type ChiuseGiornata } from '@/lib/chiuseGiornata';
++import { useControlRoom } from '@/components/controlroom/useControlRoom';
++import { righeInterruttori } from '@/components/controlroom/righeBot';
++import { PannelloBot } from '@/components/controlroom/PannelloBot';
++import { PosizioniChiuse } from '@/components/controlroom/PosizioniChiuse';
++import type { ComandiInterruttori } from '@/lib/interruttori';
++
++// 15:00 di Roma del 01/10/2026 (ora legale: UTC+2)
++const ADESSO = Date.parse('2026-10-01T13:00:00.000Z');
++const OGGI = '2026-10-01';
++
++function tradeOmega(over: Partial<OmegaTrade> = {}): OmegaTrade {
++    return {
++        id: 900, event_id: 'E1', market_id: '1.1', selection_id: 1, side: 'back',
++        mode: 'live', price: 2, size: 10, liability: 0, status: 'won', pnl: 1,
++        placed_at: '2026-10-01T10:00:00.000Z', settled_at: '2026-10-01T11:50:00.000Z', origin: 'auto',
++        ...over,
++    } as OmegaTrade;
++}
++function tradeMike(over: Partial<MikeTrade> = {}): MikeTrade {
++    return {
++        id: 800, event_id: 'E2', market_id: '1.2', selection_id: 2, side: 'back',
++        mode: 'live', price: 2, size: 9, liability: 0, status: 'won', pnl: 0.8,
++        placed_at: '2026-10-01T09:00:00.000Z', settled_at: '2026-10-01T10:30:00.000Z', origin: 'auto',
++        ...over,
++    } as MikeTrade;
++}
++/** le chiavi del contratto del 01/10, come le aggiunge la lettura del database */
++const DEL_GIORNO = { giorno_partita: OGGI, giorno_da: 'partita', in_day: true } as const;
++
++// -- IN MEMORIA (lettura dei 30 s): nessuna chiave del giorno --------------
++// 501: partita di IERI sera (22:30 di Roma), regolata alle 00:40 di OGGI
++const O501 = tradeOmega({ id: 501, event_id: 'E501', pnl: 4,
++    placed_at: '2026-09-30T20:30:00.000Z', settled_at: '2026-09-30T22:40:00.000Z' });
++// 502: partita di oggi, gia' confermata dal database
++const O502 = tradeOmega({ id: 502, event_id: 'E502', pnl: 1.5 });
++// 503: regolata 2 minuti fa, la lettura non la porta ancora: PROVVISORIA, conta oggi
++const O503 = tradeOmega({ id: 503, event_id: 'E503', status: 'lost', pnl: -0.5,
++    placed_at: '2026-10-01T12:00:00.000Z', settled_at: '2026-10-01T12:58:00.000Z' });
++// Mike 7001 + copertura 7002
++const M7001 = tradeMike({ id: 7001, event_id: 'E7', pnl: 2.25 });
++const M7002 = tradeMike({ id: 7002, event_id: 'E7', side: 'lay', status: 'lost', pnl: -1, closes_trade_id: 7001 } as Partial<MikeTrade>);
++
++// -- LA LETTURA DELLA GIORNATA (stessa per le tre viste) -------------------
++// Mike 7010: fuori dalla finestra della memoria, solo nella lettura
++const M7010 = tradeMike({ id: 7010, event_id: 'E70', pnl: 0.8 });
++function lettura(): ChiuseGiornata {
++    const righe = righeDaRisposta({
++        omega: [{ ...O502, ...DEL_GIORNO }],
++        safe: [],
++        mike: [{ ...M7001, ...DEL_GIORNO }, { ...M7002, ...DEL_GIORNO }, { ...M7010, ...DEL_GIORNO }],
++        tennis: [],
++    });
++    return {
++        giorno: OGGI, modo: 'live', righe, fonte: 'rpc', avvisi: [], lettoAlle: ADESSO,
++        giornoPartita: true, chiestoAlle: ADESSO,
++    };
++}
++
++// Omega = 502 + 503 = 1,50 - 0,50 = 1,00 (la 501 e' di IERI)
++// Mike  = 7001 + 7002 + 7010 = 2,25 - 1,00 + 0,80 = 2,05
++const ATTESO_OMEGA = 1;
++const ATTESO_MIKE = 2.05;
++const ATTESO_TOTALE = 3.05;
++
++function comandiFinti(): ComandiInterruttori {
++    return {
++        accendi: vi.fn(async () => {}), spegni: vi.fn(async () => {}),
++        cambiaModalita: vi.fn(async () => {}), cambiaImporto: vi.fn(async () => {}),
++        fermaBot: vi.fn(async () => {}), scriviAccensioni: vi.fn(async () => {}),
++        cambiaModalitaServizio: vi.fn(async () => {}),
++    };
++}
++
++beforeEach(() => {
++    vi.useFakeTimers({ toFake: ['Date'] });
++    vi.setSystemTime(ADESSO);
++    vi.mocked(fetchOmegaTrades).mockResolvedValue([O501, O502, O503]);
++    vi.mocked(fetchMikeState).mockResolvedValue({
++        control: null, events: [], trades: [M7001, M7002], activity: [], aggregates: null,
++        requests: [], day_start: null, day_by: null,
++    } as never);
++    vi.mocked(chiuseGiornata).mockImplementation(async () => lettura());
++});
++afterEach(() => {
++    vi.useRealTimers();
++    vi.mocked(chiuseGiornata).mockReset();
++});
++
++async function modello() {
++    const { result } = renderHook(() => useControlRoom());
++    await waitFor(() => expect(result.current.caricamento).toBe(false));
++    await waitFor(() => {
++        const o = result.current.bots.find((b) => b.bot === 'omega');
++        expect(o?.pnlOggi).toBe(ATTESO_OMEGA);
++    });
++    return result;
++}
++
++describe('punto 1: plancia, riassunto del gruppo e scheda Chiuse = stesso numero (giorno della PARTITA)', () => {
++    it('la plancia legge la giornata di oggi in SOLDI VERI con la lettura della scheda', async () => {
++        await modello();
++        expect(chiuseGiornata).toHaveBeenCalled();
++        for (const c of vi.mocked(chiuseGiornata).mock.calls) {
++            expect(c[0]).toBe(OGGI);
++            expect(c[1]).toBe('live');
++        }
++    });
++
++    it('per bot: Omega 1,00 (la partita di IERI regolata stanotte NON e\' di oggi), Mike 2,05', async () => {
++        const vm = (await modello()).current;
++        const omega = vm.bots.find((b) => b.bot === 'omega')!;
++        const mike = vm.bots.find((b) => b.bot === 'mike')!;
++        expect(omega.pnlOggi).toBe(ATTESO_OMEGA);
++        expect(mike.pnlOggi).toBe(ATTESO_MIKE);
++        expect(omega.fonteOggiLive?.fonte).toBe('bot');
++        // la 503 non ha ancora il giorno del database: contata, ma DICHIARATA
++        expect(omega.fonteOggiLive?.nota ?? '').toContain('1 chiusa senza il giorno della partita');
++        expect(omega.fonteOggiLive?.nota ?? '').toContain('regolamento');
++        expect(mike.fonteOggiLive?.nota ?? '').not.toContain('senza il giorno della partita');
++        // la posizione di ieri e' fuori dal giorno anche per il contatore
++        const p501 = vm.chiuse.find((p) => p.bot === 'omega' && p.id === 501)!;
++        expect(vm.chiuseEscluse?.has(p501)).toBe(true);
++    });
++
++    it('le TRE viste con gli stessi finti: plancia = riassunto del gruppo = scheda Chiuse', async () => {
++        const vm = (await modello()).current;
++        // 1) la plancia, per bot
++        const omega = vm.bots.find((b) => b.bot === 'omega')!;
++        const mike = vm.bots.find((b) => b.bot === 'mike')!;
++        const plancia = Math.round(((omega.pnlOggi ?? 0) + (mike.pnlOggi ?? 0)) * 100) / 100;
++        expect(plancia).toBe(ATTESO_TOTALE);
++
++        // 2) il riassunto del gruppo BOT CALCIO (Omega e Mike accesi in LIVE)
++        const accesi = vm.bots
++            .filter((b) => b.bot === 'omega' || b.bot === 'mike')
++            .map((b) => ({ ...b, inCorsa: true, modalita: 'live' as const }));
++        const g = render(<PannelloBot righe={righeInterruttori(accesi, 'calcio')} importi={{}} comandi={comandiFinti()} />);
++        expect(g.getByTestId('cr-bot-pnl-omega').textContent).toContain('1,00');
++        expect(g.getByTestId('cr-bot-pnl-mike').textContent).toContain('2,05');
++        expect(g.getByTestId('cr-pannello-bot-gruppo-calcio-oggi-live').textContent).toContain('3,05');
++        g.unmount();
++
++        // 3) la scheda Posizioni chiuse di oggi, soldi veri, con la STESSA lettura
++        const s = render(<MemoryRouter><PosizioniChiuse righe={vm.righeChiuse} chiuse={vm.chiuse} sport={null}
++            giorno={OGGI} leggiGiornata={async () => lettura()} /></MemoryRouter>);
++        await waitFor(() => expect(s.getByTestId('cr-chiuse-totale').textContent).toContain('3,05'));
++        expect(s.getByTestId('cr-chiuse-totale').textContent).not.toContain('7,05');
++    });
++
++    it('senza lettura (database non raggiunto): ripiego al REGOLAMENTO, dichiarato', async () => {
++        vi.mocked(chiuseGiornata).mockImplementation(async () => { throw new Error('giu'); });
++        const { result } = renderHook(() => useControlRoom());
++        await waitFor(() => expect(result.current.caricamento).toBe(false));
++        await waitFor(() => expect(chiuseGiornata).toHaveBeenCalled());
++        const omega = result.current.bots.find((b) => b.bot === 'omega')!;
++        // 501 (regolata oggi) + 502 + 503: il criterio di prima, ma DETTO
++        expect(omega.pnlOggi).toBe(5);
++        expect(omega.fonteOggiLive?.nota ?? '').toContain('3 chiuse senza il giorno della partita');
++    });
++});
