@@ -574,6 +574,17 @@
         position: relative;
     }
 
+    /* le pagine «a tutta altezza» di oggi (min-h-screen / h-screen) dentro il guscio
+       sono alte quanto il contenitore, non quanto la finestra: senza, scorrerebbero
+       di 56 px (l'altezza della testata). Vale solo per la radice della pagina. */
+    .ds-contenuto > .min-h-screen {
+        min-height: 100%;
+    }
+
+    .ds-contenuto > .h-screen {
+        height: 100%;
+    }
+
     .ds-stat {
         @apply relative flex items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-[11.5px];
         height: 30px;
@@ -726,4 +737,12 @@
         background: hsl(var(--muted));
         color: hsl(var(--muted-foreground));
     }
+}
+
+/* GUSCIO V2 — col guscio acceso le sole voci di PURA navigazione duplicata delle
+   testate di oggi (brand, «Dashboard», «Cambia sport», «Watchlist», «Report»,
+   «Analytics») spariscono: c'e' la sidebar. Mai comandi. Con 'off' nessun
+   elemento ha data-shell="v2" sopra di se': la regola non scatta. */
+[data-shell="v2"] [data-nav-legacy] {
+    display: none !important;
 }
