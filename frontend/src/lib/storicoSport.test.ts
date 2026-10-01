@@ -24,7 +24,7 @@ import {
     rigaGiornalieraTennisBot,
     type SerieBot, type ModoStorico, type BotStorico,
 } from './storicoSport';
-import { normalizeDailyRow, type DailyRow } from './dailyHistory';
+import { normalizeDailyRow, periodRange, PERIOD_LABEL, coperturaTutto, type DailyRow } from './dailyHistory';
 import { posizioniChiuse, riepilogoChiuse, rigaDaOrdineTennis, nettoOrdineTennis, type TradeChiudibile } from './posizioniChiuse';
 import type { TennisBotDailyRow, TennisBotOrderRow } from './tennis';
 
@@ -105,12 +105,39 @@ describe('intervalli: oggi, 7 giorni, 30 giorni, mese, tutto', () => {
         expect(() => intervalloRange('7g', '17/09/2026')).toThrow();
     });
     it('ogni intervallo ha un\'etichetta in italiano', () => {
-        for (const k of ['oggi', '7g', '30g', 'mese', 'tutto'] as const) {
+        for (const k of ['oggi', '7g', '30g', '90g', 'mese', 'tutto'] as const) {
             expect(INTERVALLO_LABEL[k]).toBeTruthy();
         }
     });
-    it('B-14 (01/10): «tutto» dice quello che e\' (gli ultimi 400 giorni)', () => {
-        expect(INTERVALLO_LABEL.tutto).toBe('Ultimi 400 giorni');
+    // B-14 rivisto (rilievi bassi 01/10): l'etichetta «Ultimi 400 giorni» e'
+    // diventata «Tutto», UGUALE agli storici dei bot; quanti giorni copre
+    // davvero lo dice la riga sotto i filtri (`coperturaTutto`), non l'etichetta.
+    it('B-14: STESSE etichette e STESSI intervalli degli storici dei bot', () => {
+        expect(INTERVALLO_LABEL['7g']).toBe(PERIOD_LABEL['7d']);
+        expect(INTERVALLO_LABEL['30g']).toBe(PERIOD_LABEL['30d']);
+        expect(INTERVALLO_LABEL['90g']).toBe(PERIOD_LABEL['90d']);
+        expect(INTERVALLO_LABEL.mese).toBe(PERIOD_LABEL.month);
+        expect(INTERVALLO_LABEL.tutto).toBe('Tutto');
+        expect(INTERVALLO_LABEL.tutto).toBe(PERIOD_LABEL.all);
+        const oggi = '2026-10-01';
+        expect(intervalloRange('7g', oggi)).toEqual(periodRange('7d', oggi));
+        expect(intervalloRange('90g', oggi)).toEqual({ from: '2026-07-04', to: oggi });
+        expect(intervalloRange('90g', oggi)).toEqual(periodRange('90d', oggi));
+        expect(intervalloRange('tutto', oggi)).toEqual(periodRange('all', oggi));
+    });
+    it('B-14: «Tutto» dice quanti giorni copre davvero, e la finestra ridotta dal database', () => {
+        const r = periodRange('all', '2026-10-01');
+        const righe = [normalizeDailyRow(rigaRpc('2026-09-20', 1)), normalizeDailyRow(rigaRpc('2026-09-30', -1))]
+            .filter((x): x is DailyRow => x != null);
+        const t = coperturaTutto(righe, r);
+        expect(t).toContain('al massimo gli ultimi 400 giorni');
+        expect(t).toContain('primo giorno con operazioni: 20 settembre 2026, quindi 12 giorni coperti');
+        expect(t).not.toContain('ridotto');
+        const ridotte = [normalizeDailyRow(rigaRpc('2026-09-20', 1, { window_clamped: true, window_from: '2025-08-27' }))]
+            .filter((x): x is DailyRow => x != null);
+        expect(ridotte[0].window_clamped).toBe(true);
+        expect(coperturaTutto(ridotte, r)).toContain('il database ha ridotto la finestra (dal 27 agosto 2025)');
+        expect(coperturaTutto([], r)).toContain('nessun giorno con operazioni');
     });
 });
 

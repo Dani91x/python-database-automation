@@ -65,9 +65,10 @@ import {
 } from '@/lib/tennis';
 import { fetchLiveFollows } from '@/lib/live';
 import {
-    posizioniChiuse, rigaDaOrdineTennis, SOGLIA_PARI, pnlChiuseDelGiorno,
+    posizioniChiuse, rigaDaOrdineTennis, statoDaNetto, pnlChiuseDelGiorno, chiuseDelBot,
     type PosizioneChiusa, type TradeChiudibile,
 } from '@/lib/posizioniChiuse';
+import { chiuseGiornata, posizioniDellaGiornata, type ChiuseGiornata } from '@/lib/chiuseGiornata';
 import type { RigaOrdine } from '@/lib/statoOrdine';
 import type { DatiChiusuraAlMs } from '@/lib/chiusuraAlMs';
 import {
@@ -131,8 +132,7 @@ import {
     type OrdiniContoStato,
 } from './ordiniConto';
 // P3 (30/09) - la fascia «SOLDI VERI ADESSO» della testata (campo additivo)
-import { leggiSaldoDalCanale, saldoPiuRecente, type SaldoDalCanale } from '@/lib/saldoBetfair';
-import { CANALI_SALDO } from './SaldoBetfairCard';
+import { leggiSaldoDalCanale, saldoPiuRecente, CANALI_SALDO, type SaldoDalCanale } from '@/lib/saldoBetfair';
 import {
     contoAdesso, rischioBotLive, scartoContoBot, partiteConPosizione,
     type SoldiVeriTestata,
@@ -894,8 +894,14 @@ export interface ControlRoomVM {
     bots: StatoBot[];
     posizioni: PosizioneAperta[];
     /** posizioni GIA' CHIUSE: apertura + coperture, con il P&L della posizione
-     *  intera. Le gambe di copertura non sono posizioni proprie. */
-    chiuse: PosizioneChiusa[];
+     *  intera. Le gambe di copertura non sono posizioni proprie.
+     *  01/10 (rilievi bassi, punto 1): unite alla lettura della giornata di
+     *  OGGI in soldi veri (`posizioniDellaGiornata`), quindi col giorno della
+     *  PARTITA quando il database lo porta, come nella scheda Posizioni chiuse. */
+    chiuse: readonly PosizioneChiusa[];
+    /** 01/10 - le posizioni che la lettura di oggi dice di partite di ALTRI
+     *  giorni (fuori da «oggi», come nella scheda). Assente = nessuna. */
+    chiuseEscluse?: ReadonlySet<PosizioneChiusa>;
     /** 24/09 - le righe GREZZE da cui `chiuse` e' costruita (7 bot, stesso
      *  contratto): la scheda le unisce alle giornate lette dal database */
     righeChiuse: TradeChiudibile[];
@@ -1890,8 +1896,8 @@ export function useControlRoom(): ControlRoomVM {
     // --------------------------------------------------- conto Betfair (R4)
     // NON entra nel poll dei 30 s (`FONTI_RICARICA`/`Promise.allSettled`): il
     // 13/09 il database e' andato giu' per budget IO esaurito, ed e' vietato
-    // aggiungere una lettura al giro pieno. Si riusa lo STESSO schema di
-    // `SaldoBetfairCard.tsx` (autosufficiente, gia' in pagina): UNA lettura
+    // aggiungere una lettura al giro pieno. Si riusa lo STESSO schema della
+    // vecchia card del saldo (cancellata il 01/10, non era piu' montata): UNA lettura
     // ONE-SHOT al montaggio + push Realtime sulla STESSA riga singleton
     // `betfair_live_account` — nessuna tabella nuova, nessun polling in piu'.
     useEffect(() => {
@@ -1913,8 +1919,8 @@ export function useControlRoom(): ControlRoomVM {
     }, []);
 
     // P3 (30/09) - IL SALDO DAI CANALI, per la testata. Solo ASCOLTO sui
-    // canali singleton gia' aperti dalla pagina (`CANALI_SALDO`, gli stessi di
-    // `SaldoBetfairCard`): nessuna lettura del database, nessuna porta nuova,
+    // canali singleton gia' aperti dalla pagina (`CANALI_SALDO`, in
+    // `lib/saldoBetfair`): nessuna lettura del database, nessuna porta nuova,
     // nessun poll. La riga del database e' `liveAccount`, gia' qui sopra.
     useEffect(() => {
         let vivo = true;
@@ -2672,7 +2678,7 @@ export function useControlRoom(): ControlRoomVM {
                 event_name: v.s.event_name ?? null,
                 sport: 'calcio',
                 mode: 'live',
-                status: netto > SOGLIA_PARI ? 'won' : netto < -SOGLIA_PARI ? 'lost' : 'void',
+                status: statoDaNetto(netto),
                 pnl: netto,
                 pnl_betfair: netto,
                 side: null, price: null, size: v.esp.abbinato,
@@ -2719,16 +2725,64 @@ export function useControlRoom(): ControlRoomVM {
         return righe;
     }, [omegaTrades, safe?.trades, mike?.trades, tennisOrdini, nomiPartite, righeChiuseScalper]);
 
-    const chiuse = useMemo<PosizioneChiusa[]>(() => posizioniChiuse(righeChiuse), [righeChiuse]);
+    const chiuseMemoria = useMemo<PosizioneChiusa[]>(() => posizioniChiuse(righeChiuse), [righeChiuse]);
+
+    // 01/10 (rilievi bassi, punto 1) - LA GIORNATA DI OGGI COME NELLA SCHEDA
+    // POSIZIONI CHIUSE. Le righe in memoria non portano il giorno della
+    // partita: si uniscono alla STESSA lettura della scheda (`chiuseGiornata`,
+    // memoria condivisa per giornata e modalita', scade dopo 60 s) con la
+    // STESSA funzione (`posizioniDellaGiornata`). Si legge SOLO soldi veri
+    // (la plancia usa queste posizioni solo per il LIVE) e SOLO quando c'e'
+    // almeno una posizione di oggi ancora senza il giorno del database:
+    // al massimo una lettura al minuto, nessuna se non c'e' niente da
+    // confermare. Senza lettura le posizioni restano sul giorno di
+    // REGOLAMENTO, provvisorie e dichiarate (nota della plancia).
+    const giornoOggi = useMemo(() => romeDay(new Date(nowMs)), [nowMs]);
+    const [letturaOggiLive, setLetturaOggiLive] = useState<ChiuseGiornata | null>(null);
+    const giornataLive = useMemo(() => posizioniDellaGiornata(
+        righeChiuse, chiuseMemoria,
+        letturaOggiLive && letturaOggiLive.giorno === giornoOggi && letturaOggiLive.modo === 'live'
+            ? letturaOggiLive : null,
+        giornoOggi,
+    ), [righeChiuse, chiuseMemoria, letturaOggiLive, giornoOggi]);
+    const chiuse = giornataLive.posizioni;
+    const daConfermare = useMemo(() => giornataLive.posizioni
+        .filter((p) => p.modo === 'live' && !p.giornoConfermato && p.giorno === giornoOggi
+            && !giornataLive.escluse.has(p))
+        .map((p) => `${p.bot}:${p.id}`).sort().join(','), [giornataLive, giornoOggi]);
+    const minutoLettura = daConfermare ? Math.floor(nowMs / 60_000) : 0;
+    useEffect(() => {
+        if (!daConfermare) return undefined;
+        let vivo = true;
+        chiuseGiornata(giornoOggi, 'live', { oggi: giornoOggi }).then(
+            (d) => { if (vivo) setLetturaOggiLive(d); },
+            () => { /* lettura fallita: resta il regolamento, provvisorio e dichiarato */ },
+        );
+        return () => { vivo = false; };
+    }, [giornoOggi, daConfermare, minutoLettura]);
 
     // 26/09 (F-1, e2e fase 3) - IL P&L «OGGI» DI OMEGA/MIKE/SAFE nella plancia,
     // dalle STESSE posizioni chiuse della scheda (giorno di REGOLAMENTO, una
     // modalita' per volta, netto). Prima era `null` («oggi —») mentre le
     // Chiuse della stessa pagina dicevano +0,95 / +0,79 €.
     const botsConPnl = useMemo<StatoBot[]>(() => {
-        const giorno = romeDay(new Date(nowMs));
+        const giorno = giornoOggi;
+        const escluse = giornataLive.escluse;
         const di = (bot: Bot, modo: 'live' | 'paper', strategia?: string) =>
-            pnlChiuseDelGiorno(chiuse, { giorno, bot, modo, strategia });
+            pnlChiuseDelGiorno(chiuse, { giorno, bot, modo, strategia, escluse });
+        // 01/10 (punto 1): quante chiuse di oggi del bot sono ancora sul giorno
+        // di REGOLAMENTO (il database non ha ancora detto il giorno della partita)
+        const provvisorie = (bot: Bot, strategia?: string): string | null => {
+            const n = chiuseDelBot(chiuse, { giorno, bot, modo: 'live', strategia, escluse })
+                .filter((p) => !p.giornoConfermato).length;
+            return n > 0
+                ? `${n} ${n === 1 ? 'chiusa' : 'chiuse'} senza il giorno della partita dal database: contate nel giorno di regolamento (provvisorie)`
+                : null;
+        };
+        const unisci = (...note: (string | null)[]): string | null => {
+            const v = note.filter((x): x is string => !!x);
+            return v.length ? v.join(' \u00b7 ') : null;
+        };
         // 30/09 (P8bis): IN PROVA la cifra di oggi e' per partite di OGGI; gli
         // arretrati (partite di giorni precedenti regolate oggi) a parte, con la
         // STESSA regola e fonte della corsia PROVA (`lib/provaGiornata.ts`). Il
@@ -2745,7 +2799,8 @@ export function useControlRoom(): ControlRoomVM {
         // 0,00 € «nessuna regolata oggi»; non letto = null («—»). Il paper non
         // passa mai di qui.
         const etaConto = etaContoS(pnlRealeOggi?.letto_at, nowMs);
-        const liveDi = (fonte: FonteReale | null, dalleRighe: number | null, nota: string | null = null):
+        const liveDi = (fonte: FonteReale | null, dalleRighe: number | null, nota: string | null = null,
+            notaRighe: string | null = null):
             { valore: number | null; f: FonteOggiLive | null } => {
             if (pnlRealeOggi && fonte) {
                 const pf = pnlRealeOggi.per_fonte[fonte];
@@ -2755,21 +2810,22 @@ export function useControlRoom(): ControlRoomVM {
                     f: { fonte: 'conto', vuoto, etaS: etaConto === undefined ? null : etaConto, nota },
                 };
             }
-            if (dalleRighe != null) return { valore: dalleRighe, f: { fonte: 'bot', vuoto: false, nota } };
+            if (dalleRighe != null) return { valore: dalleRighe, f: { fonte: 'bot', vuoto: false, nota: unisci(nota, notaRighe) } };
             if (soldiLetti) return { valore: 0, f: { fonte: 'bot', vuoto: true, nota } };
             return { valore: null, f: null };
         };
         return bots.map((b) => {
             if (b.bot === 'omega') {
                 const p = provaDellaRiga(pOmega);
-                const l = liveDi('omega', di(b.bot, 'live'));
+                const l = liveDi('omega', di(b.bot, 'live'), null, provvisorie('omega'));
                 return { ...b, pnlOggi: l.valore, fonteOggiLive: l.f, pnlOggiPaper: p.oggi, arretratiPaper: p.arretrati };
             }
             if (b.bot === 'mike') {
                 // review incrociata 30/09 (M3): dalle RIGHE (conto non letto) la cifra
                 // comprende anche gli ordini dell'utente sulle partite di Mike
                 const l = liveDi('mike', di(b.bot, 'live'),
-                    'righe di Mike: comprendono anche gli ordini fatti dall\'utente sulle sue partite');
+                    'righe di Mike: comprendono anche gli ordini fatti dall\'utente sulle sue partite',
+                    provvisorie('mike'));
                 return {
                     ...b, pnlOggi: l.valore, fonteOggiLive: l.f, pnlOggiPaper: provaDellaRiga(pMike).oggi,
                     arretratiPaper: arretratiMike,
@@ -2786,16 +2842,17 @@ export function useControlRoom(): ControlRoomVM {
                     // la strategia tennis e' tutto il tennis di Safe; quelle del calcio
                     // restano dalle righe del bot, e lo si dice
                     const l = k === 'tennis'
-                        ? liveDi('safe_tennis', di('safe', 'live', k))
+                        ? liveDi('safe_tennis', di('safe', 'live', k), null, provvisorie('safe', k))
                         : liveDi(null, di('safe', 'live', k),
-                            pnlRealeOggi ? 'il conto separa Safe solo per sport: per strategia la cifra viene dalle righe del bot' : null);
+                            pnlRealeOggi ? 'il conto separa Safe solo per sport: per strategia la cifra viene dalle righe del bot' : null,
+                            provvisorie('safe', k));
                     perStr[k] = { live: l.valore, fonteLive: l.f, paper: p.oggi, arretratiPaper: p.arretrati };
                 }
                 return { ...b, pnlOggiPerStrategia: perStr };
             }
             return b;
         });
-    }, [bots, chiuse, nowMs, provaPerBot, provaOggi, pnlRealeOggi, soldiLetti]);
+    }, [bots, chiuse, giornataLive, giornoOggi, nowMs, provaPerBot, provaOggi, pnlRealeOggi, soldiLetti]);
 
     /**
      * Quanto vale chiudere ADESSO, con la matematica condivisa del green-up.
@@ -4041,7 +4098,7 @@ export function useControlRoom(): ControlRoomVM {
         provaGiornata: provaOggi,
         contoLettoAt: pnlRealeOggi?.letto_at ?? null,
         apertoAdesso: soldiLetti ? apertoOggi : null,
-        bots: botsConPnl, posizioni, chiuse, righeChiuse, registrazioni, copertura,
+        bots: botsConPnl, posizioni, chiuse, chiuseEscluse: giornataLive.escluse, righeChiuse, registrazioni, copertura,
         freni: safe?.control?.stats?.risk ?? null,
         soldiVeri,
         stopPerdita,

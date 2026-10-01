@@ -8,7 +8,7 @@
 // ============================================================================
 import { describe, it, expect } from 'vitest';
 import {
-    posizioniChiuse, filtraChiuse, riepilogoChiuse, esitoDi, fuoriGiornata,
+    posizioniChiuse, filtraChiuse, riepilogoChiuse, esitoDi, statoDaNetto, fuoriGiornata,
     unisciRighe, regolatoNelGiorno, aCavalloDellaMezzanotte, giornoDalDatabase, rigaDaOrdineTennis,
     type TradeChiudibile,
 } from './posizioniChiuse';
@@ -105,6 +105,29 @@ describe('esito — un centesimo di arrotondamento non è una vittoria', () => {
         expect(esitoDi(-0.03)).toBe('persa');
         expect(esitoDi(0)).toBe('pari');
         expect(esitoDi(0.001)).toBe('pari');
+    });
+});
+
+// C-05 (01/10, rilievi bassi): l'esito con la regola del DATABASE (zero esatto
+// al centesimo: `total_pnl > 0` vinta, `< 0` persa). FALSIFICAZIONE: rimettendo
+// la soglia di +/-0,005 (`pnl > 0.005`) i casi di mezzo centesimo diventano rossi.
+describe('C-05: «pari» = zero esatto al centesimo, come il database', () => {
+    it('mezzo centesimo si porta al centesimo, in modo simmetrico', () => {
+        expect(esitoDi(0.005)).toBe('vinta');
+        expect(esitoDi(-0.005)).toBe('persa');
+        expect(esitoDi(0.004)).toBe('pari');
+        expect(esitoDi(-0.004)).toBe('pari');
+    });
+    it('il residuo di un calcolo in virgola mobile non diventa una vinta', () => {
+        expect(0.1 + 0.2 - 0.3).toBeGreaterThan(0);
+        expect(esitoDi(0.1 + 0.2 - 0.3)).toBe('pari');
+    });
+    it('un centesimo basta per un esito; lo stato di una riga tennis segue la stessa regola', () => {
+        expect(esitoDi(0.01)).toBe('vinta');
+        expect(esitoDi(-0.01)).toBe('persa');
+        expect(statoDaNetto(0.005)).toBe('won');
+        expect(statoDaNetto(-0.005)).toBe('lost');
+        expect(statoDaNetto(0)).toBe('void');
     });
 });
 

@@ -183,9 +183,17 @@ describe('R_T (30/09) + 01/10 - frasi chiare, mai criptiche', () => {
         mostra({ conto: stopDelConto(RIGA_OGGI, NOW), bot: bot() });
         const el = screen.getByTestId('cr-stop-altri');
         expect(el.textContent).toBe(NOTA_TENNIS_SCALPER.testo);
-        expect(el.textContent).toMatch(/Tennis e Scalper: nessuno stop proprio/);
+        // R-07 (rilievi bassi 01/10): «giornaliero» e i due tetti dello scalper.
+        // Cambiato di proposito: prima «nessuno stop proprio» faceva credere che
+        // lo scalper non avesse nessun limite.
+        expect(el.textContent).toMatch(/Tennis e Scalper: nessuno stop giornaliero proprio/);
         expect(el.textContent).toMatch(/non lo fanno scattare/);
+        expect(el.textContent).toMatch(/perdita massima per partita/);
+        expect(el.textContent).toMatch(/esposizione massima per selezione/);
         expect(el.getAttribute('title')).toMatch(/runner calcio/);
+        expect(el.getAttribute('title')).toMatch(/1,50 EUR/);
+        // nessun nome di tabella a schermo
+        expect(el.getAttribute('title')).not.toMatch(/betfair_live_settled/);
     });
 });
 

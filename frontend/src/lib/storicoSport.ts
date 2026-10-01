@@ -23,7 +23,7 @@
 // ============================================================================
 import type { EquityPoint } from '@/components/trading/EquityCurve';
 import {
-    equityByDay, addDays, romeDay, MAX_HISTORY_DAYS,
+    equityByDay, romeDay, periodRange, PERIOD_LABEL,
     fetchSafeDaily, fetchMikeDaily, fetchOmegaDailyPerModo, fetchStakePerGiorno,
     fetchSafeDayTrades, fetchMikeDayTrades, fetchOmegaDayTradesPerModo,
     type DailyRow, type DayTrade, type HistoryVariant,
@@ -113,15 +113,21 @@ export function rottaStorico(sport: SportStorico): string {
 
 // ------------------------------------------------------------- intervalli
 
-export type IntervalloKind = 'oggi' | '7g' | '30g' | 'mese' | 'tutto';
+export type IntervalloKind = 'oggi' | '7g' | '30g' | '90g' | 'mese' | 'tutto';
 
+/**
+ * B-14 (01/10, rilievi bassi): le STESSE etichette e lo STESSO significato
+ * degli storici dei bot (`PERIOD_LABEL`/`periodRange` in `lib/dailyHistory`):
+ * 7 / 30 / 90 giorni, mese corrente e «Tutto» (= gli ultimi 400 giorni, detto
+ * a schermo da `coperturaTutto`). «Oggi» resta solo qui.
+ */
 export const INTERVALLO_LABEL: Record<IntervalloKind, string> = {
     oggi: 'Oggi',
-    '7g': '7 giorni',
-    '30g': '30 giorni',
-    mese: 'Mese corrente',
-    // B-14 (01/10): «Tutto» era in realta' il tetto di 400 giorni, senza dirlo
-    tutto: `Ultimi ${MAX_HISTORY_DAYS} giorni`,
+    '7g': PERIOD_LABEL['7d'],
+    '30g': PERIOD_LABEL['30d'],
+    '90g': PERIOD_LABEL['90d'],
+    mese: PERIOD_LABEL.month,
+    tutto: PERIOD_LABEL.all,
 };
 
 /** Intervallo [from, to] inclusivo di un ambito, rispetto alla giornata `oggi`. */
@@ -129,13 +135,15 @@ export function intervalloRange(kind: IntervalloKind, oggi: string): { from: str
     if (!/^\d{4}-\d{2}-\d{2}$/.test(oggi)) throw new RangeError(`giorno non valido: ${oggi}`);
     switch (kind) {
         case 'oggi': return { from: oggi, to: oggi };
-        case '7g': return { from: addDays(oggi, -6), to: oggi };
-        case '30g': return { from: addDays(oggi, -29), to: oggi };
-        case 'mese': return { from: `${oggi.slice(0, 7)}-01`, to: oggi };
+        // B-14: gli stessi intervalli degli storici dei bot, dalla stessa funzione
+        case '7g': return periodRange('7d', oggi);
+        case '30g': return periodRange('30d', oggi);
+        case '90g': return periodRange('90d', oggi);
+        case 'mese': return periodRange('month', oggi);
         // «tutto» dentro il tetto del motore condiviso (M-17: oltre 400 giorni
         // la RPC restringe da sola e lo dichiara). Chiedere 10 anni per poi
         // riceverne uno sarebbe una promessa non mantenuta.
-        case 'tutto': return { from: addDays(oggi, -(MAX_HISTORY_DAYS - 1)), to: oggi };
+        case 'tutto': return periodRange('all', oggi);
     }
 }
 

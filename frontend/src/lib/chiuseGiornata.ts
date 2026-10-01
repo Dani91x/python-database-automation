@@ -29,7 +29,10 @@ import {
     type DayTrade,
 } from '@/lib/dailyHistory';
 import type { TennisBotOrderRow } from '@/lib/tennis';
-import { haGiornoDb, rigaDaOrdineTennis, type TradeChiudibile } from '@/lib/posizioniChiuse';
+import {
+    haGiornoDb, posizioniChiuse, rigaDaOrdineTennis, unisciRighe,
+    type PosizioneChiusa, type TradeChiudibile,
+} from '@/lib/posizioniChiuse';
 
 export const RPC_CHIUSE_GIORNATA = 'get_posizioni_chiuse_giornata';
 
@@ -152,6 +155,58 @@ export async function leggiChiuseGiornata(giorno: string, modo: Modo): Promise<C
         giorno, modo, righe, fonte: 'rpc', avvisi: [], lettoAlle: Date.now(),
         giornoPartita: giornoPartitaDi(righe), chiestoAlle,
     };
+}
+
+// ------------------------------------------- le posizioni di UNA giornata
+/**
+ * 01/10 - una riga regolata piu' di questo PRIMA che partisse la lettura del
+ * giorno, e che la lettura (col giorno della partita) non porta, NON e' di
+ * quella giornata: e' di una partita di un altro giorno. Il margine copre il
+ * ritardo fra il regolamento di Betfair e la scrittura della riga.
+ */
+export const MARGINE_LETTURA_MS = 5 * 60_000;
+
+export interface PosizioniDellaGiornata {
+    /** memoria + righe lette, con il giorno del database ereditato */
+    posizioni: readonly PosizioneChiusa[];
+    /** posizioni in memoria SENZA il giorno del database che la lettura dice
+     *  di un altro giorno (partite di altri giorni): fuori dal giorno e dal totale */
+    escluse: ReadonlySet<PosizioneChiusa>;
+}
+
+const NESSUNA = new Set<PosizioneChiusa>();
+
+/**
+ * 01/10 (rilievi bassi, punto 1) - LA REGOLA UNICA con cui la scheda
+ * Posizioni chiuse e la plancia «oggi per bot» fanno la giornata: le righe in
+ * memoria si uniscono alla lettura della giornata (`unisciRighe`: la memoria
+ * eredita `giorno_partita`/`giorno_da`/`in_day` dal database), le posizioni si
+ * costruiscono UNA volta e, se la lettura porta il giorno della partita, quelle
+ * in memoria ancora senza giorno, regolate ben prima della lettura e che la
+ * lettura non porta, si escludono (`MARGINE_LETTURA_MS`). Le righe senza il
+ * dato restano sul giorno di REGOLAMENTO, provvisorie (`giornoConfermato`
+ * false): il client non calcola mai il giorno della partita.
+ */
+export function posizioniDellaGiornata(
+    righe: readonly TradeChiudibile[],
+    chiuse: readonly PosizioneChiusa[] | undefined,
+    lettura: Pick<ChiuseGiornata, 'righe' | 'giornoPartita' | 'chiestoAlle'> | null,
+    giorno: string,
+): PosizioniDellaGiornata {
+    const posizioni = lettura && lettura.righe.length
+        ? posizioniChiuse(unisciRighe(righe, lettura.righe))
+        : (chiuse ?? posizioniChiuse(righe));
+    if (!lettura || lettura.giornoPartita !== true || lettura.chiestoAlle == null) {
+        return { posizioni, escluse: NESSUNA };
+    }
+    const escluse = new Set<PosizioneChiusa>();
+    const limite = lettura.chiestoAlle - MARGINE_LETTURA_MS;
+    for (const p of posizioni) {
+        if (p.giornoConfermato || p.giorno !== giorno) continue;
+        const ms = Date.parse(p.chiusaAt);
+        if (Number.isFinite(ms) && ms < limite) escluse.add(p);
+    }
+    return { posizioni, escluse };
 }
 
 // ------------------------------------------------------------------ memoria

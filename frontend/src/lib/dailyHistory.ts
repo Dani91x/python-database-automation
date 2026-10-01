@@ -73,6 +73,13 @@ export interface DailyRow {
     by_sport: Record<string, DailyBreakdown>;
     by_origin: Record<string, DailyBreakdown>;
     first_trade_at: string | null;
+    /**
+     * B-14 (01/10) - il database ha RIDOTTO la finestra chiesta (oltre 400
+     * giorni) e lo dichiara su ogni riga (`window_clamped`, `window_from`).
+     * Assente = finestra intera.
+     */
+    window_clamped?: boolean;
+    window_from?: string | null;
     last_trade_at: string | null;
 }
 
@@ -198,6 +205,12 @@ export function normalizeDailyRow(raw: unknown): DailyRow | null {
         by_origin: breakdown(r.by_origin),
         first_trade_at: typeof r.first_trade_at === 'string' ? r.first_trade_at : null,
         last_trade_at: typeof r.last_trade_at === 'string' ? r.last_trade_at : null,
+        // B-14 (01/10): la finestra ridotta dal database si porta solo se c'e'
+        ...(r.window_clamped === true ? {
+            window_clamped: true,
+            window_from: typeof r.window_from === 'string' && /^\d{4}-\d{2}-\d{2}/.test(r.window_from)
+                ? r.window_from.slice(0, 10) : null,
+        } : {}),
     };
 }
 
@@ -483,9 +496,14 @@ export function monthLabel(year: number, month: number): string {
 }
 
 // ------------------------------------------------------------ periodi UI
-export type PeriodKind = 'month' | '30d' | '90d' | 'year';
+// B-14 (01/10, rilievi bassi): UNA serie di periodi per lo Storico dello sport
+// e per gli storici dei bot (7 / 30 / 90 giorni e «Tutto»), con le STESSE
+// etichette e lo STESSO significato di «Tutto»: gli ultimi `MAX_HISTORY_DAYS`
+// giorni, il massimo che lo storico legge (detto a schermo, `coperturaTutto`).
+export type PeriodKind = '7d' | '30d' | '90d' | 'month' | 'year' | 'all';
 export const PERIOD_LABEL: Record<PeriodKind, string> = {
-    month: 'Mese corrente', '30d': '30 giorni', '90d': '90 giorni', year: 'Anno',
+    '7d': '7 giorni', '30d': '30 giorni', '90d': '90 giorni',
+    month: 'Mese corrente', year: 'Anno', all: 'Tutto',
 };
 
 /** Intervallo [from, to] (inclusivo) di un periodo rispetto a `today`. */
@@ -495,10 +513,40 @@ export function periodRange(kind: PeriodKind, today: string): { from: string; to
     const y = m[1], mo = m[2];
     switch (kind) {
         case 'month': return { from: `${y}-${mo}-01`, to: today };
+        case '7d': return { from: addDays(today, -6), to: today };
         case '30d': return { from: addDays(today, -29), to: today };
         case '90d': return { from: addDays(today, -89), to: today };
         case 'year': return { from: `${y}-01-01`, to: today };
+        // «Tutto» = dentro il tetto dello storico (M-17): chiedere 10 anni per
+        // riceverne uno sarebbe una promessa non mantenuta
+        case 'all': return { from: addDays(today, -(MAX_HISTORY_DAYS - 1)), to: today };
     }
+}
+
+/**
+ * B-14 (01/10) - che cosa copre DAVVERO «Tutto»: la finestra letta (al
+ * massimo `MAX_HISTORY_DAYS` giorni), il primo giorno con operazioni e, se il
+ * database l'ha ridotta (`window_clamped`), da quando. Mai «tutta la storia».
+ */
+export function coperturaTutto(rows: readonly DailyRow[], range: { from: string; to: string }): string {
+    const parti = [`«Tutto» = al massimo gli ultimi ${MAX_HISTORY_DAYS} giorni (dal ${dayLabel(range.from)}): oltre lo storico non legge`];
+    let primo: string | null = null;
+    for (const r of rows) {
+        if (r.day < range.from || r.day > range.to) continue;
+        if (!(r.trades_placed > 0 || r.settled > 0 || r.pnl_realized !== 0)) continue;
+        if (primo == null || r.day < primo) primo = r.day;
+    }
+    if (primo) {
+        const giorni = Math.round((dayToMs(range.to) - dayToMs(primo)) / 86_400_000) + 1;
+        parti.push(`primo giorno con operazioni: ${dayLabel(primo)}, quindi ${giorni} ${giorni === 1 ? 'giorno coperto' : 'giorni coperti'}`);
+    } else {
+        parti.push('nessun giorno con operazioni nella finestra');
+    }
+    const ridotta = rows.find((r) => r.window_clamped === true);
+    if (ridotta) {
+        parti.push(`il database ha ridotto la finestra${ridotta.window_from ? ` (dal ${dayLabel(ridotta.window_from)})` : ''}`);
+    }
+    return parti.join(' \u00b7 ');
 }
 
 export function filterRange(rows: DailyRow[], from: string, to: string): DailyRow[] {

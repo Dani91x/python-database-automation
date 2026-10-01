@@ -25,6 +25,10 @@ import {
     type RigaOrdine, type StatoOrdine, type ValoreOrdine,
 } from '@/lib/statoOrdine';
 
+/** 01/10 (rilievi bassi, punto 10): parole per il trader, nessun nome di file SQL */
+export const TITOLO_NOTA = 'numero preso dalla nota scritta dal bot, non dallo stato dell\'ordine letto da Betfair: '
+    + 'il database non ha ancora l\'aggiornamento che salva quello stato';
+
 /** badge «dalla nota»: il numero c'e', ma non arriva dalle colonne di Betfair */
 const CLS_NOTA = 'bg-white/5 text-slate-400 border-white/10';
 
@@ -34,7 +38,7 @@ function Nota({ v }: { v: ValoreOrdine }) {
         <span
             className="ml-0.5 text-[9px] text-slate-500"
             data-testid="stato-ordine-nota"
-            title="numero preso dalla nota del servizio (meta), non dalle colonne di Betfair: la migrazione trades_consapevolezza_ordine_2026-09-16.sql non risulta applicata"
+            title={TITOLO_NOTA}
         >*</span>
     );
 }

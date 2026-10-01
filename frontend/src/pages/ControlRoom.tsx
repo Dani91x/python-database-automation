@@ -253,10 +253,12 @@ export default function ControlRoom() {
 
     // il contatore della scheda deve contare QUELLO CHE LA SCHEDA MOSTRA:
     // soldi veri, dello sport scelto, e SOLO della giornata di oggi.
+    // 01/10 (rilievi bassi, punto 1): fuori anche le partite di altri giorni
+    // che la lettura di oggi esclude, come fa la scheda
     const contaChiuse = useMemo(
         () => vm.chiuse.filter((c) => (sport == null || c.sport === sport)
-            && c.modo === 'live' && c.giorno === giornoOperativo).length,
-        [vm.chiuse, sport, giornoOperativo],
+            && c.modo === 'live' && c.giorno === giornoOperativo && !vm.chiuseEscluse?.has(c)).length,
+        [vm.chiuse, vm.chiuseEscluse, sport, giornoOperativo],
     );
 
     // RITORNO AL PUNTO ESATTO: si consuma UNA volta sola, quando le righe ci

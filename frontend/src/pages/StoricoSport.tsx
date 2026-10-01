@@ -44,7 +44,7 @@ import { DayDetail } from '@/components/trading/DayDetail';
 import { fmtMoney, fmtPct, fmtNum, DASH } from '@/lib/format';
 import { pnlClass } from '@/lib/tradeStatus';
 import {
-    dayLabel, attributionOf, calendarGridBounds, historyWindow, filterRange,
+    dayLabel, attributionOf, coperturaTutto, calendarGridBounds, historyWindow, filterRange,
     GIORNATA_RIPIEGO_TESTO, testoCriterioGiornata, type HistoryVariant,
 } from '@/lib/dailyHistory';
 import { FONTE_PNL_BREVE } from '@/lib/fontePnl';
@@ -57,7 +57,8 @@ import {
     type SerieBot, type AggregatoBot, type TradeGiornoBot,
 } from '@/lib/storicoSport';
 
-const INTERVALLI: IntervalloKind[] = ['oggi', '7g', '30g', 'mese', 'tutto'];
+// B-14 (01/10): gli stessi periodi degli storici dei bot (piu' «Oggi»)
+const INTERVALLI: IntervalloKind[] = ['oggi', '7g', '30g', '90g', 'mese', 'tutto'];
 const ALTRO_SPORT: Record<SportStorico, SportStorico> = { calcio: 'tennis', tennis: 'calcio' };
 
 export interface StoricoSportProps {
@@ -250,6 +251,12 @@ export function StoricoSport({ sport, oggi }: StoricoSportProps) {
                 <span className="ml-auto text-[10.5px] text-white/40" data-testid="storico-intervallo">
                     {dayLabel(range.from)} → {dayLabel(range.to)}
                 </span>
+                {/* B-14 (01/10): «Tutto» dice quanti giorni copre davvero */}
+                {intervallo === 'tutto' && !caricamento && (
+                    <span className="basis-full text-[10.5px] text-white/45" data-testid="storico-copertura-tutto">
+                        {coperturaTutto(serieModo.flatMap((s) => s.righe), range)}
+                    </span>
+                )}
             </Card>
 
             {errore && (

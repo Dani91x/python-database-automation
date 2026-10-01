@@ -14,6 +14,20 @@
 // futuro aggancio (contratto nuovo) cambia SOLO l'input, mai questa funzione.
 // ============================================================================
 import { fmtTime, DASH } from './format';
+import type { LocalSport } from './localChannel';
+
+/**
+ * 23/09 - i canali dei processi che piazzano ordini VERI e pubblicano il
+ * topic "account" dopo ogni ordine/regolazione (`stream/saldo_evento.py`):
+ * runner calcio, runner tennis, Mike, Omega, Safe. Sono gli stessi singleton
+ * gia' aperti dalla Control Room: nessuna porta nuova.
+ *
+ * 01/10 (rilievi bassi, punto 11): spostato qui da `SaldoBetfairCard.tsx`, che
+ * dal 01/10 non era piu' montata da nessuna parte e restava nel codice solo
+ * per questa costante (la usa `useControlRoom`). La card e il suo test sono
+ * stati cancellati: nessun altro file li importava.
+ */
+export const CANALI_SALDO: readonly LocalSport[] = ['calcio', 'tennis', 'mike', 'omega', 'safe'] as const;
 
 export type StatoSaldo = 'ok' | 'non-verificato' | 'ignoto';
 

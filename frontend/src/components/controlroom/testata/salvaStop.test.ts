@@ -52,6 +52,20 @@ const OMEGA_RAW: Record<string, unknown> = { strategy_version: 3, v3_daily_loss_
 
 beforeEach(() => { rpc.mockReset(); });
 
+/**
+ * R-05 (rilievi bassi 01/10): prima di scrivere lo stop di un bot si rilegge lo
+ * stato del servizio. Risposte con le chiavi delle RPC vere: `get_safe_state`
+ * e `get_mike_state` -> { control, trades, aggregates, activity, ... };
+ * `get_omega_state` -> { control, aggregates, activity, activity_more, ... }.
+ */
+function statoServizio(params: Record<string, unknown>) {
+    return {
+        control: control(params), trades: [], aggregates: null, activity: [],
+        activity_more: 0, activity_day: '2026-10-01', goal_today: null, goal_snapshot: false,
+        events: [], requests: [], day_start: null, day_by: null,
+    };
+}
+
 describe('leggiImporto - euro al centesimo, negativo = perdita massima', () => {
     it('-40, −40,5, 40 sono la stessa perdita; 3 decimali rifiutati', () => {
         expect(leggiImporto('-40', 'mike')).toEqual({ ok: true, perdita: 40 });
@@ -98,6 +112,10 @@ describe('payloadStop - lo STESSO payload del foglio del proprietario', () => {
             const p = mergeBotParams(SAFE_RAW);
             const v = toValues(p, mergeExits(SAFE_RAW.exits), SAFE_RAW);
             v['risk.daily_loss_stop'] = -40;
+            // R-06 (01/10): cambiato di proposito. Il foglio scrive
+            // `risk.max_open_trades: 0` (= nessun tetto) anche quando la chiave
+            // manca; lo stop dalla testata no: la chiave assente resta assente.
+            delete v['risk.max_open_trades'];
             return fromValues(v, p.variants, SAFE_RAW);
         })();
         const payload = payloadStop('safe', 40, SAFE_RAW);
@@ -144,23 +162,30 @@ describe('salvaStop - RPC vere, chiavi vere, cifra dal database', () => {
         rpc.mockResolvedValueOnce({ data: { ...RIGA_SETTINGS, daily_loss_limit: 25 }, error: null });
         expect(await salvaStop('conto', null, null)).toBe(25);
     });
+    // R-05: la scrittura e' la SECONDA chiamata (la prima rilegge lo stato)
     it('Safe: safe_update_params({ p_params }) col payload del foglio; ritorna |risk.daily_loss_stop| della riga', async () => {
+        rpc.mockResolvedValueOnce({ data: statoServizio(SAFE_RAW), error: null });
         rpc.mockResolvedValueOnce({ data: control({ ...SAFE_RAW, risk: { daily_loss_stop: -45 } }), error: null });
         const v = await salvaStop('safe', 40, SAFE_RAW);
-        expect(rpc.mock.calls[0][0]).toBe('safe_update_params');
-        expect(rpc.mock.calls[0][1]).toEqual({ p_params: payloadStop('safe', 40, SAFE_RAW) });
+        expect(rpc.mock.calls[0][0]).toBe('get_safe_state');
+        expect(rpc.mock.calls[1][0]).toBe('safe_update_params');
+        expect(rpc.mock.calls[1][1]).toEqual({ p_params: payloadStop('safe', 40, SAFE_RAW) });
         // la cifra e' quella RESTITUITA (45), non quella digitata (40)
         expect(v).toBe(45);
     });
     it('Mike: mike_update_params({ p_params, p_mode: null }): la modalita\' non si tocca', async () => {
+        rpc.mockResolvedValueOnce({ data: statoServizio(MIKE_RAW), error: null });
         rpc.mockResolvedValueOnce({ data: control({ ...MIKE_RAW, daily_loss_stop: 35 }), error: null });
         expect(await salvaStop('mike', 40, MIKE_RAW)).toBe(35);
-        expect(rpc.mock.calls[0][0]).toBe('mike_update_params');
-        expect(rpc.mock.calls[0][1]).toEqual({ p_params: payloadStop('mike', 40, MIKE_RAW), p_mode: null });
+        expect(rpc.mock.calls[0][0]).toBe('get_mike_state');
+        expect(rpc.mock.calls[1][0]).toBe('mike_update_params');
+        expect(rpc.mock.calls[1][1]).toEqual({ p_params: payloadStop('mike', 40, MIKE_RAW), p_mode: null });
     });
     it('Omega: omega_update_params con p_daily_goal null (obiettivo intatto) e p_mode null', async () => {
+        rpc.mockResolvedValueOnce({ data: statoServizio(OMEGA_RAW), error: null });
         rpc.mockResolvedValueOnce({ data: control({ ...OMEGA_RAW, v3_daily_loss_cap: 110 }, { daily_goal: 250 }), error: null });
         expect(await salvaStop('omega', 120, OMEGA_RAW)).toBe(110);
+        expect(rpc.mock.calls[0][0]).toBe('get_omega_state');
         expect(rpc).toHaveBeenCalledWith('omega_update_params', {
             p_daily_goal: null, p_params: payloadStop('omega', 120, OMEGA_RAW), p_mode: null,
         });
@@ -172,5 +197,60 @@ describe('salvaStop - RPC vere, chiavi vere, cifra dal database', () => {
     it('parametri non letti: nessuna RPC parte', async () => {
         await expect(salvaStop('mike', 40, null)).rejects.toThrow(StopNonSalvabile);
         expect(rpc).not.toHaveBeenCalled();
+    });
+});
+
+// R-06 (rilievi bassi 01/10): il confronto dei predefiniti frontend/Python ha
+// trovato UNA differenza che sovrascrive un valore vero: `risk.max_open_trades`
+// di Safe (frontend 0 = nessun tetto; Python assente = tetto del bot, 20).
+// FALSIFICAZIONE: togliendo la correzione in `payloadStop` i due test diventano
+// rossi (il payload porta `risk.max_open_trades: 0`).
+describe('R-06: salvare lo stop di Safe non tocca il tetto delle posizioni aperte', () => {
+    it('chiave ASSENTE nel database: resta assente (il servizio usa il tetto del bot)', () => {
+        const p = payloadStop('safe', 40, SAFE_RAW) as { risk: Record<string, unknown> };
+        expect('max_open_trades' in p.risk).toBe(false);
+        expect(p.risk.daily_loss_stop).toBe(-40);
+        expect(p.risk.daily_liability_cap).toBe(500);
+    });
+    it('chiave PRESENTE (5): resta 5, mai 0 (= nessun tetto)', () => {
+        const raw = { ...SAFE_RAW, risk: { daily_loss_stop: -50, max_open_trades: 5 } };
+        const p = payloadStop('safe', 40, raw) as { risk: Record<string, unknown> };
+        expect(p.risk.max_open_trades).toBe(5);
+        // e la riga letta non viene toccata
+        expect((raw.risk as Record<string, unknown>).daily_loss_stop).toBe(-50);
+    });
+});
+
+// R-05 (rilievi bassi 01/10). FALSIFICAZIONE: componendo il payload su `raw`
+// (i parametri della pagina) invece che sulla riga riletta, il primo test
+// diventa rosso; togliendo la rilettura, rossi anche gli altri due.
+describe('R-05: prima di scrivere si RILEGGONO i parametri del bot', () => {
+    it('Mike: un foglio ha cambiato max_open_matches (10 -> 12) dopo la lettura della pagina: il 12 resta', async () => {
+        const nelDb = { ...MIKE_RAW, max_open_matches: 12 };
+        rpc.mockResolvedValueOnce({ data: statoServizio(nelDb), error: null });
+        rpc.mockResolvedValueOnce({ data: control({ ...nelDb, daily_loss_stop: 40 }), error: null });
+        await salvaStop('mike', 40, MIKE_RAW);   // la pagina ha ancora 10
+        const scritto = rpc.mock.calls[1][1].p_params as Record<string, unknown>;
+        expect(scritto.max_open_matches).toBe(12);
+        expect(scritto.daily_loss_stop).toBe(40);
+        expect(scritto).toEqual(payloadStop('mike', 40, nelDb));
+    });
+    it('Safe: una strategia aggiunta nel frattempo (punta) non si perde', async () => {
+        const nelDb = { ...SAFE_RAW, variants: ['base', 'tennis', 'punta'] };
+        rpc.mockResolvedValueOnce({ data: statoServizio(nelDb), error: null });
+        rpc.mockResolvedValueOnce({ data: control({ ...nelDb, risk: { daily_loss_stop: -40 } }), error: null });
+        await salvaStop('safe', 40, SAFE_RAW);
+        const scritto = rpc.mock.calls[1][1].p_params as Record<string, unknown>;
+        expect(scritto.variants).toEqual(['base', 'tennis', 'punta']);
+    });
+    it('rilettura FALLITA o VUOTA: niente scrittura, e il motivo si legge', async () => {
+        rpc.mockResolvedValueOnce({ data: null, error: { message: 'rete giu' } });
+        await expect(salvaStop('omega', 120, OMEGA_RAW)).rejects.toThrow(/non riletti prima di salvare \(rete giu\)/);
+        expect(rpc).toHaveBeenCalledTimes(1);
+        rpc.mockReset();
+        rpc.mockResolvedValueOnce({ data: statoServizio({}), error: null });
+        await expect(salvaStop('safe', 40, SAFE_RAW)).rejects.toThrow(StopNonSalvabile);
+        expect(rpc).toHaveBeenCalledTimes(1);
+        expect(rpc.mock.calls[0][0]).toBe('get_safe_state');
     });
 });

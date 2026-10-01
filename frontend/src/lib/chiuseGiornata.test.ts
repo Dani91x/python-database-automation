@@ -8,6 +8,8 @@
 // la migrazione si ripiega sulle RPC di storico e lo si DICE.
 // Le risposte finte hanno le chiavi di `to_jsonb(t.*)` delle tabelle vere.
 // ============================================================================
+// D-06 (01/10, rilievi bassi): UN solo tipo FontePnl (lib/fontePnl.ts): le
+// parole sono conto / stima / simulato (prima betfair / stimato / paper).
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('@/integrations/supabase/client', () => ({
@@ -81,7 +83,7 @@ describe('la RPC della giornata', () => {
         const pos = posizioniChiuse(righe);
         const omega = pos.find((p) => p.bot === 'omega');
         expect(omega?.pnlGlobale).toBe(0.9);        // 1,90 - 1,00 dal netto di Betfair
-        expect(omega?.fontePnl).toBe('betfair');
+        expect(omega?.fontePnl).toBe('conto');
     });
 
     it('un errore vero della RPC si propaga (la pagina lo mostra)', async () => {

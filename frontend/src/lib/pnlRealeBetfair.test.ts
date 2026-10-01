@@ -3,6 +3,8 @@
 // `safe_strategy_trades`/`mike_trades` + le colonne della migrazione
 // `pnl_betfair_reale_2026-09-24.sql`) e del JSONB `pnl_reale_oggi` scritto dal
 // runner (`reconcile_worker.componi_regolati`).
+// D-06 (01/10, rilievi bassi): UN solo tipo FontePnl (lib/fontePnl.ts): le
+// parole sono conto / stima / simulato (prima betfair / stimato / paper).
 import { describe, expect, it } from 'vitest';
 import {
     fonteDiRighe, nettoCicloChiuso, pnlDiRiga, groupTradesIntoCicli,
@@ -53,9 +55,9 @@ describe('P&L di una riga: Betfair se c e, altrimenti stimato', () => {
     });
     it('un insieme e da Betfair solo se TUTTE le gambe lo sono', () => {
         expect(fonteDiRighe([{ pnl_betfair: 1, mode: 'live' }, { pnl_betfair: null, mode: 'live' }]))
-            .toBe('stimato');
-        expect(fonteDiRighe([{ pnl_betfair: 1, mode: 'live' }])).toBe('betfair');
-        expect(fonteDiRighe([{ pnl: 1, mode: 'paper' }])).toBe('paper');
+            .toBe('stima');
+        expect(fonteDiRighe([{ pnl_betfair: 1, mode: 'live' }])).toBe('conto');
+        expect(fonteDiRighe([{ pnl: 1, mode: 'paper' }])).toBe('simulato');
     });
     it('il netto di un cash out usa il netto di Betfair di ogni gamba', () => {
         const open = { status: 'won', pnl: 0.45, pnl_betfair: 0.43, mode: 'live' };
@@ -66,7 +68,7 @@ describe('P&L di una riga: Betfair se c e, altrimenti stimato', () => {
             riga({ id: 2, pnl: -0.25, pnl_betfair: -0.25, status: 'lost', closes_trade_id: 1 }),
         ]);
         expect(c[0].netPnl).toBe(0.18);
-        expect(c[0].fontePnl).toBe('betfair');
+        expect(c[0].fontePnl).toBe('conto');
     });
 });
 
@@ -78,10 +80,10 @@ describe('posizioni chiuse: il reale e dichiarato, lo stimato pure', () => {
         });
         const [reale] = posizioniChiuse([t({ id: 1, pnl_betfair: 0.43 })]);
         expect(reale.pnlGlobale).toBe(0.43);
-        expect(reale.fontePnl).toBe('betfair');
+        expect(reale.fontePnl).toBe('conto');
         const [stimata] = posizioniChiuse([t({ id: 2 })]);
         expect(stimata.pnlGlobale).toBe(0.45);
-        expect(stimata.fontePnl).toBe('stimato');
+        expect(stimata.fontePnl).toBe('stima');
     });
 });
 

@@ -53,12 +53,19 @@ export interface PnlTradeLike {
 /**
  * 24/09 - DA DOVE VIENE UN P&L (ordine dell'utente: "il P&L delle operazioni
  * va preso DIRETTAMENTE da Betfair e non stimato, al netto di tutto"):
- *   - `betfair` = il netto regolato da Betfair (`pnl_betfair`);
- *   - `stimato` = soldi veri, ma Betfair non ha ancora regolato: e' il calcolo
- *     del bot, e la pagina lo deve SCRIVERE ("stimato");
- *   - `paper`   = simulazione: Betfair non esiste, e' sempre il calcolo.
+ *   - `conto`    = il netto regolato da Betfair (`pnl_betfair`);
+ *   - `stima`    = soldi veri, ma Betfair non ha ancora regolato: e' il calcolo
+ *     del bot, e la pagina lo deve SCRIVERE ("stima");
+ *   - `simulato` = prova: Betfair non esiste, e' sempre il calcolo.
+ *
+ * D-06 (01/10, rilievi bassi): UN SOLO tipo `FontePnl`, quello di
+ * `lib/fontePnl.ts` (le parole della pagina di Mike e dello Storico). Prima
+ * qui c'era un secondo tipo con altre parole (betfair/stimato/paper) che la
+ * scheda Posizioni chiuse rimappava a mano. Si riesporta per chi lo importava
+ * da qui.
  */
-export type FontePnl = 'betfair' | 'stimato' | 'paper';
+import type { FontePnl } from '@/lib/fontePnl';
+export type { FontePnl };
 
 export interface RigaPnlReale {
     pnl?: number | null;
@@ -82,20 +89,20 @@ export function pnlDiRiga(r: RigaPnlReale): number | null {
 
 /** La fonte del P&L di UNA riga. */
 export function fonteDiRiga(r: RigaPnlReale): FontePnl {
-    if (ePaper(r)) return 'paper';
-    return num(r.pnl_betfair) != null ? 'betfair' : 'stimato';
+    if (ePaper(r)) return 'simulato';
+    return num(r.pnl_betfair) != null ? 'conto' : 'stima';
 }
 
 /**
  * La fonte di un INSIEME di righe regolate (un'operazione, una partita):
- * `betfair` solo se TUTTE hanno il reale; basta una stimata e l'insieme e'
- * stimato (un totale mezzo reale e mezzo calcolato non e' "da Betfair").
- * Una qualunque riga paper -> paper. Nessuna riga -> null.
+ * `conto` solo se TUTTE hanno il reale; basta una stimata e l'insieme e'
+ * una stima (un totale mezzo reale e mezzo calcolato non e' "da Betfair").
+ * Una qualunque riga paper -> simulato. Nessuna riga -> null.
  */
 export function fonteDiRighe(righe: readonly RigaPnlReale[]): FontePnl | null {
     if (!righe.length) return null;
-    if (righe.some(ePaper)) return 'paper';
-    return righe.every((r) => num(r.pnl_betfair) != null) ? 'betfair' : 'stimato';
+    if (righe.some(ePaper)) return 'simulato';
+    return righe.every((r) => num(r.pnl_betfair) != null) ? 'conto' : 'stima';
 }
 
 /** Esiti CERTI: solo queste righe hanno un P&L da sommare. */

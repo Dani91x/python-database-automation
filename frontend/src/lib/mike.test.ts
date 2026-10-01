@@ -557,7 +557,10 @@ describe('mike KO passato ma partita non ancora in gioco', () => {
 });
 
 describe('mike storico: errore LEGGIBILE senza la migrazione (R2)', () => {
-    it('gli errori di firma/RPC diventano "applica migrations/mike_history_v2.sql"', () => {
+    // 01/10 (rilievi bassi, punto 10): cambiato di proposito - il messaggio e'
+    // in parole per il trader, SENZA nome di file SQL ne' di funzione (prima
+    // diceva il file e ripeteva l'errore grezzo del database)
+    it('gli errori di firma/RPC diventano «aggiornamento dello storico da applicare», senza nomi del database', () => {
         for (const raw of [
             new Error('function public.trading_daily_history(unknown, unknown) is not unique'),
             new Error('Could not find the function public.get_mike_daily(p_from, p_to)'),
@@ -567,6 +570,7 @@ describe('mike storico: errore LEGGIBILE senza la migrazione (R2)', () => {
         ]) {
             expect(mikeHistoryErrorMessage(raw)).toContain(MIKE_HISTORY_MIGRATION_HINT);
             expect(mikeHistoryErrorMessage(raw)).not.toBe(raw.message);
+            expect(mikeHistoryErrorMessage(raw)).not.toMatch(/\.sql|trading_|get_mike|mike_trades|migrations\//);
         }
     });
 

@@ -19,6 +19,8 @@
 //   · sommando il paper al live, o dimenticando di sottrarre la commissione,
 //     l'assenza di somma e il netto diventano rossi.
 // ============================================================================
+// D-06 (01/10, rilievi bassi): UN solo tipo FontePnl (lib/fontePnl.ts): le
+// parole sono conto / stima / simulato (prima betfair / stimato / paper).
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import type { TennisBotOrderRow } from '@/lib/tennis';
@@ -164,6 +166,8 @@ import {
 import { fetchLiveAccount, subscribeLiveAccount } from '@/lib/liveOrders';
 import { fetchScalperControlRoom } from '@/lib/scalperControlRoom';
 import { useControlRoom, FONTI_RICARICA } from '@/components/controlroom/useControlRoom';
+import { getLocalChannel } from '@/lib/localChannel';
+import { CANALI_SALDO } from '@/lib/saldoBetfair';
 
 /** tutte le letture del giro, nell'ORDINE in cui il hook le lancia */
 function letture() {
@@ -270,6 +274,31 @@ describe('«fonti non raggiunte»: ogni lettura si chiama per nome', () => {
         const { result } = renderHook(() => useControlRoom());
         await waitFor(() => expect(result.current.caricamento).toBe(false));
         expect(result.current.errore).toBeNull();
+    });
+});
+
+// 01/10 (rilievi bassi, punto 11): la card del saldo e' cancellata; la
+// testata ascolta il saldo dai canali di `CANALI_SALDO` (ora in
+// `lib/saldoBetfair`). FALSIFICAZIONE: togliendo un canale dalla costante o
+// la sottoscrizione dal hook questo test diventa rosso.
+describe('saldo del conto: il hook ascolta il topic «account» di TUTTI i canali del saldo', () => {
+    it('una sottoscrizione «account» per ciascuno dei 5 canali', async () => {
+        const visti: string[] = [];
+        vi.mocked(getLocalChannel).mockImplementation(((s: string) => ({
+            getStatus: () => 'off' as const,
+            onStatus: () => () => { /* nessun cambio */ },
+            subscribe: (topic: string) => { visti.push(`${s}:${topic}`); return () => { /* niente */ }; },
+        })) as never);
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        expect(CANALI_SALDO.length).toBe(5);
+        for (const s of CANALI_SALDO) expect(visti).toContain(`${s}:account`);
+        // il finto di partenza torna com'era (stessa forma, nessun evento)
+        vi.mocked(getLocalChannel).mockImplementation((() => ({
+            getStatus: () => 'off' as const,
+            onStatus: () => () => { /* nessun cambio */ },
+            subscribe: () => () => { /* nessuna spinta */ },
+        })) as never);
     });
 });
 
@@ -1136,7 +1165,7 @@ describe('scalper calcio: riga, sessioni, posizioni, barra e Chiudi', () => {
         await waitFor(() => expect(result.current.chiuse.some((c) => c.bot === 'scalper')).toBe(true));
         const c = result.current.chiuse.filter((x) => x.bot === 'scalper');
         expect(c).toHaveLength(1);   // la sessione PAPER non entra: il bot ha solo un lordo
-        expect(c[0]).toMatchObject({ id: 101, pnlGlobale: 0.3, modo: 'live', fontePnl: 'betfair', esito: 'vinta' });
+        expect(c[0]).toMatchObject({ id: 101, pnlGlobale: 0.3, modo: 'live', fontePnl: 'conto', esito: 'vinta' });
     });
 
     it('barra: voce Scalper = reale di Betfair; il manuale app perde gli stessi euro (mai due volte)', async () => {

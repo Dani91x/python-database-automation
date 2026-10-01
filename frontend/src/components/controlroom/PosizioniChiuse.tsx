@@ -33,16 +33,17 @@ import { StatoOrdineCompatto } from '@/components/trading/StatoOrdine';
 import { BOT_LABEL, type Bot, type Modo } from '@/lib/controlRoom';
 import { addDays, dayLabel, isValidDay } from '@/lib/dailyHistory';
 import {
-    filtraChiuse, fuoriGiornata, raggruppaGiornata, unisciRighe,
-    posizioniChiuse, certezzaDiPosizione, gambeAnnullate, sintesiPosizione,
+    filtraChiuse, fuoriGiornata, raggruppaGiornata,
+    certezzaDiPosizione, gambeAnnullate, sintesiPosizione,
     regolatoNelGiorno, aCavalloDellaMezzanotte,
     type PosizioneChiusa, type Esito, type TradeChiudibile, type RiepilogoChiuse,
     type GruppoBot, type GruppoPartita,
 } from '@/lib/posizioniChiuse';
-import { chiuseGiornata, type ChiuseGiornata } from '@/lib/chiuseGiornata';
+import {
+    chiuseGiornata, posizioniDellaGiornata, MARGINE_LETTURA_MS, type ChiuseGiornata,
+} from '@/lib/chiuseGiornata';
 import type { ComposizioneObiettivo, RigaComposizione } from '@/lib/composizioneObiettivo';
-import type { FontePnl } from '@/lib/eventGroups';
-import { FONTE_PNL_BREVE, FONTE_PNL_TESTO } from '@/lib/fontePnl';
+import { FONTE_PNL_BREVE, FONTE_PNL_TESTO, type FontePnl } from '@/lib/fontePnl';
 import { eCertezzaVerde, type StatoCertezzaChiusura } from '@/lib/certezzaChiusura';
 
 const CERTEZZA_LABEL: Record<StatoCertezzaChiusura, string> = {
@@ -83,13 +84,9 @@ const VOCI_BARRA: readonly RigaComposizione['chiave'][] = [
     'omega', 'safe_calcio', 'safe_tennis', 'mike', 'bot_tennis', 'manuale',
 ];
 
-/**
- * 01/10 - una riga regolata piu' di questo PRIMA che partisse la lettura del
- * giorno, e che la lettura (col giorno della partita) non porta, NON e' di
- * quella giornata: e' di una partita di un altro giorno. Il margine copre il
- * ritardo fra il regolamento di Betfair e la scrittura della riga.
- */
-export const MARGINE_LETTURA_MS = 5 * 60_000;
+/** 01/10 - il margine vive in `lib/chiuseGiornata` (una regola sola con la
+ *  plancia «oggi per bot»); qui si riesporta per chi lo importava da qui. */
+export { MARGINE_LETTURA_MS };
 
 /** oltre questo numero di operazioni le partite partono chiuse (velocita') */
 export const SOGLIA_PARTITE_APERTE = 40;
@@ -179,10 +176,13 @@ export function PosizioniChiuse({
     const datiDb = lettura.chiave === chiaveLettura ? lettura.dati : null;
 
     // -- LE POSIZIONI: memoria + giornata letta, costruite UNA volta ---------
-    const posizioni = useMemo<readonly PosizioneChiusa[]>(() => {
-        if (datiDb && datiDb.righe.length) return posizioniChiuse(unisciRighe(righe, datiDb.righe));
-        return chiuse ?? posizioniChiuse(righe);
-    }, [righe, chiuse, datiDb]);
+    // 01/10 (rilievi bassi, punto 1): la STESSA funzione della plancia «oggi
+    // per bot» (`posizioniDellaGiornata`), con l'esclusione qui sotto.
+    const giornata = useMemo(
+        () => posizioniDellaGiornata(righe, chiuse, datiDb, giornoScelto),
+        [righe, chiuse, datiDb, giornoScelto],
+    );
+    const posizioni = giornata.posizioni;
 
     const filtroBase = useMemo(
         () => ({ modo, sport: sport ?? 'tutti' as const }),
@@ -194,17 +194,7 @@ export function PosizioniChiuse({
      * porta): sono di partite di altri giorni, non di questa giornata. Prima
      * una partita di ieri sera regolata stanotte compariva «oggi».
      */
-    const dialtroGiorno = useMemo(() => {
-        const s = new Set<PosizioneChiusa>();
-        if (!datiDb || datiDb.giornoPartita !== true || datiDb.chiestoAlle == null) return s;
-        const limite = datiDb.chiestoAlle - MARGINE_LETTURA_MS;
-        for (const p of posizioni) {
-            if (p.giornoConfermato || p.giorno !== giornoScelto) continue;
-            const ms = Date.parse(p.chiusaAt);
-            if (Number.isFinite(ms) && ms < limite) s.add(p);
-        }
-        return s;
-    }, [datiDb, posizioni, giornoScelto]);
+    const dialtroGiorno = giornata.escluse;
     const visibili = useMemo(
         () => filtraChiuse(posizioni, { ...filtroBase, esito, bot, fonte: modo === 'live' ? fonte : 'tutte', giorno: giornoScelto })
             .filter((p) => !dialtroGiorno.has(p)),
@@ -570,26 +560,27 @@ function etichettaGruppo(g: GruppoBot): string {
 }
 
 function fonteDiRiepilogo(modo: Modo, r: RiepilogoChiuse): FontePnl | 'misto' {
-    if (modo === 'paper') return 'paper';
-    if (r.stimato == null) return 'betfair';
-    if (r.reale == null) return 'stimato';
+    if (modo === 'paper') return 'simulato';
+    if (r.stimato == null) return 'conto';
+    if (r.reale == null) return 'stima';
     return 'misto';
 }
 
 // 30/09 (ordine dell'utente: «massima coerenza»): le STESSE parole della
-// pagina di Mike e dello Storico (`lib/fontePnl.ts`)
+// pagina di Mike e dello Storico (`lib/fontePnl.ts`); D-06 (01/10): anche lo
+// STESSO tipo, nessuna rimappatura a mano
 const FONTE_TESTO: Record<FontePnl | 'misto', string> = {
-    betfair: FONTE_PNL_BREVE.conto, stimato: FONTE_PNL_BREVE.stima, paper: FONTE_PNL_BREVE.simulato,
+    conto: FONTE_PNL_BREVE.conto, stima: FONTE_PNL_BREVE.stima, simulato: FONTE_PNL_BREVE.simulato,
     misto: `${FONTE_PNL_BREVE.conto} + ${FONTE_PNL_BREVE.stima}`,
 };
 const FONTE_CLS: Record<FontePnl | 'misto', string> = {
-    betfair: 'text-emerald-300/80', stimato: 'text-amber-300/90', paper: 'text-white/40', misto: 'text-amber-300/90',
+    conto: 'text-emerald-300/80', stima: 'text-amber-300/90', simulato: 'text-white/40', misto: 'text-amber-300/90',
 };
 const FONTE_TITOLO: Record<FontePnl | 'misto', string> = {
-    betfair: 'netto regolato sul conto Betfair (profit meno la commissione del mercato); per Mike: '
+    conto: 'netto regolato sul conto Betfair (profit meno la commissione del mercato); per Mike: '
         + FONTE_PNL_TESTO.conto,
-    stimato: `${FONTE_PNL_TESTO.stima}. Diventa il netto di Betfair al regolamento`,
-    paper: `${FONTE_PNL_TESTO.simulato}: su Betfair non esiste, e' sempre il calcolo`,
+    stima: `${FONTE_PNL_TESTO.stima}. Diventa il netto di Betfair al regolamento`,
+    simulato: `${FONTE_PNL_TESTO.simulato}: su Betfair non esiste, e' sempre il calcolo`,
     misto: `in parte ${FONTE_PNL_BREVE.conto} e in parte ${FONTE_PNL_TESTO.stima}`,
 };
 
@@ -597,7 +588,7 @@ const FONTE_TITOLO: Record<FontePnl | 'misto', string> = {
 function FonteTag({ fonte, modo, riepilogo, testId }: {
     fonte?: FontePnl; modo?: Modo; riepilogo?: RiepilogoChiuse; testId?: string;
 }) {
-    const f: FontePnl | 'misto' = fonte ?? (riepilogo && modo ? fonteDiRiepilogo(modo, riepilogo) : 'stimato');
+    const f: FontePnl | 'misto' = fonte ?? (riepilogo && modo ? fonteDiRiepilogo(modo, riepilogo) : 'stima');
     return (
         <span className={`text-[9px] font-normal uppercase tracking-wider ${FONTE_CLS[f]}`}
             data-testid={testId} data-fonte={f} title={FONTE_TITOLO[f]}>
@@ -776,7 +767,7 @@ const RigaCiclo = memo(function RigaCiclo({ p, aperta, onToggle }: {
                             : "P&L dell'OPERAZIONE intera: apertura e coperture insieme"}>
                         {fmtMoney(p.pnlGlobale, { signed: true })}
                     </span>
-                    <FonteTag fonte={p.fontePnl ?? (p.modo === 'paper' ? 'paper' : 'stimato')}
+                    <FonteTag fonte={p.fontePnl ?? (p.modo === 'paper' ? 'simulato' : 'stima')}
                         testId={`cr-chiusa-fonte-${p.id}`} />
 
                     <span className="text-[9px] text-white/35 font-mono w-10 text-right" title="ora di regolamento">

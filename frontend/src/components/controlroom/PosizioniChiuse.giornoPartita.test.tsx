@@ -13,7 +13,7 @@
 // I finti hanno le chiavi delle tabelle vere piu' quelle del contratto 01/10.
 // ============================================================================
 import { describe, it, expect } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { PosizioniChiuse, MARGINE_LETTURA_MS, type LeggiGiornata } from './PosizioniChiuse';
 import type { TradeChiudibile } from '@/lib/posizioniChiuse';
@@ -145,5 +145,62 @@ describe('note fisse e testi del criterio', () => {
         const r = { ...diOggi, giorno_partita: null, giorno_da: 'piazzamento', in_day: true };
         monta([r], async (g, m) => ({ ...lettura(g, []), modo: m }));
         expect(screen.getByTestId('cr-chiuse-nota-piazzamento')).toHaveTextContent('1 operazione senza inizio partita noto');
+    });
+});
+
+// C-08 (01/10, rilievi bassi): il badge «parziale» non aveva un test. Compare
+// SOLO per una giornata PASSATA letta in ripiego (bot tennis assenti) e quando
+// la scheda comprende il tennis. FALSIFICAZIONE: con `parziale` sempre falso il
+// primo caso diventa rosso; con la condizione su oggi o sullo sport tolta,
+// diventano rossi i casi negativi.
+describe('C-08: «parziale» sulla giornata passata letta in ripiego', () => {
+    const ieriDb = t({ id: 30, pnl: 1.5, event_id: 'E30', placed_at: `${IERI}T08:00:00.000Z`,
+        settled_at: `${IERI}T10:00:00.000Z` });
+    const leggiCon = (fonte: ChiuseGiornata['fonte']): LeggiGiornata => async (g, m) => ({
+        ...lettura(g, g === IERI ? [ieriDb] : [], { fonte, giornoPartita: false }), modo: m,
+    });
+    function montaSport(sport: 'calcio' | 'tennis' | null, leggi: LeggiGiornata) {
+        return render(
+            <MemoryRouter>
+                <PosizioniChiuse righe={[]} sport={sport} giorno={OGGI} leggiGiornata={leggi} />
+            </MemoryRouter>,
+        );
+    }
+    async function vaiAIeri() {
+        fireEvent.click(screen.getByTestId('cr-f-giorno-prima'));
+        await waitFor(() => expect(screen.getByTestId('cr-chiuse-totale')).toHaveTextContent('+1,50'));
+    }
+
+    it('ieri, lettura di ripiego, tutti gli sport: «parziale» col motivo', async () => {
+        montaSport(null, leggiCon('ripiego'));
+        await vaiAIeri();
+        const b = screen.getByTestId('cr-chiuse-parziale');
+        expect(b).toHaveTextContent('parziale');
+        expect(b.getAttribute('title')).toMatch(/bot tennis di questa giornata non sono letti/);
+    });
+
+    it('ieri, lettura di ripiego, scheda tennis: «parziale»', async () => {
+        montaSport('tennis', leggiCon('ripiego'));
+        fireEvent.click(screen.getByTestId('cr-f-giorno-prima'));
+        await waitFor(() => expect(screen.getByTestId('cr-chiuse-parziale')).toBeInTheDocument());
+    });
+
+    it('ieri, lettura completa: nessun «parziale»', async () => {
+        montaSport(null, leggiCon('rpc'));
+        await vaiAIeri();
+        expect(screen.queryByTestId('cr-chiuse-parziale')).toBeNull();
+    });
+
+    it('ieri, ripiego, scheda CALCIO: nessun «parziale» (il ripiego legge tutto il calcio)', async () => {
+        montaSport('calcio', leggiCon('ripiego'));
+        await vaiAIeri();
+        expect(screen.queryByTestId('cr-chiuse-parziale')).toBeNull();
+    });
+
+    it('OGGI in ripiego: nessun «parziale» (oggi i bot tennis arrivano dalla memoria)', async () => {
+        const leggi: LeggiGiornata = async (g, m) => ({ ...lettura(g, [diOggi], { fonte: 'ripiego' }), modo: m });
+        montaSport(null, leggi);
+        await waitFor(() => expect(screen.getByTestId('cr-chiuse-totale')).toHaveTextContent('+1,00'));
+        expect(screen.queryByTestId('cr-chiuse-parziale')).toBeNull();
     });
 });

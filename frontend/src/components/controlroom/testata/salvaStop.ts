@@ -33,11 +33,21 @@
 //
 // La cifra di ritorno e' quella della riga RESTITUITA dal database dopo la
 // scrittura, mai quella digitata.
+//
+// R-05 (rilievi bassi 01/10): i parametri della Control Room possono avere
+// fino a 30 s, e le RPC di Safe e Mike SOSTITUISCONO l'intero oggetto. Prima
+// di scrivere si RILEGGONO i parametri del bot (la stessa lettura dello stato
+// del servizio da cui arrivano quelli della pagina: `get_safe_state`,
+// `get_mike_state`, `get_omega_state`) e il payload si compone sulla riga
+// appena letta: una modifica fatta nel frattempo da un foglio non si perde.
+// Se la rilettura fallisce o torna vuota NON si salva, e lo si dice.
 // ============================================================================
 import { setLiveSettings, type LiveSettings } from '@/lib/liveOrders';
-import { mergeBotParams, updateSafeParams, normalizeLossStop, type SafeControl } from '@/lib/safeBot';
-import { mergeMikeParams, updateMikeParams, type MikeControl, type MikeParams } from '@/lib/mike';
-import { omegaParamsPatch, updateOmegaParams, OMEGA_PARAM_DEFAULTS, type OmegaControl, type OmegaParams } from '@/lib/omega';
+import { mergeBotParams, updateSafeParams, normalizeLossStop, fetchSafeState, type SafeControl } from '@/lib/safeBot';
+import { mergeMikeParams, updateMikeParams, fetchMikeState, type MikeControl, type MikeParams } from '@/lib/mike';
+import {
+    omegaParamsPatch, updateOmegaParams, fetchOmegaState, OMEGA_PARAM_DEFAULTS, type OmegaControl, type OmegaParams,
+} from '@/lib/omega';
 import { toValues, fromValues, mergeExits } from '@/components/safestrategy/BotParamsSheet';
 import type { BotConStop } from './stopPerdita';
 
@@ -123,6 +133,18 @@ export function payloadStop(chi: ProprietarioStop, perdita: number | null, raw: 
         const v = toValues(params, mergeExits(raw.exits), raw);
         // il servizio legge il valore assoluto; si scrive negativo (come il predefinito -50)
         v['risk.daily_loss_stop'] = normalizeLossStop(p) ?? 0;
+        // R-06 (rilievi bassi 01/10): `risk.max_open_trades` NON e' fra i
+        // predefiniti di `mergeRiskParams`, quindi `toValues` lo legge sempre 0.
+        // Per il servizio 0 = NESSUN tetto, mentre la chiave assente (None) vuol
+        // dire «vale max_open_trades del bot» (di serie 20: `risk.py`
+        // DEFAULT_RISK_PARAMS e `risk_params`). Salvare lo stop scriveva 0:
+        // tetto delle posizioni aperte TOLTO (o un 5 del database riscritto a 0).
+        // Si riscrive il valore della riga letta; assente resta assente.
+        const rischioDb = raw.risk != null && typeof raw.risk === 'object' && !Array.isArray(raw.risk)
+            ? raw.risk as Record<string, unknown> : {};
+        const tettoDb = rischioDb.max_open_trades;
+        if (typeof tettoDb === 'number' && Number.isFinite(tettoDb)) v['risk.max_open_trades'] = tettoDb;
+        else delete v['risk.max_open_trades'];
         // H-14 del foglio: mai una lista di strategie vuota
         if (params.variants.length === 0) {
             throw new StopNonSalvabile('nessuna strategia abilitata su Safe: il foglio rifiuta di salvare, aprilo e scegline almeno una');
@@ -140,9 +162,20 @@ export interface DipendenzeSalvaStop {
     updateSafeParams: typeof updateSafeParams;
     updateMikeParams: typeof updateMikeParams;
     updateOmegaParams: typeof updateOmegaParams;
+    /** R-05: la rilettura dei parametri del bot subito prima di scrivere */
+    leggiParams: (chi: BotConStop) => Promise<Record<string, unknown> | null>;
 }
 
-const VERE: DipendenzeSalvaStop = { setLiveSettings, updateSafeParams, updateMikeParams, updateOmegaParams };
+/** R-05: i parametri del bot dalla STESSA lettura dello stato del servizio. */
+async function leggiParamsVeri(chi: BotConStop): Promise<Record<string, unknown> | null> {
+    if (chi === 'safe') return ((await fetchSafeState()).control?.params ?? null) as Record<string, unknown> | null;
+    if (chi === 'mike') return ((await fetchMikeState()).control?.params ?? null) as unknown as Record<string, unknown> | null;
+    return ((await fetchOmegaState(1)).control?.params ?? null) as unknown as Record<string, unknown> | null;
+}
+
+const VERE: DipendenzeSalvaStop = {
+    setLiveSettings, updateSafeParams, updateMikeParams, updateOmegaParams, leggiParams: leggiParamsVeri,
+};
 
 function numero(v: unknown): number | null {
     return typeof v === 'number' && Number.isFinite(v) ? v : null;
@@ -162,7 +195,20 @@ export async function salvaStop(
         const v = numero(r.daily_loss_limit);
         return v == null || v <= 0 ? null : v;
     }
-    const payload = payloadStop(chi, perdita, raw);
+    // cancello di prima (parametri della pagina non letti): nessuna lettura, nessuna scrittura
+    payloadStop(chi, perdita, raw);
+    // R-05: si rilegge e si compone sulla riga APPENA letta, mai su quella della pagina
+    let fresco: Record<string, unknown> | null;
+    try {
+        fresco = await deps.leggiParams(chi);
+    } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        throw new StopNonSalvabile(`parametri di ${chi} non riletti prima di salvare (${msg}): nulla e' stato scritto, riprova`);
+    }
+    if (!letti(fresco)) {
+        throw new StopNonSalvabile(`parametri di ${chi} non riletti prima di salvare (risposta vuota): nulla e' stato scritto, riprova`);
+    }
+    const payload = payloadStop(chi, perdita, fresco);
     if (chi === 'safe') {
         const r: SafeControl = await deps.updateSafeParams(payload);
         const v = numero((r?.params?.risk as Record<string, unknown> | undefined)?.daily_loss_stop);
@@ -174,6 +220,6 @@ export async function salvaStop(
         return v == null ? undefined : v <= 0 ? null : v;
     }
     const r: OmegaControl = await deps.updateOmegaParams({ params: payload as Partial<OmegaParams> });
-    const v = numero(r?.params?.[chiaveStopOmega(raw as Record<string, unknown>)]);
+    const v = numero(r?.params?.[chiaveStopOmega(fresco)]);
     return v == null ? undefined : v <= 0 ? null : v;
 }

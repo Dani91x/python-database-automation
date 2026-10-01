@@ -762,7 +762,10 @@ describe('Mike page — storico senza migrazione', () => {
         renderPage();
         await waitFor(() => expect(screen.getByTestId('mike-status')).toBeInTheDocument());
         await userEvent.click(screen.getByRole('tab', { name: /Storico/ }));
-        await waitFor(() => expect(screen.getByText(/mike_history_v2\.sql/)).toBeInTheDocument());
+        // 01/10 (rilievi bassi, punto 10): parole per il trader, nessun nome di file
+        await waitFor(() => expect(screen.getByText(/aggiornamento dello storico/)).toBeInTheDocument());
+        expect(screen.queryByText(/\.sql/)).toBeNull();
+        expect(screen.queryByText(/is not unique/)).toBeNull();
     });
 });
 

@@ -55,7 +55,7 @@ export interface RigaChiusa {
     /** netto di commissione; null = non regolata. 24/09: quello di Betfair
      *  (`pnl_betfair`) se c'e', altrimenti il calcolo del bot (`fontePnl`). */
     pnl: number | null;
-    /** 24/09 - da dove viene `pnl`: Betfair, stimato (calcolo del bot), paper */
+    /** 24/09 - da dove viene `pnl`: conto Betfair, stima (calcolo del bot), simulato (D-06) */
     fontePnl?: FontePnl;
     stato: string;
     at: string;
@@ -104,8 +104,8 @@ export interface PosizioneChiusa {
     /** P&L della posizione INTERA: apertura + coperture */
     pnlGlobale: number;
     /**
-     * 24/09 - da dove viene `pnlGlobale`: `betfair` solo se TUTTE le gambe
-     * regolate hanno il netto di Betfair; altrimenti `stimato` o `paper`.
+     * 24/09 - da dove viene `pnlGlobale`: `conto` solo se TUTTE le gambe
+     * regolate hanno il netto di Betfair; altrimenti `stima` o `simulato` (D-06).
      * Opzionale nel tipo per i fixture scritti prima.
      */
     fontePnl?: FontePnl;
@@ -227,14 +227,30 @@ export interface TradeChiudibile {
     __senzaLegame?: boolean;
 }
 
-/** Sotto questa soglia in valore assoluto una posizione e' "pari": un
- *  centesimo di arrotondamento non e' una vittoria ne' una sconfitta. */
+/** Mezzo centesimo: sotto questa soglia un IMPORTO (abbinato, residuo) non
+ *  esiste. NON decide piu' l'esito (C-05, sotto). */
 export const SOGLIA_PARI = 0.005;
 
+/**
+ * C-05 (01/10, rilievi bassi) - L'ESITO con la STESSA regola del database
+ * (storico: `total_pnl > 0` vinta, `< 0` persa, `= 0` pari): ZERO ESATTO AL
+ * CENTESIMO. Le cifre sono gia' arrotondate al centesimo (`pnlGlobale`, netto
+ * tennis), quindi per loro e' lo zero esatto; un valore con piu' decimali si
+ * porta prima al centesimo (simmetrico: -0,005 e' -0,01 come +0,005 e' +0,01),
+ * cosi' un residuo di calcolo in virgola mobile (5e-17) non diventa una vinta.
+ * Prima: soglia di +/-0,005 (mezzo centesimo, non lo zero del database).
+ */
 export function esitoDi(pnl: number): Esito {
-    if (pnl > SOGLIA_PARI) return 'vinta';
-    if (pnl < -SOGLIA_PARI) return 'persa';
+    const c = Math.sign(pnl) * Math.round(Math.abs(pnl) * 100);
+    if (c > 0) return 'vinta';
+    if (c < 0) return 'persa';
     return 'pari';
+}
+
+/** lo stato di regolamento dal segno al centesimo (stessa regola di `esitoDi`) */
+export function statoDaNetto(netto: number): 'won' | 'lost' | 'void' {
+    const e = esitoDi(netto);
+    return e === 'vinta' ? 'won' : e === 'persa' ? 'lost' : 'void';
 }
 
 function testo(v: unknown): string | null {
@@ -407,7 +423,7 @@ function costruisci(
         if (Number.isFinite(ms) && !(ms <= regMs)) { regMs = ms; regIso = iso; }
     }
     globale = cent(globale);
-    const fontePnl = fonteDiRighe(regolate) ?? 'stimato';
+    const fontePnl = fonteDiRighe(regolate) ?? 'stima';
 
     const conMs = tutte.map((r) => {
         const riga = rigaChiusa(r, legame === 'catena' && numero(r.closes_trade_id) != null);
@@ -609,7 +625,7 @@ export function rigaDaOrdineTennis(
         event_name: nomePartita,
         sport: 'tennis',
         mode: o.mode,
-        status: netto > SOGLIA_PARI ? 'won' : netto < -SOGLIA_PARI ? 'lost' : 'void',
+        status: statoDaNetto(netto),
         pnl: netto,
         pnl_betfair: o.pnl_betfair ?? null,
         pnl_betfair_settled_at: o.pnl_betfair_settled_at ?? null,
@@ -701,7 +717,7 @@ export function filtraChiuse(
         if (f.sport && f.sport !== 'tutti' && p.sport !== f.sport) return false;
         if (f.modo && f.modo !== 'tutte' && p.modo !== f.modo) return false;
         if (f.bot && f.bot !== 'tutti' && p.bot !== f.bot) return false;
-        if (f.fonte === 'betfair' && p.fontePnl !== 'betfair') return false;
+        if (f.fonte === 'betfair' && p.fontePnl !== 'conto') return false;
         // una posizione SENZA giornata leggibile non e' "di oggi": lo dice la
         // scheda con un avviso, invece di finire nel totale del giorno
         if (giorno && p.giorno !== giorno) return false;
@@ -712,24 +728,47 @@ export function filtraChiuse(
 /**
  * 26/09 (F-1, e2e fase 3) - IL P&L «OGGI» DI UN BOT nella plancia, con la
  * STESSA fonte e la STESSA regola della scheda Posizioni chiuse: posizioni
- * chiuse, giorno di REGOLAMENTO, UNA modalita', netto (`pnlGlobale`). Prima
- * Omega/Mike/Safe avevano `null` («oggi —») mentre le Chiuse della stessa
- * pagina dicevano +0,95 / +0,79 €. `strategia` (Safe) = quella dell'APERTURA
- * del ciclo. `null` = nessuna posizione chiusa: «—», mai uno zero inventato.
+ * chiuse, UNA modalita', netto (`pnlGlobale`). Prima Omega/Mike/Safe avevano
+ * `null` («oggi —») mentre le Chiuse della stessa pagina dicevano +0,95 /
+ * +0,79 €. `strategia` (Safe) = quella dell'APERTURA del ciclo. `null` =
+ * nessuna posizione chiusa: «—», mai uno zero inventato.
+ *
+ * 01/10 (rilievi bassi, punto 1) - la giornata e' `p.giorno`, cioe' quella
+ * della scheda: giorno della PARTITA quando la riga porta il dato del database
+ * (`posizioniDellaGiornata` in `lib/chiuseGiornata`), altrimenti il giorno di
+ * REGOLAMENTO, provvisorio (`giornoConfermato` false). `escluse` = le posizioni
+ * che la scheda toglie dal giorno (partite di altri giorni): fuori anche qui.
  */
 export function pnlChiuseDelGiorno(
     posizioni: readonly PosizioneChiusa[],
-    f: { giorno: string; bot: Bot; modo: Modo; strategia?: string | null },
+    f: {
+        giorno: string; bot: Bot; modo: Modo; strategia?: string | null;
+        escluse?: ReadonlySet<PosizioneChiusa>;
+    },
 ): number | null {
     let tot: number | null = null;
+    for (const p of chiuseDelBot(posizioni, f)) tot = cent((tot ?? 0) + p.pnlGlobale);
+    return tot;
+}
+
+/** Le posizioni chiuse di un bot nel giorno: la base di `pnlChiuseDelGiorno`. */
+export function chiuseDelBot(
+    posizioni: readonly PosizioneChiusa[],
+    f: {
+        giorno: string; bot: Bot; modo: Modo; strategia?: string | null;
+        escluse?: ReadonlySet<PosizioneChiusa>;
+    },
+): PosizioneChiusa[] {
+    const out: PosizioneChiusa[] = [];
     for (const p of filtraChiuse(posizioni, { giorno: f.giorno, bot: f.bot, modo: f.modo })) {
+        if (f.escluse?.has(p)) continue;
         if (f.strategia != null) {
             const apertura = p.righe.find((r) => !r.chiusura && String(r.id) === String(p.id));
             if ((apertura?.quale ?? null) !== f.strategia) continue;
         }
-        tot = cent((tot ?? 0) + p.pnlGlobale);
+        out.push(p);
     }
-    return tot;
+    return out;
 }
 
 /** giorno di REGOLAMENTO (Roma) di una riga: quello del conto per il reale */
@@ -760,7 +799,7 @@ export function regolatoNelGiorno(posizioni: readonly PosizioneChiusa[], giorno:
         for (const r of p.righe) {
             if (r.pnl == null || !isSettled(r.stato)) continue;
             if (giornoRegolamentoRiga(r) !== giorno) continue;
-            if (r.fontePnl === 'betfair') reale = cent((reale ?? 0) + r.pnl);
+            if (r.fontePnl === 'conto') reale = cent((reale ?? 0) + r.pnl);
             else stimato = cent((stimato ?? 0) + r.pnl);
         }
     }

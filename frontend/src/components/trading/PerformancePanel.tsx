@@ -10,7 +10,7 @@ import { EquityCurve } from '@/components/trading/EquityCurve';
 import { EQUITY_TITLE, EQUITY_AXIS_NOTE_GIORNATE } from '@/components/trading/EquityCard';
 import { StatTile, KpiRow } from '@/components/trading/StatTile';
 import {
-    equityByDay, summarizeRows, aggregateBreakdown, dayLabel, WIN_LOSS_TIP,
+    equityByDay, summarizeRows, coperturaTutto, aggregateBreakdown, dayLabel, WIN_LOSS_TIP,
     PERIOD_LABEL, type DailyRow, type PeriodKind, type HistoryVariant, type DailyBreakdown,
 } from '@/lib/dailyHistory';
 import { fmtMoney, fmtPct as fmtPctFrac, fmtNum } from '@/lib/format';
@@ -32,7 +32,9 @@ function fmtPct(v: number | null | undefined): string {
     return fmtPctFrac(v, 1);
 }
 
-const PERIODS: PeriodKind[] = ['month', '30d', '90d', 'year'];
+// B-14 (01/10): gli stessi periodi dello Storico dello sport (7/30/90 giorni,
+// mese, «Tutto»), con le stesse etichette (`PERIOD_LABEL`); «Anno» resta qui
+const PERIODS: PeriodKind[] = ['7d', '30d', '90d', 'month', 'year', 'all'];
 
 const OMEGA_PHASE_LABEL: Record<string, string> = {
     ht_cs: 'Gamba 1T (Half Time Score)', ft_cs: 'Gamba 2T (Correct Score)', scalp: 'Scalp', none: 'Senza fase (v1/manuale)',
@@ -145,6 +147,12 @@ export function PerformancePanel({ rows, period, onPeriodChange, variant, loadin
                     </span>
                 )}
             </div>
+
+            {period === 'all' && range && !loading && (
+                <div className="text-[11px] text-slate-500" data-testid="period-copertura-tutto">
+                    {coperturaTutto(rows, range)}
+                </div>
+            )}
 
             {unavailable && (
                 <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-200" data-testid="period-unavailable">

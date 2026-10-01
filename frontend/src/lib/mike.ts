@@ -831,7 +831,11 @@ export const MIKE_AWAITING_KICKOFF_NOTE = 'in attesa del fischio';
  * «function public.trading_daily_history(...) is not unique» (42725): un codice
  * nudo in una pagina vuota. Vedi audit R2.
  */
-export const MIKE_HISTORY_MIGRATION_HINT = 'storico Mike: applica migrations/mike_history_v2.sql';
+// 01/10 (rilievi bassi, punto 10): a schermo parole per il trader, mai il
+// nome di un file SQL o di una funzione del database (anche l'errore grezzo,
+// che li contiene, non si mostra: resta nella console per chi indaga).
+export const MIKE_HISTORY_MIGRATION_HINT =
+    'storico di Mike non disponibile: il database non ha ancora l\'aggiornamento dello storico (da applicare)';
 
 export function mikeHistoryErrorMessage(raw: unknown): string {
     const msg = String((raw as Error)?.message ?? raw ?? '').trim();
@@ -842,7 +846,10 @@ export function mikeHistoryErrorMessage(raw: unknown): string {
         || low.includes('could not find the function')
         || low.includes('tabella non ammessa')
         || low.includes('attribuzione non valida');
-    if (broken) return `${MIKE_HISTORY_MIGRATION_HINT} (${msg || 'RPC assente'})`;
+    if (broken) {
+        console.warn('[storico Mike] errore del database:', msg || 'lettura assente');
+        return MIKE_HISTORY_MIGRATION_HINT;
+    }
     return msg || 'storico Mike non disponibile';
 }
 

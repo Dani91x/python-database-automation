@@ -12,6 +12,8 @@
 // I finti hanno le chiavi delle tabelle vere; le posizioni le costruisce la
 // funzione VERA.
 // ============================================================================
+// D-06 (01/10, rilievi bassi): UN solo tipo FontePnl (lib/fontePnl.ts): le
+// parole sono conto / stima / simulato (prima betfair / stimato / paper).
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -106,7 +108,7 @@ describe('una regola: giornata -> bot -> partita -> ciclo', () => {
         expect(omega).toHaveTextContent('punta');
         expect(omega).toHaveTextContent('vinta');
         expect(within(omega).getByTestId('cr-chiusa-pnl-1')).toHaveTextContent('+1,00');
-        expect(within(omega).getByTestId('cr-chiusa-fonte-1').dataset.fonte).toBe('stimato');
+        expect(within(omega).getByTestId('cr-chiusa-fonte-1').dataset.fonte).toBe('stima');
     });
 
     it('il totale in testa e\' la somma dei bot', () => {
@@ -134,7 +136,7 @@ describe('paper e live: mai insieme', () => {
         expect(screen.getByTestId('cr-chiuse-moneta')).toHaveTextContent('prova');
         expect(screen.getByTestId('cr-chiuse-moneta').dataset.modo).toBe('paper');
         expect(screen.getByTestId('cr-chiuse-totale')).toHaveTextContent('+50,00');
-        expect(screen.getByTestId('cr-chiuse-totale-fonte').dataset.fonte).toBe('paper');
+        expect(screen.getByTestId('cr-chiuse-totale-fonte').dataset.fonte).toBe('simulato');
         expect(screen.queryByText('Inter - Milan')).toBeNull();
     });
 
@@ -158,8 +160,8 @@ describe('la fonte di ogni cifra: Betfair / stimato', () => {
         expect(screen.getByTestId('cr-chiuse-reale')).toHaveTextContent('+2,85');
         expect(screen.getByTestId('cr-chiuse-stimato')).toHaveTextContent(`${MINUS}0,40`);
         expect(screen.getByTestId('cr-chiuse-totale-fonte').dataset.fonte).toBe('misto');
-        expect(screen.getByTestId('cr-chiusa-fonte-1').dataset.fonte).toBe('betfair');
-        expect(screen.getByTestId('cr-chiusa-fonte-2').dataset.fonte).toBe('stimato');
+        expect(screen.getByTestId('cr-chiusa-fonte-1').dataset.fonte).toBe('conto');
+        expect(screen.getByTestId('cr-chiusa-fonte-2').dataset.fonte).toBe('stima');
     });
 
     it('W_B2 (punto 5): le parole delle fonti sono quelle di lib/fontePnl.ts (stesse della pagina di Mike)', () => {

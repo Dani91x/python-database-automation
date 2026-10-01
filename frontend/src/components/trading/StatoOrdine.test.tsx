@@ -65,6 +65,21 @@ describe('StatoOrdineRiga — i tre numeri e lo stato', () => {
         expect(screen.getByTestId('stato-ordine')).toHaveAttribute('data-dalla-nota', '1');
     });
 
+    // 01/10 (rilievi bassi, punto 10): il tooltip dell'asterisco parla al
+    // trader, senza nome di file SQL. FALSIFICAZIONE: rimettendo il vecchio
+    // title (col nome del file) questo test diventa rosso.
+    it('il tooltip «dalla nota» non nomina file SQL', () => {
+        render(<StatoOrdineRiga riga={{ status: 'open', side: 'back', price: 3, size: 1,
+            meta: { esecuzione: { size_richiesta: 2, size_abbinata: 1, size_residua: 1 } } }} nowMs={ORA} />);
+        const note = screen.getAllByTestId('stato-ordine-nota');
+        expect(note.length).toBeGreaterThan(0);
+        for (const n of note) {
+            const t = n.getAttribute('title') ?? '';
+            expect(t).not.toMatch(/\.sql|migrazione|meta\)/);
+            expect(t).toMatch(/nota scritta dal bot/);
+        }
+    });
+
     it('⚠️ riga senza niente: «—» ovunque e MAI «0,00 €»', () => {
         render(<StatoOrdineRiga riga={{ status: 'pending', price: 2.2, size: 5 }} nowMs={ORA} />);
         const riga = screen.getByTestId('stato-ordine');

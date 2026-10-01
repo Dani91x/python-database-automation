@@ -1,4 +1,13 @@
 import { describe, it, expect } from 'vitest';
+import { CANALI_SALDO } from './saldoBetfair';
+
+// 01/10 (rilievi bassi, punto 11): la costante vive qui (la card del saldo e'
+// stata cancellata). Stessa asserzione che stava nel test della card.
+describe('CANALI_SALDO - i canali che portano il topic «account»', () => {
+    it('sono i 5 processi che piazzano ordini veri (porte esistenti)', () => {
+        expect([...CANALI_SALDO]).toEqual(['calcio', 'tennis', 'mike', 'omega', 'safe']);
+    });
+});
 import {
     statoSaldoBetfair, SALDO_HEARTBEAT_STALE_S, leggiSaldoDalCanale, saldoPiuRecente, saldoDaMostrare,
     testoUltimaVerifica,

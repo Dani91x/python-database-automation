@@ -10,6 +10,8 @@
 // I finti hanno le chiavi delle tabelle vere (`omega_trades`,
 // `safe_strategy_trades`, `mike_trades`, `tennis_live_orders`).
 // ============================================================================
+// D-06 (01/10, rilievi bassi): UN solo tipo FontePnl (lib/fontePnl.ts): le
+// parole sono conto / stima / simulato (prima betfair / stimato / paper).
 import { describe, it, expect } from 'vitest';
 import {
     posizioniChiuse, filtraChiuse, riepilogoChiuse, raggruppaGiornata, unisciRighe,
@@ -103,7 +105,7 @@ describe('fonte del P&L: Betfair / stimato / paper, sempre dichiarata', () => {
             t({ id: 1, pnl: 3, pnl_betfair: 2.85, pnl_betfair_settled_at: `${G}T12:05:00.000Z` }),
             t({ id: 2, pnl: -2, closes_trade_id: 1 }),
         ]);
-        expect(p.fontePnl).toBe('stimato');
+        expect(p.fontePnl).toBe('stima');
         expect(p.pnlReale).toBe(2.85);
         expect(p.pnlStimato).toBe(-2);
         expect(p.pnlGlobale).toBe(0.85);
@@ -114,7 +116,7 @@ describe('fonte del P&L: Betfair / stimato / paper, sempre dichiarata', () => {
             t({ id: 1, pnl: 3, pnl_betfair: 2.85 }),
             t({ id: 2, pnl: -2, pnl_betfair: -2, closes_trade_id: 1 }),
         ]);
-        expect(p.fontePnl).toBe('betfair');
+        expect(p.fontePnl).toBe('conto');
         expect(p.pnlStimato).toBeNull();
         expect(p.pnlReale).toBe(0.85);
     });
@@ -141,7 +143,7 @@ describe('fonte del P&L: Betfair / stimato / paper, sempre dichiarata', () => {
 
     it('paper: fonte paper, il pnl_betfair (che non puo\' esistere) e\' ignorato', () => {
         const [p] = posizioniChiuse([t({ id: 1, mode: 'paper', pnl: 1, pnl_betfair: 9 })]);
-        expect(p.fontePnl).toBe('paper');
+        expect(p.fontePnl).toBe('simulato');
         expect(p.pnlGlobale).toBe(1);
         expect(p.pnlReale).toBeNull();
         expect(p.pnlStimato).toBeNull();

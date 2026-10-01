@@ -49,11 +49,22 @@ export function vaiAllaRigaDelBot(bot: string, doc: Document = document): boolea
  *    che entrambi leggono (`guardie_tennis.kill_switch_attivo`,
  *    `scalper_session.motivo_freno`): da li' solo chiusure.
  */
+// R-07 (rilievi bassi 01/10): la verita' COMPLETA. Nessuno stop GIORNALIERO
+// proprio (nessun daily loss in `stream/tennis_live/` ne' in `stream/scalper/`),
+// ma lo scalper ha due tetti suoi, verificati nel codice: per PARTITA
+// `event_loss_cap` (scalper_session.py: 1,50 di serie, al massimo 1,00 nella
+// modalita' intervallo; scalper_bot.py: oltre il tetto chiude tutto su quella
+// partita) e per SELEZIONE il tetto di esposizione che la sessione passa alla
+// strategia (stake x (quota massima - 1) x 2).
 export const NOTA_TENNIS_SCALPER = {
-    testo: 'Tennis e Scalper: nessuno stop proprio. Li ferma lo stop del Conto quando scatta, ma le loro perdite non lo fanno scattare.',
+    testo: 'Tennis e Scalper: nessuno stop giornaliero proprio. Li ferma lo stop del Conto quando scatta, ma le loro perdite non lo fanno scattare. '
+        + 'Lo Scalper ha in piu\' due tetti suoi, nei parametri della sessione: perdita massima per partita ed esposizione massima per selezione.',
     titolo: 'I 4 bot tennis e lo scalper calcio non hanno uno stop di perdita giornaliera. Lo stop del Conto e\' calcolato dal runner calcio '
-        + 'sulle SUE operazioni (betfair_live_settled + posizioni aperte del runner calcio): quando scatta tira il freno generale, '
-        + 'che tennis e scalper leggono (da quel momento solo chiusure), ma le perdite di tennis e scalper non entrano nel suo conteggio.',
+        + 'sulle SUE operazioni (regolate dal conto Betfair + posizioni aperte del runner calcio): quando scatta tira il freno generale, '
+        + 'che tennis e scalper leggono (da quel momento solo chiusure), ma le perdite di tennis e scalper non entrano nel suo conteggio. '
+        + 'Lo scalper calcio ha due tetti suoi, non giornalieri: per PARTITA una perdita massima (di serie 1,50 EUR, al massimo 1,00 EUR '
+        + 'nella modalita\' intervallo) oltre la quale chiude tutto su quella partita; per SELEZIONE un\'esposizione massima '
+        + '(stake x (quota massima - 1) x 2).',
 };
 
 const CONFERMA_SCADE_MS = 10_000;
