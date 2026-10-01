@@ -19,9 +19,9 @@ export function PageShell({ title, header, children, footer }: {
     return (
         <div className="min-h-screen bg-background text-foreground relative pb-16" data-testid="page-shell">
             <Helmet><title>{title}</title></Helmet>
-            <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-30" />
+            <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-30 ds-v2-nascondi" />
             {header}
-            <main className="container mx-auto px-4 lg:px-6 py-5 relative z-10 max-w-7xl space-y-5">
+            <main className="container mx-auto px-4 lg:px-6 py-5 relative z-10 max-w-7xl space-y-5 ds-v2-pagina-larga">
                 {children}
                 {footer && (
                     <p className="text-[11px] text-muted-foreground pt-2" data-testid="page-footer">{footer}</p>

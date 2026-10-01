@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { HelmetProvider } from 'react-helmet-async';
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { useState } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
@@ -30,10 +31,69 @@ import { SafeStrategyProvider } from "@/components/safestrategy/SafeStrategyProv
 import CheckEmail from "@/pages/CheckEmail";
 import ResetPassword from "@/pages/ResetPassword";
 import NotFound from "@/pages/NotFound";
+import { AppShell } from "@/components/shell/AppShell";
+import { ProvaNuovaGrafica } from "@/components/shell/ProvaNuovaGrafica";
+import { leggiUiShell } from "@/lib/uiShell";
 
 const queryClient = new QueryClient();
 
+// REDESIGN «guscio v2» (01/10/2026) — con ui.shell='v2' le rotte protette sono
+// rese dentro la cornice nuova (layout route: sidebar + testata + <Outlet/>).
+// Le PAGINE e i loro elementi sono gli stessi, nello stesso ordine; l'auth e'
+// la stessa ProtectedRoute, montata una volta sulla cornice. Fuori dal guscio
+// sempre: /ladder-popout (finestra 560×860), landing, check-email,
+// reset-password, 404. Con 'off' (default) vale il ramo sotto, che e' l'albero
+// delle rotte di oggi, invariato.
+function RotteGuscioV2() {
+    return (
+        <Routes>
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/check-email" element={<CheckEmail />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route
+                element={
+                    <ProtectedRoute>
+                        <AppShell />
+                    </ProtectedRoute>
+                }
+            >
+                <Route path="/board" element={<Board />} />
+                <Route path="/control-room" element={<ControlRoom />} />
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/omega" element={<Omega />} />
+                <Route path="/safe-strategy" element={<SafeStrategy />} />
+                <Route path="/mike" element={<Mike />} />
+                <Route path="/segui-live" element={<SeguiLive />} />
+                <Route path="/multi-ladder" element={<MultiLadder />} />
+                <Route path="/market-watch" element={<MarketWatch />} />
+                <Route path="/live-pnl" element={<LivePnl />} />
+                <Route path="/storico/calcio" element={<StoricoCalcio />} />
+                <Route path="/storico/tennis" element={<StoricoTennis />} />
+                <Route path="/tennis" element={<TennisDashboard />} />
+                <Route path="/tennis/terminal" element={<TennisTerminal />} />
+                <Route path="/trade-journal" element={<TradeJournal />} />
+                <Route path="/report-personale" element={<ReportPersonale />} />
+                <Route path="/watchlist" element={<Watchlist />} />
+                <Route path="/analytics" element={<Analytics />} />
+                <Route path="/match-replay" element={<MatchReplay />} />
+                <Route path="/select-sport" element={<SelectSport />} />
+            </Route>
+            <Route
+                path="/ladder-popout"
+                element={
+                    <ProtectedRoute>
+                        <LadderPopout />
+                    </ProtectedRoute>
+                }
+            />
+            <Route path="*" element={<NotFound />} />
+        </Routes>
+    );
+}
+
 function App() {
+    // letto una volta: il cambio passa sempre da un ricaricamento (lib/uiShell.ts)
+    const [uiShell] = useState(leggiUiShell);
     return (
         <QueryClientProvider client={queryClient}>
             <HelmetProvider>
@@ -43,6 +103,8 @@ function App() {
                         {/* Provider globale Safe Strategy: valuta i segnali anche quando
                             l'utente è su un'altra schermata (toast → /safe-strategy). */}
                         <SafeStrategyProvider>
+                        {uiShell === 'v2' ? <RotteGuscioV2 /> : (
+                        <>
                         <Routes>
                             {/* AUTH ATTIVA: la landing (con login/registrazione) è la root.
                                 La dashboard e analytics sono protette da ProtectedRoute. */}
@@ -223,6 +285,9 @@ function App() {
                             />
                             <Route path="*" element={<NotFound />} />
                         </Routes>
+                        <ProvaNuovaGrafica />
+                        </>
+                        )}
                         </SafeStrategyProvider>
                     </BrowserRouter>
                 </TooltipProvider>

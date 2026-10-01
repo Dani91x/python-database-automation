@@ -42,13 +42,14 @@ export function TennisNav({ sectionLabel = 'TENNIS', onBack, backLabel = 'Torna 
 
     return (
         <nav
-            className="border-b border-white/5 bg-black/50 backdrop-blur-xl sticky top-0 z-50"
+            className="border-b border-white/5 bg-black/50 backdrop-blur-xl sticky ds-v2-non-sticky top-0 z-50"
             role="navigation"
             aria-label="Tennis navigation"
         >
-            <div className="container mx-auto px-6 h-16 flex items-center justify-between">
+            <div className="container mx-auto px-6 h-16 flex items-center justify-between ds-v2-largo">
                 <div className="flex items-center gap-4">
                     <div
+                        data-nav-legacy
                         className="font-display font-black text-xl tracking-tighter cursor-pointer"
                         onClick={() => navigate('/tennis')}
                     >
@@ -78,6 +79,7 @@ export function TennisNav({ sectionLabel = 'TENNIS', onBack, backLabel = 'Torna 
                         variant="outline"
                         size="sm"
                         onClick={() => navigate('/select-sport')}
+                        data-nav-legacy
                         className="border-secondary/30 text-secondary hover:bg-secondary/10"
                         aria-label="Cambia sport"
                     >
@@ -88,6 +90,7 @@ export function TennisNav({ sectionLabel = 'TENNIS', onBack, backLabel = 'Torna 
                         variant="outline"
                         size="sm"
                         onClick={() => navigate('/watchlist')}
+                        data-nav-legacy
                         className="border-amber-400/30 text-amber-300 hover:bg-amber-400/10"
                         aria-label="Watchlist"
                     >
@@ -98,6 +101,7 @@ export function TennisNav({ sectionLabel = 'TENNIS', onBack, backLabel = 'Torna 
                         variant="outline"
                         size="sm"
                         onClick={() => navigate('/report-personale')}
+                        data-nav-legacy
                         className="border-primary/30 text-primary hover:bg-primary/10"
                         aria-label="Report Personale"
                     >
@@ -108,6 +112,7 @@ export function TennisNav({ sectionLabel = 'TENNIS', onBack, backLabel = 'Torna 
                         variant="outline"
                         size="sm"
                         onClick={() => navigate('/analytics')}
+                        data-nav-legacy
                         className="border-primary/30 text-primary hover:bg-primary/10"
                         aria-label="Analytics"
                     >

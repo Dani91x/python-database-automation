@@ -133,7 +133,7 @@ export default function TennisTerminal() {
     if (!eventId || !marketId) {
         return (
             <div className="min-h-screen bg-background relative">
-                <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-30" />
+                <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-30 ds-v2-nascondi" />
                 <TennisNav sectionLabel="TERMINAL" onBack={indietro}
                     backLabel={daControlRoom ? 'Torna alla Control Room' : undefined} />
                 <main className="container mx-auto px-6 py-20 relative z-10 text-center">
@@ -155,13 +155,13 @@ export default function TennisTerminal() {
                 <title>{title}</title>
             </Helmet>
 
-            <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-20" />
+            <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-20 ds-v2-nascondi" />
 
             <TennisNav sectionLabel="TERMINAL" onBack={indietro}
                 backLabel={daControlRoom ? 'Torna alla Control Room' : undefined} />
 
             {/* Header match compatto */}
-            <div className="border-b border-white/5 bg-black/40 backdrop-blur-xl sticky top-16 z-40">
+            <div className="border-b border-white/5 bg-black/40 backdrop-blur-xl sticky ds-v2-non-sticky top-16 z-40">
                 <div className="w-full px-4 lg:px-6 h-12 flex items-center gap-3 text-sm">
                     <span className="font-display font-black tracking-tight text-white">
                         {p1} <span className="text-white/30 mx-1">vs</span> {p2}

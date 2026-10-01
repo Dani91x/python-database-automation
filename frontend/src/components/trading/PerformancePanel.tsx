@@ -204,7 +204,7 @@ export function PerformancePanel({ rows, period, onPeriodChange, variant, loadin
                 )}
             </KpiRow>
 
-            <Card className="glass-card border-white/10 p-4">
+            <Card className="glass-card border-white/10 p-4 ds-v2-panel">
                 <div className="text-sm text-slate-300" title={EQUITY_AXIS_NOTE_GIORNATE}>{EQUITY_TITLE} · per giornata</div>
                 <div className="text-[10px] text-slate-500 mb-2">{EQUITY_AXIS_NOTE_GIORNATE}</div>
                 <EquityCurve
@@ -215,7 +215,7 @@ export function PerformancePanel({ rows, period, onPeriodChange, variant, loadin
             </Card>
 
             {rows.length > 0 && (
-                <Card className="glass-card border-white/10 p-0 overflow-hidden divide-y divide-white/5">
+                <Card className="glass-card border-white/10 p-0 overflow-hidden divide-y divide-white/5 ds-v2-panel">
                     <BreakdownTable
                         title={variant === 'safe' ? 'Strategia' : 'Gamba'}
                         data={byStrategy}

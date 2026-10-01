@@ -1,0 +1,64 @@
+{
+  "pagina": "watchlist",
+  "url": "/watchlist",
+  "titolo": "Watchlist | Alpha Score",
+  "testi": [
+    "AI",
+    "TERMINAL",
+    "WATCHLIST",
+    "Report",
+    "Dashboard",
+    "La mia",
+    "Watchlist",
+    "Snapshot pre-match congelati. Decidi se giocare o scartare — il sistema traccia consiglio e scelta.",
+    "Da valutare",
+    "Giocate",
+    "Scartate",
+    "Nessuna partita in watchlist",
+    "Spunta le partite dalla Dashboard e premi \"Aggiungi a Watchlist\" per congelarne lo snapshot.",
+    "©",
+    "2026",
+    "Alpha Score AI. All rights reserved."
+  ],
+  "testid": [],
+  "comandi": [
+    {
+      "ruolo": "link",
+      "nome": "AI TERMINAL",
+      "href": "/dashboard"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Report",
+      "href": "/report-personale"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Report"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Dashboard",
+      "href": "/dashboard"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Dashboard"
+    },
+    {
+      "ruolo": "tab",
+      "nome": "Da valutare",
+      "selezionato": "true"
+    },
+    {
+      "ruolo": "tab",
+      "nome": "Giocate",
+      "selezionato": "false"
+    },
+    {
+      "ruolo": "tab",
+      "nome": "Scartate",
+      "selezionato": "false"
+    }
+  ]
+}

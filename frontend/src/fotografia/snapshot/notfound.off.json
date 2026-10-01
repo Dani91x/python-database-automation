@@ -1,0 +1,22 @@
+{
+  "pagina": "notfound",
+  "url": "/pagina-che-non-esiste",
+  "titolo": "",
+  "testi": [
+    "404",
+    "La pagina che stai cercando non esiste o è stata spostata.",
+    "Torna alla Home"
+  ],
+  "testid": [],
+  "comandi": [
+    {
+      "ruolo": "link",
+      "nome": "Torna alla Home",
+      "href": "/"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Torna alla Home"
+    }
+  ]
+}

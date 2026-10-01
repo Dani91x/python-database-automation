@@ -1,0 +1,71 @@
+{
+  "pagina": "select-sport",
+  "url": "/select-sport",
+  "titolo": "Scegli lo Sport | Alpha Score",
+  "testi": [
+    "AI",
+    "TERMINAL",
+    "daniele.ritrovato@gmail.com",
+    "CONTROL ROOM",
+    "Esci",
+    "Scegli lo",
+    "sport",
+    "Seleziona il terminale operativo su cui vuoi lavorare.",
+    "⚽",
+    "Football",
+    "Partite del Giorno · motori AI · trading live",
+    "Entra",
+    "🎾",
+    "Tennis",
+    "Betfair Exchange · ladder pro · bot trading",
+    "Entra",
+    "Ω",
+    "Omega",
+    "Correct Score · obiettivo €/giorno · set-and-forget",
+    "Entra",
+    "🛡️",
+    "Safe Strategy",
+    "Segnali live calcio + tennis · ingresso sempre manuale",
+    "Entra",
+    "🎯",
+    "Mike",
+    "Under 3.5 / Over 4.5 · green-up e cash-out · paper-first",
+    "Entra",
+    "©",
+    "2026",
+    "Alpha Score AI. All rights reserved."
+  ],
+  "testid": [
+    "nav-control-room"
+  ],
+  "comandi": [
+    {
+      "ruolo": "button",
+      "nome": "Apri la Control Room"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Logout"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Apri sezione Football"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Apri sezione Tennis"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Apri sezione Omega"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Apri sezione Safe Strategy"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Apri sezione Mike"
+    }
+  ]
+}

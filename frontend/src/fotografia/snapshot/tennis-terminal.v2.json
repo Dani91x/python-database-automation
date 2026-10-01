@@ -1,0 +1,51 @@
+{
+  "pagina": "tennis-terminal",
+  "url": "/tennis/terminal",
+  "titolo": "",
+  "testi": [
+    "AI",
+    "TERMINAL",
+    "TERMINAL",
+    "Torna alle partite",
+    "Cambia sport",
+    "Watchlist",
+    "Report",
+    "Analytics",
+    "daniele.ritrovato@gmail.com",
+    "Esci",
+    "Nessun match selezionato. Torna alle",
+    "Partite del Giorno",
+    "."
+  ],
+  "testid": [],
+  "comandi": [
+    {
+      "ruolo": "button",
+      "nome": "Torna alle partite"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Cambia sport"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Watchlist"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Report Personale"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Analytics"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Logout"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Partite del Giorno"
+    }
+  ]
+}

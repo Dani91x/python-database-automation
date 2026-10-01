@@ -1,0 +1,70 @@
+{
+  "pagina": "board",
+  "url": "/board",
+  "titolo": "Programma di oggi | Alpha Score",
+  "testi": [
+    "AI",
+    "TERMINAL",
+    "PROGRAMMA",
+    "🛡️ Safe Strategy",
+    "Segui Live",
+    "Dashboard",
+    "Programma di",
+    "oggi",
+    "Tabellone in tempo reale dal canale locale del runner (push 'board', nessuna lettura DB).",
+    "⚽ Calcio",
+    "🎾 Tennis",
+    "Canale locale",
+    "calcio",
+    "non attivo (ws://127.0.0.1:",
+    "47331",
+    "). Avvia l'app desktop / il runner",
+    "calcio",
+    "per il programma in tempo reale."
+  ],
+  "testid": [],
+  "comandi": [
+    {
+      "ruolo": "link",
+      "nome": "AI TERMINAL",
+      "href": "/dashboard"
+    },
+    {
+      "ruolo": "link",
+      "nome": "🛡️ Safe Strategy",
+      "href": "/safe-strategy"
+    },
+    {
+      "ruolo": "button",
+      "nome": "🛡️ Safe Strategy"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Segui Live",
+      "href": "/segui-live"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Segui Live"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Dashboard",
+      "href": "/dashboard"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Dashboard"
+    },
+    {
+      "ruolo": "button",
+      "nome": "⚽ Calcio",
+      "premuto": "true"
+    },
+    {
+      "ruolo": "button",
+      "nome": "🎾 Tennis",
+      "premuto": "false"
+    }
+  ]
+}

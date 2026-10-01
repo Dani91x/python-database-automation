@@ -1,0 +1,56 @@
+{
+  "pagina": "trade-journal",
+  "url": "/trade-journal",
+  "titolo": "Trade Journal | Alpha Score",
+  "testi": [
+    "Terminal",
+    "Trade Journal",
+    "mode: tutte",
+    "paper",
+    "live",
+    "azione: tutte",
+    "origine: tutte",
+    "manuale",
+    "regola",
+    "solo oggi",
+    "Nessuna riga journal con i filtri correnti.",
+    "Statistiche per pattern",
+    "Per tag",
+    "Nessuna riga.",
+    "Per side",
+    "Nessuna riga.",
+    "Per origine",
+    "Nessuna riga.",
+    "Per minuto",
+    "Nessuna riga."
+  ],
+  "testid": [],
+  "comandi": [
+    {
+      "ruolo": "link",
+      "nome": "Terminal",
+      "href": "/segui-live"
+    },
+    {
+      "ruolo": "combobox",
+      "nome": "Filtro mode"
+    },
+    {
+      "ruolo": "combobox",
+      "nome": "Filtro azione"
+    },
+    {
+      "ruolo": "combobox",
+      "nome": "Filtro origine"
+    },
+    {
+      "ruolo": "textbox",
+      "nome": ""
+    },
+    {
+      "ruolo": "checkbox",
+      "nome": "solo oggi",
+      "spuntato": "true"
+    }
+  ]
+}

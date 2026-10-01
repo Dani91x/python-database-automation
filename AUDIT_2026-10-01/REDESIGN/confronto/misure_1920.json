@@ -1,0 +1,124 @@
+[
+ {
+  "nome": "control-room",
+  "stato": "off",
+  "w": 1920,
+  "websocket": [
+   "ws://127.0.0.1:47331",
+   "ws://127.0.0.1:47332",
+   "ws://127.0.0.1:47333",
+   "ws://127.0.0.1:47334",
+   "ws://127.0.0.1:47335",
+   "ws://127.0.0.1:47336",
+   "ws://127.0.0.1:47337",
+   "ws://127.0.0.1:47338"
+  ],
+  "nWebsocket": 16,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "control-room",
+  "stato": "v2",
+  "w": 1920,
+  "websocket": [
+   "ws://127.0.0.1:47331",
+   "ws://127.0.0.1:47332",
+   "ws://127.0.0.1:47333",
+   "ws://127.0.0.1:47334",
+   "ws://127.0.0.1:47335",
+   "ws://127.0.0.1:47336",
+   "ws://127.0.0.1:47337",
+   "ws://127.0.0.1:47338"
+  ],
+  "nWebsocket": 16,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "mike",
+  "stato": "off",
+  "w": 1920,
+  "websocket": [
+   "ws://127.0.0.1:47333"
+  ],
+  "nWebsocket": 3,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "mike",
+  "stato": "v2",
+  "w": 1920,
+  "websocket": [
+   "ws://127.0.0.1:47333"
+  ],
+  "nWebsocket": 3,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "segui-live",
+  "stato": "off",
+  "w": 1920,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "segui-live",
+  "stato": "v2",
+  "w": 1920,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "tennis-terminal-match",
+  "stato": "off",
+  "w": 1920,
+  "websocket": [
+   "ws://127.0.0.1:47332"
+  ],
+  "nWebsocket": 3,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "tennis-terminal-match",
+  "stato": "v2",
+  "w": 1920,
+  "websocket": [
+   "ws://127.0.0.1:47332"
+  ],
+  "nWebsocket": 3,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ }
+]

@@ -592,7 +592,7 @@ export default function Mike() {
             </KpiRow>
 
             <Tabs value={tab} onValueChange={setTab} className="w-full">
-                <TabsList className="sticky z-30" style={{ top: navH }}>
+                <TabsList className="sticky ds-v2-non-sticky z-30" style={{ top: navH }}>
                     {/* ogni contatore è lo STESSO numero della scheda che apre:
                         Partite = seguite ora, Operazioni = PARTITE con operazioni
                         nella giornata, Risultati = partite con cicli chiusi prima

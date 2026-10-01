@@ -1,0 +1,168 @@
+{
+  "pagina": "analytics",
+  "url": "/analytics",
+  "titolo": "",
+  "testi": [
+    "AI",
+    "TERMINAL",
+    "ANALYTICS",
+    "Dashboard",
+    "Centro di Controllo",
+    "Motori",
+    "Pagella per-motore per-mercato sullo storico settlato.",
+    "Performance Motori",
+    "Decisioni",
+    "Crea Strategia",
+    "Reportistiche",
+    "Backtest Automatico",
+    "Filtri",
+    "Reset",
+    "Motore",
+    "Tutti",
+    "Mercato",
+    "Tutti",
+    "Selezione",
+    "Tutte",
+    "Lega",
+    "Tutte",
+    "Stagione",
+    "Tutte",
+    "Confidenza % (min–max)",
+    "–",
+    "Concordanza min. motori",
+    "Qualsiasi",
+    "≥ 2 motori",
+    "≥ 3 motori",
+    "≥ 4 motori",
+    "Frequenza vs baseline",
+    "Qualsiasi",
+    "Sopra (mercato \"caldo\")",
+    "Sotto (mercato \"freddo\")",
+    "Ritardo mercato ≥",
+    "1° gol entro min.",
+    "⚠ retrosp.",
+    "Raggruppa per",
+    "Totale",
+    "Per fascia di confidenza",
+    "Per mercato",
+    "Per selezione",
+    "Per motore",
+    "Per lega",
+    "Solo segnali piazzati",
+    "Nota.",
+    "Hit-rate = % direzione azzeccata sulle partite",
+    "settlate",
+    ". Motori",
+    "Poisson/ML/Tactics",
+    "= esito ai",
+    "90'",
+    "(no supplementari/rigori). Motore",
+    "API",
+    "= solo 1X2, esito a",
+    "tempo pieno",
+    "→ confrontalo con cautela. Intervallo di Wilson 95%: con N basso la stima è incerta — guarda l'ampiezza.",
+    "Scarto calib.",
+    "= hit-rate − prob. media: positivo = il motore",
+    "sottostima",
+    ", negativo =",
+    "sovrastima",
+    ". Clic su un gruppo per le partite.",
+    "⚠ Il filtro \"1° gol entro min.\" è RETROSPETTIVO",
+    ": il minuto del primo gol è un esito della partita, non noto pre-match — usalo per analisi storica / conferma in-play, NON come edge giocabile prima del fischio. Dati storici, non garanzia di risultati futuri."
+  ],
+  "testid": [],
+  "comandi": [
+    {
+      "ruolo": "link",
+      "nome": "AI TERMINAL",
+      "href": "/dashboard"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Dashboard",
+      "href": "/dashboard"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Dashboard"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Performance Motori"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Decisioni"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Crea Strategia"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Reportistiche"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Backtest Automatico"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Reset"
+    },
+    {
+      "ruolo": "combobox",
+      "nome": ""
+    },
+    {
+      "ruolo": "combobox",
+      "nome": ""
+    },
+    {
+      "ruolo": "combobox",
+      "nome": "",
+      "disabled": true
+    },
+    {
+      "ruolo": "combobox",
+      "nome": ""
+    },
+    {
+      "ruolo": "combobox",
+      "nome": ""
+    },
+    {
+      "ruolo": "spinbutton",
+      "nome": ""
+    },
+    {
+      "ruolo": "spinbutton",
+      "nome": ""
+    },
+    {
+      "ruolo": "combobox",
+      "nome": ""
+    },
+    {
+      "ruolo": "combobox",
+      "nome": ""
+    },
+    {
+      "ruolo": "spinbutton",
+      "nome": ""
+    },
+    {
+      "ruolo": "spinbutton",
+      "nome": ""
+    },
+    {
+      "ruolo": "combobox",
+      "nome": ""
+    },
+    {
+      "ruolo": "checkbox",
+      "nome": "Solo segnali piazzati",
+      "spuntato": "false"
+    }
+  ]
+}

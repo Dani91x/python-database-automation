@@ -1,0 +1,174 @@
+{
+  "pagina": "landing",
+  "url": "/",
+  "titolo": "",
+  "testi": [
+    "Login",
+    "Register",
+    "Data-Driven Football Analysis",
+    "Alpha",
+    "Score",
+    "Non scommettere.",
+    "Investi.",
+    "Il primo algoritmo a",
+    "3 Livelli",
+    "che trasforma le scommesse in asset finanziari. Smetti di giocare d'azzardo. Inizia ad operare con metodo.",
+    "INIZIA ORA",
+    "Accedi alla Dashboard",
+    "50.000+",
+    "Pronostici Generati",
+    "87%",
+    "Accuratezza Media",
+    "120+",
+    "Campionati Analizzati",
+    "Real-Time",
+    "Aggiornamento Dati",
+    "* Valori dimostrativi basati su backtesting storico",
+    "Il Protocollo",
+    "Alpha",
+    "Non ci fidiamo di un solo modello.",
+    "Processiamo ogni partita attraverso",
+    "3 livelli di validazione",
+    "prima di darti un consiglio.",
+    "1",
+    "Livello 1: L'Algoritmo",
+    "Deep Data Analysis",
+    "Analisi di 200+ metriche: xG, Poisson, Form State e trend statistici puri.",
+    "2",
+    "Livello 2: La Storia",
+    "Historical Validation",
+    "Il database confronta il pronostico con 10 anni di storico: è già successo? Con che esito?",
+    "3",
+    "Livello 3: Il verdetto",
+    "AI Financial Advisor",
+    "L'AI confronta i dati dell'algoritmo con i dati storici e news in tempo reale come infortuni, meteo, o imprevisti dell'ultimo minuto e ti consiglia le scelte statisticamente più probabili per quello specifico evento.",
+    "Perché Alpha Score?",
+    "Non siamo un altro sito di statistiche. Siamo il tuo vantaggio competitivo. Saprai esattamente come affrontare ogni investimento con i dati dalla tua",
+    "Edge Matematico",
+    "Algoritmo + Database + Intelligenza Artificiale, nessuna opinione personale solo dati e scelte consapevoli.",
+    "Copertura Globale",
+    "1200+ Campionati monitorati H24. Dalla Premier League alla Serie B brasiliana, non ti perdi mai un'occasione di profitto.",
+    "Gestione del Rischio",
+    "Il sistema a 3 livelli filtra i falsi positivi. Non cerchiamo di indovinare tutto, ma di proteggere il tuo capitale nel lungo periodo.",
+    "Risparmio di Tempo",
+    "Da 4 ore di studio a 30 secondi. Tu devi solo decidere l'investimento, a tutta l'analisi complessa ci pensiamo noi.",
+    "Una Dashboard Completa",
+    "Per Ogni Partita",
+    "Pronostico AI con advice e percentuali 1X2",
+    "Statistiche dettagliate Home vs Away",
+    "Grafici goals by minute e cards heatmap",
+    "Confronto squadre con matrice comparativa",
+    "Distribuzione Under/Over per soglia",
+    "Head-to-Head e ultimi 5 match",
+    "HOME",
+    "VS",
+    "AWAY",
+    "1",
+    "45%",
+    "X",
+    "28%",
+    "2",
+    "27%",
+    "Preview dimostrativa",
+    "PROVA GRATUITA",
+    "€0",
+    "per 7 giorni, poi €9.99/mese",
+    "Accesso completo alla dashboard AI",
+    "Pronostici illimitati",
+    "Tutti i campionati",
+    "Aggiornamenti in tempo reale",
+    "Grafici e heatmap interattivi",
+    "Supporto via Telegram",
+    "Registrati Ora",
+    "Registrati",
+    "Accedi",
+    "Nome *",
+    "Cognome *",
+    "Email *",
+    "Telefono *",
+    "Telegram (opzionale)",
+    "Password *",
+    "Conferma Password *",
+    "Accetto i Termini e Condizioni e la Privacy Policy",
+    "Inizia la Prova Gratuita",
+    "© 2025 Alpha Score — Don't bet. Invest.",
+    "Privacy Policy",
+    "Termini",
+    "Contatti"
+  ],
+  "testid": [],
+  "comandi": [
+    {
+      "ruolo": "button",
+      "nome": "Login"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Register"
+    },
+    {
+      "ruolo": "button",
+      "nome": "INIZIA ORA"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Accedi alla Dashboard"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Registrati Ora"
+    },
+    {
+      "ruolo": "tab",
+      "nome": "Registrati",
+      "selezionato": "true"
+    },
+    {
+      "ruolo": "tab",
+      "nome": "Accedi",
+      "selezionato": "false"
+    },
+    {
+      "ruolo": "textbox",
+      "nome": "Nome *"
+    },
+    {
+      "ruolo": "textbox",
+      "nome": "Cognome *"
+    },
+    {
+      "ruolo": "textbox",
+      "nome": "Email *"
+    },
+    {
+      "ruolo": "textbox",
+      "nome": "Telefono *"
+    },
+    {
+      "ruolo": "textbox",
+      "nome": "Telegram (opzionale)"
+    },
+    {
+      "ruolo": "textbox",
+      "nome": "Password *"
+    },
+    {
+      "ruolo": "textbox",
+      "nome": "Conferma Password *"
+    },
+    {
+      "ruolo": "checkbox",
+      "nome": "Accetto i Termini e Condizioni e la Privacy Policy",
+      "spuntato": "false"
+    },
+    {
+      "ruolo": "checkbox",
+      "nome": "",
+      "spuntato": "false"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Inizia la Prova Gratuita"
+    }
+  ]
+}

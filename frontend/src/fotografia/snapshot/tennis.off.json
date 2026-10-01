@@ -1,0 +1,67 @@
+{
+  "pagina": "tennis",
+  "url": "/tennis",
+  "titolo": "Tennis · Partite del Giorno | Alpha Score",
+  "testi": [
+    "AI",
+    "TERMINAL",
+    "TENNIS",
+    "Cambia sport",
+    "Watchlist",
+    "Report",
+    "Analytics",
+    "daniele.ritrovato@gmail.com",
+    "Esci",
+    "Partite del Giorno",
+    ".",
+    "Tennis ·",
+    "giovedì 1 ottobre",
+    "Ieri",
+    "Oggi",
+    "Domani",
+    "0",
+    "Match",
+    "Nessun match di tennis",
+    "Non ci sono partite di tennis per",
+    "oggi",
+    ". Prova un altro giorno.",
+    "©",
+    "2026",
+    "Alpha Score AI. All rights reserved."
+  ],
+  "testid": [],
+  "comandi": [
+    {
+      "ruolo": "button",
+      "nome": "Cambia sport"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Watchlist"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Report Personale"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Analytics"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Logout"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Ieri"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Oggi"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Domani"
+    }
+  ]
+}

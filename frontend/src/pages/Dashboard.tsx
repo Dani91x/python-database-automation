@@ -95,11 +95,11 @@ export default function Dashboard() {
             </Helmet>
 
             {/* Grid pattern */}
-            <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-30" />
+            <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-30 ds-v2-nascondi" />
 
             {/* Navbar */}
-            <nav className="border-b border-white/5 bg-black/50 backdrop-blur-xl sticky top-0 z-50" role="navigation" aria-label="Dashboard navigation">
-                <div className="container mx-auto px-6 h-16 flex items-center justify-between">
+            <nav className="border-b border-white/5 bg-black/50 backdrop-blur-xl sticky ds-v2-non-sticky top-0 z-50" role="navigation" aria-label="Dashboard navigation">
+                <div className="container mx-auto px-6 h-16 flex items-center justify-between ds-v2-largo">
                     <div className="flex items-center gap-4">
                         <div className="font-display font-black text-xl tracking-tighter cursor-pointer" onClick={() => setViewMode('list')}>
                             AI <span className="text-primary">TERMINAL</span>
@@ -169,22 +169,22 @@ export default function Dashboard() {
                             CONTROL ROOM
                         </Button>
                         {/* come TennisNav: ritorno rapido allo Sport Selector */}
-                        <Button variant="outline" size="sm" onClick={() => navigate('/select-sport')}
+                        <Button variant="outline" size="sm" onClick={() => navigate('/select-sport')} data-nav-legacy
                             className="border-secondary/30 text-secondary hover:bg-secondary/10" aria-label="Cambia sport">
                             <LayoutGrid className="w-4 h-4 md:mr-2" />
                             <span className="hidden md:inline">Cambia sport</span>
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => navigate('/watchlist')}
+                        <Button variant="outline" size="sm" onClick={() => navigate('/watchlist')} data-nav-legacy
                             className="border-amber-400/30 text-amber-300 hover:bg-amber-400/10" aria-label="Watchlist">
                             <Bookmark className="w-4 h-4 md:mr-2" />
                             <span className="hidden md:inline">Watchlist</span>
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => navigate('/report-personale')}
+                        <Button variant="outline" size="sm" onClick={() => navigate('/report-personale')} data-nav-legacy
                             className="border-primary/30 text-primary hover:bg-primary/10" aria-label="Report Personale">
                             <Wallet className="w-4 h-4 md:mr-2" />
                             <span className="hidden md:inline">Report</span>
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => navigate('/analytics')}
+                        <Button variant="outline" size="sm" onClick={() => navigate('/analytics')} data-nav-legacy
                             className="border-primary/30 text-primary hover:bg-primary/10" aria-label="Analytics">
                             <BarChart3 className="w-4 h-4 md:mr-2" />
                             <span className="hidden md:inline">Analytics</span>
@@ -210,7 +210,7 @@ export default function Dashboard() {
                 </div>
             </nav>
 
-            <main className="container mx-auto px-4 lg:px-6 py-8 max-w-7xl relative z-10 w-full overflow-hidden">
+            <main className="container mx-auto px-4 lg:px-6 py-8 max-w-7xl relative z-10 w-full overflow-hidden ds-v2-pagina-larga">
 
                 {viewMode === 'list' ? (
                     <MatchesList onSelectMatch={loadFixture} />
