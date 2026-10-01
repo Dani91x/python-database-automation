@@ -161,7 +161,7 @@ export default function TennisTerminal() {
                 backLabel={daControlRoom ? 'Torna alla Control Room' : undefined} />
 
             {/* Header match compatto */}
-            <div className="border-b border-white/5 bg-black/40 backdrop-blur-xl sticky top-16 z-40">
+            <div className="border-b border-white/5 bg-black/40 backdrop-blur-xl sticky ds-v2-non-sticky top-16 z-40">
                 <div className="w-full px-4 lg:px-6 h-12 flex items-center gap-3 text-sm">
                     <span className="font-display font-black tracking-tight text-white">
                         {p1} <span className="text-white/30 mx-1">vs</span> {p2}

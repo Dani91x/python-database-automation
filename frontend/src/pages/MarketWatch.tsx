@@ -350,7 +350,7 @@ export default function MarketWatch() {
             <Helmet><title>Market Watch | Alpha Score</title></Helmet>
 
             {/* top bar minimale */}
-            <div className="sticky top-0 z-40 px-3 py-2 border-b border-white/10 bg-black/80 backdrop-blur flex items-center gap-2">
+            <div className="sticky ds-v2-non-sticky top-0 z-40 px-3 py-2 border-b border-white/10 bg-black/80 backdrop-blur flex items-center gap-2">
                 <Link to="/segui-live" className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-white">
                     <ArrowLeft className="w-3.5 h-3.5" /> Terminal
                 </Link>

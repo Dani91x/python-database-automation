@@ -42,7 +42,7 @@ export function TennisNav({ sectionLabel = 'TENNIS', onBack, backLabel = 'Torna 
 
     return (
         <nav
-            className="border-b border-white/5 bg-black/50 backdrop-blur-xl sticky top-0 z-50"
+            className="border-b border-white/5 bg-black/50 backdrop-blur-xl sticky ds-v2-non-sticky top-0 z-50"
             role="navigation"
             aria-label="Tennis navigation"
         >

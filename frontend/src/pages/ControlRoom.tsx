@@ -759,14 +759,14 @@ export default function ControlRoom() {
                 si impilano: uscite sopra (più urgenti), poi opportunità. */}
             <div className="grid gap-4 items-start
                 lg:grid-cols-[minmax(0,1fr)_340px]
-                xl:grid-cols-[minmax(0,1fr)_340px_340px]">
+                xl:grid-cols-[minmax(0,1fr)_340px_340px] ds-v2-cr-banco">
                 {/* B16 (24/09) — il «Chiudi» di ogni riga, cablato sul SUO bot:
                     il contesto non disegna niente, porta solo il comando. */}
                 <ChiusuraRigaContext.Provider value={chiusuraRiga}>
                 {/* W_T/P14: gli ordini del conto fuori dai bot per le schede
                     (assenti dal modello di vista = nessun contesto, niente a schermo) */}
                 <OrdiniContoContext.Provider value={vm.ordiniConto ? { stato: vm.ordiniConto, nowMs: vm.nowMs } : null}>
-                <Tabs value={scheda} onValueChange={setScheda} className="min-w-0 xl:[grid-column:1]">
+                <Tabs value={scheda} onValueChange={setScheda} className="min-w-0 xl:[grid-column:1] ds-v2-cr-tabs">
                     <TabsList className="w-full justify-start flex-wrap h-auto gap-1 bg-white/[0.03] p-1">
                         <Scheda valore="pre" conta={contaPre} testId="cr-tab-pre">Pre-match</Scheda>
                         <Scheda valore="live" conta={contaLive} testId="cr-tab-live">Live</Scheda>
@@ -836,7 +836,7 @@ export default function ControlRoom() {
                 {/* le due colonne di decisione: su schermi < xl si impilano in
                     un'unica colonna di griglia (uscite sopra, poi opportunità);
                     da xl in su diventano due colonne reali (`xl:contents`). */}
-                <div className="flex flex-col gap-4 xl:contents">
+                <div className="flex flex-col gap-4 xl:contents ds-v2-cr-decisioni">
                     <UsciteColonna vm={vm} filtroSport={sport} />
                     <OpportunitaColonna vm={vm} filtroSport={sport} />
                 </div>
@@ -987,10 +987,10 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
     ]);
     return (
         <header
-            className={`sticky top-0 z-30 border-b backdrop-blur ${inLive ? 'border-orange-500/40 bg-orange-950/30' : 'border-white/10 bg-background/80'}`}
+            className={`sticky ds-v2-non-sticky top-0 z-30 border-b backdrop-blur ${inLive ? 'border-orange-500/40 bg-orange-950/30' : 'border-white/10 bg-background/80'}`}
             data-testid="cr-testata"
         >
-            <div className="container mx-auto max-w-7xl px-4 lg:px-6 py-2.5 flex flex-wrap items-center gap-x-6 gap-y-2">
+            <div className="container mx-auto max-w-7xl px-4 lg:px-6 py-2.5 flex flex-wrap items-center gap-x-6 gap-y-2 ds-v2-largo">
                 <div className="flex items-baseline gap-3">
                     <Link to="/dashboard" className="text-[11px] uppercase tracking-[0.2em] text-white/40 hover:text-white/70">
                         AI Terminal

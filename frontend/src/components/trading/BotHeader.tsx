@@ -148,7 +148,7 @@ export function BotHeader({
     return (
         <nav
             ref={ref}
-            className="border-b border-white/5 bg-black/60 backdrop-blur-xl sticky top-0 z-50"
+            className="border-b border-white/5 bg-black/60 backdrop-blur-xl sticky ds-v2-non-sticky top-0 z-50"
             data-testid="bot-header"
             data-bot={bot}
         >

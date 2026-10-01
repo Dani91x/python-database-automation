@@ -568,7 +568,7 @@ function Testata({ sport, modo, onModo, onRicarica, caricamento }: {
 }) {
     const altro = ALTRO_SPORT[sport];
     return (
-        <header className="sticky top-0 z-30 backdrop-blur bg-background/80 border-b border-white/10"
+        <header className="sticky ds-v2-non-sticky top-0 z-30 backdrop-blur bg-background/80 border-b border-white/10"
             data-testid="storico-testata">
             <div className="container mx-auto px-4 lg:px-6 max-w-7xl py-2.5 flex items-center gap-3 flex-wrap">
                 <Link to="/control-room" className="text-[11px] text-white/45 hover:text-white inline-flex items-center gap-1">

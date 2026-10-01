@@ -64,4 +64,24 @@ describe('veste v2 delle pagine: inerte col guscio spento', () => {
         expect(usate).toBeGreaterThan(0);
         expect(mancanti).toEqual([]);
     });
+
+    it('ogni testata o barra «sticky» di PAGINA e\' marcata ds-v2-non-sticky (oggi non resta incollata)', () => {
+        // gli sticky interni (intestazioni di tabelle con scroll proprio) non c'entrano
+        const file = [
+            ...readdirSync(join(SRC, 'pages')).filter((n) => /\.tsx$/.test(n) && !/\.test\.tsx$/.test(n)).map((n) => join(SRC, 'pages', n)),
+            join(SRC, 'components', 'trading', 'BotHeader.tsx'),
+            join(SRC, 'components', 'tennis', 'TennisNav.tsx'),
+        ];
+        const senza: string[] = [];
+        let marcati = 0;
+        for (const f of file) {
+            readFileSync(f, 'utf-8').split(/\r?\n/).forEach((riga, i) => {
+                if (!/className=.*\bsticky\b/.test(riga) || /<thead/.test(riga)) return;
+                if (riga.includes('ds-v2-non-sticky')) marcati += 1;
+                else senza.push(`${relative(SRC, f)}:${i + 1}`);
+            });
+        }
+        expect(senza).toEqual([]);
+        expect(marcati).toBe(21);
+    });
 });

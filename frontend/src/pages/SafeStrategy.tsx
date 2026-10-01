@@ -1459,7 +1459,7 @@ export default function SafeStrategy() {
                     if (v === 'storico' && (topTab === 'calcio' || topTab === 'tennis')) setHistorySport(topTab);
                     setTopTab(v);
                 }} className="w-full">
-                    <TabsList className="sticky z-30" style={{ top: navH }}>
+                    <TabsList className="sticky ds-v2-non-sticky z-30" style={{ top: navH }}>
                         <TabsTrigger value="calcio" aria-label={`Calcio (${bySport.calcioActive.length})`}>⚽ Calcio ({bySport.calcioActive.length})</TabsTrigger>
                         <TabsTrigger value="tennis" aria-label={`Tennis (${bySport.tennisActive.length})`}>🎾 Tennis ({bySport.tennisActive.length})</TabsTrigger>
                         <TabsTrigger value="storico" aria-label="Storico">📅 Storico</TabsTrigger>
