@@ -46,7 +46,7 @@ export function TennisNav({ sectionLabel = 'TENNIS', onBack, backLabel = 'Torna 
             role="navigation"
             aria-label="Tennis navigation"
         >
-            <div className="container mx-auto px-6 h-16 flex items-center justify-between">
+            <div className="container mx-auto px-6 h-16 flex items-center justify-between ds-v2-largo">
                 <div className="flex items-center gap-4">
                     <div
                         data-nav-legacy

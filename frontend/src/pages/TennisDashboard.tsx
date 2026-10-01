@@ -17,11 +17,11 @@ export default function TennisDashboard() {
                 <title>Tennis · Partite del Giorno | Alpha Score</title>
             </Helmet>
 
-            <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-30" />
+            <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-30 ds-v2-nascondi" />
 
             <TennisNav sectionLabel="TENNIS" />
 
-            <main className="container mx-auto px-4 lg:px-6 py-8 max-w-7xl relative z-10 w-full overflow-hidden">
+            <main className="container mx-auto px-4 lg:px-6 py-8 max-w-7xl relative z-10 w-full overflow-hidden ds-v2-pagina-larga">
                 <TennisMatchesList />
             </main>
 

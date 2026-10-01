@@ -261,7 +261,7 @@ export function TennisMatchesList() {
     }, [groups, itemValue]);
 
     return (
-        <div className="space-y-4 md:space-y-6 max-w-5xl mx-auto px-4">
+        <div className="space-y-4 md:space-y-6 max-w-5xl mx-auto px-4 ds-v2-pagina">
             {/* Header */}
             <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 md:mb-8">
                 <div>
