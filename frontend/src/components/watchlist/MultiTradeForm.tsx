@@ -35,7 +35,7 @@ interface Props {
 }
 
 const SELECT_CLS =
-    'w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ' +
+    'w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ds-v2-campo ' +
     'focus:outline-none focus:border-primary/60 transition-colors';
 const FIELD_LABEL = 'text-[10px] uppercase tracking-wider text-muted-foreground mb-1 block';
 

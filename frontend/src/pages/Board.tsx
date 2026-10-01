@@ -229,8 +229,8 @@ export default function Board() {
             <Helmet><title>Programma di oggi | Alpha Score</title></Helmet>
             <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-30 ds-v2-nascondi" />
 
-            <nav className="border-b border-white/5 bg-black/50 backdrop-blur-xl sticky ds-v2-non-sticky top-0 z-50">
-                <div className="container mx-auto px-6 h-16 flex items-center justify-between">
+            <nav className="border-b border-white/5 bg-black/50 backdrop-blur-xl sticky ds-v2-non-sticky top-0 z-50 ds-v2-navbar">
+                <div className="container mx-auto px-6 h-16 flex items-center justify-between ds-v2-navbar-dentro">
                     <div className="flex items-center gap-4">
                         <Link to="/dashboard" data-nav-legacy className="font-display font-black text-xl tracking-tighter">
                             AI <span className="text-primary">TERMINAL</span>

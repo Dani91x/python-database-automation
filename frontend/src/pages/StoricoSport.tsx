@@ -575,14 +575,14 @@ function Testata({ sport, modo, onModo, onRicarica, caricamento }: {
 }) {
     const altro = ALTRO_SPORT[sport];
     return (
-        <header className="sticky ds-v2-non-sticky top-0 z-30 backdrop-blur bg-background/80 border-b border-white/10"
+        <header className="sticky ds-v2-non-sticky top-0 z-30 backdrop-blur bg-background/80 border-b border-white/10 ds-v2-botheader"
             data-testid="storico-testata">
-            <div className="container mx-auto px-4 lg:px-6 max-w-7xl py-2.5 flex items-center gap-3 flex-wrap ds-v2-largo">
+            <div className="container mx-auto px-4 lg:px-6 max-w-7xl py-2.5 flex items-center gap-3 flex-wrap ds-v2-largo ds-v2-botheader-dentro">
                 <Link to="/control-room" className="text-[11px] text-white/45 hover:text-white inline-flex items-center gap-1">
                     <ArrowLeft className="w-3.5 h-3.5" aria-hidden /> Control Room
                 </Link>
                 <span className="text-white/15" aria-hidden>|</span>
-                <h1 className="text-sm font-display font-black tracking-wide flex items-center gap-2">
+                <h1 className="text-sm font-display font-black tracking-wide flex items-center gap-2 ds-v2-st-titolo">
                     <History className="w-4 h-4 text-primary" aria-hidden />
                     <span aria-hidden>{SPORT_ICONA[sport]}</span>
                     STORICO {SPORT_LABEL[sport].toUpperCase()}
@@ -709,7 +709,7 @@ function Pillola({ attivo, onClick, children, testId, titolo }: {
     return (
         <button
             type="button" onClick={onClick} aria-pressed={attivo} data-testid={testId} title={titolo}
-            className={`text-[10.5px] px-2 py-0.5 rounded border transition-colors ${
+            className={`text-[10.5px] px-2 py-0.5 rounded border transition-colors ds-v2-pillola ${
                 attivo
                     ? 'border-primary/60 text-primary bg-primary/10'
                     : 'border-white/15 text-white/45 hover:text-white/80'

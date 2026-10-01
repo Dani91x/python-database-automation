@@ -42,7 +42,7 @@ interface Props {
 }
 
 const SELECT_CLS =
-    'w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ' +
+    'w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ds-v2-campo ' +
     'focus:outline-none focus:border-primary/60 transition-colors';
 
 // badge stato a colori

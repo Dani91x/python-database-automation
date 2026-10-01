@@ -1823,7 +1823,9 @@
     padding: 0;
     border-radius: 0;
     background-color: transparent;
-    border-bottom: 1px solid hsl(var(--border));
+    border-width: 0 0 1px 0;
+    border-style: solid;
+    border-color: hsl(var(--border));
 }
 
 [data-shell="v2"] .ds-v2-schede > button {
@@ -1994,4 +1996,107 @@
     text-transform: uppercase;
     color: hsl(var(--muted-foreground));
     border-bottom: 1px solid hsl(var(--border));
+}
+
+/* ---------- PAGINA 11 — STORICI (prototipo s_storici.js) ---------- */
+[data-shell="v2"] .ds-v2-st-titolo {
+    font-size: 18px;
+    font-weight: 800;
+}
+
+/* 5 tessere KPI: una riga da 5 (prototipo .grid.g5) */
+@media (min-width: 1100px) {
+    [data-shell="v2"] .ds-v2-kpi-griglia:has(> :nth-child(5):last-child) {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+}
+
+/* ---------- PAGINA 12 — ANALISI (Report, Watchlist, Match replay, Analytics, Cruscotto) ---------- */
+/* barra di navigazione delle pagine di oggi: dentro il guscio resta solo il
+   nome della sezione e i comandi; si compatta come la barra delle pagine trading */
+[data-shell="v2"] .ds-v2-navbar {
+    background-color: hsl(var(--background) / 0.6);
+    backdrop-filter: none;
+    border-bottom-color: hsl(var(--border));
+}
+
+[data-shell="v2"] .ds-v2-navbar-dentro {
+    height: 48px;
+    max-width: none;
+    padding-left: 24px;
+    padding-right: 24px;
+}
+
+[data-shell="v2"] .ds-v2-main {
+    padding-top: 20px;
+}
+
+/* titolo di scheda: come il prototipo (.panel-h h3), maiuscolo tolto */
+[data-shell="v2"] .ds-v2-scheda-titolo {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: none;
+    letter-spacing: normal;
+}
+
+[data-shell="v2"] .ds-v2-rp-metrica {
+    font-size: 14px;
+    margin-top: 2px;
+}
+
+/* linguette fatte di bottoni (Analytics): sottolineate dentro un filetto */
+[data-shell="v2"] .ds-v2-schede-bottoni {
+    gap: 2px;
+    border-bottom: 1px solid hsl(var(--border));
+}
+
+[data-shell="v2"] .ds-v2-tab-bottone {
+    height: auto;
+    padding: 8px 12px;
+    margin-bottom: -1px;
+    border-width: 0 0 2px 0;
+    border-style: solid;
+    border-color: transparent;
+    border-radius: 0;
+    background-color: transparent;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: hsl(var(--muted-foreground));
+}
+
+[data-shell="v2"] .ds-v2-tab-bottone--attivo {
+    color: hsl(var(--foreground));
+    border-bottom-color: hsl(var(--primary));
+}
+
+/* Match replay: registrazioni su due colonne, carte compatte */
+@media (min-width: 1100px) {
+    [data-shell="v2"] .ds-v2-mr-griglia {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+    }
+
+    [data-shell="v2"] .ds-v2-mr-griglia > * {
+        margin-top: 0 !important;
+    }
+}
+
+[data-shell="v2"] .ds-v2-mr-carta {
+    padding: 10px 14px;
+}
+
+/* gruppi per campionato/torneo (Cruscotto partite, Dashboard tennis): testa compatta */
+[data-shell="v2"] .ds-v2-gruppo {
+    padding: 10px 14px;
+}
+
+[data-shell="v2"] .ds-v2-gruppo-icona {
+    width: 32px;
+    height: 32px;
+}
+
+[data-shell="v2"] .ds-v2-cp-logo {
+    width: 20px;
+    height: 20px;
 }

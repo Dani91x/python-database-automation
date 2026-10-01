@@ -365,9 +365,9 @@ export function TennisMatchesList() {
                                     transition={{ delay: groupIndex * 0.05 }}
                                 >
                                     <AccordionItem value={value} className="border-none">
-                                        <AccordionTrigger className="glass-card hover:no-underline px-4 md:px-6 py-4 rounded-xl border border-white/5 hover:border-primary/20 transition-all [&[data-state=open]]:rounded-b-none [&[data-state=open]]:border-primary/30">
+                                        <AccordionTrigger className="glass-card hover:no-underline px-4 md:px-6 py-4 rounded-xl border border-white/5 hover:border-primary/20 transition-all [&[data-state=open]]:rounded-b-none [&[data-state=open]]:border-primary/30 ds-v2-gruppo">
                                             <div className="flex items-center gap-3 md:gap-4 text-left">
-                                                <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-black/40 border border-white/10 flex items-center justify-center flex-shrink-0">
+                                                <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-black/40 border border-white/10 flex items-center justify-center flex-shrink-0 ds-v2-gruppo-icona">
                                                     <Trophy className="w-4 h-4 md:w-5 md:h-5 text-primary/60" />
                                                 </div>
                                                 <div className="flex flex-col">

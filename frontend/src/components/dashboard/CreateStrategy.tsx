@@ -14,7 +14,7 @@ import {
     type StrategyFilters, type BacktestRow, type AnalyticsFilters,
 } from '@/lib/analytics';
 
-const SELECT_CLS = 'w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary/60 transition-colors';
+const SELECT_CLS = 'w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary/60 transition-colors ds-v2-campo';
 const INPUT_CLS = SELECT_CLS;
 const LABEL_CLS = 'text-[10px] uppercase tracking-wider text-muted-foreground mb-1 block';
 
@@ -175,7 +175,7 @@ export default function CreateStrategy({ filters }: { filters: AnalyticsFilters 
             <Card className="glass-card border-white/10 p-4 md:p-5 mb-6">
                 <div className="flex items-center gap-2 mb-4">
                     <FlaskConical className="w-4 h-4 text-primary" />
-                    <span className="font-heading font-bold text-sm uppercase tracking-wide">Crea strategia — filtri</span>
+                    <span className="font-heading font-bold text-sm uppercase tracking-wide ds-v2-scheda-titolo">Crea strategia — filtri</span>
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

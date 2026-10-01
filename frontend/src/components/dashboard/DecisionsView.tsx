@@ -15,7 +15,7 @@ import {
 } from '@/lib/analytics';
 import { classificaErroreRpc, fmtOrarioRiepilogo } from '@/lib/erroreRpc';
 
-const SELECT_CLS = 'w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary/60 transition-colors';
+const SELECT_CLS = 'w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary/60 transition-colors ds-v2-campo';
 const LABEL_CLS = 'text-[10px] uppercase tracking-wider text-muted-foreground mb-1 block';
 const eur = (v: number | null | undefined) => v == null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(0)}€`;
 
@@ -67,7 +67,7 @@ export default function DecisionsView() {
             <Card className="glass-card border-white/10 p-4 md:p-5 mb-6">
                 <div className="flex items-center gap-2 mb-4">
                     <Filter className="w-4 h-4 text-secondary" />
-                    <span className="font-heading font-bold text-sm uppercase tracking-wide">Filtri decisioni</span>
+                    <span className="font-heading font-bold text-sm uppercase tracking-wide ds-v2-scheda-titolo">Filtri decisioni</span>
                     <Button variant="ghost" size="sm" onClick={reset} className="ml-auto text-xs text-muted-foreground hover:text-white">
                         <RotateCcw className="w-3 h-3 mr-1" /> Reset
                     </Button>

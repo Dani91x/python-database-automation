@@ -70,6 +70,7 @@ cssGuscio (già esistente) ha preso un mio refuso: classe ds-v2-cr-impianto-stop
 | pagine 4-6 Mike, Safe Strategy, Omega | 0 | 316 / 4839 verdi | 26/26 identica | 3.517.604 B (+0,63 %) |
 | pagine 7-8 Tennis Terminal, Dashboard tennis | 0 | 316 / 4839 verdi | 26/26 identica | 3.518.664 B (+0,66 %) |
 | pagine 9-10 Multi-ladder, Ladder pop-out, Market watch, Live P&L (+ Trade journal) | 0 | 316 / 4839 verdi | 26/26 identica | 3.519.789 B (+0,69 %) |
+| pagine 11-12 Storici, Report, Watchlist, Match replay, Analytics, Cruscotto | 0 | 316 / 4839 verdi | 26/26 identica | 3.522.982 B (+0,78 %) |
 
 Fotografie `off` e `v2` delle pagine: **mai rigenerate** (le classi non entrano nella fotografia; testi, testid,
 comandi, chiamate e WebSocket restano identici, anche col guscio acceso). Nessun test esistente modificato.
@@ -94,6 +95,8 @@ comandi, chiamate e WebSocket restano identici, anche col guscio acceso). Nessun
 | 9b | Ladder pop-out `/ladder-popout` | nessuno | **lasciata invariata (motivo)**: è FUORI dal guscio in entrambi gli stati (brief 1 e 2: finestra senza navigazione), quindi non ha `data-shell="v2"` sopra di sé e nessuna regola della veste la tocca; il ladder dentro è lo stesso `LadderView`. Leggibile a 640×780 come oggi. Per vestirla servirebbe un contenitore `data-shell` attorno alla sola rotta del pop-out in `App.tsx`: non fatto | — | — |
 | 10 | Market watch `/market-watch`, Live P&L `/live-pnl` | `MarketWatch.tsx` (righe più ariose, sezioni, pillole di stato), `LivePnl.tsx` (tessere KPI come il resto dell'app, intestazioni di tabella maiuscole); barra e contenitore condivisi | **fatto** | `ds-v2-barra`, `ds-v2-contenitore`, `ds-v2-mw-*`, `ds-v2-kpi*`, `ds-v2-testa-tabella` | `confronto2/market-watch.*`, `confronto2/live-pnl.*` |
 | 12a | Trade journal `/trade-journal` (anticipata: stessa barra e stesse tabelle della pagina 10) | `TradeJournal.tsx`: barra, contenitore, intestazione di tabella | **fatto** | `ds-v2-barra`, `ds-v2-contenitore`, `ds-v2-testa-tabella` | `confronto2/trade-journal.*` |
+| 11 | Storico calcio `/storico/calcio`, Storico tennis `/storico/tennis` | `StoricoSport.tsx`: testata come pannello (stessa classe del BotHeader), titolo 18 px, filtri a pillole; KPI 5 per riga, tabelle, equity, barre e calendario dai componenti condivisi | **fatto** | `ds-v2-botheader*`, `ds-v2-st-titolo`, `ds-v2-pillola`, `ds-v2-kpi-griglia` | `confronto2/storico-calcio.*`, `confronto2/storico-tennis.*` |
+| 12 | Report personale, Watchlist, Match replay, Analytics, Cruscotto partite (`/dashboard`) (Trade journal: vedi 12a) | barra di navigazione delle pagine di oggi compattata (8 pagine, 48 px, anche Board, Segui live, Scelta sport); titoli di scheda come il prototipo; campi 30 px nei moduli (14 file: filtri, order entry, dutching, regole di rischio, schede trade); `ReportPersonale` (KPI e metriche), `Watchlist` (linguette sottolineate, contenitore largo), `MatchReplay` (registrazioni su due colonne), `Analytics` (linguette-bottone sottolineate), `MatchesList` (righe compatte, loghi 20 px, «ANALIZZA» piccolo), gruppi per campionato/torneo compatti | **fatto** | `ds-v2-navbar*`, `ds-v2-scheda-titolo`, `ds-v2-campo`, `ds-v2-schede*`, `ds-v2-tab-bottone*`, `ds-v2-mr-*`, `ds-v2-gruppo*`, `ds-v2-cp-logo`, `ds-v2-rp-metrica` | `confronto2/{report-personale,watchlist,match-replay,analytics,dashboard}.*` |
 | 13a | Scelta sport `/select-sport` (fatta prima delle pagine 3-12 mentre i finti di quelle si preparavano: non ha bisogno di dati) | `SelectSport.tsx`: titolo a sinistra Sora 24, 5 carte compatte (padding 18, icona 56, titolo 17 in `foreground`, «Entra» col colore della carta), contenitore largo | **fatto** | `ds-v2-ss-*`, `ds-v2-titolo` | `confronto2/select-sport.{off,v2}.{1280,1600}.png`, `confronto2/select-sport.affianco.png` |
 | 13b | Accesso (landing), Conferma email, Reimposta password, 404 | nessuno | **lasciate invariate (motivo)**: sono FUORI dal guscio in entrambi gli stati (brief 1 e 2) e non hanno `data-shell="v2"` sopra di sé; il prototipo `#landing` riproduce la landing di oggi (stessi blocchi e stessa veste). Per vestirle servirebbe un contenitore `data-shell` attorno alle rotte pubbliche in `App.tsx`: non necessario e non fatto, il flusso di login resta intatto | — | — |
 
@@ -138,6 +141,18 @@ comandi, chiamate e WebSocket restano identici, anche col guscio acceso). Nessun
 ### Pagine 9-10 (+ Trade journal): verifiche
 - Prova pixel col guscio spento contro master (Multi-ladder, Ladder pop-out, Market watch, Live P&L, Trade journal;
   1280 e 1600, pagina intera, canale finto acceso): **tutte identiche**.
+
+### Pagine 11-12: verifiche
+- Prova pixel col guscio spento contro master (Storico calcio e tennis, Report, Watchlist, Match replay, Analytics,
+  Cruscotto, e di nuovo Dashboard tennis; 1280 e 1600, pagina intera): **identiche**, salvo la stella animata della
+  Dashboard tennis (già vista alla pagina 8, uguale fra due scatti dello stesso codice).
+- Errore mio trovato e corretto prima del commit: aggiungendo `ds-v2-campo` a stringhe di classi concatenate con `+`
+  avevo tolto lo spazio finale e incollato la classe alla successiva (`ds-v2-campofocus:outline-none`). Con il guscio
+  spento era inerte, ma toglieva la classe di focus anche con `off`: trovato rileggendo il diff, corretto in 10 file
+  (`ds-v2-campo ' +`), verificato da `solo_classi.py` e dalla prova pixel.
+- Il Cruscotto si vede popolato solo dopo il clic su «Match Betfair» (la vista iniziale legge
+  `from('fixture_predictions')` dentro la pagina e il finto del client risponde vuoto); i loghi delle squadre sono
+  immagini esterne bloccate nell'anteprima.
 
 ### Pagina 13a — Scelta sport: verifiche
 - Prova pixel col guscio spento contro master: identiche salvo poche decine di pixel dell'animazione d'ingresso delle
