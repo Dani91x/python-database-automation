@@ -69,6 +69,7 @@ cssGuscio (già esistente) ha preso un mio refuso: classe ds-v2-cr-impianto-stop
 | pagina 3 Segui live + terminal calcio | 0 | 316 / 4839 verdi | 26/26 identica | 3.514.871 B (+0,55 %) |
 | pagine 4-6 Mike, Safe Strategy, Omega | 0 | 316 / 4839 verdi | 26/26 identica | 3.517.604 B (+0,63 %) |
 | pagine 7-8 Tennis Terminal, Dashboard tennis | 0 | 316 / 4839 verdi | 26/26 identica | 3.518.664 B (+0,66 %) |
+| pagine 9-10 Multi-ladder, Ladder pop-out, Market watch, Live P&L (+ Trade journal) | 0 | 316 / 4839 verdi | 26/26 identica | 3.519.789 B (+0,69 %) |
 
 Fotografie `off` e `v2` delle pagine: **mai rigenerate** (le classi non entrano nella fotografia; testi, testid,
 comandi, chiamate e WebSocket restano identici, anche col guscio acceso). Nessun test esistente modificato.
@@ -89,6 +90,10 @@ comandi, chiamate e WebSocket restano identici, anche col guscio acceso). Nessun
 | 6 | Omega `/omega` | `Omega.tsx` (linguette); BotHeader, KPI, giornata, equity e fogli parametri condivisi | **fatto** | `ds-v2-schede` | `confronto2/omega.*` |
 | 7 | Tennis Terminal `/tennis/terminal?event=…` | `TennisTerminal.tsx`: barra della partita come pannello, giocatori Sora 16, stato ordini / SEGUITA / REC come pillole; ladder tennis, bot tennis (Pro, Scalper, FLB, Swing) e Stats/Chart/Depth dai componenti già vestiti | **fatto** | `ds-v2-tt-*`, `ds-v2-chip--*`, `ds-v2-forma-pillola` | `confronto2/tennis-terminal-sinner.*` |
 | 8 | Dashboard tennis `/tennis` | `TennisMatchesList`: contenitore largo, titolo Sora 24, righe partita compatte, ora a pillola, «APRI TERMINAL» piccolo | **fatto** | `ds-v2-tn-*`, `ds-v2-titolo`, `ds-v2-pulsante--sm` | `confronto2/tennis.*` |
+| 9 | Multi-ladder `/multi-ladder` | barra di pagina e contenitore (`MultiLadder.tsx`); i ladder sono `LadderView` già vestiti (pagina 3) | **fatto** | `ds-v2-barra` | `confronto2/multi-ladder.*` |
+| 9b | Ladder pop-out `/ladder-popout` | nessuno | **lasciata invariata (motivo)**: è FUORI dal guscio in entrambi gli stati (brief 1 e 2: finestra senza navigazione), quindi non ha `data-shell="v2"` sopra di sé e nessuna regola della veste la tocca; il ladder dentro è lo stesso `LadderView`. Leggibile a 640×780 come oggi. Per vestirla servirebbe un contenitore `data-shell` attorno alla sola rotta del pop-out in `App.tsx`: non fatto | — | — |
+| 10 | Market watch `/market-watch`, Live P&L `/live-pnl` | `MarketWatch.tsx` (righe più ariose, sezioni, pillole di stato), `LivePnl.tsx` (tessere KPI come il resto dell'app, intestazioni di tabella maiuscole); barra e contenitore condivisi | **fatto** | `ds-v2-barra`, `ds-v2-contenitore`, `ds-v2-mw-*`, `ds-v2-kpi*`, `ds-v2-testa-tabella` | `confronto2/market-watch.*`, `confronto2/live-pnl.*` |
+| 12a | Trade journal `/trade-journal` (anticipata: stessa barra e stesse tabelle della pagina 10) | `TradeJournal.tsx`: barra, contenitore, intestazione di tabella | **fatto** | `ds-v2-barra`, `ds-v2-contenitore`, `ds-v2-testa-tabella` | `confronto2/trade-journal.*` |
 | 13a | Scelta sport `/select-sport` (fatta prima delle pagine 3-12 mentre i finti di quelle si preparavano: non ha bisogno di dati) | `SelectSport.tsx`: titolo a sinistra Sora 24, 5 carte compatte (padding 18, icona 56, titolo 17 in `foreground`, «Entra» col colore della carta), contenitore largo | **fatto** | `ds-v2-ss-*`, `ds-v2-titolo` | `confronto2/select-sport.{off,v2}.{1280,1600}.png`, `confronto2/select-sport.affianco.png` |
 | 13b | Accesso (landing), Conferma email, Reimposta password, 404 | nessuno | **lasciate invariate (motivo)**: sono FUORI dal guscio in entrambi gli stati (brief 1 e 2) e non hanno `data-shell="v2"` sopra di sé; il prototipo `#landing` riproduce la landing di oggi (stessi blocchi e stessa veste). Per vestirle servirebbe un contenitore `data-shell` attorno alle rotte pubbliche in `App.tsx`: non necessario e non fatto, il flusso di login resta intatto | — | — |
 
@@ -129,6 +134,10 @@ comandi, chiamate e WebSocket restano identici, anche col guscio acceso). Nessun
   preferiti), uguali fra due scatti dello STESSO codice.
 - Correzione di sola grafica: la pillola «PAPER · SIMULATO» del terminal era ambra piena; col guscio acceso è il
   verde unico di PAPER (brief §3.8).
+
+### Pagine 9-10 (+ Trade journal): verifiche
+- Prova pixel col guscio spento contro master (Multi-ladder, Ladder pop-out, Market watch, Live P&L, Trade journal;
+  1280 e 1600, pagina intera, canale finto acceso): **tutte identiche**.
 
 ### Pagina 13a — Scelta sport: verifiche
 - Prova pixel col guscio spento contro master: identiche salvo poche decine di pixel dell'animazione d'ingresso delle

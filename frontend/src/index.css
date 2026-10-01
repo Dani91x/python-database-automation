@@ -1953,3 +1953,45 @@
 [data-shell="v2"] .ds-v2-tn-giocatore {
     font-size: 13px;
 }
+
+/* ---------- PAGINE 9-10 — TRADING (Multi-ladder, Market watch, Live P&L, Trade journal) ---------- */
+/* barra in testa alla pagina e contenitore: margini del prototipo */
+[data-shell="v2"] .ds-v2-barra {
+    padding: 10px 24px;
+    background-color: hsl(var(--background) / 0.6);
+    backdrop-filter: none;
+    border-bottom-color: hsl(var(--border));
+}
+
+[data-shell="v2"] .ds-v2-contenitore {
+    max-width: none;
+    padding: 20px 24px 40px;
+}
+
+[data-shell="v2"] .ds-v2-mw-sezione {
+    font-size: 15px;
+    margin-top: 4px;
+}
+
+[data-shell="v2"] .ds-v2-mw-riga {
+    padding: 14px 16px;
+    gap: 16px;
+}
+
+[data-shell="v2"] .ds-v2-mw-nome {
+    font-size: 13px;
+}
+
+[data-shell="v2"] .ds-v2-mw-stato {
+    border: 1px solid rgb(52 211 153 / 0.5);
+}
+
+/* intestazione di tabella (prototipo .t th): maiuscolo spaziato 10,5 px */
+[data-shell="v2"] .ds-v2-testa-tabella > th {
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
+    border-bottom: 1px solid hsl(var(--border));
+}
