@@ -169,22 +169,22 @@ export default function Dashboard() {
                             CONTROL ROOM
                         </Button>
                         {/* come TennisNav: ritorno rapido allo Sport Selector */}
-                        <Button variant="outline" size="sm" onClick={() => navigate('/select-sport')}
+                        <Button variant="outline" size="sm" onClick={() => navigate('/select-sport')} data-nav-legacy
                             className="border-secondary/30 text-secondary hover:bg-secondary/10" aria-label="Cambia sport">
                             <LayoutGrid className="w-4 h-4 md:mr-2" />
                             <span className="hidden md:inline">Cambia sport</span>
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => navigate('/watchlist')}
+                        <Button variant="outline" size="sm" onClick={() => navigate('/watchlist')} data-nav-legacy
                             className="border-amber-400/30 text-amber-300 hover:bg-amber-400/10" aria-label="Watchlist">
                             <Bookmark className="w-4 h-4 md:mr-2" />
                             <span className="hidden md:inline">Watchlist</span>
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => navigate('/report-personale')}
+                        <Button variant="outline" size="sm" onClick={() => navigate('/report-personale')} data-nav-legacy
                             className="border-primary/30 text-primary hover:bg-primary/10" aria-label="Report Personale">
                             <Wallet className="w-4 h-4 md:mr-2" />
                             <span className="hidden md:inline">Report</span>
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => navigate('/analytics')}
+                        <Button variant="outline" size="sm" onClick={() => navigate('/analytics')} data-nav-legacy
                             className="border-primary/30 text-primary hover:bg-primary/10" aria-label="Analytics">
                             <BarChart3 className="w-4 h-4 md:mr-2" />
                             <span className="hidden md:inline">Analytics</span>

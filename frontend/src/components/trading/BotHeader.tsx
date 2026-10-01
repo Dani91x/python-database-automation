@@ -154,7 +154,7 @@ export function BotHeader({
         >
             <div className="container mx-auto px-4 lg:px-6 py-2 flex items-center justify-between gap-3 flex-wrap">
                 <div className="flex items-center gap-3 flex-wrap">
-                    <Link to="/select-sport" className="font-display font-black text-lg tracking-tighter">
+                    <Link to="/select-sport" data-nav-legacy className="font-display font-black text-lg tracking-tighter">
                         AI <span className="text-primary">TERMINAL</span>
                     </Link>
                     <span className={`flex items-center gap-2 text-sm font-heading font-bold ${id.accent}`} data-testid="bot-name">

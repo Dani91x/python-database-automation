@@ -192,12 +192,12 @@ export default function Analytics() {
             <nav className="border-b border-white/5 bg-black/50 backdrop-blur-xl sticky top-0 z-50">
                 <div className="container mx-auto px-6 h-16 flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                        <Link to="/dashboard" className="font-display font-black text-xl tracking-tighter">AI <span className="text-primary">TERMINAL</span></Link>
+                        <Link to="/dashboard" data-nav-legacy className="font-display font-black text-xl tracking-tighter">AI <span className="text-primary">TERMINAL</span></Link>
                         <span className="hidden md:flex items-center gap-2 text-sm text-secondary font-heading font-bold ml-4">
                             <BarChart3 className="w-4 h-4" /> ANALYTICS
                         </span>
                     </div>
-                    <Link to="/dashboard"><Button variant="outline" size="sm" className="border-white/10 text-muted-foreground hover:text-white">
+                    <Link to="/dashboard" data-nav-legacy><Button variant="outline" size="sm" className="border-white/10 text-muted-foreground hover:text-white">
                         <ChevronLeft className="w-4 h-4 mr-1" /> Dashboard
                     </Button></Link>
                 </div>
