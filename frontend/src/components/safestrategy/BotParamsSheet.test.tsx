@@ -9,6 +9,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {
     BotParamsSheet, mergeExits, EXITS_DEFAULTS, gruppiDellaStrategia,
+    toValues, fromValues,
     type StrategiaFiltro,
 } from './BotParamsSheet';
 import type { ParamGroup } from '@/components/trading/ParamsSheetBase';
@@ -528,5 +529,106 @@ describe('BotParamsSheet — `soloStrategia` nel foglio vero', () => {
         expect((payload.tennis as Record<string, unknown>).setsLeadMin).toBe(2);
         // e la chiave che il registro non conosce resta intatta
         expect(payload.unknown_key_from_service).toEqual({ keep: 'me' });
+    });
+});
+
+// R-06 (rilievi bassi 01/10) - `risk.max_open_trades` di Safe ha TRE stati nel
+// servizio (`risk.py`: merge_risk_params / risk_params / check): chiave ASSENTE
+// (o null) = vale "Max trade aperti" del bot (`bot_service.py` resolve_params,
+// di serie 20); 0 = NESSUN tetto; N > 0 = tetto N. Il foglio scriveva 0 quando
+// la chiave mancava. FALSIFICAZIONE: rimettendo in `toValues` "assente -> 0"
+// e in `fromValues` la scrittura incondizionata, (a), (d), il Default e la
+// verifica pura diventano rossi.
+const TETTO = 'Max posizioni aperte (rischio)';
+function rischioSalvato(onSave: ReturnType<typeof vi.fn>): Record<string, unknown> {
+    return (onSave.mock.calls[0][0] as Record<string, unknown>).risk as Record<string, unknown>;
+}
+
+describe('BotParamsSheet - R-06 tetto delle posizioni aperte (risk.max_open_trades)', () => {
+    it('(a) chiave ASSENTE nel database + campo non toccato: il payload NON la porta', async () => {
+        const { user, onSave } = await openSheet(vi.fn(), RAW);
+        expect((screen.getByLabelText(TETTO) as HTMLInputElement).value).toBe('');
+        await user.click(screen.getByTestId('params-save'));
+        await waitFor(() => expect(onSave).toHaveBeenCalled());
+        const risk = rischioSalvato(onSave);
+        expect('max_open_trades' in risk).toBe(false);
+        // il resto del rischio resta quello di prima
+        expect(risk.daily_liability_cap).toBe(800);
+        expect(risk.daily_loss_stop).toBe(-30);
+    });
+
+    it('(b) chiave 5 nel database: si mostra 5 e si salva 5', async () => {
+        const raw = { ...RAW, risk: { ...RAW.risk, max_open_trades: 5 } };
+        const { user, onSave } = await openSheet(vi.fn(), raw);
+        expect((screen.getByLabelText(TETTO) as HTMLInputElement).value).toBe('5');
+        await user.click(screen.getByTestId('params-save'));
+        await waitFor(() => expect(onSave).toHaveBeenCalled());
+        expect(rischioSalvato(onSave).max_open_trades).toBe(5);
+    });
+
+    it("chiave 0 nel database e campo non toccato: resta 0 (non si decide per l'utente)", async () => {
+        const raw = { ...RAW, risk: { ...RAW.risk, max_open_trades: 0 } };
+        const { user, onSave } = await openSheet(vi.fn(), raw);
+        expect((screen.getByLabelText(TETTO) as HTMLInputElement).value).toBe('0');
+        await user.click(screen.getByTestId('params-save'));
+        await waitFor(() => expect(onSave).toHaveBeenCalled());
+        expect(rischioSalvato(onSave).max_open_trades).toBe(0);
+    });
+
+    it("(c) l'utente scrive 0 su una chiave assente: si salva 0 (= nessun tetto, scelto da lui)", async () => {
+        const { user, onSave } = await openSheet(vi.fn(), RAW);
+        await user.type(screen.getByLabelText(TETTO), '0');
+        await user.click(screen.getByTestId('params-save'));
+        await waitFor(() => expect(onSave).toHaveBeenCalled());
+        expect(rischioSalvato(onSave).max_open_trades).toBe(0);
+    });
+
+    it("(d) l'utente svuota il campo (era 5): la chiave sparisce dal payload", async () => {
+        const raw = { ...RAW, risk: { ...RAW.risk, max_open_trades: 5 } };
+        const { user, onSave } = await openSheet(vi.fn(), raw);
+        await user.clear(screen.getByLabelText(TETTO));
+        await user.click(screen.getByTestId('params-save'));
+        await waitFor(() => expect(onSave).toHaveBeenCalled());
+        const risk = rischioSalvato(onSave);
+        expect('max_open_trades' in risk).toBe(false);
+        expect(risk.daily_liability_cap).toBe(800);
+        // la riga letta non viene toccata
+        expect((raw.risk as Record<string, unknown>).max_open_trades).toBe(5);
+    });
+
+    it('il campo dice il significato vero di 0 e del vuoto, col tetto del bot in uso', async () => {
+        await openSheet(vi.fn(), { ...RAW, max_open_trades: 12 });
+        const testo = group('Rischio').textContent ?? '';
+        expect(testo).toContain('0 = NESSUN tetto (illimitato); vuoto = vale "Max trade aperti" del bot (ora 12; di serie 20)');
+    });
+
+    it('Default: il campo torna VUOTO (= tetto del bot), non 0', async () => {
+        const raw = { ...RAW, risk: { ...RAW.risk, max_open_trades: 5 } };
+        const { user, onSave } = await openSheet(vi.fn(), raw);
+        await user.click(screen.getByTestId('params-reset'));
+        expect((screen.getByLabelText(TETTO) as HTMLInputElement).value).toBe('');
+        await user.click(screen.getByTestId('params-save'));
+        await waitFor(() => expect(onSave).toHaveBeenCalled());
+        expect('max_open_trades' in rischioSalvato(onSave)).toBe(false);
+    });
+
+    it('toValues/fromValues puri: assente, null, non numerico -> campo vuoto -> chiave assente; numero -> numero', () => {
+        for (const valore of [undefined, null, 'x']) {
+            const raw: Record<string, unknown> = { ...RAW, risk: { ...RAW.risk } };
+            if (valore !== undefined) (raw.risk as Record<string, unknown>).max_open_trades = valore;
+            const p = mergeBotParams(raw);
+            const v = toValues(p, mergeExits(raw.exits), raw);
+            expect(v['risk.max_open_trades']).toBe('');
+            const out = fromValues(v, p.variants, raw) as Record<string, unknown>;
+            expect('max_open_trades' in (out.risk as Record<string, unknown>)).toBe(false);
+        }
+        for (const n of [0, 5]) {
+            const raw = { ...RAW, risk: { ...RAW.risk, max_open_trades: n } };
+            const p = mergeBotParams(raw);
+            const v = toValues(p, mergeExits(raw.exits), raw);
+            expect(v['risk.max_open_trades']).toBe(n);
+            const out = fromValues(v, p.variants, raw) as Record<string, unknown>;
+            expect((out.risk as Record<string, unknown>).max_open_trades).toBe(n);
+        }
     });
 });

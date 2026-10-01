@@ -164,6 +164,20 @@ const OPPS_FIELDS: Num[] = [
     { key: 'opps_min_edge', label: 'Edge minimo (0-1)', step: 0.01, min: -1, max: 1 },
 ];
 
+/**
+ * R-06 (rilievi bassi 01/10) - `risk.max_open_trades` ha TRE stati nel servizio
+ * (`risk.py` merge_risk_params / risk_params / check):
+ *   - chiave ASSENTE (o null) -> vale `max_open_trades` del bot (resolve_params,
+ *     `bot_service.py`: di serie 20);
+ *   - 0 -> NESSUN tetto globale delle posizioni aperte (`if max_open and ...`);
+ *   - N > 0 -> tetto N, con la precedenza su "Max trade aperti".
+ * Il foglio la leggeva sempre come numero (assente -> 0) e al salvataggio la
+ * SCRIVEVA a 0: tetto tolto senza che nessuno lo chiedesse. Ora il campo VUOTO
+ * vuol dire chiave assente, e la chiave si scrive solo se nel campo c'e' un
+ * numero (stesso criterio di `salvaStop.payloadStop`).
+ */
+export const TETTO_RISCHIO_KEY = 'risk.max_open_trades';
+
 const RISK_FIELDS: Num[] = [
     { key: 'risk.daily_liability_cap', label: 'Cap liability giornaliera €', step: 50, min: 0, hint: 'raggiunto il cap nessun nuovo ingresso automatico fino a domani (0 = nessun cap)' },
     { key: 'risk.per_event_liability_cap', label: 'Cap liability per evento €', step: 10, min: 0, hint: 'somma delle liability aperte sulla stessa partita' },
@@ -177,8 +191,17 @@ const RISK_FIELDS: Num[] = [
     // il "Max trade aperti" generale (risk.py:101): finora era un cap
     // money-critical INVISIBILE, che l'utente non poteva ne' vedere ne'
     // cambiare. Vuoto/assente = vale quello generale.
-    { key: 'risk.max_open_trades', label: 'Max posizioni aperte (rischio)', step: 1, min: 0, hint: 'tetto sulle posizioni vive contemporanee: ha la PRECEDENZA su "Max trade aperti". 0 = illimitato' },
+    // R-06 (01/10): il testo del campo si compone con `hintTettoRischio` (dice
+    // anche il valore di "Max trade aperti" che vale a campo vuoto).
+    { key: TETTO_RISCHIO_KEY, label: 'Max posizioni aperte (rischio)', step: 1, min: 0, hint: '' },
 ];
+
+function hintTettoRischio(maxTradeAperti: number): string {
+    const generale = maxTradeAperti > 0 ? String(maxTradeAperti) : "0, cioe' nessun tetto";
+    return 'tetto sulle posizioni vive contemporanee: ha la PRECEDENZA su "Max trade aperti". '
+        + '0 = NESSUN tetto (illimitato); vuoto = vale "Max trade aperti" del bot '
+        + `(ora ${generale}; di serie 20)`;
+}
 
 const MODEL_STAKE_FIELDS: Num[] = [
     { key: 'risk.model_stake', label: 'Stake auto-trade modello / anomalie / tennis €', step: 0.5, min: 0, hint: 'stake di ogni trade automatico di questi tipi (le combinazioni lo usano come stake TOTALE)' },
@@ -369,7 +392,10 @@ function numFields(
         min: f.min,
         max: f.max,
         step: f.step,
-        hint: hintWithEffective(f, values[f.key], eff, corrections),
+        // R-06: campo vuoto = chiave assente, non "salvato 0"
+        hint: f.key === TETTO_RISCHIO_KEY && String(values[f.key] ?? '').trim() === ''
+            ? f.hint
+            : hintWithEffective(f, values[f.key], eff, corrections),
     }));
 }
 
@@ -534,7 +560,11 @@ export function BotParamsSheet({
                     )}
                 </>
             ),
-            fields: numFields(RISK_FIELDS, flat, effective, corrections),
+            fields: numFields(
+                RISK_FIELDS.map((f) => (f.key === TETTO_RISCHIO_KEY
+                    ? { ...f, hint: hintTettoRischio(params.max_open_trades) } : f)),
+                flat, effective, corrections,
+            ),
         },
         {
             // 18/09 (decisione «B») — il vecchio gruppo «Auto-trade»
@@ -771,6 +801,18 @@ export function toValues(
         const v = Number(getPath(src, k));
         out[k] = k in src && Number.isFinite(v) ? v : d;
     }
+    // R-06: `risk.max_open_trades` NON e' fra i predefiniti di `mergeRiskParams`
+    // (e `p.risk` copre `raw.risk` in `src`): si legge dalla riga grezza. Numero
+    // -> quel numero (anche 0, che il servizio legge "nessun tetto"); assente,
+    // null o non numerico -> campo VUOTO (= tetto del bot), mai 0.
+    {
+        const rischioRaw = raw?.risk;
+        const daRaw = rischioRaw != null && typeof rischioRaw === 'object' && !Array.isArray(rischioRaw)
+            ? (rischioRaw as Record<string, unknown>).max_open_trades : undefined;
+        const daP = (p.risk as unknown as Record<string, unknown> | undefined)?.max_open_trades;
+        const tetto = typeof daRaw === 'number' ? daRaw : daP;
+        out[TETTO_RISCHIO_KEY] = typeof tetto === 'number' && Number.isFinite(tetto) ? tetto : '';
+    }
     for (const t of AUTO_TRADE_TOGGLES) out[t.key] = Boolean(getPath(src, t.key));
     // 18/09 — i rubinetti nascono TRUE: una chiave assente sul DB (mai
     // salvata) deve mostrarsi ACCESA (comportamento di oggi), non spenta come
@@ -813,6 +855,21 @@ export function fromValues(
             continue;
         }
         setPath(out, key, value);
+    }
+    // R-06: `risk.max_open_trades` si scrive SOLO se nel campo c'e' un numero.
+    // Campo vuoto (o non numerico) = chiave ASSENTE nel payload (il servizio usa
+    // "Max trade aperti" del bot); mai 0, che per il servizio e' "nessun tetto".
+    // Se il campo non e' fra i valori (es. `salvaStop`, che lo toglie) la
+    // chiave della riga letta resta com'e'.
+    if (TETTO_RISCHIO_KEY in v) {
+        const grezzo = v[TETTO_RISCHIO_KEY];
+        const n = typeof grezzo === 'number' ? grezzo
+            : typeof grezzo === 'string' && grezzo.trim() !== '' ? Number(grezzo) : NaN;
+        const rischio = out.risk != null && typeof out.risk === 'object' && !Array.isArray(out.risk)
+            ? { ...(out.risk as Record<string, unknown>) } : {};
+        if (Number.isFinite(n)) rischio.max_open_trades = n;
+        else delete rischio.max_open_trades;
+        out.risk = rischio;
     }
     out.strategy_modes = modi;
     out.variants = variants;

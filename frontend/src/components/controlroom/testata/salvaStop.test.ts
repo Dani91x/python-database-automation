@@ -112,17 +112,27 @@ describe('payloadStop - lo STESSO payload del foglio del proprietario', () => {
             const p = mergeBotParams(SAFE_RAW);
             const v = toValues(p, mergeExits(SAFE_RAW.exits), SAFE_RAW);
             v['risk.daily_loss_stop'] = -40;
-            // R-06 (01/10): cambiato di proposito. Il foglio scrive
-            // `risk.max_open_trades: 0` (= nessun tetto) anche quando la chiave
-            // manca; lo stop dalla testata no: la chiave assente resta assente.
-            delete v['risk.max_open_trades'];
+            // R-06 (01/10): anche il foglio, ora, lascia ASSENTE la chiave
+            // `risk.max_open_trades` assente nel database: nessuna eccezione qui.
             return fromValues(v, p.variants, SAFE_RAW);
         })();
         const payload = payloadStop('safe', 40, SAFE_RAW);
         expect(payload).toEqual(atteso);
         expect((payload.risk as Record<string, unknown>).daily_loss_stop).toBe(-40);
+        expect('max_open_trades' in (payload.risk as Record<string, unknown>)).toBe(false);
         expect(payload.chiave_del_servizio_ignota).toBe(7);
         expect(payload.strategy_modes).toEqual({ tennis: 'live' });
+    });
+    it('Safe: identico al foglio anche con il tetto delle posizioni nel database (5 e 0)', () => {
+        for (const n of [5, 0]) {
+            const raw: Record<string, unknown> = { ...SAFE_RAW, risk: { daily_loss_stop: -50, max_open_trades: n } };
+            const p = mergeBotParams(raw);
+            const v = toValues(p, mergeExits(raw.exits), raw);
+            v['risk.daily_loss_stop'] = -40;
+            const payload = payloadStop('safe', 40, raw);
+            expect(payload).toEqual(fromValues(v, p.variants, raw));
+            expect((payload.risk as Record<string, unknown>).max_open_trades).toBe(n);
+        }
     });
     it('Mike: mergeMikeParams del foglio con daily_loss_stop positivo', () => {
         expect(payloadStop('mike', 40, MIKE_RAW)).toEqual(mergeMikeParams({ ...mergeMikeParams(MIKE_RAW), daily_loss_stop: 40 }));
