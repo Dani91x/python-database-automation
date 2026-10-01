@@ -261,11 +261,11 @@ export function TennisMatchesList() {
     }, [groups, itemValue]);
 
     return (
-        <div className="space-y-4 md:space-y-6 max-w-5xl mx-auto px-4 ds-v2-pagina">
+        <div className="space-y-4 md:space-y-6 max-w-5xl mx-auto px-4 ds-v2-pagina ds-v2-tn-pagina">
             {/* Header */}
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 md:mb-8">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 md:mb-8 ds-v2-tn-intesta">
                 <div>
-                    <h1 className="text-2xl md:text-4xl font-display font-black text-white">
+                    <h1 className="text-2xl md:text-4xl font-display font-black text-white ds-v2-titolo">
                         Partite del Giorno <span className="text-primary">.</span>
                     </h1>
                     <p className="text-muted-foreground text-sm mt-1 capitalize">
@@ -396,7 +396,7 @@ export function TennisMatchesList() {
                                                     return (
                                                         <div
                                                             key={`${m.event_id}-${m.market_id}`}
-                                                            className="p-3 md:p-4 rounded-lg bg-white/5 border border-white/5 hover:bg-white/10 transition-colors"
+                                                            className="p-3 md:p-4 rounded-lg bg-white/5 border border-white/5 hover:bg-white/10 transition-colors ds-v2-tn-riga"
                                                         >
                                                             <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3 lg:gap-4">
                                                                 {/* Star + time + status (top row on mobile) */}
@@ -424,7 +424,7 @@ export function TennisMatchesList() {
                                                                         />
                                                                     </button>
 
-                                                                    <div className="flex items-center justify-center w-12 h-12 rounded-lg bg-black/40 border border-white/10 flex-shrink-0 gap-0.5 flex-col">
+                                                                    <div className="flex items-center justify-center w-12 h-12 rounded-lg bg-black/40 border border-white/10 flex-shrink-0 gap-0.5 flex-col ds-v2-tn-ora">
                                                                         <Clock className="w-3 h-3 text-primary/60" />
                                                                         <span className="text-[11px] font-bold text-white leading-none">
                                                                             {fmtTime(m.open_date)}
@@ -438,7 +438,7 @@ export function TennisMatchesList() {
                                                                 <div className="flex-1 flex items-center justify-center gap-2 md:gap-4 min-w-0">
                                                                     {/* P1 (right-aligned) */}
                                                                     <div className="flex-1 flex items-center justify-end gap-2 md:gap-3 min-w-0">
-                                                                        <span className="text-sm md:text-base font-bold text-white text-right truncate">
+                                                                        <span className="text-sm md:text-base font-bold text-white text-right truncate ds-v2-tn-giocatore">
                                                                             {p1?.name || 'Giocatore 1'}
                                                                         </span>
                                                                         <PlayerOdds runner={p1} />
@@ -451,7 +451,7 @@ export function TennisMatchesList() {
                                                                     {/* P2 (left-aligned) */}
                                                                     <div className="flex-1 flex items-center justify-start gap-2 md:gap-3 min-w-0">
                                                                         <PlayerOdds runner={p2} />
-                                                                        <span className="text-sm md:text-base font-bold text-white text-left truncate">
+                                                                        <span className="text-sm md:text-base font-bold text-white text-left truncate ds-v2-tn-giocatore">
                                                                             {p2?.name || 'Giocatore 2'}
                                                                         </span>
                                                                     </div>
@@ -476,7 +476,7 @@ export function TennisMatchesList() {
                                                                                 )}&p2=${encodeURIComponent(p2?.name ?? '')}`,
                                                                             )
                                                                         }
-                                                                        className="bg-primary text-primary-foreground font-bold hover:bg-primary/90 h-9 md:h-10 px-3 md:px-4"
+                                                                        className="bg-primary text-primary-foreground font-bold hover:bg-primary/90 h-9 md:h-10 px-3 md:px-4 ds-v2-pulsante ds-v2-pulsante--sm"
                                                                     >
                                                                         <span className="hidden sm:inline">APRI TERMINAL</span>
                                                                         <ArrowRight className="w-4 h-4 sm:ml-2" />

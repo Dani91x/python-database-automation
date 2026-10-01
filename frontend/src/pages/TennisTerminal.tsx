@@ -161,9 +161,9 @@ export default function TennisTerminal() {
                 backLabel={daControlRoom ? 'Torna alla Control Room' : undefined} />
 
             {/* Header match compatto */}
-            <div className="border-b border-white/5 bg-black/40 backdrop-blur-xl sticky ds-v2-non-sticky top-16 z-40">
-                <div className="w-full px-4 lg:px-6 h-12 flex items-center gap-3 text-sm">
-                    <span className="font-display font-black tracking-tight text-white">
+            <div className="border-b border-white/5 bg-black/40 backdrop-blur-xl sticky ds-v2-non-sticky top-16 z-40 ds-v2-tt-testa">
+                <div className="w-full px-4 lg:px-6 h-12 flex items-center gap-3 text-sm ds-v2-tt-testa-dentro">
+                    <span className="font-display font-black tracking-tight text-white ds-v2-tt-giocatori">
                         {p1} <span className="text-white/30 mx-1">vs</span> {p2}
                     </span>
                     <span className="text-xs text-muted-foreground font-mono">· {marketName}</span>
@@ -183,10 +183,10 @@ export default function TennisTerminal() {
                     {/* badge modalità ordini del runner (regola specchio: PAPER = demo
                         identica al vivo, cambia solo che i soldi non sono veri) */}
                     <span
-                        className={`px-1.5 py-0.5 rounded text-[10px] font-black ${
-                            orderMode === 'LIVE' ? 'bg-red-500 text-white'
-                                : orderMode === 'PAPER' ? 'bg-amber-500 text-black'
-                                    : 'bg-slate-700 text-slate-300'
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-black ds-v2-chip ${
+                            orderMode === 'LIVE' ? 'bg-red-500 text-white ds-v2-chip--live'
+                                : orderMode === 'PAPER' ? 'bg-amber-500 text-black ds-v2-chip--paper'
+                                    : 'bg-slate-700 text-slate-300 ds-v2-chip--fermo'
                         }`}
                         title={orderMode === 'LIVE'
                             ? 'Runner in LIVE: gli ordini sono REALI (soldi veri).'
@@ -199,7 +199,7 @@ export default function TennisTerminal() {
                     {/* F-11 (26/09): seguire la partita e' un gesto dell'utente, mai
                         automatico all'apertura della pagina. */}
                     {seguita === true ? (
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-emerald-700 text-white"
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-emerald-700 text-white ds-v2-chip ds-v2-chip--teal"
                             title="Partita seguita dal runner tennis: ladder e punteggio in arrivo.">
                             SEGUITA
                         </span>
@@ -233,7 +233,7 @@ export default function TennisTerminal() {
                         onClick={toggleRecord}
                         disabled={recBusy}
                         aria-pressed={rec === true}
-                        className={`px-1.5 py-0.5 rounded text-[10px] font-black inline-flex items-center gap-1 transition-colors ${
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-black inline-flex items-center gap-1 transition-colors ds-v2-forma-pillola ${
                             rec === true
                                 ? 'bg-red-600 text-white'
                                 : 'bg-slate-800 text-slate-300 hover:bg-slate-700'

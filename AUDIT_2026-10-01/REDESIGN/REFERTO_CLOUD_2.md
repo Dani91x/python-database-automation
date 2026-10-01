@@ -68,6 +68,7 @@ cssGuscio (già esistente) ha preso un mio refuso: classe ds-v2-cr-impianto-stop
 | pagina 13a Scelta sport | 0 | 316 / 4839 verdi | 26/26 identica | 3.513.770 B (+0,52 %) |
 | pagina 3 Segui live + terminal calcio | 0 | 316 / 4839 verdi | 26/26 identica | 3.514.871 B (+0,55 %) |
 | pagine 4-6 Mike, Safe Strategy, Omega | 0 | 316 / 4839 verdi | 26/26 identica | 3.517.604 B (+0,63 %) |
+| pagine 7-8 Tennis Terminal, Dashboard tennis | 0 | 316 / 4839 verdi | 26/26 identica | 3.518.664 B (+0,66 %) |
 
 Fotografie `off` e `v2` delle pagine: **mai rigenerate** (le classi non entrano nella fotografia; testi, testid,
 comandi, chiamate e WebSocket restano identici, anche col guscio acceso). Nessun test esistente modificato.
@@ -86,6 +87,8 @@ comandi, chiamate e WebSocket restano identici, anche col guscio acceso). Nessun
 | 4 | Mike `/mike` | `trading/BotHeader` (testata del bot come pannello, nome Sora 20, stato a pillola con i colori di `botStatusMeta`, comandi a destra), `trading/StatTile` (KPI su 4 colonne, valore Sora 20), `Mike.tsx` (linguette sottolineate), `MikeMatchCard` (tessere del modello con cifre 18 px, quote BACK/LAY in caselle); Operazioni, Risultati, Attività e Storico prendono la veste dai componenti condivisi | **fatto** | `ds-v2-botheader*`, `ds-v2-forma-pillola`, `ds-v2-kpi-griglia`, `ds-v2-schede`, `ds-v2-mike-*` | `confronto2/mike.*` |
 | 5 | Safe Strategy `/safe-strategy` (calcio e tennis) | `SafeStrategy.tsx` (linguette principali sottolineate, sotto-linguette a segmento), `safestrategy/ParamsSheet` (foglio parametri del portale); Strategie di Safe = `PannelloBot` della Control Room; BotHeader e KPI condivisi | **fatto** | `ds-v2-schede`, `ds-v2-segmento`, `ds-portale-v2-foglio` | `confronto2/safe-strategy.*` |
 | 6 | Omega `/omega` | `Omega.tsx` (linguette); BotHeader, KPI, giornata, equity e fogli parametri condivisi | **fatto** | `ds-v2-schede` | `confronto2/omega.*` |
+| 7 | Tennis Terminal `/tennis/terminal?event=…` | `TennisTerminal.tsx`: barra della partita come pannello, giocatori Sora 16, stato ordini / SEGUITA / REC come pillole; ladder tennis, bot tennis (Pro, Scalper, FLB, Swing) e Stats/Chart/Depth dai componenti già vestiti | **fatto** | `ds-v2-tt-*`, `ds-v2-chip--*`, `ds-v2-forma-pillola` | `confronto2/tennis-terminal-sinner.*` |
+| 8 | Dashboard tennis `/tennis` | `TennisMatchesList`: contenitore largo, titolo Sora 24, righe partita compatte, ora a pillola, «APRI TERMINAL» piccolo | **fatto** | `ds-v2-tn-*`, `ds-v2-titolo`, `ds-v2-pulsante--sm` | `confronto2/tennis.*` |
 | 13a | Scelta sport `/select-sport` (fatta prima delle pagine 3-12 mentre i finti di quelle si preparavano: non ha bisogno di dati) | `SelectSport.tsx`: titolo a sinistra Sora 24, 5 carte compatte (padding 18, icona 56, titolo 17 in `foreground`, «Entra» col colore della carta), contenitore largo | **fatto** | `ds-v2-ss-*`, `ds-v2-titolo` | `confronto2/select-sport.{off,v2}.{1280,1600}.png`, `confronto2/select-sport.affianco.png` |
 | 13b | Accesso (landing), Conferma email, Reimposta password, 404 | nessuno | **lasciate invariate (motivo)**: sono FUORI dal guscio in entrambi gli stati (brief 1 e 2) e non hanno `data-shell="v2"` sopra di sé; il prototipo `#landing` riproduce la landing di oggi (stessi blocchi e stessa veste). Per vestirle servirebbe un contenitore `data-shell` attorno alle rotte pubbliche in `App.tsx`: non necessario e non fatto, il flusso di login resta intatto | — | — |
 
@@ -119,6 +122,14 @@ comandi, chiamate e WebSocket restano identici, anche col guscio acceso). Nessun
   invalidavano a vicenda (pagina bianca, «504 Outdated Optimize Dep»): ora ogni porta ha la sua cache e la prova fa
   un giro di riscaldamento.
 
+### Pagine 7-8 — tennis: verifiche
+- Ladder tennis (`misura_ladder.mjs` sul terminal Sinner–Draper): 264 celle-bottone, **0 più piccole**, larghezza
+  invariata, altezza +6,5 px.
+- Prova pixel col guscio spento contro master: differenze di 130-180 pixel in zone animate (pallino REC, stella dei
+  preferiti), uguali fra due scatti dello STESSO codice.
+- Correzione di sola grafica: la pillola «PAPER · SIMULATO» del terminal era ambra piena; col guscio acceso è il
+  verde unico di PAPER (brief §3.8).
+
 ### Pagina 13a — Scelta sport: verifiche
 - Prova pixel col guscio spento contro master: identiche salvo poche decine di pixel dell'animazione d'ingresso delle
   carte (`framer-motion`), che differiscono allo stesso modo fra due scatti dello stesso codice (già nel referto 1).
@@ -146,6 +157,7 @@ comandi, chiamate e WebSocket restano identici, anche col guscio acceso). Nessun
 
 ## Correzioni di sola grafica fatte (ammesse dal brief, solo col guscio acceso)
 1. Marchio della fonte con i colori del prototipo in tutte le pagine (CONTO/BOT/PROVA/STIMA).
+3. Tennis Terminal: pillola «PAPER · SIMULATO» da ambra al verde unico di PAPER.
 2. Bottone armato `Confermo: soldi veri` (Uscite, Opportunità): da arancio pieno a rosso pieno, come le altre
    conferme dei soldi veri (brief §4: «lo stato ARMATO … rosso pieno»).
 

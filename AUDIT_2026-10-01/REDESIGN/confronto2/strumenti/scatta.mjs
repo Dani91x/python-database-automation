@@ -24,7 +24,7 @@ const PAGINE = [
   ['safe-strategy', '/safe-strategy'], ['mike', '/mike'], ['segui-live', '/segui-live'], ['segui-live-terminal', '/segui-live?event=34812001'], ['multi-ladder', '/multi-ladder'],
   ['market-watch', '/market-watch'], ['live-pnl', '/live-pnl'], ['storico-calcio', '/storico/calcio'],
   ['storico-tennis', '/storico/tennis'], ['tennis', '/tennis'], ['tennis-terminal', '/tennis/terminal'],
-  ['tennis-terminal-match', '/tennis/terminal?event=34000001&market=1.250000001&name=Match%20Odds&p1=Giocatore%20Uno&p2=Giocatore%20Due'],
+  ['tennis-terminal-sinner', '/tennis/terminal?event=34813501&market=1.248135010&name=Match%20Odds&p1=J.%20Sinner&p2=J.%20Draper'], ['tennis-terminal-match', '/tennis/terminal?event=34000001&market=1.250000001&name=Match%20Odds&p1=Giocatore%20Uno&p2=Giocatore%20Due'],
   ['trade-journal', '/trade-journal'], ['report-personale', '/report-personale'], ['watchlist', '/watchlist'],
   ['analytics', '/analytics'], ['match-replay', '/match-replay'], ['select-sport', '/select-sport'],
   ['ladder-popout', '/ladder-popout?market=1.248120010&event=34812001&name=Match%20Odds&eventName=Inter%20-%20Torino'],

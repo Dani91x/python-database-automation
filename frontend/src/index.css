@@ -1904,3 +1904,52 @@
     color: hsl(var(--foreground));
     box-shadow: inset 0 0 0 1px hsl(var(--glass-border));
 }
+
+/* ---------- PAGINA 7 — TENNIS TERMINAL (prototipo s_tennis.js) ---------- */
+[data-shell="v2"] .ds-v2-tt-testa {
+    margin: 16px 24px 0;
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius);
+    background-color: hsl(var(--card));
+    backdrop-filter: none;
+}
+
+[data-shell="v2"] .ds-v2-tt-testa-dentro {
+    height: auto;
+    min-height: 48px;
+    padding: 8px 14px;
+    flex-wrap: wrap;
+}
+
+[data-shell="v2"] .ds-v2-tt-giocatori {
+    font-size: 16px;
+    font-weight: 800;
+}
+
+/* ---------- PAGINA 8 — DASHBOARD TENNIS (prototipo s_tennis.js) ---------- */
+[data-shell="v2"] .ds-v2-tn-pagina {
+    max-width: none;
+    padding: 0;
+}
+
+[data-shell="v2"] .ds-v2-tn-intesta {
+    margin-bottom: 16px;
+}
+
+[data-shell="v2"] .ds-v2-tn-riga {
+    padding: 8px 12px;
+    border-radius: 10px;
+    background-color: hsl(var(--card));
+    border-color: hsl(var(--border));
+}
+
+[data-shell="v2"] .ds-v2-tn-ora {
+    width: auto;
+    height: auto;
+    padding: 2px 8px;
+    border-radius: 8px;
+}
+
+[data-shell="v2"] .ds-v2-tn-giocatore {
+    font-size: 13px;
+}
