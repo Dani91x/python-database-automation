@@ -726,7 +726,7 @@ export default function Omega() {
                             lo storico. Prima la pagina si apriva sulla scheda
                             Missione e le posizioni aperte erano nascoste dietro
                             un click. */}
-                        <TabsList className="sticky ds-v2-non-sticky z-30" style={{ top: navH }}>
+                        <TabsList className="sticky ds-v2-non-sticky z-30 ds-v2-schede" style={{ top: navH }}>
                             <TabsTrigger value="auto" aria-label="Automatico">⚙️ Automatico</TabsTrigger>
                             <TabsTrigger value="mission" aria-label="Missione">🎯 Missione</TabsTrigger>
                             <TabsTrigger value="manual" aria-label="Manuale">✋ Manuale</TabsTrigger>
