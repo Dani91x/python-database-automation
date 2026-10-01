@@ -1572,3 +1572,77 @@
     border-top: 1px solid hsl(var(--border));
     padding-top: 14px;
 }
+
+/* ---------- PAGINA 2 — PROGRAMMA DEL GIORNO (prototipo s_home.js) ---------- */
+/* linguette e righe in un solo pannello (le linguette ne sono la testa) */
+[data-shell="v2"] .ds-v2-board-tabbar {
+    margin-bottom: 0;
+    padding: 0 8px;
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius) var(--radius) 0 0;
+    background-color: hsl(var(--card));
+}
+
+[data-shell="v2"] .ds-v2-board-tabella {
+    border-top-width: 0;
+    border-radius: 0 0 var(--radius) var(--radius);
+}
+
+[data-shell="v2"] .ds-v2-board-tabella > .ds-v2-riga {
+    padding-top: 9px;
+    padding-bottom: 9px;
+    font-size: 12px;
+}
+
+[data-shell="v2"] .ds-v2-board-ora {
+    font-weight: 700;
+    font-size: 12px;
+}
+
+[data-shell="v2"] .ds-v2-board-evento {
+    font-weight: 600;
+    font-size: 12.5px;
+}
+
+[data-shell="v2"] .ds-v2-board-inplay {
+    height: 17px;
+    margin-top: 2px;
+    padding: 0 6px;
+    background-color: rgb(52 211 153 / 0.12);
+    border-color: rgb(52 211 153 / 0.5);
+    color: #34d399;
+    animation: none;
+    align-self: flex-start;
+}
+
+[data-shell="v2"] .ds-v2-board-nome {
+    font-size: 10.5px;
+    color: hsl(var(--muted-foreground));
+    margin-bottom: 2px;
+}
+
+[data-shell="v2"] .ds-v2-board-quote {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+}
+
+/* casella di quota del prototipo (.o): 46 x 30 */
+[data-shell="v2"] .ds-v2-board-quota {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 46px;
+    height: 30px;
+    font-size: 12px;
+}
+
+[data-shell="v2"] .ds-v2-board-sep {
+    font-size: 10px;
+    color: hsl(var(--muted-foreground));
+}
+
+[data-shell="v2"] .ds-v2-board-orario {
+    width: 92px;
+    flex: none;
+}

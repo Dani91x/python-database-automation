@@ -58,11 +58,11 @@ const fmtTime = (iso: string): string => {
 function OddsCell({ sel }: { sel: BoardSelection }) {
     return (
         <div className="flex flex-col items-center min-w-[72px]" title={sel.name}>
-            <span className="text-[10px] text-slate-400 truncate max-w-[90px]">{sel.name}</span>
-            <span className="font-mono tabular-nums text-[11px]">
-                <span className="text-sky-300">{fmtPrice(sel.back)}</span>
-                <span className="text-slate-600"> / </span>
-                <span className="text-rose-300">{fmtPrice(sel.lay)}</span>
+            <span className="text-[10px] text-slate-400 truncate max-w-[90px] ds-v2-board-nome">{sel.name}</span>
+            <span className="font-mono tabular-nums text-[11px] ds-v2-board-quote">
+                <span className="text-sky-300 ds-v2-quota--back ds-v2-board-quota">{fmtPrice(sel.back)}</span>
+                <span className="text-slate-600 ds-v2-board-sep"> / </span>
+                <span className="text-rose-300 ds-v2-quota--lay ds-v2-board-quota">{fmtPrice(sel.lay)}</span>
             </span>
         </div>
     );
@@ -143,7 +143,7 @@ function SportBoard({ sport }: { sport: LocalSport }) {
     }
 
     return (
-        <div className="space-y-1.5 ds-v2-tabella">
+        <div className="space-y-1.5 ds-v2-tabella ds-v2-board-tabella">
             {sorted.map(row => {
                 const countdown = !row.inplay ? countdownToOff(row.open_date, nowTick) : null;
                 const p1 = row.selections[0]?.name ?? '';
@@ -157,10 +157,10 @@ function SportBoard({ sport }: { sport: LocalSport }) {
                         className="rounded-lg border border-white/10 bg-slate-900 px-3 py-2 flex items-center gap-3 flex-wrap text-[11px] ds-v2-riga"
                     >
                         {/* orario + countdown / badge in-play */}
-                        <div className="flex flex-col min-w-[64px]">
-                            <span className="font-mono tabular-nums text-slate-200">{fmtTime(row.open_date)}</span>
+                        <div className="flex flex-col min-w-[64px] ds-v2-board-orario">
+                            <span className="font-mono tabular-nums text-slate-200 ds-v2-board-ora">{fmtTime(row.open_date)}</span>
                             {row.inplay ? (
-                                <span className="text-[9px] font-black text-emerald-300 animate-pulse">● IN-PLAY</span>
+                                <span className="text-[9px] font-black text-emerald-300 animate-pulse ds-v2-chip ds-v2-board-inplay">● IN-PLAY</span>
                             ) : countdown != null ? (
                                 <span className="text-[9px] font-mono tabular-nums text-amber-300" title="Countdown all'off">
                                     OFF in {countdown}
@@ -170,7 +170,7 @@ function SportBoard({ sport }: { sport: LocalSport }) {
 
                         {/* evento + stato mercato */}
                         <div className="flex-1 min-w-[180px]">
-                            <div className="font-bold text-slate-100 truncate" title={row.event_name}>{row.event_name}</div>
+                            <div className="font-bold text-slate-100 truncate ds-v2-board-evento" title={row.event_name}>{row.event_name}</div>
                             <div className="text-[9px] text-slate-500 font-mono">
                                 {row.status ?? ''}{row.total_matched != null ? ` · €${Math.round(row.total_matched).toLocaleString('it-IT')}` : ''}
                             </div>
@@ -188,14 +188,14 @@ function SportBoard({ sport }: { sport: LocalSport }) {
                                     size="sm"
                                     disabled={following[row.event_id] === 'pending'}
                                     onClick={() => void handleFollowTennis(row)}
-                                    className="h-6 px-2 text-[10px] font-black bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-40"
+                                    className="h-6 px-2 text-[10px] font-black bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-40 ds-v2-pulsante ds-v2-pulsante--sm ds-v2-pulsante--primario"
                                     title="Registra l'evento al follow tennis (tennis_follow_event): il runner lo prende in carico"
                                 >
                                     {following[row.event_id] === 'done' ? '✓ Seguito' : 'Segui live'}
                                 </Button>
                                 <Link
                                     to={terminalHref}
-                                    className="h-6 px-2 inline-flex items-center rounded-md border border-white/15 text-[10px] font-bold text-slate-300 hover:text-white hover:border-emerald-400/40"
+                                    className="h-6 px-2 inline-flex items-center rounded-md border border-white/15 text-[10px] font-bold text-slate-300 hover:text-white hover:border-emerald-400/40 ds-v2-pulsante ds-v2-pulsante--sm ds-v2-pulsante--secondario"
                                     title="Apri il Tennis Trading Terminal su questo match"
                                 >
                                     Terminal →
@@ -204,7 +204,7 @@ function SportBoard({ sport }: { sport: LocalSport }) {
                         ) : (
                             <Link
                                 to="/segui-live"
-                                className="h-6 px-2 inline-flex items-center rounded-md border border-white/15 text-[10px] font-bold text-slate-300 hover:text-white hover:border-emerald-400/40"
+                                className="h-6 px-2 inline-flex items-center rounded-md border border-white/15 text-[10px] font-bold text-slate-300 hover:text-white hover:border-emerald-400/40 ds-v2-pulsante ds-v2-pulsante--sm ds-v2-pulsante--secondario"
                                 title="La registrazione del follow calcio non è esposta da questa pagina: apri Segui Live (i follow nascono da watchlist/runner)"
                             >
                                 Segui live →
@@ -259,9 +259,9 @@ export default function Board() {
                 </div>
             </nav>
 
-            <main className="container mx-auto px-4 lg:px-6 py-8 relative z-10 max-w-5xl ds-v2-pagina">
+            <main className="container mx-auto px-4 lg:px-6 py-8 relative z-10 max-w-5xl ds-v2-pagina ds-v2-largo">
                 <div className="mb-4">
-                    <h1 className="font-display font-black text-2xl md:text-3xl tracking-tight">
+                    <h1 className="font-display font-black text-2xl md:text-3xl tracking-tight ds-v2-titolo">
                         Programma di <span className="text-primary">oggi</span>
                     </h1>
                     <p className="text-[11px] text-muted-foreground mt-1">
@@ -270,7 +270,7 @@ export default function Board() {
                 </div>
 
                 {/* tab sport + stato canale per-sport */}
-                <div className="flex items-stretch gap-1 border-b border-white/5 mb-3 ds-v2-tabbar">
+                <div className="flex items-stretch gap-1 border-b border-white/5 mb-3 ds-v2-tabbar ds-v2-board-tabbar">
                     {SPORT_TABS.map(t => {
                         const st = t.key === 'calcio' ? calcioStatus : tennisStatus;
                         return (

@@ -20,4 +20,4 @@ curl -s -o /dev/null http://127.0.0.1:5198/ || avvia $RADICE 5198
 rm -rf /tmp/claude-0/off_master /tmp/claude-0/off_ramo
 PORTA=5197 node $QUI/scatta.mjs /tmp/claude-0/off_master $PAG $LARG off 1 > /dev/null
 PORTA=5198 node $QUI/scatta.mjs /tmp/claude-0/off_ramo $PAG $LARG off 1 > /dev/null
-node $QUI/confronta_png.mjs /tmp/claude-0/off_master /tmp/claude-0/off_ramo
+python3 $QUI/confronta_png.py /tmp/claude-0/off_master /tmp/claude-0/off_ramo 2>/dev/null

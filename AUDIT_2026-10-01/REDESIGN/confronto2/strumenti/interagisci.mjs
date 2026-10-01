@@ -19,6 +19,7 @@ await ctx.addInitScript(([s, ora]) => {
   }
 }, [STATO, ORA]);
 await ctx.route(/^https?:\/\/(?!127\.0\.0\.1)/, (r) => r.fulfill({ status: 200, body: '' }));
+if (process.env.CANALE_FINTO === '1') await (await import('./canaleFinto.mjs')).instradaCanali(ctx);
 const page = await ctx.newPage();
 const errori = []; page.on('pageerror', (e) => errori.push(String(e.message).slice(0, 200)));
 await page.goto(URL.startsWith('file:') ? URL : 'http://127.0.0.1:' + (process.env.PORTA || 5198) + URL, { waitUntil: 'domcontentloaded' });

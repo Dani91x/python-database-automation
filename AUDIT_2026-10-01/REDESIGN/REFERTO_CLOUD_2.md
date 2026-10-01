@@ -64,6 +64,7 @@ cssGuscio (già esistente) ha preso un mio refuso: classe ds-v2-cr-impianto-stop
 |---|---|---|---|---|
 | partenza (`ebfab2a`) | 0 | 314 file / 4829 test verdi (10/50 saltati) | 26/26 | 3.495.574 B |
 | pagina 1 Control Room | 0 | 316 / 4839 verdi (+2 file, +10 test), 10/50 saltati | 26/26 identica, nessuna fotografia rigenerata | 3.511.199 B (+0,45 %) |
+| pagina 2 Programma del giorno | 0 | 316 / 4839 verdi | 26/26 identica | 3.512.809 B (+0,49 %) |
 
 Fotografie `off` e `v2` delle pagine: **mai rigenerate** (le classi non entrano nella fotografia; testi, testid,
 comandi, chiamate e WebSocket restano identici, anche col guscio acceso). Nessun test esistente modificato.
@@ -75,6 +76,14 @@ comandi, chiamate e WebSocket restano identici, anche col guscio acceso). Nessun
 | # | pagina | componenti ritoccati | stato | classi principali | immagini |
 |---|---|---|---|---|---|
 | 1 | Control Room `/control-room` | `ControlRoom.tsx` (testata, chip dei bot, feed, linguette del banco), `testata/FasciaSoldiVeri`, `testata/TesseraRunner`, `testata/FasciaStop`, `MarchioSoldi`, `ObiettivoHero` (composizione a 2 colonne, corsia PROVA in tabella tratteggiata), `PannelloBot` (pillole di stato e modalità, bottoni piccoli, conferme armate), `RigaOrdiniReali`, `RigaFreno`, `RigaCapacitaMercati`, `InterruttoreUscite`, `QuoteMercato` (BACK sky / LAY rose in caselle), `SchedaChiusura`, `SchedaChiusuraOmega`, `SchedaPropostaOpportunita` (tessere 2×2, azioni arrotondate, armato rosso pieno), `PosizioniChiuse` (pillole dei filtri), `trading/PageShell` (`flow-root`), `trading/ParamsSheetBase` (foglio parametri) | **fatto** | `ds-v2-cr-*`, `ds-v2-chip--*`, `ds-v2-marchio`, `ds-v2-pulsante--*`, `ds-v2-quota--*`, `ds-v2-pillola`, `ds-v2-tab`, `ds-portale-v2-foglio` + leve globali | `confronto2/control-room.{off,v2}.{1280,1600}.png`, `confronto2/control-room.affianco.png` |
+
+| 2 | Programma del giorno `/board` | `Board.tsx`: linguette come testa di un unico pannello con le righe, orario a colonna fissa, IN-PLAY come pillola, quote BACK/LAY in caselle 46×30 (prototipo `.o`), bottoni piccoli, titolo Sora, contenitore largo; stato vuoto/canale off con `ds-v2-vuoto` | **fatto** | `ds-v2-board-*`, `ds-v2-quota--*`, `ds-v2-pulsante--*`, `ds-v2-titolo` | `confronto2/board.{off,v2}.{1280,1600}.png`, `confronto2/board.affianco.png` (tabellone finto sul canale locale: `CANALE_FINTO=1`, partite del prototipo, `strumenti/canaleFinto.mjs`) |
+
+### Pagina 2 — Programma del giorno: verifiche
+- Prova pixel col guscio spento contro master con tabellone finto, 1280 e 1600, pagina intera: **identiche**.
+- Stato «canale off» verificato a vista col guscio acceso (pannello tratteggiato sotto le linguette).
+- Non fatto (come nel referto 1): conteggio nelle linguette e riga d'intestazione della tabella del prototipo:
+  sarebbero testi nuovi.
 
 ### Pagina 1 — Control Room: dettagli e verifiche
 - Testata: col guscio acceso è un pannello dentro i margini (prototipo `header.panel.flat`), velo arancio se un bot
