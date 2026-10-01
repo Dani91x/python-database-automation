@@ -67,6 +67,7 @@ cssGuscio (già esistente) ha preso un mio refuso: classe ds-v2-cr-impianto-stop
 | pagina 2 Programma del giorno | 0 | 316 / 4839 verdi | 26/26 identica | 3.512.809 B (+0,49 %) |
 | pagina 13a Scelta sport | 0 | 316 / 4839 verdi | 26/26 identica | 3.513.770 B (+0,52 %) |
 | pagina 3 Segui live + terminal calcio | 0 | 316 / 4839 verdi | 26/26 identica | 3.514.871 B (+0,55 %) |
+| pagine 4-6 Mike, Safe Strategy, Omega | 0 | 316 / 4839 verdi | 26/26 identica | 3.517.604 B (+0,63 %) |
 
 Fotografie `off` e `v2` delle pagine: **mai rigenerate** (le classi non entrano nella fotografia; testi, testid,
 comandi, chiamate e WebSocket restano identici, anche col guscio acceso). Nessun test esistente modificato.
@@ -82,6 +83,9 @@ comandi, chiamate e WebSocket restano identici, anche col guscio acceso). Nessun
 | 2 | Programma del giorno `/board` | `Board.tsx`: linguette come testa di un unico pannello con le righe, orario a colonna fissa, IN-PLAY come pillola, quote BACK/LAY in caselle 46×30 (prototipo `.o`), bottoni piccoli, titolo Sora, contenitore largo; stato vuoto/canale off con `ds-v2-vuoto` | **fatto** | `ds-v2-board-*`, `ds-v2-quota--*`, `ds-v2-pulsante--*`, `ds-v2-titolo` | `confronto2/board.{off,v2}.{1280,1600}.png`, `confronto2/board.affianco.png` (tabellone finto sul canale locale: `CANALE_FINTO=1`, partite del prototipo, `strumenti/canaleFinto.mjs`) |
 
 | 3 | Segui live `/segui-live` e terminal calcio (`/segui-live?event=…`) | `LiveMatchCard` (punteggio grande al centro, pillole), `LadderView` (righe del ladder 19 px invece di 12,5 px, cifre 11,5 px, intestazione 10 px: SOLO tipografia e spaziatura interna), `LiveTradingPanel` (campi 30 px su due colonne); il resto (top bar, banner rischio gol, tab mercati, toolbar, rail posizioni/ordini, segnali, tabellone) prende la veste dalle leve globali e dalla Control Room | **fatto** | `ds-v2-lm-*`, `ds-v2-ladder-riga/testa`, `ds-v2-lt-griglia`, `ds-v2-campo` | `confronto2/segui-live.{off,v2}.{1280,1600}.png`, `confronto2/segui-live-terminal.{off,v2}.{1280,1600}.png`, `confronto2/segui-live.affianco.png`, `confronto2/segui-live-terminal.affianco.png` |
+| 4 | Mike `/mike` | `trading/BotHeader` (testata del bot come pannello, nome Sora 20, stato a pillola con i colori di `botStatusMeta`, comandi a destra), `trading/StatTile` (KPI su 4 colonne, valore Sora 20), `Mike.tsx` (linguette sottolineate), `MikeMatchCard` (tessere del modello con cifre 18 px, quote BACK/LAY in caselle); Operazioni, Risultati, Attività e Storico prendono la veste dai componenti condivisi | **fatto** | `ds-v2-botheader*`, `ds-v2-forma-pillola`, `ds-v2-kpi-griglia`, `ds-v2-schede`, `ds-v2-mike-*` | `confronto2/mike.*` |
+| 5 | Safe Strategy `/safe-strategy` (calcio e tennis) | `SafeStrategy.tsx` (linguette principali sottolineate, sotto-linguette a segmento), `safestrategy/ParamsSheet` (foglio parametri del portale); Strategie di Safe = `PannelloBot` della Control Room; BotHeader e KPI condivisi | **fatto** | `ds-v2-schede`, `ds-v2-segmento`, `ds-portale-v2-foglio` | `confronto2/safe-strategy.*` |
+| 6 | Omega `/omega` | `Omega.tsx` (linguette); BotHeader, KPI, giornata, equity e fogli parametri condivisi | **fatto** | `ds-v2-schede` | `confronto2/omega.*` |
 | 13a | Scelta sport `/select-sport` (fatta prima delle pagine 3-12 mentre i finti di quelle si preparavano: non ha bisogno di dati) | `SelectSport.tsx`: titolo a sinistra Sora 24, 5 carte compatte (padding 18, icona 56, titolo 17 in `foreground`, «Entra» col colore della carta), contenitore largo | **fatto** | `ds-v2-ss-*`, `ds-v2-titolo` | `confronto2/select-sport.{off,v2}.{1280,1600}.png`, `confronto2/select-sport.affianco.png` |
 | 13b | Accesso (landing), Conferma email, Reimposta password, 404 | nessuno | **lasciate invariate (motivo)**: sono FUORI dal guscio in entrambi gli stati (brief 1 e 2) e non hanno `data-shell="v2"` sopra di sé; il prototipo `#landing` riproduce la landing di oggi (stessi blocchi e stessa veste). Per vestirle servirebbe un contenitore `data-shell` attorno alle rotte pubbliche in `App.tsx`: non necessario e non fatto, il flusso di login resta intatto | — | — |
 
@@ -106,6 +110,14 @@ comandi, chiamate e WebSocket restano identici, anche col guscio acceso). Nessun
   animate): stesse zone e stesso ordine di grandezza in `off_ramo` contro `off_ramo2`.
 - Il terminal mostra meno righe di ladder per volta nella stessa finestra di 420 px (circa 21 invece di 32):
   conseguenza della riga più alta del prototipo. Da valutare con l'utente.
+
+### Pagine 4-6 — bot calcio: verifiche
+- Prova pixel col guscio spento contro master (1280 e 1600, pagina intera): differenze solo nelle zone che cambiano
+  anche fra due scatti dello STESSO codice (età «feed vivo (N s)» nella testata del bot, strisce animate delle schede
+  segnale di Safe, un pallino animato di Omega).
+- Strumenti: i due server di anteprima (master e ramo) condividevano la cache delle dipendenze di Vite e si
+  invalidavano a vicenda (pagina bianca, «504 Outdated Optimize Dep»): ora ogni porta ha la sua cache e la prova fa
+  un giro di riscaldamento.
 
 ### Pagina 13a — Scelta sport: verifiche
 - Prova pixel col guscio spento contro master: identiche salvo poche decine di pixel dell'animazione d'ingresso delle

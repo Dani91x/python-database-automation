@@ -116,3 +116,6 @@ export async function fetchXhedge(eventId: string): Promise<XhedgeRow[]> {
 export async function fetchLiveAudit(limit = 100): Promise<LiveAuditRow[]> {
     return AUDIT.slice(0, limit).map((r) => ({ ...r }));
 }
+
+// pagine di analisi (Live P&L, Trade journal): letture pronte in analisiDati.ts
+export { fetchLiveSettled, fetchLiveJournal, fetchLivePositionsAll } from './analisiDati';

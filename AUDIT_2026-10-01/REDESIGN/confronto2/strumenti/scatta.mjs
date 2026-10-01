@@ -27,7 +27,7 @@ const PAGINE = [
   ['tennis-terminal-match', '/tennis/terminal?event=34000001&market=1.250000001&name=Match%20Odds&p1=Giocatore%20Uno&p2=Giocatore%20Due'],
   ['trade-journal', '/trade-journal'], ['report-personale', '/report-personale'], ['watchlist', '/watchlist'],
   ['analytics', '/analytics'], ['match-replay', '/match-replay'], ['select-sport', '/select-sport'],
-  ['ladder-popout', '/ladder-popout?market=1.250000001&event=34000001&name=Match%20Odds'],
+  ['ladder-popout', '/ladder-popout?market=1.248120010&event=34812001&name=Match%20Odds&eventName=Inter%20-%20Torino'],
 ];
 const browser = await chromium.launch();
 const misure = [];

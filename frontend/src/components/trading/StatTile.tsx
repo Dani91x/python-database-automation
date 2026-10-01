@@ -48,10 +48,10 @@ export function StatTile({ label, value, tone = 'plain', icon, sub, hint, testId
             <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-slate-400 ds-v2-kpi-k">
                 {icon}{label}
             </div>
-            <div className={`mt-0.5 text-xl md:text-2xl font-display font-black tabular-nums ${TONE_CLS[tone]}`}>
+            <div className={`mt-0.5 text-xl md:text-2xl font-display font-black tabular-nums ds-v2-kpi-v ${TONE_CLS[tone]}`}>
                 {value}
             </div>
-            {sub && <div className="text-[10px] text-slate-500">{sub}</div>}
+            {sub && <div className="text-[10px] text-slate-500 ds-v2-kpi-nota">{sub}</div>}
         </Card>
     );
 }
@@ -65,14 +65,14 @@ export function KpiRow({ loading, tiles, children }: {
 }) {
     if (loading) {
         return (
-            <div className="flex flex-wrap gap-3" data-testid="kpi-row" data-loading="1">
+            <div className="flex flex-wrap gap-3 ds-v2-kpi-griglia" data-testid="kpi-row" data-loading="1">
                 {Array.from({ length: tiles ?? 6 }).map((_, i) => (
                     <Skeleton key={i} className="h-[74px] flex-1 min-w-[130px]" />
                 ))}
             </div>
         );
     }
-    return <div className="flex flex-wrap gap-3" data-testid="kpi-row">{children}</div>;
+    return <div className="flex flex-wrap gap-3 ds-v2-kpi-griglia" data-testid="kpi-row">{children}</div>;
 }
 
 export default StatTile;

@@ -65,3 +65,6 @@ export async function fetchLiveAlerts(): Promise<Alert[]> {
 export function subscribeLiveAlerts(_cb: () => void): () => void {
     return nessunCambio();
 }
+
+// Match replay (e Backtest di Analytics): letture pronte in analisiDati.ts
+export { fetchReplayList, fetchReplayChunked } from './analisiDati';

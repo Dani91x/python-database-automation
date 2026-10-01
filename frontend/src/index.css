@@ -1767,3 +1767,140 @@
     text-transform: none;
     letter-spacing: 0.03em;
 }
+
+/* ---------- PAGINE 4-6 — BOT CALCIO (Mike, Safe, Omega: prototipo s_calcio.js) ---------- */
+/* testata del bot (BotHeader) come pannello dentro i margini */
+[data-shell="v2"] .ds-v2-botheader {
+    margin: 20px 24px 0;
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius);
+    background-color: hsl(var(--card));
+    backdrop-filter: none;
+}
+
+[data-shell="v2"] .ds-v2-botheader-dentro {
+    max-width: none;
+    padding: 12px 16px;
+}
+
+[data-shell="v2"] .ds-v2-botheader-nome {
+    font-family: 'Sora', sans-serif;
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+}
+
+/* solo la FORMA della pillola: i colori restano quelli di botStatusMeta */
+[data-shell="v2"] .ds-v2-forma-pillola {
+    height: 20px;
+    padding: 0 8px;
+    border-radius: 9999px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+}
+
+/* KPI su 4 colonne (prototipo .grid.g4) */
+[data-shell="v2"] .ds-v2-kpi-griglia {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+@media (min-width: 1100px) {
+    [data-shell="v2"] .ds-v2-kpi-griglia {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
+
+/* linguette di pagina (TabsList di shadcn): sottolineate dentro un filetto */
+[data-shell="v2"] .ds-v2-schede {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    height: auto;
+    gap: 2px;
+    padding: 0;
+    border-radius: 0;
+    background-color: transparent;
+    border-bottom: 1px solid hsl(var(--border));
+}
+
+[data-shell="v2"] .ds-v2-schede > button {
+    border-radius: 0;
+    padding: 8px 12px;
+    margin-bottom: -1px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: hsl(var(--muted-foreground));
+    border-bottom: 2px solid transparent;
+    box-shadow: none;
+}
+
+[data-shell="v2"] .ds-v2-schede > button[data-state="active"] {
+    color: hsl(var(--foreground));
+    background-color: transparent;
+    border-bottom-color: hsl(var(--primary));
+    box-shadow: none;
+}
+
+[data-shell="v2"] .ds-v2-botheader-dentro > :last-child {
+    margin-left: auto;
+}
+
+/* scheda partita di Mike: tessere del modello con cifre grandi, quote in caselle */
+[data-shell="v2"] .ds-v2-mike-cella {
+    border-radius: 10px;
+    border-color: hsl(var(--border));
+    background-color: hsl(var(--card));
+    padding: 10px 14px;
+}
+
+[data-shell="v2"] .ds-v2-mike-cella-k {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+}
+
+[data-shell="v2"] .ds-v2-mike-cella-v {
+    font-family: 'Sora', sans-serif;
+    font-size: 18px;
+    font-weight: 800;
+    margin-top: 2px;
+}
+
+[data-shell="v2"] .ds-v2-mike-quota {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    height: 24px;
+    padding: 0 6px;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+/* sotto-linguette come segmento (prototipo .seg) */
+[data-shell="v2"] .ds-v2-segmento {
+    display: inline-flex;
+    height: auto;
+    padding: 2px;
+    gap: 2px;
+    border-radius: 8px;
+    background-color: hsl(var(--muted));
+    border: 1px solid hsl(var(--border));
+}
+
+[data-shell="v2"] .ds-v2-segmento > button {
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: hsl(var(--muted-foreground));
+    box-shadow: none;
+}
+
+[data-shell="v2"] .ds-v2-segmento > button[data-state="active"] {
+    background-color: hsl(var(--glass));
+    color: hsl(var(--foreground));
+    box-shadow: inset 0 0 0 1px hsl(var(--glass-border));
+}

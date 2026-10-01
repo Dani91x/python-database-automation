@@ -77,11 +77,30 @@ function canaleSeguiLive(ws, D) {
   });
 }
 
+// Tennis (/tennis/terminal): sul 47332 il runner tennis manda alla connessione
+//   hello {sport, mode}   (local_channel.py + tennis_runner.py: set_hello(mode=live_order_mode()))
+// e risponde alle richieste. NON si mandano 'ladder'/'now': sono i segni di vita
+// della sorgente ladder (localTransport TOPIC_VITA) e spegnerebbero il realtime
+// DB del finto (frontend/src/anteprima/tennisFinto.ts), che porta la storia del
+// book per Chart e Depth. Il chip "LOCALE" della ladder resta acceso (connesso).
+function canaleTennis(ws) {
+  const manda = (o) => { try { ws.send(JSON.stringify(o)); } catch { /* route chiusa */ } };
+  setTimeout(() => manda({ t: 'hello', d: { sport: 'tennis', mode: 'paper' } }), 50);
+  ws.onMessage((testo) => {
+    let m;
+    try { m = JSON.parse(String(testo)); } catch { return; }
+    if (typeof m?.id !== 'number') return;
+    // anteprima: nessun comando viene eseguito (esito applicativo negativo, mai un silenzio)
+    manda({ id: m.id, ok: false, e: 'anteprima: canale finto, nessun comando eseguito' });
+  });
+}
+
 export async function instradaCanali(ctx) {
   const datiSL = await caricaDatiSeguiLive();
   await ctx.routeWebSocket(/:4733[12]/, (ws) => {
     const sport = ws.url().includes('47331') ? 'calcio' : 'tennis';
     setTimeout(() => ws.send(JSON.stringify({ t: 'board', d: { rows: sport === 'calcio' ? CALCIO : TENNIS } })), 300);
     if (sport === 'calcio' && datiSL) canaleSeguiLive(ws, datiSL);
+    if (sport === 'tennis') canaleTennis(ws);
   });
 }

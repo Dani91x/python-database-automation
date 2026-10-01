@@ -17,6 +17,9 @@ cp -r $QUI $M/AUDIT_2026-10-01/REDESIGN/confronto2/strumenti
 avvia() { (cd $1 && PORTA=$2 node AUDIT_2026-10-01/REDESIGN/confronto2/strumenti/server.mjs > /tmp/claude-0/server_$2.log 2>&1 &); until curl -s -m 5 -o /dev/null http://127.0.0.1:$2/; do sleep 1; done; }
 curl -s -m 5 -o /dev/null http://127.0.0.1:5197/ || avvia $M 5197
 curl -s -m 5 -o /dev/null http://127.0.0.1:5198/ || avvia $RADICE 5198
+# riscaldamento: al primo caricamento Vite ottimizza le dipendenze e la pagina resta vuota
+PORTA=5197 node $QUI/scatta.mjs /tmp/claude-0/off_riscaldo $PAG 1280 off 0 > /dev/null
+PORTA=5198 node $QUI/scatta.mjs /tmp/claude-0/off_riscaldo $PAG 1280 off 0 > /dev/null
 rm -rf /tmp/claude-0/off_master /tmp/claude-0/off_ramo
 PORTA=5197 node $QUI/scatta.mjs /tmp/claude-0/off_master $PAG $LARG off 1 > /dev/null
 PORTA=5198 node $QUI/scatta.mjs /tmp/claude-0/off_ramo $PAG $LARG off 1 > /dev/null

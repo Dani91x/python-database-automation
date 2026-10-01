@@ -35,6 +35,9 @@ if (MODO === 'popolata') {
 const server = await createServer({
     root: FE,
     configFile: false,
+    // cache delle dipendenze PER PORTA: due anteprime accese insieme (master e ramo,
+    // node_modules condiviso) altrimenti si invalidano a vicenda (504 Outdated Optimize Dep)
+    cacheDir: path.join(FE, 'node_modules', `.vite-anteprima-${PORTA}`),
     plugins: [react()],
     resolve: {
         alias: [
