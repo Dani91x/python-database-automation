@@ -1,0 +1,29 @@
+{
+  "pagina": "multi-ladder",
+  "url": "/multi-ladder",
+  "titolo": "Multi-ladder",
+  "testi": [
+    "Segui live",
+    "Multi-ladder",
+    "0",
+    "/",
+    "8",
+    "Aggiungi ladder",
+    "Workspace vuoto. Usa",
+    "Aggiungi ladder",
+    "qui sopra, oppure il bottone",
+    "su un ladder di Segui live / Tennis terminal."
+  ],
+  "testid": [],
+  "comandi": [
+    {
+      "ruolo": "link",
+      "nome": "Segui live",
+      "href": "/segui-live"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Aggiungi ladder"
+    }
+  ]
+}

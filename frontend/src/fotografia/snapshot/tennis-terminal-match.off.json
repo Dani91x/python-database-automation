@@ -1,0 +1,327 @@
+{
+  "pagina": "tennis-terminal-match",
+  "url": "/tennis/terminal?event=34000001&market=1.250000001&name=Match%20Odds&p1=Giocatore%20Uno&p2=Giocatore%20Due",
+  "titolo": "Giocatore Uno vs Giocatore Due · Terminal Tennis | Alpha Score",
+  "testi": [
+    "AI",
+    "TERMINAL",
+    "TERMINAL",
+    "Torna alle partite",
+    "Cambia sport",
+    "Watchlist",
+    "Report",
+    "Analytics",
+    "daniele.ritrovato@gmail.com",
+    "Esci",
+    "Giocatore Uno",
+    "vs",
+    "Giocatore Due",
+    "·",
+    "Match Odds",
+    "ORDINI OFF",
+    "SEGUI",
+    "partita non seguita: premi «Segui» per ladder e punteggio",
+    "REC",
+    "📺",
+    "📊",
+    "event",
+    "34000001",
+    "· market",
+    "1.250000001",
+    "Bot Tennis",
+    "nessun bot armato",
+    "Tennis Scalper",
+    "pre + in-play",
+    "Missione tick pre-match: 1 tick di profitto prima del via, poi stop. Maker micro-scalp sul favorito (gamba in-play OFF: bocciata dal backtest di validazione).",
+    "Inattivo",
+    "Stake €",
+    "Dry-run (solo log: nessun ordine, nemmeno simulato)",
+    "runner OFF: dry-run forzato, nessun ordine possibile",
+    "Parametri",
+    "(",
+    "10",
+    ")",
+    "default",
+    "ARMA",
+    "(dry-run)",
+    "Tennis Pro",
+    "in-play",
+    "Direzionale score-driven: break point, serving-for-set, doppio break, favorito compresso.",
+    "Inattivo",
+    "superficie: la decide il runner all'armamento, dal nome del torneo",
+    "Stake €",
+    "Dry-run (solo log: nessun ordine, nemmeno simulato)",
+    "runner OFF: dry-run forzato, nessun ordine possibile",
+    "Parametri",
+    "(",
+    "8",
+    ")",
+    "default",
+    "ARMA",
+    "(dry-run)",
+    "Tennis FLB",
+    "in-play",
+    "Lay del favorito estremo (favourite-longshot bias), liability minima, exit green/hold/hybrid.",
+    "Inattivo",
+    "Stake €",
+    "Dry-run (solo log: nessun ordine, nemmeno simulato)",
+    "runner OFF: dry-run forzato, nessun ordine possibile",
+    "Parametri",
+    "(",
+    "6",
+    ")",
+    "default",
+    "ARMA",
+    "(dry-run)",
+    "Tennis Swing",
+    "in-play",
+    "Maker fade degli estremi del favorito: z-score robusto + Efficiency-Ratio + RSI.",
+    "Inattivo",
+    "Stake €",
+    "Dry-run (solo log: nessun ordine, nemmeno simulato)",
+    "runner OFF: dry-run forzato, nessun ordine possibile",
+    "Parametri",
+    "(",
+    "5",
+    ")",
+    "default",
+    "ARMA",
+    "(dry-run)",
+    "Equity bot (live)",
+    "In attesa di operatività dei bot…",
+    "Attività",
+    "Nessuna attività ancora…",
+    "Match Odds",
+    "Giocatore Uno",
+    "vs",
+    "Giocatore Due",
+    "Ordini OFF — il runner tennis non accetta ordini (nemmeno simulati) e il ladder non mostra ordini/posizioni. Per la DEMO: imposta TENNIS_LIVE_ORDER_MODE=PAPER e riavvia il runner.",
+    "Ladder",
+    "Grid",
+    "⚠",
+    "stato dello stream NON NOTO (canale locale del runner non raggiungibile): i prezzi mostrati potrebbero essere fermi",
+    "Match Odds",
+    "OFF",
+    "Stake",
+    "2",
+    "5",
+    "10",
+    "25",
+    "Colonne",
+    "Ladder non disponibile: il runner non sta pubblicando la profondità per questo mercato.",
+    "Sola lettura (modalità OFF) · per operare avvia il runner in PAPER/LIVE",
+    "Gli ordini in overlay (colonne",
+    "B",
+    "/",
+    "L",
+    ") includono sia i tuoi ordini manuali sia quelli dei bot tennis. Trascina un ordine su un altro livello per spostarlo (annulla e ripiazza).",
+    "Stats",
+    "Chart",
+    "Depth",
+    "Match Stats",
+    "PRE-MATCH",
+    "Giocatore",
+    "Set",
+    "Set-by-set",
+    "Gm",
+    "Pt",
+    "Giocatore Uno",
+    "vs",
+    "Giocatore Due",
+    "In attesa dei dati punteggio (inizio match)…",
+    "Punto per punto",
+    "Nessun dettaglio punto-per-punto disponibile"
+  ],
+  "testid": [
+    "tennis-pro-superficie",
+    "flusso-stream-runner"
+  ],
+  "comandi": [
+    {
+      "ruolo": "button",
+      "nome": "Torna alle partite"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Cambia sport"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Watchlist"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Report Personale"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Analytics"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Logout"
+    },
+    {
+      "ruolo": "button",
+      "nome": "SEGUI"
+    },
+    {
+      "ruolo": "button",
+      "nome": "REC",
+      "premuto": "false"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Apri video live Betfair"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Apri statistiche e visualizzazione partita Betfair"
+    },
+    {
+      "ruolo": "spinbutton",
+      "nome": "Stake €"
+    },
+    {
+      "ruolo": "checkbox",
+      "nome": "Dry-run (solo log: nessun ordine, nemmeno simulato)",
+      "disabled": true,
+      "spuntato": "true"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Parametri(10)default"
+    },
+    {
+      "ruolo": "button",
+      "nome": "default"
+    },
+    {
+      "ruolo": "button",
+      "nome": "ARMA (dry-run)"
+    },
+    {
+      "ruolo": "spinbutton",
+      "nome": "Stake €"
+    },
+    {
+      "ruolo": "checkbox",
+      "nome": "Dry-run (solo log: nessun ordine, nemmeno simulato)",
+      "disabled": true,
+      "spuntato": "true"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Parametri(8)default"
+    },
+    {
+      "ruolo": "button",
+      "nome": "default"
+    },
+    {
+      "ruolo": "button",
+      "nome": "ARMA (dry-run)"
+    },
+    {
+      "ruolo": "spinbutton",
+      "nome": "Stake €"
+    },
+    {
+      "ruolo": "checkbox",
+      "nome": "Dry-run (solo log: nessun ordine, nemmeno simulato)",
+      "disabled": true,
+      "spuntato": "true"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Parametri(6)default"
+    },
+    {
+      "ruolo": "button",
+      "nome": "default"
+    },
+    {
+      "ruolo": "button",
+      "nome": "ARMA (dry-run)"
+    },
+    {
+      "ruolo": "spinbutton",
+      "nome": "Stake €"
+    },
+    {
+      "ruolo": "checkbox",
+      "nome": "Dry-run (solo log: nessun ordine, nemmeno simulato)",
+      "disabled": true,
+      "spuntato": "true"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Parametri(5)default"
+    },
+    {
+      "ruolo": "button",
+      "nome": "default"
+    },
+    {
+      "ruolo": "button",
+      "nome": "ARMA (dry-run)"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Ladder",
+      "premuto": "true"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Grid",
+      "premuto": "false"
+    },
+    {
+      "ruolo": "button",
+      "nome": "2"
+    },
+    {
+      "ruolo": "button",
+      "nome": "5"
+    },
+    {
+      "ruolo": "button",
+      "nome": "10"
+    },
+    {
+      "ruolo": "button",
+      "nome": "25"
+    },
+    {
+      "ruolo": "spinbutton",
+      "nome": "Stake custom (€)"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Aggiungi questo mercato al workspace Multi-ladder (N ladder affiancati, anche di eventi diversi)"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Stacca questo ladder in una finestra dedicata (multi-monitor)"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Configura colonne del ladder"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Stats",
+      "premuto": "true"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Chart",
+      "premuto": "false"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Depth",
+      "premuto": "false"
+    }
+  ]
+}

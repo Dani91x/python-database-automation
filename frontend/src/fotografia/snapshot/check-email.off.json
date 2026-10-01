@@ -1,0 +1,36 @@
+{
+  "pagina": "check-email",
+  "url": "/check-email",
+  "titolo": "",
+  "testi": [
+    "Controlla la tua email",
+    "Ti abbiamo inviato un link di conferma. Clicca sul link per attivare il tuo account.",
+    "1",
+    "Apri la tua casella di posta",
+    "Cerca l'email di conferma",
+    "2",
+    "Clicca su \"Conferma Email\"",
+    "Si aprirà una pagina di conferma",
+    "3",
+    "Accedi alla Dashboard",
+    "Il tuo account è pronto!",
+    "Non trovi l'email? Controlla la cartella",
+    "Spam",
+    "o",
+    "Promozioni",
+    ".",
+    "Torna alla Home",
+    "Non hai ricevuto l'email?"
+  ],
+  "testid": [],
+  "comandi": [
+    {
+      "ruolo": "button",
+      "nome": "Torna alla Home"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Non hai ricevuto l'email?"
+    }
+  ]
+}

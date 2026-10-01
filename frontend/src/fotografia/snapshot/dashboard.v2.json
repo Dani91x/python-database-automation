@@ -1,0 +1,75 @@
+{
+  "pagina": "dashboard",
+  "url": "/dashboard",
+  "titolo": "Partite del Giorno | Alpha Score",
+  "testi": [
+    "AI",
+    "TERMINAL",
+    "CONTROL ROOM",
+    "Cambia sport",
+    "Watchlist",
+    "Report",
+    "Analytics",
+    "Segui Live",
+    "Match Replay",
+    "daniele.ritrovato@gmail.com",
+    "Esci",
+    "Partite del Giorno",
+    ".",
+    "Tutte le partite in programma oggi",
+    "Match Betfair",
+    "Filtra per Campionato",
+    "0",
+    "Match",
+    "Nessuna partita trovata",
+    "Non ci sono pronostici disponibili per oggi.",
+    "©",
+    "2026",
+    "Alpha Score AI. All rights reserved."
+  ],
+  "testid": [
+    "nav-control-room"
+  ],
+  "comandi": [
+    {
+      "ruolo": "button",
+      "nome": "Apri la Control Room"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Cambia sport"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Watchlist"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Report Personale"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Analytics"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Segui Live"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Match Replay"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Logout"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Match Betfair"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Filtra per Campionato"
+    }
+  ]
+}

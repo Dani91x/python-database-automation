@@ -1,0 +1,23 @@
+{
+  "pagina": "market-watch",
+  "url": "/market-watch",
+  "titolo": "Market Watch | Alpha Score",
+  "testi": [
+    "Terminal",
+    "Market Watch",
+    "modalità ordini:",
+    "OFF",
+    "⚽ Calcio",
+    "Nessun evento calcio seguito.",
+    "🎾 Tennis",
+    "Nessun match tennis seguito."
+  ],
+  "testid": [],
+  "comandi": [
+    {
+      "ruolo": "link",
+      "nome": "Terminal",
+      "href": "/segui-live"
+    }
+  ]
+}

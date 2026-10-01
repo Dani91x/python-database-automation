@@ -1,0 +1,59 @@
+{
+  "pagina": "live-pnl",
+  "url": "/live-pnl",
+  "titolo": "P&L di giornata | Alpha Score",
+  "testi": [
+    "Terminal",
+    "P&L di giornata",
+    "Giorno",
+    "Mode",
+    "paper",
+    "live",
+    "P&L realizzato",
+    "+€0.00",
+    "MTM aperto",
+    "—",
+    "0",
+    "posizioni aperte · rischio €",
+    "0.00",
+    "(",
+    "live",
+    ")",
+    "· fonte db (poll 15 s)",
+    "Totale giornata",
+    "—",
+    "Stop giornaliero",
+    "—",
+    "non scattato",
+    "Equity intraday (P&L realizzato cumulato",
+    "· punto ambra = totale con MTM",
+    ")",
+    "nessun mercato regolato nella giornata",
+    "Per mercato",
+    "Nessun mercato regolato.",
+    "Per evento",
+    "Nessun mercato regolato.",
+    "🎾 Tennis (posizioni aperte)",
+    "il settled tennis non è ancora storicizzato — qui SOLO le esposizioni aperte (get_tennis_live_positions_all)",
+    "Nessuna posizione tennis aperta."
+  ],
+  "testid": [
+    "livepnl-posizioni",
+    "livepnl-fonte-posizioni"
+  ],
+  "comandi": [
+    {
+      "ruolo": "link",
+      "nome": "Terminal",
+      "href": "/segui-live"
+    },
+    {
+      "ruolo": "textbox",
+      "nome": "Giorno"
+    },
+    {
+      "ruolo": "combobox",
+      "nome": "Mode"
+    }
+  ]
+}

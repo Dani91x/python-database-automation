@@ -1,0 +1,77 @@
+{
+  "pagina": "segui-live",
+  "url": "/segui-live",
+  "titolo": "Segui Live | Alpha Score",
+  "testi": [
+    "AI",
+    "TERMINAL",
+    "SEGUI LIVE",
+    "Market Watch",
+    "MW",
+    "P&L",
+    "Journal",
+    "Match Replay",
+    "Dashboard",
+    "Segui",
+    "Live",
+    "Partite sottoscritte allo stream Betfair. Clic su una partita per le quote in tempo reale.",
+    "Habitat scan non disponibile: avvia il servizio scalper (avvia_scalper_service.bat) — la classifica appare qui da sola.",
+    "Nessuna partita in streaming.",
+    "©",
+    "2026",
+    "Alpha Score AI. All rights reserved."
+  ],
+  "testid": [],
+  "comandi": [
+    {
+      "ruolo": "link",
+      "nome": "AI TERMINAL",
+      "href": "/dashboard"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Market WatchMW",
+      "href": "/market-watch"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Market WatchMW"
+    },
+    {
+      "ruolo": "link",
+      "nome": "P&L",
+      "href": "/live-pnl"
+    },
+    {
+      "ruolo": "button",
+      "nome": "P&L"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Journal",
+      "href": "/trade-journal"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Journal"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Match Replay",
+      "href": "/match-replay"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Match Replay"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Dashboard",
+      "href": "/dashboard"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Dashboard"
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "pagina": "match-replay",
+  "url": "/match-replay",
+  "titolo": "Match Replay | Alpha Score",
+  "testi": [
+    "AI",
+    "TERMINAL",
+    "MATCH REPLAY",
+    "Segui Live",
+    "Dashboard",
+    "FOOTBALL TRADING",
+    "SIMULATOR",
+    "Riproduci i dati di mercato registrati e piazza back/lay simulate alle quote storiche.",
+    "Nessun replay registrato disponibile.",
+    "©",
+    "2026",
+    "Alpha Score AI. All rights reserved."
+  ],
+  "testid": [],
+  "comandi": [
+    {
+      "ruolo": "link",
+      "nome": "AI TERMINAL",
+      "href": "/dashboard"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Segui Live",
+      "href": "/segui-live"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Segui Live"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Dashboard",
+      "href": "/dashboard"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Dashboard"
+    }
+  ]
+}

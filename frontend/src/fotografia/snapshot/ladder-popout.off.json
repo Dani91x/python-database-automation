@@ -1,0 +1,67 @@
+{
+  "pagina": "ladder-popout",
+  "url": "/ladder-popout?market=1.250000001&event=34000001&name=Match%20Odds",
+  "titolo": "Ladder · Match Odds",
+  "testi": [
+    "Match Odds",
+    "📺",
+    "📊",
+    "⚠",
+    "stato dello stream NON NOTO (canale locale del runner non raggiungibile): i prezzi mostrati potrebbero essere fermi",
+    "Match Odds",
+    "OFF",
+    "Stake",
+    "2",
+    "5",
+    "10",
+    "25",
+    "Colonne",
+    "Ladder non disponibile: il runner non sta pubblicando la profondità per questo mercato.",
+    "Sola lettura (modalità OFF) · per operare avvia il runner in PAPER/LIVE"
+  ],
+  "testid": [
+    "flusso-stream-runner"
+  ],
+  "comandi": [
+    {
+      "ruolo": "button",
+      "nome": "Apri video live Betfair"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Apri statistiche e visualizzazione partita Betfair"
+    },
+    {
+      "ruolo": "button",
+      "nome": "2"
+    },
+    {
+      "ruolo": "button",
+      "nome": "5"
+    },
+    {
+      "ruolo": "button",
+      "nome": "10"
+    },
+    {
+      "ruolo": "button",
+      "nome": "25"
+    },
+    {
+      "ruolo": "spinbutton",
+      "nome": "Stake custom (€)"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Aggiungi questo mercato al workspace Multi-ladder (N ladder affiancati, anche di eventi diversi)"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Stacca questo ladder in una finestra dedicata (multi-monitor)"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Configura colonne del ladder"
+    }
+  ]
+}
