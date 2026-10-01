@@ -17,7 +17,7 @@ import { PerformancePanel } from '@/components/trading/PerformancePanel';
 import { DayDetail } from '@/components/trading/DayDetail';
 import {
     periodRange, filterRange, romeDay, addDays, historyWindow, attributionOf, dayLabel,
-    GIORNATA_PARTITA_TESTO,
+    statoGiornoDb, testoCriterioGiornata,
     calendarGridBounds, PERIOD_LABEL, MAX_HISTORY_DAYS,
     type DailyRow, type DayTrade, type PeriodKind, type HistoryVariant,
 } from '@/lib/dailyHistory';
@@ -113,6 +113,9 @@ export function TradingHistory({
     // i trade mostrati sono SOLO quelli del giorno selezionato: mai quelli di
     // un'altra giornata rimasti da una richiesta precedente
     const dayTrades = dayData && dayData.day === selectedDay ? dayData.trades : null;
+    // R-01 (review 01/10): il «giorno della PARTITA» si dichiara solo se le
+    // righe lette lo portano dal database (`in_day`); altrimenti il criterio vero
+    const criterioTesto = testoCriterioGiornata(statoGiornoDb(dayTrades), [variant]);
     const periodRows = useMemo(() => filterRange(rows, pRange.from, pRange.to), [rows, pRange]);
     const onMonthChange = useCallback((year: number, month: number) => setYm({ year, month }), []);
     const onSelectDay = useCallback((day: string) => setSelectedDay(day), []);
@@ -143,12 +146,12 @@ export function TradingHistory({
                     </span>
                 )}
                 {/* B-02 (01/10): UNA frase sola per i tre bot, il giorno della
-                    PARTITA; la variante non cambia piu' il criterio */}
+                    PARTITA, ma SOLO se il database lo manda (R-01, review 01/10) */}
                 <span data-testid="history-criterio">
                     {/* §1: le date si leggono nella stessa forma ovunque
                         («12 settembre 2026»), mai l'ISO grezzo accanto alle
                         etichette italiane del calendario e del dettaglio */}
-                    Oggi <b className="text-slate-300">{dayLabel(todayDay)}</b> · {GIORNATA_PARTITA_TESTO}
+                    Oggi <b className="text-slate-300">{dayLabel(todayDay)}</b> · {criterioTesto}
                     {fonteNota && <span data-testid="history-fonte-pnl"> · {fonteNota}</span>}
                 </span>
                 <Button variant="ghost" size="sm" className="ml-auto h-7 text-xs" onClick={() => setManualRefresh((n) => n + 1)} disabled={loading}>

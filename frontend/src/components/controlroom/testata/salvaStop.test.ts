@@ -69,6 +69,27 @@ describe('leggiImporto - euro al centesimo, negativo = perdita massima', () => {
     it('oltre il tetto del foglio (Mike 100000) rifiutato', () => {
         expect(leggiImporto('-100001', 'mike').ok).toBe(false);
     });
+    // R-04 (review 01/10): i punti delle migliaia della forma it-IT
+    it('R-04: «12.500,00» (migliaia + virgola decimale) = 12500; «-1.234.567,5» = 1234567,5', () => {
+        expect(leggiImporto('-12.500,00', 'safe')).toEqual({ ok: true, perdita: 12500 });
+        expect(leggiImporto('12.500,5', 'conto')).toEqual({ ok: true, perdita: 12500.5 });
+        expect(leggiImporto('−12.500,00 €', 'omega')).toEqual({ ok: true, perdita: 12500 });
+        // letto come 1234567,5 e rifiutato per il TETTO (1.000.000), non come «non valido»
+        expect(leggiImporto('-1.234.567,5', 'conto')).toEqual({ ok: false, errore: expect.stringMatching(/oltre il massimo/) });
+        expect(leggiImporto('-999.999,99', 'conto')).toEqual({ ok: true, perdita: 999999.99 });
+    });
+    it('R-04: «12.500» senza virgola = 12500 SOLO con esattamente 3 cifre dopo ogni punto', () => {
+        expect(leggiImporto('-12.500', 'safe')).toEqual({ ok: true, perdita: 12500 });
+        expect(leggiImporto('1.000', 'omega')).toEqual({ ok: true, perdita: 1000 });
+        // il punto decimale di prima resta com'era: 1 o 2 cifre = centesimi
+        expect(leggiImporto('-12.50', 'safe')).toEqual({ ok: true, perdita: 12.5 });
+        expect(leggiImporto('-12.5', 'safe')).toEqual({ ok: true, perdita: 12.5 });
+        // forme non di migliaia: rifiutate come prima
+        expect(leggiImporto('-12.5000', 'safe').ok).toBe(false);
+        expect(leggiImporto('-1.2,50', 'safe').ok).toBe(false);
+        expect(leggiImporto('-12,500', 'safe').ok).toBe(false);
+        expect(leggiImporto('-12.500.0', 'safe').ok).toBe(false);
+    });
 });
 
 describe('payloadStop - lo STESSO payload del foglio del proprietario', () => {

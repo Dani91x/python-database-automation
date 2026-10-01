@@ -53,6 +53,22 @@ export type LetturaImporto =
     | { ok: false; errore: string };
 
 /**
+ * R-04 (review 01/10): i PUNTI delle migliaia (forma it-IT) si tolgono solo
+ * quando sono in posizione di migliaia (gruppi di 3 cifre):
+ *  - con la virgola decimale: "12.500,00" -> "12500.00";
+ *  - senza virgola: "12.500" (esattamente 3 cifre dopo ogni punto) -> "12500".
+ *    Non e' ambiguo: un punto decimale con 3 cifre era gia' rifiutato
+ *    (euro al centesimo); "12.50" resta 12,50 come prima.
+ * Ogni altra forma passa invariata (con la virgola -> punto) e la regola
+ * dell'importo la accetta o la rifiuta come prima.
+ */
+function normalizzaMigliaia(t: string): string {
+    if (/^-?\d{1,3}(\.\d{3})+,\d{1,2}$/.test(t)) return t.replace(/\./g, '').replace(',', '.');
+    if (/^-?\d{1,3}(\.\d{3})+$/.test(t)) return t.replace(/\./g, '');
+    return t.replace(',', '.');
+}
+
+/**
  * Il testo del campo -> perdita massima in euro (POSITIVA, al centesimo).
  * "-50", "-50,5", "50" sono la stessa perdita (il segno meno e' la convenzione
  * a schermo: negativo = perdita massima). `null` = stop SPENTO: per il conto
@@ -60,7 +76,7 @@ export type LetturaImporto =
  * loro fogli: "0 = OFF").
  */
 export function leggiImporto(testo: string, chi: ProprietarioStop): LetturaImporto {
-    const t = String(testo ?? '').trim().replace(/\u2212/g, '-').replace(/\s|\u20ac/g, '').replace(',', '.');
+    const t = normalizzaMigliaia(String(testo ?? '').trim().replace(/\u2212/g, '-').replace(/\s|\u20ac/g, ''));
     if (t === '') {
         return chi === 'conto'
             ? { ok: true, perdita: null }

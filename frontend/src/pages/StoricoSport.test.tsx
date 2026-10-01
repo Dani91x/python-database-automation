@@ -222,12 +222,13 @@ describe('storico calcio: i profitti per bot, separati per moneta', () => {
         expect(screen.getByTestId('storico-testata-live')).toBeInTheDocument();
     });
 
-    it('B-01: il piede dice il criterio vero (giorno della PARTITA), senza nomi di funzioni', async () => {
+    it('B-01 / R-01: senza righe del giorno il piede NON afferma il giorno della PARTITA, e niente nomi di funzioni', async () => {
         monta();
         await screen.findByTestId('storico-filtri');
         const piede = document.body.textContent ?? '';
-        expect(piede).toMatch(/giorno della PARTITA/);
-        expect(piede).not.toMatch(/PIAZZAMENTO, fuso|trading_daily_history/);
+        expect(piede).toMatch(/Criterio della giornata non verificabile/);
+        expect(piede).not.toMatch(/attribuita al giorno della PARTITA/);
+        expect(piede).not.toMatch(/trading_daily_history|\.sql/);
     });
 
     it('D-04: il P&L in soldi veri dice la sua fonte', async () => {
@@ -364,6 +365,11 @@ describe('B-04 (01/10): il dettaglio del giorno di Mike usa il criterio della CE
         expect(screen.getByTestId('storico-giornata-ripiego')).toHaveTextContent(/non manda ancora il giorno della partita/);
         // C-01: col criterio di prima P&L (regolamento) e importo (piazzamento) non stanno sullo stesso giorno
         expect(screen.getByTestId('storico-kpi-roi')).toHaveTextContent('—');
+        // R-01 (review 01/10): il piede dice il criterio VERO, non il giorno della partita
+        const piede = screen.getByTestId('page-footer');
+        expect(piede).not.toHaveTextContent(/attribuita al giorno della PARTITA/);
+        expect(piede).toHaveTextContent(/Omega e Safe attribuiscono ogni operazione al giorno di PIAZZAMENTO, Mike al giorno di REGOLAMENTO/);
+        expect(piede).toHaveTextContent(/manca il suo aggiornamento/);
     });
 
     it('contratto nuovo (in_day): nessun ripiego dichiarato, dettaglio = cella', async () => {
@@ -377,6 +383,8 @@ describe('B-04 (01/10): il dettaglio del giorno di Mike usa il criterio della CE
         await waitFor(() => expect(within(det).getByTestId('day-total-pnl')).toHaveTextContent('+4,75'));
         expect(screen.queryByTestId('storico-giornata-ripiego')).toBeNull();
         expect(screen.getByTestId('storico-kpi-roi')).toHaveTextContent('47,5');
+        // R-01 (review 01/10): con in_day dal database il piede dice il giorno della PARTITA
+        expect(screen.getByTestId('page-footer')).toHaveTextContent(/attribuita al giorno della PARTITA/);
     });
 });
 

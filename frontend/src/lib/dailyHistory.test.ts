@@ -9,7 +9,7 @@ import {
     dayToMs, msToDay, addDays, isValidDay, romeDay, periodRange, filterRange,
     dayLabel, monthLabel, exitInfo, tradeExit,
     clampHistoryRange, attributionOf, summarizeDayTrades, calendarGridBounds,
-    ripiegoAttribuzione, offsetRomaMs,
+    ripiegoAttribuzione, offsetRomaMs, statoGiornoDb, testoCriterioGiornata,
     historyWindow, exitReasonText, MAX_HISTORY_DAYS,
     type DailyRow,
 } from './dailyHistory';
@@ -730,5 +730,31 @@ describe('tradeExit — un green-up ANNULLATO non è un green-up (12/09)', () =>
     it('cash out manuale: solo da una chiusura non in errore', () => {
         expect(tradeExit({ meta: null, closes: [close({ meta: { cashout: true } })] })).toBeNull();
         expect(tradeExit({ meta: null, closes: [close({ status: 'won', meta: { cashout: true } })] })?.kind).toBe('manual');
+    });
+});
+
+// R-01 (review 01/10): il «giorno della PARTITA» si afferma solo se il database lo manda
+describe('statoGiornoDb / testoCriterioGiornata (R-01)', () => {
+    const vecchia = { id: 1, placed_in_day: true, settled_in_day: true };
+    it('tutte le righe con in_day boolean -> partita; una sola senza -> ripiego; nessuna -> ignoto', () => {
+        expect(statoGiornoDb([{ ...vecchia, in_day: true }, { ...vecchia, in_day: false }])).toBe('partita');
+        expect(statoGiornoDb([{ ...vecchia, in_day: true }, { ...vecchia, in_day: null }])).toBe('ripiego');
+        expect(statoGiornoDb([vecchia])).toBe('ripiego');
+        expect(statoGiornoDb([])).toBe('ignoto');
+        expect(statoGiornoDb(null)).toBe('ignoto');
+    });
+    it('il testo dice il criterio VERO di ogni bot, mai «giorno della PARTITA» senza in_day', () => {
+        expect(testoCriterioGiornata('partita', ['mike'])).toMatch(/attribuita al giorno della PARTITA/);
+        for (const s of ['ripiego', 'ignoto'] as const) {
+            expect(testoCriterioGiornata(s, ['mike'])).not.toMatch(/giorno della PARTITA/);
+            expect(testoCriterioGiornata(s, ['mike'])).toMatch(/giorno di REGOLAMENTO/);
+            // la pagina di UN bot parla solo di quel bot
+            expect(testoCriterioGiornata(s, ['mike'])).not.toMatch(/Omega|Safe|PIAZZAMENTO/);
+            expect(testoCriterioGiornata(s, ['omega'])).toMatch(/giorno di PIAZZAMENTO/);
+            expect(testoCriterioGiornata(s, ['safe'])).not.toMatch(/REGOLAMENTO/);
+            expect(testoCriterioGiornata(s, ['omega', 'safe', 'mike'])).toMatch(/Omega e Safe .*PIAZZAMENTO, Mike .*REGOLAMENTO/);
+            expect(testoCriterioGiornata(s, ['mike'])).not.toMatch(/\.sql|migrations/);
+        }
+        expect(testoCriterioGiornata('ripiego', ['safe'])).toMatch(/manca il suo aggiornamento/);
     });
 });

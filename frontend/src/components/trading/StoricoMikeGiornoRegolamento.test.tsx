@@ -34,6 +34,13 @@ function riga(over: Record<string, unknown>): Record<string, unknown> {
     };
 }
 
+/** riga di `get_mike_day_trades` come la manda la RPC di PRIMA (senza le tre chiavi del 01/10) */
+function rigaVecchia(over: Record<string, unknown> = {}): Record<string, unknown> {
+    const r = riga(over);
+    delete r.giorno_partita; delete r.giorno_da; delete r.in_day;
+    return r;
+}
+
 /** riga di `get_mike_daily` con le chiavi della RPC vera */
 function giornata(day: string, pnl: number, over: Record<string, unknown> = {}) {
     return {
@@ -62,11 +69,42 @@ describe('01/10 - un criterio solo: il giorno della PARTITA', () => {
     });
 
     it('la pagina dice il criterio (una frase sola per i tre bot) e la MONETA', async () => {
-        render(<TradingHistory variant="mike" fetchDaily={async () => []} fetchDayTrades={async () => []}
-            today="2026-10-01" modo="live" />);
-        expect(await screen.findByTestId('history-criterio')).toHaveTextContent(/giorno della PARTITA/);
+        // R-01: righe del contratto 01/10 (in_day dal database) -> giorno della PARTITA
+        render(<TradingHistory variant="mike" fetchDaily={async () => []}
+            fetchDayTrades={async () => normalizeDayTrades([riga({})])}
+            today="2026-09-30" modo="live" />);
+        await waitFor(() => expect(screen.getByTestId('history-criterio')).toHaveTextContent(/attribuita al giorno della PARTITA/));
         expect(screen.getByTestId('history-criterio')).not.toHaveTextContent(/REGOLATE nel giorno|PIAZZATE nel giorno/);
         expect(screen.getByTestId('history-moneta')).toHaveTextContent('SOLDI VERI');
+    });
+
+    // R-01 (review 01/10): «giorno della PARTITA» SOLO se il database lo manda
+    it('R-01: righe senza in_day (aggiornamento non applicato): Mike dichiara il REGOLAMENTO e che manca l\'aggiornamento', async () => {
+        render(<TradingHistory variant="mike" fetchDaily={async () => []}
+            fetchDayTrades={async () => normalizeDayTrades([rigaVecchia({ placed_in_day: false, settled_in_day: true })])}
+            today="2026-10-01" modo="live" />);
+        const c = await screen.findByTestId('history-criterio');
+        await waitFor(() => expect(c).toHaveTextContent(/giorno di REGOLAMENTO/));
+        expect(c).toHaveTextContent(/manca il suo aggiornamento/);
+        expect(c).not.toHaveTextContent(/attribuita al giorno della PARTITA/);
+        expect(c).not.toHaveTextContent(/\.sql|migrations/);
+    });
+
+    it('R-01: righe senza in_day per Omega/Safe: il criterio vero e\' il PIAZZAMENTO', async () => {
+        render(<TradingHistory variant="safe" fetchDaily={async () => []}
+            fetchDayTrades={async () => normalizeDayTrades([rigaVecchia({})])}
+            today="2026-10-01" modo="paper" />);
+        const c = await screen.findByTestId('history-criterio');
+        await waitFor(() => expect(c).toHaveTextContent(/giorno di PIAZZAMENTO/));
+        expect(c).not.toHaveTextContent(/attribuita al giorno della PARTITA/);
+    });
+
+    it('R-01: nessuna riga letta: il criterio non si afferma (ne\' partita ne\' altro), si dice che non e\' verificabile', async () => {
+        render(<TradingHistory variant="mike" fetchDaily={async () => []} fetchDayTrades={async () => []}
+            today="2026-10-01" modo="live" />);
+        const c = await screen.findByTestId('history-criterio');
+        await waitFor(() => expect(c).toHaveTextContent(/non verificabile/));
+        expect(c).not.toHaveTextContent(/attribuita al giorno della PARTITA/);
     });
 
     it('moneta assente: si dichiara «moneta non dichiarata», mai muta', async () => {

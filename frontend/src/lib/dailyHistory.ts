@@ -615,6 +615,44 @@ export const GIORNATA_RIPIEGO_TESTO =
     'giornata NON per partita: il database non manda ancora il giorno della partita '
     + '(serve l’aggiornamento del database del 01/10); qui vale il criterio precedente';
 
+/**
+ * R-01 (review 01/10) - QUALE criterio ha davvero costruito le giornate.
+ * Il giorno della PARTITA esiste solo se il database lo manda (`in_day` su
+ * ogni riga letta); senza, le celle sono ancora per piazzamento (Omega, Safe)
+ * o per regolamento (Mike). 'ignoto' = nessuna riga letta da cui saperlo.
+ * Stessa regola del ripiego di `summarizeDayTrades` (`in_day` boolean).
+ */
+export type StatoGiornoDb = 'partita' | 'ripiego' | 'ignoto';
+
+export function statoGiornoDb(righe: readonly object[] | null | undefined): StatoGiornoDb {
+    if (!righe || righe.length === 0) return 'ignoto';
+    return righe.every((t) => typeof (t as { in_day?: unknown }).in_day === 'boolean') ? 'partita' : 'ripiego';
+}
+
+/** Il criterio di PRIMA, in parole, per i bot mostrati. */
+function criterioPrecedenteTesto(varianti: readonly HistoryVariant[]): string {
+    const conMike = varianti.includes('mike');
+    const altri = varianti.filter((v) => v !== 'mike');
+    if (conMike && altri.length === 0) return 'ogni operazione è attribuita al giorno di REGOLAMENTO (fuso Europe/Rome)';
+    if (!conMike) return 'ogni operazione è attribuita al giorno di PIAZZAMENTO (fuso Europe/Rome)';
+    return 'Omega e Safe attribuiscono ogni operazione al giorno di PIAZZAMENTO, Mike al giorno di REGOLAMENTO (fuso Europe/Rome)';
+}
+
+/**
+ * La frase del criterio della giornata, VERA rispetto alle righe lette: il
+ * «giorno della PARTITA» si scrive solo se il database lo manda.
+ */
+export function testoCriterioGiornata(stato: StatoGiornoDb, varianti: readonly HistoryVariant[]): string {
+    if (stato === 'partita') return GIORNATA_PARTITA_TESTO;
+    const prima = criterioPrecedenteTesto(varianti);
+    if (stato === 'ripiego') {
+        return `Giornata NON per partita: il database non manda ancora il giorno della partita `
+            + `(manca il suo aggiornamento), quindi ${prima}.`;
+    }
+    return 'Criterio della giornata non verificabile: nessuna operazione letta nel giorno scelto. '
+        + `Con il database aggiornato vale il giorno di inizio dell’evento; senza l’aggiornamento ${prima}.`;
+}
+
 export interface DaySummary {
     /** posizioni che il CALENDARIO attribuisce a questo giorno (le stesse che
      *  fanno `trades_placed` e `pnl_realized` della cella) */

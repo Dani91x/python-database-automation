@@ -25,12 +25,11 @@ import { supabase } from '@/integrations/supabase/client';
 import type { Bot, Modo } from '@/lib/controlRoom';
 import { isBotTennis } from '@/lib/controlRoom';
 import {
-    eFirmaMancante, fetchMikeDayTrades, fetchOmegaDayTradesPerModo, fetchSafeDayTrades,
+    addDays, eFirmaMancante, fetchMikeDayTrades, fetchOmegaDayTradesPerModo, fetchSafeDayTrades,
     type DayTrade,
 } from '@/lib/dailyHistory';
 import type { TennisBotOrderRow } from '@/lib/tennis';
 import { haGiornoDb, rigaDaOrdineTennis, type TradeChiudibile } from '@/lib/posizioniChiuse';
-import { addDays } from '@/lib/dailyHistory';
 
 export const RPC_CHIUSE_GIORNATA = 'get_posizioni_chiuse_giornata';
 

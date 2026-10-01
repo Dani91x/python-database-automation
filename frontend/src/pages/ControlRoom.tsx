@@ -76,7 +76,7 @@ import { ProposteUsciteFlusso } from '@/components/controlroom/ProposteUsciteFlu
 import { RigaCapacitaMercati } from '@/components/controlroom/RigaCapacitaMercati';
 import { FasciaSoldiVeri } from '@/components/controlroom/testata/FasciaSoldiVeri';
 import { StopPerdita } from '@/components/controlroom/testata/FasciaStop';
-import { TesseraRunner } from '@/components/controlroom/testata/TesseraRunner';
+import { TesseraRunner, runnerForseLive } from '@/components/controlroom/testata/TesseraRunner';
 import {
     modoChip, statoChip, usciteChip, pallinoChip, aggiornatoChip, sorgenteFeed, riassuntoDati, type Tono,
 } from '@/components/controlroom/testata/paroleImpianto';
@@ -1104,6 +1104,7 @@ function Freni({ vm }: { vm: ReturnType<typeof useControlRoom> }) {
             <StopPerdita
                 stop={vm.stopPerdita}
                 qualcheBotLive={vm.bots.some((b) => b.modalita === 'live')}
+                runnerTennisForseLive={runnerForseLive(vm.runnerTennis)}
                 params={{ safe: di('safe')?.params ?? null, mike: di('mike')?.params ?? null, omega: di('omega')?.params ?? null }}
                 statoServizio={{
                     safe: { fonte: di('safe')?.fonteStato, etaS: di('safe')?.etaStatoS },

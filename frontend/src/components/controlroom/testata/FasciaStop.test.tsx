@@ -17,7 +17,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { StopPerdita, vaiAllaRigaDelBot, NOTA_TENNIS_SCALPER } from './FasciaStop';
+import { StopPerdita, vaiAllaRigaDelBot, NOTA_TENNIS_SCALPER, confermaStopConto, testoIniziale } from './FasciaStop';
 import { stopDelConto, stopDeiBot, type StopPerditaTestata } from './stopPerdita';
 import type { LiveRiskState } from '@/lib/liveOrders';
 
@@ -343,6 +343,76 @@ describe('01/10 - LIVE (soldi veri): conferma esplicita, che scade', () => {
         } finally {
             vi.useRealTimers();
         }
+    });
+});
+
+// R-03 (review 01/10): lo stop del CONTO chiede conferma a meno che la sua
+// modalita' sia LETTA e PAPER (e nessun bot ne' il runner tennis possa essere LIVE)
+describe('R-03 - conferma dello stop del CONTO: fail-closed sulla modalita\'', () => {
+    function salvaConto(mode: unknown, extra: { qualcheBotLive?: boolean; runnerTennisForseLive?: boolean } = {}) {
+        const salva = vi.fn(async () => 35);
+        render(<MemoryRouter><StopPerdita
+            // la riga vera di betfair_live_risk_state con `mode` come arriva (null = colonna senza valore)
+            stop={{ conto: stopDelConto({ ...RIGA_OGGI, mode: mode as string }, NOW), bot: bot({ mike: { modalita: 'paper', params: PARAMS.mike, stats: { daily_stop: false } } }) }}
+            params={PARAMS} salva={salva as never}
+            qualcheBotLive={extra.qualcheBotLive ?? false}
+            runnerTennisForseLive={extra.runnerTennisForseLive}
+        /></MemoryRouter>);
+        fireEvent.click(screen.getByTestId('cr-stop-conto-valore'));
+        fireEvent.change(screen.getByTestId('cr-stop-conto-campo'), { target: { value: '-40' } });
+        fireEvent.click(screen.getByTestId('cr-stop-conto-salva'));
+        return salva;
+    }
+    it('modalita\' del conto NON letta (null): chiede conferma e lo dice («potrebbe essere LIVE»)', () => {
+        const salva = salvaConto(null);
+        expect(screen.getByTestId('cr-stop-conto-richiesta-conferma').textContent).toMatch(/non letta \(potrebbe essere LIVE\)/);
+        expect(salva).not.toHaveBeenCalled();
+    });
+    it('modalita\' del conto LETTA e PAPER, nessun bot LIVE, runner tennis solo simulati: nessuna conferma, scrive', async () => {
+        const salva = salvaConto('paper', { runnerTennisForseLive: false });
+        expect(screen.queryByTestId('cr-stop-conto-richiesta-conferma')).toBeNull();
+        await waitFor(() => expect(salva).toHaveBeenCalledWith('conto', 40, null));
+    });
+    it('modalita\' del conto LIVE: conferma', () => {
+        const salva = salvaConto('live');
+        expect(screen.getByTestId('cr-stop-conto-richiesta-conferma').textContent).toMatch(/soldi veri/);
+        expect(salva).not.toHaveBeenCalled();
+    });
+    it('conto PAPER ma il runner tennis puo\' servire ordini veri: conferma (il freno ferma anche tennis e scalper)', () => {
+        const salva = salvaConto('paper', { runnerTennisForseLive: true });
+        expect(screen.getByTestId('cr-stop-conto-richiesta-conferma').textContent).toMatch(/runner tennis/);
+        expect(salva).not.toHaveBeenCalled();
+    });
+    it('confermaStopConto: tabella della regola', () => {
+        expect(confermaStopConto(false, 'paper')).toBe(false);
+        expect(confermaStopConto(false, null)).toBe(true);
+        expect(confermaStopConto(false, 'live')).toBe(true);
+        expect(confermaStopConto(true, 'paper')).toBe(true);
+        expect(confermaStopConto(false, 'paper', true)).toBe(true);
+    });
+});
+
+// R-04 (review 01/10): uno stop >= 10.000 si apre senza separatore delle
+// migliaia e si salva senza toccarlo
+describe('R-04 - stop da 10.000 in su: il campo si rilegge', () => {
+    it('testoIniziale: nessun punto delle migliaia', () => {
+        expect(testoIniziale(12500)).toBe('-12500,00');
+        expect(testoIniziale(50)).toBe('-50,00');
+        expect(testoIniziale(40.5)).toBe('-40,50');
+        expect(testoIniziale(0)).toBe('0');
+        expect(testoIniziale(null)).toBe('');
+    });
+    it('Safe a 12.500: il campo si apre con «-12500,00» e Salva senza modifiche scrive 12500', async () => {
+        const salva = vi.fn(async () => 12500);
+        render(<MemoryRouter><StopPerdita
+            stop={{ conto: stopDelConto({ ...RIGA_OGGI, mode: 'paper' }, NOW), bot: bot({ safe: { modalita: 'paper', risk: { daily_loss_stop: -12500, loss_stop_active: false } }, mike: { modalita: 'paper', params: PARAMS.mike, stats: { daily_stop: false } } }) }}
+            params={PARAMS} salva={salva as never} qualcheBotLive={false}
+        /></MemoryRouter>);
+        fireEvent.click(screen.getByTestId('cr-stop-safe-valore'));
+        expect((screen.getByTestId('cr-stop-safe-campo') as HTMLInputElement).value).toBe('-12500,00');
+        fireEvent.click(screen.getByTestId('cr-stop-safe-salva'));
+        expect(screen.queryByTestId('cr-stop-safe-errore')).toBeNull();
+        await waitFor(() => expect(salva).toHaveBeenCalledWith('safe', 12500, PARAMS.safe));
     });
 });
 

@@ -47,6 +47,18 @@ const PROCESSO: Record<RunnerPhase, { testo: string; tono: Tono }> = {
     off: { testo: 'fermo', tono: 'allarme' },
 };
 
+/**
+ * R-03 (review 01/10): il runner PUO' servire ordini veri? Stessa regola
+ * fail-closed della modalita': false SOLO se il tetto e' letto e dice "solo
+ * simulati" o "ordini spenti"; runner non letto o tetto ignoto = forse.
+ * Nessuna lettura nuova: `r` e' `vm.runner` / `vm.runnerTennis`.
+ */
+export function runnerForseLive(r: RunnerState | null | undefined): boolean {
+    if (r == null) return true;
+    const t = tettoRunner(r.mode);
+    return !(t?.testo === 'solo simulati' || t?.testo === 'ordini spenti');
+}
+
 /** Funzione PURA: cosa scrive la tessera. */
 export function descriviRunner(
     sport: SportRunner,

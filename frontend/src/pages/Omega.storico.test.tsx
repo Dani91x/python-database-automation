@@ -150,8 +150,10 @@ describe('Omega — tab Storico', () => {
         expect(screen.getByTestId('kpi-goal')).toHaveTextContent('0/1');
         expect(within(screen.getByTestId('breakdown-strategy')).getByText('Gamba 1T (Half Time Score)')).toBeInTheDocument();
         expect(screen.getByTestId('day-detail')).toBeInTheDocument();
-        // 01/10 (B-02): una frase sola per i tre bot, il giorno della PARTITA
-        expect(screen.getByTestId('history-criterio')).toHaveTextContent(/giorno della PARTITA/);
+        // 01/10 (B-02) + R-01 (review 01/10): il giorno della PARTITA si afferma
+        // solo con righe che lo portano dal database; qui il giorno non ha righe
+        expect(screen.getByTestId('history-criterio')).toHaveTextContent(/non verificabile/);
+        expect(screen.getByTestId('history-criterio')).not.toHaveTextContent(/attribuita al giorno della PARTITA/);
         expect(screen.getByTestId('trading-history')).not.toHaveTextContent(/posizioni PIAZZATE nel giorno/);
         // A-05: la moneta e' dichiarata prima dei numeri
         expect(screen.getByTestId('history-moneta')).toHaveTextContent('PROVA');

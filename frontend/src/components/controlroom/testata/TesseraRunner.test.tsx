@@ -8,7 +8,7 @@
 // ============================================================================
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { TesseraRunner, descriviRunner } from './TesseraRunner';
+import { TesseraRunner, descriviRunner, runnerForseLive } from './TesseraRunner';
 import type { RunnerState } from '@/lib/safeBot';
 
 const CALCIO_CANALE: RunnerState = { ts: '2026-10-01T08:00:00.000Z', mode: 'LIVE+PAPER', ageS: 5, up: true, streaming: 0 };
@@ -51,6 +51,18 @@ describe('descriviRunner - di che runner parliamo e se e\' connesso', () => {
         expect(descriviRunner('calcio', { ts: '2026-09-02T17:55:00Z', mode: 'PAPER', ageS: 1_000_000, up: false }, { fonte: 'database', etaS: 1_000_000 }).processo.testo).toBe('fermo');
         expect(descriviRunner('calcio', { ts: null, mode: null, ageS: null, up: false }, { fonte: 'database', etaS: null }).processo.testo).toBe('mai avviato');
         expect(descriviRunner('calcio', { ...CALCIO_CANALE, streaming: null }, { fonte: 'canale', etaS: 5 }).processo.testo).toBe('vivo, in attesa');
+    });
+});
+
+// R-03 (review 01/10): il runner tennis per la conferma dello stop del conto
+describe('runnerForseLive - fail-closed: false SOLO col tetto letto PAPER o OFF', () => {
+    it('PAPER e OFF letti: no; LIVE+PAPER: si\'; non letto o tetto ignoto: si\'', () => {
+        expect(runnerForseLive(TENNIS_CANALE)).toBe(false);
+        expect(runnerForseLive({ ...TENNIS_CANALE, mode: 'OFF' })).toBe(false);
+        expect(runnerForseLive({ ...TENNIS_CANALE, mode: 'LIVE+PAPER' })).toBe(true);
+        expect(runnerForseLive(null)).toBe(true);
+        expect(runnerForseLive({ ...TENNIS_CANALE, mode: null })).toBe(true);
+        expect(runnerForseLive({ ...TENNIS_CANALE, mode: 'BOH' })).toBe(true);
     });
 });
 

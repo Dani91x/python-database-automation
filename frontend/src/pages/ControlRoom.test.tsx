@@ -275,6 +275,29 @@ describe('freni — un freno che nessuno vede non è un freno', () => {
         expect((within(el).getByTestId('cr-stop-conto-valore') as HTMLButtonElement).disabled).toBe(false);
     });
 
+    it('R-03 (review 01/10): conto PAPER e bot tutti PAPER, ma il runner tennis consente ordini veri: lo stop del conto chiede conferma', () => {
+        mVm.mockReturnValue(vm({
+            runnerTennis: { ts: '2026-09-14T14:59:58Z', mode: 'LIVE+PAPER', ageS: 2, up: true, streaming: null },
+            fonteRunnerTennis: { fonte: 'canale', etaS: 2 },
+            stopPerdita: {
+                conto: stopDelConto({
+                    id: 1, mode: 'paper', day: '2026-09-14', realized: 0, open_mtm: 0, total: 0,
+                    limit_value: 40, stop_fired: false, detail: { reason: 'under_limit' },
+                    updated_at: '2026-09-14T14:59:00Z',
+                }, Date.parse('2026-09-14T15:00:00Z')),
+                bot: stopDeiBot({
+                    safe: { modalita: 'paper', risk: { daily_loss_stop: -50, loss_stop_active: false } },
+                    mike: { modalita: 'paper', params: { daily_loss_stop: 50 }, stats: { daily_stop: false } },
+                    omega: { modalita: 'paper', params: null },
+                }),
+            },
+        }));
+        const el = mostra().getByTestId('cr-freni');
+        fireEvent.click(within(el).getByTestId('cr-stop-conto-valore'));
+        fireEvent.click(within(el).getByTestId('cr-stop-conto-salva'));
+        expect(within(el).getByTestId('cr-stop-conto-richiesta-conferma').textContent).toMatch(/runner tennis/);
+    });
+
     it('01/10: il cancello dei fogli parametri vale anche qui: i parametri GREZZI del bot (vm.bots[].params) aprono la modifica; non letti la chiudono', () => {
         const v = vm({
             stopPerdita: {

@@ -93,8 +93,33 @@ function statoBot(s: StopBot): { cifra: string; cifraCls: string; stato: Stato }
     return { cifra: fmtMoney(-s.soglia), cifraCls: 'text-white', stato: { testo: 'attivo', cls: 'text-emerald-400' } };
 }
 
-/** Il valore iniziale del campo: la cifra in vigore col segno meno. */
-function testoIniziale(soglia: number | null | undefined): string {
+/**
+ * R-03 (review 01/10): lo stop del CONTO chiede conferma a meno che la sua
+ * modalita' sia LETTA e sia PAPER e nessun bot (ne' il runner tennis) possa
+ * essere LIVE: tira il freno anche per tennis e scalper, e una modalita' non
+ * letta potrebbe essere LIVE (stessa regola dei bot).
+ */
+export function confermaStopConto(qualcheLive: boolean, modoConto: Modo, runnerTennisForseLive = false): boolean {
+    return qualcheLive || runnerTennisForseLive || modoConto !== 'paper';
+}
+
+/** Perche' lo stop del conto chiede conferma, detto in parole. */
+function motivoConfermaConto(qualcheLive: boolean, modoConto: Modo, runnerTennisForseLive: boolean): string {
+    if (qualcheLive || modoConto === 'live') return 'Lo stop del Conto protegge i soldi veri';
+    if (modoConto == null) return "modalita' del conto non letta (potrebbe essere LIVE): lo stop del Conto protegge i soldi veri";
+    if (runnerTennisForseLive) {
+        return "il runner tennis consente ordini veri (o il suo stato non e' letto): lo stop del Conto ferma anche tennis e scalper";
+    }
+    return 'Lo stop del Conto protegge i soldi veri';
+}
+
+/**
+ * Il valore iniziale del campo: la cifra in vigore col segno meno.
+ * R-04 (review 01/10): `fmtNum` NON mette i punti delle migliaia
+ * (`itFixed` = toFixed + virgola), quindi il campo si apre gia' con
+ * «-12500,00»; esportata solo perche' un test lo tiene fermo.
+ */
+export function testoIniziale(soglia: number | null | undefined): string {
     if (soglia == null || soglia === 0) return soglia === 0 ? '0' : '';
     return `-${fmtNum(soglia, 2)}`;
 }
@@ -263,8 +288,13 @@ function fonteServizio(s: StatoServizio | undefined): string {
 }
 
 export function StopPerdita({
-    stop, vai = vaiAllaRigaDelBot, qualcheBotLive, params, statoServizio, strategieLive, salva = salvaStopVero, onSalvato,
+    stop, vai = vaiAllaRigaDelBot, qualcheBotLive, runnerTennisForseLive, params, statoServizio, strategieLive, salva = salvaStopVero, onSalvato,
 }: {
+    /** R-03 (review 01/10): il runner tennis PUO' servire ordini veri (tetto
+     *  LIVE_ORDER_MODE letto e non PAPER/OFF) o il suo stato non e' letto.
+     *  Lo stop del conto ferma anche tennis e scalper: si conferma. Solo per
+     *  la conferma, non cambia i colori della riga. */
+    runnerTennisForseLive?: boolean;
     /** 01/10: Safe con almeno una strategia in LIVE (`modiStrategia`) anche
      *  se la sua modalita' di servizio e' PAPER: lo stop e' comune, si conferma */
     strategieLive?: Partial<Record<BotConStop, boolean>>;
@@ -305,8 +335,8 @@ export function StopPerdita({
                             id="conto" nome="Conto" cifra={sc.cifra} cifraCls={sc.cifraCls} soglia={c?.soglia ?? null}
                             modificabile={c?.letto === true}
                             motivoBlocco={c?.letto ? null : 'stato del runner non letto: modifica non disponibile qui'}
-                            chiedeConferma={live || c?.modo === 'live'}
-                            motivoConferma="Lo stop del Conto protegge i soldi veri"
+                            chiedeConferma={confermaStopConto(live, c?.modo ?? null, runnerTennisForseLive === true)}
+                            motivoConferma={motivoConfermaConto(live, c?.modo ?? null, runnerTennisForseLive === true)}
                             raw={null} salva={salva} onSalvato={onSalvato}
                             etichettaSpento="lo stop del conto SPENTO"
                         />

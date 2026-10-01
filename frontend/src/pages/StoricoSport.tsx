@@ -45,7 +45,7 @@ import { fmtMoney, fmtPct, fmtNum, DASH } from '@/lib/format';
 import { pnlClass } from '@/lib/tradeStatus';
 import {
     dayLabel, attributionOf, calendarGridBounds, historyWindow, filterRange,
-    GIORNATA_PARTITA_TESTO, GIORNATA_RIPIEGO_TESTO,
+    GIORNATA_RIPIEGO_TESTO, testoCriterioGiornata, type HistoryVariant,
 } from '@/lib/dailyHistory';
 import { FONTE_PNL_BREVE } from '@/lib/fontePnl';
 import {
@@ -213,8 +213,13 @@ export function StoricoSport({ sport, oggi }: StoricoSportProps) {
                 onRicarica={() => setRicarica((n) => n + 1)} caricamento={caricamento} />}
             footer={
                 // B-01 (01/10): il criterio vero, uguale per tutti i bot; niente
-                // nomi di funzioni del database davanti al trader
-                `${GIORNATA_PARTITA_TESTO} Le giornate sono quelle che il database calcola per ogni bot, `
+                // nomi di funzioni del database davanti al trader. R-01 (review
+                // 01/10): «giorno della PARTITA» solo se le righe lette lo portano
+                `${testoCriterioGiornata(
+                    criterioVecchio == null ? 'ignoto' : criterioVecchio ? 'ripiego' : 'partita',
+                    FONTI_STORICO[sport].map((f) => f.bot)
+                        .filter((b): b is HistoryVariant => b === 'omega' || b === 'safe' || b === 'mike'),
+                )} Le giornate sono quelle che il database calcola per ogni bot, `
                 + 'con la stessa matematica dello Storico dentro Omega, Safe e Mike: questa pagina non '
                 + 'ricalcola nessun P&L e non somma mai soldi veri e prova.'
             }
