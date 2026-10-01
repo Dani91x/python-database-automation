@@ -27,13 +27,14 @@
 // stato «backend vuoto» che e' lo stesso per tutte le pagine.
 //
 // Aggiornare le fotografie e' una DECISIONE, non una correzione:
-//   FOTOGRAFIA_AGGIORNA=1 npx vitest run src/fotografia
+//   FOTOGRAFIA_AGGIORNA=1 npx vitest run src/fotografia        (tutto)
+//   FOTOGRAFIA_AGGIORNA=guscio npx vitest run src/fotografia   (solo *.guscio.json)
 // e il diff dei JSON va riletto riga per riga.
 // ============================================================================
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { render, act, cleanup } from '@testing-library/react';
 import { computeAccessibleName } from 'dom-accessibility-api';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 
 process.env.TZ = 'Europe/Rome';
@@ -92,7 +93,29 @@ export const PAGINE: Pagina[] = [
  * Ogni data-testid trovato nella cornice deve stare qui: un testid nuovo nel
  * guscio e' una decisione da scrivere, non un effetto collaterale.
  */
-export const LISTA_BIANCA_GUSCIO: readonly string[] = [];
+export const LISTA_BIANCA_GUSCIO: readonly string[] = [
+    // app attuale (ui.shell='off'): il solo bottone fisso in basso a destra
+    'shell-prova-nuova-grafica',
+    // guscio v2: sidebar
+    'shell-sidebar', 'shell-filtro-sport', 'shell-filtro-tutti', 'shell-filtro-calcio', 'shell-filtro-tennis',
+    'shell-gruppo-inizio', 'shell-gruppo-calcio', 'shell-gruppo-tennis', 'shell-gruppo-trading',
+    'shell-gruppo-analisi', 'shell-gruppo-account',
+    'shell-voce-board', 'shell-voce-control-room',
+    'shell-voce-dashboard', 'shell-voce-omega', 'shell-voce-safe-strategy', 'shell-voce-mike',
+    'shell-voce-segui-live', 'shell-voce-storico-calcio',
+    'shell-voce-tennis', 'shell-voce-tennis-terminal', 'shell-voce-bot-tennis', 'shell-voce-safe-strategy-tennis',
+    'shell-voce-storico-tennis',
+    'shell-voce-multi-ladder', 'shell-voce-ladder-popout', 'shell-voce-market-watch', 'shell-voce-live-pnl',
+    'shell-voce-watchlist',
+    'shell-voce-match-replay', 'shell-voce-analytics', 'shell-voce-report-personale', 'shell-voce-trade-journal',
+    'shell-voce-select-sport', 'shell-voce-esci',
+    'shell-comprimi',
+    // guscio v2: testata globale (sola lettura + ritorno alla grafica attuale)
+    'shell-testata', 'shell-canali',
+    'shell-canale-calcio', 'shell-canale-tennis', 'shell-canale-mike', 'shell-canale-omega', 'shell-canale-safe',
+    'shell-canale-scanner', 'shell-canale-tennis_bot', 'shell-canale-scalper',
+    'shell-torna-grafica-attuale',
+];
 
 // ---------------------------------------------------------------------------
 // raccolta
@@ -218,6 +241,8 @@ function serializza(x: unknown): string {
 // ---------------------------------------------------------------------------
 const CARTELLA = join(process.cwd().endsWith('frontend') ? process.cwd() : join(process.cwd(), 'frontend'), 'src', 'fotografia', 'snapshot');
 const AGGIORNA = process.env.FOTOGRAFIA_AGGIORNA === '1';
+/** riscrive SOLO le fotografie della cornice (*.guscio.json); le pagine restano confrontate */
+const AGGIORNA_GUSCIO = AGGIORNA || process.env.FOTOGRAFIA_AGGIORNA === 'guscio';
 const ORA_FERMA = new Date('2026-10-01T08:00:00.000Z'); // 10:00 a Roma
 
 beforeAll(() => {
@@ -234,6 +259,17 @@ beforeAll(() => {
     if (typeof w.ResizeObserver !== 'function') w.ResizeObserver = Osservatore;
     if (typeof w.IntersectionObserver !== 'function') w.IntersectionObserver = Osservatore;
     w.scrollTo = () => {};
+    // conta i WebSocket aperti (i canali locali): il guscio non deve aprirne di nuovi.
+    // Si avvolge il WebSocket spento di src/test/setup.ts, che resta muto.
+    const WsSpento = (globalThis as unknown as { WebSocket: new (u: string | URL) => object }).WebSocket;
+    const G = globalThis as unknown as { __wsFotografia?: string[]; WebSocket: unknown };
+    G.__wsFotografia = [];
+    G.WebSocket = class extends WsSpento {
+        constructor(u: string | URL) {
+            super(u);
+            G.__wsFotografia?.push(String(u).replace(/\?.*$/, ''));
+        }
+    };
     Element.prototype.scrollIntoView = function () {};
     if (!existsSync(CARTELLA)) mkdirSync(CARTELLA, { recursive: true });
 });
@@ -271,6 +307,8 @@ async function fotografa(p: Pagina, stato: 'off' | 'v2') {
     const finto = await import('./supabaseFinto');
     finto.impostaSessione(p.sessione);
     finto.azzeraRegistro();
+    const G = globalThis as unknown as { __wsFotografia?: string[] };
+    G.__wsFotografia = [];
     window.history.replaceState(null, '', p.url);
     document.title = '';
     const { default: App } = await import('@/App');
@@ -281,6 +319,7 @@ async function fotografa(p: Pagina, stato: 'off' | 'v2') {
         rpc: [...new Set(finto.registro.rpc)].sort(),
         from: [...new Set(finto.registro.from)].sort(),
         channel: finto.registro.channel,
+        websocket: [...(G.__wsFotografia ?? [])].sort(),
     };
     cleanup();
     return { ...foto, chiamate };
@@ -300,8 +339,9 @@ function confronta(file: string, attuale: string) {
 function confrontaGuscio(file: string, guscio: Raccolta) {
     const percorso = join(CARTELLA, file);
     const vuoto = guscio.testi.length === 0 && guscio.testid.length === 0 && guscio.comandi.length === 0;
-    if (AGGIORNA) {
+    if (AGGIORNA_GUSCIO) {
         if (!vuoto) writeFileSync(percorso, serializza(guscio), 'utf-8');
+        else if (existsSync(percorso)) unlinkSync(percorso);
         return;
     }
     if (vuoto) {
@@ -316,6 +356,9 @@ describe('fotografia di parita\' (guscio v2)', () => {
         it(`${p.nome}: 'off' identica alla fase 0, 'v2' con le stesse pagine`, async () => {
             const off = await fotografa(p, 'off');
             const v2 = await fotografa(p, 'v2');
+
+            // 0. il guscio non fa letture: stesse RPC, tabelle, canali realtime e WebSocket locali
+            expect(v2.chiamate, `${p.nome}: col guscio acceso cambiano le chiamate al backend`).toEqual(off.chiamate);
 
             // 1. con l'interruttore spento l'app e' quella di oggi, byte per byte
             confronta(`${p.nome}.off.json`, serializza(off.pagina));
@@ -333,8 +376,6 @@ describe('fotografia di parita\' (guscio v2)', () => {
                 expect(estranei, `${p.nome}: testid del guscio fuori dalla lista bianca`).toEqual([]);
             }
 
-            // 4. il guscio non fa letture: stesse RPC, tabelle e canali realtime
-            expect(v2.chiamate, `${p.nome}: col guscio acceso cambiano le chiamate al backend`).toEqual(off.chiamate);
         }, 60_000);
     }
 });

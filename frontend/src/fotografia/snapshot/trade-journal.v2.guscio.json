@@ -1,0 +1,227 @@
+{
+  "testi": [
+    "AI",
+    "AI",
+    "TERMINAL",
+    "Tutti",
+    "⚽ Calcio",
+    "🎾 Tennis",
+    "Programma del giorno",
+    "Control Room",
+    "Calcio",
+    "Cruscotto partite",
+    "Omega",
+    "Safe Strategy",
+    "Mike",
+    "Segui live · Scalper",
+    "Storico calcio",
+    "Tennis",
+    "Dashboard tennis",
+    "Tennis Terminal",
+    "Bot tennis",
+    "Safe Strategy · Tennis",
+    "Storico tennis",
+    "Trading",
+    "Multi-ladder",
+    "Ladder pop-out",
+    "Market watch",
+    "Live P&L",
+    "Watchlist",
+    "Analisi",
+    "Match replay",
+    "Analytics",
+    "Report personale",
+    "Trade journal",
+    "Account",
+    "Scelta sport",
+    "Esci",
+    "Analisi",
+    "Trade journal",
+    "Torna alla grafica attuale"
+  ],
+  "testid": [
+    "shell-sidebar",
+    "shell-filtro-sport",
+    "shell-filtro-tutti",
+    "shell-filtro-calcio",
+    "shell-filtro-tennis",
+    "shell-gruppo-inizio",
+    "shell-voce-board",
+    "shell-voce-control-room",
+    "shell-gruppo-calcio",
+    "shell-voce-dashboard",
+    "shell-voce-omega",
+    "shell-voce-safe-strategy",
+    "shell-voce-mike",
+    "shell-voce-segui-live",
+    "shell-voce-storico-calcio",
+    "shell-gruppo-tennis",
+    "shell-voce-tennis",
+    "shell-voce-tennis-terminal",
+    "shell-voce-bot-tennis",
+    "shell-voce-safe-strategy-tennis",
+    "shell-voce-storico-tennis",
+    "shell-gruppo-trading",
+    "shell-voce-multi-ladder",
+    "shell-voce-ladder-popout",
+    "shell-voce-market-watch",
+    "shell-voce-live-pnl",
+    "shell-voce-watchlist",
+    "shell-gruppo-analisi",
+    "shell-voce-match-replay",
+    "shell-voce-analytics",
+    "shell-voce-report-personale",
+    "shell-voce-trade-journal",
+    "shell-gruppo-account",
+    "shell-voce-select-sport",
+    "shell-voce-esci",
+    "shell-comprimi",
+    "shell-testata",
+    "shell-torna-grafica-attuale"
+  ],
+  "comandi": [
+    {
+      "ruolo": "button",
+      "nome": "Tutti",
+      "premuto": "true"
+    },
+    {
+      "ruolo": "button",
+      "nome": "⚽ Calcio",
+      "premuto": "false"
+    },
+    {
+      "ruolo": "button",
+      "nome": "🎾 Tennis",
+      "premuto": "false"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Programma del giorno",
+      "href": "/board"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Control Room",
+      "href": "/control-room"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Cruscotto partite",
+      "href": "/dashboard"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Omega",
+      "href": "/omega"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Safe Strategy",
+      "href": "/safe-strategy"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Mike",
+      "href": "/mike"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Segui live · Scalper",
+      "href": "/segui-live"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Storico calcio",
+      "href": "/storico/calcio"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Dashboard tennis",
+      "href": "/tennis"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Tennis Terminal",
+      "href": "/tennis/terminal"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Bot tennis",
+      "href": "/tennis/terminal"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Safe Strategy · Tennis",
+      "href": "/safe-strategy"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Storico tennis",
+      "href": "/storico/tennis"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Multi-ladder",
+      "href": "/multi-ladder"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Ladder pop-out",
+      "href": "/ladder-popout"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Market watch",
+      "href": "/market-watch"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Live P&L",
+      "href": "/live-pnl"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Watchlist",
+      "href": "/watchlist"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Match replay",
+      "href": "/match-replay"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Analytics",
+      "href": "/analytics"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Report personale",
+      "href": "/report-personale"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Trade journal",
+      "href": "/trade-journal"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Scelta sport",
+      "href": "/select-sport"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Esci"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Comprimi la barra",
+      "premuto": "false"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Torna alla grafica attuale"
+    }
+  ]
+}
