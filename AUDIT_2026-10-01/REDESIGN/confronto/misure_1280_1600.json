@@ -1,0 +1,1170 @@
+[
+ {
+  "nome": "board",
+  "stato": "off",
+  "w": 1280,
+  "websocket": [
+   "ws://127.0.0.1:47331",
+   "ws://127.0.0.1:47332"
+  ],
+  "nWebsocket": 6,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "board",
+  "stato": "off",
+  "w": 1600,
+  "websocket": [
+   "ws://127.0.0.1:47331",
+   "ws://127.0.0.1:47332"
+  ],
+  "nWebsocket": 6,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "board",
+  "stato": "v2",
+  "w": 1280,
+  "websocket": [
+   "ws://127.0.0.1:47331",
+   "ws://127.0.0.1:47332"
+  ],
+  "nWebsocket": 6,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "board",
+  "stato": "v2",
+  "w": 1600,
+  "websocket": [
+   "ws://127.0.0.1:47331",
+   "ws://127.0.0.1:47332"
+  ],
+  "nWebsocket": 6,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "control-room",
+  "stato": "off",
+  "w": 1280,
+  "websocket": [
+   "ws://127.0.0.1:47331",
+   "ws://127.0.0.1:47332",
+   "ws://127.0.0.1:47333",
+   "ws://127.0.0.1:47334",
+   "ws://127.0.0.1:47335",
+   "ws://127.0.0.1:47336",
+   "ws://127.0.0.1:47337",
+   "ws://127.0.0.1:47338"
+  ],
+  "nWebsocket": 16,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "control-room",
+  "stato": "off",
+  "w": 1600,
+  "websocket": [
+   "ws://127.0.0.1:47331",
+   "ws://127.0.0.1:47332",
+   "ws://127.0.0.1:47333",
+   "ws://127.0.0.1:47334",
+   "ws://127.0.0.1:47335",
+   "ws://127.0.0.1:47336",
+   "ws://127.0.0.1:47337",
+   "ws://127.0.0.1:47338"
+  ],
+  "nWebsocket": 16,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "control-room",
+  "stato": "v2",
+  "w": 1280,
+  "websocket": [
+   "ws://127.0.0.1:47331",
+   "ws://127.0.0.1:47332",
+   "ws://127.0.0.1:47333",
+   "ws://127.0.0.1:47334",
+   "ws://127.0.0.1:47335",
+   "ws://127.0.0.1:47336",
+   "ws://127.0.0.1:47337",
+   "ws://127.0.0.1:47338"
+  ],
+  "nWebsocket": 16,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "control-room",
+  "stato": "v2",
+  "w": 1600,
+  "websocket": [
+   "ws://127.0.0.1:47331",
+   "ws://127.0.0.1:47332",
+   "ws://127.0.0.1:47333",
+   "ws://127.0.0.1:47334",
+   "ws://127.0.0.1:47335",
+   "ws://127.0.0.1:47336",
+   "ws://127.0.0.1:47337",
+   "ws://127.0.0.1:47338"
+  ],
+  "nWebsocket": 16,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "dashboard",
+  "stato": "off",
+  "w": 1280,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "dashboard",
+  "stato": "off",
+  "w": 1600,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "dashboard",
+  "stato": "v2",
+  "w": 1280,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "dashboard",
+  "stato": "v2",
+  "w": 1600,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "omega",
+  "stato": "off",
+  "w": 1280,
+  "websocket": [
+   "ws://127.0.0.1:47334"
+  ],
+  "nWebsocket": 3,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "omega",
+  "stato": "off",
+  "w": 1600,
+  "websocket": [
+   "ws://127.0.0.1:47334"
+  ],
+  "nWebsocket": 3,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "omega",
+  "stato": "v2",
+  "w": 1280,
+  "websocket": [
+   "ws://127.0.0.1:47334"
+  ],
+  "nWebsocket": 3,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "omega",
+  "stato": "v2",
+  "w": 1600,
+  "websocket": [
+   "ws://127.0.0.1:47334"
+  ],
+  "nWebsocket": 3,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "safe-strategy",
+  "stato": "off",
+  "w": 1280,
+  "websocket": [
+   "ws://127.0.0.1:47335"
+  ],
+  "nWebsocket": 3,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "safe-strategy",
+  "stato": "off",
+  "w": 1600,
+  "websocket": [
+   "ws://127.0.0.1:47335"
+  ],
+  "nWebsocket": 3,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "safe-strategy",
+  "stato": "v2",
+  "w": 1280,
+  "websocket": [
+   "ws://127.0.0.1:47335"
+  ],
+  "nWebsocket": 3,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "safe-strategy",
+  "stato": "v2",
+  "w": 1600,
+  "websocket": [
+   "ws://127.0.0.1:47335"
+  ],
+  "nWebsocket": 3,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "mike",
+  "stato": "off",
+  "w": 1280,
+  "websocket": [
+   "ws://127.0.0.1:47333"
+  ],
+  "nWebsocket": 3,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "mike",
+  "stato": "off",
+  "w": 1600,
+  "websocket": [
+   "ws://127.0.0.1:47333"
+  ],
+  "nWebsocket": 3,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "mike",
+  "stato": "v2",
+  "w": 1280,
+  "websocket": [
+   "ws://127.0.0.1:47333"
+  ],
+  "nWebsocket": 3,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "mike",
+  "stato": "v2",
+  "w": 1600,
+  "websocket": [
+   "ws://127.0.0.1:47333"
+  ],
+  "nWebsocket": 3,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "segui-live",
+  "stato": "off",
+  "w": 1280,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "segui-live",
+  "stato": "off",
+  "w": 1600,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "segui-live",
+  "stato": "v2",
+  "w": 1280,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "segui-live",
+  "stato": "v2",
+  "w": 1600,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "multi-ladder",
+  "stato": "off",
+  "w": 1280,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "multi-ladder",
+  "stato": "off",
+  "w": 1600,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "multi-ladder",
+  "stato": "v2",
+  "w": 1280,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "multi-ladder",
+  "stato": "v2",
+  "w": 1600,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "market-watch",
+  "stato": "off",
+  "w": 1280,
+  "websocket": [
+   "ws://127.0.0.1:47331",
+   "ws://127.0.0.1:47332"
+  ],
+  "nWebsocket": 6,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "market-watch",
+  "stato": "off",
+  "w": 1600,
+  "websocket": [
+   "ws://127.0.0.1:47331",
+   "ws://127.0.0.1:47332"
+  ],
+  "nWebsocket": 6,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "market-watch",
+  "stato": "v2",
+  "w": 1280,
+  "websocket": [
+   "ws://127.0.0.1:47331",
+   "ws://127.0.0.1:47332"
+  ],
+  "nWebsocket": 6,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "market-watch",
+  "stato": "v2",
+  "w": 1600,
+  "websocket": [
+   "ws://127.0.0.1:47331",
+   "ws://127.0.0.1:47332"
+  ],
+  "nWebsocket": 6,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "live-pnl",
+  "stato": "off",
+  "w": 1280,
+  "websocket": [
+   "ws://127.0.0.1:47331",
+   "ws://127.0.0.1:47332"
+  ],
+  "nWebsocket": 6,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "live-pnl",
+  "stato": "off",
+  "w": 1600,
+  "websocket": [
+   "ws://127.0.0.1:47331",
+   "ws://127.0.0.1:47332"
+  ],
+  "nWebsocket": 6,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "live-pnl",
+  "stato": "v2",
+  "w": 1280,
+  "websocket": [
+   "ws://127.0.0.1:47331",
+   "ws://127.0.0.1:47332"
+  ],
+  "nWebsocket": 6,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "live-pnl",
+  "stato": "v2",
+  "w": 1600,
+  "websocket": [
+   "ws://127.0.0.1:47331",
+   "ws://127.0.0.1:47332"
+  ],
+  "nWebsocket": 6,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "storico-calcio",
+  "stato": "off",
+  "w": 1280,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "storico-calcio",
+  "stato": "off",
+  "w": 1600,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "storico-calcio",
+  "stato": "v2",
+  "w": 1280,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "storico-calcio",
+  "stato": "v2",
+  "w": 1600,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "storico-tennis",
+  "stato": "off",
+  "w": 1280,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "storico-tennis",
+  "stato": "off",
+  "w": 1600,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "storico-tennis",
+  "stato": "v2",
+  "w": 1280,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "storico-tennis",
+  "stato": "v2",
+  "w": 1600,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "tennis",
+  "stato": "off",
+  "w": 1280,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "tennis",
+  "stato": "off",
+  "w": 1600,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "tennis",
+  "stato": "v2",
+  "w": 1280,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "tennis",
+  "stato": "v2",
+  "w": 1600,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "tennis-terminal",
+  "stato": "off",
+  "w": 1280,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "tennis-terminal",
+  "stato": "off",
+  "w": 1600,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "tennis-terminal",
+  "stato": "v2",
+  "w": 1280,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "tennis-terminal",
+  "stato": "v2",
+  "w": 1600,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "tennis-terminal-match",
+  "stato": "off",
+  "w": 1280,
+  "websocket": [
+   "ws://127.0.0.1:47332"
+  ],
+  "nWebsocket": 3,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "tennis-terminal-match",
+  "stato": "off",
+  "w": 1600,
+  "websocket": [
+   "ws://127.0.0.1:47332"
+  ],
+  "nWebsocket": 3,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "tennis-terminal-match",
+  "stato": "v2",
+  "w": 1280,
+  "websocket": [
+   "ws://127.0.0.1:47332"
+  ],
+  "nWebsocket": 3,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "tennis-terminal-match",
+  "stato": "v2",
+  "w": 1600,
+  "websocket": [
+   "ws://127.0.0.1:47332"
+  ],
+  "nWebsocket": 3,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "trade-journal",
+  "stato": "off",
+  "w": 1280,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "trade-journal",
+  "stato": "off",
+  "w": 1600,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "trade-journal",
+  "stato": "v2",
+  "w": 1280,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "trade-journal",
+  "stato": "v2",
+  "w": 1600,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "report-personale",
+  "stato": "off",
+  "w": 1280,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "report-personale",
+  "stato": "off",
+  "w": 1600,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "report-personale",
+  "stato": "v2",
+  "w": 1280,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "report-personale",
+  "stato": "v2",
+  "w": 1600,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "watchlist",
+  "stato": "off",
+  "w": 1280,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "watchlist",
+  "stato": "off",
+  "w": 1600,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "watchlist",
+  "stato": "v2",
+  "w": 1280,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "watchlist",
+  "stato": "v2",
+  "w": 1600,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "analytics",
+  "stato": "off",
+  "w": 1280,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "analytics",
+  "stato": "off",
+  "w": 1600,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "analytics",
+  "stato": "v2",
+  "w": 1280,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "analytics",
+  "stato": "v2",
+  "w": 1600,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "match-replay",
+  "stato": "off",
+  "w": 1280,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "match-replay",
+  "stato": "off",
+  "w": 1600,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "match-replay",
+  "stato": "v2",
+  "w": 1280,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "match-replay",
+  "stato": "v2",
+  "w": 1600,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "select-sport",
+  "stato": "off",
+  "w": 1280,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "select-sport",
+  "stato": "off",
+  "w": 1600,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": true,
+  "errori": []
+ },
+ {
+  "nome": "select-sport",
+  "stato": "v2",
+  "w": 1280,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "select-sport",
+  "stato": "v2",
+  "w": 1600,
+  "websocket": [],
+  "nWebsocket": 0,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": false,
+  "guscio": true,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "ladder-popout",
+  "stato": "off",
+  "w": 1280,
+  "websocket": [
+   "ws://127.0.0.1:47331"
+  ],
+  "nWebsocket": 3,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "ladder-popout",
+  "stato": "off",
+  "w": 1600,
+  "websocket": [
+   "ws://127.0.0.1:47331"
+  ],
+  "nWebsocket": 3,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "ladder-popout",
+  "stato": "v2",
+  "w": 1280,
+  "websocket": [
+   "ws://127.0.0.1:47331"
+  ],
+  "nWebsocket": 3,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": false,
+  "errori": []
+ },
+ {
+  "nome": "ladder-popout",
+  "stato": "v2",
+  "w": 1600,
+  "websocket": [
+   "ws://127.0.0.1:47331"
+  ],
+  "nWebsocket": 3,
+  "scrollOrizzontalePagina": false,
+  "scrollOrizzontaleContenuto": null,
+  "guscio": false,
+  "prova": false,
+  "errori": []
+ }
+]
