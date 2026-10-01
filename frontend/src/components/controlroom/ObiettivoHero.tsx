@@ -95,8 +95,8 @@ export function ObiettivoHero({
     return (
         <Card className="glass-card border-white/10 p-0 overflow-hidden" data-testid={testId}>
             <div className="px-4 pt-3 flex items-center gap-2">
-                <Target className="w-4 h-4 text-secondary" aria-hidden />
-                <span className="text-[13px] text-white/85">Obiettivo di oggi</span>
+                <Target className="w-5 h-5 text-secondary" aria-hidden />
+                <span className="text-base font-semibold text-white/90">Obiettivo di oggi</span>
                 <ObiettivoEditor
                     valoreAttuale={dayBar.goal ?? null}
                     onSalva={onSalvaObiettivo}
@@ -106,7 +106,9 @@ export function ObiettivoHero({
             </div>
 
             <div className="px-2 pt-1">
-                <DayBar {...dayBar} testId="cr-giornata" />
+                {/* 01/10: la card occupa tutta la larghezza (il saldo e' in testata):
+                    realizzato e obiettivo grandi, leggibili a colpo d'occhio */}
+                <DayBar {...dayBar} enfasi testId="cr-giornata" />
             </div>
 
             <div className="px-4 pb-3 pt-1" data-testid="cr-composizione">
@@ -123,7 +125,7 @@ export function ObiettivoHero({
                         </span>
                     )}
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-0.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-5 gap-y-0.5">
                     {composizione.righe.map((r) => (
                         <div
                             key={r.chiave}

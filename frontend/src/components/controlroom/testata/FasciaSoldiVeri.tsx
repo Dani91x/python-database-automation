@@ -17,22 +17,27 @@
 // porta il suo `MarchioSoldi`.
 // Solo presentazione: i numeri arrivano da `vm.soldiVeri` (testata/soldiVeri.ts).
 // ============================================================================
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 import { fmtMoney, DASH } from '@/lib/format';
 import { BOT_LABEL } from '@/lib/controlRoom';
 import { MarchioSoldi } from '@/components/controlroom/MarchioSoldi';
 import type { SoldiVeriTestata } from './soldiVeri';
 
-/** La STESSA preferenza dell'occhio di `SaldoBetfairCard` (chiave privata di
- *  quel file, qui ripetuta): chi ha nascosto il saldo nella card non deve
- *  ritrovarlo in chiaro nella testata. */
+/** La preferenza dell'occhio del saldo (la STESSA chiave che usava l'occhio di
+ *  `SaldoBetfairCard`, che dal 01/10 non e' piu' montata: chi l'aveva nascosto
+ *  li' lo ritrova nascosto qui). Default = VISIBILE. */
 export const CHIAVE_SALDO_NASCOSTO = 'cr-saldo-nascosto';
 
-function saldoNascosto(): boolean {
+export function leggiSaldoNascosto(): boolean {
     try { return window.localStorage.getItem(CHIAVE_SALDO_NASCOSTO) === '1'; } catch { return false; }
 }
+function scriviSaldoNascosto(v: boolean): void {
+    try { window.localStorage.setItem(CHIAVE_SALDO_NASCOSTO, v ? '1' : '0'); } catch { /* preferenza persa, non bloccante */ }
+}
 
-const NASCOSTO = '\u2022\u2022\u2022\u2022,\u2022\u2022 \u20ac';
+/** 01/10: il saldo nascosto si scrive cosi' (solo la cifra del saldo). */
+export const SALDO_NASCOSTO = '\u2022\u2022\u2022\u2022';
 const PUNTO = ' \u00b7 ';
 
 function Etichetta({ children }: { children: ReactNode }) {
@@ -40,7 +45,11 @@ function Etichetta({ children }: { children: ReactNode }) {
 }
 
 export function FasciaSoldiVeri({ s }: { s: SoldiVeriTestata | undefined }) {
-    const nascosto = saldoNascosto();
+    // 01/10 (ordine dell'utente: "voglio la possibilita' di nascondere il
+    // saldo"): l'occhio nasconde SOLO la cifra del saldo (Disponibile);
+    // esposizione, rischio e stop restano sempre visibili.
+    const [nascosto, setNascosto] = useState(leggiSaldoNascosto);
+    const cambiaNascosto = () => setNascosto((prima) => { const dopo = !prima; scriviSaldoNascosto(dopo); return dopo; });
     const conto = s?.conto ?? null;
     const letto = conto?.letto === true;
     const rischio = s?.rischioBot ?? null;
@@ -48,7 +57,7 @@ export function FasciaSoldiVeri({ s }: { s: SoldiVeriTestata | undefined }) {
 
     // --- esposizione del conto
     const valoreConto = !letto || conto?.esposizione == null
-        ? DASH : nascosto ? NASCOSTO : fmtMoney(conto.esposizione);
+        ? DASH : fmtMoney(conto.esposizione);
 
     // --- rischio dei bot (perdita massima: col segno del conto, cosi' le due
     //     cifre si leggono nello stesso verso)
@@ -103,10 +112,27 @@ export function FasciaSoldiVeri({ s }: { s: SoldiVeriTestata | undefined }) {
 
             {letto && conto?.disponibile != null && (
                 <div className="flex flex-col gap-0.5" data-testid="cr-disponibile-conto" title="saldo giocabile del conto Betfair">
-                    <Etichetta>Disponibile</Etichetta>
-                    <span className="font-mono text-sm font-semibold tabular-nums">
-                        {nascosto ? NASCOSTO : fmtMoney(conto.disponibile)}
+                    <span className="flex items-center gap-1">
+                        <Etichetta>Saldo disponibile</Etichetta>
+                        <button type="button" onClick={cambiaNascosto} aria-pressed={nascosto}
+                            data-testid="cr-saldo-occhio"
+                            title={nascosto ? 'mostra il saldo' : 'nascondi il saldo'}
+                            aria-label={nascosto ? 'mostra il saldo' : 'nascondi il saldo'}
+                            className="text-white/40 hover:text-white/80">
+                            {nascosto ? <EyeOff className="w-3 h-3" aria-hidden /> : <Eye className="w-3 h-3" aria-hidden />}
+                        </button>
                     </span>
+                    {nascosto ? (
+                        <button type="button" onClick={cambiaNascosto} data-testid="cr-disponibile-conto-valore"
+                            title="saldo nascosto: clicca per mostrare"
+                            className="font-mono text-sm font-semibold tabular-nums text-left text-white/60">
+                            {SALDO_NASCOSTO}
+                        </button>
+                    ) : (
+                        <span className="font-mono text-sm font-semibold tabular-nums" data-testid="cr-disponibile-conto-valore">
+                            {fmtMoney(conto.disponibile)}
+                        </span>
+                    )}
                     <span className="text-[9.5px] leading-tight"><MarchioSoldi fonte="conto" testId="cr-disponibile-conto-marchio" /></span>
                 </div>
             )}

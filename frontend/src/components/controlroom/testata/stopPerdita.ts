@@ -40,11 +40,14 @@ export interface StopConto {
     degradato: boolean;
     /** eta' dell'ultimo CAMBIO della riga (scritta solo al cambio) */
     etaS: number | null;
+    /** 01/10: la modalita' su cui il runner calcola lo stop (`mode` della riga,
+     *  `daily_stop_worker` filtra `betfair_live_settled` per modalita'); null = ignota */
+    modo: 'live' | 'paper' | null;
 }
 
 export function stopDelConto(riga: LiveRiskState | null, nowMs: number): StopConto {
     if (riga == null) {
-        return { letto: false, soglia: null, oggi: null, scattato: false, motivo: null, degradato: false, etaS: null };
+        return { letto: false, soglia: null, oggi: null, scattato: false, motivo: null, degradato: false, etaS: null, modo: null };
     }
     const ms = Date.parse(riga.updated_at);
     const soglia = typeof riga.limit_value === 'number' && Number.isFinite(riga.limit_value) && riga.limit_value > 0
@@ -58,6 +61,8 @@ export function stopDelConto(riga: LiveRiskState | null, nowMs: number): StopCon
         motivo: typeof riga.detail?.reason === 'string' ? riga.detail.reason : null,
         degradato: riga.detail?.degraded === true,
         etaS: Number.isFinite(ms) ? Math.max(0, Math.round((nowMs - ms) / 1000)) : null,
+        modo: String(riga.mode ?? '').toLowerCase() === 'live' ? 'live'
+            : String(riga.mode ?? '').toLowerCase() === 'paper' ? 'paper' : null,
     };
 }
 
@@ -75,7 +80,8 @@ export interface StopBot {
     scattato: boolean;
     /** R_T (30/09): false = il servizio NON pubblica se lo stop e' scattato
      *  (Omega: solo l'attivita' `loss_stop`, non letta qui). `scattato` allora
-     *  non vale "armato": a schermo si dice "scatto non pubblicato". */
+     *  non vale "armato": a schermo (01/10) «Omega non pubblica se lo stop e'
+     *  scattato». */
     scattoPubblicato: boolean;
     /** da dove viene il numero (per il tooltip) */
     fonte: string;

@@ -10,11 +10,14 @@
 //    (mike/service.py:4107);
 //  - Omega `control.params` strategy_version / v3_daily_loss_cap / daily_loss_cap.
 // Oggi (progetto par. 0): stop del conto SPENTO (limit_value null, reason limit_off).
+// 01/10: modifica sul posto (salvataggio iniettato: la funzione vera e le sue
+// RPC sono collaudate in salvaStop.test.ts), cancello «parametri non letti»,
+// conferma in LIVE, frasi chiare al posto di quelle criptiche.
 // ============================================================================
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { StopPerdita, vaiAllaRigaDelBot } from './FasciaStop';
+import { StopPerdita, vaiAllaRigaDelBot, NOTA_TENNIS_SCALPER } from './FasciaStop';
 import { stopDelConto, stopDeiBot, type StopPerditaTestata } from './stopPerdita';
 import type { LiveRiskState } from '@/lib/liveOrders';
 
@@ -87,8 +90,16 @@ describe('stopDeiBot', () => {
     });
 });
 
+// 01/10: i parametri GREZZI dei bot come li porta il modello di vista
+// (`vm.bots[].params`, chiavi di produzione)
+const PARAMS = {
+    safe: { variants: ['base'], risk: { daily_loss_stop: -50 } },
+    mike: { daily_loss_stop: 50, max_open_matches: 10 },
+    omega: { strategy_version: 3, v3_daily_loss_cap: 300 },
+};
+
 describe('StopPerdita - a schermo', () => {
-    it('oggi: \u00abConto: SPENTO\u00bb e ogni bot col SUO nome, la SUA modalita\' e il suo valore', () => {
+    it('oggi: «Conto: SPENTO» e ogni bot col SUO nome, la SUA modalita\' e il suo valore', () => {
         mostra({ conto: stopDelConto(RIGA_OGGI, NOW), bot: bot() });
         expect(screen.getByTestId('cr-stop-conto-valore').textContent).toBe('SPENTO');
         const safe = screen.getByTestId('cr-stop-safe');
@@ -102,26 +113,41 @@ describe('StopPerdita - a schermo', () => {
         expect(screen.getByTestId('cr-stop-omega').textContent).toMatch(/300,00/);
     });
 
+    it('01/10 - una riga per stop: modalita\' col suo colore, stato, fonte ed eta\'', () => {
+        render(<MemoryRouter><StopPerdita stop={{ conto: stopDelConto(RIGA_OGGI, NOW), bot: bot() }}
+            statoServizio={{ safe: { fonte: 'canale', etaS: 3 }, mike: { fonte: 'database', etaS: 12 } }} /></MemoryRouter>);
+        // conto: la modalita' su cui il runner calcola lo stop (mode della riga)
+        expect(screen.getByTestId('cr-stop-conto-modo').textContent).toBe('LIVE');
+        expect(screen.getByTestId('cr-stop-conto-modo').className).toMatch(/red/);
+        expect(screen.getByTestId('cr-stop-conto-fonte').textContent).toMatch(/runner calcio .* cambio 1 min fa/);
+        expect(screen.getByTestId('cr-stop-safe-modo').textContent).toBe('PAPER');
+        expect(screen.getByTestId('cr-stop-safe-stato').textContent).toBe('attivo');
+        expect(screen.getByTestId('cr-stop-safe-fonte').textContent).toMatch(/servizio Safe .* canale .* 3 s fa/);
+        expect(screen.getByTestId('cr-stop-mike-fonte').textContent).toMatch(/parametro Mike .* database .* 12 s fa/);
+        expect(screen.getByTestId('cr-stop-omega-fonte').textContent).toMatch(/stato del servizio non letto/);
+    });
+
     it('stop del conto attivo: soglia e P&L di giornata', () => {
         mostra({ conto: stopDelConto({ ...RIGA_OGGI, limit_value: 40, total: -12.5 }, NOW), bot: bot() });
         expect(screen.getByTestId('cr-stop-conto-valore').textContent).toMatch(/40,00/);
+        expect(screen.getByTestId('cr-stop-conto-stato').textContent).toMatch(/attivo/);
         expect(screen.getByTestId('cr-stop-conto-oggi').textContent).toMatch(/12,50/);
     });
 
     it('stop del conto scattato: lo dice, freno generale', () => {
         mostra({ conto: stopDelConto({ ...RIGA_OGGI, limit_value: 40, stop_fired: true }, NOW), bot: bot() });
         expect(screen.getByTestId('cr-stop-conto-valore').textContent).toMatch(/SCATTATO/);
+        expect(screen.getByTestId('cr-stop-conto-stato').textContent).toMatch(/^SCATTATO/);
     });
 
-    it('stop del conto non letto: \u00abnon letto\u00bb, mai \u00abSPENTO\u00bb ne\' 0,00', () => {
+    it('stop del conto non letto: «non letto», mai «SPENTO» ne\' 0,00', () => {
         mostra({ conto: stopDelConto(null, NOW), bot: bot() });
         expect(screen.getByTestId('cr-stop-conto-valore').textContent).toBe('non letto');
         expect(screen.getByTestId('cr-stop-conto').textContent).not.toMatch(/0,00/);
     });
 
-    it('ogni stop porta al SUO editor: il conto a Segui Live, i bot alla loro riga', () => {
+    it('ogni bot ha ancora la strada al SUO foglio completo (riga di Comando dei bot)', () => {
         const vai = mostra({ conto: stopDelConto(RIGA_OGGI, NOW), bot: bot() });
-        expect(screen.getByTestId('cr-stop-conto-modifica').getAttribute('href')).toBe('/segui-live');
         fireEvent.click(screen.getByTestId('cr-stop-mike-modifica'));
         expect(vai).toHaveBeenCalledWith('mike');
         fireEvent.click(screen.getByTestId('cr-stop-omega-modifica'));
@@ -130,12 +156,14 @@ describe('StopPerdita - a schermo', () => {
     });
 });
 
-describe('R_T (30/09) - review finale', () => {
-    it('Omega: la soglia NON e\' presentata come armata: "scatto non pubblicato"; Safe e Mike no', () => {
+describe('R_T (30/09) + 01/10 - frasi chiare, mai criptiche', () => {
+    it('Omega: la soglia NON e\' presentata come armata: lo dice in chiaro; Safe e Mike "attivo"', () => {
         mostra({ conto: stopDelConto(RIGA_OGGI, NOW), bot: bot() });
-        expect(screen.getByTestId('cr-stop-omega').textContent).toMatch(/scatto non pubblicato/);
-        expect(screen.queryByTestId('cr-stop-safe-scatto')).toBeNull();
-        expect(screen.queryByTestId('cr-stop-mike-scatto')).toBeNull();
+        expect(screen.getByTestId('cr-stop-omega-stato').textContent).toBe('Omega non pubblica se lo stop e\' scattato');
+        expect(screen.getByTestId('cr-stop-omega-stato').textContent).not.toMatch(/attivo/);
+        expect(screen.getByTestId('cr-stop-safe-stato').textContent).toBe('attivo');
+        expect(screen.getByTestId('cr-stop-mike-stato').textContent).toBe('attivo');
+        expect(document.body.textContent).not.toMatch(/scatto non pubblicato|stop proprio non pubblicato/);
     });
     it('conto SPENTO con un bot in LIVE: ambra; tutti in paper: grigio (testo invariato)', () => {
         mostra({ conto: stopDelConto(RIGA_OGGI, NOW), bot: bot() }); // Mike LIVE
@@ -151,11 +179,170 @@ describe('R_T (30/09) - review finale', () => {
         render(<MemoryRouter><StopPerdita stop={{ conto: stopDelConto(RIGA_OGGI, NOW), bot: bot({ mike: { modalita: 'paper', params: { daily_loss_stop: 50 }, stats: null } }) }} qualcheBotLive /></MemoryRouter>);
         expect(screen.getByTestId('cr-stop-conto-valore').className).toMatch(/amber/);
     });
-    it('tennis e scalper: "stop proprio non pubblicato", mai "nessuno stop"', () => {
+    it('tennis e scalper: la verita\' verificata nel codice (nessuno stop proprio; lo stop del conto li ferma ma non conta le loro perdite)', () => {
         mostra({ conto: stopDelConto(RIGA_OGGI, NOW), bot: bot() });
         const el = screen.getByTestId('cr-stop-altri');
-        expect(el.textContent).toMatch(/Tennis, Scalper: stop proprio non pubblicato/);
-        expect(el.textContent).not.toMatch(/nessuno/);
+        expect(el.textContent).toBe(NOTA_TENNIS_SCALPER.testo);
+        expect(el.textContent).toMatch(/Tennis e Scalper: nessuno stop proprio/);
+        expect(el.textContent).toMatch(/non lo fanno scattare/);
+        expect(el.getAttribute('title')).toMatch(/runner calcio/);
+    });
+});
+
+// ------------------------------------------------------------ 01/10 modifica sul posto
+
+function conParametri(over: {
+    stop?: StopPerditaTestata; params?: Parameters<typeof StopPerdita>[0]['params'];
+    salva?: ReturnType<typeof vi.fn>; onSalvato?: () => void; qualcheBotLive?: boolean;
+} = {}) {
+    const salva = over.salva ?? vi.fn(async () => 35);
+    render(<MemoryRouter><StopPerdita
+        stop={over.stop ?? { conto: stopDelConto({ ...RIGA_OGGI, mode: 'paper' }, NOW), bot: bot({ mike: { modalita: 'paper', params: PARAMS.mike, stats: { daily_stop: false } } }) }}
+        params={'params' in over ? over.params : PARAMS}
+        salva={salva as never}
+        onSalvato={over.onSalvato}
+        qualcheBotLive={over.qualcheBotLive ?? false}
+    /></MemoryRouter>);
+    return salva;
+}
+
+describe('01/10 - ogni stop si modifica DALLA TESTATA', () => {
+    it('clic sulla cifra -> campo con la cifra in vigore (negativa), Salva chiama la funzione con chi, perdita e i parametri GREZZI', async () => {
+        const onSalvato = vi.fn();
+        const salva = conParametri({ onSalvato });
+        fireEvent.click(screen.getByTestId('cr-stop-mike-valore'));
+        const campo = screen.getByTestId('cr-stop-mike-campo') as HTMLInputElement;
+        expect(campo.value).toBe('-50,00');
+        fireEvent.change(campo, { target: { value: '-40' } });
+        fireEvent.click(screen.getByTestId('cr-stop-mike-salva'));
+        await waitFor(() => expect(salva).toHaveBeenCalledWith('mike', 40, PARAMS.mike));
+        // riscontro: la cifra RESTITUITA dal database, poi la rilettura della pagina
+        await waitFor(() => expect(screen.getByTestId('cr-stop-mike-esito').textContent).toMatch(/salvato: .*35,00 .*\(letto dal database\)/));
+        // digitato 40, riga del DB 35: mai la cifra digitata
+        expect(screen.getByTestId('cr-stop-mike-esito').textContent).not.toMatch(/40,00/);
+        expect(onSalvato).toHaveBeenCalledTimes(1);
+    });
+
+    it('la cifra mostrata dopo il salvataggio e\' quella del DATABASE, non quella digitata', async () => {
+        conParametri({ salva: vi.fn(async () => 45) });
+        fireEvent.click(screen.getByTestId('cr-stop-omega-valore'));
+        fireEvent.change(screen.getByTestId('cr-stop-omega-campo'), { target: { value: '-40' } });
+        fireEvent.click(screen.getByTestId('cr-stop-omega-salva'));
+        await waitFor(() => expect(screen.getByTestId('cr-stop-omega-esito').textContent).toMatch(/45,00/));
+        expect(screen.getByTestId('cr-stop-omega-esito').textContent).not.toMatch(/40,00/);
+    });
+
+    it('conto: digitato −40, la riga del DB dice 35 -> «salvato: −35,00 € (letto dal database)»', async () => {
+        const salva = conParametri({ salva: vi.fn(async () => 35) });
+        fireEvent.click(screen.getByTestId('cr-stop-conto-valore'));
+        fireEvent.change(screen.getByTestId('cr-stop-conto-campo'), { target: { value: '-40' } });
+        fireEvent.click(screen.getByTestId('cr-stop-conto-salva'));
+        await waitFor(() => expect(salva).toHaveBeenCalledWith('conto', 40, null));
+        await waitFor(() => expect(screen.getByTestId('cr-stop-conto-esito').textContent).toBe('salvato: −35,00 € (letto dal database)'));
+    });
+
+    it('importo non valido: lo dice e NON salva', () => {
+        const salva = conParametri();
+        fireEvent.click(screen.getByTestId('cr-stop-safe-valore'));
+        fireEvent.change(screen.getByTestId('cr-stop-safe-campo'), { target: { value: '-40,555' } });
+        fireEvent.click(screen.getByTestId('cr-stop-safe-salva'));
+        expect(screen.getByTestId('cr-stop-safe-errore').textContent).toMatch(/non valido/);
+        expect(salva).not.toHaveBeenCalled();
+    });
+
+    it('errore della scrittura: "non salvato" col motivo, nessun "salvato"', async () => {
+        conParametri({ salva: vi.fn(async () => { throw new Error('non autorizzato'); }) });
+        fireEvent.click(screen.getByTestId('cr-stop-safe-valore'));
+        fireEvent.change(screen.getByTestId('cr-stop-safe-campo'), { target: { value: '-40' } });
+        fireEvent.click(screen.getByTestId('cr-stop-safe-salva'));
+        await waitFor(() => expect(screen.getByTestId('cr-stop-safe-errore').textContent).toMatch(/non salvato: non autorizzato/));
+        expect(screen.queryByTestId('cr-stop-safe-esito')).toBeNull();
+    });
+
+    it('Annulla: nessun salvataggio, torna la cifra', () => {
+        const salva = conParametri();
+        fireEvent.click(screen.getByTestId('cr-stop-omega-valore'));
+        fireEvent.click(screen.getByTestId('cr-stop-omega-annulla'));
+        expect(screen.getByTestId('cr-stop-omega-valore').textContent).toMatch(/300,00/);
+        expect(salva).not.toHaveBeenCalled();
+    });
+});
+
+describe('01/10 - CANCELLO: parametri non letti = campo disabilitato, e lo dice', () => {
+    it('Mike e Omega senza parametri letti: cifra non cliccabile, "parametri non letti: modifica disabilitata"', () => {
+        const salva = conParametri({ params: { safe: PARAMS.safe, mike: null, omega: {} } });
+        for (const b of ['mike', 'omega']) {
+            const v = screen.getByTestId(`cr-stop-${b}-valore`) as HTMLButtonElement;
+            expect(v.disabled).toBe(true);
+            fireEvent.click(v);
+            expect(screen.queryByTestId(`cr-stop-${b}-campo`)).toBeNull();
+            expect(screen.getByTestId(`cr-stop-${b}-non-modificabile`).textContent).toMatch(/parametri non letti: modifica disabilitata/);
+        }
+        // Safe letto: modificabile
+        expect((screen.getByTestId('cr-stop-safe-valore') as HTMLButtonElement).disabled).toBe(false);
+        expect(salva).not.toHaveBeenCalled();
+    });
+    it('nessun parametro passato (finto di prima): niente e\' modificabile', () => {
+        conParametri({ params: undefined });
+        expect((screen.getByTestId('cr-stop-safe-valore') as HTMLButtonElement).disabled).toBe(true);
+    });
+    it('conto: stato del runner non letto = non modificabile da qui', () => {
+        conParametri({ stop: { conto: stopDelConto(null, NOW), bot: bot() } });
+        expect((screen.getByTestId('cr-stop-conto-valore') as HTMLButtonElement).disabled).toBe(true);
+        expect(screen.getByTestId('cr-stop-conto-non-modificabile').textContent).toMatch(/non letto/);
+    });
+});
+
+describe('01/10 - LIVE (soldi veri): conferma esplicita, che scade', () => {
+    it('Mike in LIVE: Salva NON scrive, chiede conferma; Conferma scrive', async () => {
+        const salva = conParametri({ stop: { conto: stopDelConto(RIGA_OGGI, NOW), bot: bot() } }); // Mike LIVE
+        fireEvent.click(screen.getByTestId('cr-stop-mike-valore'));
+        fireEvent.change(screen.getByTestId('cr-stop-mike-campo'), { target: { value: '-40' } });
+        fireEvent.click(screen.getByTestId('cr-stop-mike-salva'));
+        expect(salva).not.toHaveBeenCalled();
+        expect(screen.getByTestId('cr-stop-mike-richiesta-conferma').textContent).toMatch(/Mike e' in LIVE \(soldi veri\): confermi lo stop a .*40,00/);
+        fireEvent.click(screen.getByTestId('cr-stop-mike-conferma'));
+        await waitFor(() => expect(salva).toHaveBeenCalledWith('mike', 40, PARAMS.mike));
+    });
+    it('Safe in PAPER: nessuna conferma, scrive subito', async () => {
+        const salva = conParametri({ stop: { conto: stopDelConto(RIGA_OGGI, NOW), bot: bot() } });
+        fireEvent.click(screen.getByTestId('cr-stop-safe-valore'));
+        fireEvent.change(screen.getByTestId('cr-stop-safe-campo'), { target: { value: '-40' } });
+        fireEvent.click(screen.getByTestId('cr-stop-safe-salva'));
+        expect(screen.queryByTestId('cr-stop-safe-richiesta-conferma')).toBeNull();
+        await waitFor(() => expect(salva).toHaveBeenCalledWith('safe', 40, PARAMS.safe));
+    });
+    it('Safe PAPER ma con una strategia in LIVE (modiStrategia): conferma, lo stop e\' comune', () => {
+        const salva = vi.fn(async () => 35);
+        render(<MemoryRouter><StopPerdita stop={{ conto: stopDelConto(RIGA_OGGI, NOW), bot: bot() }}
+            params={PARAMS} salva={salva as never} strategieLive={{ safe: true }} /></MemoryRouter>);
+        fireEvent.click(screen.getByTestId('cr-stop-safe-valore'));
+        fireEvent.click(screen.getByTestId('cr-stop-safe-salva'));
+        expect(screen.getByTestId('cr-stop-safe-richiesta-conferma').textContent).toMatch(/strategie in LIVE/);
+        expect(salva).not.toHaveBeenCalled();
+    });
+    it('modalita\' NON letta: si chiede conferma (potrebbe essere LIVE)', () => {
+        const salva = conParametri({ stop: { conto: stopDelConto(RIGA_OGGI, NOW), bot: bot({ omega: { modalita: null, params: PARAMS.omega } }) } });
+        fireEvent.click(screen.getByTestId('cr-stop-omega-valore'));
+        fireEvent.click(screen.getByTestId('cr-stop-omega-salva'));
+        expect(screen.getByTestId('cr-stop-omega-richiesta-conferma').textContent).toMatch(/non letta/);
+        expect(salva).not.toHaveBeenCalled();
+    });
+    it('conto con un bot LIVE: conferma; la conferma dimenticata scade dopo 10 s e non scrive', () => {
+        vi.useFakeTimers();
+        try {
+            const salva = conParametri({ qualcheBotLive: true });
+            fireEvent.click(screen.getByTestId('cr-stop-conto-valore'));
+            fireEvent.change(screen.getByTestId('cr-stop-conto-campo'), { target: { value: '-80' } });
+            fireEvent.click(screen.getByTestId('cr-stop-conto-salva'));
+            expect(screen.getByTestId('cr-stop-conto-richiesta-conferma').textContent).toMatch(/soldi veri/);
+            act(() => { vi.advanceTimersByTime(10_001); });
+            expect(screen.queryByTestId('cr-stop-conto-conferma')).toBeNull();
+            expect(screen.getByTestId('cr-stop-conto-errore').textContent).toMatch(/conferma scaduta/);
+            expect(salva).not.toHaveBeenCalled();
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });
 

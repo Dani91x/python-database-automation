@@ -51,7 +51,6 @@ import {
     statoPartitaAperta, type StatoPartitaAperta, type EsitoStatoPartita,
 } from '@/components/controlroom/aperte/statoPartitaAperta';
 import { ObiettivoHero } from '@/components/controlroom/ObiettivoHero';
-import { SaldoBetfairCard } from '@/components/controlroom/SaldoBetfairCard';
 import { UsciteColonna } from '@/components/controlroom/UsciteColonna';
 import { OpportunitaColonna } from '@/components/controlroom/OpportunitaColonna';
 import { pnlClass } from '@/lib/tradeStatus';
@@ -62,7 +61,7 @@ import {
     BOT_LABEL, affidabilePerPiazzare, BOT_TENNIS, isBotTennis,
     type Bot, type GruppoCampionato, type Freschezza, type PartitaGiornata,
 } from '@/lib/controlRoom';
-import { runnerPhase, type RunnerPhase } from '@/lib/safeBot';
+import { runnerPhase } from '@/lib/safeBot';
 import { fmtMs, totaleCatena, totaleNostro, colloDiBottiglia } from '@/lib/controlRoomCatena';
 import type { StatoChiusuraEvento } from '@/lib/chiusuraUtente';
 import {
@@ -77,8 +76,9 @@ import { ProposteUsciteFlusso } from '@/components/controlroom/ProposteUsciteFlu
 import { RigaCapacitaMercati } from '@/components/controlroom/RigaCapacitaMercati';
 import { FasciaSoldiVeri } from '@/components/controlroom/testata/FasciaSoldiVeri';
 import { StopPerdita } from '@/components/controlroom/testata/FasciaStop';
+import { TesseraRunner } from '@/components/controlroom/testata/TesseraRunner';
 import {
-    modoChip, statoChip, usciteChip, pallinoChip, aggiornatoChip, tettoRunner, sorgenteFeed, riassuntoDati, type Tono,
+    modoChip, statoChip, usciteChip, pallinoChip, aggiornatoChip, sorgenteFeed, riassuntoDati, type Tono,
 } from '@/components/controlroom/testata/paroleImpianto';
 import {
     STAKE_TENNIS, differenzeSoloTennis, altreInLiveAdesso,
@@ -138,17 +138,7 @@ const BOT_CLS: Record<Bot, string> = {
 };
 
 
-/** I TRE STATI DEL RUNNER — «vivo» non basta.
- *  14/09: il battito diceva «2 settembre» mentre il processo girava (corretto in
- *  `ad68253`: ora batte anche da fermo). Ma «vivo» e «utilizzabile» restano due
- *  cose diverse: `live_order_worker` nasce dentro il framework, quindi con il
- *  runner IN ATTESA la coda non ha nessuno dall'altro capo. Il dubbio non
- *  concede mai la coda (`runnerPhase`, fail-closed). */
-const FASE_RUNNER: Record<RunnerPhase, string> = {
-    off: 'spento',
-    idle: 'vivo, in attesa',
-    streaming: 'in streaming',
-};
+// 01/10 - le parole dei tre stati del runner vivono in `testata/TesseraRunner.tsx`.
 
 /**
  * COSA DIRE DI UN PREZZO — segnalato dall'utente il 14/09 su «Quote 2 min».
@@ -531,7 +521,7 @@ export default function ControlRoom() {
                 ) : undefined}
             />
 
-            {/* ═══ ZONA 1 — L'OBIETTIVO (hero, una volta sola) + SALDO ═══════
+            {/* ═══ ZONA 1 — L'OBIETTIVO (hero, una volta sola, tutta la larghezza) ═══════
                 ⚠️ REVIEW 15/09 — `live` riceve le POSIZIONI aperte con soldi
                 veri, non le partite in gioco: in tutta la piattaforma quella
                 etichetta significa «posizioni ancora vive, non regolate», e
@@ -545,7 +535,11 @@ export default function ControlRoom() {
                 tocca `params`/`mode`). L'AVVISO sul motore non si nasconde:
                 Omega legge `daily_goal` a OGNI ciclo (`omega_service.py`), un
                 bot in corsa vede il nuovo target dal ciclo successivo. */}
-            <div className="grid gap-4 lg:grid-cols-[1.9fr_1fr] items-start">
+            {/* 01/10 (ordine dell'utente): la card del SALDO non si monta piu'
+                qui (saldo disponibile ed esposizione sono gia' in testata, nella
+                fascia SOLDI VERI ADESSO, con la stessa fonte e la stessa eta'):
+                l'obiettivo occupa tutta la larghezza. */}
+            <div data-testid="cr-zona-obiettivo">
                 <ObiettivoHero
                     dayBar={{
                         dayLabel: etichettaGiorno(giornoOperativo),
@@ -614,7 +608,6 @@ export default function ControlRoom() {
                             : null
                     }
                 />
-                <SaldoBetfairCard testId="cr-saldo" />
             </div>
 
             {/* I GIORNI PRECEDENTI HANNO UNA CASA. Tutta questa pagina parla
@@ -1013,9 +1006,19 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
                     conto, 30/09) non compare piu'. Mai 0,00 per un dato non
                     letto: «—» e il motivo. */}
                 <FasciaSoldiVeri s={vm.soldiVeri} />
-                <Freni stop={vm.stopPerdita} qualcheBotLive={vm.bots.some((b) => b.modalita === 'live')} />
-                <Runner r={vm.runner} fonte={vm.fonteRunner} />
-                <Runner r={vm.runnerTennis} fonte={vm.fonteRunnerTennis} tennis />
+                {/* 01/10 - IMPIANTO E STOP, in quest'ordine: prima i due runner
+                    (una tessera ciascuno, nominata), poi gli stop di perdita
+                    (una riga per stop, modificabili sul posto). */}
+                <div className="flex items-start gap-x-4 gap-y-2 flex-wrap" data-testid="cr-impianto-stop">
+                    <div className="flex flex-col gap-0.5" data-testid="cr-impianto">
+                        <span className="text-[10px] uppercase tracking-wider text-white/45">Runner</span>
+                        <div className="flex items-stretch gap-2">
+                            <TesseraRunner sport="calcio" r={vm.runner} fonte={vm.fonteRunner} />
+                            <TesseraRunner sport="tennis" r={vm.runnerTennis} fonte={vm.fonteRunnerTennis} />
+                        </div>
+                    </div>
+                    <Freni vm={vm} />
+                </div>
 
                 <div className="flex items-stretch gap-3" data-testid="cr-bots">
                     {vm.bots.map((b) => <ChipBot key={b.bot} b={b} nowMs={vm.nowMs} />)}
@@ -1082,66 +1085,6 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
 }
 
 /**
- * STATO DEL RUNNER — tre stati, non due.
- *
- * 14/09: il battito diceva «2 settembre» mentre il processo girava, perché chi
- * lo scrive vive dentro il framework e il runner era parcheggiato in attesa di
- * eventi. Tre sessioni hanno inseguito un runner morto che stava benissimo.
- * Adesso il runner batte anche da fermo: battito fresco = processo vivo.
- * «Vivo ma senza lavoro» è uno stato LEGITTIMO e si scrive così — un
- * indicatore che grida guasto su un comportamento normale fa ignorare anche i
- * guasti veri.
- */
-function Runner({ r, fonte, tennis = false }: {
-    r: ReturnType<typeof useControlRoom>['runner'];
-    /** 25/09 (voce 6): da dove viene la riga e quanto e' vecchia la notizia */
-    fonte: ReturnType<typeof useControlRoom>['fonteRunner'];
-    /** il runner TENNIS: solo dal canale 47332 (nessun battito sul database) */
-    tennis?: boolean;
-}) {
-    const testid = tennis ? 'cr-runner-tennis' : 'cr-runner';
-    const etichetta = tennis ? 'Runner tennis' : 'Runner';
-    const notaFonte = (
-        <span className="text-[9.5px] text-white/30" data-testid={`${testid}-fonte`}
-            title="canale locale (processo collegato, eta' dell'ultimo messaggio) o database (battito al giro dei 30 s)">
-            {fonte.fonte === 'canale' ? 'canale' : 'db'} {fonte.etaS == null ? DASH : fmtAge(fonte.etaS)}
-        </span>
-    );
-    if (r == null) {
-        return (
-            <div className="flex flex-col" data-testid={testid}
-                title={tennis ? 'canale del runner tennis (47332) spento: stato non noto' : 'stato del runner non letto'}>
-                <span className="text-[10px] uppercase tracking-wider text-white/40">{etichetta}</span>
-                <span className="font-mono text-sm font-semibold text-white/60">{tennis ? 'canale spento' : 'ignoto'}</span>
-            </div>
-        );
-    }
-    // «mai battuto» vale GIU', non «non lo so»: un runner che non ha mai dato
-    // segno di vita non sta eseguendo niente.
-    const fase: RunnerPhase = runnerPhase(r);
-    const testo = r.ageS == null ? 'mai avviato' : FASE_RUNNER[fase];
-    const cls = fase === 'streaming' ? 'text-emerald-400' : fase === 'idle' ? 'text-secondary' : 'text-orange-400';
-    const tetto = tettoRunner(r.mode);
-    return (
-        <div className="flex flex-col" data-testid={testid}
-            title={r.ageS != null ? `ultimo battito ${fmtAge(Math.round(r.ageS))} fa` : 'il runner non ha mai battuto'}>
-            <span className="text-[10px] uppercase tracking-wider text-white/40">{etichetta}</span>
-            <span className={`font-mono text-sm font-semibold ${cls}`}>
-                {testo}
-                {/* T_P5 (30/09): «live+paper» era il TETTO del .env del runner
-                    (runner.py::heartbeat_mode), non il modo di un bot */}
-                {tetto && (
-                    <span className="text-white/40" data-testid={`${testid}-tetto`} title={tetto.titolo}>
-                        {' · '}{tetto.testo}
-                    </span>
-                )}
-            </span>
-            {notaFonte}
-        </div>
-    );
-}
-
-/**
  * L'ULTIMO FRENO. I cap sono spenti per decisione dell'utente: lo stop di
  * perdita giornaliera è l'unica cosa che resta fra un comportamento imprevisto
  * e il conto. Sta in testata perché un freno che nessuno vede non è un freno.
@@ -1150,13 +1093,26 @@ function Runner({ r, fonte, tennis = false }: {
 // P4 (30/09) - «Stop perdita −50,00» era lo stop di SAFE presentato come se
 // fosse l'unico: adesso il contenitore `cr-freni` porta lo stop del CONTO e
 // quello di ogni bot, con modalita' e punto dove si modifica (`StopPerdita`).
-function Freni({ stop, qualcheBotLive }: {
-    stop: ReturnType<typeof useControlRoom>['stopPerdita'] | undefined;
-    qualcheBotLive: boolean;
-}) {
+// 01/10 - ogni stop si modifica sul posto: i parametri grezzi dei bot sono
+// quelli gia' nel modello di vista (`vm.bots[].params`, gli stessi dei fogli
+// parametri e del loro cancello «parametri non letti»), fonte ed eta' dello
+// stato del servizio idem (`fonteStato`/`etaStatoS`). Nessuna lettura nuova.
+function Freni({ vm }: { vm: ReturnType<typeof useControlRoom> }) {
+    const di = (b: 'safe' | 'mike' | 'omega') => vm.bots.find((x) => x.bot === b);
     return (
         <div className="flex flex-col" data-testid="cr-freni">
-            <StopPerdita stop={stop} qualcheBotLive={qualcheBotLive} />
+            <StopPerdita
+                stop={vm.stopPerdita}
+                qualcheBotLive={vm.bots.some((b) => b.modalita === 'live')}
+                params={{ safe: di('safe')?.params ?? null, mike: di('mike')?.params ?? null, omega: di('omega')?.params ?? null }}
+                statoServizio={{
+                    safe: { fonte: di('safe')?.fonteStato, etaS: di('safe')?.etaStatoS },
+                    mike: { fonte: di('mike')?.fonteStato, etaS: di('mike')?.etaStatoS },
+                    omega: { fonte: di('omega')?.fonteStato, etaS: di('omega')?.etaStatoS },
+                }}
+                strategieLive={{ safe: Object.values(di('safe')?.modiStrategia ?? {}).includes('live') }}
+                onSalvato={vm.ricarica}
+            />
         </div>
     );
 }

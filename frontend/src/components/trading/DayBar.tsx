@@ -76,13 +76,19 @@ export interface DayBarProps {
     riskNode?: ReactNode;
     /** parola del contatore `live` (di serie quella del glossario) */
     liveLabel?: string;
+    /**
+     * 01/10 (Control Room, "la voglio piu' visibile"): numeri a colpo
+     * d'occhio. Realizzato e obiettivo GRANDI, barra piu' alta. Solo
+     * presentazione: nessun numero cambia. Assente = DayBar di prima.
+     */
+    enfasi?: boolean;
 }
 
 export function DayBar({
     dayLabel, realized, realizedTotal, goal, matches, operations, won, lost, live,
     openLiability, lockedPnl, note, labels, countsNote, testId = 'day-bar', ids,
     realizedEstimated, inProgress,
-    realizedMissing, realizedNote, openNow, openNowNode, riskNode, liveLabel,
+    realizedMissing, realizedNote, openNow, openNowNode, riskNode, liveLabel, enfasi = false,
 }: DayBarProps) {
     const matchesLabel = labels?.matches?.trim() || T.matches;
     const operationsLabel = labels?.operations?.trim() || T.operations;
@@ -136,9 +142,14 @@ export function DayBar({
                     </div>
                 </div>
                 {real !== null && (
-                    <div className="font-display font-black text-2xl tabular-nums">
+                    <div className={`font-display font-black tabular-nums ${enfasi ? 'text-5xl leading-none' : 'text-2xl'}`}>
                         <span className={pnlClass(real)} data-testid="day-bar-realizzato">{fmtMoney(real, { signed: true })}</span>
-                        {hasGoal && <span className="text-slate-500 text-lg"> · {pctText}</span>}
+                        {enfasi && hasGoal && (
+                            <span className="text-slate-400 text-2xl font-bold" data-testid="day-bar-obiettivo-grande" title={TIP.goalToday}>
+                                {' '}su <span className="text-secondary">{fmtMoney(g)}</span>
+                            </span>
+                        )}
+                        {hasGoal && <span className={`text-slate-500 ${enfasi ? 'text-2xl' : 'text-lg'}`}> · {pctText}</span>}
                         {realizedNote != null && (
                             <div className="text-[10.5px] font-sans font-normal text-slate-400 text-right"
                                 data-testid="day-bar-realizzato-nota">{realizedNote}</div>
@@ -147,8 +158,13 @@ export function DayBar({
                 )}
                 {/* W_G: un realizzato che manca si DICE (prima il numero spariva) */}
                 {real === null && realizedMissing != null && (
-                    <div className="font-display font-black text-2xl tabular-nums text-slate-500 text-right">
+                    <div className={`font-display font-black tabular-nums text-slate-500 text-right ${enfasi ? 'text-5xl leading-none' : 'text-2xl'}`}>
                         <span data-testid="day-bar-realizzato">—</span>
+                        {enfasi && hasGoal && (
+                            <span className="text-slate-400 text-2xl font-bold" data-testid="day-bar-obiettivo-grande">
+                                {' '}su <span className="text-secondary">{fmtMoney(g)}</span>
+                            </span>
+                        )}
                         <div className="text-[10.5px] font-sans font-normal text-amber-300/80"
                             data-testid="day-bar-realizzato-nota">{realizedMissing}</div>
                     </div>
@@ -159,8 +175,9 @@ export function DayBar({
                 className="text-sm text-slate-200 flex flex-wrap items-center gap-x-3 gap-y-1 tabular-nums"
                 data-testid={tid.line}
             >
-                {hasGoal && <span title={TIP.goalToday}>{T.goalToday} <b className="text-secondary">{fmtMoney(g)}</b></span>}
-                {hasGoal && <span className="text-slate-600" aria-hidden>·</span>}
+                {/* con `enfasi` l'obiettivo e' gia' scritto grande accanto al realizzato */}
+                {hasGoal && !enfasi && <span title={TIP.goalToday}>{T.goalToday} <b className="text-secondary">{fmtMoney(g)}</b></span>}
+                {hasGoal && !enfasi && <span className="text-slate-600" aria-hidden>·</span>}
                 {(matches != null || operations != null) && (
                     <>
                         <span data-testid={tid.counts}>
@@ -245,7 +262,7 @@ export function DayBar({
 
             {hasGoal && (
                 <div
-                    className="relative h-5 mt-2 rounded-full bg-black/50 border border-white/10 overflow-hidden"
+                    className={`relative mt-2 rounded-full bg-black/50 border border-white/10 overflow-hidden ${enfasi ? 'h-8' : 'h-5'}`}
                     role="progressbar"
                     aria-valuemin={0}
                     aria-valuemax={100}
@@ -264,7 +281,7 @@ export function DayBar({
                             style={{ left: `${Math.min(pct, pctPieno)}%`, width: `${Math.abs(pct - pctPieno)}%` }}
                         />
                     )}
-                    <div className="absolute inset-0 flex items-center justify-center text-[11px] font-bold text-white/90 tabular-nums">
+                    <div className={`absolute inset-0 flex items-center justify-center font-bold text-white/90 tabular-nums ${enfasi ? 'text-sm' : 'text-[11px]'}`}>
                         {pctText}
                     </div>
                 </div>

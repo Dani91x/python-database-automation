@@ -4,9 +4,9 @@
 // finti dei produttori veri (vedi soldiVeri.test.ts): nessun oggetto a mano
 // piu' comodo del vero.
 // ============================================================================
-import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
-import { FasciaSoldiVeri, CHIAVE_SALDO_NASCOSTO } from './FasciaSoldiVeri';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { FasciaSoldiVeri, CHIAVE_SALDO_NASCOSTO, SALDO_NASCOSTO } from './FasciaSoldiVeri';
 import {
     contoAdesso, rischioBotLive, scartoContoBot, partiteConPosizione, type SoldiVeriTestata,
 } from './soldiVeri';
@@ -133,10 +133,57 @@ describe('FasciaSoldiVeri - dati mancanti: mai una cifra inventata', () => {
         expect(screen.queryByTestId('cr-rischio-bot-stantio')).toBeNull();
     });
 
-    it('saldo nascosto con l\'occhio della card: nascosto anche qui', () => {
+    // 01/10 - CAMBIATO PERCHE' CAMBIA L'ORDINE: prima la preferenza della card
+    // nascondeva anche l'esposizione; ora l'occhio nasconde SOLO il saldo
+    it('preferenza "nascosto" gia\' salvata (anche dalla card di prima): saldo nascosto, ESPOSIZIONE visibile', () => {
         window.localStorage.setItem(CHIAVE_SALDO_NASCOSTO, '1');
         render(<FasciaSoldiVeri s={soldi()} />);
-        expect(screen.getByTestId('cr-esposizione-conto-valore').textContent).not.toMatch(/9,95/);
+        expect(screen.getByTestId('cr-esposizione-conto-valore').textContent).toMatch(/9,95/);
         expect(screen.getByTestId('cr-disponibile-conto').textContent).not.toMatch(/30,61/);
+        expect(screen.getByTestId('cr-disponibile-conto-valore').textContent).toBe(SALDO_NASCOSTO);
+    });
+});
+
+describe('01/10 - l\'occhio del saldo in testata', () => {
+    it('default (nessuna preferenza): saldo VISIBILE', () => {
+        render(<FasciaSoldiVeri s={soldi()} />);
+        expect(screen.getByTestId('cr-disponibile-conto-valore').textContent).toMatch(/30,61/);
+        expect(screen.getByTestId('cr-saldo-occhio').getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('clic sull\'occhio: nasconde SOLO la cifra del saldo ("••••"), esposizione e rischio restano; la preferenza si salva', () => {
+        render(<FasciaSoldiVeri s={soldi()} />);
+        fireEvent.click(screen.getByTestId('cr-saldo-occhio'));
+        const v = screen.getByTestId('cr-disponibile-conto-valore');
+        expect(v.textContent).toBe('••••');
+        expect(v.getAttribute('title')).toBe('saldo nascosto: clicca per mostrare');
+        expect(screen.getByTestId('cr-esposizione-conto-valore').textContent).toMatch(/9,95/);
+        expect(screen.getByTestId('cr-rischio-bot-valore').textContent).toMatch(/16,22/);
+        expect(window.localStorage.getItem(CHIAVE_SALDO_NASCOSTO)).toBe('1');
+    });
+
+    it('persistenza: una nuova testata (ricarica della pagina) lo ritrova nascosto; clic sulla cifra nascosta lo mostra e salva', () => {
+        const primo = render(<FasciaSoldiVeri s={soldi()} />);
+        fireEvent.click(screen.getByTestId('cr-saldo-occhio'));
+        primo.unmount();
+        render(<FasciaSoldiVeri s={soldi()} />);
+        expect(screen.getByTestId('cr-disponibile-conto-valore').textContent).toBe(SALDO_NASCOSTO);
+        fireEvent.click(screen.getByTestId('cr-disponibile-conto-valore'));
+        expect(screen.getByTestId('cr-disponibile-conto-valore').textContent).toMatch(/30,61/);
+        expect(window.localStorage.getItem(CHIAVE_SALDO_NASCOSTO)).toBe('0');
+    });
+
+    it('localStorage che lancia (sito bloccato): nessun crash, saldo visibile, l\'occhio funziona per la sessione', () => {
+        const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('bloccato'); });
+        const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('bloccato'); });
+        try {
+            render(<FasciaSoldiVeri s={soldi()} />);
+            expect(screen.getByTestId('cr-disponibile-conto-valore').textContent).toMatch(/30,61/);
+            fireEvent.click(screen.getByTestId('cr-saldo-occhio'));
+            expect(screen.getByTestId('cr-disponibile-conto-valore').textContent).toBe(SALDO_NASCOSTO);
+        } finally {
+            get.mockRestore();
+            set.mockRestore();
+        }
     });
 });

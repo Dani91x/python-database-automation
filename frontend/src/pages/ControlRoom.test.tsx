@@ -33,6 +33,7 @@ vi.mock('@/lib/liveOrders', async (orig) => ({
 }));
 
 import ControlRoom from './ControlRoom';
+import { fetchLiveAccount, fetchLiveHeartbeat } from '@/lib/liveOrders';
 import { useControlRoom } from '@/components/controlroom/useControlRoom';
 import type { GruppoCampionato, PartitaGiornata } from '@/lib/controlRoom';
 // T_P3 (30/09): il campo `soldiVeri` dei finti si costruisce con le funzioni VERE
@@ -269,7 +270,33 @@ describe('freni — un freno che nessuno vede non è un freno', () => {
         expect(within(el).getByTestId('cr-stop-safe').textContent).toMatch(/Safe.*PAPER.*50,00/);
         expect(within(el).getByTestId('cr-stop-mike').textContent).toMatch(/Mike.*LIVE.*50,00/);
         expect(within(el).getByTestId('cr-stop-omega').textContent).toMatch(/Omega.*PAPER.*spento/);
-        expect(within(el).getByTestId('cr-stop-conto-modifica').getAttribute('href')).toBe('/segui-live');
+        // 01/10 - CAMBIATO PERCHE' CAMBIA L'ORDINE: lo stop del conto si modifica
+        // QUI (prima: link a Segui Live). Stato del runner letto = modificabile.
+        expect((within(el).getByTestId('cr-stop-conto-valore') as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    it('01/10: il cancello dei fogli parametri vale anche qui: i parametri GREZZI del bot (vm.bots[].params) aprono la modifica; non letti la chiudono', () => {
+        const v = vm({
+            stopPerdita: {
+                conto: stopDelConto(null, Date.parse('2026-09-14T15:00:00Z')),
+                bot: stopDeiBot({
+                    safe: { modalita: 'paper', risk: { daily_loss_stop: -50, loss_stop_active: false } },
+                    mike: { modalita: 'paper', params: { daily_loss_stop: 50 }, stats: { daily_stop: false } },
+                    omega: { modalita: 'paper', params: null },
+                }),
+            },
+        });
+        v.bots[2] = { ...v.bots[2], params: { daily_loss_stop: 50, max_open_matches: 10 } }; // Mike letto
+        mVm.mockReturnValue(v);
+        const el = mostra().getByTestId('cr-freni');
+        const mike = within(el).getByTestId('cr-stop-mike-valore') as HTMLButtonElement;
+        expect(mike.disabled).toBe(false);
+        fireEvent.click(mike);
+        expect((within(el).getByTestId('cr-stop-mike-campo') as HTMLInputElement).value).toBe('-50,00');
+        // Omega e Safe senza parametri nel finto: disabilitati, e lo dicono
+        expect((within(el).getByTestId('cr-stop-omega-valore') as HTMLButtonElement).disabled).toBe(true);
+        expect(within(el).getByTestId('cr-stop-omega-non-modificabile').textContent).toMatch(/parametri non letti/);
+        expect((within(el).getByTestId('cr-stop-conto-valore') as HTMLButtonElement).disabled).toBe(true);
     });
 
     it('stop già scattato: lo dice, non mostra solo un numero', () => {
@@ -666,9 +693,11 @@ describe('runner — tre stati, non due', () => {
         expect(within(mostra().getByTestId('cr-runner')).getByText(/vivo, in attesa/)).toBeTruthy();
     });
 
-    it('battito vecchio = spento', () => {
+    // 01/10 - CAMBIATO PERCHE' CAMBIA IL TESTO VOLUTO: «fermo» (ordine dell'utente:
+    // in attesa / in streaming / fermo)
+    it('battito vecchio = fermo', () => {
         mVm.mockReturnValue(vm({ runner: { ts: '2026-09-02T17:55:00Z', mode: 'PAPER', ageS: 1_000_000, up: false } }));
-        expect(within(mostra().getByTestId('cr-runner')).getByText(/spento/)).toBeTruthy();
+        expect(mostra().getByTestId('cr-runner-processo').textContent).toBe('processo: fermo');
     });
 
     it('MAI battuto non si confonde con spento: si dice «mai avviato»', () => {
@@ -676,23 +705,43 @@ describe('runner — tre stati, non due', () => {
         expect(within(mostra().getByTestId('cr-runner')).getByText(/mai avviato/)).toBeTruthy();
     });
 
-    it('stato non letto = «ignoto», e non si spaccia per spento', () => {
+    it('stato non letto = «stato non letto», e non si spaccia per fermo', () => {
         mVm.mockReturnValue(vm({ runner: null }));
-        expect(within(mostra().getByTestId('cr-runner')).getByText(/ignoto/)).toBeTruthy();
+        const el = mostra().getByTestId('cr-runner');
+        expect(within(el).getByTestId('cr-runner-processo').textContent).toMatch(/stato non letto/);
+        expect(el.textContent).not.toMatch(/fermo/);
     });
 
     // 25/09 (voce 6): la fonte e l'eta' della riga si DICHIARANO a video
+    // 01/10: con il NOME del canale e la parola «connesso»
     it("dichiara la fonte: canale con l'eta' dell'ultimo messaggio, db col battito", () => {
         mVm.mockReturnValue(vm({ fonteRunner: { fonte: 'canale', etaS: 3 } }));
-        expect(mostra().getByTestId('cr-runner-fonte').textContent).toMatch(/canale 3/);
+        expect(mostra().getByTestId('cr-runner-fonte').textContent).toMatch(/canale 47331 .* ultimo messaggio 3 s fa/);
+        expect(screen.getByTestId('cr-runner-connessione').textContent).toBe('connesso');
         cleanup();
         mVm.mockReturnValue(vm({ fonteRunner: { fonte: 'database', etaS: 41 } }));
-        expect(mostra().getByTestId('cr-runner-fonte').textContent).toMatch(/db 41/);
+        expect(mostra().getByTestId('cr-runner-fonte').textContent).toMatch(/database .* battito 41 s fa/);
+        expect(screen.getByTestId('cr-runner-connessione').textContent).toMatch(/non connesso/);
     });
 
-    it('runner tennis: canale spento = "canale spento", mai "spento"', () => {
+    it('01/10: due tessere nominate, CALCIO (47331) e TENNIS (47332), prima dei freni', () => {
+        mVm.mockReturnValue(vm());
+        const s = mostra();
+        expect(s.getByTestId('cr-runner-nome').textContent).toBe('Runner CALCIO (canale 47331)');
+        expect(s.getByTestId('cr-runner-tennis-nome').textContent).toBe('Runner TENNIS (canale 47332)');
+        const blocco = s.getByTestId('cr-impianto-stop');
+        const impianto = within(blocco).getByTestId('cr-impianto');
+        const freni = within(blocco).getByTestId('cr-freni');
+        // i runner (impianto) vengono PRIMA degli stop
+        expect(impianto.compareDocumentPosition(freni) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('runner tennis: canale spento = "canale 47332 spento", mai "fermo"', () => {
         mVm.mockReturnValue(vm({ runnerTennis: null }));
-        expect(within(mostra().getByTestId('cr-runner-tennis')).getByText(/canale spento/)).toBeTruthy();
+        const el = mostra().getByTestId('cr-runner-tennis');
+        expect(within(el).getByTestId('cr-runner-tennis-fonte').textContent).toBe('canale 47332 spento');
+        expect(within(el).getByTestId('cr-runner-tennis-connessione').textContent).toMatch(/non connesso/);
+        expect(el.textContent).not.toMatch(/fermo/);
     });
 
     it('runner tennis collegato: vivo dal canale 47332, con la fonte', () => {
@@ -702,7 +751,8 @@ describe('runner — tre stati, non due', () => {
         }));
         const el = mostra().getByTestId('cr-runner-tennis');
         expect(within(el).getByText(/vivo, in attesa/)).toBeTruthy();
-        expect(within(el).getByTestId('cr-runner-tennis-fonte').textContent).toMatch(/canale 2/);
+        expect(within(el).getByTestId('cr-runner-tennis-fonte').textContent).toMatch(/canale 47332 .* ultimo messaggio 2 s fa/);
+        expect(within(el).getByTestId('cr-runner-tennis-tetto').textContent).toBe('solo simulati');
     });
 });
 
@@ -858,7 +908,8 @@ describe('onestà sulle fonti', () => {
         expect(sc).not.toMatch(/ignota|senza spinta/);
         expect(s.getByTestId('cr-bot-modo-mike').textContent).toBe('LIVE');
         const runner = s.getByTestId('cr-runner').textContent ?? '';
-        expect(runner).toMatch(/ordini veri consentiti/);
+        // 01/10: «ORDINI VERI consentiti» (maiuscolo voluto dall'ordine dell'utente)
+        expect(runner).toMatch(/ORDINI VERI consentiti/);
         expect(runner).not.toMatch(/live\+paper/i);
         expect(s.getByTestId('cr-dati-riassunto').textContent).toMatch(/Dati: dal database \(ogni 30 s\) per: quote scanner, stato scanner, Omega, Safe, Mike, Tennis/);
     });
@@ -1933,6 +1984,34 @@ describe('ZONA 1 — l’obiettivo vive UNA sola volta (Task 1/2)', () => {
         expect(within(hero).getByTestId('cr-composizione-safe_calcio')).toBeTruthy();
         expect(within(hero).getByTestId('cr-composizione-bot_tennis')).toBeTruthy();
         expect(within(hero).getByTestId('cr-composizione-manuale')).toBeTruthy();
+    });
+
+    // 01/10 (ordine dell'utente): «elimina la card del saldo conto (e' gia' in
+    // header), allarga la card dell'obiettivo»
+    it('01/10: la card del SALDO non e\' montata (nessuna sua lettura parte); l\'obiettivo e\' l\'unico contenuto della zona', () => {
+        mVm.mockReturnValue(vm());
+        const s = mostra();
+        expect(s.queryByTestId('cr-saldo')).toBeNull();
+        expect(s.queryByText(/Saldo conto Betfair/)).toBeNull();
+        // `useControlRoom` e' finto: l'unico che chiamerebbe queste letture era la card
+        expect(vi.mocked(fetchLiveAccount)).not.toHaveBeenCalled();
+        expect(vi.mocked(fetchLiveHeartbeat)).not.toHaveBeenCalled();
+        const zona = s.getByTestId('cr-zona-obiettivo');
+        expect(zona.children.length).toBe(1);
+        expect(zona.firstElementChild?.getAttribute('data-testid')).toBe('cr-obiettivo');
+    });
+
+    it('01/10: obiettivo e realizzato GRANDI; la fonte del realizzato resta accanto al numero', () => {
+        mVm.mockReturnValue(vm());
+        const s = mostra();
+        const hero = s.getByTestId('cr-obiettivo');
+        const grande = within(hero).getByTestId('day-bar-obiettivo-grande');
+        expect(grande.textContent).toMatch(/su 250,00/);
+        expect(within(hero).getByTestId('day-bar-realizzato').parentElement?.className).toMatch(/text-5xl/);
+        expect(within(hero).getByTestId('day-bar-realizzato').textContent).toMatch(/96,40/);
+        expect(within(hero).getByTestId('cr-giornata-realizzato-fonte')).toBeTruthy();
+        // l'obiettivo e' scritto UNA volta (grande), non ripetuto nella riga
+        expect(within(hero).getByTestId('cr-giornata-riga').textContent).not.toMatch(/Obiettivo di oggi/);
     });
 });
 
