@@ -52,7 +52,7 @@ export function RigaCapacitaMercati() {
         <div className={`px-3 py-2 border-b border-white/10 ${fuori ? 'bg-red-500/10' : ''}`}
             data-testid="cr-capacita">
             <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[12px] font-bold uppercase tracking-wider w-24 shrink-0">Mercati</span>
+                <span className="text-[12px] font-bold uppercase tracking-wider w-24 shrink-0 ds-v2-cr-botnome">Mercati</span>
                 {cap == null ? (
                     <span className="text-[10px] text-white/40" data-testid="cr-capacita-ignota">
                         non noto (runner calcio spento o auto-follow non attivo)

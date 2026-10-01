@@ -125,7 +125,7 @@ export function ObiettivoHero({
                         </span>
                     )}
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-5 gap-y-0.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-5 gap-y-0.5 ds-v2-cr-comp-griglia">
                     {composizione.righe.map((r) => (
                         <div
                             key={r.chiave}
@@ -196,15 +196,15 @@ function CorsiaProva({ prova, modalitaBot }: {
     prova: ProvaGiornata; modalitaBot?: Partial<Record<ChiaveProva, 'paper' | 'live' | null>> | null;
 }) {
     return (
-        <div className="mt-2 pt-1.5 border-t border-dashed border-white/15 text-[11px] text-white/45"
+        <div className="mt-2 pt-1.5 border-t border-dashed border-white/15 text-[11px] text-white/45 ds-v2-cr-prova"
             data-testid="cr-composizione-prova">
             <div className="flex items-baseline gap-2 mb-1">
-                <span className="uppercase tracking-wider text-[9.5px] px-1.5 py-0.5 rounded border border-dashed border-white/20 text-white/55">
+                <span className="uppercase tracking-wider text-[9.5px] px-1.5 py-0.5 rounded border border-dashed border-white/20 text-white/55 ds-v2-chip ds-v2-chip--paper">
                     in prova (simulato)
                 </span>
                 <span className="text-white/30">— mai sommato all&apos;obiettivo; gli arretrati mai sommati a oggi</span>
             </div>
-            <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1.4fr)] gap-x-3 gap-y-0.5">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1.4fr)] gap-x-3 gap-y-0.5 ds-v2-cr-prova-griglia">
                 <span className="text-[9.5px] uppercase tracking-wider text-white/30">bot</span>
                 <span className="text-[9.5px] uppercase tracking-wider text-white/30 text-right">partite di oggi</span>
                 <span className="text-[9.5px] uppercase tracking-wider text-white/30">arretrati regolati oggi</span>

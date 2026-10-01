@@ -200,7 +200,7 @@ export function ParamsSheetBase({
                     {dirty && <span className="ml-1 text-amber-300" aria-hidden>•</span>}
                 </Button>
             </SheetTrigger>
-            <SheetContent className="glass-card border-white/10 w-full sm:max-w-md overflow-y-auto" data-testid="params-sheet">
+            <SheetContent className="glass-card border-white/10 w-full sm:max-w-md overflow-y-auto ds-portale-v2-foglio" data-testid="params-sheet">
                 <SheetHeader>
                     <SheetTitle className="font-display flex items-center gap-2">
                         {symbol}{title}

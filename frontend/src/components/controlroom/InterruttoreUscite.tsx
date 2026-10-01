@@ -95,7 +95,7 @@ export function InterruttoreUscite({ id, uscite, cambia, occupato = false }: Int
                     onClick={() => void cambia(false)}
                     data-testid={`cr-uscite-cambia-${id}`}
                     title={titoloPassaAManuali(uscite)}
-                    className="h-6 px-2 text-[10px]"
+                    className="h-6 px-2 text-[10px] ds-v2-pulsante ds-v2-pulsante--sm ds-v2-pulsante--secondario"
                 >passa a manuali</Button>
             )}
             {uscite.automatiche === false && cambia && (armataDa != null ? (
@@ -106,14 +106,14 @@ export function InterruttoreUscite({ id, uscite, cambia, occupato = false }: Int
                         onClick={() => { setArmataDa(null); void cambia(true); }}
                         data-testid={`cr-uscite-conferma-${id}`}
                         title={titoloConfermaAutomatiche(uscite)}
-                        className="h-6 px-2 text-[10px] bg-amber-600/70 hover:bg-amber-600 text-white"
+                        className="h-6 px-2 text-[10px] bg-amber-600/70 hover:bg-amber-600 text-white ds-v2-pulsante ds-v2-pulsante--sm"
                     >confermi? passa ad automatiche</Button>
                     <Button
                         type="button" size="sm" variant="ghost"
                         disabled={occupato}
                         onClick={() => setArmataDa(null)}
                         data-testid={`cr-uscite-annulla-${id}`}
-                        className="h-6 px-2 text-[10px]"
+                        className="h-6 px-2 text-[10px] ds-v2-pulsante ds-v2-pulsante--sm ds-v2-pulsante--secondario"
                     >annulla</Button>
                 </>
             ) : (
@@ -123,7 +123,7 @@ export function InterruttoreUscite({ id, uscite, cambia, occupato = false }: Int
                     onClick={() => setArmataDa(Date.now())}
                     data-testid={`cr-uscite-cambia-${id}`}
                     title="il bot chiuderebbe da solo: si conferma col secondo clic"
-                    className="h-6 px-2 text-[10px]"
+                    className="h-6 px-2 text-[10px] ds-v2-pulsante ds-v2-pulsante--sm ds-v2-pulsante--secondario"
                 >passa ad automatiche</Button>
             ))}
         </div>

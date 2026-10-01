@@ -100,12 +100,12 @@ export function QuoteMercato({ celle, testId, titolo }: {
                 return (
                     <span key={c.chiave} className="inline-flex items-baseline gap-1">
                         <span data-testid="cr-quota-cella" title={c.titolo}
-                            className="inline-flex items-baseline gap-1 rounded border border-white/10 bg-white/[0.03] px-1.5 py-0.5">
+                            className="inline-flex items-baseline gap-1 rounded border border-white/10 bg-white/[0.03] px-1.5 py-0.5 ds-v2-cr-quota">
                             <span className="text-[11px] font-semibold text-white/60 max-w-[9rem] truncate">{c.etichetta}</span>{' '}
-                            <span className="font-mono tabular-nums text-[12.5px] font-semibold text-sky-300"
+                            <span className="font-mono tabular-nums text-[12.5px] font-semibold text-sky-300 ds-v2-quota--back ds-v2-cr-quota-n"
                                 data-testid="cr-quota-back" title="miglior BACK (punta)">{quota(c.back)}</span>
                             <span className="text-white/25 text-[11px]">/</span>
-                            <span className="font-mono tabular-nums text-[12.5px] font-semibold text-rose-300"
+                            <span className="font-mono tabular-nums text-[12.5px] font-semibold text-rose-300 ds-v2-quota--lay ds-v2-cr-quota-n"
                                 data-testid="cr-quota-lay" title="miglior LAY (banca)">{quota(c.lay)}</span>
                         </span>
                         {spread != null && spread > SOGLIA_SPREAD_TICK && (

@@ -82,7 +82,7 @@ export function FasciaSoldiVeri({ s }: { s: SoldiVeriTestata | undefined }) {
     const scarto = s?.scarto ?? null;
 
     return (
-        <div className="flex items-stretch gap-x-5 gap-y-1 flex-wrap" data-testid="cr-soldi-veri">
+        <div className="flex items-stretch gap-x-5 gap-y-1 flex-wrap ds-v2-cr-soldi" data-testid="cr-soldi-veri">
             <div className="flex flex-col gap-0.5" data-testid="cr-esposizione-conto"
                 title={letto
                     ? `rischio massimo del conto adesso, calcolato da Betfair (tutti i mercati: bot, sito e app). ${conto?.messaggio ?? ''}`

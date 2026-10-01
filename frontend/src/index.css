@@ -917,3 +917,658 @@
     border-radius: 10px;
     padding: 8px 12px;
 }
+
+/* ============================================================================
+   VESTE COMPLETA (brief 2, 01/10/2026) — fedele al prototipo
+   AUDIT_2026-10-01/REDESIGN/prototipo. Regola di casa, verificata da
+   src/fotografia/cssGuscio.test.ts: OGNI selettore da qui in fondo e'
+   condizionato dal guscio acceso, in una di tre forme:
+     [data-shell="v2"] ...                  classi .ds-v2-* (specificita' alta)
+     :where([data-shell="v2"]) ...          leve globali (specificita' pari a una
+                                            utility: le varianti hover:/data-[]:
+                                            delle pagine continuano a vincere)
+     :where(body:has([data-shell="v2"])) .ds-v2-...   SOLO per i portali Radix
+                                            (fogli, dialoghi, menu) che vivono fuori
+                                            dalla radice del guscio
+   Con ui.shell='off' nessuna di queste regole ha effetto. Nessun colore nuovo:
+   token di :root e tavolozza Tailwind gia' in uso (sky = BACK, rose = LAY).
+   Nessun selettore tocca le classi di default di components/ui/* (guardia).
+
+   VOCABOLARIO (una riga per classe):
+   .ds-v2-pagina          contenitore di pagina: margini e ritmo verticale del prototipo
+   .ds-v2-intesta         testata di pagina (titolo Sora 24/800, sottotitolo, azioni a destra)
+   .ds-v2-titolo          titolo di pagina o di blocco grande (Sora)
+   .ds-v2-scheda          card/pannello: bordo token, raggio, vetro leggero, nessuna sfocatura
+   .ds-v2-scheda--piatta  card su fondo pieno (--card)
+   .ds-v2-scheda-h        intestazione di scheda (riga 13 px bold con filetto sotto)
+   .ds-v2-kpi             tessera KPI; -k etichetta maiuscola, -v valore Sora tabulare, -nota nota
+   .ds-v2-tabella         tabella densa; .ds-v2-th intestazione, .ds-v2-td cella, .ds-v2-riga riga
+   .ds-v2-chip            pillola di stato 20 px; --live --paper --fermo --errore --attesa --oro --teal --back --lay
+   .ds-v2-marchio         marchio della fonte di una cifra; --conto --bot --prova --stima
+   .ds-v2-strip           fascia di avviso; --live --paper --warn --info
+   .ds-v2-strumenti       barra strumenti (filtri, segmenti) compatta
+   .ds-v2-tabbar/.ds-v2-tab  linguette con sottolineatura primary
+   .ds-v2-pulsante        bottone 30 px; --primario --secondario --pericolo --armato --sm
+   .ds-v2-vuoto           stato vuoto tratteggiato
+   .ds-v2-nota            nota piccola (fonte, eta') >= 10 px, muted
+   .ds-v2-lbl             etichetta maiuscola spaziata 10,5 px
+   .ds-v2-num             numero tabulare (Inter, tabular-nums)
+   .ds-v2-quota--back/--lay   casella di quota BACK (sky) / LAY (rose)
+   .ds-v2-ladder*         ladder: solo colori, tipografia, bordi interni (aree cliccabili invariate)
+   .ds-v2-foglio          foglio parametri / dialogo (portale): veste del prototipo params.js
+   ============================================================================ */
+
+/* ---------- LIVELLO 1: leve globali dentro il guscio ---------- */
+
+/* corpo del testo: Inter 13 px come il prototipo (le classi text-* esplicite vincono) */
+[data-shell="v2"] .ds-contenuto {
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+/* cifre: Inter con numeri tabulari al posto del monospace di sistema (piano §B) */
+:where([data-shell="v2"]) .font-mono {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.01em;
+}
+
+:where([data-shell="v2"]) .font-black {
+    font-weight: 800;
+}
+
+/* minimi di leggibilita' (brief §4.3): note e fonti >= 10 px */
+:where([data-shell="v2"]) .text-\[8px\],
+:where([data-shell="v2"]) .text-\[9px\],
+:where([data-shell="v2"]) .text-\[9\.5px\] {
+    font-size: 10px;
+}
+
+/* grigi neutri del bianco trasparente -> grigio verde del token (piu' leggibile) */
+:where([data-shell="v2"]) .text-white\/20,
+:where([data-shell="v2"]) .text-white\/25,
+:where([data-shell="v2"]) .text-white\/30,
+:where([data-shell="v2"]) .text-white\/35,
+:where([data-shell="v2"]) .text-white\/40,
+:where([data-shell="v2"]) .text-white\/45,
+:where([data-shell="v2"]) .text-white\/50 {
+    color: hsl(var(--muted-foreground));
+}
+
+:where([data-shell="v2"]) .text-white\/60,
+:where([data-shell="v2"]) .text-white\/70,
+:where([data-shell="v2"]) .text-white\/80 {
+    color: hsl(var(--foreground) / 0.8);
+}
+
+:where([data-shell="v2"]) .text-white {
+    color: hsl(var(--foreground));
+}
+
+/* filetti: bianco trasparente -> bordo del token */
+:where([data-shell="v2"]) .border-white\/10,
+:where([data-shell="v2"]) .border-white\/15,
+:where([data-shell="v2"]) .border-white\/20 {
+    border-color: hsl(var(--border));
+}
+
+:where([data-shell="v2"]) .border-white\/5 {
+    border-color: hsl(var(--border) / 0.6);
+}
+
+/* superfici: nero trasparente -> card del token */
+:where([data-shell="v2"]) .bg-black\/20,
+:where([data-shell="v2"]) .bg-black\/30,
+:where([data-shell="v2"]) .bg-black\/40,
+:where([data-shell="v2"]) .bg-black\/50,
+:where([data-shell="v2"]) .bg-black\/60 {
+    background-color: hsl(var(--card));
+}
+
+:where([data-shell="v2"]) .bg-white\/5,
+:where([data-shell="v2"]) .bg-white\/\[0\.02\],
+:where([data-shell="v2"]) .bg-white\/\[0\.03\] {
+    background-color: hsl(var(--muted) / 0.6);
+}
+
+/* pannello del prototipo al posto del vetro sfocato */
+:where([data-shell="v2"]) .glass-card {
+    border-color: hsl(var(--border));
+    border-radius: var(--radius);
+    background: linear-gradient(135deg, hsl(var(--glass) / 0.55), hsl(var(--glass) / 0.25));
+    backdrop-filter: none;
+    box-shadow: none;
+}
+
+:where([data-shell="v2"]) .glass-card::before {
+    display: none;
+}
+
+:where([data-shell="v2"]) .rounded-2xl {
+    border-radius: var(--radius);
+}
+
+/* titoli: Sora, interlinea stretta come il prototipo */
+:where([data-shell="v2"]) h1,
+:where([data-shell="v2"]) h2,
+:where([data-shell="v2"]) h3 {
+    letter-spacing: -0.01em;
+}
+
+/* ---------- LIVELLO 2: vocabolario di componente (classi .ds-v2-*) ---------- */
+
+[data-shell="v2"] .ds-v2-intesta {
+    display: flex;
+    align-items: flex-end;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+[data-shell="v2"] .ds-v2-titolo {
+    font-family: 'Sora', sans-serif;
+    font-size: 24px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    line-height: 1.2;
+}
+
+[data-shell="v2"] .ds-v2-scheda {
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius);
+    background: linear-gradient(135deg, hsl(var(--glass) / 0.55), hsl(var(--glass) / 0.25));
+    box-shadow: none;
+    backdrop-filter: none;
+    min-width: 0;
+}
+
+[data-shell="v2"] .ds-v2-scheda--piatta {
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius);
+    background: hsl(var(--card));
+    box-shadow: none;
+    backdrop-filter: none;
+    min-width: 0;
+}
+
+[data-shell="v2"] .ds-v2-scheda-h {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 10px 14px;
+    border-bottom: 1px solid hsl(var(--border));
+    font-size: 13px;
+    font-weight: 700;
+}
+
+[data-shell="v2"] .ds-v2-kpi-v {
+    font-family: 'Sora', sans-serif;
+    font-size: 20px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.25;
+    margin-top: 4px;
+}
+
+[data-shell="v2"] .ds-v2-kpi-nota {
+    font-size: 11px;
+    color: hsl(var(--muted-foreground));
+    margin-top: 2px;
+}
+
+[data-shell="v2"] .ds-v2-lbl {
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
+}
+
+[data-shell="v2"] .ds-v2-nota {
+    font-size: 11px;
+    color: hsl(var(--muted-foreground));
+}
+
+[data-shell="v2"] .ds-v2-num {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.01em;
+}
+
+/* pillole di stato (colori di botStatusMeta e della modalita': solo la resa) */
+[data-shell="v2"] .ds-v2-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 20px;
+    padding: 0 8px;
+    border-radius: 9999px;
+    border: 1px solid hsl(var(--border));
+    background-color: hsl(var(--muted));
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+    line-height: 1;
+}
+
+[data-shell="v2"] .ds-v2-chip--live { background-color: rgb(239 68 68 / 0.14); border-color: rgb(239 68 68 / 0.5); color: #fca5a5; }
+[data-shell="v2"] .ds-v2-chip--paper { background-color: rgb(16 185 129 / 0.12); border-color: rgb(16 185 129 / 0.45); color: #6ee7b7; }
+[data-shell="v2"] .ds-v2-chip--fermo { background-color: hsl(var(--muted)); border-color: hsl(var(--border)); color: #cbd5e1; }
+[data-shell="v2"] .ds-v2-chip--errore { background-color: rgb(239 68 68 / 0.12); border-color: rgb(239 68 68 / 0.45); color: #fca5a5; }
+[data-shell="v2"] .ds-v2-chip--attesa { background-color: rgb(251 191 36 / 0.12); border-color: rgb(251 191 36 / 0.45); color: #fbbf24; }
+[data-shell="v2"] .ds-v2-chip--oro { background-color: hsl(var(--secondary) / 0.12); border-color: hsl(var(--secondary) / 0.45); color: hsl(var(--secondary)); }
+[data-shell="v2"] .ds-v2-chip--teal { background-color: rgb(45 212 191 / 0.12); border-color: rgb(45 212 191 / 0.45); color: #5eead4; }
+[data-shell="v2"] .ds-v2-chip--back { background-color: rgb(14 165 233 / 0.16); border-color: rgb(14 165 233 / 0.4); color: #7dd3fc; }
+[data-shell="v2"] .ds-v2-chip--lay { background-color: rgb(244 63 94 / 0.16); border-color: rgb(244 63 94 / 0.4); color: #fda4af; }
+
+/* marchio della fonte: stesso stile in tutte le pagine (prototipo .mk) */
+[data-shell="v2"] .ds-v2-marchio {
+    display: inline-flex;
+    align-items: center;
+    height: 16px;
+    padding: 0 5px;
+    border-radius: 4px;
+    border-width: 1px;
+    border-style: solid;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    vertical-align: middle;
+}
+
+[data-shell="v2"] .ds-v2-marchio[data-fonte="conto"],
+[data-shell="v2"] .ds-v2-marchio--conto { color: #fca5a5; border-color: rgb(239 68 68 / 0.5); background-color: rgb(239 68 68 / 0.1); }
+[data-shell="v2"] .ds-v2-marchio[data-fonte="bot"],
+[data-shell="v2"] .ds-v2-marchio--bot { color: #7dd3fc; border-color: rgb(14 165 233 / 0.4); background-color: rgb(14 165 233 / 0.16); }
+[data-shell="v2"] .ds-v2-marchio[data-fonte="prova"],
+[data-shell="v2"] .ds-v2-marchio--prova { color: #6ee7b7; border-color: rgb(16 185 129 / 0.45); background-color: rgb(16 185 129 / 0.1); border-style: solid; }
+[data-shell="v2"] .ds-v2-marchio[data-fonte="pagina"],
+[data-shell="v2"] .ds-v2-marchio--stima { color: #fbbf24; border-color: rgb(251 191 36 / 0.45); background-color: rgb(251 191 36 / 0.1); }
+
+/* fasce di avviso */
+[data-shell="v2"] .ds-v2-strip--live { background-color: rgb(239 68 68 / 0.08); border-color: rgb(239 68 68 / 0.4); color: hsl(var(--foreground)); }
+[data-shell="v2"] .ds-v2-strip--paper { background-color: rgb(16 185 129 / 0.07); border-color: rgb(16 185 129 / 0.35); color: hsl(var(--foreground)); }
+[data-shell="v2"] .ds-v2-strip--warn { background-color: rgb(251 191 36 / 0.07); border-color: rgb(251 191 36 / 0.35); }
+[data-shell="v2"] .ds-v2-strip--info { background-color: hsl(var(--muted)); border-color: hsl(var(--border)); }
+
+[data-shell="v2"] .ds-v2-strumenti {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* bottoni (le varianti di button.tsx non si toccano: qui solo la classe aggiunta) */
+[data-shell="v2"] .ds-v2-pulsante {
+    height: 30px;
+    padding: 0 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    gap: 6px;
+}
+
+[data-shell="v2"] .ds-v2-pulsante--sm {
+    height: 24px;
+    padding: 0 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: none;
+    letter-spacing: normal;
+}
+
+[data-shell="v2"] .ds-v2-pulsante--secondario {
+    border: 1px solid hsl(var(--border));
+    background-color: hsl(var(--card));
+    color: hsl(var(--foreground));
+}
+
+[data-shell="v2"] .ds-v2-pulsante--secondario:hover {
+    border-color: hsl(var(--glass-border));
+    background-color: hsl(var(--glass));
+}
+
+[data-shell="v2"] .ds-v2-pulsante--primario {
+    border: 1px solid hsl(var(--primary));
+    background-color: hsl(var(--primary));
+    color: hsl(var(--card));
+}
+
+[data-shell="v2"] .ds-v2-pulsante--pericolo {
+    border: 1px solid rgb(239 68 68 / 0.5);
+    background-color: rgb(239 68 68 / 0.12);
+    color: #fca5a5;
+}
+
+[data-shell="v2"] .ds-v2-pulsante--pericolo:hover {
+    background-color: rgb(239 68 68 / 0.22);
+}
+
+/* conferma ARMATA (aspetta il secondo clic): rosso pieno, piu' vistosa di oggi */
+[data-shell="v2"] .ds-v2-pulsante--armato {
+    border: 1px solid #f87171;
+    background-color: #dc2626;
+    color: #ffffff;
+    font-weight: 800;
+    box-shadow: 0 0 0 3px rgb(239 68 68 / 0.35);
+}
+
+/* tabella densa: celle */
+[data-shell="v2"] .ds-v2-th {
+    padding: 7px 10px;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
+    background-color: hsl(var(--card));
+    border-bottom: 1px solid hsl(var(--border));
+    white-space: nowrap;
+}
+
+[data-shell="v2"] .ds-v2-td {
+    padding: 7px 10px;
+    border-bottom: 1px solid hsl(var(--border) / 0.6);
+    font-variant-numeric: tabular-nums;
+}
+
+/* caselle di quota: BACK sky, LAY rose (come l'exchange) */
+[data-shell="v2"] .ds-v2-quota--back { background-color: rgb(14 165 233 / 0.16); border-color: rgb(14 165 233 / 0.4); color: #7dd3fc; }
+[data-shell="v2"] .ds-v2-quota--lay { background-color: rgb(244 63 94 / 0.16); border-color: rgb(244 63 94 / 0.4); color: #fda4af; }
+[data-shell="v2"] .ds-v2-quota--back,
+[data-shell="v2"] .ds-v2-quota--lay {
+    border-width: 1px;
+    border-style: solid;
+    border-radius: 5px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---------- PAGINA 1 — CONTROL ROOM (prototipo s_controlroom.js) ---------- */
+
+/* testata: un pannello dentro i margini della pagina, non una fascia a tutta
+   larghezza (prototipo «header.panel.flat»); i colori di LIVE restano quelli
+   della pagina (bordo e velo arancio) */
+[data-shell="v2"] .ds-v2-cr-testata {
+    margin: 20px 24px 0;
+    border-width: 1px;
+    border-radius: var(--radius);
+    backdrop-filter: none;
+}
+
+[data-shell="v2"] .ds-v2-cr-testata.bg-background\/80 {
+    background-color: hsl(var(--card));
+}
+
+[data-shell="v2"] .ds-v2-cr-testata.border-orange-500\/40 {
+    background-image: linear-gradient(180deg, rgb(124 45 18 / 0.22), hsl(var(--card)));
+}
+
+[data-shell="v2"] .ds-v2-cr-testata-dentro {
+    max-width: none;
+    padding: 10px 14px;
+    column-gap: 18px;
+    row-gap: 10px;
+    align-items: flex-start;
+}
+
+[data-shell="v2"] .ds-v2-cr-nome {
+    font-family: 'Sora', sans-serif;
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+}
+
+/* SOLDI VERI ADESSO: riquadro tenue come il prototipo */
+[data-shell="v2"] .ds-v2-cr-soldi {
+    padding: 6px 12px;
+    border-radius: 10px;
+    background-color: hsl(var(--muted) / 0.6);
+    border: 1px solid hsl(var(--border));
+    column-gap: 16px;
+}
+
+[data-shell="v2"] .ds-v2-cr-runner {
+    border-radius: 8px;
+    border-color: hsl(var(--border));
+    background-color: hsl(var(--card));
+    padding: 6px 10px;
+}
+
+[data-shell="v2"] .ds-v2-cr-stop-modo {
+    justify-self: start;
+    height: 18px;
+    font-size: 10px;
+}
+
+/* chip degli 8 bot: tessere in griglia (prototipo) */
+[data-shell="v2"] .ds-v2-cr-bots {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+    gap: 6px;
+    flex: 1 1 560px;
+    min-width: 0;
+    padding-top: 8px;
+    border-top: 1px solid hsl(var(--border));
+}
+
+[data-shell="v2"] .ds-v2-cr-chipbot {
+    padding: 4px 8px;
+    border-radius: 8px;
+    border: 1px solid hsl(var(--border));
+    background-color: hsl(var(--card));
+    min-width: 0;
+}
+
+[data-shell="v2"] .ds-v2-cr-chipbot--live {
+    border-color: rgb(239 68 68 / 0.45);
+}
+
+[data-shell="v2"] .ds-v2-cr-feed {
+    flex-wrap: wrap;
+    padding-top: 8px;
+}
+
+/* la testata-pannello ha un margine sopra: senza flow-root il margine
+   «uscirebbe» dalla pagina e lascerebbe vedere lo sfondo verde del corpo */
+[data-shell="v2"] .ds-v2-pageshell {
+    display: flow-root;
+}
+
+[data-shell="v2"] .ds-v2-cr-stop-griglia {
+    justify-content: start;
+    column-gap: 14px;
+}
+
+/* Obiettivo: composizione su due colonne, corsia PROVA come tabella tratteggiata */
+@media (min-width: 900px) {
+    [data-shell="v2"] .ds-v2-cr-comp-griglia {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        column-gap: 22px;
+    }
+}
+
+[data-shell="v2"] .ds-v2-cr-comp-griglia > * {
+    padding-top: 3px;
+    padding-bottom: 3px;
+    font-size: 12px;
+}
+
+[data-shell="v2"] .ds-v2-cr-prova {
+    border: 1px dashed hsl(var(--glass-border));
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-top: 10px;
+}
+
+[data-shell="v2"] .ds-v2-cr-prova-griglia {
+    row-gap: 0;
+    column-gap: 0;
+    margin-top: 6px;
+    font-size: 12px;
+}
+
+[data-shell="v2"] .ds-v2-cr-prova-griglia > span {
+    padding: 7px 10px;
+    border-bottom: 1px solid hsl(var(--border) / 0.6);
+}
+
+[data-shell="v2"] .ds-v2-cr-prova-griglia > span:nth-child(-n + 3) {
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: hsl(var(--muted-foreground));
+    border-bottom-color: hsl(var(--border));
+}
+
+/* Comando dei bot (PannelloBot) */
+[data-shell="v2"] .ds-v2-cr-pannello-titolo {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: none;
+    letter-spacing: normal;
+    color: hsl(var(--foreground));
+}
+
+[data-shell="v2"] .ds-v2-cr-botnome {
+    width: 112px;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+}
+
+[data-shell="v2"] .ds-v2-cr-verso-live {
+    color: #fda4af;
+    background-color: transparent;
+}
+
+/* banco: linguette sottolineate dentro un filetto (prototipo .tabs) */
+[data-shell="v2"] .ds-v2-cr-tablist {
+    background-color: transparent;
+    border-radius: 0;
+    padding: 0;
+    gap: 2px;
+    border-bottom: 1px solid hsl(var(--border));
+}
+
+[data-shell="v2"] .ds-v2-cr-tab {
+    letter-spacing: 0.04em;
+    margin-bottom: -1px;
+}
+
+/* quote della scheda partita: BACK e LAY in caselle colorate separate */
+[data-shell="v2"] .ds-v2-cr-quota {
+    border-color: transparent;
+    background-color: transparent;
+    padding: 0;
+    align-items: center;
+    gap: 3px;
+}
+
+[data-shell="v2"] .ds-v2-cr-quota-n {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 42px;
+    height: 24px;
+    padding: 0 5px;
+}
+
+/* colonne Uscite e Opportunita': i numeri che decidono in tessere 2 x 2 */
+[data-shell="v2"] .ds-v2-cr-tessere {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    background-color: transparent;
+    border-top-width: 0;
+    padding: 8px 10px 0;
+}
+
+[data-shell="v2"] .ds-v2-cr-tessere > * {
+    border: 1px solid hsl(var(--border));
+    border-radius: 8px;
+    background-color: hsl(var(--card));
+    padding: 6px 8px;
+}
+
+[data-shell="v2"] .ds-v2-cr-azioni {
+    gap: 8px;
+    background-color: transparent;
+    border-top-width: 0;
+    padding: 10px;
+}
+
+[data-shell="v2"] .ds-v2-cr-azione {
+    height: 32px;
+    border-radius: 8px;
+    letter-spacing: normal;
+    text-transform: none;
+    font-size: 12.5px;
+}
+
+[data-shell="v2"] .ds-v2-cr-azione--primaria {
+    background-color: hsl(var(--primary));
+    color: hsl(var(--card));
+}
+
+/* pillole dei filtri (prototipo .chip cliccabile): la scelta attiva tiene i
+   colori della pagina (primary), la veste e' quella della pillola */
+[data-shell="v2"] .ds-v2-pillola {
+    display: inline-flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 9px;
+    border-radius: 9999px;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+[data-shell="v2"] .ds-v2-pillola[aria-pressed="false"] {
+    background-color: hsl(var(--muted));
+    border-color: hsl(var(--border));
+    color: hsl(var(--foreground) / 0.85);
+}
+
+[data-shell="v2"] .ds-v2-campo {
+    height: 26px;
+    border-radius: 8px;
+    border-color: hsl(var(--border));
+    background-color: hsl(var(--input) / 0.6);
+    padding: 0 8px;
+    font-size: 11.5px;
+}
+
+/* ---------- PORTALI (fogli parametri, dialoghi): fuori dalla radice del guscio,
+   condizionati da body:has([data-shell="v2"]) — veste del prototipo params.js ---------- */
+:where(body:has([data-shell="v2"])) .ds-portale-v2-foglio {
+    background: hsl(var(--popover));
+    border-color: hsl(var(--glass-border));
+    border-radius: 0;
+    backdrop-filter: none;
+    box-shadow: -20px 0 60px rgb(0 0 0 / 0.6);
+    font-size: 12px;
+}
+
+:where(body:has([data-shell="v2"])) .ds-portale-v2-foglio input:not([type="checkbox"]):not([type="radio"]),
+:where(body:has([data-shell="v2"])) .ds-portale-v2-foglio select {
+    height: 30px;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-radius: 8px;
+    border-color: hsl(var(--border));
+    background-color: hsl(var(--input) / 0.6);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+:where(body:has([data-shell="v2"])) .ds-portale-v2-foglio input:focus,
+:where(body:has([data-shell="v2"])) .ds-portale-v2-foglio select:focus {
+    outline: none;
+    border-color: hsl(var(--primary) / 0.6);
+}
+
+:where(body:has([data-shell="v2"])) .ds-portale-v2-foglio section + section {
+    border-top: 1px solid hsl(var(--border));
+    padding-top: 14px;
+}
