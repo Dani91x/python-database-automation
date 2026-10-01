@@ -68,15 +68,16 @@ describe('DayDetail', () => {
         expect(screen.getByText('1 ancora vivi')).toBeInTheDocument();
         // totale = solo regolati: 2.5 − 10
         expect(screen.getByTestId('day-total-pnl')).toHaveTextContent('−7,50 €');
-        // liability piazzata OGGI: OPEN (10) + LOST (10); HEDGED_WON è di ieri
-        expect(screen.getByTestId('day-detail')).toHaveTextContent('liability piazzata 20,00 €');
+        // liability delle partite del giorno OGGI: OPEN (10) + LOST (10); HEDGED_WON è di ieri
+        expect(screen.getByTestId('day-detail')).toHaveTextContent('liability delle partite del giorno 20,00 €');
 
         const rows = screen.getAllByTestId('day-trade-row');
         expect(rows).toHaveLength(3);
         const hedged = rows[1];
         expect(within(hedged).getByText('R. ESATTO')).toBeInTheDocument();
         expect(within(hedged).getByText('LIVE')).toBeInTheDocument();
-        expect(within(hedged).getByText('(prec.)')).toBeInTheDocument();
+        // B-05 (01/10): «(prec.)» non esiste piu' (criterio unico del giorno partita)
+        expect(within(hedged).queryByText('(prec.)')).toBeNull();
         expect(within(hedged).getByTestId('exit-badge')).toHaveTextContent('Uscita: tempo');
         expect(within(hedged).getByTestId('exit-badge')).toHaveAttribute('title', "72' raggiunto");
         expect(within(hedged).getByText('bloccato +2,50 €')).toBeInTheDocument();
@@ -189,7 +190,7 @@ describe('DayDetail — attribuzione al giorno del calendario (H-11 / M-18)', ()
         // attribuzione 'settled': la riga (piazzata ieri, regolata oggi) è
         // attribuita a questa giornata e quindi compare in tabella
         render(<DayDetail day="2026-09-10" trades={[HEDGED_WON]} variant="safe" attribution="settled" />);
-        expect(screen.getByTestId('day-detail')).toHaveTextContent('liability piazzata 0,00 €');
+        expect(screen.getByTestId('day-detail')).toHaveTextContent('liability delle partite del giorno 0,00 €');
         expect(screen.getAllByTestId('day-trade-row')[0]).toHaveTextContent('20:00');
     });
 });
@@ -273,7 +274,7 @@ describe('DayDetail — nessuno zero prima dei dati (12/09)', () => {
         expect(screen.getByTestId('day-count')).not.toHaveTextContent('0 trade');
         expect(screen.getByTestId('day-total-pnl')).toHaveTextContent('—');
         expect(head).not.toHaveTextContent('+0,00 €');
-        expect(head).toHaveTextContent('liability piazzata —');
+        expect(head).toHaveTextContent('liability delle partite del giorno —');
         expect(screen.getByTestId('day-detail-loading')).toBeInTheDocument();
         expect(screen.queryByTestId('day-detail-none')).toBeNull();
     });
@@ -319,7 +320,7 @@ describe('DayDetail — la testata dice gli stessi numeri del calendario (12/09)
         render(<DayDetail day="2026-09-12" trades={[WON_190, failed]} variant="safe" attribution="placed" />);
         expect(screen.getByTestId('day-count')).toHaveTextContent('1 trade');
         expect(screen.getByTestId('day-not-placed')).toHaveTextContent('1 non piazzati');
-        expect(screen.getByTestId('day-detail')).toHaveTextContent('liability piazzata 66,00 €');
+        expect(screen.getByTestId('day-detail')).toHaveTextContent('liability delle partite del giorno 66,00 €');
         // la riga fallita resta in tabella: un ordine perso è un'informazione
         expect(screen.getAllByTestId('day-trade-row')).toHaveLength(2);
     });

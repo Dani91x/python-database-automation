@@ -87,7 +87,7 @@ describe('PerformancePanel', () => {
         expect(screen.getByTestId('kpi-pf')).toHaveTextContent('—');
         expect(screen.getByTestId('kpi-goal')).toHaveTextContent('nessun obiettivo registrato');
         expect(screen.queryByTestId('breakdown-strategy')).toBeNull();
-        expect(screen.getByText(/nessuna giornata regolata nel periodo/)).toBeInTheDocument();
+        expect(screen.getByText(/nessuna giornata con partite concluse nel periodo/)).toBeInTheDocument();
     });
 });
 

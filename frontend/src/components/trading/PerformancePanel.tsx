@@ -7,7 +7,7 @@
 import { useMemo } from 'react';
 import { Card } from '@/components/ui/card';
 import { EquityCurve } from '@/components/trading/EquityCurve';
-import { EQUITY_TITLE, EQUITY_AXIS_NOTE } from '@/components/trading/EquityCard';
+import { EQUITY_TITLE, EQUITY_AXIS_NOTE_GIORNATE } from '@/components/trading/EquityCard';
 import { StatTile, KpiRow } from '@/components/trading/StatTile';
 import {
     equityByDay, summarizeRows, aggregateBreakdown, dayLabel, WIN_LOSS_TIP,
@@ -69,7 +69,7 @@ function BreakdownTable({ title, data, labels, testId }: {
                 <thead className="text-[11px] uppercase text-slate-500 bg-black/30">
                     <tr>
                         <th className="text-left px-3 py-2">{title}</th>
-                        <th className="text-right px-3 py-2" title="aperture piazzate nel periodo">Trade</th>
+                        <th className="text-right px-3 py-2" title="aperture delle partite del periodo">Trade</th>
                         <th className="text-right px-3 py-2" title={WIN_LOSS_TIP}>Vinti</th>
                         <th className="text-right px-3 py-2" title={WIN_LOSS_TIP}>Persi</th>
                         <th className="text-right px-3 py-2">Win rate</th>
@@ -197,12 +197,12 @@ export function PerformancePanel({ rows, period, onPeriodChange, variant, loadin
             </KpiRow>
 
             <Card className="glass-card border-white/10 p-4">
-                <div className="text-sm text-slate-300" title={EQUITY_AXIS_NOTE}>{EQUITY_TITLE} · per giornata</div>
-                <div className="text-[10px] text-slate-500 mb-2">{EQUITY_AXIS_NOTE}</div>
+                <div className="text-sm text-slate-300" title={EQUITY_AXIS_NOTE_GIORNATE}>{EQUITY_TITLE} · per giornata</div>
+                <div className="text-[10px] text-slate-500 mb-2">{EQUITY_AXIS_NOTE_GIORNATE}</div>
                 <EquityCurve
                     series={equity}
                     label="Equity per giornata"
-                    emptyLabel="nessuna giornata regolata nel periodo — la curva compare al primo incasso"
+                    emptyLabel="nessuna giornata con partite concluse nel periodo — la curva compare alla prima"
                 />
             </Card>
 

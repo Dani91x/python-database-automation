@@ -9,7 +9,7 @@
 // assolutamente nulla. IL TRADER DEVE FIDARSI DI QUELLO CHE VEDE."
 //
 // UNA REGOLA, per calcio e tennis (`lib/posizioniChiuse.ts::raggruppaGiornata`):
-//   giornata di REGOLAMENTO (Roma) -> bot -> partita -> ciclo (operazione)
+//   giornata della PARTITA (Roma, dal database; 01/10) -> bot -> partita -> ciclo
 // ogni livello con il suo netto e la sua FONTE (Betfair / stimato / prova).
 //
 //   - UNA giornata alla volta, scelta qui (oggi di serie). Oggi si vede
@@ -18,7 +18,9 @@
 //   - UNA modalita' alla volta: soldi veri OPPURE prova, mai insieme.
 //   - Ogni cifra dice da dove viene; ogni riga orfana o a ripiego (bot tennis,
 //     reperto B13) lo dichiara.
-//   - Il totale della giornata si CONFRONTA con la barra (controprova).
+//   - Il totale della giornata si CONFRONTA con la barra (controprova) sullo
+//     STESSO perimetro della barra (regolato oggi sul conto); le posizioni a
+//     cavallo della mezzanotte si elencano (01/10, B-12).
 // ============================================================================
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Card } from '@/components/ui/card';
@@ -33,6 +35,7 @@ import { addDays, dayLabel, isValidDay } from '@/lib/dailyHistory';
 import {
     filtraChiuse, fuoriGiornata, raggruppaGiornata, unisciRighe,
     posizioniChiuse, certezzaDiPosizione, gambeAnnullate, sintesiPosizione,
+    regolatoNelGiorno, aCavalloDellaMezzanotte,
     type PosizioneChiusa, type Esito, type TradeChiudibile, type RiepilogoChiuse,
     type GruppoBot, type GruppoPartita,
 } from '@/lib/posizioniChiuse';
@@ -71,11 +74,22 @@ const BOT_FILTRO: readonly Bot[] = [
     'omega', 'safe', 'mike', 'tennis_scalper', 'tennis_pro', 'tennis_flb', 'tennis_swing',
 ];
 
-/** le voci della barra che corrispondono alle posizioni dei bot (niente
- *  manuale sito/app ne' "altro sul conto": non sono posizioni di questa scheda) */
+/** le voci della barra che corrispondono alle posizioni dei bot: Omega, Safe,
+ *  Mike, bot tennis e «manuale» (= gambe manuali DENTRO i bot, `origin`
+ *  'manual'). Fuori: «Manuale · sito»/«Manuale · app» e «Altro sul conto»
+ *  (non sono righe dei bot) e lo «Scalper calcio» (C-06: ha un P&L reale ma
+ *  non registra posizioni: si DICHIARA a parte, con la sua cifra). */
 const VOCI_BARRA: readonly RigaComposizione['chiave'][] = [
     'omega', 'safe_calcio', 'safe_tennis', 'mike', 'bot_tennis', 'manuale',
 ];
+
+/**
+ * 01/10 - una riga regolata piu' di questo PRIMA che partisse la lettura del
+ * giorno, e che la lettura (col giorno della partita) non porta, NON e' di
+ * quella giornata: e' di una partita di un altro giorno. Il margine copre il
+ * ritardo fra il regolamento di Betfair e la scrittura della riga.
+ */
+export const MARGINE_LETTURA_MS = 5 * 60_000;
 
 /** oltre questo numero di operazioni le partite partono chiuse (velocita') */
 export const SOGLIA_PARTITE_APERTE = 40;
@@ -174,17 +188,49 @@ export function PosizioniChiuse({
         () => ({ modo, sport: sport ?? 'tutti' as const }),
         [modo, sport],
     );
+    /**
+     * 01/10 - posizioni in memoria SENZA il giorno del database, regolate ben
+     * prima della lettura del giorno (che col giorno della partita non le
+     * porta): sono di partite di altri giorni, non di questa giornata. Prima
+     * una partita di ieri sera regolata stanotte compariva «oggi».
+     */
+    const dialtroGiorno = useMemo(() => {
+        const s = new Set<PosizioneChiusa>();
+        if (!datiDb || datiDb.giornoPartita !== true || datiDb.chiestoAlle == null) return s;
+        const limite = datiDb.chiestoAlle - MARGINE_LETTURA_MS;
+        for (const p of posizioni) {
+            if (p.giornoConfermato || p.giorno !== giornoScelto) continue;
+            const ms = Date.parse(p.chiusaAt);
+            if (Number.isFinite(ms) && ms < limite) s.add(p);
+        }
+        return s;
+    }, [datiDb, posizioni, giornoScelto]);
     const visibili = useMemo(
-        () => filtraChiuse(posizioni, { ...filtroBase, esito, bot, fonte: modo === 'live' ? fonte : 'tutte', giorno: giornoScelto }),
-        [posizioni, filtroBase, esito, bot, fonte, modo, giornoScelto],
+        () => filtraChiuse(posizioni, { ...filtroBase, esito, bot, fonte: modo === 'live' ? fonte : 'tutte', giorno: giornoScelto })
+            .filter((p) => !dialtroGiorno.has(p)),
+        [posizioni, filtroBase, esito, bot, fonte, modo, giornoScelto, dialtroGiorno],
     );
     const gruppi = useMemo(() => raggruppaGiornata(giornoScelto, visibili), [giornoScelto, visibili]);
     const r = gruppi.riepilogo;
-    const fuori = useMemo(
-        () => fuoriGiornata(filtraChiuse(posizioni, filtroBase), giornoScelto),
+    const fuori = useMemo(() => {
+        const base = filtraChiuse(posizioni, filtroBase);
+        const f = fuoriGiornata(base, giornoScelto);
+        let extra = 0;
+        for (const p of base) if (dialtroGiorno.has(p)) extra += 1;
+        return { ...f, altriGiorni: f.altriGiorni + extra };
+    }, [posizioni, filtroBase, giornoScelto, dialtroGiorno]);
+    // B-11 (01/10): una nota per ripiego, con quanti
+    const daPiazzamento = useMemo(() => visibili.filter((p) => p.giornoDa === 'piazzamento').length, [visibili]);
+    const provvisorie = useMemo(() => visibili.filter((p) => !p.giornoConfermato && p.giornoDa === 'regolamento').length, [visibili]);
+    // il database ha risposto con righe ma SENZA il giorno della partita
+    const dbSenzaGiornoPartita = datiDb?.giornoPartita === false;
+    // B-12: le posizioni a cavallo della mezzanotte che toccano questa giornata
+    const cavallo = useMemo(
+        () => aCavalloDellaMezzanotte(filtraChiuse(posizioni, filtroBase), giornoScelto),
         [posizioni, filtroBase, giornoScelto],
     );
-    const daPiazzamento = useMemo(() => visibili.filter((p) => p.giornoDa === 'piazzamento').length, [visibili]);
+    // C-08: lettura di ripiego di un giorno passato = bot tennis assenti
+    const parziale = datiDb?.fonte === 'ripiego' && giornoScelto !== giorno && sport !== 'calcio';
 
     // LA CERTEZZA DI CHIUSURA (18/09): riepilogo delle righe visibili, UNA
     // modalita' alla volta per costruzione.
@@ -204,6 +250,10 @@ export function PosizioniChiuse({
     }, [visibili]);
 
     // -- CONTROPROVA CON LA BARRA (oggi, soldi veri, nessun filtro) ----------
+    // B-12 (01/10): la barra conta il regolato del CONTO per giorno di
+    // REGOLAMENTO; la scheda e' per giorno della PARTITA. Il confronto si fa
+    // sullo STESSO perimetro della barra (gambe regolate oggi, qualunque sia
+    // la partita), e le posizioni a cavallo della mezzanotte si elencano.
     const controprova = useMemo(() => {
         if (!barra || giornoScelto !== giorno || modo !== 'live' || sport != null
             || bot !== 'tutti' || esito !== 'tutte' || fonte !== 'tutte') return null;
@@ -212,11 +262,13 @@ export function PosizioniChiuse({
             if (!VOCI_BARRA.includes(v.chiave) || v.valore == null) continue;
             somma = Math.round(((somma ?? 0) + v.valore) * 100) / 100;
         }
-        if (somma == null && r.totale == null) return null;
-        const qui = r.totale ?? 0;
+        const reg = regolatoNelGiorno(filtraChiuse(posizioni, { modo: 'live' }), giorno);
+        if (somma == null && reg.totale == null) return null;
+        const qui = reg.totale ?? 0;
         const differenza = Math.round((qui - (somma ?? 0)) * 100) / 100;
-        return { barra: somma, qui, differenza };
-    }, [barra, giornoScelto, giorno, modo, sport, bot, esito, fonte, r.totale]);
+        const scalper = barra.righe.find((v) => v.chiave === 'scalper' && v.valore != null) ?? null;
+        return { barra: somma, qui, differenza, scalper: scalper?.valore ?? null };
+    }, [barra, giornoScelto, giorno, modo, sport, bot, esito, fonte, posizioni]);
 
     const apriTutte = visibili.length <= SOGLIA_PARTITE_APERTE;
     const partitaAperta = useCallback(
@@ -238,7 +290,7 @@ export function PosizioniChiuse({
                 <span
                     className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-primary/15 text-primary"
                     data-testid="cr-chiuse-giornata"
-                    title={`giornata ${dayLabel(giornoScelto)} (Europe/Rome), per giorno di REGOLAMENTO`}
+                    title={`giornata ${dayLabel(giornoScelto)} (Europe/Rome), per giorno della PARTITA (se l'inizio non è noto, giorno di piazzamento)`}
                 >
                     {eOggi ? 'Oggi' : dayLabel(giornoScelto, { weekday: true })} {PUNTO} {r.n} {r.n === 1 ? 'chiusa' : 'chiuse'}
                 </span>
@@ -247,6 +299,13 @@ export function PosizioniChiuse({
                     {r.totale == null ? DASH : fmtMoney(r.totale, { signed: true })}
                 </span>
                 {r.totale != null && <FonteTag modo={modo} riepilogo={r} testId="cr-chiuse-totale-fonte" />}
+                {parziale && (
+                    <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300"
+                        data-testid="cr-chiuse-parziale"
+                        title="lettura di ripiego: i bot tennis di questa giornata non sono letti, il totale non li comprende">
+                        parziale
+                    </span>
+                )}
                 <span className="text-[10.5px] text-white/45 flex items-baseline gap-2">
                     <span className="text-emerald-400/80 font-mono">{r.vinte} V</span>
                     <span className="text-red-400/80 font-mono">{r.perse} P</span>
@@ -256,11 +315,12 @@ export function PosizioniChiuse({
                     )}
                 </span>
                 <span className="ml-auto flex items-center gap-2">
-                    {modo === 'live' && (
-                        <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-red-500/20 text-red-300">
-                            soldi veri
-                        </span>
-                    )}
+                    {/* A-08 (01/10): la moneta e' SEMPRE dichiarata, anche in prova */}
+                    <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                        modo === 'live' ? 'bg-red-500/20 text-red-300' : 'bg-white/10 text-white/60'}`}
+                        data-testid="cr-chiuse-moneta" data-modo={modo}>
+                        {modo === 'live' ? 'soldi veri' : 'prova'}
+                    </span>
                     <StoricoLink sport={sport} compatto testId="cr-chiuse-storico" />
                 </span>
             </div>
@@ -292,17 +352,42 @@ export function PosizioniChiuse({
                     data-coincide={Math.abs(controprova.differenza) < 0.005 ? '1' : '0'}
                 >
                     {Math.abs(controprova.differenza) < 0.005 ? (
-                        <>Controprova con la barra di giornata: <b>coincide</b> ({fmtMoney(controprova.barra, { signed: true })}).</>
+                        <>Controprova con la barra (stesso perimetro: operazioni regolate oggi sul conto, qualunque
+                            sia il giorno della partita): <b>coincide</b> ({fmtMoney(controprova.barra, { signed: true })}).</>
                     ) : (
-                        <>Controprova con la barra: la barra dice{' '}
-                            <b className="font-mono">{fmtMoney(controprova.barra, { signed: true })}</b>, qui{' '}
-                            <b className="font-mono">{fmtMoney(controprova.qui, { signed: true })}</b>: differenza{' '}
+                        <>Controprova con la barra (stesso perimetro: operazioni regolate oggi sul conto): la barra dice{' '}
+                            <b className="font-mono">{fmtMoney(controprova.barra, { signed: true })}</b>, le righe lette qui{' '}
+                            <b className="font-mono" data-testid="cr-chiuse-controprova-qui">{fmtMoney(controprova.qui, { signed: true })}</b>: differenza{' '}
                             <b className="font-mono" data-testid="cr-chiuse-controprova-diff">
                                 {fmtMoney(controprova.differenza, { signed: true })}
                             </b>. Cause tipiche: ordini gia&apos; regolati sul conto Betfair ma non ancora scritti
-                            sulla riga del bot, righe fuori dalla finestra letta dalla barra, ordini tennis
-                            piazzati ieri e regolati oggi.</>
+                            sulla riga del bot, righe fuori dalla finestra letta dalla barra, operazioni con una
+                            gamba ancora aperta (qui compaiono solo quelle chiuse).</>
                     )}
+                    {controprova.scalper != null && (
+                        <span data-testid="cr-chiuse-controprova-scalper">
+                            {' '}Lo <b>Scalper calcio</b> ({fmtMoney(controprova.scalper, { signed: true })} nella barra) non è
+                            in questa scheda: non registra posizioni.
+                        </span>
+                    )}
+                </div>
+            )}
+
+            {cavallo.length > 0 && (
+                <div className="px-3 py-1 border-b border-white/10 text-[10.5px] text-sky-200/80"
+                    data-testid="cr-chiuse-a-cavallo">
+                    {cavallo.length} {cavallo.length === 1 ? 'operazione' : 'operazioni'} a cavallo della mezzanotte
+                    (partita di un giorno, regolata in un altro): qui {cavallo.length === 1 ? 'sta' : 'stanno'} nel giorno
+                    della PARTITA, nella barra nel giorno del regolamento.
+                    <ul className="mt-0.5 space-y-0.5">
+                        {cavallo.map(({ p, regolata }) => (
+                            <li key={`${p.bot}-${p.id}`} className="font-mono" data-testid={`cr-chiuse-a-cavallo-${p.id}`}>
+                                {BOT_LABEL[p.bot]} {PUNTO} {p.partita} {PUNTO} partita del {dayLabel(p.giorno, { year: false })},
+                                regolata il {dayLabel(regolata, { year: false })}: {fmtMoney(p.pnlGlobale, { signed: true })}
+                                {p.giorno === giornoScelto ? ' (in questa giornata)' : ' (non in questa giornata)'}
+                            </li>
+                        ))}
+                    </ul>
                 </div>
             )}
 
@@ -348,7 +433,7 @@ export function PosizioniChiuse({
                         type="date" value={giornoScelto} max={giorno}
                         onChange={(e) => scegliGiorno(e.target.value)}
                         data-testid="cr-f-giorno"
-                        aria-label="giornata di regolamento da mostrare"
+                        aria-label="giornata della partita da mostrare"
                         className="text-[10px] px-1.5 py-0.5 rounded border border-white/15 bg-white/[0.03] text-white/80"
                     />
                     <Pillola attivo={false} onClick={() => scegliGiorno(addDays(giornoScelto, 1))}
@@ -358,7 +443,7 @@ export function PosizioniChiuse({
 
                 <Gruppo etichetta="soldi">
                     <Pillola attivo={modo === 'live'} onClick={() => setModo('live')} testId="cr-f-modo-live"
-                        titolo="solo operazioni con denaro reale">veri</Pillola>
+                        titolo="solo operazioni con denaro reale">soldi veri</Pillola>
                     <Pillola attivo={modo === 'paper'} onClick={() => setModo('paper')} testId="cr-f-modo-paper"
                         titolo="solo operazioni simulate: non si sommano MAI ai soldi veri">prova</Pillola>
                 </Gruppo>
@@ -411,18 +496,37 @@ export function PosizioniChiuse({
                     ingresso-uscita no.
                 </div>
             )}
+            {dbSenzaGiornoPartita && (
+                <div className="px-3 py-1 border-b border-amber-500/30 bg-amber-500/10 text-[10.5px] text-amber-300"
+                    data-testid="cr-chiuse-giornata-ripiego" role="note">
+                    Giornata per REGOLAMENTO, non per partita: il database non manda ancora il giorno della
+                    partita (serve l&apos;aggiornamento del database del 01/10).
+                </div>
+            )}
             {daPiazzamento > 0 && (
                 <div className="px-3 py-1 border-b border-white/10 text-[10.5px] text-amber-300"
                     data-testid="cr-chiuse-nota-piazzamento">
-                    {daPiazzamento} {daPiazzamento === 1 ? 'operazione' : 'operazioni'} senza ora di regolamento:
+                    {daPiazzamento} {daPiazzamento === 1 ? 'operazione' : 'operazioni'} senza inizio partita noto:
                     attribuite al giorno di piazzamento.
                 </div>
             )}
+            {!dbSenzaGiornoPartita && provvisorie > 0 && (
+                <div className="px-3 py-1 border-b border-white/10 text-[10.5px] text-amber-300/90"
+                    data-testid="cr-chiuse-nota-provvisorie">
+                    {provvisorie} {provvisorie === 1 ? 'operazione' : 'operazioni'} con giornata PROVVISORIA (dal
+                    regolamento): il database non ha ancora confermato il giorno della partita.
+                </div>
+            )}
+            {/* C-04 (01/10): la differenza con lo Storico, detta una volta per tutte */}
+            <div className="px-3 py-1 border-b border-white/10 text-[10px] text-white/35" data-testid="cr-chiuse-nota-cicli-aperti">
+                Qui solo operazioni CHIUSE in tutte le gambe: le coperture già regolate di operazioni ancora
+                aperte compaiono quando l&apos;operazione si chiude (lo Storico le conta già).
+            </div>
 
             {(fuori.altriGiorni > 0 || fuori.senzaData > 0) && (
                 <div className="px-3 py-1.5 border-b border-white/10 text-[10.5px] text-white/45"
                     data-testid="cr-chiuse-fuori-giornata">
-                    Qui c&apos;e&apos; solo <b className="text-white/70">{dayLabel(giornoScelto)}</b> (giorno di regolamento).
+                    Qui c&apos;e&apos; solo <b className="text-white/70">{dayLabel(giornoScelto)}</b> (giorno della partita).
                     {fuori.altriGiorni > 0 && (
                         <> Altre <b className="text-white/70">{fuori.altriGiorni}</b> posizioni chiuse gia&apos; in memoria
                         sono di altre giornate: sceglile qui sopra o apri lo <b className="text-white/70">Storico</b>.</>
@@ -511,7 +615,7 @@ function StatoLetturaRiga({ lettura, chiave, eOggi, onRileggi }: {
             <div className="px-3 py-1 border-b border-white/10 text-[10.5px] text-white/40" data-testid="cr-chiuse-lettura"
                 data-stato="attesa">
                 {eOggi
-                    ? 'Oggi si vede subito dalla memoria; lettura completa della giornata dal database in corso...'
+                    ? 'Oggi si vede subito dalla memoria, con la giornata PROVVISORIA (dal regolamento); lettura completa della giornata dal database in corso...'
                     : 'Lettura della giornata dal database in corso...'}
             </div>
         );
@@ -659,7 +763,7 @@ const RigaCiclo = memo(function RigaCiclo({ p, aperta, onToggle }: {
 
                     <span className={`text-[9px] font-bold uppercase tracking-wider px-1 rounded ${
                         p.modo === 'live' ? 'bg-red-500/20 text-red-300' : 'bg-white/10 text-white/35'
-                    }`}>{p.modo === 'live' ? 'veri' : 'prova'}</span>
+                    }`}>{p.modo === 'live' ? 'soldi veri' : 'prova'}</span>
 
                     <span className={`text-[9px] uppercase tracking-wider ${ESITO_CLS[p.esito]}`}>{ESITO_UNO[p.esito]}</span>
 

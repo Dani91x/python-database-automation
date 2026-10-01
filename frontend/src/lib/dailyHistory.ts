@@ -93,6 +93,8 @@ export interface DayTradeLeg {
     settled_at: string | null;
     /** id dell'ordine su Betfair: null = mai arrivato a mercato */
     bet_id?: string | null;
+    /** 24/09 - netto regolato da Betfair (assente/null = non ancora: stima del bot) */
+    pnl_betfair?: number | null;
     origin?: 'auto' | 'manual' | null;
     closes_trade_id?: number | null;
     meta: Record<string, unknown> | null;
@@ -115,7 +117,28 @@ export interface DayTrade extends DayTradeLeg {
     total_pnl: number;
     placed_in_day: boolean;
     settled_in_day: boolean;
+    /**
+     * 01/10 (contratto SQL del giorno della PARTITA): la riga appartiene alla
+     * giornata chiesta? Lo decide il database con lo stesso criterio della
+     * cella del calendario. `null` = la RPC non lo manda (aggiornamento del
+     * database del 01/10 non applicato): si usa il criterio precedente e lo
+     * si DICHIARA, mai un giorno partita calcolato qui.
+     */
+    in_day?: boolean | null;
+    /** 01/10 - giorno della partita 'YYYY-MM-DD' (Roma) secondo il database;
+     *  null = inizio della partita non noto (vale allora il piazzamento) */
+    giorno_partita?: string | null;
+    /** 01/10 - da dove viene il giorno della riga: inizio partita o ripiego sul piazzamento */
+    giorno_da?: GiornoDaDb | null;
 }
+
+/**
+ * 01/10 - origine del giorno di una riga secondo il database (contratto SQL):
+ * 'partita' = inizio della partita (per Safe calcio lo stima il database);
+ * 'piazzamento' = inizio non noto, vale il giorno di piazzamento (ripiego
+ * dichiarato). Il frontend non deduce mai il giorno partita da solo.
+ */
+export type GiornoDaDb = 'partita' | 'piazzamento';
 export type DayTrades = DayTrade[];
 
 export type HistoryVariant = 'omega' | 'safe' | 'mike';
@@ -197,17 +220,34 @@ function normalizeLeg(raw: unknown): DayTradeLeg {
     };
 }
 
+/** 'YYYY-MM-DD' valido o null (mai una data inventata). */
+function giornoOrNull(v: unknown): string | null {
+    if (typeof v !== 'string') return null;
+    const d = v.slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
+}
+
 export function normalizeDayTrades(raw: unknown): DayTrade[] {
     if (!Array.isArray(raw)) return [];
     return raw.map((x) => {
         const r = (x ?? {}) as Record<string, unknown>;
+        const inDay = typeof r.in_day === 'boolean' ? r.in_day : null;
+        // C-03 (01/10): il dettaglio somma lo STESSO P&L della cella. Il motore
+        // del database (referto SQL del 01/10, §3) resta su `pnl` del bot, quindi
+        // qui non si sostituisce `pnl_betfair`: farlo darebbe dettaglio != cella.
+        const totale = num(r.total_pnl, num(r.pnl));
+        const apertura = normalizeLeg(r);
         const closes = Array.isArray(r.closes) ? r.closes.map(normalizeLeg) : [];
+        const gd = r.giorno_da === 'partita' || r.giorno_da === 'piazzamento' ? r.giorno_da : null;
         return {
-            ...normalizeLeg(r),
+            ...apertura,
             closes,
-            total_pnl: num(r.total_pnl, num(r.pnl)),
+            total_pnl: totale,
             placed_in_day: Boolean(r.placed_in_day),
             settled_in_day: Boolean(r.settled_in_day),
+            in_day: inDay,
+            giorno_partita: giornoOrNull(r.giorno_partita),
+            giorno_da: gd,
         };
     });
 }
@@ -406,7 +446,23 @@ export function romeDay(now: Date = new Date()): string {
         const s = `${get('year')}-${get('month')}-${get('day')}`;
         if (DAY_RE.test(s)) return s;
     } catch { /* Intl senza timeZone (ambienti minimi): fallback sotto */ }
-    return msToDay(now.getTime() + 2 * 3_600_000);
+    return msToDay(now.getTime() + offsetRomaMs(now.getTime()));
+}
+
+/**
+ * B-16 - scarto di Roma da UTC senza `Intl`: +2 h dall'ultima domenica di
+ * marzo all'ultima domenica di ottobre (alle 01:00 UTC), +1 h altrimenti.
+ * Prima era +2 h sempre: d'inverno la giornata cambiava un'ora prima.
+ */
+export function offsetRomaMs(ms: number): number {
+    const y = new Date(ms).getUTCFullYear();
+    const ultimaDomenica = (mese: number) => {
+        const fine = Date.UTC(y, mese + 1, 0);
+        const dow = new Date(fine).getUTCDay();
+        return fine - dow * 86_400_000 + 3_600_000;   // 01:00 UTC
+    };
+    const legale = ms >= ultimaDomenica(2) && ms < ultimaDomenica(9);
+    return (legale ? 2 : 1) * 3_600_000;
 }
 
 /** 'YYYY-MM-DD' → "10 settembre 2026" (etichette UI, senza fuso del browser). */
@@ -521,23 +577,43 @@ export function historyWindow(
 }
 
 // ------------------------------------------------- attribuzione al giorno
-/** Come il calendario attribuisce una posizione a una giornata operativa. */
-export type DayAttribution = 'placed' | 'settled';
+/**
+ * Come il calendario attribuisce una posizione a una giornata operativa.
+ * 'match' (01/10) = il giorno della PARTITA, deciso dal database per riga
+ * (`in_day`); 'placed'/'settled' sono i criteri di PRIMA, che restano solo
+ * come ripiego dichiarato quando la RPC non manda `in_day`.
+ */
+export type DayAttribution = 'placed' | 'settled' | 'match';
 
 /**
- * Giornata operativa = giorno di PIAZZAMENTO per Omega e Safe; per Mike (dal
- * 29/09, M8.10) il giorno del REGOLAMENTO.
- * (Il commento storico diceva «Safe per regolazione»: non è più vero dal
- * `safe_strategy_bot_v2.sql`, e la funzione ha sempre ritornato 'placed'.)
+ * 01/10 (ordine dell'utente, decisione del coordinatore): UNA giornata per
+ * tutti i bot, calcio e tennis, prova e soldi veri = il giorno della PARTITA
+ * (inizio evento, Europe/Rome); se l'inizio non e' noto, il giorno del
+ * regolamento (la riga lo dichiara). Prima: Omega e Safe per piazzamento,
+ * Mike per regolamento, tre criteri nella stessa pagina.
  */
-export function attributionOf(variant: HistoryVariant): DayAttribution {
-    // Giornata operativa = giorno di PIAZZAMENTO per Omega (§14) e Safe
-    // (`safe_strategy_bot_v2.sql`). 29/09 (piano Mike M8.10, difetto D10): Mike
-    // conta il giorno del REGOLAMENTO, come «Posizioni chiuse» - va insieme a
-    // `migrations/mike_storico_giorno_regolamento_2026-09-29.sql`.
-    if (variant === 'mike') return 'settled';
-    return 'placed';
+export function attributionOf(_variant: HistoryVariant): DayAttribution {
+    return 'match';
 }
+
+/**
+ * Il criterio di PRIMA del 01/10, usato SOLO come ripiego dichiarato sulle
+ * righe senza `in_day` (RPC non aggiornata): e' quello con cui la RPC vecchia
+ * ha costruito la cella, quindi dettaglio e cella continuano a coincidere.
+ */
+export function ripiegoAttribuzione(variant: HistoryVariant): 'placed' | 'settled' {
+    return variant === 'mike' ? 'settled' : 'placed';
+}
+
+/** Una frase sola, per tutte le pagine di storico (B-01/B-02). */
+export const GIORNATA_PARTITA_TESTO =
+    'Ogni operazione è attribuita al giorno della PARTITA (fuso Europe/Rome), anche se si regola dopo; '
+    + 'se l’inizio della partita non è noto, al giorno di piazzamento (la riga lo dichiara).';
+
+/** Cosa si dice al trader quando il database non manda ancora il giorno della partita. */
+export const GIORNATA_RIPIEGO_TESTO =
+    'giornata NON per partita: il database non manda ancora il giorno della partita '
+    + '(serve l’aggiornamento del database del 01/10); qui vale il criterio precedente';
 
 export interface DaySummary {
     /** posizioni che il CALENDARIO attribuisce a questo giorno (le stesse che
@@ -568,10 +644,17 @@ export interface DaySummary {
     voided: number;
     /** posizioni ancora vive fra quelle attribuite */
     open: number;
-    /** liability piazzata nel giorno */
+    /** liability delle posizioni attribuite al giorno */
     liability: number;
     /** P&L bloccato dalle coperture (null = nessuna copertura) */
     lockedPnl: number | null;
+    /**
+     * 01/10 - righe della risposta SENZA `in_day` (RPC non aggiornata): sono
+     * state attribuite col criterio di prima (ripiego), e la pagina lo dice.
+     */
+    senzaGiornoPartita: number;
+    /** 01/10 - righe attribuite al giorno di PIAZZAMENTO perche' l'inizio della partita non e' noto */
+    giornoDaPiazzamento: number;
 }
 
 const DAY_SETTLED = new Set(['won', 'lost', 'void']);
@@ -644,9 +727,20 @@ export function outcomeOf(status: string, totalPnl: number): 'won' | 'lost' | 'v
  */
 export function summarizeDayTrades(
     trades: DayTrade[] | null | undefined, attribution: DayAttribution,
+    ripiego: 'placed' | 'settled' = 'placed',
 ): DaySummary {
     const list = trades ?? [];
-    const belongs = (t: DayTrade) => (attribution === 'placed' ? t.placed_in_day : t.settled_in_day || (t.placed_in_day && !t.settled_at));
+    const vecchio = (a: 'placed' | 'settled', t: DayTrade) => (a === 'placed'
+        ? t.placed_in_day : t.settled_in_day || (t.placed_in_day && !t.settled_at));
+    // 01/10: col giorno della PARTITA decide il database (`in_day`); una riga
+    // senza il campo usa il criterio di prima, contata e dichiarata
+    const belongs = (t: DayTrade) => (attribution === 'match'
+        ? (typeof t.in_day === 'boolean' ? t.in_day : vecchio(ripiego, t))
+        : vecchio(attribution, t));
+    let senzaGiornoPartita = 0;
+    if (attribution === 'match') {
+        for (const t of list) if (typeof t.in_day !== 'boolean') senzaGiornoPartita += 1;
+    }
     const mine = list.filter(belongs);
     const others = list.filter((t) => !belongs(t));
     const attributed = mine.filter((t) => isPlacedLeg(t));
@@ -670,12 +764,16 @@ export function summarizeDayTrades(
             pnl += cashed;
             realizedOnOpen += cashed;
         }
-        if (t.placed_in_day) liability += Number(t.liability ?? 0) || 0;
+        // la liability delle posizioni di QUESTA giornata: col giorno partita
+        // sono tutte quelle attribuite; coi criteri di prima, le piazzate oggi
+        const nelGiorno = attribution === 'match' && typeof t.in_day === 'boolean' ? true : t.placed_in_day;
+        if (nelGiorno) liability += Number(t.liability ?? 0) || 0;
         const lk = Number((t.meta ?? {})['locked_pnl']);
         if (Number.isFinite(lk) && !DAY_SETTLED.has(t.status)) lockedPnl = (lockedPnl ?? 0) + lk;
     }
+    const giornoDaPiazzamento = attributed.filter((t) => t.giorno_da === 'piazzamento').length;
     return {
-        attributed, others, notPlaced,
+        attributed, others, notPlaced, senzaGiornoPartita, giornoDaPiazzamento,
         pnl: Math.round(pnl * 100) / 100,
         realizedOnOpen: Math.round(realizedOnOpen * 100) / 100,
         settled, won, lost, voided, open,

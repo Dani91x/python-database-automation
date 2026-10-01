@@ -248,8 +248,12 @@ describe('Safe Strategy — tab Storico', () => {
         await waitFor(() => // 12/09: la finestra copre la GRIGLIA del mese (lun 31 ago → dom 4 ott),
         // altrimenti le celle fuori mese dichiarano «nessuna operazione» su dati mai letti
         // FIX-A 26/09 (U0507): SEMPRE con la modalita' del bot, mai «tutte» (= somma)
-        expect(mDaily).toHaveBeenCalledWith('2026-08-31', '2026-10-04', null, 'paper'));
-        await waitFor(() => expect(mDay).toHaveBeenCalledWith('2026-09-10', null, 'paper'));
+        // A-06 (01/10): e SEMPRE con uno sport (di serie quello della scheda di partenza)
+        expect(mDaily).toHaveBeenCalledWith('2026-08-31', '2026-10-04', 'calcio', 'paper'));
+        await waitFor(() => expect(mDay).toHaveBeenCalledWith('2026-09-10', 'calcio', 'paper'));
+        expect(within(screen.getByTestId('history-sport-filter')).queryByRole('button', { name: /tutti/ })).toBeNull();
+        expect(screen.getByTestId('history-moneta')).toHaveTextContent('PROVA');
+        expect(screen.getByTestId('history-mode-live')).toHaveTextContent('soldi veri');
         await waitFor(() => expect(screen.getByTestId('kpi-pnl')).toHaveTextContent('+2,85 €'));
         expect(within(screen.getByTestId('breakdown-sport')).getByText('⚽ Calcio')).toBeInTheDocument();
         expect(screen.queryByTestId('kpi-goal')).toBeNull();

@@ -90,6 +90,59 @@ describe('la RPC della giornata', () => {
     });
 });
 
+describe('01/10 - giorno della partita nella lettura (contratto SQL)', () => {
+    it('le righe col contratto nuovo portano il giorno: la lettura lo DICE (giornoPartita)', async () => {
+        rpc.mockResolvedValueOnce({ data: {
+            omega: [omegaRiga({ id: 1, giorno_partita: '2026-09-23', giorno_da: 'partita', in_day: true })],
+            safe: [], mike: [], tennis: [],
+        }, error: null });
+        const g = await leggiChiuseGiornata('2026-09-23', 'live');
+        expect(g.giornoPartita).toBe(true);
+        expect(typeof g.chiestoAlle).toBe('number');
+        expect(posizioniChiuse(g.righe)[0].giornoDa).toBe('partita');
+    });
+
+    it('righe SENZA il giorno (aggiornamento non applicato): giornoPartita=false, da dichiarare', async () => {
+        rpc.mockResolvedValueOnce({ data: { omega: [omegaRiga({ id: 1 })], safe: [], mike: [], tennis: [] }, error: null });
+        expect((await leggiChiuseGiornata('2026-09-23', 'live')).giornoPartita).toBe(false);
+    });
+
+    it('nessuna riga: non si sa (null), nessuna affermazione', async () => {
+        rpc.mockResolvedValueOnce({ data: { omega: [], safe: [], mike: [], tennis: [] }, error: null });
+        expect((await leggiChiuseGiornata('2026-09-23', 'live')).giornoPartita).toBeNull();
+    });
+
+    it('C-07: il nome della partita tennis arriva dalla lettura (mai «evento 3456…»)', () => {
+        const righe = righeDaRisposta({ omega: [], safe: [], mike: [],
+            tennis: [tennisRiga({ id: 50, event_name: 'Sinner v Alcaraz', giorno_partita: '2026-09-23', giorno_da: 'partita', in_day: true })] });
+        const [p] = posizioniChiuse(righe);
+        expect(p.partita).toBe('Sinner v Alcaraz');
+        expect(p.giorno).toBe('2026-09-23');
+    });
+
+    it('accettazione del coordinatore (Mike live): 30/09 = 14 righe, 01/10 = 0', async () => {
+        const mikeRiga = (id: number, over: Record<string, unknown> = {}) => ({
+            id, event_id: 'M1', event_name: 'Atalanta v Como', market_id: '1.2', selection_id: 9,
+            side: 'back', price: 2, size: 2, liability: 2, status: 'won', pnl: 0.2, mode: 'live',
+            strategy: 'under_entry', origin: 'auto', placed_at: '2026-09-30T18:00:00+00:00',
+            settled_at: '2026-09-30T20:00:00+00:00', closes_trade_id: null, bet_id: `M${id}`, meta: null,
+            pnl_betfair: null, pnl_betfair_settled_at: null,
+            giorno_partita: '2026-09-30', giorno_da: 'partita', in_day: true, ...over,
+        });
+        rpc.mockImplementation(async (_n: string, a: { p_day: string }) => ({
+            data: a.p_day === '2026-09-30'
+                ? { omega: [], safe: [], tennis: [], mike: Array.from({ length: 14 }, (_x, i) => mikeRiga(100 + i)) }
+                : { omega: [], safe: [], mike: [], tennis: [] },
+            error: null,
+        }));
+        const g30 = await leggiChiuseGiornata('2026-09-30', 'live');
+        const g01 = await leggiChiuseGiornata('2026-10-01', 'live');
+        expect(g30.righe).toHaveLength(14);
+        expect(g30.giornoPartita).toBe(true);
+        expect(g01.righe).toHaveLength(0);
+    });
+});
+
 describe('ripiego senza migrazione: dichiarato, e mai due modalita\' insieme', () => {
     it('usa le RPC di storico, filtra la modalita\' e lo DICE', async () => {
         rpc.mockImplementation(async (nome: string) => {
@@ -113,6 +166,8 @@ describe('ripiego senza migrazione: dichiarato, e mai due modalita\' insieme', (
         const g = await leggiChiuseGiornata('2026-09-23', 'live');
         expect(g.fonte).toBe('ripiego');
         expect(g.avvisi.join(' ')).toMatch(/ripiego/i);
+        // A-03/C-02 (01/10): niente nomi di migrazioni o funzioni davanti al trader
+        expect(g.avvisi.join(' ')).not.toMatch(/migrazione|posizioni_chiuse_giornata|[.]sql/i);
         expect(g.righe.map((r) => r.id).sort()).toEqual([1, 2]);   // la paper (#3) resta fuori
     });
 
@@ -142,6 +197,17 @@ describe('memoria per giornata', () => {
         await chiuseGiornata('2026-09-20', 'paper', { oggi: '2026-09-24', leggi });
         expect(leggi).toHaveBeenCalledTimes(2);
         expect(leggi.mock.calls.map((c) => c[1])).toEqual(['live', 'paper']);
+    });
+
+    it('B-10 (01/10): anche IERI scade (partita di ieri sera regolata stamattina), l\'altro ieri no', async () => {
+        const leggi = vi.fn(async (g: string, m: 'live' | 'paper') => finta(g, m));
+        const t0 = 1_000_000;
+        await chiuseGiornata('2026-09-23', 'live', { oggi: '2026-09-24', leggi, ora: t0 });
+        await chiuseGiornata('2026-09-23', 'live', { oggi: '2026-09-24', leggi, ora: t0 + SCADENZA_OGGI_MS + 1 });
+        expect(leggi).toHaveBeenCalledTimes(2);          // ieri riletto senza riavvio
+        await chiuseGiornata('2026-09-22', 'live', { oggi: '2026-09-24', leggi, ora: t0 });
+        await chiuseGiornata('2026-09-22', 'live', { oggi: '2026-09-24', leggi, ora: t0 + SCADENZA_OGGI_MS + 1 });
+        expect(leggi).toHaveBeenCalledTimes(3);          // l'altro ieri resta in memoria
     });
 
     it('oggi scade dopo la sua finestra, e "rileggi" forza', async () => {

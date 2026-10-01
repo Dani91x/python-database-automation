@@ -21,9 +21,12 @@ import { describe, it, expect } from 'vitest';
 import {
     intervalloRange, aggregaBot, totaleModo, unisciGiornate, curvaCumulata,
     barrePerGiorno, FONTI_STORICO, FONTI_ASSENTI, rottaStorico, INTERVALLO_LABEL,
-    type SerieBot, type ModoStorico,
+    rigaGiornalieraTennisBot,
+    type SerieBot, type ModoStorico, type BotStorico,
 } from './storicoSport';
 import { normalizeDailyRow, type DailyRow } from './dailyHistory';
+import { posizioniChiuse, riepilogoChiuse, rigaDaOrdineTennis, nettoOrdineTennis, type TradeChiudibile } from './posizioniChiuse';
+import type { TennisBotDailyRow, TennisBotOrderRow } from './tennis';
 
 // --------------------------------------------------------------- finti
 
@@ -68,7 +71,7 @@ function riga(day: string, pnl: number, over: Record<string, unknown> = {}): Dai
 }
 
 function serie(
-    bot: 'omega' | 'safe' | 'mike', modo: ModoStorico, righe: DailyRow[],
+    bot: BotStorico, modo: ModoStorico, righe: DailyRow[],
     over: Partial<SerieBot> = {},
 ): SerieBot {
     return {
@@ -105,6 +108,9 @@ describe('intervalli: oggi, 7 giorni, 30 giorni, mese, tutto', () => {
         for (const k of ['oggi', '7g', '30g', 'mese', 'tutto'] as const) {
             expect(INTERVALLO_LABEL[k]).toBeTruthy();
         }
+    });
+    it('B-14 (01/10): «tutto» dice quello che e\' (gli ultimi 400 giorni)', () => {
+        expect(INTERVALLO_LABEL.tutto).toBe('Ultimi 400 giorni');
     });
 });
 
@@ -159,12 +165,75 @@ describe('aggregato di un bot', () => {
         expect(t.roi).toBeCloseTo(0.1, 6);
     });
 
+    it('C-01/D-01 (01/10): un bot CON giornate e senza importo rende il ROI del totale non calcolabile', () => {
+        const safe = aggregaBot(serie('safe', 'live', [riga('2026-09-16', 3.5)], { stakePerGiorno: { '2026-09-16': 35 } }));
+        const swing = aggregaBot(serie('tennis_swing', 'live', [riga('2026-09-16', 1)]));
+        const t = totaleModo([safe, swing], 'live');
+        expect(t.pnl).toBe(4.5);
+        // prima: 4,5 / 35 = 12,9 % (P&L di due bot diviso l'importo di uno)
+        expect(t.stake).toBeNull();
+        expect(t.roi).toBeNull();
+    });
+
     it('stake a zero non produce un ROI infinito', () => {
         const a = aggregaBot(serie('safe', 'live', [riga('2026-09-14', 2)], {
             stakePerGiorno: { '2026-09-14': 0 },
         }));
         expect(a.stake).toBe(0);
         expect(a.roi).toBeNull();
+    });
+});
+
+// ------------------------------------- 01/10: i 4 bot tennis nello Storico
+
+describe('D-01 - bot tennis: stesso netto dello Storico e delle Posizioni chiuse', () => {
+    /** riga di `get_tennis_bot_daily` (12 chiavi della RPC del 30/09) */
+    const daily = (over: Partial<TennisBotDailyRow> = {}): TennisBotDailyRow => ({
+        giorno: '2026-09-30', bot_key: 'tennis_swing', ordini: 3, vinti: 2, persi: 1,
+        pnl_lordo: 1.9, commissione: 0.08, pnl_netto: 1.78, volume: 6,
+        pnl_reale: 0.95, pnl_stimato: 0.83, stimati: 2, ...over,
+    });
+    /** ordine di `tennis_live_orders` (chiavi della tabella vera) */
+    const ordine = (id: number, over: Record<string, unknown>) => ({
+        id, bet_id: `T${id}`, client_order_ref: `awtq${id}`, request_id: id, mode: 'live',
+        source: 'tennis_swing', event_id: 'T1', market_id: `1.${id}`, selection_id: 77, handicap: 0,
+        side: 'back', order_type: 'LIMIT', price: 2, size: 2, size_matched: 2, size_remaining: 0,
+        size_cancelled: 0, size_lapsed: 0, size_voided: 0, average_price_matched: 2,
+        status: 'EXECUTION_COMPLETE', persistence: 'LAPSE', placed_at: '2026-09-30T09:00:00+00:00',
+        matched_at: null, updated_at: '2026-09-30T11:00:00+00:00', pnl: 0, commission: 0,
+        settled_at: '2026-09-30T11:00:00+00:00', pnl_betfair: null, pnl_betfair_settled_at: null,
+        ...over,
+    }) as unknown as TennisBotOrderRow;
+
+    it('una giornata del bot diventa una riga del motore: ordini, esiti, netto', () => {
+        const r = rigaGiornalieraTennisBot(daily())!;
+        expect(r).toMatchObject({ day: '2026-09-30', pnl_realized: 1.78, trades_placed: 3, settled: 3, won: 2, lost: 1, void: 0 });
+        expect(rigaGiornalieraTennisBot(daily({ pnl_netto: null }))).toBeNull();   // nessuna regolata: nessuna riga, mai 0
+    });
+
+    it('reale e stima separati dalla fonte, sommati per periodo', () => {
+        const a = aggregaBot(serie('tennis_swing', 'live', [rigaGiornalieraTennisBot(daily())!], {
+            fontePerGiorno: { '2026-09-30': { reale: 0.95, stimato: 0.83, stimati: 2 } },
+        }));
+        expect(a).toMatchObject({ pnl: 1.78, reale: 0.95, stimato: 0.83, stimati: 2 });
+        const t = totaleModo([a], 'live');
+        expect([t.reale, t.stimato]).toEqual([0.95, 0.83]);
+    });
+
+    it('stessi ordini: totale dello Storico == totale delle Posizioni chiuse (stessa definizione di netto)', () => {
+        const ordini = [
+            ordine(1, { pnl: 1.0, commission: 0.05, pnl_betfair: 0.95 }),     // regolato da Betfair
+            ordine(2, { pnl: 0.9, commission: 0.03 }),                         // stimato: 0,87
+            ordine(3, { pnl: -0.04, commission: 0 }),                          // stimato: -0,04
+        ];
+        // la RPC somma coalesce(pnl_betfair, pnl - commission): 0,95 + 0,87 - 0,04
+        const nettoRpc = Math.round(ordini.reduce((s, o) => s + (nettoOrdineTennis(o) ?? 0), 0) * 100) / 100;
+        const storico = totaleModo([aggregaBot(serie('tennis_swing', 'live',
+            [rigaGiornalieraTennisBot(daily({ pnl_netto: nettoRpc }))!]))], 'live');
+        const chiuse = riepilogoChiuse(posizioniChiuse(
+            ordini.map((o) => rigaDaOrdineTennis(o, 'Sinner v Alcaraz', () => true) as TradeChiudibile)));
+        expect(storico.pnl).toBe(1.78);
+        expect(chiuse.totale).toBe(storico.pnl);
     });
 });
 
@@ -302,16 +371,19 @@ describe('chi entra nello storico di uno sport, e chi no', () => {
         expect(FONTI_STORICO.calcio.map((f) => f.bot)).toEqual(['omega', 'safe', 'mike']);
     });
 
-    it('il tennis ha solo Safe: gli altri quattro bot non hanno P&L a database', () => {
-        expect(FONTI_STORICO.tennis.map((f) => f.bot)).toEqual(['safe']);
-        expect(FONTI_ASSENTI.tennis.map((f) => f.id)).toEqual([
-            'tennis_scalper', 'tennis_pro', 'tennis_flb', 'tennis_swing',
+    it('D-01 (01/10): il tennis ha Safe E i quattro bot tennis (P&L a database dal 17/09); nessun assente', () => {
+        expect(FONTI_STORICO.tennis.map((f) => f.bot)).toEqual([
+            'safe', 'tennis_scalper', 'tennis_pro', 'tennis_flb', 'tennis_swing',
         ]);
-        for (const f of FONTI_ASSENTI.tennis) expect(f.perche).toBeTruthy();
+        expect(FONTI_ASSENTI.tennis).toEqual([]);
     });
 
-    it('lo scalper del calcio è dichiarato assente, non mostrato a zero', () => {
+    it('lo scalper del calcio è dichiarato assente, non mostrato a zero, col motivo VERO (C-06)', () => {
         expect(FONTI_ASSENTI.calcio.map((f) => f.id)).toEqual(['scalper']);
+        const perche = FONTI_ASSENTI.calcio[0].perche;
+        expect(perche).toMatch(/P&L reale/);
+        // niente nomi di tabelle davanti al trader
+        expect(perche).not.toMatch(/`|scalper_activity|tennis_live_orders/);
     });
 
     it('la RPC di Safe riceve lo sport, quelle di Omega e Mike no', () => {

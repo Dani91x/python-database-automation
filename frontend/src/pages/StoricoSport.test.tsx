@@ -76,6 +76,20 @@ interface Piano {
     omegaRighe?: unknown[];
     /** true = get_storico_stake esiste */
     stake?: Record<string, number> | null;
+    /** 01/10 (D-01): righe di `get_tennis_bot_daily` per moneta (chiavi della RPC vera) */
+    tennisLive?: unknown[];
+    tennisPaper?: unknown[];
+    /** 01/10: righe di `get_mike_day_trades` / `get_safe_day_trades` per giorno */
+    mikeDay?: Record<string, unknown[]>;
+}
+
+/** riga di `get_tennis_bot_daily` con le 12 chiavi della RPC (migrazione del 30/09) */
+function rigaTennis(giorno: string, bot: string, netto: number, over: Record<string, unknown> = {}) {
+    return {
+        giorno, bot_key: bot, ordini: 2, vinti: netto > 0 ? 1 : 0, persi: netto < 0 ? 1 : 0,
+        pnl_lordo: netto + 0.05, commissione: 0.05, pnl_netto: netto,
+        pnl_reale: 0, pnl_stimato: netto, stimati: 2, volume: 4, ...over,
+    };
 }
 
 function montaRpc(p: Piano) {
@@ -92,6 +106,13 @@ function montaRpc(p: Piano) {
         }
         if (nome === 'get_mike_daily') {
             return { data: (modo === 'paper' ? p.mikePaper : p.mikeLive) ?? [], error: null };
+        }
+        if (nome === 'get_tennis_bot_daily') {
+            const righe = ((modo === 'paper' ? p.tennisPaper : p.tennisLive) ?? []) as Record<string, unknown>[];
+            return { data: { rows: righe.filter((r) => r.bot_key === args.p_bot), mode: modo }, error: null };
+        }
+        if (nome === 'get_mike_day_trades') {
+            return { data: p.mikeDay?.[String(args.p_day)] ?? [], error: null };
         }
         if (nome === 'get_storico_stake') {
             if (!p.stake) return firmaMancante('get_storico_stake', 'p_bot, p_from, p_mode, p_sport, p_to');
@@ -149,12 +170,14 @@ describe('storico calcio: i profitti per bot, separati per moneta', () => {
         expect(screen.getByTestId('storico-kpi-pnl')).not.toHaveTextContent('5,95');
     });
 
-    it('Omega finisce nel blocco «modalita\' non separabile», con il motivo e la migrazione', async () => {
+    it('Omega finisce nel blocco «non separabile» SENZA cifre (sarebbero di due monete) e senza nomi tecnici', async () => {
         monta();
         const blocco = await screen.findByTestId('storico-modo-non-separabile');
-        expect(blocco).toHaveTextContent(/non separabili/i);
-        expect(blocco).toHaveTextContent('storico_sport_2026-09-17.sql');
-        expect(within(blocco).getByTestId('storico-misto-omega')).toHaveTextContent('0,95');
+        expect(blocco).toHaveTextContent(/storico per moneta non disponibile/i);
+        expect(within(blocco).getByTestId('storico-misto-omega')).toHaveTextContent('non incluso nei totali');
+        // A-02/A-03 (01/10): la cifra MISTA e i nomi di file/funzioni non ci sono piu'
+        expect(blocco).not.toHaveTextContent('0,95');
+        expect(blocco).not.toHaveTextContent(/\.sql|get_omega_daily|p_from|RPC/);
     });
 
     it('la tabella per bot elenca un rigo per bot, con il suo P&L', async () => {
@@ -173,12 +196,49 @@ describe('storico calcio: i profitti per bot, separati per moneta', () => {
         expect(tot).toHaveTextContent('5,00');
     });
 
-    it('l\'altra moneta si vede, ma dichiara di NON essere sommata', async () => {
+    it('A-01 (01/10): NESSUNA cifra dell\'altra moneta, in nessuna delle due viste', async () => {
+        const u = userEvent.setup();
         monta();
-        const altra = await screen.findByTestId('storico-altra-modalita');
-        // paper: -1,25 (Safe) + 10 (Mike) = 8,75
-        expect(altra).toHaveTextContent('8,75');
-        expect(altra).toHaveTextContent(/non è sommato/i);
+        await waitFor(() => expect(screen.getByTestId('storico-kpi-pnl')).toHaveTextContent('5,00'));
+        expect(screen.queryByTestId('storico-altra-modalita')).toBeNull();
+        // vista soldi veri: niente prova (Safe −1,25, Mike +10,00, totale 8,75) e niente Omega misto
+        const pagina = () => document.body.textContent ?? '';
+        for (const c of ['8,75', '1,25', '10,00', '0,95']) expect(pagina()).not.toContain(c);
+        // vista prova: niente soldi veri (Safe 3,50, Mike 1,50, totale 5,00). Il «+5,00 €»
+        // della scala dell'asse della curva e' una tacca, non una cifra: si guarda
+        // dove stanno le cifre (riepilogo e tabella)
+        await u.click(screen.getByTestId('storico-testata-paper'));
+        await waitFor(() => expect(screen.getByTestId('storico-kpi-pnl')).toHaveTextContent('8,75'));
+        for (const c of ['3,50', '1,50', '0,95']) expect(pagina()).not.toContain(c);
+        expect(screen.getByTestId('storico-per-bot')).not.toHaveTextContent('5,00');
+        expect(screen.getByTestId('storico-kpi-pnl')).not.toHaveTextContent('5,00');
+    });
+
+    it('A-09: la moneta si sceglie in UN posto solo (la testata), niente pillole doppie', async () => {
+        monta();
+        await screen.findByTestId('storico-filtri');
+        expect(screen.queryByTestId('storico-modo-live')).toBeNull();
+        expect(screen.queryByTestId('storico-modo-paper')).toBeNull();
+        expect(screen.getByTestId('storico-testata-live')).toBeInTheDocument();
+    });
+
+    it('B-01: il piede dice il criterio vero (giorno della PARTITA), senza nomi di funzioni', async () => {
+        monta();
+        await screen.findByTestId('storico-filtri');
+        const piede = document.body.textContent ?? '';
+        expect(piede).toMatch(/giorno della PARTITA/);
+        expect(piede).not.toMatch(/PIAZZAMENTO, fuso|trading_daily_history/);
+    });
+
+    it('D-04: il P&L in soldi veri dice la sua fonte', async () => {
+        monta();
+        await waitFor(() => expect(screen.getByTestId('storico-kpi-pnl')).toHaveTextContent('5,00'));
+        expect(screen.getByTestId('storico-kpi-pnl-fonte')).toHaveTextContent(/conto Betfair/);
+    });
+
+    it('C-05: le regolate né vinte né perse sono dette (pari/annullate)', async () => {
+        monta();
+        await waitFor(() => expect(screen.getByTestId('storico-kpi-vp')).toHaveTextContent('pari/annullate'));
     });
 
     it('passando a «prova» i numeri cambiano: sono un\'altra moneta', async () => {
@@ -197,7 +257,7 @@ describe('storico calcio: i profitti per bot, separati per moneta', () => {
         expect(screen.queryByTestId('storico-bot-scelto-misto')).toBeNull();
         await u.click(screen.getByTestId('storico-bot-omega'));
         await waitFor(() => {
-            expect(screen.getByTestId('storico-bot-scelto-misto')).toHaveTextContent(/miste/i);
+            expect(screen.getByTestId('storico-bot-scelto-misto')).toHaveTextContent(/non è separato per moneta/i);
         });
     });
 
@@ -210,12 +270,14 @@ describe('storico calcio: i profitti per bot, separati per moneta', () => {
 });
 
 describe('ROI: senza l\'importo piazzato non si inventa', () => {
-    it('senza get_storico_stake il ROI e\' assente e la pagina dice quale migrazione serve', async () => {
+    it('senza l\'importo piazzato il ROI e\' assente e la pagina lo dice IN PAROLE (C-02)', async () => {
         montaRpc({ safeLive: [rigaRpc('2026-09-16', 3.5)], stake: null });
         monta();
         await waitFor(() => expect(screen.getByTestId('storico-kpi-pnl')).toHaveTextContent('3,50'));
         expect(screen.getByTestId('storico-kpi-roi')).toHaveTextContent('—');
-        expect(screen.getByTestId('storico-manca-stake')).toHaveTextContent('storico_sport_2026-09-17.sql');
+        expect(screen.getByTestId('storico-manca-stake')).toHaveTextContent(/serve un aggiornamento del database/);
+        expect(screen.getByTestId('storico-manca-stake')).not.toHaveTextContent(/\.sql|migrations/);
+        expect(screen.getByTestId('storico-kpi-stake')).not.toHaveTextContent(/migrazione/);
     });
 
     it('con l\'importo piazzato il ROI compare', async () => {
@@ -229,18 +291,42 @@ describe('ROI: senza l\'importo piazzato non si inventa', () => {
     });
 });
 
-describe('storico tennis: i quattro bot senza P&L sono dichiarati, non messi a zero', () => {
+describe('storico tennis: i quattro bot tennis ENTRANO (D-01, 01/10)', () => {
     beforeEach(() => {
-        montaRpc({ safeLive: [rigaRpc('2026-09-14', 0.44, { by_sport: { tennis: { n: 1, pnl: 0.44, won: 1, lost: 0 } } })] });
+        montaRpc({
+            safeLive: [rigaRpc('2026-09-14', 0.44, { by_sport: { tennis: { n: 1, pnl: 0.44, won: 1, lost: 0 } } })],
+            tennisLive: [rigaTennis('2026-09-15', 'tennis_swing', 1.2, { pnl_reale: 1.0, pnl_stimato: 0.2, stimati: 1 })],
+            tennisPaper: [rigaTennis('2026-09-15', 'tennis_pro', -3.3)],
+        });
     });
 
-    it('elenca Tennis Scalper, Pro, FLB e Swing con il motivo', async () => {
+    it('Tennis Swing ha il suo rigo e il suo P&L; nessun «non compaiono» per i bot tennis', async () => {
         monta('tennis');
-        const blocco = await screen.findByTestId('storico-senza-storico');
-        for (const id of ['tennis_scalper', 'tennis_pro', 'tennis_flb', 'tennis_swing']) {
-            expect(within(blocco).getByTestId(`storico-assente-${id}`)).toBeTruthy();
-        }
-        expect(blocco).toHaveTextContent(/Non è uno zero/i);
+        expect(await screen.findByTestId('storico-bot-pnl-tennis_swing')).toHaveTextContent('1,20');
+        expect(screen.queryByTestId('storico-senza-storico')).toBeNull();
+        // 0,44 (Safe tennis) + 1,20 (Swing) = 1,64, SOLO soldi veri (il Pro in prova non entra)
+        expect(screen.getByTestId('storico-kpi-pnl')).toHaveTextContent('1,64');
+        expect(document.body.textContent).not.toContain('3,30');
+        // ROI non calcolabile: i bot tennis non registrano l'importo piazzato, detto
+        expect(screen.getByTestId('storico-kpi-roi')).toHaveTextContent('—');
+        expect(screen.getByTestId('storico-manca-stake')).toHaveTextContent(/bot tennis/);
+        // le «operazioni» di un bot tennis sono ordini, detto sul rigo
+        expect(screen.getByTestId('storico-bot-riga-tennis_swing')).toHaveTextContent('ordini');
+    });
+
+    it('D-03/D-04: solo bot tennis con la fonte separata: «di cui conto Betfair · stima (N ordini stimati)»', async () => {
+        montaRpc({ tennisLive: [rigaTennis('2026-09-15', 'tennis_swing', 1.2, { pnl_reale: 1.0, pnl_stimato: 0.2, stimati: 1 })] });
+        monta('tennis');
+        await waitFor(() => expect(screen.getByTestId('storico-kpi-pnl-fonte'))
+            .toHaveTextContent('di cui conto Betfair +1,00 € · stima +0,20 € (1 ordine ancora stimato)'));
+    });
+
+    it('la lettura chiede UNA moneta per bot (p_mode), mai le due insieme', async () => {
+        monta('tennis');
+        await screen.findByTestId('storico-bot-pnl-tennis_swing');
+        const chiamate = rpc.mock.calls.filter(([n]) => n === 'get_tennis_bot_daily');
+        expect(chiamate.length).toBe(8);      // 4 bot x 2 monete
+        expect(chiamate.every(([, a]) => a.p_mode === 'live' || a.p_mode === 'paper')).toBe(true);
     });
 
     it('nel tennis non compare Omega ne\' Mike', async () => {
@@ -254,6 +340,43 @@ describe('storico tennis: i quattro bot senza P&L sono dichiarati, non messi a z
         monta('tennis');
         const link = await screen.findByTestId('storico-testata-altro');
         expect(link).toHaveAttribute('href', '/storico/calcio');
+    });
+});
+
+describe('B-04 (01/10): il dettaglio del giorno di Mike usa il criterio della CELLA, mai uno cablato', () => {
+    const rigaMike = (over: Record<string, unknown>) => ({
+        id: 31, event_id: 'm1', event_name: 'Roma v Lazio', side: 'back', mode: 'live',
+        price: 1.5, size: 10, liability: 10, status: 'won', pnl: 4.75, bet_id: 'b31', strategy: 'under_entry',
+        placed_at: '2026-09-16T21:30:00Z', settled_at: '2026-09-16T23:15:00Z',
+        meta: null, closes: [], total_pnl: 4.75, placed_in_day: false, settled_in_day: true, ...over,
+    });
+
+    it('RPC vecchia (senza in_day): Mike per regolamento come la cella, e la pagina lo DICHIARA', async () => {
+        montaRpc({
+            mikeLive: [rigaRpc(OGGI, 4.75, { mode: 'live' })],
+            mikeDay: { [OGGI]: [rigaMike({})] },
+            stake: { [OGGI]: 10 },
+        });
+        monta();
+        const det = await screen.findByTestId('storico-dettaglio-mike');
+        await waitFor(() => expect(within(det).getByTestId('day-total-pnl')).toHaveTextContent('+4,75'));
+        expect(screen.getByTestId('storico-bot-pnl-mike')).toHaveTextContent('4,75');
+        expect(screen.getByTestId('storico-giornata-ripiego')).toHaveTextContent(/non manda ancora il giorno della partita/);
+        // C-01: col criterio di prima P&L (regolamento) e importo (piazzamento) non stanno sullo stesso giorno
+        expect(screen.getByTestId('storico-kpi-roi')).toHaveTextContent('—');
+    });
+
+    it('contratto nuovo (in_day): nessun ripiego dichiarato, dettaglio = cella', async () => {
+        montaRpc({
+            mikeLive: [rigaRpc(OGGI, 4.75, { mode: 'live' })],
+            mikeDay: { [OGGI]: [rigaMike({ in_day: true, giorno_partita: OGGI, giorno_da: 'partita', placed_at: '2026-09-17T18:00:00Z', settled_at: '2026-09-17T20:00:00Z', placed_in_day: true })] },
+            stake: { [OGGI]: 10 },
+        });
+        monta();
+        const det = await screen.findByTestId('storico-dettaglio-mike');
+        await waitFor(() => expect(within(det).getByTestId('day-total-pnl')).toHaveTextContent('+4,75'));
+        expect(screen.queryByTestId('storico-giornata-ripiego')).toBeNull();
+        expect(screen.getByTestId('storico-kpi-roi')).toHaveTextContent('47,5');
     });
 });
 
@@ -277,18 +400,29 @@ describe('periodo e curve', () => {
         expect(aria).toMatch(/peggiore/);
     });
 
-    it('cambiando periodo la finestra chiesta alle RPC cambia davvero', async () => {
+    it('cambiando periodo i NUMERI seguono il periodo; la lettura copre anche la griglia del mese (B-15)', async () => {
         const u = userEvent.setup();
         monta();
-        await waitFor(() => expect(screen.getByTestId('storico-kpi-pnl')).toBeTruthy());
-        rpc.mockClear();
+        await waitFor(() => expect(screen.getByTestId('storico-kpi-pnl')).toHaveTextContent('1,50'));
         await u.click(screen.getByTestId('storico-periodo-oggi'));
+        // il 17/09 non ha giornate: P&L del periodo 0,00 (le giornate del 15 e 16 restano nel calendario)
+        await waitFor(() => expect(screen.getByTestId('storico-kpi-pnl')).toHaveTextContent('0,00'));
+        const chiamate = rpc.mock.calls.filter(([n]) => n === 'get_safe_daily');
+        // griglia di settembre 2026: lunedi' 31 agosto -> domenica 4 ottobre
+        expect(chiamate[chiamate.length - 1][1]).toMatchObject({ p_from: '2026-08-31', p_to: '2026-10-04' });
+        expect(screen.getByTestId('storico-intervallo')).toHaveTextContent('17 settembre 2026');
+    });
+
+    it('B-15: il mese precedente si LEGGE (mai «nessuna operazione» su giornate non lette)', async () => {
+        const u = userEvent.setup();
+        monta();
+        await screen.findByTestId('storico-calendario');
+        await u.click(screen.getByRole('button', { name: 'Mese precedente' }));
         await waitFor(() => {
             const chiamate = rpc.mock.calls.filter(([n]) => n === 'get_safe_daily');
-            expect(chiamate.length).toBeGreaterThan(0);
-            expect(chiamate[0][1]).toMatchObject({ p_from: OGGI, p_to: OGGI });
+            // agosto 2026: griglia da lunedi' 27 luglio; il periodo (30 giorni) arriva al 17/09
+            expect(chiamate[chiamate.length - 1][1]).toMatchObject({ p_from: '2026-07-27', p_to: '2026-09-17' });
         });
-        expect(screen.getByTestId('storico-intervallo')).toHaveTextContent('17 settembre 2026');
     });
 
     it('il calendario riceve le giornate unite dei bot visibili', async () => {

@@ -19,8 +19,19 @@ export const EQUITY_AXIS_NOTE =
     'asse verticale = € realizzati sommati, si parte da 0,00 € all’inizio dell’ambito; '
     + 'asse orizzontale = tempo (primo e ultimo passo etichettati); ogni gradino è un regolamento';
 
-export function EquityCard({ series, scope, emptyLabel, label = 'Equity curve', testId = 'equity-card' }: {
+/**
+ * B-07 (01/10) - la stessa curva costruita PER GIORNATA (storico): un gradino
+ * e' una giornata di partite, non un regolamento. Prima le due note della
+ * stessa curva si contraddicevano.
+ */
+export const EQUITY_AXIS_NOTE_GIORNATE =
+    'asse verticale = € realizzati sommati, si parte da 0,00 € all’inizio dell’ambito; '
+    + 'asse orizzontale = giornate (primo e ultimo passo etichettati); ogni gradino è una giornata (le partite di quel giorno)';
+
+export function EquityCard({ series, scope, emptyLabel, label = 'Equity curve', testId = 'equity-card', axisNote = EQUITY_AXIS_NOTE }: {
     series: EquityPoint[];
+    /** nota dell'asse: di serie quella per regolamento; lo storico passa quella per giornata */
+    axisNote?: string;
     /** ambito della curva: "giornata 10 settembre" o "tutte le partite caricate" */
     scope?: string;
     emptyLabel?: string;
@@ -30,12 +41,12 @@ export function EquityCard({ series, scope, emptyLabel, label = 'Equity curve', 
 }) {
     return (
         <Card className="glass-card border-white/10 p-4" data-testid={testId}>
-            <div className="flex items-center gap-2 text-sm text-slate-300 mb-1" title={EQUITY_AXIS_NOTE}>
+            <div className="flex items-center gap-2 text-sm text-slate-300 mb-1" title={axisNote}>
                 <TrendingUp className="w-4 h-4 text-primary" aria-hidden />
                 {EQUITY_TITLE}
                 {scope && <span className="text-[11px] text-slate-500">· {scope}</span>}
             </div>
-            <div className="text-[10px] text-slate-500 mb-2" data-testid="equity-axis-note">{EQUITY_AXIS_NOTE}</div>
+            <div className="text-[10px] text-slate-500 mb-2" data-testid="equity-axis-note">{axisNote}</div>
             <EquityCurve series={series} emptyLabel={emptyLabel} label={label} />
         </Card>
     );

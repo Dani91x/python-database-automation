@@ -28,10 +28,17 @@ import {
     fetchSafeDayTrades, fetchMikeDayTrades, fetchOmegaDayTradesPerModo,
     type DailyRow, type DayTrade, type HistoryVariant,
 } from '@/lib/dailyHistory';
+import { fetchTennisBotDaily, type TennisBotDailyRow, type TennisBotKey } from '@/lib/tennis';
 
 export type SportStorico = 'calcio' | 'tennis';
 export type ModoStorico = 'paper' | 'live';
-export type BotStorico = 'omega' | 'safe' | 'mike';
+/** 01/10 (D-01): anche i 4 bot tennis, che dal 17/09 hanno P&L e regolamento */
+export type BotStorico = 'omega' | 'safe' | 'mike' | TennisBotKey;
+
+/** I 4 bot tennis dedicati: storico da `fetchTennisBotDaily`, per ordine. */
+export function eBotTennisStorico(bot: BotStorico): bot is TennisBotKey {
+    return bot === 'tennis_scalper' || bot === 'tennis_pro' || bot === 'tennis_flb' || bot === 'tennis_swing';
+}
 
 export const SPORT_LABEL: Record<SportStorico, string> = {
     calcio: 'Calcio',
@@ -72,40 +79,31 @@ export const FONTI_STORICO: Record<SportStorico, FonteStorico[]> = {
     ],
     tennis: [
         { bot: 'safe', etichetta: 'Safe Strategy · tennis', accento: 'text-secondary', sportRpc: 'tennis' },
+        // 01/10 (D-01): i 4 bot tennis hanno P&L e regolamento dal 17/09 e
+        // netto di Betfair dal 24/09; la giornata e' quella della partita
+        { bot: 'tennis_scalper', etichetta: 'Tennis Scalper', accento: 'text-lime-300', sportRpc: 'tennis' },
+        { bot: 'tennis_pro', etichetta: 'Tennis Pro', accento: 'text-lime-300', sportRpc: 'tennis' },
+        { bot: 'tennis_flb', etichetta: 'Tennis FLB', accento: 'text-lime-300', sportRpc: 'tennis' },
+        { bot: 'tennis_swing', etichetta: 'Tennis Swing', accento: 'text-lime-300', sportRpc: 'tennis' },
     ],
 };
 
 export const FONTI_ASSENTI: Record<SportStorico, FonteAssente[]> = {
     calcio: [
         {
+            // C-06 (01/10): lo scalper HA un P&L reale, ma solo della giornata
+            // in corso (voce della barra, dal conto Betfair per ordine): non
+            // scrive posizioni regolate per giornata, quindi qui non c'e' una
+            // serie da sommare. Detto in parole, senza nomi di tabelle.
             id: 'scalper',
             etichetta: 'Scalper calcio',
-            perche: 'non scrive operazioni regolate con P&L su nessuna tabella di trade: '
-                + '`scalper_activity` è un diario di scansioni, non un registro di posizioni.',
+            perche: 'il suo P&L reale esiste solo per la giornata in corso (voce «Scalper calcio» '
+                + 'della barra di oggi, letta dal conto Betfair): non registra operazioni per giornata, '
+                + 'quindi qui non ha uno storico da sommare.',
         },
     ],
-    tennis: [
-        {
-            id: 'tennis_scalper', etichetta: 'Tennis Scalper',
-            perche: 'gli ordini finiscono in `tennis_live_orders`, che non ha né P&L né regolamento: '
-                + 'nessuna giornata da sommare.',
-        },
-        {
-            id: 'tennis_pro', etichetta: 'Tennis Pro',
-            perche: 'stessa tabella ordini senza P&L; `tennis_bot_control.stats` è la fotografia '
-                + 'della sessione in corso, non uno storico per giorno.',
-        },
-        {
-            id: 'tennis_flb', etichetta: 'Tennis FLB',
-            perche: 'stessa tabella ordini senza P&L; `tennis_bot_control.stats` è la fotografia '
-                + 'della sessione in corso, non uno storico per giorno.',
-        },
-        {
-            id: 'tennis_swing', etichetta: 'Tennis Swing',
-            perche: 'stessa tabella ordini senza P&L; `tennis_bot_control.stats` è la fotografia '
-                + 'della sessione in corso, non uno storico per giorno.',
-        },
-    ],
+    // 01/10 (D-01): i 4 bot tennis hanno uno storico; nessun bot tennis assente
+    tennis: [],
 };
 
 /** Rotta della dashboard di uno sport: una sola forma, usata da ogni pulsante. */
@@ -122,7 +120,8 @@ export const INTERVALLO_LABEL: Record<IntervalloKind, string> = {
     '7g': '7 giorni',
     '30g': '30 giorni',
     mese: 'Mese corrente',
-    tutto: 'Tutto',
+    // B-14 (01/10): «Tutto» era in realta' il tetto di 400 giorni, senza dirlo
+    tutto: `Ultimi ${MAX_HISTORY_DAYS} giorni`,
 };
 
 /** Intervallo [from, to] inclusivo di un ambito, rispetto alla giornata `oggi`. */
@@ -155,10 +154,43 @@ export interface SerieBot {
      * `migrations/storico_sport_2026-09-17.sql`.
      */
     modoAttendibile: boolean;
-    /** importo piazzato per giorno; null = `get_storico_stake` non applicata */
+    /** importo piazzato per giorno; null = dato non disponibile */
     stakePerGiorno: Record<string, number> | null;
+    /**
+     * 01/10 (D-04) - di ogni giornata, la parte regolata dal CONTO Betfair e
+     * quella STIMATA dal bot, quando la fonte le separa (oggi solo i 4 bot
+     * tennis). null = la fonte non le separa: lo si dice, non si inventa.
+     */
+    fontePerGiorno?: Record<string, { reale: number | null; stimato: number | null; stimati: number | null }> | null;
     /** errore di lettura di QUESTO bot: gli altri restano leggibili */
     errore: string | null;
+}
+
+/**
+ * Una giornata di un bot tennis nel formato del motore condiviso. Le
+ * «operazioni» sono gli ORDINI regolati: il servizio non scrive il legame
+ * ingresso-uscita (B13), quindi non esistono posizioni da contare.
+ */
+export function rigaGiornalieraTennisBot(r: TennisBotDailyRow): DailyRow | null {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(r.giorno) || r.pnl_netto == null) return null;
+    const vuoti = Math.max(0, r.ordini - r.vinti - r.persi);
+    return {
+        day: r.giorno,
+        pnl_realized: r.pnl_netto,
+        trades_placed: r.ordini,
+        settled: r.ordini,
+        won: r.vinti,
+        lost: r.persi,
+        void: vuoti,
+        hedged_closed: 0,
+        win_rate: r.vinti + r.persi > 0 ? Math.round((r.vinti / (r.vinti + r.persi)) * 10000) / 10000 : null,
+        avg_win: null, avg_loss: null, best_trade: null, worst_trade: null, max_liability: null,
+        gross_profit: 0, gross_loss: 0, profit_factor: null,
+        commission_paid: r.commissione,
+        goal: null, goal_pct: null, goal_snapshot: false,
+        by_strategy: {}, by_sport: {}, by_origin: {},
+        first_trade_at: null, last_trade_at: null,
+    };
 }
 
 /** Legge lo storico di UN bot per UNA modalità. Non lancia: l'errore è un dato. */
@@ -171,6 +203,23 @@ export async function caricaSerieBot(
     try {
         let righe: DailyRow[] = [];
         let modoAttendibile = true;
+        if (eBotTennisStorico(fonte.bot)) {
+            // D-01: una moneta per lettura (p_mode obbligatoria), giorno della
+            // partita dal database; niente importo piazzato per giornata
+            const rows = await fetchTennisBotDaily(from, to, modo, fonte.bot);
+            const fontePerGiorno: NonNullable<SerieBot['fontePerGiorno']> = {};
+            for (const r of rows) {
+                const g = rigaGiornalieraTennisBot(r);
+                if (!g) continue;
+                righe.push(g);
+                fontePerGiorno[g.day] = r.pnl_stimato === undefined
+                    // RPC senza la separazione: tutto il netto e' stima del bot
+                    ? { reale: null, stimato: r.pnl_netto, stimati: null }
+                    : { reale: r.pnl_reale ?? null, stimato: r.pnl_stimato ?? null, stimati: r.stimati ?? null };
+            }
+            righe = righe.sort((a, b) => a.day.localeCompare(b.day));
+            return { ...base, righe, modoAttendibile: true, stakePerGiorno: null, fontePerGiorno, errore: null };
+        }
         if (fonte.bot === 'omega') {
             const r = await fetchOmegaDailyPerModo(from, to, modo);
             righe = r.rows;
@@ -183,7 +232,7 @@ export async function caricaSerieBot(
         // lo stake è un DI PIÙ: se manca, manca solo il ROI
         let stakePerGiorno: Record<string, number> | null = null;
         try {
-            stakePerGiorno = await fetchStakePerGiorno(fonte.bot, from, to, fonte.sportRpc, modo);
+            stakePerGiorno = await fetchStakePerGiorno(fonte.bot as 'omega' | 'safe' | 'mike', from, to, fonte.sportRpc, modo);
         } catch { stakePerGiorno = null; }
         return { ...base, righe, modoAttendibile, stakePerGiorno, errore: null };
     } catch (e) {
@@ -227,6 +276,16 @@ export interface AggregatoBot {
     regolate: number;
     vinte: number;
     perse: number;
+    /** C-05 (01/10): regolate né vinte né perse (P&L esattamente zero o annullate) */
+    pari: number;
+    /**
+     * D-04 (01/10): di `pnl`, la parte regolata dal conto Betfair e la stima del
+     * bot; null = la fonte non le separa (lo si dichiara a schermo).
+     */
+    reale: number | null;
+    stimato: number | null;
+    /** ordini ancora stimati nel periodo (bot tennis); null = non noto */
+    stimati: number | null;
     /** vinte/(vinte+perse) in [0,1]; null senza esiti */
     winRate: number | null;
     /** somma degli importi piazzati; null = non disponibile (migrazione mancante) */
@@ -237,13 +296,23 @@ export interface AggregatoBot {
 }
 
 export function aggregaBot(s: SerieBot): AggregatoBot {
-    let pnl = 0, operazioni = 0, regolate = 0, vinte = 0, perse = 0;
+    let pnl = 0, operazioni = 0, regolate = 0, vinte = 0, perse = 0, pari = 0;
+    // reale/stimato SOLO se la fonte li separa per OGNI giornata mostrata
+    let reale: number | null = s.fontePerGiorno ? 0 : null;
+    let stimato: number | null = s.fontePerGiorno ? 0 : null;
+    let stimati: number | null = s.fontePerGiorno ? 0 : null;
     for (const r of s.righe) {
         pnl += r.pnl_realized;
         operazioni += r.trades_placed;
         regolate += r.settled;
         vinte += r.won;
         perse += r.lost;
+        pari += r.void;
+        const f = s.fontePerGiorno?.[r.day];
+        if (!f) { reale = null; stimato = null; stimati = null; continue; }
+        if (reale != null) reale += f.reale ?? 0;
+        if (stimato != null) stimato += f.stimato ?? 0;
+        if (stimati != null) stimati = f.stimati == null ? null : stimati + f.stimati;
     }
     let stake: number | null = null;
     if (s.stakePerGiorno) {
@@ -268,7 +337,10 @@ export function aggregaBot(s: SerieBot): AggregatoBot {
     return {
         bot: s.bot, etichetta: s.etichetta, accento: s.accento, modo: s.modo,
         modoAttendibile: s.modoAttendibile,
-        pnl: r2(pnl), giorni: s.righe.length, operazioni, regolate, vinte, perse,
+        pnl: r2(pnl), giorni: s.righe.length, operazioni, regolate, vinte, perse, pari,
+        reale: reale == null ? null : r2(reale),
+        stimato: stimato == null ? null : r2(stimato),
+        stimati,
         winRate: vinte + perse > 0 ? Math.round((vinte / (vinte + perse)) * 10000) / 10000 : null,
         stake,
         roi: stake != null && stake > 0 ? Math.round((pnl / stake) * 10000) / 10000 : null,
@@ -283,6 +355,13 @@ export interface TotaleStorico {
     regolate: number;
     vinte: number;
     perse: number;
+    /** C-05: regolate né vinte né perse */
+    pari: number;
+    /** D-04: parte del conto Betfair e stima; null = almeno un bot non le separa */
+    reale: number | null;
+    stimato: number | null;
+    /** D-03: ordini ancora stimati (bot tennis); null = non noto */
+    stimati: number | null;
     winRate: number | null;
     stake: number | null;
     roi: number | null;
@@ -302,8 +381,15 @@ export interface TotaleStorico {
 export function totaleModo(
     aggregati: readonly AggregatoBot[], modo: ModoStorico,
 ): TotaleStorico {
-    let pnl = 0, operazioni = 0, regolate = 0, vinte = 0, perse = 0, bot = 0;
+    let pnl = 0, operazioni = 0, regolate = 0, vinte = 0, perse = 0, pari = 0, bot = 0;
     let stake: number | null = null;
+    // C-01/D-01 (01/10): se un bot CON giornate non ha l'importo piazzato, il
+    // ROI del totale non si calcola: P&L di tutti diviso l'importo di alcuni
+    // sarebbe un numero falso
+    let stakeIncompleto = false;
+    let reale: number | null = 0;
+    let stimato: number | null = 0;
+    let stimati: number | null = 0;
     for (const a of aggregati) {
         if (a.modo !== modo) {
             throw new Error(
@@ -314,11 +400,24 @@ export function totaleModo(
         if (!a.modoAttendibile) continue;   // fuori dai totali, dichiarato a parte
         bot += 1;
         pnl += a.pnl; operazioni += a.operazioni; regolate += a.regolate;
-        vinte += a.vinte; perse += a.perse;
+        vinte += a.vinte; perse += a.perse; pari += a.pari ?? 0;
         if (a.stake != null) stake = r2((stake ?? 0) + a.stake);
+        else if (a.giorni > 0) stakeIncompleto = true;
+        if (a.giorni > 0) {
+            if (a.reale === undefined || a.reale === null || a.stimato === undefined || a.stimato === null) {
+                reale = null; stimato = null;
+            } else if (reale != null && stimato != null) {
+                reale += a.reale; stimato += a.stimato;
+            }
+            stimati = a.stimati == null || stimati == null ? null : stimati + a.stimati;
+        }
     }
+    if (stakeIncompleto) stake = null;
     return {
-        modo, pnl: r2(pnl), operazioni, regolate, vinte, perse, bot,
+        modo, pnl: r2(pnl), operazioni, regolate, vinte, perse, pari, bot,
+        reale: bot > 0 && reale != null ? r2(reale) : null,
+        stimato: bot > 0 && stimato != null ? r2(stimato) : null,
+        stimati: bot > 0 && reale != null ? stimati : null,
         winRate: vinte + perse > 0 ? Math.round((vinte / (vinte + perse)) * 10000) / 10000 : null,
         stake,
         roi: stake != null && stake > 0 ? Math.round((pnl / stake) * 10000) / 10000 : null,
@@ -439,11 +538,13 @@ export function oggiOperativo(now: Date = new Date()): string {
 export interface TradeGiornoBot {
     bot: BotStorico;
     etichetta: string;
-    /** la variante che `DayDetail` usa per le etichette (fase/strategia/ruolo) */
-    variante: HistoryVariant;
+    /** la variante che `DayDetail` usa per le etichette (fase/strategia/ruolo); null = bot tennis */
+    variante: HistoryVariant | null;
     trades: DayTrade[];
     modoAttendibile: boolean;
     errore: string | null;
+    /** 01/10 - il dettaglio per riga non esiste per questo bot: perche' (detto in parole) */
+    senzaDettaglio?: string | null;
 }
 
 /** Le operazioni di UN giorno, bot per bot, per UNA modalità. Non lancia. */
@@ -453,12 +554,21 @@ export async function caricaTradeGiorno(
     return Promise.all(FONTI_STORICO[sport].map(async (fonte): Promise<TradeGiornoBot> => {
         const base = {
             bot: fonte.bot, etichetta: fonte.etichetta,
-            variante: fonte.bot as HistoryVariant,
+            variante: eBotTennisStorico(fonte.bot) ? null : fonte.bot as HistoryVariant,
         };
+        if (eBotTennisStorico(fonte.bot)) {
+            // nessuna lettura in piu': il dettaglio per ordine e' nelle Chiuse
+            return {
+                ...base, trades: [], modoAttendibile: true, errore: null,
+                senzaDettaglio: 'il dettaglio per ordine di questo bot è nella scheda «Posizioni chiuse» di quella giornata',
+            };
+        }
         try {
             if (fonte.bot === 'omega') {
                 const r = await fetchOmegaDayTradesPerModo(day, modo);
-                return { ...base, trades: r.trades, modoAttendibile: r.modoAttendibile, errore: null };
+                // A-02 (01/10): righe MISTE (paper + live) non si mostrano mai
+                // sotto una moneta: il bot resta dichiarato, senza righe
+                return { ...base, trades: r.modoAttendibile ? r.trades : [], modoAttendibile: r.modoAttendibile, errore: null };
             }
             if (fonte.bot === 'safe') {
                 const t = await fetchSafeDayTrades(day, fonte.sportRpc, modo);

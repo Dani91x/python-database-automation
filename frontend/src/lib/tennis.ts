@@ -1058,6 +1058,9 @@ export interface TennisBotDailyRow {
      */
     pnl_reale?: number | null;
     pnl_stimato?: number | null;
+    /** 01/10 (D-03): quanti ordini della giornata sono ancora STIMATI (senza
+     *  netto di Betfair). Assente = RPC di prima. */
+    stimati?: number | null;
 }
 
 /** Un numero, o `null`. Mai zero per «non lo so». */
@@ -1090,6 +1093,7 @@ export async function fetchTennisBotDaily(
         volume: numeroO(r.volume),
         // 24/09: presenti solo con la RPC nuova; assenti restano undefined
         ...('pnl_stimato' in r ? { pnl_reale: numeroO(r.pnl_reale), pnl_stimato: numeroO(r.pnl_stimato) } : {}),
+        ...('stimati' in r ? { stimati: numeroO(r.stimati) } : {}),
     }));
 }
 

@@ -10,7 +10,9 @@
 //     dalla finestra delle 200 righe di Safe, reperto B15, torna intera);
 //   - un giorno passato, quando il trader lo sceglie.
 // Il risultato si MEMORIZZA per (giornata, modalita'): tornare su un giorno
-// gia' visto non rilegge niente. Oggi scade dopo `SCADENZA_OGGI_MS`.
+// gia' visto non rilegge niente. OGGI e IERI scadono dopo `SCADENZA_OGGI_MS`
+// (01/10, B-10: col giorno della partita una partita di ieri sera regolata
+// stanotte o stamattina cambia IERI, che deve aggiornarsi senza riavvio).
 //
 // FONTE: la RPC `get_posizioni_chiuse_giornata(p_day, p_mode)` (migrazione
 // `migrations/posizioni_chiuse_giornata_2026-09-24.sql`): i cicli con almeno
@@ -27,11 +29,12 @@ import {
     type DayTrade,
 } from '@/lib/dailyHistory';
 import type { TennisBotOrderRow } from '@/lib/tennis';
-import { rigaDaOrdineTennis, type TradeChiudibile } from '@/lib/posizioniChiuse';
+import { haGiornoDb, rigaDaOrdineTennis, type TradeChiudibile } from '@/lib/posizioniChiuse';
+import { addDays } from '@/lib/dailyHistory';
 
 export const RPC_CHIUSE_GIORNATA = 'get_posizioni_chiuse_giornata';
 
-/** quanto resta buona la lettura di OGGI (le altre giornate non scadono) */
+/** quanto resta buona la lettura di OGGI e di IERI (le altre giornate non scadono) */
 export const SCADENZA_OGGI_MS = 60_000;
 
 export interface ChiuseGiornata {
@@ -43,6 +46,20 @@ export interface ChiuseGiornata {
     /** cio' che il trader deve sapere di questa lettura (ripieghi, cadute) */
     avvisi: string[];
     lettoAlle: number;
+    /**
+     * 01/10 - la risposta porta il giorno della PARTITA (contratto SQL)?
+     * true = si'; false = righe presenti ma senza (aggiornamento del database
+     * non applicato: si dichiara); null = nessuna riga da cui saperlo.
+     */
+    giornoPartita?: boolean | null;
+    /** 01/10 - quando e' PARTITA la lettura (ms): cio' che era regolato prima c'e' */
+    chiestoAlle?: number;
+}
+
+/** 01/10 - le righe dicono il giorno della partita? (vedi `ChiuseGiornata.giornoPartita`) */
+export function giornoPartitaDi(righe: readonly TradeChiudibile[]): boolean | null {
+    if (righe.length === 0) return null;
+    return righe.some((r) => haGiornoDb(r));
 }
 
 function comeRighe(v: unknown): Record<string, unknown>[] {
@@ -63,7 +80,10 @@ export function righeDaRisposta(data: unknown): TradeChiudibile[] {
     const d = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>;
     const tennis: TradeChiudibile[] = [];
     for (const o of comeRighe(d.tennis)) {
-        const r = rigaDaOrdineTennis(o as unknown as TennisBotOrderRow, null,
+        // C-07 (01/10): il nome della partita arriva dalla lettura anche per il
+        // tennis; prima era null e le giornate passate dicevano «evento 3456…»
+        const nome = typeof o.event_name === 'string' && o.event_name.trim() ? o.event_name.trim() : null;
+        const r = rigaDaOrdineTennis(o as unknown as TennisBotOrderRow, nome,
             (b) => isBotTennis(b as Bot));
         if (r) tennis.push(r);
     }
@@ -87,8 +107,10 @@ export function righeDaStorico(trades: readonly DayTrade[], bot: Bot, sport?: st
 }
 
 async function leggiRipiego(giorno: string, modo: Modo): Promise<ChiuseGiornata> {
+    const chiestoAlle = Date.now();
+    // A-03/C-02 (01/10): in parole, senza nomi di migrazioni o funzioni
     const avvisi = [
-        'Lettura di ripiego (migrazione posizioni_chiuse_giornata non applicata): '
+        'Lettura di ripiego (il database non ha ancora la lettura completa delle chiuse): '
         + 'bot tennis assenti per i giorni passati, catene di chiusura al primo livello.',
     ];
     const [o, s, m] = await Promise.allSettled([
@@ -110,11 +132,15 @@ async function leggiRipiego(giorno: string, modo: Modo): Promise<ChiuseGiornata>
         righe.push(...righeDaStorico(m.value, 'mike', 'calcio')
             .filter((r) => String(r.mode ?? '').toLowerCase() === modo));
     } else avvisi.push(`Mike non letto: ${m.reason instanceof Error ? m.reason.message : String(m.reason)}`);
-    return { giorno, modo, righe, fonte: 'ripiego', avvisi, lettoAlle: Date.now() };
+    return {
+        giorno, modo, righe, fonte: 'ripiego', avvisi, lettoAlle: Date.now(),
+        giornoPartita: giornoPartitaDi(righe), chiestoAlle,
+    };
 }
 
 /** UNA giornata, UNA modalita', dal database (nessuna memoria qui). */
 export async function leggiChiuseGiornata(giorno: string, modo: Modo): Promise<ChiuseGiornata> {
+    const chiestoAlle = Date.now();
     const { data, error } = await supabase.rpc(RPC_CHIUSE_GIORNATA as never, {
         p_day: giorno, p_mode: modo,
     } as never);
@@ -122,7 +148,11 @@ export async function leggiChiuseGiornata(giorno: string, modo: Modo): Promise<C
         if (eFirmaMancante(error.message)) return leggiRipiego(giorno, modo);
         throw new Error(error.message);
     }
-    return { giorno, modo, righe: righeDaRisposta(data), fonte: 'rpc', avvisi: [], lettoAlle: Date.now() };
+    const righe = righeDaRisposta(data);
+    return {
+        giorno, modo, righe, fonte: 'rpc', avvisi: [], lettoAlle: Date.now(),
+        giornoPartita: giornoPartitaDi(righe), chiestoAlle,
+    };
 }
 
 // ------------------------------------------------------------------ memoria
@@ -144,7 +174,9 @@ export function chiuseGiornata(
     const k = chiave(giorno, modo);
     const ora = opz.ora ?? Date.now();
     const quando = lettaAlle.get(k);
-    const scaduta = giorno === opz.oggi && quando != null && ora - quando > SCADENZA_OGGI_MS;
+    // B-10 (01/10): scadono OGGI e IERI (partite serali regolate dopo mezzanotte)
+    const recente = giorno === opz.oggi || giorno === addDays(opz.oggi, -1);
+    const scaduta = recente && quando != null && ora - quando > SCADENZA_OGGI_MS;
     const giaLetta = memoria.get(k);
     if (giaLetta && !opz.forza && !scaduta) return giaLetta;
     const p = (opz.leggi ?? leggiChiuseGiornata)(giorno, modo);

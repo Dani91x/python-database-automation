@@ -599,7 +599,10 @@ export const T = {
 export const TIP = {
     openLiability: 'quanto è ancora a rischio ADESSO sulle posizioni vive (non è il capitale impegnato oggi)',
     lockedPnl: 'risultato GIÀ bloccato dalle coperture sulle posizioni ancora vive: non cambia più, qualunque sia l’esito',
-    realizedToday: 'somma dei P&L delle posizioni PIAZZATE oggi e già regolate (fuso Europe/Rome)',
+    // B-08 (01/10): il testo valeva solo per il piazzamento ed era usato anche
+    // dove la giornata e' un'altra; ora dice cosa e' il numero senza inventare
+    // un criterio (ogni pagina dichiara il suo accanto)
+    realizedToday: 'somma dei P&L già regolati attribuiti alla giornata di oggi (fuso Europe/Rome), netti di commissione',
     // CERT. 13/09 — due cose che il numero da solo non dice e che cambiano
     // completamente come va letto: (1) a QUALE MODALITÀ si riferisce — il
     // backend tiene P&L e rischio separati fra paper e live, e sommare le due
@@ -614,8 +617,8 @@ export const TIP = {
     // SEGNO del P&L totale della POSIZIONE (apertura + chiusure).
     winLoss: 'V = posizioni con P&L totale positivo, P = negativo (apertura + chiusure): un ciclo greenato vale UNA posizione, non 1 vinta + 1 persa',
     goalToday: 'obiettivo di P&L realizzato per la giornata di oggi',
-    matches: 'partite con almeno una posizione piazzata oggi',
-    operations: 'posizioni (gambe) piazzate oggi, chiusure escluse',
+    matches: 'partite con almeno una posizione nella giornata di oggi',
+    operations: 'posizioni (gambe) della giornata di oggi, chiusure escluse',
     liveCount: 'posizioni ancora vive: non regolate',
     // CERT. 13/09 — barra dei totali della sezione Operazioni
     totOperazioni: 'quante POSIZIONI (aperture) rientrano in questa vista: le gambe di chiusura stanno dentro la posizione che chiudono, non si contano due volte',
@@ -623,7 +626,7 @@ export const TIP = {
     totAperto: 'quanto si bloccherebbe chiudendo ADESSO a mercato tutte le posizioni ancora vive, al netto della commissione. È una STIMA sui prezzi del feed, non un incasso.',
     totInvestito: 'capitale impegnato nelle aperture di questa vista (lo stake, non la liability di una banca)',
     totLiability: 'quanto è ancora a rischio ADESSO sulle posizioni vive di questa vista',
-    equity: 'P&L cumulato realizzato, un gradino per giornata: parte da 0 il primo giorno del periodo',
+    equity: 'P&L cumulato realizzato, un gradino per giornata (le partite di quel giorno): parte da 0 il primo giorno del periodo',
     feed: 'FEED dello scanner (fonte unica delle quote): da quanti secondi non si aggiorna',
     beat: 'BATTITO del servizio del bot: se manca, il bot non sta operando',
 } as const;

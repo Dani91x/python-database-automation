@@ -491,7 +491,9 @@ describe('DayBar — «Liability aperta» a zero NON sparisce (12/09)', () => {
         const line = screen.getByTestId('day-bar-line');
         expect(line.querySelector('[title*="ADESSO"]')).not.toBeNull();          // Liability aperta
         expect(line.querySelector('[title*="non cambia più"]')).not.toBeNull();  // P&L bloccato
-        expect(line.querySelector('[title*="PIAZZATE oggi"]')).not.toBeNull();   // realizzato oggi
+        // B-08 (01/10): il testo non afferma piu' un criterio (prima diceva «PIAZZATE oggi»)
+        expect(line.querySelector('[title*="giornata di oggi"]')).not.toBeNull();   // realizzato oggi
+        expect(line.querySelector('[title*="PIAZZATE oggi"]')).toBeNull();
     });
 });
 

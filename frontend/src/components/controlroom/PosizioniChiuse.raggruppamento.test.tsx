@@ -127,7 +127,12 @@ describe('paper e live: mai insieme', () => {
         monta(righe);
         expect(screen.getByTestId('cr-chiuse-totale')).toHaveTextContent('+1,00');
         expect(screen.queryByText('Finta')).toBeNull();
+        // A-08 (01/10): la moneta e' dichiarata in testata in ENTRAMBE le viste
+        expect(screen.getByTestId('cr-chiuse-moneta')).toHaveTextContent('soldi veri');
+        expect(screen.getByTestId('cr-f-modo-live')).toHaveTextContent('soldi veri');
         fireEvent.click(screen.getByTestId('cr-f-modo-paper'));
+        expect(screen.getByTestId('cr-chiuse-moneta')).toHaveTextContent('prova');
+        expect(screen.getByTestId('cr-chiuse-moneta').dataset.modo).toBe('paper');
         expect(screen.getByTestId('cr-chiuse-totale')).toHaveTextContent('+50,00');
         expect(screen.getByTestId('cr-chiuse-totale-fonte').dataset.fonte).toBe('paper');
         expect(screen.queryByText('Inter - Milan')).toBeNull();
@@ -205,10 +210,26 @@ describe('orfane e ripiego B13: dichiarati, mai nascosti', () => {
     });
 });
 
-describe('giornata di REGOLAMENTO, scelta dal trader, letta a richiesta', () => {
-    it('aperta ieri sera e regolata oggi: e\' di OGGI', () => {
+describe('giornata della PARTITA (01/10), scelta dal trader, letta a richiesta', () => {
+    // 01/10: prima «aperta ieri sera e regolata oggi: e' di OGGI» (regolamento).
+    // Ora la giornata e' quella della PARTITA, dal database: una riga in memoria
+    // senza quel dato resta su oggi solo come PROVVISORIA, e la scheda lo dice.
+    it('in memoria senza il giorno del database: oggi PROVVISORIA, dichiarata', () => {
         monta([t({ id: 1, pnl: 2, placed_at: `${IERI}T21:30:00.000Z`, settled_at: `${OGGI}T06:00:00.000Z` })]);
         expect(screen.getByTestId('cr-chiuse-giornata')).toHaveTextContent('Oggi');
+        expect(screen.getByTestId('cr-chiuse-totale')).toHaveTextContent('+2,00');
+        expect(screen.getByTestId('cr-chiuse-nota-provvisorie')).toHaveTextContent('1 operazione con giornata PROVVISORIA');
+    });
+
+    it('con il giorno del database (partita di IERI): non e\' di oggi, e sta sotto ieri', async () => {
+        const riga = t({ id: 1, pnl: 2, placed_at: `${IERI}T21:30:00.000Z`, settled_at: `${OGGI}T06:00:00.000Z`,
+            giorno_partita: IERI, giorno_da: 'partita', in_day: true });
+        const leggi: LeggiGiornata = async (g, m) => (g === IERI ? giornata(g, m, [riga]) : giornata(g, m));
+        monta([riga], { leggi });
+        expect(screen.queryByTestId('cr-chiusa-1')).toBeNull();
+        expect(screen.getByTestId('cr-chiuse-fuori-giornata')).toHaveTextContent('Altre 1 posizioni');
+        fireEvent.click(screen.getByTestId('cr-f-giorno-prima'));
+        await waitFor(() => expect(screen.getByTestId('cr-chiusa-1')).toBeInTheDocument());
         expect(screen.getByTestId('cr-chiuse-totale')).toHaveTextContent('+2,00');
     });
 
@@ -253,9 +274,10 @@ describe('controprova con la barra di giornata', () => {
     });
     const righe = [t({ __bot: 'omega', id: 1, pnl: 1 }), t({ id: 2, pnl: 0.5, event_id: 'E2' })];
 
-    it('coincide: lo dice', () => {
+    it('coincide: lo dice (stesso perimetro della barra: regolato oggi sul conto)', () => {
         monta(righe, { barra: barra(1, 0.5) });
         expect(screen.getByTestId('cr-chiuse-controprova').dataset.coincide).toBe('1');
+        expect(screen.getByTestId('cr-chiuse-controprova')).toHaveTextContent('stesso perimetro');
     });
 
     it('non coincide: mostra la differenza (il manuale del sito non entra)', () => {

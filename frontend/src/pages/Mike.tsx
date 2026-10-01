@@ -77,6 +77,9 @@ export default function Mike() {
     const [scanStatus, setScanStatus] = useState<ScanStatusRow | null>(null);
     const [liveConfirmOpen, setLiveConfirmOpen] = useState(false);
     const [tab, setTab] = useState('partite');
+    // A-07 (01/10): lo Storico chiede SEMPRE una moneta esplicita e la dichiara;
+    // di serie quella del bot, l'altra si sceglie apposta
+    const [historyModeScelto, setHistoryModeScelto] = useState<MikeMode | null>(null);
     // filtri della scheda Partite: la scelta sopravvive al ricaricamento
     const filtro = useSectionFilter('mike.partite.nascoste', SEZIONI_PARTITE);
     const notifiedRef = useRef<Set<string>>(new Set());
@@ -122,6 +125,11 @@ export default function Mike() {
     const status: MikeStatus = (bot.control?.status ?? 'idle') as MikeStatus;
     const running = status === 'running' || status === 'stopping';
     const mode: MikeMode = bot.mode;
+    const historyMode: MikeMode = historyModeScelto ?? mode;
+    const fetchHistoryDaily = useCallback(
+        (from: string, to: string) => fetchDailyReadable(from, to, historyMode), [historyMode]);
+    const fetchHistoryDay = useCallback(
+        (day: string) => fetchDayTradesReadable(day, historyMode), [historyMode]);
     const stats = bot.control?.stats ?? null;
     // CERT. 13/09, difetto B3 — fail-CLOSED. Con `updated_at` non parsabile
     // `Date.parse` da' NaN, e `NaN > soglia` e' false: il feed risultava FRESCO e
@@ -762,11 +770,14 @@ export default function Mike() {
                 <TabsContent value="storico" className="mt-3">
                     <TradingHistory
                         variant="mike"
-                        fetchDaily={fetchDailyReadable}
-                        fetchDayTrades={fetchDayTradesReadable}
+                        fetchDaily={fetchHistoryDaily}
+                        fetchDayTrades={fetchHistoryDay}
+                        filterKey={historyMode}
+                        modo={historyMode}
+                        onModo={setHistoryModeScelto}
                         refreshToken={bot.trades.length}
                         onGoLive={() => setTab('partite')}
-                        fonteNota={mode === 'paper'
+                        fonteNota={historyMode === 'paper'
                             ? `P&L: ${FONTE_PNL_TESTO.simulato}`
                             // review incrociata 30/09 (M4): niente data fissa. La fonte vera
                             // e' per riga (`meta.fonte`, DayDetail): qui si dice solo la regola.

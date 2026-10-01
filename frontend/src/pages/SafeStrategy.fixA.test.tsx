@@ -107,8 +107,12 @@ describe('FIX-A — Safe: i numeri di una modalità, mai la somma', () => {
         expect(screen.getByTestId('safe-kpi-pnl-today')).toHaveTextContent('+4,78');
         const altra = screen.getByTestId('safe-altra-modalita');
         expect(altra).toHaveAttribute('data-mode', 'live');
-        expect(altra).toHaveTextContent('LIVE');
-        expect(screen.getByTestId('safe-altra-pnl-totale')).toHaveTextContent('+2,58');
+        expect(altra).toHaveTextContent('SOLDI VERI');
+        // A-04 (01/10, regola estesa dal coordinatore): NESSUNA cifra dell'altra
+        // moneta nella vista di una moneta; resta solo il passaggio allo Storico
+        expect(altra).not.toHaveTextContent('2,58');
+        expect(screen.queryByTestId('safe-altra-pnl-totale')).toBeNull();
+        expect(screen.getByTestId('safe-altra-apri-storico')).toBeInTheDocument();
     });
 
     it('LIVE: il totale LIVE è +2,58 e il paper sta nella riga a parte', async () => {
@@ -119,7 +123,9 @@ describe('FIX-A — Safe: i numeri di una modalità, mai la somma', () => {
         expect(tot).toHaveTextContent('+2,58');
         expect(screen.getByTestId('safe-kpi-liability')).toHaveTextContent('0,00');
         expect(screen.getByTestId('safe-altra-modalita')).toHaveAttribute('data-mode', 'paper');
-        expect(screen.getByTestId('safe-altra-pnl-totale')).toHaveTextContent('−43,05');
+        // A-04 (01/10): niente cifre della prova sotto i soldi veri
+        expect(screen.getByTestId('safe-altra-modalita')).not.toHaveTextContent('43,05');
+        expect(screen.queryByTestId('safe-altra-pnl-totale')).toBeNull();
     });
 
     it('senza gli aggregati per modalità: il totale separato dalla RPC, MAI la somma', async () => {

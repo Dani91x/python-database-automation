@@ -57,7 +57,7 @@ import { safeActivityLine, safeActivityMeta, safeActivityMode, SAFE_SKIP_KINDS }
 import { fmtMoney } from '@/lib/format';
 import { T, TIP } from '@/lib/tradeStatus';
 import { toastSettlement } from '@/lib/toasts';
-import { fetchSafeDaily, fetchSafeDayTrades, romeDay, dayLabel, type SafeSportFilter } from '@/lib/dailyHistory';
+import { fetchSafeDaily, fetchSafeDayTrades, romeDay, dayLabel } from '@/lib/dailyHistory';
 // stesse funzioni PURE (testate) della scheda Omega: gruppo per evento, P&L per
 // posizione (apertura + chiusure), filtro GIORNATA operativa (Europe/Rome)
 import { groupTradesByMatch, filterMatchesForDay, summarizeMatches } from '@/lib/omegaMatches';
@@ -164,8 +164,9 @@ export default function SafeStrategy() {
     const [topTab, setTopTab] = useState<string>('calcio');
     const [calcioTab, setCalcioTab] = useState<string>('segnali');
     const [tennisTab, setTennisTab] = useState<string>('segnali');
-    // filtro sport dello storico (null = tutti)
-    const [historySport, setHistorySport] = useState<SafeSportFilter>(null);
+    // filtro sport dello storico. A-06 (01/10): niente «tutti» (calcio e
+    // tennis non si mischiano); di serie lo sport della scheda di partenza
+    const [historySport, setHistorySport] = useState<'calcio' | 'tennis'>('calcio');
     // FIX-A 26/09 (U0507): lo Storico si apre nella modalità del BOT (come Omega
     // e Mike) e si può passare all'altra; mai «tutte» (= paper + live sommati).
     const [historyModeScelto, setHistoryModeScelto] = useState<SafeMode | null>(null);
@@ -1435,33 +1436,29 @@ export default function SafeStrategy() {
                 {/* FIX-A 26/09 — l'ALTRA modalità, a parte e con la SUA etichetta:
                     Safe ha la modalità per strategia (tennis live + calcio paper),
                     quindi le due contabilità possono vivere insieme. Mai sommate. */}
+                {/* A-04 (01/10, regola del coordinatore): dell'altra moneta NESSUNA
+                    cifra in questa vista; resta solo il selettore per passarci */}
                 {altraAttiva && aggAltra && (
                     <div
-                        className="mt-2 rounded-md border border-white/10 bg-black/20 px-3 py-2 text-[11px] text-slate-300 tabular-nums"
+                        className="mt-2 rounded-md border border-white/10 bg-black/20 px-3 py-2 text-[11px] text-slate-300"
                         data-testid="safe-altra-modalita"
                         data-mode={altraModalita}
                     >
-                        <b className={altraModalita === 'live' ? 'text-red-300' : 'text-sky-300'}>
-                            {altraModalita.toUpperCase()}
-                        </b>
-                        {' (contabilità separata, NON inclusa nei numeri '}{modeTag}{' qui sopra): '}
-                        <span data-testid="safe-altra-pnl-oggi">
-                            {T.pnlToday} {fmtMoney(numOrNull(aggAltra.realized_today), { signed: true })}
-                        </span>
-                        {' · '}
-                        <span data-testid="safe-altra-pnl-totale">
-                            {T.pnlTotal} {fmtMoney(numOrNull(aggAltra.realized_total), { signed: true })}
-                        </span>
-                        {' · '}
-                        <span data-testid="safe-altra-liability">
-                            {T.openLiability} {fmtMoney(numOrNull(aggAltra.open_liability))}
-                            {aggAltra.open_count != null && ` su ${aggAltra.open_count} ${aggAltra.open_count === 1 ? 'posizione' : 'posizioni'}`}
-                        </span>
+                        <button type="button" className="underline hover:text-white"
+                            data-testid="safe-altra-apri-storico"
+                            onClick={() => { setHistoryModeScelto(altraModalita); setTopTab('storico'); }}>
+                            apri lo Storico in {altraModalita === 'live' ? 'SOLDI VERI' : 'PROVA'}
+                        </button>
+                        {' — contabilità separata, mai sommata ai numeri '}{modeTag}{' qui sopra'}
                     </div>
                 )}
 
                 {/* --------------------------------------------- sport + sezioni */}
-                <Tabs value={topTab} onValueChange={setTopTab} className="w-full">
+                <Tabs value={topTab} onValueChange={(v) => {
+                    // A-06: lo Storico parte dallo sport della scheda da cui si arriva
+                    if (v === 'storico' && (topTab === 'calcio' || topTab === 'tennis')) setHistorySport(topTab);
+                    setTopTab(v);
+                }} className="w-full">
                     <TabsList className="sticky z-30" style={{ top: navH }}>
                         <TabsTrigger value="calcio" aria-label={`Calcio (${bySport.calcioActive.length})`}>⚽ Calcio ({bySport.calcioActive.length})</TabsTrigger>
                         <TabsTrigger value="tennis" aria-label={`Tennis (${bySport.tennisActive.length})`}>🎾 Tennis ({bySport.tennisActive.length})</TabsTrigger>
@@ -1598,8 +1595,8 @@ export default function SafeStrategy() {
                     <TabsContent value="storico" className="mt-3 space-y-3">
                         <div className="flex items-center gap-2 flex-wrap text-[11px]" data-testid="history-sport-filter">
                             <span className="text-muted-foreground uppercase tracking-wide">Sport</span>
-                            {([['all', 'tutti'], ['calcio', '⚽ calcio'], ['tennis', '🎾 tennis']] as const).map(([k, label]) => {
-                                const val: SafeSportFilter = k === 'all' ? null : k;
+                            {([['calcio', '⚽ calcio'], ['tennis', '🎾 tennis']] as const).map(([k, label]) => {
+                                const val = k;
                                 const active = historySport === val;
                                 return (
                                     <button
@@ -1613,28 +1610,16 @@ export default function SafeStrategy() {
                                     </button>
                                 );
                             })}
-                            <span className="ml-3 text-muted-foreground uppercase tracking-wide">Modalità</span>
-                            {(['paper', 'live'] as const).map((m) => {
-                                const active = historyMode === m;
-                                return (
-                                    <button
-                                        key={m}
-                                        type="button"
-                                        onClick={() => setHistoryModeScelto(m)}
-                                        aria-pressed={active}
-                                        data-testid={`history-mode-${m}`}
-                                        className={`px-2 py-0.5 rounded-full border ${active ? 'bg-primary/20 text-primary border-primary/40' : 'border-white/10 text-muted-foreground hover:text-white'}`}
-                                    >
-                                        {m.toUpperCase()}
-                                    </button>
-                                );
-                            })}
+                            {/* A-06 (01/10): la moneta si sceglie nella testata dello
+                                Storico, con le parole «soldi veri» / «prova» */}
                         </div>
                         <TradingHistory
                             variant="safe"
                             fetchDaily={fetchHistoryDaily}
                             fetchDayTrades={fetchHistoryDay}
-                            filterKey={`${historySport ?? 'all'}:${historyMode}`}
+                            filterKey={`${historySport}:${historyMode}`}
+                            modo={historyMode}
+                            onModo={setHistoryModeScelto}
                             onGoLive={(t) => {
                                 const sp = t.sport === 'tennis' ? 'tennis' : 'calcio';
                                 setTopTab(sp);

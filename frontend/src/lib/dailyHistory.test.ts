@@ -9,6 +9,7 @@ import {
     dayToMs, msToDay, addDays, isValidDay, romeDay, periodRange, filterRange,
     dayLabel, monthLabel, exitInfo, tradeExit,
     clampHistoryRange, attributionOf, summarizeDayTrades, calendarGridBounds,
+    ripiegoAttribuzione, offsetRomaMs,
     historyWindow, exitReasonText, MAX_HISTORY_DAYS,
     type DailyRow,
 } from './dailyHistory';
@@ -399,6 +400,52 @@ describe('goalHitRate — solo obiettivi STORICIZZATI (H-10)', () => {
     });
 });
 
+describe('B-16 - scarto di Roma senza Intl (ora legale)', () => {
+    it("+2 h d'estate, +1 h d'inverno, cambio l'ultima domenica di marzo e di ottobre alle 01:00 UTC", () => {
+        expect(offsetRomaMs(Date.parse('2026-07-01T12:00:00Z'))).toBe(2 * 3_600_000);
+        expect(offsetRomaMs(Date.parse('2026-01-14T12:00:00Z'))).toBe(1 * 3_600_000);
+        // 2026: ultima domenica di marzo = 29, di ottobre = 25
+        expect(offsetRomaMs(Date.parse('2026-03-29T00:59:59Z'))).toBe(1 * 3_600_000);
+        expect(offsetRomaMs(Date.parse('2026-03-29T01:00:00Z'))).toBe(2 * 3_600_000);
+        expect(offsetRomaMs(Date.parse('2026-10-25T00:59:59Z'))).toBe(2 * 3_600_000);
+        expect(offsetRomaMs(Date.parse('2026-10-25T01:00:00Z'))).toBe(1 * 3_600_000);
+    });
+});
+
+describe('C-03 - il dettaglio somma lo STESSO P&L della cella (il motore resta su pnl, referto SQL 01/10)', () => {
+    const riga = (over: Record<string, unknown>) => ({
+        id: 7, event_id: 'e1', event_name: 'Roma v Lazio', side: 'back', mode: 'live',
+        price: 2, size: 10, liability: 10, status: 'won', pnl: 10, pnl_betfair: 9.5,
+        placed_at: '2026-09-30T18:00:00Z', settled_at: '2026-09-30T20:00:00Z', meta: null,
+        total_pnl: 8, placed_in_day: true, settled_in_day: true,
+        closes: [{ id: 8, event_id: 'e1', side: 'lay', mode: 'live', price: 1.5, size: 4, liability: 2,
+            status: 'lost', pnl: -2, pnl_betfair: -2.1, placed_at: '2026-09-30T19:00:00Z',
+            settled_at: '2026-09-30T20:00:00Z', closes_trade_id: 7, meta: null }],
+        ...over,
+    });
+    it('con `in_day` (contratto nuovo) restano pnl e total_pnl del database, le chiavi del giorno passano', () => {
+        const [t] = normalizeDayTrades([riga({ in_day: true, giorno_partita: '2026-09-30', giorno_da: 'partita' })]);
+        // la cella somma pnl (10 - 2 = 8): un dettaglio col netto di Betfair (7,40) la contraddirebbe
+        expect(t.pnl).toBe(10);
+        expect(t.closes[0].pnl).toBe(-2);
+        expect(t.total_pnl).toBe(8);
+        expect(t.in_day).toBe(true);
+        expect(t.giorno_partita).toBe('2026-09-30');
+        expect(t.giorno_da).toBe('partita');
+    });
+    it('senza `in_day` (RPC vecchia) resta il P&L del bot: la cella vecchia somma quello', () => {
+        const [t] = normalizeDayTrades([riga({})]);
+        expect(t.pnl).toBe(10);
+        expect(t.total_pnl).toBe(8);
+        expect(t.in_day).toBeNull();
+    });
+    it('una riga PAPER non usa mai pnl_betfair', () => {
+        const [t] = normalizeDayTrades([riga({ mode: 'paper', in_day: true, closes: [] , total_pnl: 10 })]);
+        expect(t.pnl).toBe(10);
+        expect(t.total_pnl).toBe(10);
+    });
+});
+
 describe('normalizeDailyRow — goal_snapshot (H-10)', () => {
     it('senza il flag (RPC vecchia) il giorno NON è storicizzato', () => {
         expect(normalizeDailyRow({ day: '2026-09-10', goal: 250 })?.goal_snapshot).toBe(false);
@@ -415,11 +462,48 @@ describe('attributionOf / summarizeDayTrades (M-18 / H-11)', () => {
         placed_in_day: true, settled_in_day: true, ...over,
     }) as never;
 
-    it('Omega e Mike attribuiscono per PIAZZAMENTO, Safe per REGOLAZIONE', () => {
-        expect(attributionOf('omega')).toBe('placed');
-        // 29/09 (piano Mike M8.10, difetto D10): Mike per REGOLAMENTO, come «Posizioni chiuse»
-        expect(attributionOf('mike')).toBe('settled');
-        expect(attributionOf('safe')).toBe('placed');   // safe_strategy_bot_v2: giorno di piazzamento
+    it('01/10: UN criterio per tutti i bot, il giorno della PARTITA; il criterio di prima resta solo come ripiego', () => {
+        // prima: Omega e Safe per piazzamento, Mike per regolamento (tre criteri nella stessa pagina)
+        expect(attributionOf('omega')).toBe('match');
+        expect(attributionOf('mike')).toBe('match');
+        expect(attributionOf('safe')).toBe('match');
+        expect(ripiegoAttribuzione('mike')).toBe('settled');
+        expect(ripiegoAttribuzione('omega')).toBe('placed');
+        expect(ripiegoAttribuzione('safe')).toBe('placed');
+    });
+
+    it("'match': decide `in_day` del database, non il piazzamento ne' il regolamento", () => {
+        // partita del 30/09 alle 23:30, regolata il 01/10 alle 01:15: nella risposta
+        // del 30/09 il database dice in_day=true anche se placed/settled dicono altro
+        const s = summarizeDayTrades([
+            leg({ id: 1, total_pnl: 3, placed_in_day: true, settled_in_day: false, in_day: true, giorno_partita: '2026-09-30', giorno_da: 'partita' }),
+            leg({ id: 2, total_pnl: -10, status: 'lost', placed_in_day: false, settled_in_day: true, in_day: false, giorno_partita: '2026-09-29', giorno_da: 'partita' }),
+        ], 'match');
+        expect(s.pnl).toBe(3);
+        expect(s.attributed.map((t) => t.id)).toEqual([1]);
+        expect(s.others.map((t) => t.id)).toEqual([2]);
+        expect(s.senzaGiornoPartita).toBe(0);
+        expect(s.liability).toBe(195);
+    });
+
+    it("'match' senza `in_day` (RPC non aggiornata): ripiego sul criterio di prima, CONTATO", () => {
+        const righe = [
+            leg({ id: 1, total_pnl: 3, placed_in_day: false, settled_in_day: true }),
+            leg({ id: 2, total_pnl: -10, status: 'lost', placed_in_day: true, settled_in_day: false }),
+        ];
+        const mike = summarizeDayTrades(righe, 'match', 'settled');
+        expect(mike.pnl).toBe(3);
+        expect(mike.senzaGiornoPartita).toBe(2);
+        const omega = summarizeDayTrades(righe, 'match', 'placed');
+        expect(omega.pnl).toBe(-10);
+        expect(omega.senzaGiornoPartita).toBe(2);
+    });
+
+    it("giorno di piazzamento dichiarato quando l'inizio partita non e' noto", () => {
+        const s = summarizeDayTrades([
+            leg({ id: 1, in_day: true, giorno_partita: null, giorno_da: 'piazzamento' }),
+        ], 'match');
+        expect(s.giornoDaPiazzamento).toBe(1);
     });
 
     it("'placed': somma solo le posizioni piazzate nel giorno (le altre sono di un'altra cella)", () => {

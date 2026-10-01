@@ -18,10 +18,14 @@
 // 24/09 (ordine dell'utente: "i dati sono mischiati per giornata, sono
 // confusionari, il trader non capisce nulla: IL TRADER DEVE FIDARSI DI QUELLO
 // CHE VEDE"). Tre cambi, tutti qui dentro e tutti testati:
-//   1. GIORNATA = giorno di REGOLAMENTO (fuso Europe/Rome), come la barra di
-//      giornata e come il conto Betfair (`settledDate`): una posizione aperta
-//      ieri sera e regolata stamattina e' di OGGI. Prima era il giorno di
-//      piazzamento e la scheda contraddiceva la barra.
+//   1. GIORNATA = dal 01/10 (ordine dell'utente: «le chiusure devono essere
+//      assegnate alla giornata di riferimento») il giorno della PARTITA,
+//      deciso dal DATABASE per riga (`giorno_partita`/`giorno_da`); se
+//      l'inizio non e' noto, il giorno di piazzamento (dichiarato). Una
+//      partita di ieri sera regolata stamattina e' di IERI. Le righe ancora
+//      senza il giorno del database (in memoria, non ancora rilette) restano
+//      sul giorno di REGOLAMENTO come PROVVISORIE, contate e dichiarate: il
+//      client non calcola mai il giorno della partita da solo.
 //   2. UNA REGOLA DI RAGGRUPPAMENTO per calcio e tennis:
 //      giornata -> bot -> partita -> ciclo (`raggruppaGiornata`), con il netto
 //      di ogni livello e la sua FONTE (Betfair / stimato / paper).
@@ -79,8 +83,15 @@ export interface RigaChiusa {
  */
 export type Legame = 'catena' | 'ripiego';
 
-/** 24/09 - da quale istante viene la giornata della posizione */
-export type GiornoDa = 'regolamento' | 'piazzamento' | 'nessuno';
+/**
+ * Da dove viene la giornata della posizione.
+ *  - 'partita'     (01/10) giorno della partita, dal database;
+ *  - 'piazzamento' inizio partita non noto: giorno di piazzamento (dal
+ *                  database), o nessun istante di regolamento (client);
+ *  - 'regolamento' riga senza il giorno del database: giornata PROVVISORIA;
+ *  - 'nessuno'     nessuna data leggibile.
+ */
+export type GiornoDa = 'partita' | 'regolamento' | 'piazzamento' | 'nessuno';
 
 export interface PosizioneChiusa {
     /** id della riga di APERTURA: identifica la posizione (con il bot) */
@@ -122,6 +133,12 @@ export interface PosizioneChiusa {
      */
     giorno: string;
     giornoDa?: GiornoDa;
+    /**
+     * 01/10 - true = `giorno` viene dal DATABASE (giorno della partita, o il
+     * suo ripiego dichiarato); false/assente = calcolato qui dal regolamento,
+     * provvisorio finche' il database non lo conferma.
+     */
+    giornoConfermato?: boolean;
     /**
      * 23/09 - true = la riga e' una GAMBA DI CHIUSURA la cui apertura NON e'
      * fra le righe lette (paginazione, giorno diverso, riga cancellata). Il
@@ -198,6 +215,12 @@ export interface TradeChiudibile {
     /** 18/09 - presente = un ordine reale e' stato accettato da Betfair */
     bet_id?: string | null;
     meta?: Record<string, unknown> | null;
+    /** 01/10 (contratto SQL) - giorno della partita 'YYYY-MM-DD' (Roma); null = inizio non noto */
+    giorno_partita?: string | null;
+    /** 01/10 (contratto SQL) - 'partita' | 'piazzamento' (inizio non noto) */
+    giorno_da?: string | null;
+    /** 01/10 (contratto SQL) - la riga appartiene alla giornata chiesta */
+    in_day?: boolean | null;
     __bot: Bot;
     /** 24/09 - marcatore del CLIENT (come `__bot`): la riga non porta il
      *  legame ingresso-uscita (i 4 bot tennis, B13). */
@@ -307,6 +330,39 @@ function rigaChiusa(r: TradeChiudibile, chiusura: boolean): RigaChiusa {
     };
 }
 
+const GIORNO_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * 01/10 - il giorno della posizione secondo il DATABASE (contratto SQL del
+ * giorno partita), dalla prima riga che lo porta (l'apertura per prima).
+ * `null` = nessuna riga porta il dato: la giornata resta provvisoria.
+ * Nessun giorno partita e' calcolato qui: con 'piazzamento' il database
+ * dichiara che l'inizio non e' noto e vale il giorno di piazzamento
+ * dell'apertura, la stessa regola del database.
+ */
+export function giornoDalDatabase(
+    righe: readonly TradeChiudibile[], piazzataAt: string,
+): { giorno: string; da: 'partita' | 'piazzamento' } | null {
+    for (const r of righe) {
+        const gp = typeof r.giorno_partita === 'string' ? r.giorno_partita.slice(0, 10) : '';
+        if (GIORNO_RE.test(gp) && r.giorno_da !== 'piazzamento') return { giorno: gp, da: 'partita' };
+        if (r.giorno_da === 'piazzamento') {
+            const g = giornataDi(piazzataAt || testo(r.placed_at));
+            if (g) return { giorno: g, da: 'piazzamento' };
+        }
+    }
+    return null;
+}
+
+/** Le chiavi del contratto del 01/10 che la memoria eredita dalla lettura del database. */
+const CHIAVI_GIORNO = ['giorno_partita', 'giorno_da', 'in_day'] as const;
+
+/** La riga porta il giorno del database? (contratto del 01/10: `giorno_da` o `in_day` valorizzati) */
+export function haGiornoDb(r: object): boolean {
+    const x = r as { giorno_da?: unknown; in_day?: unknown };
+    return x.giorno_da === 'partita' || x.giorno_da === 'piazzamento' || typeof x.in_day === 'boolean';
+}
+
 /**
  * La posizione da un'apertura (o dalla prima riga di un ripiego B13) e da
  * TUTTE le sue gambe. `null` = non ancora chiusa.
@@ -367,12 +423,24 @@ function costruisci(
     }
     const piazzataAt = testo(a.placed_at) ?? '';
 
-    // LA GIORNATA = regolamento; senza, il piazzamento (dichiarato)
-    let giorno = regIso ? giornataDi(regIso) : '';
-    let giornoDa: GiornoDa = giorno ? 'regolamento' : 'nessuno';
-    if (!giorno) {
-        giorno = giornataDi(piazzataAt);
-        if (giorno) giornoDa = 'piazzamento';
+    // LA GIORNATA (01/10) = quella del DATABASE (giorno della partita, o il
+    // piazzamento se l'inizio non e' noto). Senza il dato del database: il
+    // regolamento, PROVVISORIO e dichiarato; senza regolamento, il piazzamento.
+    let giorno = '';
+    let giornoDa: GiornoDa = 'nessuno';
+    let giornoConfermato = false;
+    const db = giornoDalDatabase(tutte, piazzataAt);
+    if (db) {
+        giorno = db.giorno;
+        giornoDa = db.da;
+        giornoConfermato = true;
+    } else {
+        giorno = regIso ? giornataDi(regIso) : '';
+        giornoDa = giorno ? 'regolamento' : 'nessuno';
+        if (!giorno) {
+            giorno = giornataDi(piazzataAt);
+            if (giorno) giornoDa = 'piazzamento';
+        }
     }
 
     const nomeTennis = String(a.sport ?? '').toLowerCase() === 'tennis';
@@ -393,6 +461,7 @@ function costruisci(
         piazzataAt,
         giorno,
         giornoDa,
+        giornoConfermato,
         orfana,
         legame,
         mercato: mercatoDi(a),
@@ -527,7 +596,14 @@ export function rigaDaOrdineTennis(
     if (o.settled_at == null) return null;
     const netto = nettoOrdineTennis(o);
     if (netto == null) return null;
+    // 01/10 (contratto SQL): il giorno della partita, se la lettura lo porta
+    const extra = o as unknown as Record<string, unknown>;
+    const giornoDb: Partial<TradeChiudibile> = {};
+    for (const c of CHIAVI_GIORNO) {
+        if (c in extra) (giornoDb as Record<string, unknown>)[c] = extra[c];
+    }
     return {
+        ...giornoDb,
         id: o.id,
         event_id: String(o.event_id ?? ''),
         event_name: nomePartita,
@@ -570,9 +646,24 @@ export function unisciRighe(
     memoria: readonly TradeChiudibile[], giornata: readonly TradeChiudibile[],
 ): TradeChiudibile[] {
     if (!giornata.length) return memoria as TradeChiudibile[];
+    // 01/10: la riga in memoria vince (piu' fresca) ma EREDITA il giorno della
+    // partita dalla stessa riga letta dal database (la memoria non lo porta)
+    const dalDb = new Map<string, TradeChiudibile>();
+    for (const r of giornata) dalDb.set(chiaveRiga(r.__bot, r.id), r);
     const viste = new Set<string>();
-    for (const r of memoria) viste.add(chiaveRiga(r.__bot, r.id));
-    const out = memoria.slice();
+    const out: TradeChiudibile[] = [];
+    for (const r of memoria) {
+        const k = chiaveRiga(r.__bot, r.id);
+        viste.add(k);
+        const d = dalDb.get(k);
+        if (d && !haGiornoDb(r) && haGiornoDb(d)) {
+            const conGiorno: TradeChiudibile = { ...r };
+            for (const c of CHIAVI_GIORNO) {
+                if (c in d) (conGiorno as unknown as Record<string, unknown>)[c] = (d as unknown as Record<string, unknown>)[c];
+            }
+            out.push(conGiorno);
+        } else out.push(r);
+    }
     for (const r of giornata) {
         const k = chiaveRiga(r.__bot, r.id);
         if (viste.has(k)) continue;
@@ -592,8 +683,9 @@ export interface FiltroChiuse {
     modo?: Modo | 'tutte';
     bot?: Bot | 'tutti';
     /**
-     * GIORNATA da mostrare, 'YYYY-MM-DD' (Europe/Rome), giorno di regolamento.
-     * `undefined` / `null` / '' = nessun filtro di giornata.
+     * GIORNATA da mostrare, 'YYYY-MM-DD' (Europe/Rome), giorno della partita
+     * (01/10; vedi `GiornoDa` per i ripieghi). `undefined` / `null` / '' =
+     * nessun filtro di giornata.
      */
     giorno?: string | null;
     /** 24/09 - 'betfair' = solo posizioni col netto TUTTO regolato da Betfair */
@@ -638,6 +730,65 @@ export function pnlChiuseDelGiorno(
         tot = cent((tot ?? 0) + p.pnlGlobale);
     }
     return tot;
+}
+
+/** giorno di REGOLAMENTO (Roma) di una riga: quello del conto per il reale */
+function giornoRegolamentoRiga(r: RigaChiusa): string {
+    return giornataDi(r.at || null);
+}
+
+export interface ControprovaRegolato {
+    /** somma dei netti delle gambe regolate nel giorno (conto Betfair + stima) */
+    totale: number | null;
+    reale: number | null;
+    stimato: number | null;
+}
+
+/**
+ * B-12 (01/10) - LA CONTROPROVA CON LA BARRA sullo STESSO perimetro della
+ * barra: le gambe SOLDI VERI regolate nel giorno (giorno di REGOLAMENTO del
+ * conto Betfair, la stessa regola di `righeGiornataPerCiclo`), qualunque sia
+ * il giorno della loro partita. Di ogni gamba il netto di Betfair se c'e',
+ * altrimenti la stima (come la barra). Le posizioni a cavallo della
+ * mezzanotte si elencano a parte (`aCavalloDellaMezzanotte`).
+ */
+export function regolatoNelGiorno(posizioni: readonly PosizioneChiusa[], giorno: string): ControprovaRegolato {
+    let reale: number | null = null;
+    let stimato: number | null = null;
+    for (const p of posizioni) {
+        if (p.modo !== 'live') continue;
+        for (const r of p.righe) {
+            if (r.pnl == null || !isSettled(r.stato)) continue;
+            if (giornoRegolamentoRiga(r) !== giorno) continue;
+            if (r.fontePnl === 'betfair') reale = cent((reale ?? 0) + r.pnl);
+            else stimato = cent((stimato ?? 0) + r.pnl);
+        }
+    }
+    const totale = reale == null && stimato == null ? null : cent((reale ?? 0) + (stimato ?? 0));
+    return { totale, reale, stimato };
+}
+
+export interface ACavallo {
+    p: PosizioneChiusa;
+    /** giorno di regolamento dell'ultima gamba */
+    regolata: string;
+}
+
+/**
+ * B-12 (01/10) - le posizioni il cui giorno della partita (confermato dal
+ * database) e' diverso dal giorno in cui si sono regolate, e che toccano la
+ * giornata `giorno` da uno dei due lati: si ELENCANO, mai sommate in silenzio.
+ */
+export function aCavalloDellaMezzanotte(posizioni: readonly PosizioneChiusa[], giorno: string): ACavallo[] {
+    const out: ACavallo[] = [];
+    for (const p of posizioni) {
+        if (!p.giornoConfermato) continue;
+        const regolata = giornataDi(p.chiusaAt || null);
+        if (!regolata || regolata === p.giorno) continue;
+        if (p.giorno !== giorno && regolata !== giorno) continue;
+        out.push({ p, regolata });
+    }
+    return out;
 }
 
 /**
@@ -702,7 +853,7 @@ export function riepilogoChiuse(righe: readonly PosizioneChiusa[]): RiepilogoChi
 
 // ============================================================================
 // 24/09 - LA REGOLA DI RAGGRUPPAMENTO, una per calcio e tennis:
-//   giornata (regolamento, Roma) -> bot -> partita -> ciclo (operazione)
+//   giornata (della partita dal 01/10, Roma) -> bot -> partita -> ciclo
 // Ogni livello porta il suo netto e la sua composizione (reale / stimato), e
 // la somma dei livelli e' IDENTICA al totale della giornata (testato).
 // Safe si divide per sport ("Safe calcio" / "Safe tennis"), come le voci della

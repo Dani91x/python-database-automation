@@ -9,8 +9,10 @@
 import { describe, it, expect } from 'vitest';
 import {
     posizioniChiuse, filtraChiuse, riepilogoChiuse, esitoDi, fuoriGiornata,
+    unisciRighe, regolatoNelGiorno, aCavalloDellaMezzanotte, giornoDalDatabase, rigaDaOrdineTennis,
     type TradeChiudibile,
 } from './posizioniChiuse';
+import type { TennisBotOrderRow } from './tennis';
 
 function t(over: Partial<TradeChiudibile> & { id: number }): TradeChiudibile {
     return {
@@ -384,5 +386,98 @@ describe('posizioni chiuse: SOLO la giornata operativa', () => {
     it('quante restano fuori dalla giornata: si dice, non si fanno sparire', () => {
         const tutte = posizioniChiuse([oggi, ieri]);
         expect(fuoriGiornata(tutte, '2026-09-17')).toEqual({ altriGiorni: 1, senzaData: 0 });
+    });
+});
+
+// ============================================================================
+// 01/10 - GIORNATA = GIORNO DELLA PARTITA (ordine dell'utente: «le chiusure
+// devono essere assegnate alla giornata di riferimento»). Il giorno lo decide
+// il DATABASE (`giorno_partita`, `giorno_da`, `in_day`); la memoria senza quel
+// dato resta sul regolamento come PROVVISORIA, mai un giorno partita calcolato
+// qui.
+// ============================================================================
+describe('01/10 - giorno della partita dal database', () => {
+    // partita del 30/09 alle 23:30 di Roma, regolata il 01/10 alle 01:15 di Roma
+    const mezzanotte = (over: Partial<TradeChiudibile> = {}) => t({
+        id: 40, pnl: 2, placed_at: '2026-09-30T21:30:00.000Z', settled_at: '2026-09-30T23:15:00.000Z',
+        giorno_partita: '2026-09-30', giorno_da: 'partita', in_day: true, ...over,
+    });
+
+    it('partita delle 23:30 regolata alle 01:15: e\' del giorno della PARTITA (30/09), non del regolamento (01/10)', () => {
+        const [p] = posizioniChiuse([mezzanotte()]);
+        expect(p.giorno).toBe('2026-09-30');
+        expect(p.giornoDa).toBe('partita');
+        expect(p.giornoConfermato).toBe(true);
+        expect(filtraChiuse([p], { giorno: '2026-10-01' })).toHaveLength(0);
+        expect(filtraChiuse([p], { giorno: '2026-09-30' })).toHaveLength(1);
+    });
+
+    it('FALSIFICAZIONE: la stessa riga SENZA il dato del database cade sul regolamento (01/10), provvisoria', () => {
+        const [p] = posizioniChiuse([mezzanotte({ giorno_partita: undefined, giorno_da: undefined, in_day: undefined })]);
+        expect(p.giorno).toBe('2026-10-01');
+        expect(p.giornoDa).toBe('regolamento');
+        expect(p.giornoConfermato).toBe(false);
+    });
+
+    it('inizio partita non noto (giorno_da=piazzamento): il giorno di piazzamento, dichiarato', () => {
+        const [p] = posizioniChiuse([mezzanotte({ giorno_partita: null, giorno_da: 'piazzamento' })]);
+        expect(p.giorno).toBe('2026-09-30');
+        expect(p.giornoDa).toBe('piazzamento');
+        expect(p.giornoConfermato).toBe(true);
+        expect(giornoDalDatabase([t({ id: 1, giorno_da: null })], '')).toBeNull();
+    });
+
+    it('la memoria (senza il dato) EREDITA il giorno della partita dalla riga letta dal database', () => {
+        const memoria = [mezzanotte({ giorno_partita: undefined, giorno_da: undefined, in_day: undefined, pnl: 2.5 })];
+        const dalDb = [mezzanotte({ pnl: 2 })];
+        const unite = unisciRighe(memoria, dalDb);
+        expect(unite).toHaveLength(1);
+        expect(unite[0].pnl).toBe(2.5);                 // vince la memoria (piu' fresca)
+        expect(unite[0].giorno_partita).toBe('2026-09-30');
+        expect(posizioniChiuse(unite)[0].giorno).toBe('2026-09-30');
+    });
+
+    it('bot tennis: il giorno della partita passa anche dalla traduzione dell\'ordine', () => {
+        const o = {
+            id: 50, bet_id: 'T50', client_order_ref: 'awtq50', request_id: 50, mode: 'live',
+            source: 'tennis_swing', event_id: 'T1', market_id: '1.9', selection_id: 77, handicap: 0,
+            side: 'back', order_type: 'LIMIT', price: 2, size: 1, size_matched: 1, size_remaining: 0,
+            size_cancelled: 0, size_lapsed: 0, size_voided: 0, average_price_matched: 2,
+            status: 'EXECUTION_COMPLETE', persistence: 'LAPSE', placed_at: '2026-09-30T21:00:00+00:00',
+            matched_at: null, updated_at: '2026-09-30T23:30:00+00:00', pnl: 1, commission: 0.05,
+            settled_at: '2026-09-30T23:30:00+00:00', pnl_betfair: null, pnl_betfair_settled_at: null,
+            event_name: 'Sinner v Alcaraz', giorno_partita: '2026-09-30', giorno_da: 'partita', in_day: true,
+        } as unknown as TennisBotOrderRow;
+        const r = rigaDaOrdineTennis(o, 'Sinner v Alcaraz', () => true) as TradeChiudibile;
+        expect(r.giorno_partita).toBe('2026-09-30');
+        expect(posizioniChiuse([r])[0].giorno).toBe('2026-09-30');
+    });
+});
+
+describe('01/10 (B-12) - controprova con la barra sullo STESSO perimetro', () => {
+    const oggi = t({ id: 1, pnl: 1, settled_at: '2026-10-01T10:00:00.000Z', placed_at: '2026-10-01T09:00:00.000Z',
+        giorno_partita: '2026-10-01', giorno_da: 'partita', in_day: true });
+    const ieriRegolataOggi = t({ id: 2, pnl: 2, event_id: 'E2', placed_at: '2026-09-30T21:30:00.000Z',
+        settled_at: '2026-09-30T23:15:00.000Z', giorno_partita: '2026-09-30', giorno_da: 'partita', in_day: false });
+
+    it('regolato oggi sul conto = gambe regolate oggi, qualunque sia la partita (come la barra)', () => {
+        const pos = posizioniChiuse([oggi, ieriRegolataOggi]);
+        expect(regolatoNelGiorno(pos, '2026-10-01').totale).toBe(3);
+        // la scheda di oggi (giorno partita) ne mostra solo 1,00
+        expect(riepilogoChiuse(filtraChiuse(pos, { giorno: '2026-10-01' })).totale).toBe(1);
+    });
+
+    it('la posizione a cavallo della mezzanotte si ELENCA, da entrambe le giornate', () => {
+        const pos = posizioniChiuse([oggi, ieriRegolataOggi]);
+        expect(aCavalloDellaMezzanotte(pos, '2026-10-01').map((x) => x.p.id)).toEqual([2]);
+        expect(aCavalloDellaMezzanotte(pos, '2026-09-30').map((x) => [x.p.id, x.regolata])).toEqual([[2, '2026-10-01']]);
+    });
+
+    it('netto di Betfair con la SUA data di regolamento; paper fuori', () => {
+        const bf = t({ id: 3, pnl: 5, pnl_betfair: 4.8, settled_at: '2026-09-30T21:50:00.000Z',
+            pnl_betfair_settled_at: '2026-09-30T22:20:00.000Z' });
+        const paper = t({ id: 4, pnl: 9, mode: 'paper', settled_at: '2026-10-01T10:00:00.000Z' });
+        const r = regolatoNelGiorno(posizioniChiuse([bf, paper]), '2026-10-01');
+        expect(r).toEqual({ totale: 4.8, reale: 4.8, stimato: null });
     });
 });

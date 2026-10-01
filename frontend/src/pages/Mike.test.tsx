@@ -767,6 +767,32 @@ describe('Mike page — storico senza migrazione', () => {
 });
 
 // ===========================================================================
+// A-07 (01/10): lo Storico di Mike chiede SEMPRE una moneta e la dichiara
+// ===========================================================================
+describe('Mike page — storico con la moneta esplicita', () => {
+    beforeEach(() => {
+        mState.mockReset();
+        mState.mockResolvedValue(state());
+        mDaily.mockReset();
+        mDaily.mockResolvedValue([]);
+    });
+
+    it('di serie la moneta del bot, mai null; l\'altra si sceglie apposta', async () => {
+        renderPage();
+        await waitFor(() => expect(screen.getByTestId('mike-status')).toBeInTheDocument());
+        await userEvent.click(screen.getByRole('tab', { name: /Storico/ }));
+        await waitFor(() => expect(mDaily).toHaveBeenCalled());
+        const primo = mDaily.mock.calls[0][2];
+        expect(primo === 'paper' || primo === 'live').toBe(true);
+        expect(screen.getByTestId('history-moneta')).toHaveTextContent(primo === 'live' ? 'SOLDI VERI' : 'PROVA');
+        const altra = primo === 'live' ? 'paper' : 'live';
+        await userEvent.click(screen.getByTestId(`history-mode-${altra}`));
+        await waitFor(() => expect(mDaily.mock.calls[mDaily.mock.calls.length - 1][2]).toBe(altra));
+        expect(mDaily.mock.calls.every((c) => c[2] === 'paper' || c[2] === 'live')).toBe(true);
+    });
+});
+
+// ===========================================================================
 // Tab Trade -> scheda della partita (il cash out di Mike e' per EVENTO)
 // ===========================================================================
 describe('Mike page — dalla tabella Trade alla scheda', () => {

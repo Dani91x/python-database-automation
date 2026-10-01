@@ -16,7 +16,7 @@
 // ieri, e finivano DUE numeri diversi nella stessa card. Il raggruppamento per
 // partita serve alla TABELLA, non ai KPI.
 // ============================================================================
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -51,7 +51,7 @@ import { T } from '@/lib/tradeStatus';
 import { toastSettlement } from '@/lib/toasts';
 import { SCANNER_STALE_MS } from '@/lib/safeBot';
 import { fetchScanStatus, type ScanStatusRow } from '@/lib/safeStrategyScan';
-import { fetchOmegaDaily, fetchOmegaDayTrades, romeDay, dayLabel } from '@/lib/dailyHistory';
+import { fetchOmegaDailyPerModo, fetchOmegaDayTradesPerModo, romeDay, dayLabel } from '@/lib/dailyHistory';
 import { getLocalChannel, type LocalStatus } from '@/lib/localChannel';
 import {
     Zap, ShieldAlert, Activity, Lock,
@@ -68,6 +68,9 @@ import {
 
 /** quante righe di attività della giornata chiedere all'RPC (M-22) */
 const ACTIVITY_PAGE = 60;
+/** A-05 (01/10): senza il filtro per moneta lo storico mescolerebbe soldi veri e prova */
+const STORICO_SENZA_MONETA = 'storico per moneta non disponibile: il database non separa ancora soldi veri e prova '
+    + '(serve un aggiornamento del database). Nessuna cifra mostrata, per non mescolare le due monete';
 /**
  * §18: la vista di giornata non ha bisogno di tutto lo storico dei trade.
  * La finestra resta comunque larga (~6 giorni a 200 gambe/giorno) perché una
@@ -148,6 +151,19 @@ export default function Omega() {
 
     const status: OmegaStatus = control?.status ?? 'idle';
     const mode: OmegaMode = control?.mode ?? 'paper';
+    // A-05 (01/10): lo Storico dice SEMPRE la sua moneta e la chiede alla RPC
+    // (`p_mode`); di serie quella del bot, l'altra si sceglie apposta
+    const [historyModeScelto, setHistoryModeScelto] = useState<OmegaMode | null>(null);
+    const fetchHistoryDaily = useCallback(async (from: string, to: string) => {
+        const r = await fetchOmegaDailyPerModo(from, to, historyModeScelto ?? mode);
+        if (!r.modoAttendibile) throw new Error(STORICO_SENZA_MONETA);
+        return r.rows;
+    }, [historyModeScelto, mode]);
+    const fetchHistoryDay = useCallback(async (day: string) => {
+        const r = await fetchOmegaDayTradesPerModo(day, historyModeScelto ?? mode);
+        if (!r.modoAttendibile) throw new Error(STORICO_SENZA_MONETA);
+        return r.trades;
+    }, [historyModeScelto, mode]);
     // il socket vince campo per campo; ciò che non manda resta del database.
     // Il tipo resta quello del servizio: la sovrapposizione non deve allargare
     // il contratto, altrimenti si perde ogni controllo sui numeri della testata.
@@ -685,22 +701,21 @@ export default function Omega() {
                         />
                     </KpiRow>
 
-                    {/* FIX-A 26/09 — l'ALTRA modalità, a parte e con la sua etichetta */}
+                    {/* FIX-A 26/09 — l'ALTRA modalità, a parte e con la sua etichetta.
+                        A-04 (01/10, regola del coordinatore): NESSUNA sua cifra in
+                        questa vista; resta solo il selettore per passarci. */}
                     {altraAttiva && aggAltra && (
                         <div
-                            className="mt-2 rounded-md border border-white/10 bg-black/20 px-3 py-2 text-[11px] text-slate-300 tabular-nums"
+                            className="mt-2 rounded-md border border-white/10 bg-black/20 px-3 py-2 text-[11px] text-slate-300"
                             data-testid="omega-altra-modalita"
                             data-mode={altraModalita}
                         >
-                            <b className={altraModalita === 'live' ? 'text-red-300' : 'text-sky-300'}>
-                                {altraModalita.toUpperCase()}
-                            </b>
-                            {' (contabilità separata, NON inclusa nei numeri '}{mode.toUpperCase()}{' qui sopra): '}
-                            <span data-testid="omega-altra-pnl-oggi">oggi {fmtMoney(aggAltra.realized_today ?? null, { signed: true })}</span>
-                            {' · '}
-                            <span data-testid="omega-altra-pnl-totale">totale storico {fmtMoney(aggAltra.realized_profit ?? null, { signed: true })}</span>
-                            {' · '}
-                            <span data-testid="omega-altra-liability">{T.openLiability} {fmtMoney(aggAltra.open_liability ?? null)}</span>
+                            <button type="button" className="underline hover:text-white"
+                                data-testid="omega-altra-apri-storico"
+                                onClick={() => { setHistoryModeScelto(altraModalita); setTab('storico'); }}>
+                                apri lo Storico in {altraModalita === 'live' ? 'SOLDI VERI' : 'PROVA'}
+                            </button>
+                            {' — contabilità separata, mai sommata ai numeri qui sopra'}
                         </div>
                     )}
 
@@ -843,8 +858,11 @@ export default function Omega() {
                         <TabsContent value="storico" className="mt-3">
                             <TradingHistory
                                 variant="omega"
-                                fetchDaily={fetchOmegaDaily}
-                                fetchDayTrades={fetchOmegaDayTrades}
+                                fetchDaily={fetchHistoryDaily}
+                                fetchDayTrades={fetchHistoryDay}
+                                filterKey={historyModeScelto ?? mode}
+                                modo={historyModeScelto ?? mode}
+                                onModo={setHistoryModeScelto}
                                 onGoLive={() => setTab('auto')}
                             />
                         </TabsContent>

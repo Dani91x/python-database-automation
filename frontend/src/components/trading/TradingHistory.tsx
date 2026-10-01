@@ -17,6 +17,7 @@ import { PerformancePanel } from '@/components/trading/PerformancePanel';
 import { DayDetail } from '@/components/trading/DayDetail';
 import {
     periodRange, filterRange, romeDay, addDays, historyWindow, attributionOf, dayLabel,
+    GIORNATA_PARTITA_TESTO,
     calendarGridBounds, PERIOD_LABEL, MAX_HISTORY_DAYS,
     type DailyRow, type DayTrade, type PeriodKind, type HistoryVariant,
 } from '@/lib/dailyHistory';
@@ -36,6 +37,15 @@ export interface TradingHistoryProps {
     /** 30/09: da dove viene il P&L mostrato (conto Betfair / simulato / stima),
      *  con le parole di `lib/fontePnl.ts`. Assente = nessuna riga in piu'. */
     fonteNota?: string;
+    /**
+     * 01/10 (A-05..A-07) - la MONETA dello storico mostrato, dichiarata in
+     * testa prima dei numeri («SOLDI VERI» / «PROVA»). Assente = la pagina
+     * non l'ha detta: si scrive che la moneta non e' dichiarata, mai muti.
+     */
+    modo?: 'live' | 'paper';
+    /** 01/10 - presente = la pagina permette di passare all'altra moneta: il
+     *  selettore («soldi veri» / «prova») e' l'UNICA traccia dell'altra moneta */
+    onModo?: (m: 'live' | 'paper') => void;
 }
 
 function monthBounds(year: number, month: number): { from: string; to: string } {
@@ -47,7 +57,7 @@ function monthBounds(year: number, month: number): { from: string; to: string } 
 
 export function TradingHistory({
     variant, fetchDaily, fetchDayTrades, onGoLive, filterKey = '', today, refreshToken = 0,
-    fonteNota,
+    fonteNota, modo, onModo,
 }: TradingHistoryProps) {
     const todayDay = today ?? romeDay();
     const [period, setPeriod] = useState<PeriodKind>('month');
@@ -110,16 +120,35 @@ export function TradingHistory({
     return (
         <div className="space-y-5" data-testid="trading-history">
             <div className="flex items-center gap-2 flex-wrap text-[11px] text-slate-500">
-                {/* L-08: il testo dice l'ATTRIBUZIONE vera della variante, non
-                    "regolati nel giorno" anche dove il giorno è il piazzamento */}
-                <span>
+                {/* 01/10 (A-05..A-07): la MONETA si legge prima dei numeri, con
+                    le stesse parole e gli stessi colori dello Storico dello sport */}
+                <span
+                    className={`text-[9.5px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
+                        modo === 'live' ? 'bg-red-500/20 text-red-300'
+                            : modo === 'paper' ? 'bg-white/10 text-white/60' : 'bg-amber-500/15 text-amber-300'
+                    }`}
+                    data-testid="history-moneta" data-modo={modo ?? 'non-dichiarata'}
+                >{modo === 'live' ? 'SOLDI VERI' : modo === 'paper' ? 'PROVA' : 'moneta non dichiarata'}</span>
+                {onModo && (
+                    <span className="flex items-center rounded-lg border border-white/10 overflow-hidden text-[10.5px] font-bold"
+                        role="group" aria-label="Moneta dello storico">
+                        {(['live', 'paper'] as const).map((m) => (
+                            <button key={m} type="button" onClick={() => onModo(m)} aria-pressed={modo === m}
+                                data-testid={`history-mode-${m}`}
+                                className={`px-2 py-0.5 transition ${modo === m
+                                    ? (m === 'live' ? 'bg-red-500/25 text-red-300' : 'bg-white/15 text-white/80')
+                                    : 'text-slate-400 hover:text-white'}`}
+                            >{m === 'live' ? 'soldi veri' : 'prova'}</button>
+                        ))}
+                    </span>
+                )}
+                {/* B-02 (01/10): UNA frase sola per i tre bot, il giorno della
+                    PARTITA; la variante non cambia piu' il criterio */}
+                <span data-testid="history-criterio">
                     {/* §1: le date si leggono nella stessa forma ovunque
                         («12 settembre 2026»), mai l'ISO grezzo accanto alle
                         etichette italiane del calendario e del dettaglio */}
-                    Giornata operativa = fuso Europe/Rome · oggi <b className="text-slate-300">{dayLabel(todayDay)}</b> ·
-                    {attributionOf(variant) === 'placed'
-                        ? ' P&L realizzato = posizioni PIAZZATE nel giorno (chiusure incluse), anche se si regolano dopo'
-                        : ' P&L realizzato = posizioni REGOLATE nel giorno (chiusure incluse), come in «Posizioni chiuse»'}
+                    Oggi <b className="text-slate-300">{dayLabel(todayDay)}</b> · {GIORNATA_PARTITA_TESTO}
                     {fonteNota && <span data-testid="history-fonte-pnl"> · {fonteNota}</span>}
                 </span>
                 <Button variant="ghost" size="sm" className="ml-auto h-7 text-xs" onClick={() => setManualRefresh((n) => n + 1)} disabled={loading}>

@@ -11,19 +11,19 @@
 // LE TRE COSE CHE QUESTA PAGINA NON FA, e non deve iniziare a fare:
 //
 //  1. **Non somma paper e live.** Mai, in nessun totale, per nessuna comodità.
-//     Si sceglie una moneta e si guarda quella; l'altra è a un clic, in un
-//     riquadro che dice quanto vale, senza entrare in questi numeri. È la
-//     regola del 14/09 («i soldi veri si raggiungono solo scrivendolo») e
-//     `totaleModo` LANCIA se qualcuno prova a mescolare.
+//     Si sceglie una moneta e si guarda quella; l'altra è a un clic (il
+//     selettore in testata) e NESSUNA sua cifra compare in questa vista
+//     (01/10, ordine dell'utente: «massima distinzione»). `totaleModo` LANCIA
+//     se qualcuno prova a mescolare.
 //  2. **Non ricalcola il P&L.** Le giornate arrivano dalle RPC dei tre bot,
 //     che passano tutte dal motore condiviso `trading_daily_history`: stessa
 //     matematica dello Storico dentro Omega, Safe e Mike. Una seconda verità
 //     sotto gli occhi del trader diverge sempre.
 //  3. **Non finge che i bot senza storico abbiano fatto zero.** Lo scalper del
-//     calcio e i quattro bot del tennis non scrivono operazioni regolate con
-//     P&L su nessuna tabella (verificato sul database reale il 17/09): sono
-//     elencati a parte, con il motivo. Uno zero affermativo su un dato che non
-//     esiste è peggio di un buco dichiarato.
+//     calcio non registra operazioni per giornata: è elencato a parte, con il
+//     motivo. (I quattro bot del tennis hanno uno storico dal 17/09 e dal
+//     01/10 entrano qui.) Uno zero affermativo su un dato che non esiste è
+//     peggio di un buco dichiarato.
 //
 // Tutto il resto è riuso: `PageShell`, `StatTile`/`KpiRow`, `EquityCard`,
 // `DailyCalendar`, `DayDetail`, `BarreGiornaliere`, e le funzioni pure di
@@ -37,15 +37,19 @@ import { Button } from '@/components/ui/button';
 import { PageShell } from '@/components/trading/PageShell';
 import { EmptyState } from '@/components/trading/EmptyState';
 import { StatTile, KpiRow, toneOf } from '@/components/trading/StatTile';
-import { EquityCard } from '@/components/trading/EquityCard';
+import { EquityCard, EQUITY_AXIS_NOTE_GIORNATE } from '@/components/trading/EquityCard';
 import { BarreGiornaliere } from '@/components/trading/BarreGiornaliere';
 import { DailyCalendar } from '@/components/trading/DailyCalendar';
 import { DayDetail } from '@/components/trading/DayDetail';
 import { fmtMoney, fmtPct, fmtNum, DASH } from '@/lib/format';
 import { pnlClass } from '@/lib/tradeStatus';
-import { dayLabel } from '@/lib/dailyHistory';
 import {
-    FONTI_STORICO, FONTI_ASSENTI, INTERVALLO_LABEL, MODO_LABEL,
+    dayLabel, attributionOf, calendarGridBounds, historyWindow, filterRange,
+    GIORNATA_PARTITA_TESTO, GIORNATA_RIPIEGO_TESTO,
+} from '@/lib/dailyHistory';
+import { FONTE_PNL_BREVE } from '@/lib/fontePnl';
+import {
+    FONTI_STORICO, FONTI_ASSENTI, INTERVALLO_LABEL, MODO_LABEL, eBotTennisStorico,
     SPORT_ICONA, SPORT_LABEL, rottaStorico,
     intervalloRange, caricaStoricoSport, caricaTradeGiorno, aggregaBot, totaleModo,
     unisciGiornate, curvaCumulata, barrePerGiorno, oggiOperativo,
@@ -63,7 +67,15 @@ export interface StoricoSportProps {
 }
 
 export function StoricoSport({ sport, oggi }: StoricoSportProps) {
-    const giornoOggi = oggi ?? oggiOperativo();
+    // B-16 (01/10): «oggi» si ricalcola (una pagina aperta oltre mezzanotte
+    // restava su ieri); i test lo fissano con la prop
+    const [oggiVivo, setOggiVivo] = useState(() => oggiOperativo());
+    useEffect(() => {
+        if (oggi) return undefined;
+        const id = setInterval(() => setOggiVivo(oggiOperativo()), 60_000);
+        return () => clearInterval(id);
+    }, [oggi]);
+    const giornoOggi = oggi ?? oggiVivo;
     const [modo, setModo] = useState<ModoStorico>('live');
     const [intervallo, setIntervallo] = useState<IntervalloKind>('30g');
     const [botScelto, setBotScelto] = useState<string>('tutti');
@@ -80,43 +92,77 @@ export function StoricoSport({ sport, oggi }: StoricoSportProps) {
     }));
     const [giornoScelto, setGiornoScelto] = useState<string | null>(giornoOggi);
 
+    // B-15 (01/10): la finestra letta copre il PERIODO e la GRIGLIA del mese a
+    // schermo (come lo Storico dei bot): ogni cella del calendario è una
+    // giornata letta davvero, mai «nessuna operazione» su dati mai chiesti
+    const griglia = useMemo(() => calendarGridBounds(ym.year, ym.month), [ym]);
+    const finestra = useMemo(() => historyWindow(griglia, range), [griglia, range]);
+
     // ── LETTURA: una guardia anti-risposte fuori ordine, come TradingHistory ──
     const seq = useRef(0);
     useEffect(() => {
         const mio = ++seq.current;
         setCaricamento(true);
         setErrore(null);
-        caricaStoricoSport(sport, range.from, range.to)
+        caricaStoricoSport(sport, finestra.from, finestra.to)
             .then((s) => { if (mio === seq.current) { setSerie(s); setCaricamento(false); } })
             .catch((e) => {
                 if (mio !== seq.current) return;
                 setErrore(String((e as Error)?.message ?? e));
                 setCaricamento(false);
             });
-    }, [sport, range.from, range.to, ricarica]);
+    }, [sport, finestra.from, finestra.to, ricarica]);
+
+    // ── DETTAGLIO DEL GIORNO (dichiarato qui: serve anche al criterio) ──
+    const [dettaglio, setDettaglio] = useState<{ day: string; modo: ModoStorico; righe: TradeGiornoBot[] } | null>(null);
+
+    /**
+     * 01/10 - il database manda il giorno della PARTITA? Lo dicono le righe
+     * del dettaglio (`in_day`): se mancano, la giornata è ancora quella del
+     * criterio precedente e la pagina lo DICHIARA (mai un giorno partita
+     * calcolato qui). null = nessuna riga da cui saperlo.
+     */
+    const criterioVecchio = useMemo<boolean | null>(() => {
+        if (!dettaglio) return null;
+        const righe = dettaglio.righe.flatMap((d) => d.trades);
+        if (righe.length === 0) return null;
+        return righe.some((t) => typeof t.in_day !== 'boolean');
+    }, [dettaglio]);
 
     // ── le serie della MODALITÀ scelta, e quelle che non sanno separarla ──
+    // (i numeri sono del PERIODO; il calendario usa tutta la finestra letta)
     const serieModo = useMemo(() => serie.filter((s) => s.modo === modo), [serie, modo]);
-    const aggregati = useMemo(() => serieModo.map(aggregaBot), [serieModo]);
+    const seriePeriodo = useMemo(
+        () => serieModo.map((s) => ({ ...s, righe: filterRange(s.righe, range.from, range.to) })),
+        [serieModo, range.from, range.to],
+    );
+    const aggregati = useMemo(() => seriePeriodo.map(aggregaBot).map((a) => (
+        // C-01: col criterio di prima il P&L di Mike è per regolamento e
+        // l'importo per piazzamento: due giorni diversi, ROI non calcolabile
+        criterioVecchio && a.bot === 'mike' ? { ...a, stake: null, roi: null } : a
+    )), [seriePeriodo, criterioVecchio]);
     const separabili = useMemo(() => aggregati.filter((a) => a.modoAttendibile), [aggregati]);
     const nonSeparabili = useMemo(() => aggregati.filter((a) => !a.modoAttendibile && !a.errore), [aggregati]);
     const conErrore = useMemo(() => aggregati.filter((a) => a.errore), [aggregati]);
 
-    // il totale somma SOLO la modalità scelta e SOLO i bot che sanno separarla
+    // il totale somma SOLO la modalità scelta e SOLO i bot che sanno separarla.
+    // A-01 (01/10): dell'altra moneta NESSUNA cifra in questa vista.
     const totale = useMemo(() => totaleModo(aggregati, modo), [aggregati, modo]);
-    // l'altra moneta, mostrata SENZA entrare in nessun numero di questa pagina
-    const totaleAltraModalita = useMemo(() => {
-        const altro: ModoStorico = modo === 'live' ? 'paper' : 'live';
-        return totaleModo(serie.filter((s) => s.modo === altro).map(aggregaBot), altro);
-    }, [serie, modo]);
+    const stakeTennisAssente = useMemo(
+        () => separabili.some((a) => eBotTennisStorico(a.bot) && a.giorni > 0), [separabili]);
 
     // filtro per bot: cambia quello che si VEDE nei grafici e nel calendario
-    const serieVisibili = useMemo(
-        () => serieModo.filter((s) => s.modoAttendibile && (botScelto === 'tutti' || s.bot === botScelto)),
-        [serieModo, botScelto],
+    const filtroBot = useCallback(
+        (s: { modoAttendibile: boolean; bot: string }) => s.modoAttendibile && (botScelto === 'tutti' || s.bot === botScelto),
+        [botScelto],
     );
+    const serieVisibili = useMemo(() => seriePeriodo.filter(filtroBot), [seriePeriodo, filtroBot]);
     const righeUnite = useMemo(
         () => unisciGiornate(serieVisibili.map((s) => s.righe)), [serieVisibili],
+    );
+    // il calendario: tutte le giornate LETTE (periodo + griglia del mese)
+    const righeCalendario = useMemo(
+        () => unisciGiornate(serieModo.filter(filtroBot).map((s) => s.righe)), [serieModo, filtroBot],
     );
     const curva = useMemo(() => curvaCumulata(righeUnite), [righeUnite]);
     const barre = useMemo(
@@ -135,7 +181,6 @@ export function StoricoSport({ sport, oggi }: StoricoSportProps) {
     );
 
     // ── DETTAGLIO DEL GIORNO: si carica alla selezione, bot per bot ──
-    const [dettaglio, setDettaglio] = useState<{ day: string; modo: ModoStorico; righe: TradeGiornoBot[] } | null>(null);
     const [dettaglioCarica, setDettaglioCarica] = useState(false);
     const seqDay = useRef(0);
     useEffect(() => {
@@ -167,10 +212,11 @@ export function StoricoSport({ sport, oggi }: StoricoSportProps) {
             header={<Testata sport={sport} modo={modo} onModo={setModo}
                 onRicarica={() => setRicarica((n) => n + 1)} caricamento={caricamento} />}
             footer={
-                'Le giornate vengono dalle RPC dei bot (motore condiviso trading_daily_history): stessa '
-                + 'matematica dello Storico dentro Omega, Safe e Mike. Giornata operativa = giorno di '
-                + 'PIAZZAMENTO, fuso Europe/Rome. Questa pagina non ricalcola nessun P&L e non somma mai '
-                + 'soldi veri e simulati.'
+                // B-01 (01/10): il criterio vero, uguale per tutti i bot; niente
+                // nomi di funzioni del database davanti al trader
+                `${GIORNATA_PARTITA_TESTO} Le giornate sono quelle che il database calcola per ogni bot, `
+                + 'con la stessa matematica dello Storico dentro Omega, Safe e Mike: questa pagina non '
+                + 'ricalcola nessun P&L e non somma mai soldi veri e prova.'
             }
         >
             {/* ── I FILTRI: periodo, moneta, bot. Sempre visibile quale è attivo ── */}
@@ -183,13 +229,9 @@ export function StoricoSport({ sport, oggi }: StoricoSportProps) {
                     ))}
                 </Gruppo>
 
-                <Gruppo etichetta="soldi">
-                    <Pillola attivo={modo === 'live'} onClick={() => setModo('live')} testId="storico-modo-live"
-                        titolo="solo operazioni con denaro reale">soldi veri</Pillola>
-                    <Pillola attivo={modo === 'paper'} onClick={() => setModo('paper')} testId="storico-modo-paper"
-                        titolo="solo operazioni simulate">prova</Pillola>
-                    {/* NESSUN «entrambi»: due monete diverse non hanno un totale. */}
-                </Gruppo>
+                {/* A-09 (01/10): la moneta si sceglie in UN posto solo, il
+                    selettore in testata (NESSUN «entrambi»: due monete
+                    diverse non hanno un totale) */}
 
                 <Gruppo etichetta="bot">
                     <Pillola attivo={botScelto === 'tutti'} onClick={() => setBotScelto('tutti')}
@@ -209,6 +251,15 @@ export function StoricoSport({ sport, oggi }: StoricoSportProps) {
                 <Card className="glass-card border-orange-500/40 bg-orange-500/10 p-3 text-sm text-orange-200"
                     data-testid="storico-errore">
                     Lettura non riuscita: {errore}. I riquadri sotto mostrano l&apos;ultimo dato letto, non uno più recente.
+                </Card>
+            )}
+
+            {criterioVecchio && (
+                <Card className="glass-card border-amber-500/40 bg-amber-500/[0.07] p-3 text-[11.5px] text-amber-200"
+                    data-testid="storico-giornata-ripiego" role="note">
+                    <b className="text-amber-300">Attenzione:</b> {GIORNATA_RIPIEGO_TESTO} (Omega e Safe per giorno di
+                    piazzamento, Mike per giorno di regolamento). Il ROI di Mike non si calcola: P&amp;L e importo
+                    cadrebbero su giorni diversi.
                 </Card>
             )}
 
@@ -232,14 +283,17 @@ export function StoricoSport({ sport, oggi }: StoricoSportProps) {
                         value={fmtMoney(totale.pnl, { signed: true })}
                         tone={toneOf(totale.pnl)}
                         testId="storico-kpi-pnl"
-                        hint="somma del P&L realizzato delle giornate del periodo, netto di commissione, SOLO di questa modalità"
+                        // D-04 (01/10): ogni cifra in soldi veri dice la sua fonte
+                        sub={<span data-testid="storico-kpi-pnl-fonte">{fonteTotale(modo, totale)}</span>}
+                        hint="somma del P&L realizzato delle giornate del periodo, netto di commissione, SOLO di questa moneta"
                     />
                     <StatTile
                         label="Operazioni"
                         value={fmtNum(totale.operazioni)}
                         testId="storico-kpi-operazioni"
                         sub={`${fmtNum(totale.regolate)} regolate`}
-                        hint="aperture PIAZZATE nel periodo (le coperture non contano come operazioni a sé)"
+                        hint={'aperture delle partite del periodo (le coperture non contano come operazioni a sé)'
+                            + (sport === 'tennis' ? '; per i 4 bot tennis sono gli ordini regolati: il servizio non scrive il legame ingresso-uscita' : '')}
                     />
                     <StatTile
                         label="Vinte / perse"
@@ -247,45 +301,34 @@ export function StoricoSport({ sport, oggi }: StoricoSportProps) {
                             <span className="text-slate-500"> / </span>
                             <span className="text-red-400">{totale.perse}</span></span>}
                         testId="storico-kpi-vp"
-                        sub={totale.winRate == null ? 'nessun esito' : `${fmtPct(totale.winRate, 1)} vinte`}
-                        hint="esito della POSIZIONE intera (apertura + coperture), non della singola riga"
+                        // C-05 (01/10): regolate = vinte + perse + pari/annullate, detto
+                        sub={`${totale.winRate == null ? 'nessun esito' : `${fmtPct(totale.winRate, 1)} vinte`} · ${fmtNum(totale.pari)} pari/annullate`}
+                        hint="esito della POSIZIONE intera (apertura + coperture), non della singola riga: vinta se il P&L è positivo, persa se negativo; a zero o annullata è «pari/annullata», fuori da vinte e perse"
                     />
                     <StatTile
                         label="Importo piazzato"
                         value={totale.stake == null ? DASH : fmtMoney(totale.stake)}
                         testId="storico-kpi-stake"
-                        sub={totale.stake == null ? 'migrazione da applicare' : 'somma delle size di apertura'}
-                        hint="somma degli importi messi a mercato in apertura. Sui lay NON è la liability: sono due grandezze diverse."
+                        sub={totale.stake == null ? 'dato non disponibile' : 'somma degli importi di apertura'}
+                        hint="somma degli importi messi a mercato in apertura, per le partite del periodo. Sui lay NON è la liability: sono due grandezze diverse."
                     />
                     <StatTile
-                        label="ROI su stake"
+                        label="ROI su importo piazzato"
                         value={totale.roi == null ? DASH : fmtPct(totale.roi, 1)}
                         tone={totale.roi == null ? 'plain' : toneOf(totale.roi)}
                         testId="storico-kpi-roi"
-                        sub={totale.roi == null ? 'serve l’importo piazzato' : 'P&L / importo piazzato'}
-                        hint="P&L realizzato diviso l'importo piazzato nel periodo"
+                        sub={totale.roi == null ? 'manca l’importo piazzato' : 'P&L / importo piazzato'}
+                        hint="P&L realizzato diviso l'importo piazzato, per le partite del periodo"
                     />
                 </KpiRow>
 
-                {/* L'ALTRA MONETA: si vede, ma non entra in nessun numero qui sopra. */}
-                <div className="flex items-baseline gap-2 text-[11px] text-white/45 px-1"
-                    data-testid="storico-altra-modalita">
-                    <span className="uppercase tracking-wider text-[9.5px] px-1.5 py-0.5 rounded bg-white/10">
-                        {MODO_LABEL[modo === 'live' ? 'paper' : 'live']}
-                    </span>
-                    <span className={pnlClass(totaleAltraModalita.pnl)}>
-                        {fmtMoney(totaleAltraModalita.pnl, { signed: true })}
-                    </span>
-                    <span>su {fmtNum(totaleAltraModalita.operazioni)} operazioni —
-                        <strong className="text-white/60"> non è sommato</strong> ai numeri qui sopra:
-                        sono due monete diverse.</span>
-                </div>
-
                 {totale.stake == null && (
+                    // C-02 (01/10): in parole, senza nomi di file del database
                     <div className="px-1 text-[10.5px] text-amber-300/90" data-testid="storico-manca-stake">
-                        ROI non calcolabile: serve l&apos;importo piazzato per giornata, che oggi nessuna RPC
-                        espone. Lo aggiunge <code>migrations/storico_sport_2026-09-17.sql</code> —
-                        <strong> da applicare</strong>.
+                        ROI non disponibile: manca l&apos;importo piazzato per giornata
+                        {stakeTennisAssente
+                            ? ' (i bot tennis non registrano l’importo piazzato per giornata).'
+                            : ' (dato non disponibile: serve un aggiornamento del database).'}
                     </div>
                 )}
             </div>
@@ -298,21 +341,20 @@ export function StoricoSport({ sport, oggi }: StoricoSportProps) {
                         <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" aria-hidden />
                         <div className="text-[11.5px] text-amber-100/90 space-y-1">
                             <div className="font-semibold text-amber-300">
-                                {nonSeparabili.map((a) => a.etichetta).join(', ')}: soldi veri e simulati non separabili
+                                {nonSeparabili.map((a) => a.etichetta).join(', ')}: storico per moneta non disponibile
                             </div>
                             <div>
-                                La RPC di questo bot non sa filtrare per modalità (verificato sul database il 17/09:
-                                <code> get_omega_daily</code> esiste solo con <code>p_from</code> e <code>p_to</code>).
-                                Le sue righe sono <strong>miste</strong> e per questo restano FUORI dai totali qui
-                                sopra: metterle dentro vorrebbe dire chiamare «soldi veri» delle righe che non lo sono.
-                                La cura è <code>migrations/storico_sport_2026-09-17.sql</code> — <strong>da applicare</strong>.
+                                {/* A-02/A-03 (01/10): nessuna cifra (sarebbe di due monete
+                                    insieme) e nessun nome tecnico davanti al trader */}
+                                Il database non separa ancora le sue giornate fra soldi veri e prova: per questo
+                                il bot resta FUORI da tutti i numeri di questa pagina, in entrambe le monete
+                                (dato non disponibile: serve un aggiornamento del database).
                             </div>
                             <ul className="pt-1 space-y-0.5">
                                 {nonSeparabili.map((a) => (
-                                    <li key={`${a.bot}-${a.modo}`} className="font-mono text-[11px]"
+                                    <li key={`${a.bot}-${a.modo}`} className="text-[11px]"
                                         data-testid={`storico-misto-${a.bot}`}>
-                                        {a.etichetta}: {fmtMoney(a.pnl, { signed: true })} su {fmtNum(a.operazioni)} operazioni
-                                        <span className="text-amber-200/60"> (paper + live insieme)</span>
+                                        {a.etichetta}: non incluso nei totali
                                     </li>
                                 ))}
                             </ul>
@@ -350,7 +392,7 @@ export function StoricoSport({ sport, oggi }: StoricoSportProps) {
                                 <th className="text-right px-2 py-1.5 font-normal">vinte / perse</th>
                                 <th className="text-right px-2 py-1.5 font-normal">% vinte</th>
                                 <th className="text-right px-2 py-1.5 font-normal">importo piazzato</th>
-                                <th className="text-right px-3 py-1.5 font-normal">ROI</th>
+                                <th className="text-right px-3 py-1.5 font-normal">ROI su importo piazzato</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/[0.06]">
@@ -414,9 +456,8 @@ export function StoricoSport({ sport, oggi }: StoricoSportProps) {
 
             {botSceltoMisto && (
                 <div className="px-1 text-[11px] text-amber-300/90" data-testid="storico-bot-scelto-misto">
-                    Hai scelto un bot le cui righe sono <strong>miste</strong> (paper + live): curva,
-                    barre e calendario qui sotto restano vuoti apposta. I suoi numeri complessivi sono
-                    nel riquadro «modalità non separabile» qui sopra.
+                    Hai scelto un bot il cui storico non è separato per moneta: curva, barre e calendario
+                    qui sotto restano vuoti apposta (vedi il riquadro qui sopra).
                 </div>
             )}
 
@@ -425,9 +466,10 @@ export function StoricoSport({ sport, oggi }: StoricoSportProps) {
                 <EquityCard
                     series={curva}
                     scope={`${MODO_LABEL[modo]} · ${botScelto === 'tutti' ? 'tutti i bot' : botScelto} · ${INTERVALLO_LABEL[intervallo].toLowerCase()}`}
-                    emptyLabel="nessuna giornata regolata in questo periodo — la curva compare al primo incasso"
+                    emptyLabel="nessuna giornata con partite concluse in questo periodo — la curva compare alla prima"
                     label={`Curva globale ${SPORT_LABEL[sport].toLowerCase()} ${MODO_LABEL[modo]}`}
                     testId="storico-curva"
+                    axisNote={EQUITY_AXIS_NOTE_GIORNATE}
                 />
 
                 <Card className="glass-card border-white/10 p-4" data-testid="storico-barre">
@@ -457,7 +499,7 @@ export function StoricoSport({ sport, oggi }: StoricoSportProps) {
                         Calendario — {MODO_LABEL[modo]}
                     </div>
                     <DailyCalendar
-                        rows={righeUnite}
+                        rows={righeCalendario}
                         year={ym.year}
                         month={ym.month}
                         selectedDay={giornoScelto}
@@ -466,10 +508,13 @@ export function StoricoSport({ sport, oggi }: StoricoSportProps) {
                         today={giornoOggi}
                         loading={caricamento}
                     />
-                    <div className="text-[10px] text-slate-500 mt-2">
-                        Il calendario mostra il MESE scelto; il periodo dei numeri qui sopra è
-                        {' '}{INTERVALLO_LABEL[intervallo].toLowerCase()}. Una cella vuota fuori dal periodo
-                        caricato significa «non letto», non «nessuna operazione».
+                    <div className="text-[10px] text-slate-500 mt-2" data-testid="storico-calendario-nota">
+                        Il calendario mostra il MESE scelto, letto per intero; i numeri qui sopra sono del periodo
+                        {' '}«{INTERVALLO_LABEL[intervallo].toLowerCase()}».
+                        {finestra.periodTruncated && (
+                            <> Con questo mese a schermo il periodo non entra tutto nel limite di lettura: i numeri
+                            qui sopra partono dal {dayLabel(finestra.from)}.</>
+                        )}
                     </div>
                 </Card>
 
@@ -489,7 +534,7 @@ export function StoricoSport({ sport, oggi }: StoricoSportProps) {
                             {dettaglioValido
                                 .filter((d) => botScelto === 'tutti' || d.bot === botScelto)
                                 .map((d) => (
-                                    <DettaglioBot key={d.bot} d={d} giorno={giornoScelto} modo={modo} />
+                                    <DettaglioBot key={d.bot} d={d} giorno={giornoScelto} />
                                 ))}
                         </div>
                     )}
@@ -552,7 +597,7 @@ function Testata({ sport, modo, onModo, onRicarica, caricamento }: {
                         >SOLDI VERI</button>
                         <button type="button" onClick={() => onModo('paper')} aria-pressed={modo === 'paper'}
                             data-testid="storico-testata-paper"
-                            className={`px-2.5 py-1 transition ${modo === 'paper' ? 'bg-emerald-500/25 text-emerald-300' : 'text-slate-400 hover:text-white'}`}
+                            className={`px-2.5 py-1 transition ${modo === 'paper' ? 'bg-white/15 text-white/80' : 'text-slate-400 hover:text-white'}`}
                         >PROVA</button>
                     </div>
                     <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={onRicarica}
@@ -567,6 +612,7 @@ function Testata({ sport, modo, onModo, onRicarica, caricamento }: {
 }
 
 function RigaBot({ a }: { a: AggregatoBot }) {
+    const tennis = eBotTennisStorico(a.bot);
     return (
         <tr data-testid={`storico-bot-riga-${a.bot}`} className="hover:bg-white/[0.03]">
             <td className={`px-3 py-1.5 ${a.accento}`}>{a.etichetta}</td>
@@ -574,7 +620,10 @@ function RigaBot({ a }: { a: AggregatoBot }) {
                 data-testid={`storico-bot-pnl-${a.bot}`}>
                 {fmtMoney(a.pnl, { signed: true })}
             </td>
-            <td className="px-2 py-1.5 text-right font-mono tabular-nums text-white/70">{fmtNum(a.operazioni)}</td>
+            <td className="px-2 py-1.5 text-right font-mono tabular-nums text-white/70"
+                title={tennis ? 'ordini regolati: il servizio non scrive il legame ingresso-uscita' : undefined}>
+                {fmtNum(a.operazioni)}{tennis && <span className="text-white/35 font-sans text-[10px]"> ordini</span>}
+            </td>
             <td className="px-2 py-1.5 text-right font-mono tabular-nums">
                 <span className="text-emerald-400">{a.vinte}</span>
                 <span className="text-slate-500"> / </span>
@@ -583,7 +632,8 @@ function RigaBot({ a }: { a: AggregatoBot }) {
             <td className="px-2 py-1.5 text-right font-mono tabular-nums text-white/70">
                 {a.winRate == null ? DASH : fmtPct(a.winRate, 1)}
             </td>
-            <td className="px-2 py-1.5 text-right font-mono tabular-nums text-white/70">
+            <td className="px-2 py-1.5 text-right font-mono tabular-nums text-white/70"
+                title={a.stake == null ? (tennis ? 'i bot tennis non registrano l’importo piazzato per giornata' : 'dato non disponibile') : undefined}>
                 {a.stake == null ? DASH : fmtMoney(a.stake)}
             </td>
             <td className={`px-3 py-1.5 text-right font-mono tabular-nums ${a.roi == null ? 'text-white/40' : pnlClass(a.roi)}`}>
@@ -593,24 +643,42 @@ function RigaBot({ a }: { a: AggregatoBot }) {
     );
 }
 
-function DettaglioBot({ d, giorno, modo }: { d: TradeGiornoBot; giorno: string; modo: ModoStorico }) {
+function DettaglioBot({ d, giorno }: { d: TradeGiornoBot; giorno: string }) {
+    // A-02 (01/10): un bot senza storico per moneta non mostra righe (sarebbero
+    // di due monete); il bot tennis rimanda alle Chiuse (nessuna lettura in più)
+    const nota = d.errore ? null
+        : !d.modoAttendibile ? 'storico per moneta non disponibile: righe non mostrate (sarebbero di soldi veri e prova insieme)'
+            : d.senzaDettaglio ?? null;
     return (
         <div data-testid={`storico-dettaglio-${d.bot}`}>
             <div className="flex items-baseline gap-2 mb-1">
                 <span className="text-[11px] uppercase tracking-wider text-white/55">{d.etichetta}</span>
-                <span className="text-[10px] text-white/35">{d.trades.length} {d.trades.length === 1 ? 'operazione' : 'operazioni'}</span>
-                {!d.modoAttendibile && !d.errore && (
-                    <span className="text-[9.5px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300"
-                        title={`la RPC non sa filtrare per modalità: queste righe non sono solo «${MODO_LABEL[modo]}»`}>
-                        modalità mista
-                    </span>
+                {!nota && !d.errore && (
+                    <span className="text-[10px] text-white/35">{d.trades.length} {d.trades.length === 1 ? 'operazione' : 'operazioni'}</span>
                 )}
             </div>
             {d.errore
                 ? <div className="text-[11px] text-orange-300">{d.errore}</div>
-                : <DayDetail day={giorno} trades={d.trades} variant={d.variante} attribution="placed" />}
+                : nota || d.variante == null
+                    ? <div className="text-[11px] text-white/45" data-testid={`storico-dettaglio-nota-${d.bot}`}>{nota}</div>
+                    // B-04 (01/10): il criterio del dettaglio è quello della cella, mai cablato
+                    : <DayDetail day={giorno} trades={d.trades} variant={d.variante} attribution={attributionOf(d.variante)} />}
         </div>
     );
+}
+
+/** D-04 (01/10): la fonte del P&L del totale, in parole (vocabolario di `lib/fontePnl`). */
+function fonteTotale(modo: ModoStorico, t: { reale: number | null; stimato: number | null; stimati: number | null; bot: number }): string {
+    if (modo === 'paper') return `fonte: ${FONTE_PNL_BREVE.simulato}`;
+    if (t.bot > 0 && t.reale != null && t.stimato != null) {
+        // D-03: quanti ordini sono ancora stimati, se la fonte lo dice
+        const quanti = t.stimati != null && t.stimati > 0
+            ? ` (${t.stimati} ${t.stimati === 1 ? 'ordine ancora stimato' : 'ordini ancora stimati'})` : '';
+        return `di cui ${FONTE_PNL_BREVE.conto} ${fmtMoney(t.reale, { signed: true })} · ${FONTE_PNL_BREVE.stima} ${fmtMoney(t.stimato, { signed: true })}${quanti}`;
+    }
+    // C-03 (01/10): il motore somma il P&L scritto da ogni bot; conto e stima
+    // non sono separati per giornata, e lo si dice invece di attribuirgli una fonte
+    return `fonte: P&L scritto da ogni bot (${FONTE_PNL_BREVE.conto} e ${FONTE_PNL_BREVE.stima} non separati per giornata)`;
 }
 
 function Gruppo({ etichetta, children }: { etichetta: string; children: React.ReactNode }) {

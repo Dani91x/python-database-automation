@@ -11,12 +11,13 @@ import { ExitBadge } from '@/components/trading/ExitBadge';
 import { ModeBadge } from '@/components/trading/ModeBadge';
 import { cappedFrom } from '@/lib/safeBot';
 import {
-    dayLabel, tradeExit, summarizeDayTrades, attributionOf, WIN_LOSS_TIP,
+    dayLabel, tradeExit, summarizeDayTrades, attributionOf, ripiegoAttribuzione, WIN_LOSS_TIP,
+    GIORNATA_RIPIEGO_TESTO,
     type DayTrade, type DayTradeLeg, type HistoryVariant, type DayAttribution,
 } from '@/lib/dailyHistory';
 import { MatchTradesTable } from '@/components/omega/MatchTradesTable';
 import { fmtMoney, fmtOdds, fmtTime, DASH } from '@/lib/format';
-import { statusMeta, statusMetaOf, TIP, pnlClass, pnlClassSoft } from '@/lib/tradeStatus';
+import { statusMeta, statusMetaOf, pnlClass, pnlClassSoft } from '@/lib/tradeStatus';
 
 /**
  * §1 — un dato ASSENTE è «—», non «0,00 €». Prima `fmtEur` faceva
@@ -86,6 +87,10 @@ function kindOf(t: DayTradeLeg, variant: HistoryVariant): string {
     return STRATEGY_LABEL[t.strategy ?? ''] ?? (t.strategy ?? '—');
 }
 
+/** B-05/B-08 (01/10): il realizzato del DETTAGLIO segue il giorno della partita */
+const TIP_REALIZZATO_GIORNO =
+    'somma dei P&L già regolati delle posizioni delle partite di questa giornata (fuso Europe/Rome), netti di commissione';
+
 export interface DayDetailProps {
     day: string | null;
     trades: DayTrade[] | null;
@@ -94,7 +99,8 @@ export interface DayDetailProps {
     variant: HistoryVariant;
     /**
      * H-11/M-18: come il CALENDARIO attribuisce una posizione al giorno.
-     * Per TUTTI E TRE i bot è il giorno di PIAZZAMENTO (Europe/Rome).
+     * Dal 01/10 per TUTTI i bot è il giorno della PARTITA (`in_day` del
+     * database); senza il campo si ripiega sul criterio di prima, dichiarato.
      * Assente = dedotta dalla variante (`attributionOf`).
      */
     attribution?: DayAttribution;
@@ -114,7 +120,7 @@ export function DayDetail({ day, trades, loading = false, error = null, variant,
     const attr = attribution ?? attributionOf(variant);
     // H-11/M-18: i totali sono quelli della CELLA del calendario — solo le
     // posizioni che il calendario attribuisce a questa giornata.
-    const day0 = summarizeDayTrades(list, attr);
+    const day0 = summarizeDayTrades(list, attr, ripiegoAttribuzione(variant));
     const settled = day0.attributed.filter((t) => ['won', 'lost', 'void'].includes(t.status));
     const totalPnl = day0.pnl;
     const openCount = day0.open;
@@ -148,20 +154,30 @@ export function DayDetail({ day, trades, loading = false, error = null, variant,
                     </span>
                 )}
                 {!noData && otherDays > 0 && (
-                    <span className="text-[11px] text-slate-500" data-testid="day-other-days" title={attr === 'placed'
-                        ? 'righe regolate oggi ma PIAZZATE in un altro giorno: il calendario le conta là, quindi non entrano in questi totali'
-                        : 'righe piazzate oggi ma regolate in un altro giorno: il calendario le conta là'}>
-                        + {otherDays} di altre giornate (fuori dai totali)
+                    <span className="text-[11px] text-slate-500" data-testid="day-other-days"
+                        title="righe presenti nella risposta ma di partite di altri giorni: il calendario le conta nel giorno della loro partita, quindi non entrano in questi totali">
+                        + {otherDays} di altre giornate (partite di altri giorni, fuori dai totali)
+                    </span>
+                )}
+                {!noData && day0.giornoDaPiazzamento > 0 && (
+                    <span className="text-[11px] text-amber-300/90" data-testid="day-giorno-piazzamento"
+                        title="per queste posizioni il database non conosce l'inizio della partita: sono attribuite al giorno di piazzamento">
+                        {day0.giornoDaPiazzamento} senza inizio partita noto: giorno di piazzamento
+                    </span>
+                )}
+                {!noData && day0.senzaGiornoPartita > 0 && (
+                    <span className="text-[11px] text-amber-300" data-testid="day-giorno-ripiego" role="note">
+                        {GIORNATA_RIPIEGO_TESTO}
                     </span>
                 )}
                 <span className="ml-auto tabular-nums">
                     <span
                         className="text-slate-400 mr-1 text-xs"
-                        title="capitale IMPEGNATO dalle posizioni piazzate in questa giornata (non è quello ancora a rischio adesso)"
+                        title="capitale IMPEGNATO dalle posizioni delle partite di questa giornata (non è quello ancora a rischio adesso)"
                     >
-                        liability piazzata {noData ? DASH : fmtEur(liability)} ·
+                        liability delle partite del giorno {noData ? DASH : fmtEur(liability)} ·
                     </span>
-                    <span className="text-slate-400 mr-1 text-xs" title={TIP.realizedToday}>realizzato</span>
+                    <span className="text-slate-400 mr-1 text-xs" title={TIP_REALIZZATO_GIORNO}>realizzato</span>
                     <b className={noData ? 'text-slate-500' : pnlClass(totalPnl)} data-testid="day-total-pnl">
                         {noData ? DASH : fmtSignedEur(totalPnl)}
                     </b>
@@ -184,8 +200,8 @@ export function DayDetail({ day, trades, loading = false, error = null, variant,
                 <div className="text-sm text-muted-foreground py-8 text-center" data-testid="day-detail-none">
                     nessun trade in questa giornata
                     {otherDays > 0 && (
-                        <>: le {otherDays} righe di questa risposta sono {attr === 'placed' ? 'state piazzate' : 'state regolate'} in
-                        un’altra giornata e il calendario le conta là</>
+                        <>: le {otherDays} righe di questa risposta sono di partite di un’altra giornata
+                        e il calendario le conta là</>
                     )}
                 </div>
             ) : variant === 'omega' ? (
@@ -235,7 +251,7 @@ export function DayDetail({ day, trades, loading = false, error = null, variant,
                                     <tr key={t.id} className="border-t border-white/5 hover:bg-white/5" data-testid="day-trade-row">
                                         <td className="px-3 py-2 text-slate-400 tabular-nums">
                                             {timeLabel(t.placed_at)}
-                                            {!t.placed_in_day && <span className="ml-1 text-[10px] text-slate-500" title="piazzato in un'altra giornata, regolato oggi">(prec.)</span>}
+                                            {t.giorno_da === 'piazzamento' && <span className="ml-1 text-[10px] text-amber-300/80" title="inizio della partita non noto al database: la posizione è attribuita al giorno di piazzamento" data-testid="day-trade-giorno-piazzamento">(piazz.)</span>}
                                         </td>
                                         <td className="px-3 py-2 max-w-[220px] truncate" title={t.event_name ?? t.event_id}>
                                             {t.origin === 'manual' && (

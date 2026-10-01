@@ -39,18 +39,19 @@ vi.mock('@/lib/dailyHistory', async (orig) => {
     return {
         ...actual,
         romeDay: () => '2026-09-10',
-        fetchOmegaDaily: vi.fn(async () => []),
-        fetchOmegaDayTrades: vi.fn(async () => []),
+        // A-05 (01/10): lo Storico di Omega chiede SEMPRE una moneta (p_mode)
+        fetchOmegaDailyPerModo: vi.fn(async () => ({ rows: [], modoAttendibile: true })),
+        fetchOmegaDayTradesPerModo: vi.fn(async () => ({ trades: [], modoAttendibile: true })),
     };
 });
 
 import Omega from './Omega';
 import { fetchOmegaState } from '@/lib/omega';
-import { fetchOmegaDaily, fetchOmegaDayTrades, type DailyRow } from '@/lib/dailyHistory';
+import { fetchOmegaDailyPerModo, fetchOmegaDayTradesPerModo, type DailyRow } from '@/lib/dailyHistory';
 
 const mState = vi.mocked(fetchOmegaState);
-const mDaily = vi.mocked(fetchOmegaDaily);
-const mDay = vi.mocked(fetchOmegaDayTrades);
+const mDaily = vi.mocked(fetchOmegaDailyPerModo);
+const mDay = vi.mocked(fetchOmegaDayTradesPerModo);
 
 const CONTROL = {
     id: 1, status: 'running', mode: 'paper', daily_goal: 250, params: {},
@@ -78,8 +79,8 @@ beforeEach(() => {
         },
         activity: [], activity_more: 0, goal_today: 250, goal_snapshot: true,
     });
-    mDaily.mockResolvedValue([DAILY_ROW]);
-    mDay.mockResolvedValue([]);
+    mDaily.mockResolvedValue({ rows: [DAILY_ROW], modoAttendibile: true });
+    mDay.mockResolvedValue({ trades: [], modoAttendibile: true });
 });
 
 function renderPage() {
@@ -141,19 +142,42 @@ describe('Omega — tab Storico', () => {
         expect(await screen.findByTestId('trading-history')).toBeInTheDocument();
         await waitFor(() => // 12/09: la finestra copre la GRIGLIA del mese (lun 31 ago → dom 4 ott),
         // altrimenti le celle fuori mese dichiarano «nessuna operazione» su dati mai letti
-        expect(mDaily).toHaveBeenCalledWith('2026-08-31', '2026-10-04'));
-        await waitFor(() => expect(mDay).toHaveBeenCalledWith('2026-09-10'));
+        // A-05 (01/10): con la moneta ESPLICITA, di serie quella del bot (paper)
+        expect(mDaily).toHaveBeenCalledWith('2026-08-31', '2026-10-04', 'paper'));
+        await waitFor(() => expect(mDay).toHaveBeenCalledWith('2026-09-10', 'paper'));
         expect(await screen.findByRole('gridcell', { name: /10 settembre.*\+60,00 €.*3 trade.*obiettivo mancato/ })).toBeInTheDocument();
         await waitFor(() => expect(screen.getByTestId('kpi-pnl')).toHaveTextContent('+60,00 €'));
         expect(screen.getByTestId('kpi-goal')).toHaveTextContent('0/1');
         expect(within(screen.getByTestId('breakdown-strategy')).getByText('Gamba 1T (Half Time Score)')).toBeInTheDocument();
         expect(screen.getByTestId('day-detail')).toBeInTheDocument();
-        // L-08: il testo dice l'attribuzione VERA (Omega storicizza per piazzamento)
-        expect(screen.getByTestId('trading-history')).toHaveTextContent(/posizioni PIAZZATE nel giorno/);
+        // 01/10 (B-02): una frase sola per i tre bot, il giorno della PARTITA
+        expect(screen.getByTestId('history-criterio')).toHaveTextContent(/giorno della PARTITA/);
+        expect(screen.getByTestId('trading-history')).not.toHaveTextContent(/posizioni PIAZZATE nel giorno/);
+        // A-05: la moneta e' dichiarata prima dei numeri
+        expect(screen.getByTestId('history-moneta')).toHaveTextContent('PROVA');
+    });
+
+    it('A-05: l\'altra moneta si legge APPOSTA dal selettore, con p_mode esplicito', async () => {
+        const user = userEvent.setup();
+        renderPage();
+        await user.click(await screen.findByRole('tab', { name: /Storico/ }));
+        await user.click(await screen.findByTestId('history-mode-live'));
+        await waitFor(() => expect(mDaily).toHaveBeenLastCalledWith('2026-08-31', '2026-10-04', 'live'));
+        expect(screen.getByTestId('history-moneta')).toHaveTextContent('SOLDI VERI');
+        expect(mDaily.mock.calls.every((c) => c[2] === 'paper' || c[2] === 'live')).toBe(true);
+    });
+
+    it('A-05: se il database non separa le monete, NESSUNA cifra (righe miste) e il motivo in parole', async () => {
+        mDaily.mockResolvedValue({ rows: [DAILY_ROW], modoAttendibile: false });
+        const user = userEvent.setup();
+        renderPage();
+        await user.click(await screen.findByRole('tab', { name: /Storico/ }));
+        expect(await screen.findByTestId('history-error')).toHaveTextContent(/storico per moneta non disponibile/);
+        expect(screen.queryByRole('gridcell', { name: /\+60,00 €/ })).toBeNull();
     });
 
     it('H-10: giornata con obiettivo di RIPIEGO → nessun ●/○ e niente giudizio', async () => {
-        mDaily.mockResolvedValue([{ ...DAILY_ROW, goal_snapshot: false }]);
+        mDaily.mockResolvedValue({ rows: [{ ...DAILY_ROW, goal_snapshot: false }], modoAttendibile: true });
         const user = userEvent.setup();
         renderPage();
         await user.click(await screen.findByRole('tab', { name: /Storico/ }));
