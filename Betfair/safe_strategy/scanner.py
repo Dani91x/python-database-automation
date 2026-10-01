@@ -385,15 +385,67 @@ def in_pre_ko_window(open_date: Optional[str], now: datetime) -> bool:
     return 0 < delta <= PRE_KO_WINDOW_SEC
 
 
+# ----------------------------------------------- ATTESA DEL FISCHIO (01/10/2026)
+# ORDINE DELL'UTENTE (01/10): «TUTTI I BOT NON DEVONO ESSERE MAI CIECHI PER
+# NESSUN MOTIVO, a meno che non dipenda da Betfair».
+# Difetto accertato il 01/10 su Greece U21 v Latvia U21 (36132210): Mike in LIVE
+# con 5 EUR sul mercato; alle 17:00:00 (orario PREVISTO del fischio) la riga e'
+# stata RIMOSSA perche' la finestra pre-KO finiva all'orario programmato, ed e'
+# tornata solo alle 17:02:04, quando Betfair ha messo la partita in gioco: due
+# minuti senza quote ne' punteggio con una posizione aperta. Causa INTERNA.
+#
+# Dopo l'orario previsto una partita non ancora in gioco resta monitorata
+# (riga pubblicata) finche' Betfair non la mette in gioco o non CHIUDE il suo
+# Match Odds:
+#   * SEMPRE se un bot ha esposizione su di essa (posizione o ordine vivo);
+#   * per tutte le altre fino a ``POST_KO_WAIT_SEC`` dopo l'orario previsto
+#     (fischio in ritardo, partita rinviata di poco). Il tetto e' lo stesso di
+#     Mike (``mike/service.py::_MATCH_OVER_S``, 3 h: «oltre 3h dal KO la
+#     partita e' finita comunque»), cosi' feed e bot usano lo stesso orologio.
+# Nessuna chiamata in piu' a Betfair: il Match Odds e' gia' tenuto in stream da
+# ``is_relevant_market`` (KO passato = rilevante finche' non CLOSED), qui si
+# smette solo di CANCELLARE la riga che lo pubblica.
+POST_KO_WAIT_SEC = 3 * 3600
+
+
+def in_post_ko_wait(
+    inplay: Optional[bool], mo_status: Optional[str], open_date: Optional[str],
+    now: datetime, esposto: bool = False,
+) -> bool:
+    """Orario previsto del fischio GIA' passato (o appena raggiunto), partita
+    NON ancora in gioco e Match Odds non chiuso: si aspetta Betfair.
+
+    ``esposto=True`` (un bot ha una posizione o un ordine vivo sulla partita):
+    nessun tetto, si aspetta finche' Betfair non la mette in gioco o la chiude.
+    Altrimenti il tetto e' ``POST_KO_WAIT_SEC``."""
+    if inplay or mo_status == "CLOSED":
+        return False
+    ko = parse_iso(open_date)
+    if ko is None:
+        return False
+    passati = (now - ko).total_seconds()
+    if passati < 0:
+        return False  # prima del fischio decidono le finestre pre-KO
+    return bool(esposto) or passati <= POST_KO_WAIT_SEC
+
+
 def is_monitorable(
     inplay: bool, open_date: Optional[str], now: datetime, pre_ko_ou_hours: float = 0.0,
+    *, mo_status: Optional[str] = None, esposto: bool = False, visto: bool = True,
 ) -> bool:
     """Riga da pubblicare: evento in-play, KO entro la finestra pre-KO, oppure
-    (ramo pre-KO O/U acceso) KO entro ``pre_ko_ou_hours``."""
+    (ramo pre-KO O/U acceso) KO entro ``pre_ko_ou_hours``, oppure orario del
+    fischio passato ma partita non ancora in gioco (``in_post_ko_wait``, 01/10).
+
+    ``visto=False``: nessun book dell'evento e' ancora arrivato (tipicamente lo
+    scanner appena ripartito), quindi «non in gioco» non e' un FATTO ma
+    un'ignoranza: l'attesa del fischio non si applica, per non pubblicare una
+    riga «non in gioco» inventata sopra una partita che magari e' al 70'."""
     return (
         inplay
         or in_pre_ko_window(open_date, now)
         or in_pre_ko_ou_window(open_date, now, pre_ko_ou_hours)
+        or (bool(visto) and in_post_ko_wait(inplay, mo_status, open_date, now, esposto))
     )
 
 

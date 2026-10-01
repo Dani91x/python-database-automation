@@ -1,0 +1,45 @@
+== F1 is_monitorable senza attesa del fischio (comportamento vecchio): exit=1 -> 10 failed, 19 passed in 3.10s
+    FAILED Betfair/safe_strategy/tests/test_attesa_fischio_2026_10_01.py::test_esposto_un_secondo_dopo_il_fischio_previsto_resta_monitorabile
+    FAILED Betfair/safe_strategy/tests/test_attesa_fischio_2026_10_01.py::test_esattamente_all_orario_previsto_resta_monitorabile
+    FAILED Betfair/safe_strategy/tests/test_attesa_fischio_2026_10_01.py::test_senza_esposizione_resta_fino_al_tetto_poi_esce
+    FAILED Betfair/safe_strategy/tests/test_attesa_fischio_2026_10_01.py::test_esposto_oltre_il_tetto_resta_finche_betfair_non_decide
+    FAILED Betfair/safe_strategy/tests/test_attesa_fischio_2026_10_01.py::test_build_rows_mike_esposto_un_secondo_dopo_il_fischio_riga_resta
+    FAILED Betfair/safe_strategy/tests/test_attesa_fischio_2026_10_01.py::test_publish_non_rimuove_la_riga_al_fischio_previsto
+    FAILED Betfair/safe_strategy/tests/test_attesa_fischio_2026_10_01.py::test_build_rows_senza_esposizione_entro_il_tetto_resta
+    FAILED Betfair/safe_strategy/tests/test_attesa_fischio_2026_10_01.py::test_build_rows_esposto_oltre_il_tetto_resta
+    FAILED Betfair/safe_strategy/tests/test_bot_mai_ciechi_2026_10_01.py::test_visto_false_niente_attesa_del_fischio
+    FAILED Betfair/safe_strategy/tests/test_bot_mai_ciechi_2026_10_01.py::test_build_rows_a_scanner_ripartito_non_pubblica_una_riga_inventata
+== F2 build_rows ignora l'esposizione: exit=1 -> 1 failed, 28 passed in 3.57s
+    FAILED Betfair/safe_strategy/tests/test_attesa_fischio_2026_10_01.py::test_build_rows_esposto_oltre_il_tetto_resta
+== F3 linee Mike fuori dallo stream durante l'attesa: exit=1 -> 1 failed, 28 passed in 2.97s
+    FAILED Betfair/safe_strategy/tests/test_attesa_fischio_2026_10_01.py::test_linee_di_mike_restano_nello_stream_durante_l_attesa_del_fischio
+== F4 pre-KO seguita al tier 2: exit=1 -> 1 failed, 28 passed in 4.22s
+    FAILED Betfair/safe_strategy/tests/test_attesa_fischio_2026_10_01.py::test_linee_di_mike_pre_ko_al_tier_della_posizione
+== F5 attesa che ignora CLOSED: exit=1 -> 2 failed, 27 passed in 12.50s
+    FAILED Betfair/safe_strategy/tests/test_attesa_fischio_2026_10_01.py::test_match_odds_chiuso_non_monitorabile
+    FAILED Betfair/safe_strategy/tests/test_attesa_fischio_2026_10_01.py::test_linee_escono_dallo_stream_a_match_odds_chiuso
+== F6 tetto ignorato (tutte per sempre): exit=1 -> 2 failed, 27 passed in 13.11s
+    FAILED Betfair/safe_strategy/tests/test_attesa_fischio_2026_10_01.py::test_senza_esposizione_resta_fino_al_tetto_poi_esce
+    FAILED Betfair/safe_strategy/tests/test_attesa_fischio_2026_10_01.py::test_build_rows_senza_esposizione_oltre_il_tetto_esce
+== F7 attesa anche senza nessun book (riga inventata al riavvio): exit=1 -> 2 failed, 27 passed in 8.60s
+    FAILED Betfair/safe_strategy/tests/test_bot_mai_ciechi_2026_10_01.py::test_visto_false_niente_attesa_del_fischio
+    FAILED Betfair/safe_strategy/tests/test_bot_mai_ciechi_2026_10_01.py::test_build_rows_a_scanner_ripartito_non_pubblica_una_riga_inventata
+== F8 pulizia orfane senza margine dall'avvio: exit=1 -> 1 failed, 28 passed in 6.61s
+    FAILED Betfair/safe_strategy/tests/test_bot_mai_ciechi_2026_10_01.py::test_pulizia_orfane_mai_prima_dei_primi_book
+== F9 pulizia orfane con un catalogo mancante: exit=1 -> 1 failed, 28 passed in 4.91s
+    FAILED Betfair/safe_strategy/tests/test_bot_mai_ciechi_2026_10_01.py::test_pulizia_orfane_mai_con_un_catalogo_mancante
+== F10 catalogo sostituito per intero (comportamento vecchio): exit=1 -> 2 failed, 27 passed in 3.60s
+    FAILED Betfair/safe_strategy/tests/test_bot_mai_ciechi_2026_10_01.py::test_catalogo_tiene_in_gioco_ed_esposti_fuori_finestra
+    FAILED Betfair/safe_strategy/tests/test_bot_mai_ciechi_2026_10_01.py::test_catalogo_tennis_in_gioco_fuori_finestra_resta
+== F11 catalogo che ignora l'esposizione: exit=1 -> 1 failed, 28 passed in 2.82s
+    FAILED Betfair/safe_strategy/tests/test_bot_mai_ciechi_2026_10_01.py::test_catalogo_tiene_in_gioco_ed_esposti_fuori_finestra
+== F12 catalogo che tiene anche i mercati chiusi: exit=1 -> 1 failed, 28 passed in 2.85s
+    FAILED Betfair/safe_strategy/tests/test_bot_mai_ciechi_2026_10_01.py::test_catalogo_tiene_in_gioco_ed_esposti_fuori_finestra
+== F13 Safe: lettura fallita = nessuna riga (comportamento vecchio): exit=1 -> 2 failed, 27 passed in 4.58s
+    FAILED Betfair/safe_strategy/tests/test_bot_mai_ciechi_2026_10_01.py::test_safe_lettura_fallita_tiene_l_ultima_lista_buona
+    FAILED Betfair/safe_strategy/tests/test_bot_mai_ciechi_2026_10_01.py::test_safe_lettura_fallita_nel_ciclo_vero_il_motore_vede_ancora_la_partita
+== F14 bot_db: lettura fallita torna [] (comportamento vecchio): exit=1 -> 1 failed, 28 passed in 3.02s
+    FAILED Betfair/safe_strategy/tests/test_bot_mai_ciechi_2026_10_01.py::test_bot_db_fetch_scan_rows_torna_none_se_la_lettura_fallisce
+== F15 avviso a ogni ciclo invece che a episodio: exit=1 -> 1 failed, 28 passed in 4.80s
+    FAILED Betfair/safe_strategy/tests/test_bot_mai_ciechi_2026_10_01.py::test_safe_lettura_fallita_tiene_l_ultima_lista_buona
+ripristinato

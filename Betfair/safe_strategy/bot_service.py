@@ -9174,6 +9174,33 @@ def azzera_canale_scan() -> None:
     _CONTI_SVEGLIA.update({"sveglie": 0, "rifiutate": 0, "installata": False})
     _SVEGLIA.clear()
     _ULTIMO_GIRO["mono"] = 0.0
+    _FEED_KO.clear()
+
+
+# 01/10 - episodio di lettura del feed fallita (inizio, in secondi epoch)
+_FEED_KO: dict[str, float] = {}
+
+
+def _avvisa_feed_non_letto(db: Any, now_ts: float, *, ripreso: bool = False,
+                           errore: Optional[str] = None) -> None:
+    """UNA riga all'inizio dell'episodio e UNA alla ripresa, mai a ogni ciclo
+    (stesso schema di ``mike/service.py::_avvisa_feed_non_letto``)."""
+    if ripreso:
+        dal = _FEED_KO.pop("dal", None)
+        if dal:
+            logger.warning("[safe.bot] lettura del feed RIPRESA dopo %.0f s", now_ts - float(dal))
+            _log(db, "skip", {"reason": "lettura_feed_ripresa",
+                              "secondi_senza_lettura": round(now_ts - float(dal), 1)})
+        return
+    if _FEED_KO.get("dal"):
+        return
+    _FEED_KO["dal"] = float(now_ts)
+    logger.critical("[safe.bot] lettura del feed FALLITA: si ritenta a ogni ciclo con "
+                    "l'ultima lista buona, nessuna partita viene data per sparita")
+    _log(db, "error", {"reason": "feed_failed", "critical": True, "err": errore,
+                       "nota": "lettura di safe_strategy_scan fallita: Safe ritenta a ogni "
+                               "ciclo con l'ultima lista buona (righe che invecchiano = "
+                               "freschezza dichiarata, mai feed_blind)"})
 
 
 def _leggi_righe_scan(db: Any, now_ts: float) -> tuple[list[dict[str, Any]], str]:
@@ -9205,13 +9232,23 @@ def _leggi_righe_scan(db: Any, now_ts: float) -> tuple[list[dict[str, Any]], str
     scaduto = (mono - float(_CANALE_SCAN.get("ultima_db_mono") or 0.0)) >= _RISINC_DB_S
     rileggi = (not acceso) or (not fresche) or scaduto or not _CANALE_SCAN.get("righe_db")
     if rileggi:
+        errore: Optional[str] = None
         try:
-            righe_db = list(db.fetch_scan_rows() or [])
+            letto = db.fetch_scan_rows()
         except Exception as ex:  # noqa: BLE001
-            _log(db, "error", {"reason": "feed_failed", "err": str(ex)[:160]})
-            righe_db = []
-        _CANALE_SCAN["righe_db"] = righe_db
-        _CANALE_SCAN["ultima_db_mono"] = mono
+            letto, errore = None, str(ex)[:160]
+        if letto is None:
+            # 01/10 (bot mai ciechi, come Mike M8.7): lettura FALLITA != partite
+            # sparite. Si tiene l'ultima lista buona (le sue righe invecchiano e
+            # la freschezza le giudica: prezzi vecchi = nessuna entrata, uscite in
+            # attesa DICHIARATA), si ritenta al ciclo dopo e lo si dice una volta.
+            righe_db = list(_CANALE_SCAN.get("righe_db") or [])
+            _avvisa_feed_non_letto(db, now_ts, errore=errore)
+        else:
+            righe_db = list(letto)
+            _CANALE_SCAN["righe_db"] = righe_db
+            _CANALE_SCAN["ultima_db_mono"] = mono
+            _avvisa_feed_non_letto(db, now_ts, ripreso=True)
     else:
         righe_db = list(_CANALE_SCAN.get("righe_db") or [])
     if not acceso:
@@ -10597,6 +10634,7 @@ def svuota_le_cache() -> None:
     _DATO_MANCANTE_LOG.clear()
     _PLACE_ATTEMPTS.clear()
     _SENZA_RUNNER_LOG.clear()          # cantiere P (28/09): riga critica 1/min
+    _FEED_KO.clear()                   # 01/10: episodio di lettura del feed fallita
     _SKIP_LOG_STATE.clear()
     _EVENT_NAMES.clear()
     _PENDING_CICLO.clear()

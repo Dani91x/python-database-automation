@@ -159,6 +159,17 @@ _SVEGLIA_PAVIMENTO_SEC = 0.5
 _PUBLISH_MIN_INTERVAL_SEC = 2.5
 _STATUS_PERIOD_SEC = 10.0
 _ORPHAN_PURGE_PERIOD_SEC = 300.0
+# 01/10 (bot mai ciechi): la PRIMA pulizia delle righe orfane aspetta che il giro
+# sappia cosa vuole: cataloghi di TUTTI gli sport caricati e questo margine
+# dall'avvio, perche' arrivino i primi book. Prima la pulizia partiva al primo
+# publish: a scanner appena ripartito le partite IN GIOCO (stato ancora ignoto,
+# nessun book) e tutte quelle di uno sport col catalogo fallito risultavano
+# «non volute» e la loro riga veniva CANCELLATA, anche con posizioni aperte.
+_ORPHAN_FIRST_GRACE_SEC = 60.0
+# 01/10: un evento IN GIOCO (o con esposizione) uscito dalla finestra del
+# catalogo resta nel radar finche' il suo Match Odds non chiude, ma non oltre
+# questo tetto dall'orario previsto (difesa da un mercato mai chiuso).
+_CATALOGUE_KEEP_MAX_H = 24
 _KEEPALIVE_PERIOD_SEC = 900.0
 _BOOK_CHUNK = 25          # peso EX_BEST_OFFERS 5/mercato → 125 < 200
 _SCORES_CHUNK = 50        # eventId per chiamata IPS (verificato 09/09: 50 ok, ~70ms)
@@ -510,7 +521,8 @@ class Scanner:
             "scores": 0, "timelines": 0, "timelines_fischio": 0,
             "sveglie": 0, "punteggi_dalla_timeline": 0,
         }
-        self.orphan_purge_ts = -1e9  # prima pulizia subito al primo publish
+        self.orphan_purge_ts = -1e9  # prima pulizia appena e' sicura (_pulizia_orfani_sicura)
+        self.avvio_mono = time.monotonic()
         # CERT. 13/09 — reidratazione del riferimento 1X2 pre-KO dal DB.
         # ``pre_ko`` viveva SOLO qui dentro: a ogni riavvio (app chiusa, crash +
         # watchdog, modifica al codice) si perdeva per tutte le partite gia' in
@@ -646,10 +658,48 @@ class Scanner:
                     else scanner.tennis_sides(runners)
                 ),
             }
+        tenuti = self._tieni_eventi_vivi(sport, st.metas, metas)
+        if len(cats or []) >= _MAX_MARKETS:
+            # 01/10: il catalogo e' TRONCATO (sort FIRST_TO_START: resta fuori la
+            # coda piu' lontana). Non si tace: e' il giorno in cui serve saperlo.
+            logger.warning("[safe-scan] catalogo %s TRONCATO a %d mercati: le partite "
+                           "piu' lontane restano fuori dal radar", sport, _MAX_MARKETS)
         st.metas = metas
         st.catalogue_ts = time.monotonic()
         self._rebuild_market_index()
-        logger.info("[safe-scan] catalogo %s: %d eventi oggi", sport, len(metas))
+        logger.info("[safe-scan] catalogo %s: %d eventi oggi%s", sport, len(metas),
+                    f" (+{tenuti} in gioco/esposti fuori finestra)" if tenuti else "")
+
+    def _tieni_eventi_vivi(self, sport: str, vecchi: Dict[str, Dict[str, Any]],
+                           nuovi: Dict[str, Dict[str, Any]],
+                           now: Optional[datetime] = None) -> int:
+        """01/10 (bot mai ciechi) - un evento che esce dalla finestra del
+        catalogo (orario previsto piu' vecchio di ``_CATALOGUE_PAST_H``, tipico
+        del tennis «a seguire» o di una partita ripresa tardi) mentre e' IN
+        GIOCO o ha ESPOSIZIONE di un bot non sparisce: la riga, le quote e il
+        punteggio restano finche' il suo Match Odds non e' CLOSED (al massimo
+        ``_CATALOGUE_KEEP_MAX_H`` dall'orario previsto). Prima ``st.metas``
+        veniva sostituito per intero, ``tick`` toglieva l'evento da
+        ``self.events`` e ``publish`` cancellava la riga. Nessuna chiamata in
+        piu': si conserva la meta gia' in mano. Modifica ``nuovi`` sul posto e
+        torna quanti eventi ha tenuto."""
+        now = now or datetime.now(timezone.utc)
+        esposti = {str(e) for e in self._mike_followed()} if sport == "calcio" else set()
+        tenuti = 0
+        for eid, meta in (vecchi or {}).items():
+            if eid in nuovi:
+                continue
+            ev = self.events.get(eid) or {}
+            if ev.get("mo_status") == "CLOSED":
+                continue
+            if not (ev.get("inplay") or str(eid) in esposti):
+                continue
+            ko = scanner.parse_iso(meta.get("open_date"))
+            if ko is not None and (now - ko).total_seconds() > _CATALOGUE_KEEP_MAX_H * 3600:
+                continue
+            nuovi[eid] = meta
+            tenuti += 1
+        return tenuti
 
     def _rebuild_market_index(self) -> None:
         """Indice market_id → (sport, meta) su tutto il catalogo MATCH_ODDS più i
@@ -1065,12 +1115,36 @@ class Scanner:
                                                      mike=mike_line), mid))
         # ramo pre-KO O/U (Mike): SOLO le due linee, tier 2 con minuto 0 → dopo
         # ogni mercato in-play; se il pool è pieno escono per primi loro
-        for eid in self.pre_ko_ou_candidates(now):
+        # 01/10: una partita pre-KO SEGUITA da Mike (posizione o ordine vivo gia'
+        # prima del fischio) ha le sue due linee al tier 1.5 come in gioco: a
+        # pool pieno uscivano per prime proprio le linee con soldi sopra.
+        pre_ko = self.pre_ko_ou_candidates(now)
+        for eid in pre_ko:
             meta = self.sports["calcio"].metas.get(eid) or {}
-            key = scanner.opp_rank_key(None, meta.get("open_date"))
+            key = scanner.opp_rank_key(None, meta.get("open_date"), mike=str(eid) in followed)
             for mid, mk in (self.opp_markets.get(eid) or {}).items():
                 if scanner.is_opp_market_live(mk.get("market_type"), mk.get("line"),
                                               None, None, None, pre_ko=True):
+                    out.append((key, mid))
+        # 01/10 - ATTESA DEL FISCHIO: partita seguita da Mike con l'orario
+        # previsto gia' passato ma non ancora in gioco. Il ramo pre-KO chiede un
+        # KO futuro e ``opp_candidates`` una partita in gioco: nessuno dei due la
+        # copriva e le linee 3.5/4.5 uscivano dallo stream con la posizione
+        # aperta (Greece U21 v Latvia U21, 01/10, 2 minuti). Solo le due linee,
+        # tier 1.5; i mercati sono gia' a catalogo (ramo pre-KO): zero chiamate.
+        gia = set(cands) | set(pre_ko)
+        adesso = now or datetime.now(timezone.utc)
+        for eid in followed:
+            if eid in gia:
+                continue
+            ev = self.events.get(eid) or {}
+            meta = self.sports["calcio"].metas.get(eid) or {}
+            if not scanner.in_post_ko_wait(ev.get("inplay"), ev.get("mo_status"),
+                                           meta.get("open_date"), adesso, esposto=True):
+                continue
+            key = scanner.opp_rank_key(None, meta.get("open_date"), mike=True)
+            for mid, mk in (self.opp_markets.get(eid) or {}).items():
+                if str(mk.get("market_type") or "").upper() in scanner.MIKE_OU_MARKET_TYPES:
                     out.append((key, mid))
         return out
 
@@ -2039,12 +2113,20 @@ class Scanner:
     def build_rows(self, now: datetime) -> "tuple[List[Dict[str, Any]], List[str]]":
         rows: List[Dict[str, Any]] = []
         wanted: List[str] = []
+        # 01/10 - partite con ESPOSIZIONE di un bot: dopo l'orario previsto del
+        # fischio la riga resta finche' Betfair non le mette in gioco o le chiude
+        # (``scanner.in_post_ko_wait``). Lista gia' in cache (10 s), zero letture
+        # in piu'.
+        esposti = {str(e) for e in self._mike_followed()}
         for sport, st in self.sports.items():
             for eid, meta in st.metas.items():
                 ev = self.events.get(eid) or {}
                 inplay = bool(ev.get("inplay"))
                 if not scanner.is_monitorable(inplay, meta.get("open_date"), now,
-                                              self.pre_ko_ou_hours if sport == "calcio" else 0.0):
+                                              self.pre_ko_ou_hours if sport == "calcio" else 0.0,
+                                              mo_status=ev.get("mo_status"),
+                                              esposto=str(eid) in esposti,
+                                              visto="inplay" in ev):
                     continue
                 if ev.get("mo_status") == "CLOSED":
                     continue  # partita finita: la riga verrà cancellata
@@ -2301,6 +2383,17 @@ class Scanner:
             )
         return recuperati
 
+    def _pulizia_orfani_sicura(self, now_mono: Optional[float] = None) -> bool:
+        """01/10 - la pulizia delle orfane cancella cio' che questo giro NON
+        vuole: si fa solo quando il giro sa cosa vuole (cataloghi di tutti gli
+        sport caricati e ``_ORPHAN_FIRST_GRACE_SEC`` dall'avvio per i primi
+        book). Una riga vecchia lasciata 60 s in piu' si dichiara da sola
+        (``updated_at`` invecchia); una riga cancellata acceca il bot."""
+        t = time.monotonic() if now_mono is None else now_mono
+        if not all(st.catalogue_ts > 0.0 for st in self.sports.values()):
+            return False
+        return t - self.avvio_mono >= _ORPHAN_FIRST_GRACE_SEC
+
     def purge_orphans(self, wanted: List[str]) -> int:
         """Righe in tabella che NON appartengono a questo giro (istanze
         precedenti dello scanner, riavvii dell'app): vanno CANCELLATE, altrimenti
@@ -2323,7 +2416,7 @@ class Scanner:
         stale = [eid for eid in self.written_sig if eid not in set(wanted)]
         if self.dry:
             return len(rows), len(stale)
-        if time.monotonic() - self.orphan_purge_ts > _ORPHAN_PURGE_PERIOD_SEC:
+        if time.monotonic() - self.orphan_purge_ts > _ORPHAN_PURGE_PERIOD_SEC                 and self._pulizia_orfani_sicura():
             self.purge_orphans(wanted)
         if rows:
             scan_db.upsert_scan_rows(rows)

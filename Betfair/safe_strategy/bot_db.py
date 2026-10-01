@@ -948,16 +948,22 @@ def fixture_analysis(fixture_id: int) -> Optional[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # FEED UNICO (safe_strategy_scan) — sola lettura
 # ---------------------------------------------------------------------------
-def fetch_scan_rows() -> list[dict[str, Any]]:
-    """Tutte le righe del feed: {event_id, sport, payload, updated_at}."""
+def fetch_scan_rows() -> Optional[list[dict[str, Any]]]:
+    """Tutte le righe del feed: {event_id, sport, payload, updated_at}.
+
+    01/10 (bot mai ciechi, come Mike M8.7 del 29/09): ``None`` = LETTURA
+    FALLITA, mai confusa con «nessuna riga». Prima tornava ``[]``: ogni
+    posizione risultava ``feed_blind`` (falso: il feed c'era), nessuna uscita,
+    e con il canale acceso anche le righe fresche del canale venivano scartate
+    (``canale_scan.fondi`` itera sulla lista del database)."""
     try:
         return (
             _sb().table("safe_strategy_scan")
             .select("event_id,sport,payload,updated_at").execute().data or []
         )
-    except Exception as ex:  # noqa: BLE001 — feed KO: ciclo senza segnali
+    except Exception as ex:  # noqa: BLE001 — lettura fallita: decide il chiamante
         logger.warning("[safe.db] lettura feed KO: %s", str(ex)[:160])
-        return []
+        return None
 
 
 def scanner_status() -> Optional[dict[str, Any]]:
