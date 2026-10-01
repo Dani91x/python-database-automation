@@ -31,7 +31,7 @@ export function ModeBanner({
     return (
         <div
             className={[
-                'rounded-lg border px-3 py-2 text-[12px] flex items-center gap-2 flex-wrap',
+                'rounded-lg border px-3 py-2 text-[12px] flex items-center gap-2 flex-wrap ds-v2-strip',
                 live ? 'border-red-500/40 bg-red-500/10 text-red-200' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200',
             ].join(' ')}
             data-testid={testId}

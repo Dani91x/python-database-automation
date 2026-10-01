@@ -129,7 +129,7 @@ export function DayBar({
     const pctText = fmtPctPoints(pct, 1);
 
     return (
-        <Card className="glass-card border-white/10 p-4" data-testid={testId}>
+        <Card className="glass-card border-white/10 p-4 ds-v2-panel" data-testid={testId}>
             <div className="flex items-end justify-between mb-2 gap-3 flex-wrap">
                 <div>
                     <div className="flex items-center gap-2 text-sm text-slate-300">

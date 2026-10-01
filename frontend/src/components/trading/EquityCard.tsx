@@ -40,7 +40,7 @@ export function EquityCard({ series, scope, emptyLabel, label = 'Equity curve', 
     testId?: string;
 }) {
     return (
-        <Card className="glass-card border-white/10 p-4" data-testid={testId}>
+        <Card className="glass-card border-white/10 p-4 ds-v2-panel" data-testid={testId}>
             <div className="flex items-center gap-2 text-sm text-slate-300 mb-1" title={axisNote}>
                 <TrendingUp className="w-4 h-4 text-primary" aria-hidden />
                 {EQUITY_TITLE}

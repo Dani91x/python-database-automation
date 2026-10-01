@@ -887,3 +887,33 @@
     position: relative;
     top: auto !important;
 }
+
+/* fase 4 — pagine dei bot e components/trading: superfici come il prototipo.
+   Solo bordi, raggi, ombre e tipografia delle etichette: i colori di
+   significato (LIVE rosso, PAPER verde, toni del P&L) non si toccano. */
+[data-shell="v2"] .ds-v2-panel {
+    border-color: hsl(var(--border));
+    border-radius: var(--radius);
+    box-shadow: none;
+}
+
+[data-shell="v2"] .ds-v2-kpi {
+    border-color: hsl(var(--border));
+    border-radius: var(--radius);
+    background: hsl(var(--card));
+    box-shadow: none;
+    backdrop-filter: none;
+    padding: 12px 14px;
+}
+
+[data-shell="v2"] .ds-v2-kpi-k {
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    color: hsl(var(--muted-foreground));
+}
+
+[data-shell="v2"] .ds-v2-strip {
+    border-radius: 10px;
+    padding: 8px 12px;
+}

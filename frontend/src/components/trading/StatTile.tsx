@@ -41,11 +41,11 @@ export function StatTile({ label, value, tone = 'plain', icon, sub, hint, testId
 }) {
     return (
         <Card
-            className="glass-card border-white/10 p-3 flex-1 min-w-[130px]"
+            className="glass-card border-white/10 p-3 flex-1 min-w-[130px] ds-v2-kpi"
             data-testid={testId ?? 'stat-tile'}
             title={hint}
         >
-            <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-slate-400">
+            <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-slate-400 ds-v2-kpi-k">
                 {icon}{label}
             </div>
             <div className={`mt-0.5 text-xl md:text-2xl font-display font-black tabular-nums ${TONE_CLS[tone]}`}>

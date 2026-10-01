@@ -152,7 +152,7 @@ export function BotHeader({
             data-testid="bot-header"
             data-bot={bot}
         >
-            <div className="container mx-auto px-4 lg:px-6 py-2 flex items-center justify-between gap-3 flex-wrap">
+            <div className="container mx-auto px-4 lg:px-6 py-2 flex items-center justify-between gap-3 flex-wrap ds-v2-largo">
                 <div className="flex items-center gap-3 flex-wrap">
                     <Link to="/select-sport" data-nav-legacy className="font-display font-black text-lg tracking-tighter">
                         AI <span className="text-primary">TERMINAL</span>
