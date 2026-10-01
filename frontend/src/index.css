@@ -440,3 +440,290 @@
         }
     }
 }
+/* ============================================================================
+   GUSCIO V2 — classi .ds-* del redesign (01/10/2026, AUDIT_2026-10-01/REDESIGN).
+   Fase 0: aggiunte e NON ancora usate. Nessun token nuovo e nessun colore nuovo:
+   solo le variabili di :root qui sopra e la tavolozza Tailwind gia' in uso
+   (sky = BACK, rose = LAY, emerald, red, amber, teal, orange: DESIGN_SYSTEM.md §4).
+   Il guscio le usa dalla fase 1; le pagine dalle fasi 2-7, solo via className.
+   ============================================================================ */
+@layer components {
+
+    /* ---- cornice: sidebar | (testata 56 px + contenuto con scroll proprio) ---- */
+    .ds-shell {
+        display: grid;
+        grid-template-columns: 244px minmax(0, 1fr);
+        height: 100vh;
+        overflow: hidden;
+        position: relative;
+        z-index: 2;
+    }
+
+    .ds-shell[data-compressa="true"] {
+        grid-template-columns: 64px minmax(0, 1fr);
+    }
+
+    .ds-sidebar {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+        border-right: 1px solid hsl(var(--border));
+        background: linear-gradient(180deg, hsl(var(--card)), hsl(var(--background)));
+    }
+
+    .ds-sb-brand {
+        @apply flex items-center gap-2.5 px-4;
+        height: 56px;
+        flex: none;
+        border-bottom: 1px solid hsl(var(--border));
+    }
+
+    .ds-sb-logo {
+        @apply grid place-items-center rounded-lg font-display text-xs font-extrabold;
+        width: 28px;
+        height: 28px;
+        flex: none;
+        background: hsl(var(--primary) / 0.14);
+        border: 1px solid hsl(var(--primary) / 0.45);
+        color: hsl(var(--primary));
+    }
+
+    .ds-sb-sport {
+        @apply mx-3 mb-1 mt-3 flex gap-1 rounded-[10px] p-[3px];
+        background: hsl(var(--muted));
+        border: 1px solid hsl(var(--border));
+    }
+
+    .ds-sb-sport > button {
+        @apply flex-1 whitespace-nowrap rounded-[7px] px-1 py-[5px] text-[11.5px] font-semibold;
+        color: hsl(var(--muted-foreground));
+    }
+
+    .ds-sb-sport > button[aria-pressed="true"] {
+        background: hsl(var(--glass));
+        color: hsl(var(--foreground));
+        box-shadow: inset 0 0 0 1px hsl(var(--glass-border));
+    }
+
+    .ds-sb-gruppo {
+        @apply mt-3 flex items-center gap-1.5 px-2.5 py-1 text-[10.5px] font-bold uppercase;
+        letter-spacing: 0.09em;
+        color: hsl(var(--muted-foreground));
+    }
+
+    .ds-sb-voce {
+        @apply relative flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-[12.5px] no-underline;
+        color: hsl(var(--foreground) / 0.78);
+    }
+
+    .ds-sb-voce:hover {
+        background: hsl(var(--glass) / 0.7);
+        color: hsl(var(--foreground));
+    }
+
+    .ds-sb-voce[aria-current="page"] {
+        background: hsl(var(--primary) / 0.12);
+        color: hsl(var(--foreground));
+        box-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.3);
+    }
+
+    .ds-sb-voce[aria-current="page"] > svg {
+        color: hsl(var(--primary));
+    }
+
+    .ds-sb-voce > svg {
+        width: 16px;
+        height: 16px;
+        flex: none;
+        color: hsl(var(--muted-foreground));
+    }
+
+    .ds-sb-piede {
+        @apply flex items-center gap-2.5 px-3 py-2.5;
+        flex: none;
+        border-top: 1px solid hsl(var(--border));
+    }
+
+    .ds-main {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        min-height: 0;
+    }
+
+    .ds-topbar {
+        @apply flex items-center gap-2.5 px-5;
+        height: 56px;
+        flex: none;
+        border-bottom: 1px solid hsl(var(--border));
+        background: hsl(var(--background) / 0.82);
+        backdrop-filter: blur(14px);
+        position: relative;
+        z-index: 40;
+    }
+
+    /* il contenitore che scorre: gli `sticky top-0` delle pagine restano attaccati qui */
+    .ds-contenuto {
+        flex: 1;
+        min-height: 0;
+        min-width: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+        position: relative;
+    }
+
+    .ds-stat {
+        @apply relative flex items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-[11.5px];
+        height: 30px;
+        border: 1px solid hsl(var(--border));
+        background: hsl(var(--card));
+    }
+
+    .ds-led {
+        @apply inline-block rounded-full;
+        width: 7px;
+        height: 7px;
+        flex: none;
+        background: hsl(var(--muted-foreground));
+    }
+
+    .ds-led-on { @apply bg-emerald-400; box-shadow: 0 0 0 3px rgb(52 211 153 / 0.15); }
+    .ds-led-warn { @apply bg-amber-400; box-shadow: 0 0 0 3px rgb(251 191 36 / 0.15); }
+    .ds-led-off { @apply bg-slate-600; }
+    .ds-led-live { @apply bg-red-400 animate-pulse; box-shadow: 0 0 0 3px rgb(248 113 113 / 0.18); }
+
+    .ds-pop {
+        @apply absolute right-0 rounded-xl p-2.5;
+        top: 36px;
+        min-width: 300px;
+        z-index: 60;
+        border: 1px solid hsl(var(--glass-border));
+        background: hsl(var(--popover));
+        box-shadow: 0 20px 50px rgb(0 0 0 / 0.6);
+    }
+
+    /* ---- primitive di pagina ---- */
+    .ds-panel {
+        @apply min-w-0 rounded-xl border;
+        border-color: hsl(var(--border));
+        background: linear-gradient(135deg, hsl(var(--glass) / 0.55), hsl(var(--glass) / 0.25));
+    }
+
+    .ds-panel-flat {
+        @apply min-w-0 rounded-xl border;
+        border-color: hsl(var(--border));
+        background: hsl(var(--card));
+    }
+
+    .ds-panel-h {
+        @apply flex flex-wrap items-center gap-2 px-3.5 py-2.5;
+        border-bottom: 1px solid hsl(var(--border));
+    }
+
+    .ds-kpi {
+        @apply min-w-0 rounded-xl border px-3.5 py-3;
+        border-color: hsl(var(--border));
+        background: hsl(var(--card));
+    }
+
+    .ds-kpi-k {
+        @apply text-[10.5px] font-semibold uppercase;
+        letter-spacing: 0.07em;
+        color: hsl(var(--muted-foreground));
+    }
+
+    .ds-kpi-v {
+        @apply mt-1 font-display text-xl font-bold tabular-nums;
+    }
+
+    .ds-chip {
+        @apply inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 text-[10.5px] font-bold;
+        height: 20px;
+        letter-spacing: 0.03em;
+        border-color: hsl(var(--border));
+        background: hsl(var(--muted));
+        color: hsl(var(--foreground) / 0.85);
+    }
+
+    .ds-chip-live { @apply border-red-500/50 bg-red-500/15 text-red-300; }
+    .ds-chip-paper { @apply border-emerald-500/45 bg-emerald-500/10 text-emerald-300; }
+    .ds-chip-warn { @apply border-amber-400/45 bg-amber-400/10 text-amber-400; }
+    .ds-chip-teal { @apply border-teal-400/45 bg-teal-400/10 text-teal-300; }
+    .ds-chip-back { @apply border-sky-500/40 bg-sky-500/15 text-sky-300; }
+    .ds-chip-lay { @apply border-rose-500/40 bg-rose-500/15 text-rose-300; }
+    .ds-chip-gold {
+        background: hsl(var(--secondary) / 0.12);
+        border-color: hsl(var(--secondary) / 0.45);
+        color: hsl(var(--secondary));
+    }
+
+    /* marchio della fonte di una cifra (CONTO / BOT / PROVA / STIMA) */
+    .ds-mk {
+        @apply inline-flex items-center rounded border px-[5px] align-middle text-[9px] font-extrabold;
+        height: 16px;
+        letter-spacing: 0.07em;
+    }
+
+    .ds-mk-conto { @apply border-red-500/50 bg-red-500/10 text-red-300; }
+    .ds-mk-bot { @apply border-sky-500/40 bg-sky-500/15 text-sky-300; }
+    .ds-mk-prova { @apply border-emerald-500/45 bg-emerald-500/10 text-emerald-300; }
+    .ds-mk-stima { @apply border-amber-400/45 bg-amber-400/10 text-amber-400; }
+
+    /* banner di modalita': rosso = soldi veri, verde = prova (un solo verde per PAPER) */
+    .ds-strip-live { @apply rounded-[10px] border border-red-500/40 bg-red-500/[0.08]; }
+    .ds-strip-paper { @apply rounded-[10px] border border-emerald-500/35 bg-emerald-500/[0.07]; }
+    .ds-strip-warn { @apply rounded-[10px] border border-amber-400/35 bg-amber-400/[0.07]; }
+
+    .ds-tabular {
+        font-family: 'Inter', system-ui, sans-serif;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: 0.01em;
+    }
+
+    .ds-lbl {
+        @apply text-[10.5px] font-semibold uppercase;
+        letter-spacing: 0.07em;
+        color: hsl(var(--muted-foreground));
+    }
+
+    /* tabella densa (Programma del giorno, storici, journal) */
+    .ds-riga-densa {
+        @apply border-b px-2.5 py-[7px];
+        border-color: hsl(var(--border) / 0.6);
+    }
+
+    .ds-riga-densa:hover {
+        background: hsl(var(--glass) / 0.45);
+    }
+
+    .ds-th {
+        @apply whitespace-nowrap px-2.5 py-[7px] text-left text-[10.5px] font-semibold uppercase;
+        letter-spacing: 0.06em;
+        color: hsl(var(--muted-foreground));
+        background: hsl(var(--card));
+        border-bottom: 1px solid hsl(var(--border));
+    }
+
+    /* linguetta con sottolineatura primary e conteggio */
+    .ds-tab {
+        @apply -mb-px flex items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent px-3 py-2 text-[12.5px] font-semibold;
+        color: hsl(var(--muted-foreground));
+    }
+
+    .ds-tab:hover { color: hsl(var(--foreground)); }
+
+    .ds-tab[aria-pressed="true"],
+    .ds-tab[aria-selected="true"],
+    .ds-tab[data-state="active"] {
+        color: hsl(var(--foreground));
+        border-bottom-color: hsl(var(--primary));
+    }
+
+    .ds-cnt {
+        @apply rounded-full px-[7px] py-px text-[10.5px] font-bold;
+        background: hsl(var(--muted));
+        color: hsl(var(--muted-foreground));
+    }
+}
