@@ -1,0 +1,42 @@
+--- migrations/giornata_di_riferimento_giorno_partita_2026-10-01.sql.ORIG_TMP	2026-10-01 12:25:51.314110700 +0200
++++ migrations/giornata_di_riferimento_giorno_partita_2026-10-01.sql	2026-10-01 12:26:11.084047700 +0200
+@@ -11,7 +11,8 @@
+ -- (orario d'inizio dell'evento, fuso Europe/Rome). Correzione del coordinatore
+ -- (01/10, stessa giornata): ORDINE DI RICERCA, per Omega, Safe e Mike:
+ --   1. inizio partita dalla catena di fonti            -> giorno_da 'partita'
+---   2. altrimenti STIMA dal minuto di gioco all'ingresso:
++--   2. altrimenti STIMA dal minuto di gioco all'ingresso, solo se il minuto
++--      e' > 0 (R-02 review 01/10: minuto 0 = ingresso pre-partita, non stima):
+ --      placed_at - minute_at_entry minuti               -> giorno_da 'partita'
+ --   3. altrimenti il giorno di PIAZZAMENTO               -> giorno_da 'piazzamento'
+ -- Il giorno di REGOLAMENTO non decide MAI (le righe orfane regolate giorni dopo
+@@ -41,7 +42,12 @@
+ --   catena CALCIO : mike_events.ko_at, min(omega_trades.kickoff),
+ --                   omega_missions.kickoff, live_follow.open_date, omega_events.open_date
+ --   catena TENNIS : tennis_live_follow.open_date, tennis_markets.open_date
+---   Poi: minute_at_entry (integer, su tutte e tre le tabelle) -> stima.
++--   Poi: minute_at_entry (integer, su tutte e tre le tabelle) -> stima, solo
++--   con minuto > 0 (R-02 review 01/10: NULLIF(minute_at_entry, 0); col minuto 0
++--   e senza catena la riga va a 'piazzamento', dichiarato). Sonda REST in sola
++--   lettura del 01/10: righe con minute_at_entry = 0 -> Safe 0, Omega 0, Mike 43
++--   (16 regolate + 27 'error'), tutte le 43 con l'inizio in catena: la tabella
++--   qui sotto NON cambia.
+ --   Righe REGOLATE (won/lost/void) al 01/10, per fonte del giorno:
+ --                       catena  minuto  piazzamento   totale
+ --     mike_trades         425       0            0      425
+@@ -198,8 +204,13 @@
+     -- 1) catena delle fonti; 2) STIMA dal minuto di gioco all'ingresso
+     --    (placed_at - minute_at_entry minuti: i bot in gioco lo scrivono sempre);
+     -- NULL = nessuno dei due -> il chiamante ripiega sul PIAZZAMENTO.
+-    RETURN format('coalesce(%2$s, CASE WHEN %1$s.minute_at_entry IS NOT NULL '
+-                  'THEN %1$s.placed_at - %1$s.minute_at_entry * interval %3$L END)',
++    -- R-02 review 01/10: minute_at_entry = 0 (ingresso pre-partita) NON e' una
++    -- stima dell'inizio (darebbe placed_at, il giorno di PIAZZAMENTO etichettato
++    -- 'partita'): NULLIF lo tratta come «non noto», e senza catena la riga va a
++    -- giorno_da = 'piazzamento', dichiarato. Dati del 01/10: nessun numero cambia
++    -- (Safe e Omega 0 righe col minuto 0; Mike 43, tutte con l'inizio in catena).
++    RETURN format('coalesce(%2$s, CASE WHEN NULLIF(%1$s.minute_at_entry, 0) IS NOT NULL '
++                  'THEN %1$s.placed_at - NULLIF(%1$s.minute_at_entry, 0) * interval %3$L END)',
+                   p_alias,
+                   CASE p_table
+                       WHEN 'omega_trades' THEN

@@ -1,0 +1,636 @@
+﻿diff --git a/frontend/src/components/controlroom/testata/FasciaStop.test.tsx b/frontend/src/components/controlroom/testata/FasciaStop.test.tsx
+index 27d1176..5512149 100644
+--- a/frontend/src/components/controlroom/testata/FasciaStop.test.tsx
++++ b/frontend/src/components/controlroom/testata/FasciaStop.test.tsx
+@@ -17,7 +17,7 @@
+ import { describe, it, expect, vi } from 'vitest';
+ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+ import { MemoryRouter } from 'react-router-dom';
+-import { StopPerdita, vaiAllaRigaDelBot, NOTA_TENNIS_SCALPER } from './FasciaStop';
++import { StopPerdita, vaiAllaRigaDelBot, NOTA_TENNIS_SCALPER, confermaStopConto, testoIniziale } from './FasciaStop';
+ import { stopDelConto, stopDeiBot, type StopPerditaTestata } from './stopPerdita';
+ import type { LiveRiskState } from '@/lib/liveOrders';
+ 
+@@ -346,6 +346,76 @@ describe('01/10 - LIVE (soldi veri): conferma esplicita, che scade', () => {
+     });
+ });
+ 
++// R-03 (review 01/10): lo stop del CONTO chiede conferma a meno che la sua
++// modalita' sia LETTA e PAPER (e nessun bot ne' il runner tennis possa essere LIVE)
++describe('R-03 - conferma dello stop del CONTO: fail-closed sulla modalita\'', () => {
++    function salvaConto(mode: unknown, extra: { qualcheBotLive?: boolean; runnerTennisForseLive?: boolean } = {}) {
++        const salva = vi.fn(async () => 35);
++        render(<MemoryRouter><StopPerdita
++            // la riga vera di betfair_live_risk_state con `mode` come arriva (null = colonna senza valore)
++            stop={{ conto: stopDelConto({ ...RIGA_OGGI, mode: mode as string }, NOW), bot: bot({ mike: { modalita: 'paper', params: PARAMS.mike, stats: { daily_stop: false } } }) }}
++            params={PARAMS} salva={salva as never}
++            qualcheBotLive={extra.qualcheBotLive ?? false}
++            runnerTennisForseLive={extra.runnerTennisForseLive}
++        /></MemoryRouter>);
++        fireEvent.click(screen.getByTestId('cr-stop-conto-valore'));
++        fireEvent.change(screen.getByTestId('cr-stop-conto-campo'), { target: { value: '-40' } });
++        fireEvent.click(screen.getByTestId('cr-stop-conto-salva'));
++        return salva;
++    }
++    it('modalita\' del conto NON letta (null): chiede conferma e lo dice («potrebbe essere LIVE»)', () => {
++        const salva = salvaConto(null);
++        expect(screen.getByTestId('cr-stop-conto-richiesta-conferma').textContent).toMatch(/non letta \(potrebbe essere LIVE\)/);
++        expect(salva).not.toHaveBeenCalled();
++    });
++    it('modalita\' del conto LETTA e PAPER, nessun bot LIVE, runner tennis solo simulati: nessuna conferma, scrive', async () => {
++        const salva = salvaConto('paper', { runnerTennisForseLive: false });
++        expect(screen.queryByTestId('cr-stop-conto-richiesta-conferma')).toBeNull();
++        await waitFor(() => expect(salva).toHaveBeenCalledWith('conto', 40, null));
++    });
++    it('modalita\' del conto LIVE: conferma', () => {
++        const salva = salvaConto('live');
++        expect(screen.getByTestId('cr-stop-conto-richiesta-conferma').textContent).toMatch(/soldi veri/);
++        expect(salva).not.toHaveBeenCalled();
++    });
++    it('conto PAPER ma il runner tennis puo\' servire ordini veri: conferma (il freno ferma anche tennis e scalper)', () => {
++        const salva = salvaConto('paper', { runnerTennisForseLive: true });
++        expect(screen.getByTestId('cr-stop-conto-richiesta-conferma').textContent).toMatch(/runner tennis/);
++        expect(salva).not.toHaveBeenCalled();
++    });
++    it('confermaStopConto: tabella della regola', () => {
++        expect(confermaStopConto(false, 'paper')).toBe(false);
++        expect(confermaStopConto(false, null)).toBe(true);
++        expect(confermaStopConto(false, 'live')).toBe(true);
++        expect(confermaStopConto(true, 'paper')).toBe(true);
++        expect(confermaStopConto(false, 'paper', true)).toBe(true);
++    });
++});
++
++// R-04 (review 01/10): uno stop >= 10.000 si apre senza separatore delle
++// migliaia e si salva senza toccarlo
++describe('R-04 - stop da 10.000 in su: il campo si rilegge', () => {
++    it('testoIniziale: nessun punto delle migliaia', () => {
++        expect(testoIniziale(12500)).toBe('-12500,00');
++        expect(testoIniziale(50)).toBe('-50,00');
++        expect(testoIniziale(40.5)).toBe('-40,50');
++        expect(testoIniziale(0)).toBe('0');
++        expect(testoIniziale(null)).toBe('');
++    });
++    it('Safe a 12.500: il campo si apre con «-12500,00» e Salva senza modifiche scrive 12500', async () => {
++        const salva = vi.fn(async () => 12500);
++        render(<MemoryRouter><StopPerdita
++            stop={{ conto: stopDelConto({ ...RIGA_OGGI, mode: 'paper' }, NOW), bot: bot({ safe: { modalita: 'paper', risk: { daily_loss_stop: -12500, loss_stop_active: false } }, mike: { modalita: 'paper', params: PARAMS.mike, stats: { daily_stop: false } } }) }}
++            params={PARAMS} salva={salva as never} qualcheBotLive={false}
++        /></MemoryRouter>);
++        fireEvent.click(screen.getByTestId('cr-stop-safe-valore'));
++        expect((screen.getByTestId('cr-stop-safe-campo') as HTMLInputElement).value).toBe('-12500,00');
++        fireEvent.click(screen.getByTestId('cr-stop-safe-salva'));
++        expect(screen.queryByTestId('cr-stop-safe-errore')).toBeNull();
++        await waitFor(() => expect(salva).toHaveBeenCalledWith('safe', 12500, PARAMS.safe));
++    });
++});
++
+ describe('vaiAllaRigaDelBot - porta alla riga, mette il fuoco sul foglio, non lo apre', () => {
+     it('riga presente: fuoco sul primo pulsante del foglio parametri del bot, nessun clic', () => {
+         document.body.innerHTML = `
+diff --git a/frontend/src/components/controlroom/testata/FasciaStop.tsx b/frontend/src/components/controlroom/testata/FasciaStop.tsx
+index 2bed511..aee4a1b 100644
+--- a/frontend/src/components/controlroom/testata/FasciaStop.tsx
++++ b/frontend/src/components/controlroom/testata/FasciaStop.tsx
+@@ -93,8 +93,33 @@ function statoBot(s: StopBot): { cifra: string; cifraCls: string; stato: Stato }
+     return { cifra: fmtMoney(-s.soglia), cifraCls: 'text-white', stato: { testo: 'attivo', cls: 'text-emerald-400' } };
+ }
+ 
+-/** Il valore iniziale del campo: la cifra in vigore col segno meno. */
+-function testoIniziale(soglia: number | null | undefined): string {
++/**
++ * R-03 (review 01/10): lo stop del CONTO chiede conferma a meno che la sua
++ * modalita' sia LETTA e sia PAPER e nessun bot (ne' il runner tennis) possa
++ * essere LIVE: tira il freno anche per tennis e scalper, e una modalita' non
++ * letta potrebbe essere LIVE (stessa regola dei bot).
++ */
++export function confermaStopConto(qualcheLive: boolean, modoConto: Modo, runnerTennisForseLive = false): boolean {
++    return qualcheLive || runnerTennisForseLive || modoConto !== 'paper';
++}
++
++/** Perche' lo stop del conto chiede conferma, detto in parole. */
++function motivoConfermaConto(qualcheLive: boolean, modoConto: Modo, runnerTennisForseLive: boolean): string {
++    if (qualcheLive || modoConto === 'live') return 'Lo stop del Conto protegge i soldi veri';
++    if (modoConto == null) return "modalita' del conto non letta (potrebbe essere LIVE): lo stop del Conto protegge i soldi veri";
++    if (runnerTennisForseLive) {
++        return "il runner tennis consente ordini veri (o il suo stato non e' letto): lo stop del Conto ferma anche tennis e scalper";
++    }
++    return 'Lo stop del Conto protegge i soldi veri';
++}
++
++/**
++ * Il valore iniziale del campo: la cifra in vigore col segno meno.
++ * R-04 (review 01/10): `fmtNum` NON mette i punti delle migliaia
++ * (`itFixed` = toFixed + virgola), quindi il campo si apre gia' con
++ * «-12500,00»; esportata solo perche' un test lo tiene fermo.
++ */
++export function testoIniziale(soglia: number | null | undefined): string {
+     if (soglia == null || soglia === 0) return soglia === 0 ? '0' : '';
+     return `-${fmtNum(soglia, 2)}`;
+ }
+@@ -263,8 +288,13 @@ function fonteServizio(s: StatoServizio | undefined): string {
+ }
+ 
+ export function StopPerdita({
+-    stop, vai = vaiAllaRigaDelBot, qualcheBotLive, params, statoServizio, strategieLive, salva = salvaStopVero, onSalvato,
++    stop, vai = vaiAllaRigaDelBot, qualcheBotLive, runnerTennisForseLive, params, statoServizio, strategieLive, salva = salvaStopVero, onSalvato,
+ }: {
++    /** R-03 (review 01/10): il runner tennis PUO' servire ordini veri (tetto
++     *  LIVE_ORDER_MODE letto e non PAPER/OFF) o il suo stato non e' letto.
++     *  Lo stop del conto ferma anche tennis e scalper: si conferma. Solo per
++     *  la conferma, non cambia i colori della riga. */
++    runnerTennisForseLive?: boolean;
+     /** 01/10: Safe con almeno una strategia in LIVE (`modiStrategia`) anche
+      *  se la sua modalita' di servizio e' PAPER: lo stop e' comune, si conferma */
+     strategieLive?: Partial<Record<BotConStop, boolean>>;
+@@ -305,8 +335,8 @@ export function StopPerdita({
+                             id="conto" nome="Conto" cifra={sc.cifra} cifraCls={sc.cifraCls} soglia={c?.soglia ?? null}
+                             modificabile={c?.letto === true}
+                             motivoBlocco={c?.letto ? null : 'stato del runner non letto: modifica non disponibile qui'}
+-                            chiedeConferma={live || c?.modo === 'live'}
+-                            motivoConferma="Lo stop del Conto protegge i soldi veri"
++                            chiedeConferma={confermaStopConto(live, c?.modo ?? null, runnerTennisForseLive === true)}
++                            motivoConferma={motivoConfermaConto(live, c?.modo ?? null, runnerTennisForseLive === true)}
+                             raw={null} salva={salva} onSalvato={onSalvato}
+                             etichettaSpento="lo stop del conto SPENTO"
+                         />
+diff --git a/frontend/src/components/controlroom/testata/TesseraRunner.test.tsx b/frontend/src/components/controlroom/testata/TesseraRunner.test.tsx
+index 4306e37..1e79eec 100644
+--- a/frontend/src/components/controlroom/testata/TesseraRunner.test.tsx
++++ b/frontend/src/components/controlroom/testata/TesseraRunner.test.tsx
+@@ -8,7 +8,7 @@
+ // ============================================================================
+ import { describe, it, expect } from 'vitest';
+ import { render, screen } from '@testing-library/react';
+-import { TesseraRunner, descriviRunner } from './TesseraRunner';
++import { TesseraRunner, descriviRunner, runnerForseLive } from './TesseraRunner';
+ import type { RunnerState } from '@/lib/safeBot';
+ 
+ const CALCIO_CANALE: RunnerState = { ts: '2026-10-01T08:00:00.000Z', mode: 'LIVE+PAPER', ageS: 5, up: true, streaming: 0 };
+@@ -54,6 +54,18 @@ describe('descriviRunner - di che runner parliamo e se e\' connesso', () => {
+     });
+ });
+ 
++// R-03 (review 01/10): il runner tennis per la conferma dello stop del conto
++describe('runnerForseLive - fail-closed: false SOLO col tetto letto PAPER o OFF', () => {
++    it('PAPER e OFF letti: no; LIVE+PAPER: si\'; non letto o tetto ignoto: si\'', () => {
++        expect(runnerForseLive(TENNIS_CANALE)).toBe(false);
++        expect(runnerForseLive({ ...TENNIS_CANALE, mode: 'OFF' })).toBe(false);
++        expect(runnerForseLive({ ...TENNIS_CANALE, mode: 'LIVE+PAPER' })).toBe(true);
++        expect(runnerForseLive(null)).toBe(true);
++        expect(runnerForseLive({ ...TENNIS_CANALE, mode: null })).toBe(true);
++        expect(runnerForseLive({ ...TENNIS_CANALE, mode: 'BOH' })).toBe(true);
++    });
++});
++
+ describe('TesseraRunner - a schermo', () => {
+     it('due tessere distinte e nominate, con pallino connesso/non connesso', () => {
+         render(<>
+diff --git a/frontend/src/components/controlroom/testata/TesseraRunner.tsx b/frontend/src/components/controlroom/testata/TesseraRunner.tsx
+index 363ba56..342e5f8 100644
+--- a/frontend/src/components/controlroom/testata/TesseraRunner.tsx
++++ b/frontend/src/components/controlroom/testata/TesseraRunner.tsx
+@@ -47,6 +47,18 @@ const PROCESSO: Record<RunnerPhase, { testo: string; tono: Tono }> = {
+     off: { testo: 'fermo', tono: 'allarme' },
+ };
+ 
++/**
++ * R-03 (review 01/10): il runner PUO' servire ordini veri? Stessa regola
++ * fail-closed della modalita': false SOLO se il tetto e' letto e dice "solo
++ * simulati" o "ordini spenti"; runner non letto o tetto ignoto = forse.
++ * Nessuna lettura nuova: `r` e' `vm.runner` / `vm.runnerTennis`.
++ */
++export function runnerForseLive(r: RunnerState | null | undefined): boolean {
++    if (r == null) return true;
++    const t = tettoRunner(r.mode);
++    return !(t?.testo === 'solo simulati' || t?.testo === 'ordini spenti');
++}
++
+ /** Funzione PURA: cosa scrive la tessera. */
+ export function descriviRunner(
+     sport: SportRunner,
+diff --git a/frontend/src/components/controlroom/testata/salvaStop.test.ts b/frontend/src/components/controlroom/testata/salvaStop.test.ts
+index a8a3975..998e150 100644
+--- a/frontend/src/components/controlroom/testata/salvaStop.test.ts
++++ b/frontend/src/components/controlroom/testata/salvaStop.test.ts
+@@ -69,6 +69,27 @@ describe('leggiImporto - euro al centesimo, negativo = perdita massima', () => {
+     it('oltre il tetto del foglio (Mike 100000) rifiutato', () => {
+         expect(leggiImporto('-100001', 'mike').ok).toBe(false);
+     });
++    // R-04 (review 01/10): i punti delle migliaia della forma it-IT
++    it('R-04: «12.500,00» (migliaia + virgola decimale) = 12500; «-1.234.567,5» = 1234567,5', () => {
++        expect(leggiImporto('-12.500,00', 'safe')).toEqual({ ok: true, perdita: 12500 });
++        expect(leggiImporto('12.500,5', 'conto')).toEqual({ ok: true, perdita: 12500.5 });
++        expect(leggiImporto('−12.500,00 €', 'omega')).toEqual({ ok: true, perdita: 12500 });
++        // letto come 1234567,5 e rifiutato per il TETTO (1.000.000), non come «non valido»
++        expect(leggiImporto('-1.234.567,5', 'conto')).toEqual({ ok: false, errore: expect.stringMatching(/oltre il massimo/) });
++        expect(leggiImporto('-999.999,99', 'conto')).toEqual({ ok: true, perdita: 999999.99 });
++    });
++    it('R-04: «12.500» senza virgola = 12500 SOLO con esattamente 3 cifre dopo ogni punto', () => {
++        expect(leggiImporto('-12.500', 'safe')).toEqual({ ok: true, perdita: 12500 });
++        expect(leggiImporto('1.000', 'omega')).toEqual({ ok: true, perdita: 1000 });
++        // il punto decimale di prima resta com'era: 1 o 2 cifre = centesimi
++        expect(leggiImporto('-12.50', 'safe')).toEqual({ ok: true, perdita: 12.5 });
++        expect(leggiImporto('-12.5', 'safe')).toEqual({ ok: true, perdita: 12.5 });
++        // forme non di migliaia: rifiutate come prima
++        expect(leggiImporto('-12.5000', 'safe').ok).toBe(false);
++        expect(leggiImporto('-1.2,50', 'safe').ok).toBe(false);
++        expect(leggiImporto('-12,500', 'safe').ok).toBe(false);
++        expect(leggiImporto('-12.500.0', 'safe').ok).toBe(false);
++    });
+ });
+ 
+ describe('payloadStop - lo STESSO payload del foglio del proprietario', () => {
+diff --git a/frontend/src/components/controlroom/testata/salvaStop.ts b/frontend/src/components/controlroom/testata/salvaStop.ts
+index 1ba8644..d8151b4 100644
+--- a/frontend/src/components/controlroom/testata/salvaStop.ts
++++ b/frontend/src/components/controlroom/testata/salvaStop.ts
+@@ -52,6 +52,22 @@ export type LetturaImporto =
+     | { ok: true; perdita: number | null }
+     | { ok: false; errore: string };
+ 
++/**
++ * R-04 (review 01/10): i PUNTI delle migliaia (forma it-IT) si tolgono solo
++ * quando sono in posizione di migliaia (gruppi di 3 cifre):
++ *  - con la virgola decimale: "12.500,00" -> "12500.00";
++ *  - senza virgola: "12.500" (esattamente 3 cifre dopo ogni punto) -> "12500".
++ *    Non e' ambiguo: un punto decimale con 3 cifre era gia' rifiutato
++ *    (euro al centesimo); "12.50" resta 12,50 come prima.
++ * Ogni altra forma passa invariata (con la virgola -> punto) e la regola
++ * dell'importo la accetta o la rifiuta come prima.
++ */
++function normalizzaMigliaia(t: string): string {
++    if (/^-?\d{1,3}(\.\d{3})+,\d{1,2}$/.test(t)) return t.replace(/\./g, '').replace(',', '.');
++    if (/^-?\d{1,3}(\.\d{3})+$/.test(t)) return t.replace(/\./g, '');
++    return t.replace(',', '.');
++}
++
+ /**
+  * Il testo del campo -> perdita massima in euro (POSITIVA, al centesimo).
+  * "-50", "-50,5", "50" sono la stessa perdita (il segno meno e' la convenzione
+@@ -60,7 +76,7 @@ export type LetturaImporto =
+  * loro fogli: "0 = OFF").
+  */
+ export function leggiImporto(testo: string, chi: ProprietarioStop): LetturaImporto {
+-    const t = String(testo ?? '').trim().replace(/\u2212/g, '-').replace(/\s|\u20ac/g, '').replace(',', '.');
++    const t = normalizzaMigliaia(String(testo ?? '').trim().replace(/\u2212/g, '-').replace(/\s|\u20ac/g, ''));
+     if (t === '') {
+         return chi === 'conto'
+             ? { ok: true, perdita: null }
+diff --git a/frontend/src/components/trading/StoricoMikeGiornoRegolamento.test.tsx b/frontend/src/components/trading/StoricoMikeGiornoRegolamento.test.tsx
+index e15f1ad..523d0bd 100644
+--- a/frontend/src/components/trading/StoricoMikeGiornoRegolamento.test.tsx
++++ b/frontend/src/components/trading/StoricoMikeGiornoRegolamento.test.tsx
+@@ -34,6 +34,13 @@ function riga(over: Record<string, unknown>): Record<string, unknown> {
+     };
+ }
+ 
++/** riga di `get_mike_day_trades` come la manda la RPC di PRIMA (senza le tre chiavi del 01/10) */
++function rigaVecchia(over: Record<string, unknown> = {}): Record<string, unknown> {
++    const r = riga(over);
++    delete r.giorno_partita; delete r.giorno_da; delete r.in_day;
++    return r;
++}
++
+ /** riga di `get_mike_daily` con le chiavi della RPC vera */
+ function giornata(day: string, pnl: number, over: Record<string, unknown> = {}) {
+     return {
+@@ -62,13 +69,44 @@ describe('01/10 - un criterio solo: il giorno della PARTITA', () => {
+     });
+ 
+     it('la pagina dice il criterio (una frase sola per i tre bot) e la MONETA', async () => {
+-        render(<TradingHistory variant="mike" fetchDaily={async () => []} fetchDayTrades={async () => []}
+-            today="2026-10-01" modo="live" />);
+-        expect(await screen.findByTestId('history-criterio')).toHaveTextContent(/giorno della PARTITA/);
++        // R-01: righe del contratto 01/10 (in_day dal database) -> giorno della PARTITA
++        render(<TradingHistory variant="mike" fetchDaily={async () => []}
++            fetchDayTrades={async () => normalizeDayTrades([riga({})])}
++            today="2026-09-30" modo="live" />);
++        await waitFor(() => expect(screen.getByTestId('history-criterio')).toHaveTextContent(/attribuita al giorno della PARTITA/));
+         expect(screen.getByTestId('history-criterio')).not.toHaveTextContent(/REGOLATE nel giorno|PIAZZATE nel giorno/);
+         expect(screen.getByTestId('history-moneta')).toHaveTextContent('SOLDI VERI');
+     });
+ 
++    // R-01 (review 01/10): «giorno della PARTITA» SOLO se il database lo manda
++    it('R-01: righe senza in_day (aggiornamento non applicato): Mike dichiara il REGOLAMENTO e che manca l\'aggiornamento', async () => {
++        render(<TradingHistory variant="mike" fetchDaily={async () => []}
++            fetchDayTrades={async () => normalizeDayTrades([rigaVecchia({ placed_in_day: false, settled_in_day: true })])}
++            today="2026-10-01" modo="live" />);
++        const c = await screen.findByTestId('history-criterio');
++        await waitFor(() => expect(c).toHaveTextContent(/giorno di REGOLAMENTO/));
++        expect(c).toHaveTextContent(/manca il suo aggiornamento/);
++        expect(c).not.toHaveTextContent(/attribuita al giorno della PARTITA/);
++        expect(c).not.toHaveTextContent(/\.sql|migrations/);
++    });
++
++    it('R-01: righe senza in_day per Omega/Safe: il criterio vero e\' il PIAZZAMENTO', async () => {
++        render(<TradingHistory variant="safe" fetchDaily={async () => []}
++            fetchDayTrades={async () => normalizeDayTrades([rigaVecchia({})])}
++            today="2026-10-01" modo="paper" />);
++        const c = await screen.findByTestId('history-criterio');
++        await waitFor(() => expect(c).toHaveTextContent(/giorno di PIAZZAMENTO/));
++        expect(c).not.toHaveTextContent(/attribuita al giorno della PARTITA/);
++    });
++
++    it('R-01: nessuna riga letta: il criterio non si afferma (ne\' partita ne\' altro), si dice che non e\' verificabile', async () => {
++        render(<TradingHistory variant="mike" fetchDaily={async () => []} fetchDayTrades={async () => []}
++            today="2026-10-01" modo="live" />);
++        const c = await screen.findByTestId('history-criterio');
++        await waitFor(() => expect(c).toHaveTextContent(/non verificabile/));
++        expect(c).not.toHaveTextContent(/attribuita al giorno della PARTITA/);
++    });
++
+     it('moneta assente: si dichiara «moneta non dichiarata», mai muta', async () => {
+         render(<TradingHistory variant="omega" fetchDaily={async () => []} fetchDayTrades={async () => []} today="2026-10-01" />);
+         expect(await screen.findByTestId('history-moneta')).toHaveTextContent('moneta non dichiarata');
+diff --git a/frontend/src/components/trading/TradingHistory.tsx b/frontend/src/components/trading/TradingHistory.tsx
+index 3d529a9..428fe48 100644
+--- a/frontend/src/components/trading/TradingHistory.tsx
++++ b/frontend/src/components/trading/TradingHistory.tsx
+@@ -17,7 +17,7 @@ import { PerformancePanel } from '@/components/trading/PerformancePanel';
+ import { DayDetail } from '@/components/trading/DayDetail';
+ import {
+     periodRange, filterRange, romeDay, addDays, historyWindow, attributionOf, dayLabel,
+-    GIORNATA_PARTITA_TESTO,
++    statoGiornoDb, testoCriterioGiornata,
+     calendarGridBounds, PERIOD_LABEL, MAX_HISTORY_DAYS,
+     type DailyRow, type DayTrade, type PeriodKind, type HistoryVariant,
+ } from '@/lib/dailyHistory';
+@@ -113,6 +113,9 @@ export function TradingHistory({
+     // i trade mostrati sono SOLO quelli del giorno selezionato: mai quelli di
+     // un'altra giornata rimasti da una richiesta precedente
+     const dayTrades = dayData && dayData.day === selectedDay ? dayData.trades : null;
++    // R-01 (review 01/10): il «giorno della PARTITA» si dichiara solo se le
++    // righe lette lo portano dal database (`in_day`); altrimenti il criterio vero
++    const criterioTesto = testoCriterioGiornata(statoGiornoDb(dayTrades), [variant]);
+     const periodRows = useMemo(() => filterRange(rows, pRange.from, pRange.to), [rows, pRange]);
+     const onMonthChange = useCallback((year: number, month: number) => setYm({ year, month }), []);
+     const onSelectDay = useCallback((day: string) => setSelectedDay(day), []);
+@@ -143,12 +146,12 @@ export function TradingHistory({
+                     </span>
+                 )}
+                 {/* B-02 (01/10): UNA frase sola per i tre bot, il giorno della
+-                    PARTITA; la variante non cambia piu' il criterio */}
++                    PARTITA, ma SOLO se il database lo manda (R-01, review 01/10) */}
+                 <span data-testid="history-criterio">
+                     {/* §1: le date si leggono nella stessa forma ovunque
+                         («12 settembre 2026»), mai l'ISO grezzo accanto alle
+                         etichette italiane del calendario e del dettaglio */}
+-                    Oggi <b className="text-slate-300">{dayLabel(todayDay)}</b> · {GIORNATA_PARTITA_TESTO}
++                    Oggi <b className="text-slate-300">{dayLabel(todayDay)}</b> · {criterioTesto}
+                     {fonteNota && <span data-testid="history-fonte-pnl"> · {fonteNota}</span>}
+                 </span>
+                 <Button variant="ghost" size="sm" className="ml-auto h-7 text-xs" onClick={() => setManualRefresh((n) => n + 1)} disabled={loading}>
+diff --git a/frontend/src/lib/chiuseGiornata.ts b/frontend/src/lib/chiuseGiornata.ts
+index 35bf11b..547a37b 100644
+--- a/frontend/src/lib/chiuseGiornata.ts
++++ b/frontend/src/lib/chiuseGiornata.ts
+@@ -25,12 +25,11 @@ import { supabase } from '@/integrations/supabase/client';
+ import type { Bot, Modo } from '@/lib/controlRoom';
+ import { isBotTennis } from '@/lib/controlRoom';
+ import {
+-    eFirmaMancante, fetchMikeDayTrades, fetchOmegaDayTradesPerModo, fetchSafeDayTrades,
++    addDays, eFirmaMancante, fetchMikeDayTrades, fetchOmegaDayTradesPerModo, fetchSafeDayTrades,
+     type DayTrade,
+ } from '@/lib/dailyHistory';
+ import type { TennisBotOrderRow } from '@/lib/tennis';
+ import { haGiornoDb, rigaDaOrdineTennis, type TradeChiudibile } from '@/lib/posizioniChiuse';
+-import { addDays } from '@/lib/dailyHistory';
+ 
+ export const RPC_CHIUSE_GIORNATA = 'get_posizioni_chiuse_giornata';
+ 
+diff --git a/frontend/src/lib/dailyHistory.test.ts b/frontend/src/lib/dailyHistory.test.ts
+index 2a82e08..734a885 100644
+--- a/frontend/src/lib/dailyHistory.test.ts
++++ b/frontend/src/lib/dailyHistory.test.ts
+@@ -9,7 +9,7 @@ import {
+     dayToMs, msToDay, addDays, isValidDay, romeDay, periodRange, filterRange,
+     dayLabel, monthLabel, exitInfo, tradeExit,
+     clampHistoryRange, attributionOf, summarizeDayTrades, calendarGridBounds,
+-    ripiegoAttribuzione, offsetRomaMs,
++    ripiegoAttribuzione, offsetRomaMs, statoGiornoDb, testoCriterioGiornata,
+     historyWindow, exitReasonText, MAX_HISTORY_DAYS,
+     type DailyRow,
+ } from './dailyHistory';
+@@ -732,3 +732,29 @@ describe('tradeExit — un green-up ANNULLATO non è un green-up (12/09)', () =>
+         expect(tradeExit({ meta: null, closes: [close({ status: 'won', meta: { cashout: true } })] })?.kind).toBe('manual');
+     });
+ });
++
++// R-01 (review 01/10): il «giorno della PARTITA» si afferma solo se il database lo manda
++describe('statoGiornoDb / testoCriterioGiornata (R-01)', () => {
++    const vecchia = { id: 1, placed_in_day: true, settled_in_day: true };
++    it('tutte le righe con in_day boolean -> partita; una sola senza -> ripiego; nessuna -> ignoto', () => {
++        expect(statoGiornoDb([{ ...vecchia, in_day: true }, { ...vecchia, in_day: false }])).toBe('partita');
++        expect(statoGiornoDb([{ ...vecchia, in_day: true }, { ...vecchia, in_day: null }])).toBe('ripiego');
++        expect(statoGiornoDb([vecchia])).toBe('ripiego');
++        expect(statoGiornoDb([])).toBe('ignoto');
++        expect(statoGiornoDb(null)).toBe('ignoto');
++    });
++    it('il testo dice il criterio VERO di ogni bot, mai «giorno della PARTITA» senza in_day', () => {
++        expect(testoCriterioGiornata('partita', ['mike'])).toMatch(/attribuita al giorno della PARTITA/);
++        for (const s of ['ripiego', 'ignoto'] as const) {
++            expect(testoCriterioGiornata(s, ['mike'])).not.toMatch(/giorno della PARTITA/);
++            expect(testoCriterioGiornata(s, ['mike'])).toMatch(/giorno di REGOLAMENTO/);
++            // la pagina di UN bot parla solo di quel bot
++            expect(testoCriterioGiornata(s, ['mike'])).not.toMatch(/Omega|Safe|PIAZZAMENTO/);
++            expect(testoCriterioGiornata(s, ['omega'])).toMatch(/giorno di PIAZZAMENTO/);
++            expect(testoCriterioGiornata(s, ['safe'])).not.toMatch(/REGOLAMENTO/);
++            expect(testoCriterioGiornata(s, ['omega', 'safe', 'mike'])).toMatch(/Omega e Safe .*PIAZZAMENTO, Mike .*REGOLAMENTO/);
++            expect(testoCriterioGiornata(s, ['mike'])).not.toMatch(/\.sql|migrations/);
++        }
++        expect(testoCriterioGiornata('ripiego', ['safe'])).toMatch(/manca il suo aggiornamento/);
++    });
++});
+diff --git a/frontend/src/lib/dailyHistory.ts b/frontend/src/lib/dailyHistory.ts
+index b05a3b2..396070f 100644
+--- a/frontend/src/lib/dailyHistory.ts
++++ b/frontend/src/lib/dailyHistory.ts
+@@ -615,6 +615,44 @@ export const GIORNATA_RIPIEGO_TESTO =
+     'giornata NON per partita: il database non manda ancora il giorno della partita '
+     + '(serve l’aggiornamento del database del 01/10); qui vale il criterio precedente';
+ 
++/**
++ * R-01 (review 01/10) - QUALE criterio ha davvero costruito le giornate.
++ * Il giorno della PARTITA esiste solo se il database lo manda (`in_day` su
++ * ogni riga letta); senza, le celle sono ancora per piazzamento (Omega, Safe)
++ * o per regolamento (Mike). 'ignoto' = nessuna riga letta da cui saperlo.
++ * Stessa regola del ripiego di `summarizeDayTrades` (`in_day` boolean).
++ */
++export type StatoGiornoDb = 'partita' | 'ripiego' | 'ignoto';
++
++export function statoGiornoDb(righe: readonly object[] | null | undefined): StatoGiornoDb {
++    if (!righe || righe.length === 0) return 'ignoto';
++    return righe.every((t) => typeof (t as { in_day?: unknown }).in_day === 'boolean') ? 'partita' : 'ripiego';
++}
++
++/** Il criterio di PRIMA, in parole, per i bot mostrati. */
++function criterioPrecedenteTesto(varianti: readonly HistoryVariant[]): string {
++    const conMike = varianti.includes('mike');
++    const altri = varianti.filter((v) => v !== 'mike');
++    if (conMike && altri.length === 0) return 'ogni operazione è attribuita al giorno di REGOLAMENTO (fuso Europe/Rome)';
++    if (!conMike) return 'ogni operazione è attribuita al giorno di PIAZZAMENTO (fuso Europe/Rome)';
++    return 'Omega e Safe attribuiscono ogni operazione al giorno di PIAZZAMENTO, Mike al giorno di REGOLAMENTO (fuso Europe/Rome)';
++}
++
++/**
++ * La frase del criterio della giornata, VERA rispetto alle righe lette: il
++ * «giorno della PARTITA» si scrive solo se il database lo manda.
++ */
++export function testoCriterioGiornata(stato: StatoGiornoDb, varianti: readonly HistoryVariant[]): string {
++    if (stato === 'partita') return GIORNATA_PARTITA_TESTO;
++    const prima = criterioPrecedenteTesto(varianti);
++    if (stato === 'ripiego') {
++        return `Giornata NON per partita: il database non manda ancora il giorno della partita `
++            + `(manca il suo aggiornamento), quindi ${prima}.`;
++    }
++    return 'Criterio della giornata non verificabile: nessuna operazione letta nel giorno scelto. '
++        + `Con il database aggiornato vale il giorno di inizio dell’evento; senza l’aggiornamento ${prima}.`;
++}
++
+ export interface DaySummary {
+     /** posizioni che il CALENDARIO attribuisce a questo giorno (le stesse che
+      *  fanno `trades_placed` e `pnl_realized` della cella) */
+diff --git a/frontend/src/pages/ControlRoom.test.tsx b/frontend/src/pages/ControlRoom.test.tsx
+index 0c81928..9fa2427 100644
+--- a/frontend/src/pages/ControlRoom.test.tsx
++++ b/frontend/src/pages/ControlRoom.test.tsx
+@@ -275,6 +275,29 @@ describe('freni — un freno che nessuno vede non è un freno', () => {
+         expect((within(el).getByTestId('cr-stop-conto-valore') as HTMLButtonElement).disabled).toBe(false);
+     });
+ 
++    it('R-03 (review 01/10): conto PAPER e bot tutti PAPER, ma il runner tennis consente ordini veri: lo stop del conto chiede conferma', () => {
++        mVm.mockReturnValue(vm({
++            runnerTennis: { ts: '2026-09-14T14:59:58Z', mode: 'LIVE+PAPER', ageS: 2, up: true, streaming: null },
++            fonteRunnerTennis: { fonte: 'canale', etaS: 2 },
++            stopPerdita: {
++                conto: stopDelConto({
++                    id: 1, mode: 'paper', day: '2026-09-14', realized: 0, open_mtm: 0, total: 0,
++                    limit_value: 40, stop_fired: false, detail: { reason: 'under_limit' },
++                    updated_at: '2026-09-14T14:59:00Z',
++                }, Date.parse('2026-09-14T15:00:00Z')),
++                bot: stopDeiBot({
++                    safe: { modalita: 'paper', risk: { daily_loss_stop: -50, loss_stop_active: false } },
++                    mike: { modalita: 'paper', params: { daily_loss_stop: 50 }, stats: { daily_stop: false } },
++                    omega: { modalita: 'paper', params: null },
++                }),
++            },
++        }));
++        const el = mostra().getByTestId('cr-freni');
++        fireEvent.click(within(el).getByTestId('cr-stop-conto-valore'));
++        fireEvent.click(within(el).getByTestId('cr-stop-conto-salva'));
++        expect(within(el).getByTestId('cr-stop-conto-richiesta-conferma').textContent).toMatch(/runner tennis/);
++    });
++
+     it('01/10: il cancello dei fogli parametri vale anche qui: i parametri GREZZI del bot (vm.bots[].params) aprono la modifica; non letti la chiudono', () => {
+         const v = vm({
+             stopPerdita: {
+diff --git a/frontend/src/pages/ControlRoom.tsx b/frontend/src/pages/ControlRoom.tsx
+index 6c19f94..f1a3c81 100644
+--- a/frontend/src/pages/ControlRoom.tsx
++++ b/frontend/src/pages/ControlRoom.tsx
+@@ -76,7 +76,7 @@ import { ProposteUsciteFlusso } from '@/components/controlroom/ProposteUsciteFlu
+ import { RigaCapacitaMercati } from '@/components/controlroom/RigaCapacitaMercati';
+ import { FasciaSoldiVeri } from '@/components/controlroom/testata/FasciaSoldiVeri';
+ import { StopPerdita } from '@/components/controlroom/testata/FasciaStop';
+-import { TesseraRunner } from '@/components/controlroom/testata/TesseraRunner';
++import { TesseraRunner, runnerForseLive } from '@/components/controlroom/testata/TesseraRunner';
+ import {
+     modoChip, statoChip, usciteChip, pallinoChip, aggiornatoChip, sorgenteFeed, riassuntoDati, type Tono,
+ } from '@/components/controlroom/testata/paroleImpianto';
+@@ -1104,6 +1104,7 @@ function Freni({ vm }: { vm: ReturnType<typeof useControlRoom> }) {
+             <StopPerdita
+                 stop={vm.stopPerdita}
+                 qualcheBotLive={vm.bots.some((b) => b.modalita === 'live')}
++                runnerTennisForseLive={runnerForseLive(vm.runnerTennis)}
+                 params={{ safe: di('safe')?.params ?? null, mike: di('mike')?.params ?? null, omega: di('omega')?.params ?? null }}
+                 statoServizio={{
+                     safe: { fonte: di('safe')?.fonteStato, etaS: di('safe')?.etaStatoS },
+diff --git a/frontend/src/pages/Omega.storico.test.tsx b/frontend/src/pages/Omega.storico.test.tsx
+index c704f65..e8785d4 100644
+--- a/frontend/src/pages/Omega.storico.test.tsx
++++ b/frontend/src/pages/Omega.storico.test.tsx
+@@ -150,8 +150,10 @@ describe('Omega — tab Storico', () => {
+         expect(screen.getByTestId('kpi-goal')).toHaveTextContent('0/1');
+         expect(within(screen.getByTestId('breakdown-strategy')).getByText('Gamba 1T (Half Time Score)')).toBeInTheDocument();
+         expect(screen.getByTestId('day-detail')).toBeInTheDocument();
+-        // 01/10 (B-02): una frase sola per i tre bot, il giorno della PARTITA
+-        expect(screen.getByTestId('history-criterio')).toHaveTextContent(/giorno della PARTITA/);
++        // 01/10 (B-02) + R-01 (review 01/10): il giorno della PARTITA si afferma
++        // solo con righe che lo portano dal database; qui il giorno non ha righe
++        expect(screen.getByTestId('history-criterio')).toHaveTextContent(/non verificabile/);
++        expect(screen.getByTestId('history-criterio')).not.toHaveTextContent(/attribuita al giorno della PARTITA/);
+         expect(screen.getByTestId('trading-history')).not.toHaveTextContent(/posizioni PIAZZATE nel giorno/);
+         // A-05: la moneta e' dichiarata prima dei numeri
+         expect(screen.getByTestId('history-moneta')).toHaveTextContent('PROVA');
+diff --git a/frontend/src/pages/StoricoSport.test.tsx b/frontend/src/pages/StoricoSport.test.tsx
+index bfc77bc..f254d39 100644
+--- a/frontend/src/pages/StoricoSport.test.tsx
++++ b/frontend/src/pages/StoricoSport.test.tsx
+@@ -222,12 +222,13 @@ describe('storico calcio: i profitti per bot, separati per moneta', () => {
+         expect(screen.getByTestId('storico-testata-live')).toBeInTheDocument();
+     });
+ 
+-    it('B-01: il piede dice il criterio vero (giorno della PARTITA), senza nomi di funzioni', async () => {
++    it('B-01 / R-01: senza righe del giorno il piede NON afferma il giorno della PARTITA, e niente nomi di funzioni', async () => {
+         monta();
+         await screen.findByTestId('storico-filtri');
+         const piede = document.body.textContent ?? '';
+-        expect(piede).toMatch(/giorno della PARTITA/);
+-        expect(piede).not.toMatch(/PIAZZAMENTO, fuso|trading_daily_history/);
++        expect(piede).toMatch(/Criterio della giornata non verificabile/);
++        expect(piede).not.toMatch(/attribuita al giorno della PARTITA/);
++        expect(piede).not.toMatch(/trading_daily_history|\.sql/);
+     });
+ 
+     it('D-04: il P&L in soldi veri dice la sua fonte', async () => {
+@@ -364,6 +365,11 @@ describe('B-04 (01/10): il dettaglio del giorno di Mike usa il criterio della CE
+         expect(screen.getByTestId('storico-giornata-ripiego')).toHaveTextContent(/non manda ancora il giorno della partita/);
+         // C-01: col criterio di prima P&L (regolamento) e importo (piazzamento) non stanno sullo stesso giorno
+         expect(screen.getByTestId('storico-kpi-roi')).toHaveTextContent('—');
++        // R-01 (review 01/10): il piede dice il criterio VERO, non il giorno della partita
++        const piede = screen.getByTestId('page-footer');
++        expect(piede).not.toHaveTextContent(/attribuita al giorno della PARTITA/);
++        expect(piede).toHaveTextContent(/Omega e Safe attribuiscono ogni operazione al giorno di PIAZZAMENTO, Mike al giorno di REGOLAMENTO/);
++        expect(piede).toHaveTextContent(/manca il suo aggiornamento/);
+     });
+ 
+     it('contratto nuovo (in_day): nessun ripiego dichiarato, dettaglio = cella', async () => {
+@@ -377,6 +383,8 @@ describe('B-04 (01/10): il dettaglio del giorno di Mike usa il criterio della CE
+         await waitFor(() => expect(within(det).getByTestId('day-total-pnl')).toHaveTextContent('+4,75'));
+         expect(screen.queryByTestId('storico-giornata-ripiego')).toBeNull();
+         expect(screen.getByTestId('storico-kpi-roi')).toHaveTextContent('47,5');
++        // R-01 (review 01/10): con in_day dal database il piede dice il giorno della PARTITA
++        expect(screen.getByTestId('page-footer')).toHaveTextContent(/attribuita al giorno della PARTITA/);
+     });
+ });
+ 
+diff --git a/frontend/src/pages/StoricoSport.tsx b/frontend/src/pages/StoricoSport.tsx
+index 1752d8c..5df8e9b 100644
+--- a/frontend/src/pages/StoricoSport.tsx
++++ b/frontend/src/pages/StoricoSport.tsx
+@@ -45,7 +45,7 @@ import { fmtMoney, fmtPct, fmtNum, DASH } from '@/lib/format';
+ import { pnlClass } from '@/lib/tradeStatus';
+ import {
+     dayLabel, attributionOf, calendarGridBounds, historyWindow, filterRange,
+-    GIORNATA_PARTITA_TESTO, GIORNATA_RIPIEGO_TESTO,
++    GIORNATA_RIPIEGO_TESTO, testoCriterioGiornata, type HistoryVariant,
+ } from '@/lib/dailyHistory';
+ import { FONTE_PNL_BREVE } from '@/lib/fontePnl';
+ import {
+@@ -213,8 +213,13 @@ export function StoricoSport({ sport, oggi }: StoricoSportProps) {
+                 onRicarica={() => setRicarica((n) => n + 1)} caricamento={caricamento} />}
+             footer={
+                 // B-01 (01/10): il criterio vero, uguale per tutti i bot; niente
+-                // nomi di funzioni del database davanti al trader
+-                `${GIORNATA_PARTITA_TESTO} Le giornate sono quelle che il database calcola per ogni bot, `
++                // nomi di funzioni del database davanti al trader. R-01 (review
++                // 01/10): «giorno della PARTITA» solo se le righe lette lo portano
++                `${testoCriterioGiornata(
++                    criterioVecchio == null ? 'ignoto' : criterioVecchio ? 'ripiego' : 'partita',
++                    FONTI_STORICO[sport].map((f) => f.bot)
++                        .filter((b): b is HistoryVariant => b === 'omega' || b === 'safe' || b === 'mike'),
++                )} Le giornate sono quelle che il database calcola per ogni bot, `
+                 + 'con la stessa matematica dello Storico dentro Omega, Safe e Mike: questa pagina non '
+                 + 'ricalcola nessun P&L e non somma mai soldi veri e prova.'
+             }

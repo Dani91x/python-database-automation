@@ -1,0 +1,1985 @@
+diff --git a/frontend/src/components/controlroom/ObiettivoHero.tsx b/frontend/src/components/controlroom/ObiettivoHero.tsx
+index 6896745..3bde1bf 100644
+--- a/frontend/src/components/controlroom/ObiettivoHero.tsx
++++ b/frontend/src/components/controlroom/ObiettivoHero.tsx
+@@ -95,8 +95,8 @@ export function ObiettivoHero({
+     return (
+         <Card className="glass-card border-white/10 p-0 overflow-hidden" data-testid={testId}>
+             <div className="px-4 pt-3 flex items-center gap-2">
+-                <Target className="w-4 h-4 text-secondary" aria-hidden />
+-                <span className="text-[13px] text-white/85">Obiettivo di oggi</span>
++                <Target className="w-5 h-5 text-secondary" aria-hidden />
++                <span className="text-base font-semibold text-white/90">Obiettivo di oggi</span>
+                 <ObiettivoEditor
+                     valoreAttuale={dayBar.goal ?? null}
+                     onSalva={onSalvaObiettivo}
+@@ -106,7 +106,9 @@ export function ObiettivoHero({
+             </div>
+ 
+             <div className="px-2 pt-1">
+-                <DayBar {...dayBar} testId="cr-giornata" />
++                {/* 01/10: la card occupa tutta la larghezza (il saldo e' in testata):
++                    realizzato e obiettivo grandi, leggibili a colpo d'occhio */}
++                <DayBar {...dayBar} enfasi testId="cr-giornata" />
+             </div>
+ 
+             <div className="px-4 pb-3 pt-1" data-testid="cr-composizione">
+@@ -123,7 +125,7 @@ export function ObiettivoHero({
+                         </span>
+                     )}
+                 </div>
+-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-0.5">
++                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-5 gap-y-0.5">
+                     {composizione.righe.map((r) => (
+                         <div
+                             key={r.chiave}
+diff --git a/frontend/src/components/controlroom/testata/FasciaSoldiVeri.test.tsx b/frontend/src/components/controlroom/testata/FasciaSoldiVeri.test.tsx
+index 1ae6a2d..1db40d0 100644
+--- a/frontend/src/components/controlroom/testata/FasciaSoldiVeri.test.tsx
++++ b/frontend/src/components/controlroom/testata/FasciaSoldiVeri.test.tsx
+@@ -4,9 +4,9 @@
+ // finti dei produttori veri (vedi soldiVeri.test.ts): nessun oggetto a mano
+ // piu' comodo del vero.
+ // ============================================================================
+-import { describe, it, expect, beforeEach } from 'vitest';
+-import { render, screen, cleanup } from '@testing-library/react';
+-import { FasciaSoldiVeri, CHIAVE_SALDO_NASCOSTO } from './FasciaSoldiVeri';
++import { describe, it, expect, beforeEach, vi } from 'vitest';
++import { render, screen, cleanup, fireEvent } from '@testing-library/react';
++import { FasciaSoldiVeri, CHIAVE_SALDO_NASCOSTO, SALDO_NASCOSTO } from './FasciaSoldiVeri';
+ import {
+     contoAdesso, rischioBotLive, scartoContoBot, partiteConPosizione, type SoldiVeriTestata,
+ } from './soldiVeri';
+@@ -133,10 +133,57 @@ describe('FasciaSoldiVeri - dati mancanti: mai una cifra inventata', () => {
+         expect(screen.queryByTestId('cr-rischio-bot-stantio')).toBeNull();
+     });
+ 
+-    it('saldo nascosto con l\'occhio della card: nascosto anche qui', () => {
++    // 01/10 - CAMBIATO PERCHE' CAMBIA L'ORDINE: prima la preferenza della card
++    // nascondeva anche l'esposizione; ora l'occhio nasconde SOLO il saldo
++    it('preferenza "nascosto" gia\' salvata (anche dalla card di prima): saldo nascosto, ESPOSIZIONE visibile', () => {
+         window.localStorage.setItem(CHIAVE_SALDO_NASCOSTO, '1');
+         render(<FasciaSoldiVeri s={soldi()} />);
+-        expect(screen.getByTestId('cr-esposizione-conto-valore').textContent).not.toMatch(/9,95/);
++        expect(screen.getByTestId('cr-esposizione-conto-valore').textContent).toMatch(/9,95/);
+         expect(screen.getByTestId('cr-disponibile-conto').textContent).not.toMatch(/30,61/);
++        expect(screen.getByTestId('cr-disponibile-conto-valore').textContent).toBe(SALDO_NASCOSTO);
++    });
++});
++
++describe('01/10 - l\'occhio del saldo in testata', () => {
++    it('default (nessuna preferenza): saldo VISIBILE', () => {
++        render(<FasciaSoldiVeri s={soldi()} />);
++        expect(screen.getByTestId('cr-disponibile-conto-valore').textContent).toMatch(/30,61/);
++        expect(screen.getByTestId('cr-saldo-occhio').getAttribute('aria-pressed')).toBe('false');
++    });
++
++    it('clic sull\'occhio: nasconde SOLO la cifra del saldo ("••••"), esposizione e rischio restano; la preferenza si salva', () => {
++        render(<FasciaSoldiVeri s={soldi()} />);
++        fireEvent.click(screen.getByTestId('cr-saldo-occhio'));
++        const v = screen.getByTestId('cr-disponibile-conto-valore');
++        expect(v.textContent).toBe('••••');
++        expect(v.getAttribute('title')).toBe('saldo nascosto: clicca per mostrare');
++        expect(screen.getByTestId('cr-esposizione-conto-valore').textContent).toMatch(/9,95/);
++        expect(screen.getByTestId('cr-rischio-bot-valore').textContent).toMatch(/16,22/);
++        expect(window.localStorage.getItem(CHIAVE_SALDO_NASCOSTO)).toBe('1');
++    });
++
++    it('persistenza: una nuova testata (ricarica della pagina) lo ritrova nascosto; clic sulla cifra nascosta lo mostra e salva', () => {
++        const primo = render(<FasciaSoldiVeri s={soldi()} />);
++        fireEvent.click(screen.getByTestId('cr-saldo-occhio'));
++        primo.unmount();
++        render(<FasciaSoldiVeri s={soldi()} />);
++        expect(screen.getByTestId('cr-disponibile-conto-valore').textContent).toBe(SALDO_NASCOSTO);
++        fireEvent.click(screen.getByTestId('cr-disponibile-conto-valore'));
++        expect(screen.getByTestId('cr-disponibile-conto-valore').textContent).toMatch(/30,61/);
++        expect(window.localStorage.getItem(CHIAVE_SALDO_NASCOSTO)).toBe('0');
++    });
++
++    it('localStorage che lancia (sito bloccato): nessun crash, saldo visibile, l\'occhio funziona per la sessione', () => {
++        const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('bloccato'); });
++        const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('bloccato'); });
++        try {
++            render(<FasciaSoldiVeri s={soldi()} />);
++            expect(screen.getByTestId('cr-disponibile-conto-valore').textContent).toMatch(/30,61/);
++            fireEvent.click(screen.getByTestId('cr-saldo-occhio'));
++            expect(screen.getByTestId('cr-disponibile-conto-valore').textContent).toBe(SALDO_NASCOSTO);
++        } finally {
++            get.mockRestore();
++            set.mockRestore();
++        }
+     });
+ });
+diff --git a/frontend/src/components/controlroom/testata/FasciaSoldiVeri.tsx b/frontend/src/components/controlroom/testata/FasciaSoldiVeri.tsx
+index f121b03..0ca922d 100644
+--- a/frontend/src/components/controlroom/testata/FasciaSoldiVeri.tsx
++++ b/frontend/src/components/controlroom/testata/FasciaSoldiVeri.tsx
+@@ -17,22 +17,27 @@
+ // porta il suo `MarchioSoldi`.
+ // Solo presentazione: i numeri arrivano da `vm.soldiVeri` (testata/soldiVeri.ts).
+ // ============================================================================
+-import type { ReactNode } from 'react';
++import { useState, type ReactNode } from 'react';
++import { Eye, EyeOff } from 'lucide-react';
+ import { fmtMoney, DASH } from '@/lib/format';
+ import { BOT_LABEL } from '@/lib/controlRoom';
+ import { MarchioSoldi } from '@/components/controlroom/MarchioSoldi';
+ import type { SoldiVeriTestata } from './soldiVeri';
+ 
+-/** La STESSA preferenza dell'occhio di `SaldoBetfairCard` (chiave privata di
+- *  quel file, qui ripetuta): chi ha nascosto il saldo nella card non deve
+- *  ritrovarlo in chiaro nella testata. */
++/** La preferenza dell'occhio del saldo (la STESSA chiave che usava l'occhio di
++ *  `SaldoBetfairCard`, che dal 01/10 non e' piu' montata: chi l'aveva nascosto
++ *  li' lo ritrova nascosto qui). Default = VISIBILE. */
+ export const CHIAVE_SALDO_NASCOSTO = 'cr-saldo-nascosto';
+ 
+-function saldoNascosto(): boolean {
++export function leggiSaldoNascosto(): boolean {
+     try { return window.localStorage.getItem(CHIAVE_SALDO_NASCOSTO) === '1'; } catch { return false; }
+ }
++function scriviSaldoNascosto(v: boolean): void {
++    try { window.localStorage.setItem(CHIAVE_SALDO_NASCOSTO, v ? '1' : '0'); } catch { /* preferenza persa, non bloccante */ }
++}
+ 
+-const NASCOSTO = '\u2022\u2022\u2022\u2022,\u2022\u2022 \u20ac';
++/** 01/10: il saldo nascosto si scrive cosi' (solo la cifra del saldo). */
++export const SALDO_NASCOSTO = '\u2022\u2022\u2022\u2022';
+ const PUNTO = ' \u00b7 ';
+ 
+ function Etichetta({ children }: { children: ReactNode }) {
+@@ -40,7 +45,11 @@ function Etichetta({ children }: { children: ReactNode }) {
+ }
+ 
+ export function FasciaSoldiVeri({ s }: { s: SoldiVeriTestata | undefined }) {
+-    const nascosto = saldoNascosto();
++    // 01/10 (ordine dell'utente: "voglio la possibilita' di nascondere il
++    // saldo"): l'occhio nasconde SOLO la cifra del saldo (Disponibile);
++    // esposizione, rischio e stop restano sempre visibili.
++    const [nascosto, setNascosto] = useState(leggiSaldoNascosto);
++    const cambiaNascosto = () => setNascosto((prima) => { const dopo = !prima; scriviSaldoNascosto(dopo); return dopo; });
+     const conto = s?.conto ?? null;
+     const letto = conto?.letto === true;
+     const rischio = s?.rischioBot ?? null;
+@@ -48,7 +57,7 @@ export function FasciaSoldiVeri({ s }: { s: SoldiVeriTestata | undefined }) {
+ 
+     // --- esposizione del conto
+     const valoreConto = !letto || conto?.esposizione == null
+-        ? DASH : nascosto ? NASCOSTO : fmtMoney(conto.esposizione);
++        ? DASH : fmtMoney(conto.esposizione);
+ 
+     // --- rischio dei bot (perdita massima: col segno del conto, cosi' le due
+     //     cifre si leggono nello stesso verso)
+@@ -103,10 +112,27 @@ export function FasciaSoldiVeri({ s }: { s: SoldiVeriTestata | undefined }) {
+ 
+             {letto && conto?.disponibile != null && (
+                 <div className="flex flex-col gap-0.5" data-testid="cr-disponibile-conto" title="saldo giocabile del conto Betfair">
+-                    <Etichetta>Disponibile</Etichetta>
+-                    <span className="font-mono text-sm font-semibold tabular-nums">
+-                        {nascosto ? NASCOSTO : fmtMoney(conto.disponibile)}
++                    <span className="flex items-center gap-1">
++                        <Etichetta>Saldo disponibile</Etichetta>
++                        <button type="button" onClick={cambiaNascosto} aria-pressed={nascosto}
++                            data-testid="cr-saldo-occhio"
++                            title={nascosto ? 'mostra il saldo' : 'nascondi il saldo'}
++                            aria-label={nascosto ? 'mostra il saldo' : 'nascondi il saldo'}
++                            className="text-white/40 hover:text-white/80">
++                            {nascosto ? <EyeOff className="w-3 h-3" aria-hidden /> : <Eye className="w-3 h-3" aria-hidden />}
++                        </button>
+                     </span>
++                    {nascosto ? (
++                        <button type="button" onClick={cambiaNascosto} data-testid="cr-disponibile-conto-valore"
++                            title="saldo nascosto: clicca per mostrare"
++                            className="font-mono text-sm font-semibold tabular-nums text-left text-white/60">
++                            {SALDO_NASCOSTO}
++                        </button>
++                    ) : (
++                        <span className="font-mono text-sm font-semibold tabular-nums" data-testid="cr-disponibile-conto-valore">
++                            {fmtMoney(conto.disponibile)}
++                        </span>
++                    )}
+                     <span className="text-[9.5px] leading-tight"><MarchioSoldi fonte="conto" testId="cr-disponibile-conto-marchio" /></span>
+                 </div>
+             )}
+diff --git a/frontend/src/components/controlroom/testata/FasciaStop.test.tsx b/frontend/src/components/controlroom/testata/FasciaStop.test.tsx
+index 66ea8d2..27d1176 100644
+--- a/frontend/src/components/controlroom/testata/FasciaStop.test.tsx
++++ b/frontend/src/components/controlroom/testata/FasciaStop.test.tsx
+@@ -10,11 +10,14 @@
+ //    (mike/service.py:4107);
+ //  - Omega `control.params` strategy_version / v3_daily_loss_cap / daily_loss_cap.
+ // Oggi (progetto par. 0): stop del conto SPENTO (limit_value null, reason limit_off).
++// 01/10: modifica sul posto (salvataggio iniettato: la funzione vera e le sue
++// RPC sono collaudate in salvaStop.test.ts), cancello «parametri non letti»,
++// conferma in LIVE, frasi chiare al posto di quelle criptiche.
+ // ============================================================================
+ import { describe, it, expect, vi } from 'vitest';
+-import { render, screen, fireEvent } from '@testing-library/react';
++import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+ import { MemoryRouter } from 'react-router-dom';
+-import { StopPerdita, vaiAllaRigaDelBot } from './FasciaStop';
++import { StopPerdita, vaiAllaRigaDelBot, NOTA_TENNIS_SCALPER } from './FasciaStop';
+ import { stopDelConto, stopDeiBot, type StopPerditaTestata } from './stopPerdita';
+ import type { LiveRiskState } from '@/lib/liveOrders';
+ 
+@@ -87,8 +90,16 @@ describe('stopDeiBot', () => {
+     });
+ });
+ 
++// 01/10: i parametri GREZZI dei bot come li porta il modello di vista
++// (`vm.bots[].params`, chiavi di produzione)
++const PARAMS = {
++    safe: { variants: ['base'], risk: { daily_loss_stop: -50 } },
++    mike: { daily_loss_stop: 50, max_open_matches: 10 },
++    omega: { strategy_version: 3, v3_daily_loss_cap: 300 },
++};
++
+ describe('StopPerdita - a schermo', () => {
+-    it('oggi: \u00abConto: SPENTO\u00bb e ogni bot col SUO nome, la SUA modalita\' e il suo valore', () => {
++    it('oggi: «Conto: SPENTO» e ogni bot col SUO nome, la SUA modalita\' e il suo valore', () => {
+         mostra({ conto: stopDelConto(RIGA_OGGI, NOW), bot: bot() });
+         expect(screen.getByTestId('cr-stop-conto-valore').textContent).toBe('SPENTO');
+         const safe = screen.getByTestId('cr-stop-safe');
+@@ -102,26 +113,41 @@ describe('StopPerdita - a schermo', () => {
+         expect(screen.getByTestId('cr-stop-omega').textContent).toMatch(/300,00/);
+     });
+ 
++    it('01/10 - una riga per stop: modalita\' col suo colore, stato, fonte ed eta\'', () => {
++        render(<MemoryRouter><StopPerdita stop={{ conto: stopDelConto(RIGA_OGGI, NOW), bot: bot() }}
++            statoServizio={{ safe: { fonte: 'canale', etaS: 3 }, mike: { fonte: 'database', etaS: 12 } }} /></MemoryRouter>);
++        // conto: la modalita' su cui il runner calcola lo stop (mode della riga)
++        expect(screen.getByTestId('cr-stop-conto-modo').textContent).toBe('LIVE');
++        expect(screen.getByTestId('cr-stop-conto-modo').className).toMatch(/red/);
++        expect(screen.getByTestId('cr-stop-conto-fonte').textContent).toMatch(/runner calcio .* cambio 1 min fa/);
++        expect(screen.getByTestId('cr-stop-safe-modo').textContent).toBe('PAPER');
++        expect(screen.getByTestId('cr-stop-safe-stato').textContent).toBe('attivo');
++        expect(screen.getByTestId('cr-stop-safe-fonte').textContent).toMatch(/servizio Safe .* canale .* 3 s fa/);
++        expect(screen.getByTestId('cr-stop-mike-fonte').textContent).toMatch(/parametro Mike .* database .* 12 s fa/);
++        expect(screen.getByTestId('cr-stop-omega-fonte').textContent).toMatch(/stato del servizio non letto/);
++    });
++
+     it('stop del conto attivo: soglia e P&L di giornata', () => {
+         mostra({ conto: stopDelConto({ ...RIGA_OGGI, limit_value: 40, total: -12.5 }, NOW), bot: bot() });
+         expect(screen.getByTestId('cr-stop-conto-valore').textContent).toMatch(/40,00/);
++        expect(screen.getByTestId('cr-stop-conto-stato').textContent).toMatch(/attivo/);
+         expect(screen.getByTestId('cr-stop-conto-oggi').textContent).toMatch(/12,50/);
+     });
+ 
+     it('stop del conto scattato: lo dice, freno generale', () => {
+         mostra({ conto: stopDelConto({ ...RIGA_OGGI, limit_value: 40, stop_fired: true }, NOW), bot: bot() });
+         expect(screen.getByTestId('cr-stop-conto-valore').textContent).toMatch(/SCATTATO/);
++        expect(screen.getByTestId('cr-stop-conto-stato').textContent).toMatch(/^SCATTATO/);
+     });
+ 
+-    it('stop del conto non letto: \u00abnon letto\u00bb, mai \u00abSPENTO\u00bb ne\' 0,00', () => {
++    it('stop del conto non letto: «non letto», mai «SPENTO» ne\' 0,00', () => {
+         mostra({ conto: stopDelConto(null, NOW), bot: bot() });
+         expect(screen.getByTestId('cr-stop-conto-valore').textContent).toBe('non letto');
+         expect(screen.getByTestId('cr-stop-conto').textContent).not.toMatch(/0,00/);
+     });
+ 
+-    it('ogni stop porta al SUO editor: il conto a Segui Live, i bot alla loro riga', () => {
++    it('ogni bot ha ancora la strada al SUO foglio completo (riga di Comando dei bot)', () => {
+         const vai = mostra({ conto: stopDelConto(RIGA_OGGI, NOW), bot: bot() });
+-        expect(screen.getByTestId('cr-stop-conto-modifica').getAttribute('href')).toBe('/segui-live');
+         fireEvent.click(screen.getByTestId('cr-stop-mike-modifica'));
+         expect(vai).toHaveBeenCalledWith('mike');
+         fireEvent.click(screen.getByTestId('cr-stop-omega-modifica'));
+@@ -130,12 +156,14 @@ describe('StopPerdita - a schermo', () => {
+     });
+ });
+ 
+-describe('R_T (30/09) - review finale', () => {
+-    it('Omega: la soglia NON e\' presentata come armata: "scatto non pubblicato"; Safe e Mike no', () => {
++describe('R_T (30/09) + 01/10 - frasi chiare, mai criptiche', () => {
++    it('Omega: la soglia NON e\' presentata come armata: lo dice in chiaro; Safe e Mike "attivo"', () => {
+         mostra({ conto: stopDelConto(RIGA_OGGI, NOW), bot: bot() });
+-        expect(screen.getByTestId('cr-stop-omega').textContent).toMatch(/scatto non pubblicato/);
+-        expect(screen.queryByTestId('cr-stop-safe-scatto')).toBeNull();
+-        expect(screen.queryByTestId('cr-stop-mike-scatto')).toBeNull();
++        expect(screen.getByTestId('cr-stop-omega-stato').textContent).toBe('Omega non pubblica se lo stop e\' scattato');
++        expect(screen.getByTestId('cr-stop-omega-stato').textContent).not.toMatch(/attivo/);
++        expect(screen.getByTestId('cr-stop-safe-stato').textContent).toBe('attivo');
++        expect(screen.getByTestId('cr-stop-mike-stato').textContent).toBe('attivo');
++        expect(document.body.textContent).not.toMatch(/scatto non pubblicato|stop proprio non pubblicato/);
+     });
+     it('conto SPENTO con un bot in LIVE: ambra; tutti in paper: grigio (testo invariato)', () => {
+         mostra({ conto: stopDelConto(RIGA_OGGI, NOW), bot: bot() }); // Mike LIVE
+@@ -151,11 +179,170 @@ describe('R_T (30/09) - review finale', () => {
+         render(<MemoryRouter><StopPerdita stop={{ conto: stopDelConto(RIGA_OGGI, NOW), bot: bot({ mike: { modalita: 'paper', params: { daily_loss_stop: 50 }, stats: null } }) }} qualcheBotLive /></MemoryRouter>);
+         expect(screen.getByTestId('cr-stop-conto-valore').className).toMatch(/amber/);
+     });
+-    it('tennis e scalper: "stop proprio non pubblicato", mai "nessuno stop"', () => {
++    it('tennis e scalper: la verita\' verificata nel codice (nessuno stop proprio; lo stop del conto li ferma ma non conta le loro perdite)', () => {
+         mostra({ conto: stopDelConto(RIGA_OGGI, NOW), bot: bot() });
+         const el = screen.getByTestId('cr-stop-altri');
+-        expect(el.textContent).toMatch(/Tennis, Scalper: stop proprio non pubblicato/);
+-        expect(el.textContent).not.toMatch(/nessuno/);
++        expect(el.textContent).toBe(NOTA_TENNIS_SCALPER.testo);
++        expect(el.textContent).toMatch(/Tennis e Scalper: nessuno stop proprio/);
++        expect(el.textContent).toMatch(/non lo fanno scattare/);
++        expect(el.getAttribute('title')).toMatch(/runner calcio/);
++    });
++});
++
++// ------------------------------------------------------------ 01/10 modifica sul posto
++
++function conParametri(over: {
++    stop?: StopPerditaTestata; params?: Parameters<typeof StopPerdita>[0]['params'];
++    salva?: ReturnType<typeof vi.fn>; onSalvato?: () => void; qualcheBotLive?: boolean;
++} = {}) {
++    const salva = over.salva ?? vi.fn(async () => 35);
++    render(<MemoryRouter><StopPerdita
++        stop={over.stop ?? { conto: stopDelConto({ ...RIGA_OGGI, mode: 'paper' }, NOW), bot: bot({ mike: { modalita: 'paper', params: PARAMS.mike, stats: { daily_stop: false } } }) }}
++        params={'params' in over ? over.params : PARAMS}
++        salva={salva as never}
++        onSalvato={over.onSalvato}
++        qualcheBotLive={over.qualcheBotLive ?? false}
++    /></MemoryRouter>);
++    return salva;
++}
++
++describe('01/10 - ogni stop si modifica DALLA TESTATA', () => {
++    it('clic sulla cifra -> campo con la cifra in vigore (negativa), Salva chiama la funzione con chi, perdita e i parametri GREZZI', async () => {
++        const onSalvato = vi.fn();
++        const salva = conParametri({ onSalvato });
++        fireEvent.click(screen.getByTestId('cr-stop-mike-valore'));
++        const campo = screen.getByTestId('cr-stop-mike-campo') as HTMLInputElement;
++        expect(campo.value).toBe('-50,00');
++        fireEvent.change(campo, { target: { value: '-40' } });
++        fireEvent.click(screen.getByTestId('cr-stop-mike-salva'));
++        await waitFor(() => expect(salva).toHaveBeenCalledWith('mike', 40, PARAMS.mike));
++        // riscontro: la cifra RESTITUITA dal database, poi la rilettura della pagina
++        await waitFor(() => expect(screen.getByTestId('cr-stop-mike-esito').textContent).toMatch(/salvato: .*35,00 .*\(letto dal database\)/));
++        // digitato 40, riga del DB 35: mai la cifra digitata
++        expect(screen.getByTestId('cr-stop-mike-esito').textContent).not.toMatch(/40,00/);
++        expect(onSalvato).toHaveBeenCalledTimes(1);
++    });
++
++    it('la cifra mostrata dopo il salvataggio e\' quella del DATABASE, non quella digitata', async () => {
++        conParametri({ salva: vi.fn(async () => 45) });
++        fireEvent.click(screen.getByTestId('cr-stop-omega-valore'));
++        fireEvent.change(screen.getByTestId('cr-stop-omega-campo'), { target: { value: '-40' } });
++        fireEvent.click(screen.getByTestId('cr-stop-omega-salva'));
++        await waitFor(() => expect(screen.getByTestId('cr-stop-omega-esito').textContent).toMatch(/45,00/));
++        expect(screen.getByTestId('cr-stop-omega-esito').textContent).not.toMatch(/40,00/);
++    });
++
++    it('conto: digitato −40, la riga del DB dice 35 -> «salvato: −35,00 € (letto dal database)»', async () => {
++        const salva = conParametri({ salva: vi.fn(async () => 35) });
++        fireEvent.click(screen.getByTestId('cr-stop-conto-valore'));
++        fireEvent.change(screen.getByTestId('cr-stop-conto-campo'), { target: { value: '-40' } });
++        fireEvent.click(screen.getByTestId('cr-stop-conto-salva'));
++        await waitFor(() => expect(salva).toHaveBeenCalledWith('conto', 40, null));
++        await waitFor(() => expect(screen.getByTestId('cr-stop-conto-esito').textContent).toBe('salvato: −35,00 € (letto dal database)'));
++    });
++
++    it('importo non valido: lo dice e NON salva', () => {
++        const salva = conParametri();
++        fireEvent.click(screen.getByTestId('cr-stop-safe-valore'));
++        fireEvent.change(screen.getByTestId('cr-stop-safe-campo'), { target: { value: '-40,555' } });
++        fireEvent.click(screen.getByTestId('cr-stop-safe-salva'));
++        expect(screen.getByTestId('cr-stop-safe-errore').textContent).toMatch(/non valido/);
++        expect(salva).not.toHaveBeenCalled();
++    });
++
++    it('errore della scrittura: "non salvato" col motivo, nessun "salvato"', async () => {
++        conParametri({ salva: vi.fn(async () => { throw new Error('non autorizzato'); }) });
++        fireEvent.click(screen.getByTestId('cr-stop-safe-valore'));
++        fireEvent.change(screen.getByTestId('cr-stop-safe-campo'), { target: { value: '-40' } });
++        fireEvent.click(screen.getByTestId('cr-stop-safe-salva'));
++        await waitFor(() => expect(screen.getByTestId('cr-stop-safe-errore').textContent).toMatch(/non salvato: non autorizzato/));
++        expect(screen.queryByTestId('cr-stop-safe-esito')).toBeNull();
++    });
++
++    it('Annulla: nessun salvataggio, torna la cifra', () => {
++        const salva = conParametri();
++        fireEvent.click(screen.getByTestId('cr-stop-omega-valore'));
++        fireEvent.click(screen.getByTestId('cr-stop-omega-annulla'));
++        expect(screen.getByTestId('cr-stop-omega-valore').textContent).toMatch(/300,00/);
++        expect(salva).not.toHaveBeenCalled();
++    });
++});
++
++describe('01/10 - CANCELLO: parametri non letti = campo disabilitato, e lo dice', () => {
++    it('Mike e Omega senza parametri letti: cifra non cliccabile, "parametri non letti: modifica disabilitata"', () => {
++        const salva = conParametri({ params: { safe: PARAMS.safe, mike: null, omega: {} } });
++        for (const b of ['mike', 'omega']) {
++            const v = screen.getByTestId(`cr-stop-${b}-valore`) as HTMLButtonElement;
++            expect(v.disabled).toBe(true);
++            fireEvent.click(v);
++            expect(screen.queryByTestId(`cr-stop-${b}-campo`)).toBeNull();
++            expect(screen.getByTestId(`cr-stop-${b}-non-modificabile`).textContent).toMatch(/parametri non letti: modifica disabilitata/);
++        }
++        // Safe letto: modificabile
++        expect((screen.getByTestId('cr-stop-safe-valore') as HTMLButtonElement).disabled).toBe(false);
++        expect(salva).not.toHaveBeenCalled();
++    });
++    it('nessun parametro passato (finto di prima): niente e\' modificabile', () => {
++        conParametri({ params: undefined });
++        expect((screen.getByTestId('cr-stop-safe-valore') as HTMLButtonElement).disabled).toBe(true);
++    });
++    it('conto: stato del runner non letto = non modificabile da qui', () => {
++        conParametri({ stop: { conto: stopDelConto(null, NOW), bot: bot() } });
++        expect((screen.getByTestId('cr-stop-conto-valore') as HTMLButtonElement).disabled).toBe(true);
++        expect(screen.getByTestId('cr-stop-conto-non-modificabile').textContent).toMatch(/non letto/);
++    });
++});
++
++describe('01/10 - LIVE (soldi veri): conferma esplicita, che scade', () => {
++    it('Mike in LIVE: Salva NON scrive, chiede conferma; Conferma scrive', async () => {
++        const salva = conParametri({ stop: { conto: stopDelConto(RIGA_OGGI, NOW), bot: bot() } }); // Mike LIVE
++        fireEvent.click(screen.getByTestId('cr-stop-mike-valore'));
++        fireEvent.change(screen.getByTestId('cr-stop-mike-campo'), { target: { value: '-40' } });
++        fireEvent.click(screen.getByTestId('cr-stop-mike-salva'));
++        expect(salva).not.toHaveBeenCalled();
++        expect(screen.getByTestId('cr-stop-mike-richiesta-conferma').textContent).toMatch(/Mike e' in LIVE \(soldi veri\): confermi lo stop a .*40,00/);
++        fireEvent.click(screen.getByTestId('cr-stop-mike-conferma'));
++        await waitFor(() => expect(salva).toHaveBeenCalledWith('mike', 40, PARAMS.mike));
++    });
++    it('Safe in PAPER: nessuna conferma, scrive subito', async () => {
++        const salva = conParametri({ stop: { conto: stopDelConto(RIGA_OGGI, NOW), bot: bot() } });
++        fireEvent.click(screen.getByTestId('cr-stop-safe-valore'));
++        fireEvent.change(screen.getByTestId('cr-stop-safe-campo'), { target: { value: '-40' } });
++        fireEvent.click(screen.getByTestId('cr-stop-safe-salva'));
++        expect(screen.queryByTestId('cr-stop-safe-richiesta-conferma')).toBeNull();
++        await waitFor(() => expect(salva).toHaveBeenCalledWith('safe', 40, PARAMS.safe));
++    });
++    it('Safe PAPER ma con una strategia in LIVE (modiStrategia): conferma, lo stop e\' comune', () => {
++        const salva = vi.fn(async () => 35);
++        render(<MemoryRouter><StopPerdita stop={{ conto: stopDelConto(RIGA_OGGI, NOW), bot: bot() }}
++            params={PARAMS} salva={salva as never} strategieLive={{ safe: true }} /></MemoryRouter>);
++        fireEvent.click(screen.getByTestId('cr-stop-safe-valore'));
++        fireEvent.click(screen.getByTestId('cr-stop-safe-salva'));
++        expect(screen.getByTestId('cr-stop-safe-richiesta-conferma').textContent).toMatch(/strategie in LIVE/);
++        expect(salva).not.toHaveBeenCalled();
++    });
++    it('modalita\' NON letta: si chiede conferma (potrebbe essere LIVE)', () => {
++        const salva = conParametri({ stop: { conto: stopDelConto(RIGA_OGGI, NOW), bot: bot({ omega: { modalita: null, params: PARAMS.omega } }) } });
++        fireEvent.click(screen.getByTestId('cr-stop-omega-valore'));
++        fireEvent.click(screen.getByTestId('cr-stop-omega-salva'));
++        expect(screen.getByTestId('cr-stop-omega-richiesta-conferma').textContent).toMatch(/non letta/);
++        expect(salva).not.toHaveBeenCalled();
++    });
++    it('conto con un bot LIVE: conferma; la conferma dimenticata scade dopo 10 s e non scrive', () => {
++        vi.useFakeTimers();
++        try {
++            const salva = conParametri({ qualcheBotLive: true });
++            fireEvent.click(screen.getByTestId('cr-stop-conto-valore'));
++            fireEvent.change(screen.getByTestId('cr-stop-conto-campo'), { target: { value: '-80' } });
++            fireEvent.click(screen.getByTestId('cr-stop-conto-salva'));
++            expect(screen.getByTestId('cr-stop-conto-richiesta-conferma').textContent).toMatch(/soldi veri/);
++            act(() => { vi.advanceTimersByTime(10_001); });
++            expect(screen.queryByTestId('cr-stop-conto-conferma')).toBeNull();
++            expect(screen.getByTestId('cr-stop-conto-errore').textContent).toMatch(/conferma scaduta/);
++            expect(salva).not.toHaveBeenCalled();
++        } finally {
++            vi.useRealTimers();
++        }
+     });
+ });
+ 
+diff --git a/frontend/src/components/controlroom/testata/FasciaStop.tsx b/frontend/src/components/controlroom/testata/FasciaStop.tsx
+index e1b3b2e..2bed511 100644
+--- a/frontend/src/components/controlroom/testata/FasciaStop.tsx
++++ b/frontend/src/components/controlroom/testata/FasciaStop.tsx
+@@ -1,27 +1,33 @@
+ // ============================================================================
+-// StopPerdita.tsx - P4 (30/09): gli stop di perdita nella testata, dentro il
+-// contenitore storico `cr-freni`.
++// FasciaStop.tsx - gli STOP DI PERDITA nella testata (contenitore `cr-freni`).
+ //
+-//   Stop conto: SPENTO  [si modifica: Segui Live]
+-//   Safe PAPER -50,00  Mike LIVE -50,00  Omega PAPER -300,00   [modifica]
+-//
+-// Ogni stop col NOME del proprietario, la sua MODALITA' e il posto dove si
+-// modifica. Nessun nuovo punto di salvataggio: il conto rimanda a
+-// `LiveControlsPanel` (pagina Segui Live, "Controlli runner - limiti - audit"),
+-// ogni bot porta alla SUA riga di "Comando dei bot", dove c'e' il foglio
+-// parametri gia' montato col suo cancello "parametri non letti". Il pulsante
+-// scorre fino alla riga e mette il fuoco sul foglio: non lo apre e non salva
+-// niente da solo.
++// P4 (30/09): ogni stop col NOME del proprietario e la sua MODALITA'.
++// 01/10 (ordine dell'utente: "che roba e'? illeggibile" / "stop perdita devo
++// poterlo modificare direttamente da qui"):
++//   * UNA RIGA PER STOP: NOME - modalita' (PAPER/LIVE col suo colore) - cifra
++//     grande - stato (attivo / SPENTO / SCATTATO / assente / non letto) - fonte
++//     ed eta';
++//   * la cifra si MODIFICA SUL POSTO: clic -> campo in euro al centesimo
++//     (negativo = perdita massima) + Salva/Annulla. Il salvataggio passa da
++//     `salvaStop.ts`, cioe' dalle STESSE funzioni e chiavi dei fogli parametri
++//     e del pannello del conto, col loro cancello "parametri non letti" (campo
++//     disabilitato, e lo dice). In LIVE (o modalita' non letta) serve una
++//     conferma esplicita, che scade da sola dopo 10 s. Dopo il salvataggio si
++//     mostra la cifra RESTITUITA dal database, mai quella digitata;
++//   * via le frasi criptiche: "Omega non pubblica se lo stop e' scattato";
++//     "Tennis e Scalper: nessuno stop proprio" con la verita' sullo stop del
++//     conto (verificata nel codice, vedi `NOTA_TENNIS_SCALPER`).
+ // Assente si scrive "assente", mai 0,00; scattato si scrive "SCATTATO".
+ // ============================================================================
+-import { Link } from 'react-router-dom';
+-import { Pencil } from 'lucide-react';
+-import { fmtMoney, fmtAge } from '@/lib/format';
++import { useEffect, useRef, useState } from 'react';
++import { Pencil, SlidersHorizontal } from 'lucide-react';
++import { fmtMoney, fmtAge, fmtNum } from '@/lib/format';
+ import { BOT_LABEL } from '@/lib/controlRoom';
+-import type { StopPerditaTestata, StopBot } from './stopPerdita';
++import type { StopPerditaTestata, StopBot, StopConto, BotConStop } from './stopPerdita';
++import { leggiImporto, salvaStop as salvaStopVero, type ProprietarioStop } from './salvaStop';
+ 
+ /** Porta il trader alla riga del bot in "Comando dei bot" (il foglio
+- *  parametri esistente), o al pannello se la riga non e' visibile. */
++ *  parametri completo), o al pannello se la riga non e' visibile. */
+ export function vaiAllaRigaDelBot(bot: string, doc: Document = document): boolean {
+     const riga = doc.querySelector<HTMLElement>(`[data-testid="cr-parametri-${bot}"]`);
+     const bersaglio = riga ?? doc.querySelector<HTMLElement>('[data-testid="cr-pannello-bot"]');
+@@ -32,94 +38,337 @@ export function vaiAllaRigaDelBot(bot: string, doc: Document = document): boolea
+     return riga != null;
+ }
+ 
+-function Modo({ m }: { m: StopBot['modalita'] }) {
+-    if (m === 'live') return <span className="text-[9px] font-bold px-1 rounded bg-red-500/20 text-red-300">LIVE</span>;
+-    if (m === 'paper') return <span className="text-[9px] px-1 rounded border border-white/15 text-slate-300">PAPER</span>;
+-    return <span className="text-[9px] px-1 rounded text-orange-300">modo ?</span>;
++/**
++ * 01/10 - verificato nel codice prima di scriverlo:
++ *  - nessuno stop di perdita giornaliera nei bot tennis (`Betfair/stream/
++ *    tennis_live/`) ne' nello scalper (`Betfair/stream/scalper/`);
++ *  - lo stop del conto lo calcola SOLO il runner calcio (`daily_stop_worker`,
++ *    P&L da `betfair_live_settled` + posizioni del suo framework): tennis e
++ *    scalper non scrivono li' e non registrano quel worker;
++ *  - quando scatta tira il freno generale (`betfair_live_settings.kill_switch`)
++ *    che entrambi leggono (`guardie_tennis.kill_switch_attivo`,
++ *    `scalper_session.motivo_freno`): da li' solo chiusure.
++ */
++export const NOTA_TENNIS_SCALPER = {
++    testo: 'Tennis e Scalper: nessuno stop proprio. Li ferma lo stop del Conto quando scatta, ma le loro perdite non lo fanno scattare.',
++    titolo: 'I 4 bot tennis e lo scalper calcio non hanno uno stop di perdita giornaliera. Lo stop del Conto e\' calcolato dal runner calcio '
++        + 'sulle SUE operazioni (betfair_live_settled + posizioni aperte del runner calcio): quando scatta tira il freno generale, '
++        + 'che tennis e scalper leggono (da quel momento solo chiusure), ma le perdite di tennis e scalper non entrano nel suo conteggio.',
++};
++
++const CONFERMA_SCADE_MS = 10_000;
++
++type Modo = 'live' | 'paper' | null;
++
++function ChipModo({ m, testId }: { m: Modo; testId: string }) {
++    if (m === 'live') return <span data-testid={testId} className="text-[9.5px] font-bold px-1 rounded bg-red-500/20 text-red-300">LIVE</span>;
++    if (m === 'paper') return <span data-testid={testId} className="text-[9.5px] px-1 rounded border border-white/15 text-slate-300">PAPER</span>;
++    return <span data-testid={testId} className="text-[9.5px] px-1 rounded text-orange-300">modo ?</span>;
+ }
+ 
+-function ValoreBot({ s }: { s: StopBot }) {
+-    if (s.scattato) return <span className="text-red-400 font-semibold">SCATTATO</span>;
++interface Stato { testo: string; cls: string }
++
++function statoConto(c: StopConto | null, live: boolean): { cifra: string; cifraCls: string; stato: Stato } {
++    if (c == null || !c.letto) return { cifra: 'non letto', cifraCls: 'text-orange-400', stato: { testo: 'stato del runner non letto', cls: 'text-orange-300' } };
++    if (c.scattato) return { cifra: 'SCATTATO: freno generale tirato', cifraCls: 'text-red-400', stato: { testo: 'SCATTATO', cls: 'text-red-400 font-semibold' } };
++    // R_T (30/09): nessun freno di conto con soldi veri in gioco = ambra
++    if (c.soglia == null) return { cifra: 'SPENTO', cifraCls: live ? 'text-amber-300' : 'text-white/60', stato: { testo: 'nessuno stop', cls: live ? 'text-amber-300' : 'text-white/45' } };
++    return { cifra: fmtMoney(-c.soglia), cifraCls: 'text-white', stato: { testo: 'attivo', cls: 'text-emerald-400' } };
++}
++
++function statoBot(s: StopBot): { cifra: string; cifraCls: string; stato: Stato } {
++    if (s.scattato) return { cifra: s.soglia != null ? fmtMoney(-s.soglia) : 'SCATTATO', cifraCls: 'text-red-400', stato: { testo: 'SCATTATO', cls: 'text-red-400 font-semibold' } };
+     // Safe: lo stop lo DICHIARA il servizio, se manca e' assente; Mike e
+     // Omega: e' un parametro, se la riga non e' letta non si sa
+     if (!s.letto || s.soglia == null) {
+-        return <span className="text-orange-400">{s.bot === 'safe' ? 'assente' : 'non letto'}</span>;
++        return s.bot === 'safe'
++            ? { cifra: 'assente', cifraCls: 'text-orange-400', stato: { testo: 'non dichiarato dal servizio', cls: 'text-orange-300' } }
++            : { cifra: 'non letto', cifraCls: 'text-orange-400', stato: { testo: 'parametri non letti', cls: 'text-orange-300' } };
+     }
+-    if (s.soglia === 0) return <span className="text-white/50">spento</span>;
+-    return (
+-        <>
+-            <span className="text-white/90">{fmtMoney(-s.soglia)}</span>
+-            {/* R_T (30/09): Omega non pubblica lo scatto: mai presentare la
+-                soglia come "armata" */}
+-            {!s.scattoPubblicato && (
+-                <span className="text-white/40 font-sans text-[9.5px]" data-testid={`cr-stop-${s.bot}-scatto`}
+-                    title={`${BOT_LABEL[s.bot]} non pubblica se il suo stop e' scattato (lo scrive solo nella sua attivita'): la soglia c'e', lo stato no`}>
+-                    scatto non pubblicato
++    if (s.soglia === 0) return { cifra: 'spento', cifraCls: 'text-white/50', stato: { testo: 'spento (0)', cls: 'text-white/45' } };
++    // R_T (30/09): Omega non pubblica lo scatto: mai presentare la soglia come "armata"
++    if (!s.scattoPubblicato) {
++        return { cifra: fmtMoney(-s.soglia), cifraCls: 'text-white', stato: { testo: `${BOT_LABEL[s.bot]} non pubblica se lo stop e' scattato`, cls: 'text-white/55' } };
++    }
++    return { cifra: fmtMoney(-s.soglia), cifraCls: 'text-white', stato: { testo: 'attivo', cls: 'text-emerald-400' } };
++}
++
++/** Il valore iniziale del campo: la cifra in vigore col segno meno. */
++function testoIniziale(soglia: number | null | undefined): string {
++    if (soglia == null || soglia === 0) return soglia === 0 ? '0' : '';
++    return `-${fmtNum(soglia, 2)}`;
++}
++
++type Fase =
++    | { k: 'vista' }
++    | { k: 'modifica'; testo: string; errore: string | null }
++    | { k: 'conferma'; testo: string; perdita: number | null }
++    | { k: 'salvataggio'; testo: string };
++
++export type SalvaStopFn = typeof salvaStopVero;
++
++/**
++ * La cifra di UNO stop, modificabile sul posto.
++ * `modificabile=false` = cancello chiuso (parametri non letti): la cifra non
++ * apre il campo e il motivo e' scritto accanto.
++ */
++function CifraStop({
++    id, nome, cifra, cifraCls, soglia, modificabile, motivoBlocco, chiedeConferma, motivoConferma,
++    raw, salva, onSalvato, etichettaSpento,
++}: {
++    id: ProprietarioStop;
++    nome: string;
++    cifra: string;
++    cifraCls: string;
++    soglia: number | null | undefined;
++    modificabile: boolean;
++    motivoBlocco: string | null;
++    chiedeConferma: boolean;
++    motivoConferma: string;
++    raw: Record<string, unknown> | null;
++    salva: SalvaStopFn;
++    onSalvato?: () => void;
++    etichettaSpento: string;
++}) {
++    const [fase, setFase] = useState<Fase>({ k: 'vista' });
++    const [esito, setEsito] = useState<{ ok: boolean; testo: string } | null>(null);
++    const vivo = useRef(true);
++    useEffect(() => () => { vivo.current = false; }, []);
++
++    // la conferma armata scade da sola: una conferma dimenticata non scrive mai
++    useEffect(() => {
++        if (fase.k !== 'conferma') return undefined;
++        const t = window.setTimeout(() => {
++            if (vivo.current) setFase({ k: 'modifica', testo: fase.testo, errore: 'conferma scaduta: premi di nuovo Salva' });
++        }, CONFERMA_SCADE_MS);
++        return () => window.clearTimeout(t);
++    }, [fase]);
++
++    async function scrivi(perdita: number | null, testo: string) {
++        setFase({ k: 'salvataggio', testo });
++        try {
++            const letto = await salva(id, perdita, raw);
++            if (!vivo.current) return;
++            setEsito({
++                ok: true,
++                testo: letto === undefined
++                    ? 'salvato (il database non ha restituito la cifra: attendi la rilettura)'
++                    : `salvato: ${letto == null ? etichettaSpento : fmtMoney(-letto)} (letto dal database)`,
++            });
++            setFase({ k: 'vista' });
++            onSalvato?.();
++        } catch (e) {
++            if (!vivo.current) return;
++            const msg = e instanceof Error ? e.message : String(e);
++            setFase({ k: 'modifica', testo, errore: `non salvato: ${msg}` });
++        }
++    }
++
++    function salvaDaCampo(testo: string) {
++        const l = leggiImporto(testo, id);
++        if (!l.ok) { setFase({ k: 'modifica', testo, errore: l.errore }); return; }
++        if (chiedeConferma) { setFase({ k: 'conferma', testo, perdita: l.perdita }); return; }
++        void scrivi(l.perdita, testo);
++    }
++
++    if (fase.k === 'modifica' || fase.k === 'conferma' || fase.k === 'salvataggio') {
++        const testo = fase.testo;
++        return (
++            <span className="flex flex-col gap-0.5" data-testid={`cr-stop-${id}-editor`}>
++                <span className="flex items-center gap-1">
++                    <input
++                        type="text" inputMode="decimal" autoFocus
++                        aria-label={`stop di perdita di ${nome} in euro (negativo = perdita massima)`}
++                        className="w-24 rounded border border-white/20 bg-black/40 px-1 py-0.5 text-[12px] font-mono text-white"
++                        data-testid={`cr-stop-${id}-campo`}
++                        value={testo}
++                        disabled={fase.k !== 'modifica'}
++                        onChange={(e) => setFase({ k: 'modifica', testo: e.target.value, errore: null })}
++                        onKeyDown={(e) => {
++                            if (e.key === 'Enter' && fase.k === 'modifica') salvaDaCampo(fase.testo);
++                            if (e.key === 'Escape') setFase({ k: 'vista' });
++                        }}
++                    />
++                    <span className="text-[10px] text-white/40">{'\u20ac'}</span>
++                    {fase.k === 'modifica' && (
++                        <>
++                            <button type="button" data-testid={`cr-stop-${id}-salva`}
++                                className="text-[10.5px] px-1.5 py-0.5 rounded bg-secondary/20 text-secondary hover:bg-secondary/30"
++                                onClick={() => salvaDaCampo(fase.testo)}>Salva</button>
++                            <button type="button" data-testid={`cr-stop-${id}-annulla`}
++                                className="text-[10.5px] px-1.5 py-0.5 rounded text-white/60 hover:text-white"
++                                onClick={() => setFase({ k: 'vista' })}>Annulla</button>
++                        </>
++                    )}
++                    {fase.k === 'salvataggio' && <span className="text-[10.5px] text-white/50" data-testid={`cr-stop-${id}-in-corso`}>{'salvataggio\u2026'}</span>}
+                 </span>
++                {fase.k === 'modifica' && fase.errore && (
++                    <span className="text-[10px] text-red-300" data-testid={`cr-stop-${id}-errore`}>{fase.errore}</span>
++                )}
++                {fase.k === 'modifica' && !fase.errore && (
++                    <span className="text-[9.5px] text-white/35">
++                        {id === 'conto' ? 'euro al centesimo, es. \u221250; vuoto = stop spento' : 'euro al centesimo, es. \u221250; 0 = stop spento'}
++                    </span>
++                )}
++                {fase.k === 'conferma' && (
++                    <span className="flex items-center gap-1 flex-wrap text-[10.5px]" data-testid={`cr-stop-${id}-richiesta-conferma`}>
++                        <span className="text-red-300 font-semibold">{motivoConferma}: confermi {fase.perdita == null ? etichettaSpento : `lo stop a ${fmtMoney(-fase.perdita)}`}?</span>
++                        <button type="button" data-testid={`cr-stop-${id}-conferma`}
++                            className="px-1.5 py-0.5 rounded bg-red-500/25 text-red-200 hover:bg-red-500/35 font-semibold"
++                            onClick={() => void scrivi(fase.perdita, fase.testo)}>Conferma</button>
++                        <button type="button" data-testid={`cr-stop-${id}-annulla-conferma`}
++                            className="px-1.5 py-0.5 rounded text-white/60 hover:text-white"
++                            onClick={() => setFase({ k: 'modifica', testo: fase.testo, errore: null })}>Annulla</button>
++                    </span>
++                )}
++            </span>
++        );
++    }
++
++    return (
++        <span className="flex flex-col">
++            <span className="flex items-center gap-1">
++                <button
++                    type="button"
++                    data-testid={`cr-stop-${id}-valore`}
++                    disabled={!modificabile}
++                    onClick={() => { setEsito(null); setFase({ k: 'modifica', testo: testoIniziale(soglia), errore: null }); }}
++                    className={`font-mono text-[13px] font-bold tabular-nums ${cifraCls} ${modificabile ? 'hover:underline decoration-dotted cursor-pointer' : 'cursor-not-allowed'}`}
++                    title={modificabile ? `clic per modificare lo stop di ${nome}` : (motivoBlocco ?? 'non modificabile')}
++                >{cifra}</button>
++                {modificabile && (
++                    <button type="button" data-testid={`cr-stop-${id}-matita`}
++                        onClick={() => { setEsito(null); setFase({ k: 'modifica', testo: testoIniziale(soglia), errore: null }); }}
++                        className="text-white/35 hover:text-white/80" aria-label={`modifica lo stop di ${nome}`}>
++                        <Pencil className="w-3 h-3" />
++                    </button>
++                )}
++            </span>
++            {!modificabile && motivoBlocco && (
++                <span className="text-[9.5px] text-orange-300/80" data-testid={`cr-stop-${id}-non-modificabile`}>{motivoBlocco}</span>
++            )}
++            {esito && (
++                <span className={`text-[9.5px] ${esito.ok ? 'text-emerald-300' : 'text-red-300'}`} data-testid={`cr-stop-${id}-esito`}>{esito.testo}</span>
+             )}
+-        </>
++        </span>
+     );
+ }
+ 
+-export function StopPerdita({ stop, vai = vaiAllaRigaDelBot, qualcheBotLive }: {
++export interface StatoServizio { fonte?: 'canale' | 'database'; etaS?: number | null }
++
++function fonteServizio(s: StatoServizio | undefined): string {
++    if (!s?.fonte) return 'stato del servizio non letto';
++    const eta = s.etaS == null ? '?' : fmtAge(s.etaS);
++    return `${s.fonte === 'canale' ? 'canale' : 'database'} \u00b7 ${eta} fa`;
++}
++
++export function StopPerdita({
++    stop, vai = vaiAllaRigaDelBot, qualcheBotLive, params, statoServizio, strategieLive, salva = salvaStopVero, onSalvato,
++}: {
++    /** 01/10: Safe con almeno una strategia in LIVE (`modiStrategia`) anche
++     *  se la sua modalita' di servizio e' PAPER: lo stop e' comune, si conferma */
++    strategieLive?: Partial<Record<BotConStop, boolean>>;
+     stop: StopPerditaTestata | undefined;
+     /** iniettabile per i test */
+     vai?: (bot: string) => boolean;
+     /** R_T (30/09): almeno un bot (qualunque, acceso o fermo) dichiara LIVE.
+      *  Assente = si guarda solo Safe/Mike/Omega. */
+     qualcheBotLive?: boolean;
++    /** 01/10: i parametri GREZZI di ogni bot (`vm.bots[].params`): il cancello
++     *  "parametri non letti" e la base del salvataggio. Assenti = non modificabile. */
++    params?: Partial<Record<BotConStop, Record<string, unknown> | null>>;
++    /** 01/10: fonte ed eta' dello stato di ogni servizio (`vm.bots[].fonteStato/etaStatoS`) */
++    statoServizio?: Partial<Record<BotConStop, StatoServizio>>;
++    /** iniettabile per i test: di default le funzioni di scrittura vere */
++    salva?: SalvaStopFn;
++    /** dopo un salvataggio riuscito (la pagina rilegge: `vm.ricarica`) */
++    onSalvato?: () => void;
+ }) {
+     const c = stop?.conto ?? null;
+     const live = qualcheBotLive ?? (stop?.bot ?? []).some((b) => b.modalita === 'live');
+-    let contoTesto: string;
+-    let contoCls = 'text-white/90';
+-    if (c == null || !c.letto) { contoTesto = 'non letto'; contoCls = 'text-orange-400'; }
+-    else if (c.scattato) { contoTesto = 'SCATTATO: freno generale tirato'; contoCls = 'text-red-400'; }
+-    // R_T (30/09): nessun freno di conto con soldi veri in gioco = ambra
+-    else if (c.soglia == null) { contoTesto = 'SPENTO'; contoCls = live ? 'text-amber-300' : 'text-white/60'; }
+-    else contoTesto = fmtMoney(-c.soglia);
++    const sc = statoConto(c, live);
++    const letti = (p: Record<string, unknown> | null | undefined) => p != null && Object.keys(p).length > 0;
+ 
+     return (
+         <div className="flex flex-col gap-0.5" data-testid="cr-stop-perdita">
+-            <span className="text-[10px] uppercase tracking-wider text-white/40">Stop perdita</span>
+-            <span className="flex items-center gap-1.5 text-[11px] font-mono tabular-nums" data-testid="cr-stop-conto"
+-                title={c?.letto
+-                    ? `stop del CONTO (betfair_live_settings.daily_loss_limit, applicato dal runner): raggiunto, tira il freno generale.${c.motivo ? ` Stato del runner: ${c.motivo}.` : ''} Riga aggiornata al cambio, ultimo cambio ${fmtAge(c.etaS)} fa.`
+-                    : 'stato dello stop del conto (betfair_live_risk_state) non ancora letto'}>
+-                <span className="text-white/45 font-sans">Conto:</span>
+-                <span className={`font-semibold ${contoCls}`} data-testid="cr-stop-conto-valore">{contoTesto}</span>
+-                {c?.letto && c.soglia != null && c.oggi != null && (
+-                    <span className={c.oggi < 0 ? 'text-red-300' : 'text-white/50'} data-testid="cr-stop-conto-oggi"
+-                        title="P&L di giornata secondo il runner (regolato dal conto + aperto stimato)">
+-                        oggi {fmtMoney(c.oggi, { signed: true })}{c.degradato ? ' (stima degradata)' : ''}
++            <span className="text-[10px] uppercase tracking-wider text-white/45">Stop perdita giornaliera</span>
++            <div className="grid grid-cols-[auto_auto_auto_auto_auto] items-start gap-x-2.5 gap-y-1 text-[11px]">
++                {/* --- CONTO */}
++                <div className="contents" data-testid="cr-stop-conto"
++                    title={c?.letto
++                        ? `stop del CONTO (betfair_live_settings.daily_loss_limit, applicato dal runner calcio): raggiunto, tira il freno generale.${c.motivo ? ` Stato del runner: ${c.motivo}.` : ''} Riga aggiornata al cambio, ultimo cambio ${fmtAge(c.etaS)} fa.`
++                        : 'stato dello stop del conto (betfair_live_risk_state) non ancora letto'}>
++                    <span className="font-semibold text-white/85" data-testid="cr-stop-conto-nome">Conto</span>
++                    <span title="la modalita' su cui il runner calcola lo stop del conto"><ChipModo m={c?.modo ?? null} testId="cr-stop-conto-modo" /></span>
++                    <span data-testid="cr-stop-conto-cifra">
++                        <CifraStop
++                            id="conto" nome="Conto" cifra={sc.cifra} cifraCls={sc.cifraCls} soglia={c?.soglia ?? null}
++                            modificabile={c?.letto === true}
++                            motivoBlocco={c?.letto ? null : 'stato del runner non letto: modifica non disponibile qui'}
++                            chiedeConferma={live || c?.modo === 'live'}
++                            motivoConferma="Lo stop del Conto protegge i soldi veri"
++                            raw={null} salva={salva} onSalvato={onSalvato}
++                            etichettaSpento="lo stop del conto SPENTO"
++                        />
+                     </span>
+-                )}
+-                <Link to="/segui-live" data-testid="cr-stop-conto-modifica"
+-                    className="text-white/40 hover:text-white/80"
+-                    title="si modifica in Segui Live, pannello 'Controlli runner - limiti - audit', campo 'Stop giornaliero' (lo stesso controllo di sempre)">
+-                    <Pencil className="w-3 h-3" aria-label="modifica lo stop del conto" />
+-                </Link>
+-            </span>
+-            <span className="flex items-center gap-x-2 gap-y-0.5 flex-wrap text-[11px] font-mono tabular-nums">
+-                {(stop?.bot ?? []).map((s) => (
+-                    <span key={s.bot} className="flex items-center gap-1" data-testid={`cr-stop-${s.bot}`}
+-                        title={`stop di ${BOT_LABEL[s.bot]}: ${s.fonte}. Si modifica in ${s.dove}. Vale solo per le aperture di ${BOT_LABEL[s.bot]}.`}>
+-                        <span className="text-white/55 font-sans">{BOT_LABEL[s.bot]}</span>
+-                        <Modo m={s.modalita} />
+-                        <ValoreBot s={s} />
+-                        <button type="button" onClick={() => vai(s.bot)} data-testid={`cr-stop-${s.bot}-modifica`}
+-                            className="text-white/40 hover:text-white/80"
+-                            aria-label={`modifica lo stop di ${BOT_LABEL[s.bot]}`}>
+-                            <Pencil className="w-3 h-3" />
+-                        </button>
++                    <span className={sc.stato.cls} data-testid="cr-stop-conto-stato">
++                        {sc.stato.testo}
++                        {c?.letto && c.soglia != null && c.oggi != null && (
++                            <span className={`block font-mono ${c.oggi < 0 ? 'text-red-300' : 'text-white/50'}`} data-testid="cr-stop-conto-oggi"
++                                title="P&L di giornata secondo il runner calcio (regolato dal conto + aperto stimato)">
++                                oggi {fmtMoney(c.oggi, { signed: true })}{c.degradato ? ' (stima degradata)' : ''}
++                            </span>
++                        )}
+                     </span>
+-                ))}
+-                {/* R_T (30/09): tennis e scalper non pubblicano uno stop proprio
+-                    che la pagina conosca: non si dice "nessuno stop" */}
+-                <span className="text-white/35 font-sans text-[9.5px]" data-testid="cr-stop-altri"
+-                    title="i 4 bot tennis e lo scalper calcio non pubblicano uno stop di perdita giornaliera che questa pagina possa leggere: non sappiamo se ne hanno uno">
+-                    Tennis, Scalper: stop proprio non pubblicato
+-                </span>
++                    <span className="text-[9.5px] text-white/35" data-testid="cr-stop-conto-fonte">
++                        {c?.letto ? `runner calcio \u00b7 cambio ${c.etaS == null ? '?' : fmtAge(c.etaS)} fa` : 'runner: non letto'}
++                    </span>
++                </div>
++
++                {/* --- BOT */}
++                {(stop?.bot ?? []).map((s) => {
++                    const v = statoBot(s);
++                    const raw = params?.[s.bot] ?? null;
++                    const aperto = letti(raw);
++                    return (
++                        <div key={s.bot} className="contents" data-testid={`cr-stop-${s.bot}`}
++                            title={`stop di ${BOT_LABEL[s.bot]}: ${s.fonte}. Foglio completo: ${s.dove}. Vale solo per le aperture di ${BOT_LABEL[s.bot]}.`}>
++                            <span className="font-semibold text-white/85 flex items-center gap-1">
++                                {BOT_LABEL[s.bot]}
++                                <button type="button" onClick={() => vai(s.bot)} data-testid={`cr-stop-${s.bot}-modifica`}
++                                    className="text-white/30 hover:text-white/70"
++                                    aria-label={`apri tutti i parametri di ${BOT_LABEL[s.bot]}`}
++                                    title={`tutti i parametri di ${BOT_LABEL[s.bot]} (Comando dei bot)`}>
++                                    <SlidersHorizontal className="w-3 h-3" />
++                                </button>
++                            </span>
++                            <ChipModo m={s.modalita} testId={`cr-stop-${s.bot}-modo`} />
++                            <span data-testid={`cr-stop-${s.bot}-cifra`}>
++                                <CifraStop
++                                    id={s.bot} nome={BOT_LABEL[s.bot]} cifra={v.cifra} cifraCls={v.cifraCls}
++                                    soglia={s.soglia}
++                                    modificabile={aperto}
++                                    motivoBlocco={aperto ? null : 'parametri non letti: modifica disabilitata'}
++                                    chiedeConferma={s.modalita !== 'paper' || strategieLive?.[s.bot] === true}
++                                    motivoConferma={s.modalita === 'live'
++                                        ? `${BOT_LABEL[s.bot]} e' in LIVE (soldi veri)`
++                                        : s.modalita == null
++                                            ? `modalita' di ${BOT_LABEL[s.bot]} non letta (potrebbe essere LIVE)`
++                                            : `${BOT_LABEL[s.bot]} ha strategie in LIVE (soldi veri): lo stop vale anche per loro`}
++                                    raw={raw} salva={salva} onSalvato={onSalvato}
++                                    etichettaSpento="stop spento (0)"
++                                />
++                            </span>
++                            <span className={v.stato.cls} data-testid={`cr-stop-${s.bot}-stato`}>{v.stato.testo}</span>
++                            <span className="text-[9.5px] text-white/35" data-testid={`cr-stop-${s.bot}-fonte`}>
++                                {s.bot === 'safe' ? 'servizio Safe' : `parametro ${BOT_LABEL[s.bot]}`}{' \u00b7 '}{fonteServizio(statoServizio?.[s.bot])}
++                            </span>
++                        </div>
++                    );
++                })}
++            </div>
++            <span className="text-white/45 text-[10px]" data-testid="cr-stop-altri" title={NOTA_TENNIS_SCALPER.titolo}>
++                {NOTA_TENNIS_SCALPER.testo}
+             </span>
+         </div>
+     );
+diff --git a/frontend/src/components/controlroom/testata/stopPerdita.ts b/frontend/src/components/controlroom/testata/stopPerdita.ts
+index 9dec396..a76b349 100644
+--- a/frontend/src/components/controlroom/testata/stopPerdita.ts
++++ b/frontend/src/components/controlroom/testata/stopPerdita.ts
+@@ -40,11 +40,14 @@ export interface StopConto {
+     degradato: boolean;
+     /** eta' dell'ultimo CAMBIO della riga (scritta solo al cambio) */
+     etaS: number | null;
++    /** 01/10: la modalita' su cui il runner calcola lo stop (`mode` della riga,
++     *  `daily_stop_worker` filtra `betfair_live_settled` per modalita'); null = ignota */
++    modo: 'live' | 'paper' | null;
+ }
+ 
+ export function stopDelConto(riga: LiveRiskState | null, nowMs: number): StopConto {
+     if (riga == null) {
+-        return { letto: false, soglia: null, oggi: null, scattato: false, motivo: null, degradato: false, etaS: null };
++        return { letto: false, soglia: null, oggi: null, scattato: false, motivo: null, degradato: false, etaS: null, modo: null };
+     }
+     const ms = Date.parse(riga.updated_at);
+     const soglia = typeof riga.limit_value === 'number' && Number.isFinite(riga.limit_value) && riga.limit_value > 0
+@@ -58,6 +61,8 @@ export function stopDelConto(riga: LiveRiskState | null, nowMs: number): StopCon
+         motivo: typeof riga.detail?.reason === 'string' ? riga.detail.reason : null,
+         degradato: riga.detail?.degraded === true,
+         etaS: Number.isFinite(ms) ? Math.max(0, Math.round((nowMs - ms) / 1000)) : null,
++        modo: String(riga.mode ?? '').toLowerCase() === 'live' ? 'live'
++            : String(riga.mode ?? '').toLowerCase() === 'paper' ? 'paper' : null,
+     };
+ }
+ 
+@@ -75,7 +80,8 @@ export interface StopBot {
+     scattato: boolean;
+     /** R_T (30/09): false = il servizio NON pubblica se lo stop e' scattato
+      *  (Omega: solo l'attivita' `loss_stop`, non letta qui). `scattato` allora
+-     *  non vale "armato": a schermo si dice "scatto non pubblicato". */
++     *  non vale "armato": a schermo (01/10) «Omega non pubblica se lo stop e'
++     *  scattato». */
+     scattoPubblicato: boolean;
+     /** da dove viene il numero (per il tooltip) */
+     fonte: string;
+diff --git a/frontend/src/components/trading/DayBar.tsx b/frontend/src/components/trading/DayBar.tsx
+index 166de1c..32e6889 100644
+--- a/frontend/src/components/trading/DayBar.tsx
++++ b/frontend/src/components/trading/DayBar.tsx
+@@ -76,13 +76,19 @@ export interface DayBarProps {
+     riskNode?: ReactNode;
+     /** parola del contatore `live` (di serie quella del glossario) */
+     liveLabel?: string;
++    /**
++     * 01/10 (Control Room, "la voglio piu' visibile"): numeri a colpo
++     * d'occhio. Realizzato e obiettivo GRANDI, barra piu' alta. Solo
++     * presentazione: nessun numero cambia. Assente = DayBar di prima.
++     */
++    enfasi?: boolean;
+ }
+ 
+ export function DayBar({
+     dayLabel, realized, realizedTotal, goal, matches, operations, won, lost, live,
+     openLiability, lockedPnl, note, labels, countsNote, testId = 'day-bar', ids,
+     realizedEstimated, inProgress,
+-    realizedMissing, realizedNote, openNow, openNowNode, riskNode, liveLabel,
++    realizedMissing, realizedNote, openNow, openNowNode, riskNode, liveLabel, enfasi = false,
+ }: DayBarProps) {
+     const matchesLabel = labels?.matches?.trim() || T.matches;
+     const operationsLabel = labels?.operations?.trim() || T.operations;
+@@ -136,9 +142,14 @@ export function DayBar({
+                     </div>
+                 </div>
+                 {real !== null && (
+-                    <div className="font-display font-black text-2xl tabular-nums">
++                    <div className={`font-display font-black tabular-nums ${enfasi ? 'text-5xl leading-none' : 'text-2xl'}`}>
+                         <span className={pnlClass(real)} data-testid="day-bar-realizzato">{fmtMoney(real, { signed: true })}</span>
+-                        {hasGoal && <span className="text-slate-500 text-lg"> · {pctText}</span>}
++                        {enfasi && hasGoal && (
++                            <span className="text-slate-400 text-2xl font-bold" data-testid="day-bar-obiettivo-grande" title={TIP.goalToday}>
++                                {' '}su <span className="text-secondary">{fmtMoney(g)}</span>
++                            </span>
++                        )}
++                        {hasGoal && <span className={`text-slate-500 ${enfasi ? 'text-2xl' : 'text-lg'}`}> · {pctText}</span>}
+                         {realizedNote != null && (
+                             <div className="text-[10.5px] font-sans font-normal text-slate-400 text-right"
+                                 data-testid="day-bar-realizzato-nota">{realizedNote}</div>
+@@ -147,8 +158,13 @@ export function DayBar({
+                 )}
+                 {/* W_G: un realizzato che manca si DICE (prima il numero spariva) */}
+                 {real === null && realizedMissing != null && (
+-                    <div className="font-display font-black text-2xl tabular-nums text-slate-500 text-right">
++                    <div className={`font-display font-black tabular-nums text-slate-500 text-right ${enfasi ? 'text-5xl leading-none' : 'text-2xl'}`}>
+                         <span data-testid="day-bar-realizzato">—</span>
++                        {enfasi && hasGoal && (
++                            <span className="text-slate-400 text-2xl font-bold" data-testid="day-bar-obiettivo-grande">
++                                {' '}su <span className="text-secondary">{fmtMoney(g)}</span>
++                            </span>
++                        )}
+                         <div className="text-[10.5px] font-sans font-normal text-amber-300/80"
+                             data-testid="day-bar-realizzato-nota">{realizedMissing}</div>
+                     </div>
+@@ -159,8 +175,9 @@ export function DayBar({
+                 className="text-sm text-slate-200 flex flex-wrap items-center gap-x-3 gap-y-1 tabular-nums"
+                 data-testid={tid.line}
+             >
+-                {hasGoal && <span title={TIP.goalToday}>{T.goalToday} <b className="text-secondary">{fmtMoney(g)}</b></span>}
+-                {hasGoal && <span className="text-slate-600" aria-hidden>·</span>}
++                {/* con `enfasi` l'obiettivo e' gia' scritto grande accanto al realizzato */}
++                {hasGoal && !enfasi && <span title={TIP.goalToday}>{T.goalToday} <b className="text-secondary">{fmtMoney(g)}</b></span>}
++                {hasGoal && !enfasi && <span className="text-slate-600" aria-hidden>·</span>}
+                 {(matches != null || operations != null) && (
+                     <>
+                         <span data-testid={tid.counts}>
+@@ -245,7 +262,7 @@ export function DayBar({
+ 
+             {hasGoal && (
+                 <div
+-                    className="relative h-5 mt-2 rounded-full bg-black/50 border border-white/10 overflow-hidden"
++                    className={`relative mt-2 rounded-full bg-black/50 border border-white/10 overflow-hidden ${enfasi ? 'h-8' : 'h-5'}`}
+                     role="progressbar"
+                     aria-valuemin={0}
+                     aria-valuemax={100}
+@@ -264,7 +281,7 @@ export function DayBar({
+                             style={{ left: `${Math.min(pct, pctPieno)}%`, width: `${Math.abs(pct - pctPieno)}%` }}
+                         />
+                     )}
+-                    <div className="absolute inset-0 flex items-center justify-center text-[11px] font-bold text-white/90 tabular-nums">
++                    <div className={`absolute inset-0 flex items-center justify-center font-bold text-white/90 tabular-nums ${enfasi ? 'text-sm' : 'text-[11px]'}`}>
+                         {pctText}
+                     </div>
+                 </div>
+diff --git a/frontend/src/pages/ControlRoom.test.tsx b/frontend/src/pages/ControlRoom.test.tsx
+index 68752da..0c81928 100644
+--- a/frontend/src/pages/ControlRoom.test.tsx
++++ b/frontend/src/pages/ControlRoom.test.tsx
+@@ -33,6 +33,7 @@ vi.mock('@/lib/liveOrders', async (orig) => ({
+ }));
+ 
+ import ControlRoom from './ControlRoom';
++import { fetchLiveAccount, fetchLiveHeartbeat } from '@/lib/liveOrders';
+ import { useControlRoom } from '@/components/controlroom/useControlRoom';
+ import type { GruppoCampionato, PartitaGiornata } from '@/lib/controlRoom';
+ // T_P3 (30/09): il campo `soldiVeri` dei finti si costruisce con le funzioni VERE
+@@ -269,7 +270,33 @@ describe('freni — un freno che nessuno vede non è un freno', () => {
+         expect(within(el).getByTestId('cr-stop-safe').textContent).toMatch(/Safe.*PAPER.*50,00/);
+         expect(within(el).getByTestId('cr-stop-mike').textContent).toMatch(/Mike.*LIVE.*50,00/);
+         expect(within(el).getByTestId('cr-stop-omega').textContent).toMatch(/Omega.*PAPER.*spento/);
+-        expect(within(el).getByTestId('cr-stop-conto-modifica').getAttribute('href')).toBe('/segui-live');
++        // 01/10 - CAMBIATO PERCHE' CAMBIA L'ORDINE: lo stop del conto si modifica
++        // QUI (prima: link a Segui Live). Stato del runner letto = modificabile.
++        expect((within(el).getByTestId('cr-stop-conto-valore') as HTMLButtonElement).disabled).toBe(false);
++    });
++
++    it('01/10: il cancello dei fogli parametri vale anche qui: i parametri GREZZI del bot (vm.bots[].params) aprono la modifica; non letti la chiudono', () => {
++        const v = vm({
++            stopPerdita: {
++                conto: stopDelConto(null, Date.parse('2026-09-14T15:00:00Z')),
++                bot: stopDeiBot({
++                    safe: { modalita: 'paper', risk: { daily_loss_stop: -50, loss_stop_active: false } },
++                    mike: { modalita: 'paper', params: { daily_loss_stop: 50 }, stats: { daily_stop: false } },
++                    omega: { modalita: 'paper', params: null },
++                }),
++            },
++        });
++        v.bots[2] = { ...v.bots[2], params: { daily_loss_stop: 50, max_open_matches: 10 } }; // Mike letto
++        mVm.mockReturnValue(v);
++        const el = mostra().getByTestId('cr-freni');
++        const mike = within(el).getByTestId('cr-stop-mike-valore') as HTMLButtonElement;
++        expect(mike.disabled).toBe(false);
++        fireEvent.click(mike);
++        expect((within(el).getByTestId('cr-stop-mike-campo') as HTMLInputElement).value).toBe('-50,00');
++        // Omega e Safe senza parametri nel finto: disabilitati, e lo dicono
++        expect((within(el).getByTestId('cr-stop-omega-valore') as HTMLButtonElement).disabled).toBe(true);
++        expect(within(el).getByTestId('cr-stop-omega-non-modificabile').textContent).toMatch(/parametri non letti/);
++        expect((within(el).getByTestId('cr-stop-conto-valore') as HTMLButtonElement).disabled).toBe(true);
+     });
+ 
+     it('stop già scattato: lo dice, non mostra solo un numero', () => {
+@@ -666,9 +693,11 @@ describe('runner — tre stati, non due', () => {
+         expect(within(mostra().getByTestId('cr-runner')).getByText(/vivo, in attesa/)).toBeTruthy();
+     });
+ 
+-    it('battito vecchio = spento', () => {
++    // 01/10 - CAMBIATO PERCHE' CAMBIA IL TESTO VOLUTO: «fermo» (ordine dell'utente:
++    // in attesa / in streaming / fermo)
++    it('battito vecchio = fermo', () => {
+         mVm.mockReturnValue(vm({ runner: { ts: '2026-09-02T17:55:00Z', mode: 'PAPER', ageS: 1_000_000, up: false } }));
+-        expect(within(mostra().getByTestId('cr-runner')).getByText(/spento/)).toBeTruthy();
++        expect(mostra().getByTestId('cr-runner-processo').textContent).toBe('processo: fermo');
+     });
+ 
+     it('MAI battuto non si confonde con spento: si dice «mai avviato»', () => {
+@@ -676,23 +705,43 @@ describe('runner — tre stati, non due', () => {
+         expect(within(mostra().getByTestId('cr-runner')).getByText(/mai avviato/)).toBeTruthy();
+     });
+ 
+-    it('stato non letto = «ignoto», e non si spaccia per spento', () => {
++    it('stato non letto = «stato non letto», e non si spaccia per fermo', () => {
+         mVm.mockReturnValue(vm({ runner: null }));
+-        expect(within(mostra().getByTestId('cr-runner')).getByText(/ignoto/)).toBeTruthy();
++        const el = mostra().getByTestId('cr-runner');
++        expect(within(el).getByTestId('cr-runner-processo').textContent).toMatch(/stato non letto/);
++        expect(el.textContent).not.toMatch(/fermo/);
+     });
+ 
+     // 25/09 (voce 6): la fonte e l'eta' della riga si DICHIARANO a video
++    // 01/10: con il NOME del canale e la parola «connesso»
+     it("dichiara la fonte: canale con l'eta' dell'ultimo messaggio, db col battito", () => {
+         mVm.mockReturnValue(vm({ fonteRunner: { fonte: 'canale', etaS: 3 } }));
+-        expect(mostra().getByTestId('cr-runner-fonte').textContent).toMatch(/canale 3/);
++        expect(mostra().getByTestId('cr-runner-fonte').textContent).toMatch(/canale 47331 .* ultimo messaggio 3 s fa/);
++        expect(screen.getByTestId('cr-runner-connessione').textContent).toBe('connesso');
+         cleanup();
+         mVm.mockReturnValue(vm({ fonteRunner: { fonte: 'database', etaS: 41 } }));
+-        expect(mostra().getByTestId('cr-runner-fonte').textContent).toMatch(/db 41/);
++        expect(mostra().getByTestId('cr-runner-fonte').textContent).toMatch(/database .* battito 41 s fa/);
++        expect(screen.getByTestId('cr-runner-connessione').textContent).toMatch(/non connesso/);
++    });
++
++    it('01/10: due tessere nominate, CALCIO (47331) e TENNIS (47332), prima dei freni', () => {
++        mVm.mockReturnValue(vm());
++        const s = mostra();
++        expect(s.getByTestId('cr-runner-nome').textContent).toBe('Runner CALCIO (canale 47331)');
++        expect(s.getByTestId('cr-runner-tennis-nome').textContent).toBe('Runner TENNIS (canale 47332)');
++        const blocco = s.getByTestId('cr-impianto-stop');
++        const impianto = within(blocco).getByTestId('cr-impianto');
++        const freni = within(blocco).getByTestId('cr-freni');
++        // i runner (impianto) vengono PRIMA degli stop
++        expect(impianto.compareDocumentPosition(freni) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+     });
+ 
+-    it('runner tennis: canale spento = "canale spento", mai "spento"', () => {
++    it('runner tennis: canale spento = "canale 47332 spento", mai "fermo"', () => {
+         mVm.mockReturnValue(vm({ runnerTennis: null }));
+-        expect(within(mostra().getByTestId('cr-runner-tennis')).getByText(/canale spento/)).toBeTruthy();
++        const el = mostra().getByTestId('cr-runner-tennis');
++        expect(within(el).getByTestId('cr-runner-tennis-fonte').textContent).toBe('canale 47332 spento');
++        expect(within(el).getByTestId('cr-runner-tennis-connessione').textContent).toMatch(/non connesso/);
++        expect(el.textContent).not.toMatch(/fermo/);
+     });
+ 
+     it('runner tennis collegato: vivo dal canale 47332, con la fonte', () => {
+@@ -702,7 +751,8 @@ describe('runner — tre stati, non due', () => {
+         }));
+         const el = mostra().getByTestId('cr-runner-tennis');
+         expect(within(el).getByText(/vivo, in attesa/)).toBeTruthy();
+-        expect(within(el).getByTestId('cr-runner-tennis-fonte').textContent).toMatch(/canale 2/);
++        expect(within(el).getByTestId('cr-runner-tennis-fonte').textContent).toMatch(/canale 47332 .* ultimo messaggio 2 s fa/);
++        expect(within(el).getByTestId('cr-runner-tennis-tetto').textContent).toBe('solo simulati');
+     });
+ });
+ 
+@@ -858,7 +908,8 @@ describe('onestà sulle fonti', () => {
+         expect(sc).not.toMatch(/ignota|senza spinta/);
+         expect(s.getByTestId('cr-bot-modo-mike').textContent).toBe('LIVE');
+         const runner = s.getByTestId('cr-runner').textContent ?? '';
+-        expect(runner).toMatch(/ordini veri consentiti/);
++        // 01/10: «ORDINI VERI consentiti» (maiuscolo voluto dall'ordine dell'utente)
++        expect(runner).toMatch(/ORDINI VERI consentiti/);
+         expect(runner).not.toMatch(/live\+paper/i);
+         expect(s.getByTestId('cr-dati-riassunto').textContent).toMatch(/Dati: dal database \(ogni 30 s\) per: quote scanner, stato scanner, Omega, Safe, Mike, Tennis/);
+     });
+@@ -1934,6 +1985,34 @@ describe('ZONA 1 — l’obiettivo vive UNA sola volta (Task 1/2)', () => {
+         expect(within(hero).getByTestId('cr-composizione-bot_tennis')).toBeTruthy();
+         expect(within(hero).getByTestId('cr-composizione-manuale')).toBeTruthy();
+     });
++
++    // 01/10 (ordine dell'utente): «elimina la card del saldo conto (e' gia' in
++    // header), allarga la card dell'obiettivo»
++    it('01/10: la card del SALDO non e\' montata (nessuna sua lettura parte); l\'obiettivo e\' l\'unico contenuto della zona', () => {
++        mVm.mockReturnValue(vm());
++        const s = mostra();
++        expect(s.queryByTestId('cr-saldo')).toBeNull();
++        expect(s.queryByText(/Saldo conto Betfair/)).toBeNull();
++        // `useControlRoom` e' finto: l'unico che chiamerebbe queste letture era la card
++        expect(vi.mocked(fetchLiveAccount)).not.toHaveBeenCalled();
++        expect(vi.mocked(fetchLiveHeartbeat)).not.toHaveBeenCalled();
++        const zona = s.getByTestId('cr-zona-obiettivo');
++        expect(zona.children.length).toBe(1);
++        expect(zona.firstElementChild?.getAttribute('data-testid')).toBe('cr-obiettivo');
++    });
++
++    it('01/10: obiettivo e realizzato GRANDI; la fonte del realizzato resta accanto al numero', () => {
++        mVm.mockReturnValue(vm());
++        const s = mostra();
++        const hero = s.getByTestId('cr-obiettivo');
++        const grande = within(hero).getByTestId('day-bar-obiettivo-grande');
++        expect(grande.textContent).toMatch(/su 250,00/);
++        expect(within(hero).getByTestId('day-bar-realizzato').parentElement?.className).toMatch(/text-5xl/);
++        expect(within(hero).getByTestId('day-bar-realizzato').textContent).toMatch(/96,40/);
++        expect(within(hero).getByTestId('cr-giornata-realizzato-fonte')).toBeTruthy();
++        // l'obiettivo e' scritto UNA volta (grande), non ripetuto nella riga
++        expect(within(hero).getByTestId('cr-giornata-riga').textContent).not.toMatch(/Obiettivo di oggi/);
++    });
+ });
+ 
+ describe('ZONA 5 — la Catena è richiudibile, chiusa di default (Task 1)', () => {
+diff --git a/frontend/src/pages/ControlRoom.tsx b/frontend/src/pages/ControlRoom.tsx
+index d7d402a..6c19f94 100644
+--- a/frontend/src/pages/ControlRoom.tsx
++++ b/frontend/src/pages/ControlRoom.tsx
+@@ -51,7 +51,6 @@ import {
+     statoPartitaAperta, type StatoPartitaAperta, type EsitoStatoPartita,
+ } from '@/components/controlroom/aperte/statoPartitaAperta';
+ import { ObiettivoHero } from '@/components/controlroom/ObiettivoHero';
+-import { SaldoBetfairCard } from '@/components/controlroom/SaldoBetfairCard';
+ import { UsciteColonna } from '@/components/controlroom/UsciteColonna';
+ import { OpportunitaColonna } from '@/components/controlroom/OpportunitaColonna';
+ import { pnlClass } from '@/lib/tradeStatus';
+@@ -62,7 +61,7 @@ import {
+     BOT_LABEL, affidabilePerPiazzare, BOT_TENNIS, isBotTennis,
+     type Bot, type GruppoCampionato, type Freschezza, type PartitaGiornata,
+ } from '@/lib/controlRoom';
+-import { runnerPhase, type RunnerPhase } from '@/lib/safeBot';
++import { runnerPhase } from '@/lib/safeBot';
+ import { fmtMs, totaleCatena, totaleNostro, colloDiBottiglia } from '@/lib/controlRoomCatena';
+ import type { StatoChiusuraEvento } from '@/lib/chiusuraUtente';
+ import {
+@@ -77,8 +76,9 @@ import { ProposteUsciteFlusso } from '@/components/controlroom/ProposteUsciteFlu
+ import { RigaCapacitaMercati } from '@/components/controlroom/RigaCapacitaMercati';
+ import { FasciaSoldiVeri } from '@/components/controlroom/testata/FasciaSoldiVeri';
+ import { StopPerdita } from '@/components/controlroom/testata/FasciaStop';
++import { TesseraRunner } from '@/components/controlroom/testata/TesseraRunner';
+ import {
+-    modoChip, statoChip, usciteChip, pallinoChip, aggiornatoChip, tettoRunner, sorgenteFeed, riassuntoDati, type Tono,
++    modoChip, statoChip, usciteChip, pallinoChip, aggiornatoChip, sorgenteFeed, riassuntoDati, type Tono,
+ } from '@/components/controlroom/testata/paroleImpianto';
+ import {
+     STAKE_TENNIS, differenzeSoloTennis, altreInLiveAdesso,
+@@ -138,17 +138,7 @@ const BOT_CLS: Record<Bot, string> = {
+ };
+ 
+ 
+-/** I TRE STATI DEL RUNNER — «vivo» non basta.
+- *  14/09: il battito diceva «2 settembre» mentre il processo girava (corretto in
+- *  `ad68253`: ora batte anche da fermo). Ma «vivo» e «utilizzabile» restano due
+- *  cose diverse: `live_order_worker` nasce dentro il framework, quindi con il
+- *  runner IN ATTESA la coda non ha nessuno dall'altro capo. Il dubbio non
+- *  concede mai la coda (`runnerPhase`, fail-closed). */
+-const FASE_RUNNER: Record<RunnerPhase, string> = {
+-    off: 'spento',
+-    idle: 'vivo, in attesa',
+-    streaming: 'in streaming',
+-};
++// 01/10 - le parole dei tre stati del runner vivono in `testata/TesseraRunner.tsx`.
+ 
+ /**
+  * COSA DIRE DI UN PREZZO — segnalato dall'utente il 14/09 su «Quote 2 min».
+@@ -531,7 +521,7 @@ export default function ControlRoom() {
+                 ) : undefined}
+             />
+ 
+-            {/* ═══ ZONA 1 — L'OBIETTIVO (hero, una volta sola) + SALDO ═══════
++            {/* ═══ ZONA 1 — L'OBIETTIVO (hero, una volta sola, tutta la larghezza) ═══════
+                 ⚠️ REVIEW 15/09 — `live` riceve le POSIZIONI aperte con soldi
+                 veri, non le partite in gioco: in tutta la piattaforma quella
+                 etichetta significa «posizioni ancora vive, non regolate», e
+@@ -545,7 +535,11 @@ export default function ControlRoom() {
+                 tocca `params`/`mode`). L'AVVISO sul motore non si nasconde:
+                 Omega legge `daily_goal` a OGNI ciclo (`omega_service.py`), un
+                 bot in corsa vede il nuovo target dal ciclo successivo. */}
+-            <div className="grid gap-4 lg:grid-cols-[1.9fr_1fr] items-start">
++            {/* 01/10 (ordine dell'utente): la card del SALDO non si monta piu'
++                qui (saldo disponibile ed esposizione sono gia' in testata, nella
++                fascia SOLDI VERI ADESSO, con la stessa fonte e la stessa eta'):
++                l'obiettivo occupa tutta la larghezza. */}
++            <div data-testid="cr-zona-obiettivo">
+                 <ObiettivoHero
+                     dayBar={{
+                         dayLabel: etichettaGiorno(giornoOperativo),
+@@ -614,7 +608,6 @@ export default function ControlRoom() {
+                             : null
+                     }
+                 />
+-                <SaldoBetfairCard testId="cr-saldo" />
+             </div>
+ 
+             {/* I GIORNI PRECEDENTI HANNO UNA CASA. Tutta questa pagina parla
+@@ -1013,9 +1006,19 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
+                     conto, 30/09) non compare piu'. Mai 0,00 per un dato non
+                     letto: «—» e il motivo. */}
+                 <FasciaSoldiVeri s={vm.soldiVeri} />
+-                <Freni stop={vm.stopPerdita} qualcheBotLive={vm.bots.some((b) => b.modalita === 'live')} />
+-                <Runner r={vm.runner} fonte={vm.fonteRunner} />
+-                <Runner r={vm.runnerTennis} fonte={vm.fonteRunnerTennis} tennis />
++                {/* 01/10 - IMPIANTO E STOP, in quest'ordine: prima i due runner
++                    (una tessera ciascuno, nominata), poi gli stop di perdita
++                    (una riga per stop, modificabili sul posto). */}
++                <div className="flex items-start gap-x-4 gap-y-2 flex-wrap" data-testid="cr-impianto-stop">
++                    <div className="flex flex-col gap-0.5" data-testid="cr-impianto">
++                        <span className="text-[10px] uppercase tracking-wider text-white/45">Runner</span>
++                        <div className="flex items-stretch gap-2">
++                            <TesseraRunner sport="calcio" r={vm.runner} fonte={vm.fonteRunner} />
++                            <TesseraRunner sport="tennis" r={vm.runnerTennis} fonte={vm.fonteRunnerTennis} />
++                        </div>
++                    </div>
++                    <Freni vm={vm} />
++                </div>
+ 
+                 <div className="flex items-stretch gap-3" data-testid="cr-bots">
+                     {vm.bots.map((b) => <ChipBot key={b.bot} b={b} nowMs={vm.nowMs} />)}
+@@ -1081,66 +1084,6 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
+     );
+ }
+ 
+-/**
+- * STATO DEL RUNNER — tre stati, non due.
+- *
+- * 14/09: il battito diceva «2 settembre» mentre il processo girava, perché chi
+- * lo scrive vive dentro il framework e il runner era parcheggiato in attesa di
+- * eventi. Tre sessioni hanno inseguito un runner morto che stava benissimo.
+- * Adesso il runner batte anche da fermo: battito fresco = processo vivo.
+- * «Vivo ma senza lavoro» è uno stato LEGITTIMO e si scrive così — un
+- * indicatore che grida guasto su un comportamento normale fa ignorare anche i
+- * guasti veri.
+- */
+-function Runner({ r, fonte, tennis = false }: {
+-    r: ReturnType<typeof useControlRoom>['runner'];
+-    /** 25/09 (voce 6): da dove viene la riga e quanto e' vecchia la notizia */
+-    fonte: ReturnType<typeof useControlRoom>['fonteRunner'];
+-    /** il runner TENNIS: solo dal canale 47332 (nessun battito sul database) */
+-    tennis?: boolean;
+-}) {
+-    const testid = tennis ? 'cr-runner-tennis' : 'cr-runner';
+-    const etichetta = tennis ? 'Runner tennis' : 'Runner';
+-    const notaFonte = (
+-        <span className="text-[9.5px] text-white/30" data-testid={`${testid}-fonte`}
+-            title="canale locale (processo collegato, eta' dell'ultimo messaggio) o database (battito al giro dei 30 s)">
+-            {fonte.fonte === 'canale' ? 'canale' : 'db'} {fonte.etaS == null ? DASH : fmtAge(fonte.etaS)}
+-        </span>
+-    );
+-    if (r == null) {
+-        return (
+-            <div className="flex flex-col" data-testid={testid}
+-                title={tennis ? 'canale del runner tennis (47332) spento: stato non noto' : 'stato del runner non letto'}>
+-                <span className="text-[10px] uppercase tracking-wider text-white/40">{etichetta}</span>
+-                <span className="font-mono text-sm font-semibold text-white/60">{tennis ? 'canale spento' : 'ignoto'}</span>
+-            </div>
+-        );
+-    }
+-    // «mai battuto» vale GIU', non «non lo so»: un runner che non ha mai dato
+-    // segno di vita non sta eseguendo niente.
+-    const fase: RunnerPhase = runnerPhase(r);
+-    const testo = r.ageS == null ? 'mai avviato' : FASE_RUNNER[fase];
+-    const cls = fase === 'streaming' ? 'text-emerald-400' : fase === 'idle' ? 'text-secondary' : 'text-orange-400';
+-    const tetto = tettoRunner(r.mode);
+-    return (
+-        <div className="flex flex-col" data-testid={testid}
+-            title={r.ageS != null ? `ultimo battito ${fmtAge(Math.round(r.ageS))} fa` : 'il runner non ha mai battuto'}>
+-            <span className="text-[10px] uppercase tracking-wider text-white/40">{etichetta}</span>
+-            <span className={`font-mono text-sm font-semibold ${cls}`}>
+-                {testo}
+-                {/* T_P5 (30/09): «live+paper» era il TETTO del .env del runner
+-                    (runner.py::heartbeat_mode), non il modo di un bot */}
+-                {tetto && (
+-                    <span className="text-white/40" data-testid={`${testid}-tetto`} title={tetto.titolo}>
+-                        {' · '}{tetto.testo}
+-                    </span>
+-                )}
+-            </span>
+-            {notaFonte}
+-        </div>
+-    );
+-}
+-
+ /**
+  * L'ULTIMO FRENO. I cap sono spenti per decisione dell'utente: lo stop di
+  * perdita giornaliera è l'unica cosa che resta fra un comportamento imprevisto
+@@ -1150,13 +1093,26 @@ function Runner({ r, fonte, tennis = false }: {
+ // P4 (30/09) - «Stop perdita −50,00» era lo stop di SAFE presentato come se
+ // fosse l'unico: adesso il contenitore `cr-freni` porta lo stop del CONTO e
+ // quello di ogni bot, con modalita' e punto dove si modifica (`StopPerdita`).
+-function Freni({ stop, qualcheBotLive }: {
+-    stop: ReturnType<typeof useControlRoom>['stopPerdita'] | undefined;
+-    qualcheBotLive: boolean;
+-}) {
++// 01/10 - ogni stop si modifica sul posto: i parametri grezzi dei bot sono
++// quelli gia' nel modello di vista (`vm.bots[].params`, gli stessi dei fogli
++// parametri e del loro cancello «parametri non letti»), fonte ed eta' dello
++// stato del servizio idem (`fonteStato`/`etaStatoS`). Nessuna lettura nuova.
++function Freni({ vm }: { vm: ReturnType<typeof useControlRoom> }) {
++    const di = (b: 'safe' | 'mike' | 'omega') => vm.bots.find((x) => x.bot === b);
+     return (
+         <div className="flex flex-col" data-testid="cr-freni">
+-            <StopPerdita stop={stop} qualcheBotLive={qualcheBotLive} />
++            <StopPerdita
++                stop={vm.stopPerdita}
++                qualcheBotLive={vm.bots.some((b) => b.modalita === 'live')}
++                params={{ safe: di('safe')?.params ?? null, mike: di('mike')?.params ?? null, omega: di('omega')?.params ?? null }}
++                statoServizio={{
++                    safe: { fonte: di('safe')?.fonteStato, etaS: di('safe')?.etaStatoS },
++                    mike: { fonte: di('mike')?.fonteStato, etaS: di('mike')?.etaStatoS },
++                    omega: { fonte: di('omega')?.fonteStato, etaS: di('omega')?.etaStatoS },
++                }}
++                strategieLive={{ safe: Object.values(di('safe')?.modiStrategia ?? {}).includes('live') }}
++                onSalvato={vm.ricarica}
++            />
+         </div>
+     );
+ }
+diff --git a/frontend/src/components/controlroom/testata/TesseraRunner.tsx b/frontend/src/components/controlroom/testata/TesseraRunner.tsx
+new file mode 100644
+index 0000000..363ba56
+--- /dev/null
++++ b/frontend/src/components/controlroom/testata/TesseraRunner.tsx
+@@ -0,0 +1,138 @@
++// ============================================================================
++// TesseraRunner.tsx - 01/10: i due runner in testata, una TESSERA ciascuno.
++//
++// Ordine dell'utente (01/10): "i segnali di vita dei runner: devo sapere se il
++// runner e' connesso e di che runner parliamo, calcio o tennis". Ieri:
++// "Runner vivo, in attesa - ordini veri consentiti canale 5 s" e "Runner
++// tennis vivo, in attesa - solo simulati": illeggibile.
++//
++// Ogni tessera dice, una riga per cosa:
++//   * QUALE runner: "Runner CALCIO (canale 47331)" / "Runner TENNIS (canale 47332)";
++//   * CONNESSO o no al canale locale (pallino): `fonte === 'canale'` vuol dire
++//     che il canale del processo e' collegato e ha parlato
++//     (`lib/runnerCanale.ts::runnerDalCanale`); il calcio senza canale ripiega
++//     sul battito del database, il tennis non ha un battito sul database;
++//   * il PROCESSO: in streaming / vivo, in attesa / fermo / mai avviato
++//     (`runnerPhase`, fail-closed: il dubbio vale attesa, mai streaming);
++//   * gli ORDINI che il runner PUO' servire (tetto del suo .env,
++//     `tettoRunner`): ORDINI VERI consentiti col colore LIVE, solo simulati col
++//     colore PAPER. Non e' il modo di un bot (lo dicono i chip dei bot);
++//   * FONTE ed ETA' dell'ultima notizia.
++// Solo presentazione: nessuna lettura nuova, i dati sono quelli che il hook
++// gia' calcola (`vm.runner`, `vm.fonteRunner`, `vm.runnerTennis`,
++// `vm.fonteRunnerTennis`).
++// ============================================================================
++import { fmtAge } from '@/lib/format';
++import { runnerPhase, type RunnerPhase, type RunnerState } from '@/lib/safeBot';
++import type { FonteRunner } from '@/lib/runnerCanale';
++import { tettoRunner, type Tono } from './paroleImpianto';
++
++export type SportRunner = 'calcio' | 'tennis';
++
++export const PORTA_RUNNER: Record<SportRunner, number> = { calcio: 47331, tennis: 47332 };
++
++export interface TesseraRunnerVista {
++    titolo: string;
++    porta: number;
++    connesso: boolean;
++    connessione: string;
++    processo: { testo: string; tono: Tono };
++    ordini: { testo: string; tono: Tono; titolo: string };
++    fonte: string;
++}
++
++const PROCESSO: Record<RunnerPhase, { testo: string; tono: Tono }> = {
++    streaming: { testo: 'in streaming', tono: 'ok' },
++    idle: { testo: 'vivo, in attesa', tono: 'neutro' },
++    off: { testo: 'fermo', tono: 'allarme' },
++};
++
++/** Funzione PURA: cosa scrive la tessera. */
++export function descriviRunner(
++    sport: SportRunner,
++    r: RunnerState | null,
++    fonte: { fonte: FonteRunner; etaS: number | null },
++): TesseraRunnerVista {
++    const porta = PORTA_RUNNER[sport];
++    const titolo = `Runner ${sport === 'calcio' ? 'CALCIO' : 'TENNIS'}`;
++    const connesso = r != null && fonte.fonte === 'canale';
++    const eta = fonte.etaS == null ? null : fmtAge(fonte.etaS);
++
++    if (r == null) {
++        return {
++            titolo, porta, connesso: false,
++            connessione: 'non connesso',
++            processo: sport === 'tennis'
++                ? { testo: 'stato non noto (il runner tennis non scrive un battito sul database)', tono: 'attenzione' }
++                : { testo: 'stato non letto', tono: 'attenzione' },
++            ordini: { testo: 'ordini: non noto', tono: 'attenzione', titolo: 'il runner non ha dichiarato cosa puo\' servire' },
++            fonte: sport === 'tennis' ? `canale ${porta} spento` : 'canale e database non letti',
++        };
++    }
++    const processo = r.ageS == null
++        ? { testo: 'mai avviato', tono: 'allarme' as Tono }
++        : PROCESSO[runnerPhase(r)];
++    const tetto = tettoRunner(r.mode);
++    const ordini = tetto == null
++        ? { testo: 'ordini: non dichiarato', tono: 'attenzione' as Tono, titolo: 'il runner non ha dichiarato LIVE_ORDER_MODE' }
++        : tetto.testo === 'ordini veri consentiti'
++            ? { testo: 'ORDINI VERI consentiti', tono: 'live' as Tono, titolo: tetto.titolo }
++            : tetto.testo === 'solo simulati'
++                ? { testo: 'solo simulati', tono: 'paper' as Tono, titolo: tetto.titolo }
++                : { testo: tetto.testo, tono: 'neutro' as Tono, titolo: tetto.titolo };
++    return {
++        titolo, porta, connesso,
++        connessione: connesso ? 'connesso' : 'non connesso al canale',
++        processo,
++        ordini,
++        fonte: connesso
++            ? `canale ${porta} \u00b7 ultimo messaggio ${eta ?? '?'} fa`
++            : `database (battito ogni 30 s) \u00b7 battito ${eta ?? '?'} fa`,
++    };
++}
++
++const TONO_CLS: Record<Tono, string> = {
++    live: 'text-red-300 font-semibold',
++    paper: 'text-slate-300',
++    neutro: 'text-white/70',
++    ok: 'text-emerald-400',
++    attenzione: 'text-amber-300',
++    allarme: 'text-orange-400 font-semibold',
++};
++
++export function TesseraRunner({ sport, r, fonte }: {
++    sport: SportRunner;
++    r: RunnerState | null;
++    fonte: { fonte: FonteRunner; etaS: number | null };
++}) {
++    const t = sport === 'tennis' ? 'cr-runner-tennis' : 'cr-runner';
++    const v = descriviRunner(sport, r, fonte);
++    return (
++        <div className="flex flex-col gap-0.5 rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 min-w-[11rem]"
++            data-testid={t}
++            title={r?.ageS != null ? `ultimo battito del processo ${fmtAge(Math.round(r.ageS))} fa` : undefined}>
++            <span className="text-[10.5px] tracking-wide text-white/80 font-semibold" data-testid={`${t}-nome`}>
++                {v.titolo} <span className="font-normal text-white/40">(canale {v.porta})</span>
++            </span>
++            <span className="flex items-center gap-1.5 text-[11px]" data-testid={`${t}-connessione`}
++                title="canale locale del processo: collegato = notizie in tempo reale dal runner">
++                <span aria-hidden className={`inline-block w-2 h-2 rounded-full ${v.connesso ? 'bg-emerald-400' : 'bg-orange-400'}`}
++                    data-testid={`${t}-pallino`} data-connesso={v.connesso ? '1' : '0'} />
++                <span className={v.connesso ? 'text-emerald-300' : 'text-orange-300'}>{v.connessione}</span>
++            </span>
++            <span className="text-[11px]" data-testid={`${t}-processo`}>
++                <span className="text-white/45">processo: </span>
++                <span className={TONO_CLS[v.processo.tono]}>{v.processo.testo}</span>
++            </span>
++            <span className={`text-[11px] ${TONO_CLS[v.ordini.tono]}`} data-testid={`${t}-tetto`} title={v.ordini.titolo}>
++                {v.ordini.testo}
++            </span>
++            <span className="text-[9.5px] text-white/35" data-testid={`${t}-fonte`}
++                title="canale locale (processo collegato, eta' dell'ultimo messaggio) o database (battito al giro dei 30 s)">
++                {v.fonte}
++            </span>
++        </div>
++    );
++}
++
++export default TesseraRunner;
+diff --git a/frontend/src/components/controlroom/testata/TesseraRunner.test.tsx b/frontend/src/components/controlroom/testata/TesseraRunner.test.tsx
+new file mode 100644
+index 0000000..4306e37
+--- /dev/null
++++ b/frontend/src/components/controlroom/testata/TesseraRunner.test.tsx
+@@ -0,0 +1,73 @@
++// ============================================================================
++// TesseraRunner.test.tsx - 01/10: le due tessere dei runner in testata.
++// Finti con le chiavi del vero: `RunnerState` (lib/safeBot: ts, mode, ageS,
++// up, streaming) come lo costruisce `runnerDalCanale` (lib/runnerCanale.ts),
++// e `{ fonte: 'canale' | 'database', etaS }` come `vm.fonteRunner`.
++// `mode` = le modalita' SERVITE dichiarate dal runner (heartbeat_mode():
++// 'LIVE+PAPER' | 'PAPER' | 'OFF').
++// ============================================================================
++import { describe, it, expect } from 'vitest';
++import { render, screen } from '@testing-library/react';
++import { TesseraRunner, descriviRunner } from './TesseraRunner';
++import type { RunnerState } from '@/lib/safeBot';
++
++const CALCIO_CANALE: RunnerState = { ts: '2026-10-01T08:00:00.000Z', mode: 'LIVE+PAPER', ageS: 5, up: true, streaming: 0 };
++const TENNIS_CANALE: RunnerState = { ts: '2026-10-01T08:00:00.000Z', mode: 'PAPER', ageS: 2, up: true, streaming: null };
++
++describe('descriviRunner - di che runner parliamo e se e\' connesso', () => {
++    it('CALCIO dal canale: nome, porta 47331, connesso, vivo in attesa, ORDINI VERI col tono LIVE, fonte ed eta\'', () => {
++        const v = descriviRunner('calcio', CALCIO_CANALE, { fonte: 'canale', etaS: 5 });
++        expect(v.titolo).toBe('Runner CALCIO');
++        expect(v.porta).toBe(47331);
++        expect(v.connesso).toBe(true);
++        expect(v.connessione).toBe('connesso');
++        expect(v.processo).toEqual({ testo: 'vivo, in attesa', tono: 'neutro' });
++        expect(v.ordini.testo).toBe('ORDINI VERI consentiti');
++        expect(v.ordini.tono).toBe('live');
++        expect(v.fonte).toBe('canale 47331 · ultimo messaggio 5 s fa');
++    });
++    it('TENNIS dal canale: porta 47332, solo simulati col tono PAPER', () => {
++        const v = descriviRunner('tennis', TENNIS_CANALE, { fonte: 'canale', etaS: 2 });
++        expect(v.titolo).toBe('Runner TENNIS');
++        expect(v.porta).toBe(47332);
++        expect(v.connesso).toBe(true);
++        expect(v.ordini).toMatchObject({ testo: 'solo simulati', tono: 'paper' });
++    });
++    it('CALCIO senza canale (ripiego sul battito del database): NON connesso, fonte database', () => {
++        const v = descriviRunner('calcio', { ...CALCIO_CANALE, ageS: 30, streaming: 2 }, { fonte: 'database', etaS: 30 });
++        expect(v.connesso).toBe(false);
++        expect(v.connessione).toBe('non connesso al canale');
++        expect(v.processo.testo).toBe('in streaming');
++        expect(v.fonte).toMatch(/^database \(battito ogni 30 s\)/);
++    });
++    it('TENNIS canale spento (null): non connesso, stato NON NOTO (mai "fermo")', () => {
++        const v = descriviRunner('tennis', null, { fonte: 'database', etaS: null });
++        expect(v.connesso).toBe(false);
++        expect(v.processo.testo).toMatch(/non noto/);
++        expect(v.processo.testo).not.toMatch(/fermo/);
++        expect(v.fonte).toBe('canale 47332 spento');
++    });
++    it('battito vecchio = fermo; mai battuto = mai avviato; streaming non letto = attesa (mai streaming)', () => {
++        expect(descriviRunner('calcio', { ts: '2026-09-02T17:55:00Z', mode: 'PAPER', ageS: 1_000_000, up: false }, { fonte: 'database', etaS: 1_000_000 }).processo.testo).toBe('fermo');
++        expect(descriviRunner('calcio', { ts: null, mode: null, ageS: null, up: false }, { fonte: 'database', etaS: null }).processo.testo).toBe('mai avviato');
++        expect(descriviRunner('calcio', { ...CALCIO_CANALE, streaming: null }, { fonte: 'canale', etaS: 5 }).processo.testo).toBe('vivo, in attesa');
++    });
++});
++
++describe('TesseraRunner - a schermo', () => {
++    it('due tessere distinte e nominate, con pallino connesso/non connesso', () => {
++        render(<>
++            <TesseraRunner sport="calcio" r={CALCIO_CANALE} fonte={{ fonte: 'canale', etaS: 5 }} />
++            <TesseraRunner sport="tennis" r={null} fonte={{ fonte: 'database', etaS: null }} />
++        </>);
++        expect(screen.getByTestId('cr-runner-nome').textContent).toBe('Runner CALCIO (canale 47331)');
++        expect(screen.getByTestId('cr-runner-tennis-nome').textContent).toBe('Runner TENNIS (canale 47332)');
++        expect(screen.getByTestId('cr-runner-pallino').getAttribute('data-connesso')).toBe('1');
++        expect(screen.getByTestId('cr-runner-pallino').className).toMatch(/emerald/);
++        expect(screen.getByTestId('cr-runner-tennis-pallino').getAttribute('data-connesso')).toBe('0');
++        expect(screen.getByTestId('cr-runner-tennis-connessione').textContent).toMatch(/non connesso/);
++        expect(screen.getByTestId('cr-runner-tetto').textContent).toBe('ORDINI VERI consentiti');
++        expect(screen.getByTestId('cr-runner-tetto').className).toMatch(/red/);
++        expect(screen.getByTestId('cr-runner-processo').textContent).toBe('processo: vivo, in attesa');
++    });
++});
+diff --git a/frontend/src/components/controlroom/testata/salvaStop.ts b/frontend/src/components/controlroom/testata/salvaStop.ts
+new file mode 100644
+index 0000000..1ba8644
+--- /dev/null
++++ b/frontend/src/components/controlroom/testata/salvaStop.ts
+@@ -0,0 +1,163 @@
++// ============================================================================
++// salvaStop.ts - 01/10: lo stop di perdita si modifica DALLA TESTATA.
++//
++// Ordine dell'utente (01/10): "stop perdita devo poterlo modificare
++// direttamente da qui". Nessun punto di salvataggio nuovo: ogni stop si scrive
++// con la STESSA funzione e le STESSE chiavi del posto dove si modificava ieri.
++//
++//   * CONTO -> `setLiveSettings({ daily_loss_limit })` (RPC `set_live_settings`,
++//     la stessa di `LiveControlsPanel.handleSave`): la RPC aggiorna SOLO le
++//     chiavi passate (`migrations/betfair_live_risk_limits_v4.sql`). Stessa
++//     regola del pannello: valore > 0, vuoto = stop SPENTO (null).
++//   * SAFE  -> `updateSafeParams(fromValues(...))` (RPC `safe_update_params`),
++//     cioe' esattamente il percorso del foglio `BotParamsSheet.save`: si parte
++//     da `toValues(mergeBotParams(raw), mergeExits(raw.exits), raw)`, si cambia
++//     SOLO `risk.daily_loss_stop` e si ricompone con `fromValues` (chiavi
++//     ignote preservate: la RPC SOSTITUISCE l'intero oggetto). Stesso rifiuto
++//     del foglio se non c'e' nessuna strategia abilitata. Il servizio legge il
++//     valore assoluto (`risk.py:84-88`): si scrive negativo, come il predefinito.
++//   * MIKE  -> `updateMikeParams(mergeMikeParams({...mergeMikeParams(raw),
++//     daily_loss_stop}))` (RPC `mike_update_params`), il percorso di
++//     `MikeParamsSheet` (`onSave(mergeMikeParams(v))`). Positivo, 0 = spento,
++//     tetto 100000 (`MIKE_PARAM_FIELDS`).
++//   * OMEGA -> `updateOmegaParams({ params: omegaParamsPatch(raw, {chiave}) })`
++//     (RPC `omega_update_params`), il percorso di `OmegaParamsSheet.save`:
++//     stato del servizio + SOLO la chiave cambiata. La chiave e' quella che il
++//     servizio applica (motore v3 -> `v3_daily_loss_cap`, v2 -> `daily_loss_cap`,
++//     la stessa scelta di `stopDeiBot`). L'obiettivo NON si manda (la RPC fa
++//     `coalesce(p_daily_goal, daily_goal)`): non si tocca.
++//
++// CANCELLO "parametri non letti" (ControlRoom.tsx `fogliParametri`): con i
++// parametri di un bot non letti NON si salva (si sostituirebbero quelli veri
++// con i predefiniti). Qui la funzione rifiuta, e il componente disabilita.
++//
++// La cifra di ritorno e' quella della riga RESTITUITA dal database dopo la
++// scrittura, mai quella digitata.
++// ============================================================================
++import { setLiveSettings, type LiveSettings } from '@/lib/liveOrders';
++import { mergeBotParams, updateSafeParams, normalizeLossStop, type SafeControl } from '@/lib/safeBot';
++import { mergeMikeParams, updateMikeParams, type MikeControl, type MikeParams } from '@/lib/mike';
++import { omegaParamsPatch, updateOmegaParams, OMEGA_PARAM_DEFAULTS, type OmegaControl, type OmegaParams } from '@/lib/omega';
++import { toValues, fromValues, mergeExits } from '@/components/safestrategy/BotParamsSheet';
++import type { BotConStop } from './stopPerdita';
++
++export type ProprietarioStop = 'conto' | BotConStop;
++
++/** Tetti dei campi dei fogli (gli stessi `max` delle loro spec). */
++const TETTO: Record<ProprietarioStop, number> = {
++    conto: 1_000_000, safe: 1_000_000, mike: 100_000, omega: 1_000_000,
++};
++
++export type LetturaImporto =
++    | { ok: true; perdita: number | null }
++    | { ok: false; errore: string };
++
++/**
++ * Il testo del campo -> perdita massima in euro (POSITIVA, al centesimo).
++ * "-50", "-50,5", "50" sono la stessa perdita (il segno meno e' la convenzione
++ * a schermo: negativo = perdita massima). `null` = stop SPENTO: per il conto
++ * il campo vuoto (regola di `LiveControlsPanel`), per i bot lo 0 (regola dei
++ * loro fogli: "0 = OFF").
++ */
++export function leggiImporto(testo: string, chi: ProprietarioStop): LetturaImporto {
++    const t = String(testo ?? '').trim().replace(/\u2212/g, '-').replace(/\s|\u20ac/g, '').replace(',', '.');
++    if (t === '') {
++        return chi === 'conto'
++            ? { ok: true, perdita: null }
++            : { ok: false, errore: 'scrivi un importo (0 = stop spento)' };
++    }
++    if (!/^-?\d+(\.\d{1,2})?$/.test(t)) {
++        return { ok: false, errore: 'importo non valido: euro al centesimo, es. \u221250 o \u221250,50' };
++    }
++    const v = Math.abs(Number(t));
++    if (!Number.isFinite(v)) return { ok: false, errore: 'importo non valido' };
++    if (v === 0) {
++        return chi === 'conto'
++            ? { ok: false, errore: 'per il conto 0 non vale: lascia vuoto per spegnere lo stop' }
++            : { ok: true, perdita: null };
++    }
++    if (v > TETTO[chi]) return { ok: false, errore: `oltre il massimo ammesso (${TETTO[chi]})` };
++    return { ok: true, perdita: Math.round(v * 100) / 100 };
++}
++
++/** La chiave dello stop di Omega che il servizio applica (stessa scelta di `stopDeiBot`). */
++export function chiaveStopOmega(raw: Record<string, unknown>): 'v3_daily_loss_cap' | 'daily_loss_cap' {
++    const v = typeof raw.strategy_version === 'number' && Number.isFinite(raw.strategy_version)
++        ? raw.strategy_version : OMEGA_PARAM_DEFAULTS.strategy_version;
++    return v >= 3 ? 'v3_daily_loss_cap' : 'daily_loss_cap';
++}
++
++function letti(p: Record<string, unknown> | null | undefined): p is Record<string, unknown> {
++    return p != null && Object.keys(p).length > 0;
++}
++
++export class StopNonSalvabile extends Error {}
++
++/**
++ * Il payload ESATTO che il foglio del proprietario manderebbe cambiando solo
++ * lo stop. `perdita` positiva, `null` = spento. Lancia `StopNonSalvabile` se
++ * il cancello dei parametri non letti lo vieta.
++ */
++export function payloadStop(chi: ProprietarioStop, perdita: number | null, raw: Record<string, unknown> | null = null): Record<string, unknown> {
++    if (chi === 'conto') return { daily_loss_limit: perdita };
++    if (!letti(raw)) throw new StopNonSalvabile(`parametri di ${chi} non letti: salvare ora sostituirebbe quelli veri con i predefiniti`);
++    const p = perdita ?? 0;
++    if (chi === 'safe') {
++        const params = mergeBotParams(raw);
++        const v = toValues(params, mergeExits(raw.exits), raw);
++        // il servizio legge il valore assoluto; si scrive negativo (come il predefinito -50)
++        v['risk.daily_loss_stop'] = normalizeLossStop(p) ?? 0;
++        // H-14 del foglio: mai una lista di strategie vuota
++        if (params.variants.length === 0) {
++            throw new StopNonSalvabile('nessuna strategia abilitata su Safe: il foglio rifiuta di salvare, aprilo e scegline almeno una');
++        }
++        return fromValues(v, params.variants, raw) as Record<string, unknown>;
++    }
++    if (chi === 'mike') {
++        return mergeMikeParams({ ...mergeMikeParams(raw), daily_loss_stop: p } as Partial<MikeParams>) as unknown as Record<string, unknown>;
++    }
++    return omegaParamsPatch(raw, { [chiaveStopOmega(raw)]: p });
++}
++
++export interface DipendenzeSalvaStop {
++    setLiveSettings: typeof setLiveSettings;
++    updateSafeParams: typeof updateSafeParams;
++    updateMikeParams: typeof updateMikeParams;
++    updateOmegaParams: typeof updateOmegaParams;
++}
++
++const VERE: DipendenzeSalvaStop = { setLiveSettings, updateSafeParams, updateMikeParams, updateOmegaParams };
++
++function numero(v: unknown): number | null {
++    return typeof v === 'number' && Number.isFinite(v) ? v : null;
++}
++
++/**
++ * Scrive lo stop e ritorna la perdita LETTA dalla riga restituita dal database
++ * (positiva; null = spento; undefined = la riga non l'ha restituita).
++ */
++export async function salvaStop(
++    chi: ProprietarioStop, perdita: number | null, raw: Record<string, unknown> | null,
++    deps: DipendenzeSalvaStop = VERE,
++): Promise<number | null | undefined> {
++    if (chi === 'conto') {
++        const r: LiveSettings | null = await deps.setLiveSettings({ daily_loss_limit: perdita });
++        if (r == null) return undefined;
++        const v = numero(r.daily_loss_limit);
++        return v == null || v <= 0 ? null : v;
++    }
++    const payload = payloadStop(chi, perdita, raw);
++    if (chi === 'safe') {
++        const r: SafeControl = await deps.updateSafeParams(payload);
++        const v = numero((r?.params?.risk as Record<string, unknown> | undefined)?.daily_loss_stop);
++        return v == null ? undefined : v === 0 ? null : Math.abs(v);
++    }
++    if (chi === 'mike') {
++        const r: MikeControl = await deps.updateMikeParams(payload as unknown as MikeParams);
++        const v = numero(r?.params?.daily_loss_stop);
++        return v == null ? undefined : v <= 0 ? null : v;
++    }
++    const r: OmegaControl = await deps.updateOmegaParams({ params: payload as Partial<OmegaParams> });
++    const v = numero(r?.params?.[chiaveStopOmega(raw as Record<string, unknown>)]);
++    return v == null ? undefined : v <= 0 ? null : v;
++}
+diff --git a/frontend/src/components/controlroom/testata/salvaStop.test.ts b/frontend/src/components/controlroom/testata/salvaStop.test.ts
+new file mode 100644
+index 0000000..a8a3975
+--- /dev/null
++++ b/frontend/src/components/controlroom/testata/salvaStop.test.ts
+@@ -0,0 +1,155 @@
++// ============================================================================
++// salvaStop.test.ts - 01/10: lo stop modificato dalla testata passa dalle
++// STESSE RPC, con le STESSE chiavi, dei fogli parametri e del pannello del
++// conto. Il client Supabase e' finto (`rpc` registra nome e argomenti) e
++// risponde con righe dalle chiavi delle tabelle vere:
++//  - set_live_settings -> to_jsonb(betfair_live_settings) (id, kill_switch,
++//    max_exposure_per_selection, max_orders_per_min, order_poll_sec,
++//    risk_poll_sec, daily_loss_limit, max_exposure_per_event,
++//    max_exposure_per_league, updated_at) - migrations/betfair_live_risk_limits_v4.sql;
++//  - safe/mike/omega_update_params -> to_jsonb della riga di control (id,
++//    status, mode, params, stats, error, started_at, stopped_at,
++//    heartbeat_at, updated_at [+ daily_goal per Omega]).
++// Le funzioni di merge (mergeBotParams, toValues/fromValues, mergeMikeParams,
++// omegaParamsPatch) sono quelle VERE.
++// ============================================================================
++import { describe, it, expect, vi, beforeEach } from 'vitest';
++
++const rpc = vi.hoisted(() => vi.fn());
++vi.mock('@/integrations/supabase/client', () => ({ supabase: { rpc } }));
++
++import { leggiImporto, payloadStop, salvaStop, chiaveStopOmega, StopNonSalvabile } from './salvaStop';
++import { toValues, fromValues, mergeExits } from '@/components/safestrategy/BotParamsSheet';
++import { mergeBotParams } from '@/lib/safeBot';
++import { mergeMikeParams } from '@/lib/mike';
++import { omegaParamsPatch } from '@/lib/omega';
++
++const RIGA_SETTINGS = {
++    id: 1, kill_switch: false, max_exposure_per_selection: null, max_orders_per_min: null,
++    order_poll_sec: null, risk_poll_sec: null, daily_loss_limit: null,
++    max_exposure_per_event: null, max_exposure_per_league: null,
++    updated_at: '2026-10-01T08:00:00+00:00',
++};
++function control(params: Record<string, unknown>, extra: Record<string, unknown> = {}) {
++    return {
++        id: 1, status: 'stopped', mode: 'paper', params, stats: null, error: null,
++        started_at: null, stopped_at: null, heartbeat_at: null, updated_at: '2026-10-01T08:00:00+00:00', ...extra,
++    };
++}
++
++// parametri grezzi come li scrive il DB (chiavi di produzione, con una chiave
++// ignota a mergeBotParams che il salvataggio deve conservare)
++const SAFE_RAW: Record<string, unknown> = {
++    variants: ['base', 'tennis'],
++    risk: { daily_loss_stop: -50, daily_liability_cap: 500 },
++    strategy_modes: { tennis: 'live' },
++    tennis_exit_approval: true,
++    exits: { enabled: true },
++    chiave_del_servizio_ignota: 7,
++};
++const MIKE_RAW: Record<string, unknown> = { daily_loss_stop: 50, max_open_matches: 10 };
++const OMEGA_RAW: Record<string, unknown> = { strategy_version: 3, v3_daily_loss_cap: 300, daily_loss_cap: 0, stake: 2 };
++
++beforeEach(() => { rpc.mockReset(); });
++
++describe('leggiImporto - euro al centesimo, negativo = perdita massima', () => {
++    it('-40, −40,5, 40 sono la stessa perdita; 3 decimali rifiutati', () => {
++        expect(leggiImporto('-40', 'mike')).toEqual({ ok: true, perdita: 40 });
++        expect(leggiImporto('−40,5', 'mike')).toEqual({ ok: true, perdita: 40.5 });
++        expect(leggiImporto('40', 'omega')).toEqual({ ok: true, perdita: 40 });
++        expect(leggiImporto('-40,555', 'mike').ok).toBe(false);
++        expect(leggiImporto('abc', 'mike').ok).toBe(false);
++    });
++    it('conto: vuoto = spento, 0 rifiutato (regola di LiveControlsPanel); bot: 0 = spento, vuoto rifiutato', () => {
++        expect(leggiImporto('', 'conto')).toEqual({ ok: true, perdita: null });
++        expect(leggiImporto('0', 'conto').ok).toBe(false);
++        expect(leggiImporto('0', 'safe')).toEqual({ ok: true, perdita: null });
++        expect(leggiImporto('', 'safe').ok).toBe(false);
++    });
++    it('oltre il tetto del foglio (Mike 100000) rifiutato', () => {
++        expect(leggiImporto('-100001', 'mike').ok).toBe(false);
++    });
++});
++
++describe('payloadStop - lo STESSO payload del foglio del proprietario', () => {
++    it('Safe: identico a BotParamsSheet.save con il solo stop cambiato (chiavi ignote conservate)', () => {
++        const atteso = (() => {
++            const p = mergeBotParams(SAFE_RAW);
++            const v = toValues(p, mergeExits(SAFE_RAW.exits), SAFE_RAW);
++            v['risk.daily_loss_stop'] = -40;
++            return fromValues(v, p.variants, SAFE_RAW);
++        })();
++        const payload = payloadStop('safe', 40, SAFE_RAW);
++        expect(payload).toEqual(atteso);
++        expect((payload.risk as Record<string, unknown>).daily_loss_stop).toBe(-40);
++        expect(payload.chiave_del_servizio_ignota).toBe(7);
++        expect(payload.strategy_modes).toEqual({ tennis: 'live' });
++    });
++    it('Mike: mergeMikeParams del foglio con daily_loss_stop positivo', () => {
++        expect(payloadStop('mike', 40, MIKE_RAW)).toEqual(mergeMikeParams({ ...mergeMikeParams(MIKE_RAW), daily_loss_stop: 40 }));
++    });
++    it('Omega: omegaParamsPatch con la chiave del motore in uso (v3 -> v3_daily_loss_cap; v2 -> daily_loss_cap)', () => {
++        expect(payloadStop('omega', 120, OMEGA_RAW)).toEqual(omegaParamsPatch(OMEGA_RAW, { v3_daily_loss_cap: 120 }));
++        const v2 = { ...OMEGA_RAW, strategy_version: 2 };
++        expect(chiaveStopOmega(v2)).toBe('daily_loss_cap');
++        expect(payloadStop('omega', 120, v2).daily_loss_cap).toBe(120);
++        expect(payloadStop('omega', 120, v2).v3_daily_loss_cap).toBe(300);
++    });
++    it('0 / spento: Safe 0, Mike 0, Omega 0 (la convenzione "0 = OFF" dei fogli)', () => {
++        expect(((payloadStop('safe', null, SAFE_RAW).risk) as Record<string, unknown>).daily_loss_stop).toBe(0);
++        expect(payloadStop('mike', null, MIKE_RAW).daily_loss_stop).toBe(0);
++        expect(payloadStop('omega', null, OMEGA_RAW).v3_daily_loss_cap).toBe(0);
++    });
++    it('CANCELLO: parametri non letti (null o {}) -> rifiuta, mai i predefiniti al posto dei veri', () => {
++        expect(() => payloadStop('safe', 40, null)).toThrow(StopNonSalvabile);
++        expect(() => payloadStop('mike', 40, {})).toThrow(StopNonSalvabile);
++        expect(() => payloadStop('omega', 40, null)).toThrow(StopNonSalvabile);
++    });
++});
++
++describe('salvaStop - RPC vere, chiavi vere, cifra dal database', () => {
++    it('conto: set_live_settings({ p: { daily_loss_limit } }) e SOLO quella chiave; ritorna la cifra della riga', async () => {
++        rpc.mockResolvedValueOnce({ data: { ...RIGA_SETTINGS, daily_loss_limit: 35 }, error: null });
++        const v = await salvaStop('conto', 40, null);
++        expect(rpc).toHaveBeenCalledWith('set_live_settings', { p: { daily_loss_limit: 40 } });
++        expect(v).toBe(35);
++    });
++    it('conto spento: daily_loss_limit null; la riga del DB vale null -> null', async () => {
++        rpc.mockResolvedValueOnce({ data: RIGA_SETTINGS, error: null });
++        expect(await salvaStop('conto', null, null)).toBeNull();
++        expect(rpc).toHaveBeenCalledWith('set_live_settings', { p: { daily_loss_limit: null } });
++    });
++    it('conto: digitato SPENTO ma la riga del DB dice 25 -> vale 25 (la riga, mai il digitato)', async () => {
++        rpc.mockResolvedValueOnce({ data: { ...RIGA_SETTINGS, daily_loss_limit: 25 }, error: null });
++        expect(await salvaStop('conto', null, null)).toBe(25);
++    });
++    it('Safe: safe_update_params({ p_params }) col payload del foglio; ritorna |risk.daily_loss_stop| della riga', async () => {
++        rpc.mockResolvedValueOnce({ data: control({ ...SAFE_RAW, risk: { daily_loss_stop: -45 } }), error: null });
++        const v = await salvaStop('safe', 40, SAFE_RAW);
++        expect(rpc.mock.calls[0][0]).toBe('safe_update_params');
++        expect(rpc.mock.calls[0][1]).toEqual({ p_params: payloadStop('safe', 40, SAFE_RAW) });
++        // la cifra e' quella RESTITUITA (45), non quella digitata (40)
++        expect(v).toBe(45);
++    });
++    it('Mike: mike_update_params({ p_params, p_mode: null }): la modalita\' non si tocca', async () => {
++        rpc.mockResolvedValueOnce({ data: control({ ...MIKE_RAW, daily_loss_stop: 35 }), error: null });
++        expect(await salvaStop('mike', 40, MIKE_RAW)).toBe(35);
++        expect(rpc.mock.calls[0][0]).toBe('mike_update_params');
++        expect(rpc.mock.calls[0][1]).toEqual({ p_params: payloadStop('mike', 40, MIKE_RAW), p_mode: null });
++    });
++    it('Omega: omega_update_params con p_daily_goal null (obiettivo intatto) e p_mode null', async () => {
++        rpc.mockResolvedValueOnce({ data: control({ ...OMEGA_RAW, v3_daily_loss_cap: 110 }, { daily_goal: 250 }), error: null });
++        expect(await salvaStop('omega', 120, OMEGA_RAW)).toBe(110);
++        expect(rpc).toHaveBeenCalledWith('omega_update_params', {
++            p_daily_goal: null, p_params: payloadStop('omega', 120, OMEGA_RAW), p_mode: null,
++        });
++    });
++    it('errore della RPC: si propaga (il componente lo scrive), nessun esito inventato', async () => {
++        rpc.mockResolvedValueOnce({ data: null, error: { message: 'non autorizzato (owner-only)' } });
++        await expect(salvaStop('conto', 40, null)).rejects.toThrow(/owner-only/);
++    });
++    it('parametri non letti: nessuna RPC parte', async () => {
++        await expect(salvaStop('mike', 40, null)).rejects.toThrow(StopNonSalvabile);
++        expect(rpc).not.toHaveBeenCalled();
++    });
++});
