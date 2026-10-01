@@ -897,10 +897,10 @@ export default function MatchReplay() {
     return (
         <div className="min-h-screen bg-background relative pb-24">
             <Helmet><title>Match Replay | Alpha Score</title></Helmet>
-            <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-30" />
+            <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-30 ds-v2-nascondi" />
 
             <nav className="border-b border-white/5 bg-black/50 backdrop-blur-xl sticky ds-v2-non-sticky top-0 z-50">
-                <div className="container mx-auto px-6 h-16 flex items-center justify-between">
+                <div className="container mx-auto px-6 h-16 flex items-center justify-between ds-v2-largo">
                     <div className="flex items-center gap-4">
                         <Link to="/dashboard" data-nav-legacy className="font-display font-black text-xl tracking-tighter">AI <span className="text-primary">TERMINAL</span></Link>
                         <span className="hidden md:flex items-center gap-2 text-sm text-secondary font-heading font-bold ml-4">
@@ -922,7 +922,7 @@ export default function MatchReplay() {
                 </div>
             </nav>
 
-            <main className="container mx-auto px-4 lg:px-6 py-8 max-w-7xl relative z-10">
+            <main className="container mx-auto px-4 lg:px-6 py-8 max-w-7xl relative z-10 ds-v2-pagina-larga">
                 <div className="mb-6">
                     <h1 className="font-display font-black text-2xl md:text-4xl tracking-tight">
                         FOOTBALL TRADING <span className="text-secondary">SIMULATOR</span>
