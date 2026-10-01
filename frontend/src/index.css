@@ -1646,3 +1646,60 @@
     width: 92px;
     flex: none;
 }
+
+/* ---------- PAGINA 13a — SCELTA SPORT (prototipo s_account.js) ---------- */
+[data-shell="v2"] .ds-v2-ss-main {
+    max-width: none;
+    align-items: stretch;
+    justify-content: flex-start;
+    padding: 20px 24px 24px;
+    flex: none;
+}
+
+[data-shell="v2"] .ds-v2-ss-intesta {
+    text-align: left;
+    margin-bottom: 16px;
+}
+
+[data-shell="v2"] .ds-v2-ss-sotto {
+    font-size: 12.5px;
+    margin-top: 4px;
+}
+
+[data-shell="v2"] .ds-v2-ss-griglia {
+    max-width: none;
+    gap: 12px;
+}
+
+[data-shell="v2"] .ds-v2-ss-carta {
+    padding: 18px;
+    gap: 10px;
+    min-height: 0;
+    border-radius: var(--radius);
+}
+
+[data-shell="v2"] .ds-v2-ss-icona {
+    width: 56px;
+    height: 56px;
+    font-size: 28px;
+    border-radius: 12px;
+}
+
+[data-shell="v2"] .ds-v2-ss-titolo {
+    font-size: 17px;
+    font-weight: 800;
+    color: hsl(var(--foreground));
+    letter-spacing: -0.01em;
+}
+
+[data-shell="v2"] .ds-v2-ss-entra {
+    font-size: 12.5px;
+    text-transform: none;
+    letter-spacing: normal;
+}
+
+[data-shell="v2"] .ds-v2-ss-piede {
+    border-top-width: 0;
+    text-align: left;
+    padding: 0 24px 24px;
+}

@@ -20,10 +20,17 @@ const { default: react } = await import(path.join(FE, 'node_modules/@vitejs/plug
 // Alias ESATTI (regex ancorate): intercettano SOLO lo specificatore '@/...' usato
 // dall'app; i finti importano il modulo vero con percorso RELATIVO, che qui non
 // passa, quindi `export * from '../...'` dentro il finto arriva al vero.
-const FINTI = MODO === 'popolata' ? [
-    { find: /^@\/components\/controlroom\/useControlRoom$/, replacement: path.join(ANTE, 'controlRoomFinto.ts') },
-    { find: /^@\/lib\/liveOrders$/, replacement: path.join(ANTE, 'liveOrdersFinto.ts') },
-] : [];
+// Ogni pagina registra i suoi finti in un file `alias_<pagina>.mjs` di questa
+// cartella: `export default [[/^@\/percorso$/, 'fileDentroSrcAnteprima.ts'], ...]`.
+const { readdirSync } = await import('node:fs');
+const FINTI = [];
+if (MODO === 'popolata') {
+    for (const f of readdirSync(QUI).filter((n) => /^alias_.*\.mjs$/.test(n)).sort()) {
+        for (const [find, file] of (await import(path.join(QUI, f))).default) {
+            FINTI.push({ find, replacement: path.join(ANTE, file) });
+        }
+    }
+}
 
 const server = await createServer({
     root: FE,

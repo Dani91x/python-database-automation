@@ -65,6 +65,7 @@ cssGuscio (già esistente) ha preso un mio refuso: classe ds-v2-cr-impianto-stop
 | partenza (`ebfab2a`) | 0 | 314 file / 4829 test verdi (10/50 saltati) | 26/26 | 3.495.574 B |
 | pagina 1 Control Room | 0 | 316 / 4839 verdi (+2 file, +10 test), 10/50 saltati | 26/26 identica, nessuna fotografia rigenerata | 3.511.199 B (+0,45 %) |
 | pagina 2 Programma del giorno | 0 | 316 / 4839 verdi | 26/26 identica | 3.512.809 B (+0,49 %) |
+| pagina 13a Scelta sport | 0 | 316 / 4839 verdi | 26/26 identica | 3.513.770 B (+0,52 %) |
 
 Fotografie `off` e `v2` delle pagine: **mai rigenerate** (le classi non entrano nella fotografia; testi, testid,
 comandi, chiamate e WebSocket restano identici, anche col guscio acceso). Nessun test esistente modificato.
@@ -79,11 +80,20 @@ comandi, chiamate e WebSocket restano identici, anche col guscio acceso). Nessun
 
 | 2 | Programma del giorno `/board` | `Board.tsx`: linguette come testa di un unico pannello con le righe, orario a colonna fissa, IN-PLAY come pillola, quote BACK/LAY in caselle 46×30 (prototipo `.o`), bottoni piccoli, titolo Sora, contenitore largo; stato vuoto/canale off con `ds-v2-vuoto` | **fatto** | `ds-v2-board-*`, `ds-v2-quota--*`, `ds-v2-pulsante--*`, `ds-v2-titolo` | `confronto2/board.{off,v2}.{1280,1600}.png`, `confronto2/board.affianco.png` (tabellone finto sul canale locale: `CANALE_FINTO=1`, partite del prototipo, `strumenti/canaleFinto.mjs`) |
 
+| 13a | Scelta sport `/select-sport` (fatta prima delle pagine 3-12 mentre i finti di quelle si preparavano: non ha bisogno di dati) | `SelectSport.tsx`: titolo a sinistra Sora 24, 5 carte compatte (padding 18, icona 56, titolo 17 in `foreground`, «Entra» col colore della carta), contenitore largo | **fatto** | `ds-v2-ss-*`, `ds-v2-titolo` | `confronto2/select-sport.{off,v2}.{1280,1600}.png`, `confronto2/select-sport.affianco.png` |
+| 13b | Accesso (landing), Conferma email, Reimposta password, 404 | nessuno | **lasciate invariate (motivo)**: sono FUORI dal guscio in entrambi gli stati (brief 1 e 2) e non hanno `data-shell="v2"` sopra di sé; il prototipo `#landing` riproduce la landing di oggi (stessi blocchi e stessa veste). Per vestirle servirebbe un contenitore `data-shell` attorno alle rotte pubbliche in `App.tsx`: non necessario e non fatto, il flusso di login resta intatto | — | — |
+
 ### Pagina 2 — Programma del giorno: verifiche
 - Prova pixel col guscio spento contro master con tabellone finto, 1280 e 1600, pagina intera: **identiche**.
 - Stato «canale off» verificato a vista col guscio acceso (pannello tratteggiato sotto le linguette).
 - Non fatto (come nel referto 1): conteggio nelle linguette e riga d'intestazione della tabella del prototipo:
   sarebbero testi nuovi.
+
+### Pagina 13a — Scelta sport: verifiche
+- Prova pixel col guscio spento contro master: identiche salvo poche decine di pixel dell'animazione d'ingresso delle
+  carte (`framer-motion`), che differiscono allo stesso modo fra due scatti dello stesso codice (già nel referto 1).
+- Nota sugli strumenti: con l'orologio fisso di Playwright (`ORA_FISSA`) le animazioni d'ingresso non partono e la
+  pagina resta trasparente: per Scelta sport le immagini sono scattate con `ORA_FISSA=0`.
 
 ### Pagina 1 — Control Room: dettagli e verifiche
 - Testata: col guscio acceso è un pannello dentro i margini (prototipo `header.panel.flat`), velo arancio se un bot
