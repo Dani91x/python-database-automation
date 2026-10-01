@@ -4,8 +4,15 @@ Mandato: `AUDIT_2026-10-01/REDESIGN/BRIEF_SESSIONE_CLOUD.md`. Ramo `redesign/gus
 Letti prima di scrivere codice: brief, `PIANO_INTEGRAZIONE.md`, `INVENTARIO_FUNZIONALITA.md`, `inventario_parti/A…E`,
 `RICERCA_MERCATO.md`, prototipo (`prototipo/index.html`, `js/core.js`, `js/boot.js` e schermate).
 
-**Fase raggiunta: 1 (guscio) completa e pushata.** Le fasi 2-7 (veste delle singole pagine) non sono iniziate: vedi
-«Cosa resta» in fondo.
+**Fase raggiunta: 7 — tutte le fasi 0-7 completate e pushate**, ognuna con commit propri, tsc 0, suite intera
+verde, fotografia identica. Le fasi 2-7 sono una veste **prudente** (contenitori, griglie, superfici, linguette,
+tabella densa del Programma): non replicano ogni dettaglio del prototipo dentro i componenti (vedi «Cosa resta»).
+
+**Prova di parità visiva con `ui.shell` spento** (la più forte di questo lavoro): l'app di `master` e il codice
+finale, entrambi con `off`, scattati uno dopo l'altro in Chromium su 22 schermate × 1280/1600 px: **pixel identici
+salvo il riquadro in basso a destra del bottone «Prova la nuova grafica»** (`confronto/off_contro_master.txt`; unica
+altra differenza: 46 pixel dell'animazione d'ingresso delle card di Scelta sport, presente anche fra due scatti
+dello stesso codice). Tutta la veste nuova vive in regole CSS confinate a `[data-shell="v2"]`.
 
 ---
 
@@ -16,6 +23,24 @@ Letti prima di scrivere codice: brief, `PIANO_INTEGRAZIONE.md`, `INVENTARIO_FUNZ
 | partenza (`2d8ee70`) | 0 errori | 310 file / 4764 test verdi, 10 file / 50 test saltati | — |
 | fase 0 | 0 errori | 311 file / 4790 verdi (+1 file, +26 test), 10/50 saltati | 26/26, tre giri identici |
 | fase 1 | 0 errori | 313 file / 4814 verdi (+2 file, +24 test), 10/50 saltati | 26/26: tutte le `*.off.json` e `*.v2.json` IDENTICHE a quelle della fase 0 (nessun file di pagina riscritto) |
+| fase 2 | 0 errori | 314 file / 4816 verdi (+1 file, +2 test: guardia CSS) | 26/26 identica |
+| fase 3 | 0 errori | 314 / 4817 (+1 test: guardia sticky) | 26/26 identica |
+| fase 4 | 0 errori | 314 / 4817 (vedi nota su `MarketWatch.test.tsx`) | 26/26 identica |
+| fase 5 | 0 errori | 314 / 4817 | 26/26 identica |
+| fase 6 | 0 errori | 314 / 4817 | 26/26 identica |
+| fase 7 | 0 errori | 314 / 4817, `npm run build` verde | 26/26 identica |
+
+Totale test nuovi: 53 (fotografia 26, interruttore 9, guscio 15, guardia CSS 3) = 4817 − 4764. Le fotografie delle
+pagine (`*.off.json`, `*.v2.json`) non sono mai state riscritte dalla fase 0.
+
+Nota sulla fase 4: il primo giro della suite intera ha dato 1 rosso in `src/pages/MarketWatch.test.tsx` («paper e live
+dello stesso evento…»: letto `live€0.00` invece di `€3.00`) mentre in parallelo giravano gli screenshot. La fase 4 non
+tocca `MarketWatch.tsx` (il suo diff da master è la sola classe `ds-v2-non-sticky` della fase 3, con cui la suite era
+verde). Il file da solo: 5 giri su 5 verdi; la suite intera rilanciata senza altro carico: 314/4817 verdi, EXIT 0.
+Causa: il test asserisce il testo subito dopo `findAllByTestId` (senza `waitFor`), quindi sotto carico può leggere la
+riga prima che arrivino le posizioni. Fragilità del test preesistente, NON corretta (regola: nessun test esistente
+modificato); il commit della fase 4 era già partito prima della rilettura (errore mio di procedura: da lì la suite gira
+senza carico e l'esito si controlla prima del commit).
 
 `npm run build` verde alla fase 1. Nessun test esistente modificato. `designGuard.test.ts` e `zeroPerAssente.test.ts`
 verdi senza eccezioni nuove.
@@ -149,6 +174,7 @@ fotografia: «Prova la nuova grafica» senza data-shell-chrome          → la f
 ```
 
 ### Screenshot
+(Rifatti sullo stato FINALE della fase 7; `board-con-tabellone.*.png` = Programma col canale finto `CANALE_FINTO=1`.)
 `AUDIT_2026-10-01/REDESIGN/confronto/<pagina>.<off|v2>.<1280|1600>.png` per 22 schermate (le 20 interne, Tennis
 Terminal con match, Ladder pop-out) e `.1920.png` per Control Room, Segui live, Tennis Terminal con match, Mike.
 Rifacibili con `AUDIT_2026-10-01/REDESIGN/confronto/strumenti/` (`node …/server.mjs`, poi
@@ -188,6 +214,41 @@ via CSS i soli 24 elementi elencati sopra, che restano nel DOM).
 
 ---
 
+## Fasi 2-7 — veste delle pagine
+
+Regola comune (garantita da `src/fotografia/cssGuscio.test.ts`): le pagine ricevono solo classi `ds-v2-*` e ogni
+regola che le nomina sta sotto `[data-shell="v2"]`; ogni classe `ds-v2-*` usata esiste nel foglio. Con `off` sono
+inerti (prova pixel sopra). Nessun testo, testid, comando, hook, RPC o ordine di blocchi cambiato (fotografia).
+
+| fase | file | cosa cambia col guscio acceso |
+|---|---|---|
+| 2 | `pages/Board.tsx` | righe in tabella densa (un pannello, righe separate da linea, hover), linguette ⚽/🎾 con sottolineatura primary, contenitore fino a 1280 px, griglia di sfondo tolta. **Conteggio nelle linguette NON fatto**: sarebbe un testo nuovo e le righe vivono dentro `SportBoard` (servirebbe spostare lo stato: logica). |
+| 3 | `pages/ControlRoom.tsx`, `components/trading/PageShell.tsx`, `components/ui/tabs.tsx` + 21 testate | banco come nel prototipo: sopra 1360 px tre colonne (tab, Uscite, Opportunità), fino a 1360 px le due colonne di decisione accanto alle tab impilate, fino a 1100 px in colonna (sempre visibili, ordine DOM invariato); testata e contenitore a tutta larghezza; linguette con sottolineatura primary (nessuno sfondo di significato toccato); **sticky di pagina come oggi** (vedi sotto). |
+| 4 | `components/trading/{BotHeader,StatTile,ModeBanner,DayBar,EquityCard,PerformancePanel}.tsx` | BotHeader largo; tessere KPI e pannelli con fondo, bordo, raggio e ombra del prototipo; nessun colore di significato toccato (LIVE rosso, PAPER verde, toni P&L). Omega, Safe, Mike ereditano il contenitore largo da PageShell. |
+| 5 | `pages/{TennisDashboard,TennisTerminal,SeguiLive}.tsx`, `components/tennis/{TennisNav,TennisMatchesList}.tsx` | contenitori larghi, griglia di sfondo tolta. LadderView, GridView e i 7 pannelli strumento NON toccati. |
+| 6 | `pages/{ReportPersonale,Watchlist,MatchReplay,Analytics,Dashboard,StoricoSport}.tsx` | testate e contenuti a tutta larghezza, griglia di sfondo tolta; Watchlist resta stretta; Market watch, Live P&L, Trade journal hanno già contenitori propri. |
+| 7 | `pages/SelectSport.tsx` | testata larga, griglia di sfondo tolta. Le pagine pubbliche e il pop-out restano fuori dal guscio in entrambi gli stati: identiche. |
+
+### Scoperta della fase 3: gli «sticky» di pagina oggi non restano incollati
+Nell'app di oggi `html` e `body` hanno `overflow-x: hidden` (`index.css`): il body diventa il contenitore di
+scorrimento ma non scorre (scorre il documento), quindi le 21 testate/barre `sticky top-0` di pagina (navbar inline,
+BotHeader, TennisNav, testata della Control Room, testata dello Storico, barre di Market watch/Live P&L/Trade journal/
+Multi-ladder, TabsList di Omega/Safe/Mike, barre di Segui live e Tennis Terminal) **scorrono via** (misurato in
+Chromium: `top` da 0 a −400 dopo 400 px). Dentro il guscio, dove il contenuto scorre in `.ds-contenuto`, si sarebbero
+incollate per davvero: la testata della Control Room (~540 px) avrebbe coperto metà schermo. Per non cambiare il
+comportamento, quei 21 elementi sono marcati `ds-v2-non-sticky` e nel guscio scorrono via come oggi (misurato:
+`top` 56 → −344). Gli sticky interni (intestazioni di tabelle con scroll proprio) non sono toccati. Guardia: ogni
+`sticky` di pagina deve avere la marca (falsificata: tolta dal Board → rosso). Il difetto di oggi NON è corretto.
+
+### Falsificazioni delle fasi 2-7
+```
+regola .ds-v2-riga non confinata a [data-shell=v2]          → regole .ds-v2-* che varrebbero anche con ui.shell=off: [ '.ds-v2-riga' ]
+refuso ds-v2-rigaa nel Board                                  → [ 'pages/Board.tsx: ds-v2-rigaa' ]
+tolto ds-v2-non-sticky dalla navbar del Board                 → [ 'pages/Board.tsx:232' ]
+```
+
+---
+
 ## Bug e incongruenze trovati e NON corretti
 1. `frontend/package.json`: `react@^19.2.4` con `react-helmet-async@^2.0.5`, che dichiara peer `react ^16.6 || ^17 || ^18`:
    `npm ci` puro fallisce (ERESOLVE); serve `--legacy-peer-deps`. Nessun file toccato.
@@ -198,7 +259,11 @@ via CSS i soli 24 elementi elencati sopra, che restano nel DOM).
    la finestra 560×860 come il bottone «stacca», ma senza un mercato è vuota. Il pop-out utile nasce dal ladder.
 4. «Tennis Terminal» e «Bot tennis» portano alla stessa rotta: quando sei lì sono evidenziate tutte e due (come nel
    prototipo, dove «Bot tennis» è una scheda del terminal). Idem «Safe Strategy» e «Safe Strategy · Tennis».
-5. Già nell'inventario e ancora veri (non toccati): nessun link a `/board` nell'app attuale (col guscio è la prima voce);
+5. `frontend/src/index.css` (`html, body { overflow-x: hidden }`): le 21 testate `sticky top-0` di pagina non restano
+   incollate nell'app di oggi (vedi «Scoperta della fase 3»). Nel guscio il comportamento è stato mantenuto uguale.
+6. `src/pages/MarketWatch.test.tsx:167-170`: asserzione immediata dopo `findAllByTestId` (senza `waitFor`), fragile sotto
+   carico (un rosso visto in fase 4, poi 5/5 e suite verde da sola).
+7. Già nell'inventario e ancora veri (non toccati): nessun link a `/board` nell'app attuale (col guscio è la prima voce);
    tre «home» diverse; PAPER in tre colori nei pannelli live; LAY `rose`/`pink`; mojibake in `ScalperPanel.tsx`;
    Trade journal con filtro «tutte»; `FixtureSelector.tsx` non montato.
 
@@ -211,7 +276,30 @@ via CSS i soli 24 elementi elencati sopra, che restano nel DOM).
 - I font Sora/Inter negli screenshot (rete esterna bloccata nell'anteprima): le immagini usano il font di ripiego.
 - Gli stati popolati delle pagine nella fotografia (vedi limite della fase 0).
 
-## Cosa resta (fasi 2-7, non iniziate)
-Programma del giorno (tabella densa, tab con conteggio), Control Room (§C del piano), pagine bot e
-`components/trading/*`, tennis e live, storici e analisi, account; checklist finale pagina per pagina. Tutte «solo
-`className`», sotto la stessa fotografia.
+## Cosa resta (onestà sul perimetro)
+- Le fasi 2-7 sono fatte, ma la veste è prudente: contenitori, griglie, superfici, KPI, linguette, Programma in
+  tabella densa, banco della Control Room. Dentro i componenti (ladder, pannelli strumento, schede partita della
+  Control Room, tabelle di storici e journal, chip quote back/lay del prototipo) la grafica è quella di oggi.
+  Proseguire si fa con lo stesso metodo (classi `ds-v2-*` confinate, fotografia, guardia, prova pixel con `off`).
+- Non fatte perché richiedono una decisione dell'utente o una modifica di logica: conteggio nelle linguette del
+  Programma; colore unico di PAPER nei pannelli live e `pink`→`rose` (piano §B: «solo se l'utente lo approva»);
+  ordini LIVE/PROVA e saldo nella testata (letture nuove); scheda tennis di Safe apribile da URL.
+
+## Checklist finale pagina per pagina (fase 7)
+Per ogni rotta dell'inventario: blocchi, comandi, testi e testid **presenti e invariati** (fotografia `off` = fase 0 =
+`v2`, byte per byte, 26 schermate); `data-nav-legacy` solo sui 24 elementi di pura navigazione; con `off` pixel
+identici a master salvo il bottone «Prova la nuova grafica».
+
+| rotta | dentro il guscio | veste v2 (fase) | parità |
+|---|---|---|---|
+| `/board` | sì (prima voce) | tabella densa, linguette (2) | presente, invariato |
+| `/control-room` | sì | banco 3/2/1 colonne, contenitore largo, linguette, sticky come oggi (3) | presente, invariato |
+| `/dashboard` | sì | contenitore largo (6) | presente, invariato |
+| `/omega`, `/safe-strategy`, `/mike` | sì | PageShell largo (3), KPI/pannelli/banner (4) | presente, invariato |
+| `/segui-live` | sì | contenitore largo (5) | presente, invariato |
+| `/multi-ladder`, `/market-watch`, `/live-pnl`, `/trade-journal` | sì | barre sticky come oggi (3) | presente, invariato |
+| `/storico/calcio`, `/storico/tennis` | sì | PageShell largo (3), testata larga (6) | presente, invariato |
+| `/tennis`, `/tennis/terminal` | sì | contenitori larghi (5) | presente, invariato |
+| `/report-personale`, `/watchlist`, `/match-replay`, `/analytics` | sì | contenitori larghi (6) | presente, invariato |
+| `/select-sport` | sì | testata larga (7) | presente, invariato |
+| `/ladder-popout`, `/`, `/check-email`, `/reset-password`, 404 | no, mai | nessuna | identiche |
