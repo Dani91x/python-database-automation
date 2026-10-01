@@ -13,7 +13,10 @@
 // ============================================================================
 import type {
     LiveSettings, LiveAccountRow, LiveHeartbeatRow, LiveRiskState,
+    LiveOrderRow, LivePositionRow, XhedgeRow, LiveAuditRow,
 } from '../lib/liveOrders';
+// Segui live (aggiunta): ordini/posizioni PAPER di Inter-Torino, x-hedge, registro.
+import { AUDIT, ORDINI, POSIZIONI, XHEDGE } from './seguiLiveDati';
 
 export * from '../lib/liveOrders';
 
@@ -87,4 +90,29 @@ export async function fetchLiveRiskState(): Promise<LiveRiskState | null> {
 export function subscribeLiveRiskState(cb: (row: LiveRiskState | null) => void): () => void {
     const t = setTimeout(() => cb({ ...RISCHIO }), 50);
     return () => clearTimeout(t);
+}
+
+// ---------------------------------------------------------------------------
+// Segui live (/segui-live): letture dello specchio ordini/posizioni per
+// mercato ed evento, x-hedge e registro del runner. Filtrate per id come le
+// RPC vere: un mercato/evento senza righe restituisce [] (come prima).
+
+export async function fetchLiveOrders(marketId: string): Promise<LiveOrderRow[]> {
+    return (ORDINI[marketId] ?? []).map((r) => ({ ...r }));
+}
+
+export async function fetchLivePositions(marketId: string): Promise<LivePositionRow[]> {
+    return (POSIZIONI[marketId] ?? []).map((r) => ({ ...r }));
+}
+
+export async function fetchLivePositionsEvent(eventId: string): Promise<LivePositionRow[]> {
+    return Object.values(POSIZIONI).flat().filter((r) => r.event_id === eventId).map((r) => ({ ...r }));
+}
+
+export async function fetchXhedge(eventId: string): Promise<XhedgeRow[]> {
+    return (XHEDGE[eventId] ?? []).map((r) => ({ ...r }));
+}
+
+export async function fetchLiveAudit(limit = 100): Promise<LiveAuditRow[]> {
+    return AUDIT.slice(0, limit).map((r) => ({ ...r }));
 }

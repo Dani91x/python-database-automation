@@ -27,9 +27,61 @@ export const TENNIS = [
   riga('34813580', 'Gauff v Andreeva', 120, false, 289770, [['C. Gauff', 1.88, 1.9], ['M. Andreeva', 2.06, 2.08]]),
   riga('34813601', 'Arnaldi v Etcheverry', 180, false, 22410, [['M. Arnaldi', 1.95, 1.98], ['T. Etcheverry', 1.99, 2.04]]),
 ];
+// Segui live (/segui-live): il canale calcio porta anche i topic che il terminal
+// ascolta, con le STESSE chiavi dei push veri del runner (Betfair/stream):
+//   hello    {sport}                                    (local_channel.py, alla connessione)
+//   now      riga live_now                              (db.update_live_now -> _lpub("now", row))
+//   ladder   {event_id, market_id, market_type, market_name, status, ladder}  (runner.py ladder-worker)
+//   risposta a 'snapshot' {id, ok, d: {orders, positions}}  (live_order_worker._local_snapshot)
+// Le righe NON sono ricopiate qui: si chiedono al server Vite dell'anteprima
+// (frontend/src/anteprima/seguiLiveDati.ts, solo `import type`: il JS servito
+// non ha dipendenze), cosi' canale e finti del database dicono la stessa cosa.
+// Il canale e' piu' fresco del database di 2 s (MS_CANALE > MS_DB): vince lui.
+async function caricaDatiSeguiLive() {
+  const porta = Number(process.env.PORTA || 5198);
+  try {
+    const r = await fetch(`http://127.0.0.1:${porta}/src/anteprima/seguiLiveDati.ts`);
+    if (!r.ok) return null;
+    const js = await r.text();
+    return await import('data:text/javascript;base64,' + Buffer.from(js).toString('base64'));
+  } catch {
+    return null;   // server spento o file assente: il canale resta quello di prima (solo 'board')
+  }
+}
+
+function canaleSeguiLive(ws, D) {
+  const manda = (o) => { try { ws.send(JSON.stringify(o)); } catch { /* route chiusa */ } };
+  setTimeout(() => manda({ t: 'hello', d: { sport: 'calcio' } }), 50);
+  const giro = () => {
+    for (const ev of [D.EV.inter, D.EV.betis]) manda({ t: 'now', d: D.liveNowDi(ev, D.MS_CANALE) });
+    for (const mid of D.MERCATI_CON_LADDER) {
+      const { updated_at: _scarta, ...riga } = D.ladderDi(mid, D.MS_CANALE);   // il push non porta updated_at
+      manda({ t: 'ladder', d: riga });
+    }
+  };
+  // primo giro subito, poi ogni 1,5 s (sotto i 4 s di "canale muto" della sorgente ladder)
+  setTimeout(giro, 200);
+  const t = setInterval(giro, 1500);
+  ws.onClose(() => clearInterval(t));
+  ws.onMessage((testo) => {
+    let m;
+    try { m = JSON.parse(String(testo)); } catch { return; }
+    if (typeof m?.id !== 'number') return;
+    if (m.m === 'snapshot') {
+      const mid = String(m.p?.market_id ?? '');
+      manda({ id: m.id, ok: true, d: { orders: D.ORDINI[mid] ?? [], positions: D.POSIZIONI[mid] ?? [] } });
+    } else {
+      // anteprima: nessun comando viene eseguito (esito applicativo negativo, mai un silenzio)
+      manda({ id: m.id, ok: false, e: 'anteprima: canale finto, nessun comando eseguito' });
+    }
+  });
+}
+
 export async function instradaCanali(ctx) {
+  const datiSL = await caricaDatiSeguiLive();
   await ctx.routeWebSocket(/:4733[12]/, (ws) => {
     const sport = ws.url().includes('47331') ? 'calcio' : 'tennis';
     setTimeout(() => ws.send(JSON.stringify({ t: 'board', d: { rows: sport === 'calcio' ? CALCIO : TENNIS } })), 300);
+    if (sport === 'calcio' && datiSL) canaleSeguiLive(ws, datiSL);
   });
 }

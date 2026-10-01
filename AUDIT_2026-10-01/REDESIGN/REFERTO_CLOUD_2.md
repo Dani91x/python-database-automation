@@ -66,6 +66,7 @@ cssGuscio (già esistente) ha preso un mio refuso: classe ds-v2-cr-impianto-stop
 | pagina 1 Control Room | 0 | 316 / 4839 verdi (+2 file, +10 test), 10/50 saltati | 26/26 identica, nessuna fotografia rigenerata | 3.511.199 B (+0,45 %) |
 | pagina 2 Programma del giorno | 0 | 316 / 4839 verdi | 26/26 identica | 3.512.809 B (+0,49 %) |
 | pagina 13a Scelta sport | 0 | 316 / 4839 verdi | 26/26 identica | 3.513.770 B (+0,52 %) |
+| pagina 3 Segui live + terminal calcio | 0 | 316 / 4839 verdi | 26/26 identica | 3.514.871 B (+0,55 %) |
 
 Fotografie `off` e `v2` delle pagine: **mai rigenerate** (le classi non entrano nella fotografia; testi, testid,
 comandi, chiamate e WebSocket restano identici, anche col guscio acceso). Nessun test esistente modificato.
@@ -80,6 +81,7 @@ comandi, chiamate e WebSocket restano identici, anche col guscio acceso). Nessun
 
 | 2 | Programma del giorno `/board` | `Board.tsx`: linguette come testa di un unico pannello con le righe, orario a colonna fissa, IN-PLAY come pillola, quote BACK/LAY in caselle 46×30 (prototipo `.o`), bottoni piccoli, titolo Sora, contenitore largo; stato vuoto/canale off con `ds-v2-vuoto` | **fatto** | `ds-v2-board-*`, `ds-v2-quota--*`, `ds-v2-pulsante--*`, `ds-v2-titolo` | `confronto2/board.{off,v2}.{1280,1600}.png`, `confronto2/board.affianco.png` (tabellone finto sul canale locale: `CANALE_FINTO=1`, partite del prototipo, `strumenti/canaleFinto.mjs`) |
 
+| 3 | Segui live `/segui-live` e terminal calcio (`/segui-live?event=…`) | `LiveMatchCard` (punteggio grande al centro, pillole), `LadderView` (righe del ladder 19 px invece di 12,5 px, cifre 11,5 px, intestazione 10 px: SOLO tipografia e spaziatura interna), `LiveTradingPanel` (campi 30 px su due colonne); il resto (top bar, banner rischio gol, tab mercati, toolbar, rail posizioni/ordini, segnali, tabellone) prende la veste dalle leve globali e dalla Control Room | **fatto** | `ds-v2-lm-*`, `ds-v2-ladder-riga/testa`, `ds-v2-lt-griglia`, `ds-v2-campo` | `confronto2/segui-live.{off,v2}.{1280,1600}.png`, `confronto2/segui-live-terminal.{off,v2}.{1280,1600}.png`, `confronto2/segui-live.affianco.png`, `confronto2/segui-live-terminal.affianco.png` |
 | 13a | Scelta sport `/select-sport` (fatta prima delle pagine 3-12 mentre i finti di quelle si preparavano: non ha bisogno di dati) | `SelectSport.tsx`: titolo a sinistra Sora 24, 5 carte compatte (padding 18, icona 56, titolo 17 in `foreground`, «Entra» col colore della carta), contenitore largo | **fatto** | `ds-v2-ss-*`, `ds-v2-titolo` | `confronto2/select-sport.{off,v2}.{1280,1600}.png`, `confronto2/select-sport.affianco.png` |
 | 13b | Accesso (landing), Conferma email, Reimposta password, 404 | nessuno | **lasciate invariate (motivo)**: sono FUORI dal guscio in entrambi gli stati (brief 1 e 2) e non hanno `data-shell="v2"` sopra di sé; il prototipo `#landing` riproduce la landing di oggi (stessi blocchi e stessa veste). Per vestirle servirebbe un contenitore `data-shell` attorno alle rotte pubbliche in `App.tsx`: non necessario e non fatto, il flusso di login resta intatto | — | — |
 
@@ -88,6 +90,22 @@ comandi, chiamate e WebSocket restano identici, anche col guscio acceso). Nessun
 - Stato «canale off» verificato a vista col guscio acceso (pannello tratteggiato sotto le linguette).
 - Non fatto (come nel referto 1): conteggio nelle linguette e riga d'intestazione della tabella del prototipo:
   sarebbero testi nuovi.
+
+### Pagina 3 — Segui live e ladder: verifiche (brief §6, massima prudenza)
+- **Aree cliccabili del ladder** (`confronto2/strumenti/misura_ladder.mjs`, Chromium, terminal Inter–Torino, 322
+  celle-bottone delle prime righe dei due ladder; guscio spento a 1356 px = larghezza del contenuto del guscio a
+  1600 px, così le colonne sono le stesse): **0 celle più piccole in v2**; larghezza invariata (scarto minimo
+  0 px: le colonne hanno larghezze fisse in px nel codice), altezza +6,5 px (12,5 → 19 px). Falsificazione: con le
+  celle forzate a 8 px di altezza → `piuPiccoleInV2: 322`, scarto −4,5 px → ripristino. Struttura del DOM, ordine
+  delle colonne (LAY a sinistra del prezzo, BACK a destra), drag e scroll non toccati; la centratura del ladder
+  misura le righe dal DOM (`offsetTop`/`clientHeight`), quindi regge l'altezza nuova. `LadderView.test.tsx`,
+  `GridView.test.tsx`, `StandaloneLadder.test.tsx` verdi senza modifiche (suite intera).
+- A 1280 px nessuno scroll orizzontale nel terminal (misura di `scatta.mjs`).
+- Prova pixel col guscio spento contro master (lista e terminal, 1280 e 1600): differenze solo nelle zone che
+  cambiano anche fra due scatti dello STESSO codice (dati del canale finto che arrivano ogni 1,5 s, icone
+  animate): stesse zone e stesso ordine di grandezza in `off_ramo` contro `off_ramo2`.
+- Il terminal mostra meno righe di ladder per volta nella stessa finestra di 420 px (circa 21 invece di 32):
+  conseguenza della riga più alta del prototipo. Da valutare con l'utente.
 
 ### Pagina 13a — Scelta sport: verifiche
 - Prova pixel col guscio spento contro master: identiche salvo poche decine di pixel dell'animazione d'ingresso delle
@@ -124,7 +142,10 @@ comandi, chiamate e WebSocket restano identici, anche col guscio acceso). Nessun
    con lo stesso nome «Parametri» (foglio della strategia `parametriRiga` + foglio del bot `parametri`, perché
    `primaDelBot`). È voluto dal codice, ma a schermo i due bottoni sono indistinguibili per nome accessibile e
    testo. Presente uguale col guscio spento. Non toccato (testo).
-2. Ereditati dal referto 1 e ancora veri: `npm ci` richiede `--legacy-peer-deps`; testate `sticky` di pagina che
+2. `components/live/ScalperPanel.tsx`: il mojibake è nei TESTI A SCHERMO, non solo nei commenti (24 sequenze;
+   visibili nel pannello Scalper del terminal: «pre-match Â· stop automatico al KO», «â€" cicli 5»,
+   «â‚¬0.71»). Il brief ammette la correzione solo nei commenti: non corretto, da correggere dal coordinatore.
+3. Ereditati dal referto 1 e ancora veri: `npm ci` richiede `--legacy-peer-deps`; testate `sticky` di pagina che
    oggi non restano incollate; `MarketWatch.test.tsx` fragile sotto carico.
 
 ## Cosa non ho potuto verificare

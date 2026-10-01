@@ -45,30 +45,30 @@ export function LiveMatchCard({ follow, selected, onClick }: {
                         title={follow.origine === 'auto'
                             ? 'Seguita DA SOLA dal runner per i bot (solo stream e ordini): "Segui live" per il terminale completo'
                             : 'Seguita a mano ("Segui live")'}
-                        className={`inline-flex items-center px-2 py-0.5 rounded-md border text-[10px] font-bold uppercase ${
+                        className={`inline-flex items-center px-2 py-0.5 rounded-md border text-[10px] font-bold uppercase ds-v2-lm-pillola ${
                             follow.origine === 'auto'
                                 ? 'bg-sky-500/15 text-sky-300 border-sky-500/40'
                                 : 'bg-white/5 text-muted-foreground border-white/10'}`}
                     >
                         {follow.origine === 'auto' ? 'auto' : 'manuale'}
                     </span>
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-bold uppercase ${statusBadgeCls(follow.status)}`}>
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-bold uppercase ds-v2-lm-pillola ${statusBadgeCls(follow.status)}`}>
                         {follow.status === 'STREAMING' && <Radio className="w-3 h-3" />}
                         {LIVE_STATUS_LABEL[follow.status]}
                     </span>
                 </span>
             </div>
 
-            <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-emerald-400 font-bold truncate">{follow.home_name}</span>
-                    <span className="font-display font-black tabular-nums text-white px-2">
+            <div className="flex items-center justify-between gap-3 ds-v2-lm-riga">
+                <div className="flex items-center gap-2 min-w-0 ds-v2-lm-squadre">
+                    <span className="text-emerald-400 font-bold truncate ds-v2-lm-squadra">{follow.home_name}</span>
+                    <span className="font-display font-black tabular-nums text-white px-2 ds-v2-lm-punteggio">
                         {hasScore ? `${sh} - ${sa}` : 'vs'}
                     </span>
-                    <span className="text-amber-400 font-bold truncate">{follow.away_name}</span>
+                    <span className="text-amber-400 font-bold truncate ds-v2-lm-squadra">{follow.away_name}</span>
                 </div>
                 {follow.inplay && follow.minute != null && (
-                    <span className="shrink-0 inline-flex items-center px-2 py-0.5 rounded-md bg-primary/15 text-primary border border-primary/40 text-[11px] font-bold tabular-nums">
+                    <span className="shrink-0 inline-flex items-center px-2 py-0.5 rounded-md bg-primary/15 text-primary border border-primary/40 text-[11px] font-bold tabular-nums ds-v2-lm-pillola">
                         {follow.minute}'
                     </span>
                 )}

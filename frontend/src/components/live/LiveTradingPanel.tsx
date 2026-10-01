@@ -49,7 +49,7 @@ interface Props {
 
 const SELECT_CLS =
     'w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ' +
-    'focus:outline-none focus:border-primary/60 transition-colors disabled:opacity-40';
+    'focus:outline-none focus:border-primary/60 transition-colors disabled:opacity-40 ds-v2-campo';
 const FIELD_LABEL = 'text-[10px] uppercase tracking-wider text-muted-foreground mb-1 block';
 
 const num = (s: string): number | null => {
@@ -324,7 +324,7 @@ export function LiveTradingPanel({
 
             {/* ---------------- order entry ---------------- */}
             <fieldset disabled={readOnly} className="space-y-3">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 ds-v2-lt-griglia">
                     <div className="col-span-2 md:col-span-2">
                         <Label className={FIELD_LABEL}>Selezione</Label>
                         {selections.length > 0 ? (
@@ -338,13 +338,13 @@ export function LiveTradingPanel({
                             </select>
                         ) : (
                             <Input type="number" value={selectionId} onChange={e => setSelectionId(e.target.value)}
-                                placeholder="selection_id" className="bg-black/60 border-white/10" />
+                                placeholder="selection_id" className="bg-black/60 border-white/10 ds-v2-campo" />
                         )}
                     </div>
                     <div>
                         <Label className={FIELD_LABEL}>Handicap</Label>
                         <Input type="number" step="0.25" value={handicap} onChange={e => setHandicap(e.target.value)}
-                            className="bg-black/60 border-white/10" />
+                            className="bg-black/60 border-white/10 ds-v2-campo" />
                     </div>
                     <div>
                         <Label className={FIELD_LABEL}>Lato</Label>
@@ -357,13 +357,13 @@ export function LiveTradingPanel({
                         <Label className={FIELD_LABEL}>Prezzo (quota)</Label>
                         <Input type="number" step="0.01" min="1.01" max="1000" value={price}
                             onChange={e => setPrice(e.target.value)} placeholder="es. 2.10"
-                            className="bg-black/60 border-white/10" />
+                            className="bg-black/60 border-white/10 ds-v2-campo" />
                     </div>
                     <div>
                         <Label className={FIELD_LABEL}>{sizeMode === 'liability' ? 'Liability (€)' : 'Size (€)'}</Label>
                         <Input type="number" step="0.01" min="0" value={amount}
                             onChange={e => setAmount(e.target.value)} placeholder="es. 2.00"
-                            className="bg-black/60 border-white/10" />
+                            className="bg-black/60 border-white/10 ds-v2-campo" />
                     </div>
                     <div>
                         <Label className={FIELD_LABEL}>Importo come</Label>
@@ -390,7 +390,7 @@ export function LiveTradingPanel({
                     <div>
                         <Label className={FIELD_LABEL}>Cap max stake (€)</Label>
                         <Input type="number" step="0.5" min="0" value={maxStake}
-                            onChange={e => setMaxStake(e.target.value)} className="bg-black/60 border-white/10" />
+                            onChange={e => setMaxStake(e.target.value)} className="bg-black/60 border-white/10 ds-v2-campo" />
                     </div>
                 </div>
 

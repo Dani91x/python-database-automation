@@ -21,7 +21,7 @@ const ORA_FISSA = process.env.ORA_FISSA === undefined ? '2026-10-01T08:38:00Z' :
 mkdirSync(OUT, { recursive: true });
 const PAGINE = [
   ['board', '/board'], ['control-room', '/control-room'], ['dashboard', '/dashboard'], ['omega', '/omega'],
-  ['safe-strategy', '/safe-strategy'], ['mike', '/mike'], ['segui-live', '/segui-live'], ['multi-ladder', '/multi-ladder'],
+  ['safe-strategy', '/safe-strategy'], ['mike', '/mike'], ['segui-live', '/segui-live'], ['segui-live-terminal', '/segui-live?event=34812001'], ['multi-ladder', '/multi-ladder'],
   ['market-watch', '/market-watch'], ['live-pnl', '/live-pnl'], ['storico-calcio', '/storico/calcio'],
   ['storico-tennis', '/storico/tennis'], ['tennis', '/tennis'], ['tennis-terminal', '/tennis/terminal'],
   ['tennis-terminal-match', '/tennis/terminal?event=34000001&market=1.250000001&name=Match%20Odds&p1=Giocatore%20Uno&p2=Giocatore%20Due'],

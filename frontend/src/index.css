@@ -1531,12 +1531,8 @@
 }
 
 [data-shell="v2"] .ds-v2-campo {
-    height: 26px;
-    border-radius: 8px;
     border-color: hsl(var(--border));
     background-color: hsl(var(--input) / 0.6);
-    padding: 0 8px;
-    font-size: 11.5px;
 }
 
 /* ---------- PORTALI (fogli parametri, dialoghi): fuori dalla radice del guscio,
@@ -1702,4 +1698,72 @@
     border-top-width: 0;
     text-align: left;
     padding: 0 24px 24px;
+}
+
+/* ---------- PAGINA 3 — SEGUI LIVE e terminal calcio (prototipo s_live.js, ladder.js) ---------- */
+/* LADDER (massima prudenza, brief §6): solo tipografia e spaziatura interna.
+   La riga si alza (le celle-bottone la riempiono: area cliccabile PIU' GRANDE,
+   mai piu' piccola); larghezze delle colonne, ordine, drag e scroll invariati
+   (la centratura misura le righe dal DOM). Misura: confronto2/strumenti/misura_ladder.mjs */
+[data-shell="v2"] .ds-v2-ladder-riga {
+    min-height: 20px;
+    font-size: 11.5px;
+    line-height: 1.25;
+}
+
+[data-shell="v2"] .ds-v2-ladder-testa {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: hsl(var(--muted-foreground));
+    background-color: hsl(var(--muted));
+    padding-top: 3px;
+    padding-bottom: 3px;
+}
+
+/* Live Trading (colonna destra del terminal): due colonne di campi da 30 px */
+[data-shell="v2"] .ds-v2-lt-griglia {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+[data-shell="v2"] .ds-v2-lt-griglia > .col-span-2 {
+    grid-column: span 2 / span 2;
+}
+
+[data-shell="v2"] .ds-v2-campo {
+    height: 30px;
+    padding-top: 0;
+    padding-bottom: 0;
+    padding-left: 10px;
+    padding-right: 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+/* scheda di una partita seguita: punteggio grande al centro (prototipo) */
+[data-shell="v2"] .ds-v2-lm-riga {
+    justify-content: center;
+}
+
+[data-shell="v2"] .ds-v2-lm-squadre {
+    gap: 10px;
+}
+
+[data-shell="v2"] .ds-v2-lm-squadra {
+    font-size: 15px;
+    font-weight: 700;
+}
+
+[data-shell="v2"] .ds-v2-lm-punteggio {
+    font-size: 20px;
+    font-weight: 800;
+}
+
+[data-shell="v2"] .ds-v2-lm-pillola {
+    border-radius: 9999px;
+    height: 20px;
+    text-transform: none;
+    letter-spacing: 0.03em;
 }
