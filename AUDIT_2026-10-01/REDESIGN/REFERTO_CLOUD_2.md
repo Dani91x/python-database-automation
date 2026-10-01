@@ -5,7 +5,17 @@ Mandato: `AUDIT_2026-10-01/REDESIGN/BRIEF_SESSIONE_CLOUD_2_VESTE_COMPLETA.md`. R
 Letti prima di scrivere codice: brief 2, brief 1 (da `2d8ee70`, il file non è più su master), `REFERTO_CLOUD.md`,
 `PIANO_INTEGRAZIONE.md`, `INVENTARIO_FUNZIONALITA.md` + `inventario_parti/*`, prototipo (`index.html`, `js/*.js`).
 
-**Stato: in corso — vedi la tabella delle pagine.** Il referto si aggiorna a ogni pagina.
+**Stato: COMPLETATO — tutte le pagine dell'elenco §5 sono vestite, verificate e pushate** (1-13; le pagine fuori
+dal guscio — landing, conferma email, reimposta password, 404, Ladder pop-out — restano invariate per costruzione:
+vedi righe 9b e 13b). Nessuna fusione su master, nessun build in produzione.
+
+**Passata finale sullo stato definitivo** (`confronto2/strumenti/rigenera_tutto.sh`): tutte le immagini di
+`confronto2/` rifatte sul codice finale; prova pixel col guscio spento contro master su 21 schermate × 1280/1600:
+`confronto2/off_contro_master_finale.txt` — 26 scatti identici, gli altri 16 diversi SOLO nelle zone dinamiche
+già documentate pagina per pagina (pallino REC, età «feed vivo (N s)», strisce animate dei segnali di Safe, dati del
+canale finto che arrivano ogni 1,5 s, stella dei preferiti), ognuna verificata con due scatti dello STESSO codice.
+Dialoghi e fogli (portali) sopra la cornice: verificati col guscio acceso (foglio parametri di Omega, dialogo
+«Svuota Report»).
 
 ---
 
