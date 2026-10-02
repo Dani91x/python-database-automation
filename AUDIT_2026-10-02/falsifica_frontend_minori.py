@@ -97,6 +97,11 @@ BPS = 'frontend/src/components/safestrategy/BotParamsSheet.tsx'
 FOTO = 'frontend/src/fotografia/fotografia.test.tsx'
 FINTO = 'frontend/src/fotografia/supabaseFinto.ts'
 MWT = 'frontend/src/pages/MarketWatch.test.tsx'
+MIKE = 'frontend/src/lib/mike.ts'
+TEN = 'frontend/src/components/tennis/TennisBotServiceParamsSheet.tsx'
+OML = 'frontend/src/lib/omega.ts'
+OMS = 'frontend/src/components/omega/OmegaParamsSheet.tsx'
+OMP = 'frontend/src/pages/Omega.tsx'
 
 T_A = (['src/test/codificaSorgenti.test.ts'], None)
 T_B = (['src/pages/ControlRoom.test.tsx'], 'FRONTEND MINORI B')
@@ -104,6 +109,11 @@ T_C = (['src/fotografia/cssVeste.test.ts'], None)
 T_35 = (['src/components/safestrategy/BotParamsSheet.test.tsx'], '35 campo')
 T_31 = (['src/fotografia/fotografia.test.tsx'], 'mike:')
 T_32 = (['src/pages/MarketWatch.test.tsx'], None)
+T_R1 = (['src/components/safestrategy/BotParamsSheet.test.tsx'], 'reperto 1')
+T_MK = (['src/components/mike/MikeParamsSheet.test.tsx'], 'reperto 2')
+T_TN = (['src/components/tennis/TennisBotServiceParamsSheet.test.tsx'], 'reperto 2')
+T_OM = (['src/components/omega/OmegaParamsSheet.test.tsx'], 'reperto 2')
+T_OP = (['src/pages/Omega.test.tsx'], 'reperto 2')
 
 MUTAZIONI = [
     ('A1', 'A', 'ScalperPanel: rimesso "Stake ' + 'EURO guasto" (riga 311)',
@@ -144,7 +154,28 @@ MUTAZIONI = [
      {MWT: lambda _t: ritarda_letture_mw(git_master('frontend/src/pages/MarketWatch.test.tsx').decode('utf-8'))}, T_32, 'ROSSO'),
     ('W1b', '32', 'CARICO SIMULATO con MarketWatch.test CORRETTO (controprova)',
      {MWT: ritarda_letture_mw}, T_32, 'VERDE'),
-    ('W2', '32', 'MarketWatch.test corretto ma "paper e live" senza waitFor + carico simulato',
+    # ---- reperti 1-2 (seconda consegna, 02/10)
+    ('R1a', 'rep.1', 'mergeExits torna a NON leggere base_control_exit / base_control_exit_max',
+     {BPS: lambda t: sostituisci(sostituisci(t,
+        'base_control_exit: b(r.base_control_exit, EXITS_DEFAULTS.base_control_exit),',
+        'base_control_exit: EXITS_DEFAULTS.base_control_exit,'),
+        'base_control_exit_max: n(r.base_control_exit_max, EXITS_DEFAULTS.base_control_exit_max),',
+        'base_control_exit_max: EXITS_DEFAULTS.base_control_exit_max,')}, T_R1, 'ROSSO'),
+    ('R1b', 'rep.1', 'direzione nuova: valore di serie sbagliato (uscita ACCESA di serie)',
+     {BPS: lambda t: sostituisci(t, 'base_control_exit: false,', 'base_control_exit: true,')}, T_R1, 'ROSSO'),
+    ('R2m1', 'rep.2 Mike', 'mergeMikeParams: "" torna a Number("") = 0 -> minimo del campo',
+     {MIKE: lambda t: sostituisci(t, "if (typeof v === 'string' && v.trim() === '') continue;", '')}, T_MK, 'ROSSO'),
+    ('R2m2', 'rep.2 Mike', 'parametriMikeDaSalvare non toglie la chiave del campo svuotato',
+     {MIKE: lambda t: sostituisci(t, "String(v[f.key]).trim() === '') delete out[f.key];", "String(v[f.key]).trim() === '') void 0;")}, T_MK, 'ROSSO'),
+    ('R2t', 'rep.2 tennis', 'save: tolto il ramo "campo svuotato" (torna Number("") = 0)',
+     {TEN: lambda t: sostituisci(t, "} else if (String(v ?? '').trim() === '') {", '} else if (false) {')}, T_TN, 'ROSSO'),
+    ('R2o1', 'rep.2 Omega', 'omegaParamsPatch: tolto il ramo "campo numerico svuotato" (torna "")',
+     {OML: lambda t: sostituisci(t, "&& typeof v === 'string' && v.trim() === '') {", '&& false) {')}, T_OM, 'ROSSO'),
+    ('R2o2', 'rep.2 Omega', 'foglio (Control Room): tolto il rifiuto dell\'obiettivo vuoto (torna dailyGoal 0)',
+     {OMS: lambda t: sostituisci(t, 'if (obiettivoVuoto(next.__daily_goal)) {', 'if (false) {')}, T_OM, 'ROSSO'),
+    ('R2o3', 'rep.2 Omega', 'pagina Omega: tolto il rifiuto dell\'obiettivo vuoto (torna dailyGoal 0)',
+     {OMP: lambda t: sostituisci(t, 'if (obiettivoVuoto(next.__daily_goal)) {', 'if (false) {')}, T_OP, 'ROSSO'),
+    ('W2', '32','MarketWatch.test corretto ma "paper e live" senza waitFor + carico simulato',
      {MWT: lambda t: ritarda_letture_mw(sostituisci(t, '        await waitFor(() => {', '        await (async (f: () => void) => f())(() => {'))}, T_32, 'ROSSO'),
 ]
 
@@ -174,7 +205,7 @@ def main() -> int:
         esiti.append(ok)
         print(f'[{mid}] punto {punto}: {descr}\n    atteso {atteso}, visto {visto} -> {"OK" if ok else "NON OK"}\n    {riass}')
     print('\n--- controprova finale: albero ripristinato, test mirati verdi ---')
-    for files, filtro in (T_A, T_B, T_C, T_35, T_32):
+    for files, filtro in (T_A, T_B, T_C, T_35, T_32, T_R1, T_MK, T_TN, T_OM, T_OP):
         rc, riass = vitest(files, filtro)
         esiti.append(rc == 0)
         print(f'    {" ".join(files)} {filtro or ""}: {"VERDE" if rc == 0 else "ROSSO"} | {riass}')
