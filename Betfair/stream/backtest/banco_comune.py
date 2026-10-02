@@ -575,6 +575,9 @@ class MercatoFlumine:
         self.letture: int = 0
         # 30/09: market_id -> libro finale (``registra_libro_chiuso``)
         self.libri_chiusi: Dict[str, Dict[str, Any]] = {}
+        # 02/10 (REPLAY VELOCE): market_id -> (book, convertito, libro) dell'ultima
+        # ``registra_libro_chiuso``: vedi li' quando il libro si riusa
+        self._libro_chiuso_da: Dict[str, Tuple[Any, Any, Dict[str, Any]]] = {}
         # 30/09 (P&L REALE DEL CONTO): l'aliquota con cui il banco calcola la
         # commissione del MERCATO nella lettura per mercato
         # (``list_account_cleared_markets``). In produzione la applica Betfair;
@@ -1301,6 +1304,28 @@ class MercatoFlumine:
         stato = str(getattr(market_book, "status", "") or "").upper()
         if stato != "CLOSED":
             return None
+        # 02/10 (REPLAY VELOCE, PROCESSO_STANDARD_BOT par. 6.9). Flumine RIEMETTE
+        # il book CLOSED di un mercato chiuso a OGNI riga della registrazione
+        # (`GeneratoreLibri`: lo STESSO oggetto finche' la cache non cambia) e il
+        # replay di Mike lo consegna qui ogni volta: 139.142 ricostruzioni su
+        # 35760084 [base], tutte uguali. Il libro si riusa SOLO quando e' certo
+        # che sarebbe uguale:
+        #   * STESSO oggetto (`is`; il book resta referenziato qui, quindi il suo
+        #     id non puo' passare a un altro oggetto);
+        #   * stesso stato di conversione in EUR (`size_gbp_convertite`, l'unica
+        #     cosa che modifica un book dopo la nascita: ne sostituisce le scale);
+        #   * in ``libri_chiusi`` c'e' ancora QUEL libro (nessuno lo ha sostituito;
+        #     `read_book` ne consegna una copia, non lo modifica).
+        # Un book NUOVO (la cache del mercato e' cambiata) si rifa' sempre, come
+        # prima. Equivalenza e falsificazione:
+        # `Betfair/stream/tests/test_banco_replay_veloce_2026_10_02.py`.
+        mid_libro = str(getattr(market_book, "market_id", "") or "")
+        convertito = getattr(market_book, "size_gbp_convertite", None)
+        prec = self._libro_chiuso_da.get(mid_libro)
+        if (RIUSA_LIBRO_CHIUSO and prec is not None and prec[0] is market_book
+                and prec[1] == convertito
+                and self.libri_chiusi.get(mid_libro) is prec[2]):
+            return prec[2]
 
         def _livelli(xs: Any) -> List[Dict[str, Any]]:
             # i livelli nella forma di ``listMarketBook`` ({price, size}): la
@@ -1333,6 +1358,7 @@ class MercatoFlumine:
                  "inplay": bool(getattr(market_book, "inplay", False)),
                  "runners": runners}
         self.libri_chiusi[libro["market_id"]] = libro
+        self._libro_chiuso_da[mid_libro] = (market_book, convertito, libro)
         return libro
 
     def pnl_betfair(self, commissione: float, con_utente: bool = False) -> Dict[str, Any]:
@@ -1549,6 +1575,128 @@ def info_flumine_solo_se_loggata():
         BaseFlumine.info = originale
 
 
+# 02/10 (REPLAY VELOCE, par. 6.9): `False` = `_process_close_market` di flumine
+# tale e quale (serve SOLO al test di equivalenza e alla falsificazione).
+CHIUSURA_SENZA_RESOCONTI_MUTI = True
+
+#: l'impronta del sorgente di `BaseFlumine._process_close_market` da cui e' stata
+#: copiata `_chiudi_mercato_senza_resoconti` (flumine 2.13.11). Un flumine diverso
+#: -> impronta diversa -> si usa la funzione VERA, senza toccare niente.
+_IMPRONTA_CHIUSURA_FLUMINE = "43ee8df005fd9454e18a7f8f24e66787bf3aa042f6564a64d4f037fc8539e57c"
+
+
+def _impronta_chiusura_flumine() -> str:
+    import hashlib
+    import inspect
+
+    from flumine.baseflumine import BaseFlumine
+
+    sorgente = inspect.getsource(BaseFlumine.__dict__["_process_close_market"])
+    return hashlib.sha256(sorgente.encode("utf-8")).hexdigest()
+
+
+def _chiudi_mercato_senza_resoconti(self: Any, event: Any) -> None:
+    """`BaseFlumine._process_close_market` (flumine 2.13.11,
+    `baseflumine.py:353-414`) riga per riga, MENO il blocco che in simulazione
+    fabbrica un `ClearedOrdersEvent` vuoto e un `ClearedMarketsEvent` per client.
+
+    Quel blocco non tocca niente che qualcuno legga, quando nessuno ascolta:
+      * `_process_cleared_orders` con la lista VUOTA di Betfair: il blotter non
+        assegna nessun `cleared_order` (`blotter.py:176-184` cicla su zero
+        ordini) e il resto e' `log_control` + `logger.info`;
+      * `_process_cleared_markets`: solo `logger.info` + `log_control`;
+      * `market.cleared(client)` legge gli ordini e non li modifica.
+    `log_control` senza logging control (il banco non ne monta) non fa nulla, e
+    il log INFO di flumine nel banco e' spento (`certifica.py`, WARNING). Si usa
+    SOLO in quelle condizioni (vedi `chiusura_flumine_senza_resoconti_muti`).
+
+    MISURATO (02/10, profilo di `certifica mike 35760084 --scenari base`):
+    flumine riconsegna il book CLOSED di ogni mercato chiuso a OGNI riga della
+    registrazione (139.142 chiamate) e ogni volta fabbricava due `ClearedOrders`
+    e i conti di `market.cleared`: ~15 s su 205 di profilo. Il resto della
+    funzione - `market(market_book)`, `blotter.process_closed_market`,
+    `strategy.process_closed_market` di ogni strategia, `_remove_market` - resta
+    identico: NESSUN book viene saltato e la strategia li vede tutti.
+    """
+    from flumine.baseflumine import logger as log_flumine
+
+    market_book = event.event
+    if isinstance(market_book, dict):
+        recorder = True
+        market_id = market_book["id"]
+        stream_id = market_book["_stream_id"]
+    else:
+        recorder = False
+        market_id = market_book.market_id
+        stream_id = market_book.streaming_unique_id
+    market = self.markets.markets.get(market_id)
+    if market is None:
+        log_flumine.warning(
+            "Market %s not present when closing",
+            market_id,
+            extra={"market_id": market_id, **self.info},
+        )
+        return
+    # process market
+    if market.closed is False:
+        market.close_market()
+    if recorder is False:
+        market(market_book)
+        market.blotter.process_closed_market(market, event.event)
+
+    for strategy in self.strategies:
+        if stream_id in strategy.stream_ids or strategy.market_filter == {}:
+            strategy.process_closed_market(market, event.event)
+
+    # [qui flumine simula ClearedOrdersEvent e ClearedMarketsEvent: muti, vedi sopra]
+
+    self.log_control(event)
+    log_flumine.info("Market closed", extra={"market_id": market_id, **self.info})
+
+    # check for markets that have been closed for x seconds and remove
+    if not self.clients.simulated:
+        # due to monkey patching this will clear simulated markets
+        closed_markets = [
+            m
+            for m in self.markets
+            if m.closed
+            and m.elapsed_seconds_closed
+            and m.elapsed_seconds_closed > 3600
+        ]
+        for market in closed_markets:
+            self._remove_market(market)
+    else:
+        self._remove_market(market, clear=False)
+
+
+@contextmanager
+def chiusura_flumine_senza_resoconti_muti():
+    """Dentro il banco, `BaseFlumine._process_close_market` salta i resoconti
+    simulati di regolamento SOLO se nessuno li puo' osservare: nessun logging
+    control montato sul quadro e log INFO di flumine spento. Altrimenti, e con un
+    flumine il cui sorgente non e' quello copiato, e' la funzione VERA. Si rimette
+    a posto all'uscita, come `info_flumine_solo_se_loggata`."""
+    from flumine.baseflumine import BaseFlumine
+
+    originale = BaseFlumine.__dict__["_process_close_market"]
+    if _impronta_chiusura_flumine() != _IMPRONTA_CHIUSURA_FLUMINE:
+        yield False
+        return
+    log_flumine = logging.getLogger("flumine.baseflumine")
+
+    def _process_close_market(self, event):
+        if (not CHIUSURA_SENZA_RESOCONTI_MUTI or self._logging_controls
+                or log_flumine.isEnabledFor(logging.INFO)):
+            return originale(self, event)
+        return _chiudi_mercato_senza_resoconti(self, event)
+
+    BaseFlumine._process_close_market = _process_close_market
+    try:
+        yield True
+    finally:
+        BaseFlumine._process_close_market = originale
+
+
 @contextmanager
 def simulazione_flumine():
     """Accende la simulazione di flumine e RIMETTE A POSTO i flag globali.
@@ -1571,9 +1719,10 @@ def simulazione_flumine():
 
     try:
         # 02/10 (banco ottimista): l'exchange simulato rifiuta come Betfair .it
-        # gli ordini sotto il minimo (``minimi_banco``), per ogni replay
+        # gli ordini sotto il minimo (``minimi_banco``), per ogni replay.
+        # 02/10 (REPLAY VELOCE): la chiusura del mercato senza i resoconti muti.
         with orologio_monotono() as stato, info_flumine_solo_se_loggata(), \
-                minimi_it_su_flumine():
+                minimi_it_su_flumine(), chiusura_flumine_senza_resoconti_muti():
             fconf._orologio_banco = stato       # diagnostica del giro corrente
             yield fconf
     finally:
@@ -1604,6 +1753,18 @@ ATTESA_ESATTA = True
 # fa girare il bot piu' spesso di quanto giri davvero): serve alla misura
 # prima/dopo e alla falsificazione.
 CADENZA_DOPO_LE_CHIAMATE = True
+
+# 02/10 (REPLAY VELOCE, par. 6.9): il libro finale di un mercato CHIUSO si riusa
+# quando flumine riconsegna lo STESSO book (`MercatoFlumine.registra_libro_chiuso`).
+# `False` lo ricostruisce a ogni consegna, come prima: serve SOLO al test di
+# equivalenza e alla falsificazione.
+RIUSA_LIBRO_CHIUSO = True
+
+# 02/10 (REPLAY VELOCE, par. 6.9): le due regole di lapse (fischio, sospensione in
+# gioco) non si ricalcolano quando flumine riconsegna lo STESSO book dell'ultima
+# volta per quel mercato (`MotoreReplay._a_flumine`). `False` = la via di prima:
+# serve SOLO al test di equivalenza e alla falsificazione.
+RIUSA_LAPSE = True
 
 # LATENZA DELLE CHIAMATE DI LETTURA — ASSUNTA, NON MISURATA (16/09/2026).
 # `list_current_orders`, `list_cleared_orders` e `read_book` sono REST sincrone
@@ -1801,6 +1962,9 @@ class MotoreReplay:
         # market_id -> ultimo stato visto (per la scadenza alla sospensione)
         self._stato_mercato: Dict[str, str] = {}
         self.lapse_alla_sospensione: int = 0
+        # 02/10 (REPLAY VELOCE): market_id -> l'ultimo book passato dalle due
+        # regole di lapse (vedi `_a_flumine`)
+        self._ultimo_book_lapse: Dict[str, Any] = {}
         # quanti book sono passati mentre un piazzamento aspettava il bet delay
         self.pompati: int = 0
         # piazzamenti per cui non esisteva nessun book futuro (registrazione
@@ -1851,14 +2015,24 @@ class MotoreReplay:
         elif market.closed:
             quadro.markets.add_market(market_id, market)
         market(market_book)
-        # PRIMA del middleware, che e' quello che abbina: su Betfair l'ordine e'
-        # gia' morto quando il mercato passa in gioco, quindi non deve poter
-        # prendere i prezzi del fischio.
-        self._lapse_al_fischio(market, market_book)
-        # ... e alla SOSPENSIONE IN GIOCO: su Betfair il gol uccide l'ordine
-        # appoggiato prima che il mercato riapra. Anche questa PRIMA del
-        # middleware che abbina.
-        self._lapse_alla_sospensione(market, market_book)
+        # 02/10 (REPLAY VELOCE, par. 6.9): se l'ultimo book di QUESTO mercato
+        # passato di qui e' lo STESSO oggetto (flumine riemette il book di ogni
+        # mercato a ogni riga, `GeneratoreLibri`), le due regole sotto non
+        # possono scattare: confrontano lo stato del book con quello del book
+        # precedente dello stesso mercato, che e' lui (in gioco e stato non
+        # cambiano su un oggetto gia' nato; la conversione in EUR tocca solo le
+        # scale). Tornerebbero 0 e riscriverebbero gli stessi valori: si salta
+        # il CALCOLO, non il book. `RIUSA_LAPSE = False` = la via di prima.
+        if not (RIUSA_LAPSE and self._ultimo_book_lapse.get(market_id) is market_book):
+            # PRIMA del middleware, che e' quello che abbina: su Betfair l'ordine e'
+            # gia' morto quando il mercato passa in gioco, quindi non deve poter
+            # prendere i prezzi del fischio.
+            self._lapse_al_fischio(market, market_book)
+            # ... e alla SOSPENSIONE IN GIOCO: su Betfair il gol uccide l'ordine
+            # appoggiato prima che il mercato riapra. Anche questa PRIMA del
+            # middleware che abbina.
+            self._lapse_alla_sospensione(market, market_book)
+            self._ultimo_book_lapse[market_id] = market_book
         for middleware in quadro._market_middleware:
             futils.call_middleware_error_handling(middleware, market)
         if market.blotter.active:

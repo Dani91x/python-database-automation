@@ -1,0 +1,594 @@
+diff --git a/AUDIT_2026-10-02/TEST_ISOLAMENTO_4.md b/AUDIT_2026-10-02/TEST_ISOLAMENTO_4.md
+new file mode 100644
+index 0000000..dafaa0b
+--- /dev/null
++++ b/AUDIT_2026-10-02/TEST_ISOLAMENTO_4.md
+@@ -0,0 +1,89 @@
++# Isolamento 4 - `test_db_client_is_per_thread` rosso solo nella suite intera (02/10)
++
++Ramo locale `test-isolamento-4` (base `4472930`), worktree `agent-acfe2e24b0b2ec3e8`.
++Solo test/conftest toccati: nessuna condotta di produzione cambiata.
++
++## Inquinatore (bisezione)
++
++Script `AUDIT_2026-10-02/bisezione_inquinatore_4.py`, uscita `bisezione_inquinatore_4_out.txt`:
++391 file che precedono `stream/tests/test_net_retry.py` nell'ordine della suite -> ROSSO
++(riprodotto, 665 s); dimezzamenti fino al file
++`Betfair/mike/tests/test_mike_riga_assente_e_arresto_2026_10_02.py`, poi fino al test
++
++    Betfair/mike/tests/test_mike_riga_assente_e_arresto_2026_10_02.py::test_R1_main_all_arresto_chiama_l_arresto_degli_ordini
++
++Combinazione minima: quel test + `Betfair/stream/tests/test_net_retry.py::test_db_client_is_per_thread`.
++
++## Causa esatta
++
++- Il test inquinatore (`test_mike_riga_assente_e_arresto_2026_10_02.py:240` e `:244`) esegue
++  il `main` VERO di Mike (`S.main()`), che a `Betfair/mike/service.py:7371` chiama
++  `db_client.usa_timeout_bot()` reale (il test neutralizza canale, lock, segnali, ma non questo).
++- `usa_timeout_bot` (`db_client.py:59-67`) scrive `_STATO["timeout"] = httpx.Timeout(...)`
++  nello stato di PROCESSO (`db_client.py:33`) e nessuno lo rimette a `None`.
++- Da li' in poi `get_supabase_client` prende il ramo `create_client(url, key, options=ClientOptions(...))`
++  (`db_client.py:83-84`); il finto del bersaglio `_mk(url, key)` (`test_net_retry.py:189`)
++  non accetta `options` -> `TypeError: _mk() got an unexpected keyword argument 'options'`.
++- Non c'entrano `_TLS` (il bersaglio lo rimpiazza con `monkeypatch`), thread vivi o
++  `sys.modules` duplicati (`db_client` si importa solo come `db_client`).
++- Nota: il bersaglio e' del 28/09 (`3e96c82`), l'inquinatore e' entrato oggi con `09072ca`
++  (14:11): il rosso e' "preesistente" alla sessione di audit ma nato oggi.
++
++## Correzione (alla radice, in `Betfair/conftest.py`)
++
++Fixture autouse `_ripristina_stato_di_processo_di_db_client`: se `db_client` e' gia'
++importato (mai importato da qui) fotografa l'oggetto `_STATO` e il suo contenuto, l'oggetto
++`_TLS` e il contenuto di `_TLS` del thread del test; a fine test li rimette (oggetto e
++contenuto). Se il modulo e' stato importato DURANTE il test, `_STATO` torna allo stato di
++import (`{"timeout": None}`). Copre ogni test presente e futuro che chiama il `main` vero di
++un bot (Mike, Omega `omega_service.py:8517`, Safe `bot_service.py:10451`, scanner
++`safe_strategy/service.py:3363`). Nessuna funzione di reset aggiunta in produzione.
++Nessun riordino, xfail o skip.
++
++## Falsificazione
++
++`AUDIT_2026-10-02/falsifica_test_isolamento_4.py` -> `falsifica_test_isolamento_4_out.txt`:
++
++| passo | esito |
++|---|---|
++| con correzione | VERDE (2 passed) |
++| fixture tolta dal testo del conftest | ROSSO, `TypeError ... 'options'` |
++| byte originali rimessi (`finally`) | VERDE (2 passed) |
++| sha256 prima/dopo | `602b3831...139d59` identico |
++
++## Esecuzioni (con correzione, nel worktree)
++
++| cosa | esito |
++|---|---|
++| bersaglio da solo | 1 passed |
++| combinazione minima | 2 passed |
++| inquinatore + `test_db_client_timeout_bot_2026_09_28.py` + `test_net_retry.py` | 38 passed |
++| `Betfair/stream/tests` intera | 3416 passed, 25 skipped, 331 s |
++| suite intera `Betfair` (una volta) | **9555 passed, 0 failed**, 31 skipped, 9 xfailed, 443 s (`suite_isolamento_4.txt`) |
++
++Totale raccolto identico a master (9595 = 9555+31+9 qui; 9585+1+9 sul principale). I 31
++skipped compaiono anche nella corsa di bisezione SENZA correzione (391 file, 31 skipped):
++sono d'ambiente del worktree (file non versionati assenti), non effetto della correzione.
++
++## Altri candidati cercati (grep, punto 5)
++
++- Sostituzioni di `_TLS`: solo `test_net_retry.py:194` e `test_db_client_timeout_bot_2026_09_28.py:28`,
++  entrambe via `monkeypatch` (ripristinate). `_STATO`: solo quest'ultimo, via `monkeypatch`.
++- Altri `main()` veri chiamati dai test: `test_p_blocco3_2026_09_28.py:65` (Omega) neutralizza
++  `usa_timeout_bot` con `monkeypatch` (pulito); `test_backtest_opportunity.py:153` e' il main
++  del backtest, non tocca `db_client`.
++- Thread senza `join` (tutti `daemon`, nessuno tocca `db_client`, non sono la causa, non toccati):
++  `safe_strategy/tests/test_porta_ordini_f5_2026_09_24.py:928` (server ws `serve_forever`),
++  `stream/tests/test_frammenti_tcp_2026_09_28.py:116,125` (server TCP finto),
++  `stream/tests/test_banco_scalper_sniper_2026_09_28.py:160` (target vuoto, termina subito).
++
++## NON VERIFICATO
++
++- La suite intera e' girata sulla base `4472930`, non sull'ultimo master (`c0e3feb`, che ha
++  cambiato `banco_comune.py` e altri file); il merge del ramo su master e' pulito
++  (`git merge-tree`), ma la suite su master+correzione non l'ho rilanciata.
++- Elenco preciso dei 31 skipped del worktree (non rilanciato con `-rs`).
++- La patch e' `git diff master...HEAD` (dalla base comune): `git diff master` a due punti
++  includerebbe al contrario i commit arrivati su master dopo la base.
++- Il test inquinatore resta com'e' (chiama `usa_timeout_bot` vero): la scelta di
++  neutralizzarlo anche li' con `monkeypatch` e' lasciata al coordinatore.
+diff --git a/AUDIT_2026-10-02/bisezione_inquinatore_4.py b/AUDIT_2026-10-02/bisezione_inquinatore_4.py
+new file mode 100644
+index 0000000..9a960cf
+--- /dev/null
++++ b/AUDIT_2026-10-02/bisezione_inquinatore_4.py
+@@ -0,0 +1,100 @@
++"""Bisezione dell'inquinatore di ``test_net_retry.py::test_db_client_is_per_thread``.
++
++Uso (dalla radice del worktree):
++    python AUDIT_2026-10-02/bisezione_inquinatore_4.py [--candidati FILE...] [--raccogli]
++
++1. raccoglie l'ordine dei file della suite ``Betfair`` (pytest --collect-only);
++2. tiene i file che PRECEDONO il bersaglio (o i ``--candidati`` dati);
++3. verifica che l'insieme + bersaglio sia ROSSO;
++4. dimezza: prova la prima meta', se rossa tiene quella, altrimenti la seconda;
++   se nessuna delle due da sola e' rossa (servono due file insieme) si ferma e
++   lo dichiara;
++5. stampa l'inquinatore minimo (un file), poi bisezione sui SUOI test.
++
++Nessun riordino: i file sono passati a pytest nell'ordine della suite, il
++bersaglio sempre per ultimo.
++"""
++from __future__ import annotations
++
++import subprocess
++import sys
++import time
++from pathlib import Path
++
++RADICE = Path(__file__).resolve().parents[1]
++PY = sys.executable
++BERSAGLIO = "Betfair/stream/tests/test_net_retry.py::test_db_client_is_per_thread"
++FILE_BERSAGLIO = "Betfair/stream/tests/test_net_retry.py"
++
++
++def _pytest(args: list[str], timeout: int = 1500) -> subprocess.CompletedProcess:
++    return subprocess.run([PY, "-m", "pytest", *args, "-q", "-p", "no:cacheprovider"],
++                          cwd=RADICE, capture_output=True, text=True, timeout=timeout)
++
++
++def raccogli_file() -> list[str]:
++    r = _pytest(["Betfair", "--collect-only"])
++    visti: list[str] = []
++    for riga in r.stdout.splitlines():
++        if "::" in riga:
++            f = riga.split("::", 1)[0]
++            if not visti or visti[-1] != f:
++                if f not in visti:
++                    visti.append(f)
++    return visti
++
++
++def raccogli_test(file: str) -> list[str]:
++    r = _pytest([file, "--collect-only"])
++    return [riga.strip() for riga in r.stdout.splitlines() if "::" in riga]
++
++
++def rosso(insieme: list[str]) -> bool:
++    t0 = time.time()
++    r = _pytest([*insieme, BERSAGLIO])
++    # il bersaglio e' rosso se compare tra i FAILED
++    esito = f"FAILED {BERSAGLIO}" in r.stdout
++    print(f"  [{len(insieme):4d} elementi] {'ROSSO' if esito else 'verde'} "
++          f"({time.time() - t0:.0f} s) :: {r.stdout.strip().splitlines()[-1] if r.stdout.strip() else r.stderr[-200:]}",
++          flush=True)
++    return esito
++
++
++def bisezione(elementi: list[str]) -> list[str]:
++    while len(elementi) > 1:
++        meta = len(elementi) // 2
++        a, b = elementi[:meta], elementi[meta:]
++        if rosso(a):
++            elementi = a
++        elif rosso(b):
++            elementi = b
++        else:
++            print("  nessuna meta' da sola e' rossa: servono elementi di entrambe", flush=True)
++            return elementi
++    return elementi
++
++
++def main() -> int:
++    argv = sys.argv[1:]
++    if "--candidati" in argv:
++        candidati = argv[argv.index("--candidati") + 1:]
++    else:
++        tutti = raccogli_file()
++        idx = tutti.index(FILE_BERSAGLIO)
++        candidati = tutti[:idx]
++    print(f"candidati: {len(candidati)} file", flush=True)
++    if not rosso(candidati):
++        print("L'insieme dei candidati NON riproduce il rosso.", flush=True)
++        return 2
++    file_min = bisezione(candidati)
++    print(f"FILE inquinatore minimo: {file_min}", flush=True)
++    if len(file_min) == 1:
++        test = raccogli_test(file_min[0])
++        print(f"bisezione sui {len(test)} test del file", flush=True)
++        test_min = bisezione(test)
++        print(f"TEST inquinatore minimo: {test_min}", flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/AUDIT_2026-10-02/bisezione_inquinatore_4_out.txt b/AUDIT_2026-10-02/bisezione_inquinatore_4_out.txt
+new file mode 100644
+index 0000000..ecfe599
+--- /dev/null
++++ b/AUDIT_2026-10-02/bisezione_inquinatore_4_out.txt
+@@ -0,0 +1,27 @@
++﻿candidati: 391 file
++  [ 391 elementi] ROSSO (665 s) :: 1 failed, 7889 passed, 31 skipped, 9 xfailed, 19 warnings in 638.19s (0:10:38)
++  [ 195 elementi] ROSSO (157 s) :: 1 failed, 4133 passed, 4 skipped, 4 warnings in 137.11s (0:02:17)
++  [  97 elementi] ROSSO (70 s) :: 1 failed, 1605 passed, 2 warnings in 62.39s (0:01:02)
++  [  48 elementi] verde (72 s) :: 979 passed, 2 warnings in 57.44s
++  [  49 elementi] ROSSO (68 s) :: 1 failed, 627 passed, 2 warnings in 46.58s
++  [  24 elementi] verde (39 s) :: 287 passed in 21.12s
++  [  25 elementi] ROSSO (59 s) :: 1 failed, 341 passed, 2 warnings in 39.65s
++  [  12 elementi] ROSSO (45 s) :: 1 failed, 184 passed, 2 warnings in 25.56s
++  [   6 elementi] verde (24 s) :: 62 passed in 7.76s
++  [   6 elementi] ROSSO (20 s) :: 1 failed, 123 passed, 2 warnings in 11.50s
++  [   3 elementi] verde (14 s) :: 58 passed in 5.52s
++  [   3 elementi] ROSSO (16 s) :: 1 failed, 66 passed, 2 warnings in 9.52s
++  [   1 elementi] verde (45 s) :: 38 passed, 2 warnings in 20.66s
++  [   2 elementi] ROSSO (24 s) :: 1 failed, 29 passed in 7.66s
++  [   1 elementi] ROSSO (16 s) :: 1 failed, 11 passed in 5.73s
++FILE inquinatore minimo: ['Betfair/mike/tests/test_mike_riga_assente_e_arresto_2026_10_02.py']
++bisezione sui 11 test del file
++  [   5 elementi] verde (7 s) :: 6 passed in 0.51s
++  [   6 elementi] ROSSO (11 s) :: 1 failed, 6 passed in 4.36s
++  [   3 elementi] verde (10 s) :: 4 passed in 3.78s
++  [   3 elementi] ROSSO (7 s) :: 1 failed, 3 passed in 1.07s
++  [   1 elementi] verde (7 s) :: 2 passed in 0.45s
++  [   2 elementi] ROSSO (7 s) :: 1 failed, 2 passed in 1.26s
++  [   1 elementi] verde (7 s) :: 2 passed in 0.48s
++  [   1 elementi] ROSSO (7 s) :: 1 failed, 1 passed in 1.01s
++TEST inquinatore minimo: ['Betfair/mike/tests/test_mike_riga_assente_e_arresto_2026_10_02.py::test_R1_main_all_arresto_chiama_l_arresto_degli_ordini']
+diff --git a/AUDIT_2026-10-02/falsifica_test_isolamento_4.py b/AUDIT_2026-10-02/falsifica_test_isolamento_4.py
+new file mode 100644
+index 0000000..36de5df
+--- /dev/null
++++ b/AUDIT_2026-10-02/falsifica_test_isolamento_4.py
+@@ -0,0 +1,76 @@
++"""Falsificazione della correzione «isolamento 4» (``Betfair/conftest.py``,
++fixture ``_ripristina_stato_di_processo_di_db_client``).
++
++Uso (dalla radice del worktree):
++    python AUDIT_2026-10-02/falsifica_test_isolamento_4.py
++
++1. sha256 del conftest corretto;
++2. CON la correzione: combinazione minima -> attesa VERDE;
++3. correzione TOLTA (la fixture rimossa dal testo): combinazione minima ->
++   attesa ROSSA con ``TypeError ... 'options'``;
++4. correzione RIMESSA (byte originali, in ``finally``): -> attesa VERDE;
++5. sha256 dopo == sha256 prima, altrimenti esce con errore.
++"""
++from __future__ import annotations
++
++import hashlib
++import subprocess
++import sys
++from pathlib import Path
++
++RADICE = Path(__file__).resolve().parents[1]
++CONFTEST = RADICE / "Betfair" / "conftest.py"
++PY = sys.executable
++INQUINATORE = ("Betfair/mike/tests/test_mike_riga_assente_e_arresto_2026_10_02.py::"
++               "test_R1_main_all_arresto_chiama_l_arresto_degli_ordini")
++BERSAGLIO = "Betfair/stream/tests/test_net_retry.py::test_db_client_is_per_thread"
++INIZIO = "@pytest.fixture(autouse=True)\ndef _ripristina_stato_di_processo_di_db_client"
++
++
++def sha(p: Path) -> str:
++    return hashlib.sha256(p.read_bytes()).hexdigest()
++
++
++def gira(etichetta: str) -> bool:
++    r = subprocess.run([PY, "-m", "pytest", INQUINATORE, BERSAGLIO, "-q", "-p", "no:cacheprovider"],
++                       cwd=RADICE, capture_output=True, text=True, timeout=600)
++    rosso = f"FAILED {BERSAGLIO}" in r.stdout
++    motivo = [riga.strip() for riga in r.stdout.splitlines() if "TypeError" in riga][:1]
++    print(f"[{etichetta}] {'ROSSO' if rosso else 'VERDE'} :: {r.stdout.strip().splitlines()[-1]}"
++          f"{' :: ' + motivo[0] if motivo else ''}", flush=True)
++    return rosso
++
++
++def senza_correzione(testo: str) -> str:
++    testo_n = testo.replace("\r\n", "\n")
++    i = testo_n.index(INIZIO)
++    j = testo_n.find("\n\n\n@pytest.fixture", i + len(INIZIO))
++    assert j > i, "fine della fixture non trovata"
++    tolto = testo_n[:i] + testo_n[j + 3:]
++    assert "_ripristina_stato_di_processo_di_db_client" not in tolto
++    return tolto
++
++
++def main() -> int:
++    originale = CONFTEST.read_bytes()
++    h0 = sha(CONFTEST)
++    print(f"sha256 conftest (con correzione): {h0}", flush=True)
++    esiti = {}
++    esiti["con"] = gira("1 con correzione")
++    try:
++        CONFTEST.write_bytes(senza_correzione(originale.decode("utf-8")).encode("utf-8"))
++        print(f"sha256 conftest (correzione tolta): {sha(CONFTEST)}", flush=True)
++        esiti["senza"] = gira("2 correzione TOLTA")
++    finally:
++        CONFTEST.write_bytes(originale)
++    h1 = sha(CONFTEST)
++    print(f"sha256 conftest (rimesso): {h1} {'IDENTICO' if h1 == h0 else 'DIVERSO!'}", flush=True)
++    esiti["rimessa"] = gira("3 correzione RIMESSA")
++    ok = (not esiti["con"]) and esiti["senza"] and (not esiti["rimessa"]) and h1 == h0
++    print(f"FALSIFICAZIONE {'RIUSCITA' if ok else 'FALLITA'}: con=verde, tolta=rossa, rimessa=verde, sha identico",
++          flush=True)
++    return 0 if ok else 1
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/AUDIT_2026-10-02/falsifica_test_isolamento_4_out.txt b/AUDIT_2026-10-02/falsifica_test_isolamento_4_out.txt
+new file mode 100644
+index 0000000..2027602
+--- /dev/null
++++ b/AUDIT_2026-10-02/falsifica_test_isolamento_4_out.txt
+@@ -0,0 +1,7 @@
++﻿sha256 conftest (con correzione): 602b38315dfca7246c04d78383411c9b119ea450bd810d1416a80a4828139d59
++[1 con correzione] VERDE :: 2 passed in 0.41s
++sha256 conftest (correzione tolta): e477f4618cc7fe34a1b61efba8ab06acfbe82daaab0a69d16e8b80bf5588328d
++[2 correzione TOLTA] ROSSO :: 1 failed, 1 passed in 0.79s :: E           TypeError: test_db_client_is_per_thread.<locals>._mk() got an unexpected keyword argument 'options'
++sha256 conftest (rimesso): 602b38315dfca7246c04d78383411c9b119ea450bd810d1416a80a4828139d59 IDENTICO
++[3 correzione RIMESSA] VERDE :: 2 passed in 0.43s
++FALSIFICAZIONE RIUSCITA: con=verde, tolta=rossa, rimessa=verde, sha identico
+diff --git a/AUDIT_2026-10-02/suite_isolamento_4.txt b/AUDIT_2026-10-02/suite_isolamento_4.txt
+new file mode 100644
+index 0000000..86eb436
+--- /dev/null
++++ b/AUDIT_2026-10-02/suite_isolamento_4.txt
+@@ -0,0 +1,199 @@
++﻿........................................................................ [  0%]
++........................................................................ [  1%]
++........................................................................ [  2%]
++........................................................................ [  3%]
++........................................................................ [  3%]
++........................................................................ [  4%]
++........................................................................ [  5%]
++........................................................................ [  6%]
++........................................................................ [  6%]
++........................................................................ [  7%]
++........................................................................ [  8%]
++........................................................................ [  9%]
++........................................................................ [  9%]
++........................................................................ [ 10%]
++........................................................................ [ 11%]
++........................................................................ [ 12%]
++........................................................................ [ 12%]
++........................................................................ [ 13%]
++........................................................................ [ 14%]
++........................................................................ [ 15%]
++........................................................................ [ 15%]
++........................................................................ [ 16%]
++........................................................................ [ 17%]
++........................................................................ [ 18%]
++........................................................................ [ 18%]
++........................................................................ [ 19%]
++........................................................................ [ 20%]
++........................................................................ [ 21%]
++........................................................................ [ 21%]
++........................................................................ [ 22%]
++........................................................................ [ 23%]
++......................................................................s. [ 24%]
++........................................................................ [ 24%]
++........................................................................ [ 25%]
++........................................................................ [ 26%]
++........................................................................ [ 27%]
++....................................s.................s................. [ 27%]
++........................................................................ [ 28%]
++........................................................................ [ 29%]
++........................................................................ [ 30%]
++........................................................................ [ 30%]
++........................................................................ [ 31%]
++........................................................................ [ 32%]
++........................................................................ [ 33%]
++........................................................................ [ 33%]
++........................................................................ [ 34%]
++........................................................................ [ 35%]
++........................................................................ [ 36%]
++........................................................................ [ 36%]
++........................................................................ [ 37%]
++........................................................................ [ 38%]
++.................s...................................................... [ 39%]
++........................................................................ [ 39%]
++........................................................................ [ 40%]
++........................................................................ [ 41%]
++........................................................................ [ 42%]
++........................................................................ [ 42%]
++........................................................................ [ 43%]
++........................................................................ [ 44%]
++........................................................................ [ 45%]
++........................................................................ [ 45%]
++........................................................................ [ 46%]
++........................................................................ [ 47%]
++......................ss................................................ [ 48%]
++........................................................................ [ 48%]
++........................................................................ [ 49%]
++........................................................................ [ 50%]
++........................................................................ [ 51%]
++........................................................................ [ 51%]
++....................................................x................... [ 52%]
++........................................................................ [ 53%]
++.......................................xxxx....x................xxx..... [ 54%]
++........................................................................ [ 54%]
++........................................................................ [ 55%]
++........................................................................ [ 56%]
++........................................................................ [ 57%]
++........................................................................ [ 57%]
++........................................................................ [ 58%]
++........................................................................ [ 59%]
++........................................................................ [ 60%]
++........................................................................ [ 60%]
++........................................................................ [ 61%]
++........................................................................ [ 62%]
++........................................................................ [ 63%]
++........................................................................ [ 63%]
++........................................................................ [ 64%]
++........................................................................ [ 65%]
++..........................................................ss.ss.sssss... [ 66%]
++.s............sss..sss.sss.............................................. [ 66%]
++........................................................................ [ 67%]
++........................................................................ [ 68%]
++........................................................................ [ 69%]
++........................................................................ [ 69%]
++........................................................................ [ 70%]
++........................................................................ [ 71%]
++........................................................................ [ 72%]
++.....................................................................sss [ 72%]
++ss.s.................................................................... [ 73%]
++........................................................................ [ 74%]
++........................................................................ [ 75%]
++........................................................................ [ 75%]
++........................................................................ [ 76%]
++........................................................................ [ 77%]
++........................................................................ [ 78%]
++........................................................................ [ 78%]
++........................................................................ [ 79%]
++........................................................................ [ 80%]
++........................................................................ [ 81%]
++..................................................................
++[misura DOPO] motore a evento, comando->place: p50=1.75 ms p95=2.33 ms max=3.06 ms (n=60)
++.
++[misura PRIMA] worker a 1,0 s, comando->place: 950, 651, 350 ms
++..... [ 81%]
++........................................................................ [ 82%]
++........................................................................ [ 83%]
++........................................................................ [ 84%]
++........................................................................ [ 84%]
++........................................................................ [ 85%]
++........................................................................ [ 86%]
++........................................................................ [ 87%]
++........................................................................ [ 87%]
++........................................................................ [ 88%]
++........................................................................ [ 89%]
++........................................................................ [ 90%]
++........................................................................ [ 90%]
++........................................................................ [ 91%]
++........................................................................ [ 92%]
++........................................................................ [ 93%]
++........................................................................ [ 93%]
++........................................................................ [ 94%]
++........................................................................ [ 95%]
++........................................................................ [ 96%]
++........................................................................ [ 96%]
++........................................................................ [ 97%]
++........................................................................ [ 98%]
++........................................................................ [ 99%]
++........................................................................ [ 99%]
++...................                                                      [100%]
++============================== warnings summary ===============================
++Betfair/mike/tests/test_mike_audit_2026_09_12.py: 1 warning
++Betfair/omega/test_omega_cashout_feed_fermo_2026_09_11.py: 1 warning
++Betfair/omega/tests/test_omega_stato_mercato_2026_09_24.py: 2 warnings
++Betfair/safe_strategy/tests/test_flusso_su_master_cantiere_j2_2026_09_28.py: 1 warning
++Betfair/safe_strategy/tests/test_incidente_quote_2026_09_17.py: 8 warnings
++Betfair/safe_strategy/tests/test_resilienza_rete_fix_c_2026_09_26.py: 1 warning
++Betfair/stream/tennis_live/tests/test_tennis_hardening.py: 1 warning
++Betfair/stream/tennis_live/tests/test_tennis_mission_done.py: 1 warning
++Betfair/stream/tests/test_db_client_timeout_bot_2026_09_28.py: 4 warnings
++Betfair/stream/tests/test_punto6_b_stato_bot_e_battito_tennis_2026_09_25.py: 2 warnings
++Betfair/stream/tests/test_scalper_certificazione_2026_09_24.py: 2 warnings
++  C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Lib\site-packages\supabase\_sync\client.py:309: DeprecationWarning: The 'timeout' parameter is deprecated. Please configure it in the http client instead.
++    return SyncPostgrestClient(
++
++Betfair/mike/tests/test_mike_audit_2026_09_12.py: 1 warning
++Betfair/omega/test_omega_cashout_feed_fermo_2026_09_11.py: 1 warning
++Betfair/omega/tests/test_omega_stato_mercato_2026_09_24.py: 2 warnings
++Betfair/safe_strategy/tests/test_flusso_su_master_cantiere_j2_2026_09_28.py: 1 warning
++Betfair/safe_strategy/tests/test_incidente_quote_2026_09_17.py: 8 warnings
++Betfair/safe_strategy/tests/test_resilienza_rete_fix_c_2026_09_26.py: 1 warning
++Betfair/stream/tennis_live/tests/test_tennis_hardening.py: 1 warning
++Betfair/stream/tennis_live/tests/test_tennis_mission_done.py: 1 warning
++Betfair/stream/tests/test_db_client_timeout_bot_2026_09_28.py: 4 warnings
++Betfair/stream/tests/test_punto6_b_stato_bot_e_battito_tennis_2026_09_25.py: 2 warnings
++Betfair/stream/tests/test_scalper_certificazione_2026_09_24.py: 2 warnings
++  C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Lib\site-packages\supabase\_sync\client.py:309: DeprecationWarning: The 'verify' parameter is deprecated. Please configure it in the http client instead.
++    return SyncPostgrestClient(
++
++Betfair/stream/tests/test_frammenti_tcp_2026_09_28.py::test_frammento_aperto_a_caldo_arriva_a_process_market_book
++Betfair/stream/tests/test_frammenti_tcp_2026_09_28.py::test_rifiuto_max_connection_limit_chiude_e_non_ritenta
++Betfair/stream/tests/test_frammenti_tcp_2026_09_28.py::test_connessione_che_cade_si_riconnette_con_initialclk_e_clk
++Betfair/stream/tests/test_frammenti_tcp_2026_09_28.py::test_connessione_che_cade_si_riconnette_con_initialclk_e_clk
++Betfair/stream/tests/test_frammenti_tcp_2026_09_28.py::test_uscita_ordinata_chiude_tutte_le_connessioni_a_caldo
++  C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Lib\site-packages\betfairlightweight\streaming\betfairstream.py:216: DeprecationWarning: ssl.PROTOCOL_TLS is deprecated
++    context = ssl.SSLContext(ssl.PROTOCOL_TLS)
++
++Betfair/stream/tests/test_punto6_b_stato_bot_e_battito_tennis_2026_09_25.py::test_tennis_in_attesa_senza_mercati_pubblica_il_battito
++  C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Lib\site-packages\_pytest\threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread cambio-gbp-eur
++  
++  Traceback (most recent call last):
++    File "C:\Python313\Lib\threading.py", line 1041, in _bootstrap_inner
++      self.run()
++      ~~~~~~~~^^
++    File "C:\Python313\Lib\threading.py", line 992, in run
++      self._target(*self._args, **self._kwargs)
++      ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
++    File "C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-acfe2e24b0b2ec3e8\Betfair\stream\valuta.py", line 226, in _ciclo
++      time.sleep(RINFRESCO_S)
++      ~~~~~~~~~~^^^^^^^^^^^^^
++    File "C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-acfe2e24b0b2ec3e8\Betfair\stream\tests\test_punto6_b_stato_bot_e_battito_tennis_2026_09_25.py", line 169, in _sonno
++      raise _Fermo()
++  Betfair.stream.tests.test_punto6_b_stato_bot_e_battito_tennis_2026_09_25._Fermo
++  
++  Enable tracemalloc to get traceback where the object was allocated.
++  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
++    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
++
++-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
++9555 passed, 31 skipped, 9 xfailed, 54 warnings in 442.79s (0:07:22)
++in 446 s
+diff --git a/Betfair/conftest.py b/Betfair/conftest.py
+index e304b81..7b74e9f 100644
+--- a/Betfair/conftest.py
++++ b/Betfair/conftest.py
+@@ -130,6 +130,55 @@ def _svuota_cache_lambda_di_omega():
+         _cache.clear()
+ 
+ 
++_DB_CLIENT_STATO_DI_IMPORT = {"timeout": None}
++
++
++@pytest.fixture(autouse=True)
++def _ripristina_stato_di_processo_di_db_client():
++    """02/10 (isolamento 4, ``AUDIT_2026-10-02/TEST_ISOLAMENTO_4.md``):
++    ``db_client._STATO`` (``db_client.py:33``) e' lo stato di PROCESSO del
++    timeout PostgREST; ``usa_timeout_bot`` (``db_client.py:59-67``) ci scrive
++    il profilo bot e nessuno lo rimette a ``None``: in produzione e' giusto (lo
++    chiama il ``main`` di un bot una volta per processo), in pytest no. Il
++    ``main`` VERO di Mike (``Betfair/mike/service.py:7371``) lo chiama, e
++    ``Betfair/mike/tests/test_mike_riga_assente_e_arresto_2026_10_02.py::
++    test_R1_main_all_arresto_chiama_l_arresto_degli_ordini`` esegue ``S.main()``
++    due volte: da li' in poi ``get_supabase_client`` chiamava
++    ``create_client(url, key, options=...)`` (``db_client.py:83-84``) e
++    ``Betfair/stream/tests/test_net_retry.py::test_db_client_is_per_thread``
++    (finto ``create_client(url, key)``) cadeva con ``TypeError: unexpected
++    keyword argument 'options'``: rosso solo dopo quel file.
++
++    Fotografa (se il modulo e' gia' importato; mai importato da qui) l'oggetto
++    ``_STATO`` col suo contenuto, l'oggetto ``_TLS`` e il contenuto di ``_TLS``
++    del thread del test, e li rimette a fine test. Se il modulo e' stato
++    importato DURANTE il test, ``_STATO`` torna allo stato di import (``None``)."""
++    _mod = sys.modules.get("db_client")
++    if _mod is not None:
++        _stato = getattr(_mod, "_STATO", None)
++        _stato_contenuto = dict(_stato) if isinstance(_stato, dict) else None
++        _tls = getattr(_mod, "_TLS", None)
++        _tls_contenuto = dict(vars(_tls)) if _tls is not None else None
++    yield
++    _dopo = sys.modules.get("db_client")
++    if _dopo is None:
++        return
++    if _mod is None or _dopo is not _mod:
++        _s = getattr(_dopo, "_STATO", None)
++        if isinstance(_s, dict):
++            _s.clear()
++            _s.update(_DB_CLIENT_STATO_DI_IMPORT)
++        return
++    if isinstance(_stato, dict):
++        _stato.clear()
++        _stato.update(_stato_contenuto)
++        _mod._STATO = _stato
++    if _tls is not None:
++        vars(_tls).clear()
++        vars(_tls).update(_tls_contenuto)
++        _mod._TLS = _tls
++
++
+ @pytest.fixture(autouse=True)
+ def _nessun_dotenv_a_meta_test(monkeypatch):
+     """02/10 (isolamento 2): nessun ``load_dotenv()`` durante un test.

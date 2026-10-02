@@ -1,0 +1,21 @@
+=== ebfab2a (docs(redesign): brief 2 esaustivo per la sessione cloud (ves) ===
+exit 0 in 120 s
+OK  35760084  tick= 52262 decisioni= 4713 azioni=   5 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNC
+=== aa5749a (fix(scanner+safe): bot MAI ciechi (ordine dell'utente 01/10)) ===
+exit 1 in 125 s
+KO  35760084  tick= 51806 decisioni= 5219 azioni= 377 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNC
+      P1 x1: il motore non deve riproporre all'infinito la stessa identica azione
+      P2 x1: un ciclo non genera decine di gambe dello stesso ruolo
+      P3 x1: quello che il motore propone e quello che arriva a mercato non devono divergere di ordini di grandezza
+=== 67261b9 (docs: consegna finale del correttore del runner (minimi .it)) ===
+exit 1 in 101 s
+KO  35760084  tick= 51806 decisioni= 5219 azioni= 377 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNC
+      P1 x1: il motore non deve riproporre all'infinito la stessa identica azione
+      P2 x1: un ciclo non genera decine di gambe dello stesso ruolo
+      P3 x1: quello che il motore propone e quello che arriva a mercato non devono divergere di ordini di grandezza
+=== 7bedd6b (fix(scanner+scalper): scanner mai cieco (punti 26-29 dell'ut) ===
+exit 1 in 101 s
+KO  35760084  tick= 51806 decisioni= 5219 azioni= 377 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNC
+      P1 x1: il motore non deve riproporre all'infinito la stessa identica azione
+      P2 x1: un ciclo non genera decine di gambe dello stesso ruolo
+      P3 x1: quello che il motore propone e quello che arriva a mercato non devono divergere di ordini di grandezza

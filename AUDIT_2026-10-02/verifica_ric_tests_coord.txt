@@ -1,0 +1,6 @@
+=== omega + safe + stream tests ===
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED Betfair/stream/tests/test_riconciliazione_tradotti_2026_10_02.py::test_r_contratto_tradotto_del_finto_uguale_al_motore_vero
+1 failed, 7020 passed, 56 skipped, 1 xfailed, 14 warnings in 520.10s (0:08:40)
+in 539 s

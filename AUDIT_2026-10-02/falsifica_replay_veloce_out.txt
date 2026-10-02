@@ -1,0 +1,21 @@
+﻿M1 libro chiuso: memoria per market_id, non per oggetto: ROSSO 1 failed, 11 passed in 5.57s
+      Betfair/stream/tests/test_banco_replay_veloce_2026_10_02.py::test_book_nuovo_dello_stesso_mercato_si_ricostruisce
+M2 libro chiuso: ignora la conversione in EUR: ROSSO 1 failed, 11 passed in 5.22s
+      Betfair/stream/tests/test_banco_replay_veloce_2026_10_02.py::test_stesso_book_convertito_in_eur_dopo_si_ricostruisce
+M3 libro chiuso: ignora chi ha sostituito il libro: ROSSO 1 failed, 11 passed in 3.82s
+      Betfair/stream/tests/test_banco_replay_veloce_2026_10_02.py::test_libro_sostituito_da_altri_non_si_riusa
+M4 lapse: memoria per market_id, non per oggetto: ROSSO 3 failed, 9 passed in 7.40s
+      Betfair/stream/tests/test_banco_replay_veloce_2026_10_02.py::test_lapse_stesso_book_riconsegnato_uguale_alla_via_lenta
+      Betfair/stream/tests/test_banco_replay_veloce_2026_10_02.py::test_lapse_book_nuovo_dopo_riconsegne_scatta_ancora
+      Betfair/stream/tests/test_banco_replay_veloce_2026_10_02.py::test_lapse_sospensione_con_book_nuovo_dopo_riconsegne
+M5 lapse: la memoria non si aggiorna (resta il primo book del mercato): ROSSO 1 failed, 11 passed in 3.36s
+      Betfair/stream/tests/test_banco_replay_veloce_2026_10_02.py::test_lapse_stesso_book_riconsegnato_uguale_alla_via_lenta
+M6 chiusura: muta anche con un logging control montato: ROSSO 1 failed, 11 passed in 3.86s
+      Betfair/stream/tests/test_banco_replay_veloce_2026_10_02.py::test_chiusura_con_un_ascoltatore_e_la_vera
+M7 chiusura: muta anche con il log INFO di flumine acceso: ROSSO 1 failed, 11 passed in 10.12s
+      Betfair/stream/tests/test_banco_replay_veloce_2026_10_02.py::test_chiusura_con_log_info_acceso_e_la_vera
+M8 chiusura: la copia non consegna la chiusura alla strategia: ROSSO 1 failed, 11 passed in 6.97s
+      Betfair/stream/tests/test_banco_replay_veloce_2026_10_02.py::test_chiusura_muta_uguale_alla_vera
+M9 chiusura: la copia non regola gli ordini del blotter: ROSSO 1 failed, 11 passed in 6.49s
+      Betfair/stream/tests/test_banco_replay_veloce_2026_10_02.py::test_chiusura_muta_uguale_alla_vera
+sorgenti ripristinati, md5 identici

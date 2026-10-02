@@ -1,0 +1,16 @@
+=== MIKE TUTTI su verifica-rv-master fb2f568 (macchina carica) ===
+exit 1 in 672 s
+ESITO: 25 partite senza violazioni, 1 con violazioni, 0 senza decisioni
+       3 violazioni totali
+TEMPO TOTALE: 10m52.3s (652.3 s) su 26 replay | obiettivo 300 s, tetto 600 s (CERTIFICA_TETTO_S)
+25
+=== CONFRONTO col PRIMA del delegato (confronta_referti.py, ignora i tempi) ===
+144230 byte
+Traceback (most recent call last):
+  File "C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\AUDIT_2026-10-01\confronta_referti.py", line 40, in <module>
+    print(d[:400])
+    ~~~~~^^^^^^^^^
+  File "C:\Python313\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\ufffd' in position 46: character maps to <undefined>
