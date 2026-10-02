@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Dove e' il peso: i 5 programmi che chiamano di piu'",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "all",
+      "entries": {
+        "backend": { "label": "Programma Python (chi fa la chiamata)" },
+        "database": { "label": "Database Supabase" },
+        "external": { "label": "Betfair", "visible": false },
+        "frontend": { "label": "App", "visible": false },
+        "messagebus": { "label": "Canale locale", "visible": false },
+        "security": { "label": "Banco di prova", "visible": false },
+        "cloud": { "label": "Guardiano", "visible": false }
+      }
+    },
+    "views": [
+      { "id": "runner", "label": "Il runner calcio", "focus": ["rc", "db"], "note": "552 chiamate al minuto: coda ordini 189, regole di rischio 168, impostazioni 123." },
+      { "id": "bot", "label": "Mike e Safe", "focus": ["mike", "safe", "db"], "note": "Mike 279 e Safe 269 al minuto: rileggono operazioni, richieste e comandi a ogni giro." }
+    ]
+  },
+  "components": [
+    { "id": "rc", "type": "backend", "label": "Runner calcio", "sublabel": "coda, regole, impostazioni", "pos": [30, 40], "size": [200, 70] },
+    { "id": "mike", "type": "backend", "label": "Mike", "sublabel": "rilegge a ogni giro di 1 s", "pos": [30, 160], "size": [200, 70] },
+    { "id": "safe", "type": "backend", "label": "Bot Safe", "sublabel": "operazioni e richieste", "pos": [30, 280], "size": [200, 70] },
+    { "id": "sc", "type": "backend", "label": "Scanner", "sublabel": "scrive le righe del feed", "pos": [30, 400], "size": [200, 70] },
+    { "id": "scalper", "type": "backend", "label": "Scalper calcio", "sublabel": "comandi e freno", "pos": [30, 520], "size": [200, 70] },
+
+    { "id": "db", "type": "database", "label": "Database Supabase", "sublabel": "1.240 su 1.309 al minuto", "pos": [720, 250], "size": [200, 120] }
+  ],
+  "connections": [
+    { "id": "rc-db", "from": "rc", "to": "db", "label": "552/min", "width": 7, "labelSegment": 0 },
+    { "id": "mike-db", "from": "mike", "to": "db", "label": "279/min", "width": 4.5, "labelSegment": 0 },
+    { "id": "safe-db", "from": "safe", "to": "db", "label": "269/min", "width": 4.5, "labelAt": [300, 302] },
+    { "id": "sc-db", "from": "sc", "to": "db", "label": "86/min", "width": 2.2, "labelSegment": 0 },
+    { "id": "scalper-db", "from": "scalper", "to": "db", "label": "54/min", "width": 1.8, "labelSegment": 0 }
+  ],
+  "cards": [
+    { "dot": "rose", "title": "File piu' grandi (righe)", "items": ["Bot Safe 10.862 - Omega 8.709 - Mike 7.496", "esecutore ordini 3.991 - scanner 3.444", "motore ordini 2.417"] },
+    { "dot": "amber", "title": "Doppioni", "items": ["ogni bot rilegge i suoi ordini a modo suo", "4 strade per gli ordini calcio", "lo scanner vive nel programma Safe"] },
+    { "dot": "slate", "title": "Misura", "items": ["02/10 dalle 17:15:40 alle 17:16:40", "Betfair non e' contata: nessun contatore nei registri"] }
+  ]
+}

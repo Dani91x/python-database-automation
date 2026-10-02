@@ -1,0 +1,260 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Il banco di prova: come si sostituiscono Betfair e il database",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "all",
+      "entries": {
+        "security": {
+          "label": "Banco di prova (replay)"
+        },
+        "backend": {
+          "label": "Codice vero del bot (lo stesso del live)"
+        },
+        "external": {
+          "label": "Betfair",
+          "visible": false
+        },
+        "database": {
+          "label": "Database",
+          "visible": false
+        },
+        "frontend": {
+          "label": "App",
+          "visible": false
+        },
+        "messagebus": {
+          "label": "Canale locale",
+          "visible": false
+        },
+        "cloud": {
+          "label": "Guardiano",
+          "visible": false
+        }
+      }
+    },
+    "views": [
+      {
+        "id": "finti",
+        "label": "Cosa e' finto",
+        "focus": [
+          "simbf",
+          "dbmem",
+          "porta",
+          "registrazioni"
+        ],
+        "note": "Betfair e' una simulazione che rilegge una partita registrata; il database vive in memoria; gli ordini passano da una porta di prova."
+      },
+      {
+        "id": "veri",
+        "label": "Cosa e' vero",
+        "focus": [
+          "registro",
+          "bot",
+          "porta"
+        ],
+        "note": "Il bot gira con il suo codice di produzione; con la strada del filo risponde il vero esecutore degli ordini del runner."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "cert",
+      "type": "security",
+      "label": "Comando certifica",
+      "sublabel": "unico punto d'ingresso",
+      "pos": [
+        30,
+        250
+      ],
+      "size": [
+        180,
+        80
+      ]
+    },
+    {
+      "id": "registro",
+      "type": "security",
+      "label": "Registro dei bot",
+      "sublabel": "11 bot registrati",
+      "pos": [
+        290,
+        90
+      ],
+      "size": [
+        180,
+        70
+      ]
+    },
+    {
+      "id": "referto",
+      "type": "security",
+      "label": "Referto",
+      "sublabel": "condotta, non profitto",
+      "pos": [
+        290,
+        430
+      ],
+      "size": [
+        180,
+        70
+      ]
+    },
+    {
+      "id": "bot",
+      "type": "backend",
+      "label": "Servizio del bot",
+      "sublabel": "codice di produzione",
+      "pos": [
+        560,
+        230
+      ],
+      "size": [
+        190,
+        120
+      ]
+    },
+    {
+      "id": "simbf",
+      "type": "security",
+      "label": "Betfair simulata",
+      "sublabel": "tempo e ritardi veri",
+      "pos": [
+        850,
+        90
+      ],
+      "size": [
+        180,
+        70
+      ]
+    },
+    {
+      "id": "porta",
+      "type": "security",
+      "label": "Porta di prova",
+      "sublabel": "coda o filo ordini",
+      "pos": [
+        850,
+        255
+      ],
+      "size": [
+        180,
+        70
+      ]
+    },
+    {
+      "id": "dbmem",
+      "type": "security",
+      "label": "Database in memoria",
+      "sublabel": "nessun Supabase",
+      "pos": [
+        850,
+        420
+      ],
+      "size": [
+        180,
+        70
+      ]
+    },
+    {
+      "id": "registrazioni",
+      "type": "security",
+      "label": "Partite registrate",
+      "sublabel": "flusso Betfair e punteggi",
+      "pos": [
+        1110,
+        90
+      ],
+      "size": [
+        180,
+        70
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "cert-registro",
+      "from": "cert",
+      "to": "registro",
+      "label": "quale bot"
+    },
+    {
+      "id": "cert-referto",
+      "from": "cert",
+      "to": "referto",
+      "label": "giudica"
+    },
+    {
+      "id": "registro-bot",
+      "from": "registro",
+      "to": "bot",
+      "label": "codice vero",
+      "variant": "emphasis"
+    },
+    {
+      "id": "bot-referto",
+      "from": "bot",
+      "to": "referto",
+      "label": "cosa ha fatto"
+    },
+    {
+      "id": "registrazioni-simbf",
+      "from": "registrazioni",
+      "to": "simbf",
+      "label": "rilette"
+    },
+    {
+      "id": "simbf-bot",
+      "from": "simbf",
+      "to": "bot",
+      "label": "prezzi e punteggi",
+      "fromSide": "left",
+      "toSide": "top"
+    },
+    {
+      "id": "bot-porta",
+      "from": "bot",
+      "to": "porta",
+      "label": "ordini"
+    },
+    {
+      "id": "porta-simbf",
+      "from": "porta",
+      "to": "simbf",
+      "label": "piazza"
+    },
+    {
+      "id": "bot-dbmem",
+      "from": "bot",
+      "to": "dbmem",
+      "label": "legge e scrive"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "violet",
+      "title": "Ingresso unico",
+      "items": [
+        "python -m Betfair.stream.backtest.certifica <bot>",
+        "nessun replay a parte, nessun riempimento scritto a mano"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Strade degli ordini",
+      "items": [
+        "coda: la porta di prova piazza sulla Betfair simulata",
+        "filo: risponde il vero esecutore del runner"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Fonte delle partite",
+      "items": [
+        "cartella _live_raw: flusso Betfair registrato dal vivo"
+      ]
+    }
+  ]
+}

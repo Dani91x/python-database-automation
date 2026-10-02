@@ -1,0 +1,311 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "L'app: da dove legge e come comanda i bot",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "all",
+      "entries": {
+        "frontend": {
+          "label": "App desktop (lo schermo e il suo guscio)"
+        },
+        "database": {
+          "label": "Database Supabase"
+        },
+        "messagebus": {
+          "label": "Canali locali (fili diretti)"
+        },
+        "backend": {
+          "label": "Programma Python (bot)"
+        },
+        "external": {
+          "label": "Betfair",
+          "visible": false
+        },
+        "security": {
+          "label": "Banco di prova",
+          "visible": false
+        },
+        "cloud": {
+          "label": "Guardiano",
+          "visible": false
+        }
+      }
+    },
+    "views": [
+      {
+        "id": "comando",
+        "label": "Un pulsante premuto",
+        "focus": [
+          "app",
+          "rpc",
+          "ctrl",
+          "mike",
+          "safe",
+          "omega",
+          "scalper",
+          "ponte"
+        ],
+        "note": "Il pulsante scrive nel database; ogni bot se ne accorge al suo giro (Mike 1 s, Safe 2 s, Omega 20 s) o subito con la sveglia."
+      },
+      {
+        "id": "lettura",
+        "label": "Cosa vede lo schermo",
+        "focus": [
+          "app",
+          "stato",
+          "canali",
+          "guscio"
+        ],
+        "note": "Lo schermo rilegge lo stato ogni 15 s, riceve gli aggiornamenti istantanei del database e le notizie dei fili."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "guscio",
+      "type": "frontend",
+      "label": "Guscio dell'app",
+      "sublabel": "pagina su 47330 e chiave",
+      "pos": [
+        30,
+        40
+      ],
+      "size": [
+        180,
+        64
+      ]
+    },
+    {
+      "id": "app",
+      "type": "frontend",
+      "label": "Schermo dell'app",
+      "sublabel": "pagine e pulsanti",
+      "pos": [
+        30,
+        240
+      ],
+      "size": [
+        180,
+        300
+      ]
+    },
+    {
+      "id": "rpc",
+      "type": "database",
+      "label": "Funzioni di comando",
+      "sublabel": "accendi, ferma, ordina",
+      "pos": [
+        330,
+        140
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "stato",
+      "type": "database",
+      "label": "Letture di stato",
+      "sublabel": "ogni 15 s e in diretta",
+      "pos": [
+        330,
+        300
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "canali",
+      "type": "messagebus",
+      "label": "Fili 47331-47338",
+      "sublabel": "notizie e sveglia",
+      "pos": [
+        330,
+        460
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "ctrl",
+      "type": "database",
+      "label": "Tabelle di comando",
+      "sublabel": "una per bot",
+      "pos": [
+        640,
+        140
+      ],
+      "size": [
+        180,
+        64
+      ]
+    },
+    {
+      "id": "mike",
+      "type": "backend",
+      "label": "Mike",
+      "sublabel": "rilegge ogni 1 s",
+      "pos": [
+        940,
+        20
+      ],
+      "size": [
+        180,
+        56
+      ]
+    },
+    {
+      "id": "safe",
+      "type": "backend",
+      "label": "Bot Safe",
+      "sublabel": "rilegge ogni 2 s",
+      "pos": [
+        940,
+        100
+      ],
+      "size": [
+        180,
+        56
+      ]
+    },
+    {
+      "id": "omega",
+      "type": "backend",
+      "label": "Omega",
+      "sublabel": "rilegge ogni 20 s",
+      "pos": [
+        940,
+        180
+      ],
+      "size": [
+        180,
+        56
+      ]
+    },
+    {
+      "id": "scalper",
+      "type": "backend",
+      "label": "Scalper calcio",
+      "sublabel": "rilegge ogni 3 s",
+      "pos": [
+        940,
+        260
+      ],
+      "size": [
+        180,
+        56
+      ]
+    },
+    {
+      "id": "ponte",
+      "type": "backend",
+      "label": "Ponte tennis",
+      "sublabel": "rilegge ogni 15 s",
+      "pos": [
+        940,
+        340
+      ],
+      "size": [
+        180,
+        56
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "guscio-app",
+      "from": "guscio",
+      "to": "app",
+      "label": "pagina e chiave",
+      "labelAt": [
+        100,
+        172
+      ]
+    },
+    {
+      "id": "app-rpc",
+      "from": "app",
+      "to": "rpc",
+      "label": "pulsante",
+      "variant": "emphasis",
+      "fromSide": "top",
+      "toSide": "left"
+    },
+    {
+      "id": "stato-app",
+      "from": "stato",
+      "to": "app",
+      "label": "stato dei bot"
+    },
+    {
+      "id": "canali-app",
+      "from": "canali",
+      "to": "app",
+      "label": "notizie in diretta"
+    },
+    {
+      "id": "rpc-ctrl",
+      "from": "rpc",
+      "to": "ctrl",
+      "label": "scrive",
+      "variant": "emphasis"
+    },
+    {
+      "id": "ctrl-mike",
+      "from": "ctrl",
+      "to": "mike"
+    },
+    {
+      "id": "ctrl-safe",
+      "from": "ctrl",
+      "to": "safe"
+    },
+    {
+      "id": "ctrl-omega",
+      "from": "ctrl",
+      "to": "omega"
+    },
+    {
+      "id": "ctrl-scalper",
+      "from": "ctrl",
+      "to": "scalper"
+    },
+    {
+      "id": "ctrl-ponte",
+      "from": "ctrl",
+      "to": "ponte"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "Comandi",
+      "items": [
+        "lo schermo non scrive mai direttamente nelle tabelle",
+        "usa solo funzioni del database (es. accendi Mike)"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Sveglia",
+      "items": [
+        "dopo il pulsante lo schermo sveglia il bot sul suo filo",
+        "cosi' il bot non aspetta il suo giro"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Control Room",
+      "items": [
+        "rilegge tutto ogni 30 s, piu' i fili in diretta"
+      ]
+    }
+  ]
+}

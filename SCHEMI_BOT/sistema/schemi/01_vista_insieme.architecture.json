@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Architettura attuale: chi parla con chi",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "all",
+      "entries": {
+        "external": { "label": "Betfair (fuori dal computer)" },
+        "backend": { "label": "Programma Python (servizio o bot)" },
+        "database": { "label": "Database Supabase (il postino)" },
+        "frontend": { "label": "App desktop (lo schermo)" },
+        "messagebus": { "label": "Canale locale (filo diretto)", "visible": false },
+        "security": { "label": "Banco di prova (replay)", "visible": false },
+        "cloud": { "label": "Guardiano (watchdog)", "visible": false }
+      }
+    },
+    "views": [
+      { "id": "linea-betfair", "label": "Chi tiene la linea con Betfair", "focus": ["bf", "rc", "rt", "sc", "scalper"], "note": "Quattro programmi tengono una linea continua con Betfair. Mike, Safe e Omega no: leggono le quote dello scanner." },
+      { "id": "postino", "label": "Il database come postino", "focus": ["db", "rc", "mike", "safe", "sc"], "note": "Circa 1.309 chiamate al minuto al database, misurate il 02/10 alle 17:16. Il runner calcio da solo ne fa 552." },
+      { "id": "bot", "label": "I bot e lo schermo", "focus": ["db", "mike", "safe", "omega", "ponte", "app"], "note": "I bot e l'app si parlano attraverso il database; i fili diretti (canali locali) sono nel capitolo 4." }
+    ]
+  },
+  "components": [
+    { "id": "bf", "type": "external", "label": "Betfair", "sublabel": "linea continua (stream)", "pos": [30, 335], "size": [160, 80] },
+
+    { "id": "rc", "type": "backend", "label": "Runner calcio", "sublabel": "linea e ordini calcio", "pos": [300, 110], "size": [185, 70] },
+    { "id": "sc", "type": "backend", "label": "Scanner", "sublabel": "quote per tutti i bot", "pos": [300, 260], "size": [185, 70] },
+    { "id": "rt", "type": "backend", "label": "Runner tennis", "sublabel": "linea tennis e 4 bot", "pos": [300, 410], "size": [185, 70] },
+    { "id": "scalper", "type": "backend", "label": "Scalper calcio", "sublabel": "una sessione a partita", "pos": [300, 560], "size": [185, 70] },
+
+    { "id": "db", "type": "database", "label": "Database Supabase", "sublabel": "1.309 chiamate al minuto", "pos": [685, 320], "size": [180, 110] },
+    { "id": "app", "type": "frontend", "label": "App desktop", "sublabel": "schermate e pulsanti", "pos": [695, 590], "size": [160, 70] },
+
+    { "id": "mike", "type": "backend", "label": "Mike", "sublabel": "Under 3,5 e Over 4,5", "pos": [1065, 110], "size": [185, 70] },
+    { "id": "safe", "type": "backend", "label": "Bot Safe", "sublabel": "segue i segnali Safe", "pos": [1065, 260], "size": [185, 70] },
+    { "id": "omega", "type": "backend", "label": "Omega", "sublabel": "banca il risultato esatto", "pos": [1065, 410], "size": [185, 70] },
+    { "id": "ponte", "type": "backend", "label": "Ponte tennis", "sublabel": "arma i 4 bot tennis", "pos": [1065, 560], "size": [185, 70] }
+  ],
+  "connections": [
+    { "id": "bf-rc", "from": "bf", "to": "rc", "variant": "emphasis" },
+    { "id": "bf-sc", "from": "bf", "to": "sc", "variant": "emphasis" },
+    { "id": "bf-rt", "from": "bf", "to": "rt", "variant": "emphasis" },
+    { "id": "bf-scalper", "from": "bf", "to": "scalper", "variant": "emphasis" },
+
+    { "id": "rc-db", "from": "rc", "to": "db", "label": "552/min", "width": 6, "labelSegment": 0 },
+    { "id": "sc-db", "from": "sc", "to": "db", "label": "86/min", "width": 2.5, "labelSegment": 0 },
+    { "id": "rt-db", "from": "rt", "to": "db", "label": "28/min", "width": 1.5, "labelSegment": 0 },
+    { "id": "scalper-db", "from": "scalper", "to": "db", "label": "54/min", "width": 2, "labelSegment": 0 },
+
+    { "id": "db-mike", "from": "mike", "to": "db", "label": "279/min", "width": 4.5, "labelSegment": 0 },
+    { "id": "db-safe", "from": "safe", "to": "db", "label": "269/min", "width": 4.5, "labelSegment": 0 },
+    { "id": "db-omega", "from": "omega", "to": "db", "label": "5/min", "width": 1, "labelSegment": 0 },
+    { "id": "db-ponte", "from": "ponte", "to": "db", "label": "36/min", "width": 1.5, "labelSegment": 0 },
+
+    { "id": "app-db", "from": "app", "to": "db", "label": "legge e comanda", "variant": "dashed" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Betfair", "items": ["4 programmi tengono una linea continua", "Mike, Safe e Omega NON hanno una linea propria"] },
+    { "dot": "amber", "title": "Database", "items": ["fa da postino fra tutti i programmi", "1.309 chiamate al minuto il 02/10 alle 17:16"] },
+    { "dot": "violet", "title": "Fili diretti", "items": ["8 canali locali, porte da 47331 a 47338", "sono disegnati nel capitolo 4"] }
+  ]
+}

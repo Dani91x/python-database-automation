@@ -1,0 +1,276 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "I fili diretti fra i programmi",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "all",
+      "entries": {
+        "backend": {
+          "label": "Programma Python (servizio o bot)"
+        },
+        "external": {
+          "label": "Betfair",
+          "visible": false
+        },
+        "database": {
+          "label": "Database",
+          "visible": false
+        },
+        "frontend": {
+          "label": "App",
+          "visible": false
+        },
+        "messagebus": {
+          "label": "Canale locale",
+          "visible": false
+        },
+        "security": {
+          "label": "Banco di prova",
+          "visible": false
+        },
+        "cloud": {
+          "label": "Guardiano",
+          "visible": false
+        }
+      }
+    },
+    "views": [
+      {
+        "id": "quote",
+        "label": "Le quote dello scanner",
+        "focus": [
+          "sc",
+          "mike",
+          "safe",
+          "omega",
+          "rc"
+        ],
+        "note": "Lo scanner manda le sue righe (quote e punteggi) sulla porta 47336 a Mike, Safe, Omega e al runner calcio."
+      },
+      {
+        "id": "ordini",
+        "label": "Gli ordini al runner",
+        "focus": [
+          "mike",
+          "safe",
+          "omega",
+          "rc",
+          "rt"
+        ],
+        "note": "Safe e Omega mandano gli ordini al runner calcio (47331); Mike solo quelli in prova (paper); Safe tennis al 47332."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "sc",
+      "type": "backend",
+      "label": "Scanner",
+      "sublabel": "pubblica su 47336",
+      "pos": [
+        30,
+        300
+      ],
+      "size": [
+        180,
+        70
+      ]
+    },
+    {
+      "id": "mike",
+      "type": "backend",
+      "label": "Mike",
+      "sublabel": "legge 47336",
+      "pos": [
+        400,
+        140
+      ],
+      "size": [
+        180,
+        70
+      ]
+    },
+    {
+      "id": "safe",
+      "type": "backend",
+      "label": "Bot Safe",
+      "sublabel": "legge 47336",
+      "pos": [
+        400,
+        460
+      ],
+      "size": [
+        180,
+        70
+      ]
+    },
+    {
+      "id": "omega",
+      "type": "backend",
+      "label": "Omega",
+      "sublabel": "legge 47336",
+      "pos": [
+        400,
+        300
+      ],
+      "size": [
+        180,
+        70
+      ]
+    },
+    {
+      "id": "rc",
+      "type": "backend",
+      "label": "Runner calcio",
+      "sublabel": "riceve ordini su 47331",
+      "pos": [
+        820,
+        140
+      ],
+      "size": [
+        190,
+        390
+      ]
+    },
+    {
+      "id": "rt",
+      "type": "backend",
+      "label": "Runner tennis",
+      "sublabel": "riceve ordini su 47332",
+      "pos": [
+        820,
+        600
+      ],
+      "size": [
+        190,
+        70
+      ]
+    },
+    {
+      "id": "ponte",
+      "type": "backend",
+      "label": "Ponte tennis",
+      "sublabel": "rilancia su 47337",
+      "pos": [
+        820,
+        740
+      ],
+      "size": [
+        190,
+        70
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "sc-mike",
+      "from": "sc",
+      "to": "mike",
+      "label": "righe ogni 2,5 s",
+      "variant": "emphasis",
+      "labelSegment": 2
+    },
+    {
+      "id": "sc-safe",
+      "from": "sc",
+      "to": "safe",
+      "label": "righe ogni 2,5 s",
+      "variant": "emphasis",
+      "labelSegment": 2
+    },
+    {
+      "id": "sc-omega",
+      "from": "sc",
+      "to": "omega",
+      "variant": "emphasis"
+    },
+    {
+      "id": "sc-rc",
+      "from": "sc",
+      "to": "rc",
+      "label": "punteggi",
+      "variant": "emphasis",
+      "fromSide": "top",
+      "toSide": "top",
+      "via": [
+        [
+          120,
+          70
+        ],
+        [
+          915,
+          70
+        ]
+      ]
+    },
+    {
+      "id": "mike-rc",
+      "from": "mike",
+      "to": "rc",
+      "label": "ordini prova, conto",
+      "labelSegment": 0
+    },
+    {
+      "id": "safe-rc",
+      "from": "safe",
+      "to": "rc",
+      "label": "ordini ed esiti",
+      "labelSegment": 0
+    },
+    {
+      "id": "omega-rc",
+      "from": "omega",
+      "to": "rc",
+      "label": "ordini ed esiti",
+      "labelAt": [
+        640,
+        352
+      ]
+    },
+    {
+      "id": "safe-rt",
+      "from": "safe",
+      "to": "rt",
+      "label": "ordini Safe tennis",
+      "fromSide": "bottom",
+      "toSide": "left"
+    },
+    {
+      "id": "rt-ponte",
+      "from": "rt",
+      "to": "ponte",
+      "label": "posizioni bot tennis",
+      "labelAt": [
+        915,
+        705
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "violet",
+      "title": "Una fonte, un lettore",
+      "items": [
+        "ogni programma apre UN solo collegamento al 47336",
+        "se il filo cade, si torna a leggere il database"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Mike vero (live)",
+      "items": [
+        "NON passa dal runner: va diretto a Betfair (capitolo 7)"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Porte di sola guardia",
+      "items": [
+        "47311-47319: una porta per programma",
+        "impedisce una seconda copia accesa"
+      ]
+    }
+  ]
+}
