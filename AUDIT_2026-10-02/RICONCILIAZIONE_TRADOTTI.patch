@@ -1,9 +1,9 @@
 diff --git a/AUDIT_2026-10-02/RICONCILIAZIONE_TRADOTTI.md b/AUDIT_2026-10-02/RICONCILIAZIONE_TRADOTTI.md
 new file mode 100644
-index 0000000..e477ea5
+index 0000000..9dd5cf8
 --- /dev/null
 +++ b/AUDIT_2026-10-02/RICONCILIAZIONE_TRADOTTI.md
-@@ -0,0 +1,301 @@
+@@ -0,0 +1,302 @@
 +# RICONCILIAZIONE_TRADOTTI - ordini tradotti dal runner letti giusti da Safe e Omega (02/10/2026)
 +
 +Correttore: delegato Opus. Ramo locale `riconciliazione-tradotti` (sopra `verifica-runner-master`
@@ -273,7 +273,8 @@ index 0000000..e477ea5
 +## 8. Numeri (worktree, interprete del principale)
 +
 +**Dopo l'unione con `master` e il reperto 1** (stesso set mirato): **7060 passed, 31 skipped,
-+1 xfailed, 0 failed** (377 s). Falsificazioni rilanciate sull'albero unito:
++1 xfailed, 0 failed** (377 s); dopo la seconda unione con `master` (replay veloce, isolamento
++4): **7072 passed, 31 skipped, 1 xfailed, 0 failed** (471 s). Falsificazioni rilanciate sull'albero unito:
 +riconciliazione **33/33**, arresto **14/14**, reperto 1 + punto 11 **13/13**. (Lo script
 +base ora riconosce le ancore anche nelle copie di lavoro CRLF.) Numeri precedenti:
 +
