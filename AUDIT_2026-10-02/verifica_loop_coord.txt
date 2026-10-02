@@ -1,0 +1,28 @@
+=== test nuovi/toccati ===
+9 passed in 1.80s
+=== MUTAZIONE MIA: _tieni_a_feed_stantio restituisce d senza filtrare ===
+7 failed, 2 passed in 0.81s
+ripristinato
+=== SUITE MIKE ===
+2 failed, 1545 passed, 1 skipped in 52.42s
+in 57 s
+=== REPLAY lettura-dati-ko ===
+exit 0 in 60 s
+OK  35760084  tick= 51806 decisioni= 5219 azioni=   8 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PE
+      nota: attivita' del servizio: uscita_proposta x10, uscita_proposta_decaduta x8, state x7, place_resting x4, rilettura_alla_riapertura 
+      nota: motivi dichiarati: lettura_feed_fallita x1 | feed_stantio x1 | lettura_feed_ripresa x1
+      nota: P&L del replay: lordo -17.58 | commissione 0.00 (5.0%) | NETTO -17.58 EUR (non e' il metro della certificazione: il metro e' la 
+ESITO: 1 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+     G4: dopo una firma VALIDA dell'utente gli ordini di chiusura arrivano al mercato entro FIRMA_ESEGUITA_ENTRO_S secondi di mercato (il 29
+=== REPLAY base/riavvio/feed-stantio ===
+exit 0 in 85 s
+OK  35760084 [base] <canale>  tick= 56146 decisioni= 5879 azioni=   6 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_K
+      nota: P&L del replay: lordo -14.17 | commissione 0.00 (5.0%) | NETTO -14.17 EUR (non e' il metro della certificazi
+      nota: righe di scan scritte dallo SCANNER VERO: 2481 | giri senza riga nel feed: 602
+OK  35760084 [riavvio] <canale>  tick= 56146 decisioni= 5879 azioni=   6 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIV
+      nota: P&L del replay: lordo -14.17 | commissione 0.00 (5.0%) | NETTO -14.17 EUR (non e' il metro della certificazi
+      nota: righe di scan scritte dallo SCANNER VERO: 2481 | giri senza riga nel feed: 602
+OK  35760084 [feed-stantio] <canale>  tick= 56229 decisioni= 1024 azioni=   0 stati=WATCH,IDLE_LIVE,SETTLED [COMPLETE]
+      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro della certificazion
+      nota: righe di scan scritte dallo SCANNER VERO: 2482 | giri senza riga nel feed: 1
+ESITO: 3 partite senza violazioni, 0 con violazioni, 0 senza decisioni

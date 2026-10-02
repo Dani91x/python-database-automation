@@ -1,0 +1,6 @@
+=== MIKE TUTTI FINALE su master e8794ca ===
+exit 0 in 737 s
+ESITO: 26 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+       0 violazioni totali
+TEMPO TOTALE: 12m08.4s (728.4 s) su 26 replay | obiettivo 300 s, tetto 600 s (CERTIFICA_TETTO_S)
+26
