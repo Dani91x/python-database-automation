@@ -1,0 +1,6 @@
+=== MIKE TUTTI su master 39050a8 senza replay veloce ===
+exit 1 in 780 s
+KO  35760084 [lettura-dati-ko]  tick= 51806 decisioni= 5219 azioni= 377 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOV
+ESITO: 25 partite senza violazioni, 1 con violazioni, 0 senza decisioni
+       3 violazioni totali
+TEMPO TOTALE: 12m52.6s (772.6 s) su 26 replay | obiettivo 300 s, tetto 600 s (CERTIFICA_TETTO_S)
