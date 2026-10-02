@@ -23,6 +23,13 @@ from typing import Any, List
 
 import pytest
 
+# 01/10/2026 (RUNNER_MINIMI_CHIUSURE, reperto 1): minimi .it definitivi 01/10: punta 1,00 /
+# banca 1,00 / trim >= 0,50. Una chiusura "esatta al centesimo" che riduce un parcheggio
+# sotto 0,50 e' IMPOSSIBILE PER LEGGE (DM 47/2013 art. 8): condotta da riallineare con
+# l'utente (equivalente sulla stessa selezione / residuo dichiarato), non adattata a forza.
+XFAIL_REPERTO_1 = ("reperto 1 RUNNER_MINIMI_CHIUSURE: chiusura esatta con resto sotto 0,50 "
+                   "impossibile per legge su .it (minimi definitivi 01/10)")
+
 from Betfair.stream.tennis_live import tennis_runner as TR
 from Betfair.stream.tennis_live.tests.test_tennis_iscrizione_a_caldo_2026_09_25 import (  # noqa: F401
     _banco,
@@ -66,6 +73,7 @@ def _giri(b: Any, strat: Any, n: int = 8) -> None:
         strat._esatte.avanza(b.fw.markets.markets["1.101"])
 
 
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason=XFAIL_REPERTO_1)
 @pytest.mark.parametrize("bot", ["tennis_flb", "tennis_pro", "tennis_swing"])
 def test_copertura_esatta_al_centesimo_nel_runner_paper(bot, db, banchi,
                                                        esecuzione_sincrona):
@@ -103,6 +111,7 @@ def test_copertura_esatta_al_centesimo_nel_runner_paper(bot, db, banchi,
     assert str(o.sequenza["state"].step.value) == "done"
 
 
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason=XFAIL_REPERTO_1)
 def test_copertura_tutta_sotto_il_minimo_esatta(db, banchi, esecuzione_sincrona):
     """Copertura BACK 1,05 (sotto il minimo 2,00): tutta col place-and-trim,
     esatta; mai 2,00 (prima: gonfiata a 2,00, posizione ribaltata)."""
@@ -133,9 +142,10 @@ def test_copertura_lay_sopra_il_minimo_diretta_esatta(db, banchi, esecuzione_sin
     b.book("101")
     strat = b.session.hosted[("101", "tennis_pro")]
     market = b.fw.markets.markets["1.101"]
-    o = strat._place(market, 11, "LAY", 2.1, 0.93, copertura=True)
+    # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
+    o = strat._place(market, 11, "LAY", 2.1, 1.93, copertura=True)
     assert o is not None and not isinstance(o, CD.OrdineComposto)
-    assert o.order_type.size == 0.93
+    assert o.order_type.size == 1.93
 
 
 def test_annullo_di_una_chiusura_esatta_ferma_la_sequenza(db, banchi, esecuzione_sincrona):
@@ -169,9 +179,20 @@ def test_scalper_tennis_uscite_esatte_accese_in_paper_e_live():
 # ---------------------------------------------------------------------------
 # la regola pura
 # ---------------------------------------------------------------------------
+# minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50 (banca 0,93 sotto il minimo: tutto al resto, trim legale >= 0,50).
+# 1,98 BACK oggi si spezza 1,50 + 0,48: un resto sotto 0,50 e' impossibile per legge
+# (reperto 1, condotta delle uscite esatte del tennis): xfail.
+# 02/10/2026 (RUNNER_MINIMI_CORREZIONI, punto 8): ANCHE le righe 2,02 -> 2,00 + 0,02 e
+# 3,15 -> 3,00 + 0,15 (e la banca 0,30) descrivono un resto sotto 0,50, impossibile per
+# legge su .it: restano VERDI perche' ``condotta_ordini.spezza_esatta`` (tennis, fuori
+# dal perimetro del runner) non e' stata cambiata. Non sono una certificazione della
+# condotta: appartengono al reperto 1 aperto, da riallineare col bot tennis.
 @pytest.mark.parametrize("size,lato,attesa", [
-    (2.02, "BACK", (2.0, 0.02)), (1.98, "BACK", (0.0, 1.98)), (3.15, "BACK", (3.0, 0.15)),
-    (2.5, "BACK", (2.5, 0.0)), (0.30, "LAY", (0.0, 0.30)), (0.93, "LAY", (0.93, 0.0)),
+    (2.02, "BACK", (2.0, 0.02)),
+    pytest.param(1.98, "BACK", (0.0, 1.98),
+                 marks=pytest.mark.xfail(strict=True, raises=AssertionError, reason=XFAIL_REPERTO_1)),
+    (3.15, "BACK", (3.0, 0.15)),
+    (2.5, "BACK", (2.5, 0.0)), (0.30, "LAY", (0.0, 0.30)), (0.93, "LAY", (0.0, 0.93)),
 ])
 def test_spezza_esatta_la_somma_e_sempre_la_size(size, lato, attesa):
     diretta, resto = CD.spezza_esatta(size, lato)
@@ -220,8 +241,8 @@ def test_anti_cascata_mai_definitiva_intervallo_crescente(monkeypatch):
     m = _MercatoFinto()
     chiave = ("1.101", 11)
 
-    def _prova() -> Any:
-        return ue.piazza(m, 11, "BACK", 2.0, 1.2, diretto=lambda s: None)
+    def _prova() -> Any:   # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50: 0,70 e' tutto resto (1,20 oggi e' 1,00 diretto)
+        return ue.piazza(m, 11, "BACK", 2.0, 0.7, diretto=lambda s: None)
 
     assert _prova() is not None                       # 1a: parte e fallisce
     attese = [60, 120, 240, 300, 300, 300]
@@ -237,10 +258,10 @@ def test_anti_cascata_mai_definitiva_intervallo_crescente(monkeypatch):
     attesa = [p for k, p in critiche if k == "uscita_esatta_attesa"]
     assert len(abort) == 1 + len(attese)
     assert len(attesa) == len(attese)                  # una per finestra, mai per book
-    assert all(p["scoperto"] == 1.2 and p["lato"] == "BACK" for p in abort + attesa)
+    assert all(p["scoperto"] == 0.7 and p["lato"] == "BACK" for p in abort + attesa)
     assert "chiudere a mano" in attesa[0]["note"]
     # un'altra selezione non e' toccata
-    assert ue.piazza(m, 22, "BACK", 2.0, 1.2, diretto=lambda s: None) is not None
+    assert ue.piazza(m, 22, "BACK", 2.0, 0.7, diretto=lambda s: None) is not None
 
 
 def test_anti_cascata_si_azzera_al_primo_successo(monkeypatch):
@@ -258,12 +279,12 @@ def test_anti_cascata_si_azzera_al_primo_successo(monkeypatch):
     ue = CD.UsciteEsatte(bot, bot._emit)
     m = _MercatoFinto()
     chiave = ("1.101", 11)
-    for _ in range(3):
-        ue.piazza(m, 11, "BACK", 2.0, 1.2, diretto=lambda s: None)
+    for _ in range(3):   # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
+        ue.piazza(m, 11, "BACK", 2.0, 0.7, diretto=lambda s: None)
         bot.ora += ue.intervallo_s(chiave)
     assert ue.intervallo_s(chiave) == 240
     esito["x"] = "riesce"
-    assert ue.piazza(m, 11, "BACK", 2.0, 1.2, diretto=lambda s: None) is not None
+    assert ue.piazza(m, 11, "BACK", 2.0, 0.7, diretto=lambda s: None) is not None
     assert ue.intervallo_s(chiave) == 30               # azzerato al successo
 
 
@@ -280,9 +301,10 @@ def test_composto_abortito_a_meta_non_e_completo(monkeypatch):
     monkeypatch.setattr(SM, "advance_submin", _esplode)
     bot = _BotFinto()
     ue = CD.UsciteEsatte(bot, bot._emit)
-    o = ue.piazza(_MercatoFinto(), 11, "BACK", 2.0, 1.2, diretto=lambda s: None)
+    # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
+    o = ue.piazza(_MercatoFinto(), 11, "BACK", 2.0, 0.7, diretto=lambda s: None)
     assert o.status == OrderStatus.EXECUTION_COMPLETE
-    assert o.completa is False and o.size_remaining == 1.2
+    assert o.completa is False and o.size_remaining == 0.7
 
 
 # ---------------------------------------------------------------------------

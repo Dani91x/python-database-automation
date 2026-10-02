@@ -107,11 +107,12 @@ def test_dedup_e_rifiuti_come_dal_vivo(banco):
 
 def test_place_and_trim_nel_banco_stessa_macchina(banco):
     porta, market, _sim, chiamate = banco
-    ack = porta.invia(_cmd(1, size=1.0, price=3.0))
+    # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
+    ack = porta.invia(_cmd(1, size=0.7, price=3.0))
     assert ack["accettato"] is True and chiamate == ["place_submin"]
     for _ in range(6):
         porta.aggiorna()
     fasi = [e["fase"] for e in porta.esiti("safe-t1")]
     assert fasi[:4] == ["inviato", "parcheggiato", "ridotto", "accettato_betfair"]
     ordine = market.calls[0][0]
-    assert ordine.order_type.size == 1.0 and ordine.order_type.price == 3.0
+    assert ordine.order_type.size == 0.7 and ordine.order_type.price == 3.0

@@ -179,9 +179,9 @@ def test_dutch_place_rejected_midway_rolls_back():
 
 def test_dutch_build_failure_places_nothing():
     """Gamba sotto il minimo .it (€2) su build: NESSUN ordine piazzato (all-or-nothing)."""
-    # 10€ su 6 selezioni → gambe ~1.67 < €2 minimo back .it
+    # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50: 4 EUR su 6 selezioni -> gambe ~0,67 < 1,00
     sels = [{"selection_id": i, "price": 6.0} for i in range(1, 7)]
-    sb = _FakeSupabase([_dutch_row(selections=sels)])
+    sb = _FakeSupabase([_dutch_row(selections=sels, total_stake=4.0)])
     market = _FakeMarket("1.1")
     fl = _FakeFlumine({"1.1": market})
 

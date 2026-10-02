@@ -11,6 +11,7 @@ Ambiente: quello del test del motore (``amb``: canale, motore e ordini flumine
 VERI; mercato finto con la borsa: il place assegna il bet_id, il cancel parziale
 riduce, il cancel totale completa l'ordine).
 """
+# minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50 (il 'sotto minimo' dei test place-and-trim e' 0,70 col parcheggio 1,00)
 from __future__ import annotations
 
 from typing import Any, List, Optional
@@ -33,7 +34,7 @@ def _fasi(amb: Any, ws: Any) -> list:
 def _manda_fok(amb: Any, mode: str = "paper") -> Any:
     amb.market.borsa = True
     ws = amb.ch.collega("mike")
-    _manda(amb, ws, _cmd("mike", 1, mode=mode, size=1.0, price=3.0,
+    _manda(amb, ws, _cmd("mike", 1, mode=mode, size=0.7, price=3.0,
                          time_in_force="FILL_OR_KILL"))
     assert _ack(amb, ws)["accettato"] is True, "FOK sotto il minimo rifiutato"
     return ws
@@ -47,10 +48,10 @@ def _giri(amb: Any, n: int = 6) -> None:
 def test_fok_sotto_minimo_sequenza_del_live_e_residuo_ritirato(amb):
     ws = _manda_fok(amb)
     ordine = amb.market.calls[0][0]
-    assert ordine.order_type.size == 2.0 and ordine.order_type.price == 1000.0
+    assert ordine.order_type.size == 1.0 and ordine.order_type.price == 1000.0
     _giri(amb)
-    # parcheggio, taglio a 1,00, rimpiazzo a 3,0, RITIRO del residuo (totale)
-    assert _tipi(amb) == [("place", None), ("cancel", 1.0), ("replace", 3.0),
+    # parcheggio 1,00, taglio a 0,70, rimpiazzo a 3,0, RITIRO del residuo (totale)
+    assert _tipi(amb) == [("place", None), ("cancel", 0.3), ("replace", 3.0),
                           ("cancel", None)]
     assert not amb.motore._submin
     assert "errore" not in _fasi(amb, ws)
@@ -68,16 +69,16 @@ def test_fok_abbinato_per_intero_nessun_ritiro(amb):
     amb.market.replace_order = _replace_e_abbina
     ws = _manda_fok(amb)
     _giri(amb)
-    assert _tipi(amb) == [("place", None), ("cancel", 1.0), ("replace", 3.0)]
+    assert _tipi(amb) == [("place", None), ("cancel", 0.3), ("replace", 3.0)]
     assert not amb.motore._submin and "errore" not in _fasi(amb, ws)
 
 
 def test_senza_fok_il_residuo_resta_come_prima(amb):
     amb.market.borsa = True
     ws = amb.ch.collega("mike")
-    _manda(amb, ws, _cmd("mike", 1, size=1.0, price=3.0))
+    _manda(amb, ws, _cmd("mike", 1, size=0.7, price=3.0))
     _giri(amb)
-    assert _tipi(amb) == [("place", None), ("cancel", 1.0), ("replace", 3.0)]
+    assert _tipi(amb) == [("place", None), ("cancel", 0.3), ("replace", 3.0)]
 
 
 def test_ritiro_del_residuo_che_solleva_si_ritenta(amb):
@@ -108,7 +109,7 @@ def test_passo_fallito_non_chiude_un_ordine_vivo(amb, monkeypatch):
     terminale ``errore`` solo a ordine morto (prima: subito ``errore``)."""
     amb.market.borsa = True
     ws = amb.ch.collega("mike")
-    _manda(amb, ws, _cmd("mike", 1, size=1.0, price=3.0))
+    _manda(amb, ws, _cmd("mike", 1, size=0.7, price=3.0))
     ordine = amb.market.calls[0][0]
 
     def _esplode(*_a: Any, **_k: Any) -> None:

@@ -148,18 +148,25 @@ def test_lay_conversion_bad_price_raises():
 
 
 # ===========================================================================
-# min_stake_rules — .it BACK (min 2.00, floor 0.50)
+# min_stake_rules — .it BACK (min 2.00, al CENTESIMO dal 01/10/2026: l'API accetta
+# 7,47; il floor a 0,50 lasciava residui scoperti fino a 0,49)
 # ===========================================================================
 @pytest.mark.parametrize(
     "size, ok, legal",
     [
-        (1.5, False, None),
+        # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
+        (0.5, False, None),
+        (0.99, False, None),
+        (1.0, True, 1.0),
+        (1.5, True, 1.5),
+        (1.99, True, 1.99),
         (2.0, True, 2.0),
-        (2.3, True, 2.0),
+        (2.3, True, 2.3),
         (2.5, True, 2.5),
-        (2.7, True, 2.5),
+        (2.7, True, 2.7),
         (3.0, True, 3.0),
-        (4.99, True, 4.5),
+        (4.99, True, 4.99),
+        (7.47, True, 7.47),
     ],
 )
 def test_min_stake_it_back(size, ok, legal):
@@ -171,14 +178,18 @@ def test_min_stake_it_back(size, ok, legal):
 
 
 # ===========================================================================
-# min_stake_rules — .it LAY (min size 0.50, no floor a 0.50)
+# min_stake_rules — .it LAY (01/10/2026: minimo = IT_LAY_MIN_SIZE = 1,00, costante
+# condivisa e prudente: 0,50 nella doc, 1,00 per betfair.it 2023; nessun passo)
 # ===========================================================================
 @pytest.mark.parametrize(
     "size, ok, legal",
     [
         (0.3, False, None),
-        (0.5, True, 0.5),
-        (0.75, True, 0.75),
+        (0.5, False, None),
+        (0.75, False, None),
+        (0.99, False, None),
+        (1.0, True, 1.0),
+        (1.37, True, 1.37),
         (2.0, True, 2.0),
     ],
 )
@@ -188,14 +199,16 @@ def test_min_stake_it_lay(size, ok, legal):
     assert v.legalized_size == legal
 
 
-def test_min_stake_reduces_liability_allows_submin():
-    # green-up/hedge: sotto-minimo consentito (size accettata, round 2dp)
+def test_min_stake_reduces_liability_non_esenta_piu():
+    # 01/10/2026: Betfair NON ha eccezioni per chi riduce l'esposizione (banca di
+    # chiusura 0,43 @18 rifiutata INVALID_BET_SIZE 21 volte): il flag e' solo
+    # informazione, il verdetto e' identico a quello senza flag.
     v = min_stake_rules("it", "back", 3.0, 0.37, reduces_liability=True)
-    assert v.valid is True
-    assert v.legalized_size == 0.37
-    v2 = min_stake_rules("it", "lay", 5.0, 0.12, reduces_liability=True)
-    assert v2.valid is True
-    assert v2.legalized_size == 0.12
+    assert v.valid is False and v.legalized_size is None
+    assert v.reason.startswith("SOTTO_MINIMO_NON_PIAZZABILE")
+    v2 = min_stake_rules("it", "lay", 18.0, 0.43, reduces_liability=True)
+    assert v2.valid is False and v2.legalized_size is None
+    assert min_stake_rules("it", "lay", 18.0, 0.43, reduces_liability=True) ==         min_stake_rules("it", "lay", 18.0, 0.43)
 
 
 def test_min_stake_invalid_inputs():
@@ -267,15 +280,18 @@ def test_build_back_rounds_price_to_tick():
     assert b.order.order_type.price == 3.05
 
 
-def test_build_back_floors_size_to_step():
+def test_build_back_tiene_il_centesimo():
+    # 01/10/2026: niente piu' floor a 0,50 (residuo scoperto fino a 0,49)
     b = build_order(_market(), **_base_kwargs(price=3.0, size=4.99))
-    assert b.size == 4.5
-    assert "legalize" in b.note
+    assert b.size == 4.99
+    assert b.order.order_type.size == 4.99
+    assert "legalize" not in b.note
 
 
 def test_build_back_below_min_raises():
+    # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
     with pytest.raises(ValueError, match="minimo"):
-        build_order(_market(), **_base_kwargs(price=3.0, size=1.5))
+        build_order(_market(), **_base_kwargs(price=3.0, size=0.99))
 
 
 def test_build_back_requires_size():

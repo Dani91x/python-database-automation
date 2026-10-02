@@ -40,14 +40,16 @@ ESTENSIONE DEL PROTOCOLLO (coordinatore, 24/09, dal referto della porta di Safe)
   * ``time_in_force``: "FILL_OR_KILL" | null sul ``place`` (build_order lo valida
     con la persistenza come per la coda DB; non abbinato -> l'evento ``order``
     porta la fase "scaduto"/"annullato" con size_matched 0, mai un residuo);
-  * ``reduces_liability``: bool del COMANDO (mai dai params: tolto sempre). Di
-    serie passa come oggi (build_order consente la size sotto il minimo); con
+  * ``reduces_liability``: bool del COMANDO (mai dai params: tolto sempre). Con
     kill-switch, guardia d'avvio o settings stantie scavalca SOLO se il runner lo
     verifica sulle esposizioni abbinate del blotter, altrimenti rifiuto
-    ``reduces_liability_non_verificabile``;
-  * sotto il minimo di Betfair senza ``reduces_liability``: oggi rifiuto
-    ``submin_non_percorribile`` (il place-and-trim dal canale e' il punto di
-    ripresa 1 di STATO_RIPRESA.md);
+    ``reduces_liability_non_verificabile``. Dal 01/10/2026 NON esenta dai minimi;
+  * sotto il minimo di Betfair (aperture E chiusure, 01/10/2026,
+    ``_applica_minimi``): equivalente sul lato opposto dell'altra selezione di un
+    mercato a due esiti (eventi riportati al bot nei termini del chiesto), oppure
+    place-and-trim, oppure rifiuto ``SOTTO_MINIMO_NON_PIAZZABILE``; una punta
+    rifiutata ``INVALID_BET_SIZE`` ha UN solo ripiego ai 0,50 (``ripiego_050``) e una
+    taglia rifiutata non si ritenta identica;
   * ``customerOrderRef`` = ref del comando: NON fattibile senza rompere il
     riconoscimento degli ordini di flumine (vedi STATO_RIPRESA.md, punto 2); il
     diario lega ogni ref al customerOrderRef VERO inviato (riga ``ordine``);
@@ -103,6 +105,16 @@ M_SETTINGS = "settings_stantie"
 M_DIARIO = "diario_non_scrivibile"
 M_RIDUZIONE = "reduces_liability_non_verificabile"
 M_SUBMIN = "submin_non_percorribile"
+# 01/10/2026 (RUNNER_MINIMI_CHIUSURE): ordine sotto il minimo di giurisdizione senza
+# nessuna via legittima (ne' equivalente ne' place-and-trim), oppure taglia gia'
+# rifiutata da Betfair: rifiuto esplicito al bot, MAI un REST verso Betfair.
+M_SOTTO_MINIMO = "SOTTO_MINIMO_NON_PIAZZABILE"
+#: chiavi della riga che il verdetto dei minimi puo' tradurre (equivalente)
+_CHIAVI_MINIMI = ("selection_id", "handicap", "side", "price", "size")
+#: secondi di sorveglianza di un place per il rifiuto INVALID_BET_SIZE di Betfair (la
+#: risposta di placeOrders puo' arrivare fino a 15 s dopo: Betting Enums, TIMEOUT)
+SORVEGLIANZA_TAGLIA_S = 20.0
+MAX_TAGLIE_RIFIUTATE = 500
 # 25/09 AUTO-FOLLOW (``auto_follow.py``): il mercato non e' ancora sottoscritto.
 # Sull'ACK (accettato) = "parcheggiato, aggancio al volo in corso"; sull'evento
 # terminale (rifiutato) = "non arrivato entro MOTORE_AGGANCIO_MAX_MS: il bot
@@ -487,6 +499,21 @@ def altro_runner_due_esiti(market: Any, selection_id: int) -> Optional[tuple]:
     runners = list(getattr(mb, "runners", None) or [])
     if len(runners) != 2:
         return None
+    # 02/10/2026 (punto 5): l'equivalenza vale solo se i due esiti sono ESAUSTIVI ed
+    # esclusivi: entrambi ACTIVE (un REMOVED cambia il mercato) e un solo vincitore
+    # (``market_definition.number_of_winners``, se il book lo porta).
+    for r in runners:
+        st = str(getattr(r, "status", "ACTIVE") or "ACTIVE").upper()
+        if st != "ACTIVE":
+            return None
+    md = getattr(mb, "market_definition", None)
+    nw = getattr(md, "number_of_winners", None) if md is not None else None
+    if nw is not None:
+        try:
+            if int(nw) != 1:
+                return None
+        except (TypeError, ValueError):
+            return None
     ids = [(int(getattr(r, "selection_id")), float(getattr(r, "handicap", 0.0) or 0.0))
            for r in runners]
     if int(selection_id) not in (ids[0][0], ids[1][0]):
@@ -574,6 +601,109 @@ def _ordine_eseguibile(ordine: Any) -> bool:
     return _is_executable(ordine)
 
 
+#: 02/10/2026: codici che possono stare in MEZZO al testo d'errore (es. "greenup:
+#: SOTTO_MINIMO_NON_PIAZZABILE: ..."): vincono sul prefisso
+_CODICI_NEL_TESTO = ("SOTTO_MINIMO_NON_PIAZZABILE", "SUBMIN_PARCHEGGIO_ABBINABILE",
+                     "INVALID_PROFIT_RATIO_PREVISTO", "INVALID_BET_SIZE")
+
+
+def codice_errore(testo: Any) -> Optional[str]:
+    """02/10/2026 (RUNNER_MINIMI_CORREZIONI, punto 2): il CODICE di un esito negativo
+    dal suo testo, per l'evento ``order`` (chiave ``error_code``) su OGNI strada:
+    sincrona, aggancio al volo, errore del dispatch, place-and-trim abortito. Prima i
+    codici noti in qualunque punto del testo, poi il prefisso ``CODICE:`` (i ``M_*``
+    del motore, ``post_place``). None = nessun codice riconoscibile (il testo resta
+    intero in ``errore``)."""
+    if not testo:
+        return None
+    s = str(testo)
+    for c in _CODICI_NEL_TESTO:
+        if c in s:
+            return c
+    testa = s.split(":", 1)[0].strip()
+    # solo identificatori con '_' (``kill_switch``, ``post_place``...): "greenup: ..."
+    # e' il nome dell'azione, non un codice
+    if testa and len(testa) <= 60 and "_" in testa and testa.replace("_", "").isalnum() \
+            and not testa[0].isdigit():
+        return testa
+    return None
+
+
+def _estremi_errore(errore: Any) -> Dict[str, Any]:
+    """Le chiavi d'errore dell'evento ``order`` (02/10): ``error_code`` + ``errore``.
+    NON stanno in ``CHIAVI_SPECCHIO`` (che sono le colonne di ``betfair_live_orders``,
+    test ``test_eventi_con_le_chiavi_dello_specchio_di_produzione``): viaggiano solo
+    nell'evento, come ``submin_step`` / ``portata_al_minimo``."""
+    return {"error_code": codice_errore(errore), "errore": (str(errore)[:300]
+                                                           if errore else None)}
+
+
+def _codice_errore_place(ordine: Any) -> Optional[str]:
+    """Il codice d'errore di Betfair sulla risposta di placeOrders dell'ordine flumine
+    (``order.responses.place_response.error_code``), None se assente."""
+    resp = getattr(ordine, "responses", None)
+    pr = getattr(resp, "place_response", None) if resp is not None else None
+    codice = getattr(pr, "error_code", None) if pr is not None else None
+    return str(codice) if codice else None
+
+
+def _rifiutato_per_taglia(ordini: List[Any]) -> bool:
+    """Un ordine del comando e' stato RIFIUTATO da Betfair per la taglia: risposta
+    ``INVALID_BET_SIZE``, ordine terminale, niente abbinato. Solo RAM."""
+    for o in ordini or []:
+        try:
+            if (_codice_errore_place(o) == "INVALID_BET_SIZE" and _ordine_terminale(o)
+                    and float(getattr(o, "size_matched", 0.0) or 0.0) <= 0.0):
+                return True
+        except Exception:  # noqa: BLE001 - lettura difensiva
+            continue
+    return False
+
+
+def _ordine_ha_esito_positivo(ordine: Any) -> bool:
+    """L'ordine e' stato ACCETTATO da Betfair (bet_id o abbinato): nessun rifiuto di
+    taglia possibile, la sorveglianza si chiude."""
+    try:
+        return bool(getattr(ordine, "bet_id", None)) or \
+            float(getattr(ordine, "size_matched", 0.0) or 0.0) > 0.0
+    except Exception:  # noqa: BLE001 - lettura difensiva
+        return False
+
+
+def _riporta_tradotto(d: Dict[str, Any], tradotto: Dict[str, Any]) -> Dict[str, Any]:
+    """La riga dello specchio dell'ordine EQUIVALENTE riportata nei termini dell'ordine
+    CHIESTO dal bot (``live_order_build.riporta_abbinato_all_originale``). La riga vera
+    resta intera in ``riga_mandata``; ``tradotto`` dice chiesto e mandato."""
+    from . import live_order_build as LB
+
+    orig = tradotto["originale"]
+    mand = tradotto["mandato"]
+    out = dict(d)
+    out["riga_mandata"] = {k: d.get(k) for k in (
+        "selection_id", "handicap", "side", "price", "size", "size_matched",
+        "size_remaining", "average_price_matched", "size_cancelled", "size_lapsed",
+        "size_voided")}
+    mandata = float(mand["size"])
+    fattore = (float(orig["size"]) / mandata) if mandata > 0 else 0.0
+    abbinato, quota = LB.riporta_abbinato_all_originale(
+        orig["side"], orig["price"], orig["size"], mandata, d.get("size_matched"))
+    out.update({
+        "selection_id": orig["selection_id"], "handicap": orig.get("handicap", 0.0),
+        "side": orig["side"], "price": orig["price"], "size": orig["size"],
+        "size_matched": abbinato, "average_price_matched": (quota or 0.0),
+    })
+    for k in ("size_remaining", "size_cancelled", "size_lapsed", "size_voided"):
+        v = d.get(k)
+        if v is not None:
+            try:
+                out[k] = round(float(v) * fattore, 2)
+            except (TypeError, ValueError):
+                pass
+    out["tradotto"] = {k: (dict(v) if isinstance(v, dict) else v)
+                       for k, v in tradotto.items()}
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Il motore
 # ---------------------------------------------------------------------------
@@ -623,6 +753,17 @@ class MotoreOrdini:
         self._eta_settings = eta_settings or self._low.eta_settings_s
         # place-and-trim in corso: ref interno awlq<rid> -> stato in RAM
         self._submin: Dict[str, Dict[str, Any]] = {}
+        # 01/10/2026: place sorvegliati per il rifiuto INVALID_BET_SIZE di Betfair
+        # (ref interno -> {attore, ref, piano, ordini, t0, trattenuti}) e taglie gia'
+        # rifiutate ((mode, lato, size) -> ms): mai un secondo invio identico.
+        self._sorvegliati: Dict[str, Dict[str, Any]] = {}
+        self._taglie_rifiutate: "collections.OrderedDict[tuple, int]" = \
+            collections.OrderedDict()
+        # 02/10/2026 (punto 3): bet_id VERO di un ordine tradotto -> ref interno del
+        # comando (per convertire cancel/replace del bot), e replace di ordini tradotti
+        # in attesa del cancel confermato (ref interno del cancel -> stato)
+        self._bet_tradotti: "collections.OrderedDict[str, str]" = collections.OrderedDict()
+        self._riprezzi: Dict[str, Dict[str, Any]] = {}
         self.canale = canale
         self.diario = diario
         self.scrittore = scrittore
@@ -723,7 +864,8 @@ class MotoreOrdini:
             # aspetta al massimo questo (mai il secondo del worker). Con un
             # place-and-trim in corso il giro e' al passo della macchina
             # (``_SUBMIN_POLL_SEC``): si avanza in RAM, mai un sonno sincrono.
-            attesa = LOW._SUBMIN_POLL_SEC if self._submin else 0.5
+            attesa = LOW._SUBMIN_POLL_SEC if (self._submin or self._sorvegliati
+                                              or self._riprezzi) else 0.5
             if self._in_aggancio:
                 attesa = min(attesa, 0.05)   # 25/09: il primo book si vede entro 50 ms
             self._evento.wait(timeout=attesa)
@@ -742,6 +884,14 @@ class MotoreOrdini:
                 self.avanza_aggancio()
             except Exception:  # noqa: BLE001
                 logger.exception("[motore] avanzamento degli agganci KO")
+            try:
+                self.avanza_sorvegliati()
+            except Exception:  # noqa: BLE001
+                logger.exception("[motore] sorveglianza INVALID_BET_SIZE KO")
+            try:
+                self.avanza_riprezzi()
+            except Exception:  # noqa: BLE001
+                logger.exception("[motore] replace su ordini tradotti KO")
 
     def drena(self, max_giri: int = 20) -> int:
         """Serve tutto cio' che e' in coda sul canale. Ritorna i messaggi gestiti."""
@@ -904,6 +1054,9 @@ class MotoreOrdini:
         """Le guardie del runner, TUTTE da RAM (zero IO). Ordine: eta', aggancio,
         modalita' servibile, guardia d'avvio, kill-switch, freschezza settings."""
         LOW = self._low  # 25/09: l'esecutore dello sport (calcio: live_order_worker)
+        # 01/10/2026: le guardie si fanno SEMPRE sull'ordine CHIESTO (mai su una
+        # traduzione di un giro precedente: aggancio al volo -> secondo giro)
+        self._ripristina_minimi(piano)
         eta = ricevuto_ms - int(piano["creato_ms"])
         if eta > int(piano["max_eta_ms"]):
             raise Rifiuto(M_ETA, f"eta' {eta} ms > max_eta_ms {piano['max_eta_ms']}")
@@ -1004,36 +1157,232 @@ class MotoreOrdini:
                     riga["size"] = portata
                     piano["portata_al_minimo"] = {"chiesto": round(chiesto, 2),
                                                   "piazzato": round(portata, 2)}
-        if azione == "place" and not riduce:
-            # estensione 24/09 (3), decisione dell'utente: sotto il minimo di
-            # Betfair il motore usa la STESSA macchina place-and-trim del worker
-            # (``_start_submin`` + ``_advance_submin_row``), in paper E in live
-            # (paper = stessa macchina sul client simulato). Qui SOLO la verifica
-            # di percorribilita' (``start_submin``, pura): se la macchina non puo'
-            # partire -> rifiuto ``submin_non_percorribile`` col motivo suo.
+        if azione == "place":
+            # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): i minimi valgono per OGNI place,
+            # aperture E chiusure (``reduces_liability`` non esenta piu'): il verdetto
+            # sceglie diretto / equivalente / place-and-trim / rifiuto esplicito.
+            self._applica_minimi(piano)
+        elif azione in ("cancel", "replace"):
+            # 02/10/2026 (punto 3): un cancel/replace su un ordine TRADOTTO si converte
+            # nei termini dell'ordine VERO (mai un prezzo dell'Over sulla punta Under)
+            self._traduci_annullo(piano)
+
+    # ------------------------------------- 02/10 cancel/replace su ordine tradotto
+    def _ordine_per_bet(self, flumine: Any, market_id: Any, bet_id: str) -> Any:
+        """L'ordine flumine per bet_id con la lookup dell'esecutore dello sport (calcio:
+        ``live_order_worker._find_order_by_bet_id``; tennis: quella del suo worker)."""
+        trova = getattr(self._low, "_find_order_by_bet_id", None)
+        if trova is None:
+            trova = getattr(getattr(self._low, "_TW", None), "_find_order_by_bet_id", None)
+        if trova is None:
+            return None
+        return trova(flumine, market_id, bet_id)
+
+    def _tradotto_di_bet(self, bet_id: Any) -> Optional[Dict[str, Any]]:
+        """L'``info`` del comando (``_rif_interni``) se ``bet_id`` e' di un ordine
+        tradotto nell'equivalente; None altrimenti. Solo RAM."""
+        if not bet_id:
+            return None
+        with self._lock_seq:
+            cust = self._bet_tradotti.get(str(bet_id))
+            info = self._rif_interni.get(cust) if cust is not None else None
+            if info is None or not info.get("tradotto"):
+                return None
+            return {"cust": cust, "tradotto": info["tradotto"]}
+
+    def _traduci_annullo(self, piano: Dict[str, Any]) -> None:
+        """Cancel e replace del bot su un ordine tradotto (02/10/2026, punto 3).
+
+        - cancel TOTALE: annulla l'ordine vero (nulla da convertire);
+        - cancel con ``size_reduction`` (termini del CHIESTO): riduzione convertita
+          ``r * mandata/chiesta`` al centesimo (banca Over S@q -> punta Under S(q-1):
+          fattore q-1). Il residuo vero non scende mai sotto il floor del trim
+          (``SUBMIN_IMPORTO_FINALE_MIN``) e resta nella banda INVALID_PROFIT_RATIO,
+          altrimenti rifiuto ``SOTTO_MINIMO_NON_PIAZZABILE`` col residuo dichiarato;
+        - replace a ``new_price`` (termini del CHIESTO): MAI un replace dell'ordine vero
+          (la quota dell'Over sulla punta Under). Diventa: cancel totale dell'ordine
+          vero e, a cancel CONFERMATO (``avanza_riprezzi``), un nuovo place dell'ordine
+          chiesto alla quota nuova, con un verdetto dei minimi nuovo
+          (``_applica_minimi``), stesso ref del bot.
+        Idempotente: riparte sempre dal comando originale (``annullo_originale``)."""
+        from .live_order_build import SUBMIN_IMPORTO_FINALE_MIN
+        from .trading.submin import rendimento_in_banda
+
+        riga = piano["riga"]
+        if piano.get("annullo_originale") is None:
+            piano["annullo_originale"] = {"azione": piano["azione"],
+                                          "size_reduction": riga.get("size_reduction"),
+                                          "new_price": riga.get("new_price")}
+        info = self._tradotto_di_bet(riga.get("bet_id"))
+        if info is None:
+            return
+        t = info["tradotto"]
+        orig, mand = t["originale"], t["mandato"]
+        chiesta, mandata = float(orig["size"]), float(mand["size"])
+        fattore = (mandata / chiesta) if chiesta > 0 else 0.0
+        ordine = None
+        if self._flumine is not None:
             try:
-                minimo = float(LOW._sub_minimum_floor(str(riga["side"]).lower()))
-            except Exception:  # noqa: BLE001 - minimo ignoto: fail-closed
-                raise Rifiuto(M_SUBMIN, "minimo di giurisdizione non determinabile")
-            if float(riga["size"]) < minimo - 1e-9:
-                # D1-ter (28/09, caso B): un FILL_OR_KILL sotto il minimo era
-                # RIFIUTATO qui, mentre il live REST (``place_submin_live``,
-                # ``fill_or_kill=True``) lo esegue: parcheggio, taglio, rimpiazzo
-                # alla quota target e residuo NON abbinato RITIRATO a fine
-                # sequenza. Ora la stessa sequenza (la macchina parcheggia sempre
-                # senza FOK: ``FlumineSubminOps.place``) e il ritiro del residuo
-                # al passo ``done`` (``_ritira_residuo_fok``), in paper E in live.
-                if riga.get("time_in_force") == "FILL_OR_KILL":
-                    piano["submin_fok"] = True
-                from .trading.submin import start_submin
-                try:
-                    start_submin(side=str(riga["side"]).lower(),
-                                 target_price=float(riga["price"]),
-                                 target_size=float(riga["size"]),
-                                 jurisdiction=LOW._jurisdiction())  # come _start_submin
-                except ValueError as ex:
-                    raise Rifiuto(M_SUBMIN, str(ex)[:200]) from ex
-                piano["submin"] = True
+                ordine = self._ordine_per_bet(self._flumine, riga.get("market_id"),
+                                                         str(riga["bet_id"]))
+            except Exception:  # noqa: BLE001 - lettura difensiva
+                ordine = None
+        resto_vero = None
+        if ordine is not None:
+            try:
+                resto_vero = round(float(ordine.size_remaining or 0.0), 2)
+            except Exception:  # noqa: BLE001
+                resto_vero = None
+        # anche gli eventi del cancel/replace tornano al bot nei termini del CHIESTO
+        # (la riga del cancel legge l'ordine VERO: senza, il bot vedrebbe la punta Under)
+        piano["tradotto"] = t
+        piano["annullo_tradotto"] = {"bet_id": str(riga["bet_id"]), "cust": info["cust"],
+                                     "originale": dict(orig), "mandato": dict(mand),
+                                     "fattore": round(fattore, 6),
+                                     "resto_vero": resto_vero}
+        if piano["annullo_originale"]["azione"] == "cancel":
+            r = riga.get("size_reduction")
+            if r is None or float(r) <= 0:
+                return                               # cancel totale: niente da convertire
+            if resto_vero is None:
+                raise Rifiuto(M_SOTTO_MINIMO, (
+                    f"cancel parziale su ordine tradotto (bet {riga['bet_id']}): ordine vero "
+                    f"non trovato, riduzione non convertibile: nessun cancel"))
+            r_vera = round(float(r) * fattore, 2)
+            if r_vera >= resto_vero - 1e-9:
+                riga["size_reduction"] = None        # riduce tutto = cancel totale
+                piano["annullo_tradotto"]["riduzione_vera"] = None
+                return
+            residuo = round(resto_vero - r_vera, 2)
+            prezzo_vero = float(mand["price"])
+            if residuo < SUBMIN_IMPORTO_FINALE_MIN - 1e-9 \
+                    or not rendimento_in_banda(residuo, prezzo_vero):
+                residuo_chiesto = round(residuo / fattore, 2) if fattore > 0 else residuo
+                raise Rifiuto(M_SOTTO_MINIMO, (
+                    f"cancel parziale di {float(r):.2f} su ordine tradotto: l'ordine vero "
+                    f"{mand['side'].upper()} {resto_vero:.2f}@{prezzo_vero} resterebbe "
+                    f"{residuo:.2f} (sotto {SUBMIN_IMPORTO_FINALE_MIN:.2f} o fuori banda "
+                    f"INVALID_PROFIT_RATIO): nessun cancel; residuo {residuo_chiesto:.2f} "
+                    f"nei termini chiesti da dichiarare al trader (annullare tutto, oppure "
+                    f"lasciare)"))
+            riga["size_reduction"] = r_vera
+            piano["annullo_tradotto"]["riduzione_vera"] = r_vera
+            return
+        # replace -> cancel totale dell'ordine vero + nuovo place a cancel confermato
+        if resto_vero is None:
+            raise Rifiuto(M_SOTTO_MINIMO, (
+                f"replace su ordine tradotto (bet {riga['bet_id']}): ordine vero non "
+                f"trovato: nessun replace"))
+        piano["azione"] = "cancel"
+        riga["size_reduction"] = None
+        piano["annullo_tradotto"]["replace_a"] = float(riga.get("new_price") or 0.0)
+        piano["annullo_tradotto"]["abbinato_al_cancel"] = round(
+            float(getattr(ordine, "size_matched", 0.0) or 0.0), 2)
+        piano["riprezzo_tradotto"] = True
+
+    def _applica_minimi(self, piano: Dict[str, Any]) -> None:
+        """Il verdetto dei minimi di giurisdizione sul place del comando, PRIMA di
+        qualunque invio (zero IO: book e blotter in RAM).
+
+        - ``diretto``: nulla cambia;
+        - ``equivalente`` (mercato a due esiti): la riga diventa l'ordine equivalente sul
+          lato opposto dell'altra selezione (``piano["tradotto"]`` = originale e mandato,
+          per il diario e per riportare gli eventi al bot nei termini dell'ordine
+          chiesto, ``_riporta_tradotto``);
+        - ``submin``: la STESSA macchina place-and-trim del worker (``_start_submin`` +
+          ``_advance_submin_row``), in paper E in live; qui la verifica di
+          percorribilita' (``start_submin``, pura) -> altrimenti ``submin_non_percorribile``;
+        - ``impossibile``: ``Rifiuto(SOTTO_MINIMO_NON_PIAZZABILE)``, MAI un REST.
+
+        Un comando la cui taglia Betfair ha GIA' rifiutato (``INVALID_BET_SIZE`` visto da
+        questo motore) non si ritenta identico: rifiuto esplicito.
+        Idempotente: ``_controlla`` puo' girare due volte (aggancio al volo) e riparte
+        sempre dall'ordine chiesto (``minimi_originale``, ripristinato all'inizio)."""
+        from . import live_order_build as LB
+
+        LOW = self._low
+        riga = piano["riga"]
+        if piano.get("minimi_originale") is None:
+            piano["minimi_originale"] = {k: riga.get(k) for k in _CHIAVI_MINIMI}
+        lato = str(riga["side"]).lower()
+        try:
+            giurisdizione = LOW._jurisdiction()
+        except Exception as ex:  # noqa: BLE001 - minimo ignoto: fail-closed
+            raise Rifiuto(M_SUBMIN, f"minimo di giurisdizione non determinabile: "
+                                    f"{str(ex)[:120]}") from ex
+        altra = None
+        if self._flumine is not None and riga.get("market_id"):
+            try:
+                mercato = LOW._resolve_market(self._flumine, riga.get("market_id"))
+                altra = altro_runner_due_esiti(mercato, int(riga["selection_id"]))
+            except Exception:  # noqa: BLE001 - mercato non risolvibile: niente equivalente
+                altra = None
+        verdetto = LB.verdetto_minimi(
+            giurisdizione, lato, float(riga["price"]), float(riga["size"]),
+            altra_selezione=altra,
+            # il runner tennis non ha il place-and-trim (``esecutore_tennis.MOTIVO_SUBMIN``)
+            submin_disponibile=getattr(LOW, "MOTIVO_SUBMIN", None) is None)
+        piano["minimi"] = {"esito": verdetto.esito, "motivo": verdetto.motivo}
+        if verdetto.esito == LB.VERDETTO_IMPOSSIBILE:
+            dettaglio = str(verdetto.motivo or "")
+            if dettaglio.startswith(M_SOTTO_MINIMO + ":"):
+                dettaglio = dettaglio[len(M_SOTTO_MINIMO) + 1:].strip()
+            raise Rifiuto(M_SOTTO_MINIMO, dettaglio[:240])
+        if verdetto.esito == LB.VERDETTO_EQUIVALENTE:
+            eq = verdetto.equivalente
+            orig = dict(piano["minimi_originale"])
+            orig["side"] = lato
+            mandato = {"selection_id": int(verdetto.altra_selezione[0]),
+                       "handicap": float(verdetto.altra_selezione[1]),
+                       "side": eq.side, "price": float(eq.price), "size": float(eq.size)}
+            riga.update(mandato)
+            piano["tradotto"] = {
+                "originale": {"selection_id": int(orig["selection_id"]),
+                              "handicap": float(orig.get("handicap") or 0.0),
+                              "side": lato, "price": float(orig["price"]),
+                              "size": round(float(orig["size"]), 2)},
+                "mandato": dict(mandato),
+                "quota_esatta": eq.price_esatta,
+                "scarto_se_vince_chiesta": eq.scarto_se_vince_chiesta,
+                "scarto_se_vince_altra": eq.scarto_se_vince_altra,
+                "motivo": verdetto.motivo,
+            }
+        elif verdetto.esito == LB.VERDETTO_SUBMIN:
+            # D1-ter (28/09, caso B): un FILL_OR_KILL sotto il minimo fa la stessa
+            # sequenza del live REST (``place_submin_live``, ``fill_or_kill=True``):
+            # parcheggio, taglio, rimpiazzo e residuo NON abbinato RITIRATO a fine
+            # sequenza (``_ritira_residuo_fok``), in paper E in live.
+            if riga.get("time_in_force") == "FILL_OR_KILL":
+                piano["submin_fok"] = True
+            from .trading.submin import start_submin
+            try:
+                start_submin(side=lato, target_price=float(riga["price"]),
+                             target_size=float(riga["size"]),
+                             jurisdiction=giurisdizione)  # come _start_submin
+            except ValueError as ex:
+                raise Rifiuto(M_SUBMIN, str(ex)[:200]) from ex
+            piano["submin"] = True
+        # "un ordine rifiutato per taglia NON si ritenta identico" (01/10/2026)
+        chiave = (str(piano.get("mode")), str(riga["side"]).lower(),
+                  round(float(riga["size"]), 2))
+        if not piano.get("submin") and chiave in self._taglie_rifiutate:
+            raise Rifiuto(M_SOTTO_MINIMO, (
+                f"Betfair ha gia' rifiutato INVALID_BET_SIZE un {chiave[1].upper()} da "
+                f"{chiave[2]:.2f} EUR ({chiave[0]}): non si ritenta identico"))
+
+    def _ripristina_minimi(self, piano: Dict[str, Any]) -> None:
+        """Riporta la riga all'ordine CHIESTO prima di rifare le guardie (aggancio)."""
+        orig = piano.get("minimi_originale")
+        if orig is not None:
+            piano["riga"].update(orig)
+        ann = piano.get("annullo_originale")
+        if ann is not None:
+            piano["azione"] = ann["azione"]
+            piano["riga"]["size_reduction"] = ann["size_reduction"]
+            piano["riga"]["new_price"] = ann["new_price"]
+        for k in ("tradotto", "submin", "submin_fok", "minimi", "annullo_tradotto",
+                  "riprezzo_tradotto"):
+            piano.pop(k, None)
 
     def _riduzione_verificata(self, flumine: Any, riga: Dict[str, Any], mode: str) -> bool:
         """Il place riduce DAVVERO la posizione abbinata del runner? Legge le
@@ -1096,7 +1445,14 @@ class MotoreOrdini:
         cust = LOW._cust_ref(rid)
         with self._lock_seq:
             self._rif_interni[cust] = {"attore": attore, "ref": ref, "mode": mode,
-                                       "pronto": False, "trattenuti": []}
+                                       "pronto": False, "trattenuti": [],
+                                       # 01/10: ordine tradotto nell'equivalente -> gli
+                                       # eventi tornano al bot nei termini del CHIESTO
+                                       "tradotto": piano.get("tradotto"),
+                                       "extra_fisso": ({"ripiego_050":
+                                                        dict(piano["ripiego_050"])}
+                                                       if piano.get("ripiego_050")
+                                                       else None)}
             self._rif_ordine.append(cust)
             while len(self._rif_ordine) > 5000:
                 self._rif_interni.pop(self._rif_ordine.popleft(), None)
@@ -1108,7 +1464,29 @@ class MotoreOrdini:
             # la STESSA macchina del worker: azione place_submin (step INIT->PLACED
             # qui, gli step successivi da ``avanza_submin`` a ogni giro)
             riga["action"] = "place_submin"
-        self._imposta_contesto(piano["strategy_ref"], self._pre_invio(ref))
+        if piano.get("tradotto") and errore_forzato is None:
+            # 01/10: il diario dice che l'ordine e' stato TRADOTTO, con il chiesto e il
+            # mandato, PRIMA dell'invio (la riga ``ordine`` del pre-invio ha il mandato)
+            try:
+                self.diario.scrivi({"tipo": "tradotto", "ref": ref, "rid": rid,
+                                    "ref_interno": cust, "ts_ms": self._ora_ms(),
+                                    **piano["tradotto"]})
+            except Exception as ex:  # noqa: BLE001 - fail-closed: senza diario niente ordine
+                errore_forzato = f"{M_DIARIO}: traduzione non scrivibile: {str(ex)[:120]}"
+        inviati: List[Any] = []
+        hook_diario = self._pre_invio(ref)
+
+        def _hook(order: Any, market: Any, what: str, info: Optional[Dict[str, Any]]) -> None:
+            hook_diario(order, market, what, info)
+            if order is not None:
+                inviati.append(order)       # per la sorveglianza INVALID_BET_SIZE
+        sorveglia = (errore_forzato is None and not submin and mode == "live"
+                     and riga.get("action") == "place")
+        if sorveglia:
+            # 01/10: registrato PRIMA dell'invio, cosi' una riga terminale dello specchio
+            # che arrivasse subito (rifiuto di Betfair) trova gia' la sorveglianza
+            self._sorveglia(cust, attore, ref, piano, inviati)
+        self._imposta_contesto(piano["strategy_ref"], _hook)
         try:
             if errore_forzato is not None:
                 # 25/09: comando mai partito (aggancio scaduto o guardia
@@ -1125,6 +1503,9 @@ class MotoreOrdini:
         finally:
             self._pulisci_contesto()
         if LOW._tempi_on(): LOW._TEMPI.fine(cust, ok, errore)  # noqa: E701 - F0 misura
+        if not ok and sorveglia:
+            with self._lock_seq:
+                self._sorvegliati.pop(cust, None)   # niente e' partito: niente da sorvegliare
         result = lsb.captured.get("result") or {"ok": ok, "action": riga["action"],
                                                 "mode": mode, "error": errore}
         if ok and submin:
@@ -1149,6 +1530,11 @@ class MotoreOrdini:
         # l'ordine su Betfair per ref (il suo ref non arriva mai a Betfair).
         if isinstance(result, dict) and result.get("cor_betfair"):
             extra["cor"] = str(result["cor_betfair"])
+        if not ok:
+            # 02/10 (punto 2): il CODICE del rifiuto anche sulla strada asincrona
+            # (aggancio al volo) e sugli errori del dispatch: l'attore lo legge
+            # nell'evento (``error_code``/``errore``), non solo nell'ack sincrono
+            extra.update(_estremi_errore(errore))
         with self._lock_seq:
             self._emetti(attore, ref, riga_specchio_da_esito(result, cust_ref=cust, rid=rid,
                                                              mode=mode, riga=riga), fase,
@@ -1158,7 +1544,14 @@ class MotoreOrdini:
                 info["pronto"] = True
                 trattenuti, info["trattenuti"] = info["trattenuti"], []
                 for payload in trattenuti:
-                    self._emetti(attore, ref, payload, fase_da_riga(payload))
+                    self._emetti_specchio(cust, attore, ref, payload)
+        if ok and piano.get("riprezzo_tradotto"):
+            # 02/10 (punto 3): replace su ordine tradotto = il cancel e' partito; il
+            # nuovo place parte SOLO a cancel confermato (``avanza_riprezzi``)
+            with self._lock_seq:
+                self._riprezzi[cust] = {"attore": attore, "ref": ref, "piano": piano,
+                                        "t0": time.monotonic()}
+            self.sveglia()
         contesto = None
         if ok:
             try:
@@ -1466,7 +1859,8 @@ class MotoreOrdini:
                 self._emetti(s["attore"], s["ref"], riga_specchio_da_esito(
                     result, cust_ref=cust, rid=s["riga"]["id"], mode=s["mode"],
                     riga=s["riga"]), "errore",
-                    extra={"submin_step": result.get("submin_step"), "errore": errore})
+                    extra={"submin_step": result.get("submin_step"),
+                           **_estremi_errore(errore)})
             info = self._rif_interni.get(cust)
             if info is not None:
                 info["pronto"] = True
@@ -1487,6 +1881,22 @@ class MotoreOrdini:
     def _emetti(self, attore: str, ref: str, riga: Dict[str, Any], fase: str,
                 extra: Optional[Dict[str, Any]] = None) -> None:
         d = dict(riga)
+        # 01/10/2026: un ordine TRADOTTO nell'equivalente torna al bot nei termini
+        # dell'ordine CHIESTO (selezione, lato, quota, size, abbinato); la riga vera
+        # mandata a Betfair viaggia intera in ``riga_mandata``. Un ripiego ai 0,50 porta
+        # sempre la sua dichiarazione (``ripiego_050``).
+        rif = self._rif_interno_di(d.get("client_order_ref"))
+        info = self._rif_interni.get(rif) if rif is not None else None
+        if info is not None:
+            if info.get("tradotto"):
+                if d.get("bet_id"):
+                    # 02/10 (punto 3): il bet_id vero resta legato al comando tradotto
+                    self._bet_tradotti[str(d["bet_id"])] = rif
+                    while len(self._bet_tradotti) > 5000:
+                        self._bet_tradotti.popitem(last=False)
+                d = _riporta_tradotto(d, info["tradotto"])
+            if info.get("extra_fisso"):
+                d.update(info["extra_fisso"])
         if extra:
             d.update(extra)
         d.update({"ref": ref, "seq": self._prossimo_seq(attore), "fase": fase,
@@ -1538,7 +1948,288 @@ class MotoreOrdini:
             if not info["pronto"]:
                 info["trattenuti"].append(dict(payload))
                 return
-            self._emetti(info["attore"], info["ref"], payload, fase_da_riga(payload))
+            self._emetti_specchio(rif, info["attore"], info["ref"], payload)
+
+    # ------------------------------------- 01/10 traduzione e ripiego INVALID_BET_SIZE
+    def _emetti_specchio(self, cust: str, attore: str, ref: str,
+                         payload: Dict[str, Any]) -> None:
+        """Una riga dello specchio diventa evento ``order``, TRANNE la riga terminale di
+        un place sorvegliato che Betfair ha rifiutato ``INVALID_BET_SIZE``: quella si
+        TRATTIENE (il bot non deve vedere "annullato" mentre il motore fa l'unico
+        ripiego ai 0,50); la emette ``avanza_sorvegliati`` se il ripiego non parte.
+        Chiamata sotto ``_lock_seq``."""
+        s = self._sorvegliati.get(cust)
+        if s is not None and not s.get("chiuso"):
+            if _rifiutato_per_taglia(s["ordini"]) and fase_da_riga(payload) in (
+                    "annullato", "scaduto", "rifiutato", "errore"):
+                s["trattenuto"] = dict(payload)
+                self.sveglia()
+                return
+        self._emetti(attore, ref, payload, fase_da_riga(payload))
+
+    def _sorveglia(self, cust: str, attore: str, ref: str, piano: Dict[str, Any],
+                   inviati: List[Any]) -> None:
+        with self._lock_seq:
+            ora = time.monotonic()
+            for k in [k for k, v in self._sorvegliati.items()
+                      if ora - v["t0"] > 3 * SORVEGLIANZA_TAGLIA_S]:
+                self._sorvegliati.pop(k, None)      # pulizia: niente crescita senza fine
+            self._sorvegliati[cust] = {"attore": attore, "ref": ref, "piano": piano,
+                                       "ordini": inviati, "t0": ora, "trattenuto": None,
+                                       "chiuso": False}
+
+    def avanza_sorvegliati(self) -> int:
+        """I place sorvegliati (live): se Betfair ha risposto ``INVALID_BET_SIZE`` la
+        taglia si ricorda (mai un secondo invio identico) e, per una PUNTA non multipla
+        di 0,50 al primo rifiuto, si fa UN solo nuovo tentativo arrotondato per difetto
+        ai 0,50 con il residuo DICHIARATO al bot (``ripiego_050``). Ogni altro esito
+        chiude la sorveglianza. Nessun sonno, solo RAM; ritorna i ripieghi partiti."""
+        from . import live_order_build as LB
+
+        if not self._sorvegliati:
+            return 0
+        n = 0
+        ora = time.monotonic()
+        for cust in list(self._sorvegliati):
+            with self._lock_seq:
+                s = self._sorvegliati.get(cust)
+                if s is None or s.get("chiuso"):
+                    self._sorvegliati.pop(cust, None)
+                    continue
+                ordini = list(s["ordini"])
+                rifiutato = _rifiutato_per_taglia(ordini)
+                vivo_o_abbinato = any(_ordine_ha_esito_positivo(o) for o in ordini)
+                finito = bool(ordini) and all(_ordine_terminale(o) for o in ordini)
+                if not rifiutato:
+                    if vivo_o_abbinato or finito or ora - s["t0"] > SORVEGLIANZA_TAGLIA_S:
+                        self._sorvegliati.pop(cust, None)
+                        if s.get("trattenuto") is not None:
+                            self._emetti(s["attore"], s["ref"], s["trattenuto"],
+                                         fase_da_riga(s["trattenuto"]))
+                    continue
+                s["chiuso"] = True
+                self._sorvegliati.pop(cust, None)
+            piano = s["piano"]
+            riga = piano["riga"]
+            lato = str(riga["side"]).lower()
+            size = round(float(riga["size"]), 2)
+            self._ricorda_taglia(str(piano.get("mode")), lato, size)
+            nuova = LB.size_ripiego_punta(size) if lato == "back" else None
+            motivo_no = None
+            if piano.get("ripiego_050"):
+                motivo_no = "ripiego ai 0,50 gia' fatto una volta"
+            elif nuova is None:
+                motivo_no = "nessun ripiego possibile (non e' una punta non multipla di 0,50)"
+            elif self._guardia_armata():
+                motivo_no = "guardia d'avvio armata"
+            elif not piano.get("riduce") and (self._low._kill_switch()
+                                              or self._low._db_kill_switch()):
+                motivo_no = "kill-switch ATTIVO (apertura)"
+            if motivo_no is not None:
+                logger.warning("[motore] %s rifiutato INVALID_BET_SIZE (%s %.2f): %s",
+                               s["ref"], lato, size, motivo_no)
+                self._emetti_rifiuto_taglia(s, motivo_no)
+                continue
+            self._ripiega(s, nuova)
+            n += 1
+        return n
+
+    def avanza_riprezzi(self) -> int:
+        """02/10/2026 (punto 3): i replace del bot su ordini TRADOTTI. Il cancel
+        dell'ordine vero e' partito; quando l'ordine vero e' terminale, la parte
+        annullata (resto al cancel meno cio' che si e' abbinato nel frattempo) si
+        riporta nei termini del CHIESTO e si ripiazza alla quota nuova chiesta dal bot,
+        con un verdetto dei minimi nuovo. Mai prima del cancel confermato (niente
+        doppia esposizione). Solo RAM; ritorna i nuovi place partiti."""
+        from .trading.submin import _status_name
+
+        if not self._riprezzi:
+            return 0
+        n = 0
+        ora = time.monotonic()
+        for cust in list(self._riprezzi):
+            with self._lock_seq:
+                s = self._riprezzi.get(cust)
+            if s is None:
+                continue
+            piano = s["piano"]
+            at = piano["annullo_tradotto"]
+            ordine = None
+            if self._flumine is not None:
+                try:
+                    ordine = self._ordine_per_bet(
+                        self._flumine, piano["riga"].get("market_id"), at["bet_id"])
+                except Exception:  # noqa: BLE001
+                    ordine = None
+            terminale = ordine is None or _status_name(ordine) in _STATI_TERMINALI_ORDINE
+            if not terminale:
+                if ora - s["t0"] > SORVEGLIANZA_TAGLIA_S:
+                    with self._lock_seq:
+                        self._riprezzi.pop(cust, None)
+                    self._emetti_riprezzo(s, "rifiutato", {
+                        "eseguito": False,
+                        "motivo": "cancel dell'ordine vero non confermato entro "
+                                  f"{SORVEGLIANZA_TAGLIA_S:.0f} s: nessun nuovo ordine"},
+                        codice="REPLACE_TRADOTTO_CANCEL_NON_CONFERMATO")
+                continue
+            with self._lock_seq:
+                self._riprezzi.pop(cust, None)
+            abbinato_ora = round(float(getattr(ordine, "size_matched", 0.0) or 0.0), 2) \
+                if ordine is not None else float(at.get("abbinato_al_cancel") or 0.0)
+            vero = round(float(at.get("resto_vero") or 0.0)
+                         - max(0.0, abbinato_ora - float(at.get("abbinato_al_cancel") or 0.0)),
+                         2)
+            fattore = float(at.get("fattore") or 0.0)
+            chiesto = round(vero / fattore, 2) if fattore > 0 else 0.0
+            if chiesto <= 0:
+                self._emetti_riprezzo(s, "annullato", {
+                    "eseguito": False,
+                    "motivo": "l'ordine vero si e' abbinato prima del cancel: niente da "
+                              "riprezzare"})
+                continue
+            o = at["originale"]
+            LOW = self._low
+            riga = {k: None for k in LOW._LOCAL_ROW_KEYS}
+            riga.update({"market_id": piano["riga"].get("market_id"),
+                         "selection_id": int(o["selection_id"]),
+                         "handicap": float(o.get("handicap") or 0.0), "side": o["side"],
+                         "price": float(at["replace_a"]), "size": chiesto,
+                         "order_type": "LIMIT", "persistence": "LAPSE",
+                         "time_in_force": None, "params": dict(piano["riga"].get("params")
+                                                               or {}),
+                         "id": next(LOW._LOCAL_RID), "action": "place",
+                         "mode": piano["mode"]})
+            nuovo = {"riga": riga, "azione": "place", "mode": piano["mode"],
+                     "strategy_ref": piano.get("strategy_ref"),
+                     "creato_ms": piano.get("creato_ms"),
+                     "max_eta_ms": piano.get("max_eta_ms"), "riduce": piano.get("riduce"),
+                     "riprezzo_di": {"bet_id": at["bet_id"], "chiesto": chiesto,
+                                     "quota": float(at["replace_a"])}}
+            self._imposta_contesto(None, None)   # come _gestisci: modo di processo/env
+            try:
+                self._applica_minimi(nuovo)
+            except Rifiuto as r:
+                self._emetti_riprezzo(s, "rifiutato", {"eseguito": False, "motivo": str(r)},
+                                      codice=r.codice, errore=str(r))
+                continue
+            finally:
+                self._pulisci_contesto()
+            try:
+                self.diario.scrivi({
+                    "tipo": "inviato", "canale": "replace_tradotto", "ref": s["ref"],
+                    "attore": s["attore"], "azione": "place", "mode": piano["mode"],
+                    "rid": riga["id"], "ref_interno": LOW._cust_ref(riga["id"]),
+                    "strategy_ref": piano.get("strategy_ref"), "parametri": dict(riga),
+                    "riprezzo_di": dict(nuovo["riprezzo_di"]), "ts_ms": self._ora_ms()})
+            except Exception as ex:  # noqa: BLE001 - fail-closed: senza diario niente ordine
+                self._emetti_riprezzo(s, "rifiutato", {"eseguito": False,
+                                                       "motivo": f"{M_DIARIO}: {ex}"},
+                                      codice=M_DIARIO)
+                continue
+            self._esegui(s["attore"], s["ref"], nuovo)
+            n += 1
+        return n
+
+    def _emetti_riprezzo(self, s: Dict[str, Any], fase: str, dettaglio: Dict[str, Any],
+                         codice: Optional[str] = None, errore: Optional[str] = None) -> None:
+        """Evento al bot (termini del CHIESTO) per un replace tradotto che non diventa
+        un nuovo ordine."""
+        piano = s["piano"]
+        at = piano["annullo_tradotto"]
+        o = at["originale"]
+        LOW = self._low
+        cust = LOW._cust_ref(piano["riga"]["id"])
+        riga = dict(piano["riga"], selection_id=o["selection_id"], side=o["side"],
+                    price=o["price"], size=o["size"])
+        payload = riga_specchio_da_esito({"status": "EXECUTION_COMPLETE", "size_matched": 0.0,
+                                          "size_remaining": 0.0}, cust_ref=cust,
+                                         rid=piano["riga"]["id"], mode=piano["mode"], riga=riga)
+        extra: Dict[str, Any] = {"riprezzo_tradotto": dict(dettaglio,
+                                                           bet_id=at["bet_id"])}
+        if codice or errore:
+            extra.update({"error_code": codice or codice_errore(errore),
+                          "errore": (errore or dettaglio.get("motivo"))})
+        with self._lock_seq:
+            self._emetti(s["attore"], s["ref"], payload, fase, extra=extra)
+        try:
+            self.diario.scrivi({"tipo": "riprezzo_tradotto", "ref": s["ref"], "fase": fase,
+                                **extra["riprezzo_tradotto"], "ts_ms": self._ora_ms()},
+                               durevole=False)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _ricorda_taglia(self, mode: str, lato: str, size: float) -> None:
+        with self._lock_seq:
+            self._taglie_rifiutate[(mode, lato, round(float(size), 2))] = self._ora_ms()
+            while len(self._taglie_rifiutate) > MAX_TAGLIE_RIFIUTATE:
+                self._taglie_rifiutate.popitem(last=False)
+
+    def _emetti_rifiuto_taglia(self, s: Dict[str, Any], motivo: str) -> None:
+        """L'esito terminale per il bot: la riga trattenuta (o una costruita) con il
+        codice di Betfair e il motivo per cui il ripiego non e' partito."""
+        piano = s["piano"]
+        riga = piano["riga"]
+        cust = self._low._cust_ref(riga["id"])
+        payload = s.get("trattenuto")
+        if payload is None:
+            payload = riga_specchio_da_esito(
+                {"status": "EXECUTION_COMPLETE", "size_matched": 0.0,
+                 "size_remaining": 0.0}, cust_ref=cust, rid=riga["id"],
+                mode=piano["mode"], riga=riga)
+        with self._lock_seq:
+            self._emetti(s["attore"], s["ref"], payload, "rifiutato",
+                         extra={"errore_betfair": "INVALID_BET_SIZE",
+                                "error_code": "INVALID_BET_SIZE",
+                                "errore": f"INVALID_BET_SIZE: {motivo}",
+                                "ripiego_050": {"eseguito": False, "motivo": motivo}})
+        try:
+            self.diario.scrivi({"tipo": "rifiuto_taglia", "ref": s["ref"],
+                                "ref_interno": cust, "side": riga.get("side"),
+                                "size": riga.get("size"), "motivo": motivo,
+                                "ts_ms": self._ora_ms()}, durevole=False)
+        except Exception:  # noqa: BLE001 - il rifiuto resta rifiuto
+            pass
+
+    def _ripiega(self, s: Dict[str, Any], nuova: float) -> None:
+        """UN solo nuovo tentativo della punta rifiutata, ai 0,50 per difetto, con il
+        residuo dichiarato. Nuovo ref interno (nuovo ordine), STESSO ref del bot."""
+        LOW = self._low
+        vecchio = s["piano"]
+        riga_v = vecchio["riga"]
+        chiesta = round(float(riga_v["size"]), 2)
+        riga = dict(riga_v)
+        riga["size"] = float(nuova)
+        riga["id"] = next(LOW._LOCAL_RID)
+        riga["action"] = "place"
+        piano = dict(vecchio)
+        piano["riga"] = riga
+        residuo = round(chiesta - float(nuova), 2)
+        piano["ripiego_050"] = {"eseguito": True, "motivo": "INVALID_BET_SIZE",
+                                "chiesto": chiesta, "piazzato": float(nuova),
+                                "residuo": residuo,
+                                "ref_interno_rifiutato": LOW._cust_ref(riga_v["id"])}
+        if vecchio.get("tradotto"):
+            t = {k: (dict(v) if isinstance(v, dict) else v)
+                 for k, v in vecchio["tradotto"].items()}
+            fattore = float(nuova) / chiesta if chiesta > 0 else 0.0
+            t["originale"]["size"] = round(float(t["originale"]["size"]) * fattore, 2)
+            t["mandato"]["size"] = float(nuova)
+            piano["tradotto"] = t
+            piano["ripiego_050"]["residuo_nei_termini_del_chiesto"] = round(
+                float(vecchio["tradotto"]["originale"]["size"]) - t["originale"]["size"], 2)
+        try:
+            self.diario.scrivi({
+                "tipo": "inviato", "canale": "ripiego_050", "ref": s["ref"],
+                "attore": s["attore"], "azione": "place", "mode": piano["mode"],
+                "rid": riga["id"], "ref_interno": LOW._cust_ref(riga["id"]),
+                "strategy_ref": piano.get("strategy_ref"), "parametri": dict(riga),
+                "ripiego_050": dict(piano["ripiego_050"]), "ts_ms": self._ora_ms()})
+        except Exception as ex:  # noqa: BLE001 - fail-closed: senza diario niente ordine
+            self._emetti_rifiuto_taglia(s, f"{M_DIARIO}: {str(ex)[:120]}")
+            return
+        logger.warning("[motore] %s: punta %.2f rifiutata INVALID_BET_SIZE -> UN ripiego a "
+                       "%.2f (residuo %.2f dichiarato)", s["ref"], chiesta, nuova, residuo)
+        self._esegui(s["attore"], s["ref"], piano)
 
     def _rispondi_da_seq(self, c: Any, d: Dict[str, Any]) -> None:
         dal = d.get("seq")

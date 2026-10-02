@@ -480,33 +480,35 @@ def test_place_sub_minimum_sequenza_completa():
     ops = _SubOps(order)
     state, got = wk._place_sub_minimum(
         None, market, market_id="1.1", strategy=_STRAT, selection_id=10, handicap=0.0,
-        side="back", price=3.00, size=1.20, cust_ref="awlq1x0", what="test",
+        side="back", price=3.00, size=0.70, cust_ref="awlq1x0", what="test",
         ops=ops, find_order=lambda _oid, _bid: order, sleep=lambda *_a: None,
         timeout_sec=5.0,
     )
     assert ops.names() == ["place", "cancel", "replace"]
-    assert ops.calls[0][1] == 1000.0 and ops.calls[0][2] == pytest.approx(2.00)  # park BACK
-    assert ops.calls[1][1] == pytest.approx(0.80)                                # 2.00 - 1.20
+    assert ops.calls[0][1] == 1000.0 and ops.calls[0][2] == pytest.approx(1.00)  # park BACK (minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50)
+    assert ops.calls[1][1] == pytest.approx(0.30)                                # 1.00 - 0.70
     assert ops.calls[2][1] == pytest.approx(3.00)                                # quota target
     assert state.step.value == "done"
-    assert state.target_size == pytest.approx(1.20)
+    assert state.target_size == pytest.approx(0.70)
     assert got is order
 
 
-def test_place_sub_minimum_lato_lay_parcheggia_a_1_01():
+def test_place_sub_minimum_banca_sotto_un_euro_mai_tentata():
+    # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50: sotto 0,50
+    # una banca da 0,30 NON si riduce (prima: parcheggio 0,50 @1,01 -> INVALID_BET_SIZE
+    # sul parcheggio e INVALID_PROFIT_RATIO sul residuo). Nessuna operazione.
     market = _Market("1.1")
     order = _sub_order()
     order.side = "lay"
     ops = _SubOps(order)
-    wk._place_sub_minimum(
-        None, market, market_id="1.1", strategy=_STRAT, selection_id=10, handicap=0.0,
-        side="lay", price=2.50, size=0.30, cust_ref="awlq2x0", what="test",
-        ops=ops, find_order=lambda _oid, _bid: order, sleep=lambda *_a: None,
-        timeout_sec=5.0,
-    )
-    assert ops.calls[0][1] == pytest.approx(1.01)
-    assert ops.calls[0][2] == pytest.approx(0.50)      # minimo LAY .it
-    assert ops.calls[1][1] == pytest.approx(0.20)
+    with pytest.raises(ValueError, match="SOTTO_MINIMO_NON_PIAZZABILE"):
+        wk._place_sub_minimum(
+            None, market, market_id="1.1", strategy=_STRAT, selection_id=10, handicap=0.0,
+            side="lay", price=2.50, size=0.30, cust_ref="awlq2x0", what="test",
+            ops=ops, find_order=lambda _oid, _bid: order, sleep=lambda *_a: None,
+            timeout_sec=5.0,
+        )
+    assert ops.calls == []
 
 
 def test_place_sub_minimum_abort_ritira_il_residuo_e_alza():
@@ -521,7 +523,7 @@ def test_place_sub_minimum_abort_ritira_il_residuo_e_alza():
     with pytest.raises(ValueError, match="sotto-minimo NON piazzato"):
         wk._place_sub_minimum(
             None, market, market_id="1.1", strategy=_STRAT, selection_id=10, handicap=0.0,
-            side="back", price=3.00, size=1.20, cust_ref="awlq3x0", what="test",
+            side="back", price=3.00, size=0.70, cust_ref="awlq3x0", what="test",
             ops=ops, find_order=_matched, sleep=lambda *_a: None, timeout_sec=5.0,
         )
     assert "replace" not in ops.names()          # MAI un replace dopo l'abort
@@ -535,7 +537,7 @@ def test_place_sub_minimum_timeout_ritira_e_alza():
     with pytest.raises(ValueError, match="timeout"):
         wk._place_sub_minimum(
             None, market, market_id="1.1", strategy=_STRAT, selection_id=10, handicap=0.0,
-            side="back", price=3.00, size=1.20, cust_ref="awlq4x0", what="test",
+            side="back", price=3.00, size=0.70, cust_ref="awlq4x0", what="test",
             ops=ops, find_order=lambda _o, _b: order, sleep=lambda *_a: None,
             timeout_sec=0.0,
         )
@@ -561,17 +563,41 @@ def test_closing_leg_ripiega_sul_submin_solo_in_live(monkeypatch):
     assert len(calls) == 1 and calls[0]["size"] == pytest.approx(0.30)
 
 
-def test_closing_leg_in_paper_non_usa_il_trucco(monkeypatch):
-    monkeypatch.setattr(wk, "_place_sub_minimum",
-                        lambda *_a, **_k: pytest.fail("mai in PAPER"))
-    market = _Market("1.1", place_ok=False)
-    order = SimpleNamespace(violation_msg="rifiutato")
-    with pytest.raises(ValueError):
+def test_closing_leg_in_paper_stessa_decisione_del_live(monkeypatch):
+    """02/10/2026 (RUNNER_MINIMI_CORREZIONI, punto 1, decisione dell'utente "paper =
+    specchio della realta'"): CONDOTTA CAMBIATA rispetto a ``test_closing_leg_in_paper_
+    non_usa_il_trucco``. In paper la gamba sotto il minimo fa la STESSA strada del live:
+    place-and-trim sul client della riga (0,70), rifiuto sotto 0,50 (0,30). Mai un
+    place diretto sotto il minimo."""
+    monkeypatch.setattr(wk, "_jurisdiction", lambda: "it")
+    vero = wk._place_sub_minimum
+    chiamate: List[Dict[str, Any]] = []
+
+    def _finto(*_a, **kw):
+        chiamate.append(kw)
+        return SimpleNamespace(step=SimpleNamespace(value="done")), None
+
+    monkeypatch.setattr(wk, "_place_sub_minimum", _finto)
+    sim = object()
+    market = _Market("1.1", place_ok=True)
+    for mode in ("paper", "live"):
         wk._place_closing_leg(
-            None, market, order=order, strategy=_STRAT, market_id="1.1", selection_id=10,
-            handicap=0.0, side="lay", price=2.5, size=0.30, cust_ref="awlq6x0",
-            what="greenup", mode="paper", params={},
-        )
+            None, market, order=None, strategy=_STRAT, market_id="1.1", selection_id=10,
+            handicap=0.0, side="lay", price=2.5, size=0.70, cust_ref="awlq6x0",
+            what="greenup", mode=mode, params={}, client=sim)
+    assert [c["size"] for c in chiamate] == [0.70, 0.70]
+    assert all(c["client"] is sim for c in chiamate)
+    assert market.placed == []
+    # sotto 0,50: il place-and-trim VERO rifiuta prima di qualunque ordine, in paper
+    # come in live
+    monkeypatch.setattr(wk, "_place_sub_minimum", vero)
+    for mode in ("paper", "live"):
+        with pytest.raises(ValueError, match="SOTTO_MINIMO_NON_PIAZZABILE"):
+            wk._place_closing_leg(
+                None, market, order=None, strategy=_STRAT, market_id="1.1",
+                selection_id=10, handicap=0.0, side="lay", price=2.5, size=0.30,
+                cust_ref="awlq6x1", what="greenup", mode=mode, params={})
+    assert market.placed == []
 
 
 def test_closing_leg_opt_out_esplicito(monkeypatch):
@@ -606,7 +632,7 @@ def test_do_place_sotto_minimo_richiede_opt_in(monkeypatch):
                         lambda *_a, **_k: pytest.fail("opt-in mancante"))
     market = _Market("1.1", runners=[_runner(10, 3.0, 3.05)])
     row = {"id": 201, "market_id": "1.1", "selection_id": 10, "handicap": 0,
-           "side": "back", "order_type": "LIMIT", "price": 3.0, "size": 1.0,
+           "side": "back", "order_type": "LIMIT", "price": 3.0, "size": 0.99,  # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
            "action": "place", "params": {}}
     with pytest.raises(ValueError):
         wk._do_place(_Sb([row]), _fl(market), row, "live", _STRAT)
@@ -620,7 +646,7 @@ def test_do_place_ignora_allow_sub_minimum_e_applica_il_minimo_normale(monkeypat
                         lambda *_a, **_k: pytest.fail("mai il place-and-trim dal place semplice"))
     market = _Market("1.1", runners=[_runner(10, 3.0, 3.05)])
     row = {"id": 202, "market_id": "1.1", "selection_id": 10, "handicap": 0,
-           "side": "back", "order_type": "LIMIT", "price": 3.0, "size": 1.0,
+           "side": "back", "order_type": "LIMIT", "price": 3.0, "size": 0.99,  # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
            "action": "place", "params": {"allow_sub_minimum": True}}
     sb = _Sb([row])
     with pytest.raises(ValueError):     # build_order rifiuta il sotto-minimo .it
@@ -636,7 +662,7 @@ def test_do_place_in_paper_ignora_il_trucco(monkeypatch):
                         lambda *_a, **_k: pytest.fail("mai in PAPER"))
     market = _Market("1.1", runners=[_runner(10, 3.0, 3.05)])
     row = {"id": 203, "market_id": "1.1", "selection_id": 10, "handicap": 0,
-           "side": "back", "order_type": "LIMIT", "price": 3.0, "size": 1.0,
+           "side": "back", "order_type": "LIMIT", "price": 3.0, "size": 0.99,  # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
            "action": "place", "params": {"allow_sub_minimum": True}}
     with pytest.raises(ValueError):     # build_order rifiuta il sotto-minimo .it
         wk._do_place(_Sb([row]), _fl(market), row, "paper", _STRAT)
@@ -685,27 +711,39 @@ def test_equalize_gamba_su_runner_piatto_e_apertura_non_chiusura():
     legs = {leg["selection_id"]: leg for leg in row["result"]["legs"]}
     # chiusura (sel 10, esposizione aperta): size libera al centesimo (reduces_liability)
     assert legs[10]["size"] == pytest.approx(6.60) and not legs[10].get("opening")
-    # APERTURA (sel 20, runner piatto): min-stake NORMALE .it -> BACK legalizzato allo
-    # step 0.50 (6.58 -> 6.50): la prova che NON e' passata da reduces_liability=True
+    # APERTURA (sel 20, runner piatto): min-stake NORMALE .it. 01/10/2026: la punta e'
+    # legalizzata al CENTESIMO (niente floor a 0,50 che lasciava 0,08 scoperti): 6,58
     assert legs[20]["opening"] is True
-    assert legs[20]["size"] == pytest.approx(6.50)
+    assert legs[20]["size"] == pytest.approx(6.58)
     assert row["result"]["equal"] is True and row["result"]["partial"] is False
 
 
 def test_equalize_apertura_sotto_minimo_saltata_mai_submin_piano_parziale(monkeypatch):
-    monkeypatch.setattr(wk, "_place_sub_minimum",
-                        lambda *_a, **_k: pytest.fail("MAI place-and-trim su un'apertura"))
+    # 01/10/2026: la CHIUSURA LAY 0,66 (sel 10) e' sotto la banca minima .it (1,00): in
+    # LIVE va al place-and-trim deciso PRIMA dell'invio (mai un place diretto che Betfair
+    # rifiuterebbe). L'APERTURA (sel 20) non ci va MAI: resta saltata.
+    chiamate: List[Dict[str, Any]] = []
+
+    def _finto_submin(*_a, **kw):
+        assert kw["selection_id"] != 20, "MAI place-and-trim su un'apertura"
+        chiamate.append(kw)
+        return SimpleNamespace(step=SimpleNamespace(value="done")), None
+
+    monkeypatch.setattr(wk, "_place_sub_minimum", _finto_submin)
     market = _market_small()
     row = _row_eq(302)
     wk._do_cashout_all(_Sb([row]), _fl(market), row, "live", _STRAT)
     assert row["status"] == "done"
     assert [leg["selection_id"] for leg in row["result"]["legs"]] == [10]   # solo la chiusura
+    assert row["result"]["legs"][0].get("submin") is True
+    assert [c["selection_id"] for c in chiamate] == [10]
+    assert chiamate[0]["size"] == pytest.approx(0.66)
     skipped = row["result"]["skipped"]
     assert len(skipped) == 1 and skipped[0]["selection_id"] == 20
     assert skipped[0]["size"] == pytest.approx(0.66) and "minimo" in skipped[0]["note"]
     assert row["result"]["partial"] is True and row["result"]["equal"] is False
     assert "PARZIALE" in row["result"]["detail"]
-    assert len(market.placed) == 1
+    assert len(market.placed) == 0       # nessun place diretto: la chiusura e' nel submin
 
 
 def test_equalize_apertura_passa_dal_rate_guard():

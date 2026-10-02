@@ -263,18 +263,18 @@ def test_safe_sotto_minimo_dal_canale_va_nel_place_and_trim(banco):
     tr = _riserva(db, mode="live", side="back")
     out = X.place(db=db, market=mkt, mode="live", event_id=tr["event_id"],
                   market_id="1.234", selection_id=47972, side="back", price=3.0,
-                  size=1.5, best_size=100.0, ladder=((3.0, 100.0),),
+                  size=0.7, best_size=100.0, ladder=((3.0, 100.0),),  # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
                   client_ref="safe-t%d" % tr["id"], trade_id=tr["id"],
                   meta=dict(tr["meta"]), now=NOW, params={}, porta=client)
     assert out.status == "pending", out
     cmd = [m for m in pb.ultimo_ws.inviati if m["t"] == "comando"][-1]["d"]
-    assert cmd["time_in_force"] is None and cmd["size"] == 1.5
+    assert cmd["time_in_force"] is None and cmd["size"] == 0.7
     ack = pb._ack["safe-t%d" % tr["id"]]
     assert ack["accettato"] is True
-    # la macchina vera: parcheggio al minimo (2,00) e subito il taglio di 0,50
+    # la macchina vera: parcheggio al minimo (1,00) e subito il taglio di 0,30
     # (il doppio del Market riduce la size sull'ordine, come Betfair il residuo)
     assert market.calls[0][2] is pb.cliente_live
-    assert market.calls[1][0] == "cancel" and market.calls[1][2] == 0.5
+    assert market.calls[1][0] == "cancel" and market.calls[1][2] == 0.3
 
 
 def test_safe_sopra_il_minimo_resta_fok():

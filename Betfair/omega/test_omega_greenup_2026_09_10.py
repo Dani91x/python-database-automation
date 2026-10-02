@@ -336,17 +336,51 @@ def test_trigger_quota_tiene_con_modello_a_margine_ampio(monkeypatch, lambdas):
 # ---------------------------------------------------------------------------
 # TAKE-PROFIT
 # ---------------------------------------------------------------------------
-def test_take_profit_blocca_il_profitto_quasi_pieno(lambdas):
+def test_take_profit_a_1000_coi_minimi_veri_rifiuto_dichiarato_posizione_aperta(lambdas):
+    """02/10/2026 (RUNNER_MINIMI_CORREZIONI, punto 8): con i minimi .it VERI (niente
+    manopola ``SAFE_MIN_SIZE_LIVE``). La strategia NON cambia: il take-profit scatta
+    come prima (minuto >= 80, profitto bloccato >= 4,5 su 5), ma la chiusura e' una
+    punta di 5x55/990 = 0,28 EUR, sotto il floor di legge 0,50 e su un Risultato Esatto
+    (3+ esiti, nessun equivalente): rifiuto CERTO uguale in paper e in live, nessun
+    ordine, posizione ancora aperta, ``SOTTO_MINIMO_NON_PIAZZABILE`` dichiarato
+    (critical). Reperto 3: la divergenza di strategia si porta all'utente."""
     db = _db_with_model()
     tr = _trade(db)                                  # stake 5 → serve locked ≥ 4.5
     p = _params(greenup_settle_delay_s=0)
     assert _run(db, _payload(70, 1, 0, cs=[_sel(14, "1 - 3", 1000.0, 990.0)]), p) == 0   # minuto < 80
     assert _run(db, _payload(85, 1, 0, cs=[_sel(14, "1 - 3", 320.0, 300.0)]), p) == 0    # 5·(1−55/300)=4.08 < 4.5
+    assert _logs(db, "greenup_retry") == []          # fin qui la regola non e' scattata
+    assert _run(db, _payload(85, 1, 0, cs=[_sel(14, "1 - 3", 1000.0, 990.0)]), p) == 0
+    g = db.get_trade(tr["id"])["meta"]["greenup"]
+    assert g["trigger"] == "take_profit" and g["locked_pnl"] >= 4.5    # la regola scatta
+    assert g["state"] == "pending" and "sotto_minimo_non_piazzabile" in g["detail"]
+    rif = _logs(db, "place_rifiutato")
+    assert len(rif) == 1 and rif[0]["error_code"] == "SOTTO_MINIMO_NON_PIAZZABILE"
+    assert rif[0]["critical"] is True and rif[0]["size"] == 0.28
+    assert db.get_trade(tr["id"])["status"] == "open"          # posizione ancora aperta
+    chiusure = _closings(db, tr["id"])
+    assert len(chiusure) == 1 and chiusure[0]["status"] == "error"
+    assert chiusure[0]["meta"]["error_code"] == "SOTTO_MINIMO_NON_PIAZZABILE"
+
+
+def test_take_profit_blocca_il_profitto_quasi_pieno(lambdas):
+    """02/10/2026: la LOGICA dell'uscita (etichetta 'greenup', profitto bloccato) con uno
+    stake la cui chiusura raggiunge il minimo .it (18 @55 -> punta 18x55/990 = 1,00 EUR),
+    al posto della manopola ``SAFE_MIN_SIZE_LIVE`` che azzerava i minimi. Cambia SOLO lo
+    stake di prova, mai la regola (soglia = 90 % dello stake, minuto >= 80)."""
+    db = _db_with_model()
+    tr = _trade(db, size=18.0)                       # stake 18 → serve locked ≥ 15,39
+    p = _params(greenup_settle_delay_s=0)
+    assert _run(db, _payload(70, 1, 0, cs=[_sel(14, "1 - 3", 1000.0, 990.0)]), p) == 0   # minuto < 80
+    assert _run(db, _payload(85, 1, 0, cs=[_sel(14, "1 - 3", 320.0, 300.0)]), p) == 0    # 20·(1−55/300) < 18
     assert _run(db, _payload(85, 1, 0, cs=[_sel(14, "1 - 3", 1000.0, 990.0)]), p) == 1
+    assert _logs(db, "place_rifiutato") == []
+    assert _closings(db, tr["id"])[0]["size"] >= 1.0      # sopra il minimo .it
     g = _logs(db, "greenup")[0]
     # take-profit INTEGRALE in utile: questo e' il green-up VERO -> 'greenup'
     # (CANTIERE P, P-O1 corretto: anche col fill in volo sul runner)
-    assert g["trigger"] == "take_profit" and g["exit_kind"] == "greenup" and g["locked_pnl"] >= 4.5
+    # soglia della regola: 0,9 x profitto del tenere (18 x 0,95) = 15,39
+    assert g["trigger"] == "take_profit" and g["exit_kind"] == "greenup" and g["locked_pnl"] >= 15.39
     assert g["kind"] == "profit"
     opened = db.get_trade(tr["id"])
     assert opened["status"] == "hedged" and opened["meta"]["exit_kind"] == "greenup"
@@ -357,9 +391,12 @@ def test_take_profit_blocca_il_profitto_quasi_pieno(lambdas):
 
 def test_p_o1_green_up_integrale_col_fill_in_volo_e_greenup(lambdas):
     """CANTIERE P (28/09, P-O1): all'INVIO il fill e' in volo (``pending_fill``)
-    e l'uscita e' comunque INTEGRALE (fraction 1.0): etichetta 'greenup'."""
+    e l'uscita e' comunque INTEGRALE (fraction 1.0): etichetta 'greenup'.
+    02/10/2026 (punto 8): stake 18 (chiusura 1,00 EUR, pari al minimo .it) al posto
+    della manopola ``SAFE_MIN_SIZE_LIVE``; il caso stake 5 (chiusura 0,28) e' il gemello
+    qui sotto, coi minimi veri."""
     db = _db_with_model()
-    tr = _trade(db)
+    tr = _trade(db, size=18.0)
     p = _params(greenup_settle_delay_s=0)
     n = S.process_auto_greenup(
         params=p, market=FakeMarket([], None, _open_snapshot()), db=db, now=NOW,
@@ -368,6 +405,24 @@ def test_p_o1_green_up_integrale_col_fill_in_volo_e_greenup(lambdas):
     meta = db.get_trade(tr["id"])["meta"]
     assert meta["greenup"]["pending_fill"] is True and meta["greenup"]["state"] == "pending"
     assert meta["exit_kind"] == "greenup"
+
+
+def test_p_o1_coi_minimi_veri_chiusura_da_028_rifiutata_mai_inviata(lambdas):
+    """02/10/2026 (punto 8): gemello di P-O1 con lo stake di sempre (5 @55) e i minimi
+    VERI: la chiusura da 0,28 non parte (sotto 0,50, Risultato Esatto), niente
+    ``pending_fill``, niente etichetta d'uscita, green-up ancora 'pending' col motivo."""
+    db = _db_with_model()
+    tr = _trade(db)
+    p = _params(greenup_settle_delay_s=0)
+    n = S.process_auto_greenup(
+        params=p, market=FakeMarket([], None, _open_snapshot()), db=db, now=NOW,
+        feed=lambda eid: _payload(85, 1, 0, cs=[_sel(14, "1 - 3", 1000.0, 990.0)]))
+    assert n == 0
+    meta = db.get_trade(tr["id"])["meta"]
+    assert meta["greenup"]["state"] == "pending" and not meta["greenup"].get("pending_fill")
+    assert "sotto_minimo_non_piazzabile" in meta["greenup"]["detail"]
+    assert meta.get("exit_kind") is None
+    assert db.get_trade(tr["id"])["status"] == "open"
 
 
 def test_p_o1_stato_done_al_fill_e_mai_un_secondo_invio(lambdas):

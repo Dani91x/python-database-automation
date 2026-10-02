@@ -13,6 +13,7 @@ Ambiente: lo stesso del test del motore (``amb``: canale vero, motore vero,
 ordini flumine VERI, mercato finto con la borsa), piu' il ``cancel_order`` che
 solleva come flumine su un ordine senza ``bet_id``.
 """
+# minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50 (il 'sotto minimo' dei test place-and-trim e' 0,70 col parcheggio 1,00)
 from __future__ import annotations
 
 from typing import Any, Optional
@@ -45,7 +46,7 @@ def _avvia(amb: Any, monkeypatch) -> tuple:
     amb.market.borsa = True
     _cancel_come_flumine(amb.market)
     ws = amb.ch.collega("mike")
-    _manda(amb, ws, _cmd("mike", 1, size=1.0, price=3.0))
+    _manda(amb, ws, _cmd("mike", 1, size=0.7, price=3.0))
     assert _ack(amb, ws)["accettato"] is True
     ordine = amb.market.calls[0][0]
     monkeypatch.setattr(LOW, "_submin_timeout_sec", lambda: -1.0)
@@ -105,7 +106,7 @@ def test_vale_in_paper_e_in_live(amb, monkeypatch, mode):
     amb.market.borsa = True
     _cancel_come_flumine(amb.market)
     ws = amb.ch.collega("mike")
-    _manda(amb, ws, _cmd("mike", 1, mode=mode, size=1.0, price=3.0))
+    _manda(amb, ws, _cmd("mike", 1, mode=mode, size=0.7, price=3.0))
     ordine = amb.market.calls[0][0]
     monkeypatch.setattr(LOW, "_submin_timeout_sec", lambda: -1.0)
     ordine.bet_id = None

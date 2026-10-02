@@ -139,9 +139,17 @@ def test_kill_attivo_la_chiusura_rest_passa(monkeypatch, meta):
 def test_kill_attivo_anche_il_sotto_minimo_si_ferma(monkeypatch):
     _kill_db(monkeypatch, True)
     mk = _Mercato()
+    # 02/10/2026 (RUNNER_MINIMI_CORREZIONI, punto 8, D4): torna a 0,73, cioe' SOTTO il
+    # minimo .it di 1,00 e sopra il floor del trim 0,50: senza freno andrebbe al place-
+    # and-trim REST (``place_submin_live``). Il kill-switch deve fermare ANCHE questa
+    # via (il 01/10 era stato portato a 1,73, sopra il minimo: il test non la provava piu').
     out = _place(mk, size=0.73)
     assert out.status == "error" and out.fill_note == "db_kill_switch_attivo"
     assert mk.placed == []
+    # controprova: a freno spento la stessa apertura passa DAVVERO dal place-and-trim
+    _kill_db(monkeypatch, False)
+    out = _place(mk, size=0.73)
+    assert out.status == "open" and [p.get("_submin") for p in mk.placed] == [True]
 
 
 def test_kill_spento_parita_col_comportamento_di_oggi(monkeypatch):

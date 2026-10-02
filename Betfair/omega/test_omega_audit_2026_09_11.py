@@ -904,8 +904,11 @@ def test_rev_h3_chiusura_in_perdita_e_exit_kind_loss():
 
 
 def test_rev_h3_take_profit_integrale_e_greenup_vero():
+    # 02/10/2026 (RUNNER_MINIMI_CORREZIONI, punto 8): stake 18 @55 (chiusura 18x55/990 =
+    # 1,00 EUR, pari al minimo .it) al posto della manopola SAFE_MIN_SIZE_LIVE; il caso
+    # 5 @55 (chiusura 0,28) coi minimi veri e' il gemello qui sotto.
     db = _GDB(_control(status="idle"))
-    tr = _trade(db, price=55.0, size=5.0, score="1-0")
+    tr = _trade(db, price=55.0, size=18.0, score="1-0")
     p = _gparams(greenup_settle_delay_s=0)
     _run(db, _payload(85, 1, 0, cs=[_sel(14, "1 - 3", 1000.0, 990.0,
                                          lay_size=500.0, back_size=500.0)]), p)
@@ -913,6 +916,21 @@ def test_rev_h3_take_profit_integrale_e_greenup_vero():
     assert opened["meta"]["locked_pnl"] >= 0
     assert opened["meta"]["exit_kind"] == "greenup" and opened["meta"]["exit_profit"] is True
     assert tr is not None
+
+
+def test_rev_h3_take_profit_coi_minimi_veri_rifiutato_e_dichiarato():
+    """02/10/2026 (punto 8): stake 5 @55, minimi VERI: la chiusura da 0,28 e' un rifiuto
+    certo (nessun ordine, critical), la posizione resta aperta, niente etichetta."""
+    db = _GDB(_control(status="idle"))
+    tr = _trade(db, price=55.0, size=5.0, score="1-0")
+    p = _gparams(greenup_settle_delay_s=0)
+    _run(db, _payload(85, 1, 0, cs=[_sel(14, "1 - 3", 1000.0, 990.0,
+                                         lay_size=500.0, back_size=500.0)]), p)
+    opened = db.get_trade(tr["id"])
+    assert opened["status"] == "open" and opened["meta"].get("exit_kind") is None
+    rif = [v for k, v in db.activity if k == "place_rifiutato"]
+    assert len(rif) == 1 and rif[0]["error_code"] == "SOTTO_MINIMO_NON_PIAZZABILE"
+    assert rif[0]["critical"] is True
 
 
 # --- H4: il budget dei tentativi sopravvive al riavvio (lo dice il DB) ---
@@ -1009,7 +1027,36 @@ def test_rev_m2_allarme_stale_anche_sulle_hedged():
 
 
 # --- M3/M4: cash out manuale parziale ---
+def _m3_mercato_a_1000():
+    from Betfair.omega.test_omega_service import FakeMarket as FM
+
+    class _M(FM):
+        def read_book(self, market_id, runners):
+            return {"market_id": CS_MID, "status": "OPEN",
+                    "runners": [{"selection_id": 14, "back_price": 990.0, "back_size": 500.0,
+                                 "lay_price": 1000.0, "lay_size": 500.0,
+                                 "lay_ladder": ((1000.0, 500.0),)}]}
+
+    return _M([], None, _open_snapshot())
+
+
+def test_rev_m3_cash_out_parziale_coi_minimi_veri_rifiutato_e_dichiarato():
+    """02/10/2026 (RUNNER_MINIMI_CORREZIONI, punto 8): metà di 5 @55 a 1000 = punta
+    0,14 EUR: coi minimi VERI il cash out manuale parziale e' un rifiuto certo
+    dichiarato (``sotto_minimo_non_piazzabile``), nessun ordine, posizione aperta."""
+    db = _GDB(_control(status="idle"))
+    tr = _trade(db, price=55.0, size=5.0)
+    res = S._manual_cashout(market=_m3_mercato_a_1000(), db=db,
+                            payload={"trade_id": tr["id"], "fraction": 0.5}, now=NOW)
+    assert res.get("ok") is not True and res.get("error") == "chiusura_non_eseguita"
+    assert "sotto_minimo_non_piazzabile" in str(res.get("detail"))
+    assert db.get_trade(tr["id"])["status"] == "open"
+
+
 def test_rev_m3_exit_profit_del_parziale_dal_valore_pianificato():
+    # 02/10/2026 (punto 8): stake 40 @55 (metà a 1000 = punta 1,10 EUR, sopra il minimo
+    # .it) al posto della manopola SAFE_MIN_SIZE_LIVE; il caso 5 @55 coi minimi veri e'
+    # il gemello qui sopra.
     from Betfair.omega.test_omega_service import FakeMarket as FM
 
     class _M(FM):
@@ -1020,7 +1067,7 @@ def test_rev_m3_exit_profit_del_parziale_dal_valore_pianificato():
                                  "lay_ladder": ((1000.0, 500.0),)}]}
 
     db = _GDB(_control(status="idle"))
-    tr = _trade(db, price=55.0, size=5.0)
+    tr = _trade(db, price=55.0, size=40.0)
     res = S._manual_cashout(market=_M([], None, _open_snapshot()), db=db,
                             payload={"trade_id": tr["id"], "fraction": 0.5}, now=NOW)
     assert res.get("ok") is True
@@ -1036,6 +1083,8 @@ def test_rev_m3_exit_profit_del_parziale_dal_valore_pianificato():
 
 
 def test_rev_m4_parziale_da_liquidita_riconosciuto():
+    # 02/10/2026 (punto 8): la manopola SAFE_MIN_SIZE_LIVE del 01/10 qui non serviva
+    # (la chiusura cappata dalla liquidita' 0,6 passa coi minimi veri): tolta.
     from Betfair.omega.test_omega_service import FakeMarket as FM
 
     class _M(FM):

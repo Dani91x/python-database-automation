@@ -196,12 +196,12 @@ def test_sotto_il_minimo_apertura_portata_al_minimo(db, banchi, ambiente):
     b = _banco(db, banchi, [_follow("101")])
     b.book("101")
     m = Motore(b, ambiente)
-    cmd = m.manda(side="BACK", price=2.0, size=1.5)
+    cmd = m.manda(side="BACK", price=2.0, size=0.7)       # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
     assert m.fasi(cmd["ref"]) == ["inviato"]
     esito = [r for r in m.diario() if r["tipo"] == "esito"][-1]
     assert esito["ok"] is True and esito["errore"] is None
     ordini = _ordine_nel_blotter(b)
-    assert len(ordini) == 1 and ordini[0].order_type.size == 2.0
+    assert len(ordini) == 1 and ordini[0].order_type.size == 1.0
     assert not m.motore._submin
 
 
