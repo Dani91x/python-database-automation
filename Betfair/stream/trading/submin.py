@@ -334,14 +334,56 @@ def verifica_importo_finale(side: str, target_size: Any) -> None:
             f"da dichiarare al trader (lasciarlo, oppure aumentare e richiudere)")
 
 
-def quota_parcheggio_lontano(side: str, target_size: float) -> float:
+#: 02/10/2026 (RUNNER_MINIMI_CORREZIONI, punto 6) - banda di ``INVALID_PROFIT_RATIO``.
+#: Fonte nel repo: AUDIT_2026-10-01/RICERCA_STAKE_MINIMI_BETFAIR.md par. 2, articolo
+#: ufficiale Betfair (support.developer.betfair.com ... 360010423978, 21/07/2026): un
+#: place / cancel parziale / replace che lascia un ordine il cui guadagno "returns 20%
+#: less or 25% more than it 'ought' to" viene rifiutato; tabella del par. 6 (riga
+#: ``INVALID_PROFIT_RATIO``): "ratio = arrotondato(size*(p-1)) / (size*(p-1)) ... per la
+#: BACK, e la liability per la LAY, e verificare 0,80 <= ratio <= 1,25". Il metodo di
+#: arrotondamento NON e' documentato: si richiede la banda con l'arrotondamento al piu'
+#: vicino sia "half up" sia "half even". Le tre misure empiriche dello stesso par. 2
+#: ("0,80 si parcheggia @1,01, 0,79 no"; "0,01 @1,8 si', @1,79 no"; "1,49 @1,01 rifiutato
+#: comunque") sono TUTTE spiegate da questa regola, non dal solo "liability >= 0,008"
+#: (che non vede il limite -20 %: 1,49 @1,01 = 0,0149 -> 0,01 = -33 %).
+BANDA_PROFIT_RATIO = (0.80, 1.25)
+#: motivo del rifiuto preventivo (nessun ordine): la combinazione importo/quota
+#: verrebbe rifiutata da Betfair ``INVALID_PROFIT_RATIO``
+INVALID_PROFIT_RATIO_PREVISTO = "INVALID_PROFIT_RATIO_PREVISTO"
+
+
+def rendimento_in_banda(size: Any, price: Any) -> bool:
+    """True se ``size*(price-1)`` (vincita di una BACK, liability di una LAY) arrotondato
+    al centesimo resta in ``BANDA_PROFIT_RATIO`` rispetto al valore esatto, con
+    entrambi gli arrotondamenti al piu' vicino. Pura, aritmetica decimale esatta."""
+    from decimal import ROUND_HALF_EVEN, ROUND_HALF_UP, Decimal, InvalidOperation
+
+    try:
+        esatto = Decimal(str(round(float(size), 2))) * (Decimal(str(float(price))) - 1)
+    except (TypeError, ValueError, InvalidOperation):
+        return False
+    if esatto <= 0:
+        return False
+    lo, hi = Decimal(str(BANDA_PROFIT_RATIO[0])), Decimal(str(BANDA_PROFIT_RATIO[1]))
+    for metodo in (ROUND_HALF_UP, ROUND_HALF_EVEN):
+        arrot = esatto.quantize(Decimal("0.01"), rounding=metodo)
+        rapporto = arrot / esatto
+        if rapporto < lo or rapporto > hi:
+            return False
+    return True
+
+
+def quota_parcheggio_lontano(side: str, target_size: float) -> Optional[float]:
     """Quota del parcheggio LONTANO (percorso B) per il residuo ``target_size``.
 
-    BACK: 1000 (``initial_place_price``). LAY: la quota piu' bassa che lascia una
-    liability residua >= ``LIABILITY_MIN_RESIDUO_LAY`` dopo il taglio, cioe'
-    ``1 + 0,008/target_size`` al tick SUPERIORE, mai sotto 1,01 (01/10/2026: a 1,01 una
-    banca residua sotto 0,80 EUR viene rifiutata ``INVALID_PROFIT_RATIO``). Esempi:
-    0,43 -> 1,02; 0,30 -> 1,03; 0,80 -> 1,01.
+    BACK: 1000 (``initial_place_price``: vincita centinaia di EUR, sempre in banda).
+    LAY: 02/10/2026 - la quota PIU' BASSA della scala Betfair dove la banca residua dopo
+    il taglio (``target_size`` @ quota) ha la liability arrotondata nella banda
+    ``INVALID_PROFIT_RATIO`` (``rendimento_in_banda``). Prima (01/10) era ``1 + 0,008/S``
+    al tick superiore: per i residui 0,63-0,79 dava 1,02 con la liability fuori banda
+    (0,70 @1,02 = 0,014 -> 0,01, -28,6 %). Esempi: 0,43 -> 1,02; 0,30 -> 1,03;
+    0,70 -> 1,03; 0,80 -> 1,01. None = nessuna quota sicura fino a
+    ``QUOTA_PARCHEGGIO_LAY_MAX``: chi pianifica RIFIUTA (mai un ordine a rischio).
     """
     s = (side or "").lower()
     base = initial_place_price(s)
@@ -350,11 +392,17 @@ def quota_parcheggio_lontano(side: str, target_size: float) -> float:
     t = round(float(target_size), 2)
     if t <= 0:
         raise ValueError(f"target_size non valida per il parcheggio: {target_size!r}")
-    minima = 1.0 + LIABILITY_MIN_RESIDUO_LAY / t
-    tick = _tick_su(minima)
-    if tick is None:
-        raise ValueError(f"nessun tick per il parcheggio LAY di {t:.2f}")
-    return max(base, float(tick))
+    p = _tick_su(max(float(base), 1.0 + LIABILITY_MIN_RESIDUO_LAY / t))
+    while p is not None and p <= QUOTA_PARCHEGGIO_LAY_MAX + _TOL:
+        if rendimento_in_banda(t, p):
+            return float(p)
+        p = _tick_su(p + 1e-6)
+    return None
+
+
+#: tetto della quota di parcheggio LAY: oltre, il "parcheggio lontano" non e' piu'
+#: lontano dal mercato (le quote reali delle chiusure stanno sopra)
+QUOTA_PARCHEGGIO_LAY_MAX = 1.20
 
 
 # ---------------------------------------------------------------------------
@@ -662,6 +710,26 @@ def pianifica_submin(
     # 01/10/2026: parcheggio lontano della BANCA alla quota che supera INVALID_PROFIT_RATIO
     # sul residuo (``quota_parcheggio_lontano``), non piu' sempre a 1,01.
     park_lontano = quota_parcheggio_lontano(s, tsize)
+    # 02/10/2026 (punto 6): mai un ordine a rischio INVALID_PROFIT_RATIO. L'ordine
+    # FINALE (``tsize`` @ quota target, dopo taglio e riprezzo) e la banca residua al
+    # parcheggio devono stare nella banda; altrimenti rifiuto dichiarato, nessun ordine.
+    rischio = None
+    if not rendimento_in_banda(tsize, tick):
+        rischio = ("l'ordine finale %.2f @ %s ha il %s arrotondato fuori dalla banda "
+                   "-20%%/+25%%" % (tsize, tick, "liability" if s == "lay" else "guadagno"))
+    elif park_lontano is None:
+        rischio = ("nessuna quota di parcheggio LAY fino a %.2f lascia la liability "
+                   "residua di %.2f nella banda -20%%/+25%%" % (QUOTA_PARCHEGGIO_LAY_MAX, tsize))
+    if rischio is not None:
+        return PianoSubmin(
+            serve_trucco=True, park_mode=PARK_FAR, park_price=float(park_lontano or tick),
+            park_size=minimo, target_price=tick, target_size=tsize,
+            size_reduction=riduzione, serve_replace=True, chiamate_mutanti=0,
+            motivo="rischio INVALID_PROFIT_RATIO",
+            rifiuto=("%s: %s: nessun ordine piazzato; residuo %s %.2f da dichiarare al "
+                     "trader (%s)" % (SOTTO_MINIMO_NON_PIAZZABILE, INVALID_PROFIT_RATIO_PREVISTO,
+                                      s.upper(), tsize, rischio)),
+        )
     passiva = quota_non_abbinabile(s, tick, best_back=best_back, best_lay=best_lay)
     if passiva is not True and quota_non_abbinabile(
             s, park_lontano, best_back=best_back, best_lay=best_lay) is False:

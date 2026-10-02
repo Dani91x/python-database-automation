@@ -479,6 +479,45 @@ def ha_marker_canale(trade: dict[str, Any]) -> bool:
     return bool(isinstance(meta, dict) and meta.get("canale_ref"))
 
 
+#: 02/10/2026 (RUNNER_MINIMI_CORREZIONI, punto 10): episodi di rifiuto
+#: ``SOTTO_MINIMO_NON_PIAZZABILE`` gia' dichiarati CRITICAL (chiave -> [primo_ts, n]).
+#: Le strategie ritentano le uscite a cadenza (Safe: residui ogni 20 s poi 300 s;
+#: Omega: green-up ogni 20 s, giri illimitati): ogni tentativo resta un rifiuto CERTO
+#: (nessun ordine, nessuna chiamata a Betfair), ma il CRITICAL si dice UNA volta per
+#: episodio; le ripetizioni si loggano come tali (non critiche, col contatore).
+_EPISODI_SOTTO_MINIMO: dict[tuple, list] = {}
+_EPISODIO_TTL_S = 6 * 3600
+
+
+def _critico_una_volta(*, db: Any, market_id: Any, selection_id: Any, side: str, meta: Any,
+                       size: float, now: Optional[datetime] = None) -> "tuple[bool, int]":
+    """(critical?, numero del tentativo nell'episodio). Episodio = stessa posizione da
+    chiudere (``closes_trade_id``) o, per un'apertura, stesso mercato/selezione/lato/
+    importo; scade dopo ``_EPISODIO_TTL_S``. Solo RAM, mai IO. La memoria sta
+    sull'oggetto ``db`` del servizio (un servizio = un db), cosi' due istanze non si
+    confondono; se l'oggetto non la accetta, sul modulo."""
+    registro = getattr(db, "_episodi_sotto_minimo", None)
+    if not isinstance(registro, dict):
+        registro = {}
+        try:
+            setattr(db, "_episodi_sotto_minimo", registro)
+        except Exception:  # noqa: BLE001 - oggetto senza attributi liberi
+            registro = _EPISODI_SOTTO_MINIMO
+    m = meta if isinstance(meta, dict) else {}
+    padre = m.get("closes_trade_id")
+    chiave = (str(market_id), str(selection_id), str(side).lower(),
+              ("chiude", str(padre)) if padre is not None else ("importo", round(float(size), 2)))
+    ts = now.timestamp() if now is not None else time.time()
+    for k in [k for k, v in registro.items() if ts - v[0] > _EPISODIO_TTL_S]:
+        registro.pop(k, None)
+    ep = registro.get(chiave)
+    if ep is None:
+        registro[chiave] = [ts, 1]
+        return True, 1
+    ep[1] += 1
+    return False, ep[1]
+
+
 def _place_via_canale(porta: Any, *, db, mode: str, market_id: str, selection_id: int,
                       side: str, price: float, size: float, client_ref: str,
                       tid: Optional[int], meta: dict[str, Any], now: Optional[datetime],
@@ -587,8 +626,17 @@ def _place_via_canale(porta: Any, *, db, mode: str, market_id: str, selection_id
         return PlaceOutcome("pending", price, size, None, f"canale_esito_ignoto:{ref}",
                             size_requested=size)
     if not ack.accettato and ack.motivo != PO.MOTIVO_REF_GIA_VISTO:
+        critico, tentativo = (mode == "live"), 1
+        if "SOTTO_MINIMO_NON_PIAZZABILE" in str(ack.motivo or ""):
+            # 02/10 (punto 10): il runner rifiuta lo stesso importo a ogni ritento della
+            # strategia; il CRITICAL si dice una volta per episodio
+            primo, tentativo = _critico_una_volta(db=db, market_id=market_id,
+                                                  selection_id=selection_id, side=side,
+                                                  meta=meta, size=size, now=now)
+            critico = critico and primo
         _log(db, "canale_rifiutato", {"trade_id": tid, "mode": mode, "ref": ref,
-                                      "motivo": ack.motivo, "critical": mode == "live",
+                                      "tentativo_nell_episodio": tentativo,
+                                      "motivo": ack.motivo, "critical": critico,
                                       "nota": "il runner ha rifiutato il comando: nessun "
                                               "ordine, nessun secondo invio"})
         return PlaceOutcome("error", None, 0.0, None, f"canale_rifiutato:{ack.motivo}",
@@ -812,9 +860,14 @@ def place(
     )
 
     if submin_fuori_canale and size < SUBMIN_IMPORTO_FINALE_MIN - 1e-9:
+        # 02/10 (punto 10): UN solo CRITICAL per episodio, le ripetizioni contate
+        critico, tentativo = _critico_una_volta(db=db, market_id=market_id,
+                                                selection_id=selection_id, side=side,
+                                                meta=meta, size=size, now=now)
         _log(db, "place_rifiutato", {
             "trade_id": tid, "mode": mode, "side": side, "price": price, "size": size,
-            "error_code": SOTTO_MINIMO_NON_PIAZZABILE, "critical": True,
+            "error_code": SOTTO_MINIMO_NON_PIAZZABILE, "critical": critico,
+            "tentativo_nell_episodio": tentativo,
             "percorso": "submin",
             "nota": ("sotto il minimo .it e sotto %.2f EUR (place-and-trim mai sotto il floor di legge 0,50): "
                      "nessun ordine; residuo %.2f da dichiarare al trader"
@@ -934,7 +987,10 @@ def place(
         # restava bloccato dall'indice unico e la liability veniva contata piena.
         # Un rifiuto certo e' una riga 'error', col codice di Betfair scritto.
         return _esito_rifiuto_certo(db, ex, tid=tid, mode=mode, side=side, price=price,
-                                    size=size, sotto_minimo=submin_fuori_canale)
+                                    size=size, sotto_minimo=submin_fuori_canale,
+                                    episodio={"market_id": market_id,
+                                              "selection_id": selection_id,
+                                              "meta": meta, "now": now})
     except Exception as ex:  # noqa: BLE001 — esito IGNOTO: MAI ripiazzare
         return _reconciling(db, tid, meta=meta, mode=mode, price=price, size=size, ex=ex)
     t5 = _ora_ms()
@@ -1007,15 +1063,22 @@ def place(
 
 
 def _esito_rifiuto_certo(db, ex: Exception, *, tid: Optional[int], mode: str, side: str,
-                         price: float, size: float, sotto_minimo: bool) -> PlaceOutcome:
+                         price: float, size: float, sotto_minimo: bool,
+                         episodio: Optional[dict[str, Any]] = None) -> PlaceOutcome:
     """RIFIUTO CERTO del place (``PlaceRifiutato``): riga 'error' col codice.
 
     Unico punto che lo scrive: il live (REST) e, dal D1-ter, il paper di un
-    taker FOK sotto il minimo sul canale, che deve dare lo STESSO esito."""
+    taker FOK sotto il minimo sul canale, che deve dare lo STESSO esito.
+    02/10/2026 (punto 10): per ``SOTTO_MINIMO_NON_PIAZZABILE`` (nessuna chiamata a
+    Betfair) il CRITICAL e' UNO per episodio (``_critico_una_volta``)."""
     codice = getattr(ex, "error_code", None)
+    critico, tentativo = True, 1
+    if codice == "SOTTO_MINIMO_NON_PIAZZABILE" and episodio is not None:
+        critico, tentativo = _critico_una_volta(db=db, side=side, size=size, **episodio)
     _log(db, "place_rifiutato", {"trade_id": tid, "mode": mode, "side": side,
                                  "price": price, "size": size,
-                                 "error_code": codice, "critical": True,
+                                 "tentativo_nell_episodio": tentativo,
+                                 "error_code": codice, "critical": critico,
                                  "percorso": "submin" if sotto_minimo else "rest",
                                  "reason": str(ex)[:160],
                                  "nota": "Betfair ha rifiutato: nessun ordine a mercato"})

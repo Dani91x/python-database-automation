@@ -1187,6 +1187,11 @@ def _write_error(sb: Any, rid: int, request_row: Dict[str, Any], mode: str, ex: 
         cust_ref=_cust_ref(rid),
         error=str(ex),
     )
+    # 02/10/2026 (RUNNER_MINIMI_CORREZIONI, punto 2): il CODICE del rifiuto anche sulla
+    # riga della CODA (``result.error_code``), come nell'evento del canale
+    # (``motore_ordini.codice_errore``): chi legge la riga non deve analizzare il testo.
+    from .motore_ordini import codice_errore
+    result["error_code"] = codice_errore(str(ex))
     sb.table(_TABLE).update(
         {
             "status": "error",
@@ -2126,16 +2131,22 @@ def _place_closing_leg(
     decisa PRIMA di qualunque invio: mai un place diretto che Betfair rifiuterebbe. Opt-out
     ``params.allow_sub_minimum=False`` -> rifiuto esplicito ``SOTTO_MINIMO_NON_PIAZZABILE``,
     nessun ordine. In questo caso ``order`` puo' essere None (non costruito: build_order
-    lo rifiuterebbe). Sopra il minimo (o in PAPER, client simulato): place diretto; un
-    rifiuto dei control viene propagato. Un'eccezione sollevata DENTRO place_order
-    (RuntimeError ``post_place:``) NON e' un rifiuto provabile e viene ri-propagata.
+    lo rifiuterebbe). Sopra il minimo: place diretto; un rifiuto dei control viene
+    propagato. Un'eccezione sollevata DENTRO place_order (RuntimeError ``post_place:``)
+    NON e' un rifiuto provabile e viene ri-propagata.
+
+    02/10/2026 (RUNNER_MINIMI_CORREZIONI, punto 1, "paper = specchio della realta'"):
+    la stessa decisione in PAPER e in LIVE. Prima in paper la gamba sotto il minimo
+    partiva DIRETTA anche sotto 0,50 (il simulatore accetta tutto): il paper eseguiva
+    chiusure che il live rifiuta. Ora in paper la stessa sequenza place-and-trim sul
+    client SIMULATO della riga (``client``), e sotto 0,50 lo stesso rifiuto
+    ``SOTTO_MINIMO_NON_PIAZZABILE`` (``_place_sub_minimum`` -> ``verifica_importo_finale``).
     """
-    sotto_minimo_live = (
-        _is_live_mode(mode)
-        and size is not None
+    sotto_minimo = (
+        size is not None
         and float(size) < _sub_minimum_floor(side) - 1e-9
     )
-    if not sotto_minimo_live:
+    if not sotto_minimo:
         if order is None:
             raise ValueError(f"{what}: ordine di chiusura non costruito")
         _place_or_raise(market, order, what, client=client)
@@ -2169,14 +2180,15 @@ def _costruisci_chiusura(market: Any, *, strategy: Any, selection_id: int, handi
                          cust_ref: str, mode: str) -> "tuple[Any, float, float]":
     """La gamba di CHIUSURA di greenup/cash-out: (ordine, quota al tick, size).
 
-    01/10/2026: in LIVE una size sotto il minimo NON si costruisce (build_order la
-    rifiuterebbe, e Betfair pure): ordine None, ``_place_closing_leg`` va al place-and-trim.
-    In PAPER (client simulato) l'ordine si costruisce anche sotto il minimo, come sempre
-    (``simulato_ammette_sotto_minimo``): la sequenza sincrona non si usa sul simulato."""
+    01/10/2026: una size sotto il minimo NON si costruisce (build_order la rifiuterebbe, e
+    Betfair pure): ordine None, ``_place_closing_leg`` va al place-and-trim.
+    02/10/2026 (punto 1): IDENTICO in paper e in live (tolta la via
+    ``simulato_ammette_sotto_minimo``: il paper e' lo specchio del live). ``mode`` resta
+    nella firma per i chiamanti."""
     from .live_order_build import build_order, round_to_tick
 
-    live = _is_live_mode(mode)
-    if live and float(size) < _sub_minimum_floor(side) - 1e-9:
+    del mode  # stessa decisione in ogni modalita'
+    if float(size) < _sub_minimum_floor(side) - 1e-9:
         return None, float(round_to_tick(price)), round(float(size), 2)
     built = build_order(
         market, strategy=strategy, selection_id=selection_id, handicap=handicap,
@@ -2186,7 +2198,6 @@ def _costruisci_chiusura(market: Any, *, strategy: Any, selection_id: int, handi
         max_stake=None,                 # hedge self-bounded (liability < |W-L|): nessun cap
         customer_order_ref=cust_ref,
         reduces_liability=True,         # informazione: NON esenta dai minimi (01/10)
-        simulato_ammette_sotto_minimo=not live,
     )
     return built.order, float(built.price), float(built.size)
 

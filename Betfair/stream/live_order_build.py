@@ -508,7 +508,6 @@ def build_order(
     max_stake: Optional[float],
     customer_order_ref: str,
     reduces_liability: bool = False,
-    simulato_ammette_sotto_minimo: bool = False,
 ) -> BuiltOrder:
     """Valida e costruisce un BetfairOrder flumine pronto per `market.place_order`.
 
@@ -523,11 +522,9 @@ def build_order(
     legittima (equivalente / place-and-trim) la sceglie il chiamante con
     ``verdetto_minimi``.
 
-    ``simulato_ammette_sotto_minimo=True``: SOLO per un ordine che va al client SIMULATO
-    (paper) dalle gambe di chiusura di greenup/cash-out del worker, che in paper non
-    passano dal place-and-trim (la sequenza e' sincrona e il mercato simulato non
-    avanza mentre aspetta; comportamento di sempre, ``_place_closing_leg``). Mai per un
-    ordine che puo' raggiungere Betfair: chi chiama lo deriva dalla modalita' della riga.
+    02/10/2026 (RUNNER_MINIMI_CORREZIONI, punto 1): nessuna eccezione nemmeno per il
+    client SIMULATO (paper = specchio del live): la via ``simulato_ammette_sotto_minimo``
+    del 01/10 e' stata tolta.
 
     MONEY-CRITICAL: ``strategy`` DEVE essere l'istanza ``LiveTradingStrategy`` registrata
     nel framework via ``add_strategy``. Il Trade viene creato sotto questa istanza così che
@@ -621,12 +618,9 @@ def build_order(
     raw_size = round(float(size), 2)
 
     # Regole stake minimo
-    # Regole stake minimo: NESSUNA esenzione per le chiusure (01/10/2026). Solo il client
-    # SIMULATO delle gambe greenup/cash-out in paper lo ammette (vedi docstring).
+    # Regole stake minimo: NESSUNA esenzione, ne' per le chiusure (01/10/2026) ne' per il
+    # client simulato (02/10/2026: paper = specchio del live).
     verdict = min_stake_rules(jurisdiction, side_l, tick_price, raw_size)
-    if not verdict.valid and simulato_ammette_sotto_minimo and raw_size > 0:
-        verdict = MinStakeVerdict(True, raw_size, None)
-        note_bits.append("sotto il minimo ammesso SOLO sul client simulato (paper)")
     if not verdict.valid:
         raise ValueError(verdict.reason or "size non valida per la giurisdizione")
     legal_size = verdict.legalized_size

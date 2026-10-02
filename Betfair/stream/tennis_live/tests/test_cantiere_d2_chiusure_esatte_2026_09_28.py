@@ -73,7 +73,7 @@ def _giri(b: Any, strat: Any, n: int = 8) -> None:
         strat._esatte.avanza(b.fw.markets.markets["1.101"])
 
 
-@pytest.mark.xfail(strict=False, reason=XFAIL_REPERTO_1)
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason=XFAIL_REPERTO_1)
 @pytest.mark.parametrize("bot", ["tennis_flb", "tennis_pro", "tennis_swing"])
 def test_copertura_esatta_al_centesimo_nel_runner_paper(bot, db, banchi,
                                                        esecuzione_sincrona):
@@ -111,7 +111,7 @@ def test_copertura_esatta_al_centesimo_nel_runner_paper(bot, db, banchi,
     assert str(o.sequenza["state"].step.value) == "done"
 
 
-@pytest.mark.xfail(strict=False, reason=XFAIL_REPERTO_1)
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason=XFAIL_REPERTO_1)
 def test_copertura_tutta_sotto_il_minimo_esatta(db, banchi, esecuzione_sincrona):
     """Copertura BACK 1,05 (sotto il minimo 2,00): tutta col place-and-trim,
     esatta; mai 2,00 (prima: gonfiata a 2,00, posizione ribaltata)."""
@@ -185,7 +185,7 @@ def test_scalper_tennis_uscite_esatte_accese_in_paper_e_live():
 @pytest.mark.parametrize("size,lato,attesa", [
     (2.02, "BACK", (2.0, 0.02)),
     pytest.param(1.98, "BACK", (0.0, 1.98),
-                 marks=pytest.mark.xfail(strict=False, reason=XFAIL_REPERTO_1)),
+                 marks=pytest.mark.xfail(strict=True, raises=AssertionError, reason=XFAIL_REPERTO_1)),
     (3.15, "BACK", (3.0, 0.15)),
     (2.5, "BACK", (2.5, 0.0)), (0.30, "LAY", (0.0, 0.30)), (0.93, "LAY", (0.0, 0.93)),
 ])

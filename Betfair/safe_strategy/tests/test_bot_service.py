@@ -2058,12 +2058,10 @@ def _esatto_2_at_60(db):
                        selection_id=501, price=60.0, size=2.0, minute_at_entry=50)
 
 
-def test_exit_residuo_dopo_fill_cappato_viene_richiuso_dopo_il_cooldown(monkeypatch):
-    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): test di LOGICA dell'uscita, non dei minimi.
-    # Le chiusure qui sono sotto 1,00 EUR: su .it fuori dal canale sono un rifiuto certo
-    # (test_runner_minimi_chiusure_2026_10_01). Qui il minimo si azzera con la manopola
-    # gia' esistente SAFE_MIN_SIZE_LIVE per isolare la logica dai minimi.
-    monkeypatch.setenv("SAFE_MIN_SIZE_LIVE", "0.01")
+def test_exit_residuo_dopo_fill_cappato_viene_richiuso_dopo_il_cooldown():
+    # 02/10/2026 (RUNNER_MINIMI_CORREZIONI, punto 8): minimi .it VERI (tolta la manopola
+    # SAFE_MIN_SIZE_LIVE del 01/10): il residuo 0,85 (fra 0,50 e 1,00) va al place-and-
+    # trim della coda in paper, e il test resta verde senza azzerare i minimi.
     db = FakeDB(status="running")
     tid = _esatto_2_at_60(db)
     _cycle(db, _cs_row(60))
@@ -2124,10 +2122,12 @@ def test_exit_residuo_non_si_ritenta_con_gamba_di_chiusura_pending():
 
 
 def test_exit_residuo_si_ferma_al_cap_e_logga_una_volta(monkeypatch):
-    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): test di LOGICA dell'uscita, non dei minimi.
-    # Le chiusure qui sono sotto 1,00 EUR: su .it fuori dal canale sono un rifiuto certo
-    # (test_runner_minimi_chiusure_2026_10_01). Qui il minimo si azzera con la manopola
-    # gia' esistente SAFE_MIN_SIZE_LIVE per isolare la logica dai minimi.
+    # 02/10/2026 (RUNNER_MINIMI_CORREZIONI, punto 8): UNICO test che tiene la manopola
+    # SAFE_MIN_SIZE_LIVE, e lo dichiara. Collauda il TETTO dei ritenti del residuo
+    # (H-17) con fette di liquidita' da 0,30: coi minimi .it veri ogni fetta e' un
+    # rifiuto certo (sotto 0,50) e il tetto non si puo' osservare. La condotta VERA con
+    # quegli importi (rifiuto, nessun ordine, un solo CRITICAL per episodio) e' il
+    # gemello ``test_exit_residuo_sotto_050_coi_minimi_veri_mai_ordini_un_critical``.
     monkeypatch.setenv("SAFE_MIN_SIZE_LIVE", "0.01")
     db = FakeDB(status="running", params={"exits": {"residual_max_attempts": 2,
                                                     "residual_retry_s": 10}})
@@ -2158,6 +2158,35 @@ def test_exit_residuo_si_ferma_al_cap_e_logga_una_volta(monkeypatch):
     at = NOW + timedelta(seconds=60)
     r = _cycle(db, _cs_row(74, back_size=50.0, updated_at=at), at=at)
     assert r["exits"] == 1 and len(_closings(db, tid)) == 4
+
+
+def test_exit_residuo_sotto_050_coi_minimi_veri_mai_ordini_un_critical():
+    """02/10/2026 (RUNNER_MINIMI_CORREZIONI, punti 8 e 10): lo scenario del tetto con i
+    minimi .it VERI. La strategia ritenta l'uscita a cadenza (non la tocchiamo); ogni
+    tentativo e' un rifiuto CERTO deciso in casa (nessun ordine, nessuna chiamata), la
+    posizione resta aperta, e il CRITICAL ``place_rifiutato`` e' UNO per episodio: le
+    ripetizioni sono loggate con il contatore, non critiche."""
+    db = FakeDB(status="running", params={"exits": {"residual_max_attempts": 2,
+                                                    "residual_retry_s": 10}})
+    mk = FakeMarket()
+    tid = _esatto_2_at_60(db)
+    _cycle(db, _cs_row(60), market=mk)
+    _cycle(db, _cs_row(72, back_size=0.3), market=mk)
+    for s in (11, 22, 40, 100):
+        at = NOW + timedelta(seconds=s)
+        _cycle(db, _cs_row(73, back_size=0.3, updated_at=at), at=at, market=mk)
+    rif = [p for k, p in db.activity if k == "place_rifiutato"]
+    assert len(rif) >= 3, "la strategia ritenta: ogni tentativo e' un rifiuto"
+    assert all(p["error_code"] == "SOTTO_MINIMO_NON_PIAZZABILE" for p in rif)
+    assert [p["critical"] for p in rif] == [True] + [False] * (len(rif) - 1)
+    assert [p["tentativo_nell_episodio"] for p in rif] == list(range(1, len(rif) + 1))
+    assert mk.placed == []                                    # mai un ordine REST
+    chiusure = _closings(db, tid)
+    assert chiusure and all(c["status"] == "error" for c in chiusure)
+    ids = {c["id"] for c in chiusure}
+    assert [p for k, p in db.activity if k == "flumine_enqueue"
+            and p.get("trade_id") in ids] == []               # mai in coda al runner
+    assert db.get_trade(tid)["status"] == "open"
 
 
 def test_exit_parametri_residuo_con_clamp():
@@ -2434,12 +2463,9 @@ def test_uscita_obbligatoria_tennis_e_forced_per_la_ui():
     assert _closings(db, tid)[0]["meta"]["exit_kind"] == "forced"
 
 
-def test_residuo_di_uscita_a_tempo_usa_la_stessa_decisione(monkeypatch):
-    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): test di LOGICA dell'uscita, non dei minimi.
-    # Le chiusure qui sono sotto 1,00 EUR: su .it fuori dal canale sono un rifiuto certo
-    # (test_runner_minimi_chiusure_2026_10_01). Qui il minimo si azzera con la manopola
-    # gia' esistente SAFE_MIN_SIZE_LIVE per isolare la logica dai minimi.
-    monkeypatch.setenv("SAFE_MIN_SIZE_LIVE", "0.01")
+def test_residuo_di_uscita_a_tempo_usa_la_stessa_decisione():
+    # 02/10/2026 (RUNNER_MINIMI_CORREZIONI, punto 8): minimi .it VERI (tolta la manopola
+    # SAFE_MIN_SIZE_LIVE del 01/10, qui non necessaria).
     db = FakeDB(status="running")
     tid = _esatto_2_at_60(db)
     _cycle(db, _cs_row(60))

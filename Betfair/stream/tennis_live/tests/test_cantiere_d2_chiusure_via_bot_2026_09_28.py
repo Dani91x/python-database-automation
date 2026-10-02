@@ -87,7 +87,7 @@ def _prepara(db: Any, banchi: Any, bot: str, params: Any = None):
     return b, strat, market, round(size, 2)
 
 
-@pytest.mark.xfail(strict=False, reason=XFAIL_REPERTO_1)
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason=XFAIL_REPERTO_1)
 @pytest.mark.parametrize("bot", ["tennis_flb", "tennis_pro", "tennis_swing"])
 def test_chiusura_esatta_guidata_dai_book_del_bot(bot, db, banchi, esecuzione_sincrona):
     b, strat, market, size = _prepara(db, banchi, bot)

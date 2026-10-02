@@ -563,17 +563,41 @@ def test_closing_leg_ripiega_sul_submin_solo_in_live(monkeypatch):
     assert len(calls) == 1 and calls[0]["size"] == pytest.approx(0.30)
 
 
-def test_closing_leg_in_paper_non_usa_il_trucco(monkeypatch):
-    monkeypatch.setattr(wk, "_place_sub_minimum",
-                        lambda *_a, **_k: pytest.fail("mai in PAPER"))
-    market = _Market("1.1", place_ok=False)
-    order = SimpleNamespace(violation_msg="rifiutato")
-    with pytest.raises(ValueError):
+def test_closing_leg_in_paper_stessa_decisione_del_live(monkeypatch):
+    """02/10/2026 (RUNNER_MINIMI_CORREZIONI, punto 1, decisione dell'utente "paper =
+    specchio della realta'"): CONDOTTA CAMBIATA rispetto a ``test_closing_leg_in_paper_
+    non_usa_il_trucco``. In paper la gamba sotto il minimo fa la STESSA strada del live:
+    place-and-trim sul client della riga (0,70), rifiuto sotto 0,50 (0,30). Mai un
+    place diretto sotto il minimo."""
+    monkeypatch.setattr(wk, "_jurisdiction", lambda: "it")
+    vero = wk._place_sub_minimum
+    chiamate: List[Dict[str, Any]] = []
+
+    def _finto(*_a, **kw):
+        chiamate.append(kw)
+        return SimpleNamespace(step=SimpleNamespace(value="done")), None
+
+    monkeypatch.setattr(wk, "_place_sub_minimum", _finto)
+    sim = object()
+    market = _Market("1.1", place_ok=True)
+    for mode in ("paper", "live"):
         wk._place_closing_leg(
-            None, market, order=order, strategy=_STRAT, market_id="1.1", selection_id=10,
-            handicap=0.0, side="lay", price=2.5, size=0.30, cust_ref="awlq6x0",
-            what="greenup", mode="paper", params={},
-        )
+            None, market, order=None, strategy=_STRAT, market_id="1.1", selection_id=10,
+            handicap=0.0, side="lay", price=2.5, size=0.70, cust_ref="awlq6x0",
+            what="greenup", mode=mode, params={}, client=sim)
+    assert [c["size"] for c in chiamate] == [0.70, 0.70]
+    assert all(c["client"] is sim for c in chiamate)
+    assert market.placed == []
+    # sotto 0,50: il place-and-trim VERO rifiuta prima di qualunque ordine, in paper
+    # come in live
+    monkeypatch.setattr(wk, "_place_sub_minimum", vero)
+    for mode in ("paper", "live"):
+        with pytest.raises(ValueError, match="SOTTO_MINIMO_NON_PIAZZABILE"):
+            wk._place_closing_leg(
+                None, market, order=None, strategy=_STRAT, market_id="1.1",
+                selection_id=10, handicap=0.0, side="lay", price=2.5, size=0.30,
+                cust_ref="awlq6x1", what="greenup", mode=mode, params={})
+    assert market.placed == []
 
 
 def test_closing_leg_opt_out_esplicito(monkeypatch):

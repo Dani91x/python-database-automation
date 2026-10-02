@@ -29,7 +29,10 @@ from Betfair.odds_refresh import BetfairLimitHit, get_shared_client, reset_share
 logger = logging.getLogger(__name__)
 
 LIMIT_MARKERS = ("TOO_MANY_REQUESTS", "TOO_MUCH_DATA")
-MIN_STAKE_EUR = 2.0          # stake minimo Exchange .it
+# 02/10/2026 (RUNNER_MINIMI_CORREZIONI, punto 7): i minimi .it sono UNA definizione,
+# ``Betfair.stream.trading.minimi_it`` (punta e banca 1,00 al centesimo). Prima qui 2,00
+# fisso per entrambi i lati: un duplicato (piu' severo del listino) del vecchio minimo.
+from Betfair.stream.trading.minimi_it import IT_MIN_BACK as MIN_STAKE_EUR  # noqa: E402
 EXCHANGE_FOOTBALL = "1"      # eventTypeId calcio (coerente col resto del repo)
 
 # serializza i piazzamenti nel processo: niente race, una richiesta per volta.
@@ -260,8 +263,12 @@ def place_order(
     if size is None:
         raise ValueError("stake (size) mancante.")
     size = round(float(size), 2)
-    if size < MIN_STAKE_EUR:
-        raise ValueError(f"stake €{size:.2f} sotto il minimo Betfair (€{MIN_STAKE_EUR:.2f}).")
+    # stessa regola del motore ordini (lato per lato, al centesimo, nessuna esenzione)
+    from Betfair.stream.live_order_build import JURISDICTION_IT, min_stake_rules
+
+    _v = min_stake_rules(JURISDICTION_IT, side_up.lower(), price_tick, size)
+    if not _v.valid:
+        raise ValueError(f"stake €{size:.2f} sotto il minimo Betfair .it: {_v.reason}.")
     if max_stake is not None and size > float(max_stake) + 1e-9:
         raise ValueError(f"stake €{size:.2f} oltre il cap impostato (€{float(max_stake):.2f}).")
     if fill_or_kill and min_fill_size is not None:

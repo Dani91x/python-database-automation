@@ -719,6 +719,20 @@ def place_order_live(
     price_tick = E.round_to_tick(float(price))   # solleva su prezzo non finito
     if not (E.MIN_PRICE <= price_tick <= E.MAX_PRICE):
         raise ValueError(f"prezzo fuori scala Betfair: {price!r}")
+    # 02/10/2026 (RUNNER_MINIMI_CORREZIONI, punto 7): il REST diretto aveva NESSUNA
+    # guardia sui minimi .it. Stessa regola del motore (``min_stake_rules``, minimi da
+    # ``trading.minimi_it``, nessuna esenzione per le chiusure): sotto il minimo e'
+    # un RIFIUTO CERTO prima di qualunque chiamata di rete. Le vie legittime sotto il
+    # minimo (place-and-trim) passano da ``place_submin_live``, che chiama questa
+    # funzione solo con importi >= minimo.
+    from Betfair.stream.live_order_build import JURISDICTION_IT, min_stake_rules
+    from Betfair.stream.trading.minimi_it import SOTTO_MINIMO_NON_PIAZZABILE
+
+    _v = min_stake_rules(JURISDICTION_IT, side_bf.lower(), price_tick, round(size_f, 2))
+    if not _v.valid:
+        raise PlaceRifiutato(
+            f"{_v.reason}: nessun ordine inviato (REST diretto); residuo {round(size_f, 2):.2f} "
+            f"da dichiarare al trader", error_code=SOTTO_MINIMO_NON_PIAZZABILE)
     customer_ref = (customer_ref or f"omega-{event_id}")[:32]
     ref_strategia = ref_di_strategia(strategy_ref)   # validato PRIMA della rete
     instruction = {

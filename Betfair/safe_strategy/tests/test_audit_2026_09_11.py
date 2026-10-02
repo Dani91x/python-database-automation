@@ -1287,28 +1287,52 @@ def test_rev_m10_meta_incompleto_conta_la_liability_piena():
                                  "meta": {"hedge": {"remaining_liability": "x"}}}) == 50.0
 
 
-def test_rev_c2_il_minimo_2_euro_non_blocca_le_chiusure():
-    """Betfair ACCETTA gli ordini sotto minimo che RIDUCONO una posizione: un
-    residuo da 1,40 EUR deve poter essere chiuso."""
+def test_rev_c2_il_minimo_non_blocca_le_chiusure_sotto_il_minimo_vanno_al_trim():
+    """02/10/2026 (RUNNER_MINIMI_CORREZIONI, punto 8, D7): il test riporta il caso che
+    il suo nome promette, coi minimi .it veri (punta/banca 1,00, trim finale >= 0,50).
+    Prima (13/09) "Betfair accetta le chiusure sotto minimo": FALSO (INVALID_BET_SIZE del
+    01/10). Il 01/10 il delegato aveva lasciato chiusure da 1,40, SOPRA il minimo: il
+    test non provava piu' nulla sul sotto-minimo. Ora:
+      * apertura sotto minimo su un mercato senza place-and-trim: rifiutata, zero chiamate;
+      * chiusura da 1,40 (sopra il minimo): diretta;
+      * chiusura da 0,70 (sotto il minimo, sopra 0,50): NON bloccata, va al place-and-
+        trim REST (mai un place diretto che Betfair rifiuterebbe);
+      * chiusura da 0,40 (sotto 0,50): rifiuto certo dichiarato, nessun ordine."""
     db = FakeDB(status="stopped")
     mk = FakeMarket()
-    # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50: APERTURA sotto minimo (0,70): rifiutata, nessuna chiamata buttata.
-    # Le chiusure da 1,40 qui sotto sono SOPRA il minimo (1,00): passano dirette.
     out = X.place(db=db, market=mk, mode="live", event_id="1.1", market_id="m1",
                   selection_id=7, side="back", price=3.0, size=0.7,
                   client_ref="safe-t1", trade_id=1, now=NOW, params={})
     assert out.status == "error" and mk.placed == []
-    # CHIUSURA sotto minimo: passa
     out = X.place(db=db, market=mk, mode="live", event_id="1.1", market_id="m1",
                   selection_id=7, side="lay", price=3.0, size=1.4,
                   client_ref="safe-t2", trade_id=2, now=NOW, params={},
                   meta={"cashout": True, "closes_trade_id": 1})
     assert out.status == "open" and len(mk.placed) == 1
-    out = X.place(db=db, market=mk, mode="live", event_id="1.1", market_id="m1",
-                  selection_id=7, side="lay", price=3.0, size=1.4,
+
+    class _ConTrim(FakeMarket):
+        def __init__(self):
+            super().__init__()
+            self.submin: list[dict] = []
+
+        def place_submin_live(self, **kw):
+            self.submin.append(kw)
+            return M.PlaceResult(ok=True, order_status="EXECUTION_COMPLETE", bet_id="b-2",
+                                 size_matched=kw["size"], avg_price_matched=kw["price"])
+
+    mk2 = _ConTrim()
+    out = X.place(db=db, market=mk2, mode="live", event_id="1.1", market_id="m1",
+                  selection_id=7, side="lay", price=3.0, size=0.7,
                   client_ref="safe-t3", trade_id=3, now=NOW, params={},
                   meta={"closes_trade_id": 1})
-    assert out.status == "open" and len(mk.placed) == 2
+    assert out.status == "open" and mk2.placed == []
+    assert [s["size"] for s in mk2.submin] == [0.7]
+    out = X.place(db=db, market=mk2, mode="live", event_id="1.1", market_id="m1",
+                  selection_id=7, side="lay", price=3.0, size=0.4,
+                  client_ref="safe-t4", trade_id=4, now=NOW, params={},
+                  meta={"closes_trade_id": 1})
+    assert out.status == "error" and out.error_code == "SOTTO_MINIMO_NON_PIAZZABILE"
+    assert mk2.placed == [] and len(mk2.submin) == 1
 
 
 def test_rev_h1_il_cap_giornaliero_non_si_libera_coprendo():
@@ -1515,14 +1539,11 @@ def test_rev_m2_una_posizione_pre_ko_non_e_cieca():
     assert _run(db2)["blind"] == 1
 
 
-def test_rev_m3_green_up_in_coda_resta_greenup(monkeypatch):
+def test_rev_m3_green_up_in_coda_resta_greenup():
     """Con la coda flumine il fill arriva dopo: ``residual_size`` e' ancora
     pieno ma la chiusura e' INTEGRALE -> 'greenup', non 'profit'."""
-    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): test di LOGICA dell'uscita, non dei minimi.
-    # Le chiusure qui sono sotto 1,00 EUR: su .it fuori dal canale sono un rifiuto certo
-    # (test_runner_minimi_chiusure_2026_10_01). Qui il minimo si azzera con la manopola
-    # gia' esistente SAFE_MIN_SIZE_LIVE per isolare la logica dai minimi.
-    monkeypatch.setenv("SAFE_MIN_SIZE_LIVE", "0.01")
+    # 02/10/2026 (RUNNER_MINIMI_CORREZIONI, punto 8): la manopola SAFE_MIN_SIZE_LIVE del
+    # 01/10 qui non serviva (la chiusura e' sopra il minimo .it): tolta, minimi veri.
     assert XE.ui_exit_kind("time", locked=1.0, integral=True) == "greenup"
     db = FakeDB(status="running")
     db.follow = "STREAMING"          # gate flumine aperto: fill differito
