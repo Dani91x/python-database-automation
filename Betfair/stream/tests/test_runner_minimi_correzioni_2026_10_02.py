@@ -239,6 +239,10 @@ def test_p3_cancel_totale_annulla_l_ordine_vero(amb):
     _manda(amb, ws, _cmd("safe", 2, mode="live", azione="cancel", bet_id=ev["bet_id"]))
     assert _ack(amb, ws)["accettato"] is True
     assert amb.market.calls[-1] == ("cancel", vero, None)
+    # anche l'evento del CANCEL e' nei termini del chiesto (mai la punta Under al bot)
+    e = _eventi(amb, ws, "safe-t2")[-1]
+    assert (e["selection_id"], e["side"], e["price"], e["size"]) == (OVER, "lay", 18.0, 0.43)
+    assert e["riga_mandata"]["selection_id"] == UNDER
 
 
 def test_p3_cancel_parziale_convertito_nei_termini_del_vero(amb):

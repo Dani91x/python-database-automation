@@ -1233,6 +1233,9 @@ class MotoreOrdini:
                 resto_vero = round(float(ordine.size_remaining or 0.0), 2)
             except Exception:  # noqa: BLE001
                 resto_vero = None
+        # anche gli eventi del cancel/replace tornano al bot nei termini del CHIESTO
+        # (la riga del cancel legge l'ordine VERO: senza, il bot vedrebbe la punta Under)
+        piano["tradotto"] = t
         piano["annullo_tradotto"] = {"bet_id": str(riga["bet_id"]), "cust": info["cust"],
                                      "originale": dict(orig), "mandato": dict(mand),
                                      "fattore": round(fattore, 6),
