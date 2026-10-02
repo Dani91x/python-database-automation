@@ -588,10 +588,10 @@ def test_rpc_assente_ripiega_avvisa_una_volta_e_riprova_dopo(monkeypatch, rpc_pu
     assert [r["event_id"] for r in out["omega"]] == ["E1"]          # ripiego per fonte
     LIST_BOT_EXPOSURES_VERA(now_ts=10.0)
     assert len(sb.rpc_chiamate) == 1                                # niente RPC a ogni giro
-    avvisi = [r for r in caplog.records if "non disponibile" in r.getMessage()]
-    assert len(avvisi) == 1                                         # una volta sola
     LIST_BOT_EXPOSURES_VERA(now_ts=SDB._RPC_ESPOSIZIONI_RIPROVA_S + 1.0)
     assert len(sb.rpc_chiamate) == 2                                # riprovata dopo
+    avvisi = [r for r in caplog.records if "non disponibile" in r.getMessage()]
+    assert len(avvisi) == 1                                         # una volta sola
 
 
 def test_rpc_errore_tiene_l_ultima_lista_buona(monkeypatch, rpc_pulita):
