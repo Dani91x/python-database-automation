@@ -1317,9 +1317,19 @@ class MotoreOrdini:
                 altra = altro_runner_due_esiti(mercato, int(riga["selection_id"]))
             except Exception:  # noqa: BLE001 - mercato non risolvibile: niente equivalente
                 altra = None
+        # 02/10/2026 (punto 11): la traduzione solo per gli attori che sanno riconciliare
+        # un ordine tradotto (``minimi_it.ATTORI_CON_TRADUZIONE``), paper e live uguali
+        from .trading import minimi_it as MI
+
+        attore = str(piano.get("strategy_ref") or "")
+        no_eq = None
+        if altra is not None and attore not in MI.ATTORI_CON_TRADUZIONE:
+            altra = None
+            no_eq = (f"equivalente NON ammesso per l'attore {attore!r} "
+                     f"(ATTORI_CON_TRADUZIONE)")
         verdetto = LB.verdetto_minimi(
             giurisdizione, lato, float(riga["price"]), float(riga["size"]),
-            altra_selezione=altra,
+            altra_selezione=altra, motivo_no_equivalente=no_eq,
             # il runner tennis non ha il place-and-trim (``esecutore_tennis.MOTIVO_SUBMIN``)
             submin_disponibile=getattr(LOW, "MOTIVO_SUBMIN", None) is None)
         piano["minimi"] = {"esito": verdetto.esito, "motivo": verdetto.motivo}
@@ -1327,7 +1337,9 @@ class MotoreOrdini:
             dettaglio = str(verdetto.motivo or "")
             if dettaglio.startswith(M_SOTTO_MINIMO + ":"):
                 dettaglio = dettaglio[len(M_SOTTO_MINIMO) + 1:].strip()
-            raise Rifiuto(M_SOTTO_MINIMO, dettaglio[:240])
+            # 02/10 (punto 11): 480 caratteri, cosi' il residuo da dichiarare al trader
+            # (in coda al motivo) non viene tagliato
+            raise Rifiuto(M_SOTTO_MINIMO, dettaglio[:480])
         if verdetto.esito == LB.VERDETTO_EQUIVALENTE:
             eq = verdetto.equivalente
             orig = dict(piano["minimi_originale"])

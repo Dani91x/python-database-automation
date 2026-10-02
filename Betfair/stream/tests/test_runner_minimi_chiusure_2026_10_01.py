@@ -275,7 +275,17 @@ def _riga_specchio(cust: str, **kw: Any) -> Dict[str, Any]:
     return r
 
 
-def test_motore_banca_043_mandata_come_punta_731_e_riportata_al_bot(amb):
+@pytest.fixture()
+def traduzione_mike(monkeypatch):
+    """02/10/2026 (RUNNER_MINIMI_CORREZIONI, punto 11): la traduzione nell'equivalente vale
+    solo per gli attori di ``minimi_it.ATTORI_CON_TRADUZIONE`` (oggi nessuno). Questi
+    test collaudano la MACCHINA della traduzione: abilitano 'mike' SOLO per la prova."""
+    from Betfair.stream.trading import minimi_it as MI
+
+    monkeypatch.setattr(MI, "ATTORI_CON_TRADUZIONE", frozenset({"mike"}))
+
+
+def test_motore_banca_043_mandata_come_punta_731_e_riportata_al_bot(amb, traduzione_mike):
     _due_esiti(amb.market)
     ws = amb.ch.collega("mike")
     _manda(amb, ws, _cmd("mike", 1, mode="live", selection_id=OVER, side="LAY",
@@ -398,7 +408,7 @@ def test_motore_nessun_ripiego_senza_invalid_bet_size(amb):
     assert _ack(amb, ws)["accettato"] is True and len(amb.market.calls) == 2
 
 
-def test_motore_aggancio_ripete_le_guardie_sull_ordine_chiesto(amb):
+def test_motore_aggancio_ripete_le_guardie_sull_ordine_chiesto(amb, traduzione_mike):
     """Idempotenza: ``_controlla`` due volte sullo stesso piano (aggancio al volo) riparte
     dall'ordine CHIESTO, mai dalla traduzione del giro prima."""
     _due_esiti(amb.market)

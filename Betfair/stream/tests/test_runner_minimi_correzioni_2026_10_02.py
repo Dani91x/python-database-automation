@@ -62,6 +62,16 @@ def _due_esiti(market: Any, **runner_kw: Any) -> None:
                  SimpleNamespace(selection_id=UNDER, handicap=0.0)])
 
 
+@pytest.fixture()
+def traduzione(monkeypatch):
+    """Punto 11: la traduzione vale solo per ``minimi_it.ATTORI_CON_TRADUZIONE`` (oggi
+    vuoto). I test della MACCHINA della traduzione (punti 1 e 3) abilitano 'mike' e
+    'safe' SOLO per la prova; il comportamento vero di Safe/Omega e' al punto 11."""
+    from Betfair.stream.trading import minimi_it as MI
+
+    monkeypatch.setattr(MI, "ATTORI_CON_TRADUZIONE", frozenset({"mike", "safe"}))
+
+
 def _eventi(amb: Any, ws: Any, ref: str) -> List[Dict[str, Any]]:
     return [p["d"] for p in amb.ch.per_ws(ws, "order") if p["d"].get("ref") == ref]
 
@@ -81,7 +91,7 @@ def _place_tradotto(amb: Any, ws: Any, n: int, mode: str = "live") -> Dict[str, 
 # ===========================================================================
 # 1. paper = specchio del live
 # ===========================================================================
-def test_p1_stesso_ordine_043_in_paper_e_in_live_stesso_mandato_e_stesso_evento(amb):
+def test_p1_stesso_ordine_043_in_paper_e_in_live_stesso_mandato_e_stesso_evento(amb, traduzione):
     _due_esiti(amb.market)
     ws = amb.ch.collega("mike")
     esiti = {}
@@ -232,7 +242,7 @@ def test_p2_strada_della_coda_result_col_codice():
 # ===========================================================================
 # 3. cancel e replace su un ordine tradotto (canale: Safe, Mike, Omega, desktop)
 # ===========================================================================
-def test_p3_cancel_totale_annulla_l_ordine_vero(amb):
+def test_p3_cancel_totale_annulla_l_ordine_vero(amb, traduzione):
     ws = amb.ch.collega("safe")
     ev = _place_tradotto(amb, ws, 1)
     vero = amb.market.calls[0][0]
@@ -245,7 +255,7 @@ def test_p3_cancel_totale_annulla_l_ordine_vero(amb):
     assert e["riga_mandata"]["selection_id"] == UNDER
 
 
-def test_p3_cancel_parziale_convertito_nei_termini_del_vero(amb):
+def test_p3_cancel_parziale_convertito_nei_termini_del_vero(amb, traduzione):
     ws = amb.ch.collega("safe")
     ev = _place_tradotto(amb, ws, 1)
     vero = amb.market.calls[0][0]
@@ -258,7 +268,7 @@ def test_p3_cancel_parziale_convertito_nei_termini_del_vero(amb):
     assert vero.order_type.size == 5.61
 
 
-def test_p3_cancel_parziale_che_lascerebbe_sotto_050_rifiutato_col_residuo(amb):
+def test_p3_cancel_parziale_che_lascerebbe_sotto_050_rifiutato_col_residuo(amb, traduzione):
     ws = amb.ch.collega("safe")
     ev = _place_tradotto(amb, ws, 1)
     n = len(amb.market.calls)
@@ -281,7 +291,7 @@ def test_p3_cancel_su_ordine_non_tradotto_invariato(amb):
     assert amb.market.calls[-1][0] == "cancel" and amb.market.calls[-1][2] == 1.0
 
 
-def test_p3_replace_su_tradotto_cancel_poi_nuovo_verdetto_mai_la_quota_dell_over(amb):
+def test_p3_replace_su_tradotto_cancel_poi_nuovo_verdetto_mai_la_quota_dell_over(amb, traduzione):
     ws = amb.ch.collega("safe")
     ev = _place_tradotto(amb, ws, 1)
     vero = amb.market.calls[0][0]
@@ -300,7 +310,7 @@ def test_p3_replace_su_tradotto_cancel_poi_nuovo_verdetto_mai_la_quota_dell_over
     assert (e["selection_id"], e["side"], e["price"], e["size"]) == (OVER, "lay", 17.0, 0.43)
 
 
-def test_p3_replace_su_tradotto_non_ripiazza_prima_del_cancel_confermato(amb, monkeypatch):
+def test_p3_replace_su_tradotto_non_ripiazza_prima_del_cancel_confermato(amb, monkeypatch, traduzione):
     ws = amb.ch.collega("safe")
     ev = _place_tradotto(amb, ws, 1)
     # cancel accettato ma l'ordine vero resta vivo (Betfair non ha ancora confermato)
@@ -486,3 +496,102 @@ def test_p9_green_up_mercato_a_due_esiti_senza_chiusura_chiude_davvero():
     LOW._do_greenup(_Sb([row]), _fl(market), row, "paper", _STRAT)
     assert len(market.placed) == 1 and market.placed[0].side == "LAY"
     assert market.placed[0].order_type.size == pytest.approx(2.22)   # 40 / 18
+
+
+# ===========================================================================
+# 11. traduzione SOLO per gli attori che sanno riconciliarla (oggi nessuno)
+# ===========================================================================
+def test_p11_insieme_degli_attori_con_traduzione_oggi_vuoto():
+    from Betfair.stream.trading import minimi_it as MI
+
+    assert MI.ATTORI_CON_TRADUZIONE == frozenset()
+    for a in ("safe", "safe_tennis", "omega", "mike", "desktop"):
+        assert a not in MI.ATTORI_CON_TRADUZIONE
+
+
+@pytest.mark.parametrize("attore", ["safe", "safe_tennis", "omega", "mike", "desktop"])
+@pytest.mark.parametrize("mode", ["paper", "live"])
+def test_p11_banca_043_mai_tradotta_rifiuto_col_codice(amb, attore, mode):
+    """Due esiti, banca 0,43 @18 (sotto 0,50): senza traduzione l'unica via e' il
+    rifiuto ``SOTTO_MINIMO_NON_PIAZZABILE`` col residuo dichiarato e il motivo
+    dell'attore. Mai un ordine (ne' sull'Under ne' altrove), paper come live."""
+    _due_esiti(amb.market)
+    ws = amb.ch.collega(attore)
+    _manda(amb, ws, _cmd(attore, 1, mode=mode, selection_id=OVER, side="LAY", price=18.0,
+                         size=0.43, reduces_liability=True))
+    ack = _ack(amb, ws)
+    assert ack["accettato"] is False
+    assert MO.codice_errore(ack["motivo"]) == "SOTTO_MINIMO_NON_PIAZZABILE"
+    assert "NON ammesso per l'attore" in ack["motivo"] and "trader" in ack["motivo"]
+    assert amb.market.calls == []
+
+
+@pytest.mark.parametrize("attore", ["safe", "safe_tennis", "omega"])
+def test_p11_banca_070_mai_tradotta_va_al_place_and_trim_sulla_stessa_selezione(amb, attore):
+    amb.market.borsa = True
+    _due_esiti(amb.market)
+    ws = amb.ch.collega(attore)
+    _manda(amb, ws, _cmd(attore, 1, mode="live", selection_id=OVER, side="LAY", price=18.0,
+                         size=0.70, reduces_liability=True))
+    assert _ack(amb, ws)["accettato"] is True
+    parcheggio = amb.market.calls[0][0]
+    assert parcheggio.selection_id == OVER and parcheggio.side == "LAY"   # mai l'Under
+    assert parcheggio.order_type.size == 1.00 and parcheggio.order_type.price == 1.03
+    assert amb.motore._submin
+
+
+def test_p11_attore_nell_insieme_traduzione_resta(amb, monkeypatch):
+    from Betfair.stream.trading import minimi_it as MI
+
+    monkeypatch.setattr(MI, "ATTORI_CON_TRADUZIONE", frozenset({"omega"}))
+    _due_esiti(amb.market)
+    ws = amb.ch.collega("omega")
+    _manda(amb, ws, _cmd("omega", 1, mode="live", selection_id=OVER, side="LAY", price=18.0,
+                         size=0.43, reduces_liability=True))
+    assert _ack(amb, ws)["accettato"] is True
+    o = amb.market.calls[0][0]
+    assert (o.selection_id, o.side, o.order_type.price, o.order_type.size) == (
+        UNDER, "BACK", 1.06, 7.31)
+    # un attore fuori dall'insieme, nello stesso processo: mai tradotto
+    ws2 = amb.ch.collega("safe")
+    _manda(amb, ws2, _cmd("safe", 2, mode="live", selection_id=OVER, side="LAY", price=18.0,
+                          size=0.43, reduces_liability=True))
+    assert _ack(amb, ws2)["accettato"] is False and len(amb.market.calls) == 1
+
+
+def test_p11_safe_sul_canale_un_solo_critical_per_episodio():
+    """Safe ritenta la chiusura; il runner rifiuta ogni volta (nessun ordine): il CRITICAL
+    ``canale_rifiutato`` e' uno per episodio, le ripetizioni contate."""
+    from Betfair.safe_strategy import execution as X
+    from Betfair.safe_strategy import porta_ordini as PO
+
+    class _Db:
+        def __init__(self) -> None:
+            self.log_righe: List[Any] = []
+
+        def log(self, k: str, p: Dict[str, Any]) -> None:
+            self.log_righe.append((k, p))
+
+        def update_trade(self, *_a: Any, **_k: Any) -> None:
+            return None
+
+    class _Porta:
+        attore = "safe"
+
+        def disponibile(self) -> bool:
+            return True
+
+        def invia(self, comando: Dict[str, Any]) -> Any:
+            return PO.Ack(comando["ref"], 1, False,
+                          "SOTTO_MINIMO_NON_PIAZZABILE: LAY 0.43 ...; residuo ... al trader", 0)
+
+    db, porta = _Db(), _Porta()
+    for tid in (11, 12, 13):
+        out = X._place_via_canale(porta, db=db, mode="live", market_id="1.1", selection_id=OVER,
+                                  side="lay", price=18.0, size=0.43, client_ref=f"safe-t{tid}",
+                                  tid=tid, meta={"closes_trade_id": 5}, now=None,
+                                  is_closing=True, sotto_minimo=True)
+        assert out.status == "error" and out.error_code.startswith("SOTTO_MINIMO_NON_PIAZZABILE")
+    rif = [p for k, p in db.log_righe if k == "canale_rifiutato"]
+    assert [p["critical"] for p in rif] == [True, False, False]
+    assert [p["tentativo_nell_episodio"] for p in rif] == [1, 2, 3]
