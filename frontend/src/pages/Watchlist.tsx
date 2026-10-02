@@ -69,8 +69,8 @@ export default function Watchlist() {
             <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-30 ds-v2-nascondi" />
 
             {/* navbar */}
-            <nav className="border-b border-white/5 bg-black/50 backdrop-blur-xl sticky ds-v2-non-sticky top-0 z-50">
-                <div className="container mx-auto px-6 h-16 flex items-center justify-between ds-v2-largo">
+            <nav className="border-b border-white/5 bg-black/50 backdrop-blur-xl sticky ds-v2-non-sticky top-0 z-50 ds-v2-navbar">
+                <div className="container mx-auto px-6 h-16 flex items-center justify-between ds-v2-largo ds-v2-navbar-dentro">
                     <div className="flex items-center gap-4">
                         <Link to="/dashboard" data-nav-legacy className="font-display font-black text-xl tracking-tighter">AI <span className="text-primary">TERMINAL</span></Link>
                         <span className="hidden md:flex items-center gap-2 text-sm text-amber-300 font-heading font-bold ml-4">
@@ -92,7 +92,7 @@ export default function Watchlist() {
                 </div>
             </nav>
 
-            <main className="container mx-auto px-4 lg:px-6 py-8 max-w-4xl relative z-10">
+            <main className="container mx-auto px-4 lg:px-6 py-8 max-w-4xl relative z-10 ds-v2-pagina-larga ds-v2-main">
                 <div className="mb-6">
                     <h1 className="font-display font-black text-2xl md:text-3xl tracking-tight">
                         La mia <span className="text-amber-300">Watchlist</span>
@@ -103,7 +103,7 @@ export default function Watchlist() {
                 </div>
 
                 <Tabs value={tab} onValueChange={v => setTab(v as TabKey)}>
-                    <TabsList className="bg-black/40 border border-white/10">
+                    <TabsList className="bg-black/40 border border-white/10 ds-v2-schede">
                         {(Object.keys(TAB_LABEL) as TabKey[]).map(k => (
                             <TabsTrigger key={k} value={k}
                                 className="data-[state=active]:bg-amber-400/20 data-[state=active]:text-amber-300">

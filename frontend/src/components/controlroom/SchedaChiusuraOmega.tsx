@@ -207,7 +207,7 @@ export function SchedaChiusuraOmega({
             </div>
 
             {/* ---- i tre numeri che decidono, insieme ---- */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-white/5 mt-2 border-t border-white/5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-white/5 ds-v2-cr-tessere mt-2 border-t border-white/5">
                 <Cella etichetta="Blocchi adesso"
                     valore={bloccabile == null ? DASH : fmtMoney(bloccabile, { signed: true })}
                     tono={bloccabile == null ? undefined : bloccabile > 0 ? 'buono' : 'cattivo'} />
@@ -260,11 +260,11 @@ export function SchedaChiusuraOmega({
                 </div>
             )}
 
-            <div className="grid grid-cols-2 gap-px bg-white/5 border-t border-white/5">
+            <div className="grid grid-cols-2 gap-px bg-white/5 border-t border-white/5 ds-v2-cr-azioni">
                 {armato ? (
                     <Button
                         onClick={() => void azione(approvaConPrezzo)} disabled={inCorso}
-                        className="rounded-none h-10 bg-orange-500 text-black hover:bg-orange-400 font-bold uppercase tracking-wider text-[12px]"
+                        className="rounded-none h-10 bg-orange-500 text-black hover:bg-orange-400 font-bold uppercase tracking-wider text-[12px] ds-v2-cr-azione ds-v2-pulsante--armato"
                         data-testid="cr-omega-conferma-live"
                     >
                         {inCorso ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Confermo: soldi veri</>}
@@ -273,7 +273,7 @@ export function SchedaChiusuraOmega({
                     <Button
                         onClick={() => (live ? setArmato(true) : void azione(approvaConPrezzo))}
                         disabled={inCorso}
-                        className={`rounded-none h-10 text-white font-bold uppercase tracking-wider text-[12px] disabled:opacity-40 ${
+                        className={`rounded-none h-10 text-white font-bold uppercase tracking-wider text-[12px] disabled:opacity-40 ds-v2-cr-azione ${
                             protezione ? 'bg-red-600/80 hover:bg-red-600' : 'bg-emerald-600/80 hover:bg-emerald-600'
                         }`}
                         data-testid="cr-omega-approva"
@@ -285,7 +285,7 @@ export function SchedaChiusuraOmega({
                 )}
                 <Button
                     variant="ghost" onClick={() => void azione(onIgnora)} disabled={inCorso}
-                    className="rounded-none h-10 text-white/60 hover:text-white uppercase tracking-wider text-[12px]"
+                    className="rounded-none h-10 text-white/60 hover:text-white uppercase tracking-wider text-[12px] ds-v2-cr-azione ds-v2-pulsante--secondario"
                     data-testid="cr-omega-ignora"
                 >
                     Ignora

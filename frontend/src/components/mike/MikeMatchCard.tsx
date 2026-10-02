@@ -203,9 +203,9 @@ function Cell({ label, value, title, testId, sub }: {
     label: string; value: ReactNode; title?: string; testId?: string; sub?: ReactNode;
 }) {
     return (
-        <div className="rounded-md bg-black/30 border border-white/5 px-2 py-1.5 min-h-[42px]" title={title} data-testid={testId}>
-            <div className="text-slate-500 uppercase tracking-wide text-[9px] truncate">{label}</div>
-            <div className="tabular-nums text-white/90 truncate">{value}</div>
+        <div className="rounded-md bg-black/30 border border-white/5 px-2 py-1.5 min-h-[42px] ds-v2-mike-cella" title={title} data-testid={testId}>
+            <div className="text-slate-500 uppercase tracking-wide text-[9px] truncate ds-v2-mike-cella-k">{label}</div>
+            <div className="tabular-nums text-white/90 truncate ds-v2-mike-cella-v">{value}</div>
             {sub ? <div className="truncate">{sub}</div> : null}
         </div>
     );
@@ -291,12 +291,12 @@ function QuoteLine({ label, book, prev, title, testId, frozen = false }: {
                 </span>
             </div>
             <div className="flex items-center gap-2 text-[11px] tabular-nums">
-                <span className="text-sky-300">
+                <span className="text-sky-300 ds-v2-quota--back ds-v2-mike-quota">
                     <Move now={book?.best_back ?? null} prev={prev?.back} /> {fmtOdds(book?.best_back ?? null)}
                     <span className="text-slate-500 text-[10px]"> {book ? fmtMoney(book.back_size, { decimals: 0 }) : '—'}</span>
                 </span>
                 <span className="text-slate-600">/</span>
-                <span className="text-rose-300">
+                <span className="text-rose-300 ds-v2-quota--lay ds-v2-mike-quota">
                     {fmtOdds(book?.best_lay ?? null)} <Move now={book?.best_lay ?? null} prev={prev?.lay} />
                     <span className="text-slate-500 text-[10px]"> {book ? fmtMoney(book.lay_size, { decimals: 0 }) : '—'}</span>
                 </span>

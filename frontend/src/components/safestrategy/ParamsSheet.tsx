@@ -259,7 +259,7 @@ export function ParamsSheet() {
                     <Settings2 className="w-4 h-4 mr-1" /> Parametri
                 </Button>
             </SheetTrigger>
-            <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto bg-background border-white/10">
+            <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto bg-background border-white/10 ds-portale-v2-foglio">
                 <SheetHeader>
                     <SheetTitle className="font-display">Parametri Safe Strategy</SheetTitle>
                     <SheetDescription>

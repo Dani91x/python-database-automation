@@ -120,7 +120,7 @@ export function TesseraRunner({ sport, r, fonte }: {
     const t = sport === 'tennis' ? 'cr-runner-tennis' : 'cr-runner';
     const v = descriviRunner(sport, r, fonte);
     return (
-        <div className="flex flex-col gap-0.5 rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 min-w-[11rem]"
+        <div className="flex flex-col gap-0.5 rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 min-w-[11rem] ds-v2-cr-runner"
             data-testid={t}
             title={r?.ageS != null ? `ultimo battito del processo ${fmtAge(Math.round(r.ageS))} fa` : undefined}>
             <span className="text-[10.5px] tracking-wide text-white/80 font-semibold" data-testid={`${t}-nome`}>

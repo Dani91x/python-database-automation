@@ -1,0 +1,43 @@
+analytics.off.1280.intera.png identica
+analytics.off.1600.intera.png identica
+board.off.1280.intera.png identica
+board.off.1600.intera.png identica
+control-room.off.1280.intera.png pixel diversi 86 riquadro (330, 3931, 346, 3945)
+control-room.off.1600.intera.png pixel diversi 101 riquadro (490, 3930, 506, 3946)
+dashboard.off.1280.intera.png identica
+dashboard.off.1600.intera.png identica
+ladder-popout.off.1280.intera.png identica
+ladder-popout.off.1600.intera.png identica
+live-pnl.off.1280.intera.png identica
+live-pnl.off.1600.intera.png identica
+market-watch.off.1280.intera.png identica
+market-watch.off.1600.intera.png identica
+match-replay.off.1280.intera.png identica
+match-replay.off.1600.intera.png identica
+mike.off.1280.intera.png pixel diversi 2544 riquadro (214, 15, 333, 37)
+mike.off.1600.intera.png pixel diversi 2517 riquadro (314, 15, 433, 37)
+multi-ladder.off.1280.intera.png identica
+multi-ladder.off.1600.intera.png identica
+omega.off.1280.intera.png pixel diversi 1884 riquadro (111, 15, 313, 1396)
+omega.off.1600.intera.png pixel diversi 32 riquadro (271, 1346, 277, 1352)
+report-personale.off.1280.intera.png identica
+report-personale.off.1600.intera.png identica
+safe-strategy.off.1280.intera.png pixel diversi 210689 riquadro (0, 15, 1280, 1948)
+safe-strategy.off.1600.intera.png pixel diversi 128746 riquadro (143, 1574, 1457, 1946)
+segui-live-terminal.off.1280.intera.png pixel diversi 2073 riquadro (1036, 258, 1239, 1293)
+segui-live-terminal.off.1600.intera.png pixel diversi 2332 riquadro (1443, 258, 1559, 279)
+segui-live.off.1280.intera.png pixel diversi 4706 riquadro (501, 454, 1175, 475)
+segui-live.off.1600.intera.png pixel diversi 1370 riquadro (661, 454, 1335, 475)
+storico-calcio.off.1280.intera.png identica
+storico-calcio.off.1600.intera.png identica
+storico-tennis.off.1280.intera.png identica
+storico-tennis.off.1600.intera.png identica
+tennis-terminal-sinner.off.1280.intera.png pixel diversi 157 riquadro (255, 86, 1201, 547)
+tennis-terminal-sinner.off.1600.intera.png pixel diversi 172 riquadro (255, 86, 1521, 547)
+tennis.off.1280.intera.png pixel diversi 161 riquadro (283, 317, 299, 333)
+tennis.off.1600.intera.png pixel diversi 158 riquadro (443, 317, 459, 333)
+trade-journal.off.1280.intera.png identica
+trade-journal.off.1600.intera.png identica
+watchlist.off.1280.intera.png identica
+watchlist.off.1600.intera.png identica
+DIFFERENZE

@@ -53,9 +53,9 @@ function StatTile({ label, value, tone, title, extra }: {
 }) {
     const color = tone === 'pos' ? 'text-emerald-400' : tone === 'neg' ? 'text-red-400' : 'text-white/90';
     return (
-        <Card className="glass-card border-white/10 p-3 min-w-[160px] flex-1" title={title}>
-            <div className="text-[11px] text-slate-400">{label}</div>
-            <div className={`text-2xl font-semibold tabular-nums ${color}`}>{value}</div>
+        <Card className="glass-card border-white/10 p-3 min-w-[160px] flex-1 ds-v2-kpi" title={title}>
+            <div className="text-[11px] text-slate-400 ds-v2-kpi-k">{label}</div>
+            <div className={`text-2xl font-semibold tabular-nums ds-v2-kpi-v ${color}`}>{value}</div>
             {extra}
         </Card>
     );
@@ -321,7 +321,7 @@ export default function LivePnl() {
             <Helmet><title>P&L di giornata | Alpha Score</title></Helmet>
 
             {/* top bar + filtri */}
-            <div className="sticky ds-v2-non-sticky top-0 z-40 px-3 py-2 border-b border-white/10 bg-black/80 backdrop-blur flex items-center gap-3 flex-wrap">
+            <div className="sticky ds-v2-non-sticky top-0 z-40 px-3 py-2 border-b border-white/10 bg-black/80 backdrop-blur flex items-center gap-3 flex-wrap ds-v2-barra">
                 <Link to="/segui-live" className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-white">
                     <ArrowLeft className="w-3.5 h-3.5" /> Terminal
                 </Link>
@@ -351,7 +351,7 @@ export default function LivePnl() {
                 </label>
             </div>
 
-            <div className="p-3 space-y-4 max-w-[1200px] mx-auto">
+            <div className="p-3 space-y-4 max-w-[1200px] mx-auto ds-v2-contenitore">
                 {/* ------------------------------------------------------ KPI row */}
                 <div className="flex gap-3 flex-wrap">
                     <StatTile
@@ -419,7 +419,7 @@ export default function LivePnl() {
                         ) : (
                             <table className="w-full text-[11px]">
                                 <thead>
-                                    <tr className="text-slate-400 text-left">
+                                    <tr className="text-slate-400 text-left ds-v2-testa-tabella">
                                         <th className="py-1 pr-2 font-normal">Mercato</th>
                                         <th className="py-1 pr-2 font-normal">Evento</th>
                                         <th className="py-1 pr-2 font-normal text-right">P&amp;L</th>
@@ -461,7 +461,7 @@ export default function LivePnl() {
                         ) : (
                             <table className="w-full text-[11px]">
                                 <thead>
-                                    <tr className="text-slate-400 text-left">
+                                    <tr className="text-slate-400 text-left ds-v2-testa-tabella">
                                         <th className="py-1 pr-2 font-normal">Evento</th>
                                         <th className="py-1 pr-2 font-normal text-right">Mercati</th>
                                         <th className="py-1 font-normal text-right">P&amp;L</th>
@@ -498,7 +498,7 @@ export default function LivePnl() {
                     ) : (
                         <table className="w-full text-[11px]">
                             <thead>
-                                <tr className="text-slate-400 text-left">
+                                <tr className="text-slate-400 text-left ds-v2-testa-tabella">
                                     <th className="py-1 pr-2 font-normal">Evento</th>
                                     <th className="py-1 pr-2 font-normal text-right">Posizioni</th>
                                     <th className="py-1 pr-2 font-normal text-right">Σ esposizione</th>

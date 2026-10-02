@@ -816,7 +816,7 @@ const SelectionLadder = memo(function SelectionLadder({
 
             {/* intestazione colonne (ordine dal profilo) */}
             <div
-                className="grid items-center text-[8px] uppercase tracking-wider text-muted-foreground/70 px-1 py-0.5 border-b border-white/5 bg-black/30"
+                className="grid items-center text-[8px] uppercase tracking-wider text-muted-foreground/70 px-1 py-0.5 border-b border-white/5 bg-black/30 ds-v2-ladder-testa"
                 style={{ gridTemplateColumns: colTemplate }}
             >
                 {gridCols.map((k) => {
@@ -1107,7 +1107,7 @@ const SelectionLadder = memo(function SelectionLadder({
                                 })}
                                 onDragOver={enableDragMove ? (e) => overRow(e, r.price) : undefined}
                                 onDrop={enableDragMove ? (e) => dropRow(e, r.price) : undefined}
-                                className={`grid items-stretch border-b border-white/[0.04] text-[10px] leading-tight ${
+                                className={`grid items-stretch border-b border-white/[0.04] text-[10px] leading-tight ds-v2-ladder-riga ${
                                     isArmed ? 'ring-1 ring-inset ring-amber-400/60' : ''
                                 } ${isDropTarget ? 'ring-1 ring-inset ring-emerald-400/70 bg-emerald-400/5' : ''}`}
                                 style={{ gridTemplateColumns: colTemplate }}

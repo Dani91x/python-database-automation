@@ -199,7 +199,7 @@ export function RigaOrdiniReali({
     return (
         <div className="px-3 py-2 border-b border-white/10" data-testid="cr-ordini-reali">
             <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[12px] font-bold uppercase tracking-wider w-24 shrink-0">Ordini reali</span>
+                <span className="text-[12px] font-bold uppercase tracking-wider w-24 shrink-0 ds-v2-cr-botnome">Ordini reali</span>
 
                 <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
                     live ? 'bg-red-500/20 text-red-300'
@@ -263,7 +263,7 @@ export function RigaOrdiniReali({
                     onClick={() => void esegui('OFF')}
                     data-testid="cr-ordini-reali-off"
                     title="nessun ordine dal ladder, nessun ordine reale dai bot. Le chiusure restano servite."
-                    className="h-6 px-2 text-[10px] uppercase tracking-wider"
+                    className="h-6 px-2 text-[10px] uppercase tracking-wider ds-v2-pulsante ds-v2-pulsante--sm ds-v2-pulsante--secondario"
                 >{inCorso ? <Loader2 className="w-3 h-3 animate-spin" /> : 'off'}</Button>
 
                 <Button
@@ -272,7 +272,7 @@ export function RigaOrdiniReali({
                     onClick={() => void esegui('PAPER')}
                     data-testid="cr-ordini-reali-paper"
                     title="ordini simulati: nessun ordine reale"
-                    className="h-6 px-2 text-[10px] uppercase tracking-wider"
+                    className="h-6 px-2 text-[10px] uppercase tracking-wider ds-v2-pulsante ds-v2-pulsante--sm ds-v2-pulsante--secondario"
                 >paper</Button>
 
                 {armatoDa != null ? (
@@ -282,7 +282,7 @@ export function RigaOrdiniReali({
                         title={troppoPresto ? 'attendi un istante: sono soldi veri' : undefined}
                         onClick={() => void esegui('LIVE')}
                         data-testid="cr-ordini-reali-conferma-live"
-                        className="h-6 px-2 text-[10px] uppercase tracking-wider bg-red-600/80 hover:bg-red-600 text-white font-bold"
+                        className="h-6 px-2 text-[10px] uppercase tracking-wider bg-red-600/80 hover:bg-red-600 text-white font-bold ds-v2-pulsante ds-v2-pulsante--sm ds-v2-pulsante--armato"
                     >confermi? ordini reali su Betfair</Button>
                 ) : (
                     <Button
@@ -294,7 +294,7 @@ export function RigaOrdiniReali({
                         title={!liveConsentito
                             ? `tetto dell'ambiente: ${st.tetto ?? 'non dichiarato'} - LIVE non si puo' scegliere da qui`
                             : 'ordini reali: si conferma due volte'}
-                        className="h-6 px-2 text-[10px] uppercase tracking-wider border-red-400/40 text-red-300 hover:bg-red-500/15"
+                        className="h-6 px-2 text-[10px] uppercase tracking-wider border-red-400/40 text-red-300 hover:bg-red-500/15 ds-v2-pulsante ds-v2-pulsante--sm ds-v2-pulsante--pericolo"
                     ><AlertTriangle className="w-3 h-3 mr-1" />live</Button>
                 )}
 

@@ -72,8 +72,8 @@ const CONFERMA_SCADE_MS = 10_000;
 type Modo = 'live' | 'paper' | null;
 
 function ChipModo({ m, testId }: { m: Modo; testId: string }) {
-    if (m === 'live') return <span data-testid={testId} className="text-[9.5px] font-bold px-1 rounded bg-red-500/20 text-red-300">LIVE</span>;
-    if (m === 'paper') return <span data-testid={testId} className="text-[9.5px] px-1 rounded border border-white/15 text-slate-300">PAPER</span>;
+    if (m === 'live') return <span data-testid={testId} className="text-[9.5px] font-bold px-1 rounded bg-red-500/20 text-red-300 ds-v2-chip ds-v2-chip--live ds-v2-cr-stop-modo">LIVE</span>;
+    if (m === 'paper') return <span data-testid={testId} className="text-[9.5px] px-1 rounded border border-white/15 text-slate-300 ds-v2-chip ds-v2-chip--paper ds-v2-cr-stop-modo">PAPER</span>;
     return <span data-testid={testId} className="text-[9.5px] px-1 rounded text-orange-300">modo ?</span>;
 }
 
@@ -333,7 +333,7 @@ export function StopPerdita({
     return (
         <div className="flex flex-col gap-0.5" data-testid="cr-stop-perdita">
             <span className="text-[10px] uppercase tracking-wider text-white/45">Stop perdita giornaliera</span>
-            <div className="grid grid-cols-[auto_auto_auto_auto_auto] items-start gap-x-2.5 gap-y-1 text-[11px]">
+            <div className="grid grid-cols-[auto_auto_auto_auto_auto] items-start gap-x-2.5 gap-y-1 text-[11px] ds-v2-cr-stop-griglia">
                 {/* --- CONTO */}
                 <div className="contents" data-testid="cr-stop-conto"
                     title={c?.letto

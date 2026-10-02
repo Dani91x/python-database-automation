@@ -276,7 +276,7 @@ export function PosizioniChiuse({
         <Card className="glass-card border-white/10 p-0 overflow-hidden" data-testid={testId}>
             {/* IL RIEPILOGO - descrive le righe qui sotto, non tutto lo storico */}
             <div className="px-3 py-2 border-b border-white/10 flex items-baseline gap-3 flex-wrap">
-                <span className="text-[11px] uppercase tracking-wider text-white/60">Posizioni chiuse</span>
+                <span className="text-[11px] uppercase tracking-wider text-white/60 ds-v2-cr-pannello-titolo">Posizioni chiuse</span>
                 <span
                     className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-primary/15 text-primary"
                     data-testid="cr-chiuse-giornata"
@@ -424,7 +424,7 @@ export function PosizioniChiuse({
                         onChange={(e) => scegliGiorno(e.target.value)}
                         data-testid="cr-f-giorno"
                         aria-label="giornata della partita da mostrare"
-                        className="text-[10px] px-1.5 py-0.5 rounded border border-white/15 bg-white/[0.03] text-white/80"
+                        className="text-[10px] px-1.5 py-0.5 rounded border border-white/15 bg-white/[0.03] text-white/80 ds-v2-campo"
                     />
                     <Pillola attivo={false} onClick={() => scegliGiorno(addDays(giornoScelto, 1))}
                         testId="cr-f-giorno-dopo" titolo="la giornata successiva" disabilitato={eOggi}>{'\u25b6'}</Pillola>
@@ -870,7 +870,7 @@ function Pillola({ attivo, onClick, children, testId, titolo, disabilitato }: {
         <button
             type="button" onClick={onClick} aria-pressed={attivo} data-testid={testId} title={titolo}
             disabled={disabilitato}
-            className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors disabled:opacity-30 ${
+            className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors disabled:opacity-30 ds-v2-pillola ${
                 attivo
                     ? 'border-primary/60 text-primary bg-primary/10'
                     : 'border-white/15 text-white/45 hover:text-white/80'

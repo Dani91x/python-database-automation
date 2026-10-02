@@ -176,7 +176,7 @@ export function RigaFreno({
         <div className={`px-3 py-2 border-b border-white/10 ${tirato ? 'bg-red-500/10' : ''}`}
             data-testid="cr-freno">
             <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[12px] font-bold uppercase tracking-wider w-24 shrink-0">Freno</span>
+                <span className="text-[12px] font-bold uppercase tracking-wider w-24 shrink-0 ds-v2-cr-botnome">Freno</span>
 
                 <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
                     tirato ? 'bg-red-500/30 text-red-200'
@@ -223,7 +223,7 @@ export function RigaFreno({
                         onClick={() => void esegui(true)}
                         data-testid="cr-freno-tira"
                         title="ferma OGNI apertura di tutti i bot, live e paper. Le chiusure restano servite."
-                        className="h-6 px-2 text-[10px] uppercase tracking-wider bg-red-600/80 hover:bg-red-600 text-white font-bold"
+                        className="h-6 px-2 text-[10px] uppercase tracking-wider bg-red-600/80 hover:bg-red-600 text-white font-bold ds-v2-pulsante ds-v2-pulsante--sm ds-v2-pulsante--armato"
                     >{inCorso ? <Loader2 className="w-3 h-3 animate-spin" /> : <><OctagonX className="w-3 h-3 mr-1" />tira il freno</>}</Button>
                 )}
 
@@ -234,7 +234,7 @@ export function RigaFreno({
                         onClick={() => avanza(1)}
                         data-testid="cr-freno-rilascia"
                         title="rialza il freno: si conferma due volte"
-                        className="h-6 px-2 text-[10px] uppercase tracking-wider"
+                        className="h-6 px-2 text-[10px] uppercase tracking-wider ds-v2-pulsante ds-v2-pulsante--sm ds-v2-pulsante--secondario"
                     >rilascia</Button>
                 )}
 
@@ -264,7 +264,7 @@ export function RigaFreno({
                         disabled={inCorso}
                         onClick={annulla}
                         data-testid="cr-freno-annulla"
-                        className="h-6 px-2 text-[10px] uppercase tracking-wider"
+                        className="h-6 px-2 text-[10px] uppercase tracking-wider ds-v2-pulsante ds-v2-pulsante--sm ds-v2-pulsante--secondario"
                     >annulla</Button>
                 )}
             </div>

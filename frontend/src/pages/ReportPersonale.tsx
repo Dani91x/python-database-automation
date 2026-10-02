@@ -35,7 +35,7 @@ import { ManualTradeForm } from '@/components/report/ManualTradeForm';
 import { DateRangeFilter } from '@/components/report/DateRangeFilter';
 
 const SELECT_CLS =
-    'w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ' +
+    'w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ds-v2-campo ' +
     'focus:outline-none focus:border-primary/60 transition-colors';
 const LABEL_CLS = 'text-[10px] uppercase tracking-wider text-muted-foreground mb-1 block';
 
@@ -51,9 +51,9 @@ const signColor = (v: number | null | undefined) =>
 // ---- KPI card ----
 function Kpi({ label, value, color, hint }: { label: string; value: string; color?: string; hint?: string }) {
     return (
-        <Card className="glass-card border-white/10 p-4" title={hint}>
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">{label}</div>
-            <div className={`text-xl md:text-2xl font-black font-display tabular-nums ${color ?? 'text-white'}`}>{value}</div>
+        <Card className="glass-card border-white/10 p-4 ds-v2-kpi" title={hint}>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1 ds-v2-kpi-k">{label}</div>
+            <div className={`text-xl md:text-2xl font-black font-display tabular-nums ds-v2-kpi-v ${color ?? 'text-white'}`}>{value}</div>
         </Card>
     );
 }
@@ -460,8 +460,8 @@ function RiskGrid({ m }: { m: Metrics }) {
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
             {items.map(it => (
                 <div key={it.label} className="glass-card rounded-lg border border-white/10 px-3 py-2" title={it.hint}>
-                    <div className="text-[9px] uppercase tracking-wider text-muted-foreground">{it.label}</div>
-                    <div className="text-sm font-bold font-mono tabular-nums text-white">{it.value}</div>
+                    <div className="text-[9px] uppercase tracking-wider text-muted-foreground ds-v2-kpi-k">{it.label}</div>
+                    <div className="text-sm font-bold font-mono tabular-nums text-white ds-v2-rp-metrica">{it.value}</div>
                 </div>
             ))}
         </div>
@@ -578,8 +578,8 @@ export default function ReportPersonale() {
             <Helmet><title>Report Personale | Alpha Score</title></Helmet>
             <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-30 ds-v2-nascondi" />
 
-            <nav className="border-b border-white/5 bg-black/50 backdrop-blur-xl sticky ds-v2-non-sticky top-0 z-50">
-                <div className="container mx-auto px-6 h-16 flex items-center justify-between ds-v2-largo">
+            <nav className="border-b border-white/5 bg-black/50 backdrop-blur-xl sticky ds-v2-non-sticky top-0 z-50 ds-v2-navbar">
+                <div className="container mx-auto px-6 h-16 flex items-center justify-between ds-v2-largo ds-v2-navbar-dentro">
                     <div className="flex items-center gap-4">
                         <Link to="/dashboard" data-nav-legacy className="font-display font-black text-xl tracking-tighter">AI <span className="text-primary">TERMINAL</span></Link>
                         <span className="hidden md:flex items-center gap-2 text-sm text-primary font-heading font-bold ml-4">
@@ -601,7 +601,7 @@ export default function ReportPersonale() {
                 </div>
             </nav>
 
-            <main className="container mx-auto px-4 lg:px-6 py-8 max-w-7xl relative z-10 space-y-6 ds-v2-pagina-larga">
+            <main className="container mx-auto px-4 lg:px-6 py-8 max-w-7xl relative z-10 space-y-6 ds-v2-pagina-larga ds-v2-main">
                 <div className="flex items-start justify-between gap-4">
                     <div>
                         <h1 className="font-display font-black text-2xl md:text-3xl tracking-tight">
@@ -629,7 +629,7 @@ export default function ReportPersonale() {
                 <Card className="glass-card border-white/10 p-4 relative z-40 !overflow-visible">
                     <div className="flex items-center gap-2 mb-4">
                         <Filter className="w-4 h-4 text-primary" />
-                        <span className="font-heading font-bold text-sm uppercase tracking-wide">Filtri</span>
+                        <span className="font-heading font-bold text-sm uppercase tracking-wide ds-v2-scheda-titolo">Filtri</span>
                         <Button variant="ghost" size="sm" onClick={reset} className="ml-auto text-xs text-muted-foreground hover:text-white">
                             <RotateCcw className="w-3 h-3 mr-1" /> Reset
                         </Button>
@@ -671,7 +671,7 @@ export default function ReportPersonale() {
                     <Card className="glass-card border-white/10 p-4">
                         <div className="flex items-center gap-2 mb-3">
                             <Wallet className="w-4 h-4 text-primary" />
-                            <span className="font-heading font-bold text-sm uppercase tracking-wide">Cassa (depositi / prelievi)</span>
+                            <span className="font-heading font-bold text-sm uppercase tracking-wide ds-v2-scheda-titolo">Cassa (depositi / prelievi)</span>
                             <span className="text-[10px] text-muted-foreground ml-2">non incluso nell'equity curve</span>
                         </div>
                         <div className="grid grid-cols-3 gap-3">
@@ -738,7 +738,7 @@ export default function ReportPersonale() {
                         <Card className="glass-card border-white/10 p-4">
                             <div className="flex items-center gap-2 mb-3">
                                 <TrendingUp className="w-4 h-4 text-primary" />
-                                <span className="font-heading font-bold text-sm uppercase tracking-wide">Equity Curve</span>
+                                <span className="font-heading font-bold text-sm uppercase tracking-wide ds-v2-scheda-titolo">Equity Curve</span>
                             </div>
                             <ResponsiveContainer width="100%" height={260}>
                                 <LineChart data={report!.daily} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
@@ -756,7 +756,7 @@ export default function ReportPersonale() {
                         <Card className="glass-card border-white/10 p-4">
                             <div className="flex items-center gap-2 mb-3">
                                 <TrendingDown className="w-4 h-4 text-red-400" />
-                                <span className="font-heading font-bold text-sm uppercase tracking-wide">Underwater (Drawdown)</span>
+                                <span className="font-heading font-bold text-sm uppercase tracking-wide ds-v2-scheda-titolo">Underwater (Drawdown)</span>
                             </div>
                             <ResponsiveContainer width="100%" height={180}>
                                 <AreaChart data={report!.daily} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
@@ -777,14 +777,14 @@ export default function ReportPersonale() {
 
                         {/* metriche di rischio */}
                         <Card className="glass-card border-white/10 p-4">
-                            <span className="font-heading font-bold text-sm uppercase tracking-wide block mb-3">Metriche di rischio</span>
+                            <span className="font-heading font-bold text-sm uppercase tracking-wide ds-v2-scheda-titolo block mb-3">Metriche di rischio</span>
                             <RiskGrid m={m} />
                         </Card>
 
                         {/* consigli seguiti vs fuori-consiglio + heatmap */}
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                             <Card className="glass-card border-white/10 p-4">
-                                <span className="font-heading font-bold text-sm uppercase tracking-wide block mb-3">Consigli seguiti vs fuori-consiglio</span>
+                                <span className="font-heading font-bold text-sm uppercase tracking-wide ds-v2-scheda-titolo block mb-3">Consigli seguiti vs fuori-consiglio</span>
                                 {advice ? (
                                     <div className="grid grid-cols-2 gap-3">
                                         <div className="rounded-xl border border-emerald-400/30 bg-emerald-400/5 px-4 py-3">
@@ -807,7 +807,7 @@ export default function ReportPersonale() {
                             </Card>
 
                             <Card className="glass-card border-white/10 p-4">
-                                <span className="font-heading font-bold text-sm uppercase tracking-wide block mb-3">Calendario P&L giornaliero</span>
+                                <span className="font-heading font-bold text-sm uppercase tracking-wide ds-v2-scheda-titolo block mb-3">Calendario P&L giornaliero</span>
                                 <CalendarHeatmap daily={report!.daily} />
                                 <div className="flex items-center gap-3 mt-3 text-[10px] text-muted-foreground">
                                     <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-400/70" /> profitto</span>

@@ -1459,7 +1459,7 @@ export default function SafeStrategy() {
                     if (v === 'storico' && (topTab === 'calcio' || topTab === 'tennis')) setHistorySport(topTab);
                     setTopTab(v);
                 }} className="w-full">
-                    <TabsList className="sticky ds-v2-non-sticky z-30" style={{ top: navH }}>
+                    <TabsList className="sticky ds-v2-non-sticky z-30 ds-v2-schede" style={{ top: navH }}>
                         <TabsTrigger value="calcio" aria-label={`Calcio (${bySport.calcioActive.length})`}>⚽ Calcio ({bySport.calcioActive.length})</TabsTrigger>
                         <TabsTrigger value="tennis" aria-label={`Tennis (${bySport.tennisActive.length})`}>🎾 Tennis ({bySport.tennisActive.length})</TabsTrigger>
                         <TabsTrigger value="storico" aria-label="Storico">📅 Storico</TabsTrigger>
@@ -1468,7 +1468,7 @@ export default function SafeStrategy() {
                     {/* ============================== CALCIO ============================== */}
                     <TabsContent value="calcio" className="mt-3">
                         <Tabs value={calcioTab} onValueChange={setCalcioTab} className="w-full">
-                            <TabsList className="mb-3">
+                            <TabsList className="mb-3 ds-v2-segmento">
                                 <TabsTrigger value="segnali">Segnali ({bySport.calcioActive.length})</TabsTrigger>
                                 {/* il numero fra parentesi sono le OPPORTUNITÀ, non le partite:
                                     il tooltip diceva "N partite con opportunità" anche quando le
@@ -1533,7 +1533,7 @@ export default function SafeStrategy() {
                     {/* ============================== TENNIS ============================== */}
                     <TabsContent value="tennis" className="mt-3">
                         <Tabs value={tennisTab} onValueChange={setTennisTab} className="w-full">
-                            <TabsList className="mb-3">
+                            <TabsList className="mb-3 ds-v2-segmento">
                                 <TabsTrigger value="segnali">Segnali ({bySport.tennisActive.length})</TabsTrigger>
                                 <TabsTrigger
                                     value="opportunita"

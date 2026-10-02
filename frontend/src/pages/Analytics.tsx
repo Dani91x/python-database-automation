@@ -24,7 +24,7 @@ import {
 import { classificaErroreRpc, fmtOrarioRiepilogo } from '@/lib/erroreRpc';
 
 const SELECT_CLS =
-    'w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ' +
+    'w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ds-v2-campo ' +
     'focus:outline-none focus:border-primary/60 transition-colors';
 const LABEL_CLS = 'text-[10px] uppercase tracking-wider text-muted-foreground mb-1 block';
 
@@ -189,8 +189,8 @@ export default function Analytics() {
         <div className="min-h-screen bg-black text-white relative">
             <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-30 ds-v2-nascondi" />
 
-            <nav className="border-b border-white/5 bg-black/50 backdrop-blur-xl sticky ds-v2-non-sticky top-0 z-50">
-                <div className="container mx-auto px-6 h-16 flex items-center justify-between ds-v2-largo">
+            <nav className="border-b border-white/5 bg-black/50 backdrop-blur-xl sticky ds-v2-non-sticky top-0 z-50 ds-v2-navbar">
+                <div className="container mx-auto px-6 h-16 flex items-center justify-between ds-v2-largo ds-v2-navbar-dentro">
                     <div className="flex items-center gap-4">
                         <Link to="/dashboard" data-nav-legacy className="font-display font-black text-xl tracking-tighter">AI <span className="text-primary">TERMINAL</span></Link>
                         <span className="hidden md:flex items-center gap-2 text-sm text-secondary font-heading font-bold ml-4">
@@ -203,7 +203,7 @@ export default function Analytics() {
                 </div>
             </nav>
 
-            <main className="container mx-auto px-4 lg:px-6 py-8 max-w-7xl relative z-10 ds-v2-pagina-larga">
+            <main className="container mx-auto px-4 lg:px-6 py-8 max-w-7xl relative z-10 ds-v2-pagina-larga ds-v2-main">
                 <div className="mb-6">
                     <h1 className="font-display font-black text-2xl md:text-3xl tracking-tight">Centro di Controllo <span className="text-primary">Motori</span></h1>
                     <p className="text-sm text-muted-foreground mt-1">
@@ -213,30 +213,30 @@ export default function Analytics() {
                 </div>
 
                 {/* ---- TAB ---- */}
-                <div className="flex gap-2 mb-5">
+                <div className="flex gap-2 mb-5 ds-v2-schede-bottoni">
                     <Button variant={tab === 'engines' ? 'default' : 'outline'} size="sm"
                         onClick={() => setTab('engines')}
-                        className={tab === 'engines' ? 'bg-primary text-black' : 'border-white/10 text-muted-foreground hover:text-white'}>
+                        className={tab === 'engines' ? 'bg-primary text-black ds-v2-tab-bottone ds-v2-tab-bottone--attivo' : 'border-white/10 text-muted-foreground hover:text-white ds-v2-tab-bottone'}>
                         Performance Motori
                     </Button>
                     <Button variant={tab === 'decisions' ? 'default' : 'outline'} size="sm"
                         onClick={() => setTab('decisions')}
-                        className={tab === 'decisions' ? 'bg-secondary text-black' : 'border-white/10 text-muted-foreground hover:text-white'}>
+                        className={tab === 'decisions' ? 'bg-secondary text-black ds-v2-tab-bottone ds-v2-tab-bottone--attivo' : 'border-white/10 text-muted-foreground hover:text-white ds-v2-tab-bottone'}>
                         Decisioni
                     </Button>
                     <Button variant={tab === 'create' ? 'default' : 'outline'} size="sm"
                         onClick={() => setTab('create')}
-                        className={tab === 'create' ? 'bg-primary text-black' : 'border-white/10 text-muted-foreground hover:text-white'}>
+                        className={tab === 'create' ? 'bg-primary text-black ds-v2-tab-bottone ds-v2-tab-bottone--attivo' : 'border-white/10 text-muted-foreground hover:text-white ds-v2-tab-bottone'}>
                         Crea Strategia
                     </Button>
                     <Button variant={tab === 'reports' ? 'default' : 'outline'} size="sm"
                         onClick={() => setTab('reports')}
-                        className={tab === 'reports' ? 'bg-primary text-black' : 'border-white/10 text-muted-foreground hover:text-white'}>
+                        className={tab === 'reports' ? 'bg-primary text-black ds-v2-tab-bottone ds-v2-tab-bottone--attivo' : 'border-white/10 text-muted-foreground hover:text-white ds-v2-tab-bottone'}>
                         Reportistiche
                     </Button>
                     <Button variant={tab === 'backtest_auto' ? 'default' : 'outline'} size="sm"
                         onClick={() => setTab('backtest_auto')}
-                        className={tab === 'backtest_auto' ? 'bg-primary text-black' : 'border-white/10 text-muted-foreground hover:text-white'}>
+                        className={tab === 'backtest_auto' ? 'bg-primary text-black ds-v2-tab-bottone ds-v2-tab-bottone--attivo' : 'border-white/10 text-muted-foreground hover:text-white ds-v2-tab-bottone'}>
                         <FlaskConical className="w-4 h-4 mr-1" /> Backtest Automatico
                     </Button>
                 </div>
@@ -252,7 +252,7 @@ export default function Analytics() {
                 <Card className="glass-card border-white/10 p-4 md:p-5 mb-6">
                     <div className="flex items-center gap-2 mb-4">
                         <Filter className="w-4 h-4 text-primary" />
-                        <span className="font-heading font-bold text-sm uppercase tracking-wide">Filtri</span>
+                        <span className="font-heading font-bold text-sm uppercase tracking-wide ds-v2-scheda-titolo">Filtri</span>
                         <Button variant="ghost" size="sm" onClick={reset} className="ml-auto text-xs text-muted-foreground hover:text-white">
                             <RotateCcw className="w-3 h-3 mr-1" /> Reset
                         </Button>
@@ -375,7 +375,7 @@ export default function Analytics() {
                 {!loading && result && result.groups.length > 1 && (
                     <Card className="glass-card border-white/10 p-4 mb-4">
                         <div className="flex items-center justify-between mb-1">
-                            <span className="font-heading font-bold text-sm uppercase tracking-wide">Calibrazione</span>
+                            <span className="font-heading font-bold text-sm uppercase tracking-wide ds-v2-scheda-titolo">Calibrazione</span>
                             <span className="text-[10px] text-muted-foreground hidden md:inline">🟢 sottostima · 🔴 sovrastima · ⟍ perfetta · area ∝ N</span>
                         </div>
                         <CalibrationChart groups={result.groups} />

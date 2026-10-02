@@ -144,7 +144,7 @@ function CalcioBadge({ f, now }: { f: LiveFollow; now: LiveNowRow | null | undef
         const sa = now?.score_away ?? f.score_away;
         return (
             <span className="inline-flex items-center gap-1">
-                <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 text-[10px] font-black">
+                <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 text-[10px] font-black ds-v2-forma-pillola ds-v2-mw-stato">
                     LIVE {minute != null ? `${minute}'` : ''}{sh != null && sa != null ? ` · ${sh}–${sa}` : ''}
                 </span>
                 {suspended && <span className="px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 text-[10px] font-black">SOSPESO</span>}
@@ -154,7 +154,7 @@ function CalcioBadge({ f, now }: { f: LiveFollow; now: LiveNowRow | null | undef
     if (suspended) {
         return <span className="px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 text-[10px] font-black">SOSPESO</span>;
     }
-    return <span className="px-1.5 py-0.5 rounded bg-white/10 text-white/60 text-[10px] font-bold">{countdownLabel(f.open_date)}</span>;
+    return <span className="px-1.5 py-0.5 rounded bg-white/10 text-white/60 text-[10px] font-bold ds-v2-forma-pillola">{countdownLabel(f.open_date)}</span>;
 }
 
 export default function MarketWatch() {
@@ -350,7 +350,7 @@ export default function MarketWatch() {
             <Helmet><title>Market Watch | Alpha Score</title></Helmet>
 
             {/* top bar minimale */}
-            <div className="sticky ds-v2-non-sticky top-0 z-40 px-3 py-2 border-b border-white/10 bg-black/80 backdrop-blur flex items-center gap-2">
+            <div className="sticky ds-v2-non-sticky top-0 z-40 px-3 py-2 border-b border-white/10 bg-black/80 backdrop-blur flex items-center gap-2 ds-v2-barra">
                 <Link to="/segui-live" className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-white">
                     <ArrowLeft className="w-3.5 h-3.5" /> Terminal
                 </Link>
@@ -363,10 +363,10 @@ export default function MarketWatch() {
                 </span>
             </div>
 
-            <div className="p-3 space-y-4 max-w-[1400px] mx-auto">
+            <div className="p-3 space-y-4 max-w-[1400px] mx-auto ds-v2-contenitore">
                 {/* ------------------------------------------------ sezione CALCIO */}
                 <section className="space-y-2">
-                    <h2 className="text-sm font-heading font-bold text-white">⚽ Calcio</h2>
+                    <h2 className="text-sm font-heading font-bold text-white ds-v2-mw-sezione">⚽ Calcio</h2>
                     {follows == null ? (
                         <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
                             <Loader2 className="w-4 h-4 animate-spin" /> Carico gli eventi seguiti…
@@ -379,9 +379,9 @@ export default function MarketWatch() {
                         const firstMarketId = now?.state?.markets?.[0]?.market_id;
                         const cashDisabled = mode === 'off' || !firstMarketId || busyEvent != null;
                         return (
-                            <Card key={f.event_id} className="glass-card border-white/10 px-3 py-2 flex items-center gap-3 flex-wrap">
+                            <Card key={f.event_id} className="glass-card border-white/10 px-3 py-2 flex items-center gap-3 flex-wrap ds-v2-mw-riga">
                                 <div className="min-w-[220px] flex-1">
-                                    <div className="text-[12px] font-bold text-white truncate">{f.home_name} – {f.away_name}</div>
+                                    <div className="text-[12px] font-bold text-white truncate ds-v2-mw-nome">{f.home_name} – {f.away_name}</div>
                                     <div className="text-[10px] text-muted-foreground truncate">{f.league_name ?? '—'}</div>
                                 </div>
                                 <CalcioBadge f={f} now={now} />
@@ -424,7 +424,7 @@ export default function MarketWatch() {
 
                 {/* ------------------------------------------------ sezione TENNIS */}
                 <section className="space-y-2">
-                    <h2 className="text-sm font-heading font-bold text-white">🎾 Tennis</h2>
+                    <h2 className="text-sm font-heading font-bold text-white ds-v2-mw-sezione">🎾 Tennis</h2>
                     {tFollows == null ? (
                         <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
                             <Loader2 className="w-4 h-4 animate-spin" /> Carico i match tennis seguiti…
@@ -447,25 +447,25 @@ export default function MarketWatch() {
                             }).toString()}`
                             : null;
                         return (
-                            <Card key={f.event_id} className="glass-card border-white/10 px-3 py-2 flex items-center gap-3 flex-wrap">
+                            <Card key={f.event_id} className="glass-card border-white/10 px-3 py-2 flex items-center gap-3 flex-wrap ds-v2-mw-riga">
                                 <div className="min-w-[220px] flex-1">
-                                    <div className="text-[12px] font-bold text-white truncate">{f.player1_name} vs {f.player2_name}</div>
+                                    <div className="text-[12px] font-bold text-white truncate ds-v2-mw-nome">{f.player1_name} vs {f.player2_name}</div>
                                     <div className="text-[10px] text-muted-foreground truncate">{f.competition_name ?? '—'}</div>
                                 </div>
                                 {/* 26/09 (F-10): «LIVE» solo se la partita non e' finita (stato IPS
                                     'Finished' o Match Odds CLOSED); prima bastava `inplay` */}
                                 {partitaTennisFinita(score?.status, mo?.status) ? (
-                                    <span className="px-1.5 py-0.5 rounded bg-white/10 text-white/60 text-[10px] font-black"
+                                    <span className="px-1.5 py-0.5 rounded bg-white/10 text-white/60 text-[10px] font-black ds-v2-forma-pillola"
                                         data-testid="mw-tennis-finita">
                                         FINITA{score?.set_summary ? ` · ${score.set_summary}` : ''}
                                     </span>
                                 ) : inplay ? (
-                                    <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 text-[10px] font-black"
+                                    <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 text-[10px] font-black ds-v2-forma-pillola ds-v2-mw-stato"
                                         data-testid="mw-tennis-live">
                                         LIVE{score?.set_summary ? ` · ${score.set_summary}` : ''}
                                     </span>
                                 ) : (
-                                    <span className="px-1.5 py-0.5 rounded bg-white/10 text-white/60 text-[10px] font-bold">{countdownLabel(f.open_date)}</span>
+                                    <span className="px-1.5 py-0.5 rounded bg-white/10 text-white/60 text-[10px] font-bold ds-v2-forma-pillola">{countdownLabel(f.open_date)}</span>
                                 )}
                                 <div className="text-[11px] w-28 text-right" title="P&L MTM se si greenasse ORA ai prezzi correnti">
                                     <span className="text-slate-400 mr-1">MTM</span>

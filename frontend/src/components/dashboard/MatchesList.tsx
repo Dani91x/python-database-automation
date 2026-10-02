@@ -258,10 +258,10 @@ export function MatchesList({ onSelectMatch }: MatchesListProps) {
     }, [groupedMatches, selectedLeague]);
 
     return (
-        <div className="space-y-4 md:space-y-6 max-w-5xl mx-auto px-4">
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 md:mb-8">
+        <div className="space-y-4 md:space-y-6 max-w-5xl mx-auto px-4 ds-v2-tn-pagina">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 md:mb-8 ds-v2-tn-intesta">
                 <div>
-                    <h1 className="text-2xl md:text-4xl font-display font-black text-white">
+                    <h1 className="text-2xl md:text-4xl font-display font-black text-white ds-v2-titolo">
                         Partite del Giorno <span className="text-primary">.</span>
                     </h1>
                     <p className="text-muted-foreground text-sm mt-1">
@@ -374,9 +374,9 @@ export function MatchesList({ onSelectMatch }: MatchesListProps) {
                                     transition={{ delay: groupIndex * 0.05 }}
                                 >
                                     <AccordionItem value={`${group.league.id}-${groupIndex}`} className="border-none">
-                                        <AccordionTrigger className="glass-card hover:no-underline px-4 md:px-6 py-4 rounded-xl border border-white/5 hover:border-primary/20 transition-all [&[data-state=open]]:rounded-b-none [&[data-state=open]]:border-primary/30">
+                                        <AccordionTrigger className="glass-card hover:no-underline px-4 md:px-6 py-4 rounded-xl border border-white/5 hover:border-primary/20 transition-all [&[data-state=open]]:rounded-b-none [&[data-state=open]]:border-primary/30 ds-v2-gruppo">
                                             <div className="flex items-center gap-3 md:gap-4 text-left">
-                                                <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-black/40 border border-white/10 flex items-center justify-center overflow-hidden flex-shrink-0">
+                                                <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-black/40 border border-white/10 flex items-center justify-center overflow-hidden flex-shrink-0 ds-v2-gruppo-icona">
                                                     {group.league.logo ? (
                                                         <img src={group.league.logo} alt={group.league.name} loading="lazy" decoding="async" className="w-6 h-6 md:w-8 md:h-8 object-contain" />
                                                     ) : (
@@ -396,7 +396,7 @@ export function MatchesList({ onSelectMatch }: MatchesListProps) {
                                                 {group.matches.map((match) => (
                                                     <div
                                                         key={match.fixture_id}
-                                                        className="p-3 md:p-4 rounded-lg bg-white/5 border border-white/5 hover:bg-white/10 transition-colors"
+                                                        className="p-3 md:p-4 rounded-lg bg-white/5 border border-white/5 hover:bg-white/10 transition-colors ds-v2-tn-riga"
                                                     >
                                                         <div className="flex flex-col md:flex-row items-center justify-between gap-4">
 
@@ -424,24 +424,24 @@ export function MatchesList({ onSelectMatch }: MatchesListProps) {
                                                                     />
                                                                 </div>
                                                                 {/* Time - Desktop */}
-                                                                <div className="hidden md:flex items-center justify-center w-12 h-12 rounded-lg bg-black/40 border border-white/10 flex-shrink-0">
+                                                                <div className="hidden md:flex items-center justify-center w-12 h-12 rounded-lg bg-black/40 border border-white/10 flex-shrink-0 ds-v2-tn-ora">
                                                                     <span className="text-xs font-bold text-white">{match.time}</span>
                                                                 </div>
 
                                                                 {/* Teams */}
                                                                 <div className="flex-1 flex items-center justify-center gap-2 md:gap-6">
                                                                     <div className="flex items-center gap-2 md:gap-3 text-right flex-1 justify-end">
-                                                                        <span className="text-sm md:text-lg font-bold text-white">
+                                                                        <span className="text-sm md:text-lg font-bold text-white ds-v2-tn-giocatore">
                                                                             {match.home.name}
                                                                         </span>
-                                                                        <img src={match.home.logo} alt="" loading="lazy" decoding="async" className="w-6 h-6 md:w-10 md:h-10 object-contain shrink-0" />
+                                                                        <img src={match.home.logo} alt="" loading="lazy" decoding="async" className="w-6 h-6 md:w-10 md:h-10 object-contain shrink-0 ds-v2-cp-logo" />
                                                                     </div>
 
                                                                     <div className="text-muted-foreground font-display font-black text-xs md:text-sm shrink-0">VS</div>
 
                                                                     <div className="flex items-center gap-2 md:gap-3 text-left flex-1 justify-start">
-                                                                        <img src={match.away.logo} alt="" loading="lazy" decoding="async" className="w-6 h-6 md:w-10 md:h-10 object-contain shrink-0" />
-                                                                        <span className="text-sm md:text-lg font-bold text-white">
+                                                                        <img src={match.away.logo} alt="" loading="lazy" decoding="async" className="w-6 h-6 md:w-10 md:h-10 object-contain shrink-0 ds-v2-cp-logo" />
+                                                                        <span className="text-sm md:text-lg font-bold text-white ds-v2-tn-giocatore">
                                                                             {match.away.name}
                                                                         </span>
                                                                     </div>
@@ -451,7 +451,7 @@ export function MatchesList({ onSelectMatch }: MatchesListProps) {
                                                                 <Button
                                                                     size="sm"
                                                                     onClick={() => onSelectMatch(match.fixture_id)}
-                                                                    className="bg-primary text-primary-foreground font-bold hover:bg-primary/90 h-8 md:h-10 px-3 md:px-4"
+                                                                    className="bg-primary text-primary-foreground font-bold hover:bg-primary/90 h-8 md:h-10 px-3 md:px-4 ds-v2-pulsante ds-v2-pulsante--sm"
                                                                 >
                                                                     <span className="hidden sm:inline">ANALIZZA</span>
                                                                     <ArrowRight className="w-4 h-4 sm:ml-2" />

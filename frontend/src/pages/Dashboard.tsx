@@ -98,8 +98,8 @@ export default function Dashboard() {
             <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-30 ds-v2-nascondi" />
 
             {/* Navbar */}
-            <nav className="border-b border-white/5 bg-black/50 backdrop-blur-xl sticky ds-v2-non-sticky top-0 z-50" role="navigation" aria-label="Dashboard navigation">
-                <div className="container mx-auto px-6 h-16 flex items-center justify-between ds-v2-largo">
+            <nav className="border-b border-white/5 bg-black/50 backdrop-blur-xl sticky ds-v2-non-sticky top-0 z-50 ds-v2-navbar" role="navigation" aria-label="Dashboard navigation">
+                <div className="container mx-auto px-6 h-16 flex items-center justify-between ds-v2-largo ds-v2-navbar-dentro">
                     <div className="flex items-center gap-4">
                         <div className="font-display font-black text-xl tracking-tighter cursor-pointer" onClick={() => setViewMode('list')}>
                             AI <span className="text-primary">TERMINAL</span>
@@ -210,7 +210,7 @@ export default function Dashboard() {
                 </div>
             </nav>
 
-            <main className="container mx-auto px-4 lg:px-6 py-8 max-w-7xl relative z-10 w-full overflow-hidden ds-v2-pagina-larga">
+            <main className="container mx-auto px-4 lg:px-6 py-8 max-w-7xl relative z-10 w-full overflow-hidden ds-v2-pagina-larga ds-v2-main">
 
                 {viewMode === 'list' ? (
                     <MatchesList onSelectMatch={loadFixture} />

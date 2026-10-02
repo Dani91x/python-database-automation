@@ -769,7 +769,7 @@ export default function ControlRoom() {
                     (assenti dal modello di vista = nessun contesto, niente a schermo) */}
                 <OrdiniContoContext.Provider value={vm.ordiniConto ? { stato: vm.ordiniConto, nowMs: vm.nowMs } : null}>
                 <Tabs value={scheda} onValueChange={setScheda} className="min-w-0 xl:[grid-column:1] ds-v2-cr-tabs">
-                    <TabsList className="w-full justify-start flex-wrap h-auto gap-1 bg-white/[0.03] p-1">
+                    <TabsList className="w-full justify-start flex-wrap h-auto gap-1 bg-white/[0.03] p-1 ds-v2-cr-tablist">
                         <Scheda valore="pre" conta={contaPre} testId="cr-tab-pre">Pre-match</Scheda>
                         <Scheda valore="live" conta={contaLive} testId="cr-tab-live">Live</Scheda>
                         {/* W_T/P15: mai un contatore unico: partite LIVE e in prova */}
@@ -989,15 +989,15 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
     ]);
     return (
         <header
-            className={`sticky ds-v2-non-sticky top-0 z-30 border-b backdrop-blur ${inLive ? 'border-orange-500/40 bg-orange-950/30' : 'border-white/10 bg-background/80'}`}
+            className={`sticky ds-v2-non-sticky ds-v2-cr-testata top-0 z-30 border-b backdrop-blur ${inLive ? 'border-orange-500/40 bg-orange-950/30' : 'border-white/10 bg-background/80'}`}
             data-testid="cr-testata"
         >
-            <div className="container mx-auto max-w-7xl px-4 lg:px-6 py-2.5 flex flex-wrap items-center gap-x-6 gap-y-2 ds-v2-largo">
+            <div className="container mx-auto max-w-7xl px-4 lg:px-6 py-2.5 flex flex-wrap items-center gap-x-6 gap-y-2 ds-v2-largo ds-v2-cr-testata-dentro">
                 <div className="flex items-baseline gap-3">
                     <Link to="/dashboard" className="text-[11px] uppercase tracking-[0.2em] text-white/40 hover:text-white/70">
                         AI Terminal
                     </Link>
-                    <span className="font-semibold tracking-wide">CONTROL ROOM</span>
+                    <span className="font-semibold tracking-wide ds-v2-cr-nome">CONTROL ROOM</span>
                     <span className="text-xs text-white/50">{dayLabel(romeDay(new Date(vm.nowMs)))}</span>
                 </div>
 
@@ -1022,11 +1022,11 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
                     <Freni vm={vm} />
                 </div>
 
-                <div className="flex items-stretch gap-3" data-testid="cr-bots">
+                <div className="flex items-stretch gap-3 ds-v2-cr-bots" data-testid="cr-bots">
                     {vm.bots.map((b) => <ChipBot key={b.bot} b={b} nowMs={vm.nowMs} />)}
                 </div>
 
-                <div className="flex items-center gap-2 text-[11px]" data-testid="cr-feed">
+                <div className="flex items-center gap-2 text-[11px] ds-v2-cr-feed" data-testid="cr-feed">
                     <Radio className={`w-3.5 h-3.5 ${FRESCHEZZA_CLS[vm.feedFreschezza]}`} />
                     <span className="text-white/50">Quote dello scanner</span>
                     {/* T_P5 (30/09): «rest» = RIPIEGO (stream fermo), in ambra;
@@ -1157,7 +1157,7 @@ function ChipBot({ b, nowMs }: { b: StatoBot; nowMs: number }) {
     const pallino = pallinoChip({ inCorsa: b.inCorsa, muto, modalita: b.modalita });
     const agg = aggiornatoChip({ inCorsa: b.inCorsa, etaS: b.etaPushS ?? etaBattito, freschezza: b.freschezzaPush });
     return (
-        <div className="flex flex-col gap-0.5" data-testid={`cr-bot-${b.bot}`} title={descriviModalita(b)}>
+        <div className={`flex flex-col gap-0.5 ds-v2-cr-chipbot${b.modalita === 'live' ? ' ds-v2-cr-chipbot--live' : ''}`} data-testid={`cr-bot-${b.bot}`} title={descriviModalita(b)}>
             <span className={`flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide ${BOT_CLS[b.bot]}`}>
                 <Circle className={`w-2 h-2 ${PALLINO_CLS[pallino]}`} data-pallino={pallino} />
                 {BOT_LABEL[b.bot]}
@@ -1224,7 +1224,7 @@ function Scheda({ valore, conta, children, testId, evidenzia = false, contaTesto
 }) {
     return (
         <TabsTrigger value={valore} data-testid={testId}
-            className="text-[11px] uppercase tracking-wider data-[state=active]:bg-white/10">
+            className="text-[11px] uppercase tracking-wider data-[state=active]:bg-white/10 ds-v2-tab ds-v2-cr-tab">
             {children}
             {contaTesto ?? (
                 <span className={`ml-1.5 font-mono text-[10px] ${

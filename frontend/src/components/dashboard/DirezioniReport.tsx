@@ -27,7 +27,7 @@ const signPct = (r: number | null, d = 1) => (r != null && r > 0 ? '+' : '') + p
 const oddsFmt = (o: number | null) => (o == null ? '—' : o.toFixed(2));
 
 const SELECT_CLS =
-    'w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ' +
+    'w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ds-v2-campo ' +
     'focus:outline-none focus:border-primary/60 transition-colors';
 const LABEL_CLS = 'text-[10px] uppercase tracking-wider text-muted-foreground mb-1 block';
 
@@ -219,7 +219,7 @@ export default function DirezioniReport() {
             <Card className="glass-card border-white/10 p-4 md:p-5">
                 <div className="flex items-center gap-2 mb-4">
                     <Filter className="w-4 h-4 text-primary" />
-                    <span className="font-heading font-bold text-sm uppercase tracking-wide">Filtri</span>
+                    <span className="font-heading font-bold text-sm uppercase tracking-wide ds-v2-scheda-titolo">Filtri</span>
                     <Button variant="ghost" size="sm" onClick={reset} className="ml-auto text-xs text-muted-foreground hover:text-white">
                         <RotateCcw className="w-3 h-3 mr-1" /> Reset
                     </Button>
@@ -355,7 +355,7 @@ export default function DirezioniReport() {
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                         <Card className="glass-card border-white/10 p-4">
                             <div className="flex items-center justify-between mb-2">
-                                <span className="font-heading font-bold text-sm uppercase tracking-wide flex items-center gap-1.5">
+                                <span className="font-heading font-bold text-sm uppercase tracking-wide ds-v2-scheda-titolo flex items-center gap-1.5">
                                     <TrendingUp className="w-4 h-4 text-primary" /> Andamento
                                 </span>
                                 <span className="text-[10px] text-muted-foreground">━ reale · ┄ atteso</span>
@@ -365,7 +365,7 @@ export default function DirezioniReport() {
 
                         <Card className="glass-card border-white/10 p-4 overflow-x-auto">
                             <div className="flex items-center justify-between mb-3">
-                                <span className="font-heading font-bold text-sm uppercase tracking-wide">Per segnale</span>
+                                <span className="font-heading font-bold text-sm uppercase tracking-wide ds-v2-scheda-titolo">Per segnale</span>
                                 <span className="text-[10px] text-muted-foreground">🟩 ≥75 · 🟨 60 · 🟧 50 · 🟥 &lt;50</span>
                             </div>
                             <div className="min-w-[360px]">
@@ -487,7 +487,7 @@ export default function DirezioniReport() {
                     {/* ---------------- CLASSIFICA LEGHE ---------------- */}
                     <Card className="glass-card border-white/10 p-4">
                         <div className="flex items-center justify-between mb-3">
-                            <span className="font-heading font-bold text-sm uppercase tracking-wide">Classifica leghe</span>
+                            <span className="font-heading font-bold text-sm uppercase tracking-wide ds-v2-scheda-titolo">Classifica leghe</span>
                             <label className="text-[10px] text-muted-foreground flex items-center gap-1">
                                 min. direzioni
                                 <select className="bg-black/60 border border-white/10 rounded px-1.5 py-0.5 text-white" value={minN} onChange={e => setMinN(Number(e.target.value))}>

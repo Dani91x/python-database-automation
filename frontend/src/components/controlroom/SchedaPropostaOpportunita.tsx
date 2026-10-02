@@ -519,7 +519,7 @@ export function SchedaPropostaOpportunita({
             )}
 
             {/* ---- i numeri dei soldi ---- */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-white/5 mt-2 border-t border-white/5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-white/5 ds-v2-cr-tessere mt-2 border-t border-white/5">
                 <Cella etichetta="Stake previsto" valore={fmtMoney(p.size)} testId="cr-opp-stake" />
                 <Cella etichetta="Liability"
                     valore={(ap?.liability ?? p.liability) == null ? DASH : fmtMoney(ap?.liability ?? p.liability)}
@@ -544,7 +544,7 @@ export function SchedaPropostaOpportunita({
             </div>
 
             {/* ---- i numeri del modello (24/09: P del mercato e vantaggio AL PREZZO DI ADESSO) ---- */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-white/5 border-t border-white/5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-white/5 ds-v2-cr-tessere border-t border-white/5">
                 <Cella etichetta="P modello" valore={PCT(p.p_model)} testId="cr-opp-pmodel" />
                 {/* 26/09 (F-7): senza prezzo vivo la P del mercato e' 1/quota della
                     PROPOSTA, la stessa con cui i motori calcolano il vantaggio
@@ -592,11 +592,11 @@ export function SchedaPropostaOpportunita({
             )}
 
             {/* ---- le due azioni ---- */}
-            <div className="grid grid-cols-2 gap-px bg-white/5 border-t border-white/5">
+            <div className="grid grid-cols-2 gap-px bg-white/5 border-t border-white/5 ds-v2-cr-azioni">
                 {armato ? (
                     <Button
                         onClick={() => void piazza()} disabled={inCorso}
-                        className="rounded-none h-10 bg-orange-500 text-black hover:bg-orange-400 font-bold uppercase tracking-wider text-[12px]"
+                        className="rounded-none h-10 bg-orange-500 text-black hover:bg-orange-400 font-bold uppercase tracking-wider text-[12px] ds-v2-cr-azione ds-v2-pulsante--armato"
                         data-testid="cr-opp-conferma-live"
                     >
                         {inCorso ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Confermo: soldi veri</>}
@@ -605,7 +605,7 @@ export function SchedaPropostaOpportunita({
                     <Button
                         onClick={() => (live ? setArmato(true) : void piazza())}
                         disabled={inCorso}
-                        className="rounded-none h-10 bg-emerald-600/80 text-white hover:bg-emerald-600 font-bold uppercase tracking-wider text-[12px] disabled:opacity-40"
+                        className="rounded-none h-10 bg-emerald-600/80 text-white hover:bg-emerald-600 font-bold uppercase tracking-wider text-[12px] ds-v2-cr-azione ds-v2-cr-azione--primaria disabled:opacity-40"
                         data-testid="cr-opp-piazza"
                         title={avvisi.length ? `attenzione: ${avvisi.join(' · ')}` : 'invia l’ordine di apertura'}
                     >
@@ -614,7 +614,7 @@ export function SchedaPropostaOpportunita({
                 )}
                 <Button
                     variant="ghost" onClick={() => void rifiuta()} disabled={inCorso}
-                    className="rounded-none h-10 text-white/60 hover:text-white uppercase tracking-wider text-[12px]"
+                    className="rounded-none h-10 text-white/60 hover:text-white uppercase tracking-wider text-[12px] ds-v2-cr-azione ds-v2-pulsante--secondario"
                     data-testid="cr-opp-rifiuta"
                 >
                     Rifiuta

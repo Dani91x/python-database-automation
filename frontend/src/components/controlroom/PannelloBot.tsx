@@ -64,6 +64,16 @@ function statoTesto(stato: string): string {
     return stato === 'ignoto' ? 'stato non letto' : stato;
 }
 
+// redesign v2: la stessa semantica di STATO_CLS resa come pillola (solo col guscio acceso)
+const STATO_V2: Record<string, string> = {
+    running: 'ds-v2-chip--paper',
+    stopping: 'ds-v2-chip--attesa',
+    stopped: 'ds-v2-chip--fermo',
+    idle: 'ds-v2-chip--fermo',
+    error: 'ds-v2-chip--errore',
+    ignoto: 'ds-v2-chip--attesa',
+};
+
 const STATO_CLS: Record<string, string> = {
     running: 'text-emerald-400',
     stopping: 'text-amber-300',
@@ -346,7 +356,7 @@ export function PannelloBot({
     return (
         <Card className="glass-card border-white/10 p-0 overflow-hidden" data-testid={testId}>
             <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between gap-2">
-                <span className="text-[11px] uppercase tracking-wider text-white/60"
+                <span className="text-[11px] uppercase tracking-wider text-white/60 ds-v2-cr-pannello-titolo"
                     data-testid={`${testId}-titolo`}>{titolo}</span>
                 <div className="flex items-center gap-2">
                     {inLive.length > 0 && (
@@ -363,7 +373,7 @@ export function PannelloBot({
                         title={accesi.length === 0
                             ? 'nessun bot in esecuzione'
                             : 'ferma le aperture di tutti i bot. Non chiude nessuna posizione.'}
-                        className="h-6 px-2 text-[10px] uppercase tracking-wider border-red-400/40 text-red-300 hover:bg-red-500/15"
+                        className="h-6 px-2 text-[10px] uppercase tracking-wider border-red-400/40 text-red-300 hover:bg-red-500/15 ds-v2-pulsante ds-v2-pulsante--sm ds-v2-pulsante--pericolo"
                     >
                         {inCorso === 'tutti'
                             ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" />fermo tutti…</>
@@ -585,20 +595,20 @@ function RigaBot({
     return (
         <div className="px-3 py-2" data-testid={`cr-bot-riga-${r.id}`}>
             <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[12px] font-bold uppercase tracking-wider w-24 shrink-0"
+                <span className="text-[12px] font-bold uppercase tracking-wider w-24 shrink-0 ds-v2-cr-botnome"
                     title={r.descrizione}>{r.etichetta}</span>
 
-                <span className={`text-[11px] ${STATO_CLS[r.stato] ?? 'text-white/40'}`}
+                <span className={`text-[11px] ${STATO_CLS[r.stato] ?? 'text-white/40'} ds-v2-chip ${STATO_V2[r.stato] ?? 'ds-v2-chip--fermo'}`}
                     data-testid={`cr-bot-stato-${r.id}`}>
                     {statoTesto(r.stato)}
                 </span>
 
                 {r.modalita == null ? (
-                    <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-400/15 text-amber-300"
+                    <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-400/15 text-amber-300 ds-v2-chip ds-v2-chip--attesa"
                         title="il servizio non dichiara la modalità">modalità n/d</span>
                 ) : (
                     <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
-                        live ? 'bg-red-500/20 text-red-300' : 'bg-white/10 text-white/45'
+                        live ? 'bg-red-500/20 text-red-300 ds-v2-chip ds-v2-chip--live' : 'bg-white/10 text-white/45 ds-v2-chip'
                     }`} data-testid={`cr-bot-modalita-${r.id}`}>
                         {live ? 'soldi veri' : 'prova'}
                     </span>
@@ -793,7 +803,7 @@ function RigaBot({
                             title={r.stopFermaSoloAperture
                                 ? 'ferma le APERTURE. Le posizioni già aperte restano sorvegliate: coperture, green-up, cash out e regolamento continuano'
                                 : 'ferma il bot'}
-                            className="h-6 px-2 text-[10px] uppercase tracking-wider border-red-400/40 text-red-300 hover:bg-red-500/15"
+                            className="h-6 px-2 text-[10px] uppercase tracking-wider border-red-400/40 text-red-300 hover:bg-red-500/15 ds-v2-pulsante ds-v2-pulsante--sm ds-v2-pulsante--pericolo"
                         >{mio ? <Loader2 className="w-3 h-3 animate-spin" /> : <><Square className="w-3 h-3 mr-1" />ferma</>}</Button>
 
                         {r.stopFermaSoloAperture && (
@@ -817,7 +827,7 @@ function RigaBot({
                                     disabled={occupato}
                                     onClick={() => void esegui(() => comandi.cambiaModalita(r.id, 'paper'), { acceso: true, modalita: 'paper' })}
                                     data-testid={`cr-a-paper-${r.id}`}
-                                    className="h-6 px-2 text-[10px]"
+                                    className="h-6 px-2 text-[10px] ds-v2-pulsante ds-v2-pulsante--sm ds-v2-pulsante--secondario"
                                     title="torna a operare in prova: nessun ordine reale"
                                 >passa a prova</Button>
                             ) : armato ? (
@@ -827,7 +837,7 @@ function RigaBot({
                                     title={troppoPresto ? 'attendi un istante: sono soldi veri' : undefined}
                                     onClick={() => void esegui(() => comandi.cambiaModalita(r.id, 'live'), { acceso: true, modalita: 'live' })}
                                     data-testid={`cr-conferma-live-${r.id}`}
-                                    className="h-6 px-2 text-[10px] uppercase tracking-wider bg-red-600/80 hover:bg-red-600 text-white font-bold"
+                                    className="h-6 px-2 text-[10px] uppercase tracking-wider bg-red-600/80 hover:bg-red-600 text-white font-bold ds-v2-pulsante ds-v2-pulsante--sm ds-v2-pulsante--armato"
                                 >confermi? sono soldi veri</Button>
                             ) : (
                                 <Button
@@ -835,7 +845,7 @@ function RigaBot({
                                     disabled={occupato}
                                     onClick={() => setArmatoDa(Date.now())}
                                     data-testid={`cr-a-live-${r.id}`}
-                                    className="h-6 px-2 text-[10px] text-red-300/80 hover:text-red-300"
+                                    className="h-6 px-2 text-[10px] text-red-300/80 hover:text-red-300 ds-v2-pulsante ds-v2-pulsante--sm ds-v2-cr-verso-live"
                                 >passa a soldi veri</Button>
                             )
                         )}
@@ -853,7 +863,7 @@ function RigaBot({
                             disabled={occupato}
                             onClick={() => void esegui(() => comandi.accendi(r.id, 'paper'), { acceso: true, modalita: 'paper' })}
                             data-testid={`cr-avvia-paper-${r.id}`}
-                            className="h-6 px-2 text-[10px] uppercase tracking-wider"
+                            className="h-6 px-2 text-[10px] uppercase tracking-wider ds-v2-pulsante ds-v2-pulsante--sm ds-v2-pulsante--secondario"
                         ><Power className="w-3 h-3 mr-1" />avvia in prova</Button>
 
                         {armato ? (
@@ -863,7 +873,7 @@ function RigaBot({
                                 title={troppoPresto ? 'attendi un istante: sono ordini reali' : undefined}
                                 onClick={() => void esegui(() => comandi.accendi(r.id, 'live'), { acceso: true, modalita: 'live' })}
                                 data-testid={`cr-conferma-avvio-live-${r.id}`}
-                                className="h-6 px-2 text-[10px] uppercase tracking-wider bg-red-600/80 hover:bg-red-600 text-white font-bold"
+                                className="h-6 px-2 text-[10px] uppercase tracking-wider bg-red-600/80 hover:bg-red-600 text-white font-bold ds-v2-pulsante ds-v2-pulsante--sm ds-v2-pulsante--armato"
                             >confermi? ordini reali su Betfair</Button>
                         ) : (
                             <Button
@@ -871,7 +881,7 @@ function RigaBot({
                                 disabled={occupato}
                                 onClick={() => setArmatoDa(Date.now())}
                                 data-testid={`cr-avvia-live-${r.id}`}
-                                className="h-6 px-2 text-[10px] uppercase tracking-wider border-red-400/40 text-red-300 hover:bg-red-500/15"
+                                className="h-6 px-2 text-[10px] uppercase tracking-wider border-red-400/40 text-red-300 hover:bg-red-500/15 ds-v2-pulsante ds-v2-pulsante--sm ds-v2-pulsante--pericolo"
                             ><AlertTriangle className="w-3 h-3 mr-1" />avvia con soldi veri</Button>
                         )}
                     </>
@@ -953,7 +963,7 @@ function Importo({ campo, id, occupato, salva }: {
                     disabled={occupato}
                     onClick={() => void salva(scritto).then(() => setBozza(''))}
                     data-testid={`${idCampo}-salva`}
-                    className="h-6 px-2 text-[10px]"
+                    className="h-6 px-2 text-[10px] ds-v2-pulsante ds-v2-pulsante--sm ds-v2-pulsante--secondario"
                 >salva</Button>
             )}
             {/* un campo che non si può salvare DICE PERCHÉ, invece di restare

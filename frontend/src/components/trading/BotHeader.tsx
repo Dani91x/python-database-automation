@@ -148,21 +148,21 @@ export function BotHeader({
     return (
         <nav
             ref={ref}
-            className="border-b border-white/5 bg-black/60 backdrop-blur-xl sticky ds-v2-non-sticky top-0 z-50"
+            className="border-b border-white/5 bg-black/60 backdrop-blur-xl sticky ds-v2-non-sticky top-0 z-50 ds-v2-botheader"
             data-testid="bot-header"
             data-bot={bot}
         >
-            <div className="container mx-auto px-4 lg:px-6 py-2 flex items-center justify-between gap-3 flex-wrap ds-v2-largo">
+            <div className="container mx-auto px-4 lg:px-6 py-2 flex items-center justify-between gap-3 flex-wrap ds-v2-largo ds-v2-botheader-dentro">
                 <div className="flex items-center gap-3 flex-wrap">
                     <Link to="/select-sport" data-nav-legacy className="font-display font-black text-lg tracking-tighter">
                         AI <span className="text-primary">TERMINAL</span>
                     </Link>
-                    <span className={`flex items-center gap-2 text-sm font-heading font-bold ${id.accent}`} data-testid="bot-name">
+                    <span className={`flex items-center gap-2 text-sm font-heading font-bold ds-v2-botheader-nome ${id.accent}`} data-testid="bot-name">
                         <span aria-hidden>{id.symbol}</span><span>{id.name}</span>
                     </span>
                     <Badge
                         variant="outline"
-                        className={meta.cls}
+                        className={`${meta.cls} ds-v2-forma-pillola`}
                         data-testid={statusTestId ?? 'bot-status'}
                         data-stale={meta.stale ? 'true' : undefined}
                         title={meta.title}

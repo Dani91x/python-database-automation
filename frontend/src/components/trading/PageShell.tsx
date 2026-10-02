@@ -17,7 +17,7 @@ export function PageShell({ title, header, children, footer }: {
     footer?: ReactNode;
 }) {
     return (
-        <div className="min-h-screen bg-background text-foreground relative pb-16" data-testid="page-shell">
+        <div className="min-h-screen bg-background text-foreground relative pb-16 ds-v2-pageshell" data-testid="page-shell">
             <Helmet><title>{title}</title></Helmet>
             <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-30 ds-v2-nascondi" />
             {header}

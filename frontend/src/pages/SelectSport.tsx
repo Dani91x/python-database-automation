@@ -98,8 +98,8 @@ export default function SelectSport() {
             <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-30 ds-v2-nascondi" />
 
             {/* Minimal top bar */}
-            <nav className="border-b border-white/5 bg-black/50 backdrop-blur-xl sticky ds-v2-non-sticky top-0 z-50">
-                <div className="container mx-auto px-6 h-16 flex items-center justify-between ds-v2-largo">
+            <nav className="border-b border-white/5 bg-black/50 backdrop-blur-xl sticky ds-v2-non-sticky top-0 z-50 ds-v2-navbar">
+                <div className="container mx-auto px-6 h-16 flex items-center justify-between ds-v2-largo ds-v2-navbar-dentro">
                     <div className="font-display font-black text-xl tracking-tighter">
                         AI <span className="text-primary">TERMINAL</span>
                     </div>
@@ -131,22 +131,22 @@ export default function SelectSport() {
                 </div>
             </nav>
 
-            <main className="flex-1 container mx-auto px-4 lg:px-6 relative z-10 flex flex-col items-center justify-center py-16">
+            <main className="flex-1 container mx-auto px-4 lg:px-6 relative z-10 flex flex-col items-center justify-center py-16 ds-v2-ss-main">
                 <motion.div
                     initial={{ opacity: 0, y: 12 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.5 }}
-                    className="text-center mb-12"
+                    className="text-center mb-12 ds-v2-ss-intesta"
                 >
-                    <h1 className="text-3xl md:text-5xl font-display font-black tracking-tight text-white">
+                    <h1 className="text-3xl md:text-5xl font-display font-black tracking-tight text-white ds-v2-titolo">
                         Scegli lo <span className="text-primary">sport</span>
                     </h1>
-                    <p className="mt-3 text-sm md:text-base text-muted-foreground font-sans">
+                    <p className="mt-3 text-sm md:text-base text-muted-foreground font-sans ds-v2-ss-sotto">
                         Seleziona il terminale operativo su cui vuoi lavorare.
                     </p>
                 </motion.div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6 md:gap-8 w-full max-w-7xl">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6 md:gap-8 w-full max-w-7xl ds-v2-ss-griglia">
                     {CHOICES.map((c, i) => (
                         <motion.button
                             key={c.key}
@@ -159,7 +159,7 @@ export default function SelectSport() {
                             whileHover={c.available ? { y: -6 } : undefined}
                             whileTap={c.available ? { scale: 0.98 } : undefined}
                             className={[
-                                'group relative overflow-hidden rounded-2xl glass-card animated-border p-8 md:p-10 text-left',
+                                'group relative overflow-hidden rounded-2xl glass-card animated-border p-8 md:p-10 text-left ds-v2-ss-carta',
                                 'flex flex-col items-start gap-4 min-h-[240px] transition-all',
                                 c.available ? 'cursor-pointer hover:border-white/20' : 'opacity-40 cursor-not-allowed',
                                 ACCENT[c.accent].glow,
@@ -168,7 +168,7 @@ export default function SelectSport() {
                         >
                             <div
                                 className={[
-                                    'w-20 h-20 rounded-2xl flex items-center justify-center text-5xl',
+                                    'w-20 h-20 rounded-2xl flex items-center justify-center text-5xl ds-v2-ss-icona',
                                     'bg-black/40 border',
                                     ACCENT[c.accent].border,
                                 ].join(' ')}
@@ -180,18 +180,18 @@ export default function SelectSport() {
                             <div className="flex-1">
                                 <h2
                                     className={[
-                                        'font-display font-black text-3xl md:text-4xl tracking-tight',
+                                        'font-display font-black text-3xl md:text-4xl tracking-tight ds-v2-ss-titolo',
                                         ACCENT[c.accent].text,
                                     ].join(' ')}
                                 >
                                     {c.title}
                                 </h2>
-                                <p className="mt-2 text-sm text-muted-foreground font-sans">{c.subtitle}</p>
+                                <p className="mt-2 text-sm text-muted-foreground font-sans ds-v2-ss-sotto">{c.subtitle}</p>
                             </div>
 
                             <span
                                 className={[
-                                    'inline-flex items-center gap-2 text-sm font-heading font-bold uppercase tracking-wide',
+                                    'inline-flex items-center gap-2 text-sm font-heading font-bold uppercase tracking-wide ds-v2-ss-entra',
                                     ACCENT[c.accent].text,
                                 ].join(' ')}
                             >
@@ -203,7 +203,7 @@ export default function SelectSport() {
                 </div>
             </main>
 
-            <footer className="border-t border-white/5 py-6 text-center text-xs text-muted-foreground relative z-10">
+            <footer className="border-t border-white/5 py-6 text-center text-xs text-muted-foreground relative z-10 ds-v2-ss-piede">
                 <p>&copy; {new Date().getFullYear()} Alpha Score AI. All rights reserved.</p>
             </footer>
         </div>

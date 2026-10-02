@@ -24,7 +24,7 @@ export function MarchioSoldi({
             data-testid={testId ?? 'marchio-soldi'}
             data-fonte={fonte}
             className={[
-                'inline-flex items-center gap-1 rounded border px-1 py-0 font-heading',
+                'inline-flex items-center gap-1 rounded border px-1 py-0 font-heading ds-v2-marchio',
                 'text-[9px] font-medium uppercase tracking-wide whitespace-nowrap',
                 m.cls,
                 className,

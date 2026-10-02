@@ -76,7 +76,7 @@ export default function MultiLadder() {
             <Helmet><title>Multi-ladder</title></Helmet>
 
             {/* top bar */}
-            <div className="sticky ds-v2-non-sticky top-0 z-40 px-3 py-2 border-b border-white/10 bg-black/80 backdrop-blur flex items-center gap-2 flex-wrap">
+            <div className="sticky ds-v2-non-sticky top-0 z-40 px-3 py-2 border-b border-white/10 bg-black/80 backdrop-blur flex items-center gap-2 flex-wrap ds-v2-barra">
                 <Link
                     to="/segui-live"
                     className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-white"
