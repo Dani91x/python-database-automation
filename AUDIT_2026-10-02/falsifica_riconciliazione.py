@@ -116,8 +116,8 @@ MUTAZIONI = [
      "    equivalente_ammesso = bool(sotto_minimo_chiusura\n",
      "    equivalente_ammesso = bool(submin_fuori_canale\n"),
     ("D3-l", "perimetro: equivalente candidato anche su Risultato Esatto (coda a ogni ritento)",
-     EX_, "                               and mercato_a_due_esiti_per_tipo(market_type))",
-     "                               and True)"),
+     EX_, "                               and mercato_a_due_esiti_per_tipo(market_type)\n",
+     "                               and True\n"),
     ("D3-m", "close_trade non passa il tipo di mercato della gamba", EX_,
      "        market_type=reserve.get(\"market_type\"),\n",
      ""),
@@ -171,6 +171,10 @@ def main() -> int:
         with open(path, "rb") as f:
             originale = f.read()
         testo = originale.decode("utf-8")
+        if testo.count(vecchio) == 0 and "\r\n" in testo:
+            # copia di lavoro con fine riga CRLF (autocrlf): stessa ancora in CRLF
+            vecchio = vecchio.replace("\n", "\r\n")
+            nuovo = nuovo.replace("\n", "\r\n")
         n = testo.count(vecchio)
         if n != 1:
             out.append(f"{sigla} ANCORA NON TROVATA ({n} occorrenze) in {rel}: {difetto}")
