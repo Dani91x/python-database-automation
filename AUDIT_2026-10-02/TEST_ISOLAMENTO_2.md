@@ -2,7 +2,7 @@
 
 Ramo `test-isolamento-2`, partito da master `c0505ff` e poi portato sull'ultimo master. Si toccano solo i conftest e i test: **nessuna condotta di produzione cambiata** e nessuna funzione di produzione aggiunta.
 
-STATO AL 13:45: fatto tutto (casi c, d, e, f, falsificazione, giri d'ordine, suite intera). Manca solo la revisione del coordinatore.
+STATO AL 14:15: fatto tutto sul ramo ribasato sull'ultimo master (b90ef1a): casi c, d, e, f, falsificazione (tutto come atteso), 4 giri d'ordine e suite intera verde. Manca solo la revisione del coordinatore.
 
 ## (c) `test_audit_2026_09_11.py::test_l14_ttl_della_cache_lambda`
 
@@ -38,6 +38,7 @@ STATO AL 13:45: fatto tutto (casi c, d, e, f, falsificazione, giri d'ordine, sui
 
   Passarli a `setenv` avrebbe indebolito il test. Questi siti li protegge la guardia generale descritta sotto.
 - **Correzione alla radice.** `Betfair/conftest.py`, fixture autouse `_nessun_dotenv_a_meta_test`: durante ogni test `dotenv.load_dotenv` non fa nulla. Il riempimento a metà test veniva da `Betfair/stream/config_stream.py:16-17` alla prima importazione o a un `reload`. Gli import fatti alla raccolta restano come prima e li neutralizza già `_ambiente_neutro_canali_e_db`.
+- **Raffinamento dopo il rebase.** Il master nuovo porta `Betfair/stream/tests/test_banco_ambiente_dichiarato_2026_10_02.py`, che chiama `load_dotenv(<percorso di un .env FINTO>)` e si aspetta la funzione vera. La guardia ora neutralizza **solo** la chiamata senza percorso, cioè la ricerca automatica del `.env` vero; con un percorso esplicito delega alla funzione vera. La sonda `test_sonda_percorso_esplicito_usa_la_funzione_vera` lo prova, e quel file dà 23 passed in 133 s. I due `delenv(n)` di quel file (righe 100 e 187) provano l'ambiente VUOTO e restano come sono.
 - **Escluso dopo verifica.** `test_tennis_iscrizione_a_caldo:260` usa `IAC.ENV_INTERRUTTORE`, cioè `TENNIS_ISCRIZIONE_A_CALDO`, che non è nel `.env` e acceso di serie. Lo script di censimento l'aveva risolto per omonimia: convertirlo dava 18 test rossi, quindi è stato rimesso com'era.
 
 ## (e) Quarto caso gemello, trovato lungo la strada
@@ -79,23 +80,24 @@ A file ripristinati tutto torna verde, con lo sha256 verificato. Le sonde contro
 | Batch dei 32 file + l14 (prima: 1 failed, 1129 passed) | 1130 passed | 63,8 s |
 | File di test toccati | 462 passed | 52 s |
 | `Betfair/safe_strategy/tests` | 2121 passed, 3 skipped, 1 xfailed | 81 s |
-| **Suite intera `Betfair/`** | **9260 passed, 31 skipped, 1 xfailed** | 549 s |
-
-La suite intera è stata lanciata prima del caso (f): quella correzione la coprono `safe_strategy/tests` e i giri d'ordine.
+| Suite intera `Betfair/`, ramo prima del rebase e del caso (f) | 9260 passed, 31 skipped, 1 xfailed | 549 s |
+| **Suite intera `Betfair/`, ramo finale ribasato** | **9418 passed, 31 skipped, 9 xfailed, 0 failed** | 511 s |
 
 **Giri d'ordine su `safe_strategy/tests`** (plugin `ordine_test_plugin.py`), tutti con 2121 passed:
 
 | Ordine | Durata |
 |---|---|
-| inverso | 83,6 s |
-| casuale:11 | 135,9 s |
-| casuale:12 | 260,3 s |
-| casuale:13 | 245,9 s |
+| inverso | 68,7 s |
+| casuale:11 | 64,8 s |
+| casuale:12 | 72,7 s |
+| casuale:13 | 62,9 s |
+
+Sul ramo finale ribasato ogni giro dà 2122 passed, 3 skipped, 1 xfailed. Un giro precedente, prima della correzione (f), aveva dato 2 rossi in ordine inverso: da lì vengono il caso (f) e la nota sul test di velocità.
 
 ## NON VERIFICATO
 
-- La suite intera non è stata rilanciata dopo il caso (f), che tocca solo il conftest di Safe.
 - I giri casuali coprono solo `safe_strategy/tests`, non stream, tennis, mike e omega.
 - Il test di velocità del feed resta fragile per i tempi.
 - Il valore delle variabili del `.env` non è mai stato letto: si conoscono solo i nomi.
-- Su master non esiste una suite intera di riferimento lanciata da me con cui confrontare i 9260.
+- Non ho lanciato una suite intera di riferimento su master con cui confrontare i 9418.
+- Due strumenti (`safe_strategy/tools/conta_operazioni_live.py`, `storia_operazioni.py`) caricano il `.env` vero col percorso esplicito: la guardia non li ferma. Non li importa nessun test.
