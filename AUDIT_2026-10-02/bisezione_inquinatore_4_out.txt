@@ -1,0 +1,27 @@
+﻿candidati: 391 file
+  [ 391 elementi] ROSSO (665 s) :: 1 failed, 7889 passed, 31 skipped, 9 xfailed, 19 warnings in 638.19s (0:10:38)
+  [ 195 elementi] ROSSO (157 s) :: 1 failed, 4133 passed, 4 skipped, 4 warnings in 137.11s (0:02:17)
+  [  97 elementi] ROSSO (70 s) :: 1 failed, 1605 passed, 2 warnings in 62.39s (0:01:02)
+  [  48 elementi] verde (72 s) :: 979 passed, 2 warnings in 57.44s
+  [  49 elementi] ROSSO (68 s) :: 1 failed, 627 passed, 2 warnings in 46.58s
+  [  24 elementi] verde (39 s) :: 287 passed in 21.12s
+  [  25 elementi] ROSSO (59 s) :: 1 failed, 341 passed, 2 warnings in 39.65s
+  [  12 elementi] ROSSO (45 s) :: 1 failed, 184 passed, 2 warnings in 25.56s
+  [   6 elementi] verde (24 s) :: 62 passed in 7.76s
+  [   6 elementi] ROSSO (20 s) :: 1 failed, 123 passed, 2 warnings in 11.50s
+  [   3 elementi] verde (14 s) :: 58 passed in 5.52s
+  [   3 elementi] ROSSO (16 s) :: 1 failed, 66 passed, 2 warnings in 9.52s
+  [   1 elementi] verde (45 s) :: 38 passed, 2 warnings in 20.66s
+  [   2 elementi] ROSSO (24 s) :: 1 failed, 29 passed in 7.66s
+  [   1 elementi] ROSSO (16 s) :: 1 failed, 11 passed in 5.73s
+FILE inquinatore minimo: ['Betfair/mike/tests/test_mike_riga_assente_e_arresto_2026_10_02.py']
+bisezione sui 11 test del file
+  [   5 elementi] verde (7 s) :: 6 passed in 0.51s
+  [   6 elementi] ROSSO (11 s) :: 1 failed, 6 passed in 4.36s
+  [   3 elementi] verde (10 s) :: 4 passed in 3.78s
+  [   3 elementi] ROSSO (7 s) :: 1 failed, 3 passed in 1.07s
+  [   1 elementi] verde (7 s) :: 2 passed in 0.45s
+  [   2 elementi] ROSSO (7 s) :: 1 failed, 2 passed in 1.26s
+  [   1 elementi] verde (7 s) :: 2 passed in 0.48s
+  [   1 elementi] ROSSO (7 s) :: 1 failed, 1 passed in 1.01s
+TEST inquinatore minimo: ['Betfair/mike/tests/test_mike_riga_assente_e_arresto_2026_10_02.py::test_R1_main_all_arresto_chiama_l_arresto_degli_ordini']

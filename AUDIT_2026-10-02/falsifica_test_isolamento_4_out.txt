@@ -1,0 +1,7 @@
+﻿sha256 conftest (con correzione): 602b38315dfca7246c04d78383411c9b119ea450bd810d1416a80a4828139d59
+[1 con correzione] VERDE :: 2 passed in 0.41s
+sha256 conftest (correzione tolta): e477f4618cc7fe34a1b61efba8ab06acfbe82daaab0a69d16e8b80bf5588328d
+[2 correzione TOLTA] ROSSO :: 1 failed, 1 passed in 0.79s :: E           TypeError: test_db_client_is_per_thread.<locals>._mk() got an unexpected keyword argument 'options'
+sha256 conftest (rimesso): 602b38315dfca7246c04d78383411c9b119ea450bd810d1416a80a4828139d59 IDENTICO
+[3 correzione RIMESSA] VERDE :: 2 passed in 0.43s
+FALSIFICAZIONE RIUSCITA: con=verde, tolta=rossa, rimessa=verde, sha identico
