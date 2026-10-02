@@ -77,6 +77,37 @@ def _ripristina_flumine_config():
 
 
 @pytest.fixture(autouse=True)
+def _ripristina_ref_di_strategia_omega_market():
+    """02/10 (isolamento, ``AUDIT_2026-10-02/TEST_ISOLAMENTO.md``):
+    ``omega_market.CUSTOMER_STRATEGY_REF`` e' una costante di MODULO che Mike
+    RILEGA a ``"mike"`` scrivendoci sopra direttamente
+    (``Betfair/mike/service.py:133``, ``_RealMarket._bind_strategy_ref``,
+    chiamata da place/cancel/list_current_orders/list_cleared_orders dello
+    sportello di Mike). In produzione Mike e' un processo a se' e non serve
+    ripristinarla; in una sessione pytest resta ``"mike"`` per tutti i test
+    dopo. Riprodotto: ``Betfair/mike/tests/test_mike_p4_ordini_2026_09_29.py::
+    test_rilettura_alla_riapertura_con_lo_sportello_vero`` (e
+    ``test_sospensione_e_riapertura_in_live_dice_cancellata_da_betfair``) prima
+    di ``Betfair/omega/tests/test_ref_strategia_per_attore_r1_2026_09_24.py::
+    test_omega_piazza_con_omega_come_prima`` -> Omega piazza con ``"mike"``.
+
+    Si ripristina dopo ogni test il valore che aveva prima (o, se il modulo e'
+    stato importato durante il test, il ref di Omega fissato all'import,
+    ``omega_market._REF_OMEGA``). Non importa il modulo se nessuno l'ha gia'
+    importato."""
+    _nome = "Betfair.omega.omega_market"
+    _om = sys.modules.get(_nome)
+    _prima = getattr(_om, "CUSTOMER_STRATEGY_REF", None) if _om is not None else None
+    yield
+    _om = sys.modules.get(_nome)
+    if _om is None:
+        return
+    _valore = _prima if _prima is not None else getattr(_om, "_REF_OMEGA", None)
+    if _valore is not None:
+        _om.CUSTOMER_STRATEGY_REF = _valore
+
+
+@pytest.fixture(autouse=True)
 def _kill_switch_del_db_senza_rete(monkeypatch):
     """O1 (24/09): ``controls.motivo_kill_switch`` legge anche
     ``betfair_live_settings`` (RPC, cache 2 s). Nei test la rete non c'e'
