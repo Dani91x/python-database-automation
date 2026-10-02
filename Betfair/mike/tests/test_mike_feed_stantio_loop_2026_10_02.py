@@ -207,3 +207,50 @@ def test_tenere_non_consuma_aggiornamenti_ne_tentativi():
     assert out.actions == [] and out.state == "PRE_OPEN" and out.updates == {}
     # col feed fresco la decisione passa intatta
     assert E._tieni_a_feed_stantio(ctx, d, _snap(fresco=True, now=NOW.timestamp())) is d
+
+
+# ---------------------------------------------------------------------------
+# 4 - i casi SIMMETRICI in gioco: copertura (LIVE_UNCOVERED -> LIVE_COVER_PENDING)
+#     e chiusura manuale (-> LIVE_CLOSING). Stesso giro del servizio: la gamba
+#     nasce, e' respinta per feed stantio, il rifiuto va nel ctx.
+# ---------------------------------------------------------------------------
+def _foto_in_gioco(*, fresco: bool, dt: float = 0.0) -> E.Snapshot:
+    from dataclasses import replace
+
+    from Betfair.mike.tests.test_mike_p5_banco_2026_09_29 import foto
+    s = foto()
+    return replace(s, now=s.now + dt, feed_fresh=fresco, order_fresh=fresco)
+
+
+def _giri_stantii(ctx: E.MatchCtx, p: Dict[str, Any], n: int = N_GIRI_STANTII):
+    proposte, motivi = [], []
+    for i in range(n):
+        snap = _foto_in_gioco(fresco=False, dt=float(i))
+        d = E.decide(ctx, snap, p)
+        proposte += [(a.role, a.side, a.size, a.price) for a in d.actions if a.kind == "place"]
+        motivi.append(d.reason)
+        _respingi_come_il_servizio(ctx, d, snap.now)
+    return proposte, motivi
+
+
+def test_copertura_in_gioco_a_feed_stantio_non_si_ripropone():
+    from Betfair.mike.tests.test_mike_p5_banco_2026_09_29 import ingresso, params
+    p = params()
+    ctx = E.MatchCtx(state="LIVE_UNCOVERED", legs=[ingresso()], cover_forced=True,
+                     live_since=_foto_in_gioco(fresco=True).now - 600)
+    proposte, motivi = _giri_stantii(ctx, p)
+    assert len(proposte) == 1 and proposte[0][0] == "over_cover", (proposte, motivi[:3])
+    assert "feed stantio" in motivi[-1], motivi[-1]
+    d = E.decide(ctx, _foto_in_gioco(fresco=True, dt=100.0), p)
+    assert [a.role for a in d.actions if a.kind == "place"] == ["over_cover"], d.reason
+
+
+def test_chiusura_manuale_in_gioco_a_feed_stantio_non_si_ripropone():
+    from Betfair.mike.tests.test_mike_p5_banco_2026_09_29 import ingresso, params
+    p = params()
+    ctx = E.MatchCtx(state="LIVE_UNCOVERED", legs=[ingresso()], flatten_pending=True)
+    proposte, motivi = _giri_stantii(ctx, p)
+    assert len(proposte) == 1 and proposte[0][0] == "manual_close", (proposte, motivi[:3])
+    assert "feed stantio" in motivi[-1], motivi[-1]
+    d = E.decide(ctx, _foto_in_gioco(fresco=True, dt=100.0), p)
+    assert [a.role for a in d.actions if a.kind == "place"] == ["manual_close"], d.reason
