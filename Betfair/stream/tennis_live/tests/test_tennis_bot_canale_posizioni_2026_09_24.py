@@ -350,7 +350,7 @@ def test_runner_assente_il_client_riprova_senza_sollevare():
 
 def test_linoltro_parte_solo_con_linterruttore_e_il_canale(monkeypatch):
     CBT._INOLTRO = None
-    monkeypatch.delenv(CB.ENV_TENNIS_BOT, raising=False)
+    monkeypatch.setenv(CB.ENV_TENNIS_BOT, "0")
     assert CBT.avvia_inoltro_nel_ponte() is None
     monkeypatch.setenv(CB.ENV_TENNIS_BOT, "1")
     monkeypatch.setattr("Betfair.stream.local_channel.get_channel", lambda: None)

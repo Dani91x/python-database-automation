@@ -38,7 +38,7 @@ def _punteggi_canale_neutro(monkeypatch):
     ``PUNTEGGI_CANALE`` REALE nell'ambiente farebbe riusare il client
     condiviso del feed unico al posto di quello che ``ambiente`` costruisce
     e osserva (``client.svegliate``)."""
-    monkeypatch.delenv(SF.ENV_PUNTEGGI_CANALE, raising=False)
+    monkeypatch.setenv(SF.ENV_PUNTEGGI_CANALE, "0")
     SF.azzera_lettore_canale()
     yield
     SF.azzera_lettore_canale()
@@ -188,7 +188,7 @@ class _DbPending:
 
 
 def test_poll_flumine_pending_annota_le_pending(monkeypatch):
-    monkeypatch.delenv("ESITI_ORDINI_CANALE", raising=False)
+    monkeypatch.setenv("ESITI_ORDINI_CANALE", "0")
     S._CACHE_POSIZIONI_VIVE.clear()
     db = _DbPending([_trade("P9", "pending", 9)])
     S.poll_flumine_pending(db=db, params={}, now=datetime.now(timezone.utc))

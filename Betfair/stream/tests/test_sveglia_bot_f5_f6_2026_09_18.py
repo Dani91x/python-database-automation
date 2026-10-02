@@ -95,8 +95,8 @@ def test_a_interruttore_spento_non_parte_nessun_thread_e_nessun_client(
     """La spia CONTA, non solleva: ``_avvia_sveglia`` inghiotte le eccezioni (e
     deve farlo), quindi un finto esplosivo sarebbe un test che non sa diventare
     rosso - il difetto 29 del catalogo."""
-    monkeypatch.delenv(SV.ENV_OMEGA_SVEGLIA, raising=False)
-    monkeypatch.delenv(SV.ENV_MIKE_SVEGLIA, raising=False)
+    monkeypatch.setenv(SV.ENV_OMEGA_SVEGLIA, "0")
+    monkeypatch.setenv(SV.ENV_MIKE_SVEGLIA, "0")
     costruiti: list = []
 
     class _AscoltoFinto:
@@ -122,7 +122,7 @@ def test_ponte_tennis_spento_non_aggancia_niente(monkeypatch):
     farlo), quindi un finto esplosivo qui sarebbe un test che non sa diventare
     rosso. Si conta invece che cosa e' stato toccato.
     """
-    monkeypatch.delenv(SV.ENV_TENNIS_SVEGLIA, raising=False)
+    monkeypatch.setenv(SV.ENV_TENNIS_SVEGLIA, "0")
     toccato: list[str] = []
 
     class _CanaleConSveglia:

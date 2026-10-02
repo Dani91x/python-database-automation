@@ -72,8 +72,8 @@ def _riga(eid: str, minute: int, odds_ts_ms: int = 1) -> dict:
 def _pulito(monkeypatch):
     """Interruttori spenti, lettore del feed unico azzerato, client di Omega
     azzerato: nessuno stato di un test passa al successivo."""
-    monkeypatch.delenv(ENV_OMEGA, raising=False)
-    monkeypatch.delenv(ENV_FEED, raising=False)
+    monkeypatch.setenv(ENV_OMEGA, "0")
+    monkeypatch.setenv(ENV_FEED, "0")
     SF.azzera_lettore_canale()
     S._CLIENT_SCAN.update({"client": None, "cache": None, "condiviso": False})
     monkeypatch.setattr(CS, "ClientScan", _ClientSenzaRete)

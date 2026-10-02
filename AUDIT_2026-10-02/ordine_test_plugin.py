@@ -23,6 +23,13 @@ def pytest_collection_modifyitems(session, config, items):
         items.reverse()
     elif modo.startswith("casuale:"):
         random.Random(int(modo.split(":", 1)[1])).shuffle(items)
+    elif modo.startswith("elenco:"):
+        # solo i test elencati nel file (un nodeid per riga), in QUELL'ordine:
+        # serve alla bisezione degli inquinatori
+        with open(modo.split(":", 1)[1], encoding="utf-8") as fh:
+            ordine = [r.strip() for r in fh if r.strip()]
+        per_id = {it.nodeid: it for it in items}
+        items[:] = [per_id[n] for n in ordine if n in per_id]
     else:
         raise ValueError(f"ORDINE_TEST sconosciuto: {modo!r}")
 

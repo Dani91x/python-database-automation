@@ -1,0 +1,43 @@
+falsifica_test_isolamento_2 - 2026-10-02 13:48:42
+interprete: C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Scripts\python.exe
+
+== 0) CON LE CORREZIONI
+  [OK ] (c) greenup Omega poi l14: atteso VERDE, ottenuto VERDE -> 22 passed in 11.19s (14.3s)
+  [OK ] (c) l14 da solo: atteso VERDE, ottenuto VERDE -> 1 passed in 3.80s (6.3s)
+  [OK ] (d) sonde .env (delenv resta assente / '0' resta '0'): atteso VERDE, ottenuto VERDE -> 3 passed in 0.42s (6.4s)
+  [OK ] (e) file Mike legge_canale da solo: atteso VERDE, ottenuto VERDE -> 25 passed in 0.62s (5.8s)
+  [OK ] (f) aggregati stantii poi illeggibili: atteso VERDE, ottenuto VERDE -> 2 passed in 3.81s (5.7s)
+
+== 1) MUTAZIONE C: niente svuotamento di omega_service._LAMBDA_CACHE
+        FAILED Betfair/safe_strategy/tests/test_audit_2026_09_11.py::test_l14_ttl_della_cache_lambda
+  [OK ] (c) greenup Omega poi l14: atteso ROSSO, ottenuto ROSSO -> 1 failed, 21 passed in 6.55s (8.7s)
+  [OK ] (c) l14 da solo: atteso VERDE, ottenuto VERDE -> 1 passed in 4.33s (6.8s)
+
+== 2) MUTAZIONE D: load_dotenv di nuovo attivo durante i test
+        FAILED Betfair/stream/tests/test_zz_sonda_dotenv_isolamento_2.py::test_sonda_delenv_resta_assente
+  [OK ] (d) sonda delenv: riaccesa dal .env: atteso ROSSO, ottenuto ROSSO -> 1 failed in 0.68s (5.5s)
+  [OK ] (d) sonda setenv '0': il criterio per sito regge anche senza guardia: atteso VERDE, ottenuto VERDE -> 1 passed in 0.31s (6.4s)
+
+== 3) MUTAZIONE E: le due corse di Mike senza azzerare l'avviso di processo
+        FAILED Betfair/mike/tests/test_mike_legge_canale_2026_09_23.py::test_1_interruttore_spento_chiamate_identiche_a_prima[None]
+  [OK ] (e) file Mike legge_canale da solo: atteso ROSSO, ottenuto ROSSO -> 1 failed, 24 passed in 1.31s (7.5s)
+
+== 3b) MUTAZIONE F: _AGG_ULTIMO_BUONO non azzerato fra i test
+        FAILED Betfair/safe_strategy/tests/test_cert_2026_09_13.py::test_aggregati_illeggibili_bloccano_i_nuovi_ingressi
+  [OK ] (f) aggregati stantii poi illeggibili: atteso ROSSO, ottenuto ROSSO -> 1 failed, 1 passed in 3.73s (5.8s)
+  [OK ] (f) illeggibili da solo: atteso VERDE, ottenuto VERDE -> 1 passed in 3.04s (5.0s)
+
+== 4) RIPRISTINATO
+  [OK ] (c) greenup Omega poi l14: atteso VERDE, ottenuto VERDE -> 22 passed in 5.78s (7.9s)
+  [OK ] (d) sonde .env: atteso VERDE, ottenuto VERDE -> 3 passed in 0.25s (5.6s)
+  [OK ] (e) file Mike legge_canale da solo: atteso VERDE, ottenuto VERDE -> 25 passed in 0.58s (5.1s)
+  [OK ] (f) aggregati stantii poi illeggibili: atteso VERDE, ottenuto VERDE -> 2 passed in 3.37s (5.3s)
+
+== 5) ORDINE: Betfair/safe_strategy/tests, inverso e 3 semi
+  [OK ] ORDINE_TEST=inverso: atteso VERDE, ottenuto VERDE -> 2122 passed, 3 skipped, 1 xfailed, 2 warnings in 66.44s (0:01:06) (68.7s)
+  [OK ] ORDINE_TEST=casuale:11: atteso VERDE, ottenuto VERDE -> 2122 passed, 3 skipped, 1 xfailed, 2 warnings in 62.14s (0:01:02) (64.8s)
+  [OK ] ORDINE_TEST=casuale:12: atteso VERDE, ottenuto VERDE -> 2122 passed, 3 skipped, 1 xfailed, 2 warnings in 70.19s (0:01:10) (72.7s)
+  [OK ] ORDINE_TEST=casuale:13: atteso VERDE, ottenuto VERDE -> 2122 passed, 3 skipped, 1 xfailed, 2 warnings in 60.63s (0:01:00) (62.9s)
+
+ripristino verificato (sha256, sonda cancellata): True
+ESITO COMPLESSIVO: TUTTO COME ATTESO
