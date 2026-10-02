@@ -1,0 +1,8 @@
+=== SUITE Betfair/ intera FINALE su master e8794ca ===
+Betfair/stream/tests/test_frammenti_tcp_2026_09_28.py::test_uscita_ordinata_chiude_tutte_le_connessioni_a_caldo
+  C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Lib\site-packages\betfairlightweight\streaming\betfairstream.py:216: DeprecationWarning: ssl.PROTOCOL_TLS is deprecated
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+9698 passed, 9 xfailed, 65 warnings in 826.93s (0:13:46)
+in 832 s
