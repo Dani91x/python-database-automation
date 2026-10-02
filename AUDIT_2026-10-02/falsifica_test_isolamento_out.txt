@@ -1,0 +1,32 @@
+falsifica_test_isolamento - 2026-10-02 11:14:54
+interprete: C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Scripts\python.exe
+
+== 0) CON LE CORREZIONI (stato del ramo)
+  [OK ] (a) inquinatore Mike poi Omega: atteso VERDE, ottenuto VERDE -> 25 passed in 3.57s (9.4s)
+  [OK ] (b) l4 da solo: atteso VERDE, ottenuto VERDE -> 1 passed, 2 warnings in 4.64s (6.8s)
+
+== 1) MUTAZIONE A: Betfair/conftest.py come su master
+        FAILED Betfair/omega/tests/test_ref_strategia_per_attore_r1_2026_09_24.py::test_omega_piazza_con_omega_come_prima
+  [OK ] (a) inquinatore Mike poi Omega: atteso ROSSO, ottenuto ROSSO -> 1 failed, 24 passed in 2.76s (7.9s)
+  [OK ] (a) Omega da solo: atteso VERDE, ottenuto VERDE -> 1 passed in 2.02s (3.5s)
+  [OK ] (b) l4 da solo (correzione B intatta): atteso VERDE, ottenuto VERDE -> 1 passed, 2 warnings in 5.52s (7.1s)
+
+== 2) MUTAZIONE B: Betfair/safe_strategy/tests/conftest.py come su master
+        FAILED Betfair/safe_strategy/tests/test_audit_2026_09_11.py::test_l4_la_guardia_combo_decide_UGUALE_in_paper_e_in_live
+  [OK ] (b) l4 da solo: atteso ROSSO, ottenuto ROSSO -> 1 failed, 2 warnings in 5.10s (7.5s)
+        FAILED Betfair/safe_strategy/tests/test_audit_2026_09_11.py::test_l4_la_guardia_combo_decide_UGUALE_in_paper_e_in_live
+  [OK ] (b) file test_audit intero: atteso ROSSO, ottenuto ROSSO -> 1 failed, 69 passed, 2 warnings in 8.31s (10.5s)
+  [OK ] (a) inquinatore poi Omega (correzione A intatta): atteso VERDE, ottenuto VERDE -> 25 passed in 2.39s (6.6s)
+
+== 3) RIPRISTINATO: di nuovo verde
+  [OK ] (a) inquinatore Mike poi Omega: atteso VERDE, ottenuto VERDE -> 25 passed in 2.44s (6.8s)
+  [OK ] (b) l4 da solo: atteso VERDE, ottenuto VERDE -> 1 passed, 2 warnings in 3.81s (5.4s)
+
+== 4) ORDINE: mike + omega/tests + test_audit Safe, inverso e 3 semi
+  [OK ] ORDINE_TEST=inverso: atteso VERDE, ottenuto VERDE -> 1920 passed, 2 skipped, 2 warnings in 54.55s (59.6s)
+  [OK ] ORDINE_TEST=casuale:1: atteso VERDE, ottenuto VERDE -> 1920 passed, 2 skipped, 2 warnings in 53.34s (57.8s)
+  [OK ] ORDINE_TEST=casuale:2: atteso VERDE, ottenuto VERDE -> 1920 passed, 2 skipped, 2 warnings in 53.71s (57.8s)
+  [OK ] ORDINE_TEST=casuale:3: atteso VERDE, ottenuto VERDE -> 1920 passed, 2 skipped, 2 warnings in 55.01s (61.1s)
+
+ripristino dei file corretti verificato per sha256: True
+ESITO COMPLESSIVO: TUTTO COME ATTESO

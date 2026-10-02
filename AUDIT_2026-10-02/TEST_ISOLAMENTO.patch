@@ -1,0 +1,409 @@
+diff --git a/AUDIT_2026-10-02/TEST_ISOLAMENTO.md b/AUDIT_2026-10-02/TEST_ISOLAMENTO.md
+new file mode 100644
+index 0000000..0c123d0
+--- /dev/null
++++ b/AUDIT_2026-10-02/TEST_ISOLAMENTO.md
+@@ -0,0 +1,119 @@
++# Isolamento di due test fragili (02/10/2026)
++
++Ramo `test-isolamento` da master `d56bb3b`. Solo conftest dei test: **nessuna
++condotta di produzione cambiata**, nessuna funzione di produzione aggiunta.
++Interprete: `.venv` del checkout principale (percorso assoluto), nessuna junction.
++
++## (a) `Betfair/omega/tests/test_ref_strategia_per_attore_r1_2026_09_24.py::test_omega_piazza_con_omega_come_prima`
++
++**Sintomo.** Rosso dopo `Betfair/mike` nella stessa sessione, verde da solo:
++`assert ['mike', 'mike'] == ['omega', 'omega']` (Omega piazza col ref di Mike).
++
++**Causa esatta.** `Betfair/mike/service.py:132-133`
++(`_RealMarket._bind_strategy_ref`) scrive direttamente
++`omega_market.CUSTOMER_STRATEGY_REF = "mike"` sulla costante di modulo
++del vero `Betfair/omega/omega_market.py` (letta a `omega_market.py:39`,
++`ref_di_strategia`). In produzione Mike è un processo separato e non deve
++ripristinarla; in pytest resta `"mike"` per tutti i test successivi, e
++nessuna fixture la rimetteva a posto. La chiamano place/cancel/
++`list_current_orders`/`list_cleared_orders` dello sportello di Mike
++(`service.py:146,164,186,194,201`).
++
++**Inquinatore minimo (trovato per bisezione file → test):**
++`Betfair/mike/tests/test_mike_p4_ordini_2026_09_29.py`, nei 6 test
++`test_rilettura_alla_riapertura_con_lo_sportello_vero[*]` (5 parametri) e
++`test_sospensione_e_riapertura_in_live_dice_cancellata_da_betfair`: passano da
++`S._real_market` → `_rileggi_ordine_appoggiato` → `list_current_orders` →
++`_bind_strategy_ref`. Ciascuno da solo, seguito dal test di Omega, lo rende rosso.
++(Gli altri 5 file di Mike che nominano `_RealMarket` non inquinano: usano finti.)
++
++**Correzione.** `Betfair/conftest.py:79-107`, nuova fixture autouse
++`_ripristina_ref_di_strategia_omega_market`: fotografa
++`omega_market.CUSTOMER_STRATEGY_REF` prima del test e la ripristina dopo (se il
++modulo è stato importato durante il test, la rimette a `omega_market._REF_OMEGA`,
++il ref di Omega fissato all'import). Non importa il modulo se nessuno l'ha
++importato (stesso schema di `_kill_switch_del_db_senza_rete`). Messa nel
++conftest di `Betfair/` e non in quello di Mike perché chiunque chiami lo
++sportello vero di Mike, da qualunque cartella, sporca la stessa costante (stesso
++criterio della fixture R-4 su `flumine.config`).
++
++## (b) `Betfair/safe_strategy/tests/test_audit_2026_09_11.py::test_l4_la_guardia_combo_decide_UGUALE_in_paper_e_in_live`
++
++**Sintomo.** Rosso da solo **e anche col solo suo file** (1 failed, 69 passed);
++verde nella cartella intera. `assert n_pap == n_liv` → `1 == 0`: in live la
++seconda gamba della combo finisce in `canale_giu:apertura_non_inviata`
++(log `canale di comando ws://127.0.0.1:47331/comando/safe non disponibile`).
++
++**Causa esatta (strumentata con una sonda temporanea, poi cancellata).**
++1. `Betfair/safe_strategy/tests/conftest.py:31-32` (master) faceva
++   `monkeypatch.delenv("SAFE_ORDINI_VIA_CANALE")` (e la variante tennis):
++   la variabile restava **assente**, annullando lo `"0"` messo da
++   `Betfair/conftest.py::_ambiente_neutro_canali_e_db`.
++2. Durante il giro live, `_esegui_combo_riservata` importa per la prima volta
++   `Betfair.stream.config_stream` (con `controls`, `risk_engine`, `ladder_canale`):
++   `Betfair/stream/config_stream.py:16-17` esegue `load_dotenv()`, che riempie
++   **solo le variabili assenti** risalendo fino al `.env` vero del checkout
++   principale, dove l'interruttore è acceso. Sonda: `porta_ordini.acceso(ENV_CANALE)`
++   = False prima di `_esegui_combo_riservata` live, True subito dopo, con 66
++   moduli nuovi importati in mezzo.
++3. Da lì `bot_service._porta_di` (`bot_service.py:868-873`) trova la porta del
++   canale accesa, senza token → fail-closed sulla gamba 2.
++Nella cartella intera `config_stream` è già stato importato da un test
++precedente (e la `setenv` del conftest di `Betfair/` ripristina l'env a fine
++test), quindi il `load_dotenv` non scatta più a metà di l4: per questo era verde.
++
++**Correzione.** `Betfair/safe_strategy/tests/conftest.py:38-39`: `delenv` →
++`setenv(..., "0")`. `"0"` è spento per costruzione (`porta_ordini.VALORI_ACCESI`)
++e `load_dotenv` (senza override) non lo tocca. Nessun test di Safe distingue
++"assente" da `"0"` (verificato con grep; i test che provano l'interruttore lo
++impostano da sé dentro il test).
++
++## Falsificazione
++`AUDIT_2026-10-02/falsifica_test_isolamento.py` (+ `_out.txt`): rimette ciascun
++conftest com'è su master (`git show master:`), pretende ROSSO, ripristina
++(sha256 verificato nel `finally`) e pretende VERDE; più le direzioni incrociate.
++Esito: **TUTTO COME ATTESO**.
++
++| Passo | Combinazione | Atteso | Ottenuto |
++|---|---|---|---|
++| 0 | inquinatore Mike → Omega | verde | 25 passed |
++| 0 | l4 da solo | verde | 1 passed |
++| A | conftest Betfair di master: inquinatore → Omega | rosso | 1 failed, 24 passed |
++| A | Omega da solo | verde | 1 passed |
++| A | l4 da solo (B intatta) | verde | 1 passed |
++| B | conftest Safe di master: l4 da solo | rosso | 1 failed |
++| B | file test_audit intero | rosso | 1 failed, 69 passed |
++| B | inquinatore → Omega (A intatta) | verde | 25 passed |
++| 3 | ripristinato: entrambe | verde | 25 passed / 1 passed |
++
++## Esecuzioni (dopo la correzione)
++| Comando | Esito | Durata |
++|---|---|---|
++| l4 da solo | 1 passed | 5,8 s |
++| Omega `test_omega_piazza...` da solo | 1 passed | 4,4 s |
++| `Betfair/mike` + file ref Omega (la combinazione rossa) | **1431 passed** (prima: 1 failed, 1430 passed) | 46,5 s |
++| `test_audit_2026_09_11.py` intero | **70 passed** (prima: 1 failed, 69 passed) | 11,5 s |
++| `Betfair/omega/tests` | 434 passed, 2 skipped | 26,9 s |
++| `Betfair/safe_strategy/tests` | 2088 passed, 3 skipped, 1 xfailed | 72,2 s |
++| `Betfair/mike` | 1416 passed | 45,9 s |
++
++**Ordine.** `pytest-randomly` e `pytest-reverse` non sono installati (nel `.venv`
++c'è solo pytest 9.1.1). Al loro posto il plugin `AUDIT_2026-10-02/ordine_test_plugin.py`
++(`-p ordine_test_plugin`, `ORDINE_TEST=inverso|casuale:<seme>`) su
++`Betfair/mike` + `Betfair/omega/tests` + `test_audit_2026_09_11.py`:
++inverso 1920 passed, 2 skipped (59,6 s); semi 1, 2, 3: 1920 passed, 2 skipped
++ciascuno (57,8 / 57,8 / 61,1 s).
++
++## NON VERIFICATO
++- Suite intera `Betfair/` non lanciata (fuori dal perimetro): la fixture nuova
++  in `Betfair/conftest.py` gira per ogni test di `Betfair/`; verificata solo su
++  mike, omega/tests, safe_strategy/tests.
++- Il valore dell'interruttore nel `.env` vero non l'ho letto (lettura negata dal
++  sistema): la riaccensione è dimostrata dalla sonda (`acceso()` passa da False
++  a True all'import di `config_stream`), non dal file.
++- Rischio affine NON corretto (fuori perimetro, da segnalare): qualunque test che
++  fa `delenv` di una variabile presente nel `.env` vero può vederla riaccendersi
++  al primo import di `config_stream` a metà test. Esempi: `test_porta_ordini_f5_2026_09_24.py:815-816,831`
++  (oggi verdi). Il rimedio generale (spegnere con `"0"` invece di cancellare) è
++  quello applicato qui.
++- Ordini casuali su altre cartelle (stream, tennis) non provati.
+diff --git a/AUDIT_2026-10-02/falsifica_test_isolamento.py b/AUDIT_2026-10-02/falsifica_test_isolamento.py
+new file mode 100644
+index 0000000..8ca70b2
+--- /dev/null
++++ b/AUDIT_2026-10-02/falsifica_test_isolamento.py
+@@ -0,0 +1,139 @@
++# -*- coding: utf-8 -*-
++"""Falsificazione delle due correzioni di isolamento dei test (02/10).
++
++Lancio (dalla radice del repo, con l'interprete del .venv):
++
++    python AUDIT_2026-10-02/falsifica_test_isolamento.py [--ordini]
++
++Per ciascuna correzione rimette il file com'era su ``master`` (``git show
++master:<file>``), lancia la combinazione che falliva e pretende ROSSO; poi
++rimette il file corretto (contenuto tenuto in memoria, verificato per sha256
++alla fine, anche se lo script si interrompe: ``finally``) e pretende VERDE.
++In piu' le direzioni incrociate: senza la correzione A il difetto B resta
++corretto e viceversa (le due correzioni sono indipendenti).
++
++``--ordini``: lancia anche mike + omega/tests + test_audit di Safe in ordine
++inverso e con 3 semi casuali (plugin ``ordine_test_plugin.py``: pytest-randomly
++non e' installato). Il referto va in ``falsifica_test_isolamento_out.txt``.
++"""
++from __future__ import annotations
++
++import hashlib
++import os
++import re
++import subprocess
++import sys
++import time
++from pathlib import Path
++
++RADICE = Path(__file__).resolve().parent.parent
++AUDIT = Path(__file__).resolve().parent
++OUT = AUDIT / "falsifica_test_isolamento_out.txt"
++
++CONFTEST_A = "Betfair/conftest.py"                       # difetto (a)
++CONFTEST_B = "Betfair/safe_strategy/tests/conftest.py"   # difetto (b)
++
++OMEGA = ("Betfair/omega/tests/test_ref_strategia_per_attore_r1_2026_09_24.py"
++         "::test_omega_piazza_con_omega_come_prima")
++INQUINATORE = "Betfair/mike/tests/test_mike_p4_ordini_2026_09_29.py"
++L4 = ("Betfair/safe_strategy/tests/test_audit_2026_09_11.py"
++      "::test_l4_la_guardia_combo_decide_UGUALE_in_paper_e_in_live")
++
++righe: list[str] = []
++
++
++def scrivi(s: str) -> None:
++    print(s, flush=True)
++    righe.append(s)
++
++
++def sha(p: Path) -> str:
++    return hashlib.sha256(p.read_bytes()).hexdigest()
++
++
++def da_master(rel: str) -> bytes:
++    return subprocess.run(["git", "show", f"master:{rel}"], cwd=RADICE,
++                          capture_output=True, check=True).stdout
++
++
++def pytest(*args: str, env_extra: dict | None = None) -> tuple[str, float]:
++    env = dict(os.environ)
++    env.update(env_extra or {})
++    t0 = time.time()
++    p = subprocess.run([sys.executable, "-m", "pytest", *args, "-q", "-p", "no:cacheprovider"],
++                       cwd=RADICE, capture_output=True, text=True, env=env,
++                       encoding="utf-8", errors="replace")
++    dt = time.time() - t0
++    ultime = [r for r in p.stdout.splitlines() if r.strip()]
++    sommario = ultime[-1] if ultime else f"(nessun output, rc={p.returncode})"
++    falliti = [r for r in p.stdout.splitlines() if r.startswith("FAILED")]
++    for f in falliti[:10]:
++        scrivi(f"        {f}")
++    return sommario, dt
++
++
++def esito(nome: str, atteso: str, args: tuple[str, ...], env_extra: dict | None = None) -> bool:
++    sommario, dt = pytest(*args, env_extra=env_extra)
++    rosso = bool(re.search(r"\b\d+ (failed|error)", sommario))
++    ottenuto = "ROSSO" if rosso else "VERDE"
++    ok = ottenuto == atteso
++    scrivi(f"  [{'OK ' if ok else 'KO!'}] {nome}: atteso {atteso}, ottenuto {ottenuto} "
++           f"-> {sommario} ({dt:.1f}s)")
++    return ok
++
++
++def main() -> int:
++    ordini = "--ordini" in sys.argv
++    pa, pb = RADICE / CONFTEST_A, RADICE / CONFTEST_B
++    corretto_a, corretto_b = pa.read_bytes(), pb.read_bytes()
++    sha_a, sha_b = sha(pa), sha(pb)
++    tutto_ok = True
++    scrivi(f"falsifica_test_isolamento - {time.strftime('%Y-%m-%d %H:%M:%S')}")
++    scrivi(f"interprete: {sys.executable}")
++    try:
++        scrivi("\n== 0) CON LE CORREZIONI (stato del ramo)")
++        tutto_ok &= esito("(a) inquinatore Mike poi Omega", "VERDE", (INQUINATORE, OMEGA))
++        tutto_ok &= esito("(b) l4 da solo", "VERDE", (L4,))
++
++        scrivi(f"\n== 1) MUTAZIONE A: {CONFTEST_A} come su master")
++        pa.write_bytes(da_master(CONFTEST_A))
++        tutto_ok &= esito("(a) inquinatore Mike poi Omega", "ROSSO", (INQUINATORE, OMEGA))
++        tutto_ok &= esito("(a) Omega da solo", "VERDE", (OMEGA,))
++        tutto_ok &= esito("(b) l4 da solo (correzione B intatta)", "VERDE", (L4,))
++        pa.write_bytes(corretto_a)
++
++        scrivi(f"\n== 2) MUTAZIONE B: {CONFTEST_B} come su master")
++        pb.write_bytes(da_master(CONFTEST_B))
++        tutto_ok &= esito("(b) l4 da solo", "ROSSO", (L4,))
++        tutto_ok &= esito("(b) file test_audit intero", "ROSSO",
++                          ("Betfair/safe_strategy/tests/test_audit_2026_09_11.py",))
++        tutto_ok &= esito("(a) inquinatore poi Omega (correzione A intatta)", "VERDE",
++                          (INQUINATORE, OMEGA))
++        pb.write_bytes(corretto_b)
++
++        scrivi("\n== 3) RIPRISTINATO: di nuovo verde")
++        tutto_ok &= esito("(a) inquinatore Mike poi Omega", "VERDE", (INQUINATORE, OMEGA))
++        tutto_ok &= esito("(b) l4 da solo", "VERDE", (L4,))
++
++        if ordini:
++            scrivi("\n== 4) ORDINE: mike + omega/tests + test_audit Safe, inverso e 3 semi")
++            insieme = ("Betfair/mike", "Betfair/omega/tests",
++                       "Betfair/safe_strategy/tests/test_audit_2026_09_11.py",
++                       "-p", "ordine_test_plugin")
++            pp = str(AUDIT) + os.pathsep + os.environ.get("PYTHONPATH", "")
++            for modo in ("inverso", "casuale:1", "casuale:2", "casuale:3"):
++                tutto_ok &= esito(f"ORDINE_TEST={modo}", "VERDE", insieme,
++                                  env_extra={"ORDINE_TEST": modo, "PYTHONPATH": pp})
++    finally:
++        pa.write_bytes(corretto_a)
++        pb.write_bytes(corretto_b)
++        ripristino = sha(pa) == sha_a and sha(pb) == sha_b
++        scrivi(f"\nripristino dei file corretti verificato per sha256: {ripristino}")
++        tutto_ok &= ripristino
++        scrivi(f"ESITO COMPLESSIVO: {'TUTTO COME ATTESO' if tutto_ok else 'DIFFORMITA'}")
++        OUT.write_text("\n".join(righe) + "\n", encoding="utf-8")
++    return 0 if tutto_ok else 1
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/AUDIT_2026-10-02/falsifica_test_isolamento_out.txt b/AUDIT_2026-10-02/falsifica_test_isolamento_out.txt
+new file mode 100644
+index 0000000..ce19605
+--- /dev/null
++++ b/AUDIT_2026-10-02/falsifica_test_isolamento_out.txt
+@@ -0,0 +1,32 @@
++falsifica_test_isolamento - 2026-10-02 11:14:54
++interprete: C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Scripts\python.exe
++
++== 0) CON LE CORREZIONI (stato del ramo)
++  [OK ] (a) inquinatore Mike poi Omega: atteso VERDE, ottenuto VERDE -> 25 passed in 3.57s (9.4s)
++  [OK ] (b) l4 da solo: atteso VERDE, ottenuto VERDE -> 1 passed, 2 warnings in 4.64s (6.8s)
++
++== 1) MUTAZIONE A: Betfair/conftest.py come su master
++        FAILED Betfair/omega/tests/test_ref_strategia_per_attore_r1_2026_09_24.py::test_omega_piazza_con_omega_come_prima
++  [OK ] (a) inquinatore Mike poi Omega: atteso ROSSO, ottenuto ROSSO -> 1 failed, 24 passed in 2.76s (7.9s)
++  [OK ] (a) Omega da solo: atteso VERDE, ottenuto VERDE -> 1 passed in 2.02s (3.5s)
++  [OK ] (b) l4 da solo (correzione B intatta): atteso VERDE, ottenuto VERDE -> 1 passed, 2 warnings in 5.52s (7.1s)
++
++== 2) MUTAZIONE B: Betfair/safe_strategy/tests/conftest.py come su master
++        FAILED Betfair/safe_strategy/tests/test_audit_2026_09_11.py::test_l4_la_guardia_combo_decide_UGUALE_in_paper_e_in_live
++  [OK ] (b) l4 da solo: atteso ROSSO, ottenuto ROSSO -> 1 failed, 2 warnings in 5.10s (7.5s)
++        FAILED Betfair/safe_strategy/tests/test_audit_2026_09_11.py::test_l4_la_guardia_combo_decide_UGUALE_in_paper_e_in_live
++  [OK ] (b) file test_audit intero: atteso ROSSO, ottenuto ROSSO -> 1 failed, 69 passed, 2 warnings in 8.31s (10.5s)
++  [OK ] (a) inquinatore poi Omega (correzione A intatta): atteso VERDE, ottenuto VERDE -> 25 passed in 2.39s (6.6s)
++
++== 3) RIPRISTINATO: di nuovo verde
++  [OK ] (a) inquinatore Mike poi Omega: atteso VERDE, ottenuto VERDE -> 25 passed in 2.44s (6.8s)
++  [OK ] (b) l4 da solo: atteso VERDE, ottenuto VERDE -> 1 passed, 2 warnings in 3.81s (5.4s)
++
++== 4) ORDINE: mike + omega/tests + test_audit Safe, inverso e 3 semi
++  [OK ] ORDINE_TEST=inverso: atteso VERDE, ottenuto VERDE -> 1920 passed, 2 skipped, 2 warnings in 54.55s (59.6s)
++  [OK ] ORDINE_TEST=casuale:1: atteso VERDE, ottenuto VERDE -> 1920 passed, 2 skipped, 2 warnings in 53.34s (57.8s)
++  [OK ] ORDINE_TEST=casuale:2: atteso VERDE, ottenuto VERDE -> 1920 passed, 2 skipped, 2 warnings in 53.71s (57.8s)
++  [OK ] ORDINE_TEST=casuale:3: atteso VERDE, ottenuto VERDE -> 1920 passed, 2 skipped, 2 warnings in 55.01s (61.1s)
++
++ripristino dei file corretti verificato per sha256: True
++ESITO COMPLESSIVO: TUTTO COME ATTESO
+diff --git a/AUDIT_2026-10-02/ordine_test_plugin.py b/AUDIT_2026-10-02/ordine_test_plugin.py
+new file mode 100644
+index 0000000..23e5539
+--- /dev/null
++++ b/AUDIT_2026-10-02/ordine_test_plugin.py
+@@ -0,0 +1,31 @@
++# -*- coding: utf-8 -*-
++"""Plugin pytest minimo (02/10): rimescola l'ordine dei test raccolti.
++
++pytest-randomly e pytest-reverse NON sono installati nel .venv; questo plugin
++fa la stessa cosa senza installare nulla. Si carica con
++``-p ordine_test_plugin`` e ``PYTHONPATH=AUDIT_2026-10-02``.
++
++    ORDINE_TEST=inverso      -> ordine inverso
++    ORDINE_TEST=casuale:<n>  -> rimescolamento con seme <n> (riproducibile)
++    (assente)                -> ordine di pytest, invariato
++"""
++from __future__ import annotations
++
++import os
++import random
++
++
++def pytest_collection_modifyitems(session, config, items):
++    modo = (os.getenv("ORDINE_TEST") or "").strip()
++    if not modo:
++        return
++    if modo == "inverso":
++        items.reverse()
++    elif modo.startswith("casuale:"):
++        random.Random(int(modo.split(":", 1)[1])).shuffle(items)
++    else:
++        raise ValueError(f"ORDINE_TEST sconosciuto: {modo!r}")
++
++
++def pytest_report_header(config):
++    return f"ordine_test_plugin: ORDINE_TEST={os.getenv('ORDINE_TEST') or '(pytest)'}"
+diff --git a/Betfair/conftest.py b/Betfair/conftest.py
+index c08cdb5..9a3a925 100644
+--- a/Betfair/conftest.py
++++ b/Betfair/conftest.py
+@@ -76,6 +76,37 @@ def _ripristina_flumine_config():
+         setattr(_fconf, _nome, _valore)
+ 
+ 
++@pytest.fixture(autouse=True)
++def _ripristina_ref_di_strategia_omega_market():
++    """02/10 (isolamento, ``AUDIT_2026-10-02/TEST_ISOLAMENTO.md``):
++    ``omega_market.CUSTOMER_STRATEGY_REF`` e' una costante di MODULO che Mike
++    RILEGA a ``"mike"`` scrivendoci sopra direttamente
++    (``Betfair/mike/service.py:133``, ``_RealMarket._bind_strategy_ref``,
++    chiamata da place/cancel/list_current_orders/list_cleared_orders dello
++    sportello di Mike). In produzione Mike e' un processo a se' e non serve
++    ripristinarla; in una sessione pytest resta ``"mike"`` per tutti i test
++    dopo. Riprodotto: ``Betfair/mike/tests/test_mike_p4_ordini_2026_09_29.py::
++    test_rilettura_alla_riapertura_con_lo_sportello_vero`` (e
++    ``test_sospensione_e_riapertura_in_live_dice_cancellata_da_betfair``) prima
++    di ``Betfair/omega/tests/test_ref_strategia_per_attore_r1_2026_09_24.py::
++    test_omega_piazza_con_omega_come_prima`` -> Omega piazza con ``"mike"``.
++
++    Si ripristina dopo ogni test il valore che aveva prima (o, se il modulo e'
++    stato importato durante il test, il ref di Omega fissato all'import,
++    ``omega_market._REF_OMEGA``). Non importa il modulo se nessuno l'ha gia'
++    importato."""
++    _nome = "Betfair.omega.omega_market"
++    _om = sys.modules.get(_nome)
++    _prima = getattr(_om, "CUSTOMER_STRATEGY_REF", None) if _om is not None else None
++    yield
++    _om = sys.modules.get(_nome)
++    if _om is None:
++        return
++    _valore = _prima if _prima is not None else getattr(_om, "_REF_OMEGA", None)
++    if _valore is not None:
++        _om.CUSTOMER_STRATEGY_REF = _valore
++
++
+ @pytest.fixture(autouse=True)
+ def _kill_switch_del_db_senza_rete(monkeypatch):
+     """O1 (24/09): ``controls.motivo_kill_switch`` legge anche
+diff --git a/Betfair/safe_strategy/tests/conftest.py b/Betfair/safe_strategy/tests/conftest.py
+index 0b371bd..7142ee2 100644
+--- a/Betfair/safe_strategy/tests/conftest.py
++++ b/Betfair/safe_strategy/tests/conftest.py
+@@ -28,8 +28,15 @@ def freni_live_aperti(monkeypatch):
+     monkeypatch.setenv("LIVE_KILL_SWITCH", "false")
+     # F5 (24/09): la porta a comandi e' SPENTA per difetto anche nei test, qualunque
+     # cosa dica il .env della macchina; chi la prova la accende a mano.
+-    monkeypatch.delenv("SAFE_ORDINI_VIA_CANALE", raising=False)
+-    monkeypatch.delenv("SAFE_TENNIS_ORDINI_VIA_CANALE", raising=False)
++    # 02/10 (isolamento, ``AUDIT_2026-10-02/TEST_ISOLAMENTO.md``): SPENTA con
++    # ``"0"``, MAI cancellata. Con ``delenv`` la variabile restava ASSENTE e il
++    # primo import di ``Betfair/stream/config_stream.py`` (``load_dotenv()`` a
++    # riga 17, che riempie solo le variabili assenti) la riaccendeva dal ``.env``
++    # vero A META' TEST: ``test_audit_2026_09_11.py::test_l4_...`` da solo era
++    # rosso (seconda gamba live mandata al canale giu'). ``"0"`` e' spento per
++    # costruzione (``porta_ordini.VALORI_ACCESI``) e ``load_dotenv`` non lo tocca.
++    monkeypatch.setenv("SAFE_ORDINI_VIA_CANALE", "0")
++    monkeypatch.setenv("SAFE_TENNIS_ORDINI_VIA_CANALE", "0")
+     with _mo.dichiara_per_banco("LIVE"):
+         yield
+ 

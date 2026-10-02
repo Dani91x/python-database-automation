@@ -28,8 +28,15 @@ def freni_live_aperti(monkeypatch):
     monkeypatch.setenv("LIVE_KILL_SWITCH", "false")
     # F5 (24/09): la porta a comandi e' SPENTA per difetto anche nei test, qualunque
     # cosa dica il .env della macchina; chi la prova la accende a mano.
-    monkeypatch.delenv("SAFE_ORDINI_VIA_CANALE", raising=False)
-    monkeypatch.delenv("SAFE_TENNIS_ORDINI_VIA_CANALE", raising=False)
+    # 02/10 (isolamento, ``AUDIT_2026-10-02/TEST_ISOLAMENTO.md``): SPENTA con
+    # ``"0"``, MAI cancellata. Con ``delenv`` la variabile restava ASSENTE e il
+    # primo import di ``Betfair/stream/config_stream.py`` (``load_dotenv()`` a
+    # riga 17, che riempie solo le variabili assenti) la riaccendeva dal ``.env``
+    # vero A META' TEST: ``test_audit_2026_09_11.py::test_l4_...`` da solo era
+    # rosso (seconda gamba live mandata al canale giu'). ``"0"`` e' spento per
+    # costruzione (``porta_ordini.VALORI_ACCESI``) e ``load_dotenv`` non lo tocca.
+    monkeypatch.setenv("SAFE_ORDINI_VIA_CANALE", "0")
+    monkeypatch.setenv("SAFE_TENNIS_ORDINI_VIA_CANALE", "0")
     with _mo.dichiara_per_banco("LIVE"):
         yield
 
