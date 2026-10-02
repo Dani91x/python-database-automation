@@ -57,7 +57,7 @@ JURISDICTION_COM = "com"
 # motore, Safe, Omega e Mike con gli stessi nomi). Qui solo gli alias storici del modulo:
 #   punta >= 1,00 al CENTESIMO (nessun passo di 0,50), banca >= 1,00 sul size (puntata
 #   del backer, la liability non conta), nessuna esenzione per le chiusure, floor di legge
-#   0,50 mai tentato, place-and-trim solo con parcheggio e importo finale >= 1,00.
+#   0,50 mai tentato, place-and-trim solo con parcheggio e importo finale >= 0,50 (02/10).
 from Betfair.stream.trading.minimi_it import (  # noqa: E402, F401 - riesportati
     IT_FLOOR_LEGGE,
     IT_MIN_BACK,

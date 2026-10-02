@@ -50,12 +50,12 @@ ENQUEUE_UNKNOWN = -1
 # il minimo di giurisdizione passa dal place-and-trim, non viene rifiutato.
 ABS_MIN_SIZE = 0.01
 
-# SIZE MINIMA di PIAZZAMENTO di Betfair (.it: BACK 2,00 / LAY 0,50). Sotto
+# SIZE MINIMA di PIAZZAMENTO di Betfair (.it: BACK 1,00 / LAY 1,00 dal 01/10, minimi_it). Sotto
 # questa soglia l'exchange rifiuta un place DIRETTO — ma NON rifiuta un ordine
 # esistente RIDOTTO sotto la soglia. E' la tecnica che usano Bet Angel, Fairbot
 # e Betting Toolkit, si chiama PLACE-AND-TRIM ed e' implementata in
 # ``Betfair/stream/trading/submin.py`` (azione di coda ``place_submin``):
-#   1. place del minimo a una quota NON abbinabile (BACK 1000 / LAY 1.01);
+#   1. place del minimo a una quota NON abbinabile (BACK 1000 / LAY quota_parcheggio_lontano);
 #   2. cancel PARZIALE: resta esattamente la size voluta, sotto il minimo;
 #   3. replace alla quota reale.
 # Quindi QUALSIASI importo e' piazzabile, fino al centesimo. Questa soglia serve
@@ -790,7 +790,7 @@ def place(
     min_live = _min_size_live(side)
     is_closing = bool(meta.get("cashout") or meta.get("closes_trade_id"))
     # CANTIERE P (28/09) - DECISIONE DELL'UTENTE per il TENNIS: un'APERTURA
-    # sotto il minimo di Betfair si porta AL minimo (BACK 2,00, LAY 0,50) su
+    # sotto il minimo di Betfair si porta AL minimo (BACK 1,00, LAY 1,00 dal 01/10) su
     # OGNI strada (canale, coda, REST live), non piu' il place-and-trim alla
     # size esatta che restava sul REST. Le CHIUSURE restano esatte.
     # CORREZIONE (28/09 sera): sulla strada del CANALE la regola la applica il

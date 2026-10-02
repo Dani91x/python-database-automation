@@ -8,7 +8,7 @@ stato REALE dell'ordine sul mercato. Il worker persiste lo `SubminState` (nel
 framework, la sequenza riprenda esattamente da dove era rimasta.
 
 TECNICA (Betfair): non puoi piazzare direttamente un ordine sotto il minimo
-(.it BACK €2,00 / LAY €0,50), ma puoi RIDURRE un ordine esistente sotto quel
+(.it BACK 1,00 / LAY 1,00 dal 01/10, minimi_it), ma puoi RIDURRE un ordine esistente sotto quel
 minimo. Quindi:
 
   step1 PLACED  - place size = minimo di giurisdizione a una quota NON abbinabile
@@ -104,7 +104,7 @@ class SubminState:
     bet_id: Optional[str]
     target_size: float
     target_price: float          # già al tick
-    placed_size: float           # = minimo di giurisdizione (€2 .it BACK / €0,50 LAY)
+    placed_size: float           # = minimo di giurisdizione (.it: 1,00 BACK e LAY, minimi_it)
     side: str                    # 'back' | 'lay'
     note: str = ""
     # epoch ms della RICHIESTA di cancel (step2); 0 = non ancora richiesto.
@@ -290,6 +290,8 @@ def porta_al_minimo_apertura(jurisdiction: str, side: str, size: float) -> float
     Exchange" -> "Italian Exchange Specific Bet Rules"): BACK >= 200 centesimi
     (a multipli di 50), LAY tale che lo stake del back corrispondente sia
     >= 50 centesimi, cioe' size LAY >= 0,50 EUR. Sono ``place_min_size``.
+    02/10/2026: SUPERATO dai minimi .it definitivi del 01/10 (punta e banca 1,00 al
+    centesimo, ``trading.minimi_it``): ``place_min_size`` oggi vale 1,00 per i due lati.
 
     Solo verso l'ALTO e solo fino al minimo: una size gia' >= minimo torna
     identica (le regole sopra il minimo restano quelle di sempre). Vale SOLO per
@@ -568,7 +570,7 @@ def _guard_replace_cap_lay(
 #
 #   PERCORSO B (fallback, 3 chiamate mutanti):
 #       la quota target E' abbinabile (ordine aggressivo) oppure il book non e'
-#       noto -> parcheggio alla quota estrema (BACK 1000 / LAY 1.01), taglio,
+#       noto -> parcheggio alla quota estrema (BACK 1000 / LAY quota_parcheggio_lontano), taglio,
 #       replace. E' la sequenza storica, quella che in-play fallisce: si prova
 #       UNA volta sola e il rifiuto va dichiarato con il codice INTERNO.
 #
@@ -984,7 +986,7 @@ def advance_submin(
                     "NON ripiazzato"
                 ),
             )
-        # 01/10/2026: la regola "importo finale >= 1,00" e' applicata agli INGRESSI del
+        # 01/10/2026: la regola "importo finale >= 0,50" e' applicata agli INGRESSI del
         # motore ordini (``verifica_importo_finale``), non qui: i bot che costruiscono lo
         # stato da se' (scalper, sniper, scalper tennis, uscite esatte tennis) sono un
         # reperto aperto (RUNNER_MINIMI_CHIUSURE.md), da decidere con l'utente.

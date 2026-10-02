@@ -182,6 +182,11 @@ def test_scalper_tennis_uscite_esatte_accese_in_paper_e_live():
 # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50 (banca 0,93 sotto il minimo: tutto al resto, trim legale >= 0,50).
 # 1,98 BACK oggi si spezza 1,50 + 0,48: un resto sotto 0,50 e' impossibile per legge
 # (reperto 1, condotta delle uscite esatte del tennis): xfail.
+# 02/10/2026 (RUNNER_MINIMI_CORREZIONI, punto 8): ANCHE le righe 2,02 -> 2,00 + 0,02 e
+# 3,15 -> 3,00 + 0,15 (e la banca 0,30) descrivono un resto sotto 0,50, impossibile per
+# legge su .it: restano VERDI perche' ``condotta_ordini.spezza_esatta`` (tennis, fuori
+# dal perimetro del runner) non e' stata cambiata. Non sono una certificazione della
+# condotta: appartengono al reperto 1 aperto, da riallineare col bot tennis.
 @pytest.mark.parametrize("size,lato,attesa", [
     (2.02, "BACK", (2.0, 0.02)),
     pytest.param(1.98, "BACK", (0.0, 1.98),

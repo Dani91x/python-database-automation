@@ -220,7 +220,7 @@ ARCHIVE_BUCKET: str = os.getenv("LIVE_ARCHIVE_BUCKET", "")  # vuoto = solo local
 LIVE_ORDER_MODE: str = os.getenv("LIVE_ORDER_MODE", "OFF").strip().upper()
 
 # Giurisdizione del conto Betfair → regole di stake minimo (live_order_build.min_stake_rules).
-# 'it' = Italian Exchange (01/10/2026: back min EUR2.00 al centesimo; lay size min EUR1.00;
+# 'it' = Italian Exchange (01/10/2026: back min EUR1.00 al centesimo; lay size min EUR1.00 (minimi_it);
 # nessuna esenzione per le chiusure: costanti in live_order_build).
 BETFAIR_JURISDICTION: str = os.getenv("LIVE_BETFAIR_JURISDICTION", "it").strip().lower()
 

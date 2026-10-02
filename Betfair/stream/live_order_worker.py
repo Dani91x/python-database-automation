@@ -410,7 +410,7 @@ def _min_stake() -> float:
 def _sub_minimum_floor(side: str) -> float:
     """Size sotto la quale un ordine NON e' piazzabile DIRETTAMENTE (serve il place-and-trim).
 
-    E' il minimo di PIAZZAMENTO per giurisdizione e per LATO (.it: BACK 2,00 / LAY 0,50 —
+    E' il minimo di PIAZZAMENTO per giurisdizione e per LATO (.it: BACK 1,00 / LAY 1,00 dal 01/10, minimi_it —
     ``trading.submin.place_min_size``, la stessa soglia che la macchina a stati usa per il
     "park"); se la giurisdizione non e' nota si ricade sull'env ``BETFAIR_MIN_STAKE``.
     """
@@ -1299,14 +1299,14 @@ def _replace_or_raise(market: Any, order: Any, new_price: float, what: str) -> N
 # ---------------------------------------------------------------------------
 # Betfair non accetta un ordine sotto il minimo di giurisdizione, ma accetta di RIDURRE un
 # ordine gia' a mercato sotto quel minimo. Quindi (vedi trading/submin.py):
-#   1) place del MINIMO a una quota NON abbinabile (BACK 1000 / LAY 1.01), persistenza LAPSE;
+#   1) place del MINIMO a una quota NON abbinabile (BACK 1000 / LAY quota_parcheggio_lontano), persistenza LAPSE;
 #   2) cancel PARZIALE con size_reduction = minimo - size  -> resta la size sotto-minima;
 #   3) replace alla quota target reale.
 # Qui la macchina a stati verificata (advance_submin) e' guidata in modo SINCRONO, con un
 # timeout: e' la stessa macchina della coda 'place_submin', quindi conserva la GUARDIA
 # money-critical del 10/07 (mai un replace se il trim non e' stato OSSERVATO: altrimenti la
 # size PIENA finirebbe alla quota reale). Se un passo fallisce -> ritiro del residuo + errore
-# esplicito. In PAPER non si usa mai (esecuzione simulata: nessun minimo da aggirare).
+# esplicito. 02/10: in PAPER la STESSA sequenza sul client simulato (paper = specchio del live).
 _SUBMIN_POLL_SEC = 0.25
 
 
@@ -2294,6 +2294,23 @@ def _do_greenup(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, s
             cancel_note += f" ({len(cancel_failed)} cancel FALLITI)"
 
     w, l = _read_matched_exposures(flumine, market, strategy, selection_id, handicap)
+    # 02/10/2026 (RUNNER_MINIMI_CORREZIONI, punto 9) - DOPPIA CHIUSURA. Il motore traduce
+    # una chiusura sotto il minimo nell'ordine EQUIVALENTE sull'altra selezione di un
+    # mercato a due esiti (banca Over 0,43 @18 -> punta Under 7,31 @1,06): la posizione
+    # e' piatta per il MERCATO, ma la sola selezione Over sembra ancora aperta. Leggendo
+    # solo questa selezione il green-up rifarebbe l'hedge (seconda chiusura, soldi). In
+    # un mercato a due esiti esaustivi la posizione si legge sul mercato, come gia' fa il
+    # motore per ``reduces_liability`` (``_riduzione_verificata``, 29/09): P&L se vince
+    # questa selezione = W(questa) + L(altra); se perde = L(questa) + W(altra).
+    from .motore_ordini import altro_runner_due_esiti
+
+    _altro = altro_runner_due_esiti(market, selection_id)
+    if _altro is not None:
+        w2, l2 = _read_matched_exposures(flumine, market, strategy, _altro[0], _altro[1])
+        if abs(w2) > 1e-9 or abs(l2) > 1e-9:
+            w, l = w + l2, l + w2
+            cancel_note += (f"; posizione del MERCATO a due esiti (altra selezione "
+                            f"{_altro[0]}: W={w2:.2f} L={l2:.2f})")
     best_back, best_lay = _best_prices(market, selection_id, handicap)
     plan = compute_greenup(
         matched_if_win=w, matched_if_lose=l,
