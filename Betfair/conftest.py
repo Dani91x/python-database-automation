@@ -130,6 +130,55 @@ def _svuota_cache_lambda_di_omega():
         _cache.clear()
 
 
+_DB_CLIENT_STATO_DI_IMPORT = {"timeout": None}
+
+
+@pytest.fixture(autouse=True)
+def _ripristina_stato_di_processo_di_db_client():
+    """02/10 (isolamento 4, ``AUDIT_2026-10-02/TEST_ISOLAMENTO_4.md``):
+    ``db_client._STATO`` (``db_client.py:33``) e' lo stato di PROCESSO del
+    timeout PostgREST; ``usa_timeout_bot`` (``db_client.py:59-67``) ci scrive
+    il profilo bot e nessuno lo rimette a ``None``: in produzione e' giusto (lo
+    chiama il ``main`` di un bot una volta per processo), in pytest no. Il
+    ``main`` VERO di Mike (``Betfair/mike/service.py:7371``) lo chiama, e
+    ``Betfair/mike/tests/test_mike_riga_assente_e_arresto_2026_10_02.py::
+    test_R1_main_all_arresto_chiama_l_arresto_degli_ordini`` esegue ``S.main()``
+    due volte: da li' in poi ``get_supabase_client`` chiamava
+    ``create_client(url, key, options=...)`` (``db_client.py:83-84``) e
+    ``Betfair/stream/tests/test_net_retry.py::test_db_client_is_per_thread``
+    (finto ``create_client(url, key)``) cadeva con ``TypeError: unexpected
+    keyword argument 'options'``: rosso solo dopo quel file.
+
+    Fotografa (se il modulo e' gia' importato; mai importato da qui) l'oggetto
+    ``_STATO`` col suo contenuto, l'oggetto ``_TLS`` e il contenuto di ``_TLS``
+    del thread del test, e li rimette a fine test. Se il modulo e' stato
+    importato DURANTE il test, ``_STATO`` torna allo stato di import (``None``)."""
+    _mod = sys.modules.get("db_client")
+    if _mod is not None:
+        _stato = getattr(_mod, "_STATO", None)
+        _stato_contenuto = dict(_stato) if isinstance(_stato, dict) else None
+        _tls = getattr(_mod, "_TLS", None)
+        _tls_contenuto = dict(vars(_tls)) if _tls is not None else None
+    yield
+    _dopo = sys.modules.get("db_client")
+    if _dopo is None:
+        return
+    if _mod is None or _dopo is not _mod:
+        _s = getattr(_dopo, "_STATO", None)
+        if isinstance(_s, dict):
+            _s.clear()
+            _s.update(_DB_CLIENT_STATO_DI_IMPORT)
+        return
+    if isinstance(_stato, dict):
+        _stato.clear()
+        _stato.update(_stato_contenuto)
+        _mod._STATO = _stato
+    if _tls is not None:
+        vars(_tls).clear()
+        vars(_tls).update(_tls_contenuto)
+        _mod._TLS = _tls
+
+
 @pytest.fixture(autouse=True)
 def _nessun_dotenv_a_meta_test(monkeypatch):
     """02/10 (isolamento 2): nessun ``load_dotenv()`` durante un test.
