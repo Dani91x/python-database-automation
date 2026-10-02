@@ -1,0 +1,2190 @@
+diff --git a/AUDIT_2026-10-02/PARITA_SAFE_ENV.md b/AUDIT_2026-10-02/PARITA_SAFE_ENV.md
+new file mode 100644
+index 0000000..65177a8
+--- /dev/null
++++ b/AUDIT_2026-10-02/PARITA_SAFE_ENV.md
+@@ -0,0 +1,237 @@
++# Parità coda/canale di Safe e `.env` dell'operatore (02/10/2026)
++
++Ramo `parita-safe-env` (base master `d56bb3b`), worktree `agent-a11985ec60bea0327`.
++Interprete: `.venv` del principale (percorso assoluto), nessuna junction. Registrazioni:
++`<principale>\_live_raw`. Nessun ordine vero, nessuna scrittura sul DB, nessun processo
++lasciato acceso. Replay lanciati uno alla volta. Il merge sul master di oggi (`5a7e076`) è
++pulito (`git merge-tree`).
++
++## 1. La causa, con le prove
++
++### 1.1 La premessa del 01/10 era sbagliata due volte
++
++- Il referto «PARITÀ RAGGIUNTA» del 01/10 (`AUDIT_2026-10-01/replay/safe_base_entrambi_RUNNER_MINIMI.txt`,
++  riga 3) **non è lo stesso comando**: è `--scenari base --trasporto entrambi`. Lo scenario `base`
++  su 35760084 non ha ordini (0 segnali nelle tre strategie), quindi coda=0 e canale=0 sono
++  uguali per forza. Il profilo `rapidi` confronta invece lo scenario d'ordine `ordini-manuali`
++  (`trasporto_rapido.py:91`).
++- Quel delegato **non aveva un ambiente isolato**. Un worktree sotto `.claude/worktrees/` sta
++  dentro l'albero del repo: `load_dotenv()` risale le cartelle e trova il `.env` del principale.
++  La prova è nel suo stesso referto della coda: `safe_base_ordini_manuali_coda_RUNNER_MINIMI.txt:1`
++  contiene `canale di comando ws://127.0.0.1:47331/comando/safe non disponibile (token del canale
++  assente: porta giu' (fail-closed))`, e la riga finisce `error`.
++
++### 1.2 La variabile e il punto del codice
++
++**La variabile è `SAFE_ORDINI_VIA_CANALE=1`** del `.env` del principale. Gli altri interruttori del
++`.env` sono stati letti solo per nome e valore, mai le chiavi.
++
++1. `Betfair/stream/config_stream.py:16-17`: `load_dotenv()` al primo import. Riempie solo le
++   variabili ASSENTI, e il primo import può cadere anche a metà replay.
++2. `Betfair/stream/backtest/trasporto.py:100-104` (master `d56bb3b`): `contesto()` scriveva l'interruttore
++   **solo per il canale**. Con `"coda"` lo lasciava all'ambiente, che vale `1` per via del `.env`.
++3. `Betfair/safe_strategy/bot_service.py:870-881` (`_porta_di` / `_porta_kw`), poi
++   `porta_ordini.py:134-136` (`acceso`) e `:752` (`porta_per_sport`). Con l'interruttore acceso il
++   servizio passa a `execution.place` la porta VERA `PortaCanale` verso `127.0.0.1:47331`. Nel
++   replay non ci sono né runner né token, quindi la porta è giù e chiude (fail-closed).
++4. `execution.place` → `_place_via_canale`: l'apertura a canale giù non si manda mai sul REST
++   (decisione D5). Il risultato è la riga `error` `canale_giu:apertura_non_inviata`.
++
++In breve: con il `.env` del principale, la «coda» del banco era in realtà un «canale giù».
++
++### 1.3 Prove sperimentali (stesso codice master `d56bb3b`, stesso comando)
++
++| Ambiente | coda | canale | Parità | File |
++|---|---|---|---|---|
++| `.env` del principale (worktree dentro il repo) | decisioni 3512, azioni 1, ordini 0, righe 1 `error` | 3512 / 2 / 2 / 2 | **NON RAGGIUNTA, KO** | `replay/safe_base_entrambi_PRIMA_env_principale.txt` (107,2 s) |
++| stesso `.env` + **solo** `SAFE_ORDINI_VIA_CANALE=0` nella shell | 3508 / 2 / 2 / 2 | 3512 / 2 / 2 / 2 | **RAGGIUNTA, OK** | `replay/safe_base_entrambi_PRIMA_solo_SAFE_ORDINI_0.txt` (95,1 s) |
++
++Cambiando una sola variabile, il referto si capovolge. Il referto del coordinatore su master
++(`<principale>/AUDIT_2026-10-02/replay/safe_base_entrambi_MASTER_d56bb3b.txt`) coincide con la prima
++riga, compreso il WARNING `47331 ... fail-closed`.
++
++### 1.4 Le azioni del diario: sono ordini MANUALI dello scenario, non della strategia
++
++Sonda: `sonda_diario_azioni.py`. Fa girare lo scenario `ordini-manuali` con le funzioni vere e
++stampa le righe complete di `safe_strategy_trades` e `safe_strategy_requests`. Uscite:
++`replay/sonda_diario_coda_env_principale.txt` e `replay/sonda_diario_canale_env_principale.txt`.
++
++- **Coda, 1 azione** (`SAFE_ORDINI_VIA_CANALE` = `'1'` prima e durante il replay):
++  `strategy: "manual", origin: "manual", side: lay, price 12.0, size 2.0, status: "error",
++  meta.reason: "canale_giu:apertura_non_inviata"`. La richiesta `place` (`idempotency_key
++  replay-35760084-manuale`) è stata respinta con `non eseguito (canale_giu:apertura_non_inviata)`.
++  Attività: `canale_giu x1, place_retry x1`. Ordini reali su flumine: 0.
++- **Canale, 2 azioni**:
++  - riga 1 `strategy: "manual"`: LAY 2,00 chiesto a 12,0 e abbinato a 11,0 (`canale_ref safe-t1`), poi `hedged`;
++  - riga 2 `closes_trade_id: 1`: BACK 2,39 @ 9,2, `exit_reason "Cash out manuale dalla dashboard"`
++    (`safe-t2`), abbinata 2,39. P&L bloccato −0,40 EUR.
++
++Tutte e tre le azioni sono **il trader finto del banco**: «Investi» e poi «Chiudi» dalla UI
++(`replay_registrazioni.py:110`, `SCENARI_DESCRITTI[ordini-manuali]`). Non sono ordini delle tre
++strategie, che su questa partita hanno 0 segnali (scenario `base`). La coda non «perdeva» un
++ordine della strategia: non apriva il manuale perché usava il canale, giù nel replay. Il secondo
++ordine del canale è la chiusura di quel manuale, che sulla coda non poteva esistere.
++
++## 2. La condotta giusta secondo le decisioni scritte
++
++- **CRONOSTORIA, checkpoint 07:49 del 29/09**: i replay di certificazione si fanno «con le
++  variabili non segrete del `.env` DICHIARATE nell'ambiente: `LIVE_ORDER_MODE=LIVE`,
++  `LIVE_KILL_SWITCH=false`, `MIKE_LIVE_ENABLED=1`, `SAFE_PRE_KO_OU_HOURS=1` … **i 20 interruttori
++  dei canali a 0**; Supabase finto». Con quell'ambiente: «safe_base, safe_esatto, safe_punta |
++  rapidi, entrambi | 14 OK ciascuno, **PARITA' RAGGIUNTA**».
++- **CRONOSTORIA, checkpoint 07:11 del 29/09**: «il KO della coda era l'AMBIENTE». La
++  certificazione deve essere ripetibile e non dipendere dal checkout.
++- **CRONOSTORIA, 25/09 h19:20**: strada unica, parità coda/canale RAGGIUNTA su safe_base.
++- **CRONOSTORIA, 28/09** («ambiente neutro», riga ~3870).
++- **`trasporto.py`, docstring di testa**: `coda` = «il trasporto di oggi nel banco … l'ordine
++  esce da `place_order_live` … è il riferimento certificato». Con l'interruttore acceso questo
++  non vale più.
++- **PROCESSO_STANDARD_BOT §6.8**: «il referto deve essere rifacibile identico».
++
++Quindi la condotta giusta è questa: coda = interruttore SPENTO, canale = ACCESO, gli altri
++interruttori a 0, e tutto **dichiarato dal banco**, non preso dal `.env`. Prima del 26/09
++(scrittura delle 4 righe `*_ORDINI_VIA_CANALE` nel `.env`, CRONOSTORIA h17:15 del 26/09) il
++problema non si vedeva perché l'interruttore mancava.
++
++## 3. Cosa ho cambiato (solo banco e test, nessuna strategia, nessun file di produzione dei bot)
++
++Commit `6517082` più il commit del referto.
++
++- `Betfair/stream/backtest/trasporto.py`:
++  - `VALORE_INTERRUTTORE = {"coda": "0", "canale": "1"}` (riga 54);
++  - `contesto()` scrive l'interruttore del bot in **entrambi** i trasporti e lo ripristina
++    all'uscita (righe 105-118 e 128).
++  - `"0"` è spento per costruzione (`porta_ordini.VALORI_ACCESI`) e `load_dotenv` senza override
++    non lo riscrive. Mike non ha interruttore e resta com'era.
++- `Betfair/stream/backtest/certifica.py`:
++  - `INTERRUTTORI_CANALE_DEL_BANCO` (riga 298): i 20 interruttori, stesso elenco di `Betfair/conftest.py`, e
++    un test li tiene allineati.
++  - `AMBIENTE_DEL_BANCO` (riga 319): freni D1-quater, più i 20 interruttori a `0`, più `MIKE_LIVE_ENABLED=1`
++    e `SAFE_PRE_KO_OU_HOURS=1` (valori di produzione, elenco del 29/09).
++  - `descrivi_ambiente()`.
++  - `_freni_da_banco` (riga 267) dichiara e ripristina tutto `AMBIENTE_DEL_BANCO`, anche su eccezione.
++  - Il referto stampa l'ambiente in testa, nel percorso normale e in quello `rapidi` (parametro
++    `intestazione` di `main_rapidi`).
++  - Non dichiarati, di proposito: `LIVE_MARKET_TYPES`, `LIVE_RECONCILE_POLL_SEC` e
++    `HAZARD_ATLAS_SYNC`. Li leggono solo il runner, i worker e il `main` dello scanner, che nel
++    replay non girano (verificato con grep).
++- `Betfair/stream/backtest/trasporto_rapido.py`: argomento `intestazione` (stampata e scritta nel
++  diario).
++- `Betfair/stream/tests/test_strada_unica_banco_2026_09_25.py`: il test
++  `test_contesto_accende_e_rimette_l_interruttore` pretendeva «in coda l'interruttore ASSENTE»,
++  cioè la condotta difettosa. Ora pretende `"0"` dentro e assente dopo.
++
++## 4. Test e falsificazione
++
++`Betfair/stream/tests/test_banco_ambiente_dichiarato_2026_10_02.py` (23 test):
++
++- coda spenta e canale acceso per ogni valore dell'ambiente (`1/true/si/yes/0/""/assente`), con
++  `porta_per_sport` vera;
++- ogni bot con interruttore (omega, safe_tennis, safe_esatto, safe_punta);
++- **`load_dotenv` a metà replay** con un `.env` finto che accende tutto: non riaccende niente (è
++  il meccanismo esatto del reperto);
++- ripristino dell'ambiente anche su eccezione;
++- elenco allineato al conftest e ai bot del trasporto;
++- intestazione identica per ogni ambiente;
++- **[cert]** sulla registrazione vera: la coda dello scenario `ordini-manuali` con i 20
++  interruttori ACCESI nell'ambiente e con l'ambiente VUOTO dà lo stesso referto e la stessa
++  traccia, con 2 ordini (righe `hedged`, `open`). Dura circa 90 s.
++
++Esecuzioni:
++
++- file nuovo + `test_strada_unica` + D1-quater: 43 verdi;
++- [cert]: 1 verde (90,6 s);
++- **suite `Betfair/stream/tests` intera (non cert): 3228 passed, 10 skipped** (269 s).
++
++Falsificazione: `falsifica_parita_env.py` e `_out.txt`. Esito **TUTTO COME ATTESO**, sha256 dei
++file ripristinati identico.
++
++| Mutazione | Atteso | Ottenuto |
++|---|---|---|
++| 0 codice corretto | verde | 39 passed |
++| M1 la coda non scrive l'interruttore (strato trasporto di master) | rosso | 11 failed |
++| M2 freni senza i 20 interruttori (strato freni di master) | rosso | 6 failed |
++| M3 = master (M1+M2): test [cert] sulla registrazione vera | rosso | 1 failed (87 s) |
++| M4 intestazione senza interruttori | rosso | 1 failed |
++| R ripristinato: veloci / [cert] | verde | 39 passed / 1 passed |
++
++## 5. I due replay dopo la correzione
++
++Comando `certifica safe_base 35760084 --scenari rapidi --trasporto entrambi --worker 1 --data-dir <principale>\_live_raw`.
++
++| Ambiente | Scenari di trasporto | coda | canale | Parità | ESITO | Durata |
++|---|---|---|---|---|---|---|
++| `.env` del principale caricato (worktree dentro il repo) | 14 OK | 3508 / 2 azioni / 2 ordini / 2 righe | 3512 / 2 / 2 / 2 | **RAGGIUNTA** (scarto tempi max 2,1 s di mercato) | **OK** | 171,7 s |
++| isolato: `PYTHON_DOTENV_DISABLED=1` (nessun `.env` letto) | 14 OK | 3508 / 2 / 2 / 2 | 3512 / 2 / 2 / 2 | **RAGGIUNTA** | **OK** | 160,8 s |
++
++`confronta_referti_env.py` toglie solo le righe dei tempi (§6.9). Uscita in `replay/confronto_referti_env.txt`:
++
++- principale e isolato: **referti identici, 90 righe su 90, tracce identiche**, intestazione dell'ambiente identica;
++- master con il solo `SAFE_ORDINI_VIA_CANALE=0` e correzione con il `.env` del principale: **identici**.
++
++La correzione quindi non cambia altro rispetto all'ambiente certificato del 29/09: gli altri 19
++interruttori a 0 non toccano il referto di Safe.
++
++Durate: 95-107 s prima, 152-172 s dopo. Le durate dei singoli replay sono salite allo stesso
++modo in coda e canale (coda 43 → 75 s), anche sul codice del runner senza la mia correzione
++(152,5 s): è carico della macchina (suite e falsificazione appena finite), non la correzione.
++Il profilo resta sotto il tetto dei 10 minuti. Da rimisurare a macchina scarica.
++
++## 6. Dato del coordinatore: «la patch del runner porta la coda da 1 a 2 ordini»
++
++**Non è la patch del runner. È ancora l'ambiente.** Prove:
++
++1. Ho fatto girare il commit `e4c93e0` (master `fb890d5` + patch del runner corretta), staccato nel
++   mio worktree, che sta dentro il repo e quindi legge il `.env` del principale. Risultato: coda
++   3512 / 1 / 0 ordini, canale 3512 / 2 / 2, **NON RAGGIUNTA, ESITO KO**, con il WARNING
++   `47331 ... fail-closed`. È lo stesso referto di master. File:
++   `replay/safe_base_entrambi_RUNNER_e4c93e0_env_principale.txt` (152,5 s).
++2. Il worktree del coordinatore sta in `...\scratchpad\verifica-runner`, **fuori dall'albero del
++   repo**. Ho risalito le cartelle fino alla radice del disco: nessun `.env`, quindi
++   `load_dotenv()` non carica niente e l'interruttore resta assente. Nel suo referto
++   (`safe_base_entrambi_RUNNER_coord.txt`) **manca** la riga `47331 ... token del canale assente
++   (fail-closed)`, che c'è sempre quando la coda usa la porta vera. Il suo replay è quindi l'ambiente
++   «isolato», non quello del principale.
++3. **Nessun ordine perso in produzione.** Il «secondo ordine» che la coda non faceva è la chiusura
++   (BACK 2,39 @ 9,2) dell'ordine MANUALE che la coda non aveva aperto. Sulla coda vera, a
++   interruttore spento, entrambi gli ordini partono sia su master sia con la patch.
++4. **Decisioni 3512 → 3508.** È la differenza ammessa e dichiarata in `trasporto.py` (docstring):
++   sulla coda il bot resta FERMO sulla REST per `place_latency + betDelay`
++   (`MotoreReplay.attendi_esecuzione`) a ogni piazzamento. Con 2 piazzamenti veri si perdono 4
++   giri di `run_once`. Con l'interruttore acceso la coda non piazzava niente (rifiuto immediato a
++   canale giù), non aspettava e faceva tutti i 3512 giri. 3508 è il segno che la coda sta
++   piazzando davvero.
++
++## 7. REPERTI per l'utente
++
++- **R1 (banco, CORRETTO qui).** Il referto di certificazione dipendeva dal `.env` di chi lo
++  lancia e dalla posizione del checkout. Tutte le parità coda/canale lanciate dal principale dopo
++  il 26/09 (4 righe `*_ORDINI_VIA_CANALE=1` nel `.env`) confrontavano un «canale giù», non la
++  coda. Per Safe questo ha dato un falso KO. **Omega** (`OMEGA_ORDINI_VIA_CANALE=1`) e
++  **safe_tennis** (`SAFE_TENNIS_ORDINI_VIA_CANALE=1`) avevano lo stesso difetto sulla coda dal
++  principale. Non li ho rilanciati: i loro referti «coda» dal principale dopo il 26/09 vanno
++  riletti con questo in mente.
++- **R2 (produzione): nessun difetto money-critical trovato.** La coda non perde ordini della
++  strategia e il canale non ne manda di più: tutte e tre le azioni sono del trader finto. Impatto
++  in euro sulla strategia: 0. Sul manuale dello scenario: apertura LAY 2,00 (rischio 20-22 EUR)
++  non aperta, chiusura −0,40 EUR non necessaria.
++  - In produzione, con `SAFE_ORDINI_VIA_CANALE=1` e il runner giù o senza token, un'apertura
++    finisce `error` `canale_giu:apertura_non_inviata` e non passa mai sul REST. È la decisione D5,
++    verificata anche dallo scenario R4 del profilo rapido. È la condotta voluta, non un difetto.
++  - Da sapere: a interruttore acceso **la coda non è un ripiego automatico per le aperture**.
++    Se il canale cade, le aperture si fermano; solo le chiusure passano dal REST (D5).
++- **R3 (da decidere, non toccato).** `config_stream.py:16-17` carica il `.env` al primo import
++  da qualunque processo, test e banco compresi. Il banco ora non ne dipende più. Restano esposti
++  i test che fanno `delenv` di un interruttore presente nel `.env` (già segnalato in
++  `TEST_ISOLAMENTO.md`).
++
++## 8. NON VERIFICATO
++
++- Parità coda/canale di **omega** e **safe_tennis** e i replay di Mike dopo la correzione.
++  L'ambiente dichiarato vale per tutti i bot. Per Mike i valori sono quelli del `.env` del
++  principale, quindi dal principale nulla cambia; da un checkout fuori dal repo ora vale come dal
++  principale. Non l'ho misurato.
++- La suite `Betfair/` intera: ho lanciato solo `Betfair/stream/tests` più i file toccati.
++- La patch è prodotta contro la base `d56bb3b`: `git diff d56bb3b`, non contro il `master`
++  attuale `5a7e076`, che contiene solo commit successivi. Il merge è pulito.
++- Durata dei replay a macchina scarica (vedi §5).
+diff --git a/AUDIT_2026-10-02/confronta_referti_env.py b/AUDIT_2026-10-02/confronta_referti_env.py
+new file mode 100644
+index 0000000..99f44af
+--- /dev/null
++++ b/AUDIT_2026-10-02/confronta_referti_env.py
+@@ -0,0 +1,59 @@
++"""Confronta due referti del banco riga per riga, tolte le sole righe dei tempi
++(PROCESSO_STANDARD_BOT par. 6.9) e i WARNING di log, e due file di tracce
++(``--tracce``) tolto ``durata_s``. Uso:
++python AUDIT_2026-10-02/confronta_referti_env.py A.txt B.txt [tracceA.json tracceB.json]
++"""
++import json
++import re
++import sys
++
++
++def righe(p):
++    out = []
++    for r in open(p, encoding="utf-8", errors="replace").read().splitlines():
++        if r.startswith(("WARNING", "INFO")) or "durata" in r or "DURATA" in r:
++            continue
++        r = re.sub(r"\s\d+\.\d s$", "", r)
++        r = re.sub(r"costo del banco sul canale: [0-9.]+ s",
++                   "costo del banco sul canale: <tempo> s", r)
++        if r.startswith("ambiente del banco"):
++            continue   # la riga nuova di testa: confrontata a parte
++        out.append(r)
++    return out
++
++
++def tracce(p):
++    d = json.load(open(p, encoding="utf-8"))
++    for tr in ("coda", "canale"):
++        if isinstance(d.get(tr), dict):
++            d[tr].pop("durata_s", None)
++            d[tr].pop("costo_banco_s", None)
++    if isinstance(d.get("parita"), dict):
++        d["parita"].pop("durata_s", None)
++    return _senza_tempi(d)
++
++
++def _senza_tempi(x):
++    """Toglie ricorsivamente le sole chiavi di TEMPO di macchina (durata, costo
++    del banco): i tempi di MERCATO (``t_mercato``, ``scarto_tempi_s``) restano."""
++    if isinstance(x, dict):
++        return {k: _senza_tempi(v) for k, v in x.items()
++                if k not in ("durata_s", "costo_banco_s")}
++    if isinstance(x, list):
++        return [_senza_tempi(v) for v in x]
++    return x
++
++
++a, b = righe(sys.argv[1]), righe(sys.argv[2])
++diverse = [(i, x, y) for i, (x, y) in enumerate(zip(a, b)) if x != y]
++print("righe confrontate: %d / %d | diverse: %d" % (len(a), len(b), len(diverse)))
++for i, x, y in diverse[:20]:
++    print("  #%d\n   A: %s\n   B: %s" % (i, x, y))
++print("REFERTI:", "IDENTICI" if (len(a) == len(b) and not diverse) else "DIVERSI")
++if len(sys.argv) > 4:
++    ta, tb = tracce(sys.argv[3]), tracce(sys.argv[4])
++    print("TRACCE (tolte le durate):", "IDENTICHE" if ta == tb else "DIVERSE")
++    if ta != tb:
++        for k in ta:
++            if ta.get(k) != tb.get(k):
++                print("  chiave diversa:", k, str(ta.get(k))[:300], "|", str(tb.get(k))[:300])
+diff --git a/AUDIT_2026-10-02/falsifica_parita_env.py b/AUDIT_2026-10-02/falsifica_parita_env.py
+new file mode 100644
+index 0000000..49a7a68
+--- /dev/null
++++ b/AUDIT_2026-10-02/falsifica_parita_env.py
+@@ -0,0 +1,145 @@
++"""Falsificazione della correzione PARITA_SAFE_ENV (02/10/2026).
++
++Rimette il difetto in tre modi (uno alla volta), pretende ROSSO dai test, poi
++ripristina il file (sha256 verificato nel ``finally``) e pretende VERDE.
++
++  M1  ``trasporto.contesto`` torna a scrivere l'interruttore SOLO per il canale
++      (la coda lo lascia all'ambiente: il difetto di master, strato trasporto)
++  M2  ``AMBIENTE_DEL_BANCO`` senza i 20 interruttori (solo i freni di master:
++      il difetto di master, strato freni)
++  M3  M1 + M2 insieme = master: anche il test [cert] sulla registrazione vera
++      deve diventare rosso (circa 90 s)
++  M4  l'intestazione del referto non stampa gli interruttori
++
++NON interrompere lo script: il ripristino e' nel ``finally``. Uscita in
++``AUDIT_2026-10-02/falsifica_parita_env_out.txt``.
++Uso (dalla radice del worktree): python AUDIT_2026-10-02/falsifica_parita_env.py
++"""
++from __future__ import annotations
++
++import hashlib
++import io
++import os
++import subprocess
++import sys
++import time
++
++RADICE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++TRA = os.path.join(RADICE, "Betfair", "stream", "backtest", "trasporto.py")
++CER = os.path.join(RADICE, "Betfair", "stream", "backtest", "certifica.py")
++TEST_NUOVO = "Betfair/stream/tests/test_banco_ambiente_dichiarato_2026_10_02.py"
++TEST_STRADA = "Betfair/stream/tests/test_strada_unica_banco_2026_09_25.py"
++OUT = os.path.join(RADICE, "AUDIT_2026-10-02", "falsifica_parita_env_out.txt")
++
++M1 = (
++    "        os.environ[nome_env] = VALORE_INTERRUTTORE[trasporto]",
++    "        if trasporto == \"canale\":\n            os.environ[nome_env] = \"1\"",
++)
++M2 = (
++    "    **{nome: \"0\" for nome in INTERRUTTORI_CANALE_DEL_BANCO},",
++    "    # MUTAZIONE M2: interruttori non dichiarati",
++)
++M4 = (
++    "            + \" \".join(f\"{k}={v}\" for k, v in sorted(AMBIENTE_DEL_BANCO.items()))",
++    "            + \" \".join(f\"{k}={v}\" for k, v in sorted(FRENI_AMBIENTE_DEL_BANCO.items()))",
++)
++
++righe = []
++
++
++def scrivi(s: str) -> None:
++    print(s, flush=True)
++    righe.append(s)
++
++
++def sha(p: str) -> str:
++    with open(p, "rb") as f:
++        return hashlib.sha256(f.read()).hexdigest()
++
++
++def leggi(p: str) -> str:
++    with io.open(p, "r", encoding="utf-8", newline="") as f:
++        return f.read()
++
++
++def scrivi_file(p: str, s: str) -> None:
++    with io.open(p, "w", encoding="utf-8", newline="") as f:
++        f.write(s)
++
++
++def muta(p: str, coppia) -> None:
++    s = leggi(p)
++    vecchio, nuovo = coppia
++    assert s.count(vecchio) == 1, "punto di mutazione non unico in %s: %r" % (p, vecchio)
++    scrivi_file(p, s.replace(vecchio, nuovo))
++
++
++def pytest(*args: str) -> tuple:
++    t0 = time.monotonic()
++    cmd = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", *args]
++    p = subprocess.run(cmd, cwd=RADICE, capture_output=True, text=True,
++                       encoding="utf-8", errors="replace")
++    coda = [r for r in p.stdout.splitlines() if r.strip()][-1:] or ["(nessuna uscita)"]
++    return p.returncode, coda[0], round(time.monotonic() - t0, 1)
++
++
++def passo(nome: str, atteso: str, *args: str) -> bool:
++    rc, riga, dur = pytest(*args)
++    ottenuto = "verde" if rc == 0 else "rosso"
++    ok = ottenuto == atteso
++    scrivi("%-4s %-62s atteso=%-5s ottenuto=%-5s %s | %s (%.1f s)" % (
++        "OK" if ok else "KO", nome, atteso, ottenuto, "" if ok else "<-- !!", riga, dur))
++    return ok
++
++
++def main() -> int:
++    originali = {TRA: leggi(TRA), CER: leggi(CER)}
++    impronte = {p: sha(p) for p in originali}
++    tutti_ok = True
++    try:
++        veloci = (TEST_NUOVO, TEST_STRADA, "-m", "not cert")
++        scrivi("FALSIFICAZIONE PARITA_SAFE_ENV - %s" % time.strftime("%Y-%m-%d %H:%M:%S"))
++        tutti_ok &= passo("0  codice corretto: test veloci", "verde", *veloci)
++
++        muta(TRA, M1)
++        tutti_ok &= passo("M1 coda non scrive l'interruttore: test veloci", "rosso", *veloci)
++        tutti_ok &= passo("M1   - test_coda_spegne... (valore '1')", "rosso",
++                          TEST_NUOVO + "::test_coda_spegne_l_interruttore_per_ogni_valore_dell_ambiente[1]")
++        scrivi_file(TRA, originali[TRA])
++
++        muta(CER, M2)
++        tutti_ok &= passo("M2 freni senza i 20 interruttori: test veloci", "rosso", *veloci)
++        tutti_ok &= passo("M2   - test_load_dotenv_a_meta_replay_non_riaccende", "rosso",
++                          TEST_NUOVO + "::test_load_dotenv_a_meta_replay_non_riaccende")
++        scrivi_file(CER, originali[CER])
++
++        muta(TRA, M1)
++        muta(CER, M2)
++        tutti_ok &= passo("M3 = master (M1+M2): test [cert] sulla registrazione vera",
++                          "rosso", TEST_NUOVO, "-m", "cert")
++        scrivi_file(TRA, originali[TRA])
++        scrivi_file(CER, originali[CER])
++
++        muta(CER, M4)
++        tutti_ok &= passo("M4 intestazione senza interruttori", "rosso",
++                          TEST_NUOVO + "::test_intestazione_identica_per_ogni_ambiente")
++        scrivi_file(CER, originali[CER])
++
++        tutti_ok &= passo("R  ripristinato: test veloci", "verde", *veloci)
++        tutti_ok &= passo("R  ripristinato: test [cert]", "verde", TEST_NUOVO, "-m", "cert")
++    finally:
++        for p, s in originali.items():
++            scrivi_file(p, s)
++        for p, h in impronte.items():
++            ok = sha(p) == h
++            tutti_ok &= ok
++            scrivi("ripristino %s sha256 %s" % (os.path.relpath(p, RADICE),
++                                                "IDENTICO" if ok else "DIVERSO !!"))
++        scrivi("ESITO: %s" % ("TUTTO COME ATTESO" if tutti_ok else "QUALCOSA NON TORNA"))
++        with io.open(OUT, "w", encoding="utf-8") as f:
++            f.write("\n".join(righe) + "\n")
++    return 0 if tutti_ok else 1
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/AUDIT_2026-10-02/falsifica_parita_env_out.txt b/AUDIT_2026-10-02/falsifica_parita_env_out.txt
+new file mode 100644
+index 0000000..3e21b51
+--- /dev/null
++++ b/AUDIT_2026-10-02/falsifica_parita_env_out.txt
+@@ -0,0 +1,13 @@
++FALSIFICAZIONE PARITA_SAFE_ENV - 2026-10-02 11:54:23
++OK   0  codice corretto: test veloci                                atteso=verde ottenuto=verde  | 39 passed, 1 deselected in 12.09s (16.3 s)
++OK   M1 coda non scrive l'interruttore: test veloci                 atteso=rosso ottenuto=rosso  | 11 failed, 28 passed, 1 deselected in 12.20s (17.1 s)
++OK   M1   - test_coda_spegne... (valore '1')                        atteso=rosso ottenuto=rosso  | 1 failed in 2.58s (6.8 s)
++OK   M2 freni senza i 20 interruttori: test veloci                  atteso=rosso ottenuto=rosso  | 6 failed, 33 passed, 1 deselected in 11.27s (15.7 s)
++OK   M2   - test_load_dotenv_a_meta_replay_non_riaccende            atteso=rosso ottenuto=rosso  | 1 failed in 2.95s (7.6 s)
++OK   M3 = master (M1+M2): test [cert] sulla registrazione vera      atteso=rosso ottenuto=rosso  | 1 failed, 22 deselected in 86.96s (0:01:26) (91.3 s)
++OK   M4 intestazione senza interruttori                             atteso=rosso ottenuto=rosso  | 1 failed in 2.68s (7.2 s)
++OK   R  ripristinato: test veloci                                   atteso=verde ottenuto=verde  | 39 passed, 1 deselected in 9.28s (13.5 s)
++OK   R  ripristinato: test [cert]                                   atteso=verde ottenuto=verde  | 1 passed, 22 deselected in 138.58s (0:02:18) (142.5 s)
++ripristino Betfair\stream\backtest\trasporto.py sha256 IDENTICO
++ripristino Betfair\stream\backtest\certifica.py sha256 IDENTICO
++ESITO: TUTTO COME ATTESO
+diff --git a/AUDIT_2026-10-02/replay/confronto_referti_env.txt b/AUDIT_2026-10-02/replay/confronto_referti_env.txt
+new file mode 100644
+index 0000000..8e1f43c
+--- /dev/null
++++ b/AUDIT_2026-10-02/replay/confronto_referti_env.txt
+@@ -0,0 +1,8 @@
++﻿=== DOPO: env principale vs env isolato (PYTHON_DOTENV_DISABLED=1)
++righe confrontate: 90 / 90 | diverse: 0
++REFERTI: IDENTICI
++TRACCE (tolte le durate): IDENTICHE
++=== PRIMA (master, solo SAFE_ORDINI_VIA_CANALE=0 nell'ambiente) vs DOPO env principale
++righe confrontate: 90 / 90 | diverse: 0
++REFERTI: IDENTICI
++TRACCE (tolte le durate): IDENTICHE
+diff --git a/AUDIT_2026-10-02/replay/safe_base_entrambi_DOPO_env_isolato.txt b/AUDIT_2026-10-02/replay/safe_base_entrambi_DOPO_env_isolato.txt
+new file mode 100644
+index 0000000..061d3cb
+--- /dev/null
++++ b/AUDIT_2026-10-02/replay/safe_base_entrambi_DOPO_env_isolato.txt
+@@ -0,0 +1,102 @@
++WARNING:safe.porta_ordini:[safe.porta] canale di comando ws://127.0.0.1:0/comando/safe non disponibile (socket del banco chiuso)
++WARNING:Betfair.stream.auto_follow:[auto-follow] ESPULSO feed-candidata (1 mercati, priorita' candidata, senza ordini) per fare posto
++WARNING:Betfair.stream.auto_follow:[auto-follow] 1 partite idonee NON seguite (capacita' 1 mercati, 1 connessioni): feed-candidata
++WARNING:Betfair.stream.auto_follow:[auto-follow] comando su 1.259475526 NON agganciabile: 1 mercati seguiti su 1 e nessun evento automatico espellibile (posizioni vive, manuali o piu' prioritari)
++WARNING:Betfair.stream.auto_follow:[auto-follow] comando su 1.259475526 NON agganciabile: 1 mercati seguiti su 1 e nessun evento automatico espellibile (posizioni vive, manuali o piu' prioritari)
++WARNING:Betfair.stream.motore_ordini:[motore] safe-t15 NON eseguito: in_aggancio: mercato 1.999999999 non sottoscritto entro 300 ms (aggancio richiesto: il bot ripete la decisione)
++WARNING:safe.porta_ordini:[safe.porta] canale di comando ws://127.0.0.1:0/comando/safe non disponibile (socket del banco chiuso)
++WARNING:safe.porta_ordini:[safe.porta] canale di comando ws://127.0.0.1:0/comando/safe non disponibile (socket del banco chiuso)
++PROFILO RAPIDO del trasporto - bot safe_base (attore safe) - registrazione 35760084
++ambiente del banco (dichiarato; il .env di chi lancia non conta): ESITI_ORDINI_CANALE=0 LIVE_KILL_SWITCH=false LIVE_ORDER_MODE=LIVE MIKE_CANALE_POSIZIONI=0 MIKE_LEGGE_CANALE=0 MIKE_LIVE_ENABLED=1 MIKE_SVEGLIA_CANALE=0 MOTORE_ORDINI_CANALE=0 MOTORE_ORDINI_CANALE_TENNIS=0 OMEGA_CANALE_POSIZIONI=0 OMEGA_LEGGE_CANALE=0 OMEGA_ORDINI_VIA_CANALE=0 OMEGA_SVEGLIA_CANALE=0 PUNTEGGI_CANALE=0 SAFE_BOT_LEGGE_CANALE=0 SAFE_BOT_SVEGLIA_CANALE=0 SAFE_CANALE_POSIZIONI=0 SAFE_ORDINI_VIA_CANALE=0 SAFE_PRE_KO_OU_HOURS=1 SAFE_SCAN_CANALE=0 SAFE_TENNIS_ORDINI_VIA_CANALE=0 SCALPER_CANALE=0 TENNIS_BOT_CANALE=0 TENNIS_BOT_SVEGLIA_CANALE=0 | interruttore ordini del bot: coda=0 canale=1
++OK  R1 accettato  controlli=7  0.1 s
++      ok esito dell'invio 'pending' (esito dal canale)
++      ok ack accettato dal motore
++      ok evento terminale arrivato al client
++      ok UN solo ordine su flumine per il comando
++      ok nessuna chiamata REST
++      ok riga 'open' con l'abbinato del runner
++      ok bet_id della riga = bet_id dell'evento
++OK  R2 freno  controlli=3  0.0 s
++      ok quota non abbinabile: evento terminale senza abbinato
++      ok abbinato 0
++      ok riga in 'error' (nessun fill inventato)
++OK  R3 parziale  controlli=3  0.0 s
++      ok LIVE FOK oltre la liquidita': ucciso, 0 abbinato (mai un parziale)
++      ok riga 'error'
++      ok PAPER: N/A per Safe (stesso FOK del live, gia' provato)
++OK  R4 canale giu'  controlli=6  1.6 s
++      ok il client vede il canale giu'
++      ok APERTURA a canale giu': NON inviata, errore certo
++      ok APERTURA mai sul REST (D5)
++      ok nessun comando al motore
++      ok CHIUSURA a canale giu': sul REST di oggi (D5, ripiego dichiarato)
++      ok il client si ricollega da solo
++OK  R5 duplicato  controlli=3  0.0 s
++      ok secondo invio: ack 'ref_gia_visto', nessuna seconda esecuzione
++      ok il bot non lo tratta come rifiuto (pending, attende l'esito del primo)
++      ok UN solo ordine su flumine
++OK  R6 comando vecchio  controlli=3  0.0 s
++      ok rifiutato 'comando_scaduto'
++      ok esito certo negativo per il bot
++      ok nessun ordine su flumine
++OK  R7 kill-switch  controlli=5  0.0 s
++      ok APERTURA a kill-switch acceso: rifiutata 'kill_switch'
++      ok esito certo negativo per il bot
++      ok nessun ordine su flumine
++      ok CHIUSURA (riduzione verificata sul blotter) accettata
++      ok la chiusura arriva a un esito
++OK  R8 sotto il minimo  controlli=4  0.0 s
++      ok apertura sotto il minimo ACCETTATA dal motore (place-and-trim)
++      ok fasi della macchina: parcheggiato -> ridotto -> alla quota
++      ok sequenza chiusa (nessun place-and-trim appeso)
++      ok ordine a mercato: 1,50 alla quota chiesta (nessun 2,00 a quota vera)
++OK  R9 sequenza  controlli=2  0.0 s
++      ok richieste da_seq <= riconnessioni (nessuna tempesta)
++      ok seq contiguo (nessun buco aperto)
++OK  R10 mercato non seguito  controlli=11  0.0 s
++      ok prima del comando il runner NON segue il mercato
++      ok esito dell'invio 'pending' (il bot attende l'esito)
++      ok ack ACCETTATO con motivo 'in_aggancio' (dichiarato)
++      ok mercato nel piano a priorita' COMANDO
++      ok sottoscrizione a caldo inviata col mercato del comando
++      ok evento terminale arrivato al client
++      ok UN solo ordine su flumine per il comando
++      ok nessuna chiamata REST
++      ok mai 'non sottoscritto' negli eventi
++      ok riga 'open' con l'abbinato del runner
++      ok la voce prende l'event_id vero dal primo book
++OK  R10b tetto pieno  controlli=5  0.0 s
++      ok tetto pieno: 1 mercato candidato seguito su tetto 1
++      ok ack accettato in_aggancio
++      ok la candidata SENZA ordini e' espulsa, entra il mercato del comando
++      ok comando eseguito dopo l'espulsione: ordine sul mercato del comando ed evento terminale
++      ok mai piu' mercati del tetto nella sottoscrizione
++OK  R10c mai espulsi  controlli=8  0.0 s
++      ok [posizioni] rifiuto dichiarato 'tetto_mercati_pieno'
++      ok [posizioni] niente espulso: il piano e' quello di prima
++      ok [posizioni] nessun ordine, nessun REST
++      ok [posizioni] esito certo negativo per il bot (come R6)
++      ok [manuale] rifiuto dichiarato 'tetto_mercati_pieno'
++      ok [manuale] niente espulso: il piano e' quello di prima
++      ok [manuale] nessun ordine, nessun REST
++      ok [manuale] esito certo negativo per il bot (come R6)
++OK  R10d aggancio mai in silenzio  controlli=6  0.3 s
++      ok ack accettato in_aggancio
++      ok evento terminale 'rifiutato' (mai in silenzio)
++      ok esito nel diario del runner col motivo 'in_aggancio'
++      ok nessun ordine, nessun REST
++      ok nessun comando rimasto parcheggiato
++      ok riga 'error'
++OK  R2b mercato sospeso  controlli=3  3.6 s
++      ok mercato SOSPESO: nessun abbinato
++      ok esito terminale negativo
++      ok riga 'error'
++scenari di trasporto: 14, KO 0, durata 6.3 s
++PARITA' coda/canale sullo scenario d'ordine 'ordini-manuali' (partita intera, due replay in sequenza)...
++  35760084 <coda>: pulita=True decisioni=3508 azioni=2 violazioni=0
++  35760084 <canale>: pulita=True decisioni=3512 azioni=2 violazioni=0
++  PARITA' coda/canale: RAGGIUNTA | ordini coda=2 canale=2 | righe coda=2 canale=2 | REST sul canale=0
++     tempi (canale - coda, s di mercato): {'max': 2.1, 'min': 0.0, 'n': 2} | durata replay s: {'coda': 74.7, 'canale': 79.8}
++     client: {'da_seq': 0, 'buchi': 0, 'connessioni': 1} | motore: {'comandi': 2, 'accettati': 2, 'rifiutati': 0, 'order': 6} | costo del banco sul canale: 1.7 s su 340486 book
++DURATA DEL PROFILO RAPIDO (safe_base): 160.8 s
++ESITO: OK
+diff --git a/AUDIT_2026-10-02/replay/safe_base_entrambi_DOPO_env_principale.txt b/AUDIT_2026-10-02/replay/safe_base_entrambi_DOPO_env_principale.txt
+new file mode 100644
+index 0000000..2617adc
+--- /dev/null
++++ b/AUDIT_2026-10-02/replay/safe_base_entrambi_DOPO_env_principale.txt
+@@ -0,0 +1,101 @@
++WARNING:safe.porta_ordini:[safe.porta] canale di comando ws://127.0.0.1:0/comando/safe non disponibile (socket del banco chiuso)
++WARNING:Betfair.stream.auto_follow:[auto-follow] ESPULSO feed-candidata (1 mercati, priorita' candidata, senza ordini) per fare posto
++WARNING:Betfair.stream.auto_follow:[auto-follow] 1 partite idonee NON seguite (capacita' 1 mercati, 1 connessioni): feed-candidata
++WARNING:Betfair.stream.auto_follow:[auto-follow] comando su 1.259475526 NON agganciabile: 1 mercati seguiti su 1 e nessun evento automatico espellibile (posizioni vive, manuali o piu' prioritari)
++WARNING:Betfair.stream.auto_follow:[auto-follow] comando su 1.259475526 NON agganciabile: 1 mercati seguiti su 1 e nessun evento automatico espellibile (posizioni vive, manuali o piu' prioritari)
++WARNING:Betfair.stream.motore_ordini:[motore] safe-t15 NON eseguito: in_aggancio: mercato 1.999999999 non sottoscritto entro 300 ms (aggancio richiesto: il bot ripete la decisione)
++WARNING:safe.porta_ordini:[safe.porta] canale di comando ws://127.0.0.1:0/comando/safe non disponibile (socket del banco chiuso)
++PROFILO RAPIDO del trasporto - bot safe_base (attore safe) - registrazione 35760084
++ambiente del banco (dichiarato; il .env di chi lancia non conta): ESITI_ORDINI_CANALE=0 LIVE_KILL_SWITCH=false LIVE_ORDER_MODE=LIVE MIKE_CANALE_POSIZIONI=0 MIKE_LEGGE_CANALE=0 MIKE_LIVE_ENABLED=1 MIKE_SVEGLIA_CANALE=0 MOTORE_ORDINI_CANALE=0 MOTORE_ORDINI_CANALE_TENNIS=0 OMEGA_CANALE_POSIZIONI=0 OMEGA_LEGGE_CANALE=0 OMEGA_ORDINI_VIA_CANALE=0 OMEGA_SVEGLIA_CANALE=0 PUNTEGGI_CANALE=0 SAFE_BOT_LEGGE_CANALE=0 SAFE_BOT_SVEGLIA_CANALE=0 SAFE_CANALE_POSIZIONI=0 SAFE_ORDINI_VIA_CANALE=0 SAFE_PRE_KO_OU_HOURS=1 SAFE_SCAN_CANALE=0 SAFE_TENNIS_ORDINI_VIA_CANALE=0 SCALPER_CANALE=0 TENNIS_BOT_CANALE=0 TENNIS_BOT_SVEGLIA_CANALE=0 | interruttore ordini del bot: coda=0 canale=1
++OK  R1 accettato  controlli=7  0.3 s
++      ok esito dell'invio 'pending' (esito dal canale)
++      ok ack accettato dal motore
++      ok evento terminale arrivato al client
++      ok UN solo ordine su flumine per il comando
++      ok nessuna chiamata REST
++      ok riga 'open' con l'abbinato del runner
++      ok bet_id della riga = bet_id dell'evento
++OK  R2 freno  controlli=3  0.0 s
++      ok quota non abbinabile: evento terminale senza abbinato
++      ok abbinato 0
++      ok riga in 'error' (nessun fill inventato)
++OK  R3 parziale  controlli=3  0.0 s
++      ok LIVE FOK oltre la liquidita': ucciso, 0 abbinato (mai un parziale)
++      ok riga 'error'
++      ok PAPER: N/A per Safe (stesso FOK del live, gia' provato)
++OK  R4 canale giu'  controlli=6  1.5 s
++      ok il client vede il canale giu'
++      ok APERTURA a canale giu': NON inviata, errore certo
++      ok APERTURA mai sul REST (D5)
++      ok nessun comando al motore
++      ok CHIUSURA a canale giu': sul REST di oggi (D5, ripiego dichiarato)
++      ok il client si ricollega da solo
++OK  R5 duplicato  controlli=3  0.0 s
++      ok secondo invio: ack 'ref_gia_visto', nessuna seconda esecuzione
++      ok il bot non lo tratta come rifiuto (pending, attende l'esito del primo)
++      ok UN solo ordine su flumine
++OK  R6 comando vecchio  controlli=3  0.0 s
++      ok rifiutato 'comando_scaduto'
++      ok esito certo negativo per il bot
++      ok nessun ordine su flumine
++OK  R7 kill-switch  controlli=5  0.0 s
++      ok APERTURA a kill-switch acceso: rifiutata 'kill_switch'
++      ok esito certo negativo per il bot
++      ok nessun ordine su flumine
++      ok CHIUSURA (riduzione verificata sul blotter) accettata
++      ok la chiusura arriva a un esito
++OK  R8 sotto il minimo  controlli=4  0.0 s
++      ok apertura sotto il minimo ACCETTATA dal motore (place-and-trim)
++      ok fasi della macchina: parcheggiato -> ridotto -> alla quota
++      ok sequenza chiusa (nessun place-and-trim appeso)
++      ok ordine a mercato: 1,50 alla quota chiesta (nessun 2,00 a quota vera)
++OK  R9 sequenza  controlli=2  0.0 s
++      ok richieste da_seq <= riconnessioni (nessuna tempesta)
++      ok seq contiguo (nessun buco aperto)
++OK  R10 mercato non seguito  controlli=11  0.0 s
++      ok prima del comando il runner NON segue il mercato
++      ok esito dell'invio 'pending' (il bot attende l'esito)
++      ok ack ACCETTATO con motivo 'in_aggancio' (dichiarato)
++      ok mercato nel piano a priorita' COMANDO
++      ok sottoscrizione a caldo inviata col mercato del comando
++      ok evento terminale arrivato al client
++      ok UN solo ordine su flumine per il comando
++      ok nessuna chiamata REST
++      ok mai 'non sottoscritto' negli eventi
++      ok riga 'open' con l'abbinato del runner
++      ok la voce prende l'event_id vero dal primo book
++OK  R10b tetto pieno  controlli=5  0.0 s
++      ok tetto pieno: 1 mercato candidato seguito su tetto 1
++      ok ack accettato in_aggancio
++      ok la candidata SENZA ordini e' espulsa, entra il mercato del comando
++      ok comando eseguito dopo l'espulsione: ordine sul mercato del comando ed evento terminale
++      ok mai piu' mercati del tetto nella sottoscrizione
++OK  R10c mai espulsi  controlli=8  0.0 s
++      ok [posizioni] rifiuto dichiarato 'tetto_mercati_pieno'
++      ok [posizioni] niente espulso: il piano e' quello di prima
++      ok [posizioni] nessun ordine, nessun REST
++      ok [posizioni] esito certo negativo per il bot (come R6)
++      ok [manuale] rifiuto dichiarato 'tetto_mercati_pieno'
++      ok [manuale] niente espulso: il piano e' quello di prima
++      ok [manuale] nessun ordine, nessun REST
++      ok [manuale] esito certo negativo per il bot (come R6)
++OK  R10d aggancio mai in silenzio  controlli=6  0.3 s
++      ok ack accettato in_aggancio
++      ok evento terminale 'rifiutato' (mai in silenzio)
++      ok esito nel diario del runner col motivo 'in_aggancio'
++      ok nessun ordine, nessun REST
++      ok nessun comando rimasto parcheggiato
++      ok riga 'error'
++OK  R2b mercato sospeso  controlli=3  3.6 s
++      ok mercato SOSPESO: nessun abbinato
++      ok esito terminale negativo
++      ok riga 'error'
++scenari di trasporto: 14, KO 0, durata 6.4 s
++PARITA' coda/canale sullo scenario d'ordine 'ordini-manuali' (partita intera, due replay in sequenza)...
++  35760084 <coda>: pulita=True decisioni=3508 azioni=2 violazioni=0
++  35760084 <canale>: pulita=True decisioni=3512 azioni=2 violazioni=0
++  PARITA' coda/canale: RAGGIUNTA | ordini coda=2 canale=2 | righe coda=2 canale=2 | REST sul canale=0
++     tempi (canale - coda, s di mercato): {'max': 2.1, 'min': 0.0, 'n': 2} | durata replay s: {'coda': 74.6, 'canale': 90.6}
++     client: {'da_seq': 0, 'buchi': 0, 'connessioni': 1} | motore: {'comandi': 2, 'accettati': 2, 'rifiutati': 0, 'order': 6} | costo del banco sul canale: 2.3 s su 340486 book
++DURATA DEL PROFILO RAPIDO (safe_base): 171.7 s
++ESITO: OK
+diff --git a/AUDIT_2026-10-02/replay/safe_base_entrambi_PRIMA_env_principale.txt b/AUDIT_2026-10-02/replay/safe_base_entrambi_PRIMA_env_principale.txt
+new file mode 100644
+index 0000000..216a45d
+--- /dev/null
++++ b/AUDIT_2026-10-02/replay/safe_base_entrambi_PRIMA_env_principale.txt
+@@ -0,0 +1,104 @@
++WARNING:safe.porta_ordini:[safe.porta] canale di comando ws://127.0.0.1:0/comando/safe non disponibile (socket del banco chiuso)
++WARNING:Betfair.stream.auto_follow:[auto-follow] ESPULSO feed-candidata (1 mercati, priorita' candidata, senza ordini) per fare posto
++WARNING:Betfair.stream.auto_follow:[auto-follow] 1 partite idonee NON seguite (capacita' 1 mercati, 1 connessioni): feed-candidata
++WARNING:Betfair.stream.auto_follow:[auto-follow] comando su 1.259475526 NON agganciabile: 1 mercati seguiti su 1 e nessun evento automatico espellibile (posizioni vive, manuali o piu' prioritari)
++WARNING:Betfair.stream.auto_follow:[auto-follow] comando su 1.259475526 NON agganciabile: 1 mercati seguiti su 1 e nessun evento automatico espellibile (posizioni vive, manuali o piu' prioritari)
++WARNING:Betfair.stream.motore_ordini:[motore] safe-t15 NON eseguito: in_aggancio: mercato 1.999999999 non sottoscritto entro 300 ms (aggancio richiesto: il bot ripete la decisione)
++WARNING:safe.porta_ordini:[safe.porta] canale di comando ws://127.0.0.1:0/comando/safe non disponibile (socket del banco chiuso)
++WARNING:safe.porta_ordini:[safe.porta] canale di comando ws://127.0.0.1:47331/comando/safe non disponibile (token del canale assente: porta giu' (fail-closed))
++PROFILO RAPIDO del trasporto - bot safe_base (attore safe) - registrazione 35760084
++OK  R1 accettato  controlli=7  0.3 s
++      ok esito dell'invio 'pending' (esito dal canale)
++      ok ack accettato dal motore
++      ok evento terminale arrivato al client
++      ok UN solo ordine su flumine per il comando
++      ok nessuna chiamata REST
++      ok riga 'open' con l'abbinato del runner
++      ok bet_id della riga = bet_id dell'evento
++OK  R2 freno  controlli=3  0.0 s
++      ok quota non abbinabile: evento terminale senza abbinato
++      ok abbinato 0
++      ok riga in 'error' (nessun fill inventato)
++OK  R3 parziale  controlli=3  0.0 s
++      ok LIVE FOK oltre la liquidita': ucciso, 0 abbinato (mai un parziale)
++      ok riga 'error'
++      ok PAPER: N/A per Safe (stesso FOK del live, gia' provato)
++OK  R4 canale giu'  controlli=6  1.5 s
++      ok il client vede il canale giu'
++      ok APERTURA a canale giu': NON inviata, errore certo
++      ok APERTURA mai sul REST (D5)
++      ok nessun comando al motore
++      ok CHIUSURA a canale giu': sul REST di oggi (D5, ripiego dichiarato)
++      ok il client si ricollega da solo
++OK  R5 duplicato  controlli=3  0.0 s
++      ok secondo invio: ack 'ref_gia_visto', nessuna seconda esecuzione
++      ok il bot non lo tratta come rifiuto (pending, attende l'esito del primo)
++      ok UN solo ordine su flumine
++OK  R6 comando vecchio  controlli=3  0.0 s
++      ok rifiutato 'comando_scaduto'
++      ok esito certo negativo per il bot
++      ok nessun ordine su flumine
++OK  R7 kill-switch  controlli=5  0.0 s
++      ok APERTURA a kill-switch acceso: rifiutata 'kill_switch'
++      ok esito certo negativo per il bot
++      ok nessun ordine su flumine
++      ok CHIUSURA (riduzione verificata sul blotter) accettata
++      ok la chiusura arriva a un esito
++OK  R8 sotto il minimo  controlli=4  0.0 s
++      ok apertura sotto il minimo ACCETTATA dal motore (place-and-trim)
++      ok fasi della macchina: parcheggiato -> ridotto -> alla quota
++      ok sequenza chiusa (nessun place-and-trim appeso)
++      ok ordine a mercato: 1,50 alla quota chiesta (nessun 2,00 a quota vera)
++OK  R9 sequenza  controlli=2  0.0 s
++      ok richieste da_seq <= riconnessioni (nessuna tempesta)
++      ok seq contiguo (nessun buco aperto)
++OK  R10 mercato non seguito  controlli=11  0.0 s
++      ok prima del comando il runner NON segue il mercato
++      ok esito dell'invio 'pending' (il bot attende l'esito)
++      ok ack ACCETTATO con motivo 'in_aggancio' (dichiarato)
++      ok mercato nel piano a priorita' COMANDO
++      ok sottoscrizione a caldo inviata col mercato del comando
++      ok evento terminale arrivato al client
++      ok UN solo ordine su flumine per il comando
++      ok nessuna chiamata REST
++      ok mai 'non sottoscritto' negli eventi
++      ok riga 'open' con l'abbinato del runner
++      ok la voce prende l'event_id vero dal primo book
++OK  R10b tetto pieno  controlli=5  0.0 s
++      ok tetto pieno: 1 mercato candidato seguito su tetto 1
++      ok ack accettato in_aggancio
++      ok la candidata SENZA ordini e' espulsa, entra il mercato del comando
++      ok comando eseguito dopo l'espulsione: ordine sul mercato del comando ed evento terminale
++      ok mai piu' mercati del tetto nella sottoscrizione
++OK  R10c mai espulsi  controlli=8  0.0 s
++      ok [posizioni] rifiuto dichiarato 'tetto_mercati_pieno'
++      ok [posizioni] niente espulso: il piano e' quello di prima
++      ok [posizioni] nessun ordine, nessun REST
++      ok [posizioni] esito certo negativo per il bot (come R6)
++      ok [manuale] rifiuto dichiarato 'tetto_mercati_pieno'
++      ok [manuale] niente espulso: il piano e' quello di prima
++      ok [manuale] nessun ordine, nessun REST
++      ok [manuale] esito certo negativo per il bot (come R6)
++OK  R10d aggancio mai in silenzio  controlli=6  0.3 s
++      ok ack accettato in_aggancio
++      ok evento terminale 'rifiutato' (mai in silenzio)
++      ok esito nel diario del runner col motivo 'in_aggancio'
++      ok nessun ordine, nessun REST
++      ok nessun comando rimasto parcheggiato
++      ok riga 'error'
++OK  R2b mercato sospeso  controlli=3  1.6 s
++      ok mercato SOSPESO: nessun abbinato
++      ok esito terminale negativo
++      ok riga 'error'
++scenari di trasporto: 14, KO 0, durata 4.1 s
++PARITA' coda/canale sullo scenario d'ordine 'ordini-manuali' (partita intera, due replay in sequenza)...
++  35760084 <coda>: pulita=True decisioni=3512 azioni=1 violazioni=0
++  35760084 <canale>: pulita=True decisioni=3512 azioni=2 violazioni=0
++  PARITA' coda/canale: NON RAGGIUNTA | ordini coda=0 canale=2 | righe coda=1 canale=2 | REST sul canale=0
++     tempi (canale - coda, s di mercato): None | durata replay s: {'coda': 53.3, 'canale': 49.7}
++     client: {'da_seq': 0, 'buchi': 0, 'connessioni': 1} | motore: {'comandi': 2, 'accettati': 2, 'rifiutati': 0, 'order': 6} | costo del banco sul canale: 1.0 s su 340486 book
++     primo scarto all'ordine #0: coda=None | canale={'azione': 'place', 'ref': 'safe-t1', 'market_id': '1.259475525', 'selection_id': 86159298, 'side': 'LAY', 'price': 12.0, 'size': 2.0, 'fok': True, 't_mercato': '2026-06-30T16:00:35.675000+00:00', 'accettato': True, 'motivo': None}
++     riga 1 diversa: coda={'id': 1, 'status': 'error', 'side': 'lay', 'market_id': '1.259475525', 'selection_id': 86159298, 'price': 12.0, 'size': 2.0, 'mode': 'live'} | canale={'id': 1, 'status': 'hedged', 'side': 'lay', 'market_id': '1.259475525', 'selection_id': 86159298, 'price': 11.0, 'size': 2.0, 'mode': 'live'}
++     riga 2 diversa: coda=None | canale={'id': 2, 'status': 'open', 'side': 'back', 'market_id': '1.259475525', 'selection_id': 86159298, 'price': 9.2, 'size': 2.39, 'mode': 'live'}
++DURATA DEL PROFILO RAPIDO (safe_base): 107.2 s
++ESITO: KO
+diff --git a/AUDIT_2026-10-02/replay/safe_base_entrambi_PRIMA_solo_SAFE_ORDINI_0.txt b/AUDIT_2026-10-02/replay/safe_base_entrambi_PRIMA_solo_SAFE_ORDINI_0.txt
+new file mode 100644
+index 0000000..8d482b7
+--- /dev/null
++++ b/AUDIT_2026-10-02/replay/safe_base_entrambi_PRIMA_solo_SAFE_ORDINI_0.txt
+@@ -0,0 +1,100 @@
++WARNING:safe.porta_ordini:[safe.porta] canale di comando ws://127.0.0.1:0/comando/safe non disponibile (socket del banco chiuso)
++WARNING:Betfair.stream.auto_follow:[auto-follow] ESPULSO feed-candidata (1 mercati, priorita' candidata, senza ordini) per fare posto
++WARNING:Betfair.stream.auto_follow:[auto-follow] 1 partite idonee NON seguite (capacita' 1 mercati, 1 connessioni): feed-candidata
++WARNING:Betfair.stream.auto_follow:[auto-follow] comando su 1.259475526 NON agganciabile: 1 mercati seguiti su 1 e nessun evento automatico espellibile (posizioni vive, manuali o piu' prioritari)
++WARNING:Betfair.stream.auto_follow:[auto-follow] comando su 1.259475526 NON agganciabile: 1 mercati seguiti su 1 e nessun evento automatico espellibile (posizioni vive, manuali o piu' prioritari)
++WARNING:Betfair.stream.motore_ordini:[motore] safe-t15 NON eseguito: in_aggancio: mercato 1.999999999 non sottoscritto entro 300 ms (aggancio richiesto: il bot ripete la decisione)
++WARNING:safe.porta_ordini:[safe.porta] canale di comando ws://127.0.0.1:0/comando/safe non disponibile (socket del banco chiuso)
++PROFILO RAPIDO del trasporto - bot safe_base (attore safe) - registrazione 35760084
++OK  R1 accettato  controlli=7  0.0 s
++      ok esito dell'invio 'pending' (esito dal canale)
++      ok ack accettato dal motore
++      ok evento terminale arrivato al client
++      ok UN solo ordine su flumine per il comando
++      ok nessuna chiamata REST
++      ok riga 'open' con l'abbinato del runner
++      ok bet_id della riga = bet_id dell'evento
++OK  R2 freno  controlli=3  0.0 s
++      ok quota non abbinabile: evento terminale senza abbinato
++      ok abbinato 0
++      ok riga in 'error' (nessun fill inventato)
++OK  R3 parziale  controlli=3  0.0 s
++      ok LIVE FOK oltre la liquidita': ucciso, 0 abbinato (mai un parziale)
++      ok riga 'error'
++      ok PAPER: N/A per Safe (stesso FOK del live, gia' provato)
++OK  R4 canale giu'  controlli=6  1.5 s
++      ok il client vede il canale giu'
++      ok APERTURA a canale giu': NON inviata, errore certo
++      ok APERTURA mai sul REST (D5)
++      ok nessun comando al motore
++      ok CHIUSURA a canale giu': sul REST di oggi (D5, ripiego dichiarato)
++      ok il client si ricollega da solo
++OK  R5 duplicato  controlli=3  0.0 s
++      ok secondo invio: ack 'ref_gia_visto', nessuna seconda esecuzione
++      ok il bot non lo tratta come rifiuto (pending, attende l'esito del primo)
++      ok UN solo ordine su flumine
++OK  R6 comando vecchio  controlli=3  0.0 s
++      ok rifiutato 'comando_scaduto'
++      ok esito certo negativo per il bot
++      ok nessun ordine su flumine
++OK  R7 kill-switch  controlli=5  0.0 s
++      ok APERTURA a kill-switch acceso: rifiutata 'kill_switch'
++      ok esito certo negativo per il bot
++      ok nessun ordine su flumine
++      ok CHIUSURA (riduzione verificata sul blotter) accettata
++      ok la chiusura arriva a un esito
++OK  R8 sotto il minimo  controlli=4  0.0 s
++      ok apertura sotto il minimo ACCETTATA dal motore (place-and-trim)
++      ok fasi della macchina: parcheggiato -> ridotto -> alla quota
++      ok sequenza chiusa (nessun place-and-trim appeso)
++      ok ordine a mercato: 1,50 alla quota chiesta (nessun 2,00 a quota vera)
++OK  R9 sequenza  controlli=2  0.0 s
++      ok richieste da_seq <= riconnessioni (nessuna tempesta)
++      ok seq contiguo (nessun buco aperto)
++OK  R10 mercato non seguito  controlli=11  0.0 s
++      ok prima del comando il runner NON segue il mercato
++      ok esito dell'invio 'pending' (il bot attende l'esito)
++      ok ack ACCETTATO con motivo 'in_aggancio' (dichiarato)
++      ok mercato nel piano a priorita' COMANDO
++      ok sottoscrizione a caldo inviata col mercato del comando
++      ok evento terminale arrivato al client
++      ok UN solo ordine su flumine per il comando
++      ok nessuna chiamata REST
++      ok mai 'non sottoscritto' negli eventi
++      ok riga 'open' con l'abbinato del runner
++      ok la voce prende l'event_id vero dal primo book
++OK  R10b tetto pieno  controlli=5  0.0 s
++      ok tetto pieno: 1 mercato candidato seguito su tetto 1
++      ok ack accettato in_aggancio
++      ok la candidata SENZA ordini e' espulsa, entra il mercato del comando
++      ok comando eseguito dopo l'espulsione: ordine sul mercato del comando ed evento terminale
++      ok mai piu' mercati del tetto nella sottoscrizione
++OK  R10c mai espulsi  controlli=8  0.0 s
++      ok [posizioni] rifiuto dichiarato 'tetto_mercati_pieno'
++      ok [posizioni] niente espulso: il piano e' quello di prima
++      ok [posizioni] nessun ordine, nessun REST
++      ok [posizioni] esito certo negativo per il bot (come R6)
++      ok [manuale] rifiuto dichiarato 'tetto_mercati_pieno'
++      ok [manuale] niente espulso: il piano e' quello di prima
++      ok [manuale] nessun ordine, nessun REST
++      ok [manuale] esito certo negativo per il bot (come R6)
++OK  R10d aggancio mai in silenzio  controlli=6  0.3 s
++      ok ack accettato in_aggancio
++      ok evento terminale 'rifiutato' (mai in silenzio)
++      ok esito nel diario del runner col motivo 'in_aggancio'
++      ok nessun ordine, nessun REST
++      ok nessun comando rimasto parcheggiato
++      ok riga 'error'
++OK  R2b mercato sospeso  controlli=3  2.2 s
++      ok mercato SOSPESO: nessun abbinato
++      ok esito terminale negativo
++      ok riga 'error'
++scenari di trasporto: 14, KO 0, durata 4.3 s
++PARITA' coda/canale sullo scenario d'ordine 'ordini-manuali' (partita intera, due replay in sequenza)...
++  35760084 <coda>: pulita=True decisioni=3508 azioni=2 violazioni=0
++  35760084 <canale>: pulita=True decisioni=3512 azioni=2 violazioni=0
++  PARITA' coda/canale: RAGGIUNTA | ordini coda=2 canale=2 | righe coda=2 canale=2 | REST sul canale=0
++     tempi (canale - coda, s di mercato): {'max': 2.1, 'min': 0.0, 'n': 2} | durata replay s: {'coda': 43.3, 'canale': 47.5}
++     client: {'da_seq': 0, 'buchi': 0, 'connessioni': 1} | motore: {'comandi': 2, 'accettati': 2, 'rifiutati': 0, 'order': 6} | costo del banco sul canale: 1.0 s su 340486 book
++DURATA DEL PROFILO RAPIDO (safe_base): 95.1 s
++ESITO: OK
+diff --git a/AUDIT_2026-10-02/replay/safe_base_entrambi_RUNNER_e4c93e0_env_principale.txt b/AUDIT_2026-10-02/replay/safe_base_entrambi_RUNNER_e4c93e0_env_principale.txt
+new file mode 100644
+index 0000000..4a1ed75
+--- /dev/null
++++ b/AUDIT_2026-10-02/replay/safe_base_entrambi_RUNNER_e4c93e0_env_principale.txt
+@@ -0,0 +1,104 @@
++WARNING:safe.porta_ordini:[safe.porta] canale di comando ws://127.0.0.1:0/comando/safe non disponibile (socket del banco chiuso)
++WARNING:Betfair.stream.auto_follow:[auto-follow] ESPULSO feed-candidata (1 mercati, priorita' candidata, senza ordini) per fare posto
++WARNING:Betfair.stream.auto_follow:[auto-follow] 1 partite idonee NON seguite (capacita' 1 mercati, 1 connessioni): feed-candidata
++WARNING:Betfair.stream.auto_follow:[auto-follow] comando su 1.259475526 NON agganciabile: 1 mercati seguiti su 1 e nessun evento automatico espellibile (posizioni vive, manuali o piu' prioritari)
++WARNING:Betfair.stream.auto_follow:[auto-follow] comando su 1.259475526 NON agganciabile: 1 mercati seguiti su 1 e nessun evento automatico espellibile (posizioni vive, manuali o piu' prioritari)
++WARNING:Betfair.stream.motore_ordini:[motore] safe-t15 NON eseguito: in_aggancio: mercato 1.999999999 non sottoscritto entro 300 ms (aggancio richiesto: il bot ripete la decisione)
++WARNING:safe.porta_ordini:[safe.porta] canale di comando ws://127.0.0.1:0/comando/safe non disponibile (socket del banco chiuso)
++WARNING:safe.porta_ordini:[safe.porta] canale di comando ws://127.0.0.1:47331/comando/safe non disponibile (token del canale assente: porta giu' (fail-closed))
++PROFILO RAPIDO del trasporto - bot safe_base (attore safe) - registrazione 35760084
++OK  R1 accettato  controlli=7  0.3 s
++      ok esito dell'invio 'pending' (esito dal canale)
++      ok ack accettato dal motore
++      ok evento terminale arrivato al client
++      ok UN solo ordine su flumine per il comando
++      ok nessuna chiamata REST
++      ok riga 'open' con l'abbinato del runner
++      ok bet_id della riga = bet_id dell'evento
++OK  R2 freno  controlli=3  0.3 s
++      ok quota non abbinabile: evento terminale senza abbinato
++      ok abbinato 0
++      ok riga in 'error' (nessun fill inventato)
++OK  R3 parziale  controlli=3  0.0 s
++      ok LIVE FOK oltre la liquidita': ucciso, 0 abbinato (mai un parziale)
++      ok riga 'error'
++      ok PAPER: N/A per Safe (stesso FOK del live, gia' provato)
++OK  R4 canale giu'  controlli=6  1.5 s
++      ok il client vede il canale giu'
++      ok APERTURA a canale giu': NON inviata, errore certo
++      ok APERTURA mai sul REST (D5)
++      ok nessun comando al motore
++      ok CHIUSURA a canale giu': sul REST di oggi (D5, ripiego dichiarato)
++      ok il client si ricollega da solo
++OK  R5 duplicato  controlli=3  0.0 s
++      ok secondo invio: ack 'ref_gia_visto', nessuna seconda esecuzione
++      ok il bot non lo tratta come rifiuto (pending, attende l'esito del primo)
++      ok UN solo ordine su flumine
++OK  R6 comando vecchio  controlli=3  0.0 s
++      ok rifiutato 'comando_scaduto'
++      ok esito certo negativo per il bot
++      ok nessun ordine su flumine
++OK  R7 kill-switch  controlli=5  0.0 s
++      ok APERTURA a kill-switch acceso: rifiutata 'kill_switch'
++      ok esito certo negativo per il bot
++      ok nessun ordine su flumine
++      ok CHIUSURA (riduzione verificata sul blotter) accettata
++      ok la chiusura arriva a un esito
++OK  R8 sotto il minimo  controlli=4  0.1 s
++      ok apertura sotto il minimo ACCETTATA dal motore (place-and-trim)
++      ok fasi della macchina: parcheggiato -> ridotto -> alla quota
++      ok sequenza chiusa (nessun place-and-trim appeso)
++      ok ordine a mercato: 0,70 alla quota chiesta (nessun 1,00 a quota vera)
++OK  R9 sequenza  controlli=2  0.0 s
++      ok richieste da_seq <= riconnessioni (nessuna tempesta)
++      ok seq contiguo (nessun buco aperto)
++OK  R10 mercato non seguito  controlli=11  0.1 s
++      ok prima del comando il runner NON segue il mercato
++      ok esito dell'invio 'pending' (il bot attende l'esito)
++      ok ack ACCETTATO con motivo 'in_aggancio' (dichiarato)
++      ok mercato nel piano a priorita' COMANDO
++      ok sottoscrizione a caldo inviata col mercato del comando
++      ok evento terminale arrivato al client
++      ok UN solo ordine su flumine per il comando
++      ok nessuna chiamata REST
++      ok mai 'non sottoscritto' negli eventi
++      ok riga 'open' con l'abbinato del runner
++      ok la voce prende l'event_id vero dal primo book
++OK  R10b tetto pieno  controlli=5  0.1 s
++      ok tetto pieno: 1 mercato candidato seguito su tetto 1
++      ok ack accettato in_aggancio
++      ok la candidata SENZA ordini e' espulsa, entra il mercato del comando
++      ok comando eseguito dopo l'espulsione: ordine sul mercato del comando ed evento terminale
++      ok mai piu' mercati del tetto nella sottoscrizione
++OK  R10c mai espulsi  controlli=8  0.0 s
++      ok [posizioni] rifiuto dichiarato 'tetto_mercati_pieno'
++      ok [posizioni] niente espulso: il piano e' quello di prima
++      ok [posizioni] nessun ordine, nessun REST
++      ok [posizioni] esito certo negativo per il bot (come R6)
++      ok [manuale] rifiuto dichiarato 'tetto_mercati_pieno'
++      ok [manuale] niente espulso: il piano e' quello di prima
++      ok [manuale] nessun ordine, nessun REST
++      ok [manuale] esito certo negativo per il bot (come R6)
++OK  R10d aggancio mai in silenzio  controlli=6  0.3 s
++      ok ack accettato in_aggancio
++      ok evento terminale 'rifiutato' (mai in silenzio)
++      ok esito nel diario del runner col motivo 'in_aggancio'
++      ok nessun ordine, nessun REST
++      ok nessun comando rimasto parcheggiato
++      ok riga 'error'
++OK  R2b mercato sospeso  controlli=3  2.7 s
++      ok mercato SOSPESO: nessun abbinato
++      ok esito terminale negativo
++      ok riga 'error'
++scenari di trasporto: 14, KO 0, durata 6.1 s
++PARITA' coda/canale sullo scenario d'ordine 'ordini-manuali' (partita intera, due replay in sequenza)...
++  35760084 <coda>: pulita=True decisioni=3512 azioni=1 violazioni=0
++  35760084 <canale>: pulita=True decisioni=3512 azioni=2 violazioni=0
++  PARITA' coda/canale: NON RAGGIUNTA | ordini coda=0 canale=2 | righe coda=1 canale=2 | REST sul canale=0
++     tempi (canale - coda, s di mercato): None | durata replay s: {'coda': 70.6, 'canale': 75.8}
++     client: {'da_seq': 0, 'buchi': 0, 'connessioni': 1} | motore: {'comandi': 2, 'accettati': 2, 'rifiutati': 0, 'order': 6} | costo del banco sul canale: 1.7 s su 340486 book
++     primo scarto all'ordine #0: coda=None | canale={'azione': 'place', 'ref': 'safe-t1', 'market_id': '1.259475525', 'selection_id': 86159298, 'side': 'LAY', 'price': 12.0, 'size': 2.0, 'fok': True, 't_mercato': '2026-06-30T16:00:35.675000+00:00', 'accettato': True, 'motivo': None}
++     riga 1 diversa: coda={'id': 1, 'status': 'error', 'side': 'lay', 'market_id': '1.259475525', 'selection_id': 86159298, 'price': 12.0, 'size': 2.0, 'mode': 'live'} | canale={'id': 1, 'status': 'hedged', 'side': 'lay', 'market_id': '1.259475525', 'selection_id': 86159298, 'price': 11.0, 'size': 2.0, 'mode': 'live'}
++     riga 2 diversa: coda=None | canale={'id': 2, 'status': 'open', 'side': 'back', 'market_id': '1.259475525', 'selection_id': 86159298, 'price': 9.2, 'size': 2.39, 'mode': 'live'}
++DURATA DEL PROFILO RAPIDO (safe_base): 152.5 s
++ESITO: KO
+diff --git a/AUDIT_2026-10-02/replay/sonda_diario_canale_env_principale.txt b/AUDIT_2026-10-02/replay/sonda_diario_canale_env_principale.txt
+new file mode 100644
+index 0000000..49c2a4a
+--- /dev/null
++++ b/AUDIT_2026-10-02/replay/sonda_diario_canale_env_principale.txt
+@@ -0,0 +1,11 @@
++SAFE_ORDINI_VIA_CANALE nell'ambiente PRIMA del replay: '1'
++SAFE_ORDINI_VIA_CANALE DURANTE il replay: '1'
++azioni del referto: 2
++[trades] {"event_id": "35760084", "event_name": "Liepajas Metalurgs v Ogre United", "sport": "calcio", "strategy": "manual", "market_id": "1.259475525", "market_type": "MATCH_ODDS", "selection_id": 86159298, "selection_name": "Ogre United", "side": "lay", "mode": "live", "price": 11.0, "size": 2.0, "liability": 20.0, "commission": 0.05, "minute_at_entry": null, "score_at_entry": "None-None", "status": "hedged", "pnl": 0.0, "origin": "manual", "signal_key": null, "meta": {"manual": true, "idempotency_key": "replay-35760084-manuale", "canale_ref": "safe-t1", "canale_attore": "safe", "canale_inviato_at": "2026-06-30T16:00:35.675000+00:00", "canale_ack_seq": 1790934437399, "canale_ack_ms": 1790934441651, "canale_fase": "inviato", "canale_seq": 1790934437401, "requested_size": 2.0, "esecuzione": {"percorso": "canale", "canale_ref": "safe-t1", "fase": "abbinato", "price_richiesto": 12.0, "price_medio": 11.0, "size_richiesta": 2.0, "size_abbinata": 2.0, "size_residua": 0.0}, "fill": "flumine_live", "size_remaining": 0.0, "betfair_updated_at": "2026-06-30T16:00:41.287000+00:00", "cashout_at": "2026-06-30T16:02:51.459000+00:00", "hedged_size": 2.0, "residual_size": 0.0, "locked_pnl": -0.4, "locked_pnl_net": -0.4, "worst_case": -0.4, "best_case": -0.39, "if_win": -0.4, "if_lose": -0.39, "hedge_pending_ids": [], "closing_ids": [2], "closing_trade_id": 2, "closing_status": "open", "hedge": {"fraction": 1.0, "remaining_liability": 0.0, "hedged_size": 2.0, "residual_size": 0.0, "complete": true}, "
++[trades] {"event_id": "35760084", "event_name": "Liepajas Metalurgs v Ogre United", "market_id": "1.259475525", "selection_id": 86159298, "side": "back", "mode": "live", "origin": "manual", "price": 9.2, "size": 2.39, "liability": 2.39, "commission": 0.05, "status": "open", "pnl": 0.0, "closes_trade_id": 1, "meta": {"cashout": true, "closes_trade_id": 1, "plan_note": "BACK 2.39@9.2 (f=1.00)", "expected_if_win": -0.4, "expected_if_lose": -0.39, "exit_kind": "manual", "exit_reason": "Cash out manuale dalla dashboard", "price_segnale": 9.2, "canale_ref": "safe-t2", "canale_attore": "safe", "canale_inviato_at": "2026-06-30T16:02:51.459000+00:00", "canale_ack_seq": 1790934437403, "canale_ack_ms": 1790934442664, "canale_fase": "inviato", "canale_seq": 1790934437405, "requested_size": 2.39, "esecuzione": {"percorso": "canale", "canale_ref": "safe-t2", "fase": "abbinato", "price_richiesto": 9.2, "price_medio": 9.2, "size_richiesta": 2.39, "size_abbinata": 2.39, "size_residua": 0.0}, "fill": "flumine_live", "size_remaining": 0.0, "betfair_updated_at": "2026-06-30T16:02:56.642000+00:00"}, "sport": "calcio", "strategy": "manual", "market_type": "MATCH_ODDS", "selection_name": "Ogre United", "minute_at_entry": null, "score_at_entry": "None-None", "id": 2, "placed_at": "2026-06-30T16:02:51.459000+00:00", "size_requested": 2.39, "size_matched": 2.39, "size_remaining": 0.0, "bet_id": "100000000002", "avg_price_matched": 9.2, "betfair_updated_at": "2026-06-30T16:02:56.642000+00:00"}
++[requests] {"id": 1, "kind": "place", "status": "done", "payload": {"event_id": "35760084", "event_name": "Liepajas Metalurgs v Ogre United", "sport": "calcio", "market_id": "1.259475525", "market_type": "MATCH_ODDS", "selection_id": 86159298, "selection_name": "Ogre United", "side": "lay", "mode": "live", "price": 12.0, "size": 2.0, "minute": null, "score": "None-None", "idempotency_key": "replay-35760084-manuale"}, "created_at": "2026-06-30T16:00:35.675000+00:00", "result": {"ok": true, "trade_id": 1, "status": "pending", "price": 12.0, "size": 2.0, "pending_fill": true, "message": "eseguito"}, "updated_at": "2026-06-30T16:00:35.675000+00:00"}
++[requests] {"id": 2, "kind": "cashout", "status": "done", "payload": {"trade_id": 1, "fraction": 1.0}, "created_at": "2026-06-30T16:02:51.459000+00:00", "result": {"ok": true, "trade_id": 1, "closing_trade_id": 2, "side": "back", "price": 9.2, "size": 2.39, "locked_pnl": null, "planned_lock": -0.4, "worst_case": null, "hedge_fraction": 0.0, "remaining_liability": 20.0, "pending_fill": true, "hedged": false, "hedged_size": 0.0, "residual_size": 2.0, "note": "BACK 2.39@9.2 (f=1.00)", "source": "feed", "message": "cash out eseguito"}, "updated_at": "2026-06-30T16:02:51.459000+00:00"}
++nota: giri di run_once: 3512 | ordini reali su flumine: 2 | righe safe_strategy_trades: 2 | place osservati: 2 | uscite valutate: 0
++nota: attivita' del servizio: diagnosi x23, replay_richiesta_manuale x2, canale_inviato x2, flumine_fill x2, flusso_non_dichiarato x1, place_pending x1, cashout x1
++nota: righe per stato: {'hedged': 1, 'open': 1}
++nota: fill: 2 abbinamenti su 2 ordini per 4.39 EUR (prezzi [9.2, 11.0])
+diff --git a/AUDIT_2026-10-02/replay/sonda_diario_coda_env_principale.txt b/AUDIT_2026-10-02/replay/sonda_diario_coda_env_principale.txt
+new file mode 100644
+index 0000000..8cf8625
+--- /dev/null
++++ b/AUDIT_2026-10-02/replay/sonda_diario_coda_env_principale.txt
+@@ -0,0 +1,10 @@
++WARNING:safe.porta_ordini:[safe.porta] canale di comando ws://127.0.0.1:47331/comando/safe non disponibile (token del canale assente: porta giu' (fail-closed))
++SAFE_ORDINI_VIA_CANALE nell'ambiente PRIMA del replay: '1'
++SAFE_ORDINI_VIA_CANALE DURANTE il replay: '1'
++azioni del referto: 1
++[trades] {"event_id": "35760084", "event_name": "Liepajas Metalurgs v Ogre United", "sport": "calcio", "strategy": "manual", "market_id": "1.259475525", "market_type": "MATCH_ODDS", "selection_id": 86159298, "selection_name": "Ogre United", "side": "lay", "mode": "live", "price": 12.0, "size": 2.0, "liability": 22.0, "commission": 0.05, "minute_at_entry": null, "score_at_entry": "None-None", "status": "error", "pnl": 0.0, "origin": "manual", "signal_key": null, "meta": {"manual": true, "idempotency_key": "replay-35760084-manuale", "reason": "canale_giu:apertura_non_inviata", "error_final": true, "place": {"attempts": 1, "last_error": "canale_giu:apertura_non_inviata", "last_ts": "2026-06-30T16:00:35.675000+00:00", "final": false, "next_retry_at": "2026-06-30T16:00:40.675000+00:00"}}, "id": 1, "placed_at": "2026-06-30T16:00:35.675000+00:00", "settled_at": "2026-06-30T16:00:35.675000+00:00"}
++[requests] {"id": 1, "kind": "place", "status": "error", "payload": {"event_id": "35760084", "event_name": "Liepajas Metalurgs v Ogre United", "sport": "calcio", "market_id": "1.259475525", "market_type": "MATCH_ODDS", "selection_id": 86159298, "selection_name": "Ogre United", "side": "lay", "mode": "live", "price": 12.0, "size": 2.0, "minute": null, "score": "None-None", "idempotency_key": "replay-35760084-manuale"}, "created_at": "2026-06-30T16:00:35.675000+00:00", "result": {"error": "non_eseguito", "detail": "canale_giu:apertura_non_inviata", "trade_id": 1, "message": "non eseguito: non_eseguito (canale_giu:apertura_non_inviata)"}, "updated_at": "2026-06-30T16:00:35.675000+00:00"}
++nota: giri di run_once: 3512 | ordini reali su flumine: 0 | righe safe_strategy_trades: 1 | place osservati: 1 | uscite valutate: 0
++nota: attivita' del servizio: diagnosi x23, replay_richiesta_manuale x1, flusso_non_dichiarato x1, canale_giu x1, place_retry x1, skip x1
++nota: righe per stato: {'error': 1}
++nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
+diff --git a/AUDIT_2026-10-02/replay/tracce_DOPO_env_isolato.json b/AUDIT_2026-10-02/replay/tracce_DOPO_env_isolato.json
+new file mode 100644
+index 0000000..bf55b3d
+--- /dev/null
++++ b/AUDIT_2026-10-02/replay/tracce_DOPO_env_isolato.json
+@@ -0,0 +1,160 @@
++{
++ "scenario": "ordini-manuali",
++ "evento": "35760084",
++ "coda": {
++  "trasporto": "coda",
++  "bot": "safe_base",
++  "ordini": [
++   {
++    "azione": "place",
++    "ref": "safe-t1",
++    "market_id": "1.259475525",
++    "selection_id": 86159298,
++    "side": "LAY",
++    "price": 12.0,
++    "size": 2.0,
++    "fok": true,
++    "t_mercato": "2026-06-30T16:00:35.675000+00:00"
++   },
++   {
++    "azione": "place",
++    "ref": "safe-t2",
++    "market_id": "1.259475525",
++    "selection_id": 86159298,
++    "side": "BACK",
++    "price": 9.2,
++    "size": 2.39,
++    "fok": true,
++    "t_mercato": "2026-06-30T16:02:49.331000+00:00"
++   }
++  ],
++  "righe": [
++   {
++    "id": 1,
++    "status": "hedged",
++    "side": "lay",
++    "market_id": "1.259475525",
++    "selection_id": 86159298,
++    "price": 11.0,
++    "size": 2.0,
++    "mode": "live"
++   },
++   {
++    "id": 2,
++    "status": "open",
++    "side": "back",
++    "market_id": "1.259475525",
++    "selection_id": 86159298,
++    "price": 9.2,
++    "size": 2.39,
++    "mode": "live"
++   }
++  ],
++  "durata_s": 74.7,
++  "rest_sul_canale": []
++ },
++ "canale": {
++  "trasporto": "canale",
++  "bot": "safe_base",
++  "ordini": [
++   {
++    "azione": "place",
++    "ref": "safe-t1",
++    "market_id": "1.259475525",
++    "selection_id": 86159298,
++    "side": "LAY",
++    "price": 12.0,
++    "size": 2.0,
++    "fok": true,
++    "t_mercato": "2026-06-30T16:00:35.675000+00:00",
++    "accettato": true,
++    "motivo": null
++   },
++   {
++    "azione": "place",
++    "ref": "safe-t2",
++    "market_id": "1.259475525",
++    "selection_id": 86159298,
++    "side": "BACK",
++    "price": 9.2,
++    "size": 2.39,
++    "fok": true,
++    "t_mercato": "2026-06-30T16:02:51.459000+00:00",
++    "accettato": true,
++    "motivo": null
++   }
++  ],
++  "righe": [
++   {
++    "id": 1,
++    "status": "hedged",
++    "side": "lay",
++    "market_id": "1.259475525",
++    "selection_id": 86159298,
++    "price": 11.0,
++    "size": 2.0,
++    "mode": "live"
++   },
++   {
++    "id": 2,
++    "status": "open",
++    "side": "back",
++    "market_id": "1.259475525",
++    "selection_id": 86159298,
++    "price": 9.2,
++    "size": 2.39,
++    "mode": "live"
++   }
++  ],
++  "durata_s": 79.8,
++  "rest_sul_canale": [],
++  "client": {
++   "da_seq": 0,
++   "buchi": 0,
++   "connessioni": 1
++  },
++  "motore": {
++   "comandi": 2,
++   "accettati": 2,
++   "rifiutati": 0,
++   "order": 6
++  },
++  "costo_banco_s": 1.7,
++  "book": 340486
++ },
++ "parita": {
++  "parita": true,
++  "ordini_coda": 2,
++  "ordini_canale": 2,
++  "ordini_uguali": true,
++  "primo_scarto": null,
++  "scarto_coda": null,
++  "scarto_canale": null,
++  "righe_coda": 2,
++  "righe_canale": 2,
++  "righe_diverse": [],
++  "rest_sul_canale": 0,
++  "scarto_tempi_s": {
++   "max": 2.1,
++   "min": 0.0,
++   "n": 2
++  },
++  "durata_s": {
++   "coda": 74.7,
++   "canale": 79.8
++  },
++  "client": {
++   "da_seq": 0,
++   "buchi": 0,
++   "connessioni": 1
++  },
++  "motore": {
++   "comandi": 2,
++   "accettati": 2,
++   "rifiutati": 0,
++   "order": 6
++  },
++  "costo_banco_s": 1.7,
++  "book": 340486
++ }
++}
+\ No newline at end of file
+diff --git a/AUDIT_2026-10-02/replay/tracce_DOPO_env_principale.json b/AUDIT_2026-10-02/replay/tracce_DOPO_env_principale.json
+new file mode 100644
+index 0000000..9e4a339
+--- /dev/null
++++ b/AUDIT_2026-10-02/replay/tracce_DOPO_env_principale.json
+@@ -0,0 +1,160 @@
++{
++ "scenario": "ordini-manuali",
++ "evento": "35760084",
++ "coda": {
++  "trasporto": "coda",
++  "bot": "safe_base",
++  "ordini": [
++   {
++    "azione": "place",
++    "ref": "safe-t1",
++    "market_id": "1.259475525",
++    "selection_id": 86159298,
++    "side": "LAY",
++    "price": 12.0,
++    "size": 2.0,
++    "fok": true,
++    "t_mercato": "2026-06-30T16:00:35.675000+00:00"
++   },
++   {
++    "azione": "place",
++    "ref": "safe-t2",
++    "market_id": "1.259475525",
++    "selection_id": 86159298,
++    "side": "BACK",
++    "price": 9.2,
++    "size": 2.39,
++    "fok": true,
++    "t_mercato": "2026-06-30T16:02:49.331000+00:00"
++   }
++  ],
++  "righe": [
++   {
++    "id": 1,
++    "status": "hedged",
++    "side": "lay",
++    "market_id": "1.259475525",
++    "selection_id": 86159298,
++    "price": 11.0,
++    "size": 2.0,
++    "mode": "live"
++   },
++   {
++    "id": 2,
++    "status": "open",
++    "side": "back",
++    "market_id": "1.259475525",
++    "selection_id": 86159298,
++    "price": 9.2,
++    "size": 2.39,
++    "mode": "live"
++   }
++  ],
++  "durata_s": 74.6,
++  "rest_sul_canale": []
++ },
++ "canale": {
++  "trasporto": "canale",
++  "bot": "safe_base",
++  "ordini": [
++   {
++    "azione": "place",
++    "ref": "safe-t1",
++    "market_id": "1.259475525",
++    "selection_id": 86159298,
++    "side": "LAY",
++    "price": 12.0,
++    "size": 2.0,
++    "fok": true,
++    "t_mercato": "2026-06-30T16:00:35.675000+00:00",
++    "accettato": true,
++    "motivo": null
++   },
++   {
++    "azione": "place",
++    "ref": "safe-t2",
++    "market_id": "1.259475525",
++    "selection_id": 86159298,
++    "side": "BACK",
++    "price": 9.2,
++    "size": 2.39,
++    "fok": true,
++    "t_mercato": "2026-06-30T16:02:51.459000+00:00",
++    "accettato": true,
++    "motivo": null
++   }
++  ],
++  "righe": [
++   {
++    "id": 1,
++    "status": "hedged",
++    "side": "lay",
++    "market_id": "1.259475525",
++    "selection_id": 86159298,
++    "price": 11.0,
++    "size": 2.0,
++    "mode": "live"
++   },
++   {
++    "id": 2,
++    "status": "open",
++    "side": "back",
++    "market_id": "1.259475525",
++    "selection_id": 86159298,
++    "price": 9.2,
++    "size": 2.39,
++    "mode": "live"
++   }
++  ],
++  "durata_s": 90.6,
++  "rest_sul_canale": [],
++  "client": {
++   "da_seq": 0,
++   "buchi": 0,
++   "connessioni": 1
++  },
++  "motore": {
++   "comandi": 2,
++   "accettati": 2,
++   "rifiutati": 0,
++   "order": 6
++  },
++  "costo_banco_s": 2.3,
++  "book": 340486
++ },
++ "parita": {
++  "parita": true,
++  "ordini_coda": 2,
++  "ordini_canale": 2,
++  "ordini_uguali": true,
++  "primo_scarto": null,
++  "scarto_coda": null,
++  "scarto_canale": null,
++  "righe_coda": 2,
++  "righe_canale": 2,
++  "righe_diverse": [],
++  "rest_sul_canale": 0,
++  "scarto_tempi_s": {
++   "max": 2.1,
++   "min": 0.0,
++   "n": 2
++  },
++  "durata_s": {
++   "coda": 74.6,
++   "canale": 90.6
++  },
++  "client": {
++   "da_seq": 0,
++   "buchi": 0,
++   "connessioni": 1
++  },
++  "motore": {
++   "comandi": 2,
++   "accettati": 2,
++   "rifiutati": 0,
++   "order": 6
++  },
++  "costo_banco_s": 2.3,
++  "book": 340486
++ }
++}
+\ No newline at end of file
+diff --git a/AUDIT_2026-10-02/replay/tracce_PRIMA_env_principale.json b/AUDIT_2026-10-02/replay/tracce_PRIMA_env_principale.json
+new file mode 100644
+index 0000000..f4e255b
+--- /dev/null
++++ b/AUDIT_2026-10-02/replay/tracce_PRIMA_env_principale.json
+@@ -0,0 +1,173 @@
++{
++ "scenario": "ordini-manuali",
++ "evento": "35760084",
++ "coda": {
++  "trasporto": "coda",
++  "bot": "safe_base",
++  "ordini": [],
++  "righe": [
++   {
++    "id": 1,
++    "status": "error",
++    "side": "lay",
++    "market_id": "1.259475525",
++    "selection_id": 86159298,
++    "price": 12.0,
++    "size": 2.0,
++    "mode": "live"
++   }
++  ],
++  "durata_s": 53.3,
++  "rest_sul_canale": []
++ },
++ "canale": {
++  "trasporto": "canale",
++  "bot": "safe_base",
++  "ordini": [
++   {
++    "azione": "place",
++    "ref": "safe-t1",
++    "market_id": "1.259475525",
++    "selection_id": 86159298,
++    "side": "LAY",
++    "price": 12.0,
++    "size": 2.0,
++    "fok": true,
++    "t_mercato": "2026-06-30T16:00:35.675000+00:00",
++    "accettato": true,
++    "motivo": null
++   },
++   {
++    "azione": "place",
++    "ref": "safe-t2",
++    "market_id": "1.259475525",
++    "selection_id": 86159298,
++    "side": "BACK",
++    "price": 9.2,
++    "size": 2.39,
++    "fok": true,
++    "t_mercato": "2026-06-30T16:02:51.459000+00:00",
++    "accettato": true,
++    "motivo": null
++   }
++  ],
++  "righe": [
++   {
++    "id": 1,
++    "status": "hedged",
++    "side": "lay",
++    "market_id": "1.259475525",
++    "selection_id": 86159298,
++    "price": 11.0,
++    "size": 2.0,
++    "mode": "live"
++   },
++   {
++    "id": 2,
++    "status": "open",
++    "side": "back",
++    "market_id": "1.259475525",
++    "selection_id": 86159298,
++    "price": 9.2,
++    "size": 2.39,
++    "mode": "live"
++   }
++  ],
++  "durata_s": 49.7,
++  "rest_sul_canale": [],
++  "client": {
++   "da_seq": 0,
++   "buchi": 0,
++   "connessioni": 1
++  },
++  "motore": {
++   "comandi": 2,
++   "accettati": 2,
++   "rifiutati": 0,
++   "order": 6
++  },
++  "costo_banco_s": 1.0,
++  "book": 340486
++ },
++ "parita": {
++  "parita": false,
++  "ordini_coda": 0,
++  "ordini_canale": 2,
++  "ordini_uguali": false,
++  "primo_scarto": 0,
++  "scarto_coda": null,
++  "scarto_canale": {
++   "azione": "place",
++   "ref": "safe-t1",
++   "market_id": "1.259475525",
++   "selection_id": 86159298,
++   "side": "LAY",
++   "price": 12.0,
++   "size": 2.0,
++   "fok": true,
++   "t_mercato": "2026-06-30T16:00:35.675000+00:00",
++   "accettato": true,
++   "motivo": null
++  },
++  "righe_coda": 1,
++  "righe_canale": 2,
++  "righe_diverse": [
++   {
++    "id": 1,
++    "coda": {
++     "id": 1,
++     "status": "error",
++     "side": "lay",
++     "market_id": "1.259475525",
++     "selection_id": 86159298,
++     "price": 12.0,
++     "size": 2.0,
++     "mode": "live"
++    },
++    "canale": {
++     "id": 1,
++     "status": "hedged",
++     "side": "lay",
++     "market_id": "1.259475525",
++     "selection_id": 86159298,
++     "price": 11.0,
++     "size": 2.0,
++     "mode": "live"
++    }
++   },
++   {
++    "id": 2,
++    "coda": null,
++    "canale": {
++     "id": 2,
++     "status": "open",
++     "side": "back",
++     "market_id": "1.259475525",
++     "selection_id": 86159298,
++     "price": 9.2,
++     "size": 2.39,
++     "mode": "live"
++    }
++   }
++  ],
++  "rest_sul_canale": 0,
++  "scarto_tempi_s": null,
++  "durata_s": {
++   "coda": 53.3,
++   "canale": 49.7
++  },
++  "client": {
++   "da_seq": 0,
++   "buchi": 0,
++   "connessioni": 1
++  },
++  "motore": {
++   "comandi": 2,
++   "accettati": 2,
++   "rifiutati": 0,
++   "order": 6
++  },
++  "costo_banco_s": 1.0,
++  "book": 340486
++ }
++}
+\ No newline at end of file
+diff --git a/AUDIT_2026-10-02/replay/tracce_PRIMA_solo_SAFE_ORDINI_0.json b/AUDIT_2026-10-02/replay/tracce_PRIMA_solo_SAFE_ORDINI_0.json
+new file mode 100644
+index 0000000..ae97b05
+--- /dev/null
++++ b/AUDIT_2026-10-02/replay/tracce_PRIMA_solo_SAFE_ORDINI_0.json
+@@ -0,0 +1,160 @@
++{
++ "scenario": "ordini-manuali",
++ "evento": "35760084",
++ "coda": {
++  "trasporto": "coda",
++  "bot": "safe_base",
++  "ordini": [
++   {
++    "azione": "place",
++    "ref": "safe-t1",
++    "market_id": "1.259475525",
++    "selection_id": 86159298,
++    "side": "LAY",
++    "price": 12.0,
++    "size": 2.0,
++    "fok": true,
++    "t_mercato": "2026-06-30T16:00:35.675000+00:00"
++   },
++   {
++    "azione": "place",
++    "ref": "safe-t2",
++    "market_id": "1.259475525",
++    "selection_id": 86159298,
++    "side": "BACK",
++    "price": 9.2,
++    "size": 2.39,
++    "fok": true,
++    "t_mercato": "2026-06-30T16:02:49.331000+00:00"
++   }
++  ],
++  "righe": [
++   {
++    "id": 1,
++    "status": "hedged",
++    "side": "lay",
++    "market_id": "1.259475525",
++    "selection_id": 86159298,
++    "price": 11.0,
++    "size": 2.0,
++    "mode": "live"
++   },
++   {
++    "id": 2,
++    "status": "open",
++    "side": "back",
++    "market_id": "1.259475525",
++    "selection_id": 86159298,
++    "price": 9.2,
++    "size": 2.39,
++    "mode": "live"
++   }
++  ],
++  "durata_s": 43.3,
++  "rest_sul_canale": []
++ },
++ "canale": {
++  "trasporto": "canale",
++  "bot": "safe_base",
++  "ordini": [
++   {
++    "azione": "place",
++    "ref": "safe-t1",
++    "market_id": "1.259475525",
++    "selection_id": 86159298,
++    "side": "LAY",
++    "price": 12.0,
++    "size": 2.0,
++    "fok": true,
++    "t_mercato": "2026-06-30T16:00:35.675000+00:00",
++    "accettato": true,
++    "motivo": null
++   },
++   {
++    "azione": "place",
++    "ref": "safe-t2",
++    "market_id": "1.259475525",
++    "selection_id": 86159298,
++    "side": "BACK",
++    "price": 9.2,
++    "size": 2.39,
++    "fok": true,
++    "t_mercato": "2026-06-30T16:02:51.459000+00:00",
++    "accettato": true,
++    "motivo": null
++   }
++  ],
++  "righe": [
++   {
++    "id": 1,
++    "status": "hedged",
++    "side": "lay",
++    "market_id": "1.259475525",
++    "selection_id": 86159298,
++    "price": 11.0,
++    "size": 2.0,
++    "mode": "live"
++   },
++   {
++    "id": 2,
++    "status": "open",
++    "side": "back",
++    "market_id": "1.259475525",
++    "selection_id": 86159298,
++    "price": 9.2,
++    "size": 2.39,
++    "mode": "live"
++   }
++  ],
++  "durata_s": 47.5,
++  "rest_sul_canale": [],
++  "client": {
++   "da_seq": 0,
++   "buchi": 0,
++   "connessioni": 1
++  },
++  "motore": {
++   "comandi": 2,
++   "accettati": 2,
++   "rifiutati": 0,
++   "order": 6
++  },
++  "costo_banco_s": 1.0,
++  "book": 340486
++ },
++ "parita": {
++  "parita": true,
++  "ordini_coda": 2,
++  "ordini_canale": 2,
++  "ordini_uguali": true,
++  "primo_scarto": null,
++  "scarto_coda": null,
++  "scarto_canale": null,
++  "righe_coda": 2,
++  "righe_canale": 2,
++  "righe_diverse": [],
++  "rest_sul_canale": 0,
++  "scarto_tempi_s": {
++   "max": 2.1,
++   "min": 0.0,
++   "n": 2
++  },
++  "durata_s": {
++   "coda": 43.3,
++   "canale": 47.5
++  },
++  "client": {
++   "da_seq": 0,
++   "buchi": 0,
++   "connessioni": 1
++  },
++  "motore": {
++   "comandi": 2,
++   "accettati": 2,
++   "rifiutati": 0,
++   "order": 6
++  },
++  "costo_banco_s": 1.0,
++  "book": 340486
++ }
++}
+\ No newline at end of file
+diff --git a/AUDIT_2026-10-02/sonda_diario_azioni.py b/AUDIT_2026-10-02/sonda_diario_azioni.py
+new file mode 100644
+index 0000000..11366e7
+--- /dev/null
++++ b/AUDIT_2026-10-02/sonda_diario_azioni.py
+@@ -0,0 +1,39 @@
++"""Sonda di SOLA LETTURA (nessuna scrittura su DB, nessun ordine vero): fa girare
++lo scenario d'ordine di Safe ('ordini-manuali') sul banco, nel trasporto chiesto,
++e stampa le righe COMPLETE di ``safe_strategy_trades`` del replay (stato,
++motivo, meta) e le richieste manuali (``safe_strategy_requests``): sono il
++"diario" delle azioni che il rapporto di parita' riassume in una riga.
++
++Uso: python AUDIT_2026-10-02/sonda_diario_azioni.py <coda|canale> [evento]
++"""
++import json
++import logging
++import os
++import sys
++
++sys.path.insert(0, os.getcwd())
++logging.basicConfig(level=logging.WARNING)
++
++from Betfair.stream.backtest import certifica as CE  # noqa: E402
++from Betfair.stream.backtest import registro_bot as REG  # noqa: E402
++from Betfair.stream.backtest import trasporto as TRA  # noqa: E402
++
++trasp = sys.argv[1]
++ev = sys.argv[2] if len(sys.argv) > 2 else "35760084"
++DATA = r"C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\_live_raw"
++print("SAFE_ORDINI_VIA_CANALE nell'ambiente PRIMA del replay:",
++      repr(os.environ.get("SAFE_ORDINI_VIA_CANALE")))
++fn = REG.bot("safe_base").funzione_replay()
++with CE._freni_da_banco():
++    with TRA.contesto("safe_base", trasp) as st:
++        r = fn(ev, data_dir=DATA, scenario="ordini-manuali", ogni_ms=0, campioni_diff=0)
++        print("SAFE_ORDINI_VIA_CANALE DURANTE il replay:",
++              repr(os.environ.get("SAFE_ORDINI_VIA_CANALE")))
++        db = getattr(st.get("strategia"), "db", None)
++        print("azioni del referto:", getattr(r, "azioni", None))
++        for nome in ("trades", "requests"):
++            for riga in list(getattr(db, nome, []) or []):
++                print("[%s]" % nome, json.dumps(riga, default=str, ensure_ascii=False)[:1500])
++        for n in (getattr(r, "note", []) or []):
++            if any(k in n for k in ("righe per stato", "ordini reali", "fill:", "attivita'")):
++                print("nota:", n[:400])
+diff --git a/AUDIT_2026-10-02/sonda_leggi_tracce.py b/AUDIT_2026-10-02/sonda_leggi_tracce.py
+new file mode 100644
+index 0000000..d8aae70
+--- /dev/null
++++ b/AUDIT_2026-10-02/sonda_leggi_tracce.py
+@@ -0,0 +1,15 @@
++"""Sonda di sola lettura: stampa le tracce coda/canale scritte da ``--tracce``."""
++import json
++import sys
++
++d = json.load(open(sys.argv[1], encoding="utf-8"))
++for tr in ("coda", "canale"):
++    t = d[tr]
++    print("==", tr, list(t.keys()))
++    for k, v in t.items():
++        if isinstance(v, list):
++            print(" ", k, len(v))
++            for x in v[:8]:
++                print("    ", json.dumps(x, default=str)[:700])
++        else:
++            print(" ", k, str(v)[:300])
+diff --git a/Betfair/stream/backtest/certifica.py b/Betfair/stream/backtest/certifica.py
+index 107c7d3..4559205 100644
+--- a/Betfair/stream/backtest/certifica.py
++++ b/Betfair/stream/backtest/certifica.py
+@@ -262,11 +262,13 @@ def _freni_da_banco() -> Iterator[None]:
+     from Betfair.stream.trading import controls as _ctl
+ 
+     prima = dict(_ctl._SETTINGS_CACHE)
+-    prima_env = {k: os.environ.get(k) for k in FRENI_AMBIENTE_DEL_BANCO}
++    # 02/10 (PARITA_SAFE_ENV): non solo i freni, TUTTO l'ambiente che conta
++    # (``AMBIENTE_DEL_BANCO``): stessa dichiarazione, stesso ripristino.
++    prima_env = {k: os.environ.get(k) for k in AMBIENTE_DEL_BANCO}
+     _ctl._SETTINGS_CACHE["data"] = {"kill_switch": False}
+     _ctl._SETTINGS_CACHE["ts"] = float("inf")
+     try:
+-        os.environ.update(FRENI_AMBIENTE_DEL_BANCO)
++        os.environ.update(AMBIENTE_DEL_BANCO)
+         with _mo.dichiara_per_banco("LIVE", kill=False):
+             yield
+     finally:
+@@ -283,6 +285,52 @@ def _freni_da_banco() -> Iterator[None]:
+ #: per TUTTI i bot (stesso valore del ``.env`` del checkout principale).
+ FRENI_AMBIENTE_DEL_BANCO = {"LIVE_ORDER_MODE": "LIVE", "LIVE_KILL_SWITCH": "false"}
+ 
++#: 02/10 (PARITA_SAFE_ENV) - i 20 interruttori dei canali di produzione (stesso
++#: elenco di ``Betfair/conftest.py::INTERRUTTORI_CANALE``: un test li tiene
++#: allineati). Nel replay i canali del PC non esistono: il banco li SPEGNE
++#: tutti, come la certificazione del 29/09 («i 20 interruttori dei canali a 0»,
++#: CRONOSTORIA, checkpoint 07:49 del 29/09). L'interruttore degli ORDINI del bot
++#: lo riscrive poi ``trasporto.contesto`` secondo ``--trasporto`` (coda 0,
++#: canale 1). Prima restavano al ``.env`` di chi lancia: col ``.env`` del
++#: checkout principale (``SAFE_ORDINI_VIA_CANALE=1``) la «coda» di Safe usava la
++#: porta vera del canale, giu' nel replay, e la parita' coda/canale cambiava
++#: con l'operatore.
++INTERRUTTORI_CANALE_DEL_BANCO: Tuple[str, ...] = (
++    "SAFE_SCAN_CANALE", "MIKE_CANALE_POSIZIONI", "OMEGA_CANALE_POSIZIONI",
++    "SAFE_CANALE_POSIZIONI", "TENNIS_BOT_CANALE", "SAFE_BOT_LEGGE_CANALE",
++    "SAFE_BOT_SVEGLIA_CANALE", "OMEGA_SVEGLIA_CANALE", "MIKE_SVEGLIA_CANALE",
++    "TENNIS_BOT_SVEGLIA_CANALE", "MIKE_LEGGE_CANALE", "OMEGA_LEGGE_CANALE",
++    "PUNTEGGI_CANALE", "ESITI_ORDINI_CANALE", "MOTORE_ORDINI_CANALE", "SCALPER_CANALE",
++    "SAFE_ORDINI_VIA_CANALE", "OMEGA_ORDINI_VIA_CANALE", "MOTORE_ORDINI_CANALE_TENNIS",
++    "SAFE_TENNIS_ORDINI_VIA_CANALE",
++)
++
++#: 02/10 - L'AMBIENTE DICHIARATO del replay di certificazione: ogni variabile
++#: che cambia la condotta di un bot nel replay ha qui il suo valore, e il
++#: referto lo stampa in testa. Due persone con due ``.env`` diversi ottengono lo
++#: stesso referto numero per numero. Oltre ai freni e agli interruttori: le
++#: variabili non segrete del ``.env`` principale che il 29/09 si e' visto
++#: cambiare la condotta nel replay (``MIKE_LIVE_ENABLED``: senza, ogni ordine
++#: live di Mike e' bloccato; ``SAFE_PRE_KO_OU_HOURS``: il ramo pre-KO O/U del
++#: feed), coi valori di produzione. NON ci sono ``LIVE_MARKET_TYPES``,
++#: ``LIVE_RECONCILE_POLL_SEC``, ``HAZARD_ATLAS_SYNC``: li leggono solo il
++#: runner, i worker di riconciliazione e il ``main`` dello scanner, che nel
++#: replay non girano.
++AMBIENTE_DEL_BANCO: Dict[str, str] = {
++    **FRENI_AMBIENTE_DEL_BANCO,
++    **{nome: "0" for nome in INTERRUTTORI_CANALE_DEL_BANCO},
++    "MIKE_LIVE_ENABLED": "1",
++    "SAFE_PRE_KO_OU_HOURS": "1",
++}
++
++
++def descrivi_ambiente() -> str:
++    """La riga di testa del referto con l'ambiente DICHIARATO (mai i valori
++    dell'operatore: il referto deve uscire identico per chiunque)."""
++    return ("ambiente del banco (dichiarato; il .env di chi lancia non conta): "
++            + " ".join(f"{k}={v}" for k, v in sorted(AMBIENTE_DEL_BANCO.items()))
++            + " | interruttore ordini del bot: coda=0 canale=1")
++
+ 
+ def _lavora(compito: tuple) -> Any:
+     """UN replay, in un processo suo. Deve stare a livello di modulo per essere
+@@ -685,7 +733,8 @@ def main(argv: Optional[List[str]] = None) -> int:
+ 
+         return TRR.main_rapidi(scheda, eventi, data_dir, trasporto=a.trasporto,
+                                diario=a.diario, tracce=a.tracce,
+-                               lavora=_lavora, freni=_freni_da_banco)
++                               lavora=_lavora, freni=_freni_da_banco,
++                               intestazione=descrivi_ambiente())
+     noti = scheda.elenco_scenari()
+     scelti = (list(noti) if a.scenari.strip().lower() == "tutti"
+               else [x.strip() for x in a.scenari.split(",") if x.strip()])
+@@ -710,6 +759,8 @@ def main(argv: Optional[List[str]] = None) -> int:
+           # `<canale>` e i numeri): senza, il comando stampato non lo rifaceva
+           # (PROCESSO_STANDARD_BOT par. 6.8, "comando esatto")
+           + (f" --trasporto {a.trasporto}" if a.trasporto else ""))
++    # 02/10 (PARITA_SAFE_ENV): l'ambiente dichiarato, in testa (par. 6.8)
++    print(descrivi_ambiente())
+     qualita: Dict[str, int] = {}
+     for e in eventi:
+         v = verdetti.get(e, "?")
+diff --git a/Betfair/stream/backtest/trasporto.py b/Betfair/stream/backtest/trasporto.py
+index 1424485..b9712e5 100644
+--- a/Betfair/stream/backtest/trasporto.py
++++ b/Betfair/stream/backtest/trasporto.py
+@@ -49,6 +49,10 @@ logger = logging.getLogger(__name__)
+ 
+ TRASPORTI = ("coda", "canale")
+ 
++#: 02/10 - il valore DICHIARATO dell'interruttore del bot in ogni trasporto
++#: (``coda`` = spento, ``canale`` = acceso), qualunque cosa dica il ``.env``.
++VALORE_INTERRUTTORE: Dict[str, str] = {"coda": "0", "canale": "1"}
++
+ #: bot del registro -> (attore del protocollo, interruttore del bot)
+ ATTORI: Dict[str, tuple] = {
+     "safe_base": ("safe", "SAFE_ORDINI_VIA_CANALE"),
+@@ -99,9 +103,19 @@ def contesto(bot: str, trasporto: str) -> Iterator[Dict[str, Any]]:
+     }
+     env_prima: Optional[str] = None
+     nome_env = voce[1] if voce else None
+-    if trasporto == "canale" and nome_env:
++    # 02/10 (PARITA_SAFE_ENV): l'interruttore del bot e' DICHIARATO in ENTRAMBI
++    # i trasporti, mai lasciato all'ambiente dell'operatore. Prima la ``coda``
++    # non lo toccava: col ``.env`` del checkout principale
++    # (``SAFE_ORDINI_VIA_CANALE=1``, riacceso anche a meta' replay dal
++    # ``load_dotenv()`` di ``config_stream`` al primo import) il bot «in coda»
++    # usava la porta VERA del canale verso 47331, senza runner ne' token:
++    # fail-closed, ``canale_giu:apertura_non_inviata``, 0 ordini, e la parita'
++    # coda/canale cambiava con chi lancia il comando. ``"0"`` e' spento per
++    # costruzione (``porta_ordini.VALORI_ACCESI``) e ``load_dotenv`` senza
++    # override non riscrive una variabile gia' presente.
++    if nome_env:
+         env_prima = os.environ.get(nome_env)
+-        os.environ[nome_env] = "1"
++        os.environ[nome_env] = VALORE_INTERRUTTORE[trasporto]
+     prima = _STATO
+     _STATO = stato
+     t0 = time.monotonic()
+@@ -111,7 +125,7 @@ def contesto(bot: str, trasporto: str) -> Iterator[Dict[str, Any]]:
+         stato["durata_s"] = round(time.monotonic() - t0, 1)
+         _smonta(stato)
+         _STATO = prima
+-        if trasporto == "canale" and nome_env:
++        if nome_env:
+             if env_prima is None:
+                 os.environ.pop(nome_env, None)
+             else:
+diff --git a/Betfair/stream/backtest/trasporto_rapido.py b/Betfair/stream/backtest/trasporto_rapido.py
+index f595146..13ab222 100644
+--- a/Betfair/stream/backtest/trasporto_rapido.py
++++ b/Betfair/stream/backtest/trasporto_rapido.py
+@@ -1294,7 +1294,7 @@ def _r10d_tennis(b: BancoRapido, A: Any, pref: str, e: _Esito, stato: Dict[str,
+ # ---------------------------------------------------------------------------
+ def main_rapidi(scheda: Any, eventi: List[str], data_dir: str, *, trasporto: Optional[str],
+                 diario: Optional[str], tracce: Optional[str], lavora: Callable[..., Any],
+-                freni: Callable[[], Any]) -> int:
++                freni: Callable[[], Any], intestazione: Optional[str] = None) -> int:
+     bot = scheda.nome
+     if TRA.attore_di(bot) is None:
+         print("IL BOT '%s' NON HA LA PORTA A COMANDI: %s" % (
+@@ -1313,6 +1313,9 @@ def main_rapidi(scheda: Any, eventi: List[str], data_dir: str, *, trasporto: Opt
+     t0 = time.monotonic()
+     scrivi("PROFILO RAPIDO del trasporto - bot %s (attore %s) - registrazione %s" % (
+         bot, TRA.attore_di(bot), ev))
++    if intestazione:
++        # 02/10 (PARITA_SAFE_ENV): l'ambiente DICHIARATO del banco, in testa
++        scrivi(intestazione)
+     with freni():
+         esiti = esegui_scenari(bot, ev, data_dir)
+     t_scenari = time.monotonic() - t0
+diff --git a/Betfair/stream/tests/test_banco_ambiente_dichiarato_2026_10_02.py b/Betfair/stream/tests/test_banco_ambiente_dichiarato_2026_10_02.py
+new file mode 100644
+index 0000000..bb62025
+--- /dev/null
++++ b/Betfair/stream/tests/test_banco_ambiente_dichiarato_2026_10_02.py
+@@ -0,0 +1,192 @@
++"""02/10 (PARITA_SAFE_ENV) - il replay di certificazione NON dipende dal ``.env``
++di chi lo lancia.
++
++Reperto: ``certifica safe_base 35760084 --scenari rapidi --trasporto entrambi``
++dava PARITA' NON RAGGIUNTA dal checkout principale (coda: 0 ordini, 1 riga
++``error`` ``canale_giu:apertura_non_inviata``; canale: 2 ordini) e RAGGIUNTA con
++``SAFE_ORDINI_VIA_CANALE`` spento nell'ambiente. Causa: ``trasporto.contesto``
++accendeva l'interruttore per il ``canale`` ma per la ``coda`` lo lasciava
++all'ambiente, e il ``.env`` vero (``SAFE_ORDINI_VIA_CANALE=1``, caricato anche a
++meta' replay dal ``load_dotenv()`` di ``Betfair/stream/config_stream.py`` al
++primo import) faceva usare al bot «in coda» la porta VERA del canale, giu' nel
++replay.
++
++Qui, con le funzioni di produzione (``porta_ordini.acceso``,
++``porta_ordini.porta_per_sport``) e i contesti veri del banco:
++(1) in coda l'interruttore e' spento per OGNI valore dell'ambiente, in canale
++acceso; (2) un ``load_dotenv`` con l'interruttore acceso, a meta' replay, non lo
++riaccende; (3) i 20 interruttori sono dichiarati e l'ambiente torna com'era;
++(4) l'intestazione del referto e' la stessa per ogni ambiente; (5) [cert] sulla
++registrazione vera la coda da' la stessa traccia con l'ambiente «principale» e
++con l'ambiente vuoto.
++"""
++from __future__ import annotations
++
++import os
++from pathlib import Path
++
++import pytest
++
++from Betfair.safe_strategy import porta_ordini as PO
++from Betfair.stream.backtest import certifica as CE
++from Betfair.stream.backtest import trasporto as TRA
++
++#: i valori dell'interruttore che un ``.env`` puo' avere (accesi e spenti)
++VALORI = ["1", "true", "si", "yes", "0", "", None]
++
++
++def _imposta(monkeypatch, nome, valore):
++    if valore is None:
++        monkeypatch.delenv(nome, raising=False)
++    else:
++        monkeypatch.setenv(nome, valore)
++
++
++@pytest.mark.parametrize("valore", VALORI)
++def test_coda_spegne_l_interruttore_per_ogni_valore_dell_ambiente(monkeypatch, valore):
++    """Rottura minima: ``contesto`` che non scrive l'interruttore per la coda ->
++    con ``1``/``true``/``si``/``yes`` nell'ambiente il bot usa la porta del
++    canale (il reperto)."""
++    _imposta(monkeypatch, PO.ENV_CANALE, valore)
++    # il trasporto da solo (senza i freni del banco: ogni strato si difende)
++    with TRA.contesto("safe_base", "coda"):
++        assert os.environ[PO.ENV_CANALE] == "0"
++        assert PO.acceso(PO.ENV_CANALE) is False
++        # la funzione che il servizio usa per scegliere il trasporto
++        assert PO.porta_per_sport("calcio", avvia=False) is None
++    assert os.environ.get(PO.ENV_CANALE) == valore
++    # e dentro i freni del banco, come in ``certifica._lavora``
++    with CE._freni_da_banco():
++        with TRA.contesto("safe_base", "coda"):
++            assert PO.acceso(PO.ENV_CANALE) is False
++
++
++@pytest.mark.parametrize("valore", VALORI)
++def test_canale_accende_l_interruttore_per_ogni_valore_dell_ambiente(monkeypatch, valore):
++    _imposta(monkeypatch, PO.ENV_CANALE, valore)
++    with CE._freni_da_banco():
++        with TRA.contesto("safe_base", "canale"):
++            assert PO.acceso(PO.ENV_CANALE) is True
++
++
++@pytest.mark.parametrize("bot, nome", [("omega", "OMEGA_ORDINI_VIA_CANALE"),
++                                       ("safe_tennis", "SAFE_TENNIS_ORDINI_VIA_CANALE"),
++                                       ("safe_esatto", "SAFE_ORDINI_VIA_CANALE"),
++                                       ("safe_punta", "SAFE_ORDINI_VIA_CANALE")])
++def test_ogni_bot_con_interruttore_e_spento_in_coda(monkeypatch, bot, nome):
++    monkeypatch.setenv(nome, "1")
++    with TRA.contesto(bot, "coda"):
++        assert os.environ[nome] == "0"
++    with CE._freni_da_banco():
++        assert os.environ[nome] == "0"
++        with TRA.contesto(bot, "canale"):
++            assert os.environ[nome] == "1"
++        assert os.environ[nome] == "0"
++    assert os.environ[nome] == "1"   # l'ambiente dell'operatore torna com'era
++
++
++def test_load_dotenv_a_meta_replay_non_riaccende(monkeypatch, tmp_path):
++    """Il meccanismo esatto del reperto: il primo import di ``config_stream``
++    chiama ``load_dotenv()``, che riempie le variabili ASSENTI dal ``.env`` vero.
++    Con l'ambiente dichiarato nessun interruttore e' assente: il ``.env`` non
++    tocca niente. Rottura minima: dichiarare ``AMBIENTE_DEL_BANCO`` senza gli
++    interruttori -> qui il ``.env`` finto li riaccende."""
++    from dotenv import load_dotenv
++
++    finto = tmp_path / ".env"
++    finto.write_text("".join(f"{n}=1\n" for n in CE.INTERRUTTORI_CANALE_DEL_BANCO)
++                     + "LIVE_ORDER_MODE=OFF\nMIKE_LIVE_ENABLED=0\n", encoding="utf-8")
++    for n in CE.INTERRUTTORI_CANALE_DEL_BANCO:
++        monkeypatch.delenv(n, raising=False)
++    with CE._freni_da_banco():
++        with TRA.contesto("safe_base", "coda"):
++            load_dotenv(str(finto))          # override=False, come config_stream
++            for n in CE.INTERRUTTORI_CANALE_DEL_BANCO:
++                assert os.environ[n] == "0", n
++            assert os.environ["LIVE_ORDER_MODE"] == "LIVE"
++            assert os.environ["MIKE_LIVE_ENABLED"] == "1"
++            assert PO.porta_per_sport("calcio", avvia=False) is None
++
++
++def test_ambiente_dichiarato_e_ripristinato(monkeypatch):
++    """Ogni variabile dichiarata vale il valore del banco DENTRO e torna com'era
++    FUORI (presenti e assenti), anche su eccezione."""
++    prima = {}
++    for i, k in enumerate(sorted(CE.AMBIENTE_DEL_BANCO)):
++        v = None if i % 2 else "valore-operatore-%d" % i
++        _imposta(monkeypatch, k, v)
++        prima[k] = v
++    with pytest.raises(RuntimeError):
++        with CE._freni_da_banco():
++            for k, v in CE.AMBIENTE_DEL_BANCO.items():
++                assert os.environ[k] == v, k
++            raise RuntimeError("replay esploso")
++    for k, v in prima.items():
++        assert os.environ.get(k) == v, k
++
++
++def test_elenco_interruttori_allineato_al_conftest_e_ai_bot():
++    from Betfair import conftest as BC
++
++    assert set(CE.INTERRUTTORI_CANALE_DEL_BANCO) == set(BC.INTERRUTTORI_CANALE)
++    for _bot, (_attore, nome) in TRA.ATTORI.items():
++        if nome:
++            assert nome in CE.INTERRUTTORI_CANALE_DEL_BANCO, nome
++            assert CE.AMBIENTE_DEL_BANCO[nome] == "0"
++    assert TRA.VALORE_INTERRUTTORE == {"coda": "0", "canale": "1"}
++
++
++def test_intestazione_identica_per_ogni_ambiente(monkeypatch):
++    righe = set()
++    for v in VALORI:
++        _imposta(monkeypatch, PO.ENV_CANALE, v)
++        righe.add(CE.descrivi_ambiente())
++    assert len(righe) == 1
++    riga = righe.pop()
++    for k, v in CE.AMBIENTE_DEL_BANCO.items():
++        assert f"{k}={v}" in riga
++    assert "coda=0 canale=1" in riga
++
++
++# ---------------------------------------------------------------------------
++# [cert] sulla registrazione vera: stesso referto con due ambienti
++# ---------------------------------------------------------------------------
++def _cartella_registrazioni() -> str:
++    candidati = [os.getenv("LIVE_STREAM_DATA_DIR") or ""]
++    radice = Path(__file__).resolve().parents[3]
++    candidati += [str(radice / "_live_raw"), str(radice.parents[2] / "_live_raw")]
++    for c in candidati:
++        if c and os.path.exists(os.path.join(c, "35760084", "35760084.raw.jsonl")):
++            return c
++    return ""
++
++
++def _riassunto(r):
++    tr = dict(getattr(r, "traccia_trasporto", None) or {})
++    tr.pop("durata_s", None)
++    return {"pulita": r.pulita, "decisioni": r.decisioni, "azioni": r.azioni,
++            "violazioni": sorted(v.codice for v in (r.violazioni or [])),
++            "traccia": tr}
++
++
++@pytest.mark.cert
++@pytest.mark.skipif(not _cartella_registrazioni(),
++                    reason="registrazione 35760084 assente su questa macchina")
++def test_coda_stesso_referto_con_ambiente_principale_e_ambiente_vuoto(monkeypatch):
++    """La coda dello scenario d'ordine di Safe (``ordini-manuali``) con i 20
++    interruttori ACCESI nell'ambiente (come il ``.env`` del checkout principale)
++    e con l'ambiente VUOTO: stesso referto, 2 ordini sulla REST del banco.
++    Prima della correzione: 0 ordini e 1 riga ``error`` con l'ambiente acceso.
++    Circa 90 s (due replay della partita intera)."""
++    dati = _cartella_registrazioni()
++    compito = ("safe_base", "35760084", dati, "ordini-manuali", 0, 0, "coda")
++    for n in CE.INTERRUTTORI_CANALE_DEL_BANCO:
++        monkeypatch.setenv(n, "1")
++    acceso, _ = CE._lavora(compito)
++    for n in CE.INTERRUTTORI_CANALE_DEL_BANCO:
++        monkeypatch.delenv(n, raising=False)
++    vuoto, _ = CE._lavora(compito)
++    a, b = _riassunto(acceso), _riassunto(vuoto)
++    assert a == b
++    assert len(a["traccia"]["ordini"]) == 2, a["traccia"]
++    assert [r["status"] for r in a["traccia"]["righe"]] == ["hedged", "open"]
+diff --git a/Betfair/stream/tests/test_strada_unica_banco_2026_09_25.py b/Betfair/stream/tests/test_strada_unica_banco_2026_09_25.py
+index c924dce..45c788a 100644
+--- a/Betfair/stream/tests/test_strada_unica_banco_2026_09_25.py
++++ b/Betfair/stream/tests/test_strada_unica_banco_2026_09_25.py
+@@ -350,8 +350,12 @@ def test_contesto_accende_e_rimette_l_interruttore(monkeypatch):
+     with TRA.contesto("omega", "canale"):
+         assert os.environ["OMEGA_ORDINI_VIA_CANALE"] == "1"
+     assert os.environ["OMEGA_ORDINI_VIA_CANALE"] == "0"
++    # 02/10 (PARITA_SAFE_ENV): la coda DICHIARA l'interruttore spento ("0"),
++    # non lo lascia all'ambiente (prima: assente, e il ``load_dotenv`` di
++    # ``config_stream`` lo riaccendeva dal ``.env`` vero a meta' replay)
+     with TRA.contesto("safe_base", "coda"):
+-        assert "SAFE_ORDINI_VIA_CANALE" not in os.environ
++        assert os.environ["SAFE_ORDINI_VIA_CANALE"] == "0"
++    assert "SAFE_ORDINI_VIA_CANALE" not in os.environ
+     assert TRA.attivo() is None
+ 
+ 

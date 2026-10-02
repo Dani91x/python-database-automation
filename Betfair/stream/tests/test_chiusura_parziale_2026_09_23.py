@@ -206,9 +206,13 @@ def corsa() -> Dict[str, Any]:
             # CP4: una SECONDA chiusura sulla stessa selezione mentre la prima
             # ha ancora il residuo vivo a mercato
             out["a_vivo_prima_della_seconda"] = CP.vivo(out["chiude_a"])
+            # 02/10 (banco ottimista corretto): il banco rifiuta come Betfair .it
+            # una banca sotto 1,00 (il residuo qui e' 0,82). CP4 guarda che la
+            # seconda chiusura esista mentre la prima e' viva, non il suo importo:
+            # la seconda si manda dal minimo del listino in su.
             market.place_order_live(market_id=mid, selection_id=out["sid_a"],
                                     price=float(out["chiude_a"].order_type.price),
-                                    size=float(out["chiude_a"].size_remaining or 0.5),
+                                    size=max(float(out["chiude_a"].size_remaining or 0.5), 1.0),
                                     event_id=CALCIO_EVENTO, side="lay",
                                     customer_ref="cp-chiude-a2", fill_or_kill=False)
             out["fase"] = 6

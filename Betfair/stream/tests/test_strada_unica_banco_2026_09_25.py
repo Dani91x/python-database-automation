@@ -350,8 +350,12 @@ def test_contesto_accende_e_rimette_l_interruttore(monkeypatch):
     with TRA.contesto("omega", "canale"):
         assert os.environ["OMEGA_ORDINI_VIA_CANALE"] == "1"
     assert os.environ["OMEGA_ORDINI_VIA_CANALE"] == "0"
+    # 02/10 (PARITA_SAFE_ENV): la coda DICHIARA l'interruttore spento ("0"),
+    # non lo lascia all'ambiente (prima: assente, e il ``load_dotenv`` di
+    # ``config_stream`` lo riaccendeva dal ``.env`` vero a meta' replay)
     with TRA.contesto("safe_base", "coda"):
-        assert "SAFE_ORDINI_VIA_CANALE" not in os.environ
+        assert os.environ["SAFE_ORDINI_VIA_CANALE"] == "0"
+    assert "SAFE_ORDINI_VIA_CANALE" not in os.environ
     assert TRA.attivo() is None
 
 

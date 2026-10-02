@@ -103,6 +103,11 @@ export function TennisBotServiceParamsSheet({
                 payload[f.key] = v === 'on';
             } else if (f.type === 'select') {
                 payload[f.key] = String(v ?? '');
+            } else if (String(v ?? '').trim() === '') {
+                // 02/10 (reperto 2): campo SVUOTATO = chiave ASSENTE (il bot usa
+                // `c.get(chiave, default)`; lo scalper prima il preset del runner).
+                // Prima Number('') = 0 e si salvava 0.
+                delete payload[f.key];
             } else {
                 const n = Number(v);
                 if (Number.isFinite(n)) payload[f.key] = n;

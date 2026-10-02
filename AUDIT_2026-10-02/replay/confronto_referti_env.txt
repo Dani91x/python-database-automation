@@ -1,0 +1,8 @@
+﻿=== DOPO: env principale vs env isolato (PYTHON_DOTENV_DISABLED=1)
+righe confrontate: 90 / 90 | diverse: 0
+REFERTI: IDENTICI
+TRACCE (tolte le durate): IDENTICHE
+=== PRIMA (master, solo SAFE_ORDINI_VIA_CANALE=0 nell'ambiente) vs DOPO env principale
+righe confrontate: 90 / 90 | diverse: 0
+REFERTI: IDENTICI
+TRACCE (tolte le durate): IDENTICHE

@@ -24,6 +24,11 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Dict, List, Optional, Tuple
 
 from Betfair.stream.live_order_build import round_to_tick, ticks_away
+# 01/10 (Ashdod v Maccabi Herzliya): i minimi di Betfair .it si LEGGONO dalla
+# fonte unica del repo (``Betfair/stream/trading/minimi_it.py``, la stessa del
+# runner), non si riscrivono qui.
+from Betfair.stream.trading.minimi_it import (IT_MIN_BACK, IT_MIN_LAY,
+                                              SUBMIN_IMPORTO_FINALE_MIN)
 from Betfair.stream.scalper.scalper_bot import ticks_between
 from Betfair.stream.trading.greenup import GreenupPlan, compute_greenup
 
@@ -64,18 +69,25 @@ STATUS_RECONCILE = "pending_reconcile"
 # meta.exit_kind ammessi sulle righe di chiusura (contratto con la UI, H4)
 EXIT_KINDS = ("greenup", "profit", "loss", "time", "forced", "manual", "other")
 
-IT_BACK_MIN = 2.0
-IT_BACK_STEP = 0.5
-# 29/09 (M3.1): minimo di una BANCATA sul listino italiano (poi al centesimo).
-# Stesso valore di ``safe_strategy.execution._min_size_live`` per il lato lay.
-IT_LAY_MIN = 0.50
+# 01/10 - CORREZIONE DEFINITIVA dei minimi (ordine dell'utente, Nota informativa
+# betfair.it; ricerche in ``AUDIT_2026-10-01/``): ordine DIRETTO da 1,00 per la
+# PUNTA e da 1,00 per la BANCA (puntata del backer), al centesimo, nessun passo.
+# Prima qui: punta 2,00 con passo 0,50 e banca 0,50 (copiati da
+# ``live_order_build``): la banca di chiusura da 0,43 del 01/10 e' stata
+# rifiutata (INVALID_BET_SIZE) e la puntata da 7,47 dell'utente e' stata abbinata.
+IT_BACK_MIN = IT_MIN_BACK
+IT_LAY_MIN = IT_MIN_LAY
+# nessun passo: l'importo e' al centesimo anche con ``exact_sizes`` spento
+# (``legalize_back_size`` porta solo al minimo)
+IT_BACK_STEP = 0.01
 # forme della copertura (parametro ``cover_form``, M3.1)
 COVER_LAY_U45 = "lay_under45"
 COVER_BACK_O45 = "back_over45"
-# Floor ASSOLUTO di un ordine, col place-and-trim: un centesimo. Sotto il minimo
-# di PIAZZAMENTO (IT_BACK_MIN) l'ordine esiste comunque — si parcheggia il minimo
-# a una quota non abbinabile, si taglia e si riprezza. Vedi
-# ``omega_market.place_submin_live`` e ``Betfair/stream/trading/submin.py``.
+# Il CENTESIMO: la piu' piccola cifra che un ordine puo' avere. NON e' un minimo
+# di piazzamento: serve solo a riconoscere i resti che nessun ordine puo'
+# chiudere (``size_chiudibile`` senza lato, ``residuo_non_chiudibile``).
+# 01/10: il minimo di un ordine col place-and-trim e' ``SUBMIN_IMPORTO_FINALE_MIN``
+# (0,50, fonte unica): sotto, nemmeno il taglio lo rende piazzabile.
 SUBMIN_FLOOR = 0.01
 _EPS = 1e-9
 _FLAT_EPS = 0.01
@@ -398,9 +410,10 @@ class CashoutValue:
     # prezzo e non rendono il cash-out incompleto (C2)
     decided: Tuple[Tuple[str, str], ...] = ()
     per_selection_net: Dict[Tuple[str, str], float] = field(default_factory=dict)
-    # 29/09 (M3.3): chiusura scritta sull'ALTRA selezione (selezione, piano) quando
-    # la banca che chiude la copertura-banca sarebbe sotto 0,50 e la puntata
-    # equivalente e' un importo piazzabile diretto (multiplo di 0,50 da 2,00)
+    # chiusura scritta sull'ALTRA selezione (selezione, piano): la PUNTATA
+    # equivalente piazzabile diretta (da IT_MIN_BACK al centesimo). Quando: banca
+    # di chiusura sotto IT_MIN_LAY (01/10) e, con la copertura-banca, sempre
+    # (decisione 12 dell'utente, 02/10). Vedi ``ripiego_chiusura_sotto_minimo``.
     ripieghi: Dict[Tuple[str, str], Tuple[str, GreenupPlan]] = field(default_factory=dict)
 
 
@@ -656,6 +669,68 @@ def size_ok(size: Optional[float]) -> bool:
     return math.isfinite(s) and s >= 0.01
 
 
+# ---------------------------------------------------------------------------
+# 01/10 - LA GUARDIA UNICA DEL MINIMO DI BETFAIR .it (ordine dell'utente:
+# «non voglio mai piu' vedere queste cose»).
+#
+# Fatto (FC Ashdod v Maccabi Herzliya, evento 36134689, LIVE): la chiusura della
+# copertura era una BANCA Over 4,5 da 0,43 EUR @ 18. Betfair l'ha rifiutata
+# (INVALID_BET_SIZE) 21 volte in 24 secondi, poi il bot ha dichiarato «chiuso
+# (profit)» con la banca Under 4,5 ancora a mercato. Il presupposto del 13/09
+# («Betfair accetta gli ordini che RIDUCONO una posizione anche sotto il
+# minimo») e' FALSO sul listino italiano: nessuna chiusura live di Mike sotto il
+# minimo risulta mai abbinata, e quella di oggi e' stata rifiutata per taglia.
+#
+# Qui c'e' l'UNICO punto che dice come esce un ordine di Mike rispetto al
+# minimo (punta IT_MIN_BACK = 1,00, banca IT_MIN_LAY = 1,00, al centesimo):
+#   * ``diretto``      - sopra il minimo: si piazza com'e';
+#   * ``submin``       - sotto il minimo, APERTURA: il place-and-trim e' collegato
+#                        (``execution.place``: ``sotto_minimo`` vale solo per chi
+#                        non chiude; live ``place_submin_live``, paper runner);
+#   * ``legalizzata``  - puntata di apertura con ``exact_sizes`` spento: il
+#                        servizio la porta al minimo (``legalize_back_size``);
+#   * ``non_si_manda`` - sotto il minimo, CHIUSURA: ``execution.place`` manda le
+#                        chiusure dirette (mai place-and-trim), quindi Betfair la
+#                        rifiuterebbe. Non parte: chi chiude usa prima lo
+#                        strumento equivalente (``ripiego_chiusura_sotto_minimo``),
+#                        altrimenti lo si dichiara (``_guardia_minimo_listino``).
+# ---------------------------------------------------------------------------
+VIA_DIRETTA = "diretto"
+VIA_SUBMIN = "submin"
+VIA_LEGALIZZATA = "legalizzata"
+VIA_NON_SI_MANDA = "non_si_manda"
+
+
+def minimo_listino(side: Optional[str]) -> float:
+    """Minimo di PIAZZAMENTO diretto sul listino .it per il lato dato."""
+    return IT_LAY_MIN if str(side or "").lower() == "lay" else IT_BACK_MIN
+
+
+def via_ordine(role: Optional[str], side: Optional[str], size: Optional[float],
+               params: Optional[Dict[str, Any]] = None) -> str:
+    """Come esce QUESTO ordine rispetto al minimo di Betfair .it (vedi sopra)."""
+    if not size_ok(size):
+        return VIA_NON_SI_MANDA
+    s = round(float(size), 2)
+    if s >= minimo_listino(side) - 0.0005:
+        return VIA_DIRETTA
+    if role in CLOSING_ROLES:
+        return VIA_NON_SI_MANDA
+    if str(side or "").lower() == "lay":
+        # 01/10 (vincolo definitivo): una BANCA sotto 1,00 non parte MAI, nemmeno
+        # in apertura: ``execution.place`` la manderebbe diretta fra 0,50 e 1,00
+        # e sotto 0,50 il place-and-trim parcheggia 0,50 (sotto il minimo
+        # commerciale): nessuna delle due vie e' ammessa.
+        return VIA_NON_SI_MANDA
+    if str(side or "").lower() == "back" and not (params or {}).get("exact_sizes", True):
+        return VIA_LEGALIZZATA
+    if s < SUBMIN_IMPORTO_FINALE_MIN - 0.0005:
+        # 01/10: l'importo finale del place-and-trim non scende sotto 0,50 (fonte
+        # unica, floor di legge): sotto, nessuna via
+        return VIA_NON_SI_MANDA
+    return VIA_SUBMIN
+
+
 def selection_wins(market: str, selection: str, total_goals: int) -> bool:
     line = LINE[market]
     if selection == SEL_UNDER:
@@ -900,19 +975,14 @@ def _banca_di_apertura(legs: List[Leg], market: str) -> bool:
                and float(l.matched) > 0 and not l.archived for l in legs)
 
 
-def ripiego_chiusura_sotto_minimo(legs: List[Leg], key: Tuple[str, str], plan: GreenupPlan,
-                                  books: Dict[Tuple[str, str], Book],
-                                  place_at_ticks: int = 0) -> Optional[Tuple[str, GreenupPlan]]:
-    """M3.3 (decisione dell'utente 29/09): la copertura-banca si annulla BANCANDO
-    l'Over 4,5; se quella banca e' sotto 0,50 si usa la PUNTATA sull'Under 4,5
-    quando l'importo e' un multiplo di 0,50 da almeno 2,00 (piazzabile diretto);
-    altrimenti resta la banca, diretta come oggi (le chiusure riducono il rischio).
-
-    Vale SOLO per il mercato 4,5 con una banca di apertura (forma nuova): nella
-    forma di oggi nessuna chiusura cambia. Ritorna (selezione, piano) o None."""
-    if key[0] != MARKET_OU45 or plan.side != "lay" or plan.size is None:
-        return None
-    if float(plan.size) >= IT_LAY_MIN - _EPS or not _banca_di_apertura(legs, key[0]):
+def puntata_equivalente(legs: List[Leg], key: Tuple[str, str],
+                        books: Dict[Tuple[str, str], Book],
+                        place_at_ticks: int = 0) -> Optional[Tuple[str, GreenupPlan]]:
+    """La chiusura della posizione ``key`` scritta come PUNTATA sull'ALTRA
+    selezione dello stesso mercato (a due esiti: punta Under 4,5 = banca Over
+    4,5). Ritorna (selezione, piano) o None se non c'e' prezzo o il green-up
+    sull'altra selezione non e' una puntata. Nessun controllo di minimo qui."""
+    if key[0] != MARKET_OU45:
         return None
     altra = SEL_UNDER if key[1] == SEL_OVER else SEL_OVER
     bk = books.get((key[0], altra))
@@ -924,10 +994,45 @@ def ripiego_chiusura_sotto_minimo(legs: List[Leg], key: Tuple[str, str], plan: G
                           place_at_ticks=int(place_at_ticks))
     if not alt.actionable or alt.side != "back":
         return None
-    s = round(float(alt.size), 2)
-    if s < IT_BACK_MIN - _EPS or abs(round(s / IT_BACK_STEP) * IT_BACK_STEP - s) > 0.005:
-        return None
     return (altra, alt)
+
+
+def ripiego_chiusura_sotto_minimo(legs: List[Leg], key: Tuple[str, str], plan: GreenupPlan,
+                                  books: Dict[Tuple[str, str], Book],
+                                  place_at_ticks: int = 0) -> Optional[Tuple[str, GreenupPlan]]:
+    """M3.3 (decisione dell'utente 29/09): la copertura-banca si annulla BANCANDO
+    l'Over 4,5; se quella banca e' sotto 0,50 si usa la PUNTATA sull'Under 4,5
+    quando e' piazzabile diretta, cioe' dal minimo della punta (IT_BACK_MIN) AL CENTESIMO.
+
+    01/10 (Ashdod v Maccabi Herzliya, LIVE) - corretto: fino a oggi la puntata
+    doveva essere anche un MULTIPLO di 0,50. Quella condizione e' falsa per il
+    listino italiano (la puntata Under 4,5 da 7,47 EUR dell'utente e' stata
+    abbinata) e ha tenuto la BANCA Over da 0,43, che Betfair ha rifiutato
+    (INVALID_BET_SIZE). Se nemmeno la puntata arriva al minimo non c'e' ripiego e la
+    chiusura non parte (``via_ordine``: una chiusura non passa dal
+    place-and-trim): lo si dichiara.
+
+    01/10 (vincoli del coordinatore, ricerche in ``AUDIT_2026-10-01/``): la banca
+    di chiusura sotto il minimo commerciale (``IT_LAY_MIN`` = 1,00) diventa la
+    PUNTATA equivalente sull'altra selezione, in ENTRAMBE le forme della
+    copertura: bancare l'Over S a q == puntare l'Under S*(q-1) a q/(q-1) (e' cio'
+    che fa il Cash Out di Betfair). L'importo si calcola col green-up sul libro
+    VERO dell'Under (coincide con S*(q-1) quando l'Under quota q/(q-1)).
+
+    02/10 - DECISIONE 12 DELL'UTENTE (supera M3.3 del 29/09): con la
+    copertura-banca (banca Under 4,5 di apertura) la chiusura e' la PUNTATA Under
+    4,5 «di serie», anche quando la banca Over sarebbe da 1,00 in su; la banca
+    Over resta solo se la puntata e' sotto il minimo e la banca no. Nella forma
+    di prima (punta Over 4,5) la chiusura resta la banca Over da 1,00 in su:
+    la decisione riguarda la copertura-banca. Ritorna (selezione, piano) o None."""
+    if key[0] != MARKET_OU45 or plan.side != "lay" or plan.size is None:
+        return None
+    if size_chiudibile(plan.size, "lay") and not _banca_di_apertura(legs, key[0]):
+        return None
+    eq = puntata_equivalente(legs, key, books, place_at_ticks)
+    if eq is None or not size_chiudibile(eq[1].size, "back"):
+        return None
+    return eq
 
 
 def cashout_value(legs: List[Leg], books: Dict[Tuple[str, str], Book], commission: float,
@@ -969,7 +1074,12 @@ def cashout_value(legs: List[Leg], books: Dict[Tuple[str, str], Book], commissio
             alt = ripiego_chiusura_sotto_minimo(legs, key, plan, books, int(place_at_ticks))
             if alt is not None:
                 ripieghi[key] = alt
-            locked = float(min(plan.expected_if_win, plan.expected_if_lose))
+                # 01/10: il valore e' quello dell'ordine che PARTE davvero (la
+                # puntata), non quello della banca che non si puo' piazzare:
+                # chiudendo, il risultato bloccato coincide con questo numero.
+                locked = float(min(alt[1].expected_if_win, alt[1].expected_if_lose))
+            else:
+                locked = float(min(plan.expected_if_win, plan.expected_if_lose))
         per[key] = round(locked, 2)
         gross += locked
         gross_market[key[0]] = gross_market.get(key[0], 0.0) + locked
@@ -1820,6 +1930,50 @@ def motivo_del_rifiuto(a: Action, r: Dict[str, Any]) -> str:
             f"{float(a.size or 0.0):.2f} @ {a.price} non si ripropone identica")
 
 
+# Codice di Betfair per un importo fuori listino: ripetere lo stesso strumento
+# (stesso ruolo, selezione, lato) con un importo simile da' lo stesso rifiuto.
+# Betfair (INVALID_BET_SIZE) e runner (SOTTO_MINIMO_NON_PIAZZABILE, 01/10)
+RIFIUTI_PER_TAGLIA = ("INVALID_BET_SIZE", "SOTTO_MINIMO_NON_PIAZZABILE")
+
+
+def chiusura_gia_rifiutata(ctx: MatchCtx, a: Action) -> Optional[Dict[str, Any]]:
+    """01/10 - una CHIUSURA che non va riproposta: lo STRUMENTO (ruolo,
+    selezione, lato) rifiutato per TAGLIA (INVALID_BET_SIZE), a qualunque prezzo
+    e importo: li' serve un altro strumento (``ripiego_chiusura_sotto_minimo``)
+    o ci si ferma. Caso vero: la banca Over 4,5 da 0,43 rifiutata 21 volte in 24 s.
+
+    Un FOK non abbinato (prezzo mosso, liquidita' sparita) NON blocca: la stessa
+    chiusura si ritenta, ma solo dopo ``close_retry_s`` (``attesa_ritento_
+    chiusura``) e al piu' ``close_max_attempts`` volte, come i riprezzi di sempre.
+    Bloccarla vorrebbe dire lasciare aperto un residuo chiudibile."""
+    if a.kind != "place":
+        return None
+    r = ctx.rifiuti.get(chiave_richiesta(a.role, ctx.cycle_no, a.market, a.selection,
+                                         a.side, a.final))
+    if isinstance(r, dict) and any(c in str(r.get("motivo") or "").upper()
+                                   for c in RIFIUTI_PER_TAGLIA):
+        return r
+    return None
+
+
+# ruoli delle chiusure A MERCATO (le stesse di ``_pending_closings``)
+RUOLI_CHIUSURA_A_MERCATO = ("under_close", "over_close", "manual_close")
+
+
+def attesa_ritento_chiusura(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> float:
+    """Secondi che mancano al prossimo tentativo di chiusura: ``close_retry_s``
+    dall'ULTIMO ordine di chiusura del ciclo, qualunque sia stato il suo esito
+    (abbinato, rifiutato, annullato). 01/10: prima il ritmo si contava solo sugli
+    ordini ancora 'pending', e un ordine rifiutato non lo e': un tentativo al
+    secondo."""
+    ultimi = [float(l.placed_at or 0.0) for l in ctx.legs
+              if l.role in RUOLI_CHIUSURA_A_MERCATO and not l.archived
+              and int(l.cycle_no or 0) == int(ctx.cycle_no or 0)]
+    if not ultimi:
+        return 0.0
+    return max(0.0, float(params["close_retry_s"]) - (float(snap.now) - max(ultimi)))
+
+
 # ---------------------------------------------------------------------------
 # IL FRENO DELLA COPERTURA — ordine dell'utente 17/09, reperto 25
 # ---------------------------------------------------------------------------
@@ -1989,24 +2143,28 @@ def liability_room(ctx: MatchCtx, params: Dict[str, Any]) -> float:
     return max(0.0, cap - invested(ctx.legs))
 
 
-def size_chiudibile(size: Optional[float]) -> bool:
+def size_chiudibile(size: Optional[float], side: Optional[str] = None) -> bool:
     """La size di una CHIUSURA e' abbastanza grande da essere accettata?
 
-    13/09 — la soglia e' il CENTESIMO, non i 2 EUR. Due motivi, entrambi
-    verificati sul codice di esecuzione:
+    01/10 - PER LATO (Ashdod v Maccabi Herzliya, LIVE). Con il lato la risposta
+    e' quella della guardia unica (``via_ordine``): una chiusura parte DIRETTA
+    (``execution.place`` esenta le chiusure dal place-and-trim), quindi e'
+    chiudibile solo dal minimo del suo lato (``minimo_listino``: 1,00 e 1,00). Il
+    13/09 qui si diceva «Betfair accetta gli ordini che riducono una posizione
+    anche sotto il minimo»: falso sul listino .it (banca da 0,43 rifiutata
+    INVALID_BET_SIZE, 21 volte). Sotto il minimo la chiusura passa dallo
+    strumento equivalente (``ripiego_chiusura_sotto_minimo``) o non parte.
 
-      * Betfair accetta gia' gli ordini che RIDUCONO una posizione anche sotto
-        il minimo (per questo ``execution.place`` esenta le chiusure dal
-        controllo: ``is_closing``);
-      * e in ogni caso, dal place-and-trim in poi, qualunque importo e'
-        piazzabile (vedi ``omega_market.place_submin_live``).
-
-    La soglia a 2 EUR era il ripiego del 12/09, quando il sotto-minimo non era
-    collegato a niente: portava al regolamento residui che si potevano chiudere.
+    Senza lato resta la domanda di prima, «esiste un ordine al centesimo?»
+    (``SUBMIN_FLOOR``): serve solo a ``residuo_non_chiudibile``, che riconosce i
+    resti che NESSUN ordine puo' chiudere (sotto il centesimo) e li porta al
+    regolamento senza oscillare (12/09).
     """
     if not size_ok(size):
         return False
-    return float(size) >= SUBMIN_FLOOR - 0.0005
+    if side is None:
+        return float(size) >= SUBMIN_FLOOR - 0.0005
+    return via_ordine("manual_close", side, size) == VIA_DIRETTA
 
 
 def ordini_vivi_su(ctx: MatchCtx, market: str, selection: str,
@@ -2039,13 +2197,16 @@ def _stessa_posizione(m1: Optional[str], s1: Optional[str],
     return m1 == m2 and (s1 == s2 or m1 in LINE)
 
 
+RUOLI_CHIUSURA_DI_SERIE = {
+    (MARKET_OU35, SEL_UNDER): "under_close",
+    (MARKET_OU45, SEL_OVER): "over_close",
+    (MARKET_OU45, SEL_UNDER): "reentry_green",
+}
+
+
 def _close_actions(ctx: MatchCtx, cv: CashoutValue, params: Dict[str, Any],
                    role_map: Optional[Dict[Tuple[str, str], str]] = None) -> List[Action]:
-    role_map = role_map or {
-        (MARKET_OU35, SEL_UNDER): "under_close",
-        (MARKET_OU45, SEL_OVER): "over_close",
-        (MARKET_OU45, SEL_UNDER): "reentry_green",
-    }
+    role_map = role_map or RUOLI_CHIUSURA_DI_SERIE
     acts = []
     for key, plan in cv.plans.items():
         if not plan.actionable:
@@ -2058,7 +2219,14 @@ def _close_actions(ctx: MatchCtx, cv: CashoutValue, params: Dict[str, Any],
         # posizione, e il residuo non si chiudeva comunque). Non si tenta:
         # la posizione resta aperta fino al regolamento, che e' l'unico esito
         # possibile, e il servizio lo dichiara una volta sola.
-        if not size_chiudibile(plan.size):
+        # puntata equivalente sull'altra selezione se piazzabile diretta
+        # (``ripiego_chiusura_sotto_minimo``: banca sotto 1,00; con la
+        # copertura-banca sempre, decisione 12 dell'utente del 02/10)
+        sel_ordine, piano = cv.ripieghi.get(key, (key[1], plan))
+        # 01/10: la guardia UNICA del minimo (``via_ordine``), per lato. Una
+        # chiusura sotto il minimo non parte (Betfair la rifiuterebbe): la
+        # dichiara ``_controllo_di_piatto`` con la proposta all'utente.
+        if via_ordine(role_map[key], piano.side, piano.size, params) != VIA_DIRETTA:
             continue
         # difetto 1: prima di appoggiare la chiusura si ANNULLA qualunque altro
         # ordine vivo sulla stessa selezione. Due ordini nella stessa direzione
@@ -2066,9 +2234,6 @@ def _close_actions(ctx: MatchCtx, cv: CashoutValue, params: Dict[str, Any],
         for viva in ordini_vivi_su(ctx, key[0], key[1], escludi=(role_map[key],)):
             acts.append(Action(kind="cancel", ref=viva.ref, role=viva.role,
                                market=viva.market, selection=viva.selection))
-        # 29/09 (M3.3): banca sotto 0,50 -> puntata equivalente sull'altra
-        # selezione se piazzabile diretta (``ripiego_chiusura_sotto_minimo``)
-        sel_ordine, piano = cv.ripieghi.get(key, (key[1], plan))
         acts.append(_place(role_map[key], key[0], sel_ordine, piano.side, piano.price, piano.size,
                            note=piano.note))
     return acts
@@ -2452,6 +2617,17 @@ def _decide_flatten(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> De
         # posizione ancora VIVA ma nessun prezzo con cui chiuderla: si ASPETTA.
         # Chiudere il ciclo qui archivierebbe una posizione aperta (capitale a
         # rischio invisibile) — mai.
+        # 01/10: se il prezzo c'e' ma l'ordine che chiude e' sotto il minimo
+        # Betfair .it (non parte, ``via_ordine``) lo si dice, con la proposta
+        # dell'ordine esatto: «Chiudi» non puo' farlo, l'utente si'.
+        c = float(params["commission_pct"]) / 100.0
+        cv_m = cashout_value(ctx.legs, snap.books, c, int(params["cashout_place_at_ticks"]),
+                             goals=snap.goals)
+        if any(pl.actionable for pl in cv_m.plans.values()):
+            return _dichiara_residuo(
+                ctx, Decision(ctx.state, [], "chiusura manuale"), snap, params, c,
+                "chiusura manuale: l'ordine che chiude e' sotto il minimo Betfair .it",
+                stato=ctx.state)
         return Decision(ctx.state, [], "chiusura manuale: prezzi non disponibili, attendo")
     if open_selections(ctx.legs):
         # CERT. 13/09, difetto 6. ``live_open_selections`` non vede le selezioni
@@ -2498,6 +2674,272 @@ def _decide_flatten(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> De
                         "dove": "pre-match", "minuto": snap.minute, "stato": "WATCH"}})
 
 
+# ---------------------------------------------------------------------------
+# 01/10 - LA VERITA' SULLA CHIUSURA (Ashdod v Maccabi Herzliya, evento 36134689)
+# ---------------------------------------------------------------------------
+# categoria della proposta scritta quando Mike NON riesce a chiudere da solo: non
+# e' un'uscita da firmare (la UI non mostra «approva»), e' l'ordine esatto che
+# l'utente puo' mettere a mano (o con «Chiudi» di Mike) per chiudere il residuo.
+CATEGORIA_RESIDUO = "residuo_scoperto"
+_NOME_MERCATO = {MARKET_OU35: "Under/Over 3.5", MARKET_OU45: "Under/Over 4.5"}
+
+
+def _lato_it(side: Optional[str]) -> str:
+    return "punta" if side == "back" else "banca"
+
+
+def _ordine_proposto(role: str, market: str, selection: str, plan: GreenupPlan,
+                     params: Dict[str, Any]) -> Dict[str, Any]:
+    return {"ruolo": role, "mercato": market, "selezione": selection, "lato": plan.side,
+            "prezzo": float(round_to_tick(plan.price)) if plan.price else None,
+            "size": round(float(plan.size), 2) if plan.size is not None else None,
+            "piazzabile": via_ordine(role, plan.side, plan.size, params) == VIA_DIRETTA}
+
+
+def _ordini_che_chiudono(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any],
+                         c: float) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """(ordini, esposizioni) del residuo ancora aperto: per ogni selezione viva,
+    l'ordine ESATTO che la chiude ai prezzi di adesso. Fra i due strumenti del
+    mercato a due esiti (la chiusura sulla selezione, la puntata sull'altra) si
+    sceglie il primo piazzabile diretto e non gia' rifiutato; poi il primo
+    piazzabile (l'utente puo' metterlo a mano anche se il bot se l'e' visto
+    rifiutare); se nessuno lo e', quello della strategia, ``piazzabile`` False."""
+    ticks = int(params["cashout_place_at_ticks"])
+    cv = cashout_value(ctx.legs, snap.books, c, ticks, goals=snap.goals)
+    ordini: List[Dict[str, Any]] = []
+    esposizioni: List[Dict[str, Any]] = []
+    for key in live_open_selections(ctx.legs, snap.goals):
+        w, l = exposure(ctx.legs, *key)
+        esposizioni.append({"mercato": key[0], "selezione": key[1],
+                            "se_vince": round(w, 2), "se_perde": round(l, 2),
+                            "sbilancio": round(abs(w - l), 2)})
+        role = RUOLI_CHIUSURA_DI_SERIE.get(key, "manual_close")
+        candidati: List[Tuple[str, GreenupPlan]] = []
+        plan = cv.plans.get(key)
+        if plan is not None and plan.actionable:
+            candidati.append((key[1], plan))
+        eq = puntata_equivalente(ctx.legs, key, snap.books, ticks)
+        if eq is not None:
+            # 02/10 (precisazione dell'utente): si chiude sulla STESSA selezione
+            # della posizione. Con la copertura-banca la posizione e' sull'Under
+            # 4,5 (chiave del mercato sull'Over): la puntata Under viene PRIMA,
+            # la banca Over e' solo il ripiego.
+            if _banca_di_apertura(ctx.legs, key[0]):
+                candidati.insert(0, eq)
+            else:
+                candidati.append(eq)
+        if not candidati:
+            ordini.append({"ruolo": role, "mercato": key[0], "selezione": key[1], "lato": None,
+                           "prezzo": None, "size": None, "piazzabile": False,
+                           "nota": "nessun prezzo per chiudere"})
+            continue
+        proposti = [(_ordine_proposto(role, key[0], sel, pl, params),
+                     chiusura_gia_rifiutata(ctx, _place(role, key[0], sel, pl.side, pl.price,
+                                                        pl.size)) is None)
+                    for sel, pl in candidati]
+        scelto = (next((o for o, libero in proposti if o["piazzabile"] and libero), None)
+                  or next((o for o, _libero in proposti if o["piazzabile"]), None)
+                  or proposti[0][0])
+        ordini.append(scelto)
+    return ordini, esposizioni
+
+
+def _testo_ordine(o: Dict[str, Any]) -> str:
+    if o.get("lato") is None:
+        return "%s/%s: nessun prezzo" % (o.get("mercato"), o.get("selezione"))
+    return "%s/%s %s %.2f @ %s" % (o.get("mercato"), o.get("selezione"), _lato_it(o.get("lato")),
+                                   float(o.get("size") or 0.0), o.get("prezzo"))
+
+
+def _proposta_residuo(ctx: MatchCtx, snap: Snapshot, ordini: List[Dict[str, Any]],
+                      esposizioni: List[Dict[str, Any]], motivo: str, stato_voluto: str,
+                      bloccabile: Optional[float]) -> Tuple[Dict[str, Any], bool]:
+    """(proposta, nuova?) con le CHIAVI della proposta di ``gate_uscite`` (la UI
+    la legge con lo stesso tipo) piu' ``residuo_scoperto`` ed ``esposizioni``.
+    Se la proposta viva dice gia' la stessa cosa (stesse selezioni, stessi lati,
+    stessa piazzabilita') resta quella: nessuna riga nuova, nessun log."""
+    chiave = f"{CATEGORIA_RESIDUO}|c{int(ctx.cycle_no)}"
+    sostanza = [chiave, [[o.get("mercato"), o.get("selezione"), o.get("lato"),
+                          bool(o.get("piazzabile"))] for o in ordini]]
+    prima = ctx.uscita_proposta if isinstance(ctx.uscita_proposta, dict) else None
+    if prima is not None and prima.get("residuo_scoperto") and prima.get("sostanza") == sostanza:
+        return prima, False
+    stessa = prima is not None and prima.get("chiave") == chiave
+    # stesso EPISODIO (proposta del residuo gia' viva per questo ciclo) con
+    # l'ordine cambiato (il libro si muove): la proposta si aggiorna, ma l'avviso
+    # CRITICAL e la riga di attivita' restano quelli dell'inizio dell'episodio.
+    # Nel banco (`uscite-automatiche`) il libro dell'Under 4,5 che va e viene
+    # produceva 54 avvisi in una partita.
+    nuova = not (stessa and bool((prima or {}).get("residuo_scoperto")))
+    return ({"chiave": chiave, "categoria": CATEGORIA_RESIDUO, "ciclo": int(ctx.cycle_no),
+             "stato": ctx.state, "stato_voluto": stato_voluto, "motivo": motivo,
+             "close_reason": ctx.close_reason, "ordini": ordini, "bloccabile": bloccabile,
+             "urgente": True, "minuto": snap.minute, "gol": snap.goals,
+             "decided_at": (prima.get("decided_at") if stessa else None) or snap.now,
+             "proposed_at": snap.now, "residuo_scoperto": True,
+             "esposizioni": esposizioni, "alternative": _alternative_residuo(ordini),
+             "sostanza": sostanza}, nuova)
+
+
+def _alternative_residuo(ordini: List[Dict[str, Any]]) -> List[str]:
+    """01/10 (vincolo definitivo 3): le scelte dell'UTENTE sul residuo. Se un
+    ordine e' piazzabile a mano lo si dice; se nessuno lo e' (anche la puntata
+    equivalente e' sotto il minimo) le due vie della guida italiana."""
+    if any(o.get("piazzabile") for o in ordini):
+        return ["mettere a mano l'ordine indicato (o 'Chiudi' di Mike)",
+                "lasciare il residuo fino al regolamento"]
+    return ["lasciare il residuo fino al regolamento",
+            "aumentare la posizione di un importo minimo e poi chiudere tutto"]
+
+
+def _guardia_minimo_listino(ctx: MatchCtx, d: Decision, snap: Snapshot,
+                            params: Dict[str, Any]) -> Decision:
+    """01/10 - L'ULTIMA PAROLA SU OGNI ORDINE DI MIKE (aperture, green, coperture,
+    chiusure, rientri): nessun ordine che Betfair .it rifiuterebbe per taglia.
+
+    Decide ``via_ordine``: sopra il minimo passa, un'apertura sotto il minimo
+    passa (place-and-trim collegato), una CHIUSURA sotto il minimo NON parte. Chi
+    chiude usa prima lo strumento equivalente (``_close_actions``); se un ramo
+    arrivasse qui lo stesso, l'ordine si toglie (con l'eventuale annullo dello
+    stesso ruolo: annullare senza poter ripiazzare lascerebbe la posizione piu'
+    scoperta), si ricorda come un rifiuto (la riga si scrive UNA volta) e, se e'
+    un'uscita, diventa la proposta all'utente con l'ordine esatto."""
+    scartate = [a for a in d.actions
+                if a.kind == "place" and via_ordine(a.role, a.side, a.size, params) == VIA_NON_SI_MANDA]
+    if not scartate:
+        return d
+    tolte = {id(a) for a in scartate}
+    ruoli = {(a.role, a.market) for a in scartate}
+    kept = [a for a in d.actions if id(a) not in tolte
+            and not (a.kind == "cancel" and (a.role, a.market) in ruoli)]
+    restano = any(a.kind == "place" for a in kept)
+    stato = d.state if restano else ctx.state
+    upd = dict(d.updates) if stato == d.state else {}
+    rif = dict(ctx.rifiuti)
+    nuove = []
+    for a in scartate:
+        if tentativo_gia_rifiutato(ctx, a) is None:
+            nuove.append(a)
+        rif[chiave_richiesta(a.role, ctx.cycle_no, a.market, a.selection, a.side, a.final)] = {
+            "price": round(float(a.price or 0.0), 4), "size": round(float(a.size or 0.0), 2),
+            "motivo": "sotto il minimo Betfair .it (%.2f): non inviato" % minimo_listino(a.side),
+            "ref": ""}
+    upd["rifiuti"] = rif
+    a0 = scartate[0]
+    perche = ("ordine %s %s %.2f sotto il minimo Betfair .it di %.2f: non inviato"
+              % (a0.role, _lato_it(a0.side), float(a0.size or 0.0), minimo_listino(a0.side)))
+    tele = dict(d.telemetry)
+    if nuove:
+        tele["ordine_sotto_minimo"] = {
+            "ordini": [{"ruolo": a.role, "mercato": a.market, "selezione": a.selection,
+                        "lato": a.side, "prezzo": a.price, "size": a.size,
+                        "minimo": minimo_listino(a.side)} for a in nuove],
+            "testo": perche, "critical": True}
+    uscite = [a for a in scartate if a.role in CLOSING_ROLES]
+    if uscite:
+        ordini = [{"ruolo": a.role, "mercato": a.market, "selezione": a.selection,
+                   "lato": a.side, "prezzo": a.price, "size": a.size, "piazzabile": False}
+                  for a in uscite]
+        proposta, nuova = _proposta_residuo(ctx, snap, ordini, [], perche, d.state, None)
+        upd["uscita_proposta"] = proposta
+        if nuova:
+            tele["uscita_proposta"] = {k: v for k, v in proposta.items() if k != "sostanza"}
+    return Decision(stato, kept, f"{d.reason} ({perche})", upd, tele)
+
+
+def _controllo_di_piatto(ctx: MatchCtx, d: Decision, snap: Snapshot,
+                         params: Dict[str, Any]) -> Decision:
+    """01/10 - IL CONTROLLO DI PIATTO DOPO OGNI CHIUSURA (ordine dell'utente).
+
+    Una decisione che porta a FLAT («chiuso (profit)», «chiuso (loss_*)»,
+    «re-ingresso chiuso», fine della chiusura manuale) passa di qui: si
+    ricalcola l'esposizione di TUTTE le selezioni ancora in gioco
+    (``live_open_selections``) e, se resta una posizione, la decisione NON e'
+    «chiuso». Diventa LIVE_CLOSING «chiusura parziale: residuo scoperto su ...»,
+    con l'avviso CRITICAL (``chiusura_parziale``, una volta per episodio) e la
+    proposta all'utente con l'ordine esatto che chiude (``uscita_proposta``).
+    ``attempts`` non si azzera: i tentativi esauriti restano esauriti.
+
+    Restano «chiuse» solo le posizioni che NESSUN ordine puo' chiudere (resto
+    sotto il centesimo, ``residuo_non_chiudibile``, 12/09) e il resto di
+    arrotondamento del mercato 4,5 gia' considerato piatto
+    (``tolleranza_piatto_ou45``, scritto in ``residuo_non_piazzabile``).
+
+    Caso vero: Ashdod v Maccabi Herzliya, la banca Under 4,5 6,32 @ 1,23 rimasta a
+    mercato dopo «chiuso (profit)», -0,30 EUR con 4 gol o meno."""
+    if d.state != "FLAT":
+        return d
+    if not live_open_selections(ctx.legs, snap.goals):
+        return d
+    c = float(params["commission_pct"]) / 100.0
+    if residuo_non_chiudibile(ctx, snap, params, c):
+        return d
+    return _dichiara_residuo(ctx, d, snap, params, c, None, stato="LIVE_CLOSING")
+
+
+def _dichiara_residuo(ctx: MatchCtx, d: Decision, snap: Snapshot, params: Dict[str, Any],
+                      c: float, perche: Optional[str], *, stato: str) -> Decision:
+    """La decisione che DICE il residuo scoperto: stato ``stato``, motivo «chiusura
+    parziale: residuo scoperto su ...», proposta con l'ordine esatto, avviso
+    CRITICAL una volta per episodio. Usata dal controllo di piatto e dalla
+    chiusura manuale che non puo' piazzare l'ordine (sotto il minimo)."""
+    ordini, esposizioni = _ordini_che_chiudono(ctx, snap, params, c)
+    if perche is None:
+        if ctx.attempts >= int(params["close_max_attempts"]):
+            perche = "tentativi esauriti (%d)" % int(ctx.attempts)
+        elif any(not o.get("piazzabile") for o in ordini):
+            perche = "nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo"
+        else:
+            perche = "ordine di chiusura rifiutato a mercato"
+    testo = "chiusura parziale: residuo scoperto su " + "; ".join(_testo_ordine(o) for o in ordini)
+    motivo = "%s (%s)" % (testo, perche)
+    try:
+        bloccabile = cashout_value(ctx.legs, snap.books, c, int(params["cashout_place_at_ticks"]),
+                                   goals=snap.goals).net
+    except Exception:  # noqa: BLE001 - la proposta esce lo stesso, senza cifra
+        bloccabile = None
+    proposta, nuova = _proposta_residuo(ctx, snap, ordini, esposizioni, motivo, d.state,
+                                        bloccabile)
+    upd = {k: v for k, v in d.updates.items() if k not in ("attempts", "reentry_allowed")}
+    # 02/10 - DECISIONE 13 DELL'UTENTE: residuo non chiudibile = LIVE_CLOSING fino
+    # al regolamento, SENZA RIENTRI. Anche se il residuo poi si chiude (prezzo
+    # mosso, ordine diventato piazzabile) la partita non rientra: come le
+    # chiusure manuali, ``reentry_done`` resta acceso per il ciclo.
+    upd["reentry_allowed"] = False
+    upd["reentry_done"] = True
+    upd["uscita_proposta"] = proposta
+    tele = {k: v for k, v in d.telemetry.items() if k != "residuo_non_piazzabile"}
+    if nuova:
+        tele["chiusura_parziale"] = {"testo": testo, "perche": perche, "ordini": ordini,
+                                     "esposizioni": esposizioni, "close_reason": ctx.close_reason,
+                                     "attempts": int(ctx.attempts), "minuto": snap.minute,
+                                     "gol": snap.goals, "critical": True}
+        tele["uscita_proposta"] = {k: v for k, v in proposta.items() if k != "sostanza"}
+    keep = [a for a in d.actions if a.kind == "cancel"]
+    return Decision(stato, keep, "%s - proposta all'utente" % motivo, upd, tele)
+
+
+def _proposta_residuo_finale(ctx: MatchCtx, d: Decision) -> Decision:
+    """La proposta del residuo vive finche' la decisione la riafferma; quando non
+    serve piu' (residuo chiuso, nuovo tentativo in corso) decade, detto UNA volta."""
+    prima = ctx.uscita_proposta if isinstance(ctx.uscita_proposta, dict) else None
+    if prima is None or not prima.get("residuo_scoperto") or "uscita_proposta" in d.updates:
+        return d
+    upd = dict(d.updates)
+    upd["uscita_proposta"] = None
+    tele = dict(d.telemetry)
+    tele["uscita_proposta_decaduta"] = {"chiave": prima.get("chiave"),
+                                        "motivo": "residuo: %s" % d.reason}
+    return Decision(d.state, list(d.actions), d.reason, upd, tele)
+
+
+def _ultime_guardie(ctx: MatchCtx, d: Decision, snap: Snapshot,
+                    params: Dict[str, Any]) -> Decision:
+    d = _guardia_minimo_listino(ctx, d, snap, params)
+    d = _controllo_di_piatto(ctx, d, snap, params)
+    return _proposta_residuo_finale(ctx, d)
+
+
 def decide(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Decision:
     st = ctx.state
     if st in TERMINAL_STATES:
@@ -2515,7 +2957,7 @@ def decide(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Decision:
                                     "la posizione non e' piu' del bot")
         # C2 — chiusura manuale in corso: nessuna riappoggiata, nessuna apertura
         if ctx.flatten_pending:
-            return _decide_flatten(ctx, snap, params)
+            return _ultime_guardie(ctx, _decide_flatten(ctx, snap, params), snap, params)
         # C3 — cash out manuale pre-KO: ingressi disabilitati finche' l'utente
         # non riabilita la partita ("Riprendi")
         if ctx.no_reentry:
@@ -2550,7 +2992,10 @@ def decide(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Decision:
     # 25/09 — CHI ESEGUE L'USCITA (interruttore "uscite automatiche" in Control
     # Room). Ultima parola: la decisione qui sopra e' quella di sempre, il gate
     # cambia solo chi la esegue.
-    return gate_uscite(ctx, d, snap, params)
+    d = gate_uscite(ctx, d, snap, params)
+    # 01/10 (Ashdod v Maccabi Herzliya): nessun ordine sotto il minimo .it e mai
+    # «chiuso» con esposizione viva. Dopo tutto, su ogni ramo.
+    return _ultime_guardie(ctx, d, snap, params)
 
 
 # ---------------------------------------------------------------------------
@@ -2688,6 +3133,10 @@ def _con(d: Decision, *, updates: Dict[str, Any], telemetry: Dict[str, Any]) -> 
 
 def _decadi(ctx: MatchCtx, d: Decision, motivo: str) -> Decision:
     """La proposta viva non regge piu': si toglie e lo si dice UNA volta."""
+    if isinstance(ctx.uscita_proposta, dict) and ctx.uscita_proposta.get("residuo_scoperto"):
+        # 01/10: la proposta del RESIDUO SCOPERTO non e' un'uscita della
+        # strategia: vive finche' il residuo c'e' (``_proposta_residuo_finale``)
+        return d
     if not isinstance(ctx.uscita_proposta, dict):
         if isinstance(ctx.uscita_approvata, dict):
             # firma rimasta senza proposta: cade anche lei (29/09)
@@ -2731,6 +3180,14 @@ def gate_uscite(ctx: MatchCtx, d: Decision, snap: Snapshot, params: Dict[str, An
     if uscite_automatiche(params):
         return _decadi(ctx, d, "uscite automatiche: l'uscita la esegue il bot")
     cat = categoria_uscita(d)
+    if cat is None and d.state in STATI_USCITA_IN_CORSO and ctx.state not in STATI_USCITA_IN_CORSO \
+            and d.updates.get("close_reason"):
+        # 01/10: la strategia ha DECISO di chiudere (stato e motivo di chiusura) ma
+        # gli ordini sono stati tolti perche' sotto il minimo (``_close_actions``).
+        # E' comunque un'uscita: senza questa riga passava il cancello senza firma,
+        # e al giro dopo (prezzo mosso, ordine piazzabile) l'uscita IN PERDITA
+        # partiva da sola. Trovato dal banco (`copertura-rifiutata-legacy`).
+        cat = "chiusura"
     if cat is None:
         return _decadi(ctx, d, "la strategia non vuole piu' uscire: %s" % d.reason)
     if str(d.updates.get("close_reason") or "") in MOTIVI_PROTEZIONE:
@@ -3743,7 +4200,7 @@ def frazione_copertura(stage: int, params: Dict[str, Any], x_pieno: Optional[flo
         return (1.0, False)
     if x_pieno is None:
         return (f, False)
-    piu_piccola_piazzabile = SUBMIN_FLOOR if params.get("exact_sizes", True) else IT_BACK_MIN
+    piu_piccola_piazzabile = SUBMIN_IMPORTO_FINALE_MIN if params.get("exact_sizes", True) else IT_BACK_MIN
     if cover_form(params) == COVER_LAY_U45:
         # 29/09 (M3.1): una tranche di BANCA sotto 0,50 non e' piazzabile diretta
         piu_piccola_piazzabile = IT_LAY_MIN
@@ -3981,8 +4438,8 @@ def _copertura_banca(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
         # M3.5 - "non voglio operazioni doppie": il resto sotto il minimo di una
         # bancata non si rincorre con un secondo ordine. Coperta, e lo si dice.
         return Decision("LIVE_COVERED", acts,
-                        "copertura: resta da coprire %.2f, sotto il minimo di 0,50: "
-                        "si considera coperta (nessun secondo ordine)" % size,
+                        "copertura: resta da coprire %.2f, sotto il minimo di %.2f: "
+                        "si considera coperta (nessun secondo ordine)" % (size, IT_LAY_MIN),
                         updates={"cover_stage": 0, "cover_forced": False},
                         telemetry={"cover_resto_sotto_minimo": {**base_tele, "resto": size,
                                                                 "minimo": IT_LAY_MIN}})
@@ -4139,8 +4596,8 @@ def _riprezzo_copertura_banca(ctx: MatchCtx, snap: Snapshot, params: Dict[str, A
     size, _ = cover_legal_size(x, params, side="lay")
     if size < IT_LAY_MIN - _EPS:
         return Decision("LIVE_COVERED", [annulla],
-                        "copertura: resta da coprire %.2f, sotto il minimo di 0,50: si "
-                        "considera coperta (nessun secondo ordine)" % size,
+                        "copertura: resta da coprire %.2f, sotto il minimo di %.2f: si "
+                        "considera coperta (nessun secondo ordine)" % (size, IT_LAY_MIN),
                         updates={"attempts": 0, "cover_stage": 0, "cover_forced": False},
                         telemetry={"cover_resto_sotto_minimo": {"resto": size,
                                                                 "minimo": IT_LAY_MIN,
@@ -4267,13 +4724,29 @@ def _decide_closing(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: fl
                         "chiusura su selezione gia' decisa: annullo")
     if not pend:
         if live_open_selections(ctx.legs, snap.goals):
-            # residuo non chiuso (fill parziale gia' consolidato): riprova
+            # residuo non chiuso (fill parziale gia' consolidato, ordine
+            # rifiutato): riprova, ma (01/10, Ashdod v Maccabi Herzliya)
+            #   * mai un ordine sotto il minimo (``_close_actions``, guardia unica);
+            #   * mai la STESSA richiesta gia' rifiutata, e dopo un rifiuto PER
+            #     TAGLIA (INVALID_BET_SIZE) mai piu' lo stesso strumento;
+            #   * mai piu' di un tentativo ogni ``close_retry_s`` (prima: un
+            #     ordine al secondo, 21 in 24 s, perche' l'ordine rifiutato non
+            #     resta 'pending' e il ritmo guardava solo i pending).
             cv = cashout_value(ctx.legs, snap.books, c, int(params["cashout_place_at_ticks"]),
                                goals=snap.goals)
-            acts = _close_actions(ctx, cv, params)
-            if acts and ctx.attempts < int(params["close_max_attempts"]):
+            acts = [a for a in _close_actions(ctx, cv, params)
+                    if a.kind != "place" or chiusura_gia_rifiutata(ctx, a) is None]
+            if any(a.kind == "place" for a in acts) \
+                    and ctx.attempts < int(params["close_max_attempts"]):
+                manca = attesa_ritento_chiusura(ctx, snap, params)
+                if manca > 0:
+                    return Decision("LIVE_CLOSING", [],
+                                    "chiusura residuo: prossimo tentativo fra %.0f s" % manca)
                 return Decision("LIVE_CLOSING", acts, "chiusura residuo",
                                 updates={"attempts": ctx.attempts + 1})
+            # nessun ordine possibile o tentativi esauriti: la decisione resta
+            # «chiuso», e ``_controllo_di_piatto`` (in ``decide``) la smentisce
+            # finche' resta esposizione - UN posto solo per ogni chiusura.
         upd = {"reentry_allowed": ctx.close_reason == "profit", "attempts": 0}
         return Decision("FLAT", [], f"chiuso ({ctx.close_reason})", updates=upd,
                         telemetry=_tele_residuo(ctx.legs))
@@ -4296,10 +4769,12 @@ def _decide_closing(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: fl
                                best_lay_price=bk.best_lay, fraction=1.0,
                                place_at_ticks=int(params["cashout_place_at_ticks"]))
         sel_ordine = leg.selection
-        if leg.market == MARKET_OU45 and _banca_di_apertura(ctx.legs, MARKET_OU45):
+        if leg.market == MARKET_OU45:
             # 29/09 (M3.3): con la copertura-banca la chiusura si riprezza sulla
             # chiave del MERCATO (banca sulla selezione lunga), col ripiego della
-            # puntata equivalente sotto 0,50. Forma di oggi: ramo non toccato.
+            # puntata equivalente. 01/10: anche nella forma di prima (una sola
+            # selezione: la chiave e' la selezione della gamba, piano identico a
+            # prima; cambia solo una banca sotto 1,00, che diventa la puntata).
             chiave = _chiave_ou45(ctx.legs)
             bk_k = snap.book(*chiave) if chiave is not None else None
             if chiave is not None and bk_k is not None:
@@ -4314,6 +4789,11 @@ def _decide_closing(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: fl
                     if plan.actionable else None)
                 if alt is not None:
                     sel_ordine, plan = alt
+        if plan.actionable and via_ordine(leg.role, plan.side, plan.size, params) != VIA_DIRETTA:
+            # 01/10: il riprezzo sarebbe sotto il minimo (Betfair lo rifiuterebbe):
+            # la chiusura viva resta sul book com'e', nessun annullo senza
+            # poter ripiazzare
+            continue
         acts.append(Action(kind="cancel", ref=leg.ref, role=leg.role, market=leg.market,
                            selection=leg.selection))
         if plan.actionable:

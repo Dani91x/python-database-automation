@@ -1,0 +1,46 @@
+
+ RUN  v3.2.6 C:/Users/Admin/Desktop/PYTHON DATABASE/python-database-automation/.claude/worktrees/agent-a625321199874f716/frontend
+
+ ✓ src/fotografia/uiDefault.test.ts (2 tests) 22ms
+ ✓ src/fotografia/cssVeste.test.ts (9 tests) 1089ms
+   ✓ veste completa: confinata al guscio acceso > ogni classe ds-portale-v2-* usata nel codice e' definita nella sezione  591ms
+   ✓ veste completa: leggibilita' > ogni marcatore LIVE resta d'allarme a guscio acceso: rosso, contrasto >= 4,5:1, pieno dove oggi e' pieno  431ms
+ ✓ src/fotografia/cssGuscio.test.ts (3 tests) 522ms
+   ✓ veste v2 delle pagine: inerte col guscio spento > ogni classe ds-v2-* usata nel codice e' definita nel foglio  481ms
+ ✓ src/pages/MarketWatch.test.tsx (5 tests) 2104ms
+   ✓ MarketWatch > renderizza le due sezioni con le righe dalle fixture  459ms
+   ✓ MarketWatch > riga calcio: badge in-play con minuto+score e bottone Cash-out EVENTO  824ms
+   ✓ MarketWatch > riga tennis: set_summary visibile e NESSUN bottone cash-out (capability gating)  490ms
+ ✓ src/fotografia/fotografia.test.tsx (26 tests) 265912ms
+   ✓ fotografia di parita' (guscio v2) > board: 'off' identica alla fase 0, 'v2' con le stesse pagine  8111ms
+   ✓ fotografia di parita' (guscio v2) > control-room: 'off' identica alla fase 0, 'v2' con le stesse pagine  14187ms
+   ✓ fotografia di parita' (guscio v2) > dashboard: 'off' identica alla fase 0, 'v2' con le stesse pagine  6519ms
+   ✓ fotografia di parita' (guscio v2) > omega: 'off' identica alla fase 0, 'v2' con le stesse pagine  6799ms
+   ✓ fotografia di parita' (guscio v2) > safe-strategy: 'off' identica alla fase 0, 'v2' con le stesse pagine  6461ms
+   ✓ fotografia di parita' (guscio v2) > mike: 'off' identica alla fase 0, 'v2' con le stesse pagine  6728ms
+   ✓ fotografia di parita' (guscio v2) > segui-live: 'off' identica alla fase 0, 'v2' con le stesse pagine  6070ms
+   ✓ fotografia di parita' (guscio v2) > multi-ladder: 'off' identica alla fase 0, 'v2' con le stesse pagine  6060ms
+   ✓ fotografia di parita' (guscio v2) > market-watch: 'off' identica alla fase 0, 'v2' con le stesse pagine  5876ms
+   ✓ fotografia di parita' (guscio v2) > live-pnl: 'off' identica alla fase 0, 'v2' con le stesse pagine  5825ms
+   ✓ fotografia di parita' (guscio v2) > storico-calcio: 'off' identica alla fase 0, 'v2' con le stesse pagine  6779ms
+   ✓ fotografia di parita' (guscio v2) > storico-tennis: 'off' identica alla fase 0, 'v2' con le stesse pagine  6898ms
+   ✓ fotografia di parita' (guscio v2) > tennis: 'off' identica alla fase 0, 'v2' con le stesse pagine  6367ms
+   ✓ fotografia di parita' (guscio v2) > tennis-terminal: 'off' identica alla fase 0, 'v2' con le stesse pagine  5875ms
+   ✓ fotografia di parita' (guscio v2) > tennis-terminal-match: 'off' identica alla fase 0, 'v2' con le stesse pagine  7563ms
+   ✓ fotografia di parita' (guscio v2) > trade-journal: 'off' identica alla fase 0, 'v2' con le stesse pagine  5641ms
+   ✓ fotografia di parita' (guscio v2) > report-personale: 'off' identica alla fase 0, 'v2' con le stesse pagine  7213ms
+   ✓ fotografia di parita' (guscio v2) > watchlist: 'off' identica alla fase 0, 'v2' con le stesse pagine  6008ms
+   ✓ fotografia di parita' (guscio v2) > analytics: 'off' identica alla fase 0, 'v2' con le stesse pagine  7209ms
+   ✓ fotografia di parita' (guscio v2) > match-replay: 'off' identica alla fase 0, 'v2' con le stesse pagine  6334ms
+   ✓ fotografia di parita' (guscio v2) > select-sport: 'off' identica alla fase 0, 'v2' con le stesse pagine  7722ms
+   ✓ fotografia di parita' (guscio v2) > ladder-popout: 'off' identica alla fase 0, 'v2' con le stesse pagine  5486ms
+   ✓ fotografia di parita' (guscio v2) > landing: 'off' identica alla fase 0, 'v2' con le stesse pagine  8342ms
+   ✓ fotografia di parita' (guscio v2) > check-email: 'off' identica alla fase 0, 'v2' con le stesse pagine  5388ms
+   ✓ fotografia di parita' (guscio v2) > reset-password: 'off' identica alla fase 0, 'v2' con le stesse pagine  5075ms
+   ✓ fotografia di parita' (guscio v2) > notfound: 'off' identica alla fase 0, 'v2' con le stesse pagine  5127ms
+
+ Test Files  5 passed (5)
+      Tests  45 passed (45)
+   Start at  11:34:17
+   Duration  286.73s (transform 100.91s, setup 20.18s, collect 35.49s, tests 269.65s, environment 55.25s, prepare 8.96s)
+

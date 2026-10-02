@@ -1056,6 +1056,14 @@ def test_l5_tutti_i_kind_di_attivita_sono_dichiarati():
         # partita (parametro cambiato a posizione aperta) -> dichiarato, mai
         # scelto in silenzio
         "settle_commissione_mista",
+        # 01/10 (Ashdod v Maccabi Herzliya, live): la chiusura NON completata
+        # (resta esposizione, niente «chiuso») e l'ordine sotto il minimo .it
+        # che non parte - avvisi CRITICAL, una riga per episodio
+        "chiusura_parziale", "ordine_sotto_minimo",
+        # 02/10 (punto 25): riga assente ma mercato aperto per Betfair (si tiene);
+        # (R1) all'arresto: posizione abbinata dichiarata, ordini non annullati
+        "riga_assente_mercato_aperto", "posizione_lasciata_per_arresto",
+        "arresto_ordini_non_annullati",
         # cert. 12/09: la decisione di chiudere in perdita con i suoi numeri
         # (prima veniva sovrascritta al ciclo dopo e spariva), e le gambe
         # pianificate mai piazzate, che valgono zero e non sono un errore

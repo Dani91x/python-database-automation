@@ -736,12 +736,20 @@ def _bloccato_uscita_rientro(ctx, snap) -> Optional[float]:
     return round(float(min(plan.expected_if_win, plan.expected_if_lose)), 2)
 
 
+def _proposta_di_uscita(d: E.Decision) -> bool:
+    """Una proposta d'USCITA della strategia (``gate_uscite``). 01/10: la
+    proposta del RESIDUO SCOPERTO (``residuo_scoperto``) non lo e': e' cio' che
+    Mike non riesce a chiudere da solo, la giudicano L1 e L2."""
+    prop = d.updates.get("uscita_proposta")
+    return isinstance(prop, dict) and not prop.get("residuo_scoperto")
+
+
 @_controllo("G3", "un'uscita in PROFITTO non resta mai una proposta: la esegue il bot "
                   "anche a uscite manuali (piano Mike 29/09, M1.1, M4.1-M4.4)",
-            quando=lambda ctx, snap, d, p: isinstance(d.updates.get("uscita_proposta"), dict))
+            quando=lambda ctx, snap, d, p: _proposta_di_uscita(d))
 def _g3(ctx, snap, d, params):
     prop = d.updates.get("uscita_proposta")
-    if not isinstance(prop, dict):
+    if not _proposta_di_uscita(d):
         return None
     motivo = str(prop.get("close_reason") or "")
     if motivo.startswith("loss"):
@@ -760,6 +768,64 @@ def _g3(ctx, snap, d, params):
         return None                      # chiusura del veto pre-partita: in perdita
     return (f"uscita in profitto ({prop.get('categoria')}, motivo {motivo or '-'}) lasciata "
             f"come proposta: {prop.get('motivo')}")
+
+
+# ===========================================================================
+# L. IL MINIMO DI BETFAIR .it E LA VERITA' SULLA CHIUSURA (01/10, Ashdod v
+#    Maccabi Herzliya, LIVE: banca di chiusura 0,43 rifiutata INVALID_BET_SIZE 21
+#    volte, poi «chiuso (profit)» con la copertura ancora a mercato)
+# ===========================================================================
+def _sotto_minimo_listino(a: Any) -> bool:
+    """Scritto QUI con i minimi della fonte unica del listino (non con la guardia
+    del motore): punta sotto 1,00, banca sotto 1,00, al centesimo."""
+    from Betfair.stream.trading.minimi_it import IT_MIN_BACK, IT_MIN_LAY
+
+    # minimi di betfair.it (fonte unica, ordine dell'utente del 01/10): 1,00 / 1,00
+    minimo = IT_MIN_LAY if str(a.side) == "lay" else IT_MIN_BACK
+    return round(float(a.size or 0.0), 2) < minimo - 0.0005
+
+
+def _punta_sotto_floor(a: Any, params: Dict[str, Any]) -> bool:
+    """02/10: una PUNTA d'apertura sotto l'importo finale minimo del place-and-trim
+    (0,50, floor di legge): nessuna via la rende piazzabile. Con ``exact_sizes``
+    spento il servizio la porta al minimo (legalizzata): non e' una violazione."""
+    from Betfair.stream.trading.minimi_it import SUBMIN_IMPORTO_FINALE_MIN
+
+    if str(a.side) != "back" or a.role in E.CLOSING_ROLES:
+        return False
+    if not (params or {}).get("exact_sizes", True):
+        return False
+    return round(float(a.size or 0.0), 2) < SUBMIN_IMPORTO_FINALE_MIN - 0.0005
+
+
+@_controllo("L1", "nessun ordine di CHIUSURA sotto il minimo Betfair .it (punta 1,00, banca "
+                  "1,00), nessuna BANCA sotto 1,00 in assoluto e nessuna PUNTA d'apertura "
+                  "sotto 0,50 (floor del place-and-trim): Betfair le rifiuta per taglia "
+                  "(01/10, INVALID_BET_SIZE)",
+            quando=lambda ctx, snap, d, p: bool(_piazzamenti(d)))
+def _l1(ctx, snap, d, params):
+    sotto = [a for a in _piazzamenti(d)
+             if ((a.role in E.CLOSING_ROLES or str(a.side) == "lay") and _sotto_minimo_listino(a))
+             or _punta_sotto_floor(a, params)]
+    if sotto:
+        a = sotto[0]
+        return f"ordine '{a.role}' {a.side} {float(a.size):.2f} @ {a.price} sotto il minimo"
+    return None
+
+
+@_controllo("L2", "mai «chiuso» (FLAT) con una posizione ancora in gioco che un ordine puo' "
+                  "chiudere: il residuo si dichiara (chiusura parziale) e va all'utente (01/10)",
+            quando=lambda ctx, snap, d, p: d.state == "FLAT")
+def _l2(ctx, snap, d, params):
+    if d.state != "FLAT":
+        return None
+    aperte = E.live_open_selections(ctx.legs, snap.goals)
+    if not aperte:
+        return None
+    c = float(params.get("commission_pct", 5.0)) / 100.0
+    if E.residuo_non_chiudibile(ctx, snap, params, c):
+        return None                     # resto sotto il centesimo: nessun ordine lo chiude
+    return f"FLAT ('{d.reason}') con esposizione viva su {aperte}"
 
 
 # ===========================================================================

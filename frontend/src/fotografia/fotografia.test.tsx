@@ -274,9 +274,25 @@ beforeAll(() => {
     if (!existsSync(CARTELLA)) mkdirSync(CARTELLA, { recursive: true });
 });
 
+// 02/10 (FRONTEND MINORI 31) - FRAGILE SOTTO CARICO. La PRIMA importazione di
+// <App/> trasforma l'intero grafo dei moduli dell'app: 42 s a macchina scarica e
+// cache fredda, oltre i 60 s del test sotto carico. Il primo test (board) scadeva
+// e, rimasto vivo in sottofondo, continuava a montare e smontare l'app mentre
+// giravano i successivi: pagine vuote e chiamate a zero, 26 rossi a catena.
+// La trasformazione si paga UNA volta qui, con un tempo adeguato; i test poi
+// rivalutano i moduli (vi.resetModules) senza ritrasformarli.
+beforeAll(async () => {
+    await import('@/App');
+}, 600_000);
+
 afterAll(() => {
     vi.useRealTimers();
 });
+
+/** tempo per test: due montaggi dell'app intera (off e v2), ciascuno con la sua attesa */
+const TEMPO_PER_PAGINA_MS = 300_000;
+/** oltre questa attesa la pagina NON si e' fermata: errore esplicito, mai una foto presa a meta' */
+const STABILE_ENTRO_MS = 120_000;
 
 async function attendi(ms: number) {
     await act(async () => {
@@ -284,14 +300,31 @@ async function attendi(ms: number) {
     });
 }
 
-/** attende che la pagina smetta di cambiare (5 letture uguali di fila, ~400 ms), al massimo 6 s */
-async function attendiStabile(p: Pagina): Promise<{ pagina: Fotografia; guscio: Raccolta }> {
+/**
+ * Attende che la pagina sia PRONTA e FERMA, poi la fotografa:
+ *  - pronta: almeno un testo della pagina a schermo (mai il DOM vuoto di prima del
+ *    primo render, che sotto carico resta "fermo" piu' di 400 ms);
+ *  - ferma: 5 letture uguali di fila (~80 ms l'una, cioe' >= 400 ms) del DOM E delle
+ *    chiamate al backend (nomi distinti di rpc e tabelle, canali, WebSocket): una
+ *    pagina ancora in caricamento cambia l'uno o le altre e azzera il conto.
+ * Le asserzioni restano quelle di prima; cambia solo QUANDO si scatta. Il tempo si
+ * misura con performance.now() (Date e' fermo al 2026-10-01 10:00).
+ */
+async function attendiStabile(
+    p: Pagina, chiamateOra: () => unknown,
+): Promise<{ pagina: Fotografia; guscio: Raccolta }> {
+    const inizio = performance.now();
+    const firma = () => serializza(scatta(p)) + JSON.stringify(chiamateOra());
     await attendi(300);
-    let prima = serializza(scatta(p));
+    let prima = firma();
     let uguali = 0;
-    for (let i = 0; i < 75 && uguali < 5; i++) {
+    while (uguali < 5 || scatta(p).pagina.testi.length === 0) {
+        if (performance.now() - inizio > STABILE_ENTRO_MS) {
+            throw new Error(`${p.nome}: la pagina non e' pronta e ferma dopo ${STABILE_ENTRO_MS / 1000} s `
+                + `(testi a schermo: ${scatta(p).pagina.testi.length})`);
+        }
         await attendi(80);
-        const ora = serializza(scatta(p));
+        const ora = firma();
         if (ora === prima) uguali += 1;
         else { uguali = 0; prima = ora; }
     }
@@ -312,15 +345,16 @@ async function fotografa(p: Pagina, stato: 'off' | 'v2') {
     window.history.replaceState(null, '', p.url);
     document.title = '';
     const { default: App } = await import('@/App');
-    render(<App />);
-    const foto = await attendiStabile(p);
-    const chiamate = {
+    const chiamateOra = () => ({
         // nomi distinti: il NUMERO di giri dei poll dipende da quanto dura l'attesa
         rpc: [...new Set(finto.registro.rpc)].sort(),
         from: [...new Set(finto.registro.from)].sort(),
         channel: finto.registro.channel,
         websocket: [...(G.__wsFotografia ?? [])].sort(),
-    };
+    });
+    render(<App />);
+    const foto = await attendiStabile(p, chiamateOra);
+    const chiamate = chiamateOra();
     cleanup();
     return { ...foto, chiamate };
 }
@@ -376,6 +410,6 @@ describe('fotografia di parita\' (guscio v2)', () => {
                 expect(estranei, `${p.nome}: testid del guscio fuori dalla lista bianca`).toEqual([]);
             }
 
-        }, 60_000);
+        }, TEMPO_PER_PAGINA_MS);
     }
 });

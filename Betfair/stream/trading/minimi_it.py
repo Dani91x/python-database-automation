@@ -44,5 +44,15 @@ IT_PASSO_PUNTA_RIPIEGO = 0.50
 #     riuscita; "rifiutato del tutto"): rifiuto esplicito, residuo dichiarato al trader.
 #: importo FINALE minimo di un place-and-trim su .it (= floor di legge)
 SUBMIN_IMPORTO_FINALE_MIN = IT_FLOOR_LEGGE
+#: 02/10/2026 (RUNNER_MINIMI_CORREZIONI, punto 11, decisione del coordinatore): chi sa
+#: riconciliare un ordine tradotto nello specchio, nei cleared e nei ripieghi REST. La via
+#: "equivalente sull'altra selezione" del motore vale SOLO per questi attori (``attore`` /
+#: ``strategy_ref`` del comando), in paper come in live. Oggi NESSUNO: Safe e Omega
+#: rileggono l'ordine VERO nei ripieghi live oltre la scadenza (difetti aperti), Mike in
+#: live non passa dal canale (ha la sua patch), gli ordini manuali dell'app aspettano la
+#: conferma dell'utente sul green-up di mercato. Per tutti gli altri: diretto ->
+#: place-and-trim (finale >= 0,50) -> rifiuto ``SOTTO_MINIMO_NON_PIAZZABILE``. Un attore si
+#: aggiunge solo dopo averne verificato la riconciliazione.
+ATTORI_CON_TRADUZIONE: frozenset = frozenset()
 #: codice INTERNO del rifiuto di un ordine sotto il minimo senza via legittima
 SOTTO_MINIMO_NON_PIAZZABILE = "SOTTO_MINIMO_NON_PIAZZABILE"

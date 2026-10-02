@@ -1,0 +1,17 @@
+falsifica_test_isolamento_3 - 2026-10-02 14:25:11
+
+== 0) CON LA CORREZIONE
+  [OK ] HOURS=0: atteso VERDE, ottenuto VERDE -> 25 passed in 0.40s (4.0s)
+  [OK ] HOURS=3: atteso VERDE, ottenuto VERDE -> 25 passed in 0.39s (3.9s)
+  [OK ] HOURS=(assente: .env): atteso VERDE, ottenuto VERDE -> 25 passed in 0.52s (4.7s)
+
+== 1) MUTAZIONE: _CONFIG_WARNED non azzerato fra le due corse
+        FAILED Betfair/mike/tests/test_mike_legge_canale_2026_09_23.py::test_1_interruttore_spento_chiamate_identiche_a_prima[None]
+  [OK ] HOURS=0 (avviso emesso): atteso ROSSO, ottenuto ROSSO -> 1 failed, 24 passed in 1.06s (5.0s)
+  [OK ] HOURS=3 (nessun avviso: il difetto non si vede): atteso VERDE, ottenuto VERDE -> 25 passed in 0.41s (4.5s)
+
+== 2) RIPRISTINATO
+  [OK ] HOURS=0: atteso VERDE, ottenuto VERDE -> 25 passed in 0.49s (4.9s)
+
+ripristino verificato (sha256): True
+ESITO COMPLESSIVO: TUTTO COME ATTESO

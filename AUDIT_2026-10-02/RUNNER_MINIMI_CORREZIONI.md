@@ -1,5 +1,14 @@
 # RUNNER_MINIMI_CORREZIONI - correzioni dopo la verifica di RUNNER_MINIMI_CHIUSURE (02/10/2026)
 
+**STATO AL 02/10, fine punto 11.**
+- **Fatto**:
+  - punti 1-3 e 5-11 (codice `2081711`);
+  - patch rigenerata con `git diff 67261b9 HEAD -- Betfair` (`a1da8cc`): 43 file, riapplicata
+    su `67261b9` riproduce l'albero;
+  - falsificazione finale **50/50 rosse**.
+- **Manca**: punto 4 (fermato, da decidere) e i due difetti dei bot (§9, altro delegato).
+- **Chi riprende**: `git log verifica-runner`.
+
 Correttore: delegato Opus. Worktree `agent-a0274ee823e0cae47`, ramo locale `verifica-runner`
 (sopra `42984d2` = patch del runner del 01/10 applicata su `master` `67261b9`).
 Niente commit su master, niente push, mai `git add -A`. Nessun ordine vero, nessun replay.
@@ -59,8 +68,9 @@ Dettaglio del punto 10:
   e dipendono dall'ambiente: nell'export mancano `migrations/` e `frontend/`. Nel worktree
   quei 5 file danno **147 passed**.
 
-**Falsificazione** (`falsifica_runner_correzioni_out.txt`, export di `7e34f3c`, set di 16 file e
-905 test): **46 mutazioni su 46 ROSSE, nessuna sopravvissuta**.
+**Falsificazione** (prima del punto 11, export di `7e34f3c`, 905 test): **46 mutazioni su 46
+ROSSE**. Dopo il punto 11 (§12-bis): **50 su 50 ROSSE**. L'output aggiornato è in
+`falsifica_runner_correzioni_out.txt`.
 - **23 nuove** (C1-C23, almeno una per ogni correzione).
 - **Le 8 del delegato** (M1-M8). L'ancora di M4 è aggiornata perché il blocco è cambiato.
 - **Le 15 della verifica del mattino** (R1-R15). R3 è riscritta sulla nuova quota di
@@ -487,6 +497,77 @@ Va tenuta la versione del runner: è un superinsieme, e Mike importa `IT_MIN_BAC
 
 Mike vedrà ora `error_code` anche negli eventi asincroni: il delegato di Mike oggi legge il
 codice dal testo del `motivo`.
+
+## 12-bis. Punto 11: traduzione solo per gli attori che sanno riconciliarla
+
+Decisione del coordinatore: un ordine tradotto nell'equivalente è ammesso SOLO per chi sa
+riconciliarlo. Commit `2081711`.
+
+- **Codice**:
+  - `trading/minimi_it.py`: `ATTORI_CON_TRADUZIONE: frozenset = frozenset()`. È **vuoto**,
+    e il commento dice «chi sa riconciliare un ordine tradotto nello specchio, nei cleared
+    e nei ripieghi REST» e perché oggi non c'è nessuno:
+    - Safe e Omega: i due difetti del §9, che un altro delegato sta correggendo;
+    - Mike: in live non passa dal canale e ha la sua patch;
+    - ordini manuali dell'app (`desktop`): aspettano la conferma del green-up di mercato.
+  - `motore_ordini._applica_minimi`: l'unico punto dove si decide «equivalente»; worker,
+    coda e REST non traducono mai. Se l'attore del comando (`strategy_ref`, che
+    `valida_comando` impone uguale all'`attore`) non è nell'insieme, l'altra selezione non
+    si passa al verdetto. Il verdetto allora va: diretto → place-and-trim (finale ≥ 0,50)
+    → rifiuto `SOTTO_MINIMO_NON_PIAZZABILE`. Il motivo dice «equivalente NON ammesso per
+    l'attore '…' (ATTORI_CON_TRADUZIONE)» e porta il residuo da dichiarare.
+  - `live_order_build.verdetto_minimi`: nuovo parametro opzionale `motivo_no_equivalente`,
+    solo per il testo del motivo.
+  - Paper e live uguali (il motore non guarda il modo).
+  - Un solo CRITICAL per episodio sul lato Safe (`_critico_una_volta`), già fatto al punto 10.
+- **Correzione nata dai test**: il motivo del `Rifiuto` era tagliato a 240 caratteri, e il
+  residuo «da dichiarare al trader» (in coda al motivo) spariva dall'ack. Ora 480.
+- **Test** (`test_runner_minimi_correzioni_2026_10_02.py`):
+  - `test_p11_insieme_degli_attori_con_traduzione_oggi_vuoto`;
+  - `test_p11_banca_043_mai_tradotta_rifiuto_col_codice[paper|live × safe, safe_tennis, omega, mike, desktop]`:
+    10 casi; zero ordini, ack col codice, motivo dell'attore e residuo;
+  - `test_p11_banca_070_mai_tradotta_va_al_place_and_trim_sulla_stessa_selezione[safe, safe_tennis, omega]`:
+    il parcheggio sta sull'Over, banca 1,00 @1,03, mai l'Under;
+  - `test_p11_attore_nell_insieme_traduzione_resta`: con 'omega' nell'insieme la
+    traduzione c'è (punta Under 7,31 @1,06); 'safe', nello stesso processo, no;
+  - `test_p11_safe_sul_canale_un_solo_critical_per_episodio`: tre ritenti col rifiuto del
+    runner danno critical `[True, False, False]`.
+- **Test della MACCHINA della traduzione** (punti 1 e 3, e due test del delegato del 01/10:
+  `test_motore_banca_043…`, `test_motore_aggancio_ripete…`): abilitano 'mike' e 'safe' SOLO
+  per la prova, con una fixture dichiarata (`traduzione`, `traduzione_mike`) che fa
+  `monkeypatch` di `ATTORI_CON_TRADUZIONE`. Senza, sarebbero 8 rossi (verificato) e la
+  macchina non sarebbe più collaudata.
+- **Falsificazione**: C24 (insieme ignorato: traduzione per tutti), C25 (Safe e Omega
+  aggiunti a mano), C26 (insieme svuotato anche per chi c'è), C27 (motivo tagliato, residuo
+  perso). Esito qui sotto.
+- **Test mirati** (export di `2081711`):
+  - file toccati: **1260 passed, 3 failed, 2 skipped, 8 xfailed**. I 3 rossi sono gli
+    stessi preesistenti della base;
+  - 117 file collegati: **2444 passed, 8 failed**, gli 8 d'ambiente di sempre.
+
+**Falsificazione finale** (export di `2081711`, 16 file, 921 test): **50 mutazioni su 50
+ROSSE, nessuna sopravvissuta**.
+- **27 nuove**: C1-C27, comprese le 4 del punto 11 (C24 → 15 rossi, C25 → 8, C26 → 10,
+  C27 → 11).
+- **8 del delegato** (M1-M8).
+- **15 della verifica** (R1-R15).
+
+Ripristino uguale alla base. L'unico rosso della base è `test_l03_stats_azzerate_a_bot_fermo`,
+preesistente. Il file `falsifica_runner_correzioni_out.txt` è aggiornato a questo giro.
+
+### Il green-up del ladder dell'app, per l'utente (cosa cambia a schermo)
+
+- **Caso**: hai due posizioni sullo stesso Over/Under 2,5, punta Over 10 € @2,00 e punta
+  Under 10 € @2,00. Il mercato è già in pari: vinca chi vinca, fai 0 €.
+- **Prima**, cliccando «green-up» sull'Over, il runner guardava solo l'Over (+10 / −10) e
+  mandava una banca Over di circa 9,76 € @2,05. Ti ritrovavi esposto: −10,25 € se vince
+  l'Over, +9,76 € se vince l'Under.
+- **Ora** guarda il mercato intero: vede 0 € / 0 €, non manda nessun ordine e scrive
+  «posizione già piatta».
+- **Con posizioni diverse**: per esempio punta Over 10 € @3,00 e punta Under 5 € @1,50. Prima
+  si chiudeva solo l'Over: banca circa 9,84 € e l'Under restava scoperto. Ora una sola banca
+  Over di circa 7,38 € pareggia l'intero mercato, circa −0,1 € su entrambi gli esiti.
+- **Con una posizione sola** (il caso tipico) a schermo non cambia nulla.
 
 ## 13. NON VERIFICATO
 

@@ -1,0 +1,6 @@
+
+ Test Files  161 passed (161)
+      Tests  2016 passed (2016)
+   Start at  11:02:29
+   Duration  292.06s (transform 98.63s, setup 222.95s, collect 281.63s, tests 368.91s, environment 859.73s, prepare 110.56s)
+

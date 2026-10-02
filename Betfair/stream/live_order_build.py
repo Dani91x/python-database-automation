@@ -599,6 +599,7 @@ def verdetto_minimi(
     *,
     altra_selezione: Optional[tuple] = None,
     submin_disponibile: bool = True,
+    motivo_no_equivalente: Optional[str] = None,
 ) -> VerdettoMinimi:
     """Traduce l'ordine chiesto in uno piazzabile con lo STESSO effetto economico, o dice
     che non si puo'. Nessuna decisione di strategia: stesso rischio, limite di prezzo mai
@@ -625,7 +626,9 @@ def verdetto_minimi(
             motivo = f"{SOTTO_MINIMO_NON_PIAZZABILE}: {motivo}"
         return VerdettoMinimi(VERDETTO_IMPOSSIBILE, None, motivo)
     chiesta = round(float(size), 2)
-    perche_no_eq = "mercato non a due esiti (equivalente non applicabile)"
+    # 02/10 (punto 11): chi chiama puo' dire perche' l'equivalente non e' ammesso
+    perche_no_eq = (motivo_no_equivalente
+                    or "mercato non a due esiti (equivalente non applicabile)")
     if altra_selezione is not None:
         eq = equivalente_lato_opposto(s, price, chiesta)
         if eq is None:

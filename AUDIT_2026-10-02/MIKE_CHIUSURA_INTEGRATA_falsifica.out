@@ -1,0 +1,160 @@
+﻿====================================================================================================
+N1 la guardia lascia passare una BANCA da 0,99
+    23 failed, 213 passed, 2 warnings in 16.25s
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_A_ogni_ruolo_sotto_minimo_ha_una_via_e_mai_un_ordine_impossibile[lay-0.99-under_entry]
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_A_ogni_ruolo_sotto_minimo_ha_una_via_e_mai_un_ordine_impossibile[lay-0.99-under_green]
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_A_ogni_ruolo_sotto_minimo_ha_una_via_e_mai_un_ordine_impossibile[lay-0.99-under_last]
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_A_ogni_ruolo_sotto_minimo_ha_una_via_e_mai_un_ordine_impossibile[lay-0.99-under_second]
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_A_ogni_ruolo_sotto_minimo_ha_una_via_e_mai_un_ordine_impossibile[lay-0.99-ko_green]
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_A_ogni_ruolo_sotto_minimo_ha_una_via_e_mai_un_ordine_impossibile[lay-0.99-over_cover]
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_A_ogni_ruolo_sotto_minimo_ha_una_via_e_mai_un_ordine_impossibile[lay-0.99-under_close]
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_A_ogni_ruolo_sotto_minimo_ha_una_via_e_mai_un_ordine_impossibile[lay-0.99-over_close]
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_A_ogni_ruolo_sotto_minimo_ha_una_via_e_mai_un_ordine_impossibile[lay-0.99-reentry]
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_A_ogni_ruolo_sotto_minimo_ha_una_via_e_mai_un_ordine_impossibile[lay-0.99-reentry_green]
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_A_ogni_ruolo_sotto_minimo_ha_una_via_e_mai_un_ordine_impossibile[lay-0.99-manual_close]
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_A_ogni_ruolo_sotto_minimo_ha_una_via_e_mai_un_ordine_impossibile[back-0.99-under_entry]
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_A_ogni_ruolo_sotto_minimo_ha_una_via_e_mai_un_ordine_impossibile[back-0.99-under_green]
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_A_ogni_ruolo_sotto_minimo_ha_una_via_e_mai_un_ordine_impossibile[back-0.99-under_last]
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_A_ogni_ruolo_sotto_minimo_ha_una_via_e_mai_un_ordine_impossibile[back-0.99-under_second]
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_A_ogni_ruolo_sotto_minimo_ha_una_via_e_mai_un_ordine_impossibile[back-0.99-ko_green]
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_A_ogni_ruolo_sotto_minimo_ha_una_via_e_mai_un_ordine_impossibile[back-0.99-over_cover]
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_A_ogni_ruolo_sotto_minimo_ha_una_via_e_mai_un_ordine_impossibile[back-0.99-under_close]
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_A_ogni_ruolo_sotto_minimo_ha_una_via_e_mai_un_ordine_impossibile[back-0.99-over_close]
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_A_ogni_ruolo_sotto_minimo_ha_una_via_e_mai_un_ordine_impossibile[back-0.99-reentry]
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_A_ogni_ruolo_sotto_minimo_ha_una_via_e_mai_un_ordine_impossibile[back-0.99-reentry_green]
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_A_ogni_ruolo_sotto_minimo_ha_una_via_e_mai_un_ordine_impossibile[back-0.99-manual_close]
+       FAILED Betfair/mike/tests/test_mike_audit_2026_09_12.py::test_size_chiudibile_e_la_soglia_dichiarata
+====================================================================================================
+N2 FLAT dichiarato con residuo (ogni residuo creduto non chiudibile)
+    10 failed, 226 passed, 2 warnings in 14.21s
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_B_ashdod_tentativi_esauriti_chiusura_parziale_mai_chiuso_profit
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_B_al_giro_dopo_resta_la_stessa_proposta_senza_un_secondo_avviso
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_B_residuo_chiuso_a_mano_la_proposta_decade_e_la_partita_e_piatta
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_c_stesso_strumento_rifiutato_per_taglia_non_si_ripropone_a_nessun_importo
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_c_il_servizio_scrive_l_avviso_critico_e_la_riga
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_c_la_proposta_del_residuo_non_si_approva
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_controlli_del_banco_L1_L2_vedono_il_difetto_di_oggi
+       FAILED Betfair/mike/tests/test_mike_chiusura_integrata_2026_10_02.py::test_decisione_13_residuo_dichiarato_spegne_il_rientro
+       FAILED Betfair/mike/tests/test_mike_chiusura_integrata_2026_10_02.py::test_decisione_13_anche_a_residuo_chiuso_la_partita_non_rientra
+       FAILED Betfair/mike/tests/test_mike_p5_copertura_banca_2026_09_29.py::test_resto_da_0_006_di_banca_NON_e_piatto_e_si_dichiara_chiusura_parziale
+====================================================================================================
+N3 rientro dopo un residuo dichiarato (decisione 13 tolta)
+    2 failed, 234 passed, 2 warnings in 12.21s
+       FAILED Betfair/mike/tests/test_mike_chiusura_integrata_2026_10_02.py::test_decisione_13_residuo_dichiarato_spegne_il_rientro
+       FAILED Betfair/mike/tests/test_mike_chiusura_integrata_2026_10_02.py::test_decisione_13_anche_a_residuo_chiuso_la_partita_non_rientra
+====================================================================================================
+N4 equivalente al prezzo sbagliato (lati del libro scambiati)
+    20 failed, 216 passed, 2 warnings in 9.26s
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_a_la_chiusura_del_45_e_una_puntata_under_7_55_a_1_03
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_a_i_numeri_delle_19_07_riproducono_la_banca_rifiutata
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_a_la_puntata_non_deve_essere_multipla_di_0_50
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_b_tutte_le_chiusure_abbinate_bloccano_il_cash_out
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_B_ashdod_tentativi_esauriti_chiusura_parziale_mai_chiuso_profit
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_c_dopo_il_rifiuto_della_banca_si_cambia_strumento
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_c_stesso_strumento_rifiutato_per_taglia_non_si_ripropone_a_nessun_importo
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_d_fok_non_abbinato_si_ritenta_uguale_dopo_close_retry_s_e_non_e_chiusura_parziale
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_e_banca_di_chiusura_sopra_il_minimo_diventa_la_puntata_decisione_12
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_e_copertura_banca_con_puntata_sotto_minimo_resta_la_banca
+       FAILED Betfair/mike/tests/test_mike_chiusura_integrata_2026_10_02.py::test_chiusure_di_serie_stessa_selezione_copertura_banca[profitto]
+       FAILED Betfair/mike/tests/test_mike_chiusura_integrata_2026_10_02.py::test_chiusure_di_serie_stessa_selezione_copertura_banca[perdita]
+       FAILED Betfair/mike/tests/test_mike_chiusura_integrata_2026_10_02.py::test_il_servizio_manda_la_selection_id_della_posizione
+       FAILED Betfair/mike/tests/test_mike_chiusura_integrata_2026_10_02.py::test_codice_del_rifiuto_dal_runner_asincrono_blocca_lo_strumento[SOTTO_MINIMO_NON_PIAZZABILE]
+       FAILED Betfair/mike/tests/test_mike_chiusura_integrata_2026_10_02.py::test_codice_del_rifiuto_dal_runner_asincrono_blocca_lo_strumento[INVALID_BET_SIZE]
+       FAILED Betfair/mike/tests/test_mike_p5_copertura_banca_2026_09_29.py::test_banca_over_sotto_0_50_diventa_puntata_under_se_piazzabile
+       FAILED Betfair/mike/tests/test_mike_p5_copertura_banca_2026_09_29.py::test_banca_over_sotto_0_50_diventa_puntata_under_anche_non_multipla_di_0_50
+       FAILED Betfair/mike/tests/test_mike_p5_copertura_banca_2026_09_29.py::test_riprezzo_della_chiusura_resta_puntata_al_centesimo
+       FAILED Betfair/mike/tests/test_mike_p5_copertura_banca_2026_09_29.py::test_forma_di_prima_ripiego_solo_sotto_la_soglia_incerta_della_banca
+       FAILED Betfair/mike/tests/test_mike_p5_4b_2026_09_29.py::test_forma_di_prima_chiusura_sotto_0_50_identica_a_prima
+====================================================================================================
+N5 secondo CRITICAL sulla STESSA proposta (episodio rotto)
+    2 failed, 234 passed, 2 warnings in 9.41s
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_B_al_giro_dopo_resta_la_stessa_proposta_senza_un_secondo_avviso
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_B_stesso_episodio_ordine_cambiato_nessun_secondo_avviso
+====================================================================================================
+N6 chiusura sull'ALTRA selezione di serie (banca Over sopra il minimo)
+    8 failed, 228 passed, 2 warnings in 11.10s
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_a_banca_fra_0_50_e_1_00_preferisce_la_puntata[o451-atteso1]
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_e_banca_di_chiusura_sopra_il_minimo_diventa_la_puntata_decisione_12
+       FAILED Betfair/mike/tests/test_mike_chiusura_integrata_2026_10_02.py::test_chiusure_di_serie_stessa_selezione_copertura_banca[perdita]
+       FAILED Betfair/mike/tests/test_mike_chiusura_integrata_2026_10_02.py::test_chiudi_dell_utente_stessa_selezione[perdita]
+       FAILED Betfair/mike/tests/test_mike_chiusura_integrata_2026_10_02.py::test_riprezzo_della_chiusura_resta_sulla_stessa_selezione[perdita]
+       FAILED Betfair/mike/tests/test_mike_p5_4c_2026_09_29.py::test_un_mercato_chiuso_non_ferma_la_chiusura_dell_altro
+       FAILED Betfair/mike/tests/test_mike_p5_4c_2026_09_29.py::test_selezione_gia_decisa_dai_gol_non_e_fra_le_chiusure
+       FAILED Betfair/mike/tests/test_mike_p5_banco_2026_09_29.py::test_chiusura_manuale_in_gioco_aspetta_la_riapertura
+====================================================================================================
+N7 proposta del residuo: prima l'altra selezione
+    1 failed, 235 passed, 2 warnings in 14.85s
+       FAILED Betfair/mike/tests/test_mike_chiusura_integrata_2026_10_02.py::test_proposta_del_residuo_propone_prima_la_stessa_selezione
+====================================================================================================
+N8 cash out col valore della banca anche quando parte la punta
+    2 failed, 234 passed, 2 warnings in 12.20s
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_b_tutte_le_chiusure_abbinate_bloccano_il_cash_out
+       FAILED Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py::test_e_banca_di_chiusura_sopra_il_minimo_diventa_la_puntata_decisione_12
+====================================================================================================
+N9 codice del rifiuto ignorato sulla strada asincrona del runner
+    2 failed, 234 passed, 2 warnings in 10.17s
+       FAILED Betfair/mike/tests/test_mike_chiusura_integrata_2026_10_02.py::test_codice_del_rifiuto_dal_runner_asincrono_blocca_lo_strumento[SOTTO_MINIMO_NON_PIAZZABILE]
+       FAILED Betfair/mike/tests/test_mike_chiusura_integrata_2026_10_02.py::test_codice_del_rifiuto_dal_runner_asincrono_blocca_lo_strumento[INVALID_BET_SIZE]
+====================================================================================================
+N10 L1 non guarda la punta d'apertura sotto 0,50
+    1 failed, 235 passed, 2 warnings in 10.60s
+       FAILED Betfair/mike/tests/test_mike_chiusura_integrata_2026_10_02.py::test_L1_punta_d_apertura_sotto_0_50_e_una_violazione
+====================================================================================================
+N11 exchange del banco senza regola (ATTIVO di serie spento)
+    2 failed, 234 passed, 2 warnings in 14.07s
+       FAILED Betfair/stream/tests/test_banco_minimi_it_2026_10_02.py::test_exchange_del_banco_rifiuta_invalid_bet_size_e_il_controllo_lo_vede
+       FAILED Betfair/stream/tests/test_banco_minimi_it_2026_10_02.py::test_replace_con_importo_finale_sotto_0_50_rifiutato
+====================================================================================================
+N12 replace del banco senza il floor 0,50
+    1 failed, 235 passed, 2 warnings in 12.18s
+       FAILED Betfair/stream/tests/test_banco_minimi_it_2026_10_02.py::test_replace_con_importo_finale_sotto_0_50_rifiutato
+====================================================================================================
+N13 REST del banco senza la guardia del vero
+    1 failed, 235 passed, 2 warnings in 10.45s
+       FAILED Betfair/stream/tests/test_banco_minimi_it_2026_10_02.py::test_rest_del_banco_banca_0_43_rifiutata_prima_di_partire
+====================================================================================================
+N14 il controllo BANCO-SOTTO-MINIMO non scrive la violazione
+    1 failed, 235 passed, 2 warnings in 8.76s
+       FAILED Betfair/stream/tests/test_banco_minimi_it_2026_10_02.py::test_certifica_scrive_la_violazione_banco_sotto_minimo
+====================================================================================================
+N15 sintetica di Ashdod con i livelli vecchi nel libro
+    1 failed, 235 passed, 2 warnings in 9.59s
+       FAILED Betfair/mike/tests/test_mike_chiusura_integrata_2026_10_02.py::test_sintetica_ashdod_toglie_i_livelli_vecchi_dal_libro
+====================================================================================================
+P1 riga assente: si annulla senza rileggere il mercato via REST
+    5 failed, 231 passed, 2 warnings in 9.25s
+       FAILED Betfair/mike/tests/test_mike_riga_assente_e_arresto_2026_10_02.py::test_25_riga_assente_mercato_aperto_tengo_gli_ordini[aperto]
+       FAILED Betfair/mike/tests/test_mike_riga_assente_e_arresto_2026_10_02.py::test_25_riga_assente_mercato_aperto_tengo_gli_ordini[sospeso]
+       FAILED Betfair/mike/tests/test_mike_riga_assente_e_arresto_2026_10_02.py::test_25_riga_assente_mercato_aperto_tengo_gli_ordini[3_5_chiuso_4_5_aperto]
+       FAILED Betfair/mike/tests/test_mike_riga_assente_e_arresto_2026_10_02.py::test_25_rilettura_col_suo_ritmo_e_alla_chiusura_si_annulla
+       FAILED Betfair/mike/tests/test_mike_riga_assente_e_arresto_2026_10_02.py::test_25_rest_illeggibile_valgono_i_tetti_di_sempre
+====================================================================================================
+P2 riga assente: mercato APERTO trattato come chiuso
+    4 failed, 232 passed, 2 warnings in 11.89s
+       FAILED Betfair/mike/tests/test_mike_riga_assente_e_arresto_2026_10_02.py::test_25_riga_assente_mercato_aperto_tengo_gli_ordini[aperto]
+       FAILED Betfair/mike/tests/test_mike_riga_assente_e_arresto_2026_10_02.py::test_25_riga_assente_mercato_aperto_tengo_gli_ordini[sospeso]
+       FAILED Betfair/mike/tests/test_mike_riga_assente_e_arresto_2026_10_02.py::test_25_riga_assente_mercato_aperto_tengo_gli_ordini[3_5_chiuso_4_5_aperto]
+       FAILED Betfair/mike/tests/test_mike_riga_assente_e_arresto_2026_10_02.py::test_25_rilettura_col_suo_ritmo_e_alla_chiusura_si_annulla
+====================================================================================================
+P3 riga assente: la rilettura REST non ha il ritmo (una per giro)
+    1 failed, 235 passed, 2 warnings in 10.63s
+       FAILED Betfair/mike/tests/test_mike_riga_assente_e_arresto_2026_10_02.py::test_25_rilettura_col_suo_ritmo_e_alla_chiusura_si_annulla
+====================================================================================================
+R1a arresto senza annullo degli ordini vivi
+    3 failed, 233 passed, 2 warnings in 9.79s
+       FAILED Betfair/mike/tests/test_mike_riga_assente_e_arresto_2026_10_02.py::test_R1_arresto_annulla_gli_ordini_vivi_e_dichiara_le_posizioni
+       FAILED Betfair/mike/tests/test_mike_riga_assente_e_arresto_2026_10_02.py::test_R1_oltre_il_tetto_nessun_altro_annullo_e_un_critical
+       FAILED Betfair/mike/tests/test_mike_riga_assente_e_arresto_2026_10_02.py::test_R1_live_stessa_via_con_betfair
+====================================================================================================
+R1b arresto senza CRITICAL sulle posizioni abbinate
+    1 failed, 235 passed, 2 warnings in 10.15s
+       FAILED Betfair/mike/tests/test_mike_riga_assente_e_arresto_2026_10_02.py::test_R1_arresto_annulla_gli_ordini_vivi_e_dichiara_le_posizioni
+====================================================================================================
+R1c arresto senza tetto di tempo
+    1 failed, 235 passed, 2 warnings in 21.61s
+       FAILED Betfair/mike/tests/test_mike_riga_assente_e_arresto_2026_10_02.py::test_R1_oltre_il_tetto_nessun_altro_annullo_e_un_critical
+====================================================================================================
+R1d main senza l'arresto ordinato degli ordini
+    MUTAZIONE NON APPLICABILE (testo trovato 0 volte)
+====================================================================================================
+mutazioni rosse: 21 su 22; file ripristinati, impronte identiche

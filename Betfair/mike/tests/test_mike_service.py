@@ -366,10 +366,12 @@ def test_settlement_when_row_disappears():
     assert abs(sum(t["pnl"] for t in db.trades) - db.events["E1"]["settled_pnl"]) < 0.02
     assert db.trades[0]["meta"]["commission_paid"] == 0.25
     assert db.trades[0]["meta"]["pnl_gross"] == 5.0
-    assert sorted(mk.calls) == ["1.35", "1.45"]
+    # 02/10 (punto 25): riga sparita -> PRIMA la rilettura REST dello stato (1.35 e
+    # 1.45 CLOSED), poi le due letture del regolamento di sempre
+    assert sorted(mk.calls) == ["1.35", "1.35", "1.45", "1.45"]
     # terminale: nessun'altra chiamata
     run(db, mk, NOW + timedelta(seconds=2), [])
-    assert len(mk.calls) == 2
+    assert len(mk.calls) == 4
 
 
 def test_final_total_from_books_mapping():

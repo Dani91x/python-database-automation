@@ -134,6 +134,34 @@ def diagnosi_esplosione(r: Any) -> Optional[str]:
     return None
 
 
+def segna_sotto_minimo(r: Any, cert: Any) -> int:
+    """02/10 (banco ottimista, punto 3 dell'utente): se l'exchange simulato del
+    banco ha ABBINATO un ordine sotto il minimo Betfair .it lo DICE con UNA
+    violazione ``BANCO-SOTTO-MINIMO`` (Betfair lo avrebbe rifiutato
+    ``INVALID_BET_SIZE``: il P&L del referto sarebbe ottimista). Il numero degli
+    ordini sotto minimo RIFIUTATI dal banco va nelle note (sollecitazione del
+    controllo). Torna quanti ordini sotto minimo risultano abbinati."""
+    from . import minimi_banco as MB
+
+    fuori = MB.abbinati_sotto_minimo()
+    rifiutati = len(MB.REGISTRO.rifiutati)
+    try:
+        note = getattr(r, "note", None)
+        # la nota SOLO quando il controllo ha avuto un caso: i referti dei replay
+        # senza ordini sotto minimo restano identici riga per riga
+        if isinstance(note, list) and (rifiutati or fuori):
+            note.append(f"banco minimi .it: {len(MB.REGISTRO.piazzati)} ordini eseguiti, "
+                        f"{rifiutati} rifiutati {MB.CODICE_TAGLIA}, "
+                        f"{len(fuori)} sotto minimo abbinati")
+        if fuori and not any(getattr(v, "codice", "") == MB.CODICE_CONTROLLO
+                             for v in r.violazioni):
+            r.violazioni.append(cert.Violazione(MB.CODICE_CONTROLLO, MB.REGOLA_CONTROLLO,
+                                                MB.testo_violazione(fuori)))
+    except Exception:  # noqa: BLE001 - referto senza violazioni/note: si dice altrove
+        pass
+    return len(fuori)
+
+
 def segna_esplosione(r: Any, cert: Any) -> Optional[str]:
     """Se il replay e' esploso, lo DICE: aggiunge UNA violazione `BANCO-ESPLOSO`
     (con la `Violazione` del modulo di controlli del bot: le prime tre chiavi
@@ -262,11 +290,13 @@ def _freni_da_banco() -> Iterator[None]:
     from Betfair.stream.trading import controls as _ctl
 
     prima = dict(_ctl._SETTINGS_CACHE)
-    prima_env = {k: os.environ.get(k) for k in FRENI_AMBIENTE_DEL_BANCO}
+    # 02/10 (PARITA_SAFE_ENV): non solo i freni, TUTTO l'ambiente che conta
+    # (``AMBIENTE_DEL_BANCO``): stessa dichiarazione, stesso ripristino.
+    prima_env = {k: os.environ.get(k) for k in AMBIENTE_DEL_BANCO}
     _ctl._SETTINGS_CACHE["data"] = {"kill_switch": False}
     _ctl._SETTINGS_CACHE["ts"] = float("inf")
     try:
-        os.environ.update(FRENI_AMBIENTE_DEL_BANCO)
+        os.environ.update(AMBIENTE_DEL_BANCO)
         with _mo.dichiara_per_banco("LIVE", kill=False):
             yield
     finally:
@@ -283,6 +313,52 @@ def _freni_da_banco() -> Iterator[None]:
 #: per TUTTI i bot (stesso valore del ``.env`` del checkout principale).
 FRENI_AMBIENTE_DEL_BANCO = {"LIVE_ORDER_MODE": "LIVE", "LIVE_KILL_SWITCH": "false"}
 
+#: 02/10 (PARITA_SAFE_ENV) - i 20 interruttori dei canali di produzione (stesso
+#: elenco di ``Betfair/conftest.py::INTERRUTTORI_CANALE``: un test li tiene
+#: allineati). Nel replay i canali del PC non esistono: il banco li SPEGNE
+#: tutti, come la certificazione del 29/09 («i 20 interruttori dei canali a 0»,
+#: CRONOSTORIA, checkpoint 07:49 del 29/09). L'interruttore degli ORDINI del bot
+#: lo riscrive poi ``trasporto.contesto`` secondo ``--trasporto`` (coda 0,
+#: canale 1). Prima restavano al ``.env`` di chi lancia: col ``.env`` del
+#: checkout principale (``SAFE_ORDINI_VIA_CANALE=1``) la «coda» di Safe usava la
+#: porta vera del canale, giu' nel replay, e la parita' coda/canale cambiava
+#: con l'operatore.
+INTERRUTTORI_CANALE_DEL_BANCO: Tuple[str, ...] = (
+    "SAFE_SCAN_CANALE", "MIKE_CANALE_POSIZIONI", "OMEGA_CANALE_POSIZIONI",
+    "SAFE_CANALE_POSIZIONI", "TENNIS_BOT_CANALE", "SAFE_BOT_LEGGE_CANALE",
+    "SAFE_BOT_SVEGLIA_CANALE", "OMEGA_SVEGLIA_CANALE", "MIKE_SVEGLIA_CANALE",
+    "TENNIS_BOT_SVEGLIA_CANALE", "MIKE_LEGGE_CANALE", "OMEGA_LEGGE_CANALE",
+    "PUNTEGGI_CANALE", "ESITI_ORDINI_CANALE", "MOTORE_ORDINI_CANALE", "SCALPER_CANALE",
+    "SAFE_ORDINI_VIA_CANALE", "OMEGA_ORDINI_VIA_CANALE", "MOTORE_ORDINI_CANALE_TENNIS",
+    "SAFE_TENNIS_ORDINI_VIA_CANALE",
+)
+
+#: 02/10 - L'AMBIENTE DICHIARATO del replay di certificazione: ogni variabile
+#: che cambia la condotta di un bot nel replay ha qui il suo valore, e il
+#: referto lo stampa in testa. Due persone con due ``.env`` diversi ottengono lo
+#: stesso referto numero per numero. Oltre ai freni e agli interruttori: le
+#: variabili non segrete del ``.env`` principale che il 29/09 si e' visto
+#: cambiare la condotta nel replay (``MIKE_LIVE_ENABLED``: senza, ogni ordine
+#: live di Mike e' bloccato; ``SAFE_PRE_KO_OU_HOURS``: il ramo pre-KO O/U del
+#: feed), coi valori di produzione. NON ci sono ``LIVE_MARKET_TYPES``,
+#: ``LIVE_RECONCILE_POLL_SEC``, ``HAZARD_ATLAS_SYNC``: li leggono solo il
+#: runner, i worker di riconciliazione e il ``main`` dello scanner, che nel
+#: replay non girano.
+AMBIENTE_DEL_BANCO: Dict[str, str] = {
+    **FRENI_AMBIENTE_DEL_BANCO,
+    **{nome: "0" for nome in INTERRUTTORI_CANALE_DEL_BANCO},
+    "MIKE_LIVE_ENABLED": "1",
+    "SAFE_PRE_KO_OU_HOURS": "1",
+}
+
+
+def descrivi_ambiente() -> str:
+    """La riga di testa del referto con l'ambiente DICHIARATO (mai i valori
+    dell'operatore: il referto deve uscire identico per chiunque)."""
+    return ("ambiente del banco (dichiarato; il .env di chi lancia non conta): "
+            + " ".join(f"{k}={v}" for k, v in sorted(AMBIENTE_DEL_BANCO.items()))
+            + " | interruttore ordini del bot: coda=0 canale=1")
+
 
 def _lavora(compito: tuple) -> Any:
     """UN replay, in un processo suo. Deve stare a livello di modulo per essere
@@ -295,6 +371,11 @@ def _lavora(compito: tuple) -> Any:
     certifica_evento = scheda.funzione_replay()
     CERT = scheda.modulo_controlli()
     traccia = None
+    # 02/10 (banco ottimista): il registro dell'exchange simulato riparte vuoto
+    # per QUESTO replay (``minimi_banco.abbinati_sotto_minimo`` qui sotto)
+    from . import minimi_banco as _MB
+
+    _MB.REGISTRO.azzera()
     try:
         with _freni_da_banco():
             if trasp is None:
@@ -317,6 +398,9 @@ def _lavora(compito: tuple) -> Any:
                          if dove else ""))
         # la violazione la mette `main` (`segna_esplosione`), una volta sola:
         # anche un replay che NON solleva ma non legge niente e' esploso
+    # 02/10 - CONTROLLO DEL BANCO «nessun ordine sotto il minimo abbinato»: legge
+    # gli ordini che l'exchange simulato ha eseguito, indipendente dalla regola
+    segna_sotto_minimo(r, CERT)
     if trasp is not None:
         # la traccia del trasporto viaggia CON il referto (serve al confronto
         # coda/canale nel padre); None se il replay e' esploso
@@ -685,7 +769,8 @@ def main(argv: Optional[List[str]] = None) -> int:
 
         return TRR.main_rapidi(scheda, eventi, data_dir, trasporto=a.trasporto,
                                diario=a.diario, tracce=a.tracce,
-                               lavora=_lavora, freni=_freni_da_banco)
+                               lavora=_lavora, freni=_freni_da_banco,
+                               intestazione=descrivi_ambiente())
     noti = scheda.elenco_scenari()
     scelti = (list(noti) if a.scenari.strip().lower() == "tutti"
               else [x.strip() for x in a.scenari.split(",") if x.strip()])
@@ -710,6 +795,8 @@ def main(argv: Optional[List[str]] = None) -> int:
           # `<canale>` e i numeri): senza, il comando stampato non lo rifaceva
           # (PROCESSO_STANDARD_BOT par. 6.8, "comando esatto")
           + (f" --trasporto {a.trasporto}" if a.trasporto else ""))
+    # 02/10 (PARITA_SAFE_ENV): l'ambiente dichiarato, in testa (par. 6.8)
+    print(descrivi_ambiente())
     qualita: Dict[str, int] = {}
     for e in eventi:
         v = verdetti.get(e, "?")

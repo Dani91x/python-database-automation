@@ -47,7 +47,7 @@ from Betfair.stream.scores.betfair_inplay import parse_score_dict
 
 @pytest.fixture(autouse=True)
 def _pulito(monkeypatch):
-    monkeypatch.delenv(sf.ENV_PUNTEGGI_CANALE, raising=False)
+    monkeypatch.setenv(sf.ENV_PUNTEGGI_CANALE, "0")
     sf.azzera_lettore_canale()
     yield
     sf.azzera_lettore_canale()

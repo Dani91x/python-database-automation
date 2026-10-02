@@ -1,0 +1,25 @@
+﻿====================================================================================================
+B1 sotto_minimo -> return False (il banco riaccetta tutto)
+    8 failed, 237 passed, 2 warnings in 8.83s
+       FAILED Betfair/stream/tests/test_banco_minimi_it_2026_10_02.py::test_exchange_del_banco_rifiuta_invalid_bet_size_e_il_controllo_lo_vede
+       FAILED Betfair/stream/tests/test_banco_minimi_it_2026_10_02.py::test_replace_con_importo_finale_sotto_0_50_rifiutato
+       FAILED Betfair/stream/tests/test_banco_minimi_it_2026_10_02.py::test_certifica_scrive_la_violazione_banco_sotto_minimo
+       FAILED Betfair/stream/tests/test_minimi_banco_2026_10_02.py::test_diretto_0_99_rifiutato_invalid_bet_size[LAY]
+       FAILED Betfair/stream/tests/test_minimi_banco_2026_10_02.py::test_diretto_0_99_rifiutato_invalid_bet_size[BACK]
+       FAILED Betfair/stream/tests/test_minimi_banco_2026_10_02.py::test_place_and_trim_finale_0_49_rifiutato_0_50_passa
+       FAILED Betfair/stream/tests/test_minimi_banco_2026_10_02.py::test_replace_sotto_0_50_rifiutato[0.49-False]
+       FAILED Betfair/stream/tests/test_minimi_banco_2026_10_02.py::test_a_guardia_spenta_il_controllo_trova_l_abbinato
+====================================================================================================
+B2 minimo_per a 0,50 anche per gli ordini diretti
+    3 failed, 242 passed, 2 warnings in 8.11s
+       FAILED Betfair/stream/tests/test_minimi_banco_2026_10_02.py::test_diretto_0_99_rifiutato_invalid_bet_size[LAY]
+       FAILED Betfair/stream/tests/test_minimi_banco_2026_10_02.py::test_diretto_0_99_rifiutato_invalid_bet_size[BACK]
+       FAILED Betfair/stream/tests/test_minimi_banco_2026_10_02.py::test_a_guardia_spenta_il_controllo_trova_l_abbinato
+====================================================================================================
+B3 il controllo non vede gli abbinati
+    3 failed, 242 passed, 2 warnings in 7.99s
+       FAILED Betfair/stream/tests/test_banco_minimi_it_2026_10_02.py::test_exchange_del_banco_rifiuta_invalid_bet_size_e_il_controllo_lo_vede
+       FAILED Betfair/stream/tests/test_banco_minimi_it_2026_10_02.py::test_certifica_scrive_la_violazione_banco_sotto_minimo
+       FAILED Betfair/stream/tests/test_minimi_banco_2026_10_02.py::test_a_guardia_spenta_il_controllo_trova_l_abbinato
+====================================================================================================
+mutazioni rosse: 3 su 3; file ripristinati, impronte identiche

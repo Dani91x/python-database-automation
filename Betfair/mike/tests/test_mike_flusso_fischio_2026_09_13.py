@@ -408,13 +408,20 @@ def test_la_divisione_si_fa_a_qualunque_quota():
     """Il vecchio limite (meta' copertura sotto i 2,00 EUR di Betfair) NON esiste
     piu': col place-and-trim si piazza qualunque cifra fino al centesimo, quindi
     la divisione in due tempi si fa sempre. Prima si fermava sopra quota 5,74,
-    cioe' quasi sempre."""
+    cioe' quasi sempre.
+
+    01/10 (fonte unica ``minimi_it``): l'importo FINALE del place-and-trim non
+    scende sotto 0,50, quindi una meta' sotto 0,50 non e' piazzabile e la
+    copertura si compra in una volta (a quota 30 e 100 con 15 EUR di rischio)."""
     liab, fattore, c = 15.0, 1.2, 0.05
     for quota in (3.0, 5.0, 5.8, 8.0, 12.0, 30.0, 100.0):
         x = E.cover_residual(liab, quota, c, fattore, 0.0)
         frazione, declassato = E.frazione_copertura(1, params(), x)
-        assert (frazione, declassato) == (pytest.approx(0.5), False), quota
-        assert round(x * frazione, 2) >= E.SUBMIN_FLOOR
+        if round(x * 0.5, 2) >= E.SUBMIN_IMPORTO_FINALE_MIN:
+            assert (frazione, declassato) == (pytest.approx(0.5), False), quota
+        else:
+            assert (frazione, declassato) == (pytest.approx(1.0), True), quota
+        assert quota not in (30.0, 100.0) or declassato
 
 
 @pytest.mark.usefixtures("forma_di_prima")
@@ -428,8 +435,13 @@ def test_con_importi_esatti_spenti_la_divisione_si_ferma_al_minimo():
     frazione, declassato = E.frazione_copertura(
         1, p, E.cover_residual(liab, 4.0, c, fattore, 0.0))
     assert (frazione, declassato) == (pytest.approx(0.5), False)
+    # 01/10: il minimo .it della punta e' 1,00 (era 2,00): a quota 8 la meta'
+    # (1,35) ci arriva, a quota 12 (0,86) no
     frazione, declassato = E.frazione_copertura(
         1, p, E.cover_residual(liab, 8.0, c, fattore, 0.0))
+    assert (frazione, declassato) == (pytest.approx(0.5), False)
+    frazione, declassato = E.frazione_copertura(
+        1, p, E.cover_residual(liab, 12.0, c, fattore, 0.0))
     assert (frazione, declassato) == (pytest.approx(1.0), True)
 
 

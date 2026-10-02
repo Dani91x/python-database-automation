@@ -63,7 +63,11 @@ def test_sospeso_si_aspetta_tutto():
 def test_un_mercato_chiuso_non_ferma_la_chiusura_dell_altro():
     d = E._decide_flatten(_ctx(), foto(st45="CLOSED"), params())
     assert _posti(d) == [(E.MARKET_OU35, E.SEL_UNDER, "lay")]
-    assert "CHIUSO su OU45|OVER" in d.reason and d.state == "LIVE_CLOSING"
+    # 02/10 (decisione 12 dell'utente): la chiusura della copertura-banca e' la
+    # PUNTA Under 4,5 di serie, quindi il mercato chiuso si dice sulla selezione
+    # di quell'ordine (prima: banca Over, «OU45|OVER»). Condotta identica:
+    # nessun ordine sul 4,5 chiuso, la chiusura del 3,5 parte.
+    assert "CHIUSO su OU45|UNDER" in d.reason and d.state == "LIVE_CLOSING"
 
 
 def test_tutti_chiusi_nessun_ordine_e_lo_si_dice():
@@ -77,7 +81,10 @@ def test_selezione_gia_decisa_dai_gol_non_e_fra_le_chiusure():
     ``won is not None``), quindi ``_close_actions`` non lo chiude e la guardia
     del mercato non lo guarda. La chiusura della copertura parte."""
     cancels, closes = E.force_flat_plan(_ctx(), foto(goals=4).books, params(), goals=4)
-    assert [(a.market, a.selection) for a in closes] == [(E.MARKET_OU45, E.SEL_OVER)]
+    # 02/10 (decisione 12 dell'utente): la chiusura della copertura-banca e' la
+    # PUNTA Under 4,5 di serie (prima: banca Over 4,5). Il punto del test resta:
+    # l'Under 3,5 deciso non e' fra le chiusure e quella del 4,5 parte.
+    assert [(a.market, a.selection) for a in closes] == [(E.MARKET_OU45, E.SEL_UNDER)]
     # anche con il mercato 3,5 CHIUSO (linea potata dopo il 4o gol) la chiusura parte
     d = E._decide_flatten(_ctx(), foto(st35="CLOSED", goals=4), params())
-    assert _posti(d) == [(E.MARKET_OU45, E.SEL_OVER, "lay")]
+    assert _posti(d) == [(E.MARKET_OU45, E.SEL_UNDER, "back")]

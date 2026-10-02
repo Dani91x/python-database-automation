@@ -1,0 +1,183 @@
+diff --git a/AUDIT_2026-10-02/TEST_ISOLAMENTO_3.md b/AUDIT_2026-10-02/TEST_ISOLAMENTO_3.md
+new file mode 100644
+index 0000000..1e04969
+--- /dev/null
++++ b/AUDIT_2026-10-02/TEST_ISOLAMENTO_3.md
+@@ -0,0 +1,44 @@
++# Isolamento dei test, terza parte (02/10/2026)
++
++Ramo `test-isolamento-3`, preso da master. Una sola modifica, nel test; la produzione non è toccata.
++
++STATO AL 14:30: fatto. Difetto riprodotto, corretto, falsificato e verificato su `Betfair/mike` intera. Manca solo la revisione del coordinatore.
++
++## Il caso
++
++`Betfair/mike/tests/test_mike_legge_canale_2026_09_23.py::test_1_interruttore_spento_chiamate_identiche_a_prima[None]`.
++
++Il test fa due corse nello stesso processo (PRIMA e DOPO) e confronta le chiamate al DB.
++
++**Causa.** `Betfair/mike/service.py:4461` (`_config_warn`) scrive la riga `config_warn` una sola volta per chiave. La memoria è `_CONFIG_WARNED`, definita a riga 76 e scritta a :4483. Quando `SAFE_PRE_KO_OU_HOURS` manca o vale 0, l'avviso esce solo nella prima corsa, e alla seconda manca → il confronto cade.
++
++**Perché dipendeva dalla macchina.** Nel mio worktree il `.env` vero, letto alla raccolta, imposta la variabile, quindi il test era verde. Nell'ambiente del coordinatore mancava, e il test era rosso. Non l'ho riprodotto con l'ambiente così com'è, ma con `SAFE_PRE_KO_OU_HOURS=0` nell'ambiente del processo: 1 failed, 24 passed.
++
++**Correzione.** In `_sequenza` (il test) aggiunto `S._CONFIG_WARNED.clear()` accanto all'azzeramento di `_NON_NOTO_AVVISATO` dell'isolamento 2. Le due corse partono così dallo stesso stato, qualunque cosa dica il `.env`.
++
++## Falsificazione (`falsifica_test_isolamento_3.py` e `_out.txt`)
++
++Esito: **TUTTO COME ATTESO**.
++
++| Stato | `SAFE_PRE_KO_OU_HOURS` | Atteso | Ottenuto |
++|---|---|---|---|
++| con la correzione | 0 | verde | 25 passed |
++| con la correzione | 3 | verde | 25 passed |
++| con la correzione | assente (decide il `.env` vero) | verde | 25 passed |
++| riga tolta | 0 | rosso | 1 failed, 24 passed |
++| riga tolta | 3 | verde (senza avviso il difetto non si vede) | 25 passed |
++| ripristinato | 0 | verde | 25 passed |
++
++Lo sha256 del file ripristinato è verificato.
++
++## Esecuzioni
++
++| Cartella | `SAFE_PRE_KO_OU_HOURS` | Esito | Durata |
++|---|---|---|---|
++| `Betfair/mike` | dal `.env` | 1539 passed | 48,8 s |
++| `Betfair/mike` | 0 | 1539 passed | 48,7 s |
++
++## NON VERIFICATO
++
++- La suite intera non l'ho lanciata: la modifica tocca un solo file di test.
++- Non ho cercato in altri test di Mike lo stesso schema "due corse a confronto" esposto ad altre memorie una-volta.
+diff --git a/AUDIT_2026-10-02/falsifica_test_isolamento_3.py b/AUDIT_2026-10-02/falsifica_test_isolamento_3.py
+new file mode 100644
+index 0000000..4f0d8e7
+--- /dev/null
++++ b/AUDIT_2026-10-02/falsifica_test_isolamento_3.py
+@@ -0,0 +1,86 @@
++# -*- coding: utf-8 -*-
++"""Falsificazione dell'isolamento 3 (02/10): ``_CONFIG_WARNED`` di Mike.
++
++    python AUDIT_2026-10-02/falsifica_test_isolamento_3.py
++
++Il file di test di Mike da solo, con ``SAFE_PRE_KO_OU_HOURS`` = 0 (ramo
++pre-KO spento: l'avviso ``config_warn`` esce), = 3 e assente dall'ambiente del
++processo (allora decide il ``.env`` vero letto alla raccolta). Con la riga
++``S._CONFIG_WARNED.clear()`` tolta il caso 0 deve tornare ROSSO. File rimesso
++dal contenuto in memoria (sha256 verificato nel ``finally``).
++"""
++from __future__ import annotations
++
++import hashlib
++import os
++import re
++import subprocess
++import sys
++import time
++from pathlib import Path
++
++RADICE = Path(__file__).resolve().parent.parent
++OUT = Path(__file__).resolve().parent / "falsifica_test_isolamento_3_out.txt"
++FILE = RADICE / "Betfair/mike/tests/test_mike_legge_canale_2026_09_23.py"
++REL = "Betfair/mike/tests/test_mike_legge_canale_2026_09_23.py"
++RIGA = "    S._CONFIG_WARNED.clear()\n"
++righe: list[str] = []
++
++
++def scrivi(s: str) -> None:
++    print(s, flush=True)
++    righe.append(s)
++
++
++def corri(nome: str, atteso: str, ore: str | None) -> bool:
++    env = dict(os.environ)
++    env.pop("SAFE_PRE_KO_OU_HOURS", None)
++    if ore is not None:
++        env["SAFE_PRE_KO_OU_HOURS"] = ore
++    t0 = time.time()
++    p = subprocess.run([sys.executable, "-m", "pytest", REL, "-q", "-p", "no:cacheprovider"],
++                       cwd=RADICE, capture_output=True, text=True, env=env,
++                       encoding="utf-8", errors="replace")
++    ult = [r for r in p.stdout.splitlines() if r.strip()]
++    som = ult[-1] if ult else f"rc={p.returncode}"
++    ott = "ROSSO" if re.search(r"\b\d+ (failed|error)", som) else "VERDE"
++    for f in [r for r in p.stdout.splitlines() if r.startswith("FAILED")][:5]:
++        scrivi(f"        {f}")
++    ok = ott == atteso
++    scrivi(f"  [{'OK ' if ok else 'KO!'}] {nome}: atteso {atteso}, ottenuto {ott} -> {som} "
++           f"({time.time() - t0:.1f}s)")
++    return ok
++
++
++def main() -> int:
++    orig = FILE.read_bytes()
++    h = hashlib.sha256(orig).hexdigest()
++    ok = True
++    scrivi(f"falsifica_test_isolamento_3 - {time.strftime('%Y-%m-%d %H:%M:%S')}")
++    try:
++        scrivi("\n== 0) CON LA CORREZIONE")
++        for ore in ("0", "3", None):
++            ok &= corri(f"HOURS={ore if ore is not None else '(assente: .env)'}", "VERDE", ore)
++        scrivi("\n== 1) MUTAZIONE: _CONFIG_WARNED non azzerato fra le due corse")
++        testo = orig.decode("utf-8")
++        nl = "\r\n" if "\r\n" in testo else "\n"
++        cerca = RIGA.replace("\n", nl)
++        assert testo.count(cerca) == 1
++        FILE.write_bytes(testo.replace(cerca, f"    pass  # MUTAZIONE{nl}").encode("utf-8"))
++        ok &= corri("HOURS=0 (avviso emesso)", "ROSSO", "0")
++        ok &= corri("HOURS=3 (nessun avviso: il difetto non si vede)", "VERDE", "3")
++        FILE.write_bytes(orig)
++        scrivi("\n== 2) RIPRISTINATO")
++        ok &= corri("HOURS=0", "VERDE", "0")
++    finally:
++        FILE.write_bytes(orig)
++        rip = hashlib.sha256(FILE.read_bytes()).hexdigest() == h
++        scrivi(f"\nripristino verificato (sha256): {rip}")
++        ok &= rip
++        scrivi(f"ESITO COMPLESSIVO: {'TUTTO COME ATTESO' if ok else 'DIFFORMITA'}")
++        OUT.write_text("\n".join(righe) + "\n", encoding="utf-8")
++    return 0 if ok else 1
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/AUDIT_2026-10-02/falsifica_test_isolamento_3_out.txt b/AUDIT_2026-10-02/falsifica_test_isolamento_3_out.txt
+new file mode 100644
+index 0000000..e55028a
+--- /dev/null
++++ b/AUDIT_2026-10-02/falsifica_test_isolamento_3_out.txt
+@@ -0,0 +1,17 @@
++falsifica_test_isolamento_3 - 2026-10-02 14:25:11
++
++== 0) CON LA CORREZIONE
++  [OK ] HOURS=0: atteso VERDE, ottenuto VERDE -> 25 passed in 0.40s (4.0s)
++  [OK ] HOURS=3: atteso VERDE, ottenuto VERDE -> 25 passed in 0.39s (3.9s)
++  [OK ] HOURS=(assente: .env): atteso VERDE, ottenuto VERDE -> 25 passed in 0.52s (4.7s)
++
++== 1) MUTAZIONE: _CONFIG_WARNED non azzerato fra le due corse
++        FAILED Betfair/mike/tests/test_mike_legge_canale_2026_09_23.py::test_1_interruttore_spento_chiamate_identiche_a_prima[None]
++  [OK ] HOURS=0 (avviso emesso): atteso ROSSO, ottenuto ROSSO -> 1 failed, 24 passed in 1.06s (5.0s)
++  [OK ] HOURS=3 (nessun avviso: il difetto non si vede): atteso VERDE, ottenuto VERDE -> 25 passed in 0.41s (4.5s)
++
++== 2) RIPRISTINATO
++  [OK ] HOURS=0: atteso VERDE, ottenuto VERDE -> 25 passed in 0.49s (4.9s)
++
++ripristino verificato (sha256): True
++ESITO COMPLESSIVO: TUTTO COME ATTESO
+diff --git a/Betfair/mike/tests/test_mike_legge_canale_2026_09_23.py b/Betfair/mike/tests/test_mike_legge_canale_2026_09_23.py
+index 692b46f..d6279c2 100644
+--- a/Betfair/mike/tests/test_mike_legge_canale_2026_09_23.py
++++ b/Betfair/mike/tests/test_mike_legge_canale_2026_09_23.py
+@@ -126,6 +126,13 @@ def _sequenza(db_finto: FakeDB) -> tuple:
+     from Betfair.stream import flusso_prezzi as _FP
+ 
+     _FP._NON_NOTO_AVVISATO.discard("mike")
++    # 02/10 (isolamento 3, ``AUDIT_2026-10-02/TEST_ISOLAMENTO_3.md``): stessa
++    # cosa per ``config_warn`` di ``service._config_warn`` (memoria
++    # ``_CONFIG_WARNED``, ``Betfair/mike/service.py:76``, una riga per chiave).
++    # Con ``SAFE_PRE_KO_OU_HOURS`` assente o 0 nell'ambiente della macchina
++    # l'avviso usciva solo nella PRIMA corsa: rosso da solo, verde solo se il
++    # .env vero la imposta.
++    S._CONFIG_WARNED.clear()
+     db = Traccia(db_finto)
+     mk = FakeMarket()
+     passi = [(0, payload()), (2, payload()), (4, payload()),

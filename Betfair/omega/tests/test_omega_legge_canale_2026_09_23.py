@@ -55,7 +55,7 @@ def _punteggi_canale_neutro(monkeypatch):
     che si difende allo stesso modo) farebbe riusare un client CONDIVISO al
     posto di quello proprio che questi test costruiscono e osservano -- si
     forza spento e si azzera il lettore di processo, qui e a fine test."""
-    monkeypatch.delenv(SF.ENV_PUNTEGGI_CANALE, raising=False)
+    monkeypatch.setenv(SF.ENV_PUNTEGGI_CANALE, "0")
     SF.azzera_lettore_canale()
     yield
     SF.azzera_lettore_canale()
@@ -141,7 +141,7 @@ def test_1_spento_anche_con_un_client_pieno_di_righe_vincenti(monkeypatch):
     adesso = time.time()
     for eid in ("E1", "E2", "E3", "E4"):
         c.spingi(T.riga_scan(eid, adesso + 5.0, minute=88, odds_ts_ms=1))
-    monkeypatch.delenv(ENV, raising=False)
+    monkeypatch.setenv(ENV, "0")
     monkeypatch.setitem(S._CLIENT_SCAN, "client", c.client)
     monkeypatch.setitem(S._CLIENT_SCAN, "cache", c.cache)
     # ``traccia_feed`` chiama ``svuota_le_cache``: la memoria del canale va
@@ -184,7 +184,7 @@ def test_1_acceso_con_canale_muto_run_once_scrive_solo_fonte_db(canale):
 
 
 def test_1_spento_nessun_client_si_avvia(monkeypatch):
-    monkeypatch.delenv(ENV, raising=False)
+    monkeypatch.setenv(ENV, "0")
 
     def vietato(*a, **k):
         raise AssertionError("a interruttore spento non si costruisce nessun client")
@@ -692,7 +692,7 @@ def test_sveglia_tetto_dal_env_rispettato(sveglia, monkeypatch):
 
 def test_sveglia_spento_dorme_con_time_sleep_come_oggi(monkeypatch):
     chiamate: list[float] = []
-    monkeypatch.delenv(ENV, raising=False)
+    monkeypatch.setenv(ENV, "0")
     monkeypatch.setattr(S.time, "sleep", lambda s: chiamate.append(s))
     monkeypatch.setattr(S, "_ASCOLTO_SCAN", None)
     monkeypatch.setitem(S._CLIENT_SCAN, "client", Canale().client)   # anche con un client
@@ -735,7 +735,7 @@ def test_sveglia_col_canale_acceso_ascolto_scan_di_f5_non_parte(monkeypatch):
 def test_sveglia_a_canale_spento_f5_resta_quella_di_prima(monkeypatch):
     from Betfair.stream import sveglia_canale as SV
 
-    monkeypatch.delenv(ENV, raising=False)
+    monkeypatch.setenv(ENV, "0")
     monkeypatch.setenv(SV.ENV_OMEGA_SVEGLIA, "1")
     monkeypatch.setattr(S, "_ASCOLTO_SCAN", None)
     costruiti = []
