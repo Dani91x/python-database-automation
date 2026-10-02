@@ -209,13 +209,50 @@ def test_chiudi_all_arresto_non_solleva_mai():
 
 
 # ================================================================ cablaggio
-def test_l_eccezione_del_ciclo_passa_dall_arresto_prima_di_sys_exit():
-    """La via 1625-1631 (except esterno) annulla gli ordini PRIMA di uscire, e
-    prende anche KeyboardInterrupt/segnali (prima: nessun handler)."""
+def test_l_eccezione_del_ciclo_passa_dall_uscita_ordinata():
+    """La via 1625-1631 (except esterno) prende anche KeyboardInterrupt/segnali
+    (prima: nessun handler) e passa da ``_uscita_su_eccezione``."""
     src = inspect.getsource(SS.run_session)
     coda = src[src.rindex("except (Exception, KeyboardInterrupt) as exc"):]
-    assert coda.index("chiudi_all_arresto(") < coda.index("sys.exit(1)")
-    assert "\"segnale\" if segnale else \"errore_fatale\"" in coda
+    assert "_uscita_su_eccezione(db, ev, exc, framework, trading, session_paper, runner, flush)" in coda
+    assert "sys.exit" not in coda
+
+
+class _DbSessione(_Db):
+    def __init__(self):
+        super().__init__()
+        self.ordine: list = []
+
+    def set_control(self, ev, **campi):
+        self.ordine.append(("set_control", campi.get("status")))
+
+    def log(self, ev, kind, payload):
+        super().log(ev, kind, payload)
+        self.ordine.append(("log", payload.get("msg", "")[:40]))
+
+
+@pytest.mark.parametrize("exc,causa", [(RuntimeError("boom"), "errore_fatale"),
+                                       (KeyboardInterrupt("segnale 15"), "segnale")])
+def test_uscita_su_eccezione_annulla_prima_dello_stato_e_di_sys_exit(exc, causa):
+    m = _mercato_tipico()
+    db = _DbSessione()
+    runner = SimpleNamespace(is_alive=lambda: True)
+    with pytest.raises(SystemExit) as fine:
+        SS._uscita_su_eccezione(db, "E1", exc, _framework(m), None, True, runner, lambda: None)
+    assert fine.value.code == 1
+    assert m.annullati == ["B1", "B2"]                       # ordini vivi annullati
+    assert db.ordine[0][0] == "log" and db.ordine[0][1].startswith("arresto")
+    assert ("set_control", "error") in db.ordine
+    assert db.ordine.index(("set_control", "error")) > 0     # lo stato DOPO l'annullo
+    assert f"[{causa}]" in db.avvisi[0]["message"]          # CRITICAL della posizione
+
+
+def test_uscita_su_eccezione_senza_framework_nessun_annullo():
+    db = _DbSessione()
+    with pytest.raises(SystemExit):
+        SS._uscita_su_eccezione(db, "E1", RuntimeError("prima di flumine"), None, None, True,
+                                None, lambda: None)
+    assert db.avvisi == [] and db.ordine[0] == ("set_control", "error")
 
 
 def test_stop_dall_app_e_freno_passano_dall_arresto_prima_di_spegnere_flumine():

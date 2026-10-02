@@ -1772,17 +1772,26 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
         # posizione lasciata a mercato, POI lo stato e l'uscita. Le altre
         # ``BaseException`` (SystemExit, i fermi del banco che simulano un
         # processo ucciso) passano come prima.
-        segnale = isinstance(exc, KeyboardInterrupt)
         logger.exception("[scalper-sess] sessione %s in errore", ev)
-        if framework is not None:
-            chiudi_all_arresto(db, ev, framework, trading, session_paper,
-                               "segnale" if segnale else "errore_fatale",
-                               flumine_vivo=bool(runner is not None and runner.is_alive()))
-        flush()
-        db.set_control(ev, status="error", error=str(exc)[:500] or type(exc).__name__,
-                       stopped_at=_now_iso())
-        db.log(ev, "error", {"msg": str(exc)[:500] or type(exc).__name__})
-        sys.exit(1)
+        _uscita_su_eccezione(db, ev, exc, framework, trading, session_paper, runner, flush)
+
+
+def _uscita_su_eccezione(db: Any, ev: str, exc: BaseException, framework: Any, trading: Any,
+                         session_paper: bool, runner: Any, flush: Any) -> None:
+    """02/10 (punto 26) - l'uscita della sessione su eccezione o segnale: PRIMA
+    l'annullo degli ordini vivi e la dichiarazione della posizione
+    (``chiudi_all_arresto``), POI stato 'error' e ``sys.exit(1)`` come prima.
+    Senza framework (eccezione prima di flumine) non c'e' nessun ordine."""
+    segnale = isinstance(exc, KeyboardInterrupt)
+    if framework is not None:
+        chiudi_all_arresto(db, ev, framework, trading, session_paper,
+                           "segnale" if segnale else "errore_fatale",
+                           flumine_vivo=bool(runner is not None and runner.is_alive()))
+    flush()
+    db.set_control(ev, status="error", error=str(exc)[:500] or type(exc).__name__,
+                   stopped_at=_now_iso())
+    db.log(ev, "error", {"msg": str(exc)[:500] or type(exc).__name__})
+    sys.exit(1)
 
 
 def main() -> None:
