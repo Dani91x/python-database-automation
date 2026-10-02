@@ -37,7 +37,7 @@ export function letterali(sorgente: string): string[] {
 function leggiTutti(): Record<string, string[]> {
     const out: Record<string, string[]> = {};
     for (const n of readdirSync(UI).filter((f) => /\.tsx?$/.test(f) && !/\.test\./.test(f)).sort()) {
-        out[n] = letterali(readFileSync(join(UI, n), 'utf-8'));
+        out[n] = letterali(readFileSync(join(UI, n), 'utf-8').replace(/\r\n/g, '\n'));
     }
     return out;
 }
