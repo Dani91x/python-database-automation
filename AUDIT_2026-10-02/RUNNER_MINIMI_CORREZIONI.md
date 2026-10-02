@@ -1,11 +1,12 @@
 # RUNNER_MINIMI_CORREZIONI - correzioni dopo la verifica di RUNNER_MINIMI_CHIUSURE (02/10/2026)
 
-**STATO AL 02/10, punto 11.**
-- **Fatto**: punti 1-3 e 5-11 committati (codice `2081711`). I test mirati del punto 11
-  sono verdi.
-- **Manca**:
-  - l'esito della falsificazione finale (in corso);
-  - rigenerare `RUNNER_MINIMI_CORREZIONI.patch` da `git diff 67261b9`.
+**STATO AL 02/10, fine punto 11.**
+- **Fatto**:
+  - punti 1-3 e 5-11 (codice `2081711`);
+  - patch rigenerata con `git diff 67261b9 HEAD -- Betfair` (`a1da8cc`): 43 file, riapplicata
+    su `67261b9` riproduce l'albero;
+  - falsificazione finale **50/50 rosse**.
+- **Manca**: punto 4 (fermato, da decidere) e i due difetti dei bot (§9, altro delegato).
 - **Chi riprende**: `git log verifica-runner`.
 
 Correttore: delegato Opus. Worktree `agent-a0274ee823e0cae47`, ramo locale `verifica-runner`
@@ -67,8 +68,9 @@ Dettaglio del punto 10:
   e dipendono dall'ambiente: nell'export mancano `migrations/` e `frontend/`. Nel worktree
   quei 5 file danno **147 passed**.
 
-**Falsificazione** (`falsifica_runner_correzioni_out.txt`, export di `7e34f3c`, set di 16 file e
-905 test): **46 mutazioni su 46 ROSSE, nessuna sopravvissuta**.
+**Falsificazione** (prima del punto 11, export di `7e34f3c`, 905 test): **46 mutazioni su 46
+ROSSE**. Dopo il punto 11 (§12-bis): **50 su 50 ROSSE**. L'output aggiornato è in
+`falsifica_runner_correzioni_out.txt`.
 - **23 nuove** (C1-C23, almeno una per ogni correzione).
 - **Le 8 del delegato** (M1-M8). L'ancora di M4 è aggiornata perché il blocco è cambiato.
 - **Le 15 della verifica del mattino** (R1-R15). R3 è riscritta sulla nuova quota di
@@ -543,7 +545,15 @@ riconciliarlo. Commit `2081711`.
     stessi preesistenti della base;
   - 117 file collegati: **2444 passed, 8 failed**, gli 8 d'ambiente di sempre.
 
-FALSIFICA_P11
+**Falsificazione finale** (export di `2081711`, 16 file, 921 test): **50 mutazioni su 50
+ROSSE, nessuna sopravvissuta**.
+- **27 nuove**: C1-C27, comprese le 4 del punto 11 (C24 → 15 rossi, C25 → 8, C26 → 10,
+  C27 → 11).
+- **8 del delegato** (M1-M8).
+- **15 della verifica** (R1-R15).
+
+Ripristino uguale alla base. L'unico rosso della base è `test_l03_stats_azzerate_a_bot_fermo`,
+preesistente. Il file `falsifica_runner_correzioni_out.txt` è aggiornato a questo giro.
 
 ### Il green-up del ladder dell'app, per l'utente (cosa cambia a schermo)
 
