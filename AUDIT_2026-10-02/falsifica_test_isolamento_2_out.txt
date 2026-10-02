@@ -1,0 +1,38 @@
+falsifica_test_isolamento_2 - 2026-10-02 12:48:12
+interprete: C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Scripts\python.exe
+
+== 0) CON LE CORREZIONI
+  [OK ] (c) greenup Omega poi l14: atteso VERDE, ottenuto VERDE -> 20 passed in 17.53s (21.7s)
+  [OK ] (c) l14 da solo: atteso VERDE, ottenuto VERDE -> 1 passed in 7.92s (10.6s)
+  [OK ] (d) sonde .env (delenv resta assente / '0' resta '0'): atteso VERDE, ottenuto VERDE -> 2 passed in 0.36s (13.8s)
+  [OK ] (e) file Mike legge_canale da solo: atteso VERDE, ottenuto VERDE -> 25 passed in 3.61s (25.6s)
+
+== 1) MUTAZIONE C: niente svuotamento di omega_service._LAMBDA_CACHE
+        FAILED Betfair/safe_strategy/tests/test_audit_2026_09_11.py::test_l14_ttl_della_cache_lambda
+  [OK ] (c) greenup Omega poi l14: atteso ROSSO, ottenuto ROSSO -> 1 failed, 19 passed in 16.95s (24.2s)
+  [OK ] (c) l14 da solo: atteso VERDE, ottenuto VERDE -> 1 passed in 8.93s (12.0s)
+
+== 2) MUTAZIONE D: load_dotenv di nuovo attivo durante i test
+        FAILED Betfair/stream/tests/test_zz_sonda_dotenv_isolamento_2.py::test_sonda_delenv_resta_assente
+  [OK ] (d) sonda delenv: riaccesa dal .env: atteso ROSSO, ottenuto ROSSO -> 1 failed in 2.42s (13.5s)
+  [OK ] (d) sonda setenv '0': il criterio per sito regge anche senza guardia: atteso VERDE, ottenuto VERDE -> 1 passed in 0.38s (18.1s)
+
+== 3) MUTAZIONE E: le due corse di Mike senza azzerare l'avviso di processo
+        FAILED Betfair/mike/tests/test_mike_legge_canale_2026_09_23.py::test_1_interruttore_spento_chiamate_identiche_a_prima[None]
+  [OK ] (e) file Mike legge_canale da solo: atteso ROSSO, ottenuto ROSSO -> 1 failed, 24 passed in 4.40s (18.1s)
+
+== 4) RIPRISTINATO
+  [OK ] (c) greenup Omega poi l14: atteso VERDE, ottenuto VERDE -> 20 passed in 14.54s (19.3s)
+  [OK ] (d) sonde .env: atteso VERDE, ottenuto VERDE -> 2 passed in 0.46s (19.2s)
+  [OK ] (e) file Mike legge_canale da solo: atteso VERDE, ottenuto VERDE -> 25 passed in 2.59s (45.8s)
+
+== 5) ORDINE: Betfair/safe_strategy/tests, inverso e 3 semi
+        FAILED Betfair/safe_strategy/tests/test_velocita_feed_2026_09_30.py::test_worker_riparte_subito_alla_sveglia_ma_non_sotto_il_pavimento
+        FAILED Betfair/safe_strategy/tests/test_cert_2026_09_13.py::test_aggregati_illeggibili_bloccano_i_nuovi_ingressi
+  [KO!] ORDINE_TEST=inverso: atteso VERDE, ottenuto ROSSO -> 2 failed, 2119 passed, 3 skipped, 1 xfailed, 2 warnings in 225.47s (0:03:45) (232.6s)
+  [OK ] ORDINE_TEST=casuale:11: atteso VERDE, ottenuto VERDE -> 2121 passed, 3 skipped, 1 xfailed, 2 warnings in 128.08s (0:02:08) (133.3s)
+  [OK ] ORDINE_TEST=casuale:12: atteso VERDE, ottenuto VERDE -> 2121 passed, 3 skipped, 1 xfailed, 2 warnings in 148.06s (0:02:28) (154.4s)
+  [OK ] ORDINE_TEST=casuale:13: atteso VERDE, ottenuto VERDE -> 2121 passed, 3 skipped, 1 xfailed, 2 warnings in 148.63s (0:02:28) (157.7s)
+
+ripristino verificato (sha256, sonda cancellata): True
+ESITO COMPLESSIVO: DIFFORMITA
