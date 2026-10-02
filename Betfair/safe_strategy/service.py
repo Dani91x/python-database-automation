@@ -1966,10 +1966,16 @@ class Scanner:
             t = time.monotonic() if now_mono is None else now_mono
             if t - self._esposizioni_ts >= self._ESPOSIZIONI_TTL_S:
                 self._esposizioni_ts = t
-                fonti = scan_db.list_bot_exposures()
-                for nome, righe in (fonti or {}).items():
-                    if righe is not None:
-                        self._esposizioni_fonti[str(nome)] = list(righe)
+                fonti = scan_db.list_bot_exposures() or {}
+                if all(righe is not None for righe in fonti.values()):
+                    # lettura COMPLETA (RPC o tutte le fonti): sostituisce
+                    # tutto, cosi' il passaggio ripiego -> RPC non lascia
+                    # righe vecchie di una fonte che non si legge piu'
+                    self._esposizioni_fonti = {str(n): list(r) for n, r in fonti.items()}
+                else:
+                    for nome, righe in fonti.items():
+                        if righe is not None:
+                            self._esposizioni_fonti[str(nome)] = list(righe)
         out: Dict[str, Dict[str, Any]] = {}
 
         def _rec(eid: str) -> Dict[str, Any]:
@@ -2207,7 +2213,13 @@ class Scanner:
         from betfairlightweight import filters
 
         # cache solo per eventi ancora noti (memoria stabile nei run lunghi)
-        for eid in [e for e in store if e not in self.events]:
+        # 02/10 (R9, verificato su 35760084: 103 richieste in 34 minuti): un
+        # mercato ESPOSTO non esce dalla cache solo perche' l'evento non ha
+        # ancora un book (pre-partita, KO oltre 20'): ``refresh_mercati_esposti``
+        # lo richiedeva a Betfair a ogni giro. Esce quando non e' piu' esposto.
+        esposti = self._mercati_esposti()
+        for eid in [e for e in store if e not in self.events
+                    and str(store[e].get("market_id")) not in esposti]:
             store.pop(eid, None)
         missing = [e for e in candidates if e not in store]
         if not missing:

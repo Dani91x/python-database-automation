@@ -275,3 +275,136 @@ def test_segnale_di_arresto_diventa_keyboardinterrupt():
     finally:
         for n, h in vecchi.items():
             signal.signal(getattr(signal, n), h)
+
+
+# ================================================================ R2: supervisore
+class _SessioneFinta:
+    """``Popen`` finto di una sessione: esce da sola al secondo ``esce_a_s``
+    (tempo del supervisore) oppure, se ``esce_al_segnale``, appena riceve il
+    segnale di arresto. Registra segnale e terminate con l'istante."""
+
+    def __init__(self, orologio, esce_a_s=None, esce_al_segnale=False):
+        self.orologio = orologio
+        self.esce_a_s = esce_a_s
+        self.esce_al_segnale = esce_al_segnale
+        self.segnale_a = None
+        self.terminata_a = None
+
+    def poll(self):
+        t = self.orologio["t"]
+        if self.esce_a_s is not None and t >= self.esce_a_s:
+            return 0
+        if self.esce_al_segnale and self.segnale_a is not None:
+            return 1
+        return None
+
+    def send_signal(self, sig):
+        self.segnale_a = self.orologio["t"]
+
+    def terminate(self):
+        self.terminata_a = self.orologio["t"]
+
+
+def _attendi(children, orologio):
+    from Betfair.stream.scalper import scalper_service as SV
+
+    SV.attendi_e_termina_flat(children, now=lambda: orologio["t"],
+                              sleep=lambda s: orologio.__setitem__("t", orologio["t"] + s))
+
+
+def test_supervisore_non_termina_una_sessione_che_impiega_95_s():
+    orologio = {"t": 0.0}
+    lenta = _SessioneFinta(orologio, esce_a_s=95.0)
+    children = {"E1": lenta}
+    _attendi(children, orologio)
+    assert lenta.terminata_a is None and lenta.segnale_a is None
+    assert children == {}
+
+
+def test_supervisore_che_non_risponde_segnale_poi_terminate_dopo_il_tetto():
+    from Betfair.stream.scalper import scalper_service as SV
+
+    orologio = {"t": 0.0}
+    muta = _SessioneFinta(orologio)
+    _attendi({"E1": muta}, orologio)
+    assert muta.segnale_a >= SS.TEMPO_MASSIMO_ARRESTO_S                  # mai prima del tetto
+    assert muta.terminata_a >= muta.segnale_a + SV._attesa_dopo_segnale_s()
+    assert muta.terminata_a <= SV.tempo_supervisore_arresto_s() + 4.0
+
+
+def test_supervisore_sessione_che_esce_al_segnale_non_viene_terminata():
+    orologio = {"t": 0.0}
+    s = _SessioneFinta(orologio, esce_al_segnale=True)
+    children = {"E1": s}
+    _attendi(children, orologio)
+    assert s.segnale_a is not None and s.terminata_a is None and children == {}
+
+
+def test_tetto_della_sessione_dalle_sue_costanti():
+    """Il tetto copre battito + flat di OGNI strategia + annullo; ogni
+    ``_all_flat(timeout_s=X)`` di run_session usa X == FLAT_ATTESA_S e
+    ``_all_flat`` aspetta il maker piu' le strategie di ``(sniper, theta)``."""
+    import re
+
+    assert SS.TEMPO_MASSIMO_ARRESTO_S >= (SS.HEARTBEAT_S + SS.STRATEGIE_MAX * SS.FLAT_ATTESA_S
+                                          + SS.ARRESTO_ANNULLO_TIMEOUT_S)
+    src = inspect.getsource(SS.run_session)
+    attese = [float(x) for x in re.findall(r"_all_flat\(timeout_s=([0-9.]+)\)", src)]
+    assert attese and all(a == SS.FLAT_ATTESA_S for a in attese)
+    assert "for extra in (sniper, theta):" in src and SS.STRATEGIE_MAX == 1 + 2
+
+
+def test_main_js_concede_allo_scalper_almeno_il_tempo_del_supervisore():
+    import os
+    import re
+
+    from Betfair.stream.scalper import scalper_service as SV
+
+    radice = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+    with open(os.path.join(radice, "desktop", "main.js"), encoding="utf-8") as f:
+        js = f.read()
+    m = re.search(r"if \(label === 'scalper-service'\) return ([0-9_]+);", js)
+    assert m, "shutdownGraceMs('scalper-service') non trovato in main.js"
+    grazia_s = int(m.group(1).replace("_", "")) / 1000.0
+    assert grazia_s >= SV.tempo_supervisore_arresto_s() + 10.0
+
+
+def test_la_sessione_nasce_nel_suo_gruppo_di_processi(monkeypatch):
+    import subprocess
+
+    from Betfair.stream.scalper import scalper_service as SV
+
+    visti = {}
+    monkeypatch.setattr(SV.subprocess, "Popen", lambda *a, **kw: visti.update(kw) or "p")
+    SV._spawn("E1")
+    assert visti.get("creationflags") == getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+
+
+# ================================================================ R3: fine vita
+def test_fine_vita_annulla_e_dichiara_partita_finita_no():
+    src = inspect.getsource(SS.run_session)
+    assert "causa_arresto = \"fine_vita\"" in src
+    assert "causa_arresto = \"partita_finita\"" in src
+    assert "fine_vita" in SS.CAUSE_ARRESTO
+    assert "partita_finita" not in SS.CAUSE_ARRESTO      # mercato CLOSED: niente da annullare
+    # il ramo fine vita imposta la causa DOPO il controllo dell'orario di vita
+    i_vita = src.index("time.time() > ko_ts + _life_s")
+    assert src.index("causa_arresto = \"fine_vita\"", i_vita) > i_vita
+
+
+def test_fine_vita_posizione_lasciata_critical():
+    m = _mercato_tipico()
+    db = _Db()
+    SS.chiudi_all_arresto(db, "E1", _framework(m), None, False, "fine_vita", flumine_vivo=True)
+    assert m.annullati == ["B1", "B2"]
+    assert db.avvisi and "[fine_vita]" in db.avvisi[0]["message"]
+
+
+def test_partita_finita_mercato_closed_nessun_ordine_da_annullare():
+    """A partita finita il mercato e' CLOSED (regolato): flumine lo marca
+    ``closed`` e Betfair non tiene ordini vivi; ``partita_finita`` lo
+    riconosce e la sessione esce senza annullo (``CAUSE_ARRESTO``)."""
+    closed = SimpleNamespace(closed=True, market_book=SimpleNamespace(status="CLOSED"))
+    fw = SimpleNamespace(markets=SimpleNamespace(markets={"1.MO": closed}))
+    assert SS.partita_finita(fw, "1.MO", ["1.MO"]) is True
+    assert "partita_finita" not in SS.CAUSE_ARRESTO

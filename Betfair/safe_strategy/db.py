@@ -382,7 +382,7 @@ def _righe_esposte(righe: Any, bot: str, sport: Optional[str]) -> List[Dict[str,
             "event_id": str(r["event_id"]),
             "market_id": str(r["market_id"]) if r.get("market_id") else None,
             "sport": str(r.get("sport") or sport or "") or None,
-            "bot": str(r.get("source") or bot),
+            "bot": str(r.get("source") or r.get("bot") or bot),
         })
     return out
 
@@ -397,12 +397,64 @@ def _leggi_fonte(nome: str, leggi: Any) -> Optional[List[Dict[str, Any]]]:
         return None
 
 
-def list_bot_exposures() -> Dict[str, Optional[List[Dict[str, Any]]]]:
+#: R6 (02/10): UNA chiamata invece di 6-7 SELECT. La RPC e' nella migrazione
+#: ``migrations/scanner_list_bot_exposures_2026-10-02.sql`` (la applica
+#: l'utente); finche' manca si ripiega sulle letture per fonte e la si
+#: riprova ogni ``_RPC_ESPOSIZIONI_RIPROVA_S``.
+_RPC_ESPOSIZIONI = "list_bot_exposures"
+_RPC_ESPOSIZIONI_RIPROVA_S = 300.0
+_RPC_ESPOSIZIONI_STATO: Dict[str, Any] = {"assente_ts": None, "avvisato": False}
+
+
+def _rpc_assente(exc: Exception) -> bool:
+    """La funzione non esiste (migrazione non applicata): PostgREST risponde
+    404 con codice PGRST202 «Could not find the function»."""
+    msg = str(exc).lower()
+    return "pgrst202" in msg or "could not find the function" in msg or "404" in msg
+
+
+def list_bot_exposures(now_ts: Optional[float] = None) -> Dict[str, Optional[List[Dict[str, Any]]]]:
     """{fonte: [{event_id, market_id, sport, bot}] | None} delle esposizioni
     VIVE (ordini non abbinati + posizioni aperte) di TUTTI i bot, paper e live.
-    ``None`` = lettura di QUELLA fonte fallita (il chiamante tiene l'ultima
-    buona). Sola lettura: una SELECT filtrata per fonte (piu' una sulle
-    regolazioni per le posizioni del calcio)."""
+
+    R6 (02/10): prima la RPC ``list_bot_exposures`` (UNA chiamata), che
+    restituisce ``{"rows": [{event_id, market_id, bot, modalita, sport}]}``:
+    esito ``{"rpc": righe}``. RPC che risponde con un errore: ``{"rpc": None}``
+    (il chiamante tiene l'ultima lista buona). RPC ASSENTE (404, migrazione non
+    applicata): WARNING una volta sola e ripiego sulle letture per fonte
+    (``_list_bot_exposures_a_fonti``), riprovando la RPC ogni 300 s."""
+    import time as _time
+
+    t = _time.time() if now_ts is None else float(now_ts)
+    st = _RPC_ESPOSIZIONI_STATO
+    if st["assente_ts"] is None or t - float(st["assente_ts"]) >= _RPC_ESPOSIZIONI_RIPROVA_S:
+        try:
+            res = get_supabase_client().rpc(_RPC_ESPOSIZIONI, {}).execute()
+            data = getattr(res, "data", None)
+            righe = data.get("rows") if isinstance(data, dict) else None
+            if not isinstance(righe, list):
+                raise ValueError(f"risposta inattesa: {type(data).__name__}")
+            st["assente_ts"] = None
+            return {"rpc": _righe_esposte(righe, "?", None)}
+        except Exception as e:  # noqa: BLE001 - mai fatale
+            if not _rpc_assente(e):
+                logger.warning("[safe-scan] esposizioni: RPC %s KO (tengo l'ultima lista "
+                               "buona): %s", _RPC_ESPOSIZIONI, str(e)[:160])
+                return {"rpc": None}
+            st["assente_ts"] = t
+            if not st["avvisato"]:
+                st["avvisato"] = True
+                logger.warning(
+                    "[safe-scan] RPC %s non disponibile (migrazione "
+                    "scanner_list_bot_exposures_2026-10-02.sql non applicata?): ripiego "
+                    "sulle letture per fonte (6-7 SELECT ogni 10 s)", _RPC_ESPOSIZIONI)
+    return _list_bot_exposures_a_fonti()
+
+
+def _list_bot_exposures_a_fonti() -> Dict[str, Optional[List[Dict[str, Any]]]]:
+    """Il RIPIEGO senza la RPC: una SELECT filtrata per fonte (piu' una sulle
+    regolazioni per le posizioni del calcio). ``None`` = lettura di QUELLA
+    fonte fallita (il chiamante tiene l'ultima buona)."""
     sb = get_supabase_client()
 
     def _omega() -> List[Dict[str, Any]]:

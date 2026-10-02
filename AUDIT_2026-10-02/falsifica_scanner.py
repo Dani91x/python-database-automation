@@ -21,6 +21,8 @@ RADICE = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 SERVICE = "Betfair/safe_strategy/service.py"
 DB = "Betfair/safe_strategy/db.py"
 SESS = "Betfair/stream/scalper/scalper_session.py"
+SUPERV = "Betfair/stream/scalper/scalper_service.py"
+MAINJS = "desktop/main.js"
 T_SCAN = "Betfair/safe_strategy/tests/test_scanner_mai_cieco_2026_10_02.py"
 T_SESS = "Betfair/stream/tests/test_scalper_arresto_ordinato_2026_10_02.py"
 OUT = os.path.join(RADICE, "AUDIT_2026-10-02", "falsifica_scanner_out.txt")
@@ -120,6 +122,44 @@ MUTAZIONI = [
     ("G11 annullati anche gli ordini abbinati", SESS,
      "                if str(nome or \"\").upper() in _STATI_VIVI:\n                    out.append((m, o))",
      "                out.append((m, o))", T_SESS),
+    # ------------------------------------------- correzioni del pomeriggio
+    ("H1 R2 supervisore: attesa di 60 s (il vecchio tetto)", SUPERV,
+     "        deadline_s = _tempo_massimo_arresto_s()", "        deadline_s = 60.0", T_SESS),
+    ("H2 R2 supervisore: nessun segnale prima del terminate", SUPERV,
+     "            _segnale_di_arresto(p)", "            pass", T_SESS),
+    ("H3 R2 supervisore: terminate subito dopo il segnale", SUPERV,
+     "        _attendi(now() + _attesa_dopo_segnale_s())", "        pass", T_SESS),
+    ("H4 R2 tetto calcolato con UNA sola strategia", SESS,
+     "TEMPO_MASSIMO_ARRESTO_S = (HEARTBEAT_S + STRATEGIE_MAX * FLAT_ATTESA_S",
+     "TEMPO_MASSIMO_ARRESTO_S = (HEARTBEAT_S + FLAT_ATTESA_S", T_SESS),
+    ("H5 R2 main.js torna a 70 s", MAINJS,
+     "    if (label === 'scalper-service') return 150_000;",
+     "    if (label === 'scalper-service') return 70_000;", T_SESS),
+    ("H6 R2 sessione senza gruppo di processi (CTRL_BREAK non le arriva)", SUPERV,
+     "        creationflags=getattr(subprocess, \"CREATE_NEW_PROCESS_GROUP\", 0),\n", "", T_SESS),
+    ("H7 R3 fine vita senza annullo", SESS,
+     "                causa_arresto = \"fine_vita\"\n", "", T_SESS),
+    ("H8 R3 partita finita trattata come arresto", SESS,
+     "\"errore_fatale\", \"fine_vita\"})", "\"errore_fatale\", \"fine_vita\", \"partita_finita\"})",
+     T_SESS),
+    ("H9 R3 fine vita fuori dalle cause", SESS,
+     "\"errore_fatale\", \"fine_vita\"})", "\"errore_fatale\"})", T_SESS),
+    ("I1 R6 RPC mai usata (sempre 6-7 SELECT)", DB,
+     "    if st[\"assente_ts\"] is None or t - float(st[\"assente_ts\"]) >= _RPC_ESPOSIZIONI_RIPROVA_S:",
+     "    if False:", T_SCAN),
+    ("I2 R6 errore della RPC trattato come assente (ripiego)", DB,
+     "            if not _rpc_assente(e):", "            if False:", T_SCAN),
+    ("I3 R6 RPC assente trattata come errore (nessun ripiego)", DB,
+     "            if not _rpc_assente(e):", "            if True:", T_SCAN),
+    ("I4 R6 WARNING a ogni giro", DB,
+     "            if not st[\"avvisato\"]:", "            if True:", T_SCAN),
+    ("I5 R6 RPC assente richiesta a ogni giro", DB,
+     "            st[\"assente_ts\"] = t\n", "            st[\"assente_ts\"] = None\n", T_SCAN),
+    ("I6 R6 lettura completa che non sostituisce (righe vecchie)", SERVICE,
+     "                if all(righe is not None for righe in fonti.values()):",
+     "                if False:", T_SCAN),
+    ("J1 R9 esposto tolto dalla cache senza book", SERVICE,
+     "                    and str(store[e].get(\"market_id\")) not in esposti]:", "]:", T_SCAN),
 ]
 
 
@@ -150,9 +190,9 @@ def main() -> int:
     righe.append(f"BASE (codice corretto): {base[2]}")
     esiti = []
     # F0: il codice di MASTER con i test nuovi -> rosso (TDD)
-    originali = {p: _leggi(p) for p in (SERVICE, DB, SESS)}
+    originali = {p: _leggi(p) for p in (SERVICE, DB, SESS, SUPERV, MAINJS)}
     try:
-        for p in (SERVICE, DB, SESS):
+        for p in (SERVICE, DB, SESS, SUPERV, MAINJS):
             master = subprocess.run(["git", "show", f"master:{p}"], cwd=RADICE,
                                     capture_output=True).stdout
             _scrivi(p, master)
@@ -189,7 +229,8 @@ def main() -> int:
         righe.append(f"{nome}: {'ROSSO' if esito else 'VERDE (SOPRAVVISSUTA)'} - {riga}")
     finale = _pytest(T_SCAN, T_SESS)
     righe.append(f"FINALE (dopo i ripristini): {finale[2]}")
-    stato = subprocess.run(["git", "status", "--short", "--", SERVICE, DB, SESS], cwd=RADICE,
+    stato = subprocess.run(["git", "status", "--short", "--", SERVICE, DB, SESS, SUPERV, MAINJS],
+                           cwd=RADICE,
                            capture_output=True, text=True).stdout.strip()
     righe.append(f"git status dei file mutati dopo i ripristini: {stato or 'pulito'}")
     rosse = sum(1 for _, e in esiti if e)

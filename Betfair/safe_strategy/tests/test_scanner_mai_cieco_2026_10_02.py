@@ -150,7 +150,7 @@ def test_db_list_bot_exposures_legge_tutte_le_fonti_paper_e_live(monkeypatch):
         ],
     })
     monkeypatch.setattr(SDB, "get_supabase_client", lambda: sb)
-    out = LIST_BOT_EXPOSURES_VERA()
+    out = SDB._list_bot_exposures_a_fonti()        # il ripiego senza la RPC (R6)
     assert [r["event_id"] for r in out["omega"]] == ["E_OM", "E_OM3"]
     assert out["safe"] == [_esp("T_SAFE", "1.TMO", "safe", "tennis")]
     assert {r["event_id"] for r in out["ordini_calcio"]} == {"E_SCALP", "E_SCALP2"}
@@ -167,7 +167,7 @@ def test_db_una_fonte_che_cade_non_spegne_le_altre(monkeypatch):
               "safe_strategy_trades": RuntimeError('relation "x" does not exist 42P01'),
               "betfair_live_orders": [{"event_id": "E1", "market_id": "1.1", "status": "EXECUTABLE"}]})
     monkeypatch.setattr(SDB, "get_supabase_client", lambda: sb)
-    out = LIST_BOT_EXPOSURES_VERA()
+    out = SDB._list_bot_exposures_a_fonti()
     assert out["omega"] is None                 # lettura fallita: il chiamante tiene l'ultima
     assert out["safe"] == []                    # tabella assente: bot non installato
     assert [r["event_id"] for r in out["ordini_calcio"]] == ["E1"]
@@ -524,3 +524,113 @@ def test_catalogo_senza_esposti_mancanti_zero_chiamate_in_piu():
     scan.refresh_catalogue("calcio")
     assert len(betting.calls) == 1
     assert list(scan._avvisi_in_attesa) == []
+
+
+# =============================================================== R6: una RPC
+class _Rpc:
+    def __init__(self, esito):
+        self.esito = esito
+
+    def execute(self):
+        if isinstance(self.esito, Exception):
+            raise self.esito
+        return SimpleNamespace(data=self.esito)
+
+
+class _SbRpc(_Sb):
+    """Client con la RPC (``sb.rpc(nome, params).execute()``) e le tabelle del
+    ripiego; conta le chiamate."""
+
+    def __init__(self, esito_rpc, righe=None):
+        super().__init__(righe or {})
+        self.esito_rpc = esito_rpc
+        self.rpc_chiamate: list = []
+
+    def rpc(self, nome, params):
+        self.rpc_chiamate.append((nome, dict(params)))
+        return _Rpc(self.esito_rpc)
+
+
+def _assente():
+    from postgrest.exceptions import APIError
+
+    return APIError({"code": "PGRST202", "details": None, "hint": None,
+                     "message": "Could not find the function public.list_bot_exposures "
+                                "without parameters in the schema cache"})
+
+
+@pytest.fixture
+def rpc_pulita(monkeypatch):
+    monkeypatch.setitem(SDB._RPC_ESPOSIZIONI_STATO, "assente_ts", None)
+    monkeypatch.setitem(SDB._RPC_ESPOSIZIONI_STATO, "avvisato", False)
+    yield
+
+
+def test_rpc_ok_una_sola_chiamata_nessuna_tabella(monkeypatch, rpc_pulita):
+    sb = _SbRpc({"rows": [{"event_id": "E1", "market_id": "1.CS", "bot": "omega",
+                           "modalita": "live", "sport": "calcio"},
+                          {"event_id": "T1", "market_id": "1.T", "bot": "tennis_scalper",
+                           "modalita": "paper", "sport": "tennis"}]})
+    monkeypatch.setattr(SDB, "get_supabase_client", lambda: sb)
+    out = LIST_BOT_EXPOSURES_VERA(now_ts=0.0)
+    assert sb.rpc_chiamate == [("list_bot_exposures", {})]
+    assert sb.query == []                                   # nessuna SELECT per fonte
+    assert out == {"rpc": [_esp("E1", "1.CS", "omega"),
+                           _esp("T1", "1.T", "tennis_scalper", "tennis")]}
+
+
+def test_rpc_assente_ripiega_avvisa_una_volta_e_riprova_dopo(monkeypatch, rpc_pulita, caplog):
+    sb = _SbRpc(_assente(), {"omega_trades": [{"event_id": "E1", "market_id": "1.CS",
+                                                "status": "open"}]})
+    monkeypatch.setattr(SDB, "get_supabase_client", lambda: sb)
+    caplog.set_level("WARNING")
+    out = LIST_BOT_EXPOSURES_VERA(now_ts=0.0)
+    assert [r["event_id"] for r in out["omega"]] == ["E1"]          # ripiego per fonte
+    LIST_BOT_EXPOSURES_VERA(now_ts=10.0)
+    assert len(sb.rpc_chiamate) == 1                                # niente RPC a ogni giro
+    avvisi = [r for r in caplog.records if "non disponibile" in r.getMessage()]
+    assert len(avvisi) == 1                                         # una volta sola
+    LIST_BOT_EXPOSURES_VERA(now_ts=SDB._RPC_ESPOSIZIONI_RIPROVA_S + 1.0)
+    assert len(sb.rpc_chiamate) == 2                                # riprovata dopo
+
+
+def test_rpc_errore_tiene_l_ultima_lista_buona(monkeypatch, rpc_pulita):
+    sb = _SbRpc({"rows": [{"event_id": "E1", "market_id": "1.CS", "bot": "omega"}]})
+    monkeypatch.setattr(SDB, "get_supabase_client", lambda: sb)
+    monkeypatch.setattr(S.scan_db, "list_bot_exposures", LIST_BOT_EXPOSURES_VERA)
+    scan = _scan(dry=False)
+    scan._mike_followed = lambda now_mono=None: []      # type: ignore[method-assign]
+    assert set(scan._esposizioni(now_mono=100.0)) == {"E1"}
+    sb.esito_rpc = RuntimeError("57014 statement timeout")
+    assert LIST_BOT_EXPOSURES_VERA(now_ts=1.0) == {"rpc": None}
+    assert sb.query == []                                           # errore != assente
+    assert set(scan._esposizioni(now_mono=111.0)) == {"E1"}         # ultima buona
+
+
+def test_passaggio_dal_ripiego_alla_rpc_non_lascia_righe_vecchie(monkeypatch):
+    scan = _scan(dry=False)
+    scan._mike_followed = lambda now_mono=None: []      # type: ignore[method-assign]
+    esiti = [_fonti(omega=[_esp("VECCHIA", "1.X", "omega")]),
+             {"rpc": [_esp("NUOVA", "1.Y", "omega")]}]
+    monkeypatch.setattr(S.scan_db, "list_bot_exposures", lambda: esiti.pop(0))
+    assert set(scan._esposizioni(now_mono=100.0)) == {"VECCHIA"}
+    assert set(scan._esposizioni(now_mono=111.0)) == {"NUOVA"}
+
+
+# =============================================================== R9: cache
+def test_mercato_esposto_non_esce_dalla_cache_senza_book():
+    """Verificato su 35760084 (``AUDIT_2026-10-02/sonda_r9.py``): prima 103
+    richieste in 34 minuti per un CS esposto prima del fischio."""
+    betting = _BettingCat([_cat("E1", "1.CS", "CORRECT_SCORE"), _cat("E2", "1.CS2", "CORRECT_SCORE")])
+    scan = _scan_client(betting)
+    del scan.events["E1"]                          # pre-partita: nessun book
+    scan.events["ALTRA"] = {"sport": "calcio", "inplay": True, "minute": 35,
+                            "score_home": 0, "score_away": 0, "mo_status": "OPEN"}
+    scan.cs_markets["E2"] = {"market_id": "1.CS2", "names": {}}   # non esposto, senza book
+    scan._esposizioni_fonti = _fonti(omega=[_esp("E1", "1.CS", "omega")])
+    assert scan.refresh_mercati_esposti(now_mono=0.0) == 1
+    scan.refresh_cs_catalogue(scan.cs_candidates())
+    assert "E1" in scan.cs_markets                 # esposto: resta
+    assert "E2" not in scan.cs_markets             # non esposto: esce come prima
+    assert scan.refresh_mercati_esposti(now_mono=20.0) == 0
+    assert len([c for c in betting.calls if c["filter"].get("marketIds")]) == 1

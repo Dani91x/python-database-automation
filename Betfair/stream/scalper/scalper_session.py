@@ -485,8 +485,23 @@ def _sweep_cancel(trading: Any, market_ids: List[str],
 
 #: tempo massimo per veder sparire gli ordini annullati (poi ripiego/diario)
 ARRESTO_ANNULLO_TIMEOUT_S = 10.0
-#: cause di arresto: una posizione abbinata lasciata a mercato e' un CRITICAL
-CAUSE_ARRESTO = frozenset({"stop_app", "freno", "segnale", "errore_fatale"})
+#: cause di uscita che annullano gli ordini vivi e dichiarano la posizione
+#: abbinata con un CRITICAL. R3 (02/10): anche la FINE VITA (regola
+#: dell'utente: mai una gamba a mercato senza avviso). NON la partita finita:
+#: col mercato CLOSED (regolato) Betfair non tiene nessun ordine vivo.
+CAUSE_ARRESTO = frozenset({"stop_app", "freno", "segnale", "errore_fatale", "fine_vita"})
+#: R2 (02/10): attesa del flat per ciascuna strategia (``_all_flat``)
+FLAT_ATTESA_S = 30.0
+#: strategie che ``_all_flat`` aspetta una dopo l'altra: maker, sniper, theta
+STRATEGIE_MAX = 3
+#: R2 (02/10): il tempo MASSIMO della sequenza di arresto di una sessione, dalle
+#: stesse costanti che la governano: lo stop si vede al battito (HEARTBEAT_S),
+#: poi il flat di ogni strategia (STRATEGIE_MAX x FLAT_ATTESA_S), l'annullo
+#: degli ordini vivi (ARRESTO_ANNULLO_TIMEOUT_S), i 2 s dopo il
+#: TerminationEvent, piu' un margine. Il supervisore aspetta ALMENO questo
+#: prima di qualunque ripiego (``scalper_service.attendi_e_termina_flat``).
+TEMPO_MASSIMO_ARRESTO_S = (HEARTBEAT_S + STRATEGIE_MAX * FLAT_ATTESA_S
+                           + ARRESTO_ANNULLO_TIMEOUT_S + 2.0 + 10.0)
 #: codice dell'avviso in ``live_alerts``
 CODICE_ARRESTO = "SCALPER_ARRESTO"
 
@@ -1700,6 +1715,10 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                     db.log(ev, "error",
                            {"msg": "fine sessione: posizione NON flat dopo 30s"})
                     non_flat_30s = dichiarazione_stop_non_flat(framework)
+                # 02/10 (R3): mercato CLOSED = regolato, nessun ordine vivo
+                # possibile: nessun annullo (``partita_finita`` non e' fra le
+                # CAUSE_ARRESTO)
+                causa_arresto = "partita_finita"
                 clean_break = True
                 break
             if ko_ts is not None and time.time() > ko_ts + _life_s:
@@ -1712,6 +1731,8 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                     db.log(ev, "error",
                            {"msg": "fine sessione: posizione NON flat dopo 30s"})
                     non_flat_30s = dichiarazione_stop_non_flat(framework)
+                # 02/10 (R3): fine vita = annullo dei vivi + dichiarazione
+                causa_arresto = "fine_vita"
                 clean_break = True
                 break
         stop_flag.set()
@@ -1729,7 +1750,7 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
         # 02/10 (punto 26): ARRESTO (stop dall'app, freno) - prima di spegnere
         # flumine si annullano gli ordini NON abbinati rimasti dopo il
         # force-flat e si dichiara la posizione che resta (mai chiusa da qui).
-        # Fine vita e partita finita: invariati (non sono un arresto).
+        # R3 (02/10): anche a FINE VITA; non a partita finita (CLOSED).
         elif causa_arresto in CAUSE_ARRESTO:
             chiudi_all_arresto(db, ev, framework, trading, session_paper, causa_arresto,
                                flumine_vivo=runner.is_alive())
