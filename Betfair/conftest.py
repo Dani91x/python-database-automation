@@ -152,7 +152,18 @@ def _nessun_dotenv_a_meta_test(monkeypatch):
     except Exception:  # noqa: BLE001 - dotenv assente: niente da neutralizzare
         yield
         return
-    monkeypatch.setattr(_dotenv, "load_dotenv", lambda *a, **k: False)
+    _vero = _dotenv.load_dotenv
+
+    def _solo_con_percorso(dotenv_path=None, *a, **k):
+        # neutralizzata SOLO la ricerca automatica del .env vero (chiamata senza
+        # percorso, come ``config_stream``); un test che passa un .env FINTO
+        # col suo percorso (``test_banco_ambiente_dichiarato_2026_10_02.py``)
+        # usa la funzione vera, cosi' resta capace di diventare rosso
+        if dotenv_path:
+            return _vero(dotenv_path, *a, **k)
+        return False
+
+    monkeypatch.setattr(_dotenv, "load_dotenv", _solo_con_percorso)
     yield
 
 

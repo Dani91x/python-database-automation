@@ -42,7 +42,7 @@ MIKE_REL = "Betfair/mike/tests/test_mike_legge_canale_2026_09_23.py"
 SONDA_REL = "Betfair/stream/tests/test_zz_sonda_dotenv_isolamento_2.py"
 
 RIGA_LAMBDA = "        _cache.clear()\n"
-RIGA_DOTENV = '    monkeypatch.setattr(_dotenv, "load_dotenv", lambda *a, **k: False)\n'
+RIGA_DOTENV = '    monkeypatch.setattr(_dotenv, "load_dotenv", _solo_con_percorso)\n'
 BLOCCO_AGG = ("    _S._AGG_ULTIMO_BUONO.clear()\n    yield\n"
               "    _S._AGG_ULTIMO_BUONO.clear()\n")
 AGG_STANTII = ("Betfair/safe_strategy/tests/test_cert_2026_09_13.py"
@@ -67,6 +67,18 @@ def test_sonda_delenv_resta_assente(monkeypatch):
     finally:
         os.environ.pop("SAFE_ORDINI_VIA_CANALE", None)
         importlib.reload(config_stream)
+
+
+def test_sonda_percorso_esplicito_usa_la_funzione_vera(tmp_path, monkeypatch):
+    # la guardia neutralizza solo la ricerca automatica: un .env FINTO passato
+    # col percorso si carica davvero (test_banco_ambiente_dichiarato_2026_10_02)
+    from dotenv import load_dotenv
+    finto = tmp_path / ".env"
+    finto.write_text("ZZ_SONDA_ISOLAMENTO_2=1\\n", encoding="utf-8")
+    monkeypatch.delenv("ZZ_SONDA_ISOLAMENTO_2", raising=False)
+    load_dotenv(str(finto))
+    assert os.environ.get("ZZ_SONDA_ISOLAMENTO_2") == "1"
+    monkeypatch.delenv("ZZ_SONDA_ISOLAMENTO_2", raising=False)
 
 
 def test_sonda_setenv_zero_resta_zero(monkeypatch):
