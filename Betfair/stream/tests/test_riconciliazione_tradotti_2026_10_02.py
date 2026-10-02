@@ -124,6 +124,11 @@ def test_r_evento_del_canale_non_si_traduce_due_volte():
     ev = evento_tradotto(t, ref="safe-t1", seq=1, fase="abbinato", matched=7.31,
                          remaining=0.0, status="EXECUTION_COMPLETE", bet_id=BET)
     assert LB.lettura_nei_termini_chiesti(RIGA_BOT, ev, tradotto=t) is None
+    # con la dichiarazione, un ordine della selezione CHIESTA col lato del mandato (per
+    # esempio l'apertura punta Over) non e' mai l'equivalente
+    apertura = riga_vera(selection_id=OVER, side="back", price=7.74, size=1.0, matched=1.0,
+                         remaining=0.0, status="EXECUTION_COMPLETE", bet_id="A1", avg=7.74)
+    assert LB.lettura_nei_termini_chiesti(RIGA_BOT, apertura, tradotto=t) is None
 
 
 def test_r_impronta_equivalente_esatta():
