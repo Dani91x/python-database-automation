@@ -1,0 +1,6 @@
+﻿interruttori: RIUSA_LIBRO_CHIUSO, RIUSA_LAPSE
+A spento: parete   91.4 s  cpu   78.9 s  (52082, 5246, 6, 0)
+B acceso: parete   90.5 s  cpu   79.0 s  (52082, 5246, 6, 0)
+A spento: parete   94.9 s  cpu   83.2 s  (52082, 5246, 6, 0)
+B acceso: parete   85.8 s  cpu   76.8 s  (52082, 5246, 6, 0)
+CPU media A 81.0 s, B 77.9 s, guadagno 3.8 % | numeri identici fra tutti i giri: True
