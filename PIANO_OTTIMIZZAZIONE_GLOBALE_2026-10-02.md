@@ -71,3 +71,30 @@ storici); riconciliazione notturna col conto; pagina di salute unica.
 
 `CRONOSTORIA.md` sezione 02/10 (misure e decisioni), `SCHEMI_BOT/sistema/ARCHITETTURA_ATTUALE.html`
 (schema interattivo dell'architettura attuale, in costruzione il 02/10 sera), `PROCESSO_STANDARD_BOT.md`.
+
+## Aggiunte del 02/10 sera (da fare, decisioni dell'utente: «ci torneremo nei prossimi giorni»)
+
+- **Librerie**: betfairlightweight 2.23.2 → 2.24.0 presto (minore; suite + replay prima/dopo).
+  flumine 2.13.11 → 3.2.6 = blocco a se' DOPO monitoraggio e scanner come blocco proprio: la 3 cambia
+  l'avvio (stream creati a mano e passati alle strategie, iscrizione a caldo), rinomina i parametri della
+  simulazione, richiede betfairlightweight ==2.24.0; porta l'abbinamento passivo dinamico nel simulatore
+  (cambia i numeri dei replay: ricertificare e distinguere «piu' realistico» da «regressione»), la
+  correzione del loop sul cancel e degli stream ordini. Costo: ~44 costruzioni di Flumine/FlumineSimulation,
+  38 strategie, 33 punti in cui il banco entra in flumine (uno verifica l'impronta della 2.13.11).
+  Altre librerie Python e npm: aggiornamenti minori, uno per volta con suite verde.
+- **ML / Poisson** (referto `AUDIT_2026-10-02/AUDIT_ML_POISSON.md`): il mercato batte tutti i nostri
+  modelli; prima di investire: (1) misurare il veto Under 3,5 di Mike fuori campione sulle quote Betfair
+  registrate e far decidere l'utente (1-2 gg); (2) pagella contro media storica e mercato, validazione a
+  calendario (1-2 gg); (3) congelare le previsioni al fischio e alzare la copertura delle quote (2 gg);
+  poi, a valore basso: un solo motore di lambda (TacticAI), ML globale o sospensione dove non batte la
+  media storica.
+- **Mike, condotta da proporre**: una partita con green bloccato e rischio zero oggi occupa un posto di
+  `max_open_matches` fino al regolamento (regola uguale a quella dello scanner): valutare se contare solo
+  le partite con rischio netto > 0 o ordini vivi. Un CRITICAL per episodio all'avvio con partite vive in
+  altra modalita'. Residuo del green al fischio (es. 0,08) non piazzabile: pareggiarlo nella copertura
+  quando la somma supera il minimo (modifica di condotta, solo su richiesta).
+- **Feed**: oggi flusso prezzi del mercato 4,5 fermo piu' volte per decine di secondi su entrambe le
+  partite live (ripiego REST scattato): da capire se Betfair o il nostro stream (il monitoraggio lo misurera').
+- **Metodo**: master = versione che fa soldi; riordino su rami corti nei worktree, un blocco per volta
+  (3-4 giorni), fusione certificata ogni venerdi' e riavvio dell'app senza posizioni; nessuna copia del
+  progetto, nessun DB parallelo; strategie intoccate durante il riordino. Stima 5-6 settimane.
