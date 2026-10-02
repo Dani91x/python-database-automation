@@ -671,8 +671,10 @@ def test_il_banco_espone_order_state_by_bet_id_con_le_chiavi_del_vero():
     m.ordini["ko_green-0-3"] = OrdineFinto()
     st = m.order_state_by_bet_id("B7")
     # LE STESSE CHIAVI di `omega_market.order_state_by_bet_id`, nemmeno una in piu'
+    # 02/10 (riconciliazione tradotti): anche i termini CHIESTI dell'ordine.
     assert set(st) == {"found", "size_matched", "avg_price_matched",
-                       "size_remaining", "matched_date", "placed_date"}
+                       "size_remaining", "matched_date", "placed_date",
+                       "selection_id", "side", "price_requested", "size_requested"}
     assert st["found"] is True and st["size_remaining"] == 0.0
 
 

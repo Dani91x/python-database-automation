@@ -112,8 +112,11 @@ def test_stesse_chiavi_del_finto_del_banco(monkeypatch):
     insieme di chiavi e stessi tipi."""
     _collega(monkeypatch, ClientBetfair(correnti=[corrente(abbinato=4.0, residuo=6.14)]))
     st = S._real_market.order_state_by_bet_id("B1")
+    # 02/10 (riconciliazione tradotti): il vero e il gemello del banco riportano anche i
+    # termini CHIESTI (selection_id, side, price_requested, size_requested).
     assert set(st) == {"found", "size_matched", "avg_price_matched", "size_remaining",
-                       "matched_date", "placed_date"}
+                       "matched_date", "placed_date",
+                       "selection_id", "side", "price_requested", "size_requested"}
     assert st["found"] is True and isinstance(st["size_matched"], float)
     assert isinstance(st["size_remaining"], float)
 
