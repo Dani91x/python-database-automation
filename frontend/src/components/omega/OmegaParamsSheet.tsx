@@ -16,13 +16,14 @@
 // non per scelta — perche' `pages/Omega.tsx` e' fuori dal mio perimetro (di
 // altri costruttori). Va tenuto allineato a mano se cambia la, vedi referto.
 // ============================================================================
+import { useState } from 'react';
 import {
     ParamsSheetBase, type ParamGroup, type ParamValues,
 } from '@/components/trading/ParamsSheetBase';
 import {
     OMEGA_PARAM_GROUPS, OMEGA_PARAM_DEFAULTS, OMEGA_DAILY_GOAL_MAX,
     omegaParamsPatch, updateOmegaParams, type OmegaParams,
-    USCITE_PROTEZIONE_KEY, modoUsciteProtezione,
+    USCITE_PROTEZIONE_KEY, modoUsciteProtezione, OBIETTIVO_OBBLIGATORIO, obiettivoVuoto,
 } from '@/lib/omega';
 
 /** Il gruppo "Obiettivo" — DUPLICATO DICHIARATO da `pages/Omega.tsx` (vedi
@@ -65,7 +66,15 @@ export function OmegaParamsSheet({
         [USCITE_PROTEZIONE_KEY]: modoUsciteProtezione((rawParams ?? {})[USCITE_PROTEZIONE_KEY]),
     };
 
+    const [obbligatorio, setObbligatorio] = useState(false);
+
     async function save(next: ParamValues) {
+        // 02/10 (reperto 2): obiettivo svuotato = salvataggio rifiutato, mai 0
+        if (obiettivoVuoto(next.__daily_goal)) {
+            setObbligatorio(true);
+            return;
+        }
+        setObbligatorio(false);
         const goal = Number(next.__daily_goal);
         const draft = { ...next } as Record<string, unknown>;
         delete draft.__daily_goal;
@@ -94,7 +103,12 @@ export function OmegaParamsSheet({
             })}
             busy={busy}
             triggerTestId={triggerTestId}
-            footer={<>I tre cap (liability/partita, stop-loss, liability aperta) sono <b>OFF di default</b>: Omega e' set-and-forget. Mettili &gt; 0 per attivarli.</>}
+            footer={<>
+                {obbligatorio && (
+                    <p className="text-red-300" role="alert" data-testid="omega-params-obbligatorio">{OBIETTIVO_OBBLIGATORIO}</p>
+                )}
+                I tre cap (liability/partita, stop-loss, liability aperta) sono <b>OFF di default</b>: Omega e' set-and-forget. Mettili &gt; 0 per attivarli.
+            </>}
         />
     );
 }

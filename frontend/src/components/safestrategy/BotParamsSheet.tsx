@@ -78,6 +78,11 @@ export interface ExitsParams {
     model_take_profit_frac: number;
     /** modello: cash out "gratis" sotto questa P(perdita) (0-1) */
     model_free_cashout_p_lose: number;
+    // 02/10 (reperto 1): uscita BASE "il controllo passa alla sfavorita" e la
+    // sua soglia. Prima non si leggevano: il foglio le mostrava spente/vuote
+    // qualunque cosa ci fosse nel DB (exits.py DEFAULT_EXIT_PARAMS).
+    base_control_exit: boolean;
+    base_control_exit_max: number;
 }
 
 export const EXITS_DEFAULTS: ExitsParams = {
@@ -101,6 +106,8 @@ export const EXITS_DEFAULTS: ExitsParams = {
     model_exit_p_lose: 0.10,
     model_take_profit_frac: 0.8,
     model_free_cashout_p_lose: 0.005,
+    base_control_exit: false,          // = exits.DEFAULT_EXIT_PARAMS del servizio
+    base_control_exit_max: -0.20,
 };
 
 /** merge DIFENSIVO di params.exits: valori mancanti/malformati → default. */
@@ -129,6 +136,8 @@ export function mergeExits(raw: unknown): ExitsParams {
         model_exit_p_lose: n(r.model_exit_p_lose, EXITS_DEFAULTS.model_exit_p_lose),
         model_take_profit_frac: n(r.model_take_profit_frac, EXITS_DEFAULTS.model_take_profit_frac),
         model_free_cashout_p_lose: n(r.model_free_cashout_p_lose, EXITS_DEFAULTS.model_free_cashout_p_lose),
+        base_control_exit: b(r.base_control_exit, EXITS_DEFAULTS.base_control_exit),
+        base_control_exit_max: n(r.base_control_exit_max, EXITS_DEFAULTS.base_control_exit_max),
     };
 }
 
@@ -263,6 +272,16 @@ const STRATEGY_FIELDS: Num[] = [
     { key: 'punta.controlMin', label: 'PUNTA · soglia controllo del gioco', step: 0.05, min: 0, max: 1, hint: 'quanto la favorita deve continuare a spingere' },
 ];
 
+/**
+ * 02/10 (punto 35) - le chiavi di TUTTI i campi numerici del foglio. Un campo
+ * numerico svuotato non si scrive come "" sul DB: `fromValues` toglie la
+ * chiave (il servizio usa il suo valore di serie), come per R-06.
+ */
+export const CHIAVI_NUMERICHE: ReadonlySet<string> = new Set([
+    ...BOT_FIELDS, ...RISK_FIELDS, ...OPPS_FIELDS, ...MODEL_STAKE_FIELDS,
+    ...MODEL_EXIT_FIELDS, ...EXIT_NUM_FIELDS, ...STRATEGY_FIELDS,
+].map((f) => f.key));
+
 // 18/09 (decisione «B» dell'utente) — questi QUATTRO non governano più nessun
 // piazzamento (dal 17/09 il modello, dal 18/09 anomalie e combo): restano
 // leggibili sul DB per compatibilità ma NON hanno più una vista dedicata in
@@ -337,6 +356,19 @@ function setPath(target: Record<string, unknown>, path: string, value: unknown):
         node = node[k] as Record<string, unknown>;
     }
     node[keys[keys.length - 1]] = value;
+}
+
+/** toglie la chiave `path` copiando i nodi lungo la strada (la riga letta non si muta) */
+function deletePath(target: Record<string, unknown>, path: string): void {
+    const keys = path.split('.');
+    let node = target;
+    for (let i = 0; i < keys.length - 1; i++) {
+        const cur = node[keys[i]];
+        if (!cur || typeof cur !== 'object') return;
+        node[keys[i]] = { ...(cur as object) } as Record<string, unknown>;
+        node = node[keys[i]] as Record<string, unknown>;
+    }
+    delete node[keys[keys.length - 1]];
 }
 
 /** Valore EFFETTIVO (in uso dal servizio) di un campo, se pubblicato. */
@@ -487,11 +519,14 @@ export interface BotParamsSheetProps {
      */
     soloStrategia?: StrategiaFiltro;
     triggerTestId?: string;
+    /** testo del bottone che apre il foglio (02/10: in Control Room la riga
+     *  "Safe base" ne ha due, strategia e servizio intero: nomi distinti) */
+    triggerLabel?: string;
 }
 
 export function BotParamsSheet({
     params, rawParams = null, effective = null, corrections = null, persisted = null,
-    busy = false, onSave, soloStrategia, triggerTestId = 'params-trigger',
+    busy = false, onSave, soloStrategia, triggerTestId = 'params-trigger', triggerLabel,
 }: BotParamsSheetProps) {
     const [refused, setRefused] = useState<string | null>(null);
 
@@ -739,6 +774,7 @@ export function BotParamsSheet({
             onSave={save}
             onReset={() => toValues(SAFE_BOT_DEFAULTS, EXITS_DEFAULTS, null)}
             triggerTestId={triggerTestId}
+            triggerLabel={triggerLabel}
             footer={
                 <>
                     {refused && (
@@ -852,6 +888,12 @@ export function fromValues(
             // che poi nessuno ricorda di aver messo.
             const scelto = String(value ?? '');
             if (scelto === 'paper' || scelto === 'live') modi[key.slice('strategy_modes.'.length)] = scelto;
+            continue;
+        }
+        // 02/10 (punto 35): campo numerico SVUOTATO = chiave ASSENTE (il
+        // servizio usa il suo valore di serie), mai la stringa vuota sul DB.
+        if (CHIAVI_NUMERICHE.has(key) && typeof value === 'string' && value.trim() === '') {
+            deletePath(out, key);
             continue;
         }
         setPath(out, key, value);

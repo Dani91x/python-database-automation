@@ -1153,6 +1153,10 @@
 }
 
 [data-shell="v2"] .ds-v2-chip--live { background-color: rgb(239 68 68 / 0.14); border-color: rgb(239 68 68 / 0.5); color: #fca5a5; }
+/* 02/10 (C): dove oggi il marcatore LIVE e' rosso PIENO (Tennis Terminal, LIVE / REALE,
+   bg-red-500 text-white) resta rosso pieno anche col guscio: l'avviso dei soldi veri non
+   diventa mai meno vistoso. Rosso 600 come "Confermo: soldi veri" (testo bianco 4,8:1). */
+[data-shell="v2"] .ds-v2-chip--live.bg-red-500 { background-color: #dc2626; border-color: #f87171; color: #ffffff; }
 [data-shell="v2"] .ds-v2-chip--paper { background-color: rgb(16 185 129 / 0.12); border-color: rgb(16 185 129 / 0.45); color: #6ee7b7; }
 [data-shell="v2"] .ds-v2-chip--fermo { background-color: hsl(var(--muted)); border-color: hsl(var(--border)); color: #cbd5e1; }
 [data-shell="v2"] .ds-v2-chip--errore { background-color: rgb(239 68 68 / 0.12); border-color: rgb(239 68 68 / 0.45); color: #fca5a5; }

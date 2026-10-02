@@ -424,6 +424,10 @@ export default function ControlRoom() {
                 <BotParamsSheet
                     params={mergeBotParams(safeParams)}
                     rawParams={safeParams}
+                    // 02/10 (B): sta sulla riga "Safe base" accanto al foglio
+                    // della strategia: il nome dice che apre TUTTO il servizio
+                    triggerLabel="Parametri comuni di Safe"
+                    triggerTestId="cr-safe-params-trigger"
                     onSave={async (p) => { await updateSafeParams(p); vm.ricarica(); }}
                 />
             ) : <ParametriNonLetti bot="Safe" />,
@@ -473,6 +477,7 @@ export default function ControlRoom() {
                     params={mergeBotParams(safeParams)}
                     rawParams={safeParams}
                     soloStrategia={s}
+                    triggerLabel="Parametri strategia"
                     triggerTestId={`cr-safe-${s}-params-trigger`}
                     onSave={async (p) => { await updateSafeParams(p); vm.ricarica(); }}
                 />

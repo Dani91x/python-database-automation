@@ -218,6 +218,80 @@ describe('veste completa: leggibilita\'', () => {
         expect(piccole).toEqual([]);
     });
 
+    // 02/10 (FRONTEND MINORI C): a guscio acceso "LIVE · REALE" del Tennis
+    // Terminal passava dal rosso PIENO di oggi (bg-red-500 text-white) alla
+    // tinta chiara di `.ds-v2-chip--live`: l'avviso dei soldi veri MENO
+    // vistoso. Qui, per OGNI marcatore `ds-v2-chip--live` del codice, si
+    // calcola la resa a guscio acceso (regole della veste che si applicano
+    // alle sue classi, in ordine di specificita' e di foglio) e si pretende:
+    // colore d'allarme (rosso), contrasto >= 4,5:1 e, dove oggi lo sfondo e'
+    // rosso pieno, sfondo rosso pieno anche col guscio.
+    // FALSIFICAZIONE: togliendo la regola `.ds-v2-chip--live.bg-red-500` il
+    // Tennis Terminal torna a sfondo al 14 % -> rosso.
+    it('ogni marcatore LIVE resta d\'allarme a guscio acceso: rosso, contrasto >= 4,5:1, pieno dove oggi e\' pieno', () => {
+        const marcatori = new Map<string, string>();
+        const visita = (dir: string) => {
+            for (const n of readdirSync(dir)) {
+                const p = join(dir, n);
+                if (statSync(p).isDirectory()) visita(p);
+                else if (/\.tsx?$/.test(n) && !/\.test\.tsx?$/.test(n)) {
+                    const src = readFileSync(p, 'utf-8');
+                    for (const m of src.matchAll(/'([^'\n]*)'|"([^"\n]*)"/g)) {
+                        const testo = m[1] ?? m[2] ?? '';
+                        if (/(^|\s)ds-v2-chip--live(\s|$)/.test(testo)) marcatori.set(`${relative(SRC, p)}: ${testo}`, testo);
+                    }
+                }
+            }
+        };
+        visita(SRC);
+        // PannelloBot (modalita' del bot), FasciaStop (stop LIVE), TennisTerminal (LIVE · REALE)
+        expect(marcatori.size).toBeGreaterThanOrEqual(3);
+
+        const COMPOSTO = /^\[data-shell="v2"\]\s+((?:\.(?:\\.|[A-Za-z0-9_-])+)+)$/;
+        const ROSSO_TW: Record<string, string> = { 'red-500': '#ef4444', 'red-600': '#dc2626', 'red-700': '#b91c1c' };
+        const rosso = (c: RGBA | [number, number, number]) => c[0] >= 150 && c[0] > 1.5 * c[1] && c[0] > 1.5 * c[2];
+        const male: string[] = [];
+        for (const [dove, testo] of marcatori) {
+            const classi = new Set([...testo.split(/\s+/).filter(Boolean), 'ds-v2-chip']);
+            // regole della veste che valgono per queste classi, nell'ordine della cascata
+            const valide: { spec: number; ordine: number; corpo: string }[] = [];
+            REGOLE.forEach((r, ordine) => {
+                for (const s of r.selettori) {
+                    const m = s.match(COMPOSTO);
+                    if (!m) continue;
+                    const cl = classiDi(m[1]);
+                    if (cl.every((c) => classi.has(c))) valide.push({ spec: cl.length, ordine, corpo: r.corpo });
+                }
+            });
+            valide.sort((a, b) => a.spec - b.spec || a.ordine - b.ordine);
+            let bg: RGBA | null = null;
+            let fg: RGBA | null = null;
+            for (const v of valide) {
+                const b = dichiarazione(v.corpo, 'background-color');
+                const f = dichiarazione(v.corpo, 'color');
+                if (b && colore(b)) bg = colore(b);
+                if (f && colore(f)) fg = colore(f);
+            }
+            if (!bg || !fg) { male.push(`${dove}: colori a guscio acceso non dichiarati`); continue; }
+            const fondi = FONDI_PAGINA.map((f) => sopra(bg as RGBA, f));
+            const minimo = Math.min(...fondi.map((f) => contrasto(sopra(fg as RGBA, f), f)));
+            if (minimo < 4.5) male.push(`${dove}: contrasto ${minimo.toFixed(2)} < 4,5`);
+            // il rosso si giudica su quello che si VEDE: sfondo e testo composti sui fondi della pagina
+            // (una tinta al 14 % su fondo scuro non e' "rossa": lo deve essere il testo)
+            if (!fondi.every((f) => rosso(f) || rosso(sopra(fg as RGBA, f)))) {
+                male.push(`${dove}: ne' sfondo ne' testo rossi a schermo`);
+            }
+            const oggi = testo.match(/(?:^|\s)bg-(red-\d00)(\/\d+)?(?=\s|$)/);
+            if (oggi && !oggi[2]) {
+                const pieno = colore(ROSSO_TW[oggi[1]] ?? '');
+                if (pieno && (bg[3] < 1 || !rosso(bg))) {
+                    male.push(`${dove}: oggi sfondo ${oggi[1]} PIENO, a guscio acceso alfa ${bg[3]} (${bg.slice(0, 3).join(',')})`);
+                }
+            }
+        }
+        expect(male).toEqual([]);
+    });
+
     it('la funzione di contrasto e\' quella WCAG (controprova)', () => {
         expect(contrasto([255, 255, 255], [0, 0, 0])).toBeCloseTo(21, 0);
         expect(contrasto([119, 119, 119], [255, 255, 255])).toBeCloseTo(4.48, 1);

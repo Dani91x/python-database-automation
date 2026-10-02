@@ -8,7 +8,7 @@
 // qui a mano.
 // ============================================================================
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 vi.mock('@/integrations/supabase/client', () => ({
@@ -93,4 +93,40 @@ describe('TennisBotServiceParamsSheet', () => {
         expect(payload.one_tick_per_phase).not.toBe('on');
         expect(payload.one_tick_per_phase).not.toBe('off');
     });
+});
+
+// ============================================================================
+// FRONTEND MINORI, reperto 2 (02/10) - un campo numerico SVUOTATO veniva
+// salvato 0 (`Number('')` = 0, finito). Regola unica: campo svuotato = chiave
+// ASSENTE dal payload (`tennis_bot_service_update_params` sostituisce la
+// colonna); il bot usa allora `c.get(chiave, default)` e lo scalper, prima, il
+// preset del runner (tabella nel referto).
+// FALSIFICAZIONE: togliendo il ramo "vuoto" da `save` torna 0 -> rosso.
+// ============================================================================
+describe('TennisBotServiceParamsSheet - reperto 2: campo numerico svuotato = chiave assente', () => {
+    for (const d of TENNIS_BOT_REGISTRY) {
+        const numerici = d.params.filter((f) => f.type !== 'select');
+        it(`${d.key}: OGNI campo numerico (${numerici.length}) svuotato -> chiave assente, il resto identico`, async () => {
+            const raw: Record<string, unknown> = { chiave_ignota_dal_servizio: 42 };
+            for (const f of numerici) raw[f.key] = f.max;
+            const male: string[] = [];
+            for (const f of numerici) {
+                mUpdate.mockClear();
+                const user = userEvent.setup();
+                render(<TennisBotServiceParamsSheet botKey={d.key} rawParams={raw} onSaved={vi.fn()} />);
+                await user.click(screen.getByTestId(`cr-tennis-params-trigger-${d.key}`));
+                await screen.findByTestId('params-sheet');
+                fireEvent.change(screen.getByLabelText(f.label), { target: { value: '' } });
+                await user.click(screen.getByTestId('params-save'));
+                await waitFor(() => expect(mUpdate).toHaveBeenCalled());
+                const payload = mUpdate.mock.calls[0][1].params as Record<string, unknown>;
+                if (f.key in payload) male.push(`${f.key}: presente (${String(payload[f.key])})`);
+                for (const g of numerici) if (g.key !== f.key && payload[g.key] !== g.max) male.push(`${f.key}: cambiato ${g.key}`);
+                if (payload.chiave_ignota_dal_servizio !== 42) male.push(`${f.key}: persa la chiave ignota`);
+                cleanup();
+            }
+            expect(male).toEqual([]);
+            expect(numerici.length).toBeGreaterThan(0);
+        }, 120_000);
+    }
 });

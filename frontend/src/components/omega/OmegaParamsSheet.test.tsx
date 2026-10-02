@@ -9,7 +9,7 @@
 // modifiche vere, mai un default della UI sopra un valore vivo.
 // ============================================================================
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 vi.mock('@/lib/omega', async () => {
@@ -18,7 +18,7 @@ vi.mock('@/lib/omega', async () => {
 });
 
 import { OmegaParamsSheet } from './OmegaParamsSheet';
-import { updateOmegaParams, OMEGA_PARAM_DEFAULTS } from '@/lib/omega';
+import { updateOmegaParams, OMEGA_PARAM_DEFAULTS, OMEGA_PARAM_GROUPS, omegaParamsPatch } from '@/lib/omega';
 
 const mUpdate = vi.mocked(updateOmegaParams);
 
@@ -128,5 +128,68 @@ describe('OmegaParamsSheet', () => {
         const { user } = await apri({ min_stake: 9 }, 999);
         await user.click(screen.getByTestId('params-reset'));
         expect((screen.getByLabelText('Obiettivo giornaliero (€)') as HTMLInputElement).value).toBe('250');
+    });
+});
+
+// ============================================================================
+// FRONTEND MINORI, reperto 2 (02/10) - un campo numerico SVUOTATO veniva
+// scritto come "" (`omegaParamsPatch`: '' diverso dal valore -> inviato).
+// Regola unica: campo svuotato = chiave ASSENTE (`omega_config.resolve_params`
+// usa DEFAULTS, tabella nel referto). L'obiettivo giornaliero e' una COLONNA
+// (`omega_control.daily_goal`), senza valore di serie nel servizio: svuotato,
+// il foglio RIFIUTA il salvataggio ("campo obbligatorio") invece di scrivere 0.
+// FALSIFICAZIONE: togliendo il ramo "vuoto" da `omegaParamsPatch` o il rifiuto
+// in `save` questi test tornano rossi.
+// ============================================================================
+const NUMERICI_OMEGA = OMEGA_PARAM_GROUPS.flatMap((g) => g.fields)
+    .filter((f) => f.type === 'number').map((f) => ({ key: f.key, max: f.max as number }));
+
+describe('OmegaParamsSheet - reperto 2: campo numerico svuotato = chiave assente', () => {
+    it('omegaParamsPatch puro, OGNI campo numerico: vuoto -> chiave assente (sul DB o no), il resto identico', () => {
+        const server: Record<string, unknown> = { chiave_ignota: 'x' };
+        for (const f of NUMERICI_OMEGA) server[f.key] = f.max;
+        const male: string[] = [];
+        for (const f of NUMERICI_OMEGA) {
+            const out = omegaParamsPatch(server, { ...server, [f.key]: '' });
+            if (f.key in out) male.push(`${f.key}: presente (${String(out[f.key])})`);
+            for (const g of NUMERICI_OMEGA) if (g.key !== f.key && out[g.key] !== g.max) male.push(`${f.key}: cambiato ${g.key}`);
+            if (out.chiave_ignota !== 'x') male.push(`${f.key}: persa la chiave ignota`);
+            // chiave che il servizio non ha: vuoto -> non si scrive nemmeno ""
+            const senza = { ...server };
+            delete senza[f.key];
+            if (f.key in omegaParamsPatch(senza, { [f.key]: '' })) male.push(`${f.key}: "" scritto su chiave assente`);
+        }
+        expect(male).toEqual([]);
+        expect(NUMERICI_OMEGA.length).toBeGreaterThan(50);
+    });
+
+    it('nel foglio vero: svuotati TUTTI i campi numerici (non l\'obiettivo) -> nessuna chiave numerica, nessun ""', async () => {
+        const raw: Record<string, unknown> = { chiave_ignota: 'x' };
+        for (const f of NUMERICI_OMEGA) raw[f.key] = f.max;
+        const { user } = await apri(raw, 180);
+        const obiettivo = screen.getByLabelText('Obiettivo giornaliero (€)');
+        const inputs = Array.from(screen.getByTestId('params-sheet').querySelectorAll('input[type="number"]'))
+            .filter((i) => i !== obiettivo);
+        expect(inputs.length).toBe(NUMERICI_OMEGA.length);
+        for (const i of inputs) {
+            fireEvent.change(i, { target: { value: '1' } });
+            fireEvent.change(i, { target: { value: '' } });
+        }
+        await user.click(screen.getByTestId('params-save'));
+        await waitFor(() => expect(mUpdate).toHaveBeenCalled());
+        const args = mUpdate.mock.calls[0][0];
+        const payload = args.params as Record<string, unknown>;
+        expect(NUMERICI_OMEGA.filter((f) => f.key in payload).map((f) => f.key)).toEqual([]);
+        expect(Object.entries(payload).filter(([, v]) => v === '').map(([k]) => k)).toEqual([]);
+        expect(payload.chiave_ignota).toBe('x');
+        expect(args.dailyGoal).toBe(180);
+    }, 60_000);
+
+    it('obiettivo giornaliero svuotato: salvataggio RIFIUTATO con "campo obbligatorio", nessuna scrittura', async () => {
+        const { user } = await apri({ min_stake: 0.5 }, 180);
+        fireEvent.change(screen.getByLabelText('Obiettivo giornaliero (€)'), { target: { value: '' } });
+        await user.click(screen.getByTestId('params-save'));
+        expect(await screen.findByTestId('omega-params-obbligatorio')).toHaveTextContent(/campo obbligatorio/i);
+        expect(mUpdate).not.toHaveBeenCalled();
     });
 });
