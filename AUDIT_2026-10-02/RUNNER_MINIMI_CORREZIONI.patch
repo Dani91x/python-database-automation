@@ -1269,7 +1269,7 @@ index d0d5891..cf32319 100644
  
  # Cadenza del BackgroundWorker che svuota la coda ordini (UN passo per giro): basso =
 diff --git a/Betfair/stream/live_order_build.py b/Betfair/stream/live_order_build.py
-index d3773c7..ff5e35a 100644
+index d3773c7..eae9e53 100644
 --- a/Betfair/stream/live_order_build.py
 +++ b/Betfair/stream/live_order_build.py
 @@ -11,15 +11,24 @@ e delle classi ordine flumine (LimitOrder / LimitOnCloseOrder / MarketOnCloseOrd
@@ -1417,7 +1417,7 @@ index d3773c7..ff5e35a 100644
  
      if j == JURISDICTION_COM:
          payout = float(size) * float(price) if price else 0.0
-@@ -193,6 +231,262 @@ def min_stake_rules(
+@@ -193,6 +231,265 @@ def min_stake_rules(
      return MinStakeVerdict(False, None, f"giurisdizione sconosciuta: {jurisdiction!r}")
  
  
@@ -1602,6 +1602,7 @@ index d3773c7..ff5e35a 100644
 +    *,
 +    altra_selezione: Optional[tuple] = None,
 +    submin_disponibile: bool = True,
++    motivo_no_equivalente: Optional[str] = None,
 +) -> VerdettoMinimi:
 +    """Traduce l'ordine chiesto in uno piazzabile con lo STESSO effetto economico, o dice
 +    che non si puo'. Nessuna decisione di strategia: stesso rischio, limite di prezzo mai
@@ -1628,7 +1629,9 @@ index d3773c7..ff5e35a 100644
 +            motivo = f"{SOTTO_MINIMO_NON_PIAZZABILE}: {motivo}"
 +        return VerdettoMinimi(VERDETTO_IMPOSSIBILE, None, motivo)
 +    chiesta = round(float(size), 2)
-+    perche_no_eq = "mercato non a due esiti (equivalente non applicabile)"
++    # 02/10 (punto 11): chi chiama puo' dire perche' l'equivalente non e' ammesso
++    perche_no_eq = (motivo_no_equivalente
++                    or "mercato non a due esiti (equivalente non applicabile)")
 +    if altra_selezione is not None:
 +        eq = equivalente_lato_opposto(s, price, chiesta)
 +        if eq is None:
@@ -1680,7 +1683,7 @@ index d3773c7..ff5e35a 100644
  # ---------------------------------------------------------------------------
  # Costruzione ordine
  # ---------------------------------------------------------------------------
-@@ -222,9 +516,15 @@ def build_order(
+@@ -222,9 +519,15 @@ def build_order(
      cap `max_stake`, payout massimo. Solleva `ValueError` con motivo su input invalido.
  
      ``reduces_liability=True`` (green-up / hedge / cash-out): l'ordine CHIUDE/riduce una
@@ -1699,7 +1702,7 @@ index d3773c7..ff5e35a 100644
  
      MONEY-CRITICAL: ``strategy`` DEVE essere l'istanza ``LiveTradingStrategy`` registrata
      nel framework via ``add_strategy``. Il Trade viene creato sotto questa istanza così che
-@@ -303,7 +603,7 @@ def build_order(
+@@ -303,7 +606,7 @@ def build_order(
  
      note_bits = []
      if reduces_liability:
@@ -1708,7 +1711,7 @@ index d3773c7..ff5e35a 100644
  
      # Derivazione size per LAY da liability
      if side_l == "lay":
-@@ -318,7 +618,9 @@ def build_order(
+@@ -318,7 +621,9 @@ def build_order(
      raw_size = round(float(size), 2)
  
      # Regole stake minimo
@@ -2059,7 +2062,7 @@ index af16a26..3441d8d 100644
      juris = _jurisdiction()
      state = start_submin(
 diff --git a/Betfair/stream/motore_ordini.py b/Betfair/stream/motore_ordini.py
-index 2982999..de49fcc 100644
+index 2982999..d17dce7 100644
 --- a/Betfair/stream/motore_ordini.py
 +++ b/Betfair/stream/motore_ordini.py
 @@ -40,14 +40,16 @@ ESTENSIONE DEL PROTOCOLLO (coordinatore, 24/09, dal referto della porta di Safe)
@@ -2287,7 +2290,7 @@ index 2982999..de49fcc 100644
          eta = ricevuto_ms - int(piano["creato_ms"])
          if eta > int(piano["max_eta_ms"]):
              raise Rifiuto(M_ETA, f"eta' {eta} ms > max_eta_ms {piano['max_eta_ms']}")
-@@ -1004,36 +1157,232 @@ class MotoreOrdini:
+@@ -1004,36 +1157,244 @@ class MotoreOrdini:
                      riga["size"] = portata
                      piano["portata_al_minimo"] = {"chiesto": round(chiesto, 2),
                                                    "piazzato": round(portata, 2)}
@@ -2480,9 +2483,19 @@ index 2982999..de49fcc 100644
 +                altra = altro_runner_due_esiti(mercato, int(riga["selection_id"]))
 +            except Exception:  # noqa: BLE001 - mercato non risolvibile: niente equivalente
 +                altra = None
++        # 02/10/2026 (punto 11): la traduzione solo per gli attori che sanno riconciliare
++        # un ordine tradotto (``minimi_it.ATTORI_CON_TRADUZIONE``), paper e live uguali
++        from .trading import minimi_it as MI
++
++        attore = str(piano.get("strategy_ref") or "")
++        no_eq = None
++        if altra is not None and attore not in MI.ATTORI_CON_TRADUZIONE:
++            altra = None
++            no_eq = (f"equivalente NON ammesso per l'attore {attore!r} "
++                     f"(ATTORI_CON_TRADUZIONE)")
 +        verdetto = LB.verdetto_minimi(
 +            giurisdizione, lato, float(riga["price"]), float(riga["size"]),
-+            altra_selezione=altra,
++            altra_selezione=altra, motivo_no_equivalente=no_eq,
 +            # il runner tennis non ha il place-and-trim (``esecutore_tennis.MOTIVO_SUBMIN``)
 +            submin_disponibile=getattr(LOW, "MOTIVO_SUBMIN", None) is None)
 +        piano["minimi"] = {"esito": verdetto.esito, "motivo": verdetto.motivo}
@@ -2490,7 +2503,9 @@ index 2982999..de49fcc 100644
 +            dettaglio = str(verdetto.motivo or "")
 +            if dettaglio.startswith(M_SOTTO_MINIMO + ":"):
 +                dettaglio = dettaglio[len(M_SOTTO_MINIMO) + 1:].strip()
-+            raise Rifiuto(M_SOTTO_MINIMO, dettaglio[:240])
++            # 02/10 (punto 11): 480 caratteri, cosi' il residuo da dichiarare al trader
++            # (in coda al motivo) non viene tagliato
++            raise Rifiuto(M_SOTTO_MINIMO, dettaglio[:480])
 +        if verdetto.esito == LB.VERDETTO_EQUIVALENTE:
 +            eq = verdetto.equivalente
 +            orig = dict(piano["minimi_originale"])
@@ -2549,7 +2564,7 @@ index 2982999..de49fcc 100644
  
      def _riduzione_verificata(self, flumine: Any, riga: Dict[str, Any], mode: str) -> bool:
          """Il place riduce DAVVERO la posizione abbinata del runner? Legge le
-@@ -1096,7 +1445,14 @@ class MotoreOrdini:
+@@ -1096,7 +1457,14 @@ class MotoreOrdini:
          cust = LOW._cust_ref(rid)
          with self._lock_seq:
              self._rif_interni[cust] = {"attore": attore, "ref": ref, "mode": mode,
@@ -2565,7 +2580,7 @@ index 2982999..de49fcc 100644
              self._rif_ordine.append(cust)
              while len(self._rif_ordine) > 5000:
                  self._rif_interni.pop(self._rif_ordine.popleft(), None)
-@@ -1108,7 +1464,29 @@ class MotoreOrdini:
+@@ -1108,7 +1476,29 @@ class MotoreOrdini:
              # la STESSA macchina del worker: azione place_submin (step INIT->PLACED
              # qui, gli step successivi da ``avanza_submin`` a ogni giro)
              riga["action"] = "place_submin"
@@ -2596,7 +2611,7 @@ index 2982999..de49fcc 100644
          try:
              if errore_forzato is not None:
                  # 25/09: comando mai partito (aggancio scaduto o guardia
-@@ -1125,6 +1503,9 @@ class MotoreOrdini:
+@@ -1125,6 +1515,9 @@ class MotoreOrdini:
          finally:
              self._pulisci_contesto()
          if LOW._tempi_on(): LOW._TEMPI.fine(cust, ok, errore)  # noqa: E701 - F0 misura
@@ -2606,7 +2621,7 @@ index 2982999..de49fcc 100644
          result = lsb.captured.get("result") or {"ok": ok, "action": riga["action"],
                                                  "mode": mode, "error": errore}
          if ok and submin:
-@@ -1149,6 +1530,11 @@ class MotoreOrdini:
+@@ -1149,6 +1542,11 @@ class MotoreOrdini:
          # l'ordine su Betfair per ref (il suo ref non arriva mai a Betfair).
          if isinstance(result, dict) and result.get("cor_betfair"):
              extra["cor"] = str(result["cor_betfair"])
@@ -2618,7 +2633,7 @@ index 2982999..de49fcc 100644
          with self._lock_seq:
              self._emetti(attore, ref, riga_specchio_da_esito(result, cust_ref=cust, rid=rid,
                                                               mode=mode, riga=riga), fase,
-@@ -1158,7 +1544,14 @@ class MotoreOrdini:
+@@ -1158,7 +1556,14 @@ class MotoreOrdini:
                  info["pronto"] = True
                  trattenuti, info["trattenuti"] = info["trattenuti"], []
                  for payload in trattenuti:
@@ -2634,7 +2649,7 @@ index 2982999..de49fcc 100644
          contesto = None
          if ok:
              try:
-@@ -1466,7 +1859,8 @@ class MotoreOrdini:
+@@ -1466,7 +1871,8 @@ class MotoreOrdini:
                  self._emetti(s["attore"], s["ref"], riga_specchio_da_esito(
                      result, cust_ref=cust, rid=s["riga"]["id"], mode=s["mode"],
                      riga=s["riga"]), "errore",
@@ -2644,7 +2659,7 @@ index 2982999..de49fcc 100644
              info = self._rif_interni.get(cust)
              if info is not None:
                  info["pronto"] = True
-@@ -1487,6 +1881,22 @@ class MotoreOrdini:
+@@ -1487,6 +1893,22 @@ class MotoreOrdini:
      def _emetti(self, attore: str, ref: str, riga: Dict[str, Any], fase: str,
                  extra: Optional[Dict[str, Any]] = None) -> None:
          d = dict(riga)
@@ -2667,7 +2682,7 @@ index 2982999..de49fcc 100644
          if extra:
              d.update(extra)
          d.update({"ref": ref, "seq": self._prossimo_seq(attore), "fase": fase,
-@@ -1538,7 +1948,288 @@ class MotoreOrdini:
+@@ -1538,7 +1960,288 @@ class MotoreOrdini:
              if not info["pronto"]:
                  info["trattenuti"].append(dict(payload))
                  return
@@ -3981,10 +3996,10 @@ index 3efbaa3..a2cd9bd 100644
 +    assert ordine.order_type.size == 0.7 and ordine.order_type.price == 3.0
 diff --git a/Betfair/stream/tests/test_runner_minimi_chiusure_2026_10_01.py b/Betfair/stream/tests/test_runner_minimi_chiusure_2026_10_01.py
 new file mode 100644
-index 0000000..b901c0b
+index 0000000..79759e6
 --- /dev/null
 +++ b/Betfair/stream/tests/test_runner_minimi_chiusure_2026_10_01.py
-@@ -0,0 +1,412 @@
+@@ -0,0 +1,422 @@
 +"""01/10/2026 - RUNNER_MINIMI_CHIUSURE: i minimi .it valgono per OGNI ordine del runner.
 +
 +Difetto (money-critical, tutti i bot): ``live_order_build.min_stake_rules`` esentava dai
@@ -4262,7 +4277,17 @@ index 0000000..b901c0b
 +    return r
 +
 +
-+def test_motore_banca_043_mandata_come_punta_731_e_riportata_al_bot(amb):
++@pytest.fixture()
++def traduzione_mike(monkeypatch):
++    """02/10/2026 (RUNNER_MINIMI_CORREZIONI, punto 11): la traduzione nell'equivalente vale
++    solo per gli attori di ``minimi_it.ATTORI_CON_TRADUZIONE`` (oggi nessuno). Questi
++    test collaudano la MACCHINA della traduzione: abilitano 'mike' SOLO per la prova."""
++    from Betfair.stream.trading import minimi_it as MI
++
++    monkeypatch.setattr(MI, "ATTORI_CON_TRADUZIONE", frozenset({"mike"}))
++
++
++def test_motore_banca_043_mandata_come_punta_731_e_riportata_al_bot(amb, traduzione_mike):
 +    _due_esiti(amb.market)
 +    ws = amb.ch.collega("mike")
 +    _manda(amb, ws, _cmd("mike", 1, mode="live", selection_id=OVER, side="LAY",
@@ -4385,7 +4410,7 @@ index 0000000..b901c0b
 +    assert _ack(amb, ws)["accettato"] is True and len(amb.market.calls) == 2
 +
 +
-+def test_motore_aggancio_ripete_le_guardie_sull_ordine_chiesto(amb):
++def test_motore_aggancio_ripete_le_guardie_sull_ordine_chiesto(amb, traduzione_mike):
 +    """Idempotenza: ``_controlla`` due volte sullo stesso piano (aggancio al volo) riparte
 +    dall'ordine CHIESTO, mai dalla traduzione del giro prima."""
 +    _due_esiti(amb.market)
@@ -4399,10 +4424,10 @@ index 0000000..b901c0b
 +    assert piano["tradotto"]["originale"]["size"] == 0.43
 diff --git a/Betfair/stream/tests/test_runner_minimi_correzioni_2026_10_02.py b/Betfair/stream/tests/test_runner_minimi_correzioni_2026_10_02.py
 new file mode 100644
-index 0000000..343d468
+index 0000000..541424a
 --- /dev/null
 +++ b/Betfair/stream/tests/test_runner_minimi_correzioni_2026_10_02.py
-@@ -0,0 +1,488 @@
+@@ -0,0 +1,597 @@
 +"""02/10/2026 - RUNNER_MINIMI_CORREZIONI: correzioni dopo la verifica di RUNNER_MINIMI_CHIUSURE.
 +
 +Decisioni dell'utente: "le chiusure devono funzionare", "paper = specchio della realta'",
@@ -4467,6 +4492,16 @@ index 0000000..343d468
 +                 SimpleNamespace(selection_id=UNDER, handicap=0.0)])
 +
 +
++@pytest.fixture()
++def traduzione(monkeypatch):
++    """Punto 11: la traduzione vale solo per ``minimi_it.ATTORI_CON_TRADUZIONE`` (oggi
++    vuoto). I test della MACCHINA della traduzione (punti 1 e 3) abilitano 'mike' e
++    'safe' SOLO per la prova; il comportamento vero di Safe/Omega e' al punto 11."""
++    from Betfair.stream.trading import minimi_it as MI
++
++    monkeypatch.setattr(MI, "ATTORI_CON_TRADUZIONE", frozenset({"mike", "safe"}))
++
++
 +def _eventi(amb: Any, ws: Any, ref: str) -> List[Dict[str, Any]]:
 +    return [p["d"] for p in amb.ch.per_ws(ws, "order") if p["d"].get("ref") == ref]
 +
@@ -4486,7 +4521,7 @@ index 0000000..343d468
 +# ===========================================================================
 +# 1. paper = specchio del live
 +# ===========================================================================
-+def test_p1_stesso_ordine_043_in_paper_e_in_live_stesso_mandato_e_stesso_evento(amb):
++def test_p1_stesso_ordine_043_in_paper_e_in_live_stesso_mandato_e_stesso_evento(amb, traduzione):
 +    _due_esiti(amb.market)
 +    ws = amb.ch.collega("mike")
 +    esiti = {}
@@ -4637,7 +4672,7 @@ index 0000000..343d468
 +# ===========================================================================
 +# 3. cancel e replace su un ordine tradotto (canale: Safe, Mike, Omega, desktop)
 +# ===========================================================================
-+def test_p3_cancel_totale_annulla_l_ordine_vero(amb):
++def test_p3_cancel_totale_annulla_l_ordine_vero(amb, traduzione):
 +    ws = amb.ch.collega("safe")
 +    ev = _place_tradotto(amb, ws, 1)
 +    vero = amb.market.calls[0][0]
@@ -4650,7 +4685,7 @@ index 0000000..343d468
 +    assert e["riga_mandata"]["selection_id"] == UNDER
 +
 +
-+def test_p3_cancel_parziale_convertito_nei_termini_del_vero(amb):
++def test_p3_cancel_parziale_convertito_nei_termini_del_vero(amb, traduzione):
 +    ws = amb.ch.collega("safe")
 +    ev = _place_tradotto(amb, ws, 1)
 +    vero = amb.market.calls[0][0]
@@ -4663,7 +4698,7 @@ index 0000000..343d468
 +    assert vero.order_type.size == 5.61
 +
 +
-+def test_p3_cancel_parziale_che_lascerebbe_sotto_050_rifiutato_col_residuo(amb):
++def test_p3_cancel_parziale_che_lascerebbe_sotto_050_rifiutato_col_residuo(amb, traduzione):
 +    ws = amb.ch.collega("safe")
 +    ev = _place_tradotto(amb, ws, 1)
 +    n = len(amb.market.calls)
@@ -4686,7 +4721,7 @@ index 0000000..343d468
 +    assert amb.market.calls[-1][0] == "cancel" and amb.market.calls[-1][2] == 1.0
 +
 +
-+def test_p3_replace_su_tradotto_cancel_poi_nuovo_verdetto_mai_la_quota_dell_over(amb):
++def test_p3_replace_su_tradotto_cancel_poi_nuovo_verdetto_mai_la_quota_dell_over(amb, traduzione):
 +    ws = amb.ch.collega("safe")
 +    ev = _place_tradotto(amb, ws, 1)
 +    vero = amb.market.calls[0][0]
@@ -4705,7 +4740,7 @@ index 0000000..343d468
 +    assert (e["selection_id"], e["side"], e["price"], e["size"]) == (OVER, "lay", 17.0, 0.43)
 +
 +
-+def test_p3_replace_su_tradotto_non_ripiazza_prima_del_cancel_confermato(amb, monkeypatch):
++def test_p3_replace_su_tradotto_non_ripiazza_prima_del_cancel_confermato(amb, monkeypatch, traduzione):
 +    ws = amb.ch.collega("safe")
 +    ev = _place_tradotto(amb, ws, 1)
 +    # cancel accettato ma l'ordine vero resta vivo (Betfair non ha ancora confermato)
@@ -4891,6 +4926,105 @@ index 0000000..343d468
 +    LOW._do_greenup(_Sb([row]), _fl(market), row, "paper", _STRAT)
 +    assert len(market.placed) == 1 and market.placed[0].side == "LAY"
 +    assert market.placed[0].order_type.size == pytest.approx(2.22)   # 40 / 18
++
++
++# ===========================================================================
++# 11. traduzione SOLO per gli attori che sanno riconciliarla (oggi nessuno)
++# ===========================================================================
++def test_p11_insieme_degli_attori_con_traduzione_oggi_vuoto():
++    from Betfair.stream.trading import minimi_it as MI
++
++    assert MI.ATTORI_CON_TRADUZIONE == frozenset()
++    for a in ("safe", "safe_tennis", "omega", "mike", "desktop"):
++        assert a not in MI.ATTORI_CON_TRADUZIONE
++
++
++@pytest.mark.parametrize("attore", ["safe", "safe_tennis", "omega", "mike", "desktop"])
++@pytest.mark.parametrize("mode", ["paper", "live"])
++def test_p11_banca_043_mai_tradotta_rifiuto_col_codice(amb, attore, mode):
++    """Due esiti, banca 0,43 @18 (sotto 0,50): senza traduzione l'unica via e' il
++    rifiuto ``SOTTO_MINIMO_NON_PIAZZABILE`` col residuo dichiarato e il motivo
++    dell'attore. Mai un ordine (ne' sull'Under ne' altrove), paper come live."""
++    _due_esiti(amb.market)
++    ws = amb.ch.collega(attore)
++    _manda(amb, ws, _cmd(attore, 1, mode=mode, selection_id=OVER, side="LAY", price=18.0,
++                         size=0.43, reduces_liability=True))
++    ack = _ack(amb, ws)
++    assert ack["accettato"] is False
++    assert MO.codice_errore(ack["motivo"]) == "SOTTO_MINIMO_NON_PIAZZABILE"
++    assert "NON ammesso per l'attore" in ack["motivo"] and "trader" in ack["motivo"]
++    assert amb.market.calls == []
++
++
++@pytest.mark.parametrize("attore", ["safe", "safe_tennis", "omega"])
++def test_p11_banca_070_mai_tradotta_va_al_place_and_trim_sulla_stessa_selezione(amb, attore):
++    amb.market.borsa = True
++    _due_esiti(amb.market)
++    ws = amb.ch.collega(attore)
++    _manda(amb, ws, _cmd(attore, 1, mode="live", selection_id=OVER, side="LAY", price=18.0,
++                         size=0.70, reduces_liability=True))
++    assert _ack(amb, ws)["accettato"] is True
++    parcheggio = amb.market.calls[0][0]
++    assert parcheggio.selection_id == OVER and parcheggio.side == "LAY"   # mai l'Under
++    assert parcheggio.order_type.size == 1.00 and parcheggio.order_type.price == 1.03
++    assert amb.motore._submin
++
++
++def test_p11_attore_nell_insieme_traduzione_resta(amb, monkeypatch):
++    from Betfair.stream.trading import minimi_it as MI
++
++    monkeypatch.setattr(MI, "ATTORI_CON_TRADUZIONE", frozenset({"omega"}))
++    _due_esiti(amb.market)
++    ws = amb.ch.collega("omega")
++    _manda(amb, ws, _cmd("omega", 1, mode="live", selection_id=OVER, side="LAY", price=18.0,
++                         size=0.43, reduces_liability=True))
++    assert _ack(amb, ws)["accettato"] is True
++    o = amb.market.calls[0][0]
++    assert (o.selection_id, o.side, o.order_type.price, o.order_type.size) == (
++        UNDER, "BACK", 1.06, 7.31)
++    # un attore fuori dall'insieme, nello stesso processo: mai tradotto
++    ws2 = amb.ch.collega("safe")
++    _manda(amb, ws2, _cmd("safe", 2, mode="live", selection_id=OVER, side="LAY", price=18.0,
++                          size=0.43, reduces_liability=True))
++    assert _ack(amb, ws2)["accettato"] is False and len(amb.market.calls) == 1
++
++
++def test_p11_safe_sul_canale_un_solo_critical_per_episodio():
++    """Safe ritenta la chiusura; il runner rifiuta ogni volta (nessun ordine): il CRITICAL
++    ``canale_rifiutato`` e' uno per episodio, le ripetizioni contate."""
++    from Betfair.safe_strategy import execution as X
++    from Betfair.safe_strategy import porta_ordini as PO
++
++    class _Db:
++        def __init__(self) -> None:
++            self.log_righe: List[Any] = []
++
++        def log(self, k: str, p: Dict[str, Any]) -> None:
++            self.log_righe.append((k, p))
++
++        def update_trade(self, *_a: Any, **_k: Any) -> None:
++            return None
++
++    class _Porta:
++        attore = "safe"
++
++        def disponibile(self) -> bool:
++            return True
++
++        def invia(self, comando: Dict[str, Any]) -> Any:
++            return PO.Ack(comando["ref"], 1, False,
++                          "SOTTO_MINIMO_NON_PIAZZABILE: LAY 0.43 ...; residuo ... al trader", 0)
++
++    db, porta = _Db(), _Porta()
++    for tid in (11, 12, 13):
++        out = X._place_via_canale(porta, db=db, mode="live", market_id="1.1", selection_id=OVER,
++                                  side="lay", price=18.0, size=0.43, client_ref=f"safe-t{tid}",
++                                  tid=tid, meta={"closes_trade_id": 5}, now=None,
++                                  is_closing=True, sotto_minimo=True)
++        assert out.status == "error" and out.error_code.startswith("SOTTO_MINIMO_NON_PIAZZABILE")
++    rif = [p for k, p in db.log_righe if k == "canale_rifiutato"]
++    assert [p["critical"] for p in rif] == [True, False, False]
++    assert [p["tentativo_nell_episodio"] for p in rif] == [1, 2, 3]
 diff --git a/Betfair/stream/tests/test_strada_unica_banco_2026_09_25.py b/Betfair/stream/tests/test_strada_unica_banco_2026_09_25.py
 index c924dce..d795c0c 100644
 --- a/Betfair/stream/tests/test_strada_unica_banco_2026_09_25.py
@@ -5180,10 +5314,10 @@ index 4655f6b..e8c73f2 100644
  
 diff --git a/Betfair/stream/trading/minimi_it.py b/Betfair/stream/trading/minimi_it.py
 new file mode 100644
-index 0000000..b34c955
+index 0000000..4ebe2ec
 --- /dev/null
 +++ b/Betfair/stream/trading/minimi_it.py
-@@ -0,0 +1,48 @@
+@@ -0,0 +1,58 @@
 +"""Minimi di puntata di Betfair Exchange Italia: UNA definizione per tutto il repo.
 +
 +01/10/2026 - CORREZIONE DEFINITIVA (ordine dell'utente, confermato dalla Nota informativa di
@@ -5230,6 +5364,16 @@ index 0000000..b34c955
 +#     riuscita; "rifiutato del tutto"): rifiuto esplicito, residuo dichiarato al trader.
 +#: importo FINALE minimo di un place-and-trim su .it (= floor di legge)
 +SUBMIN_IMPORTO_FINALE_MIN = IT_FLOOR_LEGGE
++#: 02/10/2026 (RUNNER_MINIMI_CORREZIONI, punto 11, decisione del coordinatore): chi sa
++#: riconciliare un ordine tradotto nello specchio, nei cleared e nei ripieghi REST. La via
++#: "equivalente sull'altra selezione" del motore vale SOLO per questi attori (``attore`` /
++#: ``strategy_ref`` del comando), in paper come in live. Oggi NESSUNO: Safe e Omega
++#: rileggono l'ordine VERO nei ripieghi live oltre la scadenza (difetti aperti), Mike in
++#: live non passa dal canale (ha la sua patch), gli ordini manuali dell'app aspettano la
++#: conferma dell'utente sul green-up di mercato. Per tutti gli altri: diretto ->
++#: place-and-trim (finale >= 0,50) -> rifiuto ``SOTTO_MINIMO_NON_PIAZZABILE``. Un attore si
++#: aggiunge solo dopo averne verificato la riconciliazione.
++ATTORI_CON_TRADUZIONE: frozenset = frozenset()
 +#: codice INTERNO del rifiuto di un ordine sotto il minimo senza via legittima
 +SOTTO_MINIMO_NON_PIAZZABILE = "SOTTO_MINIMO_NON_PIAZZABILE"
 diff --git a/Betfair/stream/trading/submin.py b/Betfair/stream/trading/submin.py
