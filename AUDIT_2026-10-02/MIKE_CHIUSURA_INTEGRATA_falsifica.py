@@ -106,8 +106,8 @@ MUTAZIONI = [
      "                if orologio() - t0 >= tetto_s:",
      "                if False:"),
     ("R1d main senza l'arresto ordinato degli ordini", SRV,
-     "        if not args.once and not args.dry:\n            arresto_con_ordini(",
-     "        if False:\n            arresto_con_ordini("),
+     "            if not args.once and not args.dry:\n                arresto_con_ordini(",
+     "            if False:\n                arresto_con_ordini("),
 ]
 
 
@@ -126,7 +126,8 @@ def main():
         prima[rel] = impronta(p)
     esiti = []
     try:
-        for nome, rel, vecchio, nuovo in MUTAZIONI:
+        scelte = [m for m in MUTAZIONI if not sys.argv[1:] or m[0].split()[0] in sys.argv[1:]]
+        for nome, rel, vecchio, nuovo in scelte:
             sorgente = open(copie[rel], encoding="utf-8").read()
             if sorgente.count(vecchio) != 1:
                 esiti.append((nome, "MUTAZIONE NON APPLICABILE (testo trovato %d volte)"
