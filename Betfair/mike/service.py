@@ -809,6 +809,11 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
         # Prima valeva solo in paper; in live l'ordine partiva col prezzo del
         # feed fermo e decideva Betfair. Ora e' identico nei due modi.
         leg.status = "cancelled"
+        # 02/10: il motore lo deve SAPERE, altrimenti ripropone la stessa
+        # richiesta a ogni giro finche' il feed resta stantio (scenario
+        # lettura-dati-ko: 373 volte). Non e' un rifiuto del mercato: al ritorno
+        # del feed non conta piu' (``engine._tieni_a_feed_stantio``).
+        _rifiutata(ctx, leg, E.MOTIVO_FEED_STANTIO)
         db.log("no_fill", {"leg": leg.ref, "role": leg.role, "reason": "feed_stantio",
                            "wanted": leg.price, "side": leg.side, "mode": mode}, info.event_id)
         return "cancelled"
@@ -5236,6 +5241,10 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                 # (stessa regola di ``execute_place``). Non e' un rifiuto del
                 # mercato: il motore ripropone quando il feed torna vivo.
                 leg.status = "cancelled"
+                if not snap.feed_fresh:
+                    # 02/10: ... e finche' resta stantio NON la ripropone
+                    # identica a ogni giro (``engine._tieni_a_feed_stantio``).
+                    _rifiutata(ctx, leg, E.MOTIVO_FEED_STANTIO)
                 db.log("no_fill", {"leg": leg.ref, "role": leg.role, "reason": "feed_stantio",
                                    "wanted": leg.price, "side": leg.side, "mode": mode,
                                    "resting": True}, ev["event_id"])
