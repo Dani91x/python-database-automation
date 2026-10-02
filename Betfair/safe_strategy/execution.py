@@ -532,6 +532,17 @@ def nei_termini_della_riga(trade: dict[str, Any], letto: Any) -> Any:
 #: il prefisso dei ref di Safe CALCIO (``porta_ordini.ref_ordine``, ``close_trade``):
 #: le sole righe a cui coda e REST applicano l'equivalente (02/10/2026, D3)
 _REF_SAFE_CALCIO = "safe-t"
+#: i tipi di mercato con DUE esiti per costruzione (Over/Under, gol nel primo tempo,
+#: entrambe segnano). E' solo il filtro d'ingresso dell'equivalente su coda e REST: il
+#: verdetto vero lo da' il book (due runner ACTIVE, un vincitore).
+_TIPI_DUE_ESITI = ("BOTH_TEAMS_TO_SCORE",)
+_PREFISSI_TIPI_DUE_ESITI = ("OVER_UNDER_", "FIRST_HALF_GOALS_")
+
+
+def mercato_a_due_esiti_per_tipo(market_type: Any) -> bool:
+    """Il tipo di mercato e' uno di quelli a DUE esiti? Tipo ignoto: no. Pura."""
+    mt = str(market_type or "").strip().upper()
+    return bool(mt) and (mt in _TIPI_DUE_ESITI or mt.startswith(_PREFISSI_TIPI_DUE_ESITI))
 
 
 def _equivalente_possibile(side: str, price: float, size: float) -> bool:
@@ -872,6 +883,7 @@ def place(
     best_back: Optional[float] = None,
     best_lay: Optional[float] = None,
     _nota: Optional[dict[str, Any]] = None,
+    market_type: Optional[str] = None,
 ) -> PlaceOutcome:
     """Esegue UN ordine per una riga già RISERVATA ('pending').
 
@@ -1012,14 +1024,21 @@ def place(
     # all'EQUIVALENTE sull'altra selezione; chi lo decide e' chi vede il book (il worker
     # della coda, ``live_order_worker._traduci_riga_coda``; il REST qui sotto,
     # ``_equivalente_rest``). In casa si rifiuta solo cio' che non ha NESSUNA via: sotto
-    # 0,50 e senza un equivalente piazzabile. SOLO Safe calcio (ref ``safe-t<id>``): e' il
-    # bot le cui letture (canale, specchio, stato per bet_id, ordini per ref) sanno
-    # riportare un tradotto nei termini chiesti. Omega e Mike, che passano di qui per
-    # chiusure e aperture, restano come prima (le loro riconciliazioni REST per ref non
-    # lo sanno fare: ``omega_engine.reconcile_decision``, ``mike/service``); il tennis ha
-    # la sua regola.
-    equivalente_ammesso = bool(submin_fuori_canale
-                               and str(client_ref or "").startswith(_REF_SAFE_CALCIO))
+    # 0,50 e senza un equivalente piazzabile. SOLO le CHIUSURE di Safe calcio (ref
+    # ``safe-t<id>``): e' il bot le cui letture (canale, specchio, stato per bet_id, ordini
+    # per ref) sanno riportare un tradotto nei termini chiesti, e la chiusura e' il caso
+    # del difetto (una chiusura 0,43 rifiutata qui e accettata sul canale). Omega e Mike,
+    # che passano di qui, restano come prima (le loro riconciliazioni REST per ref non lo
+    # sanno fare: ``omega_engine.reconcile_decision``, ``mike/service``); il tennis ha la
+    # sua regola; le APERTURE sotto il minimo restano al place-and-trim (sul canale la
+    # loro traduzione e' senza FOK, cosa che sul REST lascerebbe un ordine a riposo che
+    # nessuno segue: riportato, non deciso qui).
+    # ``market_type`` (la riga lo porta, ``close_trade`` lo passa) e' solo il filtro
+    # d'ingresso: un Risultato Esatto non manda mai in coda o al book un ordine che
+    # sarebbe rifiutato a ogni ritento; la parola finale e' del book (worker, REST).
+    equivalente_ammesso = bool(sotto_minimo_chiusura
+                               and str(client_ref or "").startswith(_REF_SAFE_CALCIO)
+                               and mercato_a_due_esiti_per_tipo(market_type))
     if submin_fuori_canale and size < SUBMIN_IMPORTO_FINALE_MIN - 1e-9 and not (
             equivalente_ammesso and _equivalente_possibile(side, price, size)):
         return _rifiuto_sotto_050(db, tid=tid, mode=mode, side=side, price=price, size=size,
@@ -2160,6 +2179,9 @@ def close_trade(*, db, market, trade: dict[str, Any], prices: dict[str, Any],
         meta={**dict(reserve.get("meta") or {}), "cashout": True,
               "closes_trade_id": trade.get("id")},
         now=now, params=params_ordine,
+        # 02/10/2026 (D3): il tipo di mercato della gamba, filtro d'ingresso
+        # dell'equivalente su coda e REST (``mercato_a_due_esiti_per_tipo``)
+        market_type=reserve.get("market_type"),
         **({"porta": porta} if porta is not None else {}),
     )
     if out.status == "error":

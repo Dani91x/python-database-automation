@@ -310,11 +310,34 @@ def test_d2_pnl_dal_regolato_di_betfair_e_il_vero_al_centesimo(monkeypatch):
 # ===========================================================================
 # D3 - CODA: la chiusura 0,43 non e' piu' un rifiuto in casa, va al runner
 # ===========================================================================
-def _place_chiusura_043(db: FakeDB, mercato: Any, mode: str, closing_id: int) -> Any:
+TIPO_OU = "OVER_UNDER_45"
+
+
+def _place_chiusura_043(db: FakeDB, mercato: Any, mode: str, closing_id: int,
+                        market_type: Any = TIPO_OU) -> Any:
     return X.place(db=db, market=mercato, mode=mode, event_id="E1", market_id=MID,
                    selection_id=OVER, side="lay", price=18.0, size=0.43,
                    client_ref="safe-t%d" % closing_id, trade_id=closing_id,
-                   meta={"cashout": True, "closes_trade_id": 1}, now=NOW, params={})
+                   meta={"cashout": True, "closes_trade_id": 1}, now=NOW, params={},
+                   market_type=market_type)
+
+
+@pytest.mark.parametrize("tipo", ["CORRECT_SCORE", "MATCH_ODDS", None])
+def test_d3_mercato_non_a_due_esiti_rifiuto_in_casa_mai_coda_ne_book(monkeypatch, tipo):
+    """Risultato Esatto, 1X2 o tipo ignoto: l'equivalente non e' nemmeno candidato. Il
+    rifiuto resta in casa (un CRITICAL per episodio, nessuna riga in coda a ogni ritento,
+    nessuna lettura del book)."""
+    rete = monta_rete(monkeypatch)
+    rete.book = book_grezzo(OVER, UNDER)
+    for mode, rest in (("paper", False), ("live", False), ("live", True)):
+        db = _db(mode)
+        if rest:
+            _rest(db)
+        out = _place_chiusura_043(db, S._MercatoSafe(OM), mode, 5, market_type=tipo)
+        assert out.status == "error" and out.error_code == "SOTTO_MINIMO_NON_PIAZZABILE"
+        assert db.queue == [] and rete.piazzati == []
+    assert "listMarketBook" not in " ".join(rete.chiamate) and \
+        "list_market_book" not in rete.chiamate
 
 
 @pytest.mark.parametrize("mode", ["paper", "live"])
@@ -335,6 +358,24 @@ def test_d3_coda_chiusura_043_va_al_runner_con_l_equivalente_ammesso(mode):
     assert (payload["selection_id"], payload["side"], payload["size"]) == (OVER, "lay", 0.43)
 
 
+def test_d3_close_trade_porta_il_tipo_di_mercato_della_gamba():
+    """La strada vera delle uscite di Safe (``close_trade`` con ``extra_row`` che porta
+    ``market_type``, come i tre chiamanti di ``bot_service``): la chiusura 0,43 su un
+    Over/Under va in coda con l'equivalente ammesso."""
+    db = _db("live")
+    parent = _apertura(db)
+    db.update_trade(parent["id"], market_type=TIPO_OU)
+    out = X.close_trade(db=db, market=None, trade=db.get_trade(parent["id"]),
+                        prices={"back": 17.5, "lay": 18.0, "back_size": 500.0,
+                                "lay_size": 500.0},
+                        now=NOW, extra_row={"market_type": TIPO_OU, "sport": "calcio"})
+    assert out.get("ok") is True and out.get("pending_fill") is True, out
+    payload = db.queue[-1]
+    assert (payload["action"], payload["side"], payload["size"], payload["price"]) == \
+        ("place_submin", "lay", 0.43, 18.0)
+    assert payload["params"][LOW.PARAM_EQUIVALENTE] is True
+
+
 def test_d3_coda_sotto_050_senza_equivalente_possibile_resta_rifiuto_in_casa():
     """Una banca 0,30 @1,50: l'equivalente (punta 0,15) e' anch'esso sotto il minimo:
     nessuna via legittima, rifiuto certo deciso in casa come prima (nessuna riga in coda)."""
@@ -342,7 +383,7 @@ def test_d3_coda_sotto_050_senza_equivalente_possibile_resta_rifiuto_in_casa():
     out = X.place(db=db, market=None, mode="paper", event_id="E1", market_id=MID,
                   selection_id=OVER, side="lay", price=1.5, size=0.30, client_ref="safe-t9",
                   trade_id=9, meta={"cashout": True, "closes_trade_id": 1}, now=NOW,
-                  params={})
+                  params={}, market_type=TIPO_OU)
     assert out.status == "error" and out.error_code == "SOTTO_MINIMO_NON_PIAZZABILE"
     assert db.queue == []
 
@@ -390,6 +431,8 @@ def test_d3_worker_traduce_la_riga_di_coda_come_il_canale(worker, mode):
     assert (ordine.selection_id, ordine.side, ordine.order_type.price,
             ordine.order_type.size) == (UNDER, "BACK", t["mandato"]["price"],
                                         t["mandato"]["size"])
+    # una CHIUSURA tradotta e' FILL_OR_KILL come sul canale (mai a riposo sul book)
+    assert ordine.order_type.time_in_force == "FILL_OR_KILL"
     assert riga["status"] == "done"
     res = riga["result"]
     assert (res["selection_id"], res["side"], res["price"], res["size"]) == \
@@ -493,6 +536,7 @@ def test_d3_rest_chiusura_043_piazza_l_equivalente_e_conferma_nei_termini_chiest
             ins["limitOrder"]["size"]) == (UNDER, "BACK", t["mandato"]["price"],
                                            t["mandato"]["size"])
     assert ins["customerOrderRef"] == "safe-t5"
+    assert ins["limitOrder"].get("timeInForce") == "FILL_OR_KILL"
     assert kw["customer_strategy_ref"] == S.SAFE_STRATEGY_REF
     # l'esito nei termini chiesti: la riga dira' banca Over 0,43 @18
     assert (out.price, out.size, out.bet_id) == (18.0, 0.43, "PIAZZATO1")
@@ -532,6 +576,20 @@ def test_d3_rest_esito_ignoto_poi_riconciliazione_per_ref_nei_termini_chiesti(mo
         (OVER, "lay", 0.43, 18.0, "B9")
 
 
+def test_d3_apertura_sotto_050_resta_rifiuto_in_casa(monkeypatch):
+    """L'equivalente su coda e REST vale per le CHIUSURE (il difetto D3): un'apertura di
+    Safe 0,43 resta il rifiuto certo di prima, nessuna riga in coda, nessun ordine."""
+    rete = monta_rete(monkeypatch)
+    rete.book = book_grezzo(OVER, UNDER)
+    db = _db("live")
+    out = X.place(db=db, market=S._MercatoSafe(OM), mode="live", event_id="E1",
+                  market_id=MID, selection_id=OVER, side="lay", price=18.0, size=0.43,
+                  client_ref="safe-t5", trade_id=5, meta={}, now=NOW, params={},
+                  market_type=TIPO_OU)
+    assert out.status == "error" and out.error_code == "SOTTO_MINIMO_NON_PIAZZABILE"
+    assert db.queue == [] and rete.piazzati == []
+
+
 def test_d3_omega_e_mike_fuori_perimetro_restano_come_prima(monkeypatch):
     """La coda e il REST applicano l'equivalente SOLO a Safe calcio (ref ``safe-t``):
     una chiusura di Omega o di Mike sotto 0,50 resta il rifiuto certo di prima."""
@@ -542,7 +600,8 @@ def test_d3_omega_e_mike_fuori_perimetro_restano_come_prima(monkeypatch):
         out = X.place(db=db, market=S._MercatoSafe(OM), mode="live", event_id="E1",
                       market_id=MID, selection_id=OVER, side="lay", price=18.0, size=0.43,
                       client_ref=ref, trade_id=5,
-                      meta={"cashout": True, "closes_trade_id": 1}, now=NOW, params={})
+                      meta={"cashout": True, "closes_trade_id": 1}, now=NOW, params={},
+                      market_type=TIPO_OU)
         assert out.status == "error" and out.error_code == "SOTTO_MINIMO_NON_PIAZZABILE", ref
         assert db.queue == [] and rete.piazzati == []
 

@@ -3641,6 +3641,15 @@ def _traduci_riga_coda(flumine: Any, request_row: Dict[str, Any]) -> Optional[Di
     riga.update(mandato)
     riga["action"] = "place"
     riga["liability"] = None
+    if params.get("reduces_liability"):
+        # una CHIUSURA tradotta e' un place DIRETTO: FILL_OR_KILL come la stessa chiusura
+        # sul canale (``execution._place_via_canale``: FOK sulle chiusure) e come ogni
+        # place diretto della coda (``execution.enqueue_place``). La riga
+        # ``place_submin`` non lo aveva solo per la tecnica del parcheggio (un FOK
+        # ucciderebbe il primo passo), che qui non c'e'.
+        riga["time_in_force"] = "FILL_OR_KILL"
+        riga["persistence"] = "LAPSE"
+        riga["min_fill_size"] = None
     riga["params"] = {k: v2 for k, v2 in params.items() if k not in ("target_size",)}
     tradotto = {
         "originale": {"selection_id": int(sel),
