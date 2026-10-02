@@ -1,8 +1,13 @@
 # FRONTEND MINORI (02/10/2026) - punti 31, 32, 33, 35, A, B, C, 30 + reperti 1-2
 
-STATO AL 13:05: fatti reperto 1 (commit `6ba348c`) e reperto 2 Mike/tennis/Omega (`9594453`,
-`ea432f8`, `10852ed`), falsificazione 38/38 e tabella dei valori di serie (`866ddc2`);
-MANCA: suite intera, fotografia, build, `npm ci`, patch rigenerata.
+STATO AL 13:24: TUTTO FATTO. Reperto 1 (`6ba348c`), reperto 2 Mike/tennis/Omega (`9594453`,
+`ea432f8`, `10852ed`), falsificazione 38/38 e tabella (`866ddc2`), referto (`3ba1246`). Verifica finale
+della seconda consegna (macchina scarica): `tsc` 0 errori (app e progetto); suite intera **317 file
+verdi / 10 saltati, 4864 test verdi / 50 saltati, 0 rossi** (728 s; prima consegna 4848 + 16 nuovi);
+fotografia `off` invariata (`git diff 61f73a6 -- frontend/src/fotografia/snapshot` vuoto); `npm run build`
+exit 0 (`dist/assets` 3.526.829 B); `npm ci` senza flag exit 0, nessun warning di peer. Master ora
+`543b13d` (nessun file di `frontend/` cambiato dalla base), `git merge-tree` pulito. Patch rigenerata.
+MANCA: niente.
 
 Delegato Opus, worktree isolato, ramo locale `frontend-minori` partito da `61f73a6`
 (base indicata dal brief). Nel frattempo master e' avanzato a `9803700` (8 commit di sola
