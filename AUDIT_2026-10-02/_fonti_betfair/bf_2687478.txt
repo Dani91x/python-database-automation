@@ -1,0 +1,73 @@
+ Karma - Page Builder What are Market Data Request Limits? | listMarketCatalogue | listMarketBook/listRunnerBook | listMarketProfitandLoss What are Market Data Request Limits?
+ Although you can request multiple markets from listMarketBook , listRunnerBook ,  listMarketCatalogue  and listMarketProfitandLoss , there are limits on the amount of data requested in one request. 
+ 
+ sum(Weight) * number market ids must not exceed 200 points per requests
+
+ The following tables explain the "weighting" of data for each  MarketProjection  or  PriceProjection . If you exceed the maximum weighting of 200 points, the API will return a  TOO_MUCH_DATA  error.
+ listMarketCatalogue
+ MarketProjection 
+ Weight 
+ 
+ MARKET_DESCRIPTION
+ 1
+ 
+ RUNNER_DESCRIPTION
+ 0
+ 
+ EVENT
+ 0
+ 
+ EVENT_TYPE
+ 0
+ 
+ COMPETITION
+ 0
+ 
+ RUNNER_METADATA
+ 1
+ 
+ MARKET_START_TIME
+ 0
+ 
+ listMarketBook/listRunnerBook
+ PriceProjection 
+ Weight 
+ 
+ Null (No PriceProjection set)
+ 2
+ 
+ SP_AVAILABLE
+ 3
+ 
+ SP_TRADED
+ 7
+ 
+ EX_BEST_OFFERS
+ 5
+ 
+ EX_ALL_OFFERS
+ 17
+ 
+ EX_TRADED
+ 17
+ 
+ Please note : specific combinations of priceProjections will carry different weights that aren't the sum of their individual weights.  Please see a summary of these below:
+ PriceProjection 
+ Weight 
+ 
+ EX_BEST_OFFERS + EX_TRADED
+ 20
+ 
+ EX_ALL_OFFERS + EX_TRADED
+ 32
+ 
+ If  exBestOffersOverrides is used the weight is is calculated by weight * (requestedDepth/3) .
+ listMarketProfitandLoss
+ PriceProjection 
+ Weight 
+ 
+ Not applicable
+ 4
+ 
+ What are Market Data Request Limits? | listMarketCatalogue | listMarketBook/listRunnerBook | listMarketProfitandLoss 
+

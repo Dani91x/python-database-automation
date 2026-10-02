@@ -1,0 +1,1230 @@
+ [data-colorid=cf9q9vq4rv]{color:#333333} html[data-color-mode=dark] [data-colorid=cf9q9vq4rv]{color:#cccccc}[data-colorid=on20wmzkmx]{color:#333333} html[data-color-mode=dark] [data-colorid=on20wmzkmx]{color:#cccccc}[data-colorid=ecq1o8z1ki]{color:#333333} html[data-color-mode=dark] [data-colorid=ecq1o8z1ki]{color:#cccccc}[data-colorid=wi5rriu9aa]{color:#1d1c1d} html[data-color-mode=dark] [data-colorid=wi5rriu9aa]{color:#e3e2e3}[data-colorid=dysciwpluf]{color:#333333} html[data-color-mode=dark] [data-colorid=dysciwpluf]{color:#cccccc}[data-colorid=mbsnq7l4cg]{color:#222426} html[data-color-mode=dark] [data-colorid=mbsnq7l4cg]{color:#d9dbdd}[data-colorid=ix17yr4ako]{color:#1d1c1d} html[data-color-mode=dark] [data-colorid=ix17yr4ako]{color:#e3e2e3}[data-colorid=mjsw85rapm]{color:#2f3941} html[data-color-mode=dark] [data-colorid=mjsw85rapm]{color:#bec8d0}[data-colorid=godhh38i28]{color:#032f62} html[data-color-mode=dark] [data-colorid=godhh38i28]{color:#9dc9fc}[data-colorid=qbgu4famd1]{color:#333333} html[data-color-mode=dark] [data-colorid=qbgu4famd1]{color:#cccccc}[data-colorid=ym5ivn6ivi]{color:#1d1c1d} html[data-color-mode=dark] [data-colorid=ym5ivn6ivi]{color:#e3e2e3}[data-colorid=l4t5t0n95a]{color:#333333} html[data-color-mode=dark] [data-colorid=l4t5t0n95a]{color:#cccccc}[data-colorid=fsifw3jesf]{color:#333333} html[data-color-mode=dark] [data-colorid=fsifw3jesf]{color:#cccccc}[data-colorid=wwsqaut390]{color:#333333} html[data-color-mode=dark] [data-colorid=wwsqaut390]{color:#cccccc}[data-colorid=xgkk60uisw]{color:#333333} html[data-color-mode=dark] [data-colorid=xgkk60uisw]{color:#cccccc}[data-colorid=whzhldhp5z]{color:#222426} html[data-color-mode=dark] [data-colorid=whzhldhp5z]{color:#d9dbdd}[data-colorid=t9qs6zdnfh]{color:#333333} html[data-color-mode=dark] [data-colorid=t9qs6zdnfh]{color:#cccccc}[data-colorid=ahq60d718f]{color:#2f3941} html[data-color-mode=dark] [data-colorid=ahq60d718f]{color:#bec8d0}[data-colorid=st2g83imtf]{color:#333333} html[data-color-mode=dark] [data-colorid=st2g83imtf]{color:#cccccc}[data-colorid=m7qatlzywm]{color:#2f3941} html[data-color-mode=dark] [data-colorid=m7qatlzywm]{color:#bec8d0}[data-colorid=ub0f1kw9c1]{color:#333333} html[data-color-mode=dark] [data-colorid=ub0f1kw9c1]{color:#cccccc}[data-colorid=y3xonk8yse]{color:#032f62} html[data-color-mode=dark] [data-colorid=y3xonk8yse]{color:#9dc9fc}[data-colorid=xysh029xvl]{color:#333333} html[data-color-mode=dark] [data-colorid=xysh029xvl]{color:#cccccc}[data-colorid=dxuus5z5lt]{color:#2f3941} html[data-color-mode=dark] [data-colorid=dxuus5z5lt]{color:#bec8d0}[data-colorid=gf9s7wycho]{color:#0a3069} html[data-color-mode=dark] [data-colorid=gf9s7wycho]{color:#96bcf5}[data-colorid=z73m42cizo]{color:#333333} html[data-color-mode=dark] [data-colorid=z73m42cizo]{color:#cccccc}[data-colorid=i0rm6e5uqs]{color:#333333} html[data-color-mode=dark] [data-colorid=i0rm6e5uqs]{color:#cccccc}[data-colorid=mox672j6yh]{color:#3b4151} html[data-color-mode=dark] [data-colorid=mox672j6yh]{color:#aeb4c4}[data-colorid=mwb2nuftws]{color:#333333} html[data-color-mode=dark] [data-colorid=mwb2nuftws]{color:#cccccc}[data-colorid=v2y21ej2kr]{color:#032f62} html[data-color-mode=dark] [data-colorid=v2y21ej2kr]{color:#9dc9fc}[data-colorid=i26tqxhlrf]{color:#333333} html[data-color-mode=dark] [data-colorid=i26tqxhlrf]{color:#cccccc}[data-colorid=l1abwzmkbq]{color:#333333} html[data-color-mode=dark] [data-colorid=l1abwzmkbq]{color:#cccccc}[data-colorid=cmz0cxt2sx]{color:#1d1c1d} html[data-color-mode=dark] [data-colorid=cmz0cxt2sx]{color:#e3e2e3}[data-colorid=cyja6bdxw9]{color:#3b73af} html[data-color-mode=dark] [data-colorid=cyja6bdxw9]{color:#5088c4}[data-colorid=qa32jn4k25]{color:#333333} html[data-color-mode=dark] [data-colorid=qa32jn4k25]{color:#cccccc}[data-colorid=e8d3wf87nt]{color:#0a3069} html[data-color-mode=dark] [data-colorid=e8d3wf87nt]{color:#96bcf5}[data-colorid=q9l504klf5]{color:#333333} html[data-color-mode=dark] [data-colorid=q9l504klf5]{color:#cccccc} Karma - Page Builder Overview | Sample Application - C#, Java & Node.js | Swagger Definition | Typical Interactions with Stream API: | Connection | Protocol | TCP / SSL Connection | Basic Message Protocol | RequestMessage | ResponseMessage | Connection / ConnectionMessage | Authentication / AuthenticationMessage | Subscription / SubscriptionMessage | ChangeMessage | MarketSubscriptionMessage | Market Filtering / MarketFilter | Market data field filtering / MarketDataFilter | MarketDefinition Fields | RunnerDefinition Fields | KeyLineSelection Fields | OrderSubcription Message | Example Output of Order Stream Message on Connection/Re-connection | Heartbeat / HeartbeatMessage | Re-connection / Re-subscription | Performance Considerations | Currency Support | Runner Removals on the Order Stream | Identifying Cancelled BSP Bets | VAR (Video Assistant Referee) Void Bets Handling | Line Markets | Stream API Status - latency | Stream Health | Conflation | Lapse Status Reason Code Possible Values | Offline Documentation | Known Issues Overview
+ The Exchange Streaming API provides low latency access to Betfair Exchange market data allowing you to subscribe to and efficiently track changes to market, price, and order data.  
+ The protocol is based on ssl sockets (normal) with a CRLF JSON protocol.  We publish a definition of the schema of the JSON messages in the Swagger format .
+ We maintain sample code in Java, C#, and Node.js here:  https://github.com/betfair/stream-api-sample-code 
+ Sample Application - C#, Java & Node.js
+ A console-based C#, Java and Node.js sample application is available for the Market & Order Streaming API and is available via https://github.com/betfair/stream-api-sample-code 
+ Users wishing to interact with the Streaming API using one of these languages are strongly advised to make use of this sample code.
+ Swagger Definition
+ For users wishing to use other languages or develop their own implementation, we provide a swagger schema to allow browsing & code generation.
+ We recommend using Swagger Code Gen ( http://swagger.io/swagger-codegen/ ) for generation,
+ As a pre-requisite Java version 7 or higher must be installed
+
+ Download both:
+ The Swagger Code Gen jar from:  https://oss.sonatype.org/content/repositories/releases/io/swagger/swagger-codegen-cli/2.2.1/swagger-codegen-cli-2.2.1.jar 
+
+ The Swagger Definition from our GitHub repository:  https://github.com/betfair/stream-api-sample-code/blob/master/ESASwaggerSchema.json 
+
+ 
+ Run the following command to view a list of available languages to generate code for:  java -jar swagger-codegen-cli-2.2.1.jar  
+
+ Run the following command to generate the code:  java -jar swagger-codegen-cli-2.2.1.jar generate -i ESASwaggerSchema.json -l <LANGUAGE> -o <OUTPUT_DIRECTORY> 
+
+ The Swagger editor can also be used to view the domain model
+ Use File -> Import File and choose the Swagger Definition downloaded from our  GitHub repository 
+
+ A few points to note with Swagger:
+ It's cross-platform and we can't control how it works / behaves - but it does save a lot of error-prone typing.
+
+ Enums and Inheritance are a little flaky:
+ Enums for error codes / filters etc. are defined but are treated as strings in c# (so you will need to copy definitions from the Swagger spec until this is fixed by Swagger).
+
+ Inheritance is defined but not generated correctly - you will have to manually manipulate the op=<type> field
+ In c#  JsonCreationConverter is the typical way to model inheritance 
+
+ In java look at JsonSubTypes 
+
+ 
+ 
+ We are not a REST service - so only the swagger-generated model package is relevant.
+
+ Typical Interactions with Stream API:
+ The typical API interactions are documented below (detail is below this).
+ Market Stream: 
+ Order Stream: 
+ Connection
+ Protocol
+ Every message is in json & terminated with a line feed (CRLF): 
+ 
+ {json message}\r\n
+
+ Json Serializer Setup
+ As the protocol is CRLF delimited don't forget to turn-off JSON pretty printing (C# has this on by default)
+ TCP / SSL Connection
+ Connection is established with an SSL socket to the following address: 
+ External (SSL): 
+ 
+ stream-api.betfair.com:443
+
+ Avoiding TIMEOUT on connection
+ Once you have established a connection you should send a message within 15 seconds to avoid receiving a TIMEOUT error
+ Pre-production (beta) endpoint 
+ For pre-production (beta) releases the following URL should be used for integration testing only. 
+ Integration Endpoint 
+ 
+ stream-api-integration.betfair.com
+
+ Basic Message Protocol
+ Two base message classes exist:
+ RequestMessage - These are messages sent to the server.
+
+ ResponseMessage - These are messages received from the server.
+
+ Every child message type has:
+ id - A unique counter you should supply on a RequestMessage and which will be supplied back on a ResponseMessage. 
+
+ op - This identifies the request type and may be used to switch/deserialize correctly 
+
+
+ 
+ Note:  Any fields representing time and having a long type will represent the UNIX Timestamps (See  https://currentmillis.com/  for conversions)  
+
+ RequestMessage
+ RequestMessage is the base class for requests from the client; the discriminator is op=<message type> 
+ Key fields: 
+ op=authentication - The AuthenticationMessage - authenticates your connection. 
+
+ op=marketSubscription - The MarketSubscriptionMessage - subscribes to market changes. 
+
+ op=orderSubscription - The OrderSubscriptionMessage - subscribes to order changes. 
+
+ op=heartbeat - The HeartbeatMessage - use if you need to keep a firewall open or want to test connectivity. 
+
+
+ RequestMessages
+ Remember to set op=<message type> - otherwise, we can't decode the request 
+
+ Remember to set id=<unique sequence> - this will let you link requests with responses (these should be logged and provided on support calls) 
+
+ Every RequestMessage will receive a StatusMessage with the status of the call (linked by the id that you send). 
+ All errors apart from SUBSCRIPTION_LIMIT_EXCEEDED close the connection 
+
+ 
+ ResponseMessage
+ ResponseMessage is the base class for responses back to the client; the discriminator is op=<message type> 
+ Key fields: 
+ op=connection - The ConnectionMessage sent on your connection. 
+
+ op=status - The StatusMessage (returned in response to every RequestMessage) 
+
+ op=mcm - The MarketChangeMessage that carries the initial image and updates to markets that you have subscribed to. 
+
+ op=ocm - The OrderChangeMessage that carries the initial image and updates to orders that you have subscribed to. 
+
+
+ ResponseMessages
+ As mentioned earlier the id=<request id> and links your request with your response. 
+ ChangeMessages carry the id of the original request that established the subscription 
+ Status / StatusMessage
+ Every request receives a status response with a matching id.
+ Key fields:
+ statusCode -  The status of the request i.e success/fail
+ SUCCESS - Call processed correctly
+
+ FAILURE - Call failed (inspect errorCode and errorMessage for reason)
+
+ 
+ connectionClosed - Boolean set to true if the connection was closed as a result of a failure
+
+ errorCode - The type of error in case of a failure - see the swagger spec/enum.
+
+ errorMessage - Additional message in case of a failure
+
+ connectionsAvailable – The number of additional connections you can open (populated only in response to authentication requests)
+
+ ErrorCode
+ This categorizes the various error codes that could be expected (these are subject to change and extension)
+ Category 
+ ErrorCode 
+ Description 
+ 
+ Protocol  
+ General errors not sent with id linking to specific request (as no request context) 
+ 
+ INVALID_INPUT
+ Failure code returned when an invalid input is provided (could not deserialize the message) 
+ 
+ TIMEOUT
+ Failure code when a client times out (i.e. too slow sending data) 
+ 
+ 
+ Authentication
+ Specific to authentication 
+ 
+ NO_APP_KEY
+ Failure code returned when an application key is not found in the message 
+ 
+ INVALID_APP_KEY
+ Failure code returned when an invalid application key is received 
+ 
+ NO_SESSION
+ Failure code returned when a session token is not found in the message 
+ 
+ INVALID_SESSION_INFORMATION
+ Failure code returned when an invalid session token is received 
+ 
+ NOT_AUTHORIZED
+ Failure code returned when the client is not authorized to perform the operation 
+ 
+ MAX_CONNECTION_LIMIT_EXCEEDED
+ Failure code returned when a client tries to create more connections than allowed to 
+ 
+ TOO_MANY_REQUESTS
+ Failure code is returned when a client makes too many requests within a short time period 
+ 
+ 
+ Subscription  
+ Specific to subscription requests 
+ 
+ SUBSCRIPTION_LIMIT_EXCEEDED
+ Thrown when subscribed to more markets than allowed to - set to 200 markets by default 
+ 
+ INVALID_CLOCK
+ Failure code returned when an invalid clock is provided on re-subscription (check initialClk / clk supplied) 
+ 
+   
+ 
+  General
+   General errors which may or may not be linked to specific request id 
+ 
+ UNEXPECTED_ERROR
+ Failure code returned when an internal error occurred on the server. Slow or unstable internet connectivity on the client side is one of the most common root causes of this issue. See FAQ’s for further information
+ 
+ CONNECTION_FAILED
+ Failure code used when the client/server connection is terminated 
+ 
+ Connection / ConnectionMessage
+ This is received by the client when it successfully opens a connection to the server
+ Key fields:
+ connectionId - This is a unique identifier that  you must supply for support. 
+
+
+ Initial ConnectionMessage
+ On establishing a connection a client receives a ConnectionMessage - the  connectionId   must  be logged & supplied on any support queries : 
+ {"op":"connection","connectionId":"002-230915140112-174"} 
+ Authentication / AuthenticationMessage
+ This message is the first message that the client must send on connecting to the server - you must be authenticated before any other request is processed.  
+ Key fields:
+ op=authentication - This is the operation type
+
+ appKey - This is your application key to identify your application
+
+ session - The session token generated from  API login. 
+
+ Common Authentication Errors
+ Some common authentication errors that you should handle - are defined on ErrorCodes enum (these will all close your connection):
+ NO_APP_KEY / INVALID_APP_KEY - Check you are using the correct app key
+
+ NO_SESSION / INVALID_SESSION_INFORMATION - Check the session is current
+
+ NOT_AUTHORIZED - Check that you are using the correct Application Key/session and that it has been set up by Betfair Developer Support.
+
+ MAX_CONNECTION_LIMIT_EXCEEDED - Check that you are not creating too many connections / are closing connections properly.
+
+ TOO_MANY_REQUESTS – Check that you are not creating/closing connections too frequently
+
+ Subscription / SubscriptionMessage
+ This message changes the client's subscription - there are currently two subscription message types:
+ op=marketSubscription- MarketSubscriptionMessage which streams:
+ op=mcm - MarketChangeMessage - the price changes for a market
+
+ 
+ op=orderSubscription- OrderSubscriptionMessage which streams:
+ op=ocm - OrderChangeMessage - the order changes for a market
+
+ 
+ On creating a subscription you will receive:
+ StatusMessage confirming the status of your request
+
+ A stream of ChangeMessages linked with the id of the request which is composed of:
+ Initial image
+
+ Deltas to the initial image
+
+ 
+ It is possible to subscribe multiple times - each replaces the previous (each will send a new initial image and deltas) - they are not additive.
+ Key fields on a SubscriptionMessage: 
+ segmentationEnabled=true 
+ segmentation breaks up large messages and improves: end to end performance, latency, time to the first and last byte
+
+ see the topic on change message segmentation for a full explanation of how this works.
+
+ 
+ conflateMs - Specifies a forced conflation rate (in milliseconds) - Please note : the field value will be 180000 if you access the Stream API using a Delayed App Key or have an account delay in place when using the Live App Key.
+
+ heartbeatMs - Specifies a minimum interval that a client would expect to receive a message (in milliseconds) - bounds are 500 to 5000 milliseconds.
+ If no change is delivered in this interval then an empty change message will be sent with a ChangeType.HEARTBEAT
+
+ 
+ initialClk & clk - these two sequence tokens allow for faster recovery in the event of a disconnection:
+ If supplied (with identical subscription criteria) you will receive a delta to your previous state rather than a full initial image
+
+ see the topic on re-subscription for a full explanation of how this works.
+
+ 
+ ChangeMessage
+ This message is the payload that delivers changes (both initial image & updates) to a client - there are currently two change message types:
+ op=mcm - MarketChangeMessage
+
+ op=ocm - OrderChangeMessage
+
+
+ The Order Changes and Market Changes are being produced by 2 independent systems so we can give no guarantee as to the order in which they will be sent.
+ Key fields on a ChangeMessage:
+ ct= ChangeType - this enumeration is used to identify the type of change
+ SUB_IMAGE - The initial image returned from a subscription. May also happen while the subscription is ongoing and should replace local cache entirely.
+
+ RESUB_DELTA - A patch returned from a resubscribe
+
+ HEARTBEAT - An empty message published if no data has been sent within heartbeatMs
+ We send these to maintain the connection to you and detect closed connections
+
+ You can use the heartbeatMs to verify that you are still connected
+
+ 
+ <null / not set> - An update message
+
+ 
+ segmentType - SegmentType - this enumeration identifies multi-part segmented messages:
+ SEG_START - Start of a segmented message
+
+ SEG - Middle part of a segmented message
+
+ SEG_END - Last part of a segmented message
+
+ <null / not set> - A non-segmented message
+
+ 
+ conflateMs - the actual conflation being used 
+ This might be different from what you specified - if your account is for instance delayed or your request was out of bounds
+
+ 
+ status -  Stream status: set to null if the exchange stream data is up to date and  503  if the downstream services are experiencing latency 
+
+ heartbeatMs - the actual heartbeat being used
+ This might be different from what you specified as we bounds check
+
+ You can use this to verify your connection is live (as you should receive 1 message within this time period).
+
+ 
+ pt - publishTime - the time we sent the message
+
+ initialClk & clk - these two sequence tokens allow for faster recovery in the event of a disconnection:
+ If we send these then they should be stored
+
+ see the topic on re-subscription for a full explanation of how this works.
+
+ 
+ Heartbeat ChangeMessages
+ heartbeatMs is a guarantee of how often (even with no changes) you will receive a ChangeMessage; i.e.:
+ If heartbeatMs= 500 and your subscription has not changed in 500ms then we will send an empty ChangeMessage with ct=HEARTBEAT
+ (this verifies your connection is live and processing data)
+ Change Message Segmentation
+ The below shows the key interactions for subscription & changes with segmentation applied:
+ Typically on changing your subscription, you will want to clear any local cache you maintain.
+ Initial Image Handling
+ How can I detect the start of an initial image & clear my cache?
+ ct=ChangeType.SUB_IMAGE and segmentType=null or SegmentType.SEG_START indicates the start of a new image
+
+ 
+ How can I detect the end of an initial image?
+ ct=ChangeType.SUB_IMAGE and segmentType=null or SegmentType.SEG_END indicates the end of a new image
+
+ 
+ When I change Subscription how do I safely ignore messages for a previous subscription?
+ All ChangeMessages carry have id=<request id> this allows safe disposal during subscription change
+
+ 
+ MarketSubscriptionMessage
+ This subscription type is used to receive price changes for one or more markets; your subscription criteria determine what you see.
+ Coarse vs Fine Grain Subscriptions
+ It is preferable to use coarse grain subscriptions (subscribe to a super-set) rather than fine grain (specific market ids).
+ If you find yourself frequently changing subscriptions you probably want to find a wider super-set to subscribe to
+
+ A Market Subscription has two types of filter:
+ marketFilter - MarketFilter - this is a horizontal filter of markets that you require (i.e. rows)
+
+ marketDataFilter - MarketDataFilter - this is a vertical filter of fields that you require (i.e. columns)
+
+ Limiting the amount of data that you consume will make your initial image much smaller (and faster) & suppress changes that are uninteresting to you.
+ Market Filtering / MarketFilter 
+ As with the Betting API users have the ability to filter the market data they get from the Exchange Stream API (ESA).
+ All subscriptions are evaluated with a few default criteria:
+ Standard jurisdictional filtering that restricts visibility (mirroring site behavior)
+
+ Permissions that control:
+ Specific sports that you are entitled to
+
+ A maximum consumption limit (exceeding this will result in an error with details of the limit: ErrorCode.SUBSCRIPTION_LIMIT_EXCEEDED)
+
+ 
+  Users can then specify the following filters when they subscribe to ESA:
+ Filter name 
+ Type 
+ Mandatory 
+ Description 
+ 
+ marketIds 
+ Set<String>
+ No
+ If no marketIds passed user will be subscribed to all markets
+ 
+ bspMarket 
+ Boolean 
+ No
+ Restrict to Bsp markets only, if True or non-bsp markets if False. If not specified then returns both BSP and non-BSP markets
+ 
+ bettingTypes 
+ Set<BettingType>
+ No
+ Restrict to markets that match the betting type of the market (i.e. Odds, Asian Handicap Singles, or Asian Handicap Doubles)
+ 
+ eventTypeIds 
+ Set<String>
+ No
+ Restrict markets by event type associated with the market. (i.e., "1" for Football, "7" for Horse Racing, etc)
+ 
+ eventIds 
+ Set<String>
+ No
+ Restrict markets by the event id associated with the market.
+ 
+ turnInPlayEnabled 
+ Boolean 
+ No
+ Restrict to markets that will turn in play if True or will not turn in play if false. If not specified, returns both.
+ 
+ marketTypes 
+ Set<String>
+ No
+ Restrict to markets that match the type of the market (i.e., MATCH_ODDS, HALF_TIME_SCORE). You should use this instead of relying on the market name as the market type codes are the same in all locales
+ 
+ venues 
+ Set<String>
+ No
+ Restrict markets by the venue associated with the market. Currently, only Horse Racing markets have venues.
+ 
+ countryCodes 
+ Set<String>
+ No
+ Restrict to markets that are in the specified country or countries. Please note: default value is 'GB' when the correct country code cannot be determined.
+ 
+ raceTypes
+ Set<String>
+ No
+ Restrict to markets of a specific raceType. Valid values are - Harness, Flat, Hurdle, Chase, Bumper, NH Flat, Steeple (AUS/NZ races), and NO_VALUE (when no valid race type has been mapped).    
+ For AUS/NZ races, the following definitions apply:
+ Flat ’ – Used for standard ANZ thoroughbred races
+
+ ‘ Harness ’ – Self-explanatory – used for Aus/NZ harness racing events.
+
+ ‘ Steeple ’ – Used for Aus/NZ steeple chase races.
+
+ ‘ Hurdle ’ - Used for Aus/NZ hurdle races.
+
+ 
+ Example marketSubscription 
+ For example a subscription message with almost all filters enabled will look something like this:   
+ {"op":"marketSubscription","id":2,"marketFilter":{"marketIds":["1.120684740"],"bspMarket":true,"bettingTypes":["ODDS"],"eventTypeIds":["1"],"eventIds":["27540841"],"turnInPlayEnabled":true,"marketTypes":["MATCH_ODDS"],"countryCodes":["ES"]},"marketDataFilter":{}} 
+
+ Subscriptions with no matching markets
+ We don't verify your subscription criteria as you could potentially subscribe to either a wild card (which would include future markets) or a future marketid which we do not have yet but would send on arrival
+ Market data field filtering / MarketDataFilter 
+ A market data filter restricts the fields that you get back (and only if the fields have changed). 
+ Key fields: 
+ fields - A set of field filter flags (see below) 
+
+ ladderLevels - For depth-based ladders the number of levels to send (1 to 10). 1 is best price to back or lay etc. 
+
+ Ladder Levels Behaviour
+ When bdatb and bdatl are sent with an empty array ("bdatb:[]"), this indicates that there's an update but this has been filtered out due to the "ladderLevels" marketDataFilter i.e. the update falls outside of the "ladderLevels" specified.
+ The field filter flags are defined as shown below.  
+ Please note: An illustration of the equivalent data as displayed on the Betfair website can be viewed here 
+ Filter name 
+ Fields: 
+ Type 
+ Description 
+ 
+ EX_BEST_OFFERS_DISP 
+ bdatb, bdatl 
+ level, price, size
+ Best prices including Virtual Bets - depth is controlled by ladderLevels (1 to 10) - Please note: The virtual price stream is updated ~150 m/s after non-virtual prices. Virtual prices are calculated for all ladder levels. 
+
+ 
+ EX_BEST_OFFERS 
+ batb, batl 
+ level, price, size
+ Best prices not including Virtual Bets - depth is controlled by ladderLevels (1 to 10). 
+ 
+ EX_ALL_OFFERS 
+ atb, atl 
+ price, size
+ Full available to BACK/LAY ladder. 
+ 
+ EX_TRADED 
+ trd 
+ price, size
+ Full traded ladder.  This is the amount traded at any price on any selection in the market 
+ 
+ EX_TRADED_VOL 
+ tv 
+ size
+ Market and runner level traded volume.   
+ 
+ EX_LTP 
+ ltp 
+ price
+ The "Last Price Matched" on a selection. 
+ 
+ EX_MARKET_DEF 
+ marketDefinition 
+ MarketDefinition
+ Send market definitions.     To receive updates to any of the following fields -  Exchange Stream API#MarketDefinitionFields   
+ 
+ SP_TRADED 
+ spb, spl 
+ price, size
+ Starting price ladder. 
+ 
+ SP_PROJECTED 
+ spn, spf 
+ price
+ Starting price projection prices.  To receive any update to the  Betfair SP Near and Far price.   
+ 
+ Examples
+ Multiple field filters may be combined; a subscription message that contains data fields should look like the following:  
+ 
+ {"op":"marketSubscription","id":2,"marketFilter":{"marketIds":["1.120684740"]},"marketDataFilter":{"fields":["EX_BEST_OFFERS_DISP","EX_BEST_OFFERS","EX_ALL_OFFERS","EX_TRADED","EX_TRADED_VOL","EX_LTP","EX_MARKET_DEF","SP_TRADED","SP_PROJECTED"]}}  
+
+ The below example shows how to correctly use the  ladderLevels  marketDataFilter:
+ 
+ {"op": "marketSubscription", "id": 1, "marketFilter": { "marketIds": [ "1.134085859" ] }, "marketDataFilter": { "ladderLevels": 2, "fields": [ "EX_MARKET_DEF", "EX_BEST_OFFERS" ] } }
+
+ Correctly configuring field filters
+ Correctly configuring field filters can help by:
+ Reducing the size (and time) of initial images
+
+ Reducing the rate of change (as only changes matching your field filter are sent)
+
+ MC / MarketChangeMessage
+ This is the ChangeMessage stream of data we send back to you once you subscribe to the market stream. 
+ Key fields:
+ <as for ChangeMessage>
+
+ mc / MarketChange - this list of market changes contains the changes in the markets that you have subscribed to.  
+ img / Image - replace existing prices/data with the data supplied: it is not a delta (or null if delta)
+
+ tv - The total amount matched across the market.  This value is truncated at 2dp (or null if unchanged) 
+
+ marketDefinition / MarketDefinition - this is sent in full (but only if it has changed)
+
+ rc / RunnerChange - this is sent to supply the details of a runner (namely prices)
+ con / Conflated = true - if this is sent then more than one change is combined in this message
+
+ Values -  Please note:  these fields are only included if: the field is in your marketSubscription marketDataFilter (e.g. EX_LTP ), the field changed at ANY POINT since last received clock (clk).
+ tv - Traded Volume on this runner.
+
+ ltp - Last Traded Price on this runner.
+
+ spn - Starting Price Near
+
+ spf - Starting Price Far
+
+ 
+ Level / Depth Based Ladders (level, price, size - triples - keyed by level):
+ size=0 - indicates a remove
+
+ batb / batl - Best Available To Back / Best Available To Lay (non-virtual)
+
+ bdatb / bdatl - Best Display Available To Back / Best Display Available To Lay (virtual)
+
+ 
+ Price point / full depth Ladders (price, size - tuples - keyed by price):
+ size=0 - indicates a remove
+
+ atb / atl - Available To Back / Available To Lay (these are the raw/full depth non-virtual prices)
+
+ spb / spl - Starting Price (Available To) Back / Starting Price (Available To) Lay (please be aware that these values are aligned with atb / atl)
+
+ trd - Traded
+
+ 
+ 
+ 
+ Building a price cache
+ Most of the change-based data (RunnerChange) is delta based - this means a few rules: 
+ img / Image - if this is set to true then you should replace this item in your cache 
+
+ Values - the values sent are nullable & are not sent if they are not changed (i.e. if tv has not changed then there will be no field in the message) 
+
+ Level / Depth-Based ladders 
+ [0, 1.2, 20] -> Insert / Update level 0 (top of book) with price 1.2 and size 20 
+
+ [0, 1.2, 0] -> Remove level 0 (top of book) i.e. ladder is now empty 
+
+ 
+ Price point / full-depth ladders 
+ [1.2, 20] -> Insert / Update price 1.2 with size 20 
+
+ [1.2, 0] -> Remove price 1.2 i.e. there is no size at this price 
+
+ 
+ Examples 
+ You will always receive an update at every position in the ladder that changed so you'll never have to assume anything based on the message you receive.
+ Seeing [position,0,0] means that there’s nothing at that position anymore (and hence [0,0,0] means there’s nothing in the entire ladder anymore)
+ Placed the first bet on a selection 
+
+ `"batl":[[0,1.4,2],[1,0,0],[2,0,0],[3,0,0],[4,0,0],[5,0,0],[6,0,0],[7,0,0],[8,0,0],[9,0,0]]`
+ Placed a second bet that didn't disturb the first bet's position 
+
+ `"batl":[[1,1.5,2]]`
+ Placed a third bet that bumped the previous two down the ladder 
+
+ `"batl":[[2,1.5,2],[1,1.4,2],[0,1.3,2]]`
+ Cancelled the top position causing the other positions to move up (and the bottom position to become empty) 
+
+  `"batl":[[2,0,0],[1,1.5,2],[0,1.4,2]]`
+ Cancelled by market to remove the remaining 2 positions in one go 
+
+   `"batl":[[1,0,0],[0,0,0]]`
+ MarketDefinition Fields
+ The following fields are returned within the marketDefintition. 
+ Field Name 
+ Description 
+ Type 
+ 
+ Id
+ Market Id - the id of the market 
+ string
+ 
+ Venue
+ The venue - applies to horse racing and greyhound markets only
+ string
+ 
+ raceType
+ Harness, Flat, Hurdle, Chase, Bumper, NH Flat, Steeple (AUS/NZ races), and NO_VALUE (when no valid race type has been mapped).    
+ string
+ 
+ settledTime
+ Market settled time.
+ date-time
+ 
+ timeZone
+ This is the timezone in which the event is taking place
+ string
+ 
+ eachWayDivisor
+ The divisor is returned for the marketType EACH_WAY only and refers to the fraction of the win odds at which the place portion of an each way bet is settled
+ double
+ 
+ bspMarket
+ If 'true' the market supports Betfair SP betting
+ boolean
+ 
+ turnInPlayEnabled
+ If 'true' the market is set to turn in-play
+ boolean
+ 
+ priceLadderDefinition
+ Definition of the price ladder type “CLASSIC”, “FINEST”, “LINE_RANGE”
+ string
+ 
+ keyLineDefinition
+ Definition of a markets key line selection (for valid markets), comprising the selectionId and handicap of the team it is applied to
+ integer
+ 
+ persistenceEnabled
+ If 'true' the market supports 'Keep' bets if the market is to be turned in-play
+ boolean
+ 
+ marketBaseRate
+ The commission rate applicable to the market
+ double
+ 
+ eventId
+ The unique id for the event
+ string
+ 
+ eventTypeId
+ The unique eventTypeId that the event belongs to
+ string
+ 
+ numberOfWinners
+ The number of winners on a market
+ integer
+ 
+ countryCode
+ The events ISO 3166-2 country code.
+ string
+ 
+ lineMaxUnit
+ For Handicap and Line markets, the maximum value for the outcome, in market units for this market (eg 100 runs).
+ double
+ 
+ bettingType
+ The market betting type i.e. ODDS,ASIAN_HANDICAP_DOUBLE_LINE, ASIAN_HANDICAP_SINGLE_LINE
+ string
+ 
+ marketType
+ Market base type
+ string
+ 
+ marketTime
+ The market start time
+ string
+ 
+ suspendTime
+ The market suspend time
+ string
+ 
+ bspReconciled
+ True if the market starting price has been reconciled
+ boolean
+ 
+ complete
+ If false, runners may be added to the market
+ boolean
+ 
+ inPlay
+ True if the market is currently in play
+ boolean
+ 
+ crossMatching
+ True if cross-matching is enabled for this market.
+ boolean
+ 
+ runnersVoidable
+ True if runners in the market can be voided
+ boolean
+ 
+ numberOfActiveRunners
+ The number of runners that are currently active. An active runner is a selection available for betting
+ integer
+ 
+ lineMinUnit
+ For Handicap and Line markets, the minimum value for the outcome, in market units for this market (eg 0 runs).
+ double
+ 
+ betDelay
+ The number of seconds an order is held until it is submitted into the market. Orders are usually delayed when the market is in-play
+ boolean
+ 
+ status
+ The status of the market, for example, OPEN, SUSPENDED, CLOSED (settled), etc.
+ string
+ 
+ regulators
+ The market regulators
+ string
+ 
+ discountAllowed
+ Indicate whether or not the users discount rate is taken into account in this market
+ boolean
+ 
+ openDate
+ The scheduled start date and time of the event.  This is GMT by default
+ date
+ 
+ version
+ A non-monotonically increasing number indicates market changes
+ long
+ 
+ suspendReason
+ Currently returned only for Soccer markets, when status = SUSPENDED. Possible values are Goal, Third Party Unavailable, Penalty, Red Card, Non In Play Market ,
+ string
+ 
+ betDelayModels
+ Indicates which bet delay model/s are applied to a market. PASSIVE, DYNAMIC or both.
+ PASSIVE - For in-play markets where betDelay > 0, orders that are guaranteed not to match immediately are accepted straight away, bypassing the bet delay wait. Order requirements (otherwise bets will be subject to the usual bet delay before being placed).
+ Only plain LIMIT orders are supported.
+
+ Allowed persistenceType: LAPSE
+
+ The following attributes are not supported and must be omitted: timeInForce, minFillSize, betTargetType
+
+ DYNAMIC - Indicates market is subject to dynamic in-play bet delays. This mean that the in-play betDelay will vary while the market is turned in-play.
+ Please note: Currently returned for Tennis markets only. Specifically, every game 3,5,7,9,11 or game which decides a set (potentially 6,8,10,12) the betDelay is reduced to 1 second.
+ string
+ 
+ RunnerDefinition Fields
+ The following fields are returned within the runnerDefinition.
+ Field Name 
+ Description 
+ Type 
+ 
+ sortPriority
+ Indicates the sort order of the runner on www.betfair.com
+ integer
+ 
+ removalDate
+ The date and time the selection was removed from the market
+ date-time
+ 
+ name
+ The name of the selection
+ string
+ 
+ Id
+ The unique id for the selection
+ integer
+ 
+ hc
+ Handicap - the handicap of the runner (selection) (null if not applicable)
+ double
+ 
+ adjustmentFactor
+ The adjustment factor appicable is the runner is removed from the market
+ double
+ 
+ bsp
+ The Betfair Starting Price of the selection
+ double
+ 
+ status
+ The status of the selection (ACTIVE, WINNER, LOSER, REMOVED, REMOVED_VACANT, HIDDEN, PLACED)
+ string
+ 
+ KeyLineSelection Fields
+ Description of a markets key line selection, comprising the selectionId and handicap of the team it is applied to.
+ Please Note - The KeyLine selection returned via the Exchange Stream API is based on raw (non virtual prices ) only. 
+ Field name 
+ Description 
+ Type 
+ 
+ id
+ Selection ID of the runner in the key line handicap.
+ integer
+ 
+ hc
+ Handicap value of the key line.
+ double
+ 
+ OrderSubcription Message
+ This subscription type is used to receive order changes; the subscription message has one type of filter
+ orderFilter (optional)
+
+ OrderFilter
+ This optional filter already filters by your account, but additional data shaping is supported
+ Filter name 
+ Type 
+ Mandatory 
+ Default 
+ Description 
+ 
+ accountIds 
+ Set<Integer>
+ No
+ null
+ This is for internal use only & should not be set on your filter (your subscription is already locked to your account).
+ 
+ includeOverallPosition 
+ Boolean 
+ No
+ true
+ Returns overall / net position (OrderRunnerChange.mb / OrderRunnerChange.ml)
+ 
+ customerStrategyRefs 
+ Set<String>
+ No
+ null
+ Restricts to specified customerStrategyRefs (specified in placeOrders ) ; this will filter orders and StrategyMatchChanges accordingly (Note: overall position is not filtered)
+ 
+ partitionMatchedByStrategyRef 
+ Boolean 
+ No
+ false
+ Returns strategy positions (OrderRunnerChange.smc=Map<customerStrategyRef, StrategyMatchChange>) - these are sent in delta format as per overall position.
+ 
+ Example
+ 
+ {"op":"orderSubscription","orderFilter":{"includeOverallPosition":false,"customerStrategyRefs":["betstrategy1"],"partitionMatchedByStrategyRef":true},"segmentationEnabled":true} 
+
+ OCM / OrderChangeMessage
+ This is the ChangeMessage stream of data we send back to you once you subscribe to the order stream. 
+ Key fields:
+ <as for ChangeMessage>
+
+ oc / OrderAccountChange - the modifications to account's orders (will be null on a heartbeat)
+ closed - indicates when the market is closed
+
+ id / Market Id - the id of the market the order is on
+
+ fullImage - replace existing data at market level with the data supplied: it is not a delta (or null if delta)
+
+ orc / Order Changes - a list of changes to orders on a runner
+ fullImage - replace existing data at runner level with the data supplied: it is not a delta (or null if delta)
+
+ id / Selection Id - the id of the runner (selection) 
+
+ hc /  Handicap - the handicap of the runner (selection) (null if not applicable) 
+
+ uo / Unmatched Orders - orders on this runner that are unmatched
+ Every order change is sent in full; the transient on a change to EXECUTION_COMPLETE is sent (but it would not be sent on the initial image)
+
+ id / Bet Id - the id of the order    
+
+ p / Price - the original placed price of the order
+
+ s / Size - the original placed size of the order
+
+ bsp / BSP Liability - the BSP liability of the order (null if the order is not a BSP order)
+
+ side / Side - the side of the order
+
+ status / Status - the status of the order (E = EXECUTABLE, EC = EXECUTION_COMPLETE)
+
+ pt / Persistence Type - whether the order will persist at in play or not (L = LAPSE, P = PERSIST, MOC = Market On Close)
+
+ ot / Order Type - the type of the order (L = LIMIT, MOC = MARKET_ON_CLOSE, LOC = LIMIT_ON_CLOSE)
+
+ pd / Placed Date - the date the order was placed
+
+ md / Matched Date - the date the order was matched (null if the order is not matched)
+
+ cd / Cancelled Date - the date the order was cancelled (null if the order is not cancelled) 
+
+ ld / Lapsed Date - the date the order was lapsed (null if the order is not lapsed)
+
+ lsrc/Lapse Status Reason Code - the reason that some or all of this order has been lapsed (null if no portion of the order is lapsed)
+
+ avp / Average Price Matched - the average price the order was matched at (null if the order is not matched
+
+ sm / Size Matched - the amount of the order that has been matched
+
+ sr / Size Remaining - the amount of the order that is remaining unmatched
+
+ sl / Size Lapsed - the amount of the order that has been lapsed
+
+ sc / Size Cancelled - the amount of the order that has been cancelled
+
+ sv / Size Voided - the amount of the order that has been voided
+
+ rac / Regulator Auth Code - the auth code returned by the regulator
+
+ rc / Regulator Code - the regulator of the order 
+
+
+ rfo / Reference Order - the customer supplied order reference 
+
+ rfs / Reference Strategy - the customer-supplied strategy reference used to group orders together - default is ""
+
+
+ 
+ Price point / full depth Ladders (price, size - tuples - keyed by price) of matches:
+ mb / Matched Backs - matched amounts by distinct matched price on the Back side for this runner
+
+ ml / Matched Lays - matched amounts by distinct matched price on the Lay side for this runner 
+
+ 
+ 
+ 
+ Building an order cache
+ An order cache is somewhat simpler as orders are sent in full (on change) and only matches need delta merging
+ fullImage - if the market or runner's fullImage value is set to true then you should replace this item in your cache N.B. it is possible for the fulllImage flag to be sent with an  empty  update for a market/runner which indicates you no longer have any position on that market/runner and it can be removed from your cache completely
+
+ Orders - replace each order according to order id. 
+
+ Price point / full depth ladders 
+ [1.2, 20] -> Insert / Update price 1.2 with size 20 
+
+ [1.2, 0] -> Remove price 1.2 i.e. there is no size at this price 
+
+ An empty list of points also means the ladder is now empty 
+
+ 
+ Currencies
+ Market subscriptions - are always in underlying exchange currency - GBP. The default roll-up for GBP is £1 for batb / batl  and bdatb / bdatl , This means that stakes of less than £1 (or currency equivalent) are rolled up to the next available price on the odds ladder. For atb / atl there is no roll-up. Available volume is displayed at all prices including those with less than £2 available.
+ Orders subscriptions - are provided in the currency of the account that the orders are placed in.
+ Unmatched Orders
+ New subscriptions: Will receive an initial image with only E - Executable orders (unmatched).
+ Live subscriptions: Will receive a transient of the order to EC - Execution Complete as the order transits into that state (allowing you to remove the order from your cache).
+ Please note: EXECUTION_COMPLETE (fully matched) orders are only returned when transitioning from EXECUTABLE to EXECUTION_COMPLETE. The full details of EXECUTION_COMPLETE orders can only be viewed using listCurrentOrders/listMarketBook using orderProjections.
+ Market Level Snapshots
+ During normal streaming, you may on rare occasions receive a market-level snapshot, in which case you should replace the item in your cache. The update will be a fullImage, as shown in the example below
+ {"clk": "AIElAJgiAIYjAMAhAOsm", "oc": [{"orc": [{"uo": [{"status": "E", "rfs": "", "sm": 0, "pt": "L", "sr": 2, "rc": "REG_GGC", "sv": 0, "side": "B", "p": 990, "s": 2, "pd": 1603894536000, "sl": 0, "sc": 0, "ot": "L", "rfo": "", "id": "215144775671", "rac": ""}], "id": 30246, "fullImage": true}], "id": "1.174743281", "fullImage": true}], "pt": 1603895058618, "op": "ocm"} 
+ Example Output of Order Stream Message on Connection/Re-connection
+ Here's an example showing the data provided following a connection/re-connection to the Order Stream API.  The example shows matched backs on two separate markets one of which has a size remaining of 0.25.
+ Example of Order Stream Output (reconnection) - with size remaining 
+ 
+ {
+ "op": "ocm",
+ "id": 6,
+ "initialClk": "GpOH0JwBH762w50BHKKomJ0BGpzR5ZoBH5mWsJwB",
+ "clk": "AAAAAAAAAAAAAA==",
+ "conflateMs": 0,
+ "heartbeatMs": 5000,
+ "pt": 1468943673782,
+ "ct": "SUB_IMAGE",
+ "oc": [{
+ "id": "1.125657695",
+ "orc": [{
+ "fullImage": true,
+ "id": 48756,
+ "mb": [
+ [1.4, 2]
+ ]
+ }]
+ }, {
+ "id": "1.125657760",
+ "orc": [{
+ "fullImage": true,
+ "id": 151478,
+ "uo": [{
+ "id": "71352090695",
+ "p": 12,
+ "s": 5,
+ "side": "B",
+ "status": "E",
+ "pt": "L",
+ "ot": "L",
+ "pd": 1468919099000,
+ "md": 1468933833000,
+ "avp": 12,
+ "sm": 4.75,
+ "sr": 0.25,
+ "sl": 0,
+ "sc": 0,
+ "sv": 0
+ }],
+ "mb": [
+ [12, 4.75]
+ ]
+ }]
+ }]
+}
+
+ Remaining 0.25 is then matched on marketId  1.125657760 
+ Example of Order Stream Output - with size remaining matched 
+ 
+ {
+ "op": "ocm",
+ "id": 10,
+ "initialClk": "GtD10ZwBH5OJxZ0BHK75mZ0BGsKq6JoBH4THsZwB",
+ "clk": "AAAAAAAAAAAAAA==",
+ "conflateMs": 0,
+ "heartbeatMs": 5000,
+ "pt": 1468944647413,
+ "ct": "SUB_IMAGE",
+ "oc": [{
+ "id": "1.125670254",
+ "orc": [{
+ "fullImage": true,
+ "id": 5643663
+ }]
+ }, {
+ "id": "1.125657760",
+ "orc": [{
+ "fullImage": true,
+ "id": 151478,
+ "mb": [
+ [12, 5]
+ ]
+ }]
+ }, {
+ "id": "1.125657695",
+ "orc": [{
+ "fullImage": true,
+ "id": 48756,
+ "mb": [
+ [1.4, 2]
+ ]
+ }]
+ }]
+ }
+
+ Heartbeat / HeartbeatMessage
+ This is an explicit heartbeat request (in addition to the server heartbeat interval which is automatic). 
+ This functionality should not normally be necessary unless you need to keep a firewall open. 
+ Do I need to use HeartbeatMessage?
+ No - under normal circumstances the subscription level ChangeType.HEARTBEAT is an acceptable guarantee of connection health.
+ Use the HeartbeatMessage only if you need to keep a firewall open - as it will incur some performance penalty (as a response will block your connection)
+ Re-connection / Re-subscription
+ Although maintaining long-lived connections is actively encouraged (for the Stream API for example), for a number of reasons within & beyond our direct control, we cannot guarantee that keep-alive connection won't be forcibly closed.  We, therefore, advise all customers to ensure that they have reconnection logic in place to handle any connection termination scenarios. 
+ If a client is disconnected a client may connect, authenticate and re-subscribe.
+ Prerequisite steps:
+ Store your subscription criteria (re-subscribe will only work correctly with identical subscription criteria.
+
+ Store initialClk (normally only initial image) & Clk (normally on every non-segmented message or a SEG_END) on any change message they are sent on.
+
+ The connection is broken.
+ Connect & Authenticate as normal
+
+ Subscribe setting initialClk and Clk to the last values sent on the subscription
+
+ Change message with ChangeType.RESUB_DELTA is sent - this will patch your cache
+
+ Some markets might have img=true set indicating they are either new or can't be patched.
+
+ Easiest way to implement re-subscribe
+ Store any new subscription message you send as a "pending subscription"
+
+ Store this as a "active subscription" once you get your initial image
+
+ Update the initialClk & clk on the subscription message with any non-null values
+
+ Resend this message after re-connecting
+
+ Performance Considerations
+ Here are a few tips on performance which are worth bearing in mind:
+ Performance tips
+ A single market subscription & a subscription to all markets have an identical latency:
+ Cost is identical as the two subscriptions above would evaluate in sequence and thus with the same average latency.
+
+ The initial image is more costly to send than extra updates.
+
+ Limiting data with appropriate filters reduces initial image time
+
+ 
+ Segmented data will always outperform non-segmented data:
+ You will be processing a buffer while another is in-flight and another is being prepared to send
+
+ 
+ Writes to your connection are directly affected by how quickly you consume data & clear your socket's buffer
+ Consuming data slowly is effectively identical to setting conflation.
+
+ If you receive con=true flag on a market - then you are either:
+
+ 
+ 
+ 
+ consuming data slower than the rate of delivery
+
+ The client subscription message has the "conflateMs" parameter set to a value greater than '0'.
+
+ the Stream API has a slow publishing cycle resulting in multiple updates being pushed in the same message.
+
+ 
+ 
+ Currency Support
+ The Exchange Stream API supports GBP currency only.
+ Those looking to convert data from GBP to a different currency should use  listCurrencyRates  to do so.
+ Currencies
+ Market subscriptions - are always in underlying exchange currency - GBP. The default roll-up for GBP is £1 for batb / batl  and bdatb / bdatl , This means that stakes of less than £1 (or currency equivalent) are rolled up to the next available price on the odds ladder. For atb / atl there is no roll-up. Available volume is displayed at all prices including those with less than £2 available.
+ Orders subscriptions - are provided in the currency of the account that the orders are placed in.
+ Runner Removals on the Order Stream
+ When a Rule 4 Runner Removal occurs in a Horse Race the price of matched bets on remaining runners are reduced by a Reduction Factor.
+ For these matched bets, you will receive on the Order Stream both a uo for the affected bet and the relevant updates to mb or ml (reducing the matched volume at the original matched price and adding volume at the new reduced price).
+ Initial bet placement at price 12 
+ {"op":"ocm","id":2,"clk":"AK0CAPsBALEC","pt":1467219304831,"oc":[{"id":"1.102151675","orc":[{"fullImage":true,"id":6113662,"uo":[{"id":"10822867886","p":12,"s":2,"side":"B","status":"E","pt":"L","ot":"L","pd":1467219304000,"sm":0,"sr":2,"sl":0,"sc":0,"sv":0,"rac":"","rc":"REG_GGC"}]}]}]} 
+ 
+ Bet fully matched at price 12 
+ {"op":"ocm","id":2,"clk":"AK0CAPsBALMC","pt":1467219316709,"oc":[{"id":"1.102151675","orc":[{"id":6113662,"uo":[{"id":"10822867886","p":12,"s":2,"side":"B","status":"EC","pt":"L","ot":"L","pd":1467219304000,"md":1467219316000,"avp":12,"sm":2,"sr":0,"sl":0,"sc":0,"sv":0}],"mb":[[12,2]]}]}]} 
+ 
+ Runner removed (and so bet was reduced in price to 9.47) 
+ {"op":"ocm","id":2,"clk":"AK0CAJACALsC","pt":1467219376611,"oc":[{"id":"1.102151675","orc":[{"id":6113662,"uo":[{"id":"10822867886","p":12,"s":2,"side":"B","status":"EC","pt":"L","ot":"L","pd":1467219304000,"md":1467219316000,"avp":9.47,"sm":2,"sr":0,"sl":0,"sc":0,"sv":0}],"mb":[[9.47,2],[12,0]]}]}]} 
+ 
+ See the avp in the uo record showing the new price of 9.47 and see the two entries in mb, one to remove the previously added size of 2 at a price point 12 and one to add the size of 2 into the new price point of size 9.47.
+ Bets placed on the actual removed runner will be voided/lapsed (for matched/unmatched bets respectively) and these will also be sent through on the Order Stream. 
+ Identifying Cancelled BSP Bets
+ Whilst BSP bets cannot be cancelled in general, in the scenario where a Limit Price applied to the BSP bet is updated this is modelled as a Cancellation of the original bet with the original Limit Price and a Place of a new bet with the new Limit Price.
+ In this scenario, the cancellation of the original bet can be identified by looking at the "Cancelled Date" field ("cd") on the "Unmatched Orders" object ("uo") - N.B. there will be no "Size Cancelled" ("sc") because a BSP bet does not have any Size before reconciliation.
+ VAR (Video Assistant Referee) Void Bets Handling
+ Here’s an example of the Stream API output during a VAR goal cancellation.
+ Bets placed after goal scored by home team: 
+ 
+ {"op": "ocm", "clk": "AAAAbwBSAE0AAA==", "status": 503, "pt": 1740062495457, "oc": [{"id": "1.183211193", "orc": [{"id": 55271, "uo": [{"id": "309703551064", "p": 2, "s": 2, "side": "L", "status": "EC", "pt": "L", "ot": "L", "pd": 1740062487000, "md": 1740062495000, "avp": 2, "sm": 2, "sr": 0, "sl": 0, "sc": 0, "sv": 0, "rac": "", "rc": "REG_GGC", "rfo": "", "rfs": ""}], "ml": [[2, 4]], "smc": {"": {"ml": [[2, 4]]}}}]}]}
+{"op": "ocm", "clk": "AAAAcgBSAE0AAA==", "status": 503, "pt": 1740062516601, "oc": [{"id": "1.183211193", "orc": [{"id": 44787, "uo": [{"id": "309703551066", "p": 2, "s": 2, "side": "B", "status": "E", "pt": "L", "ot": "L", "pd": 1740062508000, "sm": 0, "sr": 2, "sl": 0, "sc": 0, "sv": 0, "rac": "", "rc": "REG_GGC", "rfo": "", "rfs": ""}]}]}]}
+
+   Same bets after goal scored by home team have been cancelled: 
+ 
+ {"id": 55271, "uo": [{"id": "309703551064", "p": 2, "s": 2, "side": "L", "status": "EC", "pt": "L", "ot": "L", "pd": 1740062487000, "md": 1740062495000, "sm": 0, "sr": 0, "sl": 0, "sc": 0, "sv": 2, "rac": "", "rc": "REG_GGC", "rfo": "", "rfs": ""}
+{"id": 44787, "uo": [{"id": "309703551066", "p": 2, "s": 2, "side": "B", "status": "EC", "pt": "L", "ot": "L", "pd": 1740062508000, "ld": 1740062723421, "sm": 0, "sr": 0, "sl": 2, "sc": 0, "sv": 0, "rac": "", "rc": "REG_GGC", "rfo": "", "rfs": ""}
+
+ Key difference being in the values of sizeMatched and sizeRemaining before the event and sizeVoided and sizeLapsed after the event. 
+ Line Markets
+ Line markets being sent on the Market Stream can be identified by the bettingType field of MarketDefinition (with value of "LINE").
+ The MarketDefinition of Line markets provides some additional fields that will be null for all other types,
+ lineMaxUnit - maximum value for the outcome, in market units for this market (eg 100 runs).
+
+ lineMinUnit - minimum value for the outcome, in market units for this market (eg 0 runs).
+
+ lineInterval - the odds ladder on this market will be between the range of lineMinUnit and lineMaxUnit, in increments of the interval value.e.g. If lineMinUnit=10 runs, lineMaxUnit=20 runs, lineInterval=0.5 runs, then valid odds include 10, 10.5, 11, 11.5 up to 20 runs.
+
+ For updates for Orders on Line markets received on the Order Stream be aware of how the following properties behave,
+ price - line markets operate at even-money odds of 2.0. However, the price for these markets refers to the line positions available as defined by the markets min-max range and interval steps.
+
+ side - for Line markets a 'B' bet refers to a SELL line and an 'L' bet refers to a BUY line.
+
+ averagePriceMatched - this value is not meaningful for activity on Line markets and is not guaranteed to be returned or maintained for these markets.
+
+ Stream API Status - latency
+ If any latency occurs, the ChangeMessage for the Order and Market Stream will contain a ' status' field which will give an indication of the health of the stream data provided by the service.  This feature will be used in addition to the heartbeat mechanism which only gives an indication that the service is up but doesn't provide an indication of the latency of the data provided. 
+ By default, when the stream data is up to date the value is set to null and will be set to  503 when the stream data is unreliable (i.e. not all bets and market changes will be reflected on the stream) due to an increase in push latency.  Clients  shouldn't  disconnect if status 503 is returned; when the stream recovers updates will be sent containing the latest data.  The status is sent per subscription on heartbeats and change messages.
+ Example of message containing the status field: 
+ {"op":"ocm","id":3,"clk":"AAAAAAAA","status":503,"pt":1498137379766,"ct":"HEARTBEAT"}
+ {"op":"mcm","id":2,"clk":"AAAAAAAA","status":503,"pt":1498137381621,"ct":"HEARTBEAT"
+ 
+ Stream Health
+ In addition to the Stream API status field, we'd recommend the below as best practice for monitoring the health of the Stream API:
+ Use heartbeat messages to confirm Stream API is healthy and that you are still connected
+
+ Messages with ChangeType.HEARTBEAT will be sent at the requested interval if no change has occurred.
+
+ If no message of any kind is received for 2 x heartbeat intervals then you may no longer be connected to initiate a fresh connection (use re-subscribe to continue where you left off)
+
+ Re-connect code should contain back-offs to avoid spamming the service if you are unable to connect for a prolonged period for any reason
+
+ Conflation
+ Conflation set to true ( con=true) in the stream message means that multiple stream updates have been pushed in the same cycle. 
+ This can happen due to the following reasons: 
+ The client socket buffer for the connection needs to be read (cleared) by the client in order for the Stream API to push the next cycle, if not the current update is skipped, and pushed with the next cycle resulting in "con = true".
+
+ The client subscription message has the "conflateMs" parameter set to a value greater than '0'.
+
+ The Stream API has a slow publishing cycle resulting in multiple updates being pushed in the same message.
+
+ Lapse Status Reason Code Possible Values
+ This field will now be present in some cases on the Order object of the Order Stream to denote the reason that some or all of the order is lapsed. It will be null if no portion of the order is lapsed or if the order lapsed for some reason other than those listed below.
+ The full list of currently supported values for this field is:
+ Code 
+ Description 
+ 
+ MKT_UNKNOWN
+ The market was unknown, presumably removed from the matcher (closed) between bet placement and matching.
+ 
+ MKT_INVALID
+  The market was known about but in an invalid state.
+ 
+ RNR_UNKNOWN
+ The runner was unknown, presumably removed between bet placement and matching.
+ 
+ TIME_ELAPSED
+ The bet was waiting in the queue too long, so was lapsed for safety.
+ 
+ CURRENCY_UNKNOWN
+ The bet's currency ID was not recognised by the matcher.
+ 
+ PRICE_INVALID
+ The bet's price was invalid, e.g. outside the defined ladder for the market.
+ 
+ MKT_SUSPENDED
+ The market was suspended at the time the bet came to be matched.
+ 
+ MKT_VERSION
+ The bet had a maximum market version set, and the market's version on matching was greater than this.
+ 
+ LINE_TARGET
+ The bet was on a line market, but was requested targeting profit or payout.
+ 
+ LINE_SP
+ The bet was on a line market, but was either a BSP bet directly or requested to PERSIST_TO_SP.
+ 
+ SP_IN_PLAY
+ The bet was a BSP bet that had somehow come to be placed after turn-in-play.
+ 
+ SMALL_STAKE
+ The bet's stake was worth less than half a penny in GBP.
+ 
+ PRICE_IMP_TOO_LARGE
+ When the bet came to be matched, the price available was better than its best-permitted price, suggesting a significant shift in the market, presumably due to a major incident, which may have rendered the bet unwanted.
+ 
+ Offline Documentation
+ An offline version of the Exchange Stream API is available via  ExchangeStreamAPI-March2018.pdf 
+ Please note, the full Exchange Stream API specification is available online here    
+ Known Issues
+ Markets moved under a new eventId - In certain circumstances, a market may move from one eventId to another due to actions performed by our Exchange Operations team.  This will cause the Exchange Stream API to hold two copies of the market in its cache and the initial image of the market provided will therefore contain both copies of the market.  In these circumstances, further Stream API updates will only be sent for the latest version of the market.  You can identify the latest version of the market using the "version" parameter returned in the initial image and should only store the market with the higher version number.
+
+ Trades with volume = 0 for all traded price points - e.g. [{"trd":[[1.75,0],[1.5,0],[1.25,0],[1.32,0],[1.57,0],[2.86,0],[1.82,0],[2.36,0],[1.76,0],[2.48,0],[1.51,0],[2.98,0],[1.26,0]...  - This is an artefact of settlement kicking off that moves the bets away from trading DB into the longer-term store. Any price change notifications triggered during this process will result in attempts to reconstruct the market view based on no bets being available and would result in this kind of notification being sent. 
+
+ Overview | Sample Application - C#, Java & Node.js | Swagger Definition | Typical Interactions with Stream API: | Connection | Protocol | TCP / SSL Connection | Basic Message Protocol | RequestMessage | ResponseMessage | Connection / ConnectionMessage | Authentication / AuthenticationMessage | Subscription / SubscriptionMessage | ChangeMessage | MarketSubscriptionMessage | Market Filtering / MarketFilter | Market data field filtering / MarketDataFilter | MarketDefinition Fields | RunnerDefinition Fields | KeyLineSelection Fields | OrderSubcription Message | Example Output of Order Stream Message on Connection/Re-connection | Heartbeat / HeartbeatMessage | Re-connection / Re-subscription | Performance Considerations | Currency Support | Runner Removals on the Order Stream | Identifying Cancelled BSP Bets | VAR (Video Assistant Referee) Void Bets Handling | Line Markets | Stream API Status - latency | Stream Health | Conflation | Lapse Status Reason Code Possible Values | Offline Documentation | Known Issues 
+

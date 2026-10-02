@@ -1,0 +1,187 @@
+ [data-colorid=gesv0wfon6]{color:#202020} html[data-color-mode=dark] [data-colorid=gesv0wfon6]{color:#dfdfdf}[data-colorid=b5oczssfjq]{color:#202020} html[data-color-mode=dark] [data-colorid=b5oczssfjq]{color:#dfdfdf} Operation
+ 
+ listMarketCatalogue 
+ List< MarketCatalogue > listMarketCatalogue#listMarketCatalogue ( MarketFilter filter ,Set< MarketProjection >marketProjection, MarketSort sort, intmaxResults ,Stringlocale ) throws APINGException 
+ Returns a list of information about published ( ACTIVE/SUSPENDED ) markets that does not change (or changes very rarely). You use listMarketCatalogue to retrieve the name of the market, the names of selections and other information about markets.  Market Data Request Limits apply to requests made to listMarketCatalogue.
+ Please note: listMarketCatalogue does not return markets that are CLOSED.
+ Parameter name 
+ Type 
+ Required 
+ Description 
+ 
+ filter
+ MarketFilter 
+ 
+ The filter to select desired markets. All markets that match the criteria in the filter are selected.
+ 
+ marketProjection
+ Set< MarketProjection >
+  
+ The type and amount of data returned about the market.
+ 
+ sort
+ MarketSort 
+  
+ The order of the results. Will default to RANK if not passed. R ANK is an assigned priority that is determined by our Market Operations team in our back-end system. A result's overall rank is derived from the ranking given to the flowing attributes for the result. EventType, Competition, StartTime, MarketType, MarketId. For example, EventType is ranked by the most popular sports types and marketTypes are ranked in the following order: ODDS ASIAN LINE RANGE If all other dimensions of the result are equal, then the results are ranked in MarketId order. 
+ 
+ maxResults
+ int
+ 
+ limit on the total number of results returned, must be greater than 0 and less than or equal to 1000
+ 
+ locale
+ String
+  
+ The language used for the response. If not specified, the default is returned.
+ 
+ Return type 
+ Description 
+ 
+ List< MarketCatalogue >
+ output data
+ 
+ Throws 
+ Description 
+ 
+ APINGException 
+ Generic exception that is thrown if this operation fails for any reason.
+ 
+ Since 1.0.0 
+
+ RUNNER_METADATA Description
+ The RUNNER_METADATA returned by listMarketCatalogue for  Horse Racing  (when available) is described in the table below.
+ Parameter 
+ Description 
+ Example 
+ 
+ WEIGHT_UNITS
+ The unit of weight used
+ pounds
+ 
+ ADJUSTED_RATING
+ Adjusted ratings are race-specific ratings which reflect weights allocated in the race and, in some circumstances, the age of the horse. Collectively they represent the chance each runner has on form. https://www.timeform.com/Racing/Articles/How_the_ratings_for_a_race_are_calculated 
+ 79
+ 
+ DAM_YEAR_BORN
+ The year the horse’s mother's birth
+ 1997
+ 
+ DAYS_SINCE_LAST_RUN
+ The number of days since the horse last ran
+ 66
+ 
+ WEARING
+ Any extra equipment the horse is wearing
+ tongue strap
+ 
+ DAMSIRE_YEAR_BORN
+ The year in which the horse's grandfather was born on its mothers side
+ 1988
+ 
+ SIRE_BRED
+ The country were the horse's father was bred
+ IRE
+ 
+ TRAINER_NAME
+ The name of the horse's trainer
+ Fergal O'Brien
+ 
+ STALL_DRAW
+ The stall number the horse is starting from
+ 10
+ 
+ SEX_TYPE
+ The sex of the horse
+ f
+ 
+ OWNER_NAME
+ The owner of the horse
+ Mr M. C. Fahy
+ 
+ SIRE_NAME
+ The name of the horse's father
+ Revoque
+ 
+ FORECASTPRICE_NUMERATOR
+ The forecast price numerator
+ 13
+ 
+ FORECASTPRICE_DENOMINATOR
+ The forecast price denominator
+ 8
+ 
+ JOCKEY_CLAIM
+ The reduction in the weight that the horse carries for a particular jockey
+ 5
+ 
+ WEIGHT_VALUE
+ The weight of the horse
+ 163
+ 
+ DAM_NAME
+ The name of the horse's mother
+ Rare Gesture
+ 
+ AGE
+ The age of the horse
+ 7
+ 
+ COLOUR_TYPE
+ The colour of the horse
+ b
+ 
+ DAMSIRE_BRED
+ The country were the horse's grandfather was born
+ IRE
+ 
+ DAMSIRE_NAME
+ The name of the horse's grandfather
+ Shalford
+ 
+ SIRE_YEAR_BORN
+ The year the horse's father was born
+ 1994
+ 
+ OFFICIAL_RATING
+ The horses official rating
+ 97
+ 
+ FORM
+ The horses recent form
+ 212246
+ 
+ BRED
+ The country in which the horse was born
+ IRE
+ 
+ runnerId
+  
+ The runnerId for the horse
+  
+ 62434983
+ 
+ JOCKEY_NAME
+ The name of the jockey. Please note : This field will contain ' Reserve ' in the event that the horse has been entered into the market as a reserve runner. Any reserve runners will be withdrawn from the market once it has been confirmed that they will not run.
+ Paddy Brennan
+ 
+ DAM_BRED
+ The country where the horse's mother was born
+ IRE
+ 
+ COLOURS_DESCRIPTION
+ The textual description of the jockey silk
+ Royal blue and black check, white sleeves and cap
+ 
+ COLOURS_FILENAME
+ A relative URL to an image file corresponding to the jockey silk. You must add the value of this field to the base URL: https://content.betfair.com/feeds_images/Horses/SilkColours/  
+ c20140225lei/00058836.jpg 
+ 
+ CLOTH_NUMBER
+ The number on the saddle-cloth
+ 5
+ 
+ CLOTH_NUMBER ALPHA
+ The number on the saddle-cloth. For US Racing were the runner is paired, this field will display the cloth number of the paired runner e.g. "1A"
+  
+ 
+ 

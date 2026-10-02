@@ -35,6 +35,18 @@ def freni_live_aperti(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def esposizioni_dei_bot_mai_dal_db_vero(monkeypatch):
+    """02/10 (punto 27): lo scanner NON dry legge le esposizioni di tutti i bot
+    dal DB (``db.list_bot_exposures``), come gia' fa per Mike. Nei test nessuna
+    esposizione per difetto e MAI una lettura del DB vero; chi le prova le
+    dichiara con ``monkeypatch`` (stessa forma del vero)."""
+    from Betfair.safe_strategy import db as _scan_db
+
+    monkeypatch.setattr(_scan_db, "list_bot_exposures", lambda: {})
+    yield
+
+
+@pytest.fixture(autouse=True)
 def indice_eventi_chiusi_pulito():
     """Ogni test parte come un servizio APPENA AVVIATO.
 

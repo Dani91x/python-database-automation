@@ -470,6 +470,133 @@ def _sweep_cancel(trading: Any, market_ids: List[str],
     return out
 
 
+# ------------------------------------------------------- ARRESTO (02/10)
+# Punto 26 dell'elenco dell'utente: all'arresto (segnale, errore fatale, stop
+# dall'app, freno) la sessione usciva con ``sys.exit`` senza togliere gli ordini
+# vivi (``except`` esterno di ``run_session``): in LIVE restavano sull'exchange
+# senza padrone. Ora, PRIMA di uscire: (1) annullo degli ordini NON abbinati
+# della sessione, con un tempo massimo; (2) le posizioni ABBINATE che restano
+# NON si chiudono di iniziativa: diario + CRITICAL «posizione lasciata a
+# mercato per arresto»; (3) solo poi l'uscita. Stesso codice in paper e live:
+# l'annullo passa da flumine (``market.cancel_order``, simulato in paper); il
+# ripiego REST per bet_id, MAI market-wide, esiste solo in live (in paper gli
+# ordini non sono sull'exchange e un cancel REST toccherebbe il conto vero:
+# stessa regola di ``_handle_flumine_crash``).
+
+#: tempo massimo per veder sparire gli ordini annullati (poi ripiego/diario)
+ARRESTO_ANNULLO_TIMEOUT_S = 10.0
+#: cause di arresto: una posizione abbinata lasciata a mercato e' un CRITICAL
+CAUSE_ARRESTO = frozenset({"stop_app", "freno", "segnale", "errore_fatale"})
+#: codice dell'avviso in ``live_alerts``
+CODICE_ARRESTO = "SCALPER_ARRESTO"
+
+
+def _ordini_vivi_lista(framework: Any) -> Optional[List[Any]]:
+    """[(market, order)] degli ordini della sessione ancora VIVI
+    (``_STATI_VIVI``), dai blotter di tutti i mercati. ``None`` = blotter
+    illeggibile (mai "nessuno" a occhio)."""
+    try:
+        out = []
+        for m in list(getattr(framework, "markets", None) or []):
+            blotter = getattr(m, "blotter", None)
+            if blotter is None:
+                continue
+            for o in list(blotter):
+                st = getattr(o, "status", None)
+                nome = getattr(st, "name", st)
+                if str(nome or "").upper() in _STATI_VIVI:
+                    out.append((m, o))
+        return out
+    except Exception:  # noqa: BLE001 - blotter mutato dal thread flumine
+        return None
+
+
+def annulla_ordini_vivi_all_arresto(
+    framework: Any, trading: Any, session_paper: bool, *, flumine_vivo: bool,
+    timeout_s: float = ARRESTO_ANNULLO_TIMEOUT_S, ora: Any = time.monotonic,
+    dormi: Any = time.sleep,
+) -> Dict[str, Any]:
+    """Annulla gli ordini NON abbinati della sessione (mai le posizioni).
+
+    1. flumine vivo: ``market.cancel_order(order)`` per ogni ordine vivo (la
+       stessa via delle strategie; in paper la esegue il simulatore), poi si
+       aspetta al massimo ``timeout_s`` che spariscano dal blotter;
+    2. LIVE, se ne restano (o flumine e' morto): ripiego REST MIRATO ai loro
+       bet_id (``_sweep_cancel``), mai market-wide; in PAPER nessun REST.
+    Non solleva mai: torna l'esito per il diario."""
+    esito: Dict[str, Any] = {"vivi_prima": None, "annullo_chiesto": 0,
+                             "vivi_dopo": None, "rest": None, "paper": bool(session_paper)}
+    vivi = _ordini_vivi_lista(framework)
+    esito["vivi_prima"] = None if vivi is None else len(vivi)
+    if vivi and flumine_vivo:
+        for market, order in vivi:
+            try:
+                market.cancel_order(order)
+                esito["annullo_chiesto"] += 1
+            except Exception as exc:  # noqa: BLE001 - si prova su TUTTI
+                esito.setdefault("errori", []).append(str(exc)[:120])
+        scadenza = ora() + max(0.0, float(timeout_s))
+        while ora() < scadenza:
+            rimasti = _ordini_vivi_lista(framework)
+            if rimasti is not None and not rimasti:
+                break
+            dormi(0.5)
+    rimasti = _ordini_vivi_lista(framework)
+    if rimasti and not session_paper and trading is not None:
+        mids = sorted({str(getattr(o, "market_id", None) or getattr(m, "market_id", ""))
+                       for m, o in rimasti})
+        bets = [str(getattr(o, "bet_id")) for _, o in rimasti if getattr(o, "bet_id", None)]
+        if bets:
+            esito["rest"] = _sweep_cancel(trading, [m for m in mids if m], bets)
+    esito["vivi_dopo"] = None if rimasti is None else len(rimasti)
+    return esito
+
+
+def chiudi_all_arresto(db: Any, event_id: str, framework: Any, trading: Any,
+                       session_paper: bool, causa: str, *, flumine_vivo: bool,
+                       timeout_s: float = ARRESTO_ANNULLO_TIMEOUT_S,
+                       ora: Any = time.monotonic, dormi: Any = time.sleep) -> Dict[str, Any]:
+    """Il pezzo che manca prima di ogni uscita della sessione: annullo degli
+    ordini vivi (``annulla_ordini_vivi_all_arresto``), diario, e per le cause
+    di ARRESTO un CRITICAL se resta una posizione abbinata o un ordine vivo.
+    Le posizioni NON si chiudono qui (regola dell'utente). Non solleva mai."""
+    try:
+        esito = annulla_ordini_vivi_all_arresto(
+            framework, trading, session_paper, flumine_vivo=flumine_vivo,
+            timeout_s=timeout_s, ora=ora, dormi=dormi)
+    except Exception as exc:  # noqa: BLE001 - l'uscita non si blocca mai
+        esito = {"errore": str(exc)[:200], "vivi_dopo": None}
+    non_flat = _dichiarazione_non_flat(framework)
+    esito["posizione"] = non_flat
+    esito["causa"] = causa
+    try:
+        db.log(event_id, "error" if (non_flat or esito.get("vivi_dopo")) else "info",
+               {"msg": "arresto: ordini vivi annullati prima dell'uscita", **esito})
+    except Exception:  # noqa: BLE001 - diario best-effort
+        pass
+    ordini_rimasti = esito.get("vivi_dopo")
+    rest_ok = bool((esito.get("rest") or {}).get("ok")) and not (esito.get("rest") or {}).get("ko")
+    problemi = []
+    if non_flat and causa in CAUSE_ARRESTO:
+        problemi.append("posizione lasciata a mercato per arresto: " + non_flat)
+    if ordini_rimasti and not rest_ok:
+        problemi.append(f"{ordini_rimasti} ordini ancora vivi dopo l'annullo "
+                        f"({'PAPER, simulati' if session_paper else 'LIVE: VERIFICALI sul conto'})")
+    elif ordini_rimasti is None:
+        problemi.append("ordini vivi non verificabili (blotter illeggibile)")
+    if problemi:
+        try:
+            db.sb.table("live_alerts").insert({
+                "level": "CRITICAL", "code": CODICE_ARRESTO,
+                "message": (f"sessione {event_id} ({'paper' if session_paper else 'live'}) "
+                            f"arresto [{causa}]: " + "; ".join(problemi))[:500],
+                "event_id": event_id,
+            }).execute()
+        except Exception:  # noqa: BLE001 - alert best-effort
+            pass
+    return esito
+
+
 def _sniper_profit_target(cp: Dict[str, Any]) -> float:
     """Tetto profitto della caccia sniper dai params UI (default 0.01).
 
@@ -912,6 +1039,12 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
     strategy = None
     framework = None
     stopped_by_ui = False
+    # 02/10 (punto 26): cio' che serve all'arresto anche se si esce da un
+    # punto qualunque del ``try`` (eccezione, segnale)
+    trading = None
+    session_paper = True
+    runner = None
+    causa_arresto: Optional[str] = None
     try:
         control = db.get_control(ev)
         if not control or control.get("status") not in ("requested", "arming", "running"):
@@ -1541,6 +1674,9 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                 # si marca nella riga, l'auto-mode la riarma al rilascio
                 if freno and status not in ("stopping", "stopped", "error"):
                     fermata_freno = freno
+                # 02/10 (punto 26): e' un ARRESTO (app o freno)
+                causa_arresto = ("freno" if freno and status not in ("stopping", "stopped", "error")
+                                 else "stop_app")
                 clean_break = True
                 break
             # vita sessione: pre-match KO+10'; ht_mode ~KO+70'; sniper/theta
@@ -1590,6 +1726,13 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             # sweep MIRATO ai bet_id del blotter — vedi _handle_flumine_crash.
             _handle_flumine_crash(db, ev, trading, market_ids, session_paper,
                                   framework=framework)
+        # 02/10 (punto 26): ARRESTO (stop dall'app, freno) - prima di spegnere
+        # flumine si annullano gli ordini NON abbinati rimasti dopo il
+        # force-flat e si dichiara la posizione che resta (mai chiusa da qui).
+        # Fine vita e partita finita: invariati (non sono un arresto).
+        elif causa_arresto in CAUSE_ARRESTO:
+            chiudi_all_arresto(db, ev, framework, trading, session_paper, causa_arresto,
+                               flumine_vivo=runner.is_alive())
         try:
             # BUG FIX (cert 10/07): flumine 2.13.11 esce dal run() SOLO con un
             # TerminationEvent in handler_queue — _running=False non è mai testato
@@ -1622,12 +1765,23 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             error=("; ".join(_errori) or None))
         db.log(ev, "info", {"msg": f"sessione {final}",
                             "stats": _final_stats})
-    except Exception as exc:  # noqa: BLE001
+    except (Exception, KeyboardInterrupt) as exc:  # noqa: BLE001
+        # 02/10 (punto 26): anche ``KeyboardInterrupt``/segnale (prima nessun
+        # handler: la riga restava 'running' e gli ordini sull'exchange). Prima
+        # di uscire: annullo degli ordini vivi, diario + CRITICAL della
+        # posizione lasciata a mercato, POI lo stato e l'uscita. Le altre
+        # ``BaseException`` (SystemExit, i fermi del banco che simulano un
+        # processo ucciso) passano come prima.
+        segnale = isinstance(exc, KeyboardInterrupt)
         logger.exception("[scalper-sess] sessione %s in errore", ev)
+        if framework is not None:
+            chiudi_all_arresto(db, ev, framework, trading, session_paper,
+                               "segnale" if segnale else "errore_fatale",
+                               flumine_vivo=bool(runner is not None and runner.is_alive()))
         flush()
-        db.set_control(ev, status="error", error=str(exc)[:500],
+        db.set_control(ev, status="error", error=str(exc)[:500] or type(exc).__name__,
                        stopped_at=_now_iso())
-        db.log(ev, "error", {"msg": str(exc)[:500]})
+        db.log(ev, "error", {"msg": str(exc)[:500] or type(exc).__name__})
         sys.exit(1)
 
 
@@ -1639,7 +1793,34 @@ def main() -> None:
     # repo root nel path (db_client, config) quando lanciato con -m dal root
     sys.path.insert(0, os.path.abspath(os.path.join(
         os.path.dirname(__file__), "..", "..", "..")))
+    installa_segnali_di_arresto()
     run_session(str(sys.argv[1]))
+
+
+def _al_segnale(signum: int, _frame: Any) -> None:
+    """02/10 (punto 26): un segnale di arresto diventa un ``KeyboardInterrupt``
+    nel thread principale, cioe' passa dall'``except`` di ``run_session``:
+    annullo degli ordini vivi, diario/CRITICAL, stato, uscita."""
+    raise KeyboardInterrupt(f"segnale {signum}")
+
+
+def installa_segnali_di_arresto() -> List[int]:
+    """SIGTERM e (Windows) SIGBREAK -> arresto ordinato. Ctrl+C e' gia' un
+    ``KeyboardInterrupt``. NB: ``Popen.terminate()``/``taskkill /F`` su Windows
+    sono TerminateProcess, che nessun processo puo' intercettare."""
+    import signal
+
+    fatti = []
+    for nome in ("SIGTERM", "SIGBREAK"):
+        num = getattr(signal, nome, None)
+        if num is None:
+            continue
+        try:
+            signal.signal(num, _al_segnale)
+            fatti.append(int(num))
+        except (ValueError, OSError):  # fuori dal thread principale
+            continue
+    return fatti
 
 
 if __name__ == "__main__":
