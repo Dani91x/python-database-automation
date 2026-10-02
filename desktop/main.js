@@ -267,7 +267,7 @@ function cancellaArrestoAllAvvio(root) {
 }
 
 // tempo massimo dichiarato di attesa PRIMA di forzare (taskkill), SOLO per i
-// figli che leggono il file (elenco sotto): lo scalper aspetta fino a 60s la
+// figli che leggono il file (elenco sotto): lo scalper aspetta (vedi sotto) la
 // chiusura flat delle sue sessioni (scalper_service.py, kill-switch) + un
 // margine; i due runner 25s per la specifica del cantiere A (ramo peggiore
 // 15s di attesa "nessun mercato" + chiusura follow + flush + logout Betfair);
@@ -280,8 +280,12 @@ const ARRESTO_ORDINATO_LABELS = new Set([
     'tennis-bot-service', 'scalper-service',
 ]);
 
+// 02/10 (R2): lo scalper ora aspetta le sue sessioni fino a
+// scalper_service.tempo_supervisore_arresto_s() (132 s: battito + flat di 3
+// strategie + annullo degli ordini + segnale): qui quel tempo + margine.
+// Il test test_scalper_arresto_ordinato_2026_10_02.py confronta i due numeri.
 function shutdownGraceMs(label) {
-    if (label === 'scalper-service') return 70_000;
+    if (label === 'scalper-service') return 150_000;
     return 25_000;
 }
 // <<< K-SPEGNIMENTO-ORDINATO --------------------------------------------------

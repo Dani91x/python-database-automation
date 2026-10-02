@@ -236,7 +236,12 @@ _CHIAMANTI_AUTORIZZATI: Dict[str, _Autorizzato] = {
     "Betfair/stream/scalper/scalper_session.py": _Autorizzato(
         motivo=(
             "_sweep_cancel: cancel_orders REST di emergenza (bypassa flumine) "
-            "se il thread della sessione muore con ordini vivi (fix 15/07-17/07)"
+            "se il thread della sessione muore con ordini vivi (fix 15/07-17/07); "
+            "02/10 (punto 26, R3): all'ARRESTO (stop dall'app, freno, segnale, "
+            "errore fatale) e a FINE VITA ``annulla_ordini_vivi_all_arresto`` "
+            "chiama market.cancel_order sui soli ordini NON abbinati della "
+            "sessione e, in LIVE, il ripiego _sweep_cancel mirato ai loro bet_id "
+            "(mai market-wide, mai in paper)"
         ),
         strade=("S4a",),
     ),

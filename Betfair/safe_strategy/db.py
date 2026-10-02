@@ -324,3 +324,179 @@ def list_mike_followed_event_ids() -> Optional[List[str]]:
         if not _is_missing_table(e):
             logger.warning("[safe-scan] lettura mike_events KO: %s", str(e)[:160])
         return None
+
+
+# ---------------------------------------------------------------------------
+# 02/10 (punto 27, ordine dell'utente: "lo scanner deve sapere le posizioni di
+# tutti i bot; SOLO QUANDO I MERCATI SONO CLOSED [...] possiamo liberare lo
+# scanner") - ESPOSIZIONI DI TUTTI I BOT, paper E live, in sola lettura.
+#
+# Fonti = le righe che i bot GIA' scrivono (nessuna tabella nuova, nessuna
+# migrazione, nessun processo nuovo; Mike resta su
+# ``list_mike_followed_event_ids``, invariata):
+#   * ``omega_trades``           - Omega, stati pending/open/hedged;
+#   * ``safe_strategy_trades``   - Safe calcio e tennis, stati pending/open/hedged;
+#   * ``betfair_live_orders``    - lo SPECCHIO del runner e della sessione scalper
+#     (scalper, sniper, theta, ordini via runner di Mike/Omega/Safe, manuali
+#     dall'app): ordini in uno stato VIVO;
+#   * ``betfair_live_positions`` - posizioni aperte (``esposizione_aperta``) su
+#     un mercato non ancora regolato nella stessa modalita';
+#   * ``tennis_live_orders`` / ``tennis_live_positions`` - i bot tennis
+#     (tennis_scalper, tennis_pro, tennis_flb, tennis_swing, safe_tennis).
+# Ogni fonte e' letta da sola: una lettura fallita torna None SOLO per quella
+# fonte e il chiamante tiene l'ultima lista buona (mai "nessuna esposizione"
+# per un errore di rete).
+# ---------------------------------------------------------------------------
+#: stati delle righe dei diari dei bot che sono un impegno (ordine vivo,
+#: posizione abbinata, posizione coperta ma non ancora regolata)
+_STATI_TRADE_ESPOSTI = ("pending", "open", "hedged")
+#: stati flumine di un ordine vivo, nelle DUE grafie che lo specchio puo'
+#: contenere (nome dell'Enum e valore): ``Betfair/stream/db.py::STATI_ORDINE_VIVO``
+_STATI_ORDINE_VIVO_GRAFIE = (
+    "PENDING", "EXECUTABLE", "CANCELLING", "UPDATING", "REPLACING",
+    "Pending", "Executable", "Cancelling", "Updating", "Replacing",
+)
+#: le posizioni dello specchio si leggono solo se toccate negli ultimi N giorni:
+#: lo specchio non cancella le righe alla regolazione (FIX-A 26/09) e la
+#: tabella cresce con la storia. E' un LIMITE DI LETTURA, non una regola di
+#: "partita finita": lo scanner guarda eventi da -6 h a +14 h.
+_ESPOSIZIONI_FINESTRA_GIORNI = 7
+#: colonne lette dalle posizioni (``esposizione_aperta`` + chiavi)
+_COLONNE_POSIZIONI_ESPOSTE = ("mode,event_id,market_id,matched_if_win,matched_if_lose,"
+                              "unmatched_back_exposure,unmatched_lay_exposure")
+
+
+def _da_giorni(giorni: int) -> str:
+    from datetime import timedelta
+
+    return (datetime.now(timezone.utc) - timedelta(days=giorni)).isoformat()
+
+
+def _righe_esposte(righe: Any, bot: str, sport: Optional[str]) -> List[Dict[str, Any]]:
+    """Righe grezze -> [{event_id, market_id, sport, bot}] (solo con event_id)."""
+    out: List[Dict[str, Any]] = []
+    for r in righe or []:
+        if not isinstance(r, dict) or not r.get("event_id"):
+            continue
+        out.append({
+            "event_id": str(r["event_id"]),
+            "market_id": str(r["market_id"]) if r.get("market_id") else None,
+            "sport": str(r.get("sport") or sport or "") or None,
+            "bot": str(r.get("source") or r.get("bot") or bot),
+        })
+    return out
+
+
+def _leggi_fonte(nome: str, leggi: Any) -> Optional[List[Dict[str, Any]]]:
+    try:
+        return leggi()
+    except Exception as e:  # noqa: BLE001 - una fonte giu' non spegne le altre
+        if _is_missing_table(e):
+            return []          # tabella assente = quel bot non e' installato
+        logger.warning("[safe-scan] esposizioni %s: lettura KO: %s", nome, str(e)[:160])
+        return None
+
+
+#: R6 (02/10): UNA chiamata invece di 6-7 SELECT. La RPC e' nella migrazione
+#: ``migrations/scanner_list_bot_exposures_2026-10-02.sql`` (la applica
+#: l'utente); finche' manca si ripiega sulle letture per fonte e la si
+#: riprova ogni ``_RPC_ESPOSIZIONI_RIPROVA_S``.
+_RPC_ESPOSIZIONI = "list_bot_exposures"
+_RPC_ESPOSIZIONI_RIPROVA_S = 300.0
+_RPC_ESPOSIZIONI_STATO: Dict[str, Any] = {"assente_ts": None, "avvisato": False}
+
+
+def _rpc_assente(exc: Exception) -> bool:
+    """La funzione non esiste (migrazione non applicata): PostgREST risponde
+    404 con codice PGRST202 «Could not find the function»."""
+    msg = str(exc).lower()
+    return "pgrst202" in msg or "could not find the function" in msg or "404" in msg
+
+
+def list_bot_exposures(now_ts: Optional[float] = None) -> Dict[str, Optional[List[Dict[str, Any]]]]:
+    """{fonte: [{event_id, market_id, sport, bot}] | None} delle esposizioni
+    VIVE (ordini non abbinati + posizioni aperte) di TUTTI i bot, paper e live.
+
+    R6 (02/10): prima la RPC ``list_bot_exposures`` (UNA chiamata), che
+    restituisce ``{"rows": [{event_id, market_id, bot, modalita, sport}]}``:
+    esito ``{"rpc": righe}``. RPC che risponde con un errore: ``{"rpc": None}``
+    (il chiamante tiene l'ultima lista buona). RPC ASSENTE (404, migrazione non
+    applicata): WARNING una volta sola e ripiego sulle letture per fonte
+    (``_list_bot_exposures_a_fonti``), riprovando la RPC ogni 300 s."""
+    import time as _time
+
+    t = _time.time() if now_ts is None else float(now_ts)
+    st = _RPC_ESPOSIZIONI_STATO
+    if st["assente_ts"] is None or t - float(st["assente_ts"]) >= _RPC_ESPOSIZIONI_RIPROVA_S:
+        try:
+            res = get_supabase_client().rpc(_RPC_ESPOSIZIONI, {}).execute()
+            data = getattr(res, "data", None)
+            righe = data.get("rows") if isinstance(data, dict) else None
+            if not isinstance(righe, list):
+                raise ValueError(f"risposta inattesa: {type(data).__name__}")
+            st["assente_ts"] = None
+            return {"rpc": _righe_esposte(righe, "?", None)}
+        except Exception as e:  # noqa: BLE001 - mai fatale
+            if not _rpc_assente(e):
+                logger.warning("[safe-scan] esposizioni: RPC %s KO (tengo l'ultima lista "
+                               "buona): %s", _RPC_ESPOSIZIONI, str(e)[:160])
+                return {"rpc": None}
+            st["assente_ts"] = t
+            if not st["avvisato"]:
+                st["avvisato"] = True
+                logger.warning(
+                    "[safe-scan] RPC %s non disponibile (migrazione "
+                    "scanner_list_bot_exposures_2026-10-02.sql non applicata?): ripiego "
+                    "sulle letture per fonte (6-7 SELECT ogni 10 s)", _RPC_ESPOSIZIONI)
+    return _list_bot_exposures_a_fonti()
+
+
+def _list_bot_exposures_a_fonti() -> Dict[str, Optional[List[Dict[str, Any]]]]:
+    """Il RIPIEGO senza la RPC: una SELECT filtrata per fonte (piu' una sulle
+    regolazioni per le posizioni del calcio). ``None`` = lettura di QUELLA
+    fonte fallita (il chiamante tiene l'ultima buona)."""
+    sb = get_supabase_client()
+
+    def _omega() -> List[Dict[str, Any]]:
+        res = (sb.table("omega_trades").select("event_id,market_id,status")
+               .in_("status", list(_STATI_TRADE_ESPOSTI)).execute())
+        return _righe_esposte(getattr(res, "data", None), "omega", "calcio")
+
+    def _safe() -> List[Dict[str, Any]]:
+        res = (sb.table("safe_strategy_trades").select("event_id,market_id,sport,status")
+               .in_("status", list(_STATI_TRADE_ESPOSTI)).execute())
+        return _righe_esposte(getattr(res, "data", None), "safe", "calcio")
+
+    def _ordini(tabella: str, sport: str) -> List[Dict[str, Any]]:
+        # ``source`` NON si legge: se la sua migrazione mancasse, la SELECT
+        # fallirebbe e la fonte resterebbe cieca. Il nome del bot non serve.
+        res = (sb.table(tabella).select("event_id,market_id,status")
+               .in_("status", list(_STATI_ORDINE_VIVO_GRAFIE)).execute())
+        return _righe_esposte(getattr(res, "data", None), "specchio", sport)
+
+    def _posizioni(tabella: str, sport: str, regolate: bool) -> List[Dict[str, Any]]:
+        from Betfair.stream import db as _specchio
+
+        res = (sb.table(tabella).select(_COLONNE_POSIZIONI_ESPOSTE)
+               .gte("updated_at", _da_giorni(_ESPOSIZIONI_FINESTRA_GIORNI)).execute())
+        righe = getattr(res, "data", None) or []
+        if regolate:
+            # stessa regola della guardia del catalogo vuoto (cantiere A)
+            aperte = _specchio._posizioni_aperte_non_regolate(sb, righe)  # noqa: SLF001
+        else:
+            # il tennis non ha una tabella di regolazione (``tennis_db``)
+            aperte = [p for p in righe if _specchio.esposizione_aperta(p)]
+        return _righe_esposte(aperte, "specchio", sport)
+
+    return {
+        "omega": _leggi_fonte("omega", _omega),
+        "safe": _leggi_fonte("safe", _safe),
+        "ordini_calcio": _leggi_fonte(
+            "ordini_calcio", lambda: _ordini("betfair_live_orders", "calcio")),
+        "posizioni_calcio": _leggi_fonte(
+            "posizioni_calcio", lambda: _posizioni("betfair_live_positions", "calcio", True)),
+        "ordini_tennis": _leggi_fonte(
+            "ordini_tennis", lambda: _ordini("tennis_live_orders", "tennis")),
+        "posizioni_tennis": _leggi_fonte(
+            "posizioni_tennis", lambda: _posizioni("tennis_live_positions", "tennis", False)),
+    }

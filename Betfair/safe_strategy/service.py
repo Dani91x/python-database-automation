@@ -592,6 +592,24 @@ class Scanner:
         # LISTA, non insieme: l'ordine (soldi a rischio decrescente) e' un dato
         self._mike_followed_ids: List[str] = []
         self._mike_followed_ts: float = -1e9
+        # 02/10 (punto 27) - ESPOSIZIONI DI TUTTI GLI ALTRI BOT (Omega, Safe,
+        # specchio ordini/posizioni calcio e tennis: scalper, sniper, theta,
+        # bot tennis, manuali), paper E live: {fonte: [righe]}. Ultima lista
+        # BUONA per fonte (una lettura fallita non cancella niente). Stessa
+        # cadenza di Mike. In ``dry`` (banco, collaudo) nessuna lettura DB: il
+        # banco puo' dichiararle qui con la stessa forma.
+        self._esposizioni_fonti: Dict[str, List[Dict[str, Any]]] = {}
+        self._esposizioni_ts: float = -1e9
+        # punto 29 - eventi esposti che Betfair non restituisce a catalogo
+        # (chiusi/regolati): event_id -> ultimo tentativo (monotono)
+        self._esposti_non_a_catalogo: Dict[str, float] = {}
+        self._esposti_catalogo_ts: float = -1e9
+        # punto 28 - mercati esposti gia' chiesti a Betfair: market_id ->
+        # ("non_pubblicato" | "non_a_catalogo", istante monotono)
+        self._esposti_mercati_memo: Dict[str, Any] = {}
+        self._esposti_mercati_ts: float = -1e9
+        # episodi degli avvisi (uno per episodio, mai a raffica)
+        self._episodi_avviso: Dict[str, Any] = {}
 
     # --------------------------------------------------------------- orologio
     # Tre letture dell'ora, tutte incanalate qui: senza orologio iniettato
@@ -628,6 +646,40 @@ class Scanner:
             sort="FIRST_TO_START",
             max_results=_MAX_MARKETS,
         )
+        metas = self._metas_da_catalogo(sport, cats)
+        tenuti = self._tieni_eventi_vivi(sport, st.metas, metas)
+        # 02/10 (punto 29a) - PRIORITA' DEL CATALOGO: 1) i mercati con
+        # esposizione di QUALUNQUE bot entrano SEMPRE (chiamata mirata per
+        # event_id, fuori dal tetto e dalla finestra); 2) poi quelli in gioco e
+        # 3) i prossimi per orario: e' l'ordine ``FIRST_TO_START`` di Betfair
+        # sulla finestra -6 h/+14 h (chi e' gia' iniziato viene prima).
+        aggiunti = self._aggiungi_esposti_mancanti(sport, metas)
+        if len(cats or []) >= _MAX_MARKETS:
+            # 01/10: il catalogo e' TRONCATO (sort FIRST_TO_START: resta fuori la
+            # coda piu' lontana). Non si tace: e' il giorno in cui serve saperlo.
+            # 02/10 (punto 29c): WARNING col conteggio, nel log a ogni giro di
+            # catalogo e in ``live_alerts`` una volta per episodio.
+            ultimo = max((str(m.get("open_date") or "") for m in metas.values()), default="?")
+            in_gioco = sum(1 for e in metas if (self.events.get(e) or {}).get("inplay"))
+            testo = (f"catalogo {sport} TRONCATO al tetto Betfair di {_MAX_MARKETS} "
+                     f"mercati: dentro {len(metas)} eventi ({in_gioco} in gioco, "
+                     f"{aggiunti} esposti aggiunti fuori tetto); restano fuori le "
+                     f"partite con orario dopo {ultimo}")
+            logger.warning("[safe-scan] %s", testo)
+            self._avviso_episodio(f"catalogo_troncato:{sport}", True, "WARN",
+                                  "CATALOGO_TRONCATO", testo)
+        else:
+            self._avviso_episodio(f"catalogo_troncato:{sport}", None, "", "", "")
+        st.metas = metas
+        st.catalogue_ts = time.monotonic()
+        self._rebuild_market_index()
+        logger.info("[safe-scan] catalogo %s: %d eventi oggi%s", sport, len(metas),
+                    f" (+{tenuti} in gioco/esposti fuori finestra)" if tenuti else "")
+
+    def _metas_da_catalogo(self, sport: str, cats: Any) -> Dict[str, Dict[str, Any]]:
+        """Risposta di ``listMarketCatalogue`` (MATCH_ODDS) -> meta per evento.
+        (02/10: estratta da ``refresh_catalogue`` tale e quale, per riusarla
+        nella chiamata mirata degli esposti.)"""
         metas: Dict[str, Dict[str, Any]] = {}
         for c in cats or []:
             event = getattr(c, "event", None)
@@ -658,17 +710,73 @@ class Scanner:
                     else scanner.tennis_sides(runners)
                 ),
             }
-        tenuti = self._tieni_eventi_vivi(sport, st.metas, metas)
-        if len(cats or []) >= _MAX_MARKETS:
-            # 01/10: il catalogo e' TRONCATO (sort FIRST_TO_START: resta fuori la
-            # coda piu' lontana). Non si tace: e' il giorno in cui serve saperlo.
-            logger.warning("[safe-scan] catalogo %s TRONCATO a %d mercati: le partite "
-                           "piu' lontane restano fuori dal radar", sport, _MAX_MARKETS)
-        st.metas = metas
-        st.catalogue_ts = time.monotonic()
-        self._rebuild_market_index()
-        logger.info("[safe-scan] catalogo %s: %d eventi oggi%s", sport, len(metas),
-                    f" (+{tenuti} in gioco/esposti fuori finestra)" if tenuti else "")
+        return metas
+
+    def _aggiungi_esposti_mancanti(self, sport: str, metas: Dict[str, Dict[str, Any]],
+                                   now_mono: Optional[float] = None) -> int:
+        """02/10 (punto 29a/b) - gli eventi con ESPOSIZIONE di un bot che non sono
+        in ``metas`` (oltre il tetto dei 1000, fuori finestra, scanner appena
+        ripartito) entrano con UNA chiamata mirata per event_id (MATCH_ODDS,
+        stessa proiezione, nessun tetto di orario). Modifica ``metas`` sul posto
+        e torna quanti ne ha aggiunti.
+
+        * Evento che Betfair NON restituisce: il suo Match Odds non e' piu' a
+          catalogo, cioe' chiuso/regolato (``listMarketCatalogue`` restituisce
+          i mercati attivi): e' «partita finita» per Betfair, non un guasto.
+          Si scrive nel diario e si richiede solo dopo ``_CATALOGUE_TTL_SEC``.
+        * Chiamata FALLITA: CRITICAL con l'elenco (un episodio per elenco):
+          quelle posizioni restano senza riga finche' la chiamata non riesce.
+        Zero chiamate quando nessun esposto manca."""
+        from betfairlightweight import filters
+
+        t = time.monotonic() if now_mono is None else now_mono
+        mancanti = [
+            e for e in self._eventi_esposti(sport)
+            if e not in metas
+            and t - self._esposti_non_a_catalogo.get(e, -1e18) > _CATALOGUE_TTL_SEC
+        ]
+        if not mancanti or self.client is None:
+            self._avviso_episodio(f"esposti_senza_catalogo:{sport}", None, "", "", "")
+            return 0
+        mancanti = mancanti[:_MAX_CATALOGUE_RESULTS]
+        try:
+            cats = self.client.betting.list_market_catalogue(
+                filter=filters.market_filter(
+                    event_type_ids=[_SPORTS[sport]],
+                    event_ids=mancanti,
+                    market_type_codes=["MATCH_ODDS"],
+                ),
+                market_projection=[
+                    "EVENT", "COMPETITION", "MARKET_START_TIME", "RUNNER_DESCRIPTION",
+                ],
+                max_results=min(_MAX_CATALOGUE_RESULTS, len(mancanti)),
+            )
+        except Exception as e:  # noqa: BLE001 - il catalogo principale e' gia' buono
+            self.sessione.segnala_errore(e)
+            self._avviso_episodio(
+                f"esposti_senza_catalogo:{sport}", tuple(sorted(mancanti)), "CRITICAL",
+                "SCANNER_ESPOSTI_NON_SOTTOSCRITTI",
+                f"{len(mancanti)} partite {sport} CON ESPOSIZIONE di un bot non entrano "
+                f"nel feed (catalogo mirato fallito: {type(e).__name__}): "
+                f"{', '.join(mancanti[:20])}")
+            return 0
+        trovati = self._metas_da_catalogo(sport, cats)
+        aggiunti = 0
+        for eid in mancanti:
+            if eid in trovati:
+                metas[eid] = trovati[eid]
+                self._esposti_non_a_catalogo.pop(eid, None)
+                aggiunti += 1
+            else:
+                if eid not in self._esposti_non_a_catalogo:
+                    logger.info("[safe-scan] evento %s esposto ma Betfair non ne restituisce "
+                                "il Match Odds a catalogo (chiuso/regolato): partita finita", eid)
+                self._esposti_non_a_catalogo[eid] = t
+        if aggiunti:
+            logger.info("[safe-scan] catalogo %s: +%d eventi con esposizione fuori tetto/finestra",
+                        sport, aggiunti)
+        self._avviso_episodio(f"esposti_senza_catalogo:{sport}", None, "", "", "")
+        return aggiunti
 
     def _tieni_eventi_vivi(self, sport: str, vecchi: Dict[str, Dict[str, Any]],
                            nuovi: Dict[str, Dict[str, Any]],
@@ -684,13 +792,16 @@ class Scanner:
         piu': si conserva la meta gia' in mano. Modifica ``nuovi`` sul posto e
         torna quanti eventi ha tenuto."""
         now = now or datetime.now(timezone.utc)
-        esposti = {str(e) for e in self._mike_followed()} if sport == "calcio" else set()
+        # 02/10 (punto 27): esposizione di QUALUNQUE bot, ogni sport (prima:
+        # solo Mike e solo il calcio)
+        esp = self._esposizioni()
+        esposti = set(self._eventi_esposti(sport, esp))
         tenuti = 0
         for eid, meta in (vecchi or {}).items():
             if eid in nuovi:
                 continue
             ev = self.events.get(eid) or {}
-            if ev.get("mo_status") == "CLOSED":
+            if ev.get("mo_status") == "CLOSED" and not self._esposti_aperti_dopo_mo(eid, ev, esp):
                 continue
             if not (ev.get("inplay") or str(eid) in esposti):
                 continue
@@ -1076,6 +1187,32 @@ class Scanner:
                     out.append((scanner.rank_key(True, meta.get("open_date")), self.ht_markets[eid]["market_id"]))
         if sport == "calcio":
             out.extend(self._opp_ranked_market_ids(now))
+        # 02/10 (punti 27-28) - MERCATI CON ESPOSIZIONE di qualunque bot: mai
+        # esclusi da un tetto di candidatura (CS dal 30' con <=3 gol, HT 15-44',
+        # 1X2 1T <45', linea O/U gia' decisa, tetto dei 20 eventi a gol, MO
+        # CLOSED con un altro mercato esposto ancora aperto) finche' il LORO
+        # stato noto non e' CLOSED; e tier -1, davanti a tutto: a pool pieno
+        # escono per primi i mercati SENZA esposizione.
+        esp = self._esposizioni()
+        esposti = self._mercati_esposti(esp)
+        if esposti:
+            presenti = {mid for _, mid in out}
+            for eid in self._eventi_esposti(sport, esp):
+                ev = self.events.get(eid)
+                meta = self.sports[sport].metas.get(eid)
+                if ev is None or meta is None:
+                    continue
+                for mid in sorted(esp[eid]["mercati"]):
+                    if mid in presenti or mid == str(meta.get("market_id")):
+                        continue
+                    trovato = self.market_meta.get(mid)
+                    if not trovato or trovato[1].get("kind") not in ("cs", "ht", "opp"):
+                        continue
+                    if self._stato_blocco(ev, mid) == "CLOSED":
+                        continue
+                    out.append((scanner.rank_key(True, meta.get("open_date")), mid))
+                    presenti.add(mid)
+            out = [((-1,) + tuple(k) if mid in esposti else k, mid) for k, mid in out]
         out.sort()
         return out
 
@@ -1203,6 +1340,34 @@ class Scanner:
         ids = [mid for _, mid in ranked]
         if ids:
             self.stream.set_markets(ids)
+            self._diario_pool_stream(ids)
+
+    def _diario_pool_stream(self, ids: List[str]) -> None:
+        """02/10 (punti 28-29b/c) - il DIARIO del tetto del pool stream: i
+        mercati rimasti FUORI dalla sottoscrizione (vanno al poll REST di
+        ripiego). Con esposizione: CRITICAL con l'elenco (un episodio per
+        elenco); gli altri: WARNING col conteggio quando cambia. Sola lettura."""
+        try:
+            pianificati = self.stream.planned_ids()
+        except Exception:  # noqa: BLE001 - un diario non ferma mai lo scanner
+            return
+        fuori = [mid for mid in ids if mid not in pianificati]
+        esposti = self._mercati_esposti()
+        fuori_esposti = sorted(m for m in fuori if m in esposti)
+        if fuori_esposti:
+            self._avviso_episodio(
+                "pool_esposti", tuple(fuori_esposti), "CRITICAL",
+                "SCANNER_ESPOSTI_NON_SOTTOSCRITTI",
+                f"{len(fuori_esposti)} mercati CON ESPOSIZIONE fuori dal pool stream "
+                f"(solo poll REST di ripiego): {', '.join(fuori_esposti[:20])}")
+        else:
+            self._avviso_episodio("pool_esposti", None, "", "", "")
+        n_altri = len(fuori) - len(fuori_esposti)
+        if n_altri != self._episodi_avviso.get("pool_altri_n", 0):
+            self._episodi_avviso["pool_altri_n"] = n_altri
+            if n_altri:
+                logger.warning("[safe-scan] pool stream pieno: %d mercati SENZA esposizione "
+                               "fuori dalla sottoscrizione (poll REST di ripiego)", n_altri)
 
     def _segna_prezzi(self, market_id: Any, dallo_stream: bool) -> None:
         """Questo mercato ha appena consegnato un book CON PREZZI."""
@@ -1782,6 +1947,154 @@ class Scanner:
                 self._mike_followed_ids = [str(e) for e in ids]
         return list(self._mike_followed_ids)
 
+    # ------------------------------------------------- esposizioni (02/10)
+    _ESPOSIZIONI_TTL_S = 10.0
+
+    def _esposizioni(self, now_mono: Optional[float] = None) -> Dict[str, Dict[str, Any]]:
+        """02/10 (punto 27) - L'INTERFACCIA UNICA delle esposizioni di TUTTI i
+        bot, paper e live: ``{event_id: {"mercati": set, "bot": set, "sport": set}}``.
+
+        Fonti: Mike (``_mike_followed``, invariata) + ``db.list_bot_exposures``
+        (Omega, Safe, specchio ordini/posizioni calcio e tennis), cache di 10 s
+        come Mike. Una fonte che non si legge tiene l'ULTIMA lista buona: meglio
+        tenere una partita in piu' che togliere il feed a una posizione aperta.
+        ``mercati`` = i mercati che le righe dei bot dichiarano esposti;
+        ``priorita`` = in piu' il Match Odds di ogni evento esposto (la riga
+        stessa) e, per Mike (noto per evento), le sue due linee;
+        ``bot_mercato`` = market_id -> bot che lo espongono."""
+        if not self.dry:
+            t = time.monotonic() if now_mono is None else now_mono
+            if t - self._esposizioni_ts >= self._ESPOSIZIONI_TTL_S:
+                self._esposizioni_ts = t
+                fonti = scan_db.list_bot_exposures() or {}
+                if all(righe is not None for righe in fonti.values()):
+                    # lettura COMPLETA (RPC o tutte le fonti): sostituisce
+                    # tutto, cosi' il passaggio ripiego -> RPC non lascia
+                    # righe vecchie di una fonte che non si legge piu'
+                    self._esposizioni_fonti = {str(n): list(r) for n, r in fonti.items()}
+                else:
+                    for nome, righe in fonti.items():
+                        if righe is not None:
+                            self._esposizioni_fonti[str(nome)] = list(righe)
+        out: Dict[str, Dict[str, Any]] = {}
+
+        def _rec(eid: str) -> Dict[str, Any]:
+            return out.setdefault(eid, {"mercati": set(), "bot": set(), "sport": set(),
+                                        "bot_mercato": {}, "priorita": set()})
+
+        for righe in self._esposizioni_fonti.values():
+            for r in righe or []:
+                eid = str((r or {}).get("event_id") or "")
+                if not eid:
+                    continue
+                rec = _rec(eid)
+                if r.get("market_id"):
+                    rec["mercati"].add(str(r["market_id"]))
+                    rec["bot_mercato"].setdefault(str(r["market_id"]), set()).add(
+                        str(r.get("bot") or "?"))
+                if r.get("bot"):
+                    rec["bot"].add(str(r["bot"]))
+                if r.get("sport"):
+                    rec["sport"].add(str(r["sport"]))
+        for eid in self._mike_followed(now_mono):
+            rec = _rec(str(eid))
+            rec["bot"].add("mike")
+            rec["sport"].add("calcio")
+            # le due linee di Mike: per la PRIORITA' (non sono necessariamente
+            # entrambe esposte: Mike e' noto per evento, non per mercato)
+            for mid, mk in (self.opp_markets.get(str(eid)) or {}).items():
+                if str(mk.get("market_type") or "").upper() in scanner.MIKE_OU_MARKET_TYPES:
+                    rec["priorita"].add(str(mid))
+        for eid, rec in out.items():
+            for st in self.sports.values():
+                meta = st.metas.get(eid)
+                if meta and meta.get("market_id"):
+                    rec["priorita"].add(str(meta["market_id"]))
+        return out
+
+    def _eventi_esposti(self, sport: Optional[str] = None,
+                        esp: Optional[Dict[str, Dict[str, Any]]] = None) -> List[str]:
+        """event_id con esposizione di QUALUNQUE bot (``sport`` None = tutti;
+        una riga senza sport vale per ogni sport). Ordine: prima Mike (per
+        soldi a rischio, come oggi), poi gli altri in ordine stabile."""
+        esp = self._esposizioni() if esp is None else esp
+        mike = [str(e) for e in self._mike_followed()]
+        resto = sorted(e for e in esp if e not in set(mike))
+        out = []
+        for eid in mike + resto:
+            rec = esp.get(eid)
+            if rec is None:
+                continue
+            if sport is not None and rec["sport"] and sport not in rec["sport"]:
+                continue
+            out.append(eid)
+        return out
+
+    def _mercati_esposti(self, esp: Optional[Dict[str, Dict[str, Any]]] = None) -> set:
+        """Mercati da tenere DAVANTI a tutto (tier -1) e mai fuori da un tetto:
+        quelli esposti (righe dei bot) + il Match Odds di ogni evento esposto +
+        le due linee delle partite di Mike."""
+        esp = self._esposizioni() if esp is None else esp
+        return {mid for rec in esp.values() for mid in (rec["mercati"] | rec["priorita"])}
+
+    def _stato_blocco(self, ev: Dict[str, Any], market_id: str) -> Optional[str]:
+        """Ultimo stato NOTO (dal suo book) di un mercato CS/HT/a gol dell'evento;
+        None = mai visto (nessun fatto)."""
+        trovato = self.market_meta.get(market_id)
+        if not trovato:
+            return None
+        kind = trovato[1].get("kind")
+        if kind in ("cs", "ht"):
+            blk = ev.get(kind)
+            if isinstance(blk, dict) and str(blk.get("market_id")) == str(market_id):
+                return blk.get("status")
+            return None
+        if kind == "opp":
+            blk = (ev.get("opp") or {}).get(market_id)
+            return blk.get("status") if isinstance(blk, dict) else None
+        return None
+
+    def _esposti_aperti_dopo_mo(self, eid: str, ev: Dict[str, Any],
+                                esp: Optional[Dict[str, Dict[str, Any]]] = None) -> List[str]:
+        """Punto 27 - REGOLA UNICA «partita finita» (documentata in
+        ``AUDIT_2026-10-02/SCANNER_PARTITA_FINITA.md``): la partita e' finita
+        quando il Match Odds e' CLOSED e nessun ALTRO mercato esposto e' ancora
+        noto come aperto. Qui: i mercati esposti dell'evento (diversi dal MO)
+        il cui ultimo stato NOTO non e' CLOSED. Mai un orologio."""
+        esp = self._esposizioni() if esp is None else esp
+        rec = esp.get(str(eid))
+        if not rec:
+            return []
+        mo = None
+        for st in self.sports.values():
+            meta = st.metas.get(str(eid))
+            if meta:
+                mo = str(meta.get("market_id"))
+        out = []
+        for mid in sorted(rec["mercati"]):
+            if mid == mo:
+                continue
+            stato = self._stato_blocco(ev, mid)
+            if stato is not None and stato != "CLOSED":
+                out.append(mid)
+        return out
+
+    def _avviso_episodio(self, chiave: str, firma: Any, level: str, code: str,
+                         message: str) -> bool:
+        """Un avviso in ``live_alerts`` (coda dello scanner) UNA volta per
+        episodio: si riscrive solo se ``firma`` cambia (es. l'elenco dei
+        mercati). ``firma`` None chiude l'episodio. True se accodato."""
+        if firma is None:
+            self._episodi_avviso.pop(chiave, None)
+            return False
+        if self._episodi_avviso.get(chiave) == firma:
+            return False
+        self._episodi_avviso[chiave] = firma
+        with self._avvisi_lock:
+            self._avvisi_in_attesa.append({"level": level, "code": code, "message": message[:500]})
+        (logger.critical if level == "CRITICAL" else logger.warning)("[safe-scan] %s: %s", code, message)
+        return True
+
     def opp_candidates(self) -> List[str]:
         """Eventi calcio in-play (dal 1') per cui tenere sotto quote i mercati a
         gol del motore opportunità, al massimo ``scanner.OPP_MAX_EVENTS``: i posti
@@ -1846,7 +2159,9 @@ class Scanner:
         # 46 allarmi 'feed_line_missing' critici.
         # Le partite seguite da Mike passano davanti: sono poche (tetto
         # MIKE_MAX_FOLLOWED) e non spostano il costo della chiamata.
-        missing = scanner.prioritize_followed(missing, self._mike_followed())
+        # 02/10 (punto 28): davanti le partite con esposizione di QUALUNQUE bot
+        # (Mike per primo, come prima), non piu' solo Mike
+        missing = scanner.prioritize_followed(missing, self._eventi_esposti("calcio"))
         missing = missing[:max(1, _MAX_CATALOGUE_RESULTS // per_event)]
         cats = self.client.betting.list_market_catalogue(
             filter=filters.market_filter(
@@ -1898,7 +2213,13 @@ class Scanner:
         from betfairlightweight import filters
 
         # cache solo per eventi ancora noti (memoria stabile nei run lunghi)
-        for eid in [e for e in store if e not in self.events]:
+        # 02/10 (R9, verificato su 35760084: 103 richieste in 34 minuti): un
+        # mercato ESPOSTO non esce dalla cache solo perche' l'evento non ha
+        # ancora un book (pre-partita, KO oltre 20'): ``refresh_mercati_esposti``
+        # lo richiedeva a Betfair a ogni giro. Esce quando non e' piu' esposto.
+        esposti = self._mercati_esposti()
+        for eid in [e for e in store if e not in self.events
+                    and str(store[e].get("market_id")) not in esposti]:
             store.pop(eid, None)
         missing = [e for e in candidates if e not in store]
         if not missing:
@@ -1931,6 +2252,98 @@ class Scanner:
         # (refresh_stream_set) o nel poll REST di fallback come il MATCH_ODDS
         self._rebuild_market_index()
 
+    #: bot che leggono i prezzi dei loro mercati SOLO dal feed dello scanner
+    #: (lo scalper, lo sniper e i bot tennis hanno il loro stream di sessione)
+    _BOT_SUL_FEED = frozenset({"mike", "omega", "safe"})
+    #: mercati per chiamata mirata (MARKET_DESCRIPTION pesa 1: <= 200 punti)
+    _ESPOSTI_PER_CHIAMATA = 100
+
+    def refresh_mercati_esposti(self, now_mono: Optional[float] = None) -> int:
+        """02/10 (punto 28) - I MERCATI CON ESPOSIZIONE che lo scanner non conosce
+        ancora (CS prima del 30' o con 4 gol, HT prima del 15', O/U/BTTS/1X2 1T
+        di una partita fuori dal tetto dei 20 eventi, scanner appena ripartito)
+        entrano con UNA chiamata mirata per ``market_id`` (stessa proiezione dei
+        cataloghi a gol) e vanno nella cache del loro tipo: da li' stream/REST e
+        riga come per i candidati. Zero chiamate se non manca nulla.
+
+        * Tipo che lo scanner non pubblica: diario; CRITICAL se il mercato e' di
+          un bot che legge i prezzi solo dal feed (Mike, Omega, Safe).
+        * Mercato non restituito (chiuso/regolato): diario, si richiede dopo
+          ``_CATALOGUE_TTL_SEC``. Torna quanti mercati ha risolto."""
+        from betfairlightweight import filters
+
+        if self.client is None:
+            return 0
+        t = time.monotonic() if now_mono is None else now_mono
+        esp = self._esposizioni()
+        memo = self._esposti_mercati_memo
+        ignoti: List[str] = []
+        evento_di: Dict[str, str] = {}
+        for eid in self._eventi_esposti("calcio", esp):
+            if eid not in self.sports["calcio"].metas:
+                continue    # prima l'evento (catalogo MO, punto 29)
+            for mid in sorted(esp[eid]["mercati"]):
+                if mid in self.market_meta:
+                    continue
+                tipo, ts = memo.get(mid, (None, -1e18))
+                if tipo == "non_pubblicato" or t - ts <= _CATALOGUE_TTL_SEC:
+                    continue
+                ignoti.append(mid)
+                evento_di[mid] = eid
+        if not ignoti:
+            return 0
+        ignoti = ignoti[:self._ESPOSTI_PER_CHIAMATA]
+        cats = self.client.betting.list_market_catalogue(
+            filter=filters.market_filter(market_ids=ignoti),
+            market_projection=["EVENT", "MARKET_DESCRIPTION", "RUNNER_DESCRIPTION"],
+            max_results=len(ignoti),
+        )
+        risolti = 0
+        visti = set()
+        for c in cats or []:
+            mid = str(getattr(c, "market_id", None) or "")
+            if mid not in evento_di:
+                continue
+            visti.add(mid)
+            eid = evento_di[mid]
+            mtype = getattr(getattr(c, "description", None), "market_type", None)
+            if mtype is None:
+                mtype = _market_type_from_name(getattr(c, "market_name", None))
+            names = {getattr(r, "selection_id", None): getattr(r, "runner_name", None)
+                     for r in (getattr(c, "runners", None) or [])}
+            if mtype == "CORRECT_SCORE":
+                self.cs_markets[eid] = {"market_id": mid, "names": names}
+            elif mtype == "HALF_TIME_SCORE":
+                self.ht_markets[eid] = {"market_id": mid, "names": names}
+            elif mtype in scanner.OPP_MARKET_TYPES:
+                self.opp_markets.setdefault(eid, {})[mid] = {
+                    "market_id": mid, "market_type": mtype,
+                    "line": scanner.ou_line_from_market_type(mtype), "names": names,
+                }
+            else:
+                memo[mid] = ("non_pubblicato", t)
+                bots = esp[eid]["bot_mercato"].get(mid) or set()
+                testo = (f"mercato {mid} ({mtype}) dell'evento {eid} con esposizione di "
+                         f"{', '.join(sorted(bots)) or '?'}: tipo che lo scanner non pubblica")
+                if bots & self._BOT_SUL_FEED:
+                    self._avviso_episodio(f"tipo_non_pubblicato:{mid}", True, "CRITICAL",
+                                          "SCANNER_ESPOSTI_NON_SOTTOSCRITTI", testo)
+                else:
+                    logger.info("[safe-scan] %s (il bot lo segue col suo stream)", testo)
+                continue
+            memo.pop(mid, None)
+            risolti += 1
+            logger.info("[safe-scan] mercato esposto %s (%s) dell'evento %s: sotto quote "
+                        "per esposizione", mid, mtype, eid)
+        for mid in ignoti:
+            if mid not in visti:
+                memo[mid] = ("non_a_catalogo", t)
+                logger.info("[safe-scan] mercato esposto %s non restituito da Betfair "
+                            "(chiuso/regolato): nessuna quota da chiedere", mid)
+        if risolti:
+            self._rebuild_market_index()
+        return risolti
+
 
     # ------------------------------------------------------------ opportunità
     def _prune_opp_blocks(self, ev: Dict[str, Any], eid: Optional[str] = None,
@@ -1944,12 +2357,17 @@ class Scanner:
             return {}
         pre_ko = self._is_pre_ko_ou_event(eid, ev, now)
         mike = bool(eid) and str(eid) in set(self._mike_followed())
+        # 02/10 (punto 28): un blocco con ESPOSIZIONE di un bot (es. la O/U gia'
+        # decisa o il 1X2 1T nel recupero su cui Safe deve uscire) resta nella
+        # riga finche' il suo mercato non e' CLOSED.
+        esposti = self._mercati_esposti()
         live = {
             mid: blk for mid, blk in blocks.items()
             if scanner.is_opp_market_live(
                 blk.get("market_type"), blk.get("line"), ev.get("minute"),
                 ev.get("score_home"), ev.get("score_away"), pre_ko=pre_ko, mike=mike,
             )
+            or (str(mid) in esposti and isinstance(blk, dict) and blk.get("status") != "CLOSED")
         }
         # H6 — una linea tenuta viva SOLO per Mike può essere già DECISA: va
         # marcata, altrimenti il motore opportunità la prezzerebbe come se fosse
@@ -2117,18 +2535,25 @@ class Scanner:
         # fischio la riga resta finche' Betfair non le mette in gioco o le chiude
         # (``scanner.in_post_ko_wait``). Lista gia' in cache (10 s), zero letture
         # in piu'.
-        esposti = {str(e) for e in self._mike_followed()}
+        # 02/10 (punto 27): esposizione di QUALUNQUE bot (prima: solo Mike).
+        esp = self._esposizioni()
+        esposti = set(self._eventi_esposti(None, esp))
         for sport, st in self.sports.items():
             for eid, meta in st.metas.items():
                 ev = self.events.get(eid) or {}
                 inplay = bool(ev.get("inplay"))
-                if not scanner.is_monitorable(inplay, meta.get("open_date"), now,
-                                              self.pre_ko_ou_hours if sport == "calcio" else 0.0,
-                                              mo_status=ev.get("mo_status"),
-                                              esposto=str(eid) in esposti,
-                                              visto="inplay" in ev):
+                # 02/10 (punto 27) - regola unica «partita finita»: MO CLOSED e
+                # nessun altro mercato esposto ancora noto come aperto.
+                aperti = (self._esposti_aperti_dopo_mo(eid, ev, esp)
+                          if ev.get("mo_status") == "CLOSED" and str(eid) in esposti else [])
+                if not (scanner.is_monitorable(inplay, meta.get("open_date"), now,
+                                               self.pre_ko_ou_hours if sport == "calcio" else 0.0,
+                                               mo_status=ev.get("mo_status"),
+                                               esposto=str(eid) in esposti,
+                                               visto="inplay" in ev)
+                        or aperti):
                     continue
-                if ev.get("mo_status") == "CLOSED":
+                if ev.get("mo_status") == "CLOSED" and not aperti:
                     continue  # partita finita: la riga verrà cancellata
                 wanted.append(eid)
                 if sport == "calcio":
@@ -2576,6 +3001,15 @@ class Scanner:
                         logger.warning("[safe-scan] catalogo %s KO (riprovo fra %.0fs): %s",
                                        sport, _CATALOGUE_RETRY_SEC, str(e)[:140])
                     time.sleep(_REQ_DELAY)
+            # 02/10 (punto 29a): fra due cataloghi (300 s) una partita che
+            # diventa ESPOSTA fuori dal catalogo entra entro ~20 s, non al
+            # catalogo dopo. Zero chiamate se nessun esposto manca.
+            if now_mono - self._esposti_catalogo_ts > _CS_CATALOGUE_MIN_INTERVAL_SEC:
+                self._esposti_catalogo_ts = now_mono
+                for sport, st in self.sports.items():
+                    if st.catalogue_ts > 0.0 and self._aggiungi_esposti_mancanti(
+                            sport, st.metas, now_mono):
+                        self._rebuild_market_index()
             # pruning: eventi non più nel catalogo del giorno → via dallo stato
             known = {
                 eid for st in self.sports.values() for eid in st.metas
@@ -2686,6 +3120,11 @@ class Scanner:
             if opp_cands and now_mono - self.opp_catalogue_ts > _CS_CATALOGUE_MIN_INTERVAL_SEC:
                 self.opp_catalogue_ts = now_mono
                 self._safe_catalogue("mercati a gol", self.refresh_opp_catalogue, opp_cands)
+            # 02/10 (punto 28): i mercati con ESPOSIZIONE che lo scanner non
+            # conosce ancora (fuori da ogni tetto di candidatura), stesso throttle
+            if now_mono - self._esposti_mercati_ts > _CS_CATALOGUE_MIN_INTERVAL_SEC:
+                self._esposti_mercati_ts = now_mono
+                self._safe_catalogue("mercati esposti", self.refresh_mercati_esposti, now_mono)
             # ramo pre-KO O/U (Mike): SOLO le linee 3.5/4.5 delle partite in
             # finestra, stesso throttle; a ramo spento la lista è vuota
             pre_cands = self.pre_ko_ou_candidates(now)

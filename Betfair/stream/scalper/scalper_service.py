@@ -664,6 +664,10 @@ def _spawn(event_id: str) -> subprocess.Popen:
         [sys.executable, "-m", "Betfair.stream.scalper.scalper_session",
          str(event_id)],
         cwd=repo_root,
+        # R2 (02/10): un gruppo di processi PROPRIO, cosi' il CTRL_BREAK del
+        # supervisore (``_segnale_di_arresto``) arriva solo a questa sessione.
+        # Fuori da Windows la costante non esiste: 0 = nessun flag.
+        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
     )
 
 
@@ -704,21 +708,76 @@ def orfane_giudicabili(db_sano_dal: Optional[float], adesso: float) -> bool:
     return db_sano_dal is not None and adesso - db_sano_dal >= ORPHAN_HEARTBEAT_S
 
 
+def _tempo_massimo_arresto_s() -> float:
+    """R2 (02/10): il tetto della sequenza di arresto di UNA sessione, dalle
+    costanti della sessione stessa (mai un numero scritto qui a mano)."""
+    from .scalper_session import TEMPO_MASSIMO_ARRESTO_S
+
+    return float(TEMPO_MASSIMO_ARRESTO_S)
+
+
+def _attesa_dopo_segnale_s() -> float:
+    """R2 (02/10): dopo il segnale la sessione annulla gli ordini (tetto
+    ``ARRESTO_ANNULLO_TIMEOUT_S``) e scrive lo stato: questo, piu' un margine."""
+    from .scalper_session import ARRESTO_ANNULLO_TIMEOUT_S, HEARTBEAT_S
+
+    return float(ARRESTO_ANNULLO_TIMEOUT_S + HEARTBEAT_S)
+
+
+def tempo_supervisore_arresto_s() -> float:
+    """Il tempo massimo che il supervisore impiega a fermare le sessioni:
+    attesa del flat + segnale + annullo. ``desktop/main.js``
+    (``shutdownGraceMs('scalper-service')``) deve concederne ALMENO tanto
+    (un test lo confronta)."""
+    return _tempo_massimo_arresto_s() + _attesa_dopo_segnale_s()
+
+
+def _segnale_di_arresto(p: Any) -> None:
+    """R2 (02/10): il segnale che la sessione gestisce (``scalper_session.
+    installa_segnali_di_arresto``): CTRL_BREAK su Windows (la sessione nasce
+    in un suo gruppo di processi, ``_spawn``), SIGTERM altrove."""
+    import signal
+
+    sig = getattr(signal, "CTRL_BREAK_EVENT", None)
+    if sig is None:
+        sig = signal.SIGTERM
+    try:
+        p.send_signal(sig)
+    except Exception as exc:  # noqa: BLE001 - poi c'e' comunque il terminate
+        logger.warning("[scalper-svc] segnale di arresto non inviato: %s", str(exc)[:120])
+
+
 def attendi_e_termina_flat(children: Dict[str, subprocess.Popen], *,
-                           deadline_s: float = 60.0,
+                           deadline_s: Optional[float] = None,
                            sleep: Callable[[float], None] = time.sleep,
                            now: Callable[[], float] = time.time) -> None:
     """CANTIERE K2 (28/09): attende che le sessioni in ``children`` escano DA
     SOLE (vedono il kill-file/l'arresto ordinato dalla stessa cwd) fino a
-    ``deadline_s`` (default 60s), poi termina (``Popen.terminate()``) chi
-    resta. Muta ``children`` in place (toglie chi e' uscito). Estratta dal
-    ramo kill-switch di ``main()`` per essere provata con Popen finti e
-    orologio iniettato, senza aspettare 60s per davvero."""
-    deadline = now() + deadline_s
-    while children and now() < deadline:
-        for ev in [e for e, p in children.items() if p.poll() is not None]:
-            children.pop(ev, None)
-        sleep(2)
+    ``deadline_s``, poi termina (``Popen.terminate()``) chi resta. Muta
+    ``children`` in place (toglie chi e' uscito). Estratta dal ramo
+    kill-switch di ``main()`` per essere provata con Popen finti e orologio
+    iniettato.
+
+    R2 (02/10): ``deadline_s`` per difetto = ``TEMPO_MASSIMO_ARRESTO_S`` della
+    sessione (era 60 s, meno dei ~100 s che la sessione puo' impiegare: il
+    terminate arrivava a meta' del flat e l'annullo degli ordini non girava).
+    Allo scadere, PRIMA del terminate, il segnale di arresto (la sessione
+    annulla gli ordini vivi ed esce) e un'altra attesa breve; il terminate
+    (TerminateProcess, non intercettabile) resta l'ultimo ripiego."""
+    if deadline_s is None:
+        deadline_s = _tempo_massimo_arresto_s()
+
+    def _attendi(fino_a: float) -> None:
+        while children and now() < fino_a:
+            for ev in [e for e, p in children.items() if p.poll() is not None]:
+                children.pop(ev, None)
+            sleep(2)
+
+    _attendi(now() + deadline_s)
+    if children:
+        for p in children.values():
+            _segnale_di_arresto(p)
+        _attendi(now() + _attesa_dopo_segnale_s())
     for p in children.values():
         p.terminate()
 
