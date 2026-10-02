@@ -137,9 +137,11 @@ MUTAZIONI = [
     ("T-e", "banco: stato per bet_id senza l'identita' (gemello diverso dal vero)", BC_,
      "        \"side\": str(side).lower() if side else None,\n        \"price_requested\"",
      "        \"side\": side,\n        \"price_requested\""),
-    ("T-f", "una lettura gia' nei termini chiesti si ritraduce", LB_,
-     "    if sel_l == sel_c and side_l in (None, side_c):",
-     "    if sel_l == sel_c and side_l is None:"),
+    ("T-f", "con la dichiarazione, una lettura di un'altra selezione si traduce lo stesso",
+     LB_,
+     "        if sel_l is not None and sel_l != _sel_int(mand.get(\"selection_id\")):\n"
+     "            return None\n",
+     ""),
 ]
 
 

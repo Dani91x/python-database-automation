@@ -484,10 +484,9 @@ def lettura_nei_termini_chiesti(chiesto: Any, letto: Any, *,
         return None
     sel_l = _sel_int(letto.get("selection_id"))
     side_l = str(letto.get("side") or "").lower() or None
-    if sel_l == sel_c and side_l in (None, side_c):
-        # l'ordine chiesto non tradotto, o una lettura GIA' nei termini chiesti (l'evento
-        # del canale): mai tradotta due volte
-        return None
+    # l'ordine chiesto non tradotto, o una lettura GIA' nei termini chiesti (l'evento del
+    # canale), sta sulla selezione chiesta: entrambe le strade qui sotto lo escludono
+    # (la dichiarazione vuole la selezione MANDATA, i dati l'ALTRA selezione)
     t = tradotto if isinstance(tradotto, dict) else None
     orig = t.get("originale") if t else None
     mand = t.get("mandato") if t else None
