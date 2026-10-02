@@ -184,6 +184,20 @@ def test_d1_evento_accettato_salva_la_dichiarazione_e_il_ripiego_la_usa(monkeypa
     assert r["status"] == "open" and (r["size"], r["price"]) == (0.43, 18.0)
 
 
+def test_d1_evento_terminale_conferma_e_conserva_la_dichiarazione():
+    db = _db()
+    parent = _apertura(db, side="back", price=7.74, size=1.0)
+    tr = _chiusura_pending(db, parent, side="lay", price=18.0, size=0.43)
+    t = tradotto_di("lay", 18.0, 0.43)
+    ev = evento_tradotto(t, ref=tr["meta"]["canale_ref"], seq=4, fase="abbinato",
+                         matched=7.31, remaining=0.0, status="EXECUTION_COMPLETE",
+                         bet_id=BET)
+    assert S._chiudi_da_evento(tr, ev, db=db, mode="live", min_stake=0.5, now=NOW) == 1
+    r = db.get_trade(tr["id"])
+    assert r["status"] == "open" and (r["size"], r["price"]) == (0.43, 18.0)
+    assert r["meta"][X.CHIAVE_TRADOTTO]["mandato"]["selection_id"] == UNDER
+
+
 def test_d1_ordine_non_tradotto_invariato(monkeypatch):
     """Una chiusura NON tradotta (stessa selezione, stesso lato) si conferma coi numeri
     di Betfair come prima: nessuna regressione."""

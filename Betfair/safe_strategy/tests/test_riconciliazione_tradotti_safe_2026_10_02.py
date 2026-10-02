@@ -167,6 +167,77 @@ def test_d2_non_tradotto_invariato(monkeypatch):
     assert X.CHIAVE_TRADOTTO not in r["meta"]
 
 
+def test_d2_evento_terminale_conserva_la_dichiarazione(monkeypatch):
+    """L'esito terminale dal canale e' gia' nei termini chiesti; la dichiarazione del
+    runner resta sulla riga confermata (per le letture di dopo)."""
+    db = _db()
+    parent = _apertura(db)
+    tr = _chiusura_canale(db, parent)
+    t = tradotto_di("lay", 18.0, 0.43)
+    ev = evento_tradotto(t, ref=tr["meta"]["canale_ref"], seq=3, fase="abbinato",
+                         matched=7.31, remaining=0.0, status="EXECUTION_COMPLETE",
+                         bet_id=BET)
+    monkeypatch.setattr(SPO, "porta_esistente",
+                        lambda *a, **k: _PortaStub({tr["meta"]["canale_ref"]: ev}))
+    S.reconcile_pending(market=None, db=db, now=NOW + timedelta(seconds=2))
+    r = db.get_trade(tr["id"])
+    assert r["status"] == "open" and (r["size"], r["price"]) == (0.43, 18.0)
+    assert r["meta"][X.CHIAVE_TRADOTTO]["mandato"]["selection_id"] == UNDER
+
+
+def test_d2_annullo_prima_del_terminale_abbinato_nel_frattempo(monkeypatch):
+    """Lo stato per bet_id dice «morto senza abbinato»; prima di chiudere la riga si
+    annulla e si rilegge: si era abbinato nel frattempo (numeri del VERO). La conferma
+    va nei termini chiesti."""
+    from Betfair.omega.omega_market import CancelResult
+
+    db = _db()
+    parent = _apertura(db)
+    tr = _chiusura_canale(db, parent, bet_id=BET)
+    meta = dict(tr["meta"])
+    meta[X.CHIAVE_TRADOTTO] = {k: v for k, v in tradotto_di("lay", 18.0, 0.43).items()
+                               if k in ("originale", "mandato")}
+    db.update_trade(tr["id"], meta=meta)
+
+    class _Mercato:
+        def list_current_orders(self) -> list:
+            return []
+
+        def list_cleared_orders(self) -> list:
+            return []
+
+        def order_state_by_bet_id(self, bet_id: str) -> dict:
+            return {"found": True, "size_matched": 0.0, "avg_price_matched": None,
+                    "size_remaining": 0.0, "matched_date": None, "placed_date": None}
+
+        def cancel_order_live(self, bet_id: str, market_id: str, size_reduction: Any = None):
+            return CancelResult(ok=True, status="SUCCESS", bet_id=bet_id, size_cancelled=0.0,
+                                riletto=True, size_matched=7.31, avg_price_matched=1.06,
+                                size_remaining=0.0)
+
+    S.reconcile_pending(market=_Mercato(), db=db, now=NOW + timedelta(seconds=30))
+    r = db.get_trade(tr["id"])
+    assert r["status"] == "open", r["meta"]
+    assert (r["size"], r["price"]) == (0.43, 18.0)
+
+
+def test_d2_consapevolezza_completata_dopo_nei_termini_chiesti(monkeypatch):
+    """Il completamento della consapevolezza (righe aperte senza ``size_matched``) legge
+    per bet_id: anche li' i numeri della riga sono quelli chiesti."""
+    rete = monta_rete(monkeypatch)
+    rete.correnti = [_under_abbinata()]
+    monkeypatch.setattr(S, "_CONSAPEVOLEZZA_SCRITTA", {})
+    db = _db()
+    parent = _apertura(db)
+    tr = _chiusura_canale(db, parent, bet_id=BET)
+    db.update_trade(tr["id"], status="open")
+    n = S._completa_consapevolezza_mancante(db=db, market=S._MercatoSafe(OM),
+                                             rows=[db.get_trade(tr["id"])])
+    assert n == 1
+    r = db.get_trade(tr["id"])
+    assert (r["size_matched"], r["avg_price_matched"]) == (0.43, 18.0)
+
+
 # ===========================================================================
 # IL CASO COMPLETO (Safe): canale -> tradotto -> esito oltre 20 s -> REST -> P&L
 # ===========================================================================
@@ -377,6 +448,29 @@ def test_d3_coda_completa_lo_specchio_si_legge_nei_termini_chiesti(worker, mode)
     assert (c["selection_id"], c["side"], c["size"], c["price"]) == (OVER, "lay", 0.43, 18.0)
 
 
+def test_d3_coda_live_oltre_la_deadline_per_bet_id_nei_termini_chiesti(worker, monkeypatch):
+    """Coda LIVE senza specchio oltre la deadline: la verita' per bet_id da Betfair (punta
+    Under) si legge nei termini della riga."""
+    rete = monta_rete(monkeypatch)
+    rete.correnti = [_under_abbinata()]
+    db = _db("live")
+    parent = _apertura(db)
+    cid = db.insert_trade({"event_id": "E1", "market_id": MID, "selection_id": OVER,
+                           "side": "lay", "mode": "live", "origin": "manual",
+                           "status": "pending", "price": 18.0, "size": 0.43,
+                           "closes_trade_id": parent["id"],
+                           "meta": {"phase": "reserved", "cashout": True,
+                                    "closes_trade_id": parent["id"]}})
+    assert _place_chiusura_043(db, None, "live", cid).status == "pending"
+    rid = int(db.get_trade(cid)["meta"]["flumine_request_id"])
+    db.coda_runner[rid].update({"status": "done", "bet_id": BET, "result": None})
+    OS.poll_flumine_pending(db=db, params={}, now=NOW + timedelta(seconds=40),
+                            market=S._MercatoSafe(OM))
+    c = db.get_trade(cid)
+    assert c["status"] == "open", c["meta"]
+    assert (c["size"], c["price"], c["bet_id"]) == (0.43, 18.0, BET)
+
+
 # ===========================================================================
 # D3 - REST (runner giu', soldi veri): stesso verdetto, letto dal book di Betfair
 # ===========================================================================
@@ -403,6 +497,54 @@ def test_d3_rest_chiusura_043_piazza_l_equivalente_e_conferma_nei_termini_chiest
     # l'esito nei termini chiesti: la riga dira' banca Over 0,43 @18
     assert (out.price, out.size, out.bet_id) == (18.0, 0.43, "PIAZZATO1")
     assert out.esecuzione["tradotto"]["mandato"] == t["mandato"]
+
+
+def test_d3_rest_esito_ignoto_poi_riconciliazione_per_ref_nei_termini_chiesti(monkeypatch):
+    """Il place REST dell'equivalente va a esito IGNOTO (timeout): la riga resta in
+    riconciliazione; Betfair poi mostra la punta Under col ref della riga: la
+    riconciliazione per ref la conferma nei termini chiesti (mai 7,31 @1,06)."""
+    rete = monta_rete(monkeypatch)
+    rete.book = book_grezzo(OVER, UNDER)
+
+    def _timeout(fn: Any) -> Any:
+        raise RuntimeError("placeOrders esito IGNOTO (TIMEOUT)")
+
+    monkeypatch.setattr(OM, "call_mutating", _timeout)
+    db = _db("live")
+    _rest(db)
+    parent = _apertura(db)
+    cid = db.insert_trade({"event_id": "E1", "market_id": MID, "selection_id": OVER,
+                           "side": "lay", "mode": "live", "origin": "manual",
+                           "status": "pending", "price": 18.0, "size": 0.43,
+                           "closes_trade_id": parent["id"],
+                           "meta": {"phase": "reserved", "cashout": True,
+                                    "closes_trade_id": parent["id"]}})
+    out = _place_chiusura_043(db, S._MercatoSafe(OM), "live", cid)
+    assert out.status == "pending", out.fill_note
+    assert X.is_reconciling(db.get_trade(cid))
+    rete.correnti = [corrente_grezzo(bet_id="B9", selection_id=UNDER, side="back",
+                                     price=1.06, size=7.31, matched=7.31, remaining=0.0,
+                                     ref="safe-t%d" % cid)]
+    S.reconcile_pending(market=S._MercatoSafe(OM), db=db, now=NOW + timedelta(seconds=30))
+    c = db.get_trade(cid)
+    assert c["status"] == "open", c["meta"]
+    assert (c["selection_id"], c["side"], c["size"], c["price"], c["bet_id"]) == \
+        (OVER, "lay", 0.43, 18.0, "B9")
+
+
+def test_d3_omega_e_mike_fuori_perimetro_restano_come_prima(monkeypatch):
+    """La coda e il REST applicano l'equivalente SOLO a Safe calcio (ref ``safe-t``):
+    una chiusura di Omega o di Mike sotto 0,50 resta il rifiuto certo di prima."""
+    rete = monta_rete(monkeypatch)
+    rete.book = book_grezzo(OVER, UNDER)
+    for ref in ("omega-t5", "mike-t5", "safe_tennis-t5"):
+        db = _db("live")
+        out = X.place(db=db, market=S._MercatoSafe(OM), mode="live", event_id="E1",
+                      market_id=MID, selection_id=OVER, side="lay", price=18.0, size=0.43,
+                      client_ref=ref, trade_id=5,
+                      meta={"cashout": True, "closes_trade_id": 1}, now=NOW, params={})
+        assert out.status == "error" and out.error_code == "SOTTO_MINIMO_NON_PIAZZABILE", ref
+        assert db.queue == [] and rete.piazzati == []
 
 
 def test_d3_rest_tre_esiti_rifiuto_certo_nessun_ordine(monkeypatch):

@@ -75,6 +75,11 @@ def test_r_ogni_via_di_lettura_da_gli_stessi_numeri(monkeypatch, abbinato):
     da_corrente = X.nei_termini_della_riga(dict(RIGA_BOT), corrente)
     attesi = _chiave(ev)
     assert attesi[:2] == (OVER, "lay")
+    # i numeri ricalcolati QUI, indipendenti dalla funzione (ogni via la condivide):
+    # abbinato = 0,43 x m/7,31; quota = 1 + m/abbinato; residuo = r x 0,43/7,31
+    ab = round(0.43 * abbinato / 7.31, 2)
+    quota = round(1.0 + abbinato / ab, 4) if ab > 0 else 0.0
+    assert attesi[2:] == (ab, quota, round(residuo * 0.43 / 7.31, 2))
     assert _chiave(da_specchio) == attesi
     assert _chiave(da_stato) == attesi
     assert _chiave(da_corrente) == attesi
@@ -145,6 +150,22 @@ def test_r_altro_esito_dal_book_rest_stessa_regola_del_canale(runners, vincitori
     if vincitori is not None:
         book["numberOfWinners"] = vincitori
     assert OM.altro_esito_dal_book(book, OVER) == atteso
+
+
+def test_r_banco_stato_per_bet_id_con_le_chiavi_della_produzione():
+    """Il gemello del banco (``MercatoFlumine.order_state_by_bet_id``) porta le stesse
+    chiavi d'identita' della produzione (difetto 27 del catalogo: il finto parla come il
+    vero)."""
+    from types import SimpleNamespace
+
+    from Betfair.stream.backtest import banco_comune as BC
+
+    ordine = SimpleNamespace(selection_id=UNDER, side="BACK",
+                             order_type=SimpleNamespace(price=1.06, size=7.31))
+    banco = BC._identita_ordine_flumine(ordine)
+    vero = OM._identita_ordine({"selectionId": UNDER, "side": "BACK"}, 1.06, 7.31)
+    assert banco == vero == {"selection_id": UNDER, "side": "back", "price_requested": 1.06,
+                             "size_requested": 7.31}
 
 
 def test_r_contratto_tradotto_del_finto_uguale_al_motore_vero(amb):
