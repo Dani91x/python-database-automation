@@ -24,6 +24,8 @@ F.TEST = [
     "Betfair/safe_strategy/tests/test_riconciliazione_tradotti_safe_2026_10_02.py",
     "Betfair/omega/tests/test_riconciliazione_tradotti_omega_2026_10_02.py",
     "Betfair/stream/tests/test_riconciliazione_tradotti_2026_10_02.py",
+    "Betfair/safe_strategy/tests/test_porta_ordini_f5_2026_09_24.py",
+    "Betfair/safe_strategy/tests/test_p_blocco3_2026_09_28.py",
 ]
 F.MUTAZIONI = [
     ("P1-a", "nessuna adozione per mercato (il difetto del reperto 1)", BS_,
@@ -45,14 +47,19 @@ F.MUTAZIONI = [
      "    if len(cand) > 1:\n        return None\n    bet_id, o = next(iter(cand.items()))",
      "    bet_id, o = next(iter(cand.items()))"),
     ("P1-g", "indecisa senza avviso", BS_,
-     "                        _log(db, \"canale_orfano\", {",
-     "                        (lambda *a, **k: None)(db, \"canale_orfano\", {"),
+     "                        _log(db, \"flumine_live_orphan\", {",
+     "                        (lambda *a, **k: None)(db, \"flumine_live_orphan\", {"),
     ("P1-h", "lettura del conto intero invece della strategia safe", BS_,
      "        ordini = list(leggi(SAFE_STRATEGY_REF) or [])",
      "        ordini = list(leggi() or [])"),
     ("P1-i", "il canale non scrive l'ordine mandato prima dell'invio", EX_,
      "                \"canale_inviato\": {\"selection_id\": int(selection_id),",
      "                \"canale_inviato_no\": {\"selection_id\": int(selection_id),"),
+    ("P1-j", "lettura in piu' anche quando il ref del giro gia' trova l'ordine", BS_,
+     "            if X.ha_marker_canale(tr) and not tr.get(\"bet_id\") \\\n"
+     "                    and not _trovata_per_ref(tr, current, cleared):",
+     "            if X.ha_marker_canale(tr) and not tr.get(\"bet_id\") \\\n"
+     "                    and True:"),
     ("P11-a", "coda e REST di Safe ignorano ATTORI_CON_TRADUZIONE", EX_,
      "                               and _ATTORE_SAFE in _MI.ATTORI_CON_TRADUZIONE)",
      "                               and True)"),

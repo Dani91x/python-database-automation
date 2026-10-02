@@ -1201,16 +1201,18 @@ def reconcile_pending(*, market, db, now: datetime) -> int:
     per_bet = {str(o.get("bet_id")): o for o in current if o.get("bet_id")}
     for tr in live:
         try:
-            if X.ha_marker_canale(tr) and not tr.get("bet_id"):
-                # 02/10/2026 (reperto 1): riga del canale senza nessun evento: prima
-                # si ritrova l'ordine per MERCATO (il ref di flumine non e' ``safe-``)
+            if X.ha_marker_canale(tr) and not tr.get("bet_id") \
+                    and not _trovata_per_ref(tr, current, cleared):
+                # 02/10/2026 (reperto 1): riga del canale senza nessun evento e senza
+                # un ordine col suo ref nella lettura del giro: si ritrova l'ordine per
+                # MERCATO (il ref di flumine non e' ``safe-``)
                 if _adotta_per_mercato(market, tr, db=db) is None:
                     meta_o = dict(tr.get("meta") or {})
                     if not meta_o.get("canale_orfano_segnalato"):
                         meta_o["canale_orfano_segnalato"] = True
                         db.update_trade(int(tr["id"]), meta=meta_o)
                         tr["meta"] = meta_o
-                        _log(db, "canale_orfano", {
+                        _log(db, "flumine_live_orphan", {
                             "trade_id": tr.get("id"), "event_id": tr.get("event_id"),
                             "critical": True, "ref": meta_o.get("canale_ref"),
                             "nota": "ordine del canale senza esito e ricerca per mercato "
@@ -1527,6 +1529,17 @@ def _nella_finestra(o: dict[str, Any], inviato: Optional[datetime]) -> bool:
         inviato = inviato.replace(tzinfo=timezone.utc)
     delta = (quando - inviato).total_seconds()
     return -_ADOZIONE_PRIMA_S <= delta <= _ADOZIONE_DOPO_S
+
+
+def _trovata_per_ref(tr: dict[str, Any], current: list, cleared: list) -> bool:
+    """La lettura del giro ha GIA' un ordine col ref di questa riga (``safe-t<id>`` o
+    ``meta.canale_cor``)? Allora la ricerca per ref basta: nessuna lettura in piu'."""
+    from Betfair.safe_strategy import porta_ordini as _PO_ref
+
+    refs = X.refs_di_riconciliazione(tr, _PO_ref.ref_ordine(tr["id"], sport=_sport_di(tr)))
+    refs = set(refs if isinstance(refs, (list, tuple, set)) else [refs])
+    return any(str(o.get("customer_order_ref") or "") in refs
+               for o in list(current or []) + list(cleared or []))
 
 
 def _adotta_per_mercato(market, tr: dict[str, Any], *, db) -> Optional[str]:

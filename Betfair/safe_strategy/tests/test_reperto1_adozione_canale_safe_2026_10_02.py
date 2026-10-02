@@ -146,7 +146,7 @@ def test_r1_due_candidati_indecisa_resta_in_verifica_con_avviso(monkeypatch):
     _riconcilia(db, 200)
     r = db.get_trade(tr["id"])
     assert r["status"] == "pending" and not r.get("bet_id")
-    assert any(k == "canale_orfano" for k, _p in db.activity)
+    assert any(k == "flumine_live_orphan" for k, _p in db.activity)
 
 
 def test_r1_bet_id_gia_di_un_altra_riga_mai_adottato(monkeypatch):

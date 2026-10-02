@@ -1208,6 +1208,10 @@ def test_h16_catalogo_dei_kind_di_attivita():
         # / chiusura col trasporto di oggi).
         "canale_inviato", "canale_rifiutato", "canale_senza_ack",
         "canale_giu", "canale_giu_ripiego",
+        # 02/10 (reperto 1): la riga del canale senza eventi ritrovata per MERCATO
+        # (stesso kind di Omega) o indecisa (orfana, critica: stesso kind di Omega);
+        # entrambe gia' etichettate in `safeActivity.ts`
+        "flumine_recovered", "flumine_live_orphan",
         # 28/09 (cantiere J): lo scanner in esercizio non dichiara il flusso
         # dei prezzi (versione vecchia): detto UNA volta, critico
         "flusso_non_dichiarato",
