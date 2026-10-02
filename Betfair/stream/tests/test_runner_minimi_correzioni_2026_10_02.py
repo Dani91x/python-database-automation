@@ -348,6 +348,27 @@ def test_p5_due_esiti_attivi_un_vincitore_equivalente():
     assert MO.altro_runner_due_esiti(m, OVER) == (UNDER, 0.0)
 
 
+def test_p5_equivalente_peggiore_oltre_la_tolleranza_mai_usato(monkeypatch):
+    """La guardia ``TOLLERANZA_EQUIVALENZA`` (0,01): con il tick "mai peggiore" non
+    scatta sui numeri veri (la size al centesimo sposta al piu' 0,005), quindi la si
+    prova con un equivalente costruito apposta peggiore di 0,02 (chiude il buco R9
+    della verifica del 02/10)."""
+    vero = LB.equivalente_lato_opposto
+
+    def _peggiore(side: str, price: float, size: float) -> Any:
+        eq = vero(side, price, size)
+        return LB.OrdineEquivalente(side=eq.side, price=eq.price, price_esatta=eq.price_esatta,
+                                    size=eq.size, scarto_se_vince_chiesta=-0.02,
+                                    scarto_se_vince_altra=eq.scarto_se_vince_altra)
+
+    monkeypatch.setattr(LB, "equivalente_lato_opposto", _peggiore)
+    v = LB.verdetto_minimi("it", "lay", 18.0, 0.43, altra_selezione=(UNDER, 0.0))
+    assert v.esito == LB.VERDETTO_IMPOSSIBILE and "tolleranza" in v.motivo
+    monkeypatch.setattr(LB, "equivalente_lato_opposto", vero)
+    assert LB.verdetto_minimi("it", "lay", 18.0, 0.43,
+                              altra_selezione=(UNDER, 0.0)).esito == LB.VERDETTO_EQUIVALENTE
+
+
 # ===========================================================================
 # 6. parcheggio della banca nella banda INVALID_PROFIT_RATIO
 # ===========================================================================
