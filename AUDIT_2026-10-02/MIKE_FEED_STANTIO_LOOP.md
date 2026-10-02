@@ -168,3 +168,7 @@ Confronto con `mike_tutti_MASTER_senza_rv.txt` del principale (`AUDIT_2026-10-02
 - La durata di `--scenari tutti` supera il tetto di 600 s anche su master (772,6 s nel referto
   del coordinatore): difetto del banco gia' dichiarato in `REPLAY_VELOCE.md`, non toccato.
 - Nessuna prova in paper/live vero: solo test e banco.
+
+## 10. Nota sulla patch
+
+Mentre girava il `tutti` il coordinatore ha integrato la correzione su master (`f34a281`): `engine.py`, `service.py` e il file di test su master sono IDENTICI a quelli del ramo (`git diff HEAD master` vuoto su quei tre file). Per questo la patch `MIKE_FEED_STANTIO_LOOP.patch` e' `git diff c190dc8` (la base del ramo), non `git diff master` (che oggi mostrerebbe al contrario il lavoro di master arrivato dopo).
