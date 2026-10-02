@@ -1,0 +1,36 @@
+BASE (codice corretto): rc=0 7 passed, 2 warnings in 1.48s
+M1 execute_place non scrive il rifiuto per feed stantio (ramo taker): ROSSO (atteso) | 1 failed, 6 passed, 2 warnings in 2.10s
+      rosso: test_green_taker_respinta_a_feed_stantio_non_si_ripropone
+M2 la lay appoggiata respinta non scrive il rifiuto (ramo resting): ROSSO (atteso) | 2 failed, 5 passed, 2 warnings in 3.48s
+      rosso: test_green_appoggiata_respinta_a_feed_stantio_non_si_ripropone[paper]
+      rosso: test_green_appoggiata_respinta_a_feed_stantio_non_si_ripropone[live]
+M3 il motore non tiene mai (filtro spento): ROSSO (atteso) | 5 failed, 2 passed, 2 warnings in 3.77s
+      rosso: test_green_appoggiata_respinta_a_feed_stantio_non_si_ripropone[paper]
+      rosso: test_green_appoggiata_respinta_a_feed_stantio_non_si_ripropone[live]
+      rosso: test_green_taker_respinta_a_feed_stantio_non_si_ripropone
+      rosso: test_motore_tiene_a_feed_stantio_e_riparte_una_volta
+      rosso: test_tenere_non_consuma_aggiornamenti_ne_tentativi
+M4 il filtro vale anche a feed FRESCO (non riparte al ritorno): ROSSO (atteso) | 5 failed, 2 passed, 2 warnings in 2.90s
+      rosso: test_green_appoggiata_respinta_a_feed_stantio_non_si_ripropone[paper]
+      rosso: test_green_appoggiata_respinta_a_feed_stantio_non_si_ripropone[live]
+      rosso: test_green_taker_respinta_a_feed_stantio_non_si_ripropone
+      rosso: test_motore_tiene_a_feed_stantio_e_riparte_una_volta
+      rosso: test_tenere_non_consuma_aggiornamenti_ne_tentativi
+M5 tentativo_gia_rifiutato conta anche il feed stantio (blocca per sempre): ROSSO (atteso) | 5 failed, 2 passed, 2 warnings in 7.80s
+      rosso: test_green_appoggiata_respinta_a_feed_stantio_non_si_ripropone[paper]
+      rosso: test_green_appoggiata_respinta_a_feed_stantio_non_si_ripropone[live]
+      rosso: test_green_taker_respinta_a_feed_stantio_non_si_ripropone
+      rosso: test_motore_tiene_a_feed_stantio_e_riparte_una_volta
+      rosso: test_rifiuto_per_feed_stantio_non_blocca_a_feed_fresco
+M6 tenendo, lo stato avanza e gli aggiornamenti si applicano: ROSSO (atteso) | 2 failed, 5 passed, 2 warnings in 3.62s
+      rosso: test_green_taker_respinta_a_feed_stantio_non_si_ripropone
+      rosso: test_tenere_non_consuma_aggiornamenti_ne_tentativi
+M7 aggiornamenti applicati anche senza ordine (attempts consumati): ROSSO (atteso) | 1 failed, 6 passed, 2 warnings in 3.75s
+      rosso: test_tenere_non_consuma_aggiornamenti_ne_tentativi
+M8 il filtro non e' chiamato dalle ultime guardie: ROSSO (atteso) | 4 failed, 3 passed, 2 warnings in 2.47s
+      rosso: test_green_appoggiata_respinta_a_feed_stantio_non_si_ripropone[paper]
+      rosso: test_green_appoggiata_respinta_a_feed_stantio_non_si_ripropone[live]
+      rosso: test_green_taker_respinta_a_feed_stantio_non_si_ripropone
+      rosso: test_motore_tiene_a_feed_stantio_e_riparte_una_volta
+RIPRISTINO: sorgenti identici (sha256) | test di nuovo: rc=0 7 passed, 2 warnings in 1.67s
+TOTALE: 8/8 mutazioni viste dai test
