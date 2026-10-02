@@ -1908,7 +1908,19 @@ def tentativo_gia_rifiutato(ctx: MatchCtx, a: Action) -> Optional[Dict[str, Any]
     quante gambe la spec prevede restano quelli. La Costituzione prevede UNA
     uscita appoggiata per ciclo (§3 Fase 1) e UNA lay di re-ingresso che resta
     sul book fino a fine gara (§3 Fase 6): il motore finalmente lo rispetta.
+
+    02/10: un rifiuto per FEED STANTIO non e' una risposta del mercato (il
+    mercato non e' stato nemmeno interpellato): qui non conta, lo governa
+    ``_tieni_a_feed_stantio`` finche' il feed resta stantio.
     """
+    r = _stessa_richiesta_rifiutata(ctx, a)
+    if r is None or r.get("motivo") == MOTIVO_FEED_STANTIO:
+        return None
+    return r
+
+
+def _stessa_richiesta_rifiutata(ctx: MatchCtx, a: Action) -> Optional[Dict[str, Any]]:
+    """Il rifiuto registrato per la STESSA domanda (stessa gamba, prezzo, size)."""
     if a.kind != "place":
         return None
     r = ctx.rifiuti.get(chiave_richiesta(a.role, ctx.cycle_no, a.market, a.selection,
@@ -1920,6 +1932,58 @@ def tentativo_gia_rifiutato(ctx: MatchCtx, a: Action) -> Optional[Dict[str, Any]
     if abs(float(r.get("size") or 0.0) - float(a.size or 0.0)) > 0.005:
         return None
     return r
+
+
+# ---------------------------------------------------------------------------
+# 02/10 - FEED STANTIO: la stessa gamba respinta non si ripropone a ogni giro
+# ---------------------------------------------------------------------------
+# Regressione dello scenario ``lettura-dati-ko`` (35760084): dal 01/10 («bot
+# MAI ciechi», ``aa5749a``) lo scanner TIENE la riga della partita anche quando
+# la lettura dei dati cade, quindi il motore decide su un feed STANTIO. Il
+# servizio respinge ogni ordine (``no_fill feed_stantio``, D1 29/09: prezzi non
+# vivi = nessun ordine) e il motore, che non lo sapeva, riproponeva la stessa
+# ``under_green`` a ogni giro: 373 proposte identiche contro 6 ordini veri.
+# Ora il servizio scrive il rifiuto nel ctx (``motivo = MOTIVO_FEED_STANTIO``)
+# e, finche' il feed resta stantio, la STESSA richiesta si toglie dalla
+# decisione: il motore TIENE (posizione e intento restano, il motivo lo dice).
+# Al ritorno del feed il rifiuto non conta piu' (``tentativo_gia_rifiutato`` lo
+# ignora) e la gamba parte UNA volta. Nessuna condotta di strategia cambia:
+# cosa e quando chiudere restano quelli; cambia solo che non si ripete.
+MOTIVO_FEED_STANTIO = "feed_stantio"
+
+
+def gia_respinta_a_feed_stantio(ctx: MatchCtx, a: Action) -> Optional[Dict[str, Any]]:
+    """La STESSA richiesta, gia' respinta dal servizio per feed stantio."""
+    r = _stessa_richiesta_rifiutata(ctx, a)
+    return r if (r is not None and r.get("motivo") == MOTIVO_FEED_STANTIO) else None
+
+
+def _tieni_a_feed_stantio(ctx: MatchCtx, d: Decision, snap: Snapshot) -> Decision:
+    """Col feed STANTIO toglie dalla decisione le richieste gia' respinte per
+    feed stantio. Annulli e richieste DIVERSE passano come prima.
+
+    Se non resta nessun ordine da piazzare lo stato resta quello di adesso e gli
+    aggiornamenti della decisione NON si applicano (stessa regola di
+    ``_strip_openings``, CERT. 13/09 difetto 3: se lo stato avanza senza
+    l'ordine, il bot si comporta come se l'ordine ci fosse; e un
+    ``attempts + 1`` consumerebbe i tentativi di chiusura senza nessun ordine).
+    """
+    if snap.feed_fresh:
+        return d
+    tolte = [a for a in d.actions if gia_respinta_a_feed_stantio(ctx, a) is not None]
+    if not tolte:
+        return d
+    via = {id(a) for a in tolte}
+    kept = [a for a in d.actions if id(a) not in via]
+    restano_place = any(a.kind == "place" for a in kept)
+    stato = d.state if restano_place else ctx.state
+    a0 = tolte[0]
+    perche = ("tengo, feed stantio: %s %s %.2f @ %s gia' respinta, non si ripropone "
+              "finche' il feed non torna fresco" % (a0.role, a0.side, float(a0.size or 0.0),
+                                                     a0.price))
+    return Decision(state=stato, actions=kept, reason=f"{perche} ({d.reason})",
+                    updates=dict(d.updates) if restano_place else {},
+                    telemetry=dict(d.telemetry))
 
 
 def motivo_del_rifiuto(a: Action, r: Dict[str, Any]) -> str:
@@ -2935,6 +2999,9 @@ def _proposta_residuo_finale(ctx: MatchCtx, d: Decision) -> Decision:
 
 def _ultime_guardie(ctx: MatchCtx, d: Decision, snap: Snapshot,
                     params: Dict[str, Any]) -> Decision:
+    # 02/10: col feed stantio la richiesta gia' respinta non si ripropone (su
+    # ogni ramo, anche la chiusura manuale in corso).
+    d = _tieni_a_feed_stantio(ctx, d, snap)
     d = _guardia_minimo_listino(ctx, d, snap, params)
     d = _controllo_di_piatto(ctx, d, snap, params)
     return _proposta_residuo_finale(ctx, d)

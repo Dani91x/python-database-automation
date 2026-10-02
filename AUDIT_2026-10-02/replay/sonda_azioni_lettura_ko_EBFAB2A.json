@@ -1,0 +1,68 @@
+{
+ "decisioni_referto": 4713,
+ "azioni_referto": 5,
+ "decisioni": 4713,
+ "a_feed_stantio": 3,
+ "azioni": [
+  {
+   "t": 1782832091.5,
+   "da": "WATCH",
+   "a": "PRE_ENTRY_PENDING",
+   "kind": "place",
+   "role": "under_entry",
+   "side": "back",
+   "size": 10.0,
+   "price": 1.71,
+   "feed_fresh": true,
+   "motivo": "ingresso ciclo 1"
+  },
+  {
+   "t": 1782832095.0,
+   "da": "PRE_ENTRY_PENDING",
+   "a": "PRE_OPEN",
+   "kind": "place",
+   "role": "under_green",
+   "side": "lay",
+   "size": 10.12,
+   "price": 1.69,
+   "feed_fresh": true,
+   "motivo": "ingresso abbinato"
+  },
+  {
+   "t": 1782835953.3,
+   "da": "LIVE_KO_GREEN",
+   "a": "LIVE_KO_GREEN",
+   "kind": "place",
+   "role": "ko_green",
+   "side": "lay",
+   "size": 10.12,
+   "price": 1.69,
+   "feed_fresh": true,
+   "motivo": "uscita appoggiata a 1.69"
+  },
+  {
+   "t": 1782836132.4,
+   "da": "LIVE_KO_GREEN",
+   "a": "LIVE_UNCOVERED",
+   "kind": "cancel",
+   "role": "ko_green",
+   "side": null,
+   "size": null,
+   "price": null,
+   "feed_fresh": true,
+   "motivo": "uscita non abbinata in 3': copertura sulla linea 4,5"
+  },
+  {
+   "t": 1782836134.2,
+   "da": "LIVE_UNCOVERED",
+   "a": "LIVE_COVER_PENDING",
+   "kind": "place",
+   "role": "over_cover",
+   "side": "lay",
+   "size": 12.63,
+   "price": 1.63,
+   "feed_fresh": true,
+   "motivo": "copertura banca Under 4.5"
+  }
+ ]
+}
