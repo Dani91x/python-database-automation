@@ -1,0 +1,13 @@
+FALSIFICAZIONE PARITA_SAFE_ENV - 2026-10-02 11:54:23
+OK   0  codice corretto: test veloci                                atteso=verde ottenuto=verde  | 39 passed, 1 deselected in 12.09s (16.3 s)
+OK   M1 coda non scrive l'interruttore: test veloci                 atteso=rosso ottenuto=rosso  | 11 failed, 28 passed, 1 deselected in 12.20s (17.1 s)
+OK   M1   - test_coda_spegne... (valore '1')                        atteso=rosso ottenuto=rosso  | 1 failed in 2.58s (6.8 s)
+OK   M2 freni senza i 20 interruttori: test veloci                  atteso=rosso ottenuto=rosso  | 6 failed, 33 passed, 1 deselected in 11.27s (15.7 s)
+OK   M2   - test_load_dotenv_a_meta_replay_non_riaccende            atteso=rosso ottenuto=rosso  | 1 failed in 2.95s (7.6 s)
+OK   M3 = master (M1+M2): test [cert] sulla registrazione vera      atteso=rosso ottenuto=rosso  | 1 failed, 22 deselected in 86.96s (0:01:26) (91.3 s)
+OK   M4 intestazione senza interruttori                             atteso=rosso ottenuto=rosso  | 1 failed in 2.68s (7.2 s)
+OK   R  ripristinato: test veloci                                   atteso=verde ottenuto=verde  | 39 passed, 1 deselected in 9.28s (13.5 s)
+OK   R  ripristinato: test [cert]                                   atteso=verde ottenuto=verde  | 1 passed, 22 deselected in 138.58s (0:02:18) (142.5 s)
+ripristino Betfair\stream\backtest\trasporto.py sha256 IDENTICO
+ripristino Betfair\stream\backtest\certifica.py sha256 IDENTICO
+ESITO: TUTTO COME ATTESO

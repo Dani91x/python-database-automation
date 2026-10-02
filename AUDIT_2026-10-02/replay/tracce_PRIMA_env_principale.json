@@ -1,0 +1,173 @@
+{
+ "scenario": "ordini-manuali",
+ "evento": "35760084",
+ "coda": {
+  "trasporto": "coda",
+  "bot": "safe_base",
+  "ordini": [],
+  "righe": [
+   {
+    "id": 1,
+    "status": "error",
+    "side": "lay",
+    "market_id": "1.259475525",
+    "selection_id": 86159298,
+    "price": 12.0,
+    "size": 2.0,
+    "mode": "live"
+   }
+  ],
+  "durata_s": 53.3,
+  "rest_sul_canale": []
+ },
+ "canale": {
+  "trasporto": "canale",
+  "bot": "safe_base",
+  "ordini": [
+   {
+    "azione": "place",
+    "ref": "safe-t1",
+    "market_id": "1.259475525",
+    "selection_id": 86159298,
+    "side": "LAY",
+    "price": 12.0,
+    "size": 2.0,
+    "fok": true,
+    "t_mercato": "2026-06-30T16:00:35.675000+00:00",
+    "accettato": true,
+    "motivo": null
+   },
+   {
+    "azione": "place",
+    "ref": "safe-t2",
+    "market_id": "1.259475525",
+    "selection_id": 86159298,
+    "side": "BACK",
+    "price": 9.2,
+    "size": 2.39,
+    "fok": true,
+    "t_mercato": "2026-06-30T16:02:51.459000+00:00",
+    "accettato": true,
+    "motivo": null
+   }
+  ],
+  "righe": [
+   {
+    "id": 1,
+    "status": "hedged",
+    "side": "lay",
+    "market_id": "1.259475525",
+    "selection_id": 86159298,
+    "price": 11.0,
+    "size": 2.0,
+    "mode": "live"
+   },
+   {
+    "id": 2,
+    "status": "open",
+    "side": "back",
+    "market_id": "1.259475525",
+    "selection_id": 86159298,
+    "price": 9.2,
+    "size": 2.39,
+    "mode": "live"
+   }
+  ],
+  "durata_s": 49.7,
+  "rest_sul_canale": [],
+  "client": {
+   "da_seq": 0,
+   "buchi": 0,
+   "connessioni": 1
+  },
+  "motore": {
+   "comandi": 2,
+   "accettati": 2,
+   "rifiutati": 0,
+   "order": 6
+  },
+  "costo_banco_s": 1.0,
+  "book": 340486
+ },
+ "parita": {
+  "parita": false,
+  "ordini_coda": 0,
+  "ordini_canale": 2,
+  "ordini_uguali": false,
+  "primo_scarto": 0,
+  "scarto_coda": null,
+  "scarto_canale": {
+   "azione": "place",
+   "ref": "safe-t1",
+   "market_id": "1.259475525",
+   "selection_id": 86159298,
+   "side": "LAY",
+   "price": 12.0,
+   "size": 2.0,
+   "fok": true,
+   "t_mercato": "2026-06-30T16:00:35.675000+00:00",
+   "accettato": true,
+   "motivo": null
+  },
+  "righe_coda": 1,
+  "righe_canale": 2,
+  "righe_diverse": [
+   {
+    "id": 1,
+    "coda": {
+     "id": 1,
+     "status": "error",
+     "side": "lay",
+     "market_id": "1.259475525",
+     "selection_id": 86159298,
+     "price": 12.0,
+     "size": 2.0,
+     "mode": "live"
+    },
+    "canale": {
+     "id": 1,
+     "status": "hedged",
+     "side": "lay",
+     "market_id": "1.259475525",
+     "selection_id": 86159298,
+     "price": 11.0,
+     "size": 2.0,
+     "mode": "live"
+    }
+   },
+   {
+    "id": 2,
+    "coda": null,
+    "canale": {
+     "id": 2,
+     "status": "open",
+     "side": "back",
+     "market_id": "1.259475525",
+     "selection_id": 86159298,
+     "price": 9.2,
+     "size": 2.39,
+     "mode": "live"
+    }
+   }
+  ],
+  "rest_sul_canale": 0,
+  "scarto_tempi_s": null,
+  "durata_s": {
+   "coda": 53.3,
+   "canale": 49.7
+  },
+  "client": {
+   "da_seq": 0,
+   "buchi": 0,
+   "connessioni": 1
+  },
+  "motore": {
+   "comandi": 2,
+   "accettati": 2,
+   "rifiutati": 0,
+   "order": 6
+  },
+  "costo_banco_s": 1.0,
+  "book": 340486
+ }
+}

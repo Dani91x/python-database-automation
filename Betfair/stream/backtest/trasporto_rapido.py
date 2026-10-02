@@ -1294,7 +1294,7 @@ def _r10d_tennis(b: BancoRapido, A: Any, pref: str, e: _Esito, stato: Dict[str, 
 # ---------------------------------------------------------------------------
 def main_rapidi(scheda: Any, eventi: List[str], data_dir: str, *, trasporto: Optional[str],
                 diario: Optional[str], tracce: Optional[str], lavora: Callable[..., Any],
-                freni: Callable[[], Any]) -> int:
+                freni: Callable[[], Any], intestazione: Optional[str] = None) -> int:
     bot = scheda.nome
     if TRA.attore_di(bot) is None:
         print("IL BOT '%s' NON HA LA PORTA A COMANDI: %s" % (
@@ -1313,6 +1313,9 @@ def main_rapidi(scheda: Any, eventi: List[str], data_dir: str, *, trasporto: Opt
     t0 = time.monotonic()
     scrivi("PROFILO RAPIDO del trasporto - bot %s (attore %s) - registrazione %s" % (
         bot, TRA.attore_di(bot), ev))
+    if intestazione:
+        # 02/10 (PARITA_SAFE_ENV): l'ambiente DICHIARATO del banco, in testa
+        scrivi(intestazione)
     with freni():
         esiti = esegui_scenari(bot, ev, data_dir)
     t_scenari = time.monotonic() - t0
