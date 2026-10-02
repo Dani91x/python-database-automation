@@ -42,6 +42,7 @@ def test_book_ignoto_torna_none():
 
 # ---------------------------------------------------------------------------
 # pianifica_submin
+# minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50 (parcheggio 1,00, target sotto 1,00)
 # ---------------------------------------------------------------------------
 def test_percorso_a_quando_la_quota_non_e_abbinabile():
     p = S.pianifica_submin(side="back", target_price=5.9, target_size=0.79,
@@ -49,15 +50,15 @@ def test_percorso_a_quando_la_quota_non_e_abbinabile():
     assert p.serve_trucco is True
     assert p.park_mode == S.PARK_TARGET
     assert p.park_price == 5.9          # parcheggio ALLA quota target
-    assert p.park_size == 2.00          # minimo .it BACK
-    assert p.size_reduction == 1.21
+    assert p.park_size == 1.00          # minimo .it BACK
+    assert p.size_reduction == 0.21
     assert p.serve_replace is False     # <- niente replace, niente CANCELLED_NOT_PLACED
     assert p.chiamate_mutanti == 2
 
 
 def test_percorso_b_quando_la_quota_e_abbinabile():
     # Il caso REALE di Mike il 17/09: copertura aggressiva sotto il best back.
-    p = S.pianifica_submin(side="back", target_price=5.4, target_size=1.21,
+    p = S.pianifica_submin(side="back", target_price=5.4, target_size=0.71,
                            jurisdiction="it", best_back=5.9, best_lay=6.0)
     assert p.park_mode == S.PARK_FAR
     assert p.park_price == 1000.0
@@ -72,7 +73,7 @@ def test_book_ignoto_sceglie_il_percorso_conservativo():
 
 
 def test_replace_non_consentito_rifiuta_senza_piazzare():
-    p = S.pianifica_submin(side="back", target_price=5.4, target_size=1.21,
+    p = S.pianifica_submin(side="back", target_price=5.4, target_size=0.71,
                            jurisdiction="it", best_back=5.9,
                            consenti_replace=False)
     assert p.rifiuto and p.rifiuto.startswith("SUBMIN_REPLACE_VIETATO")
@@ -88,8 +89,10 @@ def test_sopra_il_minimo_nessun_trucco():
 def test_lay_percorso_a():
     p = S.pianifica_submin(side="lay", target_price=2.00, target_size=0.20,
                            jurisdiction="it", best_back=1.9, best_lay=2.1)
-    assert p.park_mode == S.PARK_TARGET and p.park_size == 0.50
-    assert p.size_reduction == 0.30 and p.serve_replace is False
+    # 01/10/2026: banca minima .it 1,00 -> parcheggio 1,00, taglio 0,80 (nucleo
+    # meccanico; in produzione un importo finale < 1,00 non entra: verifica_importo_finale)
+    assert p.park_mode == S.PARK_TARGET and p.park_size == 1.00
+    assert p.size_reduction == 0.80 and p.serve_replace is False
 
 
 def test_sotto_il_floor_assoluto_solleva():
@@ -194,7 +197,7 @@ def test_start_submin_percorso_a_parcheggia_alla_quota_target():
 
 
 def test_start_submin_senza_book_resta_al_comportamento_storico():
-    st = S.start_submin(side="back", target_price=5.4, target_size=1.21,
+    st = S.start_submin(side="back", target_price=5.4, target_size=0.71,
                         jurisdiction="it")
     assert st.serve_replace is True
     assert st.prezzo_parcheggio == 1000.0
@@ -208,12 +211,12 @@ def test_macchina_percorso_a_non_chiama_mai_replace():
     st = S.advance_submin(object(), st, order=None, jurisdiction="it",
                           customer_order_ref="ref", ops=ops)
     assert st.step == S.SubminStep.PLACED
-    assert ops.chiamate[0] == ("place", "back", 5.9, 2.00)
+    assert ops.chiamate[0] == ("place", "back", 5.9, 1.00)
     # step2: cancel parziale, poi osservazione del residuo al target
-    ord_park = _OrdineFinto(bet_id="1", price=5.9, size_remaining=2.00)
+    ord_park = _OrdineFinto(bet_id="1", price=5.9, size_remaining=1.00)
     st = S.advance_submin(object(), st, order=ord_park, jurisdiction="it",
                           customer_order_ref="ref", ops=ops, now_ms=1_000)
-    assert ("cancel", 1.21) in ops.chiamate
+    assert ("cancel", 0.21) in ops.chiamate
     ord_trim = _OrdineFinto(bet_id="1", price=5.9, size_remaining=0.79)
     st = S.advance_submin(object(), st, order=ord_trim, jurisdiction="it",
                           customer_order_ref="ref", ops=ops, now_ms=2_000)
@@ -230,12 +233,12 @@ def test_macchina_percorso_a_non_chiama_mai_replace():
 
 def test_macchina_percorso_b_chiama_il_replace():
     ops = _OpsFinte()
-    st = S.start_submin(side="back", target_price=5.4, target_size=1.21,
+    st = S.start_submin(side="back", target_price=5.4, target_size=0.71,
                         jurisdiction="it", best_back=5.9, best_lay=6.0)
     st = S.advance_submin(object(), st, order=None, jurisdiction="it",
                           customer_order_ref="ref", ops=ops)
-    assert ops.chiamate[0] == ("place", "back", 1000.0, 2.00)
-    ord_trim = _OrdineFinto(bet_id="1", price=1000.0, size_remaining=1.21)
+    assert ops.chiamate[0] == ("place", "back", 1000.0, 1.00)
+    ord_trim = _OrdineFinto(bet_id="1", price=1000.0, size_remaining=0.71)
     st = S.advance_submin(object(), st, order=ord_trim, jurisdiction="it",
                           customer_order_ref="ref", ops=ops, now_ms=1_000)
     assert st.step == S.SubminStep.TRIMMED
@@ -256,11 +259,13 @@ def test_liability_del_parcheggio_lay_alla_quota_target():
 
 
 def test_lay_percorso_a_vietato_se_il_parcheggio_sfonda_il_cap():
-    # LAY a 95: percorso A impegnerebbe 0,50*(95-1) = 47,00 EUR, cap 10,00.
+    # LAY a 95: percorso A impegnerebbe 1,00*(95-1) = 94,00 EUR, cap 10,00.
+    # 01/10/2026: il parcheggio lontano della banca e' a 1 + 0,008/0,20 = 1,04
+    # (INVALID_PROFIT_RATIO sul residuo), non piu' a 1,01.
     p = S.pianifica_submin(side="lay", target_price=95.0, target_size=0.20,
                            jurisdiction="it", best_back=90.0, best_lay=100.0,
                            max_stake=10.0)
-    assert p.park_mode == S.PARK_FAR and p.park_price == 1.01
+    assert p.park_mode == S.PARK_FAR and p.park_price == 1.04
     assert p.serve_replace is True
     assert "oltre il cap" in p.motivo
 

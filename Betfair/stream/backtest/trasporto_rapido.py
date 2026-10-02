@@ -749,11 +749,13 @@ def _r7(b: BancoRapido, A: Any, pref: str, e: _Esito, stato: Dict[str, Any]) -> 
 
 def _r8(b: BancoRapido, A: Any, pref: str, e: _Esito, stato: Dict[str, Any]) -> None:
     if A.nome == "omega":
-        e.na = ("Omega: stake fisso 1,00 EUR di LAY, sopra il minimo .it 0,50; "
+        e.na = ("Omega: stake fisso 1,00 EUR di LAY, pari al minimo .it 1,00; "
                 "omega_service passa sempre sotto_minimo=False")
         return
     sel, prezzo_b, _d = b.quota("back")
-    size = 1.50                                 # BACK sotto il minimo .it (2,00)
+    # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50 (sul Match Odds a 3 esiti
+    # non c'e' equivalente: 0,70 va al place-and-trim, parcheggio 1,00)
+    size = 0.70                                 # BACK sotto il minimo .it (1,00)
     tid = A.riserva(side="back", price=prezzo_b, size=size)
     ref = "%s%d" % (pref, tid)
     A.invia(tid, selection_id=sel, side="back", price=prezzo_b, size=size)
@@ -776,7 +778,7 @@ def _r8(b: BancoRapido, A: Any, pref: str, e: _Esito, stato: Dict[str, Any]) -> 
     finali = [ev for ev in b.pb.esiti(ref) if ev.get("fase") not in
               ("inviato", "parcheggiato", "ridotto")]
     ultimo = finali[-1] if finali else {}
-    e.controlla("ordine a mercato: 1,50 alla quota chiesta (nessun 2,00 a quota vera)",
+    e.controlla("ordine a mercato: 0,70 alla quota chiesta (nessun 1,00 a quota vera)",
                 abs(float(ultimo.get("size") or 0) - size) < 0.01
                 and abs(float(ultimo.get("price") or 0) - prezzo_b) < 1e-6,
                 {k: ultimo.get(k) for k in ("fase", "price", "size", "size_matched",
@@ -1083,11 +1085,12 @@ def _motivo_esito_diario(b: BancoRapido, ref: str) -> str:
 def _r8_tennis(b: BancoRapido, A: Any, pref: str, e: _Esito, stato: Dict[str, Any]) -> None:
     """28/09 - DECISIONE DELL'UTENTE su R-1 ("porta al limite minimo
     accettato"): il runner tennis non ha il place-and-trim e un'apertura sotto
-    il minimo NON si rifiuta piu': parte AL minimo (BACK 2,00) come place
+    il minimo NON si rifiuta piu': parte AL minimo (BACK 1,00 dal 01/10) come place
     normale, e l'evento lo DICE (``portata_al_minimo``). Prima: rifiuto
     ``submin_non_percorribile``, nessun ordine."""
     sel, prezzo_b, _d = b.quota("back")
-    size = 1.50                                 # BACK sotto il minimo .it (2,00)
+    # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
+    size = 0.70                                 # BACK sotto il minimo .it (1,00)
     tid = A.riserva(side="back", price=prezzo_b, size=size)
     ref = "%s%d" % (pref, tid)
     ord0, rest0 = len(b.ordini_del_motore()), _conta_rest(b)
@@ -1100,12 +1103,12 @@ def _r8_tennis(b: BancoRapido, A: Any, pref: str, e: _Esito, stato: Dict[str, An
     eventi = list(b.pb.esiti(ref) or [])
     primo = eventi[0] if eventi else {}
     e.controlla("l'evento DICE che l'importo e' stato portato al minimo",
-                primo.get("portata_al_minimo") == {"chiesto": size, "piazzato": 2.0},
+                primo.get("portata_al_minimo") == {"chiesto": size, "piazzato": 1.0},
                 primo.get("portata_al_minimo"))
     nuovi = b.ordini_del_motore()[ord0:]
-    e.controlla("UN ordine al minimo (2,00) alla quota chiesta, nessun REST",
+    e.controlla("UN ordine al minimo (1,00) alla quota chiesta, nessun REST",
                 len(nuovi) == 1 and _conta_rest(b) == rest0
-                and abs(float(nuovi[0].order_type.size) - 2.0) < 1e-9
+                and abs(float(nuovi[0].order_type.size) - 1.0) < 1e-9
                 and abs(float(nuovi[0].order_type.price) - prezzo_b) < 1e-6,
                 ([(o.order_type.size, o.order_type.price) for o in nuovi],
                  b.rest[rest0:]))

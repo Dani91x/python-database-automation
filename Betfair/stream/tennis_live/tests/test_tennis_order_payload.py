@@ -108,7 +108,7 @@ def _place_cmd(**kw):
 def test_place_rejects_submin_back_it(monkeypatch):
     flumine, session = _fake_env(monkeypatch)
     with pytest.raises(ValueError, match="minimo"):
-        tow._do_place(flumine, session, _place_cmd(size=1.0), "awtq1")   # < €2.00 .it
+        tow._do_place(flumine, session, _place_cmd(size=0.99), "awtq1")   # < 1,00 .it (minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50)
 
 
 def test_place_rejects_submin_lay_it(monkeypatch):
@@ -192,5 +192,5 @@ def test_place_mercato_aperto_passa_la_guardia_come_prima(monkeypatch):
     # una size sotto minimo continua a essere rifiutata dal SUO motivo, non
     # da "mercato non operabile": prova che la guardia dello stato ha lasciato
     # passare e il codice e' arrivato al controllo successivo.
-    with pytest.raises(ValueError, match="minimo"):
-        tow._do_place(flumine, session, _place_cmd(size=1.0), "awtq1")
+    with pytest.raises(ValueError, match="minimo"):  # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
+        tow._do_place(flumine, session, _place_cmd(size=0.99), "awtq1")

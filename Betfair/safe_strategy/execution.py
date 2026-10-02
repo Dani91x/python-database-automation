@@ -50,12 +50,12 @@ ENQUEUE_UNKNOWN = -1
 # il minimo di giurisdizione passa dal place-and-trim, non viene rifiutato.
 ABS_MIN_SIZE = 0.01
 
-# SIZE MINIMA di PIAZZAMENTO di Betfair (.it: BACK 2,00 / LAY 0,50). Sotto
+# SIZE MINIMA di PIAZZAMENTO di Betfair (.it: BACK 1,00 / LAY 1,00 dal 01/10, minimi_it). Sotto
 # questa soglia l'exchange rifiuta un place DIRETTO — ma NON rifiuta un ordine
 # esistente RIDOTTO sotto la soglia. E' la tecnica che usano Bet Angel, Fairbot
 # e Betting Toolkit, si chiama PLACE-AND-TRIM ed e' implementata in
 # ``Betfair/stream/trading/submin.py`` (azione di coda ``place_submin``):
-#   1. place del minimo a una quota NON abbinabile (BACK 1000 / LAY 1.01);
+#   1. place del minimo a una quota NON abbinabile (BACK 1000 / LAY quota_parcheggio_lontano);
 #   2. cancel PARZIALE: resta esattamente la size voluta, sotto il minimo;
 #   3. replace alla quota reale.
 # Quindi QUALSIASI importo e' piazzabile, fino al centesimo. Questa soglia serve
@@ -86,7 +86,11 @@ def _min_size_live(side: str = "back") -> float:
             return max(0.0, float(raw))
         except ValueError:
             pass
-    return 0.50 if str(side).lower() == "lay" else 2.0
+    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): UNA definizione dei minimi .it per tutto il
+    # repo, ``Betfair.stream.trading.minimi_it`` (punta e banca 1,00 al centesimo).
+    from Betfair.stream.trading.minimi_it import IT_MIN_BACK, IT_MIN_LAY
+
+    return float(IT_MIN_LAY) if str(side).lower() == "lay" else float(IT_MIN_BACK)
 
 
 #: CANTIERE P (28/09): ``porta_al_minimo_apertura`` arriva con il cantiere D2
@@ -475,6 +479,45 @@ def ha_marker_canale(trade: dict[str, Any]) -> bool:
     return bool(isinstance(meta, dict) and meta.get("canale_ref"))
 
 
+#: 02/10/2026 (RUNNER_MINIMI_CORREZIONI, punto 10): episodi di rifiuto
+#: ``SOTTO_MINIMO_NON_PIAZZABILE`` gia' dichiarati CRITICAL (chiave -> [primo_ts, n]).
+#: Le strategie ritentano le uscite a cadenza (Safe: residui ogni 20 s poi 300 s;
+#: Omega: green-up ogni 20 s, giri illimitati): ogni tentativo resta un rifiuto CERTO
+#: (nessun ordine, nessuna chiamata a Betfair), ma il CRITICAL si dice UNA volta per
+#: episodio; le ripetizioni si loggano come tali (non critiche, col contatore).
+_EPISODI_SOTTO_MINIMO: dict[tuple, list] = {}
+_EPISODIO_TTL_S = 6 * 3600
+
+
+def _critico_una_volta(*, db: Any, market_id: Any, selection_id: Any, side: str, meta: Any,
+                       size: float, now: Optional[datetime] = None) -> "tuple[bool, int]":
+    """(critical?, numero del tentativo nell'episodio). Episodio = stessa posizione da
+    chiudere (``closes_trade_id``) o, per un'apertura, stesso mercato/selezione/lato/
+    importo; scade dopo ``_EPISODIO_TTL_S``. Solo RAM, mai IO. La memoria sta
+    sull'oggetto ``db`` del servizio (un servizio = un db), cosi' due istanze non si
+    confondono; se l'oggetto non la accetta, sul modulo."""
+    registro = getattr(db, "_episodi_sotto_minimo", None)
+    if not isinstance(registro, dict):
+        registro = {}
+        try:
+            setattr(db, "_episodi_sotto_minimo", registro)
+        except Exception:  # noqa: BLE001 - oggetto senza attributi liberi
+            registro = _EPISODI_SOTTO_MINIMO
+    m = meta if isinstance(meta, dict) else {}
+    padre = m.get("closes_trade_id")
+    chiave = (str(market_id), str(selection_id), str(side).lower(),
+              ("chiude", str(padre)) if padre is not None else ("importo", round(float(size), 2)))
+    ts = now.timestamp() if now is not None else time.time()
+    for k in [k for k, v in registro.items() if ts - v[0] > _EPISODIO_TTL_S]:
+        registro.pop(k, None)
+    ep = registro.get(chiave)
+    if ep is None:
+        registro[chiave] = [ts, 1]
+        return True, 1
+    ep[1] += 1
+    return False, ep[1]
+
+
 def _place_via_canale(porta: Any, *, db, mode: str, market_id: str, selection_id: int,
                       side: str, price: float, size: float, client_ref: str,
                       tid: Optional[int], meta: dict[str, Any], now: Optional[datetime],
@@ -583,8 +626,17 @@ def _place_via_canale(porta: Any, *, db, mode: str, market_id: str, selection_id
         return PlaceOutcome("pending", price, size, None, f"canale_esito_ignoto:{ref}",
                             size_requested=size)
     if not ack.accettato and ack.motivo != PO.MOTIVO_REF_GIA_VISTO:
+        critico, tentativo = (mode == "live"), 1
+        if "SOTTO_MINIMO_NON_PIAZZABILE" in str(ack.motivo or ""):
+            # 02/10 (punto 10): il runner rifiuta lo stesso importo a ogni ritento della
+            # strategia; il CRITICAL si dice una volta per episodio
+            primo, tentativo = _critico_una_volta(db=db, market_id=market_id,
+                                                  selection_id=selection_id, side=side,
+                                                  meta=meta, size=size, now=now)
+            critico = critico and primo
         _log(db, "canale_rifiutato", {"trade_id": tid, "mode": mode, "ref": ref,
-                                      "motivo": ack.motivo, "critical": mode == "live",
+                                      "tentativo_nell_episodio": tentativo,
+                                      "motivo": ack.motivo, "critical": critico,
                                       "nota": "il runner ha rifiutato il comando: nessun "
                                               "ordine, nessun secondo invio"})
         return PlaceOutcome("error", None, 0.0, None, f"canale_rifiutato:{ack.motivo}",
@@ -732,12 +784,13 @@ def place(
     tid = trade_id if trade_id is not None else _trade_id_from_ref(client_ref)
 
     # --- sotto il minimo di PIAZZAMENTO? allora place-and-trim -------------------
-    # Le CHIUSURE non c'entrano: Betfair accetta gia' gli ordini sotto minimo che
-    # RIDUCONO una posizione (review C2), quindi passano dal percorso normale.
+    # 01/10/2026: anche le CHIUSURE (vedi ``sotto_minimo_chiusura`` piu' sotto):
+    # l'idea che Betfair accetti gli ordini sotto minimo che RIDUCONO una posizione
+    # (review C2) e' stata smentita dal rifiuto INVALID_BET_SIZE del 01/10.
     min_live = _min_size_live(side)
     is_closing = bool(meta.get("cashout") or meta.get("closes_trade_id"))
     # CANTIERE P (28/09) - DECISIONE DELL'UTENTE per il TENNIS: un'APERTURA
-    # sotto il minimo di Betfair si porta AL minimo (BACK 2,00, LAY 0,50) su
+    # sotto il minimo di Betfair si porta AL minimo (BACK 1,00, LAY 1,00 dal 01/10) su
     # OGNI strada (canale, coda, REST live), non piu' il place-and-trim alla
     # size esatta che restava sul REST. Le CHIUSURE restano esatte.
     # CORREZIONE (28/09 sera): sulla strada del CANALE la regola la applica il
@@ -766,6 +819,15 @@ def place(
                                   "nota": "apertura tennis sotto il minimo di Betfair "
                                           "portata al minimo (decisione dell'utente)"})
     sotto_minimo = bool(min_live > 0 and size < min_live - 1e-9 and not is_closing)
+    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): l'ipotesi "Betfair accetta le chiusure sotto
+    # il minimo" (review C2) e' FALSA: una chiusura sotto il minimo viene rifiutata
+    # INVALID_BET_SIZE. Sul CANALE decide il motore del runner (equivalente / place-and-
+    # trim / rifiuto esplicito), quindi la chiusura parte come sempre (FOK compreso);
+    # sulla CODA e sul REST, che non hanno quel verdetto, la chiusura sotto il minimo va
+    # al place-and-trim (``place_submin`` / ``place_submin_live``), mai un place diretto
+    # che Betfair rifiuterebbe.
+    sotto_minimo_chiusura = bool(min_live > 0 and size < min_live - 1e-9 and is_closing)
+    submin_fuori_canale = sotto_minimo or sotto_minimo_chiusura
 
     # --- F5 (24/09): PORTA A COMANDI sul canale del runner ----------------------
     # Solo se il chiamante (Safe, interruttore acceso) la passa. ``None`` = il
@@ -787,6 +849,34 @@ def place(
         if esito_canale is not None:
             return esito_canale
 
+    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): fuori dal canale non c'e' l'equivalente
+    # sull'altra selezione; il place-and-trim non riduce mai sotto 0,50 EUR (floor di
+    # legge, ``SUBMIN_IMPORTO_FINALE_MIN``; il minimo diretto e' 1,00). Un importo
+    # sotto il minimo E sotto 0,50 e' quindi un RIFIUTO CERTO, deciso qui, uguale in
+    # paper e in live (nessuna riga in coda, nessun REST): il residuo e' del trader.
+    from Betfair.stream.live_order_build import (
+        SOTTO_MINIMO_NON_PIAZZABILE,
+        SUBMIN_IMPORTO_FINALE_MIN,
+    )
+
+    if submin_fuori_canale and size < SUBMIN_IMPORTO_FINALE_MIN - 1e-9:
+        # 02/10 (punto 10): UN solo CRITICAL per episodio, le ripetizioni contate
+        critico, tentativo = _critico_una_volta(db=db, market_id=market_id,
+                                                selection_id=selection_id, side=side,
+                                                meta=meta, size=size, now=now)
+        _log(db, "place_rifiutato", {
+            "trade_id": tid, "mode": mode, "side": side, "price": price, "size": size,
+            "error_code": SOTTO_MINIMO_NON_PIAZZABILE, "critical": critico,
+            "tentativo_nell_episodio": tentativo,
+            "percorso": "submin",
+            "nota": ("sotto il minimo .it e sotto %.2f EUR (place-and-trim mai sotto il floor di legge 0,50): "
+                     "nessun ordine; residuo %.2f da dichiarare al trader"
+                     % (SUBMIN_IMPORTO_FINALE_MIN, size))})
+        return PlaceOutcome("error", None, 0.0, None,
+                            f"{SOTTO_MINIMO_NON_PIAZZABILE.lower()}:{size:.2f}",
+                            size_requested=size, size_remaining=0.0,
+                            error_code=SOTTO_MINIMO_NON_PIAZZABILE)
+
     # --- gate flumine (PAPER e LIVE): riuso 1:1 di omega_service._flumine_gate ---
     # CERT. 13/09, difetto C-2: qui il gate veniva FORZATO ad 'auto' per gli
     # ordini sotto-minimo, per mandarli sulla macchina place-and-trim della coda.
@@ -802,10 +892,10 @@ def place(
             db=db, trade_id=tid, client_ref=client_ref, event_id=event_id,
             market_id=market_id, selection_id=selection_id, side=side,
             price=price, size=size, base_meta=meta, now=now, mode=mode,
-            action="place_submin" if sotto_minimo else "place",
+            action="place_submin" if submin_fuori_canale else "place",
         )
         if rid:
-            nota = "submin" if sotto_minimo else mode
+            nota = "submin" if submin_fuori_canale else mode
             return PlaceOutcome("pending", price, size, None,
                                 f"flumine_{nota}:{rid if rid > 0 else 'unknown'}")
         gate_reason = "enqueue_failed"
@@ -845,7 +935,7 @@ def place(
         # Mike lo riconosce dal prefisso (``_NOTE_SENZA_RUNNER``).
         return PlaceOutcome("error", None, 0.0, None, f"paper_senza_runner:{gate_reason}",
                             size_requested=size, size_remaining=0.0)
-    if sotto_minimo and not hasattr(market, "place_submin_live"):
+    if submin_fuori_canale and not hasattr(market, "place_submin_live"):
         # LIVE, nessuna coda E nessun place-and-trim su questo mercato: si
         # dichiara il MOTIVO, non "l'importo e' troppo piccolo"
         return PlaceOutcome("error", None, 0.0, None,
@@ -878,7 +968,7 @@ def place(
     # dipende da noi. Senza, "il bot e' lento" resta un'opinione.
     t4 = _ora_ms()
     try:
-        if sotto_minimo:
+        if submin_fuori_canale:
             res = market.place_submin_live(
                 market_id=str(market_id), selection_id=int(selection_id), price=price,
                 size=size, event_id=str(event_id), side=side, customer_ref=client_ref[:32],
@@ -897,7 +987,10 @@ def place(
         # restava bloccato dall'indice unico e la liability veniva contata piena.
         # Un rifiuto certo e' una riga 'error', col codice di Betfair scritto.
         return _esito_rifiuto_certo(db, ex, tid=tid, mode=mode, side=side, price=price,
-                                    size=size, sotto_minimo=sotto_minimo)
+                                    size=size, sotto_minimo=submin_fuori_canale,
+                                    episodio={"market_id": market_id,
+                                              "selection_id": selection_id,
+                                              "meta": meta, "now": now})
     except Exception as ex:  # noqa: BLE001 — esito IGNOTO: MAI ripiazzare
         return _reconciling(db, tid, meta=meta, mode=mode, price=price, size=size, ex=ex)
     t5 = _ora_ms()
@@ -915,7 +1008,7 @@ def place(
                                      "error_code": codice,
                                      "order_status": res.order_status,
                                      "critical": True,
-                                     "percorso": "submin" if sotto_minimo else "rest"})
+                                     "percorso": "submin" if submin_fuori_canale else "rest"})
         nota = f"live_not_matched:{res.order_status}"
         if codice:
             nota += f":{codice}"
@@ -944,7 +1037,7 @@ def place(
                                              + ("vivo" if float(residuo) > 0 else "annullato"))})
     return PlaceOutcome(
         "open", medio, abbinato, res.bet_id,
-        f"live_{'submin' if sotto_minimo else 'rest'}:{res.order_status}",
+        f"live_{'submin' if submin_fuori_canale else 'rest'}:{res.order_status}",
         esecuzione={
             "t4_inviato": t4, "t5_risposta": t5,
             "betfair_ms": round(t5 - t4, 1),
@@ -957,7 +1050,7 @@ def place(
             # QUELLA size sarebbe dovuta passare. Non e' la stessa cosa del
             # fill reale, ed e' etichettata come previsione, non come fatto.
             "livelli_previsti": livelli_attraversati(ladder, size, price, side),
-            "percorso": "submin" if sotto_minimo else "rest",
+            "percorso": "submin" if submin_fuori_canale else "rest",
             # C.12a — chiesto e residuo anche nella catena dei tempi
             "size_richiesta": chiesto,
             "size_abbinata": abbinato,
@@ -970,15 +1063,22 @@ def place(
 
 
 def _esito_rifiuto_certo(db, ex: Exception, *, tid: Optional[int], mode: str, side: str,
-                         price: float, size: float, sotto_minimo: bool) -> PlaceOutcome:
+                         price: float, size: float, sotto_minimo: bool,
+                         episodio: Optional[dict[str, Any]] = None) -> PlaceOutcome:
     """RIFIUTO CERTO del place (``PlaceRifiutato``): riga 'error' col codice.
 
     Unico punto che lo scrive: il live (REST) e, dal D1-ter, il paper di un
-    taker FOK sotto il minimo sul canale, che deve dare lo STESSO esito."""
+    taker FOK sotto il minimo sul canale, che deve dare lo STESSO esito.
+    02/10/2026 (punto 10): per ``SOTTO_MINIMO_NON_PIAZZABILE`` (nessuna chiamata a
+    Betfair) il CRITICAL e' UNO per episodio (``_critico_una_volta``)."""
     codice = getattr(ex, "error_code", None)
+    critico, tentativo = True, 1
+    if codice == "SOTTO_MINIMO_NON_PIAZZABILE" and episodio is not None:
+        critico, tentativo = _critico_una_volta(db=db, side=side, size=size, **episodio)
     _log(db, "place_rifiutato", {"trade_id": tid, "mode": mode, "side": side,
                                  "price": price, "size": size,
-                                 "error_code": codice, "critical": True,
+                                 "tentativo_nell_episodio": tentativo,
+                                 "error_code": codice, "critical": critico,
                                  "percorso": "submin" if sotto_minimo else "rest",
                                  "reason": str(ex)[:160],
                                  "nota": "Betfair ha rifiutato: nessun ordine a mercato"})
@@ -1253,13 +1353,11 @@ def enqueue_place(*, db, trade_id: int, client_ref: str, event_id: str, market_i
         "persistence": "LAPSE",
         "params": {"source": "safe", "trade_id": int(trade_id)},
     }
-    # CERT. 13/09 — una CHIUSURA riduce la posizione: Betfair la accetta sotto
-    # il minimo e senza il passo da 0,50 EUR sulle size BACK. Senza questo flag
-    # ``live_order_build.min_stake_rules`` SOLLEVA per ogni BACK < 2,00 EUR e
-    # tronca per difetto le altre: la gamba di uscita finiva in errore e la
-    # posizione restava esposta fino al settlement, che e' esattamente cio' che
-    # il manuale vieta ("si esce subito e si accetta"). ``_place_closing_leg``
-    # del worker faceva gia' cosi' per l'azione ``greenup``: stesso trattamento.
+    # CERT. 13/09 — una CHIUSURA riduce la posizione: il flag la marca come tale
+    # (control di flusso, kill-switch). 01/10/2026: NON la esenta piu' dai minimi
+    # (ipotesi smentita da Betfair, INVALID_BET_SIZE): sotto il minimo la chiusura
+    # arriva qui come ``place_submin`` (vedi ``sotto_minimo_chiusura``); la punta
+    # e' legalizzata al centesimo (niente piu' floor a 0,50).
     if base_meta and (base_meta.get("cashout") or base_meta.get("closes_trade_id")):
         payload["params"]["reduces_liability"] = True
     if action == "place_submin":

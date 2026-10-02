@@ -11,15 +11,24 @@ e delle classi ordine flumine (LimitOrder / LimitOnCloseOrder / MarketOnCloseOrd
 Trade / BetfairOrder). Nessuna rete, nessun login: testabile a unità con mock del Market.
 
 Giurisdizione conto = .it (Italian Exchange):
-  - BACK: stake minimo €2,00, incrementi €0,50 (floor);
-  - LAY : size minima €0,50 (no incrementi fissi);
+  - BACK: stake minimo 1,00 EUR, al CENTESIMO (01/10/2026, ``trading.minimi_it``);
+  - LAY : size (= stake del backer) minima 1,00 EUR; la liability NON conta;
   - NESSUN Minimum Bet Payout;
   - max vincita €10.000; vietato back+lay misti nello stesso ordine (ogni BuiltOrder = 1 lato).
-Eccezione sotto-minimo: `reduces_liability=True` (green-up / hedge) consente size sotto
-il minimo, soggetta alla guardia profit-ratio INVALID_PROFIT_RATIO (-20% / +25%).
+
+01/10/2026 (RUNNER_MINIMI_CHIUSURE, AUDIT_2026-10-01/RICERCA_STAKE_MINIMI_BETFAIR.md):
+NESSUNA eccezione per gli ordini che riducono l'esposizione. Fino a oggi
+``reduces_liability=True`` esentava chiusure/green-up/hedge dai minimi: ipotesi FALSA
+(nessuna fonte Betfair la prevede; il 01/10 una banca di chiusura da 0,43 @18 di Mike e'
+stata rifiutata ``INVALID_BET_SIZE`` 21 volte). ``reduces_liability`` resta SOLO come
+informazione (log, diario, ``order.context`` per i control di flusso). Sotto il minimo le
+vie legittime sono decise da ``verdetto_minimi``: (a) l'ordine EQUIVALENTE sul lato opposto
+dell'altra selezione di un mercato a due esiti; (b) il place-and-trim; (c) nessun ordine,
+con rifiuto esplicito ``SOTTO_MINIMO_NON_PIAZZABILE``.
 """
 from __future__ import annotations
 
+import bisect
 import math
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_FLOOR
@@ -29,7 +38,13 @@ from flumine.order.order import BetfairOrder
 from flumine.order.ordertype import LimitOnCloseOrder, LimitOrder, MarketOnCloseOrder
 from flumine.order.trade import Trade
 from flumine.strategy.strategy import BaseStrategy
-from flumine.utils import MAX_PRICE, MIN_PRICE, get_nearest_price, price_ticks_away
+from flumine.utils import (
+    MAX_PRICE,
+    MIN_PRICE,
+    PRICES_FLOAT,
+    get_nearest_price,
+    price_ticks_away,
+)
 
 # ---------------------------------------------------------------------------
 # Costanti giurisdizione / guardie money-critical
@@ -37,9 +52,34 @@ from flumine.utils import MAX_PRICE, MIN_PRICE, get_nearest_price, price_ticks_a
 JURISDICTION_IT = "it"
 JURISDICTION_COM = "com"
 
-IT_BACK_MIN_STAKE = 2.00       # stake minimo BACK (€)
-IT_BACK_STEP = 0.50            # incremento BACK (€)
-IT_LAY_MIN_SIZE = 0.50         # size minima LAY (€)
+# 01/10/2026 - CORREZIONE DEFINITIVA (ordine dell'utente, Nota informativa betfair.it): i
+# minimi .it sono UNA definizione, in ``trading.minimi_it`` (senza dipendenze, importata da
+# motore, Safe, Omega e Mike con gli stessi nomi). Qui solo gli alias storici del modulo:
+#   punta >= 1,00 al CENTESIMO (nessun passo di 0,50), banca >= 1,00 sul size (puntata
+#   del backer, la liability non conta), nessuna esenzione per le chiusure, floor di legge
+#   0,50 mai tentato, place-and-trim solo con parcheggio e importo finale >= 0,50 (02/10).
+from Betfair.stream.trading.minimi_it import (  # noqa: E402, F401 - riesportati
+    IT_FLOOR_LEGGE,
+    IT_MIN_BACK,
+    IT_MIN_LAY,
+    IT_PASSO_PUNTA_RIPIEGO,
+    SOTTO_MINIMO_NON_PIAZZABILE,
+    SUBMIN_IMPORTO_FINALE_MIN,
+)
+
+IT_BACK_MIN_STAKE = IT_MIN_BACK      # alias storico (submin, condotta tennis, worker)
+IT_LAY_MIN_SIZE = IT_MIN_LAY         # alias storico
+# Passo di 0,50 della documentazione: SOLO per il RIPIEGO (``size_ripiego_punta``) dopo un
+# ``INVALID_BET_SIZE`` reale su una punta non multipla di 0,50; mai un floor preventivo.
+IT_BACK_STEP = IT_PASSO_PUNTA_RIPIEGO
+
+# Floor MECCANICO della macchina place-and-trim (residuo > 0 dopo il taglio). La REGOLA
+# d'ingresso (importo finale >= ``SUBMIN_IMPORTO_FINALE_MIN``) la verificano il verdetto e
+# ogni ingresso reale nella macchina (``trading.submin.verifica_importo_finale``).
+SUBMIN_ABS_MIN_SIZE = 0.01
+# Tolleranza dell'equivalenza economica (EUR): l'ordine tradotto non puo' essere peggiore
+# di quello chiesto di piu' di un centesimo in nessuno dei due esiti.
+TOLLERANZA_EQUIVALENZA = 0.01
 
 COM_MIN_STAKE = 2.00           # stake minimo generico .com (€)
 COM_MIN_BET_PAYOUT = 20.0      # Min Bet Payout .com: ammesso sotto-minimo se size*price >= 20
@@ -141,12 +181,17 @@ def min_stake_rules(
 ) -> MinStakeVerdict:
     """Verifica/legalizza la size secondo la giurisdizione.
 
-    .it  -> BACK: min €2,00 + floor a €0,50; LAY: size floor €0,50; NO Min Bet Payout.
-    .com -> min €2,00 oppure Min Bet Payout (size*price >= 20).
-    `reduces_liability=True` (green-up/hedge) consente size sotto-minimo: in tal caso la
-    size è accettata (round 2 decimali) e la guardia profit-ratio resta a carico del
-    chiamante (banda INVALID_PROFIT_RATIO_MIN..MAX).
+    .it  -> BACK: size >= ``IT_MIN_BACK`` (1,00), legalizzata al CENTESIMO; LAY: size >=
+            ``IT_MIN_LAY`` (1,00; la liability non conta); NO Min Bet Payout.
+    .com -> min 2,00 EUR oppure Min Bet Payout (size*price >= 20).
+
+    ``reduces_liability`` e' SOLO informazione (01/10/2026): NON esenta piu' dai minimi.
+    Betfair non ha nessuna eccezione per chi riduce l'esposizione: un ordine sotto il
+    minimo, anche di chiusura, viene rifiutato ``INVALID_BET_SIZE``. La via legittima
+    sotto il minimo la decide ``verdetto_minimi``. Il parametro resta per i chiamanti
+    esistenti (tennis, condotta, worker) e non cambia il verdetto.
     """
+    del reduces_liability  # informazione: mai un'esenzione dai minimi
     j = (jurisdiction or "").lower()
     s = (side or "").lower()
     if s not in _VALID_SIDES:
@@ -154,31 +199,24 @@ def min_stake_rules(
     if size is None or not math.isfinite(size) or size <= 0:
         return MinStakeVerdict(False, None, f"size non valida: {size!r}")
 
-    # Sotto-minimo consentito quando si riduce la liability (hedge / green-up).
-    if reduces_liability:
-        return MinStakeVerdict(True, round(float(size), 2), None)
-
     if j == JURISDICTION_IT:
+        legal = round(float(size), 2)
         if s == "back":
-            if size < IT_BACK_MIN_STAKE - _EPS:
-                return MinStakeVerdict(
-                    False, None,
-                    f"BACK size {size:.2f} < minimo €{IT_BACK_MIN_STAKE:.2f} (.it)",
-                )
-            legal = _floor_to_step(size, IT_BACK_STEP)
             if legal < IT_BACK_MIN_STAKE - _EPS:
                 return MinStakeVerdict(
                     False, None,
-                    f"BACK size legalizzata {legal:.2f} < minimo €{IT_BACK_MIN_STAKE:.2f} (.it)",
+                    f"{SOTTO_MINIMO_NON_PIAZZABILE}: BACK size {legal:.2f} < minimo "
+                    f"{IT_BACK_MIN_STAKE:.2f} EUR (.it)",
                 )
             return MinStakeVerdict(True, legal, None)
-        # lay
-        if size < IT_LAY_MIN_SIZE - _EPS:
+        # lay: conta il size (stake del backer), mai la liability
+        if legal < IT_LAY_MIN_SIZE - _EPS:
             return MinStakeVerdict(
                 False, None,
-                f"LAY size {size:.2f} < minimo €{IT_LAY_MIN_SIZE:.2f} (.it)",
+                f"{SOTTO_MINIMO_NON_PIAZZABILE}: LAY size {legal:.2f} < minimo "
+                f"{IT_LAY_MIN_SIZE:.2f} EUR (.it, conta lo stake del backer)",
             )
-        return MinStakeVerdict(True, round(float(size), 2), None)
+        return MinStakeVerdict(True, legal, None)
 
     if j == JURISDICTION_COM:
         payout = float(size) * float(price) if price else 0.0
@@ -191,6 +229,265 @@ def min_stake_rules(
         )
 
     return MinStakeVerdict(False, None, f"giurisdizione sconosciuta: {jurisdiction!r}")
+
+
+def size_ripiego_punta(size: float) -> Optional[float]:
+    """RIPIEGO dopo un ``INVALID_BET_SIZE`` REALE su una punta non multipla di 0,50.
+
+    Ritorna la size arrotondata PER DIFETTO al multiplo di ``IT_BACK_STEP`` se e' diversa
+    da quella rifiutata e resta >= ``IT_BACK_MIN_STAKE``; altrimenti None (nessun ripiego:
+    la punta era gia' un multiplo, oppure scenderebbe sotto il minimo). Pura: chi la usa
+    garantisce che il ripiego avvenga UNA sola volta e solo dopo il rifiuto vero di
+    Betfair, mai in via preventiva.
+    """
+    try:
+        s = round(float(size), 2)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(s) or s <= 0:
+        return None
+    ripiego = round(_floor_to_step(s, IT_BACK_STEP), 2)
+    if abs(ripiego - s) <= _EPS or ripiego < IT_BACK_MIN_STAKE - _EPS:
+        return None
+    return ripiego
+
+
+def punta_da_sorvegliare_per_ripiego(side: str, size: Optional[float]) -> bool:
+    """Una punta legale al centesimo ma NON multipla di 0,50 che, se Betfair la rifiutasse
+    ``INVALID_BET_SIZE``, avrebbe un ripiego possibile (``size_ripiego_punta``)."""
+    if str(side or "").lower() != "back" or size is None:
+        return False
+    return size_ripiego_punta(size) is not None
+
+
+# ---------------------------------------------------------------------------
+# Sotto il minimo: l'ordine EQUIVALENTE e il verdetto (01/10/2026)
+# ---------------------------------------------------------------------------
+def _tick_su(price: float) -> Optional[float]:
+    """Il tick Betfair piu' piccolo >= price (None oltre 1000)."""
+    i = bisect.bisect_left(PRICES_FLOAT, float(price) - 1e-9)
+    return PRICES_FLOAT[i] if i < len(PRICES_FLOAT) else None
+
+
+def _tick_giu(price: float) -> Optional[float]:
+    """Il tick Betfair piu' grande <= price (None sotto 1,01)."""
+    i = bisect.bisect_right(PRICES_FLOAT, float(price) + 1e-9) - 1
+    return PRICES_FLOAT[i] if i >= 0 else None
+
+
+@dataclass(frozen=True)
+class OrdineEquivalente:
+    """L'ordine sul lato OPPOSTO dell'altra selezione (mercato a due esiti) con lo stesso
+    effetto economico di quello chiesto.
+
+    ``scarto_*`` = P&L dell'equivalente MENO P&L dell'ordine chiesto (tutto abbinato al
+    limite) nei due esiti: ``_se_vince_chiesta`` = vince la selezione dell'ordine chiesto,
+    ``_se_vince_altra`` = vince l'altra. Positivo = l'equivalente rende di piu'.
+    """
+
+    side: str                 # 'back' | 'lay' (lato OPPOSTO a quello chiesto)
+    price: float              # al tick, arrotondata dal lato che non peggiora mai il limite
+    price_esatta: float       # q/(q-1), prima del tick
+    size: float               # size*(q-1) dell'ordine chiesto, al centesimo
+    scarto_se_vince_chiesta: float
+    scarto_se_vince_altra: float
+
+
+def equivalente_lato_opposto(side: str, price: float,
+                             size: float) -> Optional[OrdineEquivalente]:
+    """In un mercato a DUE esiti (X, Y): ``lay X S@q`` == ``back Y S(q-1) @ q/(q-1)`` e
+    ``back X B@p`` == ``lay Y B(p-1) @ p/(p-1)`` (stessa formula, lato opposto).
+
+    Prima della commissione, che Betfair applica sul netto del mercato. La quota esatta
+    raramente e' un tick: si arrotonda dal lato che NON peggiora mai il limite chiesto
+    (equivalente BACK -> tick in su, equivalente LAY -> tick in giu'), cosi' nessun
+    abbinamento puo' avvenire a un prezzo peggiore di quello che il bot ha accettato. La
+    size copre esattamente l'esito sfavorevole dell'ordine chiesto (liability di una
+    banca, stake di una punta), al centesimo. Pura. None = equivalente non costruibile.
+    """
+    s = (side or "").lower()
+    if s not in _VALID_SIDES:
+        return None
+    try:
+        q = float(price)
+        z = float(size)
+    except (TypeError, ValueError):
+        return None
+    if not (math.isfinite(q) and math.isfinite(z)) or q <= 1.0 + _EPS or z <= 0:
+        return None
+    esatta = q / (q - 1.0)
+    lato = "back" if s == "lay" else "lay"
+    tick = _tick_su(esatta) if lato == "back" else _tick_giu(esatta)
+    if tick is None or not (MIN_PRICE - _EPS <= tick <= MAX_PRICE + _EPS):
+        return None
+    size_eq = round(z * (q - 1.0), 2)
+    if size_eq <= 0:
+        return None
+    if s == "lay":
+        # chiesto: lay X z@q        -> X vince: -z(q-1)      ; Y vince: +z
+        # equivalente: back Y e@t   -> X vince: -e           ; Y vince: +e(t-1)
+        sc_x = -size_eq + z * (q - 1.0)
+        sc_y = size_eq * (tick - 1.0) - z
+    else:
+        # chiesto: back X z@q       -> X vince: +z(q-1)      ; Y vince: -z
+        # equivalente: lay Y e@t    -> X vince: +e           ; Y vince: -e(t-1)
+        sc_x = size_eq - z * (q - 1.0)
+        sc_y = -size_eq * (tick - 1.0) + z
+    return OrdineEquivalente(
+        side=lato, price=float(tick), price_esatta=round(esatta, 6), size=size_eq,
+        scarto_se_vince_chiesta=round(sc_x, 4), scarto_se_vince_altra=round(sc_y, 4),
+    )
+
+
+def riporta_abbinato_all_originale(
+    side_chiesto: str, price_chiesta: float, size_chiesta: float,
+    size_mandata: float, abbinato_mandato: float,
+) -> "tuple[float, Optional[float]]":
+    """L'abbinato dell'ordine EQUIVALENTE riportato nei termini dell'ordine CHIESTO.
+
+    Per il bot che ha chiesto (``side_chiesto`` ``size_chiesta`` @ ``price_chiesta``) e a
+    cui il runner ha mandato l'equivalente di ``size_mandata``: ritorna (abbinato, quota
+    media) come se avesse abbinato l'ordine chiesto. abbinato = size chiesta x frazione
+    abbinata dell'equivalente; quota = 1 + abbinato_mandato / abbinato, cioe':
+      - banca chiesta (equivalente PUNTA): la liability riportata e' ESATTA (= stake
+        abbinato della punta); la vincita reale e' >= quella riportata;
+      - punta chiesta (equivalente BANCA): la vincita riportata e' ESATTA (= stake del
+        backer abbinato); la perdita reale e' <= quella riportata.
+    In entrambi i casi il bot non sovrastima mai il suo esito (l'equivalente ha un limite
+    mai peggiore del chiesto). Quota None se l'abbinato riportato e' zero.
+    """
+    try:
+        q = float(price_chiesta)
+        mandata = float(size_mandata)
+        m = max(0.0, float(abbinato_mandato or 0.0))
+        chiesta = float(size_chiesta)
+    except (TypeError, ValueError):
+        return 0.0, None
+    if m <= 0 or mandata <= 0 or q <= 1.0:
+        return 0.0, None
+    frazione = min(1.0, m / mandata)
+    abbinato = round(chiesta * frazione, 2)
+    if abbinato <= 0 or str(side_chiesto or "").lower() not in _VALID_SIDES:
+        return 0.0, None
+    # banca chiesta: m (stake della punta equivalente) = liability = abbinato*(quota-1);
+    # punta chiesta: m (stake del backer della banca equivalente) = vincita = idem.
+    return abbinato, round(1.0 + m / abbinato, 4)
+
+
+VERDETTO_DIRETTO = "diretto"
+VERDETTO_EQUIVALENTE = "equivalente"
+VERDETTO_SUBMIN = "submin"
+VERDETTO_IMPOSSIBILE = "impossibile"
+
+
+@dataclass(frozen=True)
+class VerdettoMinimi:
+    """Cosa fare di un ordine rispetto ai minimi di giurisdizione.
+
+    - ``diretto``: piazzabile cosi' com'e' (``size`` = legalizzata al centesimo);
+    - ``equivalente``: sotto il minimo, ma l'ordine equivalente sull'altra selezione
+      (``altra_selezione``, ``equivalente``) e' piazzabile diretto;
+    - ``submin``: sotto il minimo, nessun equivalente diretto, importo >=
+      ``SUBMIN_IMPORTO_FINALE_MIN`` (0,50, floor di legge): va col place-and-trim (``place_submin``);
+    - ``impossibile``: nessuna via legittima; ``motivo`` comincia con
+      ``SOTTO_MINIMO_NON_PIAZZABILE``. MAI un ordine verso Betfair.
+    """
+
+    esito: str
+    size: Optional[float]
+    motivo: Optional[str]
+    equivalente: Optional[OrdineEquivalente] = None
+    altra_selezione: Optional[tuple] = None   # (selection_id, handicap)
+
+    @property
+    def sotto_minimo(self) -> bool:
+        return self.esito != VERDETTO_DIRETTO
+
+
+def verdetto_minimi(
+    jurisdiction: str,
+    side: str,
+    price: float,
+    size: float,
+    *,
+    altra_selezione: Optional[tuple] = None,
+    submin_disponibile: bool = True,
+    motivo_no_equivalente: Optional[str] = None,
+) -> VerdettoMinimi:
+    """Traduce l'ordine chiesto in uno piazzabile con lo STESSO effetto economico, o dice
+    che non si puo'. Nessuna decisione di strategia: stesso rischio, limite di prezzo mai
+    peggiorato, importi entro ``TOLLERANZA_EQUIVALENZA``.
+
+    ``altra_selezione`` = (selection_id, handicap) dell'ALTRO esito, solo se il mercato ha
+    esattamente due esiti (chi chiama lo sa dal book; None = equivalente non applicabile).
+    ``submin_disponibile`` = l'esecutore ha il place-and-trim (il runner tennis no).
+    Pura: nessuna rete, nessuno stato.
+    """
+    v = min_stake_rules(jurisdiction, side, price, size)
+    if v.valid:
+        return VerdettoMinimi(VERDETTO_DIRETTO, v.legalized_size, None)
+    s = (side or "").lower()
+    j = (jurisdiction or "").lower()
+    valida = s in _VALID_SIDES and size is not None
+    try:
+        valida = valida and math.isfinite(float(size)) and float(size) > 0
+    except (TypeError, ValueError):
+        valida = False
+    if not valida or j not in (JURISDICTION_IT, JURISDICTION_COM):
+        motivo = v.reason or "ordine non valido"
+        if not motivo.startswith(SOTTO_MINIMO_NON_PIAZZABILE):
+            motivo = f"{SOTTO_MINIMO_NON_PIAZZABILE}: {motivo}"
+        return VerdettoMinimi(VERDETTO_IMPOSSIBILE, None, motivo)
+    chiesta = round(float(size), 2)
+    # 02/10 (punto 11): chi chiama puo' dire perche' l'equivalente non e' ammesso
+    perche_no_eq = (motivo_no_equivalente
+                    or "mercato non a due esiti (equivalente non applicabile)")
+    if altra_selezione is not None:
+        eq = equivalente_lato_opposto(s, price, chiesta)
+        if eq is None:
+            perche_no_eq = "equivalente non costruibile (quota fuori scala)"
+        else:
+            v_eq = min_stake_rules(jurisdiction, eq.side, eq.price, eq.size)
+            peggiore = min(eq.scarto_se_vince_chiesta, eq.scarto_se_vince_altra)
+            vincita_eq = eq.size * (eq.price - 1.0) if eq.side == "back" else eq.size
+            if not v_eq.valid:
+                perche_no_eq = (f"equivalente {eq.side.upper()} {eq.size:.2f}@{eq.price} "
+                                f"anch'esso sotto il minimo")
+            elif peggiore < -TOLLERANZA_EQUIVALENZA - _EPS:
+                perche_no_eq = (f"equivalente peggiore del chiesto di {-peggiore:.4f} EUR "
+                                f"(oltre la tolleranza {TOLLERANZA_EQUIVALENZA:.2f})")
+            elif vincita_eq > MAX_PAYOUT_IT + _EPS:
+                perche_no_eq = "equivalente oltre la vincita massima"
+            else:
+                return VerdettoMinimi(
+                    VERDETTO_EQUIVALENTE, eq.size,
+                    (f"{s.upper()} {chiesta:.2f}@{price} sotto il minimo: equivalente "
+                     f"{eq.side.upper()} {eq.size:.2f}@{eq.price} sull'altra selezione "
+                     f"(quota esatta {eq.price_esatta}; scarti "
+                     f"{eq.scarto_se_vince_chiesta:+.4f} / {eq.scarto_se_vince_altra:+.4f} EUR)"),
+                    equivalente=eq,
+                    altra_selezione=(int(altra_selezione[0]),
+                                     float(altra_selezione[1] or 0.0)),
+                )
+    residuo = (f"residuo {s.upper()} {float(size):.2f}@{price} NON piazzato: va dichiarato "
+               f"al trader (scelta sua: lasciarlo, oppure aumentare e richiudere)")
+    if float(size) < SUBMIN_IMPORTO_FINALE_MIN - _EPS \
+            or chiesta < SUBMIN_IMPORTO_FINALE_MIN - _EPS:
+        return VerdettoMinimi(
+            VERDETTO_IMPOSSIBILE, None,
+            f"{SOTTO_MINIMO_NON_PIAZZABILE}: {s.upper()} {float(size):.2f} sotto il minimo "
+            f"(e sotto {SUBMIN_IMPORTO_FINALE_MIN:.2f}, importo minimo del place-and-trim: "
+            f"sotto il floor di legge di 0,50 non si tenta mai); {perche_no_eq}; {residuo}")
+    if not submin_disponibile:
+        return VerdettoMinimi(
+            VERDETTO_IMPOSSIBILE, None,
+            f"{v.reason}; {perche_no_eq}; place-and-trim non disponibile su questo "
+            f"esecutore; {residuo}")
+    return VerdettoMinimi(
+        VERDETTO_SUBMIN, chiesta,
+        f"{s.upper()} {chiesta:.2f}@{price} sotto il minimo: place-and-trim ({perche_no_eq}; "
+        f"in gioco su .it il bet delay si paga due volte, parcheggio e riprezzo: calcio "
+        f"circa 5 -> 10 s)")
 
 
 # ---------------------------------------------------------------------------
@@ -222,9 +519,15 @@ def build_order(
     cap `max_stake`, payout massimo. Solleva `ValueError` con motivo su input invalido.
 
     ``reduces_liability=True`` (green-up / hedge / cash-out): l'ordine CHIUDE/riduce una
-    posizione esistente → ``min_stake_rules`` consente la size SOTTO il minimo di
-    giurisdizione (€2 back / €0,50 lay su .it), soggetta solo alla guardia Betfair
-    INVALID_PROFIT_RATIO lato Exchange. Usato dall'azione ``greenup`` del worker.
+    posizione esistente. Dal 01/10/2026 e' SOLO informazione (``order.context`` per i
+    control di flusso, nota): NON esenta dai minimi. Un ordine sotto il minimo solleva
+    ``ValueError`` con ``SOTTO_MINIMO_NON_PIAZZABILE`` PRIMA di qualunque invio: la via
+    legittima (equivalente / place-and-trim) la sceglie il chiamante con
+    ``verdetto_minimi``.
+
+    02/10/2026 (RUNNER_MINIMI_CORREZIONI, punto 1): nessuna eccezione nemmeno per il
+    client SIMULATO (paper = specchio del live): la via ``simulato_ammette_sotto_minimo``
+    del 01/10 e' stata tolta.
 
     MONEY-CRITICAL: ``strategy`` DEVE essere l'istanza ``LiveTradingStrategy`` registrata
     nel framework via ``add_strategy``. Il Trade viene creato sotto questa istanza così che
@@ -303,7 +606,7 @@ def build_order(
 
     note_bits = []
     if reduces_liability:
-        note_bits.append("reduces_liability (green-up/hedge: sotto-minimo consentito)")
+        note_bits.append("reduces_liability (chiusura: minimi di giurisdizione invariati)")
 
     # Derivazione size per LAY da liability
     if side_l == "lay":
@@ -318,7 +621,9 @@ def build_order(
     raw_size = round(float(size), 2)
 
     # Regole stake minimo
-    verdict = min_stake_rules(jurisdiction, side_l, tick_price, raw_size, reduces_liability)
+    # Regole stake minimo: NESSUNA esenzione, ne' per le chiusure (01/10/2026) ne' per il
+    # client simulato (02/10/2026: paper = specchio del live).
+    verdict = min_stake_rules(jurisdiction, side_l, tick_price, raw_size)
     if not verdict.valid:
         raise ValueError(verdict.reason or "size non valida per la giurisdizione")
     legal_size = verdict.legalized_size

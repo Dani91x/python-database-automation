@@ -340,8 +340,9 @@ def test_market_not_subscribed_writes_error():
 
 
 def test_build_validation_error_below_min_stake():
-    """BACK €1,00 < minimo €2,00 (.it) → riga error, nessun ordine piazzato."""
-    sb = _FakeSupabase([_row(1, size=1.0)])
+    """BACK 0,99 < minimo 1,00 (.it) -> riga error, nessun ordine piazzato."""
+    # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
+    sb = _FakeSupabase([_row(1, size=0.99)])
     market = _FakeMarket("1.1")
     fl = _FakeFlumine({"1.1": market})
 
@@ -814,24 +815,38 @@ def test_config_helpers_reread_env(monkeypatch):
 # place_submin (place-and-trim)
 # ===========================================================================
 def test_submin_start_places_step1_and_stays_processing():
-    sb = _FakeSupabase([_row(1, action="place_submin", side="lay", price=5.0, size=0.30)])
+    # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50: il caso d'uso
+    # e' la punta fra 0,50 e 1,00 (parcheggio 1,00 @1000, taglio al target).
+    sb = _FakeSupabase([_row(1, action="place_submin", side="back", price=5.0, size=0.70)])
     market = _FakeMarket("1.1")
     fl = _FakeFlumine({"1.1": market})
 
     n = wk._process_once(sb, fl, strategy=_STRAT)
 
     assert n == 1
-    # step1: place size minima @ quota non abbinabile (lay 1.01), size 0.50
+    # step1: place size minima @ quota non abbinabile (back 1000), size 1.00
     assert [c[0] for c in market.calls] == ["place_order"]
     placed = market.calls[0][1]
-    assert placed.order_type.price == 1.01
-    assert placed.order_type.size == 0.50
+    assert placed.order_type.price == 1000.0
+    assert placed.order_type.size == 1.00
     row = _by_id(sb, 1)
     assert row["status"] == "processing"   # sequenza in corso
     res = row["result"]
     assert res["submin_step"] == "placed"
-    assert res["submin_state"]["target_size"] == 0.30
+    assert res["submin_state"]["target_size"] == 0.70
     assert res["submin_order_id"]  # id flumine persistito per i poll successivi
+
+
+def test_submin_start_sotto_un_euro_rifiutato_senza_ordini():
+    # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50: sotto 0,50 mai
+    sb = _FakeSupabase([_row(1, action="place_submin", side="lay", price=5.0, size=0.30)])
+    market = _FakeMarket("1.1")
+    fl = _FakeFlumine({"1.1": market})
+    wk._process_once(sb, fl, strategy=_STRAT)
+    row = _by_id(sb, 1)
+    assert row["status"] == "error"
+    assert "SOTTO_MINIMO_NON_PIAZZABILE" in row["error"]
+    assert market.calls == []
 
 
 def test_submin_inflight_advance_to_trimmed():
@@ -898,7 +913,7 @@ def test_submin_inflight_unexpected_match_aborts_to_error():
 def test_submin_persists_init_state_before_real_place():
     """Lo SubminState ATTESO (step=INIT) è persistito su DB PRIMA del market.place_order
     REALE: un crash tra place e persistenza lascia comunque traccia (no ordine orfano)."""
-    sb = _FakeSupabase([_row(1, action="place_submin", side="lay", price=5.0, size=0.30)])
+    sb = _FakeSupabase([_row(1, action="place_submin", side="back", price=5.0, size=0.70)])
     seen: Dict[str, Any] = {}
 
     class _PeekMarket(_FakeMarket):
@@ -1034,7 +1049,7 @@ def test_find_order_by_cust_ref_scans_all_markets():
 def test_submin_start_passes_customer_strategy_ref_to_place():
     """Lo step1 submin passa il customer_strategy_ref NATIVO a market.place_order (come il
     place normale), non solo l'ordine."""
-    sb = _FakeSupabase([_row(1, action="place_submin", side="lay", price=5.0, size=0.30)])
+    sb = _FakeSupabase([_row(1, action="place_submin", side="back", price=5.0, size=0.70)])
     market = _FakeMarket("1.1")
     fl = _FakeFlumine({"1.1": market})
 
@@ -1048,10 +1063,10 @@ def test_submin_place_enforces_effective_cap():
     """Il ramo submin propaga il cap effettivo a build_order (NON più max_stake=None): un cap
     per-richiesta sotto la size minima di piazzamento fa fallire la validazione (riga error),
     nessun ordine reale piazzato."""
-    # BACK submin: placed = €2,00 (min .it). Cap per-richiesta €1,00 → il place del minimo
+    # BACK submin: placed = 1,00 (min .it, minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50). Cap 0,50 -> il place del minimo
     # supera il cap → build_order solleva PRIMA di market.place_order.
-    sb = _FakeSupabase([_row(1, action="place_submin", side="back", price=3.0, size=1.50,
-                             params={"max_stake": 1.0})])
+    sb = _FakeSupabase([_row(1, action="place_submin", side="back", price=3.0, size=0.70,
+                             params={"max_stake": 0.5})])
     market = _FakeMarket("1.1")
     fl = _FakeFlumine({"1.1": market})
 

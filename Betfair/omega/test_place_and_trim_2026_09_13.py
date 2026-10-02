@@ -18,6 +18,7 @@ il parcheggio che si abbina, il taglio non confermato, il riprezzo rifiutato.
 In tutti e tre i casi il residuo va RITIRATO prima di propagare l'errore: mai un
 ordine a riposo non tracciato sul conto.
 """
+# minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50 (l'importo 'sotto il minimo' del REST e' 0,75 col parcheggio 1,00)
 from __future__ import annotations
 
 import pytest
@@ -142,7 +143,7 @@ def client(monkeypatch):
 
 
 def piazza(**over):
-    kw = dict(market_id="1.234", selection_id=1222344, price=8.0, size=1.35,
+    kw = dict(market_id="1.234", selection_id=1222344, price=8.0, size=0.75,
               event_id="1.999", side="back", customer_ref="mike-t7")
     kw.update(over)
     return M.place_submin_live(**kw)
@@ -152,13 +153,13 @@ def piazza(**over):
 # La sequenza, quando va bene
 # ---------------------------------------------------------------------------
 def test_un_importo_da_1_35_si_piazza_in_tre_passi(client, monkeypatch):
-    client.matched_finale = 1.35
+    client.matched_finale = 0.75
     res = piazza()
     assert client.passi() == ["place", "cancelOrders", "replaceOrders"]
 
     # 1. parcheggio: il MINIMO a una quota NON abbinabile, senza fill-or-kill
     _, _, park = client.chiamate[0]
-    assert park["limitOrder"]["size"] == 2.00
+    assert park["limitOrder"]["size"] == 1.00
     assert park["limitOrder"]["price"] == 1000.0
     assert park["limitOrder"]["persistenceType"] == "LAPSE"
     assert "timeInForce" not in park["limitOrder"], \
@@ -167,31 +168,43 @@ def test_un_importo_da_1_35_si_piazza_in_tre_passi(client, monkeypatch):
     # 2. taglio: resta esattamente l'importo voluto
     _, _, taglio = client.chiamate[1]
     assert taglio["betId"] == "bet-1"
-    assert taglio["sizeReduction"] == pytest.approx(0.65)      # 2.00 - 1.35
+    assert taglio["sizeReduction"] == pytest.approx(0.25)      # 1.00 - 0.75
 
     # 3. riprezzo alla quota reale
     _, _, ripr = client.chiamate[2]
     assert ripr["betId"] == "bet-1" and ripr["newPrice"] == 8.0
 
-    assert res.ok and res.size_matched == 1.35 and res.bet_id == "bet-2"
+    assert res.ok and res.size_matched == 0.75 and res.bet_id == "bet-2"
 
 
-def test_anche_cinque_centesimi(client):
+def test_cinque_centesimi_mai_tentati(client):
+    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): la riduzione sotto 0,50 EUR (floor di legge;
+    # commerciale .it; floor di legge 0,50) non si tenta mai. RIFIUTO CERTO prima di
+    # qualunque chiamata a Betfair (prima: parcheggio 2,00 e taglio di 1,95).
+    from Betfair.omega.omega_market import PlaceRifiutato
+
     client.matched_finale = 0.05
-    piazza(size=0.05)
-    _, _, taglio = client.chiamate[1]
-    assert taglio["sizeReduction"] == pytest.approx(1.95)
-    assert client.passi() == ["place", "cancelOrders", "replaceOrders"]
+    with pytest.raises(PlaceRifiutato) as exc:
+        piazza(size=0.05)
+    assert exc.value.error_code == "SOTTO_MINIMO_NON_PIAZZABILE"
+    assert client.passi() == []
 
 
 def test_sul_lay_il_minimo_e_il_parcheggio_sono_altri(client):
+    # 01/10/2026: la banca minima .it e' 1,00 (costante condivisa) e un importo finale
+    # sotto 0,50 non si riduce mai: una banca da 0,20 e' un rifiuto certo, nessuna
+    # chiamata (prima: parcheggio 0,50 @1,01 -> INVALID_BET_SIZE, poi INVALID_PROFIT_RATIO)
+    from Betfair.omega.omega_market import PlaceRifiutato
+
     client.matched_finale = 0.20
-    piazza(side="lay", size=0.20, price=1.48)
-    _, _, park = client.chiamate[0]
-    assert park["side"] == "LAY"
-    assert park["limitOrder"]["size"] == 0.50 and park["limitOrder"]["price"] == 1.01
-    _, _, taglio = client.chiamate[1]
-    assert taglio["sizeReduction"] == pytest.approx(0.30)
+    with pytest.raises(PlaceRifiutato) as exc:
+        piazza(side="lay", size=0.20, price=1.48)
+    assert exc.value.error_code == "SOTTO_MINIMO_NON_PIAZZABILE"
+    assert client.passi() == []
+    # una banca da 1,20 e' sopra il minimo: ordine normale, nessun trucco
+    client.matched_finale = 1.20
+    piazza(side="lay", size=1.20, price=1.48)
+    assert client.passi() == ["place"]
 
 
 def test_sopra_il_minimo_non_si_usa_nessun_trucco(client):
@@ -225,16 +238,16 @@ def test_se_il_mercato_non_copre_l_ordine_viene_RITIRATO(client):
 def test_un_fill_PARZIALE_tiene_la_parte_abbinata_e_ritira_il_resto(client):
     """Quello che si e' abbinato sono soldi veri e va contabilizzato; il residuo
     non deve restare sul book a insaputa del bot."""
-    client.matched_finale = 0.80        # su 1,35 richiesti
+    client.matched_finale = 0.40        # su 0,75 richiesti
     res = piazza()
-    assert res.ok is True and res.size_matched == 0.80
+    assert res.ok is True and res.size_matched == 0.40
     assert client.passi() == ["place", "cancelOrders", "replaceOrders", "cancelOrders"]
 
 
 def test_se_si_abbina_TUTTO_non_si_ritira_niente(client):
-    client.matched_finale = 1.35
+    client.matched_finale = 0.75
     res = piazza()
-    assert res.ok is True and res.size_matched == 1.35
+    assert res.ok is True and res.size_matched == 0.75
     assert client.passi() == ["place", "cancelOrders", "replaceOrders"]
 
 
@@ -253,7 +266,7 @@ def test_chi_sa_seguire_l_ordine_puo_lasciarlo_a_riposo(client):
 def test_guardia_il_parcheggio_non_deve_mai_abbinarsi(client):
     """A quota 1000 non c'e' controparte. Se si abbina siamo entrati a mercato in
     modo NON previsto: si ritira tutto, si solleva, nessun ritento."""
-    client.matched_al_parcheggio = 2.0
+    client.matched_al_parcheggio = 1.0
     with pytest.raises(RuntimeError, match="ABORT"):
         piazza()
     assert client.passi() == ["place", "cancelOrders"]
@@ -381,7 +394,7 @@ def test_ritiro_che_risponde_FAILURE_non_e_un_rifiuto_certo(client):
 
 def test_verifica_del_taglio_non_confermata_col_ritiro_che_SOLLEVA(client, monkeypatch):
     """La rilettura non conferma il taglio E il ritiro cade in rete: IGNOTO."""
-    client.residuo_letto = 2.00      # il taglio non risulta avvenuto
+    client.residuo_letto = 1.00      # il taglio non risulta avvenuto
     vero = M._submin_cancel
 
     def cancel(market_id, bet_id, size_reduction):

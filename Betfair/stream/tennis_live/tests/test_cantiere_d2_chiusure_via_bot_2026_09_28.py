@@ -20,6 +20,13 @@ from typing import Any
 
 import pytest
 
+# 01/10/2026 (RUNNER_MINIMI_CHIUSURE, reperto 1): minimi .it definitivi 01/10: punta 1,00 /
+# banca 1,00 / trim >= 0,50. Una chiusura "esatta al centesimo" che riduce un parcheggio
+# sotto 0,50 e' IMPOSSIBILE PER LEGGE (DM 47/2013 art. 8): condotta da riallineare con
+# l'utente (equivalente sulla stessa selezione / residuo dichiarato), non adattata a forza.
+XFAIL_REPERTO_1 = ("reperto 1 RUNNER_MINIMI_CHIUSURE: chiusura esatta con resto sotto 0,50 "
+                   "impossibile per legge su .it (minimi definitivi 01/10)")
+
 from Betfair.stream.tennis_live.tests.test_cantiere_d2_chiusure_esatte_2026_09_28 import (  # noqa: F401
     esecuzione_sincrona,
 )
@@ -80,6 +87,7 @@ def _prepara(db: Any, banchi: Any, bot: str, params: Any = None):
     return b, strat, market, round(size, 2)
 
 
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason=XFAIL_REPERTO_1)
 @pytest.mark.parametrize("bot", ["tennis_flb", "tennis_pro", "tennis_swing"])
 def test_chiusura_esatta_guidata_dai_book_del_bot(bot, db, banchi, esecuzione_sincrona):
     b, strat, market, size = _prepara(db, banchi, bot)

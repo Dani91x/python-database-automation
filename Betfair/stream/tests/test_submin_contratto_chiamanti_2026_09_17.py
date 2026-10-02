@@ -121,11 +121,14 @@ def test_la_marca_submin_e_completa():
                    "target_price", "size_reduction", "park_mode", "steps"):
         assert chiave in marca, chiave
     # il banco deve poter distinguere TRIMMATO da PIAZZATO sotto minimo
-    assert marca["trimmed_from"] == 2.00 and marca["target_size"] == 0.79
+    # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
+    assert marca["trimmed_from"] == 1.00 and marca["target_size"] == 0.79
     assert marca["steps"] == ["place", "cancel"]
 
 
-@pytest.mark.parametrize("side,minimo", [("back", 2.00), ("lay", 0.50)])
+# 01/10/2026: banca minima .it 1,00 (minimo commerciale betfair.it, costante condivisa)
+# minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
+@pytest.mark.parametrize("side,minimo", [("back", 1.00), ("lay", 1.00)])
 def test_minimi_it_dalla_tabella_non_da_costanti_sparse(side, minimo):
     assert S.place_min_size("it", side) == minimo
 
