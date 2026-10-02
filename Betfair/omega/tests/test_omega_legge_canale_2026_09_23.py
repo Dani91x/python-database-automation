@@ -699,7 +699,9 @@ def test_sveglia_spento_dorme_con_time_sleep_come_oggi(monkeypatch):
     S._SVEGLIA.alza("scan", minimo_s=0.0)
     try:
         S._dormi_o_sveglia(60.0, {"poll_interval_s": 20})
-        assert chiamate == [60.0]
+        # 02/10/2026 (R1, arresto ordinato): la STESSA dormita (60 s di time.sleep) a
+        # fette di 1 s, per vedere subito il file d'arresto; nessuna sveglia usata
+        assert sum(chiamate) == pytest.approx(60.0) and max(chiamate) <= 1.0
         assert S._SVEGLIA.statistiche()["usate"] == 0
         assert S.statistiche_sveglia() is None
     finally:

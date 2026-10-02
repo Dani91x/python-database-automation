@@ -10498,6 +10498,17 @@ def _ciclo_persistente(un_giro: Callable[[], bool], *, label: str = "[safe.bot]"
             return
 
 
+def _chiudi_all_arresto(causa: str) -> dict:
+    """02/10/2026 (R1, «niente resta in coda»): l'arresto ordinato di safe prima di
+    uscire (``arresto_bot.chiudi_bot_all_arresto``): annullo dei SUOI ordini vivi non
+    abbinati con la via di ogni riga (canale, coda paper, REST per bet_id solo live), tetto
+    10 s; posizioni abbinate dichiarate con UN CRITICAL, mai chiuse. Non solleva mai."""
+    from Betfair.safe_strategy import arresto_bot as _AB
+
+    return _AB.chiudi_bot_all_arresto(bot="safe", db=_real_db, market=_real_market,
+                                      causa=causa, porta_kw_di=_porta_kw_annullo)
+
+
 def main() -> None:
     from Betfair.stream.single_instance import acquire_single_instance_lock
 
@@ -10507,6 +10518,10 @@ def main() -> None:
     )
     lock = acquire_single_instance_lock(_SINGLE_INSTANCE_PORT, "safe-bot")
     logger.info("[safe.bot] servizio avviato (lock %s)", _SINGLE_INSTANCE_PORT)
+    # 02/10/2026 (R1): SIGTERM/SIGBREAK escono dal ciclo come Ctrl-C, cosi' passano
+    # dall'arresto ordinato
+    from Betfair.safe_strategy import arresto_bot as _AB
+    _AB.installa_segnali()
     _usa_timeout_bot("safe.bot")
     _avvia_canale()
     # 23/09: saldo del conto riletto dopo ogni ordine reale / regolazione nuova
@@ -10616,7 +10631,12 @@ def main() -> None:
         # 28/09 (cantiere K2): l'app chiede lo spegnimento ORDINATO (file di
         # arresto_ordinato) -> si esce come un KeyboardInterrupt (stesso
         # `finally`: lock.close()), exit 0, il watchdog non rilancia.
-        _ciclo_persistente(_un_giro, label="[safe.bot]")
+        # 02/10/2026 (R1): COMUNQUE esca il ciclo (stop dall'app, segnale, eccezione
+        # fatale) prima si fa l'arresto ordinato: annullo dei propri ordini vivi non
+        # abbinati (tetto 10 s), posizioni dichiarate con un CRITICAL, stato nel diario.
+        _AB.esegui_ciclo_con_arresto(
+            lambda: _ciclo_persistente(_un_giro, label="[safe.bot]"),
+            _chiudi_all_arresto, stop_app=_AO.richiesto)
     finally:
         try:
             lock.close()

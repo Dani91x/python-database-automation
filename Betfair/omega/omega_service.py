@@ -8498,7 +8498,12 @@ def _dormi_o_sveglia(pausa: float, params: Any) -> None:
     """La dormita del ciclo. A interruttori SPENTI e' ``time.sleep(pausa)``,
     la stessa identica istruzione di oggi."""
     if _ASCOLTO_SCAN is None and not _sveglia_dal_client_scan():
-        time.sleep(pausa)
+        # 02/10/2026 (R1): stessa dormita, a fette di 1 s: lo stop dell'app (file
+        # ARRESTO) si vede subito e non dopo fino a ``idle_cycle_s`` (60 s), oltre la
+        # grazia di ``desktop/main.js`` prima del kill forzato
+        from Betfair.safe_strategy import arresto_bot as _AB
+
+        _AB.dormi_finche_arresto(pausa, richiesto=_AO.richiesto, dormi=time.sleep)
         return
     _SVEGLIA.attendi(pausa, _pavimento_sveglia(params))
 
@@ -8554,6 +8559,17 @@ def _ciclo_persistente(un_giro: Callable[[], bool], *, label: str = "[omega]") -
             return
 
 
+def _chiudi_all_arresto(causa: str) -> dict:
+    """02/10/2026 (R1, «niente resta in coda»): l'arresto ordinato di omega prima di
+    uscire (``arresto_bot.chiudi_bot_all_arresto``): annullo dei SUOI ordini vivi non
+    abbinati con la via di ogni riga (canale, coda paper, REST per bet_id solo live), tetto
+    10 s; posizioni abbinate dichiarate con UN CRITICAL, mai chiuse. Non solleva mai."""
+    from Betfair.safe_strategy import arresto_bot as _AB
+
+    return _AB.chiudi_bot_all_arresto(bot="omega", db=_real_db, market=_real_market,
+                                      causa=causa, porta_kw_di=_porta_kw_annullo)
+
+
 def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -8564,6 +8580,10 @@ def main() -> None:
         logger.error("[omega] un'altra istanza è già in esecuzione (porta %s) — esco.", _SINGLE_INSTANCE_PORT)
         return
     logger.info("[omega] servizio avviato")
+    # 02/10/2026 (R1): SIGTERM/SIGBREAK escono dal ciclo come Ctrl-C, cosi' passano
+    # dall'arresto ordinato
+    from Betfair.safe_strategy import arresto_bot as _AB
+    _AB.installa_segnali()
     # CANTIERE P (28/09): timeout PostgREST del profilo bot (5 s connessione, 20 s lettura)
     logger.info("[omega] timeout PostgREST del profilo bot: %s", __import__("db_client").usa_timeout_bot())
     _avvia_canale()
@@ -8644,7 +8664,10 @@ def main() -> None:
         return True
 
     try:
-        _ciclo_persistente(_un_giro, label="[omega]")
+        # 02/10/2026 (R1): COMUNQUE esca il ciclo, prima l'arresto ordinato (vedi Safe)
+        _AB.esegui_ciclo_con_arresto(
+            lambda: _ciclo_persistente(_un_giro, label="[omega]"),
+            _chiudi_all_arresto, stop_app=_AO.richiesto)
     finally:
         try:
             lock.close()  # rilascia esplicitamente il lock socket 47313
