@@ -5,13 +5,14 @@ Correttore: delegato Opus. Ramo locale `riconciliazione-tradotti` (sopra `verifi
 niente push, mai `git add -A`. Nessun ordine vero, nessuna scrittura sul DB, nessun processo
 lasciato acceso, nessuna suite intera, nessun replay.
 
-STATO AL 02/10 sera (FINALE): D1, D2, D3 CHIUSI (59 test nuovi verdi, falsificazione 33/33
-rosse); R1 arresto ordinato di Safe e Omega FATTO (18 test nuovi, falsificazione 14/14 rosse,
-`main.js` allineato a 45 s); suite mirate verdi (§8). Patch e referto consegnati. Manca solo la
-verifica del coordinatore (diff, test, replay).
+STATO AL 02/10 notte (FINALE 2): ramo unito a `master` (punto 11 del runner:
+`ATTORI_CON_TRADUZIONE` vuoto). D1-D3 chiusi (falsificazione 33/33 sulla base vera); R1 fatto
+(14/14); REPERTO 1 corretto (adozione per mercato in Safe, 13/13 con il punto 11); coda, REST e
+finto del motore rispettano `ATTORI_CON_TRADUZIONE`; reperto 2 spiegato (§7-bis). Suite mirate:
+7060 passed, 0 failed (§8). Manca la verifica del coordinatore.
 
 Consegna (in questa cartella):
-- `RICONCILIAZIONE_TRADOTTI.patch` = `git diff verifica-runner-master` (file nuovi inclusi);
+- `RICONCILIAZIONE_TRADOTTI.patch` = `git diff master` del ramo (file nuovi inclusi);
 - `falsifica_riconciliazione.py` + `falsifica_riconciliazione_out.txt`;
 - questo referto. Commit del ramo: `git log verifica-runner-master..riconciliazione-tradotti`.
 
@@ -192,6 +193,49 @@ rosso preteso, ripristino byte per byte verificato, verde ripreso alla fine. Esi
   forzato di `main.js` resta l'ultimo ripiego (taskkill non e' intercettabile); Mike e lo
   scalper hanno il loro (non toccati).
 
+## 5-ter. REPERTO 1 corretto: Safe ritrova per mercato l'ordine del canale senza eventi
+
+- **Difetto (preesistente, non solo dei tradotti)**: `_MercatoSafe.list_current_orders` tiene
+  solo i ref `safe-` (`bot_service.py:90-92`), il runner piazza col ref di flumine. Una riga
+  LIVE del canale senza NESSUN evento non si ritrovava per ref: dopo la grazia
+  `reconcile_ordine_assente` con l'ordine ABBINATO, e un secondo cash-out apriva una seconda
+  gamba. Riprodotto rosso: `test_reperto1_adozione_canale_safe_2026_10_02.py::
+  test_r1_riga_del_canale_senza_eventi_ordine_abbinato_adottato_nessuna_seconda_chiusura`
+  (sulla base: `reconcile_ordine_assente`; ora: adottato, apertura `hedged`, secondo
+  `close_trade` rifiutato, nessuna riga, nessun ordine).
+- **Correzione** (porta di `omega_service._adotta_per_mercato`):
+  - `execution._place_via_canale` scrive nella scrittura write-ahead anche
+    `meta.canale_inviato` (selezione, lato, quota e size MANDATE, dopo tick e tetti);
+  - `bot_service._adotta_per_mercato`: solo righe live del canale senza bet_id, oltre la
+    scadenza, e SOLO se la lettura del giro non ha gia' un ordine col loro ref
+    (`_trovata_per_ref`: nessuna lettura REST in piu' quando il ref basta); legge
+    `list_current_orders("safe")` (gli ordini della strategia, mai il conto intero);
+    impronta esatta: mercato, selezione, lato, quota e size chieste identiche, piazzato fra
+    -5 s e +120 s dall'invio, bet_id non gia' di un'altra riga dell'evento; oppure
+    l'equivalente esatto (`impronta_equivalente`). Un candidato: bet_id scritto
+    (`canale_bet_id_da`), poi la riconciliazione per bet_id di sempre. Piu' candidati o
+    letture KO: la riga resta in verifica con UN `flumine_live_orphan` critico (stesso kind
+    e etichetta di Omega). Nessun candidato: la regola di prima.
+  - Nessuna condotta di strategia cambia.
+- **Test**: 11 (impronta diversa per size, quota, lato, selezione, orario; due candidati; bet_id
+  gia' noto; nessun ordine = regola di prima; lettura della sola strategia; write-ahead).
+  `test_audit_2026_09_11::test_h16` aggiornato coi due kind (gia' etichettati in
+  `safeActivity.ts`). **Falsificazione** `falsifica_reperto1.py`: **13/13 rosse** (P1-a..j e
+  P11-a..c).
+
+## 5-quater. Punto 11 del runner (`ATTORI_CON_TRADUZIONE`, oggi vuoto)
+
+- Il ramo e' unito a `master` (conflitti add/add sui file del runner risolti tenendo `master`,
+  le mie modifiche riapplicate con `git apply --3way` senza conflitti).
+- La coda (`_traduci_riga_coda`: `params.source` deve stare nell'insieme) e il REST di Safe
+  (`equivalente_ammesso` richiede `"safe"` nell'insieme) rispettano lo stesso insieme del
+  canale: OGGI Safe non traduce su nessuna via, coda e REST esattamente come prima
+  (`test_d3_attore_non_ammesso_coda_e_rest_come_prima`). Le letture nei termini chiesti
+  restano pronte.
+- I test che provano la traduzione abilitano l'attore SOLO per la prova (fixture come nei test
+  del runner); il finto del motore di Omega traduce solo se l'attore e' ammesso, altrimenti
+  rifiuta come il motore vero (`test_d1_il_finto_rispetta_gli_attori_con_traduzione[True/False]`).
+
 ## 6. NON VERIFICATO
 
 - Nessun ordine vero: l'identita' in `order_state_by_bet_id` (`selectionId`, `side`,
@@ -206,7 +250,26 @@ rosso preteso, ripristino byte per byte verificato, verde ripreso alla fine. Esi
 - R1: l'arresto non e' provato su un processo vero (file `ARRESTO` scritto da `main.js`,
   CTRL_BREAK dal watchdog): provati il guscio, la chiusura e il collegamento coi finti.
 
+## 7-bis. Reperto 2 (posizione di conto per selezione): cosa cambierebbe, quanto costa
+
+1. Oggi `_sorveglia_posizione_di_conto` confronta per SELEZIONE (back - lay abbinati) il conto
+   con cio' che Safe crede di avere; una chiusura tradotta sta sull'ALTRA selezione.
+2. Correzione: sui mercati a due esiti esaustivi nettare per MERCATO, cioe' sui due esiti
+   W(Over)+L(Under) e L(Over)+W(Under) (la stessa regola del motore `_riduzione_verificata` e
+   del green-up del runner), per conto e per righe di Safe.
+3. Costo: una funzione pura nuova (posizione di mercato da righe/ordini), il verdetto a due
+   esiti in `_sorveglia_posizione_di_conto`, il tipo di mercato per sapere quando applicarla;
+   nessuna lettura REST in piu' (gia' legge tutto il mercato). Circa mezza giornata con test.
+4. Rischio: e' un verdetto che spegne la gestione («chiuso dall'utente»): va falsificato sui
+   casi misti (utente + bot, parziali); oggi con la traduzione spenta non serve.
+5. Non corretto (perimetro, decisione del coordinatore).
+
 ## 8. Numeri (worktree, interprete del principale)
+
+**Dopo l'unione con `master` e il reperto 1** (stesso set mirato): **7060 passed, 31 skipped,
+1 xfailed, 0 failed** (377 s). Falsificazioni rilanciate sull'albero unito:
+riconciliazione **33/33**, arresto **14/14**, reperto 1 + punto 11 **13/13**. (Lo script
+base ora riconosce le ancore anche nelle copie di lavoro CRLF.) Numeri precedenti:
 
 | set | esito |
 |---|---|
@@ -221,8 +284,8 @@ rosso preteso, ripristino byte per byte verificato, verde ripreso alla fine. Esi
 
 ## 7. Reperti (fuori perimetro, NON toccati)
 
-1. **Safe, canale senza NESSUN evento, live (money-critical, preesistente, non solo dei
-   tradotti)**: `_MercatoSafe.list_current_orders` filtra `customer_order_ref` per prefisso
+1. **[CORRETTO, §5-ter] Safe, canale senza NESSUN evento, live (money-critical, preesistente,
+   non solo dei tradotti)**: `_MercatoSafe.list_current_orders` filtra `customer_order_ref` per prefisso
    `safe-` (`bot_service.py:90-92`), ma il runner piazza col ref di flumine (`<hash>-<id>`):
    la ricerca per ref (`safe-t<id>` e `meta.canale_cor`, R-2 del 28/09) non trova MAI un
    ordine del canale in produzione. Se nessun evento arriva (porta caduta, memoria persa),
