@@ -1,0 +1,116 @@
+﻿scenario base: tick=52082 decisioni=5246 azioni=6 violazioni=0 secondi=160.3 (con profilo)
+Fri Oct  2 13:30:01 2026    AUDIT_2026-10-02/replay/mike_base_DOPO.prof
+
+         102438969 function calls (98848091 primitive calls) in 159.130 seconds
+
+   Ordered by: internal time
+   List reduced from 4370 to 35 due to restriction <35>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+ 16740086    7.874    0.000    7.874    0.000 {method 'get' of 'dict' objects}
+   643713    6.540    0.000   50.351    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\backtest\banco_comune.py:1905(_a_flumine)
+ 11176267    5.139    0.000    5.554    0.000 {built-in method builtins.getattr}
+  2035410    5.136    0.000    5.152    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Lib\site-packages\flumine\markets\middleware.py:265(__call__)
+  3235009    5.081    0.000    5.081    0.000 {built-in method builtins.round}
+2757959/5245    4.885    0.000    6.422    0.001 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\safe_strategy\scanner.py:566(_senza_campi_rumorosi)
+    21982    4.851    0.000    4.851    0.000 C:\Python313\Lib\json\encoder.py:205(iterencode)
+  1471710    3.929    0.000    7.006    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\valuta.py:69(_nuovo_livello)
+  2035410    3.459    0.000    8.610    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Lib\site-packages\flumine\markets\middleware.py:245(_process_runner)
+11529694/11264392    3.458    0.000    4.224    0.000 {built-in method builtins.isinstance}
+   464213    3.314    0.000   92.404    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\mike\tools\replay_registrazioni.py:641(process_market_book)
+   504571    2.893    0.000   12.037    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Lib\site-packages\flumine\markets\middleware.py:49(__call__)
+   139142    2.538    0.000   10.748    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\backtest\banco_comune.py:1520(_chiudi_mercato_senza_resoconti)
+        1    2.497    2.497  156.088  156.088 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\backtest\banco_comune.py:2203(esegui)
+   504571    2.449    0.000   23.039    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\backtest\banco_comune.py:2450(applica_book)
+    65445    2.122    0.000    3.791    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Lib\site-packages\betfairlightweight\resources\bettingresources.py:593(__init__)
+   504571    2.031    0.000   13.708    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\valuta.py:254(converti_libro)
+   504571    1.975    0.000    3.439    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\backtest\banco_comune.py:2380(registra_mercato)
+   221242    1.879    0.000    4.898    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\backtest\banco_comune.py:469(_livelli_di_produzione)
+    44514    1.743    0.000    6.408    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\safe_strategy\service.py:1598(_apply_opp_book)
+     5847    1.645    0.000   43.423    0.007 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\mike\service.py:4588(_run_event)
+   139142    1.594    0.000    2.739    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\backtest\banco_comune.py:1220(registra_libro_chiuso)
+   539042    1.462    0.000    1.462    0.000 {method 'timestamp' of 'datetime.datetime' objects}
+  1009142    1.434    0.000   28.141    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Lib\site-packages\flumine\utils.py:289(call_middleware_error_handling)
+   258693    1.418    0.000    9.883    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\valuta.py:94(_livelli)
+   607575    1.394    0.000    2.030    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\mike\engine.py:867(_market_pnl_by_total)
+    30654    1.388    0.000   12.317    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\backtest\banco_comune.py:1762(veloce)
+  1730403    1.355    0.000    8.360    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\valuta.py:97(<genexpr>)
+    53410    1.247    0.000    1.953    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\safe_strategy\scanner.py:697(build_market_block)
+   643798    1.033    0.000   13.974    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\backtest\banco_comune.py:2061(_prossimo)
+  2129702    1.015    0.000    1.015    0.000 {method 'append' of 'list' objects}
+    18080    0.970    0.000    2.441    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\omega\omega_model.py:354(score_probs)
+   139142    0.942    0.000    2.026    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Lib\site-packages\flumine\baseflumine.py:229(_remove_market)
+   256204    0.941    0.000    4.341    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\safe_strategy\scanner.py:265(price_pair)
+    33754    0.931    0.000    3.565    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\mike\engine.py:886(net_pnl_by_total)
+
+
+Fri Oct  2 13:30:01 2026    AUDIT_2026-10-02/replay/mike_base_DOPO.prof
+
+         102438969 function calls (98848091 primitive calls) in 159.130 seconds
+
+   Ordered by: cumulative time
+   List reduced from 4370 to 60 due to restriction <60>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000  160.278  160.278 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\backtest\certifica.py:380(_lavora_cronometrato)
+        1    0.000    0.000  160.278  160.278 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\backtest\certifica.py:335(_lavora)
+        1    0.000    0.000  157.973  157.973 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\mike\tools\replay_registrazioni.py:2126(certifica_scenario)
+        1    0.000    0.000  157.973  157.973 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\mike\tools\replay_registrazioni.py:1322(certifica_evento)
+        1    0.003    0.003  157.970  157.970 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\mike\tools\replay_registrazioni.py:1330(_certifica_evento)
+        1    2.497    2.497  156.088  156.088 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\backtest\banco_comune.py:2203(esegui)
+   928447    0.891    0.000   93.424    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Lib\site-packages\flumine\utils.py:261(call_strategy_error_handling)
+   464213    3.314    0.000   92.404    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\mike\tools\replay_registrazioni.py:641(process_market_book)
+     5847    0.604    0.000   64.921    0.011 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\mike\tools\replay_registrazioni.py:685(_un_giro)
+   643713    6.540    0.000   50.351    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\backtest\banco_comune.py:1905(_a_flumine)
+     5847    1.645    0.000   43.423    0.007 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\mike\service.py:4588(_run_event)
+  1009142    1.434    0.000   28.141    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Lib\site-packages\flumine\utils.py:289(call_middleware_error_handling)
+   504571    2.449    0.000   23.039    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\backtest\banco_comune.py:2450(applica_book)
+     5847    0.124    0.000   15.683    0.003 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\backtest\banco_comune.py:2508(pubblica)
+     5847    0.454    0.000   15.040    0.003 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\safe_strategy\service.py:2531(build_rows)
+   504571    0.741    0.000   14.670    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\valuta.py:325(__call__)
+   643798    1.033    0.000   13.974    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\backtest\banco_comune.py:2061(_prossimo)
+   504571    2.031    0.000   13.708    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\valuta.py:254(converti_libro)
+    59738    0.708    0.000   13.631    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\safe_strategy\service.py:1395(_apply_market_book)
+37638/37630    0.099    0.000   12.456    0.000 {built-in method builtins.next}
+    30654    1.388    0.000   12.317    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\backtest\banco_comune.py:1762(veloce)
+   504571    2.893    0.000   12.037    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Lib\site-packages\flumine\markets\middleware.py:49(__call__)
+   139142    0.397    0.000   11.220    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\backtest\banco_comune.py:1609(_process_close_market)
+   139142    2.538    0.000   10.748    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\backtest\banco_comune.py:1520(_chiudi_mercato_senza_resoconti)
+   258693    1.418    0.000    9.883    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\valuta.py:94(_livelli)
+     5245    0.156    0.000    9.121    0.002 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\safe_strategy\scanner.py:577(payload_signature)
+  2035410    3.459    0.000    8.610    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Lib\site-packages\flumine\markets\middleware.py:245(_process_runner)
+  1730403    1.355    0.000    8.360    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\valuta.py:97(<genexpr>)
+ 16740086    7.874    0.000    7.874    0.000 {method 'get' of 'dict' objects}
+     4572    0.473    0.000    7.572    0.002 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\mike\dossier.py:298(live_frame)
+     1860    0.009    0.000    7.439    0.004 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\backtest\banco_comune.py:897(_costa_una_lettura)
+     1860    0.166    0.000    7.430    0.004 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\backtest\banco_comune.py:2151(consuma_tempo)
+  1471710    3.929    0.000    7.006    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\valuta.py:69(_nuovo_livello)
+    59725    0.198    0.000    6.592    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\backtest\banco_comune.py:2473(_vista_di)
+2757959/5245    4.885    0.000    6.422    0.001 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\safe_strategy\scanner.py:566(_senza_campi_rumorosi)
+    44514    1.743    0.000    6.408    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\safe_strategy\service.py:1598(_apply_opp_book)
+    27900    0.074    0.000    6.304    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\backtest\banco_comune.py:477(libro_di_produzione)
+    27900    0.271    0.000    6.229    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\backtest\banco_comune.py:458(__init__)
+   110621    0.342    0.000    5.854    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\backtest\banco_comune.py:438(__init__)
+ 11176267    5.139    0.000    5.554    0.000 {built-in method builtins.getattr}
+     9267    0.715    0.000    5.554    0.001 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\safe_strategy\service.py:1562(_apply_cs_book)
+   110621    0.290    0.000    5.334    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\backtest\banco_comune.py:404(__init__)
+    21982    0.207    0.000    5.310    0.000 C:\Python313\Lib\json\__init__.py:183(dumps)
+    65445    0.898    0.000    5.252    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Lib\site-packages\betfairlightweight\streaming\cache.py:360(create_resource)
+  2035410    5.136    0.000    5.152    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Lib\site-packages\flumine\markets\middleware.py:265(__call__)
+  3235009    5.081    0.000    5.081    0.000 {built-in method builtins.round}
+    21982    0.146    0.000    5.067    0.000 C:\Python313\Lib\json\encoder.py:183(encode)
+     5846    0.050    0.000    4.928    0.001 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\mike\service.py:3164(_sorveglia_posizione_di_conto)
+   221242    1.879    0.000    4.898    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\stream\backtest\banco_comune.py:469(_livelli_di_produzione)
+    21982    4.851    0.000    4.851    0.000 C:\Python313\Lib\json\encoder.py:205(iterencode)
+      324    0.017    0.000    4.845    0.015 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\mike\service.py:3033(_verdetto_di_conto)
+      551    0.005    0.000    4.734    0.009 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\mike\service.py:3213(_leggi)
+     5246    0.101    0.000    4.486    0.001 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\mike\tools\replay_registrazioni.py:1398(decide_sorvegliata)
+   256204    0.941    0.000    4.341    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\safe_strategy\scanner.py:265(price_pair)
+    30653    0.408    0.000    4.308    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Lib\site-packages\flumine\streams\historicalstream.py:35(_process)
+11529694/11264392    3.458    0.000    4.224    0.000 {built-in method builtins.isinstance}
+   139142    0.676    0.000    3.821    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\mike\tools\replay_registrazioni.py:612(process_closed_market)
+    65445    0.550    0.000    3.810    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Lib\site-packages\betfairlightweight\streaming\cache.py:234(update_cache)
+    65445    2.122    0.000    3.791    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Lib\site-packages\betfairlightweight\resources\bettingresources.py:593(__init__)
+    11695    0.183    0.000    3.649    0.000 C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.claude\worktrees\agent-a3973176466e94888\Betfair\mike\service.py:582(_signature)
+
+
