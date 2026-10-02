@@ -182,7 +182,7 @@ def _stato(guardia_fatta: bool = True) -> SVC.StatoAuto:
 @pytest.fixture(autouse=True)
 def _ambiente(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(AM.ENV_TETTO, raising=False)
-    monkeypatch.delenv(CB.ENV_SCALPER, raising=False)
+    monkeypatch.setenv(CB.ENV_SCALPER, "0")
     CB.azzera_statistiche()
 
 

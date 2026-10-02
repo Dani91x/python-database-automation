@@ -226,7 +226,7 @@ def motore(monkeypatch):
 @pytest.fixture
 def spento(monkeypatch):
     """Interruttore SPENTO: la porta non deve MAI nascere."""
-    monkeypatch.delenv(PO.ENV_CANALE, raising=False)
+    monkeypatch.setenv(PO.ENV_CANALE, "0")
 
     def _vietato():
         raise AssertionError("porta creata a interruttore spento")
