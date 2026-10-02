@@ -1,0 +1,1000 @@
+diff --git a/AUDIT_2026-10-02/TEST_ISOLAMENTO_2.md b/AUDIT_2026-10-02/TEST_ISOLAMENTO_2.md
+new file mode 100644
+index 0000000..93af467
+--- /dev/null
++++ b/AUDIT_2026-10-02/TEST_ISOLAMENTO_2.md
+@@ -0,0 +1,103 @@
++# Isolamento dei test, seconda parte (02/10/2026)
++
++Ramo `test-isolamento-2`, partito da master `c0505ff` e poi portato sull'ultimo master. Si toccano solo i conftest e i test: **nessuna condotta di produzione cambiata** e nessuna funzione di produzione aggiunta.
++
++STATO AL 14:15: fatto tutto sul ramo ribasato sull'ultimo master (b90ef1a): casi c, d, e, f, falsificazione (tutto come atteso), 4 giri d'ordine e suite intera verde. Manca solo la revisione del coordinatore.
++
++## (c) `test_audit_2026_09_11.py::test_l14_ttl_della_cache_lambda`
++
++È verde da solo e rosso dopo il batch di 32 file.
++
++**Inquinatore minimo**, trovato per bisezione file per file e poi test per test: `Betfair/omega/test_omega_greenup_2026_09_10.py::test_trigger_gol_esce_dopo_assestamento_e_marca_le_due_righe`, cioè ogni test di quel file che usa la fixture `lambdas`.
++
++**Causa.**
++- `Betfair/omega/omega_service.py:1000` definisce `_LAMBDA_CACHE`, la cache di processo dei lambda per `event_id`. La scrive `_prematch_lambdas` (riga :1238) e la legge per prima (riga :1143).
++- La catena di Safe parte proprio da qui: `Betfair/safe_strategy/bot_service.py:7220` (`resolve_event_lambdas`) chiama `_prematch_lambdas` di Omega come primo anello.
++- `svuota_le_cache` di Omega non la svuota, e nessuna fixture lo faceva a fine test.
++- Il test di Omega lascia in cache `"e1"`. l14 usa lo stesso `"e1"` e, scaduto il TTL, trova i lambda di Omega invece di rifare la sua catena: `calls["n"] == 0`.
++
++**Correzione.** `Betfair/conftest.py`, nuova fixture autouse `_svuota_cache_lambda_di_omega`. Svuota `_LAMBDA_CACHE` a fine test, e solo se il modulo è già importato.
++
++## (d) `delenv` di variabili presenti nel `.env` vero
++
++**Censimento.** `AUDIT_2026-10-02/cerca_delenv_env.py` legge del `.env` solo i nomi (41) e risolve anche gli argomenti scritti come costanti. Esito: **56 siti**.
++
++**Criterio applicato.**
++- Dove il test vuole solo l'interruttore spento, `delenv` diventa `setenv(X, "0")`. Sono **35 siti in 13 file** (elenco nel commit c52f5a8). Tutte queste variabili sono già nei 20 `INTERRUTTORI_CANALE`, che `Betfair/conftest.py` mette a `"0"` di serie, tranne `SAFE_BOT_GIRO_VELOCE`, letta con `canale_scan.acceso`. Quindi `"0"` è lo spento già in uso nella suite.
++- Dove il test prova proprio l'**assenza**, `delenv` resta. Sono 21 siti:
++  - `test_linterruttore_di_serie_e_spento` (Mike, Omega, Safe, tennis);
++  - i parametri `valore=None`;
++  - `test_senza_env_il_canale_e_spento`;
++  - `test_interruttore_assente_e_spento`;
++  - `test_di_default_e_spento` (`MIKE_LIVE_ENABLED`);
++  - `test_interruttore_spento_nessuna_porta` (porta_f5:815-816);
++  - il default di `LIVE_ORDER_MODE` (con `""` `live_order_mode()` renderebbe `""`, non `"OFF"`);
++  - il default di `LIVE_LADDER_CANALE_MS`, che fa anche `importlib.reload(config_stream)`;
++  - `test_sync_spento_di_default` (Supabase assente);
++  - `test_contesto_accende_e_rimette_l_interruttore` (verifica `not in os.environ`).
++
++  Passarli a `setenv` avrebbe indebolito il test. Questi siti li protegge la guardia generale descritta sotto.
++- **Correzione alla radice.** `Betfair/conftest.py`, fixture autouse `_nessun_dotenv_a_meta_test`: durante ogni test `dotenv.load_dotenv` non fa nulla. Il riempimento a metà test veniva da `Betfair/stream/config_stream.py:16-17` alla prima importazione o a un `reload`. Gli import fatti alla raccolta restano come prima e li neutralizza già `_ambiente_neutro_canali_e_db`.
++- **Raffinamento dopo il rebase.** Il master nuovo porta `Betfair/stream/tests/test_banco_ambiente_dichiarato_2026_10_02.py`, che chiama `load_dotenv(<percorso di un .env FINTO>)` e si aspetta la funzione vera. La guardia ora neutralizza **solo** la chiamata senza percorso, cioè la ricerca automatica del `.env` vero; con un percorso esplicito delega alla funzione vera. La sonda `test_sonda_percorso_esplicito_usa_la_funzione_vera` lo prova, e quel file dà 23 passed in 133 s. I due `delenv(n)` di quel file (righe 100 e 187) provano l'ambiente VUOTO e restano come sono.
++- **Escluso dopo verifica.** `test_tennis_iscrizione_a_caldo:260` usa `IAC.ENV_INTERRUTTORE`, cioè `TENNIS_ISCRIZIONE_A_CALDO`, che non è nel `.env` e acceso di serie. Lo script di censimento l'aveva risolto per omonimia: convertirlo dava 18 test rossi, quindi è stato rimesso com'era.
++
++## (e) Quarto caso gemello, trovato lungo la strada
++
++`Betfair/mike/tests/test_mike_legge_canale_2026_09_23.py::test_1_interruttore_spento_chiamate_identiche_a_prima[None]` era rosso **sul master** con il file da solo e verde nella cartella.
++
++- **Causa:** `Betfair/stream/flusso_prezzi.py:248` tiene `_NON_NOTO_AVVISATO`, che fa scrivere l'avviso `flusso_non_dichiarato` una sola volta per processo e per bot.
++- Il test confronta due corse (PRIMA e DOPO) nello stesso processo: alla prima corsa del processo la riga compare solo in PRIMA.
++- **Correzione:** `_sequenza` toglie `"mike"` da quel memo prima di ogni corsa, così le due corse partono dallo stesso stato.
++
++## (f) Quinto caso, trovato dal giro in ordine inverso
++
++`Betfair/safe_strategy/tests/test_cert_2026_09_13.py::test_aggregati_illeggibili_bloccano_i_nuovi_ingressi` era rosso in ordine inverso.
++
++- **Inquinatore** (bisezione con `AUDIT_2026-10-02/bisezione_inquinatore.py`): `test_aggregati_stantii_si_riusano_per_poco_invece_di_bloccare`.
++- **Causa:** `bot_service._AGG_ULTIMO_BUONO` (riga :6297, scritta a :6431, riusata a :6413 entro `_AGG_TTL_S`). Con lo stesso `NOW` fisso il test trovava una lettura "recente" invece del blocco.
++- **Correzione:** fixture autouse `aggregati_buoni_dimenticati` in `Betfair/safe_strategy/tests/conftest.py`.
++
++**Altro rosso dello stesso giro.** `test_velocita_feed_2026_09_30.py::test_worker_riparte_subito_alla_sveglia_ma_non_sotto_il_pavimento` è caduto una volta. La bisezione non lo riproduce nemmeno con tutti i 22 candidati, e al giro inverso successivo è verde. Il test misura i tempi con `time.sleep` (finestre da 0,25 a 0,9 s) ed è caduto a PC carico, con il giro inverso a 225 s invece di 80 s. È **fragile per i tempi, non per l'ordine**: non è corretto qui.
++
++## Falsificazione (`falsifica_test_isolamento_2.py` e `_out.txt`): esito «TUTTO COME ATTESO»
++
++| Mutazione | Combinazione | Atteso | Ottenuto |
++|---|---|---|---|
++| C, niente svuotamento della cache lambda | greenup → l14 | rosso | 1 failed, 19 passed |
++| C | l14 da solo | verde | 1 passed |
++| D, `load_dotenv` attivo | sonda: `delenv` poi `reload(config_stream)` | rosso (riacceso dal `.env`) | 1 failed |
++| D | sonda: `setenv "0"` poi `reload` | verde | 1 passed |
++| E, memo di Mike non azzerato | file Mike da solo | rosso | 1 failed, 24 passed |
++| F, `_AGG_ULTIMO_BUONO` non azzerato | stantii → illeggibili | rosso | 1 failed, 1 passed |
++| F | illeggibili da solo | verde | 1 passed |
++
++A file ripristinati tutto torna verde, con lo sha256 verificato. Le sonde controllano solo se la variabile è presente o uguale a `"0"`: il valore del `.env` non viene mai letto né stampato.
++
++## Esecuzioni
++
++| Esecuzione | Esito | Durata |
++|---|---|---|
++| Batch dei 32 file + l14 (prima: 1 failed, 1129 passed) | 1130 passed | 63,8 s |
++| File di test toccati | 462 passed | 52 s |
++| `Betfair/safe_strategy/tests` | 2121 passed, 3 skipped, 1 xfailed | 81 s |
++| Suite intera `Betfair/`, ramo prima del rebase e del caso (f) | 9260 passed, 31 skipped, 1 xfailed | 549 s |
++| **Suite intera `Betfair/`, ramo finale ribasato** | **9418 passed, 31 skipped, 9 xfailed, 0 failed** | 511 s |
++
++**Giri d'ordine su `safe_strategy/tests`** (plugin `ordine_test_plugin.py`), tutti con 2121 passed:
++
++| Ordine | Durata |
++|---|---|
++| inverso | 68,7 s |
++| casuale:11 | 64,8 s |
++| casuale:12 | 72,7 s |
++| casuale:13 | 62,9 s |
++
++Sul ramo finale ribasato ogni giro dà 2122 passed, 3 skipped, 1 xfailed. Un giro precedente, prima della correzione (f), aveva dato 2 rossi in ordine inverso: da lì vengono il caso (f) e la nota sul test di velocità.
++
++## NON VERIFICATO
++
++- I giri casuali coprono solo `safe_strategy/tests`, non stream, tennis, mike e omega.
++- Il test di velocità del feed resta fragile per i tempi.
++- Il valore delle variabili del `.env` non è mai stato letto: si conoscono solo i nomi.
++- Non ho lanciato una suite intera di riferimento su master con cui confrontare i 9418.
++- Due strumenti (`safe_strategy/tools/conta_operazioni_live.py`, `storia_operazioni.py`) caricano il `.env` vero col percorso esplicito: la guardia non li ferma. Non li importa nessun test.
+diff --git a/AUDIT_2026-10-02/bisezione_inquinatore.py b/AUDIT_2026-10-02/bisezione_inquinatore.py
+new file mode 100644
+index 0000000..2a47f85
+--- /dev/null
++++ b/AUDIT_2026-10-02/bisezione_inquinatore.py
+@@ -0,0 +1,67 @@
++# -*- coding: utf-8 -*-
++"""Bisezione dell'inquinatore minimo di un test che cade in ordine INVERSO.
++
++    python AUDIT_2026-10-02/bisezione_inquinatore.py <cartella> <nodeid bersaglio>
++
++Raccoglie i test della cartella, prende quelli che in ordine inverso girano
++PRIMA del bersaglio, e dimezza finche' resta il singolo test che, eseguito
++prima del bersaglio, lo rende rosso (plugin ``ordine_test_plugin``,
++``ORDINE_TEST=elenco:<file>``). Assunzione: un inquinatore singolo basta.
++"""
++from __future__ import annotations
++
++import os
++import re
++import subprocess
++import sys
++import tempfile
++from pathlib import Path
++
++RADICE = Path(__file__).resolve().parent.parent
++AUDIT = Path(__file__).resolve().parent
++
++
++def corri(cartella: str, ordine: list[str]) -> bool:
++    """True = bersaglio (ultimo) ROSSO."""
++    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as fh:
++        fh.write("\n".join(ordine))
++        nome = fh.name
++    env = dict(os.environ, ORDINE_TEST=f"elenco:{nome}",
++               PYTHONPATH=str(AUDIT) + os.pathsep + os.environ.get("PYTHONPATH", ""))
++    p = subprocess.run([sys.executable, "-m", "pytest", cartella, "-q", "-p", "no:cacheprovider",
++                        "-p", "ordine_test_plugin"], cwd=RADICE, capture_output=True,
++                       text=True, env=env, encoding="utf-8", errors="replace")
++    os.unlink(nome)
++    return any(r.startswith("FAILED") and ordine[-1] in r for r in p.stdout.splitlines())
++
++
++def main() -> None:
++    cartella, bersaglio = sys.argv[1], sys.argv[2]
++    p = subprocess.run([sys.executable, "-m", "pytest", cartella, "--collect-only", "-q",
++                        "-p", "no:cacheprovider"], cwd=RADICE, capture_output=True, text=True,
++                       encoding="utf-8", errors="replace")
++    ids = [r.strip() for r in p.stdout.splitlines() if "::" in r]
++    i = ids.index(bersaglio)
++    candidati = list(reversed(ids[i + 1:]))      # in inverso girano prima
++    print(f"candidati: {len(candidati)}", flush=True)
++    if not corri(cartella, candidati + [bersaglio]):
++        print("NON riprodotto con tutti i candidati")
++        return
++    while len(candidati) > 1:
++        meta = len(candidati) // 2
++        a, b = candidati[:meta], candidati[meta:]
++        if corri(cartella, a + [bersaglio]):
++            candidati = a
++        elif corri(cartella, b + [bersaglio]):
++            candidati = b
++        else:
++            print(f"serve una COMBINAZIONE (nessuna meta' basta da sola): {len(candidati)} rimasti")
++            break
++        print(f"  rimasti {len(candidati)}", flush=True)
++    print("INQUINATORE:", candidati if len(candidati) <= 5 else len(candidati))
++    if len(candidati) == 1:
++        print("conferma da solo:", "ROSSO" if corri(cartella, candidati + [bersaglio]) else "VERDE")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/AUDIT_2026-10-02/cerca_delenv_env.py b/AUDIT_2026-10-02/cerca_delenv_env.py
+new file mode 100644
+index 0000000..48d759b
+--- /dev/null
++++ b/AUDIT_2026-10-02/cerca_delenv_env.py
+@@ -0,0 +1,80 @@
++# -*- coding: utf-8 -*-
++"""Elenca ogni ``delenv(...)`` dei test su una variabile che sta nel ``.env`` vero.
++
++Lancio: ``python AUDIT_2026-10-02/cerca_delenv_env.py <percorso del .env>``
++
++Del ``.env`` legge SOLO i NOMI (la parte prima di ``=``): i valori non vengono
++mai letti in una variabile, stampati o scritti. Stampa:
++  ENV       delenv con nome letterale presente nel .env
++  COSTANTE  delenv con argomento non letterale (da risolvere a mano)
++"""
++from __future__ import annotations
++
++import re
++import sys
++from pathlib import Path
++
++RADICE = Path(__file__).resolve().parent.parent
++_NOME = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=")
++_DELENV = re.compile(r"delenv\(\s*([^,)]+)")
++
++
++def nomi_env(percorso: Path) -> set[str]:
++    out: set[str] = set()
++    for riga in percorso.read_text(encoding="utf-8", errors="replace").splitlines():
++        m = _NOME.match(riga)
++        if m:
++            out.add(m.group(1))
++    return out
++
++
++_COSTANTE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?::\s*[A-Za-z]+\s*)?=\s*[\"']([A-Za-z_][A-Za-z0-9_]*)[\"']")
++
++
++def mappa_costanti() -> dict[str, set[str]]:
++    """``NOME_COSTANTE -> {valori}`` per ogni ``NOME = "STRINGA"`` del repo."""
++    out: dict[str, set[str]] = {}
++    for p in RADICE.rglob("*.py"):
++        rel = p.relative_to(RADICE).as_posix()
++        if rel.startswith((".venv/", ".claude/", "frontend/")):
++            continue
++        try:
++            testo = p.read_text(encoding="utf-8", errors="replace")
++        except OSError:
++            continue
++        for riga in testo.splitlines():
++            m = _COSTANTE.match(riga)
++            if m:
++                out.setdefault(m.group(1), set()).add(m.group(2))
++    return out
++
++
++def main() -> None:
++    nomi = nomi_env(Path(sys.argv[1]))
++    costanti = mappa_costanti()
++    print(f"nomi nel .env: {len(nomi)}")
++    for p in sorted(RADICE.rglob("*.py")):
++        rel = p.relative_to(RADICE).as_posix()
++        if rel.startswith((".venv/", ".claude/", "frontend/")) or "/node_modules/" in rel:
++            continue
++        try:
++            righe = p.read_text(encoding="utf-8", errors="replace").splitlines()
++        except OSError:
++            continue
++        for i, r in enumerate(righe, 1):
++            for m in _DELENV.finditer(r):
++                arg = m.group(1).strip()
++                if arg[:1] in "\"'":
++                    if arg.strip("\"'") in nomi:
++                        print(f"ENV\t{rel}:{i}\t{r.strip()[:150]}")
++                elif rel != "AUDIT_2026-10-02/cerca_delenv_env.py":
++                    valori = costanti.get(arg.split(".")[-1], set())
++                    nel_env = sorted(v for v in valori if v in nomi)
++                    if nel_env:
++                        print(f"ENV(cost)\t{rel}:{i}\t{arg} -> {','.join(nel_env)}")
++                    elif not valori:
++                        print(f"IRRISOLTA\t{rel}:{i}\t{r.strip()[:150]}")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/AUDIT_2026-10-02/falsifica_test_isolamento_2.py b/AUDIT_2026-10-02/falsifica_test_isolamento_2.py
+new file mode 100644
+index 0000000..c1d18e6
+--- /dev/null
++++ b/AUDIT_2026-10-02/falsifica_test_isolamento_2.py
+@@ -0,0 +1,214 @@
++# -*- coding: utf-8 -*-
++"""Falsificazione dell'isolamento 2 (02/10): l14, load_dotenv a meta' test,
++avviso di processo di Mike.
++
++Lancio (dalla radice del repo, interprete del .venv):
++
++    python AUDIT_2026-10-02/falsifica_test_isolamento_2.py [--ordini]
++
++Ogni mutazione toglie UNA riga della correzione (sostituzione testuale
++verificata: deve comparire esattamente una volta), pretende ROSSO sulla
++combinazione che falliva, rimette il file (contenuto in memoria, sha256
++verificato nel ``finally``) e pretende VERDE. Le sonde del ``.env`` sono un file
++di test TEMPORANEO scritto qui e cancellato nel ``finally``: controllano solo se
++la variabile e' presente/uguale a "0", MAI il suo valore.
++
++``--ordini``: ``Betfair/safe_strategy/tests`` in ordine inverso e con 3 semi
++(plugin ``ordine_test_plugin.py``). Referto: ``falsifica_test_isolamento_2_out.txt``.
++"""
++from __future__ import annotations
++
++import hashlib
++import os
++import re
++import subprocess
++import sys
++import time
++from pathlib import Path
++
++RADICE = Path(__file__).resolve().parent.parent
++AUDIT = Path(__file__).resolve().parent
++OUT = AUDIT / "falsifica_test_isolamento_2_out.txt"
++
++CONFTEST = RADICE / "Betfair/conftest.py"
++MIKE = RADICE / "Betfair/mike/tests/test_mike_legge_canale_2026_09_23.py"
++CONFTEST_SAFE = RADICE / "Betfair/safe_strategy/tests/conftest.py"
++SONDA = RADICE / "Betfair/stream/tests/test_zz_sonda_dotenv_isolamento_2.py"
++
++L14 = ("Betfair/safe_strategy/tests/test_audit_2026_09_11.py"
++       "::test_l14_ttl_della_cache_lambda")
++GREENUP = "Betfair/omega/test_omega_greenup_2026_09_10.py"
++MIKE_REL = "Betfair/mike/tests/test_mike_legge_canale_2026_09_23.py"
++SONDA_REL = "Betfair/stream/tests/test_zz_sonda_dotenv_isolamento_2.py"
++
++RIGA_LAMBDA = "        _cache.clear()\n"
++RIGA_DOTENV = '    monkeypatch.setattr(_dotenv, "load_dotenv", _solo_con_percorso)\n'
++BLOCCO_AGG = ("    _S._AGG_ULTIMO_BUONO.clear()\n    yield\n"
++              "    _S._AGG_ULTIMO_BUONO.clear()\n")
++AGG_STANTII = ("Betfair/safe_strategy/tests/test_cert_2026_09_13.py"
++               "::test_aggregati_stantii_si_riusano_per_poco_invece_di_bloccare")
++AGG_ILLEGGIBILI = ("Betfair/safe_strategy/tests/test_cert_2026_09_13.py"
++                   "::test_aggregati_illeggibili_bloccano_i_nuovi_ingressi")
++RIGA_MIKE = '    _FP._NON_NOTO_AVVISATO.discard("mike")\n'
++
++TESTO_SONDA = '''"""SONDA TEMPORANEA di falsifica_test_isolamento_2.py: cancellata a fine corsa."""
++import importlib
++import os
++
++
++def test_sonda_delenv_resta_assente(monkeypatch):
++    # come i test "variabile assente": la si toglie, poi un import/reload a
++    # meta' test di config_stream (load_dotenv a riga 17)
++    from Betfair.stream import config_stream
++    monkeypatch.delenv("SAFE_ORDINI_VIA_CANALE", raising=False)
++    try:
++        importlib.reload(config_stream)
++        assert "SAFE_ORDINI_VIA_CANALE" not in os.environ, "riaccesa dal .env"
++    finally:
++        os.environ.pop("SAFE_ORDINI_VIA_CANALE", None)
++        importlib.reload(config_stream)
++
++
++def test_sonda_percorso_esplicito_usa_la_funzione_vera(tmp_path, monkeypatch):
++    # la guardia neutralizza solo la ricerca automatica: un .env FINTO passato
++    # col percorso si carica davvero (test_banco_ambiente_dichiarato_2026_10_02)
++    from dotenv import load_dotenv
++    finto = tmp_path / ".env"
++    finto.write_text("ZZ_SONDA_ISOLAMENTO_2=1\\n", encoding="utf-8")
++    monkeypatch.delenv("ZZ_SONDA_ISOLAMENTO_2", raising=False)
++    load_dotenv(str(finto))
++    assert os.environ.get("ZZ_SONDA_ISOLAMENTO_2") == "1"
++    monkeypatch.delenv("ZZ_SONDA_ISOLAMENTO_2", raising=False)
++
++
++def test_sonda_setenv_zero_resta_zero(monkeypatch):
++    from Betfair.stream import config_stream
++    monkeypatch.setenv("SAFE_ORDINI_VIA_CANALE", "0")
++    importlib.reload(config_stream)
++    assert os.environ.get("SAFE_ORDINI_VIA_CANALE") == "0"
++'''
++
++righe: list[str] = []
++
++
++def scrivi(s: str) -> None:
++    print(s, flush=True)
++    righe.append(s)
++
++
++def sha(p: Path) -> str:
++    return hashlib.sha256(p.read_bytes()).hexdigest()
++
++
++def pytest(*args: str, env_extra: dict | None = None) -> tuple[str, float]:
++    env = dict(os.environ)
++    env.update(env_extra or {})
++    t0 = time.time()
++    p = subprocess.run([sys.executable, "-m", "pytest", *args, "-q", "-p", "no:cacheprovider"],
++                       cwd=RADICE, capture_output=True, text=True, env=env,
++                       encoding="utf-8", errors="replace")
++    dt = time.time() - t0
++    ultime = [r for r in p.stdout.splitlines() if r.strip()]
++    sommario = ultime[-1] if ultime else f"(nessun output, rc={p.returncode})"
++    for f in [r for r in p.stdout.splitlines() if r.startswith("FAILED")][:10]:
++        scrivi(f"        {f}")
++    return sommario, dt
++
++
++def esito(nome: str, atteso: str, args: tuple[str, ...], env_extra: dict | None = None) -> bool:
++    sommario, dt = pytest(*args, env_extra=env_extra)
++    rosso = bool(re.search(r"\b\d+ (failed|error)", sommario))
++    ottenuto = "ROSSO" if rosso else "VERDE"
++    ok = ottenuto == atteso
++    scrivi(f"  [{'OK ' if ok else 'KO!'}] {nome}: atteso {atteso}, ottenuto {ottenuto} "
++           f"-> {sommario} ({dt:.1f}s)")
++    return ok
++
++
++def muta(p: Path, riga: str, sostituto: str | None = None) -> None:
++    testo = p.read_bytes().decode("utf-8")
++    nl = "\r\n" if "\r\n" in testo else "\n"
++    cerca = riga.replace("\n", nl)
++    assert testo.count(cerca) == 1, f"testo da mutare non unico in {p}: {riga!r}"
++    if sostituto is None:
++        rientro = riga[: len(riga) - len(riga.lstrip())]
++        sostituto = f"{rientro}pass  # MUTAZIONE\n"
++    p.write_bytes(testo.replace(cerca, sostituto.replace("\n", nl)).encode("utf-8"))
++
++
++def main() -> int:
++    ordini = "--ordini" in sys.argv
++    orig_c, orig_m = CONFTEST.read_bytes(), MIKE.read_bytes()
++    sha_c, sha_m = sha(CONFTEST), sha(MIKE)
++    orig_s, sha_s = CONFTEST_SAFE.read_bytes(), sha(CONFTEST_SAFE)
++    ok = True
++    scrivi(f"falsifica_test_isolamento_2 - {time.strftime('%Y-%m-%d %H:%M:%S')}")
++    scrivi(f"interprete: {sys.executable}")
++    try:
++        SONDA.write_text(TESTO_SONDA, encoding="utf-8")
++        scrivi("\n== 0) CON LE CORREZIONI")
++        ok &= esito("(c) greenup Omega poi l14", "VERDE", (GREENUP, L14))
++        ok &= esito("(c) l14 da solo", "VERDE", (L14,))
++        ok &= esito("(d) sonde .env (delenv resta assente / '0' resta '0')", "VERDE", (SONDA_REL,))
++        ok &= esito("(e) file Mike legge_canale da solo", "VERDE", (MIKE_REL,))
++        ok &= esito("(f) aggregati stantii poi illeggibili", "VERDE",
++                    (AGG_STANTII, AGG_ILLEGGIBILI))
++
++        scrivi("\n== 1) MUTAZIONE C: niente svuotamento di omega_service._LAMBDA_CACHE")
++        muta(CONFTEST, RIGA_LAMBDA)
++        ok &= esito("(c) greenup Omega poi l14", "ROSSO", (GREENUP, L14))
++        ok &= esito("(c) l14 da solo", "VERDE", (L14,))
++        CONFTEST.write_bytes(orig_c)
++
++        scrivi("\n== 2) MUTAZIONE D: load_dotenv di nuovo attivo durante i test")
++        muta(CONFTEST, RIGA_DOTENV)
++        ok &= esito("(d) sonda delenv: riaccesa dal .env", "ROSSO",
++                    (SONDA_REL + "::test_sonda_delenv_resta_assente",))
++        ok &= esito("(d) sonda setenv '0': il criterio per sito regge anche senza guardia",
++                    "VERDE", (SONDA_REL + "::test_sonda_setenv_zero_resta_zero",))
++        CONFTEST.write_bytes(orig_c)
++
++        scrivi("\n== 3) MUTAZIONE E: le due corse di Mike senza azzerare l'avviso di processo")
++        muta(MIKE, RIGA_MIKE)
++        ok &= esito("(e) file Mike legge_canale da solo", "ROSSO", (MIKE_REL,))
++        MIKE.write_bytes(orig_m)
++
++        scrivi("\n== 3b) MUTAZIONE F: _AGG_ULTIMO_BUONO non azzerato fra i test")
++        muta(CONFTEST_SAFE, BLOCCO_AGG, "    yield\n")
++        ok &= esito("(f) aggregati stantii poi illeggibili", "ROSSO",
++                    (AGG_STANTII, AGG_ILLEGGIBILI))
++        ok &= esito("(f) illeggibili da solo", "VERDE", (AGG_ILLEGGIBILI,))
++        CONFTEST_SAFE.write_bytes(orig_s)
++
++        scrivi("\n== 4) RIPRISTINATO")
++        ok &= esito("(c) greenup Omega poi l14", "VERDE", (GREENUP, L14))
++        ok &= esito("(d) sonde .env", "VERDE", (SONDA_REL,))
++        ok &= esito("(e) file Mike legge_canale da solo", "VERDE", (MIKE_REL,))
++        ok &= esito("(f) aggregati stantii poi illeggibili", "VERDE",
++                    (AGG_STANTII, AGG_ILLEGGIBILI))
++        SONDA.unlink()
++
++        if ordini:
++            scrivi("\n== 5) ORDINE: Betfair/safe_strategy/tests, inverso e 3 semi")
++            pp = str(AUDIT) + os.pathsep + os.environ.get("PYTHONPATH", "")
++            for modo in ("inverso", "casuale:11", "casuale:12", "casuale:13"):
++                ok &= esito(f"ORDINE_TEST={modo}", "VERDE",
++                            ("Betfair/safe_strategy/tests", "-p", "ordine_test_plugin"),
++                            env_extra={"ORDINE_TEST": modo, "PYTHONPATH": pp})
++    finally:
++        CONFTEST.write_bytes(orig_c)
++        MIKE.write_bytes(orig_m)
++        CONFTEST_SAFE.write_bytes(orig_s)
++        if SONDA.exists():
++            SONDA.unlink()
++        rip = sha(CONFTEST) == sha_c and sha(MIKE) == sha_m and sha(CONFTEST_SAFE) == sha_s \
++            and not SONDA.exists()
++        scrivi(f"\nripristino verificato (sha256, sonda cancellata): {rip}")
++        ok &= rip
++        scrivi(f"ESITO COMPLESSIVO: {'TUTTO COME ATTESO' if ok else 'DIFFORMITA'}")
++        OUT.write_text("\n".join(righe) + "\n", encoding="utf-8")
++    return 0 if ok else 1
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/AUDIT_2026-10-02/falsifica_test_isolamento_2_out.txt b/AUDIT_2026-10-02/falsifica_test_isolamento_2_out.txt
+new file mode 100644
+index 0000000..7139dd2
+--- /dev/null
++++ b/AUDIT_2026-10-02/falsifica_test_isolamento_2_out.txt
+@@ -0,0 +1,43 @@
++falsifica_test_isolamento_2 - 2026-10-02 13:48:42
++interprete: C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Scripts\python.exe
++
++== 0) CON LE CORREZIONI
++  [OK ] (c) greenup Omega poi l14: atteso VERDE, ottenuto VERDE -> 22 passed in 11.19s (14.3s)
++  [OK ] (c) l14 da solo: atteso VERDE, ottenuto VERDE -> 1 passed in 3.80s (6.3s)
++  [OK ] (d) sonde .env (delenv resta assente / '0' resta '0'): atteso VERDE, ottenuto VERDE -> 3 passed in 0.42s (6.4s)
++  [OK ] (e) file Mike legge_canale da solo: atteso VERDE, ottenuto VERDE -> 25 passed in 0.62s (5.8s)
++  [OK ] (f) aggregati stantii poi illeggibili: atteso VERDE, ottenuto VERDE -> 2 passed in 3.81s (5.7s)
++
++== 1) MUTAZIONE C: niente svuotamento di omega_service._LAMBDA_CACHE
++        FAILED Betfair/safe_strategy/tests/test_audit_2026_09_11.py::test_l14_ttl_della_cache_lambda
++  [OK ] (c) greenup Omega poi l14: atteso ROSSO, ottenuto ROSSO -> 1 failed, 21 passed in 6.55s (8.7s)
++  [OK ] (c) l14 da solo: atteso VERDE, ottenuto VERDE -> 1 passed in 4.33s (6.8s)
++
++== 2) MUTAZIONE D: load_dotenv di nuovo attivo durante i test
++        FAILED Betfair/stream/tests/test_zz_sonda_dotenv_isolamento_2.py::test_sonda_delenv_resta_assente
++  [OK ] (d) sonda delenv: riaccesa dal .env: atteso ROSSO, ottenuto ROSSO -> 1 failed in 0.68s (5.5s)
++  [OK ] (d) sonda setenv '0': il criterio per sito regge anche senza guardia: atteso VERDE, ottenuto VERDE -> 1 passed in 0.31s (6.4s)
++
++== 3) MUTAZIONE E: le due corse di Mike senza azzerare l'avviso di processo
++        FAILED Betfair/mike/tests/test_mike_legge_canale_2026_09_23.py::test_1_interruttore_spento_chiamate_identiche_a_prima[None]
++  [OK ] (e) file Mike legge_canale da solo: atteso ROSSO, ottenuto ROSSO -> 1 failed, 24 passed in 1.31s (7.5s)
++
++== 3b) MUTAZIONE F: _AGG_ULTIMO_BUONO non azzerato fra i test
++        FAILED Betfair/safe_strategy/tests/test_cert_2026_09_13.py::test_aggregati_illeggibili_bloccano_i_nuovi_ingressi
++  [OK ] (f) aggregati stantii poi illeggibili: atteso ROSSO, ottenuto ROSSO -> 1 failed, 1 passed in 3.73s (5.8s)
++  [OK ] (f) illeggibili da solo: atteso VERDE, ottenuto VERDE -> 1 passed in 3.04s (5.0s)
++
++== 4) RIPRISTINATO
++  [OK ] (c) greenup Omega poi l14: atteso VERDE, ottenuto VERDE -> 22 passed in 5.78s (7.9s)
++  [OK ] (d) sonde .env: atteso VERDE, ottenuto VERDE -> 3 passed in 0.25s (5.6s)
++  [OK ] (e) file Mike legge_canale da solo: atteso VERDE, ottenuto VERDE -> 25 passed in 0.58s (5.1s)
++  [OK ] (f) aggregati stantii poi illeggibili: atteso VERDE, ottenuto VERDE -> 2 passed in 3.37s (5.3s)
++
++== 5) ORDINE: Betfair/safe_strategy/tests, inverso e 3 semi
++  [OK ] ORDINE_TEST=inverso: atteso VERDE, ottenuto VERDE -> 2122 passed, 3 skipped, 1 xfailed, 2 warnings in 66.44s (0:01:06) (68.7s)
++  [OK ] ORDINE_TEST=casuale:11: atteso VERDE, ottenuto VERDE -> 2122 passed, 3 skipped, 1 xfailed, 2 warnings in 62.14s (0:01:02) (64.8s)
++  [OK ] ORDINE_TEST=casuale:12: atteso VERDE, ottenuto VERDE -> 2122 passed, 3 skipped, 1 xfailed, 2 warnings in 70.19s (0:01:10) (72.7s)
++  [OK ] ORDINE_TEST=casuale:13: atteso VERDE, ottenuto VERDE -> 2122 passed, 3 skipped, 1 xfailed, 2 warnings in 60.63s (0:01:00) (62.9s)
++
++ripristino verificato (sha256, sonda cancellata): True
++ESITO COMPLESSIVO: TUTTO COME ATTESO
+diff --git a/AUDIT_2026-10-02/ordine_test_plugin.py b/AUDIT_2026-10-02/ordine_test_plugin.py
+index 23e5539..5ffe288 100644
+--- a/AUDIT_2026-10-02/ordine_test_plugin.py
++++ b/AUDIT_2026-10-02/ordine_test_plugin.py
+@@ -23,6 +23,13 @@ def pytest_collection_modifyitems(session, config, items):
+         items.reverse()
+     elif modo.startswith("casuale:"):
+         random.Random(int(modo.split(":", 1)[1])).shuffle(items)
++    elif modo.startswith("elenco:"):
++        # solo i test elencati nel file (un nodeid per riga), in QUELL'ordine:
++        # serve alla bisezione degli inquinatori
++        with open(modo.split(":", 1)[1], encoding="utf-8") as fh:
++            ordine = [r.strip() for r in fh if r.strip()]
++        per_id = {it.nodeid: it for it in items}
++        items[:] = [per_id[n] for n in ordine if n in per_id]
+     else:
+         raise ValueError(f"ORDINE_TEST sconosciuto: {modo!r}")
+ 
+diff --git a/Betfair/conftest.py b/Betfair/conftest.py
+index 9a3a925..e304b81 100644
+--- a/Betfair/conftest.py
++++ b/Betfair/conftest.py
+@@ -107,6 +107,66 @@ def _ripristina_ref_di_strategia_omega_market():
+         _om.CUSTOMER_STRATEGY_REF = _valore
+ 
+ 
++@pytest.fixture(autouse=True)
++def _svuota_cache_lambda_di_omega():
++    """02/10 (isolamento 2, ``AUDIT_2026-10-02/TEST_ISOLAMENTO_2.md``):
++    ``omega_service._LAMBDA_CACHE`` (``Betfair/omega/omega_service.py:1000``) e'
++    la cache di PROCESSO dei lambda pre-match per ``event_id``, riempita da
++    ``_prematch_lambdas`` (:1238) e letta per prima (:1143). La usa anche Safe:
++    ``safe_strategy/bot_service.resolve_event_lambdas`` (:7220) chiama per primo
++    anello la catena di Omega. ``omega_service.svuota_le_cache`` non la svuota e
++    nessuna fixture lo faceva a fine test: un test di Omega che risolve i lambda
++    di ``"e1"`` (es. ``Betfair/omega/test_omega_greenup_2026_09_10.py::
++    test_trigger_gol_esce_dopo_assestamento_e_marca_le_due_righe``) lasciava
++    ``"e1"`` in cache, e ``safe_strategy/tests/test_audit_2026_09_11.py::
++    test_l14_ttl_della_cache_lambda`` (stesso ``event_id``) trovava i lambda di
++    Omega invece di rifare la sua catena: rosso solo dopo quel file.
++
++    Svuotata a fine test se il modulo e' gia' importato (mai importato da qui)."""
++    yield
++    _os = sys.modules.get("Betfair.omega.omega_service")
++    _cache = getattr(_os, "_LAMBDA_CACHE", None) if _os is not None else None
++    if isinstance(_cache, dict):
++        _cache.clear()
++
++
++@pytest.fixture(autouse=True)
++def _nessun_dotenv_a_meta_test(monkeypatch):
++    """02/10 (isolamento 2): nessun ``load_dotenv()`` durante un test.
++
++    ``Betfair/stream/config_stream.py:16-17`` (e gli altri moduli che fanno
++    ``from dotenv import load_dotenv`` all'import) rileggono il ``.env`` VERO del
++    checkout principale la prima volta che vengono importati — o ricaricati con
++    ``importlib.reload``. ``load_dotenv`` riempie solo le variabili ASSENTI:
++    un test che ha appena fatto ``monkeypatch.delenv(X)`` per provare il
++    comportamento "variabile assente" se la vedeva rimettere col valore del
++    ``.env`` se quell'import capitava dentro il test (reperto del 02/10 su
++    ``test_l4``, vedi ``TEST_ISOLAMENTO.md``). I test che provano proprio
++    l'ASSENZA (``..._di_serie_e_spento``, ``valore=None``, default di
++    ``LIVE_ORDER_MODE``/``LIVE_LADDER_CANALE_MS``) non possono passare a
++    ``setenv``: questa fixture li protegge tutti. Gli import fatti alla RACCOLTA
++    (prima delle fixture) restano come sono: il loro effetto e' gia' coperto da
++    ``_ambiente_neutro_canali_e_db``."""
++    try:
++        import dotenv as _dotenv
++    except Exception:  # noqa: BLE001 - dotenv assente: niente da neutralizzare
++        yield
++        return
++    _vero = _dotenv.load_dotenv
++
++    def _solo_con_percorso(dotenv_path=None, *a, **k):
++        # neutralizzata SOLO la ricerca automatica del .env vero (chiamata senza
++        # percorso, come ``config_stream``); un test che passa un .env FINTO
++        # col suo percorso (``test_banco_ambiente_dichiarato_2026_10_02.py``)
++        # usa la funzione vera, cosi' resta capace di diventare rosso
++        if dotenv_path:
++            return _vero(dotenv_path, *a, **k)
++        return False
++
++    monkeypatch.setattr(_dotenv, "load_dotenv", _solo_con_percorso)
++    yield
++
++
+ @pytest.fixture(autouse=True)
+ def _kill_switch_del_db_senza_rete(monkeypatch):
+     """O1 (24/09): ``controls.motivo_kill_switch`` legge anche
+diff --git a/Betfair/mike/tests/test_mike_legge_canale_2026_09_23.py b/Betfair/mike/tests/test_mike_legge_canale_2026_09_23.py
+index 21d747a..692b46f 100644
+--- a/Betfair/mike/tests/test_mike_legge_canale_2026_09_23.py
++++ b/Betfair/mike/tests/test_mike_legge_canale_2026_09_23.py
+@@ -84,7 +84,7 @@ def canale(monkeypatch):
+     agganciata - questo fixture vuole la SOLA lettura, come il suo nome dice.
+     """
+     monkeypatch.setenv(ENV, "1")
+-    monkeypatch.delenv(ENV_SVEGLIA, raising=False)
++    monkeypatch.setenv(ENV_SVEGLIA, "0")
+     monkeypatch.setattr(CS.ClientScan, "avvia", lambda self: None)
+     S.azzera_canale_scan()
+     assert S.avvia_client_scan() is True
+@@ -115,6 +115,17 @@ def _vecchia_lettura(db: Any, params: Dict[str, Any], now_ts: float):
+ 
+ 
+ def _sequenza(db_finto: FakeDB) -> tuple:
++    # 02/10 (isolamento 2, ``AUDIT_2026-10-02/TEST_ISOLAMENTO_2.md``): le due
++    # corse confrontate (PRIMA/DOPO) partono dallo STESSO stato di processo.
++    # ``flusso_prezzi.primo_avviso_scanner_vecchio`` scrive l'avviso
++    # ``flusso_non_dichiarato`` UNA volta per processo e per bot
++    # (``_NON_NOTO_AVVISATO``, ``Betfair/stream/flusso_prezzi.py:248``): senza
++    # questo, da solo il file era rosso ([None], prima corsa del processo: la
++    # riga c'e' in PRIMA e non in DOPO) e verde solo se un test precedente
++    # aveva gia' consumato l'avviso di "mike".
++    from Betfair.stream import flusso_prezzi as _FP
++
++    _FP._NON_NOTO_AVVISATO.discard("mike")
+     db = Traccia(db_finto)
+     mk = FakeMarket()
+     passi = [(0, payload()), (2, payload()), (4, payload()),
+@@ -132,7 +143,7 @@ def test_1_interruttore_spento_chiamate_identiche_a_prima(monkeypatch, valore):
+     params = {"stake": 10, "pre_exit_mode": "taker", "feed_cache_s": 4.0}
+     # PRIMA: il ciclo con la lettura di prima
+     with monkeypatch.context() as m:
+-        m.delenv(ENV, raising=False)
++        m.setenv(ENV, "0")
+         m.setattr(S, "_righe_del_feed", _vecchia_lettura)
+         S.svuota_le_cache()
+         prima = _sequenza(FakeDB(params=dict(params)))
+@@ -161,7 +172,7 @@ def test_1b_client_rimasto_in_memoria_ma_interruttore_spento_legge_come_prima(
+     legge il DB a ogni giro come prima, e il canale non entra."""
+     quando = NOW
+     _spingi(_riga(payload(u35=(1.47, 1.48, 30.0, 25.0)), quando + timedelta(seconds=1)))
+-    monkeypatch.delenv(ENV, raising=False)
++    monkeypatch.setenv(ENV, "0")
+     db_finto = FakeDB(params={"stake": 10})
+     db = Traccia(db_finto)
+     for i in range(3):
+@@ -181,7 +192,7 @@ def test_2_canale_fresco_nessuna_lettura_scan_e_decisioni_identiche(monkeypatch,
+ 
+     # RIFERIMENTO: interruttore spento, le stesse righe arrivano dal DB
+     with monkeypatch.context() as m:
+-        m.delenv(ENV, raising=False)
++        m.setenv(ENV, "0")
+         S._CACHE_FEED.svuota()
+         rif = FakeDB(params=dict(params))
+         rif_db = Traccia(rif)
+@@ -427,7 +438,7 @@ def test_dormi_o_sveglia_usa_attendi_nel_caso_fuso(monkeypatch, canale_e_sveglia
+ 
+ def test_solo_sveglia_apre_ascolto_scan_come_prima(monkeypatch, _ascolto_finto):
+     """(2) del brief: solo MIKE_SVEGLIA_CANALE -> come oggi (AscoltoScan)."""
+-    monkeypatch.delenv(ENV, raising=False)
++    monkeypatch.setenv(ENV, "0")
+     monkeypatch.setenv(ENV_SVEGLIA, "1")
+     S.azzera_canale_scan()
+     S._ASCOLTO_SCAN = None
+@@ -444,8 +455,8 @@ def test_solo_sveglia_apre_ascolto_scan_come_prima(monkeypatch, _ascolto_finto):
+ 
+ def test_entrambi_spenti_nessun_client(monkeypatch, _ascolto_finto):
+     """(2) del brief: entrambi spenti -> nessun client, nessuna sveglia."""
+-    monkeypatch.delenv(ENV, raising=False)
+-    monkeypatch.delenv(ENV_SVEGLIA, raising=False)
++    monkeypatch.setenv(ENV, "0")
++    monkeypatch.setenv(ENV_SVEGLIA, "0")
+     S.azzera_canale_scan()
+     S._ASCOLTO_SCAN = None
+     S._avvia_sveglia()
+diff --git a/Betfair/omega/tests/test_esiti_ordini_canale_2026_09_23.py b/Betfair/omega/tests/test_esiti_ordini_canale_2026_09_23.py
+index 3557087..392b180 100644
+--- a/Betfair/omega/tests/test_esiti_ordini_canale_2026_09_23.py
++++ b/Betfair/omega/tests/test_esiti_ordini_canale_2026_09_23.py
+@@ -49,7 +49,7 @@ RADICE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..
+ @pytest.fixture(autouse=True)
+ def _pulito(monkeypatch):
+     """Ogni test parte senza istanza registrata e con l'interruttore SPENTO."""
+-    monkeypatch.delenv(EO.ENV_ESITI, raising=False)
++    monkeypatch.setenv(EO.ENV_ESITI, "0")
+     S.ferma_esiti_ordini()
+     yield
+     S.ferma_esiti_ordini()
+@@ -521,7 +521,7 @@ def _traccia_del_poll(stato: str, monkeypatch) -> List[tuple]:
+                                   "matched_at": "2026-07-12T15:42:05+00:00"}
+     if stato == "istanza_ma_spento":
+         EO.registra(EO.EsitiOrdini(S._applica_esiti_dal_canale))
+-        monkeypatch.delenv(EO.ENV_ESITI, raising=False)
++        monkeypatch.setenv(EO.ENV_ESITI, "0")
+     elif stato == "acceso_canale_muto":
+         _accendi(monkeypatch)
+     traccia = _Traccia(db)
+@@ -529,7 +529,7 @@ def _traccia_del_poll(stato: str, monkeypatch) -> List[tuple]:
+                            now=NOW + timedelta(seconds=3), market=market)
+     assert db.trades[0]["status"] == "open"
+     S.ferma_esiti_ordini()
+-    monkeypatch.delenv(EO.ENV_ESITI, raising=False)
++    monkeypatch.setenv(EO.ENV_ESITI, "0")
+     return [(n, a) for n, a, _ in traccia.chiamate]
+ 
+ 
+@@ -554,7 +554,7 @@ def test_interruttore_spento_ignora_anche_una_memoria_piena(monkeypatch):
+     t, rid = _piazza_in_coda(db, market)
+     esiti.client.incassa(_messaggio(_riga_vera(rid=rid, size_matched=t["size"],
+                                                size=t["size"])))
+-    monkeypatch.delenv(EO.ENV_ESITI, raising=False)
++    monkeypatch.setenv(EO.ENV_ESITI, "0")
+     traccia = _Traccia(db)
+     S.poll_flumine_pending(db=traccia, params=S.omega_config.resolve_params(None),
+                            now=NOW + timedelta(seconds=3), market=market)
+@@ -564,7 +564,7 @@ def test_interruttore_spento_ignora_anche_una_memoria_piena(monkeypatch):
+ 
+ 
+ def test_interruttore_spento_nessun_thread_nessuna_porta(monkeypatch):
+-    monkeypatch.delenv(EO.ENV_ESITI, raising=False)
++    monkeypatch.setenv(EO.ENV_ESITI, "0")
+     prima = {t.name for t in threading.enumerate()}
+     assert S.avvia_esiti_ordini() is False
+     assert EO.istanza() is None
+diff --git a/Betfair/omega/tests/test_omega_client_scan_condiviso_2026_09_24.py b/Betfair/omega/tests/test_omega_client_scan_condiviso_2026_09_24.py
+index eb0f52b..b94f663 100644
+--- a/Betfair/omega/tests/test_omega_client_scan_condiviso_2026_09_24.py
++++ b/Betfair/omega/tests/test_omega_client_scan_condiviso_2026_09_24.py
+@@ -72,8 +72,8 @@ def _riga(eid: str, minute: int, odds_ts_ms: int = 1) -> dict:
+ def _pulito(monkeypatch):
+     """Interruttori spenti, lettore del feed unico azzerato, client di Omega
+     azzerato: nessuno stato di un test passa al successivo."""
+-    monkeypatch.delenv(ENV_OMEGA, raising=False)
+-    monkeypatch.delenv(ENV_FEED, raising=False)
++    monkeypatch.setenv(ENV_OMEGA, "0")
++    monkeypatch.setenv(ENV_FEED, "0")
+     SF.azzera_lettore_canale()
+     S._CLIENT_SCAN.update({"client": None, "cache": None, "condiviso": False})
+     monkeypatch.setattr(CS, "ClientScan", _ClientSenzaRete)
+diff --git a/Betfair/omega/tests/test_omega_legge_canale_2026_09_23.py b/Betfair/omega/tests/test_omega_legge_canale_2026_09_23.py
+index 61521d4..b8cbf92 100644
+--- a/Betfair/omega/tests/test_omega_legge_canale_2026_09_23.py
++++ b/Betfair/omega/tests/test_omega_legge_canale_2026_09_23.py
+@@ -55,7 +55,7 @@ def _punteggi_canale_neutro(monkeypatch):
+     che si difende allo stesso modo) farebbe riusare un client CONDIVISO al
+     posto di quello proprio che questi test costruiscono e osservano -- si
+     forza spento e si azzera il lettore di processo, qui e a fine test."""
+-    monkeypatch.delenv(SF.ENV_PUNTEGGI_CANALE, raising=False)
++    monkeypatch.setenv(SF.ENV_PUNTEGGI_CANALE, "0")
+     SF.azzera_lettore_canale()
+     yield
+     SF.azzera_lettore_canale()
+@@ -141,7 +141,7 @@ def test_1_spento_anche_con_un_client_pieno_di_righe_vincenti(monkeypatch):
+     adesso = time.time()
+     for eid in ("E1", "E2", "E3", "E4"):
+         c.spingi(T.riga_scan(eid, adesso + 5.0, minute=88, odds_ts_ms=1))
+-    monkeypatch.delenv(ENV, raising=False)
++    monkeypatch.setenv(ENV, "0")
+     monkeypatch.setitem(S._CLIENT_SCAN, "client", c.client)
+     monkeypatch.setitem(S._CLIENT_SCAN, "cache", c.cache)
+     # ``traccia_feed`` chiama ``svuota_le_cache``: la memoria del canale va
+@@ -184,7 +184,7 @@ def test_1_acceso_con_canale_muto_run_once_scrive_solo_fonte_db(canale):
+ 
+ 
+ def test_1_spento_nessun_client_si_avvia(monkeypatch):
+-    monkeypatch.delenv(ENV, raising=False)
++    monkeypatch.setenv(ENV, "0")
+ 
+     def vietato(*a, **k):
+         raise AssertionError("a interruttore spento non si costruisce nessun client")
+@@ -692,7 +692,7 @@ def test_sveglia_tetto_dal_env_rispettato(sveglia, monkeypatch):
+ 
+ def test_sveglia_spento_dorme_con_time_sleep_come_oggi(monkeypatch):
+     chiamate: list[float] = []
+-    monkeypatch.delenv(ENV, raising=False)
++    monkeypatch.setenv(ENV, "0")
+     monkeypatch.setattr(S.time, "sleep", lambda s: chiamate.append(s))
+     monkeypatch.setattr(S, "_ASCOLTO_SCAN", None)
+     monkeypatch.setitem(S._CLIENT_SCAN, "client", Canale().client)   # anche con un client
+@@ -733,7 +733,7 @@ def test_sveglia_col_canale_acceso_ascolto_scan_di_f5_non_parte(monkeypatch):
+ def test_sveglia_a_canale_spento_f5_resta_quella_di_prima(monkeypatch):
+     from Betfair.stream import sveglia_canale as SV
+ 
+-    monkeypatch.delenv(ENV, raising=False)
++    monkeypatch.setenv(ENV, "0")
+     monkeypatch.setenv(SV.ENV_OMEGA_SVEGLIA, "1")
+     monkeypatch.setattr(S, "_ASCOLTO_SCAN", None)
+     costruiti = []
+diff --git a/Betfair/omega/tests/test_omega_sveglia_posizioni_vive_2026_09_23.py b/Betfair/omega/tests/test_omega_sveglia_posizioni_vive_2026_09_23.py
+index 5b433bb..ac548cc 100644
+--- a/Betfair/omega/tests/test_omega_sveglia_posizioni_vive_2026_09_23.py
++++ b/Betfair/omega/tests/test_omega_sveglia_posizioni_vive_2026_09_23.py
+@@ -38,7 +38,7 @@ def _punteggi_canale_neutro(monkeypatch):
+     ``PUNTEGGI_CANALE`` REALE nell'ambiente farebbe riusare il client
+     condiviso del feed unico al posto di quello che ``ambiente`` costruisce
+     e osserva (``client.svegliate``)."""
+-    monkeypatch.delenv(SF.ENV_PUNTEGGI_CANALE, raising=False)
++    monkeypatch.setenv(SF.ENV_PUNTEGGI_CANALE, "0")
+     SF.azzera_lettore_canale()
+     yield
+     SF.azzera_lettore_canale()
+@@ -188,7 +188,7 @@ class _DbPending:
+ 
+ 
+ def test_poll_flumine_pending_annota_le_pending(monkeypatch):
+-    monkeypatch.delenv("ESITI_ORDINI_CANALE", raising=False)
++    monkeypatch.setenv("ESITI_ORDINI_CANALE", "0")
+     S._CACHE_POSIZIONI_VIVE.clear()
+     db = _DbPending([_trade("P9", "pending", 9)])
+     S.poll_flumine_pending(db=db, params={}, now=datetime.now(timezone.utc))
+diff --git a/Betfair/omega/tests/test_porta_ordini_omega_f6_2026_09_24.py b/Betfair/omega/tests/test_porta_ordini_omega_f6_2026_09_24.py
+index ed40ad9..4cc0260 100644
+--- a/Betfair/omega/tests/test_porta_ordini_omega_f6_2026_09_24.py
++++ b/Betfair/omega/tests/test_porta_ordini_omega_f6_2026_09_24.py
+@@ -226,7 +226,7 @@ def motore(monkeypatch):
+ @pytest.fixture
+ def spento(monkeypatch):
+     """Interruttore SPENTO: la porta non deve MAI nascere."""
+-    monkeypatch.delenv(PO.ENV_CANALE, raising=False)
++    monkeypatch.setenv(PO.ENV_CANALE, "0")
+ 
+     def _vietato():
+         raise AssertionError("porta creata a interruttore spento")
+diff --git a/Betfair/safe_strategy/tests/conftest.py b/Betfair/safe_strategy/tests/conftest.py
+index afbc801..7cc76bd 100644
+--- a/Betfair/safe_strategy/tests/conftest.py
++++ b/Betfair/safe_strategy/tests/conftest.py
+@@ -72,3 +72,22 @@ def indice_eventi_chiusi_pulito():
+     yield
+     _S._EVENTI_CHIUSI.clear()
+     _S._CONTO_LETTO_A.clear()
++
++
++@pytest.fixture(autouse=True)
++def aggregati_buoni_dimenticati():
++    """02/10 (isolamento 2, ``AUDIT_2026-10-02/TEST_ISOLAMENTO_2.md``):
++    ``bot_service._AGG_ULTIMO_BUONO`` (``bot_service.py:6297``) e' la memoria di
++    PROCESSO degli ultimi aggregati letti bene, scritta da ``build_risk_ctx``
++    (:6431) e riusata entro ``_AGG_TTL_S`` quando la lettura cade (:6413). Con
++    lo stesso ``NOW`` fisso dei test, un test che lascia li' gli aggregati di
++    ``mode='live'`` (``test_cert_2026_09_13.py::
++    test_aggregati_stantii_si_riusano_per_poco_invece_di_bloccare``) faceva
++    trovare al successivo ``test_aggregati_illeggibili_bloccano_i_nuovi_ingressi``
++    una lettura "recente" invece del blocco: rosso in ordine inverso. Ogni test
++    parte e finisce senza aggregati in memoria, come un servizio appena avviato."""
++    from Betfair.safe_strategy import bot_service as _S
++
++    _S._AGG_ULTIMO_BUONO.clear()
++    yield
++    _S._AGG_ULTIMO_BUONO.clear()
+diff --git a/Betfair/safe_strategy/tests/test_canale_scan_f4_2026_09_18.py b/Betfair/safe_strategy/tests/test_canale_scan_f4_2026_09_18.py
+index a0a5bb3..af27315 100644
+--- a/Betfair/safe_strategy/tests/test_canale_scan_f4_2026_09_18.py
++++ b/Betfair/safe_strategy/tests/test_canale_scan_f4_2026_09_18.py
+@@ -39,8 +39,8 @@ from Betfair.stream import local_channel as LC
+ @pytest.fixture(autouse=True)
+ def _pulizia(monkeypatch):
+     """Ogni test parte a interruttori SPENTI e senza stato di modulo."""
+-    monkeypatch.delenv(CS.ENV_LEGGE_CANALE, raising=False)
+-    monkeypatch.delenv(CS.ENV_SVEGLIA, raising=False)
++    monkeypatch.setenv(CS.ENV_LEGGE_CANALE, "0")
++    monkeypatch.setenv(CS.ENV_SVEGLIA, "0")
+     monkeypatch.delenv(CS.ENV_PORTA, raising=False)
+     S.azzera_canale_scan()
+     _reset_module_state()
+diff --git a/Betfair/safe_strategy/tests/test_giro_veloce_c6a_2026_09_23.py b/Betfair/safe_strategy/tests/test_giro_veloce_c6a_2026_09_23.py
+index 9cf2dec..8d4e501 100644
+--- a/Betfair/safe_strategy/tests/test_giro_veloce_c6a_2026_09_23.py
++++ b/Betfair/safe_strategy/tests/test_giro_veloce_c6a_2026_09_23.py
+@@ -43,9 +43,9 @@ PUNTO = chr(0xB7)
+ 
+ @pytest.fixture(autouse=True)
+ def _pulizia(monkeypatch):
+-    monkeypatch.delenv(S.ENV_GIRO_VELOCE, raising=False)
+-    monkeypatch.delenv(CS.ENV_LEGGE_CANALE, raising=False)
+-    monkeypatch.delenv(CS.ENV_SVEGLIA, raising=False)
++    monkeypatch.setenv(S.ENV_GIRO_VELOCE, "0")
++    monkeypatch.setenv(CS.ENV_LEGGE_CANALE, "0")
++    monkeypatch.setenv(CS.ENV_SVEGLIA, "0")
+     S.azzera_canale_scan()
+     S.azzera_giro_veloce()
+     _reset_module_state()
+diff --git a/Betfair/safe_strategy/tests/test_porta_ordini_f5_2026_09_24.py b/Betfair/safe_strategy/tests/test_porta_ordini_f5_2026_09_24.py
+index 4eb84a0..355ae33 100644
+--- a/Betfair/safe_strategy/tests/test_porta_ordini_f5_2026_09_24.py
++++ b/Betfair/safe_strategy/tests/test_porta_ordini_f5_2026_09_24.py
+@@ -828,7 +828,7 @@ def test_interruttore_spento_nessuna_porta(monkeypatch):
+ def test_interruttore_spento_execute_chiama_place_come_oggi(monkeypatch):
+     """Spento: ``X.place`` riceve ESATTAMENTE gli argomenti di sempre (nessun
+     ``porta``), e nessuna connessione viene tentata."""
+-    monkeypatch.delenv(PO.ENV_CANALE, raising=False)
++    monkeypatch.setenv(PO.ENV_CANALE, "0")
+     tentativi: list = []
+     monkeypatch.setattr(PO, "_connetti_ws", lambda *a, **k: tentativi.append(a))
+     chiamate: list = []
+diff --git a/Betfair/stream/tennis_live/tests/test_tennis_bot_canale_posizioni_2026_09_24.py b/Betfair/stream/tennis_live/tests/test_tennis_bot_canale_posizioni_2026_09_24.py
+index 2834797..bf0d525 100644
+--- a/Betfair/stream/tennis_live/tests/test_tennis_bot_canale_posizioni_2026_09_24.py
++++ b/Betfair/stream/tennis_live/tests/test_tennis_bot_canale_posizioni_2026_09_24.py
+@@ -350,7 +350,7 @@ def test_runner_assente_il_client_riprova_senza_sollevare():
+ 
+ def test_linoltro_parte_solo_con_linterruttore_e_il_canale(monkeypatch):
+     CBT._INOLTRO = None
+-    monkeypatch.delenv(CB.ENV_TENNIS_BOT, raising=False)
++    monkeypatch.setenv(CB.ENV_TENNIS_BOT, "0")
+     assert CBT.avvia_inoltro_nel_ponte() is None
+     monkeypatch.setenv(CB.ENV_TENNIS_BOT, "1")
+     monkeypatch.setattr("Betfair.stream.local_channel.get_channel", lambda: None)
+diff --git a/Betfair/stream/tests/test_punteggi_canale_2026_09_23.py b/Betfair/stream/tests/test_punteggi_canale_2026_09_23.py
+index 3229758..4637b79 100644
+--- a/Betfair/stream/tests/test_punteggi_canale_2026_09_23.py
++++ b/Betfair/stream/tests/test_punteggi_canale_2026_09_23.py
+@@ -47,7 +47,7 @@ from Betfair.stream.scores.betfair_inplay import parse_score_dict
+ 
+ @pytest.fixture(autouse=True)
+ def _pulito(monkeypatch):
+-    monkeypatch.delenv(sf.ENV_PUNTEGGI_CANALE, raising=False)
++    monkeypatch.setenv(sf.ENV_PUNTEGGI_CANALE, "0")
+     sf.azzera_lettore_canale()
+     yield
+     sf.azzera_lettore_canale()
+diff --git a/Betfair/stream/tests/test_scalper_auto_mode_2026_09_25.py b/Betfair/stream/tests/test_scalper_auto_mode_2026_09_25.py
+index 012cf0e..f28c3cd 100644
+--- a/Betfair/stream/tests/test_scalper_auto_mode_2026_09_25.py
++++ b/Betfair/stream/tests/test_scalper_auto_mode_2026_09_25.py
+@@ -182,7 +182,7 @@ def _stato(guardia_fatta: bool = True) -> SVC.StatoAuto:
+ @pytest.fixture(autouse=True)
+ def _ambiente(monkeypatch: pytest.MonkeyPatch) -> None:
+     monkeypatch.delenv(AM.ENV_TETTO, raising=False)
+-    monkeypatch.delenv(CB.ENV_SCALPER, raising=False)
++    monkeypatch.setenv(CB.ENV_SCALPER, "0")
+     CB.azzera_statistiche()
+ 
+ 
+diff --git a/Betfair/stream/tests/test_scalper_freno_origine_2026_09_26.py b/Betfair/stream/tests/test_scalper_freno_origine_2026_09_26.py
+index feb590e..5cd4056 100644
+--- a/Betfair/stream/tests/test_scalper_freno_origine_2026_09_26.py
++++ b/Betfair/stream/tests/test_scalper_freno_origine_2026_09_26.py
+@@ -37,7 +37,7 @@ FRENO = "db_kill_switch_attivo"
+ @pytest.fixture(autouse=True)
+ def _ambiente(monkeypatch: pytest.MonkeyPatch) -> None:
+     monkeypatch.delenv(AM.ENV_TETTO, raising=False)
+-    monkeypatch.delenv(CB.ENV_SCALPER, raising=False)
++    monkeypatch.setenv(CB.ENV_SCALPER, "0")
+     CB.azzera_statistiche()
+ 
+ 
+diff --git a/Betfair/stream/tests/test_sveglia_bot_f5_f6_2026_09_18.py b/Betfair/stream/tests/test_sveglia_bot_f5_f6_2026_09_18.py
+index b589228..65620a9 100644
+--- a/Betfair/stream/tests/test_sveglia_bot_f5_f6_2026_09_18.py
++++ b/Betfair/stream/tests/test_sveglia_bot_f5_f6_2026_09_18.py
+@@ -95,8 +95,8 @@ def test_a_interruttore_spento_non_parte_nessun_thread_e_nessun_client(
+     """La spia CONTA, non solleva: ``_avvia_sveglia`` inghiotte le eccezioni (e
+     deve farlo), quindi un finto esplosivo sarebbe un test che non sa diventare
+     rosso - il difetto 29 del catalogo."""
+-    monkeypatch.delenv(SV.ENV_OMEGA_SVEGLIA, raising=False)
+-    monkeypatch.delenv(SV.ENV_MIKE_SVEGLIA, raising=False)
++    monkeypatch.setenv(SV.ENV_OMEGA_SVEGLIA, "0")
++    monkeypatch.setenv(SV.ENV_MIKE_SVEGLIA, "0")
+     costruiti: list = []
+ 
+     class _AscoltoFinto:
+@@ -122,7 +122,7 @@ def test_ponte_tennis_spento_non_aggancia_niente(monkeypatch):
+     farlo), quindi un finto esplosivo qui sarebbe un test che non sa diventare
+     rosso. Si conta invece che cosa e' stato toccato.
+     """
+-    monkeypatch.delenv(SV.ENV_TENNIS_SVEGLIA, raising=False)
++    monkeypatch.setenv(SV.ENV_TENNIS_SVEGLIA, "0")
+     toccato: list[str] = []
+ 
+     class _CanaleConSveglia:
