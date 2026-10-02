@@ -100,12 +100,13 @@ def test_banca_troppi_gol_copertura_saltata():
 # A4 (N15): tranche della banca sotto 0,50 -> in una volta, mai due tranche
 # ---------------------------------------------------------------------------
 def test_tranche_della_banca_sotto_0_50_si_copre_in_una_volta():
-    # liability 0,50 -> banca piena 0,63; la meta' (0,32) sarebbe sotto 0,50
-    ctx = E.MatchCtx(state="LIVE_UNCOVERED", legs=[ingresso(0.5)], cover_stage=1,
+    # 01/10: il minimo della banca e' 1,00 (vincolo del coordinatore): liability
+    # 1,00 -> banca piena 1,26; la meta' (0,63) sarebbe sotto 1,00
+    ctx = E.MatchCtx(state="LIVE_UNCOVERED", legs=[ingresso(1.0)], cover_stage=1,
                      early_goal_at=KO + 600)
     d = E.decide(ctx, foto(goals=1), params())
     [a] = _posti(d)
-    assert (a.side, a.size) == ("lay", 0.63)
+    assert (a.side, a.size) == ("lay", 1.26)
     assert d.telemetry["cover"]["split_declassato"] is True
     assert d.updates.get("cover_stage") == 0
 
@@ -131,17 +132,23 @@ def test_forma_di_prima_chiusura_sotto_0_50_identica_a_prima():
     """Punta Over 2,00 a 6,00; banca Over a 30 = 0,40 (sotto 0,50). La puntata
     equivalente sull'Under a 1,20 sarebbe 10,00 (multiplo di 0,50): proprio il
     caso in cui il ripiego scatterebbe. Nella forma di prima NON deve: resta la
-    banca Over 0,40, l'ordine di prima."""
+    banca Over 0,40, l'ordine di prima.
+
+    01/10 (Ashdod v Maccabi Herzliya, LIVE): la banca da 0,40 non si manda piu'
+    (Betfair .it la rifiuta per taglia, ``engine.via_ordine``) e, per la ricerca
+    del coordinatore del 01/10 (minimo della banca incerto sotto 1,00), anche
+    nella forma di prima si chiude con la PUNTATA Under equivalente: 10,00 @ 1,20
+    (stesso risultato della banca Over 0,40 @ 30)."""
     punta = gamba("over_cover", E.MARKET_OU45, E.SEL_OVER, "back", 6.0, 2.0,
                   ref="over_cover-0-2")
     books = {(E.MARKET_OU45, E.SEL_OVER): libro(29.0, 30.0),
              (E.MARKET_OU45, E.SEL_UNDER): libro(1.20, 1.21)}
     cv = E.cashout_value([punta], books, COMM)
-    assert cv.ripieghi == {}
+    assert cv.plans[(E.MARKET_OU45, E.SEL_OVER)].size == 0.4
     ctx = E.MatchCtx(state="LIVE_COVERED", legs=[punta])
     [a] = [x for x in E._close_actions(ctx, cv, params()) if x.kind == "place"]
-    assert (a.role, a.selection, a.side, a.size, a.price) == ("over_close", E.SEL_OVER,
-                                                             "lay", 0.4, 30.0)
+    assert (a.role, a.selection, a.side, a.size, a.price) == ("over_close", E.SEL_UNDER,
+                                                             "back", 10.0, 1.2)
 
 
 # ---------------------------------------------------------------------------

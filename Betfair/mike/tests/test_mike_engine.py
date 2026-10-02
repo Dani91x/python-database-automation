@@ -119,18 +119,22 @@ def test_green_target_two_ticks_below():
 def test_cover_size_formula_and_legalization():
     x = E.cover_size(20.0, 8.0, 0.05, 1.2)
     assert x == pytest.approx(24 / (7 * 0.95), abs=1e-6)          # 3.609
+    # 01/10 (ordine dell'utente, Nota informativa betfair.it): nessun passo da
+    # 0,50, solo il minimo 1,00 e il centesimo (prima: 4,00 e 3,50)
     size, over = E.legalize_back_size(x, "ceil")
-    assert size == 4.0 and over == pytest.approx((4.0 / x - 1) * 100, abs=1e-3)
+    assert size == 3.61 and over == pytest.approx((3.61 / x - 1) * 100, abs=1e-3)
     size, _ = E.legalize_back_size(x, "floor")
-    assert size == 3.5
+    assert size == 3.6
     size, _ = E.legalize_back_size(x, "nearest")
-    assert size == 3.5
-    # sotto il minimo .it -> 2.00 con overshoot esplicito
-    size, over = E.legalize_back_size(E.cover_size(10.0, 8.0, 0.05, 1.2), "floor")
-    assert size == 2.0 and over > 0
+    assert size == 3.61
+    # sotto il minimo .it (1,00 dal 01/10) -> 1,00 con overshoot esplicito
+    size, over = E.legalize_back_size(E.cover_size(5.0, 8.0, 0.05, 1.2), "floor")
+    assert size == 1.0 and over > 0
     # con exact_sizes la size resta al centesimo (3.61), overshoot 0
     assert E.cover_legal_size(x, params()) == (3.61, 0.0)
-    assert E.cover_legal_size(x, params(exact_sizes=False)) == (4.0, pytest.approx(10.8333, abs=1e-3))
+    # 01/10: senza passo da 0,50 anche con exact_sizes spento resta 3,61 (era 4,00)
+    size_off, over_off = E.cover_legal_size(x, params(exact_sizes=False))
+    assert size_off == 3.61 and over_off == pytest.approx((3.61 / x - 1) * 100, abs=1e-3)
     # pareggio esatto: con 5+ gol il netto e' +20% dello stake Under
     S, Po, c = 20.0, 8.0, 0.05
     X = E.cover_size(S, Po, c, 1.2)
@@ -469,8 +473,11 @@ def test_live_cover_wait_then_cover():
     assert a.price < 9.0, "il limite deve essere piu' basso del best, mai piu' alto"
     x = E.cover_size(20, 9.0, 0.05, 1.2)
     assert a.size == round(x, 2)                      # importo ESATTO (exact_sizes)
-    assert E.needs_submin("back", a.size) is True     # 3.16: fuori passo 0.50 -> place-and-trim
-    assert E.needs_submin("back", 2.5) is False and E.needs_submin("back", 1.23) is True
+    # 01/10 (ordine dell'utente): nessun passo da 0,50, minimo 1,00 al centesimo:
+    # 3,16 e 1,23 sono diretti, sotto 1,00 serve il place-and-trim
+    assert E.needs_submin("back", a.size) is False
+    assert E.needs_submin("back", 2.5) is False and E.needs_submin("back", 1.23) is False
+    assert E.needs_submin("back", 0.73) is True
     assert E.needs_submin("lay", 1.23) is False
     E.apply_decision(ctx, d2, s2.now)
     fill(ctx.legs[-1])

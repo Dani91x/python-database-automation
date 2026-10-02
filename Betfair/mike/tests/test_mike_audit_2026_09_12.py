@@ -413,11 +413,16 @@ def test_lettura_delle_righe_fallita_non_blocca_il_regolamento():
 # minimo Betfair di 2 EUR. Il bot ci riprovava a OGNI ciclo: 64 righe 'error'
 # sulla stessa posizione in poche ore, e il residuo restava comunque aperto.
 # ===========================================================================
-def test_chiusura_sotto_il_minimo_betfair_adesso_si_fa():
+def test_chiusura_sotto_il_minimo_betfair_non_parte():
     """Caso vero del 12/09: copertura da 3,08 EUR comprata a 5,10, quota salita a
-    50. Chiuderla vale 0,31 EUR. Allora si rinunciava (l'exchange rifiutava),
-    oggi si chiude: gli ordini che RIDUCONO una posizione sono esenti dal minimo,
-    e col place-and-trim qualunque importo e' comunque piazzabile."""
+    50. Chiuderla vale una BANCA da 0,31 EUR.
+
+    Il 13/09 qui si certificava il contrario («gli ordini che RIDUCONO una
+    posizione sono esenti dal minimo»). 01/10, Ashdod v Maccabi Herzliya, LIVE:
+    Betfair .it ha rifiutato per taglia (INVALID_BET_SIZE) una banca di chiusura
+    da 0,43, 21 volte. Le chiusure di Mike vanno dirette (mai place-and-trim):
+    sotto il minimo NON partono (``engine.via_ordine``), e lo dichiara il
+    controllo di piatto."""
     over = E.Leg(role="over_cover", market=E.MARKET_OU45, selection=E.SEL_OVER,
                  side="back", price=5.10, size=3.08, ref="over_cover-0-2", cycle_no=0)
     over.matched, over.avg_price, over.status = 3.08, 5.10, "open"
@@ -425,7 +430,7 @@ def test_chiusura_sotto_il_minimo_betfair_adesso_si_fa():
     books = {(E.MARKET_OU45, E.SEL_OVER): E.Book(best_back=48.0, back_size=99.0,
                                                  best_lay=50.0, lay_size=99.0, inplay=True)}
     _cancels, closes = E.force_flat_plan(ctx, books, C.merge_params({"stake": 10}), goals=1)
-    assert len(closes) == 1 and 0.01 <= closes[0].size < 2.0
+    assert closes == []
 
 
 def test_chiusura_sopra_il_minimo_viene_regolarmente_pianificata():
@@ -451,6 +456,17 @@ def test_size_chiudibile_e_la_soglia_dichiarata():
     assert E.size_chiudibile(0.004) is False
     assert E.size_chiudibile(None) is False
     assert E.size_chiudibile(float("nan")) is False
+    # 01/10: CON IL LATO e' la guardia unica del minimo .it (chiusura diretta)
+    # banca: minimo commerciale betfair.it 1,00 (vincolo del coordinatore 01/10)
+    assert E.size_chiudibile(0.50, "lay") is False
+    assert E.size_chiudibile(0.99, "lay") is False
+    assert E.size_chiudibile(1.00, "lay") is True
+    # punta: il minimo della fonte unica (``live_order_build``; 1,00 per
+    # l'ordine dell'utente del 01/10, portato li' dal delegato del runner)
+    assert E.size_chiudibile(round(E.IT_BACK_MIN - 0.01, 2), "back") is False
+    assert E.size_chiudibile(E.IT_BACK_MIN, "back") is True
+    assert E.size_chiudibile(0.99, "back") is False
+    assert E.size_chiudibile(7.47, "back") is True     # al centesimo, nessun passo
 
 
 # ===========================================================================

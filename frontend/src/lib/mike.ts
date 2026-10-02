@@ -1385,6 +1385,10 @@ export const MIKE_ACTIVITY_KINDS = [
     // sotto il minimo che Mike non rincorre (copertura) e lo sbilancio non
     // piazzabile del mercato 4,5 considerato piatto. Una riga per episodio.
     'cover_resto_sotto_minimo', 'residuo_non_piazzabile',
+    // 01/10 (Ashdod v Maccabi Herzliya, live): la chiusura NON completata (resta
+    // esposizione: niente «chiuso», proposta con l'ordine esatto) e l'ordine sotto
+    // il minimo Betfair .it che non parte (Betfair lo rifiuterebbe per taglia).
+    'chiusura_parziale', 'ordine_sotto_minimo',
     // 30/09 (ordine dell'utente: «IL PNL DEVE ESSERE REALE»): in live il P&L
     // della partita si regola dal CONTO Betfair (ordini dell'utente compresi).
     // Attesa del regolato, differenza col calcolo del bot (vince Betfair),
@@ -1439,6 +1443,8 @@ export const MIKE_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
     mercato_deciso: { label: 'LINEA DECISA DAI GOL', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/40' },
     cover_resto_sotto_minimo: { label: 'COPERTURA: RESTO SOTTO IL MINIMO', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/40' },
     residuo_non_piazzabile: { label: 'RESTO NON PIAZZABILE', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/40' },
+    chiusura_parziale: { label: 'CHIUSURA PARZIALE: RESIDUO SCOPERTO', cls: 'bg-red-500/15 text-red-300 border-red-500/40', critical: true },
+    ordine_sotto_minimo: { label: 'ORDINE SOTTO IL MINIMO: NON INVIATO', cls: 'bg-red-500/15 text-red-300 border-red-500/40', critical: true },
     // 30/09 — P&L del conto Betfair al regolamento
     attesa_regolato_betfair: { label: 'ATTESA DEL REGOLATO BETFAIR', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
     pnl_differenza_betfair: { label: 'P&L: IL CALCOLO DEL BOT DIFFERISCE DA BETFAIR', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40', critical: true },
@@ -1710,6 +1716,12 @@ export function mikeActivityLine(kind: string, payload: Record<string, unknown> 
         case 'residuo_non_piazzabile':
             // 30/09 (M3.5): chiavi del servizio: sbilancio, tolleranza, state, ciclo
             return `mercato 4,5 piatto: sbilancio di ${money('sbilancio')} non piazzabile (chiusura arrotondata al centesimo = 0,00), resta nel risultato bloccato · fase ${stateLabel(p.state)}`;
+        case 'chiusura_parziale':
+            // 01/10: chiavi del servizio (engine._controllo_di_piatto): testo, perche, ordini, state
+            return `${String(p.testo ?? 'chiusura parziale: residuo scoperto')} (${String(p.perche ?? 'motivo non dichiarato')}) · la partita NON è chiusa: chiudi a mano con «Chiudi» di Mike o su Betfair · fase ${stateLabel(p.state)}`;
+        case 'ordine_sotto_minimo':
+            // 01/10: chiavi del servizio (engine._guardia_minimo_listino): testo, ordini, state
+            return `${String(p.testo ?? 'ordine sotto il minimo Betfair: non inviato')} · fase ${stateLabel(p.state)}`;
         case 'config_warn':
             return `${String(p.message ?? '')} (finestra ${String(p.entry_hours_before_ko ?? '?')} h · scanner ${String(p.scanner_pre_ko_hours ?? '?')} h)`;
         case 'schema_warn':
@@ -1844,6 +1856,8 @@ export const MIKE_REQUEST_CODE_MESSAGE: Record<string, string> = {
     // 25/09 - approvazione di un'uscita (interruttore spento)
     proposta_non_viva: 'nessuna uscita in attesa di approvazione',
     proposta_cambiata: 'la proposta è cambiata: guarda quella nuova prima di approvare',
+    // 01/10 - residuo scoperto: Mike non riesce a chiuderlo da solo
+    proposta_non_approvabile: 'Mike non riesce a chiudere questo residuo da solo: chiudi con «Chiudi» di Mike o su Betfair',
 };
 
 export type MikeOutcomeTone = 'ok' | 'pending' | 'warn' | 'bad';

@@ -1792,10 +1792,16 @@ def _segui_ordini_paper_su_runner(*, db: Any, ctx: E.MatchCtx, ev: Dict[str, Any
             # conteggio del freno, niente ``_rifiutata``.
             no_definitivo = (not appoggiata and not ignoto_prima
                              and fase in ("rifiutato", "annullato", "scaduto"))
+            # 02/10 (correzione del runner, punto 2): l'evento ``order`` porta ora il
+            # CODICE del rifiuto (``error_code``: INVALID_BET_SIZE,
+            # SOTTO_MINIMO_NON_PIAZZABILE, ...) anche su questa strada. Mike lo
+            # legge come nel sincrono (``execute_place``): il motore riconosce il
+            # rifiuto per taglia e non ripropone lo stesso strumento.
+            codice_runner = str(e.get("error_code") or "") or None
             if ignoto_prima:
                 pass
             elif not appoggiata and fase == "rifiutato":
-                _rifiutata(ctx, leg, f"rifiutata dal runner ({fase})")
+                _rifiutata(ctx, leg, f"rifiutata dal runner ({codice_runner or fase})")
             elif not appoggiata and fase in ("annullato", "scaduto"):
                 # il FOK ucciso: il mercato ha detto no a questa richiesta
                 _rifiutata(ctx, leg, f"FOK non abbinato ({fase})")
@@ -1811,8 +1817,11 @@ def _segui_ordini_paper_su_runner(*, db: Any, ctx: E.MatchCtx, ev: Dict[str, Any
                 # ``canale_seq`` = quel seq. Fase ``errore`` NON si conta: e'
                 # l'esito ``post_place:``/place-and-trim abbandonato, cioe' un
                 # ordine che potrebbe esistere (esito ignoto, mai contato).
+                # 02/10: se l'evento porta il codice (correzione del runner) lo si
+                # passa come il sincrono passa ``out.error_code`` (specchio del live)
                 freno = _esito_rifiuto_mercato(
-                    db, ctx, leg, error_code=None, motivo=f"runner_{fase}",
+                    db, ctx, leg, error_code=codice_runner if fase == "rifiutato" else None,
+                    motivo=f"runner_{fase}",
                     trade_id=r.get("id"), now_ts=now_ts, params=params, event_id=eid)
         try:
             X.aggiorna_trade(db, int(r["id"]), campi=campi, consapevolezza=consap)
@@ -3471,7 +3480,9 @@ _REJECT_CODES = ("evento_non_seguito", "stato_terminale", "posizione_aperta", "s
                  # 28/09 (cantiere J) - flusso prezzi interrotto: rifiuto ATTESO
                  "flusso_interrotto",
                  # 25/09 — approvazione di un'uscita che non c'e' piu' o e' cambiata
-                 "proposta_non_viva", "proposta_cambiata")
+                 "proposta_non_viva", "proposta_cambiata",
+                 # 01/10 - il residuo scoperto non si approva: si chiude a mano
+                 "proposta_non_approvabile")
 
 
 def _richiesta_non_di_questa_partita(db: Any, payload: Dict[str, Any],
@@ -3677,6 +3688,14 @@ def _request_approva_uscita(db: Any, ev: Dict[str, Any], events: Dict[str, Dict[
     if not chiave or str(viva.get("chiave") or "") != chiave:
         return _result("proposta_cambiata",
                        "La proposta e' cambiata: guarda quella nuova prima di approvare.",
+                       chiave_viva=viva.get("chiave"))
+    if viva.get("residuo_scoperto"):
+        # 01/10: il RESIDUO SCOPERTO e' cio' che Mike non riesce a chiudere da
+        # solo (``engine._controllo_di_piatto``): non c'e' un'uscita da eseguire
+        # «al prossimo giro», si chiude a mano.
+        return _result("proposta_non_approvabile",
+                       "Mike non riesce a chiudere questo residuo da solo: chiudi con "
+                       "'Chiudi' di Mike o direttamente su Betfair con l'ordine indicato.",
                        chiave_viva=viva.get("chiave"))
     contesto = payload.get("contesto") if isinstance(payload.get("contesto"), dict) else None
     rid_ok = _id_approvazione(request_id)
@@ -4561,6 +4580,32 @@ def _registra_resti(db: Any, extra: Dict[str, Any], d: Any, ctx: E.MatchCtx,
         extra["resti_scritti"] = scritti[-10:]
 
 
+def _registra_avvisi_esecuzione(db: Any, d: Any, ctx: E.MatchCtx, event_id: str) -> None:
+    """01/10 (Ashdod v Maccabi Herzliya, LIVE) - i due AVVISI CRITICI del motore
+    diventano righe di ``mike_activity`` e righe CRITICAL nel log:
+
+      * ``chiusura_parziale``: il motore voleva dichiarare la partita chiusa ma
+        resta esposizione (``engine._controllo_di_piatto``): lo stato resta
+        LIVE_CLOSING e all'utente va la proposta con l'ordine esatto;
+      * ``ordine_sotto_minimo``: un ordine sotto il minimo Betfair .it che non
+        e' partito (``engine._guardia_minimo_listino``).
+
+    Il motore li emette UNA volta per episodio (quando la proposta cambia o la
+    richiesta e' nuova): qui non si filtra niente."""
+    tele = d.telemetry if isinstance(getattr(d, "telemetry", None), dict) else {}
+    v = tele.get("chiusura_parziale")
+    if isinstance(v, dict):
+        logger.critical("[mike] %s: %s (%s) - stato %s, proposta all'utente", event_id,
+                        v.get("testo"), v.get("perche"), d.state)
+        db.log("chiusura_parziale", {**v, "state": d.state, "ciclo": int(ctx.cycle_no or 0),
+                                     "critical": True}, event_id)
+    v = tele.get("ordine_sotto_minimo")
+    if isinstance(v, dict):
+        logger.critical("[mike] %s: %s", event_id, v.get("testo"))
+        db.log("ordine_sotto_minimo", {**v, "state": d.state, "ciclo": int(ctx.cycle_no or 0),
+                                       "critical": True}, event_id)
+
+
 def _esegui_annulli(*, db: Any, market: Any, ev: Dict[str, Any], ctx: E.MatchCtx,
                     extra: Dict[str, Any], actions: List[Any],
                     cache: Optional[Dict[str, List[Dict[str, Any]]]] = None) -> int:
@@ -5236,6 +5281,8 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
         # 30/09 (decisione 26 del piano, M3.5 "lo scrive nel registro"): il resto
         # sotto minimo non si perde nella telemetria, va in ``mike_activity``
         _registra_resti(db, extra, d, ctx, ev["event_id"])
+        # 01/10: chiusura parziale e ordine sotto il minimo, CRITICAL
+        _registra_avvisi_esecuzione(db, d, ctx, ev["event_id"])
     # H5 — il log 'state' si scrive SOLO quando lo stato cambia davvero: prima
     # bastava un motivo con numeri diversi (prezzi, minuti) per riscriverlo a
     # ogni tick e riempire mike_activity.

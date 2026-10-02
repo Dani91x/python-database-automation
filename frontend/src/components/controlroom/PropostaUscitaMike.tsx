@@ -60,6 +60,9 @@ const CATEGORIA: Record<string, string> = {
     ko_green: 'uscita al fischio',
     chiusura: 'cash out della posizione',
     reentry_green: 'uscita del re-ingresso',
+    // 01/10 (engine._controllo_di_piatto): NON e' un'uscita da firmare, e' il
+    // residuo che Mike non riesce a chiudere da solo (niente «approva»)
+    residuo_scoperto: 'chiusura NON completata: residuo scoperto',
 };
 
 export function propostaDi(ev: MikeEvent): PropostaUscitaMikeDati | null {
@@ -180,6 +183,8 @@ export function PropostaUscitaMike({
     ));
     if (prop == null) return striscie.length ? <div data-testid={`${testId}-esiti`}>{striscie}</div> : null;
 
+    // 01/10: il residuo che Mike non riesce a chiudere da solo non si approva
+    const residuo = (prop as { residuo_scoperto?: unknown }).residuo_scoperto === true;
     const live = ev.live ?? {};
     const eta = etaQuoteS(live, adesso);
     const fresh = feedFreshness(eta);
@@ -246,8 +251,10 @@ export function PropostaUscitaMike({
             data-testid={testId}>
             <div className="flex items-center justify-between gap-2">
                 <span className="text-[10.5px] font-semibold text-red-200" data-testid={`${testId}-titolo`}>
-                    Mike vorrebbe uscire: {CATEGORIA[prop.categoria] ?? prop.categoria}
-                    {prop.urgente ? ' (IN PERDITA)' : ' (può chiudere IN PERDITA)'}
+                    {residuo
+                        ? <>Mike NON riesce a chiudere da solo: {CATEGORIA[prop.categoria] ?? prop.categoria}</>
+                        : <>Mike vorrebbe uscire: {CATEGORIA[prop.categoria] ?? prop.categoria}
+                            {prop.urgente ? ' (IN PERDITA)' : ' (può chiudere IN PERDITA)'}</>}
                 </span>
                 <span className={`text-[10px] px-1.5 py-0.5 rounded border ${fresh.cls}`}>{fresh.label}</span>
             </div>
@@ -264,10 +271,15 @@ export function PropostaUscitaMike({
                 ))}
             </div>
             {/* D7 (25/09) — come parte l'uscita al clic (non la decide la scheda) */}
-            <div className="text-[10px] text-white/55" data-testid={`${testId}-esecuzione`}>
-                al clic: il bot esce a mercato con la sua macchina d’uscita (prezzi e size di quel
-                momento), come la strategia la vuole; dopo il clic qui sotto il prezzo reale di abbinamento
-            </div>
+            {residuo
+                ? <div className="text-[10px] text-white/55" data-testid={`${testId}-esecuzione`}>
+                    qui sopra l’ordine che chiude il residuo ai prezzi della decisione: Mike non lo
+                    piazza da solo (sotto il minimo Betfair, rifiutato o tentativi esauriti)
+                </div>
+                : <div className="text-[10px] text-white/55" data-testid={`${testId}-esecuzione`}>
+                    al clic: il bot esce a mercato con la sua macchina d’uscita (prezzi e size di quel
+                    momento), come la strategia la vuole; dopo il clic qui sotto il prezzo reale di abbinamento
+                </div>}
             <div className="text-[10.5px] text-white/60" data-testid={`${testId}-numeri`}>
                 {/* 30/09 (B2, M12): `live.cashout.net` = TUTTA la partita */}
                 chiudendo tutta la partita ora{live.cashout != null && !cashCompleto
@@ -285,6 +297,19 @@ export function PropostaUscitaMike({
                 {' · '}deciso {daDecisioneS} s fa
                 {prop.minuto != null ? ` · ${prop.minuto}′` : ''}
             </div>
+            {residuo ? (
+                <>
+                    <div className="text-[10.5px] font-semibold text-red-200" data-testid={`${testId}-residuo`}>
+                        chiudi a mano: «Chiudi» di Mike o direttamente su Betfair con l’ordine qui sopra
+                    </div>
+                    {/* 01/10: le scelte dell'utente scritte dal bot (`engine._alternative_residuo`) */}
+                    {Array.isArray((prop as { alternative?: unknown }).alternative) && (
+                        <div className="text-[10px] text-white/60" data-testid={`${testId}-alternative`}>
+                            scelte: {((prop as { alternative?: unknown[] }).alternative ?? []).map(String).join(' · oppure ')}
+                        </div>
+                    )}
+                </>
+            ) : (
             <div className="flex items-center gap-2 flex-wrap">
                 <Button type="button" size="sm" disabled={spento}
                     onClick={() => void approva()}
@@ -295,6 +320,7 @@ export function PropostaUscitaMike({
                 </Button>
                 <span className="text-[10px] text-white/40">oppure chiudi a mano con «Chiudi» di Mike</span>
             </div>
+            )}
             {esito && <div className="text-[10px] text-white/60" data-testid={`${testId}-esito`}>{esito}</div>}
             {striscie}
         </div>
