@@ -226,9 +226,34 @@ class MotoreCheTraduce(FintoMotore):
     def __init__(self) -> None:
         super().__init__()
         self.mandati: list = []
+        self.rifiutati: list = []
+
+    def gestisci(self, ws: Any, testo: str) -> None:
+        """Come il motore VERO (punto 11, ``_applica_minimi``): un attore fuori da
+        ``minimi_it.ATTORI_CON_TRADUZIONE`` non ha l'equivalente; un place sotto il minimo
+        e sotto 0,50 e' allora un rifiuto ``SOTTO_MINIMO_NON_PIAZZABILE`` (paper = live)."""
+        from Betfair.stream.trading import minimi_it as MI
+
+        msg = json.loads(testo)
+        d = msg.get("d") or {}
+        if (msg.get("t") == "comando" and d.get("azione") == "place"
+                and d.get("attore") not in MI.ATTORI_CON_TRADUZIONE):
+            v = LB.verdetto_minimi("it", d["side"].lower(), d["price"], d["size"],
+                                   altra_selezione=None)
+            if v.esito == LB.VERDETTO_IMPOSSIBILE:
+                MO.valida_comando("omega", d)
+                self.comandi.append(d)
+                self.rifiutati.append(d)
+                self._manda(ws, "ack", {"ref": d["ref"], "seq": self._nuovo_seq(),
+                                        "accettato": False, "motivo": str(v.motivo),
+                                        "ricevuto_ms": 1.0})
+                return
+        super().gestisci(ws, testo)
 
     def _fine(self, ws: Any, d: dict) -> None:
-        if d["azione"] != "place":
+        from Betfair.stream.trading import minimi_it as MI
+
+        if d["azione"] != "place" or d.get("attore") not in MI.ATTORI_CON_TRADUZIONE:
             return super()._fine(ws, d)
         v = LB.verdetto_minimi("it", d["side"].lower(), d["price"], d["size"],
                                altra_selezione=(UNDER, 0.0))
@@ -244,6 +269,15 @@ class MotoreCheTraduce(FintoMotore):
                              bet_id=BET, mode=d["mode"])
         self.eventi.append(ev)
         self._manda(ws, "order", ev)
+
+
+@pytest.fixture
+def traduzione_omega(monkeypatch):
+    """Punto 11: la traduzione vale solo per ``ATTORI_CON_TRADUZIONE`` (oggi vuoto); i
+    test del caso completo abilitano 'omega' SOLO per la prova, come i test del runner."""
+    from Betfair.stream.trading import minimi_it as MI
+
+    monkeypatch.setattr(MI, "ATTORI_CON_TRADUZIONE", frozenset({"omega"}))
 
 
 @pytest.fixture
@@ -283,7 +317,8 @@ class _MercatoOU:
 
 @pytest.mark.parametrize("verso", ["banca_tradotta_in_punta", "punta_tradotta_in_banca"])
 @pytest.mark.parametrize("con_bet_id", [True, False])
-def test_d1_caso_completo_nessuna_seconda_chiusura(motore, monkeypatch, verso, con_bet_id):
+def test_d1_caso_completo_nessuna_seconda_chiusura(traduzione_omega, motore, monkeypatch,
+                                                   verso, con_bet_id):
     rete = monta_rete(monkeypatch)
     db = _db()
     if verso == "banca_tradotta_in_punta":
@@ -337,6 +372,31 @@ def test_d1_caso_completo_nessuna_seconda_chiusura(motore, monkeypatch, verso, c
     assert abb == round(cmd["size"], 2)
     p = db.get_trade(parent["id"])
     assert p["status"] == "hedged", p["status"]
+
+
+@pytest.mark.parametrize("ammesso", [True, False])
+def test_d1_il_finto_rispetta_gli_attori_con_traduzione(motore, monkeypatch, ammesso):
+    """Il finto del motore traduce SOLO se l'attore e' in ``ATTORI_CON_TRADUZIONE``, come
+    il motore vero: fuori dall'insieme la chiusura banca 0,43 @18 e' un rifiuto
+    ``SOTTO_MINIMO_NON_PIAZZABILE`` (nessun ordine, posizione aperta e dichiarata)."""
+    from Betfair.stream.trading import minimi_it as MI
+
+    monkeypatch.setattr(MI, "ATTORI_CON_TRADUZIONE",
+                        frozenset({"omega"}) if ammesso else frozenset())
+    monta_rete(monkeypatch)
+    db = _db()
+    parent = _apertura(db, side="back", price=7.74, size=1.0)
+    out = S._manual_cashout(market=_MercatoOU(back=17.5, lay=18.0), db=db,
+                            payload={"trade_id": parent["id"]}, now=NOW)
+    if ammesso:
+        assert motore.mandati and not motore.rifiutati
+        assert out.get("ok") is True
+    else:
+        assert motore.mandati == [] and len(motore.rifiutati) == 1
+        assert out.get("ok") is not True
+        chiusura = next(t for t in db.trades if t.get("closes_trade_id") == parent["id"])
+        assert chiusura["status"] == "error"
+        assert db.get_trade(parent["id"])["status"] == "open"
 
 
 def test_d1_contratto_le_chiavi_dell_evento_del_finto_sono_quelle_del_motore():

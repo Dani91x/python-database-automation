@@ -52,6 +52,16 @@ from Betfair.stream.tests.tradotti_comuni import (
 BET = "330000000555"
 
 
+@pytest.fixture(autouse=True)
+def traduzione_safe(monkeypatch):
+    """Punto 11 del runner: la traduzione vale solo per ``ATTORI_CON_TRADUZIONE`` (oggi
+    vuoto). Questi test provano la MACCHINA e abilitano 'safe' SOLO per la prova, come i
+    test del runner; ``test_d3_attore_non_ammesso_coda_e_rest_come_prima`` prova il vero."""
+    from Betfair.stream.trading import minimi_it as MI
+
+    monkeypatch.setattr(MI, "ATTORI_CON_TRADUZIONE", frozenset({"safe"}))
+
+
 def _db(mode: str = "live") -> FakeDB:
     db = FakeDB(status="stopped", mode=mode)
     db.heartbeat = {"ts": NOW.isoformat(), "mode": "LIVE" if mode == "live" else "PAPER"}
@@ -654,6 +664,31 @@ def test_d3_rest_due_runner_non_esaustivi_niente_equivalente(monkeypatch, libro)
     out = _place_chiusura_043(db, S._MercatoSafe(OM), "live", 5)
     assert out.status == "error" and out.error_code == "SOTTO_MINIMO_NON_PIAZZABILE"
     assert rete.piazzati == []
+
+
+def test_d3_attore_non_ammesso_coda_e_rest_come_prima(worker, monkeypatch):
+    """Oggi (``ATTORI_CON_TRADUZIONE`` vuoto) Safe NON ha l'equivalente su nessuna via:
+    la chiusura 0,43 resta il rifiuto certo in casa (coda e REST), nessuna lettura del
+    book, e una riga di coda col parametro non si traduce nel worker."""
+    from Betfair.stream.trading import minimi_it as MI
+
+    monkeypatch.setattr(MI, "ATTORI_CON_TRADUZIONE", frozenset())
+    rete = monta_rete(monkeypatch)
+    rete.book = book_grezzo(OVER, UNDER)
+    for mode, rest in (("paper", False), ("live", False), ("live", True)):
+        db = _db(mode)
+        if rest:
+            _rest(db)
+        out = _place_chiusura_043(db, S._MercatoSafe(OM), mode, 5)
+        assert out.status == "error" and out.error_code == "SOTTO_MINIMO_NON_PIAZZABILE"
+        assert db.queue == [] and rete.piazzati == []
+    assert "list_market_book" not in rete.chiamate
+    riga = {"id": 9, "action": "place_submin", "mode": "live", "market_id": MID,
+            "selection_id": OVER, "handicap": 0.0, "side": "lay", "price": 18.0,
+            "size": 0.43, "params": {"source": "safe", "target_size": 0.43,
+                                     LOW.PARAM_EQUIVALENTE: True,
+                                     "reduces_liability": True}}
+    assert LOW._traduci_riga_coda(_fl(_worker_market(2)), riga) is None
 
 
 def test_d3_tre_vie_stesso_verdetto_stesso_ordine_stessa_riga(worker, monkeypatch):

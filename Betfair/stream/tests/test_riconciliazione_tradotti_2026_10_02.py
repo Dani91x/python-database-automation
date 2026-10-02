@@ -173,9 +173,14 @@ def test_r_banco_stato_per_bet_id_con_le_chiavi_della_produzione():
                              "size_requested": 7.31}
 
 
-def test_r_contratto_tradotto_del_finto_uguale_al_motore_vero(amb):
+def test_r_contratto_tradotto_del_finto_uguale_al_motore_vero(amb, monkeypatch):
     """La dichiarazione e l'evento dei finti (``tradotti_comuni``) sono quelli del motore
-    VERO: stesso ``tradotto``, stesse chiavi, stessi numeri nei termini chiesti."""
+    VERO: stesso ``tradotto``, stesse chiavi, stessi numeri nei termini chiesti.
+    (Punto 11 del runner: la traduzione vale solo per ``ATTORI_CON_TRADUZIONE``, oggi
+    vuoto; qui si abilita 'safe' SOLO per la prova, come i test del runner.)"""
+    from Betfair.stream.trading import minimi_it as MI
+
+    monkeypatch.setattr(MI, "ATTORI_CON_TRADUZIONE", frozenset({"safe"}))
     _due_esiti(amb.market)
     amb.market.borsa = True
     ws = amb.ch.collega("safe")

@@ -3609,6 +3609,11 @@ def _traduci_riga_coda(flumine: Any, request_row: Dict[str, Any]) -> Optional[Di
     params = request_row.get("params") or {}
     if not (isinstance(params, dict) and params.get(PARAM_EQUIVALENTE)):
         return None
+    # punto 11: solo per gli attori ammessi alla traduzione, come sul canale
+    from .trading import minimi_it as MI
+
+    if str(params.get("source") or "") not in MI.ATTORI_CON_TRADUZIONE:
+        return None
     from . import live_order_build as LB
     from .motore_ordini import altro_runner_due_esiti
 

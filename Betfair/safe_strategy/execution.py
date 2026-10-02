@@ -532,6 +532,8 @@ def nei_termini_della_riga(trade: dict[str, Any], letto: Any) -> Any:
 #: il prefisso dei ref di Safe CALCIO (``porta_ordini.ref_ordine``, ``close_trade``):
 #: le sole righe a cui coda e REST applicano l'equivalente (02/10/2026, D3)
 _REF_SAFE_CALCIO = "safe-t"
+#: l'attore di Safe calcio sul runner (``minimi_it.ATTORI_CON_TRADUZIONE``)
+_ATTORE_SAFE = "safe"
 #: i tipi di mercato con DUE esiti per costruzione (Over/Under, gol nel primo tempo,
 #: entrambe segnano). E' solo il filtro d'ingresso dell'equivalente su coda e REST: il
 #: verdetto vero lo da' il book (due runner ACTIVE, un vincitore).
@@ -1041,9 +1043,15 @@ def place(
     # ``market_type`` (la riga lo porta, ``close_trade`` lo passa) e' solo il filtro
     # d'ingresso: un Risultato Esatto non manda mai in coda o al book un ordine che
     # sarebbe rifiutato a ogni ritento; la parola finale e' del book (worker, REST).
+    # Punto 11 del runner: la traduzione vale solo per gli attori ammessi
+    # (``minimi_it.ATTORI_CON_TRADUZIONE``, oggi vuoto): stessa regola del canale, quindi
+    # con Safe fuori dall'insieme coda e REST restano ESATTAMENTE come prima.
+    from Betfair.stream.trading import minimi_it as _MI
+
     equivalente_ammesso = bool(sotto_minimo_chiusura
                                and str(client_ref or "").startswith(_REF_SAFE_CALCIO)
-                               and mercato_a_due_esiti_per_tipo(market_type))
+                               and mercato_a_due_esiti_per_tipo(market_type)
+                               and _ATTORE_SAFE in _MI.ATTORI_CON_TRADUZIONE)
     if submin_fuori_canale and size < SUBMIN_IMPORTO_FINALE_MIN - 1e-9 and not (
             equivalente_ammesso and _equivalente_possibile(side, price, size)):
         return _rifiuto_sotto_050(db, tid=tid, mode=mode, side=side, price=price, size=size,
