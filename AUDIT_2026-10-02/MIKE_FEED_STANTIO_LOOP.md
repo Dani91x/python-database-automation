@@ -132,7 +132,23 @@ Differenze col riferimento `ebfab2a`, azione per azione (sonda `sonda_azioni_mik
 
 ## 8. tutti
 
-VEDI_TUTTI
+`certifica mike 35760084 --scenari tutti --worker 0` (`replay/mike_tutti_FEED_STANTIO_LOOP.txt`):
+**26/26 OK, 0 violazioni, TEMPO TOTALE 581,7 s** (sotto il tetto di 600 s; durata dichiarata
+in anticipo: circa 13 minuti, come i 772,6 s del riferimento; un altro `tutti` di un'altra
+sessione girava in parallelo).
+
+Confronto con `mike_tutti_MASTER_senza_rv.txt` del principale (`AUDIT_2026-10-02/confronta_referti.py`,
+`PYTHONIOENCODING=utf-8`): 171 righe diverse, cosi' ripartite:
+- **lettura-dati-ko**: KO -> OK, azioni 377 -> 8, `no_fill x370` -> `feed_stantio x1`,
+  «green resting appoggiata (residuo) x372» -> «tengo, feed stantio ... x369», P1/P2/P3 spariti;
+  ESITO 25+1 -> 26+0. I contatori aggregati di copertura dei controlli scendono TUTTI di
+  esattamente 369 (A3 517->148, C1/C2/C3/L1 498->129, D1 434->65, D2 392->23, J2 444->75):
+  sono le 369 riproposte tolte, nient'altro.
+- tutte le altre: solo codifica (il riferimento ha `�` dove c'e' `§`, `«»`, `—`) e l'ordine in
+  cui i worker intercalano le righe `CRITICAL` del logger. Conteggi identici nei due file:
+  «aperture FERME» 1/1, «COPERTURA BLOCCATA» 2/2, «residuo scoperto» 18/18, «RIFIUTATO la lay»
+  4/4, «esito IGNOTO» 10/10, 26 righe di esito in entrambi.
+- `LENTO: X` presente solo nel riferimento (772,6 s contro 581,7 s).
 
 ## 9. NON VERIFICATO / reperti
 
@@ -152,3 +168,7 @@ VEDI_TUTTI
 - La durata di `--scenari tutti` supera il tetto di 600 s anche su master (772,6 s nel referto
   del coordinatore): difetto del banco gia' dichiarato in `REPLAY_VELOCE.md`, non toccato.
 - Nessuna prova in paper/live vero: solo test e banco.
+
+## 10. Nota sulla patch
+
+Mentre girava il `tutti` il coordinatore ha integrato la correzione su master (`f34a281`): `engine.py`, `service.py` e il file di test su master sono IDENTICI a quelli del ramo (`git diff HEAD master` vuoto su quei tre file). Per questo la patch `MIKE_FEED_STANTIO_LOOP.patch` e' `git diff c190dc8` (la base del ramo), non `git diff master` (che oggi mostrerebbe al contrario il lavoro di master arrivato dopo).
