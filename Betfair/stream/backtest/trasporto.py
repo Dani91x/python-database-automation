@@ -49,6 +49,10 @@ logger = logging.getLogger(__name__)
 
 TRASPORTI = ("coda", "canale")
 
+#: 02/10 - il valore DICHIARATO dell'interruttore del bot in ogni trasporto
+#: (``coda`` = spento, ``canale`` = acceso), qualunque cosa dica il ``.env``.
+VALORE_INTERRUTTORE: Dict[str, str] = {"coda": "0", "canale": "1"}
+
 #: bot del registro -> (attore del protocollo, interruttore del bot)
 ATTORI: Dict[str, tuple] = {
     "safe_base": ("safe", "SAFE_ORDINI_VIA_CANALE"),
@@ -99,9 +103,19 @@ def contesto(bot: str, trasporto: str) -> Iterator[Dict[str, Any]]:
     }
     env_prima: Optional[str] = None
     nome_env = voce[1] if voce else None
-    if trasporto == "canale" and nome_env:
+    # 02/10 (PARITA_SAFE_ENV): l'interruttore del bot e' DICHIARATO in ENTRAMBI
+    # i trasporti, mai lasciato all'ambiente dell'operatore. Prima la ``coda``
+    # non lo toccava: col ``.env`` del checkout principale
+    # (``SAFE_ORDINI_VIA_CANALE=1``, riacceso anche a meta' replay dal
+    # ``load_dotenv()`` di ``config_stream`` al primo import) il bot «in coda»
+    # usava la porta VERA del canale verso 47331, senza runner ne' token:
+    # fail-closed, ``canale_giu:apertura_non_inviata``, 0 ordini, e la parita'
+    # coda/canale cambiava con chi lancia il comando. ``"0"`` e' spento per
+    # costruzione (``porta_ordini.VALORI_ACCESI``) e ``load_dotenv`` senza
+    # override non riscrive una variabile gia' presente.
+    if nome_env:
         env_prima = os.environ.get(nome_env)
-        os.environ[nome_env] = "1"
+        os.environ[nome_env] = VALORE_INTERRUTTORE[trasporto]
     prima = _STATO
     _STATO = stato
     t0 = time.monotonic()
@@ -111,7 +125,7 @@ def contesto(bot: str, trasporto: str) -> Iterator[Dict[str, Any]]:
         stato["durata_s"] = round(time.monotonic() - t0, 1)
         _smonta(stato)
         _STATO = prima
-        if trasporto == "canale" and nome_env:
+        if nome_env:
             if env_prima is None:
                 os.environ.pop(nome_env, None)
             else:
