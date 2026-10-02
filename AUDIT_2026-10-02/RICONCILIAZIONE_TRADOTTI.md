@@ -267,7 +267,8 @@ rosso preteso, ripristino byte per byte verificato, verde ripreso alla fine. Esi
 ## 8. Numeri (worktree, interprete del principale)
 
 **Dopo l'unione con `master` e il reperto 1** (stesso set mirato): **7060 passed, 31 skipped,
-1 xfailed, 0 failed** (377 s). Falsificazioni rilanciate sull'albero unito:
+1 xfailed, 0 failed** (377 s); dopo la seconda unione con `master` (replay veloce, isolamento
+4): **7072 passed, 31 skipped, 1 xfailed, 0 failed** (471 s). Falsificazioni rilanciate sull'albero unito:
 riconciliazione **33/33**, arresto **14/14**, reperto 1 + punto 11 **13/13**. (Lo script
 base ora riconosce le ancore anche nelle copie di lavoro CRLF.) Numeri precedenti:
 
