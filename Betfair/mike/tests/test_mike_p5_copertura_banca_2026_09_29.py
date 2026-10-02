@@ -227,19 +227,24 @@ def test_banca_over_sotto_0_50_diventa_puntata_under_se_piazzabile():
                                                              "back", 12.0, 1.02)
 
 
-def test_banca_over_sotto_0_50_resta_banca_se_la_puntata_non_e_piazzabile():
+def test_banca_over_sotto_0_50_diventa_puntata_under_anche_non_multipla_di_0_50():
+    """Fino al 01/10 qui la chiusura restava la BANCA Over 0,24 perche' la
+    puntata Under (11,88) non era multipla di 0,50. Ashdod v Maccabi Herzliya
+    (LIVE, 01/10): quella banca Betfair la rifiuta (INVALID_BET_SIZE), e la
+    puntata al centesimo da 2,00 in su si abbina (7,47 dell'utente)."""
     legs = [_cop_10_20()]
     books = {(E.MARKET_OU45, E.SEL_OVER): libro(48.0, 50.0),
              (E.MARKET_OU45, E.SEL_UNDER): libro(1.03, 1.04)}
     cv = E.cashout_value(legs, books, COMM)
     ctx = E.MatchCtx(state="LIVE_COVERED", legs=legs)
     [a] = [x for x in E._close_actions(ctx, cv, params()) if x.kind == "place"]
-    assert (a.selection, a.side, a.size) == (E.SEL_OVER, "lay", 0.24)
+    assert (a.selection, a.side, a.size, a.price) == (E.SEL_UNDER, "back", 11.88, 1.03)
 
 
-def test_riprezzo_della_chiusura_torna_banca_se_la_puntata_non_e_piu_piazzabile():
+def test_riprezzo_della_chiusura_resta_puntata_al_centesimo():
     """La chiusura partita come puntata Under 12,00 non si abbina; al riprezzo la
-    puntata sarebbe 11,88 (non multiplo di 0,50): si torna alla banca Over."""
+    puntata e' 11,88. Fino al 01/10 (non multiplo di 0,50) si tornava alla banca
+    Over 0,24, che Betfair .it rifiuta: oggi resta la puntata, al centesimo."""
     ferma = gamba("over_close", E.MARKET_OU45, E.SEL_UNDER, "back", 1.02, 0.0,
                   ref="over_close-0-3", status="pending", size=12.0)
     ctx = E.MatchCtx(state="LIVE_CLOSING", legs=[_cop_10_20(), ferma], close_reason="profit")
@@ -247,17 +252,23 @@ def test_riprezzo_della_chiusura_torna_banca_se_la_puntata_non_e_piu_piazzabile(
     d = E._decide_closing(ctx, s, params(), COMM)
     assert [a.kind for a in d.actions] == ["cancel", "place"]
     nuova = d.actions[1]
-    assert (nuova.role, nuova.selection, nuova.side, nuova.size) == ("over_close", E.SEL_OVER,
-                                                                     "lay", 0.24)
+    assert (nuova.role, nuova.selection, nuova.side, nuova.size) == ("over_close", E.SEL_UNDER,
+                                                                     "back", 11.88)
 
 
-def test_forma_di_prima_nessun_ripiego_sulla_chiusura():
+def test_forma_di_prima_ripiego_solo_sotto_la_soglia_incerta_della_banca():
+    """Fino al 01/10 la forma di prima non aveva ripiego. Dal 01/10 (minimo della
+    banca incerto sotto 1,00, ricerca del coordinatore) la banca Over 0,24 diventa
+    la puntata Under equivalente; una banca da 1,00 in su resta la banca."""
     punta = gamba("over_cover", E.MARKET_OU45, E.SEL_OVER, "back", 6.0, 2.0,
                   ref="over_cover-0-2")
     books = {(E.MARKET_OU45, E.SEL_OVER): libro(48.0, 50.0),
              (E.MARKET_OU45, E.SEL_UNDER): libro(1.02, 1.03)}
     cv = E.cashout_value([punta], books, COMM)
-    assert cv.ripieghi == {}
+    altra, piano = cv.ripieghi[(E.MARKET_OU45, E.SEL_OVER)]
+    assert (altra, piano.side, piano.size, piano.price) == (E.SEL_UNDER, "back", 11.76, 1.02)
+    books[(E.MARKET_OU45, E.SEL_OVER)] = libro(9.0, 10.0)      # banca 1,20
+    assert E.cashout_value([punta], books, COMM).ripieghi == {}
 
 
 # ---------------------------------------------------------------------------
@@ -285,14 +296,20 @@ def test_resto_sotto_mezzo_centesimo_di_banca_e_piatto_e_si_scrive():
     assert r["sbilancio"] == 0.09 and r["tolleranza"] == 0.105
 
 
-def test_resto_da_0_006_di_banca_NON_e_piatto_e_la_chiusura_da_0_01_parte():
+def test_resto_da_0_006_di_banca_NON_e_piatto_e_si_dichiara_chiusura_parziale():
+    """Il resto (sbilancio 0,138) NON e' piatto, come prima. Fino al 01/10 partiva
+    la banca Over da 0,01, che Betfair .it rifiuta per taglia (Ashdod v Maccabi
+    Herzliya, LIVE): oggi non parte, e la partita non si dichiara «chiusa»:
+    LIVE_CLOSING, chiusura parziale, proposta all'utente con l'ordine esatto."""
     legs = _coperta_e_chiusa((2.28, 6.6))                    # sbilancio 0,138 = 0,0066 di banca
     assert E.open_selections(legs) == [(E.MARKET_OU45, E.SEL_OVER)]
     ctx = E.MatchCtx(state="LIVE_CLOSING", legs=legs, close_reason="profit")
-    d = E._decide_closing(ctx, fotografia(o45_book=libro(20.0, 21.0)), params(), COMM)
-    [a] = [x for x in d.actions if x.kind == "place"]
-    assert (a.role, a.selection, a.side, a.size, a.price) == ("over_close", E.SEL_OVER,
-                                                             "lay", 0.01, 21.0)
+    d = E.decide(ctx, fotografia(o45_book=libro(20.0, 21.0)), params())
+    assert [x for x in d.actions if x.kind == "place"] == []
+    assert d.state == "LIVE_CLOSING" and d.reason.startswith("chiusura parziale")
+    [o] = d.updates["uscita_proposta"]["ordini"]
+    assert (o["selezione"], o["lato"], o["size"], o["prezzo"], o["piazzabile"]) == (
+        E.SEL_OVER, "lay", 0.01, 21.0, False)
 
 
 def test_due_selezioni_lunghe_sull_over_chiave_over_e_chiusura_banca_over():

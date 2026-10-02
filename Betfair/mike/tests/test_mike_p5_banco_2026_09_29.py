@@ -175,7 +175,8 @@ def test_J5B_due_banche_in_volo_sulle_due_selezioni():
 def test_chiusura_manuale_in_gioco_aspetta_la_riapertura():
     """Reperto dello scenario `cashout-dopo-copertura` (C3 x3): il cash out
     dell'utente in gioco piazzava la chiusura anche a mercato SOSPESO. Ora si
-    aspetta; alla riapertura la chiusura parte (banca Over, M3.3)."""
+    aspetta; alla riapertura la chiusura parte (punta Under 4,5, decisione 12
+    dell'utente del 02/10; prima banca Over, M3.3)."""
     cop = gamba("over_cover", E.MARKET_OU45, E.SEL_UNDER, "lay", 1.18, 12.63,
                 ref="over_cover-0-2")
     ctx = E.MatchCtx(state="LIVE_COVERED", legs=[cop], flatten_pending=True)
@@ -183,8 +184,10 @@ def test_chiusura_manuale_in_gioco_aspetta_la_riapertura():
     assert [a for a in d.actions if a.kind == "place"] == []
     assert d.state == "LIVE_COVERED" and "attendo la riapertura" in d.reason
     d2 = E._decide_flatten(ctx, foto(), params())
+    # 02/10 (decisione 12 dell'utente, supera M3.3): la chiusura della
+    # copertura-banca e' la PUNTA Under 4,5 di serie (prima: banca Over)
     assert [(a.role, a.selection, a.side) for a in d2.actions if a.kind == "place"] == [
-        ("manual_close", E.SEL_OVER, "lay")]
+        ("manual_close", E.SEL_UNDER, "back")]
 
 
 def test_J5B_tace_con_una_banca_sola_e_senza_banche_sul_4_5():

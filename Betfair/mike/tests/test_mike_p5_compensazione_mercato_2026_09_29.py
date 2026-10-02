@@ -115,17 +115,20 @@ def test_copertura_banca_aperta_si_chiude_bancando_l_over():
     books = {
         (E.MARKET_OU35, E.SEL_UNDER): E.Book(best_back=1.30, back_size=500.0,
                                              best_lay=1.31, lay_size=500.0),
-        (E.MARKET_OU45, E.SEL_OVER): E.Book(best_back=20.0, back_size=500.0,
-                                            best_lay=21.0, lay_size=500.0),
+        # 01/10: Over 4,5 a 12,5 (era 21). A 21 la banca valeva 0,71, sotto il
+        # minimo commerciale della banca (1,00): oggi non parte. A 12,5 vale
+        # 1,19: la regola provata qui (si chiude BANCANDO l'Over, M3.3) e' la stessa.
+        (E.MARKET_OU45, E.SEL_OVER): E.Book(best_back=12.0, back_size=500.0,
+                                            best_lay=12.5, lay_size=500.0),
     }
     cv = E.cashout_value(legs, books, COMM)
     piano = cv.plans[(E.MARKET_OU45, E.SEL_OVER)]
-    assert piano.side == "lay" and piano.price == 21.0 and piano.size == 0.71
+    assert piano.side == "lay" and piano.price == 12.5 and piano.size == 1.19
     ctx = E.MatchCtx(state="LIVE_COVERED", legs=legs)
     azioni = E._close_actions(ctx, cv, PAR)
     over = [a for a in azioni if a.market == E.MARKET_OU45]
     assert [(a.role, a.selection, a.side, a.size) for a in over] == [
-        ("over_close", E.SEL_OVER, "lay", 0.71)]
+        ("over_close", E.SEL_OVER, "lay", 1.19)]
 
 
 def test_residuo_corto_di_una_chiusura_resta_sulla_sua_selezione_come_prima():
@@ -264,11 +267,15 @@ def test_chiusura_manuale_aspetta_la_banca_under_a_esito_ignoto():
 def test_la_chiusura_annulla_la_copertura_viva_sull_altra_selezione():
     viva = copertura_banca(abbinato=6.0, status="pending")
     ctx = E.MatchCtx(state="LIVE_COVERED", legs=[ingresso(), viva])
+    # 01/10: Over 4,5 a 7 (era 21). A 21 la banca di chiusura valeva 0,34, sotto
+    # il minimo della banca (1,00): oggi non parte (``engine.via_ordine``) e con
+    # lei non parte l'annullo. A 7 vale 1,01: la regola provata qui (si annulla la
+    # copertura viva prima di chiudere) resta la stessa.
     books = {
         (E.MARKET_OU35, E.SEL_UNDER): E.Book(best_back=1.30, back_size=500.0,
                                              best_lay=1.31, lay_size=500.0),
-        (E.MARKET_OU45, E.SEL_OVER): E.Book(best_back=20.0, back_size=500.0,
-                                            best_lay=21.0, lay_size=500.0),
+        (E.MARKET_OU45, E.SEL_OVER): E.Book(best_back=6.8, back_size=500.0,
+                                            best_lay=7.0, lay_size=500.0),
     }
     cv = E.cashout_value(ctx.legs, books, COMM)
     azioni = E._close_actions(ctx, cv, PAR)

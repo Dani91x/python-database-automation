@@ -214,6 +214,19 @@ export function esitoChiusuraMike(
     });
 
     if (inCorso) {
+        // 01/10 (Ashdod v Maccabi Herzliya): Mike ha dichiarato di NON riuscire a
+        // chiudere il residuo (`engine._controllo_di_piatto`, proposta
+        // `residuo_scoperto`): NON COMPLETA, e il motivo non dice «chiusa in profitto»
+        const prop = ctx.uscita_proposta as { residuo_scoperto?: unknown; motivo?: unknown } | null | undefined;
+        if (stato === 'LIVE_CLOSING' && prop != null && typeof prop === 'object'
+            && prop.residuo_scoperto === true && peggiore) {
+            return {
+                ...nonCompleta(tentativo, [
+                    `Mike non riesce a chiudere il residuo da solo: ${String(prop.motivo ?? 'motivo non dichiarato')}`,
+                    'chiudi a mano con «Chiudi» di Mike o su Betfair con l’ordine della proposta']),
+                motivo: 'chiusura avviata da Mike, NON completata: resta esposizione',
+            };
+        }
         // tentativi esauriti con esposizione: la chiusura NON e' completa (il bot aspetta)
         if (stato === 'LIVE_CLOSING' && tent != null && tent >= max && peggiore) {
             return nonCompleta(max, ['tentativi esauriti: Mike resta in attesa dell’abbinamento']);

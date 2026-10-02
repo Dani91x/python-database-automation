@@ -55,6 +55,16 @@ _DAILY_STOP_LOGGED: Dict[str, str] = {}   # {"day": iso Rome} → lo stop giorna
 _ROW_MISSING_GRACE_S = 600.0      # riga assente dal feed per meno di cosi' = transitoria (es. passaggio pre-KO → in-play)
 _MATCH_OVER_S = 3 * 3600.0        # oltre 3h dal KO la partita e' finita comunque
 _MATCH_LIKELY_OVER_S = 100 * 60.0 # vista in-play e KO + 100': la riga sparita = partita finita (regolamento subito)
+# 02/10 (punto 25 dell'utente): la riga sparita dal feed NON basta per annullare
+# gli ordini e regolare. Prima si RILEGGE lo stato del mercato via REST
+# (``market.read_book``, la lettura del regolamento): CLOSED -> si annulla e si
+# regola; OPEN/SUSPENDED -> si TIENE («riga assente, mercato aperto: tengo»);
+# illeggibile -> valgono i tetti di sempre qui sopra (_ROW_MISSING_GRACE_S,
+# _MATCH_LIKELY_OVER_S, _MATCH_OVER_S). Al piu' una lettura ogni
+# _RIGA_ASSENTE_REST_S per partita (mai un poll stretto).
+_RIGA_ASSENTE_REST_S = 30.0
+_REST_APERTO = "APERTO"
+_REST_CHIUSO = "CHIUSO"
 # 13/09 — le due cadenze del battito su ``mike_control`` sono diventate
 # PARAMETRI (``heartbeat_min_s`` / ``stats_min_s``, vedi config.py): una
 # cadenza cablata nel codice non si puo' allargare quando il database soffre.
@@ -1289,6 +1299,43 @@ def _books_ripiego_rest(market: Any, info: Any, mercati: Any, now_ts: float,
     return out
 
 
+def _stato_rest_riga_assente(market: Any, ev: Dict[str, Any], extra: Dict[str, Any],
+                             now_ts: float) -> Optional[str]:
+    """02/10 (punto 25): lo stato dei mercati di Mike riletto via REST quando la
+    riga e' sparita dal feed e i tetti di sempre direbbero «partita finita».
+
+    ``_REST_APERTO`` se almeno una linea e' OPEN o SUSPENDED (la partita c'e':
+    con 4 gol il 3,5 chiude e il 4,5 resta da gestire); ``_REST_CHIUSO`` se TUTTE
+    le linee di Mike risultano CLOSED; None se anche una sola non si legge (si
+    torna ai tetti di sempre). Al piu' una lettura ogni ``_RIGA_ASSENTE_REST_S``:
+    fra due letture vale l'esito precedente (in ``extra``)."""
+    prec = extra.get("riga_assente_rest_ts")
+    if prec is not None and now_ts - float(prec) < _RIGA_ASSENTE_REST_S:
+        return extra.get("riga_assente_rest_esito")
+    extra["riga_assente_rest_ts"] = now_ts
+    stati: List[Optional[str]] = []
+    for mkey in (E.MARKET_OU35, E.MARKET_OU45):
+        mid = ((ev.get("markets") or {}).get(mkey) or {}).get("market_id")
+        if not mid:
+            continue
+        try:
+            book = market.read_book(str(mid), {}) if market is not None else None
+        except Exception as ex:  # noqa: BLE001 - REST muto: si torna ai tetti di sempre
+            logger.warning("[mike] %s: rilettura REST %s (riga assente) KO: %s",
+                           ev.get("event_id"), mid, str(ex)[:120])
+            book = None
+        st = str(book.get("status") or "").upper() if isinstance(book, dict) else ""
+        stati.append(st or None)
+    if any(s in ("OPEN", "SUSPENDED") for s in stati):
+        esito: Optional[str] = _REST_APERTO
+    elif stati and all(s == "CLOSED" for s in stati):
+        esito = _REST_CHIUSO
+    else:
+        esito = None
+    extra["riga_assente_rest_esito"] = esito
+    return esito
+
+
 def _esposizione_mike(ctx: Any) -> Optional[float]:
     """Responsabilita' delle gambe ABBINATE ancora aperte (EUR): back = stake,
     lay = stake x (quota - 1). None se non leggibile."""
@@ -1792,10 +1839,16 @@ def _segui_ordini_paper_su_runner(*, db: Any, ctx: E.MatchCtx, ev: Dict[str, Any
             # conteggio del freno, niente ``_rifiutata``.
             no_definitivo = (not appoggiata and not ignoto_prima
                              and fase in ("rifiutato", "annullato", "scaduto"))
+            # 02/10 (correzione del runner, punto 2): l'evento ``order`` porta ora il
+            # CODICE del rifiuto (``error_code``: INVALID_BET_SIZE,
+            # SOTTO_MINIMO_NON_PIAZZABILE, ...) anche su questa strada. Mike lo
+            # legge come nel sincrono (``execute_place``): il motore riconosce il
+            # rifiuto per taglia e non ripropone lo stesso strumento.
+            codice_runner = str(e.get("error_code") or "") or None
             if ignoto_prima:
                 pass
             elif not appoggiata and fase == "rifiutato":
-                _rifiutata(ctx, leg, f"rifiutata dal runner ({fase})")
+                _rifiutata(ctx, leg, f"rifiutata dal runner ({codice_runner or fase})")
             elif not appoggiata and fase in ("annullato", "scaduto"):
                 # il FOK ucciso: il mercato ha detto no a questa richiesta
                 _rifiutata(ctx, leg, f"FOK non abbinato ({fase})")
@@ -1811,8 +1864,11 @@ def _segui_ordini_paper_su_runner(*, db: Any, ctx: E.MatchCtx, ev: Dict[str, Any
                 # ``canale_seq`` = quel seq. Fase ``errore`` NON si conta: e'
                 # l'esito ``post_place:``/place-and-trim abbandonato, cioe' un
                 # ordine che potrebbe esistere (esito ignoto, mai contato).
+                # 02/10: se l'evento porta il codice (correzione del runner) lo si
+                # passa come il sincrono passa ``out.error_code`` (specchio del live)
                 freno = _esito_rifiuto_mercato(
-                    db, ctx, leg, error_code=None, motivo=f"runner_{fase}",
+                    db, ctx, leg, error_code=codice_runner if fase == "rifiutato" else None,
+                    motivo=f"runner_{fase}",
                     trade_id=r.get("id"), now_ts=now_ts, params=params, event_id=eid)
         try:
             X.aggiorna_trade(db, int(r["id"]), campi=campi, consapevolezza=consap)
@@ -3471,7 +3527,9 @@ _REJECT_CODES = ("evento_non_seguito", "stato_terminale", "posizione_aperta", "s
                  # 28/09 (cantiere J) - flusso prezzi interrotto: rifiuto ATTESO
                  "flusso_interrotto",
                  # 25/09 — approvazione di un'uscita che non c'e' piu' o e' cambiata
-                 "proposta_non_viva", "proposta_cambiata")
+                 "proposta_non_viva", "proposta_cambiata",
+                 # 01/10 - il residuo scoperto non si approva: si chiude a mano
+                 "proposta_non_approvabile")
 
 
 def _richiesta_non_di_questa_partita(db: Any, payload: Dict[str, Any],
@@ -3677,6 +3735,14 @@ def _request_approva_uscita(db: Any, ev: Dict[str, Any], events: Dict[str, Dict[
     if not chiave or str(viva.get("chiave") or "") != chiave:
         return _result("proposta_cambiata",
                        "La proposta e' cambiata: guarda quella nuova prima di approvare.",
+                       chiave_viva=viva.get("chiave"))
+    if viva.get("residuo_scoperto"):
+        # 01/10: il RESIDUO SCOPERTO e' cio' che Mike non riesce a chiudere da
+        # solo (``engine._controllo_di_piatto``): non c'e' un'uscita da eseguire
+        # «al prossimo giro», si chiude a mano.
+        return _result("proposta_non_approvabile",
+                       "Mike non riesce a chiudere questo residuo da solo: chiudi con "
+                       "'Chiudi' di Mike o direttamente su Betfair con l'ordine indicato.",
                        chiave_viva=viva.get("chiave"))
     contesto = payload.get("contesto") if isinstance(payload.get("contesto"), dict) else None
     rid_ok = _id_approvazione(request_id)
@@ -4561,6 +4627,32 @@ def _registra_resti(db: Any, extra: Dict[str, Any], d: Any, ctx: E.MatchCtx,
         extra["resti_scritti"] = scritti[-10:]
 
 
+def _registra_avvisi_esecuzione(db: Any, d: Any, ctx: E.MatchCtx, event_id: str) -> None:
+    """01/10 (Ashdod v Maccabi Herzliya, LIVE) - i due AVVISI CRITICI del motore
+    diventano righe di ``mike_activity`` e righe CRITICAL nel log:
+
+      * ``chiusura_parziale``: il motore voleva dichiarare la partita chiusa ma
+        resta esposizione (``engine._controllo_di_piatto``): lo stato resta
+        LIVE_CLOSING e all'utente va la proposta con l'ordine esatto;
+      * ``ordine_sotto_minimo``: un ordine sotto il minimo Betfair .it che non
+        e' partito (``engine._guardia_minimo_listino``).
+
+    Il motore li emette UNA volta per episodio (quando la proposta cambia o la
+    richiesta e' nuova): qui non si filtra niente."""
+    tele = d.telemetry if isinstance(getattr(d, "telemetry", None), dict) else {}
+    v = tele.get("chiusura_parziale")
+    if isinstance(v, dict):
+        logger.critical("[mike] %s: %s (%s) - stato %s, proposta all'utente", event_id,
+                        v.get("testo"), v.get("perche"), d.state)
+        db.log("chiusura_parziale", {**v, "state": d.state, "ciclo": int(ctx.cycle_no or 0),
+                                     "critical": True}, event_id)
+    v = tele.get("ordine_sotto_minimo")
+    if isinstance(v, dict):
+        logger.critical("[mike] %s: %s", event_id, v.get("testo"))
+        db.log("ordine_sotto_minimo", {**v, "state": d.state, "ciclo": int(ctx.cycle_no or 0),
+                                       "critical": True}, event_id)
+
+
 def _esegui_annulli(*, db: Any, market: Any, ev: Dict[str, Any], ctx: E.MatchCtx,
                     extra: Dict[str, Any], actions: List[Any],
                     cache: Optional[Dict[str, List[Dict[str, Any]]]] = None) -> int:
@@ -4648,8 +4740,25 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
         absent_closed = missing_for >= _ROW_MISSING_GRACE_S or (ko_ts > 0 and (
             now_ts - ko_ts > _MATCH_OVER_S
             or (bool(extra.get("seen_inplay")) and now_ts - ko_ts >= _MATCH_LIKELY_OVER_S)))
+        if absent_closed:
+            stato_rest = _stato_rest_riga_assente(market, ev, extra, now_ts)
+            if stato_rest == _REST_APERTO:
+                absent_closed = False
+                if not extra.get("riga_assente_tengo"):
+                    # detto UNA volta per episodio (finche' la riga non torna o
+                    # il mercato non chiude)
+                    extra["riga_assente_tengo"] = now_ts
+                    db.log("riga_assente_mercato_aperto",
+                           {"nota": "riga assente, mercato aperto: tengo",
+                            "assente_da_s": round(missing_for, 1),
+                            "ordini_vivi": [l.ref for l in ctx.legs if l.is_live]},
+                           ev["event_id"])
+            else:
+                extra.pop("riga_assente_tengo", None)
     else:
         extra.pop("row_missing_since", None)
+        for k in ("riga_assente_tengo", "riga_assente_rest_ts", "riga_assente_rest_esito"):
+            extra.pop(k, None)
         absent_closed = False
     closed = status_closed or absent_closed
     if row is None and not closed and ctx.state not in E.TERMINAL_STATES:
@@ -5236,6 +5345,8 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
         # 30/09 (decisione 26 del piano, M3.5 "lo scrive nel registro"): il resto
         # sotto minimo non si perde nella telemetria, va in ``mike_activity``
         _registra_resti(db, extra, d, ctx, ev["event_id"])
+        # 01/10: chiusura parziale e ordine sotto il minimo, CRITICAL
+        _registra_avvisi_esecuzione(db, d, ctx, ev["event_id"])
     # H5 — il log 'state' si scrive SOLO quando lo stato cambia davvero: prima
     # bastava un motivo con numeri diversi (prezzi, minuti) per riscriverlo a
     # ogni tick e riempire mike_activity.
@@ -7127,6 +7238,117 @@ def _ciclo_persistente(un_giro: Callable[[], bool], *, label: str = "[mike]",
             return
 
 
+# 02/10 (reperto R1, ``AUDIT_2026-10-02/SCANNER_MAI_CIECO.md`` par. 9): all'ARRESTO
+# di Mike (stop dall'app, segnale, eccezione) gli ordini vivi NON abbinati si
+# annullano con la via di sempre (``_mark_trade_cancelled``: Betfair in live, il
+# runner in paper, stesso codice) entro un tetto di tempo; le posizioni ABBINATE
+# non si chiudono (nessuna decisione nuova all'arresto) ma si DICHIARANO: diario
+# + CRITICAL «posizione lasciata a mercato per arresto». Prima: nessun annullo,
+# le lay appoggiate restavano sul conto e la ripresa si affidava al DB.
+_ARRESTO_TETTO_S = 10.0
+
+
+def arresto_con_ordini(*, motivo: str, db: Any = _real_db, market: Any = _real_market,
+                       tetto_s: float = _ARRESTO_TETTO_S,
+                       orologio: Callable[[], float] = time.monotonic) -> Dict[str, Any]:
+    """L'arresto ordinato degli ORDINI di Mike (vedi sopra). Non solleva mai:
+    ritorna {motivo, annullati, non_annullati, posizioni}. Oltre ``tetto_s`` non
+    parte nessun altro annullo: gli ordini rimasti si dichiarano CRITICAL."""
+    t0 = orologio()
+    esito: Dict[str, Any] = {"motivo": motivo, "annullati": [], "non_annullati": [],
+                             "posizioni": []}
+    try:
+        since = datetime.fromtimestamp(time.time() - 48 * 3600, tz=timezone.utc).isoformat()
+        eventi = list(db.list_events(since_iso=since) or [])
+    except Exception as ex:  # noqa: BLE001 - DB muto: si lavora con la copia in memoria
+        logger.critical("[mike] arresto: partite non lette dal DB (%s): uso la copia in "
+                        "memoria", str(ex)[:120])
+        eventi = list(_CACHE_EVENTI.values()) if isinstance(_CACHE_EVENTI, dict) else []
+    params = _ULTIMI_PARAMS or C.merge_params(None)
+    for ev in eventi:
+        if str(ev.get("state")) in E.TERMINAL_STATES:
+            continue
+        eid = str(ev.get("event_id"))
+        try:
+            ctx = _ctx_from_row(ev, db)
+        except Exception as ex:  # noqa: BLE001
+            logger.critical("[mike] arresto: partita %s illeggibile: %s", eid, str(ex)[:120])
+            continue
+        extra = dict(ev.get("ctx") or {})
+        before_sig = _signature(ev)
+        toccata = False
+        for leg in ctx.legs:
+            if leg.is_live and float(leg.size or 0.0) > float(leg.matched or 0.0) + 1e-9:
+                if orologio() - t0 >= tetto_s:
+                    esito["non_annullati"].append({"event_id": eid, "leg": leg.ref,
+                                                   "role": leg.role})
+                    continue
+                try:
+                    stato = _mark_trade_cancelled(db, eid, leg, "arresto", None, market=market)
+                except Exception as ex:  # noqa: BLE001 - si dichiara, non si ferma l'arresto
+                    stato = "errore: %s" % str(ex)[:80]
+                    logger.critical("[mike] arresto: annullo di %s KO: %s", leg.ref, str(ex)[:120])
+                toccata = True
+                esito["annullati"].append({"event_id": eid, "leg": leg.ref, "role": leg.role,
+                                           "esito": stato})
+                db.log("cancel", {"leg": leg.ref, "role": leg.role, "esito": stato,
+                                  "reason": "arresto", "motivo_arresto": motivo}, eid)
+        aperte = []
+        for key in E.open_selections(ctx.legs):
+            w, l_ = E.exposure(ctx.legs, *key)
+            aperte.append({"mercato": key[0], "selezione": key[1],
+                           "se_vince": round(w, 2), "se_perde": round(l_, 2)})
+        if aperte:
+            esito["posizioni"].append({"event_id": eid, "esposizioni": aperte})
+            logger.critical("[mike] %s: posizione lasciata a mercato per arresto (%s): %s",
+                            eid, motivo, aperte)
+            db.log("posizione_lasciata_per_arresto",
+                   {"motivo_arresto": motivo, "esposizioni": aperte, "stato": ctx.state,
+                    "critical": True,
+                    "nota": "posizione lasciata a mercato per arresto: Mike non la segue "
+                            "finche' non riparte"}, eid)
+        if toccata:
+            try:
+                ev.update(_row_from_ctx(ev, ctx, extra))
+                _persist(db, ev, before_sig, now_ts=time.time(), params=params, lotto=None)
+            except Exception as ex:  # noqa: BLE001
+                logger.critical("[mike] arresto: partita %s non salvata: %s", eid, str(ex)[:120])
+    if esito["non_annullati"]:
+        logger.critical("[mike] arresto (%s): tetto di %.0f s superato, ordini NON annullati: %s",
+                        motivo, tetto_s, esito["non_annullati"])
+        db.log("arresto_ordini_non_annullati",
+               {"motivo_arresto": motivo, "tetto_s": tetto_s, "ordini": esito["non_annullati"],
+                "critical": True})
+    logger.info("[mike] arresto (%s): annullati %d, posizioni dichiarate %d", motivo,
+                len(esito["annullati"]), len(esito["posizioni"]))
+    return esito
+
+
+def _al_segnale(signum: int, _frame: Any) -> None:
+    """02/10 (R1): un segnale di arresto diventa un ``KeyboardInterrupt`` nel
+    thread principale, cioe' passa dall'arresto ordinato degli ordini."""
+    raise KeyboardInterrupt(f"segnale {signum}")
+
+
+def _installa_segnali_di_arresto() -> List[int]:
+    """SIGTERM e (Windows) SIGBREAK -> arresto ordinato (stessa regola della
+    sessione dello scalper, ``scalper_session.installa_segnali_di_arresto``).
+    ``TerminateProcess`` / ``taskkill /F`` non si possono intercettare."""
+    import signal
+
+    fatti = []
+    for nome in ("SIGTERM", "SIGBREAK"):
+        num = getattr(signal, nome, None)
+        if num is None:
+            continue
+        try:
+            signal.signal(num, _al_segnale)
+            fatti.append(int(num))
+        except (ValueError, OSError):  # fuori dal thread principale
+            continue
+    return fatti
+
+
 def main() -> None:
     from Betfair.stream.single_instance import acquire_single_instance_lock
 
@@ -7177,6 +7399,10 @@ def main() -> None:
     _GUARDIA_AVVIO.attiva = True
     ferma_al_nuovo_avvio()
     atlas = D.load_atlas()
+    # 02/10 (R1): perche' l'arresto si e' fermato (scritto nel diario dell'arresto)
+    perche_arresto = {"motivo": "fine del ciclo"}
+    if not args.once:
+        _installa_segnali_di_arresto()
 
     def _un_giro() -> bool:
         """Un giro del ciclo di Mike. True per continuare (dopo la dormita
@@ -7211,7 +7437,8 @@ def main() -> None:
             if args.once:
                 logger.info("[mike] --once: %s", res)
                 return False
-        except KeyboardInterrupt:
+        except KeyboardInterrupt as ex:
+            perche_arresto["motivo"] = "segnale (%s)" % (str(ex) or "Ctrl+C")
             return False
         except Exception as ex:  # noqa: BLE001 — il loop non deve morire
             logger.exception("[mike] errore di ciclo: %s", str(ex)[:200])
@@ -7233,7 +7460,22 @@ def main() -> None:
         # `finally`: lock.close()), exit 0, il watchdog non rilancia. Mai in
         # `--once`: e' un giro singolo, non il servizio lungo.
         _ciclo_persistente(_un_giro, label="[mike]", controlla_arresto=not args.once)
+    except BaseException as ex:  # noqa: BLE001 - il motivo dell'arresto, poi si propaga
+        perche_arresto["motivo"] = ("segnale (%s)" % (str(ex) or "Ctrl+C")
+                                    if isinstance(ex, KeyboardInterrupt)
+                                    else "eccezione %s: %s" % (type(ex).__name__, str(ex)[:120]))
+        raise
     finally:
+        # 02/10 (R1): annullo degli ordini vivi non abbinati (tetto 10 s) e
+        # dichiarazione delle posizioni abbinate, PRIMA di lasciare il lock.
+        # Mai in ``--once`` / ``--dry`` (collaudi: nessun ordine vero da toccare).
+        try:
+            if _AO.richiesto() and perche_arresto["motivo"] == "fine del ciclo":
+                perche_arresto["motivo"] = "stop dall'app"
+            if not args.once and not args.dry:
+                arresto_con_ordini(motivo=perche_arresto["motivo"])
+        except BaseException as ex:  # noqa: BLE001 - il lock si chiude comunque
+            logger.critical("[mike] arresto degli ordini interrotto: %s", str(ex)[:160])
         if lock is not None:
             try:
                 lock.close()

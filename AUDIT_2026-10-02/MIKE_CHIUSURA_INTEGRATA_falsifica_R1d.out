@@ -1,0 +1,6 @@
+﻿====================================================================================================
+R1d main senza l'arresto ordinato degli ordini
+    1 failed, 235 passed, 2 warnings in 9.24s
+       FAILED Betfair/mike/tests/test_mike_riga_assente_e_arresto_2026_10_02.py::test_R1_main_all_arresto_chiama_l_arresto_degli_ordini
+====================================================================================================
+mutazioni rosse: 1 su 1; file ripristinati, impronte identiche

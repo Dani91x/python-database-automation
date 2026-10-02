@@ -42,6 +42,10 @@ class RunnerFinto:
         #: eventi ``order`` trattenuti (runner lento o muto): escono con ``rilascia``
         self.trattieni = False
         self._trattenuti: List[str] = []
+        #: 02/10: il prossimo place torna RIFIUTATO sulla strada asincrona con questo
+        #: codice (``error_code``/``errore`` nell'evento, come
+        #: ``motore_ordini._estremi_errore`` dopo la correzione del runner, punto 2)
+        self.rifiuto_codice: Optional[str] = None
 
     # -- interfaccia della PortaCanale -------------------------------------
     def disponibile(self) -> bool:
@@ -118,6 +122,18 @@ class RunnerFinto:
             "handicap": 0.0,
         })
         self.ordini[c["ref"]] = riga
+        if self.rifiuto_codice:
+            # l'esito terminale del motore per un place fallito: riga senza
+            # abbinato (``size_voided``), fase ``rifiutato`` e le chiavi d'errore
+            # dell'evento (``motore_ordini._estremi_errore``)
+            codice, self.rifiuto_codice = self.rifiuto_codice, None
+            riga.update({"bet_id": None, "size_voided": riga["size_remaining"],
+                         "size_remaining": 0.0, "status": "EXECUTION_COMPLETE"})
+            ev = {**riga, **MO._estremi_errore(f"{codice}: rifiutato dal motore"),
+                  "ref": c["ref"], "seq": next(self._seq), "fase": "rifiutato",
+                  "esito_ms": 0}
+            self.memoria.ricevi_evento(ev)
+            return
         if c.get("time_in_force") == PO.FOK:
             if self.rifiuta_fok:
                 riga["size_cancelled"] = riga["size_remaining"]
