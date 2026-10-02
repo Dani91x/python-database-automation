@@ -1,0 +1,6 @@
+
+ Test Files  161 passed (161)
+      Tests  2019 passed (2019)
+   Start at  11:34:01
+   Duration  368.88s (transform 83.66s, setup 287.64s, collect 306.36s, tests 472.29s, environment 1046.17s, prepare 155.18s)
+

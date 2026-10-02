@@ -1,0 +1,8 @@
+ ↓ src/certification/sessB/safetrade.cert.test.tsx (1 test | 1 skipped)
+ ✓ src/lib/replay-pnl.formatValuta.test.ts (3 tests) 11ms
+
+ Test Files  317 passed | 10 skipped (327)
+      Tests  4848 passed | 50 skipped (4898)
+   Start at  11:57:49
+   Duration  736.08s (transform 117.51s, setup 627.07s, collect 517.60s, tests 970.17s, environment 2286.50s, prepare 270.70s)
+
