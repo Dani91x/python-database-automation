@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "I fili diretti verso lo schermo (canali locali)",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "all",
+      "entries": {
+        "backend": { "label": "Programma Python (servizio o bot)" },
+        "frontend": { "label": "App desktop (lo schermo)" },
+        "messagebus": { "label": "Canale locale (filo diretto)" },
+        "external": { "label": "Betfair", "visible": false },
+        "database": { "label": "Database", "visible": false },
+        "security": { "label": "Banco di prova", "visible": false },
+        "cloud": { "label": "Guardiano", "visible": false }
+      }
+    },
+    "views": [
+      { "id": "comandi", "label": "Canali che accettano ordini", "focus": ["rc", "rt", "chiave", "app"], "note": "Solo i canali dei due runner (47331 e 47332) accettano ordini, e solo con la chiave segreta data dall'app." },
+      { "id": "lettura", "label": "Canali di sola lettura", "focus": ["mike", "omega", "safe", "sc", "ponte", "scalper", "app"], "note": "Gli altri sei canali mandano solo notizie allo schermo; dallo schermo accettano solo la sveglia." }
+    ]
+  },
+  "components": [
+    { "id": "rc", "type": "backend", "label": "Runner calcio", "sublabel": "porta 47331", "pos": [30, 60], "size": [180, 56] },
+    { "id": "rt", "type": "backend", "label": "Runner tennis", "sublabel": "porta 47332", "pos": [30, 140], "size": [180, 56] },
+    { "id": "mike", "type": "backend", "label": "Mike", "sublabel": "porta 47333", "pos": [30, 220], "size": [180, 56] },
+    { "id": "omega", "type": "backend", "label": "Omega", "sublabel": "porta 47334", "pos": [30, 300], "size": [180, 56] },
+    { "id": "safe", "type": "backend", "label": "Bot Safe", "sublabel": "porta 47335", "pos": [30, 380], "size": [180, 56] },
+    { "id": "sc", "type": "backend", "label": "Scanner", "sublabel": "porta 47336", "pos": [30, 460], "size": [180, 56] },
+    { "id": "ponte", "type": "backend", "label": "Ponte tennis", "sublabel": "porta 47337", "pos": [30, 540], "size": [180, 56] },
+    { "id": "scalper", "type": "backend", "label": "Scalper calcio", "sublabel": "porta 47338", "pos": [30, 620], "size": [180, 56] },
+
+    { "id": "app", "type": "frontend", "label": "App desktop", "sublabel": "pagina su porta 47330", "pos": [620, 330], "size": [180, 90] },
+    { "id": "chiave", "type": "messagebus", "label": "Chiave segreta", "sublabel": "nuova a ogni apertura", "pos": [620, 110], "size": [180, 70] }
+  ],
+  "connections": [
+    { "id": "rc-app", "from": "rc", "to": "app", "label": "prezzi 0,3 s, ordini, saldo", "labelSegment": 0 },
+    { "id": "rt-app", "from": "rt", "to": "app", "label": "prezzi tennis, ordini", "labelSegment": 0 },
+    { "id": "mike-app", "from": "mike", "to": "app", "label": "partite e posizioni", "labelSegment": 0 },
+    { "id": "omega-app", "from": "omega", "to": "app", "label": "posizioni e proposte", "labelSegment": 0 },
+    { "id": "safe-app", "from": "safe", "to": "app", "label": "posizioni e proposte", "labelSegment": 0 },
+    { "id": "sc-app", "from": "sc", "to": "app", "label": "quote ogni 2,5 s", "labelSegment": 0 },
+    { "id": "ponte-app", "from": "ponte", "to": "app", "label": "bot tennis armati", "labelSegment": 0 },
+    { "id": "scalper-app", "from": "scalper", "to": "app", "label": "sessioni ogni 3 s", "labelSegment": 0 },
+    { "id": "chiave-app", "from": "chiave", "to": "app", "label": "data allo schermo", "variant": "security", "labelAt": [710, 250] }
+  ],
+  "cards": [
+    { "dot": "violet", "title": "Come funziona", "items": ["filo dentro il computer, mai su internet", "solo la pagina dell'app (porta 47330) puo' collegarsi"] },
+    { "dot": "rose", "title": "Ordini dallo schermo", "items": ["vanno sul 47331 o 47332 con la chiave", "se il filo e' giu': coda nel database"] },
+    { "dot": "amber", "title": "Interruttori", "items": ["molti canali si accendono da un interruttore nel file .env", "nel .env attuale sono accesi"] }
+  ]
+}

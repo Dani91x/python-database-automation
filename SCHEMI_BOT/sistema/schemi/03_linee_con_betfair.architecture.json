@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Chi parla con Betfair, come e quanto",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "all",
+      "entries": {
+        "external": { "label": "Betfair" },
+        "backend": { "label": "Programma Python (servizio o bot)" },
+        "database": { "label": "Database", "visible": false },
+        "frontend": { "label": "App", "visible": false },
+        "messagebus": { "label": "Canale locale", "visible": false },
+        "security": { "label": "Banco di prova", "visible": false },
+        "cloud": { "label": "Guardiano", "visible": false }
+      }
+    },
+    "views": [
+      { "id": "continuo", "label": "Linea continua", "focus": ["stream", "rc", "rt", "sc", "scalper"], "note": "Quattro programmi ricevono prezzi (e ordini) in tempo reale. Lo scanner usa fino a 4 linee da 180 mercati." },
+      { "id": "domande", "label": "Domande puntuali", "focus": ["rest", "mike", "safe", "omega", "odds", "rc"], "note": "Mike, Safe e Omega non hanno linea continua: fanno domande a Betfair solo quando serve o se manca il feed." }
+    ]
+  },
+  "components": [
+    { "id": "stream", "type": "external", "label": "Betfair linea continua", "sublabel": "prezzi e ordini in diretta", "pos": [30, 250], "size": [180, 90] },
+
+    { "id": "rc", "type": "backend", "label": "Runner calcio", "sublabel": "linea mercati e ordini", "pos": [330, 60], "size": [190, 56] },
+    { "id": "sc", "type": "backend", "label": "Scanner", "sublabel": "fino a 4 linee da 180", "pos": [330, 140], "size": [190, 56] },
+    { "id": "rt", "type": "backend", "label": "Runner tennis", "sublabel": "una linea partite tennis", "pos": [330, 220], "size": [190, 56] },
+    { "id": "scalper", "type": "backend", "label": "Sessioni scalper", "sublabel": "una linea per partita", "pos": [330, 300], "size": [190, 56] },
+    { "id": "mike", "type": "backend", "label": "Mike", "sublabel": "nessuna linea continua", "pos": [330, 380], "size": [190, 56] },
+    { "id": "safe", "type": "backend", "label": "Bot Safe", "sublabel": "nessuna linea continua", "pos": [330, 460], "size": [190, 56] },
+    { "id": "omega", "type": "backend", "label": "Omega", "sublabel": "nessuna linea continua", "pos": [330, 540], "size": [190, 56] },
+    { "id": "odds", "type": "backend", "label": "Quote tennis", "sublabel": "giro breve ogni 30 min", "pos": [330, 620], "size": [190, 56] },
+
+    { "id": "rest", "type": "external", "label": "Betfair domande", "sublabel": "una domanda, una risposta", "pos": [860, 320], "size": [180, 90] }
+  ],
+  "connections": [
+    { "id": "s-rc", "from": "stream", "to": "rc", "variant": "emphasis" },
+    { "id": "s-sc", "from": "stream", "to": "sc", "variant": "emphasis" },
+    { "id": "s-rt", "from": "stream", "to": "rt", "variant": "emphasis" },
+    { "id": "s-scalper", "from": "stream", "to": "scalper", "variant": "emphasis" },
+
+    { "id": "rc-r", "from": "rc", "to": "rest", "label": "saldo 20 s, ordini 30 s", "labelSegment": 0 },
+    { "id": "sc-r", "from": "sc", "to": "rest", "label": "punteggi 2 s, elenco 5 min", "labelSegment": 0 },
+    { "id": "rt-r", "from": "rt", "to": "rest", "label": "sessione 8 min", "variant": "dashed", "labelSegment": 0 },
+    { "id": "scalper-r", "from": "scalper", "to": "rest", "label": "all'avvio e all'arresto", "variant": "dashed", "labelSegment": 0 },
+    { "id": "mike-r", "from": "mike", "to": "rest", "label": "ordini veri, se serve", "variant": "dashed", "labelSegment": 0 },
+    { "id": "safe-r", "from": "safe", "to": "rest", "label": "se serve o manca il feed", "variant": "dashed", "labelSegment": 0 },
+    { "id": "omega-r", "from": "omega", "to": "rest", "label": "elenco partite ogni giro", "labelSegment": 0 },
+    { "id": "odds-r", "from": "odds", "to": "rest", "label": "quote tennis del giorno", "variant": "dashed", "labelSegment": 0 }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Accesso", "items": ["ogni programma fa il SUO accesso col certificato .it", "nessuna sessione condivisa fra programmi"] },
+    { "dot": "amber", "title": "Linea continua", "items": ["4 programmi: runner calcio e tennis, scanner, sessioni scalper"] },
+    { "dot": "slate", "title": "Tratteggio", "items": ["linea tratteggiata = solo quando serve o di ripiego", "linea piena = a ritmo fisso"] }
+  ]
+}

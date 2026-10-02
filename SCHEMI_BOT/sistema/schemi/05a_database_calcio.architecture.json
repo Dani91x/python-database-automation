@@ -1,0 +1,329 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Il database come postino: il calcio (chiamate al minuto)",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "all",
+      "entries": {
+        "backend": {
+          "label": "Programma Python (chi fa la chiamata)"
+        },
+        "database": {
+          "label": "Tabelle del database Supabase"
+        },
+        "external": {
+          "label": "Betfair",
+          "visible": false
+        },
+        "frontend": {
+          "label": "App",
+          "visible": false
+        },
+        "messagebus": {
+          "label": "Canale locale",
+          "visible": false
+        },
+        "security": {
+          "label": "Banco di prova",
+          "visible": false
+        },
+        "cloud": {
+          "label": "Guardiano",
+          "visible": false
+        }
+      }
+    },
+    "views": [
+      {
+        "id": "runner",
+        "label": "Il runner calcio",
+        "focus": [
+          "rc",
+          "coda",
+          "altre",
+          "scan"
+        ],
+        "note": "480 delle 552 chiamate al minuto del runner sono riletture della coda ordini, delle regole di rischio e delle impostazioni."
+      },
+      {
+        "id": "bot",
+        "label": "Mike e Safe",
+        "focus": [
+          "mike",
+          "safe",
+          "tmike",
+          "tsafe",
+          "scan"
+        ],
+        "note": "Mike rilegge le sue tabelle a ogni giro di 1 s, Safe a ogni giro di 2 s: insieme 522 chiamate al minuto."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "scan",
+      "type": "database",
+      "label": "Righe dello scanner",
+      "sublabel": "quote e punteggi",
+      "pos": [
+        30,
+        80
+      ],
+      "size": [
+        180,
+        550
+      ]
+    },
+    {
+      "id": "rc",
+      "type": "backend",
+      "label": "Runner calcio",
+      "sublabel": "552/min in tutto",
+      "pos": [
+        420,
+        80
+      ],
+      "size": [
+        180,
+        70
+      ]
+    },
+    {
+      "id": "sc",
+      "type": "backend",
+      "label": "Scanner",
+      "sublabel": "86/min in tutto",
+      "pos": [
+        420,
+        200
+      ],
+      "size": [
+        180,
+        70
+      ]
+    },
+    {
+      "id": "mike",
+      "type": "backend",
+      "label": "Mike",
+      "sublabel": "279/min in tutto",
+      "pos": [
+        420,
+        320
+      ],
+      "size": [
+        180,
+        70
+      ]
+    },
+    {
+      "id": "safe",
+      "type": "backend",
+      "label": "Bot Safe",
+      "sublabel": "269/min in tutto",
+      "pos": [
+        420,
+        440
+      ],
+      "size": [
+        180,
+        70
+      ]
+    },
+    {
+      "id": "omega",
+      "type": "backend",
+      "label": "Omega",
+      "sublabel": "5/min in tutto",
+      "pos": [
+        420,
+        560
+      ],
+      "size": [
+        180,
+        70
+      ]
+    },
+    {
+      "id": "coda",
+      "type": "database",
+      "label": "Coda ordini e regole",
+      "sublabel": "piu' le impostazioni",
+      "pos": [
+        820,
+        30
+      ],
+      "size": [
+        190,
+        70
+      ]
+    },
+    {
+      "id": "altre",
+      "type": "database",
+      "label": "Partite seguite e conto",
+      "sublabel": "ordini, regolati, battito",
+      "pos": [
+        820,
+        140
+      ],
+      "size": [
+        190,
+        70
+      ]
+    },
+    {
+      "id": "tmike",
+      "type": "database",
+      "label": "Tabelle di Mike",
+      "sublabel": "operazioni, comandi",
+      "pos": [
+        820,
+        320
+      ],
+      "size": [
+        190,
+        70
+      ]
+    },
+    {
+      "id": "tsafe",
+      "type": "database",
+      "label": "Tabelle di Safe",
+      "sublabel": "operazioni, richieste",
+      "pos": [
+        820,
+        440
+      ],
+      "size": [
+        190,
+        70
+      ]
+    },
+    {
+      "id": "tomega",
+      "type": "database",
+      "label": "Tabelle di Omega",
+      "sublabel": "operazioni, missioni",
+      "pos": [
+        820,
+        560
+      ],
+      "size": [
+        190,
+        70
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "rc-coda",
+      "from": "rc",
+      "to": "coda",
+      "label": "480/min",
+      "width": 6,
+      "labelSegment": 0
+    },
+    {
+      "id": "rc-altre",
+      "from": "rc",
+      "to": "altre",
+      "label": "62/min",
+      "width": 2,
+      "labelSegment": 2
+    },
+    {
+      "id": "mike-t",
+      "from": "mike",
+      "to": "tmike",
+      "label": "265/min",
+      "width": 4.5
+    },
+    {
+      "id": "safe-t",
+      "from": "safe",
+      "to": "tsafe",
+      "label": "259/min",
+      "width": 4.5
+    },
+    {
+      "id": "omega-t",
+      "from": "omega",
+      "to": "tomega",
+      "label": "5/min",
+      "width": 1
+    },
+    {
+      "id": "sc-scan",
+      "from": "sc",
+      "to": "scan",
+      "label": "scrive 74/min",
+      "width": 2.5,
+      "labelAt": [
+        368,
+        223
+      ]
+    },
+    {
+      "id": "rc-scan",
+      "from": "rc",
+      "to": "scan",
+      "label": "legge 10/min",
+      "width": 1.2,
+      "labelAt": [
+        368,
+        103
+      ]
+    },
+    {
+      "id": "mike-scan",
+      "from": "mike",
+      "to": "scan",
+      "label": "legge 14/min",
+      "width": 1.2,
+      "labelAt": [
+        368,
+        343
+      ]
+    },
+    {
+      "id": "safe-scan",
+      "from": "safe",
+      "to": "scan",
+      "label": "legge 10/min",
+      "width": 1.2,
+      "labelAt": [
+        368,
+        463
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "Come si legge",
+      "items": [
+        "la freccia parte da chi fa la chiamata",
+        "spessore = quante chiamate al minuto"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Misura",
+      "items": [
+        "registri dell'app, 02/10 dalle 17:15:40 alle 17:16:40",
+        "una riga del registro = una chiamata"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Omega in quel minuto",
+      "items": [
+        "il bot era fermo (registro di avvio)",
+        "fermo, gira piu' piano: ogni 60 s"
+      ]
+    }
+  ]
+}

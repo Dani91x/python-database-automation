@@ -1,0 +1,331 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "La porta degli ordini: le strade verso Betfair (calcio)",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "all",
+      "entries": {
+        "frontend": {
+          "label": "App desktop (ordini a mano)"
+        },
+        "backend": {
+          "label": "Programma Python (bot o esecutore)"
+        },
+        "messagebus": {
+          "label": "Canale locale (filo diretto)"
+        },
+        "database": {
+          "label": "Coda nel database"
+        },
+        "external": {
+          "label": "Betfair"
+        },
+        "security": {
+          "label": "Banco di prova",
+          "visible": false
+        },
+        "cloud": {
+          "label": "Guardiano",
+          "visible": false
+        }
+      }
+    },
+    "views": [
+      {
+        "id": "safe-omega",
+        "label": "Safe e Omega",
+        "focus": [
+          "so",
+          "canale",
+          "coda",
+          "diretta",
+          "motore",
+          "bf"
+        ],
+        "note": "Prima il filo 47331; se cade, la coda nel database; se anche questa fallisce e il bot e' vero (live), la domanda diretta."
+      },
+      {
+        "id": "mike",
+        "label": "Mike",
+        "focus": [
+          "mikep",
+          "mikel",
+          "canale",
+          "diretta",
+          "motore",
+          "bf"
+        ],
+        "note": "Mike in prova manda gli ordini al runner sul filo 47331. Mike vero (live) li manda sempre diretti a Betfair."
+      },
+      {
+        "id": "mano",
+        "label": "Ordini a mano",
+        "focus": [
+          "app",
+          "canale",
+          "coda",
+          "motore",
+          "manuale",
+          "bf"
+        ],
+        "note": "Dallo schermo: filo 47331 con la chiave, oppure coda nel database se il filo e' giu'."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "app",
+      "type": "frontend",
+      "label": "App desktop",
+      "sublabel": "ordini a mano",
+      "pos": [
+        30,
+        30
+      ],
+      "size": [
+        180,
+        64
+      ]
+    },
+    {
+      "id": "so",
+      "type": "backend",
+      "label": "Safe e Omega",
+      "sublabel": "bot calcio",
+      "pos": [
+        30,
+        160
+      ],
+      "size": [
+        180,
+        64
+      ]
+    },
+    {
+      "id": "mikep",
+      "type": "backend",
+      "label": "Mike in prova",
+      "sublabel": "ordini simulati",
+      "pos": [
+        30,
+        300
+      ],
+      "size": [
+        180,
+        64
+      ]
+    },
+    {
+      "id": "mikel",
+      "type": "backend",
+      "label": "Mike vero",
+      "sublabel": "soldi veri",
+      "pos": [
+        30,
+        520
+      ],
+      "size": [
+        180,
+        64
+      ]
+    },
+    {
+      "id": "canale",
+      "type": "messagebus",
+      "label": "Filo ordini 47331",
+      "sublabel": "prima scelta",
+      "pos": [
+        360,
+        160
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "coda",
+      "type": "database",
+      "label": "Coda nel database",
+      "sublabel": "se il filo e' giu'",
+      "pos": [
+        360,
+        340
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "diretta",
+      "type": "backend",
+      "label": "Domanda diretta",
+      "sublabel": "dentro il bot stesso",
+      "pos": [
+        360,
+        520
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "motore",
+      "type": "backend",
+      "label": "Runner calcio",
+      "sublabel": "controlla e piazza",
+      "pos": [
+        690,
+        250
+      ],
+      "size": [
+        190,
+        80
+      ]
+    },
+    {
+      "id": "manuale",
+      "type": "backend",
+      "label": "Ordini a mano vecchi",
+      "sublabel": "NON acceso dall'app",
+      "pos": [
+        690,
+        620
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "bf",
+      "type": "external",
+      "label": "Betfair",
+      "sublabel": "ordini veri",
+      "pos": [
+        1000,
+        250
+      ],
+      "size": [
+        160,
+        300
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "app-canale",
+      "from": "app",
+      "to": "canale",
+      "label": "con la chiave"
+    },
+    {
+      "id": "so-canale",
+      "from": "so",
+      "to": "canale",
+      "label": "prima scelta",
+      "variant": "emphasis",
+      "labelAt": [
+        246,
+        180
+      ]
+    },
+    {
+      "id": "mikep-canale",
+      "from": "mikep",
+      "to": "canale",
+      "label": "solo in prova"
+    },
+    {
+      "id": "canale-coda",
+      "from": "canale",
+      "to": "coda",
+      "label": "filo giu'",
+      "variant": "dashed",
+      "labelAt": [
+        455,
+        282
+      ]
+    },
+    {
+      "id": "coda-diretta",
+      "from": "coda",
+      "to": "diretta",
+      "label": "coda fallita, solo live",
+      "variant": "dashed",
+      "labelAt": [
+        455,
+        462
+      ]
+    },
+    {
+      "id": "mikel-diretta",
+      "from": "mikel",
+      "to": "diretta",
+      "label": "sempre",
+      "variant": "emphasis"
+    },
+    {
+      "id": "canale-motore",
+      "from": "canale",
+      "to": "motore",
+      "label": "subito",
+      "variant": "emphasis"
+    },
+    {
+      "id": "coda-motore",
+      "from": "coda",
+      "to": "motore",
+      "label": "riletta ogni 1 s"
+    },
+    {
+      "id": "motore-bf",
+      "from": "motore",
+      "to": "bf",
+      "label": "vero o simulato",
+      "variant": "emphasis"
+    },
+    {
+      "id": "diretta-bf",
+      "from": "diretta",
+      "to": "bf",
+      "label": "soldi veri"
+    },
+    {
+      "id": "manuale-bf",
+      "from": "manuale",
+      "to": "bf",
+      "label": "solo se lanciato a mano",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Minimi .it",
+      "items": [
+        "ogni strada controlla il minimo di 1,00 EUR per lato",
+        "sotto 1,00: riduzione fino a 0,50 o rifiuto; la scorciatoia sull'altra selezione oggi e' spenta per tutti"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Prova (paper)",
+      "items": [
+        "la simulazione la fa sempre il runner calcio",
+        "senza runner un ordine in prova viene rifiutato"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Tennis e scalper",
+      "items": [
+        "bot tennis e sessioni scalper piazzano da soli, dentro il loro processo"
+      ]
+    }
+  ]
+}

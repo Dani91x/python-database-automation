@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "I programmi accesi dall'app e i loro guardiani",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "all",
+      "entries": {
+        "frontend": { "label": "App desktop (lo schermo)" },
+        "cloud": { "label": "Guardiano (watchdog)" },
+        "backend": { "label": "Programma Python (servizio o bot)" },
+        "database": { "label": "Database Supabase (il postino)" },
+        "external": { "label": "Betfair", "visible": false },
+        "messagebus": { "label": "Canale locale", "visible": false },
+        "security": { "label": "Banco di prova", "visible": false }
+      }
+    },
+    "views": [
+      { "id": "avvio", "label": "All'apertura dell'app", "focus": ["app", "guard", "rc", "rt", "sc", "mike", "safe", "omega", "scalper", "ponte"], "note": "L'app accende 8 programmi, ognuno con il suo guardiano, e il job delle quote tennis ogni 30 minuti." },
+      { "id": "crash", "label": "Se un programma cade", "focus": ["guard", "avvisi"], "note": "Il guardiano scrive un avviso grave, manda Telegram e lo riaccende dopo 10, 20, 40 s... al massimo 5 volte in un'ora." }
+    ]
+  },
+  "components": [
+    { "id": "app", "type": "frontend", "label": "App desktop", "sublabel": "accende e spegne tutto", "pos": [30, 330], "size": [170, 80] },
+    { "id": "guard", "type": "cloud", "label": "Guardiani", "sublabel": "uno per programma", "pos": [300, 330], "size": [170, 80] },
+    { "id": "avvisi", "type": "database", "label": "Avvisi nel database", "sublabel": "e messaggio Telegram", "pos": [300, 110], "size": [170, 70] },
+    { "id": "odds", "type": "backend", "label": "Quote tennis", "sublabel": "ogni 30 minuti, poi esce", "pos": [300, 580], "size": [170, 70] },
+
+    { "id": "rc", "type": "backend", "label": "Runner calcio", "sublabel": "linea e ordini calcio", "pos": [600, 60], "size": [185, 56] },
+    { "id": "rt", "type": "backend", "label": "Runner tennis", "sublabel": "linea tennis e 4 bot", "pos": [600, 140], "size": [185, 56] },
+    { "id": "sc", "type": "backend", "label": "Scanner", "sublabel": "quote per tutti i bot", "pos": [600, 220], "size": [185, 56] },
+    { "id": "mike", "type": "backend", "label": "Mike", "sublabel": "bot Under e Over", "pos": [600, 300], "size": [185, 56] },
+    { "id": "safe", "type": "backend", "label": "Bot Safe", "sublabel": "bot dei segnali Safe", "pos": [600, 380], "size": [185, 56] },
+    { "id": "omega", "type": "backend", "label": "Omega", "sublabel": "bot risultato esatto", "pos": [600, 460], "size": [185, 56] },
+    { "id": "scalper", "type": "backend", "label": "Scalper calcio", "sublabel": "capo delle sessioni", "pos": [600, 540], "size": [185, 56] },
+    { "id": "ponte", "type": "backend", "label": "Ponte tennis", "sublabel": "arma i bot tennis", "pos": [600, 620], "size": [185, 56] }
+  ],
+  "connections": [
+    { "id": "app-guard", "from": "app", "to": "guard", "label": "accende 8", "variant": "emphasis" },
+    { "id": "app-odds", "from": "app", "to": "odds", "label": "ogni 30 min", "variant": "dashed", "fromSide": "bottom", "toSide": "left" },
+    { "id": "guard-avvisi", "from": "guard", "to": "avvisi", "label": "se cade: avviso", "variant": "security" },
+    { "id": "g-rc", "from": "guard", "to": "rc" },
+    { "id": "g-rt", "from": "guard", "to": "rt" },
+    { "id": "g-sc", "from": "guard", "to": "sc" },
+    { "id": "g-mike", "from": "guard", "to": "mike" },
+    { "id": "g-safe", "from": "guard", "to": "safe" },
+    { "id": "g-omega", "from": "guard", "to": "omega" },
+    { "id": "g-scalper", "from": "guard", "to": "scalper" },
+    { "id": "g-ponte", "from": "guard", "to": "ponte" }
+  ],
+  "cards": [
+    { "dot": "emerald", "title": "Uscita pulita", "items": ["il programma si ferma da solo", "il guardiano NON lo riaccende"] },
+    { "dot": "rose", "title": "Caduta", "items": ["avviso grave e Telegram", "riparte dopo 10 s, poi 20, 40... fino a 300 s", "oltre 5 cadute in un'ora: serve l'utente"] },
+    { "dot": "slate", "title": "Chiusura dell'app", "items": ["file ARRESTO: ognuno chiude da solo", "chi non esce in tempo viene spento a forza"] }
+  ]
+}

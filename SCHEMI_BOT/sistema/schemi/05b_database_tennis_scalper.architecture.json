@@ -1,0 +1,268 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Il database come postino: tennis e scalper (chiamate al minuto)",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "all",
+      "entries": {
+        "backend": {
+          "label": "Programma Python (chi fa la chiamata)"
+        },
+        "database": {
+          "label": "Tabelle del database Supabase"
+        },
+        "external": {
+          "label": "Betfair",
+          "visible": false
+        },
+        "frontend": {
+          "label": "App",
+          "visible": false
+        },
+        "messagebus": {
+          "label": "Canale locale",
+          "visible": false
+        },
+        "security": {
+          "label": "Banco di prova",
+          "visible": false
+        },
+        "cloud": {
+          "label": "Guardiano",
+          "visible": false
+        }
+      }
+    },
+    "views": [
+      {
+        "id": "tennis",
+        "label": "Il tennis",
+        "focus": [
+          "rt",
+          "ponte",
+          "follow",
+          "tbot"
+        ],
+        "note": "Senza partite tennis seguite il runner tennis rilegge la lista ogni 2 s: 28 chiamate al minuto a vuoto."
+      },
+      {
+        "id": "scalper",
+        "label": "Lo scalper",
+        "focus": [
+          "scalper",
+          "tscalper",
+          "freno"
+        ],
+        "note": "Il capo dello scalper rilegge comandi e freno ogni 3 s anche quando nessuna sessione e' accesa."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "rt",
+      "type": "backend",
+      "label": "Runner tennis",
+      "sublabel": "28/min in tutto",
+      "pos": [
+        30,
+        60
+      ],
+      "size": [
+        180,
+        70
+      ]
+    },
+    {
+      "id": "ponte",
+      "type": "backend",
+      "label": "Ponte tennis",
+      "sublabel": "36/min in tutto",
+      "pos": [
+        30,
+        200
+      ],
+      "size": [
+        180,
+        70
+      ]
+    },
+    {
+      "id": "scalper",
+      "type": "backend",
+      "label": "Scalper calcio",
+      "sublabel": "54/min in tutto",
+      "pos": [
+        30,
+        360
+      ],
+      "size": [
+        180,
+        70
+      ]
+    },
+    {
+      "id": "odds",
+      "type": "backend",
+      "label": "Quote tennis",
+      "sublabel": "giro breve ogni 30 min",
+      "pos": [
+        30,
+        520
+      ],
+      "size": [
+        180,
+        70
+      ]
+    },
+    {
+      "id": "follow",
+      "type": "database",
+      "label": "Partite tennis seguite",
+      "sublabel": "lista da seguire",
+      "pos": [
+        470,
+        60
+      ],
+      "size": [
+        200,
+        70
+      ]
+    },
+    {
+      "id": "tbot",
+      "type": "database",
+      "label": "Comandi bot tennis",
+      "sublabel": "armamento e battito",
+      "pos": [
+        470,
+        200
+      ],
+      "size": [
+        200,
+        70
+      ]
+    },
+    {
+      "id": "tscalper",
+      "type": "database",
+      "label": "Comandi scalper",
+      "sublabel": "interruttore e sessioni",
+      "pos": [
+        470,
+        330
+      ],
+      "size": [
+        200,
+        70
+      ]
+    },
+    {
+      "id": "freno",
+      "type": "database",
+      "label": "Impostazioni ordini",
+      "sublabel": "modo e freno di sicurezza",
+      "pos": [
+        470,
+        440
+      ],
+      "size": [
+        200,
+        70
+      ]
+    },
+    {
+      "id": "markets",
+      "type": "database",
+      "label": "Partite tennis del giorno",
+      "sublabel": "quote per la lista",
+      "pos": [
+        470,
+        560
+      ],
+      "size": [
+        200,
+        70
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "rt-follow",
+      "from": "rt",
+      "to": "follow",
+      "label": "28/min",
+      "width": 2
+    },
+    {
+      "id": "ponte-follow",
+      "from": "ponte",
+      "to": "follow",
+      "label": "3/min",
+      "width": 1,
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelAt": [
+        400,
+        170
+      ]
+    },
+    {
+      "id": "ponte-tbot",
+      "from": "ponte",
+      "to": "tbot",
+      "label": "33/min",
+      "width": 2
+    },
+    {
+      "id": "scalper-t",
+      "from": "scalper",
+      "to": "tscalper",
+      "label": "36/min",
+      "width": 2.2,
+      "labelSegment": 2
+    },
+    {
+      "id": "scalper-freno",
+      "from": "scalper",
+      "to": "freno",
+      "label": "18/min",
+      "width": 1.5,
+      "labelSegment": 2
+    },
+    {
+      "id": "odds-markets",
+      "from": "odds",
+      "to": "markets",
+      "label": "2 per giro",
+      "width": 1,
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "Come si legge",
+      "items": [
+        "la freccia parte da chi fa la chiamata",
+        "spessore = quante chiamate al minuto"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Misura",
+      "items": [
+        "registri dell'app, 02/10 dalle 17:15:40 alle 17:16:40",
+        "nessuna partita tennis seguita in quel minuto"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Impostazioni ordini",
+      "items": [
+        "le legge anche il runner calcio: 123 volte al minuto"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,314 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Lo scanner: il feed unico di quote e punteggi",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "all",
+      "entries": {
+        "external": {
+          "label": "Betfair"
+        },
+        "backend": {
+          "label": "Programma Python (servizio o bot)"
+        },
+        "database": {
+          "label": "Tabelle del database Supabase"
+        },
+        "messagebus": {
+          "label": "Canale locale (filo diretto)"
+        },
+        "frontend": {
+          "label": "App",
+          "visible": false
+        },
+        "security": {
+          "label": "Banco di prova",
+          "visible": false
+        },
+        "cloud": {
+          "label": "Guardiano",
+          "visible": false
+        }
+      }
+    },
+    "views": [
+      {
+        "id": "entrata",
+        "label": "Cosa entra nello scanner",
+        "focus": [
+          "stream",
+          "rest",
+          "sc"
+        ],
+        "note": "Quote dalla linea continua (fino a 4 linee da 180 mercati); punteggi ogni 2 s; elenco partite ogni 5 minuti."
+      },
+      {
+        "id": "uscita",
+        "label": "Chi legge lo scanner",
+        "focus": [
+          "sc",
+          "canale",
+          "scan",
+          "mike",
+          "safe",
+          "omega",
+          "altri"
+        ],
+        "note": "Mike, Safe e Omega leggono dal filo 47336; gli altri programmi leggono le stesse righe dal database."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "stream",
+      "type": "external",
+      "label": "Betfair linea continua",
+      "sublabel": "quote in diretta",
+      "pos": [
+        30,
+        120
+      ],
+      "size": [
+        180,
+        80
+      ]
+    },
+    {
+      "id": "rest",
+      "type": "external",
+      "label": "Betfair domande",
+      "sublabel": "punteggi ed elenchi",
+      "pos": [
+        30,
+        420
+      ],
+      "size": [
+        180,
+        80
+      ]
+    },
+    {
+      "id": "sc",
+      "type": "backend",
+      "label": "Scanner",
+      "sublabel": "40 partite seguite alle 17:16",
+      "pos": [
+        300,
+        245
+      ],
+      "size": [
+        190,
+        80
+      ]
+    },
+    {
+      "id": "canale",
+      "type": "messagebus",
+      "label": "Filo 47336",
+      "sublabel": "righe in diretta",
+      "pos": [
+        700,
+        90
+      ],
+      "size": [
+        180,
+        70
+      ]
+    },
+    {
+      "id": "scan",
+      "type": "database",
+      "label": "Righe dello scanner",
+      "sublabel": "una riga per partita",
+      "pos": [
+        700,
+        250
+      ],
+      "size": [
+        180,
+        70
+      ]
+    },
+    {
+      "id": "status",
+      "type": "database",
+      "label": "Stato dello scanner",
+      "sublabel": "salute del feed",
+      "pos": [
+        700,
+        380
+      ],
+      "size": [
+        180,
+        70
+      ]
+    },
+    {
+      "id": "espo",
+      "type": "database",
+      "label": "Posizioni dei bot",
+      "sublabel": "dove ci sono soldi",
+      "pos": [
+        700,
+        510
+      ],
+      "size": [
+        180,
+        70
+      ]
+    },
+    {
+      "id": "mike",
+      "type": "backend",
+      "label": "Mike",
+      "sublabel": "quote dal filo",
+      "pos": [
+        990,
+        10
+      ],
+      "size": [
+        170,
+        56
+      ]
+    },
+    {
+      "id": "safe",
+      "type": "backend",
+      "label": "Bot Safe",
+      "sublabel": "quote dal filo",
+      "pos": [
+        990,
+        97
+      ],
+      "size": [
+        170,
+        56
+      ]
+    },
+    {
+      "id": "omega",
+      "type": "backend",
+      "label": "Omega",
+      "sublabel": "quote dal filo",
+      "pos": [
+        990,
+        184
+      ],
+      "size": [
+        170,
+        56
+      ]
+    },
+    {
+      "id": "altri",
+      "type": "backend",
+      "label": "Altri lettori",
+      "sublabel": "runner, scalper, ponte",
+      "pos": [
+        990,
+        280
+      ],
+      "size": [
+        170,
+        70
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "stream-sc",
+      "from": "stream",
+      "to": "sc",
+      "label": "quote ogni 1 s",
+      "variant": "emphasis"
+    },
+    {
+      "id": "rest-sc",
+      "from": "rest",
+      "to": "sc",
+      "label": "punteggi ogni 2 s"
+    },
+    {
+      "id": "sc-canale",
+      "from": "sc",
+      "to": "canale",
+      "label": "ogni 2,5 s",
+      "variant": "emphasis",
+      "labelSegment": 2
+    },
+    {
+      "id": "sc-scan",
+      "from": "sc",
+      "to": "scan",
+      "label": "68/min", "labelAt": [648, 304],
+      "width": 2.5
+    },
+    {
+      "id": "sc-status",
+      "from": "sc",
+      "to": "status",
+      "label": "ogni 10 s",
+      "labelSegment": 2
+    },
+    {
+      "id": "sc-espo",
+      "from": "sc",
+      "to": "espo",
+      "label": "legge ogni 10 s",
+      "variant": "dashed",
+      "labelSegment": 2
+    },
+    {
+      "id": "canale-mike",
+      "from": "canale",
+      "to": "mike",
+      "variant": "emphasis"
+    },
+    {
+      "id": "canale-safe",
+      "from": "canale",
+      "to": "safe",
+      "variant": "emphasis"
+    },
+    {
+      "id": "canale-omega",
+      "from": "canale",
+      "to": "omega",
+      "variant": "emphasis"
+    },
+    {
+      "id": "scan-altri",
+      "from": "scan",
+      "to": "altri",
+      "label": "dal database"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Ripiego",
+      "items": [
+        "mercato senza quote da 20 s: lo scanner chiede a Betfair",
+        "ogni 10 s (partita calda) fino a ogni 60 s"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Posizioni dei bot",
+      "items": [
+        "lo scanner segue per primi i mercati dove i bot hanno soldi",
+        "le legge con una sola domanda al database ogni 10 s"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Nel minuto misurato",
+      "items": [
+        "1 passaggio al ripiego e 1 rientro sulla linea continua",
+        "in 5 minuti: 151 avvisi di quote assenti"
+      ]
+    }
+  ]
+}
