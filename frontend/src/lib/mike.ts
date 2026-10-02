@@ -1389,6 +1389,10 @@ export const MIKE_ACTIVITY_KINDS = [
     // esposizione: niente «chiuso», proposta con l'ordine esatto) e l'ordine sotto
     // il minimo Betfair .it che non parte (Betfair lo rifiuterebbe per taglia).
     'chiusura_parziale', 'ordine_sotto_minimo',
+    // 02/10 (punto 25): riga sparita dal feed ma mercato aperto per Betfair: Mike
+    // tiene gli ordini; (R1) all'arresto: posizione abbinata lasciata a mercato,
+    // ordini oltre il tetto di 10 s non annullati.
+    'riga_assente_mercato_aperto', 'posizione_lasciata_per_arresto', 'arresto_ordini_non_annullati',
     // 30/09 (ordine dell'utente: «IL PNL DEVE ESSERE REALE»): in live il P&L
     // della partita si regola dal CONTO Betfair (ordini dell'utente compresi).
     // Attesa del regolato, differenza col calcolo del bot (vince Betfair),
@@ -1445,6 +1449,10 @@ export const MIKE_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
     residuo_non_piazzabile: { label: 'RESTO NON PIAZZABILE', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/40' },
     chiusura_parziale: { label: 'CHIUSURA PARZIALE: RESIDUO SCOPERTO', cls: 'bg-red-500/15 text-red-300 border-red-500/40', critical: true },
     ordine_sotto_minimo: { label: 'ORDINE SOTTO IL MINIMO: NON INVIATO', cls: 'bg-red-500/15 text-red-300 border-red-500/40', critical: true },
+    // 02/10 — punto 25 e arresto (R1)
+    riga_assente_mercato_aperto: { label: 'RIGA ASSENTE, MERCATO APERTO: ORDINI TENUTI', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
+    posizione_lasciata_per_arresto: { label: 'ARRESTO: POSIZIONE LASCIATA A MERCATO', cls: 'bg-red-500/15 text-red-300 border-red-500/40', critical: true },
+    arresto_ordini_non_annullati: { label: 'ARRESTO: ORDINI NON ANNULLATI', cls: 'bg-red-500/15 text-red-300 border-red-500/40', critical: true },
     // 30/09 — P&L del conto Betfair al regolamento
     attesa_regolato_betfair: { label: 'ATTESA DEL REGOLATO BETFAIR', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
     pnl_differenza_betfair: { label: 'P&L: IL CALCOLO DEL BOT DIFFERISCE DA BETFAIR', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40', critical: true },
@@ -1722,6 +1730,15 @@ export function mikeActivityLine(kind: string, payload: Record<string, unknown> 
         case 'ordine_sotto_minimo':
             // 01/10: chiavi del servizio (engine._guardia_minimo_listino): testo, ordini, state
             return `${String(p.testo ?? 'ordine sotto il minimo Betfair: non inviato')} · fase ${stateLabel(p.state)}`;
+        case 'riga_assente_mercato_aperto':
+            // 02/10 (punto 25): chiavi del servizio: nota, assente_da_s, ordini_vivi
+            return `${String(p.nota ?? 'riga assente, mercato aperto: tengo')} · riga assente da ${String(p.assente_da_s ?? '?')} s · ordini vivi tenuti: ${Array.isArray(p.ordini_vivi) ? p.ordini_vivi.length : 0}`;
+        case 'posizione_lasciata_per_arresto':
+            // 02/10 (R1): chiavi del servizio: motivo_arresto, esposizioni, stato, nota
+            return `${String(p.nota ?? 'posizione lasciata a mercato per arresto')} · motivo: ${String(p.motivo_arresto ?? '?')} · fase ${stateLabel(p.stato)}`;
+        case 'arresto_ordini_non_annullati':
+            // 02/10 (R1): chiavi del servizio: motivo_arresto, tetto_s, ordini
+            return `arresto (${String(p.motivo_arresto ?? '?')}): oltre il tetto di ${String(p.tetto_s ?? '?')} s, ${Array.isArray(p.ordini) ? p.ordini.length : 0} ordini NON annullati: controllali su Betfair`;
         case 'config_warn':
             return `${String(p.message ?? '')} (finestra ${String(p.entry_hours_before_ko ?? '?')} h · scanner ${String(p.scanner_pre_ko_hours ?? '?')} h)`;
         case 'schema_warn':
