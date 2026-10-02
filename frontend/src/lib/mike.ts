@@ -616,6 +616,9 @@ export function mergeMikeParams(raw: unknown): MikeParams {
         const v = r[f.key];
         if (v === undefined || v === null) continue;
         if (f.kind === 'number') {
+            // 02/10 (reperto 2): "" e' un campo SVUOTATO, non 0: resta il default
+            // (prima Number('') = 0 e il clamp lo portava al MINIMO del campo)
+            if (typeof v === 'string' && v.trim() === '') continue;
             const n = typeof v === 'number' ? v : Number(v);
             if (Number.isFinite(n)) out[f.key] = Math.min(f.max, Math.max(f.min, n));
         } else if (f.kind === 'bool') {
@@ -626,6 +629,20 @@ export function mergeMikeParams(raw: unknown): MikeParams {
         } else if (typeof v === 'string') {
             out[f.key] = v.trim();
         }
+    }
+    return out;
+}
+
+/**
+ * 02/10 (reperto 2) - il payload che il foglio parametri salva: `mergeMikeParams`
+ * dei valori, SENZA le chiavi dei campi numerici svuotati. `mike_update_params`
+ * sostituisce la colonna `params`, quindi la chiave resta ASSENTE e il servizio
+ * usa il suo valore di serie (`Betfair/mike/config.py` `merge_params`: DEFAULTS).
+ */
+export function parametriMikeDaSalvare(v: Record<string, unknown>): MikeParams {
+    const out = mergeMikeParams(v);
+    for (const f of MIKE_PARAM_FIELDS) {
+        if (f.kind === 'number' && typeof v[f.key] === 'string' && String(v[f.key]).trim() === '') delete out[f.key];
     }
     return out;
 }

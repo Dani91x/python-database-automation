@@ -11,7 +11,7 @@
 import { useMemo } from 'react';
 import { ParamsSheetBase, type ParamGroup } from '@/components/trading/ParamsSheetBase';
 import {
-    MIKE_PARAM_FIELDS, MIKE_PARAM_GROUP_LABEL, MIKE_PARAM_DEFAULTS, mergeMikeParams,
+    MIKE_PARAM_FIELDS, MIKE_PARAM_GROUP_LABEL, MIKE_PARAM_DEFAULTS, parametriMikeDaSalvare,
     type MikeParamGroup, type MikeParams,
 } from '@/lib/mike';
 
@@ -71,7 +71,8 @@ export function MikeParamsSheet({ params, busy, onSave }: MikeParamsSheetProps) 
             busy={busy}
             triggerTestId="mike-params-trigger"
             riscontroSalvataggio
-            onSave={(v) => onSave(mergeMikeParams(v))}
+            // 02/10 (reperto 2): un campo numerico svuotato NON si salva (chiave assente)
+            onSave={(v) => onSave(parametriMikeDaSalvare(v))}
             onReset={() => ({ ...MIKE_PARAM_DEFAULTS })}
             footer="La modalità (PAPER/LIVE) non è un parametro: si cambia solo dal toggle in alto, con conferma."
         />
