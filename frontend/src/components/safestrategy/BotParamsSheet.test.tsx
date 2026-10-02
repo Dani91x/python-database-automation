@@ -711,8 +711,7 @@ describe('BotParamsSheet - 35 campo numerico svuotato: chiave assente, mai ""', 
         const { user, onSave } = await openSheet(vi.fn(), RAW_PIENO);
         const inputs = Array.from(screen.getByTestId('params-sheet').querySelectorAll('input[type="number"]'));
         expect(inputs.length).toBe(64);
-        // prima un valore e poi il vuoto: un campo che si mostra gia' vuoto
-        // (es. `exits.base_control_exit_max`, che `mergeExits` non legge)
+        // prima un valore e poi il vuoto: un campo che si mostrasse gia' vuoto
         // altrimenti non riceverebbe nessun evento
         for (const i of inputs) {
             fireEvent.change(i, { target: { value: '1' } });
@@ -727,5 +726,57 @@ describe('BotParamsSheet - 35 campo numerico svuotato: chiave assente, mai ""', 
         expect(payload.unknown_key_from_service).toEqual({ keep: 'me' });
         expect(payload.variants).toEqual(['base', 'esatto', 'punta', 'tennis']);
         expect((payload.exits as Record<string, unknown>).enabled).toBe(true);
+    });
+});
+
+// ============================================================================
+// FRONTEND MINORI, reperto 1 (02/10) - `exits.base_control_exit` (uscita BASE
+// "il controllo passa alla sfavorita") e `exits.base_control_exit_max` (la sua
+// soglia) non erano in `mergeExits`: il foglio li mostrava SEMPRE spento e
+// vuoto, qualunque cosa ci fosse nel DB (il servizio li legge: exits.py
+// DEFAULT_EXIT_PARAMS False / -0,20). Ora si leggono dalla riga.
+// FALSIFICAZIONE: togliendo le due chiavi da `mergeExits` il foglio torna a
+// mostrare spento/vuoto con la riga accesa -> rosso.
+// ============================================================================
+describe('BotParamsSheet - reperto 1: uscita BASE "controllo alla sfavorita" letta dal DB', () => {
+    const INTERRUTTORE = /BASE: esci se il controllo passa alla sfavorita/;
+    const SOGLIA = 'BASE · esci se la favorita subisce oltre';
+
+    it('riga con l\'uscita ACCESA e soglia -0,35: il foglio la mostra accesa e -0.35, e salvando senza toccare resta cosi\'', async () => {
+        const raw = { ...RAW, exits: { ...RAW.exits, base_control_exit: true, base_control_exit_max: -0.35 } };
+        const { user, onSave } = await openSheet(vi.fn(), raw);
+        expect(screen.getByRole('checkbox', { name: INTERRUTTORE })).toBeChecked();
+        expect((screen.getByLabelText(SOGLIA) as HTMLInputElement).value).toBe('-0.35');
+        await user.click(screen.getByTestId('params-save'));
+        await waitFor(() => expect(onSave).toHaveBeenCalled());
+        const exits = (onSave.mock.calls[0][0] as Record<string, unknown>).exits as Record<string, unknown>;
+        expect(exits.base_control_exit).toBe(true);
+        expect(exits.base_control_exit_max).toBe(-0.35);
+    });
+
+    it('riga senza le due chiavi: si mostrano i valori di serie del servizio (spenta, -0.2)', async () => {
+        await openSheet(vi.fn(), RAW);
+        expect(screen.getByRole('checkbox', { name: INTERRUTTORE })).not.toBeChecked();
+        expect((screen.getByLabelText(SOGLIA) as HTMLInputElement).value).toBe('-0.2');
+    });
+
+    it('spegnere dal foglio scrive false; svuotare la soglia toglie la chiave (regola del punto 35)', async () => {
+        const raw = { ...RAW, exits: { ...RAW.exits, base_control_exit: true, base_control_exit_max: -0.35 } };
+        const { user, onSave } = await openSheet(vi.fn(), raw);
+        await user.click(screen.getByRole('checkbox', { name: INTERRUTTORE }));
+        fireEvent.change(screen.getByLabelText(SOGLIA), { target: { value: '' } });
+        await user.click(screen.getByTestId('params-save'));
+        await waitFor(() => expect(onSave).toHaveBeenCalled());
+        const exits = (onSave.mock.calls[0][0] as Record<string, unknown>).exits as Record<string, unknown>;
+        expect(exits.base_control_exit).toBe(false);
+        expect('base_control_exit_max' in exits).toBe(false);
+    });
+
+    it('mergeExits: valori della riga, valori di serie se mancano o malformati', () => {
+        expect(mergeExits({ base_control_exit: true, base_control_exit_max: -0.5 }))
+            .toMatchObject({ base_control_exit: true, base_control_exit_max: -0.5 });
+        expect(mergeExits({})).toMatchObject({ base_control_exit: false, base_control_exit_max: -0.2 });
+        expect(mergeExits({ base_control_exit: 'boh', base_control_exit_max: 'x' }))
+            .toMatchObject({ base_control_exit: false, base_control_exit_max: -0.2 });
     });
 });

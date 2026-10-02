@@ -78,6 +78,11 @@ export interface ExitsParams {
     model_take_profit_frac: number;
     /** modello: cash out "gratis" sotto questa P(perdita) (0-1) */
     model_free_cashout_p_lose: number;
+    // 02/10 (reperto 1): uscita BASE "il controllo passa alla sfavorita" e la
+    // sua soglia. Prima non si leggevano: il foglio le mostrava spente/vuote
+    // qualunque cosa ci fosse nel DB (exits.py DEFAULT_EXIT_PARAMS).
+    base_control_exit: boolean;
+    base_control_exit_max: number;
 }
 
 export const EXITS_DEFAULTS: ExitsParams = {
@@ -101,6 +106,8 @@ export const EXITS_DEFAULTS: ExitsParams = {
     model_exit_p_lose: 0.10,
     model_take_profit_frac: 0.8,
     model_free_cashout_p_lose: 0.005,
+    base_control_exit: false,          // = exits.DEFAULT_EXIT_PARAMS del servizio
+    base_control_exit_max: -0.20,
 };
 
 /** merge DIFENSIVO di params.exits: valori mancanti/malformati → default. */
@@ -129,6 +136,8 @@ export function mergeExits(raw: unknown): ExitsParams {
         model_exit_p_lose: n(r.model_exit_p_lose, EXITS_DEFAULTS.model_exit_p_lose),
         model_take_profit_frac: n(r.model_take_profit_frac, EXITS_DEFAULTS.model_take_profit_frac),
         model_free_cashout_p_lose: n(r.model_free_cashout_p_lose, EXITS_DEFAULTS.model_free_cashout_p_lose),
+        base_control_exit: b(r.base_control_exit, EXITS_DEFAULTS.base_control_exit),
+        base_control_exit_max: n(r.base_control_exit_max, EXITS_DEFAULTS.base_control_exit_max),
     };
 }
 
