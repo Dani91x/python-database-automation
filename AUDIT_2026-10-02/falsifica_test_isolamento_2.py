@@ -32,6 +32,7 @@ OUT = AUDIT / "falsifica_test_isolamento_2_out.txt"
 
 CONFTEST = RADICE / "Betfair/conftest.py"
 MIKE = RADICE / "Betfair/mike/tests/test_mike_legge_canale_2026_09_23.py"
+CONFTEST_SAFE = RADICE / "Betfair/safe_strategy/tests/conftest.py"
 SONDA = RADICE / "Betfair/stream/tests/test_zz_sonda_dotenv_isolamento_2.py"
 
 L14 = ("Betfair/safe_strategy/tests/test_audit_2026_09_11.py"
@@ -42,6 +43,12 @@ SONDA_REL = "Betfair/stream/tests/test_zz_sonda_dotenv_isolamento_2.py"
 
 RIGA_LAMBDA = "        _cache.clear()\n"
 RIGA_DOTENV = '    monkeypatch.setattr(_dotenv, "load_dotenv", lambda *a, **k: False)\n'
+BLOCCO_AGG = ("    _S._AGG_ULTIMO_BUONO.clear()\n    yield\n"
+              "    _S._AGG_ULTIMO_BUONO.clear()\n")
+AGG_STANTII = ("Betfair/safe_strategy/tests/test_cert_2026_09_13.py"
+               "::test_aggregati_stantii_si_riusano_per_poco_invece_di_bloccare")
+AGG_ILLEGGIBILI = ("Betfair/safe_strategy/tests/test_cert_2026_09_13.py"
+                   "::test_aggregati_illeggibili_bloccano_i_nuovi_ingressi")
 RIGA_MIKE = '    _FP._NON_NOTO_AVVISATO.discard("mike")\n'
 
 TESTO_SONDA = '''"""SONDA TEMPORANEA di falsifica_test_isolamento_2.py: cancellata a fine corsa."""
@@ -106,19 +113,22 @@ def esito(nome: str, atteso: str, args: tuple[str, ...], env_extra: dict | None 
     return ok
 
 
-def muta(p: Path, riga: str) -> None:
+def muta(p: Path, riga: str, sostituto: str | None = None) -> None:
     testo = p.read_bytes().decode("utf-8")
     nl = "\r\n" if "\r\n" in testo else "\n"
     cerca = riga.replace("\n", nl)
-    assert testo.count(cerca) == 1, f"riga da mutare non unica in {p}: {riga!r}"
-    rientro = riga[: len(riga) - len(riga.lstrip())]
-    p.write_bytes(testo.replace(cerca, f"{rientro}pass  # MUTAZIONE{nl}").encode("utf-8"))
+    assert testo.count(cerca) == 1, f"testo da mutare non unico in {p}: {riga!r}"
+    if sostituto is None:
+        rientro = riga[: len(riga) - len(riga.lstrip())]
+        sostituto = f"{rientro}pass  # MUTAZIONE\n"
+    p.write_bytes(testo.replace(cerca, sostituto.replace("\n", nl)).encode("utf-8"))
 
 
 def main() -> int:
     ordini = "--ordini" in sys.argv
     orig_c, orig_m = CONFTEST.read_bytes(), MIKE.read_bytes()
     sha_c, sha_m = sha(CONFTEST), sha(MIKE)
+    orig_s, sha_s = CONFTEST_SAFE.read_bytes(), sha(CONFTEST_SAFE)
     ok = True
     scrivi(f"falsifica_test_isolamento_2 - {time.strftime('%Y-%m-%d %H:%M:%S')}")
     scrivi(f"interprete: {sys.executable}")
@@ -129,6 +139,8 @@ def main() -> int:
         ok &= esito("(c) l14 da solo", "VERDE", (L14,))
         ok &= esito("(d) sonde .env (delenv resta assente / '0' resta '0')", "VERDE", (SONDA_REL,))
         ok &= esito("(e) file Mike legge_canale da solo", "VERDE", (MIKE_REL,))
+        ok &= esito("(f) aggregati stantii poi illeggibili", "VERDE",
+                    (AGG_STANTII, AGG_ILLEGGIBILI))
 
         scrivi("\n== 1) MUTAZIONE C: niente svuotamento di omega_service._LAMBDA_CACHE")
         muta(CONFTEST, RIGA_LAMBDA)
@@ -149,10 +161,19 @@ def main() -> int:
         ok &= esito("(e) file Mike legge_canale da solo", "ROSSO", (MIKE_REL,))
         MIKE.write_bytes(orig_m)
 
+        scrivi("\n== 3b) MUTAZIONE F: _AGG_ULTIMO_BUONO non azzerato fra i test")
+        muta(CONFTEST_SAFE, BLOCCO_AGG, "    yield\n")
+        ok &= esito("(f) aggregati stantii poi illeggibili", "ROSSO",
+                    (AGG_STANTII, AGG_ILLEGGIBILI))
+        ok &= esito("(f) illeggibili da solo", "VERDE", (AGG_ILLEGGIBILI,))
+        CONFTEST_SAFE.write_bytes(orig_s)
+
         scrivi("\n== 4) RIPRISTINATO")
         ok &= esito("(c) greenup Omega poi l14", "VERDE", (GREENUP, L14))
         ok &= esito("(d) sonde .env", "VERDE", (SONDA_REL,))
         ok &= esito("(e) file Mike legge_canale da solo", "VERDE", (MIKE_REL,))
+        ok &= esito("(f) aggregati stantii poi illeggibili", "VERDE",
+                    (AGG_STANTII, AGG_ILLEGGIBILI))
         SONDA.unlink()
 
         if ordini:
@@ -165,9 +186,11 @@ def main() -> int:
     finally:
         CONFTEST.write_bytes(orig_c)
         MIKE.write_bytes(orig_m)
+        CONFTEST_SAFE.write_bytes(orig_s)
         if SONDA.exists():
             SONDA.unlink()
-        rip = sha(CONFTEST) == sha_c and sha(MIKE) == sha_m and not SONDA.exists()
+        rip = sha(CONFTEST) == sha_c and sha(MIKE) == sha_m and sha(CONFTEST_SAFE) == sha_s \
+            and not SONDA.exists()
         scrivi(f"\nripristino verificato (sha256, sonda cancellata): {rip}")
         ok &= rip
         scrivi(f"ESITO COMPLESSIVO: {'TUTTO COME ATTESO' if ok else 'DIFFORMITA'}")
