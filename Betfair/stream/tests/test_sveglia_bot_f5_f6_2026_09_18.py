@@ -54,7 +54,8 @@ def test_omega_spento_dorme_con_time_sleep_e_lo_stesso_numero(monkeypatch):
     OMEGA._ASCOLTO_SCAN = None
     OMEGA._SVEGLIA.alza("scan")          # anche se qualcuno la alzasse: ignorata
     OMEGA._dormi_o_sveglia(60.0, {"poll_interval_s": 20})
-    assert chiamate == [60.0]
+    # 02/10/2026 (R1, arresto ordinato): stessi 60 s di time.sleep, a fette di 1 s
+    assert sum(chiamate) == pytest.approx(60.0) and max(chiamate) <= 1.0
     assert OMEGA._SVEGLIA.statistiche()["usate"] == 0
 
 

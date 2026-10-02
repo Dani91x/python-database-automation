@@ -479,6 +479,167 @@ def ha_marker_canale(trade: dict[str, Any]) -> bool:
     return bool(isinstance(meta, dict) and meta.get("canale_ref"))
 
 
+# ---------------------------------------------------------------------------
+# 02/10/2026 (RICONCILIAZIONE DEI TRADOTTI) - Safe e Omega
+# ---------------------------------------------------------------------------
+#: dove la riga conserva la dichiarazione del runner ``{"originale", "mandato"}``
+CHIAVE_TRADOTTO = "canale_tradotto"
+
+
+def tradotto_di_riga(trade: dict[str, Any]) -> Optional[dict[str, Any]]:
+    """La dichiarazione di traduzione salvata sulla riga (evento del canale, coda o
+    REST), oppure None."""
+    meta = trade.get("meta") or {}
+    if not isinstance(meta, dict):
+        return None
+    for t in (meta.get(CHIAVE_TRADOTTO),
+              (meta.get("esecuzione") or {}).get("tradotto")
+              if isinstance(meta.get("esecuzione"), dict) else None):
+        if isinstance(t, dict) and isinstance(t.get("originale"), dict) \
+                and isinstance(t.get("mandato"), dict):
+            return {"originale": dict(t["originale"]), "mandato": dict(t["mandato"])}
+    return None
+
+
+def ricorda_tradotto(meta: dict[str, Any], letto: Any) -> bool:
+    """Scrive in ``meta`` la dichiarazione di traduzione portata da ``letto`` (evento del
+    canale o lettura gia' riportata), se c'e'. True se ha scritto qualcosa di nuovo."""
+    t = letto.get("tradotto") if isinstance(letto, dict) else None
+    if not (isinstance(t, dict) and isinstance(t.get("originale"), dict)
+            and isinstance(t.get("mandato"), dict)):
+        return False
+    nuovo = {"originale": dict(t["originale"]), "mandato": dict(t["mandato"])}
+    if meta.get(CHIAVE_TRADOTTO) == nuovo:
+        return False
+    meta[CHIAVE_TRADOTTO] = nuovo
+    return True
+
+
+def nei_termini_della_riga(trade: dict[str, Any], letto: Any) -> Any:
+    """UNA lettura dell'ordine di questa riga (stato per bet_id, ordine corrente o
+    regolato, riga dello specchio, ``result`` della coda) nei termini dell'ordine che la
+    riga ha CHIESTO, se il runner l'ha tradotto nell'equivalente sull'altra selezione
+    (``live_order_build.lettura_nei_termini_chiesti``, la stessa traduzione degli eventi
+    del canale). Una lettura non tradotta torna IDENTICA (stesso oggetto)."""
+    if not isinstance(letto, dict) or not isinstance(trade, dict):
+        return letto
+    from Betfair.stream.live_order_build import lettura_nei_termini_chiesti
+
+    out = lettura_nei_termini_chiesti(trade, letto, tradotto=tradotto_di_riga(trade))
+    return letto if out is None else out
+
+
+#: il prefisso dei ref di Safe CALCIO (``porta_ordini.ref_ordine``, ``close_trade``):
+#: le sole righe a cui coda e REST applicano l'equivalente (02/10/2026, D3)
+_REF_SAFE_CALCIO = "safe-t"
+#: l'attore di Safe calcio sul runner (``minimi_it.ATTORI_CON_TRADUZIONE``)
+_ATTORE_SAFE = "safe"
+#: i tipi di mercato con DUE esiti per costruzione (Over/Under, gol nel primo tempo,
+#: entrambe segnano). E' solo il filtro d'ingresso dell'equivalente su coda e REST: il
+#: verdetto vero lo da' il book (due runner ACTIVE, un vincitore).
+_TIPI_DUE_ESITI = ("BOTH_TEAMS_TO_SCORE",)
+_PREFISSI_TIPI_DUE_ESITI = ("OVER_UNDER_", "FIRST_HALF_GOALS_")
+
+
+def mercato_a_due_esiti_per_tipo(market_type: Any) -> bool:
+    """Il tipo di mercato e' uno di quelli a DUE esiti? Tipo ignoto: no. Pura."""
+    mt = str(market_type or "").strip().upper()
+    return bool(mt) and (mt in _TIPI_DUE_ESITI or mt.startswith(_PREFISSI_TIPI_DUE_ESITI))
+
+
+def _equivalente_possibile(side: str, price: float, size: float) -> bool:
+    """L'ordine sotto il minimo ha un EQUIVALENTE piazzabile diretto (sopra il minimo,
+    entro la tolleranza), SE il mercato ha due esiti? Solo l'economia dell'ordine
+    (``verdetto_minimi`` con un'altra selezione segnaposto): il mercato lo guarda chi
+    vede il book. Pura."""
+    from Betfair.stream import live_order_build as LB
+
+    v = LB.verdetto_minimi(LB.JURISDICTION_IT, side, price, size, altra_selezione=(0, 0.0))
+    return v.esito == LB.VERDETTO_EQUIVALENTE
+
+
+def _rifiuto_sotto_050(db, *, tid: Optional[int], mode: str, side: str, price: float,
+                       size: float, market_id: Any, selection_id: Any, meta: dict[str, Any],
+                       now: Optional[datetime], motivo: Optional[str] = None) -> PlaceOutcome:
+    """Il RIFIUTO CERTO di un ordine sotto il minimo senza via legittima (sotto 0,50 e
+    senza equivalente): nessun ordine, UN solo CRITICAL per episodio (02/10, punto 10).
+    Estratto (02/10/2026, D3) per usarlo uguale in casa e dopo il book del REST."""
+    from Betfair.stream.live_order_build import (
+        SOTTO_MINIMO_NON_PIAZZABILE,
+        SUBMIN_IMPORTO_FINALE_MIN,
+    )
+
+    critico, tentativo = _critico_una_volta(db=db, market_id=market_id,
+                                            selection_id=selection_id, side=side,
+                                            meta=meta, size=size, now=now)
+    nota = ("sotto il minimo .it e sotto %.2f EUR (place-and-trim mai sotto il floor di legge 0,50): "
+            "nessun ordine; residuo %.2f da dichiarare al trader"
+            % (SUBMIN_IMPORTO_FINALE_MIN, size))
+    if motivo:
+        nota = f"{nota} ({motivo[:200]})"
+    _log(db, "place_rifiutato", {
+        "trade_id": tid, "mode": mode, "side": side, "price": price, "size": size,
+        "error_code": SOTTO_MINIMO_NON_PIAZZABILE, "critical": critico,
+        "tentativo_nell_episodio": tentativo,
+        "percorso": "submin",
+        "nota": nota})
+    return PlaceOutcome("error", None, 0.0, None,
+                        f"{SOTTO_MINIMO_NON_PIAZZABILE.lower()}:{size:.2f}",
+                        size_requested=size, size_remaining=0.0,
+                        error_code=SOTTO_MINIMO_NON_PIAZZABILE)
+
+
+def _equivalente_rest(market: Any, *, db, tid: Optional[int], mode: str, side: str,
+                      price: float, size: float, market_id: Any, selection_id: Any,
+                      meta: dict[str, Any], now: Optional[datetime]
+                      ) -> "tuple[Optional[dict[str, Any]], Optional[PlaceOutcome]]":
+    """02/10/2026 (D3): il verdetto dei minimi sulla strada REST, lo STESSO del canale
+    (``motore_ordini._applica_minimi``) con l'altra selezione letta dal book di Betfair
+    (``market.altra_selezione_due_esiti``, una ``listMarketBook`` solo sotto il minimo).
+
+    Ritorna ``(tradotto, None)`` se va mandato l'equivalente (``tradotto`` = chiesto e
+    mandato, come ``piano["tradotto"]``), ``(None, rifiuto)`` se non c'e' via legittima,
+    ``(None, None)`` se resta il place-and-trim (o il mercato non sa leggere il book)."""
+    from Betfair.stream import live_order_build as LB
+
+    altra = None
+    leggi = getattr(market, "altra_selezione_due_esiti", None)
+    if callable(leggi):
+        try:
+            altra = leggi(str(market_id), int(selection_id))
+        except Exception as ex:  # noqa: BLE001 - book illeggibile: nessun equivalente
+            logger.warning("[safe.exec] book per l'equivalente illeggibile (%s): %s",
+                           market_id, str(ex)[:120])
+            altra = None
+    v = LB.verdetto_minimi(LB.JURISDICTION_IT, side, price, size, altra_selezione=altra,
+                           submin_disponibile=hasattr(market, "place_submin_live"))
+    if v.esito == LB.VERDETTO_IMPOSSIBILE:
+        if size < LB.SUBMIN_IMPORTO_FINALE_MIN - 1e-9:
+            return None, _rifiuto_sotto_050(db, tid=tid, mode=mode, side=side, price=price,
+                                            size=size, market_id=market_id,
+                                            selection_id=selection_id, meta=meta, now=now,
+                                            motivo=v.motivo)
+        return None, None           # place-and-trim assente: lo dice il ramo di sempre
+    if v.esito != LB.VERDETTO_EQUIVALENTE:
+        return None, None
+    eq = v.equivalente
+    tradotto = {
+        "originale": {"selection_id": int(selection_id), "handicap": 0.0,
+                      "side": str(side).lower(), "price": float(price),
+                      "size": round(float(size), 2)},
+        "mandato": {"selection_id": int(v.altra_selezione[0]),
+                    "handicap": float(v.altra_selezione[1]), "side": eq.side,
+                    "price": float(eq.price), "size": float(eq.size)},
+        "quota_esatta": eq.price_esatta,
+        "scarto_se_vince_chiesta": eq.scarto_se_vince_chiesta,
+        "scarto_se_vince_altra": eq.scarto_se_vince_altra,
+        "motivo": v.motivo,
+    }
+    _log(db, "diagnosi", {"trade_id": tid, "mode": mode, "reason": "ordine_equivalente",
+                          "percorso": "rest", "tradotto": tradotto})
+    return tradotto, None
+
+
 #: 02/10/2026 (RUNNER_MINIMI_CORREZIONI, punto 10): episodi di rifiuto
 #: ``SOTTO_MINIMO_NON_PIAZZABILE`` gia' dichiarati CRITICAL (chiave -> [primo_ts, n]).
 #: Le strategie ritentano le uscite a cadenza (Safe: residui ogni 20 s poi 300 s;
@@ -587,7 +748,12 @@ def _place_via_canale(porta: Any, *, db, mode: str, market_id: str, selection_id
     pre.update({"phase": "canale_wait", "canale_ref": ref, "canale_attore": porta.attore,
                 "reason": "place_exception_reconciling", "err": "canale_in_volo",
                 "canale_inviato_at": (now.isoformat() if now is not None
-                                      else datetime.now().astimezone().isoformat())})
+                                      else datetime.now().astimezone().isoformat()),
+                # 02/10/2026 (reperto 1): l'ordine MANDATO (dopo tick e tetti), impronta
+                # esatta per ritrovarlo per mercato se nessun evento arriva
+                "canale_inviato": {"selection_id": int(selection_id),
+                                   "side": str(side).lower(), "price": float(price),
+                                   "size": round(float(size), 2)}})
     if sotto_minimo:
         pre["canale_sotto_minimo"] = True
     try:
@@ -724,6 +890,7 @@ def place(
     best_back: Optional[float] = None,
     best_lay: Optional[float] = None,
     _nota: Optional[dict[str, Any]] = None,
+    market_type: Optional[str] = None,
 ) -> PlaceOutcome:
     """Esegue UN ordine per una riga già RISERVATA ('pending').
 
@@ -859,23 +1026,37 @@ def place(
         SUBMIN_IMPORTO_FINALE_MIN,
     )
 
-    if submin_fuori_canale and size < SUBMIN_IMPORTO_FINALE_MIN - 1e-9:
-        # 02/10 (punto 10): UN solo CRITICAL per episodio, le ripetizioni contate
-        critico, tentativo = _critico_una_volta(db=db, market_id=market_id,
-                                                selection_id=selection_id, side=side,
-                                                meta=meta, size=size, now=now)
-        _log(db, "place_rifiutato", {
-            "trade_id": tid, "mode": mode, "side": side, "price": price, "size": size,
-            "error_code": SOTTO_MINIMO_NON_PIAZZABILE, "critical": critico,
-            "tentativo_nell_episodio": tentativo,
-            "percorso": "submin",
-            "nota": ("sotto il minimo .it e sotto %.2f EUR (place-and-trim mai sotto il floor di legge 0,50): "
-                     "nessun ordine; residuo %.2f da dichiarare al trader"
-                     % (SUBMIN_IMPORTO_FINALE_MIN, size))})
-        return PlaceOutcome("error", None, 0.0, None,
-                            f"{SOTTO_MINIMO_NON_PIAZZABILE.lower()}:{size:.2f}",
-                            size_requested=size, size_remaining=0.0,
-                            error_code=SOTTO_MINIMO_NON_PIAZZABILE)
+    # 02/10/2026 (riconciliazione dei tradotti, D3): la CODA e il REST hanno lo STESSO
+    # verdetto del canale. Un ordine sotto il minimo su un mercato a due esiti va
+    # all'EQUIVALENTE sull'altra selezione; chi lo decide e' chi vede il book (il worker
+    # della coda, ``live_order_worker._traduci_riga_coda``; il REST qui sotto,
+    # ``_equivalente_rest``). In casa si rifiuta solo cio' che non ha NESSUNA via: sotto
+    # 0,50 e senza un equivalente piazzabile. SOLO le CHIUSURE di Safe calcio (ref
+    # ``safe-t<id>``): e' il bot le cui letture (canale, specchio, stato per bet_id, ordini
+    # per ref) sanno riportare un tradotto nei termini chiesti, e la chiusura e' il caso
+    # del difetto (una chiusura 0,43 rifiutata qui e accettata sul canale). Omega e Mike,
+    # che passano di qui, restano come prima (le loro riconciliazioni REST per ref non lo
+    # sanno fare: ``omega_engine.reconcile_decision``, ``mike/service``); il tennis ha la
+    # sua regola; le APERTURE sotto il minimo restano al place-and-trim (sul canale la
+    # loro traduzione e' senza FOK, cosa che sul REST lascerebbe un ordine a riposo che
+    # nessuno segue: riportato, non deciso qui).
+    # ``market_type`` (la riga lo porta, ``close_trade`` lo passa) e' solo il filtro
+    # d'ingresso: un Risultato Esatto non manda mai in coda o al book un ordine che
+    # sarebbe rifiutato a ogni ritento; la parola finale e' del book (worker, REST).
+    # Punto 11 del runner: la traduzione vale solo per gli attori ammessi
+    # (``minimi_it.ATTORI_CON_TRADUZIONE``, oggi vuoto): stessa regola del canale, quindi
+    # con Safe fuori dall'insieme coda e REST restano ESATTAMENTE come prima.
+    from Betfair.stream.trading import minimi_it as _MI
+
+    equivalente_ammesso = bool(sotto_minimo_chiusura
+                               and str(client_ref or "").startswith(_REF_SAFE_CALCIO)
+                               and mercato_a_due_esiti_per_tipo(market_type)
+                               and _ATTORE_SAFE in _MI.ATTORI_CON_TRADUZIONE)
+    if submin_fuori_canale and size < SUBMIN_IMPORTO_FINALE_MIN - 1e-9 and not (
+            equivalente_ammesso and _equivalente_possibile(side, price, size)):
+        return _rifiuto_sotto_050(db, tid=tid, mode=mode, side=side, price=price, size=size,
+                                  market_id=market_id, selection_id=selection_id, meta=meta,
+                                  now=now)
 
     # --- gate flumine (PAPER e LIVE): riuso 1:1 di omega_service._flumine_gate ---
     # CERT. 13/09, difetto C-2: qui il gate veniva FORZATO ad 'auto' per gli
@@ -893,6 +1074,7 @@ def place(
             market_id=market_id, selection_id=selection_id, side=side,
             price=price, size=size, base_meta=meta, now=now, mode=mode,
             action="place_submin" if submin_fuori_canale else "place",
+            equivalente_ammesso=equivalente_ammesso,
         )
         if rid:
             nota = "submin" if submin_fuori_canale else mode
@@ -935,7 +1117,17 @@ def place(
         # Mike lo riconosce dal prefisso (``_NOTE_SENZA_RUNNER``).
         return PlaceOutcome("error", None, 0.0, None, f"paper_senza_runner:{gate_reason}",
                             size_requested=size, size_remaining=0.0)
-    if submin_fuori_canale and not hasattr(market, "place_submin_live"):
+    # 02/10/2026 (D3): il verdetto dei minimi col book di Betfair (equivalente o
+    # place-and-trim o rifiuto certo), PRIMA di sapere se il place-and-trim c'e'
+    tradotto_rest: Optional[dict[str, Any]] = None
+    if equivalente_ammesso:
+        tradotto_rest, rifiuto = _equivalente_rest(
+            market, db=db, tid=tid, mode=mode, side=side, price=price, size=size,
+            market_id=market_id, selection_id=selection_id, meta=meta, now=now)
+        if rifiuto is not None:
+            return rifiuto
+    if submin_fuori_canale and tradotto_rest is None \
+            and not hasattr(market, "place_submin_live"):
         # LIVE, nessuna coda E nessun place-and-trim su questo mercato: si
         # dichiara il MOTIVO, non "l'importo e' troppo piccolo"
         return PlaceOutcome("error", None, 0.0, None,
@@ -968,7 +1160,16 @@ def place(
     # dipende da noi. Senza, "il bot e' lento" resta un'opinione.
     t4 = _ora_ms()
     try:
-        if submin_fuori_canale:
+        if tradotto_rest is not None:
+            # l'EQUIVALENTE, diretto (sopra il minimo per costruzione), col ref della riga
+            m_eq = tradotto_rest["mandato"]
+            res = market.place_order_live(
+                market_id=str(market_id), selection_id=int(m_eq["selection_id"]),
+                price=float(m_eq["price"]), size=float(m_eq["size"]),
+                event_id=str(event_id), side=str(m_eq["side"]),
+                customer_ref=client_ref[:32],
+            )
+        elif submin_fuori_canale:
             res = market.place_submin_live(
                 market_id=str(market_id), selection_id=int(selection_id), price=price,
                 size=size, event_id=str(event_id), side=side, customer_ref=client_ref[:32],
@@ -1023,6 +1224,25 @@ def place(
     residuo = getattr(res, "size_remaining", None)
     if residuo is None:
         residuo = round(max(0.0, chiesto - abbinato), 2)
+    medio_vero = res.avg_price_matched
+    if tradotto_rest is not None:
+        # 02/10/2026 (D3): l'esito dell'equivalente nei termini dell'ordine CHIESTO (la
+        # stessa traduzione degli eventi del canale e dello specchio)
+        from Betfair.stream.live_order_build import riporta_lettura_tradotta
+
+        m_eq = tradotto_rest["mandato"]
+        letto = riporta_lettura_tradotta(
+            {"selection_id": m_eq["selection_id"], "side": m_eq["side"],
+             "size_matched": abbinato, "avg_price_matched": medio_vero,
+             "size_remaining": residuo, "size_requested": chiesto},
+            tradotto_rest["originale"], m_eq)
+        abbinato = round(float(letto["size_matched"]), 2)
+        medio = float(letto.get("avg_price_matched") or price)
+        medio_vero = letto.get("avg_price_matched")
+        chiesto = float(letto["size_requested"])
+        residuo = letto.get("size_remaining")
+        if residuo is None:
+            residuo = round(max(0.0, chiesto - abbinato), 2)
     if abbinato + 0.005 < chiesto:
         # PARZIALE: la strategia non cambia (la posizione e' quella abbinata, ed
         # e' gia' cosi' che si dimensiona la copertura), ma DEVE essere detto —
@@ -1037,7 +1257,7 @@ def place(
                                              + ("vivo" if float(residuo) > 0 else "annullato"))})
     return PlaceOutcome(
         "open", medio, abbinato, res.bet_id,
-        f"live_{'submin' if submin_fuori_canale else 'rest'}:{res.order_status}",
+        f"live_{'equivalente' if tradotto_rest is not None else 'submin' if submin_fuori_canale else 'rest'}:{res.order_status}",
         esecuzione={
             "t4_inviato": t4, "t5_risposta": t5,
             "betfair_ms": round(t5 - t4, 1),
@@ -1050,15 +1270,20 @@ def place(
             # QUELLA size sarebbe dovuta passare. Non e' la stessa cosa del
             # fill reale, ed e' etichettata come previsione, non come fatto.
             "livelli_previsti": livelli_attraversati(ladder, size, price, side),
-            "percorso": "submin" if submin_fuori_canale else "rest",
+            "percorso": ("equivalente" if tradotto_rest is not None
+                         else "submin" if submin_fuori_canale else "rest"),
             # C.12a — chiesto e residuo anche nella catena dei tempi
             "size_richiesta": chiesto,
             "size_abbinata": abbinato,
             "size_residua": round(float(residuo), 2),
+            # 02/10/2026 (D3): l'ordine mandato davvero (la riga resta nei termini
+            # chiesti; ``tradotto_di_riga`` la ritrova qui)
+            **({"tradotto": tradotto_rest, "bet_id_mandato": res.bet_id}
+               if tradotto_rest is not None else {}),
         },
         size_requested=chiesto,
         size_remaining=round(float(residuo), 2),
-        avg_price_matched=(float(res.avg_price_matched) if res.avg_price_matched else None),
+        avg_price_matched=(float(medio_vero) if medio_vero else None),
         betfair_updated_at=getattr(res, "betfair_updated_at", None))
 
 
@@ -1173,6 +1398,9 @@ def reconcile_decision(trade: dict[str, Any], current_orders: list[dict],
         mid, sid = None, None
     for o in current_orders or []:
         if E._order_matches(o, ref, mid, sid, side):
+            # 02/10/2026 (riconciliazione dei tradotti): l'ordine VERO nei termini
+            # della riga se il runner l'ha tradotto nell'equivalente
+            o = nei_termini_della_riga(trade, o)
             matched = float(o.get("size_matched") or 0.0)
             remaining = float(o.get("size_remaining") or 0.0)
             if matched > 0 and remaining <= 0:
@@ -1182,6 +1410,7 @@ def reconcile_decision(trade: dict[str, Any], current_orders: list[dict],
             return {"action": "keep"}
     for o in cleared_orders or []:
         if E._order_matches(o, ref, mid, sid, side):
+            o = nei_termini_della_riga(trade, o)
             settled = float(o.get("size_settled") or 0.0)
             if settled <= 0:
                 # ordine chiuso SENZA size (lapsed/cancellato/void): nessuna
@@ -1311,7 +1540,8 @@ def _ricorda_esito_atteso(rid: Any) -> None:
 def enqueue_place(*, db, trade_id: int, client_ref: str, event_id: str, market_id: str,
                   selection_id: int, side: str, price: float, size: float,
                   base_meta: Optional[dict], now: datetime,
-                  mode: str = "paper", action: str = "place") -> Optional[int]:
+                  mode: str = "paper", action: str = "place",
+                  equivalente_ammesso: bool = False) -> Optional[int]:
     """Accoda il place sulla coda del runner col ``client_ref`` dato.
 
     PORT fedele di ``omega_service._flumine_enqueue_place`` (ref parametrico):
@@ -1368,6 +1598,14 @@ def enqueue_place(*, db, trade_id: int, client_ref: str, event_id: str, market_i
         # Vale per ENTRAMBE le modalita': e' una tecnica di piazzamento, non una
         # differenza fra prova e soldi veri.
         payload["params"]["target_size"] = float(size)
+        if equivalente_ammesso:
+            # 02/10/2026 (D3): il worker applica lo STESSO verdetto dei minimi del canale
+            # (``live_order_worker._traduci_riga_coda``): sotto il minimo, su un mercato a
+            # due esiti, l'equivalente sull'altra selezione; il ``result`` torna nei
+            # termini chiesti e lo specchio si legge con ``nei_termini_della_riga``.
+            from Betfair.stream.live_order_build import PARAM_EQUIVALENTE_AMMESSO
+
+            payload["params"][PARAM_EQUIVALENTE_AMMESSO] = True
     else:
         # CERT. 14/09 — FILL OR KILL ANCHE IN PAPER, sulla coda.
         # Il FOK era impostato SOLO in live: l'ordine PAPER partiva come limite
@@ -1954,6 +2192,9 @@ def close_trade(*, db, market, trade: dict[str, Any], prices: dict[str, Any],
         meta={**dict(reserve.get("meta") or {}), "cashout": True,
               "closes_trade_id": trade.get("id")},
         now=now, params=params_ordine,
+        # 02/10/2026 (D3): il tipo di mercato della gamba, filtro d'ingresso
+        # dell'equivalente su coda e REST (``mercato_a_due_esiti_per_tipo``)
+        market_type=reserve.get("market_type"),
         **({"porta": porta} if porta is not None else {}),
     )
     if out.status == "error":

@@ -3070,7 +3070,12 @@ def _riga_senza_riconciliazione(tr: dict[str, Any]) -> dict[str, Any]:
 def _chiudi_da_evento(tr: dict[str, Any], ev: dict[str, Any], *, db, mode: str,
                       min_stake: float, now: datetime) -> int:
     """Esito TERMINALE dal canale: le STESSE funzioni del percorso a coda."""
+    from Betfair.safe_strategy import execution as X
+
     pulita = _riga_senza_riconciliazione(tr)
+    # 02/10/2026 (riconciliazione dei tradotti): l'evento e' gia' nei termini chiesti;
+    # la dichiarazione del runner resta sulla riga per le letture di dopo
+    X.ricorda_tradotto(pulita["meta"], ev)
     matched = float(ev.get("size_matched") or 0.0)
     if matched > 0:
         return _flumine_confirm(pulita, db=db, matched=matched,
@@ -3114,6 +3119,11 @@ def _aggiorna_da_evento(tr: dict[str, Any], ev: dict[str, Any], *, db) -> None:
     if int(ev.get("seq") or 0) <= int(meta.get("canale_seq") or 0):
         return                                  # mai un evento piu' vecchio
     meta.update({"canale_fase": ev.get("fase"), "canale_seq": int(ev.get("seq") or 0)})
+    # 02/10/2026 (riconciliazione dei tradotti): il runner ha tradotto l'ordine
+    # nell'equivalente? La sua dichiarazione (chiesto e mandato) resta sulla riga:
+    # il bet_id dell'evento e' quello dell'ordine VERO, e ogni lettura per bet_id
+    # (ripiego live oltre la scadenza, annullo) va riportata nei termini chiesti.
+    X.ricorda_tradotto(meta, ev)
     campi: dict[str, Any] = {"meta": meta}
     if ev.get("bet_id") and not tr.get("bet_id"):
         campi["bet_id"] = str(ev.get("bet_id"))
@@ -3154,19 +3164,41 @@ def _adotta_per_mercato(tr: dict[str, Any], *, db, market) -> Optional[str]:
                  if o.get("bet_id") and str(o.get("market_id")) == str(tr.get("market_id"))
                  and o.get("selection_id") == sel and str(o.get("side") or "").lower() == lato
                  and str(o.get("bet_id")) not in noti}
+    come = "mercato_selezione_lato"
+    tradotto = None
+    if not candidati:
+        # 02/10/2026 (riconciliazione dei tradotti): sotto il minimo il runner puo'
+        # aver mandato l'ordine EQUIVALENTE sull'altra selezione (lato opposto). Si
+        # adotta SOLO l'ordine con l'impronta esatta dell'equivalente (quota e size
+        # chieste identiche a ``equivalente_lato_opposto``), mai un ordine qualsiasi
+        # dell'altra selezione.
+        from Betfair.stream.live_order_build import impronta_equivalente
+
+        eq = {str(o.get("bet_id")): o for o in ordini
+              if o.get("bet_id") and str(o.get("market_id")) == str(tr.get("market_id"))
+              and str(o.get("bet_id")) not in noti and impronta_equivalente(tr, o)}
+        if len(eq) > 1:
+            return None
+        if eq:
+            o = next(iter(eq.values()))
+            letto = X.nei_termini_della_riga(tr, o)
+            tradotto = letto.get("tradotto") if letto is not o else None
+            candidati = set(eq)
+            come = "mercato_equivalente"
     if not candidati:
         return ""
     if len(candidati) > 1:
         return None
     bet_id = next(iter(candidati))
     meta = dict(tr.get("meta") or {})
-    meta["canale_bet_id_da"] = "mercato_selezione_lato"
+    meta["canale_bet_id_da"] = come
+    if tradotto is not None:
+        X.ricorda_tradotto(meta, {"tradotto": tradotto})
     X.aggiorna_trade(db, tr["id"], campi={"bet_id": bet_id, "meta": meta})
     tr["bet_id"] = bet_id
     tr["meta"] = meta
     db.log("flumine_recovered", {"trade_id": tr.get("id"), "event_id": tr.get("event_id"),
-                                 "bet_id": bet_id, "via": "canale",
-                                 "come": "mercato_selezione_lato"})
+                                 "bet_id": bet_id, "via": "canale", "come": come})
     return bet_id
 
 
@@ -3201,7 +3233,13 @@ def _canale_live_oltre_scadenza(tr: dict[str, Any], *, db, market, now: datetime
     if state is None:
         _alert_canale_orfano(tr, db=db, motivo="stato_per_bet_id_illeggibile")
         return 0
+    # 02/10/2026 (riconciliazione dei tradotti): lo stato e' dell'ordine VERO; se il
+    # runner l'ha tradotto nell'equivalente, si legge nei termini della riga
+    from Betfair.safe_strategy import execution as X
+
+    state = X.nei_termini_della_riga(tr, state)
     pulita = _riga_senza_riconciliazione(tr)
+    X.ricorda_tradotto(pulita["meta"], state)
     if state.get("found"):
         if float(state.get("size_remaining") or 0.0) > 0:
             return 0                               # ancora vivo: si aspetta
@@ -3447,7 +3485,8 @@ def _flumine_enqueue_cancel(tr: dict[str, Any], *, db, bet_id: str,
         return False
 
 
-def _mirror_fill(mirror: Optional[dict], req: Optional[dict]
+def _mirror_fill(mirror: Optional[dict], req: Optional[dict],
+                 tr: Optional[dict[str, Any]] = None
                  ) -> tuple[float, float, str, Optional[float], Optional[str]]:
     """(size_matched, avg_price_matched, status, size_remaining, betfair_updated_at)
     dallo SPECCHIO betfair_live_orders (autoritativo, scritto write-on-change da
@@ -3466,6 +3505,13 @@ def _mirror_fill(mirror: Optional[dict], req: Optional[dict]
     src: Any = mirror if mirror is not None else ((req or {}).get("result") or {})
     if not isinstance(src, dict):
         src = {}
+    if tr is not None:
+        # 02/10/2026 (riconciliazione dei tradotti): lo specchio porta l'ordine VERO;
+        # se il runner l'ha tradotto nell'equivalente (``tr`` = la riga che l'ha
+        # chiesto) i numeri si leggono nei termini chiesti, come l'evento del canale
+        from Betfair.safe_strategy import execution as X
+
+        src = X.nei_termini_della_riga(tr, src)
     matched = float(src.get("size_matched") or 0.0)
     avg = float(src.get("average_price_matched") or 0.0)
     status = str(src.get("status") or "").upper()
@@ -3626,7 +3672,7 @@ def _poll_one_flumine_trade(tr: dict[str, Any], *, db, params: dict[str, Any],
         mirror = db.get_live_order_mirror(f"awlq{rid}", "paper")
     except Exception:  # noqa: BLE001
         mirror = None
-    matched, avg, status_name, size_remaining, betfair_updated_at = _mirror_fill(mirror, req)
+    matched, avg, status_name, size_remaining, betfair_updated_at = _mirror_fill(mirror, req, tr)
     bet_id = (mirror or {}).get("bet_id") or req.get("bet_id")
     terminal = status_name in _FLUMINE_TERMINAL
     fully = matched > 0 and matched + 0.005 >= res_size
@@ -3764,7 +3810,7 @@ def _poll_one_flumine_live_trade(tr: dict[str, Any], *, db, market,
         mirror = db.get_live_order_mirror(f"awlq{rid}", "live")
     except Exception:  # noqa: BLE001
         mirror = None
-    matched, avg, status_name, size_remaining, betfair_updated_at = _mirror_fill(mirror, req)
+    matched, avg, status_name, size_remaining, betfair_updated_at = _mirror_fill(mirror, req, tr)
     bet_id = (mirror or {}).get("bet_id") or (req or {}).get("bet_id")
 
     # 1) esito TERMINALE dallo specchio (order stream: autoritativo, real-time)
@@ -3797,6 +3843,11 @@ def _poll_one_flumine_live_trade(tr: dict[str, Any], *, db, market,
             except Exception:  # noqa: BLE001 — REST muto: MAI decidere al buio
                 state = None
         if state is not None:
+            # 02/10/2026 (riconciliazione dei tradotti): stato dell'ordine VERO nei
+            # termini della riga
+            from Betfair.safe_strategy import execution as X
+
+            state = X.nei_termini_della_riga(tr, state)
             if state.get("found"):
                 if float(state.get("size_remaining") or 0.0) > 0:
                     return 0  # ancora vivo su Betfair (anomalo per un FOK): aspetta
@@ -8447,7 +8498,12 @@ def _dormi_o_sveglia(pausa: float, params: Any) -> None:
     """La dormita del ciclo. A interruttori SPENTI e' ``time.sleep(pausa)``,
     la stessa identica istruzione di oggi."""
     if _ASCOLTO_SCAN is None and not _sveglia_dal_client_scan():
-        time.sleep(pausa)
+        # 02/10/2026 (R1): stessa dormita, a fette di 1 s: lo stop dell'app (file
+        # ARRESTO) si vede subito e non dopo fino a ``idle_cycle_s`` (60 s), oltre la
+        # grazia di ``desktop/main.js`` prima del kill forzato
+        from Betfair.safe_strategy import arresto_bot as _AB
+
+        _AB.dormi_finche_arresto(pausa, richiesto=_AO.richiesto, dormi=time.sleep)
         return
     _SVEGLIA.attendi(pausa, _pavimento_sveglia(params))
 
@@ -8503,6 +8559,17 @@ def _ciclo_persistente(un_giro: Callable[[], bool], *, label: str = "[omega]") -
             return
 
 
+def _chiudi_all_arresto(causa: str) -> dict:
+    """02/10/2026 (R1, «niente resta in coda»): l'arresto ordinato di omega prima di
+    uscire (``arresto_bot.chiudi_bot_all_arresto``): annullo dei SUOI ordini vivi non
+    abbinati con la via di ogni riga (canale, coda paper, REST per bet_id solo live), tetto
+    10 s; posizioni abbinate dichiarate con UN CRITICAL, mai chiuse. Non solleva mai."""
+    from Betfair.safe_strategy import arresto_bot as _AB
+
+    return _AB.chiudi_bot_all_arresto(bot="omega", db=_real_db, market=_real_market,
+                                      causa=causa, porta_kw_di=_porta_kw_annullo)
+
+
 def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -8513,6 +8580,10 @@ def main() -> None:
         logger.error("[omega] un'altra istanza è già in esecuzione (porta %s) — esco.", _SINGLE_INSTANCE_PORT)
         return
     logger.info("[omega] servizio avviato")
+    # 02/10/2026 (R1): SIGTERM/SIGBREAK escono dal ciclo come Ctrl-C, cosi' passano
+    # dall'arresto ordinato
+    from Betfair.safe_strategy import arresto_bot as _AB
+    _AB.installa_segnali()
     # CANTIERE P (28/09): timeout PostgREST del profilo bot (5 s connessione, 20 s lettura)
     logger.info("[omega] timeout PostgREST del profilo bot: %s", __import__("db_client").usa_timeout_bot())
     _avvia_canale()
@@ -8593,7 +8664,10 @@ def main() -> None:
         return True
 
     try:
-        _ciclo_persistente(_un_giro, label="[omega]")
+        # 02/10/2026 (R1): COMUNQUE esca il ciclo, prima l'arresto ordinato (vedi Safe)
+        _AB.esegui_ciclo_con_arresto(
+            lambda: _ciclo_persistente(_un_giro, label="[omega]"),
+            _chiudi_all_arresto, stop_app=_AO.richiesto)
     finally:
         try:
             lock.close()  # rilascia esplicitamente il lock socket 47313

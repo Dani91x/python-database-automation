@@ -1006,6 +1006,9 @@ def _risolvi_una_via_canale(db, tr: dict[str, Any], *, now: datetime, os_mod: An
         # si toglie: la riga ha un esito certo
         pulita = dict(tr)
         pulita["meta"] = {k: v for k, v in meta.items() if k not in ("reason", "err")}
+        # 02/10/2026 (riconciliazione dei tradotti): l'evento e' gia' nei termini
+        # chiesti; la dichiarazione del runner resta sulla riga per le letture di dopo
+        X.ricorda_tradotto(pulita["meta"], ev)
         if matched > 0:
             # 25/09 (F8, C.12a): la riga risolta dal canale porta CHIESTO,
             # ABBINATO, RESIDUO e PREZZO MEDIO come quella del REST
@@ -1035,6 +1038,11 @@ def _risolvi_una_via_canale(db, tr: dict[str, Any], *, now: datetime, os_mod: An
         # C.12a - la riga racconta il vero anche prima della fine
         nuovo = dict(meta)
         nuovo.update({"canale_fase": ev.get("fase"), "canale_seq": int(ev.get("seq") or 0)})
+        # 02/10/2026 (riconciliazione dei tradotti): se il runner ha tradotto l'ordine
+        # nell'equivalente, la sua dichiarazione resta sulla riga: il bet_id
+        # dell'evento e' quello dell'ordine VERO, e il ripiego per bet_id oltre la
+        # scadenza (``_reconcile_by_bet_id``) va letto nei termini chiesti.
+        X.ricorda_tradotto(nuovo, ev)
         campi: dict[str, Any] = {"meta": nuovo}
         if ev.get("bet_id") and not tr.get("bet_id"):
             campi["bet_id"] = str(ev.get("bet_id"))
@@ -1193,6 +1201,24 @@ def reconcile_pending(*, market, db, now: datetime) -> int:
     per_bet = {str(o.get("bet_id")): o for o in current if o.get("bet_id")}
     for tr in live:
         try:
+            if X.ha_marker_canale(tr) and not tr.get("bet_id") \
+                    and not _trovata_per_ref(tr, current, cleared):
+                # 02/10/2026 (reperto 1): riga del canale senza nessun evento e senza
+                # un ordine col suo ref nella lettura del giro: si ritrova l'ordine per
+                # MERCATO (il ref di flumine non e' ``safe-``)
+                if _adotta_per_mercato(market, tr, db=db) is None:
+                    meta_o = dict(tr.get("meta") or {})
+                    if not meta_o.get("canale_orfano_segnalato"):
+                        meta_o["canale_orfano_segnalato"] = True
+                        db.update_trade(int(tr["id"]), meta=meta_o)
+                        tr["meta"] = meta_o
+                        _log(db, "flumine_live_orphan", {
+                            "trade_id": tr.get("id"), "event_id": tr.get("event_id"),
+                            "critical": True, "ref": meta_o.get("canale_ref"),
+                            "nota": "ordine del canale senza esito e ricerca per mercato "
+                                    "indecisa (letture KO o piu' candidati): VERIFICARE "
+                                    "SU BETFAIR, la riga resta in verifica"})
+                    continue
             d = _reconcile_by_bet_id(market, tr)
             if d is None:
                 # F1 (25/09): ref sport-aware ("safe_tennis-t<id>" per il
@@ -1210,8 +1236,11 @@ def reconcile_pending(*, market, db, now: datetime) -> int:
             # parziale si DICE.
             stato_bf = d.get("betfair")
             if isinstance(stato_bf, dict):
+                # 02/10/2026: anche l'ordine del giro (date, size chiesta) nei termini
+                # della riga, se tradotto (mai la size chiesta dell'equivalente)
                 _racconta_il_vero(db, tr, stato_bf,
-                                  ordine=per_bet.get(str(tr.get("bet_id") or "")))
+                                  ordine=X.nei_termini_della_riga(
+                                      tr, per_bet.get(str(tr.get("bet_id") or ""))))
             act = d.get("action")
             if act in ("free", "error"):
                 # ⚠️ C.12a — PRIMA DI DICHIARARLA MORTA, SI PROVA AD AMMAZZARLA.
@@ -1235,6 +1264,11 @@ def reconcile_pending(*, market, db, now: datetime) -> int:
                     # terminale, resta in riconciliazione. Fail-closed.
                     continue
             if act == "confirm":
+                # 02/10/2026 (riconciliazione dei tradotti): la conferma di un ordine
+                # tradotto conserva la dichiarazione (chiesto e mandato) sulla riga
+                m_rec = dict(tr.get("meta") or {})
+                if X.ricorda_tradotto(m_rec, d.get("betfair") or {}):
+                    tr["meta"] = m_rec
                 _reconcile_confirm(db, tr, price=float(d["price"]), size=float(d["size"]),
                                    bet_id=d.get("bet_id"), how="live", now=now)
                 n += 1
@@ -1435,6 +1469,15 @@ def _annulla_prima_del_terminale(market, tr: dict[str, Any], *, db,
     residuo = _r2(getattr(ann, "size_remaining", None)) if riletto else None
     abbinato = _r2(getattr(ann, "size_matched", None)) if riletto else None
     medio = getattr(ann, "avg_price_matched", None) if riletto else None
+    if riletto:
+        # 02/10/2026 (riconciliazione dei tradotti): numeri dell'ordine VERO nei
+        # termini della riga, se tradotto (la dichiarazione e' sulla riga)
+        letto = X.nei_termini_della_riga(tr, {"size_matched": abbinato,
+                                              "size_remaining": residuo,
+                                              "avg_price_matched": medio})
+        abbinato = _r2(letto.get("size_matched"))
+        residuo = _r2(letto.get("size_remaining"))
+        medio = letto.get("avg_price_matched")
     if not riletto:
         esito = "vivo"          # esito IGNOTO: mai dichiarare annullato
     elif (residuo or 0.0) > 0:
@@ -1470,6 +1513,105 @@ def _annulla_prima_del_terminale(market, tr: dict[str, Any], *, db,
     return {"esito": "vivo"}
 
 
+#: finestra dell'impronta: l'ordine del canale e' piazzato dopo l'invio (meno l'errore
+#: d'orologio) ed entro la scadenza del comando piu' la propagazione di Betfair
+_ADOZIONE_PRIMA_S = 5.0
+_ADOZIONE_DOPO_S = 120.0
+
+
+def _nella_finestra(o: dict[str, Any], inviato: Optional[datetime]) -> bool:
+    quando = _parse_iso(o.get("placed_date"))
+    if inviato is None or quando is None:
+        return False
+    if quando.tzinfo is None:
+        quando = quando.replace(tzinfo=timezone.utc)
+    if inviato.tzinfo is None:
+        inviato = inviato.replace(tzinfo=timezone.utc)
+    delta = (quando - inviato).total_seconds()
+    return -_ADOZIONE_PRIMA_S <= delta <= _ADOZIONE_DOPO_S
+
+
+def _trovata_per_ref(tr: dict[str, Any], current: list, cleared: list) -> bool:
+    """La lettura del giro ha GIA' un ordine col ref di questa riga (``safe-t<id>`` o
+    ``meta.canale_cor``)? Allora la ricerca per ref basta: nessuna lettura in piu'."""
+    from Betfair.safe_strategy import porta_ordini as _PO_ref
+
+    refs = X.refs_di_riconciliazione(tr, _PO_ref.ref_ordine(tr["id"], sport=_sport_di(tr)))
+    refs = set(refs if isinstance(refs, (list, tuple, set)) else [refs])
+    return any(str(o.get("customer_order_ref") or "") in refs
+               for o in list(current or []) + list(cleared or []))
+
+
+def _adotta_per_mercato(market, tr: dict[str, Any], *, db) -> Optional[str]:
+    """02/10/2026 (reperto 1): LIVE, riga mandata sul canale e rimasta SENZA bet_id
+    oltre la scadenza (nessun evento arrivato). Il runner piazza col ref di flumine, non
+    col ``safe-t<id>`` della riga: la ricerca per ref non lo trova MAI (il mercato di
+    Safe tiene solo i ref ``safe-``). Come Omega (``omega_service._adotta_per_mercato``)
+    l'ordine si cerca fra quelli della strategia ``safe`` con l'impronta ESATTA di cio'
+    che e' stato mandato (``meta.canale_inviato``: mercato, selezione, lato, quota e size
+    chieste), piazzato nella finestra dell'invio e mai gia' di un'altra riga; oppure
+    l'equivalente esatto sull'altra selezione (``impronta_equivalente``).
+
+    Ritorna il bet_id adottato (scritto sulla riga), ``""`` se nessun ordine ha
+    l'impronta, ``None`` se non si puo' decidere (letture KO o piu' candidati)."""
+    from Betfair.stream.live_order_build import impronta_equivalente
+
+    meta = dict(tr.get("meta") or {})
+    inviato = meta.get("canale_inviato") if isinstance(meta.get("canale_inviato"), dict) \
+        else {"selection_id": tr.get("selection_id"), "side": tr.get("side"),
+              "price": tr.get("price"), "size": tr.get("size")}
+    leggi = getattr(market, "list_current_orders", None)
+    if not callable(leggi):
+        return None
+    try:
+        ordini = list(leggi(SAFE_STRATEGY_REF) or [])
+        per_evento = getattr(db, "trades_for_event", None)
+        altre = list(per_evento(str(tr.get("event_id"))) if callable(per_evento)
+                     else db.list_trades(None) or [])
+    except Exception as ex:  # noqa: BLE001 - al buio non si decide
+        logger.warning("[safe.bot] ricerca per mercato di %s KO: %s", tr.get("id"), str(ex)[:120])
+        return None
+    noti = {str(r.get("bet_id")) for r in altre if r.get("bet_id") and r.get("id") != tr.get("id")}
+    quando = _parse_iso(meta.get("canale_inviato_at"))
+    try:
+        sel = int(inviato.get("selection_id"))
+        lato = str(inviato.get("side") or "").lower()
+        prezzo = float(inviato.get("price"))
+        size = round(float(inviato.get("size")), 2)
+    except (TypeError, ValueError):
+        return None
+    chiesto = {"selection_id": sel, "side": lato, "price": prezzo, "size": size}
+
+    def _stesso(o: dict[str, Any]) -> bool:
+        try:
+            return (o.get("selection_id") == sel and str(o.get("side") or "").lower() == lato
+                    and abs(float(o.get("price_requested")) - prezzo) <= 1e-9
+                    and abs(float(o.get("size_requested")) - size) <= 0.005)
+        except (TypeError, ValueError):
+            return False
+
+    cand = {str(o.get("bet_id")): o for o in ordini
+            if o.get("bet_id") and str(o.get("market_id")) == str(tr.get("market_id"))
+            and str(o.get("bet_id")) not in noti and _nella_finestra(o, quando)
+            and (_stesso(o) or impronta_equivalente(chiesto, o))}
+    if not cand:
+        return ""
+    if len(cand) > 1:
+        return None
+    bet_id, o = next(iter(cand.items()))
+    meta["canale_bet_id_da"] = ("mercato_selezione_lato" if _stesso(o)
+                                else "mercato_equivalente")
+    letto = X.nei_termini_della_riga(tr, o)
+    X.ricorda_tradotto(meta, letto if letto is not o else {})
+    db.update_trade(int(tr["id"]), bet_id=bet_id, meta=meta)
+    tr["bet_id"] = bet_id
+    tr["meta"] = meta
+    _log(db, "flumine_recovered", {"trade_id": tr.get("id"), "event_id": tr.get("event_id"),
+                                   "bet_id": bet_id, "via": "canale",
+                                   "come": meta["canale_bet_id_da"]})
+    return bet_id
+
+
 def _reconcile_by_bet_id(market, tr: dict[str, Any]) -> Optional[dict]:
     """Se la riga porta già un bet_id, lo stato per betId è la chiave certa."""
     bet_id = tr.get("bet_id")
@@ -1479,6 +1621,11 @@ def _reconcile_by_bet_id(market, tr: dict[str, Any]) -> Optional[dict]:
     st = fn(str(bet_id))  # solleva su rete KO → il chiamante non decide
     if not st or not st.get("found"):
         return None
+    # 02/10/2026 (riconciliazione dei tradotti, D2): lo stato e' dell'ordine VERO. Se il
+    # runner l'ha tradotto nell'equivalente sull'altra selezione, si legge nei termini
+    # della riga (prima: la riga di chiusura banca Over 0,43 @18 veniva confermata coi
+    # numeri della punta Under 7,31 @1,06).
+    st = X.nei_termini_della_riga(tr, st)
     matched = float(st.get("size_matched") or 0.0)
     remaining = float(st.get("size_remaining") or 0.0)
     if matched > 0 and remaining <= 0:
@@ -1870,7 +2017,7 @@ def _completa_consapevolezza_mancante(*, db, market, rows: list[dict[str, Any]])
             continue
         if not isinstance(st, dict) or not st.get("found"):
             continue
-        _racconta_il_vero(db, tr, st)
+        _racconta_il_vero(db, tr, X.nei_termini_della_riga(tr, st))
         n += 1
     return n
 
@@ -10468,6 +10615,17 @@ def _ciclo_persistente(un_giro: Callable[[], bool], *, label: str = "[safe.bot]"
             return
 
 
+def _chiudi_all_arresto(causa: str) -> dict:
+    """02/10/2026 (R1, «niente resta in coda»): l'arresto ordinato di safe prima di
+    uscire (``arresto_bot.chiudi_bot_all_arresto``): annullo dei SUOI ordini vivi non
+    abbinati con la via di ogni riga (canale, coda paper, REST per bet_id solo live), tetto
+    10 s; posizioni abbinate dichiarate con UN CRITICAL, mai chiuse. Non solleva mai."""
+    from Betfair.safe_strategy import arresto_bot as _AB
+
+    return _AB.chiudi_bot_all_arresto(bot="safe", db=_real_db, market=_real_market,
+                                      causa=causa, porta_kw_di=_porta_kw_annullo)
+
+
 def main() -> None:
     from Betfair.stream.single_instance import acquire_single_instance_lock
 
@@ -10477,6 +10635,10 @@ def main() -> None:
     )
     lock = acquire_single_instance_lock(_SINGLE_INSTANCE_PORT, "safe-bot")
     logger.info("[safe.bot] servizio avviato (lock %s)", _SINGLE_INSTANCE_PORT)
+    # 02/10/2026 (R1): SIGTERM/SIGBREAK escono dal ciclo come Ctrl-C, cosi' passano
+    # dall'arresto ordinato
+    from Betfair.safe_strategy import arresto_bot as _AB
+    _AB.installa_segnali()
     _usa_timeout_bot("safe.bot")
     _avvia_canale()
     # 23/09: saldo del conto riletto dopo ogni ordine reale / regolazione nuova
@@ -10586,7 +10748,12 @@ def main() -> None:
         # 28/09 (cantiere K2): l'app chiede lo spegnimento ORDINATO (file di
         # arresto_ordinato) -> si esce come un KeyboardInterrupt (stesso
         # `finally`: lock.close()), exit 0, il watchdog non rilancia.
-        _ciclo_persistente(_un_giro, label="[safe.bot]")
+        # 02/10/2026 (R1): COMUNQUE esca il ciclo (stop dall'app, segnale, eccezione
+        # fatale) prima si fa l'arresto ordinato: annullo dei propri ordini vivi non
+        # abbinati (tetto 10 s), posizioni dichiarate con un CRITICAL, stato nel diario.
+        _AB.esegui_ciclo_con_arresto(
+            lambda: _ciclo_persistente(_un_giro, label="[safe.bot]"),
+            _chiudi_all_arresto, stop_app=_AO.richiesto)
     finally:
         try:
             lock.close()

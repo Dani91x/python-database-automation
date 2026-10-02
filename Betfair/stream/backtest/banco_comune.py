@@ -482,6 +482,20 @@ def libro_di_produzione(market_book: Any) -> _VistaBook:
 # ---------------------------------------------------------------------------
 # il mercato: ordini VERI su flumine, matching di flumine
 # ---------------------------------------------------------------------------
+def _identita_ordine_flumine(ordine: Any) -> Dict[str, Any]:
+    """Selezione, lato, quota e size chieste di un ordine flumine, con le chiavi di
+    ``omega_market._identita_ordine`` (02/10/2026, riconciliazione dei tradotti)."""
+    ot = getattr(ordine, "order_type", None)
+    sid = getattr(ordine, "selection_id", None)
+    side = getattr(ordine, "side", None)
+    return {
+        "selection_id": int(sid) if sid is not None else None,
+        "side": str(side).lower() if side else None,
+        "price_requested": getattr(ot, "price", None) if ot is not None else None,
+        "size_requested": getattr(ot, "size", None) if ot is not None else None,
+    }
+
+
 class MercatoFlumine:
     """`place_order_live` e compagnia, serviti dal matching di flumine.
 
@@ -1005,6 +1019,9 @@ class MercatoFlumine:
             # del vero.
             "matched_date": None,
             "placed_date": None,
+            # 02/10/2026: le stesse chiavi d'identita' della produzione
+            # (``omega_market._identita_ordine``): selezione, lato, quota e size chieste
+            **_identita_ordine_flumine(ordine),
         }
 
     # ------------------------------------------- LA POSIZIONE DI CONTO

@@ -868,6 +868,54 @@ def _submin_best_prices(market_id: str, selection_id: int) -> tuple:
     return (None, None)
 
 
+def altro_esito_dal_book(book: Any, selection_id: int) -> Optional[tuple]:
+    """(selection_id, handicap) dell'ALTRA selezione se il book (``listMarketBook``
+    grezzo, un mercato) ha due esiti ESAUSTIVI: esattamente due runner, entrambi
+    ``ACTIVE``, ``numberOfWinners`` == 1 se il book lo porta, e uno dei due e'
+    ``selection_id``. Altrimenti None. Stessa regola del canale
+    (``motore_ordini.altro_runner_due_esiti``) letta dal book REST. Pura."""
+    if not isinstance(book, dict):
+        return None
+    runners = list(book.get("runners") or [])
+    if len(runners) != 2:
+        return None
+    for r in runners:
+        if str(r.get("status") or "ACTIVE").upper() != "ACTIVE":
+            return None
+    nw = book.get("numberOfWinners")
+    if nw is not None:
+        try:
+            if int(nw) != 1:
+                return None
+        except (TypeError, ValueError):
+            return None
+    try:
+        ids = [(int(r.get("selectionId")), float(r.get("handicap") or 0.0)) for r in runners]
+        sel = int(selection_id)
+    except (TypeError, ValueError):
+        return None
+    if sel not in (ids[0][0], ids[1][0]):
+        return None
+    return ids[1] if ids[0][0] == sel else ids[0]
+
+
+def altra_selezione_due_esiti(market_id: str, selection_id: int) -> Optional[tuple]:
+    """02/10/2026 (riconciliazione dei tradotti, D3): l'altra selezione di un mercato a
+    due esiti esaustivi letta da Betfair (UNA ``listMarketBook``, come il place-and-trim
+    e ``read_book``), per il verdetto dei minimi sulla strada REST. Solo sotto il minimo:
+    mai una lettura in piu' per un ordine piazzabile diretto. Book illeggibile = None
+    (nessun equivalente: si decide come prima)."""
+    try:
+        books = call(lambda c: c.list_market_book([str(market_id)])) or []
+    except Exception as ex:  # noqa: BLE001 - book non leggibile: nessun equivalente
+        logger.warning("[minimi] book non leggibile su %s: %s", market_id, str(ex)[:120])
+        return None
+    for b in books:
+        if str(b.get("marketId") or market_id) == str(market_id):
+            return altro_esito_dal_book(b, selection_id)
+    return None
+
+
 def _submin_cancel(market_id: str, bet_id: str, size_reduction: Optional[float]) -> dict:
     """cancelOrders: parziale con ``size_reduction``, totale con None."""
     instr: dict = {"betId": str(bet_id)}
@@ -1369,6 +1417,23 @@ def place_lay_live(
 # ---------------------------------------------------------------------------
 # RICONCILIAZIONE: stato reale degli ordini Omega su Betfair
 # ---------------------------------------------------------------------------
+def _identita_ordine(o: dict, prezzo_chiesto: Any, size_chiesta: Any) -> dict:
+    """02/10/2026 (riconciliazione dei tradotti): DI QUALE ordine e' lo stato letto per
+    betId - selezione, lato, quota e size chieste, come le dice Betfair
+    (``CurrentOrder.selectionId/side/priceSize``, ``ClearedOrder.selectionId/side/
+    priceRequested``). Un ordine che il runner ha TRADOTTO nell'equivalente sta
+    sull'ALTRA selezione col lato opposto: senza queste chiavi chi legge per bet_id
+    (ripiego live dei bot) non lo riconosce e scrive i numeri del vero sulla riga del
+    chiesto. Chiavi in piu', nessuna cambiata."""
+    sid = o.get("selectionId")
+    return {
+        "selection_id": int(sid) if sid is not None else None,
+        "side": (str(o.get("side")).lower() if o.get("side") else None),
+        "price_requested": prezzo_chiesto,
+        "size_requested": size_chiesta,
+    }
+
+
 def order_state_by_bet_id(bet_id: str) -> dict:
     """Stato REALE di UN ordine per betId (riconciliazione del percorso LIVE via
     flumine, §6-bis: l'ordine piazzato dal runner NON porta né il customerOrderRef
@@ -1405,6 +1470,8 @@ def order_state_by_bet_id(bet_id: str) -> dict:
                 "size_remaining": float(o.get("sizeRemaining") or 0.0),
                 "matched_date": o.get("matchedDate"),
                 "placed_date": o.get("placedDate"),
+                **_identita_ordine(o, (o.get("priceSize") or {}).get("price"),
+                                   (o.get("priceSize") or {}).get("size")),
             }
     # SETTLED prima (porta i € matchati); poi gli stati "senza fill": un FOK
     # ucciso finisce in CANCELLED/LAPSED con sizeSettled=0.
@@ -1425,6 +1492,7 @@ def order_state_by_bet_id(bet_id: str) -> dict:
                     "matched_date": o.get("lastMatchedDate"),
                     "placed_date": o.get("placedDate"),
                     "settled_date": o.get("settledDate"),
+                    **_identita_ordine(o, o.get("priceRequested"), None),
                 }
     return {"found": False}
 

@@ -139,6 +139,7 @@ _MODULI_OMEGA: Tuple[str, ...] = (
 # ``tennis_opportunity`` li importa per nome (``bot_service.OPTIONAL_MODULES``)
 _MODULI_SAFE: Tuple[str, ...] = (
     "Betfair.safe_strategy.bot_service", "Betfair.safe_strategy.anomaly",
+    "Betfair.safe_strategy.arresto_bot",
     "Betfair.safe_strategy.bot_db", "Betfair.safe_strategy.calibration",
     "Betfair.safe_strategy.canale_scan", "Betfair.safe_strategy.combos",
     "Betfair.safe_strategy.engine", "Betfair.safe_strategy.execution",

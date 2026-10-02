@@ -1421,7 +1421,7 @@ def _place_sub_minimum(
 # Azioni place / cancel / replace
 # ---------------------------------------------------------------------------
 def _do_place(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any,
-              *, client: Any = None) -> None:
+              *, client: Any = None, tradotto: Optional[Dict[str, Any]] = None) -> None:
     from .live_order_build import build_order
 
     rid = request_row["id"]
@@ -1494,6 +1494,15 @@ def _do_place(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, str
             side=built.side.lower() if isinstance(built.side, str) else built.side,
             detail=built.note,
         )
+        if tradotto is not None:
+            # 02/10/2026 (riconciliazione dei tradotti): l'esito della coda nei termini
+            # dell'ordine CHIESTO, come l'evento del canale; la riga vera in
+            # ``riga_mandata``, la dichiarazione in ``tradotto``
+            from .live_order_build import riporta_lettura_tradotta
+            result = riporta_lettura_tradotta(result, tradotto["originale"],
+                                              tradotto["mandato"])
+            result["tradotto"] = {k: (dict(v) if isinstance(v, dict) else v)
+                                  for k, v in tradotto.items()}
         _write_done(sb, rid, result)
     except Exception as ex:  # noqa: BLE001
         raise RuntimeError(
@@ -3581,6 +3590,86 @@ def _process_local_requests(sb: Any, flumine: Any, mode_l: str, strategy: Any,
 # ---------------------------------------------------------------------------
 # Dispatch + ciclo
 # ---------------------------------------------------------------------------
+#: 02/10/2026 (riconciliazione dei tradotti, D3): la riga di coda che lo chiede
+#: (``params.equivalente_ammesso``, la mette Safe) ha lo STESSO verdetto dei minimi del
+#: canale (``motore_ordini._applica_minimi``): sotto il minimo, su un mercato a due esiti
+#: esaustivi, l'ordine EQUIVALENTE sull'altra selezione.
+from .live_order_build import PARAM_EQUIVALENTE_AMMESSO as PARAM_EQUIVALENTE  # noqa: E402
+
+
+def _traduci_riga_coda(flumine: Any, request_row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Il verdetto dei minimi per una riga ``place``/``place_submin`` che lo chiede.
+
+    Ritorna ``{"riga", "tradotto"}`` se va mandato l'equivalente (``riga`` = il place
+    diretto dell'equivalente, ``tradotto`` = chiesto e mandato come
+    ``piano["tradotto"]`` del motore); None se la riga resta com'e' (piazzabile diretta,
+    o place-and-trim). Solleva ``ValueError(SOTTO_MINIMO_NON_PIAZZABILE ...)`` se non
+    c'e' nessuna via legittima (MAI un ordine). Stesse funzioni del canale:
+    ``altro_runner_due_esiti`` e ``live_order_build.verdetto_minimi``."""
+    params = request_row.get("params") or {}
+    if not (isinstance(params, dict) and params.get(PARAM_EQUIVALENTE)):
+        return None
+    # punto 11: solo per gli attori ammessi alla traduzione, come sul canale
+    from .trading import minimi_it as MI
+
+    if str(params.get("source") or "") not in MI.ATTORI_CON_TRADUZIONE:
+        return None
+    from . import live_order_build as LB
+    from .motore_ordini import altro_runner_due_esiti
+
+    side = str(request_row.get("side") or "").lower()
+    price = _f(request_row.get("price"))
+    ts = params.get("target_size")
+    size = _f(ts) if ts is not None else _f(request_row.get("size"))
+    sel = _int(request_row.get("selection_id"))
+    if price is None or size is None or sel is None or side not in ("back", "lay"):
+        return None
+    juris = _jurisdiction()
+    if LB.min_stake_rules(juris, side, price, size).valid:
+        return None
+    altra = None
+    try:
+        altra = altro_runner_due_esiti(_resolve_market(flumine, request_row.get("market_id")),
+                                       sel)
+    except Exception:  # noqa: BLE001 - mercato non risolvibile: niente equivalente
+        altra = None
+    v = LB.verdetto_minimi(juris, side, price, size, altra_selezione=altra)
+    if v.esito == LB.VERDETTO_IMPOSSIBILE:
+        raise ValueError(str(v.motivo or LB.SOTTO_MINIMO_NON_PIAZZABILE))
+    if v.esito != LB.VERDETTO_EQUIVALENTE:
+        return None
+    eq = v.equivalente
+    mandato = {"selection_id": int(v.altra_selezione[0]),
+               "handicap": float(v.altra_selezione[1]),
+               "side": eq.side, "price": float(eq.price), "size": float(eq.size)}
+    riga = dict(request_row)
+    riga.update(mandato)
+    riga["action"] = "place"
+    riga["liability"] = None
+    if params.get("reduces_liability"):
+        # una CHIUSURA tradotta e' un place DIRETTO: FILL_OR_KILL come la stessa chiusura
+        # sul canale (``execution._place_via_canale``: FOK sulle chiusure) e come ogni
+        # place diretto della coda (``execution.enqueue_place``). La riga
+        # ``place_submin`` non lo aveva solo per la tecnica del parcheggio (un FOK
+        # ucciderebbe il primo passo), che qui non c'e'.
+        riga["time_in_force"] = "FILL_OR_KILL"
+        riga["persistence"] = "LAPSE"
+        riga["min_fill_size"] = None
+    riga["params"] = {k: v2 for k, v2 in params.items() if k not in ("target_size",)}
+    tradotto = {
+        "originale": {"selection_id": int(sel),
+                      "handicap": float(request_row.get("handicap") or 0.0),
+                      "side": side, "price": float(price), "size": round(float(size), 2)},
+        "mandato": dict(mandato),
+        "quota_esatta": eq.price_esatta,
+        "scarto_se_vince_chiesta": eq.scarto_se_vince_chiesta,
+        "scarto_se_vince_altra": eq.scarto_se_vince_altra,
+        "motivo": v.motivo,
+    }
+    logger.info("[live-order] richiesta %s: %s", request_row.get("id"), v.motivo)
+    return {"riga": riga, "tradotto": tradotto}
+
+
 def _dispatch(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any) -> None:
     """Esegue UNA riga. ``mode`` e' la modalita' DELLA RIGA, mai quella del processo.
 
@@ -3594,6 +3683,12 @@ def _dispatch(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, str
     action = str(request_row.get("action") or "")
     client = _client_for_mode(flumine, mode)
     strat = _strategy_for_mode(strategy, mode)
+    if action in ("place", "place_submin"):
+        trad = _traduci_riga_coda(flumine, request_row)
+        if trad is not None:
+            _do_place(sb, flumine, trad["riga"], mode, strat, client=client,
+                      tradotto=trad["tradotto"])
+            return
     if action == "place":
         _do_place(sb, flumine, request_row, mode, strat, client=client)
     elif action == "cancel":

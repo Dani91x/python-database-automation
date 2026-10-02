@@ -284,8 +284,12 @@ const ARRESTO_ORDINATO_LABELS = new Set([
 // scalper_service.tempo_supervisore_arresto_s() (132 s: battito + flat di 3
 // strategie + annullo degli ordini + segnale): qui quel tempo + margine.
 // Il test test_scalper_arresto_ordinato_2026_10_02.py confronta i due numeri.
+// 02/10 (R1): Safe (safe-strategy-bot) e Omega all'arresto annullano i loro ordini
+// vivi (tetto 10 s) dopo il giro in corso: arresto_bot.TEMPO_MASSIMO_ARRESTO_S (35 s)
+// + margine. Il test test_arresto_bot_safe_omega_2026_10_02.py confronta i numeri.
 function shutdownGraceMs(label) {
     if (label === 'scalper-service') return 150_000;
+    if (label === 'omega-service' || label === 'safe-strategy-bot') return 45_000;
     return 25_000;
 }
 // <<< K-SPEGNIMENTO-ORDINATO --------------------------------------------------

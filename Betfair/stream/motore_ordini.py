@@ -673,32 +673,14 @@ def _ordine_ha_esito_positivo(ordine: Any) -> bool:
 def _riporta_tradotto(d: Dict[str, Any], tradotto: Dict[str, Any]) -> Dict[str, Any]:
     """La riga dello specchio dell'ordine EQUIVALENTE riportata nei termini dell'ordine
     CHIESTO dal bot (``live_order_build.riporta_abbinato_all_originale``). La riga vera
-    resta intera in ``riga_mandata``; ``tradotto`` dice chiesto e mandato."""
+    resta intera in ``riga_mandata``; ``tradotto`` dice chiesto e mandato.
+
+    02/10/2026 (riconciliazione dei tradotti): la traduzione e' UNA sola,
+    ``live_order_build.riporta_lettura_tradotta``, la stessa che usano i bot sulle altre
+    vie di lettura (specchio, stato per bet_id, ordini correnti e regolati, coda)."""
     from . import live_order_build as LB
 
-    orig = tradotto["originale"]
-    mand = tradotto["mandato"]
-    out = dict(d)
-    out["riga_mandata"] = {k: d.get(k) for k in (
-        "selection_id", "handicap", "side", "price", "size", "size_matched",
-        "size_remaining", "average_price_matched", "size_cancelled", "size_lapsed",
-        "size_voided")}
-    mandata = float(mand["size"])
-    fattore = (float(orig["size"]) / mandata) if mandata > 0 else 0.0
-    abbinato, quota = LB.riporta_abbinato_all_originale(
-        orig["side"], orig["price"], orig["size"], mandata, d.get("size_matched"))
-    out.update({
-        "selection_id": orig["selection_id"], "handicap": orig.get("handicap", 0.0),
-        "side": orig["side"], "price": orig["price"], "size": orig["size"],
-        "size_matched": abbinato, "average_price_matched": (quota or 0.0),
-    })
-    for k in ("size_remaining", "size_cancelled", "size_lapsed", "size_voided"):
-        v = d.get(k)
-        if v is not None:
-            try:
-                out[k] = round(float(v) * fattore, 2)
-            except (TypeError, ValueError):
-                pass
+    out = LB.riporta_lettura_tradotta(d, tradotto["originale"], tradotto["mandato"])
     out["tradotto"] = {k: (dict(v) if isinstance(v, dict) else v)
                        for k, v in tradotto.items()}
     return out
