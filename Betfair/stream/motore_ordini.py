@@ -1168,6 +1168,16 @@ class MotoreOrdini:
             self._traduci_annullo(piano)
 
     # ------------------------------------- 02/10 cancel/replace su ordine tradotto
+    def _ordine_per_bet(self, flumine: Any, market_id: Any, bet_id: str) -> Any:
+        """L'ordine flumine per bet_id con la lookup dell'esecutore dello sport (calcio:
+        ``live_order_worker._find_order_by_bet_id``; tennis: quella del suo worker)."""
+        trova = getattr(self._low, "_find_order_by_bet_id", None)
+        if trova is None:
+            trova = getattr(getattr(self._low, "_TW", None), "_find_order_by_bet_id", None)
+        if trova is None:
+            return None
+        return trova(flumine, market_id, bet_id)
+
     def _tradotto_di_bet(self, bet_id: Any) -> Optional[Dict[str, Any]]:
         """L'``info`` del comando (``_rif_interni``) se ``bet_id`` e' di un ordine
         tradotto nell'equivalente; None altrimenti. Solo RAM."""
@@ -1213,7 +1223,7 @@ class MotoreOrdini:
         ordine = None
         if self._flumine is not None:
             try:
-                ordine = self._low._find_order_by_bet_id(self._flumine, riga.get("market_id"),
+                ordine = self._ordine_per_bet(self._flumine, riga.get("market_id"),
                                                          str(riga["bet_id"]))
             except Exception:  # noqa: BLE001 - lettura difensiva
                 ordine = None
@@ -2044,7 +2054,7 @@ class MotoreOrdini:
             ordine = None
             if self._flumine is not None:
                 try:
-                    ordine = self._low._find_order_by_bet_id(
+                    ordine = self._ordine_per_bet(
                         self._flumine, piano["riga"].get("market_id"), at["bet_id"])
                 except Exception:  # noqa: BLE001
                     ordine = None
