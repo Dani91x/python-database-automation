@@ -228,10 +228,10 @@ index 0000000..f2d3d22
 +engine.py ripristinato, impronta fc51fa7a61f5d426
 diff --git a/AUDIT_2026-10-02/MIKE_CHIUSURA_INTEGRATA.md b/AUDIT_2026-10-02/MIKE_CHIUSURA_INTEGRATA.md
 new file mode 100644
-index 0000000..1492298
+index 0000000..c289dba
 --- /dev/null
 +++ b/AUDIT_2026-10-02/MIKE_CHIUSURA_INTEGRATA.md
-@@ -0,0 +1,203 @@
+@@ -0,0 +1,215 @@
 +# MIKE - chiusura integrata (verifica e correzione, 02/10/2026)
 +
 +Ramo `mike-chiusura` (base `verifica-runner-master` = `e4c93e0`, master `fb890d5` + runner minimi).
@@ -435,6 +435,18 @@ index 0000000..1492298
 +   minimo possono cambiare (in peggio, cioe' veri).
 +7. Scenari `cashout-dopo-copertura`, `firma-*`, `uscite-*` cambieranno (decisione 12: punta Under al
 +   posto della banca Over): da rilanciare con `tutti` (punto 5).
++
++## Aggiunta dopo la verifica del coordinatore (guardia del banco senza rete)
++Reperto del coordinatore: `minimi_banco.sotto_minimo -> return False` non colta (replay di Ashdod col
++motore nuovo: Mike non manda piu' ordini sotto minimo). Nota: la mutazione era gia' rossa su 3 test di
++`Betfair/stream/tests/test_banco_minimi_it_2026_10_02.py` (filtro `-k banco/minimi` del coordinatore:
++non seleziona quel file). Aggiunto comunque `Betfair/stream/tests/test_minimi_banco_2026_10_02.py`
++(9 test unitari, flumine finto con le chiavi vere: `order_package` iterabile, `order.side` BACK/LAY,
++`order.order_type.size`, `order.notes`, `simulated.place` / `_create_place_response`): banca e punta 0,99
++dirette -> FAILURE `INVALID_BET_SIZE`, nessun abbinato; 1,00 passa; place-and-trim finale 0,49 rifiutato,
++0,50 passa; replace 0,49 rifiutato, 0,50 passa; guardia spenta -> `abbinati_sotto_minimo()` trova
++l'abbinato; la regola si smonta all'uscita. Falsificazione (`_falsifica_B.out`): B1 `sotto_minimo ->
++False` 8 rossi (5 del file nuovo), B2 `minimo_per` a 0,50 3 rossi, B3 controllo cieco 3 rossi.
 diff --git a/AUDIT_2026-10-02/MIKE_CHIUSURA_INTEGRATA_falsifica.out b/AUDIT_2026-10-02/MIKE_CHIUSURA_INTEGRATA_falsifica.out
 new file mode 100644
 index 0000000..444be2b
@@ -603,10 +615,10 @@ index 0000000..444be2b
 +mutazioni rosse: 21 su 22; file ripristinati, impronte identiche
 diff --git a/AUDIT_2026-10-02/MIKE_CHIUSURA_INTEGRATA_falsifica.py b/AUDIT_2026-10-02/MIKE_CHIUSURA_INTEGRATA_falsifica.py
 new file mode 100644
-index 0000000..a04e10e
+index 0000000..fb2c71e
 --- /dev/null
 +++ b/AUDIT_2026-10-02/MIKE_CHIUSURA_INTEGRATA_falsifica.py
-@@ -0,0 +1,165 @@
+@@ -0,0 +1,177 @@
 +"""FALSIFICAZIONE del verificatore (02/10): mutazioni NUOVE, in direzioni che il
 +delegato del 01/10 non ha provato, piu' quelle delle correzioni del 02/10
 +(decisioni 12/13, stessa selezione, codice asincrono, L1, banco ottimista,
@@ -641,7 +653,8 @@ index 0000000..a04e10e
 +        "Betfair/mike/tests/test_mike_p5_banco_2026_09_29.py",
 +        "Betfair/mike/tests/test_mike_audit_2026_09_12.py",
 +        "Betfair/mike/tests/test_mike_riga_assente_e_arresto_2026_10_02.py",
-+        "Betfair/stream/tests/test_banco_minimi_it_2026_10_02.py"]
++        "Betfair/stream/tests/test_banco_minimi_it_2026_10_02.py",
++        "Betfair/stream/tests/test_minimi_banco_2026_10_02.py"]
 +
 +MUTAZIONI = [
 +    # --- direzioni nuove sul lavoro del delegato --------------------------------
@@ -695,6 +708,17 @@ index 0000000..a04e10e
 +     "        if False and not any(getattr(v, \"codice\", \"\") == MB.CODICE_CONTROLLO"),
 +    ("N15 sintetica di Ashdod con i livelli vecchi nel libro", SYN,
 +     "        self.azzera_livelli = bool(azzera_livelli)", "        self.azzera_livelli = False"),
++    # --- buco segnalato dal coordinatore (guardia del banco senza rete) -------
++    ("B1 sotto_minimo -> return False (il banco riaccetta tutto)", MBA,
++     "    try:\n        s = round(float(size or 0.0), 2)\n    except (TypeError, ValueError):\n"
++     "        return False\n    return s < minimo_per(tipo, side) - 0.0005",
++     "    return False"),
++    ("B2 minimo_per a 0,50 anche per gli ordini diretti", MBA,
++     "    return float(IT_MIN_LAY if lato == \"LAY\" else IT_MIN_BACK)",
++     "    return 0.50"),
++    ("B3 il controllo non vede gli abbinati", MBA,
++     "        if abbinato > 0 and sotto_minimo(size, tipo, getattr(ordine, \"side\", None)):",
++     "        if False:"),
 +    # --- punto 25 e R1 ----------------------------------------------------------
 +    ("P1 riga assente: si annulla senza rileggere il mercato via REST", SRV,
 +     "        if absent_closed:\n            stato_rest = _stato_rest_riga_assente(",
@@ -772,6 +796,37 @@ index 0000000..a04e10e
 +
 +if __name__ == "__main__":
 +    main()
+diff --git a/AUDIT_2026-10-02/MIKE_CHIUSURA_INTEGRATA_falsifica_B.out b/AUDIT_2026-10-02/MIKE_CHIUSURA_INTEGRATA_falsifica_B.out
+new file mode 100644
+index 0000000..215cdba
+--- /dev/null
++++ b/AUDIT_2026-10-02/MIKE_CHIUSURA_INTEGRATA_falsifica_B.out
+@@ -0,0 +1,25 @@
++﻿====================================================================================================
++B1 sotto_minimo -> return False (il banco riaccetta tutto)
++    8 failed, 237 passed, 2 warnings in 8.83s
++       FAILED Betfair/stream/tests/test_banco_minimi_it_2026_10_02.py::test_exchange_del_banco_rifiuta_invalid_bet_size_e_il_controllo_lo_vede
++       FAILED Betfair/stream/tests/test_banco_minimi_it_2026_10_02.py::test_replace_con_importo_finale_sotto_0_50_rifiutato
++       FAILED Betfair/stream/tests/test_banco_minimi_it_2026_10_02.py::test_certifica_scrive_la_violazione_banco_sotto_minimo
++       FAILED Betfair/stream/tests/test_minimi_banco_2026_10_02.py::test_diretto_0_99_rifiutato_invalid_bet_size[LAY]
++       FAILED Betfair/stream/tests/test_minimi_banco_2026_10_02.py::test_diretto_0_99_rifiutato_invalid_bet_size[BACK]
++       FAILED Betfair/stream/tests/test_minimi_banco_2026_10_02.py::test_place_and_trim_finale_0_49_rifiutato_0_50_passa
++       FAILED Betfair/stream/tests/test_minimi_banco_2026_10_02.py::test_replace_sotto_0_50_rifiutato[0.49-False]
++       FAILED Betfair/stream/tests/test_minimi_banco_2026_10_02.py::test_a_guardia_spenta_il_controllo_trova_l_abbinato
++====================================================================================================
++B2 minimo_per a 0,50 anche per gli ordini diretti
++    3 failed, 242 passed, 2 warnings in 8.11s
++       FAILED Betfair/stream/tests/test_minimi_banco_2026_10_02.py::test_diretto_0_99_rifiutato_invalid_bet_size[LAY]
++       FAILED Betfair/stream/tests/test_minimi_banco_2026_10_02.py::test_diretto_0_99_rifiutato_invalid_bet_size[BACK]
++       FAILED Betfair/stream/tests/test_minimi_banco_2026_10_02.py::test_a_guardia_spenta_il_controllo_trova_l_abbinato
++====================================================================================================
++B3 il controllo non vede gli abbinati
++    3 failed, 242 passed, 2 warnings in 7.99s
++       FAILED Betfair/stream/tests/test_banco_minimi_it_2026_10_02.py::test_exchange_del_banco_rifiuta_invalid_bet_size_e_il_controllo_lo_vede
++       FAILED Betfair/stream/tests/test_banco_minimi_it_2026_10_02.py::test_certifica_scrive_la_violazione_banco_sotto_minimo
++       FAILED Betfair/stream/tests/test_minimi_banco_2026_10_02.py::test_a_guardia_spenta_il_controllo_trova_l_abbinato
++====================================================================================================
++mutazioni rosse: 3 su 3; file ripristinati, impronte identiche
 diff --git a/AUDIT_2026-10-02/MIKE_CHIUSURA_INTEGRATA_falsifica_R1d.out b/AUDIT_2026-10-02/MIKE_CHIUSURA_INTEGRATA_falsifica_R1d.out
 new file mode 100644
 index 0000000..ff8c47e
@@ -5446,6 +5501,157 @@ index 4d4ef4f..ce39ea2 100644
                                      event_id=CALCIO_EVENTO, side="lay",
                                      customer_ref="cp-chiude-a2", fill_or_kill=False)
              out["fase"] = 6
+diff --git a/Betfair/stream/tests/test_minimi_banco_2026_10_02.py b/Betfair/stream/tests/test_minimi_banco_2026_10_02.py
+new file mode 100644
+index 0000000..29d029d
+--- /dev/null
++++ b/Betfair/stream/tests/test_minimi_banco_2026_10_02.py
+@@ -0,0 +1,145 @@
++"""02/10 - TEST UNITARI DELLA GUARDIA DEI MINIMI .it DEL BANCO (``minimi_banco``).
++
++Buco trovato dal coordinatore: la mutazione ``sotto_minimo -> return False`` non era
++colta dal replay di Ashdod (il motore corretto non manda piu' ordini sotto minimo,
++quindi la guardia non viene mai esercitata). Qui la guardia si prova da sola:
++``minimi_it_su_flumine()`` montato sopra un'esecuzione simulata FINTA che fa cio'
++che fa flumine (``SimulatedExecution.execute_place``: ``order.simulated.place``
++per ogni ordine del pacchetto; ``execute_replace``:
++``order.trade.create_order_replacement`` e poi ``simulated.place`` del nuovo).
++Finti con le chiavi e i tipi veri: ``order_package`` iterabile di ordini,
++``order.side`` "BACK"/"LAY", ``order.order_type.size``, ``order.notes`` dict,
++``order.simulated`` con ``size_remaining``/``size_voided``/``size_matched`` e
++``_create_place_response(bet_id, status=..., error_code=...)``. ASCII-only.
++"""
++from __future__ import annotations
++
++from types import SimpleNamespace
++from typing import Any, List
++
++import pytest
++
++from Betfair.stream.backtest import minimi_banco as MB
++
++
++class SimulatoFinto:
++    """``flumine.simulation.simulatedorder.SimulatedOrder``: abbina tutto al place."""
++
++    def __init__(self, size: float) -> None:
++        self.size_remaining = float(size)
++        self.size_voided = 0.0
++        self.size_matched = 0.0
++
++    def _create_place_response(self, bet_id: Any, status: str = "SUCCESS",
++                               error_code: Any = None) -> Any:
++        return SimpleNamespace(bet_id=bet_id, status=status, error_code=error_code)
++
++    def place(self, order_package: Any, market_book: Any, instruction: Any, bet_id: int) -> Any:
++        self.size_matched = self.size_remaining
++        self.size_remaining = 0.0
++        return self._create_place_response(bet_id, status="SUCCESS")
++
++
++class TradeFinto:
++    def create_order_replacement(self, order: Any, new_price: float, size: float,
++                                 date_time_created: Any) -> Any:
++        return ordine(order.side, size, prezzo=new_price, notes=order.notes, trade=self)
++
++
++def ordine(side: str, size: float, prezzo: float = 2.0, notes: Any = None,
++           trade: Any = None) -> Any:
++    o = SimpleNamespace(side=side, order_type=SimpleNamespace(size=float(size), price=prezzo),
++                        notes=notes if notes is not None else {},
++                        simulated=SimulatoFinto(size), trade=trade or TradeFinto(),
++                        risposta=None)
++    return o
++
++
++def _esegui_place(self: Any, order_package: Any, http_session: Any = None) -> None:
++    """Il corpo di ``SimulatedExecution.execute_place`` ridotto all'osso."""
++    for i, o in enumerate(order_package):
++        o.risposta = o.simulated.place(order_package, None, {}, i + 1)
++
++
++def _esegui_replace(self: Any, order_package: Any, http_session: Any = None) -> None:
++    for i, o in enumerate(order_package):
++        resto = o.simulated.size_remaining
++        nuovo = o.trade.create_order_replacement(o, 3.0, resto, None)
++        nuovo.risposta = nuovo.simulated.place(order_package, None, {}, 100 + i)
++        o.nuovo = nuovo
++
++
++@pytest.fixture
++def esecuzione(monkeypatch):
++    from flumine.execution.simulatedexecution import SimulatedExecution
++
++    monkeypatch.setattr(SimulatedExecution, "execute_place", _esegui_place)
++    monkeypatch.setattr(SimulatedExecution, "execute_replace", _esegui_replace)
++    return SimulatedExecution
++
++
++def _piazza(esec: Any, *ordini: Any) -> List[Any]:
++    with MB.minimi_it_su_flumine():
++        esec.execute_place(None, list(ordini), None)
++    return list(ordini)
++
++
++def _rifiutato(o: Any) -> bool:
++    return (o.risposta.status == "FAILURE" and o.risposta.error_code == "INVALID_BET_SIZE"
++            and o.simulated.size_matched == 0.0)
++
++
++@pytest.mark.parametrize("side", ["LAY", "BACK"])
++def test_diretto_0_99_rifiutato_invalid_bet_size(esecuzione, side):
++    [o] = _piazza(esecuzione, ordine(side, 0.99))
++    assert _rifiutato(o) and o.simulated.size_voided == 0.99
++    assert MB.REGISTRO.rifiutati[-1]["codice"] == "INVALID_BET_SIZE"
++    assert MB.abbinati_sotto_minimo() == []
++
++
++@pytest.mark.parametrize("side", ["LAY", "BACK"])
++def test_diretto_1_00_passa(esecuzione, side):
++    [o] = _piazza(esecuzione, ordine(side, 1.00))
++    assert o.risposta.status == "SUCCESS" and o.simulated.size_matched == 1.00
++    assert MB.REGISTRO.rifiutati == []
++
++
++def test_place_and_trim_finale_0_49_rifiutato_0_50_passa(esecuzione):
++    a = ordine("BACK", 0.49, notes={MB.NOTA_PLACE_AND_TRIM: True})
++    b = ordine("LAY", 0.50, notes={MB.NOTA_PLACE_AND_TRIM: True})
++    _piazza(esecuzione, a, b)
++    assert _rifiutato(a)
++    assert b.risposta.status == "SUCCESS" and b.simulated.size_matched == 0.50
++    assert MB.abbinati_sotto_minimo() == []
++
++
++@pytest.mark.parametrize("resto,passa", [(0.49, False), (0.50, True)])
++def test_replace_sotto_0_50_rifiutato(esecuzione, resto, passa):
++    vecchio = ordine("BACK", 1.00)
++    vecchio.simulated.size_remaining = resto
++    with MB.minimi_it_su_flumine():
++        esecuzione.execute_replace(None, [vecchio], None)
++    nuovo = vecchio.nuovo
++    if passa:
++        assert nuovo.risposta.status == "SUCCESS" and nuovo.simulated.size_matched == resto
++    else:
++        assert _rifiutato(nuovo)
++        assert MB.REGISTRO.rifiutati[-1]["tipo"] == MB.SOSTITUZIONE
++    # il metodo di classe del trade torna com'era
++    assert "create_order_replacement" not in vars(vecchio.trade)
++
++
++def test_a_guardia_spenta_il_controllo_trova_l_abbinato(esecuzione, monkeypatch):
++    """Il controllo di certificazione legge gli ordini eseguiti, non la regola."""
++    monkeypatch.setattr(MB, "ATTIVO", False)
++    [o] = _piazza(esecuzione, ordine("LAY", 0.43))
++    assert o.simulated.size_matched == 0.43
++    fuori = MB.abbinati_sotto_minimo()
++    assert len(fuori) == 1 and fuori[0]["size"] == 0.43 and fuori[0]["minimo"] == 1.00
++
++
++def test_la_regola_si_smonta_all_uscita(esecuzione):
++    with MB.minimi_it_su_flumine():
++        pass
++    assert esecuzione.execute_place is _esegui_place
++    assert esecuzione.execute_replace is _esegui_replace
 diff --git a/frontend/src/components/controlroom/PropostaUscitaMike.tsx b/frontend/src/components/controlroom/PropostaUscitaMike.tsx
 index f400d2b..11ec27f 100644
 --- a/frontend/src/components/controlroom/PropostaUscitaMike.tsx

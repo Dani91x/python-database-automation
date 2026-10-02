@@ -32,7 +32,8 @@ TEST = ["Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py",
         "Betfair/mike/tests/test_mike_p5_banco_2026_09_29.py",
         "Betfair/mike/tests/test_mike_audit_2026_09_12.py",
         "Betfair/mike/tests/test_mike_riga_assente_e_arresto_2026_10_02.py",
-        "Betfair/stream/tests/test_banco_minimi_it_2026_10_02.py"]
+        "Betfair/stream/tests/test_banco_minimi_it_2026_10_02.py",
+        "Betfair/stream/tests/test_minimi_banco_2026_10_02.py"]
 
 MUTAZIONI = [
     # --- direzioni nuove sul lavoro del delegato --------------------------------
@@ -86,6 +87,17 @@ MUTAZIONI = [
      "        if False and not any(getattr(v, \"codice\", \"\") == MB.CODICE_CONTROLLO"),
     ("N15 sintetica di Ashdod con i livelli vecchi nel libro", SYN,
      "        self.azzera_livelli = bool(azzera_livelli)", "        self.azzera_livelli = False"),
+    # --- buco segnalato dal coordinatore (guardia del banco senza rete) -------
+    ("B1 sotto_minimo -> return False (il banco riaccetta tutto)", MBA,
+     "    try:\n        s = round(float(size or 0.0), 2)\n    except (TypeError, ValueError):\n"
+     "        return False\n    return s < minimo_per(tipo, side) - 0.0005",
+     "    return False"),
+    ("B2 minimo_per a 0,50 anche per gli ordini diretti", MBA,
+     "    return float(IT_MIN_LAY if lato == \"LAY\" else IT_MIN_BACK)",
+     "    return 0.50"),
+    ("B3 il controllo non vede gli abbinati", MBA,
+     "        if abbinato > 0 and sotto_minimo(size, tipo, getattr(ordine, \"side\", None)):",
+     "        if False:"),
     # --- punto 25 e R1 ----------------------------------------------------------
     ("P1 riga assente: si annulla senza rileggere il mercato via REST", SRV,
      "        if absent_closed:\n            stato_rest = _stato_rest_riga_assente(",
