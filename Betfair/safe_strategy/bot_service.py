@@ -1006,6 +1006,9 @@ def _risolvi_una_via_canale(db, tr: dict[str, Any], *, now: datetime, os_mod: An
         # si toglie: la riga ha un esito certo
         pulita = dict(tr)
         pulita["meta"] = {k: v for k, v in meta.items() if k not in ("reason", "err")}
+        # 02/10/2026 (riconciliazione dei tradotti): l'evento e' gia' nei termini
+        # chiesti; la dichiarazione del runner resta sulla riga per le letture di dopo
+        X.ricorda_tradotto(pulita["meta"], ev)
         if matched > 0:
             # 25/09 (F8, C.12a): la riga risolta dal canale porta CHIESTO,
             # ABBINATO, RESIDUO e PREZZO MEDIO come quella del REST
@@ -1035,6 +1038,11 @@ def _risolvi_una_via_canale(db, tr: dict[str, Any], *, now: datetime, os_mod: An
         # C.12a - la riga racconta il vero anche prima della fine
         nuovo = dict(meta)
         nuovo.update({"canale_fase": ev.get("fase"), "canale_seq": int(ev.get("seq") or 0)})
+        # 02/10/2026 (riconciliazione dei tradotti): se il runner ha tradotto l'ordine
+        # nell'equivalente, la sua dichiarazione resta sulla riga: il bet_id
+        # dell'evento e' quello dell'ordine VERO, e il ripiego per bet_id oltre la
+        # scadenza (``_reconcile_by_bet_id``) va letto nei termini chiesti.
+        X.ricorda_tradotto(nuovo, ev)
         campi: dict[str, Any] = {"meta": nuovo}
         if ev.get("bet_id") and not tr.get("bet_id"):
             campi["bet_id"] = str(ev.get("bet_id"))
@@ -1235,6 +1243,11 @@ def reconcile_pending(*, market, db, now: datetime) -> int:
                     # terminale, resta in riconciliazione. Fail-closed.
                     continue
             if act == "confirm":
+                # 02/10/2026 (riconciliazione dei tradotti): la conferma di un ordine
+                # tradotto conserva la dichiarazione (chiesto e mandato) sulla riga
+                m_rec = dict(tr.get("meta") or {})
+                if X.ricorda_tradotto(m_rec, d.get("betfair") or {}):
+                    tr["meta"] = m_rec
                 _reconcile_confirm(db, tr, price=float(d["price"]), size=float(d["size"]),
                                    bet_id=d.get("bet_id"), how="live", now=now)
                 n += 1
@@ -1435,6 +1448,15 @@ def _annulla_prima_del_terminale(market, tr: dict[str, Any], *, db,
     residuo = _r2(getattr(ann, "size_remaining", None)) if riletto else None
     abbinato = _r2(getattr(ann, "size_matched", None)) if riletto else None
     medio = getattr(ann, "avg_price_matched", None) if riletto else None
+    if riletto:
+        # 02/10/2026 (riconciliazione dei tradotti): numeri dell'ordine VERO nei
+        # termini della riga, se tradotto (la dichiarazione e' sulla riga)
+        letto = X.nei_termini_della_riga(tr, {"size_matched": abbinato,
+                                              "size_remaining": residuo,
+                                              "avg_price_matched": medio})
+        abbinato = _r2(letto.get("size_matched"))
+        residuo = _r2(letto.get("size_remaining"))
+        medio = letto.get("avg_price_matched")
     if not riletto:
         esito = "vivo"          # esito IGNOTO: mai dichiarare annullato
     elif (residuo or 0.0) > 0:
@@ -1479,6 +1501,11 @@ def _reconcile_by_bet_id(market, tr: dict[str, Any]) -> Optional[dict]:
     st = fn(str(bet_id))  # solleva su rete KO → il chiamante non decide
     if not st or not st.get("found"):
         return None
+    # 02/10/2026 (riconciliazione dei tradotti, D2): lo stato e' dell'ordine VERO. Se il
+    # runner l'ha tradotto nell'equivalente sull'altra selezione, si legge nei termini
+    # della riga (prima: la riga di chiusura banca Over 0,43 @18 veniva confermata coi
+    # numeri della punta Under 7,31 @1,06).
+    st = X.nei_termini_della_riga(tr, st)
     matched = float(st.get("size_matched") or 0.0)
     remaining = float(st.get("size_remaining") or 0.0)
     if matched > 0 and remaining <= 0:
@@ -1870,7 +1897,7 @@ def _completa_consapevolezza_mancante(*, db, market, rows: list[dict[str, Any]])
             continue
         if not isinstance(st, dict) or not st.get("found"):
             continue
-        _racconta_il_vero(db, tr, st)
+        _racconta_il_vero(db, tr, X.nei_termini_della_riga(tr, st))
         n += 1
     return n
 

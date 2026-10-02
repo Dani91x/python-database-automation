@@ -80,6 +80,10 @@ SUBMIN_ABS_MIN_SIZE = 0.01
 # Tolleranza dell'equivalenza economica (EUR): l'ordine tradotto non puo' essere peggiore
 # di quello chiesto di piu' di un centesimo in nessuno dei due esiti.
 TOLLERANZA_EQUIVALENZA = 0.01
+# 02/10/2026 (riconciliazione dei tradotti, D3): la chiave di ``params`` con cui una riga
+# della CODA chiede lo stesso verdetto dei minimi del canale (equivalente sull'altra
+# selezione); la mette chi accoda (Safe calcio), la legge il worker.
+PARAM_EQUIVALENTE_AMMESSO = "equivalente_ammesso"
 
 COM_MIN_STAKE = 2.00           # stake minimo generico .com (€)
 COM_MIN_BET_PAYOUT = 20.0      # Min Bet Payout .com: ammesso sotto-minimo se size*price >= 20
@@ -372,6 +376,190 @@ def riporta_abbinato_all_originale(
     # banca chiesta: m (stake della punta equivalente) = liability = abbinato*(quota-1);
     # punta chiesta: m (stake del backer della banca equivalente) = vincita = idem.
     return abbinato, round(1.0 + m / abbinato, 4)
+
+
+# ---------------------------------------------------------------------------
+# 02/10/2026 (RICONCILIAZIONE DEI TRADOTTI): UNA traduzione per OGNI via di lettura
+# ---------------------------------------------------------------------------
+#: le chiavi della riga VERA conservate in ``riga_mandata`` (le stesse dell'evento del
+#: canale, ``motore_ordini._riporta_tradotto``)
+CHIAVI_RIGA_MANDATA = ("selection_id", "handicap", "side", "price", "size", "size_matched",
+                       "size_remaining", "average_price_matched", "size_cancelled",
+                       "size_lapsed", "size_voided")
+#: le altre grafie che le letture REST normalizzano (``omega_market._riga_corrente``,
+#: ``_riga_regolata``, ``order_state_by_bet_id``): conservate se ci sono
+_CHIAVI_RIGA_MANDATA_REST = ("avg_price_matched", "size_settled", "price_requested",
+                             "size_requested")
+
+
+def riporta_lettura_tradotta(letto: Any, originale: Any, mandato: Any) -> dict:
+    """Una lettura dell'ordine VERO (evento del canale, specchio ``betfair_live_orders``,
+    stato per bet_id, ordine corrente o regolato di Betfair, ``result`` della coda)
+    riportata nei termini dell'ordine CHIESTO, con le STESSE regole per ogni via.
+
+    ``originale`` = l'ordine chiesto dal bot (selection_id, handicap, side, price, size);
+    ``mandato`` = l'equivalente davvero piazzato (selection_id, handicap, side, price,
+    size). Abbinato e quota media da ``riporta_abbinato_all_originale``; residuo,
+    annullato, scaduto e annullato per void x (size chiesta / size mandata). Le chiavi
+    assenti nella lettura restano assenti (ogni via ha le sue grafie), tranne
+    selezione/lato/quota/size che dicono SEMPRE l'ordine chiesto. Su un ordine REGOLATO
+    (``size_settled``, dove ``price`` e' la quota ABBINATA) ``price`` diventa la quota
+    riportata. La riga vera resta intera in ``riga_mandata``. Pura."""
+    d = dict(letto or {})
+    orig = dict(originale or {})
+    mand = dict(mandato or {})
+    out = dict(d)
+    out["riga_mandata"] = {k: d.get(k) for k in CHIAVI_RIGA_MANDATA}
+    out["riga_mandata"].update({k: d[k] for k in _CHIAVI_RIGA_MANDATA_REST if k in d})
+    mandata = float(mand.get("size") or 0.0)
+    chiesta = round(float(orig.get("size") or 0.0), 2)
+    fattore = (chiesta / mandata) if mandata > 0 else 0.0
+    regolato = "size_settled" in d and "size_matched" not in d
+    m_letto = d.get("size_settled") if regolato else d.get("size_matched")
+    abbinato, quota = riporta_abbinato_all_originale(
+        orig.get("side"), orig.get("price"), chiesta, mandata, m_letto)
+    out.update({
+        "selection_id": orig.get("selection_id"),
+        "handicap": float(orig.get("handicap") or 0.0),
+        "side": str(orig.get("side") or "").lower(),
+        "price": orig.get("price"),
+        "size": chiesta,
+        "size_matched": abbinato,
+    })
+    if "size_settled" in d:
+        out["size_settled"] = abbinato
+        if regolato:
+            out.pop("size_matched", None)
+            out["price"] = quota if quota is not None else orig.get("price")
+    # quota media: la grafia dello specchio/canale sempre (come ``_riporta_tradotto``),
+    # quella del REST se la lettura la porta
+    if "average_price_matched" in d or "avg_price_matched" not in d:
+        out["average_price_matched"] = (quota or 0.0)
+    if "avg_price_matched" in d:
+        out["avg_price_matched"] = quota
+    if "price_requested" in d:
+        out["price_requested"] = orig.get("price")
+    if "size_requested" in d:
+        out["size_requested"] = chiesta
+    for k in ("size_remaining", "size_cancelled", "size_lapsed", "size_voided"):
+        v = d.get(k)
+        if v is not None:
+            try:
+                out[k] = round(float(v) * fattore, 2)
+            except (TypeError, ValueError):
+                pass
+    out["tradotto"] = {"originale": orig, "mandato": mand}
+    return out
+
+
+def _sel_int(v: Any) -> Optional[int]:
+    try:
+        return int(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def lettura_nei_termini_chiesti(chiesto: Any, letto: Any, *,
+                                tradotto: Any = None) -> Optional[dict]:
+    """La lettura ``letto`` dell'ordine di UNA riga del bot e' quella di un ordine
+    TRADOTTO dal runner nell'equivalente? Se si', la ritorna nei termini dell'ordine
+    CHIESTO (``riporta_lettura_tradotta``); altrimenti None (la lettura si usa com'e').
+
+    ``chiesto`` = la riga del bot (selection_id, handicap, side, price, size: l'ordine
+    che il bot ha chiesto). ``tradotto`` = la dichiarazione del runner se il bot l'ha
+    vista (``{"originale", "mandato"}``, dall'evento del canale o dal ``result`` della
+    coda): e' la fonte certa dei numeri mandati. Senza, si riconosce DAI DATI: la
+    lettura deve dire selezione e lato, ed e' un tradotto solo se sta sull'ALTRA
+    selezione col lato OPPOSTO (l'ordine di questa riga, letto per bet_id o per ref,
+    non puo' essere altro); la size mandata e' quella che la lettura dichiara
+    (``size_requested``/``size``) o, se non la dichiara, quella dell'equivalente
+    (``equivalente_lato_opposto``, la stessa funzione del verdetto).
+    Una lettura senza selezione e senza dichiarazione: None (non si inventa). Pura."""
+    if not isinstance(letto, dict):
+        return None
+    if letto.get("tradotto") and letto.get("riga_mandata") is not None:
+        return None                     # gia' nei termini chiesti (evento del canale)
+    c = dict(chiesto or {})
+    side_c = str(c.get("side") or "").lower()
+    sel_c = _sel_int(c.get("selection_id"))
+    if side_c not in _VALID_SIDES or sel_c is None:
+        return None
+    sel_l = _sel_int(letto.get("selection_id"))
+    side_l = str(letto.get("side") or "").lower() or None
+    if sel_l == sel_c and side_l in (None, side_c):
+        return None                     # l'ordine chiesto, non tradotto
+    t = tradotto if isinstance(tradotto, dict) else None
+    orig = t.get("originale") if t else None
+    mand = t.get("mandato") if t else None
+    if isinstance(orig, dict) and isinstance(mand, dict) and mand.get("size"):
+        if sel_l is not None and sel_l != _sel_int(mand.get("selection_id")):
+            return None
+        if side_l is not None and side_l != str(mand.get("side") or "").lower():
+            return None
+        return riporta_lettura_tradotta(letto, orig, mand)
+    # riconoscimento dai dati
+    opposto = "back" if side_c == "lay" else "lay"
+    if sel_l is None or sel_l == sel_c or side_l != opposto:
+        return None
+    try:
+        price_c = float(c.get("price"))
+        size_c = round(float(c.get("size")), 2)
+    except (TypeError, ValueError):
+        return None
+    eq = equivalente_lato_opposto(side_c, price_c, size_c)
+    if eq is None:
+        return None
+    mandata = None
+    for k in ("size_requested", "size"):
+        try:
+            v = float(letto.get(k)) if letto.get(k) is not None else None
+        except (TypeError, ValueError):
+            v = None
+        if v is not None and v > 0:
+            mandata = v
+            break
+    prezzo_m = None
+    for k in ("price_requested",) + (("price",) if "size_settled" not in letto else ()):
+        try:
+            v = float(letto.get(k)) if letto.get(k) is not None else None
+        except (TypeError, ValueError):
+            v = None
+        if v is not None and v > 1.0:
+            prezzo_m = v
+            break
+    orig = {"selection_id": sel_c, "handicap": float(c.get("handicap") or 0.0),
+            "side": side_c, "price": price_c, "size": size_c}
+    mand = {"selection_id": sel_l, "handicap": float(letto.get("handicap") or 0.0),
+            "side": opposto, "price": prezzo_m if prezzo_m is not None else eq.price,
+            "size": round(mandata if mandata is not None else eq.size, 2)}
+    return riporta_lettura_tradotta(letto, orig, mand)
+
+
+def impronta_equivalente(chiesto: Any, ordine: Any) -> bool:
+    """L'ordine ``ordine`` (letto su Betfair SENZA bet_id, per mercato) e' l'equivalente
+    che il runner avrebbe mandato per l'ordine ``chiesto``? Altra selezione, lato
+    opposto, quota e size chieste IDENTICHE a ``equivalente_lato_opposto`` del chiesto.
+    Serve all'adozione per mercato (ripiego live oltre la scadenza): e' l'unica via in
+    cui l'ordine non e' gia' legato alla riga da bet_id o ref, quindi l'impronta deve
+    essere esatta. Pura."""
+    if not isinstance(ordine, dict):
+        return False
+    c = dict(chiesto or {})
+    side_c = str(c.get("side") or "").lower()
+    sel_c = _sel_int(c.get("selection_id"))
+    sel_o = _sel_int(ordine.get("selection_id"))
+    if side_c not in _VALID_SIDES or sel_c is None or sel_o is None or sel_o == sel_c:
+        return False
+    if str(ordine.get("side") or "").lower() != ("back" if side_c == "lay" else "lay"):
+        return False
+    try:
+        eq = equivalente_lato_opposto(side_c, float(c.get("price")),
+                                      round(float(c.get("size")), 2))
+        p = float(ordine.get("price_requested"))
+        s = float(ordine.get("size_requested"))
+    except (TypeError, ValueError):
+        return False
+    return eq is not None and abs(p - eq.price) <= _EPS and abs(s - eq.size) <= 0.005
 
 
 VERDETTO_DIRETTO = "diretto"
