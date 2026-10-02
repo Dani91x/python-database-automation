@@ -72,3 +72,22 @@ def indice_eventi_chiusi_pulito():
     yield
     _S._EVENTI_CHIUSI.clear()
     _S._CONTO_LETTO_A.clear()
+
+
+@pytest.fixture(autouse=True)
+def aggregati_buoni_dimenticati():
+    """02/10 (isolamento 2, ``AUDIT_2026-10-02/TEST_ISOLAMENTO_2.md``):
+    ``bot_service._AGG_ULTIMO_BUONO`` (``bot_service.py:6297``) e' la memoria di
+    PROCESSO degli ultimi aggregati letti bene, scritta da ``build_risk_ctx``
+    (:6431) e riusata entro ``_AGG_TTL_S`` quando la lettura cade (:6413). Con
+    lo stesso ``NOW`` fisso dei test, un test che lascia li' gli aggregati di
+    ``mode='live'`` (``test_cert_2026_09_13.py::
+    test_aggregati_stantii_si_riusano_per_poco_invece_di_bloccare``) faceva
+    trovare al successivo ``test_aggregati_illeggibili_bloccano_i_nuovi_ingressi``
+    una lettura "recente" invece del blocco: rosso in ordine inverso. Ogni test
+    parte e finisce senza aggregati in memoria, come un servizio appena avviato."""
+    from Betfair.safe_strategy import bot_service as _S
+
+    _S._AGG_ULTIMO_BUONO.clear()
+    yield
+    _S._AGG_ULTIMO_BUONO.clear()
