@@ -60,6 +60,7 @@ import {
     activateOmega, stopOmega, updateOmegaParams, fetchOmegaState, fetchOmegaTrades,
     subscribeOmega, buildEquitySeries, requestManual, settlementNotifications,
     OMEGA_PARAM_DEFAULTS, OMEGA_PARAM_GROUPS, OMEGA_DAILY_GOAL_MAX, omegaParamsPatch,
+    OBIETTIVO_OBBLIGATORIO, obiettivoVuoto,
     activityMeta, activityLine, isHedging,
     type OmegaControl, type OmegaTrade, type OmegaParams, type OmegaMode, type OmegaStatus,
     type OmegaAggregates, type OmegaActivityRow, type OmegaState,
@@ -357,6 +358,11 @@ export default function Omega() {
     }
 
     async function handleSaveParams(next: ParamValues) {
+        // 02/10 (reperto 2): obiettivo svuotato = salvataggio rifiutato, mai 0
+        if (obiettivoVuoto(next.__daily_goal)) {
+            toast.error('Campo obbligatorio', { description: OBIETTIVO_OBBLIGATORIO });
+            return;
+        }
         setBusy(true);
         try {
             const goal = Number(next.__daily_goal);

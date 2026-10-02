@@ -1252,6 +1252,19 @@ export function modoUsciteProtezione(raw: unknown): 'avvisa_e_proponi' | 'automa
 export const OMEGA_PARAM_KEYS: string[] = OMEGA_PARAM_GROUPS.flatMap((g) => g.fields.map((f) => f.key));
 
 /**
+ * 02/10 (reperto 2) - l'obiettivo giornaliero vive sulla COLONNA
+ * `omega_control.daily_goal` (non in `params`): il servizio non ha un valore di
+ * serie da usare al suo posto e `omega_update_params` con NULL lo lascerebbe
+ * com'e'. Svuotato, il salvataggio si RIFIUTA (prima Number('') = 0: obiettivo 0).
+ */
+export const OBIETTIVO_OBBLIGATORIO =
+    "Obiettivo giornaliero: campo obbligatorio. Non ha un valore di serie nel servizio: scrivi un numero (anche 0). Niente e' stato salvato.";
+
+export function obiettivoVuoto(v: unknown): boolean {
+    return v == null || (typeof v === 'string' && v.trim() === '');
+}
+
+/**
  * H-07 — cosa mandare a `omega_update_params`: l'oggetto LETTO DAL CONTROL più
  * SOLO le chiavi che l'utente ha davvero cambiato. Un default della UI diverso
  * da quello del servizio (è capitato con `model_calibration` e
@@ -1271,6 +1284,13 @@ export function omegaParamsPatch(
         return String(a ?? '') === String(b ?? '');
     };
     for (const [k, v] of Object.entries(draft)) {
+        // 02/10 (reperto 2): campo NUMERICO svuotato = chiave ASSENTE (il servizio,
+        // `omega_config.resolve_params`, usa allora il suo DEFAULTS), mai "" sul DB
+        if (typeof (OMEGA_PARAM_DEFAULTS as unknown as Record<string, unknown>)[k] === 'number'
+            && typeof v === 'string' && v.trim() === '') {
+            delete out[k];
+            continue;
+        }
         if (Object.prototype.hasOwnProperty.call(server, k)) {
             if (!same(server[k], v)) out[k] = v;
             continue;

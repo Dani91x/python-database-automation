@@ -491,6 +491,28 @@ describe('Omega — green-up automatico', () => {
         expect(args.dailyGoal).toBe(250);
     });
 
+    // 02/10 (FRONTEND MINORI, reperto 2): l'obiettivo e' una colonna senza valore di
+    // serie nel servizio: svuotato, il salvataggio si RIFIUTA (prima Number('') = 0
+    // scriveva obiettivo 0). FALSIFICAZIONE: togliendo il rifiuto da
+    // `handleSaveParams` parte la scrittura con dailyGoal 0 -> rosso.
+    it('reperto 2: obiettivo svuotato -> "Campo obbligatorio", nessuna scrittura', async () => {
+        const { updateOmegaParams } = await import('@/lib/omega');
+        const { toast } = await import('sonner');
+        const mUpdate = vi.mocked(updateOmegaParams);
+        mUpdate.mockResolvedValue({} as never);
+        renderPage();
+        await screen.findByText('OMEGA');
+        const user = userEvent.setup();
+        await user.click(screen.getByTestId('omega-params-trigger'));
+        await screen.findByTestId('params-sheet');
+        await user.clear(screen.getByLabelText('Obiettivo giornaliero (€)'));
+        await user.click(screen.getByTestId('params-save'));
+        await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
+            'Campo obbligatorio', expect.objectContaining({ description: expect.stringMatching(/campo obbligatorio/) }),
+        ));
+        expect(mUpdate).not.toHaveBeenCalled();
+    });
+
     it('riga trade: badge Green-up da meta.exit_kind e colonna P modello vs mercato', async () => {
         liveState.rows = feedWithBook();
         mTrades.mockResolvedValue([{
