@@ -1,0 +1,27 @@
+=== SUITE Betfair/ intera su master ed65c37 ===
+    return SyncPostgrestClient(
+
+Betfair/mike/tests/test_mike_audit_2026_09_12.py::test_la_modalita_che_conta_e_quella_della_PARTITA_non_del_control
+Betfair/omega/test_omega_cashout_feed_fermo_2026_09_11.py::test_cs_dal_feed_propaga_il_tetto_duro
+Betfair/stream/tennis_live/tests/test_tennis_hardening.py::test_cross_mode_row_rejected_without_dispatch
+Betfair/stream/tests/test_chiusura_parziale_2026_09_23.py::test_la_chiusura_appoggiata_si_abbina_al_piu_per_il_40_e_il_residuo_resta_vivo
+Betfair/stream/tests/test_db_client_timeout_bot_2026_09_28.py::test_il_default_resta_quello_di_sempre_per_tutti_gli_altri_processi
+Betfair/stream/tests/test_db_client_timeout_bot_2026_09_28.py::test_il_profilo_bot_arriva_al_client_httpx_di_postgrest
+Betfair/stream/tests/test_db_client_timeout_bot_2026_09_28.py::test_il_client_gia_creato_nel_thread_viene_sostituito
+Betfair/stream/tests/test_db_client_timeout_bot_2026_09_28.py::test_vale_per_ogni_thread_del_processo
+  C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Lib\site-packages\supabase\_sync\client.py:309: DeprecationWarning: The 'verify' parameter is deprecated. Please configure it in the http client instead.
+    return SyncPostgrestClient(
+
+Betfair/stream/tests/test_frammenti_tcp_2026_09_28.py::test_frammento_aperto_a_caldo_arriva_a_process_market_book
+Betfair/stream/tests/test_frammenti_tcp_2026_09_28.py::test_rifiuto_max_connection_limit_chiude_e_non_ritenta
+Betfair/stream/tests/test_frammenti_tcp_2026_09_28.py::test_connessione_che_cade_si_riconnette_con_initialclk_e_clk
+Betfair/stream/tests/test_frammenti_tcp_2026_09_28.py::test_connessione_che_cade_si_riconnette_con_initialclk_e_clk
+Betfair/stream/tests/test_frammenti_tcp_2026_09_28.py::test_uscita_ordinata_chiude_tutte_le_connessioni_a_caldo
+  C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Lib\site-packages\betfairlightweight\streaming\betfairstream.py:216: DeprecationWarning: ssl.PROTOCOL_TLS is deprecated
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED Betfair/stream/tests/test_net_retry.py::test_db_client_is_per_thread
+1 failed, 9585 passed, 9 xfailed, 21 warnings in 642.41s (0:10:42)
+in 648 s
