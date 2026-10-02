@@ -1,12 +1,31 @@
 # REPLAY VELOCE (02/10) - banco di certificazione, PROCESSO_STANDARD_BOT par. 6.9
 
-Ramo `replay-veloce` (base master `4220397`), worktree `agent-a3973176466e94888`.
-Patch: `AUDIT_2026-10-02/REPLAY_VELOCE.patch` (`git diff master`).
+Ramo `replay-veloce`, worktree `agent-a3973176466e94888`. Lavoro fatto su master `4220397`,
+poi RIBASATO su master `9a3a42e` (master era andato avanti: banco ottimista, minimi .it).
+Patch: `AUDIT_2026-10-02/REPLAY_VELOCE.patch` (`git diff 9a3a42e`, la base del ramo).
 
-STATO AL 15:05: FINITO. Tre correzioni nel solo banco (`banco_comune.py`), referti identici
-su 5 confronti, test e falsificazione verdi/rossi come atteso. `mike tutti` sotto il TETTO
-(530,7 s) ma NON sotto l'obiettivo di 300 s: il resto del tempo sta in flumine e nel codice
-di produzione (sezione 6), fuori dal perimetro.
+STATO AL 16:20: FINITO. Tre correzioni nel solo banco (`banco_comune.py`), referti identici
+su 9 confronti (5 sulla base vecchia, 4 sulla nuova), test e falsificazione come attesi.
+`mike tutti` sotto il TETTO a PC non saturo (530,7 s) ma NON sotto l'obiettivo di 300 s:
+il resto del tempo sta in flumine e nel codice di produzione (sezione 6), fuori perimetro.
+
+## 0. Ribasatura su master `9a3a42e` (dopo le misure delle sezioni 1-5)
+
+- Un solo conflitto, in `simulazione_flumine` (la riga `with`): master aggiungeva
+  `minimi_it_su_flumine()` (che sostituisce solo `SimulatedExecution.execute_place/replace`,
+  nessuna sovrapposizione), io `chiusura_flumine_senza_resoconti_muti()`: tenute tutte e due.
+- Sulla base nuova, rilanciati: test del banco 617 verdi / 25 saltati (registrazioni assenti
+  nel worktree), falsificazione 9 ROSSE su 9, e i quattro replay PRIMA3 (banco di `9a3a42e`)
+  / DOPO3 (ramo), tutti a confronto con 0 righe diverse tolti i tempi:
+
+| confronto (base `9a3a42e`) | righe | diverse | tempo PRIMA3 -> DOPO3 |
+|---|---|---|---|
+| `mike tutti` | 726 / 726 | 0 | 749,9 -> 665,0 s (carico 38 % -> 99 % all'avvio) |
+| `mike base,riavvio,feed-stantio` | 152 / 152 | 0 | 113,8 -> 93,7 s |
+| `safe_base rapidi entrambi` | 94 / 94 | 0 | 119,8 -> 120,9 s |
+| `omega base` | 130 / 130 | 0 | 45,8 -> 46,6 s |
+
+  Il KO `lettura-dati-ko` (sezione 7) c'e' anche sulla base nuova, PRIMA3 e DOPO3 uguali.
 
 ## 1. In breve
 
