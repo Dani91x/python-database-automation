@@ -1,0 +1,24 @@
+=== MIKE replay su master 438d314 ===
+exit 0 in 138 s
+OK  35760084 [base] <canale>  tick= 56146 decisioni= 5879 azioni=   6 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_K
+      nota: P&L del replay: lordo -14.17 | commissione 0.00 (5.0%) | NETTO -14.17 EUR (non e' il metro della certificazi
+      nota: righe di scan scritte dallo SCANNER VERO: 2481 | giri senza riga nel feed: 602
+OK  35760084 [riavvio] <canale>  tick= 56146 decisioni= 5879 azioni=   6 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIV
+      nota: P&L del replay: lordo -14.17 | commissione 0.00 (5.0%) | NETTO -14.17 EUR (non e' il metro della certificazi
+      nota: righe di scan scritte dallo SCANNER VERO: 2481 | giri senza riga nel feed: 602
+OK  35760084 [feed-stantio] <canale>  tick= 56229 decisioni= 1024 azioni=   0 stati=WATCH,IDLE_LIVE,SETTLED [COMPLETE]
+      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro della certificazion
+      nota: righe di scan scritte dallo SCANNER VERO: 2482 | giri senza riga nel feed: 1
+ESITO: 3 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+=== PYTEST safe_strategy/tests ===
+2124 passed, 1 xfailed, 2 warnings in 182.93s (0:03:02)
+in 194 s
+=== PYTEST mike ===
+1416 passed, 2 warnings in 67.03s (0:01:07)
+in 99 s
+=== PYTEST omega ===
+1430 passed, 2 warnings in 34.74s
+in 36 s
+=== PYTEST stream/tests + scalper ===
+3267 passed, 19 warnings in 277.75s (0:04:37)
+in 283 s
