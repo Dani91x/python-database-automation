@@ -4,8 +4,8 @@ Ramo `mike-chiusura` (base `verifica-runner-master` = `e4c93e0`, master `fb890d5
 Chi riprende parte da `git log mike-chiusura`. Patch: `AUDIT_2026-10-02/MIKE_CHIUSURA_INTEGRATA.patch`
 (`git diff verifica-runner-master`, file nuovi inclusi).
 
-STATO AL 13:35: fatte fasi 1, 2, 3 (commit `d6b7db4`, `3169c73`, `3dcad88`); in corso la falsificazione
-mia; mancano i replay della fase 4 e il profilo.
+STATO AL 14:05: FATTO tutto (fasi 1-4, falsificazione 21 + 22, profilo). Commit `d6b7db4` (fase 1),
+`3169c73` (fase 2), `3dcad88` (fase 3), `a4c4850` (falsificazione), questo (referto, replay, patch).
 
 ## Fase 1 - patch del delegato applicata e verificata
 
@@ -125,10 +125,57 @@ Suite dopo la fase 2: Mike + stream/tests + scalper **4896 verdi, 25 saltati** (
 * 21 mutazioni del delegato rilanciate (M9b adattata alla decisione 12): **21/21 rosse**
   (`_tmp_verif`, esito copiato qui sotto). M1 13, M2 45, M3a 2, M3b 4, M4 8, M5 11, M6 2, M7 1, M8 4,
   M9 30, M16 4, M17 3, M18 5, M19 1, M9b 4, M12 15, M14 1, M15 1, M13 1, M10 1, M11 1.
-* Mie: `MIKE_CHIUSURA_INTEGRATA_falsifica.py` / `.out` - IN CORSO.
+  Esito: `MIKE_CHIUSURA_COPERTURA_falsifica21_rilancio.out`.
+* Mie: `MIKE_CHIUSURA_INTEGRATA_falsifica.py` (ripristino da copia + impronte), **22/22 rosse**
+  (`.out` + `_R1d.out`: R1d al primo giro aveva il testo sbagliato, rilanciata da sola e rossa).
+  Nessuna sopravvissuta.
 
-## Fase 4 - replay
-IN CORSO.
+| mutazione | rossi |
+|---|---|
+| N1 guardia che lascia passare una banca 0,99 | 23 |
+| N2 FLAT con residuo (ogni residuo creduto non chiudibile) | 10 |
+| N3 rientro dopo un residuo dichiarato (decisione 13) | 2 |
+| N4 equivalente al prezzo sbagliato (lati del libro scambiati) | 20 |
+| N5 secondo CRITICAL sulla stessa proposta | 2 |
+| N6 chiusura sull'ALTRA selezione di serie (banca Over sopra il minimo) | 8 |
+| N7 proposta del residuo: prima l'altra selezione | 1 |
+| N8 cash out col valore della banca quando parte la punta | 2 |
+| N9 codice del rifiuto ignorato sulla strada asincrona | 2 |
+| N10 L1 cieco sulla punta d'apertura < 0,50 | 1 |
+| N11 exchange del banco senza regola | 2 |
+| N12 replace del banco senza floor 0,50 | 1 |
+| N13 REST del banco senza la guardia del vero | 1 |
+| N14 BANCO-SOTTO-MINIMO senza violazione | 1 |
+| N15 sintetica di Ashdod coi livelli vecchi | 1 |
+| P1 riga assente: annullo senza rilettura REST | 5 |
+| P2 riga assente: mercato aperto trattato come chiuso | 4 |
+| P3 rilettura REST senza ritmo | 1 |
+| R1a arresto senza annullo | 3 |
+| R1b arresto senza CRITICAL sulle posizioni | 1 |
+| R1c arresto senza tetto | 1 |
+| R1d `main` senza arresto degli ordini | 1 |
+
+## Fase 4 - replay (uno alla volta, `--data-dir` = `_live_raw` del checkout principale)
+
+| replay | durata (comando / TEMPO TOTALE) | esito | confronto |
+|---|---|---|---|
+| `35760084 --scenari base,riavvio,feed-stantio --trasporto canale` | 200 s / 163,4 s | 3 OK, 0 violazioni | base e riavvio: **5879 decisioni, 6 azioni, NETTO -14,17, 602 giri senza riga**; feed-stantio 1024 decisioni, 0 azioni, NETTO 0,00: IDENTICO al riferimento di oggi. Unica differenza: letture REST 5 -> 7 (la rilettura del punto 25 quando la riga sparisce a partita finita: Betfair dice CLOSED, si regola come prima) |
+| 5 sintetiche `--scenari base --trasporto canale` | 145 s / 97,4 s | 5 OK | NETTO identico al referto del delegato (+3,43, +3,43, +0,51, +0,34, +0,34); decisioni +1 ciascuna (1617 -> 1618 ...): la lettura REST in piu' del punto 25 costa 120 ms di mercato e sposta un giro |
+| `35760084 --scenari copertura-rifiutata,copertura-rifiutata-legacy --trasporto entrambi` | 311 s / 275,8 s | 4 OK, parita' coda/canale RAGGIUNTA x2 | NETTO identico (-10,00, -3,00, -10,00, -3,00), ordini 6 / righe 5 identici. Decisioni diverse dal referto del delegato (coda 5353 -> 5367, 5340 -> 5354; canale 5861 -> 5879, 5858 -> 5879): il riferimento del delegato e' su master `ebfab2a` (base allora 620 giri senza riga), la mia base e' master `fb890d5` con scanner mai cieco (base 602): oggi il base fa 5879 come qui. NON verificato riga per riga su master di oggi |
+| `_synth_mike_ashdod` (nuova) canale | 35 s | OK | vedi fase 2 (con la patch tolta: KO) |
+
+Durate: sopra l'obiettivo dei tempi del delegato (sintetiche 16 s -> 97 s). Il profilo (sotto) dice che
+il tempo in piu' e' l'IMPORT dei moduli in un worktree nuovo, non il banco.
+
+### Profilo (`cProfile`, `certifica mike _synth_mike_reingresso --scenari base --trasporto canale`, 81,8 s)
+1. `_io.open_code` 31,9 s su 1620 chiamate (20 ms l'una): lettura dei file .py all'import, worktree
+   nuovo senza `__pycache__` / antivirus sui file nuovi (ambiente, non codice);
+2. `json.encoder.iterencode` 1,77 s (6684 chiamate: serializzazione delle righe del DB in memoria);
+3. `builtins.round` 1,58 s (388.524 chiamate);
+4. `engine._market_pnl_by_total` 1,43 s cumulati (178.920 chiamate);
+5. `dataclasses._asdict_inner` 1,07 s e `scanner._senza_campi_rumorosi` 1,01 s.
+Nessuno corretto (fuori perimetro, punto 5 dell'utente). Il giro del servizio (`_run_event`) vale
+16,8 s cumulati su 2219 giri.
 
 ## NON VERIFICATO
 * frontend (patch del delegato + i 3 kind miei): niente `tsc`/`vitest` (nel worktree non c'e'
@@ -137,3 +184,20 @@ IN CORSO.
 * scenari `cashout-dopo-copertura`, `firma-*`, `uscite-*`, `tutti`: cambiano con la decisione 12 e il
   banco nuovo, non lanciati (punto 5 dell'utente, oltre i 10 minuti);
 * coda della sintetica di Ashdod (vedi reperto).
+
+## Reperti (per l'utente / il coordinatore)
+1. **Sintetiche di prima con libro ottimista**: il generatore (`synth_mike.Costruttore`) non toglie i
+   livelli vecchi (`[prezzo, 0]`); i P&L delle 5 sintetiche di prima possono essere migliori del vero.
+   Corretto solo per `ashdod` (opzione `azzera_livelli`); estenderlo cambia i loro referti.
+2. **Sintetica di Ashdod sulla coda**: Mike in live sul banco non risolve la banca pre-partita LAPSE al
+   fischio (377 giri «attendo l'esito»), non copre. Da indagare (Mike gira sul canale).
+3. **Decisione 12 applicata solo alla copertura-banca**: nella forma di prima (punta Over 4,5) la
+   chiusura resta la banca Over (che e' la stessa selezione). Coerente con la precisazione delle 12:40.
+4. **Tetto del punto 25 con REST illeggibile = 600 s** (quello di sempre), non 60 s: da confermare.
+5. **R1**: il kill forzato di `main.js` (25 s) non e' allineato al tetto (10 s piu' un annullo da 3 s):
+   oggi basta; `TerminateProcess` non e' intercettabile. Safe e Omega: R1 ancora aperto.
+6. Il banco rifiuta ora gli ordini sotto minimo per TUTTI i bot (Safe, Omega, scalper, tennis):
+   le loro suite sono verdi, ma i loro replay non sono stati rilanciati qui: i P&L con residui sotto
+   minimo possono cambiare (in peggio, cioe' veri).
+7. Scenari `cashout-dopo-copertura`, `firma-*`, `uscite-*` cambieranno (decisione 12: punta Under al
+   posto della banca Over): da rilanciare con `tutti` (punto 5).
