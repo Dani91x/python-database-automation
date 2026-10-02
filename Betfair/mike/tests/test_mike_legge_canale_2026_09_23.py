@@ -84,7 +84,7 @@ def canale(monkeypatch):
     agganciata - questo fixture vuole la SOLA lettura, come il suo nome dice.
     """
     monkeypatch.setenv(ENV, "1")
-    monkeypatch.delenv(ENV_SVEGLIA, raising=False)
+    monkeypatch.setenv(ENV_SVEGLIA, "0")
     monkeypatch.setattr(CS.ClientScan, "avvia", lambda self: None)
     S.azzera_canale_scan()
     assert S.avvia_client_scan() is True
@@ -115,6 +115,17 @@ def _vecchia_lettura(db: Any, params: Dict[str, Any], now_ts: float):
 
 
 def _sequenza(db_finto: FakeDB) -> tuple:
+    # 02/10 (isolamento 2, ``AUDIT_2026-10-02/TEST_ISOLAMENTO_2.md``): le due
+    # corse confrontate (PRIMA/DOPO) partono dallo STESSO stato di processo.
+    # ``flusso_prezzi.primo_avviso_scanner_vecchio`` scrive l'avviso
+    # ``flusso_non_dichiarato`` UNA volta per processo e per bot
+    # (``_NON_NOTO_AVVISATO``, ``Betfair/stream/flusso_prezzi.py:248``): senza
+    # questo, da solo il file era rosso ([None], prima corsa del processo: la
+    # riga c'e' in PRIMA e non in DOPO) e verde solo se un test precedente
+    # aveva gia' consumato l'avviso di "mike".
+    from Betfair.stream import flusso_prezzi as _FP
+
+    _FP._NON_NOTO_AVVISATO.discard("mike")
     db = Traccia(db_finto)
     mk = FakeMarket()
     passi = [(0, payload()), (2, payload()), (4, payload()),
@@ -132,7 +143,7 @@ def test_1_interruttore_spento_chiamate_identiche_a_prima(monkeypatch, valore):
     params = {"stake": 10, "pre_exit_mode": "taker", "feed_cache_s": 4.0}
     # PRIMA: il ciclo con la lettura di prima
     with monkeypatch.context() as m:
-        m.delenv(ENV, raising=False)
+        m.setenv(ENV, "0")
         m.setattr(S, "_righe_del_feed", _vecchia_lettura)
         S.svuota_le_cache()
         prima = _sequenza(FakeDB(params=dict(params)))
@@ -161,7 +172,7 @@ def test_1b_client_rimasto_in_memoria_ma_interruttore_spento_legge_come_prima(
     legge il DB a ogni giro come prima, e il canale non entra."""
     quando = NOW
     _spingi(_riga(payload(u35=(1.47, 1.48, 30.0, 25.0)), quando + timedelta(seconds=1)))
-    monkeypatch.delenv(ENV, raising=False)
+    monkeypatch.setenv(ENV, "0")
     db_finto = FakeDB(params={"stake": 10})
     db = Traccia(db_finto)
     for i in range(3):
@@ -181,7 +192,7 @@ def test_2_canale_fresco_nessuna_lettura_scan_e_decisioni_identiche(monkeypatch,
 
     # RIFERIMENTO: interruttore spento, le stesse righe arrivano dal DB
     with monkeypatch.context() as m:
-        m.delenv(ENV, raising=False)
+        m.setenv(ENV, "0")
         S._CACHE_FEED.svuota()
         rif = FakeDB(params=dict(params))
         rif_db = Traccia(rif)
@@ -427,7 +438,7 @@ def test_dormi_o_sveglia_usa_attendi_nel_caso_fuso(monkeypatch, canale_e_sveglia
 
 def test_solo_sveglia_apre_ascolto_scan_come_prima(monkeypatch, _ascolto_finto):
     """(2) del brief: solo MIKE_SVEGLIA_CANALE -> come oggi (AscoltoScan)."""
-    monkeypatch.delenv(ENV, raising=False)
+    monkeypatch.setenv(ENV, "0")
     monkeypatch.setenv(ENV_SVEGLIA, "1")
     S.azzera_canale_scan()
     S._ASCOLTO_SCAN = None
@@ -444,8 +455,8 @@ def test_solo_sveglia_apre_ascolto_scan_come_prima(monkeypatch, _ascolto_finto):
 
 def test_entrambi_spenti_nessun_client(monkeypatch, _ascolto_finto):
     """(2) del brief: entrambi spenti -> nessun client, nessuna sveglia."""
-    monkeypatch.delenv(ENV, raising=False)
-    monkeypatch.delenv(ENV_SVEGLIA, raising=False)
+    monkeypatch.setenv(ENV, "0")
+    monkeypatch.setenv(ENV_SVEGLIA, "0")
     S.azzera_canale_scan()
     S._ASCOLTO_SCAN = None
     S._avvia_sveglia()
