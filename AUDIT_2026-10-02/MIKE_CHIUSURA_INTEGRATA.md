@@ -201,3 +201,15 @@ Nessuno corretto (fuori perimetro, punto 5 dell'utente). Il giro del servizio (`
    minimo possono cambiare (in peggio, cioe' veri).
 7. Scenari `cashout-dopo-copertura`, `firma-*`, `uscite-*` cambieranno (decisione 12: punta Under al
    posto della banca Over): da rilanciare con `tutti` (punto 5).
+
+## Aggiunta dopo la verifica del coordinatore (guardia del banco senza rete)
+Reperto del coordinatore: `minimi_banco.sotto_minimo -> return False` non colta (replay di Ashdod col
+motore nuovo: Mike non manda piu' ordini sotto minimo). Nota: la mutazione era gia' rossa su 3 test di
+`Betfair/stream/tests/test_banco_minimi_it_2026_10_02.py` (filtro `-k banco/minimi` del coordinatore:
+non seleziona quel file). Aggiunto comunque `Betfair/stream/tests/test_minimi_banco_2026_10_02.py`
+(9 test unitari, flumine finto con le chiavi vere: `order_package` iterabile, `order.side` BACK/LAY,
+`order.order_type.size`, `order.notes`, `simulated.place` / `_create_place_response`): banca e punta 0,99
+dirette -> FAILURE `INVALID_BET_SIZE`, nessun abbinato; 1,00 passa; place-and-trim finale 0,49 rifiutato,
+0,50 passa; replace 0,49 rifiutato, 0,50 passa; guardia spenta -> `abbinati_sotto_minimo()` trova
+l'abbinato; la regola si smonta all'uscita. Falsificazione (`_falsifica_B.out`): B1 `sotto_minimo ->
+False` 8 rossi (5 del file nuovo), B2 `minimo_per` a 0,50 3 rossi, B3 controllo cieco 3 rossi.
