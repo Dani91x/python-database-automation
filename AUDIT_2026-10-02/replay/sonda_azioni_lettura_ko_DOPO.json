@@ -1,0 +1,10207 @@
+{
+ "decisioni_referto": 5219,
+ "azioni_referto": 8,
+ "decisioni": 5219,
+ "a_feed_stantio": 398,
+ "azioni": [
+  {
+   "t": 1782832091.5,
+   "da": "WATCH",
+   "a": "PRE_ENTRY_PENDING",
+   "kind": "place",
+   "role": "under_entry",
+   "side": "back",
+   "size": 10.0,
+   "price": 1.71,
+   "feed_fresh": true,
+   "motivo": "ingresso ciclo 1"
+  },
+  {
+   "t": 1782832095.0,
+   "da": "PRE_ENTRY_PENDING",
+   "a": "PRE_OPEN",
+   "kind": "place",
+   "role": "under_green",
+   "side": "lay",
+   "size": 10.12,
+   "price": 1.69,
+   "feed_fresh": true,
+   "motivo": "ingresso abbinato"
+  },
+  {
+   "t": 1782835225.5,
+   "da": "HOLD",
+   "a": "HOLD",
+   "kind": "place",
+   "role": "under_green",
+   "side": "lay",
+   "size": 10.12,
+   "price": 1.69,
+   "feed_fresh": true,
+   "motivo": "green resting appoggiata (residuo)"
+  },
+  {
+   "t": 1782835318.7,
+   "da": "HOLD",
+   "a": "HOLD",
+   "kind": "place",
+   "role": "under_green",
+   "side": "lay",
+   "size": 10.12,
+   "price": 1.69,
+   "feed_fresh": true,
+   "motivo": "green resting appoggiata (residuo)"
+  },
+  {
+   "t": 1782835439.6,
+   "da": "HOLD",
+   "a": "HOLD",
+   "kind": "place",
+   "role": "under_green",
+   "side": "lay",
+   "size": 10.12,
+   "price": 1.69,
+   "feed_fresh": false,
+   "motivo": "green resting appoggiata (residuo)"
+  },
+  {
+   "t": 1782835958.3,
+   "da": "LIVE_KO_GREEN",
+   "a": "LIVE_KO_GREEN",
+   "kind": "place",
+   "role": "ko_green",
+   "side": "lay",
+   "size": 10.12,
+   "price": 1.69,
+   "feed_fresh": true,
+   "motivo": "uscita appoggiata a 1.69"
+  },
+  {
+   "t": 1782836137.7,
+   "da": "LIVE_KO_GREEN",
+   "a": "LIVE_UNCOVERED",
+   "kind": "cancel",
+   "role": "ko_green",
+   "side": null,
+   "size": null,
+   "price": null,
+   "feed_fresh": true,
+   "motivo": "uscita non abbinata in 3': copertura sulla linea 4,5"
+  },
+  {
+   "t": 1782836139.4,
+   "da": "LIVE_UNCOVERED",
+   "a": "LIVE_COVER_PENDING",
+   "kind": "place",
+   "role": "over_cover",
+   "side": "lay",
+   "size": 12.63,
+   "price": 1.63,
+   "feed_fresh": true,
+   "motivo": "copertura banca Under 4.5"
+  }
+ ],
+ "finestra": [
+  {
+   "t": 1782835151.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835154.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835155.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835157.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835159.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835162.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835164.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835171.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835174.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835176.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835178.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835182.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835184.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835192.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835196.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835200.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835201.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835203.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835204.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835206.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835208.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835209.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835212.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835216.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835217.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835218.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835222.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835225.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "green resting appoggiata (residuo)",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835237.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835238.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835240.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835242.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835244.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835245.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835246.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835248.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835249.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835251.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835252.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835253.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835255.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835256.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835259.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835261.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835262.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835263.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835265.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835266.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835267.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835269.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835271.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835272.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835274.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835275.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835277.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835278.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835279.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835281.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835282.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835283.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835285.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835286.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835288.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835289.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835291.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835292.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835293.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835295.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835296.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835298.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835299.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835301.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835302.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835304.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835305.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835307.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835308.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835309.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835311.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835312.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835314.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835316.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835317.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835318.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "green resting appoggiata (residuo)",
+   "green": [
+    [
+     "under_green-0-2",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835327.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835329.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835330.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835332.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835334.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835336.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835337.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835339.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835340.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835342.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835343.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835344.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835346.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835347.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835348.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835351.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835352.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835353.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835355.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835356.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835358.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835359.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835360.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835362.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835363.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835365.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835367.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835368.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835370.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835371.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835373.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835374.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835376.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835377.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835379.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835382.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835383.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835385.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835386.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835388.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835389.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835390.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835392.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835394.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835395.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835397.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835398.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835400.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": true,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835402.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835404.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835405.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835407.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835408.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835409.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835411.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835412.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835414.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835415.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835416.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835418.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835419.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835421.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835422.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835423.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835425.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835426.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835428.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835429.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835431.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835432.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835433.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835435.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835436.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "posizione aperta, green resting sul book",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "pending",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835439.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "green resting appoggiata (residuo)",
+   "green": [
+    [
+     "under_green-0-3",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835442.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835446.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835447.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835448.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835449.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835451.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835452.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835454.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835455.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835456.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835457.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835459.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835460.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835466.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835470.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835471.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835473.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835480.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835481.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835483.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835484.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835485.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835486.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835487.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835488.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835489.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835490.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835492.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835493.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835495.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835496.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835497.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835498.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835500.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835501.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835502.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835503.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835504.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835506.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835507.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835508.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835509.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835510.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835511.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835512.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835514.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835515.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835516.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835517.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835518.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835519.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835521.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835522.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835523.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835524.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835525.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835527.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835528.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835529.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835530.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835531.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835532.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835533.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835534.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835536.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835537.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835538.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835539.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835540.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835541.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835542.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835544.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835545.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835546.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835547.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835548.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835549.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835550.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835551.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835553.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835554.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835555.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835556.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835557.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835558.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835559.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835561.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835562.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835563.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835564.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835566.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835569.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835570.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835571.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835572.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835574.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835575.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835576.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835577.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835579.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835580.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835581.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835582.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835583.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835584.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835585.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835587.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835588.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835589.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835590.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835591.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835592.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835594.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835595.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835596.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835597.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835599.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835600.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835601.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835603.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835604.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835605.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835606.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835607.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835608.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835609.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835610.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835611.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835612.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835614.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835615.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835616.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835617.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835618.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835620.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835621.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835622.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835623.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835625.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835626.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835627.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835628.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835631.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835632.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835633.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835634.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835635.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835636.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835637.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835638.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835640.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835641.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835642.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835643.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835644.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835646.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835647.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835648.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835649.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835650.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835651.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835652.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835654.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835655.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835656.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835657.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835658.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835660.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835661.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835662.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835663.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835664.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835665.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835666.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835667.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835668.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835670.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835671.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835672.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835673.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835674.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835675.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835676.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835677.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835678.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835679.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835680.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835683.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835684.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835705.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835744.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835745.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835746.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835748.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835749.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835750.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835751.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835753.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835755.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835756.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835757.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835758.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835759.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835760.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835761.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835762.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835764.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835765.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835766.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835767.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835768.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835769.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835770.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835771.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835773.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835774.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835776.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835777.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835778.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835779.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835781.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835782.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835783.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835784.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835785.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835786.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835787.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835788.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835790.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835791.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835792.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835793.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835794.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835795.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835796.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835797.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835798.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835799.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835801.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835802.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835803.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835804.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835805.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835807.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835808.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835809.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835810.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835811.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835812.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835813.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835815.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835816.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835817.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835818.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835819.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835820.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835821.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835823.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835824.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835825.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835826.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835827.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835828.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835829.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835830.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835831.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835833.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835834.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835835.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835836.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835837.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835839.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835840.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835841.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835842.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835844.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835845.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835846.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835847.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835848.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835849.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835850.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835851.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835853.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835854.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835855.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835856.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835857.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835858.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835859.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835861.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835862.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835863.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835864.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835865.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835867.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835868.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835869.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835870.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835872.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835873.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835874.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835875.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835876.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835877.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835878.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835880.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835881.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835882.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835883.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835884.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835885.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835886.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835888.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835889.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835890.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835891.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835892.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835893.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835895.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835896.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835897.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835899.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835900.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835901.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835902.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835904.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835905.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835906.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835907.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835908.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835909.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835910.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835911.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835913.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835914.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835915.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835916.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835918.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835919.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835920.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835921.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835922.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835924.4,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835925.5,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835926.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835927.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835929.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835931.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835932.9,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835934.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835935.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835936.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835937.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835938.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835939.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835941.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835942.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835943.7,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835945.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835946.1,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835947.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835949.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835950.0,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835951.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835952.2,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835953.3,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835954.6,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835955.8,
+   "st": "HOLD",
+   "->": "HOLD",
+   "fresh": false,
+   "motivo": "tengo, feed stantio: under_green lay 10.12 @ 1.69 gia' respinta, non si ripropon",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835957.2,
+   "st": "HOLD",
+   "->": "LIVE_KO_GREEN",
+   "fresh": true,
+   "motivo": "in gioco: provo l'uscita a +2 tick",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835958.3,
+   "st": "LIVE_KO_GREEN",
+   "->": "LIVE_KO_GREEN",
+   "fresh": true,
+   "motivo": "uscita appoggiata a 1.69",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835965.7,
+   "st": "LIVE_KO_GREEN",
+   "->": "LIVE_KO_GREEN",
+   "fresh": true,
+   "motivo": "uscita a +2 tick sul book",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835966.9,
+   "st": "LIVE_KO_GREEN",
+   "->": "LIVE_KO_GREEN",
+   "fresh": true,
+   "motivo": "uscita a +2 tick sul book",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835968.2,
+   "st": "LIVE_KO_GREEN",
+   "->": "LIVE_KO_GREEN",
+   "fresh": true,
+   "motivo": "uscita a +2 tick sul book",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835970.1,
+   "st": "LIVE_KO_GREEN",
+   "->": "LIVE_KO_GREEN",
+   "fresh": true,
+   "motivo": "uscita a +2 tick sul book",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835971.5,
+   "st": "LIVE_KO_GREEN",
+   "->": "LIVE_KO_GREEN",
+   "fresh": true,
+   "motivo": "uscita a +2 tick sul book",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835973.1,
+   "st": "LIVE_KO_GREEN",
+   "->": "LIVE_KO_GREEN",
+   "fresh": true,
+   "motivo": "uscita a +2 tick sul book",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835974.4,
+   "st": "LIVE_KO_GREEN",
+   "->": "LIVE_KO_GREEN",
+   "fresh": true,
+   "motivo": "uscita a +2 tick sul book",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835976.4,
+   "st": "LIVE_KO_GREEN",
+   "->": "LIVE_KO_GREEN",
+   "fresh": true,
+   "motivo": "uscita a +2 tick sul book",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835978.4,
+   "st": "LIVE_KO_GREEN",
+   "->": "LIVE_KO_GREEN",
+   "fresh": true,
+   "motivo": "uscita a +2 tick sul book",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  },
+  {
+   "t": 1782835980.0,
+   "st": "LIVE_KO_GREEN",
+   "->": "LIVE_KO_GREEN",
+   "fresh": true,
+   "motivo": "uscita a +2 tick sul book",
+   "green": [
+    [
+     "under_green-0-4",
+     "cancelled",
+     0.0
+    ],
+    [
+     "under_green-0-5",
+     "cancelled",
+     0.0
+    ]
+   ]
+  }
+ ]
+}
