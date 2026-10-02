@@ -1201,6 +1201,22 @@ def reconcile_pending(*, market, db, now: datetime) -> int:
     per_bet = {str(o.get("bet_id")): o for o in current if o.get("bet_id")}
     for tr in live:
         try:
+            if X.ha_marker_canale(tr) and not tr.get("bet_id"):
+                # 02/10/2026 (reperto 1): riga del canale senza nessun evento: prima
+                # si ritrova l'ordine per MERCATO (il ref di flumine non e' ``safe-``)
+                if _adotta_per_mercato(market, tr, db=db) is None:
+                    meta_o = dict(tr.get("meta") or {})
+                    if not meta_o.get("canale_orfano_segnalato"):
+                        meta_o["canale_orfano_segnalato"] = True
+                        db.update_trade(int(tr["id"]), meta=meta_o)
+                        tr["meta"] = meta_o
+                        _log(db, "canale_orfano", {
+                            "trade_id": tr.get("id"), "event_id": tr.get("event_id"),
+                            "critical": True, "ref": meta_o.get("canale_ref"),
+                            "nota": "ordine del canale senza esito e ricerca per mercato "
+                                    "indecisa (letture KO o piu' candidati): VERIFICARE "
+                                    "SU BETFAIR, la riga resta in verifica"})
+                    continue
             d = _reconcile_by_bet_id(market, tr)
             if d is None:
                 # F1 (25/09): ref sport-aware ("safe_tennis-t<id>" per il
@@ -1493,6 +1509,94 @@ def _annulla_prima_del_terminale(market, tr: dict[str, Any], *, db,
                     "(residuo %s, riletto %s): NON lo dichiaro terminale",
                     tr.get("id"), bet_id, residuo, riletto)
     return {"esito": "vivo"}
+
+
+#: finestra dell'impronta: l'ordine del canale e' piazzato dopo l'invio (meno l'errore
+#: d'orologio) ed entro la scadenza del comando piu' la propagazione di Betfair
+_ADOZIONE_PRIMA_S = 5.0
+_ADOZIONE_DOPO_S = 120.0
+
+
+def _nella_finestra(o: dict[str, Any], inviato: Optional[datetime]) -> bool:
+    quando = _parse_iso(o.get("placed_date"))
+    if inviato is None or quando is None:
+        return False
+    if quando.tzinfo is None:
+        quando = quando.replace(tzinfo=timezone.utc)
+    if inviato.tzinfo is None:
+        inviato = inviato.replace(tzinfo=timezone.utc)
+    delta = (quando - inviato).total_seconds()
+    return -_ADOZIONE_PRIMA_S <= delta <= _ADOZIONE_DOPO_S
+
+
+def _adotta_per_mercato(market, tr: dict[str, Any], *, db) -> Optional[str]:
+    """02/10/2026 (reperto 1): LIVE, riga mandata sul canale e rimasta SENZA bet_id
+    oltre la scadenza (nessun evento arrivato). Il runner piazza col ref di flumine, non
+    col ``safe-t<id>`` della riga: la ricerca per ref non lo trova MAI (il mercato di
+    Safe tiene solo i ref ``safe-``). Come Omega (``omega_service._adotta_per_mercato``)
+    l'ordine si cerca fra quelli della strategia ``safe`` con l'impronta ESATTA di cio'
+    che e' stato mandato (``meta.canale_inviato``: mercato, selezione, lato, quota e size
+    chieste), piazzato nella finestra dell'invio e mai gia' di un'altra riga; oppure
+    l'equivalente esatto sull'altra selezione (``impronta_equivalente``).
+
+    Ritorna il bet_id adottato (scritto sulla riga), ``""`` se nessun ordine ha
+    l'impronta, ``None`` se non si puo' decidere (letture KO o piu' candidati)."""
+    from Betfair.stream.live_order_build import impronta_equivalente
+
+    meta = dict(tr.get("meta") or {})
+    inviato = meta.get("canale_inviato") if isinstance(meta.get("canale_inviato"), dict) \
+        else {"selection_id": tr.get("selection_id"), "side": tr.get("side"),
+              "price": tr.get("price"), "size": tr.get("size")}
+    leggi = getattr(market, "list_current_orders", None)
+    if not callable(leggi):
+        return None
+    try:
+        ordini = list(leggi(SAFE_STRATEGY_REF) or [])
+        per_evento = getattr(db, "trades_for_event", None)
+        altre = list(per_evento(str(tr.get("event_id"))) if callable(per_evento)
+                     else db.list_trades(None) or [])
+    except Exception as ex:  # noqa: BLE001 - al buio non si decide
+        logger.warning("[safe.bot] ricerca per mercato di %s KO: %s", tr.get("id"), str(ex)[:120])
+        return None
+    noti = {str(r.get("bet_id")) for r in altre if r.get("bet_id") and r.get("id") != tr.get("id")}
+    quando = _parse_iso(meta.get("canale_inviato_at"))
+    try:
+        sel = int(inviato.get("selection_id"))
+        lato = str(inviato.get("side") or "").lower()
+        prezzo = float(inviato.get("price"))
+        size = round(float(inviato.get("size")), 2)
+    except (TypeError, ValueError):
+        return None
+    chiesto = {"selection_id": sel, "side": lato, "price": prezzo, "size": size}
+
+    def _stesso(o: dict[str, Any]) -> bool:
+        try:
+            return (o.get("selection_id") == sel and str(o.get("side") or "").lower() == lato
+                    and abs(float(o.get("price_requested")) - prezzo) <= 1e-9
+                    and abs(float(o.get("size_requested")) - size) <= 0.005)
+        except (TypeError, ValueError):
+            return False
+
+    cand = {str(o.get("bet_id")): o for o in ordini
+            if o.get("bet_id") and str(o.get("market_id")) == str(tr.get("market_id"))
+            and str(o.get("bet_id")) not in noti and _nella_finestra(o, quando)
+            and (_stesso(o) or impronta_equivalente(chiesto, o))}
+    if not cand:
+        return ""
+    if len(cand) > 1:
+        return None
+    bet_id, o = next(iter(cand.items()))
+    meta["canale_bet_id_da"] = ("mercato_selezione_lato" if _stesso(o)
+                                else "mercato_equivalente")
+    letto = X.nei_termini_della_riga(tr, o)
+    X.ricorda_tradotto(meta, letto if letto is not o else {})
+    db.update_trade(int(tr["id"]), bet_id=bet_id, meta=meta)
+    tr["bet_id"] = bet_id
+    tr["meta"] = meta
+    _log(db, "flumine_recovered", {"trade_id": tr.get("id"), "event_id": tr.get("event_id"),
+                                   "bet_id": bet_id, "via": "canale",
+                                   "come": meta["canale_bet_id_da"]})
+    return bet_id
 
 
 def _reconcile_by_bet_id(market, tr: dict[str, Any]) -> Optional[dict]:

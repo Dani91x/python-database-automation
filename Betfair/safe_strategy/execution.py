@@ -746,7 +746,12 @@ def _place_via_canale(porta: Any, *, db, mode: str, market_id: str, selection_id
     pre.update({"phase": "canale_wait", "canale_ref": ref, "canale_attore": porta.attore,
                 "reason": "place_exception_reconciling", "err": "canale_in_volo",
                 "canale_inviato_at": (now.isoformat() if now is not None
-                                      else datetime.now().astimezone().isoformat())})
+                                      else datetime.now().astimezone().isoformat()),
+                # 02/10/2026 (reperto 1): l'ordine MANDATO (dopo tick e tetti), impronta
+                # esatta per ritrovarlo per mercato se nessun evento arriva
+                "canale_inviato": {"selection_id": int(selection_id),
+                                   "side": str(side).lower(), "price": float(price),
+                                   "size": round(float(size), 2)}})
     if sotto_minimo:
         pre["canale_sotto_minimo"] = True
     try:
