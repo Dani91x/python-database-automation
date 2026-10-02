@@ -43,6 +43,7 @@ import math
 import os
 import time
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -1335,8 +1336,11 @@ def _place_sub_minimum(
         SubminStep,
         advance_submin,
         start_submin,
+        verifica_importo_finale,
     )
 
+    # 01/10/2026: mai una riduzione sotto 0,50 EUR, floor di legge (regola d'ingresso della macchina)
+    verifica_importo_finale(str(side), size)
     juris = _jurisdiction()
     state = start_submin(
         side=str(side), target_price=float(price), target_size=float(size),
@@ -1445,15 +1449,15 @@ def _do_place(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, str
         jurisdiction=_jurisdiction(),
         max_stake=_effective_cap(request_row),
         customer_order_ref=cust_ref,
-        # CERT. 13/09 — una gamba di CHIUSURA riduce la posizione: Betfair la
-        # accetta sotto il minimo di giurisdizione e senza il passo da 0,50 EUR
-        # sulle size BACK. Senza questo flag ``min_stake_rules`` SOLLEVAVA per
-        # ogni BACK di chiusura < 2,00 EUR (e troncava per difetto le altre,
-        # lasciando la posizione non pareggiata): l'uscita finiva in errore e la
-        # liability restava esposta fino al settlement. Il flag lo mette chi
-        # accoda (``safe_strategy.execution.enqueue_place``), come gia' fa
-        # ``_place_closing_leg`` per l'azione ``greenup``; per un'APERTURA non
-        # e' mai presente, quindi il minimo normale continua a valere.
+        # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): ``reduces_liability`` e' SOLO
+        # informazione (context per i control di flusso, nota). L'ipotesi del
+        # 13/09 ("Betfair accetta le chiusure sotto il minimo") e' FALSA: una
+        # chiusura sotto il minimo viene rifiutata INVALID_BET_SIZE. Qui un place
+        # sotto il minimo solleva SOTTO_MINIMO_NON_PIAZZABILE PRIMA dell'invio
+        # (nessuna chiamata a Betfair). Le vie legittime (equivalente sull'altra
+        # selezione, place-and-trim) le sceglie il motore del canale
+        # (``motore_ordini``) o chi accoda ``place_submin``. La punta e' al
+        # centesimo: niente piu' floor a 0,50 che lasciava residui scoperti.
         reduces_liability=bool(isinstance(params, dict)
                                and params.get("reduces_liability")),
     )
@@ -2116,42 +2120,75 @@ def _place_closing_leg(
     """Piazza una gamba di CHIUSURA (greenup / cash-out). Ritorna lo SubminState se si e'
     dovuti passare dal place-and-trim, altrimenti None.
 
-    Percorso normale: place DIRETTO — Betfair consente la size sotto-minima quando l'ordine
-    RIDUCE la liability (``reduces_liability=True`` in build_order), quindi nel caso tipico
-    nessun trucco serve. Se pero' il place viene RIFIUTATO in modo PROVABILE (i trading
-    control tornano False: ordine MAI inviato) e la size e' sotto il minimo di exchange, si
-    ripiega sulla sequenza place-and-trim: una VIA D'USCITA non deve restare bloccata da un
-    minimo. Opt-in ``params.allow_sub_minimum``, default TRUE per le chiusure.
-    Un'eccezione sollevata DENTRO place_order (RuntimeError ``post_place:``) NON e' un
-    rifiuto provabile e viene ri-propagata: l'ordine potrebbe essere gia' in volo.
+    01/10/2026 (RUNNER_MINIMI_CHIUSURE): Betfair NON consente la size sotto il minimo
+    quando l'ordine riduce la liability (ipotesi storica smentita: ``INVALID_BET_SIZE``).
+    Quindi in LIVE una gamba sotto il minimo di exchange va DIRETTAMENTE al place-and-trim,
+    decisa PRIMA di qualunque invio: mai un place diretto che Betfair rifiuterebbe. Opt-out
+    ``params.allow_sub_minimum=False`` -> rifiuto esplicito ``SOTTO_MINIMO_NON_PIAZZABILE``,
+    nessun ordine. In questo caso ``order`` puo' essere None (non costruito: build_order
+    lo rifiuterebbe). Sopra il minimo (o in PAPER, client simulato): place diretto; un
+    rifiuto dei control viene propagato. Un'eccezione sollevata DENTRO place_order
+    (RuntimeError ``post_place:``) NON e' un rifiuto provabile e viene ri-propagata.
     """
-    try:
+    sotto_minimo_live = (
+        _is_live_mode(mode)
+        and size is not None
+        and float(size) < _sub_minimum_floor(side) - 1e-9
+    )
+    if not sotto_minimo_live:
+        if order is None:
+            raise ValueError(f"{what}: ordine di chiusura non costruito")
         _place_or_raise(market, order, what, client=client)
         return None
-    except ValueError as ex:
-        if not (
-            _param_bool(params, "allow_sub_minimum", True)
-            and _is_live_mode(mode)
-            and size is not None
-            and float(size) < _sub_minimum_floor(side) - 1e-9
-        ):
-            raise
-        logger.warning(
-            "[live-order] %s: place diretto RIFIUTATO (%s) - ripiego sul place-and-trim "
-            "(size %.2f < minimo %.2f)", what, str(ex)[:160], float(size),
-            _sub_minimum_floor(side),
-        )
-        # MEDIUM-6 (review 10/09): la sequenza park/trim/replace e' un place REALE: la
-        # capacita' rate va verificata PRIMA di toccare il mercato (come per place_submin),
-        # mai scoprire il rate-limit con un ordine parcheggiato alla quota non abbinabile.
-        _rate_guard()
-        state, _order = _place_sub_minimum(
-            flumine, market, market_id=market_id, strategy=strategy,
-            selection_id=int(selection_id), handicap=float(handicap or 0.0), side=str(side),
-            price=float(price), size=float(size), cust_ref=cust_ref, what=what,
-            max_stake=max_stake, client=client,
-        )
-        return state
+    if not _param_bool(params, "allow_sub_minimum", True):
+        from .live_order_build import SOTTO_MINIMO_NON_PIAZZABILE
+        raise ValueError(
+            f"{SOTTO_MINIMO_NON_PIAZZABILE}: {what}: size {float(size):.2f} < minimo "
+            f"{_sub_minimum_floor(side):.2f} e place-and-trim escluso "
+            f"(params.allow_sub_minimum=False): nessun ordine inviato")
+    logger.warning(
+        "[live-order] %s: size %.2f < minimo %.2f - place-and-trim deciso PRIMA "
+        "dell'invio (nessun place diretto sotto il minimo)", what, float(size),
+        _sub_minimum_floor(side),
+    )
+    # MEDIUM-6 (review 10/09): la sequenza park/trim/replace e' un place REALE: la
+    # capacita' rate va verificata PRIMA di toccare il mercato (come per place_submin),
+    # mai scoprire il rate-limit con un ordine parcheggiato alla quota non abbinabile.
+    _rate_guard()
+    state, _order = _place_sub_minimum(
+        flumine, market, market_id=market_id, strategy=strategy,
+        selection_id=int(selection_id), handicap=float(handicap or 0.0), side=str(side),
+        price=float(price), size=float(size), cust_ref=cust_ref, what=what,
+        max_stake=max_stake, client=client,
+    )
+    return state
+
+
+def _costruisci_chiusura(market: Any, *, strategy: Any, selection_id: int, handicap: float,
+                         side: str, price: float, size: float, persistence: str,
+                         cust_ref: str, mode: str) -> "tuple[Any, float, float]":
+    """La gamba di CHIUSURA di greenup/cash-out: (ordine, quota al tick, size).
+
+    01/10/2026: in LIVE una size sotto il minimo NON si costruisce (build_order la
+    rifiuterebbe, e Betfair pure): ordine None, ``_place_closing_leg`` va al place-and-trim.
+    In PAPER (client simulato) l'ordine si costruisce anche sotto il minimo, come sempre
+    (``simulato_ammette_sotto_minimo``): la sequenza sincrona non si usa sul simulato."""
+    from .live_order_build import build_order, round_to_tick
+
+    live = _is_live_mode(mode)
+    if live and float(size) < _sub_minimum_floor(side) - 1e-9:
+        return None, float(round_to_tick(price)), round(float(size), 2)
+    built = build_order(
+        market, strategy=strategy, selection_id=selection_id, handicap=handicap,
+        side=str(side), order_type="LIMIT", price=price, size=size, liability=None,
+        persistence=persistence, time_in_force=None, min_fill_size=None,
+        jurisdiction=_jurisdiction(),
+        max_stake=None,                 # hedge self-bounded (liability < |W-L|): nessun cap
+        customer_order_ref=cust_ref,
+        reduces_liability=True,         # informazione: NON esenta dai minimi (01/10)
+        simulato_ammette_sotto_minimo=not live,
+    )
+    return built.order, float(built.price), float(built.size)
 
 
 def _do_greenup(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any,
@@ -2160,10 +2197,10 @@ def _do_greenup(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, s
 
     Legge le esposizioni FRESCHE da flumine + il best price opposto dal book, calcola l'UNICO
     ordine di hedge (trading/greenup.compute_greenup) e lo piazza con ``reduces_liability=True``
-    (sotto-minimo consentito, hedge self-bounded → ``max_stake=None``). Se la posizione è già
-    piatta / frazione nulla / prezzo assente → riga 'done' SENZA piazzare (no-op tracciato).
+    (hedge self-bounded → ``max_stake=None``; dal 01/10/2026 NESSUNA esenzione dai minimi:
+    in live sotto il minimo va al place-and-trim, ``_place_closing_leg``). Se la posizione
+    è già piatta / frazione nulla / prezzo assente → riga 'done' SENZA piazzare (no-op).
     """
-    from .live_order_build import build_order
     from .trading.greenup import compute_greenup
 
     rid = request_row["id"]
@@ -2280,46 +2317,37 @@ def _do_greenup(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, s
         _write_done(sb, rid, result)
         return
 
-    built = build_order(
-        market,
-        strategy=strategy,
-        selection_id=selection_id,
-        handicap=handicap,
-        side=str(plan.side),
-        order_type="LIMIT",
-        price=plan.price,
-        size=plan.size,
-        liability=None,
-        persistence=persistence,
-        time_in_force=None,
-        min_fill_size=None,
-        jurisdiction=_jurisdiction(),
-        max_stake=None,                 # hedge self-bounded (liability < |W−L|): nessun cap
-        customer_order_ref=cust_ref,
-        reduces_liability=True,         # green-up: sotto-minimo .it consentito
+    # 01/10/2026: la gamba si costruisce senza esenzione dai minimi; in LIVE sotto il
+    # minimo non si costruisce affatto e va al place-and-trim (``_place_closing_leg``).
+    # Niente equivalente sull'altra selezione qui: il follow-through del greenup rilegge
+    # le esposizioni della STESSA selezione e rifarebbe l'hedge (doppia chiusura).
+    hedge_order, hedge_price, hedge_size = _costruisci_chiusura(
+        market, strategy=strategy, selection_id=selection_id, handicap=handicap,
+        side=str(plan.side), price=plan.price, size=plan.size, persistence=persistence,
+        cust_ref=cust_ref, mode=mode,
     )
     submin_state = _place_closing_leg(
-        flumine, market, order=built.order, strategy=strategy,
+        flumine, market, order=hedge_order, strategy=strategy,
         market_id=request_row.get("market_id"), selection_id=selection_id, handicap=handicap,
-        side=str(plan.side), price=float(built.price), size=float(built.size),
+        side=str(plan.side), price=hedge_price, size=hedge_size,
         cust_ref=cust_ref, what="greenup", mode=mode, params=params,
         max_stake=_effective_cap(request_row), client=client,
     )
-    # Se si e' passati dal place-and-trim l'ordine EFFETTIVO non e' ``built.order`` (che i
-    # control avevano rifiutato): niente snapshot da un ordine VIOLATION nello specchio.
+    # Se si e' passati dal place-and-trim l'ordine EFFETTIVO non e' ``hedge_order`` (mai
+    # inviato): niente snapshot da un ordine non piazzato nello specchio.
     sub_note = "" if submin_state is None else "; via place-and-trim (sotto-minimo)"
     if cancel_failed:
         # hedge PIAZZATO ma resting non annullati: esito INCOMPLETO esplicito
         # (mai un done bugiardo — stessa semantica di _flatten_market).
         raise ValueError(
-            f"cash-out selezione INCOMPLETO: hedge {plan.side} {built.size}@{built.price} "
+            f"cash-out selezione INCOMPLETO: hedge {plan.side} {hedge_size}@{hedge_price} "
             f"piazzato ma {len(cancel_failed)} resting NON annullati "
             f"({cancel_failed[0].get('error')}) — ritentare il cash-out"
         )
     result = _result(
         ok=True, action="greenup", mode=mode, request_row=request_row,
-        cust_ref=cust_ref, order=(built.order if submin_state is None else None),
-        price=built.price, size=built.size, side=plan.side,
+        cust_ref=cust_ref, order=(hedge_order if submin_state is None else None),
+        price=hedge_price, size=hedge_size, side=plan.side,
         submin_step=(submin_state.step.value if submin_state is not None else None),
         detail=f"{plan.note}; atteso vince={plan.expected_if_win} "
                f"perde={plan.expected_if_lose}{cancel_note}{sub_note}",
@@ -2639,17 +2667,18 @@ def _flatten_market(
         leg_submin = None
         try:
             if closing:
-                built = build_order(
+                # 01/10/2026: nessuna esenzione dai minimi; in LIVE sotto il minimo la
+                # gamba non si costruisce e va al place-and-trim (``_place_closing_leg``).
+                leg_order, leg_price, leg_size = _costruisci_chiusura(
                     market, strategy=strategy, selection_id=sel, handicap=hcap,
-                    side=side, order_type="LIMIT", price=plan.price, size=plan.size,
-                    liability=None, persistence="LAPSE", time_in_force=None, min_fill_size=None,
-                    jurisdiction=_jurisdiction(), max_stake=None,
-                    customer_order_ref=ref, reduces_liability=True,
+                    side=side, price=plan.price, size=plan.size, persistence="LAPSE",
+                    cust_ref=ref, mode=mode,
                 )
+                built = SimpleNamespace(order=leg_order, price=leg_price, size=leg_size)
                 leg_submin = _place_closing_leg(
-                    flumine, market, order=built.order, strategy=strategy, market_id=market_id,
-                    selection_id=sel, handicap=hcap, side=side, price=float(built.price),
-                    size=float(built.size), cust_ref=ref,
+                    flumine, market, order=leg_order, strategy=strategy, market_id=market_id,
+                    selection_id=sel, handicap=hcap, side=side, price=leg_price,
+                    size=leg_size, cust_ref=ref,
                     what=f"cashout sel {sel}", mode=mode, params=params, client=client,
                 )
             else:
@@ -2948,6 +2977,9 @@ def _start_submin(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str,
     target_size = _f(ts) if ts is not None else _f(request_row.get("size"))
     if target_size is None:
         raise ValueError("place_submin richiede size (target sotto-minimo) o params.target_size")
+    # 01/10/2026: mai una riduzione sotto 0,50 EUR, floor di legge (regola d'ingresso della macchina)
+    from .trading.submin import verifica_importo_finale
+    verifica_importo_finale(str(request_row["side"]), target_size)
 
     juris = _jurisdiction()
     state = start_submin(

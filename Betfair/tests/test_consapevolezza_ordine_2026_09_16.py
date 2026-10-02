@@ -314,7 +314,7 @@ def test_safe_rifiuto_invalid_profit_ratio_chiude_la_riga_in_error(betfair, monk
         if passi["n"] == 1:              # parcheggio
             return place_report(matched=0.0, bet_id="B9")
         if passi["n"] == 2:              # taglio
-            return cancel_report(tagliato=1.20)
+            return cancel_report(tagliato=0.20)   # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
         if passi["n"] == 3:              # riprezzo RIFIUTATO
             return {"status": "FAILURE", "instructionReports": [
                 {"status": "FAILURE", "errorCode": "INVALID_PROFIT_RATIO"}]}
@@ -322,7 +322,7 @@ def test_safe_rifiuto_invalid_profit_ratio_chiude_la_riga_in_error(betfair, monk
     monkeypatch.setattr(OM, "call_mutating", lambda fn: muta(fn))
     # 17/09 — dopo il taglio il place-and-trim RILEGGE l'ordine da Betfair
     # (`listCurrentOrders` per betId): il finto risponde come il vero, con il
-    # residuo al target (2,00 di parcheggio - 1,20 tagliati = 0,80).
+    # residuo al target (1,00 di parcheggio - 0,20 tagliati = 0,80).
     betfair.current = current_orders(bet_id="B9", residuo=0.80, stato="EXECUTABLE")
     db = DbFinto()
     out = _place_safe(db, size=0.80, side="back")
@@ -354,7 +354,7 @@ def test_safe_se_il_ritiro_fallisce_l_esito_resta_IGNOTO(betfair, monkeypatch):
         if passi["n"] == 1:
             return place_report(matched=0.0, bet_id="B9")
         if passi["n"] == 2:
-            return cancel_report(tagliato=1.20)
+            return cancel_report(tagliato=0.20)   # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
         if passi["n"] == 3:
             return {"status": "FAILURE", "instructionReports": [
                 {"status": "FAILURE", "errorCode": "INVALID_PROFIT_RATIO"}]}

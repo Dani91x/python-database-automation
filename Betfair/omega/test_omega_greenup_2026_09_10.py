@@ -336,7 +336,12 @@ def test_trigger_quota_tiene_con_modello_a_margine_ampio(monkeypatch, lambdas):
 # ---------------------------------------------------------------------------
 # TAKE-PROFIT
 # ---------------------------------------------------------------------------
-def test_take_profit_blocca_il_profitto_quasi_pieno(lambdas):
+def test_take_profit_blocca_il_profitto_quasi_pieno(lambdas, monkeypatch):
+    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): test di LOGICA dell'uscita, non dei minimi.
+    # Le chiusure qui sono sotto 1,00 EUR: su .it fuori dal canale sono un rifiuto certo
+    # (test_runner_minimi_chiusure_2026_10_01). Qui il minimo si azzera con la manopola
+    # gia' esistente SAFE_MIN_SIZE_LIVE per isolare la logica dai minimi.
+    monkeypatch.setenv("SAFE_MIN_SIZE_LIVE", "0.01")
     db = _db_with_model()
     tr = _trade(db)                                  # stake 5 → serve locked ≥ 4.5
     p = _params(greenup_settle_delay_s=0)
@@ -355,9 +360,14 @@ def test_take_profit_blocca_il_profitto_quasi_pieno(lambdas):
     assert _closings(db, tr["id"])[0]["meta"]["exit_kind"] == "greenup"
 
 
-def test_p_o1_green_up_integrale_col_fill_in_volo_e_greenup(lambdas):
+def test_p_o1_green_up_integrale_col_fill_in_volo_e_greenup(lambdas, monkeypatch):
     """CANTIERE P (28/09, P-O1): all'INVIO il fill e' in volo (``pending_fill``)
     e l'uscita e' comunque INTEGRALE (fraction 1.0): etichetta 'greenup'."""
+    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): test di LOGICA dell'uscita, non dei minimi.
+    # Le chiusure qui sono sotto 1,00 EUR: su .it fuori dal canale sono un rifiuto certo
+    # (test_runner_minimi_chiusure_2026_10_01). Qui il minimo si azzera con la manopola
+    # gia' esistente SAFE_MIN_SIZE_LIVE per isolare la logica dai minimi.
+    monkeypatch.setenv("SAFE_MIN_SIZE_LIVE", "0.01")
     db = _db_with_model()
     tr = _trade(db)
     p = _params(greenup_settle_delay_s=0)

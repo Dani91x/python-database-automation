@@ -959,8 +959,9 @@ def test_m31_size_sotto_il_minimo_non_arriva_a_betfair():
     manca il runner, non "l'importo e' troppo piccolo"."""
     db = FakeDB(status="stopped")
     mk = FakeMarket()
+    # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
     out = X.place(db=db, market=mk, mode="live", event_id="1.1", market_id="m1",
-                  selection_id=7, side="back", price=3.0, size=1.5,
+                  selection_id=7, side="back", price=3.0, size=0.7,
                   client_ref="safe-t1", trade_id=1, now=NOW, params={})
     assert out.status == "error"
     assert out.fill_note.startswith("submin_non_disponibile")
@@ -990,36 +991,46 @@ def test_m31_in_paper_qualsiasi_importo_si_abbina():
     restare non abbinato. Ora il sotto-minimo paper va al RUNNER con l'azione
     ``place_submin`` (stessa macchina del live, sul client simulato) e senza
     FOK; la chiusura sotto il minimo resta un ``place`` FOK normale."""
+    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE, decisione del coordinatore dalle fonti .it): il
+    # place-and-trim NON riduce mai sotto 1,00 EUR (minimo commerciale betfair.it; il floor
+    # di legge e' 0,50). Fuori dal canale (dove il motore puo' tradurre nell'equivalente)
+    # un importo sotto il minimo E sotto 1,00 e' un RIFIUTO CERTO, uguale in paper e in
+    # live: nessuna riga in coda, nessun REST, codice SOTTO_MINIMO_NON_PIAZZABILE.
     db = FakeDB(status="stopped")
+    # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50: sotto 0,50 rifiuto certo
+    for size, ref, tid in ((0.49, "safe-t1", 1), (0.05, "safe-t1b", 11)):
+        prima = len(db.queue)
+        out = X.place(db=db, market=FakeMarket(), mode="paper", event_id="1.1",
+                      market_id="m1", selection_id=7, side="back", price=3.0, size=size,
+                      best_size=100.0, client_ref=ref, trade_id=tid, now=NOW, params={})
+        assert out.status == "error" and out.error_code == "SOTTO_MINIMO_NON_PIAZZABILE"
+        assert len(db.queue) == prima
+    # gamba di CHIUSURA sotto 1,00: stesso rifiuto certo (Betfair non accetta il sotto-
+    # minimo che riduce una posizione: INVALID_BET_SIZE del 01/10)
     out = X.place(db=db, market=FakeMarket(), mode="paper", event_id="1.1",
-                  market_id="m1", selection_id=7, side="back", price=3.0, size=0.5,
-                  best_size=100.0, client_ref="safe-t1", trade_id=1, now=NOW, params={})
-    assert out.status == "pending" and out.fill_note.startswith("flumine_submin")
-    q = db.queue[-1]
-    assert q["action"] == "place_submin" and q["params"]["target_size"] == 0.5
-    assert "time_in_force" not in q
-    # anche cinque centesimi
-    out = X.place(db=db, market=FakeMarket(), mode="paper", event_id="1.1",
-                  market_id="m1", selection_id=7, side="back", price=3.0, size=0.05,
-                  best_size=100.0, client_ref="safe-t1b", trade_id=11, now=NOW, params={})
-    assert out.status == "pending" and db.queue[-1]["params"]["target_size"] == 0.05
-    # gamba di CHIUSURA: un place normale FOK che riduce la posizione
-    out = X.place(db=db, market=FakeMarket(), mode="paper", event_id="1.1",
-                  market_id="m1", selection_id=7, side="back", price=3.0, size=0.5,
+                  market_id="m1", selection_id=7, side="back", price=3.0, size=0.49,
                   best_size=100.0, client_ref="safe-t2", trade_id=2, now=NOW, params={},
                   meta={"cashout": True, "closes_trade_id": 1})
-    assert out.status == "pending" and db.queue[-1]["action"] == "place"
-    assert db.queue[-1]["time_in_force"] == "FILL_OR_KILL"
+    assert out.status == "error" and out.error_code == "SOTTO_MINIMO_NON_PIAZZABILE"
+    # gamba di CHIUSURA fra 0,50 e 1,00: place-and-trim sulla coda (senza FOK), flag
+    out = X.place(db=db, market=FakeMarket(), mode="paper", event_id="1.1",
+                  market_id="m1", selection_id=7, side="back", price=3.0, size=0.7,
+                  best_size=100.0, client_ref="safe-t2b", trade_id=12, now=NOW, params={},
+                  meta={"cashout": True, "closes_trade_id": 1})
+    assert out.status == "pending" and db.queue[-1]["action"] == "place_submin"
+    assert db.queue[-1]["params"]["target_size"] == 0.7
+    assert "time_in_force" not in db.queue[-1]
     assert db.queue[-1]["params"]["reduces_liability"] is True
     # size CAPPATA dalla liquidita' sotto il minimo: si accoda quella disponibile
     out = X.place(db=db, market=FakeMarket(), mode="paper", event_id="1.1",
                   market_id="m1", selection_id=7, side="back", price=3.0, size=5.0,
-                  best_size=1.2, client_ref="safe-t3", trade_id=3, now=NOW, params={})
-    assert out.status == "pending" and db.queue[-1]["params"]["target_size"] == 1.2
+                  best_size=0.8, client_ref="safe-t3", trade_id=3, now=NOW, params={})
+    assert out.status == "pending" and db.queue[-1]["params"]["target_size"] == 0.8
+    assert db.queue[-1]["action"] == "place_submin" and "time_in_force" not in db.queue[-1]
     # runner giu': NESSUN fill di casa (prima: fill FOK diretto della size)
     db.follow = "NONE"
     out = X.place(db=db, market=FakeMarket(), mode="paper", event_id="1.1",
-                  market_id="m1", selection_id=7, side="back", price=3.0, size=0.5,
+                  market_id="m1", selection_id=7, side="back", price=3.0, size=0.7,
                   best_size=100.0, client_ref="safe-t4", trade_id=4, now=NOW, params={})
     assert out.status == "error" and out.fill_note.startswith("paper_senza_runner:")
 
@@ -1281,9 +1292,10 @@ def test_rev_c2_il_minimo_2_euro_non_blocca_le_chiusure():
     residuo da 1,40 EUR deve poter essere chiuso."""
     db = FakeDB(status="stopped")
     mk = FakeMarket()
-    # APERTURA sotto minimo: rifiutata (nessuna chiamata buttata)
+    # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50: APERTURA sotto minimo (0,70): rifiutata, nessuna chiamata buttata.
+    # Le chiusure da 1,40 qui sotto sono SOPRA il minimo (1,00): passano dirette.
     out = X.place(db=db, market=mk, mode="live", event_id="1.1", market_id="m1",
-                  selection_id=7, side="back", price=3.0, size=1.4,
+                  selection_id=7, side="back", price=3.0, size=0.7,
                   client_ref="safe-t1", trade_id=1, now=NOW, params={})
     assert out.status == "error" and mk.placed == []
     # CHIUSURA sotto minimo: passa
@@ -1503,9 +1515,14 @@ def test_rev_m2_una_posizione_pre_ko_non_e_cieca():
     assert _run(db2)["blind"] == 1
 
 
-def test_rev_m3_green_up_in_coda_resta_greenup():
+def test_rev_m3_green_up_in_coda_resta_greenup(monkeypatch):
     """Con la coda flumine il fill arriva dopo: ``residual_size`` e' ancora
     pieno ma la chiusura e' INTEGRALE -> 'greenup', non 'profit'."""
+    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): test di LOGICA dell'uscita, non dei minimi.
+    # Le chiusure qui sono sotto 1,00 EUR: su .it fuori dal canale sono un rifiuto certo
+    # (test_runner_minimi_chiusure_2026_10_01). Qui il minimo si azzera con la manopola
+    # gia' esistente SAFE_MIN_SIZE_LIVE per isolare la logica dai minimi.
+    monkeypatch.setenv("SAFE_MIN_SIZE_LIVE", "0.01")
     assert XE.ui_exit_kind("time", locked=1.0, integral=True) == "greenup"
     db = FakeDB(status="running")
     db.follow = "STREAMING"          # gate flumine aperto: fill differito

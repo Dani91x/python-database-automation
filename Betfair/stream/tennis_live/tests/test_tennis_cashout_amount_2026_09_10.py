@@ -81,8 +81,9 @@ def test_amount_cappato_al_green_totale():
 
 def test_amount_vince_su_fraction():
     market = _market(2.0, -2.0, best_back=1.88, best_lay=1.90)
-    tow._dispatch(_flumine(market), _session(), _cmd(amount=0.80, fraction=0.1), "awtq52")
-    assert market.placed[0].order_type.size == pytest.approx(0.80)
+    # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50: l'hedge da 0,80 e' sotto la banca minima; 1,20 vince sulla fraction (0,21)
+    tow._dispatch(_flumine(market), _session(), _cmd(amount=1.20, fraction=0.1), "awtq52")
+    assert market.placed[0].order_type.size == pytest.approx(1.20)
 
 
 def test_amount_malformato_e_errore_esplicito():

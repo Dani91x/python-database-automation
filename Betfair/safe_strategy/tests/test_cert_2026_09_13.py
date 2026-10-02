@@ -160,15 +160,19 @@ def test_motore_dichiara_le_partite_senza_riferimento_pre_ko():
 # 2. Esecuzione: place-and-trim, minimi per lato, direzione del tick
 # ---------------------------------------------------------------------------
 def test_minimo_di_piazzamento_dipende_dal_lato(monkeypatch):
-    """Il minimo .it e' BACK 2,00 e LAY 0,50.
+    """Il minimo .it e' BACK 2,00 e LAY 1,00 (01/10/2026: banca minima commerciale di
+    betfair.it, UNA costante condivisa col motore, ``live_order_build.IT_LAY_MIN_SIZE``).
 
-    Tornando 2,00 anche per il lay, ogni LAY fra 0,50 e 2,00 finiva sulla
-    macchina place-and-trim, che pero' parcheggia a 0,50 e SOLLEVA: gamba persa
-    su un ordine che Betfair avrebbe accettato al primo colpo.
+    Tornando 2,00 anche per il lay, ogni LAY fra 1,00 e 2,00 finiva sulla
+    macchina place-and-trim, che pero' parcheggia al minimo lay e SOLLEVA: gamba
+    persa su un ordine che Betfair avrebbe accettato al primo colpo.
     """
+    from Betfair.stream.live_order_build import IT_LAY_MIN_SIZE
+
     monkeypatch.delenv("SAFE_MIN_SIZE_LIVE", raising=False)
-    assert X._min_size_live("back") == 2.0
-    assert X._min_size_live("lay") == 0.50
+    # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
+    assert X._min_size_live("back") == 1.0
+    assert X._min_size_live("lay") == 1.00 == IT_LAY_MIN_SIZE
     monkeypatch.setenv("SAFE_MIN_SIZE_LIVE", "1.25")
     assert X._min_size_live("back") == X._min_size_live("lay") == 1.25
 

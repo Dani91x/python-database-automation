@@ -1053,8 +1053,9 @@ def test_place_sotto_il_minimo_senza_coda_ne_paper_ne_live():
     db.follow = "NONE"
     common = dict(db=db, market=mk, event_id="1.1", market_id="m1", selection_id=7,
                   side="back", price=3.0, best_size=100.0, trade_id=1, now=NOW, params={})
-    paper = X.place(mode="paper", size=1.5, client_ref="safe-t1", **common)
-    live = X.place(mode="live", size=1.5, client_ref="safe-t1", **common)
+    # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
+    paper = X.place(mode="paper", size=0.7, client_ref="safe-t1", **common)
+    live = X.place(mode="live", size=0.7, client_ref="safe-t1", **common)
     assert paper.status == "error" and paper.fill_note == "paper_senza_runner:follow_none"
     assert live.status == "error"
     assert live.fill_note.startswith("submin_non_disponibile")
@@ -1067,11 +1068,11 @@ def test_place_sotto_il_minimo_paper_va_al_place_and_trim_del_runner():
     (``place_submin`` sul runner, senza FOK, size esatta in ``target_size``)."""
     db, mk = FakeDB(), FakeMarket()
     out = X.place(db=db, market=mk, mode="paper", event_id="1.1", market_id="m1",
-                  selection_id=7, side="back", price=3.0, size=1.5, best_size=100.0,
-                  client_ref="safe-t1", trade_id=1, now=NOW, params={})
+                  selection_id=7, side="back", price=3.0, size=0.7, best_size=100.0,
+                  client_ref="safe-t1", trade_id=1, now=NOW, params={})  # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
     assert out.status == "pending" and out.fill_note.startswith("flumine_submin")
     q = db.queue[-1]
-    assert q["action"] == "place_submin" and q["params"]["target_size"] == 1.5
+    assert q["action"] == "place_submin" and q["params"]["target_size"] == 0.7
     assert "time_in_force" not in q and mk.placed == []
 
 
@@ -1094,10 +1095,10 @@ def test_place_sotto_il_minimo_in_live_usa_il_place_and_trim():
     db, mk = FakeDB(), MercatoConSubmin()
     db.follow = "NONE"
     out = X.place(db=db, market=mk, mode="live", event_id="1.1", market_id="m1",
-                  selection_id=7, side="back", price=8.0, size=1.35, best_size=100.0,
-                  client_ref="safe-t5", trade_id=5, now=NOW, params={})
+                  selection_id=7, side="back", price=8.0, size=0.75, best_size=100.0,
+                  client_ref="safe-t5", trade_id=5, now=NOW, params={})  # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
     assert out.status == "open"
-    assert out.size == 1.35, "l'importo esatto, non il minimo gonfiato"
+    assert out.size == 0.75, "l'importo esatto, non il minimo gonfiato"
     assert out.fill_note.startswith("live_submin")
     assert len(mk.submin) == 1 and mk.placed == []
     # sopra il minimo si usa il percorso normale, non il place-and-trim
@@ -1108,17 +1109,20 @@ def test_place_sotto_il_minimo_in_live_usa_il_place_and_trim():
 
 
 def test_place_paper_minimo_non_blocca_la_gamba_di_chiusura():
-    """Betfair ACCETTA il sotto-minimo che RIDUCE una posizione: un residuo da
-    1,40 EUR deve poter essere chiuso, in paper come in live (review C2)."""
-    # CANTIERE P (28/09): al runner, come place FOK che riduce (non place_submin)
+    """Un residuo da 1,40 EUR deve poter essere chiuso, in paper come in live.
+    01/10/2026: Betfair NON accetta il sotto-minimo che riduce una posizione (review
+    C2 smentita, INVALID_BET_SIZE): sulla coda la chiusura va al place-and-trim
+    (``place_submin``, importo finale 0,70 >= 0,50), size esatta, flag di chiusura."""
+    # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50 (il residuo sotto il minimo oggi e' 0,70)
     db, mk = FakeDB(), FakeMarket()
     out = X.place(db=db, market=mk, mode="paper", event_id="1.1", market_id="m1",
-                  selection_id=7, side="back", price=3.0, size=1.4, best_size=100.0,
+                  selection_id=7, side="back", price=3.0, size=0.7, best_size=100.0,
                   client_ref="safe-t9", trade_id=9, now=NOW, params={},
                   meta={"cashout": True, "closes_trade_id": 1})
-    assert out.status == "pending" and out.size == 1.4
+    assert out.status == "pending" and out.size == 0.7
     q = db.queue[-1]
-    assert q["action"] == "place" and q["size"] == 1.4
+    assert q["action"] == "place_submin" and q["size"] == 0.7
+    assert q["params"]["target_size"] == 0.7
     assert q["params"]["reduces_liability"] is True
 
 

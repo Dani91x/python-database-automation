@@ -44,6 +44,10 @@ from Betfair.stream.live_order_build import (
     IT_LAY_MIN_SIZE,
     JURISDICTION_COM,
     JURISDICTION_IT,
+    SOTTO_MINIMO_NON_PIAZZABILE,
+    SUBMIN_ABS_MIN_SIZE,
+    SUBMIN_IMPORTO_FINALE_MIN,
+    _tick_su,
     build_order,
     round_to_tick,
 )
@@ -53,7 +57,17 @@ _TOL = 1e-6
 
 # Floor ASSOLUTO della size residua dopo il trim: non si può ridurre a zero/negativo.
 # Conservativo; il valore esatto su .it va verificato empiricamente (cert LIVE minimale).
-SUBMIN_ABS_MIN_SIZE = 0.01
+# 01/10/2026: la definizione e' UNA, in ``live_order_build`` (importata qui sopra), cosi'
+# il verdetto dei minimi e la macchina usano lo stesso numero.
+
+# 01/10/2026 - quota di PARCHEGGIO di una BANCA piccola. Dal 19/06/2020 Betfair rifiuta
+# (``INVALID_PROFIT_RATIO``) place/cancel parziale/replace che lasciano un ordine il cui
+# guadagno, arrotondato al centesimo, devia di oltre -20 %/+25 %. Una banca residua di S
+# EUR a 1,01 ha liability S*0,01: per S < 0,80 l'arrotondamento la porta a 0,00 o la
+# gonfia oltre il +25 %. Misura empirica degli sviluppatori (forum Betfair 2020, vedi
+# AUDIT_2026-10-01/RICERCA_STAKE_MINIMI_BETFAIR.md par. 2): la liability residua deve
+# essere >= circa 0,008 -> quota di parcheggio >= 1 + 0,008/S, al tick superiore.
+LIABILITY_MIN_RESIDUO_LAY = 0.008
 
 _VALID_SIDES = ("back", "lay")
 
@@ -298,6 +312,49 @@ def initial_place_price(side: str) -> float:
     if s == "lay":
         return round_to_tick(1.01)
     raise ValueError(f"side non valido: {side!r} (atteso back|lay)")
+
+
+def verifica_importo_finale(side: str, target_size: Any) -> None:
+    """REGOLA d'ingresso nella macchina (01/10/2026): l'importo FINALE di un place-and-
+    trim e' almeno ``SUBMIN_IMPORTO_FINALE_MIN`` (0,50 EUR, floor di legge DM 47/2013;
+    il parcheggio, ordine diretto, e' >= 1,00). Sotto 0,50 non si tenta mai: solleva ``ValueError`` con ``SOTTO_MINIMO_NON_PIAZZABILE`` e il
+    residuo da dichiarare al trader. La chiamano TUTTI gli ingressi reali (coda e motore
+    ``_start_submin``, uscite sincrone ``_place_sub_minimum``, REST
+    ``omega_market.place_submin_live``); la macchina pura resta meccanica."""
+    try:
+        t = round(float(target_size), 2)
+    except (TypeError, ValueError):
+        raise ValueError(f"{SOTTO_MINIMO_NON_PIAZZABILE}: importo non numerico "
+                         f"{target_size!r}") from None
+    if t < SUBMIN_IMPORTO_FINALE_MIN - _TOL:
+        raise ValueError(
+            f"{SOTTO_MINIMO_NON_PIAZZABILE}: {str(side).upper()} {t:.2f} sotto "
+            f"{SUBMIN_IMPORTO_FINALE_MIN:.2f} EUR, importo minimo del place-and-trim su .it "
+            f"(sotto il floor di legge di 0,50 non si tenta mai): nessun ordine; residuo {t:.2f} "
+            f"da dichiarare al trader (lasciarlo, oppure aumentare e richiudere)")
+
+
+def quota_parcheggio_lontano(side: str, target_size: float) -> float:
+    """Quota del parcheggio LONTANO (percorso B) per il residuo ``target_size``.
+
+    BACK: 1000 (``initial_place_price``). LAY: la quota piu' bassa che lascia una
+    liability residua >= ``LIABILITY_MIN_RESIDUO_LAY`` dopo il taglio, cioe'
+    ``1 + 0,008/target_size`` al tick SUPERIORE, mai sotto 1,01 (01/10/2026: a 1,01 una
+    banca residua sotto 0,80 EUR viene rifiutata ``INVALID_PROFIT_RATIO``). Esempi:
+    0,43 -> 1,02; 0,30 -> 1,03; 0,80 -> 1,01.
+    """
+    s = (side or "").lower()
+    base = initial_place_price(s)
+    if s != "lay":
+        return base
+    t = round(float(target_size), 2)
+    if t <= 0:
+        raise ValueError(f"target_size non valida per il parcheggio: {target_size!r}")
+    minima = 1.0 + LIABILITY_MIN_RESIDUO_LAY / t
+    tick = _tick_su(minima)
+    if tick is None:
+        raise ValueError(f"nessun tick per il parcheggio LAY di {t:.2f}")
+    return max(base, float(tick))
 
 
 # ---------------------------------------------------------------------------
@@ -602,7 +659,23 @@ def pianifica_submin(
     if riduzione < 0.01:
         raise ValueError(f"riduzione nulla: minimo {minimo} target {tsize}")
 
+    # 01/10/2026: parcheggio lontano della BANCA alla quota che supera INVALID_PROFIT_RATIO
+    # sul residuo (``quota_parcheggio_lontano``), non piu' sempre a 1,01.
+    park_lontano = quota_parcheggio_lontano(s, tsize)
     passiva = quota_non_abbinabile(s, tick, best_back=best_back, best_lay=best_lay)
+    if passiva is not True and quota_non_abbinabile(
+            s, park_lontano, best_back=best_back, best_lay=best_lay) is False:
+        # il parcheggio "lontano" si abbinerebbe SUBITO (book gia' a quella quota):
+        # mai un ordine del minimo pieno a una quota abbinabile (fail-closed)
+        return PianoSubmin(
+            serve_trucco=True, park_mode=PARK_FAR, park_price=park_lontano,
+            park_size=minimo, target_price=tick, target_size=tsize,
+            size_reduction=riduzione, serve_replace=True, chiamate_mutanti=0,
+            motivo="parcheggio lontano abbinabile",
+            rifiuto=("SUBMIN_PARCHEGGIO_ABBINABILE: il parcheggio del minimo a quota "
+                     "%s si abbinerebbe subito (best_back=%s, best_lay=%s); nessun ordine "
+                     "piazzato." % (park_lontano, best_back, best_lay)),
+        )
     # GUARDIA money-critical: nel percorso A il parcheggio sta ALLA quota target,
     # quindi per un LAY impegna size*(quota-1). Se sfonda il cap effettivo NON si
     # usa il percorso A: si ripiega sul parcheggio lontano (1.01, liability
@@ -615,7 +688,7 @@ def pianifica_submin(
         if not consenti_replace:
             return PianoSubmin(
                 serve_trucco=True, park_mode=PARK_FAR,
-                park_price=initial_place_price(s), park_size=minimo,
+                park_price=park_lontano, park_size=minimo,
                 target_price=tick, target_size=tsize, size_reduction=riduzione,
                 serve_replace=True, chiamate_mutanti=0,
                 motivo="parcheggio oltre il cap e replace non consentito",
@@ -627,7 +700,7 @@ def pianifica_submin(
             )
         return PianoSubmin(
             serve_trucco=True, park_mode=PARK_FAR,
-            park_price=initial_place_price(s), park_size=minimo,
+            park_price=park_lontano, park_size=minimo,
             target_price=tick, target_size=tsize, size_reduction=riduzione,
             serve_replace=True, chiamate_mutanti=3,
             motivo=("percorso B forzato: il parcheggio alla quota target "
@@ -653,7 +726,7 @@ def pianifica_submin(
     if not consenti_replace:
         return PianoSubmin(
             serve_trucco=True, park_mode=PARK_FAR,
-            park_price=initial_place_price(s), park_size=minimo,
+            park_price=park_lontano, park_size=minimo,
             target_price=tick, target_size=tsize, size_reduction=riduzione,
             serve_replace=True, chiamate_mutanti=0,
             motivo="percorso B necessario ma replace non consentito",
@@ -665,7 +738,7 @@ def pianifica_submin(
         )
     return PianoSubmin(
         serve_trucco=True, park_mode=PARK_FAR,
-        park_price=initial_place_price(s), park_size=minimo,
+        park_price=park_lontano, park_size=minimo,
         target_price=tick, target_size=tsize, size_reduction=riduzione,
         serve_replace=True, chiamate_mutanti=3,
         motivo="percorso B (parcheggio lontano + replace): " + perche,
@@ -843,6 +916,10 @@ def advance_submin(
                     "NON ripiazzato"
                 ),
             )
+        # 01/10/2026: la regola "importo finale >= 1,00" e' applicata agli INGRESSI del
+        # motore ordini (``verifica_importo_finale``), non qui: i bot che costruiscono lo
+        # stato da se' (scalper, sniper, scalper tennis, uscite esatte tennis) sono un
+        # reperto aperto (RUNNER_MINIMI_CHIUSURE.md), da decidere con l'utente.
         park = state.prezzo_parcheggio
         # DIFESA IN PROFONDITA': il cap si ri-valida al momento del place, con
         # il cap EFFETTIVO che porta l'adattatore (lo stato persistito potrebbe

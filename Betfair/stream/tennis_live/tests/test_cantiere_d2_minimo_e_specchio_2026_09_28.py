@@ -52,10 +52,11 @@ from Betfair.stream.trading.submin import place_min_size, porta_al_minimo_apertu
 # ===========================================================================
 # 1. la regola pura
 # ===========================================================================
+# minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
 @pytest.mark.parametrize("lato,chiesto,atteso", [
-    ("back", 1.22, 2.0), ("back", 0.01, 2.0), ("back", 1.999, 2.0),
-    ("back", 2.0, 2.0), ("back", 2.37, 2.37), ("back", 50.0, 50.0),
-    ("lay", 0.3, 0.5), ("lay", 0.49, 0.5), ("lay", 0.5, 0.5), ("lay", 1.2, 1.2),
+    ("back", 0.72, 1.0), ("back", 0.01, 1.0), ("back", 0.999, 1.0),
+    ("back", 1.0, 1.0), ("back", 1.22, 1.22), ("back", 2.37, 2.37), ("back", 50.0, 50.0),
+    ("lay", 0.3, 1.0), ("lay", 0.49, 1.0), ("lay", 0.5, 1.0), ("lay", 1.2, 1.2),
 ])
 def test_porta_al_minimo_solo_verso_l_alto_e_solo_fino_al_minimo(lato, chiesto, atteso):
     assert porta_al_minimo_apertura("it", lato, chiesto) == atteso
@@ -63,8 +64,9 @@ def test_porta_al_minimo_solo_verso_l_alto_e_solo_fino_al_minimo(lato, chiesto, 
 
 def test_il_minimo_e_quello_della_giurisdizione():
     # documentazione ufficiale Betfair, "Italian Exchange Specific Bet Rules"
-    assert place_min_size("it", "back") == 2.0
-    assert place_min_size("it", "lay") == 0.5
+    # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
+    assert place_min_size("it", "back") == 1.0
+    assert place_min_size("it", "lay") == 1.0
 
 
 # ===========================================================================
@@ -82,12 +84,12 @@ def test_apertura_lay_sotto_il_minimo_parte_al_minimo_con_il_fok(db, banchi, amb
     cmd = m.manda(side="LAY", price=2.1, size=0.3, time_in_force="FILL_OR_KILL")
     assert m.ack(cmd["ref"])["accettato"] is True
     o = _ordine_nel_blotter(b)[-1]
-    assert o.order_type.size == 0.5
+    assert o.order_type.size == 1.0       # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
     assert o.order_type.time_in_force == "FILL_OR_KILL"      # FOK conservato
     ev = _eventi(m, cmd["ref"])[0]
     assert ev["fase"] == "inviato"
-    assert ev["portata_al_minimo"] == {"chiesto": 0.3, "piazzato": 0.5}
-    assert ev["size"] == 0.5
+    assert ev["portata_al_minimo"] == {"chiesto": 0.3, "piazzato": 1.0}
+    assert ev["size"] == 1.0
     assert not m.motore._submin                              # nessun place-and-trim
 
 
@@ -141,9 +143,10 @@ def test_paper_e_live_consegnano_a_flumine_lo_stesso_ordine(db, banchi, ambiente
         return vero(self, order, *a, **k)
     monkeypatch.setattr(Mercato, "place_order", _spia)
     m = Motore(b, ambiente)
-    cp = m.manda(mode="paper", side="BACK", price=2.0, size=1.22,
+    # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
+    cp = m.manda(mode="paper", side="BACK", price=2.0, size=0.72,
                  time_in_force="FILL_OR_KILL")
-    cl = m.manda(mode="live", side="BACK", price=2.0, size=1.22,
+    cl = m.manda(mode="live", side="BACK", price=2.0, size=0.72,
                  time_in_force="FILL_OR_KILL")
     assert m.ack(cp["ref"])["accettato"] and m.ack(cl["ref"])["accettato"]
     assert len(visti) == 2
@@ -151,9 +154,9 @@ def test_paper_e_live_consegnano_a_flumine_lo_stesso_ordine(db, banchi, ambiente
     assert paper["client"] is b.client_paper and live["client"] is b.client
     for k in ("size", "price", "tif", "side"):
         assert paper[k] == live[k], k
-    assert paper["size"] == 2.0
+    assert paper["size"] == 1.0
     assert _eventi(m, cp["ref"])[0]["portata_al_minimo"] == \
-        _eventi(m, cl["ref"])[0]["portata_al_minimo"] == {"chiesto": 1.22, "piazzato": 2.0}
+        _eventi(m, cl["ref"])[0]["portata_al_minimo"] == {"chiesto": 0.72, "piazzato": 1.0}
 
 
 def test_l_evento_porta_il_customer_order_ref_vero_di_betfair(db, banchi, ambiente):
@@ -189,8 +192,9 @@ def test_il_calcio_non_dichiara_la_regola_del_minimo():
     """La regola vive SOLO nell'esecutore tennis: il calcio resta col
     place-and-trim (decisione dell'utente del 24/09, invariata)."""
     assert not hasattr(LOW, "_apertura_al_minimo")
-    assert ET._apertura_al_minimo("back", 1.22) == 2.0
-    assert ET._apertura_al_minimo("lay", 0.2) == 0.5
+    # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
+    assert ET._apertura_al_minimo("back", 0.72) == 1.0
+    assert ET._apertura_al_minimo("lay", 0.2) == 1.0
 
 
 # ===========================================================================
@@ -224,8 +228,9 @@ def test_ingresso_flb_sotto_il_minimo_nel_paper_parte_al_minimo(db, banchi):
     flb = b.session.hosted[("101", "tennis_flb")]
     assert flb.live is True
     market = b.fw.markets.markets["1.101"]
-    o = flb._place(market, 11, "BACK", 2.0, 1.5)
-    assert o is not None and o.order_type.size == 2.0
+    # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50: ingresso 0,70 -> 1,00
+    o = flb._place(market, 11, "BACK", 2.0, 0.7)
+    assert o is not None and o.order_type.size == 1.0
     # la copertura sotto il minimo: 28/09 (seconda consegna) ESATTA, mai
     # gonfiata (regola permanente dell'utente sulle chiusure): 0,20 col
     # place-and-trim, parcheggio legale da 2,00 a quota non abbinabile

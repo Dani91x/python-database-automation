@@ -98,8 +98,10 @@ def test_initial_place_price_unmatchable_extremes():
 
 
 def test_place_min_size_it():
-    assert place_min_size("it", "back") == 2.00
-    assert place_min_size("it", "lay") == 0.50
+    # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
+    assert place_min_size("it", "back") == 1.00
+    # 01/10/2026: banca minima .it = 1,00 (costante condivisa IT_LAY_MIN_SIZE)
+    assert place_min_size("it", "lay") == 1.00
     assert place_min_size("com", "back") == 2.00
     with pytest.raises(ValueError):
         place_min_size("zz", "back")
@@ -109,20 +111,24 @@ def test_place_min_size_it():
 # start_submin — costruzione e validazioni
 # ===========================================================================
 def test_start_submin_lay_below_floor_is_the_use_case():
-    """Target LAY €0,30 (< floor €0,50): è ESATTAMENTE lo scopo del submin.
-    placed_size = €0,50 (minimo lay .it), size_reduction = 0,20."""
+    """Macchina MECCANICA: target LAY 0,30 sotto il minimo lay .it (1,00 dal 01/10).
+    placed_size = 1,00, size_reduction = 0,70, parcheggio a 1,03 (>= 1 + 0,008/0,30:
+    INVALID_PROFIT_RATIO sul residuo). In produzione questo importo NON entra: la regola
+    d'ingresso ``verifica_importo_finale`` rifiuta ogni importo finale sotto 1,00."""
     st = start_submin(side="lay", target_price=5.0, target_size=0.30, jurisdiction="it")
     assert st.step is SubminStep.INIT
-    assert st.placed_size == 0.50
+    assert st.placed_size == 1.00
     assert st.target_size == 0.30
     assert st.target_price == 5.0
-    assert st.size_reduction == 0.20
+    assert st.size_reduction == 0.70
+    assert st.prezzo_parcheggio == 1.03
 
 
 def test_start_submin_back_below_min():
-    st = start_submin(side="back", target_price=3.0, target_size=1.50, jurisdiction="it")
-    assert st.placed_size == 2.00
-    assert st.size_reduction == 0.50  # 2.00 - 1.50
+    # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
+    st = start_submin(side="back", target_price=3.0, target_size=0.70, jurisdiction="it")
+    assert st.placed_size == 1.00
+    assert st.size_reduction == 0.30  # 1.00 - 0.70
 
 
 def test_start_submin_rejects_below_absolute_floor():
@@ -133,7 +139,7 @@ def test_start_submin_rejects_below_absolute_floor():
 def test_start_submin_rejects_target_at_or_above_place_minimum():
     # target >= minimo di piazzamento => non serve il submin (usa place normale)
     with pytest.raises(ValueError):
-        start_submin(side="lay", target_price=5.0, target_size=0.50, jurisdiction="it")
+        start_submin(side="lay", target_price=5.0, target_size=1.00, jurisdiction="it")
     with pytest.raises(ValueError):
         start_submin(side="back", target_price=3.0, target_size=2.00, jurisdiction="it")
 
@@ -150,31 +156,32 @@ def test_happy_path_full_sequence():
     ops = _RecordingOps(place_bet_id="BET-77")
     st = start_submin(side="lay", target_price=5.0, target_size=0.30, jurisdiction="it")
 
-    # step1: place min @ quota non abbinabile (1.01 lay), LAPSE
+    # step1: place min @ quota non abbinabile, LAPSE. 01/10/2026: banca minima 1,00 e
+    # parcheggio a 1,03 (residuo 0,30 -> 1 + 0,008/0,30, INVALID_PROFIT_RATIO)
     st = _advance(st, ops)  # order=None
     assert st.step is SubminStep.PLACED
     assert st.bet_id == "BET-77"
     assert ops.names() == ["place"]
-    assert ops.calls[0][1]["price"] == 1.01
-    assert ops.calls[0][1]["size"] == 0.50  # placed_size = min lay .it
+    assert ops.calls[0][1]["price"] == 1.03
+    assert ops.calls[0][1]["size"] == 1.00  # placed_size = min lay .it
 
     # step2a: ordine a riposo (EXECUTABLE) con size piena → cancel RICHIESTO,
     # ma NIENTE promozione sulla fiducia dell'API (fix bug live 10/07 21:43)
-    resting = _order(bet_id="BET-77", status="EXECUTABLE", size_matched=0.0, size_remaining=0.50, price=1.01)
+    resting = _order(bet_id="BET-77", status="EXECUTABLE", size_matched=0.0, size_remaining=1.00, price=1.03)
     st = _advance(st, ops, order=resting, now_ms=1_000_000)
     assert st.step is SubminStep.PLACED          # ancora PLACED: attesa verifica
     assert st.trim_requested_ms == 1_000_000
     assert ops.names() == ["place", "cancel"]
-    assert ops.calls[1][1]["size_reduction"] == 0.20  # 0.50 - 0.30
+    assert ops.calls[1][1]["size_reduction"] == 0.70  # 1.00 - 0.30
 
     # step2b: il trim viene OSSERVATO (size_remaining ~ target) → TRIMMED
-    observed = _order(bet_id="BET-77", status="EXECUTABLE", size_matched=0.0, size_remaining=0.30, price=1.01)
+    observed = _order(bet_id="BET-77", status="EXECUTABLE", size_matched=0.0, size_remaining=0.30, price=1.03)
     st = _advance(st, ops, order=observed, now_ms=1_001_000)
     assert st.step is SubminStep.TRIMMED
     assert ops.names() == ["place", "cancel"]     # nessuna nuova operazione
 
     # step3: ridotto a target → replace alla target_price reale (5.0)
-    trimmed = _order(bet_id="BET-77", status="EXECUTABLE", size_matched=0.0, size_remaining=0.30, price=1.01)
+    trimmed = _order(bet_id="BET-77", status="EXECUTABLE", size_matched=0.0, size_remaining=0.30, price=1.03)
     st = _advance(st, ops, order=trimmed)
     assert st.step is SubminStep.REPRICED
     assert ops.names() == ["place", "cancel", "replace"]
@@ -194,11 +201,12 @@ def test_happy_path_full_sequence():
 
 def test_back_happy_place_uses_1000_and_back_min():
     ops = _RecordingOps(place_bet_id="B1")
-    st = start_submin(side="back", target_price=3.0, target_size=1.0, jurisdiction="it")
+    # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
+    st = start_submin(side="back", target_price=3.0, target_size=0.70, jurisdiction="it")
     st = _advance(st, ops)
     assert st.step is SubminStep.PLACED
     assert ops.calls[0][1]["price"] == 1000.0
-    assert ops.calls[0][1]["size"] == 2.00  # back min .it
+    assert ops.calls[0][1]["size"] == 1.00  # back min .it
 
 
 # ===========================================================================
@@ -529,11 +537,12 @@ def test_flumine_ops_calls_native_market_methods():
         strategy=BaseStrategy(market_filter={}, name="live_trading"),
     )
 
-    order = ops.place(mkt, side="lay", price=1.01, size=0.50, customer_order_ref="awlq5")
+    # 01/10/2026: il parcheggio e' il minimo lay .it (1,00), mai 0,50
+    order = ops.place(mkt, side="lay", price=1.03, size=1.00, customer_order_ref="awlq5")
     assert placed["order"] is order  # ordine NATIVO flumine passato a place_order
 
-    ops.cancel(mkt, order, 0.20)
-    assert placed["cancel"] == (order, 0.20)
+    ops.cancel(mkt, order, 0.70)
+    assert placed["cancel"] == (order, 0.70)
 
     ops.replace(mkt, order, 5.0)
     assert placed["replace"] == (order, 5.0)

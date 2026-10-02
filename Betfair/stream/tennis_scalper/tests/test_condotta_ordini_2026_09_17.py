@@ -42,12 +42,13 @@ def test_fuori_dal_live_la_size_non_si_tocca():
     assert CD.size_legale(2.03, "BACK", live=False) == (2.03, None)
 
 
+# minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
 @pytest.mark.parametrize("chiesto,lato,atteso", [
-    (1.50, "BACK", 2.0),    # sotto il minimo BACK -> portata a 2,00
-    (0.01, "BACK", 2.0),
-    (1.99, "BACK", 2.0),
-    (0.30, "LAY", 0.5),     # sotto il minimo LAY -> portata a 0,50
-    (0.49, "LAY", 0.5),
+    (0.50, "BACK", 1.0),    # sotto il minimo BACK -> portata a 1,00
+    (0.01, "BACK", 1.0),
+    (0.99, "BACK", 1.0),
+    (0.30, "LAY", 1.0),     # sotto il minimo LAY -> portata a 1,00
+    (0.49, "LAY", 1.0),
 ])
 def test_ingresso_sotto_il_minimo_portato_al_minimo(chiesto, lato, atteso):
     """28/09 - DECISIONE DELL'UTENTE ("porta al limite minimo accettato"): un
@@ -57,11 +58,12 @@ def test_ingresso_sotto_il_minimo_portato_al_minimo(chiesto, lato, atteso):
 
 
 @pytest.mark.parametrize("chiesto,lato,atteso", [
+    # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50 (al centesimo, nessun passo di 0,50)
     (2.00, "BACK", 2.0),
-    (2.30, "BACK", 2.0),    # sopra il minimo: regola .it di sempre (per difetto)
-    (3.70, "BACK", 3.5),
-    (0.50, "LAY", 0.5),
-    (0.93, "LAY", 0.93),
+    (2.30, "BACK", 2.3),
+    (3.70, "BACK", 3.7),
+    (1.00, "LAY", 1.0),
+    (1.93, "LAY", 1.93),
     (7.13, "LAY", 7.13),
 ])
 def test_ingresso_sopra_il_minimo_non_si_gonfia(chiesto, lato, atteso):
@@ -71,14 +73,14 @@ def test_ingresso_sopra_il_minimo_non_si_gonfia(chiesto, lato, atteso):
 
 def test_live_ingresso_legale_passa_intatto():
     assert CD.size_legale(2.00, "BACK", live=True) == (2.0, None)
-    assert CD.size_legale(0.93, "LAY", live=True) == (0.93, None)
+    assert CD.size_legale(1.93, "LAY", live=True) == (1.93, None)   # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
 
 
 @pytest.mark.parametrize("chiesto,lato,atteso", [
     (2.00, "BACK", 2.0),    # diretta: passa identica
     (2.50, "BACK", 2.5),
-    (0.93, "LAY", 0.93),    # LAY >= 0,50: diretta al centesimo
-    (0.50, "LAY", 0.5),
+    (1.93, "LAY", 1.93),    # LAY >= 1,00: diretta al centesimo (minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50)
+    (1.00, "LAY", 1.0),
 ])
 def test_copertura_diretta_passa_identica(chiesto, lato, atteso):
     """28/09 - regola permanente dell'utente: "le chiusure devono sempre essere

@@ -85,11 +85,12 @@ def _esito(o: X.PlaceOutcome) -> tuple:
 
 
 # (lato, quota, importo, best_back, best_lay, codice atteso in live)
+# minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50 (sotto minimo = 0,76 / 0,70)
 CASI_A = [
     # BACK a quota PIU' ALTA del best back: resta a riposo -> percorso A + FOK
-    ("back", 4.0, 1.26, 3.9, 3.95, "SUBMIN_NESSUNA_CONTROPARTE"),
+    ("back", 4.0, 0.76, 3.9, 3.95, "SUBMIN_NESSUNA_CONTROPARTE"),
     # LAY a quota PIU' BASSA del best lay: resta a riposo -> percorso A + FOK
-    ("lay", 2.5, 0.30, 2.54, 2.6, "SUBMIN_NESSUNA_CONTROPARTE"),
+    ("lay", 2.5, 0.70, 2.54, 2.6, "SUBMIN_NESSUNA_CONTROPARTE"),
 ]
 
 
@@ -122,7 +123,7 @@ def test_book_ignoto_in_paper_non_inventa_rifiuti(runner):
     """Senza book dallo stream il piano e' il percorso B (come il live con book
     ignoto): nessun rifiuto inventato, il comando parte come prima."""
     paper = X.place(db=_DbFinto(), market=SimpleNamespace(), mode="paper", side="back",
-                    price=3.9, size=1.26, porta=MP.vista(appoggiata=False), **_richiesta())
+                    price=3.9, size=0.76, porta=MP.vista(appoggiata=False), **_richiesta())
     assert paper.status == "pending"
     assert len(runner.comandi) == 1
 

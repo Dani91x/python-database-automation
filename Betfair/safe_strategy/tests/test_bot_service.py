@@ -2058,7 +2058,12 @@ def _esatto_2_at_60(db):
                        selection_id=501, price=60.0, size=2.0, minute_at_entry=50)
 
 
-def test_exit_residuo_dopo_fill_cappato_viene_richiuso_dopo_il_cooldown():
+def test_exit_residuo_dopo_fill_cappato_viene_richiuso_dopo_il_cooldown(monkeypatch):
+    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): test di LOGICA dell'uscita, non dei minimi.
+    # Le chiusure qui sono sotto 1,00 EUR: su .it fuori dal canale sono un rifiuto certo
+    # (test_runner_minimi_chiusure_2026_10_01). Qui il minimo si azzera con la manopola
+    # gia' esistente SAFE_MIN_SIZE_LIVE per isolare la logica dai minimi.
+    monkeypatch.setenv("SAFE_MIN_SIZE_LIVE", "0.01")
     db = FakeDB(status="running")
     tid = _esatto_2_at_60(db)
     _cycle(db, _cs_row(60))
@@ -2118,7 +2123,12 @@ def test_exit_residuo_non_si_ritenta_con_gamba_di_chiusura_pending():
     assert db.get_trade(tid)["meta"]["exit_requested"].get("residual_attempts", 0) == 0
 
 
-def test_exit_residuo_si_ferma_al_cap_e_logga_una_volta():
+def test_exit_residuo_si_ferma_al_cap_e_logga_una_volta(monkeypatch):
+    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): test di LOGICA dell'uscita, non dei minimi.
+    # Le chiusure qui sono sotto 1,00 EUR: su .it fuori dal canale sono un rifiuto certo
+    # (test_runner_minimi_chiusure_2026_10_01). Qui il minimo si azzera con la manopola
+    # gia' esistente SAFE_MIN_SIZE_LIVE per isolare la logica dai minimi.
+    monkeypatch.setenv("SAFE_MIN_SIZE_LIVE", "0.01")
     db = FakeDB(status="running", params={"exits": {"residual_max_attempts": 2,
                                                     "residual_retry_s": 10}})
     tid = _esatto_2_at_60(db)
@@ -2424,7 +2434,12 @@ def test_uscita_obbligatoria_tennis_e_forced_per_la_ui():
     assert _closings(db, tid)[0]["meta"]["exit_kind"] == "forced"
 
 
-def test_residuo_di_uscita_a_tempo_usa_la_stessa_decisione():
+def test_residuo_di_uscita_a_tempo_usa_la_stessa_decisione(monkeypatch):
+    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): test di LOGICA dell'uscita, non dei minimi.
+    # Le chiusure qui sono sotto 1,00 EUR: su .it fuori dal canale sono un rifiuto certo
+    # (test_runner_minimi_chiusure_2026_10_01). Qui il minimo si azzera con la manopola
+    # gia' esistente SAFE_MIN_SIZE_LIVE per isolare la logica dai minimi.
+    monkeypatch.setenv("SAFE_MIN_SIZE_LIVE", "0.01")
     db = FakeDB(status="running")
     tid = _esatto_2_at_60(db)
     _cycle(db, _cs_row(60))

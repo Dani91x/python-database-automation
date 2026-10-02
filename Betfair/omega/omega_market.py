@@ -820,9 +820,15 @@ from Betfair.stream.trading import submin as _SUBMIN  # nucleo unico
 
 SUBMIN_PARK_PRICE_BACK = 1000.0
 SUBMIN_PARK_PRICE_LAY = 1.01
-SUBMIN_MIN_BACK = 2.00      # .it
-SUBMIN_MIN_LAY = 0.50       # .it
-SUBMIN_ABS_MIN = 0.01       # floor assoluto del residuo dopo il taglio
+# 01/10/2026 (RUNNER_MINIMI_CHIUSURE): i minimi .it sono UNA definizione per tutto il repo
+# (``Betfair.stream.trading.minimi_it``: punta e banca 1,00 al centesimo): il nucleo
+# ``pianifica_submin`` parcheggia al minimo di quella tabella, e il taglio qui deve
+# partire dallo STESSO numero (prima 2,00/0,50 fissi: parcheggio e taglio sfasati).
+from Betfair.stream.live_order_build import SUBMIN_ABS_MIN_SIZE as SUBMIN_ABS_MIN  # noqa: E402
+from Betfair.stream.trading.minimi_it import (  # noqa: E402
+    IT_MIN_BACK as SUBMIN_MIN_BACK,
+    IT_MIN_LAY as SUBMIN_MIN_LAY,
+)
 
 
 def _submin_best_prices(market_id: str, selection_id: int) -> tuple:
@@ -994,6 +1000,13 @@ def place_submin_live(
         return place_order_live(market_id=market_id, selection_id=selection_id, price=price,
                                 size=target, event_id=event_id, side=side_l,
                                 customer_ref=customer_ref, **ref_kw)
+    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): mai una riduzione sotto 0,50 EUR (floor di legge,
+    # ``SUBMIN_IMPORTO_FINALE_MIN``; il minimo diretto e' 1,00). RIFIUTO CERTO, nulla e' partito:
+    # ``PlaceRifiutato`` (non un esito ignoto), col codice interno.
+    try:
+        _SUBMIN.verifica_importo_finale(side_l, target)
+    except ValueError as ex:
+        raise PlaceRifiutato(str(ex), error_code="SOTTO_MINIMO_NON_PIAZZABILE") from None
     target_tick = E.round_to_tick(float(price))
     if not (E.MIN_PRICE <= target_tick <= E.MAX_PRICE):
         raise ValueError(f"prezzo fuori scala Betfair: {price!r}")

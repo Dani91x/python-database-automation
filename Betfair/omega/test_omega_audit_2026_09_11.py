@@ -903,7 +903,12 @@ def test_rev_h3_chiusura_in_perdita_e_exit_kind_loss():
     assert db.get_trade(tr["id"])["meta"]["greenup"]["state"] == "done"
 
 
-def test_rev_h3_take_profit_integrale_e_greenup_vero():
+def test_rev_h3_take_profit_integrale_e_greenup_vero(monkeypatch):
+    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): test di LOGICA dell'uscita, non dei minimi.
+    # Le chiusure qui sono sotto 1,00 EUR: su .it fuori dal canale sono un rifiuto certo
+    # (test_runner_minimi_chiusure_2026_10_01). Qui il minimo si azzera con la manopola
+    # gia' esistente SAFE_MIN_SIZE_LIVE per isolare la logica dai minimi.
+    monkeypatch.setenv("SAFE_MIN_SIZE_LIVE", "0.01")
     db = _GDB(_control(status="idle"))
     tr = _trade(db, price=55.0, size=5.0, score="1-0")
     p = _gparams(greenup_settle_delay_s=0)
@@ -1009,7 +1014,12 @@ def test_rev_m2_allarme_stale_anche_sulle_hedged():
 
 
 # --- M3/M4: cash out manuale parziale ---
-def test_rev_m3_exit_profit_del_parziale_dal_valore_pianificato():
+def test_rev_m3_exit_profit_del_parziale_dal_valore_pianificato(monkeypatch):
+    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): test di LOGICA dell'uscita, non dei minimi.
+    # Le chiusure qui sono sotto 1,00 EUR: su .it fuori dal canale sono un rifiuto certo
+    # (test_runner_minimi_chiusure_2026_10_01). Qui il minimo si azzera con la manopola
+    # gia' esistente SAFE_MIN_SIZE_LIVE per isolare la logica dai minimi.
+    monkeypatch.setenv("SAFE_MIN_SIZE_LIVE", "0.01")
     from Betfair.omega.test_omega_service import FakeMarket as FM
 
     class _M(FM):
@@ -1035,7 +1045,12 @@ def test_rev_m3_exit_profit_del_parziale_dal_valore_pianificato():
     assert "parziale" in opened["meta"]["exit_reason"].lower()
 
 
-def test_rev_m4_parziale_da_liquidita_riconosciuto():
+def test_rev_m4_parziale_da_liquidita_riconosciuto(monkeypatch):
+    # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): test di LOGICA dell'uscita, non dei minimi.
+    # Le chiusure qui sono sotto 1,00 EUR: su .it fuori dal canale sono un rifiuto certo
+    # (test_runner_minimi_chiusure_2026_10_01). Qui il minimo si azzera con la manopola
+    # gia' esistente SAFE_MIN_SIZE_LIVE per isolare la logica dai minimi.
+    monkeypatch.setenv("SAFE_MIN_SIZE_LIVE", "0.01")
     from Betfair.omega.test_omega_service import FakeMarket as FM
 
     class _M(FM):

@@ -139,7 +139,9 @@ def test_kill_attivo_la_chiusura_rest_passa(monkeypatch, meta):
 def test_kill_attivo_anche_il_sotto_minimo_si_ferma(monkeypatch):
     _kill_db(monkeypatch, True)
     mk = _Mercato()
-    out = _place(mk, size=0.73)
+    # 01/10/2026: 1,73 (sotto il minimo, sopra 1,00) va al place-and-trim REST: il
+    # kill-switch lo ferma. Sotto 1,00 il rifiuto e' gia' SOTTO_MINIMO_NON_PIAZZABILE.
+    out = _place(mk, size=1.73)
     assert out.status == "error" and out.fill_note == "db_kill_switch_attivo"
     assert mk.placed == []
 

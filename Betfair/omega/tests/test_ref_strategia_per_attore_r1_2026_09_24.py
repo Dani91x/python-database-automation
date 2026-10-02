@@ -104,6 +104,7 @@ def test_safe_sotto_minimo_il_parcheggio_porta_safe(client, monkeypatch):
                         client.place.append({"customer_strategy_ref": customer_strategy_ref,
                                              "customer_ref": customer_ref}) or {})
     with pytest.raises(RuntimeError, match="IGNOTO al parcheggio"):
+        # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
         SB._real_market.place_submin_live(market_id="1.10", selection_id=7, price=2.5,
                                           size=0.73, event_id="E1", side="back",
                                           customer_ref="safe-t24", fill_or_kill=False,

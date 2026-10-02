@@ -16,6 +16,7 @@ I finti: righe e ordini con le chiavi di ``bot_db``/``omega_market``; il motore
 del minimo e' la funzione pura del cantiere D2 riprodotta sul suo contratto
 (``place_min_size``) finche' D2 non e' su master. ASCII-only.
 """
+# minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50 (il 'sotto minimo' dei test e' 0,72/0,70, il minimo 1,00)
 from __future__ import annotations
 
 import sys
@@ -306,45 +307,49 @@ def freni_aperti(monkeypatch):
     monkeypatch.setattr(X, "_freno_aperture", lambda: None)
 
 
-def test_tennis_live_rest_back_122_diventa_200(con_d2, freni_aperti):
+def test_tennis_live_rest_back_072_diventa_100(con_d2, freni_aperti):
     db, mk = FakeDB(mode="live"), _MercatoConSubmin()
     db.follow = "NONE"                                  # REST live
-    out = _place(db, mk, ref="safe_tennis-t5", size=1.22)
+    out = _place(db, mk, ref="safe_tennis-t5", size=0.72)
     assert out.status == "open" and mk.submin == []
-    assert mk.placed[-1]["size"] == 2.0 and out.size_requested == 2.0
+    assert mk.placed[-1]["size"] == 1.0 and out.size_requested == 1.0
 
 
-def test_tennis_lay_sotto_050_diventa_050(con_d2, freni_aperti):
+def test_tennis_lay_sotto_050_diventa_100(con_d2, freni_aperti):
+    # 01/10/2026: il minimo accettato della banca .it e' 1,00 (costante condivisa
+    # IT_LAY_MIN_SIZE): l'apertura tennis si porta AL minimo, cioe' 1,00
     db, mk = FakeDB(mode="live"), _MercatoConSubmin()
     db.follow = "NONE"
     _place(db, mk, ref="safe_tennis-t6", size=0.3, side="lay")
-    assert mk.placed[-1]["size"] == 0.5 and mk.submin == []
+    assert mk.placed[-1]["size"] == 1.0 and mk.submin == []
 
 
 def test_tennis_paper_coda_al_minimo(con_d2):
     db, mk = FakeDB(), FakeMarket()
-    out = _place(db, mk, ref="safe_tennis-t7", size=1.22, mode="paper")
+    out = _place(db, mk, ref="safe_tennis-t7", size=0.72, mode="paper")
     assert out.status == "pending"
     q = db.queue[-1]
-    assert q["action"] == "place" and q["size"] == 2.0 and q["time_in_force"] == "FILL_OR_KILL"
+    assert q["action"] == "place" and q["size"] == 1.0 and q["time_in_force"] == "FILL_OR_KILL"
     assert q["client_ref"] == "safe_tennis-t7"
 
 
 def test_tennis_chiusura_sotto_il_minimo_resta_esatta(con_d2, freni_aperti):
     db, mk = FakeDB(mode="live"), _MercatoConSubmin()
     db.follow = "NONE"
-    _place(db, mk, ref="safe_tennis-t8", size=1.22,
+    _place(db, mk, ref="safe_tennis-t8", size=0.72,
            meta={"cashout": True, "closes_trade_id": 1})
-    assert mk.placed[-1]["size"] == 1.22
+    # 01/10/2026: la chiusura resta ESATTA (mai portata al minimo) ma non parte piu'
+    # come place diretto sotto il minimo (Betfair la rifiuterebbe): REST place-and-trim
+    assert mk.placed == [] and mk.submin[-1]["size"] == 0.72
 
 
 def test_calcio_sotto_il_minimo_resta_place_and_trim(con_d2, freni_aperti):
     db, mk = FakeDB(mode="live"), _MercatoConSubmin()
     db.follow = "NONE"
     X.place(db=db, market=mk, mode="live", event_id="1.1", market_id="m1", selection_id=7,
-            side="back", price=3.0, size=1.22, best_size=500.0, client_ref="safe-t9",
+            side="back", price=3.0, size=0.72, best_size=500.0, client_ref="safe-t9",
             trade_id=9, now=NOW, params={})
-    assert mk.placed == [] and mk.submin[-1]["size"] == 1.22
+    assert mk.placed == [] and mk.submin[-1]["size"] == 0.72
 
 
 def test_tennis_sul_canale_la_size_non_si_tocca_la_porta_al_minimo_il_motore(con_d2):
@@ -368,13 +373,13 @@ def test_tennis_sul_canale_la_size_non_si_tocca_la_porta_al_minimo_il_motore(con
 
 
 def test_tennis_rest_live_riga_e_attivita_dicono_chiesto_e_piazzato(con_d2, freni_aperti):
-    """Stessa apertura (1,00 back) sul REST live: ordine a 2,00, e la riga e
+    """Stessa apertura (0,70 back) sul REST live: ordine a 1,00, e la riga e
     l'attivita' lo dichiarano con le STESSE chiavi dell'evento del motore."""
     db, mk = FakeDB(mode="live"), _MercatoConSubmin()
     db.follow = "NONE"
     row = {"event_id": "2.1", "event_name": "P1 v P2", "sport": "tennis", "strategy": "tennis",
            "market_id": "mt", "market_type": "MATCH_ODDS", "selection_id": 11, "side": "back",
-           "price": 1.3, "size": 1.0, "liability": 1.0, "status": "pending", "mode": "live",
+           "price": 1.3, "size": 0.7, "liability": 0.7, "status": "pending", "mode": "live",
            "commission": 0.05, "origin": "auto", "signal_key": "2.1:tennis:x", "pnl": 0.0,
            "meta": {"phase": "reserved"}}
     tid = db.insert_trade(dict(row))
@@ -384,8 +389,8 @@ def test_tennis_rest_live_riga_e_attivita_dicono_chiesto_e_piazzato(con_d2, fren
                      row={**riserva, "meta": dict(riserva["meta"])},
                      params=S.resolve_params({"strategy_modes": {"tennis": "live"}}),
                      now=NOW, best_size=500.0, ladder=(), feed_prices=None)
-    assert out.status == "open" and mk.placed[-1]["size"] == 2.0
-    atteso = {"chiesto": 1.0, "piazzato": 2.0}
+    assert out.status == "open" and mk.placed[-1]["size"] == 1.0
+    atteso = {"chiesto": 0.7, "piazzato": 1.0}
     assert db.get_trade(tid)["meta"]["portata_al_minimo"] == atteso
     diag = [p for k, p in db.activity if k == "diagnosi" and p.get("reason") == "portata_al_minimo"]
     assert diag and diag[0]["portata_al_minimo"] == atteso
@@ -397,7 +402,7 @@ def test_senza_la_funzione_di_d2_comportamento_di_prima(monkeypatch, freni_apert
     db, mk = FakeDB(mode="live"), _MercatoConSubmin()
     db.follow = "NONE"
     with caplog.at_level("WARNING", logger="safe.execution"):
-        _place(db, mk, ref="safe_tennis-t10", size=1.22)
-    assert mk.submin[-1]["size"] == 1.22 and mk.placed == []
+        _place(db, mk, ref="safe_tennis-t10", size=0.72)
+    assert mk.submin[-1]["size"] == 0.72 and mk.placed == []
     assert any("porta_al_minimo_apertura non disponibile" in r.getMessage()
                for r in caplog.records)
