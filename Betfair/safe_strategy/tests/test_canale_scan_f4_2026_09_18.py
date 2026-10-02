@@ -39,8 +39,8 @@ from Betfair.stream import local_channel as LC
 @pytest.fixture(autouse=True)
 def _pulizia(monkeypatch):
     """Ogni test parte a interruttori SPENTI e senza stato di modulo."""
-    monkeypatch.delenv(CS.ENV_LEGGE_CANALE, raising=False)
-    monkeypatch.delenv(CS.ENV_SVEGLIA, raising=False)
+    monkeypatch.setenv(CS.ENV_LEGGE_CANALE, "0")
+    monkeypatch.setenv(CS.ENV_SVEGLIA, "0")
     monkeypatch.delenv(CS.ENV_PORTA, raising=False)
     S.azzera_canale_scan()
     _reset_module_state()

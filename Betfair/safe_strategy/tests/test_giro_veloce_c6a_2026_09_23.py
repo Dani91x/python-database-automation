@@ -43,9 +43,9 @@ PUNTO = chr(0xB7)
 
 @pytest.fixture(autouse=True)
 def _pulizia(monkeypatch):
-    monkeypatch.delenv(S.ENV_GIRO_VELOCE, raising=False)
-    monkeypatch.delenv(CS.ENV_LEGGE_CANALE, raising=False)
-    monkeypatch.delenv(CS.ENV_SVEGLIA, raising=False)
+    monkeypatch.setenv(S.ENV_GIRO_VELOCE, "0")
+    monkeypatch.setenv(CS.ENV_LEGGE_CANALE, "0")
+    monkeypatch.setenv(CS.ENV_SVEGLIA, "0")
     S.azzera_canale_scan()
     S.azzera_giro_veloce()
     _reset_module_state()

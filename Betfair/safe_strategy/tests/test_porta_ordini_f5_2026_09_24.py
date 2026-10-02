@@ -828,7 +828,7 @@ def test_interruttore_spento_nessuna_porta(monkeypatch):
 def test_interruttore_spento_execute_chiama_place_come_oggi(monkeypatch):
     """Spento: ``X.place`` riceve ESATTAMENTE gli argomenti di sempre (nessun
     ``porta``), e nessuna connessione viene tentata."""
-    monkeypatch.delenv(PO.ENV_CANALE, raising=False)
+    monkeypatch.setenv(PO.ENV_CANALE, "0")
     tentativi: list = []
     monkeypatch.setattr(PO, "_connetti_ws", lambda *a, **k: tentativi.append(a))
     chiamate: list = []

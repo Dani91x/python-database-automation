@@ -37,7 +37,7 @@ FRENO = "db_kill_switch_attivo"
 @pytest.fixture(autouse=True)
 def _ambiente(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(AM.ENV_TETTO, raising=False)
-    monkeypatch.delenv(CB.ENV_SCALPER, raising=False)
+    monkeypatch.setenv(CB.ENV_SCALPER, "0")
     CB.azzera_statistiche()
 
 

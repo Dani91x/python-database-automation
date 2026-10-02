@@ -49,7 +49,7 @@ RADICE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..
 @pytest.fixture(autouse=True)
 def _pulito(monkeypatch):
     """Ogni test parte senza istanza registrata e con l'interruttore SPENTO."""
-    monkeypatch.delenv(EO.ENV_ESITI, raising=False)
+    monkeypatch.setenv(EO.ENV_ESITI, "0")
     S.ferma_esiti_ordini()
     yield
     S.ferma_esiti_ordini()
@@ -521,7 +521,7 @@ def _traccia_del_poll(stato: str, monkeypatch) -> List[tuple]:
                                   "matched_at": "2026-07-12T15:42:05+00:00"}
     if stato == "istanza_ma_spento":
         EO.registra(EO.EsitiOrdini(S._applica_esiti_dal_canale))
-        monkeypatch.delenv(EO.ENV_ESITI, raising=False)
+        monkeypatch.setenv(EO.ENV_ESITI, "0")
     elif stato == "acceso_canale_muto":
         _accendi(monkeypatch)
     traccia = _Traccia(db)
@@ -529,7 +529,7 @@ def _traccia_del_poll(stato: str, monkeypatch) -> List[tuple]:
                            now=NOW + timedelta(seconds=3), market=market)
     assert db.trades[0]["status"] == "open"
     S.ferma_esiti_ordini()
-    monkeypatch.delenv(EO.ENV_ESITI, raising=False)
+    monkeypatch.setenv(EO.ENV_ESITI, "0")
     return [(n, a) for n, a, _ in traccia.chiamate]
 
 
@@ -554,7 +554,7 @@ def test_interruttore_spento_ignora_anche_una_memoria_piena(monkeypatch):
     t, rid = _piazza_in_coda(db, market)
     esiti.client.incassa(_messaggio(_riga_vera(rid=rid, size_matched=t["size"],
                                                size=t["size"])))
-    monkeypatch.delenv(EO.ENV_ESITI, raising=False)
+    monkeypatch.setenv(EO.ENV_ESITI, "0")
     traccia = _Traccia(db)
     S.poll_flumine_pending(db=traccia, params=S.omega_config.resolve_params(None),
                            now=NOW + timedelta(seconds=3), market=market)
@@ -564,7 +564,7 @@ def test_interruttore_spento_ignora_anche_una_memoria_piena(monkeypatch):
 
 
 def test_interruttore_spento_nessun_thread_nessuna_porta(monkeypatch):
-    monkeypatch.delenv(EO.ENV_ESITI, raising=False)
+    monkeypatch.setenv(EO.ENV_ESITI, "0")
     prima = {t.name for t in threading.enumerate()}
     assert S.avvia_esiti_ordini() is False
     assert EO.istanza() is None
