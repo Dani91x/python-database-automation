@@ -298,3 +298,41 @@ def test_L1_punta_d_apertura_sotto_0_50_e_una_violazione():
     # dal floor in su passa (place-and-trim), e con exact_sizes spento si legalizza
     assert _l1([E._place("under_entry", E.MARKET_OU35, E.SEL_UNDER, "back", 1.54, 0.60)]) is None
     assert _l1([a], exact_sizes=False) is None
+
+
+# ===========================================================================
+# 5. la sintetica di Ashdod (banco ottimista, punto 3): libro a DELTA onesto
+# ===========================================================================
+def _dati_veri() -> Optional[str]:
+    import os
+    from pathlib import Path
+
+    radice = Path(__file__).resolve().parents[3]
+    for c in (os.getenv("LIVE_STREAM_DATA_DIR") or "", str(radice / "_live_raw"),
+              str(radice.parents[2] / "_live_raw")):
+        if c and os.path.exists(os.path.join(c, "35760084", "35760084.raw.jsonl")):
+            return c
+    return None
+
+
+@pytest.mark.skipif(_dati_veri() is None, reason="registrazione 35760084 assente")
+def test_sintetica_ashdod_toglie_i_livelli_vecchi_dal_libro(tmp_path):
+    """Lo stream di Betfair e' a delta: senza [prezzo, 0] il livello 1,22
+    dell'Under 4,5 restava nel libro dopo il 28' e Mike chiudeva a 1,22 invece
+    che a 1,03 (prima corsa del replay, 02/10). La sintetica di Ashdod lo toglie."""
+    import json
+
+    from Betfair.mike.tools import synth_mike as SM
+
+    info = SM.genera("ashdod", _dati_veri(), str(tmp_path))
+    azzerati = set()
+    with open(info["raw"], encoding="utf-8") as fh:
+        for riga in fh:
+            for m in json.loads(riga).get("mc") or []:
+                for rc in m.get("rc") or []:
+                    for lato in ("atb", "atl"):
+                        for prezzo, size in rc.get(lato) or []:
+                            if size == 0:
+                                azzerati.add((lato, prezzo))
+    assert ("atb", 1.22) in azzerati and ("atl", 1.23) in azzerati, azzerati
+    assert ("atl", 5.5) in azzerati            # l'Over 4,5 di prima esce dal libro

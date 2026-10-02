@@ -156,7 +156,7 @@ class Costruttore:
     """Costruisce lo stream `mcm` di UNA partita sintetica."""
 
     def __init__(self, event_id: str, modelli: Dict[str, Dict[str, Any]],
-                 t0_ms: int, ko_ms: int) -> None:
+                 t0_ms: int, ko_ms: int, azzera_livelli: bool = False) -> None:
         self.event_id = str(event_id)
         self.modelli = modelli
         self.t0 = int(t0_ms)
@@ -165,6 +165,12 @@ class Costruttore:
         self.versione = 1
         self._cum: Dict[Tuple[str, int, float], float] = {}
         self._primo = True
+        # 02/10: lo stream di Betfair e' a DELTA: un livello di prezzo resta nel libro
+        # finche' non arriva [prezzo, 0]. Con ``azzera_livelli`` il livello vecchio si
+        # toglie quando il prezzo cambia (caso ``ashdod``). I casi di prima restano
+        # come sono (REPERTO nel referto del 02/10: i livelli vecchi restano nel libro)
+        self.azzera_livelli = bool(azzera_livelli)
+        self._ultimo: Dict[Tuple[str, int, str], float] = {}
 
     def sel(self, tipo: str, priorita: int) -> int:
         return _sel_per_priorita(self.modelli[tipo]["market_definition"])[priorita]
@@ -198,6 +204,12 @@ class Costruttore:
                 riga: Dict[str, Any] = {"id": int(sid),
                                         "atb": [[round(back, 2), round(back_size, 2)]],
                                         "atl": [[round(lay, 2), round(lay_size, 2)]]}
+                if self.azzera_livelli:
+                    for lato, prezzo in (("atb", round(back, 2)), ("atl", round(lay, 2))):
+                        vecchio = self._ultimo.get((tipo, int(sid), lato))
+                        if vecchio is not None and vecchio != prezzo:
+                            riga[lato].append([vecchio, 0])
+                        self._ultimo[(tipo, int(sid), lato)] = prezzo
                 tr = (scambiato or {}).get(tipo, {}).get(priorita)
                 if tr is not None:
                     prezzo, volume = tr
@@ -631,15 +643,114 @@ def _ultimo_ingresso_riprova(c: "Costruttore", istante: Any, modelli: Dict[str, 
                                  t0, ko, u35_pre, u45_pre)
 
 
+def caso_ashdod(modelli: Dict[str, Dict[str, Any]], modello_score: Dict[str, Any],
+                cartella: str, event_id: str) -> Dict[str, Any]:
+    """ASHDOD (02/10, punto 3 dell'utente): la chiusura della copertura-banca con la
+    BANCA Over 4,5 SOTTO IL MINIMO, coi prezzi del 01/10 19:07 (FC Ashdod v
+    Maccabi Herzliya, 36134689, LIVE: banca Over 4,5 0,43 @ 18 rifiutata
+    INVALID_BET_SIZE 21 volte, poi «chiuso (profit)» con la copertura a mercato).
+
+    Gira con lo scenario ``base`` (stake di serie 10,00, nessuna manopola nuova):
+    copertura = 10 x 1,2 / 0,95 = 12,63. Per avere la STESSA banca di chiusura
+    di quel giorno (0,43) con la copertura di serie, l'Over 4,5 sta a 26 / 36
+    (i libri del brief del coordinatore del 01/10: Under 4,5 1,03 / 1,04, Over
+    4,5 26 / 36, Under 3,5 1,14 / 1,16): 12,63 x 1,23 / 36 = 0,4315 -> 0,43.
+    La storia:
+      1. pre-match l'Under 3,5 sta 1,54 / 1,56: Mike punta a 1,54; l'uscita
+         appoggiata a 2 tick sotto (1,52) NON si abbina (nessuno banca sotto 1,56);
+      2. al fischio l'Under 3,5 resta 1,54 / 1,56: l'uscita al fischio non si
+         abbina, finita la finestra Mike COPRE con la banca Under 4,5 (libro
+         1,22 / 1,23: abbinata a 1,23, come quel giorno);
+      3. 0-0; al 28' il libro diventa quello dei test di Ashdod. Il cash out e'
+         in profitto e Mike chiude: la banca Over che chiude la copertura
+         sarebbe 0,43 @ 36 (sotto il minimo .it 1,00). Il motore corretto manda
+         la PUNTA Under 4,5 sulla stessa selezione della copertura:
+         12,63 x 1,23 / 1,03 = 15,08 @ 1,03;
+      4. finisce 0-0, il mercato CHIUDE con l'Under vincente.
+    Senza la correzione (motore di prima) la banca 0,43 parte, il banco la
+    rifiuta come Betfair (``minimi_banco`` / guardia della REST) e i controlli
+    L1/L2 lo vedono."""
+    mo, ou35, ou45 = "MATCH_ODDS", "OVER_UNDER_35", "OVER_UNDER_45"
+    t0 = 1_800_000_000_000
+    ko = t0 + 40 * 60 * 1000
+    c = Costruttore(event_id, modelli, t0, ko, azzera_livelli=True)
+    mo_prezzi = {1: _quattro(1.80, 200, 1.82, 200),
+                 2: _quattro(4.00, 200, 4.10, 200),
+                 3: _quattro(3.60, 200, 3.70, 200)}
+
+    def istante(pt: int, *, u35, u45, status="OPEN", inplay=False, bet_delay=0,
+                vincitori=None, definizione=False) -> None:
+        c.tick(pt, status=status, inplay=inplay, bet_delay=bet_delay,
+               prezzi={mo: mo_prezzi, ou35: u35, ou45: u45},
+               vincitori=vincitori, con_definizione=definizione)
+
+    u35_pre = {1: _quattro(1.54, 300, 1.56, 300), 2: _quattro(2.78, 300, 2.86, 300)}
+    u45_pre = {1: _quattro(1.22, 300, 1.23, 300), 2: _quattro(5.30, 300, 5.50, 300)}
+    # ---- 1) PRE-MATCH ------------------------------------------------------
+    pt = t0
+    while pt < ko:
+        istante(pt, u35=u35_pre, u45=u45_pre, definizione=(pt == t0))
+        pt += PASSO_MS
+    # ---- 2) FISCHIO e primi 28 minuti a 0-0 --------------------------------
+    istante(ko, u35=u35_pre, u45=u45_pre, inplay=True, bet_delay=5, definizione=True)
+    istante(ko + PASSO_MS, u35=u35_pre, u45=u45_pre, status="SUSPENDED", inplay=True,
+            bet_delay=5, definizione=True)
+    pt = ko + 2 * PASSO_MS
+    svolta = ko + 28 * 60 * 1000
+    primo = True
+    while pt < svolta:
+        istante(pt, u35=u35_pre, u45=u45_pre, inplay=True, bet_delay=5, definizione=primo)
+        primo = False
+        pt += PASSO_MS
+    # ---- 3) i libri dei test di Ashdod (brief del 01/10) --------------------
+    u35_tardi = {1: _quattro(1.14, 300, 1.16, 300), 2: _quattro(7.00, 300, 8.00, 300)}
+    u45_tardi = {1: _quattro(1.03, 300, 1.04, 300), 2: _quattro(26.0, 300, 36.0, 300)}
+    fine = ko + 95 * 60 * 1000
+    while pt < fine:
+        istante(pt, u35=u35_tardi, u45=u45_tardi, inplay=True, bet_delay=5)
+        pt += PASSO_MS
+    istante(fine, u35=u35_tardi, u45=u45_tardi, status="SUSPENDED", inplay=True,
+            bet_delay=5, definizione=True)
+    vinc = {}
+    for tipo in (ou35, ou45):
+        per = _sel_per_priorita(modelli[tipo]["market_definition"])
+        vinc[tipo] = {per[1]: "WINNER", per[2]: "LOSER"}
+    per_mo = _sel_per_priorita(modelli[mo]["market_definition"])
+    vinc[mo] = {per_mo[1]: "LOSER", per_mo[2]: "LOSER", per_mo[3]: "WINNER"}
+    istante(fine + PASSO_MS, u35=u35_tardi, u45=u45_tardi, status="CLOSED", inplay=True,
+            bet_delay=5, vincitori=vinc, definizione=True)
+    pt = fine + 2 * PASSO_MS
+    for _ in range(60):
+        istante(pt, u35=u35_tardi, u45=u45_tardi, status="CLOSED", inplay=True,
+                bet_delay=5, vincitori=vinc)
+        pt += PASSO_MS
+    raw = c.scrivi(cartella)
+    punti: List[Tuple[int, Optional[int], int, int]] = [(t0 + 60_000, None, 0, 0)]
+    minuto, tp = 1, ko + 60_000
+    while tp < fine:
+        punti.append((tp, minuto, 0, 0))
+        minuto += 1
+        tp += 60_000
+    scores = scrivi_punteggi(cartella, event_id, modello_score, punti)
+    return {"raw": raw, "scores": scores, "messaggi": len(c.righe),
+            "punteggi": len(punti), "ko_ms": ko}
+
+
 CASI = {"reingresso": caso_reingresso, "prezzo_migliore": caso_prezzo_migliore,
         "reingresso_2gol": caso_reingresso_2gol, "ultimo_ingresso": caso_ultimo_ingresso,
-        "ultimo_ingresso_riprova": caso_ultimo_ingresso_riprova}
+        "ultimo_ingresso_riprova": caso_ultimo_ingresso_riprova,
+        # 02/10 (punto 3 dell'utente): il caso di Ashdod, banca di chiusura 0,43 @ 18
+        "ashdod": caso_ashdod}
 
 
-def genera(caso: str, data_dir: Optional[str] = None) -> Dict[str, Any]:
+def genera(caso: str, data_dir: Optional[str] = None,
+           dest_dir: Optional[str] = None) -> Dict[str, Any]:
+    """``data_dir`` = dove sta la registrazione VERA da cui si copiano le
+    definizioni (``SORGENTE``); ``dest_dir`` (02/10) = dove scrivere la sintetica,
+    di serie la stessa cartella."""
     dd = data_dir or _data_dir()
     event_id = f"_synth_mike_{caso}"
-    cartella = os.path.join(dd, event_id)
+    cartella = os.path.join(dest_dir or dd, event_id)
     modelli = modelli_di_mercato(dd)
     score = modello_punteggio(dd)
     out = CASI[caso](modelli, score, cartella, event_id)
@@ -651,10 +762,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--caso", default="tutti", choices=list(CASI) + ["tutti"])
     ap.add_argument("--data-dir", default=None)
+    ap.add_argument("--dest-dir", default=None,
+                    help="cartella in cui scrivere la sintetica (di serie: --data-dir)")
     a = ap.parse_args(argv)
     casi = list(CASI) if a.caso == "tutti" else [a.caso]
     for caso in casi:
-        info = genera(caso, a.data_dir)
+        info = genera(caso, a.data_dir, a.dest_dir)
         print(f"SINTETICA {info['event_id']}: {info['messaggi']} messaggi, "
               f"{info['punteggi']} punteggi -> {info['raw']}")
     print("DICHIARAZIONE: sono registrazioni SINTETICHE. Non contano come partite "

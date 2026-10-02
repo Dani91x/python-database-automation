@@ -134,6 +134,34 @@ def diagnosi_esplosione(r: Any) -> Optional[str]:
     return None
 
 
+def segna_sotto_minimo(r: Any, cert: Any) -> int:
+    """02/10 (banco ottimista, punto 3 dell'utente): se l'exchange simulato del
+    banco ha ABBINATO un ordine sotto il minimo Betfair .it lo DICE con UNA
+    violazione ``BANCO-SOTTO-MINIMO`` (Betfair lo avrebbe rifiutato
+    ``INVALID_BET_SIZE``: il P&L del referto sarebbe ottimista). Il numero degli
+    ordini sotto minimo RIFIUTATI dal banco va nelle note (sollecitazione del
+    controllo). Torna quanti ordini sotto minimo risultano abbinati."""
+    from . import minimi_banco as MB
+
+    fuori = MB.abbinati_sotto_minimo()
+    rifiutati = len(MB.REGISTRO.rifiutati)
+    try:
+        note = getattr(r, "note", None)
+        # la nota SOLO quando il controllo ha avuto un caso: i referti dei replay
+        # senza ordini sotto minimo restano identici riga per riga
+        if isinstance(note, list) and (rifiutati or fuori):
+            note.append(f"banco minimi .it: {len(MB.REGISTRO.piazzati)} ordini eseguiti, "
+                        f"{rifiutati} rifiutati {MB.CODICE_TAGLIA}, "
+                        f"{len(fuori)} sotto minimo abbinati")
+        if fuori and not any(getattr(v, "codice", "") == MB.CODICE_CONTROLLO
+                             for v in r.violazioni):
+            r.violazioni.append(cert.Violazione(MB.CODICE_CONTROLLO, MB.REGOLA_CONTROLLO,
+                                                MB.testo_violazione(fuori)))
+    except Exception:  # noqa: BLE001 - referto senza violazioni/note: si dice altrove
+        pass
+    return len(fuori)
+
+
 def segna_esplosione(r: Any, cert: Any) -> Optional[str]:
     """Se il replay e' esploso, lo DICE: aggiunge UNA violazione `BANCO-ESPLOSO`
     (con la `Violazione` del modulo di controlli del bot: le prime tre chiavi
@@ -295,6 +323,11 @@ def _lavora(compito: tuple) -> Any:
     certifica_evento = scheda.funzione_replay()
     CERT = scheda.modulo_controlli()
     traccia = None
+    # 02/10 (banco ottimista): il registro dell'exchange simulato riparte vuoto
+    # per QUESTO replay (``minimi_banco.abbinati_sotto_minimo`` qui sotto)
+    from . import minimi_banco as _MB
+
+    _MB.REGISTRO.azzera()
     try:
         with _freni_da_banco():
             if trasp is None:
@@ -317,6 +350,9 @@ def _lavora(compito: tuple) -> Any:
                          if dove else ""))
         # la violazione la mette `main` (`segna_esplosione`), una volta sola:
         # anche un replay che NON solleva ma non legge niente e' esploso
+    # 02/10 - CONTROLLO DEL BANCO «nessun ordine sotto il minimo abbinato»: legge
+    # gli ordini che l'exchange simulato ha eseguito, indipendente dalla regola
+    segna_sotto_minimo(r, CERT)
     if trasp is not None:
         # la traccia del trasporto viaggia CON il referto (serve al confronto
         # coda/canale nel padre); None se il replay e' esploso

@@ -566,6 +566,9 @@ class MercatoFlumine:
         # (``list_account_cleared_markets``). In produzione la applica Betfair;
         # qui la fissa chi monta il replay (il parametro del bot).
         self.aliquota_commissione: float = 0.05
+        # 02/10: True solo durante ``place_submin_live`` (importo fra 0,50 e il
+        # minimo diretto): l'ordine porta la nota del place-and-trim
+        self._place_and_trim_in_corso: bool = False
 
     # ------------------------------------------------------------- rifiuto
     def rifiuto_provocato(self, *, market_id: Any, side: Any, size: Any,
@@ -609,6 +612,22 @@ class MercatoFlumine:
         if self.guasti.get("place_exception", 0) > 0:
             self.guasti["place_exception"] -= 1
             raise RuntimeError("guasto provocato: esito IGNOTO dal place")
+        if not self._place_and_trim_in_corso:
+            # 02/10 (banco ottimista): la STESSA guardia del vero
+            # (``omega_market.place_order_live``, correzione del runner punto 7):
+            # sotto il minimo .it nessun ordine parte, ``PlaceRifiutato``
+            # ``SOTTO_MINIMO_NON_PIAZZABILE`` prima di qualunque chiamata.
+            from ...omega.omega_market import PlaceRifiutato
+            from ..live_order_build import JURISDICTION_IT, min_stake_rules
+            from ..trading.minimi_it import SOTTO_MINIMO_NON_PIAZZABILE
+
+            _v = min_stake_rules(JURISDICTION_IT, str(side).lower(), float(price),
+                                 round(float(size), 2))
+            if not _v.valid:
+                raise PlaceRifiutato(
+                    f"{_v.reason}: nessun ordine inviato (REST diretto); residuo "
+                    f"{round(float(size), 2):.2f} da dichiarare al trader",
+                    error_code=SOTTO_MINIMO_NON_PIAZZABILE)
         rifiuto = self.rifiuto_provocato(market_id=market_id, side=side, size=size,
                                          customer_ref=customer_ref)
         if rifiuto is not None:
@@ -658,6 +677,10 @@ class MercatoFlumine:
         # derivato e in sola lettura, ma cio' che conta e' che il ref che il bot
         # ha CHIESTO torni indietro identico quando rilegge gli ordini.
         ordine.notes["bot_ref"] = ref
+        if self._place_and_trim_in_corso:
+            from .minimi_banco import NOTA_PLACE_AND_TRIM
+
+            ordine.notes[NOTA_PLACE_AND_TRIM] = True
         try:
             accettato = mercato.place_order(ordine)
         except Exception as ex:  # noqa: BLE001 — rifiuto dichiarato, non eccezione
@@ -679,6 +702,17 @@ class MercatoFlumine:
                                raw={"motivo": motivo[:160]})
         self.ordini[ref] = ordine
         self._attendi_betfair(mercato)
+
+        # 02/10: il RIFIUTO PER TAGLIA dell'exchange del banco (``minimi_banco``)
+        # torna come lo da' Betfair: ``ok=False`` col codice, nessun ordine
+        risposta = getattr(getattr(ordine, "responses", None), "place_response", None)
+        if getattr(risposta, "error_code", None) == "INVALID_BET_SIZE":
+            self.rifiutati.append({"ref": ref, "err": "INVALID_BET_SIZE"})
+            return PlaceResult(ok=False, order_status="EXPIRED", bet_id=None,
+                               size_matched=0.0, avg_price_matched=None,
+                               raw={"motivo": "INVALID_BET_SIZE",
+                                    "error_code": "INVALID_BET_SIZE"},
+                               error_code="INVALID_BET_SIZE")
 
         abbinato = float(getattr(ordine, "size_matched", 0.0) or 0.0)
         medio = getattr(ordine, "average_price_matched", None) or None
@@ -835,10 +869,37 @@ class MercatoFlumine:
         )
 
     def place_submin_live(self, **kw: Any) -> PlaceResult:
-        # LIMITE DICHIARATO: su flumine il minimo di giurisdizione non esiste,
-        # quindi qui non c'e' nessun place-and-trim da riprodurre. Un importo
-        # sotto il minimo viene piazzato diretto.
-        return self.place_order_live(**kw)
+        """Il place-and-trim della REST (``omega_market.place_submin_live``) con
+        le stesse regole del vero (02/10, banco ottimista):
+          * importo dal minimo diretto in su: ordine normale;
+          * sotto ``SUBMIN_IMPORTO_FINALE_MIN`` (0,50): ``PlaceRifiutato``
+            ``SOTTO_MINIMO_NON_PIAZZABILE``, nulla parte (come il vero);
+          * fra 0,50 e il minimo: il trucco riesce come su Betfair .it, quindi
+            l'ordine si piazza all'importo FINALE con la nota del place-and-trim
+            (l'exchange del banco, ``minimi_banco``, gli applica il floor 0,50
+            invece del minimo diretto). LIMITE DICHIARATO: parcheggio, taglio e
+            riprezzo non sono riprodotti uno per uno sulla coda (lo sono sul
+            canale, dal motore del runner)."""
+        from ...omega.omega_market import PlaceRifiutato
+        from ..trading.minimi_it import (IT_MIN_BACK, IT_MIN_LAY,
+                                         SOTTO_MINIMO_NON_PIAZZABILE,
+                                         SUBMIN_IMPORTO_FINALE_MIN)
+
+        side = str(kw.get("side") or "lay").lower()
+        size = round(float(kw.get("size") or 0.0), 2)
+        minimo = IT_MIN_LAY if side == "lay" else IT_MIN_BACK
+        if size >= minimo - 1e-9:
+            return self.place_order_live(**kw)
+        if size < SUBMIN_IMPORTO_FINALE_MIN - 1e-9:
+            raise PlaceRifiutato(
+                f"{SOTTO_MINIMO_NON_PIAZZABILE}: {side.upper()} {size:.2f} sotto l'importo "
+                f"finale minimo {SUBMIN_IMPORTO_FINALE_MIN:.2f} del place-and-trim",
+                error_code=SOTTO_MINIMO_NON_PIAZZABILE)
+        self._place_and_trim_in_corso = True
+        try:
+            return self.place_order_live(**kw)
+        finally:
+            self._place_and_trim_in_corso = False
 
     # -------------------------------------------------------- letture
     @staticmethod
@@ -1489,8 +1550,13 @@ def simulazione_flumine():
         "cancel_latency": getattr(fconf, "cancel_latency", 0.170),
     }
     fconf.simulated = True
+    from .minimi_banco import minimi_it_su_flumine
+
     try:
-        with orologio_monotono() as stato, info_flumine_solo_se_loggata():
+        # 02/10 (banco ottimista): l'exchange simulato rifiuta come Betfair .it
+        # gli ordini sotto il minimo (``minimi_banco``), per ogni replay
+        with orologio_monotono() as stato, info_flumine_solo_se_loggata(), \
+                minimi_it_su_flumine():
             fconf._orologio_banco = stato       # diagnostica del giro corrente
             yield fconf
     finally:
