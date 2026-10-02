@@ -108,6 +108,55 @@ def _ripristina_ref_di_strategia_omega_market():
 
 
 @pytest.fixture(autouse=True)
+def _svuota_cache_lambda_di_omega():
+    """02/10 (isolamento 2, ``AUDIT_2026-10-02/TEST_ISOLAMENTO_2.md``):
+    ``omega_service._LAMBDA_CACHE`` (``Betfair/omega/omega_service.py:1000``) e'
+    la cache di PROCESSO dei lambda pre-match per ``event_id``, riempita da
+    ``_prematch_lambdas`` (:1238) e letta per prima (:1143). La usa anche Safe:
+    ``safe_strategy/bot_service.resolve_event_lambdas`` (:7220) chiama per primo
+    anello la catena di Omega. ``omega_service.svuota_le_cache`` non la svuota e
+    nessuna fixture lo faceva a fine test: un test di Omega che risolve i lambda
+    di ``"e1"`` (es. ``Betfair/omega/test_omega_greenup_2026_09_10.py::
+    test_trigger_gol_esce_dopo_assestamento_e_marca_le_due_righe``) lasciava
+    ``"e1"`` in cache, e ``safe_strategy/tests/test_audit_2026_09_11.py::
+    test_l14_ttl_della_cache_lambda`` (stesso ``event_id``) trovava i lambda di
+    Omega invece di rifare la sua catena: rosso solo dopo quel file.
+
+    Svuotata a fine test se il modulo e' gia' importato (mai importato da qui)."""
+    yield
+    _os = sys.modules.get("Betfair.omega.omega_service")
+    _cache = getattr(_os, "_LAMBDA_CACHE", None) if _os is not None else None
+    if isinstance(_cache, dict):
+        _cache.clear()
+
+
+@pytest.fixture(autouse=True)
+def _nessun_dotenv_a_meta_test(monkeypatch):
+    """02/10 (isolamento 2): nessun ``load_dotenv()`` durante un test.
+
+    ``Betfair/stream/config_stream.py:16-17`` (e gli altri moduli che fanno
+    ``from dotenv import load_dotenv`` all'import) rileggono il ``.env`` VERO del
+    checkout principale la prima volta che vengono importati — o ricaricati con
+    ``importlib.reload``. ``load_dotenv`` riempie solo le variabili ASSENTI:
+    un test che ha appena fatto ``monkeypatch.delenv(X)`` per provare il
+    comportamento "variabile assente" se la vedeva rimettere col valore del
+    ``.env`` se quell'import capitava dentro il test (reperto del 02/10 su
+    ``test_l4``, vedi ``TEST_ISOLAMENTO.md``). I test che provano proprio
+    l'ASSENZA (``..._di_serie_e_spento``, ``valore=None``, default di
+    ``LIVE_ORDER_MODE``/``LIVE_LADDER_CANALE_MS``) non possono passare a
+    ``setenv``: questa fixture li protegge tutti. Gli import fatti alla RACCOLTA
+    (prima delle fixture) restano come sono: il loro effetto e' gia' coperto da
+    ``_ambiente_neutro_canali_e_db``."""
+    try:
+        import dotenv as _dotenv
+    except Exception:  # noqa: BLE001 - dotenv assente: niente da neutralizzare
+        yield
+        return
+    monkeypatch.setattr(_dotenv, "load_dotenv", lambda *a, **k: False)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _kill_switch_del_db_senza_rete(monkeypatch):
     """O1 (24/09): ``controls.motivo_kill_switch`` legge anche
     ``betfair_live_settings`` (RPC, cache 2 s). Nei test la rete non c'e'
