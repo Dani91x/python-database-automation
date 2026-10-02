@@ -126,6 +126,13 @@ def _sequenza(db_finto: FakeDB) -> tuple:
     from Betfair.stream import flusso_prezzi as _FP
 
     _FP._NON_NOTO_AVVISATO.discard("mike")
+    # 02/10 (isolamento 3, ``AUDIT_2026-10-02/TEST_ISOLAMENTO_3.md``): stessa
+    # cosa per ``config_warn`` di ``service._config_warn`` (memoria
+    # ``_CONFIG_WARNED``, ``Betfair/mike/service.py:76``, una riga per chiave).
+    # Con ``SAFE_PRE_KO_OU_HOURS`` assente o 0 nell'ambiente della macchina
+    # l'avviso usciva solo nella PRIMA corsa: rosso da solo, verde solo se il
+    # .env vero la imposta.
+    S._CONFIG_WARNED.clear()
     db = Traccia(db_finto)
     mk = FakeMarket()
     passi = [(0, payload()), (2, payload()), (4, payload()),
