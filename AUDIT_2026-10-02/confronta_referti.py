@@ -18,6 +18,14 @@ _VIA = [
     (re.compile(r"  [0-9.]+ s$"), ""),
     (re.compile(r"registrazioni: 1 in .*"), "registrazioni: 1"),
     (re.compile(r"codice bot [0-9a-f]+"), "codice bot H"),
+    # 02/10 (REPLAY VELOCE) - due altri TEMPI, e solo tempi:
+    #  * la riga `LENTO:` e' una riga dei tempi del banco (`certifica.PREFISSI_RIGHE_TEMPI`)
+    #  * l'id di un ordine flumine mai passato da Betfair e' `str(uuid.uuid1().time)`
+    #    (`flumine/order/order.py:78`): l'ORA DEL PC in centinaia di ns, 18 cifre,
+    #    diversa a ogni esecuzione dello stesso codice (compare cosi' nei referti del
+    #    01/10). I bet id del banco sono di 12 cifre e restano confrontati.
+    (re.compile(r"LENTO: .*"), "LENTO: X"),
+    (re.compile(r"'1[0-9]{17}'"), "'UUID1_ORA_DEL_PC'"),
 ]
 
 
