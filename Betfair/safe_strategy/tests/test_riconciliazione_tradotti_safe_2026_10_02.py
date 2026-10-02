@@ -590,6 +590,30 @@ def test_d3_apertura_sotto_050_resta_rifiuto_in_casa(monkeypatch):
     assert db.queue == [] and rete.piazzati == []
 
 
+def test_d3_rest_parziale_la_riga_racconta_il_vero_nei_termini_chiesti(monkeypatch):
+    """Un equivalente REST abbinato a meta' (residuo vivo): la riga in riconciliazione
+    porta abbinato, residuo e size CHIESTA nei termini della sua banca (0,43), mai quelli
+    della punta Under (7,31)."""
+    rete = monta_rete(monkeypatch)
+    monkeypatch.setattr(S, "_CONSAPEVOLEZZA_SCRITTA", {})
+    db = _db("live")
+    parent = _apertura(db)
+    cid = db.insert_trade({"event_id": "E1", "market_id": MID, "selection_id": OVER,
+                           "side": "lay", "mode": "live", "origin": "manual",
+                           "status": "pending", "price": 18.0, "size": 0.43,
+                           "closes_trade_id": parent["id"], "bet_id": "B9",
+                           "meta": {"cashout": True, "closes_trade_id": parent["id"],
+                                    "reason": "place_exception_reconciling"}})
+    rete.correnti = [corrente_grezzo(bet_id="B9", selection_id=UNDER, side="back",
+                                     price=1.06, size=7.31, matched=3.66, remaining=3.65,
+                                     status="EXECUTABLE", ref="safe-t%d" % cid)]
+    S.reconcile_pending(market=S._MercatoSafe(OM), db=db, now=NOW + timedelta(seconds=30))
+    r = db.get_trade(cid)
+    assert r["status"] == "pending"
+    assert (r["size_matched"], r["size_remaining"], r["size_requested"]) == \
+        (0.22, 0.21, 0.43)
+
+
 def test_d3_omega_e_mike_fuori_perimetro_restano_come_prima(monkeypatch):
     """La coda e il REST applicano l'equivalente SOLO a Safe calcio (ref ``safe-t``):
     una chiusura di Omega o di Mike sotto 0,50 resta il rifiuto certo di prima."""

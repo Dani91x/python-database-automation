@@ -103,8 +103,12 @@ MUTAZIONI = [
      "        if str(r.get(\"status\") or \"ACTIVE\").upper() != \"ACTIVE\":\n            return None\n    nw = book",
      "        pass\n    nw = book"),
     ("D3-i", "perimetro: equivalente anche per Omega/Mike/tennis", EX_,
-     "                               and str(client_ref or \"\").startswith(_REF_SAFE_CALCIO))",
-     "                               and True)"),
+     "                               and str(client_ref or \"\").startswith(_REF_SAFE_CALCIO)\n",
+     "                               and True\n"),
+    ("D2-h", "riconciliazione: l'ordine del giro (size chiesta) col VERO", BS_,
+     "                                  ordine=X.nei_termini_della_riga(\n"
+     "                                      tr, per_bet.get(str(tr.get(\"bet_id\") or \"\"))))",
+     "                                  ordine=per_bet.get(str(tr.get(\"bet_id\") or \"\")))"),
     ("D3-j", "worker: la chiusura tradotta non e' FILL_OR_KILL (resterebbe a riposo)", LOW_,
      "        riga[\"time_in_force\"] = \"FILL_OR_KILL\"\n",
      ""),
@@ -133,9 +137,9 @@ MUTAZIONI = [
     ("T-e", "banco: stato per bet_id senza l'identita' (gemello diverso dal vero)", BC_,
      "        \"side\": str(side).lower() if side else None,\n        \"price_requested\"",
      "        \"side\": side,\n        \"price_requested\""),
-    ("T-f", "una lettura gia' tradotta si ritraduce", LB_,
-     "    if letto.get(\"tradotto\") and letto.get(\"riga_mandata\") is not None:\n        return None",
-     "    if False:\n        return None"),
+    ("T-f", "una lettura gia' nei termini chiesti si ritraduce", LB_,
+     "    if sel_l == sel_c and side_l in (None, side_c):",
+     "    if sel_l == sel_c and side_l is None:"),
 ]
 
 

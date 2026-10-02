@@ -1218,8 +1218,11 @@ def reconcile_pending(*, market, db, now: datetime) -> int:
             # parziale si DICE.
             stato_bf = d.get("betfair")
             if isinstance(stato_bf, dict):
+                # 02/10/2026: anche l'ordine del giro (date, size chiesta) nei termini
+                # della riga, se tradotto (mai la size chiesta dell'equivalente)
                 _racconta_il_vero(db, tr, stato_bf,
-                                  ordine=per_bet.get(str(tr.get("bet_id") or "")))
+                                  ordine=X.nei_termini_della_riga(
+                                      tr, per_bet.get(str(tr.get("bet_id") or ""))))
             act = d.get("action")
             if act in ("free", "error"):
                 # ⚠️ C.12a — PRIMA DI DICHIARARLA MORTA, SI PROVA AD AMMAZZARLA.

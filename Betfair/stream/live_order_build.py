@@ -477,8 +477,6 @@ def lettura_nei_termini_chiesti(chiesto: Any, letto: Any, *,
     Una lettura senza selezione e senza dichiarazione: None (non si inventa). Pura."""
     if not isinstance(letto, dict):
         return None
-    if letto.get("tradotto") and letto.get("riga_mandata") is not None:
-        return None                     # gia' nei termini chiesti (evento del canale)
     c = dict(chiesto or {})
     side_c = str(c.get("side") or "").lower()
     sel_c = _sel_int(c.get("selection_id"))
@@ -487,7 +485,9 @@ def lettura_nei_termini_chiesti(chiesto: Any, letto: Any, *,
     sel_l = _sel_int(letto.get("selection_id"))
     side_l = str(letto.get("side") or "").lower() or None
     if sel_l == sel_c and side_l in (None, side_c):
-        return None                     # l'ordine chiesto, non tradotto
+        # l'ordine chiesto non tradotto, o una lettura GIA' nei termini chiesti (l'evento
+        # del canale): mai tradotta due volte
+        return None
     t = tradotto if isinstance(tradotto, dict) else None
     orig = t.get("originale") if t else None
     mand = t.get("mandato") if t else None
