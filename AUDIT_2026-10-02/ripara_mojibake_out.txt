@@ -1,0 +1,214 @@
+2:
+  - // ScalperPanel â€” pannello SCALPER BOT (per EVENTO, montato una volta come
+  + // ScalperPanel — pannello SCALPER BOT (per EVENTO, montato una volta come
+4:
+  - //   1. "Attiva Scalper Bot" â†’ form: MODALITÃ€ (Tradizionale = maker neutro
+  + //   1. "Attiva Scalper Bot" → form: MODALITÀ (Tradizionale = maker neutro
+7:
+  - //      (dry-run: tutto cablato, nessun ordine reale â€” default ON).
+  + //      (dry-run: tutto cablato, nessun ordine reale — default ON).
+12:
+  - //      cicli/scratch/stop/P&L bloccato, feed attivitÃ  per il debug.
+  + //      cicli/scratch/stop/P&L bloccato, feed attività per il debug.
+13:
+  - //   Al kickoff il bot chiude tutto da solo (finestre KO validate) â†’ 'done'.
+  + //   Al kickoff il bot chiude tutto da solo (finestre KO validate) → 'done'.
+45:
+  - arming: { label: 'ARMAMENTOâ€¦', cls: 'bg-sky-500/20 text-sky-300' },
+  + arming: { label: 'ARMAMENTO…', cls: 'bg-sky-500/20 text-sky-300' },
+48:
+  - stopping: { label: 'CHIUSURAâ€¦', cls: 'bg-amber-400/20 text-amber-300' },
+  + stopping: { label: 'CHIUSURA…', cls: 'bg-amber-400/20 text-amber-300' },
+76:
+  - // SNIPER in-play (bibbia Â§6, config S16): 1 tick sull'Under al momento
+  + // SNIPER in-play (bibbia §6, config S16): 1 tick sull'Under al momento
+89:
+  - // 10/07: +1.28 â‚¬/partita vs +0.10 mono (n=1) â€” da VALIDARE in paper
+  + // 10/07: +1.28 €/partita vs +0.10 mono (n=1) — da VALIDARE in paper
+90:
+  - // prima dei soldi veri (registro ipotesi Â§11 bibbia).
+  + // prima dei soldi veri (registro ipotesi §11 bibbia).
+93:
+  - // guidato dall'Atlante hazard. NON validato out-of-sample â†’ v1 SOLO PAPER
+  + // guidato dall'Atlante hazard. NON validato out-of-sample → v1 SOLO PAPER
+116:
+  - // fix audit #28: un blip Ã¨ transitorio (il polling riprova); un fallimento
+  + // fix audit #28: un blip è transitorio (il polling riprova); un fallimento
+117:
+  - // PERSISTENTE va detto â€” lo stato mostrato potrebbe essere vecchio.
+  + // PERSISTENTE va detto — lo stato mostrato potrebbe essere vecchio.
+143:
+  - // Gate THETA (v1): NON validato out-of-sample â†’ puÃ² armarsi SOLO in
+  + // Gate THETA (v1): NON validato out-of-sample → può armarsi SOLO in
+153:
+  - // autonomo che piazza scommesse vere non presidiato â†’ conferma
+  + // autonomo che piazza scommesse vere non presidiato → conferma
+157:
+  - ? '\nâš ï¸ CACCIA MULTI-LINEA ATTIVA: cella NON ancora validata ' +
+  + ? '\n⚠️ CACCIA MULTI-LINEA ATTIVA: cella NON ancora validata ' +
+158:
+  - 'out-of-sample (n=1) â€” la bibbia prescrive prima il PAPER.\n'
+  + 'out-of-sample (n=1) — la bibbia prescrive prima il PAPER.\n'
+161:
+  - `âš ï¸ ATTIVARE LO SCALPER CON ORDINI REALI su "${eventName}"?\n\n` +
+  + `⚠️ ATTIVARE LO SCALPER CON ORDINI REALI su "${eventName}"?\n\n` +
+162:
+  - `Il bot piazzerÃ  scommesse REALI su Betfair in autonomia (stake â‚¬${stake}).\n` +
+  + `Il bot piazzerà scommesse REALI su Betfair in autonomia (stake €${stake}).\n` +
+171:
+  - // missione ON â†’ one_green_per_phase=true. La gamba HT NON Ã¨ piÃ¹
+  + // missione ON → one_green_per_phase=true. La gamba HT NON è più
+173:
+  - // intervalli con verde, aggregato âˆ’1.74â‚¬): resta OPT-IN esplicito.
+  + // intervalli con verde, aggregato −1.74€): resta OPT-IN esplicito.
+189:
+  - // confirm_mode SEMPRE 'auto' (niente UI conferme â†’ 'manual'
+  + // confirm_mode SEMPRE 'auto' (niente UI conferme → 'manual'
+190:
+  - // lascerebbe il bot in attesa di conferme che nessuno dÃ ).
+  + // lascerebbe il bot in attesa di conferme che nessuno dà).
+191:
+  - // max_shots/loss_cap vuoti = default del backend (10 / 5â‚¬).
+  + // max_shots/loss_cap vuoti = default del backend (10 / 5€).
+205:
+  - toast.success(`Scalper ${dryRun ? 'ATTIVATO in PAPER (ordini simulati)' : 'ATTIVATO'} â€” ${eventName}`);
+  + toast.success(`Scalper ${dryRun ? 'ATTIVATO in PAPER (ordini simulati)' : 'ATTIVATO'} — ${eventName}`);
+224:
+  - // niente promesse: la chiusura Ã¨ in corso, l'esito lo dice lo stato
+  + // niente promesse: la chiusura è in corso, l'esito lo dice lo stato
+225:
+  - toast.success('Stop richiesto: chiusura flat in corsoâ€¦ se una posizione resta aperta comparirÃ  un errore');
+  + toast.success('Stop richiesto: chiusura flat in corso… se una posizione resta aperta comparirà un errore');
+239:
+  - <Loader2 className="h-4 w-4 animate-spin" /> Scalper Botâ€¦
+  + <Loader2 className="h-4 w-4 animate-spin" /> Scalper Bot…
+250:
+  - {/* fix audit #28: stato NON aggiornabile in modo persistente â†’ avviso esplicito */}
+  + {/* fix audit #28: stato NON aggiornabile in modo persistente → avviso esplicito */}
+253:
+  - âš  Stato scalper NON aggiornato: {stateErr} â€” i dati mostrati potrebbero essere vecchi.
+  + ⚠ Stato scalper NON aggiornato: {stateErr} — i dati mostrati potrebbero essere vecchi.
+261:
+  - <span className="text-xs text-white/40">pre-match Â· stop automatico al KO</span>
+  + <span className="text-xs text-white/40">pre-match · stop automatico al KO</span>
+267:
+  - ? <Badge className="bg-emerald-500/15 text-emerald-300 border-transparent">servizio âœ“</Badge>
+  + ? <Badge className="bg-emerald-500/15 text-emerald-300 border-transparent">servizio ✓</Badge>
+272:
+  - ARMATO â€” nessun ordine
+  + ARMATO — nessun ordine
+311:
+  - <span className="text-white/50">Stake â‚¬</span>
+  + <span className="text-white/50">Stake €</span>
+321:
+  - DEMO Â· PAPER (ordini SIMULATI, ciclo completo â€” mai soldi veri)
+  + DEMO · PAPER (ordini SIMULATI, ciclo completo — mai soldi veri)
+343:
+  - âš ï¸ Gamba INTERVALLO (HT, sperimentale): il backtest di validazione la boccia
+  + ⚠️ Gamba INTERVALLO (HT, sperimentale): il backtest di validazione la boccia
+344:
+  - (3/13 intervalli col verde, aggregato âˆ’1.74â‚¬). Solo nazionali liquide, mai elite.
+  + (3/13 intervalli col verde, aggregato −1.74€). Solo nazionali liquide, mai elite.
+356:
+  - ðŸŽ¯ SNIPER in-play (S16): 1 tick sull&apos;Under al momento letto dal book
+  + 🎯 SNIPER in-play (S16): 1 tick sull&apos;Under al momento letto dal book
+357:
+  - (cadenza+coda+spread), poi stop. Backtest: +0.99â‚¬/14 eventi, worst âˆ’0.49.
+  + (cadenza+coda+spread), poi stop. Backtest: +0.99€/14 eventi, worst −0.49.
+364:
+  - <span className="text-white/50">Stake sniper â‚¬</span>
+  + <span className="text-white/50">Stake sniper €</span>
+379:
+  - ðŸ”« CACCIA MULTI-LINEA: spara su dinamica +2 linee sopra,
+  + 🔫 CACCIA MULTI-LINEA: spara su dinamica +2 linee sopra,
+382:
+  - â‚¬/partita (n=1) â€” VALIDARE IN PAPER prima dei soldi veri.
+  + €/partita (n=1) — VALIDARE IN PAPER prima dei soldi veri.
+396:
+  - ðŸ”¬ THETA in-play (sperimentale): scalp post-gol sull&apos;Under
+  + 🔬 THETA in-play (sperimentale): scalp post-gol sull&apos;Under
+399:
+  - âš ï¸ Theta NON validato out-of-sample (verdetto S4: classico EVâˆ’,
+  + ⚠️ Theta NON validato out-of-sample (verdetto S4: classico EV−,
+400:
+  - overshoot da campionare) â€” SOLO PAPER: in DEMO piazza ordini
+  + overshoot da campionare) — SOLO PAPER: in DEMO piazza ordini
+408:
+  - <span className="text-white/50">Stake theta â‚¬</span>
+  + <span className="text-white/50">Stake theta €</span>
+424:
+  - <option value="cecchino">ðŸŽ¯ cecchino (3 step)</option>
+  + <option value="cecchino">🎯 cecchino (3 step)</option>
+439:
+  - <span className="text-white/50">Tetto perdita â‚¬</span>
+  + <span className="text-white/50">Tetto perdita €</span>
+511:
+  - <span>stake â‚¬{ctrl.stake}</span>
+  + <span>stake €{ctrl.stake}</span>
+526:
+  - : <Badge variant="secondary">nessun consenso â†’ neutro</Badge>}
+  + : <Badge variant="secondary">nessun consenso → neutro</Badge>}
+532:
+  - <div key={i} className="text-white/50">â€¢ {r}</div>
+  + <div key={i} className="text-white/50">• {r}</div>
+537:
+  - {/* statistiche â€” P&L LORDI: flumine non detrae la commissione 4,5-5% */}
+  + {/* statistiche — P&L LORDI: flumine non detrae la commissione 4,5-5% */}
+546:
+  - l: 'P&L bloccato (lordo)', v: `â‚¬${num(stats?.pnl_locked).toFixed(2)}`, i: TrendingUp,
+  + l: 'P&L bloccato (lordo)', v: `€${num(stats?.pnl_locked).toFixed(2)}`, i: TrendingUp,
+550:
+  - // paper nâ‰¥40 â€” visibile appena il bot lo espone
+  + // paper n≥40 — visibile appena il bot lo espone
+552:
+  - l: 'P&L settlato (lordo)', v: `â‚¬${num(stats?.pnl_settled).toFixed(2)}`, i: TrendingUp,
+  + l: 'P&L settlato (lordo)', v: `€${num(stats?.pnl_settled).toFixed(2)}`, i: TrendingUp,
+563:
+  - {/* missione "2 Tick": contabilitÃ  per fase (se il bot la espone) */}
+  + {/* missione "2 Tick": contabilità per fase (se il bot la espone) */}
+569:
+  - v: num(stats.greens_prematch) >= 1 ? 'âœ“' : 'â€”',
+  + v: num(stats.greens_prematch) >= 1 ? '✓' : '—',
+574:
+  - v: num(stats.greens_inplay) >= 1 ? 'âœ“' : 'â€”',
+  + v: num(stats.greens_inplay) >= 1 ? '✓' : '—',
+579:
+  - v: `â‚¬${num(stats.pnl_prematch).toFixed(2)}`,
+  + v: `€${num(stats.pnl_prematch).toFixed(2)}`,
+584:
+  - v: `â‚¬${num(stats.pnl_inplay).toFixed(2)}`,
+  + v: `€${num(stats.pnl_inplay).toFixed(2)}`,
+597:
+  - theta.stats nel control con prefisso theta_*) â€” visibili
+  + theta.stats nel control con prefisso theta_*) — visibili
+598:
+  - SOLO se il theta Ã¨ armato e il bot li espone */}
+  + SOLO se il theta è armato e il bot li espone */}
+607:
+  - l: 'P&L theta (lordo)', v: `â‚¬${num(stats.theta_pnl_locked).toFixed(2)}`,
+  + l: 'P&L theta (lordo)', v: `€${num(stats.theta_pnl_locked).toFixed(2)}`,
+610:
+  - // settlato theta (validazione paper nâ‰¥40), se il bot lo espone
+  + // settlato theta (validazione paper n≥40), se il bot lo espone
+612:
+  - l: 'Theta settl. (lordo)', v: `â‚¬${num(stats.theta_pnl_settled).toFixed(2)}`,
+  + l: 'Theta settl. (lordo)', v: `€${num(stats.theta_pnl_settled).toFixed(2)}`,
+624:
+  - {/* feed attivitÃ  (debug veloce) */}
+  + {/* feed attività (debug veloce) */}
+627:
+  - <div className="text-xs text-white/40">Nessuna attivitÃ  ancoraâ€¦</div>
+  + <div className="text-xs text-white/40">Nessuna attività ancora…</div>
+660:
+  - <> â€” cicli {num(ctrl.stats.cycles) + num(ctrl.stats.flattens)},
+  + <> — cicli {num(ctrl.stats.cycles) + num(ctrl.stats.flattens)},
+662:
+  - <span title="P&L LORDO: commissione Betfair (4,5-5%) NON detratta"> P&L bloccato (lordo) â‚¬{num(ctrl.stats.pnl_locked).toFixed(2)}</span>
+  + <span title="P&L LORDO: commissione Betfair (4,5-5%) NON detratta"> P&L bloccato (lordo) €{num(ctrl.stats.pnl_locked).toFixed(2)}</span>
+664:
+  - <span title="P&L LORDO dei soli cicli regolati: commissione NON detratta">, settlato (lordo) â‚¬{num(ctrl.stats.pnl_settled).toFixed(2)}</span>
+  + <span title="P&L LORDO dei soli cicli regolati: commissione NON detratta">, settlato (lordo) €{num(ctrl.stats.pnl_settled).toFixed(2)}</span>
+667:
+  - {ctrl.error && <span className="text-red-300"> â€” {ctrl.error}</span>}
+  + {ctrl.error && <span className="text-red-300"> — {ctrl.error}</span>}
+BOM: si, tolto; righe cambiate: 71

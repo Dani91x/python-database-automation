@@ -1,0 +1,82 @@
+git status di partenza:
+ M frontend/package-lock.json
+ M frontend/package.json
+ M frontend/src/components/live/ScalperPanel.tsx
+ M frontend/src/components/safestrategy/BotParamsSheet.test.tsx
+ M frontend/src/components/safestrategy/BotParamsSheet.tsx
+ M frontend/src/fotografia/cssVeste.test.ts
+ M frontend/src/fotografia/fotografia.test.tsx
+ M frontend/src/index.css
+ M frontend/src/pages/ControlRoom.test.tsx
+ M frontend/src/pages/ControlRoom.tsx
+ M frontend/src/pages/MarketWatch.test.tsx
+?? AUDIT_2026-10-02/
+?? frontend/src/test/codificaSorgenti.test.ts
+
+[A1] punto A: ScalperPanel: rimesso "Stake EURO guasto" (riga 311)
+    atteso ROSSO, visto ROSSO -> OK
+    9s | × codifica dei sorgenti: UTF-8 pulito > nessun sorgente di src/ contiene mojibake (cp1252 al posto di UTF-8) 321ms || → expected [ Array(1) ] to deeply equal [] || Test Files  1 failed (1) || Tests  1 failed | 2 passed (3)
+[A2] punto A: ScalperPanel: rimesso il BOM
+    atteso ROSSO, visto ROSSO -> OK
+    9s | × codifica dei sorgenti: UTF-8 pulito > nessun sorgente di src/ comincia col BOM UTF-8 152ms || → expected [ 'components\live\ScalperPanel.tsx' ] to deeply equal [] || Test Files  1 failed (1) || Tests  1 failed | 2 passed (3)
+[A3] punto A: direzione nuova: mojibake in un ALTRO sorgente (commento in index.css)
+    atteso ROSSO, visto ROSSO -> OK
+    8s | × codifica dei sorgenti: UTF-8 pulito > nessun sorgente di src/ contiene mojibake (cp1252 al posto di UTF-8) 205ms || → expected [ Array(1) ] to deeply equal [] || Test Files  1 failed (1) || Tests  1 failed | 2 passed (3)
+[B1] punto B: ControlRoom: tolta l'etichetta "Parametri comuni di Safe"
+    atteso ROSSO, visto ROSSO -> OK
+    15s | × FRONTEND MINORI B: nessuna riga del pannello bot con due comandi uguali > riga Safe base: "Parametri strategia" (solo Base) e "Parametri comuni di Safe" (tutto il servizio), testid distinti 439ms || → expected 'Parametri' to be 'Parametri comuni di Safe' // Object.is equality || Test Files  1 failed (1) || Tests  1 failed | 1 passed | 142 skipped (144)
+[B2] punto B: ControlRoom: tolta l'etichetta "Parametri strategia"
+    atteso ROSSO, visto ROSSO -> OK
+    15s | × FRONTEND MINORI B: nessuna riga del pannello bot con due comandi uguali > riga Safe base: "Parametri strategia" (solo Base) e "Parametri comuni di Safe" (tutto il servizio), testid distinti 437ms || → expected 'Parametri' to be 'Parametri strategia' // Object.is equality || Test Files  1 failed (1) || Tests  1 failed | 1 passed | 142 skipped (144)
+[B3] punto B: BotParamsSheet non passa triggerLabel a ParamsSheetBase
+    atteso ROSSO, visto ROSSO -> OK
+    15s | × FRONTEND MINORI B: nessuna riga del pannello bot con due comandi uguali > ogni riga cr-bot-riga-*: i nomi dei comandi sono tutti distinti 1079ms || → expected [ Array(1) ] to deeply equal [] || × FRONTEND MINORI B: nessuna riga del pannello bot con due comandi uguali > riga Safe base: "Parametri strategia" (solo Base) e "Parametri comuni di Safe" (tutto il servizio), testid distinti 348ms || → expected 'Parametri' to be 'Parametri strategia' // Object.is equality || Test Files  1 failed (1) || Tests  2 failed | 142 skipped (144)
+[C1] punto C: index.css: tolta la regola .ds-v2-chip--live.bg-red-500
+    atteso ROSSO, visto ROSSO -> OK
+    8s | × veste completa: leggibilita' > ogni marcatore LIVE resta d'allarme a guscio acceso: rosso, contrasto >= 4,5:1, pieno dove oggi e' pieno 183ms || → expected [ Array(1) ] to deeply equal [] || Test Files  1 failed (1) || Tests  1 failed | 8 passed (9)
+[C2] punto C: regola presente ma sfondo tinta al 50 % (non pieno)
+    atteso ROSSO, visto ROSSO -> OK
+    9s | × veste completa: leggibilita' > ogni marcatore LIVE resta d'allarme a guscio acceso: rosso, contrasto >= 4,5:1, pieno dove oggi e' pieno 192ms || → expected [ …(2) ] to deeply equal [] || Test Files  1 failed (1) || Tests  1 failed | 8 passed (9)
+[C3] punto C: regola presente ma testo rosa chiaro su rosso (contrasto basso)
+    atteso ROSSO, visto ROSSO -> OK
+    8s | × veste completa: leggibilita' > contrasto del testo >= 4,5:1 (>= 3:1 se grande) su fondo dichiarato o sui fondi del prototipo 15ms || → expected [ Array(1) ] to deeply equal [] || × veste completa: leggibilita' > ogni marcatore LIVE resta d'allarme a guscio acceso: rosso, contrasto >= 4,5:1, pieno dove oggi e' pieno 121ms || → expected [ Array(1) ] to deeply equal [] || Test Files  1 failed (1) || Tests  2 failed | 7 passed (9)
+[C4] punto C: direzione nuova: il marcatore LIVE tinta (PannelloBot/FasciaStop) diventa grigio
+    atteso ROSSO, visto ROSSO -> OK
+    7s | × veste completa: leggibilita' > ogni marcatore LIVE resta d'allarme a guscio acceso: rosso, contrasto >= 4,5:1, pieno dove oggi e' pieno 141ms || → expected [ …(2) ] to deeply equal [] || Test Files  1 failed (1) || Tests  1 failed | 8 passed (9)
+[M1] punto 35: fromValues: tolto il ramo "campo numerico vuoto"
+    atteso ROSSO, visto ROSSO -> OK
+    13s | × BotParamsSheet - 35 campo numerico svuotato: chiave assente, mai "" > puro, OGNI campo numerico: vuoto -> chiave assente, gli altri campi identici, nessun "" nel payload 48ms || → expected [ …(126) ] to deeply equal [] || × BotParamsSheet - 35 campo numerico svuotato: chiave assente, mai "" > nel foglio vero: si svuotano TUTTI i campi numerici e si salva -> nessuna chiave numerica, nessun "" 3572ms || → expected [ 'commission_pct', …(62) ] to deeply equal [] || Test Files  1 failed (1) || Tests  2 failed | 1 passed | 40 skipped (43)
+[M2] punto 35: fromValues: campo vuoto SALTATO ma chiave del DB conservata (deletePath tolto)
+    atteso ROSSO, visto ROSSO -> OK
+    11s | × BotParamsSheet - 35 campo numerico svuotato: chiave assente, mai "" > puro, OGNI campo numerico: vuoto -> chiave assente, gli altri campi identici, nessun "" nel payload 50ms || → expected [ …(12) ] to deeply equal [] || × BotParamsSheet - 35 campo numerico svuotato: chiave assente, mai "" > nel foglio vero: si svuotano TUTTI i campi numerici e si salva -> nessuna chiave numerica, nessun "" 3204ms || → expected [ 'poll_interval_s', …(11) ] to deeply equal [] || Test Files  1 failed (1) || Tests  2 failed | 1 passed | 40 skipped (43)
+[M3] punto 35: CHIAVI_NUMERICHE senza le uscite numeriche (EXIT_NUM_FIELDS)
+    atteso ROSSO, visto ROSSO -> OK
+    14s | × BotParamsSheet - 35 campo numerico svuotato: chiave assente, mai "" > l'elenco dei campi numerici e' quello del foglio (64 campi, nessuno escluso) 926ms || → expected 56 to be 64 // Object.is equality || × BotParamsSheet - 35 campo numerico svuotato: chiave assente, mai "" > nel foglio vero: si svuotano TUTTI i campi numerici e si salva -> nessuna chiave numerica, nessun "" 3867ms || → expected [ 'exits.base_exit_minute', …(7) ] to deeply equal [] || Test Files  1 failed (1) || Tests  2 failed | 1 passed | 40 skipped (43)
+[F1] punto 31: CARICO SIMULATO (sessione a 1,5 s) con la fotografia di MASTER
+    atteso ROSSO, visto ROSSO -> OK
+    29s | × fotografia di parita' (guscio v2) > mike: 'off' identica alla fase 0, 'v2' con le stesse pagine 20997ms || → la fotografia mike.off.json e' cambiata: expected '{\n  "pagina": "mike",\n  "url": "/mi…' to be '{\n  "pagina": "mike",\n  "url": "/mi…' // Object.is equality || Test Files  1 failed (1) || Tests  1 failed | 25 skipped (26)
+[F1b] punto 31: CARICO SIMULATO (sessione a 1,5 s) con la fotografia CORRETTA (controprova)
+    atteso VERDE, visto VERDE -> OK
+    37s | Test Files  1 passed (1) || Tests  1 passed | 25 skipped (26)
+[F2] punto 31: fotografia corretta SENZA la condizione "pagina pronta" + carico simulato
+    atteso ROSSO, visto ROSSO -> OK
+    29s | × fotografia di parita' (guscio v2) > mike: 'off' identica alla fase 0, 'v2' con le stesse pagine 4434ms || → la fotografia mike.off.json e' cambiata: expected '{\n  "pagina": "mike",\n  "url": "/mi…' to be '{\n  "pagina": "mike",\n  "url": "/mi…' // Object.is equality || Test Files  1 failed (1) || Tests  1 failed | 25 skipped (26)
+[W1] punto 32: CARICO SIMULATO (letture lente, fuori ordine) con MarketWatch.test di MASTER
+    atteso ROSSO, visto ROSSO -> OK
+    12s | × MarketWatch - 26/09 correzioni fase 3 > paper e live dello stesso evento: due rischi separati, mai sommati 244ms || → expected 'live€0.00' to contain '€3.00' || × MarketWatch - 26/09 correzioni fase 3 > tennis finito: «FINITA» con tutti i set, non «LIVE» 1030ms || → Unable to find an element by: [data-testid="mw-tennis-finita"] || Test Files  1 failed (1) || Tests  2 failed | 3 passed (5)
+[W1b] punto 32: CARICO SIMULATO con MarketWatch.test CORRETTO (controprova)
+    atteso VERDE, visto VERDE -> OK
+    15s | Test Files  1 passed (1) || Tests  5 passed (5)
+[W2] punto 32: MarketWatch.test corretto ma "paper e live" senza waitFor + carico simulato
+    atteso ROSSO, visto ROSSO -> OK
+    12s | × MarketWatch - 26/09 correzioni fase 3 > paper e live dello stesso evento: due rischi separati, mai sommati 30ms || → Unable to find an element by: [data-testid="mw-rischio-live"] || Test Files  1 failed (1) || Tests  1 failed | 4 passed (5)
+
+--- controprova finale: albero ripristinato, test mirati verdi ---
+    src/test/codificaSorgenti.test.ts : VERDE | 9s | Test Files  1 passed (1) || Tests  3 passed (3)
+    src/pages/ControlRoom.test.tsx FRONTEND MINORI B: VERDE | 14s | Test Files  1 passed (1) || Tests  2 passed | 142 skipped (144)
+    src/fotografia/cssVeste.test.ts : VERDE | 9s | Test Files  1 passed (1) || Tests  9 passed (9)
+    src/components/safestrategy/BotParamsSheet.test.tsx 35 campo: VERDE | 12s | Test Files  1 passed (1) || Tests  3 passed | 40 skipped (43)
+    src/pages/MarketWatch.test.tsx : VERDE | 9s | Test Files  1 passed (1) || Tests  5 passed (5)
+git status finale identico a quello di partenza: True
+
+ESITO: 25/25 come atteso

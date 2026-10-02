@@ -5,11 +5,11 @@
 //   H-14  varianti: nessuna riattivazione silenziosa, salvataggio a vuoto rifiutato
 //   H-15  clamp VISIBILE e valore EFFETTIVO del servizio dichiarato sul campo
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {
     BotParamsSheet, mergeExits, EXITS_DEFAULTS, gruppiDellaStrategia,
-    toValues, fromValues,
+    toValues, fromValues, CHIAVI_NUMERICHE,
     type StrategiaFiltro,
 } from './BotParamsSheet';
 import type { ParamGroup } from '@/components/trading/ParamsSheetBase';
@@ -630,5 +630,102 @@ describe('BotParamsSheet - R-06 tetto delle posizioni aperte (risk.max_open_trad
             const out = fromValues(v, p.variants, raw) as Record<string, unknown>;
             expect((out.risk as Record<string, unknown>).max_open_trades).toBe(n);
         }
+    });
+});
+
+// ============================================================================
+// FRONTEND MINORI 35 (02/10) - un campo numerico SVUOTATO e salvato finiva nel
+// database come stringa vuota "" (`ParamsSheetBase` passa '', `fromValues`
+// faceva `setPath`). Il servizio ripiegava sul valore di serie (`_f('')`), ma
+// il DB restava sporco e la rilettura mostrava 0 (`Number('')`). Ora, come per
+// `risk.max_open_trades` (R-06, 01/10): campo vuoto = chiave ASSENTE nel
+// payload (il servizio usa il suo valore di serie), mai "".
+// FALSIFICAZIONE: togliendo il ramo "campo numerico vuoto" da `fromValues`
+// tornano "" nel payload -> rossi i tre test qui sotto.
+// ============================================================================
+function cerca(x: unknown, dove: string, trovati: string[]): void {
+    if (typeof x === 'string' && x.trim() === '') trovati.push(dove);
+    else if (typeof x === 'number' && !Number.isFinite(x)) trovati.push(dove);
+    else if (x != null && typeof x === 'object') {
+        for (const [k, y] of Object.entries(x as Record<string, unknown>)) cerca(y, dove ? `${dove}.${k}` : k, trovati);
+    }
+}
+function stringheVuote(x: unknown): string[] {
+    const trovati: string[] = [];
+    cerca(x, '', trovati);
+    return trovati;
+}
+function presente(obj: Record<string, unknown>, path: string): boolean {
+    const keys = path.split('.');
+    let node: unknown = obj;
+    for (const k of keys.slice(0, -1)) {
+        if (node == null || typeof node !== 'object') return false;
+        node = (node as Record<string, unknown>)[k];
+    }
+    return node != null && typeof node === 'object' && keys[keys.length - 1] in (node as Record<string, unknown>);
+}
+function leggi(obj: Record<string, unknown>, path: string): unknown {
+    return path.split('.').reduce<unknown>((a, k) => (a as Record<string, unknown> | undefined)?.[k], obj);
+}
+
+describe('BotParamsSheet - 35 campo numerico svuotato: chiave assente, mai ""', () => {
+    // il database ha un valore per molte chiavi: svuotare il campo deve
+    // togliere la chiave, non conservare il vecchio valore ne' scrivere ""
+    const RAW_PIENO: Record<string, unknown> = {
+        ...RAW,
+        poll_interval_s: 3, max_open_trades: 7, min_stake: 2.5,
+        risk: { ...RAW.risk, per_event_max_trades: 2, max_open_trades: 4 },
+        base: { minuteMin: 60 },
+        exits: { ...RAW.exits, base_exit_minute: 80, base_control_exit_max: -0.3 },
+    };
+
+    it('l\'elenco dei campi numerici e\' quello del foglio (64 campi, nessuno escluso)', async () => {
+        await openSheet(vi.fn(), RAW_PIENO);
+        const inputs = screen.getByTestId('params-sheet').querySelectorAll('input[type="number"]');
+        expect(CHIAVI_NUMERICHE.size).toBe(inputs.length);
+        expect(inputs.length).toBe(64);
+    });
+
+    it('puro, OGNI campo numerico: vuoto -> chiave assente, gli altri campi identici, nessun "" nel payload', () => {
+        const p = mergeBotParams(RAW_PIENO);
+        const v = toValues(p, mergeExits(RAW_PIENO.exits), RAW_PIENO);
+        const base = fromValues(v, p.variants, RAW_PIENO) as Record<string, unknown>;
+        const sbagliati: string[] = [];
+        for (const k of CHIAVI_NUMERICHE) {
+            const out = fromValues({ ...v, [k]: '' }, p.variants, RAW_PIENO) as Record<string, unknown>;
+            if (presente(out, k)) sbagliati.push(`${k}: presente (${JSON.stringify(leggi(out, k))})`);
+            for (const altro of CHIAVI_NUMERICHE) {
+                if (altro !== k && JSON.stringify(leggi(out, altro)) !== JSON.stringify(leggi(base, altro))) {
+                    sbagliati.push(`${k}: cambiato anche ${altro}`);
+                }
+            }
+            for (const d of stringheVuote(out)) sbagliati.push(`${k}: vuoto in ${d}`);
+        }
+        expect(sbagliati).toEqual([]);
+        // la riga letta non viene mai mutata
+        expect((RAW_PIENO.risk as Record<string, unknown>).per_event_max_trades).toBe(2);
+        expect((RAW_PIENO.exits as Record<string, unknown>).base_exit_minute).toBe(80);
+    });
+
+    it('nel foglio vero: si svuotano TUTTI i campi numerici e si salva -> nessuna chiave numerica, nessun ""', async () => {
+        const { user, onSave } = await openSheet(vi.fn(), RAW_PIENO);
+        const inputs = Array.from(screen.getByTestId('params-sheet').querySelectorAll('input[type="number"]'));
+        expect(inputs.length).toBe(64);
+        // prima un valore e poi il vuoto: un campo che si mostra gia' vuoto
+        // (es. `exits.base_control_exit_max`, che `mergeExits` non legge)
+        // altrimenti non riceverebbe nessun evento
+        for (const i of inputs) {
+            fireEvent.change(i, { target: { value: '1' } });
+            fireEvent.change(i, { target: { value: '' } });
+        }
+        await user.click(screen.getByTestId('params-save'));
+        await waitFor(() => expect(onSave).toHaveBeenCalled());
+        const payload = onSave.mock.calls[0][0] as Record<string, unknown>;
+        expect(stringheVuote(payload)).toEqual([]);
+        expect([...CHIAVI_NUMERICHE].filter((k) => presente(payload, k))).toEqual([]);
+        // il resto del payload resta quello di prima
+        expect(payload.unknown_key_from_service).toEqual({ keep: 'me' });
+        expect(payload.variants).toEqual(['base', 'esatto', 'punta', 'tennis']);
+        expect((payload.exits as Record<string, unknown>).enabled).toBe(true);
     });
 });

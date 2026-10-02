@@ -3,7 +3,7 @@
 // Copre: render con fixture, riga calcio con score/minuto + bottone cash-out,
 // riga tennis SENZA cash-out (capability gating).
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
 
@@ -99,6 +99,14 @@ beforeEach(() => {
     mTPositions.mockResolvedValue([] as never);
 });
 
+// 02/10 (FRONTEND MINORI 32) - FRAGILE SOTTO CARICO: follows, now e posizioni
+// arrivano da tre letture indipendenti; sotto carico la riga compare prima delle
+// sue posizioni (si leggeva "live EUR 0.00" invece di 3.00) e le attese di
+// default (1 s) scadevano. Ora ogni attesa ha un tempo adeguato e ogni
+// asserzione che dipende da una lettura successiva si ripete finche' lo stato
+// FINALE arriva (waitFor): stesse asserzioni, nessun sleep.
+const ATTESA = { timeout: 10_000 };
+
 function renderPage() {
     return render(
         <HelmetProvider>
@@ -112,8 +120,8 @@ function renderPage() {
 describe('MarketWatch', () => {
     it('renderizza le due sezioni con le righe dalle fixture', async () => {
         renderPage();
-        expect(await screen.findByText('Milan – Inter')).toBeInTheDocument();
-        expect(await screen.findByText('Sinner vs Alcaraz')).toBeInTheDocument();
+        expect(await screen.findByText('Milan – Inter', {}, ATTESA)).toBeInTheDocument();
+        expect(await screen.findByText('Sinner vs Alcaraz', {}, ATTESA)).toBeInTheDocument();
         expect(screen.getByText('⚽ Calcio')).toBeInTheDocument();
         expect(screen.getByText('🎾 Tennis')).toBeInTheDocument();
     });
@@ -121,15 +129,17 @@ describe('MarketWatch', () => {
     it('riga calcio: badge in-play con minuto+score e bottone Cash-out EVENTO', async () => {
         renderPage();
         // badge LIVE con minuto e punteggio
-        expect(await screen.findByText(/LIVE 63' · 1–2/)).toBeInTheDocument();
+        expect(await screen.findByText(/LIVE 63' · 1–2/, {}, ATTESA)).toBeInTheDocument();
         // bottone cash-out presente sulla riga calcio
-        const btn = await screen.findByRole('button', { name: /cash-out evento/i });
+        const btn = await screen.findByRole('button', { name: /cash-out evento/i }, ATTESA);
         expect(btn).toBeInTheDocument();
     });
 
     it('riga tennis: set_summary visibile e NESSUN bottone cash-out (capability gating)', async () => {
         renderPage();
-        expect(await screen.findByText(/6-4 3-2/)).toBeInTheDocument();
+        expect(await screen.findByText(/6-4 3-2/, {}, ATTESA)).toBeInTheDocument();
+        // la riga calcio arriva da un'altra lettura: si aspetta che ci sia anche lei
+        await screen.findByText('Milan – Inter', {}, ATTESA);
         // UN SOLO bottone cash-out in tutta la pagina: quello del calcio.
         const cashButtons = screen.getAllByRole('button', { name: /cash-out/i });
         expect(cashButtons).toHaveLength(1);
@@ -138,7 +148,7 @@ describe('MarketWatch', () => {
             screen.getByTitle(/worker tennis non supporta il cash-out/i),
         ).toBeInTheDocument();
         // link al terminal tennis con i query param di TennisTerminal (event+market)
-        const link = await screen.findByRole('link', { name: /apri terminal tennis/i });
+        const link = await screen.findByRole('link', { name: /apri terminal tennis/i }, ATTESA);
         expect(link.getAttribute('href')).toContain('/tennis/terminal?');
         expect(link.getAttribute('href')).toContain('event=tev1');
         expect(link.getAttribute('href')).toContain('market=1.999');
@@ -164,10 +174,14 @@ describe('MarketWatch - 26/09 correzioni fase 3', () => {
         });
         mPositions.mockResolvedValue([riga(1, 'paper', 5), riga(2, 'live', 3)] as never);
         renderPage();
-        const live = await screen.findAllByTestId('mw-rischio-live');
-        const paper = await screen.findAllByTestId('mw-rischio-paper');
-        expect(live[0].textContent).toContain('€3.00');
-        expect(paper[0].textContent).toContain('€5.00');
+        // la riga compare PRIMA delle sue posizioni (letture separate): si
+        // aspetta lo stato finale, poi le stesse asserzioni di sempre
+        await waitFor(() => {
+            const live = screen.getAllByTestId('mw-rischio-live');
+            const paper = screen.getAllByTestId('mw-rischio-paper');
+            expect(live[0].textContent).toContain('€3.00');
+            expect(paper[0].textContent).toContain('€5.00');
+        }, ATTESA);
         expect(screen.queryByText('€8.00')).toBeNull();
     });
 
@@ -177,7 +191,7 @@ describe('MarketWatch - 26/09 correzioni fase 3', () => {
             score: { status: 'Finished', set_summary: '5-7 6-2 1-6' } as never,
         } as never);
         renderPage();
-        expect(await screen.findByTestId('mw-tennis-finita')).toHaveTextContent('FINITA · 5-7 6-2 1-6');
+        expect(await screen.findByTestId('mw-tennis-finita', {}, ATTESA)).toHaveTextContent('FINITA · 5-7 6-2 1-6');
         expect(screen.queryByTestId('mw-tennis-live')).toBeNull();
     });
 });

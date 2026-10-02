@@ -2268,3 +2268,55 @@ describe('W_B1 P10: le operazioni pre-fischio arrivano alla scheda pre-partita',
         expect(within(ops).getByTestId('cr-op-riga')).toHaveTextContent('Under 3.5');
     });
 });
+
+// ============================================================================
+// FRONTEND MINORI B (02/10) - la riga "Safe base" mostrava DUE bottoni
+// "Parametri" identici: uno apre il foglio della SOLA strategia
+// (`fogliParametriPerRiga`, `soloStrategia='base'`), l'altro quello di TUTTO il
+// servizio Safe (`fogliParametri.safe`, arriva sulla prima riga del bot via
+// `primaDelBot`). Ora le etichette dicono cosa aprono e nessuna riga ha due
+// comandi con lo stesso nome.
+// FALSIFICAZIONE: togliendo `triggerLabel` da uno dei due fogli in
+// ControlRoom.tsx la riga safe-base torna con due "Parametri" -> rosso.
+// ============================================================================
+describe('FRONTEND MINORI B: nessuna riga del pannello bot con due comandi uguali', () => {
+    const tuttiIBot = () => [
+        botFermo({ bot: 'safe', varianti: ['base', 'esatto', 'punta', 'tennis'] }),
+        botFermo({ bot: 'mike', params: { stake: 2 } }),
+        botFermo({ bot: 'omega', params: { min_stake: 0.5 } }),
+    ];
+
+    it('ogni riga cr-bot-riga-*: i nomi dei comandi sono tutti distinti', () => {
+        mVm.mockReturnValue(vm({ bots: tuttiIBot() as never }));
+        const s = mostra();
+        const righe = s.container.querySelectorAll('[data-testid^="cr-bot-riga-"]');
+        expect(righe.length).toBeGreaterThan(0);
+        const doppi: string[] = [];
+        let comandi = 0;
+        righe.forEach((riga) => {
+            const nomi = within(riga as HTMLElement).queryAllByRole('button')
+                .map((b) => (b.textContent ?? '').replace(/\s+/g, ' ').trim())
+                .filter((n) => n !== '');
+            comandi += nomi.length;
+            const visti = new Set<string>();
+            for (const n of nomi) {
+                if (visti.has(n)) doppi.push(`${riga.getAttribute('data-testid')}: "${n}"`);
+                visti.add(n);
+            }
+        });
+        expect(comandi).toBeGreaterThan(righe.length);
+        expect(doppi).toEqual([]);
+    });
+
+    it('riga Safe base: "Parametri strategia" (solo Base) e "Parametri comuni di Safe" (tutto il servizio), testid distinti', () => {
+        mVm.mockReturnValue(vm({ bots: tuttiIBot() as never }));
+        const s = mostra();
+        const riga = s.getByTestId('cr-bot-riga-safe-base');
+        expect(within(riga).getByTestId('cr-safe-base-params-trigger').textContent?.trim()).toBe('Parametri strategia');
+        expect(within(riga).getByTestId('cr-safe-params-trigger').textContent?.trim()).toBe('Parametri comuni di Safe');
+        // le altre strategie hanno solo il loro foglio, con la stessa etichetta
+        const esatto = s.getByTestId('cr-bot-riga-safe-esatto');
+        expect(within(esatto).getByTestId('cr-safe-esatto-params-trigger').textContent?.trim()).toBe('Parametri strategia');
+        expect(within(esatto).queryByTestId('cr-safe-params-trigger')).toBeNull();
+    });
+});
