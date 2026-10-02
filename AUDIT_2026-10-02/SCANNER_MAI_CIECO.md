@@ -358,3 +358,174 @@ cambia.
   conftest.
 - **Banco:** nessuna lettura DB in `dry`; i fermi `BaseException` del banco passano come prima.
 - **Paper e live:** stesso codice; l'unica differenza, voluta, è il REST di ripiego solo in live.
+
+---
+
+## 9. Correzioni del 02/10 pomeriggio (reperti del coordinatore)
+
+Commit `2f3fbbb` e `test: falsificazione I4 e F10 allineate`, sul ramo `scanner-mai-cieco`.
+Questa sezione supera i reperti R2, R3, R4, R6 e R9 della §7, che ora risultano corretti.
+
+### R2 (bloccante): il supervisore uccideva la sessione a metà dell'arresto
+
+**Prima.** `attendi_e_termina_flat` aspettava 60 s, poi lanciava `terminate()`, cioè TerminateProcess,
+che non si può intercettare. `main.js` concedeva allo scalper-service 70 s. La sessione invece può
+impiegare:
+- 5 s di battito;
+- 3 × 30 s di flat (maker, sniper, theta);
+- 10 s di annullo;
+- 2 s dopo il `TerminationEvent`.
+
+Il terminate arrivava quindi durante il flat e l'annullo del punto 26 non girava.
+
+**Ora.**
+- **Tetto della sessione**, ricavato dalle sue costanti:
+  `scalper_session.TEMPO_MASSIMO_ARRESTO_S = HEARTBEAT_S + STRATEGIE_MAX × FLAT_ATTESA_S + ARRESTO_ANNULLO_TIMEOUT_S + 2 + 10`, cioè 117 s (`:503`). `FLAT_ATTESA_S = 30` e `STRATEGIE_MAX = 3` vengono da `_all_flat`.
+  Un test verifica che ogni `_all_flat(timeout_s=X)` di `run_session` abbia `X == FLAT_ATTESA_S` e
+  che l'attesa copra maker + `(sniper, theta)`.
+  - Il letterale `30.0` nelle chiamate resta: un test esistente lo fissa
+    (`test_scalper_control_room_2026_09_24.py:132`).
+- **Supervisore** (`scalper_service.py`):
+  - `attendi_e_termina_flat` (`:750`) aspetta per difetto `TEMPO_MASSIMO_ARRESTO_S` (`:711`).
+  - Allo scadere manda il **segnale** che la sessione gestisce (`_segnale_di_arresto`, `:735`):
+    CTRL_BREAK su Windows, SIGTERM altrove. La sessione lo trasforma in `KeyboardInterrupt`, annulla
+    gli ordini ed esce.
+  - Poi aspetta ancora `ARRESTO_ANNULLO_TIMEOUT_S + HEARTBEAT_S` = 15 s (`:719`); solo dopo, come
+    ultimo ripiego, `terminate()`.
+  - Totale: `tempo_supervisore_arresto_s()` = 132 s (`:727`).
+  - La sessione nasce in un suo gruppo di processi (`creationflags=CREATE_NEW_PROCESS_GROUP`,
+    `:670`), così il CTRL_BREAK arriva solo a lei.
+- **`desktop/main.js`**: `shutdownGraceMs('scalper-service')` passa da 70 000 a **150 000** ms
+  (`:288`), con un commento. Un test legge `main.js` e verifica che la grazia sia
+  ≥ `tempo_supervisore_arresto_s()` + 10 s.
+- Prima di ricorrere al segnale resta la via di stop ordinato già esistente: il file `ARRESTO`/kill
+  visto dal sorvegliante del freno della sessione, che fa force-flat e poi l'arresto del punto 26.
+- **Test:**
+  - `test_supervisore_non_termina_una_sessione_che_impiega_95_s`: nessun segnale, nessun terminate,
+    la sessione esce da sola.
+  - `test_supervisore_che_non_risponde_segnale_poi_terminate_dopo_il_tetto`: segnale non prima di
+    117 s, terminate dopo segnale + 15 s.
+  - `test_supervisore_sessione_che_esce_al_segnale_non_viene_terminata`.
+  - `test_tetto_della_sessione_dalle_sue_costanti`.
+  - `test_main_js_concede_allo_scalper_almeno_il_tempo_del_supervisore`.
+  - `test_la_sessione_nasce_nel_suo_gruppo_di_processi`.
+  - I test esistenti del supervisore (`test_arresto_ordinato_comportamento_2026_09_28.py`) sono
+    verdi senza modifiche.
+- **Rischio.** Lo spegnimento dell'app con sessioni scalper attive può durare fino a 150 s invece di
+  70 s, ma solo se le sessioni non si fermano prima: escono appena flat. Il nuovo gruppo di processi
+  non cambia `taskkill /T`, che segue la parentela dei processi, non il gruppo.
+
+### R3: fine vita
+
+- **Prima.** A KO+vita la sessione spegneva flumine anche con ordini non abbinati rimasti.
+- **Ora.** `causa_arresto = "fine_vita"` (`:1735`) e `"fine_vita"` sta fra le `CAUSE_ARRESTO`
+  (`:492`): stesso annullo dell'arresto (tetto 10 s) e posizione abbinata dichiarata con diario +
+  CRITICAL `SCALPER_ARRESTO [fine_vita]`.
+- **Partita finita** (`"partita_finita"`, `:1721`): lasciata com'è. Il mercato è CLOSED, cioè
+  regolato («no longer available for betting»), quindi nessun ordine può essere vivo.
+- **Test:**
+  - `test_fine_vita_annulla_e_dichiara_partita_finita_no`;
+  - `test_fine_vita_posizione_lasciata_critical`;
+  - `test_partita_finita_mercato_closed_nessun_ordine_da_annullare`: `partita_finita` riconosce il
+    mercato `closed` di flumine e la causa non è fra quelle che annullano.
+
+### R4: contratto «strada unica»
+
+`test_contratto_strada_unica_2026_09_25.py:236-247`: il `motivo` di `scalper_session.py` cita ora
+anche `market.cancel_order` di `annulla_ordini_vivi_all_arresto` (arresto e fine vita) e il ripiego
+`_sweep_cancel` mirato per bet_id (mai market-wide, mai in paper). Il test resta verde.
+
+### R6: una sola chiamata invece di 6-7 SELECT
+
+- **Migrazione** `migrations/scanner_list_bot_exposures_2026-10-02.sql`, da applicare a cura
+  dell'utente. Il DB non è stato toccato.
+  - `public.list_bot_exposures()`: STABLE, SECURITY DEFINER, `search_path` fisso, guardia
+    `betfair_live_is_owner()`, EXECUTE solo a `service_role`.
+  - Restituisce `{"rows": [{event_id, market_id, bot, modalita, sport}]}` con le stesse regole del
+    ripiego Python (stati, grafie, posizioni non regolate, 7 giorni).
+  - `source` letto via `to_jsonb`, quindi la funzione non dipende dalla migrazione della colonna.
+  - `LANGUAGE sql`, così una tabella mancante fa fallire l'applicazione davanti all'utente e non lo
+    scanner a runtime.
+- **Codice** `Betfair/safe_strategy/db.py`:
+  - `list_bot_exposures` (`:416`) chiama la RPC: una chiamata ogni 10 s, cioè circa **8.640
+    letture/giorno invece di ~60.000**.
+  - RPC **assente** (PGRST202 «Could not find the function», 404): WARNING **una volta sola**,
+    ripiego sulle letture di oggi (`_list_bot_exposures_a_fonti`, `:454`), RPC riprovata ogni 300 s.
+  - RPC con **errore**: `{"rpc": None}`, e lo scanner tiene l'ultima lista buona.
+  - Nello scanner (`service.py:1970`), una lettura completa sostituisce tutto (il passaggio ripiego →
+    RPC non lascia righe vecchie); una parziale aggiorna solo le fonti lette.
+- **Test:**
+  - `test_rpc_ok_una_sola_chiamata_nessuna_tabella`;
+  - `test_rpc_assente_ripiega_avvisa_una_volta_e_riprova_dopo` (con il vero
+    `postgrest.exceptions.APIError` PGRST202);
+  - `test_rpc_errore_tiene_l_ultima_lista_buona`;
+  - `test_passaggio_dal_ripiego_alla_rpc_non_lascia_righe_vecchie`.
+- **Non verificato.** La RPC non è mai stata eseguita su Postgres: il DB non va toccato. La verifica
+  dopo l'applicazione è scritta in testa alla migrazione.
+- **Rischio da conoscere.** Una RPC che risponde con errore a OGNI chiamata (non 404) lascia lo
+  scanner sull'ultima lista buona e non ripiega. È la regola chiesta («errore → ultima lista
+  buona»), ma un'esposizione nata durante quell'errore non verrebbe vista. Il WARNING esce a ogni
+  errore (ogni 10 s).
+
+### R9: un esposto senza book richiesto ogni 20 s. Verificato sui dati: SÌ, corretto
+
+- **Sonda** `AUDIT_2026-10-02/sonda_r9.py`, sola lettura, registrazione `35760084` da
+  `--data-dir <principale>/_live_raw`:
+  - id, tipi, orari e stati veri dai `marketDefinition`;
+  - scanner di produzione; il Match Odds arriva solo quando è rilevante, come in produzione;
+  - esposizione di Omega sul Correct Score `1.259475532` dall'inizio della registrazione;
+  - un'altra partita in gioco al 35' fa girare il catalogo CS.
+
+| | Giri da 20 s senza book dell'evento | Chiamate `marketIds` |
+|---|---|---|
+| Prima | 103 | **103** (una per giro, per 34 minuti) |
+| Dopo | 103 | **1** |
+
+Con il book (403 giri) le chiamate erano 0 sia prima sia dopo.
+
+- **Correzione** `service.py:2222`: `_refresh_score_catalogue` non toglie dalla cache un mercato
+  esposto solo perché l'evento non ha ancora un book. Esce quando non è più esposto.
+- **Test:** `test_mercato_esposto_non_esce_dalla_cache_senza_book`. Verifica anche che il non esposto
+  esca come prima.
+
+### R1: Mike, Safe e Omega all'arresto. Non toccati (patch su Mike in corso)
+
+In tutti e tre il punto d'arresto è il guscio `_ciclo_persistente` più il `finally` di `main`. Il
+`finally` chiude solo il lock; nessun ordine vivo viene annullato e la ripresa si affida al DB al
+riavvio.
+
+| Bot | Punto d'arresto | Cosa servirebbe |
+|---|---|---|
+| Mike | `mike/service.py:7114` (`_ciclo_persistente`: `_AO.richiesto()` → `return`), chiamata a `:7235`, `finally` `:7236-7241` | Prima del `return` (o nel `finally`): per ogni partita con gambe `pending` (lay appoggiate), annullo con la via già esistente (`_esegui_annulli`, `:4564`; `cancel_order_live`, `:169`) e attesa dell'esito con un tetto. Le gambe abbinate solo dichiarate (diario + `critical`). Paper e live con la stessa via: il canale per il paper |
+| Safe | `safe_strategy/bot_service.py:10457`, chiamata `:10589`, `finally` `:10590-10594` | Annullo delle righe `pending` piazzate (`bot_db.trades_pending_o_aperti`, `_counts_as_placed`) con la via di uscita già usata dal bot, tetto di tempo, dichiarazione delle `open` |
+| Omega | `omega/omega_service.py:8490`, chiamata `:8596`, `finally` `:8597-8601` | Annullo degli `omega_trades` `pending` piazzati (`omega_market.cancel_order_live`, `:1227`), tetto, dichiarazione delle `open`/`hedged`. Gli ordini sono LAPSE: in gioco decadono da soli, prima del fischio no |
+
+Per tutti e tre:
+- il kill forzato di `main.js` (25 s) va allineato al tetto di annullo, come fatto per lo scalper;
+- la decisione va presa con l'utente, perché è un comportamento nuovo all'arresto dei bot live.
+
+### Falsificazione e numeri
+
+- **Test nuovi:** 62 (33 scanner, 29 scalper e supervisore), tutti verdi.
+- **Falsificazione** (`falsifica_scanner.py`, esito in `falsifica_scanner_out.txt`): **50
+  mutazioni su 50 rosse**, più F0. Le 16 nuove:
+
+| Reperto | Mutazioni |
+|---|---|
+| R2 | H1: attesa di 60 s; H2: nessun segnale; H3: terminate subito dopo il segnale; H4: tetto con una sola strategia; H5: `main.js` a 70 s; H6: sessione senza gruppo di processi |
+| R3 | H7: fine vita senza annullo; H8: partita finita trattata come arresto; H9: fine vita fuori dalle cause |
+| R6 | I1: RPC mai usata; I2: errore trattato come assente; I3: assente trattato come errore; I4: WARNING a ogni giro; I5: RPC assente richiesta a ogni giro; I6: lettura completa che non sostituisce |
+| R9 | J1: esposto tolto dalla cache |
+
+  - Alla prima corsa **I4 era sopravvissuta**: il test contava i WARNING prima del secondo
+    tentativo. È stato corretto.
+  - Nella stessa corsa F10 non era stata eseguita perché il suo testo era cambiato: riallineata.
+  - Alla seconda corsa: 50/50 rosse, ripristino byte per byte, `git status` pulito.
+- **Test mirati** (79 file: tutti quelli che importano scanner, db o banco, più tutti quelli di
+  scalper, sniper, theta, freno, fine evento, stream muto, arresto, contratto strada unica):
+  **1966 verdi, 23 saltati, 0 rossi** (121 s).
+  - I saltati cercano i file del checkout principale.
+  - Dopo questa corsa ho modificato solo l'ordine di due asserzioni in
+    `test_rpc_assente_ripiega_avvisa_una_volta_e_riprova_dopo`; il file nuovo è stato rilanciato
+    nella BASE della falsificazione: 62 verdi.
+- Suite intera e replay: non lanciati.
