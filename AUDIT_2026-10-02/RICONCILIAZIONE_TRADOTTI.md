@@ -5,9 +5,10 @@ Correttore: delegato Opus. Ramo locale `riconciliazione-tradotti` (sopra `verifi
 niente push, mai `git add -A`. Nessun ordine vero, nessuna scrittura sul DB, nessun processo
 lasciato acceso, nessuna suite intera, nessun replay.
 
-STATO AL 02/10 sera (3): D1, D2, D3 riprodotti rossi, corretti, 59 test nuovi verdi;
-falsificazione 32/33 rosse al secondo giro (T-f era un mutante equivalente: guardia ridondante
-tolta, mutazione sostituita), terzo giro e suite mirate in corso. Vedi §8 per i numeri finali.
+STATO AL 02/10 sera (FINALE): D1, D2, D3 CHIUSI (59 test nuovi verdi, falsificazione 33/33
+rosse); R1 arresto ordinato di Safe e Omega FATTO (18 test nuovi, falsificazione 14/14 rosse,
+`main.js` allineato a 45 s); suite mirate verdi (§8). Patch e referto consegnati. Manca solo la
+verifica del coordinatore (diff, test, replay).
 
 Consegna (in questa cartella):
 - `RICONCILIAZIONE_TRADOTTI.patch` = `git diff verifica-runner-master` (file nuovi inclusi);
@@ -158,6 +159,39 @@ D2-a..h, D3-a..m, T-a..f), ognuna rimessa nel file vero, i 3 file di test nuovi 
 rosso preteso, ripristino byte per byte verificato, verde ripreso alla fine. Esito nel
 `_out.txt` (§8).
 
+## 5-bis. R1 - arresto ordinato di Safe e Omega («niente resta in coda»)
+
+- **Modulo nuovo** `Betfair/safe_strategy/arresto_bot.py` (modello: lo scalper):
+  - `chiudi_bot_all_arresto`: righe `pending` col bet_id (dalla riga o dallo specchio della
+    coda) annullate con la via della riga (`annulla_riga`): canale del runner (paper e live;
+    in live senza ack ripiega sul REST, come oggi), coda paper (`_flumine_enqueue_cancel`),
+    REST per bet_id SOLO live (`execution.annulla_su_betfair`); una riga paper senza runner
+    non ha ordini (mai REST sul conto vero); MAI annulli di mercato. Tetto
+    `ARRESTO_ANNULLO_TIMEOUT_S = 10 s`: le righe oltre si dichiarano. Posizioni `open` MAI
+    chiuse: un solo record di diario `arresto` con `critical: True` e «posizione lasciata a
+    mercato per arresto» (+ `logger.critical`); idem per annulli dubbi (ignoto, ancora vivo,
+    senza bet_id, non tentati) e letture DB fallite;
+  - `esegui_ciclo_con_arresto`: comunque esca il ciclo (stop dall'app = file `ARRESTO`,
+    segnale/Ctrl-C, eccezione fatale rilanciata dopo) chiama l'arresto con la causa;
+  - `installa_segnali`: SIGTERM e SIGBREAK -> `KeyboardInterrupt`;
+  - `dormi_finche_arresto`: la dormita a fette di 1 s (stessa durata) che vede il file.
+- **Collegamento**: `bot_service.main` e `omega_service.main` (`_chiudi_all_arresto` con
+  `_real_db`, `_real_market`, `_porta_kw_annullo` del bot); la dormita di Omega a interruttori
+  spenti (fino a `idle_cycle_s` = 60 s, oltre la grazia) ora vede l'arresto entro 1 s. Due test
+  storici che fissavano `time.sleep(60)` in una chiamata ora pretendono 60 s totali a fette
+  <= 1 s (`test_omega_legge_canale_2026_09_23.py`, `test_sveglia_bot_f5_f6_2026_09_18.py`).
+- **`desktop/main.js`**: `shutdownGraceMs` 45 000 ms per `omega-service` e
+  `safe-strategy-bot` (prima 25 000): `TEMPO_MASSIMO_ARRESTO_S` = giro in corso 21 s + annullo
+  10 s + scritture 4 s = 35 s, + 10 s di margine (test che legge `main.js`).
+- **Registro del banco**: `arresto_bot` aggiunto all'impronta di Safe (`registro_bot.py`):
+  cambia l'impronta di certificazione delle quattro varianti Safe.
+- **Test**: `Betfair/safe_strategy/tests/test_arresto_bot_safe_omega_2026_10_02.py` (18).
+  **Falsificazione**: `falsifica_arresto.py` -> `falsifica_arresto_out.txt`, **14/14 rosse**.
+- **Limiti dichiarati**: la dormita con la sveglia accesa (`_SVEGLIA.attendi` di Omega) non e'
+  a fette; un annullo REST in volo puo' sforare di poco i 10 s (il margine lo copre); il kill
+  forzato di `main.js` resta l'ultimo ripiego (taskkill non e' intercettabile); Mike e lo
+  scalper hanno il loro (non toccati).
+
 ## 6. NON VERIFICATO
 
 - Nessun ordine vero: l'identita' in `order_state_by_bet_id` (`selectionId`, `side`,
@@ -169,6 +203,21 @@ rosso preteso, ripristino byte per byte verificato, verde ripreso alla fine. Esi
   va in coda e il worker vecchio la rifiuta (`verifica_importo_finale`) a ogni ritento: prima
   il runner, poi Safe.
 - Suite intera e replay: non lanciati (li fa il coordinatore).
+- R1: l'arresto non e' provato su un processo vero (file `ARRESTO` scritto da `main.js`,
+  CTRL_BREAK dal watchdog): provati il guscio, la chiusura e il collegamento coi finti.
+
+## 8. Numeri (worktree, interprete del principale)
+
+| set | esito |
+|---|---|
+| test nuovi D1-D3 (3 file) | 59 passed |
+| test nuovi R1 | 18 passed |
+| `Betfair/omega` + `Betfair/safe_strategy/tests` + `Betfair/stream/tests`, dopo D1-D3 | **6975 passed, 31 skipped, 1 xfailed, 0 failed** (300 s) |
+| stesso set, dopo R1 | 6989 passed, **4 failed** = `test_registro_impronta::...[safe_*]` (modulo nuovo fuori dall'impronta): corretto (`registro_bot.py`), i 2 file del registro rilanciati: 54 passed |
+| base `verifica-runner-master` in export (senza `desktop/`, dati, `.github`) | 6884 passed, 24 failed: tutti d'ambiente (artefatti, `main.js`, workflow), nessuno sui file toccati |
+| falsificazione D1-D3 | **33/33 rosse**, verde dopo il ripristino |
+| falsificazione R1 | **14/14 rosse**, verde dopo il ripristino |
+| test di tempo del motore | `test_latenza_logica_comando_place_sotto_20_ms` rosso una volta sotto carico, verde da solo (gia' noto) |
 
 ## 7. Reperti (fuori perimetro, NON toccati)
 
