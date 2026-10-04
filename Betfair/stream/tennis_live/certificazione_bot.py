@@ -647,7 +647,26 @@ def _b8(oss: Osservazione) -> Optional[str]:
             return ("ordine %s %s per %s: sotto il minimo .it di %s -> "
                     "INVALID_BET_SIZE, gamba scoperta"
                     % (r.get("order_id"), side, s, MINIMO_IT[side]))
+        passo = passo_punta_diretta()
+        if side == "BACK" and passo:
+            q = s / passo
+            if abs(q - round(q)) > 1e-6:
+                return ("ordine %s BACK per %s: non multiplo del passo .it di %s -> "
+                        "INVALID_BET_SIZE, gamba scoperta"
+                        % (r.get("order_id"), s, passo))
     return None
+
+
+def passo_punta_diretta() -> Optional[float]:
+    """04/10 - IPOTESI APERTA (decide coordinatore + utente): il passo di una PUNTA
+    piazzata diretta. Il banco lo legge da `trading/minimi_it.IT_PASSO_PUNTA_DIRETTA`
+    SE quella costante esiste (None o assente = al centesimo, la regola scritta oggi
+    in `minimi_it`). Nessun valore deciso qui."""
+    v = getattr(_MINIMI, "IT_PASSO_PUNTA_DIRETTA", None)
+    try:
+        return float(v) if v else None
+    except (TypeError, ValueError):
+        return None
 
 
 # gli stati di un ordine che e' DAVVERO a mercato e non sta morendo: un ordine

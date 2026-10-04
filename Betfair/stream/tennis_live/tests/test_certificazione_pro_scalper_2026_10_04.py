@@ -76,6 +76,22 @@ def test_b8_parcheggio_al_minimo_del_listino_non_e_violazione():
     assert "sotto il minimo" in str(CERT._b8(oss))
 
 
+def test_b8_passo_della_punta_solo_se_la_fonte_unica_lo_dichiara(monkeypatch):
+    """Ipotesi aperta (punte a multipli di 0,50): B8 la applica SOLO se
+    `minimi_it.IT_PASSO_PUNTA_DIRETTA` esiste; oggi non c'e' (centesimo)."""
+    oss = CERT.Osservazione(bot="tennis_pro", modalita="live", ordini=[
+        {"order_id": "e", "side": "BACK", "size": 2.37, "sostituto": False}])
+    monkeypatch.delattr(MIN, "IT_PASSO_PUNTA_DIRETTA", raising=False)
+    assert CERT.passo_punta_diretta() is None and CERT._b8(oss) is None
+    monkeypatch.setattr(MIN, "IT_PASSO_PUNTA_DIRETTA", 0.5, raising=False)
+    assert "non multiplo" in str(CERT._b8(oss))
+    oss.ordini[0]["size"] = 2.5
+    assert CERT._b8(oss) is None
+    # la banca non ha passo
+    oss.ordini = [{"order_id": "l", "side": "LAY", "size": 1.37, "sostituto": False}]
+    assert CERT._b8(oss) is None
+
+
 # --------------------------------------------------------------------------- B10
 def test_rifiuti_taglia_letti_dal_registro_dell_exchange_ripetuto_al_secondo():
     s = _bot()
