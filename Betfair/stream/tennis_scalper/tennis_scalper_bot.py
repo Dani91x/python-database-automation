@@ -60,13 +60,18 @@ from ..uscite_proposte import CHIAVE_STATS as CHIAVE_PROPOSTE
 from ..uscite_proposte import CancelloUscite, UltimiPrezzi, proposta_di
 from flumine.utils import get_nearest_price, get_price, get_size, price_ticks_away
 
+from ..trading.minimi_it import IT_MIN_BACK as _IT_MIN_BACK
+from ..trading.minimi_it import IT_MIN_LAY as _IT_MIN_LAY
+from ..trading.minimi_it import IT_PASSO_PUNTA_RIPIEGO as _IT_PASSO_PUNTA
 from ..trading.stato_mercato import AttesaRiapertura, guardia_flumine
 from .condotta_ordini import (
     ESITO_GIA_IN_USCITA,
     ESITO_NESSUNA_POSIZIONE,
     ESITO_USCITA_AVVIATA,
+    FLOOR_PLACE_AND_TRIM,
     RESIDUO_ACCETTATO,
     FrenoRifiuti,
+    ResiduiRicordati,
     dichiara_chiusura_mercato,
     registra_esito_manuale,
     sbilancio_selezione,
@@ -243,6 +248,9 @@ class _Slot:
     cooldown_until: int = 0              # niente ingressi prima di questo ts (gap/loss)
     t_last_flat: Optional[int] = None    # ultimo piazzamento flatten (anti-churn live)
     residual_ok: bool = False            # micro-residuo accettato: NON ri-flattenare
+    # 04/10 (decisione 1): il resto NON piazzabile (< 0,50) dell'ultima uscita
+    # esatta: (lato, importo, quota). Lo slot lo dichiara e chiude il ciclo.
+    resto_np: Optional[Tuple[str, float, float]] = None
     # sequenze park-trim-replace (uscite a size ESATTA su .it): vedi _drive_submins
     submins: list = field(default_factory=list)
     # prints DENTRO lo spread (ts, EUR): il CIBO diretto dei maker
@@ -498,6 +506,8 @@ class TennisScalperStrategy(BaseStrategy):
         self._now_ms: Optional[int] = None
         # freno dopo i rifiuti di Betfair (modulo condiviso coi quattro bot)
         self._freno = FrenoRifiuti()
+        # 04/10 (decisione 1 dell'utente): residui non piazzabili ricordati
+        self.residui_ricordati = ResiduiRicordati(self._emit)
         # D2 (24/09): il diario delle attese di riapertura (una riga per sospensione)
         self._attese = AttesaRiapertura()
         # eventi su cui si e' gia' spiegato perche' la missione non apre: una
@@ -1000,6 +1010,13 @@ class TennisScalperStrategy(BaseStrategy):
                 # tornato IDLE, cioe' oltre la tolleranza che il bot stesso
                 # dichiara. La fonte di verita' e' il blotter, per selezione.
                 tol = 0.30 if slot.residual_ok else 0.02
+                # 04/10 (decisione 1): il residuo RICORDATO della selezione non si
+                # ri-flattena (nessun ordine legale lo chiude): conta solo cio'
+                # che si aggiunge sopra di lui
+                gia = self.residui_ricordati.sbilancio(market.market_id,
+                                                       int(runner.selection_id))
+                if gia > 0:
+                    tol = max(tol, gia + 0.02)
                 sb_sel = sbilancio_selezione(market, self, int(runner.selection_id))
                 if sb_sel is None:
                     # blotter illeggibile: non si ricicla lo slot al buio
@@ -1017,7 +1034,7 @@ class TennisScalperStrategy(BaseStrategy):
                 # selezione produce un loop di flatten (un residuo di pochi
                 # centesimi non e' chiudibile: qualunque ordine sarebbe piu'
                 # grande del residuo — misurato, 10.743 flatten in una partita).
-                if abs(nw0 - nl0) > tol or sb_sel > RESIDUO_ACCETTATO:
+                if abs(nw0 - nl0) > tol or sb_sel > RESIDUO_ACCETTATO + gia:
                     self._begin_flatten(slot)
                     self._drive_flatten(market, slot, best_back, best_lay, now)
                     continue
@@ -1192,6 +1209,9 @@ class TennisScalperStrategy(BaseStrategy):
         return True
 
     def process_closed_market(self, market: Any, market_book: Any) -> None:
+        # 04/10: a mercato regolato i residui ricordati si chiudono col risultato
+        self.residui_ricordati.regola_mercato(getattr(market, "market_id", ""))
+        self.stats["residui_ricordati"] = self.residui_ricordati.per_stats()
         md = getattr(market_book, "market_definition", None)
         mtype = (
             getattr(md, "market_type", None)
@@ -2228,6 +2248,8 @@ class TennisScalperStrategy(BaseStrategy):
         ):
             return
         cross = min(slot.flat_tries, 8)  # ogni tentativo crossa 1 tick piu' a fondo
+        # 04/10: il resto non piazzabile vale per QUESTO tentativo, mai uno vecchio
+        slot.resto_np = None
         fo = self._flatten(market, slot, best_back, best_lay, cross_ticks=cross)
         slot.flat_tries += 1
         if fo is not None:
@@ -2252,7 +2274,24 @@ class TennisScalperStrategy(BaseStrategy):
             # live_min_bet>0/exact_exits — ma fuori LIVE il runner li azzera,
             # quindi in sim/PAPER il residuo non veniva MAI accettato (slot
             # bloccato per sempre). L'accettazione vale in OGNI modalita'.
-            if min(net_win, net_lose) >= -0.25:
+            if slot.resto_np is not None and not any(
+                    self._has_live(o) for o in slot.flatten_orders):
+                # 04/10 (DECISIONE 1): l'unica chiusura possibile e' sotto il
+                # floor di legge. Residuo DICHIARATO (CRITICAL una volta, con la
+                # proposta), RICORDATO, e il ciclo si chiude: il bot riprende.
+                lato_r, imp_r, q_r = slot.resto_np
+                sid_r = next((o.selection_id for o in (slot.entry, slot.entry_back,
+                                                        slot.entry_lay, slot.close,
+                                                        *slot.flatten_orders)
+                              if o is not None), None)
+                if sid_r is not None:
+                    self.residui_ricordati.dichiara(market.market_id, sid_r, lato_r,
+                                                    imp_r, q_r, net_win, net_lose)
+                    self.stats["residui_ricordati"] = self.residui_ricordati.per_stats()
+                slot.status = DONE
+                delta = self._book_locked(slot, min(net_win, net_lose))
+                self._on_cycle_closed(slot, delta)
+            elif min(net_win, net_lose) >= -0.25:
                 slot.status = DONE
                 if not slot.residual_ok:
                     slot.residual_ok = True
@@ -2526,15 +2565,20 @@ class TennisScalperStrategy(BaseStrategy):
     # ---------------------------------------------- uscite a size ESATTA (.it)
     @staticmethod
     def _side_min(side: str) -> float:
-        """Minimo di piazzamento diretto per lato su .it (BACK 2 / LAY 0,50)."""
-        return 2.0 if (side or "").upper() == "BACK" else 0.5
+        """Minimo di piazzamento diretto per lato su .it, dalla FONTE UNICA
+        (`trading/minimi_it`). 04/10: prima BACK 2 / LAY 0,50 scritti a mano; la
+        banca diretta sotto 1,00 Betfair la rifiuta (regola dell'utente)."""
+        return float(_IT_MIN_BACK if (side or "").upper() == "BACK" else _IT_MIN_LAY)
 
     def _size_direct_ok(self, side: str, size: float) -> bool:
-        """True se la size e' piazzabile DIRETTAMENTE su .it (multiplo di 0,50
-        e >= minimo del lato)."""
+        """True se la size e' piazzabile DIRETTAMENTE su .it: >= minimo del lato;
+        la PUNTA a multipli di 0,50, la BANCA al centesimo (regola dell'utente,
+        04/10)."""
         if size < self._side_min(side) - _EPS:
             return False
-        mult = size / 0.5
+        if (side or "").upper() != "BACK":
+            return True
+        mult = size / _IT_PASSO_PUNTA
         return abs(mult - round(mult)) < 1e-6
 
     @staticmethod
@@ -2613,6 +2657,18 @@ class TennisScalperStrategy(BaseStrategy):
         if rest < 0.05:
             if rest >= 0.01 and self._residuo_non_piazzabile_detto(
                     selection_id, side, rest):
+                self._emit("min_bet_skip", selection_id=int(selection_id),
+                           side=side, size=rest)
+            return main_order
+        if rest < FLOOR_PLACE_AND_TRIM - _EPS:
+            # 04/10 (DECISIONE 1 DELL'UTENTE): un resto sotto il floor di legge
+            # del place-and-trim (0,50) Betfair lo rifiuta SEMPRE. Nessuna
+            # sequenza (prima: fino a 5 per ciclo, tutte rifiutate, e lo slot
+            # restava FLATTENING per la partita). Lo slot lo ricorda e il flatten
+            # lo DICHIARA (residuo ricordato) chiudendo il ciclo.
+            slot.resto_np = (side.upper(), float(rest), float(price))
+            slot.residual_ok = True
+            if self._residuo_non_piazzabile_detto(selection_id, side, rest):
                 self._emit("min_bet_skip", selection_id=int(selection_id),
                            side=side, size=rest)
             return main_order
@@ -2869,6 +2925,7 @@ class TennisScalperStrategy(BaseStrategy):
         slot.close = None
         slot.close_scratched = False
         slot.residual_ok = False
+        slot.resto_np = None
         slot.submin_count = 0
         slot.next_entry = None
         slot.flatten_orders = []

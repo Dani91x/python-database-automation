@@ -155,6 +155,10 @@ class Osservazione:
     # LIVE), "nessuno_reale" (soldi veri ma «Ordini reali» in prova), "simulato"
     # (bot in prova). None negli altri scenari.
     catena_soldi_veri: Optional[str] = None
+    # 04/10 (decisione 1 dell'utente): i residui che il bot DICHIARA e RICORDA
+    # (`ResiduiRicordati.per_stats()`: market_id, selection_id, lato, importo,
+    # se_vince, se_perde, sbilancio). Li giudicano K5 (tolleranza) e RS1.
+    residui: List[Dict[str, Any]] = field(default_factory=list)
 
     def kinds(self) -> List[str]:
         return [k for k, _ in self.attivita]
@@ -925,6 +929,17 @@ def _k5(oss: Osservazione) -> Optional[str]:
     # la tolleranza la dichiara il BOT, per selezione (vedi `credenze`)
     tolleranze = {c.get("chiave"): float(c.get("tolleranza") or EPS)
                   for c in oss.credenze}
+    # 04/10 (decisione 1 dell'utente): un residuo DICHIARATO e RICORDATO dal bot
+    # (non piazzabile: lo verifica RS1) non e' senza padrone: la tolleranza della
+    # sua selezione sale al suo sbilancio dichiarato, NON oltre (qualunque euro in
+    # piu' resta rosso)
+    for r in oss.residui or ():
+        try:
+            k_r = (str(r.get("market_id")), int(r.get("selection_id")))
+            tolleranze[k_r] = max(tolleranze.get(k_r, EPS),
+                                  float(r.get("sbilancio") or 0.0) + EPS)
+        except (TypeError, ValueError):
+            continue
     for chiave, exp in (oss.esposizioni or {}).items():
         # `esposizioni` e' indicizzata per (selection_id, handicap); la chiave
         # delle credenze e' (market_id, selection_id)
@@ -945,6 +960,29 @@ def _k5(oss: Osservazione) -> Optional[str]:
                 "mercato senza padrone"
                 % (sel, round(abs(w - l), 2), round(w, 2), round(l, 2), tol,
                    stato))
+    return None
+
+
+def _q_residui(oss: Osservazione) -> bool:
+    return bool(oss.residui)
+
+
+@_controllo("RS1", "un residuo che il bot DICHIARA non piazzabile lo e' davvero: "
+                   "l'ordine che lo chiuderebbe e' sotto il floor di legge del "
+                   "place-and-trim (`minimi_it.SUBMIN_IMPORTO_FINALE_MIN`), con "
+                   "lato e sbilancio dichiarati (decisione 1 dell'utente, 04/10)",
+            quando=_q_residui)
+def _rs1(oss: Osservazione) -> Optional[str]:
+    floor = float(_MINIMI.SUBMIN_IMPORTO_FINALE_MIN)
+    for r in oss.residui:
+        imp = _f(r.get("importo"))
+        if imp is None or imp + 1e-9 >= floor:
+            return ("residuo dichiarato non piazzabile sulla selezione %s ma l'ordine "
+                    "che lo chiude vale %s (>= %s): andava chiuso, non dichiarato"
+                    % (r.get("selection_id"), imp, floor))
+        if (str(r.get("lato") or "").upper() not in ("BACK", "LAY")
+                or _f(r.get("sbilancio")) is None):
+            return "residuo dichiarato senza lato o sbilancio: %r" % (r,)
     return None
 
 

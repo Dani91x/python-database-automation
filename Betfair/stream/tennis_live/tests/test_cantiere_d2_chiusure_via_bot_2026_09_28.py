@@ -69,7 +69,7 @@ def _nessun_vivo(market: Any, strat: Any) -> list:
             if CD.ordine_vivo(o) and float(getattr(o, "size_remaining", 0.0) or 0.0) > 1e-9]
 
 
-def _prepara(db: Any, banchi: Any, bot: str, params: Any = None):
+def _prepara(db: Any, banchi: Any, bot: str, params: Any = None, size_lay: float = 3.0):
     ctl = _control("101", bot, status="running")
     if params:
         ctl["params"] = dict(params)
@@ -80,17 +80,21 @@ def _prepara(db: Any, banchi: Any, bot: str, params: Any = None):
     market = b.fw.markets.markets["1.101"]
     # posizione LAY 3,00 @2,10 ABBINATA della strategia: la copertura al
     # best-back 2,00 vale 3,15 BACK (3,00 diretti + 0,15 col place-and-trim)
-    b.posizione("101", bot, lato="LAY", prezzo=2.10, size=3.0)
+    # 04/10 (decisione 1 dell'utente): con LAY 3,00 la copertura 3,15 = 3,00 diretti +
+    # 0,15 di RESIDUO (sotto 0,50 nessun place-and-trim); col place-and-trim si
+    # chiude esatta solo una copertura fra 0,50 e 1,00 (LAY 0,60 -> BACK 0,63)
+    b.posizione("101", bot, lato="LAY", prezzo=2.10, size=size_lay)
     nw, nl = _netto(market, strat)
     lato, size, _l = compute_green(nw, nl, 2.0)
     assert lato == "BACK" and not CD.diretta_ok(size, lato)
     return b, strat, market, round(size, 2)
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason=XFAIL_REPERTO_1)
 @pytest.mark.parametrize("bot", ["tennis_flb", "tennis_pro", "tennis_swing"])
 def test_chiusura_esatta_guidata_dai_book_del_bot(bot, db, banchi, esecuzione_sincrona):
-    b, strat, market, size = _prepara(db, banchi, bot)
+    # 04/10 (decisione 1 dell'utente): l'xfail del reperto 1 e' tolto: il resto e' ora
+    # 0,63 (>= 0,50, place-and-trim legale), la chiusura esatta e' possibile
+    b, strat, market, size = _prepara(db, banchi, bot, size_lay=0.6)
     o = strat._place(market, 11, "BACK", 2.0, size, copertura=True)
     assert isinstance(o, CD.OrdineComposto) and o.in_corso()
     _book_al_bot(b, strat)
@@ -101,7 +105,8 @@ def test_chiusura_esatta_guidata_dai_book_del_bot(bot, db, banchi, esecuzione_si
     assert _nessun_vivo(market, strat) == []
     park = [x for x in o.parti() if float(x.order_type.price) == 1000.0]
     assert len(park) == 1 and float(park[0].size_remaining) == 0.0
-    assert float(park[0].size_cancelled) == pytest.approx(2.0, abs=0.001)
+    # il parcheggio e' quello della fonte unica (minimi_it, oggi 1,00; era 2,00)
+    assert float(park[0].size_cancelled) == pytest.approx(CD.IT_BACK_MIN_STAKE, abs=0.001)
     # 3. se vince = se perde al centesimo
     nw, nl = _netto(market, strat)
     assert abs(nw - nl) <= 0.01, (bot, nw, nl)
@@ -114,12 +119,14 @@ def test_scalper_tennis_chiusura_esatta_guidata_dai_book_del_bot(db, banchi,
     spenti coi soli numeri della UI (liquidita' minima irraggiungibile)."""
     b, strat, market, size = _prepara(
         db, banchi, "tennis_scalper", params={"min_size": 1e12, "min_flow": 1e12,
-                                              "exact_exits": True})
+                                              "exact_exits": True}, size_lay=0.6)
     assert strat.exact_exits is True
     slot = strat._slot("1.101", 11)
     o = strat._place(market, 11, "BACK", 2.0, size, floor_min=False, slot=slot)
-    assert o is not None                     # la parte diretta (3,00)
-    assert slot.submins, "il resto (0,15) deve partire col place-and-trim"
+    # 04/10 (decisione 1 dell'utente): 0,63 BACK e' tutta place-and-trim (nessuna
+    # parte diretta sotto 1,00): `_place_exact` torna None e AVVIA la sequenza
+    assert o is None
+    assert slot.submins, "la copertura (0,63) deve partire col place-and-trim"
     _book_al_bot(b, strat)
     assert not slot.submins, "la sequenza del resto deve essere finita"
     back = [x for x in market.blotter.strategy_orders(strat)
@@ -142,7 +149,7 @@ def test_flb_non_conta_un_verde_su_una_chiusura_abortita_a_meta(db, banchi,
     meta' (stato EXECUTION_COMPLETE, resto non abbinato) NON conta un verde."""
     from Betfair.stream.trading import submin as SM
 
-    b, strat, market, size = _prepara(db, banchi, "tennis_flb")
+    b, strat, market, size = _prepara(db, banchi, "tennis_flb", size_lay=0.6)
     monkeypatch.setattr(SM, "advance_submin", _esplode)
     o = strat._place(market, 11, "BACK", 2.0, size, copertura=True)
     assert isinstance(o, CD.OrdineComposto) and not o.in_corso()

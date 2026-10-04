@@ -943,6 +943,15 @@ class _Ponte:
             riga["order_id"] = str(per_ref.get(riga.get("client_order_ref"), ""))
         return righe
 
+    def residui_del_bot(self) -> List[Dict[str, Any]]:
+        """04/10: i residui che il bot ricorda (`ResiduiRicordati`), come li
+        pubblica nelle sue `stats`."""
+        mem = getattr(self.s, "residui_ricordati", None)
+        try:
+            return list(mem.per_stats()) if mem is not None else []
+        except Exception:  # noqa: BLE001 - memoria illeggibile: nessun residuo
+            return []
+
     def rifiuti_taglia(self) -> List[Dict[str, Any]]:
         """B10: i rifiuti per taglia NUOVI dell'exchange del banco
         (`minimi_banco`), letti dal suo registro con la SUA regola."""
@@ -1020,6 +1029,7 @@ class _Ponte:
             ordini_nuovi=nuovi,
             rifiuti_taglia=self.rifiuti_taglia(),
             catena_soldi_veri=self.catena_soldi_veri,
+            residui=self.residui_del_bot(),
         )
         if self.catena_soldi_veri is not None:
             self._conta_soldi_veri(righe, self.attivita[self._sv_idx:])
