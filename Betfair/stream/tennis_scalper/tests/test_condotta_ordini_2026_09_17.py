@@ -60,8 +60,9 @@ def test_ingresso_sotto_il_minimo_portato_al_minimo(chiesto, lato, atteso):
 @pytest.mark.parametrize("chiesto,lato,atteso", [
     # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50 (al centesimo, nessun passo di 0,50)
     (2.00, "BACK", 2.0),
-    (2.30, "BACK", 2.3),
-    (3.70, "BACK", 3.7),
+    # 04/10/2026 (regola delle punte .it): la punta parte a multiplo di 0,50 per difetto
+    (2.30, "BACK", 2.0),
+    (3.70, "BACK", 3.5),
     (1.00, "LAY", 1.0),
     (1.93, "LAY", 1.93),
     (7.13, "LAY", 7.13),

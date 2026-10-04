@@ -84,7 +84,10 @@ def test_copertura_dimensionata_sulla_liability_netta_non_sullo_stake_lordo():
     assert d.state == "LIVE_COVER_PENDING"
     # size dimensionata sul BEST (prezzo di abbinamento), limite col cuscinetto
     x_atteso = E.cover_residual(12.0, 8.0, COMM, 1.2, 0.0)
-    assert d.actions[-1].size == pytest.approx(round(x_atteso, 2))
+    # 04/10 (regola delle punte .it): 2,17 esatto -> parte 2,00 (multiplo di 0,50 per
+    # difetto); prima il test pretendeva il centesimo
+    assert round(x_atteso, 2) == 2.17
+    assert d.actions[-1].size == pytest.approx(2.00)
     assert d.actions[-1].price == pytest.approx(
         float(E.ticks_away(8.0, -int(p["cover_place_at_ticks"]))))
     assert d.actions[-1].size < E.cover_size(20.0, 8.0, COMM, 1.2)
@@ -97,7 +100,10 @@ def test_copertura_dimensionata_sulla_liability_netta_non_sullo_stake_lordo():
     # motivo per cui la size si dimensiona sul best
     cov.matched, cov.avg_price, cov.status = cov.size, 8.0, "open"
     dist = E.net_pnl_by_total(ctx.legs, COMM)
-    assert dist[5] == pytest.approx(0.2 * 12.0, abs=0.05)
+    # 04/10 (regola delle punte .it): la copertura parte 2,00 invece di 2,17; i 0,17
+    # non piazzati tolgono 0,17 x 7 x 0,95 = 1,13 alla protezione con 5+ gol (forma
+    # punta Over 4,5, spenta in produzione: divergenza scritta nel referto)
+    assert dist[5] == pytest.approx(0.2 * 12.0 - 0.17 * 7.0 * 0.95, abs=0.05)
     assert dist[0] > 0 and dist[3] > 0          # con 0-3 gol si resta in profitto
 
 
@@ -147,7 +153,10 @@ def test_riprezzo_copertura_conta_tutte_le_coperture_gia_abbinate():
     place = [a for a in d.actions if a.kind == "place"]
     gia = E.cover_matched_value(ctx.legs, COMM)
     atteso = E.cover_residual(20.0, 5.0, COMM, 1.2, gia)
-    assert place and place[0].size == pytest.approx(round(atteso, 2))
+    # 04/10 (regola delle punte .it): 2,69 esatto -> parte 2,50 (multiplo di 0,50 per
+    # difetto); prima il test pretendeva il centesimo
+    assert round(atteso, 2) == 2.69
+    assert place and place[0].size == pytest.approx(2.50)
     # e il residuo della SOLA ultima gamba sarebbe stato molto piu' grande
     sbagliato = E.cover_size_residual(20.0, 5.0, COMM, 1.2, matched=1.5, matched_price=6.0)
     assert place[0].size < round(sbagliato, 2) - 0.5
@@ -156,7 +165,10 @@ def test_riprezzo_copertura_conta_tutte_le_coperture_gia_abbinate():
     finali = [ctx.legs[0], ctx.legs[1],
               leg("over_cover", E.MARKET_OU45, E.SEL_OVER, "back", 6.0, 1.5, ref="c2m"),
               leg("over_cover", E.MARKET_OU45, E.SEL_OVER, "back", 5.0, place[0].size, ref="c3")]
-    assert E.net_pnl_by_total(finali, COMM)[5] == pytest.approx(4.0, abs=0.02)
+    # 04/10 (regola delle punte .it): l'ultima copertura parte 2,50 invece di 2,69; i
+    # 0,19 non piazzati tolgono 0,19 x 4 x 0,95 = 0,72 alla protezione con 5+ gol
+    assert E.net_pnl_by_total(finali, COMM)[5] == pytest.approx(4.0 - 0.19 * 4.0 * 0.95,
+                                                                abs=0.02)
 
 
 # ---------------------------------------------------------------------------

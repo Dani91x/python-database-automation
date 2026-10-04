@@ -7,7 +7,12 @@ da 0,43 @18 di Mike e' stata rifiutata ``INVALID_BET_SIZE`` 21 volte. In piu' la
 era legalizzata PER DIFETTO ai 0,50 (residuo scoperto fino a 0,49), mentre l'API accetta
 il centesimo (punta 7,47 accettata dall'app Betfair, stessa API).
 
-Cosa certifica:
+04/10/2026 - CORRETTO: la "punta 7,47 accettata" era un ordine dell'UTENTE dal sito, non
+del bot via API. Regola dell'utente: punta diretta da 1,00 in su SOLO a multipli di 0,50
+(per difetto, residuo dichiarato). I test della punta al centesimo e dell'equivalente
+7,31 sono stati riscritti (elenco nel referto AUDIT_2026-10-04/MINIMI_PUNTE_E_MIKE_CHIUSURA.md).
+
+Cosa certifica (testo del 01/10, numeri aggiornati nei test):
   * i numeri di oggi: banca Over 0,43 @18 -> equivalente punta Under 7,31 @1,06 (tick in
     su: 1,05 sarebbe un limite peggiore del chiesto), equivalenza economica +-0,01 su
     entrambi gli esiti; nel motore l'ordine mandato e' l'equivalente, il diario lo dice,
@@ -55,15 +60,20 @@ _STRAT = BaseStrategy(market_filter={}, name="minimi_test")
 # ===========================================================================
 # Regole pure (live_order_build)
 # ===========================================================================
-def test_punta_al_centesimo_7_47_accettata():
+def test_punta_7_47_parte_a_7_00_col_residuo_dichiarato():
+    """04/10/2026 (regola delle punte dell'utente; SOSTITUISCE il test del 01/10
+    ``test_punta_al_centesimo_7_47_accettata``, che pretendeva la punta al centesimo
+    sulla prova sbagliata di un ordine del SITO): da 1,00 in su la punta parte a
+    multiplo di 0,50 per DIFETTO e il resto e' dichiarato."""
     v = LB.min_stake_rules("it", "back", 1.03, 7.47)
-    assert v.valid and v.legalized_size == 7.47
+    assert v.valid and v.legalized_size == 7.00 and v.residuo == 0.47
     b = LB.build_order(SimpleNamespace(market_id="1.1"), strategy=_STRAT, selection_id=UNDER,
                        handicap=0.0, side="back", order_type="LIMIT", price=1.03, size=7.47,
                        liability=None, persistence="LAPSE", time_in_force=None,
                        min_fill_size=None, jurisdiction="it", max_stake=None,
                        customer_order_ref="awlq1")
-    assert b.size == 7.47 and b.order.order_type.size == 7.47
+    assert b.size == 7.00 and b.order.order_type.size == 7.00 and b.residuo == 0.47
+    assert "residuo 0.47 NON piazzato" in b.note
 
 
 def test_reduces_liability_non_esenta_piu():
@@ -112,9 +122,17 @@ def test_numeri_di_oggi_equivalente_e_scarti():
                                                      abs=1e-4)
     # 1,05 sarebbe stato peggiore del chiesto (equivale a bancare Over a 21)
     assert 1.05 / 0.05 > 18.0
+    # 04/10/2026: la punta equivalente 7,31 NON e' un multiplo di 0,50: partirebbe solo
+    # a 7,00, cioe' non equivalente. Il verdetto non la usa (0,43 < 0,50: impossibile)
     v = LB.verdetto_minimi("it", "lay", 18.0, 0.43, altra_selezione=(UNDER, 0.0))
-    assert v.esito == LB.VERDETTO_EQUIVALENTE and v.altra_selezione == (UNDER, 0.0)
-    assert v.equivalente == eq and v.size == 7.31
+    assert v.esito == LB.VERDETTO_IMPOSSIBILE and "non multiplo di 0.50" in v.motivo
+    # con importi la cui punta equivalente e' un multiplo (banca 0,25 @19 -> punta
+    # 4,50 @ 19/18 = 1,0556 -> tick IN SU 1,06) l'equivalente resta la via
+    eq2 = LB.equivalente_lato_opposto("lay", 19.0, 0.25)
+    assert (eq2.side, eq2.size, eq2.price) == ("back", 4.50, 1.06)
+    v2 = LB.verdetto_minimi("it", "lay", 19.0, 0.25, altra_selezione=(UNDER, 0.0))
+    assert v2.esito == LB.VERDETTO_EQUIVALENTE and v2.altra_selezione == (UNDER, 0.0)
+    assert v2.equivalente == eq2 and v2.size == 4.50
 
 
 def test_equivalente_tick_mai_peggiore_anche_quando_il_piu_vicino_e_sotto():
@@ -136,8 +154,12 @@ def test_equivalente_di_una_punta_e_una_banca_col_tick_in_giu():
 
 
 def test_banca_030_due_esiti_equivalente_altrimenti_impossibile():
+    # 04/10/2026: l'equivalente (punta 5,10) non e' un multiplo di 0,50 -> non si usa;
+    # con 0,30 @21 la punta equivalente e' 6,00 @1,05: si usa
     v2 = LB.verdetto_minimi("it", "lay", 18.0, 0.30, altra_selezione=(UNDER, 0.0))
-    assert v2.esito == LB.VERDETTO_EQUIVALENTE and v2.equivalente.size == 5.10
+    assert v2.esito == LB.VERDETTO_IMPOSSIBILE and "non multiplo" in v2.motivo
+    v2b = LB.verdetto_minimi("it", "lay", 21.0, 0.30, altra_selezione=(UNDER, 0.0))
+    assert v2b.esito == LB.VERDETTO_EQUIVALENTE and v2b.equivalente.size == 6.00
     v3 = LB.verdetto_minimi("it", "lay", 18.0, 0.30)
     assert v3.esito == LB.VERDETTO_IMPOSSIBILE and v3.size is None
     assert v3.motivo.startswith(LB.SOTTO_MINIMO_NON_PIAZZABILE)
@@ -285,17 +307,20 @@ def traduzione_mike(monkeypatch):
     monkeypatch.setattr(MI, "ATTORI_CON_TRADUZIONE", frozenset({"mike"}))
 
 
-def test_motore_banca_043_mandata_come_punta_731_e_riportata_al_bot(amb, traduzione_mike):
+def test_motore_banca_025_mandata_come_punta_450_e_riportata_al_bot(amb, traduzione_mike):
+    """04/10/2026: numeri cambiati (era banca 0,43 @18 -> punta 7,31 @1,06). La punta
+    equivalente deve essere un multiplo di 0,50 (regola delle punte dell'utente),
+    altrimenti il verdetto non la usa: banca 0,25 @19 -> punta 4,50 @1,06."""
     _due_esiti(amb.market)
     ws = amb.ch.collega("mike")
     _manda(amb, ws, _cmd("mike", 1, mode="live", selection_id=OVER, side="LAY",
-                         price=18.0, size=0.43, reduces_liability=True))
+                         price=19.0, size=0.25, reduces_liability=True))
     assert _ack(amb, ws)["accettato"] is True
     assert len(amb.market.calls) == 1
     ordine, _ref, client = amb.market.calls[0]
     assert client is amb.reale
     assert ordine.selection_id == UNDER and ordine.side == "BACK"
-    assert ordine.order_type.price == 1.06 and ordine.order_type.size == 7.31
+    assert ordine.order_type.price == 1.06 and ordine.order_type.size == 4.50
     assert ordine.context.get("reduces_liability") is True       # informazione, resta
     # diario: la traduzione con chiesto e mandato, PRIMA della riga 'ordine'
     righe = amb.diario.leggi([amb.diario._giorno()])
@@ -303,27 +328,41 @@ def test_motore_banca_043_mandata_come_punta_731_e_riportata_al_bot(amb, traduzi
     assert "tradotto" in tipi and tipi.index("tradotto") < tipi.index("ordine")
     tr = [r for r in righe if r["tipo"] == "tradotto"][0]
     assert tr["originale"] == {"selection_id": OVER, "handicap": 0.0, "side": "lay",
-                               "price": 18.0, "size": 0.43}
+                               "price": 19.0, "size": 0.25}
     assert tr["mandato"] == {"selection_id": UNDER, "handicap": 0.0, "side": "back",
-                             "price": 1.06, "size": 7.31}
+                             "price": 1.06, "size": 4.50}
     # evento 'inviato': nei termini del CHIESTO
     ev = amb.ch.per_ws(ws, "order")[-1]["d"]
     assert ev["selection_id"] == OVER and ev["side"] == "lay"
-    assert ev["price"] == 18.0 and ev["size"] == 0.43
-    assert ev["riga_mandata"]["selection_id"] == UNDER and ev["riga_mandata"]["size"] == 7.31
+    assert ev["price"] == 19.0 and ev["size"] == 0.25
+    assert ev["riga_mandata"]["selection_id"] == UNDER and ev["riga_mandata"]["size"] == 4.50
     cust = ev["client_order_ref"]
-    # specchio: punta Under abbinata 7,31 @1,06 -> il bot vede banca Over 0,43 @18
+    # specchio: punta Under abbinata 4,50 @1,06 -> il bot vede banca Over 0,25 @19
     amb.motore._su_riga_specchio(_riga_specchio(
-        cust, selection_id=UNDER, side="back", price=1.06, size=7.31, size_matched=7.31,
+        cust, selection_id=UNDER, side="back", price=1.06, size=4.50, size_matched=4.50,
         average_price_matched=1.06, size_remaining=0.0, status="EXECUTION_COMPLETE",
         bet_id="99"))
     ev = amb.ch.per_ws(ws, "order")[-1]["d"]
     assert ev["fase"] == "abbinato"
-    assert ev["selection_id"] == OVER and ev["side"] == "lay" and ev["size"] == 0.43
-    assert ev["size_matched"] == 0.43 and ev["average_price_matched"] == pytest.approx(18.0)
+    assert ev["selection_id"] == OVER and ev["side"] == "lay" and ev["size"] == 0.25
+    assert ev["size_matched"] == 0.25 and ev["average_price_matched"] == pytest.approx(19.0)
     assert ev["size_remaining"] == 0.0
-    assert ev["tradotto"]["mandato"]["size"] == 7.31
-    assert ev["riga_mandata"]["size_matched"] == 7.31
+    assert ev["tradotto"]["mandato"]["size"] == 4.50
+    assert ev["riga_mandata"]["size_matched"] == 4.50
+
+
+def test_motore_banca_043_la_punta_equivalente_7_31_non_e_piu_mandata(amb, traduzione_mike):
+    """04/10/2026: i numeri di Ashdod (banca 0,43 @18 -> punta 7,31) col verdetto nuovo:
+    7,31 non e' un multiplo di 0,50, l'equivalente non parte e la banca 0,43 (< 0,50)
+    e' un rifiuto esplicito, MAI un ordine verso Betfair."""
+    _due_esiti(amb.market)
+    ws = amb.ch.collega("mike")
+    _manda(amb, ws, _cmd("mike", 1, mode="live", selection_id=OVER, side="LAY",
+                         price=18.0, size=0.43, reduces_liability=True))
+    ack = _ack(amb, ws)
+    assert ack["accettato"] is False and ack["motivo"].startswith(MO.M_SOTTO_MINIMO)
+    assert "non multiplo di 0.50" in ack["motivo"]
+    assert amb.market.calls == []
 
 
 def test_motore_sotto_minimo_senza_vie_rifiuto_esplicito_mai_rest(amb):
@@ -356,43 +395,40 @@ def _rifiuta_betfair(ordine: Any, codice: str = "INVALID_BET_SIZE") -> None:
     ordine.execution_complete()
 
 
-def test_motore_ripiego_050_solo_dopo_invalid_bet_size_e_una_volta(amb):
+def test_motore_punta_7_47_parte_7_00_prima_dell_invio_e_nessun_ripiego_dopo(amb):
+    """04/10/2026 (regola delle punte dell'utente; SOSTITUISCE
+    ``test_motore_ripiego_050_solo_dopo_invalid_bet_size_e_una_volta``, che mandava
+    7,47 al centesimo e ripiegava ai 0,50 SOLO dopo il rifiuto vero): la punta parte
+    GIA' a 7,00 col residuo 0,47 dichiarato in ogni evento (``punta_050``). Se Betfair
+    rifiutasse anche 7,00 (gia' multiplo): nessun ripiego, rifiuto dichiarato, la
+    taglia rifiutata non si ritenta identica."""
     ws = amb.ch.collega("safe")
     _manda(amb, ws, _cmd("safe", 4, mode="live", price=1.03, size=7.47))
     assert _ack(amb, ws)["accettato"] is True
-    assert [c[0].order_type.size for c in amb.market.calls] == [7.47]   # al centesimo
+    assert [c[0].order_type.size for c in amb.market.calls] == [7.00]   # mai 7,47
     primo = amb.market.calls[0][0]
-    cust1 = amb.ch.per_ws(ws, "order")[-1]["d"]["client_order_ref"]
-    # nessun rifiuto ancora: nessun ripiego preventivo
-    assert amb.motore.avanza_sorvegliati() == 0 and len(amb.market.calls) == 1
-    # Betfair risponde INVALID_BET_SIZE; la riga terminale dello specchio e' TRATTENUTA
-    _rifiuta_betfair(primo)
-    n_ev = len(amb.ch.per_ws(ws, "order"))
-    amb.motore._su_riga_specchio(_riga_specchio(
-        cust1, selection_id=47972, side="back", price=1.03, size=7.47,
-        status="EXECUTION_COMPLETE"))
-    assert len(amb.ch.per_ws(ws, "order")) == n_ev          # il bot non vede "annullato"
-    # UN ripiego ai 0,50 per difetto, residuo dichiarato
-    assert amb.motore.avanza_sorvegliati() == 1
-    assert [c[0].order_type.size for c in amb.market.calls] == [7.47, 7.00]
     ev = amb.ch.per_ws(ws, "order")[-1]["d"]
+    cust1 = ev["client_order_ref"]
     assert ev["ref"] == "safe-t4" and ev["fase"] == "inviato" and ev["size"] == 7.00
-    assert ev["ripiego_050"] == {"eseguito": True, "motivo": "INVALID_BET_SIZE",
-                                 "chiesto": 7.47, "piazzato": 7.0, "residuo": 0.47,
-                                 "ref_interno_rifiutato": cust1}
-    # anche il ripiego rifiutato: NESSUN terzo tentativo, rifiuto dichiarato al bot
-    _rifiuta_betfair(amb.market.calls[1][0])
-    assert amb.motore.avanza_sorvegliati() == 0
-    assert len(amb.market.calls) == 2
+    assert ev["punta_050"]["chiesto"] == 7.47 and ev["punta_050"]["piazzato"] == 7.00
+    assert ev["punta_050"]["residuo"] == 0.47
+    assert amb.motore.avanza_sorvegliati() == 0 and len(amb.market.calls) == 1
+    _rifiuta_betfair(primo)
+    amb.motore._su_riga_specchio(_riga_specchio(
+        cust1, selection_id=47972, side="back", price=1.03, size=7.00,
+        status="EXECUTION_COMPLETE"))
+    assert amb.motore.avanza_sorvegliati() == 0          # 7,00 e' gia' multiplo
+    assert len(amb.market.calls) == 1
     ev = amb.ch.per_ws(ws, "order")[-1]["d"]
     assert ev["fase"] == "rifiutato" and ev["errore_betfair"] == "INVALID_BET_SIZE"
     assert ev["ripiego_050"]["eseguito"] is False
-    # la stessa taglia non si ritenta identica: rifiuto PRIMA di qualunque invio
+    assert ev["punta_050"]["residuo"] == 0.47             # la dichiarazione resta
+    # la stessa taglia (7,47 -> 7,00) non si ritenta identica: rifiuto PRIMA dell'invio
     _manda(amb, ws, _cmd("safe", 5, mode="live", price=1.03, size=7.47))
     ack = _ack(amb, ws)
     assert ack["accettato"] is False and ack["motivo"].startswith(MO.M_SOTTO_MINIMO)
     assert "non si ritenta identico" in ack["motivo"]
-    assert len(amb.market.calls) == 2
+    assert len(amb.market.calls) == 1
 
 
 def test_motore_nessun_ripiego_senza_invalid_bet_size(amb):
@@ -412,11 +448,23 @@ def test_motore_aggancio_ripete_le_guardie_sull_ordine_chiesto(amb, traduzione_m
     """Idempotenza: ``_controlla`` due volte sullo stesso piano (aggancio al volo) riparte
     dall'ordine CHIESTO, mai dalla traduzione del giro prima."""
     _due_esiti(amb.market)
+    # 04/10/2026: numeri con la punta equivalente multipla di 0,50 (era 0,43 @18 -> 7,31)
     piano = MO.valida_comando("mike", _cmd("mike", 8, mode="live", selection_id=OVER,
-                                           side="LAY", price=18.0, size=0.43,
+                                           side="LAY", price=19.0, size=0.25,
                                            reduces_liability=True))
     amb.motore._controlla(piano, piano["creato_ms"])
-    assert piano["riga"]["selection_id"] == UNDER and piano["riga"]["size"] == 7.31
+    assert piano["riga"]["selection_id"] == UNDER and piano["riga"]["size"] == 4.50
     amb.motore._controlla(piano, piano["creato_ms"])
-    assert piano["riga"]["selection_id"] == UNDER and piano["riga"]["size"] == 7.31
-    assert piano["tradotto"]["originale"]["size"] == 0.43
+    assert piano["riga"]["selection_id"] == UNDER and piano["riga"]["size"] == 4.50
+    assert piano["tradotto"]["originale"]["size"] == 0.25
+
+
+def test_motore_aggancio_punta_050_riparte_dal_chiesto(amb):
+    """04/10/2026: anche la punta arrotondata ai 0,50 e' idempotente sull'aggancio:
+    ``_controlla`` due volte riparte da 7,47 chiesto, mai da 7,00 del giro prima."""
+    piano = MO.valida_comando("safe", _cmd("safe", 9, mode="live", price=1.03, size=7.47))
+    amb.motore._controlla(piano, piano["creato_ms"])
+    assert piano["riga"]["size"] == 7.00 and piano["punta_050"]["chiesto"] == 7.47
+    amb.motore._controlla(piano, piano["creato_ms"])
+    assert piano["riga"]["size"] == 7.00 and piano["punta_050"]["chiesto"] == 7.47
+    assert piano["minimi_originale"]["size"] == 7.47

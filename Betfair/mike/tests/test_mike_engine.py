@@ -472,9 +472,10 @@ def test_live_cover_wait_then_cover():
     assert a.price == pytest.approx(float(E.ticks_away(9.0, -int(p["cover_place_at_ticks"]))), abs=1e-9)
     assert a.price < 9.0, "il limite deve essere piu' basso del best, mai piu' alto"
     x = E.cover_size(20, 9.0, 0.05, 1.2)
-    assert a.size == round(x, 2)                      # importo ESATTO (exact_sizes)
-    # 01/10 (ordine dell'utente): nessun passo da 0,50, minimo 1,00 al centesimo:
-    # 3,16 e 1,23 sono diretti, sotto 1,00 serve il place-and-trim
+    # 04/10 (regola delle punte .it dell'utente): l'importo esatto 3,16 parte al
+    # multiplo di 0,50 per DIFETTO (3,00); prima il test pretendeva il centesimo
+    assert round(x, 2) == 3.16 and a.size == 3.00
+    # 01/10 (ordine dell'utente): minimo 1,00; sotto 1,00 serve il place-and-trim
     assert E.needs_submin("back", a.size) is False
     assert E.needs_submin("back", 2.5) is False and E.needs_submin("back", 1.23) is False
     assert E.needs_submin("back", 0.73) is True
@@ -849,7 +850,9 @@ def test_partial_cover_reprice_uses_exact_residual():
     # abbina: su un exchange un limite piu' basso prende comunque il miglior
     # prezzo disponibile); il cuscinetto vale solo come LIMITE dell'ordine.
     x_full = E.cover_size(20, 8.0, 0.05, 1.2)
-    assert cover.size == pytest.approx(round(x_full, 2))
+    # 04/10 (regola delle punte .it): 3,61 esatto -> parte 3,50 (multiplo di 0,50 per
+    # difetto); prima il test pretendeva il centesimo
+    assert round(x_full, 2) == 3.61 and cover.size == pytest.approx(3.50)
     assert cover.price == pytest.approx(float(E.ticks_away(8.0, -int(p["cover_place_at_ticks"]))))
     cover.matched = 1.0; cover.avg_price = 8.0          # 1 € abbinato a 8.0, resto sul book
     s2 = snap(s.now + 11, u35=book(1.35, inplay=True), o45=book(6.0, bs=50, inplay=True),
@@ -868,7 +871,9 @@ def test_partial_cover_reprice_uses_exact_residual():
     d = E.decide(ctx, s2, p)
     place = [a for a in d.actions if a.kind == "place"]
     resid = E.cover_size_residual(20, 6.0, 0.05, 1.2, matched=1.0, matched_price=8.0)
-    assert place and place[0].size == pytest.approx(round(resid, 2))
+    # 04/10: anche il residuo esce al multiplo di 0,50 per difetto
+    assert place and place[0].size == pytest.approx(
+        (int(round(round(resid, 2) * 100)) // 50) * 0.5)
     # verifica del target: con 5+ gol il netto e' esattamente +20% dello stake Under
     net_if_over = 1.0 * 7 * 0.95 + resid * 5 * 0.95 - 20
     assert net_if_over == pytest.approx(4.0, abs=1e-6)

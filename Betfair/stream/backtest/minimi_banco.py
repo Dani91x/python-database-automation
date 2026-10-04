@@ -16,6 +16,10 @@ per entrambi i trasporti (coda e canale) e per ogni bot del banco:
 
   * ordine piazzato DIRETTO: punta sotto ``IT_MIN_BACK`` (1,00) o banca sotto
     ``IT_MIN_LAY`` (1,00) -> FAILURE ``INVALID_BET_SIZE``, nessun abbinato;
+  * 04/10/2026 (regola delle punte dell'utente; Umea FC v Hammarby, punta di chiusura
+    7,27 rifiutata LIVE): punta piazzata DIRETTA da 1,00 in su NON multipla di 0,50
+    -> FAILURE ``INVALID_BET_SIZE`` (``punta_fuori_passo``). Fino a oggi il banco la
+    abbinava (stessa regola sbagliata di ``minimi_it`` del 01/10): replay verdi;
   * ordine NUOVO di un replace (la coda del place-and-trim: parcheggio >= 1,00,
     taglio, replace alla quota voluta) e place-and-trim della coda
     (il place-and-trim della coda di ``MercatoFlumine``, nota ``NOTA_PLACE_AND_TRIM``): sotto
@@ -36,6 +40,8 @@ import contextlib
 from typing import Any, Dict, Iterator, List, Optional
 
 from ..trading.minimi_it import IT_MIN_BACK, IT_MIN_LAY, SUBMIN_IMPORTO_FINALE_MIN
+from ..trading.minimi_it import VIA_DIRETTA as _VIA_DIRETTA
+from ..trading.minimi_it import importo_piazzabile as _importo_piazzabile
 
 #: la regola dell'exchange simulato. ``False`` SOLO per la falsificazione: il
 #: controllo ``abbinati_sotto_minimo`` deve allora trovare gli abbinati.
@@ -50,8 +56,9 @@ NOTA_PLACE_AND_TRIM = "banco_place_and_trim"
 #: codice della violazione di certificazione (referto del banco)
 CODICE_CONTROLLO = "BANCO-SOTTO-MINIMO"
 REGOLA_CONTROLLO = ("nessun ordine sotto il minimo Betfair .it abbinato dal banco "
-                    "(punta 1,00 e banca 1,00 dirette; importo finale del "
-                    "place-and-trim >= 0,50): Betfair lo rifiuta INVALID_BET_SIZE")
+                    "(punta 1,00 a multipli di 0,50 e banca 1,00 dirette; importo "
+                    "finale del place-and-trim >= 0,50): Betfair lo rifiuta "
+                    "INVALID_BET_SIZE")
 
 DIRETTO = "diretto"
 SOSTITUZIONE = "sostituzione"
@@ -89,6 +96,30 @@ def sotto_minimo(size: Any, tipo: str, side: Any) -> bool:
     except (TypeError, ValueError):
         return False
     return s < minimo_per(tipo, side) - 0.0005
+
+
+def punta_fuori_passo(size: Any, tipo: str, side: Any) -> bool:
+    """04/10/2026 (regola delle punte dell'utente): una PUNTA piazzata DIRETTA da 1,00 in
+    su che NON e' un multiplo di 0,50 (``minimi_it.importo_piazzabile``: residuo > 0).
+    Betfair .it la rifiuta ``INVALID_BET_SIZE`` (Umea FC v Hammarby, 04/10, punta di
+    chiusura 7,27 @1,07). Solo il piazzamento DIRETTO: il sostituto di un replace e il
+    finale del place-and-trim sono il resto di un ordine gia' esistente."""
+    if tipo != DIRETTO:
+        return False
+    lato = str(getattr(side, "value", side) or "").upper()
+    if lato != "BACK":
+        return False
+    try:
+        v = _importo_piazzabile("back", size)
+    except ValueError:
+        return False
+    return v.via == _VIA_DIRETTA and v.residuo > 0.0
+
+
+def fuori_listino(size: Any, tipo: str, side: Any) -> bool:
+    """L'exchange simulato rifiuta QUESTO ordine per taglia (``INVALID_BET_SIZE``)?
+    Sotto il minimo del suo tipo, oppure punta diretta non multipla di 0,50."""
+    return sotto_minimo(size, tipo, side) or punta_fuori_passo(size, tipo, side)
 
 
 def _size(ordine: Any) -> float:
@@ -151,12 +182,22 @@ def minimi_it_su_flumine() -> Iterator[Registro]:
             for ordine in order_package:
                 tipo, size = _tipo(ordine), _size(ordine)
                 REGISTRO.piazzati.append((ordine, tipo, size))
-                if ATTIVO and sotto_minimo(size, tipo, getattr(ordine, "side", None)):
+                if ATTIVO and fuori_listino(size, tipo, getattr(ordine, "side", None)):
                     _annota_rifiuto(ordine, tipo, size)
                     pila.enter_context(_rifiuta_piazzamento(ordine))
             return vero_place(self, order_package, http_session)
 
     def execute_replace(self: Any, order_package: Any, http_session: Any = None) -> Any:
+        # 04/10 (CERTIFICAZIONE_TENNIS_PRO_SCALPER, K1 dello scalper tennis): un
+        # replace il cui ordine NUOVO e' rifiutato deve lasciare il mondo come lo
+        # lascia flumine LIVE (`BetfairExecution.execute_replace`): l'annullo
+        # resta fatto (Betfair: "the cancellations will not be rolled back"), il
+        # vecchio ordine e' `execution_complete`, e NESSUN ordine sostituto esiste
+        # (live lo crea solo su SUCCESS). La simulazione di flumine invece crea il
+        # sostituto in `trade.orders` (fuori dal blotter) e rimette il vecchio
+        # `executable`: un bot che segue l'ultimo ordine del suo Trade seguirebbe
+        # un fantasma che in produzione non esiste.
+        respinti: List[tuple] = []
         with contextlib.ExitStack() as pila:
             for ordine in order_package:
                 trade = getattr(ordine, "trade", None)
@@ -164,7 +205,8 @@ def minimi_it_su_flumine() -> Iterator[Registro]:
                     continue
                 crea_vero = trade.create_order_replacement
 
-                def _crea(*a: Any, _vero: Any = crea_vero, **kw: Any) -> Any:
+                def _crea(*a: Any, _vero: Any = crea_vero, _vecchio: Any = ordine,
+                          **kw: Any) -> Any:
                     nuovo = _vero(*a, **kw)
                     size = _size(nuovo)
                     REGISTRO.piazzati.append((nuovo, SOSTITUZIONE, size))
@@ -172,6 +214,7 @@ def minimi_it_su_flumine() -> Iterator[Registro]:
                                                getattr(nuovo, "side", None)):
                         _annota_rifiuto(nuovo, SOSTITUZIONE, size)
                         sim = nuovo.simulated
+                        respinti.append((_vecchio, nuovo))
 
                         def _place(*_a: Any, **_k: Any) -> Any:
                             sim.size_voided += sim.size_remaining
@@ -183,7 +226,10 @@ def minimi_it_su_flumine() -> Iterator[Registro]:
 
                 trade.create_order_replacement = _crea
                 pila.callback(_rimetti_creazione, trade)
-            return vero_replace(self, order_package, http_session)
+            esito = vero_replace(self, order_package, http_session)
+        for vecchio, nuovo in respinti:
+            _come_live_dopo_sostituto_respinto(vecchio, nuovo)
+        return esito
 
     SimulatedExecution.execute_place = execute_place
     SimulatedExecution.execute_replace = execute_replace
@@ -192,6 +238,19 @@ def minimi_it_su_flumine() -> Iterator[Registro]:
     finally:
         SimulatedExecution.execute_place = vero_place
         SimulatedExecution.execute_replace = vero_replace
+
+
+def _come_live_dopo_sostituto_respinto(vecchio: Any, nuovo: Any) -> None:
+    """Il dopo-replace di flumine LIVE quando il piazzamento nuovo fallisce:
+    nessun sostituto nel Trade, vecchio ordine completo (annullo non annullato)."""
+    trade = getattr(nuovo, "trade", None)
+    ordini = getattr(trade, "orders", None)
+    if isinstance(ordini, list):
+        ordini[:] = [o for o in ordini if o is not nuovo]
+    try:
+        vecchio.execution_complete()
+    except Exception:  # noqa: BLE001 - stato gia' terminale
+        pass
 
 
 def _rimetti_creazione(trade: Any) -> None:
@@ -209,7 +268,7 @@ def abbinati_sotto_minimo(registro: Optional[Registro] = None) -> List[Dict[str,
     for ordine, tipo, size in reg.piazzati:
         sim = getattr(ordine, "simulated", None)
         abbinato = float(getattr(sim, "size_matched", 0.0) or 0.0)
-        if abbinato > 0 and sotto_minimo(size, tipo, getattr(ordine, "side", None)):
+        if abbinato > 0 and fuori_listino(size, tipo, getattr(ordine, "side", None)):
             fuori.append({"tipo": tipo, "side": str(getattr(ordine, "side", "")),
                           "size": round(size, 2), "abbinato": round(abbinato, 2),
                           "minimo": minimo_per(tipo, getattr(ordine, "side", None))})

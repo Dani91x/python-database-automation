@@ -124,9 +124,12 @@ def test_a_la_chiusura_del_45_e_una_puntata_under_7_55_a_1_03():
     assert (banca.side, banca.size, banca.price) == ("lay", 0.22, 36.0)   # impossibile
     ctx = E.MatchCtx(state="LIVE_COVERED", legs=legs)
     acts = piazzamenti(SimpleNamespace(actions=E._close_actions(ctx, cv, params())))
+    # 04/10 (Umea, regola delle punte dell'utente): il green-up esatto 7,55 parte al
+    # multiplo di 0,50 per DIFETTO, 7,50 (prima il test pretendeva 7,55 al centesimo)
     assert [(a.role, a.market, a.selection, a.side, a.size, a.price) for a in acts] == [
         ("under_close", E.MARKET_OU35, E.SEL_UNDER, "lay", 6.64, 1.16),
-        ("over_close", E.MARKET_OU45, E.SEL_UNDER, "back", 7.55, 1.03)]
+        ("over_close", E.MARKET_OU45, E.SEL_UNDER, "back", 7.50, 1.03)]
+    assert cv.ripieghi[(E.MARKET_OU45, E.SEL_OVER)][1].size == 7.55     # il piano esatto
     # green-up esatto della banca Under 4,5: responsabilita' + importo / prezzo
     assert round(6.32 * 1.23 / 1.03, 4) == 7.5472
     # i 7,47 dell'utente sono il green-up allo scatto sopra (1,04)
@@ -196,9 +199,16 @@ def test_b_tutte_le_chiusure_abbinate_bloccano_il_cash_out():
         legs.append(gamba(a.role, a.market, a.selection, a.side, a.price, a.size,
                           ref=f"{a.role}-0-{9 + i}"))
     dist = E.net_pnl_by_total(legs, COMM)
-    assert max(dist.values()) - min(dist.values()) <= 0.01      # piatto su ogni totale
-    assert abs(E.locked_pnl(legs, COMM) - cv.net) <= 0.01
+    # 04/10 (regola delle punte .it): la punta Under 4,5 parte 7,50 invece di 7,55; i
+    # 0,05 non piazzabili lasciano uno sbilancio di ~0,05 (prima <= 0,01, piatto)
+    assert max(dist.values()) - min(dist.values()) <= 0.06
     assert cv.net == 0.33
+    # il residuo NON e' dimenticato: Mike non si dichiara chiuso, lo dichiara
+    ctx2 = E.MatchCtx(state="LIVE_CLOSING", legs=legs, close_reason="profit")
+    d = E.decide(ctx2, foto(), params())
+    assert d.state == "LIVE_CLOSING" and d.reason.startswith("chiusura parziale")
+    assert d.telemetry["chiusura_parziale"]["critical"] is True
+    assert [a for a in d.actions if a.kind == "place"] == []
 
 
 # ===========================================================================
@@ -300,8 +310,9 @@ def test_c_dopo_il_rifiuto_della_banca_si_cambia_strumento():
     rifiuta(ctx, rifiutata)
     d = E.decide(ctx, foto(now=T0 + 10), params())
     [a] = piazzamenti(d)
+    # 04/10: 7,55 -> 7,50 (punta a multiplo di 0,50 per difetto)
     assert (a.role, a.selection, a.side, a.size, a.price) == ("over_close", E.SEL_UNDER,
-                                                             "back", 7.55, 1.03)
+                                                             "back", 7.50, 1.03)
 
 
 def test_c_stesso_strumento_rifiutato_per_taglia_non_si_ripropone_a_nessun_importo(
@@ -323,7 +334,8 @@ def test_c_stesso_strumento_rifiutato_per_taglia_non_si_ripropone_a_nessun_impor
     ctx = in_chiusura(attempts=1)
     d = E.decide(ctx, foto(now=T0 + 10), params())
     [leg] = E.apply_decision(ctx, d, T0 + 10)
-    assert (leg.selection, leg.side, leg.size) == (E.SEL_UNDER, "back", 7.55)
+    # 04/10: 7,55 -> 7,50 (punta a multiplo di 0,50 per difetto)
+    assert (leg.selection, leg.side, leg.size) == (E.SEL_UNDER, "back", 7.50)
     db = db_vuoto()
     esito = S.execute_place(db=db, market=SimpleNamespace(place_order_live=place_order_live),
                             info=info_vera(), leg=leg, book=libri()[(E.MARKET_OU45, E.SEL_UNDER)],
@@ -416,7 +428,8 @@ def test_d_fok_non_abbinato_si_ritenta_uguale_dopo_close_retry_s_e_non_e_chiusur
     assert "chiusura_parziale" not in d.telemetry and "uscita_proposta" not in d.updates
     d = E.decide(ctx, foto(now=T0 + 10), params(close_retry_s=10))
     [a] = piazzamenti(d)
-    assert (a.selection, a.side, a.size, a.price) == (E.SEL_UNDER, "back", 7.55, 1.03)
+    # 04/10: 7,55 -> 7,50 (punta a multiplo di 0,50 per difetto)
+    assert (a.selection, a.side, a.size, a.price) == (E.SEL_UNDER, "back", 7.50, 1.03)
 
 
 def test_d_ventuno_rifiuti_in_24_secondi_non_possono_piu_accadere():
@@ -460,16 +473,19 @@ def test_e_banca_di_chiusura_sopra_il_minimo_diventa_la_puntata_decisione_12():
     ctx = E.MatchCtx(state="LIVE_COVERED", legs=legs)
     got = [(a.role, a.selection, a.side, a.size, a.price)
            for a in E._close_actions(ctx, cv, params()) if a.kind == "place"]
+    # 04/10 (regola delle punte .it): la punta 5,98 parte 5,50 (multiplo di 0,50 per
+    # difetto); prima il test pretendeva 5,98 e la posizione piatta entro 0,01
     assert got == [("under_close", E.SEL_UNDER, "lay", 4.95, 1.82),
-                   ("over_close", E.SEL_UNDER, "back", 5.98, 1.3)]   # ...ma parte la punta
+                   ("over_close", E.SEL_UNDER, "back", 5.50, 1.3)]   # ...ma parte la punta
     assert round(6.32 * 1.23 / 1.30, 2) == 5.98
     assert cv.net == 0.26
     for i, (role, sel, side, size, price) in enumerate(got):
         mk = E.MARKET_OU35 if role == "under_close" else E.MARKET_OU45
         legs.append(gamba(role, mk, sel, side, price, size, ref=f"{role}-0-{9 + i}"))
-    dist = E.net_pnl_by_total(legs, COMM)
-    assert max(dist.values()) - min(dist.values()) <= 0.0101 and abs(E.locked_pnl(legs, COMM)
-                                                                    - cv.net) <= 0.0101
+    # residuo 0,48 di punta Under non piazzato: lo sbilancio resta e si dichiara
+    ctx2 = E.MatchCtx(state="LIVE_CLOSING", legs=legs, close_reason="profit")
+    d = E.decide(ctx2, foto(u35=(1.80, 1.82), u45=(1.30, 1.31), o45=(4.2, 4.3)), params())
+    assert d.state == "LIVE_CLOSING" and d.reason.startswith("chiusura parziale")
 
 
 def test_e_copertura_banca_con_puntata_sotto_minimo_resta_la_banca():
