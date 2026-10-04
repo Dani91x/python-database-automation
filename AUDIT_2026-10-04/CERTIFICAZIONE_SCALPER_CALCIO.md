@@ -1,5 +1,154 @@
 # CERTIFICAZIONE SCALPER CALCIO — 04/10/2026
 
+## AGGIORNAMENTO (giro 3: certificazione piena)
+Commit 0c4ba67, ab16aef, merge di master b68c23d, 1cec563. Le sezioni 1-11 qui sotto restano lo storico del giro 2.
+
+### Da quando sono KO `riavvio` e `chiusura-abbinata-in-parte`
+- Entrambi gli scenari esistono dal 24/09 (2577080).
+- Rilanciati sul codice certificato del 29/09 (ff555fb) erano già KO:
+  - `riavvio`: B1 ×20, B2, S7;
+  - `chiusura-abbinata-in-parte`: B2, CP1 ×2, CP4 ×4, K5 ×2.
+- Non sono quindi regressioni: il 29/09 si erano certificati solo `base`, `paper`, `uscite-manuali` e `uscite-manuali-firmate`. Non li aveva mai passati nessun codice.
+
+### Cause e correzioni
+
+**CP4 ×2 (BOT).** Lo scratch ritirava la close a target e piazzava subito la nuova chiusura, mentre l'annullo della vecchia era ancora in volo. Esempio (selezione 22): punta 2,50 @1,66 viva e punta 2,50 @1,65 piazzata insieme; se si fossero abbinate entrambe, posizione rovesciata di 2,50 EUR.
+- Correzione in `scalper_bot.py`, ramo dello scratch: lo scratch parte quando la close vecchia è morta (`scratch_in_attesa`, un giro dopo).
+- Prezzo e importo dello scratch sono invariati. Una firma già usata non si richiede di nuovo.
+
+**CP1 ×1 (BANCO).** Il replay passava a CP1 solo le credenze dello slot. Una chiusura colpita, abbinata 10,00 su un ciclo poi chiuso e non più seguita dal bot, risultava «non riconosciuta».
+- Per i bot tennis il banco passa già l'ultima riga di specchio (`betfair_live_orders`) di ogni ordine; ora lo fa anche per lo scalper.
+- Modifica in `scalper/tools/replay_registrazioni.credenze_cp`, alimentata in modo incrementale con le sole righe nuove di ogni giro.
+- I numeri della riga (abbinato, residuo, prezzo medio) li giudica sempre CP1.
+
+**S7 ×1 (BOT/SERVIZIO).** Un processo di sessione morto lasciava ordini abbinati o vivi che nessuno seguiva né dichiarava. Un flumine nuovo non adotta ordini che non ha creato.
+- Nuova `scalper_service.marca_orfana`: riga `error` più avviso CRITICAL `SCALPER_SESSIONE_ORFANA` in `live_alerts` («verificali sul conto e chiudili a mano»). Coerente con la decisione 1 dell'utente.
+- Usata dal supervisore vero e dal banco (`_riarma` chiama la funzione di produzione).
+- **Non** ho aggiunto l'adozione degli ordini della sessione morta da parte di quella nuova: sarebbe una scelta di strategia (il bot che chiude ordini non suoi). Proposta all'utente nel §B.
+
+**Tutto-residuo valutato alla quota inseguita** (scalper e sniper). Trovato adattando il test dello sniper sulla fine finestra.
+- Al best il resto valeva 0,50 (place-and-trim possibile); alla quota inseguita del flatten valeva 0,48 (residuo).
+- Lo sniper ripiazzava a ogni giro (`min_bet_skip` a ogni book).
+- Ora «tutto residuo» si valuta alla stessa quota del flatten (`cross`).
+
+### I 23 test vecchi adattati (prima → dopo, motivo nel docstring di ognuno)
+
+**`test_cantiere_s_scalper_ko`**
+- **flatten_non_dichiara_chiuso:**
+  - prima: piatta ≤ 0,02 su LAY 0,2 / 1,0 / 25;
+  - dopo: piatta ≤ 0,02 oppure residuo dichiarato e ricordato al centesimo (`residuo_dichiarato_ok`);
+  - aggiunto il parametro 0,7: place-and-trim con piatta ≤ 0,02;
+  - K5/K6 invariati.
+- **reperto_35797769:**
+  - prima: LAY 1,98 (punta 1,98 al place-and-trim, punta non multipla);
+  - dopo: LAY 0,98 (punta 0,98 sotto 1,00 = place-and-trim);
+  - la proprietà «una sola chiusura» resta, con soglia del diretto 1,00 (era 2,00).
+- **sostituto_del_rimpiazzo:**
+  - prima: LAY 25 (resto 0,23 al trim);
+  - dopo: LAY 0,7 (tutto al trim);
+  - «una sola sequenza», «nessun residuo inventato» e «piatta ≤ 0,02» restano.
+- **parcheggio_orfano:** LAY 25. Prima: piatta ≤ 0,02. Dopo: residuo dichiarato (punta 25,00 + 0,23). «Orfano ritirato» e «slot chiuso» restano.
+- **parcheggio_ritirato_prima_del_taglio:**
+  - prima: LAY 1,0 (punta 1,00 oggi diretta, nessuna sequenza);
+  - dopo: LAY 0,7;
+  - tutte le asserzioni restano.
+
+**`test_cantiere_s_bis_sniper`**
+- **il_parcheggio_della_sequenza:** punta 3,3 → 0,7 (la banca 3,30 è oggi diretta al centesimo).
+- **parcheggio_ritirato_prima_del_taglio_chiusura:** 0,4 → 0,7 (la banca 0,40 è sotto 0,50).
+- **fine_finestra_a_prezzi_assenti_mai_residuo:** non toccato, ora verde dopo la correzione «tutto-residuo alla quota inseguita».
+
+**`test_cantiere_s3` sniper_nessun_critical_nella_pausa:** 0,4 → 0,7, stesse asserzioni.
+
+**`test_cantiere_s4` scratch_firmato:**
+- prima: punta 2,80 intera;
+- dopo: 2,50 (punta per difetto) + `min_bet_skip` 0,30 dichiarato;
+- aggiunta a ogni giro: mai due chiusure BACK vive o in volo insieme (CP4).
+
+**`test_stato_mercato_freno` d7, ramo 2:**
+- prima: −2,00/+0,05, cioè punta 1,03, «non piazzabile» col minimo copiato 2,00;
+- dopo: −0,60/+0,30, cioè punta 0,45, sotto 0,50;
+- messaggio e CRITICAL invariati.
+
+Ogni test vale per ritardo 1 e 4: 11 test × 2 + il parametro d7 = 23 casi.
+
+### Falsificazione, giro 3
+
+Per gruppo e per le correzioni nuove. Ripristino ogni volta da patch, `MUTAZIONE` = 0.
+
+| # | mutazione | test rossi |
+|---|---|---|
+| M16 | lo scratch non aspetta la close vecchia morta | 2 (S4) |
+| M17 | la sessione orfana non si dichiara | 2 |
+| M18 | CP1 senza lo specchio | 1 |
+| M19 | sniper: tutto-residuo valutato al best | 2 (fine_finestra) |
+| M20 | il residuo non si ricorda | 14 (gruppo S e test nuovi) |
+| M21 | «ultima spiaggia» che non accetta mai | 1 (d7) |
+| M22 | ordine in volo contato come morto (taglio in volo) | 13 (gruppo S) |
+| M23 | sniper che ritira il parcheggio della sequenza a ogni book | 6 (gruppo S-bis) |
+| M24 | sniper con CRITICAL anche nella pausa | 2 (S3) |
+
+Restano valide le M1-M15 del giro 2.
+
+### Merge di master b68c23d
+- Una sola definizione di `soglia_resto` in `uscite_manuali.py`, quella di master: il file è identico a master.
+- Lo scalper passa 0,50.
+- `test_banco_uscite_manuali_n3` più `stream/tennis_live`: 837 verdi, 5 xfail.
+
+### Suite `Betfair/` intera
+**9954 verdi, 16 rossi, 31 saltati, 6 xfail, 457 s.** Nessuno dei 16 rossi è dello scalper, tutti rossi anche su master:
+- 15 in `omega/tests/test_riconciliazione_tradotti_omega_2026_10_02.py` e `safe_strategy/tests/test_riconciliazione_tradotti_safe_2026_10_02.py`: rilanciati da me sull'albero esportato di master b68c23d → 15 rossi identici.
+- Il test Safe `Betfair/stream/tests/test_banco_ambiente_dichiarato_2026_10_02.py::test_coda_stesso_referto_con_ambiente_principale_e_ambiente_vuoto`, messaggio: `AssertionError: assert ['open', 'error'] == ['hedged', 'open']` (rosso anche su 8a40f5c). Non toccato.
+
+### Scenari (giro 3): VERDETTO CERTIFICATO
+Ogni lotto dentro `timeout 900`, uno alla volta. Referti in `replay/scalper_calcio_GIRO3_*.txt`.
+
+**15 scenari su 15 OK su 35797769**, più `base` e `paper` OK su 35760084 (0 azioni: il bot non entra).
+
+| scenario | esito | azioni |
+|---|---|---|
+| base | OK | 167 |
+| auto-live | OK | 167 |
+| paper | OK | 167 |
+| bot-fermo | OK | 99 |
+| kill-switch | OK | 99 |
+| senza-missione | OK | 167 |
+| esiti-ignoti | OK | 167 |
+| rifiuti-betfair | OK | 179 |
+| **riavvio** | **OK** (prima KO S7) | 204 |
+| **chiusura-abbinata-in-parte** | **OK** (prima KO CP1, CP4 ×2) | 41 |
+| sniper | OK | 167 |
+| sniper-paper | OK | 167 |
+| sniper-uscite-auto | OK | 167 |
+| uscite-manuali | OK | 229 |
+| uscite-manuali-firmate | OK | 53 |
+
+**Controlli mai sollecitati**, dichiarati «non lo so» come prima:
+- K2 e S7 nel `base` (S7 è sollecitato nello scenario `riavvio`);
+- CP2: lo scalper non scrive `hedged_size`;
+- S6 fuori da `base` e `paper`;
+- su 35760084 il bot non entra: 14 controlli.
+
+**Tempi, totale ≈ 1493 s: LENTO** (tetto 600 s).
+
+| lotto | tempo |
+|---|---|
+| A1 | 225 s |
+| A2 | 269 s |
+| B1 | 412 s |
+| B2 | 391 s |
+| B3 | 196 s |
+| C | 17 s |
+
+Difetto del banco, non toccato per ordine del coordinatore: proposte nel §9.
+
+### §B. Proposta per l'utente (non fatta: sarebbe una scelta di strategia)
+Dopo la morte di un processo di sessione, oggi la posizione della sessione morta resta a mercato DICHIARATA (avviso CRITICAL `SCALPER_SESSIONE_ORFANA`) e la chiude l'utente. Nel replay, uccisa a metà della finestra pre-match con una posizione abbinata aperta, 22 ordini della sessione morta non sono seguiti da nessun processo.
+
+L'alternativa: la sessione nuova ADOTTA gli ordini della morta e li chiude col flatten.
+
+Il valore in euro di quella posizione non l'ho misurato: va sondato prima di decidere.
+
 Delegato, ramo del worktree `agent-a8a111b7f6a26f75e`.
 Commit: e632f79 (correzione), 4d47534 (merge di master 4dd624a), 24eb499 (minimi solo da `minimi_it`).
 
