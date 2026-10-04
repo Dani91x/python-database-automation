@@ -352,7 +352,9 @@ def test_b8_catena_legittima_del_place_and_trim_non_viola():
     None,                                            # nessun ordine prima
     ("BACK", 2.0, 2.0, 1.85),                        # prima NON a quota di parcheggio
     ("BACK", 1000.0, 2.0, 0.0),                      # parcheggio MAI ridotto
-    ("BACK", 1000.0, 1.0, 0.85),                     # parcheggio sotto il minimo
+    # 04/10: sotto il minimo della FONTE UNICA (`minimi_it`, oggi 1,00): prima 1,00
+    # fisso, che coi minimi del 02/10 e' un parcheggio legale
+    ("BACK", 1000.0, 0.5, 0.35),                     # parcheggio sotto il minimo
     ("LAY", 1.01, 2.0, 1.85),                        # lato diverso
 ])
 def test_b8_sotto_il_minimo_senza_catena_legittima_viola(prima):

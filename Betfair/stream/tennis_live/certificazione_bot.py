@@ -48,6 +48,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from ..tennis_scalper import condotta_ordini as CD
 from ..tennis_scalper import tennis_flb_bot as FLB
 from ..tennis_scalper import tennis_scalper_bot as SC
+from ..trading import minimi_it as _MINIMI
 
 # gli stati in cui un ciclo dello scalper e' VIVO: li' la tolleranza e' 0,02
 _VIVI_SCALPER = frozenset({SC.QUOTING, SC.QUOTING2, SC.CANCELLING, SC.LOCKING,
@@ -64,9 +65,13 @@ STATO_VIOLAZIONE = "Violation"
 
 EPS = 0.011            # Betfair lavora al centesimo: sotto e' arrotondamento
 
-# minimi di giurisdizione .it, gli stessi che lo scalper applica in LIVE
-# (`tennis_scalper_bot._side_floor`): back 2,00 / lay 0,50.
-MINIMO_IT = {"BACK": 2.0, "LAY": 0.5}
+# minimi di giurisdizione .it per un ordine piazzato DIRETTO. 04/10
+# (CERTIFICAZIONE_TENNIS_PRO_SCALPER): letti dalla FONTE UNICA
+# `trading/minimi_it.py`, mai riscritti qui. Prima erano scritti a mano (back 2,00
+# / lay 0,50, catalogo §7 punto 33: un duplicato): dal 02/10 i bot parcheggiano a
+# `IT_MIN_BACK` e B8 li accusava di un minimo che il listino del repo non ha piu'.
+# Il VALORE lo decidono coordinatore e utente in `minimi_it`; B8 lo segue.
+MINIMO_IT = {"BACK": float(_MINIMI.IT_MIN_BACK), "LAY": float(_MINIMI.IT_MIN_LAY)}
 
 
 # ---------------------------------------------------------------------------
@@ -138,6 +143,18 @@ class Osservazione:
     manuale_chiesta: bool = False
     manuale_esito: Optional[str] = None
     ordini_dopo_manuale: set = field(default_factory=set)
+    # 04/10 (CERTIFICAZIONE_TENNIS_PRO_SCALPER, B10): gli ordini del bot che
+    # l'EXCHANGE del banco ha rifiutato per TAGLIA in questo giro
+    # (`backtest.minimi_banco`, INVALID_BET_SIZE), letti dal registro dell'exchange
+    # e non dalle attivita' del bot. Una riga per rifiuto: `selection_id`, `side`,
+    # `size`, `tipo` (diretto | sostituzione | place_and_trim), `ripetuto` = lo
+    # STESSO ordine (selezione, lato, size, tipo) era gia' stato rifiutato prima.
+    rifiuti_taglia: List[Dict[str, Any]] = field(default_factory=list)
+    # 04/10 (SV1, scenari «soldi veri»): che cosa la catena del runner impone al
+    # client degli ordini del bot: "reale" (bot in soldi veri + «Ordini reali»
+    # LIVE), "nessuno_reale" (soldi veri ma «Ordini reali» in prova), "simulato"
+    # (bot in prova). None negli altri scenari.
+    catena_soldi_veri: Optional[str] = None
 
     def kinds(self) -> List[str]:
         return [k for k, _ in self.attivita]
@@ -231,6 +248,16 @@ def sostituto_di_parcheggio(ordine: Any) -> bool:
             and size + EPS >= MINIMO_IT[lato] and ridotto > 1e-9)
 
 
+def client_reale(client: Any) -> Optional[bool]:
+    """True se il client NON e' simulato (definizione del runner tennis,
+    `guardie_tennis.is_client_paper`); None se l'ordine non ha client."""
+    if client is None:
+        return None
+    from .guardie_tennis import is_client_paper
+
+    return not is_client_paper(client)
+
+
 def riga_ordine(ordine: Any) -> Dict[str, Any]:
     """Un ordine di flumine -> le stesse chiavi snake_case che la produzione usa
     (`tennis_live_order_worker._order_snapshot`): cosi' un controllo che legge
@@ -246,6 +273,9 @@ def riga_ordine(ordine: Any) -> Dict[str, Any]:
     sostituto = sostituto_di_parcheggio(ordine)
     return {
         "sostituto": sostituto,
+        # 04/10 (SV1): il client dell'ordine e' quello REALE? Stessa definizione
+        # del runner (`guardie_tennis.is_client_paper`)
+        "client_reale": client_reale(getattr(ordine, "client", None)),
         "order_id": str(getattr(ordine, "id", "") or ""),
         "bet_id": getattr(ordine, "bet_id", None),
         "status": stato_ordine(ordine),
@@ -600,8 +630,9 @@ def _b7(oss: Osservazione) -> Optional[str]:
 
 
 @_controllo("B8", "in LIVE .it nessun ordine sotto il minimo di giurisdizione "
-                  "(back 2,00 / lay 0,50): Betfair lo RIFIUTA e la gamba resta "
-                  "scoperta (PROCESSO_STANDARD_BOT §6.4)",
+                  "(back %.2f / lay %.2f, da `trading/minimi_it`): Betfair lo "
+                  "RIFIUTA e la gamba resta scoperta (PROCESSO_STANDARD_BOT §6.4)"
+                  % (MINIMO_IT["BACK"], MINIMO_IT["LAY"]),
             quando=_q_live)
 def _b8(oss: Osservazione) -> Optional[str]:
     if oss.modalita != "live" or oss.giurisdizione != "it":
@@ -667,6 +698,85 @@ def _b9(oss: Osservazione) -> Optional[str]:
 # ===========================================================================
 # FAMIGLIA K — LA CONSAPEVOLEZZA DELL'ORDINE contro il banco (§7 punto 36)
 # ===========================================================================
+def rifiuti_taglia_nuovi(piazzati: Sequence[Any], da: int, strategia: Any,
+                         rifiutato: Callable[[float, str, Any], bool],
+                         contatori: Dict[Tuple[Any, ...], int]
+                         ) -> Tuple[List[Dict[str, Any]], int]:
+    """I rifiuti per taglia NUOVI dal registro dell'exchange del banco
+    (`minimi_banco.REGISTRO.piazzati`: tuple (ordine, tipo, size)), dall'indice
+    `da` in poi, dei SOLI ordini di `strategia`. `rifiutato(size, tipo, side)` e'
+    la regola che l'exchange del banco ha applicato. Incrementale (§6.9: nessun
+    costo che cresce con la partita): ritorna anche il nuovo indice.
+    `contatori` porta la storia (chiave selezione, lato, size, tipo)."""
+    out: List[Dict[str, Any]] = []
+    fine = len(piazzati)
+    for ordine, tipo, size in list(piazzati[da:fine]):
+        trade = getattr(ordine, "trade", None)
+        if getattr(trade, "strategy", None) is not strategia:
+            continue
+        side = getattr(ordine, "side", None)
+        if not rifiutato(size, tipo, side):
+            continue
+        lato = str(getattr(side, "value", side) or "").upper()
+        sel = getattr(ordine, "selection_id", None)
+        chiave = (sel, lato, round(float(size or 0.0), 2), str(tipo))
+        contatori[chiave] = contatori.get(chiave, 0) + 1
+        out.append({"selection_id": sel, "side": lato, "size": chiave[2],
+                    "tipo": str(tipo), "volte": contatori[chiave],
+                    "ripetuto": contatori[chiave] > 1})
+    return out, fine
+
+
+def _q_rifiuti_taglia(oss: Osservazione) -> bool:
+    return bool(oss.rifiuti_taglia)
+
+
+@_controllo("B10", "un ordine che Betfair .it ha RIFIUTATO per taglia "
+                   "(INVALID_BET_SIZE: sotto il minimo diretto o, nel "
+                   "place-and-trim, sotto il floor di legge) non si rimanda "
+                   "IDENTICO (stessa selezione, lato, size): verrebbe rifiutato "
+                   "di nuovo e la gamba resta scoperta mentre il bot crede di "
+                   "chiudere (regola dell'utente del 01/10, punto 3)",
+            quando=_q_rifiuti_taglia)
+def _b10(oss: Osservazione) -> Optional[str]:
+    for r in oss.rifiuti_taglia:
+        if r.get("ripetuto"):
+            return ("ordine %s %s per %s sulla selezione %s rifiutato "
+                    "INVALID_BET_SIZE e rimandato identico (%d-esimo rifiuto)"
+                    % (r.get("side"), r.get("tipo"), r.get("size"),
+                       r.get("selection_id"), int(r.get("volte") or 0)))
+    return None
+
+
+def _q_soldi_veri(oss: Osservazione) -> bool:
+    if oss.catena_soldi_veri is None:
+        return False
+    # «nessun ordine reale» si giudica a ogni giro; gli altri quando c'e' un ordine
+    return oss.catena_soldi_veri == "nessuno_reale" or bool(oss.ordini)
+
+
+@_controllo("SV1", "«SOLDI VERI» (04/10): l'ordine parte sul client che la catena "
+                   "impone - bot in soldi veri + «Ordini reali» LIVE di questo avvio "
+                   "-> client REALE; «Ordini reali» in prova -> NESSUN ordine reale "
+                   "eseguito; bot in prova -> client SIMULATO",
+            quando=_q_soldi_veri)
+def _sv1(oss: Osservazione) -> Optional[str]:
+    atteso = oss.catena_soldi_veri
+    for r in oss.ordini:
+        reale = r.get("client_reale")
+        if atteso == "reale" and reale is not True:
+            return ("ordine %s %s per %s su client %s: con soldi veri e «Ordini "
+                    "reali» LIVE doveva partire sul client REALE"
+                    % (r.get("order_id"), r.get("side"), r.get("size"),
+                       "assente" if reale is None else "SIMULATO"))
+        if atteso in ("nessuno_reale", "simulato") and reale is True:
+            return ("ordine %s %s per %s ESEGUITO sul client REALE (%s)"
+                    % (r.get("order_id"), r.get("side"), r.get("size"),
+                       "«Ordini reali» in prova" if atteso == "nessuno_reale"
+                       else "bot in prova"))
+    return None
+
+
 @_controllo("K1", "ogni ordine che il bot STA SEGUENDO esiste davvero a "
                   "mercato: un ordine che il bot tiene in mano e che il blotter "
                   "non conosce e' una posizione che nessuno governa",
