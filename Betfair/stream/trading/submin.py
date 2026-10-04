@@ -51,6 +51,7 @@ from Betfair.stream.live_order_build import (
     build_order,
     round_to_tick,
 )
+from Betfair.stream.trading import minimi_it as _MI
 
 # Tolleranza confronti float (size/price già arrotondati a 2 decimali / al tick).
 _TOL = 1e-6
@@ -698,11 +699,22 @@ def pianifica_submin(
 
     # Caso banale: non serve nessun trucco.
     if tsize >= minimo - _TOL:
+        # 04/10/2026 (regola delle punte dell'utente): il place normale di una PUNTA .it
+        # parte a multiplo di 0,50 per DIFETTO (``minimi_it.importo_piazzabile``); il
+        # resto non parte ed e' dichiarato nel motivo. Banca e .com invariati.
+        park = tsize
+        nota_residuo = ""
+        if (jurisdiction or "").lower() == JURISDICTION_IT and s == "back":
+            regola = _MI.importo_piazzabile(s, tsize)
+            park = round(float(regola.importo), 2)
+            if regola.residuo > 0:
+                nota_residuo = (f"; punta a multiplo di 0,50 per difetto: piazzata {park:.2f}, "
+                                f"residuo {regola.residuo:.2f} NON piazzato (da dichiarare)")
         return PianoSubmin(
             serve_trucco=False, park_mode=PARK_TARGET, park_price=tick,
-            park_size=tsize, target_price=tick, target_size=tsize,
+            park_size=park, target_price=tick, target_size=tsize,
             size_reduction=0.0, serve_replace=False, chiamate_mutanti=1,
-            motivo=f"target {tsize:.2f} >= minimo {minimo:.2f}: place normale",
+            motivo=f"target {tsize:.2f} >= minimo {minimo:.2f}: place normale{nota_residuo}",
         )
 
     riduzione = round(minimo - tsize, 2)

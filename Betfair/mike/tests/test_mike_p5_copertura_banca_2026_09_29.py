@@ -211,7 +211,9 @@ def test_interruttore_back_over45_ordine_identico_alla_forma_di_prima():
     [a] = [x for x in d_vecchia.actions if x.kind == "place"]
     assert (a.selection, a.side) == (E.SEL_OVER, "back")
     assert a.price == float(E.ticks_away(9.0, -2))
-    assert a.size == round(E.cover_size(20, 9.0, 0.05, 1.2), 2)
+    # 04/10 (regola delle punte .it): 3,16 esatto -> parte 3,00 (multiplo di 0,50 per
+    # difetto); prima il test pretendeva il centesimo
+    assert round(E.cover_size(20, 9.0, 0.05, 1.2), 2) == 3.16 and a.size == 3.00
     # di serie (dal blocco 5) la forma e' la BANCA Under 4,5
     [b] = [x for x in d_serie.actions if x.kind == "place"]
     assert (b.selection, b.side) == (E.SEL_UNDER, "lay")
@@ -238,24 +240,28 @@ def test_banca_over_sotto_0_50_diventa_puntata_under_se_piazzabile():
                                                              "back", 12.0, 1.02)
 
 
-def test_banca_over_sotto_0_50_diventa_puntata_under_anche_non_multipla_di_0_50():
+def test_banca_over_sotto_0_50_diventa_puntata_under_a_multiplo_per_difetto():
     """Fino al 01/10 qui la chiusura restava la BANCA Over 0,24 perche' la
     puntata Under (11,88) non era multipla di 0,50. Ashdod v Maccabi Herzliya
-    (LIVE, 01/10): quella banca Betfair la rifiuta (INVALID_BET_SIZE), e la
-    puntata al centesimo da 2,00 in su si abbina (7,47 dell'utente)."""
+    (LIVE, 01/10): quella banca Betfair la rifiuta (INVALID_BET_SIZE). 04/10
+    (Umea, regola delle punte dell'utente; era
+    ``..._anche_non_multipla_di_0_50`` con 11,88 al centesimo): resta la puntata,
+    ma parte al multiplo di 0,50 per DIFETTO, 11,50; i 0,38 li dichiara il
+    controllo di piatto."""
     legs = [_cop_10_20()]
     books = {(E.MARKET_OU45, E.SEL_OVER): libro(48.0, 50.0),
              (E.MARKET_OU45, E.SEL_UNDER): libro(1.03, 1.04)}
     cv = E.cashout_value(legs, books, COMM)
     ctx = E.MatchCtx(state="LIVE_COVERED", legs=legs)
     [a] = [x for x in E._close_actions(ctx, cv, params()) if x.kind == "place"]
-    assert (a.selection, a.side, a.size, a.price) == (E.SEL_UNDER, "back", 11.88, 1.03)
+    assert (a.selection, a.side, a.size, a.price) == (E.SEL_UNDER, "back", 11.50, 1.03)
 
 
-def test_riprezzo_della_chiusura_resta_puntata_al_centesimo():
+def test_riprezzo_della_chiusura_resta_puntata_a_multiplo():
     """La chiusura partita come puntata Under 12,00 non si abbina; al riprezzo la
     puntata e' 11,88. Fino al 01/10 (non multiplo di 0,50) si tornava alla banca
-    Over 0,24, che Betfair .it rifiuta: oggi resta la puntata, al centesimo."""
+    Over 0,24, che Betfair .it rifiuta: resta la puntata. 04/10 (era
+    ``..._resta_puntata_al_centesimo``): parte 11,50, multiplo di 0,50 per difetto."""
     ferma = gamba("over_close", E.MARKET_OU45, E.SEL_UNDER, "back", 1.02, 0.0,
                   ref="over_close-0-3", status="pending", size=12.0)
     ctx = E.MatchCtx(state="LIVE_CLOSING", legs=[_cop_10_20(), ferma], close_reason="profit")
@@ -264,7 +270,7 @@ def test_riprezzo_della_chiusura_resta_puntata_al_centesimo():
     assert [a.kind for a in d.actions] == ["cancel", "place"]
     nuova = d.actions[1]
     assert (nuova.role, nuova.selection, nuova.side, nuova.size) == ("over_close", E.SEL_UNDER,
-                                                                     "back", 11.88)
+                                                                     "back", 11.50)
 
 
 def test_forma_di_prima_ripiego_solo_sotto_la_soglia_incerta_della_banca():

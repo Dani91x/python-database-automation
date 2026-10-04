@@ -714,7 +714,8 @@ def test_equalize_gamba_su_runner_piatto_e_apertura_non_chiusura():
     # APERTURA (sel 20, runner piatto): min-stake NORMALE .it. 01/10/2026: la punta e'
     # legalizzata al CENTESIMO (niente floor a 0,50 che lasciava 0,08 scoperti): 6,58
     assert legs[20]["opening"] is True
-    assert legs[20]["size"] == pytest.approx(6.58)
+    # 04/10/2026 (regola delle punte .it dell'utente): la punta parte 6,50 (per difetto)
+    assert legs[20]["size"] == pytest.approx(6.50)
     assert row["result"]["equal"] is True and row["result"]["partial"] is False
 
 

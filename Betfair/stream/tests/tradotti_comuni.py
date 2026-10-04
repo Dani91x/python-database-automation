@@ -35,9 +35,16 @@ def tradotto_di(side: str, price: float, size: float, *, sel: int = OVER,
     l'ordine chiesto (stesse chiavi, stesso verdetto vero)."""
     from Betfair.stream import live_order_build as LB
 
+    # 04/10/2026 (regola delle punte .it): il verdetto VERO non sceglie piu' un
+    # equivalente PUNTA non multiplo di 0,50 (es. 0,43 @18 -> 7,31). Questi test
+    # collaudano la RICONCILIAZIONE di un ordine gia' tradotto (la dichiarazione): la si
+    # costruisce con la stessa funzione del verdetto (``equivalente_lato_opposto``).
     v = LB.verdetto_minimi("it", side, price, size, altra_selezione=(altra, 0.0))
-    assert v.esito == LB.VERDETTO_EQUIVALENTE, v
-    eq = v.equivalente
+    if v.esito == LB.VERDETTO_EQUIVALENTE:
+        eq = v.equivalente
+    else:
+        eq = LB.equivalente_lato_opposto(side, price, round(float(size), 2))
+        assert eq is not None, v
     mandato = {"selection_id": int(altra), "handicap": 0.0, "side": eq.side,
                "price": float(eq.price), "size": float(eq.size)}
     return {

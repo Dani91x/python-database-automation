@@ -27,6 +27,7 @@ from Betfair.stream.live_order_build import round_to_tick, ticks_away
 # 01/10 (Ashdod v Maccabi Herzliya): i minimi di Betfair .it si LEGGONO dalla
 # fonte unica del repo (``Betfair/stream/trading/minimi_it.py``, la stessa del
 # runner), non si riscrivono qui.
+from Betfair.stream.trading import minimi_it as _MINIMI
 from Betfair.stream.trading.minimi_it import (IT_MIN_BACK, IT_MIN_LAY,
                                               SUBMIN_IMPORTO_FINALE_MIN)
 from Betfair.stream.scalper.scalper_bot import ticks_between
@@ -77,8 +78,10 @@ EXIT_KINDS = ("greenup", "profit", "loss", "time", "forced", "manual", "other")
 # rifiutata (INVALID_BET_SIZE) e la puntata da 7,47 dell'utente e' stata abbinata.
 IT_BACK_MIN = IT_MIN_BACK
 IT_LAY_MIN = IT_MIN_LAY
-# nessun passo: l'importo e' al centesimo anche con ``exact_sizes`` spento
-# (``legalize_back_size`` porta solo al minimo)
+# passo della LEGALIZZAZIONE per eccesso delle aperture con ``exact_sizes`` spento
+# (``legalize_back_size`` porta solo al minimo). 04/10: NON e' il passo con cui la
+# punta parte: da 1,00 in su ogni punta esce a multiplo di 0,50 per DIFETTO in
+# ``_place`` (``punta_a_multiplo``, regola dell'utente dopo Umea FC v Hammarby).
 IT_BACK_STEP = 0.01
 # forme della copertura (parametro ``cover_form``, M3.1)
 COVER_LAY_U45 = "lay_under45"
@@ -682,8 +685,10 @@ def size_ok(size: Optional[float]) -> bool:
 # minimo risulta mai abbinata, e quella di oggi e' stata rifiutata per taglia.
 #
 # Qui c'e' l'UNICO punto che dice come esce un ordine di Mike rispetto al
-# minimo (punta IT_MIN_BACK = 1,00, banca IT_MIN_LAY = 1,00, al centesimo):
-#   * ``diretto``      - sopra il minimo: si piazza com'e';
+# minimo (punta IT_MIN_BACK = 1,00, banca IT_MIN_LAY = 1,00 al centesimo; 04/10:
+# la PUNTA diretta solo a multipli di 0,50, arrotondata per difetto in ``_place``):
+#   * ``diretto``      - sopra il minimo: si piazza (la punta a multiplo di 0,50,
+#                        il resto lo dichiara ``_controllo_di_piatto``);
 #   * ``submin``       - sotto il minimo, APERTURA: il place-and-trim e' collegato
 #                        (``execution.place``: ``sotto_minimo`` vale solo per chi
 #                        non chiude; live ``place_submin_live``, paper runner);
@@ -1002,14 +1007,16 @@ def ripiego_chiusura_sotto_minimo(legs: List[Leg], key: Tuple[str, str], plan: G
                                   place_at_ticks: int = 0) -> Optional[Tuple[str, GreenupPlan]]:
     """M3.3 (decisione dell'utente 29/09): la copertura-banca si annulla BANCANDO
     l'Over 4,5; se quella banca e' sotto 0,50 si usa la PUNTATA sull'Under 4,5
-    quando e' piazzabile diretta, cioe' dal minimo della punta (IT_BACK_MIN) AL CENTESIMO.
+    quando e' piazzabile diretta, cioe' dal minimo della punta (IT_BACK_MIN) in su.
 
-    01/10 (Ashdod v Maccabi Herzliya, LIVE) - corretto: fino a oggi la puntata
-    doveva essere anche un MULTIPLO di 0,50. Quella condizione e' falsa per il
-    listino italiano (la puntata Under 4,5 da 7,47 EUR dell'utente e' stata
-    abbinata) e ha tenuto la BANCA Over da 0,43, che Betfair ha rifiutato
-    (INVALID_BET_SIZE). Se nemmeno la puntata arriva al minimo non c'e' ripiego e la
-    chiusura non parte (``via_ordine``: una chiusura non passa dal
+    01/10 (Ashdod v Maccabi Herzliya, LIVE) - fino a quel giorno la puntata doveva
+    essere anche un MULTIPLO di 0,50 per fare da ripiego, e quella condizione fu tolta
+    (la prova, la puntata Under 4,5 da 7,47 EUR, era dell'UTENTE dal sito, non del
+    bot via API). 04/10 (Umea FC v Hammarby, LIVE): la punta del bot da 7,27 e' stata
+    rifiutata INVALID_BET_SIZE. Il ripiego resta valido da 1,00 in su, ma la punta
+    PARTE a multiplo di 0,50 per DIFETTO (``_place``) e il resto lo dichiara
+    ``_controllo_di_piatto``. Se nemmeno la puntata arriva al minimo non c'e' ripiego
+    e la chiusura non parte (``via_ordine``: una chiusura non passa dal
     place-and-trim): lo si dichiara.
 
     01/10 (vincoli del coordinatore, ricerche in ``AUDIT_2026-10-01/``): la banca
@@ -1851,10 +1858,37 @@ def _cancel_live(ctx: MatchCtx, roles: Optional[Tuple[str, ...]] = None) -> List
             for l in ctx.legs if l.is_live and (roles is None or l.role in roles)]
 
 
+def punta_a_multiplo(size: float) -> Tuple[float, float]:
+    """04/10 - (importo che parte, residuo) di una PUNTA di Mike.
+
+    Regola dell'utente (Umea FC v Hammarby, LIVE: punta di chiusura 7,27 rifiutata
+    INVALID_BET_SIZE): da 1,00 in su una punta parte SOLO a multiplo di 0,50, per
+    DIFETTO (7,27 -> 7,00, residuo 0,27). Sotto 1,00 nulla cambia (place-and-trim o
+    niente, ``via_ordine``). La regola e' UNA, nella fonte unica
+    (``minimi_it.importo_piazzabile``): qui solo la sua applicazione."""
+    s = round(float(size), 2)
+    v = _MINIMI.importo_piazzabile("back", s)
+    if v.via != _MINIMI.VIA_DIRETTA:
+        return (s, 0.0)
+    return (round(float(v.importo), 2), round(float(v.residuo), 2))
+
+
 def _place(role: str, market: str, selection: str, side: str, price: float, size: float,
            persistence: str = "LAPSE", final: bool = False, note: str = "") -> Action:
+    # 04/10: OGNI punta di Mike nasce qui (aperture, coperture in punta, chiusure,
+    # ripieghi, «Chiudi»): da 1,00 in su esce a multiplo di 0,50 per DIFETTO. Il
+    # residuo resta nella posizione (esposizione non chiusa): lo dichiara
+    # ``_controllo_di_piatto`` con la proposta all'utente, UNA volta per episodio.
+    s = round(float(size), 2)
+    if side == "back":
+        piazzata, residuo = punta_a_multiplo(s)
+        if residuo > 0:
+            nota = ("punta %.2f -> %.2f (multiplo di 0,50 per difetto, residuo %.2f "
+                    "non piazzabile)" % (s, piazzata, residuo))
+            note = "%s; %s" % (note, nota) if note else nota
+            s = piazzata
     return Action(kind="place", role=role, market=market, selection=selection, side=side,
-                  price=float(round_to_tick(price)), size=round(float(size), 2),
+                  price=float(round_to_tick(price)), size=s,
                   persistence=persistence, final=final, note=note)
 
 

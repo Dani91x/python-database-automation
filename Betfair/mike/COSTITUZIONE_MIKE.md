@@ -1230,6 +1230,15 @@ posizione si chiude non c'è più niente da coprire.
 
 ### 15.5 QUALSIASI IMPORTO È PIAZZABILE — place-and-trim collegato (13/09)
 
+> **04/10/2026 — SUPERATO per le PUNTE da 1,00 € in su** (Umea FC v Hammarby, LIVE: punta di
+> chiusura 7,27 € rifiutata `INVALID_BET_SIZE`). Regola dell'utente: una PUNTA piazzata
+> diretta da 1,00 € in su parte SOLO a multipli di 0,50 €, arrotondata **per difetto**
+> (7,27 → 7,00); il resto (sempre < 0,50) non è piazzabile e lo dichiara
+> `_controllo_di_piatto` con la proposta all'utente, un avviso per episodio. Sotto 1,00 €
+> resta il place-and-trim (finale ≥ 0,50); la BANCA resta al centesimo da 1,00 €. Fonte
+> unica: `Betfair/stream/trading/minimi_it.py::importo_piazzabile`; in Mike `engine._place`
+> (`punta_a_multiplo`). Referto: `AUDIT_2026-10-04/MINIMI_PUNTE_E_MIKE_CHIUSURA.md`.
+
 **Regola definitiva: su Betfair si piazza qualunque cifra, fino al centesimo.**
 Il minimo di giurisdizione (.it BACK 2,00 € / LAY 0,50 €) riguarda il place **diretto**, non
 l'ordine in sé: un ordine già esistente può essere **ridotto** sotto quella soglia. È la
