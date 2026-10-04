@@ -189,4 +189,7 @@ def test_coda_stesso_referto_con_ambiente_principale_e_ambiente_vuoto(monkeypatc
     a, b = _riassunto(acceso), _riassunto(vuoto)
     assert a == b
     assert len(a["traccia"]["ordini"]) == 2, a["traccia"]
-    assert [r["status"] for r in a["traccia"]["righe"]] == ["hedged", "open"]
+    # 04/10/2026 (regola delle punte): la chiusura in punta 2,39 parte 2,00 (prima: 2,39 al
+    # centesimo, poi rifiutata dal banco come da Betfair). Il resto (0,39 @9,2) non e'
+    # piazzabile: l'apertura resta 'open' col residuo dichiarato, mai 'hedged'
+    assert [r["status"] for r in a["traccia"]["righe"]] == ["open", "open"]
