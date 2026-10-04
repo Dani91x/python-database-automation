@@ -320,6 +320,16 @@ def _ordini_di(*candidati: Any) -> List[Any]:
     return [o for o in candidati if o is not None]
 
 
+def _residuo_ricordato(strat: Any, mid: Any, sel: Any) -> float:
+    """Lo sbilancio del residuo che il bot DICHIARA e ricorda sulla selezione
+    (`ResiduiRicordati`), 0 se non ne ha."""
+    mem = getattr(strat, "residui_ricordati", None)
+    try:
+        return float(mem.sbilancio(mid, sel)) if mem is not None else 0.0
+    except Exception:  # noqa: BLE001 - memoria illeggibile: nessuna tolleranza in piu'
+        return 0.0
+
+
 def credenze(strat: Any, bot_key: str) -> List[Dict[str, Any]]:
     """Le posizioni che il BOT CREDE di avere, lette dal suo stato di RAM VERO.
 
@@ -368,11 +378,16 @@ def credenze(strat: Any, bot_key: str) -> List[Dict[str, Any]]:
                 # una soglia scelta per far passare il referto: viene dalla
                 # giurisdizione. Senza `residual_ok` resta la tolleranza che il
                 # bot dichiara per un ciclo chiuso.
+                # 04/10 (decisione 1 dell'utente): a ciclo chiuso la tolleranza
+                # del bot e' la sua (micro-residuo) PIU' il residuo che ha
+                # DICHIARATO e ricorda su quella selezione: e' la stessa regola
+                # della sua sorveglianza DONE (`RESIDUO_ACCETTATO + gia`)
                 "tolleranza": (
                     0.02 if str(getattr(slot, "status", "")) in _VIVI_SCALPER
-                    else (CD.MINIMO_LATO["LAY"]
-                          if getattr(slot, "residual_ok", False)
-                          else CD.RESIDUO_ACCETTATO)),
+                    else ((CD.MINIMO_LATO["LAY"]
+                           if getattr(slot, "residual_ok", False)
+                           else CD.RESIDUO_ACCETTATO)
+                          + _residuo_ricordato(strat, mid, sel))),
             })
         return out
 

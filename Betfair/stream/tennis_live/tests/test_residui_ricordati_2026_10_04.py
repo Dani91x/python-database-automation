@@ -236,3 +236,34 @@ def test_uf2_scusa_solo_il_resto_sotto_il_floor_dichiarato_dal_bot():
     assert RB.resto_dichiarato_dal_bot(bot, 11, "BACK", 0.06) is True
     assert RB.resto_dichiarato_dal_bot(bot, 11, "LAY", 0.06) is False    # altro lato
     assert RB.resto_dichiarato_dal_bot(bot, 11, "BACK", 0.20) is False   # altro importo
+
+
+def test_scalper_banca_d_uscita_al_centesimo_punta_al_passo(db, banchi, esecuzione_sincrona):
+    """Regola dell'utente: BANCA al centesimo. Un'uscita LAY da 2,02 parte a 2,02
+    (prima il passo 0,50 del runner la portava a 2,00 in silenzio); la punta
+    d'uscita resta ai multipli di 0,50 (il resto e' residuo)."""
+    from Betfair.stream.tennis_live.tests.test_cantiere_t_scalper_sequenze_2026_09_28 import (
+        _scalper_in_flatten as _sf)
+    b, strat, market, slot, _r = _sf(db, banchi, 2.0)
+    assert strat.size_step == 0.5
+    o = strat._place(market, 11, "LAY", 1.5, 2.02, floor_min=False, slot=slot)
+    assert o is not None and float(o.order_type.size) == 2.02
+    e = strat._place(market, 11, "LAY", 1.5, 2.37, floor_min=True, slot=None)
+    assert e is not None and float(e.order_type.size) == 2.5        # ingresso: invariato
+
+
+def test_credenza_dello_scalper_a_ciclo_chiuso_porta_il_residuo_dichiarato():
+    from types import SimpleNamespace
+
+    from Betfair.stream.tennis_live import certificazione_bot as CERT
+
+    strat = SimpleNamespace(residui_ricordati=CD.ResiduiRicordati(None),
+                            _slots={("1.101", 11): SimpleNamespace(
+                                status=TSB.IDLE, residual_ok=False, entry=None,
+                                entry_back=None, entry_lay=None, close=None,
+                                flatten_orders=[], ref_price=None)})
+    tol0 = CERT.credenze(strat, "tennis_scalper")[0]["tolleranza"]
+    assert tol0 == CD.RESIDUO_ACCETTATO
+    strat.residui_ricordati.dichiara("1.101", 11, "BACK", 0.15, 13.5, -2.0, 0.0)
+    tol1 = CERT.credenze(strat, "tennis_scalper")[0]["tolleranza"]
+    assert tol1 == pytest.approx(CD.RESIDUO_ACCETTATO + 2.0)

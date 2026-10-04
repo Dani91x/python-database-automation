@@ -74,6 +74,7 @@ from .condotta_ordini import (
     ResiduiRicordati,
     dichiara_chiusura_mercato,
     registra_esito_manuale,
+    abbinato_selezione,
     sbilancio_selezione,
 )
 
@@ -2285,8 +2286,15 @@ class TennisScalperStrategy(BaseStrategy):
                                                         *slot.flatten_orders)
                               if o is not None), None)
                 if sid_r is not None:
+                    # i numeri della SELEZIONE (blotter), non del solo ciclo:
+                    # e' cio' che resta davvero a mercato e che l'utente chiude
+                    try:
+                        b_s, ba_s, l_s, la_s = abbinato_selezione(market, self, int(sid_r))
+                        sv_s, sp_s = b_s * (ba_s - 1.0) - l_s * (la_s - 1.0), l_s - b_s
+                    except Exception:  # noqa: BLE001 - blotter illeggibile: il ciclo
+                        sv_s, sp_s = net_win, net_lose
                     self.residui_ricordati.dichiara(market.market_id, sid_r, lato_r,
-                                                    imp_r, q_r, net_win, net_lose)
+                                                    imp_r, q_r, sv_s, sp_s)
                     self.stats["residui_ricordati"] = self.residui_ricordati.per_stats()
                 slot.status = DONE
                 delta = self._book_locked(slot, min(net_win, net_lose))
@@ -2436,7 +2444,10 @@ class TennisScalperStrategy(BaseStrategy):
         # LIVE: GRANULARITA' exchange (.it = multipli di 0,50 €): una size non
         # multipla viene RIFIUTATA (INVALID_BET_SIZE) e la posizione resta
         # aperta. Arrotonda al multiplo piu' vicino PRIMA di ogni altro check.
-        if self.size_step > 0:
+        # 04/10 (regola dell'utente: BANCA al centesimo): il passo vale per la
+        # PUNTA; per la banca resta solo sugli INGRESSI (stake, invariati), mai
+        # su un'uscita, che esce all'importo esatto
+        if self.size_step > 0 and (str(side).upper() == "BACK" or floor_min):
             size = round(round(size / self.size_step) * self.size_step, 2)
             if size < self.size_step:
                 size = 0.0

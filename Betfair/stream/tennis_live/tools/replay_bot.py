@@ -1345,12 +1345,16 @@ def nota_residui(attivita: List[Tuple[str, Dict[str, Any]]],
     in EUR (riga del referto: serve all'utente)."""
     dich = [p for k, p in attivita if k == "residuo_non_piazzabile"]
     chiusi = sum(1 for k, _p in attivita if k == "residuo_chiuso")
+    regolati = [p for k, p in attivita if k == "residuo_regolato"]
     aperti = [r for r in aperti_a_fine if float(r.get("importo") or 0.0) >= 0.0]
     return ("RESIDUI (decisione 1): dichiarati %d (importi %s EUR, sbilancio %s EUR), "
-            "tornati pari %d; aperti a fine partita %d (importi %s EUR, sbilancio "
+            "tornati pari %d; regolati col mercato %d (se vince %s / se perde %s EUR); "
+            "aperti a fine partita %d (importi %s EUR, sbilancio "
             "totale %.2f EUR, se vince %.2f / se perde %.2f)"
             % (len(dich), [p.get("importo") for p in dich],
-               [p.get("sbilancio") for p in dich], chiusi, len(aperti),
+               [p.get("sbilancio") for p in dich], chiusi, len(regolati),
+               [p.get("se_vince") for p in regolati], [p.get("se_perde") for p in regolati],
+               len(aperti),
                [r.get("importo") for r in aperti],
                sum(float(r.get("sbilancio") or 0.0) for r in aperti),
                sum(float(r.get("se_vince") or 0.0) for r in aperti),
