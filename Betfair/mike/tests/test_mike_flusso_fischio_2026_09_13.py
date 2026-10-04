@@ -533,9 +533,11 @@ def test_la_tranche_sotto_il_minimo_si_piazza_lo_stesso():
     assert d.updates["cover_stage"] == 1        # la seconda tranche arrivera'
     assert tele["x_pieno"] == pytest.approx(18.0 / (7.0 * 0.95), abs=0.01)
     assert tele["x"] == pytest.approx(1.35, abs=0.02)
-    # e l'ordine piazzato porta l'importo ESATTO, non il minimo gonfiato
+    # e l'ordine piazzato non e' il minimo gonfiato; 04/10 (regola delle punte .it
+    # dell'utente): 1,35 parte al multiplo di 0,50 per DIFETTO, 1,00 (prima il test
+    # pretendeva 1,35 al centesimo)
     ordine = [a for a in d.actions if a.kind == "place"][0]
-    assert ordine.size == pytest.approx(1.35, abs=0.02)
+    assert ordine.size == pytest.approx(1.00)
 
 
 @pytest.mark.usefixtures("forma_di_prima")
@@ -571,7 +573,10 @@ def test_il_riprezzo_della_prima_tranche_resta_sulla_frazione():
     E.apply_decision(ctx, E.decide(ctx, s2, p), s2.now)
     d = E.decide(ctx, s2, p)
     place = [a for a in d.actions if a.kind == "place"]
-    assert place and place[0].size == pytest.approx(9.0 / (3.0 * 0.95), abs=0.02)
+    # 04/10 (regola delle punte .it): 3,16 esatto -> parte 3,00 (multiplo di 0,50 per
+    # difetto); resta sulla frazione (la piena sarebbe 6,32 -> 6,00)
+    assert round(9.0 / (3.0 * 0.95), 2) == 3.16
+    assert place and place[0].size == pytest.approx(3.00)
 
 
 # ---------------------------------------------------------------------------

@@ -184,14 +184,16 @@ def test_r_contratto_tradotto_del_finto_uguale_al_motore_vero(amb, monkeypatch):
     _due_esiti(amb.market)
     amb.market.borsa = True
     ws = amb.ch.collega("safe")
-    _manda(amb, ws, _cmd("safe", 1, mode="live", selection_id=OVER, side="LAY", price=18.0,
-                         size=0.43, reduces_liability=True))
+    # 04/10/2026: banca 0,25 @19 -> punta 4,50 (multipla di 0,50; con 0,43 @18 la punta
+    # 7,31 non e' piu' un equivalente piazzabile e il motore vero rifiuta)
+    _manda(amb, ws, _cmd("safe", 1, mode="live", selection_id=OVER, side="LAY", price=19.0,
+                         size=0.25, reduces_liability=True))
     assert _ack(amb, ws)["accettato"] is True
     ev_vero = _eventi(amb, ws, "safe-t1")[-1]
-    t = tradotto_di("lay", 18.0, 0.43)
+    t = tradotto_di("lay", 19.0, 0.25)
     assert ev_vero["tradotto"] == t
     finto = evento_tradotto(t, ref="safe-t1", seq=ev_vero["seq"], fase=ev_vero["fase"],
-                            matched=0.0, remaining=7.31,
+                            matched=0.0, remaining=4.50,
                             status=ev_vero["riga_mandata"].get("status") or "EXECUTABLE",
                             bet_id=ev_vero["bet_id"])
     assert set(finto) >= set(MO.CHIAVI_SPECCHIO) and set(ev_vero) >= set(MO.CHIAVI_SPECCHIO)

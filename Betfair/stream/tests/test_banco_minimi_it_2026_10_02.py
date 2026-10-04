@@ -145,7 +145,11 @@ def test_replace_con_importo_finale_sotto_0_50_rifiutato(banco):
         mercato = banco.mercato_rest.s.mercati[banco.market_id]
         mercato.replace_order(ordine, p)
         banco.motore.attendi_esecuzione(banco.market_id)
-        nuovo = ordine.trade.orders[-1]
+        # 04/10 (patch K1 applicata): il sostituto si legge dal registro dell'exchange
+        # simulato; se e' RESPINTO non resta nel Trade (come flumine LIVE, che lo crea
+        # solo su SUCCESS) e il vecchio ordine e' completo (annullo non annullato)
+        nuovo = [o for o, t, s in MB.REGISTRO.piazzati
+                 if t == MB.SOSTITUZIONE and round(s, 2) == resto][-1]
         assert nuovo is not ordine
         risposta = nuovo.responses.place_response
         rifiutati = [x for x in MB.REGISTRO.rifiutati
@@ -153,10 +157,13 @@ def test_replace_con_importo_finale_sotto_0_50_rifiutato(banco):
         if atteso_ok:
             # flumine registra la risposta del replace solo se riuscito
             assert getattr(risposta, "status", None) == "SUCCESS" and rifiutati == []
+            assert ordine.trade.orders[-1] is nuovo
         else:
             assert len(rifiutati) == 1 and rifiutati[0]["codice"] == "INVALID_BET_SIZE"
             assert float(nuovo.simulated.size_matched) == 0.0
             assert float(nuovo.simulated.size_voided) == resto     # mai vivo a mercato
+            assert nuovo not in ordine.trade.orders                # nessun fantasma
+            assert ordine.status.value == "Execution complete"
     assert any(t == MB.SOSTITUZIONE and round(s, 2) == 0.40 for _o, t, s in MB.REGISTRO.piazzati)
     assert MB.abbinati_sotto_minimo() == []
 

@@ -159,14 +159,15 @@ def test_lay_conversion_bad_price_raises():
         (0.99, False, None),
         (1.0, True, 1.0),
         (1.5, True, 1.5),
-        (1.99, True, 1.99),
+        # 04/10/2026 (regola delle punte .it): da 1,00 multipli di 0,50 per difetto
+        (1.99, True, 1.5),
         (2.0, True, 2.0),
-        (2.3, True, 2.3),
+        (2.3, True, 2.0),
         (2.5, True, 2.5),
-        (2.7, True, 2.7),
+        (2.7, True, 2.5),
         (3.0, True, 3.0),
-        (4.99, True, 4.99),
-        (7.47, True, 7.47),
+        (4.99, True, 4.5),
+        (7.47, True, 7.0),
     ],
 )
 def test_min_stake_it_back(size, ok, legal):
@@ -280,12 +281,13 @@ def test_build_back_rounds_price_to_tick():
     assert b.order.order_type.price == 3.05
 
 
-def test_build_back_tiene_il_centesimo():
-    # 01/10/2026: niente piu' floor a 0,50 (residuo scoperto fino a 0,49)
+def test_build_back_a_multiplo_di_050_per_difetto_col_residuo():
+    # 04/10/2026 (regola delle punte .it dell'utente; era ``test_build_back_tiene_il_centesimo``
+    # sulla prova sbagliata del 01/10): 4,99 parte 4,50, il residuo 0,49 e' dichiarato
     b = build_order(_market(), **_base_kwargs(price=3.0, size=4.99))
-    assert b.size == 4.99
-    assert b.order.order_type.size == 4.99
-    assert "legalize" not in b.note
+    assert b.size == 4.5 and b.residuo == 0.49
+    assert b.order.order_type.size == 4.5
+    assert "residuo 0.49 NON piazzato" in b.note
 
 
 def test_build_back_below_min_raises():
