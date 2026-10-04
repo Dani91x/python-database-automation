@@ -153,3 +153,14 @@ banco; la misura del 13/09 dice LAY >= 0,50 al centesimo. Da allineare nella tua
 File: `AUDIT_2026-10-04/CERTIFICAZIONE_SCALPER_CALCIO.md`, `..._FIX1_SOTTO_050_NON_INTEGRARE.patch`,
 `replay/scalper_calcio_tutti_HEAD_e578802.txt`, `replay/scalper_calcio_base_sonda_7_violazioni.txt`.
 Strumenti non committati in `_bis/` (prova.sh, tutti.sh, sonde, mut.py, falsifica.sh).
+
+## 8. AGGIUNTA (19:45): il replay con la patch e' terminato da solo
+`replay/scalper_calcio_base_CON_PATCH_FIX1.txt`: KO, **K1 0** (sparito), restano K5 x1 e B2 x1
+(residuo dimenticato al reset: decisione del punto 4). Durata 2375 s, azioni 13154: il banco ha
+RIFIUTATO 1905 ordini `INVALID_BET_SIZE`, `txn_cap` 9264 volte. Lettura (dai motivi, non sondata
+ordine per ordine): senza il place-and-trim dei resti le chiusure passano dalla parte diretta; lo
+scalper considera legale la LAY diretta da 0,50 (`_side_min`), il banco la rifiuta sotto 1,00
+(`minimi_it`) e il flatten la ripiazza a ogni giro. La patch, coi minimi di oggi del banco, crea un
+LOOP di rifiuti: NON integrabile finche' non si fissa il minimo LAY (0,50 misurato il 13/09 contro
+1,00 di `minimi_it`). Il loop e' anche un difetto del bot: le chiusure rifiutate per taglia
+ritentano senza freno. I PID 33476/16048 del punto 3 sono terminati da soli.
