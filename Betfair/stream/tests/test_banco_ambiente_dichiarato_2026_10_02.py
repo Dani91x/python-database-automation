@@ -193,3 +193,22 @@ def test_coda_stesso_referto_con_ambiente_principale_e_ambiente_vuoto(monkeypatc
     # centesimo, poi rifiutata dal banco come da Betfair). Il resto (0,39 @9,2) non e'
     # piazzabile: l'apertura resta 'open' col residuo dichiarato, mai 'hedged'
     assert [r["status"] for r in a["traccia"]["righe"]] == ["open", "open"]
+
+
+
+def test_il_segnale_di_spegnimento_dell_app_non_entra_nel_replay(tmp_path, monkeypatch):
+    """04/10: ad app chiusa resta sul disco il file ``ARRESTO``; con l'orologio del
+    replay (quello della registrazione) risultava "appena scritto" e le sessioni in
+    soldi veri dello scalper non partivano (zero tick). Dentro il banco la cartella
+    del segnale e' quella del banco, senza il file; fuori torna com'era."""
+    from Betfair.stream import arresto_ordinato as AO
+    from Betfair.stream.backtest import certifica as CE
+
+    monkeypatch.setenv("APP_ARRESTO_DIR", str(tmp_path))
+    (tmp_path / AO.NOME_FILE).write_text("app chiusa", encoding="ascii")
+    assert AO.richiesto(dal=0.0) is True            # il file dell'app c'e' davvero
+    with CE._freni_da_banco():
+        assert AO.cartella() != str(tmp_path)
+        assert AO.richiesto(dal=0.0) is False       # nel replay non si vede
+    assert AO.cartella() == str(tmp_path)
+    assert AO.richiesto(dal=0.0) is True

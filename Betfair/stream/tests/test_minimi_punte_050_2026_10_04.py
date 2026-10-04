@@ -234,8 +234,27 @@ def _punta(b: Any, size: float, ref: str) -> Any:
 
 
 def test_banco_punta_diretta_7_27_rifiutata_7_00_abbinata(banco, monkeypatch):
+    from dataclasses import replace
+
+    from Betfair.stream import live_order_build as LB
     from Betfair.stream.backtest import minimi_banco as MB
 
+    # 1) lo SPECCHIO dell'ordine diretto fa come il vero (``omega_market.
+    #    place_order_live``, 04/10): 7,27 parte 7,00 e il residuo torna dichiarato
+    r0 = _punta(banco, 7.27, "t-727-specchio")
+    assert r0.ok is True and r0.size_matched == 7.00
+    assert {k: r0.punta_050[k] for k in ("chiesto", "piazzato", "residuo")} == {
+        "chiesto": 7.27, "piazzato": 7.00, "residuo": 0.27}
+    assert MB.REGISTRO.rifiutati == []
+    # 2) l'EXCHANGE simulato: un chiamante che NON arrotonda (un bot che piazza da
+    #    se') manda 7,27 cosi' com'e' e il banco la rifiuta come Betfair
+    vero = LB.min_stake_rules
+
+    def _senza_arrotondare(j, s, p, size, *a, **k):
+        return replace(vero(j, s, p, size, *a, **k),
+                       legalized_size=round(float(size), 2), residuo=0.0)
+
+    monkeypatch.setattr(LB, "min_stake_rules", _senza_arrotondare)
     r = _punta(banco, 7.27, "t-727")
     assert r.ok is False and r.error_code == "INVALID_BET_SIZE" and r.size_matched == 0.0
     assert [x["codice"] for x in MB.REGISTRO.rifiutati] == ["INVALID_BET_SIZE"]

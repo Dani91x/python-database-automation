@@ -629,6 +629,7 @@ class MercatoFlumine:
         if self.guasti.get("place_exception", 0) > 0:
             self.guasti["place_exception"] -= 1
             raise RuntimeError("guasto provocato: esito IGNOTO dal place")
+        punta_050: Optional[Dict[str, Any]] = None
         if not self._place_and_trim_in_corso:
             # 02/10 (banco ottimista): la STESSA guardia del vero
             # (``omega_market.place_order_live``, correzione del runner punto 7):
@@ -645,6 +646,17 @@ class MercatoFlumine:
                     f"{_v.reason}: nessun ordine inviato (REST diretto); residuo "
                     f"{round(float(size), 2):.2f} da dichiarare al trader",
                     error_code=SOTTO_MINIMO_NON_PIAZZABILE)
+            # 04/10/2026: come il vero (``omega_market.place_order_live``): una PUNTA
+            # da 1,00 in su non multipla di 0,50 parte a DIFETTO, il resto torna al
+            # chiamante in ``punta_050`` (prima il banco la mandava intera e
+            # ``minimi_banco`` la rifiutava: un rifiuto che il vero non ha piu')
+            if str(side).lower() == "back" and float(_v.residuo or 0.0) > 0.0:
+                punta_050 = {"chiesto": round(float(size), 2),
+                             "piazzato": round(float(_v.legalized_size), 2),
+                             "residuo": round(float(_v.residuo), 2),
+                             "motivo": "punta .it diretta solo a multipli di 0,50: "
+                                       "arrotondata per difetto, residuo NON piazzato"}
+                size = float(_v.legalized_size)
         rifiuto = self.rifiuto_provocato(market_id=market_id, side=side, size=size,
                                          customer_ref=customer_ref)
         if rifiuto is not None:
@@ -741,6 +753,7 @@ class MercatoFlumine:
             size_matched=round(abbinato, 2),
             avg_price_matched=float(medio) if medio else None,
             raw={},
+            punta_050=punta_050,
         )
 
     def _attendi_betfair(self, mercato: Any) -> None:

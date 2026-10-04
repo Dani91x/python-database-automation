@@ -293,10 +293,14 @@ def _freni_da_banco() -> Iterator[None]:
     # 02/10 (PARITA_SAFE_ENV): non solo i freni, TUTTO l'ambiente che conta
     # (``AMBIENTE_DEL_BANCO``): stessa dichiarazione, stesso ripristino.
     prima_env = {k: os.environ.get(k) for k in AMBIENTE_DEL_BANCO}
+    # 04/10: il segnale di SPEGNIMENTO ORDINATO dell'app (file ``ARRESTO`` che
+    # ``main.js`` scrive alla chiusura) non entra mai in un replay
+    prima_env[ARRESTO_ENV] = os.environ.get(ARRESTO_ENV)
     _ctl._SETTINGS_CACHE["data"] = {"kill_switch": False}
     _ctl._SETTINGS_CACHE["ts"] = float("inf")
     try:
         os.environ.update(AMBIENTE_DEL_BANCO)
+        os.environ[ARRESTO_ENV] = cartella_arresto_del_banco()
         with _mo.dichiara_per_banco("LIVE", kill=False):
             yield
     finally:
@@ -307,6 +311,32 @@ def _freni_da_banco() -> Iterator[None]:
                 os.environ[k] = v
         _ctl._SETTINGS_CACHE.clear()
         _ctl._SETTINGS_CACHE.update(prima)
+
+
+#: 04/10 - IL SEGNALE DI SPEGNIMENTO ORDINATO NON ENTRA NEL REPLAY. A app chiusa
+#: resta sul disco ``<DATA_DIR>/_arresto/ARRESTO`` (``arresto_ordinato``, scritto da
+#: ``main.js``). ``arresto_ordinato.richiesto()`` lo conta se e' piu' recente
+#: dell'avvio del processo, ma nel replay l'orologio e' quello della REGISTRAZIONE
+#: (vecchia di giorni): il file di oggi risultava "appena scritto" e ogni sessione
+#: in soldi veri dello scalper moriva ``freno tirato (arresto_ordinato)`` con zero
+#: tick (referto del coordinatore del 04/10 dal checkout principale ad app chiusa:
+#: 13 scenari BANCO-ESPLOSO; nel worktree del delegato, senza quel file, 15 OK).
+#: Il banco dichiara una cartella SUA, vuota: il referto non dipende piu' dal
+#: fatto che l'app di chi lancia sia aperta o chiusa.
+ARRESTO_ENV = "APP_ARRESTO_DIR"
+
+
+def cartella_arresto_del_banco() -> str:
+    """La cartella del segnale d'arresto per i replay: del banco, senza il file."""
+    import tempfile
+
+    p = os.path.join(tempfile.gettempdir(), "banco_replay_senza_arresto")
+    os.makedirs(p, exist_ok=True)
+    try:
+        os.remove(os.path.join(p, "ARRESTO"))
+    except OSError:
+        pass
+    return p
 
 
 #: D1-quater (29/09) - il tetto d'ambiente dichiarato per la durata del replay,
