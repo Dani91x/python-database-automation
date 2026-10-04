@@ -21,6 +21,7 @@ from typing import Any, List
 import pytest
 from flumine.order.ordertype import LimitOrder
 from flumine.order.trade import Trade
+from flumine.strategy.strategy import BaseStrategy
 
 from Betfair.stream.tennis_live.tests.test_cantiere_d2_chiusure_esatte_2026_09_28 import (  # noqa: F401
     _BotFinto,
@@ -119,9 +120,17 @@ def test_done_senza_sostituto_a_mercato_e_una_sequenza_fallita(monkeypatch):
 
     bot = _BotFinto()
 
+    class _Strategia(BaseStrategy):    # la strategia VERA di flumine del Trade
+        def check_market_book(self, *a: Any) -> bool:  # pragma: no cover
+            return False
+
+        def process_market_book(self, *a: Any) -> None:  # pragma: no cover
+            return None
+    strategia = _Strategia(market_filter={"markets": []})
+
     def _done_col_parcheggio(market, state, **k):
         park = Trade(market_id="1.101", selection_id=11, handicap=0.0,
-                     strategy=bot).create_order(
+                     strategy=strategia).create_order(
             side="BACK", order_type=LimitOrder(price=1000.0, size=1.0))
         park.execution_complete()             # annullato dal replace fallito
         k["ops"].last_order = park
@@ -131,7 +140,8 @@ def test_done_senza_sostituto_a_mercato_e_una_sequenza_fallita(monkeypatch):
     o = ue.piazza(_MercatoFinto(), 11, "BACK", 2.0, 0.7, diretto=lambda s: None)
     assert o is not None and str(o.sequenza["state"].step.value) == "aborted"
     assert ue.intervallo_s(("1.101", 11)) == 60      # fallita: 30 -> 60
-    assert [k for k, _ in bot.eventi].count("uscita_esatta_abort") == 1
+    abort = [p for k, p in bot.eventi if k == "uscita_esatta_abort"]
+    assert len(abort) == 1 and "replace rifiutato" in abort[0]["motivo"], abort
 
 
 # --------------------------------------------------------------------------- PRO
