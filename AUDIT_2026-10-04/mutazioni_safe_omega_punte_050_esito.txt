@@ -1,0 +1,82 @@
+﻿M1 REST senza arrotondamento: 4 failed, 19 passed in 7.32s
+    rosso: test_rest_punta_239_parte_200_col_residuo_dichiarato
+    rosso: test_rest_tabella_della_regola[back-7.27-7.0-0.27]
+    rosso: test_rest_tabella_della_regola[back-1.49-1.0-0.49]
+    rosso: test_rest_place_submin_sopra_il_minimo_passa_dalla_stessa_regola
+    ripristino Betfair/omega/omega_market.py: ok
+M2 REST senza dichiarazione: 4 failed, 19 passed in 4.49s
+    rosso: test_rest_punta_239_parte_200_col_residuo_dichiarato
+    rosso: test_rest_tabella_della_regola[back-7.27-7.0-0.27]
+    rosso: test_rest_tabella_della_regola[back-1.49-1.0-0.49]
+    rosso: test_rest_place_submin_sopra_il_minimo_passa_dalla_stessa_regola
+    ripristino Betfair/omega/omega_market.py: ok
+M3 place senza arrotondamento: 5 failed, 18 passed in 4.24s
+    rosso: test_safe_coda_manda_200_e_l_esito_dichiara_il_residuo
+    rosso: test_safe_canale_manda_200_e_l_esito_dichiara_il_residuo
+    rosso: test_safe_combo_con_punta_a_multiplo_lo_dice_forte_una_volta
+    rosso: test_safe_bot_uscita_con_residuo_un_avviso_e_nessun_ritento
+    rosso: test_green_up_con_residuo_un_avviso_stato_residual_dropped_nessun_ritento
+    ripristino Betfair/safe_strategy/execution.py: ok
+M4 place: esito senza punta_050: 5 failed, 18 passed in 4.60s
+    rosso: test_safe_chiusura_rest_239_parte_200_e_il_residuo_e_ricordato_una_volta
+    rosso: test_safe_coda_manda_200_e_l_esito_dichiara_il_residuo
+    rosso: test_safe_canale_manda_200_e_l_esito_dichiara_il_residuo
+    rosso: test_safe_combo_con_punta_a_multiplo_lo_dice_forte_una_volta
+    rosso: test_green_up_live_rest_abbinato_stato_residual_dropped_subito
+    ripristino Betfair/safe_strategy/execution.py: ok
+M5 close_trade senza pre-verifica del residuo: 4 failed, 19 passed in 4.59s
+    rosso: test_safe_chiusura_rest_239_parte_200_e_il_residuo_e_ricordato_una_volta
+    rosso: test_safe_residuo_di_chiusura_mai_ritentato_a_ogni_giro
+    rosso: test_safe_bot_uscita_con_residuo_un_avviso_e_nessun_ritento
+    rosso: test_green_up_con_residuo_un_avviso_stato_residual_dropped_nessun_ritento
+    ripristino Betfair/safe_strategy/execution.py: ok
+M6 residuo senza via sempre falso: 4 failed, 19 passed in 4.82s
+    rosso: test_safe_chiusura_rest_239_parte_200_e_il_residuo_e_ricordato_una_volta
+    rosso: test_safe_residuo_di_chiusura_mai_ritentato_a_ogni_giro
+    rosso: test_safe_bot_uscita_con_residuo_un_avviso_e_nessun_ritento
+    rosso: test_green_up_con_residuo_un_avviso_stato_residual_dropped_nessun_ritento
+    ripristino Betfair/safe_strategy/execution.py: ok
+M7 avviso a ogni giro: 4 failed, 19 passed in 4.09s
+    rosso: test_safe_chiusura_rest_239_parte_200_e_il_residuo_e_ricordato_una_volta
+    rosso: test_safe_residuo_di_chiusura_mai_ritentato_a_ogni_giro
+    rosso: test_safe_bot_uscita_con_residuo_un_avviso_e_nessun_ritento
+    rosso: test_green_up_con_residuo_un_avviso_stato_residual_dropped_nessun_ritento
+    ripristino Betfair/safe_strategy/execution.py: ok
+M8 residuo mai ricordato: 5 failed, 18 passed in 3.77s
+    rosso: test_safe_chiusura_rest_239_parte_200_e_il_residuo_e_ricordato_una_volta
+    rosso: test_safe_residuo_di_chiusura_mai_ritentato_a_ogni_giro
+    rosso: test_safe_bot_uscita_con_residuo_un_avviso_e_nessun_ritento
+    rosso: test_green_up_con_residuo_un_avviso_stato_residual_dropped_nessun_ritento
+    rosso: test_green_up_live_rest_abbinato_stato_residual_dropped_subito
+    ripristino Betfair/safe_strategy/execution.py: ok
+M9 chiusura abbinata: residuo non ricordato subito: 2 failed, 21 passed in 3.74s
+    rosso: test_safe_chiusura_rest_239_parte_200_e_il_residuo_e_ricordato_una_volta
+    rosso: test_green_up_live_rest_abbinato_stato_residual_dropped_subito
+    ripristino Betfair/safe_strategy/execution.py: ok
+M10 Safe: candidati non saltano il residuo: 1 failed, 22 passed in 3.93s
+    rosso: test_safe_exit_candidates_saltano_il_residuo_ricordato
+    ripristino Betfair/safe_strategy/bot_service.py: ok
+M11 Omega: candidati non saltano il residuo: 1 failed, 22 passed in 4.59s
+    rosso: test_omega_greenup_candidates_saltano_il_residuo_ricordato
+    ripristino Betfair/omega/omega_service.py: ok
+M12 Safe _send_exit senza ramo del residuo: 1 failed, 22 passed in 4.30s
+    rosso: test_safe_bot_uscita_con_residuo_un_avviso_e_nessun_ritento
+    ripristino Betfair/safe_strategy/bot_service.py: ok
+M13 Omega green-up senza ramo del residuo: 1 failed, 22 passed in 4.94s
+    rosso: test_green_up_con_residuo_un_avviso_stato_residual_dropped_nessun_ritento
+    ripristino Betfair/omega/omega_service.py: ok
+M14 terminale: punta non multipla accettata: 1 failed, 22 passed in 4.57s
+    rosso: test_terminale_punta_727_rifiutata_prima_dell_invio_coi_due_importi
+    ripristino Betfair/order_exec.py: ok
+M15 terminale: importo cambiato in silenzio: 1 failed, 22 passed in 4.51s
+    rosso: test_terminale_punta_727_rifiutata_prima_dell_invio_coi_due_importi
+    ripristino Betfair/order_exec.py: ok
+M16 Omega stato 'pending' invece di residual_dropped: 1 failed, 22 passed in 4.59s
+    rosso: test_green_up_live_rest_abbinato_stato_residual_dropped_subito
+    ripristino Betfair/omega/omega_service.py: ok
+M17 Omega automatico senza ramo del residuo: 1 failed, 22 passed in 4.33s
+    rosso: test_uscita_automatica_v3_residuo_nessun_tentativo_nessun_secondo_critico
+    ripristino Betfair/omega/omega_proposte.py: ok
+M18 combo arrotondata in silenzio: 1 failed, 22 passed in 4.97s
+    rosso: test_safe_combo_con_punta_a_multiplo_lo_dice_forte_una_volta
+    ripristino Betfair/safe_strategy/bot_service.py: ok
