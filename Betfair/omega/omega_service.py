@@ -5722,10 +5722,16 @@ def _manual_place(*, market, db, payload: dict, now: datetime) -> dict:
                 "reason": "live_not_matched", "order_status": res.order_status})
             return {"error": "live_not_matched", "trade_id": trade_id}
         avg = float(res.avg_price_matched or price)
+        # 04/10/2026: punta da 1,00 in su non multipla di 0,50 mandata a DIFETTO dal
+        # REST (``omega_market.place_order_live``, come la coda): la dichiarazione
+        # resta sulla riga, mai in silenzio
+        punta_050 = getattr(res, "punta_050", None)
         _confirm_open_trade(
             db, trade_id, event_id=event_id, price=avg, size=res.size_matched,
             liability=_back_liability(res.size_matched, side, avg), bet_id=res.bet_id,
-            meta={**manual_meta, "order_status": res.order_status}, mode="live",
+            meta={**manual_meta, "order_status": res.order_status,
+                  **({"punta_050": dict(punta_050)} if isinstance(punta_050, dict) else {})},
+            mode="live",
         )
     else:  # paper
         # CANTIERE C (28/09, D1): nessun simulatore "di casa" anche nel
@@ -6506,6 +6512,12 @@ def _greenup_candidates(db, chiusi: Optional[set] = None) -> list[dict[str, Any]
             continue
         if meta.get("hedge_pending_ids"):
             continue          # chiusura in volo: residuo non conoscibile → mai un secondo invio
+        if X.residuo_ricordato(t):
+            # 04/10/2026 (decisione dell'utente "IL RESIDUO RESTA RICORDATO E LO
+            # CHIUDO IO"): residuo NON piazzabile gia' dichiarato (CRITICAL con la
+            # proposta, ``execution.close_trade``): ne' green-up ne' proposte lo
+            # ritentano; lo chiude l'utente o lo regola il mercato.
+            continue
         req = meta.get(GREENUP_KEY)
         if isinstance(req, dict):
             if req.get("failed"):
@@ -6949,6 +6961,17 @@ def _greenup_send(*, db, market, tr: dict[str, Any], meta: dict[str, Any], trigg
         req.update({"sent": True, "note": err})
         _greenup_persist(db, tr, req)
         return False
+    if err == X.ERR_RESIDUO:
+        # 04/10/2026: il resto di una chiusura gia' abbinata non ha nessuna via
+        # (sotto 0,50). Dichiarato UNA volta da ``close_trade`` (CRITICAL con la
+        # proposta) e ricordato sull'apertura: stato 'residual_dropped' (il
+        # meccanismo che c'e' gia'), nessun tentativo consumato, nessun ritento.
+        req["attempts"] = attempts - 1
+        _greenup_residual_dropped(
+            db, tr, dict(tr.get("meta") or meta), {**req, "sent": True},
+            "residuo sotto 0,50 EUR non piazzabile: lo chiudi tu (" +
+            str(res.get("detail") or "") + ")", now)
+        return False
     if err:
         req.update({"last_error": err, "detail": res.get("detail")})
         failed = attempts >= max_attempts
@@ -6983,10 +7006,20 @@ def _greenup_send(*, db, market, tr: dict[str, Any], meta: dict[str, Any], trigg
     # H-04: 'done' = coperta del tutto; 'pending' = residuo o fill ancora in volo
     covered = (not res.get("pending_fill")) and (
         residual_after is None or float(residual_after) <= X.HEDGE_EPS)
-    req.update(_greenup_state_fields(
-        "done" if covered else "pending",
-        ui_reason if covered else ui_reason + " - residuo ancora da coprire",
-        now, attempts=attempts, p_lose=info.get("p_lose"), ev=info.get("ev_hold")))
+    if not covered and not res.get("pending_fill") and X.residuo_ricordato(tr):
+        # 04/10/2026: chiusura abbinata a multiplo di 0,50 per difetto; il resto non
+        # e' piazzabile ed e' gia' dichiarato e ricordato (``close_trade``): lo stato
+        # lo dice col meccanismo che c'e' gia' ('residual_dropped'), non "da coprire"
+        req.update({"residual_dropped": True,
+                    "note": "residuo sotto 0,50 EUR non piazzabile: lo chiudi tu"})
+        req.update(_greenup_state_fields(
+            "residual_dropped", "residuo sotto 0,50 EUR non piazzabile: lo chiudi tu",
+            now, attempts=attempts, p_lose=info.get("p_lose"), ev=info.get("ev_hold")))
+    else:
+        req.update(_greenup_state_fields(
+            "done" if covered else "pending",
+            ui_reason if covered else ui_reason + " - residuo ancora da coprire",
+            now, attempts=attempts, p_lose=info.get("p_lose"), ev=info.get("ev_hold")))
     req["kind"] = kind
     # H-01 + review H3: ``exit_kind`` dal VOCABOLARIO CONDIVISO (exits.ui_exit_kind):
     # 'greenup' SOLO se la chiusura è INTEGRALE e il P&L bloccato è >= 0 — un

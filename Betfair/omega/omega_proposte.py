@@ -838,6 +838,14 @@ def _esegui_da_solo(*, db: Any, market: Any, tr: dict[str, Any], meta: dict[str,
     if err == "posizione_gia_chiusa" or (isinstance(err, str)
                                          and err.startswith("trade_non_aperto")):
         return False
+    if err == X.ERR_RESIDUO:
+        # 04/10/2026: resto di una chiusura gia' abbinata senza nessuna via (sotto
+        # 0,50): ``close_trade`` l'ha gia' dichiarato UNA volta (CRITICAL con la
+        # proposta) e ricordato sull'apertura, che dal giro dopo esce dai candidati.
+        # Nessun tentativo consumato, nessun secondo CRITICAL, nessuna proposta.
+        _segna_automatica(db, tr, {**prima, **base, "tentativi": tentativi,
+                                   "ultimo_ts": now.isoformat(), "attesa": str(err)})
+        return False
     if err:
         tentativi += 1
         esaurita = tentativi >= _TENTATIVI_AUTOMATICI_MAX

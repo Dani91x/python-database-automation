@@ -661,6 +661,14 @@ class PlaceResult:
     # istante dichiarato da BETFAIR (``placedDate``), non l'ora di questo
     # processo: e' il "quando l'ho saputo" che le tre tabelle non hanno mai avuto.
     betfair_updated_at: Optional[str] = None
+    # 04/10/2026 (regola delle punte dell'utente): una PUNTA diretta da 1,00 in su
+    # parte SOLO a multiplo di 0,50, per DIFETTO (``minimi_it.importo_piazzabile``).
+    # Se l'importo chiesto e' stato arrotondato, qui c'e' la dichiarazione con le
+    # STESSE chiavi dell'evento del canale (``motore_ordini._applica_minimi``):
+    # {chiesto, piazzato, residuo, motivo}. ``size_requested`` resta l'importo
+    # MANDATO a Betfair (come la riga della coda e del canale). None = nessun
+    # arrotondamento. Mai in silenzio: il residuo e' del chiamante.
+    punta_050: Optional[dict] = None
 
 
 @dataclass(frozen=True)
@@ -733,6 +741,22 @@ def place_order_live(
         raise PlaceRifiutato(
             f"{_v.reason}: nessun ordine inviato (REST diretto); residuo {round(size_f, 2):.2f} "
             f"da dichiarare al trader", error_code=SOTTO_MINIMO_NON_PIAZZABILE)
+    # 04/10/2026 (regola delle punte dell'utente, fonte unica ``minimi_it`` via
+    # ``min_stake_rules``): una PUNTA da 1,00 in su che non e' multipla di 0,50
+    # Betfair la rifiuta ``INVALID_BET_SIZE`` (Umea v Hammarby, punta 7,27). Parte
+    # l'importo a DIFETTO (``legalized_size``) e il resto torna al chiamante nel
+    # risultato (``punta_050``), mai in silenzio. Banca invariata (al centesimo).
+    punta_050: Optional[dict] = None
+    residuo_050 = round(float(_v.residuo or 0.0), 2)
+    if side_bf == "BACK" and residuo_050 > 0.0:
+        chiesta = round(size_f, 2)
+        size_f = float(_v.legalized_size)
+        punta_050 = {"chiesto": chiesta, "piazzato": round(size_f, 2),
+                     "residuo": residuo_050,
+                     "motivo": "punta .it diretta solo a multipli di 0,50: "
+                               "arrotondata per difetto, residuo NON piazzato"}
+        logger.warning("[omega_market] punta %.2f -> %.2f (multiplo di 0,50 per difetto): "
+                       "residuo %.2f dichiarato al chiamante", chiesta, size_f, residuo_050)
     customer_ref = (customer_ref or f"omega-{event_id}")[:32]
     ref_strategia = ref_di_strategia(strategy_ref)   # validato PRIMA della rete
     instruction = {
@@ -800,6 +824,7 @@ def place_order_live(
         # INVALID_PROFIT_RATIO erano indistinguibili da un ``ok=False`` generico.
         error_code=ir.get("errorCode") or report.get("errorCode"),
         betfair_updated_at=ir.get("placedDate"),
+        punta_050=punta_050,
     )
 
 

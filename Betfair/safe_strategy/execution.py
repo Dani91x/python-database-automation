@@ -32,7 +32,7 @@ from __future__ import annotations
 import logging
 import math
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, Optional
 
@@ -280,6 +280,14 @@ class PlaceOutcome:
     # accettato SENZA motivo = guardie di modo/freno gia' passate). Un ack
     # ``in_aggancio`` NON lo e': le guardie si rifanno all'aggancio.
     catena_servita: bool = False
+    # 04/10/2026 (regola delle punte dell'utente): una PUNTA da 1,00 in su parte
+    # solo a multiplo di 0,50, per DIFETTO (``minimi_it.importo_piazzabile``). Se
+    # l'importo e' stato arrotondato qui c'e' la dichiarazione, con le chiavi
+    # dell'evento del canale: {chiesto, piazzato, residuo, motivo}. Vale su OGNI
+    # strada (canale, coda, REST): l'arrotondamento lo fa ``place`` PRIMA di
+    # scegliere la strada. None = nessun arrotondamento.
+    punta_050: Optional[dict[str, Any]] = None
+
     @property
     def ok(self) -> bool:
         return self.status in ("open", "pending")
@@ -1010,7 +1018,55 @@ def _annulla_via_canale(porta: Any, *, bet_id: str, market_id: Optional[str],
                         raw=dict(ev))
 
 
-def place(
+def place(**kw: Any) -> PlaceOutcome:
+    """Esegue UN ordine per una riga gia' RISERVATA ('pending'): vedi ``_place``
+    (stessi argomenti, tutti per nome).
+
+    04/10/2026 (regola delle punte dell'utente): l'esito porta ``punta_050``
+    quando ``_place`` ha mandato una punta a multiplo di 0,50 per difetto, su
+    QUALUNQUE strada e con QUALUNQUE esito (aperto, in volo, rifiutato): chi
+    chiama sa sempre che cosa e' partito e quale residuo NON e' partito."""
+    punta: dict[str, Any] = {}
+    out = _place(**kw, _punta=punta)
+    if punta and out.punta_050 is None:
+        return replace(out, punta_050=dict(punta))
+    return out
+
+
+def _dichiara_punta_050(db, *, tid: Optional[int], mode: str, price: float, size: float,
+                        meta: dict[str, Any],
+                        punta: Optional[dict[str, Any]]) -> float:
+    """04/10/2026 - LA regola delle punte (fonte unica ``minimi_it.importo_piazzabile``)
+    applicata in ``_place`` PRIMA di scegliere la strada: una PUNTA da 1,00 in su non
+    multipla di 0,50 parte a DIFETTO (2,39 -> 2,00) su canale, coda e REST allo stesso
+    modo; il resto (sempre < 0,50) NON e' piazzabile ed e' DICHIARATO: sulla riga
+    (``meta.punta_050``, scritto da chi scrive la riga), nell'esito (``punta``) e
+    nell'attivita'. Ritorna l'importo che parte (``size`` se non c'e' niente da fare)."""
+    from Betfair.stream.trading import minimi_it as _MI
+
+    v = _MI.importo_piazzabile("back", size)
+    if v.via != _MI.VIA_DIRETTA or v.residuo <= 0.0:
+        return size
+    decl = {"chiesto": round(float(v.chiesto), 2), "piazzato": round(float(v.importo), 2),
+            "residuo": round(float(v.residuo), 2),
+            "motivo": "punta .it diretta solo a multipli di 0,50: arrotondata per "
+                      "difetto, residuo NON piazzato"}
+    meta["punta_050"] = dict(decl)
+    if punta is not None:
+        punta.update(decl)
+    logger.warning("[safe.exec] punta %.2f -> %.2f (multiplo di 0,50 per difetto): residuo "
+                   "%.2f dichiarato (trade %s)", decl["chiesto"], decl["piazzato"],
+                   decl["residuo"], tid)
+    _log(db, "diagnosi", {"trade_id": tid, "mode": mode, "side": "back", "price": price,
+                          "reason": "punta_050", "punta_050": dict(decl),
+                          "chiusura": bool(meta.get("cashout") or meta.get("closes_trade_id")),
+                          "nota": "punta sopra 1 EUR solo a multipli di 0,50: parte %.2f "
+                                  "invece di %.2f, %.2f NON piazzati"
+                                  % (decl["piazzato"], decl["chiesto"], decl["residuo"])})
+    return float(v.importo)
+
+
+def _place(
     *,
     db,
     market,
@@ -1033,6 +1089,7 @@ def place(
     best_lay: Optional[float] = None,
     _nota: Optional[dict[str, Any]] = None,
     market_type: Optional[str] = None,
+    _punta: Optional[dict[str, Any]] = None,
 ) -> PlaceOutcome:
     """Esegue UN ordine per una riga già RISERVATA ('pending').
 
@@ -1127,6 +1184,12 @@ def place(
                                   "reason": "portata_al_minimo", "portata_al_minimo": portata,
                                   "nota": "apertura tennis sotto il minimo di Betfair "
                                           "portata al minimo (decisione dell'utente)"})
+    if side == "back":
+        # 04/10/2026: punta a multiplo di 0,50 per DIFETTO, residuo dichiarato, UGUALE
+        # sulle tre strade (prima: canale e coda a difetto, REST mandava 2,39 e
+        # Betfair la rifiutava ``INVALID_BET_SIZE``: chiusura nuda).
+        size = _dichiara_punta_050(db, tid=tid, mode=mode, price=price, size=size,
+                                   meta=meta, punta=_punta)
     sotto_minimo = bool(min_live > 0 and size < min_live - 1e-9 and not is_closing)
     # 01/10/2026 (RUNNER_MINIMI_CHIUSURE): l'ipotesi "Betfair accetta le chiusure sotto
     # il minimo" (review C2) e' FALSA: una chiusura sotto il minimo viene rifiutata
@@ -1337,6 +1400,12 @@ def place(
     except Exception as ex:  # noqa: BLE001 — esito IGNOTO: MAI ripiazzare
         return _reconciling(db, tid, meta=meta, mode=mode, price=price, size=size, ex=ex)
     t5 = _ora_ms()
+    # 04/10/2026: se e' il REST ad aver arrotondato la punta (``omega_market.
+    # place_order_live``: chiamante che non e' passato dall'arrotondamento qui
+    # sopra), la sua dichiarazione si legge e torna nell'esito, mai persa
+    _p_rest = getattr(res, "punta_050", None)
+    if isinstance(_p_rest, dict) and _punta is not None and not _punta:
+        _punta.update(_p_rest)
     # rifiuto PROVATO dall'exchange (risposta ricevuta, nessun fill): 'error' legittimo
     if not res.ok or res.size_matched <= 0:
         # ⚠️ C.12a — IL CODICE DI BETFAIR SI LEGGE E SI SCRIVE.
@@ -2201,6 +2270,101 @@ def locked_pnl(trade: dict[str, Any], plan: GreenupPlan) -> float:
     return round(min(float(plan.expected_if_win), float(plan.expected_if_lose)), 2)
 
 
+# ---------------------------------------------------------------------------
+# 04/10/2026 - IL RESIDUO NON PIAZZABILE (decisione dell'utente, testuale: "IL
+# RESIDUO RESTA RICORDATO E LO CHIUDO IO"). Una chiusura in punta parte a multiplo
+# di 0,50 per difetto: il resto (sempre < 0,50) nessun ordine lo puo' coprire.
+# Si DICHIARA una volta per episodio (CRITICAL con la proposta), resta scritto
+# sull'apertura (``meta.residuo_non_piazzabile``) e il bot NON lo ritenta piu': lo
+# chiude l'utente o lo regola il mercato. Le macchine delle uscite di Safe
+# (``bot_service._exit_candidates``) e di Omega (``_greenup_candidates``) saltano
+# le aperture col marcatore. Prima: ``_rifiuto_sotto_050`` a ogni giro (una riga
+# 'error' e un'attivita' per tentativo, per sempre).
+# ---------------------------------------------------------------------------
+RESIDUO_KEY = "residuo_non_piazzabile"
+ERR_RESIDUO = "residuo_non_piazzabile"
+
+
+def residuo_ricordato(trade: dict[str, Any]) -> bool:
+    """L'apertura ha un residuo dichiarato non piazzabile: il bot non lo ritenta."""
+    meta = trade.get("meta") or {}
+    return bool(isinstance(meta, dict) and isinstance(meta.get(RESIDUO_KEY), dict))
+
+
+def _testo_proposta(side: str, size: float, price: Optional[float], selezione: Any) -> str:
+    quota = f"{float(price):.2f}" if price else "?"
+    return (f"chiudi tu il residuo: {'punta' if side == 'back' else 'banca'} "
+            f"{float(size):.2f} EUR a {quota} su {selezione}: sotto 0,50 EUR Betfair non "
+            f"accetta nessun ordine (e una punta sopra 1 EUR solo a multipli di 0,50)")
+
+
+def _avviso_residuo(db, *, trade: dict[str, Any], side: str, size: float,
+                    price: Optional[float], now: Optional[datetime], origine: str,
+                    extra: Optional[dict[str, Any]] = None) -> bool:
+    """IL CRITICAL del residuo, UNO per episodio (``_critico_una_volta``: stessa
+    chiave dei rifiuti sotto il minimo, la posizione da chiudere). Ritorna True se
+    l'ha scritto. Le ripetizioni NON si loggano (nessuna IO a ogni giro)."""
+    critico, _ = _critico_una_volta(db=db, market_id=trade.get("market_id"),
+                                    selection_id=trade.get("selection_id"), side=side,
+                                    meta={"closes_trade_id": trade.get("id")},
+                                    size=size, now=now)
+    if not critico:
+        return False
+    selezione = trade.get("selection_name") or trade.get("runner_name") \
+        or trade.get("selection_id")
+    # kind ``place_parziale`` (gia' tradotto dalla UI: "parziale z su x, residuo r"):
+    # l'ordine e' stato mandato solo in parte, il resto non partira' mai
+    _log(db, "place_parziale", {
+        "reason": ERR_RESIDUO,
+        "trade_id": trade.get("id"), "event_id": trade.get("event_id"),
+        "mode": trade.get("mode"), "market_id": trade.get("market_id"),
+        "selection_id": trade.get("selection_id"), "side": side,
+        "price": price, "size": round(float(size), 2), "critical": True,
+        "origine": origine, **(extra or {}),
+        "proposta": _testo_proposta(side, size, price, selezione),
+        "nota": "residuo NON piazzabile: il bot non lo ritenta, resta ricordato "
+                "sull'apertura finche' lo chiudi tu o il mercato si regola"})
+    return True
+
+
+def _ricorda_residuo(db, trade: dict[str, Any], *, side: str, size: float,
+                     price: Optional[float], now: datetime, origine: str) -> None:
+    """Scrive ``meta.residuo_non_piazzabile`` sull'apertura (una volta: se c'e' gia'
+    non riscrive). In ``trade['meta']`` anche se la scrittura fallisce."""
+    meta = dict(trade.get("meta") or {})
+    if isinstance(meta.get(RESIDUO_KEY), dict):
+        return
+    selezione = trade.get("selection_name") or trade.get("runner_name") \
+        or trade.get("selection_id")
+    meta[RESIDUO_KEY] = {"side": side, "size": round(float(size), 2),
+                         "price": price, "origine": origine, "dal": now.isoformat(),
+                         "proposta": _testo_proposta(side, size, price, selezione)}
+    trade["meta"] = meta
+    try:
+        db.update_trade(int(trade["id"]), meta=meta)
+    except Exception as ex:  # noqa: BLE001 - lo dice comunque il CRITICAL
+        logger.warning("[safe.exec] marcatore del residuo non scritto (trade %s): %s",
+                       trade.get("id"), str(ex)[:160])
+
+
+def _residuo_senza_via(trade: dict[str, Any], side: str, price: Optional[float],
+                       size: Optional[float], table_prefix: str) -> bool:
+    """Il piano di chiusura (gia' calcolato) NON ha nessuna via: sotto 0,50 EUR
+    (``minimi_it.importo_piazzabile`` -> nessuna) e senza l'equivalente
+    sull'altra selezione (oggi spento: ``ATTORI_CON_TRADUZIONE`` vuoto). Pura."""
+    from Betfair.stream.trading import minimi_it as _MI
+
+    if size is None or price is None:
+        return False
+    if _MI.importo_piazzabile(side, size).via != _MI.VIA_NESSUNA:
+        return False
+    if (_ATTORE_SAFE in _MI.ATTORI_CON_TRADUZIONE and table_prefix == "safe"
+            and mercato_a_due_esiti_per_tipo(trade.get("market_type"))
+            and _equivalente_possibile(side, float(price), float(size))):
+        return False
+    return True
+
+
 def close_trade(*, db, market, trade: dict[str, Any], prices: dict[str, Any],
                 amount: Optional[float] = None, fraction: float = 1.0,
                 mode: Optional[str] = None, now: datetime,
@@ -2248,6 +2412,25 @@ def close_trade(*, db, market, trade: dict[str, Any], prices: dict[str, Any],
         return {"error": "niente_da_chiudere", "note": plan.note}
 
     side = str(plan.side)
+    if st["filled_ids"] and _residuo_senza_via(trade, side, plan.price, plan.size,
+                                               table_prefix):
+        # 04/10/2026: RESIDUO di una chiusura gia' abbinata (tipicamente la punta
+        # mandata a multiplo di 0,50 per difetto) che nessun ordine puo' coprire:
+        # niente riga di riserva, niente ordine, niente ritento. Dichiarato UNA
+        # volta (CRITICAL con la proposta), ricordato sull'apertura: lo chiude
+        # l'utente. La prima chiusura di una posizione NON passa di qui (resta
+        # com'era): solo il resto di una chiusura gia' avvenuta.
+        _avviso_residuo(db, trade=trade, side=side, size=float(plan.size),
+                        price=plan.price, now=now, origine="residuo_di_chiusura")
+        _ricorda_residuo(db, trade, side=side, size=float(plan.size), price=plan.price,
+                         now=now, origine="residuo_di_chiusura")
+        return {"error": ERR_RESIDUO, "trade_id": trade.get("id"),
+                "detail": _testo_proposta(side, float(plan.size), plan.price,
+                                          trade.get("selection_name")
+                                          or trade.get("runner_name")
+                                          or trade.get("selection_id")),
+                "residuo": {"side": side, "size": round(float(plan.size), 2),
+                            "price": plan.price}}
     best_size = _num(prices.get(f"{side}_size"))
     # CANTIERE P (28/09, riga S7) - qui c'era, SOLO in paper, lo stop
     # ``liquidita_del_book_ignota`` (12/09): senza la size del book il fill «di
@@ -2349,7 +2532,9 @@ def close_trade(*, db, market, trade: dict[str, Any], prices: dict[str, Any],
                                   "reason": out.fill_note, "error_final": True,
                                   # C.12a — il codice di Betfair resta scritto
                                   "error_code": out.error_code,
-                                  "closes_trade_id": trade.get("id")})
+                                  "closes_trade_id": trade.get("id"),
+                                  **({"punta_050": dict(out.punta_050)}
+                                     if out.punta_050 else {})})
         except Exception:  # noqa: BLE001
             pass
         _log(db, "cashout_error", {"trade_id": trade.get("id"),
@@ -2374,6 +2559,9 @@ def close_trade(*, db, market, trade: dict[str, Any], prices: dict[str, Any],
                             meta={**(reserve.get("meta") or {}), "cashout": True,
                                   "closes_trade_id": trade.get("id"),
                                   "fill": out.fill_note, "plan_note": plan.note,
+                                  # 04/10: punta a multiplo di 0,50 per difetto
+                                  **({"punta_050": dict(out.punta_050)}
+                                     if out.punta_050 else {}),
                                   # CERT. 14/09 — LA STORIA DELL'ORDINE: i due
                                   # istanti attorno a Betfair, il prezzo chiesto
                                   # contro quello davvero abbinato, e su quanti
@@ -2393,6 +2581,24 @@ def close_trade(*, db, market, trade: dict[str, Any], prices: dict[str, Any],
     # 'pending' con i suoi marker; l'apertura registra la chiusura IN SOSPESO
     # (blocca un secondo cash-out) e passerà a 'hedged' SOLO a fill confermato.
 
+    p050 = out.punta_050 if isinstance(out.punta_050, dict) else None
+    if p050 and float(p050.get("residuo") or 0.0) > 0.0:
+        # 04/10/2026: la chiusura e' partita a multiplo di 0,50 per DIFETTO: il resto
+        # non lo copre nessun ordine. CRITICAL una volta per episodio con la proposta
+        # (per una chiusura in volo: "se si abbina"); a fill CERTO e intero il residuo
+        # e' ricordato subito sull'apertura e il bot non lo ritenta.
+        abbinata = out.status == "open" and \
+            float(out.size or 0.0) + 0.005 >= float(p050.get("piazzato") or 0.0)
+        _avviso_residuo(db, trade=trade, side=side, size=float(p050["residuo"]),
+                        price=(out.price if out.status == "open" else plan.price), now=now,
+                        origine=("chiusura_a_multiplo" if abbinata
+                                 else "chiusura_a_multiplo_in_volo"),
+                        extra={"punta_050": dict(p050), "closing_trade_id": closing_id,
+                               **({} if abbinata else
+                                  {"condizione": "se la chiusura in volo si abbina"})})
+        if abbinata:
+            _ricorda_residuo(db, trade, side=side, size=float(p050["residuo"]),
+                             price=out.price, now=now, origine="chiusura_a_multiplo")
     # stato dell'hedge dall'insieme REALE delle gambe fillate: l'apertura resta
     # 'open' con hedged_size/locked_pnl finché c'è un residuo (cash-out
     # parziale, size cappata, fill in sospeso); 'hedged' solo a residuo nullo.
@@ -2416,7 +2622,8 @@ def close_trade(*, db, market, trade: dict[str, Any], prices: dict[str, Any],
             "pending_fill": out.status == "pending",
             "hedged": trade.get("status") == "hedged",
             "hedged_size": st["hedged_size"], "residual_size": st["residual_size"],
-            "note": plan.note}
+            "note": plan.note,
+            **({"punta_050": dict(p050)} if p050 else {})}
 
 
 def _num(v: Any) -> Optional[float]:

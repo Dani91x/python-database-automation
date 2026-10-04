@@ -164,7 +164,11 @@ def _db_with_model():
 # ---------------------------------------------------------------------------
 def test_trigger_gol_esce_dopo_assestamento_e_marca_le_due_righe(lambdas):
     db = _db_with_model()
-    tr = _trade(db)                                   # lay 1-3 @55 sull'1-0
+    # 04/10/2026 (regola delle punte): stake 4 invece di 5. Con 5 @55 la chiusura a
+    # 8.0 e' una punta di 34,38 -> 34,00 + 0,38 non piazzabili (posizione non piu'
+    # 'hedged'); con 4 e' 27,50 esatta. Bloccato ed EV scalano entrambi con lo stake:
+    # la decisione e' la stessa (bloccato -23,5 >= EV -28,4)
+    tr = _trade(db, size=4.0)                         # lay 1-3 @55 sull'1-0
     # 1-2 al 70': il bancato è a UN gol; modello p≈0.147 (< cap 0.15) ma il back 8.0
     # offre almeno l'EV del tenere (bloccato −29.4 ≥ EV −35.5) → si esce
     goal = _payload(70, 1, 2, cs=[_sel(14, "1 - 3", 8.2, 8.0)])
@@ -219,7 +223,9 @@ def test_ritardo_zero_esce_subito_e_bot_off_non_fa_nulla(lambdas):
 def test_trigger_gol_tiene_se_p_lose_bassa_poi_esce_oltre_il_cap(monkeypatch, lambdas):
     db = _db_with_model()
     tr = _trade(db)
-    goal = _payload(70, 1, 2, cs=[_sel(14, "1 - 3", 6.0, 5.8)])   # bloccato −42.4
+    # 04/10/2026 (regola delle punte): back 5.5 (era 5.8, punta 47,41 -> 47,00 + 0,41
+    # non piazzabili): 275/5.5 = 50,00 esatta; bloccato -45,0 (era -42,4)
+    goal = _payload(70, 1, 2, cs=[_sel(14, "1 - 3", 5.7, 5.5)])   # bloccato -45.0
     monkeypatch.setattr(M, "score_probs", lambda **kw: {(1, 3): 0.01})
     p = _params(greenup_settle_delay_s=0)
     assert _run(db, goal, p) == 0
