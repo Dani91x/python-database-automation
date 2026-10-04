@@ -200,3 +200,39 @@ def test_scalper_minimi_dalla_fonte_unica_banca_al_centesimo():
     assert s._size_direct_ok("LAY", 0.60) is False           # sotto il minimo diretto
     assert s._size_direct_ok("BACK", 1.50) is True
     assert s._size_direct_ok("BACK", 1.37) is False          # punta: multipli di 0,50
+
+
+def test_uscita_esatta_dichiara_subito_il_resto_non_piazzato(monkeypatch):
+    """La punta 1,37 parte a 1,00 (per DIFETTO, multipli di 0,50): il resto 0,37
+    e' dichiarato subito, UNA riga CRITICAL; un secondo resto dello stesso
+    episodio (scaglione) si aggiunge agli importi dichiarati, senza riga nuova."""
+    from Betfair.stream.trading import submin as SM
+
+    monkeypatch.setattr(SM, "advance_submin", lambda m, st, **k: st)
+    bot = _BotFinto()
+    bot.residui_ricordati = CD.ResiduiRicordati(bot._emit)
+    ue = CD.UsciteEsatte(bot, bot._emit)
+    assert ue.piazza(_MercatoFinto(), 11, "BACK", 2.0, 1.37, diretto=lambda s: object())
+    assert ue.piazza(_MercatoFinto(), 11, "BACK", 2.0, 0.30, diretto=lambda s: object()) is None
+    crit = _critiche(bot.eventi)
+    assert len(crit) == 1 and crit[0]["importo"] == 0.37
+    riga = bot.residui_ricordati.per_stats()[0]
+    assert riga["importi_dichiarati"] == [0.37, 0.3]
+    assert riga["sbilancio"] == pytest.approx(0.30 * 2.0, abs=0.011)
+
+
+def test_uf2_scusa_solo_il_resto_sotto_il_floor_dichiarato_dal_bot():
+    from Betfair.stream.backtest import uscite_manuali as UM
+    from Betfair.stream.tennis_live.tools import replay_bot as RB
+
+    assert UM.SOGLIA_RESTO_NON_PIAZZABILE == 0.05            # calcio: invariata
+    import inspect
+    assert "soglia_resto=float(_MINIMI_IT.SUBMIN_IMPORTO_FINALE_MIN)" in inspect.getsource(
+        RB.certifica_scenario)                                # tennis: il floor
+    bot = _BotFinto()
+    bot.residui_ricordati = CD.ResiduiRicordati(bot._emit)
+    assert RB.resto_dichiarato_dal_bot(bot, 11, "BACK", 0.06) is False   # mai dichiarato
+    bot.residui_ricordati.dichiara("1.101", 11, "BACK", 0.06, 1.05, -0.06, 0.0)
+    assert RB.resto_dichiarato_dal_bot(bot, 11, "BACK", 0.06) is True
+    assert RB.resto_dichiarato_dal_bot(bot, 11, "LAY", 0.06) is False    # altro lato
+    assert RB.resto_dichiarato_dal_bot(bot, 11, "BACK", 0.20) is False   # altro importo

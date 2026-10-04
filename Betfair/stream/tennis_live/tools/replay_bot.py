@@ -82,6 +82,7 @@ from contextlib import contextmanager
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .. import certificazione_bot as CERT
+from ...trading import minimi_it as _MINIMI_IT
 from ...backtest import chiusura_parziale as CP
 from ...backtest import uscite_manuali as UM
 from ..tennis_recorder import default_record_dir
@@ -1274,7 +1275,10 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
                     scenario, strategie=lambda: [ponte.s], ordini_di=_ordini_di,
                     firma=ponte.firma if scenario == UM.SCENARIO_FIRMATE else None,
                     ruolo=ponte.ruolo_ordine,
-                    resto_non_piazzabile=resto_dichiarato_dal_bot)
+                    resto_non_piazzabile=resto_dichiarato_dal_bot,
+                    # 04/10 (decisione 1): il resto scusato, SE dichiarato dal bot,
+                    # arriva al floor di legge del place-and-trim (era 0,05)
+                    soglia_resto=float(_MINIMI_IT.SUBMIN_IMPORTO_FINALE_MIN))
                 ref.note.append("USCITE MANUALI: interruttore spento; %s"
                                 % ("il banco firma ogni proposta dopo %d s di mercato "
                                    "(params.uscite_approvate, riletta da "
@@ -1318,7 +1322,9 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
                 % (motore.pompati, motore.lapse_al_fischio,
                    motore.lapse_alla_sospensione))
             mercato = quadro.markets.markets.get(market_id)
+            aperti_prima = ponte.residui_del_bot()
             ponte.chiudi(mercato)
+            ref.note.append(nota_residui(attivita, aperti_prima))
 
     if scenario in ("gate-aperto", "parziali", "rifiuti-betfair", "live", CP.SCENARIO,
                     SCENARIO_CHIUDI_ORA) or scenario in UM.SCENARI \
@@ -1333,11 +1339,41 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
     return ref
 
 
+def nota_residui(attivita: List[Tuple[str, Dict[str, Any]]],
+                 aperti_a_fine: List[Dict[str, Any]]) -> str:
+    """04/10 (decisione 1 dell'utente): i residui non piazzabili della partita,
+    in EUR (riga del referto: serve all'utente)."""
+    dich = [p for k, p in attivita if k == "residuo_non_piazzabile"]
+    chiusi = sum(1 for k, _p in attivita if k == "residuo_chiuso")
+    aperti = [r for r in aperti_a_fine if float(r.get("importo") or 0.0) >= 0.0]
+    return ("RESIDUI (decisione 1): dichiarati %d (importi %s EUR, sbilancio %s EUR), "
+            "tornati pari %d; aperti a fine partita %d (importi %s EUR, sbilancio "
+            "totale %.2f EUR, se vince %.2f / se perde %.2f)"
+            % (len(dich), [p.get("importo") for p in dich],
+               [p.get("sbilancio") for p in dich], chiusi, len(aperti),
+               [r.get("importo") for r in aperti],
+               sum(float(r.get("sbilancio") or 0.0) for r in aperti),
+               sum(float(r.get("se_vince") or 0.0) for r in aperti),
+               sum(float(r.get("se_perde") or 0.0) for r in aperti)))
+
+
 def resto_dichiarato_dal_bot(s: Any, sel: Any, lato: str, resto: float) -> bool:
     """N3 UF2: il bot ha DICHIARATO non piazzabile questo resto? Lo scalper
     tennis tiene la sua memoria dei `min_bet_skip` gia' scritti
     (`TennisScalperStrategy._min_bet_detto`: (selezione, lato, size)); gli altri
-    bot tennis non hanno un resto non piazzabile (place-and-trim di D2)."""
+    bot tennis non hanno un resto non piazzabile (place-and-trim di D2).
+    04/10 (decisione 1 dell'utente): anche il residuo che il bot RICORDA
+    (`residui_ricordati`, stesso lato, importo al centesimo)."""
+    mem = getattr(getattr(s, "residui_ricordati", None), "aperti", None) or {}
+    for r in list(mem.values()):
+        try:
+            if (int(r.get("selection_id")) == int(sel)
+                    and str(r.get("lato")).upper() == str(lato).upper()
+                    and any(abs(float(x) - float(resto)) <= 0.011
+                            for x in (r.get("importi_dichiarati") or [r.get("importo")]))):
+                return True
+        except (TypeError, ValueError):
+            continue
     detto = getattr(s, "_min_bet_detto", None) or ()
     for k in list(detto):
         try:

@@ -365,6 +365,18 @@ class UsciteEsatte:
         # partita, ~200 rifiuti). Parte solo la parte diretta; il resto e' il
         # RESIDUO che il bot dichiara e ricorda (`ResiduiRicordati`).
         if 0.0 < resto < FLOOR_PLACE_AND_TRIM - 1e-9:
+            # dichiarato SUBITO (una riga CRITICAL per episodio, se il bot ha la
+            # memoria dei residui): sbilancio stimato dal resto non piazzato alla
+            # quota dell'uscita; il bot lo riscrive coi numeri veri del blotter
+            # quando la sua sorveglianza lo trova
+            mem = getattr(self._s, "residui_ricordati", None)
+            if mem is not None:
+                p = float(price)
+                lato = str(side).upper()
+                sv, sp = ((-resto * (p - 1.0), resto) if lato == "BACK"
+                          else (resto * (p - 1.0), -resto))
+                mem.dichiara(str(getattr(market, "market_id", "") or ""), sel, lato,
+                             resto, p, sv, sp)
             resto = 0.0
             if parte <= 0:
                 return None          # niente di piazzabile: lo dichiara il bot
@@ -544,6 +556,12 @@ class ResiduiRicordati:
                 "se_vince": round(float(se_vince), 2), "se_perde": round(float(se_perde), 2),
                 "sbilancio": round(abs(float(se_vince) - float(se_perde)), 2)}
         nuovo = k not in self.aperti
+        # gli importi dichiarati non piazzabili in QUESTO episodio (un'uscita a
+        # scaglioni ne dichiara piu' d'uno): li legge il banco (UF2)
+        prima = [] if nuovo else list(self.aperti[k].get("importi_dichiarati") or [])
+        if riga["importo"] not in prima:
+            prima.append(riga["importo"])
+        riga["importi_dichiarati"] = prima
         self.aperti[k] = riga
         if nuovo and critico:
             self._e("residuo_non_piazzabile", level="CRITICAL", proposta={

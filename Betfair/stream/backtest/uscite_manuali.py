@@ -192,7 +192,8 @@ class Osservatore:
                  piatto_a_fine: Optional[Callable[[], Optional[str]]] = None,
                  ruolo: Optional[Callable[[Any], Optional[str]]] = None,
                  resto_non_piazzabile: Optional[Callable[[Any, Any, str, float], bool]]
-                 = None) -> None:
+                 = None,
+                 soglia_resto: float = SOGLIA_RESTO_NON_PIAZZABILE) -> None:
         self.scenario = scenario
         self.firmate = scenario == SCENARIO_FIRMATE
         self._strategie = strategie
@@ -203,6 +204,11 @@ class Osservatore:
         # ("ingresso"/"uscita"/None) e il resto che il bot dichiara non piazzabile
         self._ruolo = ruolo
         self._resto_non_piazzabile = resto_non_piazzabile
+        # 04/10 (decisione 1 dell'utente): sotto quale importo un resto DICHIARATO
+        # dal bot e' scusato. Di serie 0,05 (regola dello scalper tennis, invariata
+        # per chi non la passa: calcio); i bot tennis passano il floor di legge del
+        # place-and-trim (`minimi_it.SUBMIN_IMPORTO_FINALE_MIN`, 0,50)
+        self._soglia_resto = float(soglia_resto)
         self.ora_ms = 0
         self.violazioni: List[Tuple[str, str, str, str]] = []
         self.sollecitati: Dict[str, int] = {}
@@ -512,7 +518,7 @@ class Osservatore:
             manca = round(size - eff, 2)
             if abs(eff - size) <= TOLLERANZA_IMPORTO:
                 continue
-            if 0 < manca < SOGLIA_RESTO_NON_PIAZZABILE and self._resto_dichiarato(
+            if 0 < manca < self._soglia_resto and self._resto_dichiarato(
                     pend["strategia"], pend["selection_id"], pend["lato"], manca):
                 # il resto che il BOT stesso ha dichiarato non piazzabile (regola
                 # gia' esistente dello scalper tennis: resto < 0,05 dopo la parte
