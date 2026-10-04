@@ -739,3 +739,26 @@ def test_banco_scalper_resto_dichiarato_e_ruolo():
     assert b.ruolo_ordine(ingresso) == "ingresso"
     assert b.ruolo_ordine(uscita) == "uscita"
     assert b.ruolo_ordine(object()) is None
+
+
+@pytest.mark.parametrize("proposta,soglia,rosso", [
+    (10.06, 0.05, True),     # di serie (calcio): 0,06 mai scusato, invariato
+    (10.06, 0.50, False),    # 04/10 tennis (floor di legge): 0,06 dichiarato scusato
+    (10.50, 0.50, True),     # 0,50 e' piazzabile: mai scusato
+])
+def test_uf2_soglia_del_resto_per_chiamante(proposta, soglia, rosso):
+    """04/10 (decisione 1 dell'utente): la soglia del resto scusato la passa chi
+    monta l'osservatore; senza, resta 0,05 (nessun cambio per il calcio)."""
+    s = _Strategia()
+    o = _oss(UM.SCENARIO_FIRMATE, s, {}, resto_non_piazzabile=lambda *a: True,
+             soglia_resto=soglia)
+    with o.attivo():
+        c = s.cancello_uscite
+        c.lascia_uscire(automatiche=False, chiave=CHIAVE, now_s=10.0,
+                        proposta=_proposta(size_chiusura=proposta))
+        o.giro(int((10.0 + UM.FIRMA_DOPO_S) * 1000))
+        c.lascia_uscire(automatiche=False, chiave=CHIAVE, now_s=15.5,
+                        proposta=_proposta(size_chiusura=proposta))
+        s.ordini.append(_ordine("x1", size=10.0, matched=10.0))
+        o.giro(int((15.5 + UM.FINESTRA_ORDINI_S) * 1000) + 1)
+    assert ("UF2" in _codici(o)) is rosso, o.violazioni

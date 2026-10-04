@@ -682,7 +682,11 @@ def _do_place(flumine: Any, session: Any, cmd: Dict[str, Any], cust_ref: str) ->
                               reduces_liability=riduce)
     if not verdict.valid or verdict.legalized_size is None:
         raise ValueError(f"stake non valido: {verdict.reason}")
+    chiesto = round(float(size), 2)
     size = verdict.legalized_size
+    # 04/10 (regola delle punte dell'utente): la punta parte a multiplo di 0,50 PER
+    # DIFETTO; il resto NON piazzato si DICHIARA (``punta_050``), mai in silenzio
+    punta_050 = _punta_050(chiesto, size, getattr(verdict, "residuo", 0.0))
     cap = _max_stake_per_order()
     if cap is not None and size > cap + 1e-9:
         raise ValueError(f"size {size:.2f} oltre il cap TENNIS_LIVE_MAX_STAKE_PER_ORDER={cap:.2f}")
@@ -714,8 +718,67 @@ def _do_place(flumine: Any, session: Any, cmd: Dict[str, Any], cust_ref: str) ->
     if ok is False:
         raise ValueError(f"place RIFIUTATO — {_val(order, 'violation_msg') or 'violation'}")
     _track_manual(session, cust_ref, order, cmd["mode"], _event_id_of(session, cmd.get("market_id")))
-    return _result(ok=True, action="place", mode=cmd["mode"], cmd=cmd,
-                   cust_ref=cust_ref, order=order, detail=f"place {side} @{price}")
+    res = _result(ok=True, action="place", mode=cmd["mode"], cmd=cmd,
+                  cust_ref=cust_ref, order=order,
+                  detail=f"place {side} @{price}" + _nota_050(punta_050))
+    if punta_050:
+        res["punta_050"] = punta_050
+    return res
+
+
+def _punta_050(chiesto: float, piazzato: float, residuo: Any) -> Optional[Dict[str, Any]]:
+    """04/10: la dichiarazione del calcio (``live_order_worker``/``motore_ordini``):
+    chiesto, piazzato, residuo NON piazzato. None se non resta niente."""
+    try:
+        r = round(float(residuo or 0.0), 2)
+    except (TypeError, ValueError):
+        r = 0.0
+    if r <= 0.0:
+        return None
+    logger.warning("[tennis-order] punta %.2f -> %.2f (multiplo di 0,50 per difetto): "
+                   "residuo %.2f NON piazzato, dichiarato", chiesto, float(piazzato), r)
+    return {"chiesto": round(float(chiesto), 2), "piazzato": round(float(piazzato), 2),
+            "residuo": r, "motivo": "punta .it diretta solo a multipli di 0,50: "
+                                    "arrotondata per difetto, residuo NON piazzato"}
+
+
+def _nota_050(p: Optional[Dict[str, Any]]) -> str:
+    return ("" if not p else "; punta %.2f -> %.2f, residuo %.2f NON piazzato"
+            % (p["chiesto"], p["piazzato"], p["residuo"]))
+
+
+# 04/10: le uscite a PLACE-AND-TRIM del green-up (0,50 <= importo < 1,00), una macchina
+# per strategia degli ordini (modalita'): la STESSA dei bot tennis
+# (``condotta_ordini.UsciteEsatte`` su ``trading.submin``), avanzata dal giro del worker.
+_ESATTE: Dict[int, Any] = {}
+
+
+def _uscite_esatte_di(strategy: Any) -> Any:
+    from ..tennis_scalper.condotta_ordini import UsciteEsatte
+
+    ue = _ESATTE.get(id(strategy))
+    if ue is None or getattr(ue, "_s", None) is not strategy:
+        def _emit(kind: str, **p: Any) -> None:
+            lvl = logging.WARNING if p.get("level") == "CRITICAL" else logging.INFO
+            logger.log(lvl, "[tennis-order] %s %s", kind, p)
+        ue = UsciteEsatte(strategy, _emit)
+        _ESATTE[id(strategy)] = ue
+    return ue
+
+
+def _avanza_uscite_esatte(flumine: Any) -> None:
+    """Un passo per ogni place-and-trim del green-up in corso (idempotente)."""
+    if not _ESATTE:
+        return
+    for ue in list(_ESATTE.values()):
+        mercati = {c.market_id for c in list(getattr(ue, "attive", []) or [])}
+        for mid in mercati:
+            try:
+                market = _resolve_market(flumine, mid)
+                with _lucchetto_ordini():
+                    ue.avanza(market)
+            except Exception as e:  # noqa: BLE001 - un mercato sparito non ferma il worker
+                logger.warning("[tennis-order] place-and-trim %s: %s", mid, e)
 
 
 def _do_cancel(flumine: Any, cmd: Dict[str, Any], cust_ref: str) -> Dict[str, Any]:
@@ -949,12 +1012,55 @@ def _do_greenup(flumine: Any, session: Any, cmd: Dict[str, Any], cust_ref: str) 
         return _result(ok=True, action="greenup", mode=cmd["mode"], cmd=cmd,
                        cust_ref=cust_ref, detail=f"{plan.note}{cancel_note}")
 
-    # hedge SELF-BOUNDED: riduce la liability → sotto-minimo .it consentito
+    # 04/10: la regola UNICA dei minimi .it (``minimi_it.importo_piazzabile``). Prima
+    # un hedge sotto 1,00 sollevava ValueError e la punta veniva arrotondata in silenzio.
+    #   * >= 1,00: diretto (punta a multiplo di 0,50 per DIFETTO, resto DICHIARATO);
+    #   * 0,50 <= hedge < 1,00: place-and-trim (la macchina dei bot tennis);
+    #   * sotto 0,50: nessun ordine, residuo DICHIARATO (nessun ordine .it lo chiude).
+    from ..trading import minimi_it as _MI
+
+    if _jurisdiction() == "it":
+        regola = _MI.importo_piazzabile(str(plan.side), float(plan.size))
+        if regola.via == _MI.VIA_NESSUNA:
+            res = _result(ok=False, action="greenup", mode=cmd["mode"], cmd=cmd,
+                          cust_ref=cust_ref,
+                          error=("RESIDUO_NON_PIAZZABILE: hedge %s %.2f sotto 0,50, nessun "
+                                 "ordine .it lo piazza: residuo DICHIARATO, chiudilo a mano "
+                                 "o lascialo al regolamento" % (plan.side, regola.chiesto)),
+                          detail=f"{plan.note}{cancel_note}")
+            res["residuo_non_piazzabile"] = {"lato": str(plan.side).upper(),
+                                             "importo": regola.chiesto,
+                                             "prezzo": float(plan.price),
+                                             "se_vince": round(float(w), 2),
+                                             "se_perde": round(float(l), 2)}
+            logger.warning("[tennis-order] green-up: %s", res["error"])
+            return res
+        if regola.via == _MI.VIA_PLACE_AND_TRIM:
+            ue = _uscite_esatte_di(strategy)
+            with _lucchetto_ordini():
+                comp = ue.piazza(market, selection_id, str(plan.side).upper(),
+                                 float(plan.price), float(regola.chiesto),
+                                 diretto=lambda _s: None)
+            parti = comp.parti() if comp is not None else []
+            if comp is None or not parti:
+                raise ValueError("greenup: place-and-trim non avviato (anti-cascata o "
+                                 "parcheggio rifiutato) - ritentare")
+            _track_manual(session, cust_ref, parti[0], cmd["mode"],
+                          _event_id_of(session, cmd.get("market_id")))
+            res = _result(ok=True, action="greenup", mode=cmd["mode"], cmd=cmd,
+                          cust_ref=cust_ref, order=parti[0],
+                          detail=(f"{plan.note}; hedge {plan.side} {regola.chiesto:.2f} "
+                                  f"sotto 1,00: place-and-trim avviato{cancel_note}"))
+            res["place_and_trim"] = {"lato": str(plan.side).upper(),
+                                     "importo": regola.chiesto, "prezzo": float(plan.price)}
+            return res
+    # hedge >= 1,00 (o giurisdizione non .it): diretto
     verdict = min_stake_rules(_jurisdiction(), str(plan.side), float(plan.price),
                               float(plan.size), reduces_liability=True)
     if not verdict.valid or verdict.legalized_size is None:
         raise ValueError(f"greenup: size hedge non valida: {verdict.reason}")
     size = verdict.legalized_size
+    punta_050 = _punta_050(round(float(plan.size), 2), size, getattr(verdict, "residuo", 0.0))
     trade = Trade(market_id=market.market_id, selection_id=selection_id,
                   handicap=handicap, strategy=strategy)
     order = trade.create_order(
@@ -984,10 +1090,13 @@ def _do_greenup(flumine: Any, session: Any, cmd: Dict[str, Any], cust_ref: str) 
             f"piazzato ma {len(cancel_failed)} resting NON annullati "
             f"({cancel_failed[0].get('error')}) — ritentare il cash-out"
         )
-    return _result(ok=True, action="greenup", mode=cmd["mode"], cmd=cmd,
-                   cust_ref=cust_ref, order=order,
-                   detail=f"{plan.note}; atteso vince={plan.expected_if_win} "
-                          f"perde={plan.expected_if_lose}{cancel_note}")
+    res = _result(ok=True, action="greenup", mode=cmd["mode"], cmd=cmd,
+                  cust_ref=cust_ref, order=order,
+                  detail=f"{plan.note}; atteso vince={plan.expected_if_win} "
+                         f"perde={plan.expected_if_lose}{cancel_note}" + _nota_050(punta_050))
+    if punta_050:
+        res["punta_050"] = punta_050
+    return res
 
 
 def _lucchetto_ordini() -> Any:
@@ -1605,6 +1714,8 @@ def tennis_live_order_worker(context: dict, flumine: Any, session: Any = None) -
     if _gt.guardia_blocca():
         _rispondi_comandi_locali_in_guardia(flumine, session, runner_mode_l)
         return
+    # 04/10: i place-and-trim del green-up in corso, un passo per giro
+    _avanza_uscite_esatte(flumine)
     # A7: drain dei comandi desktop PRIMA della coda DB (stesso path _dispatch)
     _process_local_requests(flumine, session, runner_mode_l)
     now_m = time.monotonic()

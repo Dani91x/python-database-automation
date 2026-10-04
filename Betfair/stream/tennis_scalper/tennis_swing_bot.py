@@ -30,6 +30,8 @@ from .condotta_ordini import (
     ordini_vivi_su,
     registra_esito_manuale,
     sbilancio_selezione,
+    FLOOR_PLACE_AND_TRIM,
+    ResiduiRicordati,
     UsciteEsatte,
     diretta_ok,
     size_legale,
@@ -103,6 +105,8 @@ class TennisSwingStrategy(BaseStrategy):
         self.live = float(c.get("live_min_bet", 0.0) or 0.0) > 0.0
         # 28/09: le chiusure ESATTE (place-and-trim del resto), vedi `_place`
         self._esatte = UsciteEsatte(self, self._emit)
+        # 04/10 (decisione 1 dell'utente): residui non piazzabili ricordati
+        self.residui_ricordati = ResiduiRicordati(self._emit)
         # TOLLERANZA di «posizione pari» sulla SELEZIONE, in EUR. E' la soglia
         # che lo swing usava gia' per dire «flat» (0,01), qui resa esplicita e
         # applicata al blotter della SELEZIONE, non al solo trade corrente.
@@ -334,6 +338,32 @@ class TennisSwingStrategy(BaseStrategy):
         # 28/09: anche una chiusura esatta (parti vive + sequenza fermata)
         self._esatte.annulla(market, order)
 
+    def _residuo_non_piazzabile(self, market: Any, sel: int, tr: Dict[str, Any],
+                                nw: float, nl: float, px: Optional[float]) -> bool:
+        """04/10 (DECISIONE 1 DELL'UTENTE): l'ordine che chiuderebbe e' sotto il
+        floor di legge del place-and-trim (0,50). Si DICHIARA una volta, si RICORDA
+        e il trade si chiude (lo swing riprende). Solo a blotter letto e ordini
+        propri morti."""
+        if not self._blotter_letto or px is None or px <= 1.0:
+            return False
+        g = compute_green(nw, nl, px)
+        if g is None:
+            return False
+        lato, importo, _l = g
+        if round(float(importo), 2) >= FLOOR_PLACE_AND_TRIM - 1e-9:
+            return False
+        self._cancel(market, tr.get("close_order"))
+        if ordini_vivi_su(market, self, sel) is not False:
+            return False
+        mid = str(getattr(market, "market_id", "") or "")
+        self.residui_ricordati.dichiara(mid, sel, lato, importo, px, nw, nl)
+        self.stats["residui_ricordati"] = self.residui_ricordati.per_stats()
+        self._cancel(market, tr.get("order"))
+        self._tr.pop(mid, None)
+        self._emit("posizione_pari", sel=sel, residuo=round(float(importo), 2),
+                   note="residuo sotto 0,50 dichiarato e ricordato: trade chiuso")
+        return True
+
     def _puo_dimenticare(self, market: Any, sel: int, tr: Dict[str, Any],
                          b: float, l: float, nw: float, nl: float) -> bool:
         """L'UNICO punto da cui un trade puo' essere dimenticato.
@@ -351,7 +381,11 @@ class TennisSwingStrategy(BaseStrategy):
         if not self._blotter_letto:
             return False
         sb = sbilancio_selezione(market, self, sel)
-        if sb is None or sb > self.tolleranza_flat:
+        # 04/10 (decisione 1): il residuo DICHIARATO e ricordato della selezione non
+        # tiene in vita il trade (nessun ordine .it lo chiude)
+        tol = self.tolleranza_flat + self.residui_ricordati.sbilancio(
+            getattr(market, "market_id", ""), sel)
+        if sb is None or sb > tol:
             return False
         # nessun ordine ancora vivo: un residuo appoggiato — o un ordine ancora
         # `Cancelling`, perche' `cancel_order` e' asincrona — puo' riempirsi dopo
@@ -427,6 +461,11 @@ class TennisSwingStrategy(BaseStrategy):
         if tr.get("closing"):
             nw, nl = b*(ba-1)-l*(la-1), l-b
             if self._puo_dimenticare(market, sel, tr, b, l, nw, nl):
+                return
+            # 04/10 (DECISIONE 1): la chiusura che resta e' sotto 0,50 -> residuo
+            # dichiarato una volta, ricordato, trade chiuso (prima: closing per sempre)
+            if not self.dry_run and self._residuo_non_piazzabile(
+                    market, sel, tr, nw, nl, bl if side == "BACK" else bb):
                 return
             # ⚠️ IL PRIMO HEDGE. Quando si entra in CLOSING dal TIMEOUT
             # D'INGRESSO non c'e' nessun `close_order`: prima si aspettavano i
@@ -741,6 +780,9 @@ class TennisSwingStrategy(BaseStrategy):
         return not any(self._tr.values())
 
     def process_closed_market(self, market: Any, mb: Any) -> None:
+        # 04/10: a mercato regolato i residui ricordati si chiudono col risultato
+        self.residui_ricordati.regola_mercato(getattr(market, "market_id", ""))
+        self.stats["residui_ricordati"] = self.residui_ricordati.per_stats()
         # DEDUP PER ORDINE (correzione 17/09, lo stesso fix del PRO e del FLB):
         # flumine puo' richiamare `process_closed_market` sullo stesso mercato e
         # senza dedup il P&L di settlement RADDOPPIA.

@@ -239,8 +239,12 @@ def test_ingresso_flb_sotto_il_minimo_nel_paper_parte_al_minimo(db, banchi):
     # la copertura sotto il minimo: 28/09 (seconda consegna) ESATTA, mai
     # gonfiata (regola permanente dell'utente sulle chiusure): 0,20 col
     # place-and-trim, parcheggio legale da 2,00 a quota non abbinabile
-    c = flb._place(market, 11, "LAY", 2.1, 0.2, copertura=True)
-    assert c is not None and c.order_type.size == 0.2
+    # 04/10 (decisione 1 dell'utente): una copertura sotto 0,50 non e' piazzabile da
+    # nessuna via (floor di legge del place-and-trim): niente ordine, la dichiara
+    # il bot. Fra 0,50 e 1,00 (banca sotto il minimo diretto): place-and-trim.
+    assert flb._place(market, 11, "LAY", 2.1, 0.2, copertura=True) is None
+    c = flb._place(market, 11, "LAY", 2.1, 0.6, copertura=True)
+    assert c is not None and c.order_type.size == 0.6
     assert c.diretto is None and c.sequenza is not None
 
 

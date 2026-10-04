@@ -70,6 +70,7 @@ from ..live_order_build import (
     JURISDICTION_IT,
     min_stake_rules,
 )
+from ..trading.minimi_it import SUBMIN_IMPORTO_FINALE_MIN as FLOOR_PLACE_AND_TRIM
 from ..trading.submin import FlumineSubminOps
 from ..trading.submin import porta_al_minimo_apertura as _porta_al_minimo
 
@@ -358,6 +359,27 @@ class UsciteEsatte:
         from ..trading.submin import SubminState, SubminStep
 
         parte, resto = spezza_esatta(size, side)
+        # 04/10 (DECISIONE 1 DELL'UTENTE): un resto sotto il floor di legge del
+        # place-and-trim (`minimi_it.SUBMIN_IMPORTO_FINALE_MIN`, 0,50) Betfair lo
+        # RIFIUTA sempre: nessuna sequenza (prima: una ogni 30 s per tutta la
+        # partita, ~200 rifiuti). Parte solo la parte diretta; il resto e' il
+        # RESIDUO che il bot dichiara e ricorda (`ResiduiRicordati`).
+        if 0.0 < resto < FLOOR_PLACE_AND_TRIM - 1e-9:
+            # dichiarato SUBITO (una riga CRITICAL per episodio, se il bot ha la
+            # memoria dei residui): sbilancio stimato dal resto non piazzato alla
+            # quota dell'uscita; il bot lo riscrive coi numeri veri del blotter
+            # quando la sua sorveglianza lo trova
+            mem = getattr(self._s, "residui_ricordati", None)
+            if mem is not None:
+                p = float(price)
+                lato = str(side).upper()
+                sv, sp = ((-resto * (p - 1.0), resto) if lato == "BACK"
+                          else (resto * (p - 1.0), -resto))
+                mem.dichiara(str(getattr(market, "market_id", "") or ""), sel, lato,
+                             resto, p, sv, sp)
+            resto = 0.0
+            if parte <= 0:
+                return None          # niente di piazzabile: lo dichiara il bot
         comp = OrdineComposto(side, price, round(parte + resto, 2), sel,
                               str(getattr(market, "market_id", "") or ""))
         chiave = (comp.market_id, int(sel))
@@ -416,6 +438,18 @@ class UsciteEsatte:
             return
         if seq.get("order") is None and getattr(seq["ops"], "last_order", None) is not None:
             seq["order"] = seq["ops"].last_order
+        if str(getattr(nuovo.step, "value", nuovo.step)) == "done" \
+                and not _sostituto_a_mercato(seq, nuovo):
+            # 04/10: `advance_submin` passa REPRICED -> DONE senza guardare se il
+            # sostituto esiste (reperto, `trading/submin.py`, patch a parte). Un
+            # replace il cui ordine nuovo e' stato RIFIUTATO non e' una chiusura
+            # a riposo: la sequenza e' FALLITA (anti-cascata che raddoppia).
+            from dataclasses import replace as _r
+
+            from ..trading.submin import SubminStep
+
+            nuovo = _r(nuovo, step=SubminStep.ABORTED,
+                       note="replace rifiutato: nessun ordine alla quota voluta")
         if nuovo.step is not seq["state"].step:
             self._e("uscita_esatta_passo", sel=comp.selection_id,
                     passo=str(getattr(nuovo.step, "value", nuovo.step)))
@@ -463,6 +497,116 @@ class UsciteEsatte:
                     market.cancel_order(o)
                 except Exception:  # noqa: BLE001
                     pass
+
+
+def _sostituto_a_mercato(seq: Dict[str, Any], stato: Any) -> bool:
+    """L'ultimo ordine del Trade della sequenza e' alla quota voluta ed e' vivo
+    o abbinato? (Flumine live, replace fallito: nessun sostituto, l'ultimo
+    ordine resta il parcheggio annullato.)"""
+    base = seq.get("order") or getattr(seq.get("ops"), "last_order", None)
+    if base is None:
+        return False
+    ordini = list(getattr(getattr(base, "trade", None), "orders", None) or [base])
+    ultimo = ordini[-1]
+    try:
+        prezzo = float(getattr(getattr(ultimo, "order_type", None), "price", 0.0) or 0.0)
+        voluto = float(getattr(stato, "target_price", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return False
+    if abs(prezzo - voluto) > 1e-6:
+        return False
+    return ordine_vivo(ultimo) or float(getattr(ultimo, "size_matched", 0.0) or 0.0) > _EPS
+
+
+# ---------------------------------------------------------------------------
+# 4. I RESIDUI RICORDATI (decisione 1 dell'utente, 04/10)
+# ---------------------------------------------------------------------------
+class ResiduiRicordati:
+    """Un residuo che nessun ordine legale .it puo' chiudere (l'ordine che lo
+    chiuderebbe e' sotto il floor di legge 0,50) si DICHIARA una volta (UNA riga
+    CRITICAL per episodio, con la proposta all'utente) e il bot RIPRENDE a operare.
+    Il residuo non si dimentica: resta qui, nelle `stats` del bot (che la UI
+    legge) e nei controlli del banco, finche' lo sbilancio della selezione torna
+    pari (lo chiude l'utente o un ciclo successivo) o il mercato si regola.
+
+    Chiave (market_id, selection_id). Valori in EUR, letti dal blotter."""
+
+    def __init__(self, emit: Any = None) -> None:
+        self._emit = emit
+        self.aperti: Dict[Tuple[str, int], Dict[str, Any]] = {}
+
+    def _e(self, kind: str, **p: Any) -> None:
+        if callable(self._emit):
+            try:
+                self._emit(kind, **p)
+            except Exception:  # noqa: BLE001 - la telemetria non ferma il bot
+                pass
+
+    def dichiara(self, market_id: Any, sel: Any, lato: str, importo: float,
+                 prezzo: Optional[float], se_vince: float, se_perde: float,
+                 critico: bool = True) -> bool:
+        """Ricorda il residuo. True se e' un episodio NUOVO (riga CRITICAL).
+        ``critico=False``: il micro-residuo sotto 0,02 che il bot dichiara gia'
+        con la sua riga (`residuo_centesimi` del PRO): ricordato, nessuna riga in
+        piu'."""
+        k = (str(market_id), int(sel))
+        riga = {"market_id": k[0], "selection_id": k[1], "lato": str(lato).upper(),
+                "importo": round(float(importo), 2),
+                "prezzo": None if prezzo is None else float(prezzo),
+                "se_vince": round(float(se_vince), 2), "se_perde": round(float(se_perde), 2),
+                "sbilancio": round(abs(float(se_vince) - float(se_perde)), 2)}
+        nuovo = k not in self.aperti
+        # gli importi dichiarati non piazzabili in QUESTO episodio (un'uscita a
+        # scaglioni ne dichiara piu' d'uno): li legge il banco (UF2)
+        prima = [] if nuovo else list(self.aperti[k].get("importi_dichiarati") or [])
+        if riga["importo"] not in prima:
+            prima.append(riga["importo"])
+        riga["importi_dichiarati"] = prima
+        self.aperti[k] = riga
+        if nuovo and critico:
+            self._e("residuo_non_piazzabile", level="CRITICAL", proposta={
+                        "azione": "chiudi a mano", "lato": riga["lato"],
+                        "importo": riga["importo"], "quota": riga["prezzo"],
+                        "selection_id": k[1], "market_id": k[0]},
+                    **{x: riga[x] for x in ("selection_id", "market_id", "lato", "importo",
+                                            "se_vince", "se_perde", "sbilancio")},
+                    note=("residuo di %.2f EUR %s sulla selezione %s non piazzabile su "
+                          "Betfair .it (sotto 0,50): se vince %.2f, se perde %.2f. Il bot "
+                          "riprende a operare; il residuo resta ricordato finche' lo "
+                          "chiudi tu dal Terminale o il mercato si regola."
+                          % (riga["importo"], riga["lato"], k[1], riga["se_vince"],
+                             riga["se_perde"])))
+        return nuovo
+
+    def aggiorna(self, market_id: Any, sel: Any, se_vince: float, se_perde: float) -> None:
+        """Lo sbilancio vero della selezione: pari al centesimo (<= 0,011) =
+        residuo chiuso; sopra resta ricordato col valore vero."""
+        k = (str(market_id), int(sel))
+        riga = self.aperti.get(k)
+        if riga is None:
+            return
+        if abs(float(se_vince) - float(se_perde)) <= 0.011:
+            self.aperti.pop(k, None)
+            self._e("residuo_chiuso", selection_id=k[1], market_id=k[0],
+                    note="il residuo ricordato e' tornato pari")
+            return
+        riga.update({"se_vince": round(float(se_vince), 2),
+                     "se_perde": round(float(se_perde), 2),
+                     "sbilancio": round(abs(float(se_vince) - float(se_perde)), 2)})
+
+    def regola_mercato(self, market_id: Any) -> None:
+        for k in [k for k in self.aperti if k[0] == str(market_id)]:
+            riga = self.aperti.pop(k)
+            self._e("residuo_regolato", selection_id=k[1], market_id=k[0],
+                    se_vince=riga["se_vince"], se_perde=riga["se_perde"],
+                    note="mercato chiuso: il residuo si e' regolato col risultato")
+
+    def sbilancio(self, market_id: Any, sel: Any) -> float:
+        riga = self.aperti.get((str(market_id), int(sel)))
+        return float(riga["sbilancio"]) if riga else 0.0
+
+    def per_stats(self) -> list:
+        return [dict(r) for r in self.aperti.values()]
 
 
 class _OpsCattura(FlumineSubminOps):

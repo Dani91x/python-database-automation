@@ -44,6 +44,8 @@ from .condotta_ordini import (
     ingresso_finito,
     ordini_vivi_su,
     registra_esito_manuale,
+    FLOOR_PLACE_AND_TRIM,
+    ResiduiRicordati,
     UsciteEsatte,
     diretta_ok,
     size_legale,
@@ -113,6 +115,8 @@ class TennisFLBStrategy(BaseStrategy):
         self.live: bool = float(c.get("live_min_bet", 0.0) or 0.0) > 0.0
         # 28/09: le chiusure ESATTE (place-and-trim del resto), vedi `_place`
         self._esatte = UsciteEsatte(self, self._emit)
+        # 04/10 (decisione 1 dell'utente): residui non piazzabili ricordati
+        self.residui_ricordati = ResiduiRicordati(self._emit)
 
         # stato runtime
         self._pos_state: Dict[Tuple[str, int], Dict[str, Any]] = {}
@@ -402,6 +406,28 @@ class TennisFLBStrategy(BaseStrategy):
                     sel, st.get("green_price"), st.get("green_fr"),
                     st.get("green_est"))
 
+    def _residuo_non_piazzabile(self, market: Any, sel: int, key: Tuple[str, int],
+                                nw: float, nl: float, bb: float) -> bool:
+        """04/10 (DECISIONE 1 DELL'UTENTE): la copertura che resta e' sotto il
+        floor di legge del place-and-trim (0,50): nessun ordine .it la piazza.
+        Si DICHIARA una volta (CRITICAL con la proposta), si RICORDA e la
+        posizione e' chiusa per il bot (DONE): prima `green_fallito` a ogni book e
+        posizione OPEN per sempre. Solo a ordini propri morti."""
+        if bb is None or bb <= 1.0:
+            return False
+        g = compute_green(nw, nl, bb)
+        if g is None:
+            return False
+        lato, importo, _l = g
+        if round(float(importo), 2) >= FLOOR_PLACE_AND_TRIM - 1e-9:
+            return False
+        if ordini_vivi_su(market, self, sel) is not False:
+            return False
+        self.residui_ricordati.dichiara(market.market_id, sel, lato, importo, bb, nw, nl)
+        self.stats["residui_ricordati"] = self.residui_ricordati.per_stats()
+        self._pos_state[key] = {"state": DONE}
+        return True
+
     def _manage(self, market: Any, sel: int, key: Tuple[str, int],
                 st: Dict[str, Any], bb: float, bl: float,
                 pt: Optional[int] = None) -> None:
@@ -480,6 +506,9 @@ class TennisFLBStrategy(BaseStrategy):
                 # Si distingue guardando il netto VERO dal blotter.
                 if not self.dry_run:
                     nw_, nl_ = self._net(*self._matched(market, sel))
+                    if abs(nw_ - nl_) > 0.01 and self._residuo_non_piazzabile(
+                            market, sel, key, nw_, nl_, bb):
+                        return
                     if abs(nw_ - nl_) > 0.01:
                         st["greened"] = False       # si riprova al prossimo book
                         self._emit("green_fallito", sel=sel,
@@ -664,6 +693,9 @@ class TennisFLBStrategy(BaseStrategy):
                    for st in self._pos_state.values())
 
     def process_closed_market(self, market: Any, mb: Any) -> None:
+        # 04/10: a mercato regolato i residui ricordati si chiudono col risultato
+        self.residui_ricordati.regola_mercato(getattr(market, "market_id", ""))
+        self.stats["residui_ricordati"] = self.residui_ricordati.per_stats()
         # P&L VERO: profitto del settlement simulato (include hold-to-end).
         # DEDUP PER ORDINE (correzione 17/09, lo stesso fix che il PRO ha gia'
         # a `tennis_pro_bot.py:757-761`): flumine puo' richiamare

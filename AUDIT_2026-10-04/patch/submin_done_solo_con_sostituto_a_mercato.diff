@@ -1,0 +1,25 @@
+diff --git a/Betfair/stream/trading/submin.py b/Betfair/stream/trading/submin.py
+index 7015db5..ce177e6 100644
+--- a/Betfair/stream/trading/submin.py
++++ b/Betfair/stream/trading/submin.py
+@@ -1138,6 +1138,20 @@ def advance_submin(
+ 
+     # --- DONE: ordine a riposo a (target_price, target_size) ---------------
+     if state.step == SubminStep.REPRICED:
++        # 04/10 (CERTIFICAZIONE_TENNIS_PRO_SCALPER, patch per il coordinatore): un
++        # replace il cui ordine NUOVO e' stato rifiutato lascia il parcheggio
++        # annullato e NESSUN sostituto (flumine live). DONE solo se l'ordine
++        # osservato e' alla quota voluta e vivo o abbinato; altrimenti ABORTED.
++        if order is not None:
++            prezzo = _order_price(order)
++            vivo_o_abbinato = _is_executable(order) or _size_matched(order) > _TOL
++            if prezzo is None or abs(prezzo - state.target_price) > _TOL \
++                    or not vivo_o_abbinato:
++                return _dc_replace(
++                    state, step=SubminStep.ABORTED, bet_id=_bet_id(order) or state.bet_id,
++                    note=("step3: replace senza sostituto a mercato (rifiutato?) — "
++                          "nessun ordine alla target_price, sequenza fallita"),
++                )
+         return _dc_replace(
+             state, step=SubminStep.DONE, bet_id=_bet_id(order) or state.bet_id,
+             note="submin completato: ordine sotto-minimo a riposo alla target_price",

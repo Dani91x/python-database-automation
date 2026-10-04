@@ -155,7 +155,10 @@ def test_annullo_di_una_chiusura_esatta_ferma_la_sequenza(db, banchi, esecuzione
     strat = b.session.hosted[("101", "tennis_swing")]
     market = b.fw.markets.markets["1.101"]
     b.posizione("101", "tennis_swing", lato="LAY", prezzo=2.10, size=1.0)
-    o = strat._place(market, 11, "BACK", 1000.0, 1.05, copertura=True)
+    # 04/10 (decisione 1 dell'utente): BACK 1,05 = 1,00 diretti + 0,05 di residuo (nessun
+    # place-and-trim sotto 0,50): la sequenza da annullare nasce con 0,75 (tutto
+    # place-and-trim, finale >= 0,50)
+    o = strat._place(market, 11, "BACK", 1000.0, 0.75, copertura=True)
     assert o is not None and o.in_corso()
     strat._cancel(market, o)
     assert not o.in_corso()
@@ -273,6 +276,17 @@ def test_anti_cascata_si_azzera_al_primo_successo(monkeypatch):
         if esito["x"] == "esplodi":
             raise ValueError("rifiutato - finto")
         from dataclasses import replace as _r
+
+        # 04/10 (decisione 1 dell'utente): DONE vale solo con un ordine VERO alla quota
+        # voluta, vivo (`UsciteEsatte` verifica il sostituto a mercato)
+        from flumine.order.ordertype import LimitOrder
+        from flumine.order.trade import Trade
+        o = Trade(market_id="1.101", selection_id=11, handicap=0.0,
+                  strategy=bot).create_order(
+            side="BACK", order_type=LimitOrder(price=state.target_price,
+                                               size=state.target_size))
+        o.executable()
+        k["ops"].last_order = o
         return _r(state, step=SM.SubminStep.DONE)
     monkeypatch.setattr(SM, "advance_submin", _finto)
     bot = _BotFinto()
@@ -352,7 +366,9 @@ def test_b8_catena_legittima_del_place_and_trim_non_viola():
     None,                                            # nessun ordine prima
     ("BACK", 2.0, 2.0, 1.85),                        # prima NON a quota di parcheggio
     ("BACK", 1000.0, 2.0, 0.0),                      # parcheggio MAI ridotto
-    ("BACK", 1000.0, 1.0, 0.85),                     # parcheggio sotto il minimo
+    # 04/10: sotto il minimo della FONTE UNICA (`minimi_it`, oggi 1,00): prima 1,00
+    # fisso, che coi minimi del 02/10 e' un parcheggio legale
+    ("BACK", 1000.0, 0.5, 0.35),                     # parcheggio sotto il minimo
     ("LAY", 1.01, 2.0, 1.85),                        # lato diverso
 ])
 def test_b8_sotto_il_minimo_senza_catena_legittima_viola(prima):
