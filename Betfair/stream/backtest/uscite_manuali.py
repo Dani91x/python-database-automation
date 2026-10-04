@@ -195,13 +195,6 @@ class Osservatore:
                  = None,
                  soglia_resto: float = SOGLIA_RESTO_NON_PIAZZABILE) -> None:
         self.scenario = scenario
-        # 04/10 (decisione dell'utente «il residuo resta ricordato e lo chiudo
-        # io», scalper calcio): la soglia sotto cui un resto DICHIARATO dal bot
-        # (`min_bet_skip`) non accusa UF2. Di serie 0,05 (tennis invariato); lo
-        # scalper calcio passa l'importo finale minimo del place-and-trim (0,50,
-        # `minimi_it`): sotto, Betfair .it non accetta nessun ordine. Senza la
-        # dichiarazione del bot resta violazione.
-        self._soglia_resto = float(soglia_resto)
         self.firmate = scenario == SCENARIO_FIRMATE
         self._strategie = strategie
         self._ordini_di = ordini_di
