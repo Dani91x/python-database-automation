@@ -66,6 +66,8 @@ def test_flb_residuo_dichiarato_una_volta_e_posizione_libera(db, banchi, esecuzi
     assert len(crit) == 1 and crit[0]["importo"] == 0.32 and crit[0]["lato"] == "BACK"
     assert strat.stats["residui_ricordati"][0]["importo"] == 0.32
     assert _nessun_vivo(market, strat) == []
+    strat.process_closed_market(market, market.market_book)
+    assert strat.stats["residui_ricordati"] == []
 
 
 def test_swing_residuo_dichiarato_una_volta_trade_chiuso(db, banchi, esecuzione_sincrona):
