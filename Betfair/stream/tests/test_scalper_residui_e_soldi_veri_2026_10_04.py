@@ -260,6 +260,77 @@ def test_freno_soldi_veri_ferma_le_aperture_e_lascia_le_chiusure(
     assert b.strat._place(b.market, SCT.SEL, "BACK", 2.2, 25.0, floor_min=True) is not None
 
 
+class _TabellaFinta:
+    def __init__(self, db: "_DbSupervisore", nome: str) -> None:
+        self.db, self.nome = db, nome
+
+    def insert(self, riga: Dict[str, Any]) -> "_TabellaFinta":
+        self.db.tabelle.setdefault(self.nome, []).append(dict(riga))
+        return self
+
+    def execute(self) -> Any:
+        return None
+
+
+class _DbSupervisore:
+    """Le scritture di `scalper_service.Db` usate da `marca_orfana` (stesse
+    firme: `set_control(event_id, **campi)`, `sb.table(nome).insert(riga)`)."""
+
+    def __init__(self) -> None:
+        self.controlli: List[Dict[str, Any]] = []
+        self.tabelle: Dict[str, List[Dict[str, Any]]] = {}
+        self.sb = self
+
+    def table(self, nome: str) -> _TabellaFinta:
+        return _TabellaFinta(self, nome)
+
+    def set_control(self, event_id: str, **fields: Any) -> None:
+        self.controlli.append({"event_id": event_id, **fields})
+
+
+@pytest.mark.parametrize("dry_run,modo", [(False, "live"), (True, "paper")])
+def test_sessione_orfana_dichiarata_al_trader(dry_run, modo):
+    """S7 (scenario `riavvio`): il processo della sessione muore con ordini a
+    mercato; un processo nuovo di flumine non li adotta. Il supervisore marca
+    la riga 'error' e li DICHIARA con un avviso CRITICAL in `live_alerts`
+    (decisione dell'utente: il residuo lo chiude lui)."""
+    from Betfair.stream.scalper import scalper_service as SVC
+
+    db = _DbSupervisore()
+    SVC.marca_orfana(db, "77", {"dry_run": dry_run})
+    assert db.controlli[-1]["status"] == "error"
+    assert "orfana" in db.controlli[-1]["error"]
+    avvisi = db.tabelle.get("live_alerts") or []
+    assert len(avvisi) == 1 and avvisi[0]["level"] == "CRITICAL"
+    assert avvisi[0]["code"] == SVC.CODICE_ORFANA and avvisi[0]["event_id"] == "77"
+    assert "orfan" in avvisi[0]["message"].lower() and modo in avvisi[0]["message"]
+    # il controllo S7 del banco riconosce la dichiarazione
+    orf = [{"order_id": "o1", "side": "LAY", "selection_id": 1, "price": 2.0,
+            "size_matched": 25.0, "size_remaining": 0.0}]
+    oss = SCT.CERT.Osservazione(orfani_dopo_riavvio=orf, credenze=[], allarmi=avvisi)
+    assert SCT.CERT._s7(oss) is None
+    assert SCT.CERT._s7(SCT.CERT.Osservazione(orfani_dopo_riavvio=orf, credenze=[],
+                                              allarmi=[])) is not None
+
+
+def test_cp1_riconosce_la_chiusura_dalla_riga_di_specchio():
+    """CP1 (scenario `chiusura-abbinata-in-parte`): una chiusura colpita che lo
+    scalper ha smesso di seguire (ciclo chiuso) resta riconoscibile dalla riga
+    di specchio che la UI vede, come per i bot tennis; i NUMERI della riga si
+    giudicano (abbinato/residuo/prezzo)."""
+    from Betfair.stream.scalper.tools import replay_registrazioni as RR
+
+    riga = {"bet_id": "100000000016", "size": 25.0, "price": 1.82, "status": "EXECUTION_COMPLETE",
+            "size_matched": 10.0, "size_remaining": 0.0, "average_price_matched": 1.82,
+            "client_order_ref": "x", "mode": "live"}
+    out = RR.credenze_cp([], None, None, specchio=[riga])
+    assert len(out) == 1 and out[0]["id"] == "specchio" and out[0]["chiave"] == ()
+    c = out[0]["chiusure"][0]
+    assert c["bet_id"] == "100000000016" and c["size_matched"] == 10.0
+    assert c["avg_price_matched"] == 1.82
+    assert RR.credenze_cp([], None, None) == []
+
+
 class _DbSessione:
     """Le due scritture di `scalper_session.Db` usate all'avvio (stesse firme)."""
 

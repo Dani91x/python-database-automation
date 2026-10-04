@@ -1851,7 +1851,9 @@ class ScalperStrategy(BaseStrategy):
             # SCRATCH: il touch ha raggiunto il nostro prezzo d'ingresso ->
             # ripiazza la chiusura A PARI (profitto 0) invece di inseguire
             # +scalp_ticks che ormai non arrivera'. Una sola volta per ciclo.
-            if cond_scratch:
+            # 04/10: uno scratch gia' deciso (firmato) e in attesa che la close
+            # vecchia muoia non si ri-chiede: la firma e' gia' stata usata
+            if cond_scratch and not slot.scratch_in_attesa:
                 # 25/09 - uscite MANUALI: lo scratch a pari e' un'uscita
                 # discrezionale. Non si tocca niente (la chiusura a target, se
                 # c'era, resta dov'e'): si propone e decide l'utente. Dal 28/09
@@ -2222,9 +2224,12 @@ class ScalperStrategy(BaseStrategy):
                     # 04/10 (decisione dell'utente): un resto che Betfair non
                     # accetta (tutto residuo per il modulo dei minimi) NON si
                     # ritenta a ogni giro: si dichiara e si ricorda SUBITO
-                    or self._tutto_residuo(net_win, net_lose, best_back, best_lay)
-            ) and self._resto_davvero_non_piazzabile(
-                    slot, net_win, net_lose, best_back, best_lay):
+                    or self._tutto_residuo(net_win, net_lose, best_back, best_lay,
+                                           cross=min(max(slot.flat_tries - 1, 0), 8))
+            ) and (self._tutto_residuo(net_win, net_lose, best_back, best_lay,
+                                       cross=min(max(slot.flat_tries - 1, 0), 8))
+                   or self._resto_davvero_non_piazzabile(
+                       slot, net_win, net_lose, best_back, best_lay)):
                 # ULTIMA SPIAGGIA (direttiva operatore 10/07 §12.1: il flatten
                 # TERMINA, sempre, con ledger chiuso): niente e' piazzabile
                 # (minimi .it, submin esauriti/rate-limited), nessuna sequenza
@@ -2319,11 +2324,13 @@ class ScalperStrategy(BaseStrategy):
 
     def _tutto_residuo(
         self, net_win: float, net_lose: float,
-        best_back: Optional[float], best_lay: Optional[float],
+        best_back: Optional[float], best_lay: Optional[float], cross: int = 0,
     ) -> bool:
         """La chiusura che servirebbe ADESSO e' tutta residuo per il modulo
         condiviso dei minimi (nessuna parte diretta, nessun place-and-trim):
-        sotto ogni minimo .it, Betfair non la accetta."""
+        sotto ogni minimo .it, Betfair non la accetta. Si valuta alla STESSA
+        quota del flatten (``cross`` tick oltre il best): al best puo' essere
+        0,50 e alla quota inseguita 0,48."""
         if not self.exact_exits or self.dry_run:
             return False
         if net_win > net_lose:
@@ -2333,6 +2340,8 @@ class ScalperStrategy(BaseStrategy):
         if base is None:
             return False
         p = get_nearest_price(base)
+        if cross:
+            p = price_ticks_away(p, cross if side == "LAY" else -cross) or p
         g = compute_green(net_win, net_lose, p)
         if g is None:
             return False

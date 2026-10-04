@@ -64,12 +64,32 @@ def test_scratch_firmato_parte_esatto_subito_dopo_la_target(differita, orologio_
     proposta = float(scratch[0]["size_chiusura"])
     assert abs(proposta - 2.8) < 1e-9
     canc.approvate[scratch[0]["chiave"]] = b.pt / 1000.0
-    for _ in range(25):                   # dentro la pausa di 30 s
+    doppie = []
+    for i in range(25):                   # dentro la pausa di 30 s
         differita()
         b.book()
+        # 04/10 (CP4): mai due chiusure BACK vive o in volo insieme (la target
+        # col ritiro in volo + lo scratch): rischio di sovracopertura
+        vive_i = [o for o in b.market.blotter.strategy_orders(b.strat)
+                  if o.side == "BACK" and b.strat._vivo_o_in_volo(o)
+                  and float(o.order_type.price) < 999.0]
+        if len(vive_i) > 1:
+            doppie.append((i, [(float(o.order_type.price), str(o.status.value))
+                               for o in vive_i]))
+    assert doppie == [], doppie[:3]
     assert [r for r in b.righe if r[0] == "scratch"], "lo scratch firmato deve partire"
-    assert _importo_a_quota(b, 1.65) == proposta, (
+    # 04/10 (regola dell'utente): una PUNTA da 2,80 parte a multiplo di 0,50
+    # per DIFETTO (2,50) e il resto 0,30, sotto 0,50, e' residuo DICHIARATO
+    # (`min_bet_skip` 0,30) e poi ricordato. Prima: 2,80 interi (punta non
+    # multipla, rifiutata su .it). La proprieta' di S4 resta: lo scratch parte
+    # SUBITO all'importo che la regola consente, non a 2,50 per la pausa.
+    assert _importo_a_quota(b, 1.65) == 2.5, (
         _importo_a_quota(b, 1.65), proposta,
         [r for r in b.righe if r[0] in ("min_bet_skip", "submin_start", "place")])
-    assert not [r for r in b.righe if r[0] == "min_bet_skip"
-                and abs(float(r[1].get("size") or 0) - 0.30) < 1e-9]
+    assert [r for r in b.righe if r[0] == "min_bet_skip"
+            and abs(float(r[1].get("size") or 0) - 0.30) < 1e-9]
+    # 04/10 (CP4): mai due chiusure BACK vive insieme (target + scratch)
+    vive = [o for o in b.market.blotter.strategy_orders(b.strat)
+            if o.side == "BACK" and b.strat._vivo_o_in_volo(o)
+            and float(o.order_type.price) < 999.0]
+    assert len(vive) <= 1, [(float(o.order_type.price), float(o.size_remaining)) for o in vive]

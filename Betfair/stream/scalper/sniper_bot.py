@@ -841,8 +841,9 @@ class SniperStrategy(BaseStrategy):
                 pos.flat_tries > 12
                 # 04/10 (decisione dell'utente): tutto residuo = si dichiara
                 # SUBITO, mai ritentato a ogni giro
-                or self._tutto_residuo(nw, nl, bb, bl)
-        ) and self._resto_davvero_non_piazzabile(pos, nw, nl, bb, bl):
+                or self._tutto_residuo(nw, nl, bb, bl, cross=min(pos.flat_tries, 8))
+        ) and (self._tutto_residuo(nw, nl, bb, bl, cross=min(pos.flat_tries, 8))
+               or self._resto_davvero_non_piazzabile(pos, nw, nl, bb, bl)):
             # ULTIMA SPIAGGIA (direttiva operatore 10/07 §12.1: il flatten
             # TERMINA sempre, con ledger chiuso): niente e' piazzabile e
             # nessuna sequenza exact attiva dopo molti tentativi → il residuo
@@ -950,15 +951,19 @@ class SniperStrategy(BaseStrategy):
         return True
 
     def _tutto_residuo(self, nw: float, nl: float,
-                       bb: Optional[float], bl: Optional[float]) -> bool:
+                       bb: Optional[float], bl: Optional[float], cross: int = 0) -> bool:
         """04/10: la chiusura di ADESSO e' tutta residuo per il modulo dei
-        minimi (nessuna parte diretta, nessun place-and-trim)."""
+        minimi (nessuna parte diretta, nessun place-and-trim), alla STESSA
+        quota a cui il flatten la piazzerebbe (``cross`` tick oltre il best:
+        al best puo' essere 0,50 e alla quota inseguita 0,48)."""
         if not self.exact_exits or self.dry_run:
             return False
         side, base = ("LAY", bl) if nw > nl else ("BACK", bb)
         if base is None:
             return False
         p = get_nearest_price(base)
+        if cross:
+            p = price_ticks_away(p, cross if side == "LAY" else -cross) or p
         g = compute_green(nw, nl, p)
         if g is None:
             return False
