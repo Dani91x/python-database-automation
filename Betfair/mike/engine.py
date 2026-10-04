@@ -2060,6 +2060,11 @@ def attesa_ritento_chiusura(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any
 # prezzi), cambia solo quante volte si ritenta una richiesta che il mercato
 # respinge, e con che ritmo.
 COVER_BLOCCATA = "LIVE_COVER_BLOCKED"
+#: 04/10 - motivi d'attesa della copertura in banca (``telemetry.cover_wait.reason``):
+#: prezzo limite dell'Under 4,5 non minore della banca dell'Under 3,5 / banca
+#: dell'Under 3,5 non leggibile (vedi ``_copertura_banca``)
+COVER_FUORI_PREZZO = "copertura_fuori_prezzo"
+COVER_U35_NON_LEGGIBILE = "quota_under35_non_leggibile"
 
 
 def _cover_rifiuti(ctx: MatchCtx) -> Dict[str, Any]:
@@ -4510,6 +4515,32 @@ def _copertura_banca(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
                         updates={"cover_stage": 0, "cover_forced": False},
                         telemetry={"cover_resto_sotto_minimo": {**base_tele, "resto": size,
                                                                 "minimo": IT_LAY_MIN}})
+    # 04/10/2026 - ORDINE DELL'UTENTE (Antofagasta v CSD Rangers: libro Under 4,5
+    # quasi vuoto, copertura mandata a 3,1 e poi a 19,5 = 116,92 di rischio per
+    # coprire 5,00). La copertura parte SOLO se la quota a cui si banca l'Under 4,5
+    # (il prezzo LIMITE dell'ordine) e' MINORE - non minore o uguale - della quota
+    # di banca dell'Under 3,5 in questo stesso momento. In un mercato vero l'Under
+    # 4,5 sta sempre sotto l'Under 3,5: il contrario e' un libro senza prezzo.
+    # Altrimenti NESSUN ordine: si resta in attesa e si ricontrolla a ogni giro
+    # (l'avviso critico, uno per episodio, lo scrive il servizio). Quota
+    # dell'Under 3,5 non leggibile = nessun confronto possibile = si aspetta.
+    bk35 = snap.book(MARKET_OU35, SEL_UNDER)
+    q35 = bk35.best_lay if (bk35 is not None and price_ok(bk35.best_lay)) else None
+    if q35 is None:
+        return Decision("LIVE_UNCOVERED", acts,
+                        "copertura: quota di banca dell'Under 3.5 non leggibile, non posso "
+                        "confrontare il prezzo dell'Under 4.5: attendo",
+                        telemetry={"cover_wait": {**base_tele, "reason": COVER_U35_NON_LEGGIBILE,
+                                                  "price_lay_u45": q_best,
+                                                  "price_limite": q_lim}})
+    if float(q_lim) >= float(q35) - _EPS:
+        return Decision("LIVE_UNCOVERED", acts,
+                        "copertura NON eseguita: banca Under 4.5 a %s non minore della banca "
+                        "Under 3.5 a %s (mercato senza prezzo): attendo" % (q_lim, q35),
+                        telemetry={"cover_wait": {**base_tele, "reason": COVER_FUORI_PREZZO,
+                                                  "price_lay_u45": q_best,
+                                                  "price_limite": q_lim,
+                                                  "price_lay_u35": q35}})
     room = liability_room(ctx, params)
     if room < 0.01:
         return Decision("LIVE_COVERED", acts, "copertura saltata: cap liability partita",

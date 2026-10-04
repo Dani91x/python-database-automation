@@ -1,0 +1,184 @@
+"""04/10/2026 - LA COPERTURA PARTE SOLO A UN PREZZO COERENTE (ordine dell'utente).
+
+Incidente: Antofagasta v CSD Rangers (36140993), punta Under 3,5 5,00 a 1,41. Il
+libro dell'Under 4,5 era quasi vuoto (offerte in banca a 3,0 e poi a 18,5 contro
+un valore intorno a 1,2): Mike ha mandato la copertura a 3,1 (rischio 13,27) e poi
+tre volte a 19,5 / 19,0 (rischio 116,92 per coprire 5,00). Betfair le ha
+rifiutate; con i fondi sul conto sarebbero passate.
+
+REGOLA (testuale dell'utente): la copertura parte SOLO se la quota a cui Mike
+banca l'Under 4,5 (il suo prezzo limite) e' MINORE - non minore o uguale - della
+quota di banca dell'Under 3,5 in quello stesso momento. Altrimenti nessun
+ordine: resta in attesa, avvisa UNA volta, ricontrolla a ogni giro. Quota
+dell'Under 3,5 non leggibile = nessun confronto possibile = aspetta.
+Tutto il resto della copertura (momento, importo, tranche, liquidita') invariato.
+
+Finti: gli oggetti veri dell'engine (Leg, Book, Snapshot, MatchCtx, Decision).
+"""
+from __future__ import annotations
+
+from typing import Any, Optional
+
+from Betfair.mike import config as C
+from Betfair.mike import engine as E
+from Betfair.mike import service as S
+
+KO = 1_800_000_000.0
+
+
+def params(**over):
+    p = C.merge_params(None)
+    p["uscite_automatiche"] = True
+    p["cover_form"] = E.COVER_LAY_U45
+    p["cover_policy"] = "immediate"
+    p.update(over)
+    return p
+
+
+def ingresso(stake=5.0, prezzo=1.41) -> E.Leg:
+    return E.Leg(role="under_entry", market=E.MARKET_OU35, selection=E.SEL_UNDER, side="back",
+                 price=prezzo, size=stake, matched=stake, avg_price=prezzo,
+                 ref="under_entry-0-1", status="open", placed_at=KO)
+
+
+def libro(bb: Optional[float], bl: Optional[float], bs=500.0, ls=500.0) -> E.Book:
+    return E.Book(best_back=bb, back_size=bs, best_lay=bl, lay_size=ls, status="OPEN",
+                  inplay=True)
+
+
+def fotografia(*, u35: Optional[E.Book], u45: E.Book, now=KO + 180) -> E.Snapshot:
+    books = {(E.MARKET_OU45, E.SEL_UNDER): u45,
+             (E.MARKET_OU45, E.SEL_OVER): libro(15.0, 16.0)}
+    if u35 is not None:
+        books[(E.MARKET_OU35, E.SEL_UNDER)] = u35
+    return E.Snapshot(now=now, ko_at=KO, books=books, inplay=True, minute=3, goals=0,
+                      feed_fresh=True, order_fresh=True)
+
+
+def scoperta() -> E.MatchCtx:
+    return E.MatchCtx(state="LIVE_UNCOVERED", entry_price_initial=1.41, legs=[ingresso()])
+
+
+def ordini_di_copertura(d: E.Decision):
+    return [a for a in d.actions if getattr(a, "role", None) == "over_cover"]
+
+
+# ---------------------------------------------------------------------------
+# 1. quote normali: la copertura parte ESATTAMENTE come prima
+# ---------------------------------------------------------------------------
+def test_quote_normali_la_copertura_parte_come_prima():
+    d = E.decide(scoperta(), fotografia(u35=libro(1.40, 1.41), u45=libro(1.20, 1.21)), params())
+    assert d.state == "LIVE_COVER_PENDING"
+    (a,) = ordini_di_copertura(d)
+    assert (a.market, a.selection, a.side) == (E.MARKET_OU45, E.SEL_UNDER, "lay")
+    assert a.size == 6.32                                   # 5,00 x 1,2 / 0,95
+    assert a.price == E.cover_place_price_lay(1.21, params())   # limite di sempre (+2 tick)
+    assert a.price < 1.41
+
+
+# ---------------------------------------------------------------------------
+# 2. il caso di Antofagasta: banca Under 4,5 a 3,0 / 18,5 con l'Under 3,5 a 1,41
+# ---------------------------------------------------------------------------
+def test_antofagasta_quota_maggiore_nessun_ordine_e_attesa_dichiarata():
+    for miglior_banca_u45 in (3.0, 18.5):
+        d = E.decide(scoperta(), fotografia(u35=libro(1.40, 1.41),
+                                            u45=libro(1.05, miglior_banca_u45)), params())
+        assert d.state == "LIVE_UNCOVERED", miglior_banca_u45
+        assert ordini_di_copertura(d) == [], "nessun ordine di copertura deve partire"
+        att = d.telemetry["cover_wait"]
+        assert att["reason"] == E.COVER_FUORI_PREZZO
+        assert att["price_lay_u35"] == 1.41
+        assert att["price_lay_u45"] == miglior_banca_u45
+        assert att["price_limite"] == E.cover_place_price_lay(miglior_banca_u45, params())
+        assert "Under 4.5" in d.reason and "Under 3.5" in d.reason
+
+
+# ---------------------------------------------------------------------------
+# 3. MINORE, non minore o uguale: a quote uguali NON parte; un tick sotto parte
+# ---------------------------------------------------------------------------
+def test_quote_uguali_non_parte_un_tick_sotto_parte():
+    p = params()
+    # miglior banca Under 4,5 tale che il prezzo limite sia ESATTAMENTE 1,41
+    assert E.cover_place_price_lay(1.39, p) == 1.41
+    uguale = E.decide(scoperta(), fotografia(u35=libro(1.40, 1.41), u45=libro(1.38, 1.39)), p)
+    assert uguale.state == "LIVE_UNCOVERED"
+    assert ordini_di_copertura(uguale) == []
+    assert uguale.telemetry["cover_wait"]["reason"] == E.COVER_FUORI_PREZZO
+
+    assert E.cover_place_price_lay(1.38, p) == 1.40
+    sotto = E.decide(scoperta(), fotografia(u35=libro(1.40, 1.41), u45=libro(1.37, 1.38)), p)
+    assert sotto.state == "LIVE_COVER_PENDING"
+    (a,) = ordini_di_copertura(sotto)
+    assert a.price == 1.40 and a.size == 6.32
+
+
+# ---------------------------------------------------------------------------
+# 4. il libro torna normale al giro dopo: la copertura parte
+# ---------------------------------------------------------------------------
+def test_il_libro_torna_normale_e_la_copertura_parte():
+    ctx = scoperta()
+    p = params()
+    primo = E.decide(ctx, fotografia(u35=libro(1.40, 1.41), u45=libro(1.05, 18.5)), p)
+    assert primo.state == "LIVE_UNCOVERED" and ordini_di_copertura(primo) == []
+    secondo = E.decide(ctx, fotografia(u35=libro(1.40, 1.41), u45=libro(1.20, 1.21),
+                                       now=KO + 182), p)
+    assert secondo.state == "LIVE_COVER_PENDING"
+    (a,) = ordini_di_copertura(secondo)
+    assert a.size == 6.32 and a.price < 1.41
+
+
+# ---------------------------------------------------------------------------
+# 5. quota di banca dell'Under 3,5 non leggibile: nessun confronto, si aspetta
+# ---------------------------------------------------------------------------
+def test_under35_non_leggibile_si_aspetta():
+    for u35 in (None, libro(1.40, None)):
+        d = E.decide(scoperta(), fotografia(u35=u35, u45=libro(1.20, 1.21)), params())
+        assert d.state == "LIVE_UNCOVERED"
+        assert ordini_di_copertura(d) == []
+        assert d.telemetry["cover_wait"]["reason"] == E.COVER_U35_NON_LEGGIBILE
+
+
+# ---------------------------------------------------------------------------
+# 6. l'avviso critico: UNA volta per episodio, di nuovo al prossimo episodio
+# ---------------------------------------------------------------------------
+class _DbFinto:
+    """Stessa firma del vero ``db.log(kind, payload, event_id)``."""
+
+    def __init__(self) -> None:
+        self.righe: list[tuple[str, dict[str, Any], Any]] = []
+
+    def log(self, kind: str, payload: dict[str, Any], event_id: Any = None) -> None:
+        self.righe.append((kind, dict(payload), event_id))
+
+
+def test_avviso_critico_una_volta_per_episodio():
+    db = _DbFinto()
+    extra: dict[str, Any] = {}
+    fuori = {"reason": E.COVER_FUORI_PREZZO, "price_lay_u45": 18.5, "price_limite": 19.5,
+             "price_lay_u35": 1.41}
+    for _ in range(5):                       # cinque giri di fila nello stesso episodio
+        S._avvisa_copertura_fuori_prezzo(db, extra, fuori, "36140993")
+    assert len(db.righe) == 1
+    kind, payload, eid = db.righe[0]
+    assert kind == "error" and eid == "36140993"
+    assert payload["reason"] == E.COVER_FUORI_PREZZO and payload["critical"] is True
+    assert payload["price_limite"] == 19.5 and payload["price_lay_u35"] == 1.41
+    assert "19.5" in payload["nota"] and "1.41" in payload["nota"]
+
+    # l'episodio finisce (attesa per un altro motivo, o copertura partita) ...
+    S._avvisa_copertura_fuori_prezzo(db, extra, {"reason": "liquidita"}, "36140993")
+    assert len(db.righe) == 1
+    # ... e a un episodio nuovo l'avviso esce di nuovo, una volta
+    S._avvisa_copertura_fuori_prezzo(db, extra, fuori, "36140993")
+    S._avvisa_copertura_fuori_prezzo(db, extra, fuori, "36140993")
+    assert len(db.righe) == 2
+
+
+def test_il_servizio_chiama_l_avviso_quando_registra_l_attesa_della_copertura():
+    """Contratto sul sorgente: il giro vero del servizio (``_run_event``), nel punto
+    in cui registra ``cover_wait``, chiama l'avviso. Senza questa riga la regola
+    fermerebbe l'ordine ma il trader non lo saprebbe."""
+    import inspect
+
+    sorgente = inspect.getsource(S._run_event)
+    assert '_avvisa_copertura_fuori_prezzo(db, extra, v, ev["event_id"])' in sorgente
