@@ -535,9 +535,10 @@ describe('24/09 — Safe modello e Safe a mano nella plancia', () => {
         const s = mostra(righe, comandiFinti());
         expect(s.getByTestId('cr-bot-riga-safe-model')).toBeTruthy();
         expect(s.getByTestId('cr-bot-riga-safe-manual')).toBeTruthy();
-        expect(s.getByTestId('cr-bot-modalita-safe-model').textContent).toBe('prova');
+        // 04/10: per gli strumenti la parola e' «in prova» / «SOLDI VERI»
+        expect(s.getByTestId('cr-bot-modalita-safe-model').textContent).toBe('in prova');
         // `manual` non scritto: prova, mai ereditato dal servizio in live
-        expect(s.getByTestId('cr-bot-modalita-safe-manual').textContent).toBe('prova');
+        expect(s.getByTestId('cr-bot-modalita-safe-manual').textContent).toBe('in prova');
         expect(within(s.getByTestId('cr-bot-riga-safe-model')).getByTitle('opportunità del modello che approvo'))
             .toBeTruthy();
         expect(within(s.getByTestId('cr-bot-riga-safe-manual')).getByTitle('ordini a mano dalla scheda'))
@@ -578,7 +579,7 @@ describe('24/09 — Safe modello e Safe a mano nella plancia', () => {
             ...SAFE_IN_CORSA, modiStrategia: { tennis: 'live', model: 'live' },
         };
         const s = mostra(righeInterruttori([live], 'calcio'), c);
-        expect(s.getByTestId('cr-bot-modalita-safe-model').textContent).toBe('soldi veri');
+        expect(s.getByTestId('cr-bot-modalita-safe-model').textContent).toBe('SOLDI VERI');
         fireEvent.click(s.getByTestId('cr-a-paper-safe-model'));
         expect(c.cambiaModalita).toHaveBeenCalledWith('safe-model', 'paper');
     });

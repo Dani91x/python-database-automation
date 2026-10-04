@@ -9,7 +9,7 @@
 // righe della plancia smetterebbero di essere collaudate.
 // ============================================================================
 import {
-    interruttoriDiSport, statoInterruttore,
+    interruttoriDiSport, statoInterruttore, isSoloModalita,
     type Interruttore, type SportBot, type StatoServizio,
 } from '@/lib/interruttori';
 import type { RigaInterruttore } from '@/components/controlroom/PannelloBot';
@@ -107,6 +107,9 @@ export function righeInterruttori(
         const st = statoInterruttore(i, statoServizioDi(b));
         const primaDelBot = !visti.has(i.bot);
         visti.add(i.bot);
+        // 04/10 - «Safe modello» e «Safe a mano» sono STRUMENTI, non bot: la riga
+        // lo dichiara (`strumento`) e non porta mai lo stato di un bot in corsa.
+        const strumento = isSoloModalita(i.strategia);
         out.push({
             id: i.id, bot: i.bot,
             etichetta: etichette?.[i.id] ?? i.etichetta,
@@ -114,8 +117,9 @@ export function righeInterruttori(
             ...(i.armoPerPartita ? { armoPerPartita: i.armoPerPartita } : {}),
             ...(i.modalitaSoloAllAvvio ? { modalitaSoloAllAvvio: i.modalitaSoloAllAvvio } : {}),
             ...(b.nota ? { nota: b.nota } : {}),
+            ...(strumento ? { strumento: true } : {}),
             acceso: st.acceso, modalita: st.modalita, statoNoto: st.noto,
-            stato: parolaStato(i, b, st.acceso, st.noto),
+            stato: strumento ? parolaStatoStrumento(b, st.noto) : parolaStato(i, b, st.acceso, st.noto),
             etaPushS: b.etaPushS,
             motivoBlocco: b.motivoBlocco,
             tettoPartite: b.tettoPartite,
@@ -163,4 +167,15 @@ function parolaStato(i: Interruttore, b: StatoBotPlancia, acceso: boolean, noto:
     if (b.stato === 'stopping') return 'stopping';
     if (b.stato === 'error') return 'error';
     return acceso ? 'running' : 'stopped';
+}
+
+/**
+ * 04/10 - la parola di uno STRUMENTO (Safe modello / a mano). Mai `running`:
+ * non e' un bot in esecuzione. Resta vero che, se Safe si sta fermando, lo
+ * strumento che lo segue non va comandato (`stopping`).
+ */
+function parolaStatoStrumento(b: StatoBotPlancia, noto: boolean): string {
+    if (!noto) return 'ignoto';
+    if (b.stato === 'stopping') return 'stopping';
+    return 'strumento';
 }

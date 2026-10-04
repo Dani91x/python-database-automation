@@ -306,7 +306,7 @@
     "non noto (runner calcio spento o auto-follow non attivo)",
     "BOT CALCIO",
     "(",
-    "8",
+    "6",
     ")",
     "Omega",
     "stato non letto",
@@ -392,23 +392,21 @@
     "avvia in prova",
     "avvia con soldi veri",
     "Safe modello",
-    "FERMO",
-    "modalità n/d",
+    "strumento, non un bot",
+    "modalità non letta",
     "—",
     "oggi",
     "—",
+    "Strumento, non un bot. Safe è fermo (le sue strategie non aprono niente), ma le opportunità del modello che approvi partono lo stesso; la modalità (prova o soldi veri) non è stata letta.",
     "uscite:",
     "non lette",
-    "avvia in prova",
-    "avvia con soldi veri",
     "Safe a mano",
-    "FERMO",
-    "modalità n/d",
+    "strumento, non un bot",
+    "modalità non letta",
     "—",
     "oggi",
     "—",
-    "avvia in prova",
-    "avvia con soldi veri",
+    "Strumento, non un bot. Safe è fermo (le sue strategie non aprono niente), ma gli ordini che fai a mano dalla scheda di Safe partono lo stesso; la modalità (prova o soldi veri) non è stata letta.",
     "BOT TENNIS",
     "(",
     "5",
@@ -810,15 +808,13 @@
     "cr-bot-riga-safe-model",
     "cr-bot-stato-safe-model",
     "cr-bot-pnl-safe-model",
+    "cr-strumento-spiega-safe-model",
     "cr-uscite-safe-model",
     "cr-uscite-stato-safe-model",
-    "cr-avvia-paper-safe-model",
-    "cr-avvia-live-safe-model",
     "cr-bot-riga-safe-manual",
     "cr-bot-stato-safe-manual",
     "cr-bot-pnl-safe-manual",
-    "cr-avvia-paper-safe-manual",
-    "cr-avvia-live-safe-manual",
+    "cr-strumento-spiega-safe-manual",
     "cr-pannello-bot-gruppo-tennis",
     "cr-pannello-bot-gruppo-tennis-trigger",
     "cr-pannello-bot-gruppo-tennis-contenuto",
@@ -986,7 +982,7 @@
     },
     {
       "ruolo": "button",
-      "nome": "BOT CALCIO (8)"
+      "nome": "BOT CALCIO (6)"
     },
     {
       "ruolo": "spinbutton",
@@ -1055,22 +1051,6 @@
     {
       "ruolo": "spinbutton",
       "nome": "stake punta*"
-    },
-    {
-      "ruolo": "button",
-      "nome": "avvia in prova"
-    },
-    {
-      "ruolo": "button",
-      "nome": "avvia con soldi veri"
-    },
-    {
-      "ruolo": "button",
-      "nome": "avvia in prova"
-    },
-    {
-      "ruolo": "button",
-      "nome": "avvia con soldi veri"
     },
     {
       "ruolo": "button",

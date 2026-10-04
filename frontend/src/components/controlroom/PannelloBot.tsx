@@ -147,6 +147,39 @@ function scriviApertoSalvato(v: Partial<Record<SportBot, boolean>>): void {
     }
 }
 
+/**
+ * 04/10 - «Safe modello» e «Safe a mano» sono STRUMENTI, non bot (ordine
+ * dell'utente: «il trader non puo' essere confuso»). L'unica cosa utile da dire
+ * e' con che soldi partono gli ordini che l'utente approva (modello) o fa a
+ * mano (scheda di Safe). Soldi veri solo se Safe e' in corsa E la voce e' live.
+ */
+const COSA_FA_STRUMENTO: Record<string, string> = {
+    'safe-model': 'le opportunità del modello che approvi',
+    'safe-manual': 'gli ordini che fai a mano dalla scheda di Safe',
+};
+
+function testoStrumento(r: RigaInterruttore): string {
+    const cosa = COSA_FA_STRUMENTO[r.id] ?? 'gli ordini che approvi o fai a mano';
+    const Cosa = `${cosa[0].toUpperCase()}${cosa.slice(1)}`;
+    if (!r.statoNoto) return 'Strumento, non un bot: lo stato non è stato letto.';
+    // Il servizio esegue le richieste della scheda ANCHE a Safe fermo
+    // (`bot_service.run_once`, «richieste della UI - SEMPRE»): con Safe fermo gli
+    // ordini approvati / fatti a mano partono lo stesso, con la modalita' letta.
+    if (!r.acceso) {
+        const base = `Strumento, non un bot. Safe è fermo (le sue strategie non aprono niente), ma ${cosa} partono lo stesso`;
+        if (r.modalita === 'live') {
+            return `${base}: con SOLDI VERI su Betfair. Per cambiarlo serve prima avviare Safe.`;
+        }
+        if (r.modalita === 'paper') return `${base}: IN PROVA (nessun ordine reale).`;
+        return `${base}; la modalità (prova o soldi veri) non è stata letta.`;
+    }
+    if (r.modalita == null) {
+        return `Strumento, non un bot: non apre niente da solo. ${Cosa} partono, ma la modalità (prova o soldi veri) non è stata letta.`;
+    }
+    return `Strumento, non un bot: non apre niente da solo. ${Cosa} `
+        + (r.modalita === 'live' ? 'partono con SOLDI VERI su Betfair.' : 'partono IN PROVA (nessun ordine reale).');
+}
+
 const GRUPPO_ETICHETTA: Record<SportBot, string> = { calcio: 'BOT CALCIO', tennis: 'BOT TENNIS' };
 
 /** Un pallino per riga: verde in corsa, arancione muto/errore, grigio fermo —
@@ -171,9 +204,19 @@ function riassuntoGruppo(righeG: RigaInterruttore[]): {
     let vistoLive = false, vistoProva = false;
     let live = false, paper = false, anomalia = false;
     for (const r of righeG) {
-        if (r.acceso && r.modalita === 'live') live = true;
-        if (r.acceso && r.modalita === 'paper') paper = true;
-        if (!r.statoNoto || r.stato === 'error' || (r.acceso && r.motivoBlocco)) anomalia = true;
+        // 04/10 - uno STRUMENTO (Safe modello / a mano) non e' un bot acceso: non
+        // fa «prova» di gruppo e non porta il «motivo di blocco» di Safe. Resta
+        // solo il fatto che, se i suoi ordini partono con SOLDI VERI, il gruppo
+        // lo dice; e lo stato non letto, che e' un'anomalia vera.
+        if (r.strumento) {
+            // i soldi veri possono partire anche a Safe fermo: si vede
+            if (r.statoNoto && r.modalita === 'live') live = true;
+            if (!r.statoNoto) anomalia = true;
+        } else {
+            if (r.acceso && r.modalita === 'live') live = true;
+            if (r.acceso && r.modalita === 'paper') paper = true;
+            if (!r.statoNoto || r.stato === 'error' || (r.acceso && r.motivoBlocco)) anomalia = true;
+        }
         if (r.pnlOggi == null) continue;
         if (r.modalita === 'live') { cLive += Math.round(r.pnlOggi * 100); vistoLive = true; }
         else if (r.modalita === 'paper') { cProva += Math.round(r.pnlOggi * 100); vistoProva = true; }
@@ -198,8 +241,15 @@ export interface RigaInterruttore {
     /** 24/09 — che cosa comanda, in parole (Safe modello / a mano): si legge
      *  passando sul nome e nella conferma dei soldi veri */
     descrizione?: string;
-    /** sta aprendo? Per Safe: servizio in corsa E strategia in `variants` */
+    /** sta aprendo? Per Safe: servizio in corsa E strategia in `variants`.
+     *  Per uno STRUMENTO (`strumento`) vuol dire solo «il servizio Safe e' in
+     *  corsa»: lo strumento di per se' non e' mai un bot acceso. */
     acceso: boolean;
+    /** 04/10 - NON e' un bot: e' uno strumento di Safe (opportunita' del modello
+     *  che approvo / ordini a mano). Non apre niente da solo, non si ferma da
+     *  qui: dice solo con che soldi partono gli ordini che l'utente approva o
+     *  fa a mano. Niente stato «in corso», niente FERMA, non conta fra i bot. */
+    strumento?: boolean;
     /** con che soldi. `null` = il servizio non la dichiara */
     modalita: Modalita | null;
     /** sappiamo davvero che cosa sta facendo? no = non si comanda */
@@ -421,9 +471,9 @@ export function PannelloBot({
                                         data-testid={`${testId}-gruppo-${g}-trigger`}
                                     >
                                         <span className="flex items-center gap-2 flex-1 flex-wrap normal-case">
-                                            <span className="uppercase tracking-wider">{GRUPPO_ETICHETTA[g]} ({righeG.length})</span>
+                                            <span className="uppercase tracking-wider">{GRUPPO_ETICHETTA[g]} ({righeG.filter((r) => !r.strumento).length})</span>
                                             <span className="flex items-center gap-1" aria-hidden>
-                                                {righeG.map((r) => (
+                                                {righeG.filter((r) => !r.strumento).map((r) => (
                                                     <span key={r.id} className={`h-1.5 w-1.5 rounded-full ${colorePuntoStato(r)}`}
                                                         title={`${r.etichetta}: ${statoTesto(r.stato)}`} />
                                                 ))}
@@ -575,6 +625,7 @@ function RigaBot({
     }, [inAttesa]);
 
     const live = r.modalita === 'live';
+    const strumento = r.strumento === true;
     const occupato = bloccato || mio;
     /** la conferma è ancora inerte? (finestra del doppio clic) */
     const troppoPresto = armatoDa != null && Date.now() - armatoDa < ATTESA_CONFERMA_MS;
@@ -598,19 +649,27 @@ function RigaBot({
                 <span className="text-[12px] font-bold uppercase tracking-wider w-24 shrink-0 ds-v2-cr-botnome"
                     title={r.descrizione}>{r.etichetta}</span>
 
-                <span className={`text-[11px] ${STATO_CLS[r.stato] ?? 'text-white/40'} ds-v2-chip ${STATO_V2[r.stato] ?? 'ds-v2-chip--fermo'}`}
-                    data-testid={`cr-bot-stato-${r.id}`}>
-                    {statoTesto(r.stato)}
-                </span>
+                {strumento ? (
+                    // 04/10 - mai lo stato di un bot: e' uno strumento
+                    <span className={`text-[11px] ${r.statoNoto ? 'text-white/40' : STATO_CLS.ignoto} ds-v2-chip ${r.statoNoto ? 'ds-v2-chip--fermo' : STATO_V2.ignoto}`}
+                        data-testid={`cr-bot-stato-${r.id}`}>
+                        {r.statoNoto ? 'strumento, non un bot' : 'stato non letto'}
+                    </span>
+                ) : (
+                    <span className={`text-[11px] ${STATO_CLS[r.stato] ?? 'text-white/40'} ds-v2-chip ${STATO_V2[r.stato] ?? 'ds-v2-chip--fermo'}`}
+                        data-testid={`cr-bot-stato-${r.id}`}>
+                        {statoTesto(r.stato)}
+                    </span>
+                )}
 
-                {r.modalita == null ? (
+                {strumento && !r.statoNoto ? null : r.modalita == null ? (
                     <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-400/15 text-amber-300 ds-v2-chip ds-v2-chip--attesa"
-                        title="il servizio non dichiara la modalità">modalità n/d</span>
+                        title="il servizio non dichiara la modalità">{strumento ? 'modalità non letta' : 'modalità n/d'}</span>
                 ) : (
                     <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
                         live ? 'bg-red-500/20 text-red-300 ds-v2-chip ds-v2-chip--live' : 'bg-white/10 text-white/45 ds-v2-chip'
                     }`} data-testid={`cr-bot-modalita-${r.id}`}>
-                        {live ? 'soldi veri' : 'prova'}
+                        {strumento ? (live ? 'SOLDI VERI' : 'in prova') : (live ? 'soldi veri' : 'prova')}
                     </span>
                 )}
 
@@ -682,6 +741,13 @@ function RigaBot({
                 ) : null}
             </div>
 
+            {strumento && (
+                <div className={`mt-1.5 text-[10px] ${r.statoNoto && live ? 'text-red-300' : 'text-white/45'}`}
+                    data-testid={`cr-strumento-spiega-${r.id}`}>
+                    {testoStrumento(r)}
+                </div>
+            )}
+
             {/* TASK 2 — «l'attivazione non e' immediata»: onesto, non finto.
                 Mai «in esecuzione» qui: solo «comando inviato» finche' `r` non
                 conferma, poi sparisce da sola (l'useEffect sopra). Se scade
@@ -715,7 +781,7 @@ function RigaBot({
                 perfettamente vivo; il tetto delle partite era pieno. Un bot
                 acceso che non apre e non dice perché è indistinguibile da un
                 bot rotto. */}
-            {r.acceso && r.motivoBlocco && (
+            {!strumento && r.acceso && r.motivoBlocco && (
                 <div className="mt-1.5 text-[10px] text-amber-300 flex items-center gap-1.5"
                     data-testid={`cr-motivo-blocco-${r.id}`}>
                     <Ban className="w-3 h-3 shrink-0" />
@@ -732,7 +798,7 @@ function RigaBot({
                 (`stats.fermato_all_avvio_at`), la pagina non lo deduce.
                 «I bot li accendo solo io»: alla riapertura dell'app ogni bot
                 torna fermo e in prova. Sparisce da sola quando viene riacceso. */}
-            {!r.acceso && r.fermatoAllAvvioAt && (
+            {!strumento && !r.acceso && r.fermatoAllAvvioAt && (
                 <div className="mt-1.5 text-[10px] text-amber-300 flex items-center gap-1.5"
                     data-testid={`cr-fermato-avvio-${r.id}`}>
                     <Power className="w-3 h-3 shrink-0" />
@@ -788,8 +854,14 @@ function RigaBot({
                     <span className="text-[10px] text-amber-300" data-testid={`cr-in-arresto-${r.id}`}>
                         si sta fermando: attendi che abbia finito prima di riavviarlo
                     </span>
+                ) : strumento && !r.acceso ? (
+                    // 04/10 - Safe fermo: niente "avvia" (accendere uno strumento non
+                    // accende niente e il comando verrebbe rifiutato): la frase sopra
+                    // dice che segue Safe.
+                    null
                 ) : r.acceso ? (
                     <>
+                        {!strumento && (<>
                         <Button
                             type="button" size="sm" variant="outline"
                             disabled={occupato}
@@ -812,6 +884,7 @@ function RigaBot({
                                 ferma le aperture, non le uscite
                             </span>
                         )}
+                        </>)}
 
                         {r.modalitaSoloAllAvvio && (
                             <span className="text-[9px] text-white/30"
