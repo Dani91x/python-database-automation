@@ -1494,6 +1494,12 @@ def _do_place(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, str
             side=built.side.lower() if isinstance(built.side, str) else built.side,
             detail=built.note,
         )
+        if float(getattr(built, "residuo", 0.0) or 0.0) > 0.0:
+            # 04/10/2026: punta .it a multiplo di 0,50 per difetto: il resto NON
+            # piazzato e' dichiarato nell'esito (anche nella ``detail``), mai in silenzio
+            result["punta_050"] = {"chiesto": round(float(request_row.get("size") or 0.0), 2),
+                                   "piazzato": float(built.size),
+                                   "residuo": round(float(built.residuo), 2)}
         if tradotto is not None:
             # 02/10/2026 (riconciliazione dei tradotti): l'esito della coda nei termini
             # dell'ordine CHIESTO, come l'evento del canale; la riga vera in

@@ -117,7 +117,8 @@ def test_chiusura_sotto_il_minimo_non_si_gonfia_mai(db, banchi, ambiente):
     cmd = m.manda(side="BACK", price=2.0, size=1.2, reduces_liability=True)
     assert m.ack(cmd["ref"])["accettato"] is True
     o2 = _ordine_nel_blotter(b)[-1]
-    assert o2 is not o and o2.order_type.size == 1.2
+    # 04/10/2026 (regola delle punte .it): la punta 1,20 parte 1,00 (per difetto, mai gonfiata)
+    assert o2 is not o and o2.order_type.size == 1.0
     assert "portata_al_minimo" not in _eventi(m, cmd["ref"])[0]
 
 

@@ -1315,6 +1315,20 @@ class MotoreOrdini:
             # il runner tennis non ha il place-and-trim (``esecutore_tennis.MOTIVO_SUBMIN``)
             submin_disponibile=getattr(LOW, "MOTIVO_SUBMIN", None) is None)
         piano["minimi"] = {"esito": verdetto.esito, "motivo": verdetto.motivo}
+        if verdetto.esito == LB.VERDETTO_DIRETTO and float(verdetto.residuo or 0.0) > 0.0:
+            # 04/10/2026 (regola delle punte dell'utente): una PUNTA diretta da 1,00 in
+            # su parte SOLO a multiplo di 0,50, per DIFETTO. La riga parte con
+            # l'importo piazzabile e ogni evento al bot porta la dichiarazione
+            # ``punta_050`` (chiesto, piazzato, residuo NON piazzato): mai in silenzio.
+            chiesta = round(float(riga["size"]), 2)
+            riga["size"] = float(verdetto.size)
+            piano["punta_050"] = {"chiesto": chiesta, "piazzato": float(verdetto.size),
+                                  "residuo": round(float(verdetto.residuo), 2),
+                                  "motivo": "punta .it diretta solo a multipli di 0,50: "
+                                            "arrotondata per difetto, residuo NON piazzato"}
+            logger.warning("[motore] punta %.2f -> %.2f (multiplo di 0,50 per difetto): "
+                           "residuo %.2f dichiarato al bot", chiesta, float(verdetto.size),
+                           float(verdetto.residuo))
         if verdetto.esito == LB.VERDETTO_IMPOSSIBILE:
             dettaglio = str(verdetto.motivo or "")
             if dettaglio.startswith(M_SOTTO_MINIMO + ":"):
@@ -1375,7 +1389,7 @@ class MotoreOrdini:
             piano["riga"]["size_reduction"] = ann["size_reduction"]
             piano["riga"]["new_price"] = ann["new_price"]
         for k in ("tradotto", "submin", "submin_fok", "minimi", "annullo_tradotto",
-                  "riprezzo_tradotto"):
+                  "riprezzo_tradotto", "punta_050"):
             piano.pop(k, None)
 
     def _riduzione_verificata(self, flumine: Any, riga: Dict[str, Any], mode: str) -> bool:
@@ -1443,10 +1457,13 @@ class MotoreOrdini:
                                        # 01/10: ordine tradotto nell'equivalente -> gli
                                        # eventi tornano al bot nei termini del CHIESTO
                                        "tradotto": piano.get("tradotto"),
-                                       "extra_fisso": ({"ripiego_050":
-                                                        dict(piano["ripiego_050"])}
-                                                       if piano.get("ripiego_050")
-                                                       else None)}
+                                       "extra_fisso": (
+                                           {**({"ripiego_050": dict(piano["ripiego_050"])}
+                                               if piano.get("ripiego_050") else {}),
+                                            # 04/10: punta a multiplo di 0,50 per difetto
+                                            **({"punta_050": dict(piano["punta_050"])}
+                                               if piano.get("punta_050") else {})}
+                                           or None)}
             self._rif_ordine.append(cust)
             while len(self._rif_ordine) > 5000:
                 self._rif_interni.pop(self._rif_ordine.popleft(), None)

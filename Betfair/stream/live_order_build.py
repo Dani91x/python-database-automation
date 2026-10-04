@@ -11,7 +11,8 @@ e delle classi ordine flumine (LimitOrder / LimitOnCloseOrder / MarketOnCloseOrd
 Trade / BetfairOrder). Nessuna rete, nessun login: testabile a unità con mock del Market.
 
 Giurisdizione conto = .it (Italian Exchange):
-  - BACK: stake minimo 1,00 EUR, al CENTESIMO (01/10/2026, ``trading.minimi_it``);
+  - BACK: stake minimo 1,00 EUR, da 1,00 in su SOLO multipli di 0,50 (04/10/2026,
+    ``trading.minimi_it.importo_piazzabile``: arrotondata PER DIFETTO, residuo dichiarato);
   - LAY : size (= stake del backer) minima 1,00 EUR; la liability NON conta;
   - NESSUN Minimum Bet Payout;
   - max vincita €10.000; vietato back+lay misti nello stesso ordine (ogni BuiltOrder = 1 lato).
@@ -29,6 +30,7 @@ con rifiuto esplicito ``SOTTO_MINIMO_NON_PIAZZABILE``.
 from __future__ import annotations
 
 import bisect
+import logging
 import math
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_FLOOR
@@ -46,6 +48,8 @@ from flumine.utils import (
     price_ticks_away,
 )
 
+logger = logging.getLogger(__name__)
+
 # ---------------------------------------------------------------------------
 # Costanti giurisdizione / guardie money-critical
 # ---------------------------------------------------------------------------
@@ -55,13 +59,17 @@ JURISDICTION_COM = "com"
 # 01/10/2026 - CORREZIONE DEFINITIVA (ordine dell'utente, Nota informativa betfair.it): i
 # minimi .it sono UNA definizione, in ``trading.minimi_it`` (senza dipendenze, importata da
 # motore, Safe, Omega e Mike con gli stessi nomi). Qui solo gli alias storici del modulo:
-#   punta >= 1,00 al CENTESIMO (nessun passo di 0,50), banca >= 1,00 sul size (puntata
-#   del backer, la liability non conta), nessuna esenzione per le chiusure, floor di legge
-#   0,50 mai tentato, place-and-trim solo con parcheggio e importo finale >= 0,50 (02/10).
+#   punta >= 1,00 a multipli di 0,50 (04/10: regola dell'utente, arrotondata PER DIFETTO
+#   col residuo dichiarato; il "centesimo" del 01/10 era provato con un ordine del SITO),
+#   banca >= 1,00 sul size al centesimo (puntata del backer, la liability non conta),
+#   nessuna esenzione per le chiusure, floor di legge 0,50 mai tentato, place-and-trim
+#   solo con parcheggio e importo finale >= 0,50 (02/10).
+from Betfair.stream.trading import minimi_it as _MI  # noqa: E402
 from Betfair.stream.trading.minimi_it import (  # noqa: E402, F401 - riesportati
     IT_FLOOR_LEGGE,
     IT_MIN_BACK,
     IT_MIN_LAY,
+    IT_PASSO_PUNTA_DIRETTA,
     IT_PASSO_PUNTA_RIPIEGO,
     SOTTO_MINIMO_NON_PIAZZABILE,
     SUBMIN_IMPORTO_FINALE_MIN,
@@ -69,9 +77,9 @@ from Betfair.stream.trading.minimi_it import (  # noqa: E402, F401 - riesportati
 
 IT_BACK_MIN_STAKE = IT_MIN_BACK      # alias storico (submin, condotta tennis, worker)
 IT_LAY_MIN_SIZE = IT_MIN_LAY         # alias storico
-# Passo di 0,50 della documentazione: SOLO per il RIPIEGO (``size_ripiego_punta``) dopo un
-# ``INVALID_BET_SIZE`` reale su una punta non multipla di 0,50; mai un floor preventivo.
-IT_BACK_STEP = IT_PASSO_PUNTA_RIPIEGO
+# Passo di 0,50 della punta diretta (04/10: vale PRIMA dell'invio, ``min_stake_rules``);
+# ``size_ripiego_punta`` resta il ripiego dopo un ``INVALID_BET_SIZE`` reale.
+IT_BACK_STEP = IT_PASSO_PUNTA_DIRETTA
 
 # Floor MECCANICO della macchina place-and-trim (residuo > 0 dopo il taglio). La REGOLA
 # d'ingresso (importo finale >= ``SUBMIN_IMPORTO_FINALE_MIN``) la verificano il verdetto e
@@ -111,6 +119,9 @@ class MinStakeVerdict:
     valid: bool
     legalized_size: Optional[float]   # size arrotondata alla regola di giurisdizione
     reason: Optional[str]             # motivo se non valido
+    # 04/10/2026: la parte del chiesto che NON parte (punta .it arrotondata PER DIFETTO
+    # al multiplo di 0,50): chi riceve il verdetto la deve dichiarare, mai in silenzio
+    residuo: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -124,6 +135,9 @@ class BuiltOrder:
     time_in_force: Optional[str]
     min_fill_size: Optional[float]
     note: str                         # tracciabilità
+    # 04/10/2026: parte della size chiesta NON piazzata (punta .it a multiplo di 0,50 per
+    # difetto), dichiarata anche nella ``note``
+    residuo: float = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -185,8 +199,10 @@ def min_stake_rules(
 ) -> MinStakeVerdict:
     """Verifica/legalizza la size secondo la giurisdizione.
 
-    .it  -> BACK: size >= ``IT_MIN_BACK`` (1,00), legalizzata al CENTESIMO; LAY: size >=
-            ``IT_MIN_LAY`` (1,00; la liability non conta); NO Min Bet Payout.
+    .it  -> la regola UNICA ``minimi_it.importo_piazzabile``: BACK >= ``IT_MIN_BACK``
+            (1,00) legalizzata PER DIFETTO al multiplo di 0,50 (04/10/2026, regola
+            dell'utente: 7,27 -> 7,00), il resto in ``residuo``; LAY: size >= ``IT_MIN_LAY``
+            (1,00; la liability non conta) al centesimo; NO Min Bet Payout.
     .com -> min 2,00 EUR oppure Min Bet Payout (size*price >= 20).
 
     ``reduces_liability`` e' SOLO informazione (01/10/2026): NON esenta piu' dai minimi.
@@ -205,16 +221,19 @@ def min_stake_rules(
 
     if j == JURISDICTION_IT:
         legal = round(float(size), 2)
+        regola = _MI.importo_piazzabile(s, size)
         if s == "back":
-            if legal < IT_BACK_MIN_STAKE - _EPS:
+            if regola.via != _MI.VIA_DIRETTA:
                 return MinStakeVerdict(
                     False, None,
                     f"{SOTTO_MINIMO_NON_PIAZZABILE}: BACK size {legal:.2f} < minimo "
                     f"{IT_BACK_MIN_STAKE:.2f} EUR (.it)",
                 )
-            return MinStakeVerdict(True, legal, None)
+            # 04/10/2026: punta diretta solo a multipli di 0,50, PER DIFETTO; il resto
+            # (``residuo``) non parte e va dichiarato da chi riceve il verdetto
+            return MinStakeVerdict(True, regola.importo, None, residuo=regola.residuo)
         # lay: conta il size (stake del backer), mai la liability
-        if legal < IT_LAY_MIN_SIZE - _EPS:
+        if regola.via != _MI.VIA_DIRETTA:
             return MinStakeVerdict(
                 False, None,
                 f"{SOTTO_MINIMO_NON_PIAZZABILE}: LAY size {legal:.2f} < minimo "
@@ -585,6 +604,9 @@ class VerdettoMinimi:
     motivo: Optional[str]
     equivalente: Optional[OrdineEquivalente] = None
     altra_selezione: Optional[tuple] = None   # (selection_id, handicap)
+    # 04/10/2026: con ``diretto``, la parte del chiesto che NON parte (punta .it a
+    # multiplo di 0,50 per difetto): da dichiarare a chi ha chiesto l'ordine
+    residuo: float = 0.0
 
     @property
     def sotto_minimo(self) -> bool:
@@ -612,7 +634,9 @@ def verdetto_minimi(
     """
     v = min_stake_rules(jurisdiction, side, price, size)
     if v.valid:
-        return VerdettoMinimi(VERDETTO_DIRETTO, v.legalized_size, None)
+        # 04/10/2026: una punta .it non multipla di 0,50 parte a difetto; il resto e'
+        # nel verdetto (``residuo``) perche' chi esegue lo dichiari
+        return VerdettoMinimi(VERDETTO_DIRETTO, v.legalized_size, None, residuo=v.residuo)
     s = (side or "").lower()
     j = (jurisdiction or "").lower()
     valida = s in _VALID_SIDES and size is not None
@@ -640,6 +664,11 @@ def verdetto_minimi(
             if not v_eq.valid:
                 perche_no_eq = (f"equivalente {eq.side.upper()} {eq.size:.2f}@{eq.price} "
                                 f"anch'esso sotto il minimo")
+            elif v_eq.residuo > _EPS:
+                # 04/10/2026: l'equivalente PUNTA non multiplo di 0,50 partirebbe solo
+                # arrotondato per difetto, cioe' NON equivalente: non si usa
+                perche_no_eq = (f"equivalente {eq.side.upper()} {eq.size:.2f}@{eq.price} "
+                                f"non multiplo di {IT_PASSO_PUNTA_DIRETTA:.2f} (punta .it)")
             elif peggiore < -TOLLERANZA_EQUIVALENZA - _EPS:
                 perche_no_eq = (f"equivalente peggiore del chiesto di {-peggiore:.4f} EUR "
                                 f"(oltre la tolleranza {TOLLERANZA_EQUIVALENZA:.2f})")
@@ -816,7 +845,16 @@ def build_order(
     legal_size = verdict.legalized_size
     if legal_size is None or legal_size <= 0:
         raise ValueError("size legalizzata non valida")
-    if abs(legal_size - raw_size) > _EPS:
+    residuo = round(float(verdict.residuo or 0.0), 2)
+    if residuo > _EPS:
+        # 04/10/2026: punta .it diretta solo a multipli di 0,50, per DIFETTO. Il resto
+        # NON parte: lo si dichiara (nota dell'ordine, ``BuiltOrder.residuo``, log)
+        note_bits.append(f"punta .it a multiplo di {IT_PASSO_PUNTA_DIRETTA:.2f} per difetto: "
+                         f"chiesta {raw_size:.2f}, piazzata {legal_size:.2f}, residuo "
+                         f"{residuo:.2f} NON piazzato (da dichiarare al trader)")
+        logger.warning("[build_order] punta %.2f -> %.2f (multiplo di 0,50 per difetto): "
+                       "residuo %.2f NON piazzato", raw_size, legal_size, residuo)
+    elif abs(legal_size - raw_size) > _EPS:
         note_bits.append(f"size {raw_size:.2f}->{legal_size:.2f} (legalize)")
 
     # min_fill_size coerente con la size finale
@@ -866,7 +904,7 @@ def build_order(
     note = "; ".join(note_bits) if note_bits else "ok"
     return BuiltOrder(
         order=order, side=side_bf, price=tick_price, size=legal_size,
-        liability=final_liability, persistence=pers, time_in_force=tif,
+        liability=final_liability, persistence=pers, time_in_force=tif, residuo=residuo,
         min_fill_size=min_fill_size, note=note,
     )
 

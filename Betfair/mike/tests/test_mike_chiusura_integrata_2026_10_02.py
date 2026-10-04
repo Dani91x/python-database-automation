@@ -84,7 +84,10 @@ def test_chiusure_di_serie_stessa_selezione_copertura_banca(prezzi):
     # stake = S * q / p sulla stessa selezione
     p = prezzi["u45"][0]
     assert (c45.selection, c45.side) == (E.SEL_UNDER, "back")
-    assert c45.size == round(6.32 * 1.23 / p, 2) and c45.price == p
+    # 04/10 (regola delle punte .it dell'utente): la punta parte al multiplo di 0,50
+    # PER DIFETTO (era al centesimo: 7,33 / 4,57 -> 7,00 / 4,50)
+    esatto = round(6.32 * 1.23 / p, 2)
+    assert c45.size == (int(round(esatto * 100)) // 50) * 0.5 and c45.price == p
 
 
 @pytest.mark.parametrize("prezzi", [PROFITTO, PERDITA], ids=["profitto", "perdita"])

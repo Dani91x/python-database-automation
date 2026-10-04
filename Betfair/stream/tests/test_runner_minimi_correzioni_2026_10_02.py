@@ -77,11 +77,13 @@ def _eventi(amb: Any, ws: Any, ref: str) -> List[Dict[str, Any]]:
 
 
 def _place_tradotto(amb: Any, ws: Any, n: int, mode: str = "live") -> Dict[str, Any]:
-    """Banca Over 0,43 @18 tradotta in punta Under 7,31 @1,06 (borsa: bet_id vero)."""
+    """Banca Over 0,25 @19 tradotta in punta Under 4,50 @1,06 (borsa: bet_id vero).
+    04/10/2026: prima 0,43 @18 -> 7,31; la punta equivalente deve essere un multiplo
+    di 0,50 (regola delle punte dell'utente), altrimenti il verdetto non la usa."""
     amb.market.borsa = True
     _due_esiti(amb.market)
-    _manda(amb, ws, _cmd("safe", n, mode=mode, selection_id=OVER, side="LAY", price=18.0,
-                         size=0.43, reduces_liability=True))
+    _manda(amb, ws, _cmd("safe", n, mode=mode, selection_id=OVER, side="LAY", price=19.0,
+                         size=0.25, reduces_liability=True))
     assert _ack(amb, ws)["accettato"] is True
     ev = _eventi(amb, ws, f"safe-t{n}")[-1]
     assert ev["riga_mandata"]["selection_id"] == UNDER and ev["bet_id"]
@@ -96,8 +98,9 @@ def test_p1_stesso_ordine_043_in_paper_e_in_live_stesso_mandato_e_stesso_evento(
     ws = amb.ch.collega("mike")
     esiti = {}
     for n, mode in ((1, "paper"), (2, "live")):
+        # 04/10/2026: banca 0,25 @19 (punta equivalente 4,50, multiplo di 0,50)
         _manda(amb, ws, _cmd("mike", n, mode=mode, selection_id=OVER, side="LAY",
-                             price=18.0, size=0.43, reduces_liability=True))
+                             price=19.0, size=0.25, reduces_liability=True))
         assert _ack(amb, ws)["accettato"] is True
         ordine, _ref, client = amb.market.calls[-1]
         assert client is (amb.paper if mode == "paper" else amb.reale)
@@ -107,9 +110,9 @@ def test_p1_stesso_ordine_043_in_paper_e_in_live_stesso_mandato_e_stesso_evento(
                        {k: ev[k] for k in ("selection_id", "side", "price", "size", "fase")},
                        ev["tradotto"]["mandato"])
     assert esiti["paper"] == esiti["live"]
-    assert esiti["live"][0] == (UNDER, "BACK", 1.06, 7.31)
-    assert esiti["live"][1] == {"selection_id": OVER, "side": "lay", "price": 18.0,
-                                "size": 0.43, "fase": "inviato"}
+    assert esiti["live"][0] == (UNDER, "BACK", 1.06, 4.50)
+    assert esiti["live"][1] == {"selection_id": OVER, "side": "lay", "price": 19.0,
+                                "size": 0.25, "fase": "inviato"}
 
 
 def test_p1_build_order_senza_via_simulata_e_mai_sotto_il_minimo():
@@ -251,7 +254,7 @@ def test_p3_cancel_totale_annulla_l_ordine_vero(amb, traduzione):
     assert amb.market.calls[-1] == ("cancel", vero, None)
     # anche l'evento del CANCEL e' nei termini del chiesto (mai la punta Under al bot)
     e = _eventi(amb, ws, "safe-t2")[-1]
-    assert (e["selection_id"], e["side"], e["price"], e["size"]) == (OVER, "lay", 18.0, 0.43)
+    assert (e["selection_id"], e["side"], e["price"], e["size"]) == (OVER, "lay", 19.0, 0.25)
     assert e["riga_mandata"]["selection_id"] == UNDER
 
 
@@ -259,22 +262,22 @@ def test_p3_cancel_parziale_convertito_nei_termini_del_vero(amb, traduzione):
     ws = amb.ch.collega("safe")
     ev = _place_tradotto(amb, ws, 1)
     vero = amb.market.calls[0][0]
-    # il bot riduce di 0,10 la SUA banca Over (0,43 @18): sulla punta Under 7,31 sono
-    # 0,10 x 7,31/0,43 = 1,70; resta 5,61 @1,06 (sopra 0,50, in banda)
+    # il bot riduce di 0,10 la SUA banca Over (0,25 @19): sulla punta Under 4,50 sono
+    # 0,10 x 4,50/0,25 = 1,80; resta 2,70 @1,06 (sopra 0,50, in banda)
     _manda(amb, ws, _cmd("safe", 2, mode="live", azione="cancel", bet_id=ev["bet_id"],
                          size_reduction=0.10))
     assert _ack(amb, ws)["accettato"] is True
-    assert amb.market.calls[-1] == ("cancel", vero, 1.70)
-    assert vero.order_type.size == 5.61
+    assert amb.market.calls[-1] == ("cancel", vero, 1.80)
+    assert vero.order_type.size == 2.70
 
 
 def test_p3_cancel_parziale_che_lascerebbe_sotto_050_rifiutato_col_residuo(amb, traduzione):
     ws = amb.ch.collega("safe")
     ev = _place_tradotto(amb, ws, 1)
     n = len(amb.market.calls)
-    # 0,42 x 17 = 7,14: sulla punta vera resterebbero 0,17 (sotto il floor 0,50)
+    # 0,23 x 18 = 4,14: sulla punta vera resterebbero 0,36 (sotto il floor 0,50)
     _manda(amb, ws, _cmd("safe", 2, mode="live", azione="cancel", bet_id=ev["bet_id"],
-                         size_reduction=0.42))
+                         size_reduction=0.23))
     ack = _ack(amb, ws)
     assert ack["accettato"] is False
     assert ack["motivo"].startswith(MO.M_SOTTO_MINIMO) and "trader" in ack["motivo"]
@@ -300,14 +303,14 @@ def test_p3_replace_su_tradotto_cancel_poi_nuovo_verdetto_mai_la_quota_dell_over
     assert _ack(amb, ws)["accettato"] is True
     assert all(c[0] != "replace" for c in amb.market.calls)        # mai un replace del vero
     assert amb.market.calls[-1] == ("cancel", vero, None)
-    # cancel confermato (ordine vero terminale): nuovo place della banca Over 0,43 @17,
-    # tradotta di nuovo -> punta Under 0,43 x 16 = 6,88 @ 17/16 = 1,0625 -> tick su 1,07
+    # cancel confermato (ordine vero terminale): nuovo place della banca Over 0,25 @17,
+    # tradotta di nuovo -> punta Under 0,25 x 16 = 4,00 @ 17/16 = 1,0625 -> tick su 1,07
     assert amb.motore.avanza_riprezzi() == 1
     nuovo = amb.market.calls[-1][0]
     assert (nuovo.selection_id, nuovo.side) == (UNDER, "BACK")
-    assert (nuovo.order_type.price, nuovo.order_type.size) == (1.07, 6.88)
+    assert (nuovo.order_type.price, nuovo.order_type.size) == (1.07, 4.00)
     e = _eventi(amb, ws, "safe-t2")[-1]
-    assert (e["selection_id"], e["side"], e["price"], e["size"]) == (OVER, "lay", 17.0, 0.43)
+    assert (e["selection_id"], e["side"], e["price"], e["size"]) == (OVER, "lay", 17.0, 0.25)
 
 
 def test_p3_replace_su_tradotto_non_ripiazza_prima_del_cancel_confermato(amb, monkeypatch, traduzione):
@@ -372,10 +375,11 @@ def test_p5_equivalente_peggiore_oltre_la_tolleranza_mai_usato(monkeypatch):
                                     scarto_se_vince_altra=eq.scarto_se_vince_altra)
 
     monkeypatch.setattr(LB, "equivalente_lato_opposto", _peggiore)
-    v = LB.verdetto_minimi("it", "lay", 18.0, 0.43, altra_selezione=(UNDER, 0.0))
+    # 04/10/2026: 0,25 @19 (punta equivalente 4,50, multiplo di 0,50; era 0,43 @18 -> 7,31)
+    v = LB.verdetto_minimi("it", "lay", 19.0, 0.25, altra_selezione=(UNDER, 0.0))
     assert v.esito == LB.VERDETTO_IMPOSSIBILE and "tolleranza" in v.motivo
     monkeypatch.setattr(LB, "equivalente_lato_opposto", vero)
-    assert LB.verdetto_minimi("it", "lay", 18.0, 0.43,
+    assert LB.verdetto_minimi("it", "lay", 19.0, 0.25,
                               altra_selezione=(UNDER, 0.0)).esito == LB.VERDETTO_EQUIVALENTE
 
 
@@ -546,16 +550,17 @@ def test_p11_attore_nell_insieme_traduzione_resta(amb, monkeypatch):
     monkeypatch.setattr(MI, "ATTORI_CON_TRADUZIONE", frozenset({"omega"}))
     _due_esiti(amb.market)
     ws = amb.ch.collega("omega")
-    _manda(amb, ws, _cmd("omega", 1, mode="live", selection_id=OVER, side="LAY", price=18.0,
-                         size=0.43, reduces_liability=True))
+    # 04/10/2026: 0,25 @19 -> punta 4,50 (multiplo di 0,50; era 0,43 @18 -> 7,31)
+    _manda(amb, ws, _cmd("omega", 1, mode="live", selection_id=OVER, side="LAY", price=19.0,
+                         size=0.25, reduces_liability=True))
     assert _ack(amb, ws)["accettato"] is True
     o = amb.market.calls[0][0]
     assert (o.selection_id, o.side, o.order_type.price, o.order_type.size) == (
-        UNDER, "BACK", 1.06, 7.31)
+        UNDER, "BACK", 1.06, 4.50)
     # un attore fuori dall'insieme, nello stesso processo: mai tradotto
     ws2 = amb.ch.collega("safe")
-    _manda(amb, ws2, _cmd("safe", 2, mode="live", selection_id=OVER, side="LAY", price=18.0,
-                          size=0.43, reduces_liability=True))
+    _manda(amb, ws2, _cmd("safe", 2, mode="live", selection_id=OVER, side="LAY", price=19.0,
+                          size=0.25, reduces_liability=True))
     assert _ack(amb, ws2)["accettato"] is False and len(amb.market.calls) == 1
 
 

@@ -514,7 +514,13 @@ def _e2(ctx, snap, d, params):
         x = round(pieno * frazione, 2)
         size = float(a.size)
         if params.get("exact_sizes", True):
-            # importi esatti (il default): la copertura va al centesimo
+            # importi esatti (il default): la copertura va al centesimo; 04/10 (regola
+            # delle punte .it dell'utente) da 1,00 in su la PUNTA parte al multiplo di
+            # 0,50 per DIFETTO: si accetta ESATTAMENTE quell'importo (calcolato qui in
+            # centesimi interi), non un qualunque valore piu' piccolo
+            cent = int(round(x * 100))
+            if cent >= 100 and abs(size - (cent // 50) * 0.5) <= 0.011:
+                continue
             lo, hi = x - 0.011, x + 0.011
         else:
             # legalizzata .it (min 2,00 / passo 0,50): per eccesso entro il
@@ -826,6 +832,35 @@ def _l2(ctx, snap, d, params):
     if E.residuo_non_chiudibile(ctx, snap, params, c):
         return None                     # resto sotto il centesimo: nessun ordine lo chiude
     return f"FLAT ('{d.reason}') con esposizione viva su {aperte}"
+
+
+def _punta_fuori_passo(a: Any) -> bool:
+    """04/10: una PUNTA da 1,00 in su NON multipla di 0,50. Scritto QUI in centesimi
+    interi (non con la funzione del motore ne' con ``importo_piazzabile``), coi numeri
+    della fonte unica."""
+    from Betfair.stream.trading.minimi_it import IT_MIN_BACK, IT_PASSO_PUNTA_DIRETTA
+
+    if str(a.side) != "back":
+        return False
+    cent = int(round(float(a.size or 0.0) * 100))
+    if cent < int(round(IT_MIN_BACK * 100)):
+        return False
+    return cent % int(round(IT_PASSO_PUNTA_DIRETTA * 100)) != 0
+
+
+@_controllo("L3", "nessuna PUNTA da 1,00 in su che non sia un multiplo di 0,50: Betfair .it "
+                  "la rifiuta per taglia (04/10, Umea FC v Hammarby: punta di chiusura "
+                  "7,27 rifiutata INVALID_BET_SIZE; regola dell'utente)",
+            quando=lambda ctx, snap, d, p: any(str(a.side) == "back"
+                                               and float(a.size or 0.0) >= 1.0 - 0.0005
+                                               for a in _piazzamenti(d)))
+def _l3(ctx, snap, d, params):
+    fuori = [a for a in _piazzamenti(d) if _punta_fuori_passo(a)]
+    if fuori:
+        a = fuori[0]
+        return (f"punta '{a.role}' {float(a.size):.2f} @ {a.price} non multipla di 0,50 "
+                f"(Betfair .it: INVALID_BET_SIZE)")
+    return None
 
 
 # ===========================================================================
