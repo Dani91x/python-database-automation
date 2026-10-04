@@ -6,6 +6,161 @@ Registrazione 35794049 (COMPLETE 99,1%), `--data-dir C:/Users/Admin/Desktop/tenn
 Referti: `AUDIT_2026-10-04/replay/cert_pro_scalper/`. Nessun file del coordinatore toccato
 (`minimi_it`, `minimi_banco`, `live_order_build`, `mike/**`, `trading/submin.py`), nessuna strategia toccata.
 
+---
+
+# SECONDA CONSEGNA - decisioni dell'utente applicate (04/10, sera)
+
+Ramo rifuso con master `65ff19e` (`663953f`). Commit: `f4c8176`, `1709c81`, `6e30e44`, `80b061e`, `e3e0ae8`.
+Decisione 1 («1) a» + «IL RESIDUO RESTA RICORDATO E LO CHIUDO IO») applicata a pro e scalper. Decisione 2
+(«I SOLDI VERI LI ACCENDO SEMPRE E SOLO IO»): **nel ramo NON c'e' nessun riarmo automatico in soldi veri**; la
+proposta R1 (§6 sotto) e' RITIRATA, non costruita. Gli scenari `soldi-veri*` provano solo il gesto dell'utente
+(riga del bot live + «Ordini reali» LIVE dichiarati), non accendono niente.
+
+## A. Verdetti
+
+| bot | verdetto | perche' |
+|---|---|---|
+| **tennis_pro** | **CERTIFICATO su 35794049**, 9/9 scenari OK (decisione 1, regola dei minimi di oggi in `minimi_it`) | nessun rifiuto per taglia (prima 221-226), riprende a operare (base 5 ingressi, live 14; prima 1 e 2), residui dichiarati una volta |
+| **tennis_scalper** | **CERTIFICATO su 35794049**, 9/9 scenari OK, K1 sparito SENZA la patch del banco | nessun rifiuto per taglia (prima 11), nessuna sequenza sotto 0,50, ciclo chiuso col residuo dichiarato |
+| tennis_flb, tennis_swing | invariati (6/6 OK, azioni 1 e 0) | non arrivano a una chiusura su questa partita: la regola nuova di `UsciteEsatte` (niente trim sotto 0,50) vale anche per loro ma **non e' sollecitata** |
+| safe_tennis | invariato: 18 OK, parita' coda 1053/2, canale 1054/2 RAGGIUNTA, righe identiche al riferimento | - |
+
+**Condizione:** quando l'altro delegato porta su master la regola delle punte (passo 0,50 in `minimi_it`/`minimi_banco`)
+vanno rifatti merge e replay (ad oggi `minimi_it` dice punta al centesimo; i bot tennis usano gia' il passo 0,50
+per le punte d'USCITA con `IT_PASSO_PUNTA_RIPIEGO`).
+
+## B. Bot x scenario: prima (tetto, mattina) / dopo (azioni, esito)
+
+| scenario | pro prima | pro dopo | scalper prima | scalper dopo |
+|---|---|---|---|---|
+| base | KO B10, 1868 | OK, 37 | OK, 1 | OK, 1 |
+| live | KO B8/B10, 1816 | OK, 102 | KO K1, 125 | OK, 248 |
+| gate-aperto | KO B10, 1816 | OK, 102 | KO K1, 125 | OK, 248 |
+| parziali | KO B10, 1610 | OK, 56 | OK, 1 | OK, 1 |
+| uscite-manuali | OK, 61 | OK, 61 | KO K1, 159 | OK, 257 |
+| uscite-manuali-firmate | KO B10+UF2, 1820 | OK, 159 | KO K1, 139 | OK, 79 |
+| soldi-veri | KO B10, 1816 | OK, 102 (38 ordini sul REALE) | KO K1, 125 | OK, 248 (193 sul REALE) |
+| soldi-veri-prova | OK, 32 | OK, 32 (0 reali, 20 aperture fermate) | OK, 80 | OK, 80 (0 reali, 40 fermate) |
+| soldi-veri-paper | KO B10, 1816 | OK, 102 (38 SIMULATI) | KO K1, 125 | OK, 248 (193 SIMULATI) |
+| 29/09 (riferimento) | 62/130/130/173/61/155 | | 1/309/309/1/114/434 | |
+
+Paper = specchio: `soldi-veri`, `soldi-veri-paper` e `live` hanno le STESSE azioni (pro 102, scalper 248) e lo stesso
+numero di ordini, cambia solo il client. Durate: pro 9 scenari 38 s, scalper 102 s, flb 15 s, swing 13 s,
+safe_tennis 17 s (tutte sotto 5 min, dentro `timeout 900`).
+
+## C. Residui lasciati per partita (35794049), in EUR
+
+«importo» = l'ordine che chiuderebbe (sotto 0,50, Betfair non lo accetta); «sbilancio» = |se vince - se perde| della
+selezione in EUR. Riga `RESIDUI` di ogni scenario nel referto.
+
+| bot / scenario | dichiarati (importo -> sbilancio) | tornati pari | a mercato chiuso |
+|---|---|---|---|
+| pro base | 0,02 -> 0,02; 0,06 -> 0,06 | 1 | 1 regolato (selezione: se vince -0,14 / se perde -0,02) |
+| pro live, gate-aperto, soldi-veri, sv-paper | 0,06 -> 0,06; 0,48 -> 0,51 | 2 | nessuno |
+| pro parziali | 0,04; 0,40 -> 0,43; 0,01 x3; 0,02 | 5 | 1 regolato (+0,03 / +0,05) |
+| pro uscite-manuali-firmate | 0,06; 0,45 -> 0,49 | 2 | nessuno |
+| scalper live, gate-aperto, soldi-veri, sv-paper | 0,05 -> **0,57**; 0,12 -> 0,10 | 0 | 2 regolati (se vince -0,98 / -0,35; se perde -0,41 / -0,17) |
+| scalper uscite-manuali-firmate | 0,05 -> 0,50; 0,49 -> 0,54 | 0 | 2 regolati |
+| scalper uscite-manuali, base, parziali | nessuno | - | - |
+
+**Da sapere per l'utente:** un importo piccolo puo' valere di piu' in sbilancio a quota alta. Nel giro di mattina
+lo scalper aveva un resto da 0,15 a quota 13,5 = **2,00 EUR** di sbilancio (se vince -2,00). Con i numeri della
+selezione dichiarati dal bot (correzione `e3e0ae8`) il massimo visto e' 0,57 EUR. La riga CRITICAL riporta sempre «se vince / se perde».
+
+## D. Che cosa e' cambiato (file)
+
+- `tennis_scalper/condotta_ordini.py`:
+  - `UsciteEsatte.piazza`: nessun place-and-trim con finale < `SUBMIN_IMPORTO_FINALE_MIN`; il resto e' dichiarato subito.
+  - `_passo`: un DONE senza sostituto a mercato diventa ABORTED. E' la difesa nel tennis; la correzione nel nucleo
+    e' la patch `AUDIT_2026-10-04/patch/submin_done_solo_con_sostituto_a_mercato.diff` (NON applicata, file tuo).
+  - `ResiduiRicordati`: una riga CRITICAL per episodio con la proposta; il residuo resta nelle `stats`
+    (`residui_ricordati`) finche' torna pari (<= 0,011) o il mercato si regola; tiene gli importi dell'episodio.
+- `tennis_pro_bot.py`:
+  - `_residuo_non_piazzabile`: la chiusura richiesta e' < 0,50 e nessuna copertura e' viva -> residuo
+    dichiarato, trade FLAT, il bot riprende.
+  - `_centesimo_migliora`: un ordine sotto il floor non «migliora».
+  - Il micro-residuo < 0,02 resta ricordato (senza riga in piu').
+  - A mercato chiuso il residuo e' regolato.
+- `tennis_scalper_bot.py`:
+  - `_side_min` e `_size_direct_ok` dalla fonte unica: punta >= 1,00 a multipli di 0,50, banca >= 1,00 al
+    centesimo (prima 2,00 / 0,50 scritti a mano: la banca diretta da 0,50 Betfair la rifiuta).
+  - `_place_exact`: resto < 0,50 = `resto_np`, nessuna sequenza.
+  - `_drive_flatten`: il ciclo si chiude col residuo dichiarato (coi numeri della SELEZIONE), PRIMA del ramo
+    micro-residuo.
+  - La sorveglianza DONE non ri-flattena il residuo ricordato.
+  - Il passo 0,50 resta solo per la punta e per gli ingressi; l'uscita in banca esce al centesimo. Senza
+    questo, 2,02 diventava 2,00 in silenzio: UF2.
+- **Banco**:
+  - `certificazione_bot.py`: K5 e RS1, descritti in E.
+  - `tools/replay_bot.py`: riga RESIDUI, `soglia_resto` per UF2, hook del residuo.
+  - `backtest/uscite_manuali.py`: parametro `soglia_resto` (di serie 0,05, invariato per il calcio).
+
+## E. Controlli del banco adeguati alla decisione 1 (testo prima / dopo)
+
+| controllo | PRIMA | DOPO |
+|---|---|---|
+| K5 | tolleranza per selezione = quella della credenza del bot (pro FLAT: 0,011) | **max**(credenza, sbilancio del residuo DICHIARATO + 0,011): un euro oltre il dichiarato resta rosso |
+| credenza scalper (ciclo chiuso) | `MINIMO_LATO["LAY"]` se `residual_ok`, altrimenti `RESIDUO_ACCETTATO` | la stessa **+ sbilancio del residuo dichiarato** sulla selezione. E' la regola della sorveglianza DONE del bot (`RESIDUO_ACCETTATO + gia`) |
+| RS1 (NUOVO) | - | un residuo dichiarato e' davvero NON piazzabile: importo < floor 0,50, con lato e sbilancio. Senza RS1 il bot potrebbe «dichiarare» cio' che deve chiudere |
+| UF2 | resto scusato se < 0,05 e dichiarato dal bot | per i bot tennis: < 0,50 (floor, da `minimi_it`) e dichiarato dal bot. L'hook legge anche `residui_ricordati` (stesso lato, importo dell'episodio). Calcio INVARIATO (soglia di serie 0,05) |
+
+## F. Test
+
+- Nuovi: `test_residui_ricordati_2026_10_04.py` (14 test, di cui 5 replay di unita' nel Flumine del runner con
+  latenza differita) e +2 in `test_certificazione_pro_scalper_2026_10_04.py` (K5, RS1). Nuovo anche
+  `test_banco_uscite_manuali_n3_2026_09_28.py::test_uf2_soglia_del_resto_per_chiamante` (3 casi).
+- MODIFICATI, uno per uno. Il motivo comune: chiedevano un place-and-trim sotto 0,50 (regola del 28/09), che
+  Betfair rifiuta. Dove serviva il meccanismo, gli importi sono portati in [0,50, 1,00).
+  - `test_cantiere_d2_chiusure_esatte::test_annullo_di_una_chiusura_esatta_ferma_la_sequenza`: 1,05 -> 0,75.
+  - `test_cantiere_d2_chiusure_esatte::test_anti_cascata_si_azzera_al_primo_successo`: il finto «successo»
+    ora porta un ordine vero alla quota voluta (`UsciteEsatte` verifica il sostituto).
+  - `test_cantiere_d2_minimo_e_specchio::test_ingresso_flb_sotto_il_minimo_nel_paper_parte_al_minimo`: LAY 0,20
+    -> nessun ordine (residuo); il trim provato con LAY 0,60.
+  - `test_cantiere_d2_chiusure_via_bot` (`_prepara` con `size_lay`):
+    - `test_chiusura_esatta_guidata_dai_book_del_bot`: xfail del reperto 1 TOLTO, LAY 0,60; il parcheggio e'
+      `IT_BACK_MIN_STAKE` (1,00, era 2,00).
+    - `test_scalper_tennis_chiusura_esatta_guidata_dai_book_del_bot`: 0,60.
+    - `test_flb_non_conta_un_verde_su_una_chiusura_abortita_a_meta`: 0,60.
+  - `test_cantiere_t_pro_residuo`:
+    - `_giri`: tollera il residuo dichiarato.
+    - `test_sbilancio_di_centesimi_riducibile_non_si_dichiara_flat`: ora FLAT con `residuo_centesimi` una
+      volta, nessun ordine nuovo.
+    - `test_chiusura_esatta_in_corso_mai_flat`: LAY 0,60.
+  - `test_cantiere_t_scalper_sequenze`:
+    - `_giri_con_invariante`: + residuo dichiarato.
+    - `test_chiusura_tutta_sotto_il_minimo...`: [1,0, 2,0] -> [0,6]; i casi 1,0 e 2,0 sono ora nei test dei
+      residui.
+    - `test_chiusura_diretta_piu_resto...`: 3,0, residuo 0,15 dichiarato una volta.
+    - `test_rinvio_anti_cascata...`, `test_parcheggio_ritirato...`, `test_sequenza_abortita...`: 1,0 -> 0,6.
+- Suite: `tennis_scalper/tests` + `tennis_live/tests` + 6 file del banco: **1180 passed, 5 xfailed** (prima 8: i 3
+  xfail del reperto 1 di via_bot ora passano e sono tolti).
+- Falsificazione N1-N18 (`AUDIT_2026-10-04/strumenti/falsifica_decisione1_pro_scalper.py`): **18/18 ROSSE**,
+  ripristino con `git checkout`, 0 residui. N2 all'inizio restava VERDE: il finto faceva passare il test per
+  eccezione. Il test ora usa una strategia flumine vera.
+
+## G. NON verificato (in evidenza)
+
+- **Una sola partita** (35794049, 6 scenari + 3 di soldi veri). Mancano altre registrazioni tennis e il caso di un
+  residuo ancora aperto a mercato chiuso con importo grosso.
+- **`--data-dir`**: le registrazioni tennis non stanno in `_live_raw` del principale, che e' una cartella del calcio.
+  Usata `C:/Users/Admin/Desktop/tennis_rec/20260707` (sola lettura).
+- **flb e swing**: la nuova regola di `UsciteEsatte` vale anche per loro, ma su questa partita non chiudono mai.
+  Inoltre non hanno il ramo «esci da CLOSING col residuo»: con un residuo sotto 0,50 non mandano piu' ordini
+  inutili, ma potrebbero restare nel loro stato di chiusura. Non provato, da affidare.
+- **«Lo chiudo io»**: se l'utente chiude il residuo dal Terminale, quell'ordine non e' del bot e il bot non lo vede.
+  Il residuo resta segnalato finche' il mercato si regola, o finche' un ciclo del bot lo assorbe (pro).
+- Patch per il coordinatore NON applicate e NON provate in suite:
+  - `submin_done_solo_con_sostituto_a_mercato.diff` (nucleo condiviso col calcio).
+  - `minimi_banco_K1_...diff`: non serve piu' a scalper e pro, che non mandano trim rifiutati; resta corretta per
+    la fedelta' del banco.
+- Nessun ordine vero; la regola delle punte dell'altro delegato non e' ancora su master: **replay da rifare dopo
+  quel merge**.
+- K2, B1, B3, B6, B9 restano «mai sollecitati».
+
+---
+
+# PRIMA CONSEGNA (mattina, prima delle decisioni) - storico
+
 ## 1. Cause, scenario per scenario (con bisezione)
 
 Bisezione sul codice estratto dei commit (`git archive`, stessi comandi del banco):
