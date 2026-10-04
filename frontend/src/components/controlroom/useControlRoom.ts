@@ -113,7 +113,10 @@ import {
     breakdownProva, leggiArretratiProva, provaDellaRiga, provaGiornata, provaPerGiornoPartita,
     type GruppoArretrati, type ProvaGiornata, type RigaTradeProva,
 } from '@/lib/provaGiornata';
-import { composizioneDalConto, etaContoS, perSportDalConto, type SportDalConto } from '@/lib/composizioneConto';
+import {
+    composizioneDalConto, contoPerVista, etaContoS, perSportDalConto, righeMikeDelConto,
+    type ContoVista, type SportDalConto,
+} from '@/lib/composizioneConto';
 import { apertoAdesso, type ApertoAdesso } from '@/lib/apertoAdesso';
 import { dueEsitiMike, dueEsitiPartita, esitoDecisoMike } from '@/lib/cashOutPartita';
 import type { FonteOggiLive } from '@/components/controlroom/righeBot';
@@ -157,7 +160,6 @@ import { leggiAutoTennis, notaAutoTennis, type AutoTennis } from './tennisAuto';
 import { leggiProposteFlusso, type PropostaFlusso } from '@/lib/proposteUscite';
 // 25/09 — interruttore «uscite automatiche» dello scalper (aggregato sessioni)
 import { usciteSessioniScalper } from '@/lib/interruttori';
-import { isRigaUtente, type RigaPnl } from '@/lib/fontePnl';
 
 /** una proposta di OPPORTUNITA' con i numeri vivi che la scheda mostra */
 export interface PropostaOppVista {
@@ -841,6 +843,8 @@ export interface ControlRoomVM {
         perSportPaper: Record<string, DailyBreakdown> | null;
         /** 30/09 (W_G): il LIVE per sport dal CONTO (per_fonte); null = conto non letto. Facoltativo per i fixture. */
         perSportConto?: Record<'calcio' | 'tennis', SportDalConto> | null;
+        /** 04/10: il conto di oggi per la vista (calcio / tennis / tutti) per le Posizioni chiuse; null = non separabile */
+        contoVista?: Record<'calcio' | 'tennis' | 'tutti', ContoVista | null> | null;
         operazioni: number | null;
         vinte: number | null;
         perse: number | null;
@@ -2183,8 +2187,12 @@ export function useControlRoom(): ControlRoomVM {
         // «Manuale · sito» (il runner li attribuisce all'utente,
         // `reconcile_worker._proprietari`). Contarli anche sotto Mike li
         // conterebbe due volte.
+        // 04/10: con il runner nuovo il conto mette nella voce di Mike
+        // (`per_posizione`) le chiusure a mano sulle sue posizioni: QUELLE
+        // righe «utente» (per bet_id, `chiusure_a_mano`) entrano anche qui,
+        // le altre no. Una regola sola col conto: mai due volte, mai zero.
         const mikeRighe: RigaComponente[] = righeGiornataPerCiclo(
-            (mike?.trades ?? []).filter((t) => !isRigaUtente(t as unknown as RigaPnl)) as unknown as RigaTradeReale[],
+            righeMikeDelConto(mike?.trades ?? [], pnlRealeOggi) as unknown as RigaTradeReale[],
             { ...opz, sport: 'calcio' });
         // la controprova col servizio di Safe (`discordanza`) confronta il
         // calcolo del bot col calcolo del bot, con la regola di SEMPRE
@@ -2823,8 +2831,14 @@ export function useControlRoom(): ControlRoomVM {
             if (b.bot === 'mike') {
                 // review incrociata 30/09 (M3): dalle RIGHE (conto non letto) la cifra
                 // comprende anche gli ordini dell'utente sulle partite di Mike
+                // 04/10: dal conto (runner nuovo) la cifra di Mike e' per POSIZIONE:
+                // comprende le chiusure messe a mano sulle sue posizioni, e lo dice
+                const chMike = pnlRealeOggi?.attribuzione === 'posizione'
+                    ? pnlRealeOggi.chiusureAMano?.mike ?? null : null;
                 const l = liveDi('mike', di(b.bot, 'live'),
-                    'righe di Mike: comprendono anche gli ordini fatti dall\'utente sulle sue partite',
+                    chMike && chMike.ordini > 0
+                        ? `comprende le tue chiusure a mano sulle sue posizioni (${fmtMoney(chMike.netto, { signed: true })}, ${chMike.ordini} ${chMike.ordini === 1 ? 'ordine' : 'ordini'})`
+                        : 'righe di Mike: comprendono anche gli ordini fatti dall\'utente sulle sue partite',
                     provvisorie('mike'));
                 return {
                     ...b, pnlOggi: l.valore, fonteOggiLive: l.f, pnlOggiPaper: provaDellaRiga(pMike).oggi,
@@ -3952,6 +3966,11 @@ export function useControlRoom(): ControlRoomVM {
              *  regolamento (F-2 del 26/09), che il 30/09 metteva fra le cifre
              *  di oggi 4 partite di Safe del 26/09. */
             perSportConto: perSportDalConto(pnlRealeOggi),
+            contoVista: pnlRealeOggi?.perSport ? {
+                calcio: contoPerVista(pnlRealeOggi, 'calcio'),
+                tennis: contoPerVista(pnlRealeOggi, 'tennis'),
+                tutti: contoPerVista(pnlRealeOggi, null),
+            } : null,
             perSportPaper: soldiLetti && provaOggi ? {
                 calcio: breakdownProva(provaOggi.oggiPerSport.calcio),
                 tennis: breakdownProva(provaOggi.oggiPerSport.tennis),

@@ -30,6 +30,9 @@ import type { CorsieSport, VoceCorsia } from '@/lib/giornataCorsie';
 import { MarchioSoldi } from '@/components/controlroom/MarchioSoldi';
 import { etichettaArretrati, type ProvaGiornata } from '@/lib/provaGiornata';
 import type { ReactNode } from 'react';
+import type { SportDalConto } from '@/lib/composizioneConto';
+
+type ContoCorsia = SportDalConto & { etaS: number | null | undefined };
 
 /** Identità fissa per sport: il colore segue l'entità, non il rango. */
 const SPORT = {
@@ -64,11 +67,11 @@ export interface SplitSportProps {
      */
     prova?: ProvaGiornata | null;
     /**
-     * 30/09 (W_G) - la corsia LIVE dal CONTO Betfair (`per_fonte`): calcio =
-     * Mike + Omega + Safe calcio + Scalper, tennis = Safe tennis + bot tennis.
+     * 30/09 (W_G) - la corsia LIVE dal CONTO Betfair. 04/10: tutto il conto
+     * dello sport, bot + ordini a mano, scomposto (`perSportDalConto`).
      * Assente/null = conto non letto: le righe dei bot (marchio BOT), come prima.
      */
-    perSportConto?: Record<SportKey, { pnl: number; ordini: number }> | null;
+    perSportConto?: Record<SportKey, SportDalConto> | null;
     /** eta' della lettura del conto (s) per il marchio CONTO */
     contoEtaS?: number | null;
     testId?: string;
@@ -108,7 +111,7 @@ function Tessera({ sport, dato, datoPaper, corsie, aperte, prova, conto, letto, 
     corsie: CorsieSport | null;
     aperte: { live: number; paper: number };
     prova: ProvaGiornata | null;
-    conto: { pnl: number; ordini: number; etaS: number | null | undefined } | null;
+    conto: ContoCorsia | null;
     letto: boolean;
     scelto: boolean;
     spento: boolean;
@@ -228,8 +231,8 @@ function Corsia({ sport, tipo, voci, dato, letto, aperte, principale, conto = nu
     letto: boolean;
     aperte: number;
     principale: boolean;
-    // W_G: la corsia LIVE dal CONTO (per_fonte), quando letto; null = righe dei bot
-    conto?: { pnl: number; ordini: number; etaS: number | null | undefined } | null;
+    // W_G: la corsia LIVE dal CONTO, quando letto; null = righe dei bot
+    conto?: ContoCorsia | null;
     children?: ReactNode;
 }) {
     const live = tipo === 'live';
@@ -285,7 +288,9 @@ function Corsia({ sport, tipo, voci, dato, letto, aperte, principale, conto = nu
                     etaS={dalConto ? conto!.etaS : undefined}
                     testId={`cr-sport-${sport}-${tipo}-fonte`}
                     dettaglio={dalConto
-                        ? 'netto regolato oggi dal conto Betfair (voci dei bot di questo sport)'
+                        ? (conto!.bot != null
+                            ? 'netto di commissione regolato oggi dal conto Betfair su questo sport: bot + ordini a mano'
+                            : 'netto regolato oggi dal conto Betfair: solo i bot di questo sport (questo runner non separa per sport gli ordini a mano)')
                         : live
                         ? 'somma delle operazioni con soldi veri regolate oggi, dalle righe dei bot'
                         : 'operazioni simulate sulle partite di OGGI, regolate oggi: non entra nell\'obiettivo'}
@@ -309,7 +314,56 @@ function Corsia({ sport, tipo, voci, dato, letto, aperte, principale, conto = nu
                     )}
                 </span>
             </div>
+            {dalConto && <ScomposizioneConto sport={sport} conto={conto!} />}
             {children}
+        </div>
+    );
+}
+
+/**
+ * 04/10 - DI COSA E' FATTA la cifra LIVE dal conto: «bot −5,68 · a mano +0,53»
+ * (la somma e' la cifra sopra), le chiusure messe a mano sulle posizioni dei
+ * bot dichiarate dentro i bot, la commissione gia' tolta. Runner di prima:
+ * gli ordini a mano non separati per sport si dicono fuori, mai taciuti.
+ */
+function ScomposizioneConto({ sport, conto }: { sport: SportKey; conto: ContoCorsia }) {
+    if (conto.bot == null) {
+        if (conto.aManoNonSeparato == null) return null;
+        return (
+            <div className="mt-0.5 text-[10px] text-amber-300/80" data-testid={`cr-sport-${sport}-live-a-mano-fuori`}
+                title="il runner acceso non dice lo sport degli ordini a mano: riavviarlo per averli nella tessera del loro sport">
+                ordini a mano su tutto il conto {fmtMoney(conto.aManoNonSeparato, { signed: true })}: non compresi qui
+                (non separati per sport)
+            </div>
+        );
+    }
+    if (conto.ordini === 0) return null;
+    return (
+        <div className="mt-0.5 text-[10.5px] text-white/50 flex items-baseline gap-x-2 flex-wrap"
+            data-testid={`cr-sport-${sport}-live-scomposizione`}>
+            <span title="ordini dei bot, piu' le chiusure che hai messo a mano sulle loro posizioni">
+                bot{' '}
+                <span className={`font-mono ${pnlClass(conto.bot)}`} data-testid={`cr-sport-${sport}-live-parte-bot`}>
+                    {fmtMoney(conto.bot, { signed: true })}
+                </span>
+                {(conto.ordiniChiusureAMano ?? 0) > 0 && (
+                    <span className="text-white/40" data-testid={`cr-sport-${sport}-live-chiusure-a-mano`}>
+                        {' '}(di cui tue chiusure a mano {fmtMoney(conto.chiusureAMano ?? 0, { signed: true })})
+                    </span>
+                )}
+            </span>
+            <span>{'·'}</span>
+            <span title="ordini messi a mano (sito Betfair o app) fuori dalle posizioni dei bot">
+                a mano{' '}
+                <span className={`font-mono ${pnlClass(conto.aMano ?? 0)}`} data-testid={`cr-sport-${sport}-live-a-mano`}>
+                    {fmtMoney(conto.aMano ?? 0, { signed: true })}
+                </span>
+            </span>
+            {(conto.commissione ?? 0) > 0 && (
+                <span className="text-white/35" data-testid={`cr-sport-${sport}-live-commissione`}>
+                    {'·'} commissione {fmtMoney(conto.commissione ?? 0)} gia&apos; tolta
+                </span>
+            )}
         </div>
     );
 }

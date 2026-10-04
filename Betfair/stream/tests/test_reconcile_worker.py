@@ -363,6 +363,8 @@ def env(monkeypatch):
     monkeypatch.setattr(rw, "_MERCATI_CACHE", {"ts": None, "day": None, "gruppi": []})
     monkeypatch.setattr(rw, "_PROPRIETARIO_BET", {})
     monkeypatch.setattr(rw, "_PROPRIETARIO_DAY", None)
+    # 04/10: gli ordini dell'utente contati nella posizione di Mike
+    monkeypatch.setattr(rw, "_ADOTTATO_BET", {})
     monkeypatch.setattr(rw, "_FIRMA_RIGA", {})
     monkeypatch.setattr(rw, "_REGOLATI_DA_RILEGGERE", False)
     return state

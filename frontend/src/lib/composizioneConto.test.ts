@@ -47,11 +47,18 @@ describe('W_G: perSportDalConto - il LIVE per sport dalle voci del conto', () =>
             safe_calcio: { netto: 0.3, ordini: 1 }, safe_tennis: { netto: 0.41, ordini: 1 },
             bot_tennis: { netto: -0.2, ordini: 3 }, manuale_sito: { netto: 5, ordini: 1 }, altri_bot: { netto: 1, ordini: 1 },
         });
-        expect(perSportDalConto(c)).toEqual({ calcio: { pnl: 1.9, ordini: 5 }, tennis: { pnl: 0.21, ordini: 4 } });
+        // 04/10: runner senza `per_sport` -> gli ordini a mano (+5) si DICHIARANO fuori dalle tessere
+        expect(perSportDalConto(c)).toEqual({
+            calcio: { pnl: 1.9, ordini: 5, aManoNonSeparato: 5 },
+            tennis: { pnl: 0.21, ordini: 4, aManoNonSeparato: 5 },
+        });
     });
     it('Safe TENNIS di ieri regolato oggi: nel tennis, non nel calcio (il difetto della «differenza» nel calcio)', () => {
         const c = conto({ safe_tennis: { netto: 0.41, ordini: 1 } });
-        expect(perSportDalConto(c)).toEqual({ calcio: { pnl: 0, ordini: 0 }, tennis: { pnl: 0.41, ordini: 1 } });
+        expect(perSportDalConto(c)).toEqual({
+            calcio: { pnl: 0, ordini: 0, aManoNonSeparato: null },
+            tennis: { pnl: 0.41, ordini: 1, aManoNonSeparato: null },
+        });
     });
     it('conto non letto: null', () => {
         expect(perSportDalConto(null)).toBeNull();

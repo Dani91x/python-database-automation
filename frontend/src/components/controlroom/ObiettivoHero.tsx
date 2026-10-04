@@ -159,6 +159,16 @@ export function ObiettivoHero({
                     ))}
                 </div>
 
+                {/* 04/10 - le chiusure messe a mano contate nella posizione di un bot */}
+                {((composizione as ComposizioneConto).chiusureAMano ?? []).map((c) => (
+                    <div key={c.chiave} className="text-[10px] text-white/45 mt-1"
+                        data-testid={`cr-composizione-${c.chiave}-chiusure-a-mano`}>
+                        {c.etichetta} comprende le tue chiusure a mano sulle sue posizioni:{' '}
+                        <span className={`font-mono ${pnlClass(c.netto)}`}>{fmtMoney(c.netto, { signed: true })}</span>
+                        {' '}({c.ordini} {c.ordini === 1 ? 'ordine' : 'ordini'}); le voci «Manuale» sono gli ordini a mano fuori dalle posizioni dei bot
+                    </div>
+                ))}
+
                 {/* SITO BETFAIR — punto d'aggancio isolato (Task 2b): oggi
                     sempre assente, mai un contributo alla somma. */}
                 {manualeSito.fonte === 'non-disponibile' && (

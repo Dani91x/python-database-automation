@@ -235,13 +235,51 @@ export const FONTI_REALI: readonly FonteReale[] = [
     'manuale_app', 'manuale_sito', 'altri_bot', 'scalper',
 ];
 
+/** 04/10 - una parte di uno sport del conto (netto di commissione) */
+export interface ParteConto {
+    netto: number;
+    lordo: number;
+    ordini: number;
+}
+
+/** 04/10 - il conto di oggi su UNO sport: bot (per posizione) + a mano */
+export interface SportConto {
+    netto: number;
+    lordo: number;
+    commissione: number;
+    ordini: number;
+    /** ordini dei bot e chiusure a mano sulle loro posizioni */
+    bot: ParteConto;
+    /** ordini a mano fuori dalle posizioni dei bot */
+    a_mano: ParteConto;
+    /** di `bot`, gli ordini messi a mano che chiudono una posizione di un bot */
+    chiusure_a_mano: ParteConto;
+}
+
+export type SportDelConto = 'calcio' | 'tennis' | 'altro';
+
 export interface PnlRealeOggi {
     /** giorno di Roma YYYY-MM-DD */
     day: string;
     /** netto dell'intero conto, regolato oggi */
     netto: number;
     ordini: number;
+    /**
+     * Il P&L per VOCE della composizione. 04/10: se il runner scrive
+     * `per_posizione` e' QUELLA (un ordine a mano che chiude una posizione di
+     * Mike sta con Mike, come nelle Posizioni chiuse); altrimenti `per_fonte`
+     * del runner di prima (chi ha piazzato l'ordine). `attribuzione` lo dice.
+     */
     per_fonte: Record<FonteReale, { netto: number; ordini: number }>;
+    /** 04/10 - 'posizione' = voci per posizione (runner nuovo); 'ordine' = per chi ha piazzato (runner di prima) */
+    attribuzione?: 'posizione' | 'ordine';
+    /** 04/10 - lordo e commissione dell'intero conto (netto = lordo - commissione); null = runner di prima */
+    lordo?: number | null;
+    commissione?: number | null;
+    /** 04/10 - per voce di bot: le chiusure messe A MANO contate nella sua posizione */
+    chiusureAMano?: Partial<Record<FonteReale, ParteConto & { bet_ids: string[] }>>;
+    /** 04/10 - il conto per SPORT (bot + a mano); null = runner di prima (non separa gli ordini a mano per sport) */
+    perSport?: Record<SportDelConto, SportConto> | null;
     /** i bet_id gia' contati nel reale: la pagina non li conta anche come stimati */
     bet_ids: string[];
     /** ordini senza commissione di mercato leggibile (non nel reale) */
@@ -269,12 +307,46 @@ export function leggiPnlRealeOggi(grezzo: unknown, oggi: string): PnlRealeOggi |
     if (typeof g.day !== 'string' || g.day !== oggi) return null;
     const netto = finito(g.netto);
     if (netto == null) return null;
-    const pf = (g.per_fonte && typeof g.per_fonte === 'object') ? g.per_fonte as Record<string, unknown> : null;
-    if (!pf) return null;
+    const oggetto = (v: unknown): Record<string, unknown> | null =>
+        (v && typeof v === 'object' && !Array.isArray(v)) ? v as Record<string, unknown> : null;
+    const pfOrdine = oggetto(g.per_fonte);
+    if (!pfOrdine) return null;
+    // 04/10 - UNA verita': le voci per POSIZIONE quando il runner le scrive
+    const pfPosizione = oggetto(g.per_posizione);
+    const pf = pfPosizione ?? pfOrdine;
     const per_fonte = {} as Record<FonteReale, { netto: number; ordini: number }>;
     for (const f of FONTI_REALI) {
-        const v = pf[f] as Record<string, unknown> | undefined;
+        const v = oggetto(pf[f]);
         per_fonte[f] = { netto: finito(v?.netto) ?? 0, ordini: finito(v?.ordini) ?? 0 };
+    }
+    const parte = (v: unknown): ParteConto => {
+        const o = oggetto(v);
+        return { netto: finito(o?.netto) ?? 0, lordo: finito(o?.lordo) ?? 0, ordini: finito(o?.ordini) ?? 0 };
+    };
+    const chiusureAMano: Partial<Record<FonteReale, ParteConto & { bet_ids: string[] }>> = {};
+    const ch = pfPosizione ? oggetto(g.chiusure_a_mano) : null;
+    if (ch) {
+        for (const f of FONTI_REALI) {
+            const v = oggetto(ch[f]);
+            if (!v) continue;
+            chiusureAMano[f] = {
+                ...parte(v),
+                bet_ids: Array.isArray(v.bet_ids) ? v.bet_ids.map((x) => String(x)) : [],
+            };
+        }
+    }
+    const ps = oggetto(g.per_sport);
+    let perSport: Record<SportDelConto, SportConto> | null = null;
+    if (ps) {
+        const sport = (v: unknown): SportConto => {
+            const o = oggetto(v);
+            return {
+                netto: finito(o?.netto) ?? 0, lordo: finito(o?.lordo) ?? 0,
+                commissione: finito(o?.commissione) ?? 0, ordini: finito(o?.ordini) ?? 0,
+                bot: parte(o?.bot), a_mano: parte(o?.a_mano), chiusure_a_mano: parte(o?.chiusure_a_mano),
+            };
+        };
+        perSport = { calcio: sport(ps.calcio), tennis: sport(ps.tennis), altro: sport(ps.altro) };
     }
     const ids = Array.isArray(g.bet_ids) ? g.bet_ids.map((x) => String(x)) : [];
     return {
@@ -282,12 +354,27 @@ export function leggiPnlRealeOggi(grezzo: unknown, oggi: string): PnlRealeOggi |
         netto,
         ordini: finito(g.ordini) ?? 0,
         per_fonte,
+        attribuzione: pfPosizione ? 'posizione' : 'ordine',
+        lordo: finito(g.lordo),
+        commissione: finito(g.commissione),
+        chiusureAMano,
+        perSport,
         bet_ids: ids,
         senza_commissione: finito(g.senza_commissione) ?? 0,
         sospetti_sito: finito(g.sospetti_sito) ?? 0,
         letto_at: typeof g.letto_at === 'string' ? g.letto_at : null,
-        fontiDichiarate: FONTI_REALI.filter((f) => pf[f] != null && typeof pf[f] === 'object'),
+        fontiDichiarate: FONTI_REALI.filter((f) => oggetto(pf[f]) != null),
     };
+}
+
+/** 04/10 - i bet_id messi A MANO che il conto conta nella posizione di un bot. */
+export function betIdChiusureAMano(reale: PnlRealeOggi | null): ReadonlySet<string> {
+    const out = new Set<string>();
+    if (!reale || reale.attribuzione !== 'posizione') return out;
+    for (const v of Object.values(reale.chiusureAMano ?? {})) {
+        for (const b of v?.bet_ids ?? []) out.add(b);
+    }
+    return out;
 }
 
 /** Fra la riga del database e il messaggio del canale vince il PIU' RECENTE

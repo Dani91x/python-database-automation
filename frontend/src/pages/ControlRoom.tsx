@@ -834,7 +834,8 @@ export default function ControlRoom() {
 
                     <TabsContent value="chiuse" className="mt-3">
                         <PosizioniChiuse righe={vm.righeChiuse} chiuse={vm.chiuse} sport={sport}
-                            giorno={giornoOperativo} barra={vm.composizioneOggi} />
+                            giorno={giornoOperativo} barra={vm.composizioneOggi}
+                            contoOggi={vm.soldiGiornata.contoVista?.[sport ?? 'tutti'] ?? null} />
                     </TabsContent>
                 </Tabs>
                 </OrdiniContoContext.Provider>

@@ -359,6 +359,14 @@ export default function LivePnl() {
                         value={settled == null ? '…' : fmtEur(realized)}
                         tone={realized >= 0 ? 'pos' : 'neg'}
                         title={`Σ profit dei mercati regolati (${filtered.length} mercati, fonte get_live_settled)`}
+                        extra={
+                            // 04/10 (P&L unico): la cifra e' LORDA (profit di Betfair per
+                            // mercato, prima della commissione) e di TUTTO il conto: il
+                            // netto di giornata sta nella Control Room. Si dice, non si tace.
+                            <div className="text-[10px] text-slate-500" data-testid="livepnl-realizzato-lordo">
+                                lordo, prima della commissione · tutto il conto (bot + a mano)
+                            </div>
+                        }
                     />
                     <StatTile
                         label={`MTM aperto${riskMode ? ` (${riskMode})` : ''}${riskModeMismatch ? ' ⚠' : ''}`}

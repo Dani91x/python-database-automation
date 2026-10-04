@@ -11,6 +11,7 @@
     "live",
     "P&L realizzato",
     "+€0.00",
+    "lordo, prima della commissione · tutto il conto (bot + a mano)",
     "MTM aperto",
     "—",
     "0",
@@ -38,6 +39,7 @@
     "Nessuna posizione tennis aperta."
   ],
   "testid": [
+    "livepnl-realizzato-lordo",
     "livepnl-posizioni",
     "livepnl-fonte-posizioni"
   ],

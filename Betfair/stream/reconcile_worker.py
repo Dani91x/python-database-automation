@@ -632,6 +632,9 @@ _REGOLATI_DA_RILEGGERE = False
 # bet_id -> (tabella, id riga, extra) oppure None = nessuna nostra riga
 _PROPRIETARIO_BET: Dict[str, Optional[Tuple[str, Any, Dict[str, Any]]]] = {}
 _PROPRIETARIO_DAY: Optional[str] = None
+# 04/10: bet_id dell'UTENTE che un bot conta nella sua posizione (riga
+# ``role='utente'`` di ``mike_trades``): bet_id -> voce del bot
+_ADOTTATO_BET: Dict[str, str] = {}
 # firma dell'ultima scrittura per riga: (tabella, id) -> (netto, commissione, settled)
 _FIRMA_RIGA: Dict[Tuple[str, str], Tuple] = {}
 
@@ -845,6 +848,7 @@ def _proprietari(sb: Any, ordini: List[Any], day: str) -> None:
     global _PROPRIETARIO_DAY
     if _PROPRIETARIO_DAY != day:
         _PROPRIETARIO_BET.clear()
+        _ADOTTATO_BET.clear()
         _PROPRIETARIO_DAY = day
     nuovi = [o for o in ordini
              if low._val(o, "bet_id") is not None
@@ -873,7 +877,11 @@ def _proprietari(sb: Any, ordini: List[Any], day: str) -> None:
                     # 30/09: la riga "utente" che Mike scrive al regolamento per
                     # un ordine dell'UTENTE sul suo mercato (``mike.regolato_conto``)
                     # non fa di quell'ordine un ordine di Mike: resta dell'utente
-                    # (sito o terminale manuale), come prima
+                    # (sito o terminale manuale), come prima.
+                    # 04/10: ma la sua POSIZIONE e' quella di Mike (la riga ha
+                    # ``closes_trade_id`` = l'apertura di Mike): si ricorda per
+                    # ``per_posizione`` (stessa lettura, nessuna chiamata in piu')
+                    _ADOTTATO_BET[b] = "mike"
                     continue
                 trovati[b] = (tabella, r.get("id"), {"source": r.get("source")})
     # in subordine: customerOrderRef <bot>-t<id>, se quella riga esiste
@@ -895,22 +903,80 @@ def _proprietari(sb: Any, ordini: List[Any], day: str) -> None:
         _PROPRIETARIO_BET[b] = trovati.get(b)
 
 
+#: 04/10 - le voci "a mano" (ordini dell'UTENTE: sito Betfair o terminale
+#: manuale dell'app). Tutte le altre voci di ``FONTI`` sono bot.
+FONTI_A_MANO = ("manuale_sito", "manuale_app")
+#: lo sport di una voce di bot quando l'ordine non porta ``eventTypeId``
+_SPORT_DELLA_FONTE = {"omega": "calcio", "mike": "calcio", "safe_calcio": "calcio",
+                      "scalper": "calcio", "safe_tennis": "tennis", "bot_tennis": "tennis"}
+#: 04/10 - il bot che CONTA nella sua posizione gli ordini dell'utente sui suoi
+#: mercati (``Betfair/mike/regolato_conto.py``, righe ``role='utente'``): oggi
+#: solo Mike. Omega e Safe non scrivono righe dell'utente nelle loro posizioni:
+#: per loro un ordine a mano resta "a mano" (le Posizioni chiuse non lo hanno).
+_FONTE_CHE_ADOTTA = "mike"
+
+
+def _sport_di(o: Any, fonte: str) -> str:
+    """'calcio' | 'tennis' | 'altro': dall'``eventTypeId`` dell'ordine (1 =
+    calcio, 2 = tennis); senza, dalla voce del bot; altrimenti 'altro'
+    (dichiarato, mai indovinato)."""
+    et = str(low._val(o, "event_type_id") or "").strip()
+    if et == "1":
+        return "calcio"
+    if et == "2":
+        return "tennis"
+    return _SPORT_DELLA_FONTE.get(fonte, "altro")
+
+
+def _vuoto_sport() -> Dict[str, Any]:
+    return {"netto": 0.0, "lordo": 0.0, "commissione": 0.0, "ordini": 0, "senza_commissione": 0,
+            "bot": {"netto": 0.0, "lordo": 0.0, "ordini": 0},
+            "a_mano": {"netto": 0.0, "lordo": 0.0, "ordini": 0},
+            "chiusure_a_mano": {"netto": 0.0, "lordo": 0.0, "ordini": 0}}
+
+
 def componi_regolati(ordini: List[Any], gruppi: List[Any],
                      proprietari: Dict[str, Optional[Tuple[str, Any, Dict[str, Any]]]],
-                     day: str) -> Tuple[Dict[str, Any], Dict[Tuple[str, str], Dict[str, Any]]]:
+                     day: str,
+                     adottati: Optional[Dict[str, str]] = None,
+                     ) -> Tuple[Dict[str, Any], Dict[Tuple[str, str], Dict[str, Any]]]:
     """Funzione PURA: (totali del conto di oggi, P&L reale per riga).
 
     Totali: netto/lordo/commissione dell'intero conto e per voce (``FONTI``),
     gli ordini contati, i bet_id regolati (la pagina non li conta anche come
     stimati), quanti ordini non hanno un netto (commissione del mercato
-    illeggibile: NON entrano nei totali reali, restano stimati)."""
+    illeggibile: NON entrano nei totali reali, restano stimati).
+
+    04/10 (segnalazione dell'utente: «la scheda Calcio dice -10,75, le
+    Posizioni chiuse -5,68: uniforma») - DUE chiavi ADDITIVE, ``per_fonte``
+    resta identica (CHI ha piazzato l'ordine):
+
+    * ``per_posizione``: le stesse voci, ma un ordine A MANO che chiude/regola
+      una posizione di Mike conta nella voce di Mike (come la sua posizione:
+      riga ``role='utente'`` di ``mike_trades``, ``adottati``; oppure ordine a
+      mano sullo STESSO mercato di un ordine di Mike regolato oggi, la regola
+      di ``mike.regolato_conto``). ``chiusure_a_mano`` dice quali e quanto.
+    * ``per_sport``: per sport (dall'``eventTypeId`` dell'ordine) il totale
+      del conto, diviso in bot (per posizione) e a mano (fuori dalle posizioni
+      dei bot). La tessera dello sport lo mostra cosi' com'e'.
+
+    La somma di ``per_posizione`` = somma di ``per_fonte`` = ``netto``: si
+    sposta di voce, non si crea ne' si toglie un centesimo."""
     comm = commissioni_per_ordine(ordini, gruppi)
+    adottati = adottati or {}
     per_fonte: Dict[str, Dict[str, Any]] = {
         f: {"netto": 0.0, "lordo": 0.0, "ordini": 0, "senza_commissione": 0} for f in FONTI}
+    per_posizione: Dict[str, Dict[str, Any]] = {
+        f: {"netto": 0.0, "lordo": 0.0, "ordini": 0, "senza_commissione": 0} for f in FONTI}
+    per_sport: Dict[str, Dict[str, Any]] = {s: _vuoto_sport() for s in ("calcio", "tennis", "altro")}
+    chiusure: Dict[str, Dict[str, Any]] = {}
     tot_netto = tot_lordo = tot_comm = 0.0
     n = senza = sospetti = 0
     bet_ids: List[str] = []
     righe: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    # 1) di chi e' ogni ordine (per chi l'ha piazzato), e i mercati di Mike
+    attribuiti: List[Tuple[Any, str, float, Any, str]] = []
+    mercati_adottanti: set = set()
     for o in ordini:
         bet = low._val(o, "bet_id")
         profit = low._f(low._val(o, "profit"))
@@ -924,12 +990,27 @@ def componi_regolati(ordini: List[Any], gruppi: List[Any],
                 sospetti += 1  # porta un ref ma nessuna nostra riga: dichiarato
         else:
             fonte = _fonte_di(prop[0], prop[2], o)
+        if fonte == _FONTE_CHE_ADOTTA:
+            mercati_adottanti.add(str(low._val(o, "market_id")))
+        attribuiti.append((o, bet, profit, prop, fonte))
+    for o, bet, profit, prop, fonte in attribuiti:
+        # 2) di quale POSIZIONE e': un ordine a mano sulla posizione di Mike e' di Mike
+        posizione = fonte
+        if fonte in FONTI_A_MANO and (
+                adottati.get(bet) == _FONTE_CHE_ADOTTA
+                or str(low._val(o, "market_id")) in mercati_adottanti):
+            posizione = _FONTE_CHE_ADOTTA
         c = comm.get(bet)
         pf = per_fonte[fonte]
+        pp = per_posizione[posizione]
+        ps = per_sport[_sport_di(o, fonte)]
         pf["lordo"] += profit
+        pp["lordo"] += profit
         if c is None:
             senza += 1
             pf["senza_commissione"] += 1
+            pp["senza_commissione"] += 1
+            ps["senza_commissione"] += 1
             continue
         netto = round(profit - c, 2)
         n += 1
@@ -938,6 +1019,26 @@ def componi_regolati(ordini: List[Any], gruppi: List[Any],
         tot_comm += c
         pf["netto"] += netto
         pf["ordini"] += 1
+        pp["netto"] += netto
+        pp["ordini"] += 1
+        ps["netto"] += netto
+        ps["lordo"] += profit
+        ps["commissione"] += c
+        ps["ordini"] += 1
+        parte = ps["a_mano"] if posizione in FONTI_A_MANO else ps["bot"]
+        parte["netto"] += netto
+        parte["lordo"] += profit
+        parte["ordini"] += 1
+        if posizione != fonte:
+            ch = chiusure.setdefault(posizione, {"netto": 0.0, "lordo": 0.0, "ordini": 0, "bet_ids": []})
+            ch["netto"] += netto
+            ch["lordo"] += profit
+            ch["ordini"] += 1
+            ch["bet_ids"].append(bet)
+            cs = ps["chiusure_a_mano"]
+            cs["netto"] += netto
+            cs["lordo"] += profit
+            cs["ordini"] += 1
         bet_ids.append(bet)
         if prop is not None:
             k = (prop[0], str(prop[1]))
@@ -949,9 +1050,19 @@ def componi_regolati(ordini: List[Any], gruppi: List[Any],
             sd = _dt_iso(low._val(o, "settled_date"))
             if sd and (acc["settled_at"] is None or sd > acc["settled_at"]):
                 acc["settled_at"] = sd
-    for pf in per_fonte.values():
+    for pf in list(per_fonte.values()) + list(per_posizione.values()):
         pf["netto"] = round(pf["netto"], 2)
         pf["lordo"] = round(pf["lordo"], 2)
+    for ps in per_sport.values():
+        for k in ("netto", "lordo", "commissione"):
+            ps[k] = round(ps[k], 2)
+        for parte in ("bot", "a_mano", "chiusure_a_mano"):
+            ps[parte]["netto"] = round(ps[parte]["netto"], 2)
+            ps[parte]["lordo"] = round(ps[parte]["lordo"], 2)
+    for ch in chiusure.values():
+        ch["netto"] = round(ch["netto"], 2)
+        ch["lordo"] = round(ch["lordo"], 2)
+        ch["bet_ids"] = sorted(ch["bet_ids"])
     totali = {
         "day": day,
         "netto": round(tot_netto, 2),
@@ -962,6 +1073,10 @@ def componi_regolati(ordini: List[Any], gruppi: List[Any],
         "sospetti_sito": sospetti,
         "per_fonte": per_fonte,
         "bet_ids": sorted(bet_ids),
+        # 04/10 - chiavi ADDITIVE (vedi sopra): un frontend di prima le ignora
+        "per_posizione": per_posizione,
+        "chiusure_a_mano": chiusure,
+        "per_sport": per_sport,
     }
     return totali, righe
 
@@ -1035,7 +1150,8 @@ def _sync_manual_pnl(session: Any, *, max_eta_s: float = _MERCATI_CACHE_FORZATO_
     except Exception as ex:  # noqa: BLE001 - DB KO: mai un "sito" dedotto da un guasto
         logger.warning("[reconcile] lettura dei proprietari KO: %s", str(ex)[:200])
         return
-    totali, righe = componi_regolati(orders, gruppi, dict(_PROPRIETARIO_BET), day)
+    totali, righe = componi_regolati(orders, gruppi, dict(_PROPRIETARIO_BET), day,
+                                     adottati=dict(_ADOTTATO_BET))
     completo = _scrivi_righe(righe)
 
     def _bucket(pf: Dict[str, Any]) -> Tuple[float, bool, int]:
@@ -1071,7 +1187,8 @@ def _sync_manual_pnl(session: Any, *, max_eta_s: float = _MERCATI_CACHE_FORZATO_
     reale = dict(totali, letto_at=letto_at, pnl_letto_at=pnl_letto_at)
     reale_sig = (day, totali["netto"], totali["ordini"], totali["senza_commissione"],
                  tuple(totali["bet_ids"]),
-                 tuple((f, v["netto"], v["ordini"]) for f, v in sorted(totali["per_fonte"].items())))
+                 tuple((f, v["netto"], v["ordini"]) for f, v in sorted(totali["per_fonte"].items())),
+                 tuple((f, tuple(v["bet_ids"])) for f, v in sorted(totali["chiusure_a_mano"].items())))
     if reale_sig != _LAST_PNL_REALE_SIG:
         try:
             db.upsert_live_account_pnl_reale(reale)

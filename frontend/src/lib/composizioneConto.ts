@@ -22,7 +22,9 @@
 import type {
     ComposizioneObiettivo, PnlRealeOggi, RigaComponente, RigaComposizione,
 } from './composizioneObiettivo';
+import { betIdChiusureAMano } from './composizioneObiettivo';
 import { isErrorRow, isSettled } from './eventGroups';
+import { isRigaUtente, type RigaPnl } from './fontePnl';
 
 /** Da dove viene la cifra di una voce. */
 export type FonteVoce = 'conto' | 'bot';
@@ -38,6 +40,12 @@ export interface ComposizioneConto extends ComposizioneObiettivo {
     righe: RigaComposizioneConto[];
     /** true = le voci dei bot vengono dal conto (`per_fonte`) */
     dalConto: boolean;
+    /**
+     * 04/10 - le chiusure messe A MANO che il conto conta nella voce di un bot
+     * (la sua posizione). Vuoto = nessuna, o runner di prima (voci per chi ha
+     * piazzato: le chiusure a mano stanno in «Manuale · sito/app»).
+     */
+    chiusureAMano?: { chiave: RigaComposizione['chiave']; etichetta: string; netto: number; ordini: number }[];
 }
 
 function somma(a: number | null, b: number | null): number | null {
@@ -117,34 +125,128 @@ export function composizioneDalConto(
         };
     });
     const totale = out.reduce<number | null>((acc, r) => somma(acc, r.valore), null);
-    return { ...base, righe: out, totale, dalConto: true };
+    // 04/10: quali voci dei bot comprendono chiusure messe a mano (si DICHIARA)
+    const chiusureAMano: NonNullable<ComposizioneConto['chiusureAMano']> = [];
+    if (reale.attribuzione === 'posizione') {
+        for (const r of out) {
+            const f = r.chiave as keyof PnlRealeOggi['per_fonte'];
+            const ch = reale.chiusureAMano?.[f];
+            if (ch && ch.ordini > 0) chiusureAMano.push({ chiave: r.chiave, etichetta: r.etichetta, netto: ch.netto, ordini: ch.ordini });
+        }
+    }
+    return { ...base, righe: out, totale, dalConto: true, chiusureAMano };
 }
 
 /** La corsia LIVE di uno sport dal conto: netto regolato oggi e numero di ordini regolati. */
 export interface SportDalConto {
+    /** netto di commissione regolato oggi su questo sport */
     pnl: number;
     ordini: number;
+    /**
+     * 04/10 - la scomposizione (runner nuovo, `per_sport`): `pnl` = bot + aMano.
+     * Assente = runner di prima: `pnl` sono i soli BOT e gli ordini a mano non
+     * sono separati per sport (`aManoNonSeparato`).
+     */
+    bot?: number;
+    aMano?: number;
+    ordiniAMano?: number;
+    /** di `bot`, le chiusure messe a mano sulle posizioni dei bot (contate col bot) */
+    chiusureAMano?: number;
+    ordiniChiusureAMano?: number;
+    /** commissione del conto su questo sport (gia' tolta da `pnl`) */
+    commissione?: number;
+    /** runner di prima: netto degli ordini a mano di TUTTO il conto, fuori da `pnl`; null = nessuno */
+    aManoNonSeparato?: number | null;
 }
 
+const centesimi = (v: number) => Math.round(v * 100) / 100;
+
 /**
- * 30/09 (W_G) - il LIVE per SPORT dal CONTO (`per_fonte`): calcio = Mike +
- * Omega + Safe calcio + Scalper; tennis = Safe tennis + bot tennis. Le voci
- * manuali (app/sito) e «altri bot» non hanno uno sport: restano fuori dalle
- * tessere (sono nella composizione). `null` = conto non letto.
+ * Il LIVE per SPORT dal CONTO. `null` = conto non letto.
+ *
+ * 04/10 (segnalazione dell'utente: «la scheda Calcio dice -10,75, ma non
+ * abbiamo mai perso 10 euro») - con il runner nuovo la cifra e' TUTTO il conto
+ * di quello sport (`per_sport`: bot + ordini a mano, dall'eventTypeId di ogni
+ * ordine), scomposta in bot e a mano; prima erano le sole voci dei bot, con
+ * una chiusura a mano di una posizione di Mike fuori dalla tessera.
+ *
+ * Runner di prima (nessun `per_sport`): calcio = Mike + Omega + Safe calcio +
+ * Scalper, tennis = Safe tennis + bot tennis (30/09, W_G), e gli ordini a mano
+ * si DICHIARANO fuori (`aManoNonSeparato`), mai taciuti.
  */
 export function perSportDalConto(reale: PnlRealeOggi | null): Record<'calcio' | 'tennis', SportDalConto> | null {
     if (!reale) return null;
+    if (reale.perSport) {
+        const di = (s: 'calcio' | 'tennis'): SportDalConto => {
+            const v = reale.perSport![s];
+            return {
+                pnl: centesimi(v.netto), ordini: v.ordini,
+                bot: centesimi(v.bot.netto), aMano: centesimi(v.a_mano.netto), ordiniAMano: v.a_mano.ordini,
+                chiusureAMano: centesimi(v.chiusure_a_mano.netto), ordiniChiusureAMano: v.chiusure_a_mano.ordini,
+                commissione: centesimi(v.commissione),
+            };
+        };
+        return { calcio: di('calcio'), tennis: di('tennis') };
+    }
     const pf = reale.per_fonte;
-    const somma = (fonti: (keyof PnlRealeOggi['per_fonte'])[]): SportDalConto => {
+    const somma = (fonti: (keyof PnlRealeOggi['per_fonte'])[]): { cent: number; ordini: number } => {
         let cent = 0;
         let ordini = 0;
         for (const f of fonti) { cent += Math.round(pf[f].netto * 100); ordini += pf[f].ordini; }
-        return { pnl: cent / 100, ordini };
+        return { cent, ordini };
+    };
+    const mano = somma(['manuale_sito', 'manuale_app']);
+    const aManoNonSeparato = mano.ordini > 0 ? mano.cent / 100 : null;
+    const sport = (fonti: (keyof PnlRealeOggi['per_fonte'])[]): SportDalConto => {
+        const s = somma(fonti);
+        return { pnl: s.cent / 100, ordini: s.ordini, aManoNonSeparato };
     };
     return {
-        calcio: somma(['mike', 'omega', 'safe_calcio', 'scalper']),
-        tennis: somma(['safe_tennis', 'bot_tennis']),
+        calcio: sport(['mike', 'omega', 'safe_calcio', 'scalper']),
+        tennis: sport(['safe_tennis', 'bot_tennis']),
     };
+}
+
+/**
+ * 04/10 - le righe di Mike che entrano nella barra/composizione: quelle del
+ * BOT, piu' le righe «utente» (ordini dell'utente sulle sue partite) che il
+ * CONTO conta nella posizione di Mike (`chiusure_a_mano`, per bet_id). Le
+ * altre righe «utente» restano fuori: il conto le ha nel «Manuale». Una regola
+ * sola col conto: lo stesso ordine mai due volte, mai zero volte.
+ */
+export function righeMikeDelConto<T>(trades: readonly T[], reale: PnlRealeOggi | null): T[] {
+    const adottati = betIdChiusureAMano(reale);
+    return trades.filter((t) => !isRigaUtente(t as unknown as RigaPnl)
+        || adottati.has(String((t as { bet_id?: unknown }).bet_id ?? '')));
+}
+
+/** 04/10 - il conto di oggi per una vista filtrata per sport (o tutto il conto). */
+export interface ContoVista {
+    /** netto di commissione regolato oggi: = bot + aMano */
+    netto: number;
+    ordini: number;
+    bot: number;
+    aMano: number;
+    ordiniAMano: number;
+    commissione: number;
+}
+
+/**
+ * 04/10 - il conto di oggi per la vista di uno sport (`null` = tutti gli
+ * sport: tutto il conto, compreso cio' che non e' ne' calcio ne' tennis).
+ * `null` = conto non letto o runner di prima (che non separa gli ordini a
+ * mano per sport): la vista non inventa una scomposizione.
+ */
+export function contoPerVista(reale: PnlRealeOggi | null, sport: 'calcio' | 'tennis' | null): ContoVista | null {
+    if (!reale?.perSport) return null;
+    const parti = sport ? [reale.perSport[sport]] : [reale.perSport.calcio, reale.perSport.tennis, reale.perSport.altro];
+    let netto = 0, ordini = 0, bot = 0, aMano = 0, ordiniAMano = 0, commissione = 0;
+    for (const p of parti) {
+        netto += Math.round(p.netto * 100); ordini += p.ordini;
+        bot += Math.round(p.bot.netto * 100); aMano += Math.round(p.a_mano.netto * 100);
+        ordiniAMano += p.a_mano.ordini; commissione += Math.round(p.commissione * 100);
+    }
+    return { netto: netto / 100, ordini, bot: bot / 100, aMano: aMano / 100, ordiniAMano, commissione: commissione / 100 };
 }
 
 /** Eta' in secondi della lettura del conto (letto_at); undefined = conto non letto; null = istante illeggibile. */

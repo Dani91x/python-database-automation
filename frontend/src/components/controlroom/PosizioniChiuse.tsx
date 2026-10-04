@@ -43,6 +43,7 @@ import {
     chiuseGiornata, posizioniDellaGiornata, MARGINE_LETTURA_MS, type ChiuseGiornata,
 } from '@/lib/chiuseGiornata';
 import type { ComposizioneObiettivo, RigaComposizione } from '@/lib/composizioneObiettivo';
+import type { ContoVista } from '@/lib/composizioneConto';
 import { FONTE_PNL_BREVE, FONTE_PNL_TESTO, type FontePnl } from '@/lib/fontePnl';
 import { eCertezzaVerde, type StatoCertezzaChiusura } from '@/lib/certezzaChiusura';
 
@@ -107,6 +108,12 @@ export interface PosizioniChiuseProps {
     barra?: ComposizioneObiettivo | null;
     /** lettura di una giornata dal database; di serie `lib/chiuseGiornata` */
     leggiGiornata?: LeggiGiornata;
+    /**
+     * 04/10 - il CONTO di oggi per lo sport scelto (`contoPerVista`): bot +
+     * ordini a mano fuori dalle posizioni dei bot. Mostrato su OGGI e soldi
+     * veri, cosi' che la scheda torni col conto. Assente/null = non separabile.
+     */
+    contoOggi?: ContoVista | null;
     testId?: string;
 }
 
@@ -120,7 +127,7 @@ interface StatoLettura {
 const NIENTE: readonly TradeChiudibile[] = [];
 
 export function PosizioniChiuse({
-    righe = NIENTE, chiuse, sport, giorno, barra = null, leggiGiornata, testId = 'cr-chiuse',
+    righe = NIENTE, chiuse, sport, giorno, barra = null, leggiGiornata, contoOggi = null, testId = 'cr-chiuse',
 }: PosizioniChiuseProps) {
     const [giornoScelto, setGiornoScelto] = useState(giorno);
     const [modo, setModo] = useState<Modo>('live');
@@ -329,6 +336,34 @@ export function PosizioniChiuse({
                             data-testid="cr-chiuse-stimato">
                             {r.stimato == null ? DASH : fmtMoney(r.stimato, { signed: true })}
                         </b>
+                    </span>
+                </div>
+            )}
+
+            {/* 04/10 - IL CONTO DI OGGI: le posizioni dei bot + gli ordini a mano
+                fuori dalle posizioni dei bot = il conto Betfair (una sola verita') */}
+            {eOggi && modo === 'live' && contoOggi != null && contoOggi.ordini > 0 && (
+                <div className="px-3 py-1 border-b border-white/10 text-[10.5px] text-white/50 flex flex-wrap gap-x-1.5 items-baseline"
+                    data-testid="cr-chiuse-conto"
+                    title="regolati oggi sul conto Betfair (giorno di regolamento); le posizioni qui sotto sono per giorno della partita">
+                    <span>Conto Betfair oggi</span>
+                    <b className={`font-mono ${pnlClass(contoOggi.netto)}`} data-testid="cr-chiuse-conto-netto">
+                        {fmtMoney(contoOggi.netto, { signed: true })}
+                    </b>
+                    <span>=</span>
+                    <span>posizioni dei bot{' '}
+                        <b className={`font-mono ${pnlClass(contoOggi.bot)}`} data-testid="cr-chiuse-conto-bot">
+                            {fmtMoney(contoOggi.bot, { signed: true })}
+                        </b>
+                    </span>
+                    <span>+ a mano fuori dai bot{' '}
+                        <b className={`font-mono ${pnlClass(contoOggi.aMano)}`} data-testid="cr-chiuse-conto-a-mano">
+                            {fmtMoney(contoOggi.aMano, { signed: true })}
+                        </b>
+                        {' '}({contoOggi.ordiniAMano} {contoOggi.ordiniAMano === 1 ? 'ordine' : 'ordini'})
+                    </span>
+                    <span className="text-white/35">
+                        {PUNTO} netto di commissione{contoOggi.commissione > 0 ? ` (${fmtMoney(contoOggi.commissione)} tolta)` : ''}
                     </span>
                 </div>
             )}
