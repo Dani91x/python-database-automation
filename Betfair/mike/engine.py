@@ -4700,6 +4700,30 @@ def _riprezzo_copertura_banca(ctx: MatchCtx, snap: Snapshot, params: Dict[str, A
                         telemetry={"cover_resto_sotto_minimo": {"resto": size,
                                                                 "minimo": IT_LAY_MIN,
                                                                 "form": COVER_LAY_U45}})
+    # 04/10 - STESSA REGOLA di ``_copertura_banca`` (ordine dell'utente): un ordine
+    # di copertura parte solo a un prezzo MINORE della banca dell'Under 3,5. Il
+    # riprezzo e' un ordine nuovo: se il libro dell'Under 4,5 e' fuori prezzo (o
+    # la banca dell'Under 3,5 non e' leggibile) NON si riprezza e NON si annulla:
+    # l'ordine gia' sul libro, nato a un prezzo valido, resta dov'e'.
+    bk35 = snap.book(MARKET_OU35, SEL_UNDER)
+    q35 = bk35.best_lay if (bk35 is not None and price_ok(bk35.best_lay)) else None
+    if q35 is None:
+        return Decision("LIVE_COVER_PENDING", [],
+                        "copertura: quota di banca dell'Under 3.5 non leggibile, nessun riprezzo",
+                        telemetry={"cover_wait": {"form": COVER_LAY_U45,
+                                                  "reason": COVER_U35_NON_LEGGIBILE,
+                                                  "price_lay_u45": bk.best_lay,
+                                                  "price_limite": q_lim}})
+    if float(q_lim) >= float(q35) - _EPS:
+        return Decision("LIVE_COVER_PENDING", [],
+                        "copertura NON riprezzata: banca Under 4.5 a %s non minore della banca "
+                        "Under 3.5 a %s (mercato senza prezzo): l'ordine resta dov'e'"
+                        % (q_lim, q35),
+                        telemetry={"cover_wait": {"form": COVER_LAY_U45,
+                                                  "reason": COVER_FUORI_PREZZO,
+                                                  "price_lay_u45": bk.best_lay,
+                                                  "price_limite": q_lim,
+                                                  "price_lay_u35": q35}})
     return Decision("LIVE_COVER_PENDING",
                     [annulla, _place("over_cover", MARKET_OU45, SEL_UNDER, "lay", q_lim, size)],
                     "copertura: riprezzo", updates={"attempts": ctx.attempts + 1})

@@ -174,6 +174,72 @@ def test_avviso_critico_una_volta_per_episodio():
     assert len(db.righe) == 2
 
 
+# ---------------------------------------------------------------------------
+# 7. l'ALTRA porta: il riprezzo di una copertura gia' sul libro. Stessa regola.
+# ---------------------------------------------------------------------------
+def _copertura_sul_libro() -> E.Leg:
+    return E.Leg(role="over_cover", market=E.MARKET_OU45, selection=E.SEL_UNDER, side="lay",
+                 price=1.20, size=6.32, matched=0.0, avg_price=None,
+                 ref="over_cover-0-4", status="open", placed_at=KO + 180)
+
+
+def _in_attesa_di_abbinamento(leg: E.Leg) -> E.MatchCtx:
+    return E.MatchCtx(state="LIVE_COVER_PENDING", entry_price_initial=1.41,
+                      legs=[ingresso(), leg])
+
+
+def test_riprezzo_a_quote_normali_resta_quello_di_prima():
+    leg = _copertura_sul_libro()
+    p = params()
+    d = E._riprezzo_copertura_banca(_in_attesa_di_abbinamento(leg),
+                                    fotografia(u35=libro(1.40, 1.41), u45=libro(1.24, 1.25)),
+                                    p, 0.05, leg)
+    assert d.state == "LIVE_COVER_PENDING"
+    assert [a.kind for a in d.actions] == ["cancel", "place"]
+    nuovo = d.actions[1]
+    assert (nuovo.role, nuovo.side, nuovo.size) == ("over_cover", "lay", 6.32)
+    assert nuovo.price == E.cover_place_price_lay(1.25, p) and nuovo.price < 1.41
+
+
+def test_riprezzo_fuori_prezzo_non_parte_e_l_ordine_resta_dov_e():
+    leg = _copertura_sul_libro()
+    for miglior_banca_u45 in (3.0, 18.5, 1.39):          # 1,39 + 2 tick = 1,41: uguale
+        d = E._riprezzo_copertura_banca(
+            _in_attesa_di_abbinamento(leg),
+            fotografia(u35=libro(1.40, 1.41), u45=libro(1.05, miglior_banca_u45)),
+            params(), 0.05, leg)
+        assert d.state == "LIVE_COVER_PENDING", miglior_banca_u45
+        assert d.actions == [], "ne' annullo ne' ordine nuovo"
+        assert d.telemetry["cover_wait"]["reason"] == E.COVER_FUORI_PREZZO
+        assert d.telemetry["cover_wait"]["price_lay_u35"] == 1.41
+
+
+def test_riprezzo_con_under35_non_leggibile_non_parte():
+    leg = _copertura_sul_libro()
+    d = E._riprezzo_copertura_banca(_in_attesa_di_abbinamento(leg),
+                                    fotografia(u35=None, u45=libro(1.24, 1.25)),
+                                    params(), 0.05, leg)
+    assert d.state == "LIVE_COVER_PENDING" and d.actions == []
+    assert d.telemetry["cover_wait"]["reason"] == E.COVER_U35_NON_LEGGIBILE
+
+
+def test_nessun_altro_punto_del_motore_crea_una_copertura_in_banca_senza_la_regola():
+    """Contratto sul sorgente: ogni funzione che crea un ordine ``over_cover`` in
+    BANCA sull'Under 4,5 contiene il confronto con la banca dell'Under 3,5. Se
+    domani nasce una terza porta senza la regola, questo test diventa rosso."""
+    import inspect
+    import re
+
+    sorgente = inspect.getsource(E)
+    funzioni = re.split(r"\n(?=def )", sorgente)
+    con_banca = [f for f in funzioni
+                 if '_place("over_cover", MARKET_OU45, SEL_UNDER, "lay"' in f]
+    assert len(con_banca) == 2, [f.split("(")[0] for f in con_banca]
+    for f in con_banca:
+        assert "if float(q_lim) >= float(q35) - _EPS:" in f, f.split("(")[0]
+        assert "COVER_FUORI_PREZZO" in f and "COVER_U35_NON_LEGGIBILE" in f
+
+
 def test_il_servizio_chiama_l_avviso_quando_registra_l_attesa_della_copertura():
     """Contratto sul sorgente: il giro vero del servizio (``_run_event``), nel punto
     in cui registra ``cover_wait``, chiama l'avviso. Senza questa riga la regola
