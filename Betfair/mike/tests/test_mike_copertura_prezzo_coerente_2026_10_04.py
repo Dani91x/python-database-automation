@@ -180,7 +180,7 @@ def test_avviso_critico_una_volta_per_episodio():
 def _copertura_sul_libro() -> E.Leg:
     return E.Leg(role="over_cover", market=E.MARKET_OU45, selection=E.SEL_UNDER, side="lay",
                  price=1.20, size=6.32, matched=0.0, avg_price=None,
-                 ref="over_cover-0-4", status="open", placed_at=KO + 180)
+                 ref="over_cover-0-4", status="pending", placed_at=KO + 180)
 
 
 def _in_attesa_di_abbinamento(leg: E.Leg) -> E.MatchCtx:
@@ -223,21 +223,100 @@ def test_riprezzo_con_under35_non_leggibile_non_parte():
     assert d.telemetry["cover_wait"]["reason"] == E.COVER_U35_NON_LEGGIBILE
 
 
-def test_nessun_altro_punto_del_motore_crea_una_copertura_in_banca_senza_la_regola():
-    """Contratto sul sorgente: ogni funzione che crea un ordine ``over_cover`` in
-    BANCA sull'Under 4,5 contiene il confronto con la banca dell'Under 3,5. Se
-    domani nasce una terza porta senza la regola, questo test diventa rosso."""
+def test_nessun_altro_punto_del_motore_crea_una_copertura_senza_la_regola():
+    """Contratto sul sorgente: OGNI funzione che crea un ordine ``over_cover``
+    (banca Under 4,5 o punta Over 4,5, primo piazzamento o riprezzo) contiene la
+    regola. Se domani nasce una porta in piu' senza la regola, questo test
+    diventa rosso."""
     import inspect
     import re
 
     sorgente = inspect.getsource(E)
     funzioni = re.split(r"\n(?=def )", sorgente)
-    con_banca = [f for f in funzioni
-                 if '_place("over_cover", MARKET_OU45, SEL_UNDER, "lay"' in f]
-    assert len(con_banca) == 2, [f.split("(")[0] for f in con_banca]
-    for f in con_banca:
-        assert "if float(q_lim) >= float(q35) - _EPS:" in f, f.split("(")[0]
-        assert "COVER_FUORI_PREZZO" in f and "COVER_U35_NON_LEGGIBILE" in f
+    con_copertura = [f for f in funzioni if '_place("over_cover"' in f]
+    assert len(con_copertura) == 4, [f.split("(")[0] for f in con_copertura]
+    for f in con_copertura:
+        nome = f.split("(")[0]
+        if '_place("over_cover", MARKET_OU45, SEL_UNDER, "lay"' in f:
+            assert "if float(q_lim) >= float(q35) - _EPS:" in f, nome
+            assert "COVER_FUORI_PREZZO" in f and "COVER_U35_NON_LEGGIBILE" in f, nome
+        else:
+            assert '_place("over_cover", MARKET_OU45, SEL_OVER, "back"' in f, nome
+            assert "_punta_over45_fuori_prezzo(snap, " in f, nome
+
+
+# ---------------------------------------------------------------------------
+# 8. la forma di prima (PUNTA Over 4,5): stessa regola, sul prezzo equivalente.
+#    Puntare l'Over 4,5 a P = bancare l'Under 4,5 a P/(P-1).
+# ---------------------------------------------------------------------------
+def params_punta(**over):
+    return params(cover_form=E.COVER_BACK_O45, **over)
+
+
+def scoperta_50() -> E.MatchCtx:
+    """Punta Under 3,5 da 50,00: la copertura in punta sull'Over viene 5,00 (sopra il
+    minimo, dentro il tetto di sovracopertura)."""
+    return E.MatchCtx(state="LIVE_UNCOVERED", entry_price_initial=1.41,
+                      legs=[ingresso(stake=50.0)])
+
+
+def foto_over(over_punta: float, *, u35=libro(1.40, 1.41), now=KO + 180) -> E.Snapshot:
+    books = {(E.MARKET_OU45, E.SEL_OVER): libro(over_punta, over_punta + 1.0),
+             (E.MARKET_OU45, E.SEL_UNDER): libro(1.05, 1.07)}
+    if u35 is not None:
+        books[(E.MARKET_OU35, E.SEL_UNDER)] = u35
+    return E.Snapshot(now=now, ko_at=KO, books=books, inplay=True, minute=3, goals=0,
+                      feed_fresh=True, order_fresh=True)
+
+
+def test_equivalenza_punta_over_banca_under():
+    assert E.banca_under45_equivalente(16) == 1.0667
+    assert E.banca_under45_equivalente(1.06) == 17.6667
+    assert E.banca_under45_equivalente(1.0) is None and E.banca_under45_equivalente(None) is None
+
+
+def test_forma_punta_over_a_quote_normali_parte_come_prima():
+    d = E.decide(scoperta_50(), foto_over(15.0), params_punta())
+    assert d.state == "LIVE_COVER_PENDING"
+    (a,) = ordini_di_copertura(d)
+    assert (a.market, a.selection, a.side) == (E.MARKET_OU45, E.SEL_OVER, "back")
+    assert a.price == E.cover_place_price(15.0, params_punta())
+
+
+def test_forma_punta_over_fuori_prezzo_non_parte():
+    # Over 4,5 a 1,06 = banca Under 4,5 a 17,67: lo stesso libro vuoto di Antofagasta
+    d = E.decide(scoperta_50(), foto_over(1.06), params_punta())
+    assert d.state == "LIVE_UNCOVERED"
+    assert ordini_di_copertura(d) == []
+    att = d.telemetry["cover_wait"]
+    assert att["reason"] == E.COVER_FUORI_PREZZO and att["price_lay_u35"] == 1.41
+    assert att["price_limite"] >= 1.41
+
+
+def test_forma_punta_over_con_under35_non_leggibile_aspetta():
+    d = E.decide(scoperta_50(), foto_over(15.0, u35=None), params_punta())
+    assert d.state == "LIVE_UNCOVERED" and ordini_di_copertura(d) == []
+    assert d.telemetry["cover_wait"]["reason"] == E.COVER_U35_NON_LEGGIBILE
+
+
+def _punta_over_sul_libro() -> E.Leg:
+    return E.Leg(role="over_cover", market=E.MARKET_OU45, selection=E.SEL_OVER, side="back",
+                 price=14.0, size=5.0, matched=0.0, avg_price=None,
+                 ref="over_cover-0-4", status="pending", placed_at=KO + 100)
+
+
+def test_forma_punta_over_riprezzo_fuori_prezzo_non_parte():
+    leg = _punta_over_sul_libro()
+    ctx = E.MatchCtx(state="LIVE_COVER_PENDING", entry_price_initial=1.41,
+                     legs=[ingresso(stake=50.0), leg])
+    normale = E.decide(ctx, foto_over(15.0, now=KO + 180), params_punta())
+    # a quote normali il riprezzo parte come prima: prima l'annullo, il nuovo ordine
+    # dopo la conferma (guardia «mai sovracopertura», gia' esistente)
+    assert [a.kind for a in normale.actions] == ["cancel"], normale.reason
+    assert "riprezzo" in normale.reason
+    fuori = E.decide(ctx, foto_over(1.06, now=KO + 180), params_punta())
+    assert fuori.state == "LIVE_COVER_PENDING" and fuori.actions == []
+    assert fuori.telemetry["cover_wait"]["reason"] == E.COVER_FUORI_PREZZO
 
 
 def test_il_servizio_chiama_l_avviso_quando_registra_l_attesa_della_copertura():
@@ -248,3 +327,12 @@ def test_il_servizio_chiama_l_avviso_quando_registra_l_attesa_della_copertura():
 
     sorgente = inspect.getsource(S._run_event)
     assert '_avvisa_copertura_fuori_prezzo(db, extra, v, ev["event_id"])' in sorgente
+
+
+def test_forma_punta_over_minore_non_minore_o_uguale():
+    """Punta Over 4,5 a 2,00 = banca Under 4,5 a 2,00: con la banca dell'Under 3,5 a
+    2,00 (uguale) NON parte; a 2,02 (l'equivalente e' minore) parte."""
+    uguale = foto_over(15.0, u35=libro(1.98, 2.00))
+    assert E._punta_over45_fuori_prezzo(uguale, 2.0) == (E.COVER_FUORI_PREZZO, 2.0, 2.0)
+    minore = foto_over(15.0, u35=libro(2.00, 2.02))
+    assert E._punta_over45_fuori_prezzo(minore, 2.0) is None

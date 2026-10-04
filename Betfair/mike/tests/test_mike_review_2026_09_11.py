@@ -499,7 +499,12 @@ def test_h8_con_esito_ignoto_il_ciclo_continua_e_riduce_il_rischio():
                        goals=1, feed_fresh=True, last_goal_ts=None,
                        books={(E.MARKET_OU45, E.SEL_OVER): E.Book(best_back=6.0, back_size=99.0,
                                                                   best_lay=6.2, lay_size=99.0,
-                                                                  inplay=True)})
+                                                                  inplay=True),
+                              # 04/10: il libro dell'Under 3,5 (nel feed vero c'e' sempre)
+                              # serve alla regola del prezzo coerente della copertura
+                              (E.MARKET_OU35, E.SEL_UNDER): E.Book(best_back=1.50, back_size=99.0,
+                                                                   best_lay=1.51, lay_size=99.0,
+                                                                   inplay=True)})
     d2 = E.decide(ctx2, snap2, C.merge_params({"stake": 10, "cover_policy": "immediate"}))
     assert [a for a in d2.actions if a.kind == "place"] == []
     assert "nessuna apertura" in d2.reason
