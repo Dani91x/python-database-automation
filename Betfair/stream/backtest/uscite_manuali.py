@@ -192,8 +192,16 @@ class Osservatore:
                  piatto_a_fine: Optional[Callable[[], Optional[str]]] = None,
                  ruolo: Optional[Callable[[Any], Optional[str]]] = None,
                  resto_non_piazzabile: Optional[Callable[[Any, Any, str, float], bool]]
-                 = None) -> None:
+                 = None,
+                 soglia_resto: float = SOGLIA_RESTO_NON_PIAZZABILE) -> None:
         self.scenario = scenario
+        # 04/10 (decisione dell'utente «il residuo resta ricordato e lo chiudo
+        # io», scalper calcio): la soglia sotto cui un resto DICHIARATO dal bot
+        # (`min_bet_skip`) non accusa UF2. Di serie 0,05 (tennis invariato); lo
+        # scalper calcio passa l'importo finale minimo del place-and-trim (0,50,
+        # `minimi_it`): sotto, Betfair .it non accetta nessun ordine. Senza la
+        # dichiarazione del bot resta violazione.
+        self._soglia_resto = float(soglia_resto)
         self.firmate = scenario == SCENARIO_FIRMATE
         self._strategie = strategie
         self._ordini_di = ordini_di
@@ -512,7 +520,7 @@ class Osservatore:
             manca = round(size - eff, 2)
             if abs(eff - size) <= TOLLERANZA_IMPORTO:
                 continue
-            if 0 < manca < SOGLIA_RESTO_NON_PIAZZABILE and self._resto_dichiarato(
+            if 0 < manca < self._soglia_resto and self._resto_dichiarato(
                     pend["strategia"], pend["selection_id"], pend["lato"], manca):
                 # il resto che il BOT stesso ha dichiarato non piazzabile (regola
                 # gia' esistente dello scalper tennis: resto < 0,05 dopo la parte

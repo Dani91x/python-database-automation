@@ -409,6 +409,16 @@ def giro_auto(db: Any, st: StatoAuto, righe_attive: List[Dict[str, Any]],
 
     acceso = str(serv.get("status") or "") == "running"
     modalita = "live" if str(serv.get("mode") or "") == "live" else "paper"
+    # 04/10 «SOLDI VERI SOLO COL PULSANTE»: con l'interruttore in soldi veri si
+    # arma SOLO se «Ordini reali» (modo effettivo, kill-switch) serve i soldi
+    # veri; altrimenti e' un freno: nessuna partita nuova e il motivo lo dice.
+    # Mai un ripiego automatico (ne' in prova ne' in soldi veri).
+    if acceso and modalita == "live" and not freno:
+        from .scalper_session import freno_soldi_veri
+
+        motivo_live = freno_soldi_veri()
+        if motivo_live:
+            freno = "soldi veri non serviti: %s" % motivo_live
     params = serv.get("params") if isinstance(serv.get("params"), dict) else {}
     tetto = AM.tetto_partite(params)
     bloccato = st.guardia.blocca_aperture

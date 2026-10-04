@@ -58,6 +58,16 @@ from flumine.order.ordertype import LimitOrder
 from flumine.order.trade import Trade
 from flumine.utils import get_nearest_price, get_price, get_size, price_ticks_away
 
+from ..live_order_build import (
+    IT_BACK_MIN_STAKE,
+    IT_BACK_STEP,
+    IT_LAY_MIN_SIZE,
+    JURISDICTION_IT,
+    SOTTO_MINIMO_NON_PIAZZABILE,
+    SUBMIN_IMPORTO_FINALE_MIN,
+    _floor_to_step,
+    min_stake_rules,
+)
 from ..trading.freno_rifiuti import BACKOFF_SCALPER_S, FrenoRifiuti
 from ..trading.stato_mercato import AttesaRiapertura, guardia_flumine
 from ..uscite_proposte import CHIAVE_STATS as CHIAVE_PROPOSTE
@@ -69,6 +79,52 @@ logger = logging.getLogger(__name__)
 MIN_STAKE: float = 2.0
 # Tolleranza per confronti su importi (EUR).
 _EPS: float = 1e-9
+
+#: 04/10: codice di Betfair per un importo fuori listino
+CODICE_TAGLIA = "INVALID_BET_SIZE"
+
+
+def spezza_uscita(side: str, price: float, size: float) -> Tuple[float, float, float]:
+    """04/10 (CERTIFICAZIONE SCALPER CALCIO, regole dell'utente sui minimi .it):
+    un'USCITA di ``size`` si spezza in (diretta, place-and-trim, residuo).
+
+    I numeri li decide SOLO il modulo condiviso (``live_order_build`` /
+    ``trading/minimi_it``: minimi, passo delle punte, importo finale del
+    place-and-trim): mai una copia qui.
+      * diretta: BANCA all'importo esatto se ``min_stake_rules`` la accetta;
+        PUNTA al multiplo del passo (``IT_BACK_STEP``) per DIFETTO, se accettata;
+      * place-and-trim: solo senza parte diretta e con importo finale >=
+        ``SUBMIN_IMPORTO_FINALE_MIN`` (0,50); la punta per difetto al passo;
+      * residuo: il resto, che Betfair non accetta: si DICHIARA e si RICORDA
+        (decisione dell'utente del 04/10), mai ritentato a ogni giro.
+    Pura: nessuno stato, nessuna rete."""
+    s = round(float(size or 0.0), 2)
+    if s < 0.01:
+        return 0.0, 0.0, 0.0
+    lato = (side or "").upper()
+    prezzo = float(price or 0.0) or 2.0
+    diretta = 0.0
+    if lato == "BACK":
+        # PUNTA (regola dell'utente, 04/10): da 1,00 in su solo multipli del
+        # passo delle punte (`IT_BACK_STEP`), arrotondata per DIFETTO; il resto
+        # e' residuo. Piazzabilita' chiesta al modulo condiviso.
+        r = round(_floor_to_step(s, IT_BACK_STEP), 2)
+        if r > 0 and min_stake_rules(JURISDICTION_IT, "back", prezzo, r).valid:
+            diretta = r
+    else:
+        v = min_stake_rules(JURISDICTION_IT, "lay", prezzo, s)
+        if v.valid and v.legalized_size is not None:
+            diretta = round(float(v.legalized_size), 2)
+    if diretta > 0:
+        return diretta, 0.0, max(0.0, round(s - diretta, 2))
+    resto = s
+    trim = 0.0
+    if resto >= SUBMIN_IMPORTO_FINALE_MIN - 1e-6:
+        trim = resto if lato == "LAY" else round(_floor_to_step(resto, IT_BACK_STEP), 2)
+        if trim < SUBMIN_IMPORTO_FINALE_MIN - 1e-6:
+            trim = 0.0
+    residuo = round(resto - trim, 2)
+    return diretta, trim, max(0.0, residuo)
 
 # Stati della macchina.
 # QUOTING  = una gamba resting (modalita' reversion/momentum)
@@ -207,6 +263,19 @@ class _Slot:
     # 29/09 (cantiere S): chiusura non piazzabile gia' dichiarata CRITICAL
     # (una riga per episodio, non una a ogni book)
     chiusura_bloccata_detta: bool = False
+    # 04/10 - DECISIONE DELL'UTENTE «il residuo resta ricordato e lo chiudo io»:
+    # l'esposizione (se vince, se perde) dei residui che Betfair .it non accetta
+    # (sotto i minimi), dichiarati CRITICAL una volta e RICORDATI: `_reset` NON li
+    # azzera (la selezione li porta finche' la sessione vive). Il bot non prova
+    # a chiuderli: li chiude l'utente.
+    residuo_w: float = 0.0
+    residuo_l: float = 0.0
+    # 04/10 - FRENO sui rifiuti per la TAGLIA (INVALID_BET_SIZE letto dalla
+    # risposta di Betfair): quanti nel ciclo e fino a quando (ms di mercato) la
+    # chiusura non si ripiazza (1, 2, 4, 8, 16, poi 30 s). Prima: un ripiazzo a
+    # ogni giro (replay 35797769 con la sola correzione dei resti: 1905 rifiuti).
+    rifiuti_taglia: int = 0
+    taglia_ferma_fino_ms: int = 0
     swing: bool = False                  # ciclo originato dal trend (target/stop swing)
     # 25/09 - uscite manuali: il motivo dell'ultima proposta emessa su questo
     # ciclo (una sola 'uscita_proposta' per motivo, mai una a ogni book)
@@ -541,6 +610,15 @@ class ScalperStrategy(BaseStrategy):
         self._freno = FrenoRifiuti(tetto=None, backoff_s=BACKOFF_SCALPER_S,
                                    azzera_al_successo=True)
         self._attese = AttesaRiapertura()
+        # 04/10 - ORDINE DELL'UTENTE «tutti i bot devono operare in live solo se
+        # clicco il pulsante»: in una sessione in SOLDI VERI la sessione inietta
+        # qui il freno condiviso (`scalper_session.freno_soldi_veri`: kill-switch +
+        # modo effettivo = tetto x «Ordini reali»). Con il freno tirato nessuna
+        # APERTURA parte; le chiusure partono sempre. None = sessione in prova.
+        self.freno_live: Optional[Any] = None
+        self._apertura_live_ferma: Optional[str] = None
+        # 04/10 - ordini gia' visti rifiutati per la taglia (per id)
+        self._rifiuti_taglia_visti: set = set()
         # l'orologio DEL MERCATO (publish_time del book in lavorazione, ms)
         self._ora_mercato_ms: Optional[int] = None
 
@@ -714,6 +792,8 @@ class ScalperStrategy(BaseStrategy):
             # la classificazione usa i best del tick precedente (nessun look-ahead)
             self._update_flow(slot, int(now), ex)
             slot.last_bb, slot.last_bl = best_back, best_lay
+            # 04/10: i rifiuti per la TAGLIA arrivati da Betfair (freno)
+            self._leggi_rifiuti_taglia(market, slot, int(now))
             # avanza le sequenze park-trim-replace (uscite a size esatta)
             self._drive_submins(market, slot, int(now))
 
@@ -2094,6 +2174,9 @@ class ScalperStrategy(BaseStrategy):
             and now - slot.t_last_flat < self.flatten_min_interval_ms
         ):
             return
+        # 04/10: FRENO dopo un rifiuto per la taglia (mai un ripiazzo a ogni giro)
+        if now is not None and int(now) < int(slot.taglia_ferma_fino_ms or 0):
+            return
         cross = min(slot.flat_tries, 8)  # ogni tentativo crossa 1 tick piu' a fondo
         fo = self._flatten(market, slot, best_back, best_lay, cross_ticks=cross)
         slot.flat_tries += 1
@@ -2136,8 +2219,15 @@ class ScalperStrategy(BaseStrategy):
                     self._emit("flatten_residual", locked=round(locked, 4),
                                nw=round(net_win, 3), nl=round(net_lose, 3),
                                msg=_msg_residuo(net_win, net_lose))
+                    self._ricorda_residuo(slot, net_win, net_lose)
                 slot.status = DONE
-            elif not slot.submins and slot.flat_tries > 12 and self._resto_davvero_non_piazzabile(
+            elif not slot.submins and (
+                    slot.flat_tries > 12
+                    # 04/10 (decisione dell'utente): un resto che Betfair non
+                    # accetta (tutto residuo per il modulo dei minimi) NON si
+                    # ritenta a ogni giro: si dichiara e si ricorda SUBITO
+                    or self._tutto_residuo(net_win, net_lose, best_back, best_lay)
+            ) and self._resto_davvero_non_piazzabile(
                     slot, net_win, net_lose, best_back, best_lay):
                 # ULTIMA SPIAGGIA (direttiva operatore 10/07 §12.1: il flatten
                 # TERMINA, sempre, con ledger chiuso): niente e' piazzabile
@@ -2159,6 +2249,7 @@ class ScalperStrategy(BaseStrategy):
                                locked=round(locked, 4),
                                nw=round(net_win, 3), nl=round(net_lose, 3),
                                msg=_msg_residuo(net_win, net_lose))
+                    self._ricorda_residuo(slot, net_win, net_lose)
                 slot.status = DONE
             elif (slot.flat_tries > 12 and not slot.chiusura_bloccata_detta
                   and self._chiusura_bloccata(net_win, net_lose, best_back, best_lay)):
@@ -2179,6 +2270,101 @@ class ScalperStrategy(BaseStrategy):
                            msg="posizione NON flat e chiusura non piazzabile ora "
                                "(prezzi assenti o mercato fermo): si ritenta a "
                                "ogni book, mai accettata come residuo")
+
+    # ------------------------------------------- 04/10: residui e rifiuti di taglia
+    @staticmethod
+    def _codice_rifiuto(order: Any) -> Optional[str]:
+        """Il codice d'errore della risposta di placeOrders dell'ordine flumine
+        (`order.responses.place_response.error_code`, stessa lettura di
+        `motore_ordini._codice_errore_place`), None se assente."""
+        resp = getattr(order, "responses", None)
+        pr = getattr(resp, "place_response", None) if resp is not None else None
+        if pr is None or str(getattr(pr, "status", "") or "") != "FAILURE":
+            return None
+        codice = getattr(pr, "error_code", None)
+        return str(codice) if codice else None
+
+    def _leggi_rifiuti_taglia(self, market: Any, slot: _Slot, now: int) -> None:
+        """Un ordine dello slot che Betfair ha RIFIUTATO per la taglia
+        (INVALID_BET_SIZE, niente abbinato): freno sulle chiusure dello slot
+        (1, 2, 4, 8, 16 poi 30 s di mercato) e, per un ingresso, il freno degli
+        ingressi (D2). Una riga per rifiuto (CRITICAL al primo del ciclo)."""
+        ordini = [slot.entry, slot.entry_back, slot.entry_lay, slot.close,
+                  slot.next_entry, *slot.flatten_orders]
+        ingressi = {id(o) for o in (slot.entry, slot.entry_back, slot.entry_lay,
+                                    slot.next_entry) if o is not None}
+        for o in ordini:
+            if o is None:
+                continue
+            oid = getattr(o, "id", None)
+            if oid is None or oid in self._rifiuti_taglia_visti:
+                continue
+            if self._codice_rifiuto(o) != CODICE_TAGLIA:
+                continue
+            if float(getattr(o, "size_matched", 0.0) or 0.0) > 0:
+                continue
+            self._rifiuti_taglia_visti.add(oid)
+            ot = getattr(o, "order_type", None)
+            if id(o) in ingressi:
+                self._freno.registra_rifiuto(market.market_id, o.selection_id,
+                                             self._orologio_s())
+            slot.rifiuti_taglia += 1
+            attesa_s = min(30, 2 ** (slot.rifiuti_taglia - 1))
+            slot.taglia_ferma_fino_ms = int(now) + attesa_s * 1000
+            self._emit("rifiuto_taglia",
+                       level="CRITICAL" if slot.rifiuti_taglia == 1 else "WARN",
+                       market_id=market.market_id,
+                       selection_id=int(getattr(o, "selection_id", 0) or 0),
+                       side=getattr(o, "side", None),
+                       price=getattr(ot, "price", None), size=getattr(ot, "size", None),
+                       rifiuti=slot.rifiuti_taglia, riprovo_fra_s=attesa_s,
+                       msg="Betfair ha rifiutato l'importo (%s): nessun ripiazzo "
+                           "prima di %d s" % (CODICE_TAGLIA, attesa_s))
+
+    def _tutto_residuo(
+        self, net_win: float, net_lose: float,
+        best_back: Optional[float], best_lay: Optional[float],
+    ) -> bool:
+        """La chiusura che servirebbe ADESSO e' tutta residuo per il modulo
+        condiviso dei minimi (nessuna parte diretta, nessun place-and-trim):
+        sotto ogni minimo .it, Betfair non la accetta."""
+        if not self.exact_exits or self.dry_run:
+            return False
+        if net_win > net_lose:
+            side, base = "LAY", best_lay
+        else:
+            side, base = "BACK", best_back
+        if base is None:
+            return False
+        p = get_nearest_price(base)
+        g = compute_green(net_win, net_lose, p)
+        if g is None:
+            return False
+        diretta, trim, residuo = spezza_uscita(side, float(p), float(g[1]))
+        return diretta <= 0 and trim <= 0 and residuo > 0
+
+    def _ricorda_residuo(self, slot: _Slot, net_win: float, net_lose: float) -> None:
+        """DECISIONE DELL'UTENTE (04/10) «il residuo resta ricordato e lo chiudo
+        io»: il residuo accettato si somma a quello RICORDATO della selezione
+        (mai azzerato da `_reset`) e si dichiara con UNA riga CRITICAL col
+        totale e la proposta. Nessun ordine: lo chiude l'utente."""
+        slot.residuo_w = round(slot.residuo_w + float(net_win), 4)
+        slot.residuo_l = round(slot.residuo_l + float(net_lose), 4)
+        o = next((x for x in (slot.entry, slot.entry_back, slot.entry_lay, slot.close,
+                              *slot.flatten_orders) if x is not None), None)
+        totale = abs(slot.residuo_w - slot.residuo_l)
+        self._emit("residuo_ricordato", level="CRITICAL",
+                   market_id=getattr(o, "market_id", None),
+                   selection_id=getattr(o, "selection_id", None),
+                   nw=round(net_win, 3), nl=round(net_lose, 3),
+                   ricordato_se_vince=round(slot.residuo_w, 2),
+                   ricordato_se_perde=round(slot.residuo_l, 2),
+                   msg="%s: residuo %.2f non accettato da Betfair .it, RICORDATO "
+                       "(totale della selezione %.2f: se vince %+.2f, se perde %+.2f). "
+                       "Proposta: chiuderlo a mano dal sito o lasciarlo; il bot non "
+                       "lo ritenta" % (SOTTO_MINIMO_NON_PIAZZABILE,
+                                       abs(net_win - net_lose), totale,
+                                       slot.residuo_w, slot.residuo_l))
 
     def _chiusura_bloccata(
         self, net_win: float, net_lose: float,
@@ -2222,13 +2408,15 @@ class ScalperStrategy(BaseStrategy):
         if g is None:
             return False
         size = float(g[1])
-        if size >= self._side_min(side) - _EPS:
+        # 04/10: la spartizione del modulo condiviso dei minimi (`spezza_uscita`)
+        diretta, trim, _residuo = spezza_uscita(side, float(get_nearest_price(base)), size)
+        if diretta > 0:
             return False
-        # S3 (29/09): un resto sotto 0,05 NON avvia mai una sequenza (regola
-        # esistente di `_place_exact`: `rest < 0.05` -> `min_bet_skip`), quindi
-        # il tetto delle sequenze non si raggiunge mai: se si aspettasse il
-        # tetto, lo slot resterebbe in chiusura PER SEMPRE con quel resto.
-        if self.exact_exits and not self.dry_run and size >= 0.05 and \
+        # S3 (29/09): un resto sotto 0,05 NON avvia mai una sequenza, quindi il
+        # tetto delle sequenze non si raggiunge mai. 04/10: lo stesso sotto
+        # l'importo finale del place-and-trim (0,50): nessuna sequenza da
+        # aspettare, il resto e' davvero non piazzabile.
+        if self.exact_exits and not self.dry_run and trim >= 0.05 and \
                 getattr(slot, "submin_count", 0) < self._SUBMIN_MAX_PER_CYCLE:
             return False
         return True
@@ -2335,10 +2523,16 @@ class ScalperStrategy(BaseStrategy):
             and not self._size_direct_ok(side, size)
         ):
             return self._place_exact(market, selection_id, side, price, size, slot)
+        # 04/10: un'uscita ESATTA gia' piazzabile per il modulo condiviso dei
+        # minimi (es. banca 1,37 al centesimo) parte all'importo esatto: il
+        # vecchio arrotondamento al multiplo di 0,50 piu' vicino la gonfiava o
+        # la tagliava (condizione 10: chiusure al centesimo, mai gonfiate).
+        uscita_esatta = (not floor_min and self.exact_exits and not self.dry_run
+                         and slot is not None)
         # LIVE: GRANULARITA' exchange (.it = multipli di 0,50 €): una size non
         # multipla viene RIFIUTATA (INVALID_BET_SIZE) e la posizione resta
         # aperta. Arrotonda al multiplo piu' vicino PRIMA di ogni altro check.
-        if self.size_step > 0:
+        if self.size_step > 0 and not uscita_esatta:
             size = round(round(size / self.size_step) * self.size_step, 2)
             if size < self.size_step:
                 size = 0.0
@@ -2369,6 +2563,26 @@ class ScalperStrategy(BaseStrategy):
             if guardia_flumine(market, self._attese, self._emit,
                                selection_id=int(selection_id), side=side) is not None:
                 return None
+            # 04/10 «SOLDI VERI SOLO COL PULSANTE»: in una sessione in soldi
+            # veri ogni APERTURA chiede il freno condiviso (kill-switch + modo
+            # effettivo = tetto x «Ordini reali»). Tirato: nessun ordine, una
+            # riga CRITICAL per episodio. Le chiusure passano sempre.
+            if floor_min and self.freno_live is not None:
+                try:
+                    motivo_live = self.freno_live()
+                except Exception as ex:  # noqa: BLE001 - non valutabile = fermo
+                    motivo_live = "freni_live_non_letti: %s" % str(ex)[:80]
+                if motivo_live:
+                    if self._apertura_live_ferma != motivo_live:
+                        self._apertura_live_ferma = motivo_live
+                        self._emit("apertura_live_fermata", level="CRITICAL",
+                                   market_id=market.market_id,
+                                   selection_id=int(selection_id), side=side,
+                                   motivo=motivo_live,
+                                   msg="soldi veri NON serviti (%s): nessuna "
+                                       "apertura; le chiusure partono" % motivo_live)
+                    return None
+                self._apertura_live_ferma = None
             # D2 FRENO CRESCENTE sui rifiuti residui: solo gli INGRESSI.
             if floor_min:
                 fermo = self._freno.bloccato(market.market_id, selection_id,
@@ -2486,16 +2700,20 @@ class ScalperStrategy(BaseStrategy):
     # ---------------------------------------------- uscite a size ESATTA (.it)
     @staticmethod
     def _side_min(side: str) -> float:
-        """Minimo di piazzamento diretto per lato su .it (BACK 2 / LAY 0,50)."""
-        return 2.0 if (side or "").upper() == "BACK" else 0.5
+        """Minimo di piazzamento diretto per lato su .it.
+
+        04/10 (ordine dell'utente): i numeri si leggono SOLO dal modulo
+        condiviso (`trading/minimi_it.py` via `live_order_build`): prima qui
+        c'era una copia (BACK 2,00 / LAY 0,50) e la banca da 0,50 partiva
+        diretta e veniva rifiutata (replay 35797769: 1905 rifiuti)."""
+        return float(IT_BACK_MIN_STAKE if (side or "").upper() == "BACK"
+                     else IT_LAY_MIN_SIZE)
 
     def _size_direct_ok(self, side: str, size: float) -> bool:
-        """True se la size e' piazzabile DIRETTAMENTE su .it (multiplo di 0,50
-        e >= minimo del lato)."""
-        if size < self._side_min(side) - _EPS:
-            return False
-        mult = size / 0.5
-        return abs(mult - round(mult)) < 1e-6
+        """True se la size e' piazzabile DIRETTAMENTE su .it, all'importo
+        esatto: lo decide il modulo condiviso (`min_stake_rules`)."""
+        d, trim, residuo = spezza_uscita(side, 2.0, size)
+        return trim <= 0 and residuo <= 0 and abs(d - round(float(size), 2)) < 1e-6
 
     @staticmethod
     def _track(slot: _Slot, order: Any) -> None:
@@ -2576,21 +2794,25 @@ class ScalperStrategy(BaseStrategy):
         from ..live_order_build import round_to_tick
         from ..trading.submin import FlumineSubminOps, SubminState, SubminStep
 
-        smin = self._side_min(side)
-        main = round(int(size / 0.5 + 1e-9) * 0.5, 2)   # floor al multiplo 0,50
-        if main < smin - _EPS:
-            main = 0.0
-        rest = round(size - main, 2)
+        # 04/10 (CERTIFICAZIONE SCALPER CALCIO): la spartizione la decide il
+        # modulo condiviso dei minimi (`spezza_uscita`). Prima: parte diretta al
+        # multiplo di 0,50 coi minimi copiati qui (BACK 2,00 / LAY 0,50) e RESTO
+        # SEMPRE al place-and-trim, anche sotto 0,50: Betfair .it rifiuta quel
+        # rimpiazzo (misura sul conto del 13/09) e la sequenza si credeva "a
+        # riposo" su un ordine inesistente (replay 35797769: K1 x4).
+        main, rest, residuo = spezza_uscita(side, price, size)
         main_order = None
-        if main >= smin - _EPS:
+        if main > 0:
             # slot passato per il tracking anti-orfani; nessuna ricorsione:
-            # main e' multiplo di 0,50 → _size_direct_ok=True → place diretto.
+            # `main` e' piazzabile diretto per il modulo condiviso.
             main_order = self._place(market, selection_id, side, price, main,
                                      floor_min=False, slot=slot)
+        if residuo >= 0.01:
+            # non piazzabile su .it: nessun ordine. Lo dichiara (CRITICAL, una
+            # volta) e lo ricorda il ramo del residuo di `_drive_flatten`.
+            self._emit("min_bet_skip", selection_id=int(selection_id),
+                       side=side, size=residuo)
         if rest < 0.05:
-            if rest >= 0.01:
-                self._emit("min_bet_skip", selection_id=int(selection_id),
-                           side=side, size=rest)
             return main_order
 
         import time as _t
@@ -2816,6 +3038,10 @@ class ScalperStrategy(BaseStrategy):
         slot.residual_accepted = 0.0
         slot.submin_count = 0
         slot.chiusura_bloccata_detta = False
+        slot.rifiuti_taglia = 0
+        slot.taglia_ferma_fino_ms = 0
+        # NB 04/10: residuo_w / residuo_l NON si azzerano (decisione dell'utente:
+        # il residuo resta ricordato oltre il ciclo, lo chiude l'utente)
         slot.next_entry = None
         slot.flatten_orders = []
         slot.flat_tries = 0

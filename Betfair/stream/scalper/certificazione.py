@@ -83,9 +83,11 @@ STATI_CONTROL_AMMESSI = frozenset({"requested", "arming", "armed", "running",
                                    "stopping", "stopped", "done", "error"})
 MODI_CONTROL_AMMESSI = frozenset({"maker", "bias", "both"})
 
-# minimi di giurisdizione .it: quelli che la strategia applica
-# (`ScalperStrategy._side_min`: BACK 2,00 / LAY 0,50) e i PARK legali di
-# `_place_exact` (size 2,00 a BACK 1000 / LAY 1.01)
+# minimi di giurisdizione .it. 04/10: dal MODULO CONDIVISO dei minimi
+# (`trading/minimi_it.py` via `live_order_build.min_stake_rules`), non dalla
+# copia che lo scalper teneva (BACK 2,00 / LAY 0,50, tolta: ordine dell'utente
+# «i numeri si leggono SOLO da minimi_it»). I PARK di `_place_exact` (2,00 a
+# BACK 1000 / LAY 1.01) restano legali.
 MINIMO_IT = {"BACK": SB.ScalperStrategy._side_min("BACK"),
              "LAY": SB.ScalperStrategy._side_min("LAY")}
 PASSO_IT = 0.5
@@ -295,10 +297,22 @@ def tolleranza_slot(slot: Any) -> float:
     E' quella del suo monitor DONE (`scalper_bot.py`, ramo C e ramo A):
     0,02 di norma; `max(0.30, residual_accepted + 0.02)` se ha ACCETTATO un
     residuo non piazzabile (`residual_ok`). Pretendere lo zero accuserebbe il
-    bot di una cosa che la sua spec gli concede (falso positivo, par.7.16)."""
+    bot di una cosa che la sua spec gli concede (falso positivo, par.7.16).
+
+    04/10 (DECISIONE DELL'UTENTE «il residuo resta ricordato e lo chiudo io»):
+    in piu' l'esposizione dei residui RICORDATI dal bot (`residuo_w`/`residuo_l`,
+    dichiarati CRITICAL, mai azzerati dal reset del ciclo): sono soldi a mercato
+    CON padrone (il bot li sa e li ha detti), non posizioni fantasma. Conta solo
+    cio' che il bot ha ricordato, al centesimo: un residuo NON dichiarato resta
+    una violazione."""
+    base = 0.02
     if getattr(slot, "residual_ok", False):
-        return max(0.30, float(getattr(slot, "residual_accepted", 0.0) or 0.0) + 0.02)
-    return 0.02
+        base = max(0.30, float(getattr(slot, "residual_accepted", 0.0) or 0.0) + 0.02)
+    ricordato = abs(float(getattr(slot, "residuo_w", 0.0) or 0.0)
+                    - float(getattr(slot, "residuo_l", 0.0) or 0.0))
+    if ricordato > 0:
+        return max(base, 0.02 + ricordato)
+    return base
 
 
 def credenze(strat: Any) -> List[Dict[str, Any]]:
@@ -543,15 +557,21 @@ def _legale_it(r: Dict[str, Any]) -> Optional[str]:
         return None
     if size + 1e-9 < MINIMO_IT[side]:
         return "size %s sotto il minimo .it del lato %s (%s)" % (size, side, MINIMO_IT[side])
-    multiplo = size / PASSO_IT
-    if abs(multiplo - round(multiplo)) > 1e-6:
-        return "size %s non multipla di %.2f (INVALID_BET_SIZE su .it)" % (size, PASSO_IT)
+    # 04/10 (regole dell'utente): le PUNTE solo a multipli di 0,50; le BANCHE
+    # dal minimo in su al centesimo (prima: multipli di 0,50 anche sulle banche)
+    if side == "BACK":
+        multiplo = size / PASSO_IT
+        if abs(multiplo - round(multiplo)) > 1e-6:
+            return "size %s non multipla di %.2f (INVALID_BET_SIZE su .it)" % (size, PASSO_IT)
+    elif abs(round(size, 2) - size) > 1e-6:
+        return "size %s oltre il centesimo (INVALID_BET_SIZE su .it)" % size
     return None
 
 
 @_controllo("B3", "ogni ordine chiesto e' LEGALE su .it: prezzo nella ladder, "
-                  "size multipla di 0,50 e non sotto il minimo del lato "
-                  "(BACK 2,00 / LAY 0,50), park compresi. Vale in PAPER e in "
+                  "non sotto il minimo del lato del modulo condiviso "
+                  "(`minimi_it`: punta 1,00 / banca 1,00), punte a multipli di "
+                  "0,50, banche al centesimo, park compresi. Vale in PAPER e in "
                   "LIVE: stessi parametri (PROCESSO par.6.4 minimi; par.7.14)",
             quando=_q_nuovi)
 def _b3(o: Osservazione) -> Optional[str]:

@@ -104,6 +104,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ...backtest import chiusura_parziale as CP
 from ...backtest import uscite_manuali as UM
+from ...live_order_build import SUBMIN_IMPORTO_FINALE_MIN
 from .. import certificazione as CERT
 
 logger = logging.getLogger(__name__)
@@ -2019,7 +2020,12 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
                 firma=_firma if scenario == UM.SCENARIO_FIRMATE else None,
                 piatto_a_fine=banco.piatto_a_fine,
                 ruolo=banco.ruolo_ordine,
-                resto_non_piazzabile=banco.resto_dichiarato)
+                resto_non_piazzabile=banco.resto_dichiarato,
+                # 04/10: sotto l'importo finale minimo del place-and-trim
+                # (0,50, `minimi_it`) Betfair .it non accetta nessun ordine:
+                # il resto DICHIARATO dal bot (`min_bet_skip`) e' il residuo
+                # ricordato della decisione dell'utente, non un'uscita sbagliata
+                soglia_resto=SUBMIN_IMPORTO_FINALE_MIN)
             ref.note.append("USCITE MANUALI: interruttore spento; %s"
                             % ("il banco firma ogni proposta dopo %d s di mercato "
                                "(params.uscite_approvate, riletta dalla sessione al "
