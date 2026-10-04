@@ -8,6 +8,104 @@ Referti: `AUDIT_2026-10-04/replay/cert_pro_scalper/`. Nessun file del coordinato
 
 ---
 
+# TERZA CONSEGNA - regola delle punte su master, worker tennis, FLB e swing (04/10, notte)
+
+Ramo rifuso con master `4dd624a` (`db64a23`: `minimi_it.importo_piazzabile`, banco che rifiuta la punta diretta
+non multipla, patch K1 gia' in `minimi_banco.py`). Commit: `3ffe399` (worker), `79af73b` (FLB/swing),
+`70de1ce` (test FLB rafforzato). Ripresa dopo la caduta di rete verificata con `git status` (FLB/swing e test non
+registrati, poi committati; nessun processo rimasto in corsa).
+
+## Verdetti (35794049, `--data-dir C:/Users/Admin/Desktop/tennis_rec/20260707`, ogni replay dentro `timeout 900`)
+
+| bot | scenari | esito | confronto riga per riga | durata |
+|---|---|---|---|---|
+| tennis_pro | 9 (6 + soldi-veri, -prova, -paper) | **9/9 OK - CERTIFICATO su questa partita** | IDENTICO a `D1_FINALE` (prima e dopo il merge, prima e dopo FLB/swing) | 32 s |
+| tennis_scalper | 9 | **9/9 OK - CERTIFICATO su questa partita** | IDENTICO a `D1_FINALE`. Unica differenza testuale: una riga di WARNING su stderr mescolata alla nota nel referto vecchio, non e' contenuto | 94 s |
+| tennis_flb | 6 | 6/6 OK, azioni 1 | IDENTICO | 12 s |
+| tennis_swing | 6 | 6/6 OK, azioni 0 | IDENTICO | 11 s |
+| safe_tennis | rapidi, entrambi | 18 OK, parita' coda 1053/2 e canale 1054/2 RAGGIUNTA | IDENTICO salvo tempi (0,1 s -> 0,0 s) | 14 s |
+
+Perche' la regola delle punte non cambia i referti: i bot tennis usavano gia' il passo 0,50 per le punte d'uscita
+(`IT_PASSO_PUNTA_RIPIEGO`, ora alias di `IT_PASSO_PUNTA_DIRETTA`) e in questa partita gli ingressi sono 2,00.
+B8 controlla ora anche il passo (`IT_PASSO_PUNTA_DIRETTA` esiste su master) e resta verde.
+
+**Patch K1 su master:** il codice in `minimi_banco.py` contiene riga per riga la mia patch. Rilanciando il codice
+del bot della mattina (`3f53743`) coi `minimi_banco.py` e `minimi_it.py` di master, il referto
+`K1MASTER_tennis_scalper.txt` e' IDENTICO al `FINALE_tennis_scalper_conK1.txt`: K1 sparito, restano i B10 della
+mattina.
+
+## Punto 3 - worker tennis (`tennis_live_order_worker.py`)
+
+- `_do_place`: la punta arrotondata per difetto si DICHIARA. Il campo `punta_050` porta chiesto, piazzato,
+  residuo e motivo, come il motore calcio; il residuo compare anche nella `detail` e c'e' un WARNING nel log.
+  Prima veniva arrotondata in silenzio.
+- `_do_greenup`, con la regola unica `minimi_it.importo_piazzabile`:
+  - hedge >= 1,00: diretto. La punta va a multiplo di 0,50 per difetto con `punta_050`.
+  - 0,50 <= hedge < 1,00: **place-and-trim**, la stessa macchina dei bot (`UsciteEsatte`), una per strategia
+    degli ordini (per modalita'). La avanza il giro del worker (`_avanza_uscite_esatte`) sotto il lucchetto
+    ordini. Esito `place_and_trim`.
+  - hedge < 0,50: nessun ordine; esito `ok=False` con `RESIDUO_NON_PIAZZABILE` e il campo
+    `residuo_non_piazzabile` (lato, importo, prezzo, se vince / se perde). **Prima: ValueError «size hedge non
+    valida».**
+- Test nuovi `test_worker_minimi_tennis_2026_10_04.py` (4), sul banco del runner paper VERO. Falsificazione
+  W1-W4 **ROSSE 4/4**.
+
+## Punto 4 - FLB e swing: verificato sul bot vero, ERANO bloccati
+
+Test `test_residui_flb_swing_2026_10_04.py`: posizione LAY 0,30 @2,10, chiusura con punta 0,32 al best-back 2,00.
+
+- **Prima della correzione (test ROSSI):**
+  - FLB restava OPEN, con `green_fallito` a ogni book.
+  - Swing restava `closing` per sempre: trade mai dimenticato, mai piu' operativo su quel mercato.
+- **Correzione con la parte comune (`ResiduiRicordati`):**
+  - FLB `_residuo_non_piazzabile`: la copertura che manca e' sotto 0,50 e nessun ordine e' vivo -> residuo
+    dichiarato una volta, ricordato, posizione DONE.
+  - Swing `_residuo_non_piazzabile` nel ramo `closing`: residuo dichiarato, trade chiuso. `_puo_dimenticare`
+    tollera il residuo DICHIARATO sulla selezione.
+  - Tutti e due: con la memoria dei residui il resto non piazzato di un'uscita esatta si dichiara subito, e a
+    mercato chiuso il residuo e' regolato.
+- Falsificazione F1-F4 **ROSSE 4/4**. F2 era VERDE al primo giro: il test non controllava il regolamento; ora lo
+  controlla.
+- Su 35794049 FLB e swing non chiudono mai: la correzione non e' sollecitata dal replay, solo dai test (referti
+  IDENTICI).
+
+## Punto 5 - arrotondamento «al multiplo piu' vicino» dello scalper tennis (NON cambiato)
+
+Dove vale ancora: `TennisScalperStrategy._place`, ramo `size_step` (0,50 dal runner),
+`round(round(size/0,5)*0,5)`.
+- Sugli INGRESSI (punta e banca, `floor_min=True`) con stake non multiplo di 0,50: stake scelto dall'utente o
+  stake dinamico fra `stake` e `stake_max`.
+- Sulle uscite in PUNTA solo se non passano dall'uscita esatta, cioe' con `exact_exits` spento. Il runner lo accende
+  in paper e in live.
+- Nel ramo `min_bet_adjust` (uscita sotto il minimo di lato senza uscita esatta): arrotondamento per ECCESSO,
+  `ceil` a 0,50.
+
+Misura sul replay (`AUDIT_2026-10-04/strumenti/misura_arrotondamenti_scalper_tennis.py`):
+
+| scenario | size arrotondate | per eccesso | per difetto |
+|---|---|---|---|
+| live, gate-aperto, uscite-manuali, -firmate, soldi-veri, -paper, base, parziali | 0 | 0 | 0 |
+
+Su 35794049 lo stake e' 2,00 e `stake_max` non supera lo stake. Il caso si presenta con uno stake non multiplo:
+per esempio 2,30 -> 2,50, +0,20 per eccesso. Non misurato su una registrazione.
+
+## NON verificato (in evidenza)
+
+- Una sola partita.
+- Il place-and-trim del worker:
+  - provato nel banco del runner paper (esecuzione sincrona, parcheggio 1,00 -> taglio -> 0,84 a quota vera),
+    non dentro un runner vero;
+  - non sulla strategia «solo ordini» del LIVE;
+  - non con la latenza vera.
+  - La macchina gira nel thread del worker, non in quello di flumine.
+- Ingressi di pro/flb/swing: `size_legale` passa da `min_stake_rules`, che ora arrotonda la punta per difetto. Il
+  residuo di un INGRESSO e' stake in meno, non una posizione scoperta, e oggi NON e' dichiarato con `punta_050`
+  (non sollecitato: stake 2,00). Da decidere se va dichiarato anche quello.
+- Patch `submin_done_solo_con_sostituto_a_mercato.diff`: non applicata (file del coordinatore).
+- Nessun ordine vero; nessuna scrittura su DB; app mai avviata.
+
+---
+
 # SECONDA CONSEGNA - decisioni dell'utente applicate (04/10, sera)
 
 Ramo rifuso con master `65ff19e` (`663953f`). Commit: `f4c8176`, `1709c81`, `6e30e44`, `80b061e`, `e3e0ae8`.
