@@ -77,7 +77,8 @@ def _righe(b: SCT.Banco, kind: str) -> List[Dict[str, Any]]:
 @pytest.mark.parametrize("lato,size,atteso", [
     ("BACK", 2.83, (2.5, 0.0, 0.33)),    # punta per difetto, resto residuo
     ("BACK", 1.0, (1.0, 0.0, 0.0)),
-    ("BACK", 0.73, (0.0, 0.5, 0.23)),    # sotto 1,00: trim per difetto a 0,50
+    ("BACK", 0.73, (0.0, 0.73, 0.0)),    # fra 0,50 e 1,00: place-and-trim (minimi_it)
+    ("BACK", 7.27, (7.0, 0.0, 0.27)),    # punta per difetto (minimi_it)
     ("BACK", 0.3, (0.0, 0.0, 0.3)),      # sotto 0,50: niente
     ("LAY", 1.37, (1.37, 0.0, 0.0)),     # banca al centesimo
     ("LAY", 0.73, (0.0, 0.73, 0.0)),     # fra 0,50 e 1,00: place-and-trim

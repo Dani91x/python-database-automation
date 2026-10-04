@@ -58,15 +58,13 @@ from flumine.order.ordertype import LimitOrder
 from flumine.order.trade import Trade
 from flumine.utils import get_nearest_price, get_price, get_size, price_ticks_away
 
-from ..live_order_build import (
-    IT_BACK_MIN_STAKE,
-    IT_BACK_STEP,
-    IT_LAY_MIN_SIZE,
-    JURISDICTION_IT,
+from ..trading.minimi_it import (
+    IT_MIN_BACK as IT_BACK_MIN_STAKE,
+    IT_MIN_LAY as IT_LAY_MIN_SIZE,
     SOTTO_MINIMO_NON_PIAZZABILE,
-    SUBMIN_IMPORTO_FINALE_MIN,
-    _floor_to_step,
-    min_stake_rules,
+    VIA_DIRETTA,
+    VIA_PLACE_AND_TRIM,
+    importo_piazzabile,
 )
 from ..trading.freno_rifiuti import BACKOFF_SCALPER_S, FrenoRifiuti
 from ..trading.stato_mercato import AttesaRiapertura, guardia_flumine
@@ -76,7 +74,9 @@ from ..uscite_proposte import CancelloUscite, UltimiPrezzi, proposta_di
 logger = logging.getLogger(__name__)
 
 # Stake minimo accettato (Betfair / client simulato).
-MIN_STAKE: float = 2.0
+#: 04/10 (ordine dell'utente): dalla fonte unica `minimi_it` (punta minima 1,00),
+#: non piu' il 2,00 scritto a mano
+MIN_STAKE: float = float(IT_BACK_MIN_STAKE)
 # Tolleranza per confronti su importi (EUR).
 _EPS: float = 1e-9
 
@@ -88,43 +88,24 @@ def spezza_uscita(side: str, price: float, size: float) -> Tuple[float, float, f
     """04/10 (CERTIFICAZIONE SCALPER CALCIO, regole dell'utente sui minimi .it):
     un'USCITA di ``size`` si spezza in (diretta, place-and-trim, residuo).
 
-    I numeri li decide SOLO il modulo condiviso (``live_order_build`` /
-    ``trading/minimi_it``: minimi, passo delle punte, importo finale del
-    place-and-trim): mai una copia qui.
-      * diretta: BANCA all'importo esatto se ``min_stake_rules`` la accetta;
-        PUNTA al multiplo del passo (``IT_BACK_STEP``) per DIFETTO, se accettata;
-      * place-and-trim: solo senza parte diretta e con importo finale >=
-        ``SUBMIN_IMPORTO_FINALE_MIN`` (0,50); la punta per difetto al passo;
-      * residuo: il resto, che Betfair non accetta: si DICHIARA e si RICORDA
+    La regola e' UNA, la fonte unica ``trading/minimi_it.importo_piazzabile``
+    (punta >= 1,00 a multiplo di 0,50 PER DIFETTO col residuo; banca >= 1,00 al
+    centesimo; fra 0,50 e 1,00 place-and-trim; sotto 0,50 niente): qui solo la
+    traduzione nelle tre parti, mai un numero copiato.
+      * residuo: cio' che Betfair non accetta: si DICHIARA e si RICORDA
         (decisione dell'utente del 04/10), mai ritentato a ogni giro.
-    Pura: nessuno stato, nessuna rete."""
+    ``price`` resta nella firma per i chiamanti: la regola non dipende dalla
+    quota. Pura: nessuno stato, nessuna rete."""
+    del price
     s = round(float(size or 0.0), 2)
     if s < 0.01:
         return 0.0, 0.0, 0.0
-    lato = (side or "").upper()
-    prezzo = float(price or 0.0) or 2.0
-    diretta = 0.0
-    if lato == "BACK":
-        # PUNTA (regola dell'utente, 04/10): da 1,00 in su solo multipli del
-        # passo delle punte (`IT_BACK_STEP`), arrotondata per DIFETTO; il resto
-        # e' residuo. Piazzabilita' chiesta al modulo condiviso.
-        r = round(_floor_to_step(s, IT_BACK_STEP), 2)
-        if r > 0 and min_stake_rules(JURISDICTION_IT, "back", prezzo, r).valid:
-            diretta = r
-    else:
-        v = min_stake_rules(JURISDICTION_IT, "lay", prezzo, s)
-        if v.valid and v.legalized_size is not None:
-            diretta = round(float(v.legalized_size), 2)
-    if diretta > 0:
-        return diretta, 0.0, max(0.0, round(s - diretta, 2))
-    resto = s
-    trim = 0.0
-    if resto >= SUBMIN_IMPORTO_FINALE_MIN - 1e-6:
-        trim = resto if lato == "LAY" else round(_floor_to_step(resto, IT_BACK_STEP), 2)
-        if trim < SUBMIN_IMPORTO_FINALE_MIN - 1e-6:
-            trim = 0.0
-    residuo = round(resto - trim, 2)
-    return diretta, trim, max(0.0, residuo)
+    v = importo_piazzabile("back" if (side or "").upper() == "BACK" else "lay", s)
+    if v.via == VIA_DIRETTA:
+        return round(v.importo, 2), 0.0, round(v.residuo, 2)
+    if v.via == VIA_PLACE_AND_TRIM:
+        return 0.0, round(v.importo, 2), round(v.residuo, 2)
+    return 0.0, 0.0, round(v.residuo, 2)
 
 # Stati della macchina.
 # QUOTING  = una gamba resting (modalita' reversion/momentum)
@@ -2711,7 +2692,7 @@ class ScalperStrategy(BaseStrategy):
 
     def _size_direct_ok(self, side: str, size: float) -> bool:
         """True se la size e' piazzabile DIRETTAMENTE su .it, all'importo
-        esatto: lo decide il modulo condiviso (`min_stake_rules`)."""
+        esatto: lo decide la fonte unica (`minimi_it.importo_piazzabile`)."""
         d, trim, residuo = spezza_uscita(side, 2.0, size)
         return trim <= 0 and residuo <= 0 and abs(d - round(float(size), 2)) < 1e-6
 

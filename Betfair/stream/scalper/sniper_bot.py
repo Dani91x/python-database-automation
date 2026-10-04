@@ -38,13 +38,16 @@ from flumine.order.trade import Trade
 from flumine.utils import get_nearest_price, get_price, get_size, price_ticks_away
 
 from .scalper_bot import compute_green, spezza_uscita, ticks_between
-from ..live_order_build import IT_BACK_MIN_STAKE, IT_LAY_MIN_SIZE
+from ..trading.minimi_it import IT_MIN_BACK as IT_BACK_MIN_STAKE
+from ..trading.minimi_it import IT_MIN_LAY as IT_LAY_MIN_SIZE
 from ..uscite_proposte import CHIAVE_STATS as CHIAVE_PROPOSTE
 from ..uscite_proposte import CancelloUscite, UltimiPrezzi, proposta_di
 
 logger = logging.getLogger(__name__)
 _EPS = 1e-9
-MIN_STAKE = 2.0
+#: 04/10 (ordine dell'utente): dalla fonte unica `minimi_it` (punta minima 1,00),
+#: non piu' il 2,00 scritto a mano
+MIN_STAKE = float(IT_BACK_MIN_STAKE)
 
 
 @dataclass

@@ -84,7 +84,7 @@ STATI_CONTROL_AMMESSI = frozenset({"requested", "arming", "armed", "running",
 MODI_CONTROL_AMMESSI = frozenset({"maker", "bias", "both"})
 
 # minimi di giurisdizione .it. 04/10: dal MODULO CONDIVISO dei minimi
-# (`trading/minimi_it.py` via `live_order_build.min_stake_rules`), non dalla
+# (`trading/minimi_it.py`, `importo_piazzabile`), non dalla
 # copia che lo scalper teneva (BACK 2,00 / LAY 0,50, tolta: ordine dell'utente
 # «i numeri si leggono SOLO da minimi_it»). I PARK di `_place_exact` (2,00 a
 # BACK 1000 / LAY 1.01) restano legali.
@@ -557,14 +557,15 @@ def _legale_it(r: Dict[str, Any]) -> Optional[str]:
         return None
     if size + 1e-9 < MINIMO_IT[side]:
         return "size %s sotto il minimo .it del lato %s (%s)" % (size, side, MINIMO_IT[side])
-    # 04/10 (regole dell'utente): le PUNTE solo a multipli di 0,50; le BANCHE
-    # dal minimo in su al centesimo (prima: multipli di 0,50 anche sulle banche)
-    if side == "BACK":
-        multiplo = size / PASSO_IT
-        if abs(multiplo - round(multiplo)) > 1e-6:
-            return "size %s non multipla di %.2f (INVALID_BET_SIZE su .it)" % (size, PASSO_IT)
-    elif abs(round(size, 2) - size) > 1e-6:
-        return "size %s oltre il centesimo (INVALID_BET_SIZE su .it)" % size
+    # 04/10 (regole dell'utente, fonte unica `minimi_it.importo_piazzabile`): un
+    # ordine diretto e' legale se parte cosi' com'e', senza residuo (punte a
+    # multipli di 0,50, banche al centesimo). Prima: multipli di 0,50 per tutti.
+    from ..trading.minimi_it import VIA_DIRETTA, importo_piazzabile
+
+    v = importo_piazzabile(side.lower(), size)
+    if v.via != VIA_DIRETTA or v.residuo > 0 or abs(v.importo - size) > 1e-6:
+        return ("size %s non piazzabile diretta su .it (%s, residuo %.2f: "
+                "INVALID_BET_SIZE)" % (size, v.via, v.residuo))
     return None
 
 
