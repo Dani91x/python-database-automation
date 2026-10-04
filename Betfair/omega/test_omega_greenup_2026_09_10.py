@@ -322,9 +322,11 @@ def test_trigger_quota_decisione_a_modello_con_riserva_di_mercato(no_lambdas):
     tr = _trade(db)                                  # ingresso @55
     p = _params(greenup_settle_delay_s=0)
     assert _run(db, _payload(70, 1, 0, cs=[_sel(14, "1 - 3", 30.0, 28.0)]), p) == 0   # 30/55 > 0.5
-    assert _run(db, _payload(70, 1, 0, cs=[_sel(14, "1 - 3", 20.0, 19.0)]), p) == 1   # 20/55 ≤ 0.5
+    # 04/10/2026 (regola delle punte): back 22 (era 19: punta 275/19 = 14,47 -> 14,00 +
+    # 0,47 non piazzabili); 275/22 = 12,50 esatta; lay 23/55 <= 0.5 come prima
+    assert _run(db, _payload(70, 1, 0, cs=[_sel(14, "1 - 3", 23.0, 22.0)]), p) == 1   # 23/55 <= 0.5
     g = _logs(db, "greenup")[0]
-    assert g["trigger"] == "price" and g["p_source"] == "market" and g["p_lose"] == pytest.approx(1 / 19, abs=1e-4)
+    assert g["trigger"] == "price" and g["p_source"] == "market" and g["p_lose"] == pytest.approx(1 / 22, abs=1e-4)
     assert g["exit_kind"] == "loss" and g["kind"] == "loss"
     assert db.get_trade(tr["id"])["status"] == "hedged"
 
@@ -436,7 +438,9 @@ def test_p_o1_stato_done_al_fill_e_mai_un_secondo_invio(lambdas):
     conferma il fill; ne' prima ne' dopo parte un secondo ordine di chiusura
     (la guardia e' ``hedge_pending_ids`` / 'hedged', non lo stato)."""
     db = _db_with_model()
-    tr = _trade(db)
+    # 04/10/2026 (regola delle punte): stake 4 (punta 27,50 esatta a 8.0; con 5 sarebbe
+    # 34,38 -> 34,00 + 0,38 non piazzabili e mai 'hedged')
+    tr = _trade(db, size=4.0)
     goal = _payload(70, 1, 2, cs=[_sel(14, "1 - 3", 8.2, 8.0)])
     p = _params(greenup_settle_delay_s=0, greenup_retry_s=0)
     mk = FakeMarket([], None, _open_snapshot())
@@ -465,7 +469,8 @@ def test_p_green_up_paper_senza_runner_non_consuma_e_avvisa(lambdas):
     Appena il runner torna, parte."""
     db = _db_with_model()
     db.follow = "NONE"
-    tr = _trade(db)
+    # 04/10/2026 (regola delle punte): stake 4, punta di chiusura 27,50 esatta a 8.0
+    tr = _trade(db, size=4.0)
     goal = _payload(70, 1, 2, cs=[_sel(14, "1 - 3", 8.2, 8.0)])
     p = _params(greenup_settle_delay_s=0, greenup_retry_s=0, greenup_max_attempts=2)
     mk = FakeMarket([], None, _open_snapshot())
@@ -562,7 +567,8 @@ def test_bot_fermo_gestisce_comunque_le_uscite(lambdas):
     db = _db_with_model()
     db.control["status"] = "stopped"
     db.control["params"] = {"execution_mode": "rest", "greenup_settle_delay_s": 0}
-    tr = _trade(db)
+    # 04/10/2026 (regola delle punte): stake 4, punta di chiusura 27,50 esatta a 8.0
+    tr = _trade(db, size=4.0)
     goal = _payload(70, 1, 2, cs=[_sel(14, "1 - 3", 8.2, 8.0)])
     out = S.run_once(market=FakeMarket([], None, _open_snapshot()), db=db, now=NOW,
                      greenup_feed=lambda eid: goal)
