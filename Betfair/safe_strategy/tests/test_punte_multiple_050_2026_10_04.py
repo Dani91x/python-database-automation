@@ -320,6 +320,12 @@ def test_safe_bot_uscita_con_residuo_un_avviso_e_nessun_ritento():
     apri = db.get_trade(tid)
     assert apri["status"] == "open" and X.residuo_ricordato(apri)
     assert apri["meta"]["exit"]["last_error"] == X.ERR_RESIDUO
+    assert apri["meta"]["exit"]["state"] == "failed"
+    assert apri["meta"]["exit"].get("next_retry_at") is None
+    # nessun "ritento" dichiarato: il residuo non e' un fallimento da ritentare
+    assert [p for k, p in db.activity
+            if k in ("exit_retry", "exit_failed") and p.get("err") == X.ERR_RESIDUO] == []
+    assert apri["meta"]["exit_requested"].get("residual_attempts", 0) == 0
     assert len(_critici_residuo(db)) == 1
     assert [p for k, p in db.activity if k == "place_rifiutato"] == []
 

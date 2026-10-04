@@ -60,3 +60,36 @@ def test_green_up_con_residuo_un_avviso_stato_residual_dropped_nessun_ritento(la
     assert len(crit) == 1 and crit[0]["critical"] is True
     assert "chiudi tu il residuo" in crit[0]["proposta"]
     assert [k for k, _ in db.activity if k == "place_rifiutato"] == []
+
+
+def test_green_up_live_rest_abbinato_stato_residual_dropped_subito(lambdas, monkeypatch):
+    """LIVE sulla strada REST (``omega_market.place_order_live`` VERO, Betfair finto a
+    livello di rete): la punta 34,38 parte 34,00, abbinata subito; il residuo e'
+    ricordato in quello stesso giro e lo stato del green-up lo dice
+    ('residual_dropped'), non "residuo ancora da coprire" (che nessuno coprira')."""
+    from Betfair.omega import omega_market as OM
+    from Betfair.omega.test_omega_service import FakeMarket, _open_snapshot
+    from Betfair.stream.tests.tradotti_comuni import monta_rete
+
+    rete = monta_rete(monkeypatch)
+
+    class _MercatoRest(FakeMarket):
+        def place_order_live(self, **kw):
+            return OM.place_order_live(**kw)
+
+    db = _db_with_model()
+    db.follow = "NONE"                       # coda chiusa: REST
+    tr = _trade(db)
+    db.update_trade(tr["id"], mode="live")
+    goal = _payload(70, 1, 2, cs=[_sel(14, "1 - 3", 8.2, 8.0)])
+    p = _params(greenup_settle_delay_s=0, greenup_retry_s=0, execution_mode="rest")
+    mk = _MercatoRest([], None, _open_snapshot())
+    assert _run(db, goal, p, now=NOW, market=mk) == 1
+    assert len(rete.piazzati) == 1 and rete.piazzati[0][1]["limitOrder"]["size"] == 34.0
+    apri = db.get_trade(tr["id"])
+    assert X.residuo_ricordato(apri)
+    assert apri["meta"]["greenup"]["state"] == "residual_dropped"
+    assert len(_critici(db)) == 1
+    for s in range(1, 5):
+        _run(db, goal, p, now=NOW + timedelta(seconds=25 * s), market=mk)
+    assert len(rete.piazzati) == 1 and len(_critici(db)) == 1
