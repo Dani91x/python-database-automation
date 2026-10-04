@@ -215,6 +215,40 @@ def non_partire_col_freno(db: Any, event_id: str) -> Optional[str]:
     return motivo
 
 
+def freno_soldi_veri() -> Optional[str]:
+    """04/10 - ORDINE DELL'UTENTE «tutti i bot devono operare in live solo se
+    clicco il pulsante»: il motivo per cui un ordine in SOLDI VERI non deve
+    partire, o None. E' la funzione CONDIVISA degli altri bot
+    (``safe_strategy.execution._live_brake``: kill-switch + modo effettivo =
+    tetto ``LIVE_ORDER_MODE`` x «Ordini reali» della Control Room, riga riletta
+    al massimo ogni 5 s). Prima lo scalper guardava solo il kill-switch: con
+    «Ordini reali» su prova e l'interruttore dello scalper in soldi veri
+    partivano ordini veri. Non valutabile = fermo (fail-closed)."""
+    try:
+        from Betfair.safe_strategy import execution as _X
+
+        return _X._live_brake()
+    except Exception as ex:  # noqa: BLE001 - fail-closed
+        logger.error("[scalper-sess] freni dei soldi veri non valutabili: %s", str(ex)[:120])
+        return "freni_live_non_letti"
+
+
+def non_partire_senza_soldi_veri(db: Any, event_id: str) -> Optional[str]:
+    """All'avvio di una sessione in SOLDI VERI: «Ordini reali» non in soldi
+    veri (o tetto/kill) -> riga 'stopped' col motivo, nessun login, nessun
+    ordine. Ritorna il motivo (o None: si parte)."""
+    motivo = freno_soldi_veri()
+    if not motivo:
+        return None
+    db.set_control(event_id, status="stopped", stopped_at=_now_iso(),
+                   error=f"soldi veri non serviti ({motivo}): sessione non avviata")
+    db.log(event_id, "critical", {"msg": "soldi veri non serviti: sessione in soldi "
+                                         "veri non avviata", "motivo": motivo})
+    logger.critical("[scalper-sess] %s: soldi veri non serviti (%s), sessione non "
+                    "avviata", event_id, motivo)
+    return motivo
+
+
 def ht_should_start(minute: Optional[int], stale_s: float) -> bool:
     """True se il feed indica l'INIZIO dell'intervallo (minuto congelato).
 
@@ -1076,6 +1110,11 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
         # demo-snapshot senza ordini (dry-fire).
         session_paper = bool(control.get("dry_run", True))
         exec_mode = "paper" if session_paper else "live"
+        # 04/10 «SOLDI VERI SOLO COL PULSANTE»: una sessione in soldi veri con
+        # «Ordini reali» su prova (o tetto/kill-switch) NON parte: nessun login,
+        # riga 'stopped' col motivo. Mai un passaggio automatico a soldi veri.
+        if not session_paper and non_partire_senza_soldi_veri(db, ev):
+            return
 
         follow = db.follow(ev)
         if not follow:
@@ -1405,6 +1444,14 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             install_fresh_delay_execution(framework)
         # theta_only: il maker NON si arma (l'oggetto strategy resta per le
         # stats/flat check, ma fuori dal framework non piazza nulla)
+        # 04/10 «SOLDI VERI SOLO COL PULSANTE»: in soldi veri ogni APERTURA del
+        # maker e dello sniper chiede il freno condiviso (kill-switch + modo
+        # effettivo = tetto x «Ordini reali»). In prova: nessun freno qui (il
+        # client e' simulato, nessun ordine vero).
+        if not session_paper:
+            strategy.freno_live = freno_soldi_veri
+            if sniper is not None:
+                sniper.freno_live = freno_soldi_veri
         if not theta_only:
             framework.add_strategy(strategy)
         if sniper is not None:

@@ -358,8 +358,12 @@ def test_d7_i_due_residui_accettati_si_dichiarano(tries, kind):
     slot = _Slot()
     slot.status = FLATTENING
     slot.flat_tries = tries
-    # residuo: -0.10 se vince, +0.05 se perde (ramo 1); -2,00/+0,05 (ramo 2)
-    nw, nl = (-0.10, 0.05) if tries == 0 else (-2.0, 0.05)
+    # residuo: -0.10 se vince, +0.05 se perde (ramo 1); ramo 2 (ultima spiaggia)
+    # 04/10 (regola dell'utente, minimi da `minimi_it`): prima -2,00/+0,05, cioe'
+    # una punta da 1,03 che col minimo copiato 2,00 era «non piazzabile»; oggi la
+    # punta minima e' 1,00 e 1,03 parte (1,00 + 0,03). Il ramo si prova con
+    # -0,60/+0,30: punta 0,45 al best 2,00, sotto 0,50 = davvero non piazzabile.
+    nw, nl = (-0.10, 0.05) if tries == 0 else (-0.60, 0.30)
     with mock.patch.object(type(s), "_net_position", lambda _s, _sl: (nw, nl)), \
             mock.patch.object(type(s), "_flatten", lambda *a, **k: None):
         s._drive_flatten(m, slot, 2.0, 2.02, now=1_000_000)

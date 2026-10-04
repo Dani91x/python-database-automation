@@ -248,22 +248,38 @@ def _in_flatten(lato: str, prezzo: float, size: float, **extra: Any) -> Banco:
     return b
 
 
-@pytest.mark.parametrize("size_lay", [0.2, 1.0, 25.0])
+def residuo_dichiarato_ok(b: Banco, w: float, l: float) -> bool:
+    """04/10 (regole dell'utente sui minimi .it): una posizione chiusa e' piatta
+    entro 0,02, OPPURE il resto non piazzabile e' stato DICHIARATO e RICORDATO
+    dal bot (riga `residuo_ricordato`, `residuo_w/l` dello slot) al centesimo."""
+    if abs(w - l) <= 0.02 + 1e-9:
+        return True
+    slot = b.slot()
+    ricordato = abs(float(slot.residuo_w) - float(slot.residuo_l))
+    dichiarato = any(k == "residuo_ricordato" for k, _p in b.righe)
+    return dichiarato and abs(abs(w - l) - ricordato) <= 0.02 + 1e-9
+
+
+@pytest.mark.parametrize("size_lay", [0.2, 0.7, 1.0, 25.0])
 def test_flatten_non_dichiara_chiuso_con_sequenza_o_ordini_vivi(size_lay, differita,
                                                                orologio_mercato):
-    """Il flatten chiude la posizione ESATTAMENTE e lo slot si dichiara chiuso
-    solo senza ordini vivi e senza sequenze (K5/K6), qualunque sia la latenza.
-    LAY 0,20: chiusura tutta sotto il minimo (place-and-trim), prima il
-    "micro-residuo" si accettava a sequenza appena avviata e lo slot andava
-    DONE col parcheggio da 2,00 vivo. LAY 25: 25 diretti + resto esatto."""
+    """Il flatten chiude la posizione e lo slot si dichiara chiuso solo senza
+    ordini vivi e senza sequenze (K5/K6), qualunque sia la latenza.
+    LAY 0,70 (aggiunto il 04/10): chiusura PUNTA 0,70 fra 0,50 e 1,00 =
+    place-and-trim (prima era LAY 0,20, che oggi e' sotto 0,50: residuo).
+    04/10, regola dell'utente: piatta entro 0,02 oppure resto dichiarato e
+    ricordato (LAY 0,20 -> residuo 0,44; LAY 25 -> punta 25,00 + residuo)."""
     b = _in_flatten("LAY", 2.22, size_lay)
     orologio_mercato["banco"] = b
     viol = giri(b, differita, 150)
     assert viol == [], viol[:3]
     w, l = esposizione_vera(b.market, b.strat)
-    assert abs(w - l) <= 0.02 + 1e-9, (w, l, b.righe[-10:])
+    assert residuo_dichiarato_ok(b, w, l), (w, l, b.righe[-10:])
     assert vivi(b.market, b.strat) == []
     assert b.slot().status in (SB.IDLE, SB.DONE)
+    if size_lay == 0.7:
+        assert [r for r in b.righe if r[0] == "submin_start"], "place-and-trim atteso"
+        assert abs(w - l) <= 0.02 + 1e-9, (w, l)
 
 
 def test_reperto_35797769_nessuna_chiusura_doppia_col_taglio_in_volo(differita,
@@ -275,23 +291,30 @@ def test_reperto_35797769_nessuna_chiusura_doppia_col_taglio_in_volo(differita,
     diretta (BACK 2,00 @2,20, abbinata); poi il sostituto della sequenza (BACK
     1,98 @2,22) si abbinava senza essere agganciato. Il bot vedeva +0,02/-0,02,
     andava DONE ("residuo 0,04") con un BACK 2,00 NUDO a mercato: se vince
-    +2,44, se perde -2,00, fino al fischio (B2, K5)."""
+    +2,44, se perde -2,00, fino al fischio (B2, K5).
+
+    04/10 (regola dell'utente): una punta da 1,98 oggi e' diretta 1,50 +
+    residuo (da 1,00 in su solo multipli di 0,50): il place-and-trim resta
+    sotto 1,00. Lo stesso reperto (taglio in volo, chiusura doppia) si prova con
+    LAY 0,98: chiusura PUNTA 0,98 tutta via place-and-trim."""
     b = Banco()
     orologio_mercato["banco"] = b
     b.ladder[SEL] = (2.22, 2.24)
     b.book()
     slot = b.slot()
-    slot.entry = b.abbinato("LAY", 2.22, 1.98)
+    slot.entry = b.abbinato("LAY", 2.22, 0.98)
     slot.entry_side = "LAY"
     b.strat.force_flat = True
     b.strat._begin_flatten(slot)
     viol = giri(b, differita, 150)
     assert viol == [], viol[:3]
+    assert [r for r in b.righe if r[0] == "submin_start"], "place-and-trim atteso"
     w, l = esposizione_vera(b.market, b.strat)
     assert abs(w - l) <= 0.02 + 1e-9, (w, l)
     # UNA sola chiusura: nessun ordine BACK diretto accanto alla sequenza
+    # (04/10: soglia dal minimo diretto della punta, 1,00, non piu' 2,00)
     diretti = [r for r in b.righe if r[0] == "place" and r[1].get("side") == "BACK"
-               and float(r[1].get("size") or 0) >= 2.0]
+               and float(r[1].get("size") or 0) >= 1.0]
     assert diretti == [], diretti
 
 
@@ -300,8 +323,12 @@ def test_sostituto_del_rimpiazzo_agganciato_mai_posizione_rovesciata(differita,
     """Il SOSTITUTO del rimpiazzo (gradino 3 del place-and-trim) nasce quando
     flumine esegue il replace, cioe' book DOPO che la sequenza e' finita: prima
     nessuno lo agganciava, il bot si credeva ancora scoperto e, passata la pausa
-    di 30 s, ripiazzava la chiusura: posizione ROVESCIATA (cantiere T, K5)."""
-    b = _in_flatten("LAY", 2.22, 25.0)
+    di 30 s, ripiazzava la chiusura: posizione ROVESCIATA (cantiere T, K5).
+
+    04/10 (regola dell'utente): con LAY 25 il resto (0,23) oggi e' residuo
+    dichiarato, nessuna sequenza. Il sostituto si prova con LAY 0,70: chiusura
+    PUNTA 0,70 tutta via place-and-trim (sostituto compreso)."""
+    b = _in_flatten("LAY", 2.22, 0.7)
     orologio_mercato["banco"] = b
     viol = giri(b, differita, 150)
     assert viol == [], viol[:3]
@@ -311,6 +338,8 @@ def test_sostituto_del_rimpiazzo_agganciato_mai_posizione_rovesciata(differita,
     # UNA sola sequenza per chiudere il resto
     assert len([r for r in b.righe if r[0] == "submin_start"]) == 1, \
         [r for r in b.righe if r[0].startswith("submin")]
+    w, l = esposizione_vera(b.market, b.strat)
+    assert abs(w - l) <= 0.02 + 1e-9, (w, l)
 
 
 def test_piatta_con_un_ordine_dello_slot_vivo_non_si_dichiara_chiusa(differita,
@@ -347,7 +376,8 @@ def test_parcheggio_orfano_si_ritira_e_la_chiusura_parte(differita, orologio_mer
     viol = giri(b, differita, 150)
     assert viol == [], viol[:3]
     w, l = esposizione_vera(b.market, b.strat)
-    assert abs(w - l) <= 0.02 + 1e-9, (w, l, slot.status)
+    # 04/10 (regola dell'utente): LAY 25 -> punta 25,00 + residuo 0,23 dichiarato
+    assert residuo_dichiarato_ok(b, w, l), (w, l, slot.status)
     assert not b.strat._has_live(orfano)
     assert slot.status in (SB.IDLE, SB.DONE)
 
@@ -382,8 +412,12 @@ def test_parcheggio_ritirato_prima_del_taglio_non_blocca_la_sorveglianza(differi
     taglio (cancel delle vecchie close in LOCKING, force-flat) e lo slot e'
     DONE. Prima la sequenza restava in PLACED per sempre (`advance_submin`
     aspetta il taglio), lo slot DONE saltava la sorveglianza
-    (`if slot.submins: continue`) e la posizione restava senza padrone (K5)."""
-    b = _in_flatten("LAY", 2.22, 1.0)
+    (`if slot.submins: continue`) e la posizione restava senza padrone (K5).
+
+    04/10 (regola dell'utente): una punta da 1,00 oggi e' DIRETTA (minimo 1,00),
+    nessuna sequenza: il parcheggio si prova con LAY 0,70 (punta 0,70 fra 0,50 e
+    1,00 = place-and-trim)."""
+    b = _in_flatten("LAY", 2.22, 0.7)
     orologio_mercato["banco"] = b
     b.book()
     slot = b.slot()

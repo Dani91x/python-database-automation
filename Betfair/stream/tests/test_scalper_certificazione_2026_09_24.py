@@ -269,7 +269,19 @@ def _catalogo_e_follow():
     return R.catalogo_dal_raw(defs), follow
 
 
+@pytest.fixture
+def soldi_veri_dichiarati():
+    """04/10: la sessione in soldi veri parte solo con «Ordini reali» in soldi
+    veri (`scalper_session.non_partire_senza_soldi_veri`). Qui dichiarato come
+    nel banco (`certifica._freni_da_banco`), senza database."""
+    from Betfair.stream.backtest.certifica import _freni_da_banco
+
+    with _freni_da_banco():
+        yield
+
+
 @pytest.mark.skipif(not _ha_evento, reason="registrazione 35760084 assente")
+@pytest.mark.usefixtures("soldi_veri_dichiarati")
 def test_paper_e_live_armano_la_stessa_strategia():
     cat, follow = _catalogo_e_follow()
     p = R.parita_paper_live(EVENTO, R.control_della_ui(EVENTO, "base"), follow, cat)
@@ -281,6 +293,7 @@ def test_paper_e_live_armano_la_stessa_strategia():
 
 
 @pytest.mark.skipif(not _ha_evento, reason="registrazione 35760084 assente")
+@pytest.mark.usefixtures("soldi_veri_dichiarati")
 def test_s6_diventa_rosso_se_il_paper_arma_una_strategia_diversa(monkeypatch):
     """FALSIFICAZIONE sul servizio: il paper che cambia un parametro (qui il
     tetto transazioni, come un gate 'solo in paper', catalogo par.7.14).
@@ -499,8 +512,11 @@ def test_b2_rosso_su_posizione_aperta_in_gioco():
 
 
 @pytest.mark.parametrize("size,side,rosso", [
-    (2.37, "BACK", True), (1.5, "BACK", True), (0.3, "LAY", True),
-    (2.0, "BACK", False), (0.5, "LAY", False), (25.0, "LAY", False)])
+    # 04/10 (regole dell'utente, minimi dal modulo condiviso): punta >= 1,00 a
+    # multipli di 0,50, banca >= 1,00 al centesimo. Prima: BACK 1,50 illegale
+    # (min copiato 2,00) e LAY 0,50 legale (min copiato 0,50).
+    (2.37, "BACK", True), (1.5, "BACK", False), (0.5, "BACK", True), (0.3, "LAY", True),
+    (2.0, "BACK", False), (0.5, "LAY", True), (1.37, "LAY", False), (25.0, "LAY", False)])
 def test_b3_legalita_it(size, side, rosso):
     r = {"order_id": "o", "status": "Executable", "side": side, "selection_id": 7,
          "market_id": "1.1", "size": size, "price": 2.0, "in_blotter": True,

@@ -180,10 +180,19 @@ def _stato(guardia_fatta: bool = True) -> SVC.StatoAuto:
 
 
 @pytest.fixture(autouse=True)
-def _ambiente(monkeypatch: pytest.MonkeyPatch) -> None:
+def _ambiente(monkeypatch: pytest.MonkeyPatch) -> Any:
     monkeypatch.delenv(AM.ENV_TETTO, raising=False)
     monkeypatch.setenv(CB.ENV_SCALPER, "0")
     CB.azzera_statistiche()
+    # 04/10: con l'interruttore in soldi veri il supervisore chiede i freni dei
+    # soldi veri (`scalper_session.freno_soldi_veri`: kill-switch + «Ordini
+    # reali»). Qui «Ordini reali» = SOLDI VERI dichiarato SENZA database (lo
+    # stesso blocco del banco, `certifica._freni_da_banco`): nessuna lettura
+    # vera, nessuna rete. I test di «Ordini reali» in prova lo cambiano sopra.
+    from Betfair.stream.backtest.certifica import _freni_da_banco
+
+    with _freni_da_banco():
+        yield
 
 
 # ===========================================================================
@@ -383,6 +392,23 @@ def test_live_nasce_live() -> None:
     assert att and att[-1]["dry_run"] is False and att[-1]["modalita"] == "live"
     auto = db.nomi("set_servizio")[-1][1]["stats"]["auto"]
     assert auto["modalita"] == "live" and auto["nascono_in_dry_run"] is False
+
+
+@pytest.mark.parametrize("ordini_reali", ["PAPER", "OFF"])
+def test_soldi_veri_con_ordini_reali_in_prova_non_arma_e_lo_dice(ordini_reali: str) -> None:
+    """04/10 - ORDINE DELL'UTENTE «tutti i bot devono operare in live solo se
+    clicco il pulsante»: interruttore dello scalper in soldi veri ma «Ordini
+    reali» della Control Room in prova (o spento): NESSUNA partita si arma (ne'
+    in soldi veri ne' in prova: mai un ripiego automatico) e il motivo lo dice.
+    Prima lo scalper guardava solo il kill-switch e armava sessioni live."""
+    from Betfair.stream import modo_ordini as MO
+
+    db = DbFinto(riga_servizio(mode="live"), [riga_feed("1")])
+    with MO.dichiara_per_banco(ordini_reali, kill=False):
+        es = SVC.giro_auto(db, _stato(), [], ORA_EP)
+    assert es["armate"] == [] and db.nomi("arma") == []
+    assert "soldi veri non serviti" in str(es["motivo"])
+    assert "live_order_mode_non_live:%s" % ordini_reali in str(es["motivo"])
 
 
 def test_live_con_una_sessione_in_prova_viva_non_arma_e_lo_dice() -> None:

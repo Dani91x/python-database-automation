@@ -221,14 +221,18 @@ def test_join_spread3_migliora_entrambi_i_lati():
 # ------------------------------------------------ uscite a size esatta (.it)
 def test_size_direct_ok_regole_it():
     s = _make_strategy(exact_exits=True)
-    # multipli di 0,50 sopra il minimo del lato
+    # 04/10 (regole dell'utente, minimi dal modulo condiviso `minimi_it`):
+    # PUNTA >= 1,00 a multipli di 0,50; BANCA >= 1,00 al centesimo. Prima:
+    # copia dello scalper BACK 2,00 / LAY 0,50, multipli di 0,50 su entrambi.
     assert s._size_direct_ok("BACK", 2.0)
     assert s._size_direct_ok("BACK", 5.0)
-    assert s._size_direct_ok("LAY", 0.5)
+    assert s._size_direct_ok("BACK", 1.5)       # prima no (min 2,00 copiato)
     assert s._size_direct_ok("LAY", 2.5)
-    # non multipli o sotto minimo
+    assert s._size_direct_ok("LAY", 1.37)       # banca al centesimo
+    # non multipli (punte) o sotto minimo
     assert not s._size_direct_ok("BACK", 5.03)
-    assert not s._size_direct_ok("BACK", 1.5)   # < min back 2.0
+    assert not s._size_direct_ok("BACK", 0.5)   # < min punta 1,00
+    assert not s._size_direct_ok("LAY", 0.5)    # < min banca 1,00 (prima si')
     assert not s._size_direct_ok("LAY", 0.47)
     assert not s._size_direct_ok("LAY", 0.03)
 

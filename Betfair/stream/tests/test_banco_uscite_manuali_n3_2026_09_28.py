@@ -406,6 +406,32 @@ def test_uf2_resto_non_piazzabile_solo_se_il_bot_lo_dichiara(proposta, eseguito,
         assert any("NON piazzabile" in n for n in o.non_giudicabili)
 
 
+@pytest.mark.parametrize("proposta,eseguito,dichiarato,soglia,rosso", [
+    # 04/10 (scalper calcio, decisione dell'utente «il residuo resta ricordato»):
+    # con la soglia 0,50 (importo finale minimo del place-and-trim, minimi_it)
+    (24.42, 24.0, True, 0.50, False),    # resto 0,42 dichiarato: non giudicato
+    (24.42, 24.0, False, 0.50, True),    # non dichiarato: violazione
+    (24.52, 24.0, True, 0.50, True),     # 0,52 >= 0,50: mai scusato
+    (24.42, 24.0, True, None, True),     # soglia di serie (0,05, tennis): rosso
+])
+def test_uf2_soglia_del_resto_dichiarato_per_bot(proposta, eseguito, dichiarato,
+                                                 soglia, rosso):
+    s = _Strategia()
+    extra = {} if soglia is None else {"soglia_resto": soglia}
+    o = _oss(UM.SCENARIO_FIRMATE, s, {}, resto_non_piazzabile=lambda *a: dichiarato,
+             **extra)
+    with o.attivo():
+        c = s.cancello_uscite
+        c.lascia_uscire(automatiche=False, chiave=CHIAVE, now_s=10.0,
+                        proposta=_proposta(size_chiusura=proposta))
+        o.giro(int((10.0 + UM.FIRMA_DOPO_S) * 1000))
+        c.lascia_uscire(automatiche=False, chiave=CHIAVE, now_s=15.5,
+                        proposta=_proposta(size_chiusura=proposta))
+        s.ordini.append(_ordine("x1", size=eseguito, matched=eseguito))
+        o.giro(int((15.5 + UM.FINESTRA_ORDINI_S) * 1000) + 1)
+    assert ("UF2" in _codici(o)) is rosso, o.violazioni
+
+
 def test_uf2_resto_dichiarato_e_nessun_ordine():
     """Proposta 0,01 (scalper tennis): niente parte, il bot dichiara il resto."""
     s = _Strategia()

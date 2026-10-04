@@ -242,8 +242,12 @@ def test_il_parcheggio_della_sequenza_non_si_ritira_a_ogni_book(differita,
                                                                orologio_mercato):
     """Prima `_drive_flatten` ritirava A OGNI BOOK ogni ordine vivo della
     posizione, parcheggio compreso: la sequenza del resto moriva al taglio o
-    prima (abort) e il resto non si chiudeva mai col place-and-trim."""
-    b = _in_chiusura(3.3)
+    prima (abort) e il resto non si chiudeva mai col place-and-trim.
+
+    04/10 (regola dell'utente): con BACK 3,3 la chiusura e' una banca al
+    centesimo, DIRETTA (>= 1,00), nessuna sequenza: si prova con BACK 0,7 ->
+    banca 0,70 via place-and-trim."""
+    b = _in_chiusura(0.7)
     orologio_mercato["banco"] = b
     viol = giri(b, differita, 150)
     assert viol == [], viol[:3]
@@ -330,8 +334,12 @@ def test_parcheggio_ritirato_prima_del_taglio_non_blocca_la_chiusura(differita,
     """Il parcheggio della sequenza viene ritirato da un'altra via prima del
     taglio: `advance_submin` in PLACED aspetterebbe per sempre e lo sniper,
     che non accetta ne' chiude con una sequenza in corso, restava fermo.
-    Ora la sequenza si chiude dichiarata e la chiusura si rifa'."""
-    b = _in_chiusura(0.4)
+    Ora la sequenza si chiude dichiarata e la chiusura si rifa'.
+
+    04/10 (regola dell'utente): una banca da 0,40 e' sotto 0,50 (residuo, nessuna
+    sequenza): la sequenza si prova con BACK 0,70 -> banca 0,70 (fra 0,50 e
+    1,00 = place-and-trim)."""
+    b = _in_chiusura(0.7)
     orologio_mercato["banco"] = b
     b.book()
     pos = b.pos()

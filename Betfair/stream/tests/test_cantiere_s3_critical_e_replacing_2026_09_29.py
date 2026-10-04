@@ -76,9 +76,12 @@ def test_scalper_critical_una_volta_a_prezzi_assenti(differita, orologio_mercato
 
 # ---------------------------------------------------------------- sniper
 def test_sniper_nessun_critical_nella_pausa_fra_due_sequenze(differita, orologio_mercato):
-    """BACK Under 0,40 @1,50: chiusura LAY ~0,40 sotto il minimo, pausa di 30 s
-    fra due sequenze in corso: niente CRITICAL, la sequenza dopo chiude."""
-    b = SNT._in_chiusura(0.4)
+    """BACK Under 0,70 @1,50: chiusura LAY ~0,70 sotto il minimo diretto,
+    pausa di 30 s fra due sequenze in corso: niente CRITICAL, la sequenza dopo
+    chiude. 04/10 (regola dell'utente): prima BACK 0,40 -> banca 0,40, oggi sotto
+    0,50 (residuo dichiarato, nessuna sequenza): la pausa fra sequenze si prova
+    con 0,70 (banca fra 0,50 e 1,00 = place-and-trim)."""
+    b = SNT._in_chiusura(0.7)
     orologio_mercato["banco"] = b
     pos = b.pos()
     pos.t_last_submin = b.pt

@@ -269,52 +269,65 @@ def test_formula_green_spalmato_esatto():
 
 
 def test_size_direct_ok_regole_it():
+    # 04/10 (regole dell'utente, minimi dal modulo condiviso `minimi_it`):
+    # BANCA >= 1,00 al centesimo, PUNTA >= 1,00 a multipli di 0,50. Prima la
+    # copia dello sniper: LAY da 0,50 a multipli, BACK da 2,00.
     s = _strategy()
     assert s._size_direct_ok("LAY", 5.0) is True
-    assert s._size_direct_ok("LAY", 5.04) is False     # non multiplo di 0.50
-    assert s._size_direct_ok("LAY", 0.5) is True       # min LAY 0.50
-    assert s._size_direct_ok("BACK", 1.5) is False     # min BACK 2.00
+    assert s._size_direct_ok("LAY", 5.04) is True      # banca al centesimo
+    assert s._size_direct_ok("LAY", 0.5) is False      # min banca 1,00
+    assert s._size_direct_ok("BACK", 1.5) is True      # punta multipla >= 1,00
+    assert s._size_direct_ok("BACK", 1.53) is False    # punta non multipla
     assert s._size_direct_ok("BACK", 2.0) is True
 
 
 def test_place_exact_spezza_parte_diretta_piu_submin():
-    """LAY 7.63 con exact_exits: 7.50 diretti + sequenza submin per 0.13."""
+    """04/10: BACK 7.63 con exact_exits: 7.50 diretti (punta per difetto al
+    multiplo di 0,50), resto 0.13 RESIDUO (sotto 0,50 nessun place-and-trim:
+    Betfair .it rifiuta il rimpiazzo). Prima: LAY 7.63 -> 7.50 + submin 0.13,
+    ma la banca 7.63 oggi e' diretta al centesimo."""
     s = _strategy(exact_exits=True, size_step=0.5, live_min_bet=2.0)
     mkt = _FakeMarket()
     pos = s._p("1.234", 1221385)
-    o = s._place(mkt, 1221385, "LAY", 1.27, 7.63, floor=False, pos=pos)
+    o = s._place(mkt, 1221385, "BACK", 1.27, 7.63, floor=False, pos=pos)
     assert o is not None and o.order_type.size == pytest.approx(7.5)
-    assert len(pos.submins) == 1                       # resto 0.13 via submin
-    st = pos.submins[0]["state"]
-    assert st.target_size == pytest.approx(0.13)
-    assert st.target_price == pytest.approx(1.27)
+    assert pos.submins == []                           # 0.13 non si tenta
+    assert any(k == "min_bet_skip" and p.get("size") == pytest.approx(0.13)
+               for k, p in s._test_events)
+    o2 = s._place(mkt, 1221385, "LAY", 1.27, 7.63, floor=False, pos=pos)
+    assert o2 is not None and o2.order_type.size == pytest.approx(7.63)
 
 
 def test_place_exact_size_interamente_subminima():
-    """FIX S6.4: LAY 0.30 (main < 0.50, sotto il minimo .it): NESSUNA parte
-    diretta piazzabile — il verde arriva SOLO via park-trim-replace, con la
-    sequenza submin che copre l'INTERO importo."""
+    """04/10: LAY 0.73 (sotto la banca minima 1,00, sopra 0,50): tutta via
+    park-trim-replace. LAY 0.30 (sotto 0,50): NESSUN ordine e nessuna
+    sequenza (Betfair .it rifiuta il rimpiazzo, misura del 13/09): residuo.
+    Prima la sequenza partiva anche per 0,30."""
     s = _strategy(exact_exits=True, size_step=0.5, live_min_bet=2.0)
     mkt = _FakeMarket()
     pos = s._p("1.234", 1221385)
-    o = s._place(mkt, 1221385, "LAY", 1.27, 0.30, floor=False, pos=pos)
-    assert o is None                                   # niente parte diretta
-    assert mkt.orders == []                            # nessun ordine diretto
-    assert len(pos.submins) == 1                       # TUTTA la size via submin
+    o = s._place(mkt, 1221385, "LAY", 1.27, 0.73, floor=False, pos=pos)
+    assert o is None and mkt.orders == []
+    assert len(pos.submins) == 1
     st = pos.submins[0]["state"]
-    assert st.target_size == pytest.approx(0.30)
+    assert st.target_size == pytest.approx(0.73)
     assert st.target_price == pytest.approx(1.27)
     assert st.side == "lay"
-    assert any(k == "submin_start" for k, _ in s._test_events)
+    pos2 = s._p("1.234", 1221386)
+    o = s._place(mkt, 1221386, "LAY", 1.27, 0.30, floor=False, pos=pos2)
+    assert o is None and mkt.orders == []
+    assert pos2.submins == []
+    assert any(k == "min_bet_skip" and p.get("size") == pytest.approx(0.30)
+               for k, p in s._test_events)
 
 
 def test_place_exact_micro_resto_accettato():
-    """LAY 5.04: 5.00 diretti, resto 0.04 < 0.05 accettato (min_bet_skip),
-    NESSUNA sequenza (semantica di produzione dello scalper)."""
+    """BACK 5.04: 5.00 diretti, resto 0.04 accettato (min_bet_skip), NESSUNA
+    sequenza. 04/10: con la banca al centesimo l'esempio passa alla punta."""
     s = _strategy(exact_exits=True, size_step=0.5, live_min_bet=2.0)
     mkt = _FakeMarket()
     pos = s._p("1.234", 1221385)
-    o = s._place(mkt, 1221385, "LAY", 1.27, 5.04, floor=False, pos=pos)
+    o = s._place(mkt, 1221385, "BACK", 1.27, 5.04, floor=False, pos=pos)
     assert o is not None and o.order_type.size == pytest.approx(5.0)
     assert pos.submins == []
     assert any(k == "min_bet_skip" for k, _ in s._test_events)
@@ -326,9 +339,10 @@ def test_place_senza_exact_arrotonda_e_bumpa():
     # 5.04 -> arrotondata al multiplo 5.0
     o = s._place(mkt, 1221385, "LAY", 1.27, 5.04, floor=False)
     assert o.order_type.size == pytest.approx(5.0)
-    # BACK 1.6 sotto il minimo 2.0 -> bump a 2.0 (micro over-hedge)
-    o2 = s._place(mkt, 1221385, "BACK", 3.4, 1.6, floor=False)
-    assert o2.order_type.size == pytest.approx(2.0)
+    # 04/10: BACK 0.6 sotto il minimo condiviso 1,00 -> bump a 1,00 (prima
+    # l'esempio era 1.6 con il minimo copiato 2,00)
+    o2 = s._place(mkt, 1221385, "BACK", 3.4, 0.6, floor=False)
+    assert o2.order_type.size == pytest.approx(1.0)
     # residuo minuscolo 0.2 -> NON piazzato (micro-rischio accettato)
     o3 = s._place(mkt, 1221385, "LAY", 1.27, 0.2, floor=False)
     assert o3 is None

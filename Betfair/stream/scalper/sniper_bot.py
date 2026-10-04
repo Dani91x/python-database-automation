@@ -37,13 +37,17 @@ from flumine.order.ordertype import LimitOrder
 from flumine.order.trade import Trade
 from flumine.utils import get_nearest_price, get_price, get_size, price_ticks_away
 
-from .scalper_bot import compute_green, ticks_between
+from .scalper_bot import compute_green, spezza_uscita, ticks_between
+from ..trading.minimi_it import IT_MIN_BACK as IT_BACK_MIN_STAKE
+from ..trading.minimi_it import IT_MIN_LAY as IT_LAY_MIN_SIZE
 from ..uscite_proposte import CHIAVE_STATS as CHIAVE_PROPOSTE
 from ..uscite_proposte import CancelloUscite, UltimiPrezzi, proposta_di
 
 logger = logging.getLogger(__name__)
 _EPS = 1e-9
-MIN_STAKE = 2.0
+#: 04/10 (ordine dell'utente): dalla fonte unica `minimi_it` (punta minima 1,00),
+#: non piu' il 2,00 scritto a mano
+MIN_STAKE = float(IT_BACK_MIN_STAKE)
 
 
 @dataclass
@@ -89,6 +93,9 @@ class SniperStrategy(BaseStrategy):
         self.event_sink = kwargs.pop("event_sink", None)
         super().__init__(*args, **kwargs)
         c = {**(self.context or {}), **ctx}
+        # 04/10: freno dei soldi veri iniettato dalla sessione live (None = prova)
+        self.freno_live: Optional[Any] = None
+        self._apertura_live_ferma: Optional[str] = None
 
         # ---- mercati / direzione ----
         # Linea target DINAMICA in live: Under (gol totali + 1).5 — a 0-0 e'
@@ -827,10 +834,16 @@ class SniperStrategy(BaseStrategy):
             self._close_cycle_clock(pos, now)
             self._emit("sniper_flat_residual", locked=round(locked, 3),
                        nw=round(nw, 3), nl=round(nl, 3))
+            self._dichiara_residuo(pos, nw, nl)
             self._loss_capped()
             return
-        if not pos.submins and pos.flat_tries > 12 and self._resto_davvero_non_piazzabile(
-                pos, nw, nl, bb, bl):
+        if not pos.submins and (
+                pos.flat_tries > 12
+                # 04/10 (decisione dell'utente): tutto residuo = si dichiara
+                # SUBITO, mai ritentato a ogni giro
+                or self._tutto_residuo(nw, nl, bb, bl, cross=min(pos.flat_tries, 8))
+        ) and (self._tutto_residuo(nw, nl, bb, bl, cross=min(pos.flat_tries, 8))
+               or self._resto_davvero_non_piazzabile(pos, nw, nl, bb, bl)):
             # ULTIMA SPIAGGIA (direttiva operatore 10/07 §12.1: il flatten
             # TERMINA sempre, con ledger chiuso): niente e' piazzabile e
             # nessuna sequenza exact attiva dopo molti tentativi → il residuo
@@ -845,6 +858,7 @@ class SniperStrategy(BaseStrategy):
             self._emit("sniper_flat_forced", level="WARN",
                        locked=round(locked, 3),
                        nw=round(nw, 3), nl=round(nl, 3))
+            self._dichiara_residuo(pos, nw, nl)
             self._loss_capped()
             return
         cross = min(pos.flat_tries, 8)
@@ -923,15 +937,49 @@ class SniperStrategy(BaseStrategy):
         g = compute_green(nw, nl, get_nearest_price(base))
         if g is None:
             return False
-        if float(g[1]) >= self._side_min(side) - _EPS:
+        # 04/10: la spartizione del modulo condiviso dei minimi (gemello dello
+        # scalper): una parte diretta = piazzabile; un place-and-trim (da 0,50
+        # in su) col tetto delle sequenze non raggiunto = da aspettare; sotto
+        # 0,50 nessuna sequenza parte mai (prima: si aspettava per sempre).
+        diretta, trim, _residuo = spezza_uscita(side, float(get_nearest_price(base)),
+                                                float(g[1]))
+        if diretta > 0:
             return False
-        # S3 (29/09, come lo scalper): un resto sotto 0,05 non avvia mai una
-        # sequenza (`_place_exact`: `rest < 0.05` -> `min_bet_skip`): aspettare
-        # il tetto delle sequenze lo lascerebbe in chiusura per sempre.
-        if (self.exact_exits and not self.dry_run and float(g[1]) >= 0.05
+        if (self.exact_exits and not self.dry_run and trim >= 0.05
                 and pos.submin_count < self._SUBMIN_MAX_PER_CYCLE):
             return False
         return True
+
+    def _tutto_residuo(self, nw: float, nl: float,
+                       bb: Optional[float], bl: Optional[float], cross: int = 0) -> bool:
+        """04/10: la chiusura di ADESSO e' tutta residuo per il modulo dei
+        minimi (nessuna parte diretta, nessun place-and-trim), alla STESSA
+        quota a cui il flatten la piazzerebbe (``cross`` tick oltre il best:
+        al best puo' essere 0,50 e alla quota inseguita 0,48)."""
+        if not self.exact_exits or self.dry_run:
+            return False
+        side, base = ("LAY", bl) if nw > nl else ("BACK", bb)
+        if base is None:
+            return False
+        p = get_nearest_price(base)
+        if cross:
+            p = price_ticks_away(p, cross if side == "LAY" else -cross) or p
+        g = compute_green(nw, nl, p)
+        if g is None:
+            return False
+        d, trim, residuo = spezza_uscita(side, float(p), float(g[1]))
+        return d <= 0 and trim <= 0 and residuo > 0
+
+    def _dichiara_residuo(self, pos: _Pos, nw: float, nl: float) -> None:
+        """DECISIONE DELL'UTENTE (04/10): il residuo resta RICORDATO (lo sniper
+        tiene gli ordini della posizione fra i cicli) e si DICHIARA una volta
+        con la proposta; il bot non lo ritenta, lo chiude l'utente."""
+        self._emit("residuo_ricordato", level="CRITICAL", selection_id=self._sid(pos),
+                   nw=round(nw, 3), nl=round(nl, 3),
+                   msg="SOTTO_MINIMO_NON_PIAZZABILE: residuo %.2f dello sniper non "
+                       "accettato da Betfair .it, RICORDATO (se vince %+.2f, se perde "
+                       "%+.2f). Proposta: chiuderlo a mano dal sito o lasciarlo; il "
+                       "bot non lo ritenta" % (abs(nw - nl), nw, nl))
 
     @staticmethod
     def _ordini_in_sequenza(pos: _Pos) -> set:
@@ -956,16 +1004,16 @@ class SniperStrategy(BaseStrategy):
     # ---------------- esecuzione (semantica IDENTICA allo scalper live .it)
     @staticmethod
     def _side_min(side: str) -> float:
-        """Minimo di piazzamento diretto per lato su .it (BACK 2 / LAY 0,50)."""
-        return 2.0 if (side or "").upper() == "BACK" else 0.5
+        """Minimo di piazzamento diretto per lato su .it. 04/10: SOLO dal modulo
+        condiviso dei minimi (prima una copia: BACK 2,00 / LAY 0,50)."""
+        return float(IT_BACK_MIN_STAKE if (side or "").upper() == "BACK"
+                     else IT_LAY_MIN_SIZE)
 
     def _size_direct_ok(self, side: str, size: float) -> bool:
-        """True se la size e' piazzabile DIRETTAMENTE su .it (multiplo di
-        0,50 e >= minimo del lato)."""
-        if size < self._side_min(side) - _EPS:
-            return False
-        mult = size / 0.5
-        return abs(mult - round(mult)) < 1e-6
+        """True se la size e' piazzabile DIRETTAMENTE su .it all'importo
+        esatto: lo decide il modulo condiviso (`scalper_bot.spezza_uscita`)."""
+        d, trim, residuo = spezza_uscita(side, 2.0, size)
+        return trim <= 0 and residuo <= 0 and abs(d - round(float(size), 2)) < 1e-6
 
     @staticmethod
     def _track(pos: _Pos, order: Any) -> None:
@@ -996,9 +1044,30 @@ class SniperStrategy(BaseStrategy):
         if (not floor and self.exact_exits and pos is not None
                 and not self._size_direct_ok(side, size)):
             return self._place_exact(market, sid, side, price, size, pos)
+        # 04/10 «SOLDI VERI SOLO COL PULSANTE»: in soldi veri ogni APERTURA
+        # chiede il freno condiviso (kill-switch + «Ordini reali»); le uscite
+        # partono sempre. Una riga CRITICAL per episodio.
+        if floor and self.freno_live is not None:
+            try:
+                motivo_live = self.freno_live()
+            except Exception as ex:  # noqa: BLE001 - non valutabile = fermo
+                motivo_live = "freni_live_non_letti: %s" % str(ex)[:80]
+            if motivo_live:
+                if self._apertura_live_ferma != motivo_live:
+                    self._apertura_live_ferma = motivo_live
+                    self._emit("apertura_live_fermata", level="CRITICAL",
+                               market_id=market.market_id, selection_id=int(sid),
+                               side=side, motivo=motivo_live,
+                               msg="soldi veri NON serviti (%s): nessuna apertura; "
+                                   "le chiusure partono" % motivo_live)
+                return None
+            self._apertura_live_ferma = None
+        # 04/10: un'uscita esatta gia' piazzabile (banca al centesimo) parte
+        # all'importo esatto, senza l'arrotondamento al multiplo di 0,50
+        uscita_esatta = not floor and self.exact_exits and pos is not None
         # granularita' exchange .it: multipli di 0,50 (size non multipla =
         # INVALID_BET_SIZE e la posizione RESTA APERTA)
-        if self.size_step > 0:
+        if self.size_step > 0 and not uscita_esatta:
             size = round(round(size / self.size_step) * self.size_step, 2)
             if size < self.size_step:
                 size = 0.0
@@ -1052,21 +1121,18 @@ class SniperStrategy(BaseStrategy):
         from ..live_order_build import round_to_tick
         from ..trading.submin import FlumineSubminOps, SubminState, SubminStep
 
-        smin = self._side_min(side)
-        main = round(int(size / 0.5 + 1e-9) * 0.5, 2)
-        if main < smin - _EPS:
-            main = 0.0
-        rest = round(size - main, 2)
+        # 04/10: spartizione dal modulo condiviso dei minimi (gemello dello
+        # scalper): parte diretta, place-and-trim solo da 0,50 in su, residuo
+        # che Betfair .it non accetta (mai un rimpiazzo sotto 0,50: rifiutato).
+        main, rest, residuo = spezza_uscita(side, price, size)
         main_order = None
-        if main >= smin - _EPS:
-            # pos passato per il tracking anti-orfani; nessuna ricorsione:
-            # main e' multiplo di 0,50 → _size_direct_ok=True → place diretto.
+        if main > 0:
             main_order = self._place(market, sid, side, price, main,
                                      floor=False, pos=pos)
+        if residuo >= 0.01:
+            self._emit("min_bet_skip", selection_id=int(sid), side=side,
+                       size=residuo)
         if rest < 0.05:
-            if rest >= 0.01:
-                self._emit("min_bet_skip", selection_id=int(sid), side=side,
-                           size=rest)
             return main_order
 
         import time as _t

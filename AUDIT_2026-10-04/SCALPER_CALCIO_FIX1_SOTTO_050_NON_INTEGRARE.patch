@@ -1,0 +1,233 @@
+diff --git a/Betfair/stream/scalper/scalper_bot.py b/Betfair/stream/scalper/scalper_bot.py
+index d66a168..9278890 100644
+--- a/Betfair/stream/scalper/scalper_bot.py
++++ b/Betfair/stream/scalper/scalper_bot.py
+@@ -58,6 +58,7 @@ from flumine.order.ordertype import LimitOrder
+ from flumine.order.trade import Trade
+ from flumine.utils import get_nearest_price, get_price, get_size, price_ticks_away
+ 
++from ..live_order_build import SOTTO_MINIMO_NON_PIAZZABILE, SUBMIN_IMPORTO_FINALE_MIN
+ from ..trading.freno_rifiuti import BACKOFF_SCALPER_S, FrenoRifiuti
+ from ..trading.stato_mercato import AttesaRiapertura, guardia_flumine
+ from ..uscite_proposte import CHIAVE_STATS as CHIAVE_PROPOSTE
+@@ -207,6 +208,10 @@ class _Slot:
+     # 29/09 (cantiere S): chiusura non piazzabile gia' dichiarata CRITICAL
+     # (una riga per episodio, non una a ogni book)
+     chiusura_bloccata_detta: bool = False
++    # 04/10 (certificazione scalper calcio): resto di chiusura sotto l'importo
++    # finale minimo del place-and-trim (.it 0,50) gia' dichiarato CRITICAL
++    # (una riga per episodio, non una a ogni book)
++    sotto_minimo_detto: bool = False
+     swing: bool = False                  # ciclo originato dal trend (target/stop swing)
+     # 25/09 - uscite manuali: il motivo dell'ultima proposta emessa su questo
+     # ciclo (una sola 'uscita_proposta' per motivo, mai una a ogni book)
+@@ -2228,7 +2233,11 @@ class ScalperStrategy(BaseStrategy):
+         # esistente di `_place_exact`: `rest < 0.05` -> `min_bet_skip`), quindi
+         # il tetto delle sequenze non si raggiunge mai: se si aspettasse il
+         # tetto, lo slot resterebbe in chiusura PER SEMPRE con quel resto.
+-        if self.exact_exits and not self.dry_run and size >= 0.05 and \
++        # 04/10: lo stesso vale sotto l'importo finale minimo del place-and-trim
++        # (0,50 su .it): `_place_exact` non avvia la sequenza (Betfair la
++        # rifiuterebbe), quindi non c'e' nessuna sequenza da aspettare.
++        if self.exact_exits and not self.dry_run and \
++                size >= SUBMIN_IMPORTO_FINALE_MIN - 1e-6 and \
+                 getattr(slot, "submin_count", 0) < self._SUBMIN_MAX_PER_CYCLE:
+             return False
+         return True
+@@ -2592,6 +2601,32 @@ class ScalperStrategy(BaseStrategy):
+                 self._emit("min_bet_skip", selection_id=int(selection_id),
+                            side=side, size=rest)
+             return main_order
++        # 04/10 (CERTIFICAZIONE SCALPER CALCIO, replay 35797769 K1 x4): un resto
++        # sotto l'importo FINALE minimo del place-and-trim su .it
++        # (`SUBMIN_IMPORTO_FINALE_MIN`, 0,50, regola unica del 01-02/10 che
++        # `trading.submin.verifica_importo_finale` applica a ogni altro
++        # ingresso) NON si tenta: Betfair rifiuta il rimpiazzo
++        # (CANCELLED_NOT_PLACED:INVALID_BET_SIZE, misura sul conto del 13/09:
++        # BACK 0,33 e LAY 0,33) e la sequenza si credeva DONE con un ordine
++        # "a riposo" che a mercato non esiste. Stesso verdetto del motore:
++        # nessun ordine, il resto si DICHIARA (una riga CRITICAL per episodio)
++        # e resta il ramo esistente del residuo non piazzabile.
++        if rest < SUBMIN_IMPORTO_FINALE_MIN - 1e-6:
++            self._emit("min_bet_skip", selection_id=int(selection_id),
++                       side=side, size=rest)
++            if not slot.sotto_minimo_detto:
++                slot.sotto_minimo_detto = True
++                self._emit("sotto_minimo_non_piazzabile", level="CRITICAL",
++                           market_id=market.market_id,
++                           selection_id=int(selection_id), side=side,
++                           size=rest, price=price,
++                           msg="%s: %s %.2f sotto %.2f EUR, importo minimo del "
++                               "place-and-trim su .it: nessun ordine; residuo "
++                               "%.2f da dichiarare al trader (lasciarlo, oppure "
++                               "aumentare e richiudere)"
++                               % (SOTTO_MINIMO_NON_PIAZZABILE, side.upper(), rest,
++                                  SUBMIN_IMPORTO_FINALE_MIN, rest))
++            return main_order
+ 
+         import time as _t
+         now_ms = int(_t.time() * 1000)
+@@ -2816,6 +2851,7 @@ class ScalperStrategy(BaseStrategy):
+         slot.residual_accepted = 0.0
+         slot.submin_count = 0
+         slot.chiusura_bloccata_detta = False
++        slot.sotto_minimo_detto = False
+         slot.next_entry = None
+         slot.flatten_orders = []
+         slot.flat_tries = 0
+diff --git a/Betfair/stream/tests/test_scalper_sotto_minimo_it_2026_10_04.py b/Betfair/stream/tests/test_scalper_sotto_minimo_it_2026_10_04.py
+new file mode 100644
+index 0000000..b8144e4
+--- /dev/null
++++ b/Betfair/stream/tests/test_scalper_sotto_minimo_it_2026_10_04.py
+@@ -0,0 +1,150 @@
++"""CERTIFICAZIONE SCALPER CALCIO (04/10) - resto di chiusura sotto 0,50 su .it.
++
++Reperto del replay 35797769 [base] (KO dal 02/10, commit 09072ca che ha reso il
++banco fedele ai minimi .it, `backtest/minimi_banco.py`): le uscite esatte dello
++scalper spezzano la chiusura in parte diretta + RESTO via place-and-trim; per un
++resto sotto 0,50 (0,30 / 0,28 / 0,19 / 0,14 / 0,13 / 0,11 nel replay) Betfair
++.it rifiuta il rimpiazzo (CANCELLED_NOT_PLACED:INVALID_BET_SIZE, misura sul
++conto del 13/09) e la sequenza si dichiarava DONE ("ordine sotto-minimo a
++riposo") con un sostituto che a mercato NON esiste: K1 x4 (il bot segue un
++ordine fantasma), poi il resto restava scoperto senza dichiarazione.
++
++Regola unica del 01-02/10 (`trading.submin.verifica_importo_finale`): l'importo
++FINALE di un place-and-trim e' almeno `SUBMIN_IMPORTO_FINALE_MIN` (0,50); sotto
++non si tenta mai, il resto si dichiara. Lo scalper costruiva lo `SubminState` a
++mano e la saltava.
++
++Bot VERO su Flumine VERO (banco del cantiere S: client paper della sessione,
++esecuzione differita di 1 e 4 book) con la regola dell'exchange simulato del
++banco montata (`minimi_banco.minimi_it_su_flumine`): stessi oggetti del replay.
++"""
++from __future__ import annotations
++
++from typing import Any, List
++
++import pytest
++
++from Betfair.stream.backtest import minimi_banco as MB
++from Betfair.stream.live_order_build import SUBMIN_IMPORTO_FINALE_MIN
++from Betfair.stream.tests import test_cantiere_s_scalper_ko_2026_09_29 as SCT
++from Betfair.stream.tests.test_cantiere_s_scalper_ko_2026_09_29 import (  # noqa: F401
++    differita,
++    esecuzione_differita,
++    orologio_mercato,
++)
++
++
++@pytest.fixture
++def exchange_it():
++    """La regola dell'exchange simulato del banco (minimi .it) per il test."""
++    with MB.minimi_it_su_flumine() as registro:
++        yield registro
++
++
++def _k1(b: SCT.Banco, i: int) -> List[str]:
++    """K1 del banco: uno slot VIVO non segue mai un ordine che il blotter del
++    mercato non conosce (`certificazione._k1`, stessa regola)."""
++    slot = b.slot()
++    if str(slot.status) not in SCT.CERT.STATI_SLOT_VIVI:
++        return []
++    noti = {str(o.id) for o in b.market.blotter}
++    c = SCT.CERT.credenze(b.strat)
++    out = []
++    for riga in c:
++        if riga["chiave"] != (SCT.MID, SCT.SEL):
++            continue
++        for o in SCT.CERT.ordini_seguiti(riga):
++            if str(o.id) not in noti:
++                out.append("book %d K1: slot %s segue %s %s %.2f @%s fuori dal blotter"
++                           % (i, slot.status, o.id, o.side, float(o.order_type.size),
++                              o.order_type.price))
++    return out
++
++
++def _fino_al_done(b: SCT.Banco, svuota: Any, n: int) -> List[str]:
++    """Giri fino alla chiusura DICHIARATA (DONE). Ci si ferma li': il resto
++    accettato viene poi dimenticato dal reset del ciclo dopo, decisione aperta
++    dell'utente dal 29/09 (referto del cantiere S par. 7), fuori da questo test
++    (lo stesso fanno i test del cantiere S3)."""
++    viol: List[str] = []
++    for i in range(n):
++        svuota()
++        b.book()
++        viol += _k1(b, i) + SCT.invarianti(b, i)
++        if b.slot().status == SCT.SB.DONE:
++            break
++    return viol
++
++
++@pytest.mark.parametrize("lato,size", [("LAY", 0.2), ("LAY", 0.4), ("BACK", 0.3)])
++def test_resto_sotto_050_nessuna_sequenza_e_dichiarato(lato, size, differita,
++                                                      orologio_mercato, exchange_it):
++    """Posizione abbinata il cui intero green e' sotto 0,50: nessuna sequenza
++    place-and-trim (Betfair rifiuterebbe il rimpiazzo), nessun ordine seguito
++    fuori dal blotter, UNA riga CRITICAL `sotto_minimo_non_piazzabile` col
++    motivo, lo slot chiude DICHIARANDO il residuo (`residual_ok`), nessun
++    ordine vivo, esposizione entro la tolleranza dichiarata."""
++    b = SCT._in_flatten(lato, 2.22, size)
++    orologio_mercato["banco"] = b
++    viol = _fino_al_done(b, differita, 80)
++    slot = b.slot()
++    assert viol == [], viol[:3]
++    assert slot.status == SCT.SB.DONE, slot.status
++    assert [r for r in b.righe if r[0] == "submin_start"] == []
++    crit = [r for r in b.righe if r[0] == "sotto_minimo_non_piazzabile"]
++    assert len(crit) == 1, crit
++    assert crit[0][1]["level"] == "CRITICAL"
++    assert "SOTTO_MINIMO_NON_PIAZZABILE" in crit[0][1]["msg"]
++    assert crit[0][1]["size"] < SUBMIN_IMPORTO_FINALE_MIN
++    assert slot.residual_ok is True
++    assert SCT.vivi(b.market, b.strat) == []
++    w, l = SCT.esposizione_vera(b.market, b.strat)
++    assert abs(w - l) <= SCT.CERT.tolleranza_slot(slot) + 1e-9, (w, l)
++    # il banco non ha visto nessun rimpiazzo rifiutato (nessun tentativo)
++    assert [r for r in exchange_it.rifiutati if r["tipo"] == MB.SOSTITUZIONE] == []
++
++
++def test_parte_diretta_piu_resto_sotto_050_il_bot_non_segue_fantasmi(
++        differita, orologio_mercato, exchange_it):
++    """Il caso del replay (selezione 22, 17:00:29): LAY 2,80 @2,22 abbinata,
++    chiusura BACK ~2,83 = 2,50 diretti + resto 0,33. Prima: sequenza per 0,33,
++    rimpiazzo rifiutato dall'exchange, slot che seguiva il sostituto inesistente
++    (K1). Ora: la parte diretta parte, il resto si dichiara, mai un ordine
++    seguito fuori dal blotter."""
++    b = SCT._in_flatten("LAY", 2.22, 2.8)
++    orologio_mercato["banco"] = b
++    viol = _fino_al_done(b, differita, 120)
++    slot = b.slot()
++    assert viol == [], viol[:3]
++    assert slot.status == SCT.SB.DONE, slot.status
++    diretti = [r for r in b.righe if r[0] == "place" and r[1].get("side") == "BACK"]
++    assert diretti and float(diretti[0][1]["size"]) == 2.5, diretti
++    assert [r for r in b.righe if r[0] == "submin_start"] == []
++    assert len([r for r in b.righe if r[0] == "sotto_minimo_non_piazzabile"]) == 1
++    assert [r for r in exchange_it.rifiutati if r["tipo"] == MB.SOSTITUZIONE] == []
++
++
++def test_resto_da_050_in_su_resta_al_place_and_trim(differita, orologio_mercato,
++                                                    exchange_it):
++    """Il confine: un resto di 0,50 (LAY 0,50 @2,22 -> BACK 0,50) NON e' sotto il
++    minimo finale: la sequenza parte come prima e nessuna riga CRITICAL."""
++    b = SCT._in_flatten("LAY", 2.22, 0.5)
++    orologio_mercato["banco"] = b
++    viol = _fino_al_done(b, differita, 150)
++    assert viol == [], viol[:3]
++    assert [r for r in b.righe if r[0] == "submin_start"], b.righe[-5:]
++    assert [r for r in b.righe if r[0] == "sotto_minimo_non_piazzabile"] == []
++
++
++def test_ultima_spiaggia_resto_sotto_050_e_davvero_non_piazzabile():
++    """`_resto_davvero_non_piazzabile`: una chiusura BACK 0,30 (sotto 0,50, con
++    le uscite esatte, nessuna sequenza fatta) e' davvero non piazzabile; una
++    BACK 1,20 (place-and-trim possibile, tetto non raggiunto) no."""
++    b = SCT.Banco()
++    b.book()
++    strat, slot = b.strat, b.slot()
++    assert strat.exact_exits and not strat.dry_run
++    # posizione LAY S @2,22 (se vince -S*1,22, se perde +S): chiusura BACK
++    # ~S*2,22/2,20 al best back 2,20
++    assert strat._resto_davvero_non_piazzabile(slot, -0.30 * 1.22, 0.30, 2.20, 2.22) is True
++    assert strat._resto_davvero_non_piazzabile(slot, -1.20 * 1.22, 1.20, 2.20, 2.22) is False
