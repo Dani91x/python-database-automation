@@ -21,6 +21,8 @@ const path = require('path');
 const fs = require('fs');
 const { spawn, spawnSync } = require('child_process');
 const crypto = require('crypto');
+// 04/10: l'ambiente dei runner Python (tetto del tennis compreso), funzione pura
+const { costruisciEnvRunner } = require('./ambiente_runner');
 
 const UI_PORT = 47330;
 
@@ -354,39 +356,21 @@ function spawnRunner(label, args) {
         return;
     }
     // env passthrough + velocità canale locale (poll coda 0.15s, publish ladder 0.3s).
-    const env = {
-        ...process.env,
-        // IMPRONTA DELL'AVVIO: la leggono i servizi bot per capire se stanno
-        // ripartendo dopo un crash (stesso id → il bot acceso resta acceso) o
-        // se l'app e' stata riaperta (id nuovo → nessun bot opera).
-        APP_BOOT_ID,
-        // C1 (24/09): chiave dei comandi sui canali locali (vedi sopra).
-        LOCAL_CHANNEL_TOKEN,
-        LIVE_ORDER_QUEUE_POLL_SEC: '0.15',
-        LIVE_LADDER_PUBLISH_SEC: '0.3',
-        TENNIS_LADDER_PUBLISH_SEC: '0.3',
-        // AUDIT LATENZA 17/07: il worker ordini TENNIS girava al default 1.0s
-        // (click manuale 6.7x più lento del calcio, solo per env mancante);
-        // il drain locale ora è splittato dalla coda DB (throttle ~1s interno),
-        // quindi 0.15s NON moltiplica le query Supabase. Idem il risk engine:
-        // stop/bracket automatici devono reagire in ~150ms, non ~1s.
-        TENNIS_ORDER_POLL_SEC: '0.15',
-        LIVE_RISK_ENGINE_POLL_SEC: '0.15',
-        // desktop: i runner NON escono quando non ci sono eventi seguiti — restano
-        // in attesa (canale locale + board vivi) finché non clicchi "Segui live".
-        LIVE_RUNNER_KEEP_ALIVE: '1',
-        // MODALITÀ ORDINI TENNIS: l'app nasce in PAPER (ordini SIMULATI, mai soldi
-        // veri) se l'ambiente non specifica altro. Col vecchio default OFF il
-        // worker ordini restava spento e i bot armati non piazzavano NEMMENO
-        // ordini paper. MAI 'LIVE' di default: il LIVE va scelto esplicitamente.
-        TENNIS_LIVE_ORDER_MODE: process.env.TENNIS_LIVE_ORDER_MODE || 'PAPER',
-        // K2 (26/09): su una pipe python bufferizza stdout e scrive in cp1252
-        // (le righe con accenti/frecce diventavano errori di logging o
-        // caratteri rotti, e un kill perdeva le ultime righe): unbuffered e
-        // UTF-8, come legge il pipe qui sotto (setEncoding('utf8')).
-        PYTHONUNBUFFERED: '1',
-        PYTHONIOENCODING: process.env.PYTHONIOENCODING || 'utf-8',
-    };
+    // 04/10: costruito dalla funzione PURA `costruisciEnvRunner` (ambiente_runner.js,
+    // test di contratto `node --test desktop/ambiente_runner.test.js`). Il TETTO del runner tennis viene
+    // dalla configurazione (`TENNIS_LIVE_ORDER_MODE` scritto, altrimenti il tetto del
+    // calcio `LIVE_ORDER_MODE`, altrimenti PAPER): prima era FORZATO a PAPER e il
+    // tennis non poteva mai servire i soldi veri. Il tetto e' la CAPACITA': gli
+    // ordini reali partono solo con «Ordini reali» = LIVE scelto in questo avvio.
+    const env = costruisciEnvRunner({
+        processEnv: process.env,
+        envFile: readEnvFile(path.join(repoRoot, '.env')),
+        bootId: APP_BOOT_ID,
+        token: LOCAL_CHANNEL_TOKEN,
+    });
+    if (label === 'runner-tennis') {
+        console.log(`[desktop] tetto ordini del runner tennis: ${env.TENNIS_LIVE_ORDER_MODE}`);
+    }
     const child = spawn(PYTHON, args, {
         cwd: repoRoot,
         env,

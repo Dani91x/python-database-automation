@@ -768,7 +768,9 @@ _CACHE_VUOTE = ("_OPTIONAL_MODS", "_CONSAPEVOLEZZA_SCRITTA", "_MARKET_MISSING",
                 #  * `_EVENTI_CHIUSI` = gli eventi gia' dichiarati chiusi:
                 #    ereditato, il secondo scenario nasce con la partita gia'
                 #    «chiusa» e il bot non fa niente.
-                "_CONTO_LETTO_A", "_EVENTI_CHIUSI")
+                "_CONTO_LETTO_A", "_EVENTI_CHIUSI",
+                # 04/10: i blocchi di catena in corso (per sport e modalita')
+                "_CATENA")
 
 # le cache di processo che NON vivono in `bot_service`: sono di altri moduli
 # dello stesso servizio e un replay le eredita esattamente allo stesso modo.

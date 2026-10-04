@@ -76,6 +76,7 @@ import { PannelloBot } from '@/components/controlroom/PannelloBot';
 import { righeInterruttori, type StatoBotPlancia } from '@/components/controlroom/righeBot';
 import {
     creaInterruttori, importiInterruttori, interruttoriDiSport,
+    leggiCatenaLive, leggiStradaOrdini,
 } from '@/lib/interruttori';
 import {
     fetchScanStatus,
@@ -684,6 +685,10 @@ export default function SafeStrategy() {
             }),
             // Omega non si comanda da questa pagina: l'obiettivo non serve
             obiettivoOmega: () => null,
+            // 04/10: la catena dei soldi veri, letta al gesto (strada dichiarata
+            // dal servizio; il runner tennis non e' noto da questa pagina)
+            catenaLive: () => leggiCatenaLive({
+                stradaSafeTennis: () => leggiStradaOrdini(bot.control?.stats, 'tennis') }),
         }, () => { void bot.reload(); }),
         [paramsSafe, statoSafe, bot],
     );

@@ -866,12 +866,18 @@ def _riga_armatura(ev: str, bot: str, d: Dict[str, Any],
         # modalita' di processo: prima la riga non la portava e un bot
         # PAPER su runner LIVE andava sul client REALE.
         "mode": d["mode"],
-        # `dry_run` e' il cancello del BOT su `market.place_order`. In
-        # PAPER e' FALSO: gli ordini passano dal blotter SIMULATO (client
-        # paper_trade=True, mai Betfair) e si vedono sul ladder. In LIVE
-        # resta True finche' l'utente non lo toglie a mano per partita
-        # (il doppio gesto: il reale vuole mode='live' E dry_run=False).
-        "dry_run": d["mode"] == "live",
+        # `dry_run` e' il cancello del BOT su `market.place_order`. FALSO in
+        # entrambe le modalita'. In PAPER gli ordini passano dal blotter
+        # SIMULATO (client paper_trade=True, mai Betfair) e si vedono sul
+        # ladder. 04/10 (ordine dell'utente: «QUANDO SCELGO SOLDI VERI DEVONO
+        # PARTIRE ORDINI VERI. PER TUTTI I BOT»): in LIVE prima restava True
+        # (doppio gesto per partita) e il bot «acceso in soldi veri» non
+        # piazzava niente. Il gesto dell'utente e' l'interruttore del bot in
+        # soldi veri (riportato in prova a ogni avvio dell'app,
+        # `ferma_interruttori_al_nuovo_avvio`); il runner apre in reale SOLO
+        # col suo tetto LIVE e «Ordini reali» = LIVE scelto in questo avvio
+        # (terza rete `guardie_tennis.ControlloModoOrdiniTennis`).
+        "dry_run": False,
         "stake": d["stake"] if d["stake"] is not None else 2,
         "params": params_bot,
     }
@@ -933,7 +939,11 @@ def _stato_auto(d: Dict[str, Any], bot: str, tetto: int, feed: Dict[str, Any],
         "feed_eta_s": feed["eta_scanner_s"],
         "fonte": FONTE_FEED,
         "origine_ok": bool(origine_ok),
-        "live_in_dry_run": d.get("mode") == "live",
+        # 04/10: VERO solo se una partita armata in soldi veri e' davvero in
+        # dry-run (righe vecchie, dry-run rimesso a mano): prima era «il bot e'
+        # in live», perche' il ponte armava il live sempre in dry-run
+        "live_in_dry_run": any(_modalita_dichiarata(r) == "live" and r.get("dry_run") is not False
+                               for r in righe_attive),
         # None = colonna assente: la pagina non offre l'interruttore
         "uscite_automatiche": (None if uscite is None
                                else _AM.uscite_automatiche_bot(bot, d)),

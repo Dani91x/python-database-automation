@@ -495,7 +495,13 @@ def test_profilo_rapido_safe_tennis_sulla_registrazione_vera(monkeypatch):
 
     esiti = TRR.esegui_scenari("safe_tennis", "35795993", _REG)
     righe = {e.nome: e for e in esiti}
-    assert len(esiti) == 14
+    # 04/10 (MODIFICATO, dichiarato): 14 -> 18 (R11, R11b, R11c del cantiere
+    # «soldi veri coerenti»; R11d del cantiere tetto tennis). Sul tennis R11b non e'
+    # piu' N/A: «Ordini reali» governa anche il runner tennis.
+    assert len(esiti) == 18
+    assert righe["R11b Ordini reali in prova"].ok and not righe["R11b Ordini reali in prova"].na
+    assert righe["R11d Ordini reali LIVE (tennis)"].ok
+    assert not righe["R11d Ordini reali LIVE (tennis)"].na
     ko = [(e.nome, [c for c in e.controlli if not c[1]], e.errore) for e in esiti
           if not e.ok and not e.na]
     assert not ko, ko

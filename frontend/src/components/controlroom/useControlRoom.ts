@@ -159,7 +159,7 @@ import { leggiAutoTennis, notaAutoTennis, type AutoTennis } from './tennisAuto';
 // 28/09 (CANTIERE N): proposte d'uscita dei bot di flusso
 import { leggiProposteFlusso, type PropostaFlusso } from '@/lib/proposteUscite';
 // 25/09 — interruttore «uscite automatiche» dello scalper (aggregato sessioni)
-import { usciteSessioniScalper } from '@/lib/interruttori';
+import { usciteSessioniScalper, leggiStradaOrdini, type StradaOrdini } from '@/lib/interruttori';
 
 /** una proposta di OPPORTUNITA' con i numeri vivi che la scheda mostra */
 export interface PropostaOppVista {
@@ -285,6 +285,12 @@ export interface StatoBot {
      * continua a non dire niente.
      */
     motivoBlocco: string | null;
+    /**
+     * 04/10 — solo Safe: da quale strada partono i suoi ordini TENNIS, come la
+     * DICHIARA il servizio (`stats.strade_ordini.tennis`). Opzionale: chi
+     * costruisce uno stato senza (finti, altri bot) vale «non dichiarata».
+     */
+    stradaTennis?: StradaOrdini | null;
     /**
      * Il tetto delle partite e quante ne occupano un posto **nella modalità in
      * cui il bot sta operando**. Sono due conti separati, mai la somma: i soldi
@@ -2468,6 +2474,7 @@ export function useControlRoom(): ControlRoomVM {
                 stato, params, obiettivoGiorno,
                 // ── quello che il SERVIZIO dichiara, non quello che deduciamo ──
                 motivoBlocco: testo(stats?.motivo_blocco),
+                stradaTennis: bot === 'safe' ? leggiStradaOrdini(stats, 'tennis') : null,
                 tettoPartite: numero(stats?.tetto_partite),
                 partiteEsposte: numero(stats?.partite_esposte),
                 stopFermaSoloAperture: stats?.stop_ferma_solo_aperture === true,

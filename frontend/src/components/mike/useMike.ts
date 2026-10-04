@@ -22,7 +22,9 @@ import {
     type MikeParams, type MikeRequest, type MikeRequestKind, type MikeTrade,
 } from '@/lib/mike';
 import { getLocalChannel, type LocalStatus } from '@/lib/localChannel';
-import { creaInterruttori } from '@/lib/interruttori';
+import {
+    creaInterruttori, interruttoreDi, leggiCatenaLive, verificaSoldiVeri,
+} from '@/lib/interruttori';
 
 /** stati in cui una partita non cambia piu': una scheda spinta in uno di questi
  *  e non piu' restituita dal database e' una card fantasma, e va potata. */
@@ -208,7 +210,13 @@ export function useMike(handlers: MikeHandlers = {}): MikeView {
 
     const running = control?.status === 'running' || control?.status === 'stopping';
 
-    const start = useCallback(async () => { await wrap(() => activateMike(desiredMode)); }, [wrap, desiredMode]);
+    // 04/10: «soldi veri» solo se la catena di Mike (REST: «Ordini reali») li serve
+    const start = useCallback(async () => {
+        await wrap(async () => {
+            await verificaSoldiVeri(interruttoreDi('mike'), desiredMode, () => leggiCatenaLive());
+            return activateMike(desiredMode);
+        });
+    }, [wrap, desiredMode]);
     const stop = useCallback(async () => { await wrap(() => stopMike()); }, [wrap]);
     /**
      * ⚠️ 16/09 — UN CAMBIO DI MODALITA' NON ACCENDE MAI NIENTE.
@@ -229,6 +237,7 @@ export function useMike(handlers: MikeHandlers = {}): MikeView {
                     params: () => (control?.params ?? null) as Record<string, unknown> | null,
                     servizio: () => ({ inCorsa: running, modalita: control?.mode ?? null }),
                     obiettivoOmega: () => null,
+                    catenaLive: () => leggiCatenaLive(),
                 }, () => {}).cambiaModalita('mike', next);
                 return null;
             });

@@ -45,11 +45,26 @@ _CHIAVI_CADENZA = (
 
 
 @pytest.fixture(autouse=True)
+def _freni_live_dichiarati(monkeypatch):
+    """04/10: il REST live di Omega rispetta ora anche il MODO EFFETTIVO
+    (``omega_service._freno_rest_live`` -> ``execution._live_brake``), come Safe
+    e Mike. Ambiente DICHIARATO come nel conftest di Safe: tetto LIVE, «Ordini
+    reali» LIVE in memoria (mai letto dal DB). I test dei freni li chiudono a
+    mano con ``monkeypatch``/``dichiara_per_banco``."""
+    from Betfair.stream import modo_ordini as _mo
+
+    monkeypatch.setenv("LIVE_ORDER_MODE", "LIVE")
+    with _mo.dichiara_per_banco("LIVE"):
+        yield
+
+
+@pytest.fixture(autouse=True)
 def _reset_omega_process_state():
     from Betfair.omega import omega_config as C
     from Betfair.omega import omega_service as S
 
-    for name in ("_LEG_RETRY", "_SKIP_SEEN", "_BLIND_CYCLES", "_MARKET_FIT_CACHE"):
+    for name in ("_LEG_RETRY", "_SKIP_SEEN", "_BLIND_CYCLES", "_MARKET_FIT_CACHE",
+                 "_CATENA_OMEGA"):                    # 04/10: blocchi di catena
         d = getattr(S, name, None)
         if isinstance(d, dict):
             d.clear()

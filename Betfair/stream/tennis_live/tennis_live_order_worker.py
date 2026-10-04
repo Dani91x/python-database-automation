@@ -74,6 +74,51 @@ def _runner_mode() -> str:
     return os.getenv("TENNIS_LIVE_ORDER_MODE", "OFF").strip().upper()
 
 
+def _modo_effettivo() -> str:
+    """04/10 - il modo EFFETTIVO del runner tennis (OFF | PAPER | LIVE): il piu'
+    restrittivo fra il tetto (``_runner_mode``) e «Ordini reali» della Control
+    Room valido per QUESTO avvio dell'app (``modo_ordini.modo_effettivo_tennis``;
+    non valido -> PAPER). Governa le APERTURE; le chiusure le serve il tetto.
+    Nessuna lettura: la riga arriva gia' ~1/s (``_gt.aggiorna_impostazioni``)."""
+    from .. import modo_ordini as _mo
+
+    return _mo.modo_effettivo_tennis(_runner_mode())
+
+
+def _servibili(proc_mode: Optional[str] = None) -> tuple:
+    """Modalita' di riga che il PROCESSO sa eseguire (client esistenti), come
+    ``live_order_worker._servable_modes``: LIVE -> live+paper, PAPER -> paper."""
+    from .. import live_order_worker as _low
+
+    return _low._servable_modes(proc_mode or _runner_mode())
+
+
+def _blocco_apertura_modo(row_mode: Any, action: Any, params: Any) -> Optional[str]:
+    """04/10 - motivo per cui un'APERTURA non deve partire col modo EFFETTIVO di
+    adesso, o None. Stessa regola del calcio (``live_order_worker.
+    _blocco_apertura_modo``): le chiusure (cancel, greenup, ``reduces_liability``)
+    passano sempre; una riga che il processo non sa servire la rifiuta chi
+    controlla il tetto, col suo motivo."""
+    if _gt.is_riga_di_chiusura(action, params):
+        return None
+    row_m = str(row_mode or "").strip().lower()
+    if row_m not in _servibili():
+        return None
+    eff = _modo_effettivo()
+    if row_m in _servibili(eff):
+        return None
+    from .. import modo_ordini as _mo
+
+    info = _mo.stato_tennis(_runner_mode())
+    perche = {
+        _mo.MOTIVO_TETTO: f"tetto del runner tennis: {info['tetto_ambiente']}",
+        _mo.MOTIVO_DB_ASSENTE: "«Ordini reali» non letto",
+        _mo.MOTIVO_AVVIO_DIVERSO: "«Ordini reali» non scelto in questo avvio dell'app",
+    }.get(info["motivo"], "«Ordini reali» della Control Room")
+    return (f"modo ordini tennis {eff} ({perche}): apertura '{row_m or '?'}' RIFIUTATA "
+            f"- si cambia da Control Room, Ordini reali")
+
+
 def _strategy_ref() -> str:
     """customerStrategyRef verso Betfair: quello dell'ATTORE del comando quando
     l'ordine arriva dal motore (``_CONTESTO.strategy_ref``, es. ``safe_tennis``,
@@ -534,12 +579,22 @@ def _mirror_order(mode: str, event_id: Optional[str], cust_ref: str, order: Any,
 # ---------------------------------------------------------------------------
 # Azioni
 # ---------------------------------------------------------------------------
-def _capture_strategy(session: Any, market_id: str) -> Any:
-    """Capture-strategy dell'evento del mercato (gli ordini vi si agganciano)."""
+def _capture_strategy(session: Any, market_id: str, mode: Any = None) -> Any:
+    """Capture-strategy dell'evento del mercato (gli ordini vi si agganciano).
+
+    04/10 (B2): con ``mode`` ('paper'/'live') la strategia degli ORDINI di
+    quella modalita' (``session.capture_ordini``, una per modalita': paper e
+    live mai sommati in esposizioni, green-up, cash-out e verifica delle
+    riduzioni). Sessione che dichiara la mappa ma non la modalita' -> None (il
+    chiamante rifiuta: mai ripiegare sulla strategia dell'altra modalita').
+    Sessione senza mappa (runner di prima, banco) -> la capture unica."""
     if session is None:
         return None
     for event_id, meta in getattr(session, "market_meta", {}).items():
         if meta.get("market_id") == market_id:
+            per_modo = getattr(session, "capture_ordini", None)
+            if mode is not None and isinstance(per_modo, dict) and per_modo:
+                return per_modo.get(str(mode).strip().lower())
             return session.capture.get(event_id)
     return None
 
@@ -597,9 +652,10 @@ def _do_place(flumine: Any, session: Any, cmd: Dict[str, Any], cust_ref: str) ->
     from ..live_order_build import min_stake_rules
 
     market = _resolve_market(flumine, cmd["market_id"])
-    strategy = _capture_strategy(session, cmd["market_id"])
+    strategy = _capture_strategy(session, cmd["market_id"], cmd.get("mode"))
     if strategy is None:
-        raise ValueError("nessuna strategy sottoscritta al mercato per agganciare l'ordine")
+        raise ValueError("nessuna strategy sottoscritta al mercato per agganciare l'ordine "
+                         f"(modalita' {cmd.get('mode')!r})")
     side = str(cmd["side"]).upper()
     if side not in _VALID_PLACE_SIDES:
         raise ValueError(f"side non valido: {cmd.get('side')!r} (atteso back|lay)")
@@ -814,7 +870,8 @@ def _do_greenup(flumine: Any, session: Any, cmd: Dict[str, Any], cust_ref: str) 
     from ..trading.greenup import FLAT_EPS, compute_greenup
 
     market = _resolve_market(flumine, cmd.get("market_id"))
-    strategy = _capture_strategy(session, cmd.get("market_id"))
+    # 04/10 (B2): le esposizioni e i resting della SOLA modalita' della riga
+    strategy = _capture_strategy(session, cmd.get("market_id"), cmd.get("mode"))
     # MONEY-CRITICAL: senza la capture-strategy NON possiamo leggere le esposizioni
     # (blotter.get_exposures(strategy, ...)) → (0,0) → "posizione piatta" FALSO con
     # la posizione APERTA. Fallire forte invece di un 'done' bugiardo.
@@ -1217,6 +1274,11 @@ def _iter_tracked_strategies(session: Any) -> Any:
     out = []
     for event_id, strat in list(getattr(session, "capture", {}).items()):
         out.append((strat, event_id))
+        # 04/10 (B2): le strategie degli ordini delle ALTRE modalita' (la live),
+        # per ogni partita seguita; ognuna scrive sotto la SUA modalita'
+        for altra in list((getattr(session, "capture_ordini", None) or {}).values()):
+            if altra is not None and altra is not strat:
+                out.append((altra, event_id))
     for (event_id, _bot_key), strat in list(getattr(session, "hosted", {}).items()):
         out.append((strat, event_id))
     return out
@@ -1394,9 +1456,19 @@ def _process_local_requests(flumine: Any, session: Any, runner_mode_l: str,
             if action not in _LOCAL_TENNIS_ACTIONS:
                 ch.respond(req, False, error=f"azione non supportata dal canale locale tennis: {action}")
                 continue
-            if str(cmd.get("mode") or "") != runner_mode_l:
+            # 04/10: righe paper E live servite per riga (client della modalita'
+            # della riga), come il calcio. Il TETTO dice quali il processo sa
+            # eseguire; il modo EFFETTIVO («Ordini reali» di questo avvio) ferma
+            # le APERTURE che non puo' servire. Le chiusure passano sempre.
+            mode_req = str(cmd.get("mode") or "").strip().lower()
+            if mode_req not in _servibili(runner_mode_l):
                 ch.respond(req, False,
-                           error=f"mode richiesta '{cmd.get('mode')}' diversa dal runner '{runner_mode_l}'")
+                           error=f"mode richiesta '{cmd.get('mode')}' non servibile dal runner "
+                                 f"tennis in modalita' '{runner_mode_l}'")
+                continue
+            blocco = _blocco_apertura_modo(mode_req, action, cmd.get("params"))
+            if blocco:
+                ch.respond(req, False, error=blocco)
                 continue
             # T2 (24/09) - kill-switch RI-LETTO PER COMANDO, stessa regola del calcio
             # (``live_order_worker._process_local_requests``): aperture rifiutate,
@@ -1418,7 +1490,7 @@ def _process_local_requests(flumine: Any, session: Any, runner_mode_l: str,
             cust_ref = ("awtq" + str(sid))[:32]
             if _t_tempi is not None: _TEMPI.nuovo(  # noqa: E701 - F0 misura (solo RAM)
                 cust_ref, "tennis", via="canale", t=_t_tempi, azione=action,
-                mode=runner_mode_l, rif=client_ref,
+                mode=mode_req, rif=client_ref,
                 decisione_ms=_TEMPI.decisione_da(cmd, cmd.get("params")))
             status = "done"
             try:
@@ -1428,7 +1500,7 @@ def _process_local_requests(flumine: Any, session: Any, runner_mode_l: str,
                     result = _dispatch(flumine, session, cmd_parsed, cust_ref)
             except Exception as ex:  # noqa: BLE001
                 status = "error"
-                result = _result(ok=False, action=action, mode=runner_mode_l,
+                result = _result(ok=False, action=action, mode=mode_req,
                                  cmd=cmd, cust_ref=cust_ref, error=str(ex))
             ch.respond(req, bool(result.get("ok")), result,
                        error=None if result.get("ok") else result.get("error"))
@@ -1441,7 +1513,8 @@ def _process_local_requests(flumine: Any, session: Any, runner_mode_l: str,
             if result.get("ok") and action in ("place", "replace", "greenup"):
                 rec = (getattr(session, "tracked_orders", {}) or {}).get(cust_ref)                     if session is not None else None
                 order = rec.get("order") if isinstance(rec, dict) else None
-                _mirror_order(runner_mode_l, _event_id_of(session, cmd.get("market_id")),
+                # 04/10: lo specchio sotto la modalita' DELL'ORDINE, mai del runner
+                _mirror_order(mode_req, _event_id_of(session, cmd.get("market_id")),
                               cust_ref, order, cmd_parsed)
             # registrazione best-effort nella coda DB (storico, mai bloccante)
             try:
@@ -1557,10 +1630,26 @@ def tennis_live_order_worker(context: dict, flumine: Any, session: Any = None) -
             if tennis_db.claim_tennis_order(rid):
                 _cm.gestisci_riga(session, row, rid, db=tennis_db)
             continue
-        # CROSS-MODE (C1): una riga della mode opposta NON va eseguita. Claim atomico + error.
-        if _declared_mode(row) != runner_mode_l:
+        # CROSS-MODE (C1): una riga che il PROCESSO non sa servire (nessun client
+        # di quella modalita') NON va eseguita. Claim atomico + error.
+        # 04/10: righe paper e live servite per riga col tetto LIVE (come il calcio).
+        if _declared_mode(row) not in _servibili(runner_mode_l):
             if tennis_db.claim_tennis_order(rid):
                 _reject_cross_mode(rid, row, runner_mode_l)
+            continue
+        # 04/10: APERTURA che il modo EFFETTIVO non serve («Ordini reali» non LIVE in
+        # questo avvio): rifiutata con esito esplicito, mai lasciata 'pending'.
+        _blocco = _blocco_apertura_modo(_declared_mode(row), _declared_action(row),
+                                        _merged_field(row, "params"))
+        if _blocco:
+            if tennis_db.claim_tennis_order(rid):
+                try:
+                    tennis_db.write_tennis_order_error(
+                        rid, _result(ok=False, action=_declared_action(row),
+                                     mode=_declared_mode(row), cmd=row,
+                                     cust_ref=_cust_ref(rid), error=_blocco))
+                except Exception:  # noqa: BLE001 - perfino l'errore e' best-effort
+                    logger.exception("[tennis-order] esito modo per riga %s non scritto", rid)
             continue
         # T2 - kill-switch RI-LETTO PER RIGA: un'apertura e' RIFIUTATA con esito
         # esplicito (mai lasciata 'pending' a partire da sola a freno spento: bug

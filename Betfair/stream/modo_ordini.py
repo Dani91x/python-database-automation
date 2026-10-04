@@ -59,6 +59,10 @@ COL_MODO = "order_mode"
 COL_MODO_AGG_AT = "order_mode_updated_at"
 COL_MODO_AGG_DA = "order_mode_updated_by"
 COL_KILL = "kill_switch"
+#: avvio dell'app a cui appartiene la scelta (scritto da ``dichiara_avvio``)
+COL_BOOT_ID = "order_mode_boot_id"
+#: 04/10 - il tetto del runner TENNIS (capacita' del suo processo)
+ENV_MODO_TENNIS = "TENNIS_LIVE_ORDER_MODE"
 
 #: oltre quanti secondi una lettura del DB non vale piu' (-> OFF)
 VALIDITA_S = 30.0
@@ -69,6 +73,8 @@ ETA_RILETTURA_BOT_S = 5.0
 MOTIVO_OK = "ok"
 MOTIVO_TETTO = "tetto_ambiente"
 MOTIVO_DB_ASSENTE = "db_assente"
+#: 04/10 (tennis): la scelta letta e' di un ALTRO avvio dell'app (non vale)
+MOTIVO_AVVIO_DIVERSO = "avvio_diverso"
 
 
 def normalizza(valore: Any) -> Optional[str]:
@@ -131,6 +137,7 @@ _STATO: Dict[str, Any] = {
     "tentato_mono": None,  # ultimo tentativo (anche fallito): cadenza dei bot
     "banco": False,        # True = dichiarato da un banco/test, non scade
     "avvio_atteso": False,  # True = runner appena avviato, riga non ancora riportata a PAPER
+    "boot": None,          # 04/10: ``order_mode_boot_id`` dell'ultima lettura
 }
 
 
@@ -153,6 +160,7 @@ def registra_settings(dati: Any) -> None:
         _STATO["kill"] = bool(dati.get(COL_KILL))
         _STATO["agg_at"] = dati.get(COL_MODO_AGG_AT)
         _STATO["agg_da"] = dati.get(COL_MODO_AGG_DA)
+        _STATO["boot"] = dati.get(COL_BOOT_ID)
         _STATO["letto_mono"] = _ora()
 
 
@@ -210,6 +218,69 @@ def stato_corrente() -> Dict[str, Any]:
     return out
 
 
+# ---------------------------------------------------------------------------
+# 04/10 - IL TENNIS SEGUE LO STESSO «ORDINI REALI» (decisione dell'utente)
+# ---------------------------------------------------------------------------
+# Il runner tennis riceve la STESSA riga (``guardie_tennis.aggiorna_impostazioni``
+# -> ``live_order_worker._refresh_settings`` -> ``registra_settings``, ~1/s, gia'
+# fatta per il kill-switch): nessuna lettura in piu'. Due differenze dal calcio,
+# entrambe verso la prudenza o verso la prova:
+#   * la scelta vale SOLO se scritta per QUESTO avvio dell'app
+#     (``order_mode_boot_id`` == ``APP_BOOT_ID`` del processo): il runner
+#     tennis non riporta la riga a PAPER (lo fa il runner calcio,
+#     ``dichiara_avvio``); finche' non e' fatto, o se non riesce, la scelta di
+#     ieri NON vale;
+#   * una scelta non valida (non letta, scaduta, di un altro avvio) vale PAPER,
+#     non OFF: la PROVA del tennis non si ferma per una lettura mancata, il LIVE
+#     solo se scritto. Una scelta OFF esplicita vale OFF (come nel calcio).
+def scelta_per_questo_avvio(boot_id: Optional[str] = None) -> Optional[str]:
+    """La scelta dalla UI SOLO se letta, fresca e scritta per QUESTO avvio
+    dell'app; altrimenti None. Un banco dichiarato vale sempre."""
+    from . import avvio_app as AA
+
+    boot = AA.boot_id_ambiente() if boot_id is None else str(boot_id or "").strip()
+    with _LOCK:
+        if not _fresca():
+            return None
+        if _STATO["banco"]:
+            return _STATO["modo"]
+        if not AA.stesso_avvio({AA.CHIAVE_BOOT_ID: _STATO["boot"]}, boot):
+            return None
+        return _STATO["modo"]
+
+
+def modo_effettivo_tennis(tetto: Any, boot_id: Optional[str] = None) -> str:
+    """Il modo EFFETTIVO del runner tennis: il piu' restrittivo fra il suo tetto e
+    la scelta valida per questo avvio (non valida -> PAPER, mai LIVE)."""
+    return modo_effettivo(tetto, scelta_per_questo_avvio(boot_id) or MODO_ALL_AVVIO)
+
+
+def stato_tennis(tetto: Any, boot_id: Optional[str] = None) -> Dict[str, Any]:
+    """Il modo effettivo del TENNIS col perche' (canale 47332, ``tennis_live_now``,
+    log). Stesse chiavi di ``stato_corrente`` per effettivo/tetto/scelta/motivo."""
+    t = normalizza(tetto) or "OFF"
+    valida = scelta_per_questo_avvio(boot_id)
+    with _LOCK:
+        letto = _STATO["letto_mono"]
+        fresca = _fresca()
+        grezza = _STATO["modo"] if fresca else None
+        out: Dict[str, Any] = {
+            "scelto_ui_at": _STATO["agg_at"], "scelto_ui_da": _STATO["agg_da"],
+            "eta_lettura_s": (None if letto is None
+                              else round(max(0.0, _ora() - float(letto)), 1)),
+        }
+    if valida is None:
+        motivo = MOTIVO_AVVIO_DIVERSO if (fresca and grezza is not None) else MOTIVO_DB_ASSENTE
+    elif _RANGO[valida] > _RANGO[t]:
+        motivo = MOTIVO_TETTO
+    else:
+        motivo = MOTIVO_OK
+    out.update({"effettivo": modo_effettivo(t, valida or MODO_ALL_AVVIO),
+                "tetto_ambiente": t, "scelto_ui": valida, "motivo": motivo,
+                "sport": "tennis"})
+    return out
+
+
 def aggiorna_da_db(sb_factory: Optional[Callable[[], Any]] = None,
                    eta_max_s: float = ETA_RILETTURA_BOT_S) -> None:
     """Per i processi dei BOT: rilegge la riga se l'ultimo tentativo ha piu' di
@@ -242,7 +313,7 @@ def azzera() -> None:
     with _LOCK:
         _STATO.update({"modo": None, "kill": False, "agg_at": None, "agg_da": None,
                        "letto_mono": None, "tentato_mono": None, "banco": False,
-                       "avvio_atteso": False})
+                       "avvio_atteso": False, "boot": None})
 
 
 def richiedi_avvio() -> None:
@@ -288,7 +359,6 @@ def dichiara_per_banco(modo: str, kill: bool = False) -> Iterator[None]:
 # watchdog (stesso id) non si tocca niente. Fail-closed coerente: all'avvio si
 # SCENDE soltanto - LIVE -> PAPER, PAPER resta PAPER, OFF resta OFF (portare
 # OFF a PAPER sarebbe salire, e salire e' un gesto dell'utente).
-COL_BOOT_ID = "order_mode_boot_id"
 MODO_ALL_AVVIO = "PAPER"
 
 

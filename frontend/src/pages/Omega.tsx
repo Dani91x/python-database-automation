@@ -33,7 +33,9 @@ import { BotHeader } from '@/components/trading/BotHeader';
 import { Badge } from '@/components/ui/badge';
 import { ServiceHealthChip } from '@/components/trading/ServiceHealthChip';
 import { ModeToggle } from '@/components/trading/ModeToggle';
-import { creaInterruttori } from '@/lib/interruttori';
+import {
+    creaInterruttori, interruttoreDi, leggiCatenaLive, verificaSoldiVeri,
+} from '@/lib/interruttori';
 import { ModeBanner } from '@/components/trading/ModeBanner';
 import { LiveConfirmDialog } from '@/components/trading/LiveConfirmDialog';
 import { StatTile, KpiRow, toneOf } from '@/components/trading/StatTile';
@@ -304,6 +306,8 @@ export default function Omega() {
     async function handleStart() {
         setBusy(true);
         try {
+            // 04/10: «soldi veri» solo se la catena di Omega li serve adesso
+            await verificaSoldiVeri(interruttoreDi('omega'), mode, () => leggiCatenaLive());
             await activateOmega(mode, goalInput, omegaParamsPatch(serverParams.current, params as unknown as Record<string, unknown>) as Partial<OmegaParams>);
             toast.success('Omega avviato', { description: `Obiettivo ${fmtMoney(goalInput)}/giorno · modalità ${mode.toUpperCase()}` });
             await reload();
@@ -397,6 +401,7 @@ export default function Omega() {
                 params: () => serverParams.current,
                 servizio: () => ({ inCorsa: running, modalita: mode }),
                 obiettivoOmega: () => goalInput,
+                catenaLive: () => leggiCatenaLive(),
             }, () => {}).cambiaModalita('omega', next);
             toast[next === 'live' ? 'error' : 'success'](
                 next === 'live' ? `🔴 ${T.modeLive} — soldi veri` : '🟢 Modalità PAPER (simulazione)',

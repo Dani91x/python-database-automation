@@ -135,23 +135,44 @@ def _client_for_mode(flumine: Any, row_mode: str, proc_mode: Optional[str] = Non
     return _low._client_for_mode(flumine, row_mode, proc_mode or _modo_processo())
 
 
+class CaptureDiModo:
+    """04/10 (B2): «la strategia degli ordini di QUESTA modalita'» per il motore.
+
+    Nel tennis la strategia dipende anche dal mercato (capture della partita),
+    che qui non si conosce ancora: si porta (sessione, modalita') e la si
+    risolve dove serve (``_read_matched_exposures``; ``_dispatch`` la sceglie
+    dal ``mode`` della riga). Paper e live MAI sotto la stessa strategia."""
+
+    __slots__ = ("session", "mode")
+
+    def __init__(self, session: Any, mode: str) -> None:
+        self.session = session
+        self.mode = mode
+
+
 def _strategy_for_mode(session: Any, row_mode: str) -> Any:
-    """Nel tennis gli ordini vivono sotto la capture della PARTITA (una sola
-    per tutte le modalita': il client giusto lo sceglie ``_client_kw``). Il
-    motore passa la sessione del runner: la si ritorna, dopo aver verificato
-    la modalita'."""
-    if str(row_mode or "").strip().lower() not in ("paper", "live"):
+    """La strategia degli ordini della modalita' della riga (``CaptureDiModo``).
+    Col tetto LIVE la sessione dichiara una strategia per modalita'
+    (``session.capture_ordini``): se manca quella della riga, rifiuto (mai la
+    strategia dell'altra modalita')."""
+    m = str(row_mode or "").strip().lower()
+    if m not in ("paper", "live"):
         raise ValueError(f"mode di riga sconosciuta: {row_mode!r}")
     if session is None:
         raise ValueError(f"strategy_assente per la modalita' '{row_mode}': riga NON eseguita")
-    return session
+    per_modo = getattr(session, "capture_ordini", None)
+    if isinstance(per_modo, dict) and per_modo and per_modo.get(m) is None:
+        raise ValueError(f"strategy_assente per la modalita' '{row_mode}': riga NON eseguita")
+    return CaptureDiModo(session, m)
 
 
-def _blocco_apertura_modo(row_mode: Any, action: str, params: Any) -> Optional[str]:  # noqa: ARG001
-    """Il runner tennis non ha il modo ordini dalla Control Room (il worker
-    tennis non lo applica ne' alla coda ne' al ``/order``): stessa regola qui.
-    Il tetto e' ``TENNIS_LIVE_ORDER_MODE`` (``_servable_modes``)."""
-    return None
+def _blocco_apertura_modo(row_mode: Any, action: str, params: Any) -> Optional[str]:
+    """04/10 (decisione dell'utente: il tennis segue lo STESSO «Ordini reali»
+    del calcio) - le APERTURE seguono il modo EFFETTIVO del runner tennis (tetto
+    x scelta valida per questo avvio), le chiusure passano sempre. Prima
+    tornava sempre None: col tetto LIVE Safe tennis andava a soldi veri senza
+    che «Ordini reali» contasse. Stessa funzione della coda e del ``/order``."""
+    return _TW._blocco_apertura_modo(row_mode, action, params)
 
 
 def _apertura_al_minimo(side: str, size: float) -> float:
@@ -179,7 +200,12 @@ def _read_matched_exposures(flumine: Any, market: Any, session: Any, selection_i
     """Esposizioni ABBINATE della capture del mercato (dove vivono gli ordini
     dei comandi e del desktop). Senza capture: (0, 0) = non verificabile."""
     del flumine
-    strat = _TW._capture_strategy(session, getattr(market, "market_id", None))
+    if isinstance(session, CaptureDiModo):
+        # 04/10 (B2): SOLO le esposizioni della modalita' del comando
+        strat = _TW._capture_strategy(session.session, getattr(market, "market_id", None),
+                                      session.mode)
+    else:
+        strat = _TW._capture_strategy(session, getattr(market, "market_id", None))
     return _TW._read_matched_exposures(market, strat, int(selection_id), float(handicap or 0.0))
 
 

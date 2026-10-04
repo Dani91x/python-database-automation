@@ -397,8 +397,20 @@ def point_event(prev: Optional[TennisScore], cur: Optional[TennisScore]) -> Opti
 # La classe flumine reale è costruita da ``_make_capture`` a runtime (così il modulo
 # resta importabile senza creare strategie né toccare la rete).
 # ---------------------------------------------------------------------------
-def _make_capture(market_id: str, event_id: str, market_ids: Optional[List[str]] = None) -> Any:
-    """Istanzia una BaseStrategy flumine che cattura i book del market indicato."""
+#: 04/10 (B2) - nome flumine della capture degli ordini LIVE. In flumine il
+#: blotter e' PER STRATEGIA e le strategie si indicizzano per nome
+#: (``Strategies.hashes``): un nome diverso tiene separati esposizioni, green-up
+#: e posizioni di paper e live (come ``LiveTradingStrategyPaper`` del calcio).
+NOME_CAPTURE_LIVE = "_CaptureOrdiniLive"
+
+
+def _make_capture(market_id: str, event_id: str, market_ids: Optional[List[str]] = None,
+                  *, nome: Optional[str] = None, solo_ordini: bool = False) -> Any:
+    """Istanzia una BaseStrategy flumine che cattura i book del market indicato.
+
+    04/10 (B2): ``solo_ordini=True`` = strategia che porta SOLO gli ordini di una
+    modalita' (non legge i book: ``check_market_book`` falso, zero lavoro per
+    book); ``nome`` obbligatorio in quel caso (blotter separato)."""
     from flumine import BaseStrategy
 
     class _Capture(BaseStrategy):
@@ -410,7 +422,7 @@ def _make_capture(market_id: str, event_id: str, market_ids: Optional[List[str]]
             self._lock = threading.Lock()
 
         def check_market_book(self, market: Any, market_book: Any) -> bool:  # noqa: ARG002
-            return True
+            return not solo_ordini
 
         def process_market_book(self, market: Any, market_book: Any) -> None:  # noqa: ARG002
             with self._lock:
@@ -465,6 +477,7 @@ def _make_capture(market_id: str, event_id: str, market_ids: Optional[List[str]]
     # concesse per app key). ``market_ids`` = TUTTI i mercati seguiti → una sola
     # capture, una sola subscription; i bot ricevono lo stesso filtro
     # (_instantiate_bot) e sono scopati sul PROPRIO mercato.
+    kw_nome: Dict[str, Any] = {"name": nome} if nome else {}
     return _Capture(
         market_filter=streaming_market_filter(market_ids=list(market_ids or [market_id])),
         stream_class=TennisRecMarketStream,
@@ -472,7 +485,32 @@ def _make_capture(market_id: str, event_id: str, market_ids: Optional[List[str]]
         max_selection_exposure=None,
         max_trade_count=int(1e9),
         max_live_trade_count=int(1e9),
+        **kw_nome,
     )
+
+
+def capture_degli_ordini(shared_cap: Any, mode: str, data_filter: Any,
+                         market_ids: List[str]) -> Dict[str, Any]:
+    """04/10 (B2) - le strategie sotto cui vivono gli ordini a mano e i comandi
+    del motore, UNA PER MODALITA' (paper e live MAI sommati: catalogo §7.21).
+
+    * ``paper``: la capture che legge i book (invariata: il paper di sempre);
+    * ``live``: SOLO col tetto LIVE, strategia dedicata ``NOME_CAPTURE_LIVE``
+      (stesso filtro e data filter -> flumine la mette sullo STESSO stream:
+      zero connessioni e zero mercati in piu'), che non legge i book.
+    Ognuna porta ``_tennis_modalita_esecuzione``: lo specchio posizioni scrive la
+    modalita' giusta e ``ControlloModalitaBotTennis`` rifiuta un ordine sul client
+    dell'altra modalita' (terza rete). Non registra niente nel framework."""
+    shared_cap._tennis_modalita_esecuzione = "PAPER"
+    out: Dict[str, Any] = {"paper": shared_cap}
+    if str(mode or "").strip().upper() == "LIVE":
+        mids = list(market_ids)
+        cap_live = _make_capture(mids[0], "*", market_ids=mids, nome=NOME_CAPTURE_LIVE,
+                                 solo_ordini=True)
+        cap_live.market_data_filter = data_filter
+        cap_live._tennis_modalita_esecuzione = "LIVE"
+        out["live"] = cap_live
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -484,6 +522,9 @@ class TennisLiveSession:
         # event_id -> {market_id, market_type, market_name, name_to_sel, selection_names}
         self.market_meta: Dict[str, Dict[str, Any]] = {}
         self.capture: Dict[str, Any] = {}                 # event_id -> capture strategy
+        # 04/10 (B2): modalita' ('paper'/'live') -> strategia degli ORDINI
+        # (``capture_degli_ordini``): paper e live mai sotto la stessa strategia
+        self.capture_ordini: Dict[str, Any] = {}
         self.hosted: Dict[tuple, Any] = {}                # (event_id, bot_key) -> strategy
         self.last_score: Dict[str, Optional[TennisScore]] = {}
         self.recent_points: Dict[str, Deque[Dict[str, Any]]] = {}
@@ -561,6 +602,7 @@ class TennisLiveSession:
 
     def reset_streams(self) -> None:
         self.capture.clear()
+        self.capture_ordini = {}
         self.hosted.clear()
         self.stopping_deadline.clear()
         # il framework vecchio non esiste piu': niente operazioni a caldo su di lui
@@ -1495,12 +1537,40 @@ def _build_now_state(session: TennisLiveSession, event_id: str) -> "tuple[Dict[s
         # 26/09 (R-FA-1): un mercato chiuso non e' in gioco (l'ultimo book
         # della partita porta ancora inplay=true: la UI scriverebbe «LIVE»)
         inplay = False
+    # 04/10 (B1): ``order_mode`` = il modo EFFETTIVO (tetto x «Ordini reali» di
+    # questo avvio), lo STESSO che coda, canale, motore e terza rete applicano
+    # alle aperture, come ``live_now.state.order_mode`` del calcio. Prima era il
+    # TETTO: col tetto LIVE ogni clic sul ladder sarebbe stato reale senza nessun
+    # gesto. Accanto tetto, scelta e motivo, perche' la UI dica il perche'.
+    modo = stato_modo_ordini()
     state = {
         "markets": markets_out,
-        "order_mode": live_order_mode(),
+        "order_mode": modo["effettivo"],
+        "order_mode_tetto": modo["tetto_ambiente"],
+        "order_mode_scelto": modo["scelto_ui"],
+        "order_mode_motivo": modo["motivo"],
         "updated_ms": int(datetime.now(timezone.utc).timestamp() * 1000),
     }
     return state, inplay, status
+
+
+def aggiungi_controlli_ordini(framework: Any) -> None:
+    """I trading control del runner tennis con gli ordini accesi, DENTRO flumine
+    (ogni place, anche quello di un bot, passa di qui prima del client):
+    T1 modalita' (client <-> modalita' della strategia), T2 kill-switch e, dal
+    04/10, la terza rete: un ordine REALE parte solo con «Ordini reali» LIVE
+    scelto in questo avvio (ladder, motore e 4 bot: ogni strada)."""
+    framework.add_trading_control(_gt.ControlloModalitaBotTennis)
+    framework.add_trading_control(_gt.ControlloKillSwitchTennis)
+    framework.add_trading_control(_gt.ControlloModoOrdiniTennis)
+
+
+def stato_modo_ordini() -> Dict[str, Any]:
+    """04/10 - il modo ordini del runner tennis col perche' (in memoria, zero IO):
+    ``modo_ordini.stato_tennis`` col tetto di questo processo."""
+    from .. import modo_ordini as _mo
+
+    return _mo.stato_tennis(live_order_mode())
 
 
 _STREAM_KEEPALIVE_SEC = float(os.getenv("TENNIS_STREAM_KEEPALIVE_SEC", "480"))
@@ -3101,8 +3171,7 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
             if orders_enabled:
                 # T1 seconda rete + T2 kill-switch, DENTRO flumine (ogni place, anche
                 # quello di un bot, passa di qui prima di andare al client)
-                framework.add_trading_control(_gt.ControlloModalitaBotTennis)
-                framework.add_trading_control(_gt.ControlloKillSwitchTennis)
+                aggiungi_controlli_ordini(framework)
             # 23/09 - saldo del conto riletto dopo ogni ordine REALE confermato
             # (ladder tennis e 4 bot) e ogni regolazione: una chiamata per
             # evento, ordini simulati ignorati, SOLO in LIVE.
@@ -3119,6 +3188,11 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
             shared_cap = _make_capture(all_market_ids[0], "*", market_ids=all_market_ids)
             shared_cap.market_data_filter = data_filter
             framework.add_strategy(shared_cap)
+            # 04/10 (B2): gli ordini LIVE sotto una strategia LORO (stesso stream)
+            capture_ordini = capture_degli_ordini(shared_cap, mode, data_filter, all_market_ids)
+            if "live" in capture_ordini:
+                framework.add_strategy(capture_ordini["live"])
+            session.capture_ordini = capture_ordini
             # T2 (24/09): a guardia d'avvio armata (ripresa non riuscita) NESSUN bot
             # si arma; le righe restano 'requested' e si armano al restart che il
             # bot_control_worker chiede appena la ripresa riesce.

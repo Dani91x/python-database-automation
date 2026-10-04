@@ -957,6 +957,19 @@ def _risolvi_via_canale(*, db, rows: list[dict[str, Any]], now: datetime
     return n, al_rest
 
 
+#: 04/10: fasi dell'evento ``order`` che NON provano che l'ordine sia arrivato al
+#: mercato (``motore_ordini._esegui``: 'rifiutato' = comando mai partito,
+#: 'errore' = ``post_place``)
+_FASI_RIFIUTO = ("rifiutato", "errore")
+
+
+def _apertura(tr: dict[str, Any]) -> bool:
+    """La riga e' un'APERTURA (non chiude niente): solo le aperture contano per
+    i blocchi di catena (le chiusure passano sempre)."""
+    return (tr.get("closes_trade_id") is None
+            and (tr.get("meta") or {}).get("closes_trade_id") is None)
+
+
 def _risolvi_una_via_canale(db, tr: dict[str, Any], *, now: datetime, os_mod: Any) -> str:
     from Betfair.safe_strategy import porta_ordini as _PO
 
@@ -999,6 +1012,25 @@ def _risolvi_una_via_canale(db, tr: dict[str, Any], *, now: datetime, os_mod: An
                            tr.get("id"), str(ex)[:120])
             meta.clear()
             meta.update(prima)
+    if ev is not None and _apertura(tr):
+        fase_ev = str(ev.get("fase") or "")
+        if fase_ev not in _FASI_RIFIUTO:
+            # 04/10: l'ordine e' arrivato al mercato (anche dopo l'aggancio):
+            # prova certa che la catena serve questa modalita' -- se l'ordine e'
+            # stato MANDATO dopo l'inizio del blocco (un ordine di prima non prova
+            # niente sulla catena di adesso)
+            inviato = _ts_iso(meta.get("canale_inviato_at"))
+            if _catena_ripristinata(db, _sport_di(tr), mode, inviato_ts=inviato):
+                X.chiudi_episodi_catena(db, getattr(porta, "attore", ""), mode)
+        elif _PO.terminale(ev):
+            # 04/10: rifiuto ASINCRONO per modo/freno dopo l'aggancio = blocco di
+            # CATENA come quello sincrono (stesso episodio, nessun tentativo)
+            nota = X.rifiuto_catena_asincrono(
+                db, attore=getattr(porta, "attore", ""), mode=mode, trade_id=tr.get("id"),
+                ref=ref, errore=ev.get("errore") or ev.get("error_code"), now=now)
+            if nota is not None:
+                _place_fail_catena(db, int(tr["id"]), tr, nota, now, {})
+                return "risolta"
     if ev is not None and _PO.terminale(ev) and os_mod is not None:
         fase = str(ev.get("fase"))
         matched = float(ev.get("size_matched") or 0.0)
@@ -6066,6 +6098,11 @@ def _execute(*, db, market, trade_id: int, row: dict[str, Any], params: dict,
         # solo il tennis ha la regola del minimo: il calcio chiama place come sempre
         **({"_nota": nota_place} if _sport_di(row) == "tennis" else {}),
     )
+    if out.status == "open" or out.catena_servita:
+        # 04/10: SOLO una prova certa (fill vero, o ack del runner senza motivo =
+        # guardie di modo e freno passate). Un 'pending' qualunque NO: l'ack
+        # ``in_aggancio`` rifa' le guardie dopo e il rifiuto puo' arrivare li'.
+        _catena_ripristinata(db, _sport_di(row), mode)
     if out.status == "pending":
         # coda flumine o esito REST ignoto: la riga resta 'pending' coi suoi
         # marker (li scrive place) → poll/reconcile la risolvono. MAI 'error'.
@@ -6175,6 +6212,9 @@ def _place_fail(db, trade_id: int, row: dict[str, Any], err: str, now: datetime,
     if X.e_senza_runner(err):
         _place_fail_senza_runner(db, trade_id, row, err, now)
         return
+    if X.blocco_di_catena(err):
+        _place_fail_catena(db, trade_id, row, err, now, params)
+        return
     key = _place_key(row.get("event_id"), row.get("signal_key"))
     st = _PLACE_ATTEMPTS.setdefault(key, {"attempts": 0})
     st["attempts"] = int(st.get("attempts") or 0) + 1
@@ -6249,6 +6289,129 @@ def _place_fail_senza_runner(db, trade_id: int, row: dict[str, Any], err: str,
             "next_retry_at": place_meta["next_retry_at"],
             "nota": "paper: runner non raggiungibile, ordine non eseguito "
                     "(nessun tentativo consumato, si riprova)"})
+
+
+#: 04/10/2026 - BLOCCHI DI CATENA in corso, per (sport, modalita'): la catena
+#: degli ordini non serve quella modalita' (runner solo in prova, «Ordini reali»
+#: sotto LIVE, freno tirato). ``motivo`` = testo per la riga del bot,
+#: ``prossima_prova`` = quando parte la prossima apertura-sonda (una sola).
+_CATENA: dict[tuple, dict[str, Any]] = {}
+
+
+def _place_fail_catena(db, trade_id: int, row: dict[str, Any], err: str,
+                       now: datetime, params: dict[str, Any]) -> None:
+    """04/10 (incidente Safe tennis in soldi veri col runner in PAPER: 15
+    tentativi a vuoto su 5 partite, ``motivo_blocco`` null). Un rifiuto di
+    CATENA (``X.blocco_di_catena``) non e' un esito di mercato: la riga si
+    chiude 'error' col motivo come ogni rifiuto, ma
+      * il budget ``place_max_attempts`` NON si consuma e il segnale non diventa
+        mai ``final`` (stessa regola di ``_place_fail_senza_runner`` e di Omega
+        R-F2-12): i segnali restano quelli della strategia;
+      * il blocco si registra per (sport, modalita'): le altre aperture in quella
+        modalita' NON partono a vuoto (``_catena_bloccata``), una sola sonda
+        ogni ``X.CATENA_PROVA_S``; il motivo va su ``stats.motivo_blocco``;
+      * il CRITICAL lo dice ``canale_rifiutato`` una volta per episodio.
+    Le chiusure non passano di qui (i freni non le fermano mai)."""
+    sport = _sport_di(row)
+    mode = str(row.get("mode") or "")
+    key = _place_key(row.get("event_id"), row.get("signal_key"))
+    st = _PLACE_ATTEMPTS.setdefault(key, {"attempts": 0})
+    st["last_ts"] = now.timestamp()
+    st["final"] = bool(st.get("final"))        # un final VERO di prima resta, mai creato qui
+    st["next_ts"] = now.timestamp() + X.CATENA_PROVA_S
+    place_meta = {"attempts": int(st.get("attempts") or 0), "last_error": err,
+                  "last_ts": now.isoformat(), "final": False, "blocco_catena": True,
+                  "next_retry_at": _iso_in(now, X.CATENA_PROVA_S)}
+    meta = {k: v for k, v in (row.get("meta") or {}).items() if k != "phase"}
+    meta.update({"reason": err, "error_final": True, "place": place_meta})
+    try:
+        db.update_trade(trade_id, status="error", settled_at=now.isoformat(), meta=meta)
+    except Exception:  # noqa: BLE001
+        pass
+    nuovo = (sport, mode) not in _CATENA
+    _CATENA[(sport, mode)] = {
+        "motivo": X.testo_blocco_catena(err, sport=sport, mode=mode), "nota": err,
+        "dal": (_CATENA.get((sport, mode)) or {}).get("dal", now.isoformat()),
+        "prossima_prova": now.timestamp() + X.CATENA_PROVA_S}
+    if nuovo:
+        _log(db, "skip", {"trade_id": trade_id, "event_id": row.get("event_id"),
+                          "signal_key": row.get("signal_key"), "strategy": row.get("strategy"),
+                          "mode": mode, "sport": sport, "reason": "blocco_di_catena",
+                          "err": err, "motivo": _CATENA[(sport, mode)]["motivo"],
+                          "nota": "nessun tentativo consumato; aperture in questa "
+                                  "modalita' ferme, una prova ogni %d s"
+                                  % int(X.CATENA_PROVA_S)})
+
+
+def _catena_bloccata(sport: str, mode: str, now_ts: float) -> Optional[dict[str, Any]]:
+    """Il blocco di catena in corso per (sport, modalita'), se l'apertura NON
+    deve partire adesso. Scaduta l'attesa passa UNA apertura (la sonda) e
+    l'attesa riparte: mai una raffica, e appena la catena torna il bot opera."""
+    voce = _CATENA.get((str(sport), str(mode)))
+    if voce is None:
+        return None
+    if now_ts >= float(voce.get("prossima_prova") or 0.0):
+        voce["prossima_prova"] = now_ts + X.CATENA_PROVA_S
+        return None
+    return voce
+
+
+#: 04/10: le strade degli ordini dichiarate in ``stats.strade_ordini``
+STRADA_RUNNER_CALCIO = "runner_calcio"
+STRADA_RUNNER_TENNIS = "runner_tennis"
+STRADA_DIRETTA = "diretta"
+
+
+def strade_ordini() -> dict[str, str]:
+    """``{"calcio": ..., "tennis": ...}``: il canale del runner se il suo
+    interruttore e' acceso (``porta_ordini._config_di``, solo ambiente, zero IO),
+    altrimenti la strada diretta (coda/REST con ``execution._live_brake``)."""
+    from Betfair.safe_strategy import porta_ordini as _PO
+
+    return {
+        "calcio": STRADA_RUNNER_CALCIO if _PO._config_di("calcio") else STRADA_DIRETTA,
+        "tennis": STRADA_RUNNER_TENNIS if _PO._config_di("tennis") else STRADA_DIRETTA,
+    }
+
+
+def _ts_iso(v: Any) -> Optional[float]:
+    """Epoch di un ISO (None se assente o illeggibile)."""
+    if not v:
+        return None
+    try:
+        d = datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=timezone.utc)
+    return d.timestamp()
+
+
+def _catena_ripristinata(db, sport: str, mode: str,
+                         inviato_ts: Optional[float] = None) -> bool:
+    """Un'apertura in quella modalita' e' arrivata al mercato: il blocco e'
+    finito. ``inviato_ts`` (ordine risolto DOPO, dall'evento): se l'ordine e'
+    stato mandato PRIMA che il blocco iniziasse non prova niente -> False.
+    True = nessun blocco in corso o blocco chiuso adesso."""
+    del db   # nessun kind nuovo (contratto H-16 col frontend): basta il log del processo
+    chiave = (str(sport), str(mode))
+    voce = _CATENA.get(chiave)
+    if voce is None:
+        return True
+    dal = _ts_iso(voce.get("dal"))
+    if inviato_ts is not None and dal is not None and inviato_ts < dal:
+        return False
+    _CATENA.pop(chiave, None)
+    logger.warning("[safe.bot] catena ripristinata (%s %s, bloccata dal %s): le aperture "
+                   "ripartono", sport, mode, voce.get("dal"))
+    return True
+
+
+def _motivo_catena() -> Optional[str]:
+    """Il testo dei blocchi di catena in corso, per ``stats.motivo_blocco``."""
+    if not _CATENA:
+        return None
+    return " | ".join(f"{sp} {md}: {v['motivo']}" for (sp, md), v in sorted(_CATENA.items()))
 
 
 def _log_uscita_senza_runner(db, trade: dict[str, Any], now: datetime, *,
@@ -6824,6 +6987,9 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
     # ⚠️ 15/09 — il motivo del blocco vale per UN giro: si riazzera qui, o la
     # pagina continuerebbe a mostrare un freno che non c'è più.
     _BLOCCO.update({"motivo": None, "tetto": None, "aperte": None})
+    # 04/10: un blocco di CATENA in corso (runner che non serve la modalita',
+    # «Ordini reali», freno) si dice a OGNI giro finche' dura, anche senza segnali
+    _BLOCCO["motivo"] = _motivo_catena()
     if engine is None:
         return 0, 0
     try:
@@ -6940,6 +7106,15 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
             continue
         # da qui in poi la MODALITA' e' quella della variante, non del servizio
         mode_s = _modalita_di(variant)
+        # 04/10: la catena non serve questa modalita' -> nessuna riserva, nessun
+        # comando a vuoto; passa solo la sonda (una ogni ``X.CATENA_PROVA_S``)
+        catena = _catena_bloccata(str(_sig(s, "sport") or "calcio"), mode_s, now_ts)
+        if catena is not None:
+            _log_skip(db, now, params, {"event_id": str(event_id), "signal_key": str(key),
+                                        "strategy": variant, "mode": mode_s,
+                                        "reason": "blocco_di_catena",
+                                        "motivo": catena.get("motivo")})
+            continue
         traded_s = _traded_di(mode_s)
         if traded_s is None:
             continue                      # idempotenza illeggibile: non si piazza
@@ -10102,6 +10277,11 @@ def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
         "motivo_blocco": _BLOCCO.get("motivo"),
         "tetto_partite": _BLOCCO.get("tetto"),
         "partite_esposte": _BLOCCO.get("aperte"),
+        # 04/10: DA QUALE STRADA partono i miei ordini (dichiarato dal servizio,
+        # mai dedotto dalla pagina): la Control Room verifica la catena giusta
+        # prima di accettare «soldi veri» (runner tennis/calcio o strada diretta,
+        # che in live risponde a «Ordini reali» come il calcio)
+        "strade_ordini": strade_ordini(),
         # con che passo si ripete questo battito: la pagina deve giudicare la
         # vitalità con la cadenza VERA del servizio, non con una costante
         # scritta nel frontend (che sarebbe una seconda verità).
@@ -10834,6 +11014,7 @@ def svuota_le_cache() -> None:
     _APERTE.update({"n": 0})
     _BLOCCO.clear()
     _BLOCCO.update({"motivo": None, "tetto": None, "aperte": None})
+    _CATENA.clear()                     # 04/10: blocchi di catena (di processo)
     _LOG_MODE.clear()
     _LOG_MODE.update({"value": ""})
     _CICLO_IN_ERRORE.clear()

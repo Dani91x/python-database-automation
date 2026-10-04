@@ -318,19 +318,24 @@ def test_partita_sparita_dopo_60s_e_memoria_pulita() -> None:
 def test_conflitto_modalita() -> None:
     assert AM.conflitto_modalita([riga_control("1", dry_run=True)], "paper") is None
     assert AM.conflitto_modalita([riga_control("1", dry_run=False)], "paper") == "live"
-    # D3 (25/09): in LIVE le sessioni automatiche nascono in dry-run e l'utente
-    # toglie il dry-run per sessione: prova e soldi veri convivono per sua
-    # scelta, nessun conflitto (prima: "paper")
-    assert AM.conflitto_modalita([riga_control("1", dry_run=True)], "live") is None
+    # 04/10 (ordine dell'utente «quando scelgo soldi veri devono partire ordini
+    # veri», sostituisce D3): in LIVE le sessioni nascono in soldi veri, quindi
+    # una sessione in prova ancora viva E' un conflitto (paper e live mai
+    # insieme), come una in soldi veri con l'interruttore in prova
+    assert AM.conflitto_modalita([riga_control("1", dry_run=True)], "live") == "paper"
+    assert AM.conflitto_modalita([riga_control("1", dry_run=False)], "live") is None
     assert AM.conflitto_modalita([riga_control("1", dry_run=False),
-                                  riga_control("2", dry_run=True)], "live") is None
+                                  riga_control("2", dry_run=True)], "live") == "paper"
 
 
-def test_d3_dry_run_alla_nascita_sempre_vero() -> None:
-    """D3 (25/09): «dry run per tutti: decido io cosa attivare, se PAPER o LIVE»."""
-    assert AM.dry_run_alla_nascita("live") is True
+def test_dry_run_alla_nascita_segue_la_modalita_scritta() -> None:
+    """04/10: «soldi veri» -> ordini veri; prova (o qualunque altra cosa) ->
+    dry-run (fail-closed). Prima (D3) era SEMPRE True."""
+    assert AM.dry_run_alla_nascita("live") is False
+    assert AM.dry_run_alla_nascita(" LIVE ") is False
     assert AM.dry_run_alla_nascita("paper") is True
     assert AM.dry_run_alla_nascita("") is True
+    assert AM.dry_run_alla_nascita(None) is True  # type: ignore[arg-type]
 
 
 # ===========================================================================
@@ -364,29 +369,33 @@ def test_acceso_arma_dal_feed_fino_al_tetto_con_i_campi_giusti() -> None:
     assert es["motivo"] is None
 
 
-def test_live_nasce_in_dry_run() -> None:
-    """D3 (25/09, ordine dell'utente «dry run per tutti: decido io cosa
-    attivare, se PAPER o LIVE»): con l'interruttore in soldi veri la partita
-    armata dal feed nasce in DRY-RUN (prima di oggi nasceva con soldi veri,
-    ``test_live_nasce_live``). L'attivita' e le stats lo dicono."""
+def test_live_nasce_live() -> None:
+    """04/10 (ordine dell'utente «quando scelgo soldi veri devono partire ordini
+    veri»): con l'interruttore in soldi veri la partita armata dal feed nasce
+    con ``dry_run=False`` (client REALE della sessione, ``scalper_session``
+    ``paper_trade = dry_run``). D3 la faceva nascere in dry-run: il trader
+    premeva «soldi veri» e nessun ordine vero partiva. Attivita' e stats lo dicono."""
     db = DbFinto(riga_servizio(mode="live"), [riga_feed("1")])
     es = SVC.giro_auto(db, _stato(), [], ORA_EP)
     assert es["armate"] == ["1"]
-    assert db.nomi("arma")[0][2]["dry_run"] is True
+    assert db.nomi("arma")[0][2]["dry_run"] is False
     att = [p for ev, kind, p in db.attivita if kind == "auto_armata"]
-    assert att and att[-1]["dry_run"] is True and att[-1]["modalita"] == "live"
+    assert att and att[-1]["dry_run"] is False and att[-1]["modalita"] == "live"
     auto = db.nomi("set_servizio")[-1][1]["stats"]["auto"]
-    assert auto["modalita"] == "live" and auto["nascono_in_dry_run"] is True
+    assert auto["modalita"] == "live" and auto["nascono_in_dry_run"] is False
 
 
-def test_live_con_sessioni_in_dry_run_continua_ad_armare() -> None:
-    """D3: in live le sessioni automatiche in dry-run NON sono un conflitto
-    (prima bloccavano l'armamento delle partite successive)."""
+def test_live_con_una_sessione_in_prova_viva_non_arma_e_lo_dice() -> None:
+    """04/10: paper e live mai insieme. In soldi veri una sessione in prova
+    ancora viva blocca l'armamento (si ferma prima), e ``stats.auto.conflitto``
+    lo dice (``motivo_blocco`` resta None con una sessione viva: regola
+    esistente di ``motivo_blocco``, «mai acceso ma non apre» con un processo)."""
     viva = riga_control("7", dry_run=True, origine="auto")
     db = DbFinto(riga_servizio(mode="live"), [riga_feed("7"), riga_feed("1")])
     es = SVC.giro_auto(db, _stato(), [viva], ORA_EP)
-    assert es["armate"] == ["1"]
-    assert db.nomi("set_servizio")[-1][1]["stats"]["auto"]["conflitto"] is None
+    assert es["armate"] == []
+    auto = db.nomi("set_servizio")[-1][1]["stats"]["auto"]
+    assert auto["conflitto"] == "paper"
 
 
 def test_il_tetto_conta_anche_le_sessioni_della_card() -> None:

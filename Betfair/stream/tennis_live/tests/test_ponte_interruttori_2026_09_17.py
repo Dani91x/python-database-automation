@@ -127,12 +127,16 @@ def test_in_PAPER_il_bot_non_nasce_in_dry_run(eventi):
     assert db.armati[0]["dry_run"] is False
 
 
-def test_in_LIVE_il_bot_nasce_in_dry_run(eventi):
-    """Prudenza sui soldi veri: in LIVE il `dry_run` va tolto a mano, come fa
-    gia' `_instantiate_bot`."""
+def test_in_LIVE_il_bot_nasce_pronto_a_operare(eventi):
+    """04/10 (MODIFICATO, ordine dell'utente: «QUANDO SCELGO SOLDI VERI DEVONO
+    PARTIRE ORDINI VERI. PER TUTTI I BOT»). Prima: in LIVE il `dry_run` andava
+    tolto a mano per partita e il bot «acceso in soldi veri» non piazzava niente.
+    Ora il gesto e' l'interruttore in soldi veri: la riga nasce con `dry_run`
+    ESATTAMENTE False (il runner apre in reale solo con «Ordini reali» LIVE)."""
     db = _DbFinto([_riga(status="running", mode="live")])
     S.riconcilia_interruttori(db)
-    assert db.armati[0]["dry_run"] is True
+    assert db.armati[0]["mode"] == "live"
+    assert db.armati[0]["dry_run"] is False
 
 
 def test_non_si_riarma_un_evento_gia_attivo(eventi):

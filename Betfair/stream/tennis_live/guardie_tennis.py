@@ -231,6 +231,49 @@ def aggiorna_impostazioni(sb: Any, forza: bool = False) -> None:
         # il secondo si conta dalla FINE della lettura: un DB lento (o giu')
         # non viene riletto a raffica a ogni giro del worker
         _IMPOSTAZIONI_RILETTE["ts"] = time.monotonic()
+        # 04/10: il modo ordini VERO del tennis sul suo canale, al cambio
+        pubblica_modo_ordini_se_cambiato()
+
+
+# 04/10 (passo 6) - IL RUNNER TENNIS DICHIARA IL SUO MODO ORDINI. Sul 47332 il topic
+# ``modo_ordini`` (e ``hello.modo_ordini``) porta lo stato del TENNIS
+# (``modo_ordini.stato_tennis``: effettivo = tetto tennis x «Ordini reali» di
+# questo avvio, tetto, scelta valida, motivo), MAI quello del calcio (la
+# funzione del calcio non pubblica fuori dal 47331). Solo al cambio, zero IO:
+# lo stato e' gia' in memoria. ``hello.mode``/``battito.mode`` restano il TETTO
+# (la capacita' del processo), come prima.
+_MODO_CANALE: Dict[str, Any] = {"firma": None}
+_CHIAVI_MODO_CANALE = ("effettivo", "tetto_ambiente", "scelto_ui", "motivo",
+                       "scelto_ui_at", "scelto_ui_da")
+
+
+def pubblica_modo_ordini_se_cambiato() -> bool:
+    """True se e' uscito un messaggio. Senza canale tennis non esce niente e la
+    firma non si segna (al primo canale il modo esce). Mai solleva."""
+    try:
+        from .. import canale_bot as _cb
+        from .. import local_channel as _lc
+        from .. import modo_ordini as _mo
+        from . import tennis_live_order_worker as _TW
+
+        ch = _lc.get_channel()
+        if ch is None or getattr(ch, "sport", None) != "tennis":
+            return False
+        stato = _mo.stato_tennis(_TW._runner_mode())
+        firma = tuple(stato.get(k) for k in _CHIAVI_MODO_CANALE)
+        if firma == _MODO_CANALE["firma"]:
+            return False
+        _MODO_CANALE["firma"] = firma
+        msg = dict(stato)
+        msg["ts"] = int(time.time() * 1000)
+        try:
+            ch.set_hello(modo_ordini=msg)
+        except Exception:  # noqa: BLE001 - l'hello e' un di piu'
+            pass
+        return bool(_cb.pubblica_stato_processo(_cb.TOPIC["modo_ordini"], msg))
+    except Exception as ex:  # noqa: BLE001 - mostrare non ferma mai il worker
+        logger.debug("[tennis-runner] modo_ordini sul canale KO: %s", str(ex)[:120])
+        return False
 
 
 def kill_switch_attivo() -> bool:
@@ -292,6 +335,62 @@ class ControlloKillSwitchTennis(BaseControl):
         if ordine_riduce_il_rischio(self.flumine, order):
             return
         self._on_error(order, "kill-switch ATTIVO: apertura RIFIUTATA (passano solo le chiusure)")
+
+
+class ControlloModoOrdiniTennis(BaseControl):
+    """04/10 - TERZA RETE, DENTRO flumine: un ordine sul client REALE parte SOLO
+    se il modo EFFETTIVO del runner tennis e' LIVE («Ordini reali» = LIVE scelto
+    in QUESTO avvio dell'app e tetto LIVE), a meno che non riduca il rischio
+    (chiusura, copertura, green-up: le uscite non si fermano mai).
+
+    Vale per OGNI strada che arriva a flumine nel runner tennis: ladder e coda
+    del desktop, comandi del motore (Safe tennis), i 4 bot ospitati. Gli ordini
+    simulati (client paper) non sono affar suo. Il rifiuto e' di flumine
+    (``ControlError`` -> ordine in violazione, nessuna chiamata a Betfair); il
+    log e' al piu' uno ogni ``LOG_OGNI_S`` secondi (un bot che ritenta a ogni
+    book non riempie il log)."""
+
+    NAME = "TENNIS_MODO_ORDINI"
+    LOG_OGNI_S = 60.0
+
+    def __init__(self, flumine: Any, *a: Any, **k: Any) -> None:
+        super().__init__(flumine, *a, **k)
+        self._ultimo_log = -1e18
+
+    def _validate(self, order: Any, package_type: OrderPackageType) -> None:
+        if package_type != OrderPackageType.PLACE:
+            return
+        if is_client_paper(getattr(order, "client", None)):
+            return
+        motivo = motivo_reale_fermo()
+        if motivo is None:
+            return
+        if ordine_riduce_il_rischio(self.flumine, order):
+            return
+        msg = "Order has violated: %s Error: %s" % (self.NAME, motivo)
+        order.violation(msg)
+        adesso = time.monotonic()
+        if adesso - self._ultimo_log >= self.LOG_OGNI_S:
+            self._ultimo_log = adesso
+            logger.warning("[tennis-runner] ordine REALE fermato: %s", motivo)
+        from flumine.controls import ControlError
+
+        raise ControlError(msg)
+
+
+def motivo_reale_fermo() -> Optional[str]:
+    """None se un'apertura REALE puo' partire adesso (effettivo LIVE), altrimenti
+    il motivo in parole (stessa regola della coda e del motore)."""
+    from . import tennis_live_order_worker as _TW
+
+    eff = _TW._modo_effettivo()
+    if eff == "LIVE":
+        return None
+    # tetto riletto non LIVE (env cambiato a processo vivo): il client reale
+    # esiste ancora ma nessuna apertura reale parte (fail-closed)
+    return (_TW._blocco_apertura_modo("live", "place", {})
+            or f"modo ordini tennis {eff}: apertura REALE RIFIUTATA (tetto "
+               f"{_TW._runner_mode()}) - si cambia da Control Room, Ordini reali")
 
 
 # ===========================================================================
@@ -385,3 +484,4 @@ def azzera_per_i_test() -> None:
     GUARDIA_RUNNER.azzera()
     _RIPRESA_STATO["ultimo"] = -1e18
     _IMPOSTAZIONI_RILETTE["ts"] = 0.0
+    _MODO_CANALE["firma"] = None

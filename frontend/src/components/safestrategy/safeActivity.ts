@@ -213,6 +213,10 @@ const REASON_IT: Record<string, string> = {
     market_o_selezione_mancante: 'mercato o selezione non presenti nel feed',
     already_reserved: 'già riservato: nessun doppio ingresso sullo stesso segnale',
     place_exhausted: 'tentativi di piazzamento esauriti',
+    // 04/10 — la catena degli ordini non serve questa modalita' (runner solo in
+    // prova, «Ordini reali» sotto LIVE, freno): nessun tentativo consumato
+    blocco_di_catena: 'aperture ferme: la catena degli ordini non serve questa modalità '
+        + '(il motivo è sulla riga del bot); le chiusure passano, si riprova ogni 60 s',
     // ---- rischio: le chiavi sono quelle di risk.py (R_*)
     daily_cap: 'cap di liability giornaliera raggiunto',
     daily_liability_cap: 'cap di liability giornaliera raggiunto',

@@ -2084,6 +2084,33 @@ def _ferma_aperture(db: Any, ctx: Optional[E.MatchCtx], leg: E.Leg, motivo: str,
                     "causa non cambia", event_id, motivo, mode)
 
 
+def motivo_aperture_ferme(tracked: Any) -> Optional[str]:
+    """04/10 - il motivo per ``stats.motivo_blocco`` dalle partite con le
+    aperture ferme (``ctx.aperture_ferme`` delle partite seguite): per modalita'
+    e causa, con il numero di partite. Pura, nessun IO. None = nessuna ferma."""
+    conti: Dict[tuple, int] = {}
+    for e in (tracked or {}).values():
+        ctx = e.get("ctx") if isinstance(e, dict) else None
+        f = ctx.get("aperture_ferme") if isinstance(ctx, dict) else None
+        if isinstance(f, dict) and f.get("motivo"):
+            k = (str(f.get("mode") or ""), str(f["motivo"]))
+            conti[k] = conti.get(k, 0) + 1
+    if not conti:
+        return None
+    parti = []
+    for (md, motivo), n in sorted(conti.items()):
+        quanti = "1 partita" if n == 1 else f"{n} partite"
+        parti.append(f"aperture in {'soldi veri' if md == 'live' else 'prova'} FERME su "
+                     f"{quanti}: {X.spiega_blocco_catena(motivo, sport='calcio', mode=md)}. "
+                     f"Riparte da sola appena la causa cambia; le chiusure non si fermano")
+    return " | ".join(parti)
+
+
+def _unisci_motivi(*motivi: Optional[str]) -> Optional[str]:
+    vivi = [m for m in motivi if m]
+    return " | ".join(vivi) if vivi else None
+
+
 def _causa_aperture_ferme(ferme: Dict[str, Any], mode: str) -> Optional[str]:
     """La causa, riletta adesso (None = non c'e' piu'). Stesse funzioni che la
     decidono al piazzamento: runner in paper, freno live, freno paper."""
@@ -4238,10 +4265,13 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
         "partite_esposte_live": len(esposte_per_modo.get("live", ())),
         "partite_esposte_paper": len(esposte_per_modo.get("paper", ())),
         "aperture_bloccate": int(bloccate_dal_tetto),
-        "motivo_blocco": (
-            f"tetto partite raggiunto: {len(esposte_per_modo.get(mode, ()))} "
-            f"su {cap_partite} in {mode}"
-        ) if bloccate_dal_tetto else None,
+        # 04/10: e le APERTURE FERME per una causa che non e' il mercato (freno,
+        # «Ordini reali», runner giu': ``ctx.aperture_ferme``, D1-quater). Solo la
+        # PUBBLICAZIONE: la condotta (``_ferma_aperture``) non cambia.
+        "motivo_blocco": _unisci_motivi(
+            (f"tetto partite raggiunto: {len(esposte_per_modo.get(mode, ()))} "
+             f"su {cap_partite} in {mode}") if bloccate_dal_tetto else None,
+            motivo_aperture_ferme(tracked)),
         # Con che passo questo battito si ripete: la pagina deve giudicare la
         # vitalita' con la cadenza VERA del servizio, non con una costante
         # scritta nel frontend (che sarebbe una seconda verita').

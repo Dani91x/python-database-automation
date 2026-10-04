@@ -21,7 +21,9 @@ import {
     type SafeRequest, type SafeTrade,
 } from '@/lib/safeBot';
 import { getLocalChannel, type LocalStatus } from '@/lib/localChannel';
-import { creaInterruttori } from '@/lib/interruttori';
+import {
+    creaInterruttori, leggiCatenaLive, leggiStradaOrdini, verificaSoldiVeriSafe,
+} from '@/lib/interruttori';
 
 const POLL_MS = 15_000;
 /** Finestra minima fra due ricariche scatenate dal REALTIME (>= 1 s, come
@@ -310,8 +312,15 @@ export function useSafeBot(handlers: SafeBotHandlers = {}): SafeBotView {
             onLiveConfirmRef.current?.();
             return;
         }
-        await wrap(() => activateSafe(desiredMode));
-    }, [wrap, desiredMode, liveConfirmed]);
+        // 04/10: «soldi veri» solo se la catena di ogni strategia in live li serve
+        await wrap(async () => {
+            await verificaSoldiVeriSafe(
+                (control?.params ?? null) as Record<string, unknown> | null, desiredMode,
+                () => leggiCatenaLive({
+                    stradaSafeTennis: () => leggiStradaOrdini(control?.stats, 'tennis') }));
+            return activateSafe(desiredMode);
+        });
+    }, [wrap, desiredMode, liveConfirmed, control]);
     const stop = useCallback(async () => { await wrap(() => stopSafe()); }, [wrap]);
     /**
      * La modalita' del SERVIZIO (il TETTO sulle quattro strategie).
@@ -332,6 +341,8 @@ export function useSafeBot(handlers: SafeBotHandlers = {}): SafeBotView {
                     params: () => (control?.params ?? null) as Record<string, unknown> | null,
                     servizio: () => ({ inCorsa: running, modalita: control?.mode ?? null }),
                     obiettivoOmega: () => null,
+                    catenaLive: () => leggiCatenaLive({
+                        stradaSafeTennis: () => leggiStradaOrdini(control?.stats, 'tennis') }),
                 }, () => {}).cambiaModalitaServizio('safe', next);
                 return null;
             });

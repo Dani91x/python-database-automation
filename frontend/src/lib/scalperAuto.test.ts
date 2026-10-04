@@ -117,12 +117,25 @@ describe('la frase dell\'auto-mode', () => {
     });
 
     it('testo esatto con soldi veri e feed muto', () => {
-        const a = leggiAutoScalper({ auto: { ...AUTO, modalita: 'live', sessioni: 1, sessioni_auto: 1, ordini_vivi: null, feed: { letto: true, vivo: false } } });
-        expect(notaAutoScalper(a, null)).toBe(
-            'auto-mode: 1 sessione (1 dal feed) - tetto 2 - feed calcio non disponibile - '
-            // D3 (25/09): in LIVE le partite del feed nascono in dry-run
-            + 'LIVE: le partite del feed nascono in dry-run, nessun ordine reale finché '
-            + 'non lo togli per partita (scheda scalper della partita)');
+        // 04/10: la frase segue cio' che il supervisore DICHIARA (`nascono_in_dry_run`,
+        // chiave vera di `scalper_service._scrivi_stats`); in soldi veri nascono con
+        // ordini reali (ordine dell'utente), il vecchio testo D3 resta per un
+        // supervisore che dichiarasse ancora il dry-run
+        const live = { ...AUTO, modalita: 'live', sessioni: 1, sessioni_auto: 1, ordini_vivi: null,
+            feed: { letto: true, vivo: false } };
+        expect(notaAutoScalper(leggiAutoScalper({ auto: { ...live, nascono_in_dry_run: false } }), null))
+            .toBe('auto-mode: 1 sessione (1 dal feed) - tetto 2 - feed calcio non disponibile - '
+                + 'SOLDI VERI: le partite del feed nascono con ordini reali');
+        expect(notaAutoScalper(leggiAutoScalper({ auto: { ...live, nascono_in_dry_run: true } }), null))
+            .toBe('auto-mode: 1 sessione (1 dal feed) - tetto 2 - feed calcio non disponibile - '
+                + 'LIVE: le partite del feed nascono in dry-run, nessun ordine reale finché '
+                + 'non lo togli per partita (scheda scalper della partita)');
+        // non dichiarato: nessuna frase inventata
+        expect(notaAutoScalper(leggiAutoScalper({ auto: live }), null))
+            .toBe('auto-mode: 1 sessione (1 dal feed) - tetto 2 - feed calcio non disponibile');
+        // conflitto paper/live detto in pagina
+        expect(notaAutoScalper(leggiAutoScalper({ auto: { ...live, nascono_in_dry_run: false,
+            conflitto: 'paper' } }), null)).toContain('sessioni in prova ancora attive');
     });
 
     it('spento o non dichiarato: nessuna frase', () => {

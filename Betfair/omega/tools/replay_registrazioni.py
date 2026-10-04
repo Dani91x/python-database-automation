@@ -1158,7 +1158,8 @@ def _riavvia_processo() -> List[str]:
     S.svuota_le_cache()
     azzerati.append("svuota_le_cache (feed, scanner, aggregati, insiemi, fasi)")
     for nome in ("_LEG_RETRY", "_SKIP_SEEN", "_BLIND_CYCLES", "_MARKET_FIT_CACHE",
-                 "_LAMBDA_CACHE", "_IDLE_STATS_AT"):
+                 "_LAMBDA_CACHE", "_IDLE_STATS_AT",
+                 "_CATENA_OMEGA"):                  # 04/10: blocchi di catena
         d = getattr(S, nome, None)
         if isinstance(d, dict) and d:
             d.clear()

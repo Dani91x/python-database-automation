@@ -21,7 +21,7 @@
 // base/esatto/punta gia' accese (vedi il commento su `soloTennis`, sotto).
 // ============================================================================
 import {
-    creaInterruttori, interruttoreDi, accensioniCorrenti,
+    creaInterruttori, interruttoreDi, accensioniCorrenti, assicuraSoldiVeriServiti,
     type ComandiInterruttori, type InterruttoreId, type Modalita,
     type SorgenteInterruttori, type StatoServizio, type Accensioni,
 } from '@/lib/interruttori';
@@ -132,6 +132,8 @@ export function creaComandiControlRoom(
      * referto per la decisione da riconfermare con l'utente.
      */
     const soloTennis = async (modalita: Modalita, puoAccendere: boolean) => {
+        // 04/10: «soldi veri» sul tennis solo se il runner tennis li sa servire
+        await assicuraSoldiVeriServiti(sorgenteConRilettura, interruttoreDi('safe-tennis'), modalita);
         const fresco = await sorgenteConRilettura.rileggiSafe!();
         const acc: Accensioni = { ...accensioniCorrenti(fresco.servizio), tennis: modalita };
         return base.scriviAccensioni(acc, { altre: 'prova', extra: extraSoloTennis, puoAccendere });

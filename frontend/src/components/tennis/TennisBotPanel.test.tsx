@@ -107,9 +107,34 @@ describe('TennisBotPanel — gate ordini reali (tennis_scalper)', () => {
         expect(mArm).toHaveBeenCalledWith('evt1', 'tennis_scalper', false, SCALPER.defaultStake, payloadDefaultAtteso());
     });
 
-    it('2) servizio LIVE, checkbox dry-run NON tolta (default prudente): ARMA senza conferma, dry_run=true', async () => {
+    // 04/10 (cantiere tetto tennis, M12 - TEST MODIFICATI, DICHIARATO): i casi 2-4
+    // asserivano una conferma «ORDINI REALI» col runner LIVE. Ma dalla scheda il bot
+    // si arma SEMPRE in prova (`tennis_bot_arm` scrive mode='paper', il runner lo
+    // esegue sul client simulato): la conferma chiedeva il consenso per soldi veri
+    // che non partivano (catalogo §7.28, test che asserisce il comportamento sbagliato).
+    // Ora: in LIVE la scheda si comporta come in PAPER e lo DICE.
+    it('2) runner LIVE: la scheda arma in PROVA (dry-run tolto di default), nessuna conferma di soldi veri', async () => {
         const confirmSpy = vi.spyOn(window, 'confirm');
         const { user, card } = await montaPannello('LIVE');
+        expect(card.getByRole('checkbox')).toHaveAttribute('data-state', 'unchecked');
+        await user.click(card.getByRole('button', { name: /ARMA SIMULATO/i }));
+        await waitFor(() => expect(mArm).toHaveBeenCalledTimes(1));
+        expect(confirmSpy).not.toHaveBeenCalled();
+        expect(mArm).toHaveBeenCalledWith('evt1', 'tennis_scalper', false, SCALPER.defaultStake, payloadDefaultAtteso());
+    });
+
+    it('3) runner LIVE: la scheda NON promette ordini reali e dice dove si accendono i soldi veri', async () => {
+        const { card } = await montaPannello('LIVE');
+        expect(card.queryByText(/ORDINI REALI/i)).toBeNull();
+        expect(card.getByText(/ORDINI SIMULATI/i)).toBeTruthy();
+        expect(card.getByText(/si arma sempre in prova/i)).toBeTruthy();
+        expect(card.queryByRole('button', { name: /REALI/i })).toBeNull();
+    });
+
+    it('4) runner LIVE, dry-run rimesso a mano: arma con dry_run=true, nessuna conferma', async () => {
+        const confirmSpy = vi.spyOn(window, 'confirm');
+        const { user, card } = await montaPannello('LIVE');
+        await user.click(card.getByRole('checkbox'));
         expect(card.getByRole('checkbox')).toHaveAttribute('data-state', 'checked');
         await user.click(card.getByRole('button', { name: /ARMA/i }));
         await waitFor(() => expect(mArm).toHaveBeenCalledTimes(1));
@@ -117,31 +142,8 @@ describe('TennisBotPanel — gate ordini reali (tennis_scalper)', () => {
         expect(mArm).toHaveBeenCalledWith('evt1', 'tennis_scalper', true, SCALPER.defaultStake, payloadDefaultAtteso());
     });
 
-    it('3) servizio LIVE, checkbox dry-run TOLTA: ARMA chiede conferma; negata -> NON arma con ordini reali', async () => {
-        const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
-        const { user, card } = await montaPannello('LIVE');
-        await user.click(card.getByRole('checkbox')); // toglie il dry-run
-        expect(card.getByRole('checkbox')).toHaveAttribute('data-state', 'unchecked');
-        await user.click(card.getByRole('button', { name: /ARMA/i }));
-        expect(confirmSpy).toHaveBeenCalledTimes(1);
-        expect(String(confirmSpy.mock.calls[0][0])).toMatch(/ORDINI REALI/i);
-        expect(mArm).not.toHaveBeenCalled();
-    });
-
-    it('4) servizio LIVE, checkbox dry-run TOLTA, conferma ACCETTATA: arma con dry_run=false esplicito', async () => {
-        const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
-        const { user, card } = await montaPannello('LIVE');
-        await user.click(card.getByRole('checkbox'));
-        await user.click(card.getByRole('button', { name: /ARMA/i }));
-        expect(confirmSpy).toHaveBeenCalledTimes(1);
-        await waitFor(() => expect(mArm).toHaveBeenCalledTimes(1));
-        expect(mArm).toHaveBeenCalledWith('evt1', 'tennis_scalper', false, SCALPER.defaultStake, payloadDefaultAtteso());
-    });
-
     it('5) armTennisBot riceve gli argomenti nel TIPO esatto (dry_run booleano, non stringa \'on\'/\'off\')', async () => {
-        vi.spyOn(window, 'confirm').mockReturnValue(true);
         const { user, card } = await montaPannello('LIVE');
-        await user.click(card.getByRole('checkbox'));
         await user.click(card.getByRole('button', { name: /ARMA/i }));
         await waitFor(() => expect(mArm).toHaveBeenCalledTimes(1));
         const [eventId, botKey, dryRun, stake, params] = mArm.mock.calls[0];
@@ -173,9 +175,11 @@ describe('TennisBotPanel — default protetto per modalita (AUDIT3 caso 1)', () 
         expect(card.getByText(/ORDINI SIMULATI/i)).toBeTruthy();
     });
 
-    it('LIVE: parte con dry-run SPUNTATO (default prudente), nessun avviso "ordini reali"', async () => {
+    // 04/10 (M12, MODIFICATO): in LIVE la scheda arma comunque in prova, quindi il
+    // default e' quello della prova (prima: dry-run spuntato «per prudenza»).
+    it('LIVE: parte con dry-run TOLTO (la scheda arma in prova), nessun avviso "ordini reali"', async () => {
         const { card } = await montaPannello('LIVE');
-        expect(card.getByRole('checkbox')).toHaveAttribute('data-state', 'checked');
+        expect(card.getByRole('checkbox')).toHaveAttribute('data-state', 'unchecked');
         expect(card.queryByText(/ORDINI REALI/i)).toBeNull();
     });
 

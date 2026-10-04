@@ -54,6 +54,12 @@ GLI SCENARI (ognuno con i suoi controlli; «N/A» detto col motivo):
   R10d mai in silenzio- mercato che non arriva mai (inesistente): dopo
                         ``aggancio_max_ms`` evento terminale ``rifiutato``
                         col motivo ``in_aggancio``, riga error, nessun ordine.
+  R11 runner in prova - 04/10: bot in LIVE, runner che serve solo la PROVA
+                        (``mode_non_servibile``): nessun ordine, e il servizio
+                        Safe VERO non brucia i tentativi, dichiara
+                        ``motivo_blocco``, UN CRITICAL per episodio;
+  R11b Ordini reali   - 04/10: stesso controllo col modo EFFETTIVO su PAPER
+                        (funzione vera ``_blocco_apertura_modo``), solo calcio.
 
 25/09 (F8) - SAFE TENNIS (``certifica safe_tennis ... --scenari rapidi``): la
 stessa catena sul runner TENNIS. Motore VERO con l'esecutore tennis
@@ -525,7 +531,14 @@ def esegui_scenari(bot: str, event_id: str, data_dir: str) -> List[_Esito]:
                          ("R10c mai espulsi", _r10c_tennis if tennis else _r10c),
                          ("R10d aggancio mai in silenzio",
                           _r10d_tennis if tennis else _r10d),
-                         ("R2b mercato sospeso", _r2b)):
+                         # 04/10 (cantiere tetto tennis): PRIMA di R2b, a mercato
+                         # ancora aperto (dopo R2b il MATCH_ODDS tennis non riapre)
+                         ("R11d Ordini reali LIVE (tennis)", _r11d),
+                         ("R2b mercato sospeso", _r2b),
+                         # 04/10: in CODA, gli scenari di prima restano identici
+                         ("R11 runner solo prova", _r11),
+                         ("R11b Ordini reali in prova", _r11b),
+                         ("R11c runner in prova, mercato da agganciare", _r11c)):
             e = _Esito(nome)
             t = time.monotonic()
             try:
@@ -1075,6 +1088,391 @@ def _r2b(b: BancoRapido, A: Any, pref: str, e: _Esito, stato: Dict[str, Any]) ->
 # ---------------------------------------------------------------------------
 # 25/09 (F8) - gli scenari del runner TENNIS che differiscono dal calcio
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# 04/10/2026 - SOLDI VERI COERENTI: la catena che NON serve il live
+# ---------------------------------------------------------------------------
+# Incidente del 04/10: Safe tennis in «soldi veri», runner tennis in PAPER: 15
+# aperture rifiutate (``mode_non_servibile``), tentativi bruciati, motivo_blocco
+# null. Qui il bot e' in LIVE e il motore VERO del runner serve solo la prova
+# (R11) oppure ha «Ordini reali» su PAPER (R11b, solo calcio: il runner tennis
+# non ha un modo effettivo dalla UI). Si controlla la CONDOTTA: rifiuto certo,
+# nessun ordine, e per Safe il servizio VERO (``bot_service._place_fail``) che
+# non brucia i tentativi, dichiara il blocco e dice il CRITICAL una volta.
+N_APERTURE_CATENA = 3
+
+
+def _condotta_catena(b: BancoRapido, A: Any, pref: str, e: _Esito, motivo_atteso: str,
+                     stato: Dict[str, Any]) -> None:
+    from ...safe_strategy import bot_service as BS
+    from ...safe_strategy import execution as X
+
+    ord0, rest0 = len(b.ordini_del_motore()), _conta_rest(b)
+    critici0 = len([p for k, p, _e in A.db.attivita
+                    if k == "canale_rifiutato" and p.get("critical")])
+    # il rifiuto arriva PRIMA del mercato: selezione di R1, quota qualunque valida
+    # (dopo R2b il mercato della registrazione puo' essere sospeso o finito)
+    q = b.quota("lay")
+    sel = int(stato.get("r1_sel") or (q[0] if q else 0))
+    prezzo = float(q[1]) if q else 2.0
+    tid = 0
+    for i in range(N_APERTURE_CATENA):
+        tid = A.riserva(side="lay", price=prezzo, size=2.0)
+        ref = "%s%d" % (pref, tid)
+        out = A.invia(tid, selection_id=sel, side="lay", price=prezzo, size=2.0)
+        ack = _ack_di(b, ref)
+        if i == 0:
+            e.controlla("APERTURA live rifiutata dal motore col motivo '%s'" % motivo_atteso,
+                        ack.get("accettato") is False
+                        and str(ack.get("motivo") or "").startswith(motivo_atteso), ack)
+            e.controlla("esito certo negativo per il bot", getattr(out, "status", None)
+                        == "error", out)
+        if A.nome == "safe" and getattr(out, "status", None) == "error":
+            riga = A.riga(tid)
+            riga.setdefault("signal_key", "rapido:catena")
+            BS._place_fail(A.db, tid, riga, out.fill_note, b.ora(), {"place_max_attempts": 3})
+    e.controlla("nessun ordine su flumine, nessun REST",
+                len(b.ordini_del_motore()) == ord0 and _conta_rest(b) == rest0, "")
+    if A.nome != "safe":
+        e.controlli.append(("condotta del servizio: N/A per Omega (resta il trasporto; "
+                            "la regola di catena di Omega e' un reperto aperto)", True, ""))
+        return
+    critici = len([p for k, p, _e in A.db.attivita
+                   if k == "canale_rifiutato" and p.get("critical")]) - critici0
+    e.controlla("UN solo CRITICAL per l'episodio (non uno per tentativo)", critici == 1,
+                critici)
+    kinds = [k for k, _p, _e in A.db.attivita]
+    e.controlla("nessun 'place_exhausted' / 'place_retry' (tentativi non bruciati)",
+                "place_exhausted" not in kinds and "place_retry" not in kinds, kinds[-6:])
+    st = BS._PLACE_ATTEMPTS.get(BS._place_key(b.event_id, "rapido:catena")) or {}
+    e.controlla("budget dei tentativi intatto", int(st.get("attempts") or 0) == 0
+                and not st.get("final"), st)
+    motivo = BS._motivo_catena()
+    e.controlla("motivo_blocco dichiarato per il trader", bool(motivo)
+                and "aperture in soldi veri FERME" in str(motivo), motivo)
+    e.controlla("altre aperture live ferme fino alla sonda (nessuna raffica)",
+                BS._catena_bloccata(b.sport, "live", b.ora().timestamp() + 1) is not None, "")
+    e.controlla("la prova non e' toccata (bot indipendenti dalla modalita')",
+                BS._catena_bloccata(b.sport, "paper", b.ora().timestamp() + 1) is None, "")
+    BS._CATENA.clear()
+    BS._PLACE_ATTEMPTS.pop(BS._place_key(b.event_id, "rapido:catena"), None)
+    X._EPISODI_CATENA.clear()
+    if hasattr(A.db, "_episodi_catena"):
+        A.db._episodi_catena.clear()
+
+
+def _r11(b: BancoRapido, A: Any, pref: str, e: _Esito, stato: Dict[str, Any]) -> None:
+    """R11 - il runner serve SOLO la prova (tetto PAPER), il bot e' in LIVE."""
+    motore = b.pb.motore
+    prima = motore._modo_processo_forzato
+    motore._modo_processo_forzato = "PAPER"
+    try:
+        _condotta_catena(b, A, pref, e, "mode_non_servibile", stato)
+    finally:
+        motore._modo_processo_forzato = prima
+
+
+def _r11c(b: BancoRapido, A: Any, pref: str, e: _Esito, stato: Dict[str, Any]) -> None:
+    """R11c - lo scenario REALE dell'incidente: runner in PAPER, bot in LIVE,
+    mercato NON ancora seguito. La prima sonda e' accettata ``in_aggancio`` e
+    rifiutata DOPO (evento terminale), le successive (mercato ormai seguito)
+    subito. Condotta: un solo CRITICAL nell'episodio, ``motivo_blocco`` mai
+    sparito, nessun tentativo consumato, nessuna «catena ripristinata»."""
+    from ...safe_strategy import bot_service as BS
+    from ...safe_strategy import execution as X
+
+    if A.nome != "safe":
+        e.na = "condotta di catena del servizio: solo Safe (Omega: reperto A)"
+        return
+    motore = b.pb.motore
+    prima = motore._modo_processo_forzato
+    motore._modo_processo_forzato = "PAPER"
+    tennis = b.sport == "tennis"
+    # Il rifiuto ASINCRONO esiste SOLO a runner senza framework (fermo, senza
+    # partite seguite o in ripartenza: ``_controlla`` parcheggia PRIMA del
+    # controllo del modo, motore_ordini.py:1047-1070). E' il runner tennis
+    # dell'incidente (in attesa, nessuna partita). Con il framework vivo il
+    # controllo del modo viene PRIMA di ``_serve_aggancio`` (:983-984): rifiuto
+    # sincrono (R11). Qui: framework tolto per la prima sonda, rimesso dopo.
+    if tennis:
+        from ..tennis_live import iscrizione_a_caldo as IAC
+        b.pb.monta_aggancio_tennis(tetto=IAC.tetto_mercati(),
+                                   seguiti={str(b.event_id): b.market_id})
+    else:
+        _monta_auto(b, mercati_iniziali=[b.market_id])
+    fw = motore._flumine
+    # la porta del banco al posto di ``_porta_kw`` (interruttore del canale acceso
+    # in produzione: ``SAFE_TENNIS_ORDINI_VIA_CANALE=1``/``SAFE_ORDINI_VIA_CANALE=1``)
+    porta_kw_vera = BS._porta_kw
+    BS._porta_kw = lambda riga: {"porta": b.client}
+    ripristini: List[str] = []
+    gestore = _ContaLog("catena ripristinata", ripristini)
+    import logging as _lg
+    _lg.getLogger("safe.bot").addHandler(gestore)
+    try:
+        ord0, rest0 = len(b.ordini_del_motore()), _conta_rest(b)
+        critici0 = len([p for k, p, _e in A.db.attivita
+                        if k == "canale_rifiutato" and p.get("critical")])
+        q = b.quota("lay")
+        sel = int(stato.get("r1_sel") or (q[0] if q else 0))
+        prezzo = float(q[1]) if q else 2.0
+        motivi: List[Any] = []
+        kinds0 = len(A.db.attivita)
+        for i in range(N_APERTURE_CATENA):
+            # le sonde passano dal SERVIZIO VERO (``bot_service._execute``: e' li'
+            # che vivono il ripristino e il ``_place_fail``), come in produzione
+            tid = A.riserva(side="lay", price=prezzo, size=2.0)
+            A.db.update_trade(tid, selection_id=sel, signal_key="rapido:catena")
+            ref = "%s%d" % (pref, tid)
+            asincrona = i < 2                   # runner senza framework (partite nuove)
+            if asincrona:
+                motore._flumine = None
+            try:
+                out = BS._execute(db=A.db, market=b.mercato_rest, trade_id=tid,
+                                  row=A.riga(tid), params={"execution_mode": "rest"},
+                                  now=b.ora(), best_size=None, ladder=())
+            finally:
+                motore._flumine = fw            # il runner riparte con il mercato
+            ack = _ack_di(b, ref)
+            if asincrona:
+                e.controlla("sonda %d: ack ACCETTATO 'in_aggancio' (runner senza partite)"
+                            % (i + 1), ack.get("accettato") is True
+                            and str(ack.get("motivo") or "").startswith("in_aggancio"), ack)
+                e.controlla("sonda %d: un 'pending' in_aggancio non e' una prova"
+                            % (i + 1), getattr(out, "status", None) == "pending"
+                            and getattr(out, "catena_servita", None) is False, out)
+                if i > 0:
+                    # il blocco e' gia' in corso: il pending NON lo deve togliere
+                    motivi.append(BS._motivo_catena())
+                fase = _aspetta_terminale(b, ref, secondi=SECONDI_TENNIS)
+                e.controlla("sonda %d: rifiuto ASINCRONO per modo (evento 'rifiutato')"
+                            % (i + 1), fase == "rifiutato", fase)
+                riga_fine = A.risolvi(tid)
+                e.controlla("sonda %d: riga 'error' marcata blocco di catena (nessun no-fill)"
+                            % (i + 1), riga_fine.get("status") == "error"
+                            and ((riga_fine.get("meta") or {}).get("place") or {})
+                            .get("blocco_catena") is True, riga_fine.get("meta"))
+            else:
+                e.controlla("sonda %d: rifiuto sincrono (mercato ormai seguito)" % (i + 1),
+                            getattr(out, "status", None) == "error", out)
+            motivi.append(BS._motivo_catena())
+        e.controlla("motivo_blocco MAI sparito fra una sonda e l'altra",
+                    all(m and "aperture in soldi veri FERME" in str(m) for m in motivi), motivi)
+        critici = len([p for k, p, _e in A.db.attivita
+                       if k == "canale_rifiutato" and p.get("critical")]) - critici0
+        e.controlla("UN solo CRITICAL nell'episodio (asincrono + sincroni)", critici == 1,
+                    critici)
+        kinds = [k for k, _p, _e in A.db.attivita[kinds0:]]
+        e.controlla("nessun 'place_retry'/'place_exhausted'/'flumine_no_fill'",
+                    not ({"place_retry", "place_exhausted", "flumine_no_fill"} & set(kinds)),
+                    kinds[-8:])
+        st = BS._PLACE_ATTEMPTS.get(BS._place_key(b.event_id, "rapido:catena")) or {}
+        e.controlla("budget dei tentativi intatto", int(st.get("attempts") or 0) == 0
+                    and not st.get("final"), st)
+        e.controlla("nessuna «catena ripristinata» nel log", not ripristini, ripristini)
+        e.controlla("nessun ordine su flumine, nessun REST",
+                    len(b.ordini_del_motore()) == ord0 and _conta_rest(b) == rest0, "")
+    finally:
+        _lg.getLogger("safe.bot").removeHandler(gestore)
+        BS._porta_kw = porta_kw_vera
+        motore._modo_processo_forzato = prima
+        if tennis:
+            b.pb.smonta_aggancio_tennis()
+        else:
+            b.pb.smonta_auto_follow()
+        BS._CATENA.clear()
+        BS._PLACE_ATTEMPTS.pop(BS._place_key(b.event_id, "rapido:catena"), None)
+        X._EPISODI_CATENA.clear()
+        if hasattr(A.db, "_episodi_catena"):
+            A.db._episodi_catena.clear()
+
+
+import logging as _logging
+
+
+class _ContaLog(_logging.Handler):
+    """Handler di logging che raccoglie i messaggi che contengono ``testo``."""
+
+    def __init__(self, testo: str, dove: List[str]) -> None:
+        super().__init__(level=0)
+        self._testo, self._dove = testo, dove
+
+    def emit(self, record: Any) -> None:
+        msg = record.getMessage()
+        if self._testo in msg:
+            self._dove.append(msg)
+
+
+def _r11b_tennis(b: BancoRapido, A: Any, pref: str, e: _Esito,
+                 stato: Dict[str, Any]) -> None:
+    """R11b TENNIS (04/10, cantiere tetto tennis) - tetto del runner tennis LIVE,
+    «Ordini reali» in PROVA (lo stesso interruttore del calcio, decisione
+    dell'utente): nessun ordine reale da NESSUNA strada. Motore (Safe tennis) con
+    la funzione VERA ``esecutore_tennis._blocco_apertura_modo``: condotta di
+    catena come R11b del calcio, ma il motivo deve essere «Ordini reali» (non
+    l'assenza di un client). Ladder (coda e ``/order`` del worker tennis): stessa
+    funzione (``tennis_live_order_worker._blocco_apertura_modo``). Terza rete
+    dentro flumine (4 bot e ogni strada): ``ControlloModoOrdiniTennis``. La prova
+    e le chiusure passano."""
+    from .. import modo_ordini as MOD
+    from ..live_order_worker import _CONTESTO
+    from ..tennis_live import esecutore_tennis as ET
+    from ..tennis_live import guardie_tennis as GT
+    from ..tennis_live import tennis_live_order_worker as TW
+
+    motore = b.pb.motore
+    prima = motore._blocco_modo
+    motore._blocco_modo = ET._blocco_apertura_modo          # la funzione VERA del runner
+    acks0 = len(b.pb._ack)
+    try:
+        with MOD.dichiara_per_banco("PAPER"):
+            _condotta_catena(b, A, pref, e, "mode_non_servibile", stato)
+            nuovi = list(b.pb._ack.values())[acks0:]
+            e.controlla("il rifiuto dice «Ordini reali» (non un client assente)",
+                        bool(nuovi) and all("Ordini reali" in str(a.get("motivo") or "")
+                                            for a in nuovi if a.get("accettato") is False),
+                        [a.get("motivo") for a in nuovi][:2])
+            _CONTESTO.modo_processo = "LIVE"                 # tetto LIVE del runner
+            try:
+                e.controlla("ladder (coda e /order del worker): apertura reale rifiutata",
+                            TW._blocco_apertura_modo("live", "place", {}) is not None, "")
+                e.controlla("ladder: la prova passa",
+                            TW._blocco_apertura_modo("paper", "place", {}) is None, "")
+                e.controlla("ladder: chiusure reali servite (green-up, cancel, riduzione)",
+                            TW._blocco_apertura_modo("live", "greenup", {}) is None
+                            and TW._blocco_apertura_modo("live", "cancel", {}) is None
+                            and TW._blocco_apertura_modo(
+                                "live", "place", {"reduces_liability": True}) is None, "")
+                e.controlla("terza rete (4 bot, ogni strada): ordine reale fermo",
+                            GT.motivo_reale_fermo() is not None, "")
+                esito = _terza_rete_su_ordine(b, stato.get("r1_sel"))
+                e.controlla("terza rete DENTRO flumine: un'apertura sul client live del "
+                            "banco e' rifiutata (ControlError)", esito == "rifiutato", esito)
+            finally:
+                _CONTESTO.modo_processo = None
+    finally:
+        motore._blocco_modo = prima
+
+
+def _terza_rete_su_ordine(b: BancoRapido, sel_da_evitare: Any = None) -> str:
+    """Il trading control VERO ``ControlloModoOrdiniTennis`` su un'APERTURA
+    (BACK 2,00 su una selezione DIVERSA da quella delle posizioni degli scenari
+    di prima: alza la perdita worst-case, quindi non e' una chiusura) col client
+    LIVE del banco: 'rifiutato' | 'passa' | 'errore: ...'. Solo ``_validate``:
+    nessun ordine nasce nel blotter, nessun client e' chiamato."""
+    from flumine.controls import ControlError
+    from flumine.order.orderpackage import OrderPackageType
+    from flumine.order.ordertype import LimitOrder
+    from flumine.order.trade import Trade
+
+    from ..tennis_live import guardie_tennis as GT
+
+    try:
+        sel = None
+        for r in list(getattr(b.book, "runners", None) or []):
+            if str(r.selection_id) != str(sel_da_evitare):
+                sel = int(r.selection_id)
+                break
+        if sel is None:
+            sel = int(b.book.runners[0].selection_id)
+        prezzo = 2.0
+        o = Trade(b.market_id, sel, 0.0, b.strat).create_order(
+            "BACK", LimitOrder(prezzo, 2.0))
+        o.update_client(b.pb.cliente_live)
+        GT.ControlloModoOrdiniTennis(b.pb.vista)._validate(o, OrderPackageType.PLACE)
+        return "passa"
+    except ControlError:
+        return "rifiutato"
+    except Exception as ex:  # noqa: BLE001 - il controllo lo dice, mai un'eccezione
+        return "errore: %s" % str(ex)[:120]
+
+
+def _r11d(b: BancoRapido, A: Any, pref: str, e: _Esito, stato: Dict[str, Any]) -> None:
+    """R11d (04/10) - tetto LIVE + «Ordini reali» LIVE scelto in questo avvio: il
+    comando live di Safe tennis passa TUTTE le guardie di modo e va al client
+    live del banco (``ClienteLiveBanco``: l'«ordine reale» simulato, nessun
+    soldo). Solo tennis: il calcio lo prova R1 (banco LIVE)."""
+    if b.sport != "tennis":
+        e.na = "solo runner tennis (il calcio: R1 col banco LIVE)"
+        return
+    from .. import modo_ordini as MOD
+    from ..live_order_worker import _CONTESTO
+    from ..tennis_live import esecutore_tennis as ET
+    from ..tennis_live import guardie_tennis as GT
+
+    motore = b.pb.motore
+    prima = motore._blocco_modo
+    motore._blocco_modo = ET._blocco_apertura_modo
+    try:
+        with MOD.dichiara_per_banco("LIVE"):
+            q = b.quota("lay")
+            sel = int(q[0] if q else (stato.get("r1_sel") or 0))
+            prezzo = float(q[1]) if q else 2.0
+            ord0 = len(b.ordini_del_motore())
+            tid = A.riserva(side="lay", price=prezzo, size=2.0)
+            ref = "%s%d" % (pref, tid)
+            A.invia(tid, selection_id=sel, side="lay", price=prezzo, size=2.0)
+            ack = _ack_di(b, ref)
+            e.controlla("comando LIVE accettato dal motore (guardie di modo passate)",
+                        ack.get("accettato") is True, ack)
+            fase = _aspetta_terminale(b, ref)
+            nuovi = b.ordini_del_motore()[ord0:]
+            if nuovi:
+                cl = getattr(nuovi[-1], "client", None)
+                e.controlla("l'ordine e' sul client LIVE del banco (mai sul simulato)",
+                            str(getattr(getattr(cl, "VENUE", None), "name", "")) == "BANCO_LIVE",
+                            repr(cl))
+            else:
+                motivo = _motivo_esito_diario(b, ref)
+                e.controlla("nessun ordine solo per il mercato (mai per il modo): fase=%s "
+                            "book=%s motivo=%s" % (fase, getattr(b.book, "status", None),
+                                                   motivo[:120]),
+                            "Ordini reali" not in motivo and "mode_non_servibile" not in motivo,
+                            (fase, motivo))
+            _CONTESTO.modo_processo = "LIVE"
+            try:
+                e.controlla("terza rete: ordine reale libero con «Ordini reali» LIVE",
+                            GT.motivo_reale_fermo() is None, "")
+                esito = _terza_rete_su_ordine(b, stato.get("r1_sel"))
+                e.controlla("terza rete DENTRO flumine: l'apertura sul client live passa",
+                            esito == "passa", esito)
+            finally:
+                _CONTESTO.modo_processo = None
+            A.risolvi(tid)
+    finally:
+        motore._blocco_modo = prima
+
+
+def _r11b(b: BancoRapido, A: Any, pref: str, e: _Esito, stato: Dict[str, Any]) -> None:
+    """R11b - «Ordini reali» su PAPER (modo effettivo), tetto LIVE: aperture
+    rifiutate, la CHIUSURA della posizione di R5 passa (mai bloccata)."""
+    if b.sport == "tennis":
+        _r11b_tennis(b, A, pref, e, stato)
+        return
+    from .. import live_order_worker as LOW
+    from .. import modo_ordini as MOD
+
+    motore = b.pb.motore
+    prima = motore._blocco_modo
+    env_prima = os.environ.get("LIVE_ORDER_MODE")
+    os.environ["LIVE_ORDER_MODE"] = "LIVE"
+    motore._blocco_modo = LOW._blocco_apertura_modo      # la funzione VERA del runner
+    try:
+        with MOD.dichiara_per_banco("PAPER"):
+            _condotta_catena(b, A, pref, e, "mode_non_servibile", stato)
+        # la chiusura a modo effettivo PAPER: la posizione di R5 e' gia' chiusa in
+        # R7; la regola (chiusure mai bloccate) e' provata sul motore vero in
+        # stream/tests/test_motore_ordini_2026_09_24.py::
+        # test_modo_effettivo_dalla_ui_blocca_le_aperture_non_le_chiusure
+        e.controlli.append(("chiusura a «Ordini reali» PAPER: coperta dal test del motore "
+                            "(posizione di R5 gia' chiusa in R7)", True, ""))
+    finally:
+        motore._blocco_modo = prima
+        if env_prima is None:
+            os.environ.pop("LIVE_ORDER_MODE", None)
+        else:
+            os.environ["LIVE_ORDER_MODE"] = env_prima
+
+
 def _motivo_esito_diario(b: BancoRapido, ref: str) -> str:
     mot = b.pb.motore
     esiti = [r for r in mot.diario.leggi(mot._giorni_diario())

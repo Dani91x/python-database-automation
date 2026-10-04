@@ -276,6 +276,10 @@ class PlaceOutcome:
     # BET_TAKEN_OR_LAPSED...): finora ``ok=False`` li appiattiva tutti in uno.
     error_code: Optional[str] = None
     betfair_updated_at: Optional[str] = None
+    # 04/10: PROVA CERTA che la catena serve la modalita' (ack del runner
+    # accettato SENZA motivo = guardie di modo/freno gia' passate). Un ack
+    # ``in_aggancio`` NON lo e': le guardie si rifanno all'aggancio.
+    catena_servita: bool = False
     @property
     def ok(self) -> bool:
         return self.status in ("open", "pending")
@@ -679,6 +683,107 @@ def _critico_una_volta(*, db: Any, market_id: Any, selection_id: Any, side: str,
     return False, ep[1]
 
 
+# ---------------------------------------------------------------------------
+# 04/10/2026 (incidente Safe tennis in «soldi veri» con il runner in PAPER) -
+# RIFIUTI DI CATENA. Un'APERTURA respinta PRIMA del mercato perche' la catena
+# non serve quella modalita' (runner che non ha il client reale, modo effettivo
+# della Control Room sotto LIVE, freno d'emergenza tirato) NON e' un esito di
+# mercato: nessun ordine e' partito e ripetere lo stesso comando da' lo stesso
+# rifiuto. Regola (stessa famiglia di Omega ``_RIFIUTI_PRIMA_DEL_MERCATO`` e di
+# ``paper_senza_runner``): niente tentativi consumati, il blocco si DICHIARA
+# sulla riga del bot (``motivo_blocco``), UN CRITICAL per episodio. Le chiusure
+# non passano mai di qui (il runner e i freni le lasciano sempre passare).
+# ---------------------------------------------------------------------------
+#: prefissi delle note d'esito che sono un blocco di CATENA (canale: ack del
+#: motore ``motore_ordini.M_MODE`` / ``M_KILL``; REST/coda: ``_live_brake`` e
+#: ``controls.motivo_kill_switch``). Contratto: non cambiarli in silenzio.
+PREFISSI_CATENA = (
+    "canale_rifiutato:mode_non_servibile",
+    "canale_rifiutato:kill_switch",
+    "live_order_mode_non_live",
+    "live_kill_switch_attivo",
+    "db_kill_switch_attivo",
+    "kill_switch_illeggibile",
+    "freni_live_non_letti",
+)
+
+
+def blocco_di_catena(nota: Any) -> bool:
+    """True se l'esito di un piazzamento e' un rifiuto di CATENA (vedi sopra)."""
+    n = str(nota or "")
+    return any(n.startswith(p) for p in PREFISSI_CATENA)
+
+
+def testo_blocco_catena(nota: Any, *, sport: Any, mode: Any) -> str:
+    """Il motivo in parole da trader per ``motivo_blocco`` (cosa manca, cosa fare)."""
+    md = "soldi veri" if str(mode or "") == "live" else "prova"
+    return (f"aperture in {md} FERME: {spiega_blocco_catena(nota, sport=sport, mode=mode)}. "
+            f"Le chiusure non si fermano; si riprova da solo ogni {int(CATENA_PROVA_S)} s.")
+
+
+def spiega_blocco_catena(nota: Any, *, sport: Any, mode: Any) -> str:
+    """Che cosa manca e come si risolve, per una nota di blocco di catena (anche
+    i freni che Mike riconosce: ``paper_senza_runner``)."""
+    n = str(nota or "")
+    sp = "tennis" if str(sport or "") == "tennis" else "calcio"
+    md = "soldi veri" if str(mode or "") == "live" else "prova"
+    if n.startswith(SENZA_RUNNER):
+        return (f"il runner {sp} non e' raggiungibile e in prova gli ordini passano solo "
+                f"da li'. Si riprende appena il runner torna")
+    if "kill_switch" in n or "freni_live_non_letti" in n:
+        cosa = ("freno d'emergenza tirato (o non leggibile): passano solo le chiusure. "
+                "Si riapre rilasciando il freno in Control Room")
+    elif "non servibile dal runner in" in n:
+        tetto = n.rsplit(" ", 1)[-1].strip() or "?"
+        cosa = (f"il runner {sp} gira solo in {tetto} e non puo' piazzare ordini in {md}. "
+                f"Porta il bot in prova, oppure abilita il runner {sp} ai soldi veri e "
+                f"riavvia l'app")
+    elif "mode_non_servibile" in n or "live_order_mode_non_live" in n:
+        cosa = ("il modo ordini effettivo non e' LIVE (Control Room, «Ordini reali»). "
+                "Si sblocca portando «Ordini reali» a LIVE, oppure il bot in prova")
+    else:
+        cosa = "la catena degli ordini non serve questa modalita'"
+    return cosa
+
+
+#: ogni quanto, a blocco di catena in corso, il bot riprova UNA apertura (sonda)
+CATENA_PROVA_S = 60.0
+
+
+def _episodio_catena(db: Any, chiave: tuple, now: Optional[datetime]) -> "tuple[bool, int]":
+    """(primo?, numero nell'episodio) per un rifiuto di catena. Solo RAM,
+    sull'oggetto ``db`` del servizio (come ``_critico_una_volta``)."""
+    registro = getattr(db, "_episodi_catena", None)
+    if not isinstance(registro, dict):
+        registro = {}
+        try:
+            setattr(db, "_episodi_catena", registro)
+        except Exception:  # noqa: BLE001 - oggetto senza attributi liberi
+            registro = _EPISODI_CATENA
+    ts = now.timestamp() if now is not None else time.time()
+    ep = registro.get(chiave)
+    if ep is None:
+        registro[chiave] = [ts, 1]
+        return True, 1
+    ep[1] += 1
+    return False, ep[1]
+
+
+def chiudi_episodi_catena(db: Any, attore: Any, mode: Any) -> int:
+    """Un'apertura ACCETTATA sulla porta ``attore`` in ``mode``: l'episodio di
+    blocco e' finito (il prossimo rifiuto sara' di nuovo CRITICAL)."""
+    registro = getattr(db, "_episodi_catena", None)
+    if not isinstance(registro, dict):
+        registro = _EPISODI_CATENA
+    via = [k for k in registro if k[0] == str(attore) and k[1] == str(mode)]
+    for k in via:
+        registro.pop(k, None)
+    return len(via)
+
+
+_EPISODI_CATENA: dict[tuple, list] = {}
+
+
 def _place_via_canale(porta: Any, *, db, mode: str, market_id: str, selection_id: int,
                       side: str, price: float, size: float, client_ref: str,
                       tid: Optional[int], meta: dict[str, Any], now: Optional[datetime],
@@ -800,6 +905,14 @@ def _place_via_canale(porta: Any, *, db, mode: str, market_id: str, selection_id
                                                   selection_id=selection_id, side=side,
                                                   meta=meta, size=size, now=now)
             critico = critico and primo
+        elif not is_closing and blocco_di_catena(f"canale_rifiutato:{ack.motivo}"):
+            # 04/10: blocco di CATENA (runner che non serve il live, modo
+            # effettivo, freno): stesso rifiuto a ogni tentativo, CRITICAL una
+            # volta per episodio (finisce alla prima apertura accettata)
+            codice = str(ack.motivo or "").split(":", 1)[0]
+            primo, tentativo = _episodio_catena(db, (str(porta.attore), str(mode), codice),
+                                                now)
+            critico = critico and primo
         _log(db, "canale_rifiutato", {"trade_id": tid, "mode": mode, "ref": ref,
                                       "tentativo_nell_episodio": tentativo,
                                       "motivo": ack.motivo, "critical": critico,
@@ -809,8 +922,15 @@ def _place_via_canale(porta: Any, *, db, mode: str, market_id: str, selection_id
                             size_requested=size, size_remaining=0.0, error_code=ack.motivo)
     m = dict(pre)
     m.update({"canale_ack_seq": ack.seq, "canale_ack_ms": ack.ricevuto_ms})
+    servita = False
     if not ack.accettato:
         m["canale_ref_gia_visto"] = True        # il primo invio e' li': se ne attende l'esito
+    elif not is_closing and not ack.motivo:
+        # 04/10: ack SENZA motivo = il motore ha gia' passato le guardie di modo e
+        # freno (``_controlla``): prova certa. Un ack ``in_aggancio`` NO (le
+        # guardie si rifanno all'aggancio e il rifiuto puo' arrivare dopo).
+        chiudi_episodi_catena(db, porta.attore, mode)
+        servita = True
     try:
         db.update_trade(tid, meta=m)
     except Exception as ex:  # noqa: BLE001 - il marcatore canale_ref c'e' gia'
@@ -819,7 +939,29 @@ def _place_via_canale(porta: Any, *, db, mode: str, market_id: str, selection_id
                                 "seq": ack.seq, "price": price, "size": size,
                                 "chiusura": bool(is_closing)})
     return PlaceOutcome("pending", price, size, None, f"canale_{mode}:{ref}",
-                        size_requested=size)
+                        size_requested=size, catena_servita=servita)
+
+
+def rifiuto_catena_asincrono(db: Any, *, attore: Any, mode: str, trade_id: Any, ref: str,
+                             errore: Any, now: Optional[datetime]) -> Optional[str]:
+    """04/10 - il rifiuto per modo/freno che arriva DOPO l'aggancio (evento
+    terminale ``rifiutato`` di un comando accettato ``in_aggancio``, con
+    ``errore``/``error_code`` del motore). Se e' un blocco di CATENA lo tratta
+    come quello sincrono: ``canale_rifiutato`` col CRITICAL una volta per
+    episodio (stessa chiave dell'ack sincrono). Ritorna la nota d'esito
+    (``canale_rifiutato:<errore>``) o None se non e' un blocco di catena."""
+    nota = f"canale_rifiutato:{errore}"
+    if not blocco_di_catena(nota):
+        return None
+    codice = str(errore or "").split(":", 1)[0]
+    primo, tentativo = _episodio_catena(db, (str(attore), str(mode), codice), now)
+    _log(db, "canale_rifiutato", {"trade_id": trade_id, "mode": mode, "ref": ref,
+                                  "tentativo_nell_episodio": tentativo, "motivo": errore,
+                                  "critical": (mode == "live") and primo,
+                                  "dopo_aggancio": True,
+                                  "nota": "il runner ha rifiutato il comando dopo "
+                                          "l'aggancio: nessun ordine"})
+    return nota
 
 
 def _annulla_via_canale(porta: Any, *, bet_id: str, market_id: Optional[str],

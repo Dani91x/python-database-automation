@@ -111,11 +111,14 @@ interface CardProps {
 
 function TennisBotCard({ descriptor, control, busy, nowTs, orderMode, onArm, onDisarm }: CardProps) {
     const accent = ACCENTS[descriptor.accent];
-    // default dry-run PER MODALITÀ (regola specchio 16/07): in PAPER gli ordini sono
-    // comunque simulati → default deselezionato, così i bot piazzano e si VEDONO sul
-    // ladder; in LIVE default selezionato (soldi veri solo consapevolmente); in OFF
-    // il runner forza comunque il dry-run.
-    const [dryRun, setDryRun] = useState(orderMode !== 'PAPER');
+    // 04/10 (M12, UI veritiera): dalla SCHEDA un bot si arma SEMPRE in PROVA — la
+    // RPC `tennis_bot_arm` scrive `mode='paper'` sulla riga e il runner lo esegue sul
+    // client simulato anche col runner in LIVE (guardie_tennis.modalita_esecuzione_bot).
+    // Prima, col runner LIVE, la scheda chiedeva «ORDINI REALI» e lo annunciava: falso.
+    // I soldi veri si accendono dall'interruttore del bot (Control Room). Quindi il
+    // default e' quello della prova (dry-run tolto: gli ordini simulati si VEDONO sul
+    // ladder) in PAPER e in LIVE; in OFF il runner forza comunque il dry-run.
+    const [dryRun, setDryRun] = useState(orderMode === 'OFF');
     // fix audit #4: il pannello monta con orderMode='OFF' PRIMA che tennis_live_now
     // arrivi → lo useState iniziale è stantio e l'effect sotto lo riallinea. Ma una
     // scelta ESPLICITA dell'utente non va MAI sovrascritta da un cambio di modalità
@@ -138,8 +141,8 @@ function TennisBotCard({ descriptor, control, busy, nowTs, orderMode, onArm, onD
     // potrebbe togliere: OFF si comporta come LIVE, forzato e MAI "touchable".
     useEffect(() => {
         if (active) return;
-        if (orderMode === 'LIVE' || orderMode === 'OFF') { setDryRun(true); setDryRunTouched(false); return; }
-        if (!dryRunTouched) setDryRun(orderMode !== 'PAPER');
+        if (orderMode === 'OFF') { setDryRun(true); setDryRunTouched(false); return; }
+        if (!dryRunTouched) setDryRun(false);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [orderMode]);
     const status = control?.status ?? 'idle';
@@ -283,14 +286,15 @@ function TennisBotCard({ descriptor, control, busy, nowTs, orderMode, onArm, onD
                         Dry-run (solo log: nessun ordine, nemmeno simulato)
                     </span>
                 </label>
-                {!dryRun && !active && orderMode === 'LIVE' && (
-                    <span className="flex items-center gap-1 text-[10px] font-bold text-red-300">
-                        <ShieldAlert className="h-3.5 w-3.5" /> ORDINI REALI
-                    </span>
-                )}
-                {!dryRun && !active && orderMode === 'PAPER' && (
+                {!dryRun && !active && orderMode !== 'OFF' && (
                     <span className="flex items-center gap-1 text-[10px] font-bold text-amber-300">
                         <Zap className="h-3.5 w-3.5" /> ORDINI SIMULATI · visibili sul ladder
+                    </span>
+                )}
+                {!active && orderMode === 'LIVE' && (
+                    <span className="flex items-center gap-1 text-[10px] font-bold text-white/60">
+                        <ShieldAlert className="h-3.5 w-3.5" /> dalla scheda si arma sempre in prova:
+                        i soldi veri si accendono dall’interruttore del bot (Control Room)
                     </span>
                 )}
                 {orderMode === 'OFF' && !active && (
@@ -459,9 +463,7 @@ function TennisBotCard({ descriptor, control, busy, nowTs, orderMode, onArm, onD
                     </>
                 ) : (
                     <>
-                        <Power className="h-4 w-4 mr-2" /> ARMA {dryRun
-                            ? '(dry-run)'
-                            : orderMode === 'LIVE' ? 'ORDINI REALI' : 'SIMULATO'}
+                        <Power className="h-4 w-4 mr-2" /> ARMA {dryRun ? '(dry-run)' : 'SIMULATO'}
                     </>
                 )}
             </Button>
@@ -533,18 +535,9 @@ export function TennisBotPanel({ eventId, marketId, orderMode = 'OFF' }: Props) 
         async (botKey: TennisBotKey, dryRun: boolean, stake: number, params: Record<string, number | string | boolean>) => {
             if (inflight.current.has(botKey)) return;
             const desc = TENNIS_BOT_REGISTRY.find((d) => d.key === botKey);
-            // Gate money-critical: la conferma "ORDINI REALI" scatta SOLO quando i soldi
-            // sono davvero in gioco (runner LIVE + dry-run tolto). In PAPER gli ordini
-            // sono simulati per costruzione: niente falso allarme (prima il confirm REALE
-            // compariva anche in PAPER, fuorviante).
-            if (!dryRun && orderMode === 'LIVE') {
-                const ok = window.confirm(
-                    `⚠️ ARMARE "${desc?.name ?? botKey}" CON ORDINI REALI?\n\n` +
-                        `Il bot piazzerà scommesse REALI su Betfair in autonomia (stake €${stake}).\n` +
-                        `Confermi?`,
-                );
-                if (!ok) return;
-            }
+            // 04/10 (M12): nessuna conferma «ORDINI REALI» qui: la scheda arma SEMPRE in
+            // prova (`tennis_bot_arm` scrive mode='paper'), anche col runner in LIVE.
+            // La conferma chiedeva il consenso per soldi veri che non partivano.
             inflight.current.add(botKey);
             setBusy(botKey, true);
             try {
@@ -557,7 +550,7 @@ export function TennisBotPanel({ eventId, marketId, orderMode = 'OFF' }: Props) 
                 toast.success(
                     `${desc?.name ?? botKey} ARMATO${dryRun
                         ? ' (dry-run · nessun ordine)'
-                        : orderMode === 'LIVE' ? ' · ORDINI REALI' : ' · SIMULATO (visibile sul ladder)'}`,
+                        : ' · SIMULATO (visibile sul ladder)'}`,
                 );
                 void refresh();
             } catch (e) {

@@ -12,6 +12,21 @@ import { HelmetProvider } from 'react-helmet-async';
 vi.mock('sonner', () => ({
     toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn(), warning: vi.fn() }),
 }));
+// 04/10: il gesto «soldi veri» verifica la catena (`interruttori.verificaSoldiVeri`):
+// qui la catena e' DICHIARATA armata («Ordini reali» LIVE, tetto LIVE), con la
+// riga vera di `get_live_settings`; il rifiuto e' collaudato in `soldiVeriCatena.test.ts`
+vi.mock('@/lib/liveOrders', async (orig) => ({
+    ...(await orig<typeof import('@/lib/liveOrders')>()),
+    getLiveSettings: vi.fn(async () => ({
+        id: 1, kill_switch: false, max_exposure_per_selection: null, max_orders_per_min: null,
+        order_poll_sec: null, risk_poll_sec: null, daily_loss_limit: null,
+        max_exposure_per_event: null, max_exposure_per_league: null,
+        updated_at: '2026-10-04T10:00:00+00:00', order_mode: 'live',
+        order_mode_updated_at: '2026-10-04T10:00:00+00:00', order_mode_updated_by: 'utente',
+        order_mode_boot_id: 'b1', order_mode_tetto: 'live',
+        order_mode_tetto_at: '2026-10-04T08:00:00+00:00',
+    })),
+}));
 vi.mock('@/lib/safeStrategyScan', async (orig) => ({
     ...(await orig<typeof import('@/lib/safeStrategyScan')>()),
     fetchScanStatus: vi.fn(async () => ({ id: 'scanner', payload: {}, updated_at: new Date().toISOString() })),

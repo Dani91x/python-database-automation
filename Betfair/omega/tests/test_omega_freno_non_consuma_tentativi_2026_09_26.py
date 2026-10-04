@@ -48,8 +48,12 @@ def freno(monkeypatch):
 
 
 def _giro(db, market, i):
-    # giri distanziati oltre LEG_RETRY_MIN_S: il budget e' l'unico limite
-    return S.run_once(market=market, db=db, now=NOW + timedelta(seconds=(S.LEG_RETRY_MIN_S + 1) * i))
+    # giri distanziati oltre LEG_RETRY_MIN_S: il budget e' l'unico limite.
+    # 04/10: e oltre la sonda del blocco di catena (``X.CATENA_PROVA_S``): a freno
+    # tirato fra una sonda e l'altra non parte nessuna riserva (voluto), qui ogni
+    # giro deve essere un tentativo vero per misurare il budget
+    passo = max(S.LEG_RETRY_MIN_S, X.CATENA_PROVA_S) + 1
+    return S.run_once(market=market, db=db, now=NOW + timedelta(seconds=passo * i))
 
 
 @pytest.mark.parametrize("modo", ["paper", "live"])

@@ -131,6 +131,8 @@ SCENARIO_SNIPER = "sniper"
 SCENARIO_SNIPER_PAPER = "sniper-paper"
 SCENARIO_SNIPER_AUTO = "sniper-uscite-auto"
 SCENARI_SNIPER = (SCENARIO_SNIPER, SCENARIO_SNIPER_PAPER, SCENARIO_SNIPER_AUTO)
+#: 04/10: la sessione armata dall'auto-mode con l'interruttore in soldi veri
+SCENARIO_AUTO_LIVE = "auto-live"
 
 # 28/09 (CANTIERE N3): gli scenari a uscite MANUALI (interruttore spento, il
 # default di produzione dopo ogni avvio). Tutti gli ALTRI scenari girano con
@@ -251,6 +253,14 @@ SCENARI_DESCRITTI: Dict[str, str] = {
     # sessione VERA al battito (`uscite_proposte.applica_firme`).
     UM.SCENARIO_MANUALI: "come `sniper`, ma " + UM.DESCRIZIONE_MANUALI,
     UM.SCENARIO_FIRMATE: "come `sniper`, ma " + UM.DESCRIZIONE_FIRMATE,
+    # 04/10 (ordine dell'utente «quando scelgo soldi veri devono partire ordini
+    # veri»): la sessione ARMATA DALL'AUTO-MODE con l'interruttore in soldi veri.
+    # Il dry_run lo decide la funzione VERA del supervisore
+    # (`auto_mode.dry_run_alla_nascita("live")`): prima del 04/10 nasceva sempre
+    # in dry-run e nessun ordine vero partiva.
+    SCENARIO_AUTO_LIVE: ("come `base`, ma la riga la arma l'AUTO-MODE con "
+                         "l'interruttore in SOLDI VERI (dry_run deciso dal "
+                         "supervisore, origine 'auto'): devono partire ordini VERI"),
 }
 
 
@@ -276,6 +286,19 @@ def control_della_ui(event_id: str, scenario: str) -> Dict[str, Any]:
         params["sniper_mode"] = True
     # N3 (28/09): l'interruttore delle uscite, sempre SCRITTO e DICHIARATO
     params["uscite_automatiche"] = uscite_automatiche_scenario(scenario)
+    if scenario == SCENARIO_AUTO_LIVE:
+        # 04/10: la riga come la scrive il SUPERVISORE (`scalper_service.giro_auto`):
+        # dry_run dalla modalita' dell'interruttore, origine 'auto'
+        from .. import auto_mode as AM
+
+        return {
+            "event_id": str(event_id), "status": "requested", "mode": "maker",
+            "dry_run": AM.dry_run_alla_nascita("live"), "stake": 25,
+            "params": params, "origine": AM.ORIGINE_AUTO,
+            "bias": None, "bias_meta": None, "stats": None, "error": None,
+            "requested_at": None, "started_at": None, "stopped_at": None,
+            "heartbeat_at": None, "updated_at": None,
+        }
     return {
         "event_id": str(event_id), "status": "requested", "mode": "maker",
         "dry_run": scenario in ("paper", SCENARIO_SNIPER_PAPER), "stake": 25,
@@ -2020,7 +2043,26 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
             ex = banco.errore_motore
             ref.note.append("replay fallito: %s: %s" % (type(ex).__name__, ex))
     _chiudi_referto(ref, banco, rifiuti, ritardi, guasto_cp, esiti)
+    if scenario == SCENARIO_AUTO_LIVE:
+        _controlla_auto_live(ref, banco, control)
     return ref
+
+
+def _controlla_auto_live(ref: Any, banco: Any, control: Dict[str, Any]) -> None:
+    """04/10 - «soldi veri» scelto sull'interruttore dell'auto-mode: la sessione
+    armata dal supervisore deve girare sul client REALE (``paper_trade=False``)
+    e mandare ordini (sul banco: il client «reale» simulato di flumine)."""
+    clients = [c for fw in getattr(banco, "framework_creati", []) or []
+               for c in (getattr(fw, "clients", None) or [])]
+    reali = [c for c in clients if getattr(c, "paper_trade", True) is False]
+    esito = ("dry_run=%s, client reali %d su %d, ordini %d"
+             % (control.get("dry_run"), len(reali), len(clients), ref.ordini_piazzati))
+    ref.note.append("AUTO-LIVE: " + esito)
+    if control.get("dry_run") is not False or not reali or ref.ordini_piazzati <= 0:
+        ref.violazioni.append(CERT.Violazione(
+            "AL1", "soldi veri scelti sull'interruttore dell'auto-mode: la sessione "
+                   "armata dal supervisore manda ordini VERI (ordine dell'utente 04/10)",
+            esito))
 
 
 def _una_sessione(SS: Any, event_id: str, banco: _Banco) -> str:

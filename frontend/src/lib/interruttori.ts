@@ -668,6 +668,192 @@ export interface SorgenteInterruttori {
         params: Record<string, unknown> | null;
         servizio: StatoServizio | null;
     }>;
+    /**
+     * 04/10 — LA CATENA DEI SOLDI VERI, letta AL MOMENTO DEL GESTO (solo quando
+     * l'utente preme «soldi veri»: nessun polling in piu'). Se c'e', un gesto
+     * verso il live che la catena non sa servire e' RIFIUTATO prima di
+     * scrivere (`SoldiVeriNonServiti`). Vedi `motivoSoldiVeriNonServiti`.
+     */
+    catenaLive?: () => Promise<CatenaLive>;
+}
+
+// ============================================================================
+// 04/10 — «SOLDI VERI» HA SOLO DUE ESITI (ordine dell'utente: «ogni cosa deve
+// essere coerente per il trader; se clicca soldi veri e attiva un bot, quello
+// deve partire come da progettato»). Incidente: Safe tennis acceso in soldi
+// veri col runner tennis in PAPER, ogni ordine rifiutato, la pagina muta.
+// O il bot opera davvero, o il gesto e' rifiutato SUBITO col motivo.
+// ============================================================================
+export interface CatenaLive {
+    /** modo che il runner TENNIS dichiara sul suo canale (hello/battito, 47332):
+     *  'PAPER' | 'LIVE' | ...; null = runner non raggiungibile adesso */
+    modoRunnerTennis: string | null;
+    /** «Ordini reali» del calcio letto ADESSO (`get_live_settings`); null = non letto */
+    ordiniReali: StatoOrdiniReali | null;
+    /**
+     * 04/10 — la strada degli ordini di SAFE TENNIS come la DICHIARA il servizio
+     * (`safe_strategy_control.stats.strade_ordini.tennis`): 'runner_tennis'
+     * (canale 47332: governa il tetto del runner tennis) o 'diretta' (coda/REST:
+     * governa «Ordini reali» come il calcio). null = non dichiarata.
+     */
+    stradaSafeTennis?: StradaOrdini | null;
+}
+
+export type StradaOrdini = 'runner_calcio' | 'runner_tennis' | 'diretta';
+
+/** La strada dichiarata dal servizio Safe per uno sport (`stats.strade_ordini`). */
+export function leggiStradaOrdini(stats: unknown, sport: 'calcio' | 'tennis'): StradaOrdini | null {
+    if (stats == null || typeof stats !== 'object') return null;
+    const s = (stats as Record<string, unknown>).strade_ordini;
+    if (s == null || typeof s !== 'object') return null;
+    const v = String((s as Record<string, unknown>)[sport] ?? '').trim();
+    return v === 'runner_calcio' || v === 'runner_tennis' || v === 'diretta' ? v : null;
+}
+
+/**
+ * La catena letta AL MOMENTO DEL GESTO, uguale per ogni pagina: «Ordini reali»
+ * con UNA lettura (`get_live_settings`), il resto da chi chiama (gia' in
+ * memoria: canale del runner tennis, stats di Safe). Chi non ha il runner
+ * tennis (le pagine dei singoli bot) passa null: per le strade che ne
+ * dipendono il gesto e' rifiutato col motivo, mai dato per buono.
+ */
+export async function leggiCatenaLive(da: {
+    modoRunnerTennis?: () => string | null;
+    stradaSafeTennis?: () => StradaOrdini | null;
+} = {}): Promise<CatenaLive> {
+    const riga = await getLiveSettings().catch(() => null);
+    return {
+        modoRunnerTennis: da.modoRunnerTennis ? da.modoRunnerTennis() : null,
+        ordiniReali: statoOrdiniReali(riga),
+        stradaSafeTennis: da.stradaSafeTennis ? da.stradaSafeTennis() : null,
+    };
+}
+
+export class SoldiVeriNonServiti extends Error {
+    constructor(etichetta: string, motivo: string) {
+        super(`${etichetta}: soldi veri NON attivati — ${motivo}. Non ho scritto niente: `
+            + 'il bot resta com’era.');
+        this.name = 'SoldiVeriNonServiti';
+    }
+}
+
+/**
+ * Perche' la catena di QUESTO interruttore non puo' servire i soldi veri
+ * adesso, o null se puo'. Le strade (verificate il 04/10):
+ *   · tennis (Safe tennis via canale 47332, i 4 bot ospitati nel runner tennis):
+ *     il TETTO del runner tennis (`TENNIS_LIVE_ORDER_MODE`, dichiarato
+ *     nell'hello/battito) E, dal 04/10, «Ordini reali» = LIVE (stesso
+ *     interruttore del calcio, valido per questo avvio). Senza uno dei due ogni
+ *     apertura reale e' rifiutata dal runner.
+ *   · calcio Safe (base/esatto/punta/modello/a mano) e Omega via canale 47331,
+ *     Mike via REST (`execution._live_brake`): governa il modo EFFETTIVO =
+ *     tetto del runner x «Ordini reali» (`modo_ordini.modo_effettivo`).
+ *   · Scalper calcio: flumine PROPRIO (sessioni con client suo), non passa ne'
+ *     dal runner ne' da «Ordini reali»: nessuna verifica qui.
+ */
+export function motivoSoldiVeriNonServiti(i: Interruttore, c: CatenaLive): string | null {
+    if (i.bot === 'scalper') return null;
+    if (i.id === 'safe-tennis') {
+        // 04/10: la strada la DICHIARA il servizio Safe (`stats.strade_ordini`)
+        if (c.stradaSafeTennis === 'diretta') return motivoOrdiniReali(c);
+        if (c.stradaSafeTennis === 'runner_tennis') return motivoRunnerTennis(c);
+        // non dichiarata (Safe mai partito con il codice nuovo): si accetta solo
+        // se TUTTE E DUE le strade servirebbero il live, mai alla cieca
+        const m = motivoRunnerTennis(c) ?? motivoOrdiniReali(c);
+        return m == null ? null
+            : 'il servizio Safe non ha ancora dichiarato da quale strada partono gli '
+              + `ordini tennis, e una delle due non e' armata: ${m}`;
+    }
+    if (i.sport === 'tennis') return motivoRunnerTennis(c);
+    return motivoOrdiniReali(c);
+}
+
+function motivoRunnerTennis(c: CatenaLive): string | null {
+    const m = (c.modoRunnerTennis ?? '').trim().toUpperCase();
+    if (!m) {
+        return 'il runner tennis non risponde adesso, quindi non posso verificare che '
+            + 'possa piazzare ordini reali. Riprova quando in testata il runner tennis '
+            + 'risulta acceso (dalla Control Room), oppure accendi il bot in prova';
+    }
+    if (!m.split('+').includes('LIVE')) {
+        return `il runner tennis gira solo in PROVA (${m}): i soldi veri sul tennis non `
+            + 'sono abilitati in questa installazione e ogni ordine reale verrebbe '
+            + 'rifiutato. Accendi il bot in prova';
+    }
+    // 04/10 (decisione dell'utente): anche il tennis segue «Ordini reali». Il
+    // runner tennis apre in soldi veri SOLO con la scelta LIVE di questo avvio
+    // (`modo_ordini.modo_effettivo_tennis`): qui vale la scelta letta al gesto
+    // (il tetto del CALCIO non conta per il tennis).
+    const o = c.ordiniReali;
+    if (o == null || !o.letto) {
+        return '«Ordini reali» non leggibile adesso, quindi non posso verificare che gli '
+            + 'ordini reali partirebbero. Riprova fra poco, oppure accendi il bot in prova';
+    }
+    if (o.scelto !== 'LIVE') {
+        return `«Ordini reali» e’ su ${o.scelto ?? 'non scelto'}: gli ordini reali del tennis `
+            + 'verrebbero rifiutati. Porta prima «Ordini reali» a LIVE (riga in cima ai bot), '
+            + 'poi rifai il gesto';
+    }
+    return null;
+}
+
+function motivoOrdiniReali(c: CatenaLive): string | null {
+    const o = c.ordiniReali;
+    if (o == null || !o.letto) {
+        return '«Ordini reali» non leggibile adesso, quindi non posso verificare che gli '
+            + 'ordini reali partirebbero. Riprova fra poco, oppure accendi il bot in prova';
+    }
+    if (o.effettivo !== 'LIVE') {
+        if (o.limitatoDalTetto || (o.tetto != null && o.tetto !== 'LIVE')) {
+            return `il runner calcio ha il tetto ${o.tetto ?? 'non dichiarato'}: gli ordini `
+                + 'reali verrebbero rifiutati. Accendi il bot in prova';
+        }
+        return `«Ordini reali» e’ su ${o.effettivo}: gli ordini reali verrebbero rifiutati. `
+            + 'Porta prima «Ordini reali» a LIVE (riga in cima ai bot), poi rifai il gesto';
+    }
+    return null;
+}
+
+/** Il controllo del gesto: rifiuta PRIMA di qualunque scrittura. */
+export async function assicuraSoldiVeriServiti(
+    sorgente: SorgenteInterruttori, i: Interruttore, modalita: Modalita,
+): Promise<void> {
+    if (modalita !== 'live' || !sorgente.catenaLive) return;
+    await verificaSoldiVeri(i, modalita, sorgente.catenaLive);
+}
+
+/**
+ * La STESSA verifica per i gesti che non passano da `creaInterruttori` (l'avvio
+ * diretto delle pagine dei singoli bot: `activateOmega`/`activateMike`/
+ * `activateSafe` con la modalita' scelta). Nessuna seconda implementazione.
+ */
+export async function verificaSoldiVeri(
+    i: Interruttore, modalita: Modalita, catena: () => Promise<CatenaLive>,
+): Promise<void> {
+    if (modalita !== 'live') return;
+    const motivo = motivoSoldiVeriNonServiti(i, await catena());
+    if (motivo) throw new SoldiVeriNonServiti(i.etichetta, motivo);
+}
+
+/**
+ * Safe acceso «in soldi veri» dalla sua pagina (`activateSafe('live')`): il
+ * tetto del servizio vale per le strategie scritte 'live' in `strategy_modes`.
+ * Si verifica la catena di OGNUNA di quelle (calcio e/o tennis).
+ */
+export async function verificaSoldiVeriSafe(
+    params: Record<string, unknown> | null | undefined, modalita: Modalita,
+    catena: () => Promise<CatenaLive>,
+): Promise<void> {
+    if (modalita !== 'live') return;
+    const modi = (params?.strategy_modes ?? {}) as Record<string, unknown>;
+    const live = INTERRUTTORI.filter((i) => i.bot === 'safe' && i.strategia != null
+        && String(modi[i.strategia] ?? '').toLowerCase() === 'live');
+    if (!live.length) return;
+    const c = await catena();
+    for (const i of live) {
+        const motivo = motivoSoldiVeriNonServiti(i, c);
+        if (motivo) throw new SoldiVeriNonServiti(i.etichetta, motivo);
+    }
 }
 
 export interface ComandiInterruttori {
@@ -907,6 +1093,7 @@ export function creaInterruttori(
 
     const accendi = async (id: InterruttoreId, modalita: Modalita) => {
         const i = interruttoreDi(id);
+        await assicuraSoldiVeriServiti(sorgente, i, modalita);   // 04/10, prima di scrivere
         if (i.strategia == null) return avviaBot(i.bot, modalita);
         if (isSoloModalita(i.strategia)) return scriviSoloModalita(i, i.strategia, modalita);
         const { acc, fresco } = await conCambio(i.strategia, modalita);
@@ -926,6 +1113,8 @@ export function creaInterruttori(
         // la sessione legge `dry_run` una volta, all'armo: cambiarlo a sessione
         // in corsa non cambierebbe niente di vero
         if (i.bot === 'scalper') throw new ScalperModalitaAllAvvio();
+        // 04/10, prima di scrivere (i bot interi lo fanno in `cambiaModalitaServizio`)
+        if (i.strategia != null) await assicuraSoldiVeriServiti(sorgente, i, modalita);
         if (isSoloModalita(i.strategia)) return scriviSoloModalita(i, i.strategia, modalita);
         if (i.strategia != null) {
             const { acc, fresco } = await conCambio(i.strategia, modalita);
@@ -986,6 +1175,11 @@ export function creaInterruttori(
      */
     const cambiaModalitaServizio = async (bot: Bot, modalita: Modalita) => {
         if (bot === 'scalper') throw new ScalperModalitaAllAvvio();
+        // 04/10: Omega, Mike e i 4 bot tennis hanno UN interruttore = il bot
+        // intero: il tetto del servizio in live e' il gesto «soldi veri».
+        // Safe no: il suo tetto da solo non mette in live nessuna strategia.
+        const unico = INTERRUTTORI.find((x) => x.bot === bot && x.strategia == null);
+        if (unico) await assicuraSoldiVeriServiti(sorgente, unico, modalita);
         // TENNIS — `tennis_bot_service_activate` porterebbe `status` a
         // 'running': un cambio di modalita' non accende MAI niente, quindi
         // passa dalla gemella che `status` non lo tocca.

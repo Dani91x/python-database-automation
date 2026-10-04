@@ -1,0 +1,71 @@
+﻿python.exe : WARNING:valuta:[valuta] cambio GBP->EUR non letto: '_TradingFinto' object has no attribute 'account'
+In riga:1 car:658
++ ... aster.txt"; & "..\..\..\.venv\Scripts\python.exe" -m Betfair.stream.b ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (WARNING:valuta:...ibute 'account':String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+WARNING:valuta:[valuta] cambio GBP->EUR non letto: '_TradingFinto' object has no attribute 'account'
+WARNING:valuta:[valuta] cambio GBP->EUR non letto: '_TradingFinto' object has no attribute 'account'
+BOT: scalper_calcio | spec: Betfair/stream/scalper/BIBBIA_SCALPER_CALCIO.md | registrazioni: 1 in C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\_live_raw
+controlli attivi: 22 | flumine 2.13.11 | betfairlightweight 2.23.2 | codice bot 8ca7d978d161 (11 file)
+comando: python -m Betfair.stream.backtest.certifica scalper_calcio 35797769 --scenari base
+ambiente del banco (dichiarato; il .env di chi lancia non conta): ESITI_ORDINI_CANALE=0 LIVE_KILL_SWITCH=false LIVE_ORDER_MODE=LIVE MIKE_CANALE_POSIZIONI=0 MIKE_LEGGE_CANALE=0 MIKE_LIVE_ENABLED=1 MIKE_SVEGLIA_CANALE=0 MOTORE_ORDINI_CANALE=0 MOTORE_ORDINI_CANALE_TENNIS=0 OMEGA_CANALE_POSIZIONI=0 OMEGA_LEGGE_CANALE=0 OMEGA_ORDINI_VIA_CANALE=0 OMEGA_SVEGLIA_CANALE=0 PUNTEGGI_CANALE=0 SAFE_BOT_LEGGE_CANALE=0 SAFE_BOT_SVEGLIA_CANALE=0 SAFE_CANALE_POSIZIONI=0 SAFE_ORDINI_VIA_CANALE=0 SAFE_PRE_KO_OU_HOURS=1 SAFE_SCAN_CANALE=0 SAFE_TENNIS_ORDINI_VIA_CANALE=0 SCALPER_CANALE=0 TENNIS_BOT_CANALE=0 TENNIS_BOT_SVEGLIA_CANALE=0 | interruttore ordini del bot: coda=0 canale=1
+qualita' delle registrazioni: COMPLETE x1
+
+KO  35797769  tick=665941 decisioni=121012 azioni= 538 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:LOCKING,slot:DONE,slot:FLATTENING,sessione:done [COMPLETE]
+      nota: qualita' registrazione: COMPLETE 95.4%
+      nota: control della UI: mode=maker dry_run=False stake=25 params=[('entry_stop_before_s', 420), ('event_loss_cap', 1.5), ('event_profit_target', 1), ('flatten_before_s', 180), ('ht_mode', False), ('min_flow', 10), ('min_size', 300), ('one_green_per_phase', True), ('price_max', 4.6), ('price_min', 1.5), ('scalp_ticks', 1), ('sniper_mode', False), ('sniper_stake', 10), ('stop_ticks', 1), ('uscite_automatiche', True)]
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (params `uscite_automatiche=True`, come li scrive l'interruttore della UI su AUTOMATICHE)
+      nota: limiti dichiarati: catalogo sintetizzato dai marketDefinition; scanner non usato (lo scalper legge il book); orologio di mercato per `time.time`; settlement non raggiunto (fine vita della sessione); theta fuori perimetro; sniper spento (scenari `sniper*` per lo sniper)
+      nota: parita' paper/live: 83 parametri della strategia confrontati, diversi 0; client paper {'min_bet_validation': False, 'order_stream': True, 'paper_trade': True} / live {'min_bet_validation': False, 'order_stream': True, 'paper_trade': False}
+      nota: sessioni: {'prima': 'finita'}; stato finale 'done' (causa della fine: fine-vita)
+      nota: book in ritardo: 589606; lapse al fischio: 0; lapse alla sospensione: 0; righe di specchio catturate: 223245
+      nota: fasi viste: pre-match, stop-ingressi, finestra-flatten, in-gioco, fine-sessione
+      nota: uscite EFFETTIVE delle strategie a fine sessione: AUTOMATICHE
+      nota: stati dello slot MAI visti: QUOTING
+      nota: banco minimi .it: 57 ordini eseguiti, 11 rifiutati INVALID_BET_SIZE, 0 sotto minimo abbinati
+      motivo x430: min_bet_skip
+      motivo x41: submin_step
+      motivo x36: place
+      motivo x11: submin_start
+      motivo x6: close_presize
+      motivo x5: scratch
+      B2 x1: al FISCHIO nessuna posizione aperta: dopo il KO ogni selezione ha l'esposizione abbinata piatta (entro la tolleranza che il bot dichiara) e nessun ingresso vivo (`flatten_before_s`, bibbia 'mai posizioni aperte al KO')
+           es. in gioco la selezione ('1.259819674', 22) ha un'esposizione abbinata sbilanciata di 0.49 (se vince -0.04, se perde 0.45), oltre la tolleranza 0.02 del bot
+      K1 x4: ogni ordine che il bot STA SEGUENDO in una posizione viva esiste davvero a mercato (nel blotter): un ordine in mano al bot che il mercato non conosce e' una posizione che nessuno governa (difetti 4 e 7 del 15/09)
+           es. lo slot ('1.259819674', 22) e' 'LOCKING' e segue l'ordine 140104157559895362, che a mercato non esiste
+      K5 x2: nessuna ESPOSIZIONE abbinata resta sbilanciata su una selezione il cui slot e' dichiarato chiuso (IDLE/DONE), oltre la tolleranza che il bot stesso dichiara: nessuna posizione fantasma (PROCESSO par.6.4 'mai una posizione scoperta non dichiarata')
+           es. la selezione ('1.259819682', 47973) ha un'esposizione abbinata sbilanciata di 0.25 (se vince 0.25, se perde 0.00) e il bot la crede 'IDLE': i soldi sono a mercato senza padrone
+      tempo: 35797769 [base] 1m11.2s (71.2 s) | 9353 tick/s
+
+ESITO: 0 partite senza violazioni, 1 con violazioni, 0 senza decisioni
+       7 violazioni totali
+
+COPERTURA DEI CONTROLLI — quante volte ognuno ha avuto un caso:
+     B1  x4260    nessun INGRESSO nuovo quando le aperture sono vietate: force-flat 
+     B2  x507     al FISCHIO nessuna posizione aperta: dopo il KO ogni selezione ha 
+     B3  x37      ogni ordine chiesto e' LEGALE su .it: prezzo nella ladder, size mu
+     B4  x14      lo stake d'ingresso e' quello del control (mai piu' di quanto l'ut
+     B5  x5666    l'esposizione abbinata per selezione non supera il tetto che la se
+     B6  x14      tetto transazioni/ora (`max_txn_hour`): oltre il budget nessun NUO
+     K1  x1406    ogni ordine che il bot STA SEGUENDO in una posizione viva esiste d
+     K2  x328     un ordine RIFIUTATO (place_order ha risposto False, stato Violatio
+     K3  x5666    lo stato di ogni ordine si legge come Enum `OrderStatus` (`.value`
+     K4  x1406    uno slot che il bot crede VIVO ha almeno un ordine vivo o dell'abb
+     K5  x5423    nessuna ESPOSIZIONE abbinata resta sbilanciata su una selezione il
+     K6  x5666    quando il bot dichiara uno slot CHIUSO (IDLE/DONE) non resta nessu
+     K7  x7       a ogni ciclo chiuso il `locked` che il bot contabilizza (pnl_locke
+     S1  x1474    ogni scrittura del servizio su `scalper_control` rispetta i CHECK 
+     S2  x5       uno STOP (UI 'stopping', kill-switch, fine vita, cap globale) arma
+     S3  x1       a sessione CHUSA nessun ordine della sessione resta vivo a mercato
+     S4  x1       lo stato finale della sessione dice PERCHE' e' finita: 'stopped' s
+     S5  x5769    mentre la sessione e' 'running' il servizio scrive heartbeat_at e 
+     S6  x1       PAPER = LIVE: armata dallo stesso control, la sessione paper e que
+  ?? S7  x0       dopo un RIAVVIO della sessione, l'esposizione abbinata e gli ordin
+     P1  x5515    ogni ordine del bot arriva allo specchio `betfair_live_orders` (ri
+     P2  x5515    lo specchio non dichiara MAI un ordine abbinato piu' di quanto il 
+
+?? MAI SOLLECITATI: 1 controlli su 22. Su questi il referto NON dice «sano», dice «non lo so»:
+     S7: dopo un RIAVVIO della sessione, l'esposizione abbinata e gli ordini vivi lasciati dalla sessione morta sono governati dalla nuova (una sua credenza li segue) oppure il servizio li DICHIARA (allarme): mai una posizione orfana silenziosa (PROCESSO par.6.3 riavvio; catalogo par.7 punto 19)
+TEMPO TOTALE: 1m12.5s (72.5 s) su 1 replay | obiettivo 300 s, tetto 600 s (CERTIFICA_TETTO_S)

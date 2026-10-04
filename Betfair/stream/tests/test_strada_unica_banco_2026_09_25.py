@@ -410,9 +410,13 @@ def test_profilo_rapido_verde_sulla_registrazione_vera(bot):
     # 25/09 AUTO-FOLLOW: R10 (non seguito -> agganciato e ACCETTATO), R10b
     # (tetto pieno -> espulsione -> accettato), R10c (mai espulsi chi ha ordini
     # o e' manuale), R10d (aggancio che non arriva: rifiuto dichiarato)
-    assert len(nomi) == 14 and nomi[0] == "R1 accettato"
+    # 04/10 (MODIFICATO, dichiarato): 14 -> 18. Tre scenari del cantiere
+    # «soldi veri coerenti» (R11, R11b, R11c, in coda) e R11d del cantiere tetto
+    # tennis (N/A sul calcio, prima di R2b): gli scenari di prima sono identici.
+    assert len(nomi) == 18 and nomi[0] == "R1 accettato"
     for n in ("R10 mercato non seguito", "R10b tetto pieno", "R10c mai espulsi",
-              "R10d aggancio mai in silenzio"):
+              "R10d aggancio mai in silenzio", "R11 runner solo prova",
+              "R11b Ordini reali in prova", "R11c runner in prova, mercato da agganciare"):
         assert n in nomi
     r10 = next(e for e in esiti if e.nome == "R10 mercato non seguito")
     assert r10.ok and not r10.na

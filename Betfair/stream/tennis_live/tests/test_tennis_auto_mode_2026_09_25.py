@@ -446,16 +446,35 @@ def test_migrazione_origine_assente_auto_spento_e_detto():
     assert db2.follow_registrati == [] and db2.armati == []
 
 
-@pytest.mark.parametrize("mode,dry", [("paper", False), ("live", True)])
+@pytest.mark.parametrize("mode,dry", [("paper", False), ("live", False)])
 def test_paper_e_live_la_riga_dal_feed_e_identica_a_quella_a_mano(mode, dry):
-    """Stessa modalita', stesso dry_run (in LIVE nasce in dry-run come la
-    riga a mano: il reale resta un gesto per partita), mai ereditati."""
+    """Stessa modalita', stesso dry_run, mai ereditati. 04/10 (MODIFICATO,
+    ordine dell'utente «soldi veri -> partono gli ordini veri»): anche in LIVE
+    la riga nasce con dry_run False; ``live_in_dry_run`` resta falso (nessuna
+    partita live e' in dry-run)."""
     db = _Db([_servizio(mode=mode)], follows=[_follow("9")], feed=[_feed("1")])
     S.riconcilia_interruttori(db)
     per_ev = {r["event_id"]: r for r in db.armati}
     for ev in ("9", "1"):
         assert per_ev[ev]["mode"] == mode and per_ev[ev]["dry_run"] is dry
-    assert _stats(db)["auto"]["live_in_dry_run"] is (mode == "live")
+    assert _stats(db)["auto"]["live_in_dry_run"] is False
+
+
+def test_live_in_dry_run_dice_il_vero_sulle_righe_attive():
+    """04/10: ``live_in_dry_run`` VERO solo se una partita armata in soldi veri e'
+    davvero in dry-run (riga col ``dry_run`` non False), mai per le paper."""
+    righe = [{"event_id": "1", "bot_key": "tennis_flb", "mode": "live", "dry_run": True,
+              "stats": None},
+             {"event_id": "2", "bot_key": "tennis_flb", "mode": "paper", "dry_run": True,
+              "stats": None}]
+    feed = {"letto": True, "vivo": True, "partite": [], "eta_scanner_s": 1.0}
+    st = S._stato_auto({"mode": "live"}, "tennis_flb", 3, feed, True, 0.0, armate_feed=0,
+                       armate_a_mano=0, seguite_a_mano=0, in_attesa=0, righe_attive=righe)
+    assert st["live_in_dry_run"] is True
+    righe[0]["dry_run"] = False
+    st = S._stato_auto({"mode": "live"}, "tennis_flb", 3, feed, True, 0.0, armate_feed=0,
+                       armate_a_mano=0, seguite_a_mano=0, in_attesa=0, righe_attive=righe)
+    assert st["live_in_dry_run"] is False
 
 
 # ===========================================================================

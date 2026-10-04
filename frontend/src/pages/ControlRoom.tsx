@@ -23,7 +23,7 @@
 // partita e la partita di Mike (`ElencoPartite`, ramo `pre`): ordini pre-fischio,
 // cash out della partita e scheda di Mike come nella scheda in gioco.
 // ============================================================================
-import { useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -99,6 +99,7 @@ import { creaComandiControlRoom } from '@/components/controlroom/comandiBot';
 import {
     interruttoriDiSport, importiInterruttori, type InterruttoreId,
     usciteInterruttori, conPosizioniAperte, usciteBotTennis,
+    leggiCatenaLive,
 } from '@/lib/interruttori';
 import { BotParamsSheet, type StrategiaFiltro } from '@/components/safestrategy/BotParamsSheet';
 import { MikeParamsSheet } from '@/components/mike/MikeParamsSheet';
@@ -296,6 +297,10 @@ export default function ControlRoom() {
         [vm.bots],
     );
     const [erroreComando, setErroreComando] = useState<string | null>(null);
+    // 04/10: il runner tennis letto AL GESTO (il battito cambia a ogni secondo:
+    // un riferimento evita di ricostruire i comandi a ogni battito)
+    const runnerTennisRef = useRef(vm.runnerTennis);
+    runnerTennisRef.current = vm.runnerTennis;
     const comandi = useMemo(() => {
         // ⚠️ NELLA SCHEDA TENNIS «AVVIA» VUOL DIRE UN'ALTRA COSA.
         // Safe è un servizio solo e porta dentro sia il tennis sia le tre
@@ -306,6 +311,15 @@ export default function ControlRoom() {
             params: paramsDi,
             servizio: servizioDi,
             obiettivoOmega: () => vm.bots.find((x) => x.bot === 'omega')?.obiettivoGiorno ?? vm.obiettivo,
+            // 04/10: «soldi veri» solo se la catena del bot li sa servire ADESSO.
+            // Runner tennis: quello che dichiara sul suo canale (gia' in memoria);
+            // «Ordini reali»: UNA lettura, solo al momento del gesto.
+            catenaLive: () => leggiCatenaLive({
+                modoRunnerTennis: () => (runnerTennisRef.current?.up
+                    ? runnerTennisRef.current.mode : null),
+                // la strada dichiarata dal servizio Safe (stats), mai dedotta qui
+                stradaSafeTennis: () => vm.bots.find((x) => x.bot === 'safe')?.stradaTennis ?? null,
+            }),
         }, vm.ricarica, sport);
         // un comando che fallisce in silenzio e' peggio di un comando assente:
         // il trader crede di aver fermato un bot che sta ancora operando.

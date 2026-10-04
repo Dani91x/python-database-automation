@@ -118,7 +118,15 @@ export function TennisLadderColumn({ eventId, marketId, marketName, p1, p2 }: Te
         return () => { alive = false; unsub(); };
     }, [eventId]);
 
+    // 04/10 (B1): `order_mode` e' il modo EFFETTIVO del runner tennis (tetto x
+    // «Ordini reali» scelto in QUESTO avvio), lo stesso che il runner applica alle
+    // aperture: il ladder manda questa modalita', mai il tetto del runner.
     const orderMode = useMemo(() => normalizeMode(now?.state?.order_mode), [now]);
+    // perche' gli ordini sono OFF: tetto del runner o scelta «Ordini reali»
+    const tettoOff = useMemo(() => {
+        const st = now?.state as { order_mode_tetto?: string | null } | undefined;
+        return normalizeMode(st?.order_mode_tetto ?? null) === 'OFF';
+    }, [now]);
 
     // fallbackSelections: dalle selezioni del mercato che stiamo mostrando (per nome/ordine
     // finché la ladder full-depth non è ancora arrivata). Solo il mercato con questo marketId.
@@ -160,7 +168,9 @@ export function TennisLadderColumn({ eventId, marketId, marketName, p1, p2 }: Te
             {orderMode === 'OFF' && (
                 <div className="px-3 py-1.5 bg-slate-500/10 border-b border-white/10 text-[10px] font-bold text-slate-300">
                     Ordini OFF — il runner tennis non accetta ordini (nemmeno simulati) e il ladder non
-                    mostra ordini/posizioni. Per la DEMO: imposta TENNIS_LIVE_ORDER_MODE=PAPER e riavvia il runner.
+                    mostra ordini/posizioni. {tettoOff
+                        ? 'Il runner tennis è partito senza ordini: riavvia l’app (l’app lo avvia in prova).'
+                        : '«Ordini reali» è su OFF: portalo su PROVA dalla Control Room.'}
                 </div>
             )}
 

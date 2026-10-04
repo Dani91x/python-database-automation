@@ -24,6 +24,7 @@ ASCII-only nel codice; i commenti sono in italiano.
 """
 from __future__ import annotations
 
+import os
 import types
 from typing import Any, Dict, List, Optional
 
@@ -57,12 +58,15 @@ SEL = 47972
 @pytest.fixture(autouse=True)
 def _stato_pulito(monkeypatch):
     """Stato di processo a nuovo e kill-switch SPENTO di serie (niente .env)."""
+    from Betfair.stream import modo_ordini as _MO
+    _MO.azzera()   # 04/10: nessuna scelta «Ordini reali» ereditata da un altro test
     GT.azzera_per_i_test()
     monkeypatch.setattr(flumine_config, "place_latency", flumine_config.place_latency)
     monkeypatch.setattr(LOW, "_kill_switch", lambda: False)
     monkeypatch.setattr(LOW, "_db_kill_switch", lambda: False)
     monkeypatch.setattr(W, "_LOCAL_SEEN", {})
     yield
+    _MO.azzera()
     GT.azzera_per_i_test()
 
 
@@ -369,6 +373,15 @@ def _riga_coda(rid, action, mode="live", **extra):
 def worker_finto(monkeypatch):
     """Il worker della coda con DB e dispatch finti; canale VERO."""
     monkeypatch.setenv("TENNIS_LIVE_ORDER_MODE", "LIVE")
+    # 04/10 (cantiere tetto tennis, modifica DICHIARATA): col tetto LIVE un'apertura
+    # 'live' parte solo con «Ordini reali» LIVE scelto in QUESTO avvio. Questi test
+    # riguardano kill-switch e guardia d'avvio: si dichiara la scelta (riga con le
+    # chiavi di ``get_live_settings``), cosi' l'esito che verificano resta il loro.
+    from Betfair.stream import modo_ordini as _MO
+    boot = os.getenv("APP_BOOT_ID") or "boot-guardie-tennis"
+    monkeypatch.setenv("APP_BOOT_ID", boot)
+    _MO.registra_settings({"order_mode": "live", "order_mode_boot_id": boot,
+                           "kill_switch": False})
     monkeypatch.setattr(GT, "aggiorna_impostazioni", lambda sb, forza=False: None)
     monkeypatch.setattr(W, "_last_db_queue_poll", 0.0)
     eseguiti: List[tuple] = []
@@ -641,7 +654,9 @@ def test_ponte_scrive_la_modalita_esplicita(ponte, mode):
     db = _DbPonte([_interruttore(mode=mode)])
     S.riconcilia_interruttori(db)
     assert db.armati[0]["mode"] == mode
-    assert db.armati[0]["dry_run"] is (mode == "live")
+    # 04/10 (MODIFICATO, ordine dell'utente «quando scelgo soldi veri devono partire
+    # ordini veri»): prima il live nasceva in dry-run (doppio gesto per partita)
+    assert db.armati[0]["dry_run"] is False
 
 
 def test_ponte_a_guardia_armata_non_arma(ponte):

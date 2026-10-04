@@ -266,6 +266,7 @@ def svuota_le_cache() -> None:
     global _ULTIMI_PARAMS, _ULTIME_MISSIONI_ATTIVE
     _ULTIMI_PARAMS = None
     _ULTIME_MISSIONI_ATTIVE = 0
+    _CATENA_OMEGA.clear()     # 04/10: blocchi di catena (di processo)
     _ATTESE_MERCATO.svuota()  # D2 (24/09)
     _FLUSSO_CRITICO_OMEGA.azzera()  # cantiere J2 (28/09)
     _FLUSSO_RIPIEGO_OMEGA.azzera()
@@ -2132,13 +2133,89 @@ def _freno_rest_aperture() -> Optional[str]:
         return "kill_switch_illeggibile"
 
 
+def _freno_rest_live() -> Optional[str]:
+    """04/10 - i freni di un'APERTURA REST in soldi veri: kill-switch (prima,
+    con le sue parole di sempre) e poi il MODO EFFETTIVO (tetto del .env x
+    «Ordini reali»), con la funzione CONDIVISA ``execution._live_brake`` (Safe e
+    Mike la usano gia'). Prima il REST di Omega guardava solo il kill-switch: con
+    «Ordini reali» su PAPER il canale rifiutava e il REST mandava soldi veri."""
+    blocco = _freno_rest_aperture()
+    if blocco:
+        return blocco
+    try:
+        from Betfair.safe_strategy import execution as X
+
+        return X._live_brake()
+    except Exception as ex:  # noqa: BLE001 - freni non valutabili: si ferma
+        logger.error("[omega] modo ordini non valutabile, apertura FERMATA: %s", str(ex)[:120])
+        return "freni_live_non_letti"
+
+
 #: R-F2-12 (26/09) - prefissi dei rifiuti che arrivano PRIMA del mercato: nessun
 #: ordine e' stato sottoposto a Betfair (ne' al suo specchio paper), quindi non
 #: sono un tentativo della gamba. ``kill_switch`` = il freno (REST/paper di Omega
 #: e ack del runner, ``motore_ordini.M_KILL``, anche ``kill_switch_illeggibile``);
 #: ``runner_non_agganciato`` (``M_AGGANCIO``) e ``in_aggancio`` (``M_IN_AGGANCIO``,
 #: aggancio scaduto) = il runner non aveva il mercato.
-_RIFIUTI_PRIMA_DEL_MERCATO = ("kill_switch", "runner_non_agganciato", "in_aggancio")
+_RIFIUTI_PRIMA_DEL_MERCATO = ("kill_switch", "runner_non_agganciato", "in_aggancio",
+                              # 04/10: il runner non serve la modalita' (tetto o
+                              # «Ordini reali»): nessun ordine, mai un tentativo
+                              "mode_non_servibile")
+
+
+# ---------------------------------------------------------------------------
+# 04/10/2026 - BLOCCO DI CATENA (stessa regola di Safe, ``execution.blocco_di_catena``)
+# ---------------------------------------------------------------------------
+# La catena degli ordini non serve la modalita' (runner solo in prova, «Ordini
+# reali» sotto LIVE, freno): le APERTURE di quella modalita' non partono a vuoto
+# (una sonda ogni ``X.CATENA_PROVA_S``), il motivo va su ``stats.motivo_blocco``,
+# il CRITICAL e' uno per episodio. Le chiusure (green-up, missioni, uscite) non
+# passano di qui. mode -> {"motivo", "nota", "dal", "prossima_prova"}.
+_CATENA_OMEGA: dict[str, dict[str, Any]] = {}
+
+
+def _registra_catena(mode: str, nota: Any, now: datetime) -> bool:
+    """Registra (o rinnova) il blocco. True se e' NUOVO (inizio episodio)."""
+    from Betfair.safe_strategy import execution as X
+
+    m = str(mode)
+    voce = _CATENA_OMEGA.get(m)
+    _CATENA_OMEGA[m] = {
+        "motivo": X.testo_blocco_catena(nota, sport="calcio", mode=m),
+        "nota": str(nota or ""), "dal": (voce or {}).get("dal", now.timestamp()),
+        "prossima_prova": now.timestamp() + X.CATENA_PROVA_S}
+    return voce is None
+
+
+def _catena_omega_bloccata(mode: str, now_ts: float) -> bool:
+    """True = blocco in corso e non e' l'ora della sonda (l'apertura non parte)."""
+    from Betfair.safe_strategy import execution as X
+
+    voce = _CATENA_OMEGA.get(str(mode))
+    if voce is None:
+        return False
+    if now_ts >= float(voce.get("prossima_prova") or 0.0):
+        voce["prossima_prova"] = now_ts + X.CATENA_PROVA_S
+        return False
+    return True
+
+
+def _catena_omega_ripristinata(mode: str, inviato_ts: Optional[float] = None) -> None:
+    """Prova CERTA che la catena serve: il blocco finisce (un ordine mandato
+    PRIMA dell'inizio del blocco non prova niente)."""
+    voce = _CATENA_OMEGA.get(str(mode))
+    if voce is None:
+        return
+    if inviato_ts is not None and inviato_ts < float(voce.get("dal") or 0.0):
+        return
+    _CATENA_OMEGA.pop(str(mode), None)
+    logger.warning("[omega] catena ripristinata (%s): le aperture ripartono", mode)
+
+
+def _motivo_catena_omega() -> Optional[str]:
+    if not _CATENA_OMEGA:
+        return None
+    return " | ".join(f"{m}: {v['motivo']}" for m, v in sorted(_CATENA_OMEGA.items()))
 
 
 def _e_rifiuto_del_freno(motivo: Any) -> bool:
@@ -2622,6 +2699,10 @@ def _place_one(
     # budget dei tentativi dopo esiti CERTI negativi (vale per entrambi i motori)
     if not _leg_retry_allowed(ev.event_id, phase or "", now):
         return 0
+    # 04/10: la catena non serve questa modalita' -> nessuna riserva, nessun
+    # comando a vuoto; passa solo la sonda (una ogni ``X.CATENA_PROVA_S``)
+    if _catena_omega_bloccata(mode, now.timestamp()):
+        return 0
     # 1) RISERVA (il conflitto su event_id = già riservato/piazzato → skip pulito, I1)
     try:
         trade_id = db.insert_trade(reserve)
@@ -2656,7 +2737,12 @@ def _place_one(
                                 size=size, mode=mode, now=now,
                                 base_meta={"requested_size": req_size, **keep_meta})
         if out is not None and out.status == "pending":
+            if getattr(out, "catena_servita", False):
+                _catena_omega_ripristinata(mode)   # 04/10: ack senza motivo = prova certa
             return 1  # esito dal canale (o ignoto): riserva occupata, MAI un secondo invio
+        from Betfair.safe_strategy import execution as X
+        if out is not None and X.blocco_di_catena(out.fill_note):
+            _registra_catena(mode, out.fill_note, now)   # 04/10: il CRITICAL lo dice X
         # esito CERTO negativo (rifiuto del runner col motivo, canale giu' prima
         # dell'invio, comando non valido): nessun ordine esiste, nessun ripiego
         _leg_certain_failure(
@@ -2694,6 +2780,7 @@ def _place_one(
         # R3 (25/09): il freno unico vale anche qui, nello STESSO punto del live
         blocco = _freno_rest_aperture()
         if blocco:
+            _registra_catena(mode, blocco, now)   # 04/10: motivo sulla riga, sonda rada
             logger.warning("[omega] apertura PAPER FERMATA dal freno (%s): trade %s, "
                            "evento %s", blocco, trade_id, ev.event_id)
             _leg_certain_failure(db, trade_id, ev.event_id, phase, now, "kill_switch",
@@ -2701,6 +2788,7 @@ def _place_one(
                                  base_meta={**keep_meta, "requested_size": req_size},
                                  consuma_tentativo=False)
             return 0
+        _catena_omega_ripristinata(mode)   # 04/10: freno rilasciato (unico blocco in prova)
         # runner non disponibile: apertura NON eseguita, esito certo, nessun
         # ordine esiste. Il tentativo non si consuma (rifiuto prima del mercato,
         # come il canale giu' e il freno): si riprova al giro dopo.
@@ -2736,15 +2824,23 @@ def _place_one(
         # O1 (24/09): il kill-switch del worker (env + DB) vale anche qui. Questa
         # lay e' SEMPRE un'apertura: a freno tirato nessun ordine parte, la
         # riserva si chiude come un rifiuto CERTO (nessun ordine esiste).
-        blocco = _freno_rest_aperture()
+        # 04/10: e il MODO EFFETTIVO («Ordini reali» x tetto del .env), come la
+        # strada del canale (motore) e come Safe/Mike in REST (``_live_brake``,
+        # rilettura del DB al piu' ogni 5 s e SOLO prima di un'apertura live)
+        blocco = _freno_rest_live()
         if blocco:
-            logger.critical("[omega] apertura REST FERMATA dal kill-switch (%s): trade %s, "
-                            "evento %s - nessun ordine inviato", blocco, trade_id, ev.event_id)
-            _leg_certain_failure(db, trade_id, ev.event_id, phase, now, "kill_switch",
+            nuovo = _registra_catena(mode, blocco, now)
+            (logger.critical if nuovo else logger.warning)(
+                "[omega] apertura REST FERMATA (%s): trade %s, evento %s - nessun ordine "
+                "inviato%s", blocco, trade_id, ev.event_id,
+                "" if nuovo else " (stesso episodio)")
+            _leg_certain_failure(db, trade_id, ev.event_id, phase, now,
+                                 "kill_switch" if "kill" in blocco else "modo_ordini",
                                  {"motivo": blocco, "percorso": "rest"},
                                  base_meta={**keep_meta, "requested_size": req_size},
                                  consuma_tentativo=False)
             return 0
+        _catena_omega_ripristinata(mode)   # 04/10: freni REST passati = la catena serve
         try:
             # §16 (review C1): customerOrderRef PER GAMBA (omega-t<id>), mai per evento —
             # con due gambe per partita il secondo ordine veniva rifiutato
@@ -3077,6 +3173,26 @@ def _chiudi_da_evento(tr: dict[str, Any], ev: dict[str, Any], *, db, mode: str,
     # la dichiarazione del runner resta sulla riga per le letture di dopo
     X.ricorda_tradotto(pulita["meta"], ev)
     matched = float(ev.get("size_matched") or 0.0)
+    apertura = (tr.get("closes_trade_id") is None
+                and (tr.get("meta") or {}).get("closes_trade_id") is None)
+    if apertura and str(ev.get("fase") or "") not in ("rifiutato", "errore"):
+        # 04/10: l'ordine e' arrivato al mercato: prova certa (se mandato dopo
+        # l'inizio del blocco)
+        quando = _parse_iso_dt((tr.get("meta") or {}).get("canale_inviato_at"))
+        if quando is not None and quando.tzinfo is None:
+            quando = quando.replace(tzinfo=timezone.utc)
+        _catena_omega_ripristinata(mode, quando.timestamp() if quando else None)
+    elif apertura and str(ev.get("fase") or "") == "rifiutato":
+        # 04/10: rifiuto ASINCRONO per modo/freno dopo l'aggancio = blocco di catena
+        # (stesso episodio del CRITICAL dell'ack sincrono)
+        nota = X.rifiuto_catena_asincrono(
+            db, attore="omega", mode=mode, trade_id=tr.get("id"),
+            ref=str((tr.get("meta") or {}).get("canale_ref") or ev.get("ref") or ""),
+            errore=ev.get("errore") or ev.get("error_code"), now=now)
+        if nota is not None:
+            _registra_catena(mode, nota, now)
+            return _flumine_no_fill_error(pulita, db=db, now=now, reason="canale_rifiutato",
+                                          consuma_tentativo=False)
     if matched > 0:
         return _flumine_confirm(pulita, db=db, matched=matched,
                                 avg=float(ev.get("average_price_matched") or 0.0),
@@ -5543,12 +5659,14 @@ def _manual_place(*, market, db, payload: dict, now: datetime) -> dict:
         # O1 (24/09): kill-switch condiviso (env + DB). Il manuale apre sempre una
         # riga NUOVA (le chiusure passano da ``_manual_cashout`` -> close_trade):
         # a freno tirato nessun ordine parte e la riga si chiude come rifiuto CERTO.
-        blocco = _freno_rest_aperture()
+        # 04/10: anche il modo effettivo («Ordini reali»), come il canale
+        blocco = _freno_rest_live()
         if blocco:
-            logger.critical("[omega] ordine manuale REST FERMATO dal kill-switch (%s): "
+            logger.critical("[omega] ordine manuale REST FERMATO (%s): "
                             "trade %s - nessun ordine inviato", blocco, trade_id)
             db.update_trade(trade_id, status="error", pnl=0.0,
-                            meta={**manual_meta, "reason": "kill_switch",
+                            meta={**manual_meta,
+                                  "reason": "kill_switch" if "kill" in blocco else "modo_ordini",
                                   "motivo": blocco, "percorso": "rest",
                                   "leg_failed": True, "error_final": True,
                                   "error_at": now.isoformat()})
@@ -8265,6 +8383,13 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
         "stop_perdita": _stop_perdita(params, agg_bot, legs_engine),
         "last_cycle": now.isoformat(),
     }
+    # 04/10: PERCHE' NON APRE (la catena non serve la modalita': runner solo in
+    # prova, «Ordini reali», freno). Chiave presente SOLO a blocco in corso
+    # (assente = nessun blocco: ``useControlRoom`` legge ``stats.motivo_blocco``
+    # e lo tratta null), cosi' le tracce di prima restano identiche.
+    _motivo = _motivo_catena_omega()
+    if _motivo:
+        stats["motivo_blocco"] = _motivo
     # 23/09: da dove sono arrivate le righe del feed di QUESTO giro (solo a
     # ``OMEGA_LEGGE_CANALE`` acceso; spento, nessuna chiave nuova).
     _con_fonte_scan(stats)

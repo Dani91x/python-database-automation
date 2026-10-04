@@ -31,6 +31,7 @@ from typing import Any, Dict, List
 import pytest
 
 from Betfair.stream import live_order_worker as LOW
+from Betfair.stream import modo_ordini as MO
 from Betfair.stream.tennis_live import esecutore_tennis as ET
 from Betfair.stream.tennis_live import tennis_runner as TR
 from Betfair.stream.tennis_live.tests.test_motore_ordini_tennis_2026_09_25 import (  # noqa: F401
@@ -146,8 +147,11 @@ def test_paper_e_live_consegnano_a_flumine_lo_stesso_ordine(db, banchi, ambiente
     # minimi .it definitivi 01/10: punta 1,00 / banca 1,00 / trim >= 0,50
     cp = m.manda(mode="paper", side="BACK", price=2.0, size=0.72,
                  time_in_force="FILL_OR_KILL")
-    cl = m.manda(mode="live", side="BACK", price=2.0, size=0.72,
-                 time_in_force="FILL_OR_KILL")
+    # 04/10 (cantiere tetto tennis): il live parte solo con «Ordini reali» LIVE
+    # scelto in questo avvio (qui dichiarato come fa il banco); prima bastava il tetto
+    with MO.dichiara_per_banco("live"):
+        cl = m.manda(mode="live", side="BACK", price=2.0, size=0.72,
+                     time_in_force="FILL_OR_KILL")
     assert m.ack(cp["ref"])["accettato"] and m.ack(cl["ref"])["accettato"]
     assert len(visti) == 2
     paper, live = visti

@@ -215,6 +215,9 @@ export interface AutoScalper {
     etaScannerS: number | null;
     fonte: string | null;
     giroAt: string | null;
+    /** 04/10 — le partite del feed nascono in dry-run? COME LO DICHIARA il
+     *  supervisore (`stats.auto.nascono_in_dry_run`); null = non dichiarato */
+    nasconoInDryRun?: boolean | null;
 }
 
 /** `stats.auto` della riga dell'interruttore, o `null` se non dichiarato. */
@@ -241,13 +244,14 @@ export function leggiAutoScalper(stats: Record<string, unknown> | null | undefin
         etaScannerS: num(f.eta_scanner_s),
         fonte: str(f.fonte),
         giroAt: str(o.giro_at),
+        nasconoInDryRun: typeof o.nascono_in_dry_run === 'boolean' ? o.nascono_in_dry_run : null,
     };
 }
 
 /**
  * La frase dell'auto-mode accanto alla riga (solo ad auto-mode ACCESO).
  * Mai "armato" per una partita che il supervisore non ha dichiarato; in LIVE
- * dice che le partite del feed nascono in dry-run (D3, 25/09).
+ * dice come nascono le partite del feed, come lo dichiara il supervisore.
  */
 export function notaAutoScalper(auto: AutoScalper | null, tettoRiga: number | null): string | null {
     if (auto == null || !auto.acceso) return null;
@@ -265,12 +269,20 @@ export function notaAutoScalper(auto: AutoScalper | null, tettoRiga: number | nu
             + `${auto.fonte ? ` (${auto.fonte})` : ''}`);
     }
     if (auto.ordiniVivi != null) parti.push(`${auto.ordiniVivi} ordini vivi`);
-    // D3 (25/09) — «dry run per tutti: decido io cosa attivare, se PAPER o
-    // LIVE»: in LIVE le sessioni armate dal feed nascono in dry-run (ordini
-    // simulati); i soldi veri li mette l'utente sessione per sessione
+    // 04/10 (ordine dell'utente «quando scelgo soldi veri devono partire ordini
+    // veri»): la frase la decide quello che il supervisore DICHIARA
+    // (`nascono_in_dry_run`), non una regola ricopiata qui
     if (auto.modalita === 'live') {
-        parti.push('LIVE: le partite del feed nascono in dry-run, nessun ordine reale finché '
-            + 'non lo togli per partita (scheda scalper della partita)');
+        if (auto.nasconoInDryRun === false) {
+            parti.push('SOLDI VERI: le partite del feed nascono con ordini reali');
+        } else if (auto.nasconoInDryRun === true) {
+            parti.push('LIVE: le partite del feed nascono in dry-run, nessun ordine reale finché '
+                + 'non lo togli per partita (scheda scalper della partita)');
+        }
+    }
+    if (auto.conflitto) {
+        parti.push(`sessioni in ${auto.conflitto === 'live' ? 'soldi veri' : 'prova'} ancora `
+            + 'attive: nessuna partita nuova finché non si fermano (paper e live mai insieme)');
     }
     return parti.join(' - ');
 }
