@@ -185,8 +185,10 @@ def test_c_residuo_con_libro_che_va_e_viene_un_solo_avviso(monkeypatch, _live):
     chiamate: List[Dict[str, Any]] = []
     db = db_vuoto()
     ctx = ctx_umea()
+    ctx.flatten_pending = True            # «Chiudi» dell'utente (cash out), come nel banco
     d = E.decide(ctx, foto_umea(), params())
     _esegui(ctx, d, T0, _mercato(chiamate), db)
+    assert [round(float(k["size"]), 2) for k in chiamate] == [7.00]
     avvisi = decadute = 0
     for dt in range(1, 61):
         s = foto_umea(now=T0 + dt)
