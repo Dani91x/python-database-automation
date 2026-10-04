@@ -275,7 +275,12 @@ def test_a_freno_scattato_il_riprezzo_NON_annulla_la_copertura_gia_sul_book():
 def test_a_mercato_Over45_SOSPESO_la_copertura_non_parte_e_si_ASPETTA():
     p = params()
     ctx = _ctx_scoperto()
-    d = E.decide(ctx, _snap_copre(o45_status="SUSPENDED"), p)
+    s = _snap_copre(o45_status="SUSPENDED")
+    # 04/10: Under 3,5 NON in profitto (banca = prezzo d'ingresso). Con la regola nuova, a
+    # copertura non eseguibile e Under 3,5 in profitto di 2 tick, Mike chiude l'Under
+    # (test dedicato): qui si prova l'ATTESA, quindi l'Under non deve essere in profitto
+    s.books[(E.MARKET_OU35, E.SEL_UNDER)] = book(1.49, inplay=True)
+    d = E.decide(ctx, s, p)
     assert _place_cop(d) == []
     assert d.state == "LIVE_UNCOVERED", "sospeso non e' chiuso: si aspetta"
     assert "sospeso" in d.reason

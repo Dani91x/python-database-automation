@@ -739,7 +739,12 @@ def test_m3_cover_max_overshoot_pct_evita_coperture_gonfiate():
                       goals=1, feed_fresh=True, last_goal_ts=None,
                       books={(E.MARKET_OU45, E.SEL_OVER): E.Book(best_back=30.0, back_size=99.0,
                                                                  best_lay=32.0, lay_size=99.0,
-                                                                 inplay=True)})
+                                                                 inplay=True),
+                             # 04/10: il libro dell'Under 3,5 (nel feed vero c'e' sempre)
+                             # serve alla regola del prezzo coerente della copertura
+                             (E.MARKET_OU35, E.SEL_UNDER): E.Book(best_back=1.50, back_size=99.0,
+                                                                  best_lay=1.51, lay_size=99.0,
+                                                                  inplay=True)})
     # exact_sizes OFF: X = 1.2*10/((30-1)*0.95) = 0.44 -> legalizzata a 2.00 (+355%)
     p = C.merge_params({"stake": 10, "exact_sizes": False, "cover_policy": "immediate",
                         "cover_max_overshoot_pct": 30})

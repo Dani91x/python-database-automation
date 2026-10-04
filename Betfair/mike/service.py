@@ -514,6 +514,30 @@ def _ctx_from_row(row: Dict[str, Any], db: Any = None) -> E.MatchCtx:
     return ctx
 
 
+def _avvisa_copertura_fuori_prezzo(db: Any, extra: Dict[str, Any], attesa: Any,
+                                   event_id: Any) -> None:
+    """04/10 - la copertura NON e' partita perche' il prezzo dell'Under 4,5 non e'
+    minore di quello dell'Under 3,5 (``E.COVER_FUORI_PREZZO``): avviso CRITICO,
+    UNO per episodio (il motore ridecide a ogni giro). L'episodio finisce quando
+    l'attesa cambia motivo; al successivo l'avviso esce di nuovo."""
+    fuori = isinstance(attesa, dict) and attesa.get("reason") == E.COVER_FUORI_PREZZO
+    if not fuori:
+        extra["cover_fuori_prezzo_avvisato"] = False
+        return
+    if extra.get("cover_fuori_prezzo_avvisato"):
+        return
+    extra["cover_fuori_prezzo_avvisato"] = True
+    q_lim, q35 = attesa.get("price_limite"), attesa.get("price_lay_u35")
+    db.log("error", {"reason": E.COVER_FUORI_PREZZO, "critical": True,
+                     "price_lay_u45": attesa.get("price_lay_u45"),
+                     "price_limite": q_lim, "price_lay_u35": q35,
+                     "nota": "copertura NON eseguita: banca Under 4.5 a %s non minore della "
+                             "banca Under 3.5 a %s (mercato senza prezzo). Nessun ordine "
+                             "inviato: ricontrollo a ogni giro" % (q_lim, q35)}, event_id)
+    logger.critical("[mike] %s: copertura NON eseguita, Under 4.5 a %s contro Under 3.5 a %s",
+                    event_id, q_lim, q35)
+
+
 def _row_from_ctx(row: Dict[str, Any], ctx: E.MatchCtx, extra: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(row)
     out["state"] = ctx.state
@@ -5363,6 +5387,7 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                     extra["last_cashout"] = v
                 elif k == "cover_wait":
                     extra["last_cover_wait"] = v
+                    _avvisa_copertura_fuori_prezzo(db, extra, v, ev["event_id"])
                 elif k == "loss_exit":
                     extra["last_loss_exit"] = v
                 elif k == "loss_exit_deciso":
