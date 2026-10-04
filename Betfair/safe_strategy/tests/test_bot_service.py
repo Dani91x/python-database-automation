@@ -1787,7 +1787,10 @@ def test_resolve_params_fonde_la_sezione_exits():
 
 def test_exit_base_profit_chiude_dopo_l_assestamento_e_mai_due_volte():
     db = FakeDB(status="running")
-    tid = _auto_trade(db, "base")
+    # 04/10/2026 (regola delle punte): lay 9@8.5 invece di 10@8.5, cosi' la chiusura
+    # integrale a 9.0 e' una punta di 8,50 (multipla di 0,50): con 10 sarebbe 9,44 ->
+    # 9,00 e un residuo di 0,44 non piazzabile (posizione non piu' 'hedged')
+    tid = _auto_trade(db, "base", size=9.0)
     r = _cycle(db, _exit_feed_row(60, 1, 0))
     assert r["exits"] == 0
     assert db.get_trade(tid)["meta"]["exit_track"]["side"] == "home"
@@ -2344,9 +2347,11 @@ def test_caso_trade_12_uscita_a_tempo_in_perdita_con_margine_ampio_tiene():
     assert eh["source"] == "model" and eh["locked"] == pytest.approx(-4.0, abs=0.01)
     assert eh["ev_hold"] is not None and "ts" in eh
     assert "exit_kind" not in meta, "exit_kind solo a uscita INVIATA"
-    # il prezzo migliora (back 65): profitto bloccato -> esce, exit_hold rimosso
+    # il prezzo migliora (back 80): profitto bloccato -> esce, exit_hold rimosso.
+    # 04/10/2026 (regola delle punte): era back 65 -> punta 120/65 = 1,85 -> 1,50 e un
+    # residuo di 0,35 non piazzabile (non piu' 'hedged'); a 80 la punta e' 1,50 esatta
     at = NOW + timedelta(seconds=8)
-    r = _cycle(db, _cs_away_row(72, back=65.0, lay=70.0, updated_at=at), at=at)
+    r = _cycle(db, _cs_away_row(72, back=80.0, lay=85.0, updated_at=at), at=at)
     assert r["exits"] == 1 and db.get_trade(tid)["status"] == "hedged"
     meta = db.get_trade(tid)["meta"]
     # H-01: chiusura integrale con profitto BLOCCATO = 'greenup' (il badge
@@ -2376,13 +2381,16 @@ def test_uscita_a_tempo_esce_se_il_rischio_supera_il_cap(monkeypatch):
 def test_uscita_a_tempo_in_profitto_esce_sempre():
     db = FakeDB(status="running")
     tid = _esatto_away_2_at_60(db)
-    _cycle(db, _cs_away_row(60, back=65.0, lay=70.0))
-    r = _cycle(db, _cs_away_row(72, back=65.0, lay=70.0))
+    # 04/10/2026 (regola delle punte): back 80 invece di 65. A 65 la punta di chiusura
+    # e' 120/65 = 1,85 -> 1,50 con 0,35 non piazzabili (posizione non 'hedged', bloccato
+    # assente); a 80 e' 1,50 esatta: bloccato +0,50 lordo (era +0,15), +0,47 netto
+    _cycle(db, _cs_away_row(60, back=80.0, lay=85.0))
+    r = _cycle(db, _cs_away_row(72, back=80.0, lay=85.0))
     assert r["exits"] == 1 and _holds(db) == []
     ex = [p for k, p in db.activity if k == "exit"][0]
     # CANTIERE P: bloccato letto sull'apertura dopo il poll (chiusura via runner)
-    assert db.get_trade(tid)["meta"]["locked_pnl"] == pytest.approx(0.15, abs=0.01)
-    assert ex["model_why"].startswith("profitto bloccato +0,14")   # M-27: netto
+    assert db.get_trade(tid)["meta"]["locked_pnl"] == pytest.approx(0.50, abs=0.01)
+    assert ex["model_why"].startswith("profitto bloccato +0,4")   # M-27: netto (0,475)
     assert db.get_trade(tid)["status"] == "hedged"
 
 
@@ -2725,7 +2733,9 @@ def _model_trade(db, **kw):
 def test_uscita_modello_gol_avverso_dopo_l_assestamento(monkeypatch):
     monkeypatch.setattr(S, "_p_selection_wins", lambda **kw: (0.2, "test"))
     db = FakeDB(status="running")
-    tid = _model_trade(db)   # lay ospite 10@8.5 sull'1-0
+    # 04/10/2026 (regola delle punte): lay 9@8.5 (non 10): la chiusura a 9.0 e' una
+    # punta di 8,50, multipla di 0,50 (con 10 sarebbe 9,44 -> 9,00 + residuo 0,44)
+    tid = _model_trade(db, size=9.0)   # lay ospite 9@8.5 sull'1-0
     r = _cycle(db, _exit_feed_row(60, 1, 0))
     assert r["exits"] == 0 and db.get_trade(tid)["status"] == "open"
     t_goal = NOW + timedelta(seconds=2)

@@ -189,7 +189,10 @@ def test_apertura_paper_col_runner_va_in_coda_e_si_conferma_dal_poll():
 # ---------------------------------------------------------------------------
 def test_uscita_paper_senza_runner_resta_da_ritentare_e_poi_esce():
     db = FakeDB(status="running")
-    tid = _auto_trade(db, "base")
+    # 04/10/2026 (regola delle punte): lay 9@8.5 (non 10@8.5): la chiusura a 9.0 e' una
+    # punta di 8,50 multipla di 0,50 (con 10 sarebbe 9,44 -> 9,00 + residuo 0,44 e la
+    # posizione non tornerebbe 'hedged'); esposizione 9 * 7,5 = 67,50 (era 75,00)
+    tid = _auto_trade(db, "base", size=9.0)
     db.follow = "NONE"
     # runner giu' per 2 minuti: giri ogni 6 s
     for s in range(0, 120, 6):
@@ -207,7 +210,7 @@ def test_uscita_paper_senza_runner_resta_da_ritentare_e_poi_esce():
     assert apri["meta"]["exit"]["state"] == "retrying"
     crit = [p for k, p in db.activity if k == "exit_retry" and p.get("senza_runner")]
     assert 2 <= len(crit) <= 3, "riga critica al piu' una volta al minuto"
-    assert crit[0]["critical"] is True and crit[0]["esposizione_eur"] == 75.0
+    assert crit[0]["critical"] is True and crit[0]["esposizione_eur"] == 67.5
     # il runner torna: al giro dopo l'uscita parte e la posizione si chiude
     db.follow = "STREAMING"
     at = NOW + timedelta(seconds=126)

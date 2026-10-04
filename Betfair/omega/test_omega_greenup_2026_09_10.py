@@ -164,7 +164,11 @@ def _db_with_model():
 # ---------------------------------------------------------------------------
 def test_trigger_gol_esce_dopo_assestamento_e_marca_le_due_righe(lambdas):
     db = _db_with_model()
-    tr = _trade(db)                                   # lay 1-3 @55 sull'1-0
+    # 04/10/2026 (regola delle punte): stake 4 invece di 5. Con 5 @55 la chiusura a
+    # 8.0 e' una punta di 34,38 -> 34,00 + 0,38 non piazzabili (posizione non piu'
+    # 'hedged'); con 4 e' 27,50 esatta. Bloccato ed EV scalano entrambi con lo stake:
+    # la decisione e' la stessa (bloccato -23,5 >= EV -28,4)
+    tr = _trade(db, size=4.0)                         # lay 1-3 @55 sull'1-0
     # 1-2 al 70': il bancato è a UN gol; modello p≈0.147 (< cap 0.15) ma il back 8.0
     # offre almeno l'EV del tenere (bloccato −29.4 ≥ EV −35.5) → si esce
     goal = _payload(70, 1, 2, cs=[_sel(14, "1 - 3", 8.2, 8.0)])
@@ -219,7 +223,9 @@ def test_ritardo_zero_esce_subito_e_bot_off_non_fa_nulla(lambdas):
 def test_trigger_gol_tiene_se_p_lose_bassa_poi_esce_oltre_il_cap(monkeypatch, lambdas):
     db = _db_with_model()
     tr = _trade(db)
-    goal = _payload(70, 1, 2, cs=[_sel(14, "1 - 3", 6.0, 5.8)])   # bloccato −42.4
+    # 04/10/2026 (regola delle punte): back 5.5 (era 5.8, punta 47,41 -> 47,00 + 0,41
+    # non piazzabili): 275/5.5 = 50,00 esatta; bloccato -45,0 (era -42,4)
+    goal = _payload(70, 1, 2, cs=[_sel(14, "1 - 3", 5.7, 5.5)])   # bloccato -45.0
     monkeypatch.setattr(M, "score_probs", lambda **kw: {(1, 3): 0.01})
     p = _params(greenup_settle_delay_s=0)
     assert _run(db, goal, p) == 0
@@ -316,9 +322,11 @@ def test_trigger_quota_decisione_a_modello_con_riserva_di_mercato(no_lambdas):
     tr = _trade(db)                                  # ingresso @55
     p = _params(greenup_settle_delay_s=0)
     assert _run(db, _payload(70, 1, 0, cs=[_sel(14, "1 - 3", 30.0, 28.0)]), p) == 0   # 30/55 > 0.5
-    assert _run(db, _payload(70, 1, 0, cs=[_sel(14, "1 - 3", 20.0, 19.0)]), p) == 1   # 20/55 ≤ 0.5
+    # 04/10/2026 (regola delle punte): back 22 (era 19: punta 275/19 = 14,47 -> 14,00 +
+    # 0,47 non piazzabili); 275/22 = 12,50 esatta; lay 23/55 <= 0.5 come prima
+    assert _run(db, _payload(70, 1, 0, cs=[_sel(14, "1 - 3", 23.0, 22.0)]), p) == 1   # 23/55 <= 0.5
     g = _logs(db, "greenup")[0]
-    assert g["trigger"] == "price" and g["p_source"] == "market" and g["p_lose"] == pytest.approx(1 / 19, abs=1e-4)
+    assert g["trigger"] == "price" and g["p_source"] == "market" and g["p_lose"] == pytest.approx(1 / 22, abs=1e-4)
     assert g["exit_kind"] == "loss" and g["kind"] == "loss"
     assert db.get_trade(tr["id"])["status"] == "hedged"
 
@@ -430,7 +438,9 @@ def test_p_o1_stato_done_al_fill_e_mai_un_secondo_invio(lambdas):
     conferma il fill; ne' prima ne' dopo parte un secondo ordine di chiusura
     (la guardia e' ``hedge_pending_ids`` / 'hedged', non lo stato)."""
     db = _db_with_model()
-    tr = _trade(db)
+    # 04/10/2026 (regola delle punte): stake 4 (punta 27,50 esatta a 8.0; con 5 sarebbe
+    # 34,38 -> 34,00 + 0,38 non piazzabili e mai 'hedged')
+    tr = _trade(db, size=4.0)
     goal = _payload(70, 1, 2, cs=[_sel(14, "1 - 3", 8.2, 8.0)])
     p = _params(greenup_settle_delay_s=0, greenup_retry_s=0)
     mk = FakeMarket([], None, _open_snapshot())
@@ -459,7 +469,8 @@ def test_p_green_up_paper_senza_runner_non_consuma_e_avvisa(lambdas):
     Appena il runner torna, parte."""
     db = _db_with_model()
     db.follow = "NONE"
-    tr = _trade(db)
+    # 04/10/2026 (regola delle punte): stake 4, punta di chiusura 27,50 esatta a 8.0
+    tr = _trade(db, size=4.0)
     goal = _payload(70, 1, 2, cs=[_sel(14, "1 - 3", 8.2, 8.0)])
     p = _params(greenup_settle_delay_s=0, greenup_retry_s=0, greenup_max_attempts=2)
     mk = FakeMarket([], None, _open_snapshot())
@@ -556,7 +567,8 @@ def test_bot_fermo_gestisce_comunque_le_uscite(lambdas):
     db = _db_with_model()
     db.control["status"] = "stopped"
     db.control["params"] = {"execution_mode": "rest", "greenup_settle_delay_s": 0}
-    tr = _trade(db)
+    # 04/10/2026 (regola delle punte): stake 4, punta di chiusura 27,50 esatta a 8.0
+    tr = _trade(db, size=4.0)
     goal = _payload(70, 1, 2, cs=[_sel(14, "1 - 3", 8.2, 8.0)])
     out = S.run_once(market=FakeMarket([], None, _open_snapshot()), db=db, now=NOW,
                      greenup_feed=lambda eid: goal)

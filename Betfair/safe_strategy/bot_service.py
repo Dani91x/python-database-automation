@@ -4235,6 +4235,11 @@ def _exit_candidates(open_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         # uscite su una posizione finita: 282 `exit_hold` misurati su 35797769.
         if marcatore_utente(t) or evento_chiuso_dall_utente(t.get("event_id")):
             continue
+        # 04/10/2026 (decisione dell'utente "IL RESIDUO RESTA RICORDATO E LO CHIUDO
+        # IO"): residuo dichiarato NON piazzabile (``execution.RESIDUO_KEY``, gia'
+        # detto una volta col CRITICAL e la proposta): il bot non lo ritenta.
+        if X.residuo_ricordato(t):
+            continue
         if str(t.get("strategy") or "") not in XE.EXIT_STRATEGIES + XE.MODEL_STRATEGIES:
             continue
         req = (t.get("meta") or {}).get(XE.REQUEST_KEY)
@@ -4595,7 +4600,9 @@ def _close_combo_siblings(*, db, market, legs: list[dict[str, Any]],
             res = {"error": "exception", "detail": str(ex)[:160]}
         if res.get("error"):
             err = str(res.get("error") or "")
-            if err in ("chiusura_in_corso", "posizione_gia_chiusa") or \
+            # 04/10: ``ERR_RESIDUO`` = resto non piazzabile gia' dichiarato UNA volta
+            # da ``close_trade`` (CRITICAL con la proposta): nessun secondo CRITICAL
+            if err in ("chiusura_in_corso", "posizione_gia_chiusa", X.ERR_RESIDUO) or \
                     err.startswith("trade_non_aperto"):
                 # 12/09: una gamba GIA' in chiusura (o coperta) non e' un
                 # fallimento critico: la sua chiusura e' in volo o fatta.
@@ -5777,6 +5784,21 @@ def _send_exit(*, db, market, trade: dict[str, Any], meta: dict[str, Any],
         _write_exit_state(db, trade, trade.get("meta") or meta, state="done",
                           last_error=None, next_retry_at=None)
         return False
+    if err == X.ERR_RESIDUO:
+        # 04/10/2026: il resto di una chiusura gia' abbinata non ha nessuna via (sotto
+        # 0,50). Dichiarato UNA volta da ``close_trade`` (CRITICAL con la proposta) e
+        # ricordato sull'apertura: nessun tentativo consumato, nessun ritento (le
+        # aperture col marcatore escono da ``_exit_candidates``). Lo chiude l'utente.
+        if on_residual:
+            req.update({"residual_attempts": r_attempts - 1})
+        else:
+            req.update({"attempts": attempts - 1})
+        req.update({"sent": True, "note": err, "detail": res.get("detail")})
+        _persist_exit_request(db, trade, req)
+        _write_exit_state(db, trade, trade.get("meta") or meta, state="failed",
+                          kind=decision.kind, reason=decision.reason,
+                          last_error=err, next_retry_at=None)
+        return False
     if err and X.e_senza_runner(res.get("detail")):
         # CANTIERE P (28/09): paper, runner NON raggiungibile. Non e' un rifiuto
         # del mercato: nessun tentativo consumato, mai 'failed', si ritenta al
@@ -6115,6 +6137,10 @@ def _execute(*, db, market, trade_id: int, row: dict[str, Any], params: dict,
         if nota_place.get("portata_al_minimo"):
             # apertura tennis portata al minimo sulle strade senza motore
             meta["portata_al_minimo"] = dict(nota_place["portata_al_minimo"])
+        if out.punta_050:
+            # 04/10: punta a multiplo di 0,50 per difetto (``X.place``): la riga lo
+            # dice (chiesto, piazzato, residuo NON piazzato)
+            meta["punta_050"] = dict(out.punta_050)
         # CERT. 14/09 — t4/t5/t6 DELL'APERTURA: i due istanti attorno alla
         # chiamata a Betfair e il momento del fill. Con t0..t3 che il piazzamento
         # ha gia' scritto nel meta della riserva, la riga porta la catena INTERA
@@ -8695,11 +8721,15 @@ def _esegui_combo_riservata(*, db, market, event_id: str, event_name: Any, cid: 
     live_ids: list[int] = []
     filled_ids: list[int] = []
     non_abbinate: list[dict[str, Any]] = []
+    a_multiplo: list[dict[str, Any]] = []
     for row, tid in zip(rows, ids):
         _risk_commit(risk_ctx, {**row, "id": tid})
         out = _execute(db=db, market=market, trade_id=tid, row=row, params=params,
                        now=now, best_size=row.get("size"), ladder=(),
                        feed_prices=_feed_prices_of(rows_by_event, event_id, row))
+        if getattr(out, "punta_050", None):
+            a_multiplo.append({**_gamba_in_breve({**row, "id": tid}),
+                               "punta_050": dict(out.punta_050), "esito": out.status})
         if out.status != "error":
             placed_legs += 1
             live_ids.append(int(tid))
@@ -8707,6 +8737,21 @@ def _esegui_combo_riservata(*, db, market, event_id: str, event_name: Any, cid: 
                 filled_ids.append(int(tid))
         else:
             non_abbinate.append(_gamba_in_breve({**row, "id": tid}))
+    if a_multiplo:
+        # 04/10/2026 (regola delle punte dell'utente): una o piu' PUNTE della combo
+        # sono partite a multiplo di 0,50 per DIFETTO. Le proporzioni fra le gambe
+        # non sono piu' quelle proposte: il profitto bloccato della combinazione NON
+        # e' piu' quello approvato. Si dice, forte, una volta (mai in silenzio). Gli
+        # importi della strategia NON si ricalcolano qui (decisione dell'utente).
+        # kind ``place_parziale`` (gia' tradotto dalla UI): la combinazione e' partita
+        # solo in parte rispetto agli importi proposti
+        _log(db, "place_parziale", {
+            "reason": "combo_punta_050",
+            "event_id": event_id, "combo_id": cid, "critical": True, "mode": mode,
+            "gambe": a_multiplo,
+            "nota": "punte della combinazione arrotondate a multipli di 0,50 per "
+                    "difetto: il profitto bloccato non e' piu' quello proposto; "
+                    "controlla le gambe e decidi tu"})
     if placed_legs and placed_legs < len(rows):
         # H-20: tutto-o-niente ANCHE dopo il fill — una gamba in errore con
         # un'altra viva lascia una posizione NUDA: si chiude subito quella

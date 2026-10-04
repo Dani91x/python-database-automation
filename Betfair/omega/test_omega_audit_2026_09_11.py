@@ -269,7 +269,9 @@ from Betfair.omega.test_omega_greenup_2026_09_10 import (  # noqa: E402
 
 def test_h04_greenup_riuscito_scrive_state_done_e_exit_kind_greenup():
     db = _GDB(_control(status="idle"))
-    tr = _trade(db, price=55.0, size=5.0, score="1-0")
+    # 04/10/2026 (regola delle punte): stake 3,80 (era 5): a 7.6 la punta di chiusura e'
+    # 3,8x55/7,6 = 27,50 esatta; con 5 sarebbe 36,18 -> 36,00 + 0,18 non piazzabili
+    tr = _trade(db, price=55.0, size=3.8, score="1-0")
     # bancato 1-3, punteggio 1-2 → distanza 1: trigger 'goal'
     pay = _payload(70, 1, 2, cs=[_sel(14, "1 - 3", 8.0, 7.6, lay_size=500.0, back_size=500.0)])
     assert _run(db, pay, _gparams(greenup_settle_delay_s=0)) == 1
@@ -389,7 +391,8 @@ def test_m06_copertura_parziale_espone_frazione_e_residuo():
 
 def test_l01_hedging_falso_a_copertura_completa():
     db = _GDB(_control(status="idle"))
-    tr = _trade(db, price=55.0, size=5.0, score="1-0")
+    # 04/10/2026 (regola delle punte): stake 3,80 (era 5), punta di chiusura 27,50 esatta
+    tr = _trade(db, price=55.0, size=3.8, score="1-0")
     pay = _payload(70, 1, 2, cs=[_sel(14, "1 - 3", 8.0, 7.6, lay_size=500.0, back_size=500.0)])
     _run(db, pay, _gparams(greenup_settle_delay_s=0))
     opened = db.get_trade(tr["id"])
@@ -570,7 +573,8 @@ def test_l05_greenup_usa_i_gialli(monkeypatch):
     monkeypatch.setattr(S.M, "score_probs", _probs)
     db = _GDB(_control(status="idle"), events={EID: {"fixture_id": 7, "league_id": 135}})
     monkeypatch.setattr(S, "_prematch_lambdas", lambda *a, **k: (1.2, 1.0, 135, "fixture"))
-    tr = _trade(db, price=55.0, size=5.0, score="1-0")
+    # 04/10/2026 (regola delle punte): stake 3,80 (era 5), punta di chiusura 27,50 esatta
+    tr = _trade(db, price=55.0, size=3.8, score="1-0")
     pay = _payload(70, 1, 2, cs=[_sel(14, "1 - 3", 8.0, 7.6, lay_size=500.0, back_size=500.0)])
     pay["score_raw"] = {"score": {"home": {"numberOfYellowCards": 3},
                                   "away": {"numberOfYellowCards": 1}}}
@@ -656,7 +660,8 @@ def test_h08_stats_del_controllo_hanno_le_chiavi_della_giornata():
 def test_m04_posizione_greenata_regola_con_pnl_di_posizione():
     from Betfair.omega.test_omega_service import _closed_snapshot
     db = _GDB(_control(status="idle"))
-    tr = _trade(db, price=55.0, size=5.0, score="1-0")
+    # 04/10/2026 (regola delle punte): stake 3,80 (era 5), punta di chiusura 27,50 esatta
+    tr = _trade(db, price=55.0, size=3.8, score="1-0")
     pay = _payload(70, 1, 2, cs=[_sel(14, "1 - 3", 8.0, 7.6, lay_size=500.0, back_size=500.0)])
     _run(db, pay, _gparams(greenup_settle_delay_s=0))
     assert db.get_trade(tr["id"])["status"] == "hedged"
@@ -873,7 +878,8 @@ def test_rev_h2_un_solo_writer_dello_stato_hedge():
 
 def test_rev_h2_stato_hedge_idempotente_nessuna_scrittura_a_vuoto():
     db = _GDB(_control(status="idle"))
-    tr = _trade(db, price=55.0, size=5.0, score="1-0")
+    # 04/10/2026 (regola delle punte): stake 3,80 (era 5), punta di chiusura 27,50 esatta
+    tr = _trade(db, price=55.0, size=3.8, score="1-0")
     pay = _payload(70, 1, 2, cs=[_sel(14, "1 - 3", 8.0, 7.6, lay_size=500.0, back_size=500.0)])
     _run(db, pay, _gparams(greenup_settle_delay_s=0))
     opened = db.get_trade(tr["id"])
@@ -892,7 +898,8 @@ def test_rev_h2_stato_hedge_idempotente_nessuna_scrittura_a_vuoto():
 # --- H3: green-up chiuso in PERDITA non è un "green-up" per la UI ---
 def test_rev_h3_chiusura_in_perdita_e_exit_kind_loss():
     db = _GDB(_control(status="idle"))
-    tr = _trade(db, price=55.0, size=5.0, score="1-0")
+    # 04/10/2026 (regola delle punte): stake 3,80 (era 5), punta di chiusura 27,50 esatta
+    tr = _trade(db, price=55.0, size=3.8, score="1-0")
     pay = _payload(70, 1, 2, cs=[_sel(14, "1 - 3", 8.0, 7.6, lay_size=500.0, back_size=500.0)])
     _run(db, pay, _gparams(greenup_settle_delay_s=0))
     opened = db.get_trade(tr["id"])

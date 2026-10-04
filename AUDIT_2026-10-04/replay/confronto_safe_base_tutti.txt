@@ -1,0 +1,495 @@
+﻿--- AUDIT_2026-10-04/replay/safe_base_tutti_PRIMA_4dd624a.txt
++++ AUDIT_2026-10-04/replay/safe_base_tutti_PUNTE_MULTIPLE.txt
+@@ -199,3 +199,2 @@
+-      nota: attivita' del servizio: replay_richiesta_manuale x2, flusso_non_dichiarato x1, place x1, place_rifiutato x1, cashout_error x1
+-      nota: righe per stato: {'open': 1, 'error': 1}
+-      nota: scarti dichiarati dal servizio:  x1
++      nota: attivita' del servizio: replay_richiesta_manuale x2, flusso_non_dichiarato x1, place x1, diagnosi x1, place_parziale x1, cashout x1
++      nota: righe per stato: {'open': 2}
+@@ -203,3 +202,3 @@
+-      nota: [RIGA 2] manual/manual back sel=86159298 mkt=1.259475525 stato=error mode=live chiesto=None abbinato=None residuo=None prezzo_chiesto=None prezzo_medio=None scorrimento=None percorso=None bet_id=None chiude=1 liability=2.39 pnl=0.0
+-      nota: fill: 1 abbinamenti su 1 ordini per 2.0 EUR (prezzi [11.0])
+-      nota: P&L del replay: lordo +2.00 | commissione 0.10 (5.0%) | NETTO +1.90 EUR (non e' il metro: il metro e' la condotta)
++      nota: [RIGA 2] manual/manual back sel=86159298 mkt=1.259475525 stato=open mode=live chiesto=2.0 abbinato=2.0 residuo=0.0 prezzo_chiesto=9.2 prezzo_medio=9.2 scorrimento=0 percorso=rest bet_id=100000000002 chiude=1 liability=2.0 pnl=0.0
++      nota: fill: 2 abbinamenti su 2 ordini per 4.0 EUR (prezzi [9.2, 11.0])
++      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
+@@ -210 +208,0 @@
+-      nota: ordini rifiutati dal mercato: 1 (es. INVALID_BET_SIZE)
+@@ -214,2 +212 @@
+-      nota: [CHIUSO IL 16/09] 2 righe manuali vive per 22.39 EUR di responsabilita': i CAP del bot adesso contano SOLO l'automatico (consegna S1 del 16/09 sera). Il reperto di ieri (`open_trades`/`aggregate_rows` senza filtro `origin`, con le righe del trader dentro `build_risk_ctx`) non vale piu'; restano nei TOTALI DI PAGINA, che e' il comportamento voluto. Le uscite le filtravano gia' (`_exit_candidates`: `origin != 'auto'` -> scartata): il bot non tocca le righe del trader.
+-      nota: [SCENARIO] ordini RIFIUTATI da Betfair: 1 (es. INVALID_BET_SIZE) - e' la condizione che mette alla prova il difetto 2 del 15/09 (`res.ok` mai letto), K2
++      nota: [CHIUSO IL 16/09] 2 righe manuali vive per 22.00 EUR di responsabilita': i CAP del bot adesso contano SOLO l'automatico (consegna S1 del 16/09 sera). Il reperto di ieri (`open_trades`/`aggregate_rows` senza filtro `origin`, con le righe del trader dentro `build_risk_ctx`) non vale piu'; restano nei TOTALI DI PAGINA, che e' il comportamento voluto. Le uscite le filtravano gia' (`_exit_candidates`: `origin != 'auto'` -> scartata): il bot non tocca le righe del trader.
+@@ -265 +262,2 @@
+-      nota:   T9   CERT 12/09: nessun ingresso su una riga del feed NON FRESCA                x0      viol=0   non lo so
++      nota:   T9   CERT 12/09: nessun ingresso su una riga del feed NON FRESCA                x0      viol=0   non lo soWARNING:safe.execution:[safe.exec] punta 2.39 -> 2.00 (multiplo di 0,50 per difetto): residuo 0.39 dichiarato (trade 2)
++
+@@ -272 +270 @@
+-      nota:   J1   Catalogo §7.1: chiave scritta in una grafia e letta in un'altra            x1      viol=0   conforme
++      nota:   J1   Catalogo §7.1: chiave scritta in una grafia e letta in un'altra            x2      viol=0   conforme
+@@ -274 +272 @@
+-      nota:   J3   Catalogo §7.3: campo inesistente letto con getattr -> prezzo medio uguale  x1      viol=0   conforme
++      nota:   J3   Catalogo §7.3: campo inesistente letto con getattr -> prezzo medio uguale  x2      viol=0   conforme
+@@ -277 +275 @@
+-      nota:   J6   Catalogo §7.7: `bet_id` salvato SOLO se abbinato                           x1      viol=0   conforme
++      nota:   J6   Catalogo §7.7: `bet_id` salvato SOLO se abbinato                           x2      viol=0   conforme
+@@ -280 +278 @@
+-      nota:   K2   PROCESSO §7.36                                                             x2747   viol=0   conforme
++      nota:   K2   PROCESSO §7.36                                                             x0      viol=0   non lo so
+@@ -286 +283,0 @@
+-      nota: banco minimi .it: 2 ordini eseguiti, 1 rifiutati INVALID_BET_SIZE, 0 sotto minimo abbinati
+@@ -388 +385 @@
+-      nota: attivita' del servizio: diagnosi x23, replay_richiesta_manuale x1, flusso_non_dichiarato x1, skip x1
++      nota: attivita' del servizio: diagnosi x23, replay_richiesta_manuale x1, skip x1
+@@ -482,3 +479,2 @@
+-      nota: attivita' del servizio: diagnosi x24, replay_richiesta_manuale x2, place x1, replay_riavvio x1, place_rifiutato x1, cashout_error x1
+-      nota: righe per stato: {'open': 1, 'error': 1}
+-      nota: scarti dichiarati dal servizio:  x1
++      nota: attivita' del servizio: diagnosi x25, replay_richiesta_manuale x2, flusso_non_dichiarato x1, place x1, replay_riavvio x1, place_parziale x1, cashout x1
++      nota: righe per stato: {'open': 2}
+@@ -486,3 +482,3 @@
+-      nota: [RIGA 2] manual/manual back sel=86159298 mkt=1.259475525 stato=error mode=live chiesto=None abbinato=None residuo=None prezzo_chiesto=None prezzo_medio=None scorrimento=None percorso=None bet_id=None chiude=1 liability=2.39 pnl=0.0
+-      nota: fill: 1 abbinamenti su 1 ordini per 2.0 EUR (prezzi [11.0])
+-      nota: P&L del replay: lordo +2.00 | commissione 0.10 (5.0%) | NETTO +1.90 EUR (non e' il metro: il metro e' la condotta)
++      nota: [RIGA 2] manual/manual back sel=86159298 mkt=1.259475525 stato=open mode=live chiesto=2.0 abbinato=2.0 residuo=0.0 prezzo_chiesto=9.2 prezzo_medio=9.2 scorrimento=0 percorso=rest bet_id=100000000002 chiude=1 liability=2.0 pnl=0.0
++      nota: fill: 2 abbinamenti su 2 ordini per 4.0 EUR (prezzi [9.2, 11.0])
++      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
+@@ -493 +488,0 @@
+-      nota: ordini rifiutati dal mercato: 1 (es. INVALID_BET_SIZE)
+@@ -498,2 +493 @@
+-      nota: [CHIUSO IL 16/09] 2 righe manuali vive per 22.39 EUR di responsabilita': i CAP del bot adesso contano SOLO l'automatico (consegna S1 del 16/09 sera). Il reperto di ieri (`open_trades`/`aggregate_rows` senza filtro `origin`, con le righe del trader dentro `build_risk_ctx`) non vale piu'; restano nei TOTALI DI PAGINA, che e' il comportamento voluto. Le uscite le filtravano gia' (`_exit_candidates`: `origin != 'auto'` -> scartata): il bot non tocca le righe del trader.
+-      nota: [SCENARIO] ordini RIFIUTATI da Betfair: 1 (es. INVALID_BET_SIZE) - e' la condizione che mette alla prova il difetto 2 del 15/09 (`res.ok` mai letto), K2
++      nota: [CHIUSO IL 16/09] 2 righe manuali vive per 22.00 EUR di responsabilita': i CAP del bot adesso contano SOLO l'automatico (consegna S1 del 16/09 sera). Il reperto di ieri (`open_trades`/`aggregate_rows` senza filtro `origin`, con le righe del trader dentro `build_risk_ctx`) non vale piu'; restano nei TOTALI DI PAGINA, che e' il comportamento voluto. Le uscite le filtravano gia' (`_exit_candidates`: `origin != 'auto'` -> scartata): il bot non tocca le righe del trader.
+@@ -528 +522,2 @@
+-      nota:   E10  SPEC §2 «Selezione aggiuntiva»: scontri diretti senza troppe partite da 4+ x6084   viol=0   conforme
++      nota:   E10  SPEC §2 «Selezione aggiuntiva»: scontri diretti senza troppe partite da 4+ x6084   viol=0   conformeWARNING:safe.execution:[safe.exec] punta 2.39 -> 2.00 (multiplo di 0,50 per difetto): residuo 0.39 dichiarato (trade 2)
++
+@@ -556 +551 @@
+-      nota:   J1   Catalogo §7.1: chiave scritta in una grafia e letta in un'altra            x1      viol=0   conforme
++      nota:   J1   Catalogo §7.1: chiave scritta in una grafia e letta in un'altra            x2      viol=0   conforme
+@@ -558 +553 @@
+-      nota:   J3   Catalogo §7.3: campo inesistente letto con getattr -> prezzo medio uguale  x1      viol=0   conforme
++      nota:   J3   Catalogo §7.3: campo inesistente letto con getattr -> prezzo medio uguale  x2      viol=0   conforme
+@@ -561 +556 @@
+-      nota:   J6   Catalogo §7.7: `bet_id` salvato SOLO se abbinato                           x1      viol=0   conforme
++      nota:   J6   Catalogo §7.7: `bet_id` salvato SOLO se abbinato                           x2      viol=0   conforme
+@@ -564 +559 @@
+-      nota:   K2   PROCESSO §7.36                                                             x2747   viol=0   conforme
++      nota:   K2   PROCESSO §7.36                                                             x0      viol=0   non lo so
+@@ -570 +564,0 @@
+-      nota: banco minimi .it: 2 ordini eseguiti, 1 rifiutati INVALID_BET_SIZE, 0 sotto minimo abbinati
+@@ -681,3 +675,2 @@
+-      nota: attivita' del servizio: diagnosi x23, replay_richiesta_manuale x2, place x1, place_rifiutato x1, cashout_error x1
+-      nota: righe per stato: {'open': 1, 'error': 1}
+-      nota: scarti dichiarati dal servizio:  x1
++      nota: attivita' del servizio: diagnosi x24, replay_richiesta_manuale x2, place x1, place_parziale x1, cashout x1
++      nota: righe per stato: {'open': 2}
+@@ -685,3 +678,3 @@
+-      nota: [RIGA 2] manual/manual back sel=86159298 mkt=1.259475525 stato=error mode=live chiesto=None abbinato=None residuo=None prezzo_chiesto=None prezzo_medio=None scorrimento=None percorso=None bet_id=None chiude=1 liability=2.39 pnl=0.0
+-      nota: fill: 1 abbinamenti su 1 ordini per 2.0 EUR (prezzi [11.0])
+-      nota: P&L del replay: lordo +2.00 | commissione 0.10 (5.0%) | NETTO +1.90 EUR (non e' il metro: il metro e' la condotta)
++      nota: [RIGA 2] manual/manual back sel=86159298 mkt=1.259475525 stato=open mode=live chiesto=2.0 abbinato=2.0 residuo=0.0 prezzo_chiesto=9.2 prezzo_medio=9.2 scorrimento=0 percorso=rest bet_id=100000000002 chiude=1 liability=2.0 pnl=0.0
++      nota: fill: 2 abbinamenti su 2 ordini per 4.0 EUR (prezzi [9.2, 11.0])
++      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
+@@ -692 +684,0 @@
+-      nota: ordini rifiutati dal mercato: 1 (es. INVALID_BET_SIZE)
+@@ -696,2 +688 @@
+-      nota: [CHIUSO IL 16/09] 2 righe manuali vive per 22.39 EUR di responsabilita': i CAP del bot adesso contano SOLO l'automatico (consegna S1 del 16/09 sera). Il reperto di ieri (`open_trades`/`aggregate_rows` senza filtro `origin`, con le righe del trader dentro `build_risk_ctx`) non vale piu'; restano nei TOTALI DI PAGINA, che e' il comportamento voluto. Le uscite le filtravano gia' (`_exit_candidates`: `origin != 'auto'` -> scartata): il bot non tocca le righe del trader.
+-      nota: [SCENARIO] ordini RIFIUTATI da Betfair: 1 (es. INVALID_BET_SIZE) - e' la condizione che mette alla prova il difetto 2 del 15/09 (`res.ok` mai letto), K2
++      nota: [CHIUSO IL 16/09] 2 righe manuali vive per 22.00 EUR di responsabilita': i CAP del bot adesso contano SOLO l'automatico (consegna S1 del 16/09 sera). Il reperto di ieri (`open_trades`/`aggregate_rows` senza filtro `origin`, con le righe del trader dentro `build_risk_ctx`) non vale piu'; restano nei TOTALI DI PAGINA, che e' il comportamento voluto. Le uscite le filtravano gia' (`_exit_candidates`: `origin != 'auto'` -> scartata): il bot non tocca le righe del trader.
+@@ -754 +745 @@
+-      nota:   J1   Catalogo §7.1: chiave scritta in una grafia e letta in un'altra            x1      viol=0   conforme
++      nota:   J1   Catalogo §7.1: chiave scritta in una grafia e letta in un'altra            x2      viol=0   conforme
+@@ -756 +747 @@
+-      nota:   J3   Catalogo §7.3: campo inesistente letto con getattr -> prezzo medio uguale  x1      viol=0   conforme
++      nota:   J3   Catalogo §7.3: campo inesistente letto con getattr -> prezzo medio uguale  x2      viol=0   conforme
+@@ -759 +750 @@
+-      nota:   J6   Catalogo §7.7: `bet_id` salvato SOLO se abbinato                           x1      viol=0   conforme
++      nota:   J6   Catalogo §7.7: `bet_id` salvato SOLO se abbinato                           x2      viol=0   conforme
+@@ -762 +753 @@
+-      nota:   K2   PROCESSO §7.36                                                             x2747   viol=0   conforme
++      nota:   K2   PROCESSO §7.36                                                             x0      viol=0   non lo so
+@@ -768 +758,0 @@
+-      nota: banco minimi .it: 2 ordini eseguiti, 1 rifiutati INVALID_BET_SIZE, 0 sotto minimo abbinati
+@@ -781,3 +771,2 @@
+-      nota: attivita' del servizio: diagnosi x23, replay_richiesta_manuale x3, place x2, place_rifiutato x1, cashout_error x1
+-      nota: righe per stato: {'open': 2, 'error': 1}
+-      nota: scarti dichiarati dal servizio:  x1
++      nota: attivita' del servizio: diagnosi x24, replay_richiesta_manuale x3, place x2, place_parziale x1, cashout x1
++      nota: righe per stato: {'open': 3}
+@@ -786,3 +775,3 @@
+-      nota: [RIGA 3] manual/manual back sel=86159298 mkt=1.259475525 stato=error mode=live chiesto=None abbinato=None residuo=None prezzo_chiesto=None prezzo_medio=None scorrimento=None percorso=None bet_id=None chiude=1 liability=2.39 pnl=0.0
+-      nota: fill: 2 abbinamenti su 2 ordini per 4.0 EUR (prezzi [11.0])
+-      nota: P&L del replay: lordo +4.00 | commissione 0.20 (5.0%) | NETTO +3.80 EUR (non e' il metro: il metro e' la condotta)
++      nota: [RIGA 3] manual/manual back sel=86159298 mkt=1.259475525 stato=open mode=live chiesto=2.0 abbinato=2.0 residuo=0.0 prezzo_chiesto=9.2 prezzo_medio=9.2 scorrimento=0 percorso=rest bet_id=100000000003 chiude=1 liability=2.0 pnl=0.0
++      nota: fill: 3 abbinamenti su 3 ordini per 6.0 EUR (prezzi [9.2, 11.0])
++      nota: P&L del replay: lordo +2.00 | commissione 0.10 (5.0%) | NETTO +1.90 EUR (non e' il metro: il metro e' la condotta)
+@@ -793 +781,0 @@
+-      nota: ordini rifiutati dal mercato: 1 (es. INVALID_BET_SIZE)
+@@ -797,2 +785 @@
+-      nota: [CHIUSO IL 16/09] 3 righe manuali vive per 42.39 EUR di responsabilita': i CAP del bot adesso contano SOLO l'automatico (consegna S1 del 16/09 sera). Il reperto di ieri (`open_trades`/`aggregate_rows` senza filtro `origin`, con le righe del trader dentro `build_risk_ctx`) non vale piu'; restano nei TOTALI DI PAGINA, che e' il comportamento voluto. Le uscite le filtravano gia' (`_exit_candidates`: `origin != 'auto'` -> scartata): il bot non tocca le righe del trader.
+-      nota: [SCENARIO] ordini RIFIUTATI da Betfair: 1 (es. INVALID_BET_SIZE) - e' la condizione che mette alla prova il difetto 2 del 15/09 (`res.ok` mai letto), K2
++      nota: [CHIUSO IL 16/09] 3 righe manuali vive per 42.00 EUR di responsabilita': i CAP del bot adesso contano SOLO l'automatico (consegna S1 del 16/09 sera). Il reperto di ieri (`open_trades`/`aggregate_rows` senza filtro `origin`, con le righe del trader dentro `build_risk_ctx`) non vale piu'; restano nei TOTALI DI PAGINA, che e' il comportamento voluto. Le uscite le filtravano gia' (`_exit_candidates`: `origin != 'auto'` -> scartata): il bot non tocca le righe del trader.
+@@ -855 +842 @@
+-      nota:   J1   Catalogo §7.1: chiave scritta in una grafia e letta in un'altra            x2      viol=0   conforme
++      nota:   J1   Catalogo §7.1: chiave scritta in una grafia e letta in un'altra            x3      viol=0   conforme
+@@ -857 +844 @@
+-      nota:   J3   Catalogo §7.3: campo inesistente letto con getattr -> prezzo medio uguale  x2      viol=0   conforme
++      nota:   J3   Catalogo §7.3: campo inesistente letto con getattr -> prezzo medio uguale  x3      viol=0   conforme
+@@ -860 +847 @@
+-      nota:   J6   Catalogo §7.7: `bet_id` salvato SOLO se abbinato                           x2      viol=0   conforme
++      nota:   J6   Catalogo §7.7: `bet_id` salvato SOLO se abbinato                           x3      viol=0   conforme
+@@ -863 +850 @@
+-      nota:   K2   PROCESSO §7.36                                                             x2745   viol=0   conforme
++      nota:   K2   PROCESSO §7.36                                                             x0      viol=0   non lo so
+@@ -869 +855,0 @@
+-      nota: banco minimi .it: 3 ordini eseguiti, 1 rifiutati INVALID_BET_SIZE, 0 sotto minimo abbinati
+@@ -1429 +1415,2 @@
+-      motivo x958: esatto: no (minute,score,sideGoals,entry)
++      motivo x958: esatto: no (minute,score,sideGoals,entry)WARNING:safe.execution:[safe.exec] punta 2.39 -> 2.00 (multiplo di 0,50 per difetto): residuo 0.39 dichiarato (trade 2)
++
+@@ -1437 +1424 @@
+-      nota: attivita' del servizio: diagnosi x23, replay_richiesta_manuale x2, place x1, place_rifiutato x1, cashout_error x1
++      nota: attivita' del servizio: diagnosi x24, replay_richiesta_manuale x2, place x1, place_rifiutato x1, cashout_error x1
+@@ -1448 +1434,0 @@
+-      nota: ordini rifiutati dal mercato: 1 (es. INVALID_BET_SIZE)
+@@ -1453 +1438,0 @@
+-      nota: [SCENARIO] ordini RIFIUTATI da Betfair: 1 (es. INVALID_BET_SIZE) - e' la condizione che mette alla prova il difetto 2 del 15/09 (`res.ok` mai letto), K2
+@@ -1518 +1503 @@
+-      nota:   K2   PROCESSO §7.36                                                             x2747   viol=0   conforme
++      nota:   K2   PROCESSO §7.36                                                             x0      viol=0   non lo so
+@@ -1524,2 +1509 @@
+-      nota: scenario chiusura-abbinata-in-parte: NESSUNA chiusura colpita (il bot non ha mai chiuso una posizione su questa partita: CP1-CP4 "non lo so")
+-      nota: banco minimi .it: 2 ordini eseguiti, 1 rifiutati INVALID_BET_SIZE, 0 sotto minimo abbinati
++      nota: scenario chiusura-abbinata-in-parte: 1 chiusura/e colpita/e, 1 chiusure viste: 86159298 BACK chiesto 2.00 tetto 0.80 -> abbinato 0.00 residuo 0.00 lapsed 0.00 annullato 2.00 (FOK: tutto o niente)
+@@ -1673,2 +1657 @@
+-      nota:   E6   SPEC §2 + «differenze chiave» 1: condizione INVERTITA — la squadra BANCATA x0      viol=0   non lo soWARNING:flumine.strategy.runnercontext:Trade '4e28fdd4-cc79-4949-8dda-d00eff786115' not present in RunnerContext live_trades on reset
+-
++      nota:   E6   SPEC §2 + «differenze chiave» 1: condizione INVERTITA — la squadra BANCATA x0      viol=0   non lo so
+@@ -1693 +1676,2 @@
+-      nota:   T3   PROCESSO §6.4: la chiusura si manda al BEST OPPOSTO, spinta dentro di qual x0      viol=0   non lo so
++      nota:   T3   PROCESSO §6.4: la chiusura si manda al BEST OPPOSTO, spinta dentro di qual x0      viol=0   non lo soWARNING:flumine.strategy.runnercontext:Trade 'da144559-16c7-47b5-a17e-abbf9b05a812' not present in RunnerContext live_trades on reset
++
+@@ -1886 +1870,2 @@
+-      nota:   P8   SPEC §4 uscita in profitto: arriva il gol successivo -> cashout            x0      viol=0   non lo so
++      nota:   P8   SPEC §4 uscita in profitto: arriva il gol successivo -> cashout            x0      viol=0   non lo soWARNING:safe.execution:[safe.exec] punta 6.23 -> 6.00 (multiplo di 0,50 per difetto): residuo 0.23 dichiarato (trade 1)
++
+@@ -1931,4 +1916,4 @@
+-      nota: attivita' del servizio: diagnosi x23, skip x3, proposta_opportunita x2, place_rifiutato x2, place_retry x2, opportunita_non_piu_valida x2
+-      nota: righe per stato: {'error': 2}
+-      nota: scarti dichiarati dal servizio:  x2 | live_not_matched:EXPIRED:INVALID_BET_SIZE x2 | combo_totale_sotto_minimo x1
+-      nota: [RIGA 1] model/manual back sel=58805 mkt=1.259475525 stato=error mode=live chiesto=None abbinato=None residuo=None prezzo_chiesto=None prezzo_medio=None scorrimento=None percorso=None bet_id=None chiude=None liability=6.23 pnl=0.0
++      nota: attivita' del servizio: diagnosi x25, combo_incomplete x2, proposta_opportunita x1, place x1, place_rifiutato x1, place_retry x1, skip x1, place_parziale x1, opportunita_piazzata x1
++      nota: righe per stato: {'open': 1, 'error': 1}
++      nota: scarti dichiarati dal servizio:  x1 | live_not_matched:EXECUTION_COMPLETE x1
++      nota: [RIGA 1] model/manual back sel=58805 mkt=1.259475525 stato=open mode=live chiesto=6.0 abbinato=6.0 residuo=0.0 prezzo_chiesto=5.7 prezzo_medio=5.7 scorrimento=0 percorso=rest bet_id=100000000001 chiude=None liability=6.0 pnl=0.0
+@@ -1936,2 +1921,2 @@
+-      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
+-      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
++      nota: fill: 1 abbinamenti su 1 ordini per 6.0 EUR (prezzi [5.7])
++      nota: P&L del replay: lordo -6.00 | commissione 0.00 (5.0%) | NETTO -6.00 EUR (non e' il metro: il metro e' la condotta)
+@@ -1943 +1927,0 @@
+-      nota: ordini rifiutati dal mercato: 2 (es. INVALID_BET_SIZE)
+@@ -1946 +1930 @@
+-      nota: [PROPOSTE] scenario=combos-automatiche sport=calcio | t0 del piano=2026-06-30T16:00:30.473000+00:00 | emesse dal finto {'K': 81} | richieste di proposta 2 per stato {'error': 1, 'proposed': 1} (decadute 0, rifiutate dal trader 0) | esiti delle approvazioni {'non_eseguito': 1} | righe nate da proposta 2 [(1, 'error', 'live', 5.7), (2, 'error', 'live', 9.8)]
++      nota: [PROPOSTE] scenario=combos-automatiche sport=calcio | t0 del piano=2026-06-30T16:00:30.473000+00:00 | emesse dal finto {'K': 81} | richieste di proposta 1 per stato {'done': 1} (decadute 0, rifiutate dal trader 0) | esiti delle approvazioni {'ok': 1} | righe nate da proposta 2 [(1, 'open', 'live', 5.7), (2, 'error', 'live', 9.8)]
+@@ -1949,2 +1933 @@
+-      nota: [CHIUSO IL 16/09] 2 righe manuali vive per 10.00 EUR di responsabilita': i CAP del bot adesso contano SOLO l'automatico (consegna S1 del 16/09 sera). Il reperto di ieri (`open_trades`/`aggregate_rows` senza filtro `origin`, con le righe del trader dentro `build_risk_ctx`) non vale piu'; restano nei TOTALI DI PAGINA, che e' il comportamento voluto. Le uscite le filtravano gia' (`_exit_candidates`: `origin != 'auto'` -> scartata): il bot non tocca le righe del trader.
+-      nota: [SCENARIO] ordini RIFIUTATI da Betfair: 2 (es. INVALID_BET_SIZE) - e' la condizione che mette alla prova il difetto 2 del 15/09 (`res.ok` mai letto), K2
++      nota: [CHIUSO IL 16/09] 2 righe manuali vive per 9.77 EUR di responsabilita': i CAP del bot adesso contano SOLO l'automatico (consegna S1 del 16/09 sera). Il reperto di ieri (`open_trades`/`aggregate_rows` senza filtro `origin`, con le righe del trader dentro `build_risk_ctx`) non vale piu'; restano nei TOTALI DI PAGINA, che e' il comportamento voluto. Le uscite le filtravano gia' (`_exit_candidates`: `origin != 'auto'` -> scartata): il bot non tocca le righe del trader.
+@@ -2004,2 +1987,2 @@
+-      nota:   T13  Chiarimento dell'utente (16/09): le operazioni MANUALI del trader non sono x0      viol=0   non lo so
+-      nota:   T13-COMBO Decisione dell'utente B25 (24/09): LASCIA E AVVISA: la gamba MANUALE di un x0      viol=0   non lo so
++      nota:   T13  Chiarimento dell'utente (16/09): le operazioni MANUALI del trader non sono x2783   viol=0   conforme
++      nota:   T13-COMBO Decisione dell'utente B25 (24/09): LASCIA E AVVISA: la gamba MANUALE di un x2783   viol=0   conforme
+@@ -2007 +1990 @@
+-      nota:   J1   Catalogo §7.1: chiave scritta in una grafia e letta in un'altra            x0      viol=0   non lo so
++      nota:   J1   Catalogo §7.1: chiave scritta in una grafia e letta in un'altra            x1      viol=0   conforme
+@@ -2009 +1992 @@
+-      nota:   J3   Catalogo §7.3: campo inesistente letto con getattr -> prezzo medio uguale  x0      viol=0   non lo so
++      nota:   J3   Catalogo §7.3: campo inesistente letto con getattr -> prezzo medio uguale  x1      viol=0   conforme
+@@ -2012 +1995 @@
+-      nota:   J6   Catalogo §7.7: `bet_id` salvato SOLO se abbinato                           x0      viol=0   non lo so
++      nota:   J6   Catalogo §7.7: `bet_id` salvato SOLO se abbinato                           x1      viol=0   conforme
+@@ -2014,2 +1997,2 @@
+-      nota:   K1   PROCESSO §7.36                                                             x0      viol=0   non lo so
+-      nota:   K2   PROCESSO §7.36                                                             x2783   viol=0   conforme
++      nota:   K1   PROCESSO §7.36                                                             x2783   viol=0   conforme
++      nota:   K2   PROCESSO §7.36                                                             x0      viol=0   non lo so
+@@ -2017,2 +2000,2 @@
+-      nota:   K4   PROCESSO §7.36                                                             x0      viol=0   non lo so
+-      nota:   K5   PROCESSO §7.36                                                             x0      viol=0   non lo so
++      nota:   K4   PROCESSO §7.36                                                             x2783   viol=0   conforme
++      nota:   K5   PROCESSO §7.36                                                             x2783   viol=0   conforme
+@@ -2020,2 +2003 @@
+-      nota:   K7   PROCESSO §7.36                                                             x0      viol=0   non lo so
+-      nota: banco minimi .it: 2 ordini eseguiti, 2 rifiutati INVALID_BET_SIZE, 0 sotto minimo abbinati
++      nota:   K7   PROCESSO §7.36                                                             x2783   viol=0   conforme
+@@ -2028 +2010 @@
+-OK  35760084 [combos-gamba-automatica]  tick= 41192 decisioni= 3507 azioni=   1 stati=running/live [COMPLETE]
++OK  35760084 [combos-gamba-automatica]  tick= 33208 decisioni= 3458 azioni=   1 stati=running/live [COMPLETE]
+@@ -2030,8 +2012,8 @@
+-      nota: giri di run_once: 3507 | ordini reali su flumine: 2 | righe safe_strategy_trades: 2 | place osservati: 2 | uscite valutate: 0
+-      nota: [BASE] valutata 3041 volte | stati {'no': 3041} | segnali 0 | scartata per: favPre:no x3041, dogPre:no x3041, minute:no x1886, score:no x1743, dogLay:nd x1660, dogLay:no x1312
+-      nota: [ESATTO] valutata 6082 volte | stati {'no': 6078, 'nd': 4} | segnali 0 | scartata per: score:no x4110, minute:no x3386, entry:no x3360, entry:nd x2722, sideGoals:no x2055, minute:nd x534
+-      nota: [PUNTA] valutata 3041 volte | stati {'no': 3041} | segnali 0 | scartata per: favPre:no x3041, dogPre:no x3041, minute:no x2151, entry:nd x2008, score:no x1396, entry:no x824
+-      nota: attivita' del servizio: diagnosi x23, skip x3, proposta_opportunita x2, place_rifiutato x2, place_retry x2, opportunita_non_piu_valida x2
+-      nota: righe per stato: {'error': 2}
+-      nota: scarti dichiarati dal servizio:  x2 | live_not_matched:EXPIRED:INVALID_BET_SIZE x2 | combo_totale_sotto_minimo x1
+-      nota: [RIGA 1] model/manual back sel=58805 mkt=1.259475525 stato=error mode=live chiesto=None abbinato=None residuo=None prezzo_chiesto=None prezzo_medio=None scorrimento=None percorso=None bet_id=None chiude=None liability=6.23 pnl=0.0
++      nota: giri di run_once: 3458 | ordini reali su flumine: 3 | righe safe_strategy_trades: 3 | place osservati: 3 | uscite valutate: 0
++      nota: [BASE] valutata 2992 volte | stati {'no': 2992} | segnali 0 | scartata per: favPre:no x2992, dogPre:no x2992, minute:no x1855, score:no x1698, dogLay:nd x1614, dogLay:no x1310
++      nota: [ESATTO] valutata 5984 volte | stati {'no': 5980, 'nd': 4} | segnali 0 | scartata per: score:no x4020, minute:no x3328, entry:no x3323, entry:nd x2661, sideGoals:no x2010, minute:nd x530
++      nota: [PUNTA] valutata 2992 volte | stati {'no': 2992} | segnali 0 | scartata per: favPre:no x2992, dogPre:no x2992, minute:no x2118, entry:nd x1962, score:no x1379, entry:no x822
++      nota: attivita' del servizio: diagnosi x25, skip x3, opportunita_non_piu_valida x3, proposta_opportunita x2, place x1, place_rifiutato x1, place_retry x1, place_parziale x1, combo_incomplete x1, cashout x1
++      nota: righe per stato: {'hedged': 1, 'error': 1, 'open': 1}
++      nota: scarti dichiarati dal servizio: combo_totale_sotto_minimo x2 |  x1 | live_not_matched:EXECUTION_COMPLETE x1
++      nota: [RIGA 1] model/manual back sel=58805 mkt=1.259475525 stato=hedged mode=live chiesto=6.0 abbinato=6.0 residuo=0.0 prezzo_chiesto=5.7 prezzo_medio=5.7 scorrimento=0 percorso=rest bet_id=100000000001 chiude=None liability=6.0 pnl=0.0
+@@ -2039,4 +2021,5 @@
+-      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
+-      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
+-      nota: bet delay: 1532 book passati durante le attese | book in ritardo: 560388 | LAPSE al fischio: 0
+-      nota: righe di scan scritte dallo SCANNER VERO: 1693 | giri senza riga nel feed: 466
++      nota: [RIGA 3] model/auto lay sel=58805 mkt=1.259475525 stato=open mode=live chiesto=5.34 abbinato=5.34 residuo=0.0 prezzo_chiesto=6.4 prezzo_medio=6.4 scorrimento=0 percorso=rest bet_id=100000000003 chiude=1 liability=28.84 pnl=0.0
++      nota: fill: 2 abbinamenti su 2 ordini per 11.34 EUR (prezzi [5.7, 6.4])
++      nota: P&L del replay: lordo -0.66 | commissione 0.00 (5.0%) | NETTO -0.66 EUR (non e' il metro: il metro e' la condotta)
++      nota: bet delay: 2288 book passati durante le attese | book in ritardo: 560388 | LAPSE al fischio: 0
++      nota: righe di scan scritte dallo SCANNER VERO: 1686 | giri senza riga nel feed: 466
+@@ -2046 +2028,0 @@
+-      nota: ordini rifiutati dal mercato: 2 (es. INVALID_BET_SIZE)
+@@ -2049 +2031 @@
+-      nota: [PROPOSTE] scenario=combos-gamba-automatica sport=calcio | t0 del piano=2026-06-30T16:00:30.473000+00:00 | emesse dal finto {'K': 81} | richieste di proposta 2 per stato {'error': 1, 'proposed': 1} (decadute 0, rifiutate dal trader 0) | esiti delle approvazioni {'non_eseguito': 1} | righe nate da proposta 2 [(1, 'error', 'live', 5.7), (2, 'error', 'live', 9.8)]
++      nota: [PROPOSTE] scenario=combos-gamba-automatica sport=calcio | t0 del piano=2026-06-30T16:00:30.473000+00:00 | emesse dal finto {'K': 80} | richieste di proposta 2 per stato {'done': 1, 'proposed': 1} (decadute 0, rifiutate dal trader 0) | esiti delle approvazioni {'ok': 1} | righe nate da proposta 2 [(1, 'hedged', 'live', 5.7), (2, 'error', 'live', 9.8)]
+@@ -2052,2 +2034 @@
+-      nota: [CHIUSO IL 16/09] 2 righe manuali vive per 10.00 EUR di responsabilita': i CAP del bot adesso contano SOLO l'automatico (consegna S1 del 16/09 sera). Il reperto di ieri (`open_trades`/`aggregate_rows` senza filtro `origin`, con le righe del trader dentro `build_risk_ctx`) non vale piu'; restano nei TOTALI DI PAGINA, che e' il comportamento voluto. Le uscite le filtravano gia' (`_exit_candidates`: `origin != 'auto'` -> scartata): il bot non tocca le righe del trader.
+-      nota: [SCENARIO] ordini RIFIUTATI da Betfair: 2 (es. INVALID_BET_SIZE) - e' la condizione che mette alla prova il difetto 2 del 15/09 (`res.ok` mai letto), K2
++      nota: [CHIUSO IL 16/09] 2 righe manuali vive per 9.77 EUR di responsabilita': i CAP del bot adesso contano SOLO l'automatico (consegna S1 del 16/09 sera). Il reperto di ieri (`open_trades`/`aggregate_rows` senza filtro `origin`, con le righe del trader dentro `build_risk_ctx`) non vale piu'; restano nei TOTALI DI PAGINA, che e' il comportamento voluto. Le uscite le filtravano gia' (`_exit_candidates`: `origin != 'auto'` -> scartata): il bot non tocca le righe del trader.
+@@ -2055,2 +2036,2 @@
+-      nota:   B1   SPEC §1 tabella: Mercato = 1X2                                             x3041   viol=0   conforme
+-      nota:   B2   SPEC §1: BANCA (lay)                                                       x3041   viol=0   conforme
++      nota:   B1   SPEC §1 tabella: Mercato = 1X2                                             x2992   viol=0   conforme
++      nota:   B2   SPEC §1: BANCA (lay)                                                       x2992   viol=0   conforme
+@@ -2058,6 +2039,6 @@
+-      nota:   B4   SPEC §1: minuto ingresso DAL 55' (soglia, non fascia)                      x3041   viol=0   conforme
+-      nota:   B5   SPEC §1: punteggio 1-0 / 2-1 / 2-0 (orientato sulla favorita)              x3041   viol=0   conforme
+-      nota:   B6   SPEC §1: quota favorita pre-match 1.40-1.80                                x3041   viol=0   conforme
+-      nota:   B7   SPEC §1: quota sfavorita pre-match 4-8                                     x3041   viol=0   conforme
+-      nota:   B8   SPEC §1 + decisione dell'utente 25/09 (Q1): quota di entrata 20-34 = QUOTA x3041   viol=0   conforme
+-      nota:   B9   decisione dell'utente 25/09 (Q1): NESSUN filtro sulla quota live della FAV x3041   viol=0   conforme
++      nota:   B4   SPEC §1: minuto ingresso DAL 55' (soglia, non fascia)                      x2992   viol=0   conforme
++      nota:   B5   SPEC §1: punteggio 1-0 / 2-1 / 2-0 (orientato sulla favorita)              x2992   viol=0   conforme
++      nota:   B6   SPEC §1: quota favorita pre-match 1.40-1.80                                x2992   viol=0   conforme
++      nota:   B7   SPEC §1: quota sfavorita pre-match 4-8                                     x2992   viol=0   conforme
++      nota:   B8   SPEC §1 + decisione dell'utente 25/09 (Q1): quota di entrata 20-34 = QUOTA x2992   viol=0   conforme
++      nota:   B9   decisione dell'utente 25/09 (Q1): NESSUN filtro sulla quota live della FAV x2992   viol=0   conforme
+@@ -2065 +2046 @@
+-      nota:   B11  PROCESSO §6.2 / CERT 13/09: `pre_ko` CONGELATO al primo tick in-play, mai  x2808   viol=0   conforme
++      nota:   B11  PROCESSO §6.2 / CERT 13/09: `pre_ko` CONGELATO al primo tick in-play, mai  x2759   viol=0   conforme
+@@ -2073,3 +2054,3 @@
+-      nota:   E1   SPEC §2: LAY su Risultato Esatto, selezione «Altro risultato»              x6082   viol=0   conforme
+-      nota:   E2   SPEC §2: minuto ingresso DAL 48' (soglia)                                  x6082   viol=0   conforme
+-      nota:   E3   SPEC §2: punteggio 0-0 / 1-0 / 1-1 / 2-1 (qualsiasi orientamento)          x6082   viol=0   conforme
++      nota:   E1   SPEC §2: LAY su Risultato Esatto, selezione «Altro risultato»              x5984   viol=0   conforme
++      nota:   E2   SPEC §2: minuto ingresso DAL 48' (soglia)                                  x5984   viol=0   conforme
++      nota:   E3   SPEC §2: punteggio 0-0 / 1-0 / 1-1 / 2-1 (qualsiasi orientamento)          x5984   viol=0   conforme
+@@ -2077 +2058 @@
+-      nota:   E5   SPEC §2: quota di entrata 30-70                                            x6082   viol=0   conforme
++      nota:   E5   SPEC §2: quota di entrata 30-70                                            x5984   viol=0   conforme
+@@ -2079 +2060 @@
+-      nota:   E7   CERT 13/09: UN SOLO lato «Altro risultato» per partita                     x3507   viol=0   conforme
++      nota:   E7   CERT 13/09: UN SOLO lato «Altro risultato» per partita                     x3458   viol=0   conforme
+@@ -2082 +2063 @@
+-      nota:   E10  SPEC §2 «Selezione aggiuntiva»: scontri diretti senza troppe partite da 4+ x6082   viol=0   conforme
++      nota:   E10  SPEC §2 «Selezione aggiuntiva»: scontri diretti senza troppe partite da 4+ x5984   viol=0   conforme
+@@ -2084,5 +2065,5 @@
+-      nota:   P1   SPEC §4: PUNTA (back) sul 1X2, selezione = la favorita in vantaggio        x3041   viol=0   conforme
+-      nota:   P2   SPEC §4: minuto ingresso DAL 66' (soglia)                                  x3041   viol=0   conforme
+-      nota:   P3   SPEC §4: punteggio 2-0 / 3-1 / 3-0 (orientato sul leader)                  x3041   viol=0   conforme
+-      nota:   P4   SPEC §4: quota di entrata 1.03-1.10                                        x3041   viol=0   conforme
+-      nota:   P5   SPEC §4: aspetta 3-4' dopo il gol                                          x3041   viol=0   conforme
++      nota:   P1   SPEC §4: PUNTA (back) sul 1X2, selezione = la favorita in vantaggio        x2992   viol=0   conforme
++      nota:   P2   SPEC §4: minuto ingresso DAL 66' (soglia)                                  x2992   viol=0   conforme
++      nota:   P3   SPEC §4: punteggio 2-0 / 3-1 / 3-0 (orientato sul leader)                  x2992   viol=0   conforme
++      nota:   P4   SPEC §4: quota di entrata 1.03-1.10                                        x2992   viol=0   conforme
++      nota:   P5   SPEC §4: aspetta 3-4' dopo il gol                                          x2992   viol=0   conforme
+@@ -2096,2 +2077,2 @@
+-      nota:   T2   PROCESSO §6.4 / CERT 12/09: FILL OR KILL — un parziale e' un ERRORE        x2      viol=0   conforme
+-      nota:   T3   PROCESSO §6.4: la chiusura si manda al BEST OPPOSTO, spinta dentro di qual x0      viol=0   non lo so
++      nota:   T2   PROCESSO §6.4 / CERT 12/09: FILL OR KILL — un parziale e' un ERRORE        x3      viol=0   conforme
++      nota:   T3   PROCESSO §6.4: la chiusura si manda al BEST OPPOSTO, spinta dentro di qual x1      viol=0   conforme
+@@ -2099,3 +2080,3 @@
+-      nota:   T5   Decisione utente 3+4 (16/09): combo «piazza e svolge» UGUALE in paper e in x3507   viol=0   conforme
+-      nota:   T6   PROCESSO §6.3 / manuale: lo stop giornaliero e i tetti fermano le APERTURE x3507   viol=0   conforme
+-      nota:   T7   CERT 13/09: i tetti di rischio a 0 sono SPENTI                             x3507   viol=0   conforme
++      nota:   T5   Decisione utente 3+4 (16/09): combo «piazza e svolge» UGUALE in paper e in x3458   viol=0   conforme
++      nota:   T6   PROCESSO §6.3 / manuale: lo stop giornaliero e i tetti fermano le APERTURE x3458   viol=0   conforme
++      nota:   T7   CERT 13/09: i tetti di rischio a 0 sono SPENTI                             x3458   viol=0   conforme
+@@ -2106,3 +2087,3 @@
+-      nota:   T12  Regola di piattaforma (utente, 16/09): MAI due lay DEL BOT sullo stesso me x0      viol=0   non lo so
+-      nota:   T13  Chiarimento dell'utente (16/09): le operazioni MANUALI del trader non sono x0      viol=0   non lo so
+-      nota:   T13-COMBO Decisione dell'utente B25 (24/09): LASCIA E AVVISA: la gamba MANUALE di un x0      viol=0   non lo so
++      nota:   T12  Regola di piattaforma (utente, 16/09): MAI due lay DEL BOT sullo stesso me x2734   viol=0   conforme
++      nota:   T13  Chiarimento dell'utente (16/09): le operazioni MANUALI del trader non sono x2734   viol=0   conforme
++      nota:   T13-COMBO Decisione dell'utente B25 (24/09): LASCIA E AVVISA: la gamba MANUALE di un x2734   viol=0   conforme
+@@ -2110,21 +2091,20 @@
+-      nota:   J1   Catalogo §7.1: chiave scritta in una grafia e letta in un'altra            x0      viol=0   non lo so
+-      nota:   J2   Catalogo §7.2: `res.ok` mai letto — un rifiuto trattato come esecuzione    x2      viol=0   conforme
+-      nota:   J3   Catalogo §7.3: campo inesistente letto con getattr -> prezzo medio uguale  x0      viol=0   non lo so
+-      nota:   J4   Catalogo §7.4/§7.6 + C.12a: nessuna riga TERMINALE con un ordine ancora VI x3507   viol=0   conforme
+-      nota:   J5   Catalogo §7.5: `closes_trade_id` in COLONNA, non nel meta                  x3507   viol=0   conforme
+-      nota:   J6   Catalogo §7.7: `bet_id` salvato SOLO se abbinato                           x0      viol=0   non lo so
+-      nota:   J7   PROCESSO §6.4: mai due ordini vivi per lo stesso segnale                   x3507   viol=0   conforme
+-      nota:   K1   PROCESSO §7.36                                                             x0      viol=0   non lo so
+-      nota:   K2   PROCESSO §7.36                                                             x2783   viol=0   conforme
+-      nota:   K3   PROCESSO §7.36                                                             x2783   viol=0   conforme
+-      nota:   K4   PROCESSO §7.36                                                             x0      viol=0   non lo so
+-      nota:   K5   PROCESSO §7.36                                                             x0      viol=0   non lo so
+-      nota:   K6   PROCESSO §7.36                                                             x0      viol=0   non lo so
+-      nota:   K7   PROCESSO §7.36                                                             x0      viol=0   non lo so
+-      nota: banco minimi .it: 2 ordini eseguiti, 2 rifiutati INVALID_BET_SIZE, 0 sotto minimo abbinati
+-      motivo x1400: esatto: no (minute,entry)
+-      motivo x1354: punta: no (minute,favPre,dogPre,entry)
+-      motivo x1062: esatto: no (score,sideGoals,entry)
+-      motivo x1062: esatto: no (score,entry)
+-      motivo x958: esatto: no (minute,score,sideGoals,entry)
+-      motivo x958: esatto: no (minute,score,entry)
++      nota:   J1   Catalogo §7.1: chiave scritta in una grafia e letta in un'altra            x2      viol=0   conforme
++      nota:   J2   Catalogo §7.2: `res.ok` mai letto — un rifiuto trattato come esecuzione    x3      viol=0   conforme
++      nota:   J3   Catalogo §7.3: campo inesistente letto con getattr -> prezzo medio uguale  x2      viol=0   conforme
++      nota:   J4   Catalogo §7.4/§7.6 + C.12a: nessuna riga TERMINALE con un ordine ancora VI x3458   viol=0   conforme
++      nota:   J5   Catalogo §7.5: `closes_trade_id` in COLONNA, non nel meta                  x3458   viol=0   conforme
++      nota:   J6   Catalogo §7.7: `bet_id` salvato SOLO se abbinato                           x2      viol=0   conforme
++      nota:   J7   PROCESSO §6.4: mai due ordini vivi per lo stesso segnale                   x3458   viol=0   conforme
++      nota:   K1   PROCESSO §7.36                                                             x2734   viol=0   conforme
++      nota:   K2   PROCESSO §7.36                                                             x0      viol=0   non lo so
++      nota:   K3   PROCESSO §7.36                                                             x2734   viol=0   conforme
++      nota:   K4   PROCESSO §7.36                                                             x2734   viol=0   conforme
++      nota:   K5   PROCESSO §7.36                                                             x2734   viol=0   conforme
++      nota:   K6   PROCESSO §7.36                                                             x2734   viol=0   conforme
++      nota:   K7   PROCESSO §7.36                                                             x2734   viol=0   conforme
++      motivo x1366: esatto: no (minute,entry)
++      motivo x1324: punta: no (minute,favPre,dogPre,entry)
++      motivo x1046: esatto: no (score,sideGoals,entry)
++      motivo x1046: esatto: no (score,entry)
++      motivo x933: base: no (minute,favPre,dogPre,dogLay)
++      motivo x932: esatto: no (minute,score,sideGoals,entry)
+@@ -2136,2 +2116,2 @@
+-     B1  x63927   [SPEC §1 tabella: Mercato = 1X2] la BASE opera solo sul mercato Ma
+-     B2  x63927   [SPEC §1: BANCA (lay)] la BASE e' una BANCA: il lato e' sempre LAY
++     B1  x63878   [SPEC §1 tabella: Mercato = 1X2] la BASE opera solo sul mercato Ma
++     B2  x63878   [SPEC §1: BANCA (lay)] la BASE e' una BANCA: il lato e' sempre LAY
+@@ -2139,6 +2119,6 @@
+-     B4  x63927   [SPEC §1: minuto ingresso DAL 55' (soglia, non fascia)] nessun ing
+-     B5  x63927   [SPEC §1: punteggio 1-0 / 2-1 / 2-0 (orientato sulla favorita)] si
+-     B6  x63927   [SPEC §1: quota favorita pre-match 1.40-1.80] la favorita pre-KO d
+-     B7  x63927   [SPEC §1: quota sfavorita pre-match 4-8] la sfavorita pre-KO deve 
+-     B8  x63927   [SPEC §1 + decisione dell'utente 25/09 (Q1): quota di entrata 20-3
+-     B9  x63927   [decisione dell'utente 25/09 (Q1): NESSUN filtro sulla quota live 
++     B4  x63878   [SPEC §1: minuto ingresso DAL 55' (soglia, non fascia)] nessun ing
++     B5  x63878   [SPEC §1: punteggio 1-0 / 2-1 / 2-0 (orientato sulla favorita)] si
++     B6  x63878   [SPEC §1: quota favorita pre-match 1.40-1.80] la favorita pre-KO d
++     B7  x63878   [SPEC §1: quota sfavorita pre-match 4-8] la sfavorita pre-KO deve 
++     B8  x63878   [SPEC §1 + decisione dell'utente 25/09 (Q1): quota di entrata 20-3
++     B9  x63878   [decisione dell'utente 25/09 (Q1): NESSUN filtro sulla quota live 
+@@ -2146 +2126 @@
+-     B11 x59034   [PROCESSO §6.2 / CERT 13/09: `pre_ko` CONGELATO al primo tick in-p
++     B11 x58985   [PROCESSO §6.2 / CERT 13/09: `pre_ko` CONGELATO al primo tick in-p
+@@ -2153,3 +2133,3 @@
+-     E1  x127854  [SPEC §2: LAY su Risultato Esatto, selezione «Altro risultato»] me
+-     E2  x127854  [SPEC §2: minuto ingresso DAL 48' (soglia)] nessun ingresso prima 
+-     E3  x127854  [SPEC §2: punteggio 0-0 / 1-0 / 1-1 / 2-1 (qualsiasi orientamento)
++     E1  x127756  [SPEC §2: LAY su Risultato Esatto, selezione «Altro risultato»] me
++     E2  x127756  [SPEC §2: minuto ingresso DAL 48' (soglia)] nessun ingresso prima 
++     E3  x127756  [SPEC §2: punteggio 0-0 / 1-0 / 1-1 / 2-1 (qualsiasi orientamento)
+@@ -2157 +2137 @@
+-     E5  x127854  [SPEC §2: quota di entrata 30-70] il LAY di «Altro risultato» deve
++     E5  x127756  [SPEC §2: quota di entrata 30-70] il LAY di «Altro risultato» deve
+@@ -2159 +2139 @@
+-     E7  x77221   [CERT 13/09: UN SOLO lato «Altro risultato» per partita] mai due l
++     E7  x77172   [CERT 13/09: UN SOLO lato «Altro risultato» per partita] mai due l
+@@ -2162,6 +2142,6 @@
+-     E10 x127854  [SPEC §2 «Selezione aggiuntiva»: scontri diretti senza troppe part
+-     P1  x63927   [SPEC §4: PUNTA (back) sul 1X2, selezione = la favorita in vantagg
+-     P2  x63927   [SPEC §4: minuto ingresso DAL 66' (soglia)] nessun ingresso prima 
+-     P3  x63927   [SPEC §4: punteggio 2-0 / 3-1 / 3-0 (orientato sul leader)] si ent
+-     P4  x63927   [SPEC §4: quota di entrata 1.03-1.10] il BACK del leader deve star
+-     P5  x63927   [SPEC §4: aspetta 3-4' dopo il gol] fra il gol e l'ingresso devono
++     E10 x127756  [SPEC §2 «Selezione aggiuntiva»: scontri diretti senza troppe part
++     P1  x63878   [SPEC §4: PUNTA (back) sul 1X2, selezione = la favorita in vantagg
++     P2  x63878   [SPEC §4: minuto ingresso DAL 66' (soglia)] nessun ingresso prima 
++     P3  x63878   [SPEC §4: punteggio 2-0 / 3-1 / 3-0 (orientato sul leader)] si ent
++     P4  x63878   [SPEC §4: quota di entrata 1.03-1.10] il BACK del leader deve star
++     P5  x63878   [SPEC §4: aspetta 3-4' dopo il gol] fra il gol e l'ingresso devono
+@@ -2174,2 +2154,2 @@
+-     T2  x24      [PROCESSO §6.4 / CERT 12/09: FILL OR KILL — un parziale e' un ERRO
+-     T3  x5       [PROCESSO §6.4: la chiusura si manda al BEST OPPOSTO, spinta dentr
++     T2  x25      [PROCESSO §6.4 / CERT 12/09: FILL OR KILL — un parziale e' un ERRO
++     T3  x6       [PROCESSO §6.4: la chiusura si manda al BEST OPPOSTO, spinta dentr
+@@ -2177,3 +2157,3 @@
+-     T5  x7014    [Decisione utente 3+4 (16/09): combo «piazza e svolge» UGUALE in p
+-     T6  x77221   [PROCESSO §6.3 / manuale: lo stop giornaliero e i tetti fermano le
+-     T7  x77221   [CERT 13/09: i tetti di rischio a 0 sono SPENTI] un cap a zero non
++     T5  x6965    [Decisione utente 3+4 (16/09): combo «piazza e svolge» UGUALE in p
++     T6  x77172   [PROCESSO §6.3 / manuale: lo stop giornaliero e i tetti fermano le
++     T7  x77172   [CERT 13/09: i tetti di rischio a 0 sono SPENTI] un cap a zero non
+@@ -2184,3 +2164,3 @@
+-  ?? T12 x0       [Regola di piattaforma (utente, 16/09): MAI due lay DEL BOT sullo 
+-     T13 x22466   [Chiarimento dell'utente (16/09): le operazioni MANUALI del trader
+-  ?? T13-COMBO x0       [Decisione dell'utente B25 (24/09): LASCIA E AVVISA: la gamba MANU
++     T12 x2734    [Regola di piattaforma (utente, 16/09): MAI due lay DEL BOT sullo 
++     T13 x27983   [Chiarimento dell'utente (16/09): le operazioni MANUALI del trader
++     T13-COMBO x5517    [Decisione dell'utente B25 (24/09): LASCIA E AVVISA: la gamba MANU
+@@ -2188,14 +2168,14 @@
+-     J1  x10      [Catalogo §7.1: chiave scritta in una grafia e letta in un'altra] 
+-     J2  x24      [Catalogo §7.2: `res.ok` mai letto — un rifiuto trattato come esec
+-     J3  x10      [Catalogo §7.3: campo inesistente letto con getattr -> prezzo medi
+-     J4  x77221   [Catalogo §7.4/§7.6 + C.12a: nessuna riga TERMINALE con un ordine 
+-     J5  x77221   [Catalogo §7.5: `closes_trade_id` in COLONNA, non nel meta] ogni g
+-     J6  x10      [Catalogo §7.7: `bet_id` salvato SOLO se abbinato] quando Betfair 
+-     J7  x77221   [PROCESSO §6.4: mai due ordini vivi per lo stesso segnale] l'idemp
+-     K1  x22410   [PROCESSO §7.36] cio' che la RIGA crede (abbinato e prezzo medio) 
+-     K2  x19299   [PROCESSO §7.36] una riga il cui ordine Betfair ha RIFIUTATO non r
+-     K3  x27983   [PROCESSO §7.36] il riferimento con cui il bot ha piazzato si RILE
+-     K4  x22410   [PROCESSO §7.36] una riga 'open' dichiara un ordine che a mercato 
+-     K5  x22410   [PROCESSO §7.36] il RESIDUO che la riga dichiara e' quello che il 
+-     K6  x13733   [PROCESSO §7.36] ogni gamba di CHIUSURA dichiara l'apertura che ch
+-     K7  x22410   [PROCESSO §7.36] ogni ordine ABBINATO a mercato appartiene a una r
++     J1  x17      [Catalogo §7.1: chiave scritta in una grafia e letta in un'altra] 
++     J2  x25      [Catalogo §7.2: `res.ok` mai letto — un rifiuto trattato come esec
++     J3  x17      [Catalogo §7.3: campo inesistente letto con getattr -> prezzo medi
++     J4  x77172   [Catalogo §7.4/§7.6 + C.12a: nessuna riga TERMINALE con un ordine 
++     J5  x77172   [Catalogo §7.5: `closes_trade_id` in COLONNA, non nel meta] ogni g
++     J6  x17      [Catalogo §7.7: `bet_id` salvato SOLO se abbinato] quando Betfair 
++     J7  x77172   [PROCESSO §6.4: mai due ordini vivi per lo stesso segnale] l'idemp
++     K1  x27927   [PROCESSO §7.36] cio' che la RIGA crede (abbinato e prezzo medio) 
++  ?? K2  x0       [PROCESSO §7.36] una riga il cui ordine Betfair ha RIFIUTATO non r
++     K3  x27934   [PROCESSO §7.36] il riferimento con cui il bot ha piazzato si RILE
++     K4  x27927   [PROCESSO §7.36] una riga 'open' dichiara un ordine che a mercato 
++     K5  x27927   [PROCESSO §7.36] il RESIDUO che la riga dichiara e' quello che il 
++     K6  x16467   [PROCESSO §7.36] ogni gamba di CHIUSURA dichiara l'apertura che ch
++     K7  x27927   [PROCESSO §7.36] ogni ordine ABBINATO a mercato appartiene a una r
+@@ -2203 +2183 @@
+-  ?? CP1 x0       chiusura abbinata in parte: la riga (o la credenza) del bot porta 
++     CP1 x2746    chiusura abbinata in parte: la riga (o la credenza) del bot porta 
+@@ -2205,2 +2185,2 @@
+-  ?? CP3 x0       una posizione con esposizione residua o con il residuo della chius
+-  ?? CP4 x0       dopo una chiusura abbinata in parte nessun loop: mai una chiusura 
++     CP3 x2746    una posizione con esposizione residua o con il residuo della chius
++     CP4 x2746    dopo una chiusura abbinata in parte nessun loop: mai una chiusura 
+@@ -2209 +2189 @@
+-     PM2 x8455    mai due proposte VIVE identiche (indice unico uq_safe_requests_pro
++     PM2 x5623    mai due proposte VIVE identiche (indice unico uq_safe_requests_pro
+@@ -2212 +2192 @@
+-     PM5 x12      parita' paper/live delle proposte: la modalita' della proposta e' 
++     PM5 x11      parita' paper/live delle proposte: la modalita' della proposta e' 
+@@ -2217 +2197 @@
+-?? MAI SOLLECITATI: 29 controlli su 66. Su questi il referto NON dice «sano», dice «non lo so»:
++?? MAI SOLLECITATI: 25 controlli su 66. Su questi il referto NON dice «sano», dice «non lo so»:
+@@ -2240,2 +2219,0 @@
+-     T12: [Regola di piattaforma (utente, 16/09): MAI due lay DEL BOT sullo stesso mercato e selezione] due lay AUTOMATICHE vive (a mercato, in volo o gia' abbinate) sulla stessa selezione: la posizione resta scoperta. Le operazioni manuali del trader non contano: il bot opera sulle SUE
+-     T13-COMBO: [Decisione dell'utente B25 (24/09): LASCIA E AVVISA: la gamba MANUALE di una combo incompleta non la chiude il bot] gamba manuale lasciata a mercato, marcata e annunciata UNA volta in attivita'; nessuna chiusura automatica e nessuna uscita del bot su quella riga, ne' in quel giro ne' dopo
+@@ -2243 +2221 @@
+-     CP1: chiusura abbinata in parte: la riga (o la credenza) del bot porta l'abbinato VERO della chiusura - chiesto, abbinato, residuo e prezzo medio come a mercato (PROCESSO par.6.4 parziali, par.6.5)
++     K2: [PROCESSO §7.36] una riga il cui ordine Betfair ha RIFIUTATO non resta mai viva (difetto 2 del 15/09: `res.ok` mai letto)
+@@ -2245,2 +2222,0 @@
+-     CP3: una posizione con esposizione residua o con il residuo della chiusura ancora vivo a mercato non e' mai dichiarata CHIUSA
+-     CP4: dopo una chiusura abbinata in parte nessun loop: mai una chiusura nuova con un'altra viva sulla stessa selezione, mai una size che chiede piu' di quanto resta da chiudere, al piu' 10 chiusure dopo, mai sovracopertura (catalogo par.7.1: 32 ordini veri in loop il 15/09)

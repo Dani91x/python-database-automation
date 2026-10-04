@@ -33,7 +33,15 @@ LIMIT_MARKERS = ("TOO_MANY_REQUESTS", "TOO_MUCH_DATA")
 # ``Betfair.stream.trading.minimi_it`` (punta e banca 1,00 al centesimo). Prima qui 2,00
 # fisso per entrambi i lati: un duplicato (piu' severo del listino) del vecchio minimo.
 from Betfair.stream.trading.minimi_it import IT_MIN_BACK as MIN_STAKE_EUR  # noqa: E402
+from Betfair.stream.trading.minimi_it import (  # noqa: E402
+    IT_PASSO_PUNTA_DIRETTA as _IT_PASSO_PUNTA,
+)
 EXCHANGE_FOOTBALL = "1"      # eventTypeId calcio (coerente col resto del repo)
+
+
+def _euro(x: float) -> str:
+    """Importo con la virgola decimale (7.5 -> '7,50'), per i messaggi all'utente."""
+    return f"{float(x):.2f}".replace(".", ",")
 
 # serializza i piazzamenti nel processo: niente race, una richiesta per volta.
 _PLACE_LOCK = threading.Lock()
@@ -269,6 +277,16 @@ def place_order(
     _v = min_stake_rules(JURISDICTION_IT, side_up.lower(), price_tick, size)
     if not _v.valid:
         raise ValueError(f"stake €{size:.2f} sotto il minimo Betfair .it: {_v.reason}.")
+    if side_up == "BACK" and float(_v.residuo or 0.0) > 0.0:
+        # 04/10/2026 (regola delle punte dell'utente, fonte unica ``minimi_it``): da
+        # 1,00 in su una PUNTA va a multipli di 0,50, altrimenti Betfair la rifiuta
+        # ``INVALID_BET_SIZE``. L'importo e' dell'UTENTE: non si cambia, si rifiuta
+        # PRIMA dell'invio indicando i due importi validi vicini.
+        sotto = float(_v.legalized_size)
+        sopra = round(sotto + _IT_PASSO_PUNTA, 2)
+        raise ValueError(
+            f"{_euro(size)}: la punta va a multipli di 0,50, usa {_euro(sotto)} o "
+            f"{_euro(sopra)}.")
     if max_stake is not None and size > float(max_stake) + 1e-9:
         raise ValueError(f"stake €{size:.2f} oltre il cap impostato (€{float(max_stake):.2f}).")
     if fill_or_kill and min_fill_size is not None:
