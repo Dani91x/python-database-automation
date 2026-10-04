@@ -1113,7 +1113,9 @@ def place(
     """
     if _punta is None:
         punta: dict[str, Any] = {}
-        out = place(db=db, market=market, mode=mode, event_id=event_id,
+        # la funzione VERA (``_PLACE_VERO``), non il nome del modulo: chi osserva
+        # ``execution.place`` (banco, test) deve vedere UNA chiamata per ordine
+        out = _PLACE_VERO(db=db, market=market, mode=mode, event_id=event_id,
                     market_id=market_id, selection_id=selection_id, side=side,
                     price=price, size=size, best_size=best_size, ladder=ladder,
                     client_ref=client_ref, trade_id=trade_id, meta=meta, now=now,
@@ -1505,6 +1507,10 @@ def place(
         size_remaining=round(float(residuo), 2),
         avg_price_matched=(float(medio_vero) if medio_vero else None),
         betfair_updated_at=getattr(res, "betfair_updated_at", None))
+
+
+#: 04/10/2026: ``place`` vera, per il rientro col raccoglitore della ``punta_050``
+_PLACE_VERO = place
 
 
 def _esito_rifiuto_certo(db, ex: Exception, *, tid: Optional[int], mode: str, side: str,
