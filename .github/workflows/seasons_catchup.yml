@@ -3,7 +3,7 @@ name: Seasons Catchup (buchi di dati)
 # eventi/formazioni/statistiche/quote, solo endpoint con flag di coverage True, dentro la
 # quota API (riserva per le action giornaliere), stop a fine partita / lega-stagione.
 #
-# Catena: Daily Yesterday Backfill -> Monthly Leagues Mapping (ora anche giornaliero,
+# Catena: Daily Yesterday Backfill -> Leagues Mapping (giornaliero) (ora anche giornaliero,
 # aggiorna i flag) -> QUESTO. Non gira mai insieme a Daily/Today/Results/Retrain (quota e DB,
 # stesso DB): oltre all'aggancio dopo il mapper, lo script chiede a GitHub prima di ogni
 # lega-stagione (e ogni 2 min durante) se una di quelle action e' in corso o in coda e,
@@ -12,13 +12,17 @@ name: Seasons Catchup (buchi di dati)
 # (13:47 UTC, reale ~18:45 UTC) e' la seconda finestra del giorno, dopo Today/Results, e la
 # rete di sicurezza se il workflow_run si perde. Con la quota gia' consumata non fa nulla.
 #
-# Exit: 0 lavoro fatto o fermato per quota/tempo/action concorrente; 1 lega-stagione in
-# errore o buco aperto > BACKFILL_BUCHI_MAX_GIORNI con budget disponibile; 2 pre-controlli
-# (migrazione season_gaps_2026-09-25.sql non applicata, contatore quota non leggibile).
+# Exit (regola del 04/10): 0 lavoro fatto o fermato per quota/tempo/action concorrente, e anche
+# buchi vecchi dovuti SOLO a API vuota / attesa del 2o tentativo / flag coverage False: NON sono
+# un guasto, vengono dichiarati come AVVISO (log + riepilogo del job, titolo "BUCHI CHE L'API
+# NON RIEMPIE"); 1 solo per guasti veri: lega-stagione in errore, buco aperto >
+# BACKFILL_BUCHI_MAX_GIORNI per errore API ripetuto (o partite non tentate/aggregati da fare),
+# degradata 57014 persistente; 2 pre-controlli (migrazione season_gaps_2026-09-25.sql non
+# applicata, contatore quota non leggibile).
 
 on:
   workflow_run:
-    workflows: ["Monthly Leagues Mapping"]
+    workflows: ["Leagues Mapping (giornaliero)"]
     types: [completed]
   schedule:
     - cron: '47 13 * * *'

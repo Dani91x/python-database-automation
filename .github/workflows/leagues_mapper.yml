@@ -1,6 +1,6 @@
-name: Monthly Leagues Mapping
-# 25/09/2026: il nome resta (lo usano seasons_catchup.yml e AUDIT_2026-09-25/misure_action.py)
-# ma ora gira anche OGNI GIORNO, in coda al Daily: il mapper AGGIORNA i flag di coverage
+name: Leagues Mapping (giornaliero)
+# 04/10/2026: ex "Monthly Leagues Mapping", rinominato (usato da seasons_catchup.yml e AUDIT_2026-09-25/misure_action.py):
+# dal 25/09 gira anche OGNI GIORNO, in coda al Daily: il mapper AGGIORNA i flag di coverage
 # delle stagioni vive (API-Football li accende a stagione iniziata; prima restavano False
 # per sempre) e inserisce le leghe/stagioni nuove. 1 chiamata API (/leagues) per run.
 # Il cron mensile resta come rete di sicurezza se l'evento workflow_run si perde.

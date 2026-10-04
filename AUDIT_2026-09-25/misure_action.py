@@ -13,7 +13,7 @@ CRON = {"Daily Yesterday Backfill": (1, 12), "Today Predictions Backfill": (2, 1
         "Predictions Results Backfill": (3, 23),
         "ML Post-Calibration (assembla per-lega + globale)": (5, 14),
         "Retrain ML Models (cloud, all leagues)": (8, 19),
-        "Weekly Poisson Calibration": (3, 27), "Monthly Leagues Mapping": (0, 12)}
+        "Weekly Poisson Calibration": (3, 27), "Leagues Mapping (giornaliero)": (0, 12)}
 out = subprocess.run(["gh", "run", "list", "--limit", "500", "--json",
                       "databaseId,workflowName,conclusion,event,createdAt,startedAt,updatedAt,attempt"],
                      capture_output=True, text=True, encoding="utf-8").stdout

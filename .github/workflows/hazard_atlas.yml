@@ -28,7 +28,7 @@ name: Hazard Atlas (notturno, dopo il Daily)
 # ritenta su 5xx/rete con attese crescenti (5, 30, 120, 300 s) per blocco;
 # nella notte del reperto (run 36390445058, HTTP 500 sulla POST unica di
 # hazard_atlas per statement_timeout 57014 del ruolo authenticator, sotto il
-# carico di Retrain ML Models + Monthly Leagues Mapping sullo stesso Daily) un
+# carico di Retrain ML Models + Leagues Mapping (giornaliero) sullo stesso Daily) un
 # blocco sfortunato può restare in ritentativo per alcuni minuti: timeout del
 # job alzato da 30 a 60 min per lasciare spazio ai ritentativi senza far
 # scadere l'intero step a meta' (che sarebbe un rosso "muto", senza l'elenco

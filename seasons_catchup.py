@@ -28,8 +28,13 @@ flag di coverage), che a sua volta parte dopo il Daily. Passi:
      mancanti, ricalcolo quota DOPO, stop a fine partita/lega-stagione;
   5. REFERTO BUCHI e uscita:
        0  = lavoro fatto o fermato per quota/tempo/action concorrente (dichiarato);
-       1  = una lega-stagione in errore, oppure un buco aperto da piu' di
-            BACKFILL_BUCHI_MAX_GIORNI giorni NONOSTANTE il budget (con la causa);
+       1  = una lega-stagione in errore, un buco aperto da piu' di
+            BACKFILL_BUCHI_MAX_GIORNI giorni NONOSTANTE il budget la cui causa e' un
+            GUASTO (errore API ripetuto, partite non tentate, aggregati da fare),
+            oppure una degradata per 57014 persistente;
+            (04/10) i buchi vecchi dovuti SOLO a "API vuota / in attesa del 2o
+            tentativo / flag coverage False" NON sono un guasto: exit 0, ma elencati
+            in vista (log e GITHUB_STEP_SUMMARY) come AVVISO;
        2  = pre-controlli falliti (migrazione mancante, quota non leggibile).
 """
 from __future__ import annotations
@@ -851,6 +856,30 @@ def referto_p4(ris: Risultato, stampa: Callable[[str], None],
     stampa("  prossime: " + ", ".join(f"lega {c.chiave[0]} stagione {c.chiave[1]} ~{c.costo}" for c in restano[:5]))
 
 
+TITOLO_AVVISO_BUCHI = "BUCHI CHE L'API NON RIEMPIE (avviso, non guasto)"
+
+
+def _solo_api_vuota(lac: sg.Lacune, flags: Dict[str, bool], fermata: Optional[str]) -> bool:
+    """True se il buco vecchio ha SOLO cause attese (API vuota in attesa del 2o tentativo,
+    flag coverage False): nessun errore API, nessuna partita da chiamare non tentata,
+    nessun aggregato da fare. Qualunque altra cosa e' un guasto (exit 1)."""
+    return bool(lac.in_attesa(flags) and not lac.errori(flags)
+                and fermata != "errori_api" and not lac.chiamate_per_fixture(flags)
+                and not lac.agg_da_fare())
+
+
+def _scrivi_riepilogo_job(righe: List[str], stampa: Callable[[str], None]) -> None:
+    """Scrive il riepilogo nel job di GitHub (GITHUB_STEP_SUMMARY) se la variabile esiste."""
+    percorso = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not percorso:
+        return
+    try:
+        with open(percorso, "a", encoding="utf-8") as f:
+            f.write(chr(10).join(righe) + chr(10))
+    except OSError as e:
+        stampa(f"(riepilogo del job non scritto: {e})")
+
+
 def referto_buchi(voci: List[Voce], ris: Risultato, quota: Any, max_giorni: int, conti: Dict[str, int],
                   stampa: Callable[[str], None], oggi: date,
                   margine_medio: Optional[Callable[[], Optional[float]]] = None) -> int:
@@ -863,6 +892,7 @@ def referto_buchi(voci: List[Voce], ris: Risultato, quota: Any, max_giorni: int,
     vuoti_def = 0
     non_disp = 0
     falliti: List[str] = []
+    avvisi: List[str] = []
     rinviati: List[str] = []
     rimaste = set(ris.rimaste)
     capacita = max(1, quota.capacita_giornaliera())
@@ -894,6 +924,9 @@ def referto_buchi(voci: List[Voce], ris: Risultato, quota: Any, max_giorni: int,
             if k in rimaste or (fermata and fermata != "errori_api"):
                 rinviati.append(f"lega {k[0]} stagione {k[1]} aperto da {giorni} gg: rinviato "
                                 f"({ris.fermato_per or ris.fermate_per.get(k)}), ~{costo} chiamate")
+            elif _solo_api_vuota(lac, flags, fermata):
+                avvisi.append(f"lega {k[0]} stagione {k[1]} aperto da {giorni} gg (> {max_giorni}): "
+                              f"{_cause(lac, flags, fermata)}")
             else:
                 falliti.append(f"lega {k[0]} stagione {k[1]} aperto da {giorni} gg (> {max_giorni}) "
                                f"con budget disponibile: {_cause(lac, flags, ris.fermate_per.get(k))}")
@@ -939,6 +972,15 @@ def referto_buchi(voci: List[Voce], ris: Risultato, quota: Any, max_giorni: int,
         stampa(f"ERRORE: {e}")
     for f in falliti:
         stampa(f"BUCO VECCHIO: {f}")
+    if avvisi:
+        stampa(f"{TITOLO_AVVISO_BUCHI}: {len(avvisi)} lega-stagioni aperte da piu' di {max_giorni} giorni "
+               f"perche' l'API non ha il dato (exit 0, niente e' nascosto):")
+        for a in avvisi:
+            stampa(f"AVVISO BUCO API VUOTO: {a}")
+        _scrivi_riepilogo_job([f"### {TITOLO_AVVISO_BUCHI}",
+                               f"{len(avvisi)} lega-stagioni aperte da piu' di {max_giorni} giorni; "
+                               "l'API non ha il dato (o il flag coverage e' False). Non e' un guasto.", ""]
+                              + [f"- {a}" for a in avvisi], stampa)
     for d in degradate_persistenti:
         stampa(f"DEGRADATA PERSISTENTE (> {max_giorni} giorni consecutivi, non piu' muta): {d}")
     referto_p4(ris, stampa, margine_medio)

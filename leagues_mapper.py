@@ -5,7 +5,9 @@
 
 import time
 from datetime import date, datetime, timedelta, timezone
-from typing import List, Dict, Any, Optional, Set, Tuple
+from typing import Callable, List, Dict, Any, Optional, Set, Tuple
+
+import httpx
 
 from api_client import APIFootballClient
 from db_client import get_supabase_client
@@ -20,6 +22,55 @@ CAMPI_AGGIORNABILI = (
 )
 PAGINA = 1000                 # max-rows di PostgREST su Supabase
 FINESTRA_AGGIORNAMENTO_GIORNI = 30
+
+
+# =========================================================
+# Ritentativi sugli errori TRANSITORI del DB (04/10/2026)
+# =========================================================
+# 02, 03 e 04/10: Supabase ha risposto UNA volta 522/520 (pagina HTML di
+# Cloudflare dentro APIError) e lo script moriva senza riprovare. Qui si ritenta,
+# con attesa crescente, SOLO cio' che e' momentaneo; un errore logico (4xx,
+# vincolo, permessi) esce subito come prima. Nessuna query/campo/filtro cambia.
+TENTATIVI_DB = 5
+ATTESE_DB: Tuple[float, ...] = (5, 15, 45, 90)   # secondi tra un tentativo e il successivo
+
+_CODICI_TRANSITORI = frozenset({
+    "408", "429", "500", "502", "503", "504",
+    "520", "521", "522", "523", "524", "525", "526", "527", "530",   # Cloudflare davanti a Supabase
+    "PGRST001", "PGRST002",                                           # schema cache / DB non raggiungibile
+    "57014", "57P01", "57P02", "57P03", "53300", "53400",              # timeout, riavvio, troppe connessioni
+    "40001", "40P01", "55P03", "08000", "08003", "08006",
+})
+
+
+def _e_transitorio(e: BaseException) -> bool:
+    """True solo per gli errori che ha senso ritentare (rete, 5xx/52x, PGRST002, 57014)."""
+    if isinstance(e, (httpx.TransportError, ConnectionError, TimeoutError)):
+        return True
+    code = getattr(e, "code", None)
+    if code is None:
+        args = getattr(e, "args", ())
+        if args and isinstance(args[0], dict):
+            code = args[0].get("code")
+    return code is not None and str(code) in _CODICI_TRANSITORI
+
+
+def _con_ritentativi(azione: Callable[[], Any], etichetta: str,
+                     dormi: Optional[Callable[[float], None]] = None) -> Any:
+    """Esegue `azione` fino a TENTATIVI_DB volte, ritentando i SOLI errori
+    transitori. Dopo l'ultimo tentativo (o subito, se l'errore non e' transitorio)
+    rilancia l'eccezione ORIGINALE: l'esito finale e' quello di prima."""
+    dormi = dormi or time.sleep
+    for i in range(TENTATIVI_DB):
+        try:
+            return azione()
+        except Exception as e:
+            if not _e_transitorio(e) or i == TENTATIVI_DB - 1:
+                raise
+            attesa = ATTESE_DB[i] if i < len(ATTESE_DB) else ATTESE_DB[-1]
+            print(f"[DB] {etichetta}: tentativo {i + 1}/{TENTATIVI_DB} fallito "
+                  f"({type(e).__name__} code={getattr(e, 'code', None)}), ritento tra {attesa}s")
+            dormi(attesa)
 
 
 # =========================================================
@@ -40,13 +91,16 @@ def get_existing_coverage_rows() -> Dict[Tuple[int, int], Dict[str, Any]]:
     inizio = 0
     while True:
         try:
-            res = (
-                sb.table("api_coverage_by_season")
-                .select(colonne)
-                .order("league_id")
-                .order("season_year")
-                .range(inizio, inizio + PAGINA - 1)
-                .execute()
+            res = _con_ritentativi(
+                lambda: (
+                    sb.table("api_coverage_by_season")
+                    .select(colonne)
+                    .order("league_id")
+                    .order("season_year")
+                    .range(inizio, inizio + PAGINA - 1)
+                    .execute()
+                ),
+                f"lettura api_coverage_by_season offset {inizio}",
             )
         except Exception as e:
             # 25/09/2026: prima ritornava l'insieme VUOTO e si tentava di reinserire
@@ -267,7 +321,9 @@ def upsert_coverage_rows(rows: List[Dict[str, Any]]) -> int:
         batch_index = (i // CHUNK) + 1
 
         try:
-            sb.table("api_coverage_by_season").upsert(chunk).execute()
+            # upsert dello STESSO chunk: ritentato scrive le stesse righe (chiave primaria)
+            _con_ritentativi(lambda: sb.table("api_coverage_by_season").upsert(chunk).execute(),
+                             f"upsert batch {batch_index}")
             inserted_total += len(chunk)
             print(f"Upsert batch {batch_index} OK (righe: {len(chunk)})")
         except Exception as e:
@@ -287,12 +343,17 @@ def upsert_coverage_rows(rows: List[Dict[str, Any]]) -> int:
     for (lid, sy), diff in da_aggiornare:
         prima = {k: esistenti[(lid, sy)].get(k) for k in diff}
         try:
-            (
-                sb.table("api_coverage_by_season")
-                .update({**diff, "updated_at": adesso})
-                .eq("league_id", lid)
-                .eq("season_year", sy)
-                .execute()
+            # stesso payload (adesso e' fissato fuori dal ciclo) e stesso filtro per
+            # chiave: un UPDATE ritentato riscrive gli STESSI valori, mai doppioni.
+            _con_ritentativi(
+                lambda: (
+                    sb.table("api_coverage_by_season")
+                    .update({**diff, "updated_at": adesso})
+                    .eq("league_id", lid)
+                    .eq("season_year", sy)
+                    .execute()
+                ),
+                f"UPDATE lega {lid} stagione {sy}",
             )
             aggiornate += 1
             print(f"AGGIORNATA lega {lid} stagione {sy}: "
