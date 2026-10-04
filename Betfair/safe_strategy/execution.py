@@ -1018,19 +1018,11 @@ def _annulla_via_canale(porta: Any, *, bet_id: str, market_id: Optional[str],
                         raw=dict(ev))
 
 
-def place(**kw: Any) -> PlaceOutcome:
-    """Esegue UN ordine per una riga gia' RISERVATA ('pending'): vedi ``_place``
-    (stessi argomenti, tutti per nome).
-
-    04/10/2026 (regola delle punte dell'utente): l'esito porta ``punta_050``
-    quando ``_place`` ha mandato una punta a multiplo di 0,50 per difetto, su
-    QUALUNQUE strada e con QUALUNQUE esito (aperto, in volo, rifiutato): chi
-    chiama sa sempre che cosa e' partito e quale residuo NON e' partito."""
-    punta: dict[str, Any] = {}
-    out = _place(**kw, _punta=punta)
-    if punta and out.punta_050 is None:
-        return replace(out, punta_050=dict(punta))
-    return out
+#: 04/10/2026: gli attori per cui ``place`` applica la regola delle punte PRIMA di
+#: scegliere la strada (ref ``porta_ordini.ref_ordine`` / ``close_trade``). Mike NO: le
+#: sue punte nascono gia' a multiplo in ``engine._place`` (cantiere dei minimi, fuori
+#: da questo perimetro) e il suo canale resta com'era.
+_PREFISSI_PUNTA_050 = ("safe-", "safe_tennis-", "omega-")
 
 
 def _dichiara_punta_050(db, *, tid: Optional[int], mode: str, price: float, size: float,
@@ -1066,7 +1058,7 @@ def _dichiara_punta_050(db, *, tid: Optional[int], mode: str, price: float, size
     return float(v.importo)
 
 
-def _place(
+def place(
     *,
     db,
     market,
@@ -1112,7 +1104,24 @@ def _place(
     SOLO sulla strada del canale per una porta che dichiara
     ``submin_fill_or_kill`` (vedi ``_rifiuto_submin_fok``). Il live REST non li
     usa: ``place_submin_live`` legge il book da Betfair come sempre.
+
+    04/10/2026 - ``_punta`` (interno): l'esito porta ``punta_050`` quando la punta
+    e' partita a multiplo di 0,50 per difetto, su QUALUNQUE strada e con QUALUNQUE
+    esito (aperto, in volo, rifiutato): chi chiama sa sempre cosa e' partito e
+    quale residuo NON e' partito. Il chiamante non lo passa: la prima chiamata
+    rientra qui con il raccoglitore e riporta la dichiarazione nell'esito.
     """
+    if _punta is None:
+        punta: dict[str, Any] = {}
+        out = place(db=db, market=market, mode=mode, event_id=event_id,
+                    market_id=market_id, selection_id=selection_id, side=side,
+                    price=price, size=size, best_size=best_size, ladder=ladder,
+                    client_ref=client_ref, trade_id=trade_id, meta=meta, now=now,
+                    params=params, porta=porta, best_back=best_back, best_lay=best_lay,
+                    _nota=_nota, market_type=market_type, _punta=punta)
+        if punta and out.punta_050 is None:
+            return replace(out, punta_050=dict(punta))
+        return out
     params = params or {}
     meta = dict(meta or {})
     mode = str(mode)
@@ -1184,7 +1193,7 @@ def _place(
                                   "reason": "portata_al_minimo", "portata_al_minimo": portata,
                                   "nota": "apertura tennis sotto il minimo di Betfair "
                                           "portata al minimo (decisione dell'utente)"})
-    if side == "back":
+    if side == "back" and str(client_ref or "").startswith(_PREFISSI_PUNTA_050):
         # 04/10/2026: punta a multiplo di 0,50 per DIFETTO, residuo dichiarato, UGUALE
         # sulle tre strade (prima: canale e coda a difetto, REST mandava 2,39 e
         # Betfair la rifiutava ``INVALID_BET_SIZE``: chiusura nuda).
