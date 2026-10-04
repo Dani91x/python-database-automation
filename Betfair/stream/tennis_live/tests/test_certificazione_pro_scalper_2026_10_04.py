@@ -219,3 +219,35 @@ def test_replay_scalper_soldi_veri_sulla_registrazione(scenario, reali_attesi, f
     assert (fermati > 0) is fermati_attesi, nota
     if scenario == "soldi-veri-paper":
         assert simulati > 0, nota
+
+
+# --------------------------------------------------------------------------- K5 / RS1
+def _residuo(importo: float, sbilancio: float) -> Dict[str, Any]:
+    return {"market_id": MID, "selection_id": SEL, "lato": "BACK", "importo": importo,
+            "prezzo": 2.0, "se_vince": -sbilancio, "se_perde": 0.0, "sbilancio": sbilancio}
+
+
+def _oss_k5(sbilancio_vero: float, residui: List[Dict[str, Any]]) -> Any:
+    return CERT.Osservazione(
+        bot="tennis_pro", market_id=MID, residui=residui,
+        ordini=[{"order_id": "o", "size_matched": 1.0}],
+        esposizioni={(SEL, 0.0): {"matched_if_win": -sbilancio_vero, "matched_if_lose": 0.0}})
+
+
+def test_k5_tollera_solo_il_residuo_dichiarato_e_non_un_euro_in_piu():
+    """04/10 (decisione 1): un residuo DICHIARATO non e' senza padrone; lo
+    sbilancio oltre il dichiarato resta rosso, e senza dichiarazione e' rosso."""
+    assert CERT._k5(_oss_k5(0.10, [])) is not None
+    assert CERT._k5(_oss_k5(0.10, [_residuo(0.05, 0.10)])) is None
+    assert CERT._k5(_oss_k5(0.20, [_residuo(0.05, 0.10)])) is not None
+
+
+def test_rs1_il_residuo_dichiarato_deve_essere_davvero_non_piazzabile():
+    floor = float(MIN.SUBMIN_IMPORTO_FINALE_MIN)
+    oss = CERT.Osservazione(bot="tennis_pro", residui=[_residuo(0.05, 0.10)])
+    assert CERT._q_residui(oss) and CERT._rs1(oss) is None
+    oss.residui = [_residuo(floor, 1.0)]          # piazzabile: andava chiuso
+    assert "andava chiuso" in str(CERT._rs1(oss))
+    oss.residui = [dict(_residuo(0.05, 0.10), lato="")]
+    assert CERT._rs1(oss) is not None
+    assert not CERT._q_residui(CERT.Osservazione())
