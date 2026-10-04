@@ -50,6 +50,8 @@ from .condotta_ordini import (
     ingresso_finito,
     ordini_vivi_su,
     registra_esito_manuale,
+    FLOOR_PLACE_AND_TRIM,
+    ResiduiRicordati,
     UsciteEsatte,
     diretta_ok,
     size_legale,
@@ -231,6 +233,9 @@ class TennisProStrategy(BaseStrategy):
         self.live: bool = float(c.get("live_min_bet", 0.0) or 0.0) > 0.0
         # 28/09: le chiusure ESATTE (place-and-trim del resto), vedi `_place`
         self._esatte = UsciteEsatte(self, self._emit)
+        # 04/10 (decisione 1 dell'utente): i residui non piazzabili (< 0,50)
+        # dichiarati una volta e RICORDATI; il bot riprende a operare
+        self.residui_ricordati = ResiduiRicordati(self._emit)
         # freno dopo i rifiuti di Betfair (modulo condiviso coi quattro bot)
         self._freno = FrenoRifiuti()
         # D2 (24/09): il diario delle attese di riapertura (una riga per sospensione)
@@ -978,6 +983,10 @@ class TennisProStrategy(BaseStrategy):
         s = round(float(size), 2)
         if s < 0.01:
             return False
+        if s < FLOOR_PLACE_AND_TRIM - 1e-9:
+            # 04/10: sotto il floor di legge (0,50) nessun ordine .it lo piazza:
+            # non "migliora" niente, e' il micro-residuo dichiarato qui sotto
+            return False
         if side == "LAY":
             nw2, nl2 = nw - s * (p - 1.0), nl + s
         else:
@@ -1017,10 +1026,18 @@ class TennisProStrategy(BaseStrategy):
                 pari = False
             elif trade.get("_residuo_detto") != round(nw - nl, 4):
                 trade["_residuo_detto"] = round(nw - nl, 4)
+                # 04/10 (decisione 1): anche il micro-residuo resta RICORDATO
+                self.residui_ricordati.dichiara(
+                    market.market_id, sel, "BACK" if nw < nl else "LAY",
+                    0.01, None, nw, nl, critico=False)
+                self.stats["residui_ricordati"] = self.residui_ricordati.per_stats()
                 self._emit("residuo_centesimi", sel=sel, se_vince=round(nw, 4),
                            se_perde=round(nl, 4),
                            note=("sbilancio sotto 0,02 che nessun importo al "
                                  "centesimo riduce entro 0,01 alla quota corrente"))
+        if (self._blotter_letto and not pari and (b + l) > _EPS
+                and self._residuo_non_piazzabile(market, trade, sel, nw, nl, px)):
+            return
         if self._blotter_letto and pari:
             # blotter pari: cancella il residuo dell'hedge (un fill tardivo
             # ROVESCEREBBE la posizione appena chiusa) e chiudi davvero.
@@ -1038,6 +1055,9 @@ class TennisProStrategy(BaseStrategy):
                 return          # si aspetta la conferma del cancel
             self._trade[market.market_id] = {"state": FLAT}
             self._emit("closed_flat", sel=sel, kind=trade.get("kind"))
+            # un residuo ricordato su questa selezione e' stato assorbito?
+            self.residui_ricordati.aggiorna(market.market_id, sel, nw, nl)
+            self.stats["residui_ricordati"] = self.residui_ricordati.per_stats()
             return
         if not self._blotter_letto:
             return          # si riprova al prossimo book, senza concludere
@@ -1089,6 +1109,45 @@ class TennisProStrategy(BaseStrategy):
         trade["close_wait"] = 0
         self._emit("close_escalate", sel=sel, kind=trade.get("kind"), price=mkt,
                    locked=round(float(locked2), 3))
+
+    def _residuo_non_piazzabile(self, market: Any, trade: Dict[str, Any], sel: int,
+                                nw: float, nl: float,
+                                px: Dict[int, Dict[str, Any]]) -> bool:
+        """04/10 (DECISIONE 1 DELL'UTENTE). Lo sbilancio che resta richiede un
+        ordine di chiusura sotto il floor di legge (0,50): nessun ordine .it lo
+        chiude. Si DICHIARA una volta (CRITICAL con la proposta), si RICORDA, e il
+        trade esce da CLOSING: il bot riprende a operare. Prima restava in
+        CLOSING per tutta la partita rimandando un place-and-trim rifiutato.
+        True = gestito qui (FLAT o in attesa che i propri ordini muoiano)."""
+        d = px.get(sel)
+        p = (d.get("bl") if trade.get("side") == "BACK" else d.get("bb")) if d else None
+        if p is None or p <= 1.0:
+            return False
+        g = compute_green(nw, nl, p)
+        if g is None:
+            return False
+        lato, importo, _l = g
+        if round(float(importo), 2) >= FLOOR_PLACE_AND_TRIM - 1e-9:
+            return False          # piazzabile: la sorveglianza continua a chiudere
+        # una copertura ancora viva puo' riempirsi e chiudere da sola: la si lascia
+        # alla sorveglianza di sempre (ri-copertura dopo `close_retry_s`); il
+        # residuo si dichiara solo quando nessun ordine proprio e' a mercato
+        co = trade.get("close_order")
+        if co is not None and float(getattr(co, "size_remaining", 0.0) or 0.0) > _EPS \
+                and stato_ordine(co) in ("Executable", "Pending", "Replacing", "Updating"):
+            return False
+        # la copertura e' tutta abbinata (o morta): la si ritira come nel ramo
+        # «pari» e si dichiara solo a ordini morti (cancel asincrona)
+        self._cancel(market, co)
+        if ordini_vivi_su(market, self, sel) is not False:
+            trade["close_wait"] = int(trade.get("close_wait", 0)) + 1
+            return True
+        self.residui_ricordati.dichiara(market.market_id, sel, lato, importo, p, nw, nl)
+        self.stats["residui_ricordati"] = self.residui_ricordati.per_stats()
+        self._trade[market.market_id] = {"state": FLAT}
+        self._emit("closed_flat", sel=sel, kind=trade.get("kind"),
+                   residuo=round(float(importo), 2), lato_residuo=lato)
+        return True
 
     # ---------------------------------------------- "CHIUDI ORA" dell'utente
     def _avvia_uscita_manuale(self, market: Any, mid: str,
@@ -1164,6 +1223,8 @@ class TennisProStrategy(BaseStrategy):
         # book. Si dichiara che cosa era aperto al fischio e si chiude la
         # memoria: una posizione creduta viva resterebbe tale per sempre.
         mid = str(getattr(market, "market_id", "") or "")
+        self.residui_ricordati.regola_mercato(mid)
+        self.stats["residui_ricordati"] = self.residui_ricordati.per_stats()
         tr = self._trade.pop(mid, None)
         if tr is not None and str(tr.get("state") or "") in (OPEN, CLOSING):
             dichiara_chiusura_mercato(market, self, self.event_sink,

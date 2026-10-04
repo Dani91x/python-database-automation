@@ -106,7 +106,13 @@ def _giri(b: Any, strat: Any, svuota: Any, n: int = 30) -> List[str]:
         if tr.get("state") == PRO.FLAT:
             nw, nl = _netto(market, strat)
             vivi = _nessun_vivo(market, strat)
-            if abs(nw - nl) > 0.011 or vivi or strat._esatte.attive:
+            # 04/10 (decisione 1 dell'utente): FLAT con uno sbilancio solo se e' un residuo
+            # che nessun ordine .it chiude: sotto 0,02 (un ordine al centesimo e'
+            # sotto il floor 0,50) o il residuo RICORDATO e dichiarato dal bot
+            tol = max(0.011, strat.residui_ricordati.sbilancio("1.101", 11) + 0.011)
+            if abs(nw - nl) < 0.02:
+                tol = max(tol, 0.02)
+            if abs(nw - nl) > tol or vivi or strat._esatte.attive:
                 viol.append("book %d: FLAT con se vince %.4f / se perde %.4f, vivi=%d, "
                             "esatte in corso=%d" % (i, nw, nl, len(vivi),
                                                     len(strat._esatte.attive)))
@@ -122,25 +128,34 @@ def differita(request, esecuzione_differita):
 
 def test_sbilancio_di_centesimi_riducibile_non_si_dichiara_flat(db, banchi, differita):
     """BACK 3,00 @2,10 + copertura LAY 3,11 @2,02 abbinate: se vince 0,1278,
-    se perde 0,11, sbilancio 0,0178 (< 0,02: prima FLAT subito). Un LAY da
-    0,01 al best-lay 2,10 lo porta a 0,0032: il bot lo piazza (place-and-trim,
-    0,01 e' sotto il minimo) e dichiara FLAT solo dopo, al centesimo."""
+    se perde 0,11, sbilancio 0,0178. 04/10 (decisione 1 dell'utente, minimi):
+    il LAY da 0,01 che lo ridurrebbe e' sotto il floor di legge del
+    place-and-trim (0,50) e Betfair lo rifiuta. Prima il test voleva quel
+    place-and-trim (CANTIERE T, 28/09); ora il bot NON lo manda, dichiara il
+    micro-residuo UNA volta (`residuo_centesimi`) e va FLAT senza ordini vivi."""
     b, strat, market = _pro_in_closing(db, banchi, [("BACK", 2.10, 3.0), ("LAY", 2.02, 3.11)])
+    eventi = []
+    strat.event_sink = lambda k, p: eventi.append((k, dict(p)))
     nw0, nl0 = _netto(market, strat)
     assert 0.011 < abs(nw0 - nl0) < 0.02, (nw0, nl0)
+    n_ordini = len(list(market.blotter.strategy_orders(strat)))
     viol = _giri(b, strat, differita)
     assert viol == [], viol[:3]
     assert strat._trade["1.101"]["state"] == PRO.FLAT
     nw, nl = _netto(market, strat)
-    assert abs(nw - nl) <= 0.01, (nw, nl)
+    assert abs(nw - nl) == pytest.approx(abs(nw0 - nl0), abs=1e-6)
     assert _nessun_vivo(market, strat) == []
+    assert len(list(market.blotter.strategy_orders(strat))) == n_ordini   # nessun ordine
+    assert [k for k, _ in eventi].count("residuo_centesimi") == 1
 
 
 def test_chiusura_esatta_in_corso_mai_flat(db, banchi, differita):
-    """Posizione LAY 1,00 @2,10 senza copertura: la sorveglianza copre subito
-    con BACK 1,05 (tutto place-and-trim, `UsciteEsatte`). Finche' la sequenza
-    e' in corso (parcheggio Pending, taglio, rimpiazzo) il PRO non e' FLAT."""
-    b, strat, market = _pro_in_closing(db, banchi, [("LAY", 2.10, 1.0)], retry_subito=False)
+    """Posizione LAY 0,60 @2,10 senza copertura: la sorveglianza copre subito
+    con BACK 0,63 (tutto place-and-trim, `UsciteEsatte`, finale >= 0,50). Finche'
+    la sequenza e' in corso (parcheggio Pending, taglio, rimpiazzo) il PRO non e'
+    FLAT. 04/10: era LAY 1,00 -> BACK 1,05, che ora e' 1,00 diretti + 0,05 di
+    residuo dichiarato (decisione 1 dell'utente): niente place-and-trim."""
+    b, strat, market = _pro_in_closing(db, banchi, [("LAY", 2.10, 0.6)], retry_subito=False)
     # prezzo della copertura: best-back 2,00 (BACK abbinabile subito)
     strat._trade["1.101"]["side"] = "BACK"
     viste = []

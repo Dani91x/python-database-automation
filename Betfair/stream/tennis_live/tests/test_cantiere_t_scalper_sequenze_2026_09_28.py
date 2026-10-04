@@ -94,6 +94,9 @@ def _giri_con_invariante(b: Any, strat: Any, slot: Any, n: int = N_BOOK,
             # invariante di K5: la tolleranza e' quella che il bot DICHIARA al
             # banco (`certificazione_bot.credenze`, ciclo chiuso)
             tol = CD.MINIMO_LATO["LAY"] if slot.residual_ok else CD.RESIDUO_ACCETTATO
+            # 04/10 (decisione 1 dell'utente): il residuo RICORDATO (non piazzabile) e' dichiarato
+            tol = max(tol, strat.residui_ricordati.sbilancio("1.101", 11)
+                      + CD.RESIDUO_ACCETTATO)
             sb = sbilancio_selezione(market, strat, 11)
             if sb is None or sb > max(0.011, tol):
                 violazioni.append("book %d: stato %s con sbilancio %s oltre %s" % (
@@ -101,9 +104,14 @@ def _giri_con_invariante(b: Any, strat: Any, slot: Any, n: int = N_BOOK,
     return violazioni
 
 
-@pytest.mark.parametrize("size_lay", [1.0, 2.0])
+@pytest.mark.parametrize("size_lay", [0.6])
 def test_chiusura_tutta_sotto_il_minimo_non_dichiara_chiuso_col_parcheggio_vivo(
         size_lay, db, banchi, differita):
+    # 04/10 (decisione 1 dell'utente): era [1.0, 2.0] (BACK 1,05 e 2,10, resti
+    # 1,05 e 0,10 col place-and-trim). Coi minimi dell'utente 1,05 = 1,00
+    # diretti + 0,05 e 2,10 = 2,00 + 0,10: i resti sotto 0,50 sono RESIDUI
+    # dichiarati (test_certificazione_pro_scalper_2026_10_04). Qui resta il
+    # caso del place-and-trim legale: LAY 0,60 -> BACK 0,63 tutto in sequenza.
     """LAY 1,00 @2,10: il flatten e' un BACK 1,05 al best-back 2,00, tutto
     sotto il minimo -> tutto col place-and-trim. LAY 2,00: 2,00 diretti, poi
     il resto 0,10 (peggior esito -0,20, dentro la soglia del micro-residuo).
@@ -124,15 +132,19 @@ def test_chiusura_tutta_sotto_il_minimo_non_dichiara_chiuso_col_parcheggio_vivo(
 
 def test_chiusura_diretta_piu_resto_esatta_e_senza_cascata_di_righe(
         db, banchi, differita):
-    """LAY 3,00 @2,10: flatten BACK 3,15 = 3,00 diretti + 0,15 di resto. Il
-    resto in FLATTENING e' rimandato (regola anti-cascata, invariata) e poi
-    chiuso col place-and-trim. Le righe di attivita' per l'uscita restano
-    poche: prima `min_bet_skip` usciva a OGNI book (cascata di azioni)."""
+    """LAY 3,00 @2,10: flatten BACK 3,15 = 3,00 diretti + 0,15 di resto.
+    04/10 (decisione 1 dell'utente): il resto 0,15 e' sotto il floor del
+    place-and-trim: NON si manda, si DICHIARA una volta (residuo ricordato, una
+    riga CRITICAL) e il ciclo si chiude. Prima: chiuso col place-and-trim (che
+    Betfair rifiuta). Le righe di attivita' restano poche."""
     b, strat, market, slot, righe = _scalper_in_flatten(db, banchi, 3.0)
     viol = _giri_con_invariante(b, strat, slot, n=200, svuota=differita)
     assert viol == [], viol[:3]
     nw, nl = _netto(market, strat)
-    assert abs(nw - nl) <= 0.01, (nw, nl)
+    assert abs(nw - nl) == pytest.approx(0.15 * 2.0, abs=0.011), (nw, nl)
+    critiche = [p for k, p in righe if k == "residuo_non_piazzabile"]
+    assert len(critiche) == 1 and critiche[0]["importo"] == 0.15
+    assert critiche[0]["level"] == "CRITICAL" and critiche[0]["proposta"]["lato"] == "BACK"
     assert _nessun_vivo(market, strat) == []
     skip = [r for r in righe if r[0] == "min_bet_skip"]
     assert len(skip) <= 3, (len(skip), skip[:5])
@@ -145,7 +157,8 @@ def test_rinvio_anti_cascata_sull_orologio_del_mercato(db, banchi, esecuzione_si
     del bot (`publish_time`), come `UsciteEsatte` di pro/FLB/swing e come il
     tetto transazioni (17/09): mai sull'orologio del PC, che in replay e in
     paper accelerato scorre diversamente dal mercato."""
-    b, strat, market, slot, _r = _scalper_in_flatten(db, banchi, 1.0)
+    # 04/10: LAY 0,60 (BACK 0,63, place-and-trim legale); era LAY 1,00
+    b, strat, market, slot, _r = _scalper_in_flatten(db, banchi, 0.6)
     b.book("101")
     m = b.fw.markets.markets["1.101"]
     strat.process_market_book(m, m.market_book)
@@ -175,8 +188,9 @@ def test_parcheggio_ritirato_prima_del_taglio_non_blocca_la_sorveglianza(db, ban
     taglio (sorveglianza LOCKING, fine finestra) e lo slot e' DONE. Prima la
     sequenza restava in PLACED per sempre (`advance_submin` aspetta), lo slot
     DONE saltava la sorveglianza (`if slot.submins: continue`) e la posizione
-    restava sbilanciata senza padrone: replay 35794049, K5 x7981."""
-    b, strat, market, slot, _r = _scalper_in_flatten(db, banchi, 1.0)
+    restava sbilanciata senza padrone: replay 35794049, K5 x7981.
+    04/10: LAY 0,60 (place-and-trim legale); era LAY 1,00."""
+    b, strat, market, slot, _r = _scalper_in_flatten(db, banchi, 0.6)
     # un book fa partire la sequenza (parcheggio chiesto); il parcheggio arriva
     # a mercato e, PRIMA che il bot chieda il taglio, lo ritira un'altra via
     b.book("101")
@@ -244,7 +258,8 @@ def test_sequenza_abortita_non_lascia_il_parcheggio_vivo(db, banchi, differita,
                                        note="ABORT finto del test")
         return vero(market, state, **kw)
     monkeypatch.setattr(SM, "advance_submin", _abortisce_al_secondo_passo)
-    b, strat, market, slot, righe = _scalper_in_flatten(db, banchi, 1.0)
+    # 04/10: LAY 0,60 (place-and-trim legale); era LAY 1,00
+    b, strat, market, slot, righe = _scalper_in_flatten(db, banchi, 0.6)
     viol = _giri_con_invariante(b, strat, slot, svuota=differita)
     assert viol == [], viol[:3]
     assert chiamate[0] >= 2

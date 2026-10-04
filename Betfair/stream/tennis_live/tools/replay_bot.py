@@ -82,6 +82,7 @@ from contextlib import contextmanager
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .. import certificazione_bot as CERT
+from ...trading import minimi_it as _MINIMI_IT
 from ...backtest import chiusura_parziale as CP
 from ...backtest import uscite_manuali as UM
 from ..tennis_recorder import default_record_dir
@@ -106,6 +107,21 @@ NOTA_USCITE_AUTO = ("SCENARIO DICHIARATO: uscite automatiche accese, e' la "
                     "condotta certificata (riga del bot con "
                     "`uscite_automatiche=True`, come la scrive l'interruttore "
                     "della UI su AUTOMATICHE)")
+
+
+# 04/10 (CERTIFICAZIONE_TENNIS_PRO_SCALPER, punto 5): «SOLDI VERI» sul banco.
+# Runner con il tetto LIVE, i trading control VERI del runner
+# (`tennis_runner.aggiungi_controlli_ordini`: modalita' del bot, kill-switch,
+# terza rete «Ordini reali»), il bot armato come lo arma il ponte e la scelta
+# «Ordini reali» dichiarata (`modo_ordini.dichiara_per_banco`). Il client REALE e'
+# il `ClienteLiveBanco` del banco (stessa esecuzione simulata, venue non
+# simulata: nessun soldo), quello paper il client simulato del banco.
+#   scenario -> (modalita' della riga del bot, «Ordini reali» di questo avvio)
+SCENARI_SOLDI_VERI: Dict[str, Tuple[str, str]] = {
+    "soldi-veri": ("live", "live"),          # ordini sul client REALE
+    "soldi-veri-prova": ("live", "paper"),   # nessun ordine reale: terza rete
+    "soldi-veri-paper": ("paper", "live"),   # bot in prova: client simulato
+}
 
 
 def uscite_automatiche_scenario(scenario: str) -> bool:
@@ -174,13 +190,29 @@ SCENARI_DESCRITTI: Dict[str, str] = {
     # `bot_control_worker`, come quelle della RPC `tennis_bot_approva_uscita`.
     UM.SCENARIO_MANUALI: "i gate di `gate-aperto`; " + UM.DESCRIZIONE_MANUALI,
     UM.SCENARIO_FIRMATE: "i gate di `gate-aperto`; " + UM.DESCRIZIONE_FIRMATE,
+    # 04/10 (punto 5): la catena «soldi veri» del runner, coi gate di
+    # `gate-aperto` (senza, scalper e swing non aprono e non ci sarebbe un
+    # ordine da instradare). Lo giudica il controllo SV1.
+    "soldi-veri": (
+        "i gate di `gate-aperto`; bot acceso in SOLDI VERI e «Ordini reali» LIVE "
+        "di questo avvio, runner col tetto LIVE e i suoi trading control veri: "
+        "ogni ordine del bot parte sul client REALE del banco (`ClienteLiveBanco`, "
+        "nessun soldo)"),
+    "soldi-veri-prova": (
+        "i gate di `gate-aperto`; bot in SOLDI VERI ma «Ordini reali» in PROVA: "
+        "la terza rete (`ControlloModoOrdiniTennis`) ferma ogni apertura reale, "
+        "nessun ordine reale eseguito"),
+    "soldi-veri-paper": (
+        "i gate di `gate-aperto`; bot in PROVA nel runner LIVE con «Ordini reali» "
+        "LIVE: ordini sul client SIMULATO, stessa condotta di `soldi-veri` senza "
+        "ordini veri (paper = specchio)"),
 }
 
 
 def parametri_scenario(scenario: str, bot: str) -> Dict[str, Any]:
     """I parametri che lo scenario cambia. SOLO numeri gia' esposti dalla UI."""
     if scenario in ("rifiuti-betfair", "live", CP.SCENARIO, SCENARIO_CHIUDI_ORA) \
-            or scenario in UM.SCENARI:
+            or scenario in UM.SCENARI or scenario in SCENARI_SOLDI_VERI:
         # ⚠️ IL CASO VA PROVOCATO, non sperato. Con i parametri di produzione
         # lo scalper e lo swing non tentano MAI un ingresso su questa partita:
         # il rifiuto non sarebbe nemmeno possibile e K2 resterebbe «non lo so»
@@ -276,7 +308,16 @@ def stake_scenario(scenario: str, stake: float) -> float:
 
 
 def modalita_scenario(scenario: str) -> str:
-    return "LIVE" if scenario == "live" else "PAPER"
+    """La modalita' del RUNNER (il tetto del processo)."""
+    return "LIVE" if scenario == "live" or scenario in SCENARI_SOLDI_VERI else "PAPER"
+
+
+def modalita_bot_scenario(scenario: str) -> str:
+    """La modalita' della RIGA del bot (`mode`, la scrive il ponte
+    dall'interruttore del bot): 'live' | 'paper'."""
+    if scenario in SCENARI_SOLDI_VERI:
+        return SCENARI_SOLDI_VERI[scenario][0]
+    return "live" if modalita_scenario(scenario) == "LIVE" else "paper"
 
 
 def dry_run_scenario(scenario: str) -> Optional[bool]:
@@ -293,6 +334,10 @@ def dry_run_scenario(scenario: str) -> Optional[bool]:
     if scenario == "dry-run":
         return True
     if scenario == "live":
+        return False
+    if scenario in SCENARI_SOLDI_VERI:
+        # 04/10: il ponte arma SEMPRE con `dry_run` False (soldi veri = ordini
+        # veri, `tennis_bot_service._riga_armatura`)
         return False
     return None
 
@@ -317,6 +362,11 @@ def _azzera_stato_di_processo() -> List[str]:
         setattr(mod, nome, None)
         fatti.append("%s.%s" % (modulo, nome))
     return fatti
+
+
+@contextmanager
+def _nessun_contesto():
+    yield
 
 
 @contextmanager
@@ -615,6 +665,17 @@ class _Ponte:
         self._firme_ms = 0
         self._sess_firme: Optional[Any] = None
         self.ultimo_ms = 0
+        # B10 (04/10): il registro dell'exchange del banco si legge a pezzi
+        # (indice), la storia dei rifiuti per (selezione, lato, size, tipo)
+        self._idx_piazzati = 0
+        self._rifiuti_taglia: Dict[Tuple[Any, ...], int] = {}
+        # SV1 (04/10): la catena «soldi veri» dello scenario e i conti per il
+        # riepilogo (ordini eseguiti per client, aperture fermate dalla terza rete)
+        self.catena_soldi_veri: Optional[str] = None
+        self._sv_reali: set = set()
+        self._sv_simulati: set = set()
+        self._sv_fermati = 0
+        self._sv_idx = 0
 
     def ruolo_ordine(self, ordine: Any) -> Optional[str]:
         """Il RUOLO di un ordine per il guasto CP, dalla credenza VERA del bot
@@ -883,6 +944,50 @@ class _Ponte:
             riga["order_id"] = str(per_ref.get(riga.get("client_order_ref"), ""))
         return righe
 
+    def residui_del_bot(self) -> List[Dict[str, Any]]:
+        """04/10: i residui che il bot ricorda (`ResiduiRicordati`), come li
+        pubblica nelle sue `stats`."""
+        mem = getattr(self.s, "residui_ricordati", None)
+        try:
+            return list(mem.per_stats()) if mem is not None else []
+        except Exception:  # noqa: BLE001 - memoria illeggibile: nessun residuo
+            return []
+
+    def rifiuti_taglia(self) -> List[Dict[str, Any]]:
+        """B10: i rifiuti per taglia NUOVI dell'exchange del banco
+        (`minimi_banco`), letti dal suo registro con la SUA regola."""
+        from ...backtest import minimi_banco as MB
+
+        def _rifiutato(size: Any, tipo: str, side: Any) -> bool:
+            return bool(MB.ATTIVO) and MB.sotto_minimo(size, tipo, side)
+
+        nuovi, self._idx_piazzati = CERT.rifiuti_taglia_nuovi(
+            MB.REGISTRO.piazzati, self._idx_piazzati, self.s, _rifiutato,
+            self._rifiuti_taglia)
+        return nuovi
+
+    def _conta_soldi_veri(self, righe: List[Dict[str, Any]],
+                          attivita: List[Tuple[str, Dict[str, Any]]]) -> None:
+        for r in righe:
+            oid = r.get("order_id")
+            if r.get("client_reale") is True:
+                self._sv_reali.add(oid)
+            elif r.get("client_reale") is False:
+                self._sv_simulati.add(oid)
+        from ..guardie_tennis import ControlloModoOrdiniTennis
+
+        for kind, p in attivita:
+            if kind == "place_rejected" and ControlloModoOrdiniTennis.NAME in str(
+                    (p or {}).get("motivo") or ""):
+                self._sv_fermati += 1
+
+    def riepilogo_soldi_veri(self) -> str:
+        return ("SOLDI VERI (%s): ordini eseguiti sul client REALE %d, sul client "
+                "SIMULATO %d; aperture reali fermate dalla terza rete "
+                "(TENNIS_MODO_ORDINI) %d"
+                % (self.catena_soldi_veri, len(self._sv_reali), len(self._sv_simulati),
+                   self._sv_fermati))
+
     def giro(self, market: Any, market_book: Any, prima: int) -> None:
         ordini_veri = self.ordini_del_bot(market)
         specchio = self.specchio(ordini_veri)
@@ -923,7 +1028,13 @@ class _Ponte:
             esposizioni=self.esposizioni(market, ordini_veri),
             ids_ingresso=ids_ingresso,
             ordini_nuovi=nuovi,
+            rifiuti_taglia=self.rifiuti_taglia(),
+            catena_soldi_veri=self.catena_soldi_veri,
+            residui=self.residui_del_bot(),
         )
+        if self.catena_soldi_veri is not None:
+            self._conta_soldi_veri(righe, self.attivita[self._sv_idx:])
+            self._sv_idx = len(self.attivita)
         self.ref.violazioni.extend(CERT.verifica(oss, self.ref.sollecitati))
         # I CONTROLLI CP (scenario chiusura-abbinata-in-parte)
         if self.sorveglianza_cp is not None:
@@ -1029,7 +1140,11 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
     # il ponte (`tennis_bot_service.riconcilia_interruttori`). Lo scenario `live`
     # e' un bot acceso in LIVE dall'utente: senza `mode='live'` il runner lo
     # eseguirebbe PAPER (riga senza modalita' = paper, mai ereditata dal runner).
-    control["mode"] = "live" if modalita == "LIVE" else "paper"
+    control["mode"] = modalita_bot_scenario(scenario)
+    # la modalita' con cui il bot ESEGUE (B8, specchio, esposizioni): LIVE solo
+    # se runner LIVE e riga live (`guardie_tennis.modalita_esecuzione_bot`)
+    modalita_bot = "LIVE" if (modalita == "LIVE" and control["mode"] == "live") else "PAPER"
+    soldi_veri = SCENARI_SOLDI_VERI.get(scenario)
     # N3 (28/09): l'interruttore delle uscite, DICHIARATO. Senza la chiave la
     # funzione di produzione darebbe MANUALI (default dal 25/09 sera).
     control["uscite_automatiche"] = uscite_automatiche_scenario(scenario)
@@ -1058,14 +1173,32 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
             ref.note.append("place_latency %s ms (paper tennis di produzione) + "
                             "betDelay dal marketDefinition, dormito da flumine"
                             % int(lat))
+            # il client del framework (simulato del banco). Con «soldi veri» e'
+            # anche il client PAPER affiancato del runner LIVE, e il client REALE
+            # e' la sua vista `ClienteLiveBanco` (stessa esecuzione simulata).
+            cliente = BC.cliente_simulato()
+            cliente_reale: Optional[Any] = None
+            if soldi_veri is not None:
+                from ...backtest.porta_banco import ClienteLiveBanco
+
+                cliente_reale = ClienteLiveBanco(cliente)
             try:
                 strat = _instantiate_bot(bot, control, market_id, catalogo,
                                          _sink, data_filter, modalita,
-                                         market_ids=[market_id])
+                                         market_ids=[market_id],
+                                         client_paper=(cliente if soldi_veri is not None
+                                                       else None))
             except Exception as ex:  # noqa: BLE001 - un'istanza che non nasce E' un referto
                 ref.note.append("il bot non si e' istanziato: %s: %s"
                                 % (type(ex).__name__, ex))
                 return ref
+            if cliente_reale is not None and modalita_bot == "LIVE":
+                # in produzione il client di DEFAULT del runner LIVE e' quello
+                # reale: nel banco il default e' simulato, quindi il bot live si
+                # instrada sul `ClienteLiveBanco` con la funzione di produzione
+                from .. import guardie_tennis as GT
+
+                GT.instrada_ordini_su_client(strat, cliente_reale)
             ref.note.append("uscite EFFETTIVE del bot istanziato: %s"
                             % ("AUTOMATICHE" if getattr(strat, "uscite_automatiche",
                                                         False) is True else "MANUALI"))
@@ -1073,8 +1206,18 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
             strat.market_filter = {"markets": [raw]}
             cap = getattr(strat, "max_selection_exposure", None)
 
-            quadro = FlumineSimulation(client=BC.cliente_simulato())
+            quadro = FlumineSimulation(client=cliente)
             BC.assicura_middleware_simulato(quadro)
+            if soldi_veri is not None:
+                # i trading control VERI del runner tennis con gli ordini accesi
+                from ..tennis_runner import aggiungi_controlli_ordini
+
+                aggiungi_controlli_ordini(quadro)
+                ref.note.append(
+                    "SOLDI VERI: riga del bot mode=%s, «Ordini reali» %s di questo "
+                    "avvio, runner col tetto LIVE e i trading control del runner "
+                    "(modalita' del bot, kill-switch, terza rete); bot eseguito in %s"
+                    % (soldi_veri[0], soldi_veri[1].upper(), modalita_bot))
             rifiuta: Optional[Any] = None
             if scenario == "rifiuti-betfair":
                 rifiuta = _rifiuta_tutto(quadro)
@@ -1106,7 +1249,7 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
             ponte = _Ponte(
                 strat=strat, bot_key=bot, event_id=str(event_id),
                 market_id=market_id, scenario=scenario, punteggi=punteggi,
-                referto=ref, quadro=quadro, modalita=modalita, stake=stake,
+                referto=ref, quadro=quadro, modalita=modalita_bot, stake=stake,
                 cap=cap, attivita=attivita, rifiuta=rifiuta, ogni_ms=ogni_ms,
                 feed_stantio_da_ms=None,
                 riavvia=_riavvia if scenario == "riavvio" else None,
@@ -1132,7 +1275,10 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
                     scenario, strategie=lambda: [ponte.s], ordini_di=_ordini_di,
                     firma=ponte.firma if scenario == UM.SCENARIO_FIRMATE else None,
                     ruolo=ponte.ruolo_ordine,
-                    resto_non_piazzabile=resto_dichiarato_dal_bot)
+                    resto_non_piazzabile=resto_dichiarato_dal_bot,
+                    # 04/10 (decisione 1): il resto scusato, SE dichiarato dal bot,
+                    # arriva al floor di legge del place-and-trim (era 0,05)
+                    soglia_resto=float(_MINIMI_IT.SUBMIN_IMPORTO_FINALE_MIN))
                 ref.note.append("USCITE MANUALI: interruttore spento; %s"
                                 % ("il banco firma ogni proposta dopo %d s di mercato "
                                    "(params.uscite_approvate, riletta da "
@@ -1149,13 +1295,25 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
                 motore.guasto_chiusure = guasto_cp
                 ponte.sorveglianza_cp = CP.Sorveglianza(guasto_cp)
             oss_um = ponte.osservatore
-            if oss_um is not None:
-                with oss_um.attivo():
+            if soldi_veri is not None:
+                # SV1: che cosa la catena impone al client di ogni ordine
+                ponte.catena_soldi_veri = (
+                    "simulato" if modalita_bot != "LIVE"
+                    else ("reale" if soldi_veri[1] == "live" else "nessuno_reale"))
+            from ... import modo_ordini as _MO
+
+            scelta = (_MO.dichiara_per_banco(soldi_veri[1]) if soldi_veri is not None
+                      else _nessun_contesto())
+            with scelta:
+                if oss_um is not None:
+                    with oss_um.attivo():
+                        motore.esegui(ponte)
+                        oss_um.giro(ponte.ultimo_ms, fine=True)
+                    _chiudi_uscite_manuali(ref, oss_um)
+                else:
                     motore.esegui(ponte)
-                    oss_um.giro(ponte.ultimo_ms, fine=True)
-                _chiudi_uscite_manuali(ref, oss_um)
-            else:
-                motore.esegui(ponte)
+            if soldi_veri is not None:
+                ref.note.append(ponte.riepilogo_soldi_veri())
             if guasto_cp is not None:
                 ref.note.append(guasto_cp.riepilogo())
             ref.note.append(
@@ -1164,10 +1322,13 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
                 % (motore.pompati, motore.lapse_al_fischio,
                    motore.lapse_alla_sospensione))
             mercato = quadro.markets.markets.get(market_id)
+            aperti_prima = ponte.residui_del_bot()
             ponte.chiudi(mercato)
+            ref.note.append(nota_residui(attivita, aperti_prima))
 
     if scenario in ("gate-aperto", "parziali", "rifiuti-betfair", "live", CP.SCENARIO,
-                    SCENARIO_CHIUDI_ORA) or scenario in UM.SCENARI:
+                    SCENARIO_CHIUDI_ORA) or scenario in UM.SCENARI \
+            or scenario in SCENARI_SOLDI_VERI:
         ref.note.append("SCENARIO DICHIARATO: cambiati SOLO i parametri %s "
                         "(numeri che l'utente puo' gia' cambiare dalla UI). La "
                         "strategia e' quella di produzione."
@@ -1178,11 +1339,45 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
     return ref
 
 
+def nota_residui(attivita: List[Tuple[str, Dict[str, Any]]],
+                 aperti_a_fine: List[Dict[str, Any]]) -> str:
+    """04/10 (decisione 1 dell'utente): i residui non piazzabili della partita,
+    in EUR (riga del referto: serve all'utente)."""
+    dich = [p for k, p in attivita if k == "residuo_non_piazzabile"]
+    chiusi = sum(1 for k, _p in attivita if k == "residuo_chiuso")
+    regolati = [p for k, p in attivita if k == "residuo_regolato"]
+    aperti = [r for r in aperti_a_fine if float(r.get("importo") or 0.0) >= 0.0]
+    return ("RESIDUI (decisione 1): dichiarati %d (importi %s EUR, sbilancio %s EUR), "
+            "tornati pari %d; regolati col mercato %d (se vince %s / se perde %s EUR); "
+            "aperti a fine partita %d (importi %s EUR, sbilancio "
+            "totale %.2f EUR, se vince %.2f / se perde %.2f)"
+            % (len(dich), [p.get("importo") for p in dich],
+               [p.get("sbilancio") for p in dich], chiusi, len(regolati),
+               [p.get("se_vince") for p in regolati], [p.get("se_perde") for p in regolati],
+               len(aperti),
+               [r.get("importo") for r in aperti],
+               sum(float(r.get("sbilancio") or 0.0) for r in aperti),
+               sum(float(r.get("se_vince") or 0.0) for r in aperti),
+               sum(float(r.get("se_perde") or 0.0) for r in aperti)))
+
+
 def resto_dichiarato_dal_bot(s: Any, sel: Any, lato: str, resto: float) -> bool:
     """N3 UF2: il bot ha DICHIARATO non piazzabile questo resto? Lo scalper
     tennis tiene la sua memoria dei `min_bet_skip` gia' scritti
     (`TennisScalperStrategy._min_bet_detto`: (selezione, lato, size)); gli altri
-    bot tennis non hanno un resto non piazzabile (place-and-trim di D2)."""
+    bot tennis non hanno un resto non piazzabile (place-and-trim di D2).
+    04/10 (decisione 1 dell'utente): anche il residuo che il bot RICORDA
+    (`residui_ricordati`, stesso lato, importo al centesimo)."""
+    mem = getattr(getattr(s, "residui_ricordati", None), "aperti", None) or {}
+    for r in list(mem.values()):
+        try:
+            if (int(r.get("selection_id")) == int(sel)
+                    and str(r.get("lato")).upper() == str(lato).upper()
+                    and any(abs(float(x) - float(resto)) <= 0.011
+                            for x in (r.get("importi_dichiarati") or [r.get("importo")]))):
+                return True
+        except (TypeError, ValueError):
+            continue
     detto = getattr(s, "_min_bet_detto", None) or ()
     for k in list(detto):
         try:
