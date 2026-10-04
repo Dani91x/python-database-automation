@@ -257,6 +257,9 @@ class _Slot:
     # ogni giro (replay 35797769 con la sola correzione dei resti: 1905 rifiuti).
     rifiuti_taglia: int = 0
     taglia_ferma_fino_ms: int = 0
+    # 04/10 - scratch deciso ma in attesa che la close vecchia (annullo in
+    # volo) sia morta: mai due chiusure vive insieme
+    scratch_in_attesa: bool = False
     swing: bool = False                  # ciclo originato dal trend (target/stop swing)
     # 25/09 - uscite manuali: il motivo dell'ultima proposta emessa su questo
     # ciclo (una sola 'uscita_proposta' per motivo, mai una a ogni book)
@@ -1862,21 +1865,33 @@ class ScalperStrategy(BaseStrategy):
                     return
             if (
                 self.scratch_enable
-                and scratch_now
+                and (scratch_now or slot.scratch_in_attesa)
                 and not slot.close_scratched
                 and c_match <= _EPS
                 and entry_p is not None
             ):
                 self._cancel_if_live(market, close)
                 if close is not None:
-                    slot.flatten_orders.append(close)  # contabilita' posizione
+                    self._track(slot, close)       # contabilita' posizione
                 # il mercato e' girato: il next_entry pre-piazzato dietro la
                 # vecchia close non ha piu' senso li' -> cancellalo (restera'
                 # tracciato in flatten_orders per l'esposizione)
                 if slot.next_entry is not None:
                     self._cancel_if_live(market, slot.next_entry)
-                    slot.flatten_orders.append(slot.next_entry)
+                    self._track(slot, slot.next_entry)
                     slot.next_entry = None
+                # 04/10 (scenario `chiusura-abbinata-in-parte`, CP4: «nuova
+                # chiusura mentre la vecchia e' ancora VIVA, rischio
+                # sovracopertura»): lo scratch parte quando la close vecchia e'
+                # MORTA. Con l'annullo in volo la vecchia puo' ancora abbinarsi:
+                # due chiusure abbinate = posizione ROVESCIATA. Si aspetta il
+                # giro dopo (il ritiro e' gia' chiesto), poi si ricalcola sulla
+                # posizione VERA abbinata. Prezzo e importo dello scratch
+                # invariati (stessa regola, solo un giro dopo).
+                if close is not None and self._vivo_o_in_volo(close):
+                    slot.scratch_in_attesa = True
+                    return
+                slot.scratch_in_attesa = False
                 nw = sb * (ob - 1.0) - sl * (ol - 1.0)
                 nl = sl - sb
                 g = compute_green(nw, nl, entry_p)
@@ -3021,6 +3036,7 @@ class ScalperStrategy(BaseStrategy):
         slot.chiusura_bloccata_detta = False
         slot.rifiuti_taglia = 0
         slot.taglia_ferma_fino_ms = 0
+        slot.scratch_in_attesa = False
         # NB 04/10: residuo_w / residuo_l NON si azzerano (decisione dell'utente:
         # il residuo resta ricordato oltre il ciclo, lo chiude l'utente)
         slot.next_entry = None

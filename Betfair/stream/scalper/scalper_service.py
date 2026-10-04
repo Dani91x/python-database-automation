@@ -650,6 +650,38 @@ class PubblicaSessioni:
         self.firme = viste
 
 
+#: codice dell'avviso in ``live_alerts`` per una sessione morta (04/10)
+CODICE_ORFANA = "SCALPER_SESSIONE_ORFANA"
+
+
+def marca_orfana(db: Any, event_id: str, row: Optional[Dict[str, Any]] = None) -> None:
+    """Una sessione il cui PROCESSO e' morto (heartbeat fermo, nessun figlio):
+    riga 'error' e - 04/10, scenario `riavvio` del banco (S7: 22 ordini della
+    sessione morta non governati ne' dichiarati) - un avviso CRITICAL in
+    ``live_alerts``. La sessione nuova (o nessuna) non conosce gli ordini della
+    morta: un processo nuovo di flumine non adotta ordini che non ha creato.
+    Quegli ordini (abbinati o vivi) restano sul conto: si DICHIARANO al trader,
+    che li verifica e li chiude (decisione dell'utente: «lo chiudo io»). Nessun
+    ordine, nessuna strategia toccata."""
+    db.set_control(event_id, status="error",
+                   error="sessione orfana (processo morto)",
+                   stopped_at=_now_iso())
+    modo = "live" if (row or {}).get("dry_run") is False else "paper"
+    try:
+        db.sb.table("live_alerts").insert({
+            "level": "CRITICAL", "code": CODICE_ORFANA,
+            "message": ("sessione scalper %s (%s) ORFANA: processo morto. Ordini ed "
+                        "esposizione della sessione morta NON sono seguiti da nessun "
+                        "processo: verificali sul conto e chiudili a mano%s"
+                        % (event_id, modo, "" if modo == "live"
+                           else " (prova: ordini simulati)"))[:500],
+            "event_id": str(event_id),
+        }).execute()
+    except Exception:  # noqa: BLE001 - l'avviso non ferma il supervisore
+        logger.warning("[scalper-svc] avviso della sessione orfana %s non scritto",
+                       event_id, exc_info=True)
+
+
 def freno_supervisore() -> Optional[str]:
     """R3 (25/09): il freno unico visto dal supervisore (env + DB; il file
     ``STOP_SCALPER`` il supervisore lo gestisce gia' da se', uscendo).
@@ -937,9 +969,7 @@ def main() -> None:
                     if age is not None and age > ORPHAN_HEARTBEAT_S:
                         logger.warning("[scalper-svc] %s orfana (hb %.0fs, "
                                        "nessun figlio): error", ev, age)
-                        db.set_control(ev, status="error",
-                                       error="sessione orfana (processo morto)",
-                                       stopped_at=_now_iso())
+                        marca_orfana(db, ev, row)
         except Exception:  # noqa: BLE001
             logger.exception("[scalper-svc] errore nel loop di polling")
             db_sano_dal = None   # FIX-C: il DB non e' "sano" finche' un giro non riesce

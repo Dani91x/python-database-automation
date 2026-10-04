@@ -1088,6 +1088,8 @@ class _Banco:
         self.evento_fatto = False
         self.kill_file: Optional[str] = None
         self.sorveglianza_cp: Optional[Any] = None
+        # 04/10: ultima riga di specchio per ordine (bet_id), per CP1
+        self.specchio_per_ordine: Dict[str, Dict[str, Any]] = {}
         self.parita: Optional[Dict[str, Any]] = None
         self._parita_consegnata = False
         self.riavviata = False
@@ -1574,17 +1576,33 @@ class _Banco:
         oss = self.osservazione(ms, quando, fine=fine)
         self.ref.violazioni.extend(CERT.verifica(oss, self.ref.sollecitati, self.memoria))
         if self.sorveglianza_cp is not None:
+            # 04/10: l'ULTIMA riga di specchio di ogni ordine (incrementale: solo
+            # le righe nuove di questo giro), come per i bot tennis
+            for r in oss.specchio or []:
+                k = str(r.get("bet_id") or r.get("client_order_ref") or "")
+                if k:
+                    self.specchio_per_ordine[k] = r
             for cod, reg, det in self.sorveglianza_cp.verifica(
-                    credenze_cp(oss.credenze, self.strategia_corrente(), self),
+                    credenze_cp(oss.credenze, self.strategia_corrente(), self,
+                                specchio=list(self.specchio_per_ordine.values())),
                     self.ref.sollecitati):
                 self.ref.violazioni.append(CERT.Violazione(cod, reg, det, quando))
 
 
-def credenze_cp(cred: List[Dict[str, Any]], s: Any, banco: _Banco) -> List[Dict[str, Any]]:
+def credenze_cp(cred: List[Dict[str, Any]], s: Any, banco: _Banco,
+                specchio: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
     """Le credenze dello scalper nella forma dei controlli CP (come
     `tennis_live/tools/replay_bot.credenze_cp`): una voce per slot, CHIUSA =
     IDLE/DONE, le chiusure con i numeri VERI dell'ordine (chiavi dello specchio
-    di produzione)."""
+    di produzione).
+
+    04/10 (scenario `chiusura-abbinata-in-parte`, CP1 «NESSUNA riga/credenza
+    del bot la riconosce»): in coda una voce con l'ULTIMA riga dello SPECCHIO
+    (`betfair_live_orders`, scritto dallo specchio vero della sessione) di ogni
+    ordine, come gia' per i bot tennis: una chiusura che lo scalper ha smesso di
+    seguire perche' il ciclo e' finito resta riconoscibile dalla riga che la UI
+    vede (mai chiusa, mai coperta: CP2/CP3 la saltano). I numeri li giudica CP1:
+    una riga con abbinato/residuo/prezzo diversi dal mercato resta violazione."""
     def _riga(o: Any) -> Dict[str, Any]:
         r = CERT.riga_ordine(o)
         return {"ordine_id": r["order_id"], "bet_id": r["bet_id"], "size": r["size"],
@@ -1602,6 +1620,19 @@ def credenze_cp(cred: List[Dict[str, Any]], s: Any, banco: _Banco) -> List[Dict[
             "chiusure": [_riga(o) for o in (c.get("uscite") or ())],
             "per_selezione": True,
             "tolleranza": float(c.get("tolleranza") or 0.0),
+        })
+    if specchio:
+        out.append({
+            "id": "specchio", "chiave": (), "chiusa": False, "coperto": None,
+            "apertura": None, "ingressi": [],
+            "chiusure": [{"ordine_id": None, "bet_id": r.get("bet_id"),
+                          "size": r.get("size"), "price": r.get("price"),
+                          "status": r.get("status"),
+                          "size_matched": r.get("size_matched"),
+                          "size_remaining": r.get("size_remaining"),
+                          "avg_price_matched": r.get("average_price_matched")}
+                         for r in specchio],
+            "per_selezione": True, "tolleranza": 0.0,
         })
     return out
 
@@ -2097,10 +2128,9 @@ def _riarma(SS: Any, event_id: str, banco: _Banco, esiti: Dict[str, Any]) -> Non
 
     orologio = banco.orologio
     orologio.sleep(float(SVC.ORPHAN_HEARTBEAT_S))
-    # la riga come la scrive il supervisore (`scalper_service.main`)
-    banco.db.set_control(event_id, status="error",
-                         error="sessione orfana (processo morto)",
-                         stopped_at=SS._now_iso())
+    # la riga (e dal 04/10 l'avviso) come li scrive il supervisore: la funzione
+    # VERA di produzione (`scalper_service.marca_orfana`)
+    SVC.marca_orfana(banco.db, event_id, dict(banco.db.control))
     orologio.sleep(ATTESA_RIARMO_S)
     # `scalper_activate` (RPC): la riga torna 'requested' e si azzera il resto
     banco.db.control.update({"status": "requested", "bias": None, "bias_meta": None,
