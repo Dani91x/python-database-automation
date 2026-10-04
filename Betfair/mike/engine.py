@@ -3051,11 +3051,22 @@ def _dichiara_residuo(ctx: MatchCtx, d: Decision, snap: Snapshot, params: Dict[s
     return Decision(stato, keep, "%s - proposta all'utente" % motivo, upd, tele)
 
 
-def _proposta_residuo_finale(ctx: MatchCtx, d: Decision) -> Decision:
+def _proposta_residuo_finale(ctx: MatchCtx, d: Decision,
+                             snap: Optional[Snapshot] = None) -> Decision:
     """La proposta del residuo vive finche' la decisione la riafferma; quando non
-    serve piu' (residuo chiuso, nuovo tentativo in corso) decade, detto UNA volta."""
+    serve piu' (residuo chiuso, nuovo tentativo in corso) decade, detto UNA volta.
+
+    04/10 (punte a multiplo di 0,50, banco ``cashout-dopo-copertura``): un giro che
+    NON la riafferma solo perche' aspetta (prezzi assenti, attesa del ritento) non la
+    fa decadere finche' il residuo e' ancora in gioco e nessun ordine nuovo parte:
+    prima la proposta decadeva e rinasceva a ogni giro, con un avviso CRITICAL nuovo
+    ogni volta (23 in una partita). Decade quando il residuo e' chiuso o quando parte
+    un nuovo tentativo."""
     prima = ctx.uscita_proposta if isinstance(ctx.uscita_proposta, dict) else None
     if prima is None or not prima.get("residuo_scoperto") or "uscita_proposta" in d.updates:
+        return d
+    if snap is not None and not any(a.kind == "place" for a in d.actions) \
+            and live_open_selections(ctx.legs, snap.goals):
         return d
     upd = dict(d.updates)
     upd["uscita_proposta"] = None
@@ -3072,7 +3083,7 @@ def _ultime_guardie(ctx: MatchCtx, d: Decision, snap: Snapshot,
     d = _tieni_a_feed_stantio(ctx, d, snap)
     d = _guardia_minimo_listino(ctx, d, snap, params)
     d = _controllo_di_piatto(ctx, d, snap, params)
-    return _proposta_residuo_finale(ctx, d)
+    return _proposta_residuo_finale(ctx, d, snap)
 
 
 def decide(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Decision:

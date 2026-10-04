@@ -177,6 +177,32 @@ def test_c_rest_live_parte_7_00_residuo_dichiarato_una_volta_nessun_ritento(
     assert abs(w - l) == pytest.approx(0.27 * 1.07, abs=0.01)
 
 
+def test_c_residuo_con_libro_che_va_e_viene_un_solo_avviso(monkeypatch, _live):
+    """Banco ``cashout-dopo-copertura`` (04/10): col residuo da 0,27 aperto il libro
+    dell'Under 4,5 sparisce a giri alterni. Prima la proposta decadeva nel giro senza
+    prezzi e rinasceva al giro dopo: 23 avvisi CRITICAL in una partita. Ora UNO."""
+    monkeypatch.setenv("LIVE_ORDER_MODE", "LIVE")
+    chiamate: List[Dict[str, Any]] = []
+    db = db_vuoto()
+    ctx = ctx_umea()
+    d = E.decide(ctx, foto_umea(), params())
+    _esegui(ctx, d, T0, _mercato(chiamate), db)
+    avvisi = decadute = 0
+    for dt in range(1, 61):
+        s = foto_umea(now=T0 + dt)
+        if dt % 2:
+            s = E.Snapshot(now=s.now, ko_at=KO,
+                           books={k: v for k, v in s.books.items() if k[0] != E.MARKET_OU45},
+                           inplay=True, minute=70, goals=2, feed_fresh=True, order_fresh=True)
+        d = E.decide(ctx, s, params())
+        assert piazzamenti(d) == []
+        avvisi += "chiusura_parziale" in d.telemetry
+        decadute += "uscita_proposta_decaduta" in d.telemetry
+        E.apply_decision(ctx, d, s.now)
+    assert avvisi == 1 and decadute == 0
+    assert ctx.uscita_proposta["residuo_scoperto"] is True
+
+
 # ===========================================================================
 # (d) chiusura RIFIUTATA, qualunque motivo: mai chiuso, un avviso
 # ===========================================================================
