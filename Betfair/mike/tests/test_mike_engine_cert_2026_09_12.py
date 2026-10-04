@@ -131,7 +131,10 @@ def test_riprezzo_copertura_conta_tutte_le_coperture_gia_abbinate():
     ctx.legs.append(E.Leg(role="over_cover", market=E.MARKET_OU45, selection=E.SEL_OVER,
                           side="back", price=6.0, size=3.65, matched=1.5, avg_price=6.0,
                           status="pending", ref="c2", placed_at=KO + 20 * 60))
-    s = snap(KO + 21 * 60, books={(E.MARKET_OU45, E.SEL_OVER): book(5.0, bs=50, inplay=True)},
+    # 04/10: il libro dell'Under 3,5 (nel feed vero c'e' sempre) serve alla regola del
+    # prezzo coerente della copertura
+    s = snap(KO + 21 * 60, books={(E.MARKET_OU45, E.SEL_OVER): book(5.0, bs=50, inplay=True),
+                                  (E.MARKET_OU35, E.SEL_UNDER): book(1.50, inplay=True)},
              inplay=True, minute=21, goals=0)
     d = E.decide(ctx, s, p)
     # ORDINE DELL'UTENTE 16/09 SERA — MAI SOVRACOPERTURA: prima SOLO

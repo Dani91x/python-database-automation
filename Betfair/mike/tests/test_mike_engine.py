@@ -747,7 +747,9 @@ def test_liability_cap_blocks_entry_cover_and_reentry():
     assert d.state == "PRE_ENTRY_PENDING"
     # copertura clampata al residuo (25 - 20 = 5)
     ctx, _ = _live_uncovered()
-    s = snap(KO + 20 * 60, u35=book(1.35, inplay=True), o45=book(3.0, bs=50, inplay=True),
+    # 04/10: Under 3,5 a 1,60 (prima 1,35): con l'Over 4,5 a 3,0 un Under 3,5 a 1,35 non
+    # puo' esistere in un mercato vero, e la regola del prezzo coerente lo fermerebbe
+    s = snap(KO + 20 * 60, u35=book(1.60, inplay=True), o45=book(3.0, bs=50, inplay=True),
              inplay=True, minute=20, goals=0, hazard=0.2, p4_market=0.2)
     d = E.decide(ctx, s, p)
     assert d.state == "LIVE_COVER_PENDING" and d.actions[0].size == 5.0

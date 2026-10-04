@@ -149,14 +149,23 @@ def test_riprezzo_della_banca_ripiazza_il_residuo_al_limite_nuovo():
 # ---------------------------------------------------------------------------
 # test 11: libro Under 4,5 assente o senza prezzo di banca
 # ---------------------------------------------------------------------------
+def _under35_non_in_profitto(s):
+    """04/10: Under 3,5 NON in profitto (banca = prezzo d'ingresso 1,50). Con la regola
+    nuova, a copertura non eseguibile e Under 3,5 in profitto di 2 tick, Mike chiude
+    l'Under (test dedicato): qui si prova l'ATTESA."""
+    s.books[(E.MARKET_OU35, E.SEL_UNDER)] = libro(1.49, 1.50)
+    return s
+
+
 def test_libro_under45_assente_si_aspetta_col_motivo():
-    d = E.decide(scoperta(), fotografia(u45=False), params())
+    d = E.decide(scoperta(), _under35_non_in_profitto(fotografia(u45=False)), params())
     assert [a for a in d.actions if a.kind == "place"] == []
     assert d.state == "LIVE_UNCOVERED" and "libro Under 4.5 assente" in d.reason
 
 
 def test_nessun_prezzo_di_banca_sull_under45_si_aspetta():
-    d = E.decide(scoperta(), fotografia(u45_book=libro(1.17, None)), params())
+    d = E.decide(scoperta(), _under35_non_in_profitto(fotografia(u45_book=libro(1.17, None))),
+                 params())
     assert [a for a in d.actions if a.kind == "place"] == []
     assert d.telemetry["cover_wait"]["reason"] == "nessun_prezzo_lay_under45"
 
@@ -165,7 +174,9 @@ def test_nessun_prezzo_di_banca_sull_under45_si_aspetta():
 # liquidita' (regola dell'utente: tutto l'importo al miglior prezzo) e tetto
 # ---------------------------------------------------------------------------
 def test_liquidita_sotto_l_importo_al_miglior_prezzo_si_aspetta():
-    d = E.decide(scoperta(), fotografia(u45_book=libro(1.17, 1.18, ls=12.0)), params())
+    d = E.decide(scoperta(),
+                 _under35_non_in_profitto(fotografia(u45_book=libro(1.17, 1.18, ls=12.0))),
+                 params())
     assert [a for a in d.actions if a.kind == "place"] == []
     assert d.telemetry["cover_wait"]["reason"] == "liquidita"
 

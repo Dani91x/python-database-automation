@@ -2060,6 +2060,40 @@ def attesa_ritento_chiusura(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any
 # prezzi), cambia solo quante volte si ritenta una richiesta che il mercato
 # respinge, e con che ritmo.
 COVER_BLOCCATA = "LIVE_COVER_BLOCKED"
+#: 04/10 - motivi d'attesa della copertura in banca (``telemetry.cover_wait.reason``):
+#: prezzo limite dell'Under 4,5 non minore della banca dell'Under 3,5 / banca
+#: dell'Under 3,5 non leggibile (vedi ``_copertura_banca``)
+COVER_FUORI_PREZZO = "copertura_fuori_prezzo"
+COVER_U35_NON_LEGGIBILE = "quota_under35_non_leggibile"
+
+
+def banca_under45_equivalente(p_over: Any) -> Optional[float]:
+    """Puntare l'Over 4,5 a P equivale a bancare l'Under 4,5 a P/(P-1) (mercato a
+    due esiti). None se P non e' un prezzo."""
+    try:
+        p = float(p_over)
+    except (TypeError, ValueError):
+        return None
+    if p <= 1.0:
+        return None
+    return round(p / (p - 1.0), 4)
+
+
+def _punta_over45_fuori_prezzo(snap: "Snapshot", p_ordine: Any
+                               ) -> Optional[Tuple[str, Optional[float], Optional[float]]]:
+    """04/10 - LA STESSA REGOLA della copertura in banca (ordine dell'utente),
+    sulla forma «punta Over 4,5»: l'ordine parte solo se la banca Under 4,5
+    EQUIVALENTE al suo prezzo (P/(P-1)) e' MINORE della miglior banca dell'Under
+    3,5 in questo momento. Ritorna None se puo' partire, altrimenti
+    (motivo, banca Under 4,5 equivalente, banca Under 3,5)."""
+    bk35 = snap.book(MARKET_OU35, SEL_UNDER)
+    q35 = bk35.best_lay if (bk35 is not None and price_ok(bk35.best_lay)) else None
+    q_eq = banca_under45_equivalente(p_ordine)
+    if q35 is None:
+        return (COVER_U35_NON_LEGGIBILE, q_eq, None)
+    if q_eq is None or float(q_eq) >= float(q35) - _EPS:
+        return (COVER_FUORI_PREZZO, q_eq, q35)
+    return None
 
 
 def _cover_rifiuti(ctx: MatchCtx) -> Dict[str, Any]:
@@ -3376,7 +3410,14 @@ def _dispatch(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Decision
     if st == "LIVE_SECOND_ENTRY":
         return _decide_second_entry(ctx, snap, params, c)
     if st == "LIVE_UNCOVERED":
-        return _decide_uncovered(ctx, snap, params, c)
+        # 04/10 (seconda condizione dell'utente): prima il seguito di una chiusura
+        # in profitto gia' mandata; poi la copertura di sempre; se la copertura
+        # NON si puo' eseguire, la chiusura dell'Under 3,5 in profitto
+        seguito = _segui_chiusura_in_profitto(ctx, snap, params, c)
+        if seguito is not None:
+            return seguito
+        d_cop = _decide_uncovered(ctx, snap, params, c)
+        return _chiusura_in_profitto_se_non_copribile(ctx, snap, params, d_cop) or d_cop
     if st == "LIVE_COVER_PENDING":
         return _decide_cover_pending(ctx, snap, params, c)
     if st == "LIVE_COVERED":
@@ -4276,6 +4317,109 @@ def frazione_copertura(stage: int, params: Dict[str, Any], x_pieno: Optional[flo
     return (1.0, True)
 
 
+#: 04/10 - ORDINE DELL'UTENTE: «quando non si puo' coprire ed e' in attesa,
+#: controlla SE UNDER 3.5 puo' essere chiuso in profitto, SE SI, chiude (minimo 2
+#: tick) e se chiusura confermata, nessuna copertura e' necessaria, SE UNDER 3.5
+#: non e' in profitto, continua a controllare se e' possibile la copertura».
+#: Tick di profitto minimi (dettati dall'utente, non un parametro della strategia).
+CHIUSURA_PROFITTO_TICK_MIN = 2
+#: Motivi (``telemetry.cover_wait.reason``) per cui la copertura NON si puo'
+#: eseguire adesso. L'attesa PROGRAMMATA (Mike aspetta apposta il momento
+#: migliore) non ha ``reason`` e resta fuori: li' la chiusura non scatta.
+COPERTURA_NON_ESEGUIBILE = frozenset({
+    COVER_FUORI_PREZZO, COVER_U35_NON_LEGGIBILE, "liquidita", "libro_under45_assente",
+    "mercato_non_aperto", "nessun_prezzo_lay_under45", "size_nulla", "overshoot"})
+
+
+def _chiusura_profitto_del_ciclo(ctx: MatchCtx) -> Optional[Leg]:
+    """L'ultima chiusura dell'Under 3,5 di QUESTO ciclo (ruolo ``under_close``)."""
+    legs = [l for l in ctx.legs if l.role == "under_close" and not l.archived
+            and int(l.cycle_no) == int(ctx.cycle_no)
+            and l.market == MARKET_OU35 and l.selection == SEL_UNDER]
+    return legs[-1] if legs else None
+
+
+def _chiusura_in_profitto_se_non_copribile(ctx: MatchCtx, snap: Snapshot,
+                                           params: Dict[str, Any],
+                                           d: Decision) -> Optional[Decision]:
+    """La copertura non si puo' eseguire (``d`` e' la sua attesa): se l'Under 3,5 si
+    puo' bancare ad almeno ``CHIUSURA_PROFITTO_TICK_MIN`` tick sotto il prezzo
+    d'ingresso, lo si chiude con l'importo che pareggia i due finali. Lo stato
+    resta ``LIVE_UNCOVERED``: la chiusura e' CONFERMATA solo quando e' abbinata
+    (``_segui_chiusura_in_profitto``). None = niente da fare, vale ``d``."""
+    if d.state != "LIVE_UNCOVERED":
+        return None
+    attesa = d.telemetry.get("cover_wait") if isinstance(d.telemetry, dict) else None
+    if not isinstance(attesa, dict) or attesa.get("reason") not in COPERTURA_NON_ESEGUIBILE:
+        return None
+    S, Pe = _under_position(ctx)
+    if S <= 0 or not price_ok(Pe):
+        return None
+    bk35 = snap.book(MARKET_OU35, SEL_UNDER)
+    if bk35 is None or not operabile(bk35) or not price_ok(bk35.best_lay):
+        return None
+    soglia = green_target(round_to_tick(float(Pe)), CHIUSURA_PROFITTO_TICK_MIN)
+    q = float(bk35.best_lay)
+    if q > float(soglia) + _EPS:
+        return None                     # non in profitto di almeno 2 tick: si aspetta
+    # mai due bancate vive sull'Under 3,5; mai una gamba nuova su un esito ignoto
+    if any((l.is_live or l.needs_reconcile) and l.side == "lay"
+           and l.market == MARKET_OU35 and l.selection == SEL_UNDER for l in ctx.legs):
+        return None
+    ultima = _chiusura_profitto_del_ciclo(ctx)
+    if ultima is not None and             float(snap.now) - float(ultima.placed_at or 0.0) < float(params["close_retry_s"]):
+        return None                     # non piu' di un tentativo ogni ``close_retry_s``
+    w, l = exposure(ctx.legs, MARKET_OU35, SEL_UNDER)
+    plan = compute_greenup(matched_if_win=w, matched_if_lose=l, best_back_price=None,
+                           best_lay_price=None, fraction=1.0, target_price=q)
+    if not plan.actionable or plan.side != "lay":
+        return None
+    if via_ordine("under_close", plan.side, plan.size, params) != VIA_DIRETTA:
+        return None                     # sotto il minimo di Betfair: non si manda
+    if float(bk35.lay_size) + _EPS < float(plan.size):
+        return None                     # non c'e' tutto l'importo a quel prezzo
+    ordine = _place("under_close", MARKET_OU35, SEL_UNDER, "lay", q, plan.size,
+                    note="chiusura in profitto senza copertura")
+    if chiusura_gia_rifiutata(ctx, ordine) is not None:
+        return None
+    return Decision("LIVE_UNCOVERED", list(d.actions) + [ordine],
+                    "copertura non eseguibile (%s): chiudo l'Under 3.5 in profitto, banca a "
+                    "%s (ingresso %s, almeno %d tick)"
+                    % (attesa.get("reason"), q, Pe, CHIUSURA_PROFITTO_TICK_MIN),
+                    updates=dict(d.updates), telemetry=dict(d.telemetry))
+
+
+def _segui_chiusura_in_profitto(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any],
+                                c: float) -> Optional[Decision]:
+    """Il seguito della chiusura in profitto mandata da scoperti.
+
+    * abbinata e posizione piatta -> CONFERMATA: partita chiusa, nessuna copertura;
+    * ancora sul libro -> non e' confermata: si ritira e si resta scoperti;
+    * esito ignoto -> si aspetta la riconciliazione, mai un ordine nuovo su un dubbio;
+    * non abbinata, o abbinata solo in parte -> None: si rifanno i due controlli
+      (la copertura si dimensiona da sola sul rischio rimasto)."""
+    leg = _chiusura_profitto_del_ciclo(ctx)
+    if leg is None:
+        return None
+    if leg.needs_reconcile:
+        return Decision("LIVE_UNCOVERED", [],
+                        "chiusura in profitto '%s' a esito ignoto: aspetto la riconciliazione"
+                        % leg.ref)
+    if leg.is_live:
+        return Decision("LIVE_UNCOVERED",
+                        [Action(kind="cancel", ref=leg.ref, role=leg.role, market=leg.market,
+                                selection=leg.selection)],
+                        "chiusura in profitto non abbinata: la ritiro e ricontrollo")
+    if float(leg.matched) > 0 and not live_open_selections(ctx.legs, snap.goals):
+        bloccato = locked_pnl(ctx.legs, c)
+        testo = "%+.2f" % bloccato if bloccato is not None else "chiusa"
+        return Decision("FLAT", [], "chiusa in profitto senza copertura: %s" % testo,
+                        updates={"close_reason": "profit", "reentry_allowed": True,
+                                 "attempts": 0, "cover_stage": 0, "cover_forced": False},
+                        telemetry=_tele_residuo(ctx.legs))
+    return None
+
+
 def _decide_uncovered(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: float) -> Decision:
     S, Pe = _under_position(ctx)
     if S <= 0:
@@ -4391,6 +4535,17 @@ def _decide_uncovered(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: 
                             f"copertura: overshoot {over:.1f}% oltre il tetto {cap_over:.0f}%",
                             telemetry={"cover_wait": {"minute": snap.minute, "goals": snap.goals,
                                                       "x_now": x_now, "reason": "overshoot"}})
+    p_ordine = price_limite if price_limite is not None else price_over
+    fuori = _punta_over45_fuori_prezzo(snap, p_ordine)
+    if fuori is not None:
+        motivo, q_eq, q35 = fuori
+        return Decision("LIVE_UNCOVERED", acts,
+                        "copertura NON eseguita: punta Over 4.5 a %s (= banca Under 4.5 a %s) "
+                        "contro banca Under 3.5 a %s: attendo" % (p_ordine, q_eq, q35),
+                        telemetry={"cover_wait": {"minute": snap.minute, "goals": snap.goals,
+                                                  "x_now": x_now, "form": COVER_BACK_O45,
+                                                  "reason": motivo, "price_back_o45": p_ordine,
+                                                  "price_limite": q_eq, "price_lay_u35": q35}})
     room = liability_room(ctx, params)
     if room < 0.01:
         return Decision("LIVE_COVERED", acts, "copertura saltata: cap liability partita",
@@ -4406,8 +4561,7 @@ def _decide_uncovered(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: 
         return Decision("LIVE_UNCOVERED", acts, "copertura: size non piazzabile",
                         telemetry={"cover_wait": {"minute": snap.minute, "goals": snap.goals,
                                                   "x_now": x_now, "reason": "size_nulla"}})
-    acts.append(_place("over_cover", MARKET_OU45, SEL_OVER, "back",
-                       price_limite if price_limite is not None else price_over, size,
+    acts.append(_place("over_cover", MARKET_OU45, SEL_OVER, "back", p_ordine, size,
                        note=f"X={x_now:.2f} legal={size:.2f} over={over:.1f}% buf={n_buf}t"))
     etichetta = {1: "copertura sulla linea 4,5: prima tranche",
                  3: "copertura sulla linea 4,5: seconda tranche (residuo)"}.get(stage, "copertura sulla linea 4,5")
@@ -4510,6 +4664,32 @@ def _copertura_banca(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
                         updates={"cover_stage": 0, "cover_forced": False},
                         telemetry={"cover_resto_sotto_minimo": {**base_tele, "resto": size,
                                                                 "minimo": IT_LAY_MIN}})
+    # 04/10/2026 - ORDINE DELL'UTENTE (Antofagasta v CSD Rangers: libro Under 4,5
+    # quasi vuoto, copertura mandata a 3,1 e poi a 19,5 = 116,92 di rischio per
+    # coprire 5,00). La copertura parte SOLO se la quota a cui si banca l'Under 4,5
+    # (il prezzo LIMITE dell'ordine) e' MINORE - non minore o uguale - della quota
+    # di banca dell'Under 3,5 in questo stesso momento. In un mercato vero l'Under
+    # 4,5 sta sempre sotto l'Under 3,5: il contrario e' un libro senza prezzo.
+    # Altrimenti NESSUN ordine: si resta in attesa e si ricontrolla a ogni giro
+    # (l'avviso critico, uno per episodio, lo scrive il servizio). Quota
+    # dell'Under 3,5 non leggibile = nessun confronto possibile = si aspetta.
+    bk35 = snap.book(MARKET_OU35, SEL_UNDER)
+    q35 = bk35.best_lay if (bk35 is not None and price_ok(bk35.best_lay)) else None
+    if q35 is None:
+        return Decision("LIVE_UNCOVERED", acts,
+                        "copertura: quota di banca dell'Under 3.5 non leggibile, non posso "
+                        "confrontare il prezzo dell'Under 4.5: attendo",
+                        telemetry={"cover_wait": {**base_tele, "reason": COVER_U35_NON_LEGGIBILE,
+                                                  "price_lay_u45": q_best,
+                                                  "price_limite": q_lim}})
+    if float(q_lim) >= float(q35) - _EPS:
+        return Decision("LIVE_UNCOVERED", acts,
+                        "copertura NON eseguita: banca Under 4.5 a %s non minore della banca "
+                        "Under 3.5 a %s (mercato senza prezzo): attendo" % (q_lim, q35),
+                        telemetry={"cover_wait": {**base_tele, "reason": COVER_FUORI_PREZZO,
+                                                  "price_lay_u45": q_best,
+                                                  "price_limite": q_lim,
+                                                  "price_lay_u35": q35}})
     room = liability_room(ctx, params)
     if room < 0.01:
         return Decision("LIVE_COVERED", acts, "copertura saltata: cap liability partita",
@@ -4629,6 +4809,19 @@ def _decide_cover_pending(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any],
             if not size_ok(size):
                 return Decision("LIVE_COVERED", [Action(kind="cancel", ref=leg.ref, role=leg.role)],
                                 "copertura sufficiente", updates={"attempts": 0})
+            fuori = _punta_over45_fuori_prezzo(snap, prezzo_cop)
+            if fuori is not None:
+                # 04/10: stessa regola, il riprezzo e' un ordine nuovo. Non si
+                # riprezza e non si annulla: l'ordine sul libro resta dov'e'.
+                motivo, q_eq, q35 = fuori
+                return Decision("LIVE_COVER_PENDING", [],
+                                "copertura NON riprezzata: punta Over 4.5 a %s (= banca Under "
+                                "4.5 a %s) contro banca Under 3.5 a %s: l'ordine resta dov'e'"
+                                % (prezzo_cop, q_eq, q35),
+                                telemetry={"cover_wait": {"form": COVER_BACK_O45, "reason": motivo,
+                                                          "price_back_o45": prezzo_cop,
+                                                          "price_limite": q_eq,
+                                                          "price_lay_u35": q35}})
             return Decision("LIVE_COVER_PENDING",
                             [Action(kind="cancel", ref=leg.ref, role=leg.role),
                              _place("over_cover", MARKET_OU45, SEL_OVER, "back", prezzo_cop, size)],
@@ -4669,6 +4862,30 @@ def _riprezzo_copertura_banca(ctx: MatchCtx, snap: Snapshot, params: Dict[str, A
                         telemetry={"cover_resto_sotto_minimo": {"resto": size,
                                                                 "minimo": IT_LAY_MIN,
                                                                 "form": COVER_LAY_U45}})
+    # 04/10 - STESSA REGOLA di ``_copertura_banca`` (ordine dell'utente): un ordine
+    # di copertura parte solo a un prezzo MINORE della banca dell'Under 3,5. Il
+    # riprezzo e' un ordine nuovo: se il libro dell'Under 4,5 e' fuori prezzo (o
+    # la banca dell'Under 3,5 non e' leggibile) NON si riprezza e NON si annulla:
+    # l'ordine gia' sul libro, nato a un prezzo valido, resta dov'e'.
+    bk35 = snap.book(MARKET_OU35, SEL_UNDER)
+    q35 = bk35.best_lay if (bk35 is not None and price_ok(bk35.best_lay)) else None
+    if q35 is None:
+        return Decision("LIVE_COVER_PENDING", [],
+                        "copertura: quota di banca dell'Under 3.5 non leggibile, nessun riprezzo",
+                        telemetry={"cover_wait": {"form": COVER_LAY_U45,
+                                                  "reason": COVER_U35_NON_LEGGIBILE,
+                                                  "price_lay_u45": bk.best_lay,
+                                                  "price_limite": q_lim}})
+    if float(q_lim) >= float(q35) - _EPS:
+        return Decision("LIVE_COVER_PENDING", [],
+                        "copertura NON riprezzata: banca Under 4.5 a %s non minore della banca "
+                        "Under 3.5 a %s (mercato senza prezzo): l'ordine resta dov'e'"
+                        % (q_lim, q35),
+                        telemetry={"cover_wait": {"form": COVER_LAY_U45,
+                                                  "reason": COVER_FUORI_PREZZO,
+                                                  "price_lay_u45": bk.best_lay,
+                                                  "price_limite": q_lim,
+                                                  "price_lay_u35": q35}})
     return Decision("LIVE_COVER_PENDING",
                     [annulla, _place("over_cover", MARKET_OU45, SEL_UNDER, "lay", q_lim, size)],
                     "copertura: riprezzo", updates={"attempts": ctx.attempts + 1})

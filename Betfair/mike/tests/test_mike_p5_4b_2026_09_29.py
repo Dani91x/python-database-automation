@@ -80,7 +80,12 @@ def test_cover_form_sconosciuto_e_la_forma_di_prima(valore):
 # ---------------------------------------------------------------------------
 def test_banca_con_under45_sospeso_non_parte():
     ctx = E.MatchCtx(state="LIVE_UNCOVERED", legs=[ingresso()])
-    d = E.decide(ctx, foto(u45=libro(1.17, 1.18, status="SUSPENDED")), params())
+    s = foto(u45=libro(1.17, 1.18, status="SUSPENDED"))
+    # 04/10: Under 3,5 NON in profitto (banca = prezzo d'ingresso). Con la regola nuova, a
+    # copertura non eseguibile e Under 3,5 in profitto di 2 tick, Mike chiude l'Under
+    # (test dedicato): qui si prova l'ATTESA, quindi l'Under non deve essere in profitto
+    s.books[(E.MARKET_OU35, E.SEL_UNDER)] = libro(1.49, 1.50)
+    d = E.decide(ctx, s, params())
     assert _posti(d) == [] and d.state == "LIVE_UNCOVERED"
     assert d.reason == "copertura: mercato Under 4.5 sospeso, si aspetta la riapertura"
 
