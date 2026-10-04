@@ -1,0 +1,22 @@
+﻿base: identico
+cap-stretto: identico
+bot-fermo: stati: {'open': 1, 'error': 1} -> {'open': 2}; pnl: lordo +2.00 | commissione 0.10 (5.0%) | NETTO +1.90 EUR -> lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR; rifiuti: 1 -> None; K2: x2747 -> x0; parziale: None -> 1
+esiti-ignoti: identico
+feed-stantio: identico
+riavvio: stati: {'open': 1, 'error': 1} -> {'open': 2}; pnl: lordo +2.00 | commissione 0.10 (5.0%) | NETTO +1.90 EUR -> lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR; rifiuti: 1 -> None; K2: x2747 -> x0; parziale: None -> 1
+paper: identico
+ordini-manuali: stati: {'open': 1, 'error': 1} -> {'open': 2}; pnl: lordo +2.00 | commissione 0.10 (5.0%) | NETTO +1.90 EUR -> lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR; rifiuti: 1 -> None; K2: x2747 -> x0; parziale: None -> 1
+due-lay: stati: {'open': 2, 'error': 1} -> {'open': 3}; pnl: lordo +4.00 | commissione 0.20 (5.0%) | NETTO +3.80 EUR -> lordo +2.00 | commissione 0.10 (5.0%) | NETTO +1.90 EUR; rifiuti: 1 -> None; K2: x2745 -> x0; parziale: None -> 1
+manuale-e-bot: identico
+cashout-globale: identico
+chiusura-fuori-app: identico
+chiusura-fuori-app-ridotta: identico
+rifiuti-betfair: identico
+timeout-dopo-accettazione: identico
+chiusura-abbinata-in-parte: rifiuti: 1 -> None; K2: x2747 -> x0
+selezione-aggiuntiva: identico
+proposta-approvata: identico
+proposta-scaduta: identico
+proposta-anomalia-effimera: identico
+combos-automatiche: stati: {'error': 2} -> {'open': 1, 'error': 1}; pnl: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR -> lordo -6.00 | commissione 0.00 (5.0%) | NETTO -6.00 EUR; rifiuti: 2 -> None; K2: x2783 -> x0; parziale: None -> 1
+combos-gamba-automatica: stati: {'error': 2} -> {'hedged': 1, 'error': 1, 'open': 1}; pnl: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR -> lordo -0.66 | commissione 0.00 (5.0%) | NETTO -0.66 EUR; rifiuti: 2 -> None; K2: x2783 -> x0; parziale: None -> 1
