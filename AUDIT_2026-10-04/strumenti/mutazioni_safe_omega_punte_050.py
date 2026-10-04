@@ -61,6 +61,10 @@ M = [
     ("M16 Omega stato 'pending' invece di residual_dropped", OSV,
      "    if not covered and not res.get(\"pending_fill\") and X.residuo_ricordato(tr):",
      "    if False:"),
+    ("M17 Omega automatico senza ramo del residuo", "Betfair/omega/omega_proposte.py",
+     "    if err == X.ERR_RESIDUO:", "    if False:"),
+    ("M18 combo arrotondata in silenzio", BS,
+     "    if a_multiplo:\n", "    if False:\n"),
 ]
 
 righe = []

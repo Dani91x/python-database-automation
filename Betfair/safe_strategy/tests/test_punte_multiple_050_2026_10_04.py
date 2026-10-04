@@ -284,6 +284,34 @@ def test_terminale_importi_validi_passano_i_controlli(monkeypatch, lato, importo
         OE.place_order(1, "btts", "Yes", lato, 3.0, size=importo, sb=object())
 
 
+def test_safe_combo_con_punta_a_multiplo_lo_dice_forte_una_volta(monkeypatch):
+    """Combo approvata (``_esegui_combo_riservata``): una gamba in punta 2,39 parte 2,00
+    (``X.place`` VERO sulla coda del runner finto). Il profitto bloccato della combo non e'
+    piu' quello proposto: UN CRITICAL con le gambe arrotondate; gli importi della
+    strategia NON si ricalcolano (la gamba in banca resta quella proposta)."""
+    db = _db("paper", rest=False)
+    db.follow = "STREAMING"
+    legs = [{"market_id": MID, "market_type": "OVER_UNDER_25", "selection_id": OVER,
+             "selection_name": "Over 2.5 Goals", "side": "back", "price": 2.1, "size": 2.39,
+             "liability": 2.39},
+            {"market_id": MID, "market_type": "OVER_UNDER_25", "selection_id": UNDER,
+             "selection_name": "Under 2.5 Goals", "side": "lay", "price": 2.0, "size": 2.43,
+             "liability": 2.43}]
+    out = S._esegui_combo_riservata(db=db, market=S._MercatoSafe(OM), event_id="E1",
+                                    event_name="Nord v Sud", cid="c1", legs_esecuzione=legs,
+                                    sport="calcio", mode="paper", commission=0.05,
+                                    minute=60, score="1-0", rationale="test",
+                                    params=S.resolve_params({}), now=NOW,
+                                    rows_by_event=None, risk_ctx=None)
+    assert out["total"] == 2
+    mandati = [(q["side"], float(q["size"])) for q in db.queue]
+    assert ("back", 2.0) in mandati and ("lay", 2.43) in mandati
+    crit = [p for k, p in db.activity
+            if k == "place_parziale" and p.get("reason") == "combo_punta_050"]
+    assert len(crit) == 1 and crit[0]["critical"] is True
+    assert crit[0]["gambe"][0]["punta_050"]["residuo"] == 0.39
+
+
 # ---------------------------------------------------------------------------
 # 6. i due bot, giro VERO: il residuo si dichiara una volta e non si ritenta
 # ---------------------------------------------------------------------------

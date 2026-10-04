@@ -93,3 +93,33 @@ def test_green_up_live_rest_abbinato_stato_residual_dropped_subito(lambdas, monk
     for s in range(1, 5):
         _run(db, goal, p, now=NOW + timedelta(seconds=25 * s), market=mk)
     assert len(rete.piazzati) == 1 and len(_critici(db)) == 1
+
+
+def test_uscita_automatica_v3_residuo_nessun_tentativo_nessun_secondo_critico(monkeypatch):
+    """V3 'automatico' (``omega_proposte._esegui_da_solo``): se ``close_trade`` risponde
+    che il resto non ha via (gia' dichiarato UNA volta li'), nessun tentativo si consuma,
+    nessun CRITICAL ``uscita_automatica_fallita``, nessuna proposta di ripiego."""
+    from types import SimpleNamespace
+
+    from Betfair.omega import omega_proposte as PR
+
+    db = _db_with_model()
+    tr = _trade(db)
+    monkeypatch.setattr(S, "_cashout_prices", lambda market, t: {"back": 8.0, "lay": 8.2})
+    # la risposta VERA della pre-verifica di ``close_trade`` (stesse chiavi)
+    monkeypatch.setattr(X, "close_trade", lambda **kw: {
+        "error": X.ERR_RESIDUO, "trade_id": tr["id"], "detail": "chiudi tu il residuo",
+        "residuo": {"side": "back", "size": 0.38, "price": 8.0}})
+    proposta = SimpleNamespace(motivo_codice="protezione", profitto_bloccabile=-30.0,
+                               ev_tenere=-35.0, p_evento=0.15)
+    for s in range(3):
+        esito = PR._esegui_da_solo(db=db, market=None, tr=db.get_trade(tr["id"]),
+                                   meta=dict(db.get_trade(tr["id"])["meta"] or {}),
+                                   proposta=proposta, minuto=70, punteggio="1-2",
+                                   now=NOW + timedelta(seconds=60 * s), fonte_p="model",
+                                   cap=None, params=_params())
+        assert esito is False
+    auto = db.get_trade(tr["id"])["meta"][PR.AUTOMATICA_KEY]
+    assert int(auto.get("tentativi") or 0) == 0 and not auto.get("esaurita")
+    assert [k for k, _ in db.activity
+            if k in ("uscita_automatica_fallita", "uscita_automatica_esaurita")] == []
