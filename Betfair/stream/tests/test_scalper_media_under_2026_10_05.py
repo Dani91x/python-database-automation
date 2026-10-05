@@ -483,6 +483,8 @@ def test_in_gioco_banca_abbinata_chiude_il_ciclo_e_finisce(differita, exchange_i
     assert b.strat.stato == MU.FINE
     assert b.kinds("media_banca_abbinata") and b.kinds("media_ciclo_chiuso")
     assert len(b.ordini()) == 2
+    # chiuso in gioco = finito subito: il passaggio in gioco si annuncia UNA volta
+    assert len(b.kinds("media_live")) == 1
 
 
 def test_in_gioco_sospensione_e_banca_caduta_si_dicono(differita, exchange_it):
