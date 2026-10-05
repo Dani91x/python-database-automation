@@ -783,6 +783,24 @@ def test_controlli_m_rossi_sui_difetti(differita, exchange_it):
     assert "M9" in _codici(_oss(b, force_flat_ms=KO_MS - 3_700_000))
 
 
+def test_controlli_m6_importo_e_quota_ognuno_da_solo(differita, exchange_it):
+    """M6 guarda DUE cose della banca appoggiata: la quota (ultimo ingresso - tick)
+    e il resto (pareggio della posizione vera). Ognuna diventa rossa da sola."""
+    b = BancoMedia()
+    _posizione_a(b, differita)
+    giri(b, differita, 6)
+    oss = _oss(b, nuovi=set())
+    assert _codici(oss) == []
+    banca = next(r for r in oss.ordini if r["side"] == "LAY")
+    giusto = dict(banca)
+    banca["size_remaining"] = round(banca["size_remaining"] - 0.50, 2)   # importo sbagliato
+    assert "M6" in _codici(oss)
+    banca.clear()
+    banca.update(giusto)
+    banca["price"] = 1.49                                                 # quota sbagliata
+    assert "M6" in _codici(oss)
+
+
 def test_controlli_m5_m8_rossi_su_ordini_veri_sbagliati(differita):
     """M5 e M8: due banche vive e una banca LAPSE, piazzate a mano sul flumine
     vero (difetti che la strategia non fa)."""
@@ -827,7 +845,9 @@ def test_il_ponte_del_replay_giudica_la_modalita(differita, exchange_it):
         banco.media = b.strat
         banco.media_mercato_scelto, banco.media_under = b.mid, b.under
         banco.tipo_mercato = {b.mid: b.mercato}
-        banco.controlli_media(b.pt, "t", False)
+        # il GIRO del banco (quello che il ponte chiama alla cadenza): i controlli M
+        # passano da qui anche senza la sessione del maker
+        banco.giro(b.pt, "t")
         codici = {v.codice for v in ref.violazioni}
         assert ("M3" in codici) is rosso, (params, codici)
         assert ref.sollecitati.get("M1")
