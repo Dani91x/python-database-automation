@@ -718,7 +718,7 @@ def test_registrata_nel_banco_e_scenari_riconosciuti():
     assert R.mercato_media(R.SCENARIO_MEDIA_35) == "OVER_UNDER_35"
     assert R.mercato_media("base") is None
     assert [c for c, _r in CERT.elenco_controlli_media()] == [
-        "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9"]
+        "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "M10"]   # M10: giro 2
     # il registro del maker non cambia: la copertura dei 15 scenari resta quella
     assert not any(c.startswith("M") for c, _r in CERT.elenco_controlli())
     assert CERT.ESCLUSI_MEDIA == {"B2", "K5"}

@@ -1352,6 +1352,9 @@ class Referto:
     note: List[str] = field(default_factory=list)
     motivi: Dict[str, int] = field(default_factory=dict)
     stats_finali: Dict[str, Any] = field(default_factory=dict)
+    # 05/10 (giro 2): uno scenario pulito che NON ha esercitato cio' per cui
+    # esiste esce NE, non OK (``certifica.segno_referto``), con la causa
+    non_esercitato: List[str] = field(default_factory=list)
 
     @property
     def pulita(self) -> bool:
@@ -1382,6 +1385,8 @@ class Referto:
 #   M8 punte LAPSE, banche PERSIST
 #   M9 nessuna punta quando le aperture sono vietate (stop prima del fischio,
 #      force-flat)
+#   M10 (05/10, giro 2) gli ordini del CONTO per il riquadro: in prova nessuna
+#      lettura, in soldi veri al piu' una per battito della sessione
 # La parita' paper/live della modalita' e' S6 (stesso controllo del maker).
 @dataclass
 class OsservazioneMedia:
@@ -1402,6 +1407,12 @@ class OsservazioneMedia:
     in_gioco_ms: Optional[int] = None
     force_flat_ms: Optional[int] = None
     annullati_in_gioco: List[str] = field(default_factory=list)
+    # 05/10 (giro 2): le letture dello specchio ``betfair_live_orders`` fatte
+    # dalla sessione (dal DB finto del banco), i battiti scritti finora e se la
+    # sessione e' in prova (``dry_run``)
+    prova: bool = False
+    letture_conto: int = 0
+    battiti: int = 0
 
 
 _REGISTRO_MEDIA: List[Tuple[str, str]] = []
@@ -1712,6 +1723,19 @@ def _m9(o: OsservazioneMedia) -> Optional[str]:
         if o.force_flat_ms is not None and creato > o.force_flat_ms + 1:
             return ("punta %s nata a %d ms dopo il force-flat (%d ms)"
                     % (r.get("order_id"), creato, o.force_flat_ms))
+    return None
+
+
+@_controllo_media("M10", "gli ordini del CONTO per il riquadro <<chiusura>>: in prova "
+                         "NESSUNA lettura di `betfair_live_orders`, in soldi veri al piu' "
+                         "UNA per battito della sessione")
+def _m10(o: OsservazioneMedia) -> Optional[str]:
+    if o.prova and o.letture_conto > 0:
+        return ("sessione in PROVA con %d letture degli ordini del conto (paper e live "
+                "non si sommano)" % o.letture_conto)
+    if o.letture_conto > o.battiti + 1:
+        return ("%d letture degli ordini del conto con %d battiti della sessione (al piu' "
+                "una per battito)" % (o.letture_conto, o.battiti))
     return None
 
 

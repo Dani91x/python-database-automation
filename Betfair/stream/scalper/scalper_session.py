@@ -804,6 +804,39 @@ KIND_FLUSSO_INTERROTTO = "flusso_interrotto"
 KIND_FLUSSO_RIPRESO = "flusso_ripreso"
 
 
+def leggi_ordini_conto_media(db: Any, media: Any, session_paper: bool) -> Optional[str]:
+    """05/10 (giro 2, spec GIRO2 par.2.3) MEDIA UNDER: gli ordini del CONTO per
+    il riquadro "chiusura" ("l'importo reale"). Al piu' UNA lettura per battito
+    della sessione (si chiama una volta nel ciclo del battito), SOLO in soldi
+    veri e SOLO con la posizione aperta; le righe vanno alla strategia che le
+    usa SOLO nel riquadro (``MediaUnderStrategy.imposta_ordini_conto``). In
+    prova MAI (paper e live non si sommano). Lettura fallita: il riquadro torna
+    "solo ordini del bot" e lo dice. Torna cosa e' successo (per i test)."""
+    if media is None:
+        return None
+    if session_paper:
+        return "prova"
+    from . import media_under_bot as MU
+
+    if not media.posizione_aperta():
+        media.imposta_ordini_conto(None, "")
+        return "chiusa"
+    ora = time.strftime("%H:%M:%S", time.localtime(time.time()))
+    try:
+        mid = media.stats.get("market_id")
+        sid = media.stats.get("selection_id")
+        r = db.sb.table(MU.TABELLA_ORDINI_CONTO).select(MU.COLONNE_ORDINI_CONTO) \
+            .eq("mode", "live").eq("market_id", str(mid)).eq("selection_id", int(sid)) \
+            .execute()
+        media.imposta_ordini_conto(list(getattr(r, "data", None) or []), ora)
+        return "letta"
+    except Exception as ex:  # noqa: BLE001 - lettura fallita: lo dice il riquadro
+        logger.warning("[scalper] media under: lettura degli ordini del conto KO: %s",
+                       str(ex)[:200])
+        media.imposta_ordini_conto(None, ora, errore=(str(ex)[:120] or type(ex).__name__))
+        return "errore"
+
+
 def sorveglia_flusso_sessione(db: Any, event_id: str, framework: Any,
                               sorv: "_SM.SorvegliaStream",
                               adesso_s: Optional[float] = None,
@@ -1768,6 +1801,9 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             # gestione della posizione. Lo si DICE (alert + attivita', una volta
             # per episodio) e la riga lo dichiara finche' dura (stats.flusso).
             _flusso = sorveglia_flusso_sessione(db, ev, framework, sorv_flusso)
+            # 05/10 (giro 2) MEDIA UNDER: gli ordini del conto per il riquadro,
+            # una lettura per battito, solo in soldi veri a posizione aperta
+            leggi_ordini_conto_media(db, media, session_paper)
             db.set_control(ev, heartbeat_at=_now_iso(), stats={**_stats(), "flusso": _flusso})
             # RICONCILIAZIONE bot↔ordini (condizione §0-bis n.1, fix 11/07):
             # le divergenze ledger↔ordini rilevate dalle strategie diventano
