@@ -233,6 +233,13 @@ _CHIAMANTI_AUTORIZZATI: Dict[str, _Autorizzato] = {
         motivo="SniperStrategy, importata da scalper_session.py per lo stesso servizio",
         strade=("S4a",),
     ),
+    # 05/10 (SPEC_MEDIA_UNDER_2026-10-05.md): la modalita' "media under" dello
+    # scalper, armata da scalper_session.py nel flumine della sessione (stessa
+    # strada di maker e sniper; in gioco non piazza niente)
+    "Betfair/stream/scalper/media_under_bot.py": _Autorizzato(
+        motivo="MediaUnderStrategy._piazza, importata da scalper_session.py per lo stesso servizio",
+        strade=("S4a",),
+    ),
     "Betfair/stream/scalper/scalper_session.py": _Autorizzato(
         motivo=(
             "_sweep_cancel: cancel_orders REST di emergenza (bypassa flumine) "
