@@ -217,6 +217,9 @@ def test_riepilogo_per_ciclo_dagli_ordini_veri(differita, exchange_it):
     assert c2["puntato"] == pytest.approx(10.0 + rientro["importo"])
     assert c2["esito"] == "APERTO, esito ignoto" and c2["lordo"] is None
     assert c2["banca"]["abbinato"] == 0.0 and c2["banca"]["dove"] is None
+    # come e' finita la banca: abbinata (ciclo 1), ancora a mercato (ciclo 2)
+    assert c1["banca"]["fine"] == "abbinata per intero"
+    assert c2["banca"]["fine"].startswith("VIVA a mercato")
     # il conto: solo il ciclo con esito noto, commissione sul netto vincente
     assert conto["cicli_esito_ignoto"] == 1
     assert (conto["lordo"], conto["commissione"], conto["netto"]) == (0.13, 0.01, 0.13)
@@ -447,7 +450,7 @@ def test_posizione_chiusa_nessuna_lettura(differita, exchange_it):
     giri(b, differita, 30)
     assert b.ordini() == []
     db = _DbVero([_riga_specchio(b)])
-    assert SS.leggi_ordini_conto_media(db, b.strat, session_paper=False) == "chiusa"
+    assert SS.leggi_ordini_conto_media(db, b.strat, session_paper=False) == "non serve"
     assert db.letture == []
 
 
@@ -563,3 +566,36 @@ def test_la_lettura_non_rompe_mai_il_battito(differita, exchange_it):
             raise RuntimeError("lista cambiata")
 
     assert SS.leggi_ordini_conto_media(_DbVero([]), _Esplode(), session_paper=False) == "errore"
+
+
+def test_in_posizione_prima_del_massimo_nessuna_lettura(differita, exchange_it):
+    """Il riquadro non e' pubblicato prima del massimo dei rientri: la lettura
+    degli ordini del conto non serve (nessuna query)."""
+    b = BancoMedia()
+    giri(b, differita, 70)
+    assert b.strat.stato == MU.IN_POSIZIONE and b.posizione().puntato > 0
+    db = _DbVero([_riga_specchio(b)])
+    assert SS.leggi_ordini_conto_media(db, b.strat, session_paper=False) == "non serve"
+    assert db.letture == []
+
+
+def test_ciclo_chiuso_in_perdita_lo_dice(differita, exchange_it):
+    """Difetto di testo trovato dal replay `media-under-tick-1` sulla 35797769:
+    un rientro abbinato IN PARTE (4 su 10) con la chiusura a 1 tick lascia la
+    quota media sotto la quota della banca; la banca abbinata chiude il ciclo in
+    PERDITA e l'attivita' diceva <<in profitto>>. La regola della banca e'
+    quella della spec (non toccata); il testo dice la verita'."""
+    b = BancoMedia(media_tick_chiusura=1)
+    viol = giri(b, differita, 70)
+    b.taglie[(b.under, 1.52)] = 4.0
+    b.ladder[b.under] = (1.52, 1.53)
+    viol += giri(b, differita, 45, flusso=0.0)        # la punta di rientro scade
+    punta = _punte(b)[1]
+    assert float(punta.size_matched) == pytest.approx(4.0) and not MU.vivo_o_in_volo(punta)
+    b.ladder[b.under] = (1.50, 1.51)
+    b.scambia(b.under, 1.51, 3000)
+    viol += giri(b, differita, 10)
+    assert viol == [], viol[:3]
+    chiusi = b.kinds("media_ciclo_chiuso")
+    assert len(chiusi) == 1 and chiusi[0]["profitto_lordo"] < 0
+    assert chiusi[0]["msg"].startswith("ciclo chiuso in PERDITA: lordo -")

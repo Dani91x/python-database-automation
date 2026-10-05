@@ -1149,8 +1149,12 @@ class MediaUnderStrategy(BaseStrategy):
                    rientri=self._rientri, totale_puntato=round(pos.puntato, 2),
                    profitto_lordo=round(lordo, 4),
                    profitto_netto=round(netto_da_lordo(lordo, self.par.commissione), 4),
-                   msg="ciclo chiuso in profitto: lordo %.2f, netto %.2f, rientri %d"
-                       % (lordo, netto_da_lordo(lordo, self.par.commissione), self._rientri))
+                   # 05/10 (giro 2): un ciclo si puo' chiudere anche in PERDITA (rientro
+                   # abbinato in parte: replay `media-under-tick-1` sulla 35797769); il
+                   # testo dice quale dei due
+                   msg="ciclo chiuso in %s: lordo %.2f, netto %.2f, rientri %d"
+                       % ("profitto" if lordo >= 0 else "PERDITA", lordo,
+                          netto_da_lordo(lordo, self.par.commissione), self._rientri))
         inplay = self.stato == LIVE
         self._nuovo_ciclo()
         self.stato = FINE if inplay else FERMO
@@ -1421,6 +1425,11 @@ class MediaUnderStrategy(BaseStrategy):
             return posizione_da_ordini(list(self._ordini)).aperta
         except Exception:  # noqa: BLE001 - lista che cambia nel thread di flumine
             return False
+
+    def serve_ordini_conto(self) -> bool:
+        """Gli ordini del conto servono solo quando il riquadro "chiusura" e'
+        pubblicato (massimo dei rientri o in gioco) con una posizione aperta."""
+        return self.stato in (LIVE, MASSIMO) and self.posizione_aperta()
 
     def imposta_ordini_conto(self, righe: Optional[Sequence[Dict[str, Any]]], ora: str,
                              errore: Optional[str] = None) -> None:

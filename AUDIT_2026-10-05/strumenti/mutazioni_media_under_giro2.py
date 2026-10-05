@@ -106,12 +106,12 @@ MUTAZIONI: List[Tuple[str, str, str, str, str]] = [
      '''    if session_paper and False:
         return "prova"''',
      "in prova la lettura degli ordini del conto si fa"),
-    ("G14", SS, '''        if not media.posizione_aperta():
+    ("G14", SS, '''        if not media.serve_ordini_conto():
             media.imposta_ordini_conto(None, "")
-            return "chiusa"''',
+            return "non serve"''',
      '''        if False:
             media.imposta_ordini_conto(None, "")
-            return "chiusa"''',
+            return "non serve"''',
      "lettura degli ordini del conto anche a posizione chiusa"),
     ("G15", MU, '''SORGENTI_A_MANO = ("account", "runner")''',
      '''SORGENTI_A_MANO = ("account", "runner", "scalper")''',
@@ -168,6 +168,17 @@ MUTAZIONI: List[Tuple[str, str, str, str, str]] = [
     ("G27", SS, '''    except Exception as ex:  # noqa: BLE001 - mai rompere il battito: lo dice il riquadro''',
      '''    except ValueError as ex:  # noqa: BLE001 - mai rompere il battito: lo dice il riquadro''',
      "un'eccezione della lettura arriva al ciclo del battito"),
+    ("G28", MU, '''                       % ("profitto" if lordo >= 0 else "PERDITA", lordo,''',
+     '''                       % ("profitto", lordo,''',
+     "ciclo chiuso in perdita detto <<in profitto>> (il difetto di testo del replay)"),
+    ("G29", MU, '''        return self.stato in (LIVE, MASSIMO) and self.posizione_aperta()''',
+     '''        return self.posizione_aperta()''',
+     "lettura degli ordini del conto anche col riquadro non pubblicato"),
+    ("G30", RR, '''            elif m + 0.005 >= float(finale.order_type.size):
+                fine_b = "abbinata per intero"''',
+     '''            elif True:
+                fine_b = "abbinata per intero"''',
+     "riepilogo: una banca caduta raccontata come abbinata"),
 ]
 
 

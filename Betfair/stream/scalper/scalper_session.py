@@ -810,7 +810,8 @@ def leggi_ordini_conto_media(db: Any, media: Any, session_paper: bool) -> Option
     della sessione (si chiama una volta nel ciclo del battito), SOLO in soldi
     veri e SOLO con la posizione aperta; le righe vanno alla strategia che le
     usa SOLO nel riquadro (``MediaUnderStrategy.imposta_ordini_conto``). In
-    prova MAI (paper e live non si sommano). Lettura fallita: il riquadro torna
+    prova MAI (paper e live non si sommano); a posizione aperta solo quando il
+    riquadro e' pubblicato (massimo dei rientri o in gioco). Lettura fallita: il riquadro torna
     "solo ordini del bot" e lo dice. Torna cosa e' successo (per i test)."""
     if media is None:
         return None
@@ -824,9 +825,11 @@ def leggi_ordini_conto_media(db: Any, media: Any, session_paper: bool) -> Option
     ora = ""
     try:
         ora = datetime.fromtimestamp(float(time.time())).strftime("%H:%M:%S")
-        if not media.posizione_aperta():
+        # solo a posizione aperta e col riquadro "chiusura" pubblicato (massimo
+        # dei rientri o in gioco): prima nessuno lo vede
+        if not media.serve_ordini_conto():
             media.imposta_ordini_conto(None, "")
-            return "chiusa"
+            return "non serve"
         mid = media.stats.get("market_id")
         sid = media.stats.get("selection_id")
         r = db.sb.table(MU.TABELLA_ORDINI_CONTO).select(MU.COLONNE_ORDINI_CONTO) \

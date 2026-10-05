@@ -265,13 +265,22 @@ def riepilogo_cicli_media(ordini: List[Any], nati_ms: Dict[str, int],
         if finale is not None:
             m = MU.abbinato(finale)[0]
             quando = abbinato_ms.get(str(finale.id)) if m > 0 else None
+            resto = float(getattr(finale, "size_remaining", 0.0) or 0.0)
+            if MU.vivo_o_in_volo(finale):
+                fine_b = "VIVA a mercato (resto %.2f)" % resto
+            elif m + 0.005 >= float(finale.order_type.size):
+                fine_b = "abbinata per intero"
+            else:
+                fine_b = "NON piu' a mercato (annullata o scaduta, resto %.2f)" % (
+                    float(finale.order_type.size) - m)
             banca = {"importo": float(finale.order_type.size),
                      "quota": float(finale.order_type.price), "abbinato": round(m, 2),
-                     "dove": _quando_media(quando, ko_ms, in_gioco_ms) if m > 0 else None}
-            pezzi.append("banca finale %.2f @%.2f %s, abbinata %.2f%s" % (
+                     "dove": _quando_media(quando, ko_ms, in_gioco_ms) if m > 0 else None,
+                     "fine": fine_b}
+            pezzi.append("banca finale %.2f @%.2f %s, abbinata %.2f%s, a fine replay %s" % (
                 banca["importo"], banca["quota"],
                 str(getattr(finale.order_type, "persistence_type", "") or ""), m,
-                (" (ultimo abbinamento: %s)" % banca["dove"]) if m > 0 else ""))
+                (" (ultimo abbinamento: %s)" % banca["dove"]) if m > 0 else "", fine_b))
         else:
             pezzi.append("nessuna banca")
         pos = MU.posizione_da_ordini(oo)
@@ -1882,6 +1891,22 @@ class _Banco:
                 self.media_annullati_al_gioco[oid] = canc
             elif canc > self.media_annullati_al_gioco.get(oid, 0.0) + 1e-9:
                 annullati.append(oid)
+        # 05/10 (giro 2): gli istanti di nascita e di abbinamento anche degli
+        # ordini delle sessioni della modalita' gia' morte (riavvio): restano a
+        # mercato e il riepilogo per ciclo li racconta (solo tempi, nessun controllo)
+        for vecchia in self.medie:
+            if vecchia is mu:
+                continue
+            for o in self.ordini_di([vecchia]):
+                oid = str(getattr(o, "id", ""))
+                self.media_nati_ms.setdefault(oid, int(ms))
+                try:
+                    abb = float(getattr(o, "size_matched", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    abb = 0.0
+                if abb > self.media_abbinato_visto.get(oid, 0.0) + 1e-9:
+                    self.media_abbinato_visto[oid] = abb
+                    self.media_abbinato_ms[oid] = int(ms)
         oss = CERT.OsservazioneMedia(
             quando=quando, ms=ms, fine=fine, params=par,
             mercato_scelto=self.media_mercato_scelto, tipo_mercato=dict(self.tipo_mercato),
