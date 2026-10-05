@@ -234,7 +234,8 @@ def test_un_parametro_mancante_non_fa_partire(chiave):
     c = _control()
     c["params"].pop(chiave)
     motivo = MU.motivo_non_parte(c)
-    assert motivo and chiave in motivo
+    # il motivo dice che MANCA (non un errore di tipo qualunque)
+    assert motivo == "parametri mancanti: %s" % chiave
 
 
 @pytest.mark.parametrize("chiave,valore", [
@@ -580,6 +581,12 @@ def test_riavvio_a_posizione_aperta_non_ricostruibile_nessun_ordine(differita):
              "media_banca": {"stato": "viva"}}
     motivo = MU.posizione_aperta_nelle_stats(stats)
     assert motivo and "MASSIMO" in motivo
+    for stato, puntato in ((MU.INGRESSO, 0.0), (MU.IN_POSIZIONE, 10.0),
+                           (MU.RIENTRO, 20.0), (MU.LIVE, 40.0)):
+        assert MU.posizione_aperta_nelle_stats({"media_stato": stato,
+                                                "media_totale_puntato": puntato}), stato
+    assert MU.posizione_aperta_nelle_stats({"media_stato": MU.FERMO,
+                                            "media_totale_puntato": 0.0}) is None
     assert MU.posizione_aperta_nelle_stats({"media_stato": MU.FINE,
                                             "media_totale_puntato": 10.0}) is None
     assert MU.posizione_aperta_nelle_stats({"pnl_locked": 1.0}) is None
