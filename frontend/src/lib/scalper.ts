@@ -47,7 +47,10 @@ export interface ScalperControl {
         // Anche i P&L theta sono LORDI (vedi sopra).
         theta_shots?: number; theta_greens?: number; theta_scratches?: number;
         theta_dry_fires?: number; theta_pnl_locked?: number; theta_pnl_settled?: number;
-    } | null;
+        // MEDIA UNDER (05/10): la sessione riversa le stats della modalità con
+        // prefisso media_* (presenti SOLO con la modalità accesa); si leggono
+        // con `leggiMediaUnder` (lib/mediaUnder.ts), che ne controlla i tipi.
+    } & Record<string, unknown> | null;
     error: string | null;
     requested_at: string;
     started_at: string | null;

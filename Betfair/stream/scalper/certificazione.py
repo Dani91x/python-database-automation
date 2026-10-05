@@ -1277,10 +1277,21 @@ class Memoria:
         return n == GIRI_DI_TOLLERANZA
 
 
+#: 05/10 MEDIA UNDER: i controlli del maker che NON valgono per la modalita'
+#: "media under" (la sua posizione arriva in gioco PER PROGETTO, spec par.3.6, e
+#: non ha slot del maker): B2 (al fischio piatti) e K5 (esposizione senza slot).
+#: Al loro posto la famiglia M (``verifica_media``). Fuori dalla modalita'
+#: nessun controllo e' escluso.
+ESCLUSI_MEDIA = frozenset({"B2", "K5"})
+
+
 def verifica(oss: Osservazione, sollecitati: Optional[Dict[str, int]] = None,
-             memoria: Optional[Memoria] = None) -> List[Violazione]:
+             memoria: Optional[Memoria] = None,
+             escludi: frozenset = frozenset()) -> List[Violazione]:
     out: List[Violazione] = []
     for codice, regola in _REGISTRO:
+        if codice in escludi:
+            continue
         quando = _QUANDO.get(codice)
         try:
             if quando is not None and not quando(oss):
@@ -1351,3 +1362,393 @@ class Referto:
         for v in self.violazioni:
             out[v.codice] = out.get(v.codice, 0) + 1
         return out
+
+
+# ===========================================================================
+# FAMIGLIA M - la modalita' "MEDIA UNDER" (05/10/2026)
+# ===========================================================================
+# Spec: ``Betfair/stream/scalper/SPEC_MEDIA_UNDER_2026-10-05.md`` (par.3, par.4,
+# par.9). Un REGISTRO SEPARATO da quello del maker: ``elenco_controlli()`` (e
+# quindi la copertura stampata dal banco per i 15 scenari certificati) non
+# cambia. Ogni controllo ricalcola DAGLI ORDINI DEL MERCATO (campi veri di
+# flumine), mai dalle attivita' del bot (catalogo par.7 punto 36):
+#   M1 solo il mercato scelto (Under 2,5 o 3,5) e la sua selezione Under
+#   M2 mai piu' rientri del massimo, mai oltre il rischio massimo
+#   M3 ogni rientro ad almeno N tick dall'ultimo ingresso abbinato
+#   M4 importo del rientro = formula (par.4) sulla posizione vera
+#   M5 una sola banca di chiusura viva, una sola punta viva
+#   M6 la banca appoggiata = formula sulla posizione vera, a ingresso - N tick
+#   M7 in gioco nessun ordine nuovo e nessun annullo
+#   M8 punte LAPSE, banche PERSIST
+#   M9 nessuna punta quando le aperture sono vietate (stop prima del fischio,
+#      force-flat)
+# La parita' paper/live della modalita' e' S6 (stesso controllo del maker).
+@dataclass
+class OsservazioneMedia:
+    """Un giro della modalita': gli ordini VERI della sua strategia (righe di
+    ``riga_ordine`` piu' ``indice`` d'arrivo nel blotter e ``size_cancelled``)
+    e i fatti del banco (mercato scelto, Under, fischio, gioco, force-flat)."""
+
+    quando: str = ""
+    ms: int = 0
+    fine: bool = False
+    params: Any = None                       # media_under_bot.ParametriMedia
+    mercato_scelto: Optional[str] = None     # market_id del tipo scelto (dal raw)
+    tipo_mercato: Dict[str, str] = field(default_factory=dict)   # market_id -> tipo
+    under: Optional[int] = None              # selection_id dell'Under (dal raw)
+    ordini: List[Dict[str, Any]] = field(default_factory=list)
+    nuovi: set = field(default_factory=set)
+    ko_ms: Optional[int] = None
+    in_gioco_ms: Optional[int] = None
+    force_flat_ms: Optional[int] = None
+    annullati_in_gioco: List[str] = field(default_factory=list)
+
+
+_REGISTRO_MEDIA: List[Tuple[str, str]] = []
+_FUNZIONI_MEDIA: Dict[str, Callable[[OsservazioneMedia], Optional[str]]] = {}
+_QUANDO_MEDIA: Dict[str, Optional[Callable[[OsservazioneMedia], bool]]] = {}
+_PERSISTENTI_MEDIA: set = set()
+
+
+def _controllo_media(codice: str, regola: str,
+                     quando: Optional[Callable[[OsservazioneMedia], bool]] = None,
+                     persistente: bool = False):
+    def _reg(fn: Callable[[OsservazioneMedia], Optional[str]]):
+        _REGISTRO_MEDIA.append((codice, regola))
+        _FUNZIONI_MEDIA[codice] = fn
+        _QUANDO_MEDIA[codice] = quando
+        if persistente:
+            _PERSISTENTI_MEDIA.add(codice)
+        return fn
+
+    return _reg
+
+
+def _m_tick_sotto(prezzo: float, n: int) -> Optional[float]:
+    from flumine.utils import get_nearest_price, price_ticks_away
+
+    p = price_ticks_away(get_nearest_price(float(prezzo)), -int(n))
+    return float(p) if p and p > 1.0 else None
+
+
+def _m_posizione(righe: Sequence[Dict[str, Any]]) -> Tuple[float, float, float, float]:
+    """(se vince, se perde, puntato, sum b(p-1)) dagli abbinati delle righe."""
+    w, l = esposizione(righe)
+    s = sum(float(r.get("size_matched") or 0.0) for r in righe
+            if str(r.get("side") or "").upper() == "BACK"
+            and float(r.get("average_price_matched") or 0.0) > 1.0)
+    pp = sum(float(r.get("size_matched") or 0.0) * (float(r.get("average_price_matched")) - 1.0)
+             for r in righe if str(r.get("side") or "").upper() == "BACK"
+             and float(r.get("average_price_matched") or 0.0) > 1.0)
+    return w, l, s, pp
+
+
+def _m_vivo(r: Dict[str, Any]) -> bool:
+    """Vivo o in volo per la modalita' (anche PENDING/CANCELLING: possono ancora
+    abbinarsi)."""
+    st = str(r.get("status") or "")
+    return st in {SB.OrderStatus.EXECUTABLE.value, SB.OrderStatus.PENDING.value,
+                  SB.OrderStatus.CANCELLING.value, SB.OrderStatus.UPDATING.value,
+                  SB.OrderStatus.REPLACING.value} \
+        and float(r.get("size_remaining") or 0.0) > 1e-9
+
+
+def _m_ordinate(o: OsservazioneMedia) -> List[Dict[str, Any]]:
+    return sorted(o.ordini, key=lambda r: (int(r.get("creato_ms") or 0),
+                                           int(r.get("indice") or 0)))
+
+
+def cicli_media(righe: Sequence[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
+    """I cicli ricostruiti DAGLI ORDINI: un ciclo nuovo comincia con una PUNTA
+    piazzata quando il ciclo prima e' morto (nessun ordine vivo), ha una banca
+    abbinata ed e' pari entro l'arrotondamento al centesimo della banca."""
+    cicli: List[List[Dict[str, Any]]] = []
+    corrente: List[Dict[str, Any]] = []
+    for r in righe:
+        if (str(r.get("side") or "").upper() == "BACK" and corrente
+                and not any(_m_vivo(x) for x in corrente)
+                and any(str(x.get("side") or "").upper() == "LAY"
+                        and float(x.get("size_matched") or 0.0) > 0 for x in corrente)):
+            w, l, _s, _p = _m_posizione(corrente)
+            if abs(w - l) <= 0.02 + 0.005 * 4.0:
+                cicli.append(corrente)
+                corrente = []
+        corrente.append(r)
+    if corrente:
+        cicli.append(corrente)
+    return cicli
+
+
+def _m_rientri(ciclo: List[Dict[str, Any]], par: Any) -> List[Dict[str, Any]]:
+    """Per ogni PUNTA di rientro del ciclo: la riga, l'ultimo ingresso abbinato
+    prima di lei, la posizione degli ordini nati prima di lei, T del ciclo."""
+    out = []
+    primo = None
+    ultimo = None
+    t_lordo = None
+    for i, r in enumerate(ciclo):
+        if str(r.get("side") or "").upper() != "BACK":
+            continue
+        if primo is not None:
+            prima = ciclo[:i]
+            out.append({"riga": r, "ultimo_ingresso": ultimo, "prima": prima,
+                        "t_lordo": t_lordo})
+        if float(r.get("size_matched") or 0.0) > 0:
+            p = float(r.get("price") or 0.0)
+            if primo is None:
+                primo = r
+                c0 = _m_tick_sotto(p, par.tick_chiusura)
+                if par.obiettivo_netto is not None:
+                    t_lordo = float(par.obiettivo_netto) / (1.0 - float(par.commissione))
+                elif c0:
+                    b0 = float(r.get("size_matched") or 0.0)
+                    t_lordo = b0 * p / c0 - b0
+            ultimo = p
+    return out
+
+
+def _q_m_ordini(o: OsservazioneMedia) -> bool:
+    return bool(o.ordini)
+
+
+def _q_m_rientri(o: OsservazioneMedia) -> bool:
+    return any(_m_rientri(c, o.params) for c in cicli_media(_m_ordinate(o)))
+
+
+def _q_m_banca_ferma(o: OsservazioneMedia) -> bool:
+    if o.in_gioco_ms is not None and o.ms >= o.in_gioco_ms:
+        return False
+    vivi = [r for r in o.ordini if _m_vivo(r)]
+    return (len(vivi) == 1 and str(vivi[0].get("side") or "").upper() == "LAY"
+            and str(vivi[0].get("status")) == SB.OrderStatus.EXECUTABLE.value)
+
+
+def _q_m_in_gioco(o: OsservazioneMedia) -> bool:
+    return o.in_gioco_ms is not None and o.ms >= o.in_gioco_ms
+
+
+def _q_m_punte_nuove(o: OsservazioneMedia) -> bool:
+    return any(str(r.get("side") or "").upper() == "BACK" and r.get("order_id") in o.nuovi
+               for r in o.ordini)
+
+
+@_controllo_media("M1", "ogni ordine della modalita' sta sul mercato SCELTO "
+                        "(Under 2,5 o Under 3,5) e sulla sua selezione Under: mai un "
+                        "altro mercato, mai l'Over (spec par.1, par.3)",
+                  quando=_q_m_ordini)
+def _m1(o: OsservazioneMedia) -> Optional[str]:
+    from .media_under_bot import MERCATI_AMMESSI
+
+    for r in o.ordini:
+        mid = str(r.get("market_id") or "")
+        tipo = o.tipo_mercato.get(mid)
+        if tipo not in MERCATI_AMMESSI or mid != str(o.mercato_scelto or ""):
+            return ("ordine %s sul mercato %s (%s): scelto %s"
+                    % (r.get("order_id"), mid, tipo, o.mercato_scelto))
+        if o.under is None or int(r.get("selection_id") or 0) != int(o.under):
+            return ("ordine %s sulla selezione %s, l'Under e' %s"
+                    % (r.get("order_id"), r.get("selection_id"), o.under))
+    return None
+
+
+@_controllo_media("M2", "mai piu' rientri del massimo (`media_max_rientri`) in un "
+                        "ciclo, e con il rischio massimo acceso mai un rientro che "
+                        "porti il totale puntato oltre (spec par.3.4, par.5)",
+                  quando=_q_m_rientri)
+def _m2(o: OsservazioneMedia) -> Optional[str]:
+    par = o.params
+    for n, ciclo in enumerate(cicli_media(_m_ordinate(o))):
+        fatti = [x for x in _m_rientri(ciclo, par)
+                 if float(x["riga"].get("size_matched") or 0.0) > 0]
+        if len(fatti) > par.max_rientri:
+            return ("ciclo %d: %d rientri abbinati contro un massimo di %d"
+                    % (n + 1, len(fatti), par.max_rientri))
+        if par.rischio_max > 0:
+            for x in _m_rientri(ciclo, par):
+                _w, _l, s, _p = _m_posizione(x["prima"])
+                if s + float(x["riga"].get("size") or 0.0) > par.rischio_max + 1e-6:
+                    return ("ciclo %d: rientro %s di %.2f con %.2f gia' puntati oltre il "
+                            "rischio massimo %.2f" % (n + 1, x["riga"].get("order_id"),
+                                                      float(x["riga"].get("size") or 0.0),
+                                                      s, par.rischio_max))
+    return None
+
+
+@_controllo_media("M3", "ogni punta di rientro nasce ad almeno `media_tick_rientro` "
+                        "tick SOPRA il prezzo dell'ultimo ingresso abbinato (scala "
+                        "vera di Betfair): il rientro si misura dall'ultimo "
+                        "ingresso, non dalla media (spec par.3)",
+                  quando=_q_m_rientri)
+def _m3(o: OsservazioneMedia) -> Optional[str]:
+    par = o.params
+    for ciclo in cicli_media(_m_ordinate(o)):
+        for x in _m_rientri(ciclo, par):
+            ult, q = x["ultimo_ingresso"], float(x["riga"].get("price") or 0.0)
+            su = SB.ticks_between(ult, q) if ult else None
+            if su is None or su < par.tick_rientro:
+                return ("rientro %s @%.2f a %s tick dall'ultimo ingresso %s (minimo %d)"
+                        % (x["riga"].get("order_id"), q, su, ult, par.tick_rientro))
+    return None
+
+
+@_controllo_media("M4", "l'importo di ogni rientro e' la formula del par.4 sulla "
+                        "posizione VERA abbinata prima di lui, X = (c(T - se_perde) - "
+                        "(se_vince - se_perde)) / (q - c) con c = q - tick di "
+                        "chiusura, arrotondata per difetto a 0,50 (minimi .it)",
+                  quando=_q_m_rientri)
+def _m4(o: OsservazioneMedia) -> Optional[str]:
+    from decimal import ROUND_FLOOR, Decimal
+
+    par = o.params
+    for ciclo in cicli_media(_m_ordinate(o)):
+        for x in _m_rientri(ciclo, par):
+            r = x["riga"]
+            q = float(r.get("price") or 0.0)
+            c = _m_tick_sotto(q, par.tick_chiusura)
+            if c is None or x["t_lordo"] is None:
+                return "rientro %s senza quota di chiusura o obiettivo" % r.get("order_id")
+            w, l, _s, _p = _m_posizione(x["prima"])
+            esatto = (c * (x["t_lordo"] - l) - (w - l)) / (q - c)
+            ammessi = set()
+            for e in (esatto - 0.005, round(esatto, 2), esatto + 0.005):
+                ammessi.add(float((Decimal(str(round(e, 2))) / Decimal("0.5")).to_integral_value(
+                    rounding=ROUND_FLOOR) * Decimal("0.5")))
+            size = float(r.get("size") or 0.0)
+            if all(abs(size - a) > 1e-6 for a in ammessi):
+                return ("rientro %s di %.2f @%.2f: la formula sulla posizione vera da' "
+                        "%.4f -> %s" % (r.get("order_id"), size, q, esatto, sorted(ammessi)))
+    return None
+
+
+@_controllo_media("M5", "MAI due banche di chiusura vive (o in volo) insieme, MAI "
+                        "due punte vive insieme (spec par.3: difetto CP4 del 04/10)",
+                  quando=_q_m_ordini)
+def _m5(o: OsservazioneMedia) -> Optional[str]:
+    for lato in ("LAY", "BACK"):
+        vivi = [r for r in o.ordini if _m_vivo(r) and str(r.get("side") or "").upper() == lato]
+        if len(vivi) > 1:
+            return ("%d %s vive insieme: %s" % (len(vivi), "banche" if lato == "LAY"
+                                                 else "punte",
+                                                 [(r.get("order_id"), r.get("price"),
+                                                   r.get("size_remaining")) for r in vivi]))
+    return None
+
+
+@_controllo_media("M6", "quando la sola banca appoggiata e' sul book (nessuna punta "
+                        "viva, prima del fischio), sta a `ultimo ingresso - tick di "
+                        "chiusura` e il suo resto pareggia la posizione VERA: L = "
+                        "(se_vince - se_perde) / c al centesimo (spec par.3.2, par.4)",
+                  quando=_q_m_banca_ferma, persistente=True)
+def _m6(o: OsservazioneMedia) -> Optional[str]:
+    par = o.params
+    ciclo = cicli_media(_m_ordinate(o))[-1]
+    banca = next(r for r in ciclo if _m_vivo(r))
+    ultimo = None
+    for r in ciclo:
+        if str(r.get("side") or "").upper() == "BACK" and float(r.get("size_matched") or 0.0) > 0:
+            ultimo = float(r.get("price") or 0.0)
+    if ultimo is None:
+        return "banca %s viva senza un ingresso abbinato" % banca.get("order_id")
+    c = _m_tick_sotto(ultimo, par.tick_chiusura)
+    if c is None or abs(float(banca.get("price") or 0.0) - c) > 1e-9:
+        return ("banca %s @%s: l'ultimo ingresso e' %.2f, la chiusura va a %s"
+                % (banca.get("order_id"), banca.get("price"), ultimo, c))
+    w, l, _s, _p = _m_posizione(ciclo)
+    from decimal import ROUND_HALF_UP, Decimal
+
+    voluto = float(Decimal(repr((w - l) / c)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+    resto = float(banca.get("size_remaining") or 0.0)
+    if abs(resto - voluto) > 0.011:
+        return ("banca %s: resto %.2f @%.2f, la posizione vera ne vuole %.2f"
+                % (banca.get("order_id"), resto, c, voluto))
+    return None
+
+
+@_controllo_media("M7", "IN GIOCO la modalita' non manda NESSUN ordine e non annulla "
+                        "niente (spec par.3.6, par.6: <<solo segnalazione>>)",
+                  quando=_q_m_in_gioco)
+def _m7(o: OsservazioneMedia) -> Optional[str]:
+    for r in o.ordini:
+        creato = r.get("creato_ms")
+        if creato is not None and o.in_gioco_ms is not None and creato >= o.in_gioco_ms:
+            return ("ordine %s %s @%s per %s nato in gioco (%d ms, gioco da %d ms)"
+                    % (r.get("order_id"), r.get("side"), r.get("price"), r.get("size"),
+                       creato, o.in_gioco_ms))
+    if o.annullati_in_gioco:
+        return "annullo in gioco degli ordini %s" % o.annullati_in_gioco
+    return None
+
+
+@_controllo_media("M8", "le punte (ingresso e rientro) sono LAPSE, la banca di "
+                        "chiusura e' PERSIST: arriva in gioco con la posizione (spec "
+                        "par.3, <<modalita' PERSIST>>)",
+                  quando=_q_m_ordini)
+def _m8(o: OsservazioneMedia) -> Optional[str]:
+    for r in o.ordini:
+        lato = str(r.get("side") or "").upper()
+        pt = str(r.get("persistence") or "")
+        if lato == "LAY" and pt != "PERSIST":
+            return "banca %s con persistenza %s" % (r.get("order_id"), pt)
+        if lato == "BACK" and pt != "LAPSE":
+            return "punta %s con persistenza %s" % (r.get("order_id"), pt)
+    return None
+
+
+@_controllo_media("M9", "nessuna PUNTA nuova (ingresso o rientro) dentro la finestra "
+                        "di stop prima del fischio (`media_stop_ingressi_s`) o dopo il "
+                        "force-flat della sessione (stop, freno, fine vita)",
+                  quando=_q_m_punte_nuove)
+def _m9(o: OsservazioneMedia) -> Optional[str]:
+    par = o.params
+    for r in o.ordini:
+        if str(r.get("side") or "").upper() != "BACK" or r.get("order_id") not in o.nuovi:
+            continue
+        creato = r.get("creato_ms")
+        if creato is None:
+            continue
+        if o.ko_ms is not None and creato >= o.ko_ms - par.stop_ingressi_s * 1000.0:
+            return ("punta %s nata a %d ms, dentro la finestra di stop (fischio %d ms - "
+                    "%.0f s)" % (r.get("order_id"), creato, o.ko_ms, par.stop_ingressi_s))
+        if o.force_flat_ms is not None and creato > o.force_flat_ms + 1:
+            return ("punta %s nata a %d ms dopo il force-flat (%d ms)"
+                    % (r.get("order_id"), creato, o.force_flat_ms))
+    return None
+
+
+def verifica_media(oss: OsservazioneMedia, sollecitati: Optional[Dict[str, int]] = None,
+                   memoria: Optional[Memoria] = None) -> List[Violazione]:
+    """Il giro dei controlli M (stessa regola di ``verifica``: un controllo conta
+    come sollecitato solo se il suo ``quando`` ha un caso)."""
+    out: List[Violazione] = []
+    for codice, regola in _REGISTRO_MEDIA:
+        quando = _QUANDO_MEDIA.get(codice)
+        try:
+            if quando is not None and not quando(oss):
+                if memoria is not None and codice in _PERSISTENTI_MEDIA:
+                    memoria.conferma(codice, None)
+                continue
+        except Exception as ex:  # noqa: BLE001 - un `quando` rotto E' un referto
+            out.append(Violazione("%s-ERRORE" % codice, regola,
+                                  "il `quando` e' esploso: %s: %s"
+                                  % (type(ex).__name__, ex), oss.quando))
+            continue
+        if sollecitati is not None:
+            sollecitati[codice] = sollecitati.get(codice, 0) + 1
+        try:
+            det = _FUNZIONI_MEDIA[codice](oss)
+        except Exception as ex:  # noqa: BLE001 - un controllo rotto E' un referto
+            out.append(Violazione("%s-ERRORE" % codice, regola,
+                                  "il controllo e' esploso: %s: %s"
+                                  % (type(ex).__name__, ex), oss.quando))
+            continue
+        if codice in _PERSISTENTI_MEDIA and memoria is not None:
+            if memoria.conferma(codice, det):
+                out.append(Violazione(codice, regola, det, oss.quando))
+            continue
+        if det:
+            out.append(Violazione(codice, regola, det, oss.quando))
+    return out
+
+
+def elenco_controlli_media() -> List[Tuple[str, str]]:
+    return list(_REGISTRO_MEDIA)

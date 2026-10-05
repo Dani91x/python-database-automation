@@ -141,12 +141,21 @@ def tetto_partite(params: Optional[Dict[str, Any]],
     return TETTO_DEFAULT
 
 
+#: 05/10 MEDIA UNDER (SPEC_MEDIA_UNDER_2026-10-05.md par.2): le chiavi della
+#: modalita' "media under" cominciano cosi'. L'auto-mode non le passa MAI a una
+#: sessione: "questo bot non sara' automatico, scelgo io le partite".
+PREFISSO_MEDIA_UNDER = "media_"
+
+
 def params_per_sessione(params: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """I params che la riga di sessione riceve: quelli dell'interruttore senza
-    la chiave del tetto (e' del supervisore, non della strategia). Nessun altro
-    valore cambia: la sessione applica la SUA whitelist come sempre."""
+    la chiave del tetto (e' del supervisore, non della strategia) e senza le
+    chiavi della modalita' "media under" (05/10: l'auto-mode non la arma mai).
+    Nessun altro valore cambia: la sessione applica la SUA whitelist come sempre."""
     out = dict(params or {})
     out.pop(CHIAVE_TETTO, None)
+    for k in [k for k in out if str(k).startswith(PREFISSO_MEDIA_UNDER)]:
+        out.pop(k, None)
     return out
 
 

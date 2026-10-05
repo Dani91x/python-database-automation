@@ -134,6 +134,20 @@ SCENARIO_SNIPER_AUTO = "sniper-uscite-auto"
 SCENARI_SNIPER = (SCENARIO_SNIPER, SCENARIO_SNIPER_PAPER, SCENARIO_SNIPER_AUTO)
 #: 04/10: la sessione armata dall'auto-mode con l'interruttore in soldi veri
 SCENARIO_AUTO_LIVE = "auto-live"
+#: 05/10 MEDIA UNDER (SPEC_MEDIA_UNDER_2026-10-05.md par.9): la modalita' nuova,
+#: accesa a mano dalla scheda su UN mercato. Soldi veri simulati (client reale
+#: simulato del banco), prova, e l'altro mercato.
+SCENARIO_MEDIA = "media-under"
+SCENARIO_MEDIA_PAPER = "media-under-paper"
+SCENARIO_MEDIA_35 = "media-under-35"
+SCENARI_MEDIA: Tuple[str, ...] = (SCENARIO_MEDIA, SCENARIO_MEDIA_PAPER, SCENARIO_MEDIA_35)
+
+
+def mercato_media(scenario: str) -> Optional[str]:
+    """Il mercato che la scheda sceglie nello scenario "media under" (None fuori)."""
+    if scenario not in SCENARI_MEDIA:
+        return None
+    return "OVER_UNDER_35" if scenario == SCENARIO_MEDIA_35 else "OVER_UNDER_25"
 
 # 28/09 (CANTIERE N3): gli scenari a uscite MANUALI (interruttore spento, il
 # default di produzione dopo ogni avvio). Tutti gli ALTRI scenari girano con
@@ -262,6 +276,17 @@ SCENARI_DESCRITTI: Dict[str, str] = {
     SCENARIO_AUTO_LIVE: ("come `base`, ma la riga la arma l'AUTO-MODE con "
                          "l'interruttore in SOLDI VERI (dry_run deciso dal "
                          "supervisore, origine 'auto'): devono partire ordini VERI"),
+    # 05/10 MEDIA UNDER: la scheda accende la modalita' coi valori di serie
+    # (``media_under_bot.VALORI_DI_SERIE`` = ``MEDIA_UNDER_DEFAULTS`` della UI),
+    # maker e sniper NON armati, vita della sessione fino a fine partita;
+    # controlli M1-M9 (``certificazione.verifica_media``) e S6 (parita').
+    SCENARIO_MEDIA: ("MEDIA UNDER su Under 2,5, soldi veri SIMULATI (dry_run=False, "
+                     "client reale simulato del banco), valori di serie della "
+                     "scheda: ingresso, banca PERSIST, rientri, in gioco solo "
+                     "segnalazione"),
+    SCENARIO_MEDIA_PAPER: ("come `media-under` con dry_run=True: client paper "
+                           "(paper = live, controllo S6)"),
+    SCENARIO_MEDIA_35: "come `media-under` sul mercato Under 3,5",
 }
 
 
@@ -287,6 +312,24 @@ def control_della_ui(event_id: str, scenario: str) -> Dict[str, Any]:
         params["sniper_mode"] = True
     # N3 (28/09): l'interruttore delle uscite, sempre SCRITTO e DICHIARATO
     params["uscite_automatiche"] = uscite_automatiche_scenario(scenario)
+    if scenario in SCENARI_MEDIA:
+        # 05/10: la scheda con la modalita' accesa (`ScalperPanel.tsx`: sniper,
+        # theta e intervallo spenti, i parametri della modalita' coi valori di serie)
+        from .. import media_under_bot as MU
+
+        params["sniper_mode"] = False
+        params.update(MU.VALORI_DI_SERIE)
+        params["media_mode"] = True
+        params["media_mercato"] = mercato_media(scenario)
+        params["media_obiettivi_live"] = list(MU.VALORI_DI_SERIE["media_obiettivi_live"])
+        return {
+            "event_id": str(event_id), "status": "requested", "mode": "maker",
+            "dry_run": scenario == SCENARIO_MEDIA_PAPER, "stake": 25,
+            "params": params, "origine": "manuale",
+            "bias": None, "bias_meta": None, "stats": None, "error": None,
+            "requested_at": None, "started_at": None, "stopped_at": None,
+            "heartbeat_at": None, "updated_at": None,
+        }
     if scenario == SCENARIO_AUTO_LIVE:
         # 04/10: la riga come la scrive il SUPERVISORE (`scalper_service.giro_auto`):
         # dry_run dalla modalita' dell'interruttore, origine 'auto'
@@ -405,9 +448,15 @@ def _vita_da_control(control: Dict[str, Any]) -> int:
     from ..auto_mode import vita_sessione_s
 
     p = control.get("params") or {}
-    return int(vita_sessione_s({"sniper_mode": bool(p.get("sniper_mode")),
+    vita = int(vita_sessione_s({"sniper_mode": bool(p.get("sniper_mode")),
                                 "theta_mode": bool(p.get("theta_mode")),
                                 "ht_mode": bool(p.get("ht_mode"))}))
+    if p.get("media_mode") is True:
+        # 05/10: la stessa regola di `run_session` per la modalita' media under
+        from .. import media_under_bot as MU
+
+        vita = max(vita, int(MU.vita_sessione_s(p)))
+    return vita
 
 
 _MODULI: Dict[str, Any] = {}
@@ -1114,6 +1163,16 @@ class _Banco:
         # N3 (28/09): l'osservatore delle uscite manuali (None fuori da
         # `uscite-manuali*`)
         self.osservatore_um: Optional[Any] = None
+        # 05/10 MEDIA UNDER: la strategia della modalita' (None fuori dagli
+        # scenari `media-under*`), le sue attivita' e la memoria dei controlli M
+        self.media: Any = None
+        self.attivita_media: List[Tuple[str, Dict[str, Any], int]] = []
+        self.memoria_media = CERT.Memoria()
+        self.media_ordini_visti: set = set()
+        self.media_annullati_al_gioco: Dict[str, float] = {}
+        self.media_mercato_scelto: Optional[str] = None
+        self.media_under: Optional[int] = None
+        self.tipo_mercato: Dict[str, str] = {}
 
     # ------------------------------------------------------------ sessioni
     def strategia_corrente(self) -> Any:
@@ -1126,7 +1185,30 @@ class _Banco:
     def aggiungi_strategia(self, fw: _FrameworkSessione, s: Any) -> None:
         # la registrazione al posto dello stream (come il replay tennis)
         s.market_filter = {"markets": [self.raw]}
+        from ..media_under_bot import MediaUnderStrategy
         from ..sniper_bot import SniperStrategy
+
+        if isinstance(s, MediaUnderStrategy):
+            # 05/10 MEDIA UNDER: l'UNICA strategia della sessione (maker e
+            # sniper non armati): e' la strategia della sessione per il ciclo di
+            # vita (fine vita, specchio, controlli di servizio), con il TEE
+            # dell'event_sink in sola lettura; i controlli di slot del maker non
+            # la riguardano (ha i suoi, famiglia M)
+            vero = getattr(s, "event_sink", None)
+            att, ora = self.attivita_media, self.orologio.ora_ms
+
+            def _tee_media(kind: str, payload: Dict[str, Any], _v: Any = vero) -> None:
+                att.append((str(kind), dict(payload or {}), ora()))
+                if _v is not None:
+                    _v(kind, payload)
+            s.event_sink = _tee_media
+            self.quadro.add_strategy(s)
+            self._stream_ids |= set(getattr(s, "stream_ids", set()) or set())
+            fw.strategie.append(s)
+            self.sessioni.append((fw, s, tuple(self.mercati_catalogo)))
+            self.ultima_strategia = s
+            self.media = s
+            return
 
         if isinstance(s, SniperStrategy):
             # 28/09: lo sniper e' COMPAGNO del maker (stesso framework, stessi
@@ -1433,12 +1515,18 @@ class _Banco:
         p = self.db.control.get("params") or {}
         chiave = (bool(p.get("sniper_mode")), bool(p.get("theta_mode")),
                   bool(p.get("ht_mode")), _AM.vita_sessione_s, _AM.sniper_mode_acceso,
-                  _AM.VITA_SNIPER_THETA_S, _AM.VITA_HT_S, _AM.VITA_MAKER_S)
+                  _AM.VITA_SNIPER_THETA_S, _AM.VITA_HT_S, _AM.VITA_MAKER_S,
+                  p.get("media_mode") is True)
         cache = self.__dict__.get("_vita_cache")
         if cache is not None and cache[0] == chiave:
             return cache[1]
         valore = int(1000 * float(_AM.vita_sessione_s({
             "sniper_mode": chiave[0], "theta_mode": chiave[1], "ht_mode": chiave[2]})))
+        if chiave[-1]:
+            # 05/10 MEDIA UNDER: la regola di `run_session` (fino a fine partita)
+            from .. import media_under_bot as MU
+
+            valore = max(valore, int(1000 * float(MU.vita_sessione_s(p))))
         self.__dict__["_vita_cache"] = (chiave, valore)
         return valore
 
@@ -1566,15 +1654,71 @@ class _Banco:
             difetti.append("sniper non piatto")
         return "; ".join(difetti) or None
 
+    def controlli_media(self, ms: int, quando: str, fine: bool) -> None:
+        """05/10 - i controlli M della modalita' "media under"
+        (``certificazione.verifica_media``) sugli ordini VERI della sua
+        strategia letti dal blotter, coi fatti del banco: il mercato scelto e la
+        sua Under dal RAW (``marketDefinition``: tipo e sortPriority 1), il gioco
+        dal book, i parametri dalla riga del control (quelli che l'utente ha
+        scritto), mai dalle attivita' del bot."""
+        from .. import media_under_bot as MU
+
+        mu = self.media
+        par, _motivo = MU.leggi_parametri(self.db.control.get("params") or {})
+        if mu is None or par is None:
+            return
+        ordini: List[Any] = []
+        for mid in self._mercati_sessione():
+            m = self.quadro.markets.markets.get(mid)
+            if m is None:
+                continue
+            try:
+                ordini.extend(list(m.blotter.strategy_orders(mu) or []))
+            except Exception:  # noqa: BLE001
+                continue
+        righe = []
+        for i, o in enumerate(ordini):
+            r = CERT.riga_ordine(o, True)
+            r["indice"] = i
+            righe.append(r)
+        ids = {r["order_id"] for r in righe}
+        nuovi = ids - self.media_ordini_visti
+        self.media_ordini_visti |= ids
+        in_gioco = (self.in_gioco_ms.get(str(self.media_mercato_scelto))
+                    if self.media_mercato_scelto else None)
+        annullati: List[str] = []
+        for o in ordini:
+            try:
+                canc = float(getattr(o, "size_cancelled", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                canc = 0.0
+            oid = str(getattr(o, "id", ""))
+            if in_gioco is None or ms < in_gioco:
+                self.media_annullati_al_gioco[oid] = canc
+            elif canc > self.media_annullati_al_gioco.get(oid, 0.0) + 1e-9:
+                annullati.append(oid)
+        oss = CERT.OsservazioneMedia(
+            quando=quando, ms=ms, fine=fine, params=par,
+            mercato_scelto=self.media_mercato_scelto, tipo_mercato=dict(self.tipo_mercato),
+            under=self.media_under, ordini=righe, nuovi=nuovi, ko_ms=self.ko_ms,
+            in_gioco_ms=in_gioco, force_flat_ms=self.force_flat_ms,
+            annullati_in_gioco=annullati)
+        self.ref.violazioni.extend(CERT.verifica_media(oss, self.ref.sollecitati,
+                                                       self.memoria_media))
+
     def giro(self, ms: int, quando: str, *, fine: bool = False) -> None:
         if self.osservatore_um is not None:
             self.osservatore_um.giro(ms, fine=fine)
         if self.sniper_ultimo is not None:
             self.controlli_sniper(ms, quando, fine)
+        if self.media is not None:
+            self.controlli_media(ms, quando, fine)
         if not self.sessioni and not fine:
             return
         oss = self.osservazione(ms, quando, fine=fine)
-        self.ref.violazioni.extend(CERT.verifica(oss, self.ref.sollecitati, self.memoria))
+        self.ref.violazioni.extend(CERT.verifica(
+            oss, self.ref.sollecitati, self.memoria,
+            escludi=CERT.ESCLUSI_MEDIA if self.media is not None else frozenset()))
         if self.sorveglianza_cp is not None:
             # 04/10: l'ULTIMA riga di specchio di ogni ordine (incrementale: solo
             # le righe nuove di questo giro), come per i bot tennis
@@ -2004,7 +2148,28 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
                        ko_ms=ko_ms)
         banco.framework_creati = []
         banco.kill_file = kill_file
-        if scenario in ("base", "paper"):
+        if scenario in SCENARI_MEDIA:
+            # 05/10: i fatti del banco per i controlli M, letti dal RAW (mai dal
+            # bot): tipo di ogni mercato, il mercato scelto, la sua Under
+            banco.tipo_mercato = {mid: str(d.get("market_type") or "")
+                                  for mid, d in definizioni.items()}
+            scelto = [mid for mid, d in definizioni.items()
+                      if d.get("market_type") == mercato_media(scenario)]
+            banco.media_mercato_scelto = scelto[0] if scelto else None
+            if scelto:
+                banco.media_under = next(
+                    (int(sid) for sid, sp in definizioni[scelto[0]].get("runners") or []
+                     if sp == 1), None)
+            ref.note.append("MEDIA UNDER: mercato %s -> %s, Under %s; maker e sniper "
+                            "non armati; controlli M1-M9 + S6; B2 e K5 del maker non "
+                            "applicati (posizione in gioco per progetto)"
+                            % (mercato_media(scenario), banco.media_mercato_scelto,
+                               banco.media_under))
+            if not scelto:
+                ref.note.append("MEDIA UNDER: la registrazione NON ha il mercato %s: "
+                                "referto non valido per la modalita'"
+                                % mercato_media(scenario))
+        if scenario in ("base", "paper") or scenario in SCENARI_MEDIA:
             banco.parita = parita_paper_live(event_id, control, follow, catalogo)
             p = banco.parita
             if not p.get("errore"):
@@ -2181,6 +2346,28 @@ def _chiudi_referto(ref: CERT.Referto, banco: _Banco, rifiuti: Any, ritardi: Any
                     % ("AUTOMATICHE" if viste and all(
                         getattr(s, "uscite_automatiche", False) is True for s in viste) else
                        ("MANUALI" if viste else "nessuna strategia")))
+    if banco.media is not None:
+        mu = banco.media
+        eventi_m: Dict[str, int] = {}
+        for k, _p, _t in banco.attivita_media:
+            eventi_m[k] = eventi_m.get(k, 0) + 1
+        st_m = dict(getattr(mu, "stats", {}) or {})
+        ref.note.append("MEDIA UNDER: stato finale %s; cicli chiusi %s; rientri %s; "
+                        "totale puntato %s; banca %s; eventi %s"
+                        % (st_m.get("stato"), st_m.get("cicli_chiusi"), st_m.get("rientri"),
+                           st_m.get("totale_puntato"), (st_m.get("banca") or {}).get("stato"),
+                           eventi_m))
+        mai_m = [c for c, _r in CERT.elenco_controlli_media()
+                 if not ref.sollecitati.get(c)]
+        ref.note.append("MEDIA UNDER: controlli M sollecitati %s; MAI sollecitati "
+                        "(non lo so): %s"
+                        % ({c: ref.sollecitati.get(c, 0) for c, _r in
+                            CERT.elenco_controlli_media() if ref.sollecitati.get(c)},
+                           ", ".join(mai_m) or "nessuno"))
+        stati_m = sorted({str(p.get("stato") or "") for k, p, _t in banco.attivita_media
+                          if p.get("stato")})
+        if stati_m:
+            ref.note.append("MEDIA UNDER: stati annunciati %s" % stati_m)
     if banco.sniper_ultimo is not None:
         sn = banco.sniper_ultimo
         eventi: Dict[str, int] = {}
