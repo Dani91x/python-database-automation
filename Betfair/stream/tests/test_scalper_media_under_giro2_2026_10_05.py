@@ -599,3 +599,39 @@ def test_ciclo_chiuso_in_perdita_lo_dice(differita, exchange_it):
     chiusi = b.kinds("media_ciclo_chiuso")
     assert len(chiusi) == 1 and chiusi[0]["profitto_lordo"] < 0
     assert chiusi[0]["msg"].startswith("ciclo chiuso in PERDITA: lordo -")
+
+
+def test_la_strategia_scarta_da_sola_le_righe_di_altre_selezioni(differita, exchange_it):
+    """Anche se la lettura le portasse (filtro del DB sbagliato), le righe
+    dell'Over, di un altro mercato, in prova o senza abbinato NON entrano nel
+    riquadro: il filtro e' anche nella strategia (``righe_a_mano``)."""
+    b = _al_massimo(differita)
+    righe = [_riga_specchio(b), _riga_specchio(b, bet_id="5", selection_id=b.over),
+             _riga_specchio(b, bet_id="8", market_id="1.999"),
+             _riga_specchio(b, bet_id="6", mode="paper"),
+             _riga_specchio(b, bet_id="7", size_matched=0.0)]
+    b.strat.imposta_ordini_conto(righe, "10:00:00")
+    giri(b, differita, 1)
+    assert "(1 a mano su questa selezione)" in b.strat.stats["chiusura"]["fonte"]
+    assert [r["bet_id"] for r in b.strat._conto["righe"]] == [righe[0]["bet_id"]]
+
+
+def test_riepilogo_banca_caduta_in_gioco_detta_non_piu_a_mercato(differita, exchange_it):
+    """Una banca che sparisce in gioco senza abbinarsi (annullata da Betfair o
+    dall'utente) non e' raccontata come abbinata: <<NON piu' a mercato>>."""
+    b = BancoMedia()
+    ora = _Ora(b)
+    ora.giri(differita, 70)
+    banca = b.vivi("LAY")[0]
+    b.in_gioco()
+    ora.giri(differita, 3)
+    b.market.cancel_order(banca)
+    ora.giri(differita, 6)
+    assert not MU.vivo_o_in_volo(banca) and float(banca.size_matched) == 0.0
+    assert b.vivi("LAY") == []               # in gioco la modalita' non riappoggia
+    cicli, _conto = R.riepilogo_cicli_media(
+        b.ordini(), b.nati, ora.abbinato_ms, ora.eventi, ko_ms=KO_MS, in_gioco_ms=None,
+        commissione=0.05, stato_runner=None)
+    assert len(cicli) == 1
+    assert cicli[0]["banca"]["fine"].startswith("NON piu' a mercato")
+    assert cicli[0]["esito"] == "APERTO, esito ignoto"
