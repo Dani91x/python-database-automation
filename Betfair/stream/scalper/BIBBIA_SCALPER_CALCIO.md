@@ -854,3 +854,50 @@ d. Solo se F2 li promuove (Atlante PRIMA del codice, una cella alla
    con matched, colpi/fill coerenti col conteggio F2.2, alert puliti.
 5. Post-sessione: raw nell'Atlante (refresh §6.7), pagella per cella,
    aggiornare §11 — multi-linea si valida (o si falsifica) LÌ.
+
+
+---
+
+## 14. MODALITA' «MEDIA UNDER» (05/10/2026) — NON CERTIFICATA
+
+> Specifica: `SPEC_MEDIA_UNDER_2026-10-05.md`. Referto di costruzione:
+> `AUDIT_2026-10-05/SCALPER_MEDIA_UNDER.md`. Codice: `media_under_bot.py`.
+> Stato: costruita e provata nei test; **replay sulle registrazioni vere, prova e
+> soldi veri ancora da fare** (PROCESSO_STANDARD_BOT, gradini 3-5).
+
+**Cosa fa, in una frase**: l'utente la accende a mano su UNA partita e UN mercato
+(Under 2,5 oppure Under 3,5); prima del fischio punta l'Under, appoggia subito la
+banca che chiude in profitto e, se la quota sale, media la posizione fino a 5 volte;
+in gioco NON piazza niente e scrive all'utente gli importi esatti per chiudere.
+
+**Come si accende**: scheda dello Scalper, casella «MEDIA UNDER» e scelta del
+mercato. Spenta di serie. L'auto-mode non la arma mai (le chiavi `media_*` non
+passano dall'interruttore globale e la sessione rifiuta una riga d'origine 'auto').
+Con la modalita' accesa la sessione NON arma maker e sniper; vive fino a fine partita.
+
+**Il ciclo** (stato in `stats.media_stato`):
+1. FERMO -> INGRESSO: stesse condizioni di mercato dello scalper (300 EUR sui due
+   best, 10 EUR scambiati per lato in 90 s, distanza punta-banca <= 2 tick), quota
+   fra 1,20 e 4,00, prima di 7 minuti dal fischio: PUNTA 10 EUR (LAPSE).
+2. IN POSIZIONE: BANCA (PERSIST) 2 tick sotto l'ultima punta, importo che pareggia i
+   due esiti sulla posizione VERA. Esempio: 10,00 @1,50 -> banca 10,14 @1,48 = +0,13
+   su entrambi gli esiti.
+3. Banca abbinata -> ciclo chiuso, si ricomincia con 10 EUR.
+4. RIENTRO: quota su di 2 tick dall'ultima punta -> annulla la banca, aspetta che sia
+   morta, punta X = (c (T - se_perde) - (se_vince - se_perde)) / (q - c) a multipli
+   di 0,50 per difetto, poi la banca nuova. Sequenza di serie: 10 / 10 / 20 / 40 /
+   80,50 / 160,50 (totale 321 EUR) per circa 0,13 EUR di profitto lordo.
+5. MASSIMO (5 rientri): nessuna punta, banca appoggiata (PERSIST), detto una volta.
+6. LIVE: niente ordini; riquadro «chiusura» a ogni book (chiudere adesso; per
+   pareggio / +0,30 / +1,00 netti quanto puntare, rischio, media, banca dopo).
+
+**Cosa NON fa** (spec par.3): nessun filtro «rumore o informazione», nessun tetto o
+stop oltre ai parametri (`media_rischio_max` 0 = spento di serie), nessuna chiusura
+forzata prima del fischio, nessun ordine in gioco.
+
+**Banco**: scenari `media-under` (soldi veri simulati), `media-under-paper`,
+`media-under-35`; controlli M1-M9 (`certificazione.verifica_media`) e S6.
+
+**Punti aperti per l'utente**: referto §6 (P1 stop con posizione aperta, P2
+commissione, P3 cifre del riquadro esatte o a multiplo, P5 lettura del rischio
+massimo, P8 salto di quota sul rientro, P14 ordini a mano non visti).

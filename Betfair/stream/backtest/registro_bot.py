@@ -155,6 +155,8 @@ _MODULI_SCALPER_CALCIO: Tuple[str, ...] = (
     "Betfair.stream.scalper.bias_resolver", "Betfair.stream.scalper.habitat_scan",
     "Betfair.stream.scalper.hazard_atlas", "Betfair.stream.scalper.risk_semaphore",
     "Betfair.stream.scalper.sniper_bot", "Betfair.stream.scalper.theta_bot",
+    # 05/10: la modalita' "media under" (SPEC_MEDIA_UNDER_2026-10-05.md)
+    "Betfair.stream.scalper.media_under_bot",
 )
 # i quattro bot tennis girano nello STESSO processo (``tennis_runner``, stato
 # e tetti condivisi): ciascuno porta l'intera chiusura del runner, strategie

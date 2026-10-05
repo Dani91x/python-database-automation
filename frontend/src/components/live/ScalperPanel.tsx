@@ -27,6 +27,12 @@ import {
     SCALPER_PARAM_DEFAULTS, SCALPER_PARAM_FIELDS,
     type ScalperMode, type ScalperParams, type ScalperState,
 } from '@/lib/scalper';
+import {
+    MEDIA_MERCATI, MEDIA_UNDER_CAMPI, MEDIA_STATI_TESTO, mediaUnderDefaults,
+    erroriMediaUnder, paramsMediaUnder, leggiObiettiviLive, leggiMediaUnder,
+    testoObiettivo, euro, quota,
+    type MediaMercato, type MediaUnderParams,
+} from '@/lib/mediaUnder';
 
 interface Props {
     eventId: string;
@@ -102,6 +108,14 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
     // stringa vuota = "usa il default del backend" (max_shots 10, loss_cap 5)
     const [thetaMaxShots, setThetaMaxShots] = useState<string>('');
     const [thetaLossCap, setThetaLossCap] = useState<string>('');
+    // MEDIA UNDER (05/10, SPEC_MEDIA_UNDER_2026-10-05.md): SPENTA di serie, la
+    // accende l'utente su questa partita e su UN mercato (nessun default: si
+    // sceglie). Con la modalità accesa la sessione NON arma maker e sniper; in
+    // gioco non piazza niente e segnala gli importi per chiudere.
+    const [mediaMode, setMediaMode] = useState(false);
+    const [mediaMercato, setMediaMercato] = useState<MediaMercato | ''>('');
+    const [mediaParams, setMediaParams] = useState<MediaUnderParams>(mediaUnderDefaults());
+    const [mediaObiettiviTesto, setMediaObiettiviTesto] = useState('0; 0,30; 1');
     const [stake, setStake] = useState(25);
     const [params, setParams] = useState<ScalperParams>({ ...SCALPER_PARAM_DEFAULTS });
     const busyRef = useRef(false);
@@ -140,6 +154,20 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
 
     const handleActivate = useCallback(async () => {
         if (busyRef.current) return;
+        // MEDIA UNDER: i valori si controllano PRIMA di mandarli (la sessione con
+        // un valore mancante o sbagliato non parte: meglio dirlo qui)
+        let mediaPayload: Record<string, unknown> | null = null;
+        if (mediaMode) {
+            const obiettivi = leggiObiettiviLive(mediaObiettiviTesto);
+            const p: MediaUnderParams = { ...mediaParams, media_obiettivi_live: obiettivi ?? [] };
+            const errori = erroriMediaUnder(mediaMercato, p);
+            if (obiettivi === null) errori.push('Obiettivi della segnalazione in gioco: scrivi euro separati da punto e virgola (es. 0; 0,30; 1).');
+            if (errori.length > 0 || mediaMercato === '') {
+                toast.error(`Media Under non attivata: ${errori.join(' ')}`);
+                return;
+            }
+            mediaPayload = paramsMediaUnder(mediaMercato, p);
+        }
         // Gate THETA (v1): NON validato out-of-sample → può armarsi SOLO in
         // paper. Con dry_run spento si blocca qui, prima di ogni conferma.
         if (thetaMode && !dryRun) {
@@ -152,7 +180,21 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
         // Gate money-critical: armare con ORDINI REALI attiva un agente
         // autonomo che piazza scommesse vere non presidiato → conferma
         // esplicita (stessa asimmetria del bot tennis / 1-click LIVE).
-        if (!dryRun) {
+        if (!dryRun && mediaMode) {
+            const mercato = MEDIA_MERCATI.find(m => m.key === mediaMercato)?.label ?? mediaMercato;
+            const ok = window.confirm(
+                `⚠️ ATTIVARE LA MEDIA UNDER CON ORDINI REALI su "${eventName}" (${mercato})?\n\n` +
+                    `Prima del fischio il bot PUNTA ${euro(mediaParams.media_stake)} € sull'${mercato} e, se la quota sale, ` +
+                    `media fino a ${mediaParams.media_max_rientri} volte: ogni rientro è quasi il doppio del precedente ` +
+                    `(con 10 € e 5 rientri si arriva a circa 321 € puntati). ` +
+                    (mediaParams.media_rischio_max > 0
+                        ? `Rientri bloccati oltre ${euro(mediaParams.media_rischio_max)} € puntati.\n`
+                        : 'Rischio massimo SPENTO.\n') +
+                    `In gioco NON piazza niente: la chiusura la fai tu.\n` +
+                    `Modalità NON certificata sul replay.\nConfermi?`,
+            );
+            if (!ok) return;
+        } else if (!dryRun) {
             const huntWarn = (sniperMode && sniperHunt)
                 ? '\n⚠️ CACCIA MULTI-LINEA ATTIVA: cella NON ancora validata ' +
                   'out-of-sample (n=1) — la bibbia prescrive prima il PAPER.\n'
@@ -199,10 +241,12 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                     ...(thetaLossCap !== '' && Number.isFinite(Number(thetaLossCap))
                         ? { theta_loss_cap: Number(thetaLossCap) } : {}),
                 } : {}),
+                // MEDIA UNDER: tutti i parametri, sniper/theta/intervallo spenti
+                ...(mediaPayload ?? {}),
             } as Partial<ScalperParams> & {
                 ht_mode: boolean; sniper_mode: boolean; sniper_stake: number;
             });
-            toast.success(`Scalper ${dryRun ? 'ATTIVATO in PAPER (ordini simulati)' : 'ATTIVATO'} — ${eventName}`);
+            toast.success(`${mediaMode ? 'Media Under' : 'Scalper'} ${dryRun ? 'ATTIVATO in PAPER (ordini simulati)' : 'ATTIVATO'} — ${eventName}`);
             setShowForm(false);
             void refresh();
         } catch (e) {
@@ -213,7 +257,8 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
         }
     }, [eventId, eventName, mode, dryRun, stake, params, htMode, missionTwoTicks,
         sniperMode, sniperStake, sniperHunt, thetaMode, thetaStake, thetaPreset,
-        thetaMaxShots, thetaLossCap, refresh]);
+        thetaMaxShots, thetaLossCap, mediaMode, mediaMercato, mediaParams,
+        mediaObiettiviTesto, refresh]);
 
     const handleStop = useCallback(async () => {
         if (busyRef.current) return;
@@ -243,6 +288,7 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
 
     const st = ctrl ? STATUS_STYLE[ctrl.status] ?? STATUS_STYLE.stopped : null;
     const stats = ctrl?.stats ?? null;
+    const mediaStato = leggiMediaUnder(stats);
     const meta = ctrl?.bias_meta ?? null;
 
     return (
@@ -336,7 +382,7 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                                 checked={htMode}
                                 onCheckedChange={v => {
                                     setHtMode(v === true);
-                                    if (v === true) { setSniperMode(false); setThetaMode(false); }
+                                    if (v === true) { setSniperMode(false); setThetaMode(false); setMediaMode(false); }
                                 }}
                             />
                             <span className={htMode ? 'text-amber-300 font-semibold' : 'text-white/60'}>
@@ -349,7 +395,7 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                                 checked={sniperMode}
                                 onCheckedChange={v => {
                                     setSniperMode(v === true);
-                                    if (v === true) { setHtMode(false); setThetaMode(false); }
+                                    if (v === true) { setHtMode(false); setThetaMode(false); setMediaMode(false); }
                                 }}
                             />
                             <span className={sniperMode ? 'text-sky-300 font-semibold' : 'text-white/60'}>
@@ -389,7 +435,7 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                                 checked={thetaMode}
                                 onCheckedChange={v => {
                                     setThetaMode(v === true);
-                                    if (v === true) { setSniperMode(false); setHtMode(false); }
+                                    if (v === true) { setSniperMode(false); setHtMode(false); setMediaMode(false); }
                                 }}
                             />
                             <span className={thetaMode ? 'text-violet-300 font-semibold' : 'text-white/60'}>
@@ -445,6 +491,81 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                                     />
                                 </label>
                             </>
+                        )}
+                        <label className="flex items-center gap-2 text-xs cursor-pointer">
+                            <Checkbox
+                                checked={mediaMode}
+                                onCheckedChange={v => {
+                                    setMediaMode(v === true);
+                                    if (v === true) { setSniperMode(false); setThetaMode(false); setHtMode(false); }
+                                }}
+                            />
+                            <span className={mediaMode ? 'text-orange-300 font-semibold' : 'text-white/60'}>
+                                📉 MEDIA UNDER (scegli tu la partita e il mercato): prima del fischio punta
+                                l&apos;Under, appoggia subito la banca che chiude in profitto; se la quota
+                                sale, media la posizione fino al numero di rientri impostato. In gioco NON
+                                piazza niente: ti scrive gli importi esatti per chiudere. Con la Media Under
+                                il maker e lo sniper NON si armano. ⚠️ Modalità NON certificata sul replay:
+                                prima il replay, poi la prova, poi i soldi veri.
+                            </span>
+                        </label>
+                        {mediaMode && (
+                            <div className="w-full rounded-lg border border-orange-400/30 bg-orange-500/5 p-2 space-y-2">
+                                <div className="flex items-center gap-2 text-sm text-white/80 flex-wrap">
+                                    <span className="text-white/50">Mercato</span>
+                                    <select
+                                        aria-label="Mercato della Media Under"
+                                        value={mediaMercato}
+                                        onChange={e => setMediaMercato(
+                                            e.target.value === 'OVER_UNDER_25' || e.target.value === 'OVER_UNDER_35'
+                                                ? e.target.value : '')}
+                                        className="h-8 rounded-md border border-white/10 bg-white/5 px-2 text-sm text-white [&>option]:bg-slate-900"
+                                    >
+                                        <option value="">— scegli il mercato —</option>
+                                        {MEDIA_MERCATI.map(m => (
+                                            <option key={m.key} value={m.key}>{m.label}</option>
+                                        ))}
+                                    </select>
+                                    <span className="text-[11px] text-white/45">
+                                        La crescita è quasi un raddoppio a ogni rientro: con 10 € e 5 rientri
+                                        si arriva a circa 321 € puntati per circa 0,13 € di profitto.
+                                    </span>
+                                </div>
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                    {MEDIA_UNDER_CAMPI.map(f => (
+                                        <label key={f.key} className="text-[11px] text-white/50" title={f.hint}>
+                                            {f.label}
+                                            <Input
+                                                type="number" step={f.step} min={f.min}
+                                                value={mediaParams[f.key]}
+                                                onChange={e => {
+                                                    const v = Number(e.target.value);
+                                                    if (Number.isFinite(v)) {
+                                                        setMediaParams(p => ({ ...p, [f.key]: v }));
+                                                    }
+                                                }}
+                                                className="h-8 mt-0.5 bg-white/5 border-white/10 text-white"
+                                            />
+                                        </label>
+                                    ))}
+                                    <label className="text-[11px] text-white/50 col-span-2"
+                                        title="euro netti, separati da punto e virgola: per ognuno la segnalazione in gioco dice quanto puntare">
+                                        Obiettivi della segnalazione in gioco (€ netti)
+                                        <Input
+                                            type="text" value={mediaObiettiviTesto}
+                                            onChange={e => setMediaObiettiviTesto(e.target.value)}
+                                            className="h-8 mt-0.5 bg-white/5 border-white/10 text-white"
+                                        />
+                                    </label>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => { setMediaParams(mediaUnderDefaults()); setMediaObiettiviTesto('0; 0,30; 1'); }}
+                                    className="text-[11px] text-orange-300 hover:underline"
+                                >
+                                    Ripristina i valori di serie della Media Under
+                                </button>
+                            </div>
                         )}
                         {!dryRun && (
                             <span className="flex items-center gap-1 text-xs text-red-300 font-bold">
@@ -618,6 +739,64 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                                     <div className="text-sm font-black text-white">{s.v}</div>
                                 </div>
                             ))}
+                        </div>
+                    )}
+
+                    {/* MEDIA UNDER: stato del ciclo e riquadro «chiusura» (stats media_*
+                        della sessione, calcolati sugli ordini abbinati del bot) */}
+                    {mediaStato && (
+                        <div className="rounded-lg border border-orange-400/30 bg-orange-500/5 p-2 space-y-1.5 text-xs text-white/80">
+                            <div className="font-bold text-orange-200">
+                                📉 Media Under — {MEDIA_MERCATI.find(m => m.key === mediaStato.mercato)?.label ?? mediaStato.mercato ?? '—'}
+                                {' · '}{MEDIA_STATI_TESTO[mediaStato.stato] ?? mediaStato.stato}
+                            </div>
+                            {mediaStato.riavvio && (
+                                <div className="text-red-300 font-bold">
+                                    ⚠ {mediaStato.riavvio}: la posizione NON è ricostruibile da questa sessione. Nessun ordine: verificala sul conto e chiudila a mano.
+                                </div>
+                            )}
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+                                {[
+                                    { l: 'Rientri fatti', v: `${mediaStato.rientri} su ${mediaStato.max_rientri}` },
+                                    { l: 'Totale puntato', v: `€${euro(mediaStato.totale_puntato)}` },
+                                    { l: 'Quota media', v: quota(mediaStato.quota_media) },
+                                    { l: 'Se vince / se perde (lordo)', v: `€${euro(mediaStato.se_vince)} / €${euro(mediaStato.se_perde)}` },
+                                ].map((x, i) => (
+                                    <div key={i} className="rounded-lg bg-white/5 border border-white/10 p-1.5">
+                                        <div className="text-[10px] uppercase text-white/40">{x.l}</div>
+                                        <div className="text-sm font-black text-white">{x.v}</div>
+                                    </div>
+                                ))}
+                            </div>
+                            <div>
+                                Banca appoggiata: {mediaStato.banca.stato === 'nessuna'
+                                    ? 'nessuna'
+                                    : `€${euro(mediaStato.banca.importo ?? 0)} a ${quota(mediaStato.banca.quota)} — ${mediaStato.banca.testo ?? mediaStato.banca.stato}` +
+                                      (mediaStato.banca.abbinato ? ` (abbinati €${euro(mediaStato.banca.abbinato)})` : '')}
+                            </div>
+                            {mediaStato.rientri_bloccati === 'rischio_max' && (
+                                <div className="text-amber-300">Rientri bloccati: il prossimo avrebbe superato il rischio massimo.</div>
+                            )}
+                            <div className="text-white/50">
+                                Cicli chiusi in profitto: {mediaStato.cicli_chiusi} (lordo €{euro(mediaStato.pnl_chiuso_lordo)}, commissione non detratta)
+                            </div>
+                            {mediaStato.chiusura && (
+                                <div className="rounded-md border border-white/10 bg-black/30 p-2 space-y-1">
+                                    <div className="font-bold text-white">Chiusura — {mediaStato.chiusura.fonte}</div>
+                                    {mediaStato.chiusura.chiudi_adesso ? (
+                                        <div>
+                                            Chiudere adesso: BANCA €{euro(mediaStato.chiusura.chiudi_adesso.banca)} a{' '}
+                                            {quota(mediaStato.chiusura.chiudi_adesso.quota)} (miglior banca adesso) → risultato{' '}
+                                            €{euro(mediaStato.chiusura.chiudi_adesso.pnl_netto)} netti.
+                                        </div>
+                                    ) : (
+                                        <div className="text-white/50">Chiudere adesso: nessuna quota di banca leggibile.</div>
+                                    )}
+                                    {mediaStato.chiusura.obiettivi.map((o, i) => (
+                                        <div key={i}>• {testoObiettivo(o)}</div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     )}
 

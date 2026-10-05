@@ -91,6 +91,15 @@ UI_PARAM_WHITELIST = {
     "theta_mode", "theta_stake", "theta_scratch_s", "theta_confirm_mode",
     "theta_hazard_max", "theta_only", "theta_max_shots", "theta_loss_cap",
     "theta_preset",
+    # 05/10 MEDIA UNDER (SPEC_MEDIA_UNDER_2026-10-05.md par.5): l'interruttore
+    # e i parametri della modalita', tutti modificabili dalla UI. Gli stessi
+    # nomi di ``media_under_bot.CHIAVI_UI`` (test di contratto): scritti qui
+    # per non importare flumine nel modulo della sessione.
+    "media_mode", "media_mercato", "media_stake", "media_obiettivo",
+    "media_tick_chiusura", "media_tick_rientro", "media_max_rientri",
+    "media_rischio_max", "media_quota_min", "media_quota_max", "media_min_size",
+    "media_min_flow", "media_max_spread_ticks", "media_stop_ingressi_s",
+    "media_ttl_punta_ms", "media_obiettivi_live", "media_commissione_pct",
 }
 SESSION_MARKET_TYPES = [
     "MATCH_ODDS", "OVER_UNDER_15", "OVER_UNDER_25", "OVER_UNDER_35",
@@ -538,6 +547,9 @@ TEMPO_MASSIMO_ARRESTO_S = (HEARTBEAT_S + STRATEGIE_MAX * FLAT_ATTESA_S
                            + ARRESTO_ANNULLO_TIMEOUT_S + 2.0 + 10.0)
 #: codice dell'avviso in ``live_alerts``
 CODICE_ARRESTO = "SCALPER_ARRESTO"
+#: 05/10 MEDIA UNDER: codice dell'avviso di riavvio a posizione aperta (stesse
+#: colonne di ``live_alerts`` degli altri avvisi della sessione)
+CODICE_MEDIA_RIAVVIO = "SCALPER_MEDIA_RIAVVIO"
 
 
 def _ordini_vivi_lista(framework: Any) -> Optional[List[Any]]:
@@ -1066,6 +1078,7 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
     from betfairlightweight import filters
 
     from ..auth import build_client
+    from . import media_under_bot as _MU
     from .auto_mode import sniper_mode_acceso, vita_sessione_s
     from .scalper_bot import ScalperStrategy
 
@@ -1101,6 +1114,22 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
         # R3 (25/09): a freno tirato la sessione non si arma nemmeno.
         if non_partire_col_freno(db, ev):
             return
+        # 05/10 MEDIA UNDER (SPEC_MEDIA_UNDER_2026-10-05.md): la modalita' e'
+        # spenta di serie (solo ``media_mode`` booleano vero la accende). Con la
+        # modalita' accesa la sessione NON parte (nessun login, nessun ordine) se
+        # un parametro manca o non e' valido, se la riga l'ha armata l'auto-mode,
+        # o insieme a theta / intervallo: riga 'error' col motivo.
+        media_mode = _MU.media_mode_acceso(control.get("params") or {})
+        if media_mode:
+            motivo_media = _MU.motivo_non_parte(control)
+            if motivo_media:
+                db.set_control(ev, status="error", stopped_at=_now_iso(),
+                               error="media under non avviata: %s" % motivo_media)
+                db.log(ev, "critical", {"msg": "media under non avviata",
+                                        "motivo": motivo_media})
+                logger.critical("[scalper-sess] %s: media under non avviata (%s)",
+                                ev, motivo_media)
+                return
         db.set_control(ev, status="arming", started_at=_now_iso(), error=None)
 
         # REGOLA SPECCHIO (16/07): scalper_control.dry_run è il toggle DEMO/LIVE
@@ -1131,6 +1160,10 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
         # (`auto_mode.sniper_mode_acceso`, stesso punto usato dall'auto-mode
         # per calcolare la vita della sessione: niente doppio default).
         sniper_mode = sniper_mode_acceso(control.get("params") or {})
+        # 05/10 MEDIA UNDER: una sessione "media under" NON arma lo sniper
+        # (``sniper_mode_acceso`` lo darebbe acceso a chiave assente)
+        if media_mode:
+            sniper_mode = False
         # THETA: linea Under (gol+2).5, si sposta coi gol → servono TUTTE le
         # OU a stream (stesso requisito dello sniper).
         theta_mode = bool((control.get("params") or {}).get("theta_mode"))
@@ -1350,6 +1383,61 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                                 "confirm": _confirm,
                                 "preset": theta.theta_preset,
                                 "theta_only": theta_only})
+        # ---- 05/10 MEDIA UNDER (SPEC_MEDIA_UNDER_2026-10-05.md) -----------
+        # Strategia SEPARATA, l'UNICA della sessione (maker e sniper non si
+        # armano). Parametri dalla riga (validati sopra), flusso con gli stessi
+        # numeri dello scalper (VALIDATED_PARAMS). Nessun tetto di flumine
+        # (``max_*_exposure=None``): i limiti sono i parametri della modalita'
+        # (spec par.4: "NON aggiungere tetti"). Riavvio a posizione aperta: la
+        # posizione non e' ricostruibile da questa sessione -> BLOCCATA, nessun
+        # ordine, avviso CRITICAL (spec par.7).
+        media = None
+        if media_mode:
+            _cp = control.get("params") or {}
+            _names_media = {}
+            for m in cat:
+                for r in (m.runners or []):
+                    _names_media[(str(m.market_id), int(r.selection_id))] = \
+                        str(getattr(r, "runner_name", "") or "")
+            _riavvio_media = _MU.posizione_aperta_nelle_stats(control.get("stats"))
+            _media_params = {k: v for k, v in _cp.items()
+                             if str(k).startswith(_MU.PREFISSO)}
+            _media_params.update({
+                "flow_window_ms": VALIDATED_PARAMS["flow_window_ms"],
+                "warmup_ms": VALIDATED_PARAMS["warmup_ms"],
+                "runner_names": _names_media,
+                "riavvio_aperto": _riavvio_media,
+            })
+            media = _MU.MediaUnderStrategy(
+                market_filter=filters.streaming_market_filter(
+                    market_ids=market_ids),
+                media_params=_media_params,
+                event_sink=sink,
+                max_selection_exposure=None,
+                max_order_exposure=None,
+                max_trade_count=int(1e6),
+                max_live_trade_count=int(1e6),
+            )
+            db.log(ev, "info", {"msg": "media under armata",
+                                "mercato": media.par.mercato,
+                                "stake": media.par.stake,
+                                "exec": exec_mode,
+                                "riavvio_aperto": _riavvio_media})
+            if _riavvio_media:
+                db.log(ev, "critical", {
+                    "msg": "media under: riavvio a posizione aperta NON ricostruibile, "
+                           "nessun ordine", "motivo": _riavvio_media})
+                try:
+                    db.sb.table("live_alerts").insert({
+                        "level": "CRITICAL", "code": CODICE_MEDIA_RIAVVIO,
+                        "message": (f"media under (evento {ev}): riavvio a posizione "
+                                    f"aperta ({_riavvio_media}). La posizione NON e' "
+                                    "ricostruibile da questa sessione: nessun ordine, "
+                                    "verificala sul conto e chiudila a mano")[:500],
+                        "event_id": ev,
+                    }).execute()
+                except Exception:  # noqa: BLE001 - avviso best-effort
+                    pass
         # ---- F5 (11/07): RISK MANAGER unico per evento -------------------
         # UN semaforo condiviso: sospensione in-play (gol) → stop NUOVI
         # ingressi di TUTTE le strategie per risk_cooldown_s (default 120s,
@@ -1452,12 +1540,18 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             strategy.freno_live = freno_soldi_veri
             if sniper is not None:
                 sniper.freno_live = freno_soldi_veri
-        if not theta_only:
+            if media is not None:
+                media.freno_live = freno_soldi_veri
+        # 05/10 MEDIA UNDER: la sessione "media under" non arma il maker
+        # (l'oggetto resta per le stats e il controllo del flat, come theta_only)
+        if not theta_only and media is None:
             framework.add_strategy(strategy)
         if sniper is not None:
             framework.add_strategy(sniper)
         if theta is not None:
             framework.add_strategy(theta)
+        if media is not None:
+            framework.add_strategy(media)
 
         def _stats() -> Dict[str, Any]:
             s = dict(strategy.stats)
@@ -1465,6 +1559,8 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                 s.update({f"sniper_{k}": v for k, v in sniper.stats.items()})
             if theta is not None:
                 s.update({f"theta_{k}": v for k, v in theta.stats.items()})
+            if media is not None:
+                s.update({f"{_MU.PREFISSO}{k}": v for k, v in media.stats.items()})
             # 25/09 - quanti ordini della sessione sono ancora sul book (sola
             # lettura del blotter): la Control Room lo mostra dal canale
             n_vivi = _ordini_vivi(framework)
@@ -1611,6 +1707,11 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                 sniper.force_flat = True
             if theta is not None:
                 theta.force_flat = True
+            # 05/10 MEDIA UNDER: il force-flat ferma le APERTURE (ingressi e
+            # rientri); la modalita' non chiude di sua iniziativa (punto non
+            # deciso dalla spec: referto)
+            if media is not None:
+                media.force_flat = True
 
         def _all_flat(timeout_s: float = 30.0) -> bool:
             ok = _wait_flat(strategy, timeout_s=timeout_s)
@@ -1621,6 +1722,14 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                 while time.time() < deadline and not extra.is_flat():
                     time.sleep(1.0)
                 ok = ok and extra.is_flat()
+            # 05/10 MEDIA UNDER: in una sessione "media under" sniper e theta non
+            # esistono (maker non armato): al piu' due attese, dentro
+            # STRATEGIE_MAX e TEMPO_MASSIMO_ARRESTO_S
+            if media is not None:
+                deadline = time.time() + timeout_s
+                while time.time() < deadline and not media.is_flat():
+                    time.sleep(1.0)
+                ok = ok and media.is_flat()
             return ok
 
         _recon_alerted = 0
@@ -1748,6 +1857,9 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             _life_s = vita_sessione_s({"sniper_mode": sniper_mode,
                                        "theta_mode": theta_mode,
                                        "ht_mode": ht_mode})
+            # 05/10 MEDIA UNDER: fino a fine partita (in gioco segnala la chiusura)
+            if media_mode:
+                _life_s = max(_life_s, _MU.vita_sessione_s(control.get("params")))
             # 28/09 (cantiere A, ordine dell'utente: "le partite TERMINATE [...]
             # non devono piu' essere seguite"): Betfair ha CHIUSO il MATCH_ODDS
             # (o tutti i mercati della sessione) = partita finita. Prima la
