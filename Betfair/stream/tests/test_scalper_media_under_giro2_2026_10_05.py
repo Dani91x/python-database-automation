@@ -523,3 +523,43 @@ def test_i_guasti_del_banco_aspettano_la_posizione_della_modalita(differita, exc
     giri(b, differita, 40)
     assert b.posizione().puntato > 0
     assert R._posizione_aperta(b.strat) is True
+
+
+def test_la_lettura_usa_solo_il_tempo_che_il_banco_conosce(differita, exchange_it, monkeypatch):
+    """Difetto trovato dal replay `media-under` sulla 35797769 (giro 2, prima ->
+    dopo nel referto): la lettura chiamava ``time.strftime``; la sessione vede
+    il modulo ``time`` solo per ``sleep`` e ``time`` (contratto del banco,
+    ``replay_registrazioni._TempoSessione``) e il battito moriva in errore con
+    la banca appoggiata (S3). Col tempo del banco la lettura deve riuscire."""
+    b = _al_massimo(differita)
+    monkeypatch.setattr(SS, "time", R._TempoSessione(R._Orologio()))
+    db = _DbVero([_riga_specchio(b)])
+    assert SS.leggi_ordini_conto_media(db, b.strat, session_paper=False) == "letta"
+    giri(b, differita, 1)
+    assert "ordini del conto letti alle " in b.strat.stats["chiusura"]["fonte"]
+
+
+def test_la_lettura_non_rompe_mai_il_battito(differita, exchange_it):
+    """Qualunque cosa esploda nella lettura (anche fuori dalla chiamata al DB)
+    non arriva al ciclo del battito: il riquadro torna a "solo ordini del bot"."""
+    b = _al_massimo(differita)
+
+    class _Rotta:
+        stats = {"market_id": b.mid, "selection_id": "non-un-numero"}
+        conto = None
+
+        def posizione_aperta(self) -> bool:
+            return True
+
+        def imposta_ordini_conto(self, righe, ora, errore=None):
+            self.conto = (righe, ora, errore)
+
+    rotta = _Rotta()
+    assert SS.leggi_ordini_conto_media(_DbVero([]), rotta, session_paper=False) == "errore"
+    assert rotta.conto[0] is None and rotta.conto[2]
+
+    class _Esplode(_Rotta):
+        def posizione_aperta(self) -> bool:
+            raise RuntimeError("lista cambiata")
+
+    assert SS.leggi_ordini_conto_media(_DbVero([]), _Esplode(), session_paper=False) == "errore"

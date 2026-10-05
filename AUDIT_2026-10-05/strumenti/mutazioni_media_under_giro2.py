@@ -106,12 +106,12 @@ MUTAZIONI: List[Tuple[str, str, str, str, str]] = [
      '''    if session_paper and False:
         return "prova"''',
      "in prova la lettura degli ordini del conto si fa"),
-    ("G14", SS, '''    if not media.posizione_aperta():
-        media.imposta_ordini_conto(None, "")
-        return "chiusa"''',
-     '''    if False:
-        media.imposta_ordini_conto(None, "")
-        return "chiusa"''',
+    ("G14", SS, '''        if not media.posizione_aperta():
+            media.imposta_ordini_conto(None, "")
+            return "chiusa"''',
+     '''        if False:
+            media.imposta_ordini_conto(None, "")
+            return "chiusa"''',
      "lettura degli ordini del conto anche a posizione chiusa"),
     ("G15", MU, '''SORGENTI_A_MANO = ("account", "runner")''',
      '''SORGENTI_A_MANO = ("account", "runner", "scalper")''',
@@ -161,6 +161,13 @@ MUTAZIONI: List[Tuple[str, str, str, str, str]] = [
      '''    if False:
         return bool(s.posizione_aperta())''',
      "il guasto non aspetta la posizione aperta della modalita'"),
+    # --- difetto trovato dal replay (giro 2): la lettura e il battito
+    ("G26", SS, '''        ora = datetime.fromtimestamp(float(time.time())).strftime("%H:%M:%S")''',
+     '''        ora = time.strftime("%H:%M:%S", time.localtime(time.time()))''',
+     "la lettura torna a usare time.strftime (il difetto trovato dal replay)"),
+    ("G27", SS, '''    except Exception as ex:  # noqa: BLE001 - mai rompere il battito: lo dice il riquadro''',
+     '''    except ValueError as ex:  # noqa: BLE001 - mai rompere il battito: lo dice il riquadro''',
+     "un'eccezione della lettura arriva al ciclo del battito"),
 ]
 
 

@@ -818,11 +818,15 @@ def leggi_ordini_conto_media(db: Any, media: Any, session_paper: bool) -> Option
         return "prova"
     from . import media_under_bot as MU
 
-    if not media.posizione_aperta():
-        media.imposta_ordini_conto(None, "")
-        return "chiusa"
-    ora = time.strftime("%H:%M:%S", time.localtime(time.time()))
+    # la sessione usa del modulo ``time`` solo ``time`` e ``sleep`` (contratto
+    # col banco, ``replay_registrazioni._TempoSessione``): l'ora del dato si fa
+    # con ``datetime`` (ora locale del PC, quella che l'utente legge)
+    ora = ""
     try:
+        ora = datetime.fromtimestamp(float(time.time())).strftime("%H:%M:%S")
+        if not media.posizione_aperta():
+            media.imposta_ordini_conto(None, "")
+            return "chiusa"
         mid = media.stats.get("market_id")
         sid = media.stats.get("selection_id")
         r = db.sb.table(MU.TABELLA_ORDINI_CONTO).select(MU.COLONNE_ORDINI_CONTO) \
@@ -830,10 +834,13 @@ def leggi_ordini_conto_media(db: Any, media: Any, session_paper: bool) -> Option
             .execute()
         media.imposta_ordini_conto(list(getattr(r, "data", None) or []), ora)
         return "letta"
-    except Exception as ex:  # noqa: BLE001 - lettura fallita: lo dice il riquadro
+    except Exception as ex:  # noqa: BLE001 - mai rompere il battito: lo dice il riquadro
         logger.warning("[scalper] media under: lettura degli ordini del conto KO: %s",
                        str(ex)[:200])
-        media.imposta_ordini_conto(None, ora, errore=(str(ex)[:120] or type(ex).__name__))
+        try:
+            media.imposta_ordini_conto(None, ora, errore=(str(ex)[:120] or type(ex).__name__))
+        except Exception:  # noqa: BLE001
+            logger.debug("[scalper] media under: riquadro non aggiornato", exc_info=True)
         return "errore"
 
 
