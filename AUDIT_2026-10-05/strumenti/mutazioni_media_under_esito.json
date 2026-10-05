@@ -1,0 +1,792 @@
+[
+ {
+  "id": "U1",
+  "mutazione": "formula del rientro con il segno sbagliato",
+  "esito": "16 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_banca_abbinata_in_parte_prima_di_un_rientro[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_banca_abbinata_in_parte_prima_di_un_rientro[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m_muti_sul_bot_vero_e_tutti_sollecitati[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m_muti_sul_bot_vero_e_tutti_sollecitati[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m_rossi_sui_difetti[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m_rossi_sui_difetti[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_rientro_bloccato_dal_rischio_massimo_con_la_riga_di_log[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_rientro_bloccato_dal_rischio_massimo_con_la_riga_di_log[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_rientro_deciso_con_la_banca_ancora_in_volo[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_rientro_deciso_con_la_banca_ancora_in_volo[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_a_base_10_a_150_obiettivo_automatico_punte_a_050",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_a_su_flumine_rientri_banche_e_massimo[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_a_su_flumine_rientri_banche_e_massimo[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_b_esempio_dell_utente_netto_030_al_centesimo",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_c_come_b_con_le_punte_a_multipli_di_050",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_d_segnalazione_in_gioco_esempio_dell_utente"
+  ]
+ },
+ {
+  "id": "U2",
+  "mutazione": "banca arrotondata per difetto invece che al centesimo",
+  "esito": "8 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_ingresso_e_banca_persist_sul_mercato_scelto[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_ingresso_e_banca_persist_sul_mercato_scelto[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_punta_di_rientro_non_abbinata_si_annulla_e_non_conta[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_punta_di_rientro_non_abbinata_si_annulla_e_non_conta[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_a_base_10_a_150_obiettivo_automatico_punte_a_050",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_a_su_flumine_rientri_banche_e_massimo[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_a_su_flumine_rientri_banche_e_massimo[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_b_esempio_dell_utente_netto_030_al_centesimo"
+  ]
+ },
+ {
+  "id": "U3",
+  "mutazione": "obiettivo netto usato come lordo",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_b_esempio_dell_utente_netto_030_al_centesimo",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_c_come_b_con_le_punte_a_multipli_di_050"
+  ]
+ },
+ {
+  "id": "U4",
+  "mutazione": "punta arrotondata al multiplo piu' vicino (non per difetto)",
+  "esito": "9 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m_muti_sul_bot_vero_e_tutti_sollecitati[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m_muti_sul_bot_vero_e_tutti_sollecitati[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_punta_a_multiplo_per_difetto_dalla_fonte_unica",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_rientro_bloccato_dal_rischio_massimo_con_la_riga_di_log[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_rientro_bloccato_dal_rischio_massimo_con_la_riga_di_log[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_a_base_10_a_150_obiettivo_automatico_punte_a_050",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_a_su_flumine_rientri_banche_e_massimo[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_a_su_flumine_rientri_banche_e_massimo[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_c_come_b_con_le_punte_a_multipli_di_050"
+  ]
+ },
+ {
+  "id": "U5",
+  "mutazione": "riquadro: cifre 'esatte' calcolate col multiplo",
+  "esito": "1 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_d_segnalazione_in_gioco_esempio_dell_utente"
+  ]
+ },
+ {
+  "id": "U6",
+  "mutazione": "tick calcolati a 0,01 fissi (non la scala vera)",
+  "esito": "1 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_tick_sulla_scala_vera_di_betfair"
+  ]
+ },
+ {
+  "id": "U7",
+  "mutazione": "interruttore acceso da un valore 'vero' qualunque",
+  "esito": "1 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_spenta_di_serie_solo_un_vero_la_accende"
+  ]
+ },
+ {
+  "id": "U8",
+  "mutazione": "obiettivo 0 trattato come 0 netti (non automatico)",
+  "esito": "17 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_banca_abbinata_in_parte_prima_di_un_rientro[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_banca_abbinata_in_parte_prima_di_un_rientro[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m_rossi_sui_difetti[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m_rossi_sui_difetti[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_i_valori_di_serie_sono_validi_e_l_obiettivo_assente_e_automatico",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_il_ponte_del_replay_giudica_la_modalita[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_il_ponte_del_replay_giudica_la_modalita[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_in_gioco_nessun_ordine_banca_persist_resta_punta_lapse_cade[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_in_gioco_nessun_ordine_banca_persist_resta_punta_lapse_cade[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_punta_di_rientro_non_abbinata_si_annulla_e_non_conta[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_punta_di_rientro_non_abbinata_si_annulla_e_non_conta[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_rientro_deciso_con_la_banca_ancora_in_volo[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_rientro_deciso_con_la_banca_ancora_in_volo[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_soldi_veri_fermati_senza_ordini_reali_la_banca_parte[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_soldi_veri_fermati_senza_ordini_reali_la_banca_parte[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_a_su_flumine_rientri_banche_e_massimo[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_a_su_flumine_rientri_banche_e_massimo[4]"
+  ]
+ },
+ {
+  "id": "U9",
+  "mutazione": "un parametro mancante non ferma la sessione",
+  "esito": "16 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_la_sessione_non_parte_con_un_parametro_mancante",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_un_parametro_mancante_non_fa_partire[media_commissione_pct]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_un_parametro_mancante_non_fa_partire[media_max_rientri]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_un_parametro_mancante_non_fa_partire[media_max_spread_ticks]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_un_parametro_mancante_non_fa_partire[media_mercato]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_un_parametro_mancante_non_fa_partire[media_min_flow]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_un_parametro_mancante_non_fa_partire[media_min_size]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_un_parametro_mancante_non_fa_partire[media_obiettivi_live]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_un_parametro_mancante_non_fa_partire[media_quota_max]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_un_parametro_mancante_non_fa_partire[media_quota_min]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_un_parametro_mancante_non_fa_partire[media_rischio_max]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_un_parametro_mancante_non_fa_partire[media_stake]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_un_parametro_mancante_non_fa_partire[media_stop_ingressi_s]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_un_parametro_mancante_non_fa_partire[media_tick_chiusura]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_un_parametro_mancante_non_fa_partire[media_tick_rientro]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_un_parametro_mancante_non_fa_partire[media_ttl_punta_ms]"
+  ]
+ },
+ {
+  "id": "U10",
+  "mutazione": "stake non multiplo di 0,50 accettato",
+  "esito": "1 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_un_parametro_non_valido_non_fa_partire[media_stake-10.3]"
+  ]
+ },
+ {
+  "id": "U11",
+  "mutazione": "riga dell'auto-mode accettata",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_la_sessione_rifiuta_una_riga_armata_dall_auto_mode",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_origine_auto_theta_e_intervallo_non_fanno_partire"
+  ]
+ },
+ {
+  "id": "U12",
+  "mutazione": "media_mercato fuori dalla whitelist",
+  "esito": "1 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_le_chiavi_della_modalita_sono_nella_whitelist_della_sessione"
+  ]
+ },
+ {
+  "id": "U13",
+  "mutazione": "valore di serie diverso dalla scheda",
+  "esito": "3 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_i_valori_di_serie_sono_quelli_della_scheda",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_a_su_flumine_rientri_banche_e_massimo[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_a_su_flumine_rientri_banche_e_massimo[4]"
+  ]
+ },
+ {
+  "id": "U14",
+  "mutazione": "banca di chiusura LAPSE",
+  "esito": "26 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_banca_abbinata_in_parte_prima_di_un_rientro[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_banca_abbinata_in_parte_prima_di_un_rientro[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_ciclo_chiuso_in_profitto_e_ricomincia_con_lo_stake_base[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_ciclo_chiuso_in_profitto_e_ricomincia_con_lo_stake_base[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m6_importo_e_quota_ognuno_da_solo[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m6_importo_e_quota_ognuno_da_solo[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m_muti_sul_bot_vero_e_tutti_sollecitati[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m_muti_sul_bot_vero_e_tutti_sollecitati[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_in_gioco_banca_abbinata_chiude_il_ciclo_e_finisce[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_in_gioco_banca_abbinata_chiude_il_ciclo_e_finisce[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_in_gioco_nessun_ordine_banca_persist_resta_punta_lapse_cade[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_in_gioco_nessun_ordine_banca_persist_resta_punta_lapse_cade[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_ingresso_e_banca_persist_sul_mercato_scelto[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_ingresso_e_banca_persist_sul_mercato_scelto[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_nessuna_chiusura_forzata_prima_del_fischio[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_nessuna_chiusura_forzata_prima_del_fischio[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_punta_di_rientro_non_abbinata_si_annulla_e_non_conta[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_punta_di_rientro_non_abbinata_si_annulla_e_non_conta[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_rientro_bloccato_dal_massimo_zero[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_rientro_bloccato_dal_massimo_zero[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_rientro_bloccato_dal_rischio_massimo_con_la_riga_di_log[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_rientro_bloccato_dal_rischio_massimo_con_la_riga_di_log[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_rientro_deciso_con_la_banca_ancora_in_volo[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_rientro_deciso_con_la_banca_ancora_in_volo[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_a_su_flumine_rientri_banche_e_massimo[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_a_su_flumine_rientri_banche_e_massimo[4]"
+  ]
+ },
+ {
+  "id": "U15",
+  "mutazione": "ingresso senza liquidita' minima",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_niente_ingresso_senza_liquidita_flusso_spread_o_quota[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_niente_ingresso_senza_liquidita_flusso_spread_o_quota[4]"
+  ]
+ },
+ {
+  "id": "U16",
+  "mutazione": "nessuna finestra di stop prima del fischio",
+  "esito": "4 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_nessuna_chiusura_forzata_prima_del_fischio[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_nessuna_chiusura_forzata_prima_del_fischio[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_niente_ingresso_dentro_la_finestra_di_stop_prima_del_fischio[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_niente_ingresso_dentro_la_finestra_di_stop_prima_del_fischio[4]"
+  ]
+ },
+ {
+  "id": "U17",
+  "mutazione": "ciclo chiuso mai riconosciuto",
+  "esito": "4 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_ciclo_chiuso_in_profitto_e_ricomincia_con_lo_stake_base[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_ciclo_chiuso_in_profitto_e_ricomincia_con_lo_stake_base[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_in_gioco_banca_abbinata_chiude_il_ciclo_e_finisce[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_in_gioco_banca_abbinata_chiude_il_ciclo_e_finisce[4]"
+  ]
+ },
+ {
+  "id": "U18",
+  "mutazione": "banca vecchia riappoggiata mentre la punta di rientro e' in volo",
+  "esito": "6 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_banca_abbinata_in_parte_prima_di_un_rientro[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m_muti_sul_bot_vero_e_tutti_sollecitati[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m_rossi_sui_difetti[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_rientro_deciso_con_la_banca_ancora_in_volo[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_a_su_flumine_rientri_banche_e_massimo[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_a_su_flumine_rientri_banche_e_massimo[4]"
+  ]
+ },
+ {
+  "id": "U19",
+  "mutazione": "posizione che ignora le banche abbinate",
+  "esito": "6 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_banca_abbinata_in_parte_prima_di_un_rientro[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_banca_abbinata_in_parte_prima_di_un_rientro[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_ciclo_chiuso_in_profitto_e_ricomincia_con_lo_stake_base[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_ciclo_chiuso_in_profitto_e_ricomincia_con_lo_stake_base[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_in_gioco_banca_abbinata_chiude_il_ciclo_e_finisce[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_in_gioco_banca_abbinata_chiude_il_ciclo_e_finisce[4]"
+  ]
+ },
+ {
+  "id": "U20",
+  "mutazione": "rientri mai contati (massimo mai raggiunto)",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_a_su_flumine_rientri_banche_e_massimo[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_a_su_flumine_rientri_banche_e_massimo[4]"
+  ]
+ },
+ {
+  "id": "U21",
+  "mutazione": "punta non abbinata mai annullata (TTL)",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_punta_di_rientro_non_abbinata_si_annulla_e_non_conta[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_punta_di_rientro_non_abbinata_si_annulla_e_non_conta[4]"
+  ]
+ },
+ {
+  "id": "U22",
+  "mutazione": "rientro bloccato con la banca in volo (annullo mai chiesto)",
+  "esito": "1 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_rientro_deciso_con_la_banca_ancora_in_volo[4]"
+  ]
+ },
+ {
+  "id": "U23",
+  "mutazione": "un rientro oltre il massimo",
+  "esito": "4 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_rientro_bloccato_dal_massimo_zero[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_rientro_bloccato_dal_massimo_zero[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_a_su_flumine_rientri_banche_e_massimo[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_a_su_flumine_rientri_banche_e_massimo[4]"
+  ]
+ },
+ {
+  "id": "U24",
+  "mutazione": "rischio massimo ignorato",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_rientro_bloccato_dal_rischio_massimo_con_la_riga_di_log[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_rientro_bloccato_dal_rischio_massimo_con_la_riga_di_log[4]"
+  ]
+ },
+ {
+  "id": "U25",
+  "mutazione": "in gioco opera come prima del fischio",
+  "esito": "6 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_in_gioco_banca_abbinata_chiude_il_ciclo_e_finisce[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_in_gioco_banca_abbinata_chiude_il_ciclo_e_finisce[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_in_gioco_nessun_ordine_banca_persist_resta_punta_lapse_cade[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_in_gioco_nessun_ordine_banca_persist_resta_punta_lapse_cade[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_in_gioco_sospensione_e_banca_caduta_si_dicono[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_in_gioco_sospensione_e_banca_caduta_si_dicono[4]"
+  ]
+ },
+ {
+  "id": "U26",
+  "mutazione": "in gioco dopo la chiusura ricomincia un ciclo",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_in_gioco_banca_abbinata_chiude_il_ciclo_e_finisce[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_in_gioco_banca_abbinata_chiude_il_ciclo_e_finisce[4]"
+  ]
+ },
+ {
+  "id": "U27",
+  "mutazione": "banca caduta in gioco non detta",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_in_gioco_sospensione_e_banca_caduta_si_dicono[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_in_gioco_sospensione_e_banca_caduta_si_dicono[4]"
+  ]
+ },
+ {
+  "id": "U28",
+  "mutazione": "esito ignoto (PENDING) creduto morto",
+  "esito": "24 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_banca_abbinata_in_parte_prima_di_un_rientro[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_ciclo_chiuso_in_profitto_e_ricomincia_con_lo_stake_base[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m6_importo_e_quota_ognuno_da_solo[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m_muti_sul_bot_vero_e_tutti_sollecitati[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m_rossi_sui_difetti[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_esito_ignoto_mai_un_secondo_ordine[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_esito_ignoto_mai_un_secondo_ordine[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_il_ponte_del_replay_giudica_la_modalita[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_in_gioco_banca_abbinata_chiude_il_ciclo_e_finisce[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_in_gioco_nessun_ordine_banca_persist_resta_punta_lapse_cade[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_in_gioco_sospensione_e_banca_caduta_si_dicono[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_ingresso_e_banca_persist_sul_mercato_scelto[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_mercato_regolato_esito_dal_risultato[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_nessuna_chiusura_forzata_prima_del_fischio[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_punta_di_rientro_non_abbinata_si_annulla_e_non_conta[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_punta_di_rientro_non_abbinata_si_annulla_e_non_conta[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_rientro_bloccato_dal_massimo_zero[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_rientro_bloccato_dal_rischio_massimo_con_la_riga_di_log[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_rientro_deciso_con_la_banca_ancora_in_volo[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_rientro_deciso_con_la_banca_ancora_in_volo[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_rifiuto_freno_mai_un_ripiazzo_a_ogni_giro[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_soldi_veri_fermati_senza_ordini_reali_la_banca_parte[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_soldi_veri_fermati_senza_ordini_reali_la_banca_parte[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_a_su_flumine_rientri_banche_e_massimo[4]"
+  ]
+ },
+ {
+  "id": "U29",
+  "mutazione": "nessun freno dopo un rifiuto",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_rifiuto_freno_mai_un_ripiazzo_a_ogni_giro[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_rifiuto_freno_mai_un_ripiazzo_a_ogni_giro[4]"
+  ]
+ },
+ {
+  "id": "U30",
+  "mutazione": "aperture senza il freno dei soldi veri",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_soldi_veri_fermati_senza_ordini_reali_la_banca_parte[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_soldi_veri_fermati_senza_ordini_reali_la_banca_parte[4]"
+  ]
+ },
+ {
+  "id": "U31",
+  "mutazione": "riavvio a posizione aperta ignorato",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_riavvio_a_posizione_aperta_non_ricostruibile_nessun_ordine[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_riavvio_a_posizione_aperta_non_ricostruibile_nessun_ordine[4]"
+  ]
+ },
+ {
+  "id": "U32",
+  "mutazione": "ordini a mercato sospeso",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_sospeso_prima_del_fischio_nessun_ordine[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_sospeso_prima_del_fischio_nessun_ordine[4]"
+  ]
+ },
+ {
+  "id": "U33",
+  "mutazione": "esito dal mercato sbagliato (Match Odds)",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_mercato_regolato_esito_dal_risultato[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_mercato_regolato_esito_dal_risultato[4]"
+  ]
+ },
+ {
+  "id": "U34",
+  "mutazione": "la sessione arma anche il maker",
+  "esito": "1 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_la_sessione_arma_solo_la_modalita_e_paper_uguale_live"
+  ]
+ },
+ {
+  "id": "U35",
+  "mutazione": "modalita' accesa anche a interruttore spento",
+  "esito": "1 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_modalita_spenta_nessun_effetto_la_sessione_arma_il_maker"
+  ]
+ },
+ {
+  "id": "U36",
+  "mutazione": "la sessione parte con un parametro mancante",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_la_sessione_non_parte_con_un_parametro_mancante",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_la_sessione_rifiuta_una_riga_armata_dall_auto_mode"
+  ]
+ },
+ {
+  "id": "U37",
+  "mutazione": "l'auto-mode passa le chiavi media_*",
+  "esito": "1 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_l_auto_mode_non_passa_mai_le_chiavi_della_modalita"
+  ]
+ },
+ {
+  "id": "U38",
+  "mutazione": "replay: vita della sessione media a 10'",
+  "esito": "1 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vita_della_sessione_fino_a_fine_partita"
+  ]
+ },
+ {
+  "id": "U39",
+  "mutazione": "modulo nuovo non registrato nel banco",
+  "esito": "1 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_registrata_nel_banco_e_scenari_riconosciuti"
+  ]
+ },
+ {
+  "id": "U40",
+  "mutazione": "M4 senza l'arrotondamento a 0,50 (falso positivo)",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m_muti_sul_bot_vero_e_tutti_sollecitati[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m_muti_sul_bot_vero_e_tutti_sollecitati[4]"
+  ]
+ },
+ {
+  "id": "U41",
+  "mutazione": "M1 non guarda il mercato scelto",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m_rossi_sui_difetti[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m_rossi_sui_difetti[4]"
+  ]
+ },
+ {
+  "id": "U42",
+  "mutazione": "M2 cieco sul massimo",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m_rossi_sui_difetti[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m_rossi_sui_difetti[4]"
+  ]
+ },
+ {
+  "id": "U43",
+  "mutazione": "M3 cieco sui tick",
+  "esito": "4 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m_rossi_sui_difetti[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m_rossi_sui_difetti[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_il_ponte_del_replay_giudica_la_modalita[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_il_ponte_del_replay_giudica_la_modalita[4]"
+  ]
+ },
+ {
+  "id": "U44",
+  "mutazione": "M5 cieco su due ordini vivi",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m5_m8_rossi_su_ordini_veri_sbagliati[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m5_m8_rossi_su_ordini_veri_sbagliati[4]"
+  ]
+ },
+ {
+  "id": "U45",
+  "mutazione": "M6 cieco sull'importo",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m6_importo_e_quota_ognuno_da_solo[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m6_importo_e_quota_ognuno_da_solo[4]"
+  ]
+ },
+ {
+  "id": "U46",
+  "mutazione": "M6 cieco sulla quota",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m6_importo_e_quota_ognuno_da_solo[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m6_importo_e_quota_ognuno_da_solo[4]"
+  ]
+ },
+ {
+  "id": "U47",
+  "mutazione": "M7 cieco sugli ordini in gioco",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m_rossi_sui_difetti[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m_rossi_sui_difetti[4]"
+  ]
+ },
+ {
+  "id": "U48",
+  "mutazione": "M8 cieco sulla banca LAPSE",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m5_m8_rossi_su_ordini_veri_sbagliati[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m5_m8_rossi_su_ordini_veri_sbagliati[4]"
+  ]
+ },
+ {
+  "id": "U49",
+  "mutazione": "M9 cieco sulla finestra di stop",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m_rossi_sui_difetti[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m_rossi_sui_difetti[4]"
+  ]
+ },
+ {
+  "id": "U50",
+  "mutazione": "replay: controlli M mai chiamati",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_il_ponte_del_replay_giudica_la_modalita[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_il_ponte_del_replay_giudica_la_modalita[4]"
+  ]
+ },
+ {
+  "id": "U51",
+  "mutazione": "replay: parametri dalla scheda di serie invece che dalla riga",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_il_ponte_del_replay_giudica_la_modalita[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_il_ponte_del_replay_giudica_la_modalita[4]"
+  ]
+ },
+ {
+  "id": "U52",
+  "mutazione": "interi sotto il minimo accettati (tick 0, rientri -1, attesa 0)",
+  "esito": "3 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_un_parametro_non_valido_non_fa_partire[media_max_rientri--1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_un_parametro_non_valido_non_fa_partire[media_tick_chiusura-0]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_un_parametro_non_valido_non_fa_partire[media_ttl_punta_ms-0]"
+  ]
+ },
+ {
+  "id": "U53",
+  "mutazione": "numeri negativi accettati",
+  "esito": "1 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_un_parametro_non_valido_non_fa_partire[media_rischio_max--5]"
+  ]
+ },
+ {
+  "id": "U54",
+  "mutazione": "intervallo di quota rovesciato accettato",
+  "esito": "1 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_un_parametro_non_valido_non_fa_partire[media_quota_min-4.5]"
+  ]
+ },
+ {
+  "id": "U55",
+  "mutazione": "obiettivi in gioco come testo accettati",
+  "esito": "1 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_un_parametro_non_valido_non_fa_partire[media_obiettivi_live-0]"
+  ]
+ },
+ {
+  "id": "U56",
+  "mutazione": "commissione del 100 % accettata",
+  "esito": "1 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_un_parametro_non_valido_non_fa_partire[media_commissione_pct-100]"
+  ]
+ },
+ {
+  "id": "U57",
+  "mutazione": "obiettivo negativo accettato",
+  "esito": "1 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_un_parametro_non_valido_non_fa_partire[media_obiettivo--0.3]"
+  ]
+ },
+ {
+  "id": "U58",
+  "mutazione": "un mercato qualunque accettato",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_un_parametro_non_valido_non_fa_partire[media_mercato-MATCH_ODDS]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_un_parametro_non_valido_non_fa_partire[media_mercato-OVER_UNDER_15]"
+  ]
+ },
+ {
+  "id": "U59",
+  "mutazione": "un booleano letto come numero",
+  "esito": "1 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_un_parametro_non_valido_non_fa_partire[media_min_size-True]"
+  ]
+ },
+ {
+  "id": "U60",
+  "mutazione": "media insieme a theta o intervallo",
+  "esito": "1 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_origine_auto_theta_e_intervallo_non_fanno_partire"
+  ]
+ },
+ {
+  "id": "U61",
+  "mutazione": "riavvio: solo il MASSIMO riconosciuto",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_riavvio_a_posizione_aperta_non_ricostruibile_nessun_ordine[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_riavvio_a_posizione_aperta_non_ricostruibile_nessun_ordine[4]"
+  ]
+ },
+ {
+  "id": "U62",
+  "mutazione": "stake qualunque accettato",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_un_parametro_non_valido_non_fa_partire[media_stake-0.5]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_un_parametro_non_valido_non_fa_partire[media_stake-10.3]"
+  ]
+ },
+ {
+  "id": "U63",
+  "mutazione": "interi letti troncando i decimali",
+  "esito": "1 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_un_parametro_non_valido_non_fa_partire[media_tick_rientro-1.5]"
+  ]
+ },
+ {
+  "id": "F1",
+  "mutazione": "scheda: punta non multipla accettata",
+  "esito": "1 rossi",
+  "rossi": [
+   "src/lib/mediaUnder.test.ts > mediaUnder \u2014 parametri > punta d'ingresso solo da 1,00 a multipli di 0,50 (Betfair.it)"
+  ]
+ },
+ {
+  "id": "F2",
+  "mutazione": "scheda: sniper non spento nel payload",
+  "esito": "1 rossi",
+  "rossi": [
+   "src/lib/mediaUnder.test.ts > mediaUnder \u2014 parametri > il payload ha TUTTE le chiavi, la modalit\u00e0 accesa e sniper/theta/intervallo spenti"
+  ]
+ },
+ {
+  "id": "F3",
+  "mutazione": "scheda: obiettivi con la virgola italiana non letti",
+  "esito": "2 rossi",
+  "rossi": [
+   "src/components/live/ScalperPanel.test.tsx > ScalperPanel \u2014 MEDIA UNDER (05/10, SPEC_MEDIA_UNDER_2026-10-05.md) > accesa: senza mercato non parte; col mercato manda tutti i parametri e spegne lo sniper",
+   "src/lib/mediaUnder.test.ts > mediaUnder \u2014 parametri > obiettivi in gioco scritti con la virgola italiana"
+  ]
+ },
+ {
+  "id": "F4",
+  "mutazione": "scheda: tipi delle stats non controllati",
+  "esito": "1 rossi",
+  "rossi": [
+   "src/lib/mediaUnder.test.ts > mediaUnder \u2014 lettura delle statistiche della sessione > un campo col tipo sbagliato non passa come numero"
+  ]
+ },
+ {
+  "id": "F5",
+  "mutazione": "scheda: punta esatta al posto del multiplo",
+  "esito": "1 rossi",
+  "rossi": [
+   "src/lib/mediaUnder.test.ts > mediaUnder \u2014 lettura delle statistiche della sessione > la riga dell'obiettivo dice punta a multiplo, importo esatto, rischio, media e banca dopo"
+  ]
+ },
+ {
+  "id": "F6",
+  "mutazione": "scheda: la media non spegne lo sniper",
+  "esito": "1 rossi",
+  "rossi": [
+   "src/components/live/ScalperPanel.test.tsx > ScalperPanel \u2014 MEDIA UNDER (05/10, SPEC_MEDIA_UNDER_2026-10-05.md) > accesa: senza mercato non parte; col mercato manda tutti i parametri e spegne lo sniper"
+  ]
+ },
+ {
+  "id": "F7",
+  "mutazione": "scheda: parte senza mercato",
+  "esito": "1 rossi",
+  "rossi": [
+   "src/components/live/ScalperPanel.test.tsx > ScalperPanel \u2014 MEDIA UNDER (05/10, SPEC_MEDIA_UNDER_2026-10-05.md) > accesa: senza mercato non parte; col mercato manda tutti i parametri e spegne lo sniper"
+  ]
+ },
+ {
+  "id": "F8",
+  "mutazione": "scheda: stato del ciclo non mostrato",
+  "esito": "1 rossi",
+  "rossi": [
+   "src/components/live/ScalperPanel.test.tsx > ScalperPanel \u2014 MEDIA UNDER (05/10, SPEC_MEDIA_UNDER_2026-10-05.md) > la sessione attiva mostra lo stato del ciclo e il riquadro di chiusura"
+  ]
+ },
+ {
+  "id": "F10",
+  "mutazione": "scheda: nessun controllo del mercato",
+  "esito": "1 rossi",
+  "rossi": [
+   "src/lib/mediaUnder.test.ts > mediaUnder \u2014 parametri > il mercato si sceglie: senza mercato la scheda non manda"
+  ]
+ },
+ {
+  "id": "F11",
+  "mutazione": "scheda: quote rovesciate accettate",
+  "esito": "1 rossi",
+  "rossi": [
+   "src/lib/mediaUnder.test.ts > mediaUnder \u2014 parametri > valori non validi: tick, rientri, quote, commissione"
+  ]
+ },
+ {
+  "id": "F12",
+  "mutazione": "scheda: vista della modalita' anche senza modalita'",
+  "esito": "1 rossi",
+  "rossi": [
+   "src/lib/mediaUnder.test.ts > mediaUnder \u2014 lettura delle statistiche della sessione > nessuna modalit\u00e0 = null (la vista non compare)"
+  ]
+ },
+ {
+  "id": "F13",
+  "mutazione": "scheda: banca appoggiata mai letta",
+  "esito": "2 rossi",
+  "rossi": [
+   "src/components/live/ScalperPanel.test.tsx > ScalperPanel \u2014 MEDIA UNDER (05/10, SPEC_MEDIA_UNDER_2026-10-05.md) > la sessione attiva mostra lo stato del ciclo e il riquadro di chiusura",
+   "src/lib/mediaUnder.test.ts > mediaUnder \u2014 lettura delle statistiche della sessione > legge stato, banca e riquadro con i loro tipi"
+  ]
+ },
+ {
+  "id": "F14",
+  "mutazione": "scheda: modalita' accesa di serie",
+  "esito": "4 rossi",
+  "rossi": [
+   "src/components/live/ScalperPanel.test.tsx > ScalperPanel \u2014 MEDIA UNDER (05/10, SPEC_MEDIA_UNDER_2026-10-05.md) > accesa: senza mercato non parte; col mercato manda tutti i parametri e spegne lo sniper",
+   "src/components/live/ScalperPanel.test.tsx > ScalperPanel \u2014 MEDIA UNDER (05/10, SPEC_MEDIA_UNDER_2026-10-05.md) > spenta di serie: l'attivazione normale non manda la modalit\u00e0",
+   "src/components/live/ScalperPanel.test.tsx > ScalperPanel \u2014 sniper ACCESO di default (ordine dell'utente 25/09 sera) > il form nasce con lo sniper spuntato e lo manda acceso (true esplicito) all'attivazione",
+   "src/components/live/ScalperPanel.test.tsx > ScalperPanel \u2014 sniper ACCESO di default (ordine dell'utente 25/09 sera) > spegnendo il checkbox lo sniper parte spento (sniper_mode=false ESPLICITO, mai assente)"
+  ]
+ },
+ {
+  "id": "F9",
+  "mutazione": "valore di serie: modalita' accesa",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_i_valori_di_serie_sono_quelli_della_scheda",
+   "src/lib/mediaUnder.test.ts > mediaUnder \u2014 parametri > spenta di serie e i valori di serie della spec par.5"
+  ]
+ }
+]
