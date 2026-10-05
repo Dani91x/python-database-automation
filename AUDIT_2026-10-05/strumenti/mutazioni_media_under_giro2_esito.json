@@ -1,0 +1,29 @@
+[
+ {
+  "id": "G1",
+  "mutazione": "_forse_rientro decide il rientro anche con la quota salita meno di N tick",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro2_2026_10_05.py::test_quota_su_di_meno_di_n_tick_la_banca_resta_ferma[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro2_2026_10_05.py::test_quota_su_di_meno_di_n_tick_la_banca_resta_ferma[4]"
+  ]
+ },
+ {
+  "id": "G2",
+  "mutazione": "_assicura_banca: la banca viva e' sempre <<giusta>> (mai riallineata)",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro2_2026_10_05.py::test_punta_abbinata_in_due_tempi_la_banca_si_riallinea[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro2_2026_10_05.py::test_punta_abbinata_in_due_tempi_la_banca_si_riallinea[4]"
+  ]
+ },
+ {
+  "id": "G3",
+  "mutazione": "_assicura_banca: confronta solo la quota, non l'importo",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro2_2026_10_05.py::test_punta_abbinata_in_due_tempi_la_banca_si_riallinea[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro2_2026_10_05.py::test_punta_abbinata_in_due_tempi_la_banca_si_riallinea[4]"
+  ]
+ }
+]
