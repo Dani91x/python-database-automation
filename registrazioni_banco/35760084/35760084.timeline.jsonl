@@ -1,0 +1,11 @@
+{"update_id": 6, "type": "KickOff", "team": null, "team_name": null, "minute": 1, "elapsed_regular": 1, "elapsed_added": null, "ts": "2026-06-30T16:00:46.101662+00:00"}
+{"update_id": 17, "type": "Goal", "team": "home", "team_name": "Liepajas Metalurgs", "minute": 8, "elapsed_regular": 8, "elapsed_added": null, "ts": "2026-06-30T16:08:13.499684+00:00"}
+{"update_id": 56, "type": "Goal", "team": "home", "team_name": "Liepajas Metalurgs", "minute": 28, "elapsed_regular": 28, "elapsed_added": null, "ts": "2026-06-30T16:28:28.062801+00:00"}
+{"update_id": 67, "type": "YellowCard", "team": "away", "team_name": "Ogre United", "minute": 33, "elapsed_regular": 33, "elapsed_added": null, "ts": "2026-06-30T16:33:17.931321+00:00"}
+{"update_id": 84, "type": "Goal", "team": "home", "team_name": "Liepajas Metalurgs", "minute": 46, "elapsed_regular": 45, "elapsed_added": 1, "ts": "2026-06-30T16:46:34.487089+00:00"}
+{"update_id": 88, "type": "FirstHalfEnd", "team": null, "team_name": null, "minute": 48, "elapsed_regular": 45, "elapsed_added": 3, "ts": "2026-06-30T16:48:14.506252+00:00"}
+{"update_id": 91, "type": "SecondHalfKickOff", "team": null, "team_name": null, "minute": 46, "elapsed_regular": 46, "elapsed_added": null, "ts": "2026-06-30T17:06:08.705638+00:00"}
+{"update_id": 121, "type": "Goal", "team": "home", "team_name": "Liepajas Metalurgs", "minute": 63, "elapsed_regular": 63, "elapsed_added": null, "ts": "2026-06-30T17:23:59.875977+00:00"}
+{"update_id": 137, "type": "YellowCard", "team": "away", "team_name": "Ogre United", "minute": 72, "elapsed_regular": 72, "elapsed_added": null, "ts": "2026-06-30T17:32:58.737224+00:00"}
+{"update_id": 160, "type": "YellowCard", "team": "home", "team_name": "Liepajas Metalurgs", "minute": 92, "elapsed_regular": 90, "elapsed_added": 2, "ts": "2026-06-30T17:52:21.076009+00:00"}
+{"update_id": 164, "type": "SecondHalfEnd", "team": null, "team_name": null, "minute": 93, "elapsed_regular": 90, "elapsed_added": 3, "ts": "2026-06-30T17:53:15.060216+00:00"}

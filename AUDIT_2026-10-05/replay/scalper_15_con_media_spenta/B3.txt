@@ -1,0 +1,69 @@
+WARNING:valuta:[valuta] cambio GBP->EUR non letto: '_TradingFinto' object has no attribute 'account'
+BOT: scalper_calcio | spec: Betfair/stream/scalper/BIBBIA_SCALPER_CALCIO.md | registrazioni: 1 in C:/Users/Admin/Desktop/PYTHON DATABASE/python-database-automation/_live_raw
+controlli attivi: 22 | flumine 2.13.11 | betfairlightweight 2.23.2 | codice bot e80dc7917c5a (12 file)
+comando: python -m Betfair.stream.backtest.certifica scalper_calcio 35797769 --scenari uscite-manuali-firmate
+ambiente del banco (dichiarato; il .env di chi lancia non conta): ESITI_ORDINI_CANALE=0 LIVE_KILL_SWITCH=false LIVE_ORDER_MODE=LIVE MIKE_CANALE_POSIZIONI=0 MIKE_LEGGE_CANALE=0 MIKE_LIVE_ENABLED=1 MIKE_SVEGLIA_CANALE=0 MOTORE_ORDINI_CANALE=0 MOTORE_ORDINI_CANALE_TENNIS=0 OMEGA_CANALE_POSIZIONI=0 OMEGA_LEGGE_CANALE=0 OMEGA_ORDINI_VIA_CANALE=0 OMEGA_SVEGLIA_CANALE=0 PUNTEGGI_CANALE=0 SAFE_BOT_LEGGE_CANALE=0 SAFE_BOT_SVEGLIA_CANALE=0 SAFE_CANALE_POSIZIONI=0 SAFE_ORDINI_VIA_CANALE=0 SAFE_PRE_KO_OU_HOURS=1 SAFE_SCAN_CANALE=0 SAFE_TENNIS_ORDINI_VIA_CANALE=0 SCALPER_CANALE=0 TENNIS_BOT_CANALE=0 TENNIS_BOT_SVEGLIA_CANALE=0 | interruttore ordini del bot: coda=0 canale=1
+qualita' delle registrazioni: COMPLETE x1
+
+OK  35797769  tick=1511913 decisioni=286052 azioni=  53 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:LOCKING,slot:DONE,slot:FLATTENING,sessione:done [COMPLETE]
+      nota: qualita' registrazione: COMPLETE 95.4%
+      nota: control della UI: mode=maker dry_run=False stake=25 params=[('entry_stop_before_s', 420), ('event_loss_cap', 1.5), ('event_profit_target', 1), ('flatten_before_s', 180), ('ht_mode', False), ('min_flow', 10), ('min_size', 300), ('one_green_per_phase', True), ('price_max', 4.6), ('price_min', 1.5), ('scalp_ticks', 1), ('sniper_mode', True), ('sniper_stake', 10), ('stop_ticks', 1), ('uscite_automatiche', False)]
+      nota: limiti dichiarati: catalogo sintetizzato dai marketDefinition; scanner non usato (lo scalper legge il book); orologio di mercato per `time.time`; settlement non raggiunto (fine vita della sessione); theta fuori perimetro
+      nota: SNIPER: righe live_now dal sidecar 124 (linea Under (gol+1).5 con `scalper_session.applica_linea_sniper` ogni 15 s di mercato); vita della sessione KO+7800 s
+      nota: USCITE MANUALI: interruttore spento; il banco firma ogni proposta dopo 5 s di mercato (params.uscite_approvate, riletta dalla sessione al battito)
+      nota: sessioni: {'prima': 'finita'}; stato finale 'done' (causa della fine: ?)
+      nota: book in ritardo: 1548843; lapse al fischio: 0; lapse alla sospensione: 0; righe di specchio catturate: 259942
+      nota: fasi viste: pre-match, stop-ingressi, finestra-flatten, in-gioco, fine-sessione
+      nota: uscite EFFETTIVE delle strategie a fine sessione: MANUALI
+      nota: SNIPER: uscite manuali; stats {'orders': 2, 'entries': 1, 'greens': 1, 'pnl_locked': 0.08999999999999986, 'pos_ms_total': 167086.0, 'cycles': 1, 'pnl_settled': 0.09, 'uscite_proposte_emesse': 1}; eventi {'sniper_lines': 3, 'sniper_fire': 1, 'uscita_proposta': 1, 'uscita_eseguita_su_approvazione': 1, 'sniper_green': 1, 'sniper_mission_done': 1}; piatto a fine sessione: True
+      nota: stati dello slot MAI visti: QUOTING
+      nota: USCITE MANUALI (uscite-manuali-firmate): decisioni 166, proposte nate 9, decadute 1, firme del banco 8, uscite firmate eseguite 8; non giudicabili: UF2 scalper|1.259819674|58805|140105110381702411|target: proposta 24.42, uscita 24.00; resto 0.42 dichiarato NON piazzabile dal bot (min_bet_skip, regola esistente); UF2 scalper|1.259819674|22|140105110394169582|target: proposta 2.78, uscita 2.50; resto 0.28 dichiarato NON piazzabile dal bot (min_bet_skip, regola esistente); UF2 scalper|1.259819674|22|140105110394169582|scratch: proposta 2.80, uscita 2.50; resto 0.30 dichiarato NON piazzabile dal bot (min_bet_skip, regola esistente); UF2 scalper|1.259819682|47973|140105110422344330|target: proposta 24.86, uscita 24.50; resto 0.36 dichiarato NON piazzabile dal bot (min_bet_skip, regola esistente)
+      motivo x23: place
+      motivo x8: uscita_proposta
+      motivo x7: uscita_eseguita_su_approvazione
+      motivo x5: min_bet_skip
+      motivo x3: scratch
+      motivo x3: cycle
+      tempo: 35797769 [uscite-manuali-firmate] 2m50.5s (170.5 s) | 8866 tick/s
+
+ESITO: 1 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+       0 violazioni totali
+
+COPERTURA DEI CONTROLLI — quante volte ognuno ha avuto un caso:
+     B1  x10690   nessun INGRESSO nuovo quando le aperture sono vietate: force-flat 
+     B2  x6443    al FISCHIO nessuna posizione aperta: dopo il KO ogni selezione ha 
+     B3  x15      ogni ordine chiesto e' LEGALE su .it: prezzo nella ladder, non sot
+     B4  x8       lo stake d'ingresso e' quello del control (mai piu' di quanto l'ut
+     B5  x11602   l'esposizione abbinata per selezione non supera il tetto che la se
+     B6  x8       tetto transazioni/ora (`max_txn_hour`): oltre il budget nessun NUO
+     K1  x913     ogni ordine che il bot STA SEGUENDO in una posizione viva esiste d
+  ?? K2  x0       un ordine RIFIUTATO (place_order ha risposto False, stato Violatio
+     K3  x11602   lo stato di ogni ordine si legge come Enum `OrderStatus` (`.value`
+     K4  x913     uno slot che il bot crede VIVO ha almeno un ordine vivo o dell'abb
+     K5  x11359   nessuna ESPOSIZIONE abbinata resta sbilanciata su una selezione il
+     K6  x11602   quando il bot dichiara uno slot CHIUSO (IDLE/DONE) non resta nessu
+     K7  x4       a ogni ciclo chiuso il `locked` che il bot contabilizza (pnl_locke
+     S1  x2772    ogni scrittura del servizio su `scalper_control` rispetta i CHECK 
+  ?? S2  x0       uno STOP (UI 'stopping', kill-switch, fine vita, cap globale) arma
+     S3  x1       a sessione CHUSA nessun ordine della sessione resta vivo a mercato
+     S4  x1       lo stato finale della sessione dice PERCHE' e' finita: 'stopped' s
+     S5  x11705   mentre la sessione e' 'running' il servizio scrive heartbeat_at e 
+  ?? S6  x0       PAPER = LIVE: armata dallo stesso control, la sessione paper e que
+  ?? S7  x0       dopo un RIAVVIO della sessione, l'esposizione abbinata e gli ordin
+     P1  x11451   ogni ordine del bot arriva allo specchio `betfair_live_orders` (ri
+     P2  x11451   lo specchio non dichiara MAI un ordine abbinato piu' di quanto il 
+  -- controlli del banco comune, scenari a uscite manuali (uscite-manuali-firmate):
+     UM1 x166     a uscite manuali nessuna uscita di trading parte senza la firma de
+     UM2 x158     ogni uscita decisa dalla strategia diventa una proposta coi numeri
+     UM3 x167     le protezioni non passano dal cancello e scattano da sole
+     UM4 x1       una proposta la cui condizione cade sparisce, con la sua firma
+     UF1 x8       una firma fa partire l'uscita una volta sola
+     UF2 x8       l'uscita firmata parte all'importo esatto della proposta di adesso
+     UF3 x8       una firma non esegue mai un'uscita diversa da quella firmata
+
+?? MAI SOLLECITATI: 4 controlli su 22. Su questi il referto NON dice «sano», dice «non lo so»:
+     K2: un ordine RIFIUTATO (place_order ha risposto False, stato Violation) non lascia il bot con una posizione creduta viva che poggia SOLO su ordini rifiutati (difetto 2 del 15/09: `res.ok` mai letto)
+     S2: uno STOP (UI 'stopping', kill-switch, fine vita, cap globale) arma il force-flat della strategia entro un heartbeat del servizio (HEARTBEAT_S + 1 s di mercato): le protezioni girano, le aperture no (par.6.3)
+     S6: PAPER = LIVE: armata dallo stesso control, la sessione paper e quella live producono la STESSA strategia (parametri campo per campo) e un client flumine che differisce SOLO per `paper_trade` (par.4; catalogo par.7 punti 14, 25, 26)
+     S7: dopo un RIAVVIO della sessione, l'esposizione abbinata e gli ordini vivi lasciati dalla sessione morta sono governati dalla nuova (una sua credenza li segue) oppure il servizio li DICHIARA (allarme): mai una posizione orfana silenziosa (PROCESSO par.6.3 riavvio; catalogo par.7 punto 19)
+TEMPO TOTALE: 2m51.4s (171.4 s) su 1 replay | obiettivo 300 s, tetto 600 s (CERTIFICA_TETTO_S)

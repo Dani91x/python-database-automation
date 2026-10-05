@@ -1,0 +1,11 @@
+{"update_id": 11, "type": "KickOff", "team": null, "team_name": null, "minute": 1, "elapsed_regular": 1, "elapsed_added": null, "ts": "2026-07-10T19:01:02.613496+00:00"}
+{"update_id": 44, "type": "Goal", "team": "home", "team_name": "Spain", "minute": 30, "elapsed_regular": 30, "elapsed_added": null, "ts": "2026-07-10T19:30:09.585766+00:00"}
+{"update_id": 59, "type": "Goal", "team": "away", "team_name": "Belgium", "minute": 41, "elapsed_regular": 41, "elapsed_added": null, "ts": "2026-07-10T19:40:56.664715+00:00"}
+{"update_id": 61, "type": "YellowCard", "team": "home", "team_name": "Spain", "minute": 43, "elapsed_regular": 43, "elapsed_added": null, "ts": "2026-07-10T19:43:27.195563+00:00"}
+{"update_id": 81, "type": "FirstHalfEnd", "team": null, "team_name": null, "minute": 51, "elapsed_regular": 45, "elapsed_added": 6, "ts": "2026-07-10T19:50:45.705431+00:00"}
+{"update_id": 84, "type": "SecondHalfKickOff", "team": null, "team_name": null, "minute": 46, "elapsed_regular": 46, "elapsed_added": null, "ts": "2026-07-10T20:07:16.335194+00:00"}
+{"update_id": 127, "type": "YellowCard", "team": "away", "team_name": "Belgium", "minute": 85, "elapsed_regular": 85, "elapsed_added": null, "ts": "2026-07-10T20:47:03.158746+00:00"}
+{"update_id": 131, "type": "Goal", "team": "home", "team_name": "Spain", "minute": 88, "elapsed_regular": 88, "elapsed_added": null, "ts": "2026-07-10T20:49:44.187452+00:00"}
+{"update_id": 139, "type": "YellowCard", "team": "home", "team_name": "Spain", "minute": 93, "elapsed_regular": 90, "elapsed_added": 3, "ts": "2026-07-10T20:54:49.473882+00:00"}
+{"update_id": 145, "type": "YellowCard", "team": "away", "team_name": "Belgium", "minute": 95, "elapsed_regular": 90, "elapsed_added": 5, "ts": "2026-07-10T20:56:39.647670+00:00"}
+{"update_id": 150, "type": "SecondHalfEnd", "team": null, "team_name": null, "minute": 98, "elapsed_regular": 90, "elapsed_added": 8, "ts": "2026-07-10T20:59:23.664629+00:00"}
