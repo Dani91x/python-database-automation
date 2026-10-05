@@ -161,8 +161,11 @@
  {
   "id": "G16",
   "mutazione": "righe a mano di altre selezioni (l'Over) nel riquadro",
-  "esito": "0 rossi",
-  "rossi": []
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro2_2026_10_05.py::test_la_strategia_scarta_da_sola_le_righe_di_altre_selezioni[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro2_2026_10_05.py::test_la_strategia_scarta_da_sola_le_righe_di_altre_selezioni[4]"
+  ]
  },
  {
   "id": "G17",
@@ -289,7 +292,10 @@
  {
   "id": "G30",
   "mutazione": "riepilogo: una banca caduta raccontata come abbinata",
-  "esito": "0 rossi",
-  "rossi": []
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro2_2026_10_05.py::test_riepilogo_banca_caduta_in_gioco_detta_non_piu_a_mercato[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro2_2026_10_05.py::test_riepilogo_banca_caduta_in_gioco_detta_non_piu_a_mercato[4]"
+  ]
  }
 ]

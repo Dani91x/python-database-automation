@@ -12,7 +12,7 @@ toccate). La partita sintetica del primo giro NON e' in questo ramo.
 
 1. **Due sole partite, e sulla 35760084 la modalita' non entra mai.** Sull'Under 2,5 e
    sull'Under 3,5 di quella partita il primo filtro che ferma l'ingresso e' la
-   liquidita' (meno di 300 EUR sul miglior prezzo): tutti i suoi 14 scenari della
+   liquidita' (meno di 300 EUR sul miglior prezzo): tutti i suoi 12 scenari della
    modalita' escono **NE** (non esercitati) col motivo. Anche `media-under-35` sulla
    35797769 esce NE (stesso motivo). Tutta la condotta osservata sul banco viene da UNA
    partita (35797769, Under 2,5).
@@ -36,6 +36,15 @@ toccate). La partita sintetica del primo giro NON e' in questo ramo.
 6. **Ambiente diverso dal PC dell'utente**: Python 3.11 (l'utente 3.13).
 7. **La modalita' NON e' certificata**: mancano prova (paper) e soldi veri, e i tre punti
    in attesa dell'utente (P1, P8, P13) restano come sono (§4).
+8. **Il replay ha trovato un difetto mio** (§2, D1): la prima versione della lettura
+   degli ordini del conto faceva morire la sessione in soldi veri alla prima lettura con
+   la posizione aperta. Corretto e riprodotto da un test; tutte le varianti e i guasti
+   rilanciati dopo la correzione.
+9. **Un caso della strategia da decidere** (§4, Q1): un rientro abbinato in parte puo'
+   portare un ciclo chiuso in PERDITA (-0,25 EUR sulla partita vera, con 1 tick).
+10. **Pulizia**: un worktree git di `origin/master` usato per lanciare i 5 test rossi su
+   master e' rimasto nella cartella temporanea della sessione (la rimozione non mi e'
+   stata permessa): `git worktree list` lo mostra; si toglie con `git worktree remove`.
 
 ## 1. Esito per punto della specifica
 
@@ -116,7 +125,7 @@ quota vecchia); toglierlo dal primo produce l'annullo a ogni book (la mutazione 
 ## 3. I replay (referti in `AUDIT_2026-10-05/replay/giro2/`)
 
 Comando unico: `bash AUDIT_2026-10-05/strumenti/replay_giro2.sh` (UN replay alla volta,
-`--worker 1`); riepilogo in `riepilogo.log`. Tempi per scenario fra 9 e 160 s (sotto i 5
+`--worker 1`); riepilogo in `riepilogo.txt`. Tempi per scenario fra 1,4 e 163 s (sotto i 5
 minuti; i tempi esatti sono nelle righe `tempo:` di ogni referto).
 
 ### 3.1 Non regressione (modalita' spenta)
@@ -132,17 +141,17 @@ B3, C.
 |---|---|---|---|---|---|---|
 | 35797769 | `media-under` | OK | 5 | 1 chiuso (in gioco al 9'53") | +0,17 | nessuno |
 | 35797769 | `media-under-paper` | OK | 5 | uguale (paper = live) | +0,17 | nessuno |
-| 35797769 | `media-under-35` | **NE** (liquidita') | 0 | - | 0 | M1-M9 |
+| 35797769 | `media-under-35` | **NE** (liquidita') | 0 | - | 0 | M1-M6, M8, M9 |
 | 35797769 | `media-under-obiettivo-030` | OK | 5 | 1 (rientro 17,00 esatto 17,21) | +0,29 | nessuno |
 | 35797769 | `media-under-rientri-1` | OK | 5 | 1, MASSIMO raggiunto | +0,17 | nessuno |
 | 35797769 | `media-under-rischio-30` | OK | 5 | 1 (20 EUR, mai al tetto) | +0,17 | nessuno |
 | 35797769 | `media-under-tick-1` | OK | 19 | 2: +0,09 e **-0,25** | -0,16 | nessuno |
 | 35797769 | `media-under-riavvio` | OK | 2 | 1 (banca della sessione morta abbinata) | +0,17 | M2, M3, M4 |
-| 35797769 | `media-under-rifiuti-betfair` | OK | 11 | 1 (6 rifiuti, attese 1-32 s) | +0,17 | nessuno |
+| 35797769 | `media-under-rifiuti-betfair` | OK | 11 | 1 (6 rifiuti, attese 1, 2, 4, 8, 16, 30 s) | +0,17 | nessuno |
 | 35797769 | `media-under-esiti-ignoti` | OK | 10 | 2 | +0,34 | nessuno |
 | 35797769 | `media-under-kill-switch` | OK | 2 | 0, posizione aperta | ignoto | M2, M3, M4, M7 |
 | 35797769 | `media-under-bot-fermo` | OK | 2 | 0, posizione aperta | ignoto | M2, M3, M4, M7 |
-| 35760084 | tutti i 12 | **NE** (liquidita') | 0 | - | 0 | (M10 soltanto) |
+| 35760084 | tutti i 12 | **NE** (liquidita') | 0 | - | 0 | M1-M6, M8, M9 (sollecitati M7 e M10; kill-switch e bot-fermo, fermati prima del fischio, solo M10) |
 
 (Il dettaglio di ogni ciclo, coi minuti e la banca finale, e' nelle note di ogni referto.)
 
@@ -152,7 +161,7 @@ B3, C.
   PERSIST). Gli ordini del processo morto restano a mercato; la sessione nuova parte
   `BLOCCATA` («riavvio a posizione aperta: posizione non ricostruibile... nessun
   ordine», punto P13 dell'utente, non toccato) e non piazza niente. La banca rimasta si
-  abbina da sola: ciclo +0,17.
+  abbina da sola in gioco all'8'07": ciclo +0,17.
 - **rifiuti-betfair**: 6 piazzamenti rifiutati; la modalita' frena (1, 2, 4, 8, 16 s ...),
   conta «attesa dopo un rifiuto» fra i motivi, poi entra; nessun ripiazzo a ogni book.
 - **esiti-ignoti**: 6 piazzamenti senza esito per 20 s; mai un secondo ordine sopra uno
@@ -160,8 +169,10 @@ B3, C.
 - **kill-switch / bot-fermo**: stop a meta' della finestra pre-match con la posizione
   aperta. Dopo il blocco **nessun ordine** (M9). Resta 10 @2,18 SENZA banca: la banca
   PERSIST e' tolta dall'arresto (punto **P1** dell'utente, non toccato). S3 verde: il
-  servizio dichiara la posizione non piatta. Vedi la riga «banca finale ... a fine
-  replay» del referto.
+  servizio la dichiara (S3 e' verde solo se la posizione e' piatta OPPURE dichiarata, e
+  piatta non e'). Il referto: «banca finale 10.19 @2.14 PERSIST, abbinata 0.00, a fine
+  replay NON piu' a mercato (annullata o scaduta, resto 10.19); posizione aperta: se
+  vince l'Under +11.80, se perde -10.00».
 
 ## 4. Punti dove la specifica non decide (non fatti: per l'utente)
 
@@ -190,17 +201,59 @@ B3, C.
 primo giro: una sostituzione per volta, test dei due giri, ripristino con `git checkout`).
 Esito in `AUDIT_2026-10-05/strumenti/mutazioni_media_under_giro2_esito.json`.
 
-TABELLA_MUTAZIONI
+| # | mutazione | esito | primo test rosso |
+|---|---|---|---|
+| G1 | _forse_rientro decide il rientro anche con la quota salita meno di N tick | 2 rossi | `test_quota_su_di_meno_di_n_tick_la_banca_resta_ferma[1]` |
+| G2 | _assicura_banca: la banca viva e' sempre «giusta» (mai riallineata) | 2 rossi | `test_punta_abbinata_in_due_tempi_la_banca_si_riallinea[1]` |
+| G3 | _assicura_banca: confronta solo la quota, non l'importo | 2 rossi | `test_punta_abbinata_in_due_tempi_la_banca_si_riallinea[1]` |
+| G4 | le azioni del referto non contano gli ordini della modalita' | 2 rossi | `test_le_azioni_del_referto_sono_gli_ordini_della_modalita[1]` |
+| G5 | uno scenario senza ordini della modalita' esce OK invece di NE | 2 rossi | `test_referto_senza_ordini_e_non_esercitato_col_motivo[1]` |
+| G6 | riepilogo: profitto del ciclo chiuso sbagliato | 4 rossi | `test_referto_con_ordini_esercitato_riepilogo_e_netto[1]` |
+| G7 | riepilogo: commissione anche su un lordo negativo | 2 rossi | `test_riepilogo_per_ciclo_dagli_ordini_veri[1]` |
+| G8 | riepilogo: importo esatto del rientro preso dal rientro sbagliato | 2 rossi | `test_riepilogo_per_ciclo_dagli_ordini_veri[1]` |
+| G9 | riepilogo: tutti gli ordini in un solo ciclo | 4 rossi | `test_referto_con_ordini_esercitato_riepilogo_e_netto[1]` |
+| G10 | motivo di non ingresso con il nome sbagliato | 4 rossi | `test_motivi_di_non_ingresso_contati_per_filtro[1-kw0-None-20.0-None-liquidita]` |
+| G11 | motivi di non ingresso mai contati | 16 rossi | `test_motivi_di_non_ingresso_contati_per_filtro[1-kw0-None-20.0-None-liquidita]` |
+| G12 | un filtro (flusso) non piu' bloccante | 4 rossi | `test_niente_ingresso_senza_liquidita_flusso_spread_o_quota[1]` |
+| G13 | in prova la lettura degli ordini del conto si fa | 2 rossi | `test_in_prova_mai_nessuna_lettura[1]` |
+| G14 | lettura degli ordini del conto anche a posizione chiusa | 4 rossi | `test_in_posizione_prima_del_massimo_nessuna_lettura[1]` |
+| G15 | le righe dello specchio della sessione contate come ordini a mano | 2 rossi | `test_soldi_veri_righe_a_mano_entrano_solo_nel_riquadro[1]` |
+| G16 | righe a mano di altre selezioni (l'Over) nel riquadro | 2 rossi | `test_la_strategia_scarta_da_sola_le_righe_di_altre_selezioni[1]` |
+| G17 | righe a mano: punta e banca scambiate | 2 rossi | `test_soldi_veri_righe_a_mano_entrano_solo_nel_riquadro[1]` |
+| G18 | riquadro: le righe a mano lette ma non usate | 2 rossi | `test_soldi_veri_righe_a_mano_entrano_solo_nel_riquadro[1]` |
+| G19 | lettura fallita non detta nel riquadro | 2 rossi | `test_lettura_fallita_torna_solo_ordini_del_bot_e_lo_dice[1]` |
+| G20 | le righe a mano entrano nelle stats della modalita' (non solo nel riquadro) | 2 rossi | `test_soldi_veri_righe_a_mano_entrano_solo_nel_riquadro[1]` |
+| G21 | M10 muto su UNA lettura in prova | 1 rossi | `test_m10_rosso_su_letture_in_prova_o_oltre_i_battiti` |
+| G22 | M10 muto su piu' letture per battito | 1 rossi | `test_m10_rosso_su_letture_in_prova_o_oltre_i_battiti` |
+| G23 | le varianti dichiarate non cambiano i parametri | 4 rossi | `test_scenari_dichiarati_cambiano_solo_la_loro_differenza[media-under-obiettivo-030-diversi0-None]` |
+| G24 | le varianti di guasto non armano il guasto | 5 rossi | `test_scenari_dichiarati_cambiano_solo_la_loro_differenza[media-under-bot-fermo-diversi8-bot-fermo]` |
+| G25 | il guasto non aspetta la posizione aperta della modalita' | 2 rossi | `test_i_guasti_del_banco_aspettano_la_posizione_della_modalita[1]` |
+| G26 | la lettura torna a usare time.strftime (il difetto trovato dal replay) | 2 rossi | `test_la_lettura_usa_solo_il_tempo_che_il_banco_conosce[1]` |
+| G27 | un'eccezione della lettura arriva al ciclo del battito | 4 rossi | `test_la_lettura_non_rompe_mai_il_battito[1]` |
+| G28 | ciclo chiuso in perdita detto «in profitto» (il difetto di testo del replay) | 2 rossi | `test_ciclo_chiuso_in_perdita_lo_dice[1]` |
+| G29 | lettura degli ordini del conto anche col riquadro non pubblicato | 2 rossi | `test_in_posizione_prima_del_massimo_nessuna_lettura[1]` |
+| G30 | riepilogo: una banca caduta raccontata come abbinata | 2 rossi | `test_riepilogo_banca_caduta_in_gioco_detta_non_piu_a_mercato[1]` |
+
+**30 mutazioni, 30 rosse.** Alla prima passata G16 (righe di altre selezioni) e G30
+(banca caduta raccontata come abbinata) erano SOPRAVVISSUTE: due test nuovi
+(`test_la_strategia_scarta_da_sola_le_righe_di_altre_selezioni`,
+`test_riepilogo_banca_caduta_in_gioco_detta_non_piu_a_mercato`), poi la passata intera
+rifatta. G1-G3 sono le mutazioni del revisore (prima sopravvissute).
 
 ## 6. Test
 
-- `Betfair/stream/tests/test_scalper_media_under_giro2_2026_10_05.py`: NUMERO_TEST casi
+- `Betfair/stream/tests/test_scalper_media_under_giro2_2026_10_05.py`: 60 casi
   (flumine VERO col client paper della sessione, book nativi Betfair, esecuzione
   differita di 1 e 4 book, minimi .it del banco; righe di `betfair_live_orders` nella
   forma vera).
 - Primo giro: `test_scalper_media_under_2026_10_05.py` (unico cambio: l'elenco dei
   controlli M ha M10).
-- Suite `Betfair/stream/`: ESITO_SUITE.
+- Suite intera `python -m pytest Betfair/ -q -p no:cacheprovider`: **10124 verdi, 5 rossi,
+  54 saltati, 6 xfailed** (364 s). I 5 rossi sono tutti in
+  `Betfair/safe_strategy/tests/test_velocita_feed_2026_09_30.py` (test sui tempi del
+  worker di Safe, dominio non toccato): **rossi identici su `master` pulito** in questo
+  ambiente (stesso file lanciato in un worktree di `origin/master`: 5 rossi, 23 verdi).
+  Il revisore sul PC dell'utente ha 0 rossi: da riguardare li', non qui.
 
 ## 7. File toccati
 
