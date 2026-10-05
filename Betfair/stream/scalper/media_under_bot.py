@@ -560,6 +560,9 @@ class MediaUnderStrategy(BaseStrategy):
         if par is None:
             raise ValueError("media under: %s" % motivo)
         self.par: ParametriMedia = par
+        # gli stessi parametri in un dizionario semplice: li confronta la parita'
+        # paper/live del banco (S6), che legge solo attributi semplici
+        self.parametri: Dict[str, Any] = dict(vars(par))
         # flusso: gli stessi concetti (e numeri) dello scalper (VALIDATED_PARAMS)
         self.flow_window_ms: int = int(cfg.get("flow_window_ms", 90000))
         self.warmup_ms: int = int(cfg.get("warmup_ms", 60000))

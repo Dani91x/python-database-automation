@@ -68,6 +68,18 @@ def _sali(b: BancoMedia, svuota: Any, quote: List[float], n: int = 12) -> List[s
     return viol
 
 
+def _fino_a(b: BancoMedia, svuota: Any, kind: str, massimo: int = 60) -> List[str]:
+    """Un book alla volta finche' la strategia non emette ``kind`` (al massimo
+    ``massimo`` book: un evento che non arriva e' un test ROSSO, mai appeso)."""
+    viol: List[str] = []
+    for _i in range(massimo):
+        if b.kinds(kind):
+            return viol
+        viol += giri(b, svuota, 1)
+    assert b.kinds(kind), "nessun %s in %d book" % (kind, massimo)
+    return viol
+
+
 def _punte(b: BancoMedia) -> List[Any]:
     return [o for o in b.ordini() if MU._lato(o) == "BACK"]
 
@@ -364,8 +376,7 @@ def test_punta_di_rientro_non_abbinata_si_annulla_e_non_conta(differita, exchang
     b = BancoMedia()
     viol = _posizione_a(b, differita)
     b.ladder[b.under] = (1.52, 1.53)
-    while not b.kinds("media_rientro"):   # annullo della banca, poi la punta
-        viol += giri(b, differita, 1)
+    viol += _fino_a(b, differita, "media_rientro")   # annullo della banca, poi la punta
     # prima che la punta passi (un book senza esecuzione): il prezzo torna giu',
     # la punta resta appoggiata
     b.ladder[b.under] = (1.51, 1.52)
@@ -389,8 +400,7 @@ def test_rientro_deciso_con_la_banca_ancora_in_volo(differita, exchange_it):
     punta (mai bloccato per sempre, mai due chiusure vive)."""
     b = BancoMedia()
     viol = giri(b, differita, 61)
-    while not b.kinds("media_banca"):
-        viol += giri(b, differita, 1)
+    viol += _fino_a(b, differita, "media_banca")
     banca = b.vivi("LAY")[0]
     assert str(banca.status.value) == "Pending"
     b.ladder[b.under] = (1.52, 1.53)
@@ -429,8 +439,7 @@ def test_in_gioco_nessun_ordine_banca_persist_resta_punta_lapse_cade(differita, 
     viol = _posizione_a(b, differita)
     # una punta di rientro VIVA (non abbinata) al fischio
     b.ladder[b.under] = (1.52, 1.53)
-    while not b.kinds("media_rientro"):
-        viol += giri(b, differita, 1)
+    viol += _fino_a(b, differita, "media_rientro")
     b.ladder[b.under] = (1.51, 1.52)
     b.book(flusso=0.0)
     viol += giri(b, differita, 2, flusso=0.0)
@@ -642,6 +651,9 @@ def test_la_sessione_arma_solo_la_modalita_e_paper_uguale_live():
         ctl = R.control_della_ui(EVENTO, sc)
         par, cli = R.arma_e_cattura(EVENTO, ctl, follow, cat)
         assert par["stato"] == MU.FERMO and "flow_window_ms" in par, sc
+        # i parametri della modalita' entrano nel confronto paper/live (S6)
+        assert par["parametri"]["mercato"] == R.mercato_media(sc), sc
+        assert par["parametri"]["stake"] == 10.0
         assert cli["paper_trade"] is (sc == R.SCENARIO_MEDIA_PAPER)
     p = R.parita_paper_live(EVENTO, R.control_della_ui(EVENTO, R.SCENARIO_MEDIA), follow, cat)
     assert not p.get("errore"), p
