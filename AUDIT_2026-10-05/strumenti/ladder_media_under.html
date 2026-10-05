@@ -82,7 +82,10 @@ button.primary{background:var(--ink);color:var(--panel);border-color:var(--ink)}
 button:disabled{opacity:.4;cursor:not-allowed}
 label.inl{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
 select{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:5px 6px}
-input[type=range]{flex:1 1 100%;accent-color:var(--pre)}
+input[type=range]{flex:1 1 100%;accent-color:var(--pre);height:28px}
+.player{margin-bottom:14px}
+button.big{font-size:17px;padding:10px 18px}
+.hint{flex:1 1 100%;font-size:13px;color:var(--muted)}
 .filebtn input{position:absolute;width:1px;height:1px;opacity:0}
 .filebtn{position:relative;display:inline-flex}
 .chartbox{padding:8px 10px}
@@ -119,6 +122,19 @@ code{font-size:12px;background:var(--row-alt);padding:2px 5px;border-radius:3px;
 
   <div class="banner" id="banner" hidden><b>PARTITA SINTETICA</b><span>Storia di prezzi scritta apposta per far vedere il comportamento: non è una partita vera e non certifica niente. Le decisioni, gli ordini e gli abbinamenti invece sono quelli del codice di produzione (sessione dello scalper + strategia «media under» + flumine del banco). Carica qui sotto la traccia di una tua registrazione per vedere una partita vera.</span></div>
 
+  <div class="box controls player">
+    <button class="primary big" id="bPlay">&#9654; Avvia la partita</button>
+    <button id="bRestart" title="Torna a 70' prima del fischio">Ricomincia</button>
+    <button id="bPrev" title="Torna all'evento precedente">&#9664; Evento</button>
+    <button id="bNext" title="Salta al prossimo evento del bot">Evento &#9654;</button>
+    <label class="inl" for="speed">Velocit&agrave; <select id="speed">
+      <option value="20">lenta (20 s al secondo)</option><option value="60" selected>1 minuto al secondo</option><option value="300">5 minuti al secondo</option><option value="1200">20 minuti al secondo</option>
+    </select></label>
+    <label class="inl" for="stopEv"><input type="checkbox" id="stopEv"> Fermati a ogni mossa del bot</label>
+    <input type="range" id="seek" min="0" max="1000" value="0" aria-label="Posizione nella partita">
+    <div class="hint">Premi <b>Avvia la partita</b>: il tempo scorre da 70 minuti prima del fischio fino al 20' di gioco. A sinistra il ladder si muove, le tue puntate (azzurre) e le banche (rosa) compaiono alla loro quota; a destra leggi cosa sta facendo il bot e il registro delle sue mosse. Puoi trascinare la barra o cliccare sul grafico per saltare a un momento.</div>
+  </div>
+
   <div class="grid">
     <div class="box ladder">
       <div class="lhead"><span>Tue punte</span><span>Disponibile a punta</span><span>Quota</span><span>Disponibile a banca</span><span>Tue banche</span><span>Chiudi qui (netto)</span></div>
@@ -148,17 +164,6 @@ code{font-size:12px;background:var(--row-alt);padding:2px 5px;border-radius:3px;
         <div class="stat"><div class="k">Se perde l'Under</div><div class="v" id="sL">—</div></div>
         <div class="stat"><div class="k">Cicli chiusi</div><div class="v" id="sCic">—</div></div>
         <div class="stat"><div class="k">P&amp;L cicli chiusi</div><div class="v" id="sPnl">—</div></div>
-      </div>
-
-      <div class="box controls">
-        <button class="primary" id="bPlay">Avvia</button>
-        <button id="bPrev" title="Torna all'evento precedente">◀ Evento</button>
-        <button id="bNext" title="Salta al prossimo evento del bot">Evento ▶</button>
-        <label class="inl" for="speed">Velocità <select id="speed">
-          <option value="10">10×</option><option value="60" selected>1 min al secondo</option><option value="300">5 min al secondo</option><option value="1200">20 min al secondo</option>
-        </select></label>
-        <label class="inl" for="stopEv"><input type="checkbox" id="stopEv" checked> Pausa a ogni evento</label>
-        <input type="range" id="seek" min="0" max="1000" value="0" aria-label="Posizione nella partita">
       </div>
 
       <div class="box chartbox">
@@ -267,7 +272,7 @@ function render(){
   $('sPnl').innerHTML=`<span class="${cls(s.pnl)}">${sg(Math.round((s.pnl||0)*100)/100)}</span> <span class="sub">lordo</span>`;
   renderLadder(f,s);renderChart();renderClose(CH[fi]);renderLog();
   $('seek').value=Math.round((clock-T0)/(T1-T0||1)*1000);
-  $('bPlay').textContent=playing?'Pausa':(clock>=T1?'Da capo':'Avvia');
+  $('bPlay').innerHTML=playing?'&#10074;&#10074; Pausa':(clock>=T1?'&#9654; Rivedi da capo':(clock>T0?'&#9654; Continua':'&#9654; Avvia la partita'));
 }
 
 function renderLadder(f,s){
@@ -376,6 +381,7 @@ function tick(ts){
 function play(){if(clock>=T1)clock=T0;playing=true;lastTs=0;requestAnimationFrame(tick);render()}
 function stop(){playing=false;lastTs=0}
 $('bPlay').onclick=()=>{playing?stop():play();render()};
+$('bRestart').onclick=()=>{stop();clock=T0;render()};
 $('bNext').onclick=()=>{stop();const e=EV.find(e=>e.t>clock);clock=e?e.t:T1;render()};
 $('bPrev').onclick=()=>{stop();const e=[...EV].reverse().find(e=>e.t<clock);clock=e?e.t:T0;render()};
 $('seek').oninput=ev=>{stop();clock=T0+(T1-T0)*ev.target.value/1000;render()};
