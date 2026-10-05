@@ -511,3 +511,15 @@ def test_i_guasti_dello_scalper_restano_i_loro():
     for sc in ("riavvio", "rifiuti-betfair", "esiti-ignoti", "kill-switch", "bot-fermo",
                "base", R.SCENARIO_MEDIA):
         assert R.guasto_dello_scenario(sc) == sc
+
+
+def test_i_guasti_del_banco_aspettano_la_posizione_della_modalita(differita, exchange_it):
+    """``_evento_scenario`` provoca stop/kill-switch/riavvio appena il bot ha una
+    posizione abbinata aperta: per la modalita' la legge dalla SUA posizione
+    (la modalita' non ha gli slot del maker)."""
+    b = BancoMedia()
+    giri(b, differita, 30)
+    assert R._posizione_aperta(b.strat) is False
+    giri(b, differita, 40)
+    assert b.posizione().puntato > 0
+    assert R._posizione_aperta(b.strat) is True

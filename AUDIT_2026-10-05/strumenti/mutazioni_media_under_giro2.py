@@ -51,6 +51,116 @@ MUTAZIONI: List[Tuple[str, str, str, str, str]] = [
      '''                if abs(float(b.order_type.price) - c) < 1e-9:
                     return''',
      "_assicura_banca: confronta solo la quota, non l'importo"),
+    # --- 2.2: il referto dei replay della modalita'
+    ("G4", RR, '''            if media:
+                b.ref.azioni += int((getattr(s, "stats", {}) or {}).get("ordini", 0) or 0) \\
+                    - prima_m''',
+     '''            if False:
+                b.ref.azioni += int((getattr(s, "stats", {}) or {}).get("ordini", 0) or 0) \\
+                    - prima_m''',
+     "le azioni del referto non contano gli ordini della modalita'"),
+    ("G5", RR, '''    if not ordini_m:
+        # un replay della modalita' senza un solo ordine NON e' un OK''',
+     '''    if False:
+        # un replay della modalita' senza un solo ordine NON e' un OK''',
+     "uno scenario senza ordini della modalita' esce OK invece di NE"),
+    ("G6", RR, '''        elif pari and con_abb:
+            esito, lordo = "CHIUSO", min(pos.se_vince, pos.se_perde)''',
+     '''        elif pari and con_abb:
+            esito, lordo = "CHIUSO", max(pos.se_vince, pos.se_perde) + 0.05''',
+     "riepilogo: profitto del ciclo chiuso sbagliato"),
+    ("G7", RR, '''    comm = max(lordo_tot, 0.0) * float(commissione)''',
+     '''    comm = abs(lordo_tot) * float(commissione)''',
+     "riepilogo: commissione anche su un lordo negativo"),
+    ("G8", RR, '''            e = es[n] if n < len(es) else {}''',
+     '''            e = es[n + 1] if n + 1 < len(es) else {}''',
+     "riepilogo: importo esatto del rientro preso dal rientro sbagliato"),
+    ("G9", RR, '''        i = max([0] + [n for n, t in enumerate(inizi) if t <= nato])''',
+     '''        i = 0''',
+     "riepilogo: tutti gli ordini in un solo ciclo"),
+    ("G10", MU, '''        if (sb or 0.0) < self.par.min_size or (sl or 0.0) < self.par.min_size:
+            return "liquidita"''',
+     '''        if (sb or 0.0) < self.par.min_size or (sl or 0.0) < self.par.min_size:
+            return "spread"''',
+     "motivo di non ingresso con il nome sbagliato"),
+    ("G11", MU, '''        motivo = self._perche_non_entra(now, bb, bl, sb, sl)
+        if motivo is not None:
+            self._conta_non_ingresso(motivo)
+            return''',
+     '''        motivo = self._perche_non_entra(now, bb, bl, sb, sl)
+        if motivo is not None:
+            return''',
+     "motivi di non ingresso mai contati"),
+    ("G12", MU, '''        if motivo is not None:
+            self._conta_non_ingresso(motivo)
+            return
+        prezzo''',
+     '''        if motivo is not None and motivo != "flusso":
+            self._conta_non_ingresso(motivo)
+            return
+        prezzo''',
+     "un filtro (flusso) non piu' bloccante"),
+    # --- 2.3: gli ordini del conto nel riquadro
+    ("G13", SS, '''    if session_paper:
+        return "prova"''',
+     '''    if session_paper and False:
+        return "prova"''',
+     "in prova la lettura degli ordini del conto si fa"),
+    ("G14", SS, '''    if not media.posizione_aperta():
+        media.imposta_ordini_conto(None, "")
+        return "chiusa"''',
+     '''    if False:
+        media.imposta_ordini_conto(None, "")
+        return "chiusa"''',
+     "lettura degli ordini del conto anche a posizione chiusa"),
+    ("G15", MU, '''SORGENTI_A_MANO = ("account", "runner")''',
+     '''SORGENTI_A_MANO = ("account", "runner", "scalper")''',
+     "le righe dello specchio della sessione contate come ordini a mano"),
+    ("G16", MU, '''            if selection_id is None or int(r.get("selection_id")) != int(selection_id):
+                continue''',
+     '''            if selection_id is None:
+                continue''',
+     "righe a mano di altre selezioni (l'Over) nel riquadro"),
+    ("G17", MU, '''        if str(r.get("side") or "").lower() == "back":
+            w += m * (q - 1.0)''',
+     '''        if str(r.get("side") or "").lower() == "lay":
+            w += m * (q - 1.0)''',
+     "righe a mano: punta e banca scambiate"),
+    ("G18", MU, '''            fonte, pos_r = self._fonte_e_posizione(pos)
+            self.chiusura = riquadro_chiusura(
+                pos_r,''',
+     '''            fonte, pos_r = self._fonte_e_posizione(pos)
+            self.chiusura = riquadro_chiusura(
+                pos,''',
+     "riquadro: le righe a mano lette ma non usate"),
+    ("G19", MU, '''        if c.get("errore"):
+            return ("%s (lettura degli ordini del conto fallita alle %s: %s)"
+                    % (FONTE_SOLO_BOT, c.get("ora"), str(c["errore"])[:80]), pos)''',
+     '''        if c.get("errore"):
+            return FONTE_SOLO_BOT, pos''',
+     "lettura fallita non detta nel riquadro"),
+    ("G20", MU, '''            fonte, pos_r = self._fonte_e_posizione(pos)''',
+     '''            fonte, pos_r = self._fonte_e_posizione(pos)
+            s["totale_puntato"] = round(pos_r.puntato, 2)''',
+     "le righe a mano entrano nelle stats della modalita' (non solo nel riquadro)"),
+    ("G21", CE, '''    if o.prova and o.letture_conto > 0:''',
+     '''    if o.prova and o.letture_conto > 1:''',
+     "M10 muto su UNA lettura in prova"),
+    ("G22", CE, '''    if o.letture_conto > o.battiti + 1:''',
+     '''    if o.letture_conto > 2 * o.battiti + 1:''',
+     "M10 muto su piu' letture per battito"),
+    # --- 3: gli scenari dichiarati
+    ("G23", RR, '''        params.update(dict(SCENARI_MEDIA_VARIANTI.get(scenario, ({}, None, ""))[0]))''',
+     '''        pass''',
+     "le varianti dichiarate non cambiano i parametri"),
+    ("G24", RR, '''        return variante[1] or scenario''',
+     '''        return scenario''',
+     "le varianti di guasto non armano il guasto"),
+    ("G25", RR, '''    if callable(getattr(s, "posizione_aperta", None)):
+        return bool(s.posizione_aperta())''',
+     '''    if False:
+        return bool(s.posizione_aperta())''',
+     "il guasto non aspetta la posizione aperta della modalita'"),
 ]
 
 
