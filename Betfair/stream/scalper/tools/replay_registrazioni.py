@@ -169,15 +169,28 @@ SCENARI_MEDIA_VARIANTI: Dict[str, Tuple[Dict[str, Any], Optional[str], str]] = {
     "media-under-bot-fermo": ({}, "bot-fermo",
                               "come `media-under` col guasto `bot-fermo` (STOP dalla UI "
                               "a meta' della finestra pre-match)"),
+    # 06/10 (giro 3): i due replay chiesti dall'utente, liquidita' minima per lato
+    # (`media_min_size`, EUR sul miglior prezzo di punta e di banca) piu' bassa
+    "media-under-liquidita-100": ({"media_min_size": 100.0}, None,
+                                  "come `media-under` (Under 2,5) con liquidita' minima "
+                                  "100 EUR per lato (richiesta dell'utente, 06/10)"),
+    "media-under-35-liquidita-50": ({"media_min_size": 50.0,
+                                     "media_mercato": "OVER_UNDER_35"}, None,
+                                    "come `media-under-35` (Under 3,5) con liquidita' "
+                                    "minima 50 EUR per lato (richiesta dell'utente, 06/10)"),
 }
 SCENARI_MEDIA: Tuple[str, ...] = ((SCENARIO_MEDIA, SCENARIO_MEDIA_PAPER, SCENARIO_MEDIA_35)
                                   + tuple(SCENARI_MEDIA_VARIANTI))
 
 
 def mercato_media(scenario: str) -> Optional[str]:
-    """Il mercato che la scheda sceglie nello scenario "media under" (None fuori)."""
+    """Il mercato che la scheda sceglie nello scenario "media under" (None fuori).
+    Una variante dichiarata puo' scegliere il suo (06/10: Under 3,5)."""
     if scenario not in SCENARI_MEDIA:
         return None
+    variante = SCENARI_MEDIA_VARIANTI.get(scenario)
+    if variante is not None and variante[0].get("media_mercato"):
+        return str(variante[0]["media_mercato"])
     return "OVER_UNDER_35" if scenario == SCENARIO_MEDIA_35 else "OVER_UNDER_25"
 
 
@@ -447,7 +460,7 @@ SCENARI_DESCRITTI: Dict[str, str] = {
     # 05/10 MEDIA UNDER: la scheda accende la modalita' coi valori di serie
     # (``media_under_bot.VALORI_DI_SERIE`` = ``MEDIA_UNDER_DEFAULTS`` della UI),
     # maker e sniper NON armati, vita della sessione fino a fine partita;
-    # controlli M1-M10 (``certificazione.verifica_media``) e S6 (parita').
+    # controlli M1-M11 (``certificazione.verifica_media``) e S6 (parita').
     SCENARIO_MEDIA: ("MEDIA UNDER su Under 2,5, soldi veri SIMULATI (dry_run=False, "
                      "client reale simulato del banco), valori di serie della "
                      "scheda: ingresso, banca PERSIST, rientri, in gioco solo "
@@ -2385,7 +2398,7 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
                     (int(sid) for sid, sp in definizioni[scelto[0]].get("runners") or []
                      if sp == 1), None)
             ref.note.append("MEDIA UNDER: mercato %s -> %s, Under %s; maker e sniper "
-                            "non armati; controlli M1-M10 + S6; B2 e K5 del maker non "
+                            "non armati; controlli M1-M11 + S6; B2 e K5 del maker non "
                             "applicati (posizione in gioco per progetto)"
                             % (mercato_media(scenario), banco.media_mercato_scelto,
                                banco.media_under))

@@ -486,6 +486,40 @@ def tick_sotto(prezzo: float, n: int) -> Optional[float]:
     return float(p) if p and p > 1.0 else None
 
 
+def testo_ciclo_chiuso(lordo: float, netto: float, rientri: int) -> str:
+    """Il testo dell'attivita' di un ciclo chiuso: profitto o PERDITA, mai
+    <<in profitto>> su un lordo negativo (difetto del giro 2)."""
+    return ("ciclo chiuso in %s: lordo %.2f, netto %.2f, rientri %d"
+            % ("profitto" if lordo >= 0 else "PERDITA", lordo, netto, rientri))
+
+
+def tick_sotto_la_media(media: Optional[float]) -> Optional[float]:
+    """06/10 (giro 3): il tick della scala vera di Betfair STRETTAMENTE sotto la
+    quota media (2,2074 -> 2,20; una media esattamente su un tick, 2,20 -> 2,18:
+    chiudere sulla media stessa darebbe zero, non profitto)."""
+    if media is None or media <= 1.0:
+        return None
+    p = float(get_nearest_price(float(media)))
+    if p >= float(media) - 1e-9:
+        p = price_ticks_away(p, -1)
+    return float(p) if p and p > 1.0 else None
+
+
+def quota_della_banca(ultimo_ingresso: Optional[float], pos: "Posizione",
+                      tick: int) -> Optional[float]:
+    """06/10 (giro 3), regola dell'utente <<e' sempre la quota media che comanda>>:
+    la banca di chiusura va al PIU' BASSO fra <<ultimo ingresso - N tick>> e
+    <<quota media arrotondata al tick inferiore>>, sulla posizione REALE
+    abbinata: e' sempre in profitto. Con i rientri abbinati per intero la media
+    sta sopra <<ultimo ingresso - N tick>> (la formula del rientro chiude in
+    profitto proprio li') e la quota resta quella di prima."""
+    c = tick_sotto(ultimo_ingresso, tick) if ultimo_ingresso is not None else None
+    cm = tick_sotto_la_media(pos.quota_media)
+    if cm is not None and (c is None or cm < c - 1e-9):
+        return cm
+    return c
+
+
 def punta_a_multiplo(x: float) -> Tuple[float, float]:
     """(punta piazzabile, importo esatto): la regola dei minimi .it per una
     PUNTA (``minimi_it.importo_piazzabile``: da 1,00 a multipli di 0,50 per
@@ -1090,10 +1124,15 @@ class MediaUnderStrategy(BaseStrategy):
         la quota cambiano: annullo, attesa che sia morta, nuova banca."""
         if prezzo_ingresso is None:
             return
-        c = tick_sotto(prezzo_ingresso, self.par.tick_chiusura)
+        pos = posizione_da_ordini(self._ordini)
+        # 06/10 (giro 3): la quota la comanda anche la media della posizione VERA
+        c = quota_della_banca(prezzo_ingresso, pos, self.par.tick_chiusura)
         if c is None:
             return
-        pos = posizione_da_ordini(self._ordini)
+        # 06/10 (giro 3): la banca copre l'INTERA posizione: ogni resto non
+        # abbinato delle punte (ingresso o rientro) si annulla
+        if pos.puntato > _EPS:
+            self._annulla_resti_delle_punte(market)
         b = self._banca
         if b is not None:
             if vivo_o_in_volo(b):
@@ -1126,10 +1165,29 @@ class MediaUnderStrategy(BaseStrategy):
         if o is None:
             return
         self._banca = o
+        dalla_media = (pos.quota_media is not None
+                       and c < (tick_sotto(prezzo_ingresso, self.par.tick_chiusura) or c) - 1e-9)
         self._emit("media_banca", market_id=self._mid, selection_id=self._sid,
                    prezzo=c, importo=voluto, totale_puntato=round(pos.puntato, 2),
                    se_vince=round(pos.se_vince, 4), se_perde=round(pos.se_perde, 4),
-                   msg="banca di chiusura %.2f EUR @%.2f (PERSIST)" % (voluto, c))
+                   quota_media=(round(pos.quota_media, 4) if pos.quota_media else None),
+                   dalla_media=dalla_media,
+                   msg="banca di chiusura %.2f EUR @%.2f (PERSIST%s)"
+                       % (voluto, c, ", sotto la quota media %.4f" % pos.quota_media
+                          if dalla_media else ""))
+
+    def _annulla_resti_delle_punte(self, market: Any) -> None:
+        """06/10 (giro 3): ogni resto NON abbinato di una punta (ingresso o
+        rientro) ancora sul book si annulla quando si appoggia la banca. Si
+        annulla solo cio' che e' sul book (``eseguibile``): una punta in volo si
+        annulla al book dopo; quella gia' in annullo non si ritocca."""
+        for o in list(self._ordini):
+            if _lato(o) != "BACK" or not eseguibile(o):
+                continue
+            if float(getattr(o, "size_remaining", 0.0) or 0.0) <= 0.0:
+                continue
+            self._annulla(market, o, "banca appoggiata: il resto non abbinato della punta "
+                                     "si annulla (la banca copre l'intera posizione)")
 
     def _ciclo_chiuso(self, now: float) -> bool:
         """Banca abbinata e posizione pari, nessun ordine del ciclo vivo."""
@@ -1149,12 +1207,11 @@ class MediaUnderStrategy(BaseStrategy):
                    rientri=self._rientri, totale_puntato=round(pos.puntato, 2),
                    profitto_lordo=round(lordo, 4),
                    profitto_netto=round(netto_da_lordo(lordo, self.par.commissione), 4),
-                   # 05/10 (giro 2): un ciclo si puo' chiudere anche in PERDITA (rientro
-                   # abbinato in parte: replay `media-under-tick-1` sulla 35797769); il
-                   # testo dice quale dei due
-                   msg="ciclo chiuso in %s: lordo %.2f, netto %.2f, rientri %d"
-                       % ("profitto" if lordo >= 0 else "PERDITA", lordo,
-                          netto_da_lordo(lordo, self.par.commissione), self._rientri))
+                   # 05/10 (giro 2): il testo dice se e' profitto o PERDITA (dal 06/10 la
+                   # banca sta sotto la quota media e la perdita non dovrebbe piu'
+                   # capitare: se capita, si dice)
+                   msg=testo_ciclo_chiuso(lordo, netto_da_lordo(lordo, self.par.commissione),
+                                          self._rientri))
         inplay = self.stato == LIVE
         self._nuovo_ciclo()
         self.stato = FINE if inplay else FERMO
