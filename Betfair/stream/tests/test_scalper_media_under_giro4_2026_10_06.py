@@ -737,7 +737,7 @@ def test_esposizione_della_sessione_dopo_la_ripresa_conta_gli_ordini_del_conto(
         differita, exchange_it):
     """J18: dopo la ripresa le punte chiuse sono solo nel conto, non nel blotter
     del processo nuovo. L'esposizione della sessione deve essere quella del
-    processo morto (altrimenti allo stop dichiara un falso «non flat»), e un
+    processo morto (altrimenti allo stop dichiara un falso <<non flat>>), e un
     ordine presente in tutti e due si conta una volta."""
     b1, b2 = _ripresa_con_la_sola_banca(differita)
     attesa = SS._esposizioni_nette(b1.fw)
