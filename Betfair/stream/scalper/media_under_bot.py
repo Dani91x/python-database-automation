@@ -30,9 +30,15 @@ COSA FA (spec par.3)
 
 LIMITI DICHIARATI (spec par.6, par.7, par.11: scritti nel referto
 ``AUDIT_2026-10-05/SCALPER_MEDIA_UNDER.md``)
-  * il riquadro vede SOLO gli ordini del bot: la sessione dello scalper non
-    vede gli ordini messi a mano dal sito (flumine scarta gli ordini senza il
-    suo ``customer_order_ref``) -> ``fonte = "solo ordini del bot"``;
+  * gli ordini messi a mano: la sessione dello scalper non li vede (flumine
+    scarta gli ordini senza il suo ``customer_order_ref``). Dal 05/10 (giro 2,
+    proposta P14 approvata dal revisore) in SOLDI VERI e a posizione aperta la
+    sessione legge una volta per battito le righe dello specchio
+    ``betfair_live_orders`` della selezione scritte a mano (``source`` 'account'
+    = dal sito, visto dal ``reconcile_worker``; 'runner' = terminale dell'app):
+    entrano SOLO nel riquadro "chiusura" (mai negli ordini o nei cicli della
+    modalita'), che scrive la fonte e l'ora del dato. In prova mai; lettura
+    fallita -> "solo ordini del bot", detto;
   * riavvio a posizione aperta: la posizione NON e' ricostruibile dagli ordini
     veri da questa sessione (un flumine nuovo non governa gli ordini del
     processo morto; in prova gli ordini simulati sono spariti col processo) ->
@@ -132,6 +138,65 @@ STATI_CON_POSIZIONE = frozenset({INGRESSO, IN_POSIZIONE, RIENTRO, MASSIMO, LIVE}
 #: testo della fonte del riquadro (spec par.6: "NON fingere")
 FONTE_SOLO_BOT = ("solo ordini del bot: gli ordini messi a mano dal sito o dal "
                   "terminale NON sono visti da questa sessione")
+
+# 05/10 (giro 2, spec GIRO2 par.2.3): gli ordini del CONTO nel riquadro
+#: la tabella dello specchio e le colonne lette (migrazione
+#: ``betfair_live_order_queue.sql`` par.1.2 + ``source``)
+TABELLA_ORDINI_CONTO = "betfair_live_orders"
+COLONNE_ORDINI_CONTO = ("bet_id,mode,source,market_id,selection_id,side,price,size,"
+                        "size_matched,average_price_matched,status")
+#: le ``source`` delle righe messe A MANO: 'account' = ordine visto solo sul
+#: conto (dal sito, ``reconcile_worker._account_order_row``), 'runner' =
+#: terminale manuale dell'app. Le altre (lo specchio della sessione 'scalper',
+#: gli altri bot, 'bot:<ref>') NON sono ordini a mano.
+SORGENTI_A_MANO = ("account", "runner")
+
+
+def righe_a_mano(righe: Sequence[Dict[str, Any]], market_id: Optional[str],
+                 selection_id: Optional[int]) -> List[Dict[str, Any]]:
+    """Le righe dello specchio messe a mano, in soldi veri, su QUESTA selezione,
+    con qualcosa di abbinato."""
+    out = []
+    for r in righe or []:
+        try:
+            if str(r.get("mode") or "") != "live":
+                continue
+            if str(r.get("source") or "").strip().lower() not in SORGENTI_A_MANO:
+                continue
+            if str(r.get("market_id") or "") != str(market_id or ""):
+                continue
+            if selection_id is None or int(r.get("selection_id")) != int(selection_id):
+                continue
+            if float(r.get("size_matched") or 0.0) <= 0.0:
+                continue
+        except (TypeError, ValueError):
+            continue
+        out.append(r)
+    return out
+
+
+def posizione_con_righe(pos: "Posizione", righe: Sequence[Dict[str, Any]]) -> "Posizione":
+    """La posizione del bot PIU' gli abbinati delle righe a mano (stesse
+    formule di ``posizione_da_ordini``, quota = ``average_price_matched``,
+    se manca il prezzo chiesto)."""
+    w, lo, puntato, prof, bancato = (pos.se_vince, pos.se_perde, pos.puntato,
+                                     pos.profitto_punte, pos.bancato)
+    for r in righe:
+        m = float(r.get("size_matched") or 0.0)
+        q = float(r.get("average_price_matched") or 0.0) or float(r.get("price") or 0.0)
+        if m <= 0 or q <= 1.0:
+            continue
+        if str(r.get("side") or "").lower() == "back":
+            w += m * (q - 1.0)
+            lo -= m
+            puntato += m
+            prof += m * (q - 1.0)
+        else:
+            w -= m * (q - 1.0)
+            lo += m
+            bancato += m
+    return Posizione(se_vince=w, se_perde=lo, puntato=puntato, profitto_punte=prof,
+                     bancato=bancato)
 
 
 # ---------------------------------------------------------------------------
@@ -549,6 +614,30 @@ def codice_rifiuto(o: Any) -> Optional[str]:
     return str(codice) if codice else "FAILURE"
 
 
+# 05/10 (giro 2): perche' NON si apre, coi codici dei motivi di non ingresso
+# che la strategia conta nelle sue stats (``non_ingresso``) e il referto stampa
+_APRIRE_FRENO = "freno o stop della sessione"
+_APRIRE_FISCHIO = "fischio d'inizio non leggibile"
+_APRIRE_FINESTRA = "dentro la finestra di stop prima del fischio"
+_APRIRE_RIFIUTO = "attesa dopo un rifiuto di Betfair"
+_MOTIVO_DA_APRIRE = {_APRIRE_FRENO: "freno", _APRIRE_FISCHIO: "fischio_ignoto",
+                     _APRIRE_FINESTRA: "finestra_fischio", _APRIRE_RIFIUTO: "rifiuto"}
+#: i codici dei motivi di non ingresso, con la frase per chi legge il referto
+MOTIVI_NON_INGRESSO: Dict[str, str] = {
+    "freno": "freno o stop della sessione",
+    "fischio_ignoto": "fischio d'inizio non leggibile",
+    "finestra_fischio": "dentro la finestra di stop prima del fischio",
+    "rifiuto": "attesa dopo un rifiuto di Betfair",
+    "prezzi_mancanti": "manca il miglior prezzo di punta o di banca",
+    "quota_fuori": "quota fuori dall'intervallo (quota min / max)",
+    "liquidita": "liquidita' sotto il minimo al miglior prezzo (min size)",
+    "spread": "spread piu' largo del massimo in tick",
+    "riscaldamento": "attesa iniziale (riscaldamento del flusso)",
+    "flusso": "flusso degli scambi sotto il minimo",
+    "punta_non_piazzata": "punta d'ingresso non partita (rifiutata o soldi veri fermi)",
+}
+
+
 class MediaUnderStrategy(BaseStrategy):
     """La modalita' "media under" (vedi il docstring del modulo)."""
 
@@ -608,6 +697,9 @@ class MediaUnderStrategy(BaseStrategy):
         self._last_bb: Optional[float] = None
         self._last_bl: Optional[float] = None
         self.chiusura: Optional[Dict[str, Any]] = None
+        # 05/10 (giro 2): l'ultima lettura degli ordini del conto fatta dalla
+        # sessione (None = nessuna lettura: in prova, o posizione chiusa)
+        self._conto: Optional[Dict[str, Any]] = None
         self.stats: Dict[str, Any] = {
             "stato": self.stato, "mercato": par.mercato, "market_id": None,
             "selection_id": None, "rientri": 0, "max_rientri": par.max_rientri,
@@ -616,6 +708,8 @@ class MediaUnderStrategy(BaseStrategy):
             "obiettivo_lordo": None, "rientri_bloccati": None, "ordini": 0,
             "fonte": FONTE_SOLO_BOT, "chiusura": None, "esito_regolato": None,
             "pnl_settled": 0.0, "riavvio": self.riavvio,
+            # 05/10 (giro 2): quante volte (book) ogni filtro ha fermato l'ingresso
+            "non_ingresso": {},
         }
         self._settled: set = set()
 
@@ -757,14 +851,14 @@ class MediaUnderStrategy(BaseStrategy):
     def _puo_aprire(self, now: float) -> Optional[str]:
         """Perche' NON si puo' aprire (ingresso o rientro) adesso, o None."""
         if self.force_flat:
-            return "freno o stop della sessione"
+            return _APRIRE_FRENO
         ko = self._ko_ms
         if ko is None:
-            return "fischio d'inizio non leggibile"
+            return _APRIRE_FISCHIO
         if now >= ko - self.par.stop_ingressi_s * 1000.0:
-            return "dentro la finestra di stop prima del fischio"
+            return _APRIRE_FINESTRA
         if now < self._fermo_punte_ms:
-            return "attesa dopo un rifiuto di Betfair"
+            return _APRIRE_RIFIUTO
         return None
 
     def _pre_match(self, market: Any, mb: Any, now: float, bb: Optional[float],
@@ -817,28 +911,45 @@ class MediaUnderStrategy(BaseStrategy):
         if self.stato == IN_POSIZIONE:
             self._forse_rientro(market, now, bb, pos)
 
-    def _forse_ingresso(self, market: Any, now: float, bb: Optional[float],
-                        bl: Optional[float], sb: Optional[float], sl: Optional[float]) -> None:
-        if self._puo_aprire(now):
-            return
+    def _perche_non_entra(self, now: float, bb: Optional[float], bl: Optional[float],
+                          sb: Optional[float], sl: Optional[float]) -> Optional[str]:
+        """Il PRIMO filtro che ferma l'ingresso su questo book (codice di
+        ``MOTIVI_NON_INGRESSO``), o None se si puo' puntare. Stessi controlli,
+        nello stesso ordine, di prima del 05/10 (giro 2): qui si da' solo il nome."""
+        aprire = self._puo_aprire(now)
+        if aprire:
+            return _MOTIVO_DA_APRIRE.get(aprire, "freno")
         if bb is None or bl is None:
-            return
+            return "prezzi_mancanti"
         if not (self.par.quota_min <= bb <= self.par.quota_max):
-            return
+            return "quota_fuori"
         if (sb or 0.0) < self.par.min_size or (sl or 0.0) < self.par.min_size:
-            return
+            return "liquidita"
         st = ticks_between(bb, bl)
         if st is None or st > self.par.max_spread_ticks:
-            return
+            return "spread"
         if self._first_seen is None or now - self._first_seen < self.warmup_ms:
-            return
+            return "riscaldamento"
         fb, fl = self._somme_flusso(now)
         if self.par.min_flow > 0 and (fb < self.par.min_flow or fl < self.par.min_flow):
+            return "flusso"
+        return None
+
+    def _conta_non_ingresso(self, motivo: str) -> None:
+        conti = self.stats.setdefault("non_ingresso", {})
+        conti[motivo] = int(conti.get(motivo, 0)) + 1
+
+    def _forse_ingresso(self, market: Any, now: float, bb: Optional[float],
+                        bl: Optional[float], sb: Optional[float], sl: Optional[float]) -> None:
+        motivo = self._perche_non_entra(now, bb, bl, sb, sl)
+        if motivo is not None:
+            self._conta_non_ingresso(motivo)
             return
         prezzo = float(get_nearest_price(bb))
         o = self._piazza(market, "BACK", prezzo, self.par.stake, apertura=True,
                          persistenza="LAPSE")
         if o is None:
+            self._conta_non_ingresso("punta_non_piazzata")
             return
         self._punta, self._punta_ms, self._punta_rientro = o, now, False
         self.stato = INGRESSO
@@ -1038,8 +1149,12 @@ class MediaUnderStrategy(BaseStrategy):
                    rientri=self._rientri, totale_puntato=round(pos.puntato, 2),
                    profitto_lordo=round(lordo, 4),
                    profitto_netto=round(netto_da_lordo(lordo, self.par.commissione), 4),
-                   msg="ciclo chiuso in profitto: lordo %.2f, netto %.2f, rientri %d"
-                       % (lordo, netto_da_lordo(lordo, self.par.commissione), self._rientri))
+                   # 05/10 (giro 2): un ciclo si puo' chiudere anche in PERDITA (rientro
+                   # abbinato in parte: replay `media-under-tick-1` sulla 35797769); il
+                   # testo dice quale dei due
+                   msg="ciclo chiuso in %s: lordo %.2f, netto %.2f, rientri %d"
+                       % ("profitto" if lordo >= 0 else "PERDITA", lordo,
+                          netto_da_lordo(lordo, self.par.commissione), self._rientri))
         inplay = self.stato == LIVE
         self._nuovo_ciclo()
         self.stato = FINE if inplay else FERMO
@@ -1288,13 +1403,54 @@ class MediaUnderStrategy(BaseStrategy):
                                 else None)
         s["riavvio"] = self.riavvio
         if self.stato in (LIVE, MASSIMO) or (forza and self.stato != BLOCCATA):
+            # 05/10 (giro 2): gli ordini del conto letti dalla sessione entrano
+            # SOLO qui (il riquadro), con la fonte e l'ora del dato
+            fonte, pos_r = self._fonte_e_posizione(pos)
             self.chiusura = riquadro_chiusura(
-                pos, quota_punta=bb, quota_banca=bl, tick=self.par.tick_chiusura,
+                pos_r, quota_punta=bb, quota_banca=bl, tick=self.par.tick_chiusura,
                 obiettivi_netti=self.par.obiettivi_live, commissione=self.par.commissione,
-                banca=s["banca"])
+                banca=s["banca"], fonte=fonte)
+            s["fonte"] = fonte
         else:
             self.chiusura = None
         s["chiusura"] = self.chiusura
+
+    # ------------------------------------------------- ordini del conto
+    def posizione_aperta(self) -> bool:
+        """C'e' una posizione del ciclo da chiudere (letta dalla sessione per
+        decidere se leggere gli ordini del conto)."""
+        if self._esito is not None:
+            return False
+        try:
+            return posizione_da_ordini(list(self._ordini)).aperta
+        except Exception:  # noqa: BLE001 - lista che cambia nel thread di flumine
+            return False
+
+    def serve_ordini_conto(self) -> bool:
+        """Gli ordini del conto servono solo quando il riquadro "chiusura" e'
+        pubblicato (massimo dei rientri o in gioco) con una posizione aperta."""
+        return self.stato in (LIVE, MASSIMO) and self.posizione_aperta()
+
+    def imposta_ordini_conto(self, righe: Optional[Sequence[Dict[str, Any]]], ora: str,
+                             errore: Optional[str] = None) -> None:
+        """La sessione consegna l'ultima lettura dello specchio (``righe`` None e
+        ``ora`` vuota = nessuna lettura). Entra SOLO nel riquadro."""
+        if righe is None and errore is None:
+            self._conto = None
+            return
+        self._conto = {"righe": righe_a_mano(righe or [], self._mid, self._sid),
+                       "ora": str(ora), "errore": errore}
+
+    def _fonte_e_posizione(self, pos: Posizione) -> Tuple[str, Posizione]:
+        c = self._conto
+        if c is None:
+            return FONTE_SOLO_BOT, pos
+        if c.get("errore"):
+            return ("%s (lettura degli ordini del conto fallita alle %s: %s)"
+                    % (FONTE_SOLO_BOT, c.get("ora"), str(c["errore"])[:80]), pos)
+        righe = list(c.get("righe") or [])
+        return ("ordini del bot + ordini del conto letti alle %s (%d a mano su questa "
+                "selezione)" % (c.get("ora"), len(righe)), posizione_con_righe(pos, righe))
 
     def process_closed_market(self, market: Any, market_book: Any) -> None:
         """Mercato regolato: l'esito del ciclo dal risultato di Betfair (stato

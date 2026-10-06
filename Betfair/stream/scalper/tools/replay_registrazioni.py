@@ -140,7 +140,38 @@ SCENARIO_AUTO_LIVE = "auto-live"
 SCENARIO_MEDIA = "media-under"
 SCENARIO_MEDIA_PAPER = "media-under-paper"
 SCENARIO_MEDIA_35 = "media-under-35"
-SCENARI_MEDIA: Tuple[str, ...] = (SCENARIO_MEDIA, SCENARIO_MEDIA_PAPER, SCENARIO_MEDIA_35)
+#: 05/10 (giro 2, spec GIRO2 par.3): gli scenari DICHIARATI in piu' della
+#: modalita', tutti come `media-under` (Under 2,5, soldi veri simulati) con UNA
+#: differenza ciascuno: i parametri che la scheda scrive diversi dai valori di
+#: serie, oppure un guasto del banco gia' costruito per lo scalper.
+#: nome -> (parametri della scheda, guasto del banco o None, descrizione)
+SCENARI_MEDIA_VARIANTI: Dict[str, Tuple[Dict[str, Any], Optional[str], str]] = {
+    "media-under-obiettivo-030": ({"media_obiettivo": 0.30}, None,
+                                  "come `media-under` con l'obiettivo FISSO a 0,30 EUR netti"),
+    "media-under-rientri-1": ({"media_max_rientri": 1}, None,
+                              "come `media-under` con `media_max_rientri` = 1"),
+    "media-under-rischio-30": ({"media_rischio_max": 30.0}, None,
+                               "come `media-under` con `media_rischio_max` = 30 EUR"),
+    "media-under-tick-1": ({"media_tick_rientro": 1, "media_tick_chiusura": 1}, None,
+                           "come `media-under` con rientro e chiusura a 1 tick"),
+    "media-under-riavvio": ({}, "riavvio",
+                            "come `media-under` col guasto `riavvio` (processo ucciso a "
+                            "meta' della finestra pre-match, riarmo dell'utente)"),
+    "media-under-rifiuti-betfair": ({}, "rifiuti-betfair",
+                                    "come `media-under` col guasto `rifiuti-betfair` "
+                                    "(i primi piazzamenti rifiutati)"),
+    "media-under-esiti-ignoti": ({}, "esiti-ignoti",
+                                 "come `media-under` col guasto `esiti-ignoti` (i primi "
+                                 "piazzamenti senza esito per un tempo)"),
+    "media-under-kill-switch": ({}, "kill-switch",
+                                "come `media-under` col guasto `kill-switch` (file "
+                                "STOP_SCALPER a meta' della finestra pre-match)"),
+    "media-under-bot-fermo": ({}, "bot-fermo",
+                              "come `media-under` col guasto `bot-fermo` (STOP dalla UI "
+                              "a meta' della finestra pre-match)"),
+}
+SCENARI_MEDIA: Tuple[str, ...] = ((SCENARIO_MEDIA, SCENARIO_MEDIA_PAPER, SCENARIO_MEDIA_35)
+                                  + tuple(SCENARI_MEDIA_VARIANTI))
 
 
 def mercato_media(scenario: str) -> Optional[str]:
@@ -148,6 +179,143 @@ def mercato_media(scenario: str) -> Optional[str]:
     if scenario not in SCENARI_MEDIA:
         return None
     return "OVER_UNDER_35" if scenario == SCENARIO_MEDIA_35 else "OVER_UNDER_25"
+
+
+def guasto_dello_scenario(scenario: str) -> str:
+    """Il guasto del banco che lo scenario prova: il suo nome, o per una variante
+    della modalita' (``SCENARI_MEDIA_VARIANTI``) il guasto che dichiara."""
+    variante = SCENARI_MEDIA_VARIANTI.get(scenario)
+    if variante is not None:
+        return variante[1] or scenario
+    return scenario
+
+def _quando_media(ms: Optional[int], ko_ms: Optional[int], in_gioco_ms: Optional[int]) -> str:
+    """L'istante di mercato per chi legge: minuti al fischio o minuto di gioco."""
+    if ms is None:
+        return "?"
+    inizio = in_gioco_ms if in_gioco_ms is not None else ko_ms
+    if inizio is None:
+        return "ms %d" % ms
+    d = int(round((ms - inizio) / 1000.0))
+    if d < 0:
+        return "pre-match, %d'%02d\" al fischio" % (-d // 60, -d % 60)
+    return "in gioco al %d'%02d\"" % (d // 60, d % 60)
+
+
+def riepilogo_cicli_media(ordini: List[Any], nati_ms: Dict[str, int],
+                          abbinato_ms: Dict[str, int],
+                          eventi: List[Tuple[str, Dict[str, Any], int]], *,
+                          ko_ms: Optional[int], in_gioco_ms: Optional[int],
+                          commissione: float,
+                          stato_runner: Optional[str]) -> Tuple[List[Dict[str, Any]],
+                                                                Dict[str, Any]]:
+    """05/10 (giro 2, spec GIRO2 par.2.2): il riepilogo PER CICLO della
+    modalita', in euro, dagli ORDINI veri del blotter (campi di flumine).
+
+    Un ciclo comincia con la sua punta d'ingresso (attivita' ``media_ingresso``:
+    fa solo da confine nel tempo); gli importi, gli abbinati, la banca finale e
+    il profitto vengono dagli ordini. L'importo ESATTO di un rientro (prima del
+    multiplo di 0,50) non e' nell'ordine: si legge dall'attivita'
+    ``media_rientro`` del ciclo, nello stesso ordine.
+
+    Torna (cicli, conto): ogni ciclo e' un dizionario (``riga`` e' la frase del
+    referto); ``conto`` ha lordo, commissione (per mercato sul netto vincente,
+    come Betfair e come ``banco_comune.pnl``) e NETTO dei cicli con esito noto."""
+    from .. import media_under_bot as MU
+
+    inizi = sorted(int(t) for k, _p, t in eventi if k == "media_ingresso")
+    rientri_ev = [(int(t), p) for k, p, t in eventi if k == "media_rientro"]
+    per_ciclo: Dict[int, List[Any]] = {}
+    for o in sorted(ordini, key=lambda x: nati_ms.get(str(getattr(x, "id", "")), 0)):
+        nato = nati_ms.get(str(getattr(o, "id", "")), 0)
+        i = max([0] + [n for n, t in enumerate(inizi) if t <= nato])
+        per_ciclo.setdefault(i, []).append(o)
+    cicli: List[Dict[str, Any]] = []
+    lordo_tot = 0.0
+    ignoti = 0
+    for i in sorted(per_ciclo):
+        oo = per_ciclo[i]
+        da = inizi[i] if i < len(inizi) else None
+        a = inizi[i + 1] if i + 1 < len(inizi) else None
+        punte = [o for o in oo if MU._lato(o) == "BACK"]
+        banche = [o for o in oo if MU._lato(o) == "LAY"]
+        es = [p for t, p in rientri_ev if (da is None or t >= da) and (a is None or t < a)]
+        pezzi = []
+        if punte:
+            p0 = punte[0]
+            pezzi.append("ingresso %.2f @%.2f (abbinato %.2f, %s)" % (
+                float(p0.order_type.size), float(p0.order_type.price),
+                MU.abbinato(p0)[0], _quando_media(nati_ms.get(str(p0.id)), ko_ms, in_gioco_ms)))
+        rientri = []
+        for n, o in enumerate(punte[1:]):
+            e = es[n] if n < len(es) else {}
+            rientri.append({"quota": float(o.order_type.price),
+                            "esatto": e.get("importo_esatto"),
+                            "piazzato": float(o.order_type.size),
+                            "abbinato": round(MU.abbinato(o)[0], 2)})
+            pezzi.append("rientro %d @%.2f: esatto %s, piazzato %.2f, abbinato %.2f" % (
+                n + 1, float(o.order_type.price),
+                "%.2f" % e["importo_esatto"] if e.get("importo_esatto") is not None else "?",
+                float(o.order_type.size), MU.abbinato(o)[0]))
+        puntato = sum(MU.abbinato(o)[0] for o in punte)
+        pezzi.append("totale puntato massimo %.2f" % puntato)
+        con_abb = [o for o in banche if MU.abbinato(o)[0] > 0]
+        finale = con_abb[-1] if con_abb else (banche[-1] if banche else None)
+        banca: Dict[str, Any] = {}
+        if finale is not None:
+            m = MU.abbinato(finale)[0]
+            quando = abbinato_ms.get(str(finale.id)) if m > 0 else None
+            resto = float(getattr(finale, "size_remaining", 0.0) or 0.0)
+            if MU.vivo_o_in_volo(finale):
+                fine_b = "VIVA a mercato (resto %.2f)" % resto
+            elif m + 0.005 >= float(finale.order_type.size):
+                fine_b = "abbinata per intero"
+            else:
+                fine_b = "NON piu' a mercato (annullata o scaduta, resto %.2f)" % (
+                    float(finale.order_type.size) - m)
+            banca = {"importo": float(finale.order_type.size),
+                     "quota": float(finale.order_type.price), "abbinato": round(m, 2),
+                     "dove": _quando_media(quando, ko_ms, in_gioco_ms) if m > 0 else None,
+                     "fine": fine_b}
+            pezzi.append("banca finale %.2f @%.2f %s, abbinata %.2f%s, a fine replay %s" % (
+                banca["importo"], banca["quota"],
+                str(getattr(finale.order_type, "persistence_type", "") or ""), m,
+                (" (ultimo abbinamento: %s)" % banca["dove"]) if m > 0 else "", fine_b))
+        else:
+            pezzi.append("nessuna banca")
+        pos = MU.posizione_da_ordini(oo)
+        c = float(banche[-1].order_type.price) if banche else 2.0
+        pari = abs(pos.se_vince - pos.se_perde) <= 0.02 + 0.005 * c
+        if pos.puntato <= 1e-9 and not con_abb:
+            esito, lordo = "NESSUNA POSIZIONE", 0.0
+        elif pari and con_abb:
+            esito, lordo = "CHIUSO", min(pos.se_vince, pos.se_perde)
+        elif stato_runner in ("WINNER", "LOSER"):
+            lordo = pos.se_vince if stato_runner == "WINNER" else pos.se_perde
+            esito = "APERTO, regolato dal libro finale (Under %s)" % stato_runner
+        else:
+            esito, lordo = "APERTO, esito ignoto", None
+        if lordo is None:
+            ignoti += 1
+            pezzi.append("posizione aperta: se vince l'Under %+.2f, se perde %+.2f [%s]"
+                         % (pos.se_vince, pos.se_perde, esito))
+        else:
+            lordo_tot += lordo
+            netto = lordo * (1.0 - commissione) if lordo > 0 else lordo
+            if esito != "CHIUSO" and pos.puntato > 1e-9:
+                pezzi.append("posizione aperta: se vince l'Under %+.2f, se perde %+.2f"
+                             % (pos.se_vince, pos.se_perde))
+            pezzi.append("profitto lordo %+.2f, netto %+.2f [%s]" % (lordo, netto, esito))
+        cicli.append({"ciclo": len(cicli) + 1, "ordini": len(oo), "rientri": rientri,
+                      "puntato": round(puntato, 2), "banca": banca, "esito": esito,
+                      "lordo": None if lordo is None else round(lordo, 2),
+                      "riga": "; ".join(pezzi)})
+    comm = max(lordo_tot, 0.0) * float(commissione)
+    conto = {"lordo": round(lordo_tot, 2), "commissione": round(comm, 2),
+             "netto": round(lordo_tot - comm, 2), "aliquota": float(commissione),
+             "cicli_esito_ignoto": ignoti}
+    return cicli, conto
+
 
 # 28/09 (CANTIERE N3): gli scenari a uscite MANUALI (interruttore spento, il
 # default di produzione dopo ogni avvio). Tutti gli ALTRI scenari girano con
@@ -279,7 +447,7 @@ SCENARI_DESCRITTI: Dict[str, str] = {
     # 05/10 MEDIA UNDER: la scheda accende la modalita' coi valori di serie
     # (``media_under_bot.VALORI_DI_SERIE`` = ``MEDIA_UNDER_DEFAULTS`` della UI),
     # maker e sniper NON armati, vita della sessione fino a fine partita;
-    # controlli M1-M9 (``certificazione.verifica_media``) e S6 (parita').
+    # controlli M1-M10 (``certificazione.verifica_media``) e S6 (parita').
     SCENARIO_MEDIA: ("MEDIA UNDER su Under 2,5, soldi veri SIMULATI (dry_run=False, "
                      "client reale simulato del banco), valori di serie della "
                      "scheda: ingresso, banca PERSIST, rientri, in gioco solo "
@@ -287,6 +455,7 @@ SCENARI_DESCRITTI: Dict[str, str] = {
     SCENARIO_MEDIA_PAPER: ("come `media-under` con dry_run=True: client paper "
                            "(paper = live, controllo S6)"),
     SCENARIO_MEDIA_35: "come `media-under` sul mercato Under 3,5",
+    **{nome: v[2] for nome, v in SCENARI_MEDIA_VARIANTI.items()},
 }
 
 
@@ -322,6 +491,8 @@ def control_della_ui(event_id: str, scenario: str) -> Dict[str, Any]:
         params["media_mode"] = True
         params["media_mercato"] = mercato_media(scenario)
         params["media_obiettivi_live"] = list(MU.VALORI_DI_SERIE["media_obiettivi_live"])
+        # 05/10 (giro 2): la variante dichiarata cambia SOLO i suoi parametri
+        params.update(dict(SCENARI_MEDIA_VARIANTI.get(scenario, ({}, None, ""))[0]))
         return {
             "event_id": str(event_id), "status": "requested", "mode": "maker",
             "dry_run": scenario == SCENARIO_MEDIA_PAPER, "stake": 25,
@@ -721,6 +892,9 @@ class _Tabella:
         return self
 
     def execute(self) -> _Risposta:
+        if self._op == "select":
+            # 05/10 (giro 2): le letture della sessione, per tabella (M10)
+            self._db.letture[self._nome] = self._db.letture.get(self._nome, 0) + 1
         if self._op == "insert":
             righe = self._riga if isinstance(self._riga, list) else [self._riga]
             dest = self._db.tabelle.setdefault(self._nome, [])
@@ -762,6 +936,8 @@ class _DbFinto:
         self.follow_row = dict(follow)
         self.scritture: List[Dict[str, Any]] = []
         self.tabelle: Dict[str, List[Dict[str, Any]]] = {}
+        # 05/10 (giro 2): quante select per tabella ha fatto la sessione
+        self.letture: Dict[str, int] = {}
         self.sb = _SbFinto(self)
         self.stati_visti: List[str] = []
         # 28/09: [(ts_ms, {score_home, score_away, minute})] dal sidecar
@@ -1166,9 +1342,18 @@ class _Banco:
         # 05/10 MEDIA UNDER: la strategia della modalita' (None fuori dagli
         # scenari `media-under*`), le sue attivita' e la memoria dei controlli M
         self.media: Any = None
+        # 05/10 (giro 2): TUTTE le strategie della modalita' armate (dopo un
+        # riavvio la prima resta qui: i suoi ordini sono ancora a mercato)
+        self.medie: List[Any] = []
         self.attivita_media: List[Tuple[str, Dict[str, Any], int]] = []
         self.memoria_media = CERT.Memoria()
         self.media_ordini_visti: set = set()
+        # 05/10 (giro 2): istante di MERCATO in cui ogni ordine della modalita' e'
+        # nato e in cui il suo abbinato e' cresciuto l'ultima volta (riepilogo
+        # per ciclo del referto)
+        self.media_nati_ms: Dict[str, int] = {}
+        self.media_abbinato_ms: Dict[str, int] = {}
+        self.media_abbinato_visto: Dict[str, float] = {}
         self.media_annullati_al_gioco: Dict[str, float] = {}
         self.media_mercato_scelto: Optional[str] = None
         self.media_under: Optional[int] = None
@@ -1208,6 +1393,7 @@ class _Banco:
             self.sessioni.append((fw, s, tuple(self.mercati_catalogo)))
             self.ultima_strategia = s
             self.media = s
+            self.medie.append(s)
             return
 
         if isinstance(s, SniperStrategy):
@@ -1693,16 +1879,43 @@ class _Banco:
             except (TypeError, ValueError):
                 canc = 0.0
             oid = str(getattr(o, "id", ""))
+            self.media_nati_ms.setdefault(oid, int(ms))
+            try:
+                abb = float(getattr(o, "size_matched", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                abb = 0.0
+            if abb > self.media_abbinato_visto.get(oid, 0.0) + 1e-9:
+                self.media_abbinato_visto[oid] = abb
+                self.media_abbinato_ms[oid] = int(ms)
             if in_gioco is None or ms < in_gioco:
                 self.media_annullati_al_gioco[oid] = canc
             elif canc > self.media_annullati_al_gioco.get(oid, 0.0) + 1e-9:
                 annullati.append(oid)
+        # 05/10 (giro 2): gli istanti di nascita e di abbinamento anche degli
+        # ordini delle sessioni della modalita' gia' morte (riavvio): restano a
+        # mercato e il riepilogo per ciclo li racconta (solo tempi, nessun controllo)
+        for vecchia in self.medie:
+            if vecchia is mu:
+                continue
+            for o in self.ordini_di([vecchia]):
+                oid = str(getattr(o, "id", ""))
+                self.media_nati_ms.setdefault(oid, int(ms))
+                try:
+                    abb = float(getattr(o, "size_matched", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    abb = 0.0
+                if abb > self.media_abbinato_visto.get(oid, 0.0) + 1e-9:
+                    self.media_abbinato_visto[oid] = abb
+                    self.media_abbinato_ms[oid] = int(ms)
         oss = CERT.OsservazioneMedia(
             quando=quando, ms=ms, fine=fine, params=par,
             mercato_scelto=self.media_mercato_scelto, tipo_mercato=dict(self.tipo_mercato),
             under=self.media_under, ordini=righe, nuovi=nuovi, ko_ms=self.ko_ms,
             in_gioco_ms=in_gioco, force_flat_ms=self.force_flat_ms,
-            annullati_in_gioco=annullati)
+            annullati_in_gioco=annullati,
+            prova=bool(self.db.control.get("dry_run", True)),
+            letture_conto=int(self.db.letture.get(MU.TABELLA_ORDINI_CONTO, 0)),
+            battiti=sum(1 for w in self.db.scritture if "heartbeat_at" in (w.get("campi") or {})))
         self.ref.violazioni.extend(CERT.verifica_media(oss, self.ref.sollecitati,
                                                        self.memoria_media))
 
@@ -1850,10 +2063,17 @@ class _Ponte:
             if s.force_flat and b.force_flat_ms is None:
                 b.force_flat_ms = ms
             prima = len(b.attivita)
+            # 05/10 (giro 2): la modalita' media under non scrive in `attivita`
+            # (il suo tee e' `attivita_media`): le sue azioni sono i suoi ORDINI
+            media = s is b.media
+            prima_m = int((getattr(s, "stats", {}) or {}).get("ordini", 0) or 0) if media else 0
             if futils.call_strategy_error_handling(s.check_market_book, market, market_book):
                 futils.call_strategy_error_handling(s.process_market_book, market, market_book)
                 b.ref.decisioni += 1
             b.ref.azioni += len(b.attivita) - prima
+            if media:
+                b.ref.azioni += int((getattr(s, "stats", {}) or {}).get("ordini", 0) or 0) \
+                    - prima_m
             st = getattr(s, "stats", {}) or {}
             if (b.missione_ms is None and getattr(s, "one_green_per_phase", False)
                     and not b.in_gioco_ms and float(st.get("greens_prematch", 0) or 0) >= 1):
@@ -1885,6 +2105,9 @@ class _Ponte:
 # gli eventi degli scenari (nel thread del motore, a tempo di mercato)
 # ---------------------------------------------------------------------------
 def _posizione_aperta(s: Any) -> bool:
+    # 05/10 (giro 2): la modalita' media under ha la sua posizione (niente slot)
+    if callable(getattr(s, "posizione_aperta", None)):
+        return bool(s.posizione_aperta())
     for slot in dict(getattr(s, "_slots", {}) or {}).values():
         if slot.status in CERT.STATI_SLOT_VIVI:
             for o in (slot.entry, slot.entry_back, slot.entry_lay):
@@ -1898,7 +2121,8 @@ def _evento_scenario(self: _Banco, ms: int) -> None:
     pre-match (dal primo book a KO - entry_stop_before_s), appena il bot ha una
     posizione abbinata aperta, e comunque entro il primo quarto della seconda
     meta' della finestra: il caso va PROVOCATO, non sperato."""
-    if self.evento_fatto or self.scenario not in ("bot-fermo", "kill-switch", "riavvio"):
+    guasto = guasto_dello_scenario(self.scenario)
+    if self.evento_fatto or guasto not in ("bot-fermo", "kill-switch", "riavvio"):
         return
     s = self.strategia_corrente()
     if s is None or self.ko_ms is None or self.primo_ms is None:
@@ -1914,20 +2138,20 @@ def _evento_scenario(self: _Banco, ms: int) -> None:
         return
     self.evento_fatto = True
     aperta = _posizione_aperta(s)
-    if self.scenario == "bot-fermo":
+    if guasto == "bot-fermo":
         # `scalper_stop`: running/arming/armed -> 'stopping'
         if self.db.control.get("status") in ("running", "arming", "armed"):
             self.db.control["status"] = "stopping"
         self.stop_ms, self.stop_causa = ms, "ui"
         self.ref.note.append("STOP dalla UI a %d ms (posizione abbinata aperta: %s)"
                              % (ms, "si'" if aperta else "no"))
-    elif self.scenario == "kill-switch":
+    elif guasto == "kill-switch":
         with io.open(self.kill_file, "w", encoding="utf-8") as fh:
             fh.write("stop\n")
         self.stop_ms, self.stop_causa = ms, "kill-switch"
         self.ref.note.append("KILL-SWITCH (file nella cartella del replay) a %d ms "
                              "(posizione abbinata aperta: %s)" % (ms, "si'" if aperta else "no"))
-    elif self.scenario == "riavvio":
+    elif guasto == "riavvio":
         self.orologio.uccidi_al_prossimo_sonno(_ProcessoUcciso("processo della sessione ucciso"))
         self.ref.note.append("PROCESSO della sessione ucciso a %d ms (posizione "
                              "abbinata aperta: %s)" % (ms, "si'" if aperta else "no"))
@@ -2161,7 +2385,7 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
                     (int(sid) for sid, sp in definizioni[scelto[0]].get("runners") or []
                      if sp == 1), None)
             ref.note.append("MEDIA UNDER: mercato %s -> %s, Under %s; maker e sniper "
-                            "non armati; controlli M1-M9 + S6; B2 e K5 del maker non "
+                            "non armati; controlli M1-M10 + S6; B2 e K5 del maker non "
                             "applicati (posizione in gioco per progetto)"
                             % (mercato_media(scenario), banco.media_mercato_scelto,
                                banco.media_under))
@@ -2179,11 +2403,11 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
                                    p.get("client_paper"), p.get("client_live")))
         rifiuti = None
         ritardi = None
-        if scenario == "rifiuti-betfair":
+        if guasto_dello_scenario(scenario) == "rifiuti-betfair":
             rifiuti = _controllo_rifiuti(banco.quadro, PIAZZAMENTI_RIFIUTATI)
             banco.quadro.trading_controls.append(rifiuti)
             banco.rifiuti = rifiuti
-        if scenario == "esiti-ignoti":
+        if guasto_dello_scenario(scenario) == "esiti-ignoti":
             ritardi = _ritarda_esiti(banco.quadro, PIAZZAMENTI_IGNOTI, RITARDO_ESITO_IGNOTO_S)
         guasto_cp = None
         if scenario == CP.SCENARIO:
@@ -2233,7 +2457,7 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
                     pila.enter_context(banco.osservatore_um.attivo())
                 pila.enter_context(_iniezioni(banco, orologio, kill_file))
                 esiti["prima"] = _una_sessione(SS, event_id, banco)
-                if scenario == "riavvio" and esiti["prima"] == "ucciso":
+                if guasto_dello_scenario(scenario) == "riavvio" and esiti["prima"] == "ucciso":
                     _riarma(SS, event_id, banco, esiti)
                 # l'ULTIMO giro, a sessione chiusa (S3, S4)
                 banco.giro(orologio.ora_ms(), "fine sessione", fine=True)
@@ -2307,6 +2531,95 @@ def _riarma(SS: Any, event_id: str, banco: _Banco, esiti: Dict[str, Any]) -> Non
     esiti["seconda"] = _una_sessione(SS, event_id, banco)
 
 
+def _referto_media(ref: CERT.Referto, banco: _Banco) -> None:
+    """05/10 MEDIA UNDER: le note della modalita' nel referto (stato finale,
+    riepilogo PER CICLO dagli ordini veri, P&L con la riga NETTO, motivi di non
+    ingresso, controlli M) e, senza nessun ordine, lo scenario NON ESERCITATO."""
+    mu = banco.media
+    db = banco.db
+    eventi_m: Dict[str, int] = {}
+    for k, _p, _t in banco.attivita_media:
+        eventi_m[k] = eventi_m.get(k, 0) + 1
+    st_m = dict(getattr(mu, "stats", {}) or {})
+    medie = list(getattr(banco, "medie", None) or [mu])
+
+    def _somma(chiave: str) -> int:
+        return sum(int((getattr(m_s, "stats", {}) or {}).get(chiave, 0) or 0) for m_s in medie)
+    ref.note.append("MEDIA UNDER: stato finale %s; sessioni della modalita' %d; cicli "
+                    "chiusi %d; ordini piazzati (le azioni del referto) %d; eventi %s"
+                    % (st_m.get("stato"), len(medie), _somma("cicli_chiusi"),
+                       _somma("ordini"), eventi_m))
+    # 05/10 (giro 2, par.2.2): il riepilogo PER CICLO dagli ordini veri
+    from .. import media_under_bot as MU
+
+    mid_m = str(banco.media_mercato_scelto or "")
+    ordini_m = [o for o in banco.ordini_di(medie) if str(getattr(o, "market_id", "")) == mid_m]
+    par_m, _mot = MU.leggi_parametri(db.control.get("params") or {})
+    comm_m = float(par_m.commissione) if par_m is not None else 0.05
+    stato_runner = None
+    mk = banco.quadro.markets.markets.get(mid_m) if mid_m else None
+    for r in (getattr(getattr(mk, "market_book", None), "runners", None) or []):
+        if banco.media_under is not None and int(r.selection_id) == int(banco.media_under):
+            st_r = str(getattr(r, "status", "") or "")
+            stato_runner = st_r if st_r in ("WINNER", "LOSER") else None
+    cicli_m, conto_m = riepilogo_cicli_media(
+        ordini_m, banco.media_nati_ms, banco.media_abbinato_ms, banco.attivita_media,
+        ko_ms=banco.ko_ms, in_gioco_ms=banco.in_gioco_ms.get(mid_m),
+        commissione=comm_m, stato_runner=stato_runner)
+    for c in cicli_m:
+        ref.note.append("MEDIA UNDER ciclo %d: %s" % (c["ciclo"], c["riga"]))
+    if not cicli_m:
+        ref.note.append("MEDIA UNDER: nessun ciclo (nessun ordine della modalita')")
+    ref.note.append("MEDIA UNDER P&L del replay: lordo %+.2f | commissione %.2f "
+                    "(%.1f%%) | NETTO %+.2f EUR%s (dagli ordini abbinati della "
+                    "modalita'; non e' il metro della certificazione: il metro e' la "
+                    "condotta)"
+                    % (conto_m["lordo"], conto_m["commissione"],
+                       conto_m["aliquota"] * 100, conto_m["netto"],
+                       (" + %d cicli APERTI con esito ignoto (fuori dal conto)"
+                        % conto_m["cicli_esito_ignoto"])
+                       if conto_m["cicli_esito_ignoto"] else ""))
+    ref.stats_finali["media_riepilogo_cicli"] = cicli_m
+    ref.stats_finali["media_conto"] = conto_m
+    motivi_m: Dict[str, int] = {}
+    for m_s in medie:
+        for k_m, n_m in dict((getattr(m_s, "stats", {}) or {}).get("non_ingresso") or {}).items():
+            motivi_m[k_m] = motivi_m.get(k_m, 0) + int(n_m)
+    if motivi_m:
+        ref.note.append("MEDIA UNDER: motivi di non ingresso (book in cui il filtro "
+                        "ha fermato la punta, il PRIMO filtro che non passa): %s"
+                        % "; ".join("%s x%d" % (MU.MOTIVI_NON_INGRESSO.get(k, k), n)
+                                    for k, n in sorted(motivi_m.items(),
+                                                       key=lambda x: -x[1])))
+    battiti = sum(1 for w in db.scritture if "heartbeat_at" in (w.get("campi") or {}))
+    ref.note.append("MEDIA UNDER: letture degli ordini del conto (`%s`) %d su %d battiti "
+                    "della sessione (%s); fonte finale del riquadro: %s"
+                    % (MU.TABELLA_ORDINI_CONTO, int(db.letture.get(MU.TABELLA_ORDINI_CONTO, 0)),
+                       battiti, "PROVA: devono essere 0" if db.control.get("dry_run", True)
+                       else "soldi veri: solo a posizione aperta, al piu' una per battito",
+                       st_m.get("fonte")))
+    if not ordini_m:
+        # un replay della modalita' senza un solo ordine NON e' un OK
+        primo = (max(motivi_m.items(), key=lambda x: x[1])[0] if motivi_m else None)
+        ref.non_esercitato.append(
+            "la modalita' media under non ha piazzato NESSUN ordine su %s: %s"
+            % (mid_m or "nessun mercato",
+               ("filtro che l'ha fermata piu' spesso: %s (x%d)"
+                % (MU.MOTIVI_NON_INGRESSO.get(primo, primo), motivi_m[primo]))
+               if primo else "nessun book in pre-match valutato per l'ingresso"))
+    mai_m = [c for c, _r in CERT.elenco_controlli_media()
+             if not ref.sollecitati.get(c)]
+    ref.note.append("MEDIA UNDER: controlli M sollecitati %s; MAI sollecitati "
+                    "(non lo so): %s"
+                    % ({c: ref.sollecitati.get(c, 0) for c, _r in
+                        CERT.elenco_controlli_media() if ref.sollecitati.get(c)},
+                       ", ".join(mai_m) or "nessuno"))
+    stati_m = sorted({str(p.get("stato") or "") for k, p, _t in banco.attivita_media
+                      if p.get("stato")})
+    if stati_m:
+        ref.note.append("MEDIA UNDER: stati annunciati %s" % stati_m)
+
+
 def _chiudi_referto(ref: CERT.Referto, banco: _Banco, rifiuti: Any, ritardi: Any,
                     guasto_cp: Any, esiti: Dict[str, Any]) -> None:
     db = banco.db
@@ -2347,27 +2660,7 @@ def _chiudi_referto(ref: CERT.Referto, banco: _Banco, rifiuti: Any, ritardi: Any
                         getattr(s, "uscite_automatiche", False) is True for s in viste) else
                        ("MANUALI" if viste else "nessuna strategia")))
     if banco.media is not None:
-        mu = banco.media
-        eventi_m: Dict[str, int] = {}
-        for k, _p, _t in banco.attivita_media:
-            eventi_m[k] = eventi_m.get(k, 0) + 1
-        st_m = dict(getattr(mu, "stats", {}) or {})
-        ref.note.append("MEDIA UNDER: stato finale %s; cicli chiusi %s; rientri %s; "
-                        "totale puntato %s; banca %s; eventi %s"
-                        % (st_m.get("stato"), st_m.get("cicli_chiusi"), st_m.get("rientri"),
-                           st_m.get("totale_puntato"), (st_m.get("banca") or {}).get("stato"),
-                           eventi_m))
-        mai_m = [c for c, _r in CERT.elenco_controlli_media()
-                 if not ref.sollecitati.get(c)]
-        ref.note.append("MEDIA UNDER: controlli M sollecitati %s; MAI sollecitati "
-                        "(non lo so): %s"
-                        % ({c: ref.sollecitati.get(c, 0) for c, _r in
-                            CERT.elenco_controlli_media() if ref.sollecitati.get(c)},
-                           ", ".join(mai_m) or "nessuno"))
-        stati_m = sorted({str(p.get("stato") or "") for k, p, _t in banco.attivita_media
-                          if p.get("stato")})
-        if stati_m:
-            ref.note.append("MEDIA UNDER: stati annunciati %s" % stati_m)
+        _referto_media(ref, banco)
     if banco.sniper_ultimo is not None:
         sn = banco.sniper_ultimo
         eventi: Dict[str, int] = {}

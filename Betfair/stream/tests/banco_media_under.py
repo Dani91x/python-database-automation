@@ -115,7 +115,7 @@ class BancoMedia:
         tv = self.trd.setdefault(sid, {})
         tv[prezzo] = tv.get(prezzo, 0.0) + float(volume)
 
-    def book(self, passo_ms: int = 1000, flusso: float = 20.0) -> Any:
+    def book(self, passo_ms: int = 1000, flusso: float = 20.0, ponte: Any = None) -> Any:
         self.pt += passo_ms
         self.uid += 1
         rc = []
@@ -148,7 +148,11 @@ class BancoMedia:
         books = self.q.get_nowait()
         self.fw._process_market_books(MarketBookEvent(books))
         market = self.fw.markets.markets[self.mid]
-        if self.strat.check_market_book(market, market.market_book):
+        if ponte is not None:
+            # il PONTE vero del replay (``replay_registrazioni._Ponte``) passa il
+            # book alla strategia della sessione e conta decisioni e azioni
+            ponte._giro_del_book(market, market.market_book, self.pt)
+        elif self.strat.check_market_book(market, market.market_book):
             self.strat.process_market_book(market, market.market_book)
         for o in market.blotter.strategy_orders(self.strat):
             self.nati.setdefault(str(o.id), self.pt)

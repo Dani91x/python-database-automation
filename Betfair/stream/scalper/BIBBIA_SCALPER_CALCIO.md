@@ -896,8 +896,23 @@ stop oltre ai parametri (`media_rischio_max` 0 = spento di serie), nessuna chius
 forzata prima del fischio, nessun ordine in gioco.
 
 **Banco**: scenari `media-under` (soldi veri simulati), `media-under-paper`,
-`media-under-35`; controlli M1-M9 (`certificazione.verifica_media`) e S6.
+`media-under-35`; dal giro 2 (05/10) anche le varianti dichiarate
+`media-under-obiettivo-030`, `-rientri-1`, `-rischio-30`, `-tick-1` e i guasti
+`media-under-riavvio`, `-rifiuti-betfair`, `-esiti-ignoti`, `-kill-switch`,
+`-bot-fermo`; controlli M1-M10 (`certificazione.verifica_media`) e S6. Il referto
+della modalita' conta come azioni i suoi ORDINI, scrive un riepilogo per ciclo in
+euro (ingresso, rientri esatto/piazzato/abbinato, banca finale e dove si e'
+abbinata, profitto) con la riga NETTO, i motivi di non ingresso (stats
+`media_non_ingresso`) e, senza nessun ordine, esce `NE` col motivo.
+
+**Ordini messi a mano (giro 2, P14 approvata)**: in SOLDI VERI e a posizione
+aperta la sessione legge una volta per battito le righe di `betfair_live_orders`
+della selezione con `source` 'account' (dal sito) o 'runner' (terminale dell'app):
+entrano SOLO nel riquadro «chiusura», che scrive «ordini del bot + ordini del conto
+letti alle hh:mm:ss»; lettura fallita -> «solo ordini del bot» col motivo; in prova
+mai (controllo M10).
 
 **Punti aperti per l'utente**: referto §6 (P1 stop con posizione aperta, P2
 commissione, P3 cifre del riquadro esatte o a multiplo, P5 lettura del rischio
-massimo, P8 salto di quota sul rientro, P14 ordini a mano non visti).
+massimo, P8 salto di quota sul rientro, P13 riavvio a posizione aperta) e referto
+del giro 2 `AUDIT_2026-10-05/SCALPER_MEDIA_UNDER_GIRO2.md`.
