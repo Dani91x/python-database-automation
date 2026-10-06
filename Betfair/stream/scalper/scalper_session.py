@@ -804,6 +804,25 @@ KIND_FLUSSO_INTERROTTO = "flusso_interrotto"
 KIND_FLUSSO_RIPRESO = "flusso_ripreso"
 
 
+# 06/10 (giro 4): il NOME di ogni strategia della sessione e' legato alla
+# PARTITA. Flumine riadotta nel blotter gli ordini del conto il cui
+# ``customerOrderRef`` porta l'hash del nome della strategia (``name_hash``,
+# ``flumine.order.process.create_order_from_current``), e il ``customerStrategyRef``
+# sul conto e' il nome tagliato a 15 caratteri. Col nome della CLASSE (prima)
+# ogni sessione in soldi veri riadottava gli ordini di TUTTE le altre sessioni
+# dello Scalper vive sul conto (altre partite) e all'arresto li annullava.
+# Col nome per partita: una sessione vede solo i suoi, anche dopo un riavvio
+# (stesso nome, stesso hash: la ripresa della modalita' "media under" ci conta).
+PREFISSI_STRATEGIA: Dict[str, str] = {"maker": "scm", "sniper": "scn", "theta": "sct",
+                                      "media": "mu"}
+
+
+def nome_strategia(ruolo: str, event_id: str) -> str:
+    """Il nome flumine della strategia ``ruolo`` della sessione della partita
+    ``event_id`` (al piu' 15 caratteri: e' anche il ``customerStrategyRef``)."""
+    return ("%s%s" % (PREFISSI_STRATEGIA[ruolo], str(event_id)))[:15]
+
+
 def leggi_ordini_conto_media(db: Any, media: Any, session_paper: bool) -> Optional[str]:
     """05/10 (giro 2, spec GIRO2 par.2.3) MEDIA UNDER: gli ordini del CONTO per
     il riquadro "chiusura" ("l'importo reale"). Al piu' UNA lettura per battito
@@ -1301,6 +1320,7 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
         strategy = ScalperStrategy(
             market_filter=filters.streaming_market_filter(
                 market_ids=market_ids),
+            name=nome_strategia("maker", ev),
             scalper_params=params,
             event_sink=sink,
             max_selection_exposure=cap,
@@ -1316,6 +1336,7 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             sniper = SniperStrategy(
                 market_filter=filters.streaming_market_filter(
                     market_ids=market_ids),
+                name=nome_strategia("sniper", ev),
                 sniper_params={
                     "stake": sniper_stake,
                     "dry_run": params["dry_run"],
@@ -1410,6 +1431,7 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             theta = ThetaStrategy(
                 market_filter=filters.streaming_market_filter(
                     market_ids=market_ids),
+                name=nome_strategia("theta", ev),
                 theta_params=_theta_params,
                 event_sink=sink,
                 # esposizione: BACK -> liability = stake (margine x4: entry
@@ -1454,6 +1476,7 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             media = _MU.MediaUnderStrategy(
                 market_filter=filters.streaming_market_filter(
                     market_ids=market_ids),
+                name=nome_strategia("media", ev),
                 media_params=_media_params,
                 event_sink=sink,
                 max_selection_exposure=None,
