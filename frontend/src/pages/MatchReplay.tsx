@@ -419,7 +419,7 @@ export default function MatchReplay() {
     // ---- 06/10 APPLICA BOT: il bot (codice di produzione sul banco) sulla
     // registrazione; i suoi ordini sul ladder del training all'istante corrente ----
     const [botScelto, setBotScelto] = useState<string>('');
-    const [botRichiesta, setBotRichiesta] = useState<{ id: string; stato: StatoRichiestaBot | null; errore?: string } | null>(null);
+    const [botRichiesta, setBotRichiesta] = useState<{ id: string; stato: StatoRichiestaBot | null; errore?: string; inviataMs?: number } | null>(null);
     const botRigheRef = useRef<RigaBot[]>([]);
     botRigheRef.current = botRichiesta?.stato?.esito?.righe ?? [];
     useEffect(() => {
@@ -441,7 +441,7 @@ export default function MatchReplay() {
         if (!sc || !replayEventId) return;
         setBotRichiesta(null);
         richiediApplicaBot(replayEventId, sc.bot, sc.scenario)
-            .then(id => setBotRichiesta({ id, stato: { status: 'PENDING', error_detail: null, esito: null } }))
+            .then(id => setBotRichiesta({ id, stato: { status: 'PENDING', error_detail: null, esito: null }, inviataMs: Date.now() }))
             .catch((e: unknown) => setBotRichiesta({ id: '', stato: null, errore: e instanceof Error ? e.message : String(e) }));
     };
     const trainingOrderApi = useMemo(
@@ -1177,7 +1177,10 @@ export default function MatchReplay() {
                                     <span data-testid="stato-applica-bot" className="text-white/70">
                                         {botRichiesta?.errore
                                             ? <span className="text-red-300">errore: {botRichiesta.errore}</span>
-                                            : botRichiesta?.stato?.status === 'PENDING' ? "in coda: il banco dell'app la prende entro pochi secondi (se resta qui, riavvia l'app)…"
+                                            : botRichiesta?.stato?.status === 'PENDING'
+                                                ? ((Date.now() - (botRichiesta.inviataMs ?? Date.now())) > 20_000
+                                                    ? <span className="text-red-300 font-bold">il BANCO DEL REPLAY NON È ACCESO: parte all&apos;avvio dell&apos;app, quindi CHIUDI e RIAPRI l&apos;app (dopo l&apos;aggiornamento) e la richiesta partirà da sola</span>
+                                                    : 'richiesta inviata, il banco la sta prendendo…')
                                             : botRichiesta?.stato?.status === 'RUNNING' ? 'il bot sta girando sulla registrazione (qualche minuto)…'
                                             : botRichiesta?.stato?.status === 'ERROR' ? <span className="text-red-300">errore: {botRichiesta.stato.error_detail}</span>
                                             : botRichiesta?.stato?.status === 'DONE' && botRichiesta.stato.esito
