@@ -912,6 +912,17 @@ entrano SOLO nel riquadro «chiusura», che scrive «ordini del bot + ordini del
 letti alle hh:mm:ss»; lettura fallita -> «solo ordini del bot» col motivo; in prova
 mai (controllo M10).
 
+**Regola dell'utente del 06/10 (giro 3): «e' sempre la quota media che comanda»**.
+La banca di chiusura si calcola sulla posizione REALE abbinata e va al PIU' BASSO fra
+«ultimo ingresso - N tick» e «il tick sotto la quota media» (`quota_della_banca`):
+e' sempre in profitto. Quando la banca si appoggia, ogni resto non abbinato delle
+punte si annulla e la banca copre l'intera posizione. Esempio dell'utente: 10 @2,18,
+10 @2,20, 20 @2,22 e 2,99 abbinati su 40 @2,24 -> media 2,2074 -> resto 37,01
+annullato, banca 43,14 @2,20 -> +0,14 (prima 2,22 e -0,25). Coi rientri abbinati per
+intero la quota resta «ultimo ingresso - N tick». Controllo del banco M11 (banca
+non in profitto o resto di punta vivo = rosso); scenari `media-under-liquidita-100`
+(Under 2,5, 100 EUR per lato) e `media-under-35-liquidita-50` (Under 3,5, 50 EUR).
+
 **Punti aperti per l'utente**: referto §6 (P1 stop con posizione aperta, P2
 commissione, P3 cifre del riquadro esatte o a multiplo, P5 lettura del rischio
 massimo, P8 salto di quota sul rientro, P13 riavvio a posizione aperta) e referto
