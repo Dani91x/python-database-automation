@@ -19,6 +19,8 @@ export const SCENARI_BOT: ReadonlyArray<{ bot: string; scenario: string; etichet
     { bot: 'scalper_calcio', scenario: 'media-under-paper', etichetta: 'Scalper - Media Under 2,5 (prova)' },
     { bot: 'scalper_calcio', scenario: 'media-under-35', etichetta: 'Scalper - Media Under 3,5' },
     { bot: 'scalper_calcio', scenario: 'media-under', etichetta: 'Scalper - Media Under 2,5 (soldi veri simulati)' },
+    { bot: 'scalper_calcio', scenario: 'media-under-liquidita-100', etichetta: "Scalper - Media Under 2,5, liquidita' minima 100 EUR" },
+    { bot: 'scalper_calcio', scenario: 'media-under-35-liquidita-50', etichetta: "Scalper - Media Under 3,5, liquidita' minima 50 EUR" },
     { bot: 'scalper_calcio', scenario: 'paper', etichetta: 'Scalper - maker (prova)' },
     { bot: 'scalper_calcio', scenario: 'base', etichetta: 'Scalper - maker (soldi veri simulati)' },
     { bot: 'scalper_calcio', scenario: 'sniper-paper', etichetta: 'Scalper - sniper (prova)' },
@@ -60,6 +62,13 @@ export async function leggiEsitoBot(requestId: string): Promise<StatoRichiestaBo
 
 function chiave(r: RigaBot): string {
     return String(r.client_order_ref ?? r.bet_id ?? '');
+}
+
+/** Le righe del referto che spiegano COSA ha fatto il bot e PERCHE' non
+ *  entrava (cicli, P&L, motivi di non ingresso). PURA. */
+export function noteUtili(note: ReadonlyArray<string>): string[] {
+    return note.filter(n => /ciclo \d+:|P&L del replay|motivi di non ingresso|non entra/i.test(n))
+        .map(n => n.replace(/^nota:\s*/, '').replace(/^MEDIA UNDER:?\s*/, ''));
 }
 
 /** Gli ordini del bot come erano all'istante `ms` (ultima riga di ogni ordine

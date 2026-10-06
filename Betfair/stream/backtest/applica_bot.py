@@ -27,6 +27,8 @@ SCENARI_VISIVI: Dict[str, Dict[str, str]] = {
         "media-under-paper": "Scalper - Media Under 2,5 (prova)",
         "media-under-35": "Scalper - Media Under 3,5",
         "media-under": "Scalper - Media Under 2,5 (soldi veri simulati)",
+        "media-under-liquidita-100": "Scalper - Media Under 2,5, liquidita' minima 100 EUR",
+        "media-under-35-liquidita-50": "Scalper - Media Under 3,5, liquidita' minima 50 EUR",
         "paper": "Scalper - maker (prova)",
         "base": "Scalper - maker (soldi veri simulati)",
         "sniper-paper": "Scalper - sniper (prova)",

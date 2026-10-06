@@ -19,7 +19,7 @@ import { TradesPanel } from '@/components/replay/TradesPanel';
 import { TrainingTradesPanel } from '@/components/replay/TrainingTradesPanel';
 import { BotOrdersPanel } from '@/components/replay/BotOrdersPanel';
 import {
-    SCENARI_BOT, conOrdiniDelBot, leggiEsitoBot, ordiniBotAlMs, richiediApplicaBot,
+    SCENARI_BOT, conOrdiniDelBot, leggiEsitoBot, noteUtili, ordiniBotAlMs, richiediApplicaBot,
     type RigaBot, type StatoRichiestaBot,
 } from '@/lib/replayBot';
 import { OpportunitaPanel } from '@/components/replay/OpportunitaPanel';
@@ -1200,6 +1200,14 @@ export default function MatchReplay() {
                                         fallbackSelections={(replay.markets.find(m => m.market_id === trainingMarketId)?.selections ?? [])
                                             .map(s => ({ selection_id: s.selection_id, name: s.name ?? `#${s.selection_id}` }))}
                                     />
+                                )}
+                                {botRichiesta?.stato?.status === 'DONE' && botRichiesta.stato.esito
+                                    && noteUtili(botRichiesta.stato.esito.note).length > 0 && (
+                                    <div className="rounded-xl border border-amber-400/20 bg-black/30 p-2 text-[11px] text-white/75 space-y-0.5"
+                                        data-testid="note-bot">
+                                        <div className="font-bold text-amber-200">Cosa ha fatto il bot e perché non entrava prima</div>
+                                        {noteUtili(botRichiesta.stato.esito.note).map((n, i) => <div key={i}>• {n}</div>)}
+                                    </div>
                                 )}
                                 {botRichiesta?.stato?.status === 'DONE' && botRichiesta.stato.esito && (
                                     <BotOrdersPanel
