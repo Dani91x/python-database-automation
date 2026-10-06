@@ -112,3 +112,21 @@ def test_nel_replay_il_db_vero_e_vietato_anche_per_chi_ha_copiato_il_nome(
     STREAM_DB.insert_alert("INFO", "PROVA", "fuori dal replay")
     assert pc_con_credenziali.scritte == [("live_alerts", {
         "level": "INFO", "code": "PROVA", "message": "fuori dal replay", "event_id": None})]
+
+
+def test_chi_importa_il_nome_durante_il_replay_dopo_ha_il_client_vero(
+        pc_con_credenziali, tmp_path):
+    """Un modulo importato per la prima volta DURANTE il replay copia il nome
+    vietato: dentro il replay e' vietato, dopo deve tornare il client vero
+    (altrimenti il resto del processo resterebbe senza DB)."""
+    import types
+
+    banco = _banco()
+    nuovo = types.ModuleType("modulo_importato_nel_replay")
+    with R._iniezioni(banco, R._Orologio(), str(tmp_path / "kill")):
+        exec("from db_client import get_supabase_client", nuovo.__dict__)
+        with pytest.raises(RuntimeError, match="DB VERO vietato"):
+            nuovo.get_supabase_client()
+    assert nuovo.get_supabase_client() is not None
+    nuovo.get_supabase_client().table("live_alerts").insert({"code": "X"}).execute()
+    assert pc_con_credenziali.scritte == [("live_alerts", {"code": "X"})]
