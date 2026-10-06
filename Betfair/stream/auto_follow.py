@@ -662,6 +662,16 @@ class AutoFollow:
     def segue_auto(self, event_id: str) -> bool:
         return self.piano.voce(str(event_id)) is not None
 
+    def agganciato(self) -> bool:
+        """06/10: c'e' un framework su cui risottoscrivere a caldo (fra
+        ``aggancia`` e ``sgancia``)."""
+        with self._lock:
+            return self._framework is not None
+
+    def sveglia(self) -> None:
+        """06/10: un giro subito (i mercati manuali sono cambiati)."""
+        self._sveglia.set()
+
     def avvia(self) -> None:
         if self._thread is not None and self._thread.is_alive():
             return
