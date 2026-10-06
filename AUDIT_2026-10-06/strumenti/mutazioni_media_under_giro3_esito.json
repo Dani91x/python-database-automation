@@ -1,0 +1,165 @@
+[
+ {
+  "id": "H1",
+  "mutazione": "la quota media non comanda: banca sempre a ultimo ingresso - N tick (la regola vecchia)",
+  "esito": "10 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_esempio_dell_utente_la_media_comanda",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m11_muto_sul_bot_vero_e_sollecitato[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m11_muto_sul_bot_vero_e_sollecitato[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m11_rosso_su_banca_non_in_profitto_e_su_resto_vivo[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m11_rosso_su_banca_non_in_profitto_e_su_resto_vivo[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m6_vuole_la_quota_della_media[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m6_vuole_la_quota_della_media[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_media_esattamente_su_un_tick_va_al_tick_sotto",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_rientro_in_parte_resto_annullato_banca_sotto_la_media_in_profitto[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_rientro_in_parte_resto_annullato_banca_sotto_la_media_in_profitto[4]"
+  ]
+ },
+ {
+  "id": "H2",
+  "mutazione": "il PIU' ALTO fra le due quote invece del piu' basso",
+  "esito": "31 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_banca_abbinata_in_parte_prima_di_un_rientro[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_banca_abbinata_in_parte_prima_di_un_rientro[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_ciclo_chiuso_in_profitto_e_ricomincia_con_lo_stake_base[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_ciclo_chiuso_in_profitto_e_ricomincia_con_lo_stake_base[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m6_importo_e_quota_ognuno_da_solo[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m6_importo_e_quota_ognuno_da_solo[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_ingresso_e_banca_persist_sul_mercato_scelto[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_ingresso_e_banca_persist_sul_mercato_scelto[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_punta_di_rientro_non_abbinata_si_annulla_e_non_conta[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_punta_di_rientro_non_abbinata_si_annulla_e_non_conta[4]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_a_su_flumine_rientri_banche_e_massimo[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_vettore_a_su_flumine_rientri_banche_e_massimo[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro2_2026_10_05.py::test_quota_su_di_meno_di_n_tick_la_banca_resta_ferma[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro2_2026_10_05.py::test_quota_su_di_meno_di_n_tick_la_banca_resta_ferma[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro2_2026_10_05.py::test_referto_con_ordini_esercitato_riepilogo_e_netto[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro2_2026_10_05.py::test_referto_con_ordini_esercitato_riepilogo_e_netto[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro2_2026_10_05.py::test_riepilogo_per_ciclo_dagli_ordini_veri[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro2_2026_10_05.py::test_riepilogo_per_ciclo_dagli_ordini_veri[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_esempio_dell_utente_la_media_comanda",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m11_muto_sul_bot_vero_e_sollecitato[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m11_muto_sul_bot_vero_e_sollecitato[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m11_rosso_su_banca_non_in_profitto_e_su_resto_vivo[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m11_rosso_su_banca_non_in_profitto_e_su_resto_vivo[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m6_vuole_la_quota_della_media[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m6_vuole_la_quota_della_media[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_media_esattamente_su_un_tick_va_al_tick_sotto",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_rientri_per_intero_banca_dove_era[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_rientri_per_intero_banca_dove_era[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_rientro_in_parte_resto_annullato_banca_sotto_la_media_in_profitto[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_rientro_in_parte_resto_annullato_banca_sotto_la_media_in_profitto[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_vettore_a_rientri_per_intero_quota_invariata"
+  ]
+ },
+ {
+  "id": "H3",
+  "mutazione": "tick sotto la media NON stretto (media esattamente su un tick: chiusura a zero)",
+  "esito": "1 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_media_esattamente_su_un_tick_va_al_tick_sotto"
+  ]
+ },
+ {
+  "id": "H4",
+  "mutazione": "il resto non abbinato delle punte NON si annulla quando si appoggia la banca",
+  "esito": "9 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro2_2026_10_05.py::test_punta_abbinata_in_due_tempi_la_banca_si_riallinea[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m11_muto_sul_bot_vero_e_sollecitato[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m11_muto_sul_bot_vero_e_sollecitato[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m11_rosso_su_banca_non_in_profitto_e_su_resto_vivo[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m11_rosso_su_banca_non_in_profitto_e_su_resto_vivo[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m6_vuole_la_quota_della_media[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m6_vuole_la_quota_della_media[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_rientro_in_parte_resto_annullato_banca_sotto_la_media_in_profitto[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_rientro_in_parte_resto_annullato_banca_sotto_la_media_in_profitto[4]"
+  ]
+ },
+ {
+  "id": "H5",
+  "mutazione": "l'annullo dei resti non tocca mai le punte (filtro sbagliato)",
+  "esito": "9 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro2_2026_10_05.py::test_punta_abbinata_in_due_tempi_la_banca_si_riallinea[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m11_muto_sul_bot_vero_e_sollecitato[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m11_muto_sul_bot_vero_e_sollecitato[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m11_rosso_su_banca_non_in_profitto_e_su_resto_vivo[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m11_rosso_su_banca_non_in_profitto_e_su_resto_vivo[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m6_vuole_la_quota_della_media[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m6_vuole_la_quota_della_media[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_rientro_in_parte_resto_annullato_banca_sotto_la_media_in_profitto[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_rientro_in_parte_resto_annullato_banca_sotto_la_media_in_profitto[4]"
+  ]
+ },
+ {
+  "id": "H6",
+  "mutazione": "l'attivita' della banca non dice che la quota viene dalla media",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_rientro_in_parte_resto_annullato_banca_sotto_la_media_in_profitto[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_rientro_in_parte_resto_annullato_banca_sotto_la_media_in_profitto[4]"
+  ]
+ },
+ {
+  "id": "H7",
+  "mutazione": "M11 muto su una banca non in profitto",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m11_rosso_su_banca_non_in_profitto_e_su_resto_vivo[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m11_rosso_su_banca_non_in_profitto_e_su_resto_vivo[4]"
+  ]
+ },
+ {
+  "id": "H8",
+  "mutazione": "M11 muto su un resto di punta vivo",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m11_rosso_su_banca_non_in_profitto_e_su_resto_vivo[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m11_rosso_su_banca_non_in_profitto_e_su_resto_vivo[4]"
+  ]
+ },
+ {
+  "id": "H9",
+  "mutazione": "M11 rosso anche con l'annullo del resto gia' chiesto (falso allarme)",
+  "esito": "4 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m11_muto_sul_bot_vero_e_sollecitato[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m11_muto_sul_bot_vero_e_sollecitato[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m11_rosso_su_banca_non_in_profitto_e_su_resto_vivo[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m11_rosso_su_banca_non_in_profitto_e_su_resto_vivo[4]"
+  ]
+ },
+ {
+  "id": "H10",
+  "mutazione": "M6 con la regola vecchia (ignora la quota media)",
+  "esito": "6 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m_rossi_sui_difetti[1]",
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_controlli_m_rossi_sui_difetti[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m11_muto_sul_bot_vero_e_sollecitato[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m11_muto_sul_bot_vero_e_sollecitato[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m6_vuole_la_quota_della_media[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_m6_vuole_la_quota_della_media[4]"
+  ]
+ },
+ {
+  "id": "H11",
+  "mutazione": "lo scenario Under 3,5 con liquidita' 50 gira sull'Under 2,5",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_2026_10_05.py::test_la_sessione_arma_solo_la_modalita_e_paper_uguale_live",
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_scenari_di_liquidita_cambiano_solo_la_liquidita[media-under-35-liquidita-50-media-under-35-diversi1-OVER_UNDER_35]"
+  ]
+ },
+ {
+  "id": "H12",
+  "mutazione": "lo scenario di liquidita' 100 gira coi 300 di serie",
+  "esito": "1 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py::test_scenari_di_liquidita_cambiano_solo_la_liquidita[media-under-liquidita-100-media-under-diversi0-OVER_UNDER_25]"
+  ]
+ }
+]
