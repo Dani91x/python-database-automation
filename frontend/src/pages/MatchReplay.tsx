@@ -16,6 +16,12 @@ import { PlaybackControls } from '@/components/replay/PlaybackControls';
 import { TimelineSlider } from '@/components/replay/TimelineSlider';
 import { MarketPanel } from '@/components/replay/MarketPanel';
 import { TradesPanel } from '@/components/replay/TradesPanel';
+import { TrainingTradesPanel } from '@/components/replay/TrainingTradesPanel';
+import { BotOrdersPanel } from '@/components/replay/BotOrdersPanel';
+import {
+    SCENARI_BOT, conOrdiniDelBot, leggiEsitoBot, ordiniBotAlMs, richiediApplicaBot,
+    type RigaBot, type StatoRichiestaBot,
+} from '@/lib/replayBot';
 import { OpportunitaPanel } from '@/components/replay/OpportunitaPanel';
 import { ValidationCard } from '@/components/replay/ValidationCard';
 import {
@@ -30,6 +36,7 @@ import { simulateOrder, MIN_STAKE_GBP, type BookSnapshot, type OrderRequest, typ
 // F41: TRAINING sul ladder — LadderView reale + orderApi SIMULATO (matching engine)
 import { LadderView, type LadderSource } from '@/components/live/LadderView';
 import { createTrainingApi, frameToLadderRow, type TrainingApi } from '@/lib/trainingLadder';
+import { timelineEventMarkers } from '@/lib/replayTimelineEvents';
 import type { LiveLadderRow } from '@/lib/live';
 // F42: backtest del ladder-trading sullo storico full-depth (lib pura testata)
 import { LadderBacktestPanel } from '@/components/replay/LadderBacktestPanel';
@@ -409,6 +416,43 @@ export default function MatchReplay() {
         const s = trainSubRef.current;
         if (s && view === 'ladder') s.cb(buildTrainingRowRef.current(s.mid));
     }, [currentTs, view]);
+    // ---- 06/10 APPLICA BOT: il bot (codice di produzione sul banco) sulla
+    // registrazione; i suoi ordini sul ladder del training all'istante corrente ----
+    const [botScelto, setBotScelto] = useState<string>('');
+    const [botRichiesta, setBotRichiesta] = useState<{ id: string; stato: StatoRichiestaBot | null; errore?: string } | null>(null);
+    const botRigheRef = useRef<RigaBot[]>([]);
+    botRigheRef.current = botRichiesta?.stato?.esito?.righe ?? [];
+    useEffect(() => {
+        if (!botRichiesta || botRichiesta.errore) return undefined;
+        const st = botRichiesta.stato?.status;
+        if (st === 'DONE' || st === 'ERROR') return undefined;
+        let alive = true;
+        const id = setInterval(() => {
+            leggiEsitoBot(botRichiesta.id)
+                .then(stato => { if (alive) setBotRichiesta(r => (r && r.id === botRichiesta.id ? { ...r, stato } : r)); })
+                .catch((e: unknown) => {
+                    if (alive) setBotRichiesta(r => (r ? { ...r, errore: e instanceof Error ? e.message : String(e) } : r));
+                });
+        }, 3000);
+        return () => { alive = false; clearInterval(id); };
+    }, [botRichiesta]);
+    const applicaBot = () => {
+        const sc = SCENARI_BOT.find(x => `${x.bot}:${x.scenario}` === botScelto);
+        if (!sc || !replayEventId) return;
+        setBotRichiesta(null);
+        richiediApplicaBot(replayEventId, sc.bot, sc.scenario)
+            .then(id => setBotRichiesta({ id, stato: { status: 'PENDING', error_detail: null, esito: null } }))
+            .catch((e: unknown) => setBotRichiesta({ id: '', stato: null, errore: e instanceof Error ? e.message : String(e) }));
+    };
+    const trainingOrderApi = useMemo(
+        () => (trainApiRef.current
+            ? conOrdiniDelBot(trainApiRef.current,
+                mid => ordiniBotAlMs(botRigheRef.current, nowMsRef.current, mid))
+            : null),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [trainApiRef.current],
+    );
+
     // default: mercato MATCH_ODDS (o il primo) quando si apre la vista training
     useEffect(() => {
         if (view !== 'ladder' || trainingMarketId || !replay) return;
@@ -442,115 +486,7 @@ export default function MatchReplay() {
         const awayName = replay.event.away_name || 'Ospiti';
         const span = Math.max(1, timeline.length - 1);
 
-        // mappa minuto→ts (prima occorrenza) e funzione ts→minuto dalle sole righe
-        // PUNTEGGIO (score_home valorizzato): le righe-evento possono avere ts di
-        // ri-emissione e inquinerebbero la mappa.
-        const minuteTs = new Map<number, string>();
-        const scoreRows: { ts: string; minute: number }[] = [];
-        for (const ev of sortedScoreTimeline) {
-            if (ev.score_home == null || ev.minute == null) continue;
-            if (!minuteTs.has(ev.minute)) minuteTs.set(ev.minute, ev.ts);
-            scoreRows.push({ ts: ev.ts, minute: ev.minute });
-        }
-        const minMapped = minuteTs.size > 0 ? Math.min(...minuteTs.keys()) : null;
-        const minuteAt = (ts: string): number | null => {
-            let best: number | null = null;
-            for (const r of scoreRows) {
-                if (r.ts <= ts) best = r.minute; else break;
-            }
-            return best;
-        };
-        // ts a cui posizionare un evento discreto; null = fuori registrazione.
-        const placedTs = (ev: typeof sortedScoreTimeline[number]): string | null => {
-            if (ev.minute == null) return ev.ts;
-            const implied = minuteAt(ev.ts);
-            if (implied != null && Math.abs(implied - ev.minute) <= 2) return ev.ts; // ts coerente col minuto
-            const mapped = minuteTs.get(ev.minute)
-                ?? minuteTs.get(ev.minute + 1) ?? minuteTs.get(ev.minute - 1) ?? null;
-            if (mapped) return mapped;
-            if (minMapped != null && ev.minute < minMapped) return null; // prima della registrazione
-            return ev.ts;
-        };
-
-        type Marker = { ts: string; pctLeft: number; kind: string; team?: string | null; minute: number | null; label: string };
-        const out: Marker[] = [];
-        const seen = new Set<string>(); // dedup ri-emissioni feed: kind|minuto|team
-        const teamName = (t: string | null | undefined) => (t === 'home' ? homeName : t === 'away' ? awayName : null);
-        const numH = (p: any, k: string) => Number(p?.score?.home?.[k] ?? 0) || 0;
-        const numA = (p: any, k: string) => Number(p?.score?.away?.[k] ?? 0) || 0;
-        const add = (ev: typeof sortedScoreTimeline[number], kind: string, team: string | null, label: string) => {
-            let ts: string | null = ev.ts;
-            if (ev.event_type) { // solo gli eventi discreti hanno il problema dump/ri-emissione
-                const key = `${kind}|${ev.minute ?? '?'}|${team ?? ''}`;
-                if (seen.has(key)) {
-                    // chiave già vista: è quasi sempre una RI-EMISSIONE del feed (ts
-                    // incoerente col minuto). Ma una doppietta REALE nello stesso
-                    // minuto ha ts coerente → va tenuta, non deduplicata.
-                    const implied = ev.minute != null ? minuteAt(ev.ts) : null;
-                    const coherent = implied != null && ev.minute != null && Math.abs(implied - ev.minute) <= 2;
-                    if (!coherent) return;
-                } else {
-                    seen.add(key);
-                }
-                ts = placedTs(ev);
-                if (!ts) return;
-            }
-            const idx = stepIndexFor(timeline, ts);
-            out.push({ ts, pctLeft: Math.min(Math.max(idx / span, 0), 1), kind, team, minute: ev.minute, label });
-        };
-
-        // se ci sono eventi DISCRETI (get_event_timeline) usiamo SOLO quelli; altrimenti
-        // deriviamo TUTTO dai delta (punteggio → gol; conteggi payload → cartellini/angoli).
-        const hasDiscrete = sortedScoreTimeline.some(e => !!e.event_type);
-        let prevHome = 0, prevAway = 0;
-        let pYH = 0, pYA = 0, pRH = 0, pRA = 0, pCH = 0, pCA = 0;
-
-        for (const ev of sortedScoreTimeline) {
-            const ty = (ev.event_type || '').toLowerCase();
-            const curHome = ev.score_home ?? prevHome;
-            const curAway = ev.score_away ?? prevAway;
-            const dHome = curHome - prevHome;
-            const dAway = curAway - prevAway;
-
-            if (hasDiscrete) {
-                if (ty === 'goal') {
-                    const team = ev.payload?.team ?? (dHome > 0 ? 'home' : dAway > 0 ? 'away' : null);
-                    const who = teamName(team);
-                    add(ev, 'goal', team, who ? `Gol ${who}` : 'Gol');
-                } else if (ty === 'yellowcard' || ty === 'yellow_card') {
-                    const who = teamName(ev.payload?.team);
-                    add(ev, 'yellow', ev.payload?.team ?? null, who ? `Giallo ${who}` : 'Cartellino giallo');
-                } else if (ty === 'redcard' || ty === 'red_card') {
-                    const who = teamName(ev.payload?.team);
-                    add(ev, 'red', ev.payload?.team ?? null, who ? `Rosso ${who}` : 'Cartellino rosso');
-                } else if (ty === 'corner') {
-                    const who = teamName(ev.payload?.team);
-                    add(ev, 'corner', ev.payload?.team ?? null, who ? `Angolo ${who}` : "Calcio d'angolo");
-                }
-                // KickOff/HalfTime/... = fasi: non renderizzate.
-            } else {
-                // GOL dai delta di punteggio
-                if (dHome > 0) add(ev, 'goal', 'home', `Gol ${homeName}`);
-                if (dAway > 0) add(ev, 'goal', 'away', `Gol ${awayName}`);
-                // CARTELLINI / ANGOLI dai conteggi cumulativi nel payload
-                const yh = numH(ev.payload, 'numberOfYellowCards'), ya = numA(ev.payload, 'numberOfYellowCards');
-                const rh = numH(ev.payload, 'numberOfRedCards'), ra = numA(ev.payload, 'numberOfRedCards');
-                const ch = numH(ev.payload, 'numberOfCorners'), ca = numA(ev.payload, 'numberOfCorners');
-                if (yh > pYH) add(ev, 'yellow', 'home', `Giallo ${homeName}`);
-                if (ya > pYA) add(ev, 'yellow', 'away', `Giallo ${awayName}`);
-                if (rh > pRH) add(ev, 'red', 'home', `Rosso ${homeName}`);
-                if (ra > pRA) add(ev, 'red', 'away', `Rosso ${awayName}`);
-                if (ch > pCH) add(ev, 'corner', 'home', `Angolo ${homeName}`);
-                if (ca > pCA) add(ev, 'corner', 'away', `Angolo ${awayName}`);
-                pYH = Math.max(pYH, yh); pYA = Math.max(pYA, ya);
-                pRH = Math.max(pRH, rh); pRA = Math.max(pRA, ra);
-                pCH = Math.max(pCH, ch); pCA = Math.max(pCA, ca);
-            }
-            if (ev.score_home != null) prevHome = ev.score_home;
-            if (ev.score_away != null) prevAway = ev.score_away;
-        }
-        // ordina per ts (il riposizionamento può aver spostato eventi ri-emessi)
-        return out.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+        return timelineEventMarkers(sortedScoreTimeline, timeline, homeName, awayName, span);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [replay, sortedScoreTimeline, timeline, maxIndex]);
 
@@ -1188,13 +1124,21 @@ export default function MatchReplay() {
                                         value={trainingMarketId ?? ''}
                                         onChange={e => setTrainingMarketId(e.target.value || null)}
                                         aria-label="Mercato del ladder training"
+                                        title={`${replay.markets.length} mercati registrati`}
+                                        // 06/10: le voci erano BIANCHE su tendina bianca (Windows/Electron
+                                        // disegna la lista aperta col tema chiaro): si leggeva solo la
+                                        // voce selezionata (Match Odds). Tema scuro esplicito.
+                                        style={{ colorScheme: 'dark' }}
                                         className="px-2 py-1 rounded-md bg-black/40 border border-white/15 text-white text-[11px]"
                                     >
-                                        {replay.markets.map(m => (
-                                            <option key={m.market_id} value={m.market_id}>
-                                                {m.market_name || m.market_type || m.market_id}
-                                            </option>
-                                        ))}
+                                        {[...replay.markets]
+                                            .sort((a, b) => (a.sort_priority ?? 999) - (b.sort_priority ?? 999))
+                                            .map(m => (
+                                                <option key={m.market_id} value={m.market_id}
+                                                    className="bg-neutral-900 text-white">
+                                                    {m.market_name || m.market_type || m.market_id}
+                                                </option>
+                                            ))}
                                     </select>
                                     <Button
                                         size="sm" variant="outline"
@@ -1205,6 +1149,42 @@ export default function MatchReplay() {
                                         Azzera ordini
                                     </Button>
                                 </div>
+                                {/* 06/10 APPLICA BOT: codice di produzione sul banco comune */}
+                                <div className="rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2 flex items-center gap-2 flex-wrap text-[11px]">
+                                    <span className="font-black text-amber-200">🤖 Applica bot</span>
+                                    <select
+                                        value={botScelto}
+                                        onChange={e => setBotScelto(e.target.value)}
+                                        aria-label="Bot da applicare al replay"
+                                        style={{ colorScheme: 'dark' }}
+                                        className="px-2 py-1 rounded-md bg-black/40 border border-white/15 text-white text-[11px]"
+                                    >
+                                        <option value="" className="bg-neutral-900 text-white">— scegli un bot —</option>
+                                        {SCENARI_BOT.map(x => (
+                                            <option key={`${x.bot}:${x.scenario}`} value={`${x.bot}:${x.scenario}`}
+                                                className="bg-neutral-900 text-white">{x.etichetta}</option>
+                                        ))}
+                                    </select>
+                                    <Button
+                                        size="sm" variant="outline"
+                                        disabled={!botScelto || botRichiesta?.stato?.status === 'PENDING' || botRichiesta?.stato?.status === 'RUNNING'}
+                                        onClick={applicaBot}
+                                        className="h-7 border-amber-300/40 text-amber-100 hover:bg-amber-500/20 text-[11px] font-bold"
+                                        title="Fa girare il bot con il codice di produzione sulla registrazione di questa partita (worker del Backtest Automatico): coda, bet delay e minimi come dal vivo"
+                                    >
+                                        Applica
+                                    </Button>
+                                    <span data-testid="stato-applica-bot" className="text-white/70">
+                                        {botRichiesta?.errore
+                                            ? <span className="text-red-300">errore: {botRichiesta.errore}</span>
+                                            : botRichiesta?.stato?.status === 'PENDING' ? 'in coda: serve il worker del Backtest Automatico acceso…'
+                                            : botRichiesta?.stato?.status === 'RUNNING' ? 'il bot sta girando sulla registrazione (qualche minuto)…'
+                                            : botRichiesta?.stato?.status === 'ERROR' ? <span className="text-red-300">errore: {botRichiesta.stato.error_detail}</span>
+                                            : botRichiesta?.stato?.status === 'DONE' && botRichiesta.stato.esito
+                                                ? `${botRichiesta.stato.esito.etichetta}: ${botRichiesta.stato.esito.ordini} ordini — scorri la timeline`
+                                            : 'codice di produzione sul banco: coda, bet delay, minimi .it'}
+                                    </span>
+                                </div>
                                 {trainingMarketId && trainApiRef.current && (
                                     <LadderView
                                         key={`train:${trainingMarketId}:${trainingResetTick}`}
@@ -1213,9 +1193,34 @@ export default function MatchReplay() {
                                         sport="calcio"
                                         flussoRunner={false}
                                         ladderSource={trainingSource}
-                                        orderApi={trainApiRef.current}
+                                        orderApi={trainingOrderApi ?? trainApiRef.current}
                                         fallbackSelections={(replay.markets.find(m => m.market_id === trainingMarketId)?.selections ?? [])
                                             .map(s => ({ selection_id: s.selection_id, name: s.name ?? `#${s.selection_id}` }))}
+                                    />
+                                )}
+                                {botRichiesta?.stato?.status === 'DONE' && botRichiesta.stato.esito && (
+                                    <BotOrdersPanel
+                                        titolo={botRichiesta.stato.esito.etichetta}
+                                        ordini={ordiniBotAlMs(botRichiesta.stato.esito.righe, currentMs)}
+                                        nomeMercato={mid => {
+                                            const m = replay.markets.find(x => x.market_id === mid);
+                                            return m?.market_name || m?.market_type || mid;
+                                        }}
+                                        nomeSelezione={(mid, sid) => replay.markets.find(x => x.market_id === mid)
+                                            ?.selections?.find(x => x.selection_id === sid)?.name ?? `#${sid}`}
+                                    />
+                                )}
+                                {trainApiRef.current && (
+                                    <TrainingTradesPanel
+                                        key={`trade:${trainingResetTick}`}
+                                        api={trainApiRef.current}
+                                        nowMs={currentMs}
+                                        nomeMercato={mid => {
+                                            const m = replay.markets.find(x => x.market_id === mid);
+                                            return m?.market_name || m?.market_type || mid;
+                                        }}
+                                        nomeSelezione={(mid, sid) => replay.markets.find(x => x.market_id === mid)
+                                            ?.selections?.find(x => x.selection_id === sid)?.name ?? `#${sid}`}
                                     />
                                 )}
                             </div>

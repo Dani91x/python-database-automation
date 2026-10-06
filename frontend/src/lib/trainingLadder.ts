@@ -120,6 +120,13 @@ export interface TrainingApi extends LadderOrderApi {
     resolved: () => Array<{ order: TrainingOrder; res: ResolvedOrder }>;
     /** azzera tutti gli ordini simulati (nuova sessione di training). */
     reset: () => void;
+    /** 06/10: ELIMINA un ordine/trade simulato (la X del pannello trade del
+     *  training): sparisce dalla sessione come se non fosse mai stato piazzato.
+     *  true = trovato ed eliminato. */
+    remove: (id: number) => boolean;
+    /** 06/10: avviso a ogni cambio degli ordini (piazzato, annullato, eliminato,
+     *  azzerati) per il pannello dei trade. Ritorna la funzione di disiscrizione. */
+    onChange: (cb: () => void) => () => void;
 }
 
 const r2 = (v: number) => Math.round(v * 100) / 100;
@@ -176,6 +183,8 @@ export function selectionExposures(
 export function createTrainingApi(ctx: TrainingContext): TrainingApi {
     const orders: TrainingOrder[] = [];
     let seq = 0;
+    const ascoltatori = new Set<() => void>();
+    const avvisa = () => { for (const cb of [...ascoltatori]) { try { cb(); } catch { /* mai rompere il ladder */ } } };
 
     const resolvedAll = () => orders.map(o => ({ order: o, res: resolve(ctx, o) }));
 
@@ -213,6 +222,7 @@ export function createTrainingApi(ctx: TrainingContext): TrainingApi {
             },
         };
         orders.push(o);
+        avvisa();
         const res = resolve(ctx, o);
         return {
             ok: true, action: 'place', mode: 'paper', bet_id: o.bet_id,
@@ -228,6 +238,7 @@ export function createTrainingApi(ctx: TrainingContext): TrainingApi {
         const o = orders.find(x => x.bet_id === cmd.bet_id);
         if (!o) return err('cancel', `ordine ${cmd.bet_id ?? '?'} non trovato`);
         if (o.req.cancelledTs == null) o.req = { ...o.req, cancelledTs: ctx.getNow() };
+        avvisa();
         return { ok: true, action: 'cancel', mode: 'paper', bet_id: o.bet_id };
     };
 
@@ -306,6 +317,7 @@ export function createTrainingApi(ctx: TrainingContext): TrainingApi {
                     const res = resolve(ctx, o);
                     if (res.status === 'OPEN' || res.status === 'PENDING') {
                         o.req = { ...o.req, cancelledTs: ctx.getNow() };
+                        avvisa();
                     }
                 }
             }
@@ -340,6 +352,17 @@ export function createTrainingApi(ctx: TrainingContext): TrainingApi {
         // (capability gating: la toolbar mostra solo ciò che funziona davvero).
         supportsFok: false,
         resolved: resolvedAll,
-        reset: () => { orders.length = 0; },
+        reset: () => { orders.length = 0; avvisa(); },
+        remove: (id: number) => {
+            const i = orders.findIndex(o => o.id === id);
+            if (i < 0) return false;
+            orders.splice(i, 1);
+            avvisa();
+            return true;
+        },
+        onChange: (cb: () => void) => {
+            ascoltatori.add(cb);
+            return () => { ascoltatori.delete(cb); };
+        },
     };
 }

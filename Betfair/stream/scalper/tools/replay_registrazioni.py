@@ -2760,6 +2760,11 @@ def _referto_media(ref: CERT.Referto, banco: _Banco) -> None:
 def _chiudi_referto(ref: CERT.Referto, banco: _Banco, rifiuti: Any, ritardi: Any,
                     guasto_cp: Any, esiti: Dict[str, Any]) -> None:
     db = banco.db
+    # 06/10 (Match Replay, "applica bot"): la cronologia dello specchio ordini
+    # della sessione (righe `betfair_live_orders` con l'istante `_ms` del
+    # banco), per vedere sul ladder del replay cosa ha fatto il bot. Non entra
+    # nel referto stampato ne' nei controlli.
+    ref.ordini_specchio = list(banco.righe_specchio)
     msg = db.messaggi()
     if any("kickoff passato" in m for m in msg):
         causa = "fine-vita"

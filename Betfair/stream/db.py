@@ -736,6 +736,15 @@ def set_backtest_status(
     ).eq("id", request_id).execute()
 
 
+def write_replay_bot_esito(request_id: str, esito: Dict[str, Any]) -> None:
+    """06/10 (Match Replay, "applica bot"): l'esito di UNA richiesta (cronologia
+    degli ordini del bot + note) in ``replay_bot_esiti`` (migrazione
+    ``replay_applica_bot_2026-10-06.sql``). Idempotente per richiesta."""
+    sb = get_supabase_client()
+    sb.table("replay_bot_esiti").upsert(
+        {"request_id": request_id, "esito": esito}, on_conflict="request_id").execute()
+
+
 def write_backtest_results(request_id: str, rows: List[Dict[str, Any]]) -> int:
     sb = get_supabase_client()
     sb.table("live_backtest_results").delete().eq("request_id", request_id).execute()
