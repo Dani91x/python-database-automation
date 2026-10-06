@@ -718,7 +718,7 @@ def test_registrata_nel_banco_e_scenari_riconosciuti():
     assert R.mercato_media(R.SCENARIO_MEDIA_35) == "OVER_UNDER_35"
     assert R.mercato_media("base") is None
     assert [c for c, _r in CERT.elenco_controlli_media()] == [
-        "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "M10"]   # M10: giro 2
+        "M1", "M2", "M3", "M4", "M5", "M6", "M11", "M7", "M8", "M9", "M10"]   # M10 giro 2, M11 giro 3
     # il registro del maker non cambia: la copertura dei 15 scenari resta quella
     assert not any(c.startswith("M") for c, _r in CERT.elenco_controlli())
     assert CERT.ESCLUSI_MEDIA == {"B2", "K5"}
@@ -782,8 +782,11 @@ def test_controlli_m_rossi_sui_difetti(differita, exchange_it):
     assert "M3" in _codici(_oss(b, params={"media_tick_rientro": 3}))
     # M4: l'obiettivo dichiarato diverso cambia l'importo voluto
     assert "M4" in _codici(_oss(b, params={"media_obiettivo": 5.0}))
-    # M6: la banca a 1 tick con 2 tick dichiarati (stessa banca, regola diversa)
-    assert "M6" in _codici(_oss(b, params={"media_tick_chiusura": 1}))
+    # M6: la banca a 2 tick con 3 tick dichiarati (stessa banca, regola diversa).
+    # 06/10 (giro 3): con 1 tick dichiarato la banca a 1,52 e' GIUSTA (la quota
+    # media 1,525 comanda: tick sotto la media 1,52 < 1,53), non piu' un difetto
+    assert "M6" in _codici(_oss(b, params={"media_tick_chiusura": 3}))
+    assert "M6" not in _codici(_oss(b, params={"media_tick_chiusura": 1}))
     # M7: un ordine nato in gioco; un annullo in gioco
     assert "M7" in _codici(_oss(b, in_gioco_ms=KO_MS - 3_700_000))
     assert "M7" in _codici(_oss(b, in_gioco_ms=b.pt - 1, annullati_in_gioco=["x"]))

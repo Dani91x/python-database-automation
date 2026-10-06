@@ -1387,6 +1387,9 @@ class Referto:
 #      force-flat)
 #   M10 (05/10, giro 2) gli ordini del CONTO per il riquadro: in prova nessuna
 #      lettura, in soldi veri al piu' una per battito della sessione
+#   M11 (06/10, giro 3) <<e' sempre la quota media che comanda>>: ogni banca viva
+#      sta STRETTAMENTE sotto la quota media della posizione vera (chiusura in
+#      profitto) e nessun resto di punta resta vivo accanto a lei (annullo chiesto)
 # La parita' paper/live della modalita' e' S6 (stesso controllo del maker).
 @dataclass
 class OsservazioneMedia:
@@ -1661,10 +1664,16 @@ def _m6(o: OsservazioneMedia) -> Optional[str]:
     if ultimo is None:
         return "banca %s viva senza un ingresso abbinato" % banca.get("order_id")
     c = _m_tick_sotto(ultimo, par.tick_chiusura)
+    w, l, s_m, p_m = _m_posizione(ciclo)
+    # 06/10 (giro 3): la quota la comanda anche la media (il PIU' BASSO fra
+    # ultimo ingresso - N tick e il tick sotto la quota media)
+    cm = _m_tick_sotto_media(1.0 + p_m / s_m) if s_m > 1e-9 else None
+    if cm is not None and (c is None or cm < c - 1e-9):
+        c = cm
     if c is None or abs(float(banca.get("price") or 0.0) - c) > 1e-9:
-        return ("banca %s @%s: l'ultimo ingresso e' %.2f, la chiusura va a %s"
-                % (banca.get("order_id"), banca.get("price"), ultimo, c))
-    w, l, _s, _p = _m_posizione(ciclo)
+        return ("banca %s @%s: l'ultimo ingresso e' %.2f, la quota media %s, la chiusura "
+                "va a %s" % (banca.get("order_id"), banca.get("price"), ultimo,
+                             "%.4f" % (1.0 + p_m / s_m) if s_m > 1e-9 else "?", c))
     from decimal import ROUND_HALF_UP, Decimal
 
     voluto = float(Decimal(repr((w - l) / c)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
@@ -1672,6 +1681,54 @@ def _m6(o: OsservazioneMedia) -> Optional[str]:
     if abs(resto - voluto) > 0.011:
         return ("banca %s: resto %.2f @%.2f, la posizione vera ne vuole %.2f"
                 % (banca.get("order_id"), resto, c, voluto))
+    return None
+
+
+def _m_tick_sotto_media(media: float) -> Optional[float]:
+    """Il tick della scala vera STRETTAMENTE sotto la quota media (ricalcolato
+    qui, non preso dal bot)."""
+    from flumine.utils import get_nearest_price, price_ticks_away
+
+    if media is None or media <= 1.0:
+        return None
+    p = float(get_nearest_price(float(media)))
+    if p >= float(media) - 1e-9:
+        p = price_ticks_away(p, -1)
+    return float(p) if p and p > 1.0 else None
+
+
+def _q_m_banca_viva(o: OsservazioneMedia) -> bool:
+    if o.in_gioco_ms is not None and o.ms >= o.in_gioco_ms:
+        return False
+    return any(_m_vivo(r) and str(r.get("side") or "").upper() == "LAY" for r in o.ordini)
+
+
+@_controllo_media("M11", "<<e' sempre la quota media che comanda>> (regola dell'utente, "
+                         "06/10): ogni banca di chiusura viva prima del fischio sta "
+                         "STRETTAMENTE sotto la quota media delle punte abbinate del "
+                         "ciclo (chiusura in profitto) e accanto a lei nessun resto di "
+                         "punta e' ancora vivo senza l'annullo chiesto",
+                  quando=_q_m_banca_viva)
+def _m11(o: OsservazioneMedia) -> Optional[str]:
+    ciclo = cicli_media(_m_ordinate(o))[-1]
+    banche = [r for r in ciclo if _m_vivo(r) and str(r.get("side") or "").upper() == "LAY"]
+    if not banche:
+        return None
+    _w, _l, s_m, p_m = _m_posizione(ciclo)
+    if s_m <= 1e-9:
+        return "banca %s viva senza una punta abbinata" % banche[0].get("order_id")
+    media = 1.0 + p_m / s_m
+    for b in banche:
+        if float(b.get("price") or 0.0) >= media - 1e-9:
+            return ("banca %s @%s NON sotto la quota media %.4f: la chiusura non e' in "
+                    "profitto" % (b.get("order_id"), b.get("price"), media))
+    for r in ciclo:
+        if (str(r.get("side") or "").upper() == "BACK" and _m_vivo(r)
+                and str(r.get("status")) != SB.OrderStatus.CANCELLING.value):
+            return ("punta %s @%s con un resto vivo di %s accanto alla banca %s: il resto "
+                    "va annullato quando la banca si appoggia"
+                    % (r.get("order_id"), r.get("price"), r.get("size_remaining"),
+                       banche[0].get("order_id")))
     return None
 
 

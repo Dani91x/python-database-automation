@@ -71,46 +71,48 @@ def test_quota_su_di_meno_di_n_tick_la_banca_resta_ferma(differita, exchange_it)
 # 2.1 b) punta abbinata in due tempi: la banca si riallinea alla posizione vera
 # ===========================================================================
 def test_punta_abbinata_in_due_tempi_la_banca_si_riallinea(differita, exchange_it):
-    """Rientro a 1,52 (punta 10,00) con solo 4 sul book a quel prezzo: si
-    abbina 4, la banca va sulla posizione di quel momento (10 @1,50 + 4 @1,52).
-    Poi gli scambi a 1,52 abbinano il resto: la banca vecchia si annulla, si
-    aspetta che sia morta, la nuova e' per la posizione vera (20 puntati). Mai
-    due banche vive insieme (invarianti del banco a ogni book)."""
+    """Rientro a 1,52 (punta 10,00) con 4 sul book: si abbina 4 e la banca va
+    sulla posizione di quel momento; dal 06/10 (giro 3) il resto della punta si
+    annulla quando la banca si appoggia. Con l'annullo LENTO (esecuzione differita
+    di 4 book) gli scambi a 1,52 abbinano il resto prima che l'annullo arrivi: la
+    banca vecchia si annulla (<<banca da riallineare>>), si aspetta che sia morta e
+    la nuova copre la posizione vera (20 puntati). Con l'annullo veloce (1 book) il
+    resto e' annullato e la banca resta sui 14 puntati. Mai due banche vive."""
     b = BancoMedia()
     viol = giri(b, differita, 70)
     b.taglie[(b.under, 1.52)] = 4.0
     b.ladder[b.under] = (1.52, 1.53)
+    scambiato = False
     for _i in range(30):
         viol += giri(b, differita, 1, flusso=0.0)
-        punte = _punte(b)
-        if len(punte) == 2 and float(punte[1].size_matched) > 0 and len(_banche(b)) == 2 \
-                and MU.eseguibile(_banche(b)[1]):
-            break
+        if not scambiato and len(_banche(b)) == 2:
+            # la banca nuova e' appena partita (e l'annullo del resto con lei)
+            b.scambia(b.under, 1.52, 2000)
+            scambiato = True
     assert viol == [], viol[:3]
+    assert scambiato
     punta = _punte(b)[1]
     assert (float(punta.order_type.price), float(punta.order_type.size)) == (1.52, 10.0)
-    assert float(punta.size_matched) == pytest.approx(4.0)
-    prima = _banche(b)[1]
-    pos_parziale = MU.posizione_da_ordini([o for o in b.ordini() if o is not prima])
-    assert float(prima.order_type.price) == 1.50
-    assert float(prima.order_type.size) == pytest.approx(
-        MU.al_centesimo(MU.banca_esatta(pos_parziale, 1.50)))
-    # gli scambi a 1,52 abbinano il resto della punta
-    b.scambia(b.under, 1.52, 2000)
-    viol += giri(b, differita, 12, flusso=0.0)
-    assert viol == [], viol[:3]
-    assert float(punta.size_matched) == pytest.approx(10.0)
-    assert not MU.vivo_o_in_volo(prima)
-    assert float(prima.size_matched) == 0.0
-    riallinea = [p for p in b.kinds("media_annullo")
-                 if str(p.get("motivo", "")).startswith("banca da riallineare")]
-    assert len(riallinea) == 1
+    assert not MU.vivo_o_in_volo(punta)
     vive = b.vivi("LAY")
     pos = b.posizione()
-    assert pos.puntato == pytest.approx(20.0)
-    assert [(float(o.order_type.price), float(o.size_remaining)) for o in vive] == [
-        (1.50, MU.al_centesimo(MU.banca_esatta(pos, 1.50)))]
-    assert float(vive[0].order_type.size) == pytest.approx(20.13)
+    assert len(vive) == 1
+    assert (float(vive[0].order_type.price), float(vive[0].size_remaining)) == (
+        1.50, MU.al_centesimo(MU.banca_esatta(pos, 1.50)))
+    riallinea = [p for p in b.kinds("media_annullo")
+                 if str(p.get("motivo", "")).startswith("banca da riallineare")]
+    if differita.ritardo == 1:
+        # il resto (6) annullato prima degli scambi: la banca copre i 14 puntati
+        assert float(punta.size_matched) == pytest.approx(4.0)
+        assert pos.puntato == pytest.approx(14.0) and riallinea == []
+        assert float(vive[0].order_type.size) == pytest.approx(14.05)
+    else:
+        # il resto abbinato mentre l'annullo era in viaggio: banca riallineata
+        assert float(punta.size_matched) == pytest.approx(10.0)
+        assert pos.puntato == pytest.approx(20.0) and len(riallinea) == 1
+        assert float(vive[0].order_type.size) == pytest.approx(20.13)
+        prima = _banche(b)[1]
+        assert not MU.vivo_o_in_volo(prima) and float(prima.size_matched) == 0.0
 
 
 # ===========================================================================
@@ -579,26 +581,14 @@ def test_in_posizione_prima_del_massimo_nessuna_lettura(differita, exchange_it):
     assert db.letture == []
 
 
-def test_ciclo_chiuso_in_perdita_lo_dice(differita, exchange_it):
-    """Difetto di testo trovato dal replay `media-under-tick-1` sulla 35797769:
-    un rientro abbinato IN PARTE (4 su 10) con la chiusura a 1 tick lascia la
-    quota media sotto la quota della banca; la banca abbinata chiude il ciclo in
-    PERDITA e l'attivita' diceva <<in profitto>>. La regola della banca e'
-    quella della spec (non toccata); il testo dice la verita'."""
-    b = BancoMedia(media_tick_chiusura=1)
-    viol = giri(b, differita, 70)
-    b.taglie[(b.under, 1.52)] = 4.0
-    b.ladder[b.under] = (1.52, 1.53)
-    viol += giri(b, differita, 45, flusso=0.0)        # la punta di rientro scade
-    punta = _punte(b)[1]
-    assert float(punta.size_matched) == pytest.approx(4.0) and not MU.vivo_o_in_volo(punta)
-    b.ladder[b.under] = (1.50, 1.51)
-    b.scambia(b.under, 1.51, 3000)
-    viol += giri(b, differita, 10)
-    assert viol == [], viol[:3]
-    chiusi = b.kinds("media_ciclo_chiuso")
-    assert len(chiusi) == 1 and chiusi[0]["profitto_lordo"] < 0
-    assert chiusi[0]["msg"].startswith("ciclo chiuso in PERDITA: lordo -")
+def test_ciclo_chiuso_in_perdita_lo_dice():
+    """Difetto di testo trovato dal replay del giro 2 (`media-under-tick-1`):
+    l'attivita' diceva <<in profitto>> su un ciclo chiuso a -0,25. Dal 06/10 la
+    banca sta sotto la quota media (giro 3) e la perdita non dovrebbe piu'
+    capitare; se capita, il testo lo dice (``testo_ciclo_chiuso``, l'unico che
+    la strategia usa)."""
+    assert MU.testo_ciclo_chiuso(-0.25, -0.25, 3).startswith("ciclo chiuso in PERDITA: lordo -")
+    assert MU.testo_ciclo_chiuso(0.14, 0.13, 3).startswith("ciclo chiuso in profitto: lordo 0.14")
 
 
 def test_la_strategia_scarta_da_sola_le_righe_di_altre_selezioni(differita, exchange_it):

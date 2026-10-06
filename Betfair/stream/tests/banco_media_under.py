@@ -59,7 +59,7 @@ class BancoMedia:
     """Flumine VERO, strategia VERA, book veri su UN mercato Over/Under."""
 
     def __init__(self, mercato: str = "OVER_UNDER_25", *, profondita: float = 500.0,
-                 warmup_ms: int = 60000, **params: Any) -> None:
+                 warmup_ms: int = 60000, nome: Optional[str] = None, **params: Any) -> None:
         self.mercato = mercato
         self.mid, self.under, self.over = MERCATI[mercato]
         api = betfairlightweight.APIClient("u", "p", app_key="k")
@@ -70,8 +70,12 @@ class BancoMedia:
                     "warmup_ms": warmup_ms,
                     "runner_names": {(self.mid, self.under): "Under %s Goals" % mercato[-2:-1],
                                      (self.mid, self.over): "Over %s Goals" % mercato[-2:-1]}})
+        # 06/10 (giro 4): il nome della strategia (quello della sessione per
+        # partita, ``scalper_session.nome_strategia``): la ripresa ci conta
+        extra = {"name": nome} if nome else {}
         self.strat = MU.MediaUnderStrategy(
             market_filter=filters.streaming_market_filter(market_ids=[self.mid]),
+            **extra,
             media_params=cfg, max_selection_exposure=None, max_order_exposure=None,
             max_trade_count=int(1e6), max_live_trade_count=int(1e6))
         self.righe: List[Tuple[str, Dict[str, Any]]] = []

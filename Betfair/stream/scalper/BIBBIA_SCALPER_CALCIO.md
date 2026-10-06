@@ -912,7 +912,41 @@ entrano SOLO nel riquadro «chiusura», che scrive «ordini del bot + ordini del
 letti alle hh:mm:ss»; lettura fallita -> «solo ordini del bot» col motivo; in prova
 mai (controllo M10).
 
-**Punti aperti per l'utente**: referto §6 (P1 stop con posizione aperta, P2
-commissione, P3 cifre del riquadro esatte o a multiplo, P5 lettura del rischio
-massimo, P8 salto di quota sul rientro, P13 riavvio a posizione aperta) e referto
-del giro 2 `AUDIT_2026-10-05/SCALPER_MEDIA_UNDER_GIRO2.md`.
+**Regola dell'utente del 06/10 (giro 3): «e' sempre la quota media che comanda»**.
+La banca di chiusura si calcola sulla posizione REALE abbinata e va al PIU' BASSO fra
+«ultimo ingresso - N tick» e «il tick sotto la quota media» (`quota_della_banca`):
+e' sempre in profitto. Quando la banca si appoggia, ogni resto non abbinato delle
+punte si annulla e la banca copre l'intera posizione. Esempio dell'utente: 10 @2,18,
+10 @2,20, 20 @2,22 e 2,99 abbinati su 40 @2,24 -> media 2,2074 -> resto 37,01
+annullato, banca 43,14 @2,20 -> +0,14 (prima 2,22 e -0,25). Coi rientri abbinati per
+intero la quota resta «ultimo ingresso - N tick». Controllo del banco M11 (banca
+non in profitto o resto di punta vivo = rosso); scenari `media-under-liquidita-100`
+(Under 2,5, 100 EUR per lato) e `media-under-35-liquidita-50` (Under 3,5, 50 EUR).
+
+**Punti aperti per l'utente**: referto §6 (P2 commissione, P3 cifre del riquadro
+esatte o a multiplo, P5 lettura del rischio massimo) e referto del giro 2
+`AUDIT_2026-10-05/SCALPER_MEDIA_UNDER_GIRO2.md`. P1, P8 e P13 decisi il 06/10 (§15).
+
+## 15. MEDIA UNDER, QUARTO GIRO (06/10/2026): STOP, CRASH E RIPRESA
+
+**Nome di strategia per partita (tutte le strategie della sessione).** Maker, sniper,
+theta e media si chiamano `scm`/`scn`/`sct`/`mu` + event_id (15 caratteri, il
+`customerStrategyRef`): una sessione in soldi veri non riadotta, non legge e non
+annulla gli ordini delle sessioni delle ALTRE partite (prima il nome era la classe).
+
+**P1 (utente: A) - lo STOP lascia la banca.** Allo stop la punta in corso si ritira,
+la banca PERSIST si porta sull'intera posizione e RESTA appoggiata (la posizione si
+chiude da sola); la sessione lo dichiara («banca PERSIST di chiusura lasciata
+appoggiata»). Vale anche nello sweep del crash di flumine: la banca non si annulla e,
+se e' l'unico ordine, non c'e' sweep (mai il ripiego su tutto il mercato).
+
+**P13 - ripresa in SOLDI VERI dal conto.** All'armo la sessione legge
+`listCurrentOrders` filtrato sul nome della media di quella partita (tutte le
+pagine). Ordini trovati -> stato RIPRESA: nessun ordine finche' flumine non ha
+riadottato tutti gli ordini vivi; poi il ciclo si ricostruisce dagli ordini veri
+(cicli chiusi e P&L, rientri, ultimo ingresso, obiettivo, banca, stato) e la modalita'
+continua come se il crash non ci fosse stato. Adozione non completa in 60 s ->
+BLOCCATA, detto. Conto illeggibile -> si riprova a ogni battito, nessun ordine. Conto
+vuoto -> si parte da zero. In PAPER nessuna ripresa (BLOCCATA dopo un crash, come
+prima). Replay `media-under-riavvio`: dopo il crash la riga del ciclo e' identica a
+quella della corsa senza crash. Referto `AUDIT_2026-10-06/SCALPER_MEDIA_UNDER_GIRO4.md`.
