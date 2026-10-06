@@ -1067,11 +1067,35 @@ class _BettingFinto:
 
     def list_current_orders(self, market_ids: Any = None, **_k: Any) -> Any:
         """Gli ordini NON abbinati del conto su quei mercati, come li darebbe
-        Betfair (`bet_id` e basta: e' l'unica chiave che `_sweep_cancel` legge)."""
+        Betfair (`bet_id` e basta: e' l'unica chiave che `_sweep_cancel` legge).
+        06/10 (giro 4): filtrata per ``customer_strategy_refs`` (la ripresa della
+        media under) risponde come Betfair: ``CurrentOrders`` di
+        betfairlightweight con TUTTI gli ordini (aperti e chiusi) delle
+        strategie con quel ``customerStrategyRef``, a pagine."""
+        refs = _k.get("customer_strategy_refs")
+        if refs:
+            return self._correnti_per_strategia([str(r)[:15] for r in refs],
+                                                int(_k.get("from_record") or 0))
         self.chiamate.append(("list_current_orders", {"market_ids": market_ids}))
         righe = [SimpleNamespace(bet_id=str(o.bet_id))
                  for mid in (market_ids or []) for o in self._vivi(mid)]
         return SimpleNamespace(orders=righe, current_orders=righe)
+
+    def _correnti_per_strategia(self, refs: List[str], da: int) -> Any:
+        from betfairlightweight.resources.bettingresources import CurrentOrders
+
+        self.chiamate.append(("list_current_orders", {"customer_strategy_refs": refs,
+                                                      "from_record": da}))
+        righe = []
+        for m in list(self._banco.quadro.markets):
+            for o in list(m.blotter):
+                tr = getattr(o, "trade", None)
+                if tr is None or str(getattr(tr, "strategy", ""))[:15] not in refs:
+                    continue
+                if not getattr(o, "bet_id", None):
+                    continue
+                righe.append(_ordine_corrente_del_banco(o, self._banco))
+        return CurrentOrders(currentOrders=righe[da:], moreAvailable=False)
 
     def cancel_orders(self, market_id: Any = None, instructions: Any = None, **_k: Any) -> Any:
         """Lo SWEEP REST del crash (`scalper_session._sweep_cancel`): Betfair
@@ -1091,6 +1115,58 @@ class _BettingFinto:
             if sim is not None:
                 sim.size_cancelled += float(getattr(o, "size_remaining", 0.0) or 0.0)
         return None
+
+
+def _adotta_ordini_vivi(quadro: Any, morte: List[Any], nuova: Any) -> int:
+    """L'adozione di flumine al riavvio (``create_order_from_current``): gli
+    ordini VIVI delle strategie morte con lo STESSO nome passano nel blotter
+    della strategia nuova (gli indici del blotter e ``trade.strategy``)."""
+    n = 0
+    nome = str(nuova)
+    for vecchia in morte:
+        if vecchia is nuova or str(vecchia) != nome:
+            continue
+        for m in list(quadro.markets):
+            bl = m.blotter
+            for o in list(bl.strategy_orders(vecchia)):
+                if not CERT._vivo(CERT.riga_ordine(o)):
+                    continue
+                o.trade.strategy = nuova
+                bl._strategy_orders[vecchia].remove(o)
+                bl._strategy_orders[nuova].append(o)
+                chiave = (vecchia, o.selection_id, o.handicap)
+                if o in bl._strategy_selection_orders.get(chiave, []):
+                    bl._strategy_selection_orders[chiave].remove(o)
+                bl._strategy_selection_orders[(nuova, o.selection_id, o.handicap)].append(o)
+                n += 1
+    return n
+
+
+def _ordine_corrente_del_banco(o: Any, banco: "_Banco") -> Dict[str, Any]:
+    """Un ordine simulato del banco come riga di ``listCurrentOrders`` (chiavi
+    della API Betfair che betfairlightweight legge)."""
+    from datetime import datetime, timezone
+
+    vivo = CERT._vivo(CERT.riga_ordine(o))
+    nato = banco.media_nati_ms.get(str(getattr(o, "id", "")))
+    placed = datetime.fromtimestamp((nato or banco.orologio.ora_ms()) / 1000.0, tz=timezone.utc)
+    return {
+        "betId": str(o.bet_id), "marketId": str(o.market_id),
+        "selectionId": int(o.selection_id), "handicap": 0.0,
+        "priceSize": {"price": float(o.order_type.price), "size": float(o.order_type.size)},
+        "bspLiability": 0.0, "side": str(o.side), "orderType": "LIMIT",
+        "status": "EXECUTABLE" if vivo else "EXECUTION_COMPLETE",
+        "persistenceType": str(o.order_type.persistence_type),
+        "placedDate": placed.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+        "averagePriceMatched": float(getattr(o, "average_price_matched", 0.0) or 0.0),
+        "sizeMatched": float(getattr(o, "size_matched", 0.0) or 0.0),
+        "sizeRemaining": float(getattr(o, "size_remaining", 0.0) or 0.0) if vivo else 0.0,
+        "sizeLapsed": 0.0,
+        "sizeCancelled": float(getattr(o, "size_cancelled", 0.0) or 0.0),
+        "sizeVoided": 0.0, "regulatorCode": "MR_INT",
+        "customerOrderRef": str(getattr(o, "customer_order_ref", "") or ""),
+        "customerStrategyRef": str(o.trade.strategy)[:15],
+    }
 
 
 class _TradingFinto:
@@ -1358,6 +1434,8 @@ class _Banco:
         # 05/10 (giro 2): TUTTE le strategie della modalita' armate (dopo un
         # riavvio la prima resta qui: i suoi ordini sono ancora a mercato)
         self.medie: List[Any] = []
+        # 06/10 (giro 4): quanti ordini vivi sono passati alla sessione nuova
+        self.media_adottati: int = 0
         self.attivita_media: List[Tuple[str, Dict[str, Any], int]] = []
         self.memoria_media = CERT.Memoria()
         self.media_ordini_visti: set = set()
@@ -1400,6 +1478,14 @@ class _Banco:
                 if _v is not None:
                     _v(kind, payload)
             s.event_sink = _tee_media
+            # 06/10 (giro 4, P13): in SOLDI VERI flumine riadotta nel blotter della
+            # strategia nuova (stesso nome = stesso ``name_hash``) gli ordini VIVI
+            # del processo morto, che restano sul mercato: qui passano di mano gli
+            # ordini simulati vivi delle sessioni della modalita' gia' morte (lo
+            # stesso effetto di ``create_order_from_current``). In prova no: gli
+            # ordini simulati muoiono col processo (e la modalita' resta bloccata).
+            if not bool(self.db.control.get("dry_run", True)):
+                self.media_adottati += _adotta_ordini_vivi(self.quadro, self.medie, s)
             self.quadro.add_strategy(s)
             self._stream_ids |= set(getattr(s, "stream_ids", set()) or set())
             fw.strategie.append(s)
@@ -1507,6 +1593,13 @@ class _Banco:
 
     def righe_correnti(self, s: Any, cred: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         a_mercato = self.ordini_di([s]) if s is not None else []
+        # 06/10 (giro 4, P13): gli ordini chiusi prima di un riavvio che la
+        # modalita' "media under" ha letto dal conto (la verita' del conto, fuori
+        # dal blotter del processo nuovo): come in produzione entrano nelle righe
+        bet_ids = {str(getattr(o, "bet_id", "")) for o in a_mercato if getattr(o, "bet_id", None)}
+        extra = getattr(s, "ordini_dal_conto", None) if s is not None else None
+        if callable(extra):
+            a_mercato = a_mercato + [o for o in extra() if str(o.bet_id) not in bet_ids]
         ids = {str(getattr(o, "id", "")) for o in a_mercato}
         righe = [CERT.riga_ordine(o, True) for o in a_mercato]
         # gli ordini che il bot tiene in mano e che il mercato NON conosce
@@ -1866,15 +1959,26 @@ class _Banco:
         par, _motivo = MU.leggi_parametri(self.db.control.get("params") or {})
         if mu is None or par is None:
             return
+        # 06/10 (giro 4, P13): gli ordini di TUTTE le sessioni della modalita' di
+        # questa partita (la morta e la nuova dopo un riavvio: e' il mercato, mai
+        # una sola sessione), cosi' un ordine DOPPIO dopo la ripresa (due banche,
+        # due punte vive) e' rosso (M5); + gli ordini letti dal conto alla ripresa
         ordini: List[Any] = []
-        for mid in self._mercati_sessione():
-            m = self.quadro.markets.markets.get(mid)
-            if m is None:
-                continue
-            try:
-                ordini.extend(list(m.blotter.strategy_orders(mu) or []))
-            except Exception:  # noqa: BLE001
-                continue
+        visti_id: set = set()
+        for strat in (list(self.medie) or [mu]):
+            for mid in self._mercati_sessione():
+                m = self.quadro.markets.markets.get(mid)
+                if m is None:
+                    continue
+                try:
+                    for o in list(m.blotter.strategy_orders(strat) or []):
+                        if id(o) not in visti_id:
+                            visti_id.add(id(o))
+                            ordini.append(o)
+                except Exception:  # noqa: BLE001
+                    continue
+        bet_ids = {str(getattr(o, "bet_id", "")) for o in ordini if getattr(o, "bet_id", None)}
+        ordini += [o for o in mu.ordini_dal_conto() if str(o.bet_id) not in bet_ids]
         righe = []
         for i, o in enumerate(ordini):
             r = CERT.riga_ordine(o, True)

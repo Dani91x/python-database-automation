@@ -315,25 +315,37 @@ def _esposizioni_nette(framework: Any) -> Dict[Any, Any]:
     (`size_matched`, `average_price_matched`). Solleva se il blotter non e'
     leggibile: un'esposizione non letta NON e' un'esposizione nulla."""
     per: Dict[Any, List[float]] = {}
+    ordini: List[Any] = []
     for m in list(getattr(framework, "markets", None) or []):
         blotter = getattr(m, "blotter", None)
         if blotter is None:
             continue
-        for o in list(blotter):
-            sm = float(getattr(o, "size_matched", 0.0) or 0.0)
-            ap = float(getattr(o, "average_price_matched", 0.0) or 0.0)
-            if sm <= 0 or ap <= 1.0:
-                continue
-            k = (str(getattr(o, "market_id", "") or ""),
-                 int(getattr(o, "selection_id", 0) or 0))
-            wl = per.setdefault(k, [0.0, 0.0])
-            lato = str(getattr(o, "side", "") or "").upper()
-            if lato == "BACK":
-                wl[0] += sm * (ap - 1.0)
-                wl[1] -= sm
-            elif lato == "LAY":
-                wl[0] -= sm * (ap - 1.0)
-                wl[1] += sm
+        ordini.extend(list(blotter))
+    # 06/10 (giro 4, P13): gli ordini CHIUSI prima di un riavvio, letti dal conto
+    # dalla modalita' "media under" alla ripresa (non nel blotter di questo
+    # processo): senza, l'esposizione della sessione sarebbe falsa
+    nel_blotter = {str(getattr(o, "bet_id", "")) for o in ordini if getattr(o, "bet_id", None)}
+    for s in list(getattr(framework, "strategies", None) or []):
+        extra = getattr(s, "ordini_dal_conto", None)
+        if callable(extra):
+            for o in extra():
+                if str(getattr(o, "bet_id", "")) not in nel_blotter:
+                    ordini.append(o)
+    for o in ordini:
+        sm = float(getattr(o, "size_matched", 0.0) or 0.0)
+        ap = float(getattr(o, "average_price_matched", 0.0) or 0.0)
+        if sm <= 0 or ap <= 1.0:
+            continue
+        k = (str(getattr(o, "market_id", "") or ""),
+             int(getattr(o, "selection_id", 0) or 0))
+        wl = per.setdefault(k, [0.0, 0.0])
+        lato = str(getattr(o, "side", "") or "").upper()
+        if lato == "BACK":
+            wl[0] += sm * (ap - 1.0)
+            wl[1] -= sm
+        elif lato == "LAY":
+            wl[0] -= sm * (ap - 1.0)
+            wl[1] += sm
     return {k: (round(v[0], 4), round(v[1], 4)) for k, v in per.items()}
 
 
@@ -876,6 +888,44 @@ def nome_strategia(ruolo: str, event_id: str) -> str:
     """Il nome flumine della strategia ``ruolo`` della sessione della partita
     ``event_id`` (al piu' 15 caratteri: e' anche il ``customerStrategyRef``)."""
     return ("%s%s" % (PREFISSI_STRATEGIA[ruolo], str(event_id)))[:15]
+
+
+def leggi_ordini_media_dal_conto(trading: Any, nome: str) -> List[Dict[str, Any]]:
+    """06/10 (giro 4, P13): gli ordini della modalita' "media under" di QUESTA
+    partita ancora sul conto (``listCurrentOrders`` filtrato sul suo
+    ``customerStrategyRef``: aperti e chiusi, finche' il mercato non e'
+    regolato), paginati, come righe semplici. Solleva se la lettura fallisce."""
+    from . import media_under_bot as MU
+
+    righe: List[Dict[str, Any]] = []
+    da = 0
+    for _pagina in range(50):
+        r = trading.betting.list_current_orders(customer_strategy_refs=[str(nome)[:15]],
+                                                from_record=da)
+        ordini = list(getattr(r, "orders", None) or [])
+        righe.extend(MU.riga_dal_conto(o) for o in ordini)
+        if not ordini or not getattr(r, "more_available", False):
+            break
+        da += len(ordini)
+    return righe
+
+
+def prepara_ripresa_media(trading: Any, media: Any, event_id: str) -> str:
+    """06/10 (giro 4, P13, decisione dell'utente: <<dopo un crash il bot riprende
+    ESATTAMENTE dal punto in cui e', senza errori e senza operazioni doppie>>).
+    Solo in SOLDI VERI: legge dal conto gli ordini della modalita' di questa
+    partita e li consegna alla strategia, che resta in RIPRESA (nessun ordine)
+    finche' non ha ricostruito il ciclo. Lettura fallita: RIPRESA senza righe,
+    la sessione riprova al battito. Non solleva mai."""
+    try:
+        righe = leggi_ordini_media_dal_conto(trading, nome_strategia("media", event_id))
+    except Exception as ex:  # noqa: BLE001 - conto non letto: nessun ordine, si riprova
+        logger.warning("[scalper] media under: conto non letto per la ripresa: %s",
+                       str(ex)[:200])
+        media.conto_non_letto(str(ex)[:120] or type(ex).__name__)
+        return "non letto"
+    media.prepara_ripresa(righe)
+    return "letti %d" % len(righe)
 
 
 def leggi_ordini_conto_media(db: Any, media: Any, session_paper: bool) -> Optional[str]:
@@ -1522,7 +1572,12 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                 for r in (m.runners or []):
                     _names_media[(str(m.market_id), int(r.selection_id))] = \
                         str(getattr(r, "runner_name", "") or "")
-            _riavvio_media = _MU.posizione_aperta_nelle_stats(control.get("stats"))
+            # 06/10 (giro 4, P13): in SOLDI VERI la posizione si riprende dal conto
+            # (``prepara_ripresa_media`` qui sotto); il blocco per riavvio a
+            # posizione aperta resta solo in PROVA (gli ordini simulati sono morti
+            # col processo: la persistenza serve in soldi veri)
+            _riavvio_media = (_MU.posizione_aperta_nelle_stats(control.get("stats"))
+                              if session_paper else None)
             _media_params = {k: v for k, v in _cp.items()
                              if str(k).startswith(_MU.PREFISSO)}
             _media_params.update({
@@ -1548,6 +1603,10 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                                 "exec": exec_mode,
                                 "riavvio_aperto": _riavvio_media})
             da_lasciare = media.banca_da_lasciare
+            if not session_paper:
+                _esito_ripresa = prepara_ripresa_media(trading, media, ev)
+                db.log(ev, "info", {"msg": "media under: lettura del conto per la ripresa",
+                                    "esito": _esito_ripresa, "stato": media.stato})
             if _riavvio_media:
                 db.log(ev, "critical", {
                     "msg": "media under: riavvio a posizione aperta NON ricostruibile, "
@@ -1898,6 +1957,9 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             # 05/10 (giro 2) MEDIA UNDER: gli ordini del conto per il riquadro,
             # una lettura per battito, solo in soldi veri a posizione aperta
             leggi_ordini_conto_media(db, media, session_paper)
+            # 06/10 (giro 4, P13): conto non letto all'avvio -> si riprova qui
+            if media is not None and not session_paper and media.attende_il_conto():
+                prepara_ripresa_media(trading, media, ev)
             db.set_control(ev, heartbeat_at=_now_iso(), stats={**_stats(), "flusso": _flusso})
             # RICONCILIAZIONE bot↔ordini (condizione §0-bis n.1, fix 11/07):
             # le divergenze ledger↔ordini rilevate dalle strategie diventano

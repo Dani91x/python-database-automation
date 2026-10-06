@@ -130,8 +130,12 @@ MASSIMO = "MASSIMO"
 LIVE = "LIVE"
 FINE = "FINE"
 BLOCCATA = "BLOCCATA"
+#: 06/10 (giro 4, P13): in SOLDI VERI, dopo un riavvio, la modalita' aspetta di
+#: ritrovare sul conto (e nel blotter di flumine) gli ordini della sessione
+#: morta e ricostruisce il ciclo da li': NESSUN ordine finche' non ha finito
+RIPRESA = "RIPRESA"
 STATI: Tuple[str, ...] = (FERMO, INGRESSO, IN_POSIZIONE, RIENTRO, MASSIMO, LIVE,
-                          FINE, BLOCCATA)
+                          FINE, BLOCCATA, RIPRESA)
 #: stati con una posizione (o un ingresso) che il riavvio non sa ricostruire
 STATI_CON_POSIZIONE = frozenset({INGRESSO, IN_POSIZIONE, RIENTRO, MASSIMO, LIVE})
 
@@ -648,6 +652,114 @@ def codice_rifiuto(o: Any) -> Optional[str]:
     return str(codice) if codice else "FAILURE"
 
 
+# ---------------------------------------------------------------------------
+# 06/10 (giro 4, P13): la RIPRESA in soldi veri dal conto
+# ---------------------------------------------------------------------------
+#: quanto si aspetta (ms di mercato) che flumine riadotti nel blotter gli ordini
+#: VIVI trovati sul conto; oltre: BLOCCATA, avviso, nessun ordine
+ATTESA_RIPRESA_MS = 60_000
+
+
+def riga_dal_conto(o: Any) -> Dict[str, Any]:
+    """Un ``CurrentOrder`` di betfairlightweight (``listCurrentOrders``) come
+    riga semplice (le chiavi che la ripresa usa)."""
+    ps = getattr(o, "price_size", None)
+    placed = getattr(o, "placed_date", None)
+    try:
+        placed_ms = (float(placed.replace(tzinfo=placed.tzinfo or _dt.timezone.utc)
+                           .timestamp()) * 1000.0 if placed is not None else None)
+    except (AttributeError, TypeError, ValueError, OSError, OverflowError):
+        placed_ms = None
+    return {
+        "bet_id": str(getattr(o, "bet_id", "") or ""),
+        "market_id": str(getattr(o, "market_id", "") or ""),
+        "selection_id": int(getattr(o, "selection_id", 0) or 0),
+        "side": str(getattr(o, "side", "") or "").upper(),
+        "price": float(getattr(ps, "price", 0.0) or 0.0) if ps is not None else 0.0,
+        "size": float(getattr(ps, "size", 0.0) or 0.0) if ps is not None else 0.0,
+        "size_matched": float(getattr(o, "size_matched", 0.0) or 0.0),
+        "size_remaining": float(getattr(o, "size_remaining", 0.0) or 0.0),
+        "average_price_matched": float(getattr(o, "average_price_matched", 0.0) or 0.0),
+        "status": str(getattr(o, "status", "") or ""),
+        "persistence": str(getattr(o, "persistence_type", "") or ""),
+        "placed_ms": placed_ms,
+        "customer_order_ref": str(getattr(o, "customer_order_ref", "") or ""),
+    }
+
+
+class OrdineDelConto:
+    """Un ordine CHIUSO (``EXECUTION_COMPLETE``) della sessione morta, letto dal
+    conto e non riadottato da flumine: entra nella posizione con le stesse
+    letture di un ordine flumine (lato, abbinato, prezzo medio, stato), non si
+    annulla e non cambia piu'. Gli ordini VIVI invece si governano solo come
+    ordini flumine riadottati (nel blotter)."""
+
+    def __init__(self, riga: Dict[str, Any]) -> None:
+        self.riga = dict(riga)
+        self.id = "conto-%s" % riga.get("bet_id")
+        self.bet_id = str(riga.get("bet_id"))
+        self.market_id = str(riga.get("market_id") or "")
+        self.selection_id = int(riga.get("selection_id") or 0)
+        self.handicap = 0.0
+        self.trade = None
+        pm = riga.get("placed_ms")
+        self.date_time_created = (_dt.datetime.fromtimestamp(float(pm) / 1000.0,
+                                                             tz=_dt.timezone.utc)
+                                  if pm is not None else None)
+        self.side = str(riga.get("side") or "").upper()
+        self.status = OrderStatus.EXECUTION_COMPLETE
+        self.size_matched = float(riga.get("size_matched") or 0.0)
+        self.average_price_matched = float(riga.get("average_price_matched") or 0.0)
+        self.size_remaining = 0.0
+        self.order_type = LimitOrder(price=float(riga.get("price") or 1.01) or 1.01,
+                                     size=float(riga.get("size") or 0.0) or 0.01,
+                                     persistence_type=str(riga.get("persistence") or "LAPSE"))
+        self.placed_ms = riga.get("placed_ms")
+
+
+def _ms_creato(o: Any) -> float:
+    """L'istante di nascita di un ordine (flumine o del conto), per ordinarli."""
+    if isinstance(o, OrdineDelConto):
+        return float(o.placed_ms or 0.0)
+    d = getattr(o, "date_time_created", None)
+    try:
+        if d is not None:
+            if getattr(d, "tzinfo", None) is None:
+                d = d.replace(tzinfo=_dt.timezone.utc)
+            return float(d.timestamp()) * 1000.0
+    except (AttributeError, TypeError, ValueError, OSError, OverflowError):
+        pass
+    return 0.0
+
+
+def cicli_degli_ordini(ordini: Sequence[Any]) -> List[List[Any]]:
+    """I cicli dagli ORDINI (in ordine di nascita): un ciclo nuovo comincia con
+    una PUNTA piazzata quando il ciclo prima e' morto (nessun ordine vivo), ha
+    una banca abbinata ed e' pari entro l'arrotondamento al centesimo della
+    banca (la stessa regola di ``certificazione.cicli_media``)."""
+    cicli: List[List[Any]] = []
+    corrente: List[Any] = []
+    for o in sorted(ordini, key=_ms_creato):
+        if _lato(o) == "BACK" and corrente and _ciclo_finito(corrente):
+            cicli.append(corrente)
+            corrente = []
+        corrente.append(o)
+    if corrente:
+        cicli.append(corrente)
+    return cicli
+
+
+def _ciclo_finito(ordini: Sequence[Any]) -> bool:
+    if any(vivo_o_in_volo(o) for o in ordini):
+        return False
+    banche = [o for o in ordini if _lato(o) == "LAY" and abbinato(o)[0] > 0]
+    if not banche:
+        return False
+    pos = posizione_da_ordini(ordini)
+    c = max(float(o.order_type.price) for o in banche)
+    return pos.puntato > _EPS and abs(pos.se_vince - pos.se_perde) <= 0.02 + 0.005 * c
+
+
 # 05/10 (giro 2): perche' NON si apre, coi codici dei motivi di non ingresso
 # che la strategia conta nelle sue stats (``non_ingresso``) e il referto stampa
 _APRIRE_FRENO = "freno o stop della sessione"
@@ -734,6 +846,11 @@ class MediaUnderStrategy(BaseStrategy):
         # 05/10 (giro 2): l'ultima lettura degli ordini del conto fatta dalla
         # sessione (None = nessuna lettura: in prova, o posizione chiusa)
         self._conto: Optional[Dict[str, Any]] = None
+        # 06/10 (giro 4, P13): la ripresa dal conto in soldi veri (None = nessuna)
+        # e gli ordini CHIUSI letti dal conto (non nel blotter di questo
+        # processo): restano per tutta la sessione, l'esposizione li conta
+        self._ripresa: Optional[Dict[str, Any]] = None
+        self._ordini_conto: List[Any] = []
         self.stats: Dict[str, Any] = {
             "stato": self.stato, "mercato": par.mercato, "market_id": None,
             "selection_id": None, "rientri": 0, "max_rientri": par.max_rientri,
@@ -863,6 +980,13 @@ class MediaUnderStrategy(BaseStrategy):
                             msg="riavvio a posizione aperta: la posizione NON e' "
                                 "ricostruibile dagli ordini veri da questa sessione. "
                                 "Nessun ordine: verificala sul conto e chiudila a mano")
+            self._pubblica(None, bb, bl)
+            return
+        if self.stato == RIPRESA:
+            # 06/10 (P13): nessun ordine finche' la posizione non e' ricostruita
+            # dagli ordini veri (si decide dal book DOPO, mai in questo)
+            self._ko_epoch_ms(market_book)
+            self._forse_riprendi(market, now)
             self._pubblica(None, bb, bl)
             return
         if inplay:
@@ -1481,6 +1605,13 @@ class MediaUnderStrategy(BaseStrategy):
         banca di chiusura PERSIST resta appoggiata (la posizione resta protetta
         e si chiude da sola). True per QUELLA banca, viva, con una posizione
         aperta: la sessione non la annulla all'arresto."""
+        if self.stato == RIPRESA:
+            # durante la ripresa la banca riadottata da flumine non e' ancora
+            # "la" banca della modalita': si lascia ogni banca PERSIST viva sua
+            tr = getattr(o, "trade", None)
+            return (tr is not None and getattr(tr, "strategy", None) is self
+                    and _lato(o) == "LAY" and vivo_o_in_volo(o)
+                    and str(getattr(o.order_type, "persistence_type", "") or "") == "PERSIST")
         b = self._banca
         if b is None or o is not b or _lato(b) != "LAY" or not vivo_o_in_volo(b):
             return False
@@ -1521,6 +1652,176 @@ class MediaUnderStrategy(BaseStrategy):
         if p is not None and eseguibile(p):
             self._annulla(market, p, "stop della sessione: la punta si ritira, la banca "
                                      "resta appoggiata (decisione dell'utente P1)")
+
+    # ------------------------------------------------- ripresa (P13, 06/10)
+    def prepara_ripresa(self, righe: Optional[Sequence[Dict[str, Any]]]) -> None:
+        """La sessione in SOLDI VERI ha letto il conto (``listCurrentOrders``
+        filtrato sul ``customerStrategyRef`` della modalita' di QUESTA partita):
+        se ci sono ordini la modalita' entra in RIPRESA (nessun ordine finche'
+        non ha ricostruito il ciclo); senza ordini parte come nuova."""
+        righe = [dict(r) for r in (righe or []) if r.get("bet_id")]
+        if not righe:
+            self._ripresa = None
+            if self.stato == RIPRESA:
+                self.stato = FERMO
+            self._emit("media_ripresa", ordini=0,
+                       msg="ripresa: nessun ordine della modalita' sul conto, si parte da "
+                           "zero")
+            return
+        self._ripresa = {"righe": righe, "letto": True, "da_ms": None}
+        self.stato = RIPRESA
+        self.stats["stato"] = RIPRESA
+        self._emit("media_ripresa_avviata", level="CRITICAL", ordini=len(righe),
+                   msg="ripresa: %d ordini della modalita' sul conto; nessun ordine nuovo "
+                       "finche' la posizione non e' ricostruita" % len(righe))
+
+    def ordini_dal_conto(self) -> List[Any]:
+        """Gli ordini della partita letti dal conto alla ripresa e NON presenti
+        nel blotter di questo processo (chiusi prima del crash): la sessione li
+        conta nell'esposizione (``scalper_session._esposizioni_nette``)."""
+        return list(self._ordini_conto)
+
+    def conto_non_letto(self, errore: str) -> None:
+        """La lettura del conto e' fallita: RIPRESA senza righe (nessun ordine);
+        la sessione riprova al battito."""
+        self._ripresa = {"righe": None, "letto": False, "da_ms": None, "errore": str(errore)}
+        self.stato = RIPRESA
+        self.stats["stato"] = RIPRESA
+
+    def attende_il_conto(self) -> bool:
+        """La sessione deve (ri)leggere il conto per la ripresa."""
+        r = self._ripresa
+        return self.stato == RIPRESA and r is not None and not r.get("letto")
+
+    def _forse_riprendi(self, market: Any, now: float) -> None:
+        r = self._ripresa
+        if r is None:
+            self.stato = FERMO
+            return
+        if not r.get("letto"):
+            self._una_volta("ripresa_conto", "media_ripresa_in_attesa", level="CRITICAL",
+                            market_id=self._mid, errore=r.get("errore"),
+                            msg="ripresa in soldi veri: il conto non si legge (%s); nessun "
+                                "ordine finche' non si legge" % r.get("errore"))
+            return
+        if r["da_ms"] is None:
+            r["da_ms"] = now
+        mie = [x for x in r["righe"] if x.get("market_id") == self._mid
+               and int(x.get("selection_id") or 0) == int(self._sid or -1)]
+        altre = [x for x in r["righe"] if x not in mie]
+        if altre:
+            self._una_volta("ripresa_altre", "media_ripresa_ordini_estranei", level="CRITICAL",
+                            market_id=self._mid, bet_ids=[x.get("bet_id") for x in altre],
+                            msg="ripresa: %d ordini della modalita' su un altro mercato o "
+                                "selezione: NON governati, verificali sul conto" % len(altre))
+        try:
+            blotter = [o for o in market.blotter.strategy_orders(self)
+                       if int(getattr(o, "selection_id", -1)) == int(self._sid or -1)]
+        except Exception:  # noqa: BLE001 - blotter illeggibile: si aspetta
+            return
+        per_bet = {str(o.bet_id): o for o in blotter if getattr(o, "bet_id", None)}
+        mancano = [x["bet_id"] for x in mie
+                   if str(x.get("status")) == "EXECUTABLE" and x["bet_id"] not in per_bet]
+        if mancano:
+            if now - float(r["da_ms"]) >= ATTESA_RIPRESA_MS:
+                self._blocca_ripresa("ordini VIVI del conto non ritrovati nel blotter di "
+                                     "flumine dopo %d s: %s"
+                                     % (ATTESA_RIPRESA_MS // 1000, mancano))
+            return
+        ordini: List[Any] = []
+        visti: set = set()
+        conto: List[Any] = []
+        for x in mie:
+            o = per_bet.get(x["bet_id"])
+            if o is None:
+                o = OrdineDelConto(x)
+                conto.append(o)
+            ordini.append(o)
+            visti.add(x["bet_id"])
+        self._ordini_conto = conto
+        for bid, o in per_bet.items():
+            if bid not in visti:
+                ordini.append(o)
+        self._ricostruisci(ordini, now)
+
+    def _blocca_ripresa(self, motivo: str) -> None:
+        self._ripresa = None
+        self.riavvio = "ripresa non riuscita: %s" % motivo
+        self.stato = BLOCCATA
+        self.stats["riavvio"] = self.riavvio
+        self._emit("media_ripresa_fallita", level="CRITICAL", market_id=self._mid,
+                   motivo=motivo,
+                   msg="ripresa NON riuscita (%s): nessun ordine, verifica la posizione sul "
+                       "conto e chiudila a mano" % motivo)
+
+    def _ricostruisci(self, ordini: Sequence[Any], now: float) -> None:
+        """Il ciclo corrente dagli ordini VERI (riadottati da flumine o letti dal
+        conto): stessi conti della macchina a stati, nessun ordine."""
+        cicli = cicli_degli_ordini(ordini)
+        chiusi = list(cicli[:-1])
+        ultimo = list(cicli[-1]) if cicli else []
+        if ultimo and _ciclo_finito(ultimo):
+            chiusi.append(ultimo)
+            ultimo = []
+        lordo_chiusi = 0.0
+        for c in chiusi:
+            pc = posizione_da_ordini(c)
+            lordo_chiusi += min(pc.se_vince, pc.se_perde)
+        punte_vive = [o for o in ultimo if _lato(o) == "BACK" and vivo_o_in_volo(o)]
+        banche_vive = [o for o in ultimo if _lato(o) == "LAY" and vivo_o_in_volo(o)]
+        if len(punte_vive) > 1 or len(banche_vive) > 1:
+            self._blocca_ripresa("%d punte e %d banche vive insieme sul conto"
+                                 % (len(punte_vive), len(banche_vive)))
+            return
+        self._nuovo_ciclo()
+        self.stats["cicli_chiusi"] = len(chiusi)
+        self.stats["pnl_chiuso_lordo"] = round(lordo_chiusi, 4)
+        self._ordini = list(ultimo)
+        abbinate = [o for o in ultimo if _lato(o) == "BACK" and not vivo_o_in_volo(o)
+                    and abbinato(o)[0] > 0]
+        if abbinate:
+            m0, _p = abbinato(abbinate[0])
+            p0 = float(abbinate[0].order_type.price)
+            if self.par.obiettivo_netto is not None:
+                self._t_lordo = lordo_da_netto(self.par.obiettivo_netto, self.par.commissione)
+            else:
+                c0 = tick_sotto(p0, self.par.tick_chiusura)
+                self._t_lordo = obiettivo_automatico(m0, p0, c0) if c0 else None
+            self._rientri = len(abbinate) - 1
+            self._ultimo_ingresso = float(abbinate[-1].order_type.price)
+        self._banca = banche_vive[0] if banche_vive else None
+        if punte_vive:
+            self._punta, self._punta_ms = punte_vive[0], now
+            self._punta_rientro = bool(abbinate)
+        pos = posizione_da_ordini(self._ordini)
+        if self._punta is not None:
+            self.stato = RIENTRO if self._punta_rientro else INGRESSO
+        elif pos.aperta:
+            self.stato = MASSIMO if self._rientri >= self.par.max_rientri else IN_POSIZIONE
+            if self.stato == MASSIMO:
+                self._dichiarati.add("massimo")
+        else:
+            self._ordini = []
+            self._punta = None
+            self.stato = FERMO
+        self._ripresa = None
+        b = self._banca
+        self._emit("media_ripresa", level="CRITICAL" if pos.aperta else "INFO",
+                   market_id=self._mid, selection_id=self._sid, ordini=len(ordini),
+                   cicli_chiusi=len(chiusi), stato=self.stato, rientri=self._rientri,
+                   totale_puntato=round(pos.puntato, 2),
+                   quota_media=(round(pos.quota_media, 4) if pos.quota_media else None),
+                   banca=(None if b is None else {"importo": float(b.order_type.size),
+                                                  "quota": float(b.order_type.price),
+                                                  "resto": float(getattr(b, "size_remaining", 0.0)
+                                                                 or 0.0)}),
+                   msg="ripresa dal conto: %s; %d cicli chiusi prima; stato %s, rientri %d, "
+                       "puntato %.2f%s%s"
+                       % ("posizione aperta" if pos.aperta else "nessuna posizione aperta",
+                          len(chiusi), self.stato, self._rientri, pos.puntato,
+                          (" a media %.4f" % pos.quota_media) if pos.quota_media else "",
+                          (", banca %.2f @%.2f" % (float(b.order_type.size),
+                                                   float(b.order_type.price))) if b else ""))
 
     # ------------------------------------------------- ordini del conto
     def posizione_aperta(self) -> bool:
