@@ -16,6 +16,7 @@ import { PlaybackControls } from '@/components/replay/PlaybackControls';
 import { TimelineSlider } from '@/components/replay/TimelineSlider';
 import { MarketPanel } from '@/components/replay/MarketPanel';
 import { TradesPanel } from '@/components/replay/TradesPanel';
+import { TrainingTradesPanel } from '@/components/replay/TrainingTradesPanel';
 import { OpportunitaPanel } from '@/components/replay/OpportunitaPanel';
 import { ValidationCard } from '@/components/replay/ValidationCard';
 import {
@@ -1109,6 +1110,19 @@ export default function MatchReplay() {
                                         orderApi={trainApiRef.current}
                                         fallbackSelections={(replay.markets.find(m => m.market_id === trainingMarketId)?.selections ?? [])
                                             .map(s => ({ selection_id: s.selection_id, name: s.name ?? `#${s.selection_id}` }))}
+                                    />
+                                )}
+                                {trainApiRef.current && (
+                                    <TrainingTradesPanel
+                                        key={`trade:${trainingResetTick}`}
+                                        api={trainApiRef.current}
+                                        nowMs={currentMs}
+                                        nomeMercato={mid => {
+                                            const m = replay.markets.find(x => x.market_id === mid);
+                                            return m?.market_name || m?.market_type || mid;
+                                        }}
+                                        nomeSelezione={(mid, sid) => replay.markets.find(x => x.market_id === mid)
+                                            ?.selections?.find(x => x.selection_id === sid)?.name ?? `#${sid}`}
                                     />
                                 )}
                             </div>
