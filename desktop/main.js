@@ -459,6 +459,14 @@ function startRunners() {
     // nessun login/stream proprio; paper di default, live solo da /mike. A riposo
     // processa richieste manuali, protezioni e settlement. Lock 127.0.0.1:47319.
     spawnRunner('mike-service', ['-m', 'Betfair.stream.watchdog', '--', 'Betfair.mike.service']);
+    // BANCO DEL REPLAY (06/10, ordine dell'utente: «deve andare dalla UI»): il
+    // worker del Backtest Automatico, che esegue anche "Applica bot" di Match
+    // Replay (il bot col codice di produzione sulla registrazione, dal banco
+    // comune). Prima andava avviato a mano da terminale. A riposo legge la coda
+    // live_backtest_requests ogni 5 s (una SELECT); NESSUN ordine, nessun login
+    // Betfair: il banco gira su flumine simulato e non tocca il DB vero.
+    // Sotto WATCHDOG come gli altri servizi (crash -> riavvio con backoff).
+    spawnRunner('backtest-worker', ['-m', 'Betfair.stream.watchdog', '--', 'Betfair.stream.backtest.worker']);
     // PARTITE DEL GIORNO tennis: il job quote (betfair_tennis_odds.py) popola
     // tennis_markets — all'avvio e poi ogni 30 minuti (processo breve, esce da solo).
     // MAI due run sovrapposte (audit 09/09): una run lenta ancora viva NON viene

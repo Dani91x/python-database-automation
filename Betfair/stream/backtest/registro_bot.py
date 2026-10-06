@@ -366,6 +366,9 @@ NON_BOT: Dict[str, str] = {
     "Betfair.stream.tennis_live.tennis_bot_service": "ponte verso la UI (--bridge-only)",
     "betfair_tennis_odds.py": "job di quote tennis: nessun ordine",
     "Betfair.stream.runner": "runner calcio: ospita gli scalper, registrati a parte",
+    "Betfair.stream.backtest.worker": ("banco del replay (Backtest Automatico e 'Applica "
+                                       "bot' di Match Replay): flumine SIMULATO sulle "
+                                       "registrazioni, nessun ordine vero, nessun login"),
 }
 
 
