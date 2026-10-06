@@ -1177,7 +1177,7 @@ export default function MatchReplay() {
                                     <span data-testid="stato-applica-bot" className="text-white/70">
                                         {botRichiesta?.errore
                                             ? <span className="text-red-300">errore: {botRichiesta.errore}</span>
-                                            : botRichiesta?.stato?.status === 'PENDING' ? 'in coda: serve il worker del Backtest Automatico acceso…'
+                                            : botRichiesta?.stato?.status === 'PENDING' ? "in coda: il banco dell'app la prende entro pochi secondi (se resta qui, riavvia l'app)…"
                                             : botRichiesta?.stato?.status === 'RUNNING' ? 'il bot sta girando sulla registrazione (qualche minuto)…'
                                             : botRichiesta?.stato?.status === 'ERROR' ? <span className="text-red-300">errore: {botRichiesta.stato.error_detail}</span>
                                             : botRichiesta?.stato?.status === 'DONE' && botRichiesta.stato.esito
