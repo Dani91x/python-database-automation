@@ -1,0 +1,61 @@
+== 07:54:22 liquidita_35797769 35797769 media-under-liquidita-100,media-under-35-liquidita-50
+OK  35797769 [media-under-liquidita-100]  tick=1511913 decisioni=78022 azioni=   5 stati=sessione:arming,sessione:running,sessione:done [COMPLETE]
+OK  35797769 [media-under-35-liquidita-50]  tick=1511913 decisioni=81112 azioni=   6 stati=sessione:arming,sessione:running,sessione:done [COMPLETE]
+tempo totale 308 s
+== 07:59:30 liquidita_35760084 35760084 media-under-liquidita-100,media-under-35-liquidita-50
+NE  35760084 [media-under-liquidita-100]  tick=504571 decisioni=18662 azioni=   0 stati=sessione:arming,sessione:running,sessione:done [COMPLETE]
+NE  35760084 [media-under-35-liquidita-50]  tick=504571 decisioni=25586 azioni=   0 stati=sessione:arming,sessione:running,sessione:done [COMPLETE]
+tempo totale 66 s
+== 08:00:36 media_35797769 35797769 media-under,media-under-paper,media-under-35
+OK  35797769 [media-under]  tick=1511913 decisioni=78022 azioni=   5 stati=sessione:arming,sessione:running,sessione:done [COMPLETE]
+OK  35797769 [media-under-paper]  tick=1511913 decisioni=78022 azioni=   5 stati=sessione:arming,sessione:running,sessione:done [COMPLETE]
+NE  35797769 [media-under-35]  tick=1511913 decisioni=81112 azioni=   0 stati=sessione:arming,sessione:running,sessione:done [COMPLETE]
+tempo totale 418 s
+== 08:07:34 varianti_35797769 35797769 media-under-obiettivo-030,media-under-rientri-1,media-under-rischio-30,media-under-tick-1
+OK  35797769 [media-under-obiettivo-030]  tick=1511913 decisioni=78022 azioni=   5 stati=sessione:arming,sessione:running,sessione:done [COMPLETE]
+OK  35797769 [media-under-rientri-1]  tick=1511913 decisioni=78022 azioni=   5 stati=sessione:arming,sessione:running,sessione:done [COMPLETE]
+OK  35797769 [media-under-rischio-30]  tick=1511913 decisioni=78022 azioni=   5 stati=sessione:arming,sessione:running,sessione:done [COMPLETE]
+OK  35797769 [media-under-tick-1]  tick=1511913 decisioni=78022 azioni=  17 stati=sessione:arming,sessione:running,sessione:done [COMPLETE]
+tempo totale 604 s
+== 08:17:38 guasti_35797769 35797769 media-under-riavvio,media-under-rifiuti-betfair,media-under-esiti-ignoti,media-under-kill-switch,media-under-bot-fermo
+OK  35797769 [media-under-riavvio]  tick=1511913 decisioni=77632 azioni=   2 stati=sessione:arming,sessione:running,sessione:error,sessione:done [COMPLETE]
+OK  35797769 [media-under-rifiuti-betfair]  tick=1511913 decisioni=78022 azioni=  11 stati=sessione:arming,sessione:running,sessione:done [COMPLETE]
+OK  35797769 [media-under-esiti-ignoti]  tick=1511913 decisioni=78022 azioni=  10 stati=sessione:arming,sessione:running,sessione:done [COMPLETE]
+OK  35797769 [media-under-kill-switch]  tick=140240 decisioni= 6369 azioni=   2 stati=sessione:arming,sessione:running,sessione:done [COMPLETE]
+OK  35797769 [media-under-bot-fermo]  tick=140240 decisioni= 6369 azioni=   2 stati=sessione:arming,sessione:running,sessione:stopped [COMPLETE]
+tempo totale 483 s
+== 08:25:41 media_35760084 35760084 media-under,media-under-paper,media-under-35
+NE  35760084 [media-under]  tick=504571 decisioni=18662 azioni=   0 stati=sessione:arming,sessione:running,sessione:done [COMPLETE]
+NE  35760084 [media-under-paper]  tick=504571 decisioni=18662 azioni=   0 stati=sessione:arming,sessione:running,sessione:done [COMPLETE]
+NE  35760084 [media-under-35]  tick=504571 decisioni=25586 azioni=   0 stati=sessione:arming,sessione:running,sessione:done [COMPLETE]
+tempo totale 102 s
+== 08:27:23 A1 35797769 base,auto-live,paper,bot-fermo,kill-switch
+OK  35797769 [base]  tick=665941 decisioni=121012 azioni= 167 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:LOCKING,slot:DONE,slot:FLATTENING,sessione:done [COMPLETE]
+OK  35797769 [auto-live]  tick=665941 decisioni=121012 azioni= 167 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:LOCKING,slot:DONE,slot:FLATTENING,sessione:done [COMPLETE]
+OK  35797769 [paper]  tick=665941 decisioni=121012 azioni= 167 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:LOCKING,slot:DONE,slot:FLATTENING,sessione:done [COMPLETE]
+OK  35797769 [bot-fermo]  tick=140967 decisioni=25604 azioni=  99 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:LOCKING,slot:DONE,slot:FLATTENING,sessione:stopped [COMPLETE]
+OK  35797769 [kill-switch]  tick=140967 decisioni=25604 azioni=  99 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:LOCKING,slot:DONE,slot:FLATTENING,sessione:done [COMPLETE]
+tempo totale 226 s
+== 08:31:09 A2 35797769 senza-missione,esiti-ignoti,rifiuti-betfair,riavvio,chiusura-abbinata-in-parte
+OK  35797769 [senza-missione]  tick=665941 decisioni=121012 azioni= 167 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:LOCKING,slot:DONE,slot:FLATTENING,sessione:done [COMPLETE]
+OK  35797769 [esiti-ignoti]  tick=665941 decisioni=121012 azioni= 167 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:LOCKING,slot:DONE,slot:FLATTENING,sessione:done [COMPLETE]
+OK  35797769 [rifiuti-betfair]  tick=665941 decisioni=121012 azioni= 179 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:LOCKING,slot:DONE,slot:FLATTENING,sessione:done [COMPLETE]
+OK  35797769 [riavvio]  tick=665941 decisioni=119104 azioni= 204 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:LOCKING,slot:DONE,slot:FLATTENING,sessione:error,sessione:done [COMPLETE]
+OK  35797769 [chiusura-abbinata-in-parte]  tick=665941 decisioni=121012 azioni=  41 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:LOCKING,slot:FLATTENING,slot:DONE,sessione:done [COMPLETE]
+tempo totale 332 s
+== 08:36:41 B1 35797769 sniper,sniper-paper
+OK  35797769 [sniper]  tick=1511913 decisioni=286052 azioni= 167 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:LOCKING,slot:DONE,slot:FLATTENING,sessione:done [COMPLETE]
+OK  35797769 [sniper-paper]  tick=1511913 decisioni=286052 azioni= 167 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:LOCKING,slot:DONE,slot:FLATTENING,sessione:done [COMPLETE]
+tempo totale 512 s
+== 08:45:13 B2 35797769 sniper-uscite-auto,uscite-manuali
+OK  35797769 [sniper-uscite-auto]  tick=1511913 decisioni=286052 azioni= 167 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:LOCKING,slot:DONE,slot:FLATTENING,sessione:done [COMPLETE]
+OK  35797769 [uscite-manuali]  tick=1511913 decisioni=286052 azioni= 229 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:LOCKING,slot:FLATTENING,slot:DONE,sessione:done [COMPLETE]
+tempo totale 436 s
+== 08:52:29 B3 35797769 uscite-manuali-firmate
+OK  35797769  tick=1511913 decisioni=286052 azioni=  53 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:LOCKING,slot:DONE,slot:FLATTENING,sessione:done [COMPLETE]
+tempo totale 175 s
+== 08:55:24 C 35760084 base,paper
+OK  35760084 [base]  tick=124672 decisioni=23599 azioni=   0 stati=sessione:arming,sessione:running,slot:IDLE,sessione:done [COMPLETE]
+OK  35760084 [paper]  tick=124672 decisioni=23599 azioni=   0 stati=sessione:arming,sessione:running,slot:IDLE,sessione:done [COMPLETE]
+tempo totale 13 s
+== FINE 08:55:37
