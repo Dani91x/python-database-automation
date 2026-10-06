@@ -597,3 +597,22 @@ def test_i_controlli_m_vedono_gli_ordini_di_tutte_le_sessioni(differita, exchang
     banco2.medie, banco2.media = [b2.strat], b2.strat
     banco2.giro(b1.pt, "t")
     assert "M5" not in {v.codice for v in banco2.ref.violazioni}
+
+
+def test_la_sessione_legge_il_conto_all_avvio_e_riprova_al_battito():
+    """In soldi veri ``run_session`` legge il conto quando arma la modalita' e,
+    se non ci e' riuscita, riprova nel ciclo del battito; in prova mai
+    (lettura del sorgente: il ciclo vero gira solo con la sessione intera)."""
+    import inspect
+
+    src = inspect.getsource(SS.run_session)
+    assert src.count("prepara_ripresa_media(trading, media, ev)") == 2
+    armo = src[src.index("da_lasciare = media.banca_da_lasciare"):]
+    armo = armo[:armo.index("if _riavvio_media:")]
+    assert "if not session_paper:" in armo and "prepara_ripresa_media" in armo
+    ciclo = src[src.index("while runner.is_alive():"):]
+    ciclo = ciclo[:ciclo.index("db.set_control(ev, heartbeat_at=")]
+    assert ("if media is not None and not session_paper and media.attende_il_conto():\n"
+            "                prepara_ripresa_media(trading, media, ev)") in ciclo
+    # in prova il blocco per riavvio a posizione aperta resta (ordini simulati morti)
+    assert "if session_paper else None" in src
