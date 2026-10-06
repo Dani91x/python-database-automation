@@ -898,6 +898,9 @@ class MediaUnderStrategy(BaseStrategy):
     def _pre_match(self, market: Any, mb: Any, now: float, bb: Optional[float],
                    bl: Optional[float], sb: Optional[float], sl: Optional[float]) -> None:
         self._ko_epoch_ms(mb)
+        if self.force_flat:
+            # 06/10 (P1): allo stop nessuna punta resta sul book
+            self._ritira_la_punta_allo_stop(market)
         # 1. la punta in corso (ingresso o rientro)
         if self._punta is not None:
             p = self._punta
@@ -1471,6 +1474,53 @@ class MediaUnderStrategy(BaseStrategy):
         else:
             self.chiusura = None
         s["chiusura"] = self.chiusura
+
+    # ------------------------------------------------- stop (P1, 06/10)
+    def banca_da_lasciare(self, o: Any) -> bool:
+        """P1 (decisione dell'utente del 06/10): allo STOP della sessione la
+        banca di chiusura PERSIST resta appoggiata (la posizione resta protetta
+        e si chiude da sola). True per QUELLA banca, viva, con una posizione
+        aperta: la sessione non la annulla all'arresto."""
+        b = self._banca
+        if b is None or o is not b or _lato(b) != "LAY" or not vivo_o_in_volo(b):
+            return False
+        if str(getattr(b.order_type, "persistence_type", "") or "") != "PERSIST":
+            return False
+        try:
+            return posizione_da_ordini(list(self._ordini)).aperta
+        except Exception:  # noqa: BLE001 - lista che cambia nel thread di flumine
+            return False
+
+    def pronta_allo_stop(self) -> bool:
+        """Dopo lo STOP (force-flat): nessuna punta viva e, prima del fischio con
+        una posizione aperta, la banca viva copre l'intera posizione. La sessione
+        aspetta questo (non il piatto: la banca resta per decisione dell'utente)."""
+        if self._esito is not None:
+            return True
+        ordini = list(self._ordini)
+        if any(_lato(o) == "BACK" and vivo_o_in_volo(o) for o in ordini):
+            return False
+        pos = posizione_da_ordini(ordini)
+        if abs(pos.se_vince - pos.se_perde) <= self._toll_pari():
+            return not any(vivo_o_in_volo(o) for o in ordini)
+        if self.stato in (LIVE, FINE, BLOCCATA):
+            # in gioco la modalita' non piazza e non riprezza: resta cio' che c'e'
+            return True
+        b = self._banca
+        if b is None or not vivo_o_in_volo(b):
+            return False
+        c = quota_della_banca(self._ultimo_ingresso, pos, self.par.tick_chiusura)
+        resto = float(getattr(b, "size_remaining", 0.0) or 0.0)
+        return (c is not None and abs(float(b.order_type.price) - c) < 1e-9
+                and abs(resto - al_centesimo(banca_esatta(pos, c))) <= 0.01)
+
+    def _ritira_la_punta_allo_stop(self, market: Any) -> None:
+        """Allo STOP la punta in corso (ingresso o rientro) si ritira subito: la
+        banca poi si riallinea sull'intera posizione (``_assicura_banca``)."""
+        p = self._punta
+        if p is not None and eseguibile(p):
+            self._annulla(market, p, "stop della sessione: la punta si ritira, la banca "
+                                     "resta appoggiata (decisione dell'utente P1)")
 
     # ------------------------------------------------- ordini del conto
     def posizione_aperta(self) -> bool:

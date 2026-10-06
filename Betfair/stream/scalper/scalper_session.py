@@ -430,6 +430,22 @@ def _session_bet_ids(framework: Any) -> List[str]:
     return ids
 
 
+def _bet_ids_da_lasciare(framework: Any, da_lasciare: Any) -> set:
+    """06/10 (P1): i bet_id degli ordini che la sessione NON annulla (la banca
+    PERSIST della media con la posizione aperta)."""
+    out: set = set()
+    if da_lasciare is None:
+        return out
+    try:
+        for m in list(getattr(framework, "markets", None) or []):
+            for o in list(getattr(m, "blotter", None) or []):
+                if getattr(o, "bet_id", None) and da_lasciare(o):
+                    out.add(str(o.bet_id))
+    except Exception:  # noqa: BLE001 - blotter illeggibile: nessuna eccezione
+        return set()
+    return out
+
+
 def _mercato_chiuso_in_flumine(markets: Dict[str, Any], market_id: str) -> Optional[bool]:
     """True = chiuso (``closed`` di flumine o ultimo book CLOSED), False =
     aperto, None = mercato mai arrivato (niente da dire)."""
@@ -575,7 +591,7 @@ def _ordini_vivi_lista(framework: Any) -> Optional[List[Any]]:
 def annulla_ordini_vivi_all_arresto(
     framework: Any, trading: Any, session_paper: bool, *, flumine_vivo: bool,
     timeout_s: float = ARRESTO_ANNULLO_TIMEOUT_S, ora: Any = time.monotonic,
-    dormi: Any = time.sleep,
+    dormi: Any = time.sleep, da_lasciare: Any = None,
 ) -> Dict[str, Any]:
     """Annulla gli ordini NON abbinati della sessione (mai le posizioni).
 
@@ -584,10 +600,30 @@ def annulla_ordini_vivi_all_arresto(
        aspetta al massimo ``timeout_s`` che spariscano dal blotter;
     2. LIVE, se ne restano (o flumine e' morto): ripiego REST MIRATO ai loro
        bet_id (``_sweep_cancel``), mai market-wide; in PAPER nessun REST.
+    06/10 (P1, decisione dell'utente): gli ordini per cui ``da_lasciare(order)``
+    e' vero (la banca PERSIST della modalita' "media under" con la posizione
+    aperta) NON si annullano, ne' da flumine ne' via REST: si contano a parte.
     Non solleva mai: torna l'esito per il diario."""
     esito: Dict[str, Any] = {"vivi_prima": None, "annullo_chiesto": 0,
-                             "vivi_dopo": None, "rest": None, "paper": bool(session_paper)}
-    vivi = _ordini_vivi_lista(framework)
+                             "vivi_dopo": None, "rest": None, "paper": bool(session_paper),
+                             "lasciati": 0}
+
+    def _lascia(o: Any) -> bool:
+        try:
+            return bool(da_lasciare is not None and da_lasciare(o))
+        except Exception:  # noqa: BLE001 - nel dubbio si annulla (regola di prima)
+            return False
+
+    def _vivi_da_annullare() -> Optional[List[Any]]:
+        tutti = _ordini_vivi_lista(framework)
+        if tutti is None:
+            return None
+        return [(m, o) for m, o in tutti if not _lascia(o)]
+
+    tutti_prima = _ordini_vivi_lista(framework)
+    esito["lasciati"] = (0 if tutti_prima is None
+                         else sum(1 for _m, o in tutti_prima if _lascia(o)))
+    vivi = _vivi_da_annullare()
     esito["vivi_prima"] = None if vivi is None else len(vivi)
     if vivi and flumine_vivo:
         for market, order in vivi:
@@ -598,11 +634,11 @@ def annulla_ordini_vivi_all_arresto(
                 esito.setdefault("errori", []).append(str(exc)[:120])
         scadenza = ora() + max(0.0, float(timeout_s))
         while ora() < scadenza:
-            rimasti = _ordini_vivi_lista(framework)
+            rimasti = _vivi_da_annullare()
             if rimasti is not None and not rimasti:
                 break
             dormi(0.5)
-    rimasti = _ordini_vivi_lista(framework)
+    rimasti = _vivi_da_annullare()
     if rimasti and not session_paper and trading is not None:
         mids = sorted({str(getattr(o, "market_id", None) or getattr(m, "market_id", ""))
                        for m, o in rimasti})
@@ -616,7 +652,8 @@ def annulla_ordini_vivi_all_arresto(
 def chiudi_all_arresto(db: Any, event_id: str, framework: Any, trading: Any,
                        session_paper: bool, causa: str, *, flumine_vivo: bool,
                        timeout_s: float = ARRESTO_ANNULLO_TIMEOUT_S,
-                       ora: Any = time.monotonic, dormi: Any = time.sleep) -> Dict[str, Any]:
+                       ora: Any = time.monotonic, dormi: Any = time.sleep,
+                       da_lasciare: Any = None) -> Dict[str, Any]:
     """Il pezzo che manca prima di ogni uscita della sessione: annullo degli
     ordini vivi (``annulla_ordini_vivi_all_arresto``), diario, e per le cause
     di ARRESTO un CRITICAL se resta una posizione abbinata o un ordine vivo.
@@ -624,7 +661,7 @@ def chiudi_all_arresto(db: Any, event_id: str, framework: Any, trading: Any,
     try:
         esito = annulla_ordini_vivi_all_arresto(
             framework, trading, session_paper, flumine_vivo=flumine_vivo,
-            timeout_s=timeout_s, ora=ora, dormi=dormi)
+            timeout_s=timeout_s, ora=ora, dormi=dormi, da_lasciare=da_lasciare)
     except Exception as exc:  # noqa: BLE001 - l'uscita non si blocca mai
         esito = {"errore": str(exc)[:200], "vivi_dopo": None}
     non_flat = _dichiarazione_non_flat(framework)
@@ -638,6 +675,13 @@ def chiudi_all_arresto(db: Any, event_id: str, framework: Any, trading: Any,
     ordini_rimasti = esito.get("vivi_dopo")
     rest_ok = bool((esito.get("rest") or {}).get("ok")) and not (esito.get("rest") or {}).get("ko")
     problemi = []
+    if esito.get("lasciati"):
+        # 06/10 (P1): la banca PERSIST della media resta appoggiata, detto
+        problemi.append(
+            "media under: banca PERSIST di chiusura lasciata appoggiata (decisione "
+            "dell'utente P1: la posizione resta protetta e si chiude da sola)"
+            + (" - in PROVA la banca simulata finisce con la sessione" if session_paper
+               else ""))
     if non_flat and causa in CAUSE_ARRESTO:
         problemi.append("posizione lasciata a mercato per arresto: " + non_flat)
     if ordini_rimasti and not rest_ok:
@@ -764,7 +808,7 @@ def mantieni_sessione(trading: Any, stop_flag: Any, *, nome: str = "scalper",
 
 def _handle_flumine_crash(db: Any, event_id: str, trading: Any,
                           market_ids: List[str], session_paper: bool,
-                          framework: Any = None) -> None:
+                          framework: Any = None, da_lasciare: Any = None) -> None:
     """CRASH del thread flumine: rete di emergenza (fix 15/07, bug 3).
 
     LIVE → sweep cancel REST degli unmatched della SESSIONE (mirato per betId
@@ -778,7 +822,18 @@ def _handle_flumine_crash(db: Any, event_id: str, trading: Any,
             "msg": "CRASH thread flumine (PAPER): nessuno sweep REST — "
                    "ordini simulati, nulla di vivo sull'exchange"})
         return
-    swept = _sweep_cancel(trading, market_ids, _session_bet_ids(framework))
+    # 06/10 (P1): la banca PERSIST della media resta (mai nello sweep); se nel
+    # blotter c'era SOLO lei non c'e' niente da annullare (mai il ripiego
+    # market-wide, che la toglierebbe)
+    lascia = _bet_ids_da_lasciare(framework, da_lasciare)
+    tutti = _session_bet_ids(framework)
+    propri = [b for b in tutti if b not in lascia]
+    if lascia and not propri:
+        swept = {"ok": [], "ko": [], "market_wide": False, "saltato": "solo la banca da lasciare"}
+    else:
+        swept = _sweep_cancel(trading, market_ids, propri)
+    if lascia:
+        swept["lasciati"] = sorted(lascia)
     db.log(event_id, "error", {
         "msg": "CRASH thread flumine: sweep cancel eseguito",
         "sweep": swept})
@@ -1162,6 +1217,9 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
 
     strategy = None
     framework = None
+    # 06/10 (P1): chi dice quali ordini NON si annullano all'arresto (la banca
+    # PERSIST della media); None finche' la modalita' non e' armata
+    da_lasciare: Any = None
     stopped_by_ui = False
     # 02/10 (punto 26): cio' che serve all'arresto anche se si esce da un
     # punto qualunque del ``try`` (eccezione, segnale)
@@ -1489,6 +1547,7 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                                 "stake": media.par.stake,
                                 "exec": exec_mode,
                                 "riavvio_aperto": _riavvio_media})
+            da_lasciare = media.banca_da_lasciare
             if _riavvio_media:
                 db.log(ev, "critical", {
                     "msg": "media under: riavvio a posizione aperta NON ricostruibile, "
@@ -1792,8 +1851,10 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             # esistono (maker non armato): al piu' due attese, dentro
             # STRATEGIE_MAX e TEMPO_MASSIMO_ARRESTO_S
             if media is not None:
+                # 06/10 (P1): si aspetta che la punta sia ritirata e la banca copra
+                # l'intera posizione, non il piatto (la banca resta appoggiata)
                 deadline = time.time() + timeout_s
-                while time.time() < deadline and not media.is_flat():
+                while time.time() < deadline and not media.pronta_allo_stop():
                     time.sleep(1.0)
                 ok = ok and media.is_flat()
             return ok
@@ -1974,14 +2035,14 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             # PAPER: mai lo sweep REST (toccherebbe il conto reale); LIVE:
             # sweep MIRATO ai bet_id del blotter — vedi _handle_flumine_crash.
             _handle_flumine_crash(db, ev, trading, market_ids, session_paper,
-                                  framework=framework)
+                                  framework=framework, da_lasciare=da_lasciare)
         # 02/10 (punto 26): ARRESTO (stop dall'app, freno) - prima di spegnere
         # flumine si annullano gli ordini NON abbinati rimasti dopo il
         # force-flat e si dichiara la posizione che resta (mai chiusa da qui).
         # R3 (02/10): anche a FINE VITA; non a partita finita (CLOSED).
         elif causa_arresto in CAUSE_ARRESTO:
             chiudi_all_arresto(db, ev, framework, trading, session_paper, causa_arresto,
-                               flumine_vivo=runner.is_alive())
+                               flumine_vivo=runner.is_alive(), da_lasciare=da_lasciare)
         try:
             # BUG FIX (cert 10/07): flumine 2.13.11 esce dal run() SOLO con un
             # TerminationEvent in handler_queue — _running=False non è mai testato
@@ -2022,11 +2083,13 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
         # ``BaseException`` (SystemExit, i fermi del banco che simulano un
         # processo ucciso) passano come prima.
         logger.exception("[scalper-sess] sessione %s in errore", ev)
-        _uscita_su_eccezione(db, ev, exc, framework, trading, session_paper, runner, flush)
+        _uscita_su_eccezione(db, ev, exc, framework, trading, session_paper, runner, flush,
+                             da_lasciare=da_lasciare)
 
 
 def _uscita_su_eccezione(db: Any, ev: str, exc: BaseException, framework: Any, trading: Any,
-                         session_paper: bool, runner: Any, flush: Any) -> None:
+                         session_paper: bool, runner: Any, flush: Any,
+                         da_lasciare: Any = None) -> None:
     """02/10 (punto 26) - l'uscita della sessione su eccezione o segnale: PRIMA
     l'annullo degli ordini vivi e la dichiarazione della posizione
     (``chiudi_all_arresto``), POI stato 'error' e ``sys.exit(1)`` come prima.
@@ -2035,7 +2098,8 @@ def _uscita_su_eccezione(db: Any, ev: str, exc: BaseException, framework: Any, t
     if framework is not None:
         chiudi_all_arresto(db, ev, framework, trading, session_paper,
                            "segnale" if segnale else "errore_fatale",
-                           flumine_vivo=bool(runner is not None and runner.is_alive()))
+                           flumine_vivo=bool(runner is not None and runner.is_alive()),
+                           da_lasciare=da_lasciare)
     flush()
     db.set_control(ev, status="error", error=str(exc)[:500] or type(exc).__name__,
                    stopped_at=_now_iso())

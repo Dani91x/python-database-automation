@@ -214,7 +214,10 @@ def test_l_eccezione_del_ciclo_passa_dall_uscita_ordinata():
     (prima: nessun handler) e passa da ``_uscita_su_eccezione``."""
     src = inspect.getsource(SS.run_session)
     coda = src[src.rindex("except (Exception, KeyboardInterrupt) as exc"):]
-    assert "_uscita_su_eccezione(db, ev, exc, framework, trading, session_paper, runner, flush)" in coda
+    # 06/10 (giro 4 della media under, P1): con in piu' ``da_lasciare`` (la banca
+    # PERSIST della media resta appoggiata anche su questa uscita)
+    assert ("_uscita_su_eccezione(db, ev, exc, framework, trading, session_paper, runner, flush,\n"
+            "                             da_lasciare=da_lasciare)") in coda
     assert "sys.exit" not in coda
 
 
