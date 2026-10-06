@@ -1,0 +1,230 @@
+[
+ {
+  "id": "J1",
+  "mutazione": "il nome della strategia non dipende dalla partita",
+  "esito": "1 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_nome_strategia_per_partita_e_ruolo"
+  ]
+ },
+ {
+  "id": "J2",
+  "mutazione": "la media under torna al nome della classe",
+  "esito": "1 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_la_sessione_arma_le_strategie_col_nome_della_partita[media-under-media]"
+  ]
+ },
+ {
+  "id": "J3",
+  "mutazione": "P1 spento: la banca non e' mai da lasciare",
+  "esito": "6 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_crash_con_la_sola_banca_nel_blotter_nessuno_sweep[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_crash_con_la_sola_banca_nel_blotter_nessuno_sweep[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_crash_di_flumine_in_soldi_veri_lo_sweep_non_tocca_la_banca[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_crash_di_flumine_in_soldi_veri_lo_sweep_non_tocca_la_banca[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_stop_con_la_banca_viva_la_banca_resta[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_stop_con_la_banca_viva_la_banca_resta[4]"
+  ]
+ },
+ {
+  "id": "J4",
+  "mutazione": "allo stop la punta in corso resta sul book",
+  "esito": "1 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_stop_con_la_punta_di_rientro_non_abbinata_la_punta_si_ritira[4]"
+  ]
+ },
+ {
+  "id": "J5",
+  "mutazione": "pronta allo stop anche con la banca che non copre la posizione",
+  "esito": "1 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_pronta_allo_stop_solo_con_la_banca_sull_intera_posizione[4]"
+  ]
+ },
+ {
+  "id": "J6",
+  "mutazione": "l'annullo all'arresto toglie anche la banca da lasciare",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_stop_con_la_banca_viva_la_banca_resta[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_stop_con_la_banca_viva_la_banca_resta[4]"
+  ]
+ },
+ {
+  "id": "J7",
+  "mutazione": "lo sweep del crash annulla anche la banca da lasciare",
+  "esito": "4 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_crash_con_la_sola_banca_nel_blotter_nessuno_sweep[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_crash_con_la_sola_banca_nel_blotter_nessuno_sweep[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_crash_di_flumine_in_soldi_veri_lo_sweep_non_tocca_la_banca[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_crash_di_flumine_in_soldi_veri_lo_sweep_non_tocca_la_banca[4]"
+  ]
+ },
+ {
+  "id": "J8",
+  "mutazione": "solo la banca nel blotter: lo sweep ripiega sul market-wide",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_crash_con_la_sola_banca_nel_blotter_nessuno_sweep[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_crash_con_la_sola_banca_nel_blotter_nessuno_sweep[4]"
+  ]
+ },
+ {
+  "id": "J9",
+  "mutazione": "in RIPRESA la modalita' opera (nessun freno: ordini doppi)",
+  "esito": "16 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_crash_con_la_sola_banca_nel_blotter_nessuno_sweep[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_crash_con_la_sola_banca_nel_blotter_nessuno_sweep[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_esposizione_della_sessione_dopo_la_ripresa_conta_gli_ordini_del_conto[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_esposizione_della_sessione_dopo_la_ripresa_conta_gli_ordini_del_conto[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_al_massimo_dei_rientri_resta_al_massimo[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_al_massimo_dei_rientri_resta_al_massimo[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_con_la_banca_viva_riprende_esattamente[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_con_la_banca_viva_riprende_esattamente[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_conto_non_letto_nessun_ordine_poi_riprova[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_conto_non_letto_nessun_ordine_poi_riprova[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_dopo_un_ciclo_chiuso_conta_i_cicli[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_dopo_un_ciclo_chiuso_conta_i_cicli[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_ordini_chiusi_solo_dal_conto[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_ordini_chiusi_solo_dal_conto[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_senza_adozione_nessun_ordine_poi_bloccata[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_senza_adozione_nessun_ordine_poi_bloccata[4]"
+  ]
+ },
+ {
+  "id": "J10",
+  "mutazione": "la ripresa non aspetta che flumine riadotti gli ordini vivi",
+  "esito": "4 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_con_la_banca_viva_riprende_esattamente[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_con_la_banca_viva_riprende_esattamente[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_senza_adozione_nessun_ordine_poi_bloccata[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_senza_adozione_nessun_ordine_poi_bloccata[4]"
+  ]
+ },
+ {
+  "id": "J11",
+  "mutazione": "ricostruzione: un rientro in piu'",
+  "esito": "4 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_con_la_banca_viva_riprende_esattamente[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_con_la_banca_viva_riprende_esattamente[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_dopo_un_ciclo_chiuso_conta_i_cicli[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_dopo_un_ciclo_chiuso_conta_i_cicli[4]"
+  ]
+ },
+ {
+  "id": "J12",
+  "mutazione": "ricostruzione: ultimo ingresso = il primo",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_con_la_banca_viva_riprende_esattamente[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_con_la_banca_viva_riprende_esattamente[4]"
+  ]
+ },
+ {
+  "id": "J13",
+  "mutazione": "ricostruzione: obiettivo perso",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_con_la_banca_viva_riprende_esattamente[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_con_la_banca_viva_riprende_esattamente[4]"
+  ]
+ },
+ {
+  "id": "J14",
+  "mutazione": "ricostruzione: cicli chiusi dimenticati",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_dopo_un_ciclo_chiuso_conta_i_cicli[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_dopo_un_ciclo_chiuso_conta_i_cicli[4]"
+  ]
+ },
+ {
+  "id": "J15",
+  "mutazione": "ricostruzione al massimo: l'avviso del massimo si ripete",
+  "esito": "0 rossi",
+  "rossi": []
+ },
+ {
+  "id": "J16",
+  "mutazione": "ordini sul conto ma la modalita' parte come nuova",
+  "esito": "18 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_crash_con_la_sola_banca_nel_blotter_nessuno_sweep[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_crash_con_la_sola_banca_nel_blotter_nessuno_sweep[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_esposizione_della_sessione_dopo_la_ripresa_conta_gli_ordini_del_conto[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_esposizione_della_sessione_dopo_la_ripresa_conta_gli_ordini_del_conto[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_al_massimo_dei_rientri_resta_al_massimo[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_al_massimo_dei_rientri_resta_al_massimo[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_con_la_banca_viva_riprende_esattamente[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_con_la_banca_viva_riprende_esattamente[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_conto_non_letto_nessun_ordine_poi_riprova[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_conto_non_letto_nessun_ordine_poi_riprova[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_dopo_un_ciclo_chiuso_conta_i_cicli[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_dopo_un_ciclo_chiuso_conta_i_cicli[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_ordini_chiusi_solo_dal_conto[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_ordini_chiusi_solo_dal_conto[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_senza_adozione_nessun_ordine_poi_bloccata[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_ripresa_senza_adozione_nessun_ordine_poi_bloccata[4]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_stop_durante_la_ripresa_lascia_la_banca_riadottata[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_stop_durante_la_ripresa_lascia_la_banca_riadottata[4]"
+  ]
+ },
+ {
+  "id": "J17",
+  "mutazione": "ripresa senza adozione: mai bloccata (attesa infinita, nessun avviso)",
+  "esito": "1 rossi",
+  "rossi": [
+   "TIMEOUT::suite"
+  ]
+ },
+ {
+  "id": "J18",
+  "mutazione": "l'esposizione della sessione non conta gli ordini letti dal conto",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_esposizione_della_sessione_dopo_la_ripresa_conta_gli_ordini_del_conto[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_esposizione_della_sessione_dopo_la_ripresa_conta_gli_ordini_del_conto[4]"
+  ]
+ },
+ {
+  "id": "J19",
+  "mutazione": "lettura del conto senza le pagine successive",
+  "esito": "1 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_lettura_del_conto_paginata_e_filtrata_sulla_partita"
+  ]
+ },
+ {
+  "id": "J20",
+  "mutazione": "in soldi veri il conto non si legge all'avvio",
+  "esito": "1 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_la_sessione_legge_il_conto_all_avvio_e_riprova_al_battito"
+  ]
+ },
+ {
+  "id": "J21",
+  "mutazione": "i controlli M vedono solo la sessione corrente (doppi dopo un riavvio invisibili)",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_i_controlli_m_vedono_gli_ordini_di_tutte_le_sessioni[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_i_controlli_m_vedono_gli_ordini_di_tutte_le_sessioni[4]"
+  ]
+ },
+ {
+  "id": "J22",
+  "mutazione": "il banco non simula l'adozione di flumine",
+  "esito": "2 rossi",
+  "rossi": [
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_il_banco_risponde_al_conto_come_betfair_e_simula_l_adozione[1]",
+   "Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py::test_il_banco_risponde_al_conto_come_betfair_e_simula_l_adozione[4]"
+  ]
+ }
+]
