@@ -51,7 +51,7 @@ import {
 } from '@/lib/workspace';
 import {
     fetchLiveFollows, fetchLiveNow, subscribeLiveNow, subscribeLiveFollowEvent,
-    fetchLiveSignals, subscribeLiveSignals,
+    fetchLiveSignals, subscribeLiveSignals, apriPartitaSeguiLive, seguitaDaiBot,
     type LiveFollow, type LiveNowRow, type LiveNowMarket, type LiveSignalsRow,
 } from '@/lib/live';
 import { setFollowRecord } from '@/lib/omegaMissions';
@@ -869,8 +869,28 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt,
 // Mostra lo stato REALE del percorso click→ladder (richiesta registrata →
 // aggancio stream → primo dato ladder): l'attesa — ora di pochi secondi — non
 // deve mai sembrare un sistema morto. stage = passo ATTIVO (i precedenti sono ✓).
-function AttachProgress({ stage, error }: { stage: 1 | 2 | 3; error?: string | null }) {
+export function AttachProgress({ stage, error, apertura }: {
+    stage: 1 | 2 | 3;
+    error?: string | null;
+    // 06/10: partita seguita in automatico dai bot, aperta dal clic (promossa a
+    // follow manuale con la RPC segui_live_apri_partita)
+    apertura?: AperturaPartita | null;
+}) {
     const steps = ['Richiesta registrata', 'Aggancio stream (runner)', 'Primo dato ladder'];
+    // 06/10: la spia del runner QUI (prima stava solo nel terminale, che non
+    // c'e' proprio mentre l'aggancio e' fermo, e il testo diceva di guardarla)
+    const [heartbeat, setHeartbeat] = useState<LiveHeartbeatRow | null>(null);
+    const [nowTick, setNowTick] = useState(() => Date.now());
+    useEffect(() => {
+        let alive = true;
+        fetchLiveHeartbeat().then(r => { if (alive) setHeartbeat(r); }).catch(() => {});
+        const unsub = subscribeLiveHeartbeat(r => { if (r) setHeartbeat(r); });
+        const id = setInterval(() => setNowTick(Date.now()), 5000);
+        return () => { alive = false; unsub(); clearInterval(id); };
+    }, []);
+    const hb = heartbeatState(heartbeat?.ts, nowTick);
+    const hbAge = Math.round(heartbeatAgeSec(heartbeat?.ts, nowTick) ?? 0);
+    const erroreApertura = apertura?.stato === 'errore' ? apertura.errore : null;
     return (
         <Card className="glass-card border-secondary/30 p-4 mb-4">
             <div className="flex items-center gap-4 flex-wrap text-sm">
@@ -896,23 +916,47 @@ function AttachProgress({ stage, error }: { stage: 1 | 2 | 3; error?: string | n
                         </span>
                     );
                 })}
+                <span data-testid="spia-runner" className={`ml-auto text-[11px] font-mono tabular-nums ${
+                    hb === 'ok' ? 'text-emerald-400/90' : hb === 'stale' ? 'text-red-300 font-black' : 'text-white/40'
+                }`}>
+                    {hb === 'ok' ? `♥ runner (${hbAge}s fa)` : hb === 'stale' ? `⚠ RUNNER GIÙ da ${hbAge}s` : 'runner n/d'}
+                </span>
             </div>
+            {apertura && apertura.stato !== 'errore' && (
+                <p className="text-xs text-sky-300 mt-2">
+                    Partita seguita in automatico dai bot: il ladder non era pubblicato.
+                    {apertura.stato === 'in_corso' ? ' La sto aprendo nel terminale…' : ' Aperta: il runner la aggancia a caldo.'}
+                </p>
+            )}
+            {erroreApertura && (
+                <p className="text-xs text-red-400 mt-2">
+                    Non riesco ad aprire la partita: {erroreApertura}. Serve la migrazione
+                    segui_live_apri_partita_2026-10-06.sql.
+                </p>
+            )}
             {error ? (
                 <p className="text-xs text-red-400 mt-2">Errore dal runner: {error}</p>
+            ) : hb === 'stale' || hb === 'unknown' ? (
+                <p className="text-xs text-red-300 mt-2">
+                    Il runner non risponde: senza runner il ladder non arriva. Avvialo (o riavvia l&apos;app).
+                </p>
             ) : (
                 <p className="text-xs text-muted-foreground mt-2">
                     Il ladder si aggancia da solo appena arriva il primo dato (di norma pochi secondi).
-                    Se resta fermo a lungo: verifica che il runner sia acceso (chip ♥ runner in top bar)
                     {stage === 2 && <>
-                        {' '}oppure c'è un'<b>esposizione aperta su un'altra partita</b> (ordini vivi
-                        o regole di rischio armate): per sicurezza il runner NON riaggancia lo stream
-                        finché non è flat — controlla il pannello Alert (avviso NEW_MATCHES).
+                        {' '}Se resta fermo: mercati non ancora pubblicati da Betfair, tetto dei mercati
+                        pieno (avviso MARKET_CAP nel pannello Alert) oppure, con un runner senza
+                        auto-follow, un&apos;<b>esposizione aperta su un&apos;altra partita</b>: per
+                        sicurezza quel runner non ricostruisce lo stream finché non è flat (avviso
+                        NEW_MATCHES).
                     </>}
                 </p>
             )}
         </Card>
     );
 }
+
+export type AperturaPartita = { eventId: string; stato: 'in_corso' | 'fatta' | 'errore'; errore?: string };
 
 export default function SeguiLive() {
     const [follows, setFollows] = useState<LiveFollow[]>([]);
@@ -1032,6 +1076,32 @@ export default function SeguiLive() {
             if (unsubRef.current) { unsubRef.current(); unsubRef.current = null; }
         };
     }, [selected]);
+
+    // --- 06/10: partita seguita in automatico dai bot -> la si APRE (follow
+    // manuale): senza, il runner non pubblica il ladder e l'attesa non finisce.
+    // Una volta per partita selezionata; l'errore (migrazione assente) si mostra.
+    const [apertura, setApertura] = useState<AperturaPartita | null>(null);
+    useEffect(() => {
+        if (!selected || !selected.event_id || !seguitaDaiBot(selected)) {
+            setApertura(null);
+            return undefined;
+        }
+        let alive = true;
+        const eventId = selected.event_id;
+        setApertura({ eventId, stato: 'in_corso' });
+        apriPartitaSeguiLive(eventId)
+            .then(() => {
+                if (!alive) return;
+                setApertura({ eventId, stato: 'fatta' });
+                reloadFollows();
+            })
+            .catch((e: unknown) => {
+                if (!alive) return;
+                const msg = e instanceof Error ? e.message : String(e);
+                setApertura({ eventId, stato: 'errore', errore: msg });
+            });
+        return () => { alive = false; };
+    }, [selected, reloadFollows]);
 
     // --- canale LOCALE: push 'now' (riga live_now dal runner, cadenza più alta del
     // realtime DB). Filtrati per evento selezionato; merge "più recente vince" con il
@@ -1231,10 +1301,11 @@ export default function SeguiLive() {
                                 {!hasMarkets && selectedRow
                                     && ['PENDING', 'STREAMING', 'ERROR'].includes(selectedRow.status) && (
                                     <AttachProgress
-                                        stage={selectedRow.status === 'STREAMING' ? 3 : 2}
+                                        stage={selectedRow.status === 'STREAMING' && !seguitaDaiBot(selectedRow) ? 3 : 2}
                                         error={selectedRow.status === 'ERROR'
                                             ? (selectedRow.error_detail ?? 'errore sconosciuto')
                                             : null}
+                                        apertura={apertura?.eventId === selectedRow.event_id ? apertura : null}
                                     />
                                 )}
                                 {/* ---- TRADING TERMINAL (stessa fonte: live_now) ---- */}

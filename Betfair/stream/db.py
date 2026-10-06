@@ -140,6 +140,26 @@ def register_follow(
     }
     if record:
         row["record"] = True
+    # 06/10 (Segui Live fermo): il giro della watchlist (ogni 120 s) riportava a
+    # PENDING anche una partita gia' agganciata (STREAMING) che il runner non
+    # riaggancia piu' (e' gia' catalogata): la pagina restava su "Aggancio
+    # stream". Una riga STREAMING seguita A MANO resta STREAMING; una riga
+    # dell'AUTO-FOLLOW che la watchlist chiede diventa manuale (PENDING +
+    # origine 'manuale', come il clic in Segui Live), altrimenti l'auto-follow
+    # la chiuderebbe quando lascia la partita.
+    try:
+        esistente = (
+            sb.table("live_follow").select("status,origine")
+            .eq("event_id", event_id).limit(1).execute().data or []
+        )
+    except Exception:  # noqa: BLE001 - colonna origine assente o lettura KO
+        esistente = []
+    if esistente:
+        e0 = esistente[0]
+        if str(e0.get("origine") or "") == "auto":
+            row["origine"] = "manuale"
+        elif row["status"] == "PENDING" and str(e0.get("status") or "") == "STREAMING":
+            row["status"] = "STREAMING"
     try:
         sb.table("live_follow").upsert(row, on_conflict="event_id").execute()
     except Exception as e:  # noqa: BLE001 - fallback colonna record assente

@@ -41,6 +41,25 @@ export async function fetchLiveFollows(): Promise<LiveFollow[]> {
     return raw?.rows ?? [];
 }
 
+// 06/10 — "clicco una partita e non si carica nulla": le partite che il runner
+// segue DA SOLO per i bot (origine 'auto') sono silenziose (niente live_now,
+// niente ladder). Aprirne una in Segui Live la promuove a follow MANUALE
+// (RPC segui_live_apri_partita, migrazione segui_live_apri_partita_2026-10-06.sql):
+// il runner la cataloga, la aggancia a caldo e scrive il ladder. Una riga gia'
+// manuale non cambia (promossa=false).
+export async function apriPartitaSeguiLive(eventId: string): Promise<{ promossa: boolean }> {
+    const { data, error } = await supabase.rpc('segui_live_apri_partita', { p_event_id: eventId });
+    if (error) throw new Error(error.message);
+    const raw = data as { promossa?: boolean } | null;
+    return { promossa: Boolean(raw?.promossa) };
+}
+
+// Una riga della lista e' "seguita in automatico dai bot" (ladder non pubblicato
+// finche' non la si apre).
+export function seguitaDaiBot(f: Pick<LiveFollow, 'origine'> | null | undefined): boolean {
+    return f?.origine === 'auto';
+}
+
 // Sottoscrizione realtime alla riga `live_follow` di un evento (stato
 // PENDING→STREAMING→CLOSED/ERROR). Fix 17/07 "Trading = streaming immediato":
 // la pagina Segui Live reagisce al cambio di stato APPENA il runner aggancia,

@@ -2297,11 +2297,19 @@ def _iniezioni(banco: _Banco, orologio: _Orologio, kill_file: str):
     from ... import db as STREAM_DB
     from .. import scalper_session as SS
 
+    from ... import valuta as VALUTA
+
     trading = _TradingFinto(banco)
     banco.trading = trading
+    reale = db_client.get_supabase_client
+    vietato = {"attivo": True}
 
-    def _niente_db(*_a: Any, **_k: Any) -> Any:
-        raise RuntimeError("REPLAY: accesso al DB VERO vietato (get_supabase_client)")
+    def _niente_db(*a: Any, **k: Any) -> Any:
+        # chi ha copiato il nome DURANTE il replay se lo tiene anche dopo:
+        # finito il replay torna a essere il client vero
+        if vietato["attivo"]:
+            raise RuntimeError("REPLAY: accesso al DB VERO vietato (get_supabase_client)")
+        return reale(*a, **k)
 
     def _flumine(client: Any = None, **_k: Any) -> _FrameworkSessione:
         fw = _FrameworkSessione(banco, client)
@@ -2314,6 +2322,7 @@ def _iniezioni(banco: _Banco, orologio: _Orologio, kill_file: str):
         banco.righe_specchio.append(r)
 
     with ExitStack() as st:
+        st.callback(vietato.update, attivo=False)
         _patch(st, SS, "Db", lambda: banco.db)
         _patch(st, SS, "time", _TempoSessione(orologio))
         _patch(st, SS, "KILL_FILE", kill_file)
@@ -2324,6 +2333,17 @@ def _iniezioni(banco: _Banco, orologio: _Orologio, kill_file: str):
         _patch(st, flumine, "Flumine", _flumine)
         _patch(st, fclients, "BetfairClient", _ClientChiesto)
         _patch(st, db_client, "get_supabase_client", _niente_db)
+        # 06/10 (allarmi CAMBIO_GBP_EUR nella home dell'utente): i moduli che
+        # hanno importato il NOME (`from db_client import get_supabase_client`,
+        # come `Betfair/stream/db.py`) tenevano il client vero, e sul PC con le
+        # credenziali il replay scriveva nel DB vero (es. `insert_alert`)
+        for modulo in list(sys.modules.values()):
+            if modulo is not None and vars(modulo).get("get_supabase_client") is reale:
+                _patch(st, modulo, "get_supabase_client", _niente_db)
+        # 06/10: il cambio GBP->EUR del PROCESSO e' quello FISSO del banco: la
+        # sessione chiama `valuta.CAMBIO.avvia(trading)` col Betfair finto, che
+        # non ha `account`: la lettura falliva e l'allarme finiva nel DB vero
+        _patch(st, VALUTA, "CAMBIO", VALUTA.cambio_banco())
         _patch(st, STREAM_DB, "upsert_live_order", _cattura_ordine)
         _patch(st, STREAM_DB, "upsert_live_position", lambda row: None)
         _patch(st, STREAM_DB, "upsert_live_settled", lambda row: None)

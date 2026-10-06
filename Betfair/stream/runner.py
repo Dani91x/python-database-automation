@@ -1018,6 +1018,11 @@ def subscription_worker(context: dict, flumine: Flumine, session: LiveSession) -
     if not new_events:
         session.sub_restart_deferred_since = None
         return
+    # 06/10: con l'auto-follow agganciato la partita seguita a mano entra A
+    # CALDO, come quelle dei bot: niente ricostruzione, niente attesa del flat
+    if _aggancio_a_caldo(rest, session, new_events, _auto_attivo(), now):
+        session.sub_restart_deferred_since = None
+        return
     # THROTTLE con BYPASS primo-aggancio (fix 17/07 "Trading = streaming
     # immediato"): MIN_RESUBSCRIBE_INTERVAL_SEC protegge dal CHURN (rebuild
     # ripetuti sugli stessi eventi), ma il PRIMO aggancio di un evento MAI
@@ -1108,6 +1113,52 @@ def subscription_worker(context: dict, flumine: Flumine, session: LiveSession) -
         session.attach_attempted.update(f["event_id"] for f in new_events)
     if gap < MIN_RESUBSCRIBE_INTERVAL_SEC:
         session.last_first_attach_bypass_ts = now
+
+
+def _aggancio_a_caldo(rest: Any, session: Any, new_events: List[Dict[str, Any]],
+                      auto: Optional[Any], now: float) -> bool:
+    """06/10 (Segui Live fermo su "Aggancio stream"): una partita seguita A MANO
+    entra nello stream SENZA ricostruire il framework, con la stessa
+    risottoscrizione a caldo dell'auto-follow (``PianoFollow``: manuali +
+    automatiche sulla stessa connessione; blotter, posizioni e ordini intatti).
+    Prima ogni partita nuova chiedeva il restart della subscription, rinviato
+    finche' il runner non era flat: con i bot al lavoro non arrivava mai.
+
+    Il catalogo (REST ``listMarketCatalogue``) di una stessa partita si ritenta
+    al piu' ogni ``MIN_RESUBSCRIBE_INTERVAL_SEC`` (mercati non ancora
+    pubblicati, tetto pieno): il worker gira ogni 2 s. False = auto-follow
+    assente o non agganciato a un framework: resta la ricostruzione di sempre."""
+    if auto is None:
+        return False
+    try:
+        if not auto.agganciato():
+            return False
+    except Exception:  # noqa: BLE001 - versione senza il metodo: strada di sempre
+        return False
+    tentati = getattr(session, "catalogo_a_caldo_ts", None)
+    if tentati is None:
+        tentati = {}
+        session.catalogo_a_caldo_ts = tentati
+    da_fare = [f for f in new_events
+               if now - tentati.get(f["event_id"], -1e9) >= MIN_RESUBSCRIBE_INTERVAL_SEC]
+    if not da_fare:
+        return True
+    for f in da_fare:
+        tentati[f["event_id"]] = now
+    prima = set(session.cataloged_events)
+    _catalog_events(rest, session, da_fare)
+    nuovi = sorted(set(session.cataloged_events) - prima)
+    if nuovi:
+        auto.imposta_manuali(mercati_manuali_vivi(session))
+        auto.sveglia()
+        logger.info("[sub-worker] %d partite seguite a mano agganciate A CALDO (nessuna "
+                    "ricostruzione): %s", len(nuovi), ", ".join(nuovi))
+        try:
+            db.insert_alert("INFO", "NEW_MATCHES",
+                            f"{len(nuovi)} nuove partite agganciate al live (a caldo).")
+        except Exception as e:  # noqa: BLE001 - alert best-effort
+            logger.warning("[sub-worker] insert_alert KO (ignorato): %s", e)
+    return True
 
 
 def _nuovi_follow_manuali(follows: List[Dict[str, Any]], session: Any,
@@ -2022,7 +2073,11 @@ def _catalog_events(rest: BetfairClient, session: LiveSession, follows: List[Dic
                 # verrà catalogato al prossimo giro quando i mercati escono.
                 logger.warning("[runner] nessun mercato per %s (non ancora pubblicati?)", event_id)
             continue
-        prospective = len(session.market_to_event) + len(markets)
+        # 06/10: i mercati delle partite FINITE restano in ``market_to_event``
+        # (lo legge il registratore) ma non si sottoscrivono piu': contarli
+        # riempiva il tetto in un processo lungo e la partita nuova restava
+        # PENDING per sempre (REFUSE). Si contano i manuali che si sottoscrivono.
+        prospective = len(mercati_manuali_da_sottoscrivere(session)) + len(markets)
         # 28/09 (cantiere B): il tetto e' la capacita' di TUTTE le connessioni
         # di mercato (frammenti), non piu' di una sola; soglia d'allerta in
         # proporzione (150/180 di sempre)
