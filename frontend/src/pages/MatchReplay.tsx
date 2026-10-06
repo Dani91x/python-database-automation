@@ -1082,13 +1082,21 @@ export default function MatchReplay() {
                                         value={trainingMarketId ?? ''}
                                         onChange={e => setTrainingMarketId(e.target.value || null)}
                                         aria-label="Mercato del ladder training"
+                                        title={`${replay.markets.length} mercati registrati`}
+                                        // 06/10: le voci erano BIANCHE su tendina bianca (Windows/Electron
+                                        // disegna la lista aperta col tema chiaro): si leggeva solo la
+                                        // voce selezionata (Match Odds). Tema scuro esplicito.
+                                        style={{ colorScheme: 'dark' }}
                                         className="px-2 py-1 rounded-md bg-black/40 border border-white/15 text-white text-[11px]"
                                     >
-                                        {replay.markets.map(m => (
-                                            <option key={m.market_id} value={m.market_id}>
-                                                {m.market_name || m.market_type || m.market_id}
-                                            </option>
-                                        ))}
+                                        {[...replay.markets]
+                                            .sort((a, b) => (a.sort_priority ?? 999) - (b.sort_priority ?? 999))
+                                            .map(m => (
+                                                <option key={m.market_id} value={m.market_id}
+                                                    className="bg-neutral-900 text-white">
+                                                    {m.market_name || m.market_type || m.market_id}
+                                                </option>
+                                            ))}
                                     </select>
                                     <Button
                                         size="sm" variant="outline"
