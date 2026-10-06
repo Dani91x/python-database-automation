@@ -66,3 +66,17 @@ describe('conOrdiniDelBot — orderApi del ladder training', () => {
         expect(b.mandati).toHaveLength(1);
     });
 });
+
+import { noteUtili } from './replayBot';
+import noteVere from './__fixtures__/replay_bot_note_35797769.json';
+
+describe('noteUtili — cosa ha fatto il bot e perche\' non entrava (note vere del banco)', () => {
+    it('tiene ciclo, P&L e motivi di non ingresso; scarta i dettagli tecnici', () => {
+        const n = noteUtili(noteVere as string[]);
+        expect(n.some(x => x.startsWith('ciclo 1: ingresso 10.00 @2.18'))).toBe(true);
+        expect(n.some(x => x.includes('NETTO +0.17'))).toBe(true);
+        expect(n.some(x => x.includes("liquidita' sotto il minimo") && x.includes('x4891'))).toBe(true);
+        expect(n.some(x => x.includes('controlli M sollecitati'))).toBe(false);
+        expect(n).toHaveLength(3);
+    });
+});
