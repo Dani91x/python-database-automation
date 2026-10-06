@@ -33,6 +33,16 @@ def process_one() -> bool:
     params = req.get("params") or {}
     logger.info("[backtest-worker] presa richiesta %s: %s", request_id, params)
     try:
+        if str(params.get("tipo") or "") == "applica_bot":
+            # 06/10 (Match Replay, "applica bot"): il bot con il codice di
+            # produzione sulla registrazione, dal punto d'ingresso del banco
+            from .applica_bot import esegui as _applica_bot
+            esito = _applica_bot(params)
+            db.write_replay_bot_esito(request_id, esito)
+            db.set_backtest_status(request_id, "DONE")
+            logger.info("[backtest-worker] richiesta %s DONE (applica bot: %d ordini)",
+                        request_id, esito.get("ordini", 0))
+            return True
         rows = run_backtest(params)
         written = db.write_backtest_results(request_id, rows)
         db.set_backtest_status(request_id, "DONE")

@@ -17,6 +17,11 @@ import { TimelineSlider } from '@/components/replay/TimelineSlider';
 import { MarketPanel } from '@/components/replay/MarketPanel';
 import { TradesPanel } from '@/components/replay/TradesPanel';
 import { TrainingTradesPanel } from '@/components/replay/TrainingTradesPanel';
+import { BotOrdersPanel } from '@/components/replay/BotOrdersPanel';
+import {
+    SCENARI_BOT, conOrdiniDelBot, leggiEsitoBot, ordiniBotAlMs, richiediApplicaBot,
+    type RigaBot, type StatoRichiestaBot,
+} from '@/lib/replayBot';
 import { OpportunitaPanel } from '@/components/replay/OpportunitaPanel';
 import { ValidationCard } from '@/components/replay/ValidationCard';
 import {
@@ -411,6 +416,43 @@ export default function MatchReplay() {
         const s = trainSubRef.current;
         if (s && view === 'ladder') s.cb(buildTrainingRowRef.current(s.mid));
     }, [currentTs, view]);
+    // ---- 06/10 APPLICA BOT: il bot (codice di produzione sul banco) sulla
+    // registrazione; i suoi ordini sul ladder del training all'istante corrente ----
+    const [botScelto, setBotScelto] = useState<string>('');
+    const [botRichiesta, setBotRichiesta] = useState<{ id: string; stato: StatoRichiestaBot | null; errore?: string } | null>(null);
+    const botRigheRef = useRef<RigaBot[]>([]);
+    botRigheRef.current = botRichiesta?.stato?.esito?.righe ?? [];
+    useEffect(() => {
+        if (!botRichiesta || botRichiesta.errore) return undefined;
+        const st = botRichiesta.stato?.status;
+        if (st === 'DONE' || st === 'ERROR') return undefined;
+        let alive = true;
+        const id = setInterval(() => {
+            leggiEsitoBot(botRichiesta.id)
+                .then(stato => { if (alive) setBotRichiesta(r => (r && r.id === botRichiesta.id ? { ...r, stato } : r)); })
+                .catch((e: unknown) => {
+                    if (alive) setBotRichiesta(r => (r ? { ...r, errore: e instanceof Error ? e.message : String(e) } : r));
+                });
+        }, 3000);
+        return () => { alive = false; clearInterval(id); };
+    }, [botRichiesta]);
+    const applicaBot = () => {
+        const sc = SCENARI_BOT.find(x => `${x.bot}:${x.scenario}` === botScelto);
+        if (!sc || !replayEventId) return;
+        setBotRichiesta(null);
+        richiediApplicaBot(replayEventId, sc.bot, sc.scenario)
+            .then(id => setBotRichiesta({ id, stato: { status: 'PENDING', error_detail: null, esito: null } }))
+            .catch((e: unknown) => setBotRichiesta({ id: '', stato: null, errore: e instanceof Error ? e.message : String(e) }));
+    };
+    const trainingOrderApi = useMemo(
+        () => (trainApiRef.current
+            ? conOrdiniDelBot(trainApiRef.current,
+                mid => ordiniBotAlMs(botRigheRef.current, nowMsRef.current, mid))
+            : null),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [trainApiRef.current],
+    );
+
     // default: mercato MATCH_ODDS (o il primo) quando si apre la vista training
     useEffect(() => {
         if (view !== 'ladder' || trainingMarketId || !replay) return;
@@ -1107,6 +1149,42 @@ export default function MatchReplay() {
                                         Azzera ordini
                                     </Button>
                                 </div>
+                                {/* 06/10 APPLICA BOT: codice di produzione sul banco comune */}
+                                <div className="rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2 flex items-center gap-2 flex-wrap text-[11px]">
+                                    <span className="font-black text-amber-200">🤖 Applica bot</span>
+                                    <select
+                                        value={botScelto}
+                                        onChange={e => setBotScelto(e.target.value)}
+                                        aria-label="Bot da applicare al replay"
+                                        style={{ colorScheme: 'dark' }}
+                                        className="px-2 py-1 rounded-md bg-black/40 border border-white/15 text-white text-[11px]"
+                                    >
+                                        <option value="" className="bg-neutral-900 text-white">— scegli un bot —</option>
+                                        {SCENARI_BOT.map(x => (
+                                            <option key={`${x.bot}:${x.scenario}`} value={`${x.bot}:${x.scenario}`}
+                                                className="bg-neutral-900 text-white">{x.etichetta}</option>
+                                        ))}
+                                    </select>
+                                    <Button
+                                        size="sm" variant="outline"
+                                        disabled={!botScelto || botRichiesta?.stato?.status === 'PENDING' || botRichiesta?.stato?.status === 'RUNNING'}
+                                        onClick={applicaBot}
+                                        className="h-7 border-amber-300/40 text-amber-100 hover:bg-amber-500/20 text-[11px] font-bold"
+                                        title="Fa girare il bot con il codice di produzione sulla registrazione di questa partita (worker del Backtest Automatico): coda, bet delay e minimi come dal vivo"
+                                    >
+                                        Applica
+                                    </Button>
+                                    <span data-testid="stato-applica-bot" className="text-white/70">
+                                        {botRichiesta?.errore
+                                            ? <span className="text-red-300">errore: {botRichiesta.errore}</span>
+                                            : botRichiesta?.stato?.status === 'PENDING' ? 'in coda: serve il worker del Backtest Automatico acceso…'
+                                            : botRichiesta?.stato?.status === 'RUNNING' ? 'il bot sta girando sulla registrazione (qualche minuto)…'
+                                            : botRichiesta?.stato?.status === 'ERROR' ? <span className="text-red-300">errore: {botRichiesta.stato.error_detail}</span>
+                                            : botRichiesta?.stato?.status === 'DONE' && botRichiesta.stato.esito
+                                                ? `${botRichiesta.stato.esito.etichetta}: ${botRichiesta.stato.esito.ordini} ordini — scorri la timeline`
+                                            : 'codice di produzione sul banco: coda, bet delay, minimi .it'}
+                                    </span>
+                                </div>
                                 {trainingMarketId && trainApiRef.current && (
                                     <LadderView
                                         key={`train:${trainingMarketId}:${trainingResetTick}`}
@@ -1115,9 +1193,21 @@ export default function MatchReplay() {
                                         sport="calcio"
                                         flussoRunner={false}
                                         ladderSource={trainingSource}
-                                        orderApi={trainApiRef.current}
+                                        orderApi={trainingOrderApi ?? trainApiRef.current}
                                         fallbackSelections={(replay.markets.find(m => m.market_id === trainingMarketId)?.selections ?? [])
                                             .map(s => ({ selection_id: s.selection_id, name: s.name ?? `#${s.selection_id}` }))}
+                                    />
+                                )}
+                                {botRichiesta?.stato?.status === 'DONE' && botRichiesta.stato.esito && (
+                                    <BotOrdersPanel
+                                        titolo={botRichiesta.stato.esito.etichetta}
+                                        ordini={ordiniBotAlMs(botRichiesta.stato.esito.righe, currentMs)}
+                                        nomeMercato={mid => {
+                                            const m = replay.markets.find(x => x.market_id === mid);
+                                            return m?.market_name || m?.market_type || mid;
+                                        }}
+                                        nomeSelezione={(mid, sid) => replay.markets.find(x => x.market_id === mid)
+                                            ?.selections?.find(x => x.selection_id === sid)?.name ?? `#${sid}`}
                                     />
                                 )}
                                 {trainApiRef.current && (
