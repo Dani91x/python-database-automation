@@ -624,10 +624,13 @@ def test_la_sessione_legge_il_conto_all_avvio_e_riprova_al_battito():
 # ===========================================================================
 def test_stop_con_la_punta_di_rientro_non_abbinata_la_punta_si_ritira(differita,
                                                                      exchange_it):
-    """J4: allo stop la punta di rientro ancora a zero abbinato (il resto delle
-    punte non c'e', quindi la regola del giro 3 non la tocca) si ritira; la
-    banca resta e la sessione e' pronta. Senza il ritiro la punta resta sul book
-    e lo stop non finisce mai."""
+    """J4: allo stop la punta di rientro ancora sul book a zero abbinato (non
+    c'e' un resto di punta abbinata in parte, quindi la regola del giro 3 non
+    la tocca) si ritira SUBITO, col motivo dello stop; la banca resta e la
+    sessione e' pronta. Senza il ritiro la punta resta sul book fino alla sua
+    scadenza (30 s) e lo stop aspetta. Con l'esecuzione differita di 1 book la
+    punta si abbina prima che lo stop arrivi (niente da ritirare); con 4 book
+    resta sul book e il caso si vede."""
     b = BancoMedia()
     giri(b, differita, 70)
     b.ladder[b.under] = (1.52, 1.53)
@@ -637,30 +640,42 @@ def test_stop_con_la_punta_di_rientro_non_abbinata_la_punta_si_ritira(differita,
             break
     punta = _punte(b)[1]
     assert MU.vivo_o_in_volo(punta) and float(punta.size_matched or 0.0) == 0.0
+    b.taglie[(b.under, 1.52)] = 0.0           # da qui a 1,52 non si abbina piu'
     b.strat.force_flat = True
-    viol = giri(b, differita, 10, flusso=0.0)
+    viol = giri(b, differita, 8, flusso=0.0)
     assert viol == [], viol[:3]
     assert not MU.vivo_o_in_volo(punta)
     assert len(_punte(b)) == 2                # nessuna punta nuova
     assert len(b.vivi("LAY")) == 1 and b.strat.pronta_allo_stop() is True
+    ritiri = [p for p in b.kinds("media_annullo") if p.get("side") == "BACK"]
+    if differita.ritardo == 1:
+        assert float(punta.size_matched) == pytest.approx(10.0) and ritiri == []
+    else:
+        # ritirata dallo STOP, non dalla scadenza della punta (30 s)
+        assert float(punta.size_matched or 0.0) == 0.0
+        assert len(ritiri) == 1 and str(ritiri[0]["motivo"]).startswith(
+            "stop della sessione")
 
 
 def test_pronta_allo_stop_solo_con_la_banca_sull_intera_posizione(differita, exchange_it):
     """J5: a ogni giro dopo lo stop, ``pronta_allo_stop`` vera SOLO se la banca
     viva e' quella dell'intera posizione (quota della media e importo esatto).
-    Lo stop arriva col rientro abbinato in parte: la banca vecchia (sul solo
-    ingresso) resta viva mentre si riallinea, e in quei giri non e' pronta
-    (con l'esecuzione differita di 4 book quei giri si vedono)."""
+    Lo stop arriva quando la banca sui 14 puntati e' appena partita e il resto
+    della punta di rientro si abbina mentre il suo annullo e' in viaggio
+    (esecuzione differita di 4 book): la banca da 14,05 non copre piu' i 20
+    puntati e, finche' non e' riallineata, la sessione NON e' pronta."""
     b = BancoMedia()
     giri(b, differita, 70)
-    banca_vecchia = b.vivi("LAY")[0]
-    b.taglie[(b.under, 1.52)] = 4.0          # 4 dei 10 del rientro si abbinano
+    b.taglie[(b.under, 1.52)] = 4.0
     b.ladder[b.under] = (1.52, 1.53)
     for _i in range(30):
         giri(b, differita, 1, flusso=0.0)
-        if len(_punte(b)) == 2 and MU.vivo_o_in_volo(_punte(b)[1]):
+        if len(_banche(b)) == 2:
             break
+    assert len(_banche(b)) == 2
     b.strat.force_flat = True
+    b.scambia(b.under, 1.52, 2000)
+    non_pronti_con_la_banca_viva = 0
     for _i in range(20):
         giri(b, differita, 1, flusso=0.0)
         pos = b.posizione()
@@ -673,9 +688,18 @@ def test_pronta_allo_stop_solo_con_la_banca_sull_intera_posizione(differita, exc
         if b.strat.pronta_allo_stop():
             assert copre, (pos, [(float(o.order_type.price), float(o.size_remaining))
                                  for o in vive])
-    # il rientro si e' abbinato in parte: la banca vecchia non copre piu'
-    assert b.posizione().puntato == pytest.approx(14.0)
-    assert not MU.vivo_o_in_volo(banca_vecchia) and b.strat.pronta_allo_stop() is True
+        elif vive and not any(MU._lato(o) == "BACK" and MU.vivo_o_in_volo(o)
+                              for o in b.ordini()):
+            non_pronti_con_la_banca_viva += 1
+    assert b.strat.pronta_allo_stop() is True
+    if differita.ritardo == 1:
+        # il resto annullato in tempo: la banca sui 14 puntati e' gia' giusta
+        assert b.posizione().puntato == pytest.approx(14.0)
+    else:
+        # il resto abbinato in viaggio: c'e' stato un tratto con la banca vecchia
+        # viva, nessuna punta viva e la sessione NON pronta
+        assert b.posizione().puntato == pytest.approx(20.0)
+        assert non_pronti_con_la_banca_viva >= 1
 
 
 def _ripresa_con_la_sola_banca(differita) -> tuple:
