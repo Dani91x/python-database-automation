@@ -616,3 +616,109 @@ def test_la_sessione_legge_il_conto_all_avvio_e_riprova_al_battito():
             "                prepara_ripresa_media(trading, media, ev)") in ciclo
     # in prova il blocco per riavvio a posizione aperta resta (ordini simulati morti)
     assert "if session_paper else None" in src
+
+
+# ===========================================================================
+# E. le quattro mutazioni sopravvissute alla prima falsificazione (J4, J5, J8,
+#    J18): un test per ciascuna
+# ===========================================================================
+def test_stop_con_la_punta_di_rientro_non_abbinata_la_punta_si_ritira(differita,
+                                                                     exchange_it):
+    """J4: allo stop la punta di rientro ancora a zero abbinato (il resto delle
+    punte non c'e', quindi la regola del giro 3 non la tocca) si ritira; la
+    banca resta e la sessione e' pronta. Senza il ritiro la punta resta sul book
+    e lo stop non finisce mai."""
+    b = BancoMedia()
+    giri(b, differita, 70)
+    b.ladder[b.under] = (1.52, 1.53)
+    for _i in range(30):
+        giri(b, differita, 1, flusso=0.0)
+        if len(_punte(b)) == 2 and MU.vivo_o_in_volo(_punte(b)[1]):
+            break
+    punta = _punte(b)[1]
+    assert MU.vivo_o_in_volo(punta) and float(punta.size_matched or 0.0) == 0.0
+    b.strat.force_flat = True
+    viol = giri(b, differita, 10, flusso=0.0)
+    assert viol == [], viol[:3]
+    assert not MU.vivo_o_in_volo(punta)
+    assert len(_punte(b)) == 2                # nessuna punta nuova
+    assert len(b.vivi("LAY")) == 1 and b.strat.pronta_allo_stop() is True
+
+
+def test_pronta_allo_stop_solo_con_la_banca_sull_intera_posizione(differita, exchange_it):
+    """J5: a ogni giro dopo lo stop, ``pronta_allo_stop`` vera SOLO se la banca
+    viva e' quella dell'intera posizione (quota della media e importo esatto).
+    Lo stop arriva col rientro abbinato in parte: la banca vecchia (sul solo
+    ingresso) resta viva mentre si riallinea, e in quei giri non e' pronta
+    (con l'esecuzione differita di 4 book quei giri si vedono)."""
+    b = BancoMedia()
+    giri(b, differita, 70)
+    banca_vecchia = b.vivi("LAY")[0]
+    b.taglie[(b.under, 1.52)] = 4.0          # 4 dei 10 del rientro si abbinano
+    b.ladder[b.under] = (1.52, 1.53)
+    for _i in range(30):
+        giri(b, differita, 1, flusso=0.0)
+        if len(_punte(b)) == 2 and MU.vivo_o_in_volo(_punte(b)[1]):
+            break
+    b.strat.force_flat = True
+    for _i in range(20):
+        giri(b, differita, 1, flusso=0.0)
+        pos = b.posizione()
+        c = MU.quota_della_banca(b.strat._ultimo_ingresso, pos, 2)
+        vive = b.vivi("LAY")
+        copre = (len(vive) == 1 and c is not None
+                 and float(vive[0].order_type.price) == c
+                 and abs(float(vive[0].size_remaining)
+                         - MU.al_centesimo(MU.banca_esatta(pos, c))) <= 0.01)
+        if b.strat.pronta_allo_stop():
+            assert copre, (pos, [(float(o.order_type.price), float(o.size_remaining))
+                                 for o in vive])
+    # il rientro si e' abbinato in parte: la banca vecchia non copre piu'
+    assert b.posizione().puntato == pytest.approx(14.0)
+    assert not MU.vivo_o_in_volo(banca_vecchia) and b.strat.pronta_allo_stop() is True
+
+
+def _ripresa_con_la_sola_banca(differita) -> tuple:
+    """Crash con ingresso e rientro abbinati e la banca viva: il processo nuovo
+    riadotta la sola banca (le punte chiuse le legge dal conto)."""
+    b1 = BancoMedia(nome=NOME)
+    giri(b1, differita, 70)
+    b1.ladder[b1.under] = (1.52, 1.53)
+    giri(b1, differita, 15)
+    b2 = _rinasce(b1)
+    b2.strat.prepara_ripresa(_righe_del_conto(b1))
+    _adotta(b2, [o for o in b1.ordini() if MU.vivo_o_in_volo(o)])
+    giri(b2, differita, 2)
+    assert b2.strat.stato == MU.IN_POSIZIONE
+    assert [MU._lato(o) for o in b2.ordini()] == ["LAY"]
+    return b1, b2
+
+
+def test_crash_con_la_sola_banca_nel_blotter_nessuno_sweep(differita, exchange_it):
+    """J8: dopo una ripresa nel blotter c'e' SOLO la banca da lasciare: lo sweep
+    del crash non annulla niente e soprattutto non ripiega sull'annullo di
+    tutto il mercato (che la toglierebbe insieme agli ordini degli altri)."""
+    _b1, b2 = _ripresa_con_la_sola_banca(differita)
+    tr = _TradingCrash(b2)
+    db = _db()
+    SS._handle_flumine_crash(db, EVENTO, tr, [b2.mid], False, framework=b2.fw,
+                             da_lasciare=b2.strat.banca_da_lasciare)
+    assert tr.betting.annulli == []
+    sweep = db.attivita("error")[-1]["payload"]["sweep"]
+    assert sweep["market_wide"] is False and sweep.get("saltato")
+    assert sweep["lasciati"] == [str(b2.vivi("LAY")[0].bet_id)]
+
+
+def test_esposizione_della_sessione_dopo_la_ripresa_conta_gli_ordini_del_conto(
+        differita, exchange_it):
+    """J18: dopo la ripresa le punte chiuse sono solo nel conto, non nel blotter
+    del processo nuovo. L'esposizione della sessione deve essere quella del
+    processo morto (altrimenti allo stop dichiara un falso «non flat»), e un
+    ordine presente in tutti e due si conta una volta."""
+    b1, b2 = _ripresa_con_la_sola_banca(differita)
+    attesa = SS._esposizioni_nette(b1.fw)
+    vista = SS._esposizioni_nette(b2.fw)
+    assert set(vista) == set(attesa)
+    for k, (w, l) in attesa.items():
+        assert vista[k] == (pytest.approx(w, abs=1e-6), pytest.approx(l, abs=1e-6))
+    assert SS._dichiarazione_non_flat(b2.fw) == SS._dichiarazione_non_flat(b1.fw)
