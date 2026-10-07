@@ -242,3 +242,7 @@ Verifiche mie (cloud):
 10.1 Controlli dal vivo in PROVA:
 - Safe BASE: all'intervallo (stato IPS `FirstHalfEnd`, minuto del feed 46'-56') la diagnosi della BASE dice «Solo nel 2° tempo: no», nessun ingresso; dopo `SecondHalfKickOff` il check passa. Stessa cosa nella pagina Safe.
 - Scalper calcio: dopo un ingresso abbinato sotto 0,50 compare l'attivita' `scavalco` (punta 1,00 e poi chiusura al centesimo) e la posizione torna PIATTA (differenza fra gli esiti <= 0,02); l'attivita' `loss_cap` riporta due cifre (perdite vere / residui) e scatta solo sulle perdite vere. In SOLDI VERI non ancora: lo scavalco e il dimensionamento al best non sono mai stati provati su Betfair vero.
+
+10.2 REPLAY safe_base (miei), base/paper/riavvio/chiusura-abbinata-in-parte sulle due partite, prima (ramo prima di M) e
+dopo: esiti IDENTICI 8/8, 0 violazioni, controllo B18 «solo secondo tempo» x3849 viol=0, `secondHalf:no` x1898
+sulla 35797769 (`AUDIT_2026-10-07/replay_safe_base/`). Merge di M sul ramo dopo `920fcea`.
