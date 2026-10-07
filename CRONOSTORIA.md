@@ -5066,3 +5066,7 @@ Giornata di riferimento = GIORNO DELLA PARTITA (inizio evento, Europe/Rome) per 
 - L'agente con il DB esegue `AUDIT_2026-10-07/HANDOFF_CERTIFICAZIONE_DB.md` dal par. 1 al par. 6 e scrive l'esito qui sotto, nel suo blocco.
 - L'utente prova a schermo su una partita LIQUIDA, in PROVA: media under «Attiva adesso», Applica bot (calcio e tennis), Replay Tennis.
 - Poi le decisioni aperte; poi il cantiere del parcheggio LAY dei bot tennis.
+
+### DOMINI DI FILE (07/10 sera, l'utente ha passato il protocollo all'agente con il DB)
+- SESSIONE CLOUD (coordinatore del 07/10), lavoro IN CORSO: decisione dell'utente «SAFE BASE SEMPRE E SOLO SECONDO TEMPO». File: `Betfair/safe_strategy/engine.py`, `bot_service.py`, `certificazione.py`, `COSTITUZIONE_SAFE_STRATEGY.md`, `Betfair/safe_strategy/tests/**` (test nuovi), `frontend/src/lib/safeStrategy.ts` e test Safe del frontend. Nessun altro file.
+- AGENTE CON IL DB: se deve correggere qualcosa in questi file, AVVISA prima l'utente (che fa da tramite) e aspetta il commit della sessione cloud; per tutto il resto usa `AUDIT_2026-10-07/HANDOFF_CERTIFICAZIONE_DB.md`. Le sue scritture su CRONOSTORIA vanno nel SUO blocco; prima di ogni commit `git fetch` e `git status`.
