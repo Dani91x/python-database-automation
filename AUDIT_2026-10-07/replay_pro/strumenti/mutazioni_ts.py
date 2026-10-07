@@ -7,6 +7,15 @@ RADICE = sys.argv[1]
 FILE = RADICE + "/frontend/src/lib/replayOperazioni.ts"
 TEST = sys.argv[2] if len(sys.argv) > 2 else "src/lib/replayOperazioni.test.ts"
 MUTAZIONI = [
+    ("(coordinatore) P&L se vince della selezione con prezzo - 0,99",
+     "                s.seVinceSel += x.abbinato * (x.prezzoMedio - 1);",
+     "                s.seVinceSel += x.abbinato * (x.prezzoMedio - 0.99);"),
+    ("P&L se perde della banca col segno sbagliato",
+     "                s.sePerdeSel += x.abbinato;\n",
+     "                s.sePerdeSel -= x.abbinato;\n"),
+    ("P&L del mercato se vince: la banca vincente non paga la responsabilita'",
+     "        else v += suo ? -a.importo * (a.prezzo - 1) : a.importo;",
+     "        else v += suo ? 0 : a.importo;"),
     ("profitto arrotondato sul totale invece che per ordine",
      "        perMercato[o.marketId] = round2((perMercato[o.marketId] ?? 0) + round2(p));",
      "        perMercato[o.marketId] = (perMercato[o.marketId] ?? 0) + profittoGrezzo(o, r, stati);"),

@@ -5,6 +5,17 @@ import sys
 
 R = sys.argv[1] + "/frontend/"
 MUT = [
+    ("src/components/live/LadderView.tsx", "LadderView (coordinatore, forma viva): quota 2,5 in piu' SENZA bot",
+     "const prezziBot = useMemo(() => (bot ? bot.livelli.map(l => l.quota) : []), [bot]);",
+     "const prezziBot = useMemo(() => (bot ? bot.livelli.map(l => l.quota) : [2.5]), [bot]);",
+     "src/components/live/LadderView.botReplay.test.tsx"),
+    ("src/components/live/LadderView.tsx", "LadderView: modo replay acceso anche senza bot",
+     "    const botAttivo = botEtichetta != null;", "    const botAttivo = true;",
+     "src/components/live/LadderView.botReplay.test.tsx"),
+    ("src/components/live/LadderView.tsx", "LadderView: BotCella disegnata anche senza bot",
+     "{botLay && <BotCella l={botLay} etichetta={botEtichetta} />}",
+     "{<BotCella l={botLay ?? { lato: 'lay', quota: r.price, appoggiato: 1, abbinato: 0, inVolo: 0 }} etichetta={botEtichetta} />}",
+     "src/components/live/LadderView.botReplay.test.tsx"),
     ("src/components/live/LadderView.tsx", "LadderView: colonne del bot allargate anche fuori dal replay",
      "(botAttivo && (k === 'my_lay' || k === 'my_back')", "((k === 'my_lay' || k === 'my_back')",
      "src/components/live/LadderView.botReplay.test.tsx"),

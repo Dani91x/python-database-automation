@@ -254,7 +254,7 @@ function buildLadder(
     orders: LiveOrderRow[],
     position: LivePositionRow | null,
     centerOverride: number | null = null,
-    prezziExtra: readonly number[] = [],
+    prezziExtra: readonly number[],
 ): BuiltLadder {
     const backMap = sumByTick(sel.back);
     const layMap = sumByTick(sel.lay);
