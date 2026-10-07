@@ -2646,11 +2646,17 @@ class TennisScalperStrategy(BaseStrategy):
             quando il book si ferma;
           * UNA sola sequenza attiva per slot (cancel della precedente);
           * creazione rate-limited (3 s) per slot.
-        Park LEGALI e universali: size 2,00 su entrambi i lati (BACK @1000,
-        LAY @1.01 → payout 2.02, liability 0.02, guardia-abort di submin).
+        Park LEGALI: il MINIMO di giurisdizione della fonte unica
+        (`trading/submin.place_min_size` -> `trading/minimi_it`, oggi 1,00 per
+        i due lati) a quota non abbinabile (BACK @1000, LAY @1.01), con la
+        guardia-abort di submin. 07/10 (CP4 del banco, 35790089): prima 2,00
+        scritto a mano (il vecchio minimo della punta): dopo una close abbinata
+        in parte il parcheggio LAY 2,00 @1,01 poteva spostare il netto di 2,02
+        con 1,46 da chiudere (posizione rovesciata se si abbinasse).
         """
         from ..live_order_build import round_to_tick
-        from ..trading.submin import FlumineSubminOps, SubminState, SubminStep
+        from ..trading.submin import (JURISDICTION_IT, FlumineSubminOps, SubminState,
+                                      SubminStep, place_min_size)
 
         smin = self._side_min(side)
         main = round(int(size / 0.5 + 1e-9) * 0.5, 2)   # floor al multiplo 0,50
@@ -2719,7 +2725,10 @@ class TennisScalperStrategy(BaseStrategy):
                 step=SubminStep.INIT, bet_id=None,
                 target_size=round(rest, 2),
                 target_price=round_to_tick(price),
-                placed_size=2.0,          # park legale/universale (.it)
+                # parcheggio = minimo .it del lato (fonte unica), mai di piu':
+                # e' quanto si abbinerebbe al peggio prima del taglio
+                placed_size=round(float(place_min_size(JURISDICTION_IT,
+                                                       side.lower())), 2),
                 side=side.lower(),
                 note="exact exit",
             )
