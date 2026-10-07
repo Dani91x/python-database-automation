@@ -1,0 +1,17 @@
+applicata M1
+7 failed, 4 passed in 1.82s
+applicata M2
+3 failed, 8 passed in 1.58s
+applicata M3
+3 failed, 8 passed in 1.60s
+applicata M4
+1 failed, 10 passed in 1.87s
+applicata M5
+1 failed, 10 passed in 1.85s
+applicata M6
+2 failed, 9 passed in 1.67s
+applicata M7
+1 failed, 10 passed in 1.73s
+MUTAZIONE rimaste: 0
+RIPRISTINATO
+M8 (omega_proposte torna a _feed_prices_fresh): 1 failed, 10 passed

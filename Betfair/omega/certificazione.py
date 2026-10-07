@@ -242,16 +242,32 @@ def _num(v: Any) -> Optional[float]:
     return f if f == f else None
 
 
-def _distanza(nome: Optional[str], state: Any) -> Optional[int]:
+def _distanza(nome: Optional[str], state: Any,
+              snapshot: Any = None) -> Optional[int]:
     """Gol AGGIUNTIVI che servono perche' il risultato bancato si avveri.
-    None quando non e' una scoreline o manca lo stato: non si giudica."""
-    par = E.parse_scoreline(str(nome or "")) if nome else None
-    if par is None or state is None:
+    None quando non e' una scoreline o manca lo stato: non si giudica.
+
+    07/10 (V3 include gli «Any Other»): per un AGGREGATO la distanza e' quella
+    dal punteggio COPERTO piu' vicino, sull'insieme ricavato dai runner del
+    book della decisione (`snapshot`): la stessa regola di
+    `omega_v3.distanza_aggregato`. Senza book non si giudica (None)."""
+    if state is None or not nome:
         return None
     sh = getattr(state, "score_home", None)
     sa = getattr(state, "score_away", None)
     if sh is None or sa is None:
         return None
+    par = E.parse_scoreline(str(nome))
+    if par is None:
+        from . import omega_v3 as V3
+        if not V3.e_aggregato(str(nome)) or snapshot is None:
+            return None
+        nomi = [str(getattr(r, "name", "") or "")
+                for r in (getattr(snapshot, "runners", None) or ())]
+        quotate = V3.punteggi_quotati(nomi)
+        if not quotate:
+            return None
+        return V3.distanza_aggregato(str(nome), (int(sh), int(sa)), quotate)
     if par[0] < int(sh) or par[1] < int(sa):
         return None                     # gia' impossibile: non e' una distanza
     return (par[0] - int(sh)) + (par[1] - int(sa))
@@ -1322,7 +1338,7 @@ def _a10(m: Momento) -> Optional[str]:
             quando=lambda m: _v3_suo(m) and m.tipo == "selezione" and m.cand is not None)
 def _a11(m: Momento) -> Optional[str]:
     c = m.cand
-    d = _distanza(getattr(c, "name", None), m.state)
+    d = _distanza(getattr(c, "name", None), m.state, m.snapshot)
     minimo = int((m.params or {}).get("v3_distanza_minima_gol") or 1)
     if d is not None:
         if d == 0:

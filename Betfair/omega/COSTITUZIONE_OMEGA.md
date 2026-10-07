@@ -2036,3 +2036,74 @@ punto aperto §7-quater della certificazione di Safe Strategy (sequenza
 accoda **mai** `place_submin` — in tutto `Betfair/omega/*.py` la parola compare
 solo in `omega_market.py`, cioè il percorso REST, che è già FILL_OR_KILL — e non
 piazza importi sotto il minimo per via di coda.
+
+---
+
+## 21. OMEGA V3 INCLUDE GLI «ANY OTHER» — decisione dell'utente (07/10/2026)
+
+**Decisione dell'utente, testuale:** «io voglio che operi come ti ho detto, 1 operazione
+primo tempo e 1 operazione secondo tempo (se rispetta le condizioni) deve includere anche
+"Any Other"». La regola «1 + 1» resta quella della V3 (gamba A 1'-44', gamba B 46'-85' sul
+solo CORRECT SCORE, lay 1 EUR, idempotenza per gamba `ht_cs`/`ft_cs`): non cambia. Cambia
+l'insieme dei candidati.
+
+### 21.1 Che cosa era vero prima (verificato sul codice, non sul ricordo)
+- Il motore V3 (`omega_v3._seleziona`) gli aggregati li valutava GIA' dal 16/09 (la loro P
+  la calcolava `probabilita_selezioni`), ma **senza nessuna regola di distanza**: a 3-0
+  l'«Any Other Home Win» (4-0, a un gol) passava col solo margine, e a 4-0 (aggregato gia'
+  «vinto») lo fermava solo il tetto della P. Sui book veri delle due registrazioni del banco
+  HEAD sceglieva «Any Other Home Win» due volte (35797769, 1-1, 75' e 77').
+- La P dell'aggregato si sommava sulla griglia TRONCATA a 10 gol residui per lato e
+  normalizzata: la massa oltre il bordo (fino a 4e-4 coi lambda alti al 1', 5e-3 con quelli
+  estremi), che e' TUTTA degli aggregati, veniva spalmata su tutte le celle -> casa e
+  trasferta sottostimate.
+- Le USCITE non esistevano per un aggregato: `omega_proposte._una_gamba` lo saltava
+  («selezione_aggregata»), contro la regola 4-bis (ogni bot ha il suo pulsante d'uscita).
+- Il regolamento del paper senza mercato (`omega_engine.vince_col_risultato`) dava vincente
+  «Any Unquoted Home» anche su un pareggio non quotato e non regolava mai «Any Other Half
+  Time Score» (None).
+
+### 21.2 La regola, da oggi
+1. **Un aggregato e' un candidato come gli altri, con le STESSE condizioni**: fascia della p
+   implicita [`v3_p_min_pct`, `v3_p_max_pct`], P nostra <= tetto, margine k >= `v3_k_minimo`,
+   liquidita' lay, cap di gamba/partita/aperta/giornaliero, cella diversa fra le due gambe,
+   cella gia' bancata. Nessuna soglia nuova, nessun valore cambiato.
+2. **Insieme coperto** (`omega_v3.copre`): i punteggi FINALI della sua direzione (casa vince /
+   trasferta vince / pareggio; «Any Unquoted» senza direzione = tutto) NON elencati come
+   runner numerici di QUEL mercato (`punteggi_quotati`, sempre dai runner veri: i Correct
+   Score Betfair non hanno tutti la stessa griglia). Ingresso, uscita e regolamento leggono
+   la stessa funzione.
+3. **P nostra** = somma della griglia del modello (stesso `gamma_poisson`, rossi, fusione
+   col mercato per fascia) sull'insieme coperto, **coda oltre la griglia compresa**: si somma
+   sulla griglia estesa `MAX_GOL_CODA` (40 gol residui per lato nel FT; oltre resta < 1e-12).
+   La massa oltre la griglia di sempre e' DICHIARATA nel motivo di ogni ingresso su un
+   aggregato («coda oltre la griglia x% compresa nella P»). Le scoreline non cambiano: la
+   loro P resta quella di sempre, al bit. Veto empirico: non applicabile (le tabelle storiche
+   sono per scoreline), come prima; la decisione resta del modello e l'audit lo dice.
+4. **Distanza dal punteggio** (`v3_distanza_minima_gol`, 2) = gol aggiuntivi fino al
+   punteggio COPERTO piu' vicino (`omega_v3.distanza_aggregato`). Distanza 0 = l'aggregato e'
+   gia' il risultato corrente: si scarta `troppo_vicino_al_punteggio`, come un numerico; a
+   meno gol della soglia idem; senza celle raggiungibili `irraggiungibile`. Esempi sulla
+   griglia 0..3: da 0-0 casa/trasferta 4, pareggio 8; da 3-0 casa 1 (scartato); da 2-2 casa
+   e trasferta 2, pareggio 4; da 4-4 pareggio 0 (scartato).
+5. **Interruttore** `v3_include_aggregate` (whitelist, **di serie ACCESO** per ordine
+   dell'utente; pannello «Motore v3»). Spento: ogni aggregato si scarta `aggregato_escluso`
+   e la selezione sui numerici e' identica a quella di prima (provato sui book veri). E'
+   distinto da `include_aggregate` del motore v2/v1 (di serie spento).
+6. **Uscite**: la P del bancato e la traiettoria esistono anche per un aggregato
+   (`traiettoria_bloccabile` / `proposta_uscita` con `nomi_mercato`); l'insieme quotato viene
+   dal blocco del feed (tutti i runner numerici, qualunque stato) piu' `meta.runners`
+   salvati al piazzamento. Se non c'e' nessuna scoreline nota la P non si inventa:
+   `posizione_senza_numeri`.
+7. **Regolamento**: col mercato chiuso vale il WINNER (`selection_id`), come sempre; senza
+   mercato (paper) `vince_col_risultato` usa `omega_v3.copre`.
+
+### 21.3 Dove sta
+`omega_v3.py` (`punteggi_quotati`, `copre`, `distanza_aggregato`, `massa_oltre_griglia`,
+`probabilita_selezioni(includi_coda=...)`, `_seleziona(includi_aggregati, nomi_mercato)`,
+traiettoria e proposta con `nomi_mercato`), `omega_engine.seleziona_v3` e
+`vince_col_risultato`, `omega_config` (`v3_include_aggregate`, `parametri_v3`),
+`omega_proposte` (`_una_gamba`, `_nomi_del_mercato`), `frontend/src/lib/omega.ts`.
+Test: `Betfair/omega/tests/test_v3_any_other_2026_10_07.py` (oracoli indipendenti,
+book veri delle registrazioni in `tests/dati/`). Referto:
+`AUDIT_2026-10-07/OMEGA_ANY_OTHER.md`.

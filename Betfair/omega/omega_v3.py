@@ -102,6 +102,15 @@ FINE_PERIODO = {PERIODO_HT: 45.0, PERIODO_FT: 90.0}
 # recupero atteso: i gol del recupero contano nel punteggio del periodo
 RECUPERO = {PERIODO_HT: 2.0, PERIODO_FT: 4.0}
 MAX_GOL_RESIDUI = {PERIODO_HT: 6, PERIODO_FT: 10}
+# 07/10 (aggregati "Any Other"): la griglia ESTESA su cui si somma la P di un
+# aggregato. La griglia di sempre (`MAX_GOL_RESIDUI`) e' troncata e poi
+# normalizzata: la massa oltre il bordo (fino a 4e-4 coi lambda alti al 1')
+# viene spalmata su TUTTE le celle, mentre appartiene TUTTA agli aggregati (ogni
+# punteggio oltre il bordo e' oltre qualunque griglia quotata da Betfair). Sulla
+# griglia estesa la massa che resta fuori e' sotto 1e-12 anche coi lambda
+# estremi (test `test_massa_oltre_la_griglia_estesa_e_trascurabile`). Le
+# scoreline NON la usano: la loro P resta quella di sempre, al bit.
+MAX_GOL_CODA = {PERIODO_HT: 30, PERIODO_FT: 40}
 STAKE_STANDARD = 1.0        # ordine dell'utente: lay 1,00 EUR
 K_MINIMO = 2.0              # §3.3: il margine non scende mai sotto 2
 # O5 (25/09): moltiplicatori NEUTRI dei rossi (casa, trasferta): griglia di sempre
@@ -133,6 +142,72 @@ def direzione_aggregato(nome: str) -> Optional[str]:
         return "home"
     if _AWAY_RE.search(nome or ""):
         return "away"
+    return None
+
+
+# --------------------------------------------------------------------------
+# 0-bis. L'INSIEME DI UN AGGREGATO (07/10, decisione dell'utente: V3 include
+# gli "Any Other" con le STESSE condizioni dei numerici)
+# --------------------------------------------------------------------------
+def punteggi_quotati(nomi: Iterable[str]) -> frozenset:
+    """I punteggi elencati come runner NUMERICI di QUEL mercato.
+
+    Si ricavano sempre dai runner veri: i Correct Score Betfair non hanno tutti
+    la stessa griglia, e una lista scritta a mano sposterebbe l'insieme di un
+    aggregato senza che nessuno se ne accorga."""
+    return frozenset(sc for sc in (parse_scoreline(str(n or "")) for n in (nomi or ()))
+                     if sc is not None)
+
+
+def copre(nome: str, cella: Tuple[int, int], quotate: Iterable[Tuple[int, int]]) -> Optional[bool]:
+    """L'aggregato `nome` VINCE se il punteggio FINALE e' `cella`? None se `nome`
+    non e' un aggregato.
+
+    Un aggregato copre i punteggi della sua direzione (casa vince / trasferta
+    vince / pareggio; nessuna direzione = "Any Unquoted", tutto) che NON sono
+    runner numerici del mercato."""
+    if not e_aggregato(nome):
+        return None
+    q = quotate if isinstance(quotate, (set, frozenset)) else frozenset(quotate)
+    return _copre_dir(direzione_aggregato(nome), int(cella[0]), int(cella[1]), q)
+
+
+def _copre_dir(direzione: Optional[str], h: int, a: int, quotate: frozenset) -> bool:
+    """Il cuore di `copre`, con la direzione gia' letta (si chiama per ogni cella
+    della griglia: niente regex nel ciclo)."""
+    if (h, a) in quotate:
+        return False
+    if direzione == "home":
+        return h > a
+    if direzione == "away":
+        return a > h
+    if direzione == "draw":
+        return h == a
+    return True
+
+
+def distanza_aggregato(nome: str, punteggio: Tuple[int, int],
+                       quotate: Iterable[Tuple[int, int]],
+                       limite: int = 60) -> Optional[int]:
+    """Gol AGGIUNTIVI minimi perche' l'aggregato si avveri: la distanza dal
+    punteggio corrente al punteggio COPERTO piu' vicino (i gol non si tolgono).
+
+    0 = l'aggregato e' GIA' il risultato corrente ("vinto" se finisse ora).
+    None = nessun punteggio coperto entro `limite` gol (irraggiungibile), o
+    `nome` non e' un aggregato. Con i nomi Betfair l'insieme e' infinito in ogni
+    direzione, quindi il None non capita: esiste per non inventare una distanza.
+
+    Ricerca per distanza crescente: la prima cella coperta trovata e' la piu'
+    vicina (al massimo qualche decina di celle)."""
+    if not e_aggregato(nome):
+        return None
+    q = frozenset(quotate)
+    direzione = direzione_aggregato(nome)
+    sh, sa = int(punteggio[0]), int(punteggio[1])
+    for d in range(0, int(limite) + 1):
+        for dh in range(d + 1):
+            if _copre_dir(direzione, sh + dh, sa + d - dh, q):
+                return d
     return None
 
 
@@ -490,18 +565,36 @@ def probabilita_selezioni(*, periodo: str, minuto: float, punteggio: Tuple[int, 
                           nomi: Sequence[str], p: Parametri,
                           lambdas: Optional[Tuple[float, float]] = None,
                           max_gol: Optional[int] = None,
-                          mult_rossi: Tuple[float, float] = MULT_NEUTRO) -> Dict[str, float]:
+                          mult_rossi: Tuple[float, float] = MULT_NEUTRO,
+                          includi_coda: bool = False) -> Dict[str, float]:
     """P(la selezione si verifica a fine periodo | minuto, punteggio) per OGNI nome
     del mercato — scoreline esatte E aggregati.
 
     L'aggregato non e' «una selezione che non sappiamo leggere»: e' la somma delle
     celle della griglia che NON sono quotate e che vanno nella sua direzione. E' la
-    coda vera del mercato, e il modello la sa gia' calcolare."""
+    coda vera del mercato, e il modello la sa gia' calcolare.
+
+    `includi_coda` (07/10): la P di un aggregato si somma sulla griglia ESTESA
+    (`MAX_GOL_CODA`), cioe' CON la massa oltre il bordo della griglia di sempre,
+    che appartiene tutta agli aggregati. Senza, quella massa viene spalmata su
+    tutte le celle dalla normalizzazione e l'aggregato risulta sottostimato (per
+    un layer: il rischio sottostimato). Le scoreline non cambiano mai: si leggono
+    sempre dalla griglia di sempre. Spento (default) = il calcolo di prima, al
+    bit: e' quello che usano gli strumenti di misura del banco."""
     griglia = griglia_finale(minuto=minuto, punteggio=punteggio, periodo=periodo,
                              p=p, lambdas=lambdas, max_gol=max_gol, mult_rossi=mult_rossi)
     if not griglia:
         return {}
-    quotate = {sc for sc in (parse_scoreline(n) for n in nomi) if sc is not None}
+    quotate = punteggi_quotati(nomi)
+    griglia_agg = griglia
+    if includi_coda and any(parse_scoreline(n) is None and e_aggregato(n) for n in nomi):
+        mg = int(max_gol if max_gol is not None else MAX_GOL_RESIDUI[periodo])
+        estesa = griglia_finale(minuto=minuto, punteggio=punteggio, periodo=periodo,
+                                p=p, lambdas=lambdas,
+                                max_gol=max(mg, int(MAX_GOL_CODA[periodo])),
+                                mult_rossi=mult_rossi)
+        if estesa:
+            griglia_agg = estesa
     fuori: Dict[str, float] = {}
     for nome in nomi:
         sc = parse_scoreline(nome)
@@ -512,18 +605,28 @@ def probabilita_selezioni(*, periodo: str, minuto: float, punteggio: Tuple[int, 
             continue                       # nome che non sappiamo leggere: si salta
         direzione = direzione_aggregato(nome)
         tot = 0.0
-        for (h, a), v in griglia.items():
-            if (h, a) in quotate:
-                continue
-            if direzione == "home" and not (h > a):
-                continue
-            if direzione == "away" and not (a > h):
-                continue
-            if direzione == "draw" and not (h == a):
-                continue
-            tot += v
+        for (h, a), v in griglia_agg.items():
+            if _copre_dir(direzione, h, a, quotate):
+                tot += v
         fuori[nome] = tot
     return fuori
+
+
+def massa_oltre_griglia(*, periodo: str, minuto: float, punteggio: Tuple[int, int],
+                        p: Parametri, lambdas: Optional[Tuple[float, float]] = None,
+                        mult_rossi: Tuple[float, float] = MULT_NEUTRO,
+                        max_gol: Optional[int] = None,
+                        max_gol_estesa: Optional[int] = None) -> float:
+    """La massa di probabilita' OLTRE la griglia troncata a `max_gol` gol residui
+    per lato (default: la griglia di sempre), misurata sulla griglia estesa
+    (`MAX_GOL_CODA`, o `max_gol_estesa`). E' la quantita' che la normalizzazione
+    della griglia di sempre spalmerebbe su tutte le celle e che, invece, e' degli
+    aggregati: la si DICHIARA nel motivo di ogni ingresso su un aggregato."""
+    mg = int(max_gol if max_gol is not None else MAX_GOL_RESIDUI[periodo])
+    mge = int(max_gol_estesa if max_gol_estesa is not None else MAX_GOL_CODA[periodo])
+    res = griglia_residua(minuto=minuto, punteggio=punteggio, periodo=periodo, p=p,
+                          lambdas=lambdas, max_gol=max(mg, mge), mult_rossi=mult_rossi)
+    return float(sum(v for (h, a), v in res.items() if h > mg or a > mg))
 
 
 # --------------------------------------------------------------------------
@@ -607,7 +710,9 @@ def _seleziona(*, periodo: str, runners: Sequence[RunnerV3], probabilita: Dict[s
               p_min: float = 0.0,
               escludi: Sequence[int] = (),
               cap_liability_gamba: float = 0.0,
-              k_default: float = K_MINIMO) -> Optional[CandidatoV3]:
+              k_default: float = K_MINIMO,
+              includi_aggregati: bool = True,
+              nomi_mercato: Optional[Sequence[str]] = None) -> Optional[CandidatoV3]:
     """La selezione da bancare, o None con i motivi degli scarti.
 
     REGOLA (ordine dell'utente + coordinatore): NON vince la quota piu' alta e non
@@ -621,11 +726,24 @@ def _seleziona(*, periodo: str, runners: Sequence[RunnerV3], probabilita: Dict[s
     esistono: la P usata e' il massimo fra modello fuso e dato storico. Con
     `n < n_min_empirico` la tabella non parla e NON si finge che abbia parlato:
     la selezione passa solo col modello, ma il motivo lo dice.
+
+    07/10 - GLI AGGREGATI ("Any Other Home Win / Away Win / Draw", decisione
+    dell'utente): sono candidati come gli altri, con le STESSE condizioni. La
+    distanza dal punteggio vale per loro la distanza dal punteggio COPERTO piu'
+    vicino (`distanza_aggregato`), sull'insieme ricavato dai runner numerici
+    VERI del mercato (`nomi_mercato`; se manca, i nomi dei `runners` passati).
+    Un aggregato gia' "vinto" (distanza 0) o piu' vicino della soglia si scarta
+    `troppo_vicino_al_punteggio`, come un numerico; senza celle raggiungibili
+    `irraggiungibile`. `includi_aggregati=False` (interruttore
+    `v3_include_aggregate` spento) li scarta tutti con `aggregato_escluso`.
     """
     sh, sa = int(punteggio[0]), int(punteggio[1])
     migliore: Optional[CandidatoV3] = None
     scartati: List[Tuple[str, str]] = []
     fuori = {int(x) for x in (escludi or ())}
+    quotate = punteggi_quotati(nomi_mercato if nomi_mercato is not None
+                               else [str(r.name or "") for r in runners])
+    distanze_agg: Dict[str, int] = {}
 
     for r in runners:
         nome = str(r.name or "")
@@ -633,6 +751,12 @@ def _seleziona(*, periodo: str, runners: Sequence[RunnerV3], probabilita: Dict[s
             # la cella e' gia' della PRIMA gamba di questa partita: due ingressi
             # vuol dire due celle DIVERSE, se no e' un solo ingresso doppio
             scartati.append((nome, "cella_gia_bancata"))
+            continue
+        aggregato = parse_scoreline(nome) is None and e_aggregato(nome)
+        if aggregato and not includi_aggregati:
+            # interruttore `v3_include_aggregate` SPENTO: gli "Any Other" non
+            # sono candidati, e lo si scrive (A8: ogni scarto ha il suo motivo)
+            scartati.append((nome, "aggregato_escluso"))
             continue
         prezzo = r.lay_price
         if prezzo is None or not math.isfinite(float(prezzo)) or float(prezzo) <= 1.0:
@@ -651,6 +775,17 @@ def _seleziona(*, periodo: str, runners: Sequence[RunnerV3], probabilita: Dict[s
                 # MAI il risultato corrente, e mai uno a un gol se la regola lo chiede
                 scartati.append((nome, "troppo_vicino_al_punteggio"))
                 continue
+        elif aggregato:
+            dist = distanza_aggregato(nome, (sh, sa), quotate)
+            if dist is None:
+                scartati.append((nome, "irraggiungibile"))
+                continue
+            if dist < int(distanza_minima_gol):
+                # gia' "vinto" (il punteggio corrente e' dentro l'insieme) o a
+                # meno gol della soglia: la stessa regola dei numerici
+                scartati.append((nome, "troppo_vicino_al_punteggio"))
+                continue
+            distanze_agg[nome] = int(dist)
         p_mod = probabilita.get(nome)
         if p_mod is None or not math.isfinite(float(p_mod)):
             scartati.append((nome, "fuori_griglia"))
@@ -717,7 +852,9 @@ def _seleziona(*, periodo: str, runners: Sequence[RunnerV3], probabilita: Dict[s
             liability=liability(size, float(prezzo)),
             motivo=(f"P_nostra {p_nostra*100:.2f}% ({fonte}) contro p_implicita "
                     f"{p_imp*100:.2f}% a quota {float(prezzo):g}: margine {margine:.2f}x "
-                    f"(serve {k:g}x, secchio {etichetta or 'n/d'})"),
+                    f"(serve {k:g}x, secchio {etichetta or 'n/d'})"
+                    + (f"; aggregato: distanza {distanze_agg[nome]} gol dal punteggio "
+                       f"coperto piu' vicino" if nome in distanze_agg else "")),
         )
         if migliore is None or (cand.p_nostra, -cand.margine, cand.price) < (
                 migliore.p_nostra, -migliore.margine, migliore.price):
@@ -886,7 +1023,8 @@ def traiettoria_bloccabile(posizione: Posizione, *, minuto: float,
                            lambdas: Optional[Tuple[float, float]] = None,
                            passo: int = 5, commissione: float = 0.05,
                            p_evento_ora: Optional[float] = None,
-                           mult_rossi: Tuple[float, float] = MULT_NEUTRO
+                           mult_rossi: Tuple[float, float] = MULT_NEUTRO,
+                           nomi_mercato: Optional[Sequence[str]] = None
                            ) -> List[PuntoTraiettoria]:
     """La TRAIETTORIA attesa del profitto bloccabile da qui a fine periodo.
 
@@ -905,21 +1043,36 @@ def traiettoria_bloccabile(posizione: Posizione, *, minuto: float,
     E' un'approssimazione, ed e' dichiarata: nel ramo «e' cambiato qualcosa» il
     valore vero puo' essere anche molto peggiore (se il gol e' proprio quello che
     avvicina il risultato bancato). L'approssimazione sbaglia quindi dalla parte
-    dell'attesa, cioe' rende la proposta di uscita PIU' timida, non meno."""
+    dell'attesa, cioe' rende la proposta di uscita PIU' timida, non meno.
+
+    07/10 - AGGREGATI: con `nomi_mercato` (i runner del mercato della gamba) la
+    P di un aggregato si somma, a ogni minuto, sulla griglia ESTESA come
+    all'ingresso (`probabilita_selezioni(includi_coda=True)`): stessa P in
+    ingresso e in uscita. Senza i nomi non si inventa: nessun punto."""
     fine = FINE_PERIODO[posizione.periodo] + RECUPERO[posizione.periodo]
     sc = parse_scoreline(posizione.selection_name)
+    # un aggregato senza NESSUNA scoreline nota coprirebbe tutta la griglia:
+    # vale come "nomi assenti", mai una P inventata
+    aggregato = (sc is None and e_aggregato(posizione.selection_name)
+                 and bool(punteggi_quotati(nomi_mercato or ())))
     ev_ora = (ev_di_tenere(posizione, p_evento=float(p_evento_ora), commissione=commissione)
               if p_evento_ora is not None else None)
     fuori: List[PuntoTraiettoria] = []
     m = float(minuto)
     while m <= fine + 1e-9:
-        griglia = griglia_finale(minuto=m, punteggio=punteggio, periodo=posizione.periodo,
-                                 p=p, lambdas=lambdas, mult_rossi=mult_rossi)
         if sc is not None:
+            griglia = griglia_finale(minuto=m, punteggio=punteggio, periodo=posizione.periodo,
+                                     p=p, lambdas=lambdas, mult_rossi=mult_rossi)
             pe = float(griglia.get(sc, 0.0))
+        elif aggregato:
+            pe = float(probabilita_selezioni(
+                periodo=posizione.periodo, minuto=m, punteggio=punteggio,
+                nomi=list(nomi_mercato or ()) + [posizione.selection_name], p=p,
+                lambdas=lambdas, mult_rossi=mult_rossi,
+                includi_coda=True).get(posizione.selection_name, float("nan")))
         else:
-            # aggregato: senza la lista dei nomi quotati non e' calcolabile in modo
-            # onesto -> si salta il punto invece di inventarlo
+            # aggregato senza la lista dei nomi quotati: non e' calcolabile in
+            # modo onesto -> si salta il punto invece di inventarlo
             pe = float("nan")
         if math.isfinite(pe) and pe > 0:
             back_equo = 1.0 / pe
@@ -970,7 +1123,8 @@ def proposta_uscita(posizione: Posizione, *, minuto: float, punteggio: Tuple[int
                     margine_attesa: float = 0.02,
                     cap_scattato: Optional[str] = None,
                     p_lose_max: float = 0.0,
-                    mult_rossi: Tuple[float, float] = MULT_NEUTRO) -> PropostaUscita:
+                    mult_rossi: Tuple[float, float] = MULT_NEUTRO,
+                    nomi_mercato: Optional[Sequence[str]] = None) -> PropostaUscita:
     """Propone (o no) di chiudere la gamba, con il motivo scritto.
 
     La regola NON e' una soglia fissa: si confrontano tre numeri —
@@ -1007,13 +1161,17 @@ def proposta_uscita(posizione: Posizione, *, minuto: float, punteggio: Tuple[int
 
     Nessuna di queste chiude niente: sono domande all'utente. La firma resta
     sua, sempre (G1).
+
+    07/10 - `nomi_mercato`: i runner del mercato della gamba, che servono alla
+    traiettoria di un AGGREGATO (vedi `traiettoria_bloccabile`).
     """
     b = profitto_bloccabile(posizione, back_price=back_price, back_size=back_size,
                             commissione=commissione)
     ev_h = ev_di_tenere(posizione, p_evento=p_evento, commissione=commissione)
     traj = traiettoria_bloccabile(posizione, minuto=minuto, punteggio=punteggio, p=p,
                                   lambdas=lambdas, commissione=commissione,
-                                  p_evento_ora=float(p_evento), mult_rossi=mult_rossi)
+                                  p_evento_ora=float(p_evento), mult_rossi=mult_rossi,
+                                  nomi_mercato=nomi_mercato)
     futuri = [t for t in traj if t.minuto > minuto + 1e-9]
     # il valore dell'attesa e' PESATO con la probabilita' che il punteggio regga
     max_att = max((t.valore_attesa for t in futuri), default=float("-inf"))

@@ -266,6 +266,17 @@ _SPEC: dict[str, tuple[Any, Callable[[Any], Any], float | None, float | None]] =
     # risultato corrente (che e' il vincolo vero); 2 = anche mai a un gol.
     # 17/09: 2, cioe' nemmeno a un gol di distanza.
     "v3_distanza_minima_gol": (2, int, 1, 5),
+    # 07/10 - DECISIONE DELL'UTENTE: "1 operazione primo tempo e 1 operazione
+    # secondo tempo (se rispetta le condizioni) deve includere anche "Any
+    # Other"". True (DI SERIE) = gli aggregati "Any Other Home Win / Away Win /
+    # Draw" sono candidati con le STESSE condizioni dei numerici (fascia, tetto
+    # della P, margine k, liquidita', cap, cella diversa); P = somma della
+    # griglia sui punteggi coperti non quotati (coda oltre la griglia compresa),
+    # distanza = dal punteggio coperto piu' vicino (`omega_v3.distanza_aggregato`).
+    # False = gli aggregati si scartano col motivo `aggregato_escluso`.
+    # E' il gemello V3 di `include_aggregate` (motore v2/v1, di serie False):
+    # due motori, due interruttori, nessuno legge quello dell'altro.
+    "v3_include_aggregate": (True, bool, None, None),
     # LA FASCIA IN CUI SI OPERA, ed e' sulla **p_IMPLICITA AL TOCCO** (17/09).
     # [1,0 %, 2,0 %] di p_impl = quote lay circa **47,5-95**. E' la fascia in cui
     # il bias e' stato MISURATO in gioco: `tools/k_in_gioco.py` raggruppa per
@@ -436,6 +447,11 @@ def parametri_v3(params: dict[str, Any]) -> dict[str, Any]:
                                          DEFAULTS["v3_min_lay_liquidity"])),
         "distanza_minima_gol": int(p.get("v3_distanza_minima_gol",
                                          DEFAULTS["v3_distanza_minima_gol"])),
+        # 07/10: aggregati "Any Other" candidati (di serie ACCESO, decisione
+        # dell'utente); coercizione della whitelist: la stringa "false" spegne
+        "include_aggregate": bool(_coerce("v3_include_aggregate",
+                                          p.get("v3_include_aggregate",
+                                                DEFAULTS["v3_include_aggregate"]))),
         "p_max": float(p.get("v3_p_max_pct", DEFAULTS["v3_p_max_pct"])) / 100.0,
         "p_min": float(p.get("v3_p_min_pct", DEFAULTS["v3_p_min_pct"])) / 100.0,
         "fusione": str(p.get("v3_fusione_mercato") or DEFAULTS["v3_fusione_mercato"]) == "auto",

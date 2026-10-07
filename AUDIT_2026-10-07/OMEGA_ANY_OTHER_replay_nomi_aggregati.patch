@@ -1,0 +1,51 @@
+diff -ruN a/Betfair/omega/tests/test_replay_nomi_aggregati_2026_10_07.py b/Betfair/omega/tests/test_replay_nomi_aggregati_2026_10_07.py
+--- a/Betfair/omega/tests/test_replay_nomi_aggregati_2026_10_07.py	1970-01-01 00:00:00.000000000 +0000
++++ b/Betfair/omega/tests/test_replay_nomi_aggregati_2026_10_07.py	2026-10-07 10:41:09.904169397 +0000
+@@ -0,0 +1,24 @@
++# -*- coding: utf-8 -*-
++"""I nomi degli aggregati nel replay di Omega hanno la DIREZIONE giusta (07/10).
++
++9063254 / 9063255 / 9063256 = Home / Away / Draw: `sortPriority` 17/18/19 nel
++`marketDefinition` delle registrazioni, nell'ordine del catalogo Betfair, e i
++prezzi pre-match della 35797769 (9063255 a 80, 9063256 a 400)."""
++from __future__ import annotations
++
++from Betfair.omega import omega_v3 as V3
++from Betfair.omega.tools import replay_registrazioni as R
++
++
++def test_direzioni_degli_aggregati_come_il_catalogo_betfair():
++    assert V3.direzione_aggregato(R.nome_runner_punteggio(9063254)) == "home"
++    assert V3.direzione_aggregato(R.nome_runner_punteggio(9063255)) == "away"
++    assert V3.direzione_aggregato(R.nome_runner_punteggio(9063256)) == "draw"
++
++
++def test_stessa_mappa_della_safe_strategy():
++    from Betfair.safe_strategy.tools import validate_opportunity as V
++    for sid in (9063254, 9063255, 9063256):
++        safe = V.selection_name("CORRECT_SCORE", sid, 0, "A", "B")
++        assert V3.direzione_aggregato(safe) == V3.direzione_aggregato(
++            R.nome_runner_punteggio(sid)), sid
+diff -ruN a/Betfair/omega/tools/replay_registrazioni.py b/Betfair/omega/tools/replay_registrazioni.py
+--- a/Betfair/omega/tools/replay_registrazioni.py	2026-10-07 10:41:09.831761352 +0000
++++ b/Betfair/omega/tools/replay_registrazioni.py	2026-10-07 10:41:09.880169398 +0000
+@@ -119,10 +119,17 @@
+ # riga ospiti=k (casa k-1..0). Gli id sono GLOBALI: valgono per CORRECT_SCORE e
+ # per HALF_TIME_SCORE (che usa lo stesso spazio, fermandosi al guscio 2).
+ # VERIFICATO sulle registrazioni: vedi la testa del modulo e il test.
++# 07/10: 9063255 e' la TRASFERTA e 9063256 il PAREGGIO (erano scambiati). Prova
++# sulle registrazioni: ordine `sortPriority` 17/18/19 = Home/Away/Draw come il
++# catalogo Betfair («Any Other Home Win / Away Win / Draw»); prezzi pre-match
++# della 35797769: 9063255 scambiato a 80, 9063256 a 400 (il 4-4 o oltre e' il
++# piu' raro dei tre); stessa mappa di `safe_strategy/tools/validate_opportunity`.
++# Coi nomi scambiati il replay calcolava la P dell'aggregato sulla direzione
++# sbagliata e lo regolava col risultato sbagliato.
+ _ALTRI = {
+     9063254: "Any Unquoted Home",
+-    9063255: "Any Unquoted Draw",
+-    9063256: "Any Unquoted Away",
++    9063255: "Any Unquoted Away",
++    9063256: "Any Unquoted Draw",
+     4506345: "Any Other Half Time Score",
+ }
+ GUSCI_MAX = 12          # fino a 12-12: ben oltre qualunque mercato Betfair

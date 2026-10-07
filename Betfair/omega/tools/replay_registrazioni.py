@@ -120,10 +120,17 @@ logger = logging.getLogger(__name__)
 # riga ospiti=k (casa k-1..0). Gli id sono GLOBALI: valgono per CORRECT_SCORE e
 # per HALF_TIME_SCORE (che usa lo stesso spazio, fermandosi al guscio 2).
 # VERIFICATO sulle registrazioni: vedi la testa del modulo e il test.
+# 07/10: 9063255 e' la TRASFERTA e 9063256 il PAREGGIO (erano scambiati). Prova
+# sulle registrazioni: ordine `sortPriority` 17/18/19 = Home/Away/Draw come il
+# catalogo Betfair («Any Other Home Win / Away Win / Draw»); prezzi pre-match
+# della 35797769: 9063255 scambiato a 80, 9063256 a 400 (il 4-4 o oltre e' il
+# piu' raro dei tre); stessa mappa di `safe_strategy/tools/validate_opportunity`.
+# Coi nomi scambiati il replay calcolava la P dell'aggregato sulla direzione
+# sbagliata e lo regolava col risultato sbagliato.
 _ALTRI = {
     9063254: "Any Unquoted Home",
-    9063255: "Any Unquoted Draw",
-    9063256: "Any Unquoted Away",
+    9063255: "Any Unquoted Away",
+    9063256: "Any Unquoted Draw",
     4506345: "Any Other Half Time Score",
 }
 GUSCI_MAX = 12          # fino a 12-12: ben oltre qualunque mercato Betfair
