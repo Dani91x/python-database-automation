@@ -17,7 +17,7 @@ al fischio. La gamba 2T non viene MAI valutata. Corretta in `Betfair/omega/omega
 una riga in `omega_proposte.py`): l'HT conta solo per le decisioni SULL'HT (gamba v2 1T, sue
 chiusure, proposte, missioni) e solo in fase pre/1T; TDD + 8 mutazioni rosse. Con la prima
 versione il replay `apertura` e' tornato identico al 25/09 (467 decisioni, 2 azioni, tick 482034,
-read_market x108); la versione finale va rilanciata col via libera.
+read_market x108); con la versione finale idem (sez. 6-bis), e sulla 35797769 col motore di serie V3 la gamba 2T ora parte (1T + 2T).
 
 ## 1. Il fatto e il commit che lo causa
 
@@ -200,7 +200,7 @@ Comandi ed esiti:
 
 - Falsificazione a livello di REPLAY (prima versione): codice di partenza (= M1) 438 / 0 sulla
   35760084 [apertura] (`replay/PRIMA_4dd624af_35760084_apertura.txt`), corretto 467 / 2
-  (`replay/DOPO_35760084_apertura.txt`). **Da rifare sulla seconda versione** col via libera.
+  (`replay/DOPO_35760084_apertura.txt`). Rifatto sulla versione finale: identico (sez. 6-bis).
 
 ## 5. Prova: la fase non dipende dall'orologio di sistema
 
@@ -217,7 +217,7 @@ Scenario `apertura` (motore v2, obiettivo G=5, banda di quota allargata a 500: `
 (`strumenti/sonda_modello.py`, avvolge `omega_model.select_by_model` senza cambiarne l'esito;
 `replay/modello_*.txt`). «Vicino» = il risultato con P_sel / P_implicita piu' bassa (serve < 1).
 Misurato con la PRIMA versione della correzione (in v2 1T identica alla finale per la gamba HT;
-nel 2T identica): da riconfermare col via libera sulla versione finale.
+nel 2T identica): riconfermato sulla versione finale (sez. 6-bis).
 
 | partita | tempo | condizioni | trade prima | trade dopo |
 |---|---|---|---|---|
@@ -231,6 +231,56 @@ condizioni (salvo una gamba 1T aperta). Dopo: la 2T si valuta su entrambe; parte
 la ammette. Con i parametri di SERIE (`price_max` 120) il '3 - 3' a 300 della 35760084 e' fuori
 banda: lo dice gia' la nota dello scenario `apertura`; i numeri degli scenari di serie dopo la
 correzione arrivano coi `--scenari tutti` (sez. 9).
+
+## 6-bis. Replay della versione FINALE, prima/dopo (via libera del coordinatore, `--worker 1`, uno alla volta)
+
+"Prima" = albero di `8226d766` estratto con `git archive` (identico al ramo
+`claude/eloquent-franklin-g2nyk5` in `Betfair/omega`, `Betfair/stream/backtest`,
+`Betfair/safe_strategy`, `flusso_prezzi.py`, `scores/`: diff vuoto); non uso i referti del 05/10
+perche' il banco e' cambiato il 06/10 (`f536fdb1`, `4f021d0c`, `70cbb50f`) e coprono una sola
+partita. "Dopo" = questo worktree. Referti in `omega_apertura_35760084/replay/`.
+
+**`apertura`** (`FINALE_35760084_apertura.txt`, `FINALE_35797769_apertura.txt`):
+- 35760084: 438/0 -> **467/2**, tick 482034, read_market x108, lay '3 - 3' @300 vinto +5,00: identico
+  al 25/09 e alla prima versione. 25,5 s.
+- 35797769: 686/0 -> 686/0; `ft_cs` valutata x79 (prima x0), `ht_cs` x56 invariata; nuova attivita'
+  `flusso_interrotto x1`: la gamba v2 1T col flusso HT fermo (30'-31' / 40'-41') ora lo DICHIARA
+  (prima diventava un `no_live_state` muto, deduplicato). 89 s.
+
+**`--scenari tutti` 35760084** (`PRIMA_35760084_tutti.txt` 458 s, `DOPO_35760084_tutti.txt` 435 s):
+20/20 OK, 0 violazioni in entrambi. Differenze, tutte spiegate:
+
+| scenari | prima | dopo | perche' |
+|---|---|---|---|
+| base, giornata-reale | 438/0, solo `ht_cs` x59 | 438/0, `ft_cs:no_runner_by_model` x75 | la 2T ora si valuta; con `price_max` 120 il '3 - 3' a 300 e' fuori banda: nessun ordine (giusto) |
+| apertura | 438/0 | **467/2** | la regressione corretta (sopra) |
+| paper | 438/0 | 438/0, `ft_cs` x65 + `skip paper_runner_non_disponibile` x5 | la 2T trova il '3 - 3' come in `apertura`, ma nel banco il paper non ha il runner: **reperto RB-4** (sez. 10) |
+| 13 scenari col motore di serie (cap-stretto, bot-fermo, esiti-ignoti, riavvio, cashout-globale, proposta-approvata, uscite-automatiche, v4, v4-riavvio, v4-bot-fermo, rifiuti-betfair, chiuso-fuori-app, chiusura-abbinata-in-parte) | `ht_cs:nessun_candidato` x119 | `ht_cs` x**121** + `ft_cs:nessun_candidato` x**56** | gamba B (2T) ora valutata; +2 valutazioni della gamba A nei momenti in cui il solo HT era fermo (la V3 non e' piu' cieca per l'HT nel 1T). Nessun candidato: 0 ordini in entrambi |
+| v3 (cancello del 16/09) | `ht_cs` x52 | `ht_cs` x53 + `ft_cs` x56 | idem |
+| manuale-e-bot | 467/1 | 467/1 | invariato |
+| copertura dei controlli | 46 mai sollecitati su 52 | **38** | ora sollecitati A2, A3, A4, A7, B1, B3, E1, J3 (la gamba 2T arriva a selezione, ordine, settlement) |
+| nota `[NON ESERCITABILE] ht_ft_transitions` | in `cap-stretto` | in `base` | cache di processo `_EMPIRICAL_CACHE` non azzerata fra scenari: la nota la scrive il PRIMO scenario che legge la tabella: **reperto RB-5** |
+
+**`--scenari tutti` 35797769** (`DOPO_35797769_tutti.txt`): 20/20 OK, 0 violazioni, 29 controlli
+mai sollecitati su 52, **33 min 09 s** (oltre il tetto dei 10 minuti: difetto di velocita' del banco su
+questa registrazione, 1,47 M tick, ~90-100 s a scenario; segnalato, non aspettato). Il «prima»
+completo (altri ~33 min) NON e' stato rifatto per la scadenza dell'utente: rifatto su tre scenari
+del motore di serie (`PRIMA_35797769_cap-stretto_v4_v3.txt`, 380 s); `apertura` prima/dopo sopra.
+
+| scenario (35797769) | prima | dopo | perche' |
+|---|---|---|---|
+| cap-stretto (motore di serie V3) | 736/2: SOLO 1T, lay 'Any Unquoted Draw' @80, vinto +0,95 | 736/**4**: 1T 'Any Unquoted Draw' @80 **+ 2T 'Any Unquoted Home' @50**, vinti +0,95 +0,95 | la gamba B (2T) ora si valuta (`ft_cs:nessun_candidato` x87 + 1 scelta) |
+| v4 | 736/2: solo 1T | 736/**4**: 1T + 2T, stessi due lay | idem |
+| v3 (cancello del 16/09) | 736/2: solo 1T @110; `ht_cs:nessun_candidato` x44 | 736/2: solo 1T @110; `ht_cs` x**50** + `ft_cs:nessun_candidato` x94 | 2T valutata, nessun candidato col cancello stretto; +6 valutazioni 1T nei momenti col solo HT fermo |
+| base, giornata-reale, apertura, paper (motore v2) | apertura: 686/0, `ft_cs` x0 | 686/0, `ft_cs:no_runner_by_model` x79 | 2T valutata, il modello v2 scarta tutto (sez. 6) |
+| gli altri scenari col motore di serie (riavvio, esiti-ignoti, proposta-approvata, uscite-automatiche, v4-riavvio, rifiuti-betfair, chiusura-abbinata-in-parte) | non rifatti | 1T + 2T come cap-stretto | stessa gamba B; bot-fermo/v4-bot-fermo/chiuso-fuori-app/cashout-globale: solo 1T (bot fermato o partita chiusa dall'utente prima del 2T, voluto dallo scenario) |
+
+**La regola dell'utente sulla 35797769 col motore DI SERIE (V3)**: 1T - condizioni SI', trade
+SI' (prima e dopo); 2T - condizioni SI' ('Any Unquoted Home' @50), trade **NO prima (cieco), SI'
+dopo**. Nota: gli aggregati «Any Unquoted ...» li sceglie gia' la V3 del codice di partenza su
+questa registrazione (non e' effetto di questa correzione ne' del cantiere «Any Other» di un altro
+delegato, che non e' in questo worktree).
+
 
 ## 7. Lo stesso errore negli altri bot? (domanda 1 del coordinatore) - verdetto: NO
 
@@ -249,22 +299,15 @@ Nessuna patch per altri bot.
 `_flusso_feed` e `_ht_ancora_in_gioco` non leggono la modalita': la stessa strada decide in paper e
 in live (gate di apertura `scan_and_place_legs`, green-up, cash out). La correzione cambia la
 stessa cosa nei due modi. Prova di replay in paper: scenario `paper` dentro `--scenari tutti`
-(sez. 9, in attesa).
+(sez. 6-bis: NON dimostrabile sul banco, reperto RB-4).
 
 ## 9. NON fatto / NON verificato
 
-- **Replay della versione FINALE non lanciati** (nessun replay dopo l'osservazione V3 del
-  coordinatore): `apertura` su 35760084 e 35797769 e i `--scenari tutti` vanno rifatti col via
-  libera. Attesi su `apertura` (motore v2): identici alla prima versione (la gamba HT v2 e'
-  bloccata dall'HT fermo come prima, solo il punto del controllo si sposta nel ciclo delle gambe;
-  l'attivita' `flusso_interrotto` porta ora anche `leg`). Attesi sugli scenari V3/V4: la gamba A
-  non si ferma piu' per l'HT nel 1T.
-- **`--scenari tutti` su 35760084 e 35797769 NON lanciati** (ordine del coordinatore: aspettare
-  il «via libera replay»; la media under occupa i 4 core). Fino ad allora NON so come cambiano gli
-  altri scenari (base, paper, v3, v4, uscite, riavvio, ...). Attesi: cambi solo dove Omega ora
-  vede il 2T (gamba FT valutata, green-up delle gambe 2T dal feed invece del ripiego REST).
-  Tempo: 35797769 `apertura` da solo 190-206 s qui: i `tutti` su quella partita supereranno il
-  tetto dei 10 minuti (difetto del banco gia' noto? da misurare).
+- Replay della versione finale FATTI (sez. 6-bis), salvo il «prima» completo di `--scenari tutti`
+  sulla 35797769 (scadenza dell'utente): prima rifatto su cap-stretto, v4, v3 e apertura; gli altri
+  16 scenari di quella partita hanno solo il «dopo».
+- Parita' paper/live NON dimostrata sul banco (RB-4): lo scenario `paper` non ha il runner.
+- `--scenari tutti` 35797769 dura 33 min (tetto 10): difetto di velocita' del banco, non indagato.
 - Dal vivo (produzione) NON verificato: che lo scanner vero tolga l'HT al 45' e lasci il blocco
   fermo e' dedotto dal codice (sez. 2.5), nessun DB letto.
 - Differenze residue col 25/09 sulla 35760084 [apertura], non indagate: motivo `market_suspended
@@ -294,6 +337,20 @@ stessa cosa nei due modi. Prova di replay in paper: scenario `paper` dentro `--s
 - **RB-3 eta' assurde nei testi del flusso nel replay**: `flusso_prezzi._con_eta` usa l'orologio
   di sistema contro `dal_ms` in tempo di mercato: nel banco «da 8534488 s» (98 giorni). In
   produzione i due orologi coincidono; e' solo testo.
+
+- **RB-4 il paper di Omega non si certifica sul banco**: lo scenario `paper`
+  (`Betfair/omega/tools/replay_registrazioni.py:976`, nota a `:2320` ancora su `omega_engine.paper_fill`)
+  non ha il runner, e dal 28/09 (cantiere C) il paper di Omega passa SOLO dal runner
+  (`omega_service.py:2858-2869`, `paper_runner_non_disponibile`, senza consumare tentativi). Sulla
+  35760084 il live apre il '3 - 3', il paper viene rifiutato 5 volte: la parita' paper/live NON e'
+  dimostrabile sul banco. Prima della correzione non si vedeva (Omega non arrivava mai al 2T). Fuori
+  perimetro (file modificato oggi da un altro delegato): proposta, agganciare la porta del runner
+  del banco (come `--trasporto canale`) allo scenario `paper` e aggiornare la nota.
+- **RB-5 cache di processo di Omega non azzerate fra scenari** (catalogo 7.37): `_EMPIRICAL_CACHE`
+  e `_MINUTE_CACHE` (`omega_service.py:1313-1374`) non sono nell'elenco del banco; con `--worker 1`
+  la tabella HT->FT letta (assente) da uno scenario resta in cache per i successivi. Oggi cambia
+  solo la nota `[NON ESERCITABILE]` (la tabella e' comunque assente nel replay); con dati veri
+  cambierebbe le decisioni a seconda dell'ordine degli scenari.
 
 ## 11. Decisioni per l'utente
 
