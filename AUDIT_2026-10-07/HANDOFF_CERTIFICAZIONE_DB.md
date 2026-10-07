@@ -34,9 +34,9 @@ falsificazione, come da brief.
 | G | Omega CIECO nel 2T dal 29/09 (regressione di `304a8e1d`) | merge `6edc5b6` | `Betfair/omega/omega_service.py` (`_flusso_feed` = MO+CS, `_flusso_feed_ht`), `omega_proposte.py` | `AUDIT_2026-10-07/OMEGA_APERTURA_35760084.md` |
 | J | Omega V3 con gli «Any Other» (decisione dell'utente) | merge `6edc5b6` | `Betfair/omega/omega_v3.py`, `omega_engine.py`, `omega_config.py` (`v3_include_aggregate`), `omega_proposte.py`, `frontend/src/lib/omega.ts`, `COSTITUZIONE_OMEGA.md` par.21; banco: `omega/tools/replay_registrazioni.py` (nomi aggregati), `omega/certificazione.py` (A11) | `AUDIT_2026-10-07/OMEGA_ANY_OTHER.md` |
 | S | Banco Safe: regolamento mai esercitato nei replay | `4a8370e` (nel merge) | `Betfair/safe_strategy/tools/replay_registrazioni.py` (`process_closed_market`) | `AUDIT_2026-10-07/CONFORMITA_BOT_CALCIO.md` |
-| D | Replay TENNIS da zero (pagina separata, tutti i mercati, Applica bot tennis), registrazione tennis di tutti i mercati, curatore calcio | DA COMPLETARE | `Betfair/stream/tennis_replay/**`, `tennis_live/tennis_runner.py`, `tennis_recorder.py`, `mercati_registrati.py`, `Betfair/stream/curator.py`, `db.py`, `frontend/src/pages/TennisReplay.tsx`, `components/tennis-replay/**`, `migrations/replay_tennis_2026-10-07.sql` | `AUDIT_2026-10-07/REPLAY_TENNIS.md` |
-| K | Safe ESATTO solo nel 2T (decisione dell'utente) | DA COMPLETARE | `Betfair/safe_strategy/**` | `AUDIT_2026-10-07/SAFE_ESATTO_SECONDO_TEMPO.md` |
-| L | Scalper/sniper CALCIO: chiusura al centesimo (ordine dell'utente) | DA COMPLETARE | `Betfair/stream/scalper/scalper_bot.py`, `sniper_bot.py` | `AUDIT_2026-10-07/SCALPER_CHIUSURA_AL_CENTESIMO.md` |
+| D | Replay TENNIS da zero (pagina separata, tutti i mercati, Applica bot tennis, verificatore della barra tennis), registrazione tennis di TUTTI i mercati (stessa connessione), caricamento automatico a fine partita, curatore calcio con la chiusura dei mercati gia' sospesi | merge `c76b37b` (+ `3136e83` riga del registro) | `Betfair/stream/tennis_replay/{convertitore,caricamento,importa}.py`, `Betfair/stream/tennis_live/{tennis_runner,tennis_recorder,mercati_registrati}.py`, `Betfair/stream/curator.py` (`curate_records`, regola unica), `Betfair/stream/db.py` (`delete_event_rows(market_id=)`), `Betfair/stream/backtest/registro_bot.py` (`_MODULI_TENNIS`), `frontend/src/pages/TennisReplay.tsx`, `components/tennis-replay/**`, `lib/tennisReplay*.ts`, `lib/live.ts` (`fetchFramesAFinestre`), `trainingLadder.ts`/`ladderBacktest.ts`/`LadderBacktestPanel.tsx` (bet-delay del mercato, opzionale), `components/replay/TimelineSlider.tsx` (props opzionali), `App.tsx`, `components/shell/navigazione.ts`, `components/tennis/{TennisNav,TennisMatchStats}.tsx`, `migrations/replay_tennis_2026-10-07.sql` | `AUDIT_2026-10-07/REPLAY_TENNIS.md` |
+| K | Safe ESATTO solo nel 2T (decisione dell'utente), bot + pagina | merge `2e70ff5` | `Betfair/safe_strategy/{engine,bot_service,certificazione}.py` (check `secondHalf`, E11), `frontend/src/lib/{safeStrategy,faseIps,safeStrategyScan}.ts` | `AUDIT_2026-10-07/SAFE_ESATTO_SECONDO_TEMPO.md` |
+| L | Scalper/sniper CALCIO: chiusura al centesimo (ordine dell'utente) + banco CP4 | merge `41c94b7` | `Betfair/stream/scalper/{scalper_bot,sniper_bot}.py` (`spezza_uscita`, `stato_parcheggio`), `Betfair/stream/backtest/chiusura_parziale.py` (parcheggio BACK @1000 fuori dalla capacita' di CP4) | `AUDIT_2026-10-07/SCALPER_CHIUSURA_AL_CENTESIMO.md` |
 
 Riferimenti «prima delle modifiche» calcolati da me: `AUDIT_2026-10-07/riferimenti_coordinatore/`.
 
@@ -75,7 +75,9 @@ Nuove del 07/10:
     - nessun privilegio ad `anon` sulle tabelle e sulle 3 RPC (stesse query di 2.1 su `table_privileges`/`routine_privileges`).
     - le tabelle e le RPC del calcio (`live_market_snapshots`, `list_replays`, `get_replay_*`) INVARIATE:
       `SELECT pg_get_functiondef('public.list_replays(integer)'::regprocedure);` uguale a `migrations/live_stream_rpc.sql`.
-    DA COMPLETARE con l'eventuale migrazione della fase 2 del replay tennis.
+    La fase 2 del replay tennis (Applica bot tennis) NON ha migrazioni: usa la coda esistente
+    `request_backtest` / `get_replay_bot_esito` di `migrations/replay_applica_bot_2026-10-06.sql`.
+2.3 Nessun'altra migrazione oggi (Omega, Safe, scalper, tennis_pro, banco: solo codice).
 
 ## 3. Dubbi che nel cloud non potevo chiudere (servono DB o PC)
 
@@ -112,8 +114,21 @@ Nuove del 07/10:
     l'attivita' di Omega NON deve piu' dire `flusso_interrotto`/`no_live_state` per tutto il tempo (prima del fix
     succedeva dal 44'). Query: attivita' `omega_activity` della partita, conteggio per `kind` prima/dopo il 45'.
     Gli «Any Other»: nel pannello parametri del Motore v3 l'interruttore «Includi Any Other» c'e' ed e' acceso.
-3.10 **Safe ESATTO solo nel 2T** (K): DA COMPLETARE.
-3.11 **Scalper calcio chiusura al centesimo** (L): DA COMPLETARE.
+3.10 **Safe ESATTO solo nel 2T** (K): su una partita in PROVA, nel recupero del 1T (minuto del feed 46'-50',
+    `score_raw.matchStatus` del primo tempo) la diagnosi della Safe ESATTO deve dire «Solo nel 2° tempo: no» e
+    nessun ingresso; dopo `SecondHalfKickOff` il check passa. La pagina Safe mostra lo stesso check. Se la riga
+    dello scanner arriva SENZA `score_raw` (vecchie righe), l'ESATTO resta «n/d: stato IPS assente» e non entra:
+    controlla che le righe vive dello scan lo portino (tabella letta da `safe_strategy/bot_db.py::fetch_scan_rows`):
+    `SELECT event_id, payload ? 'score_raw' AS ha_stato, payload->'score_raw'->>'matchStatus' AS stato, updated_at FROM safe_strategy_scan WHERE sport='calcio' ORDER BY updated_at DESC LIMIT 20;`
+    ATTESO: `ha_stato` true sulle partite in gioco. Se e' false ovunque, l'ESATTO non entrera' MAI: scrivilo subito
+    all'utente (e' una condizione d'ingresso, non un dettaglio).
+3.11 **Scalper calcio chiusura al centesimo** (L): in PROVA, su una sessione maker, dopo una chiusura abbinata
+    in parte: l'uscita e' un ordine diretto + eventuale resto col place-and-trim (parcheggio da 1,00, non 2,00;
+    LAY a 1,02/1,03 per resti 0,50-0,79), NESSUN `residuo_ricordato` salvo un ingresso abbinato sotto 0,50
+    (unico residuo ammesso, testo «LAY 0.29 @1.67» = l'ordine che lo chiuderebbe). Da NON verificare in soldi
+    veri finche' l'utente non lo dice: il place-and-trim di punta e il parcheggio LAY a 1,02/1,03 non sono
+    mai stati provati su Betfair vero (rischio INVALID_PROFIT_RATIO/INVALID_BET_SIZE da guardare nei log).
+3.12 **Bot tennis dopo il cambio del runner** (D): rifatti da me (identici, par. 4); dal vivo vale 3.6.
 
 ## 4. I miei replay (NON rifarli): dove sono e cosa dicono
 
@@ -126,7 +141,18 @@ Nuove del 07/10:
 - Bot tennis, tutti gli scenari sulla 35790089: PRIMA `riferimenti_coordinatore/tennis_base_<bot>.txt`;
   tennis_scalper DOPO F: `AUDIT_2026-10-07/replay_scalper_tennis_cp4/`; tennis_pro DOPO I:
   `AUDIT_2026-10-07/replay_conformita_tennis_pro/tennis_pro_tutti_dopo_COORDINATORE.txt` (17/17 OK, identico al delegato).
-- Omega prima/dopo: DA COMPLETARE. Safe esatto prima/dopo: DA COMPLETARE. Scalper chiusura al centesimo: DA COMPLETARE.
+- Omega (G, del delegato; codice integrato identico byte per byte): `AUDIT_2026-10-07/omega_apertura_35760084/`
+  (35760084 `apertura` 438/0 -> 467/2 come il 25/09; `tutti` 20/20 OK su entrambe; 35797769 col motore V3: prima
+  solo 1T, dopo 1T + 2T vinti).
+- Safe esatto (K, miei): `AUDIT_2026-10-07/replay_safe_esatto/safe_esatto_{prima,dopo}.txt`: base/paper/riavvio/
+  chiusura-abbinata-in-parte sulle due partite, esiti IDENTICI 8/8, ESATTO della 35797769 identico e regolato `won`.
+- Scalper chiusura al centesimo (L): `AUDIT_2026-10-07/replay_scalper_chiusura_al_centesimo/replay_COORDINATORE_con_fix_banco.txt`
+  (miei: chiusura-abbinata-in-parte OK, base OK 44 azioni, paper OK 44 azioni) + referti del delegato nella stessa cartella.
+  NOTA: il «base» passa da 167 a 44 azioni perche' il primo ciclo ora chiude VERDE (+0,14) e la missione «un verde
+  per fase» ferma gli ingressi (prima 0 verdi e 6 residui): e' l'effetto atteso, non un cambio di strategia.
+- Bot tennis FINALI (dopo tutte le integrazioni, runner tennis compreso): `AUDIT_2026-10-07/riferimenti_coordinatore/finale/tennis_finale_<bot>.txt`:
+  tennis_flb, tennis_swing, safe_tennis IDENTICI al riferimento del mattino; tennis_pro IDENTICO al «dopo D1-D3»;
+  tennis_scalper IDENTICO al «dopo CP4».
 
 ## 5. Controlli anti-regressione che restano a te
 
@@ -150,7 +176,12 @@ Nuove del 07/10:
 6.3 Scheda Scalper -> Media Under: pulsante «⚡ Attiva adesso (PROVA)» / «(SOLDI VERI)» con conferma in soldi veri;
     interruttore «Rientri automatici pre-match con i filtri» (spento di serie); sotto il pulsante l'esito del clic.
     L'utente prova su una partita LIQUIDA, in PROVA.
-6.4 Replay Tennis (sezione Tennis della barra laterale e bottone «Replay» della TennisNav): DA COMPLETARE.
+6.4 Replay Tennis (voce «Replay tennis» nella sezione Tennis della barra laterale e bottone «Replay» della
+    TennisNav, rotta `/tennis/replay`): dopo 2.2 e l'import (3.7), elenco delle partite tennis (MAI partite
+    calcio), riproduzione, barra con i simboli tennis DENTRO la barra (set, break, tie-break) con la legenda,
+    tabellone tennis all'istante, menu dei mercati tennis, ladder e ladder training (bet-delay del mercato: 3 s
+    sul Match Odds tennis), pannelli; «Applica bot» con i SOLI 5 bot tennis; avviso di coerenza della barra
+    assente su una partita sana. Il Match Replay calcio deve restare com'era (nessun bot tennis, nessuna partita tennis).
 6.5 Omega: pannello Motore v3 con «Includi Any Other».
 
 ## 7. Cosa so che NON e' coperto
@@ -161,14 +192,36 @@ Nuove del 07/10:
 - Banco tennis: `certifica` non passa i nomi dei giocatori (`_names.json`), quindi i setup di tennis_pro che dipendono
   dai nomi (fade, set transition, break point) non si certificano sul banco ufficiale; lo scenario `gate-aperto` del
   banco tennis cambia anche parametri di strategia regolabili dalla UI (dichiarato nella nota del referto).
-- Parcheggio LAY @1,01 del place-and-trim: banda INVALID_PROFIT_RATIO per residui 0,50-0,79 (L, DA COMPLETARE).
+- Parcheggio LAY del place-and-trim: corretto per lo scalper CALCIO (L: quota dentro la banda); i bot tennis
+  pro/FLB/swing (`condotta_ordini`) e lo scalper tennis parcheggiano ancora a 1,01: per residui 0,50-0,79 Betfair
+  rifiuterebbe (INVALID_PROFIT_RATIO). Non corretto oggi (scadenza): e' il prossimo cantiere; il banco non lo simula.
+- Media under: replay lenti oltre il tetto del banco (alcuni giri dei clic fino a 4090 s); Omega `tutti` 35797769 33 min.
+- Reperti del banco aperti (non toccano i bot): Omega RB-1..RB-5 (`OMEGA_APERTURA_35760084.md`), Safe tennis/tennis:
+  `certifica` senza nomi, `gate-aperto` che cambia parametri regolabili; Omega A11 sugli aggregati corretto.
+- La pagina di anteprima (`src/anteprima/safeRadarFinto.ts`) costruisce righe senza `score_raw`: l'ESATTO li'
+  risulta n/d (solo anteprima, non l'app vera).
+- La cartella temporanea del bisect di Omega (`<scratchpad della sessione cloud>/bisect`) e' rimasta nel container
+  cloud: non riguarda il PC.
 
 ## 8. Decisioni aperte dell'utente (NON tue)
 
-- Scalper calcio: come conta i residui il tetto di perdita (in attesa; con L i residui dovrebbero sparire).
+- Scalper calcio: (a) come conta i residui il tetto di perdita (con L i residui sono spariti salvo il caso C3);
+  (b) chiudere anche il residuo C3 (ingresso abbinato sotto 0,50) con due ordini legali (punta 1,00 + banca al
+  centesimo, costo ~ lo spread su 1 EUR)?
+- Safe BASE «dal 55'»: il minuto del feed arriva a 56' durante l'intervallo, quindi puo' entrare all'intervallo.
+  Proposta: stessa regola dell'ESATTO (solo 2T).
 - Media under: liquidita' al clic e rischio massimo «al momento no»; da rivedere dopo la prova su partita liquida.
 - Tutto il resto deciso il 07/10 (vedi `CRONOSTORIA.md`, sezione 2026-10-07).
 
 ## 9. Numeri finali e commit
 
-DA COMPLETARE a fine lavori (suite Python, vitest, tsc, commit finale).
+Sul ramo finale, nel cloud (Python 3.13, flumine 2.13.11, betfairlightweight 2.23.2), rieseguito da me:
+- `python3 -m pytest Betfair/ -q -p no:cacheprovider`: **10651 passati, 55 saltati, 6 xfail, 0 rossi** (424 s)
+  -> `AUDIT_2026-10-07/riferimenti_coordinatore/finale/suite_python_finale.txt`.
+- frontend: `npx tsc -p tsconfig.app.json --noEmit` **0 errori**; vitest a blocchi (la suite intera supera i 10
+  minuti per comando nel cloud): `src/lib` 152 file / 2651 verdi, `src/components` + App 168 / 2130 verdi, resto
+  (pages, fotografia, anteprima, hooks, ...) 29 file / 462 verdi + 50 saltati: **5243 verdi, 0 rossi**.
+- Fotografie: rispetto a `8226d76` solo righe AGGIUNTE (537), 0 tolte.
+- Commit finale del ramo: vedi `git log -1 origin/claude/eloquent-franklin-g2nyk5` (il commit che contiene
+  questo file nella versione definitiva). Base del giorno: `8226d76`.
+- `npm run build`: NON fatto (lo fa l'utente sul PC ad app chiusa).
