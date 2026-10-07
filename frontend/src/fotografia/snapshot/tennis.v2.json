@@ -6,6 +6,7 @@
     "AI",
     "TERMINAL",
     "TENNIS",
+    "Replay",
     "Cambia sport",
     "Watchlist",
     "Report",
@@ -31,6 +32,10 @@
   ],
   "testid": [],
   "comandi": [
+    {
+      "ruolo": "button",
+      "nome": "Replay tennis"
+    },
     {
       "ruolo": "button",
       "nome": "Cambia sport"

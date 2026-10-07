@@ -451,6 +451,10 @@ _FONTI_ESENTI = {
     "Betfair/stream/tennis_scalper/flb_backtest.py": "laboratorio",
     "Betfair/stream/tennis_scalper/tune_tennis.py": "laboratorio",
     "Betfair/stream/tennis_live/paper_execution.py": "solo docstring, nessuna fonte",
+    # 07/10 (Replay Tennis): decodifica le REGISTRAZIONI raw (GBP native) per il
+    # replay; come i file curati del calcio restano GBP nel DB (eventi.valuta =
+    # 'GBP') e li converte il frontend alla fonte (live.ts::convertiFramesEur).
+    "Betfair/stream/tennis_replay/convertitore.py": "replay: GBP storiche, convertite dal frontend",
 }
 _FONTE = re.compile(r"\bFlumine(Simulation)?\(|\.create_stream\(|\bStreamListener\(")
 

@@ -20,6 +20,15 @@ Differenze rispetto a record_multi (processo di campagna massiva):
 Self-contained come record_multi: NON tocca ``raw_listener``/``recorder``
 condivisi col calcio (singleton e listener DEDICATI al tennis). Il tee non deve
 MAI rompere lo stream: ogni scrittura è best-effort con self-heal dell'handle.
+
+07/10 (Replay Tennis): a FINE PARTITA (MATCH_ODDS ``CLOSED`` nella
+marketDefinition di un evento registrato) il tee programma il caricamento della
+registrazione nel Replay Tennis (``Betfair.stream.tennis_replay``) in un THREAD
+di questo stesso processo (nessun processo nuovo), dopo
+``TENNIS_REPLAY_CARICA_DOPO_S`` secondi (default 60: lascia arrivare l'ultima
+riga di punteggio). ``TENNIS_REPLAY_CARICA=0`` lo spegne. Un errore (migrazione
+non applicata, rete) e' solo un warning: la registrazione resta su disco e si
+carica a mano con ``python -m Betfair.stream.tennis_replay.importa``.
 """
 from __future__ import annotations
 
@@ -35,6 +44,7 @@ from betfairlightweight import StreamListener
 from flumine.streams.marketstream import MarketStream
 
 from ..runner_lifecycle import MSG_HEARTBEAT, classifica_messaggio_stream
+from .mercati_registrati import CHIAVE as _CHIAVE_MERCATI, mercati_extra
 
 logger = logging.getLogger(__name__)
 
@@ -79,12 +89,23 @@ class TennisRawTee:
         self.last_heartbeat_ms: int = 0
         self._counts: Dict[str, int] = {}
         self._err_logged: Dict[str, float] = {}
+        # 07/10 (Replay Tennis): catalogo del runner per evento (nomi dei runner,
+        # torneo) e caricamenti a fine partita gia' programmati (uno per evento)
+        self._meta: Dict[str, Dict[str, Any]] = {}
+        self._fine_programmata: Dict[str, threading.Timer] = {}
 
     # -- controllo (record_flag_worker) ------------------------------------ #
-    def enable(self, event_id: str, market_ids: Iterable[str]) -> None:
-        """Accende la registrazione per UN evento (idempotente)."""
+    def enable(self, event_id: str, market_ids: Iterable[str],
+               meta: Optional[Dict[str, Any]] = None) -> None:
+        """Accende la registrazione per UN evento (idempotente).
+
+        ``meta`` (07/10): il catalogo del runner (``market_meta[event]``: nomi dei
+        runner, torneo) che il raw non contiene; serve al caricamento nel Replay
+        Tennis a fine partita."""
         ev = str(event_id)
         with self._lock:
+            if meta:
+                self._meta[ev] = dict(meta)
             if self.dir is None:
                 self.dir = default_record_dir()
             for mid in market_ids or []:
@@ -190,6 +211,10 @@ class TennisRawTee:
                                        "prossimo messaggio): %s", ev, str(exc)[:150])
                     continue
                 self._counts[ev] = self._counts.get(ev, 0) + 1
+                if any(((c.get("marketDefinition") or {}).get("status") == "CLOSED"
+                        and (c.get("marketDefinition") or {}).get("marketType") == "MATCH_ODDS")
+                       for c in changes):
+                    self._programma_replay(ev)
 
     # -- tee punteggio (score_and_now_worker) ------------------------------ #
     def write_score(self, event_id: str, ts: Any) -> None:
@@ -218,6 +243,52 @@ class TennisRawTee:
                 fh.flush()
         except Exception as exc:  # noqa: BLE001 - lo score tee non rompe mai il worker
             logger.debug("[tennis-rec] score tee KO %s (ignorato): %s", ev, exc)
+
+    # -- Replay Tennis a fine partita (07/10) ------------------------------ #
+    def _programma_replay(self, ev: str) -> None:
+        """Programma UNA volta per evento il caricamento nel Replay Tennis.
+        Chiamata sotto ``self._lock`` dal tee: solo stato in memoria, mai I/O."""
+        if ev in self._fine_programmata or os.getenv("TENNIS_REPLAY_CARICA", "1").strip() == "0":
+            return
+        try:
+            ritardo = max(0.0, float(os.getenv("TENNIS_REPLAY_CARICA_DOPO_S", "60")))
+        except ValueError:
+            ritardo = 60.0
+        ev_dir = os.path.join(self.dir or ".", ev)
+        timer = threading.Timer(ritardo, self._carica_replay,
+                                args=(ev, ev_dir, dict(self._meta.get(ev) or {})))
+        timer.daemon = True
+        timer.name = f"tennis-replay-{ev}"
+        self._fine_programmata[ev] = timer
+        timer.start()
+        logger.info("[tennis-rec] partita %s finita: caricamento nel Replay Tennis tra %.0f s", ev, ritardo)
+
+    def _carica_replay(self, ev: str, ev_dir: str, meta: Dict[str, Any]) -> None:
+        """Thread del timer: converte e carica. Best-effort, MAI un'eccezione fuori."""
+        try:
+            from ..tennis_replay.caricamento import carica_replay
+            from ..tennis_replay.convertitore import converti_evento
+
+            raw = os.path.join(ev_dir, f"{ev}.raw.jsonl")
+            score = os.path.join(ev_dir, f"{ev}.score.jsonl")
+            nomi: Dict[str, Dict[str, str]] = {}
+            if meta.get("market_id") and meta.get("selection_names"):
+                nomi[str(meta["market_id"])] = {str(k): str(v) for k, v in meta["selection_names"].items()}
+            nomi_mercato: Dict[str, str] = {}
+            for x in meta.get(_CHIAVE_MERCATI) or []:   # 07/10: catalogo degli altri mercati
+                mid = str(x.get("market_id") or "")
+                if mid:
+                    nomi[mid] = {str(k): str(v) for k, v in (x.get("selection_names") or {}).items()}
+                    if x.get("market_name"):
+                        nomi_mercato[mid] = str(x["market_name"])
+            anagrafica = {"competition_name": meta.get("competition_name")}
+            rt = converti_evento([raw], [score] if os.path.exists(score) else [],
+                                 event_id=ev, nomi=nomi, meta=anagrafica, nomi_mercato=nomi_mercato)
+            carica_replay(rt, fonte="runner", raw_files=[raw], raw_bytes=os.path.getsize(raw))
+        except Exception as exc:  # noqa: BLE001 - mai rompere il runner per il replay
+            logger.warning("[tennis-rec] Replay Tennis %s NON caricato (resta su disco; a mano: "
+                           "python -m Betfair.stream.tennis_replay.importa <cartella> --evento %s): %s",
+                           ev, ev, str(exc)[:200])
 
     # -- telemetria / teardown --------------------------------------------- #
     def counts(self) -> Dict[str, int]:
@@ -302,7 +373,8 @@ def sync_record_flags(follows: List[Dict[str, Any]],
             mid = meta.get("market_id")
             if not mid:
                 continue  # non (ancora) catalogato: riproverà al prossimo giro
-            tee.enable(ev, [mid])
+            # 07/10: anche i mercati in piu' delle partite registrate (stesso file)
+            tee.enable(ev, [mid] + mercati_extra(meta), meta=meta)
             enabled.add(ev)
         # disable per gli eventi accesi ma non più richiesti (toggle OFF a metà)
         for ev in sorted(set(tee.enabled_events) - enabled):

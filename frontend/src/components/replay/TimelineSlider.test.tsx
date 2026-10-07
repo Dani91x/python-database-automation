@@ -114,3 +114,35 @@ describe('TimelineSlider — sospensioni e calcio d\'inizio', () => {
         expect(sinistra(k)).toBeCloseTo(453 / 1121 * 100, 9);
     });
 });
+
+// 07/10 — PARAMETRI PER LO SPORT (Replay Tennis): icone, legenda e titolo del marker
+// d'inizio si possono passare; senza, tutto resta come per il calcio (Match Replay).
+describe('TimelineSlider — parametri per lo sport', () => {
+    const eventi: TimelineEventMarker[] = [
+        { pctLeft: 0.2, kind: 'goal', team: 'home', minute: 12, label: 'Gol' },
+        { pctLeft: 0.6, kind: 'break', team: null, minute: null, label: 'Break' },
+    ];
+
+    it('senza parametri: icone, legenda e titolo del calcio, identici a prima', () => {
+        monta({ events: eventi, kickoffPct: 0.1 });
+        const simboli = screen.getAllByTestId('barra-simbolo');
+        expect(simboli[0].textContent).toBe('⚽');
+        expect(simboli[1].querySelector('span.rounded-full')).not.toBeNull(); // punto generico
+        expect(screen.getByTestId('barra-kickoff').getAttribute('title')).toBe("Calcio d'inizio");
+        expect(screen.getByText('⚽ Gol')).toBeInTheDocument();
+    });
+
+    it('con i parametri: le icone dello sport, la sua legenda e il suo titolo d\'inizio', () => {
+        monta({
+            events: eventi, kickoffPct: 0.1,
+            iconaEvento: k => <span data-testid={`icona-${k}`}>{k.toUpperCase()}</span>,
+            legenda: <div data-testid="legenda-sport">B = Break</div>,
+            titoloInizio: 'Passaggio in gioco',
+        });
+        expect(screen.getByTestId('icona-goal').textContent).toBe('GOAL');
+        expect(screen.getByTestId('icona-break').textContent).toBe('BREAK');
+        expect(screen.getByTestId('barra-kickoff').getAttribute('title')).toBe('Passaggio in gioco');
+        expect(screen.getByTestId('legenda-sport')).toBeInTheDocument();
+        expect(screen.queryByText('⚽ Gol')).toBeNull();
+    });
+});

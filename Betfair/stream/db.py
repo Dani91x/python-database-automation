@@ -539,6 +539,7 @@ def delete_event_rows(
     event_id: str,
     select_page: int = 2000,
     delete_chunk: int = 500,
+    market_id: Optional[str] = None,
 ) -> int:
     """DELETE a blocchi per chiave primaria di tutte le righe di un evento.
 
@@ -552,11 +553,18 @@ def delete_event_rows(
 
     NB: ``delete_chunk`` tiene corta l'URL PostgREST ``id=in.(...)`` (500 bigint ~6KB,
     sotto i limiti tipici dei proxy); ``select_page`` limita i round-trip di lettura.
+
+    ``market_id`` (07/10, replay tennis): se dato, cancella SOLO le righe di quel
+    mercato dell'evento (un import che porta un mercato non tocca gli altri).
+    Assente = comportamento di sempre (tutto l'evento).
     """
     sb = get_supabase_client()
     total = 0
     while True:
-        res = sb.table(table).select("id").eq("event_id", event_id).limit(select_page).execute()
+        sel = sb.table(table).select("id").eq("event_id", event_id)
+        if market_id is not None:
+            sel = sel.eq("market_id", market_id)
+        res = sel.limit(select_page).execute()
         ids = [r["id"] for r in (res.data or [])]
         if not ids:
             break

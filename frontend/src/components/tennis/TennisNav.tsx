@@ -7,6 +7,7 @@ import {
     LayoutGrid,
     Activity,
     ChevronLeft,
+    History,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
@@ -75,6 +76,18 @@ export function TennisNav({ sectionLabel = 'TENNIS', onBack, backLabel = 'Torna 
                 </div>
 
                 <div className="flex items-center gap-3">
+                    {/* 07/10: il Replay Tennis (sezione tennis, separata dal Match Replay del calcio) */}
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => navigate('/tennis/replay')}
+                        data-nav-legacy
+                        className="border-primary/30 text-primary hover:bg-primary/10"
+                        aria-label="Replay tennis"
+                    >
+                        <History className="w-4 h-4 md:mr-2" />
+                        <span className="hidden md:inline">Replay</span>
+                    </Button>
                     <Button
                         variant="outline"
                         size="sm"

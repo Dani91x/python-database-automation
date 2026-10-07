@@ -57,6 +57,7 @@ export const NAV: readonly GruppoNav[] = [
         id: 'tennis', titolo: 'Tennis', sport: 'tennis', voci: [
             { id: 'tennis', etichetta: 'Dashboard tennis', rotta: '/tennis', icona: 'tennis', sport: 'tennis' },
             { id: 'tennis-terminal', etichetta: 'Tennis Terminal', rotta: '/tennis/terminal', icona: 'ladder', sport: 'tennis' },
+            { id: 'tennis-replay', etichetta: 'Replay tennis', rotta: '/tennis/replay', icona: 'replay', sport: 'tennis' },
             {
                 id: 'bot-tennis', etichetta: 'Bot tennis', rotta: '/tennis/terminal', icona: 'bot', sport: 'tennis',
                 nota: 'I 4 bot tennis stanno nel Tennis Terminal (pannello Bot Tennis)',
@@ -100,7 +101,7 @@ export const NAV: readonly GruppoNav[] = [
 export const ROTTE_NEL_GUSCIO: readonly string[] = [
     '/board', '/control-room', '/dashboard', '/omega', '/safe-strategy', '/mike', '/segui-live',
     '/multi-ladder', '/market-watch', '/live-pnl', '/storico/calcio', '/storico/tennis', '/tennis',
-    '/tennis/terminal', '/trade-journal', '/report-personale', '/watchlist', '/analytics',
+    '/tennis/terminal', '/tennis/replay', '/trade-journal', '/report-personale', '/watchlist', '/analytics',
     '/match-replay', '/select-sport',
 ];
 

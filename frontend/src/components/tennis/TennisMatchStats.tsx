@@ -60,6 +60,12 @@ function freshnessLabel(ms: number | null, now: number): string {
     return `agg. ${m}m ${s}s fa`;
 }
 
+/** Ora (locale, hh:mm:ss) di un istante: il punteggio di una registrazione. */
+function orarioPunteggio(ms: number | null): string {
+    if (ms == null) return '—';
+    return new Date(ms).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
 // --------------------------------------------------------------------------- hook
 /** Sottoscrizione a tennis_live_now: snapshot iniziale + realtime, cleanup on unmount. */
 function useTennisNow(eventId: string) {
@@ -308,20 +314,57 @@ function PointRow({ pt, p1, p2 }: { pt: TennisPointEvent; p1: string; p2: string
 export function TennisMatchStats({ eventId, p1, p2 }: TennisMatchStatsProps) {
     const { row, loading, error } = useTennisNow(eventId);
     const now = useNowTick();
+    return (
+        <TennisMatchStatsView
+            p1={p1}
+            p2={p2}
+            score={row?.score ?? null}
+            points={row?.points}
+            inplay={!!row?.inplay}
+            suspended={(row?.status ?? '').toUpperCase() === 'SUSPENDED'}
+            updatedMs={rowUpdatedMs(row)}
+            now={now}
+            loading={loading}
+            error={error}
+        />
+    );
+}
 
-    const score: TennisScoreState | null = row?.score ?? null;
-    const inplay = !!row?.inplay;
-    const suspended = (row?.status ?? '').toUpperCase() === 'SUSPENDED';
+/** 07/10 (Replay Tennis): il widget SENZA sorgente dati. Lo stesso scoreboard
+ *  del Tennis Terminal riceve il punteggio dal chiamante: dal vivo
+ *  (`TennisMatchStats`, tennis_live_now) o dalla registrazione all'istante del
+ *  cursore (pagina Replay Tennis). Il DOM e' quello di prima, invariato. */
+export interface TennisMatchStatsViewProps {
+    p1: string;
+    p2: string;
+    score: TennisScoreState | null;
+    /** cronologia punto-per-punto, dal piu' vecchio al piu' recente */
+    points: ReadonlyArray<TennisPointEvent> | null | undefined;
+    inplay: boolean;
+    suspended: boolean;
+    /** istante del dato (ms) */
+    updatedMs: number | null;
+    /** "adesso" (ms): l'orologio di sistema dal vivo, il cursore nel replay */
+    now: number;
+    loading?: boolean;
+    error?: string | null;
+    /** false nel replay: al posto di «agg. Xs fa» l'ora del punteggio (un
+     *  punteggio registrato non e' «vecchio»: e' quello di quell'istante) */
+    freschezza?: boolean;
+}
 
-    const updatedMs = rowUpdatedMs(row);
+export function TennisMatchStatsView({
+    p1, p2, score, points: puntiGrezzi, inplay, suspended, updatedMs, now,
+    loading = false, error = null, freschezza = true,
+}: TennisMatchStatsViewProps) {
     const staleAgeMs = updatedMs != null ? now - updatedMs : null;
-    const isStale = inplay && staleAgeMs != null && staleAgeMs > STALE_MS;
+    const isStale = freschezza && inplay && staleAgeMs != null && staleAgeMs > STALE_MS;
 
     // Cronologia punti: più recente in cima, capata.
     const points = useMemo(() => {
-        const src = row?.points ?? [];
+        const src = puntiGrezzi ?? [];
         return src.slice(-MAX_POINTS).reverse();
-    }, [row?.points]);
+    }, [puntiGrezzi]);
 
     // Riferimento per auto-scroll in cima quando arrivano nuovi punti.
     const listRef = useRef<HTMLDivElement | null>(null);
@@ -454,7 +497,7 @@ export function TennisMatchStats({ eventId, p1, p2 }: TennisMatchStatsProps) {
                                 title={score.source ? `sorgente: ${score.source}` : undefined}
                             >
                                 <Clock className="w-2.5 h-2.5" />
-                                {freshnessLabel(updatedMs, now)}
+                                {freschezza ? freshnessLabel(updatedMs, now) : orarioPunteggio(updatedMs)}
                             </span>
                         </div>
                     </div>

@@ -379,11 +379,11 @@ const isMissingFunction = (e: { code?: string; message?: string } | null): boole
     !!e && (e.code === 'PGRST202' || /get_replay_meta|schema cache/i.test(e.message ?? ''));
 
 async function fetchReplayFramesWindow(
-    eventId: string, fromMs: number, toMs: number, bucketSec: number,
+    rpcFrames: string, eventId: string, fromMs: number, toMs: number, bucketSec: number,
 ): Promise<Frame[]> {
     const fromIso = new Date(fromMs).toISOString();
     const toIso = new Date(toMs).toISOString();
-    const call = async () => supabase.rpc('get_replay_frames', {
+    const call = async () => supabase.rpc(rpcFrames, {
         p_event_id: eventId,
         p_from_ts: fromIso,
         p_to_ts: toIso,
@@ -404,12 +404,24 @@ async function fetchReplayFramesWindow(
     if (frames.length >= FRAMES_PER_CALL && toMs - fromMs > 30_000) {
         const mid = fromMs + Math.floor((toMs - fromMs) / 2);
         const [a, b] = [
-            await fetchReplayFramesWindow(eventId, fromMs, mid, bucketSec),
-            await fetchReplayFramesWindow(eventId, mid, toMs, bucketSec),
+            await fetchReplayFramesWindow(rpcFrames, eventId, fromMs, mid, bucketSec),
+            await fetchReplayFramesWindow(rpcFrames, eventId, mid, toMs, bucketSec),
         ];
         return [...a, ...b];
     }
     return frames;
+}
+
+/** Estremi di una registrazione e RPC dei suoi frame, per il caricamento a
+ *  finestre. 07/10 (Replay Tennis): lo stesso algoritmo serve il calcio
+ *  (`get_replay_frames`) e il tennis (`get_replay_tennis_frames`), ognuno sulle
+ *  sue tabelle: nessuna riga di uno sport passa dalle RPC dell'altro. */
+export interface FinestreReplay {
+    rpcFrames: string;
+    tsMin: string;
+    tsMax: string;
+    inplayFromTs: string | null;
+    nMercati: number;
 }
 
 // Carica un replay a finestre temporali con progresso. Se le RPC chunked non
@@ -431,11 +443,28 @@ export async function fetchReplayChunked(
         score_timeline: meta.score_timeline ?? [],
     };
     if (!meta.ts_min || !meta.ts_max) return base; // nessuno snapshot registrato
+    const frames = await fetchFramesAFinestre(eventId, {
+        rpcFrames: 'get_replay_frames',
+        tsMin: meta.ts_min,
+        tsMax: meta.ts_max,
+        inplayFromTs: meta.inplay_from_ts,
+        nMercati: base.markets.length,
+    }, onProgress);
+    return { ...base, frames };
+}
 
-    let tsMin = new Date(meta.ts_min).getTime();
-    const tsMax = new Date(meta.ts_max).getTime();
-    const inplayFrom = meta.inplay_from_ts ? new Date(meta.inplay_from_ts).getTime() : tsMin;
-    const nMkts = Math.max(1, base.markets.length);
+/** I frame di una registrazione a finestre temporali (bucket adattivi, finestre
+ *  troncate dimezzate, conversione GBP->EUR alla fonte). Estratta da
+ *  `fetchReplayChunked` il 07/10 SENZA cambiarne la logica. */
+export async function fetchFramesAFinestre(
+    eventId: string,
+    f: FinestreReplay,
+    onProgress?: (p: ReplayProgress) => void,
+): Promise<Frame[]> {
+    let tsMin = new Date(f.tsMin).getTime();
+    const tsMax = new Date(f.tsMax).getTime();
+    const inplayFrom = f.inplayFromTs ? new Date(f.inplayFromTs).getTime() : tsMin;
+    const nMkts = Math.max(1, f.nMercati);
 
     // pre-match cappato alle ultime PRE_MATCH_MAX_MS ore prima del kickoff:
     // registrazioni armate con giorni d'anticipo non generano finestre inutili.
@@ -466,12 +495,12 @@ export async function fetchReplayChunked(
     const frames: Frame[] = [];
     for (let i = 0; i < windows.length; i++) {
         const w = windows[i];
-        const part = await fetchReplayFramesWindow(eventId, w.from, w.to, w.bucket);
+        const part = await fetchReplayFramesWindow(f.rpcFrames, eventId, w.from, w.to, w.bucket);
         // CANTIERE G, voce 4: converte alla fonte, come lo stream live (vedi sopra).
         frames.push(...convertiFramesEur(part));
         onProgress?.({ done: i + 1, total: windows.length, frames: frames.length });
     }
-    return { ...base, frames };
+    return frames;
 }
 
 // ----------------------------------------------------------- Live Signals (#2)

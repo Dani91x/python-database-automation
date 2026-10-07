@@ -5,6 +5,7 @@
 // Sopra la track vengono renderizzati i MARKER degli EVENTI della partita
 // (gol ⚽, cartellini gialli/rossi, calci d'angolo 🚩) alla loro posizione %.
 // ============================================================================
+import type { ReactNode } from 'react';
 import { Flag } from 'lucide-react';
 
 // Un evento posizionato lungo la track della timeline.
@@ -34,6 +35,12 @@ export interface TimelineSliderProps {
     arbMarkers?: TimelineArbMarker[]; // istanti con un arbitraggio rilevato (rombi verdi)
     pre?: boolean;         // il cursore è PRIMA del calcio d'inizio (pre-match)
     kickoffPct?: number;   // 0..1 — posizione del calcio d'inizio sulla track (marker)
+    /** icona di un evento per kind (default: quelle del calcio). Il Replay Tennis passa le sue (07/10). */
+    iconaEvento?: (kind: string) => ReactNode;
+    /** legenda degli eventi (default: quella del calcio, solo se ci sono eventi del calcio o arbitraggi) */
+    legenda?: ReactNode;
+    /** titolo del marker d'inizio (default «Calcio d'inizio»; il tennis: «Passaggio in gioco») */
+    titoloInizio?: string;
 }
 
 // Render del singolo marker-icona (sopra la track, non blocca la drag).
@@ -55,7 +62,8 @@ function EventIcon({ kind }: { kind: string }) {
     return <span className="block w-1.5 h-1.5 rounded-full bg-white/70" />;
 }
 
-export function TimelineSlider({ min, max, value, minute, onChange, suspended, events, arbMarkers, pre, kickoffPct }: TimelineSliderProps) {
+export function TimelineSlider({ min, max, value, minute, onChange, suspended, events, arbMarkers, pre, kickoffPct,
+    iconaEvento, legenda, titoloInizio = "Calcio d'inizio" }: TimelineSliderProps) {
     const span = Math.max(1, max - min);
     const pct = ((value - min) / span) * 100;
     const steps = (max - min) + 1; // numero di bucket della timeline
@@ -81,7 +89,7 @@ export function TimelineSlider({ min, max, value, minute, onChange, suspended, e
                         style={{ left: `${Math.min(Math.max(ev.pctLeft, 0), 1) * 100}%`, height: '14px' }}
                         title={`${ev.minute != null ? `${ev.minute}' ` : ''}${ev.label}`}
                     >
-                        <EventIcon kind={ev.kind} />
+                        {iconaEvento ? iconaEvento(ev.kind) : <EventIcon kind={ev.kind} />}
                     </div>
                 ))}
 
@@ -115,7 +123,7 @@ export function TimelineSlider({ min, max, value, minute, onChange, suspended, e
                         data-testid="barra-kickoff"
                         className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-10 pointer-events-none"
                         style={{ left: `${Math.min(Math.max(kickoffPct, 0), 1) * 100}%` }}
-                        title="Calcio d'inizio"
+                        title={titoloInizio}
                     >
                         <span className="block w-[3px] h-4 rounded-full bg-white/80 border border-black/30 shadow" />
                     </div>
@@ -158,7 +166,7 @@ export function TimelineSlider({ min, max, value, minute, onChange, suspended, e
             </div>
 
             {/* legenda eventi (solo se presenti) */}
-            {(hasLegend || hasArb) && (
+            {legenda ?? ((hasLegend || hasArb) && (
                 <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mt-1 text-[10px] text-muted-foreground">
                     {hasArb && (
                         <span className="inline-flex items-center gap-1">
@@ -182,7 +190,7 @@ export function TimelineSlider({ min, max, value, minute, onChange, suspended, e
                         </span>
                     )}
                 </div>
-            )}
+            ))}
         </div>
     );
 }

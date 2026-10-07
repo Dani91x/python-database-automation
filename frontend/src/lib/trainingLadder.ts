@@ -113,6 +113,9 @@ export interface TrainingContext {
     getNow: () => number;
     /** il mercato è in-play a questo istante? (decide il bet-delay). */
     isInplayAt: (marketId: string, ts: number) => boolean;
+    /** 07/10 (Replay Tennis): bet-delay in-play del mercato in ms (il betDelay
+     *  registrato nella marketDefinition). Assente = DEFAULT_DELAY_MS (calcio). */
+    delayMsAt?: (marketId: string) => number;
 }
 
 export interface TrainingApi extends LadderOrderApi {
@@ -209,6 +212,7 @@ export function createTrainingApi(ctx: TrainingContext): TrainingApi {
         if (!cmd.market_id || cmd.selection_id == null) return err('place', 'market/selection mancanti');
         const now = ctx.getNow();
         const inPlay = ctx.isInplayAt(cmd.market_id, now);
+        const delayMs = ctx.delayMsAt ? ctx.delayMsAt(cmd.market_id) : DEFAULT_DELAY_MS;
         const o: TrainingOrder = {
             id: ++seq,
             bet_id: `T${seq}`,
@@ -216,7 +220,7 @@ export function createTrainingApi(ctx: TrainingContext): TrainingApi {
             selection_id: cmd.selection_id,
             req: {
                 side, limitPrice: price, stake: size, placedTs: now, inPlay,
-                delayMs: inPlay ? DEFAULT_DELAY_MS : 0,
+                delayMs: inPlay ? delayMs : 0,
                 persistence: cmd.persistence === 'PERSIST' ? 'PERSIST' : 'LAPSE',
                 cancelledTs: null,
             },
@@ -230,7 +234,7 @@ export function createTrainingApi(ctx: TrainingContext): TrainingApi {
             average_price_matched: res.avgPrice, size_remaining: r2(res.remaining),
             market_id: o.market_id, selection_id: o.selection_id, side,
             price, size,
-            detail: inPlay ? `bet-delay ${Math.round(DEFAULT_DELAY_MS / 1000)}s applicato (in-play)` : undefined,
+            detail: inPlay ? `bet-delay ${Math.round(delayMs / 1000)}s applicato (in-play)` : undefined,
         };
     };
 

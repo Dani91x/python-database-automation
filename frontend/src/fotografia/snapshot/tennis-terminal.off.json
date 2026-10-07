@@ -7,6 +7,7 @@
     "TERMINAL",
     "TERMINAL",
     "Torna alle partite",
+    "Replay",
     "Cambia sport",
     "Watchlist",
     "Report",
@@ -22,6 +23,10 @@
     {
       "ruolo": "button",
       "nome": "Torna alle partite"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Replay tennis"
     },
     {
       "ruolo": "button",

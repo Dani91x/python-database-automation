@@ -90,6 +90,7 @@ from . import chiusura_manuale as _cm
 from . import esecutore_tennis as _ET
 from . import guardie_tennis as _gt
 from . import iscrizione_a_caldo as _IAC
+from . import mercati_registrati as _MR
 from . import tennis_db
 from .paper_execution import install_fresh_delay_execution
 from .tennis_recorder import RAW_TEE, TennisRecMarketStream, sync_record_flags
@@ -599,6 +600,9 @@ class TennisLiveSession:
         # scritto (stato terminale: non si riscrive, NON si svuota a
         # ``reset_streams`` - dopo un rebuild il book vuoto direbbe SUSPENDED)
         self.now_chiusi: set = set()
+        # 07/10 (REC su TUTTI i mercati, ``mercati_registrati``): ultimo catalogo
+        # fallito per evento (monotonic): si riprova dopo _MR_RIPROVA_S
+        self.mercati_rec_ko: Dict[str, float] = {}
 
     def reset_streams(self) -> None:
         self.capture.clear()
@@ -2553,6 +2557,8 @@ def _allinea_follow_a_caldo(flumine: Any, session: TennisLiveSession, caldo: Con
     for ev in piano.aggiungi:
         meta = _risolvi_follow(session, voluti_righe[ev])
         if meta is not None:
+            if voluti_righe[ev].get("record"):
+                _leggi_mercati_registrati(session, ev, meta)
             metas[ev] = meta
     uscenti = list(piano.togli) + list(piano.espulsi)
     if not metas and not uscenti:
@@ -2573,8 +2579,10 @@ def _allinea_follow_a_caldo(flumine: Any, session: TennisLiveSession, caldo: Con
         for ev in metas:
             if len(base) + len(entrano) < tetto:
                 entrano.append(ev)
-        mids = ([session.market_meta[ev]["market_id"] for ev in base]
-                + [metas[ev]["market_id"] for ev in entrano])
+        # 07/10: elenco CANONICO (Match Odds + mercati delle partite registrate)
+        mids = _MR.mercati_da_sottoscrivere(
+            {**{ev: session.market_meta[ev] for ev in base}, **{ev: metas[ev] for ev in entrano}},
+            tetto)
         if not mids:
             return {"entrati": [], "usciti": [], "disarmati": [],
                     "trattenuti": trattenuti, "vuoto": True}
@@ -2688,7 +2696,7 @@ def _arma_a_caldo(flumine: Any, session: TennisLiveSession, caldo: ContestoCaldo
             bot = _instantiate_bot(
                 bot_key, ctrl, meta["market_id"], meta["name_to_sel"],
                 _make_sink(ev, bot_key), caldo.data_filter, caldo.mode,
-                market_ids=sorted(str(m.get("market_id")) for m in session.market_meta.values()),
+                market_ids=_MR.mercati_da_sottoscrivere(session.market_meta, _IAC.tetto_mercati()),
                 client_paper=caldo.client_paper,
                 competition_name=meta.get("competition_name"),
             )
@@ -2751,7 +2759,100 @@ def record_flag_worker(context: dict, flumine: Any, session: TennisLiveSession) 
     except Exception as e:  # noqa: BLE001 - il gating non rompe mai il runner
         logger.debug("[tennis-rec] lettura follow KO (ignorata): %s", e)
         return
+    # 07/10: REC acceso/spento a partita in corso = mercati in piu' dentro/fuori
+    # dallo stream unico (stessa connessione, risottoscrizione a caldo)
+    try:
+        _allinea_mercati_registrati(flumine, session, follows)
+    except Exception as e:  # noqa: BLE001 - la registrazione non rompe mai il runner
+        logger.warning("[tennis-rec] allineamento mercati registrati KO (si riprova): %s", str(e)[:200])
     sync_record_flags(follows, session.market_meta)
+
+
+#: dopo un catalogo fallito si riprova non prima di (secondi)
+_MR_RIPROVA_S = 60.0
+
+
+def _leggi_mercati_registrati(session: Any, event_id: str, meta: Dict[str, Any]) -> bool:
+    """Catalogo REST degli altri mercati dell'evento in ``meta[_MR.CHIAVE]``.
+    Errore = chiave assente (Match Odds come prima), si riprova dopo _MR_RIPROVA_S."""
+    if _MR.CHIAVE in meta:
+        return True
+    ko = getattr(session, "mercati_rec_ko", {})
+    if time.monotonic() - ko.get(event_id, -1e9) < _MR_RIPROVA_S:
+        return False
+    try:
+        meta[_MR.CHIAVE] = _MR.catalogo_mercati_evento(session.trading, event_id, str(meta.get("market_id") or ""))
+        ko.pop(event_id, None)
+        logger.info("[tennis-rec] %s: %d mercati in piu' da registrare", event_id, len(meta[_MR.CHIAVE]))
+        return True
+    except Exception as e:  # noqa: BLE001 - catalogo KO: solo il Match Odds, si riprova
+        ko[event_id] = time.monotonic()
+        logger.warning("[tennis-rec] catalogo dei mercati di %s KO (solo Match Odds per ora): %s",
+                       event_id, str(e)[:160])
+        return False
+
+
+def _mercati_registrati_alla_build(session: Any, follows: List[Dict[str, Any]]) -> None:
+    """Alla BUILD: i follow con REC acceso portano gli altri mercati dell'evento."""
+    for f in follows or []:
+        ev = str(f.get("event_id") or "")
+        if f.get("record") and ev in session.market_meta:
+            _leggi_mercati_registrati(session, ev, session.market_meta[ev])
+
+
+def _allinea_mercati_registrati(flumine: Any, session: Any,
+                                follows: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """REC acceso o spento a framework VIVO: i mercati in piu' delle partite
+    registrate entrano o escono dallo stream unico con la risottoscrizione a
+    caldo sulla STESSA connessione (lo stesso meccanismo dell'iscrizione a
+    caldo). Framework non vivo o interruttore spento: niente (la prossima build
+    li porta). I Match Odds non cambiano mai. Ritorna l'esito o None."""
+    caldo = _caldo_attivo(flumine, session)
+    if caldo is None:
+        return None
+    voluti = {str(f.get("event_id")) for f in follows or []
+              if f.get("record") and str(f.get("event_id")) in session.market_meta}
+    nuovi: Dict[str, List[Dict[str, Any]]] = {}
+    for ev in sorted(voluti):
+        meta = session.market_meta.get(ev) or {}
+        if _MR.CHIAVE not in meta:
+            prova = dict(meta)
+            if _leggi_mercati_registrati(session, ev, prova):
+                nuovi[ev] = prova[_MR.CHIAVE]
+    spenti = [ev for ev, meta in session.market_meta.items() if ev not in voluti and _MR.CHIAVE in meta]
+    if not nuovi and not spenti:
+        return None
+    tetto = _IAC.tetto_mercati()
+
+    def _applica(fw: Any) -> Dict[str, Any]:
+        candidato = {}
+        for ev, meta in session.market_meta.items():
+            m = dict(meta)
+            if ev in nuovi:
+                m[_MR.CHIAVE] = nuovi[ev]
+            if ev in spenti:
+                m.pop(_MR.CHIAVE, None)
+            candidato[ev] = m
+        mids = _MR.mercati_da_sottoscrivere(candidato, tetto)
+        stream = _IAC.stream_di_mercato(fw, caldo.capture)
+        if mids and mids != _IAC.mercati_dello_stream(stream):
+            _IAC.sottoscrivi(fw, stream, mids)
+        for ev in nuovi:
+            if ev in session.market_meta:
+                session.market_meta[ev][_MR.CHIAVE] = nuovi[ev]
+        for ev in spenti:
+            (session.market_meta.get(ev) or {}).pop(_MR.CHIAVE, None)
+        return {"accesi": sorted(nuovi), "spenti": sorted(spenti), "mercati": len(mids)}
+
+    with session.caldo_lock:
+        try:
+            esito = _IAC.esegui_nel_thread_di_flumine(caldo.framework, _applica, _CALDO_TIMEOUT_S)
+        except _IAC.NonPronto as e:
+            logger.info("[tennis-rec] mercati registrati rinviati: %s", e)
+            return None
+    logger.info("[tennis-rec] mercati registrati sulla stessa connessione: accesi %s, spenti %s "
+                "(%d mercati nello stream).", esito["accesi"], esito["spenti"], esito["mercati"])
+    return esito
 
 
 def follow_worker(context: dict, flumine: Any, session: TennisLiveSession) -> None:  # noqa: ARG001
@@ -3127,6 +3228,8 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
             follows = _entro_il_tetto_al_build(follows)
             for f in follows:
                 _catalog_follow(session, f)
+            # 07/10: REC acceso = anche gli altri mercati dell'evento (stesso stream)
+            _mercati_registrati_alla_build(session, follows)
             if not session.market_meta:
                 if os.getenv("LIVE_RUNNER_KEEP_ALIVE", "").strip() == "1":
                     logger.info("[tennis-runner] nessun mercato: attendo (keep-alive desktop).")
@@ -3184,7 +3287,9 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
             # 25/09: filtro CANONICO (ordinato): l'iscrizione a caldo e i bot armati
             # a caldo usano lo stesso dizionario, o flumine aprirebbe un'altra
             # sottoscrizione (``_IAC.filtro_mercati``)
-            all_market_ids = sorted({str(m["market_id"]) for m in session.market_meta.values()})
+            # 07/10: elenco CANONICO unico (Match Odds + mercati delle partite
+            # registrate sotto il tetto): capture, bot e stream lo stesso dizionario
+            all_market_ids = _MR.mercati_da_sottoscrivere(session.market_meta, _IAC.tetto_mercati())
             shared_cap = _make_capture(all_market_ids[0], "*", market_ids=all_market_ids)
             shared_cap.market_data_filter = data_filter
             framework.add_strategy(shared_cap)
