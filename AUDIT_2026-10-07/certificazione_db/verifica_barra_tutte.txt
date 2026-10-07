@@ -1,0 +1,168 @@
+[1/38] OK     36006953 Parma - Cremonese (2026-09-01): 0 incoerenze, 1 note | passi 333, frame 6182, simboli [goal 2, corner 13], righe punteggio 41, righe evento 3, buchi 0
+  [nota  ] SOSPENSIONE_NON_VISIBILE (16:05:03 UTC): 1 sospensioni del mercato sono cosi' brevi (la piu' lunga 7 s) da cadere fra due passi della barra: non si vedono come segmento rosso.  (8.1 s)
+[2/38] INCOERENTE 35812264 Beijing Guoan - Liaoning Tieren FC (2026-07-17): 2 incoerenze, 2 note | passi 245, frame 3317, simboli [goal 2, yellow 4, corner 3], righe punteggio 56, righe evento 18, buchi 1
+  [ERRORE] SIMBOLO_GOL_SENZA_AUMENTO (passo 2, 12:36:22 UTC, 55'): C'e' un simbolo di gol ("Gol Liaoning Tieren FC", 55' alle 12:36:22 UTC) ma il punteggio non aumenta per quella squadra entro 3 minuti.
+  [nota  ] BUCO_REGISTRAZIONE (passo 83, 12:50:15 UTC, 54'): Buco della registrazione di 14 min 29 s fra le 12:50:15 UTC e le 13:04:43 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [AVVISO] CARTELLINI_DIVERSI: Cartellini gialli di "Liaoning Tieren FC": il punteggio ne conta 2, sulla barra ci sono 3 simboli.
+  [nota  ] INIZIO_IN_CORSO (passo 0, 56'): La registrazione inizia a partita in corso (minuto 56' al primo passo): i fatti precedenti non hanno un istante sulla barra.  (4.2 s)
+[3/38] OK     35826936 Leganes - Albacete (2026-07-17): 0 incoerenze, 3 note | passi 165, frame 3034, simboli [corner 2], righe punteggio 33, righe evento 2, buchi 2
+  [nota  ] BUCO_REGISTRAZIONE (passo 11, 09:51:00 UTC, 56'): Buco della registrazione di 2 min 13 s fra le 09:51:00 UTC e le 09:53:13 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 107, 10:10:14 UTC, 75'): Buco della registrazione di 4 min 0 s fra le 10:10:14 UTC e le 10:14:13 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] INIZIO_IN_CORSO (passo 0, 54'): La registrazione inizia a partita in corso (minuto 54' al primo passo): i fatti precedenti non hanno un istante sulla barra.  (3.2 s)
+[4/38] INCOERENTE 35817305 Elimai FC - Alashkert (2026-07-16): 1 incoerenze, 1 note | passi 355, frame 4348, simboli [corner 4, goal 2], righe punteggio 26, righe evento 3, buchi 1
+  [nota  ] BUCO_REGISTRAZIONE (passo 229, 14:58:37 UTC): Buco della registrazione di 8 min 12 s fra le 14:58:37 UTC e le 15:06:49 UTC (pre-match): la barra e' a indice, qui salta da un passo al successivo.
+  [AVVISO] KICKOFF_DISCORDANTE (15:01:00 UTC): L'inizio partita dichiarato dal feed e' alle 15:01:00 UTC ma la lineetta del calcio d'inizio (primo frame in gioco del mercato) e' alle 15:06:49 UTC: scarto 5 min 49 s.  (3.5 s)
+[5/38] OK     35823616 LNZ-Lebedyn - Goztepe (2026-07-16): 0 incoerenze, 13 note | passi 189, frame 706, simboli [nessuno], righe punteggio 0, righe evento 0, buchi 12
+  [nota  ] BUCO_REGISTRAZIONE (passo 7, 14:12:59 UTC): Buco della registrazione di 106 s fra le 14:12:59 UTC e le 14:14:45 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 14, 14:17:23 UTC): Buco della registrazione di 81 s fra le 14:17:23 UTC e le 14:18:44 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 18, 14:20:31 UTC): Buco della registrazione di 91 s fra le 14:20:31 UTC e le 14:22:03 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 19, 14:22:03 UTC): Buco della registrazione di 77 s fra le 14:22:03 UTC e le 14:23:19 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 41, 14:32:54 UTC): Buco della registrazione di 111 s fra le 14:32:54 UTC e le 14:34:45 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 68, 14:41:55 UTC): Buco della registrazione di 88 s fra le 14:41:55 UTC e le 14:43:23 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 69, 14:43:23 UTC): Buco della registrazione di 81 s fra le 14:43:23 UTC e le 14:44:44 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 71, 14:45:31 UTC): Buco della registrazione di 89 s fra le 14:45:31 UTC e le 14:47:00 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 75, 14:48:14 UTC): Buco della registrazione di 78 s fra le 14:48:14 UTC e le 14:49:33 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 78, 14:50:31 UTC): Buco della registrazione di 4 min 2 s fra le 14:50:31 UTC e le 14:54:33 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 80, 14:55:31 UTC): Buco della registrazione di 2 min 40 s fra le 14:55:31 UTC e le 14:58:11 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 81, 14:58:11 UTC): Buco della registrazione di 8 min 38 s fra le 14:58:11 UTC e le 15:06:49 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] PUNTEGGIO_ASSENTE: La partita non ha nessuna riga con il punteggio: il tabellone resta 0 - 0 e i gol non si possono confrontare con il punteggio.  (1.1 s)
+[6/38] INCOERENTE 35817978 FC Astana - Dinamo Tirana (2026-07-16): 1 incoerenze, 2 note | passi 365, frame 4948, simboli [corner 3, yellow 2, goal 1], righe punteggio 30, righe evento 4, buchi 2
+  [nota  ] BUCO_REGISTRAZIONE (passo 244, 14:58:45 UTC): Buco della registrazione di 8 min 4 s fra le 14:58:45 UTC e le 15:06:49 UTC (pre-match): la barra e' a indice, qui salta da un passo al successivo.
+  [AVVISO] KICKOFF_DISCORDANTE (15:00:38 UTC): L'inizio partita dichiarato dal feed e' alle 15:00:38 UTC ma la lineetta del calcio d'inizio (primo frame in gioco del mercato) e' alle 15:06:49 UTC: scarto 6 min 11 s.
+  [nota  ] BUCO_REGISTRAZIONE (passo 332, 15:21:14 UTC, 20'): Buco della registrazione di 2 min 3 s fra le 15:21:14 UTC e le 15:23:17 UTC: la barra e' a indice, qui salta da un passo al successivo.  (3.4 s)
+[7/38] INCOERENTE 35817332 FC Inter - Sarajevo (2026-07-16): 1 incoerenze, 2 note | passi 382, frame 5679, simboli [corner 3, goal 1], righe punteggio 29, righe evento 2, buchi 1
+  [nota  ] BUCO_REGISTRAZIONE (passo 250, 14:58:42 UTC): Buco della registrazione di 8 min 7 s fra le 14:58:42 UTC e le 15:06:49 UTC (pre-match): la barra e' a indice, qui salta da un passo al successivo.
+  [AVVISO] KICKOFF_DISCORDANTE (15:01:45 UTC): L'inizio partita dichiarato dal feed e' alle 15:01:45 UTC ma la lineetta del calcio d'inizio (primo frame in gioco del mercato) e' alle 15:06:49 UTC: scarto 5 min 4 s.
+  [nota  ] TABELLONE_CORREZIONE_FEED (passo 353, 15:23:34 UTC, 21'): Il feed "betfair" ha CORRETTO il punteggio da 0 - 1 a 0 - 0 alle 15:23:34 UTC (gol annullato dal VAR o rettifica): il tabellone scende e va bene cosi'.  (5.0 s)
+[8/38] INCOERENTE 35828026 HNK Gorica - FC Epicentr Dunaivtsi (2026-07-16): 1 incoerenze, 1 note | passi 291, frame 2313, simboli [nessuno], righe punteggio 24, righe evento 1, buchi 1
+  [nota  ] BUCO_REGISTRAZIONE (passo 160, 14:58:41 UTC): Buco della registrazione di 8 min 8 s fra le 14:58:41 UTC e le 15:06:49 UTC (pre-match): la barra e' a indice, qui salta da un passo al successivo.
+  [AVVISO] KICKOFF_DISCORDANTE (15:03:25 UTC): L'inizio partita dichiarato dal feed e' alle 15:03:25 UTC ma la lineetta del calcio d'inizio (primo frame in gioco del mercato) e' alle 15:06:49 UTC: scarto 3 min 24 s.  (2.5 s)
+[9/38] OK     35826515 Aarhus Fremad - Brabrand (2026-07-16): 0 incoerenze, 2 note | passi 417, frame 5071, simboli [corner 9, yellow 2, goal 1], righe punteggio 102, righe evento 5, buchi 1
+  [nota  ] BUCO_REGISTRAZIONE (passo 285, 14:58:42 UTC, 46'): Buco della registrazione di 8 min 7 s fra le 14:58:42 UTC e le 15:06:49 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] INIZIO_IN_CORSO (passo 0, 7'): La registrazione inizia a partita in corso (minuto 7' al primo passo): i fatti precedenti non hanno un istante sulla barra.  (4.0 s)
+[10/38] OK     35823369 Nurnberg II - SC Austria Lustenau (2026-07-16): 0 incoerenze, 2 note | passi 417, frame 5009, simboli [corner 3, yellow 1, goal 1], righe punteggio 95, righe evento 4, buchi 1
+  [nota  ] BUCO_REGISTRAZIONE (passo 290, 14:58:43 UTC, 54'): Buco della registrazione di 8 min 6 s fra le 14:58:43 UTC e le 15:06:49 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] INIZIO_IN_CORSO (passo 0, 7'): La registrazione inizia a partita in corso (minuto 7' al primo passo): i fatti precedenti non hanno un istante sulla barra.  (4.0 s)
+[11/38] OK     35823409 Puskas Akademia - Basaksehir (2026-07-16): 0 incoerenze, 1 note | passi 391, frame 3898, simboli [corner 6, goal 2, yellow 3], righe punteggio 48, righe evento 9, buchi 1
+  [nota  ] BUCO_REGISTRAZIONE (passo 279, 13:25:50 UTC, 66'): Buco della registrazione di 4 min 5 s fra le 13:25:50 UTC e le 13:29:56 UTC: la barra e' a indice, qui salta da un passo al successivo.  (3.4 s)
+[12/38] INCOERENTE 35823368 FC Copenhagen - Viborg (2026-07-16): 1 incoerenze, 1 note | passi 421, frame 3946, simboli [goal 3, corner 8, yellow 1], righe punteggio 89, righe evento 7, buchi 1
+  [nota  ] BUCO_REGISTRAZIONE (passo 282, 13:25:50 UTC, 62'): Buco della registrazione di 4 min 6 s fra le 13:25:50 UTC e le 13:29:56 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [AVVISO] CARTELLINI_DIVERSI: Cartellini gialli di "FC Copenhagen": il punteggio ne conta 2, sulla barra ci sono 1 simboli.  (4.1 s)
+[13/38] OK     35797769 Spain - Belgium (2026-07-10): 0 incoerenze, 3 note | passi 1116, frame 7156, simboli [goal 3, corner 6, yellow 4], righe punteggio 116, righe evento 11, buchi 3
+  [nota  ] BUCO_REGISTRAZIONE (passo 26, 16:43:52 UTC): Buco della registrazione di 5 min 44 s fra le 16:43:52 UTC e le 16:49:35 UTC (pre-match): la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 77, 17:04:20 UTC): Buco della registrazione di 5 min 50 s fra le 17:04:20 UTC e le 17:10:10 UTC (pre-match): la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 85, 17:12:26 UTC): Buco della registrazione di 9 min 5 s fra le 17:12:26 UTC e le 17:21:32 UTC (pre-match): la barra e' a indice, qui salta da un passo al successivo.  (16.4 s)
+[14/38] OK     35788742 VPS - SJK (2026-07-10): 0 incoerenze, 3 note | passi 160, frame 1259, simboli [nessuno], righe punteggio 11, righe evento 1, buchi 0
+  [nota  ] CONTEGGI_ASSENTI: Il feed del punteggio non porta il conteggio dei cartellini gialli: simboli e conteggi non si possono confrontare.
+  [nota  ] CONTEGGI_ASSENTI: Il feed del punteggio non porta il conteggio dei cartellini rossi: simboli e conteggi non si possono confrontare.
+  [nota  ] CONTEGGI_ASSENTI: Il feed del punteggio non porta il conteggio dei calci d'angolo: simboli e conteggi non si possono confrontare.  (1.1 s)
+[15/38] OK     35804211 FC Inter 2 - RoPS (2026-07-10): 0 incoerenze, 1 note | passi 223, frame 2679, simboli [corner 7, goal 2, yellow 2], righe punteggio 66, righe evento 12, buchi 1
+  [nota  ] BUCO_REGISTRAZIONE (passo 167, 15:13:32 UTC, 42'): Buco della registrazione di 57 min 20 s fra le 15:13:32 UTC e le 16:10:52 UTC: la barra e' a indice, qui salta da un passo al successivo.  (3.6 s)
+[16/38] INCOERENTE 35804974 Legia Warsaw - Trencin (2026-07-10): 1 incoerenze, 1 note | passi 222, frame 2772, simboli [corner 14, yellow 2], righe punteggio 87, righe evento 14, buchi 1
+  [nota  ] BUCO_REGISTRAZIONE (passo 51, 14:34:50 UTC, 33'): Buco della registrazione di 10 min 10 s fra le 14:34:50 UTC e le 14:45:01 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [AVVISO] CARTELLINI_DIVERSI: Cartellini gialli di "Trencin": il punteggio ne conta 2, sulla barra ci sono 1 simboli.  (2.7 s)
+[17/38] OK     35804159 SV Sandhausen - Kaiserslautern (2026-07-10): 0 incoerenze, 6 note | passi 75, frame 1459, simboli [goal 1, yellow 1], righe punteggio 95, righe evento 4, buchi 5
+  [nota  ] BUCO_REGISTRAZIONE (passo 65, 14:05:25 UTC, 31'): Buco della registrazione di 5 min 54 s fra le 14:05:25 UTC e le 14:11:19 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 69, 14:11:52 UTC, 38'): Buco della registrazione di 3 min 8 s fra le 14:11:52 UTC e le 14:15:00 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 70, 14:15:00 UTC, 41'): Buco della registrazione di 2 min 16 s fra le 14:15:00 UTC e le 14:17:15 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 71, 14:17:15 UTC, 43'): Buco della registrazione di 9 min 13 s fra le 14:17:15 UTC e le 14:26:28 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 72, 14:26:28 UTC, 51'): Buco della registrazione di 5 min 16 s fra le 14:26:28 UTC e le 14:31:44 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] INIZIO_IN_CORSO (passo 0, 20'): La registrazione inizia a partita in corso (minuto 20' al primo passo): i fatti precedenti non hanno un istante sulla barra.  (1.1 s)
+[18/38] OK     35788728 Shandong Taishan - Yunnan Yukun (2026-07-10): 0 incoerenze, 5 note | passi 249, frame 3588, simboli [corner 11, goal 3], righe punteggio 55, righe evento 18, buchi 2
+  [nota  ] TABELLONE_CORREZIONE_FEED (passo 47, 12:51:28 UTC, 53'): Il feed "betfair" ha CORRETTO il punteggio da 4 - 1 a 3 - 1 alle 12:51:28 UTC (gol annullato dal VAR o rettifica): il tabellone scende e va bene cosi'.
+  [nota  ] BUCO_REGISTRAZIONE (passo 112, 13:02:20 UTC, 65'): Buco della registrazione di 8 min 31 s fra le 13:02:20 UTC e le 13:10:51 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 113, 13:10:51 UTC, 73'): Buco della registrazione di 75 s fra le 13:10:51 UTC e le 13:12:06 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] SOSPENSIONE_NON_VISIBILE (13:31:27 UTC) (x2): 2 sospensioni del mercato sono cosi' brevi (la piu' lunga 7 s) da cadere fra due passi della barra: non si vedono come segmento rosso.
+  [nota  ] INIZIO_IN_CORSO (passo 0, 46'): La registrazione inizia a partita in corso (minuto 46' al primo passo): i fatti precedenti non hanno un istante sulla barra.  (2.5 s)
+[19/38] OK     35792347 Cheonan City - Gimhae City (2026-07-10): 0 incoerenze, 1 note | passi 29, frame 420, simboli [corner 1], righe punteggio 6, righe evento 10, buchi 0
+  [nota  ] INIZIO_IN_CORSO (passo 0, 91'): La registrazione inizia a partita in corso (minuto 91' al primo passo): i fatti precedenti non hanno un istante sulla barra.  (0.5 s)
+[20/38] OK     35787327 Switzerland - Colombia (2026-07-07): 0 incoerenze, 1 note | passi 1028, frame 6365, simboli [corner 5, yellow 3], righe punteggio 72, righe evento 6, buchi 1
+  [nota  ] BUCO_REGISTRAZIONE (passo 1026, 21:11:44 UTC, 51'): Buco della registrazione di 29 min 4 s fra le 21:11:44 UTC e le 21:40:47 UTC: la barra e' a indice, qui salta da un passo al successivo.  (10.9 s)
+[21/38] INCOERENTE 35794996 Vardar Skopje - KuPS (2026-07-07): 1 incoerenze, 2 note | passi 336, frame 1921, simboli [corner 7, yellow 5, goal 2, red 1], righe punteggio 109, righe evento 12, buchi 2
+  [nota  ] BUCO_REGISTRAZIONE (passo 267, 17:00:15 UTC): Buco della registrazione di 50 min 21 s fra le 17:00:15 UTC e le 17:50:35 UTC (pre-match): la barra e' a indice, qui salta da un passo al successivo.
+  [AVVISO] KICKOFF_DISCORDANTE (17:00:35 UTC): L'inizio partita dichiarato dal feed e' alle 17:00:35 UTC ma la lineetta del calcio d'inizio (primo frame in gioco del mercato) e' alle 18:44:24 UTC: scarto 103 min 49 s.
+  [nota  ] BUCO_REGISTRAZIONE (passo 269, 17:54:28 UTC, 50'): Buco della registrazione di 49 min 54 s fra le 17:54:28 UTC e le 18:44:22 UTC (pre-match): la barra e' a indice, qui salta da un passo al successivo.  (3.7 s)
+[22/38] INCOERENTE 35796477 Shelbourne - Celtic (2026-07-07): 1 incoerenze, 3 note | passi 147, frame 1674, simboli [corner 14, goal 2], righe punteggio 141, righe evento 4, buchi 2
+  [AVVISO] KICKOFF_DISCORDANTE (17:02:58 UTC): L'inizio partita dichiarato dal feed e' alle 17:02:58 UTC ma la lineetta del calcio d'inizio (primo frame in gioco del mercato) e' alle 18:42:25 UTC: scarto 99 min 27 s.
+  [nota  ] BUCO_REGISTRAZIONE (passo 64, 17:09:24 UTC, 6'): Buco della registrazione di 81 min 14 s fra le 17:09:24 UTC e le 18:30:37 UTC (pre-match): la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 66, 18:34:21 UTC, 71'): Buco della registrazione di 8 min 2 s fra le 18:34:21 UTC e le 18:42:22 UTC (pre-match): la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] SOSPENSIONE_NON_VISIBILE (18:49:03 UTC): 1 sospensioni del mercato sono cosi' brevi (la piu' lunga 61 s) da cadere fra due passi della barra: non si vedono come segmento rosso.  (2.3 s)
+[23/38] OK     35796504 PAOK - AEK Larnaca (2026-07-07): 0 incoerenze, 0 note | passi 399, frame 3754, simboli [goal 5, yellow 2, corner 1], righe punteggio 44, righe evento 11, buchi 0  (2.3 s)
+[24/38] INCOERENTE 35787218 Argentina - Egypt (2026-07-07): 3 incoerenze, 2 note | passi 475, frame 3814, simboli [goal 6, corner 7, yellow 5], righe punteggio 69, righe evento 16, buchi 1
+  [nota  ] TABELLONE_CORREZIONE_FEED (passo 223, 17:24:25 UTC, 60'): Il feed "betfair" ha CORRETTO il punteggio da 0 - 2 a 0 - 1 alle 17:24:25 UTC (gol annullato dal VAR o rettifica): il tabellone scende e va bene cosi'.
+  [ERRORE] SIMBOLO_GOL_SENZA_AUMENTO (passo 263, 17:30:58 UTC, 66'): C'e' un simbolo di gol ("Gol Egypt", 67' alle 17:30:58 UTC) ma il punteggio non aumenta per quella squadra entro 3 minuti.
+  [nota  ] BUCO_REGISTRAZIONE (passo 471, 18:07:30 UTC, 101'): Buco della registrazione di 7 min 42 s fra le 18:07:30 UTC e le 18:15:12 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [AVVISO] CARTELLINI_DIVERSI: Cartellini gialli di "Argentina": il punteggio ne conta 0, sulla barra ci sono 1 simboli.
+  [AVVISO] CARTELLINI_DIVERSI: Cartellini gialli di "Egypt": il punteggio ne conta 3, sulla barra ci sono 4 simboli.  (5.8 s)
+[25/38] OK     35797538 Železničar Pančevo - CSKA 1948 (2026-07-07): 0 incoerenze, 2 note | passi 710, frame 5733, simboli [corner 9, yellow 2, goal 1], righe punteggio 120, righe evento 8, buchi 1
+  [nota  ] BUCO_REGISTRAZIONE (passo 520, 16:44:50 UTC, 56'): Buco della registrazione di 2 min 13 s fra le 16:44:50 UTC e le 16:47:04 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] SOSPENSIONE_NON_VISIBILE (17:21:29 UTC): 1 sospensioni del mercato sono cosi' brevi (la piu' lunga 0 s) da cadere fra due passi della barra: non si vedono come segmento rosso.  (5.2 s)
+[26/38] OK     35784105 Portugal - Spain (2026-07-06): 0 incoerenze, 1 note | passi 29, frame 657, simboli [corner 10, yellow 2, goal 1], righe punteggio 4, righe evento 6, buchi 0
+  [nota  ] INIZIO_IN_CORSO (passo 0, 90'): La registrazione inizia a partita in corso (minuto 90' al primo passo): i fatti precedenti non hanno un istante sulla barra.  (1.7 s)
+[27/38] OK     35780184 Super Nova - Ogre United (2026-07-06): 0 incoerenze, 0 note | passi 765, frame 6066, simboli [corner 11, yellow 2, goal 3], righe punteggio 89, righe evento 9, buchi 0  (9.0 s)
+[28/38] OK     35781607 Suduva Marijampole - TransINVEST Vilnius (2026-07-06): 0 incoerenze, 1 note | passi 507, frame 5027, simboli [yellow 3, corner 4], righe punteggio 138, righe evento 5, buchi 0
+  [nota  ] INIZIO_IN_CORSO (passo 0, 22'): La registrazione inizia a partita in corso (minuto 22' al primo passo): i fatti precedenti non hanno un istante sulla barra.  (6.1 s)
+[29/38] INCOERENTE 35777617 Brazil - Norway (2026-07-05): 1 incoerenze, 2 note | passi 808, frame 6078, simboli [goal 4, corner 10, yellow 1], righe punteggio 120, righe evento 10, buchi 1
+  [nota  ] TABELLONE_CORREZIONE_FEED (passo 143, 20:03:49 UTC, 3'): Il feed "betfair" ha CORRETTO il punteggio da 0 - 1 a 0 - 0 alle 20:03:49 UTC (gol annullato dal VAR o rettifica): il tabellone scende e va bene cosi'.
+  [ERRORE] SIMBOLO_GOL_SENZA_AUMENTO (passo 686, 21:41:28 UTC, 79'): C'e' un simbolo di gol ("Gol Norway", 80' alle 21:41:28 UTC) ma il punteggio non aumenta per quella squadra entro 3 minuti.
+  [nota  ] BUCO_REGISTRAZIONE (passo 806, 22:07:42 UTC, 101'): Buco della registrazione di 3 min 51 s fra le 22:07:42 UTC e le 22:11:33 UTC: la barra e' a indice, qui salta da un passo al successivo.  (10.5 s)
+[30/38] OK     35765620 Australia - Egypt (2026-07-03): 0 incoerenze, 10 note | passi 892, frame 5790, simboli [corner 7, goal 2], righe punteggio 117, righe evento 5, buchi 10
+  [nota  ] BUCO_REGISTRAZIONE (passo 773, 19:36:33 UTC, 73'): Buco della registrazione di 97 s fra le 19:36:33 UTC e le 19:38:11 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 881, 20:01:16 UTC, 95'): Buco della registrazione di 118 s fra le 20:01:16 UTC e le 20:03:14 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 882, 20:03:14 UTC, 95'): Buco della registrazione di 18 min 4 s fra le 20:03:14 UTC e le 20:21:17 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 883, 20:21:17 UTC, 95'): Buco della registrazione di 109 s fra le 20:21:17 UTC e le 20:23:07 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 884, 20:23:07 UTC, 95'): Buco della registrazione di 2 min 38 s fra le 20:23:07 UTC e le 20:25:45 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 885, 20:25:45 UTC, 95'): Buco della registrazione di 2 min 58 s fra le 20:25:45 UTC e le 20:28:43 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 886, 20:28:43 UTC, 95'): Buco della registrazione di 85 s fra le 20:28:43 UTC e le 20:30:09 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 887, 20:30:09 UTC, 95'): Buco della registrazione di 112 s fra le 20:30:09 UTC e le 20:32:01 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 888, 20:32:01 UTC, 95'): Buco della registrazione di 5 min 53 s fra le 20:32:01 UTC e le 20:37:54 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 890, 20:38:23 UTC, 95'): Buco della registrazione di 2 min 34 s fra le 20:38:23 UTC e le 20:40:58 UTC: la barra e' a indice, qui salta da un passo al successivo.  (8.7 s)
+[31/38] INCOERENTE 35768297 Portugal - Croatia (2026-07-02): 1 incoerenze, 11 note | passi 1247, frame 6512, simboli [corner 14, yellow 3, goal 7], righe punteggio 123, righe evento 14, buchi 5
+  [nota  ] BUCO_REGISTRAZIONE (passo 36, 19:15:11 UTC): Buco della registrazione di 10 min 22 s fra le 19:15:11 UTC e le 19:25:33 UTC (pre-match): la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] TABELLONE_CORREZIONE_FEED (passo 1016, 00:16:34 UTC, 56'): Il feed "betfair" ha CORRETTO il punteggio da 0 - 2 a 0 - 1 alle 00:16:34 UTC (gol annullato dal VAR o rettifica): il tabellone scende e va bene cosi'.
+  [nota  ] TABELLONE_CORREZIONE_FEED (passo 1041, 00:21:24 UTC, 61'): Il feed "betfair" ha CORRETTO il punteggio da 1 - 1 a 0 - 1 alle 00:21:24 UTC (gol annullato dal VAR o rettifica): il tabellone scende e va bene cosi'.
+  [ERRORE] SIMBOLO_GOL_SENZA_AUMENTO (passo 1059, 00:27:27 UTC, 67'): C'e' un simbolo di gol ("Gol Portugal", 68' alle 00:27:27 UTC) ma il punteggio non aumenta per quella squadra entro 3 minuti.
+  [nota  ] GOL_ANNULLATO (passo 1115, 00:40:09 UTC, 79'): Il simbolo "Gol Croatia" delle 00:40:09 UTC non ha un aumento del punteggio: il punteggio e' stato corretto subito dopo (gol annullato).
+  [nota  ] TABELLONE_CORREZIONE_FEED (passo 1118, 00:40:45 UTC, 80'): Il feed "betfair" ha CORRETTO il punteggio da 1 - 2 a 1 - 1 alle 00:40:45 UTC (gol annullato dal VAR o rettifica): il tabellone scende e va bene cosi'.
+  [nota  ] GOL_ANNULLATO (passo 1217, 01:02:51 UTC, 102'): Il simbolo "Gol Croatia" delle 01:02:51 UTC non ha un aumento del punteggio: il punteggio e' stato corretto subito dopo (gol annullato).
+  [nota  ] TABELLONE_CORREZIONE_FEED (passo 1228, 01:05:30 UTC, 105'): Il feed "betfair" ha CORRETTO il punteggio da 2 - 2 a 2 - 1 alle 01:05:30 UTC (gol annullato dal VAR o rettifica): il tabellone scende e va bene cosi'.
+  [nota  ] BUCO_REGISTRAZIONE (passo 1232, 01:06:56 UTC, 105'): Buco della registrazione di 90 s fra le 01:06:56 UTC e le 01:08:26 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 1235, 01:10:04 UTC, 108'): Buco della registrazione di 2 min 31 s fra le 01:10:04 UTC e le 01:12:34 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 1236, 01:12:34 UTC, 108'): Buco della registrazione di 10 min 34 s fra le 01:12:34 UTC e le 01:23:09 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 1245, 01:24:22 UTC, 108'): Buco della registrazione di 16 min 8 s fra le 01:24:22 UTC e le 01:40:30 UTC: la barra e' a indice, qui salta da un passo al successivo.  (11.9 s)
+[32/38] INCOERENTE 35768365 Spain - Austria (2026-07-02): 1 incoerenze, 4 note | passi 978, frame 6553, simboli [corner 9, goal 4, yellow 1], righe punteggio 119, righe evento 12, buchi 3
+  [nota  ] BUCO_REGISTRAZIONE (passo 449, 19:03:21 UTC, 1'): Buco della registrazione di 78 s fra le 19:03:21 UTC e le 19:04:38 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 507, 19:16:40 UTC, 15'): Buco della registrazione di 8 min 53 s fra le 19:16:40 UTC e le 19:25:33 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] TABELLONE_CORREZIONE_FEED (passo 531, 19:30:01 UTC, 29'): Il feed "betfair" ha CORRETTO il punteggio da 1 - 0 a 0 - 0 alle 19:30:01 UTC (gol annullato dal VAR o rettifica): il tabellone scende e va bene cosi'.
+  [ERRORE] SIMBOLO_GOL_SENZA_AUMENTO (passo 559, 19:36:24 UTC, 35'): C'e' un simbolo di gol ("Gol Spain", 36' alle 19:36:24 UTC) ma il punteggio non aumenta per quella squadra entro 3 minuti.
+  [nota  ] BUCO_REGISTRAZIONE (passo 975, 21:01:04 UTC, 96'): Buco della registrazione di 4 min 4 s fra le 21:01:04 UTC e le 21:05:08 UTC: la barra e' a indice, qui salta da un passo al successivo.  (11.9 s)
+[33/38] OK     35764745 Ivory Coast - Norway (2026-06-30): 0 incoerenze, 2 note | passi 1051, frame 7091, simboli [corner 17, goal 3, yellow 1], righe punteggio 125, righe evento 8, buchi 2
+  [nota  ] BUCO_REGISTRAZIONE (passo 1048, 19:00:26 UTC, 97'): Buco della registrazione di 3 min 8 s fra le 19:00:26 UTC e le 19:03:34 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 1049, 19:03:34 UTC, 97'): Buco della registrazione di 2 min 27 s fra le 19:03:34 UTC e le 19:06:01 UTC: la barra e' a indice, qui salta da un passo al successivo.  (10.4 s)
+[34/38] OK     35760084 FK Liepaja - Ogre United (2026-06-30): 0 incoerenze, 2 note | passi 861, frame 5498, simboli [corner 15, goal 4, yellow 3], righe punteggio 94, righe evento 11, buchi 2
+  [nota  ] BUCO_REGISTRAZIONE (passo 718, 17:23:44 UTC, 61'): Buco della registrazione di 93 s fra le 17:23:44 UTC e le 17:25:17 UTC: la barra e' a indice, qui salta da un passo al successivo.
+  [nota  ] BUCO_REGISTRAZIONE (passo 839, 17:47:49 UTC, 85'): Buco della registrazione di 2 min 0 s fra le 17:47:49 UTC e le 17:49:49 UTC: la barra e' a indice, qui salta da un passo al successivo.  (4.3 s)
+[35/38] OK     35759636 Rīgas FS - BFC Daugavpils (2026-06-30): 0 incoerenze, 0 note | passi 618, frame 4969, simboli [corner 5, goal 4, yellow 3], righe punteggio 114, righe evento 10, buchi 0  (3.7 s)
+[36/38] OK     35774000 Táborsko - SKU Amstetten (2026-06-30): 0 incoerenze, 0 note | passi 699, frame 6024, simboli [corner 9, goal 3, yellow 2], righe punteggio 100, righe evento 12, buchi 0  (4.3 s)
+[37/38] OK     35772591 Nyiregyhaza - Zbrojovka Brno (2026-06-30): 0 incoerenze, 0 note | passi 566, frame 5435, simboli [corner 8, yellow 1, goal 3], righe punteggio 94, righe evento 9, buchi 0  (3.6 s)
+[38/38] OK     35674515 Qingdao Hainiu - Yunnan Yukun (2026-06-26): 0 incoerenze, 1 note | passi 668, frame 4427, simboli [corner 6, goal 6, yellow 6], righe punteggio 203, righe evento 0, buchi 1
+  [nota  ] BUCO_REGISTRAZIONE (passo 301, 12:22:53 UTC, 47'): Buco della registrazione di 76 s fra le 12:22:53 UTC e le 12:24:09 UTC: la barra e' a indice, qui salta da un passo al successivo.  (3.3 s)
+RIEPILOGO: 38 partite verificate: 25 OK, 13 con incoerenze, 0 non verificabili (errore di caricamento).
+  INCOERENTE 35812264 Beijing Guoan - Liaoning Tieren FC (2026-07-17): SIMBOLO_GOL_SENZA_AUMENTO, CARTELLINI_DIVERSI
+  INCOERENTE 35817305 Elimai FC - Alashkert (2026-07-16): KICKOFF_DISCORDANTE
+  INCOERENTE 35817978 FC Astana - Dinamo Tirana (2026-07-16): KICKOFF_DISCORDANTE
+  INCOERENTE 35817332 FC Inter - Sarajevo (2026-07-16): KICKOFF_DISCORDANTE
+  INCOERENTE 35828026 HNK Gorica - FC Epicentr Dunaivtsi (2026-07-16): KICKOFF_DISCORDANTE
+  INCOERENTE 35823368 FC Copenhagen - Viborg (2026-07-16): CARTELLINI_DIVERSI
+  INCOERENTE 35804974 Legia Warsaw - Trencin (2026-07-10): CARTELLINI_DIVERSI
+  INCOERENTE 35794996 Vardar Skopje - KuPS (2026-07-07): KICKOFF_DISCORDANTE
+  INCOERENTE 35796477 Shelbourne - Celtic (2026-07-07): KICKOFF_DISCORDANTE
+  INCOERENTE 35787218 Argentina - Egypt (2026-07-07): SIMBOLO_GOL_SENZA_AUMENTO, CARTELLINI_DIVERSI, CARTELLINI_DIVERSI
+  INCOERENTE 35777617 Brazil - Norway (2026-07-05): SIMBOLO_GOL_SENZA_AUMENTO
+  INCOERENTE 35768297 Portugal - Croatia (2026-07-02): SIMBOLO_GOL_SENZA_AUMENTO
+  INCOERENTE 35768365 Spain - Austria (2026-07-02): SIMBOLO_GOL_SENZA_AUMENTO
+Tempo totale: 194.6 s. Sola lettura: nessuna scrittura sul database.
+
+real	3m28.111s
+user	0m0.015s
+sys	0m0.030s

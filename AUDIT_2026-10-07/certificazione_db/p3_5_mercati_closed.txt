@@ -1,0 +1,68 @@
+evento 35833626: righe 500, caricato {'primo': '2026-09-22T13:56:20.793784+00:00', 'ultimo': '2026-09-22T13:56:20.793784+00:00'}
+   1.260133496 {'OPEN': 27}
+   1.260133497 {'OPEN': 48}
+   1.260133498 {'OPEN': 37}
+   1.260133502 {'OPEN': 67}
+   1.260133503 {'OPEN': 13}
+   1.260133504 {'OPEN': 65}
+   1.260133505 {'OPEN': 42}
+   1.260133506 {'OPEN': 16}
+   1.260133507 {'OPEN': 31}
+   1.260133508 {'OPEN': 33}
+   1.260133510 {'OPEN': 26}
+   1.260133511 {'OPEN': 10}
+   1.260133512 {'OPEN': 7}
+   1.260133513 {'OPEN': 28}
+   1.260133514 {'OPEN': 19}
+   1.260133515 {'OPEN': 18}
+   1.260133516 {'OPEN': 13}
+   mercati senza CLOSED: ['1.260133496', '1.260133497', '1.260133498', '1.260133502', '1.260133503', '1.260133504', '1.260133505', '1.260133506', '1.260133507', '1.260133508', '1.260133510', '1.260133511', '1.260133512', '1.260133513', '1.260133514', '1.260133515', '1.260133516']
+Traceback (most recent call last):
+  File "C:\Users\Admin\AppData\Local\Temp\claude\C--Users-Admin\ef960131-e4cb-434d-b10f-b9585ed0d238\scratchpad\sonde\stati_mercati.py", line 10, in <module>
+    r = urllib.request.urlopen(urllib.request.Request(u, headers={"apikey": k, "Authorization": "Bearer " + k}), timeout=120)
+  File "C:\Python313\Lib\urllib\request.py", line 189, in urlopen
+    return opener.open(url, data, timeout)
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python313\Lib\urllib\request.py", line 495, in open
+    response = meth(req, response)
+  File "C:\Python313\Lib\urllib\request.py", line 604, in http_response
+    response = self.parent.error(
+        'http', request, response, code, msg, hdrs)
+  File "C:\Python313\Lib\urllib\request.py", line 533, in error
+    return self._call_chain(*args)
+           ~~~~~~~~~~~~~~~~^^^^^^^
+  File "C:\Python313\Lib\urllib\request.py", line 466, in _call_chain
+    result = func(*args)
+  File "C:\Python313\Lib\urllib\request.py", line 613, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 500: Internal Server Error
+== 36006953 CLOSED
+content-range: */0[]
+== 36006953 SUSPENDED
+content-range: 0-0/83
+== 35797769 CLOSED
+content-range: */0[]
+== 35797769 SUSPENDED
+content-range: 0-0/84
+== tutta la tabella, righe CLOSED
+Traceback (most recent call last):
+  File "C:\Users\Admin\AppData\Local\Temp\claude\C--Users-Admin\ef960131-e4cb-434d-b10f-b9585ed0d238\scratchpad\sonde\rest_get.py", line 11, in <module>
+    with urllib.request.urlopen(req, timeout=120) as r:
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "C:\Python313\Lib\urllib\request.py", line 189, in urlopen
+    return opener.open(url, data, timeout)
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python313\Lib\urllib\request.py", line 495, in open
+    response = meth(req, response)
+  File "C:\Python313\Lib\urllib\request.py", line 604, in http_response
+    response = self.parent.error(
+        'http', request, response, code, msg, hdrs)
+  File "C:\Python313\Lib\urllib\request.py", line 533, in error
+    return self._call_chain(*args)
+           ~~~~~~~~~~~~~~~~^^^^^^^
+  File "C:\Python313\Lib\urllib\request.py", line 466, in _call_chain
+    result = func(*args)
+  File "C:\Python313\Lib\urllib\request.py", line 613, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 500: Internal Server Error
+

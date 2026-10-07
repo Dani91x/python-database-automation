@@ -1,0 +1,1499 @@
+
+ RUN  v3.2.6 C:/Users/Admin/Desktop/PYTHON DATABASE/python-database-automation/frontend
+
+ ✓ src/components/mike/MikeParamsSheet.test.tsx (8 tests) 23229ms
+   ✓ MikeParamsSheet > mostra tutti i gruppi del bot  1915ms
+   ✓ MikeParamsSheet > il filtro competizioni è un campo di TESTO (non un numero)  1852ms
+   ✓ MikeParamsSheet > un valore fuori limite viene clampato e DICHIARATO  1470ms
+   ✓ MikeParamsSheet > Default riporta ai valori del servizio e Salva manda l’oggetto intero  1263ms
+   ✓ MikeParamsSheet - reperto 2: campo numerico svuotato = chiave assente > nel foglio vero: svuotati TUTTI i campi numerici e salvato -> nessuna chiave numerica, il resto intero  15656ms
+   ✓ MikeParamsSheet - reperto 2: campo numerico svuotato = chiave assente > lo stake svuotato non diventa 0,50: la chiave non c'e' (il servizio usa 10)  1020ms
+stderr | src/pages/Mike.test.tsx > Mike page — storico senza migrazione > non mostra "is not unique" nudo ma dice quale migrazione applicare
+[storico Mike] errore del database: function public.trading_daily_history(unknown) is not unique
+
+ ✓ src/pages/SafeStrategy.test.tsx (28 tests) 30359ms
+   ✓ pagina Safe Strategy > mostra intestazione, stato bot e modalita PAPER  1629ms
+   ✓ pagina Safe Strategy > non promette piu che nessun ordine venga piazzato  633ms
+   ✓ pagina Safe Strategy > KPI: segnali attivi, trade aperti e P&L  961ms
+   ✓ pagina Safe Strategy > M-15: "Trade aperti" conta le posizioni vive, non le chiusure ne le hedged complete  623ms
+   ✓ pagina Safe Strategy > la tab Trade elenca il trade aperto col cash out  1289ms
+   ✓ pagina Safe Strategy > dal segnale si accoda una richiesta place con gli id risolti dal feed  847ms
+   ✓ pagina Safe Strategy > trade MANUALE piazzato da un segnale: agganciato alla card tramite meta.idempotency_key (H1)  540ms
+   ✓ pagina Safe Strategy > la gamba di chiusura tagliata dalla liquidita e marcata parziale  989ms
+   ✓ pagina Safe Strategy > senza id di selezione nel feed l azione resta non disponibile  473ms
+   ✓ pagina Safe Strategy > se esiste gia un trade per il segnale mostra il suo stato al posto dell azione  647ms
+   ✓ Safe Strategy — cash out con la modalita del TRADE (CRITICAL-2) > pagina LIVE ma trade paper: nessuna doppia conferma "soldi veri"  2165ms
+   ✓ Safe Strategy — cash out con la modalita del TRADE (CRITICAL-2) > pagina PAPER ma trade live: doppia conferma e avviso soldi veri  1568ms
+   ✓ Safe Strategy — cash out con la modalita del TRADE (CRITICAL-2) > anche nella card del segnale il cash out usa la modalita del trade  629ms
+   ✓ Safe Strategy — un solo cash out per trade (HIGH-1) > gamba di chiusura gia in coda: bottone spento  928ms
+   ✓ Safe Strategy — un solo cash out per trade (HIGH-1) > richiesta cashout pending sul DB: bottone spento  1209ms
+   ✓ Safe Strategy — feed stantio (HIGH-2) > riga vecchia E scanner morto: cash out e Investi spenti con motivo  1065ms
+   ✓ Safe Strategy — feed stantio (HIGH-2) > riga vecchia ma scanner vivo (write-on-change): badge eta, bottoni attivi  985ms
+   ✓ Safe Strategy — tennis (HIGH-3) > un trade tennis riceve il book dal feed tennis: cash out attivo e live "set/game"  1264ms
+   ✓ Safe Strategy — sync parametri (HIGH-4) > payload server con chiave ignota: nessun salvataggio (niente loop)  747ms
+   ✓ Safe Strategy — sync parametri (HIGH-4) > condizione davvero diversa sul server: UN solo salvataggio normalizzato  764ms
+   ✓ Safe Strategy — LIVE ereditato dal control (MEDIUM-4) > banner LIVE ma nessun piazzamento senza conferma in questa sessione  973ms
+   ✓ Safe Strategy — l ordine a mano ha la sua modalita (24/09) > servizio LIVE e `manual` NON scritto: l ordine a mano parte in PAPER  1054ms
+   ✓ Safe Strategy — l ordine a mano ha la sua modalita (24/09) > servizio PAPER e `manual` scritto live: resta PAPER (il servizio e un tetto)  935ms
+   ✓ Safe Strategy — opportunita per tipo, combinazioni e tennis > chip per tipo con conteggi; il filtro tipo isola la combinazione  1867ms
+   ✓ Safe Strategy — opportunita per tipo, combinazioni e tennis > combinazione: "Piazza" accoda UNA richiesta per gamba, stake scalato, stesso prefisso di idempotenza e modalita  1602ms
+   ✓ Safe Strategy — opportunita per tipo, combinazioni e tennis > tennis: tab Opportunità tennis con la card e piazzamento con sport tennis e kind  1843ms
+   ✓ Safe Strategy — opportunita per tipo, combinazioni e tennis > pannello Rischio nei KPI: liability vs cap e stop perdita dal control.stats  489ms
+   ✓ Safe Strategy — opportunita filtrate (MEDIUM-5) > filtri che escludono tutto: stato vuoto esplicativo  1635ms
+ ✓ src/components/safestrategy/BotParamsSheet.test.tsx (47 tests) 37734ms
+   ✓ BotParamsSheet — gruppi e valori > Rischio: legge params.risk (valori DB + default per i mancanti)  1943ms
+   ✓ BotParamsSheet — gruppi e valori > «Auto-trade» non ha più una vista: nessuno di quei quattro piazza più da solo  848ms
+   ✓ BotParamsSheet — gruppi e valori > Proponimi...: quattro rubinetti NUOVI, default ACCESO, stato dal DB  718ms
+   ✓ BotParamsSheet — gruppi e valori > Proponimi...: un rubinetto spento sul DB si mostra spento  652ms
+   ✓ BotParamsSheet — gruppi e valori > 24/09 gamba manuale della combo: DUE pulsanti, default «Avvisa e proponi» (chiave assente)  344ms
+   ✓ BotParamsSheet — gruppi e valori > 24/09 valore sconosciuto sul DB -> «Avvisa e proponi»; «automatico» sul DB -> pulsante acceso  538ms
+   ✓ BotParamsSheet — gruppi e valori > 24/09 premere «Automatico» e salvare manda combo_gamba_manuale=automatico (e il resto invariato)  878ms
+   ✓ BotParamsSheet — gruppi e valori > 24/09 da «automatico» si torna ad «Avvisa e proponi» con un clic  892ms
+   ✓ BotParamsSheet — gruppi e valori > salvare non tocca gli auto_trade_* storici: restano quelli del DB, invariati  479ms
+   ✓ BotParamsSheet — gruppi e valori > Uscite modello e Tennis/Anomalie: campi presenti con i valori DB  566ms
+   ✓ BotParamsSheet — gruppi e valori > salvataggio: chiavi ignote preservate, toggles/risk/exits/variants espliciti  2451ms
+   ✓ BotParamsSheet — H-14 varianti > variants vuote sul DB: avviso esplicito, nessuna riattivazione silenziosa  322ms
+   ✓ BotParamsSheet — H-14 varianti > salvare senza nessuna strategia selezionata viene RIFIUTATO  1652ms
+   ✓ BotParamsSheet — H-14 varianti > varianti effettive diverse da quelle salvate: la scheda lo dice  363ms
+   ✓ BotParamsSheet — H-15 clamp e valore effettivo > valore fuori range: clampato e DICHIARATO con i limiti del servizio  892ms
+   ✓ BotParamsSheet — H-15 clamp e valore effettivo > stop perdita: il segno non conta, la scheda mostra sempre quello vero  1086ms
+   ✓ BotParamsSheet — H-15 clamp e valore effettivo > exits e risk effettivi sono letti dalle loro sezioni  406ms
+   ✓ BotParamsSheet — Default > il bottone Default riporta ai valori di fabbrica  723ms
+   ✓ BotParamsSheet — modalita per strategia > mostra una scelta per ogni strategia, col valore salvato sul DB  450ms
+   ✓ BotParamsSheet — modalita per strategia > salva la mappa; «come il servizio» NON scrive la chiave  849ms
+   ✓ BotParamsSheet — `soloStrategia` nel foglio vero > salvare dal foglio del tennis NON tocca variants/modi delle altre tre  536ms
+   ✓ BotParamsSheet - R-06 tetto delle posizioni aperte (risk.max_open_trades) > (a) chiave ASSENTE nel database + campo non toccato: il payload NON la porta  583ms
+   ✓ BotParamsSheet - R-06 tetto delle posizioni aperte (risk.max_open_trades) > (b) chiave 5 nel database: si mostra 5 e si salva 5  540ms
+   ✓ BotParamsSheet - R-06 tetto delle posizioni aperte (risk.max_open_trades) > chiave 0 nel database e campo non toccato: resta 0 (non si decide per l'utente)  494ms
+   ✓ BotParamsSheet - R-06 tetto delle posizioni aperte (risk.max_open_trades) > (c) l'utente scrive 0 su una chiave assente: si salva 0 (= nessun tetto, scelto da lui)  1085ms
+   ✓ BotParamsSheet - R-06 tetto delle posizioni aperte (risk.max_open_trades) > (d) l'utente svuota il campo (era 5): la chiave sparisce dal payload  824ms
+   ✓ BotParamsSheet - R-06 tetto delle posizioni aperte (risk.max_open_trades) > il campo dice il significato vero di 0 e del vuoto, col tetto del bot in uso  318ms
+   ✓ BotParamsSheet - R-06 tetto delle posizioni aperte (risk.max_open_trades) > Default: il campo torna VUOTO (= tetto del bot), non 0  762ms
+   ✓ BotParamsSheet - 35 campo numerico svuotato: chiave assente, mai "" > nel foglio vero: si svuotano TUTTI i campi numerici e si salva -> nessuna chiave numerica, nessun ""  10991ms
+   ✓ BotParamsSheet - reperto 1: uscita BASE "controllo alla sfavorita" letta dal DB > riga con l'uscita ACCESA e soglia -0,35: il foglio la mostra accesa e -0.35, e salvando senza toccare resta cosi'  859ms
+   ✓ BotParamsSheet - reperto 1: uscita BASE "controllo alla sfavorita" letta dal DB > riga senza le due chiavi: si mostrano i valori di serie del servizio (spenta, -0.2)  561ms
+   ✓ BotParamsSheet - reperto 1: uscita BASE "controllo alla sfavorita" letta dal DB > spegnere dal foglio scrive false; svuotare la soglia toglie la chiave (regola del punto 35)  1354ms
+ ✓ src/components/omega/ManualPanel.test.tsx (23 tests) 39155ms
+   ✓ ManualPanel — il payload è ESATTAMENTE il runner scelto > LAY a TARGET: market_id/selection_id/runner_name dallo snapshot, target e size=null  3824ms
+   ✓ ManualPanel — il payload è ESATTAMENTE il runner scelto > modalità STAKE: size valorizzato e target null (mai entrambi)  2802ms
+   ✓ ManualPanel — il payload è ESATTAMENTE il runner scelto > BACK usa la quota BACK del runner, non quella lay  3382ms
+   ✓ ManualPanel — il payload è ESATTAMENTE il runner scelto > «suggerisci» sceglie il punteggio in fascia [20,120] con la quota più alta  2647ms
+   ✓ ManualPanel — in LIVE si passa SEMPRE dalla conferma > LIVE: il click apre il dialog e NON piazza; la conferma piazza  3285ms
+   ✓ ManualPanel — in LIVE si passa SEMPRE dalla conferma > LIVE: «Annulla» chiude il dialog senza piazzare nulla  2962ms
+   ✓ ManualPanel — in LIVE si passa SEMPRE dalla conferma > PAPER: nessun dialog, l’ordine va in coda subito  2600ms
+   ✓ ManualPanel — mai un ordine su quote vecchie > book più vecchio di 20 s: bottone SPENTO e motivo scritto  2531ms
+   ✓ ManualPanel — mai un ordine su quote vecchie > book fresco: nessun avviso e bottone attivo  2390ms
+   ✓ ManualPanel — mai un ordine su quote vecchie > l'età del book è mostrata accanto alle quote  2002ms
+   ✓ ManualPanel — anteprima del rischio: LAY ≠ BACK > LAY dice «Liability aperta» (stake × (quota−1)), BACK dice «Rischio» (= stake)  2705ms
+   ✓ ManualPanel — anteprima del rischio: LAY ≠ BACK > i numeri dell’anteprima sono nel formato del design system  2356ms
+   ✓ ManualPanel — niente richiesta senza i dati minimi > senza runner scelto il bottone è spento  2137ms
+   ✓ ManualPanel — niente richiesta senza i dati minimi > quota azzerata: bottone SPENTO col motivo e NESSUNA richiesta  2798ms
+   ✓ ManualPanel — audit 12/09 > la modalità parte da quella della PAGINA e lo scarto è dichiarato  399ms
+ ✓ src/pages/Mike.test.tsx (33 tests | 1 skipped) 33197ms
+   ✓ Mike page — sezioni e schede ferme > due sezioni fisse: PRE-MATCH per KO crescente, poi LIVE  1628ms
+   ✓ Mike page — sezioni e schede ferme > le schede NON si muovono quando cambiano fase (e il realtime è debounced)  1111ms
+   ✓ Mike page — sezioni e schede ferme > ERROR e SKIPPED finiscono in DA SISTEMARE con il bottone Riprendi (H6)  674ms
+   ✓ Mike page — sezioni e schede ferme > la richiesta parte dal bottone Riprendi  1099ms
+   ✓ Mike page — profondità dei dati sulla card > pre-match: λ, P(4) modello e mercato, istogramma dei gol, quote con size e scambiato  526ms
+   ✓ Mike page — profondità dei dati sulla card > live: punteggio, espulsioni, hazard, pressione, uscita a modello, attesa copertura, allarmi  567ms
+   ✓ Mike page — profondità dei dati sulla card > posizioni: "se chiudo ora" è il NETTO del servizio, ordini sul book a parte  600ms
+   ✓ Mike page — profondità dei dati sulla card > cash out spento CON MOTIVO quando il feed della partita è fermo, ed esito della richiesta visibile (M1)  590ms
+   ✓ Mike page — Operazioni, Risultati, Attività, KPI > KPI e giornata operativa leggono gli aggregati del DB  546ms
+   ✓ Mike page — Operazioni, Risultati, Attività, KPI > UNA semantica per i conteggi: barra, linguette e KPI non contano cose diverse  587ms
+   ✓ Mike page — Operazioni, Risultati, Attività, KPI > P&L bloccato: se nessuna partita ha un valore si scrive "—", mai "+0,00 €"  430ms
+   ✓ Mike page — Operazioni, Risultati, Attività, KPI > Operazioni: una riga per PARTITA col netto, dettaglio chiuso fino al clic  1168ms
+   ✓ Mike page — Operazioni, Risultati, Attività, KPI > una partita armata in LIVE resta LIVE anche col toggle su paper  500ms
+   ✓ Mike page — Operazioni, Risultati, Attività, KPI > PAPER e SOLDI VERI non si sommano MAI: la pagina mostra una modalità sola  989ms
+   ✓ Mike page — Operazioni, Risultati, Attività, KPI > Risultati Pre-Match e Risultati Live: la stessa partita, gli euro della sua fase  1175ms
+   ✓ Mike page — Operazioni, Risultati, Attività, KPI > tab Attività: ogni kind in italiano, i critici in rosso, filtro per partita  781ms
+   ✓ Mike page — Operazioni, Risultati, Attività, KPI > KPI Liability: dichiara "stimata dalle righe" e "dato stantio"  610ms
+   ✓ Mike page — Operazioni, Risultati, Attività, KPI > KPI Liability: con la liability netta del servizio non dichiara nulla di strano  511ms
+   ✓ Mike page — Operazioni, Risultati, Attività, KPI > tab Trade: nota del tetto di 500 righe, ✋ sulle chiusure manuali e VOID per mercato  4547ms
+   ✓ Mike page — Operazioni, Risultati, Attività, KPI > senza migrazione la pagina resta leggibile  355ms
+   ✓ Mike page — Avvia, Ferma, modalità, parametri > con il bot in corsa "Ferma" chiama mike_stop  1051ms
+   ✓ Mike page — Avvia, Ferma, modalità, parametri > con il bot fermo "Avvia" chiama mike_activate in PAPER (paper-first)  1174ms
+   ✓ Mike page — Avvia, Ferma, modalità, parametri > il passaggio a LIVE chiede CONFERMA e solo dopo porta il bot a soldi veri  2020ms
+   ✓ Mike page — Avvia, Ferma, modalità, parametri > Salva parametri manda l’oggetto intero a mike_update_params  1874ms
+   ✓ Mike page — sei schede, tre ricariche, nessun salto > PRE_OPEN → HOLD → LIVE_COVERED → FLAT: si muove SOLO chi entra in gioco  1635ms
+   ✓ Mike page — sei schede, tre ricariche, nessun salto > KO passato ma partita non ancora iniziata: resta in PRE-MATCH e lo dice  433ms
+   ✓ Mike page — sei schede, tre ricariche, nessun salto > una partita appena ARMATA (senza live) va in PRE-MATCH  389ms
+   ✓ Mike page — RPC v1, senza migrazione mike_bot_v2 > la pagina resta leggibile e i KPI vengono da control.stats  442ms
+   ✓ Mike page — RPC v1, senza migrazione mike_bot_v2 > tab Trade: senza giornata dal DB lo dichiara e mostra tutte le righe  661ms
+   ✓ Mike page — storico senza migrazione > non mostra "is not unique" nudo ma dice quale migrazione applicare  1188ms
+   ✓ Mike page — storico con la moneta esplicita > di serie la moneta del bot, mai null; l'altra si sceglie apposta  1646ms
+   ✓ Mike page — dalla tabella Trade alla scheda > la riga di una posizione APERTA porta al tab Partite e alla card  1684ms
+ ✓ src/components/live/LadderView.test.tsx (36 tests) 30764ms
+   ✓ LadderView > renderizza il layout di default a 8 colonne (PIQ inclusa)  815ms
+   ✓ LadderView > il column-picker nasconde una colonna e la persiste per-sport  2112ms
+   ✓ LadderView > la colonna PIQ mostra una STIMA (~) quando hai un ordine non abbinato  307ms
+   ✓ LadderView > one-click BACK in PAPER (armato) invia il comando place (non-regressione)  1084ms
+   ✓ LadderView > B11: il clic sulla colonna prezzo RICENTRA e non invia alcun ordine  384ms
+   ✓ LadderView > B13: clic sul P&L di un livello = green-up A QUEL prezzo (greening column)  1405ms
+   ✓ LadderView > B14: clic sull'intestazione dei tuoi ordini annulla TUTTO il lato  919ms
+   ✓ LadderView > B15: in modalità Liab il LAY invia liability al posto di size  1839ms
+   ✓ LadderView > B16: hotkey B piazza un BACK alla riga sotto il cursore  995ms
+   ✓ LadderView > B16: le hotkey NON scattano mentre si digita in un input  982ms
+   ✓ LadderView > C20: con Offset armato il place arma la regola offset on_fill sul bet piazzato  1259ms
+   ✓ LadderView > C26: Offset + Stop (non trailing) = UNA regola bracket OCO  1638ms
+   ✓ LadderView > C20: ordine OK ma bet_id assente → avviso esplicito, nessuna regola armata  1312ms
+   ✓ LadderView > C22: con FoK armato il place porta params.fok_ttl_sec  1440ms
+   ✓ LadderView > C24: con Scala 3×1t un click piazza 3 ordini a tick crescenti (back)  1304ms
+   ✓ LadderView > C23: con Entry armato il click ARMA uno stop_entry (nessun place)  1624ms
+   ✓ LadderView > C27: il tasto 1 esegue la macro sulla selezione puntata  977ms
+   ✓ LadderView — popup conferma ordine (non armato) > PAPER non armato: click BACK apre il popup con proiezione P&L, conferma → send  747ms
+   ✓ LadderView — popup conferma ordine (non armato) > il popup permette di EDITARE l'importo: l'ordine parte con la size editata  1085ms
+   ✓ LadderView — popup conferma ordine (non armato) > Annulla nel popup → nessun invio  646ms
+   ✓ LadderView — popup conferma ordine (non armato) > importo invalido nel popup → Conferma disabilitata  599ms
+   ✓ LadderView — popup conferma ordine (non armato) > LIVE non armato: il popup è marcato REALE  404ms
+   ✓ LadderView — popup conferma ordine (non armato) > intent non-place (cancella lato) in PAPER non armato → barra di conferma SIMULATO  1044ms
+   ✓ LadderView — popup conferma ordine (non armato) > il toggle 1-CLICK è visibile anche in PAPER e chiede conferma SIMULATO  835ms
+   ✓ LadderView — popup conferma ordine (non armato) > OFF: il toggle 1-CLICK non è renderizzato  454ms
+   ✓ LadderView — chip Kelly (E36) > mostra il chip col suggerimento e UN click imposta lo stake (nessun ordine)  411ms
+   ✓ LadderView — fix audit #10/#11/#23 > #11: mercato SUSPENDED — il CANCEL parte, il place NO  1131ms
+   ✓ LadderView — fix audit #10/#11/#23 > #10/#23: drag-move ripiazza SOLO la size realmente annullata, con la persistence dell'ordine  861ms
+   ✓ LadderView — fix audit #10/#11/#23 > #10: tutto abbinato prima del cancel (annullato 0) → NESSUN ripiazzo  647ms
+ ✓ src/pages/SafeStrategy.modalita.test.tsx (22 tests) 18622ms
+   ✓ CERT. 13/09 — la modalità mostrata è quella del SERVIZIO > i KPI del P&L dichiarano la modalità (paper e live non si sommano)  1895ms
+   ✓ CERT. 13/09 — la modalità mostrata è quella del SERVIZIO > control in LIVE: l’etichetta dei KPI dice LIVE anche a bot FERMO  881ms
+   ✓ CERT. 13/09 — la modalità mostrata è quella del SERVIZIO > selezione diversa dal servizio: si leggono ENTRAMBE, esplicitamente  1449ms
+   ✓ CERT. 13/09 — «Avvia» in LIVE senza conferma NON parte > control lasciato in live + Avvia: dialog di conferma, nessuna attivazione  1364ms
+   ✓ CERT. 13/09 — «Avvia» in LIVE senza conferma NON parte > in PAPER l’avvio resta immediato (nessuna frizione dove non serve)  1209ms
+   ✓ CERT. 13/09 — un dato assente è «—», mai 0,00 € > senza aggregati e senza stats: P&L e liability sono «—»  686ms
+   ✓ CERT. 13/09 — perché BASE e PUNTA non scattano > contatore delle partite senza riferimento pre-KO, visibile dalla tab di default  515ms
+   ✓ CERT. 13/09 — perché BASE e PUNTA non scattano > tutte le partite col riferimento pre-KO: nessun contatore (niente rumore)  481ms
+   ✓ CERT. 13/09 — feed attività: modalità e filtro per tipo > ogni riga porta il chip PAPER/LIVE scritto dal servizio  739ms
+   ✓ CERT. 13/09 — feed attività: modalità e filtro per tipo > chip «solo NON ENTRATO»: isola gli scarti col motivo (pre-KO compreso)  843ms
+   ✓ CERT. 13/09 — feed attività: modalità e filtro per tipo > filtro per TIPO: si può isolare un singolo kind  666ms
+   ✓ CERT. 13/09 — i filtri dicono quale è attivo > «Confidenza minima» e «Lato» hanno aria-pressed come gli altri  2546ms
+   ✓ CERT. 14/09 — il controllo del gioco dichiara di NON essere applicato > condizione spenta: lo dice, e dice su quante partite il dato ci sarebbe  564ms
+   ✓ CERT. 14/09 — il controllo del gioco dichiara di NON essere applicato > condizione accesa e dato completo: nessuna nota (niente rumore)  550ms
+   ✓ CERT. 14/09 — il controllo del gioco dichiara di NON essere applicato > condizione accesa ma dato assente: lo dichiara, il calcio non si puo valutare la  556ms
+   ✓ CERT. 14/09 — il controllo del gioco dichiara di NON essere applicato > nessuna partita in corso: nessuna nota (non si allarma sul vuoto)  561ms
+   ✓ CERT. 14/09 — la testata dichiara quali strategie spendono davvero > tennis live e calcio in prova: lo dice, e separa i due elenchi  482ms
+   ✓ CERT. 14/09 — la testata dichiara quali strategie spendono davvero > servizio armato in LIVE ma tutte riportate a paper: lo dichiara  550ms
+   ✓ CERT. 14/09 — la testata dichiara quali strategie spendono davvero > servizio in PAPER: nessuna riga (non si allarma dove non ci sono soldi)  360ms
+   ✓ CERT. 14/09 — la testata dichiara il percorso di esecuzione > runner spento: REST, col motivo, e dice che gli ordini appoggiati non ci sono  589ms
+   ✓ CERT. 14/09 — la testata dichiara il percorso di esecuzione > runner vivo e coerente: coda, e nessun avviso sugli ordini appoggiati  652ms
+   ✓ CERT. 14/09 — runner vivo ma in attesa > battito fresco e ZERO partite agganciate: REST, e lo dichiara  476ms
+ ✓ src/components/omega/OmegaParamsSheet.test.tsx (13 tests) 22754ms
+   ✓ OmegaParamsSheet > mostra l'obiettivo di giornata corrente, letto dalla colonna dedicata  1728ms
+   ✓ OmegaParamsSheet > senza obiettivo storicizzato mostra 250 (il ripiego dichiarato)  911ms
+   ✓ OmegaParamsSheet > salvare manda il NUOVO obiettivo e SOLO le chiavi cambiate, mai un default sopra un valore vivo  2159ms
+   ✓ OmegaParamsSheet > FALSIFICAZIONE — se il default della UI sostituisse il valore del servizio, questo test lo direbbe  866ms
+   ✓ OmegaParamsSheet > 28/09 uscite: default "MANUALI, approvi tu" (chiave assente)  382ms
+   ✓ OmegaParamsSheet > valore sconosciuto sul DB -> MANUALI (fail-closed, come il servizio)  655ms
+   ✓ OmegaParamsSheet > passare ad automatiche CHIEDE CONFERMA; confermato e salvato manda uscite_protezione=automatico (resto invariato)  1604ms
+   ✓ OmegaParamsSheet > salvare SENZA toccare l'interruttore non scrive la chiave (nessun default della UI sul DB)  750ms
+   ✓ OmegaParamsSheet > da "automatico" si torna a MANUALI con un clic, senza conferma  850ms
+   ✓ OmegaParamsSheet > «Default» ripristina i valori di fabbrica (compreso l'obiettivo a 250)  705ms
+   ✓ OmegaParamsSheet - reperto 2: campo numerico svuotato = chiave assente > nel foglio vero: svuotati TUTTI i campi numerici (non l'obiettivo) -> nessuna chiave numerica, nessun ""  11036ms
+   ✓ OmegaParamsSheet - reperto 2: campo numerico svuotato = chiave assente > obiettivo giornaliero svuotato: salvataggio RIFIUTATO con "campo obbligatorio", nessuna scrittura  1014ms
+ ✓ src/pages/SafeStrategy.storico.test.tsx (17 tests) 25340ms
+   ✓ Safe Strategy — giornata operativa e uscite > il KPI "P&L oggi" dichiara la giornata operativa (Europe/Rome)  1934ms
+   ✓ Safe Strategy — giornata operativa e uscite > la tabella trade mostra il badge di uscita su apertura e chiusura  2102ms
+   ✓ Safe Strategy — giornata operativa e uscite > pannello parametri: sezione Uscite automatiche legge params.exits e li preserva al salvataggio  4056ms
+   ✓ Safe Strategy — tab Trade: solo la giornata operativa (come Omega) > una posizione di ieri già regolata compare solo con "mostra tutte"; una di ieri ancora viva resta visibile  4347ms
+   ✓ Safe Strategy — tab Trade: solo la giornata operativa (come Omega) > nessuna operazione oggi: stato vuoto che rimanda allo Storico  1037ms
+   ✓ Safe Strategy — tab Storico > monta lo storico con i fetcher Safe; il filtro sport ricarica con lo sport  2678ms
+   ✓ Safe Strategy — tab Storico > dal dettaglio di una posizione viva si torna al tab Trade dello sport  2469ms
+   ✓ Safe Strategy — senza la migrazione v2 (RPC vecchia) > la pagina si carica: header, stato bot e KPI presenti  527ms
+   ✓ Safe Strategy — senza la migrazione v2 (RPC vecchia) > la giornata operativa ripiega su Europe/Rome quando il DB non la dichiara  648ms
+   ✓ Safe Strategy — senza la migrazione v2 (RPC vecchia) > il pannello Rischio degrada senza stats.risk: usa gli aggregates v1  659ms
+   ✓ Safe Strategy — senza la migrazione v2 (RPC vecchia) > la tabella trade funziona: un trade = una riga, chiusura come sub-riga  1177ms
+   ✓ Safe Strategy — senza la migrazione v2 (RPC vecchia) > nessuna attivita del servizio (la v1 non la espone): sezione assente, non rotta  525ms
+   ✓ Safe Strategy — senza la migrazione v2 (RPC vecchia) > la barra della giornata DICHIARA che i numeri sono stimati dal client  494ms
+   ✓ Safe Strategy — senza la migrazione v2 (RPC vecchia) > il pannello Rischio dichiara l impegnato come stimato  431ms
+   ✓ Safe Strategy — senza la migrazione v2 (RPC vecchia) > la scheda parametri dice che i valori in uso non sono disponibili  818ms
+   ✓ Safe Strategy — senza la migrazione v2 (RPC vecchia) > CON la migrazione v2 la barra promette gli stessi numeri dello Storico  413ms
+   ✓ Safe Strategy — senza la migrazione v2 (RPC vecchia) > il pannello parametri si apre senza params_effective  1019ms
+ ✓ src/pages/Omega.test.tsx (40 tests) 29183ms
+   ✓ Omega dashboard > mostra header OMEGA e stato IN CORSA  1375ms
+   ✓ Omega dashboard > il tab AUTOMATICO è il default: le posizioni vive di oggi si vedono subito  495ms
+   ✓ Omega dashboard > il tab Missione monta il pannello quando lo si apre  922ms
+   ✓ Omega dashboard > barra obiettivo mostra realizzato e goal  546ms
+   ✓ Omega dashboard > H-08: i contatori della giornata vengono dalla RPC, non dal client  635ms
+   ✓ Omega dashboard > H-06/H-02: KPI P&L bloccato e liability con il dettaglio "in verifica"  417ms
+   ✓ Omega dashboard > L-03: a bot FERMO eventi e target non si spacciano per dati vivi  319ms
+   ✓ Omega dashboard > KPI target/match e liability aperta presenti  498ms
+   ✓ Omega dashboard > elenca la PARTITA con la gamba 2T bancata (3-2), stato APERTO e le colonne 1°/2° tempo + risultati  998ms
+   ✓ Omega dashboard > mostra tutte / solo oggi: una partita di ieri già regolata compare solo con "mostra tutte"  1053ms
+   ✓ Omega dashboard > risultati REALI 1T/2T e P&L della partita in verde/rosso (entrambe le gambe con le chiusure)  753ms
+   ✓ Omega dashboard > mostra il pulsante Ferma quando è in corsa  344ms
+   ✓ Omega — cash out > CRITICAL-2: la conferma usa la modalità del TRADE, non quella della pagina  1057ms
+   ✓ Omega — cash out > CRITICAL-2 (inverso): pagina LIVE ma trade paper -> nessuna doppia conferma  847ms
+   ✓ Omega — cash out > HIGH-1: chiusura in volo (pending) -> cash out spento (nessuna seconda copertura)  455ms
+   ✓ Omega — cash out > HIGH-1: meta.hedging alzato dal servizio -> cash out spento  555ms
+   ✓ Omega — cash out > M-24: feed FERMO (> 20 s) -> cash out spento e la riga lo dice  738ms
+   ✓ Omega — cash out > M-06: copertura PARZIALE -> stato "COPERTA 40 %", residuo e cash out del SOLO residuo  623ms
+   ✓ Omega — stati critici sulla riga > H-02: pending in riconciliazione = IN VERIFICA SU BETFAIR e conta nel rischio  702ms
+   ✓ Omega — stati critici sulla riga > M-05: riga TERMINALE (nessun ordine reale) = ERRORE definitivo, non "in corso per sempre"  498ms
+   ✓ Omega — stati critici sulla riga > M-04: esito della POSIZIONE accanto a quello della gamba  612ms
+   ✓ Omega — stati critici sulla riga > L-02: la commissione del cash out è quella FISSATA sul trade, non quella del form  649ms
+   ✓ Omega — green-up automatico > H-04: stato pending visibile sulla riga  509ms
+   ✓ Omega — green-up automatico > H-04: stato hold visibile sulla riga  416ms
+   ✓ Omega — green-up automatico > H-04: stato failed visibile sulla riga  564ms
+   ✓ Omega — green-up automatico > H-04: stato blind visibile sulla riga  529ms
+   ✓ Omega — green-up automatico > H-04: stato residual_dropped visibile sulla riga  404ms
+   ✓ Omega — green-up automatico > H-04: stato done visibile sulla riga  515ms
+   ✓ Omega — green-up automatico > pannello parametri: gruppi, green-up, default del SERVIZIO e clamp dichiarato  2218ms
+   ✓ Omega — green-up automatico > M-09: un valore fuori range viene clampato e DICHIARATO  1764ms
+   ✓ Omega — green-up automatico > H-07: "Salva" manda i parametri del SERVIZIO + le modifiche, mai i default della UI  1903ms
+   ✓ Omega — green-up automatico > reperto 2: obiettivo svuotato -> "Campo obbligatorio", nessuna scrittura  1546ms
+   ✓ Omega — green-up automatico > riga trade: badge Green-up da meta.exit_kind e colonna P modello vs mercato  694ms
+   ✓ Omega — green-up automatico > coppia lay + back di copertura: una sola riga partita, CHIUSO IN GREEN-UP, P&L bloccato, live  506ms
+   ✓ Omega — green-up automatico > M-19: la chiusura chiesta a mano si chiama "Cash out", mai "Chiusura"  445ms
+   ✓ Omega — green-up automatico > uscita non green-up (es. profitto) su trade regolato: badge di uscita classico  356ms
+   ✓ Omega — attività del servizio > M-01/M-02: kind in italiano, nome partita risolto dai trade, critici in rosso  452ms
+   ✓ Omega — attività del servizio > M-22: "carica altre" quando la giornata ha più righe del limite  610ms
+   ✓ Omega — contratto aggiornato (salute e bloccato) > locked_pnl_open_today: la barra mostra il bloccato di OGGI, il KPI anche il totale  409ms
+ ✓ src/pages/StoricoSport.test.tsx (27 tests) 18893ms
+   ✓ storico calcio: i profitti per bot, separati per moneta > la testata dichiara la moneta PRIMA dei numeri  1403ms
+   ✓ storico calcio: i profitti per bot, separati per moneta > il totale «soldi veri» somma SOLO safe e mike, mai Omega che e' misto  854ms
+   ✓ storico calcio: i profitti per bot, separati per moneta > Omega finisce nel blocco «non separabile» SENZA cifre (sarebbero di due monete) e senza nomi tecnici  798ms
+   ✓ storico calcio: i profitti per bot, separati per moneta > la tabella per bot elenca un rigo per bot, con il suo P&L  944ms
+   ✓ storico calcio: i profitti per bot, separati per moneta > il totale in fondo alla tabella e' quello della moneta scelta  584ms
+   ✓ storico calcio: i profitti per bot, separati per moneta > A-01 (01/10): NESSUNA cifra dell'altra moneta, in nessuna delle due viste  2181ms
+   ✓ storico calcio: i profitti per bot, separati per moneta > A-09: la moneta si sceglie in UN posto solo (la testata), niente pillole doppie  609ms
+   ✓ storico calcio: i profitti per bot, separati per moneta > B-01 / R-01: senza righe del giorno il piede NON afferma il giorno della PARTITA, e niente nomi di funzioni  396ms
+   ✓ storico calcio: i profitti per bot, separati per moneta > D-04: il P&L in soldi veri dice la sua fonte  432ms
+   ✓ storico calcio: i profitti per bot, separati per moneta > C-05: le regolate né vinte né perse sono dette (pari/annullate)  410ms
+   ✓ storico calcio: i profitti per bot, separati per moneta > passando a «prova» i numeri cambiano: sono un'altra moneta  1174ms
+   ✓ storico calcio: i profitti per bot, separati per moneta > scegliendo un bot MISTO la pagina dice perche' i grafici restano vuoti  609ms
+   ✓ storico calcio: i profitti per bot, separati per moneta > NON esiste un filtro «entrambi»: due monete non hanno un totale  650ms
+   ✓ ROI: senza l'importo piazzato non si inventa > senza l'importo piazzato il ROI e' assente e la pagina lo dice IN PAROLE (C-02)  448ms
+   ✓ ROI: senza l'importo piazzato non si inventa > con l'importo piazzato il ROI compare  605ms
+   ✓ storico tennis: i quattro bot tennis ENTRANO (D-01, 01/10) > Tennis Swing ha il suo rigo e il suo P&L; nessun «non compaiono» per i bot tennis  417ms
+   ✓ storico tennis: i quattro bot tennis ENTRANO (D-01, 01/10) > D-03/D-04: solo bot tennis con la fonte separata: «di cui conto Betfair · stima (N ordini stimati)»  399ms
+   ✓ storico tennis: i quattro bot tennis ENTRANO (D-01, 01/10) > la lettura chiede UNA moneta per bot (p_mode), mai le due insieme  402ms
+   ✓ storico tennis: i quattro bot tennis ENTRANO (D-01, 01/10) > nel tennis non compare Omega ne' Mike  466ms
+   ✓ storico tennis: i quattro bot tennis ENTRANO (D-01, 01/10) > il pulsante per passare all'altro sport c'e' ed e' esplicito  315ms
+   ✓ B-04 (01/10): il dettaglio del giorno di Mike usa il criterio della CELLA, mai uno cablato > RPC vecchia (senza in_day): Mike per regolamento come la cella, e la pagina lo DICHIARA  472ms
+   ✓ B-04 (01/10): il dettaglio del giorno di Mike usa il criterio della CELLA, mai uno cablato > contratto nuovo (in_day): nessun ripiego dichiarato, dettaglio = cella  769ms
+   ✓ periodo e curve > la curva cumulata e le barre per giornata ci sono entrambe  397ms
+   ✓ periodo e curve > le barre dicono il totale e le giornate migliore e peggiore (accessibilita')  482ms
+   ✓ periodo e curve > cambiando periodo i NUMERI seguono il periodo; la lettura copre anche la griglia del mese (B-15)  1122ms
+   ✓ periodo e curve > B-15: il mese precedente si LEGGE (mai «nessuna operazione» su giornate non lette)  1160ms
+   ✓ periodo e curve > il calendario riceve le giornate unite dei bot visibili  388ms
+ ✓ src/lib/liveOrders.test.ts (60 tests) 9282ms
+   ✓ sendCashoutEvent > fraction totale (default) → action cashout_event senza params  1020ms
+   ✓ sendCashoutEvent > fraction parziale → params.fraction arrotondata  1044ms
+   ✓ sendDutch v2 (target + pricing) > target → params.mode=target, target_profit, niente total_stake  1030ms
+   ✓ sendDutch v2 (target + pricing) > nominated → params.pricing e nominated_price presenti  1015ms
+   ✓ sendGreenup / sendCashoutAll / sendCashoutEvent — nuovi params > sendGreenup inoltra params.amount  1012ms
+   ✓ sendGreenup / sendCashoutAll / sendCashoutEvent — nuovi params > sendCashoutAll con equal → params.equal true  1018ms
+   ✓ sendGreenup / sendCashoutAll / sendCashoutEvent — nuovi params > sendCashoutAll equal + fraction parziale → entrambi  1004ms
+   ✓ sendGreenup / sendCashoutAll / sendCashoutEvent — nuovi params > sendCashoutAll senza equal → nessun params (comportamento storico)  1026ms
+   ✓ sendGreenup / sendCashoutAll / sendCashoutEvent — nuovi params > sendCashoutEvent con equal → params.equal true  1005ms
+ ✓ src/pages/SafeStrategy.audit.test.tsx (13 tests) 15191ms
+   ✓ C-01 / H-03 — una sola giornata, una sola liability > la giornata operativa è quella dichiarata dal DB (giorno di PIAZZAMENTO)  1848ms
+   ✓ C-01 / H-03 — una sola giornata, una sola liability > V/P di oggi dagli aggregates, non ricontati a mano  798ms
+   ✓ C-01 / H-03 — una sola giornata, una sola liability > "Liability aperta" dichiara quanta parte è IN VERIFICA su Betfair  836ms
+   ✓ C-01 / H-03 — una sola giornata, una sola liability > pannello Rischio: SOLO "impegnato oggi / cap", con la spiegazione  858ms
+   ✓ C-01 / H-03 — una sola giornata, una sola liability > la barra della giornata NON ripete la liability aperta  591ms
+   ✓ H-16 — attività del servizio visibile > il blocco elenca le righe con etichette italiane e marca le critiche  578ms
+   ✓ H-16 — attività del servizio visibile > «solo da guardare»: filtro esplicito sulle righe critiche  1281ms
+   ✓ H-16 — attività del servizio visibile > si può filtrare per evento  579ms
+   ✓ H-16 — attività del servizio visibile > senza log: testo che spiega cosa manca, mai una lista muta  499ms
+   ✓ M-04 — UN solo toast per POSIZIONE regolata > green-up in utile: un toast con il P&L della POSIZIONE, non due per gamba  1983ms
+   ✓ M-21 — Annulla la riserva e vedi l esito > la riserva pending si annulla dalla tabella (kind cancel)  2237ms
+   ✓ M-21 — Annulla la riserva e vedi l esito > richiesta rifiutata dal servizio: notifica col motivo  2006ms
+   ✓ M-21 — i contatori delle opportunità coincidono > il tab conta le OPPORTUNITÀ, come il pannello Rischio  1092ms
+ ✓ src/components/omega/ManualPanel.cert.12set.test.tsx (14 tests) 18990ms
+   ✓ ManualPanel — anteprima del rischio mai negativa > senza quota valida: "—", non un rischio negativo  4471ms
+   ✓ ManualPanel — liquidità dei DUE lati e guardie di ingresso > la tabella mostra la liquidità BACK oltre a quella LAY  2632ms
+   ✓ ManualPanel — liquidità dei DUE lati e guardie di ingresso > BACK con liquidità 3 € e stake 10 €: bottone SPENTO col motivo  3576ms
+   ✓ ManualPanel — liquidità dei DUE lati e guardie di ingresso > BACK sotto il minimo Betfair (2 €): bottone SPENTO  3377ms
+   ✓ ManualPanel — la quota segue il LATO scelto > scegliendo il runner in LAY e poi passando a BACK, la quota diventa quella back  2646ms
+   ✓ ManualPanel — selezione non ATTIVA dichiarata > un runner RITIRATO porta il suo badge in italiano  2266ms
+ ✓ src/components/trading/TradingHistory.test.tsx (6 tests) 14014ms
+   ✓ TradingHistory > carica mese ∪ periodo, mostra calendario/KPI e il dettaglio del giorno corrente  729ms
+   ✓ TradingHistory > selezione di un altro giorno → nuovo dettaglio; periodo 90 gg allarga la finestra  2203ms
+   ✓ TradingHistory > errore dell RPC: banner esplicito, la pagina resta usabile  491ms
+   ✓ TradingHistory > posizione viva nel dettaglio → onGoLive  866ms
+   ✓ TradingHistory — coerenza giorno ↔ trade mostrati (12/09) > cambiando giorno i trade del giorno prima spariscono SUBITO  1264ms
+   ✓ TradingHistory — coerenza giorno ↔ trade mostrati (12/09) > mese lontano: la finestra tiene il MESE e dichiara il periodo fuori  8456ms
+ ✓ src/pages/ControlRoom.test.tsx (144 tests) 106560ms
+   ✓ modalità — soldi veri o simulati, senza possibilità di equivoco > tutto in paper: il banner lo dice, e NON parla di soldi veri  1892ms
+   ✓ modalità — soldi veri o simulati, senza possibilità di equivoco > review finale M1: un bot con modalità NON LETTA: il banner non dice «nessuno usa soldi veri» e nomina il bot  856ms
+   ✓ modalità — soldi veri o simulati, senza possibilità di equivoco > un solo bot in live: l'avviso c'è e NOMINA quel bot  667ms
+   ✓ modalità — soldi veri o simulati, senza possibilità di equivoco > in live con varianti: dice QUALI apre, perché «LIVE» da solo sarebbe fuorviante  632ms
+   ✓ modalità — soldi veri o simulati, senza possibilità di equivoco > modalità sconosciuta non si mostra come paper: si dichiara ignota  661ms
+   ✓ freni — un freno che nessuno vede non è un freno > mostra la soglia dello stop di perdita  574ms
+   ✓ freni — un freno che nessuno vede non è un freno > SOGLIA ASSENTE si scrive «assente», MAI «0,00 €»  549ms
+   ✓ freni — un freno che nessuno vede non è un freno > T_P4: lo stop del CONTO e quello di OGNI bot, col nome e la modalita' (non piu' «Stop perdita −50,00» di chi?)  587ms
+   ✓ freni — un freno che nessuno vede non è un freno > R-03 (review 01/10): conto PAPER e bot tutti PAPER, ma il runner tennis consente ordini veri: lo stop del conto chiede conferma  589ms
+   ✓ freni — un freno che nessuno vede non è un freno > 01/10: il cancello dei fogli parametri vale anche qui: i parametri GREZZI del bot (vm.bots[].params) aprono la modifica; non letti la chiudono  631ms
+   ✓ freni — un freno che nessuno vede non è un freno > stop già scattato: lo dice, non mostra solo un numero  581ms
+   ✓ bot muto — fail-closed dichiarato > canale caduto: lo dice, e avvisa che le sue proposte non saranno approvabili  592ms
+   ✓ bot muto — fail-closed dichiarato > dato vecchio oltre soglia: muto anche col canale connesso  649ms
+   ✓ bot muto — fail-closed dichiarato > tutti freschi: nessun avviso  573ms
+   ✓ partite — quello che la riga dice e quello che non deve dire > in gioco: minuto e punteggio; pre-match: l'orario  1050ms
+   ✓ partite — quello che la riga dice e quello che non deve dire > PARTITA SENZA RISULTATO: «—», mai «0,00 €»  659ms
+   ✓ partite — quello che la riga dice e quello che non deve dire > un target CALCOLATO dalla pagina è marcato: non si spaccia per quello del servizio  532ms
+   ✓ partite — quello che la riga dice e quello che non deve dire > un target del SERVIZIO non porta l'asterisco  545ms
+   ✓ partite — quello che la riga dice e quello che non deve dire > i campionati si leggono nell'ordine in cui il modello li consegna  805ms
+   ✓ spia del controllo del gioco > quando il dato manca su qualche partita in gioco, lo dichiara con i numeri  560ms
+   ✓ spia del controllo del gioco > copertura piena: NON si allarma (niente rumore quando non serve)  555ms
+   ✓ spia del controllo del gioco > nessuna partita in gioco: nessuna percentuale inventata  531ms
+   ✓ posizioni aperte > una posizione LIVE è marcata live e contata a parte  864ms
+   ✓ posizioni aperte > 30/09 (B2): posizione ORFANA - «liability», mai «responsabilità»; chip «banca» rose come il lato LAY  860ms
+   ✓ posizioni aperte > senza posizioni lo dice invece di mostrare una tabella vuota  850ms
+   ✓ uscite — la scheda che decide un ordine vero > senza proposte spiega cosa comparirà, invece di restare muta  515ms
+   ✓ uscite — la scheda che decide un ordine vero > mostra il PREZZO VIVO e il confronto con la proposta  667ms
+   ✓ uscite — la scheda che decide un ordine vero > URGENTE è marcata e lo dice: non approvarla costa  660ms
+   ✓ uscite — la scheda che decide un ordine vero > PREZZO CORRENTE ASSENTE: bottone ACCESO e ragione scritta come avviso  691ms
+   ✓ uscite — la scheda che decide un ordine vero > PREZZO ASSENTE: il clic parte lo stesso, col prezzo della proposta e prezzo_vivo_assente  565ms
+   ✓ uscite — la scheda che decide un ordine vero > ETÀ DELLE QUOTE IGNOTA: avviso  548ms
+   ✓ uscite — la scheda che decide un ordine vero > MERCATO CHE NON ABBINA ABBASTANZA: avvisa e spiega la conseguenza  546ms
+   ✓ uscite — la scheda che decide un ordine vero > tutto a posto: si può chiudere, e il bottone non è muto  684ms
+   ✓ uscite — la scheda che decide un ordine vero > in PAPER un clic basta; in LIVE serve la seconda conferma  1324ms
+   ✓ uscite — la scheda che decide un ordine vero > IGNORA è sempre possibile, anche quando non si può chiudere  687ms
+   ✓ uscite — la scheda che decide un ordine vero > il motivo dell’uscita è in italiano, e l’ingresso è ricordato  636ms
+   ✓ catena dei tempi - da Betfair al pixel > mostra quanto e vecchio quello che il trader vede  559ms
+   ✓ catena dei tempi - da Betfair al pixel > senza istanti lo DICHIARA, invece di mostrare degli zero  582ms
+   ✓ catena dei tempi - da Betfair al pixel > con gli istanti mostra i salti e indica il PIU LENTO  674ms
+   ✓ catena dei tempi - da Betfair al pixel > separa il tempo NOSTRO da quello totale: Betfair non e colpa nostra  671ms
+   ✓ catena dei tempi - da Betfair al pixel > un salto non misurato e un trattino, mai zero  574ms
+   ✓ runner — tre stati, non due > battito fresco + follow STREAMING = in streaming  636ms
+   ✓ runner — tre stati, non due > battito fresco SENZA follow = «vivo, in attesa»: il processo c’è, la coda no  473ms
+   ✓ runner — tre stati, non due > streaming NON LETTO vale attesa, mai streaming: il dubbio non concede la coda  573ms
+   ✓ runner — tre stati, non due > battito vecchio = fermo  576ms
+   ✓ runner — tre stati, non due > MAI battuto non si confonde con spento: si dice «mai avviato»  530ms
+   ✓ runner — tre stati, non due > stato non letto = «stato non letto», e non si spaccia per fermo  534ms
+   ✓ runner — tre stati, non due > dichiara la fonte: canale con l'eta' dell'ultimo messaggio, db col battito  1178ms
+   ✓ runner — tre stati, non due > 01/10: due tessere nominate, CALCIO (47331) e TENNIS (47332), prima dei freni  536ms
+   ✓ runner — tre stati, non due > runner tennis: canale spento = "canale 47332 spento", mai "fermo"  693ms
+   ✓ runner — tre stati, non due > runner tennis collegato: vivo dal canale 47332, con la fonte  613ms
+   ✓ chip bot - fonte dello stato > stato dal canale: 'stato canale' con l'eta' del push  480ms
+   ✓ chip bot - fonte dello stato > stato dal database: 'stato db' con l'eta' della lettura  658ms
+   ✓ feed - fonte dello stato dello scanner > canale / db  1188ms
+   ✓ Mike: uscita appoggiata in live > SPENTA: lo grida, perché demo e live diventano due strategie diverse  506ms
+   ✓ Mike: uscita appoggiata in live > SPENTA con Mike in PAPER: resta, e dice che vale solo in LIVE  581ms
+   ✓ Mike: uscita appoggiata in live > SPENTA con Mike in LIVE: dice che riguarda i soldi veri adesso  540ms
+   ✓ Mike: uscita appoggiata in live > SPENTA con la modalita’ di Mike ignota: dice solo quando vale  499ms
+   ✓ Mike: uscita appoggiata in live > accesa: nessun allarme  699ms
+   ✓ Mike: uscita appoggiata in live > valore SCONOSCIUTO non vale «spento»: non si allarma su un dato assente  541ms
+   ✓ onestà sulle fonti > una fonte caduta si dichiara, e si dice che i numeri sono gli ultimi letti  567ms
+   ✓ onestà sulle fonti > la sorgente del feed è scritta: fra stream e rest c'è un ordine di grandezza  542ms
+   ✓ onestà sulle fonti > T_P5b: Mike FERMO in LIVE con stop che ferma solo le aperture: FERMO · LIVE (rosso) · uscite attive; mai SPENTO ne' ultimo modo  649ms
+   ✓ onestà sulle fonti > T_P5: fermo senza aggiornamenti = normale; scalper spento = «SPENTO · ultimo modo paper»; runner in parole vere  610ms
+   ✓ onestà sulle fonti > obiettivo non storicizzato: la pagina lo dice invece di spacciarlo per quello del giorno  658ms
+   ✓ tessere calcio/tennis — sono il filtro del banco > senza filtro si vedono ENTRAMBI gli sport  631ms
+   ✓ tessere calcio/tennis — sono il filtro del banco > cliccando TENNIS resta solo il tennis, fra le partite e fra le posizioni  1222ms
+   ✓ tessere calcio/tennis — sono il filtro del banco > cliccando CALCIO resta solo il calcio  1140ms
+   ✓ tessere calcio/tennis — sono il filtro del banco > il secondo clic sulla stessa tessera RIMETTE tutti gli sport  1332ms
+   ✓ tessere calcio/tennis — sono il filtro del banco > la tessera scelta lo dichiara con aria-pressed  894ms
+   ✓ tessere calcio/tennis — sono il filtro del banco > LE USCITE NON SI FILTRANO MAI: la proposta di tennis resta visibile col filtro sul calcio  861ms
+   ✓ tessere calcio/tennis — sono il filtro del banco > IL CONTATORE DELLA LINGUETTA segue il filtro: 2 sport -> 1  975ms
+   ✓ tessere calcio/tennis — sono il filtro del banco > una posizione su un evento SCONOSCIUTO non sparisce mai dietro un filtro  1146ms
+   ✓ la pagina non mostra MAI un numero che somma paper e live > la BARRA dell’obiettivo porta i soldi veri, e il paper ha una riga sua  654ms
+   ✓ la pagina non mostra MAI un numero che somma paper e live > P8: la prova di OGGI e' 0,00; Safe +7,60 e Mike -18,29 sono arretrati del 26/09, separati e mai uniti  581ms
+   ✓ la pagina non mostra MAI un numero che somma paper e live > R_G: nel riquadro Obiettivo niente liability LORDA e niente «in corso (stimato)»; la barra avanza col solo realizzato  909ms
+   ✓ la pagina non mostra MAI un numero che somma paper e live > P6: conto letto e 0 ordini -> «+0,00 €» con CONTO e «nessun ordine regolato oggi»; aperto -0,82 per partita; rischio 9,95 dal conto  867ms
+   ✓ la pagina non mostra MAI un numero che somma paper e live > P6: una partita NON calcolabile si dice («+ 1 partita non calcolabili»), mai una somma spacciata per completa  829ms
+   ✓ la pagina non mostra MAI un numero che somma paper e live > P6: conto NON letto e nessuna riga -> «—» e «conto non letto: P&L dalle righe dei bot»; rischio «—»  652ms
+   ✓ la pagina non mostra MAI un numero che somma paper e live > R_G: Mike ORA in LIVE senza prova di oggi -> «— (ora in LIVE)», mai «+0,00 [PROVA]»; arretrati invariati  665ms
+   ✓ la pagina non mostra MAI un numero che somma paper e live > P8: arretrati di Mike non letti -> lo dice, mai 0,00 e mai silenzio  562ms
+   ✓ la pagina non mostra MAI un numero che somma paper e live > L’ESPOSIZIONE in testata e’ quella del CONTO; la somma lorda e la prova non ci sono  595ms
+   ✓ la pagina non mostra MAI un numero che somma paper e live > T_P3: i numeri del 30/09 - conto 9,95, bot 16,22, NON TORNANO 6,27; la lorda 39,15 non compare in testata  549ms
+   ✓ la pagina non mostra MAI un numero che somma paper e live > T_P3: conto non letto -> in testata nessuna cifra dell'esposizione, «conto non letto»  578ms
+   ✓ la pagina non mostra MAI un numero che somma paper e live > quando server e pagina non concordano la pagina LO DICE  534ms
+   ✓ la pagina non mostra MAI un numero che somma paper e live > senza niente in prova non compare nessuna riga della prova (niente rumore)  493ms
+   ✓ la pagina non mostra MAI un numero che somma paper e live > LA SCHEDA PARTITA: numero grande = soldi veri, prova sotto e mai sommata  854ms
+   ✓ la pagina non mostra MAI un numero che somma paper e live > LE TESSERE: «2 aperte» dice sempre con che soldi  711ms
+   ✓ la pagina non mostra MAI un numero che somma paper e live > LE TESSERE: Mike LIVE + Safe paper -> corsia LIVE con Mike, PROVA con Safe e Omega, scalper spento elencato  650ms
+   ✓ la pagina non mostra MAI un numero che somma paper e live > LE TESSERE: nessun bot LIVE -> nessun «soldi veri» su nessuna tessera  656ms
+   ✓ comando dei bot > mostra lo stato ESATTO del servizio: «sta fermandosi» non e’ «fermo»  620ms
+   ✓ comando dei bot > FERMA TUTTI e’ spento se non c’e’ niente da fermare  839ms
+   ✓ comando dei bot > FERMA TUTTI e’ acceso e non chiede conferme: e’ un freno d’emergenza  617ms
+   ✓ comando dei bot > AVVIARE CON SOLDI VERI chiede una seconda conferma  707ms
+   ✓ comando dei bot > avviare IN PROVA non chiede nessuna conferma: non ci sono soldi in gioco  905ms
+   ✓ comando dei bot > anche PASSARE a soldi veri a bot acceso vuole la seconda conferma  786ms
+   ✓ comando dei bot > tornare in prova NON chiede conferma: si toglie rischio, non si aggiunge  808ms
+   ✓ comando dei bot > QUANTI BOT usano soldi veri si vede in cima al pannello  740ms
+   ✓ comando dei bot > l’importo mostra il valore VERO del servizio e non si salva a ogni tasto  588ms
+   ✓ comando dei bot > l’importo di Omega dichiara che e’ un MINIMO, non l’importo di lavoro  426ms
+   ✓ comando dei bot > Omega ha ORA la sua scheda parametri dedicata: non dice più «dalla sua pagina»  595ms
+   ✓ comando dei bot > Omega senza parametri LETTI non apre un foglio che scriverebbe i default  574ms
+   ✓ la TESTATA non somma paper e live (critico della review) > la barra dell’obiettivo legge il realizzato LIVE, non quello misto di Omega  570ms
+   ✓ la TESTATA non somma paper e live (critico della review) > testata e barra di giornata dicono LO STESSO numero  563ms
+   ✓ «Chiudere adesso»: il numero vivo, o l’etichetta lo dichiara > col valore VIVO l’etichetta dice «adesso»  600ms
+   ✓ «Chiudere adesso»: il numero vivo, o l’etichetta lo dichiara > SENZA valore vivo l’etichetta dice che e’ quello della proposta  831ms
+   ✓ scheda tennis: una plancia sola, e quella giusta > senza filtro si comandano tutti e tre  1261ms
+   ✓ scheda tennis: una plancia sola, e quella giusta > scelto il tennis, restano SOLO le sue righe: Mike e Omega sono calcio e spariscono  1180ms
+   ✓ scheda tennis: una plancia sola, e quella giusta > il bot si chiama TENNIS, che è il nome con cui lo si comanda  985ms
+   ✓ scheda tennis: una plancia sola, e quella giusta > 28/09 (CANTIERE G, voce 2) — dice PRIMA del clic che AGGIUNGE il tennis, a 3,00 €, senza spegnere il calcio  972ms
+   ✓ scheda tennis: una plancia sola, e quella giusta > e dichiara che cosa cambierebbe rispetto a com’è adesso  1422ms
+   ✓ scheda tennis: una plancia sola, e quella giusta > resta il solo importo che muove il tennis: «banca» è del calcio  948ms
+   ✓ scheda tennis: una plancia sola, e quella giusta > tolto il filtro tornano tutti: la plancia non resta ristretta per sbaglio  1434ms
+   ✓ scheda tennis: la conferma «soldi veri» non cambia significato sotto il dito > armata nella scheda tennis, uscendo dalla scheda si DISARMA  1388ms
+   ✓ scheda tennis: la conferma «soldi veri» non cambia significato sotto il dito > il freno d’emergenza resta su TUTTI i bot, anche quelli nascosti dal filtro  954ms
+   ✓ scheda tennis: la conferma «soldi veri» non cambia significato sotto il dito > se il calcio sta gia’ operando con soldi veri, la scheda tennis LO DICE  1010ms
+   ✓ la partita si chiude TUTTA, e il bot lo sa > la scheda della partita live porta il gesto, con l’event_id giusto  599ms
+   ✓ la partita si chiude TUTTA, e il bot lo sa > quando il servizio la dichiara chiusa: badge acceso e «Riprendi» al posto del cash out  588ms
+   ✓ la partita si chiude TUTTA, e il bot lo sa > senza posizioni vive del bot il gesto e SPENTO, e dice perche  553ms
+   ✓ la partita si chiude TUTTA, e il bot lo sa > il gesto chiama il servizio con l’event_id della partita  845ms
+   ✓ le uscite di OMEGA arrivano nel nastro come proposte > la scheda di Omega compare nel nastro e dice di chi e  693ms
+   ✓ le uscite di OMEGA arrivano nel nastro come proposte > il conteggio in testata somma le proposte dei due bot  746ms
+   ✓ le uscite di OMEGA arrivano nel nastro come proposte > con una proposta di Omega il nastro NON dice «nessuna uscita da decidere»  739ms
+   ✓ le uscite di OMEGA arrivano nel nastro come proposte > migrazione non applicata: si DICHIARA perche l’elenco e vuoto  537ms
+   ✓ uscite e opportunità sono contenitori INDIPENDENTI (Task 4) > due card separate: cr-nastro (uscite) e cr-opportunita, ciascuna col suo contatore  600ms
+   ✓ uscite e opportunità sono contenitori INDIPENDENTI (Task 4) > IL CONTATORE non conta le opportunità e viceversa (verificato a livello di pagina)  612ms
+   ✓ uscite e opportunità sono contenitori INDIPENDENTI (Task 4) > STATO VUOTO di una colonna è indipendente da quello dell’altra  576ms
+   ✓ ZONA 1 — l’obiettivo vive UNA sola volta (Task 1/2) > cr-obiettivo esiste una sola volta e contiene la matita di modifica  530ms
+   ✓ ZONA 1 — l’obiettivo vive UNA sola volta (Task 1/2) > la composizione mostra Omega/Safe calcio/Safe tennis/Mike/bot tennis/manuale  611ms
+   ✓ ZONA 1 — l’obiettivo vive UNA sola volta (Task 1/2) > 01/10: la card del SALDO non e' montata (nessuna sua lettura parte); l'obiettivo e' l'unico contenuto della zona  761ms
+   ✓ ZONA 1 — l’obiettivo vive UNA sola volta (Task 1/2) > 01/10: obiettivo e realizzato GRANDI; la fonte del realizzato resta accanto al numero  526ms
+   ✓ ZONA 5 — la Catena è richiudibile, chiusa di default (Task 1) > il riassunto e i dati della catena restano nel DOM (query per testid), il dettaglio non è espanso di default  653ms
+   ✓ W_T/P15 - Posizioni aperte da trader > due elenchi: LIVE sopra (Follo, Farul) e PROVA sotto (Milan-Inter); linguetta «2 LIVE · 1 prova»  1097ms
+   ✓ W_T/P15 - Posizioni aperte da trader > Follo A RISCHIO (caso peggiore −9,80), Farul IN VERDE  1018ms
+   ✓ W_T/P15 - Posizioni aperte da trader > fuori programma con la stessa grafica: nomi, riquadro della partita, righe; «chiudi ora» per gamba sotto  1186ms
+   ✓ W_T/P14 - ordini del conto fuori dai bot nella scheda della partita > letti: la scheda live della partita mostra l'ordine del sito e l'avviso ambra  834ms
+   ✓ W_T/P14 - ordini del conto fuori dai bot nella scheda della partita > non letti (RPC assente): la scheda lo dice  631ms
+   ✓ TAB APERTE: stessa scheda di Live, comando di chiusura ancora raggiungibile (Task 5) > una posizione su un evento sconosciuto resta con la sua riga compatta e il bottone Chiudi  753ms
+   ✓ TAB APERTE: stessa scheda di Live, comando di chiusura ancora raggiungibile (Task 5) > il comando Chiudi chiama vm.chiudi con la RIGA (bot, id, partita, modalita, stato) - B16  1246ms
+   ✓ C6 b - la testata dice da dove arrivano le righe dei bot, e quanto sono vecchie > canali muti: tre voci "db" con l'eta' della lettura  596ms
+   ✓ C6 b - la testata dice da dove arrivano le righe dei bot, e quanto sono vecchie > un bot sul canale locale lo dice, gli altri restano "db"  606ms
+   ✓ W_B1 P10: le operazioni pre-fischio arrivano alla scheda pre-partita > una punta di Mike su una partita non ancora cominciata compare nella sua scheda pre-match  830ms
+   ✓ FRONTEND MINORI B: nessuna riga del pannello bot con due comandi uguali > ogni riga cr-bot-riga-*: i nomi dei comandi sono tutti distinti  1004ms
+   ✓ FRONTEND MINORI B: nessuna riga del pannello bot con due comandi uguali > riga Safe base: "Parametri strategia" (solo Base) e "Parametri comuni di Safe" (tutto il servizio), testid distinti  767ms
+ ✓ src/components/mike/MikeParamsSheet.riscontro.test.tsx (5 tests) 10048ms
+   ✓ pannello parametri di Mike: riscontro del salvataggio > salvataggio riuscito: «Parametri salvati alle HH:MM:SS» e pallino spento  4749ms
+   ✓ pannello parametri di Mike: riscontro del salvataggio > M1 (review incrociata 30/09): rilettura NON aspettata: la bozza resta sui valori SALVATI, mai i vecchi  2444ms
+   ✓ pannello parametri di Mike: riscontro del salvataggio > salvataggio fallito: l’errore testuale e le modifiche restano da salvare  1831ms
+   ✓ pannello parametri di Mike: riscontro del salvataggio > mentre aspetta il pulsante dice «Salvataggio…» ed e’ disabilitato  796ms
+ ✓ src/components/tennis/TennisBotServiceParamsSheet.test.tsx (9 tests) 13849ms
+   ✓ TennisBotServiceParamsSheet > senza parametri letti mostra i default del registro e lo DICHIARA  1252ms
+   ✓ TennisBotServiceParamsSheet > salvare converte i booleani in VERI boolean (il bot Python attende bool, non stringhe)  449ms
+   ✓ TennisBotServiceParamsSheet > cambiare un numero e salvare manda il numero cambiato, non il default  680ms
+   ✓ TennisBotServiceParamsSheet > FALSIFICAZIONE — un select booleano NON convertito manderebbe la stringa 'on'/'off'  500ms
+   ✓ TennisBotServiceParamsSheet - reperto 2: campo numerico svuotato = chiave assente > tennis_scalper: OGNI campo numerico (7) svuotato -> chiave assente, il resto identico  4201ms
+   ✓ TennisBotServiceParamsSheet - reperto 2: campo numerico svuotato = chiave assente > tennis_pro: OGNI campo numerico (5) svuotato -> chiave assente, il resto identico  2491ms
+   ✓ TennisBotServiceParamsSheet - reperto 2: campo numerico svuotato = chiave assente > tennis_flb: OGNI campo numerico (5) svuotato -> chiave assente, il resto identico  1939ms
+   ✓ TennisBotServiceParamsSheet - reperto 2: campo numerico svuotato = chiave assente > tennis_swing: OGNI campo numerico (5) svuotato -> chiave assente, il resto identico  2057ms
+ ✓ src/components/controlroom/useControlRoom.righeNuove.test.tsx (16 tests) 7645ms
+   ✓ riga NUOVA dal canale: rilettura mirata subito > Omega: id sconosciuto -> fetchOmegaTrades subito, la riga compare dal database  686ms
+   ✓ anti-tempesta: al massimo una rilettura per bot ogni 2 s > 50 righe nuove in un colpo: una lettura subito, una sola allo scadere dei 2 s  2844ms
+   ✓ anti-tempesta: al massimo una rilettura per bot ogni 2 s > la stessa riga sconosciuta ripetuta chiede UNA rilettura sola  2433ms
+ ✓ src/components/controlroom/useControlRoom.test.tsx (72 tests) 8955ms
+   ✓ «fonti non raggiunte»: ogni lettura si chiama per nome > cade la lettura degli ORDINI dei bot tennis: compare col suo nome  359ms
+   ✓ posizioni chiuse: i quattro bot tennis sono indipendenti come gli altri > un battito del feed con gli stessi nomi NON ricostruisce le chiuse; un nome nuovo si  397ms
+   ✓ B16 - «Chiudi» cablato per singolo bot > la riga che CAMBIA (gamba di chiusura nuova) = eseguita  331ms
+ ✓ src/test/codificaSorgenti.test.ts (3 tests) 17280ms
+   ✓ codifica dei sorgenti: UTF-8 pulito > nessun sorgente di src/ contiene mojibake (cp1252 al posto di UTF-8)  9401ms
+   ✓ codifica dei sorgenti: UTF-8 pulito > nessun sorgente di src/ comincia col BOM UTF-8  7857ms
+ ✓ src/components/controlroom/useControlRoom.statoCanale.test.tsx (14 tests) 7482ms
+   ✓ voce 4 - lo STATO dei bot dal push *_stato > Safe: un giro piu' recente porta subito il motivo del blocco, fonte canale  464ms
+   ✓ voce 6 - i runner dal canale > ladder dal canale = in streaming  1077ms
+   ✓ voce 6 - i runner dal canale > battito del runner calcio: l'eta' torna a zero a ogni battito, mode e streaming dal battito  2123ms
+   ✓ voce 6 - i runner dal canale > battito storto (senza ts): non e' una notizia di vita  2369ms
+ ✓ src/components/live/RiskRulesPanel.test.tsx (14 tests) 10606ms
+   ✓ RiskRulesPanel > rende il form di arming e il banner di avviso SOFTWARE-SIDE  1116ms
+   ✓ RiskRulesPanel > in modalità 'off' i controlli sono disabilitati e l'arming è bloccato  527ms
+   ✓ RiskRulesPanel > in 'live' l'invio è bloccato finché non si spunta la conferma  917ms
+   ✓ RiskRulesPanel > arma chiamando requestRiskRule con rule_type/entry_side/params corretti  1083ms
+   ✓ RiskRulesPanel > bracket (OCO): arma con entry_bet_id, entry_price e ENTRAMBE le gambe (fix audit #1/#4)  932ms
+   ✓ RiskRulesPanel > bracket SENZA gamba stop: arming bloccato (fix audit #1, mai stop morto)  660ms
+   ✓ RiskRulesPanel > bracket senza entry_price: arming bloccato (fix audit #4, contratto RPC v4)  685ms
+   ✓ RiskRulesPanel > bracket senza entry_bet_id: arming bloccato (nessuna chiamata)  709ms
+   ✓ RiskRulesPanel > timing 'on_fill': mostra il campo entry_bet_id e lo passa a requestRiskRule  766ms
+   ✓ RiskRulesPanel > take_profit tick: invia offset_ticks (nome canonico backend, fix audit #2)  772ms
+   ✓ RiskRulesPanel > la lista mostra anche regole di ALTRA modalità con badge + tipi non armabili (fix #15/#26)  413ms
+   ✓ RiskRulesPanel > on_inplay: la policy scelta finisce nei params  662ms
+   ✓ RiskRulesPanel > stop_loss: place_at_ticks ('tick oltre') confluisce nei params  721ms
+   ✓ RiskRulesPanel > LIVE: su errore ambiguo la conferma REALE si RESETTA (niente ri-arming duplicato)  634ms
+ ✓ src/components/trading/CashOutButton.test.tsx (28 tests) 9824ms
+   ✓ CashOutButton — dialog e conferma > apre il dialog col green pieno preimpostato  1193ms
+   ✓ CashOutButton — dialog e conferma > i bottoni rapidi impostano la quota; il parziale mostra PEGGIORE (titolo) e migliore  896ms
+   ✓ CashOutButton — dialog e conferma > CRITICAL-1: LAY 10 @3, best back 3, 50% -> titolo −10,00 € (non il ramo ottimistico +5)  656ms
+   ✓ CashOutButton — dialog e conferma > conferma con frazione quando si usa un bottone rapido  571ms
+   ✓ CashOutButton — dialog e conferma > conferma con importo quando lo si digita a mano  988ms
+   ✓ CashOutButton — dialog e conferma > avvisa sotto la soglia dei 2 EUR  543ms
+   ✓ CashOutButton — dialog e conferma > importo fuori range: conferma bloccata  648ms
+   ✓ CashOutButton — dialog e conferma > in LIVE serve la doppia conferma  465ms
+   ✓ CashOutButton — dialog e conferma > MEDIUM-2: la conferma LIVE armata decade se cambia l importo  1081ms
+   ✓ CashOutButton — dialog e conferma > MEDIUM-2: la conferma LIVE armata decade dopo 10 s  369ms
+   ✓ CashOutButton — anti doppio cash out (HIGH-1) > disabledReason: il motivo arriva nel tooltip (quote non aggiornate)  474ms
+   ✓ CashOutButton — errore dell ordine di copertura (12/09) > onCashOut che fallisce: dialog APERTO, motivo a schermo, posizione dichiarata scoperta  381ms
+   ✓ CashOutButton — errore dell ordine di copertura (12/09) > riaprendo il dialog l errore precedente non resta appiccicato  883ms
+ ✓ src/pages/Omega.certificazione.test.tsx (17 tests) 7886ms
+   ✓ §7 — la pagina funziona con la RPC v4 (migrazione v5 NON applicata) > nessun crash: guscio, barra di giornata e KPI presenti  1250ms
+   ✓ §7 — la pagina funziona con la RPC v4 (migrazione v5 NON applicata) > il KPI «P&L bloccato» C’È comunque, STIMATO dalle righe caricate  561ms
+   ✓ §7 — la pagina funziona con la RPC v4 (migrazione v5 NON applicata) > con la v5 vince la RPC e la nota della STIMA scompare  510ms
+   ✓ §7 — la pagina funziona con la RPC v4 (migrazione v5 NON applicata) > nessuna posizione coperta: la stima è 0 e lo dichiara (non un dato dal DB)  443ms
+   ✓ §7 — la pagina funziona con la RPC v4 (migrazione v5 NON applicata) > obiettivo NON storicizzato: la barra lo DICHIARA (H-10) e usa quello corrente  502ms
+   ✓ §7 — la pagina funziona con la RPC v4 (migrazione v5 NON applicata) > attività: senza `activity_day` il filtro di giornata è del client e lo dice  977ms
+   ✓ §7 — la pagina funziona con la RPC v4 (migrazione v5 NON applicata) > niente «carica altre» quando la RPC non sa quante righe restano  630ms
+   ✓ header — un bot senza battito non è «IN CORSA» > battito fresco: badge normale  446ms
+   ✓ header — un bot senza battito non è «IN CORSA» > servizio fermo da ore con `status=running`: il badge lo DICE  361ms
+   ✓ header — un bot senza battito non è «IN CORSA» > battito mai scritto: anomalia dichiarata  357ms
+   ✓ §4 — KPI e barra SOLO dagli aggregati (nessun conteggio client) > righe `error` e riserve mai piazzate non spostano i contatori  347ms
+   ✓ §4 — equity della giornata: cumulato dei regolati per giorno di PIAZZAMENTO > «mostra tutte» allarga la vista, «solo oggi» la richiude  982ms
+ ✓ src/components/tennis/TennisBotPanel.test.tsx (13 tests) 8509ms
+   ✓ TennisBotPanel — gate ordini reali (tennis_scalper) > 1) servizio PAPER: ARMA senza toccare nulla -> nessuna conferma, arma con dry_run=false (PAPER e' sempre simulato)  1789ms
+   ✓ TennisBotPanel — gate ordini reali (tennis_scalper) > 2) runner LIVE: la scheda arma in PROVA (dry-run tolto di default), nessuna conferma di soldi veri  455ms
+   ✓ TennisBotPanel — gate ordini reali (tennis_scalper) > 3) runner LIVE: la scheda NON promette ordini reali e dice dove si accendono i soldi veri  360ms
+   ✓ TennisBotPanel — gate ordini reali (tennis_scalper) > 4) runner LIVE, dry-run rimesso a mano: arma con dry_run=true, nessuna conferma  1003ms
+   ✓ TennisBotPanel — gate ordini reali (tennis_scalper) > 5) armTennisBot riceve gli argomenti nel TIPO esatto (dry_run booleano, non stringa 'on'/'off')  612ms
+   ✓ TennisBotPanel — default protetto per modalita (AUDIT3 caso 1) > PAPER: parte con dry-run TOLTO e lo dichiara a video (ordini simulati, visibili sul ladder)  414ms
+   ✓ TennisBotPanel — PAPER: scelta ESPLICITA di togliere la spunta (AUDIT3 caso 4) > PAPER, spunta/tolta a mano (gia' tolta di default: la rimette e la ritoglie) e arma: nessun confirm, dry_run=false  845ms
+   ✓ TennisBotPanel — orderMode OFF (AUDIT3 caso 5) > OFF, default (dry-run spuntato): ARMA senza conferma, dry_run=true  561ms
+   ✓ TennisBotPanel — orderMode OFF (AUDIT3 caso 5) > OFF: la checkbox e disabilitata, un click non la tocca, ARMA porta sempre dry_run=true  655ms
+   ✓ TennisBotPanel — downgrade runtime PAPER -> OFF forza dry-run (mutazione coordinatore 25/09) > utente sceglie dry_run=false in PAPER (tocco esplicito), poi orderMode passa a OFF a runtime: la spunta torna true e disabilitata, ARMA porta dry_run=true  938ms
+   ✓ TennisBotPanel — payload completo, nessuna scrittura parziale (AUDIT3 caso 7) > il payload di armamento porta OGNI chiave che descriptor.params dichiara  389ms
+ ✓ src/components/live/LiveControlsPanel.test.tsx (14 tests) 6724ms
+   ✓ LiveControlsPanel > il kill-switch riflette lo stato OFF da getLiveSettings  321ms
+   ✓ LiveControlsPanel > il toggle chiama setKillSwitch(true)  1091ms
+   ✓ LiveControlsPanel > rende le righe di audit da fetchLiveAudit  303ms
+   ✓ LiveControlsPanel — limiti E34/E35 > stop giornaliero ≤ 0 → toast error e NESSUN salvataggio  938ms
+   ✓ LiveControlsPanel — limiti E34/E35 > limite evento 0 → rifiutato; campo vuoto (disattivazione) → salvato con null  881ms
+   ✓ LiveControlsPanel — limiti E34/E35 > limiti validi → salvati nel patch  1205ms
+   ✓ LiveControlsPanel — fix audit #27 > validazione client-side: max ordini/min ≤ 0 → NESSUN salvataggio  505ms
+   ✓ LiveControlsPanel — fix audit #27 > validazione client-side: poll rischio negativo → NESSUN salvataggio  317ms
+ ✓ src/components/live/XHedgePanel.test.tsx (22 tests) 7085ms
+   ✓ XHedgePanel > mostra il riepilogo cross-market (worst/mean/best + scoreline)  405ms
+   ✓ XHedgePanel — F39 copertura 1-click > PAPER: click → place BACK con ID esatti, FoK 10s, persistence LAPSE  846ms
+   ✓ XHedgePanel — F39 copertura 1-click > size sotto il minimo .it (€2) → flusso place_submin SENZA FoK  399ms
+   ✓ XHedgePanel — F39 copertura 1-click > LIVE: bottone DISABILITATO senza conferma esplicita; conferma one-shot  485ms
+   ✓ XHedgePanel — F39 copertura 1-click > fix audit #20 — LIVE: rifiuto ESPLICITO (ordine NON piazzato) → la conferma RESTA  513ms
+   ✓ XHedgePanel — F39 copertura 1-click > fix audit #20 — LIVE: eccezione AMBIGUA (timeout) → la conferma si resetta  523ms
+   ✓ XHedgePanel — F39 auto-hedge armabile > arma la regola con floor ed event_id ESATTI (paper: nessuna conferma extra)  777ms
+   ✓ XHedgePanel — F39 auto-hedge armabile > LIVE: arm DISABILITATO senza la conferma esplicita  978ms
+   ✓ XHedgePanel — F39 auto-hedge armabile > regola già armata → stato ATTIVO + Disarma (cancel_live_risk_rule)  323ms
+ ✓ src/components/live/DutchingPanel.test.tsx (13 tests) 6891ms
+   ✓ DutchingPanel > l'anteprima book% si aggiorna al variare delle selezioni  1248ms
+   ✓ DutchingPanel > richiede ≥2 selezioni (con una sola il tasto è disabilitato)  309ms
+   ✓ DutchingPanel > in LIVE il piazzamento è bloccato finché non si conferma  321ms
+   ✓ DutchingPanel > modalità TARGET invia dutchMode='target' con targetProfit e senza total_stake  505ms
+   ✓ DutchingPanel > il profitto obiettivo modifica il targetProfit inviato  1097ms
+   ✓ DutchingPanel > pricing 'nominated' mostra il prezzo nominato e lo passa a sendDutch  1115ms
+   ✓ DutchingPanel > con pricing 'nominated' senza prezzo il piazzamento è bloccato  484ms
+   ✓ DutchingPanel — fix audit #14/#19 > #19: sul lato Lay la modalità Target è disabilitata e ripiega su Equal  809ms
+ ✓ src/components/controlroom/PannelloBot.strumenti.test.tsx (45 tests) 7082ms
+   ✓ punto 1 - mai lo stato di un bot in esecuzione, mai FERMA > corsa_paper / safe-model: niente «running», niente «in corso», niente FERMA  880ms
+   ✓ punto 1 - mai lo stato di un bot in esecuzione, mai FERMA > anche con un motivo di blocco e «fermato all’avvio» di Safe le righe strumento restano pulite  473ms
+   ✓ punto 3 - i gesti che esistono restano, con la stessa conferma > safe-model: passa a soldi veri: arma, conferma inerte, poi cambiaModalita(id, live) - una sola volta  300ms
+ ✓ src/components/trading/DailyCalendar.test.tsx (16 tests) 6645ms
+   ✓ DailyCalendar > mostra il mese, 30 celle del mese, P&L e trade nelle celle attive  1705ms
+   ✓ DailyCalendar > marcatore obiettivo solo con showGoal: centrato/mancato  395ms
+   ✓ DailyCalendar > click su una cella → onSelectDay col giorno  471ms
+   ✓ DailyCalendar > tastiera: frecce muovono il focus (roving tabindex), Invio seleziona  1904ms
+   ✓ DailyCalendar > mese precedente/successivo e "Oggi"  567ms
+   ✓ DailyCalendar > stato vuoto quando il mese non ha giornate operative  355ms
+ ✓ src/components/mike/MikeMatchCard.test.tsx (31 tests) 6460ms
+   ✓ MikeMatchCard — altezza stabile > senza dati ogni zona resta montata con il suo segnaposto  493ms
+   ✓ MikeMatchCard — numeri del servizio e quote > il dialog di cash out mostra netto, dettaglio per gamba e chiede conferma  1383ms
+   ✓ MikeMatchCard — numeri del servizio e quote > in LIVE il cash out chiede DUE conferme (soldi veri)  794ms
+   ✓ MikeMatchCard — ogni pulsante manda il suo comando > Flatten → kind "flatten" (chiude a mercato, senza soglia)  524ms
+   ✓ MikeMatchCard — ogni pulsante manda il suo comando > Riprendi → kind "resume_event" su SKIPPED ed ERROR  359ms
+ ✓ src/components/omega/MissionPanel.test.tsx (17 tests) 5877ms
+   ✓ MissionPanel — pulsanti Statistiche / Trading > riga evento: "Statistiche" naviga alla scheda Dashboard con ?fixture=&from=omega  1405ms
+   ✓ MissionPanel — pulsanti Statistiche / Trading > riga evento: "Trading" registra il follow e naviga a /segui-live?event=&from=omega  535ms
+   ✓ MissionPanel — pulsanti Statistiche / Trading > senza fixture_id il pulsante Statistiche è disabilitato (nessuna scheda da aprire)  325ms
+   ✓ MissionPanel — pulsanti Statistiche / Trading > se il follow fallisce NON naviga e mostra errore  470ms
+   ✓ MissionPanel — pulsanti Statistiche / Trading > "Trading" NON attiva la registrazione (solo follow + navigazione)  307ms
+   ✓ MissionPanel — pulsanti Statistiche / Trading > "Segui live" attiva la registrazione: follow + set_follow_record(true) e badge REC  412ms
+   ✓ MissionPanel — pulsanti Statistiche / Trading > REC attivo (recording=true dal DB): il click SPEGNE la registrazione  397ms
+   ✓ MissionPanel — pulsanti Statistiche / Trading > riga MISSIONE ATTIVA: i pulsanti ci sono e il click NON richiude la scheda  423ms
+   ✓ MissionPanel — obiettivo di giornata e poll dello scalper > M-08: l obiettivo modificato viene SCRITTO sul control (non solo mostrato)  682ms
+ ✓ src/components/live/GridView.test.tsx (11 tests) 6070ms
+   ✓ GridView > renderizza nomi selezioni, 6 celle prezzo per selezione, P&L e book%  384ms
+   ✓ GridView > layout v2: il gruppo LAY sta a SINISTRA del gruppo BACK (header e celle)  1058ms
+   ✓ GridView > PAPER non armato (regola specchio): il click NON piazza; "CONFERMA SIMULATA" invia  1135ms
+   ✓ GridView > PAPER armato (1-click): il click piazza SUBITO senza conferma  553ms
+   ✓ GridView > LIVE non armato: il click NON piazza; "CONFERMA REALE" invia con mode live  917ms
+   ✓ GridView > LIVE: la conferma SCADE dopo 6s (CONFIRM_TTL_MS) senza inviare nulla  511ms
+   ✓ GridView > anti-doppio-invio: due click rapidi sulla CONFERMA = UN solo send (inFlightRef)  403ms
+   ✓ GridView — fix audit #29 (suspend entro il TTL della conferma) > mercato che si SOSPENDE con la barra di conferma aperta → CONFERMA non invia  703ms
+stderr | src/components/shell/AppShell.test.tsx > testata globale: sola lettura, nessun canale in piu' > «Torna alla grafica attuale» scrive ui.shell=off
+Not implemented: navigation to another Document
+
+stderr | src/components/shell/AppShell.test.tsx > «Prova la nuova grafica» (app attuale) > compare su ogni pagina interna e scrive ui.shell=v2
+Not implemented: navigation to another Document
+
+ ✓ src/components/controlroom/PannelloBot.test.tsx (48 tests) 6733ms
+   ✓ doppio consenso per i soldi veri — che cosa viene DAVVERO chiamato > il primo clic NON avvia niente: arma soltanto  721ms
+   ✓ quello che il pannello DICE dello stato > W_B2: ogni stato con la parola di botStatusMeta, «stato non letto» per l’ignoto  469ms
+ ✓ src/components/shell/AppShell.test.tsx (15 tests) 6178ms
+   ✓ sidebar: solo rotte esistenti > le voci portano dove dicono (clic su Omega -> /omega)  428ms
+   ✓ sidebar: filtro e compressione > Calcio nasconde il gruppo Tennis, Tennis nasconde il gruppo Calcio, Tutti li mostra  481ms
+   ✓ sidebar: filtro e compressione > la barra si comprime e si riespande; da compressa le voci hanno ancora un nome  1390ms
+   ✓ data-nav-legacy: solo navigazione, mai comandi > ogni elemento marcato porta a una rotta (Link to= o navigate(...)) e nient'altro  2203ms
+ ✓ src/components/controlroom/PosizioniChiuse.raggruppamento.test.tsx (22 tests) 4448ms
+   ✓ una regola: giornata -> bot -> partita -> ciclo > un blocco per bot (Safe diviso per sport), con il totale del bot  467ms
+   ✓ paper e live: mai insieme > di serie soldi veri; "prova" mostra solo la simulazione  385ms
+   ✓ paper e live: mai insieme > la lettura della giornata chiede UNA modalita' alla volta  314ms
+   ✓ giornata della PARTITA (01/10), scelta dal trader, letta a richiesta > il giorno prima si legge dal database e si mostra  321ms
+   ✓ VELOCITA': 500 operazioni, apertura sotto il secondo > 500 cicli (1000 righe): montata in meno di 1 s, cambio filtro in meno di 1 s  529ms
+ ✓ src/components/controlroom/InterruttoreUsciteSchede.test.tsx (2 tests) 4406ms
+   ✓ scheda parametri di Mike > uscite: componente comune, conferma per passare ad automatiche, poi Salva  2923ms
+   ✓ scheda parametri di Safe (tennis) > "le chiusure le approvo io" e' il componente comune: automatiche solo con conferma  1479ms
+ ✓ src/components/trading/designSystem.test.tsx (52 tests) 4633ms
+   ✓ BotHeader > identita del bot, stato e bottone Avvia  640ms
+   ✓ LiveConfirmDialog > titolo unico, avvertenza per bot e i due bottoni  443ms
+   ✓ ParamsSheetBase > apre lo sheet, mostra i gruppi e salva  663ms
+   ✓ ParamsSheetBase > clamp VISIBILE e indicatore di modifiche non salvate  713ms
+ ✓ src/fotografia/cssVeste.test.ts (9 tests) 9510ms
+   ✓ veste completa: confinata al guscio acceso > ogni classe ds-portale-v2-* usata nel codice e' definita nella sezione  3327ms
+   ✓ veste completa: leggibilita' > ogni marcatore LIVE resta d'allarme a guscio acceso: rosso, contrasto >= 4,5:1, pieno dove oggi e' pieno  6107ms
+ ✓ src/components/controlroom/SchedaPartita.test.tsx (40 tests) 3497ms
+ ✓ src/components/controlroom/useControlRoom.provaGiornata.test.tsx (10 tests) 3799ms
+   ✓ P8 - la prova di oggi non contiene partite di giorni precedenti > Safe +7,60 di 4 giorni fa regolato oggi: tessera PROVA «oggi» 0,00, arretrati a parte  394ms
+   ✓ R_G - prestazioni: la prova non si ricalcola a ogni secondo > nowMs avanza nello stesso giorno: provaGiornata e' LO STESSO oggetto; al cambio di giorno cambia  2186ms
+ ✓ src/components/mike/MikeMatchCard.cert.12set.test.tsx (18 tests) 4705ms
+   ✓ MikeMatchCard — "Chiudi a mercato" ha la stessa protezione del cash out > PAPER: un click apre il DIALOG, non piazza nulla  1586ms
+   ✓ MikeMatchCard — "Chiudi a mercato" ha la stessa protezione del cash out > LIVE: servono DUE conferme — il primo click sul dialog NON chiude  981ms
+   ✓ MikeMatchCard — "Chiudi a mercato" ha la stessa protezione del cash out > LIVE: la conferma armata decade da sola  336ms
+   ✓ MikeMatchCard — "Chiudi a mercato" ha la stessa protezione del cash out > il dialog dice CHE COSA fa: chiude senza guardare la soglia  348ms
+ ✓ src/components/mike/MikeCashOutButton.chiusura.test.tsx (6 tests) 4159ms
+   ✓ MIKE-01 — una chiusura che non parte si vede > il servizio rifiuta: dialog APERTO, motivo a schermo, posizione dichiarata aperta  1600ms
+   ✓ MIKE-01 — una chiusura che non parte si vede > riaprendo il dialog l errore precedente non resta appiccicato  983ms
+   ✓ MIKE-02 — condizioni decadute a dialog APERTO > feed che si ferma: conferma spenta col motivo, nessuna richiesta inviata  609ms
+   ✓ MIKE-02 — condizioni decadute a dialog APERTO > LIVE: arma caduta quando le condizioni decadono, servono di nuovo due click  523ms
+ ✓ src/components/omega/MissionCard.test.tsx (11 tests) 4741ms
+   ✓ MissionCard — piazzamento manuale (money-critical) > PIAZZA LAY → payload requestManual con ESATTAMENTE i campi della suggestion  2038ms
+   ✓ MissionCard — piazzamento manuale (money-critical) > suggestion che cambia MERCATO col dialog aperto → dialog chiuso (bozza stantia)  460ms
+   ✓ MissionCard — piazzamento manuale (money-critical) > suggestion che cambia PREZZO col dialog aperto → dialog chiuso (bozza stantia)  648ms
+   ✓ MissionCard — piazzamento manuale (money-critical) > advisor che cambia da solo: dialog APERTO e payload INVARIATO (advisor solo display)  658ms
+   ✓ MissionCard — piazzamento manuale (money-critical) > AVVIA SCALPER 1-TICK: arma il THETA in paper (mai back manuali nudi)  424ms
+ ✓ src/components/trading/StoricoMikeGiornoRegolamento.test.tsx (13 tests) 3700ms
+   ✓ 01/10 - un criterio solo: il giorno della PARTITA > la pagina dice il criterio (una frase sola per i tre bot) e la MONETA  696ms
+   ✓ 01/10 - un criterio solo: il giorno della PARTITA > R-01: righe senza in_day (aggiornamento non applicato): Mike dichiara il REGOLAMENTO e che manca l'aggiornamento  511ms
+   ✓ 01/10 - un criterio solo: il giorno della PARTITA > R-01: righe senza in_day per Omega/Safe: il criterio vero e' il PIAZZAMENTO  443ms
+   ✓ 01/10 - un criterio solo: il giorno della PARTITA > R-01: nessuna riga letta: il criterio non si afferma (ne' partita ne' altro), si dice che non e' verificabile  457ms
+   ✓ 01/10 - un criterio solo: il giorno della PARTITA > moneta assente: si dichiara «moneta non dichiarata», mai muta  423ms
+   ✓ accettazione del coordinatore (Mike live, dopo la migrazione del 01/10) > cella e dettaglio del 30/09 dicono gli STESSI numeri: +1,88, 5 trade, 2V 3P  413ms
+   ✓ accettazione del coordinatore (Mike live, dopo la migrazione del 01/10) > il 01/10 non ha righe: dettaglio vuoto, nessuno zero inventato  353ms
+ ✓ src/components/replay/TimelineSlider.test.tsx (12 tests) 807ms
+ ✓ src/components/mike/MikeCashOutButton.test.tsx (13 tests) 4295ms
+   ✓ MikeCashOutButton — bottone e dialog > il dialog mostra netto, % sulla base, soglia automatica e dettaglio per GAMBA  951ms
+   ✓ MikeCashOutButton — bottone e dialog > in PAPER una sola conferma chiude  564ms
+   ✓ MikeCashOutButton — bottone e dialog > "Annulla" non invia nulla  626ms
+   ✓ MikeCashOutButton — bottone e dialog > mostra l’esito dell’ultima richiesta (M1)  391ms
+   ✓ MikeCashOutButton — LIVE: soldi veri, doppia conferma > il primo click ARMA, il secondo invia  497ms
+   ✓ MikeCashOutButton — LIVE: soldi veri, doppia conferma > se il netto CAMBIA l’arma decade (non si conferma un numero vecchio)  338ms
+   ✓ MikeCashOutButton — spento CON MOTIVO > nessun doppio invio: il secondo click a richiesta in volo non parte  327ms
+ ✓ src/components/trading/CashOutButton.chiusura.test.tsx (8 tests) 3683ms
+   ✓ CHIUSURA-01 — il numero mostrato è quello che il servizio blocca > coerenza card ↔ dialog: il titolo del dialog al 100 % è lo stesso numero del bottone  1340ms
+   ✓ CHIUSURA-02 — condizioni decadute a dialog APERTO > feed che muore: conferma spenta, motivo a schermo, nessun ordine inviato  576ms
+   ✓ CHIUSURA-02 — condizioni decadute a dialog APERTO > condizioni tornate valide: il bottone riparte (non resta spento per sempre)  416ms
+   ✓ CHIUSURA-03 — la conferma LIVE non sopravvive alla decadenza > armata e poi feed fermo: l arma cade, servono di nuovo due click  596ms
+ ✓ src/components/controlroom/BottoneChiudiMikeConferma.test.tsx (13 tests) 2768ms
+   ✓ D5 - Chiudi di Mike: un clic in paper, conferma in live > LIVE: la conferma manda la STESSA richiesta di sempre, una volta sola  467ms
+   ✓ D5 - Chiudi di Mike: un clic in paper, conferma in live > TUTTI i bot - omega: LIVE arma al primo clic, conferma manda la STESSA richiesta, annulla non manda; PAPER un clic  491ms
+   ✓ D5 - Chiudi di Mike: un clic in paper, conferma in live > TUTTI i bot - tennis_scalper: LIVE arma al primo clic, conferma manda la STESSA richiesta, annulla non manda; PAPER un clic  530ms
+   ✓ D5 - Chiudi di Mike: un clic in paper, conferma in live > TUTTI i bot - tennis_pro: LIVE arma al primo clic, conferma manda la STESSA richiesta, annulla non manda; PAPER un clic  480ms
+   ✓ D5 - Chiudi di Mike: un clic in paper, conferma in live > TUTTI i bot - safe: LIVE arma al primo clic, conferma manda la STESSA richiesta, annulla non manda; PAPER un clic  486ms
+stderr | src/components/dashboard/RitardiPanel.fixb.test.tsx > RitardiPanel - FIX-B > periodo DATI MATCH in gg/mm/aaaa (Roma), mai ISO grezzo
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+
+stderr | src/components/dashboard/RitardiPanel.fixb.test.tsx > RitardiPanel - FIX-B > periodo DATI MATCH in gg/mm/aaaa (Roma), mai ISO grezzo
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+
+stderr | src/components/dashboard/RitardiPanel.fixb.test.tsx > RitardiPanel - FIX-B > stagioni non caricate: avviso visibile scegliendo "Stagione" (non un menu vuoto muto)
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+
+ ✓ src/pages/TradeJournal.test.tsx (3 tests) 2844ms
+   ✓ TradeJournal > renderizza la riga journal con mercato, side, minuto+score e P&L settled  555ms
+   ✓ TradeJournal > salvataggio tag chiama setLiveJournalNote con l'id giusto e mostra feedback ok  1732ms
+   ✓ TradeJournal > errore di salvataggio → feedback ESPLICITO di errore (mai silenzioso)  552ms
+stderr | src/components/dashboard/RitardiPanel.fixb.test.tsx > RitardiPanel - FIX-B > stagioni non caricate: avviso visibile scegliendo "Stagione" (non un menu vuoto muto)
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+
+ ✓ src/components/dashboard/RitardiPanel.fixb.test.tsx (3 tests) 2887ms
+   ✓ RitardiPanel - FIX-B > periodo DATI MATCH in gg/mm/aaaa (Roma), mai ISO grezzo  1752ms
+   ✓ RitardiPanel - FIX-B > timeout della RPC: messaggio di timeout dichiarato  303ms
+   ✓ RitardiPanel - FIX-B > stagioni non caricate: avviso visibile scegliendo "Stagione" (non un menu vuoto muto)  828ms
+ ✓ src/components/omega/MatchTradesTable.chiusura.test.tsx (8 tests) 2600ms
+   ✓ CHIUSURA-01 — cella e bottone dicono lo STESSO numero > "se chiudo ora" = etichetta del Cash out = bloccato del servizio  324ms
+   ✓ CHIUSURA-01 — cella e bottone dicono lo STESSO numero > il dialog conferma lo stesso numero della cella  1173ms
+   ✓ CHIUSURA-05 — copertura PARZIALE: si chiude il RESIDUO > nota sul residuo, bottone vivo e dialog che parla di residuo  661ms
+ ✓ src/components/controlroom/PosizioniChiuse.giornoPartita.test.tsx (13 tests) 3467ms
+   ✓ la chiusura di ieri sera NON e' di oggi > in memoria senza il giorno del database, la lettura di oggi la esclude: fuori dal totale, contata  477ms
+   ✓ B-12: controprova con la barra sullo STESSO perimetro, e la mezzanotte elencata > FALSIFICAZIONE: col vecchio confronto (totale della scheda contro la barra) mancherebbero 2,00 €  607ms
+ ✓ src/components/tennis/TennisBotPanel.superficie.test.tsx (11 tests) 2695ms
+   ✓ TennisBotPanel - superficie di tennis_pro a video > mostra superficie e fonte della mappa  538ms
+   ✓ TennisBotPanel - varianti di tennis_pro ACCESE di default > ARMA senza toccare nulla: trend/adapt/maker = true, nessuna "surface" nel payload  1110ms
+ ✓ src/components/live/ScalperPanel.test.tsx (12 tests) 5200ms
+   ✓ ScalperPanel — fix audit #28 (errori persistenti visibili) > 3+ fallimenti di fila di get_scalper_state → banner esplicito  315ms
+   ✓ ScalperPanel — sniper ACCESO di default (ordine dell'utente 25/09 sera) > il form nasce con lo sniper spuntato e lo manda acceso (true esplicito) all'attivazione  1160ms
+   ✓ ScalperPanel — sniper ACCESO di default (ordine dell'utente 25/09 sera) > spegnendo il checkbox lo sniper parte spento (sniper_mode=false ESPLICITO, mai assente)  711ms
+   ✓ ScalperPanel — MEDIA UNDER (05/10, SPEC_MEDIA_UNDER_2026-10-05.md) > spenta di serie: l'attivazione normale non manda la modalità  334ms
+   ✓ ScalperPanel — MEDIA UNDER (05/10, SPEC_MEDIA_UNDER_2026-10-05.md) > accesa: senza mercato non parte; col mercato manda tutti i parametri e spegne lo sniper  819ms
+   ✓ ScalperPanel — ATTIVA ADESSO (07/10, ordine dell'utente) > a sessione ferma, in PROVA: il clic accende la sessione armata dal pulsante col comando  573ms
+   ✓ ScalperPanel — ATTIVA ADESSO (07/10, ordine dell'utente) > a sessione ferma, in SOLDI VERI: senza la conferma esplicita non parte niente  570ms
+ ✓ src/components/safestrategy/cards.audit.test.tsx (9 tests) 3406ms
+   ✓ InvestAction — qualsiasi importo fino a 0,01 € è piazzabile (place-and-trim) > sotto il minimo di giurisdizione: NOTA informativa, bottone ACCESO  1259ms
+   ✓ InvestAction — qualsiasi importo fino a 0,01 € è piazzabile (place-and-trim) > 0,01 € si piazza davvero; 0 € no (non esiste un ordine da zero)  1165ms
+ ✓ src/components/controlroom/testata/FasciaStop.test.tsx (42 tests) 3089ms
+ ✓ src/components/safestrategy/SafeTradesTable.chiusura.test.tsx (11 tests) 3110ms
+   ✓ CHIUSURA-01 — colonna e bottone dicono lo STESSO numero > "Se chiudo ora" = etichetta del cash out = bloccato del servizio (+1,68 € netti)  379ms
+   ✓ CHIUSURA-01 — colonna e bottone dicono lo STESSO numero > il dialog conferma lo stesso numero della card  1058ms
+   ✓ CHIUSURA-05 — dopo una copertura PARZIALE il residuo resta chiudibile > la chiusura parziale NON blocca il resto: il dialog parla di RESIDUO  1005ms
+ ✓ src/components/safestrategy/SafeTradesTable.audit.test.tsx (27 tests) 2668ms
+   ✓ R1 — cash out sui mercati a gol, non solo Match Odds/Correct Score > trade manuale su Under 3.5: quota ORA, Δ tick, "se chiudo ora" e cash out ATTIVO  316ms
+   ✓ M-21 / L-07 — Annulla le riserve e vedi l esito di ogni richiesta > riserva pending: bottone Annulla che chiama la coda  756ms
+ ✓ src/components/safestrategy/OpportunityGroup.test.tsx (22 tests) 2634ms
+   ✓ OpportunityGroup — λ assente = n/d, mai 0,00 > lambdas con un lato mancante: si legge «n/d» su quel lato  400ms
+   ✓ OpportunityGroup — tipi di opportunita > combinazione: gambe con stake scalato allo stake totale e lock in € (peggiore/migliore)  1208ms
+ ✓ src/components/controlroom/PannelloBotUscite.test.tsx (11 tests) 2212ms
+   ✓ 28/09 uscite - che cosa si vede (stesse parole per ogni bot) > automatiche: "uscite: AUTOMATICHE" e pulsante "passa a manuali"  740ms
+   ✓ 28/09 uscite - che cosa si vede (stesse parole per ogni bot) > manuali con una posizione, con zero e senza conteggio  301ms
+ ✓ src/components/controlroom/PosizioniChiuse.test.tsx (16 tests) 2250ms
+   ✓ posizioni chiuse: solo oggi > elenca la posizione di oggi e NON quella di ieri  461ms
+ ✓ src/components/trading/DayDetail.test.tsx (21 tests) 2107ms
+   ✓ DayDetail — modalità dichiarata su OGNI riga > la riga PAPER ha il suo badge, non il vuoto  303ms
+   ✓ DayDetail > elenca aperture e chiusure con badge uscita, P&L bloccato, totale e link live  785ms
+ ✓ src/components/dashboard/DirezioneDashboard.eta.test.tsx (4 tests) 2402ms
+   ✓ DirezioneDashboard - eta e quota > mostra "quota assente" sul mercato senza quota e la quota sul mercato che ce l'ha  1205ms
+   ✓ DirezioneDashboard - eta e quota > pagella di ieri sera = verde; pagella di 3 giorni fa = ROSSA  529ms
+   ✓ DirezioneDashboard - eta e quota > RPC di eta non applicata: lo dice (rosso), il resto del pannello funziona  387ms
+ ✓ src/components/trading/EventPnlTable.test.tsx (35 tests) 2214ms
+ ✓ src/components/controlroom/plancia.giornoPartita.test.tsx (4 tests) 2499ms
+   ✓ punto 1: plancia, riassunto del gruppo e scheda Chiuse = stesso numero (giorno della PARTITA) > la plancia legge la giornata di oggi in SOLDI VERI con la lettura della scheda  615ms
+   ✓ punto 1: plancia, riassunto del gruppo e scheda Chiuse = stesso numero (giorno della PARTITA) > le TRE viste con gli stessi finti: plancia = riassunto del gruppo = scheda Chiuse  1518ms
+stderr | src/components/dashboard/MLPanel.verdetto.test.tsx > MLPanel - un solo verdetto > BTTS del referto: il verdetto e' la Previsione calibrata (No 52 %), nessuna "classe prevista" opposta
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+
+stderr | src/components/dashboard/MLPanel.verdetto.test.tsx > MLPanel - un solo verdetto > BTTS del referto: il verdetto e' la Previsione calibrata (No 52 %), nessuna "classe prevista" opposta
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+
+stderr | src/components/dashboard/MLPanel.verdetto.test.tsx > MLPanel - un solo verdetto > 1X2 concorde: 3/4 modelli con la Previsione, nessun avviso di divergenza
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+
+ ✓ src/components/dashboard/MLPanel.verdetto.test.tsx (2 tests) 2161ms
+   ✓ MLPanel - un solo verdetto > BTTS del referto: il verdetto e' la Previsione calibrata (No 52 %), nessuna "classe prevista" opposta  1671ms
+   ✓ MLPanel - un solo verdetto > 1X2 concorde: 3/4 modelli con la Previsione, nessun avviso di divergenza  487ms
+ ✓ src/components/controlroom/SchedaPropostaOpportunita.test.tsx (29 tests) 2197ms
+ ✓ src/components/controlroom/useControlRoom.righeCanale.test.tsx (11 tests) 1720ms
+   ✓ canale muto: la pagina e' quella del database > posizioni dal blocco e fonte "database"  472ms
+ ✓ src/components/dashboard/MarketFrequencyPanel.fixb.test.tsx (2 tests) 2390ms
+   ✓ MarketFrequencyPanel - stagioni non caricate > timeout di get_league_seasons: avviso "Stagioni non caricate" in modalita' Stagioni  1904ms
+   ✓ MarketFrequencyPanel - stagioni non caricate > timeout della serie: messaggio di timeout (non "Errore: canceling statement...")  480ms
+ ✓ src/components/trading/PerformancePanel.test.tsx (7 tests) 1903ms
+   ✓ PerformancePanel > KPI dal fixture (Safe): P&L, giornate, win rate, PF, expectancy, DD, best/worst, serie  1008ms
+   ✓ PerformancePanel > breakdown Safe: strategia, sport, origine con etichette italiane e ordinamento per P&L  407ms
+ ✓ src/components/controlroom/useControlRoom.soldiVeri.test.tsx (11 tests) 1609ms
+   ✓ soldiVeri - l'esposizione e' quella del CONTO > dalla riga del database: -9,95, fonte database  368ms
+ ✓ src/components/mike/MikeEventPnlTable.test.tsx (25 tests) 1597ms
+ ✓ src/components/trading/StatoOrdine.montaggio.test.tsx (7 tests) 1333ms
+   ✓ CONTROL ROOM — SchedaPartita > aprendo il bot, l operazione porta chiesto / abbinato / residuo compatti  533ms
+ ✓ src/fotografia/cssGuscio.test.ts (3 tests) 8100ms
+   ✓ veste v2 delle pagine: inerte col guscio spento > ogni classe ds-v2-* usata nel codice e' definita nel foglio  7169ms
+   ✓ veste v2 delle pagine: inerte col guscio spento > ogni testata o barra «sticky» di PAGINA e' marcata ds-v2-non-sticky (oggi non resta incollata)  903ms
+ ✓ src/lib/flussoLineeMike.test.tsx (15 tests) 866ms
+   ✓ scheda PRE-PARTITA > Match Odds non ancora seguito: nota grigia, niente rosso, niente 1628 s  351ms
+ ✓ src/lib/omegaMissions.test.ts (19 tests) 749ms
+   ✓ MissionPanel (render minimo) > mostra header giornata e la missione attiva con punteggio live  704ms
+stderr | src/lib/mike.test.ts > mike storico: errore LEGGIBILE senza la migrazione (R2) > gli errori di firma/RPC diventano «aggiornamento dello storico da applicare», senza nomi del database
+[storico Mike] errore del database: function public.trading_daily_history(unknown, unknown) is not unique
+[storico Mike] errore del database: function public.trading_daily_history(unknown, unknown) is not unique
+[storico Mike] errore del database: function public.trading_daily_history(unknown, unknown) is not unique
+[storico Mike] errore del database: Could not find the function public.get_mike_daily(p_from, p_to)
+[storico Mike] errore del database: Could not find the function public.get_mike_daily(p_from, p_to)
+[storico Mike] errore del database: Could not find the function public.get_mike_daily(p_from, p_to)
+[storico Mike] errore del database: function get_mike_day_trades does not exist
+[storico Mike] errore del database: function get_mike_day_trades does not exist
+[storico Mike] errore del database: function get_mike_day_trades does not exist
+[storico Mike] errore del database: tabella non ammessa: mike_trades
+[storico Mike] errore del database: tabella non ammessa: mike_trades
+[storico Mike] errore del database: tabella non ammessa: mike_trades
+[storico Mike] errore del database: attribuzione non valida: placed
+[storico Mike] errore del database: attribuzione non valida: placed
+[storico Mike] errore del database: attribuzione non valida: placed
+
+stderr | src/lib/mike.test.ts > mike storico: errore LEGGIBILE senza la migrazione (R2) > withMikeHistoryError riscrive l’errore e lascia passare i dati
+[storico Mike] errore del database: function public.trading_day_trades(...) is not unique
+
+ ✓ src/lib/mike.test.ts (58 tests) 346ms
+ ✓ src/lib/interruttori.test.ts (74 tests) 181ms
+ ✓ src/lib/omega.test.ts (43 tests) 198ms
+ ✓ src/lib/dailyHistory.test.ts (76 tests) 412ms
+ ✓ src/components/live/LiveTradingPanel.test.tsx (2 tests) 2776ms
+   ✓ LiveTradingPanel — fix audit #6 (submin vs FoK/persistence) > attivando il place-and-trim, FoK e Persistenza si disabilitano e azzerano (con nota)  1942ms
+   ✓ LiveTradingPanel — fix audit #6 (submin vs FoK/persistence) > disattivando il submin i controlli tornano operabili  829ms
+ ✓ src/components/omega/MissionCard.cert.12set.test.tsx (8 tests) 2433ms
+   ✓ MissionCard — la "quota live" deve essere davvero di adesso > con l età VERIFICATA e fresca: quota del feed e bollino live  318ms
+   ✓ MissionCard — la "quota live" deve essere davvero di adesso > feed FERMO: nessun bollino live, quota del servizio e bottone SPENTO  1125ms
+ ✓ src/components/replay/ApplicaBotPanel.test.tsx (9 tests) 5097ms
+   ✓ ApplicaBotPanel > calcio: solo i bot calcio; tennis: solo i bot tennis  371ms
+   ✓ ApplicaBotPanel > bot -> scenario -> parametri: un parametro cambiato e' evidenziato e parte da solo  3006ms
+   ✓ ApplicaBotPanel > valore fuori dominio: errore scritto e Applica spento; Ripristina torna alla serie  981ms
+ ✓ src/components/live/ladderAlMs.view.test.tsx (3 tests) 1758ms
+   ✓ GridView con sorgenteLadderAlMs > canale che pubblica: i prezzi del canale sono a schermo entro il tick; muto > N: DB; riprende: canale  480ms
+   ✓ LadderView con sorgenteLadderAlMs: indicatore "Aggiornato" gia' esistente > il testo dichiara la fonte della riga a schermo (canale / DB)  1129ms
+ ✓ src/components/live/TerminalPositionsRail.test.tsx (9 tests) 1915ms
+   ✓ TerminalPositionsRail > cancel di un ordine unmatched invia il comando ESATTO alla coda  790ms
+ ✓ src/components/safestrategy/InvestAction.test.tsx (5 tests) 1936ms
+   ✓ InvestAction — conferma LIVE (MEDIUM-2) > armata, decade se cambia lo stake  1624ms
+ ✓ src/components/controlroom/SchedaPropostaOpportunita.alms.test.tsx (10 tests) 1850ms
+   ✓ scheda al ms: si aggancia al ladder del mercato > si iscrive con la scheda, aggiorna prezzo, book e numeri a ogni tick, si stacca alla chiusura  549ms
+ ✓ src/components/controlroom/PannelloBotScalper.test.tsx (6 tests) 1640ms
+   ✓ la riga Scalper calcio > accesa: si vede la nota, c e FERMA, e NON c e il cambio di modalita  1138ms
+ ✓ src/components/dashboard/DirezioneDashboard.quota.test.tsx (5 tests) 2412ms
+   ✓ DirezioneDashboard - fonte della quota > Under 3.5 del referto: la carta usa la quota Betfair 1.42 (non il book 1.36)  1728ms
+   ✓ DirezioneDashboard - fonte della quota > 1X2 senza Betfair: "quota book", mai "valore" anche se la banda batte 1/quota  667ms
+ ✓ src/components/live/SelectionChartPanel.test.tsx (5 tests) 2198ms
+   ✓ SelectionChartPanel > renderizza le selezioni del ladder nel select (default: la prima)  1064ms
+   ✓ SelectionChartPanel > gli update realtime su più bucket fanno comparire le candele (svg rect)  322ms
+   ✓ SelectionChartPanel > il cambio timeframe non crasha e ri-bucketizza  719ms
+ ✓ src/components/controlroom/useControlRoom.scalperCanale.test.tsx (7 tests) 1624ms
+   ✓ la riga Scalper calcio con l'interruttore globale > acceso senza sessioni: acceso, in prova, con la frase dell'auto-mode  452ms
+ ✓ src/components/safestrategy/RiskPanel.test.tsx (14 tests) 1736ms
+   ✓ RiskPanel > liability giornaliera vs cap con barra e percentuale; stop non attivo  990ms
+ ✓ src/components/controlroom/BottoneChiudiRiga.test.tsx (17 tests) 1619ms
+   ✓ B16 - il bottone chiama il SUO bot > riga omega: chiudi con bot/id/partita/modalita' DELLA RIGA  866ms
+stderr | src/components/live/LiveAlertBanner.test.tsx > LiveAlertBanner — fix audit #24 > ack FALLITO: l'avviso RIENTRA nella lista (mai dismissal silenzioso)
+[LiveAlertBanner] ackAlert: Error: permission denied
+    at C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\frontend\src\components\live\LiveAlertBanner.test.tsx:42:32
+    at file:///C:/Users/Admin/Desktop/PYTHON%20DATABASE/python-database-automation/frontend/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11
+    at file:///C:/Users/Admin/Desktop/PYTHON%20DATABASE/python-database-automation/frontend/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26
+    at file:///C:/Users/Admin/Desktop/PYTHON%20DATABASE/python-database-automation/frontend/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///C:/Users/Admin/Desktop/PYTHON%20DATABASE/python-database-automation/frontend/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)
+    at runTest (file:///C:/Users/Admin/Desktop/PYTHON%20DATABASE/python-database-automation/frontend/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)
+    at runSuite (file:///C:/Users/Admin/Desktop/PYTHON%20DATABASE/python-database-automation/frontend/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+    at runSuite (file:///C:/Users/Admin/Desktop/PYTHON%20DATABASE/python-database-automation/frontend/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+    at runFiles (file:///C:/Users/Admin/Desktop/PYTHON%20DATABASE/python-database-automation/frontend/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3)
+
+ ✓ src/components/live/LiveAlertBanner.test.tsx (2 tests) 1684ms
+   ✓ LiveAlertBanner — fix audit #24 > ack riuscito: l'avviso sparisce e non torna  1221ms
+   ✓ LiveAlertBanner — fix audit #24 > ack FALLITO: l'avviso RIENTRA nella lista (mai dismissal silenzioso)  459ms
+ ✓ src/components/safestrategy/SafeTradesTable.test.tsx (10 tests) 1146ms
+   ✓ SafeTradesTable — trade di modello > badge del tipo da meta.kind e P(perdita) all ingresso  308ms
+ ✓ src/components/controlroom/useChiusuraAlMs.parita.test.tsx (7 tests) 1371ms
+   ✓ P11: stessa gamba in utile, ramo al ms = ramo scanner al centesimo > Mike back 9 @ 1,85, lay 1,70: scanner 0,75 netto = ms 0,75 (prima ms 0,79 lordo)  366ms
+ ✓ src/fotografia/fotografia.test.tsx (27 tests) 355289ms
+   ✓ fotografia di parita' (guscio v2) > board: 'off' identica alla fase 0, 'v2' con le stesse pagine  9226ms
+   ✓ fotografia di parita' (guscio v2) > control-room: 'off' identica alla fase 0, 'v2' con le stesse pagine  15309ms
+   ✓ fotografia di parita' (guscio v2) > dashboard: 'off' identica alla fase 0, 'v2' con le stesse pagine  7923ms
+   ✓ fotografia di parita' (guscio v2) > omega: 'off' identica alla fase 0, 'v2' con le stesse pagine  7546ms
+   ✓ fotografia di parita' (guscio v2) > safe-strategy: 'off' identica alla fase 0, 'v2' con le stesse pagine  7712ms
+   ✓ fotografia di parita' (guscio v2) > mike: 'off' identica alla fase 0, 'v2' con le stesse pagine  7698ms
+   ✓ fotografia di parita' (guscio v2) > segui-live: 'off' identica alla fase 0, 'v2' con le stesse pagine  7190ms
+   ✓ fotografia di parita' (guscio v2) > multi-ladder: 'off' identica alla fase 0, 'v2' con le stesse pagine  6700ms
+   ✓ fotografia di parita' (guscio v2) > market-watch: 'off' identica alla fase 0, 'v2' con le stesse pagine  6662ms
+   ✓ fotografia di parita' (guscio v2) > live-pnl: 'off' identica alla fase 0, 'v2' con le stesse pagine  6930ms
+   ✓ fotografia di parita' (guscio v2) > storico-calcio: 'off' identica alla fase 0, 'v2' con le stesse pagine  8087ms
+   ✓ fotografia di parita' (guscio v2) > storico-tennis: 'off' identica alla fase 0, 'v2' con le stesse pagine  8500ms
+   ✓ fotografia di parita' (guscio v2) > tennis: 'off' identica alla fase 0, 'v2' con le stesse pagine  7109ms
+   ✓ fotografia di parita' (guscio v2) > tennis-terminal: 'off' identica alla fase 0, 'v2' con le stesse pagine  6901ms
+   ✓ fotografia di parita' (guscio v2) > tennis-terminal-match: 'off' identica alla fase 0, 'v2' con le stesse pagine  8910ms
+   ✓ fotografia di parita' (guscio v2) > tennis-replay: 'off' identica alla fase 0, 'v2' con le stesse pagine  6735ms
+   ✓ fotografia di parita' (guscio v2) > trade-journal: 'off' identica alla fase 0, 'v2' con le stesse pagine  6614ms
+   ✓ fotografia di parita' (guscio v2) > report-personale: 'off' identica alla fase 0, 'v2' con le stesse pagine  8351ms
+   ✓ fotografia di parita' (guscio v2) > watchlist: 'off' identica alla fase 0, 'v2' con le stesse pagine  7487ms
+   ✓ fotografia di parita' (guscio v2) > analytics: 'off' identica alla fase 0, 'v2' con le stesse pagine  8794ms
+   ✓ fotografia di parita' (guscio v2) > match-replay: 'off' identica alla fase 0, 'v2' con le stesse pagine  6863ms
+   ✓ fotografia di parita' (guscio v2) > select-sport: 'off' identica alla fase 0, 'v2' con le stesse pagine  8858ms
+   ✓ fotografia di parita' (guscio v2) > ladder-popout: 'off' identica alla fase 0, 'v2' con le stesse pagine  6761ms
+   ✓ fotografia di parita' (guscio v2) > landing: 'off' identica alla fase 0, 'v2' con le stesse pagine  10020ms
+   ✓ fotografia di parita' (guscio v2) > check-email: 'off' identica alla fase 0, 'v2' con le stesse pagine  6303ms
+   ✓ fotografia di parita' (guscio v2) > reset-password: 'off' identica alla fase 0, 'v2' con le stesse pagine  6433ms
+   ✓ fotografia di parita' (guscio v2) > notfound: 'off' identica alla fase 0, 'v2' con le stesse pagine  6552ms
+ ✓ src/components/controlroom/righeBot.provaArretrati.test.tsx (4 tests) 1455ms
+   ✓ R_G: il riassunto del gruppo non somma LIVE e PROVA > una riga live +2 e una paper +7,60: «oggi LIVE 2,00» e «prova 7,60», mai 9,60  1301ms
+ ✓ src/components/controlroom/CashOutGlobale.montaggio.test.tsx (7 tests) 1026ms
+   ✓ P12b: il cash out della PARTITA dentro la scheda > Follo, due gambe di Mike: −0,82 netto, accanto «il bot Mike calcola −0,84 [BOT]»; il pulsante Safe resta  338ms
+ ✓ src/components/controlroom/SchedaChiusuraOmega.test.tsx (14 tests) 1527ms
+   ✓ i tre numeri stanno insieme (memoria del 12/09) > blocchi adesso, tenere vale, e la traiettoria  369ms
+ ✓ src/components/controlroom/SchedaPreMatch.test.tsx (14 tests) 1163ms
+ ✓ src/components/controlroom/RigaOrdiniReali.canale.test.tsx (7 tests) 1586ms
+   ✓ Ordini reali dal canale 47331 > canale spento: la lettura del database, fonte "db"  578ms
+ ✓ src/components/live/posizioniCanale.pannelli.test.tsx (6 tests) 1126ms
+   ✓ LiveTradingPanel - position dal canale 47331 > riga nota + push piu' fresco: fonte "canale"; push vecchio: resta "db"  476ms
+ ✓ src/components/safestrategy/SafeTradesTable.exitStatus.test.tsx (9 tests) 990ms
+   ✓ SafeTradesTable — stato di uscita da safe_strategy_activity > exit_wait{wait:"prezzi_non_nel_feed"} -> "In attesa: prezzo di chiusura assente nel book..."  332ms
+ ✓ src/components/omega/MatchTradesTable.test.tsx (24 tests) 999ms
+ ✓ src/components/controlroom/testata/FasciaSoldiVeri.test.tsx (16 tests) 726ms
+ ✓ src/components/trading/SectionFilter.test.tsx (10 tests) 454ms
+ ✓ src/components/trading/StatoOrdine.test.tsx (10 tests) 349ms
+ ✓ src/components/trading/designGuard.test.ts (12 tests) 250ms
+ ✓ src/components/controlroom/testata/TesseraRunner.test.tsx (7 tests) 175ms
+ ✓ src/components/controlroom/testata/salvaStop.test.ts (24 tests) 110ms
+ ✓ src/components/controlroom/testata/soldiVeri.test.ts (21 tests) 35ms
+ ✓ src/components/controlroom/aperte/statoPartitaAperta.test.ts (8 tests) 26ms
+ ✓ src/lib/opportunities/validate.test.ts (10 tests) 23ms
+ ✓ src/components/replay/AvvisoCoerenzaBarra.test.tsx (10 tests) 2030ms
+   ✓ AvvisoCoerenzaBarra - partita vera 35797769 > usa gli snapshot passati dalla pagina (non li rifa): un motore con il punteggio sbagliato compare come MOTORE_PUNTEGGIO  423ms
+   ✓ AvvisoCoerenzaBarra - casi limite > elenca al massimo `massimo` segnalazioni e dice quante altre ce ne sono (singolare e plurale)  391ms
+ ✓ src/lib/opportunities/engine.test.ts (8 tests) 19ms
+ ✓ src/lib/opportunities/helpers.test.ts (14 tests) 23ms
+ ✓ src/components/replay/TrainingTradesPanel.test.tsx (3 tests) 1034ms
+   ✓ TrainingTradesPanel > elenca i trade con lo stato del matching e la X li elimina  957ms
+ ✓ src/components/trading/DayBar.pnlReale.test.tsx (3 tests) 869ms
+   ✓ DayBar: reale, stimato, in corso > scrive la parte stimata e le posizioni in corso  757ms
+ ✓ src/components/trading/DayBar.aperto.test.tsx (3 tests) 747ms
+   ✓ DayBar - parametri opzionali di W_G > aperto +10 su realizzato +20 e obiettivo 100: barra al 30 %, tratteggio dal 20 % largo 10 %  503ms
+ ✓ src/components/controlroom/ObiettivoHero.test.tsx (7 tests) 1054ms
+ ✓ src/components/controlroom/B2GlossarioAuditCR.test.tsx (14 tests) 1007ms
+ ✓ src/components/controlroom/ResiduiB17.schede.test.tsx (15 tests) 1056ms
+   ✓ 2b. combo a 3 gambe: prezzi al ms per gamba, EV e semaforo ricalcolati > PIAZZA manda i prezzi A VIDEO di ogni gamba (al ms), con la fonte peggiore  366ms
+ ✓ src/components/controlroom/RigaOrdiniReali.test.tsx (28 tests) 1041ms
+   ✓ interruttore -> RPC giusta > OFF e PAPER partono al primo clic  463ms
+stderr | src/components/live/DepthPanel.test.tsx > DepthPanel > con storia sufficiente mostra il delta per lato
+The current testing environment is not configured to support act(...)
+
+ ✓ src/components/live/DepthPanel.test.tsx (5 tests) 964ms
+   ✓ DepthPanel > renderizza selezioni, totali per lato e ripartizione book  615ms
+ ✓ src/components/controlroom/RigaFreno.test.tsx (13 tests) 1413ms
+   ✓ la riga FRENO > dal database: rilasciato, fonte "db"  522ms
+ ✓ src/components/safestrategy/SafeTradesTable.modalita.test.tsx (5 tests) 870ms
+   ✓ SafeTradesTable — modalità su OGNI riga > la riga PAPER ha un badge ESPLICITO, non l’assenza di badge  448ms
+ ✓ src/components/live/XHedgePanel.canale.test.tsx (6 tests) 843ms
+   ✓ XHedgePanel - canale 47331 sul poll > una riga piu' recente dal canale sostituisce quella del poll, fonte dichiarata  520ms
+ ✓ src/components/safestrategy/useSafeBot.test.tsx (10 tests) 906ms
+   ✓ useSafeBot — reload (MEDIUM-1) > un risultato fuori ordine NON sovrascrive quello piu recente  312ms
+ ✓ src/components/controlroom/CashOutPartita.test.tsx (16 tests) 735ms
+ ✓ src/components/controlroom/useTennisVivo.canale.test.ts (6 tests) 658ms
+ ✓ src/components/controlroom/useTennisVivo.test.ts (15 tests) 572ms
+ ✓ src/components/controlroom/QuoteMercato.test.tsx (17 tests) 839ms
+ ✓ src/components/controlroom/CashOutGlobale.chiudiTutte.test.tsx (11 tests) 921ms
+ ✓ src/components/safestrategy/OpportunityGroup.cert.12set.test.tsx (14 tests) 616ms
+ ✓ src/components/safestrategy/InvestAction.cert.12set.test.tsx (16 tests) 645ms
+ ✓ src/components/controlroom/EsitoAbbinamento.schede.test.tsx (11 tests) 472ms
+stderr | src/components/dashboard/rese.KO11.test.tsx > GoalsTabs - gol per minuto (U0029) > minuti presenti: nessun avviso
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+
+ ✓ src/components/dashboard/rese.KO11.test.tsx (6 tests) 520ms
+ ✓ src/components/controlroom/PropostaUscitaMike.test.tsx (12 tests) 764ms
+ ✓ src/components/controlroom/SchedaMike.test.tsx (8 tests) 481ms
+ ✓ src/components/controlroom/ObiettivoEditor.test.tsx (7 tests) 612ms
+ ✓ src/components/controlroom/OpportunitaColonna.test.tsx (5 tests) 614ms
+ ✓ src/components/controlroom/dettaglioRiga.test.tsx (31 tests) 651ms
+ ✓ src/components/controlroom/pnlUnicoConto.viste.test.tsx (3 tests) 412ms
+ ✓ src/components/controlroom/SchedaPreMatch.cashout.test.tsx (3 tests) 778ms
+   ✓ W_B1 P10: la scheda pre-partita con le operazioni e il cash out > una punta di Mike pre-fischio: la riga dell’operazione, il riquadro del cash out e la scheda di Mike  603ms
+ ✓ src/components/live/SelectionChartPanel.alms.test.tsx (3 tests) 470ms
+ ✓ src/components/omega/PartiteChiuseDallUtente.test.tsx (6 tests) 711ms
+ ✓ src/components/controlroom/P13EsitiChiusura.test.tsx (13 tests) 577ms
+ ✓ src/components/mike/MikeP6Blocco1.test.tsx (7 tests) 405ms
+   ✓ punto 5 (M8.13) - esito di un ordine non abbinato > nella tabella delle operazioni l’ordine in errore dice come e’ finito  382ms
+ ✓ src/components/controlroom/SplitSport.corsie.test.tsx (5 tests) 439ms
+ ✓ src/components/controlroom/CashOutGlobale.test.tsx (8 tests) 388ms
+ ✓ src/components/mike/MikeMatchCard.fontePnl.test.tsx (2 tests) 441ms
+ ✓ src/components/mike/MikeP6Blocco5.test.tsx (9 tests) 314ms
+ ✓ src/components/mike/useMikeEventoAlMs.test.tsx (6 tests) 322ms
+ ✓ src/components/controlroom/DettaglioRigaView.test.tsx (6 tests) 405ms
+ ✓ src/components/mike/MikeP6Blocco6Copertura.test.tsx (8 tests) 313ms
+ ✓ src/components/omega/MatchTradesTable.fixA.test.tsx (5 tests) 336ms
+   ✓ omegaCloseNowTotal — la barra somma le stesse chiusure delle celle > il totale coincide con la somma dei valori scritti nelle celle  313ms
+ ✓ src/components/controlroom/NomiPartita.test.tsx (9 tests) 385ms
+ ✓ src/components/controlroom/fixPagine2609.giornata.test.tsx (10 tests) 330ms
+ ✓ src/components/controlroom/RigaOperazioneNomeTennis.test.tsx (3 tests) 348ms
+ ✓ src/components/controlroom/ResiduoScopertoMike.test.tsx (6 tests) 352ms
+ ✓ src/components/controlroom/OrdiniContoPartita.test.tsx (9 tests) 333ms
+ ✓ src/components/controlroom/SchedaPropostaOpportunita.banda.test.tsx (4 tests) 807ms
+   ✓ D7: la banda della strategia sulla scheda, al ms > dentro la banda: al clic parte a mercato al prezzo di adesso; fuori: lo dice prima del clic  421ms
+ ✓ src/components/controlroom/ProposteUsciteFlusso.test.tsx (9 tests) 547ms
+ ✓ src/components/controlroom/UsciteColonna.test.tsx (4 tests) 403ms
+ ✓ src/components/controlroom/StrisciaEsitoChiusura.test.tsx (7 tests) 271ms
+ ✓ src/components/controlroom/fixPagine2609.varie.test.tsx (4 tests) 343ms
+   ✓ F-7: P del mercato coerente col vantaggio mostrato > senza prezzo vivo: P mercato = 1/1,09 = 91,7 %, e P modello − P mercato = vantaggio  332ms
+ ✓ src/components/trading/ModeBadge.test.tsx (5 tests) 186ms
+ ✓ src/components/controlroom/EsitoChiusuraMike.test.tsx (16 tests) 356ms
+ ✓ src/components/controlroom/RigaCapacitaMercati.test.tsx (5 tests) 181ms
+ ✓ src/components/dashboard/EtaDato.test.tsx (3 tests) 185ms
+ ✓ src/components/live/LiveMatchCard.origine.test.tsx (2 tests) 185ms
+ ✓ src/components/controlroom/MarchioSoldi.test.tsx (14 tests) 245ms
+ ✓ src/components/safestrategy/MonitorCard.test.tsx (3 tests) 246ms
+ ✓ src/components/mike/useMike.saveParams.test.tsx (2 tests) 142ms
+ ✓ src/components/safestrategy/safeActivity.test.ts (19 tests) 147ms
+ ✓ src/lib/mediaUnder.test.ts (10 tests) 113ms
+ ✓ src/components/live/StandaloneLadder.test.tsx (1 test) 205ms
+ ✓ src/lib/ladderAlMs.test.ts (18 tests) 115ms
+ ✓ src/lib/posizioniChiuse.test.ts (46 tests) 87ms
+ ✓ src/lib/controlRoom.test.ts (89 tests) 165ms
+ ✓ src/lib/flussoPrezzi.test.tsx (4 tests) 173ms
+ ✓ src/lib/localTransport.test.ts (14 tests) 115ms
+ ✓ src/lib/format.test.ts (18 tests) 78ms
+ ✓ src/lib/chiuseGiornata.test.ts (15 tests) 131ms
+ ✓ src/lib/nettoCiclo.test.ts (11 tests) 111ms
+ ✓ src/lib/posizioniChiuse.raggruppamento.test.ts (21 tests) 172ms
+ ✓ src/lib/opportunities/tier1_quasi.test.ts (25 tests) 75ms
+ ✓ src/lib/pnlUnicoConto.test.ts (6 tests) 96ms
+ ✓ src/lib/depthFlow.test.ts (18 tests) 46ms
+ ✓ src/lib/opportunitaOrdine.test.ts (9 tests) 27ms
+ ✓ src/lib/interruttoriUscite.test.ts (21 tests) 56ms
+ ✓ src/lib/flussoStreamRunner.test.tsx (4 tests) 133ms
+ ✓ src/lib/opportunities/tier0_arb.test.ts (34 tests) 69ms
+ ✓ src/lib/priceAxis.test.ts (8 tests) 84ms
+ ✓ src/lib/esitoAbbinamento.test.ts (36 tests) 69ms
+ ✓ src/lib/pnlRealeBetfair.test.ts (10 tests) 110ms
+ ✓ src/components/controlroom/righeBot.test.ts (21 tests) 37ms
+ ✓ src/lib/mikeRpc.test.ts (11 tests) 48ms
+ ✓ src/components/trading/zeroPerAssente.test.ts (7 tests) 29ms
+ ✓ src/lib/obiettivoEditor.test.ts (11 tests) 62ms
+ ✓ src/lib/omegaMatches.test.ts (20 tests) 89ms
+ ✓ src/lib/localChannel.test.ts (18 tests) 116ms
+ ✓ src/lib/opportunities/tier2_micro.test.ts (33 tests) 83ms
+ ✓ src/lib/chiusuraUtente.test.ts (23 tests) 195ms
+ ✓ src/components/controlroom/chiudiRiga.test.ts (35 tests) 123ms
+ ✓ src/lib/eventPnl.test.ts (13 tests) 27ms
+ ✓ src/lib/cashOutPartita.test.ts (37 tests) 85ms
+ ✓ src/lib/ladderBacktest.test.ts (8 tests) 26ms
+ ✓ src/lib/controlRoomCatena.test.ts (28 tests) 35ms
+ ✓ src/lib/etaDato.test.ts (6 tests) 75ms
+ ✓ src/lib/controlRoomProposte.test.ts (38 tests) 46ms
+ ✓ src/lib/tradeStatus.test.ts (35 tests) 52ms
+ ✓ src/lib/tennisReplay.test.ts (21 tests) 111ms
+ ✓ src/lib/tennisReplayVerificaBarra.test.ts (17 tests | 1 skipped) 175ms
+ ✓ src/pages/TennisReplay.test.tsx (7 tests) 11025ms
+   ✓ Replay Tennis — elenco > mostra le partite del tennis per torneo, con le sole RPC del tennis  440ms
+   ✓ Replay Tennis — simulatore sulla partita vera > punteggio tennis al cursore, mercati per categoria, nessuna RPC del calcio  2561ms
+   ✓ Replay Tennis — simulatore sulla partita vera > a fine registrazione: fine partita, tabellone 6-4 5-7 6-7, simboli del tennis sulla barra  1984ms
+   ✓ Replay Tennis — simulatore sulla partita vera > opportunita': nota sui rilevatori del tennis  1462ms
+   ✓ Replay Tennis — simulatore sulla partita vera > ladder training: «Applica bot» (fase 2) coi SOLI bot tennis, la richiesta parte per questa partita  3491ms
+   ✓ Replay Tennis — simulatore sulla partita vera > backtest col bet-delay registrato del mercato (3 s, non i 5 s del calcio)  995ms
+ ✓ src/pages/SafeStrategy.chiarezza.test.tsx (9 tests) 10181ms
+   ✓ salute del feed: la STESSA fonte di /omega e /mike > provider senza feed ma scanner vivo: feed VIVO e partite monitorate dallo scanner  2027ms
+   ✓ salute del feed: la STESSA fonte di /omega e /mike > scanner davvero fermo: il feed resta dichiarato FERMO (nessun falso verde)  838ms
+   ✓ salute del feed: la STESSA fonte di /omega e /mike > vince la lettura PIÙ RECENTE fra provider e lettura diretta  1041ms
+   ✓ una sola liability, conteggi non duplicati > la liability aperta si legge SOLO nella sua tile  885ms
+   ✓ una sola liability, conteggi non duplicati > "Trade aperti" non ripete le operazioni della giornata  837ms
+   ✓ tab Opportunità: il tooltip non promette opportunità che non ci sono > righe analizzate senza opportunità: 0 nel tab e tooltip coerente  885ms
+   ✓ attività del servizio leggibile > event_id risolto in NOME partita, mercato e motivo in italiano  657ms
+   ✓ attività del servizio leggibile > il filtro per evento funziona anche sulle righe che portavano solo l id  1203ms
+   ✓ tabella trade: mercato in chiaro > CORRECT_SCORE si legge "Risultato Esatto"  1803ms
+ ✓ src/pages/Omega.storico.test.tsx (7 tests) 8983ms
+   ✓ Omega — giornata operativa > obiettivo di oggi / realizzato oggi (NON lo storico) / resta, con la giornata operativa  1626ms
+   ✓ Omega — giornata operativa > obiettivo centrato quando il realizzato di oggi supera il goal  454ms
+   ✓ Omega — giornata operativa > H-10: obiettivo NON storicizzato → la barra lo dichiara  446ms
+   ✓ Omega — tab Storico > monta calendario, performance e dettaglio con i fetcher dello storico  1699ms
+   ✓ Omega — tab Storico > A-05: l'altra moneta si legge APPOSTA dal selettore, con p_mode esplicito  2165ms
+   ✓ Omega — tab Storico > A-05: se il database non separa le monete, NESSUNA cifra (righe miste) e il motivo in parole  1291ms
+   ✓ Omega — tab Storico > H-10: giornata con obiettivo di RIPIEGO → nessun ●/○ e niente giudizio  1298ms
+ ✓ src/pages/TennisTerminal.test.tsx (5 tests) 6264ms
+   ✓ TennisTerminal - F-11: aprire la pagina non scrive > montata (follow CLOSED) nessuna rpc di scrittura e nessun insert/update  1742ms
+   ✓ TennisTerminal - F-11: aprire la pagina non scrive > montata (follow STREAMING) nessuna rpc di scrittura e nessun insert/update  739ms
+   ✓ TennisTerminal - F-11: aprire la pagina non scrive > montata (follow null) nessuna rpc di scrittura e nessun insert/update  797ms
+   ✓ TennisTerminal - F-11: aprire la pagina non scrive > partita non seguita: la pagina lo dice e «Segui» la segue al clic  2016ms
+   ✓ TennisTerminal - F-11: aprire la pagina non scrive > partita gia seguita: nessun bottone «Segui», nessun avviso  956ms
+ ✓ src/pages/SafeStrategy.fixA.test.tsx (5 tests) 6248ms
+   ✓ FIX-A — Safe: i numeri di una modalità, mai la somma > la pagina chiede gli aggregati PER MODALITÀ  2580ms
+   ✓ FIX-A — Safe: i numeri di una modalità, mai la somma > PAPER: «P&L totale · PAPER» = −43,05 (non −40,47); il live a parte, con la sua etichetta  1200ms
+   ✓ FIX-A — Safe: i numeri di una modalità, mai la somma > LIVE: il totale LIVE è +2,58 e il paper sta nella riga a parte  764ms
+   ✓ FIX-A — Safe: i numeri di una modalità, mai la somma > senza gli aggregati per modalità: il totale separato dalla RPC, MAI la somma  743ms
+   ✓ FIX-A — Safe: i numeri di una modalità, mai la somma > nessuna attività nell’altra modalità: nessuna riga in più  953ms
+ ✓ src/pages/Analytics.errori.test.tsx (4 tests) 3360ms
+   ✓ Analytics - errore non e' "nessun dato" > timeout di get_analytics: messaggio di timeout, NESSUN "Nessun segnale settlato"  858ms
+   ✓ Analytics - errore non e' "nessun dato" > risposta vuota VERA: "Nessun segnale settlato" e nessun errore  1033ms
+   ✓ Analytics - errore non e' "nessun dato" > dati dal riepilogo: la pagina dice di quando sono (ora di Roma)  1258ms
+ ✓ src/pages/Mike.fixA.test.tsx (4 tests) 5277ms
+   ✓ FIX-A — «Se chiudo ora» = somma dei netti delle card > la barra Operazioni scrive la somma delle card, non il bloccato  3226ms
+   ✓ FIX-A — la proposta d’uscita si firma da /mike (stesso comando della Control Room) > la card mostra la proposta e APPROVA manda approva_uscita con la chiave  1350ms
+   ✓ FIX-A — la proposta d’uscita si firma da /mike (stesso comando della Control Room) > senza proposta: nessun riquadro in più  690ms
+ ✓ src/lib/useScanLiveFeed.test.ts (8 tests) 1502ms
+   ✓ useScanLiveFeedRows — la fotografia iniziale segue gli eventi > la fotografia NON sovrascrive una riga più fresca del realtime  611ms
+   ✓ useScanLiveFeedRows — la fotografia iniziale segue gli eventi > la cancellazione di una riga la toglie dalla mappa  546ms
+ ✓ src/lib/safeBot.test.ts (99 tests) 484ms
+ ✓ src/lib/trainingLadder.replay.test.tsx (2 tests) 2190ms
+   ✓ Ladder TRAINING su mercati NON Match Odds (dati reali) > CORRECT_SCORE (19 selezioni): renderizza il ladder con righe di prezzo  914ms
+   ✓ Ladder TRAINING su mercati NON Match Odds (dati reali) > HALF_TIME (senza ltp/trd): renderizza le 3 selezioni con i prezzi del book  1260ms
+ ✓ src/lib/storicoSport.test.ts (37 tests) 216ms
+ ✓ src/pages/MarketWatch.test.tsx (5 tests) 3653ms
+   ✓ MarketWatch > renderizza le due sezioni con le righe dalle fixture  965ms
+   ✓ MarketWatch > riga calcio: badge in-play con minuto+score e bottone Cash-out EVENTO  1406ms
+   ✓ MarketWatch > riga tennis: set_summary visibile e NESSUN bottone cash-out (capability gating)  733ms
+ ✓ src/pages/MarketWatch.canale.test.tsx (8 tests) 3030ms
+   ✓ MarketWatch - canale locale sopra il poll > parita': senza canale (nessun WebSocket) la pagina rende i dati del database come oggi  987ms
+   ✓ MarketWatch - canale locale sopra il poll > position calcio: il push fresco vince sulla riga del poll  301ms
+   ✓ MarketWatch - canale locale sopra il poll > riga sparita dal blocco del database: sparisce e il canale non la riporta  308ms
+   ✓ MarketWatch - canale locale sopra il poll > now calcio: il realtime del database piu' vecchio del canale non torna indietro  497ms
+ ✓ src/pages/LivePnl.fixA.test.tsx (3 tests) 3027ms
+   ✓ FIX-A — Live P&L: una modalità alla volta, in ogni sezione > non esiste più «tutte»: si parte da LIVE (runner senza stato) e si passa a PAPER  1677ms
+   ✓ FIX-A — Live P&L: una modalità alla volta, in ogni sezione > LIVE: solo le posizioni live, il tennis paper NON compare, realizzato solo live  410ms
+   ✓ FIX-A — Live P&L: una modalità alla volta, in ogni sezione > PAPER: solo le posizioni paper (47+78), il tennis paper sì, niente della riga live  936ms
+ ✓ src/lib/safeStrategy.test.ts (89 tests) 221ms
+ ✓ src/lib/safeBot.contracts.test.ts (51 tests) 148ms
+ ✓ src/lib/omegaProposte.test.ts (20 tests) 64ms
+ ✓ src/lib/ladderMath.test.ts (23 tests) 75ms
+ ✓ src/lib/apertoAdesso.test.ts (5 tests) 40ms
+ ✓ src/lib/soldiVeriCatena.test.ts (24 tests) 66ms
+ ✓ src/lib/replayVerificaBarra.test.ts (41 tests) 2092ms
+ ✓ src/lib/localChannel.token.test.ts (7 tests) 143ms
+ ✓ src/lib/erroreRpc.test.ts (6 tests) 219ms
+ ✓ src/lib/mikeCanaleLocale.test.ts (14 tests) 40ms
+ ✓ src/fotografia/uiDefault.test.ts (2 tests) 242ms
+ ✓ src/lib/composizioneConto.test.ts (8 tests) 46ms
+ ✓ src/lib/matching.test.ts (29 tests) 89ms
+ ✓ src/lib/eventGroups.test.ts (21 tests) 50ms
+ ✓ src/lib/righeCanale.test.ts (17 tests) 64ms
+ ✓ src/lib/consapevolezzaOrdine.contratto.test.ts (14 tests) 46ms
+ ✓ src/lib/statoOrdine.test.ts (26 tests) 85ms
+ ✓ src/lib/interruttoriScalper.test.ts (12 tests) 52ms
+ ✓ src/lib/statoBotCanale.test.ts (18 tests) 120ms
+ ✓ src/lib/scalperControlRoom.test.ts (21 tests) 66ms
+ ✓ src/lib/replayVerificaBarraDb.test.ts (13 tests) 2472ms
+   ✓ verificaPartite con le funzioni VERE della pagina e il finto delle RPC > tutte le partite del finto database: 0 incoerenze, solo RPC di lettura con i parametri della pagina  435ms
+   ✓ verificaPartite con le funzioni VERE della pagina e il finto delle RPC > un database con un difetto (due fonti discordanti sul punteggio) viene segnalato: riepilogo rosso e codice nel referto  617ms
+ ✓ src/lib/saldoBetfair.test.ts (19 tests) 99ms
+ ✓ src/lib/replayTimelineEvents.barra.test.ts (19 tests) 235ms
+ ✓ src/lib/provaGiornata.test.ts (9 tests) 53ms
+ ❯ src/lib/replayVerificaBarra.partite.test.ts (17 tests | 2 failed) 2438ms
+   ✓ registrazioni scoperte > c'e' almeno una registrazione in registrazioni_banco/ (altrimenti il test non verifica nulla) 11ms
+   × partita 35760084 (registrazioni_banco) > CONTRATTO: la fixture della registrazione esiste ed e' aggiornata 199ms
+     → la registrazione 35760084 e' cambiata dopo la generazione della fixture: rigenerala con python3 tools/replay_barra_fixture.py 35760084: expected { …(3) } to deeply equal { …(3) }
+   ✓ partita 35760084 (registrazioni_banco) > 0 INCOERENZE: barra, simboli, calcio d'inizio, sospensioni, tabellone, gol, cartellini, angoli, motore 193ms
+   ✓ partita 35760084 (registrazioni_banco) > i simboli verificati sono davvero quelli della partita (il verificatore non gira a vuoto) 98ms
+   × partita 35797769 (registrazioni_banco) > CONTRATTO: la fixture della registrazione esiste ed e' aggiornata 128ms
+     → la registrazione 35797769 e' cambiata dopo la generazione della fixture: rigenerala con python3 tools/replay_barra_fixture.py 35797769: expected { …(3) } to deeply equal { …(3) }
+   ✓ partita 35797769 (registrazioni_banco) > 0 INCOERENZE: barra, simboli, calcio d'inizio, sospensioni, tabellone, gol, cartellini, angoli, motore 186ms
+   ✓ partita 35797769 (registrazioni_banco) > i simboli verificati sono davvero quelli della partita (il verificatore non gira a vuoto) 175ms
+   ✓ falsificazione sulla partita 35760084 > D1 tabellone a 0-0 dopo le righe-evento: rosso (TABELLONE_DIVERSO_DAL_FEED e, a fine replay, TABELLONE_FINALE) 81ms
+   ✓ falsificazione sulla partita 35760084 > D2 stesso difetto nel motore opportunita' (buildSnapshots): rosso (MOTORE_PUNTEGGIO) 119ms
+   ✓ falsificazione sulla partita 35760084 > D3 registrazione che INIZIA a partita in corso: la funzione vera e' pulita, quella di prima del fix e' rossa (SIMBOLO_FUORI_REGISTRAZIONE) 89ms
+   ✓ falsificazione sulla partita 35760084 > D3 registrazione che FINISCE prima della partita: rossa con la funzione di prima del fix 108ms
+   ✓ falsificazione sulla partita 35760084 > D4 gol nel punteggio ma assente dalla timeline (poll perso): la funzione vera lo disegna, quella di prima del fix no (GOL_SENZA_SIMBOLO) 244ms
+   ✓ falsificazione sulla partita 35797769 > D1 tabellone a 0-0 dopo le righe-evento: rosso (TABELLONE_DIVERSO_DAL_FEED e, a fine replay, TABELLONE_FINALE) 110ms
+   ✓ falsificazione sulla partita 35797769 > D2 stesso difetto nel motore opportunita' (buildSnapshots): rosso (MOTORE_PUNTEGGIO) 200ms
+   ✓ falsificazione sulla partita 35797769 > D3 registrazione che INIZIA a partita in corso: la funzione vera e' pulita, quella di prima del fix e' rossa (SIMBOLO_FUORI_REGISTRAZIONE) 175ms
+   ✓ falsificazione sulla partita 35797769 > D3 registrazione che FINISCE prima della partita: rossa con la funzione di prima del fix 143ms
+   ✓ falsificazione sulla partita 35797769 > D4 gol nel punteggio ma assente dalla timeline (poll perso): la funzione vera lo disegna, quella di prima del fix no (GOL_SENZA_SIMBOLO) 173ms
+ ✓ src/lib/rese.test.ts (14 tests) 99ms
+ ✓ src/lib/signalContext.test.ts (23 tests) 109ms
+ ✓ src/lib/ritorno.test.ts (14 tests) 123ms
+ ✓ src/lib/safeStrategy.d5.test.ts (20 tests) 150ms
+ ✓ src/lib/safeStrategy.secondoTempo.test.ts (13 tests) 72ms
+ ✓ src/lib/replayVerificaBarra.pagina.test.tsx (2 tests) 7866ms
+   ✓ pagina vera vs verificatore - partita 35760084 > stessi passi, stessa apertura, stessa lineetta del calcio d'inizio, stessi segmenti di sospensione, stessi simboli, stesso tabellone  3647ms
+   ✓ pagina vera vs verificatore - partita 35797769 > stessi passi, stessa apertura, stessa lineetta del calcio d'inizio, stessi segmenti di sospensione, stessi simboli, stesso tabellone  4215ms
+ ✓ src/components/dashboard/DecisionsView.errori.test.tsx (3 tests) 1197ms
+   ✓ DecisionsView - errore non e' "nessun dato" > timeout di get_decisions: messaggio di timeout, NESSUN "Nessuna decisione"  673ms
+   ✓ DecisionsView - errore non e' "nessun dato" > risposta vuota VERA: "Nessuna decisione" e nessun errore  430ms
+ ✓ src/lib/replayBarraSimboli.test.tsx (12 tests) 31424ms
+   ✓ barra e simboli — partita vera 35797769 > la griglia ha tanti passi quanti i bucket da 10 s con frame, e gli estremi sono primo e ultimo frame  4250ms
+   ✓ barra e simboli — partita vera 35797769 > il calcio d'inizio sta al primo passo con ts >= primo frame in-gioco; la pagina si apre li'; PRE solo prima  1585ms
+   ✓ barra e simboli — partita vera 35797769 > ogni simbolo sta alla posizione attesa e compare scorrendo proprio a quel passo  2517ms
+   ✓ barra e simboli — partita vera 35797769 > i segmenti di sospensione sono esattamente i passi in cui il Match Odds e' SOSPESO, e il pannello concorda  5361ms
+   ✓ barra e simboli — partita vera 35797769 > il ladder del Match Odds al cursore e' l'ultimo frame <= istante del passo (prima/dopo ogni gol)  3292ms
+   ✓ barra e simboli — partita vera 35797769 > dopo un gol il ladder si riprezza nel verso giusto (casa segna: il back della casa scende; ospite: sale)  1022ms
+   ✓ barra e simboli — partita vera 35760084 > la griglia ha tanti passi quanti i bucket da 10 s con frame, e gli estremi sono primo e ultimo frame  913ms
+   ✓ barra e simboli — partita vera 35760084 > il calcio d'inizio sta al primo passo con ts >= primo frame in-gioco; la pagina si apre li'; PRE solo prima  662ms
+   ✓ barra e simboli — partita vera 35760084 > ogni simbolo sta alla posizione attesa e compare scorrendo proprio a quel passo  3487ms
+   ✓ barra e simboli — partita vera 35760084 > i segmenti di sospensione sono esattamente i passi in cui il Match Odds e' SOSPESO, e il pannello concorda  3912ms
+   ✓ barra e simboli — partita vera 35760084 > il ladder del Match Odds al cursore e' l'ultimo frame <= istante del passo (prima/dopo ogni gol)  3687ms
+   ✓ barra e simboli — partita vera 35760084 > dopo un gol il ladder si riprezza nel verso giusto (casa segna: il back della casa scende; ospite: sale)  727ms
+ ✓ src/test/forzaSupabaseFinto.test.ts (5 tests) 233ms
+ ✓ src/pages/LivePnl.test.tsx (3 tests) 778ms
+   ✓ LivePnl > KPI "P&L realizzato" mostra la somma corretta dei settled (+€6.00)  426ms
+ ✓ src/pages/SeguiLive.clicAuto.test.tsx (2 tests) 821ms
+   ✓ Segui Live - clic su una partita > partita dei bot (origine auto): la apre col runner  562ms
+ ✓ src/lib/usePosizioniCanale.test.tsx (6 tests) 130ms
+ ✓ src/pages/SeguiLive.apertura.test.tsx (8 tests) 376ms
+ ✓ src/lib/valutaProposta.banda.test.ts (20 tests) 201ms
+ ✓ src/lib/vetoCampionati.test.ts (26 tests) 127ms
+ ✓ src/lib/opportunities/snapshot.test.ts (7 tests) 16ms
+ ✓ src/components/controlroom/chiudiRigaScalper.test.ts (23 tests) 41ms
+ ✓ src/components/controlroom/comandiBot.test.ts (13 tests) 53ms
+ ✓ src/lib/multiLadder.test.ts (8 tests) 23ms
+ ✓ src/components/controlroom/useControlRoom.effettiviStantii.test.ts (9 tests) 17ms
+ ✓ src/lib/opportunities/tradeable.test.ts (16 tests) 29ms
+ ✓ src/lib/canaleRunner.test.ts (14 tests) 27ms
+ ✓ src/lib/omegaAudit1209.test.ts (19 tests) 42ms
+ ✓ src/lib/manualeSitoBetfair.test.ts (6 tests) 46ms
+ ✓ src/lib/orderFlow.test.ts (13 tests) 44ms
+ ✓ src/lib/ladderConfig.test.ts (24 tests) 77ms
+ ✓ src/components/controlroom/soloTennis.test.ts (24 tests) 60ms
+ ✓ src/components/controlroom/tennisAuto.test.ts (16 tests) 47ms
+ ✓ src/lib/mikeRisultati.test.ts (25 tests) 86ms
+ ✓ src/components/controlroom/W_B2EsitiOmegaSafe.test.tsx (14 tests) 98ms
+ ✓ src/lib/opportunities/tier2_micro.adversarial.test.ts (12 tests) 333ms
+ ✓ src/lib/rilettureMirate.test.ts (9 tests) 112ms
+ ✓ src/lib/placedOrders.test.ts (13 tests) 106ms
+ ✓ src/lib/matchClock.test.ts (18 tests) 132ms
+ ✓ src/lib/replayBarraPunteggio.test.tsx (8 tests) 88296ms
+   ✓ punteggio al cursore — partita vera 35797769 > a OGNI passo della barra il tabellone e' il punteggio vero (intervallo e righe-evento compresi)  39214ms
+   ✓ punteggio al cursore — partita vera 35797769 > a fine replay («FT») mostra il risultato finale  1173ms
+   ✓ punteggio al cursore — partita vera 35797769 > lungo l'intervallo il tabellone resta quello del primo tempo (mai 0-0 per via della riga FirstHalfEnd)  853ms
+   ✓ punteggio al cursore — partita vera 35797769 > ogni gol: il tabellone passa dal punteggio di prima a quello di dopo entro 2 passi dal simbolo, mai per 0-0  1218ms
+   ✓ punteggio al cursore — partita vera 35760084 > a OGNI passo della barra il tabellone e' il punteggio vero (intervallo e righe-evento compresi)  41806ms
+   ✓ punteggio al cursore — partita vera 35760084 > a fine replay («FT») mostra il risultato finale  1372ms
+   ✓ punteggio al cursore — partita vera 35760084 > lungo l'intervallo il tabellone resta quello del primo tempo (mai 0-0 per via della riga FirstHalfEnd)  909ms
+   ✓ punteggio al cursore — partita vera 35760084 > ogni gol: il tabellone passa dal punteggio di prima a quello di dopo entro 2 passi dal simbolo, mai per 0-0  1744ms
+ ✓ src/lib/fairOverlay.test.ts (16 tests) 48ms
+ ✓ src/lib/scalperAuto.test.ts (14 tests) 82ms
+ ✓ src/lib/chiusuraAlMs.test.ts (14 tests) 44ms
+ ✓ src/lib/safeStrategy.q7q12.test.ts (13 tests) 43ms
+ ✓ src/lib/runnerCanale.test.ts (28 tests) 55ms
+ ✓ src/lib/comboPrezzoVivo.test.ts (9 tests) 34ms
+ ✓ src/lib/certezzaChiusura.test.ts (15 tests) 38ms
+ ✓ src/lib/scalperCanale.test.ts (7 tests) 50ms
+ ✓ src/lib/servants.test.ts (11 tests) 47ms
+ ✓ src/lib/schedaAlMs.test.ts (11 tests) 44ms
+ ✓ src/components/controlroom/testata/paroleImpianto.test.ts (13 tests) 39ms
+ ✓ src/lib/composizioneScalper.test.ts (3 tests) 39ms
+ ✓ src/lib/opportunities/tier0_arb.adversarial.test.ts (3 tests) 19ms
+ ✓ src/lib/chiusuraUtente.contratto.test.ts (11 tests) 28ms
+ ✓ src/lib/composizioneObiettivo.test.ts (10 tests) 26ms
+ ✓ src/lib/safeBot.perModalita.test.ts (7 tests) 23ms
+ ✓ src/lib/righeCanale.rilettura.test.ts (23 tests) 30ms
+ ✓ src/lib/giornataCorsie.test.ts (7 tests) 38ms
+ ✓ src/components/controlroom/trovaEsitoUscita.test.ts (6 tests) 18ms
+ ✓ src/lib/opportunities/tier1_quasi.adversarial.test.ts (5 tests) 46ms
+ ✓ src/lib/replayBot.test.ts (7 tests) 38ms
+ ✓ src/lib/replayTimelineEvents.test.ts (5 tests) 30ms
+ ✓ src/lib/replayTimelineEvents.salti.test.ts (6 tests) 53ms
+ ✓ src/lib/uiShell.test.ts (9 tests) 63ms
+ ✓ src/lib/safeBotChiusura.test.ts (6 tests) 37ms
+ ✓ src/lib/riskMath.test.ts (16 tests) 36ms
+ ✓ src/lib/scalperFlusso.test.ts (2 tests) 21ms
+ ✓ src/lib/opportunities/arb_exec.test.ts (5 tests) 44ms
+ ✓ src/lib/flussoInterrotto.test.ts (3 tests) 33ms
+ ✓ src/lib/fontePnl.test.ts (6 tests) 43ms
+ ✓ src/lib/opportunities/fill.test.ts (18 tests) 35ms
+ ✓ src/lib/soldiVeriPuntiIngresso.test.ts (10 tests) 144ms
+ ✓ src/lib/chiusuraUtente.campoLive.test.ts (3 tests) 46ms
+ ✓ src/components/controlroom/fixPagine2609.tick.test.ts (5 tests) 13ms
+ ✓ src/lib/scanEventBuffer.test.ts (7 tests) 57ms
+ ✓ src/lib/safeStrategyScan.localCanale.test.ts (7 tests) 31ms
+ ↓ src/certification/migrations.cert.test.ts (3 tests | 3 skipped)
+ ↓ src/certification/realtime.cert.test.ts (7 tests | 7 skipped)
+ ↓ src/certification/mike.cert.test.tsx (6 tests | 6 skipped)
+ ↓ src/certification/omega.cert.test.tsx (4 tests | 4 skipped)
+ ✓ src/lib/applicaBot.test.ts (12 tests) 93ms
+ ↓ src/certification/safe.cert.test.tsx (6 tests | 6 skipped)
+ ✓ src/lib/mediaUnderAttivaAdesso.test.ts (8 tests) 83ms
+ ✓ src/lib/liveSubscribe.test.ts (3 tests) 63ms
+ ↓ src/certification/zz_dump.cert.test.tsx (3 tests | 3 skipped)
+ ✓ src/lib/liveOrders.canaleUnico.test.ts (3 tests) 28ms
+ ✓ src/lib/replay-pnl.formatValuta.test.ts (3 tests) 12ms
+ ✓ src/lib/workspace.test.ts (20 tests) 32ms
+ ✓ src/lib/trainingLadder.test.ts (11 tests) 41ms
+ ✓ src/lib/valutaProposta.test.ts (37 tests) 53ms
+ ✓ src/lib/preGoal.test.ts (6 tests) 28ms
+ ✓ src/lib/replayVerificaBarra.avvisoPagina.test.tsx (4 tests) 3916ms
+   ✓ Match Replay - avviso di coerenza della barra, partita 35760084 > barra coerente: nessun avviso nella pagina  1293ms
+   ✓ Match Replay - avviso di coerenza della barra, partita 35760084 > barra che non torna: la pagina mostra l'avviso con il motivo  836ms
+   ✓ Match Replay - avviso di coerenza della barra, partita 35797769 > barra coerente: nessun avviso nella pagina  1028ms
+   ✓ Match Replay - avviso di coerenza della barra, partita 35797769 > barra che non torna: la pagina mostra l'avviso con il motivo  756ms
+ ✓ src/lib/journalStats.test.ts (11 tests) 39ms
+ ✓ src/lib/ladderChart.test.ts (21 tests) 60ms
+ ✓ src/lib/toasts.test.ts (6 tests) 27ms
+ ✓ src/lib/kellySuggest.test.ts (12 tests) 53ms
+ ✓ src/lib/mikeCoverForm.test.ts (4 tests) 57ms
+ ✓ src/lib/liveOrders.canaleUnico.risk.test.ts (3 tests) 35ms
+ ✓ src/lib/omegaUscita.test.ts (22 tests) 41ms
+ ✓ src/lib/runnerHealth.test.ts (7 tests) 15ms
+ ✓ src/lib/tennisRegistry.test.ts (4 tests) 24ms
+ ✓ src/lib/live.valutaReplay.test.ts (6 tests) 32ms
+ ✓ src/lib/delayMercato.tennisReplay.test.ts (3 tests) 24ms
+ ↓ src/certification/sessB/safetrade.cert.test.tsx (1 test | 1 skipped)
+ ↓ src/certification/sessB/dashboard.cert.test.tsx (7 tests | 7 skipped)
+ ↓ src/certification/sessB/extra.cert.test.tsx (5 tests | 5 skipped)
+ ↓ src/certification/sessB/pagine.cert.test.tsx (7 tests | 7 skipped)
+ ❯ src/lib/replayVerificaBarraScript.test.ts (4 tests | 4 failed) 600071ms
+   × script verifica_barra_replay.ts lanciato davvero (finto PostgREST su localhost) > database coerente: esce con 0, referto per partita e riepilogo; SOLO richieste di lettura alle tre RPC 180047ms
+     → Test timed out in 180000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+   × script verifica_barra_replay.ts lanciato davvero (finto PostgREST su localhost) > database con un difetto sul punteggio: esce con 1 e dice quale partita e quale codice 180008ms
+     → Test timed out in 180000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+   × script verifica_barra_replay.ts lanciato davvero (finto PostgREST su localhost) > --evento filtra una sola partita; --json stampa un documento leggibile da una macchina 120003ms
+     → Test timed out in 120000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+   × script verifica_barra_replay.ts lanciato davvero (finto PostgREST su localhost) > credenziali SOLO da ambiente: senza esce con 2 e lo dice; con la sola chiave anonima chiede anche l'utente 120009ms
+     → Test timed out in 120000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/lib/replayVerificaBarra.partite.test.ts > partita 35760084 (registrazioni_banco) > CONTRATTO: la fixture della registrazione esiste ed e' aggiornata
+AssertionError: la registrazione 35760084 e' cambiata dopo la generazione della fixture: rigenerala con python3 tools/replay_barra_fixture.py 35760084: expected { …(3) } to deeply equal { …(3) }
+
+- Expected
++ Received
+
+  {
+    "35760084.raw.jsonl": "6523b03ca307c94e06046dc90c89c2532c8efd77992a60fd2f83702b0879f4fb",
+    "35760084.scores.jsonl": "ff334d75ff176e04f1b47db0fd20ec332c9faafc2b90b3d97ce388e1b2a1f8e7",
+-   "35760084.timeline.jsonl": "31dc7de976327d2896f08e2a764dd5074c2ed1c41efe93518c82a7428d31c8cf",
++   "35760084.timeline.jsonl": "0a4253f9e2475d0e560a909002e6ac670ac5832d09f3497e90889f141bf6a181",
+  }
+
+ ❯ src/lib/replayVerificaBarra.partite.test.ts:63:11
+     61|             fx.sorgente,
+     62|             `la registrazione ${ev} e' cambiata dopo la generazione de…
+     63|         ).toEqual(impronteSorgente(ev));
+       |           ^
+     64|     });
+     65| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  src/lib/replayVerificaBarra.partite.test.ts > partita 35797769 (registrazioni_banco) > CONTRATTO: la fixture della registrazione esiste ed e' aggiornata
+AssertionError: la registrazione 35797769 e' cambiata dopo la generazione della fixture: rigenerala con python3 tools/replay_barra_fixture.py 35797769: expected { …(3) } to deeply equal { …(3) }
+
+- Expected
++ Received
+
+  {
+    "35797769.raw.jsonl": "5814fcd6391f01edd3feaeda8a260686f00c799d00795d1d420674d3468b902c",
+    "35797769.scores.jsonl": "a0348577ffb72728129d76bde47b2040700e0a6ab91e04d72fc63ff5deefe7e6",
+-   "35797769.timeline.jsonl": "7a92a5c7b0c56a1bcb161520e7ef814e358109595513f9d5c9cba544661a055a",
++   "35797769.timeline.jsonl": "9a10720825577101a4b51d2329fdf8beeadb1578f6e51046cb8c2ff5ef1fe094",
+  }
+
+ ❯ src/lib/replayVerificaBarra.partite.test.ts:63:11
+     61|             fx.sorgente,
+     62|             `la registrazione ${ev} e' cambiata dopo la generazione de…
+     63|         ).toEqual(impronteSorgente(ev));
+       |           ^
+     64|     });
+     65| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+ FAIL  src/lib/replayVerificaBarraScript.test.ts > script verifica_barra_replay.ts lanciato davvero (finto PostgREST su localhost) > database coerente: esce con 0, referto per partita e riepilogo; SOLO richieste di lettura alle tre RPC
+Error: Test timed out in 180000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/lib/replayVerificaBarraScript.test.ts:41:5
+     39| 
+     40| describe('script verifica_barra_replay.ts lanciato davvero (finto Post…
+     41|     it('database coerente: esce con 0, referto per partita e riepilogo…
+       |     ^
+     42|         server = await avviaServerFinto(new FintoDb(EVENTI));
+     43|         const r = await lancia([], { VITE_SUPABASE_URL: server.url, SU…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯
+
+ FAIL  src/lib/replayVerificaBarraScript.test.ts > script verifica_barra_replay.ts lanciato davvero (finto PostgREST su localhost) > database con un difetto sul punteggio: esce con 1 e dice quale partita e quale codice
+Error: Test timed out in 180000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/lib/replayVerificaBarraScript.test.ts:55:5
+     53|     }, 180_000);
+     54| 
+     55|     it('database con un difetto sul punteggio: esce con 1 e dice quale…
+       |     ^
+     56|         const difettoso = new FintoDb(EVENTI, {
+     57|             modifica: (_ev: string, replay: ReplayData): ReplayData =>…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/6]⎯
+
+ FAIL  src/lib/replayVerificaBarraScript.test.ts > script verifica_barra_replay.ts lanciato davvero (finto PostgREST su localhost) > --evento filtra una sola partita; --json stampa un documento leggibile da una macchina
+Error: Test timed out in 120000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/lib/replayVerificaBarraScript.test.ts:73:5
+     71|     }, 180_000);
+     72| 
+     73|     it('--evento filtra una sola partita; --json stampa un documento l…
+       |     ^
+     74|         server = await avviaServerFinto(new FintoDb(EVENTI));
+     75|         const r = await lancia(['--evento', EVENTI[0], '--json'], { VI…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯
+
+ FAIL  src/lib/replayVerificaBarraScript.test.ts > script verifica_barra_replay.ts lanciato davvero (finto PostgREST su localhost) > credenziali SOLO da ambiente: senza esce con 2 e lo dice; con la sola chiave anonima chiede anche l'utente
+Error: Test timed out in 120000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/lib/replayVerificaBarraScript.test.ts:83:5
+     81|     }, 120_000);
+     82| 
+     83|     it('credenziali SOLO da ambiente: senza esce con 2 e lo dice; con …
+       |     ^
+     84|         const senza = await lancia([], {});
+     85|         expect(senza.codice).toBe(2);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/6]⎯
+
+⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯
+
+Vitest caught 4 unhandled errors during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.
+
+⎯⎯⎯⎯⎯ Uncaught Exception ⎯⎯⎯⎯⎯
+Error: spawn npx ENOENT
+ ❯ Process.ChildProcess._handle.onexit node:internal/child_process:285:19
+ ❯ onErrorNT node:internal/child_process:483:16
+ ❯ processTicksAndRejections node:internal/process/task_queues:90:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { errno: -4058, code: 'ENOENT', syscall: 'spawn npx', path: 'npx', spawnargs: [ 'vite-node', 'scripts/verifica_barra_replay.ts' ] }
+This error originated in "src/lib/replayVerificaBarraScript.test.ts" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The latest test that might've caused the error is "database coerente: esce con 0, referto per partita e riepilogo; SOLO richieste di lettura alle tre RPC". It might mean one of the following:
+- The error was thrown, while Vitest was running this test.
+- If the error occurred after the test had been completed, this was the last documented test before it was thrown.
+
+⎯⎯⎯⎯⎯ Uncaught Exception ⎯⎯⎯⎯⎯
+Error: spawn npx ENOENT
+ ❯ Process.ChildProcess._handle.onexit node:internal/child_process:285:19
+ ❯ onErrorNT node:internal/child_process:483:16
+ ❯ processTicksAndRejections node:internal/process/task_queues:90:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { errno: -4058, code: 'ENOENT', syscall: 'spawn npx', path: 'npx', spawnargs: [ 'vite-node', 'scripts/verifica_barra_replay.ts', '--solo-incoerenti', '--senza-note' ] }
+This error originated in "src/lib/replayVerificaBarraScript.test.ts" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The latest test that might've caused the error is "database con un difetto sul punteggio: esce con 1 e dice quale partita e quale codice". It might mean one of the following:
+- The error was thrown, while Vitest was running this test.
+- If the error occurred after the test had been completed, this was the last documented test before it was thrown.
+
+⎯⎯⎯⎯⎯ Uncaught Exception ⎯⎯⎯⎯⎯
+Error: spawn npx ENOENT
+ ❯ Process.ChildProcess._handle.onexit node:internal/child_process:285:19
+ ❯ onErrorNT node:internal/child_process:483:16
+ ❯ processTicksAndRejections node:internal/process/task_queues:90:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { errno: -4058, code: 'ENOENT', syscall: 'spawn npx', path: 'npx', spawnargs: [ 'vite-node', 'scripts/verifica_barra_replay.ts', '--evento', '35760084', '--json' ] }
+This error originated in "src/lib/replayVerificaBarraScript.test.ts" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The latest test that might've caused the error is "--evento filtra una sola partita; --json stampa un documento leggibile da una macchina". It might mean one of the following:
+- The error was thrown, while Vitest was running this test.
+- If the error occurred after the test had been completed, this was the last documented test before it was thrown.
+
+⎯⎯⎯⎯⎯ Uncaught Exception ⎯⎯⎯⎯⎯
+Error: spawn npx ENOENT
+ ❯ Process.ChildProcess._handle.onexit node:internal/child_process:285:19
+ ❯ onErrorNT node:internal/child_process:483:16
+ ❯ processTicksAndRejections node:internal/process/task_queues:90:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { errno: -4058, code: 'ENOENT', syscall: 'spawn npx', path: 'npx', spawnargs: [ 'vite-node', 'scripts/verifica_barra_replay.ts' ] }
+This error originated in "src/lib/replayVerificaBarraScript.test.ts" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The latest test that might've caused the error is "credenziali SOLO da ambiente: senza esce con 2 e lo dice; con la sola chiave anonima chiede anche l'utente". It might mean one of the following:
+- The error was thrown, while Vitest was running this test.
+- If the error occurred after the test had been completed, this was the last documented test before it was thrown.
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+
+ Test Files  2 failed | 347 passed | 10 skipped (359)
+      Tests  6 failed | 5236 passed | 51 skipped (5293)
+     Errors  4 errors
+   Start at  15:26:02
+   Duration  1340.68s (transform 134.54s, setup 818.68s, collect 568.08s, tests 2028.15s, environment 2652.20s, prepare 390.14s)
+
+
+real	22m45.651s
+user	0m0.120s
+sys	0m0.290s
