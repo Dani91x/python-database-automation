@@ -1,0 +1,19 @@
+
+ RUN  v3.2.6 C:/Users/Admin/Desktop/PYTHON DATABASE/python-database-automation/frontend
+
+ ✓ src/lib/safeStrategy.baseSecondoTempo.test.ts (6 tests) 23ms
+ ✓ src/lib/safeStrategy.secondoTempo.test.ts (13 tests) 31ms
+ ✓ src/lib/safeStrategy.d5.test.ts (20 tests) 50ms
+ ✓ src/lib/safeStrategyScan.localCanale.test.ts (7 tests) 23ms
+ ✓ src/lib/safeStrategy.test.ts (89 tests) 125ms
+ ✓ src/lib/safeStrategy.q7q12.test.ts (13 tests) 26ms
+
+ Test Files  6 passed (6)
+      Tests  148 passed (148)
+   Start at  16:01:59
+   Duration  7.97s (transform 1.03s, setup 6.84s, collect 1.81s, tests 278ms, environment 24.76s, prepare 2.45s)
+
+
+real	0m11.161s
+user	0m0.136s
+sys	0m0.122s

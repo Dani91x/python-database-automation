@@ -1,0 +1,25 @@
+righe totali: 40 {'tennis': 16, 'calcio': 24}
+36155723 ha_stato= True non_nullo= True stato= KickOff inplay= True minuto= 9 updated_at= 2026-10-06T16:12:19.120578+00:00
+36155726 ha_stato= True non_nullo= True stato= KickOff inplay= True minuto= 9 updated_at= 2026-10-06T16:12:19.119625+00:00
+36155736 ha_stato= True non_nullo= True stato= SecondHalfKickOff inplay= True minuto= 52 updated_at= 2026-10-06T16:12:19.117405+00:00
+36152589 ha_stato= True non_nullo= True stato= SecondHalfKickOff inplay= True minuto= 73 updated_at= 2026-10-06T16:12:19.11639+00:00
+36146957 ha_stato= True non_nullo= False stato= None inplay= False minuto= None updated_at= 2026-10-06T16:12:17.965414+00:00
+36155707 ha_stato= True non_nullo= True stato= KickOff inplay= True minuto= 11 updated_at= 2026-10-06T16:12:17.963652+00:00
+36155784 ha_stato= True non_nullo= True stato= SecondHalfKickOff inplay= True minuto= 53 updated_at= 2026-10-06T16:12:17.961374+00:00
+36155725 ha_stato= True non_nullo= False stato= None inplay= False minuto= None updated_at= 2026-10-06T16:12:16.224443+00:00
+36155235 ha_stato= True non_nullo= False stato= None inplay= False minuto= None updated_at= 2026-10-06T16:12:16.22406+00:00
+36155677 ha_stato= True non_nullo= False stato= None inplay= False minuto= None updated_at= 2026-10-06T16:12:16.223585+00:00
+36155681 ha_stato= True non_nullo= False stato= None inplay= False minuto= None updated_at= 2026-10-06T16:12:16.22318+00:00
+36155690 ha_stato= True non_nullo= False stato= None inplay= False minuto= None updated_at= 2026-10-06T16:12:16.222721+00:00
+36155670 ha_stato= True non_nullo= False stato= None inplay= False minuto= None updated_at= 2026-10-06T16:12:16.222324+00:00
+36155237 ha_stato= True non_nullo= False stato= None inplay= False minuto= None updated_at= 2026-10-06T16:12:16.221619+00:00
+36155683 ha_stato= True non_nullo= False stato= None inplay= False minuto= None updated_at= 2026-10-06T16:12:16.221222+00:00
+36155724 ha_stato= True non_nullo= False stato= None inplay= False minuto= None updated_at= 2026-10-06T16:12:16.220878+00:00
+36155665 ha_stato= True non_nullo= False stato= None inplay= False minuto= None updated_at= 2026-10-06T16:12:16.220553+00:00
+36147019 ha_stato= True non_nullo= False stato= None inplay= False minuto= None updated_at= 2026-10-06T16:12:16.220156+00:00
+36155732 ha_stato= True non_nullo= False stato= None inplay= False minuto= None updated_at= 2026-10-06T16:12:16.219785+00:00
+36155729 ha_stato= True non_nullo= False stato= None inplay= False minuto= None updated_at= 2026-10-06T16:12:16.219408+00:00
+36155780 ha_stato= True non_nullo= False stato= None inplay= False minuto= None updated_at= 2026-10-06T16:12:16.21877+00:00
+36155731 ha_stato= True non_nullo= False stato= None inplay= False minuto= None updated_at= 2026-10-06T16:12:16.218264+00:00
+36155769 ha_stato= True non_nullo= False stato= None inplay= False minuto= None updated_at= 2026-10-06T16:12:16.217803+00:00
+36155767 ha_stato= True non_nullo= False stato= None inplay= False minuto= None updated_at= 2026-10-06T16:12:16.217264+00:00
