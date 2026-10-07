@@ -258,3 +258,89 @@ def test_sniper_dopo_lo_scavalco_size_al_best():
     o = m.orders[0]
     assert o.side == "LAY" and o.order_type.price > 2.22
     assert o.order_type.size == pytest.approx(round((nw - nl) / 2.22, 2))
+
+
+# ------------------------- 07/10 sera: OGNI flatten inseguito si dimensiona al best
+def test_r5_il_resto_non_veniva_dal_limite_ma_dalla_spartizione():
+    """R5 (35797769, 17:36:32, sel 47973), numeri della diagnostica: LAY 25 @1,85
+    abbinata, close BACK 4,54 @1,85 abbinata, stop a 1 tick -> primo flatten
+    (flat_tries 0, cross 0) BACK @1,83 = best di punta, abbinato a 1,83. Limite e
+    best COINCIDONO: la chiusura giusta e' 20,68 in entrambi i modi. Il resto 0,18
+    veniva dalla spartizione (20,50 + 0,18 "residuo", corretta il 07/10: 20,00 +
+    0,68 col place-and-trim), NON dal dimensionamento al limite."""
+    s = _scalper()
+    m = _Market()
+    slot = s._slot(m.market_id, 47973)
+    slot.status = FLATTENING
+    slot.flatten_orders.append(_Ordine("LAY", 1.85, 25.0, size_matched=25.0, sel=47973))
+    slot.flatten_orders.append(_Ordine("BACK", 1.85, 25.0, size_matched=4.54, sel=47973))
+    nw, nl = s._net_position(slot)
+    assert round((nl - nw) / 1.83, 2) == pytest.approx(20.68)
+    s._drive_flatten(m, slot, best_back=1.83, best_lay=1.84, now=10_000)
+    o = m.orders[0]
+    # parte diretta subito; il resto 0,68 col place-and-trim al giro dopo (nel
+    # flatten la sequenza aspetta che la parte diretta sia partita: anti-cascata)
+    assert (o.side, o.order_type.price, o.order_type.size) == ("BACK", 1.83, 20.0)
+    assert spezza_uscita("BACK", 1.83, 20.68) == (20.0, pytest.approx(0.68), 0.0)
+
+
+@pytest.mark.parametrize("flat_tries", [3, 9])
+def test_flatten_inseguito_si_dimensiona_al_best_anche_senza_scavalco(flat_tries):
+    """Ordine del coordinatore (07/10 sera): in OGNI flatten che insegue la size si
+    calcola al best del lato di chiusura (dove Betfair abbina), il limite resta
+    inseguito. LAY 25 @2,22 abbinata: chiusura BACK al best 2,20 = 25,23, il
+    limite scende di N tick."""
+    s = _scalper()
+    m = _Market()
+    slot = s._slot(m.market_id, 22)
+    slot.status = FLATTENING
+    slot.flatten_orders.append(_Ordine("LAY", 2.22, 25.0, size_matched=25.0))
+    slot.flat_tries = flat_tries
+    s._drive_flatten(m, slot, best_back=2.20, best_lay=2.22, now=10_000)
+    o = m.orders[0]
+    assert o.side == "BACK" and o.order_type.price < 2.20          # limite inseguito
+    giusta = round(25.0 * 2.22 / 2.20, 2)                            # 25,23 al best
+    assert o.order_type.size == pytest.approx(spezza_uscita("BACK", 2.20, giusta)[0])
+
+
+def test_abbinato_a_prezzo_peggiore_lascia_un_resto_che_il_giro_dopo_chiude():
+    """Book al best senza liquidita' per tutta la size: la chiusura (25,23 al best
+    2,20) si abbina in parte a prezzi peggiori (media 2,16). Il resto si chiude
+    al giro successivo come oggi: un ordine nuovo dallo stesso lato, piatto al
+    centesimo quando si abbina."""
+    s = _scalper()
+    m = _Market()
+    slot = s._slot(m.market_id, 22)
+    slot.status = FLATTENING
+    lay = _Ordine("LAY", 2.22, 25.0, size_matched=25.0)
+    back = _Ordine("BACK", 2.04, 25.23, size_matched=25.23)
+    back.average_price_matched = 2.05
+    slot.flatten_orders += [lay, back]
+    slot.flat_tries = 2
+    nw, nl = s._net_position(slot)
+    assert abs(nw - nl) > 0.5
+    s._drive_flatten(m, slot, best_back=2.16, best_lay=2.18, now=20_000)
+    assert m.orders, "il resto deve essere chiuso al giro dopo"
+    o = m.orders[0]
+    tot = round((nl - nw) / 2.16, 2)                 # il resto, al best di adesso
+    d, t, r = spezza_uscita("BACK", 2.16, tot)
+    assert o.side == "BACK" and o.order_type.size == pytest.approx(d) and r == 0.0
+    chiusura = _Ordine("BACK", 2.16, tot, size_matched=tot)
+    w, l = _netto([lay, back, chiusura])
+    assert abs(w - l) <= 0.02
+
+
+def test_sniper_flatten_inseguito_si_dimensiona_al_best_anche_senza_scavalco():
+    from Betfair.stream.scalper.sniper_bot import SniperStrategy
+
+    s = SniperStrategy(market_filter={}, sniper_params={
+        "stake": 10.0, "exact_exits": True, "size_step": 0.5, "live_min_bet": 2.0})
+    m = _Market()
+    pos = s._p(m.market_id, 47972)
+    pos.flattening = True
+    pos.flatten_orders.append(_Ordine("BACK", 2.22, 10.0, size_matched=10.0, sel=47972))
+    pos.flat_tries = 8
+    s._drive_flatten(m, pos, 2.20, 2.22, 10.0)
+    o = m.orders[0]
+    assert o.side == "LAY" and o.order_type.price > 2.22            # limite inseguito
+    assert o.order_type.size == pytest.approx(10.0)                 # 10 x 2,22 / 2,22

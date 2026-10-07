@@ -889,8 +889,9 @@ class SniperStrategy(BaseStrategy):
         o = None
         if g is not None:
             side, size, _l = g
-            # 07/10 (C3, gemello del maker): dopo uno scavalco la size al BEST
-            if pos.scavalchi > 0 and base:
+            # 07/10 (gemello del maker, GENERALE): la size al BEST del lato di
+            # chiusura (dove Betfair abbina), il limite resta inseguito
+            if base:
                 g_best = compute_green(nw, nl, base)
                 if g_best is not None:
                     size = g_best[1]
