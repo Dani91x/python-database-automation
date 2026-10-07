@@ -37,6 +37,7 @@ import { simulateOrder, MIN_STAKE_GBP, type BookSnapshot, type OrderRequest, typ
 import { LadderView, type LadderSource } from '@/components/live/LadderView';
 import { createTrainingApi, frameToLadderRow, type TrainingApi } from '@/lib/trainingLadder';
 import { punteggioAlTs, timelineEventMarkers } from '@/lib/replayTimelineEvents';
+import { AvvisoCoerenzaBarra } from '@/components/replay/AvvisoCoerenzaBarra';
 import type { LiveLadderRow } from '@/lib/live';
 // F42: backtest del ladder-trading sullo storico full-depth (lib pura testata)
 import { LadderBacktestPanel } from '@/components/replay/LadderBacktestPanel';
@@ -1034,6 +1035,9 @@ export default function MatchReplay() {
                                 onChange={(v) => { setIsPlaying(false); setCurrentIndex(v); }}
                             />
                         </Card>
+
+                        {/* avviso discreto: barra, simboli e tabellone non tornano con i dati registrati */}
+                        <AvvisoCoerenzaBarra replay={replay} snapshots={snapshots} />
 
                         {/* menu SOTTO LA TIMELINE: tab categorie mercato + pulsante Opportunità.
                             Clic su una categoria → vista mercati; clic su Opportunità → vista
