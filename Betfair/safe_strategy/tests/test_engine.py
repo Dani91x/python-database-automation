@@ -741,6 +741,8 @@ def test_scan_calcio_payload_completo_da_segnale_base():
                 "any_other_home": {"back": 44, "lay": 45},
                 "any_other_away": {"back": 48, "lay": 50},
             },
+            # 07/10: la riga vera porta lo stato IPS; BASE solo nel 2o tempo
+            "score_raw": stato_ips_calcio("SecondHalfKickOff", 58, 1, 0),
         },
         50,
         60,

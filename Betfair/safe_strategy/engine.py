@@ -1237,6 +1237,11 @@ def evaluate_base(ctx: FootballMatchCtx, params: Dict[str, Any]) -> VariantEvalu
     if veto is not None:
         checks.append(veto)
     checks.append(minute_check("minute", ctx.minute, params["minuteMin"]))
+    # DECISIONE DELL'UTENTE 07/10: "SAFE BASE SEMPRE E SOLO SECONDO TEMPO".
+    # All'intervallo ('FirstHalfEnd') il minuto del feed continua a contare
+    # (misurato fino a 56'): la soglia del 55' da sola lasciava entrare la BASE
+    # a partita ferma. Stesso check dell'ESATTO; soglia del minuto invariata.
+    checks.append(secondo_tempo_check(ctx))
     # BASE: "la favorita deve avere il controllo del gioco" (specifica).
     if params.get("requireControl"):
         checks.append(control_check(ctx.pressure_index, fav,
@@ -2150,8 +2155,13 @@ class SafeEngine:
         su cui l'ESATTO non puo' entrare perche' la FASE e' ignota (stato IPS
         assente o non riconosciuto: check ``secondHalf`` n/d). Il bot lo scrive
         nell'attivita' (``_log_esatto_fase_ignota``) invece di tacere."""
+        return self.fase_ignota_events("esatto")
+
+    def fase_ignota_events(self, variante: str) -> List[Dict[str, Any]]:
+        """07/10 - come ``esatto_fase_ignota_events`` per una variante calcio
+        con il check ``secondHalf`` (``esatto``, ``base``), dal suo minuto."""
         out: List[Dict[str, Any]] = []
-        soglia = (self._params.get("esatto") or {}).get("minuteMin")
+        soglia = (self._params.get(variante) or {}).get("minuteMin")
         for m in getattr(self, "_last_monitors", None) or []:
             if m.sport != SPORT_CALCIO or not getattr(m.ctx, "inplay", False):
                 continue
@@ -2160,7 +2170,7 @@ class SafeEngine:
                 continue
             ck = None
             for ev in m.evaluations:
-                if ev.variant == "esatto":
+                if ev.variant == variante:
                     ck = next((c for c in ev.checks if c.id == "secondHalf"), None)
                     break
             if ck is None or ck.ok is not None:

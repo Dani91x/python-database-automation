@@ -6919,10 +6919,29 @@ def _log_esatto_fase_ignota(db, engine, params: dict[str, Any], now: datetime) -
     nell'attivita' le partite su cui l'ESATTO non entra perche' la FASE e'
     ignota (stato IPS assente o non riconosciuto): fail-closed, ma DETTO.
     Solo con la variante ESATTO accesa; throttlato come ogni scarto."""
+    _log_fase_ignota(db, engine, params, now, "esatto")
+
+
+def _log_base_fase_ignota(db, engine, params: dict[str, Any], now: datetime) -> None:
+    """07/10 (decisione dell'utente: "SAFE BASE SEMPRE E SOLO SECONDO TEMPO")
+    - come ``_log_esatto_fase_ignota``, per la BASE (scarto ``base_fase_ignota``)."""
+    _log_fase_ignota(db, engine, params, now, "base")
+
+
+def _log_fase_ignota(db, engine, params: dict[str, Any], now: datetime,
+                     variante: str) -> None:
+    """Scarto ``<variante>_fase_ignota`` nell'attivita', solo con la variante
+    accesa. ``signal_key`` per variante: la deduplica di ``_log_skip`` e' per
+    (evento, signal_key) e due motivi diversi sulla stessa chiave si
+    alternerebbero scrivendo a ogni giro."""
     variants = {str(v) for v in (params.get("variants") or [])}
-    if variants and "esatto" not in variants:
+    if variants and variante not in variants:
         return
-    fn = getattr(engine, "esatto_fase_ignota_events", None)
+    if variante == "esatto":
+        fn = getattr(engine, "esatto_fase_ignota_events", None)
+    else:
+        gen = getattr(engine, "fase_ignota_events", None)
+        fn = (lambda: gen(variante)) if callable(gen) else None
     if not callable(fn):
         return
     try:
@@ -6932,11 +6951,12 @@ def _log_esatto_fase_ignota(db, engine, params: dict[str, Any], now: datetime) -
     for ev in voci:
         _log_skip(db, now, params, {
             "event_id": str(ev.get("event_id") or ""),
+            "signal_key": f"fase_ignota:{variante}",
             "event_name": ev.get("event_name"),
             "minute": ev.get("minute"),
-            "strategy": "esatto",
+            "strategy": variante,
             "fase": ev.get("fase"),
-            "reason": "esatto_fase_ignota",
+            "reason": f"{variante}_fase_ignota",
         })
 
 
@@ -7056,6 +7076,7 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
     # Va scritto qui, prima dell'uscita anticipata su "nessun segnale".
     _log_pre_match_missing(db, engine, params, now)
     _log_esatto_fase_ignota(db, engine, params, now)
+    _log_base_fase_ignota(db, engine, params, now)
     _log_copertura_controllo(db, engine, params, now)
     _avvisa_ereditarieta(db, params, mode, now)
     if not signals:

@@ -840,6 +840,19 @@ def _e10(v: Valutazione) -> Optional[str]:
             "intervallo, stato assente o ambiguo = mai)",
             Valutazione, quando=_valutazione("esatto"))
 def _e11(v: Valutazione) -> Optional[str]:
+    return _solo_secondo_tempo(v)
+
+
+@_controllo("B18", "DECISIONE DELL'UTENTE 07/10: 'SAFE BASE SEMPRE E SOLO SECONDO TEMPO'",
+            "nessun segnale BASE se lo stato IPS non dice 2o tempo (1T, recupero del 1T, "
+            "intervallo col minuto che continua a contare, stato assente o ambiguo = mai)",
+            Valutazione, quando=_valutazione("base"))
+def _b18(v: Valutazione) -> Optional[str]:
+    return _solo_secondo_tempo(v)
+
+
+def _solo_secondo_tempo(v: Valutazione) -> Optional[str]:
+    """E11 (ESATTO) e B18 (BASE): stessa regola, stessa verifica."""
     if _manca(v, "secondHalf"):
         return "il check della fase (2o tempo) non esiste piu' nella valutazione"
     tempo = getattr(v.ctx, "tempo", None)
