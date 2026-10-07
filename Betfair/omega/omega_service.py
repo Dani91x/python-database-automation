@@ -937,12 +937,39 @@ def _feed_row(event_id: str, hard_max_age: Optional[float] = None) -> "tuple[Opt
 _ULTIMO_STATO_SCANNER_OMEGA: dict = {}
 
 
-def _flusso_feed(event_id: str) -> "_flusso.Esito":
-    """CANTIERE J (28/09): i PREZZI della riga del feed di questa partita sono
-    VIVI? (MATCH_ODDS, Correct Score e Half Time della riga; giro dello scanner
-    non bloccato). Il 26/09 la riga veniva riscritta per i cambi di punteggio con
-    quote ferme da ore: l'eta' della riga non lo poteva dire. Mai solleva: un
-    guasto qui = non noto (restano i veti di eta' di sempre)."""
+def _ht_ancora_in_gioco(payload: dict) -> bool:
+    """La partita e' ancora nella fase in cui l'HALF TIME SCORE vive ('pre' o
+    '1t')? Il mercato si regola all'intervallo: la gamba v2 1T si apre solo
+    nella sua finestra del primo tempo e il suo green-up si ferma dopo il 45'.
+    Stessa regola della missione (``omega_engine.mission_phase``: stato IPS,
+    poi minuto; ``kickoff=None``: l'orologio di sistema non entra mai). Senza
+    stato e senza minuto la fase resta 'pre': conta, come prima."""
+    raw = payload.get("score_raw")
+    status = raw.get("matchStatus") if isinstance(raw, dict) else None
+    minuto = payload.get("minute")
+    try:
+        minuto = int(minuto) if minuto is not None else None
+    except (TypeError, ValueError):
+        minuto = None
+    fase = E.mission_phase(status=status, minute=minuto, kickoff=None,
+                           now=datetime.now(timezone.utc))
+    return fase in ("pre", "1t")
+
+
+def _flusso_della_riga(event_id: str, con_ht: bool) -> "_flusso.Esito":
+    """Verdetto del flusso sui mercati della riga: MATCH_ODDS + Correct Score,
+    e l'Half Time Score SOLO con ``con_ht`` e solo in fase pre/1T.
+
+    07/10 - causa della gamba 2T sparita dal 29/09 (registrazione 35760084,
+    commit 304a8e1d): l'HT si valutava SEMPRE. Dal 44' lo scanner smette di
+    seguirlo (finestra dei candidati HT) e il blocco ``ht`` resta sospeso
+    fino al fischio, quindi in ``flusso.mercati_fermi``: Omega diventava cieco
+    per tutto il secondo tempo (niente stato, gamba 2T mai valutata, green-up
+    delle gambe 2T sempre sul ripiego REST). E nel primo tempo un HT senza
+    prezzi (dopo ogni gol, 61 s e 68 s sulla 35797769) fermava anche la V3,
+    che opera solo sul Correct Score. Regola (decisione del 28/09): il veto
+    vale sui prezzi su cui si DECIDE; l'HT e' il mercato della sola gamba v2
+    del primo tempo, delle sue chiusure e delle sue proposte."""
     try:
         cache = _scan_feed.shared_cache()
         row = _feed_riga_cached(cache, str(event_id))
@@ -950,7 +977,8 @@ def _flusso_feed(event_id: str) -> "_flusso.Esito":
         if not isinstance(payload, dict):
             return _flusso.NON_NOTO
         mercati = [payload.get("mo_market_id")]
-        for k in ("cs", "ht"):
+        blocchi = ("cs", "ht") if con_ht and _ht_ancora_in_gioco(payload) else ("cs",)
+        for k in blocchi:
             blk = payload.get(k)
             if isinstance(blk, dict):
                 mercati.append(blk.get("market_id"))
@@ -961,6 +989,34 @@ def _flusso_feed(event_id: str) -> "_flusso.Esito":
     except Exception as ex:  # noqa: BLE001 - il feed non deve mai rompere il ciclo
         logger.debug("[omega] flusso KO per %s: %s", event_id, str(ex)[:120])
         return _flusso.NON_NOTO
+
+
+def _flusso_feed(event_id: str) -> "_flusso.Esito":
+    """CANTIERE J (28/09): i PREZZI della riga del feed di questa partita sono
+    VIVI? (MATCH_ODDS e Correct Score della riga; giro dello scanner non
+    bloccato). Il 26/09 la riga veniva riscritta per i cambi di punteggio con
+    quote ferme da ore: l'eta' della riga non lo poteva dire. Mai solleva: un
+    guasto qui = non noto (restano i veti di eta' di sempre). Dal 07/10 l'Half
+    Time Score non entra qui: lo valuta ``_flusso_feed_ht`` dove si decide su
+    di lui (vedi ``_flusso_della_riga``)."""
+    return _flusso_della_riga(event_id, con_ht=False)
+
+
+def _flusso_feed_ht(event_id: str) -> "_flusso.Esito":
+    """Come ``_flusso_feed`` piu' l'Half Time Score (finche' la partita e' in
+    pre/1T): per le decisioni SULL'HT - apertura della gamba v2 1T, chiusura e
+    proposta di una gamba sull'HT, suggerimento di missione HT."""
+    return _flusso_della_riga(event_id, con_ht=True)
+
+
+def _prezzi_del_blocco_freschi(market, event_id: str, half: bool) -> bool:
+    """``_feed_prices_fresh`` per il blocco di una GAMBA: con ``half`` (gamba
+    sull'Half Time Score) anche il flusso dell'HT deve essere vivo."""
+    if not _feed_prices_fresh(market, event_id):
+        return False
+    if half and market is _real_market and not _flusso_feed_ht(str(event_id)).vivo:
+        return False
+    return True
 
 
 def _cs_from_feed(market, event_id: str, max_age: Optional[float] = None) -> Optional["tuple[Any, Any]"]:
@@ -1932,6 +1988,16 @@ def _scan_event_legs(*, ev, events, control, params, traded_ids, traded_legs, ag
                                 else (params[k_min], params[k_max]))
             if not (fin_min <= state.minute <= fin_max):
                 continue
+            if market is _real_market and not v3_on and mtype == "HALF_TIME_SCORE":
+                # 07/10: la gamba v2 1T decide sull'Half Time Score: il suo
+                # flusso fermo la blocca (regola J2), e blocca SOLO lei
+                _es_ht = _flusso_feed_ht(str(ev.event_id))
+                if not _es_ht.vivo:
+                    _log_dedup(db, (ev.event_id, leg, "flusso_interrotto"), "flusso_interrotto",
+                               {"event_id": ev.event_id, "leg": leg, "reason": _es_ht.motivo,
+                                "testo": _es_ht.testo, "fase": "apertura",
+                                "mercati": list(_es_ht.mercati)})
+                    continue
             if not _leg_retry_allowed(ev.event_id, leg, now):
                 continue
             # V3: il mercato e' SEMPRE il Correct Score, anche per la gamba
@@ -7130,14 +7196,15 @@ def _greenup_one(*, tr: dict[str, Any], params: dict[str, Any], market, db,
         tr["meta"] = meta
     block, half = _greenup_block(tr, payload)
     if market is _real_market:
-        _es_flusso = _flusso_feed(str(tr.get("event_id") or ""))
+        # 07/10: una gamba sull'Half Time Score guarda anche il flusso dell'HT
+        _es_flusso = (_flusso_feed_ht if half else _flusso_feed)(str(tr.get("event_id") or ""))
         if not _es_flusso.vivo:
             # cantiere J: i prezzi del feed non si usano per chiudere; lo si DICE
             _log_dedup(db, (tr.get("event_id"), "flusso_interrotto_greenup"), "flusso_interrotto",
                        {"event_id": tr.get("event_id"), "trade_id": tr.get("id"),
                         "reason": _es_flusso.motivo, "testo": _es_flusso.testo,
                         "fase": "green-up", "mercati": list(_es_flusso.mercati)})
-    if block is not None and not _feed_prices_fresh(market, str(tr.get("event_id") or "")):
+    if block is not None and not _prezzi_del_blocco_freschi(market, str(tr.get("event_id") or ""), half):
         # cert. 12/09: lo STATO può avere fino a GREENUP_MAX_AGE_S (90 s) per non
         # restare ciechi, ma i PREZZI di una chiusura hanno il tetto del cash out
         # (20 s): oltre, il blocco del feed si ignora e si va al book REST
@@ -7185,7 +7252,8 @@ def _greenup_one(*, tr: dict[str, Any], params: dict[str, Any], market, db,
     # cantiere J2 (28/09, regola unica): col flusso del feed fermo la chiusura
     # ha preso i prezzi dal ripiego REST gia' esistente (``_cashout_prices``):
     # lo si scrive; se anche il REST tace, riga CRITICA al piu' 1/min.
-    flusso_fermo = market is _real_market and not _flusso_feed(str(tr.get("event_id") or "")).vivo
+    flusso_fermo = market is _real_market and not (_flusso_feed_ht if half else _flusso_feed)(
+        str(tr.get("event_id") or "")).vivo
     if flusso_fermo and trigger is not None:
         _nota_flusso_greenup(db, tr, bool(prices and (prices.get("back") or prices.get("lay"))),
                              now_ts, prices)
@@ -7354,7 +7422,8 @@ def _cs_suggestion(*, market, mission: dict, market_type: str, params: dict,
     ev_stub = SimpleNamespace(event_id=event_id, name=mission.get("event_name") or "",
                               open_date=_parse_iso_dt(mission.get("kickoff")))
     payload = _feed_state(market, event_id)
-    if payload is not None and not _flusso_feed(event_id).vivo:
+    _flusso_del_mercato = _flusso_feed_ht if market_type == "HALF_TIME_SCORE" else _flusso_feed
+    if payload is not None and not _flusso_del_mercato(event_id).vivo:
         # cantiere J2 (28/09): prezzi del feed col flusso fermo -> il blocco del
         # feed non si usa per proporre: si va al catalogo+book REST (vivo)
         payload = None

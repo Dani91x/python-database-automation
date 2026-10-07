@@ -1134,25 +1134,22 @@ def vince_col_risultato(runner_name: Optional[str], risultato: Optional[str],
     nostro = parse_scoreline(str(runner_name or ""))
     if nostro is not None:
         return nostro == (h, a)
-    nome = str(runner_name or "").lower()
-    if "any other" not in nome and "unquoted" not in nome:
+    from Betfair.omega import omega_v3 as V3
+
+    nome = str(runner_name or "")
+    if not V3.e_aggregato(nome):
         return None
     if not isinstance(runners, dict) or not runners:
         return None
-    quotati = {parse_scoreline(str(v)) for v in runners.values()} - {None}
+    quotati = V3.punteggi_quotati(str(v) for v in runners.values())
     if not quotati:
         return None
-    if (h, a) in quotati:
-        return False
-    if "unquoted" in nome:
-        return True
-    if "home" in nome:
-        return h > a
-    if "away" in nome:
-        return a > h
-    if "draw" in nome:
-        return h == a
-    return None
+    # 07/10: la regola e' UNA, quella di `omega_v3.copre` (ingresso, uscita e
+    # regolamento leggono lo stesso insieme). Prima qui "unquoted" vinceva
+    # sempre PRIMA di guardare la direzione: "Any Unquoted Home" (i nomi del
+    # banco) risultava vincente sul 4-4, e "Any Other Half Time Score" non si
+    # regolava mai (None).
+    return bool(V3.copre(nome, (h, a), quotati))
 
 
 def result_key_for_trade(trade: dict) -> Optional[str]:
@@ -1272,10 +1269,15 @@ def seleziona_v3(runners: list, *, periodo: str, minuto: float,
     # O5: `rossi` = (red_home, red_away) dal feed; interruttore spento -> neutro
     mult = (moltiplicatori_rossi_v3(params, rossi[0], rossi[1]) if rossi
             else V3.MULT_NEUTRO)
+    # 07/10 (decisione dell'utente): gli aggregati "Any Other" sono candidati
+    # con le stesse condizioni; la loro P include la coda oltre la griglia.
+    # Interruttore spento = la chiamata di prima, identica, e gli aggregati si
+    # scartano `aggregato_escluso` in `omega_v3._seleziona`.
+    con_aggregati = bool(cfg["include_aggregate"])
     probabilita = V3.probabilita_selezioni(periodo=periodo, minuto=float(minuto),
                                            punteggio=(int(punteggio[0]), int(punteggio[1])),
                                            nomi=nomi, p=p, lambdas=lambdas,
-                                           mult_rossi=mult)
+                                           mult_rossi=mult, includi_coda=con_aggregati)
     if not probabilita:
         return None, (("", "nessuna_probabilita_calcolabile"),)
     # FUSIONE COL MERCATO (candidato 6 del banco): il book sa cose che noi non
@@ -1295,7 +1297,7 @@ def seleziona_v3(runners: list, *, periodo: str, minuto: float,
               for r in runners]
 
     from Betfair.omega.tools import misura_k as K
-    return V3.valuta_runner(
+    cand, scarti = V3.valuta_runner(
         periodo=periodo, runners=elenco, probabilita=probabilita,
         k_tab=k_tab, secchio_di=K.secchio_di,
         p_empirica=p_empirica, n_min_empirico=cfg["empirical_min_n"],
@@ -1305,7 +1307,19 @@ def seleziona_v3(runners: list, *, periodo: str, minuto: float,
         punteggio=(int(punteggio[0]), int(punteggio[1])),
         p_max=cfg["p_max"], p_min=cfg["p_min"], escludi=tuple(escludi or ()),
         cap_liability_gamba=cfg["max_liability_per_leg"],
-        k_default=cfg["k_minimo"])
+        k_default=cfg["k_minimo"],
+        includi_aggregati=con_aggregati, nomi_mercato=nomi)
+    if cand is not None and V3.parse_scoreline(cand.name) is None:
+        # un ingresso su un AGGREGATO dichiara la massa oltre la griglia di
+        # sempre: e' la parte della sua P che la griglia troncata non vedeva
+        # (il motivo finisce nell'audit della decisione e nella riga del trade)
+        from dataclasses import replace as _replace
+        massa = V3.massa_oltre_griglia(periodo=periodo, minuto=float(minuto),
+                                       punteggio=(int(punteggio[0]), int(punteggio[1])),
+                                       p=p, lambdas=lambdas, mult_rossi=mult)
+        cand = _replace(cand, motivo=(f"{cand.motivo}; coda oltre la griglia "
+                                      f"{massa * 100:.4f}% compresa nella P"))
+    return cand, scarti
 
 
 def selezione_da_v3(cand) -> Optional[Selection]:

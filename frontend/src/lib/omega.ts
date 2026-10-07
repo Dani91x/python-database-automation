@@ -340,6 +340,9 @@ export interface OmegaParams {
     v3_min_lay_liquidity: number;
     /** gol AGGIUNTIVI minimi fra punteggio corrente e risultato bancato */
     v3_distanza_minima_gol: number;
+    /** 07/10 (decisione dell'utente): gli aggregati "Any Other ..." sono candidati
+     *  con le STESSE condizioni (distanza = dal punteggio coperto piu' vicino). Default ACCESO */
+    v3_include_aggregate: boolean;
     /** P massima ammessa per una selezione bancata (punti %) */
     v3_p_max_pct: number;
     /** P MINIMA ammessa: sotto la fascia il bias non copre lo spread (punti %) */
@@ -982,6 +985,7 @@ export const OMEGA_PARAM_DEFAULTS: OmegaParams = {
     v3_daily_loss_cap: 300,
     v3_min_lay_liquidity: 1,
     v3_distanza_minima_gol: 2,
+    v3_include_aggregate: true,
     v3_p_max_pct: 2,
     v3_p_min_pct: 1,
     v3_fusione_mercato: 'auto',
@@ -1188,7 +1192,7 @@ export const OMEGA_PARAM_GROUPS: ParamGroup[] = [
     },
     {
         label: 'Motore v3 — il motore di default dal 17/09',
-        note: 'Dal 17/09 è v3 a decidere gli ingressi: UN SOLO mercato, il CORRECT SCORE, e due ingressi vuol dire due CELLE DIVERSE in due momenti (gamba A 1′-44′, gamba B 46′-85′). Lay fisso da 1 €, si banca solo dentro la fascia di probabilità implicita 1-2 % (quote lay ≈ 47,5-95, la fascia in cui il bias è stato misurato in gioco) con margine k = 1,11, mai a meno di 2 gol dal punteggio corrente, e coi tetti di liability 95 € per gamba / 190 € per partita / 1.000 € aperti / 300 € di perdita al giorno. NESSUNA chiusura automatica: le uscite diventano proposte che firmi tu dalla Control Room. Il bot, comunque, lo accendi sempre tu: questi campi dicono COME opera quando è acceso, non SE è acceso. « Versione della strategia » a 2 riporta al motore di prima.',
+        note: 'Dal 17/09 è v3 a decidere gli ingressi: UN SOLO mercato, il CORRECT SCORE, e due ingressi vuol dire due CELLE DIVERSE in due momenti (gamba A 1′-44′, gamba B 46′-85′). Lay fisso da 1 €, si banca solo dentro la fascia di probabilità implicita 1-2 % (quote lay ≈ 47,5-95, la fascia in cui il bias è stato misurato in gioco) con margine k = 1,11, mai a meno di 2 gol dal punteggio corrente (dal 07/10 anche sugli aggregati « Any Other … », con le stesse condizioni), e coi tetti di liability 95 € per gamba / 190 € per partita / 1.000 € aperti / 300 € di perdita al giorno. NESSUNA chiusura automatica: le uscite diventano proposte che firmi tu dalla Control Room. Il bot, comunque, lo accendi sempre tu: questi campi dicono COME opera quando è acceso, non SE è acceso. « Versione della strategia » a 2 riporta al motore di prima.',
         fields: [
             { key: 'strategy_version', label: 'Versione della strategia (2 = v2 legacy, 3 = v3)', type: 'number', step: 1, min: 2, max: 3, hint: 'default del servizio: 3 (SOLO Correct Score, due celle in due momenti, stake fisso, uscita a proposta). 2 riporta al motore di prima' },
             { key: 'v3_stake_eur', label: 'v3: ingresso in LAY (€)', type: 'number', step: 0.5, min: 0.01, max: 100, hint: 'ordine dell’utente: 1 €. In v3 la size NON viene più dall’obiettivo di giornata' },
@@ -1208,6 +1212,8 @@ export const OMEGA_PARAM_GROUPS: ParamGroup[] = [
             { key: 'v3_p_max_pct', label: 'v3: tetto della fascia (p implicita, punti %)', type: 'number', step: 0.5, min: 0.01, max: 50, hint: 'fa due cose: è il TETTO DELLA FASCIA sulla probabilità implicita al tocco (sopra il 2 % il bias misurato in gioco vale 0,71, cioè EV negativo) ed è anche il tetto duro sulla P del nostro modello' },
             { key: 'v3_p_min_pct', label: 'v3: pavimento della fascia (p implicita, punti %)', type: 'number', step: 0.1, min: 0, max: 50, hint: 'sotto l’ 1 % di probabilità implicita (quote lay sopra ~95) il bias in gioco non è misurato e la liability per unità di EV esplode: quelle celle si scartano' },
             { key: 'v3_distanza_minima_gol', label: 'v3: distanza minima dal punteggio (gol)', type: 'number', step: 1, min: 1, max: 5, hint: 'default 2: nemmeno a un gol dal punteggio corrente' },
+            // 07/10 - decisione dell'utente: "deve includere anche Any Other"
+            { key: 'v3_include_aggregate', label: 'v3: includi gli aggregati («Any Other …»)', type: 'boolean', hint: 'ACCESO di default (decisione dell’utente del 07/10): « Any Other Home Win / Away Win / Draw » sono candidati con le STESSE condizioni delle celle esatte (fascia, tetto della P, margine k, liquidità, cap). La loro P è la somma dei punteggi che coprono e che il mercato non elenca; la distanza dal punteggio è quella dal punteggio coperto più vicino. Spento = gli aggregati si scartano (« aggregato escluso »)' },
             { key: 'v3_empirical_min_n', label: 'v3: casi minimi per il veto empirico', type: 'number', step: 50, min: 0, max: 1000000 },
             { key: 'v3_ht_entry_min', label: 'v3 gamba A (Correct Score, 1° tempo): minuto MIN', type: 'number', step: 1, min: 0, max: 45, hint: 'in v3 il mercato è UNO SOLO, il Correct Score: due ingressi = due celle diverse in due momenti' },
             { key: 'v3_ht_entry_max', label: 'v3 gamba A (Correct Score, 1° tempo): minuto MAX', type: 'number', step: 1, min: 0, max: 45 },

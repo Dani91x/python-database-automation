@@ -94,6 +94,17 @@ class BotRegistrato:
     # ``--trasporto canale`` quello scenario gira sul trasporto dichiarato e il
     # referto lo scrive nell'etichetta.
     trasporti_scenari: Optional[str] = None
+    # 07/10 (APPLICA BOT PER TUTTI): "modulo:funzione" che, dato lo scenario,
+    # torna il CATALOGO dei parametri che l'utente puo' variare SENZA cambiare
+    # la strategia (``def parametri_modificabili(scenario) -> List[Dict]``, voci
+    # di ``varianti_bot.voce``). None = il bot non espone varianti (il test di
+    # contratto lo nomina se il bot e' in produzione).
+    parametri: Optional[str] = None
+    # 07/10: argomenti IN PIU' che "Applica bot" passa alla funzione di replay
+    # per far girare il bot come lo accende l'utente (es. la sola variante Safe
+    # accesa: ``strategie=("esatto",)``). La certificazione (``certifica``) NON
+    # li usa: i suoi referti restano quelli di sempre.
+    argomenti_applica: Tuple[Tuple[str, Any], ...] = ()
 
     # ------------------------------------------------------------- comodita'
     @property
@@ -110,6 +121,21 @@ class BotRegistrato:
     def elenco_scenari(self) -> Dict[str, str]:
         sc = _risolvi(self.scenari)
         return dict(sc or {"base": "come gira in produzione"})
+
+    def funzione_parametri(self) -> Callable[[str], List[Dict[str, Any]]]:
+        """La funzione del catalogo dei parametri modificabili. ValueError col
+        motivo se il bot non la registra o se il suo modulo non la espone
+        (ancora): mai un catalogo inventato."""
+        if not self.parametri:
+            raise ValueError("il bot %r non registra il catalogo dei parametri "
+                             "modificabili (campo `parametri` del registro)" % self.nome)
+        modulo, _, nome = self.parametri.partition(":")
+        mod = importlib.import_module(modulo)
+        f = getattr(mod, nome or "parametri_modificabili", None)
+        if not callable(f):
+            raise ValueError("il modulo %s non espone ancora `%s`: il catalogo dei "
+                             "parametri di %r non e' disponibile" % (modulo, nome, self.nome))
+        return f
 
     def trasporto_obbligato(self) -> Dict[str, str]:
         """scenario -> trasporto obbligato (vuoto se il bot non ne dichiara)."""
@@ -204,6 +230,7 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
                            "Betfair.mike.regolato_conto"),
         mercati=("OVER_UNDER_35", "OVER_UNDER_45"),
         replay="Betfair.mike.tools.replay_registrazioni:certifica_scenario",
+        parametri="Betfair.mike.tools.replay_registrazioni:parametri_modificabili",
         scenari="Betfair.mike.tools.replay_registrazioni:SCENARI_DESCRITTI",
         controlli="Betfair.mike.certificazione",
         spec="Betfair/mike/COSTITUZIONE_MIKE.md",
@@ -219,6 +246,7 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
         moduli_produzione=_MODULI_OMEGA,
         mercati=("CORRECT_SCORE", "HALF_TIME_SCORE", "MATCH_ODDS"),
         replay="Betfair.omega.tools.replay_registrazioni:certifica_scenario",
+        parametri="Betfair.omega.tools.replay_registrazioni:parametri_modificabili",
         scenari="Betfair.omega.tools.replay_registrazioni:SCENARI_DESCRITTI",
         controlli="Betfair.omega.certificazione",
         spec="Betfair/omega/COSTITUZIONE_OMEGA.md",
@@ -230,6 +258,10 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
         moduli_produzione=_MODULI_SAFE,
         mercati=("MATCH_ODDS", "CORRECT_SCORE"),
         replay="Betfair.safe_strategy.tools.replay_registrazioni:certifica_scenario",
+        parametri="Betfair.safe_strategy.tools.replay_registrazioni:parametri_modificabili_base",
+        # 07/10: "Applica bot" accende SOLO questa variante, come l'interruttore
+        # della Control Room (`variants`); la certificazione le accende tutte e tre
+        argomenti_applica=(("strategie", ("base",)),),
         scenari="Betfair.safe_strategy.tools.replay_registrazioni:SCENARI_DESCRITTI",
         controlli="Betfair.safe_strategy.certificazione",
         spec="SPEC_STRATEGIA_S.md",
@@ -241,6 +273,10 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
         moduli_produzione=_MODULI_SAFE,
         mercati=("CORRECT_SCORE",),
         replay="Betfair.safe_strategy.tools.replay_registrazioni:certifica_scenario",
+        parametri="Betfair.safe_strategy.tools.replay_registrazioni:parametri_modificabili_esatto",
+        # 07/10: "Applica bot" accende SOLO questa variante, come l'interruttore
+        # della Control Room (`variants`); la certificazione le accende tutte e tre
+        argomenti_applica=(("strategie", ("esatto",)),),
         scenari="Betfair.safe_strategy.tools.replay_registrazioni:SCENARI_DESCRITTI",
         controlli="Betfair.safe_strategy.certificazione",
         spec="SPEC_STRATEGIA_S.md",
@@ -252,6 +288,10 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
         moduli_produzione=_MODULI_SAFE,
         mercati=("MATCH_ODDS",),
         replay="Betfair.safe_strategy.tools.replay_registrazioni:certifica_scenario",
+        parametri="Betfair.safe_strategy.tools.replay_registrazioni:parametri_modificabili_punta",
+        # 07/10: "Applica bot" accende SOLO questa variante, come l'interruttore
+        # della Control Room (`variants`); la certificazione le accende tutte e tre
+        argomenti_applica=(("strategie", ("punta",)),),
         scenari="Betfair.safe_strategy.tools.replay_registrazioni:SCENARI_DESCRITTI",
         controlli="Betfair.safe_strategy.certificazione",
         spec="SPEC_STRATEGIA_S.md",
@@ -263,6 +303,7 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
         moduli_produzione=_MODULI_SAFE,
         mercati=("MATCH_ODDS",),
         replay="Betfair.safe_strategy.tools.replay_tennis:certifica_scenario",
+        parametri="Betfair.safe_strategy.tools.replay_tennis:parametri_modificabili",
         scenari="Betfair.safe_strategy.tools.replay_tennis:SCENARI_DESCRITTI",
         controlli="Betfair.safe_strategy.certificazione_tennis",
         spec="SPEC_STRATEGIA_S.md",
@@ -288,6 +329,7 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
                  "OVER_UNDER_35", "OVER_UNDER_45", "OVER_UNDER_55", "OVER_UNDER_65",
                  "OVER_UNDER_75", "OVER_UNDER_85"),
         replay="Betfair.stream.scalper.tools.replay_registrazioni:certifica_scenario",
+        parametri="Betfair.stream.scalper.tools.replay_registrazioni:parametri_modificabili",
         scenari="Betfair.stream.scalper.tools.replay_registrazioni:SCENARI_DESCRITTI",
         controlli="Betfair.stream.scalper.certificazione",
         spec="Betfair/stream/scalper/BIBBIA_SCALPER_CALCIO.md",
@@ -308,6 +350,7 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
         moduli_produzione=_MODULI_TENNIS,
         mercati=("MATCH_ODDS",),
         replay="Betfair.stream.tennis_live.tools.replay_bot:certifica_scenario_tennis_scalper",
+        parametri="Betfair.stream.tennis_live.tools.replay_bot:parametri_modificabili_tennis_scalper",
         scenari="Betfair.stream.tennis_live.tools.replay_bot:SCENARI_DESCRITTI",
         controlli="Betfair.stream.tennis_live.certificazione_bot",
         spec="TENNIS_BOT_DOSSIER.md",
@@ -320,6 +363,7 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
         moduli_produzione=_MODULI_TENNIS,
         mercati=("MATCH_ODDS",),
         replay="Betfair.stream.tennis_live.tools.replay_bot:certifica_scenario_tennis_pro",
+        parametri="Betfair.stream.tennis_live.tools.replay_bot:parametri_modificabili_tennis_pro",
         scenari="Betfair.stream.tennis_live.tools.replay_bot:SCENARI_DESCRITTI",
         controlli="Betfair.stream.tennis_live.certificazione_bot",
         spec="TENNIS_BOT_DOSSIER.md",
@@ -332,6 +376,7 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
         moduli_produzione=_MODULI_TENNIS,
         mercati=("MATCH_ODDS",),
         replay="Betfair.stream.tennis_live.tools.replay_bot:certifica_scenario_tennis_flb",
+        parametri="Betfair.stream.tennis_live.tools.replay_bot:parametri_modificabili_tennis_flb",
         scenari="Betfair.stream.tennis_live.tools.replay_bot:SCENARI_DESCRITTI",
         controlli="Betfair.stream.tennis_live.certificazione_bot",
         spec="TENNIS_BOT_DOSSIER.md",
@@ -344,6 +389,7 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
         moduli_produzione=_MODULI_TENNIS,
         mercati=("MATCH_ODDS",),
         replay="Betfair.stream.tennis_live.tools.replay_bot:certifica_scenario_tennis_swing",
+        parametri="Betfair.stream.tennis_live.tools.replay_bot:parametri_modificabili_tennis_swing",
         scenari="Betfair.stream.tennis_live.tools.replay_bot:SCENARI_DESCRITTI",
         controlli="Betfair.stream.tennis_live.certificazione_bot",
         spec="TENNIS_BOT_DOSSIER.md",

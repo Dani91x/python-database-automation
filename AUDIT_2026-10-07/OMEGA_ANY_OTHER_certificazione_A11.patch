@@ -1,0 +1,119 @@
+diff -ruN a/Betfair/omega/certificazione.py b/Betfair/omega/certificazione.py
+--- a/Betfair/omega/certificazione.py	2026-10-07 10:39:52.887380247 +0000
++++ b/Betfair/omega/certificazione.py	2026-10-07 10:40:02.568171341 +0000
+@@ -242,16 +242,32 @@
+     return f if f == f else None
+ 
+ 
+-def _distanza(nome: Optional[str], state: Any) -> Optional[int]:
++def _distanza(nome: Optional[str], state: Any,
++              snapshot: Any = None) -> Optional[int]:
+     """Gol AGGIUNTIVI che servono perche' il risultato bancato si avveri.
+-    None quando non e' una scoreline o manca lo stato: non si giudica."""
+-    par = E.parse_scoreline(str(nome or "")) if nome else None
+-    if par is None or state is None:
++    None quando non e' una scoreline o manca lo stato: non si giudica.
++
++    07/10 (V3 include gli «Any Other»): per un AGGREGATO la distanza e' quella
++    dal punteggio COPERTO piu' vicino, sull'insieme ricavato dai runner del
++    book della decisione (`snapshot`): la stessa regola di
++    `omega_v3.distanza_aggregato`. Senza book non si giudica (None)."""
++    if state is None or not nome:
+         return None
+     sh = getattr(state, "score_home", None)
+     sa = getattr(state, "score_away", None)
+     if sh is None or sa is None:
+         return None
++    par = E.parse_scoreline(str(nome))
++    if par is None:
++        from . import omega_v3 as V3
++        if not V3.e_aggregato(str(nome)) or snapshot is None:
++            return None
++        nomi = [str(getattr(r, "name", "") or "")
++                for r in (getattr(snapshot, "runners", None) or ())]
++        quotate = V3.punteggi_quotati(nomi)
++        if not quotate:
++            return None
++        return V3.distanza_aggregato(str(nome), (int(sh), int(sa)), quotate)
+     if par[0] < int(sh) or par[1] < int(sa):
+         return None                     # gia' impossibile: non e' una distanza
+     return (par[0] - int(sh)) + (par[1] - int(sa))
+@@ -1322,7 +1338,7 @@
+             quando=lambda m: _v3_suo(m) and m.tipo == "selezione" and m.cand is not None)
+ def _a11(m: Momento) -> Optional[str]:
+     c = m.cand
+-    d = _distanza(getattr(c, "name", None), m.state)
++    d = _distanza(getattr(c, "name", None), m.state, m.snapshot)
+     minimo = int((m.params or {}).get("v3_distanza_minima_gol") or 1)
+     if d is not None:
+         if d == 0:
+diff -ruN a/Betfair/omega/tests/test_cert_a11_aggregati_2026_10_07.py b/Betfair/omega/tests/test_cert_a11_aggregati_2026_10_07.py
+--- a/Betfair/omega/tests/test_cert_a11_aggregati_2026_10_07.py	1970-01-01 00:00:00.000000000 +0000
++++ b/Betfair/omega/tests/test_cert_a11_aggregati_2026_10_07.py	2026-10-07 10:40:25.520170678 +0000
+@@ -0,0 +1,66 @@
++# -*- coding: utf-8 -*-
++"""A11 giudica anche la DISTANZA di un aggregato «Any Other» (07/10).
++
++Senza questa estensione `certificazione._distanza` rispondeva None per ogni
++nome non numerico e A11 taceva: un ingresso su «Any Other Home Win» a un gol
++dal punteggio (3-0 -> 4-0) passava il banco in silenzio (catalogo 36: i
++controlli devono vedere la decisione, non fidarsi del bot)."""
++from __future__ import annotations
++
++from datetime import datetime, timezone
++
++from Betfair.omega import certificazione as CERT
++from Betfair.omega import omega_config as C
++from Betfair.omega import omega_engine as E
++from Betfair.omega import omega_model as M
++from Betfair.omega import omega_v3 as V3
++
++ORA = datetime(2026, 10, 7, 20, 0, tzinfo=timezone.utc)
++NOMI_CS = [f"{h} - {a}" for h in range(4) for a in range(4)] + [
++    "Any Other Home Win", "Any Other Away Win", "Any Other Draw"]
++
++
++class _Snap:
++    """Il book della decisione: `MarketSnapshot.runners` di `ScoreRunner` veri."""
++
++    def __init__(self) -> None:
++        self.runners = [E.ScoreRunner(selection_id=i + 1, name=n, lay_price=60.0,
++                                      lay_size=10.0) for i, n in enumerate(NOMI_CS)]
++
++
++def _cand(nome: str):
++    p_imp = V3.p_implicita(60.0, 0.05)
++    return V3.CandidatoV3(
++        selection_id=9063254, name=nome, price=60.0, size=1.0, p_modello=0.012,
++        p_fusa=0.012, p_empirica=None, n_empirico=None, p_nostra=0.012,
++        p_implicita=p_imp, k_usato=1.11, margine=p_imp / 0.012,
++        ev=V3.ev_gamba(0.012, 60.0, 1.0, 0.05), liability=V3.liability(1.0, 60.0),
++        motivo="prova")
++
++
++def _mom(h: int, a: int, nome: str, snapshot=None):
++    return CERT.Momento(tipo="selezione", now=ORA, motore="v3", leg="ft_cs",
++                        params=C.resolve_params({"strategy_version": 3}),
++                        cand=_cand(nome), state=M.LiveState(minute=60, score_home=h,
++                                                            score_away=a),
++                        snapshot=snapshot)
++
++
++def _codici(m):
++    return {v.codice for v in CERT.verifica(m)}
++
++
++def test_a11_aggregato_a_un_gol_e_una_violazione():
++    assert "A11" in _codici(_mom(3, 0, "Any Other Home Win", _Snap()))
++
++
++def test_a11_aggregato_gia_vinto_e_una_violazione():
++    assert "A11" in _codici(_mom(4, 4, "Any Other Draw", _Snap()))
++
++
++def test_a11_aggregato_alla_distanza_giusta_tace():
++    assert "A11" not in _codici(_mom(2, 2, "Any Other Home Win", _Snap()))
++
++
++def test_a11_senza_book_non_giudica_l_aggregato():
++    assert "A11" not in _codici(_mom(3, 0, "Any Other Home Win", None))

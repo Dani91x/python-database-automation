@@ -1,5 +1,5 @@
 // ============================================================================
-// replayBot — "APPLICA BOT" del Match Replay (06/10).
+// replayBot — "APPLICA BOT" del Match Replay (06/10; TUTTI i bot dal 07/10).
 // Il bot gira col CODICE DI PRODUZIONE sulla registrazione della partita (banco
 // comune, Betfair/stream/backtest/applica_bot.py) nel worker del Backtest
 // Automatico; la richiesta passa dalla coda esistente (request_backtest con
@@ -9,23 +9,65 @@
 // stesse che il ladder legge dal vivo) con l'istante `_ms` del banco (= publish
 // time Betfair, lo stesso orologio dei frame del replay). Qui si ricostruisce lo
 // stato degli ordini a un istante della timeline e lo si mostra nel ladder.
+// 07/10: il catalogo dei bot (sport, scenari, parametri modificabili con i
+// valori di serie) NON e' piu' un elenco a mano: e' il file GENERATO
+// `replayBotCatalogo.ts` (applica_bot.py --catalogo-ts), qui solo i tipi.
 // ============================================================================
 import { supabase } from '@/integrations/supabase/client';
 import type { LadderOrderApi } from '@/components/live/LadderView';
 import type { LiveOrderRow } from '@/lib/liveOrders';
 
-// stesso elenco di applica_bot.SCENARI_VISIVI (il worker rifiuta il resto)
-export const SCENARI_BOT: ReadonlyArray<{ bot: string; scenario: string; etichetta: string }> = [
-    { bot: 'scalper_calcio', scenario: 'media-under-paper', etichetta: 'Scalper - Media Under 2,5 (prova)' },
-    { bot: 'scalper_calcio', scenario: 'media-under-35', etichetta: 'Scalper - Media Under 3,5' },
-    { bot: 'scalper_calcio', scenario: 'media-under', etichetta: 'Scalper - Media Under 2,5 (soldi veri simulati)' },
-    { bot: 'scalper_calcio', scenario: 'media-under-liquidita-100', etichetta: "Scalper - Media Under 2,5, liquidita' minima 100 EUR" },
-    { bot: 'scalper_calcio', scenario: 'media-under-35-liquidita-50', etichetta: "Scalper - Media Under 3,5, liquidita' minima 50 EUR" },
-    { bot: 'scalper_calcio', scenario: 'paper', etichetta: 'Scalper - maker (prova)' },
-    { bot: 'scalper_calcio', scenario: 'base', etichetta: 'Scalper - maker (soldi veri simulati)' },
-    { bot: 'scalper_calcio', scenario: 'sniper-paper', etichetta: 'Scalper - sniper (prova)' },
-];
+// --------------------------------------------------------------------------
+// il catalogo (stesse chiavi di varianti_bot.voce / applica_bot.catalogo_del_bot)
+// --------------------------------------------------------------------------
+export type SportBot = 'calcio' | 'tennis';
+export type TipoParametro = 'int' | 'float' | 'bool' | 'scelta';
+export type ValoreParametro = number | boolean | string;
+export type ModalitaScenario = 'prova' | 'soldi_veri_simulati';
 
+/** Una voce del catalogo dei parametri (contratto del banco, `varianti_bot.voce`). */
+export interface VoceParametro {
+    chiave: string;
+    etichetta: string;
+    tipo: TipoParametro;
+    /** il valore di SERIE (quello di produzione con sopra lo scenario) */
+    default: ValoreParametro;
+    min: number | null;
+    max: number | null;
+    passo: number | null;
+    unita: string;
+    gruppo: string;
+    scelte: string[] | null;
+}
+
+export interface ScenarioBot {
+    scenario: string;
+    /** le due modalita' dello STESSO scenario condividono la famiglia */
+    famiglia: string;
+    modalita: ModalitaScenario;
+    etichetta: string;
+    nota: string;
+    descrizione: string;
+    parametri: VoceParametro[];
+    errore_parametri?: string;
+}
+
+export interface CatalogoBot {
+    bot: string;
+    sport: SportBot;
+    etichetta: string;
+    descrizione: string;
+    scenari: ScenarioBot[];
+    /** la funzione di replay accetta gli istanti di clic «Attiva adesso» */
+    clic_ms: boolean;
+    /** non null = il bot non si puo' applicare, con il motivo */
+    disattivato: string | null;
+    errore_parametri?: string;
+}
+
+// --------------------------------------------------------------------------
+// la richiesta e l'esito
+// --------------------------------------------------------------------------
 // una riga della cronologia: la riga dello specchio + l'istante del banco
 export type RigaBot = Omit<LiveOrderRow, 'id' | 'updated_at'> & { _ms: number };
 
@@ -38,6 +80,14 @@ export interface EsitoBot {
     ordini: number;
     violazioni: string[];
     note: string[];
+    // 07/10 (assenti negli esiti del 06/10: opzionali)
+    sport?: SportBot;
+    modalita?: ModalitaScenario;
+    parametri_usati?: Record<string, ValoreParametro>;
+    parametri_cambiati?: Record<string, ValoreParametro>;
+    dal_ms?: number | null;
+    accensione?: string | null;
+    clic_ms?: number[] | null;
 }
 
 export interface StatoRichiestaBot {
@@ -46,9 +96,31 @@ export interface StatoRichiestaBot {
     esito: EsitoBot | null;
 }
 
-export async function richiediApplicaBot(eventId: string, bot: string, scenario: string): Promise<string> {
+/** Le opzioni della prova: varianti dei parametri, accensione e clic. */
+export interface OpzioniApplica {
+    /** SOLO le chiavi cambiate rispetto alla serie */
+    parametri?: Record<string, ValoreParametro>;
+    /** istante di accensione (ms del banco); assente = acceso dall'inizio */
+    dal_ms?: number;
+    /** istanti di clic «Attiva adesso» (solo i bot che li dichiarano) */
+    clic_ms?: number[];
+}
+
+/** Il payload della richiesta: le chiavi opzionali compaiono SOLO se usate
+ *  (il worker passa al replay solo cio' che c'e'). PURA. */
+export function payloadApplicaBot(eventId: string, bot: string, scenario: string,
+    opzioni: OpzioniApplica = {}): Record<string, unknown> {
+    const p: Record<string, unknown> = { tipo: 'applica_bot', bot, scenario, event_id: eventId };
+    if (opzioni.parametri && Object.keys(opzioni.parametri).length > 0) p.parametri = opzioni.parametri;
+    if (opzioni.dal_ms != null) p.dal_ms = Math.round(opzioni.dal_ms);
+    if (opzioni.clic_ms && opzioni.clic_ms.length > 0) p.clic_ms = opzioni.clic_ms.map(Math.round);
+    return p;
+}
+
+export async function richiediApplicaBot(eventId: string, bot: string, scenario: string,
+    opzioni: OpzioniApplica = {}): Promise<string> {
     const { data, error } = await supabase.rpc('request_backtest', {
-        p_params: { tipo: 'applica_bot', bot, scenario, event_id: eventId },
+        p_params: payloadApplicaBot(eventId, bot, scenario, opzioni),
     });
     if (error) throw new Error(error.message);
     return String(data);

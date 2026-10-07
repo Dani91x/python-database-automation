@@ -162,7 +162,7 @@ def test_esempio_utente_0_1_al_38_any_unquoted_a_65_e_candidato():
     ps = V3.probabilita_selezioni(periodo="ht", minuto=38, punteggio=(0, 1),
                                   nomi=NOMI_HT, p=p)
     runners = [_runner("Any Unquoted", 65.0)]
-    c = V3.candidato(periodo="ht", runners=runners, probabilita=ps,
+    c = V3.candidato(periodo="ht", nomi_mercato=NOMI_HT, runners=runners, probabilita=ps,
                      punteggio=(0, 1), k_default=2.0, distanza_minima_gol=1)
     assert c is not None
     assert c.name == "Any Unquoted"
@@ -178,9 +178,9 @@ def test_il_margine_k_e_un_cancello_vero():
     ps = V3.probabilita_selezioni(periodo="ht", minuto=38, punteggio=(0, 1),
                                   nomi=NOMI_HT, p=p)
     runners = [_runner("Any Unquoted", 65.0)]
-    assert V3.candidato(periodo="ht", runners=runners, probabilita=ps,
+    assert V3.candidato(periodo="ht", nomi_mercato=NOMI_HT, runners=runners, probabilita=ps,
                         punteggio=(0, 1), k_default=1.0, distanza_minima_gol=1) is not None
-    assert V3.candidato(periodo="ht", runners=runners, probabilita=ps,
+    assert V3.candidato(periodo="ht", nomi_mercato=NOMI_HT, runners=runners, probabilita=ps,
                         punteggio=(0, 1), k_default=4.0, distanza_minima_gol=1) is None
 
 
@@ -192,7 +192,7 @@ def test_mai_il_risultato_corrente():
                                   nomi=NOMI_HT, p=p)
     # prezzo assurdamente generoso: solo la regola puo' scartarlo
     runners = [_runner("1 - 1", 900.0)]
-    c = V3.candidato(periodo="ht", runners=runners, probabilita=ps, punteggio=(1, 1),
+    c = V3.candidato(periodo="ht", nomi_mercato=NOMI_HT, runners=runners, probabilita=ps, punteggio=(1, 1),
                      k_default=2.0, distanza_minima_gol=1)
     assert c is None
 
@@ -201,7 +201,7 @@ def test_mai_un_risultato_irraggiungibile():
     p = V3.Parametri()
     ps = V3.probabilita_selezioni(periodo="ft", minuto=60, punteggio=(2, 1),
                                   nomi=NOMI_CS, p=p)
-    c = V3.candidato(periodo="ft", runners=[_runner("1 - 0", 500.0)], probabilita=ps,
+    c = V3.candidato(periodo="ft", nomi_mercato=NOMI_CS, runners=[_runner("1 - 0", 500.0)], probabilita=ps,
                      punteggio=(2, 1), k_default=2.0)
     assert c is None
 
@@ -219,7 +219,7 @@ def test_la_quota_piu_alta_non_vince_per_diritto():
                                   nomi=NOMI_CS, p=p)
     assert ps["Any Other Draw"] < ps["3 - 3"]
     runners = [_runner("3 - 3", 600.0), _runner("Any Other Draw", 40.0)]
-    c = V3.candidato(periodo="ft", runners=runners, probabilita=ps, punteggio=(1, 1),
+    c = V3.candidato(periodo="ft", nomi_mercato=NOMI_CS, runners=runners, probabilita=ps, punteggio=(1, 1),
                      k_default=2.0)
     assert c is not None
     assert c.name == "Any Other Draw"
@@ -235,10 +235,10 @@ def test_il_veto_empirico_puo_bloccare_un_ingresso():
     ps = V3.probabilita_selezioni(periodo="ht", minuto=38, punteggio=(0, 1),
                                   nomi=NOMI_HT, p=p)
     runners = [_runner("Any Unquoted", 65.0)]
-    senza = V3.candidato(periodo="ht", runners=runners, probabilita=ps,
+    senza = V3.candidato(periodo="ht", nomi_mercato=NOMI_HT, runners=runners, probabilita=ps,
                          punteggio=(0, 1), k_default=2.0, distanza_minima_gol=1)
     assert senza is not None
-    con = V3.candidato(periodo="ht", runners=runners, probabilita=ps, punteggio=(0, 1),
+    con = V3.candidato(periodo="ht", nomi_mercato=NOMI_HT, runners=runners, probabilita=ps, punteggio=(0, 1),
                        k_default=2.0, distanza_minima_gol=1,
                        p_empirica=lambda nome: (0.012, 900))   # 1,2 % > 1,46 %/2
     assert con is None
@@ -252,7 +252,7 @@ def test_la_tabella_k_per_secchio_viene_usata():
     runners = [_runner("Any Unquoted", 65.0)]
     p_imp = V3.p_implicita(65.0, 0.05)
     etichetta = "fascia_x"
-    c = V3.candidato(periodo="ht", runners=runners, probabilita=ps, punteggio=(0, 1),
+    c = V3.candidato(periodo="ht", nomi_mercato=NOMI_HT, runners=runners, probabilita=ps, punteggio=(0, 1),
                      distanza_minima_gol=1, secchio_di=lambda _p: etichetta,
                      k_tab={("ht", etichetta): 10.0}, k_default=2.0)
     assert c is None
@@ -264,9 +264,9 @@ def test_il_cap_di_liability_di_gamba_scarta_la_selezione():
     ps = V3.probabilita_selezioni(periodo="ft", minuto=60, punteggio=(1, 1),
                                   nomi=NOMI_CS, p=p)
     runners = [_runner("Any Other Draw", 300.0)]
-    assert V3.candidato(periodo="ft", runners=runners, probabilita=ps, punteggio=(1, 1),
+    assert V3.candidato(periodo="ft", nomi_mercato=NOMI_CS, runners=runners, probabilita=ps, punteggio=(1, 1),
                         k_default=2.0, cap_liability_gamba=0.0) is not None
-    assert V3.candidato(periodo="ft", runners=runners, probabilita=ps, punteggio=(1, 1),
+    assert V3.candidato(periodo="ft", nomi_mercato=NOMI_CS, runners=runners, probabilita=ps, punteggio=(1, 1),
                         k_default=2.0, cap_liability_gamba=120.0) is None
 
 
@@ -274,7 +274,7 @@ def test_lo_stake_e_sempre_un_euro():
     p = V3.Parametri()
     ps = V3.probabilita_selezioni(periodo="ht", minuto=38, punteggio=(0, 1),
                                   nomi=NOMI_HT, p=p)
-    c = V3.candidato(periodo="ht", runners=[_runner("Any Unquoted", 65.0)],
+    c = V3.candidato(periodo="ht", nomi_mercato=NOMI_HT, runners=[_runner("Any Unquoted", 65.0)],
                      probabilita=ps, punteggio=(0, 1), distanza_minima_gol=1,
                      k_default=2.0)
     assert c is not None and c.size == V3.STAKE_STANDARD == 1.0
@@ -474,7 +474,7 @@ def test_prezzi_impossibili_non_diventano_candidati(prezzo):
     ps = V3.probabilita_selezioni(periodo="ht", minuto=38, punteggio=(0, 1),
                                   nomi=NOMI_HT, p=p)
     r = V3.RunnerV3(selection_id=1, name="Any Unquoted", lay_price=prezzo, lay_size=50.0)
-    assert V3.candidato(periodo="ht", runners=[r], probabilita=ps, punteggio=(0, 1),
+    assert V3.candidato(periodo="ht", nomi_mercato=NOMI_HT, runners=[r], probabilita=ps, punteggio=(0, 1),
                         distanza_minima_gol=1, k_default=2.0) is None
 
 
@@ -484,7 +484,7 @@ def test_size_non_finita_non_passa_la_liquidita():
                                   nomi=NOMI_HT, p=p)
     r = V3.RunnerV3(selection_id=1, name="Any Unquoted", lay_price=65.0,
                     lay_size=float("nan"))
-    assert V3.candidato(periodo="ht", runners=[r], probabilita=ps, punteggio=(0, 1),
+    assert V3.candidato(periodo="ht", nomi_mercato=NOMI_HT, runners=[r], probabilita=ps, punteggio=(0, 1),
                         distanza_minima_gol=1, k_default=2.0) is None
 
 

@@ -87,7 +87,7 @@ MOTIVI_TRANSITORI = ("controparte_insufficiente", "nessun_prezzo_di_back")
 
 # I motivi per cui una gamba non arriva nemmeno al calcolo. Sono DICHIARATI: una
 # gamba che salta senza motivo scritto e' il buco che §14.2 vieta.
-MOTIVI_DI_SALTO = ("feed_assente", "punteggio_assente", "selezione_aggregata",
+MOTIVI_DI_SALTO = ("feed_assente", "punteggio_assente", "selezione_non_leggibile",
                    "prezzi_non_freschi", "prezzo_di_back_assente",
                    "mercato_sospeso", "selezione_non_attiva",
                    "selezione_non_nel_feed", "gamba_ht_finita",
@@ -390,11 +390,15 @@ def _una_gamba(*, tr: dict[str, Any], params: dict[str, Any], market: Any, db: A
         return False
     nome = str(tr.get("runner_name") or "")
     laid = V3.parse_scoreline(nome)
-    if laid is None:
-        # aggregato (Any Unquoted & co.): senza un punteggio da inseguire la
-        # traiettoria non e' calcolabile in modo onesto. Non si inventa.
-        _decadi(db, tr, meta, "selezione aggregata: la traiettoria non e' calcolabile")
-        _salta(db, tr, "selezione_aggregata", runner=nome)
+    if laid is None and not V3.e_aggregato(nome):
+        # 07/10: fino a oggi qui uscivano TUTTI gli aggregati ("selezione
+        # aggregata"): una gamba su "Any Other ..." non arrivava mai al calcolo
+        # e non aveva un'uscita, contro la regola 4-bis ("ogni bot ha il suo
+        # pulsante"). Ora l'aggregato ha la sua strada (P sull'insieme coperto,
+        # traiettoria coi nomi del mercato); resta fuori solo un nome che non e'
+        # ne' una scoreline ne' un aggregato: non si inventa.
+        _decadi(db, tr, meta, "selezione non leggibile: ne' scoreline ne' aggregato")
+        _salta(db, tr, "selezione_non_leggibile", runner=nome)
         return False
     sh, sa, minuto = payload.get("score_home"), payload.get("score_away"), payload.get("minute")
     if sh is None or sa is None or minuto is None:
@@ -407,7 +411,8 @@ def _una_gamba(*, tr: dict[str, Any], params: dict[str, Any], market: Any, db: A
         return False
 
     blocco, half = S._greenup_block(tr, payload)
-    if blocco is not None and not S._feed_prices_fresh(market, event_id):
+    # 07/10: una gamba sull'Half Time Score guarda anche il flusso dell'HT
+    if blocco is not None and not S._prezzi_del_blocco_freschi(market, event_id, half):
         # cert. 12/09: lo STATO puo' avere fino a GREENUP_MAX_AGE_S, ma i PREZZI
         # di una chiusura hanno il tetto del cash out. Una proposta con un prezzo
         # vecchio e' un numero sbagliato sotto gli occhi di chi deve firmare.
@@ -465,7 +470,10 @@ def _una_gamba(*, tr: dict[str, Any], params: dict[str, Any], market: Any, db: A
         commissione=float(commissione), cap_scattato=cap,
         # la soglia arriva in PUNTI PERCENTUALI dal pannello (come `v3_p_max_pct`);
         # `proposta_uscita` ragiona in probabilita'. Zero = spenta (default).
-        p_lose_max=p_lose_max, mult_rossi=mult_rossi)
+        p_lose_max=p_lose_max, mult_rossi=mult_rossi,
+        # 07/10: i nomi del mercato servono alla traiettoria di un AGGREGATO
+        # (per una scoreline non cambiano niente)
+        nomi_mercato=(_nomi_del_mercato(payload, tr, nome) if laid is None else None))
     # 24/09 — gli INGREDIENTI con cui la scheda ricalcola l'uscita al prezzo di
     # adesso (``esito_uscita_al_prezzo``): gli stessi passati qui sopra a
     # ``proposta_uscita``, mai ricopiati a mano.
@@ -493,7 +501,7 @@ def _una_gamba(*, tr: dict[str, Any], params: dict[str, Any], market: Any, db: A
         # o no: io decido»): fino al 23/09 qui la proposta viva DECADEVA. Ora
         # resta viva, coi numeri di adesso e marcata NON PIU' VALIDA col
         # perche'; la chiude l'utente (o la firma). Restano decadenze i casi
-        # strutturali qui sopra (selezione aggregata, gamba HT finita).
+        # strutturali qui sopra (selezione non leggibile, gamba HT finita).
         _non_piu_valida(db=db, tr=tr, meta=meta, proposta=proposta, prezzi=prezzi,
                         minuto=minuto, punteggio=f"{sh}-{sa}", now=now,
                         fonte_p=fonte_p, cap=cap, ingredienti=ingredienti)
@@ -553,11 +561,17 @@ def _p_del_bancato(*, db: Any, tr: dict[str, Any], payload: dict, nome: str,
     if tuple(mult_rossi) != tuple(V3.MULT_NEUTRO):
         fonte += "+rossi"            # O5: la P ha visto i cartellini rossi
     nomi = _nomi_del_mercato(payload, tr, nome)
+    if not nomi:
+        # aggregato senza nessuna scoreline nota: l'insieme coperto non e'
+        # ricavabile e la sua P sarebbe inventata (tutta la griglia)
+        return None, "nomi_del_mercato_assenti", lambdas
     try:
+        # 07/10: `includi_coda` = la P di un AGGREGATO include la massa oltre la
+        # griglia, come all'ingresso (`seleziona_v3`); le scoreline non cambiano
         probabilita = V3.probabilita_selezioni(
             periodo=periodo, minuto=float(minuto), punteggio=punteggio,
             nomi=nomi, p=parametri_modello(), lambdas=lambdas,
-            mult_rossi=mult_rossi)
+            mult_rossi=mult_rossi, includi_coda=True)
     except Exception as ex:  # noqa: BLE001 — modello KO: nessuna proposta, mai una P finta
         logger.warning("[omega.proposte] modello KO (trade %s): %s",
                        tr.get("id"), str(ex)[:120])
@@ -571,10 +585,31 @@ def _nomi_del_mercato(payload: dict, tr: dict[str, Any], nome: str) -> list:
 
     Servono a `probabilita_selezioni` per sapere che cosa e' quotato (e quindi
     che cosa finisce negli aggregati). Se il blocco non li porta si usa almeno
-    il nome della nostra selezione: la P della cella esatta resta giusta."""
+    il nome della nostra selezione: la P della cella esatta resta giusta.
+
+    07/10 - per un AGGREGATO quel ripiego sarebbe un errore grave (senza
+    scoreline note l'aggregato coprirebbe tutta la griglia): l'insieme quotato
+    si ricava da TUTTI i runner numerici del mercato nel feed (qualunque stato:
+    un punteggio elencato resta elencato) piu' `meta.runners`, i nomi salvati
+    al piazzamento. Se nemmeno cosi' c'e' una scoreline: lista VUOTA, e il
+    chiamante non calcola niente."""
     from . import omega_service as S
 
     blocco, _half = S._greenup_block(tr, payload)
+    if V3.parse_scoreline(nome) is None and V3.e_aggregato(nome):
+        nomi: list = []
+        for s in ((blocco or {}).get("selections") or []):
+            if isinstance(s, dict) and s.get("name"):
+                nomi.append(str(s.get("name")))
+        salvati = (tr.get("meta") or {}).get("runners")
+        if isinstance(salvati, dict):
+            nomi.extend(str(v) for v in salvati.values() if v)
+        nomi = list(dict.fromkeys(nomi))
+        if not V3.punteggi_quotati(nomi):
+            return []
+        if nome not in nomi:
+            nomi.append(nome)
+        return nomi
     fuori = []
     for s in ((blocco or {}).get("selections") or []):
         if not isinstance(s, dict) or s.get("runner_status") not in (None, "ACTIVE"):

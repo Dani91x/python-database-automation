@@ -64,6 +64,28 @@ describe('OMEGA_PARAM_DEFAULTS — allineati alla whitelist del servizio (H-07)'
     });
 });
 
+describe('07/10 v3_include_aggregate - Omega V3 include gli "Any Other"', () => {
+    // decisione dell'utente del 07/10: di serie ACCESO, come in omega_config._SPEC
+    it('default ACCESO, come il servizio', () => {
+        expect(OMEGA_PARAM_DEFAULTS.v3_include_aggregate).toBe(true);
+    });
+    it('e\' un interruttore nel gruppo del motore v3, distinto da include_aggregate del v2', () => {
+        const gruppo = OMEGA_PARAM_GROUPS.find((g) => g.fields.some((f) => f.key === 'v3_include_aggregate'));
+        expect(gruppo?.label).toMatch(/Motore v3/);
+        const f = gruppo?.fields.find((x) => x.key === 'v3_include_aggregate');
+        expect(f?.type).toBe('boolean');
+        expect(f?.label).toMatch(/Any Other/);
+        // il v2 resta col suo interruttore e il suo default (spento)
+        expect(OMEGA_PARAM_DEFAULTS.include_aggregate).toBe(false);
+    });
+    it('il salvataggio lo porta al servizio', () => {
+        // l'utente lo spegne dal pannello: la chiave viaggia verso omega_control.params
+        const server = { ...OMEGA_PARAM_DEFAULTS } as unknown as Record<string, unknown>;
+        const patch = omegaParamsPatch(server, { ...server, v3_include_aggregate: false });
+        expect(patch.v3_include_aggregate).toBe(false);
+    });
+});
+
 describe('24/09 uscite_protezione — chi esegue l’uscita calcolata', () => {
     it('default della UI = quello del servizio: «avvisa_e_proponi»', () => {
         expect(OMEGA_PARAM_DEFAULTS.uscite_protezione).toBe('avvisa_e_proponi');

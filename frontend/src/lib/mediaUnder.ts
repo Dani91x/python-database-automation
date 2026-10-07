@@ -55,6 +55,9 @@ export const MEDIA_UNDER_DEFAULTS = {
     media_ttl_punta_ms: 30000,
     media_obiettivi_live: [0, 0.3, 1.0],
     media_commissione_pct: 5.0,
+    // 07/10 «Attiva adesso»: rientri automatici pre-match coi filtri (spento =
+    // il nuovo ciclo pre-match parte subito al miglior prezzo)
+    media_rientro_auto_filtri: false,
 };
 
 export type MediaCampoNumerico = Exclude<keyof MediaUnderParams, 'media_obiettivi_live'>;
@@ -80,7 +83,9 @@ export const MEDIA_UNDER_CAMPI: {
 ];
 
 export function mediaUnderDefaults(): MediaUnderParams {
-    const { media_mode: _spenta, ...resto } = MEDIA_UNDER_DEFAULTS;
+    // il rientro automatico coi filtri è un'opzione del solo pulsante «Attiva
+    // adesso» (attivaAdessoParams): l'accensione di sempre non la manda
+    const { media_mode: _spenta, media_rientro_auto_filtri: _soloPulsante, ...resto } = MEDIA_UNDER_DEFAULTS;
     return { ...resto, media_obiettivi_live: [...MEDIA_UNDER_DEFAULTS.media_obiettivi_live] };
 }
 
@@ -127,6 +132,134 @@ export function paramsMediaUnder(mercato: MediaMercato, p: MediaUnderParams): Re
         theta_mode: false,
         ht_mode: false,
     };
+}
+
+// ---- «ATTIVA ADESSO» (07/10/2026, ordine dell'utente) ---------------------
+// Il pulsante della scheda: in prova come in soldi veri, la stessa strada.
+// Il clic è un COMANDO con un id unico che la sessione consuma una sola volta
+// (anche dopo un riavvio). Sessione ferma: il clic la accende armata dal
+// pulsante (media_a_clic) col comando dentro; sessione accesa: il comando
+// arriva con la RPC scalper_media_attiva_adesso (mediaUnderAttiva.ts).
+export const CHIAVE_COMANDO = 'media_attiva_adesso';
+
+export interface ComandoAttivaAdesso {
+    id: string;
+    ts: string;
+}
+
+// un id unico per ogni clic (mai riusato: due clic = due comandi)
+export function nuovoComandoAttivaAdesso(adesso: Date = new Date()): ComandoAttivaAdesso {
+    const caso = Math.random().toString(36).slice(2, 10);
+    return { id: `clic-${adesso.getTime()}-${caso}`, ts: adesso.toISOString() };
+}
+
+// I parametri che il pulsante scrive quando la sessione è FERMA: tutti quelli
+// della modalità, la sessione armata dal pulsante, l'interruttore dei rientri
+// automatici pre-match coi filtri, e il comando del clic.
+export function paramsAttivaAdesso(
+    mercato: MediaMercato, p: MediaUnderParams, rientroConFiltri: boolean,
+    comando: ComandoAttivaAdesso,
+): Record<string, unknown> {
+    return {
+        ...paramsMediaUnder(mercato, p),
+        media_a_clic: true,
+        media_rientro_auto_filtri: rientroConFiltri,
+        [CHIAVE_COMANDO]: { id: comando.id, ts: comando.ts },
+    };
+}
+
+export interface MediaComando {
+    id: string;
+    esito: 'ricevuto' | 'eseguito' | 'rifiutato' | string;
+    motivo: string | null;
+    prezzo: number | null;
+    importo: number | null;
+    in_gioco: boolean | null;
+}
+
+function leggiComando(v: unknown): MediaComando | null {
+    if (!isObj(v) || typeof v.id !== 'string') return null;
+    return {
+        id: v.id,
+        esito: str(v.esito) ?? 'ricevuto',
+        motivo: str(v.motivo),
+        prezzo: numONull(v.prezzo),
+        importo: numONull(v.importo),
+        in_gioco: typeof v.in_gioco === 'boolean' ? v.in_gioco : null,
+    };
+}
+
+// Lo stato del comando per la scheda: l'ultimo clic mandato da QUESTA scheda
+// (idInviato) e cosa ne dice la sessione (stats.media_comando).
+export type StatoClic =
+    | { fase: 'nessuno' }
+    | { fase: 'inviato'; id: string }
+    | { fase: 'eseguito'; id: string; prezzo: number | null; importo: number | null; inGioco: boolean | null }
+    | { fase: 'rifiutato'; id: string; motivo: string };
+
+export function statoDelClic(idInviato: string | null, comando: MediaComando | null): StatoClic {
+    if (comando && (idInviato === null || comando.id === idInviato)) {
+        if (comando.esito === 'eseguito') {
+            return { fase: 'eseguito', id: comando.id, prezzo: comando.prezzo, importo: comando.importo, inGioco: comando.in_gioco };
+        }
+        if (comando.esito === 'rifiutato') {
+            return { fase: 'rifiutato', id: comando.id, motivo: comando.motivo ?? 'motivo non scritto dalla sessione' };
+        }
+        return { fase: 'inviato', id: comando.id };
+    }
+    if (idInviato) return { fase: 'inviato', id: idInviato };
+    return { fase: 'nessuno' };
+}
+
+export function testoStatoClic(s: StatoClic): string {
+    switch (s.fase) {
+        case 'nessuno':
+            return 'Nessun clic su «Attiva adesso» in questa sessione.';
+        case 'inviato':
+            return 'Attiva adesso INVIATO: la sessione punta al prossimo prezzo (o dice perché no).';
+        case 'eseguito':
+            return `Attiva adesso ESEGUITO: punta di ${s.importo !== null ? euro(s.importo) : '—'} € ` +
+                `a ${quota(s.prezzo)}${s.inGioco ? ' in gioco' : s.inGioco === false ? ' prima del fischio' : ''}.`;
+        case 'rifiutato':
+            return `Attiva adesso RIFIUTATO: ${s.motivo}.`;
+    }
+}
+
+// La conferma ESPLICITA dei soldi veri per il clic (la stessa asimmetria della
+// conferma dell'accensione: in prova nessuna conferma, in soldi veri sempre).
+export function testoConfermaAttivaAdesso(
+    evento: string, mercato: string, p: Pick<MediaUnderParams, 'media_stake' | 'media_max_rientri' | 'media_rischio_max'>,
+): string {
+    return `⚠️ ATTIVA ADESSO CON ORDINI REALI su "${evento}" (${mercato})?\n\n` +
+        `Il bot PUNTA SUBITO ${euro(p.media_stake)} € sull'${mercato} al miglior prezzo, senza aspettare i filtri, ` +
+        `poi gestisce la posizione come progettato (banca di chiusura e fino a ${p.media_max_rientri} rientri, ` +
+        'anche in gioco). Ogni rientro è quasi il doppio del precedente. ' +
+        (p.media_rischio_max > 0
+            ? `Rientri bloccati oltre ${euro(p.media_rischio_max)} € puntati.\n`
+            : 'Rischio massimo SPENTO.\n') +
+        'Se la partita ha un ciclo aperto, il clic viene rifiutato.\n' +
+        'Modalità NON certificata sul replay.\nConfermi?';
+}
+
+// i numeri della conferma letti dalla riga della sessione accesa
+export function importiDallaRiga(
+    params: Record<string, unknown> | null | undefined,
+): Pick<MediaUnderParams, 'media_stake' | 'media_max_rientri' | 'media_rischio_max'> {
+    const p = params ?? {};
+    return {
+        media_stake: num(p.media_stake, MEDIA_UNDER_DEFAULTS.media_stake),
+        media_max_rientri: num(p.media_max_rientri, MEDIA_UNDER_DEFAULTS.media_max_rientri),
+        media_rischio_max: num(p.media_rischio_max, MEDIA_UNDER_DEFAULTS.media_rischio_max),
+    };
+}
+
+// Mentre l'ultimo clic è ancora «inviato» il pulsante resta fermo (niente
+// doppio clic); scaduta l'attesa torna cliccabile (la sessione lo dirà).
+export const ATTESA_ESITO_CLIC_MS = 20_000;
+
+export function pulsanteCliccabile(s: StatoClic, inviatoAlle: number | null, adesso: number): boolean {
+    if (s.fase !== 'inviato') return true;
+    return inviatoAlle === null || adesso - inviatoAlle > ATTESA_ESITO_CLIC_MS;
 }
 
 // "0, 0,30, 1" -> [0, 0.3, 1]; null se un pezzo non è un numero
@@ -193,6 +326,11 @@ export interface MediaUnderStato {
     riavvio: string | null;
     fonte: string | null;
     chiusura: MediaChiusura | null;
+    // 07/10 «Attiva adesso»
+    comando: MediaComando | null;
+    a_clic: boolean;
+    origine_ciclo: string | null;
+    in_gioco: boolean;
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
@@ -265,6 +403,10 @@ export function leggiMediaUnder(stats: Record<string, unknown> | null | undefine
         riavvio: str(stats.media_riavvio),
         fonte: str(stats.media_fonte),
         chiusura: leggiChiusura(stats.media_chiusura),
+        comando: leggiComando(stats.media_comando),
+        a_clic: stats.media_a_clic === true,
+        origine_ciclo: str(stats.media_origine_ciclo),
+        in_gioco: stats.media_in_gioco === true,
     };
 }
 
@@ -278,6 +420,30 @@ export const MEDIA_STATI_TESTO: Record<string, string> = {
     LIVE: 'partita in gioco: NESSUN ordine, gestisci tu la chiusura',
     FINE: 'finita: nessuna posizione da gestire',
     BLOCCATA: 'ferma: posizione di una sessione precedente non ricostruibile, nessun ordine',
+    RIPRESA: 'ripresa dopo un riavvio: ricostruisce la posizione dal conto, nessun ordine nuovo',
+    // 07/10 «Attiva adesso»
+    ATTESA_CLIC: 'in ATTESA DEL CLIC: clicca «Attiva adesso» per far partire un ciclo',
+};
+
+// lo stato in parole tenendo conto di come è stata accesa (pulsante o di sempre)
+export function testoStatoMedia(s: MediaUnderStato): string {
+    if (s.a_clic && s.stato === 'FERMO') {
+        // in gioco il bot non riparte mai da solo (al primo prezzo diventa ATTESA_CLIC)
+        return s.in_gioco ? MEDIA_STATI_TESTO.ATTESA_CLIC
+            : 'ciclo chiuso prima del fischio: riparte da solo (rientro automatico)';
+    }
+    const base = MEDIA_STATI_TESTO[s.stato] ?? s.stato;
+    if (s.a_clic && s.in_gioco && ['INGRESSO', 'IN_POSIZIONE', 'RIENTRO', 'MASSIMO'].includes(s.stato)) {
+        return `${base} — in gioco gestisce la posizione come prima del fischio (avviata col pulsante)`;
+    }
+    return base;
+}
+
+// da dove è partito il ciclo in corso
+export const MEDIA_ORIGINE_TESTO: Record<string, string> = {
+    clic: 'partito dal clic su «Attiva adesso»',
+    rientro_automatico: 'partito da solo dopo una chiusura prima del fischio',
+    filtri: 'partito coi filtri d\'ingresso',
 };
 
 export const euro = (x: number): string =>

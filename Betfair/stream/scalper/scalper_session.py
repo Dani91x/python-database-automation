@@ -100,6 +100,9 @@ UI_PARAM_WHITELIST = {
     "media_rischio_max", "media_quota_min", "media_quota_max", "media_min_size",
     "media_min_flow", "media_max_spread_ticks", "media_stop_ingressi_s",
     "media_ttl_punta_ms", "media_obiettivi_live", "media_commissione_pct",
+    # 07/10 ATTIVA ADESSO (spec par.13): l'interruttore dei rientri automatici
+    # pre-match coi filtri, la sessione armata dal pulsante, il comando del clic
+    "media_rientro_auto_filtri", "media_a_clic", "media_attiva_adesso",
 }
 SESSION_MARKET_TYPES = [
     "MATCH_ODDS", "OVER_UNDER_15", "OVER_UNDER_25", "OVER_UNDER_35",
@@ -971,6 +974,79 @@ def leggi_ordini_conto_media(db: Any, media: Any, session_paper: bool) -> Option
         return "errore"
 
 
+def comando_media_precedente(control: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """07/10 (ATTIVA ADESSO): cio' che la sessione di PRIMA ha lasciato nelle
+    stats della riga (sopravvivono al riarmo: ``scalper_activate`` non le
+    azzera) sul comando del pulsante: l'id gia' consumato (un riavvio non lo
+    riesegue MAI) e, se i params portano ancora QUEL comando, la sessione "a
+    clic" di prima. Chiavi per ``MediaUnderStrategy`` (``media_params``)."""
+    from . import media_under_bot as MU
+
+    c = control or {}
+    stats = c.get("stats") if isinstance(c.get("stats"), dict) else {}
+    params = c.get("params") if isinstance(c.get("params"), dict) else {}
+    prima = stats.get(MU.PREFISSO + "comando")
+    out: Dict[str, Any] = {}
+    if isinstance(prima, dict) and str(prima.get("id") or "").strip():
+        out["comando_consumato"] = str(prima.get("id")).strip()
+        out["comando_precedente"] = dict(prima)
+        cmd = MU.leggi_comando(params)
+        if cmd is not None and cmd[0] == out["comando_consumato"] \
+                and stats.get(MU.PREFISSO + "a_clic") is True:
+            out[MU.CHIAVE_A_CLIC] = True
+    return out
+
+
+def consegna_comando_media(db: Any, event_id: str, media: Any,
+                           params: Optional[Dict[str, Any]],
+                           flusso: Optional[Dict[str, Any]],
+                           stats: Any, ora_s: Optional[float] = None) -> Optional[Dict[str, Any]]:
+    """07/10 (ATTIVA ADESSO): il comando del pulsante arriva per la STESSA strada
+    dei parametri (``scalper_control.params``, riletti al battito o all'avvio).
+    Un id nuovo si consegna alla modalita', che lo CONSUMA (scaduto, prezzi
+    fermi, mercato sospeso = rifiutato col motivo, mai accodato); se valido, PRIMA
+    di eseguirlo l'id si registra nella riga (stats): solo a scrittura riuscita
+    la modalita' punta al book successivo. Scrittura fallita = rifiutato (un
+    riavvio non saprebbe che e' gia' stato eseguito). Prezzi vivi: il verdetto
+    della sorveglianza del flusso (``stats.flusso.vivo``; None = non noto).
+    ``stats``: la funzione che da' le stats della sessione. Torna il comando
+    (dizionario) o None se non c'era niente di nuovo."""
+    if media is None or not isinstance(params, dict):
+        return None
+    from . import media_under_bot as MU
+
+    cmd = MU.leggi_comando(params)
+    if cmd is None or cmd[0] == media.comando_consumato():
+        return None
+    ora = time.time() if ora_s is None else float(ora_s)
+    vivi = (flusso or {}).get("vivo") if isinstance(flusso, dict) else None
+    info = media.ricevi_comando(cmd[0], cmd[1], ora * 1000.0,
+                                prezzi_vivi=(False if vivi is False else None))
+    if info is None:
+        return None
+    if info.get("esito") == "ricevuto":
+        ok = False
+        try:
+            ok = db.set_control(event_id, stats=stats()) is not False
+        except Exception:  # noqa: BLE001 - scrittura non riuscita: non si esegue
+            ok = False
+        if ok:
+            media.rilascia_comando()
+        else:
+            media.annulla_comando("comando non registrato nella riga (scrittura fallita): "
+                                  "non eseguito, riprova")
+    try:
+        db.log(event_id, "media_comando", {
+            "msg": "Attiva adesso ricevuto: %s" % (
+                "in esecuzione al prossimo prezzo" if media.stats.get("comando", {}).get(
+                    "esito") == "ricevuto" else "rifiutato (%s)" % media.stats.get(
+                    "comando", {}).get("motivo")),
+            "comando": dict(media.stats.get("comando") or {})})
+    except Exception:  # noqa: BLE001 - attivita' best-effort
+        pass
+    return dict(media.stats.get("comando") or {})
+
+
 def sorveglia_flusso_sessione(db: Any, event_id: str, framework: Any,
                               sorv: "_SM.SorvegliaStream",
                               adesso_s: Optional[float] = None,
@@ -1135,13 +1211,18 @@ class Db:
         from db_client import get_supabase_client
         self.sb = get_supabase_client()
 
-    def set_control(self, event_id: str, **fields: Any) -> None:
+    def set_control(self, event_id: str, **fields: Any) -> bool:
+        """07/10: torna True se la scrittura e' passata (il comando <<Attiva
+        adesso>> si esegue solo dopo che il suo id e' registrato nella riga);
+        gli altri chiamanti ignorano il valore, come prima."""
         fields["updated_at"] = _now_iso()
         try:
             self.sb.table("scalper_control").update(fields) \
                 .eq("event_id", event_id).execute()
+            return True
         except Exception:  # noqa: BLE001
             logger.warning("[scalper-sess] set_control fallito", exc_info=True)
+            return False
 
     def control_status(self, event_id: str) -> Optional[str]:
         try:
@@ -1586,6 +1667,9 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                 "runner_names": _names_media,
                 "riavvio_aperto": _riavvio_media,
             })
+            # 07/10 (ATTIVA ADESSO): l'id del clic gia' consumato dalla sessione di
+            # prima (mai due prime punte per lo stesso clic, anche dopo un riavvio)
+            _media_params.update(comando_media_precedente(control))
             media = _MU.MediaUnderStrategy(
                 market_filter=filters.streaming_market_filter(
                     market_ids=market_ids),
@@ -1753,6 +1837,10 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             return s
 
         db.set_control(ev, status="running", stats=_stats())
+        # 07/10 (ATTIVA ADESSO): la sessione armata dal pulsante porta il clic nei
+        # params: si consegna PRIMA che parta flumine (si esegue al primo book)
+        if media is not None:
+            consegna_comando_media(db, ev, media, control.get("params"), None, _stats)
 
         runner = threading.Thread(target=framework.run, daemon=True,
                                   name=f"flumine-{ev}")
@@ -2000,6 +2088,10 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             except Exception:  # noqa: BLE001 - guardia best-effort
                 pass
             status, params_vivi = db.control_stato_e_params(ev)
+            # 07/10 (ATTIVA ADESSO): il clic arriva per la stessa lettura del
+            # battito (params), con il verdetto del flusso di questo battito
+            if media is not None and status not in ("stopping", "stopped", "error"):
+                consegna_comando_media(db, ev, media, params_vivi, _flusso, _stats)
             # 25/09 - l'interruttore "uscite automatiche" letto A CALDO (stessa
             # lettura del battito): il cambio vale dal book successivo.
             applica_uscite_automatiche(db, ev, strategy, params_vivi)
