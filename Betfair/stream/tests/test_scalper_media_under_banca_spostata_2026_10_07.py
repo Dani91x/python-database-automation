@@ -612,3 +612,48 @@ def test_m4_giudica_il_rientro_sulla_posizione_della_sua_nascita(differita, exch
     senza = _oss(b)
     assert "M4" not in _codici(con)
     assert "M4" in _codici(senza)
+
+
+def test_rientro_dovuto_durante_lo_spostamento_aspetta_la_banca(differita, exchange_it):
+    """Il rientro 1 si abbina e la banca comincia a spostarsi; la quota e' gia'
+    2 tick sopra il nuovo ultimo ingresso (rientro 2 dovuto). La punta del
+    rientro 2 aspetta che lo spostamento sia concluso: mai una punta sul
+    mercato con le banche a due quote diverse (M19)."""
+    b = BancoMedia()
+    viol, _banca = _in_posizione(b, differita)
+    b.ladder[b.under] = (1.52, 1.53)
+    for _i in range(40):
+        viol += giri(b, differita, 1)
+        if b.kinds("media_banca_sposta"):
+            break
+    assert b.kinds("media_banca_sposta")
+    b.ladder[b.under] = (1.54, 1.55)
+    memoria = CERT.Memoria()
+    visti_insieme = 0
+    for _i in range(20):
+        viol += giri(b, differita, 1)
+        punte_vive = b.vivi("BACK")
+        quote = {float(o.order_type.price) for o in b.vivi("LAY")}
+        if punte_vive:
+            assert len(quote) == 1, (quote, [float(o.order_type.price) for o in punte_vive])
+            visti_insieme += 1
+        assert "M19" not in _codici(_oss(b), {}, memoria)
+    assert viol == [], viol[:3]
+    assert visti_insieme >= 1
+    assert [float(o.order_type.size) for o in _punte(b)] == [10.0, 10.0, 20.0]
+    assert _banca_viva(b) == (1.52, 40.13)
+
+
+def test_m20_non_accusa_il_sostituto_di_un_replace(differita, exchange_it):
+    """Una banca annullata e, dopo, il SOSTITUTO di un replace di un'altra
+    banca alla stessa quota e con lo stesso importo: non e' un ripiazzo (il
+    sostituto nasce dentro Betfair dal resto spostato)."""
+    b = BancoMedia()
+    _in_posizione(b, differita)
+    righe = [dict(r) for r in _oss(b).ordini]
+    banca = next(r for r in righe if r["side"] == "LAY")
+    banca.update(status="Execution complete", size_cancelled=10.14, size_remaining=0.0)
+    sost = dict(banca, order_id="b3", indice=98, creato_ms=banca["creato_ms"] + 5000,
+                status="Executable", size_remaining=10.14, size_cancelled=0.0,
+                bet_id="998", sostituto=True, sostituito=False)
+    assert "M20" not in _codici(_oss(b, righe=righe + [sost]))
