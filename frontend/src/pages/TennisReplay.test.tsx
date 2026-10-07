@@ -15,7 +15,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
 import fixture from '@/lib/__fixtures__/replay_tennis_35790089.json';
 
-const registro = vi.hoisted(() => ({ rpc: [] as string[], lista: true }));
+const registro = vi.hoisted(() => ({ rpc: [] as string[], lista: true, args: [] as Array<{ nome: string; args: unknown }> }));
 
 vi.mock('@/integrations/supabase/client', async () => {
     const fx = (await import('@/lib/__fixtures__/replay_tennis_35790089.json')).default as unknown as {
@@ -42,6 +42,9 @@ vi.mock('@/integrations/supabase/client', async () => {
     const supabase = {
         rpc: vi.fn(async (nome: string, args?: Record<string, unknown>) => {
             registro.rpc.push(nome);
+            registro.args.push({ nome, args });
+            if (nome === 'request_backtest') return { data: 'req-tennis-1', error: null };
+            if (nome === 'get_replay_bot_esito') return { data: { status: 'PENDING', error_detail: null, esito: null }, error: null };
             if (nome === 'list_replays_tennis') {
                 return {
                     data: {
@@ -115,6 +118,7 @@ async function apriPartita() {
 
 beforeEach(() => {
     registro.rpc = [];
+    registro.args = [];
     registro.lista = true;
 });
 
@@ -159,10 +163,12 @@ describe('Replay Tennis — simulatore sulla partita vera', () => {
         expect(within(tabellone).getByText('6-4 5-7 6-7')).toBeInTheDocument();
         // un punteggio registrato non e' «vecchio»: niente «agg. Xs fa» del live, l'ora del punteggio
         expect(tabellone).not.toHaveTextContent(/agg\./);
-        const simboli = screen.getByTestId('tennis-simboli-barra');
-        const tipi = Array.from(simboli.querySelectorAll('[data-tipo]')).map(e => e.getAttribute('data-tipo'));
+        // i simboli del tennis stanno DENTRO la barra (TimelineSlider con le icone del tennis)
+        const tipi = screen.getAllByTestId('barra-simbolo').map(e => e.getAttribute('data-kind'));
         expect(tipi).toEqual(['break', 'set_end', 'set_start', 'break', 'break', 'break', 'break', 'tiebreak', 'set_end', 'match_end']);
-        expect(simboli).toHaveTextContent('Fine partita');
+        // la registrazione parte gia' in gioco: nessuna lineetta d'inizio sulla barra
+        expect(screen.queryByTestId('barra-kickoff')).toBeNull();
+        expect(screen.getByTestId('tennis-legenda-barra')).toHaveTextContent('Fine partita');
     });
 
     it('opportunita\': nota sui rilevatori del tennis', async () => {
@@ -171,17 +177,28 @@ describe('Replay Tennis — simulatore sulla partita vera', () => {
         expect(screen.getByTestId('tennis-replay-nota-opportunita')).toHaveTextContent('microstruttura del book');
     });
 
-    it('ladder training: «Applica bot» coi SOLI bot tennis, spento con la ragione (fase 1)', async () => {
+    it('ladder training: «Applica bot» (fase 2) coi SOLI bot tennis, la richiesta parte per questa partita', async () => {
         const u = await apriPartita();
         await u.click(screen.getByRole('button', { name: /Ladder TRAINING/ }));
-        const sezione = await screen.findByTestId('tennis-applica-bot');
-        const opzioni = Array.from(within(sezione).getByLabelText('Bot tennis da applicare al replay').querySelectorAll('option'))
-            .map(o => o.getAttribute('value'));
-        expect(opzioni).toEqual(['', 'tennis_scalper', 'tennis_pro', 'tennis_flb', 'tennis_swing', 'safe_tennis']);
-        expect(opzioni.some(v => (v ?? '').includes('calcio'))).toBe(false);
-        expect(within(sezione).getByRole('button', { name: /Accendi all'istante del cursore/ })).toBeDisabled();
-        expect(screen.getByTestId('tennis-applica-bot-motivo')).toHaveTextContent('In arrivo');
+        const sezione = await screen.findByTestId('applica-bot');
+        const opzioni = Array.from(within(sezione).getByTestId('applica-bot-bot').querySelectorAll('option'))
+            .map(o => o.getAttribute('value') ?? '').filter(v => v !== '');
+        expect([...opzioni].sort()).toEqual(['safe_tennis', 'tennis_flb', 'tennis_pro', 'tennis_scalper', 'tennis_swing']);
+        expect(screen.queryByTestId('tennis-applica-bot')).toBeNull();
+        // verificatore della barra collegato: la partita vera e' coerente, nessun avviso
+        expect(screen.queryByTestId('avviso-coerenza-barra')).toBeNull();
         expect(screen.getByText(/bet-delay del mercato \(3s\)/)).toBeInTheDocument();
+        // bot -> scenario -> Applica: la richiesta va al banco con l'evento tennis e il bot tennis
+        await u.selectOptions(screen.getByTestId('applica-bot-bot'), 'tennis_scalper');
+        const scen = Array.from(screen.getByTestId('applica-bot-scenario').querySelectorAll('option'))
+            .map(o => o.getAttribute('value') ?? '').filter(v => v !== '');
+        expect(scen.length).toBeGreaterThan(0);
+        await u.selectOptions(screen.getByTestId('applica-bot-scenario'), scen[0]);
+        await u.click(screen.getByTestId('applica-bot-avvia'));
+        await waitFor(() => expect(registro.rpc).toContain('request_backtest'));
+        const req = registro.args.find(a => a.nome === 'request_backtest')?.args as { p_params: Record<string, unknown> };
+        expect(req.p_params).toMatchObject({ tipo: 'applica_bot', bot: 'tennis_scalper', event_id: '35790089' });
+        expect(RPC_CALCIO.some(n => registro.rpc.includes(n))).toBe(false);
     });
 
     it('backtest col bet-delay registrato del mercato (3 s, non i 5 s del calcio)', async () => {

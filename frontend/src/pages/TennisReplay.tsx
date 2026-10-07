@@ -32,9 +32,14 @@ import { TrainingTradesPanel } from '@/components/replay/TrainingTradesPanel';
 import { LadderBacktestPanel } from '@/components/replay/LadderBacktestPanel';
 import { OpportunitaPanel } from '@/components/replay/OpportunitaPanel';
 import { ValidationCard } from '@/components/replay/ValidationCard';
-import { TennisTimelineSymbols } from '@/components/tennis-replay/TennisTimelineSymbols';
+import { LegendaTennis, iconaTennis, markerTennis } from '@/components/tennis-replay/TennisTimelineSymbols';
 import { TennisReplayList } from '@/components/tennis-replay/TennisReplayList';
-import { TennisApplicaBot } from '@/components/tennis-replay/TennisApplicaBot';
+import { ApplicaBotPanel } from '@/components/replay/ApplicaBotPanel';
+import { EsitoBotPanel } from '@/components/replay/EsitoBotPanel';
+import { AvvisoCoerenzaBarra } from '@/components/replay/AvvisoCoerenzaBarra';
+import { conOrdiniDelBot, ordiniBotAlMs, type RigaBot } from '@/lib/replayBot';
+import { useApplicaBot } from '@/lib/useApplicaBot';
+import { verificaBarraTennis } from '@/lib/tennisReplayVerificaBarra';
 import { LadderView, type LadderSource } from '@/components/live/LadderView';
 import type { Frame, LiveLadderRow, ReplayProgress } from '@/lib/live';
 import { partitaTennisFinita } from '@/lib/tennis';
@@ -277,6 +282,19 @@ export default function TennisReplay() {
         const s = trainSubRef.current;
         if (s && view === 'ladder') s.cb(buildTrainingRowRef.current(s.mid));
     }, [currentTs, view]);
+    // ---- APPLICA BOT (FASE 2, 07/10): i SOLI bot tennis col codice di produzione
+    // sul banco comune; i loro ordini sul ladder del training all'istante corrente
+    const applica = useApplicaBot();
+    const botRigheRef = useRef<RigaBot[]>([]);
+    botRigheRef.current = applica.righe;
+    const trainingOrderApi = useMemo(
+        () => (trainApiRef.current
+            ? conOrdiniDelBot(trainApiRef.current,
+                mid => ordiniBotAlMs(botRigheRef.current, nowMsRef.current, mid))
+            : null),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [trainApiRef.current],
+    );
     useEffect(() => {
         if (view !== 'ladder' || trainingMarketId || !replay) return;
         const mo = markets.find(m => m.market_type === 'MATCH_ODDS');
@@ -302,6 +320,8 @@ export default function TennisReplay() {
         () => simboliTennis(punteggiOrdinati, timeline, p1, p2, inGiocoTs),
         [punteggiOrdinati, timeline, p1, p2, inGiocoTs],
     );
+    // sulla barra solo i fatti gia' avvenuti all'istante del cursore
+    const simboliVisti = useMemo(() => simboli.filter(x => !currentTs || x.ts <= currentTs), [simboli, currentTs]);
     const suspended = useMemo(() => sospesoPerPasso(timeline, framesByMarket, markets), [timeline, framesByMarket, markets]);
     const { perCategoria, presenti } = useMemo(() => raggruppaMercatiTennis(markets), [markets]);
     const activeCat: CatTennis = presenti.some(c => c.key === activeCategory)
@@ -313,8 +333,15 @@ export default function TennisReplay() {
         () => ({ ...DEFAULT_OPP_CONFIG, delaySec: delayMercatoMs(mo) / 1000 }),
         [mo],
     );
+    const perMotore = useMemo(() => (replay ? perMotoreOpportunita(replay) : null), [replay]);
     const snapshots = useMemo(
-        () => (replay ? buildSnapshots(perMotoreOpportunita(replay), TIMELINE_BUCKET_MS) : []),
+        () => (perMotore ? buildSnapshots(perMotore, TIMELINE_BUCKET_MS) : []),
+        [perMotore],
+    );
+    // verificatore della barra col dato tennis (punteggio e simboli tennis), stabile per replay
+    const verificaTennis = useMemo(
+        () => () => verificaBarraTennis(replay ?? { event: { event_id: '', competition_name: null, player1_name: '',
+            player2_name: '', open_date: null, valuta: 'GBP' }, markets: [], frames: [], score_timeline: [] }),
         [replay],
     );
     const detectionsPerSnap = useMemo<Opportunity[][]>(
@@ -541,6 +568,9 @@ export default function TennisReplay() {
                             </div>
                         </Card>
 
+                        {/* avviso discreto: barra, simboli e tabellone tennis non tornano coi dati registrati */}
+                        <AvvisoCoerenzaBarra replay={perMotore} verifica={verificaTennis} />
+
                         {/* controlli + barra */}
                         <Card className="glass-card border-white/10 p-4 space-y-4">
                             <PlaybackControls
@@ -560,12 +590,15 @@ export default function TennisReplay() {
                                 </div>
                             </div>
                             <div>
-                                <TennisTimelineSymbols simboli={simboli.filter(x => !currentTs || x.ts <= currentTs)} />
                                 <TimelineSlider
                                     min={0} max={maxIndex} value={safeIndex} minute={minutoGioco}
                                     pre={preGioco}
                                     suspended={suspended}
-                                    events={[]}
+                                    events={markerTennis(simboliVisti)}
+                                    iconaEvento={iconaTennis}
+                                    legenda={<LegendaTennis simboli={simboliVisti} arbitraggi={arbMarkers.length > 0} />}
+                                    titoloInizio="Passaggio in gioco"
+                                    kickoffPct={maxIndex > 0 ? kickoffIndex / maxIndex : 0}
                                     arbMarkers={arbMarkers}
                                     onChange={v => { setIsPlaying(false); setCurrentIndex(v); }}
                                 />
@@ -639,7 +672,13 @@ export default function TennisReplay() {
                                                 Azzera ordini
                                             </Button>
                                         </div>
-                                        <TennisApplicaBot istante={oraLocale(currentTs)} />
+                                        <ApplicaBotPanel
+                                            sport="tennis"
+                                            eventId={replayEventId}
+                                            cursoreMs={currentMs}
+                                            applica={applica}
+                                            etichettaIstante={ms => oraLocale(new Date(ms).toISOString())}
+                                        />
                                         {trainingMarketId && trainApiRef.current && (
                                             <LadderView
                                                 key={`train:${trainingMarketId}:${trainingResetTick}`}
@@ -648,10 +687,14 @@ export default function TennisReplay() {
                                                 sport="tennis"
                                                 flussoRunner={false}
                                                 ladderSource={trainingSource}
-                                                orderApi={trainApiRef.current}
+                                                orderApi={trainingOrderApi ?? trainApiRef.current}
                                                 fallbackSelections={(marketById.get(trainingMarketId)?.selections ?? [])
                                                     .map(x => ({ selection_id: x.selection_id, name: x.name ?? `#${x.selection_id}` }))}
                                             />
+                                        )}
+                                        {applica.esito && (
+                                            <EsitoBotPanel esito={applica.esito} nowMs={currentMs}
+                                                nomeMercato={nomeMercato} nomeSelezione={nomeSelezione} />
                                         )}
                                         {trainApiRef.current && (
                                             <TrainingTradesPanel key={`trade:${trainingResetTick}`} api={trainApiRef.current}

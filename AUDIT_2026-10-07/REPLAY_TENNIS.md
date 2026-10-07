@@ -64,7 +64,7 @@ Perche' nessun parser proprio: la decodifica e' della libreria (provata contro f
 ### 1.2 Pagina «Replay Tennis» (blocchi 2 e 3)
 Rotta `/tennis/replay` (entrambi gli alberi di `App.tsx`), voce «Replay tennis» nella sezione Tennis della sidebar del guscio
 (accanto a Dashboard tennis / Tennis Terminal) e bottone «Replay» nella `TennisNav` (grafica attuale, guscio spento).
-File: `pages/TennisReplay.tsx`, `lib/tennisReplay.ts`, `components/tennis-replay/{TennisReplayList,TennisTimelineSymbols,TennisApplicaBot}.tsx`.
+File: `pages/TennisReplay.tsx`, `lib/tennisReplay.ts`, `components/tennis-replay/{TennisReplayList,TennisTimelineSymbols}.tsx` (`TennisApplicaBot.tsx` rimosso in FASE 2, §13).
 Design system: stessa struttura e classi del Match Replay e delle pagine tennis (`glass-card`, `ds-v2-*`, `font-display`,
 token `primary/secondary`, componenti `ui/*`), tabellone = quello del Tennis Terminal. Le guardie della veste
 (`cssGuscio`: sticky marcati, `uiDefault`, `cssVeste`) sono verdi; la fotografia comprende ora anche la pagina nuova.
@@ -118,7 +118,7 @@ token `primary/secondary`, componenti `ui/*`), tabellone = quello del Tennis Ter
 | 30 | Validazione su dati reali | presente | stesso report, si mostra se ci sono opportunita' |
 | 31 | Ladder TRAINING (LadderView vero, selettore di TUTTI i mercati, Azzera ordini) | presente | `sport="tennis"`, delay del mercato |
 | 32 | trade del training con la X | presente | `TrainingTradesPanel` |
-| 33 | Applica bot (scelta, Applica, stato, note, ordini del bot sul ladder, BotOrdersPanel) | FASE 1: segnaposto | sezione tennis con soli bot tennis (4 + Safe tennis), comandi spenti e ragione; FASE 2 dopo l'integrazione dell'altro delegato |
+| 33 | Applica bot (scelta, Applica, stato, note, ordini del bot sul ladder, BotOrdersPanel) | SI (FASE 2) | `ApplicaBotPanel sport="tennis"` (soli 5 bot tennis), `useApplicaBot`, `EsitoBotPanel`, ordini del bot sul ladder del training (§13) |
 | 34 | Backtest del ladder | presente | `LadderBacktestPanel` con delay del mercato |
 | 35 | barra di navigazione (Segui Live / Dashboard) | adattata | `TennisNav` della sezione tennis |
 | 36 | titolo pagina, footer, card d'errore, scheletri di caricamento | presente | |
@@ -133,7 +133,7 @@ Nuovi: `Betfair/stream/tennis_replay/{__init__,convertitore,caricamento,importa}
 `migrations/replay_tennis_2026-10-07.sql`, `frontend/src/pages/TennisReplay.tsx`, `frontend/src/pages/TennisReplay.test.tsx`,
 `frontend/src/lib/tennisReplay.ts`, `frontend/src/lib/tennisReplay.test.ts`, `frontend/src/lib/delayMercato.tennisReplay.test.ts`,
 `frontend/src/lib/__fixtures__/replay_tennis_35790089.json` (99 KB, uscita del convertitore sulla registrazione vera),
-`frontend/src/components/tennis-replay/{TennisReplayList,TennisTimelineSymbols,TennisApplicaBot}.tsx`,
+`frontend/src/components/tennis-replay/{TennisReplayList,TennisTimelineSymbols}.tsx`, `frontend/src/lib/tennisReplayVerificaBarra{,.test}.ts` (FASE 2),
 `frontend/src/fotografia/snapshot/tennis-replay.{off,off.guscio,v2,v2.guscio}.json`,
 `AUDIT_2026-10-07/replay_tennis/{verifica_migrazione_pg,verifica_migrazione_falsifica,falsifica_python,falsifica_frontend,genera_fixture_frontend}.py`, questo referto.
 
@@ -233,7 +233,7 @@ DECISE dall'utente il 07/10 (testuale «1) SI 2) si 3) correggi»): 1 fatta (§1
 2. Caricamento automatico a fine partita ACCESO di default (`TENNIS_REPLAY_CARICA=0` per spegnerlo): confermare.
 3. Correzione del reperto del curatore anche per il calcio (§6): si/no.
 
-## 8. Patch per file VIETATI (non applicate)
+## 8. Patch di TimelineSlider (APPLICATA in FASE 2, vedi §13; testo originale qui sotto)
 `components/replay/TimelineSlider.tsx` parametrica per lo sport (cosi' i simboli del tennis starebbero DENTRO la barra e il
 titolo del marker non direbbe «Calcio d'inizio»):
 ```diff
@@ -382,9 +382,55 @@ copia del pacchetto: 35/35 verdi). Da applicare all'integrazione. NB: `tennis_ru
   file frontend toccato dalle sezioni 10-11.
 - Confronto curatore calcio prima/dopo: §11 (0 righe sparite, solo cambi di stato in piu').
 
+## 13. FASE 2 (07/10 sera): Applica bot tennis, verificatore della barra, barra parametrica
+Base: merge di `integrazione-0710-b` (64064f36) sul mio ramo (cc42bfb9), senza conflitti.
+
+**Applica bot tennis** (`pages/TennisReplay.tsx`, vista Ladder TRAINING): il segnaposto `TennisApplicaBot.tsx` e' RIMOSSO;
+la pagina usa i componenti comuni dell'altro delegato, come il Match Replay: `ApplicaBotPanel sport="tennis"` (solo i 5 bot
+tennis del catalogo: safe_tennis, tennis_scalper, tennis_pro, tennis_flb, tennis_swing; nessun bot calcio), `useApplicaBot`
+(richiesta `request_backtest` con `tipo: applica_bot`, `event_id` della partita tennis), `EsitoBotPanel` sotto il ladder e gli
+ordini del bot sul ladder del training all'istante del cursore (`conOrdiniDelBot` + `ordiniBotAlMs`, solo import da
+`lib/replayBot.ts`). Il backend (`applica_bot.esegui` coi bot tennis) e' dell'altro delegato: non toccato.
+
+**Verificatore della barra tennis** (`lib/tennisReplayVerificaBarra.ts`, nuovo): `verificaBarraTennis(dati, opzioni)`.
+- La barra e' costruita con le STESSE funzioni della pagina (`costruisciTimeline`, `inizioInGioco`/`indiceDiPasso`,
+  `simboliTennis`, `sospesoPerPasso`) e passata a `verificaBarraGenerica` con `ambito: 'tennis'` (estremi, ordine, simboli
+  fuori barra / prima del loro istante / fuori registrazione, inizio del gioco, sospensioni, buchi); il testo «calcio
+  d'inizio» dei controlli generici diventa «inizio del gioco».
+- Controlli di dominio con oracoli indipendenti dal convertitore: evento di gioco senza simbolo e simbolo senza evento
+  (errore), passaggio in gioco (errore), set che scendono, fine set, tie-break e break incoerenti col tabellone e col
+  servizio della riga precedente (avviso), salti di piu' game e punteggio assente (nota).
+- `CodiceRilievo` (`lib/replayVerificaBarra.ts`): aggiunti SOLO 8 codici `TENNIS_*` all'unione, nient'altro cambia.
+- Collegato alla pagina: `<AvvisoCoerenzaBarra replay={perMotore} verifica={verificaTennis} />` sopra i controlli.
+- Test `lib/tennisReplayVerificaBarra.test.ts` (17): SCOPRE DA SOLO le fixture `__fixtures__/replay_tennis_*.json` e le
+  registrazioni `_live_raw_tennis/<giorno>/<evento>/` risalendo dal frontend (fuori da git: se mancano il controllo e'
+  saltato col motivo; qui trovata 35790089, con fixture); 0 incoerenze sulla 35790089; F1-F8 difetti rimessi -> rosso;
+  regole su una partita costruita (break, tie-break, salto, punteggio assente).
+
+**TimelineSlider** (patch §8 applicata, file liberato dal coordinatore): props opzionali `iconaEvento`, `legenda`,
+`titoloInizio` (default «Calcio d'inizio»); senza props il rendering e' identico (Match Replay invariato, fotografie
+invariate: 0 righe cambiate). 2 test nuovi in `TimelineSlider.test.tsx` (default del calcio identico; parametri dello
+sport). La pagina tennis ora disegna i simboli DENTRO la barra (`markerTennis`, `iconaTennis`, `LegendaTennis` in
+`components/tennis-replay/TennisTimelineSymbols.tsx`; la legenda tiene anche la voce «Arbitraggio» dei rombi verdi), con
+la lineetta «Passaggio in gioco» quando la registrazione parte prima del gioco.
+
+**Verifiche (rieseguite)**: tsc 0 errori; vitest per blocchi (l'intera suite in un colpo supera i 10 minuti del comando):
+src/lib 151 file / 2635 test; src/components + App 168 / 2130; src/fotografia + shell + pages 28 / 469 (+1 saltato);
+anteprima/certification/hooks/test/integrations 2 / 8 (+49 saltati, come prima): tutto verde. Fotografie: nessun file
+cambiato. `falsifica_frontend.py`: **20/20 mutazioni rosse** (F12 riscritta sul pannello comune; F16-F20 nuove:
+verificatore break, simbolo perso, avviso iniettato visibile nella pagina, titolo d'inizio fisso al calcio, simboli fuori
+dalla barra), file ripristinati con sha256.
+
+**NON fatto in FASE 2 (dichiarato)**:
+- Banco dei bot tennis sulla 35790089 contro `coord/tennis_base_<bot>.txt`: NON rieseguito per la scadenza (nessun file
+  del banco o dei bot e' stato toccato in FASE 2: il diff della FASE 2 e' solo frontend + referto).
+- `npm run build` non lanciato (lo fa l'integrazione sul checkout principale).
+- L'esito completo dell'Applica bot nella pagina tennis (EsitoBotPanel con un esito DONE vero) e' provato solo dai test
+  del componente comune; il test della pagina prova catalogo, richiesta e assenza di RPC del calcio.
+- Patch di `registro_bot` (§12/patch) ancora da applicare dal coordinatore: senza, 4 test dell'impronta restano rossi.
+
 ## STATO_RIPRESA
-- Blocco 4 (FASE 2 Applica bot tennis): quando il coordinatore conferma l'integrazione del backend comune, sostituire in
-  `components/tennis-replay/TennisApplicaBot.tsx` il segnaposto con i componenti dell'altro delegato filtrati a sport tennis
-  (catalogo bot generato), mostrare gli ordini del bot sul ladder (`conOrdiniDelBot`/`ordiniBotAlMs` di `replayBot.ts`, solo
-  import) e `BotOrdersPanel` nella vista ladder di `pages/TennisReplay.tsx`; test della pagina e falsificazioni come sopra.
-- Decisioni §7; patch §8 se il coordinatore libera i file.
+- FASE 2 fatta (§13). Resta: banco dei 5 bot tennis sulla 35790089 contro i riferimenti del coordinatore
+  (`python3 -m Betfair.stream.backtest.certifica <bot> 35790089 --data-dir _live_raw_tennis/20260707 --scenari tutti
+  --worker 1`, togliendo solo tempi e impronta), `npm run build` all'integrazione, patch `registro_bot` del coordinatore.
+- Decisioni §7 ancora aperte per l'utente.
