@@ -37,10 +37,12 @@ import { TennisReplayList } from '@/components/tennis-replay/TennisReplayList';
 import { ApplicaBotPanel } from '@/components/replay/ApplicaBotPanel';
 import { EsitoBotPanel } from '@/components/replay/EsitoBotPanel';
 import { AvvisoCoerenzaBarra } from '@/components/replay/AvvisoCoerenzaBarra';
-import { conOrdiniDelBot, ordiniBotAlMs, type RigaBot } from '@/lib/replayBot';
 import { useApplicaBot } from '@/lib/useApplicaBot';
+import { useOperativitaBot } from '@/lib/useOperativitaBot';
+import { indiceTimelineAl, istanteCursore, ladderBotAl } from '@/lib/replayOperazioni';
+import type { PuntoSeek } from '@/components/replay/RegistroOperazioniBot';
 import { verificaBarraTennis } from '@/lib/tennisReplayVerificaBarra';
-import { LadderView, type LadderSource } from '@/components/live/LadderView';
+import { LadderView, type BotLadderOverlay, type LadderSource } from '@/components/live/LadderView';
 import type { Frame, LiveLadderRow, ReplayProgress } from '@/lib/live';
 import { partitaTennisFinita } from '@/lib/tennis';
 import { formatGbp, type BetSide, type SimBet } from '@/lib/replay-pnl';
@@ -55,7 +57,7 @@ import type { Detector, OppConfig, Opportunity } from '@/lib/opportunities/types
 import {
     conFaseTennis, costruisciTimeline, delayMercatoMs, faseTennis, fetchTennisReplay, fetchTennisReplayList,
     framesPerMercato, indiceDiPasso, inizioInGioco, minutiDiGioco, ordinaPunteggio, perMotoreOpportunita,
-    punteggioAl, puntiFinoA, raggruppaMercatiTennis, simboliTennis, sospesoPerPasso, ultimoAl,
+    punteggioAl, puntiFinoA, etichettaPunteggio, raggruppaMercatiTennis, simboliTennis, sospesoPerPasso, ultimoAl,
     valutaMercatoTennis,
     type CatTennis, type TennisReplayData, type TennisReplayItem, type TennisReplayMarket,
 } from '@/lib/tennisReplay';
@@ -117,6 +119,8 @@ export default function TennisReplay() {
 
     // ---- stato del simulatore ----
     const [currentIndex, setCurrentIndex] = useState(0);
+    // 07/10 sera: il cursore ESATTO (clic su un'operazione del bot nel registro)
+    const [cursoreEsatto, setCursoreEsatto] = useState<{ index: number; ms: number } | null>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [playDir, setPlayDir] = useState<1 | -1>(1);
     const [playSpeed, setPlaySpeed] = useState(PLAY_NORMAL_MS);
@@ -199,8 +203,13 @@ export default function TennisReplay() {
         if (!eid) loadedEventRef.current = null;
     }, [replay, kickoffIndex]);
     const safeIndex = Math.min(currentIndex, maxIndex);
-    const currentTs = timeline[safeIndex]?.ts ?? '';
-    const currentMs = currentTs ? new Date(currentTs).getTime() : 0;
+    const cursore = istanteCursore(timeline, safeIndex, cursoreEsatto);
+    const currentTs = cursore.ts;
+    const currentMs = cursore.ms;
+    // muovere la barra (o il play) annulla il cursore esatto
+    useEffect(() => {
+        if (cursoreEsatto && cursoreEsatto.index !== safeIndex) setCursoreEsatto(null);
+    }, [safeIndex, cursoreEsatto]);
     const minutoGioco = minutiDiGioco(currentTs, inGiocoTs);
     const preGioco = safeIndex < kickoffIndex;
 
@@ -284,17 +293,38 @@ export default function TennisReplay() {
     }, [currentTs, view]);
     // ---- APPLICA BOT (FASE 2, 07/10): i SOLI bot tennis col codice di produzione
     // sul banco comune; i loro ordini sul ladder del training all'istante corrente
+    // 07/10 sera (REPLAY PROFESSIONALE): stessi componenti del calcio, dati del tennis
     const applica = useApplicaBot();
-    const botRigheRef = useRef<RigaBot[]>([]);
-    botRigheRef.current = applica.righe;
-    const trainingOrderApi = useMemo(
-        () => (trainApiRef.current
-            ? conOrdiniDelBot(trainApiRef.current,
-                mid => ordiniBotAlMs(botRigheRef.current, nowMsRef.current, mid))
-            : null),
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-        [trainApiRef.current],
-    );
+    const punteggiRef = useRef<ReturnType<typeof ordinaPunteggio>>([]);
+    const etichettaTennis = (ms: number) => {
+        const r = punteggioAl(punteggiRef.current, new Date(ms).toISOString());
+        return r ? etichettaPunteggio(r.score) : 'pre-gioco';
+    };
+    const runnerTennis = (mid: string) => marketById.get(mid)?.selections.map(x => x.selection_id);
+    const operativita = useOperativitaBot(applica.esito, etichettaTennis, runnerTennis);
+    const botLadder: BotLadderOverlay | undefined = operativita && applica.esito && trainingMarketId
+        ? {
+            etichetta: applica.esito.etichetta,
+            perSelezione: ladderBotAl(operativita.ordini, currentMs, trainingMarketId,
+                applica.esito.esiti_mercati ?? null, runnerTennis(trainingMarketId)),
+        }
+        : undefined;
+    const [avvisoSeek, setAvvisoSeek] = useState<string | null>(null);
+    const vaiAllOperazione = (p: PuntoSeek) => {
+        setIsPlaying(false);
+        const idx = indiceTimelineAl(timeline, p.ms);
+        setCurrentIndex(idx);
+        setCursoreEsatto({ index: idx, ms: p.ms });
+        const inizio = timeline[0]?.ts ? Date.parse(timeline[0].ts) : null;
+        const presente = p.marketId ? marketById.has(p.marketId) : true;
+        if (p.marketId && presente) setTrainingMarketId(p.marketId);
+        setAvvisoSeek(!presente
+            ? 'il mercato di questa operazione non è fra i mercati registrati nel replay caricato: il ladder resta sul mercato scelto'
+            : (inizio != null && p.ms < inizio
+                ? 'l’operazione è PRIMA del primo istante caricato nel replay: il book mostrato è il primo disponibile'
+                : null));
+        setView('ladder');
+    };
     useEffect(() => {
         if (view !== 'ladder' || trainingMarketId || !replay) return;
         const mo = markets.find(m => m.market_type === 'MATCH_ODDS');
@@ -303,6 +333,7 @@ export default function TennisReplay() {
 
     // ---- punteggio tennis all'istante del cursore ----
     const punteggiOrdinati = useMemo(() => ordinaPunteggio(replay?.score_timeline ?? []), [replay]);
+    punteggiRef.current = punteggiOrdinati;
     const rigaPunteggio = currentTs ? punteggioAl(punteggiOrdinati, currentTs) : null;
     const puntiAlCursore = useMemo(
         () => (currentTs ? puntiFinoA(punteggiOrdinati, currentTs) : []),
@@ -687,13 +718,25 @@ export default function TennisReplay() {
                                                 sport="tennis"
                                                 flussoRunner={false}
                                                 ladderSource={trainingSource}
-                                                orderApi={trainingOrderApi ?? trainApiRef.current}
+                                                orderApi={trainApiRef.current}
+                                                botReplay={botLadder}
                                                 fallbackSelections={(marketById.get(trainingMarketId)?.selections ?? [])
                                                     .map(x => ({ selection_id: x.selection_id, name: x.name ?? `#${x.selection_id}` }))}
                                             />
                                         )}
-                                        {applica.esito && (
-                                            <EsitoBotPanel esito={applica.esito} nowMs={currentMs}
+                                        {avvisoSeek && (
+                                            <div className="rounded-lg border border-amber-400/50 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-100"
+                                                data-testid="avviso-seek">{avvisoSeek}</div>
+                                        )}
+                                        {cursore.esatto && (
+                                            <div className="text-[11px] text-amber-200" data-testid="cursore-esatto">
+                                                cursore all’istante esatto dell’operazione: {oraLocale(currentTs)}.{String(currentMs % 1000).padStart(3, '0')} · {etichettaTennis(currentMs)}
+                                            </div>
+                                        )}
+                                        {applica.esito && operativita && (
+                                            <EsitoBotPanel esito={applica.esito} analisi={operativita} inviato={applica.inviato}
+                                                nowMs={currentMs} etichettaIstante={etichettaTennis} runnerDi={runnerTennis}
+                                                onSeek={vaiAllOperazione}
                                                 nomeMercato={nomeMercato} nomeSelezione={nomeSelezione} />
                                         )}
                                         {trainApiRef.current && (

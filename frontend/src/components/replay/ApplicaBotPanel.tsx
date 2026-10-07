@@ -10,7 +10,7 @@
 // La richiesta e il suo stato li tiene `useApplicaBot` (prop `applica`): il
 // risultato si mostra con EsitoBotPanel e sul ladder con ordiniBotAlMs.
 // ============================================================================
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -52,7 +52,10 @@ function testoStato(a: ApplicaBot): { testo: string; errore: boolean } {
             ? { testo: 'il BANCO DEL REPLAY NON È ACCESO: parte all’avvio dell’app, quindi CHIUDI e RIAPRI l’app (dopo l’aggiornamento) e la richiesta partirà da sola', errore: true }
             : { testo: 'richiesta inviata, il banco la sta prendendo…', errore: false };
     }
-    if (st === 'RUNNING') return { testo: 'il bot sta girando sulla registrazione (qualche minuto)…', errore: false };
+    if (st === 'RUNNING') {
+        const n = r.inviato?.opzioni.clic_ms?.length ?? 0;
+        return { testo: `ricalcolo: il bot sta girando sulla registrazione${n ? ` con ${n} clic «Attiva adesso»` : ''} (qualche minuto)…`, errore: false };
+    }
     if (st === 'ERROR') return { testo: `errore: ${r.stato?.error_detail ?? ''}`, errore: true };
     if (st === 'DONE' && r.stato?.esito) {
         return { testo: `${r.stato.esito.etichetta}: ${r.stato.esito.ordini} ordini — scorri la timeline`, errore: false };
@@ -97,15 +100,49 @@ export function ApplicaBotPanel({
         if (valore === undefined) delete n[chiave]; else n[chiave] = valore;
         return n;
     });
-    const avvia = () => {
+    // l'istante di accensione resta quello del momento in cui e' stato deciso
+    // (spunta + Applica): un clic «Attiva adesso» successivo rilancia la STESSA
+    // prova con un clic in piu', non sposta l'accensione al nuovo cursore
+    const [dalMs, setDalMs] = useState<number | undefined>(undefined);
+    const avvia = (clicDaMandare: number[] = clic, dal: number | undefined = accendiDalCursore ? (dalMs ?? cursoreMs) : undefined) => {
         if (!bot || !scenario || !eventId) return;
+        if (accendiDalCursore && dal != null) setDalMs(dal);
         applica.invia(eventId, bot.bot, scenario.scenario, {
             parametri: cambiati,
-            dal_ms: accendiDalCursore ? cursoreMs : undefined,
-            clic_ms: bot.clic_ms && clic.length > 0 ? clic : undefined,
+            dal_ms: dal,
+            // un clic allo STESSO istante dell'accensione e' gia' l'accensione
+            // (la media under tratta dal_ms come il primo clic): non si raddoppia
+            clic_ms: bot.clic_ms && clicDaMandare.some(c => c !== dal) ? clicDaMandare.filter(c => c !== dal) : undefined,
         });
     };
     const puoAvviare = !!bot && !bot.disattivato && !!scenario && !!eventId && nErrori === 0 && !applica.inCorso;
+    // 07/10 sera (caso vero dell'utente: clic accodati in silenzio, mai partiti):
+    // i clic NON ancora mandati al banco sono quelli che non sono nell'ultima
+    // richiesta; finita la richiesta in corso, partono da soli
+    const mandati = [...(applica.inviato?.clic_ms ?? []),
+        ...(applica.inviato?.dal_ms != null ? [applica.inviato.dal_ms] : [])];
+    const daMandare = clic.filter(c => !mandati.includes(c));
+    const tolti = (applica.inviato?.clic_ms ?? []).filter(c => !clic.includes(c));
+    const modificheClic = daMandare.length > 0 || tolti.length > 0;
+    const pronto = !!bot && !bot.disattivato && !!scenario && !!eventId && nErrori === 0;
+    useEffect(() => {
+        if (!applica.inCorso && modificheClic && pronto && applica.inviato != null) avvia(clic, applica.inviato.dal_ms);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [applica.inCorso]);
+    const attivaAdesso = () => {
+        if (!pronto || cursoreMs <= 0 || clic.includes(cursoreMs)) return;
+        const nuovi = [...clic, cursoreMs].sort((a, b) => a - b);
+        setClic(nuovi);
+        // il clic AGISCE SUBITO: si rilancia il banco con tutti i clic (il replay
+        // e' deterministico: stesso risultato della realta'); se una prova e' gia'
+        // in corso, il clic resta «da mandare» (ben visibile) e parte alla fine
+        if (!applica.inCorso) avvia(nuovi, applica.inviato ? applica.inviato.dal_ms : (accendiDalCursore ? cursoreMs : undefined));
+    };
+    const togliClic = (ms: number) => {
+        const nuovi = clic.filter(x => x !== ms);
+        setClic(nuovi);
+        if (!applica.inCorso && applica.inviato) avvia(nuovi, applica.inviato.dal_ms);
+    };
 
     return (
         <div className="rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2 space-y-2 text-[11px]"
@@ -165,7 +202,7 @@ export function ApplicaBotPanel({
                 <Button
                     size="sm" variant="outline"
                     disabled={!puoAvviare}
-                    onClick={avvia}
+                    onClick={() => avvia(clic)}
                     className="h-7 border-amber-300/40 text-amber-100 hover:bg-amber-500/20 text-[11px] font-bold"
                     title="Fa girare il bot con il codice di produzione sulla registrazione di questa partita (worker del Backtest Automatico): coda, bet delay e minimi come dal vivo"
                     data-testid="applica-bot-avvia"
@@ -200,18 +237,30 @@ export function ApplicaBotPanel({
                         </div>
                         {bot?.clic_ms && (
                             <div className="flex items-center gap-1 flex-wrap" data-testid="applica-bot-clic">
-                                <Button type="button" size="sm" variant="outline" className="h-7 text-[11px]"
-                                    disabled={cursoreMs <= 0 || clic.includes(cursoreMs)}
-                                    onClick={() => setClic(c => [...c, cursoreMs].sort((a, b) => a - b))}>
-                                    + clic «Attiva adesso» al cursore
+                                <Button type="button" size="sm" className="h-7 text-[11px] font-black bg-amber-500 text-black hover:bg-amber-400"
+                                    disabled={!pronto || cursoreMs <= 0 || clic.includes(cursoreMs)}
+                                    onClick={attivaAdesso}
+                                    title="Come il pulsante vero: il bot riceve «Attiva adesso» all'istante del cursore. Il banco rilancia SUBITO la prova con tutti i clic (deterministico: stesso risultato della realta')."
+                                    data-testid="applica-bot-attiva-adesso">
+                                    ⚡ Attiva adesso al cursore
                                 </Button>
-                                {clic.map(ms => (
-                                    <Badge key={ms} variant="outline" className="text-[10px] gap-1">
-                                        {istante(ms)}
-                                        <button type="button" aria-label={`togli il clic delle ${testoIstante(ms)}`}
-                                            onClick={() => setClic(c => c.filter(x => x !== ms))}>×</button>
-                                    </Badge>
-                                ))}
+                                {clic.map(ms => {
+                                    const inviato = mandati.includes(ms);
+                                    return (
+                                        <Badge key={ms} variant="outline" data-testid="applica-bot-clic-voce" data-inviato={inviato ? '1' : '0'}
+                                            className={`text-[10px] gap-1 ${inviato ? '' : 'border-red-400 text-red-200 bg-red-500/20'}`}>
+                                            {istante(ms)}{inviato ? (applica.inCorso ? ' · in ricalcolo' : '') : ' · NON ANCORA INVIATO'}
+                                            <button type="button" aria-label={`togli il clic delle ${testoIstante(ms)}`}
+                                                onClick={() => togliClic(ms)}>×</button>
+                                        </Badge>
+                                    );
+                                })}
+                                {modificheClic && (
+                                    <span className="text-red-300 font-bold" data-testid="applica-bot-clic-pendenti">
+                                        {daMandare.length > 0 ? `${daMandare.length} clic non ancora inviati al banco` : 'clic tolti non ancora ricalcolati'}
+                                        {applica.inCorso ? ': partono appena finisce il ricalcolo in corso' : ''}
+                                    </span>
+                                )}
                             </div>
                         )}
                     </div>

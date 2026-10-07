@@ -110,6 +110,34 @@ export interface LadderArmRuleArgs {
     params: RiskRuleParams;
 }
 
+// 07/10 sera (REPLAY PROFESSIONALE): la sovrapposizione SOLA LETTURA del bot
+// applicato al replay. Prop OPZIONALE di LadderView: senza, il ladder del trading
+// vivo e' identico a prima (test `LadderView.botReplay.test.tsx`).
+export interface BotLadderLivello {
+    lato: 'back' | 'lay';
+    quota: number;
+    /** non abbinato appoggiato sul book a questa quota */
+    appoggiato: number;
+    /** abbinato a questa quota (prezzo medio dell'ordine, al tick) */
+    abbinato: number;
+    /** inviato, non ancora sul book */
+    inVolo: number;
+}
+export interface BotLadderSelezione {
+    livelli: BotLadderLivello[];
+    /** P&L della selezione da sola (come le colonne del ladder): se vince / se perde */
+    seVinceSel: number;
+    sePerdeSel: number;
+    /** P&L del MERCATO se vince questa selezione (Betfair «if wins») */
+    seVinceMercato: number | null;
+    abbinatoBack: number;
+    abbinatoLay: number;
+}
+export interface BotLadderOverlay {
+    etichetta: string;
+    perSelezione: Record<number, BotLadderSelezione>;
+}
+
 export interface LadderOrderApi {
     send: (cmd: LiveOrderCommand) => Promise<LiveOrderResult>;
     // mode è passato per le sorgenti che filtrano lato RPC (tennis); i default calcio lo ignorano.
@@ -226,6 +254,7 @@ function buildLadder(
     orders: LiveOrderRow[],
     position: LivePositionRow | null,
     centerOverride: number | null = null,
+    prezziExtra: readonly number[] = [],
 ): BuiltLadder {
     const backMap = sumByTick(sel.back);
     const layMap = sumByTick(sel.lay);
@@ -248,6 +277,8 @@ function buildLadder(
     for (const p of layMap.keys()) rng.push(p);
     for (const p of myLay.keys()) rng.push(p);
     for (const p of myBack.keys()) rng.push(p);
+    // replay: le quote degli ordini del bot (vuoto fuori dal replay)
+    for (const p of prezziExtra) rng.push(roundToTick(p));
     const ltp = sel.ltp != null && Number.isFinite(sel.ltp) ? roundToTick(sel.ltp) : null;
     if (ltp != null) rng.push(ltp);
 
@@ -311,6 +342,33 @@ function buildLadder(
     const hasPosition = win0 !== 0 || lose0 !== 0;
 
     return { rows, maxTrd, bestBack, bestLay, ltp, hasPosition, win: win0, lose: lose0 };
+}
+
+// ------------------------------------------------- replay: cella del bot (07/10 sera)
+// Il bot applicato al replay: APPOGGIATO (non abbinato sul book, ambra pieno) e
+// ABBINATO (verde, con ✓) alla quota, nella colonna del suo lato.
+const fmtBot = (v: number) => (v >= 100 ? v.toFixed(0) : v.toFixed(2));
+function BotCella({ l, etichetta }: { l: BotLadderLivello; etichetta?: string }) {
+    const sulBook = l.appoggiato + l.inVolo;
+    const lato = l.lato === 'back' ? 'PUNTA' : 'BANCA';
+    return (
+        <span className="flex flex-col items-center leading-none gap-px">
+            {sulBook > 0 && (
+                <span data-testid="bot-appoggiato" data-quota={l.quota} data-lato={l.lato}
+                    title={`${etichetta ?? 'bot'}: ${lato} ${sulBook.toFixed(2)} ${l.inVolo > 0 ? 'in volo (inviata, non ancora sul book)' : 'appoggiata, non abbinata'} @ ${fmtPrice(l.quota)}`}
+                    className={`px-0.5 rounded-sm font-black tabular-nums text-black ${l.inVolo > 0 ? 'bg-amber-200' : 'bg-amber-400'}`}>
+                    {fmtBot(sulBook)}
+                </span>
+            )}
+            {l.abbinato > 0 && (
+                <span data-testid="bot-abbinato" data-quota={l.quota} data-lato={l.lato}
+                    title={`${etichetta ?? 'bot'}: ${lato} abbinata ${l.abbinato.toFixed(2)} @ ${fmtPrice(l.quota)}`}
+                    className="px-0.5 rounded-sm font-bold tabular-nums bg-emerald-400/90 text-black">
+                    ✓{fmtBot(l.abbinato)}
+                </span>
+            )}
+        </span>
+    );
 }
 
 // ------------------------------------------------------------------- WOM bar
@@ -455,6 +513,9 @@ interface SelectionLadderProps {
     onAcceptKelly: (stake: number) => void;
     // F38: fair del motore per QUESTA selezione (null = nessun overlay/colonna EV).
     fair: FairInfo | null;
+    // 07/10 sera: ordini e P&L del bot applicato al replay (assenti fuori dal replay)
+    bot?: BotLadderSelezione | null;
+    botEtichetta?: string;
 }
 
 // mappa flash vuota, referenza stabile (nessun re-render quando non c'è nulla da lampeggiare).
@@ -464,8 +525,10 @@ const SelectionLadder = memo(function SelectionLadder({
     sel, orders, position, stake, stakeMode, status, canTrade, canCancelOrders, busy, columns, greenupSupported, enableDragMove,
     recenterSeq, nudge, samples,
     onPlace, onCancel, onGreenup, onGreenupAt, onCancelSide, onMoveOrder, onHoverRow, onWindowShift,
-    kelly, onAcceptKelly, fair,
+    kelly, onAcceptKelly, fair, bot, botEtichetta,
 }: SelectionLadderProps) {
+    const botAttivo = botEtichetta != null;
+    const prezziBot = useMemo(() => (bot ? bot.livelli.map(l => l.quota) : []), [bot]);
     // ---- navigazione/centraggio (B11/B18): auto-center sul LTP (default, come Bet Angel)
     // o centro MANUALE (click su prezzo/price bar/frecce). localSeq forza lo scroll one-shot.
     const [autoCenter, setAutoCenter] = useState(true);
@@ -475,8 +538,8 @@ const SelectionLadder = memo(function SelectionLadder({
     const [showAxis, setShowAxis] = useState(false);
 
     const built = useMemo(
-        () => buildLadder(sel, orders, position, autoCenter ? null : manualCenter),
-        [sel, orders, position, autoCenter, manualCenter],
+        () => buildLadder(sel, orders, position, autoCenter ? null : manualCenter, prezziBot),
+        [sel, orders, position, autoCenter, manualCenter, prezziBot],
     );
     // F38: tick del FAIR del motore (riga evidenziata + colonna EV). null = niente overlay.
     const fairTick = fair != null ? roundToTick(fair.fair) : null;
@@ -596,7 +659,8 @@ const SelectionLadder = memo(function SelectionLadder({
 
     // colonne griglia effettive (ordine dal profilo, WOM escluso, 'price' garantita).
     const gridCols = useMemo(() => gridColumnsOf(columns), [columns]);
-    const colTemplate = useMemo(() => gridCols.map((k) => COL_WIDTH[k]).join(' '), [gridCols]);
+    const colTemplate = useMemo(() => gridCols.map((k) => (botAttivo && (k === 'my_lay' || k === 'my_back')
+        ? '62px' : COL_WIDTH[k])).join(' '), [gridCols, botAttivo]);
 
     // baseline PIQ per livello+lato: {trd, ahead} catturata quando il tuo ordine ENTRA in
     // coda a quel prezzo, per stimare l'avanzamento dal volume tradato successivo.
@@ -814,6 +878,25 @@ const SelectionLadder = memo(function SelectionLadder({
                 </div>
             </div>
 
+            {/* replay: P&L del bot applicato su questa selezione (07/10 sera) */}
+            {botAttivo && (
+                <div className="px-2.5 py-1 border-b border-amber-400/30 bg-amber-400/10 text-[10px] flex flex-wrap items-center gap-x-2"
+                    data-testid="bot-pnl-selezione">
+                    <span className="font-black text-amber-200">🤖 {botEtichetta}</span>
+                    {bot && (bot.abbinatoBack > 0 || bot.abbinatoLay > 0) ? (
+                        <>
+                            <span>se vince <b className={`font-mono ${bot.seVinceMercato != null && bot.seVinceMercato < 0 ? 'text-rose-300' : 'text-emerald-300'}`}
+                                data-testid="bot-se-vince">{fmtMoney(bot.seVinceMercato ?? bot.seVinceSel)}</b></span>
+                            <span title="P&L degli ordini del bot su QUESTA selezione se non vince">se perde <b className={`font-mono ${bot.sePerdeSel < 0 ? 'text-rose-300' : 'text-emerald-300'}`}
+                                data-testid="bot-se-perde">{fmtMoney(bot.sePerdeSel)}</b></span>
+                            <span className="text-white/60">abbinato P {bot.abbinatoBack.toFixed(2)} · B {bot.abbinatoLay.toFixed(2)}</span>
+                        </>
+                    ) : (
+                        <span className="text-white/50">nessun abbinamento del bot qui (a questo istante)</span>
+                    )}
+                </div>
+            )}
+
             {/* intestazione colonne (ordine dal profilo) */}
             <div
                 className="grid items-center text-[8px] uppercase tracking-wider text-muted-foreground/70 px-1 py-0.5 border-b border-white/5 bg-black/30 ds-v2-ladder-testa"
@@ -889,6 +972,9 @@ const SelectionLadder = memo(function SelectionLadder({
                         const piqEst =
                             refineQueue(piqBackStatic, piqBaseRef.current.get(`back@${r.price}`), r.trd) +
                             refineQueue(piqLayStatic, piqBaseRef.current.get(`lay@${r.price}`), r.trd);
+                        // replay: i livelli del bot a questa quota (nessuno fuori dal replay)
+                        const botLay = bot?.livelli.find(l => l.lato === 'lay' && Math.abs(l.quota - r.price) < 1e-9);
+                        const botBack = bot?.livelli.find(l => l.lato === 'back' && Math.abs(l.quota - r.price) < 1e-9);
                         const layBetIds = myOrdersAt.get(`lay@${r.price}`) ?? [];
                         const backBetIds = myOrdersAt.get(`back@${r.price}`) ?? [];
                         // fix audit #11: cancel permesso anche in SUSPENDED (place NO).
@@ -920,6 +1006,7 @@ const SelectionLadder = memo(function SelectionLadder({
                                                     {fmtSize(r.myLay)}
                                                 </span>
                                             )}
+                                            {botLay && <BotCella l={botLay} etichetta={botEtichetta} />}
                                         </button>
                                     );
                                 }
@@ -1019,6 +1106,7 @@ const SelectionLadder = memo(function SelectionLadder({
                                                     {fmtSize(r.myBack)}
                                                 </span>
                                             )}
+                                            {botBack && <BotCella l={botBack} etichetta={botEtichetta} />}
                                         </button>
                                     );
                                 }
@@ -1026,6 +1114,16 @@ const SelectionLadder = memo(function SelectionLadder({
                                     // P&L per livello (viola). B13 "greening column" (Bet Angel):
                                     // CLIC sul valore = chiudi la posizione A QUEL prezzo (l'ordine
                                     // di hedge può restare sul book come take-profit resting).
+                                    if (pnl == null && bot && (bot.abbinatoBack > 0 || bot.abbinatoLay > 0)) {
+                                        const pb = lockedPnlAt(r.price, bot.seVinceSel, bot.sePerdeSel);
+                                        return (
+                                            <div key={k} data-testid="bot-pnl-livello"
+                                                title={`${botEtichetta ?? 'bot'}: chiudendo a ${fmtPrice(r.price)} il bot bloccherebbe ${fmtMoney(pb)}`}
+                                                className={`flex items-center justify-center font-mono tabular-nums ${pb > 0 ? 'text-emerald-300/90' : pb < 0 ? 'text-rose-300/90' : 'text-amber-200/80'}`}>
+                                                {(pb < 0 ? '−' : '') + Math.abs(pb).toFixed(2)}
+                                            </div>
+                                        );
+                                    }
                                     const pnlCls = pnl == null ? 'text-white/15'
                                         : pnl > 0 ? 'text-emerald-300/90'
                                             : pnl < 0 ? 'text-rose-300/90' : 'text-purple-200/70';
@@ -1392,6 +1490,10 @@ interface Props {
     // 28/09 (cantiere J2): mostra l'avviso «FLUSSO INTERROTTO» dello stream del
     // runner (topic `flusso_stream`). Default acceso; il REPLAY lo spegne.
     flussoRunner?: boolean;
+    // 07/10 sera (REPLAY PROFESSIONALE): ordini (appoggiati/abbinati) e P&L del
+    // bot applicato al replay all'istante del cursore, SOLA LETTURA. Assente =
+    // ladder identico a prima (trading vivo).
+    botReplay?: BotLadderOverlay;
 }
 
 // profilo iniziale delle colonne: se non c'è nulla salvato per lo sport, usa il layout
@@ -1421,7 +1523,7 @@ function initLadderProfile(sport: string): LadderProfile {
 export function LadderView({
     marketId, marketName, orderMode = 'off', handicap = 0, sport = 'calcio', fallbackSelections = [],
     ladderSource = DEFAULT_LADDER_SOURCE, orderApi = DEFAULT_ORDER_API, enableDragMove = true,
-    popout, multiSlot, signals = null, flussoRunner = true,
+    popout, multiSlot, signals = null, flussoRunner = true, botReplay,
 }: Props) {
     const [row, setRow] = useState<LiveLadderRow | null>(null);
     const [loading, setLoading] = useState(true);
@@ -2852,6 +2954,10 @@ export function LadderView({
                                 kelly={kellyMap.get(s.selection_id) ?? null}
                                 onAcceptKelly={onAcceptKelly}
                                 fair={fairMap.get(s.selection_id) ?? null}
+                                {...(botReplay ? {
+                                    bot: botReplay.perSelezione[s.selection_id] ?? null,
+                                    botEtichetta: botReplay.etichetta,
+                                } : {})}
                             />
                         ))}
                     </div>

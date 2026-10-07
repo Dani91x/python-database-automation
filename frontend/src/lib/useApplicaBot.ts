@@ -22,6 +22,9 @@ export interface RichiestaBot {
     stato: StatoRichiestaBot | null;
     errore?: string;
     inviataMs?: number;
+    /** 07/10 sera: che cosa la pagina ha MANDATO (bot, scenario, opzioni), per
+     *  confrontarlo con l'esito (avvisi) e per rilanciare coi clic nuovi */
+    inviato?: { eventId: string; bot: string; scenario: string; opzioni: OpzioniApplica };
 }
 
 export interface ApplicaBot {
@@ -32,6 +35,8 @@ export interface ApplicaBot {
     righe: RigaBot[];
     /** una richiesta in coda o in corso: il pulsante resta spento */
     inCorso: boolean;
+    /** le opzioni dell'ultima richiesta mandata (null: nessuna) */
+    inviato: OpzioniApplica | null;
     invia: (eventId: string, bot: string, scenario: string, opzioni?: OpzioniApplica) => void;
     azzera: () => void;
 }
@@ -39,7 +44,7 @@ export interface ApplicaBot {
 export function useApplicaBot(): ApplicaBot {
     const [richiesta, setRichiesta] = useState<RichiestaBot | null>(null);
     useEffect(() => {
-        if (!richiesta || richiesta.errore) return undefined;
+        if (!richiesta || richiesta.errore || !richiesta.id) return undefined;
         const st = richiesta.stato?.status;
         if (st === 'DONE' || st === 'ERROR') return undefined;
         let vivo = true;
@@ -54,10 +59,13 @@ export function useApplicaBot(): ApplicaBot {
     }, [richiesta]);
     const invia = useCallback((eventId: string, bot: string, scenario: string, opzioni: OpzioniApplica = {}) => {
         if (!eventId) return;
-        setRichiesta(null);
+        const inviato = { eventId, bot, scenario, opzioni };
+        // 07/10 sera: la richiesta e' «in corso» SUBITO (prima della risposta
+        // della RPC): un secondo clic non parte in parallelo ma si accoda
+        setRichiesta({ id: '', stato: { status: 'PENDING', error_detail: null, esito: null }, inviataMs: Date.now(), inviato });
         richiediApplicaBot(eventId, bot, scenario, opzioni)
-            .then(id => setRichiesta({ id, stato: { status: 'PENDING', error_detail: null, esito: null }, inviataMs: Date.now() }))
-            .catch((e: unknown) => setRichiesta({ id: '', stato: null, errore: e instanceof Error ? e.message : String(e) }));
+            .then(id => setRichiesta({ id, stato: { status: 'PENDING', error_detail: null, esito: null }, inviataMs: Date.now(), inviato }))
+            .catch((e: unknown) => setRichiesta({ id: '', stato: null, errore: e instanceof Error ? e.message : String(e), inviato }));
     }, []);
     const azzera = useCallback(() => setRichiesta(null), []);
     const st = richiesta?.stato?.status;
@@ -66,7 +74,8 @@ export function useApplicaBot(): ApplicaBot {
         richiesta,
         esito,
         righe: esito?.righe ?? [],
-        inCorso: st === 'PENDING' || st === 'RUNNING',
+        inCorso: !richiesta?.errore && (st === 'PENDING' || st === 'RUNNING'),
+        inviato: richiesta?.inviato?.opzioni ?? null,
         invia,
         azzera,
     };

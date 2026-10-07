@@ -1,0 +1,94 @@
+// PILOTA TEMPORANEO della prova a schermo (07/10 sera, replay professionale):
+// monta la pagina VERA (Match Replay o Replay Tennis) con le RPC di Supabase
+// sostituite da risposte costruite coi dati VERI (frame dal raw della
+// registrazione, esito vero del banco). Non entra nel commit.
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { MemoryRouter } from 'react-router-dom';
+import { HelmetProvider } from 'react-helmet-async';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import '../index.css';
+import { supabase } from '@/integrations/supabase/client';
+import MatchReplay from '@/pages/MatchReplay';
+import TennisReplay from '@/pages/TennisReplay';
+import { replayDaFixture, type FixtureBarra } from '@/lib/__fixtures__/replayBarraConversione';
+import barra from '@/lib/__fixtures__/replay_barra_35797769.json';
+import tennisFx from '@/lib/__fixtures__/replay_tennis_35790089.json';
+import esitoCalcio from '@/lib/__fixtures__/replay_pro/esito_media_clic_multi_69.json';
+import esitoTennis from '@/lib/__fixtures__/replay_pro/esito_tennis_scalper.json';
+import framesCalcio from './frames_35797769.json';
+import framesTennis from './frames_35790089.json';
+
+const sport = new URLSearchParams(location.search).get('sport') ?? 'calcio';
+const base = replayDaFixture(barra as unknown as FixtureBarra);
+const calcio = {
+    event: base.event,
+    markets: [
+        { market_id: '1.259819674', market_type: 'MATCH_ODDS', market_name: 'Esito finale', sort_priority: 1,
+            selections: [{ selection_id: 22, name: 'Spagna', sort_priority: 1 }, { selection_id: 29578, name: 'Belgio', sort_priority: 2 },
+                { selection_id: 58805, name: 'Pareggio', sort_priority: 3 }] },
+        { market_id: '1.259819682', market_type: 'OVER_UNDER_25', market_name: 'Under/Over 2,5', sort_priority: 2,
+            selections: [{ selection_id: 47972, name: 'Under 2,5', sort_priority: 1 }, { selection_id: 47973, name: 'Over 2,5', sort_priority: 2 }] },
+    ],
+    frames: framesCalcio,
+    score_timeline: base.score_timeline,
+};
+const tfx = tennisFx as unknown as { event: unknown; markets: unknown[]; score_timeline: unknown[] };
+const fr = framesTennis as Array<{ ts: string; inplay: boolean }>;
+const tennis = { event: tfx.event, markets: tfx.markets, score_timeline: tfx.score_timeline, frames: fr };
+const evento = (base.event as { event_id: string });
+let richieste = 0;
+
+// le RPC (stesse chiavi del vero)
+const rpc = async (nome: string, args: Record<string, unknown>) => {
+    const ok = (data: unknown) => ({ data, error: null, count: null, status: 200, statusText: 'OK' });
+    switch (nome) {
+        case 'list_replays':
+            return ok({ rows: [{ ...evento, fixture_id: null, league_id: null, league_name: 'Prova', home_name: 'Spain', away_name: 'Belgium',
+                open_date: '2026-07-10T19:00:00+00:00', status: 'UPLOADED', n_markets: 2, n_snapshots: framesCalcio.length,
+                started_at: null, ended_at: null }] });
+        case 'get_replay_meta':
+            return { data: null, error: { code: 'PGRST202', message: 'get_replay_meta non trovata (prova)' } };
+        case 'get_replay':
+            return ok(calcio);
+        case 'list_replays_tennis':
+            return ok({ rows: [{ event_id: '35790089', player1_name: 'Marcelo Tomas Barrios V', player2_name: 'Ilia Simakin',
+                competition_name: null, open_date: '2026-07-07T10:30:00+00:00', n_markets: 1, n_snapshots: fr.length,
+                started_at: null, ended_at: null, status: 'UPLOADED' }] });
+        case 'get_replay_tennis_meta':
+            return ok({ event: tennis.event, markets: tennis.markets, score_timeline: tennis.score_timeline,
+                ts_min: fr[0].ts, ts_max: fr[fr.length - 1].ts, inplay_from_ts: fr.find(f => f.inplay)?.ts ?? null });
+        case 'get_replay_tennis_frames': {
+            const da = Date.parse(String(args.p_from_ts));
+            const a = Date.parse(String(args.p_to_ts));
+            const frames = fr.filter(f => Date.parse(f.ts) >= da && Date.parse(f.ts) <= a);
+            return ok({ frames, n: frames.length });
+        }
+        case 'request_backtest':
+            richieste += 1;
+            (window as unknown as { richieste: unknown[] }).richieste.push(args.p_params);
+            return ok(`R${richieste}`);
+        case 'get_replay_bot_esito':
+            return ok({ status: 'DONE', error_detail: null, esito: sport === 'tennis' ? esitoTennis : esitoCalcio });
+        default:
+            return ok(null);
+    }
+};
+(window as unknown as { richieste: unknown[] }).richieste = [];
+(supabase as unknown as { rpc: typeof rpc }).rpc = rpc;
+
+const qc = new QueryClient();
+ReactDOM.createRoot(document.getElementById('root')!).render(
+    <React.StrictMode>
+        <QueryClientProvider client={qc}>
+            <HelmetProvider>
+                <TooltipProvider>
+                    <MemoryRouter>
+                        {sport === 'tennis' ? <TennisReplay /> : <MatchReplay />}
+                    </MemoryRouter>
+                </TooltipProvider>
+            </HelmetProvider>
+        </QueryClientProvider>
+    </React.StrictMode>,
+);

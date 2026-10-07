@@ -239,6 +239,82 @@ def ms_di(adesso: Any) -> Optional[int]:
         return None
 
 
+def _num(x: Any) -> Optional[float]:
+    try:
+        return None if x is None else float(x)
+    except (TypeError, ValueError):
+        return None
+
+
+def campi_ordine(ordine: Any) -> Dict[str, Any]:
+    """07/10 sera (REPLAY PROFESSIONALE): i campi ``_`` che la cronologia del
+    replay aggiunge alla riga dello specchio, letti dall'ordine VERO di flumine.
+    Sola lettura: il bot non se ne accorge e le righe di produzione (DB) non li
+    hanno (li aggiunge solo il banco, sulla SUA copia della riga).
+
+    * ``_ordine``: l'id dell'ordine flumine. E' l'identita' dell'ordine: il
+      ``client_order_ref`` NON basta, perche' un ``replace_order`` di flumine crea
+      un ordine NUOVO con lo STESSO ``context``/``notes`` (``Trade.
+      create_order_replacement``), quindi con lo stesso ref ``awlq``/``sc``
+      dell'ordine sostituito (visto sulla 35790089: ref ``sc76783175`` con due
+      bet id).
+    * ``_trade_id``: il trade flumine dell'ordine (gli ordini di un trade sono
+      un'operazione per il bot che li raggruppa cosi').
+    * ``_strategia``: il nome della strategia flumine che lo ha piazzato.
+    * ``_sostituisce``: l'``_ordine`` sostituito da questo, quando l'ordine e'
+      nato da un ``replace_order`` (riprezzo): l'ordine vecchio dello STESSO
+      trade, stesso lato e selezione, tolto (annullato o in sostituzione), con
+      cui condivide gli oggetti ``context``/``notes`` (flumine li passa al
+      nuovo ordine in ``create_order_replacement``)."""
+    tr = getattr(ordine, "trade", None)
+    tid = getattr(tr, "id", None)
+    strat = getattr(getattr(tr, "strategy", None), "name", None)
+    out: Dict[str, Any] = {
+        "_ordine": str(getattr(ordine, "id", "")) or None,
+        "_trade_id": None if tid is None else str(tid),
+        "_strategia": None if strat is None else str(strat),
+        "_sostituisce": None,
+    }
+    ot = getattr(ordine, "order_type", None)
+    prezzo = _num(getattr(ot, "price", None))
+    if tr is None or prezzo is None:
+        return out
+    try:
+        fratelli = list(getattr(tr, "orders", None) or [])
+    except Exception:  # noqa: BLE001 - trade inatteso: nessun legame
+        return out
+    nato = getattr(ordine, "date_time_created", None)
+    ctx, note = getattr(ordine, "context", None), getattr(ordine, "notes", None)
+    for o in reversed(fratelli):
+        if o is ordine:
+            continue
+        # il legame: ``create_order_replacement`` passa al nuovo ordine gli STESSI
+        # oggetti ``context`` e ``notes`` del vecchio (identita', non uguaglianza).
+        # Se sono vuoti flumine ne crea di nuovi e il legame non si puo' provare
+        # qui: ``update_data['new_price']`` NON basta (flumine lo svuota quando il
+        # vecchio si chiude, e prima legherebbe anche un ordine qualsiasi dello
+        # stesso trade a quella quota). Allora lo deduce la UI dalla cronologia
+        # (annulla e ripiazza, ``replayOperazioni.ordiniDaRighe``) e lo dice.
+        stesso = ((ctx and getattr(o, "context", None) is ctx)
+                  or (note and getattr(o, "notes", None) is note))
+        if not stesso:
+            continue
+        # il vecchio deve essere stato tolto (annullato in tutto o in parte) o in
+        # sostituzione: due ordini vivi dello stesso trade non sono un riprezzo
+        stato_o = getattr(getattr(o, "status", None), "name", None) or str(getattr(o, "status", ""))
+        if not ((_num(getattr(o, "size_cancelled", 0.0)) or 0.0) > 0 or stato_o == "REPLACING"):
+            continue
+        if (getattr(o, "selection_id", None) != getattr(ordine, "selection_id", None)
+                or str(getattr(o, "side", "")) != str(getattr(ordine, "side", ""))):
+            continue
+        quando = getattr(o, "date_time_created", None)
+        if nato is not None and quando is not None and quando > nato:
+            continue
+        out["_sostituisce"] = str(getattr(o, "id", "")) or None
+        break
+    return out
+
+
 def _dell_utente(ordine: Any) -> bool:
     note = getattr(ordine, "notes", None)
     return bool(isinstance(note, dict) and note.get("utente"))
@@ -291,6 +367,8 @@ class SpecchioOrdini:
         self._firme[chiave] = firma
         riga["source"] = self.sorgente
         riga["_ms"] = int(ms)
+        # 07/10 sera: identita' dell'ordine, trade, strategia e riprezzo
+        riga.update(campi_ordine(ordine))
         self.righe.append(riga)
 
     def osserva_mercato(self, market: Any, ms: Optional[int]) -> None:
@@ -344,8 +422,29 @@ class SpecchioOrdini:
                     visti[str(getattr(m, "market_id", ""))] = m
             for m in visti.values():
                 self.osserva_mercato(m, quando)
+        self._profitti_flumine()
         self.righe.sort(key=lambda r: int(r["_ms"]))
         return list(self.righe)
+
+    def _profitti_flumine(self) -> None:
+        """07/10 sera: sull'ULTIMA riga di ogni ordine il profitto che flumine
+        regola (``order.simulated.profit``, lordo, al centesimo) quando il
+        mercato e' stato regolato dal banco (``runner_status`` WINNER/LOSER).
+        E' il riscontro indipendente del P&L che la UI ricava dalle righe."""
+        ultima: Dict[str, Dict[str, Any]] = {}
+        for r in self.righe:
+            if r.get("_ordine"):
+                ultima[str(r["_ordine"])] = r
+        for _mid, m in self._mercati.items():
+            for o in list(getattr(m, "blotter", None) or []):
+                r = ultima.get(str(getattr(o, "id", "")))
+                if r is None or getattr(o, "runner_status", None) not in ("WINNER", "LOSER"):
+                    continue
+                sim = getattr(o, "simulated", None)
+                try:
+                    r["_profitto_flumine"] = round(float(getattr(sim, "profit", 0.0) or 0.0), 2)
+                except (TypeError, ValueError):
+                    continue
 
 
 def mercati_del_quadro(quadro: Any) -> List[Any]:

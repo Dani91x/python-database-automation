@@ -1,0 +1,1145 @@
+{
+ "bot": "scalper_calcio",
+ "scenario": "media-under",
+ "event_id": "35797769",
+ "sport": "calcio",
+ "etichetta": "Scalper - Media Under 2,5 (soldi veri simulati)",
+ "modalita": "soldi_veri_simulati",
+ "righe": [
+  {
+   "bet_id": "100000000001",
+   "client_order_ref": "d30755a527963-140106788587496440",
+   "request_id": null,
+   "mode": "live",
+   "event_id": "35797769",
+   "market_id": "1.259819682",
+   "selection_id": 47972,
+   "handicap": 0.0,
+   "side": "back",
+   "order_type": "LIMIT",
+   "price": 2.2,
+   "size": 10.0,
+   "size_matched": 10.0,
+   "size_remaining": 0.0,
+   "size_cancelled": 0.0,
+   "size_lapsed": 0.0,
+   "size_voided": 0.0,
+   "average_price_matched": 2.2,
+   "status": "EXECUTION_COMPLETE",
+   "persistence": "LAPSE",
+   "placed_at": "2026-07-10T18:30:02.164000+00:00",
+   "matched_at": "2026-07-10T18:30:02.164000+00:00",
+   "source": "scalper",
+   "_ms": 1783708203059,
+   "_ordine": "140106788587496440",
+   "_trade_id": "416b2180-9b8a-4706-9eb7-632b640ce958",
+   "_strategia": "mu35797769",
+   "_sostituisce": null
+  },
+  {
+   "bet_id": "100000000002",
+   "client_order_ref": "d30755a527963-140106788587546050",
+   "request_id": null,
+   "mode": "live",
+   "event_id": "35797769",
+   "market_id": "1.259819682",
+   "selection_id": 47972,
+   "handicap": 0.0,
+   "side": "lay",
+   "order_type": "LIMIT",
+   "price": 2.16,
+   "size": 10.19,
+   "size_matched": 0.0,
+   "size_remaining": 10.19,
+   "size_cancelled": 0.0,
+   "size_lapsed": 0.0,
+   "size_voided": 0.0,
+   "average_price_matched": 0.0,
+   "status": "EXECUTABLE",
+   "persistence": "PERSIST",
+   "placed_at": "2026-07-10T18:30:02.335000+00:00",
+   "matched_at": null,
+   "source": "scalper",
+   "_ms": 1783708203059,
+   "_ordine": "140106788587546050",
+   "_trade_id": "f03d1adc-60e3-406a-8ad5-082e5baea66d",
+   "_strategia": "mu35797769",
+   "_sostituisce": null
+  },
+  {
+   "bet_id": "100000000002",
+   "client_order_ref": "d30755a527963-140106788587546050",
+   "request_id": null,
+   "mode": "live",
+   "event_id": "35797769",
+   "market_id": "1.259819682",
+   "selection_id": 47972,
+   "handicap": 0.0,
+   "side": "lay",
+   "order_type": "LIMIT",
+   "price": 2.16,
+   "size": 10.19,
+   "size_matched": 0.0,
+   "size_remaining": 0.0,
+   "size_cancelled": 10.19,
+   "size_lapsed": 0.0,
+   "size_voided": 0.0,
+   "average_price_matched": 0.0,
+   "status": "EXECUTION_COMPLETE",
+   "persistence": "PERSIST",
+   "placed_at": "2026-07-10T18:30:02.335000+00:00",
+   "matched_at": null,
+   "source": "scalper",
+   "_ms": 1783709506228,
+   "_ordine": "140106788587546050",
+   "_trade_id": "f03d1adc-60e3-406a-8ad5-082e5baea66d",
+   "_strategia": "mu35797769",
+   "_sostituisce": null
+  },
+  {
+   "bet_id": null,
+   "client_order_ref": "d30755a527963-140106788683209110",
+   "request_id": null,
+   "mode": "live",
+   "event_id": "35797769",
+   "market_id": "1.259819682",
+   "selection_id": 47972,
+   "handicap": 0.0,
+   "side": "back",
+   "order_type": "LIMIT",
+   "price": 2.24,
+   "size": 10.0,
+   "size_matched": 0.0,
+   "size_remaining": 10.0,
+   "size_cancelled": 0.0,
+   "size_lapsed": 0.0,
+   "size_voided": 0.0,
+   "average_price_matched": 0.0,
+   "status": "PENDING",
+   "persistence": "LAPSE",
+   "placed_at": null,
+   "matched_at": null,
+   "source": "scalper",
+   "_ms": 1783709506228,
+   "_ordine": "140106788683209110",
+   "_trade_id": "723b226b-dc4b-4dc1-8bbf-1732c0b70b13",
+   "_strategia": "mu35797769",
+   "_sostituisce": null
+  },
+  {
+   "bet_id": "100000000003",
+   "client_order_ref": "d30755a527963-140106788683209110",
+   "request_id": null,
+   "mode": "live",
+   "event_id": "35797769",
+   "market_id": "1.259819682",
+   "selection_id": 47972,
+   "handicap": 0.0,
+   "side": "back",
+   "order_type": "LIMIT",
+   "price": 2.24,
+   "size": 10.0,
+   "size_matched": 1.49,
+   "size_remaining": 0.0,
+   "size_cancelled": 8.51,
+   "size_lapsed": 0.0,
+   "size_voided": 0.0,
+   "average_price_matched": 2.24,
+   "status": "EXECUTION_COMPLETE",
+   "persistence": "LAPSE",
+   "placed_at": "2026-07-10T18:51:46.331000+00:00",
+   "matched_at": "2026-07-10T18:51:46.702000+00:00",
+   "source": "scalper",
+   "_ms": 1783709507324,
+   "_ordine": "140106788683209110",
+   "_trade_id": "723b226b-dc4b-4dc1-8bbf-1732c0b70b13",
+   "_strategia": "mu35797769",
+   "_sostituisce": null
+  },
+  {
+   "bet_id": "100000000004",
+   "client_order_ref": "d30755a527963-140106788683279870",
+   "request_id": null,
+   "mode": "live",
+   "event_id": "35797769",
+   "market_id": "1.259819682",
+   "selection_id": 47972,
+   "handicap": 0.0,
+   "side": "lay",
+   "order_type": "LIMIT",
+   "price": 2.2,
+   "size": 11.52,
+   "size_matched": 0.0,
+   "size_remaining": 11.52,
+   "size_cancelled": 0.0,
+   "size_lapsed": 0.0,
+   "size_voided": 0.0,
+   "average_price_matched": 0.0,
+   "status": "EXECUTABLE",
+   "persistence": "PERSIST",
+   "placed_at": "2026-07-10T18:51:46.702000+00:00",
+   "matched_at": null,
+   "source": "scalper",
+   "_ms": 1783709507324,
+   "_ordine": "140106788683279870",
+   "_trade_id": "756d81e4-d48b-44dd-8eac-bf3fd5a3190e",
+   "_strategia": "mu35797769",
+   "_sostituisce": null
+  },
+  {
+   "bet_id": "100000000004",
+   "client_order_ref": "d30755a527963-140106788683279870",
+   "request_id": null,
+   "mode": "live",
+   "event_id": "35797769",
+   "market_id": "1.259819682",
+   "selection_id": 47972,
+   "handicap": 0.0,
+   "side": "lay",
+   "order_type": "LIMIT",
+   "price": 2.2,
+   "size": 11.52,
+   "size_matched": 9.52,
+   "size_remaining": 2.0,
+   "size_cancelled": 0.0,
+   "size_lapsed": 0.0,
+   "size_voided": 0.0,
+   "average_price_matched": 2.2,
+   "status": "EXECUTABLE",
+   "persistence": "PERSIST",
+   "placed_at": "2026-07-10T18:51:46.702000+00:00",
+   "matched_at": "2026-07-10T18:51:46.702000+00:00",
+   "source": "scalper",
+   "_ms": 1783710627102,
+   "_ordine": "140106788683279870",
+   "_trade_id": "756d81e4-d48b-44dd-8eac-bf3fd5a3190e",
+   "_strategia": "mu35797769",
+   "_sostituisce": null
+  },
+  {
+   "bet_id": "100000000004",
+   "client_order_ref": "d30755a527963-140106788683279870",
+   "request_id": null,
+   "mode": "live",
+   "event_id": "35797769",
+   "market_id": "1.259819682",
+   "selection_id": 47972,
+   "handicap": 0.0,
+   "side": "lay",
+   "order_type": "LIMIT",
+   "price": 2.2,
+   "size": 11.52,
+   "size_matched": 11.52,
+   "size_remaining": 0.0,
+   "size_cancelled": 0.0,
+   "size_lapsed": 0.0,
+   "size_voided": 0.0,
+   "average_price_matched": 2.2,
+   "status": "EXECUTION_COMPLETE",
+   "persistence": "PERSIST",
+   "placed_at": "2026-07-10T18:51:46.702000+00:00",
+   "matched_at": "2026-07-10T19:10:27.222000+00:00",
+   "source": "scalper",
+   "_ms": 1783710628105,
+   "_ordine": "140106788683279870",
+   "_trade_id": "756d81e4-d48b-44dd-8eac-bf3fd5a3190e",
+   "_strategia": "mu35797769",
+   "_sostituisce": null
+  },
+  {
+   "bet_id": null,
+   "client_order_ref": "d30755a527963-140106789008431870",
+   "request_id": null,
+   "mode": "live",
+   "event_id": "35797769",
+   "market_id": "1.259819682",
+   "selection_id": 47972,
+   "handicap": 0.0,
+   "side": "back",
+   "order_type": "LIMIT",
+   "price": 1.78,
+   "size": 10.0,
+   "size_matched": 0.0,
+   "size_remaining": 10.0,
+   "size_cancelled": 0.0,
+   "size_lapsed": 0.0,
+   "size_voided": 0.0,
+   "average_price_matched": 0.0,
+   "status": "PENDING",
+   "persistence": "LAPSE",
+   "placed_at": null,
+   "matched_at": null,
+   "source": "scalper",
+   "_ms": 1783711500586,
+   "_ordine": "140106789008431870",
+   "_trade_id": "0be02c21-34d9-4118-9aa8-466fae433bab",
+   "_strategia": "mu35797769",
+   "_sostituisce": null
+  },
+  {
+   "bet_id": "100000000005",
+   "client_order_ref": "d30755a527963-140106789008431870",
+   "request_id": null,
+   "mode": "live",
+   "event_id": "35797769",
+   "market_id": "1.259819682",
+   "selection_id": 47972,
+   "handicap": 0.0,
+   "side": "back",
+   "order_type": "LIMIT",
+   "price": 1.78,
+   "size": 10.0,
+   "size_matched": 10.0,
+   "size_remaining": 0.0,
+   "size_cancelled": 0.0,
+   "size_lapsed": 0.0,
+   "size_voided": 0.0,
+   "average_price_matched": 1.78,
+   "status": "EXECUTION_COMPLETE",
+   "persistence": "LAPSE",
+   "placed_at": "2026-07-10T19:25:05.377000+00:00",
+   "matched_at": "2026-07-10T19:25:05.377000+00:00",
+   "source": "scalper",
+   "_ms": 1783711505890,
+   "_ordine": "140106789008431870",
+   "_trade_id": "0be02c21-34d9-4118-9aa8-466fae433bab",
+   "_strategia": "mu35797769",
+   "_sostituisce": null
+  },
+  {
+   "bet_id": null,
+   "client_order_ref": "d30755a527963-140106789009135470",
+   "request_id": null,
+   "mode": "live",
+   "event_id": "35797769",
+   "market_id": "1.259819682",
+   "selection_id": 47972,
+   "handicap": 0.0,
+   "side": "lay",
+   "order_type": "LIMIT",
+   "price": 1.76,
+   "size": 10.11,
+   "size_matched": 0.0,
+   "size_remaining": 10.11,
+   "size_cancelled": 0.0,
+   "size_lapsed": 0.0,
+   "size_voided": 0.0,
+   "average_price_matched": 0.0,
+   "status": "PENDING",
+   "persistence": "PERSIST",
+   "placed_at": null,
+   "matched_at": null,
+   "source": "scalper",
+   "_ms": 1783711505890,
+   "_ordine": "140106789009135470",
+   "_trade_id": "62ba6747-8256-47bd-834c-b8a1016f4f1e",
+   "_strategia": "mu35797769",
+   "_sostituisce": null
+  },
+  {
+   "bet_id": "100000000006",
+   "client_order_ref": "d30755a527963-140106789009135470",
+   "request_id": null,
+   "mode": "live",
+   "event_id": "35797769",
+   "market_id": "1.259819682",
+   "selection_id": 47972,
+   "handicap": 0.0,
+   "side": "lay",
+   "order_type": "LIMIT",
+   "price": 1.76,
+   "size": 10.11,
+   "size_matched": 0.0,
+   "size_remaining": 10.11,
+   "size_cancelled": 0.0,
+   "size_lapsed": 0.0,
+   "size_voided": 0.0,
+   "average_price_matched": 0.0,
+   "status": "EXECUTABLE",
+   "persistence": "PERSIST",
+   "placed_at": "2026-07-10T19:25:10.567000+00:00",
+   "matched_at": null,
+   "source": "scalper",
+   "_ms": 1783711511268,
+   "_ordine": "140106789009135470",
+   "_trade_id": "62ba6747-8256-47bd-834c-b8a1016f4f1e",
+   "_strategia": "mu35797769",
+   "_sostituisce": null
+  },
+  {
+   "bet_id": "100000000006",
+   "client_order_ref": "d30755a527963-140106789009135470",
+   "request_id": null,
+   "mode": "live",
+   "event_id": "35797769",
+   "market_id": "1.259819682",
+   "selection_id": 47972,
+   "handicap": 0.0,
+   "side": "lay",
+   "order_type": "LIMIT",
+   "price": 1.76,
+   "size": 10.11,
+   "size_matched": 10.11,
+   "size_remaining": 0.0,
+   "size_cancelled": 0.0,
+   "size_lapsed": 0.0,
+   "size_voided": 0.0,
+   "average_price_matched": 1.76,
+   "status": "EXECUTION_COMPLETE",
+   "persistence": "PERSIST",
+   "placed_at": "2026-07-10T19:25:10.567000+00:00",
+   "matched_at": "2026-07-10T19:27:37.269000+00:00",
+   "source": "scalper",
+   "_ms": 1783711657478,
+   "_ordine": "140106789009135470",
+   "_trade_id": "62ba6747-8256-47bd-834c-b8a1016f4f1e",
+   "_strategia": "mu35797769",
+   "_sostituisce": null
+  }
+ ],
+ "ordini": 6,
+ "violazioni": [],
+ "note": [
+  "qualita' registrazione: COMPLETE 95.4%",
+  "control della UI: mode=maker dry_run=False stake=25 params=[('entry_stop_before_s', 420), ('event_loss_cap', 1.5), ('event_profit_target', 1), ('flatten_before_s', 180), ('ht_mode', False), ('media_a_clic', True), ('media_commissione_pct', 5.0), ('media_max_rientri', 5), ('media_max_spread_ticks', 2), ('media_mercato', 'OVER_UNDER_25'), ('media_min_flow', 10.0), ('media_min_size', 300.0), ('media_mode', True), ('media_obiettivi_live', [0.0, 0.3, 1.0]), ('media_obiettivo', 0.0), ('media_quota_max', 4.0), ('media_quota_min', 1.2), ('media_rientro_auto_filtri', False), ('media_rischio_max', 0.0), ('media_stake', 10.0), ('media_stop_ingressi_s', 420.0), ('media_tick_chiusura', 2), ('media_tick_rientro', 2), ('media_ttl_punta_ms', 30000), ('min_flow', 10), ('min_size', 300), ('one_green_per_phase', True), ('price_max', 4.6), ('price_min', 1.5), ('scalp_ticks', 1), ('sniper_mode', False), ('sniper_stake', 10), ('stop_ticks', 1), ('uscite_automatiche', True)]",
+  "SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (params `uscite_automatiche=True`, come li scrive l'interruttore della UI su AUTOMATICHE)",
+  "limiti dichiarati: catalogo sintetizzato dai marketDefinition; scanner non usato (lo scalper legge il book); orologio di mercato per `time.time`; settlement non raggiunto (fine vita della sessione); theta fuori perimetro; sniper spento (scenari `sniper*` per lo sniper)",
+  "MEDIA UNDER: mercato OVER_UNDER_25 -> 1.259819682, Under 47972; maker e sniper non armati; controlli M1-M11 + S6; B2 e K5 del maker non applicati (posizione in gioco per progetto)",
+  "ATTIVA ADESSO: sessione armata dal pulsante (media_a_clic); clic agli istanti ['pre-match, 30\\'35\" al fischio', 'in gioco al 24\\'25\"'] (dal_ms/clic_ms del chiamante); reazione concessa 15000 ms; fatti del raw: inizio 1783701106771, fischio 1783710000000, in gioco 1783710034616, sospensioni in gioco [('in gioco al 29\\'25\"', 2.8)]",
+  "parita' paper/live: 51 parametri della strategia confrontati, diversi 0; client paper {'min_bet_validation': False, 'order_stream': True, 'paper_trade': True} / live {'min_bet_validation': False, 'order_stream': True, 'paper_trade': False}",
+  "sessioni: {'prima': 'finita'}; stato finale 'done' (causa della fine: ?)",
+  "book in ritardo: 1548843; lapse al fischio: 0; lapse alla sospensione: 0; righe di specchio catturate: 37729",
+  "fasi viste: pre-match, finestra-flatten, in-gioco, fine-sessione",
+  "uscite EFFETTIVE delle strategie a fine sessione: MANUALI",
+  "MEDIA UNDER: stato finale FINE; sessioni della modalita' 1; cicli chiusi 2; ordini piazzati (le azioni del referto) 6; eventi {'media_ingresso': 2, 'media_comando_eseguito': 2, 'media_punta_abbinata': 3, 'media_banca': 3, 'media_annullo': 2, 'media_rientro': 1, 'media_live': 1, 'media_banca_abbinata': 3, 'media_ciclo_chiuso': 2, 'media_attesa_clic': 2, 'media_sospeso': 2, 'media_riaperto': 1}",
+  "MEDIA UNDER ciclo 1: ingresso 10.00 @2.20 (abbinato 10.00, pre-match, 30'32\" al fischio); rientro 1 @2.24: esatto 10.19, piazzato 10.00, abbinato 1.49; totale puntato massimo 11.49; banca finale 11.52 @2.20 PERSIST, abbinata 11.52 (ultimo abbinamento: in gioco al 9'53\"), a fine replay abbinata per intero; profitto lordo +0.02, netto +0.02 [CHIUSO]",
+  "MEDIA UNDER ciclo 2: ingresso 10.00 @1.78 (abbinato 10.00, in gioco al 24'26\"); totale puntato massimo 10.00; banca finale 10.11 @1.76 PERSIST, abbinata 10.11 (ultimo abbinamento: in gioco al 27'03\"), a fine replay abbinata per intero; profitto lordo +0.11, netto +0.10 [CHIUSO]",
+  "MEDIA UNDER P&L del replay: lordo +0.13 | commissione 0.01 (5.0%) | NETTO +0.13 EUR (dagli ordini abbinati della modalita'; non e' il metro della certificazione: il metro e' la condotta)",
+  "MEDIA UNDER: letture degli ordini del conto (`betfair_live_orders`) 144 su 2773 battiti della sessione (soldi veri: solo a posizione aperta, al piu' una per battito); fonte finale del riquadro: solo ordini del bot: gli ordini messi a mano dal sito o dal terminale NON sono visti da questa sessione",
+  "MEDIA UNDER: controlli M sollecitati {'M1': 7948, 'M2': 6910, 'M3': 6910, 'M4': 6910, 'M5': 7948, 'M6': 2165, 'M11': 2170, 'M7': 6444, 'M8': 7948, 'M9': 3, 'M10': 11710}; MAI sollecitati (non lo so): nessuno",
+  "ATTIVA ADESSO clic clic-1-1783708200000 (pre-match, 30'35\" al fischio): letto dalla sessione pre-match, 30'33\" al fischio; per il banco ESEGUIBILE; prima punta 140106788587496440 @2.2 per 10.0 a pre-match, 30'33\" al fischio",
+  "ATTIVA ADESSO clic clic-2-1783711500000 (in gioco al 24'25\"): letto dalla sessione in gioco al 24'26\"; per il banco ESEGUIBILE; prima punta 140106789008431870 @1.78 per 10.0 a in gioco al 24'26\"",
+  "ATTIVA ADESSO ciclo 1: prima punta 140106788587496440 @2.2 a pre-match, 30'33\" al fischio, partita da CLIC (clic-1-1783708200000)",
+  "ATTIVA ADESSO ciclo 2: prima punta 140106789008431870 @1.78 a in gioco al 24'26\", partita da CLIC (clic-2-1783711500000)",
+  "ATTIVA ADESSO: ultimo comando scritto dalla sessione {'id': 'clic-2-1783711500000', 'esito': 'eseguito', 'motivo': None, 'inviato_ms': 1783711500077.0, 'ricevuto_ms': 1783711500176.0, 'deciso_ms': 1783711499283.0, 'prezzo': 1.78, 'importo': 10.0, 'in_gioco': True}; stato finale FINE",
+  "ATTIVA ADESSO: controlli M12-M18 sollecitati {'M12': 7948, 'M13': 5, 'M14': 7948, 'M15': 7936}; MAI sollecitati (non lo so): M16, M17, M18",
+  "stati dello slot MAI visti: CANCELLING, DONE, FLATTENING, IDLE, LOCKING, QUOTING, QUOTING2",
+  "chiamate REST della sessione (registrate, mai eseguite): list_current_orders"
+ ],
+ "parametri_usati": {
+  "media_stake": 10.0,
+  "media_obiettivo": 0.0,
+  "media_tick_chiusura": 2,
+  "media_tick_rientro": 2,
+  "media_max_rientri": 5,
+  "media_rischio_max": 0.0,
+  "media_quota_min": 1.2,
+  "media_quota_max": 4.0,
+  "media_min_size": 300.0,
+  "media_min_flow": 10.0,
+  "media_max_spread_ticks": 2,
+  "media_stop_ingressi_s": 420.0,
+  "media_ttl_punta_ms": 30000,
+  "media_commissione_pct": 5.0,
+  "media_rientro_auto_filtri": false
+ },
+ "parametri_cambiati": {},
+ "dal_ms": 1783708200000,
+ "accensione": null,
+ "clic_ms": [
+  1783711500000
+ ],
+ "versione": 2,
+ "richiesta": {
+  "dal_ms": 1783708200000,
+  "clic_ms": [
+   1783711500000
+  ],
+  "parametri": {}
+ },
+ "conferme": {
+  "dal_ms": true,
+  "clic_ms": [
+   {
+    "ms": 1783711500000,
+    "ricevuto": true
+   }
+  ]
+ },
+ "esiti_mercati": {
+  "1.259819674": {
+   "market_type": "MATCH_ODDS",
+   "runners": {
+    "22": "WINNER",
+    "29578": "LOSER",
+    "58805": "LOSER"
+   },
+   "ordine_runner": [
+    22,
+    29578,
+    58805
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1783710034616,
+   "chiuso_ms": 1783717286994,
+   "aliquota": 0.05,
+   "vincitori": [
+    22
+   ]
+  },
+  "1.259819687": {
+   "market_type": "HALF_TIME_FULL_TIME",
+   "runners": {
+    "1340369": "LOSER",
+    "1340370": "LOSER",
+    "1340372": "LOSER",
+    "1340373": "WINNER",
+    "3710152": "LOSER",
+    "1340374": "LOSER",
+    "1340376": "LOSER",
+    "1340377": "LOSER",
+    "1340378": "LOSER"
+   },
+   "ordine_runner": [
+    1340369,
+    1340370,
+    1340372,
+    1340373,
+    3710152,
+    1340374,
+    1340376,
+    1340377,
+    1340378
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1783710034616,
+   "chiuso_ms": 1783717388310,
+   "aliquota": 0.05,
+   "vincitori": [
+    1340373
+   ]
+  },
+  "1.259819684": {
+   "market_type": "HALF_TIME_SCORE",
+   "runners": {
+    "1": "LOSER",
+    "3": "WINNER",
+    "7": "LOSER",
+    "2": "LOSER",
+    "5": "LOSER",
+    "6": "LOSER",
+    "4": "LOSER",
+    "9": "LOSER",
+    "8": "LOSER",
+    "4506345": "LOSER"
+   },
+   "ordine_runner": [
+    1,
+    3,
+    7,
+    2,
+    5,
+    6,
+    4,
+    9,
+    8,
+    4506345
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1783710034616,
+   "chiuso_ms": 1783713057191,
+   "aliquota": 0.05,
+   "vincitori": [
+    3
+   ]
+  },
+  "1.259819679": {
+   "market_type": "HALF_TIME",
+   "runners": {
+    "22": "LOSER",
+    "29578": "LOSER",
+    "58805": "WINNER"
+   },
+   "ordine_runner": [
+    22,
+    29578,
+    58805
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1783710034616,
+   "chiuso_ms": 1783713054221,
+   "aliquota": 0.05,
+   "vincitori": [
+    58805
+   ]
+  },
+  "1.259819682": {
+   "market_type": "OVER_UNDER_25",
+   "runners": {
+    "47972": "LOSER",
+    "47973": "WINNER"
+   },
+   "ordine_runner": [
+    47972,
+    47973
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1783710034616,
+   "chiuso_ms": 1783716707062,
+   "aliquota": 0.05,
+   "vincitori": [
+    47973
+   ]
+  },
+  "1.259819685": {
+   "market_type": "OVER_UNDER_15",
+   "runners": {
+    "1221385": "LOSER",
+    "1221386": "WINNER"
+   },
+   "ordine_runner": [
+    1221385,
+    1221386
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1783710034616,
+   "chiuso_ms": 1783712536335,
+   "aliquota": 0.05,
+   "vincitori": [
+    1221386
+   ]
+  },
+  "1.259819681": {
+   "market_type": "CORRECT_SCORE",
+   "runners": {
+    "1": "LOSER",
+    "4": "LOSER",
+    "9": "LOSER",
+    "16": "LOSER",
+    "2": "LOSER",
+    "3": "LOSER",
+    "8": "LOSER",
+    "15": "LOSER",
+    "5": "LOSER",
+    "6": "WINNER",
+    "7": "LOSER",
+    "14": "LOSER",
+    "10": "LOSER",
+    "11": "LOSER",
+    "12": "LOSER",
+    "13": "LOSER",
+    "9063254": "LOSER",
+    "9063255": "LOSER",
+    "9063256": "LOSER"
+   },
+   "ordine_runner": [
+    1,
+    4,
+    9,
+    16,
+    2,
+    3,
+    8,
+    15,
+    5,
+    6,
+    7,
+    14,
+    10,
+    11,
+    12,
+    13,
+    9063254,
+    9063255,
+    9063256
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1783710034616,
+   "chiuso_ms": 1783717350938,
+   "aliquota": 0.05,
+   "vincitori": [
+    6
+   ]
+  },
+  "1.259819672": {
+   "market_type": "FIRST_HALF_GOALS_25",
+   "runners": {
+    "47972": "WINNER",
+    "47973": "LOSER"
+   },
+   "ordine_runner": [
+    47972,
+    47973
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1783710034616,
+   "chiuso_ms": 1783713052151,
+   "aliquota": 0.05,
+   "vincitori": [
+    47972
+   ]
+  },
+  "1.259819680": {
+   "market_type": "OVER_UNDER_55",
+   "runners": {
+    "1485567": "WINNER",
+    "1485568": "LOSER"
+   },
+   "ordine_runner": [
+    1485567,
+    1485568
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1783710034616,
+   "chiuso_ms": 1783717366229,
+   "aliquota": 0.05,
+   "vincitori": [
+    1485567
+   ]
+  },
+  "1.259819686": {
+   "market_type": "OVER_UNDER_35",
+   "runners": {
+    "1222344": "WINNER",
+    "1222345": "LOSER"
+   },
+   "ordine_runner": [
+    1222344,
+    1222345
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1783710034616,
+   "chiuso_ms": 1783717305036,
+   "aliquota": 0.05,
+   "vincitori": [
+    1222344
+   ]
+  },
+  "1.259819683": {
+   "market_type": "OVER_UNDER_45",
+   "runners": {
+    "1222347": "WINNER",
+    "1222346": "LOSER"
+   },
+   "ordine_runner": [
+    1222347,
+    1222346
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1783710034616,
+   "chiuso_ms": 1783717354192,
+   "aliquota": 0.05,
+   "vincitori": [
+    1222347
+   ]
+  },
+  "1.259819673": {
+   "market_type": "BOTH_TEAMS_TO_SCORE",
+   "runners": {
+    "30246": "WINNER",
+    "30247": "LOSER"
+   },
+   "ordine_runner": [
+    30246,
+    30247
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1783710034616,
+   "chiuso_ms": 1783712545367,
+   "aliquota": 0.05,
+   "vincitori": [
+    30246
+   ]
+  },
+  "1.259819677": {
+   "market_type": "FIRST_HALF_GOALS_15",
+   "runners": {
+    "1221385": "LOSER",
+    "1221386": "WINNER"
+   },
+   "ordine_runner": [
+    1221385,
+    1221386
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1783710034616,
+   "chiuso_ms": 1783712535331,
+   "aliquota": 0.05,
+   "vincitori": [
+    1221386
+   ]
+  },
+  "1.259819689": {
+   "market_type": "TEAM_B_1",
+   "runners": {
+    "6421003": "LOSER",
+    "6429983": "LOSER",
+    "151478": "WINNER"
+   },
+   "ordine_runner": [
+    6421003,
+    6429983,
+    151478
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1783710034616,
+   "chiuso_ms": 1783717377276,
+   "aliquota": 0.05,
+   "vincitori": [
+    151478
+   ]
+  },
+  "1.259819678": {
+   "market_type": "OVER_UNDER_65",
+   "runners": {
+    "2542448": "WINNER",
+    "2542449": "LOSER"
+   },
+   "ordine_runner": [
+    2542448,
+    2542449
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1783710034616,
+   "chiuso_ms": 1783717364225,
+   "aliquota": 0.05,
+   "vincitori": [
+    2542448
+   ]
+  },
+  "1.259819676": {
+   "market_type": "OVER_UNDER_05",
+   "runners": {
+    "5851482": "LOSER",
+    "5851483": "WINNER"
+   },
+   "ordine_runner": [
+    5851482,
+    5851483
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1783710034616,
+   "chiuso_ms": 1783711878765,
+   "aliquota": 0.05,
+   "vincitori": [
+    5851483
+   ]
+  },
+  "1.259819688": {
+   "market_type": "TEAM_A_1",
+   "runners": {
+    "6429990": "WINNER",
+    "6421006": "LOSER",
+    "151478": "LOSER"
+   },
+   "ordine_runner": [
+    6429990,
+    6421006,
+    151478
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1783710034987,
+   "chiuso_ms": 1783717379278,
+   "aliquota": 0.05,
+   "vincitori": [
+    6429990
+   ]
+  },
+  "1.259819692": {
+   "market_type": "DOUBLE_CHANCE",
+   "runners": {
+    "6384646": "WINNER",
+    "6384647": "LOSER",
+    "6384648": "WINNER"
+   },
+   "ordine_runner": [
+    6384646,
+    6384647,
+    6384648
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1783710034616,
+   "chiuso_ms": 1783717373072,
+   "aliquota": 0.05,
+   "vincitori": [
+    6384646,
+    6384648
+   ]
+  },
+  "1.259819675": {
+   "market_type": "FIRST_HALF_GOALS_05",
+   "runners": {
+    "5851482": "LOSER",
+    "5851483": "WINNER"
+   },
+   "ordine_runner": [
+    5851482,
+    5851483
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1783710034616,
+   "chiuso_ms": 1783711883042,
+   "aliquota": 0.05,
+   "vincitori": [
+    5851483
+   ]
+  },
+  "1.259820217": {
+   "market_type": "FIRST_GOAL_SCORER",
+   "runners": {
+    "12421008": "LOSER",
+    "55105311": "LOSER",
+    "9129992": "LOSER",
+    "16420685": "LOSER",
+    "39320736": "LOSER",
+    "2774109": "LOSER",
+    "11474595": "LOSER",
+    "11766426": "LOSER",
+    "28684404": "LOSER",
+    "50552627": "LOSER",
+    "4138640": "LOSER",
+    "59307808": "LOSER",
+    "10735721": "WINNER",
+    "55435743": "LOSER",
+    "10582858": "LOSER",
+    "11813597": "LOSER",
+    "95394677": "LOSER",
+    "21852780": "LOSER",
+    "40606607": "LOSER",
+    "12524228": "LOSER",
+    "11765496": "LOSER",
+    "18038790": "LOSER",
+    "4946920": "LOSER",
+    "95394650": "LOSER",
+    "25939719": "LOSER",
+    "47006442": "LOSER",
+    "27977285": "LOSER",
+    "95394667": "LOSER",
+    "10064063": "LOSER",
+    "7649532": "LOSER",
+    "19870111": "LOSER",
+    "42217531": "LOSER",
+    "3268274": "LOSER",
+    "19769896": "LOSER",
+    "13999730": "LOSER",
+    "7002507": "LOSER",
+    "59857741": "LOSER",
+    "5931155": "LOSER",
+    "42512354": "LOSER",
+    "35504992": "LOSER",
+    "11765514": "LOSER",
+    "40293507": "LOSER",
+    "69151149": "LOSER",
+    "12156471": "LOSER",
+    "36667596": "LOSER",
+    "87470821": "LOSER"
+   },
+   "ordine_runner": [
+    12421008,
+    55105311,
+    9129992,
+    16420685,
+    39320736,
+    2774109,
+    11474595,
+    11766426,
+    28684404,
+    50552627,
+    4138640,
+    59307808,
+    10735721,
+    55435743,
+    10582858,
+    11813597,
+    95394677,
+    21852780,
+    40606607,
+    12524228,
+    11765496,
+    18038790,
+    4946920,
+    95394650,
+    25939719,
+    47006442,
+    27977285,
+    95394667,
+    10064063,
+    7649532,
+    19870111,
+    42217531,
+    3268274,
+    19769896,
+    13999730,
+    7002507,
+    59857741,
+    5931155,
+    42512354,
+    35504992,
+    11765514,
+    40293507,
+    69151149,
+    12156471,
+    36667596,
+    87470821
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1783710034966,
+   "chiuso_ms": 1783717754501,
+   "aliquota": 0.05,
+   "vincitori": [
+    10735721
+   ]
+  },
+  "1.259819691": {
+   "market_type": "OVER_UNDER_85",
+   "runners": {
+    "2407528": "WINNER",
+    "2407529": "LOSER"
+   },
+   "ordine_runner": [
+    2407528,
+    2407529
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1783710034616,
+   "chiuso_ms": 1783717381285,
+   "aliquota": 0.05,
+   "vincitori": [
+    2407528
+   ]
+  },
+  "1.259819690": {
+   "market_type": "OVER_UNDER_75",
+   "runners": {
+    "1485572": "WINNER",
+    "1485573": "LOSER"
+   },
+   "ordine_runner": [
+    1485572,
+    1485573
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1783710034616,
+   "chiuso_ms": 1783717372348,
+   "aliquota": 0.05,
+   "vincitori": [
+    1485572
+   ]
+  }
+ },
+ "conto_banco": {
+  "lordo": 0.14,
+  "commissione": 0.01,
+  "netto": 0.13,
+  "mercati": {
+   "1.259819682": 0.14
+  },
+  "mercati_non_regolati": []
+ },
+ "conto_flumine": null,
+ "conto_dichiarato": {
+  "fonte": "media_conto",
+  "metodo": "cicli",
+  "lordo": 0.13,
+  "commissione": 0.01,
+  "netto": 0.13,
+  "aliquota": 0.05,
+  "cicli_esito_ignoto": 0
+ },
+ "cicli_bot": [
+  {
+   "ciclo": 1,
+   "ordini": 4,
+   "rientri": [
+    {
+     "quota": 2.24,
+     "esatto": 10.19,
+     "piazzato": 10.0,
+     "abbinato": 1.49
+    }
+   ],
+   "puntato": 11.49,
+   "banca": {
+    "importo": 11.52,
+    "quota": 2.2,
+    "abbinato": 11.52,
+    "dove": "in gioco al 9'53\"",
+    "fine": "abbinata per intero"
+   },
+   "esito": "CHIUSO",
+   "lordo": 0.02,
+   "netto": 0.02,
+   "inizio_ms": 1783708201953,
+   "fine_ms": 1783710628105,
+   "ordini_id": [
+    "140106788587496440",
+    "140106788587546050",
+    "140106788683209110",
+    "140106788683279870"
+   ],
+   "riga": "ingresso 10.00 @2.20 (abbinato 10.00, pre-match, 30'32\" al fischio); rientro 1 @2.24: esatto 10.19, piazzato 10.00, abbinato 1.49; totale puntato massimo 11.49; banca finale 11.52 @2.20 PERSIST, abbinata 11.52 (ultimo abbinamento: in gioco al 9'53\"), a fine replay abbinata per intero; profitto lordo +0.02, netto +0.02 [CHIUSO]",
+   "origine": "clic",
+   "clic": "clic-1-1783708200000",
+   "prima_punta_ordine": "140106788587496440",
+   "prima_punta_ms": 1783708201953
+  },
+  {
+   "ciclo": 2,
+   "ordini": 2,
+   "rientri": [],
+   "puntato": 10.0,
+   "banca": {
+    "importo": 10.11,
+    "quota": 1.76,
+    "abbinato": 10.11,
+    "dove": "in gioco al 27'03\"",
+    "fine": "abbinata per intero"
+   },
+   "esito": "CHIUSO",
+   "lordo": 0.11,
+   "netto": 0.1,
+   "inizio_ms": 1783711500176,
+   "fine_ms": 1783711657478,
+   "ordini_id": [
+    "140106789008431870",
+    "140106789009135470"
+   ],
+   "riga": "ingresso 10.00 @1.78 (abbinato 10.00, in gioco al 24'26\"); totale puntato massimo 10.00; banca finale 10.11 @1.76 PERSIST, abbinata 10.11 (ultimo abbinamento: in gioco al 27'03\"), a fine replay abbinata per intero; profitto lordo +0.11, netto +0.10 [CHIUSO]",
+   "origine": "clic",
+   "clic": "clic-2-1783711500000",
+   "prima_punta_ordine": "140106789008431870",
+   "prima_punta_ms": 1783711500176
+  }
+ ],
+ "clic_bot": [
+  {
+   "id": "clic-1-1783708200000",
+   "clic_ms": 1783708200000,
+   "mandato_ms": 1783708200030,
+   "letto_ms": 1783708201953,
+   "esito": "eseguito",
+   "motivo": null,
+   "prima_punta": {
+    "ordine": "140106788587496440",
+    "quota": 2.2,
+    "importo": 10.0,
+    "ms": 1783708201953
+   }
+  },
+  {
+   "id": "clic-2-1783711500000",
+   "clic_ms": 1783711500000,
+   "mandato_ms": 1783711500077,
+   "letto_ms": 1783711500176,
+   "esito": "eseguito",
+   "motivo": null,
+   "prima_punta": {
+    "ordine": "140106789008431870",
+    "quota": 1.78,
+    "importo": 10.0,
+    "ms": 1783711500176
+   }
+  }
+ ],
+ "_secondi": 158.2
+}

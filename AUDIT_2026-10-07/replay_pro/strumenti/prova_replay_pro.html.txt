@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Prova replay professionale</title>
+</head>
+<body class="dark">
+  <div id="root"></div>
+  <script type="module" src="/src/__prova_replay_pro__/main.tsx"></script>
+</body>
+</html>

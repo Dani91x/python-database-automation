@@ -1,0 +1,604 @@
+{
+ "bot": "omega",
+ "scenario": "apertura",
+ "event_id": "35760084",
+ "sport": "calcio",
+ "etichetta": "Omega - v2 con banda di quota fino a 500 (soldi veri simulati)",
+ "modalita": "soldi_veri_simulati",
+ "righe": [
+  {
+   "bet_id": null,
+   "client_order_ref": "df83dddfe12b5-140106786462612710",
+   "request_id": null,
+   "mode": "live",
+   "event_id": "35760084",
+   "market_id": "1.259475532",
+   "selection_id": 13,
+   "handicap": 0.0,
+   "side": "lay",
+   "order_type": "LIMIT",
+   "price": 300.0,
+   "size": 5.26,
+   "size_matched": 0.0,
+   "size_remaining": 5.26,
+   "size_cancelled": 0.0,
+   "size_lapsed": 0.0,
+   "size_voided": 0.0,
+   "average_price_matched": 0.0,
+   "status": "PENDING",
+   "persistence": "LAPSE",
+   "placed_at": null,
+   "matched_at": null,
+   "source": "omega",
+   "_ms": 1782839645747,
+   "_ordine": "140106786462612710",
+   "_trade_id": "52bd4173-96c8-4fa6-bc65-63a7a5acfd6d",
+   "_strategia": "OmegaCert",
+   "_sostituisce": null
+  },
+  {
+   "bet_id": "100000000001",
+   "client_order_ref": "df83dddfe12b5-140106786462612710",
+   "request_id": null,
+   "mode": "live",
+   "event_id": "35760084",
+   "market_id": "1.259475532",
+   "selection_id": 13,
+   "handicap": 0.0,
+   "side": "lay",
+   "order_type": "LIMIT",
+   "price": 300.0,
+   "size": 5.26,
+   "size_matched": 5.26,
+   "size_remaining": 0.0,
+   "size_cancelled": 0.0,
+   "size_lapsed": 0.0,
+   "size_voided": 0.0,
+   "average_price_matched": 300.0,
+   "status": "EXECUTION_COMPLETE",
+   "persistence": "LAPSE",
+   "placed_at": "2026-06-30T17:14:10.919000+00:00",
+   "matched_at": "2026-06-30T17:14:10.919000+00:00",
+   "source": "omega",
+   "_ms": 1782839650919,
+   "_ordine": "140106786462612710",
+   "_trade_id": "52bd4173-96c8-4fa6-bc65-63a7a5acfd6d",
+   "_strategia": "OmegaCert",
+   "_sostituisce": null,
+   "_profitto_flumine": 5.26
+  }
+ ],
+ "ordini": 1,
+ "violazioni": [],
+ "note": [
+  "attivita' del servizio: skip x3, flusso_non_dichiarato x1, live_fok_fallback x1, place x1, settle x1, goal_stop x1",
+  "righe per stato: {'won': 1}",
+  "riga 1 ft_cs lay '3 - 3' stato=won chiesto=5.26 abbinato=5.26 prezzo=300.0 residuo=None liability=1572.74 bet_id=100000000001 pnl=5.0 closes=None fonte_lambda=pre_ko_odds",
+  "motivi dichiarati: no_runner_by_model x2 | no_live_state x1",
+  "fill: 1 abbinamenti su 1 ordini per 5.26 EUR (prezzi [300.0])",
+  "P&L del replay: lordo +5.26 | commissione 0.26 (5.0%) | NETTO +5.00 EUR (non e' il metro: il metro e' la condotta)",
+  "bet delay: 509 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0",
+  "righe di scan scritte dallo SCANNER VERO: 463 | letture del feed di Omega: 335 | giri senza riga nel feed: 1",
+  "catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)",
+  "chiamate al mercato: list_today_football_events x473, read_market x108",
+  "gambe aperte per fase: {'ft_cs': 1}",
+  "gambe NON aperte, per motivo: ht_cs:no_runner_by_model x59 | ft_cs:no_runner_by_model x5"
+ ],
+ "parametri_usati": {
+  "daily_goal": 5.0,
+  "min_stake": 0.5,
+  "price_min": 20.0,
+  "price_max": 500.0,
+  "ht_entry_min": 20,
+  "ht_entry_max": 40,
+  "ft_entry_min": 50,
+  "ft_entry_max": 80,
+  "model_p_max_pct": 2.0,
+  "model_min_goal_distance": 2,
+  "stop_on_goal": true,
+  "min_lay_liquidity": 5.0,
+  "greenup_trigger_distance": 1,
+  "greenup_price_trigger_ratio": 0.5,
+  "greenup_settle_delay_s": 30,
+  "greenup_take_profit_frac": 0.9,
+  "greenup_take_profit_minute": 80,
+  "max_liability_per_match": 0.0,
+  "max_open_liability": 0.0,
+  "daily_loss_cap": 0.0
+ },
+ "parametri_cambiati": {},
+ "dal_ms": null,
+ "accensione": null,
+ "clic_ms": null,
+ "versione": 2,
+ "richiesta": {
+  "dal_ms": null,
+  "clic_ms": null,
+  "parametri": {}
+ },
+ "conferme": {
+  "dal_ms": null,
+  "clic_ms": []
+ },
+ "esiti_mercati": {
+  "1.259475529": {
+   "market_type": "OVER_UNDER_65",
+   "runners": {
+    "2542448": "WINNER",
+    "2542449": "LOSER"
+   },
+   "ordine_runner": [
+    2542448,
+    2542449
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1782835225478,
+   "chiuso_ms": 1782842051294,
+   "aliquota": 0.05,
+   "vincitori": [
+    2542448
+   ]
+  },
+  "1.259475528": {
+   "market_type": "FIRST_HALF_GOALS_15",
+   "runners": {
+    "1221385": "LOSER",
+    "1221386": "WINNER"
+   },
+   "ordine_runner": [
+    1221385,
+    1221386
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1782835225478,
+   "chiuso_ms": 1782836981313,
+   "aliquota": 0.05,
+   "vincitori": [
+    1221386
+   ]
+  },
+  "1.259475531": {
+   "market_type": "OVER_UNDER_55",
+   "runners": {
+    "1485567": "WINNER",
+    "1485568": "LOSER"
+   },
+   "ordine_runner": [
+    1485567,
+    1485568
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1782835225478,
+   "chiuso_ms": 1782842051294,
+   "aliquota": 0.05,
+   "vincitori": [
+    1485567
+   ]
+  },
+  "1.259475533": {
+   "market_type": "OVER_UNDER_25",
+   "runners": {
+    "47972": "LOSER",
+    "47973": "WINNER"
+   },
+   "ordine_runner": [
+    47972,
+    47973
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1782835225478,
+   "chiuso_ms": 1782838077751,
+   "aliquota": 0.05,
+   "vincitori": [
+    47973
+   ]
+  },
+  "1.259475537": {
+   "market_type": "OVER_UNDER_35",
+   "runners": {
+    "1222344": "LOSER",
+    "1222345": "WINNER"
+   },
+   "ordine_runner": [
+    1222344,
+    1222345
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1782835225284,
+   "chiuso_ms": 1782840325616,
+   "aliquota": 0.05,
+   "vincitori": [
+    1222345
+   ]
+  },
+  "1.259475536": {
+   "market_type": "OVER_UNDER_15",
+   "runners": {
+    "1221385": "LOSER",
+    "1221386": "WINNER"
+   },
+   "ordine_runner": [
+    1221385,
+    1221386
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1782835225478,
+   "chiuso_ms": 1782836982315,
+   "aliquota": 0.05,
+   "vincitori": [
+    1221386
+   ]
+  },
+  "1.259475534": {
+   "market_type": "OVER_UNDER_45",
+   "runners": {
+    "1222347": "WINNER",
+    "1222346": "LOSER"
+   },
+   "ordine_runner": [
+    1222347,
+    1222346
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1782835225478,
+   "chiuso_ms": 1782842053299,
+   "aliquota": 0.05,
+   "vincitori": [
+    1222347
+   ]
+  },
+  "1.259475524": {
+   "market_type": "BOTH_TEAMS_TO_SCORE",
+   "runners": {
+    "30246": "LOSER",
+    "30247": "WINNER"
+   },
+   "ordine_runner": [
+    30246,
+    30247
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1782835225478,
+   "chiuso_ms": 1782842055304,
+   "aliquota": 0.05,
+   "vincitori": [
+    30247
+   ]
+  },
+  "1.259475540": {
+   "market_type": "TEAM_B_1",
+   "runners": {
+    "86159437": "LOSER",
+    "23252855": "WINNER",
+    "151478": "LOSER"
+   },
+   "ordine_runner": [
+    86159437,
+    23252855,
+    151478
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1782835225649,
+   "chiuso_ms": 1782842056302,
+   "aliquota": 0.05,
+   "vincitori": [
+    23252855
+   ]
+  },
+  "1.259475532": {
+   "market_type": "CORRECT_SCORE",
+   "runners": {
+    "1": "LOSER",
+    "4": "LOSER",
+    "9": "LOSER",
+    "16": "LOSER",
+    "2": "LOSER",
+    "3": "LOSER",
+    "8": "LOSER",
+    "15": "LOSER",
+    "5": "LOSER",
+    "6": "LOSER",
+    "7": "LOSER",
+    "14": "LOSER",
+    "10": "LOSER",
+    "11": "LOSER",
+    "12": "LOSER",
+    "13": "LOSER",
+    "9063254": "WINNER",
+    "9063255": "LOSER",
+    "9063256": "LOSER"
+   },
+   "ordine_runner": [
+    1,
+    4,
+    9,
+    16,
+    2,
+    3,
+    8,
+    15,
+    5,
+    6,
+    7,
+    14,
+    10,
+    11,
+    12,
+    13,
+    9063254,
+    9063255,
+    9063256
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1782835225478,
+   "chiuso_ms": 1782842056304,
+   "aliquota": 0.05,
+   "vincitori": [
+    9063254
+   ]
+  },
+  "1.259475525": {
+   "market_type": "MATCH_ODDS",
+   "runners": {
+    "206565": "WINNER",
+    "86159298": "LOSER",
+    "58805": "LOSER"
+   },
+   "ordine_runner": [
+    206565,
+    86159298,
+    58805
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1782835225478,
+   "chiuso_ms": 1782842053293,
+   "aliquota": 0.05,
+   "vincitori": [
+    206565
+   ]
+  },
+  "1.259475527": {
+   "market_type": "OVER_UNDER_05",
+   "runners": {
+    "5851482": "LOSER",
+    "5851483": "WINNER"
+   },
+   "ordine_runner": [
+    5851482,
+    5851483
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1782835225478,
+   "chiuso_ms": 1782835750535,
+   "aliquota": 0.05,
+   "vincitori": [
+    5851483
+   ]
+  },
+  "1.259475526": {
+   "market_type": "FIRST_HALF_GOALS_05",
+   "runners": {
+    "5851482": "LOSER",
+    "5851483": "WINNER"
+   },
+   "ordine_runner": [
+    5851482,
+    5851483
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1782835225478,
+   "chiuso_ms": 1782835750534,
+   "aliquota": 0.05,
+   "vincitori": [
+    5851483
+   ]
+  },
+  "1.259475541": {
+   "market_type": "OVER_UNDER_75",
+   "runners": {
+    "1485572": "WINNER",
+    "1485573": "LOSER"
+   },
+   "ordine_runner": [
+    1485572,
+    1485573
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1782835225649,
+   "chiuso_ms": 1782842052297,
+   "aliquota": 0.05,
+   "vincitori": [
+    1485572
+   ]
+  },
+  "1.259475530": {
+   "market_type": "HALF_TIME",
+   "runners": {
+    "206565": "WINNER",
+    "86159298": "LOSER",
+    "58805": "LOSER"
+   },
+   "ordine_runner": [
+    206565,
+    86159298,
+    58805
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1782835225478,
+   "chiuso_ms": 1782838093461,
+   "aliquota": 0.05,
+   "vincitori": [
+    206565
+   ]
+  },
+  "1.259475538": {
+   "market_type": "HALF_TIME_FULL_TIME",
+   "runners": {
+    "1340369": "WINNER",
+    "1340370": "LOSER",
+    "1340372": "LOSER",
+    "1340373": "LOSER",
+    "3710152": "LOSER",
+    "1340374": "LOSER",
+    "1340376": "LOSER",
+    "1340377": "LOSER",
+    "1340378": "LOSER"
+   },
+   "ordine_runner": [
+    1340369,
+    1340370,
+    1340372,
+    1340373,
+    3710152,
+    1340374,
+    1340376,
+    1340377,
+    1340378
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1782835225478,
+   "chiuso_ms": 1782842059312,
+   "aliquota": 0.05,
+   "vincitori": [
+    1340369
+   ]
+  },
+  "1.259475535": {
+   "market_type": "HALF_TIME_SCORE",
+   "runners": {
+    "1": "LOSER",
+    "3": "LOSER",
+    "7": "LOSER",
+    "2": "LOSER",
+    "5": "LOSER",
+    "6": "LOSER",
+    "4": "LOSER",
+    "9": "LOSER",
+    "8": "LOSER",
+    "4506345": "WINNER"
+   },
+   "ordine_runner": [
+    1,
+    3,
+    7,
+    2,
+    5,
+    6,
+    4,
+    9,
+    8,
+    4506345
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1782835225980,
+   "chiuso_ms": 1782838078751,
+   "aliquota": 0.05,
+   "vincitori": [
+    4506345
+   ]
+  },
+  "1.259475523": {
+   "market_type": "FIRST_HALF_GOALS_25",
+   "runners": {
+    "47972": "LOSER",
+    "47973": "WINNER"
+   },
+   "ordine_runner": [
+    47972,
+    47973
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1782835225478,
+   "chiuso_ms": 1782838077748,
+   "aliquota": 0.05,
+   "vincitori": [
+    47973
+   ]
+  },
+  "1.259475542": {
+   "market_type": "OVER_UNDER_85",
+   "runners": {
+    "2407528": "WINNER",
+    "2407529": "LOSER"
+   },
+   "ordine_runner": [
+    2407528,
+    2407529
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1782835225649,
+   "chiuso_ms": 1782842057312,
+   "aliquota": 0.05,
+   "vincitori": [
+    2407528
+   ]
+  },
+  "1.259475539": {
+   "market_type": "TEAM_A_1",
+   "runners": {
+    "23252854": "WINNER",
+    "86159438": "LOSER",
+    "151478": "LOSER"
+   },
+   "ordine_runner": [
+    23252854,
+    86159438,
+    151478
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1782835225478,
+   "chiuso_ms": 1782842057312,
+   "aliquota": 0.05,
+   "vincitori": [
+    23252854
+   ]
+  },
+  "1.259475543": {
+   "market_type": "DOUBLE_CHANCE",
+   "runners": {
+    "6384646": "WINNER",
+    "6384647": "LOSER",
+    "6384648": "WINNER"
+   },
+   "ordine_runner": [
+    6384646,
+    6384647,
+    6384648
+   ],
+   "stato": "CLOSED",
+   "in_gioco_ms": 1782835225649,
+   "chiuso_ms": 1782842057312,
+   "aliquota": 0.05,
+   "vincitori": [
+    6384646,
+    6384648
+   ]
+  }
+ },
+ "conto_banco": {
+  "lordo": 5.26,
+  "commissione": 0.26,
+  "netto": 5.0,
+  "mercati": {
+   "1.259475532": 5.26
+  },
+  "mercati_non_regolati": []
+ },
+ "conto_flumine": {
+  "lordo": 5.26,
+  "mercati": {
+   "1.259475532": 5.26
+  },
+  "ordini_regolati": 1
+ },
+ "conto_dichiarato": {
+  "fonte": "nota",
+  "metodo": "regolamento",
+  "lordo": 5.26,
+  "commissione": 0.26,
+  "aliquota": 0.05,
+  "netto": 5.0,
+  "testo": "P&L del replay: lordo +5.26 | commissione 0.26 (5.0%) | NETTO +5.00 EUR (non e' il metro: il metro e' la condotta)"
+ },
+ "_secondi": 25.1
+}

@@ -1,58 +1,60 @@
 // ============================================================================
-// BotOrdersPanel — "APPLICA BOT" del Match Replay (06/10): gli ordini del bot
-// applicato (codice di produzione sul banco) come erano all'istante corrente
-// della timeline. Sola lettura. Gli stessi ordini compaiono sul ladder.
+// BotOrdersPanel — gli ordini del bot applicato COME ERANO all'istante del
+// cursore (06/10; rifatto il 07/10 sera). UNA riga per ORDINE (identita' vera
+// dell'ordine, non del ref: un riprezzo e' un ordine nuovo), con lo stato
+// leggibile: un ordine con abbinato 0 tolto dal mercato e' «annullato» o
+// «sostituito» (o «scaduto»), MAI «chiuso». Di serie si vedono gli ordini
+// sul book e quelli con abbinamenti; gli ordini tolti senza abbinamenti sono
+// nel registro delle operazioni.
 // ============================================================================
-import type { LiveOrderRow } from '@/lib/liveOrders';
+import { useState } from 'react';
+import { eur, nomeLato, statoOrdineTesto, type OrdineAlMs } from '@/lib/replayOperazioni';
 
-const STATO: Record<string, string> = {
-    PENDING: 'in volo',
-    EXECUTABLE: 'in coda',
-    EXECUTION_COMPLETE: 'chiuso',
-    EXPIRED: 'scaduto',
-    VIOLATION: 'rifiutato',
-};
-
-export function BotOrdersPanel({ titolo, ordini, nomeMercato, nomeSelezione }: {
+export function BotOrdersPanel({ titolo, ordini, nomeMercato, nomeSelezione, onSeek }: {
     titolo: string;
-    ordini: LiveOrderRow[];
+    ordini: OrdineAlMs[];
     nomeMercato: (marketId: string) => string;
     nomeSelezione: (marketId: string, selectionId: number) => string;
+    onSeek?: (ms: number, marketId: string, selectionId: number) => void;
 }) {
+    const [tutti, setTutti] = useState(false);
+    const visibili = tutti ? ordini : ordini.filter(o => o.vivo || o.abbinato > 0.005);
+    const vivi = ordini.filter(o => o.vivo).length;
     return (
         <div className="rounded-xl border border-amber-400/30 bg-amber-500/5 p-2" data-testid="ordini-bot">
-            <div className="text-[11px] font-bold text-amber-200 mb-1">
-                🤖 {titolo} — {ordini.length} ordini a questo istante
-                <span className="text-white/40 font-normal"> (sola lettura, anche sul ladder)</span>
+            <div className="text-[11px] font-bold text-amber-200 mb-1 flex flex-wrap items-center gap-2">
+                <span>🤖 {titolo} — al cursore: {vivi} ordini sul book, {ordini.filter(o => o.abbinato > 0.005).length} con abbinamenti</span>
+                <label className="font-normal text-white/50 flex items-center gap-1">
+                    <input type="checkbox" checked={tutti} onChange={e => setTutti(e.target.checked)} />
+                    mostra anche i {ordini.length - visibili.length} tolti senza abbinamenti
+                </label>
             </div>
-            {ordini.length === 0 ? (
-                <div className="text-[11px] text-white/40">Nessun ordine del bot fino a questo istante della timeline.</div>
+            {visibili.length === 0 ? (
+                <div className="text-[11px] text-white/40">Nessun ordine del bot sul book o abbinato a questo istante.</div>
             ) : (
                 <table className="w-full text-[11px] text-white/80">
                     <thead className="text-white/40">
                         <tr className="text-left">
                             <th className="px-1">Mercato</th><th className="px-1">Selezione</th><th className="px-1">Lato</th>
                             <th className="px-1 text-right">Quota</th><th className="px-1 text-right">Importo</th>
-                            <th className="px-1 text-right">Abbinato</th><th className="px-1 text-right">Resto</th>
-                            <th className="px-1">Stato</th><th className="px-1">Persist.</th>
+                            <th className="px-1 text-right">Abbinato</th><th className="px-1 text-right">Sul book</th>
+                            <th className="px-1">Stato</th><th className="px-1">Bet</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {ordini.map(o => (
-                            <tr key={o.client_order_ref ?? o.bet_id ?? o.id} className="border-t border-white/5">
-                                <td className="px-1">{nomeMercato(o.market_id)}</td>
-                                <td className="px-1">{nomeSelezione(o.market_id, o.selection_id)}</td>
-                                <td className={`px-1 font-bold ${o.side === 'back' ? 'text-sky-300' : 'text-pink-300'}`}>
-                                    {o.side === 'back' ? 'PUNTA' : 'BANCA'}
-                                </td>
-                                <td className="px-1 text-right tabular-nums">{o.price != null ? o.price.toFixed(2) : '—'}</td>
-                                <td className="px-1 text-right tabular-nums">€{(o.size ?? 0).toFixed(2)}</td>
-                                <td className="px-1 text-right tabular-nums">
-                                    €{o.size_matched.toFixed(2)}{o.size_matched > 0 ? ` @${o.average_price_matched.toFixed(2)}` : ''}
-                                </td>
-                                <td className="px-1 text-right tabular-nums">€{o.size_remaining.toFixed(2)}</td>
-                                <td className="px-1">{STATO[o.status] ?? o.status}</td>
-                                <td className="px-1">{o.persistence ?? '—'}</td>
+                        {visibili.map(x => (
+                            <tr key={x.ordine.chiave} data-testid="ordine-bot-riga"
+                                onClick={onSeek ? () => onSeek(x.riga._ms, x.ordine.marketId, x.ordine.selectionId) : undefined}
+                                className={`border-t border-white/5 ${onSeek ? 'cursor-pointer hover:bg-white/5' : ''} ${x.vivo ? 'bg-amber-400/10' : ''}`}>
+                                <td className="px-1">{nomeMercato(x.ordine.marketId)}</td>
+                                <td className="px-1">{nomeSelezione(x.ordine.marketId, x.ordine.selectionId)}</td>
+                                <td className={`px-1 font-bold ${x.ordine.lato === 'back' ? 'text-sky-300' : 'text-pink-300'}`}>{nomeLato(x.ordine.lato)}</td>
+                                <td className="px-1 text-right tabular-nums">{eur(x.riga.price)}</td>
+                                <td className="px-1 text-right tabular-nums">{eur(x.riga.size)}</td>
+                                <td className="px-1 text-right tabular-nums">{eur(x.abbinato)}{x.abbinato > 0.005 ? ` @${eur(x.prezzoMedio)}` : ''}</td>
+                                <td className="px-1 text-right tabular-nums">{eur(x.residuo)}</td>
+                                <td className="px-1">{statoOrdineTesto(x.riga, x.ordine.sostituitoDa != null)}</td>
+                                <td className="px-1 text-white/40">{x.ordine.betId ?? '—'}</td>
                             </tr>
                         ))}
                     </tbody>
