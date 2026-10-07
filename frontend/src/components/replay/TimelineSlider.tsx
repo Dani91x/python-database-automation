@@ -74,6 +74,9 @@ export function TimelineSlider({ min, max, value, minute, onChange, suspended, e
                 {events && events.map((ev, i) => (
                     <div
                         key={i}
+                        data-testid="barra-simbolo"
+                        data-kind={ev.kind}
+                        data-team={ev.team ?? ''}
                         className="absolute top-0 -translate-x-1/2 z-10 flex items-center justify-center pointer-events-none"
                         style={{ left: `${Math.min(Math.max(ev.pctLeft, 0), 1) * 100}%`, height: '14px' }}
                         title={`${ev.minute != null ? `${ev.minute}' ` : ''}${ev.label}`}
@@ -91,6 +94,8 @@ export function TimelineSlider({ min, max, value, minute, onChange, suspended, e
                         s ? (
                             <div
                                 key={i}
+                                data-testid="barra-sospensione"
+                                data-indice={i}
                                 className="absolute top-0 bottom-0 bg-red-500/70"
                                 style={{
                                     // clamp: l'ultimo segmento non deve uscire dalla track (overflow-hidden lo taglierebbe)
@@ -107,6 +112,7 @@ export function TimelineSlider({ min, max, value, minute, onChange, suspended, e
                 {/* marker CALCIO D'INIZIO: lineetta verticale sulla track (se c'è pre-match) */}
                 {kickoffPct != null && kickoffPct > 0 && (
                     <div
+                        data-testid="barra-kickoff"
                         className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-10 pointer-events-none"
                         style={{ left: `${Math.min(Math.max(kickoffPct, 0), 1) * 100}%` }}
                         title="Calcio d'inizio"
@@ -129,6 +135,7 @@ export function TimelineSlider({ min, max, value, minute, onChange, suspended, e
 
                 {/* knob circolare con minuto */}
                 <div
+                    data-testid="barra-knob"
                     className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-9 h-9 rounded-full bg-secondary text-black
                                flex items-center justify-center text-xs font-black font-display tabular-nums shadow-lg pointer-events-none
                                border-2 border-black/30 z-20"

@@ -36,7 +36,7 @@ import { simulateOrder, MIN_STAKE_GBP, type BookSnapshot, type OrderRequest, typ
 // F41: TRAINING sul ladder — LadderView reale + orderApi SIMULATO (matching engine)
 import { LadderView, type LadderSource } from '@/components/live/LadderView';
 import { createTrainingApi, frameToLadderRow, type TrainingApi } from '@/lib/trainingLadder';
-import { timelineEventMarkers } from '@/lib/replayTimelineEvents';
+import { punteggioAlTs, timelineEventMarkers } from '@/lib/replayTimelineEvents';
 import type { LiveLadderRow } from '@/lib/live';
 // F42: backtest del ladder-trading sullo storico full-depth (lib pura testata)
 import { LadderBacktestPanel } from '@/components/replay/LadderBacktestPanel';
@@ -493,19 +493,14 @@ export default function MatchReplay() {
     // ---- punteggio + minuto all'istante corrente: ultima voce con ts <= currentTs.
     // (FIX: prima usava il minuto con fallback +Infinity → in pre-match mostrava il
     //  punteggio finale; ora è ancorato al timestamp del replay.) ----
-    const currentScoreEntry = useMemo(() => {
-        if (!currentTs) return null;
-        let best: typeof sortedScoreTimeline[number] | null = null;
-        for (const ev of sortedScoreTimeline) {
-            if (ev.ts <= currentTs) best = ev; else break;
-        }
-        return best;
-    }, [sortedScoreTimeline, currentTs]);
-
-    const currentScore = currentScoreEntry
-        ? { home: currentScoreEntry.score_home ?? 0, away: currentScoreEntry.score_away ?? 0 }
-        : { home: 0, away: 0 };
-    const displayMinute = currentScoreEntry?.minute ?? currentMinute;
+    // 07/10: il punteggio e' quello dell'ultima riga CHE LO PORTA (le righe-evento
+    // della timeline hanno score null e azzeravano il tabellone): `punteggioAlTs`.
+    const currentScoreEntry = useMemo(
+        () => punteggioAlTs(sortedScoreTimeline, currentTs),
+        [sortedScoreTimeline, currentTs],
+    );
+    const currentScore = { home: currentScoreEntry.home, away: currentScoreEntry.away };
+    const displayMinute = currentScoreEntry.minute ?? currentMinute;
 
     // ---- mercati ordinati per sort_priority ----
     const markets = useMemo(() => {

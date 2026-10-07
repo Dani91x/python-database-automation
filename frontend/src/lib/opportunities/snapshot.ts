@@ -140,10 +140,17 @@ export function buildSnapshots(replay: ReplayData, bucketMs = 10000): Snapshot[]
         let scoreMinute: number | null = null;
         const sIdx = bisectLast(scoresSorted, bucketEnd, (s) => tsMs(s.ts));
         if (sIdx >= 0) {
-            const sc = scoresSorted[sIdx];
-            scoreHome = sc.score_home ?? 0;
-            scoreAway = sc.score_away ?? 0;
-            scoreMinute = sc.minute;
+            scoreMinute = scoresSorted[sIdx].minute;
+            // 07/10: il punteggio e' quello dell'ultima riga CHE LO PORTA: le righe-evento
+            // della timeline (Goal, FirstHalfEnd, SecondHalfEnd, ...) hanno score null
+            for (let k = sIdx; k >= 0; k--) {
+                const r = scoresSorted[k];
+                if (r.score_home != null && r.score_away != null) {
+                    scoreHome = r.score_home;
+                    scoreAway = r.score_away;
+                    break;
+                }
+            }
         }
 
         const minute = latestFrameMinute != null ? latestFrameMinute : scoreMinute;
