@@ -95,6 +95,8 @@ class BancoMedia:
         self.inplay = False
         self.stato = "OPEN"
         self.versione = 1
+        # 07/10: il betDelay della marketDefinition (secondi; in gioco 5-10)
+        self.bet_delay = 0
         # l'istante di MERCATO in cui nasce ogni ordine (``Flumine`` non simulato
         # timbra gli ordini con l'ora del PC; il replay del banco con il
         # ``publish_time``, come qui)
@@ -140,7 +142,7 @@ class BancoMedia:
             "marketTime": _iso(KO_MS), "suspendTime": _iso(KO_MS),
             "bspReconciled": False, "complete": True, "inPlay": self.inplay,
             "crossMatching": True, "runnersVoidable": False,
-            "numberOfActiveRunners": 2, "betDelay": 0, "status": self.stato,
+            "numberOfActiveRunners": 2, "betDelay": self.bet_delay, "status": self.stato,
             "runners": [{"status": "ACTIVE", "sortPriority": 1, "id": self.under},
                         {"status": "ACTIVE", "sortPriority": 2, "id": self.over}],
             "regulators": ["MR_INT"], "countryCode": "IT", "discountAllowed": True,
@@ -188,11 +190,17 @@ class BancoMedia:
         return MU.posizione_da_ordini(self.ordini())
 
     def invarianti(self, i: int) -> List[str]:
-        """Le invarianti della spec a OGNI book: mai due banche vive, mai due
-        punte vive, nessun ordine nuovo in gioco, punte LAPSE e banche PERSIST."""
+        """Le invarianti della spec a OGNI book, lette dagli ordini del mercato:
+        mai due punte vive, punte LAPSE e banche PERSIST, e dal 07/10 (banca
+        SPOSTATA, mai annullata e ripiazzata; ordine dell'utente):
+          * la somma delle banche vive non supera MAI la posizione da coprire:
+            se si abbinassero tutte ai loro prezzi la posizione non si
+            rovescerebbe (al centesimo della banca);
+          * mai due banche vive a quote DIVERSE, tutte sul book (fuori dallo
+            spostamento: un replace o un'integrazione in volo);
+          * mai una banca annullata e poi ripiazzata IDENTICA (stessa quota,
+            stesso importo, ordine nuovo che non e' il sostituto di un replace)."""
         out = []
-        if len(self.vivi("LAY")) > 1:
-            out.append("book %d: %d banche vive insieme" % (i, len(self.vivi("LAY"))))
         if len(self.vivi("BACK")) > 1:
             out.append("book %d: %d punte vive insieme" % (i, len(self.vivi("BACK"))))
         for o in self.ordini():
@@ -201,7 +209,53 @@ class BancoMedia:
                 out.append("book %d: banca %s non PERSIST" % (i, pt))
             if MU._lato(o) == "BACK" and pt != "LAPSE":
                 out.append("book %d: punta %s non LAPSE" % (i, pt))
+        out += [("book %d: " % i) + x for x in violazioni_banche(self.ordini())]
         return out
+
+
+def violazioni_banche(ordini: List[Any]) -> List[str]:
+    """Le tre invarianti delle banche del 07/10 sugli ordini VERI di flumine
+    (campi veri: ``size_remaining``, ``size_matched``, ``average_price_matched``,
+    ``status``, ``size_cancelled``, ``bet_id``, ``trade.orders``)."""
+    from flumine.order.order import OrderStatus
+
+    out: List[str] = []
+    # la posizione del ciclo CORRENTE (un ciclo chiuso puo' lasciare un
+    # centesimo di arrotondamento della sua banca: non e' di questo ciclo)
+    cicli = MU.cicli_degli_ordini(ordini)
+    corrente = cicli[-1] if cicli else []
+    pos = MU.posizione_da_ordini(corrente)
+    vive = [o for o in ordini if MU._lato(o) == "LAY" and MU.vivo_o_in_volo(o)]
+    if vive:
+        quote = [float(o.order_type.price) for o in vive]
+        esposte = sum(float(o.size_remaining) * float(o.order_type.price) for o in vive)
+        margine = (pos.se_vince - pos.se_perde) - esposte
+        if margine < -(0.0051 * max(quote) + 1e-6):
+            out.append("banche vive %s per %.2f di esposizione: la posizione ne regge %.2f "
+                       "(copertura oltre la posizione)"
+                       % ([(q, float(o.size_remaining)) for q, o in zip(quote, vive)],
+                          esposte, pos.se_vince - pos.se_perde))
+        if len({round(q, 2) for q in quote}) > 1 and all(
+                o.status == OrderStatus.EXECUTABLE for o in vive):
+            out.append("banche vive a quote diverse fuori dallo spostamento: %s" % quote)
+    banche = [o for o in ordini if MU._lato(o) == "LAY"]
+    for j, b in enumerate(banche):
+        tr = list(getattr(b.trade, "orders", None) or [])
+        if tr and tr[0] is not b:
+            continue                       # sostituto di un replace
+        for a in banche[:j]:
+            ta = list(getattr(a.trade, "orders", None) or [])
+            sostituita = bool(ta) and ta[-1] is not a
+            annullata = float(getattr(a, "size_cancelled", 0.0) or 0.0) > 0.004
+            if (annullata and not sostituita and a.bet_id is not None
+                    and abs(float(a.order_type.price) - float(b.order_type.price)) < 1e-9
+                    and (abs(float(a.order_type.size) - float(b.order_type.size)) <= 0.005
+                         or abs(float(a.order_type.size) - float(a.size_matched)
+                                - float(b.order_type.size)) <= 0.005)):
+                out.append("banca %.2f @%.2f annullata e ripiazzata IDENTICA"
+                           % (float(b.order_type.size), float(b.order_type.price)))
+                break
+    return out
 
 
 def giri(b: BancoMedia, svuota: Any, n: int, **kw: Any) -> List[str]:

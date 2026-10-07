@@ -178,10 +178,12 @@ def test_stop_durante_un_rientro_la_punta_si_ritira_e_la_banca_copre_tutto(diffe
     assert not MU.vivo_o_in_volo(punta)
     pos = b.posizione()
     vive = b.vivi("LAY")
-    assert len(vive) == 1
     c = MU.quota_della_banca(b.strat._ultimo_ingresso, pos, 2)
-    assert (float(vive[0].order_type.price), float(vive[0].size_remaining)) == (
-        c, MU.al_centesimo(MU.banca_esatta(pos, c)))
+    # 07/10: la banca (anche piu' ordini: la banca spostata + l'integrazione)
+    # alla stessa quota, per l'intera posizione
+    assert {float(o.order_type.price) for o in vive} == {c}
+    assert round(sum(float(o.size_remaining) for o in vive), 2) == \
+        MU.al_centesimo(MU.banca_esatta(pos, c))
     assert b.strat.pronta_allo_stop() is True
     # nessuna punta nuova dopo lo stop
     assert len(_punte(b)) == 2
@@ -343,9 +345,14 @@ def test_ripresa_con_la_banca_viva_riprende_esattamente(differita, exchange_it):
     assert (s2._rientri, s2._ultimo_ingresso) == (s1._rientri, s1._ultimo_ingresso)
     assert s2._t_lordo == pytest.approx(s1._t_lordo)
     _posizione_uguale(MU.posizione_da_ordini(s2._ordini), b1.posizione())
-    assert s2._banca is not None and str(s2._banca.bet_id) == str(banca1.bet_id)
+    # 07/10: la banca viva puo' essere piu' ordini (la banca spostata col
+    # replace + l'integrazione): si riadottano TUTTI
+    vive1 = sorted(str(o.bet_id) for o in b1.vivi("LAY"))
+    assert banca1 is not None and len(vive1) == 2
+    assert sorted(str(o.bet_id) for o in s2._banche_vive()) == vive1
+    assert s2._banca is not None and str(s2._banca.bet_id) in vive1
     # nessun ordine nuovo: solo quelli riadottati
-    assert [str(o.bet_id) for o in b2.ordini()] == [str(banca1.bet_id)]
+    assert sorted(str(o.bet_id) for o in b2.ordini()) == vive1
     rip = [p for p in b2.kinds("media_ripresa") if p.get("ordini")]
     assert len(rip) == 1 and rip[0]["stato"] == MU.IN_POSIZIONE
     # ---- la quota sale di 2 tick in tutti e due: stessa mossa
@@ -646,7 +653,10 @@ def test_stop_con_la_punta_di_rientro_non_abbinata_la_punta_si_ritira(differita,
     assert viol == [], viol[:3]
     assert not MU.vivo_o_in_volo(punta)
     assert len(_punte(b)) == 2                # nessuna punta nuova
-    assert len(b.vivi("LAY")) == 1 and b.strat.pronta_allo_stop() is True
+    # 07/10: la banca (un ordine se la punta non si e' abbinata, la banca
+    # spostata + l'integrazione se si e' abbinata) sta a UNA quota
+    assert len({float(o.order_type.price) for o in b.vivi("LAY")}) == 1
+    assert b.strat.pronta_allo_stop() is True
     ritiri = [p for p in b.kinds("media_annullo") if p.get("side") == "BACK"]
     if differita.ritardo == 1:
         assert float(punta.size_matched) == pytest.approx(10.0) and ritiri == []
@@ -663,16 +673,24 @@ def test_pronta_allo_stop_solo_con_la_banca_sull_intera_posizione(differita, exc
     Lo stop arriva quando la banca sui 14 puntati e' appena partita e il resto
     della punta di rientro si abbina mentre il suo annullo e' in viaggio
     (esecuzione differita di 4 book): la banca da 14,05 non copre piu' i 20
-    puntati e, finche' non e' riallineata, la sessione NON e' pronta."""
+    puntati e, finche' non e' riallineata, la sessione NON e' pronta.
+    07/10 (banca SPOSTATA): lo stop arriva quando l'annullo del resto della
+    punta di rientro e' appena partito (la banca non si tocca finche' la punta
+    e' viva); la banca si sposta a punta terminata, e finche' lo spostamento
+    non e' concluso la sessione NON e' pronta."""
     b = BancoMedia()
     giri(b, differita, 70)
     b.taglie[(b.under, 1.52)] = 4.0
     b.ladder[b.under] = (1.52, 1.53)
-    for _i in range(30):
+
+    def _annullo_del_resto() -> bool:
+        return bool([p for p in b.kinds("media_annullo")
+                     if str(p.get("motivo", "")).startswith("punta non abbinata entro")])
+    for _i in range(50):
         giri(b, differita, 1, flusso=0.0)
-        if len(_banche(b)) == 2:
+        if _annullo_del_resto():
             break
-    assert len(_banche(b)) == 2
+    assert _annullo_del_resto()
     b.strat.force_flat = True
     b.scambia(b.under, 1.52, 2000)
     non_pronti_con_la_banca_viva = 0
@@ -681,9 +699,9 @@ def test_pronta_allo_stop_solo_con_la_banca_sull_intera_posizione(differita, exc
         pos = b.posizione()
         c = MU.quota_della_banca(b.strat._ultimo_ingresso, pos, 2)
         vive = b.vivi("LAY")
-        copre = (len(vive) == 1 and c is not None
-                 and float(vive[0].order_type.price) == c
-                 and abs(float(vive[0].size_remaining)
+        copre = (bool(vive) and c is not None
+                 and {float(o.order_type.price) for o in vive} == {c}
+                 and abs(sum(float(o.size_remaining) for o in vive)
                          - MU.al_centesimo(MU.banca_esatta(pos, c))) <= 0.01)
         if b.strat.pronta_allo_stop():
             assert copre, (pos, [(float(o.order_type.price), float(o.size_remaining))
@@ -699,7 +717,9 @@ def test_pronta_allo_stop_solo_con_la_banca_sull_intera_posizione(differita, exc
         # il resto abbinato in viaggio: c'e' stato un tratto con la banca vecchia
         # viva, nessuna punta viva e la sessione NON pronta
         assert b.posizione().puntato == pytest.approx(20.0)
-        assert non_pronti_con_la_banca_viva >= 1
+    # 07/10: in entrambi i casi la banca si sposta dopo lo stop: finche' lo
+    # spostamento non e' concluso la sessione NON e' pronta
+    assert non_pronti_con_la_banca_viva >= 1
 
 
 def _ripresa_con_la_sola_banca(differita) -> tuple:
@@ -714,7 +734,9 @@ def _ripresa_con_la_sola_banca(differita) -> tuple:
     _adotta(b2, [o for o in b1.ordini() if MU.vivo_o_in_volo(o)])
     giri(b2, differita, 2)
     assert b2.strat.stato == MU.IN_POSIZIONE
-    assert [MU._lato(o) for o in b2.ordini()] == ["LAY"]
+    # 07/10: la banca viva sono due ordini alla stessa quota (spostata +
+    # integrazione), entrambi riadottati
+    assert [MU._lato(o) for o in b2.ordini()] == ["LAY", "LAY"]
     return b1, b2
 
 
@@ -730,7 +752,7 @@ def test_crash_con_la_sola_banca_nel_blotter_nessuno_sweep(differita, exchange_i
     assert tr.betting.annulli == []
     sweep = db.attivita("error")[-1]["payload"]["sweep"]
     assert sweep["market_wide"] is False and sweep.get("saltato")
-    assert sweep["lasciati"] == [str(b2.vivi("LAY")[0].bet_id)]
+    assert sorted(sweep["lasciati"]) == sorted(str(o.bet_id) for o in b2.vivi("LAY"))
 
 
 def test_esposizione_della_sessione_dopo_la_ripresa_conta_gli_ordini_del_conto(

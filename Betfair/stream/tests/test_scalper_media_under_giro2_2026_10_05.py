@@ -71,22 +71,24 @@ def test_quota_su_di_meno_di_n_tick_la_banca_resta_ferma(differita, exchange_it)
 # 2.1 b) punta abbinata in due tempi: la banca si riallinea alla posizione vera
 # ===========================================================================
 def test_punta_abbinata_in_due_tempi_la_banca_si_riallinea(differita, exchange_it):
-    """Rientro a 1,52 (punta 10,00) con 4 sul book: si abbina 4 e la banca va
-    sulla posizione di quel momento; dal 06/10 (giro 3) il resto della punta si
-    annulla quando la banca si appoggia. Con l'annullo LENTO (esecuzione differita
-    di 4 book) gli scambi a 1,52 abbinano il resto prima che l'annullo arrivi: la
-    banca vecchia si annulla (<<banca da riallineare>>), si aspetta che sia morta e
-    la nuova copre la posizione vera (20 puntati). Con l'annullo veloce (1 book) il
-    resto e' annullato e la banca resta sui 14 puntati. Mai due banche vive."""
+    """Rientro a 1,52 (punta 10,00) con 4 sul book: si abbina 4 e il resto
+    resta sul mercato fino al TTL (07/10: la banca NON si tocca finche' la punta
+    di rientro e' viva) e si annulla allo scadere; la banca si SPOSTA una volta
+    a punta terminata, sulla posizione vera di quel momento. Con l'annullo LENTO (esecuzione differita di 4 book)
+    gli scambi a 1,52 abbinano il resto prima che l'annullo arrivi: la banca si
+    sposta sui 20 puntati. Con l'annullo veloce (1 book) il resto e' annullato e
+    la banca si sposta sui 14 puntati. In nessun caso una banca annullata: prima
+    del 07/10 la banca vecchia si annullava e se ne appoggiava una nuova."""
     b = BancoMedia()
     viol = giri(b, differita, 70)
     b.taglie[(b.under, 1.52)] = 4.0
     b.ladder[b.under] = (1.52, 1.53)
     scambiato = False
-    for _i in range(30):
+    for _i in range(50):
         viol += giri(b, differita, 1, flusso=0.0)
-        if not scambiato and len(_banche(b)) == 2:
-            # la banca nuova e' appena partita (e l'annullo del resto con lei)
+        if not scambiato and [p for p in b.kinds("media_annullo")
+                              if str(p.get("motivo", "")).startswith("punta non abbinata entro")]:
+            # l'annullo del resto e' appena partito
             b.scambia(b.under, 1.52, 2000)
             scambiato = True
     assert viol == [], viol[:3]
@@ -94,25 +96,26 @@ def test_punta_abbinata_in_due_tempi_la_banca_si_riallinea(differita, exchange_i
     punta = _punte(b)[1]
     assert (float(punta.order_type.price), float(punta.order_type.size)) == (1.52, 10.0)
     assert not MU.vivo_o_in_volo(punta)
-    vive = b.vivi("LAY")
     pos = b.posizione()
-    assert len(vive) == 1
-    assert (float(vive[0].order_type.price), float(vive[0].size_remaining)) == (
-        1.50, MU.al_centesimo(MU.banca_esatta(pos, 1.50)))
-    riallinea = [p for p in b.kinds("media_annullo")
-                 if str(p.get("motivo", "")).startswith("banca da riallineare")]
+    vive = b.vivi("LAY")
+    assert {float(o.order_type.price) for o in vive} == {1.50}
+    assert round(sum(float(o.size_remaining) for o in vive), 2) == \
+        MU.al_centesimo(MU.banca_esatta(pos, 1.50))
+    riallinea = [p for p in b.kinds("media_annullo") if p.get("side") == "LAY"]
+    assert riallinea == []                     # nessuna banca annullata
     if differita.ritardo == 1:
         # il resto (6) annullato prima degli scambi: la banca copre i 14 puntati
         assert float(punta.size_matched) == pytest.approx(4.0)
-        assert pos.puntato == pytest.approx(14.0) and riallinea == []
-        assert float(vive[0].order_type.size) == pytest.approx(14.05)
+        assert pos.puntato == pytest.approx(14.0)
+        assert round(sum(float(o.size_remaining) for o in vive), 2) == pytest.approx(14.05)
     else:
-        # il resto abbinato mentre l'annullo era in viaggio: banca riallineata
+        # il resto abbinato mentre l'annullo era in viaggio: banca sui 20 puntati
         assert float(punta.size_matched) == pytest.approx(10.0)
-        assert pos.puntato == pytest.approx(20.0) and len(riallinea) == 1
-        assert float(vive[0].order_type.size) == pytest.approx(20.13)
-        prima = _banche(b)[1]
-        assert not MU.vivo_o_in_volo(prima) and float(prima.size_matched) == 0.0
+        assert pos.puntato == pytest.approx(20.0)
+        assert round(sum(float(o.size_remaining) for o in vive), 2) == pytest.approx(20.13)
+    prima = _banche(b)[0]
+    assert float(prima.size_matched) == 0.0 and not MU.vivo_o_in_volo(prima)
+    assert list(prima.trade.orders)[-1] is not prima       # spostata col replace
 
 
 # ===========================================================================
