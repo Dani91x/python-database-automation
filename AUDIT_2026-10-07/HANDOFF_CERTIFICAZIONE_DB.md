@@ -225,3 +225,20 @@ Sul ramo finale, nel cloud (Python 3.13, flumine 2.13.11, betfairlightweight 2.2
 - Commit finale del ramo: vedi `git log -1 origin/claude/eloquent-franklin-g2nyk5` (il commit che contiene
   questo file nella versione definitiva). Base del giorno: `8226d76`.
 - `npm run build`: NON fatto (lo fa l'utente sul PC ad app chiusa).
+
+---------------------------------------------------------------------------------------------------
+
+## 10. AGGIUNTA DELLA SERA (07/10): «PRONTO PER LA CERTIFICAZIONE» - due cantieri finiti dopo la prima versione
+
+| # | Lavoro | Commit | File | Referto |
+|---|---|---|---|---|
+| M | Safe BASE SEMPRE E SOLO nel 2T (decisione dell'utente), bot + pagina; controllo B18; chiavi di deduplica distinte per gli scarti «fase ignota» di ESATTO e BASE | `dad1ef6` (merge sul ramo) | `Betfair/safe_strategy/{engine,bot_service,certificazione}.py`, `frontend/src/lib/safeStrategy.ts`, test `test_base_secondo_tempo_2026_10_07.py`, `safeStrategy.baseSecondoTempo.test.ts` | `AUDIT_2026-10-07/SAFE_BASE_SECONDO_TEMPO.md` |
+| N | Scalper e sniper CALCIO: residuo da ingresso sotto 0,50 chiuso con DUE ordini legali («scavalco»: punta 1,00 + chiusura al centesimo, al massimo 3 per ciclo); tetto di perdita SENZA i residui (`stats.pnl_residui` a parte); OGNI chiusura inseguita dimensionata al best (dove Betfair abbina), limite inseguito invariato (decisioni dell'utente 1b, 2b) | `0ec4319`, `34a684d`, `a07de6a` (merge `83ac73c`) | `Betfair/stream/scalper/{scalper_bot,sniper_bot}.py` (`ordine_di_scavalco`, `_flatten`, `_drive_flatten`), `BIBBIA_SCALPER_CALCIO.md` par.13-bis, test `test_scalper_residuo_c3_e_tetto_2026_10_07.py` (16) | `AUDIT_2026-10-07/SCALPER_CHIUSURA_AL_CENTESIMO.md` |
+
+Verifiche mie (cloud):
+- N: test scalper/sniper/submin/minimi/chiusure 1227 verdi; mia mutazione (dimensionamento al limite) 3 rossi; REPLAY sulla 35797769 sul commit finale: `base` OK 44 azioni, `paper` OK 44 (parita'), `chiusura-abbinata-in-parte` OK 215, `rifiuti-betfair` OK 56, `sniper-paper` OK 44, 0 violazioni (`AUDIT_2026-10-07/riferimenti_coordinatore/finale/scalper_N2.txt`).
+- M: Safe 2275 test verdi; mia mutazione (check del 2T tolto dalla BASE) 12 rossi; REPLAY safe_base prima/dopo: vedi par. 10.2.
+
+10.1 Controlli dal vivo in PROVA:
+- Safe BASE: all'intervallo (stato IPS `FirstHalfEnd`, minuto del feed 46'-56') la diagnosi della BASE dice «Solo nel 2° tempo: no», nessun ingresso; dopo `SecondHalfKickOff` il check passa. Stessa cosa nella pagina Safe.
+- Scalper calcio: dopo un ingresso abbinato sotto 0,50 compare l'attivita' `scavalco` (punta 1,00 e poi chiusura al centesimo) e la posizione torna PIATTA (differenza fra gli esiti <= 0,02); l'attivita' `loss_cap` riporta due cifre (perdite vere / residui) e scatta solo sulle perdite vere. In SOLDI VERI non ancora: lo scavalco e il dimensionamento al best non sono mai stati provati su Betfair vero.
