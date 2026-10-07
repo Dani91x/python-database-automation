@@ -1,0 +1,22 @@
+ESITO OK tick 5216 azioni 15 ordini 5 abbinati 0 stati ['OPEN', 'CLOSING'] violazioni {}
+STATS {"entries": 5, "greens": 0, "scratches": 0, "stops": 0, "manuali": 0, "pnl": 0.0, "pnl_settled": 0.0, "residui_ricordati": []}
+NOTA catalogo NON disponibile: ne' --nomi ne' _names.json
+NOTA SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+NOTA RESIDUI (decisione 1): dichiarati 0 (importi [] EUR, sbilancio [] EUR), tornati pari 0; regolati col mercato 0 (se vince [] / se perde [] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+NOTA SCENARIO DICHIARATO: cambiati SOLO i parametri ['min_book_size', 'min_matched', 'min_total_matched', 'price_max', 'price_min'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+EVENTI Counter({'entry': 5, 'entry_timeout': 5, 'closed_flat': 5})
+12:35:49 entry {"kind": "fade", "sel": 9633138, "side": "BACK", "price": 1.52, "target": 1.48, "stop": 1.56} S1-1 G0-0 P0-0 srv=away
+12:36:25 entry_timeout {"sel": 9633138, "kind": "fade", "note": "ingresso scaduto: cancello e sorveglio finche' il blotter non dice che la selezione e' pari"} S1-1 G0-0 P0-0 srv=away
+12:36:30 closed_flat {"sel": 9633138, "kind": "fade"} S1-1 G0-0 P0-0 srv=away
+12:48:44 entry {"kind": "fade", "sel": 9633138, "side": "BACK", "price": 1.77, "target": 1.73, "stop": 1.81} S1-1 G0-1 P0-0 srv=home
+12:49:34 entry_timeout {"sel": 9633138, "kind": "fade", "note": "ingresso scaduto: cancello e sorveglio finche' il blotter non dice che la selezione e' pari"} S1-1 G0-1 P0-0 srv=home
+12:49:34 closed_flat {"sel": 9633138, "kind": "fade"} S1-1 G0-1 P0-0 srv=home
+12:53:01 entry {"kind": "fade", "sel": 9633138, "side": "BACK", "price": 1.56, "target": 1.52, "stop": 1.6} S1-1 G1-1 P0-0 srv=away
+12:53:27 entry_timeout {"sel": 9633138, "kind": "fade", "note": "ingresso scaduto: cancello e sorveglio finche' il blotter non dice che la selezione e' pari"} S1-1 G1-1 P0-0 srv=away
+12:53:28 closed_flat {"sel": 9633138, "kind": "fade"} S1-1 G1-1 P0-0 srv=away
+12:57:47 entry {"kind": "fade", "sel": 9633138, "side": "BACK", "price": 1.75, "target": 1.71, "stop": 1.79} S1-1 G1-2 P0-0 srv=home
+12:58:28 entry_timeout {"sel": 9633138, "kind": "fade", "note": "ingresso scaduto: cancello e sorveglio finche' il blotter non dice che la selezione e' pari"} S1-1 G1-2 P0-0 srv=home
+12:58:28 closed_flat {"sel": 9633138, "kind": "fade"} S1-1 G1-2 P0-0 srv=home
+13:54:27 entry {"kind": "compressed_fav", "sel": 35635727, "side": "BACK", "price": 2.2, "target": 2.12, "stop": 2.26} S1-1 G6-6 P6-6 srv=away
+13:54:56 entry_timeout {"sel": 35635727, "kind": "compressed_fav", "note": "ingresso scaduto: cancello e sorveglio finche' il blotter non dice che la selezione e' pari"} S1-1 G6-6 P6-6 srv=away
+13:54:56 closed_flat {"sel": 35635727, "kind": "compressed_fav"} S1-1 G6-6 P6-6 srv=away

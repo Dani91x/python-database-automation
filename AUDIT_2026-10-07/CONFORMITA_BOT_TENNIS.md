@@ -169,7 +169,7 @@ servizio): i quattro fade non hanno la causa che la spec chiede.
 
 ## 4. I reperti
 
-### 4.1 [BUG, pro] Il prezzo del runner e' l'ultimo scambiato — patch `proposte/P1_pro_prezzo_del_book.diff`
+### 4.1 [BUG, pro] Il prezzo del runner e' l'ultimo scambiato — patch `conformita_tennis_proposte/P1_pro_prezzo_del_book.diff`
 
 * **Causa radice**: `tennis_pro_bot.py:343-345` (`_favourite` = minimo di `ltp`), `:682`
   (`compressed_fav` confronta `ltp` con 1,20), `:696-697` (`_set_start_px` = `ltp` al primo
@@ -194,7 +194,7 @@ servizio): i quattro fade non hanno la causa che la spec chiede.
   l'`ltp` davanti al book -> 4 rossi; (b) solo `compressed_fav` di nuovo su `ltp` -> 1 rosso.
   Albero ripristinato (`grep -c MUTAZIONE` = 0, `git diff --stat` identico).
 
-### 4.2 [BUG da confermare, pro] Nome IPS troncato — patch `proposte/P2_pro_nome_ips_troncato.diff`
+### 4.2 [BUG da confermare, pro] Nome IPS troncato — patch `conformita_tennis_proposte/P2_pro_nome_ips_troncato.diff`
 
 * **Causa radice**: `_lookup_sel` (`tennis_pro_bot.py:307-315`) prova nome completo e cognome
   (ultimo token). L'IPS scrive «Marcelo Tomas Barrios V» (23 caratteri, troncato): con un
@@ -254,9 +254,9 @@ Risultato: -2,00 (stake intero). Conforme; lo segnalo solo perche' l'utente veda
 
 **Nessun file tracciato modificato.** File nuovi, solo in `AUDIT_2026-10-07/`:
 * `CONFORMITA_BOT_TENNIS.md` (questo referto);
-* `proposte/P1_pro_prezzo_del_book.diff` (tocca `Betfair/stream/tennis_scalper/
+* `conformita_tennis_proposte/P1_pro_prezzo_del_book.diff` (tocca `Betfair/stream/tennis_scalper/
   tennis_pro_bot.py`, aggiunge `Betfair/stream/tennis_live/tests/test_pro_prezzo_vivo_2026_10_07.py`);
-* `proposte/P2_pro_nome_ips_troncato.diff` (stesso modulo, aggiunge
+* `conformita_tennis_proposte/P2_pro_nome_ips_troncato.diff` (stesso modulo, aggiunge
   `Betfair/stream/tennis_live/tests/test_pro_nome_ips_troncato_2026_10_07.py`).
 
 Nota di perimetro: i moduli dei tre bot stanno in `Betfair/stream/tennis_scalper/`, non in
@@ -274,7 +274,7 @@ Migrazioni SQL: nessuna.
 * Replay: SOLO la sonda §3.2 (prima dello stop del coordinatore), ~3 s.
 * **Da fare al «via libera replay»**, uno alla volta (per ogni patch che l'utente approva):
   ```
-  git apply AUDIT_2026-10-07/proposte/P1_pro_prezzo_del_book.diff AUDIT_2026-10-07/proposte/P2_pro_nome_ips_troncato.diff
+  git apply AUDIT_2026-10-07/conformita_tennis_proposte/P1_pro_prezzo_del_book.diff AUDIT_2026-10-07/conformita_tennis_proposte/P2_pro_nome_ips_troncato.diff
   python3 -m Betfair.stream.backtest.certifica tennis_pro 35790089 --data-dir /home/user/python-database-automation/_live_raw_tennis/20260707 --scenari tutti --worker 1
   ```
   confronto col riferimento `coord/tennis_base_tennis_pro.txt`. Attese: righe di `base`,
@@ -334,3 +334,141 @@ scenari `live`/`soldi-veri*` al via libera.
   prezzo d'ingresso con 1,20 (con il codice di oggi puo' essere molto sopra: reperto D1).
 * Scheda del pro: i nomi dei due giocatori risolti (se un nome IPS e' troncato, i setup su
   quel giocatore non compaiono mai: reperto D2).
+
+---
+
+## 11. SECONDA CONSEGNA (07/10) — decisioni dell'utente applicate
+
+Decisioni (testuali, girate dal coordinatore): «D1: ok. D2: correggi. D3: A». Base:
+ramo `claude/eloquent-franklin-g2nyk5` @ `ed9e31eb` (avanzamento fast-forward del worktree, che
+non aveva commit propri; contiene anche la correzione CP4 di `tennis_scalper_bot.py`, file non
+toccato da me). Perimetro: SOLO `Betfair/stream/tennis_scalper/tennis_pro_bot.py` + test nuovi.
+
+### 11.1 D1 e D2 applicate
+
+`git apply` delle due patch di `conformita_tennis_proposte/` (invariate, gia' verificate in §4.1
+e §4.2): prezzo del runner = medio del book, ultimo scambiato solo di ripiego
+(`tennis_pro_bot.py:359-380`, usato da `_favourite`, `compressed_fav`, `_track_sets`); nome IPS
+troncato riconosciuto per prefisso SOLO se unico (`_lookup_sel`, `:313-332`).
+
+### 11.2 D3 = A: la definizione ESATTA di «break precoce» e da dove viene
+
+| Elemento | Definizione | Fonte |
+|---|---|---|
+| CHI subisce il break | il FAVORITO: «back del favorito dopo un break PRECOCE che **ne** ha gonfiato la quota» -> e' la quota del favorito che sale, quindi e' il favorito ad aver perso il servizio | docstring `tennis_pro_bot.py:11-12` |
+| Quale favorito | quello che il setup punta, `_favourite(px)` (dal book, D1) | codice `_sig_fade` |
+| QUALE set | il set IN CORSO: il fade lavora gia' sul set corrente (prezzo d'inizio set `_set_start_px[(mid, sel, set)]`, game del set) | codice `_sig_fade`/`_track_sets`; nessuna fonte parla di «solo il primo set» |
+| ENTRO quale game («precoce») | la finestra che il fade HA GIA': si entra solo con al piu' `fade_max_game` = 3 game giocati nel set; il break deve essere avvenuto PRIMA dell'ingresso, quindi per forza dentro quei 3 game. **Nessun numero nuovo** | `fade_max_game` 3: codice `:193`, preset `run_tennis_pro.py:41`, audit 17/09 §A.2 «salto >= 8 entro `fade_max_game` 3», scheda UI (`AUDIT_2026-10-01/REDESIGN/inventario_parti/C_TENNIS_E_LIVE.md`) |
+| Come si LEGGE dal punteggio IPS | break = il game lo vince chi NON serviva. Chi serviva = `server` (`isServing`) dell'ultimo campione PRIMA del cambio dei game; vincitore = il lato i cui `games` salgono di 1 | misurato sul sidecar vero: nei 15 cambi di game della 35790089 il servitore cambia NELLO STESSO campione del game (15 su 15); gli 8 cambi di servitore senza game sono tutti nel tie-break del 6-6 |
+| `serviceBreaks` | NON usabile: vale 0 per tutta la 35790089 anche dopo i break reali (Barrios perde il servizio sul 2-3 del terzo set e sul 5-6 del secondo) | sidecar `35790089.score.jsonl` |
+| `gameSequence` | NON serve: porta solo i game dei set CHIUSI | sidecar |
+| Casi non attribuibili (fail-closed: nessun fade) | cambio di set nello stesso campione; piu' di un game fra due campioni; servitore ignoto; mappa dei nomi assente (il lato «home/away» non diventa una selezione) | scelta prudente, coerente con il fail-closed della mappa nomi (fix audit #13) |
+| Il resto del fade | INVARIATO: salto >= `fade_jump_ticks` 8 dal prezzo d'inizio set, `fade_max_game` 3, target 4 / stop 4, priorita' | codice |
+
+Nessun numero mancante: non c'e' stata nessuna domanda da girare all'utente.
+
+**Codice** (`tennis_pro_bot.py`): `_traccia_break` (`:727-758`) chiamata a ogni book dopo
+`_track_sets` (`:817`) registra i break del set in `_break_set[(mercato, set)]`;
+`_break_precoce_del` (`:760-769`); `_sig_fade` esce se il favorito non ha subito un break nel
+set (`:650-655`). Nessuna attivita' nuova emessa (le azioni del banco non cambiano per questo).
+
+**Effetto atteso sul banco**: il banco NON dichiara il catalogo dei nomi (`certifica` non passa
+`--nomi`, §4.4), quindi in tutti gli scenari del banco il fade di tennis_pro non scatta piu'
+(fail-closed: senza nomi non si sa chi ha perso il servizio). Su questa partita non scatterebbe
+comunque (nessun break nei primi 3 game di nessun set registrato).
+
+### 11.3 Test e falsificazione (D3)
+
+* Test nuovo `Betfair/stream/tennis_live/tests/test_pro_fade_dopo_break_2026_10_07.py` (6 test,
+  punteggio dai record IPS con le chiavi vere passati a `parse_tennis_scores`, book con gli
+  attributi del `MarketBook` di flumine): il CASO VERO della 35790089 (5 book reali del
+  passaggio 2°-3° set con i prezzi registrati) -> fade **2 col solo P1 (4 col codice del
+  mattino, sonda §3.2) -> 0**; break precoce del favorito -> 1 fade; stesso salto senza break,
+  break del non favorito, due game fra due campioni, nomi assenti -> 0.
+* ROSSO prima della correzione: 6 su 6 (caso vero `['fade','fade'] == []`).
+* VERDE dopo: 6 su 6; con i test di P1/P2: 14 su 14.
+* Suite collegata: `python3 -m pytest Betfair/stream/tennis_scalper/tests Betfair/stream/tennis_live/tests Betfair/stream/tests/test_live_engine_pro.py Betfair/stream/tests/test_live_engine.py -q -p no:cacheprovider` -> **1066 passed, 4 skipped, 5 xfailed** (47,7 s). Altri test che citano il pro (`test_scalper_audit_2026_07_09.py`, `test_live_engine*.py`) 41 verdi.
+* Falsificazione (script `scratchpad/conf/falsifica_d3.py`, ripristino verificato, `MUTAZIONE`
+  = 0, `git diff --stat` identico): M1 break non richiesto -> 6 rossi; M2 servitore letto dal
+  campione NUOVO invece che dal precedente -> 5 rossi; M3 break di chiunque (non solo del
+  favorito) -> 2 rossi. Una quarta mutazione (finestra dei 3 game ignorata) restava verde: la
+  condizione era RIDONDANTE (il fade entra gia' solo entro 3 game) ed e' stata tolta, con la
+  ragione scritta nel codice.
+* P1/P2: falsificazioni del §4.1/§4.2 fatte sul codice identico (stesse righe, base diversa
+  solo per `tennis_scalper_bot.py`).
+
+### 11.4 Replay: comando e differenze ATTESE (scritte prima del «via libera»; esiti in §11.7)
+
+Comando, prima (base `ed9e31eb` senza le mie modifiche, cioe' il riferimento
+`coord/tennis_base_tennis_pro.txt` se il coordinatore lo conferma identico sul nuovo ramo) e
+dopo (worktree):
+```
+python3 -m Betfair.stream.backtest.certifica tennis_pro 35790089 --data-dir /home/user/python-database-automation/_live_raw_tennis/20260707 --scenari tutti --worker 1
+```
+Differenze ATTESE, una per una:
+1. `base`, `dry-run`, `bot-fermo`, `feed-stantio`, `parziali`, `riavvio`, `catalogo-assente`:
+   IDENTICHE (cancello di liquidita' chiuso, 0 ingressi; `_traccia_break` non emette niente).
+2. Scenari coi cancelli aperti (`gate-aperto`, `live`, `rifiuti-betfair`, `chiusura-abbinata-in-parte`,
+   `chiudi-ora`, `uscite-manuali*`, `soldi-veri*`): spariscono i fade (senza nomi e senza break)
+   e il `compressed_fav` delle 13:54:27 sul prezzo fermo; puo' COMPARIRE un `compressed_fav` vero
+   fra 13:27 e 13:30 (Simakin 1,16/1,17 a book, ultimo scambiato 1,36). Azioni diverse dai 15/23
+   di oggi: ogni differenza va ricondotta a questi due punti.
+3. Sonda §3.2 coi nomi COMPLETI (`"Marcelo Tomas Barrios Vera=9633138,Ilia Simakin=35635727"`)
+   prima/dopo: dopo, il break point delle 13:15:10 su Barrios (ribattitore) torna possibile (D2).
+
+### 11.5 Parita' paper/live, cosa non ho fatto, da controllare dal vivo
+
+* Parita': le tre correzioni sono nella DECISIONE d'ingresso, nessun ramo per modalita'.
+* Replay fatti al via libera: §11.7. Non verificato: il nome vero del catalogo di Barrios; un caso
+  REGISTRATO di break precoce del favorito (il fade «buono» e' provato solo dal test sintetico;
+  serve una registrazione con un break nei primi 3 game di un set, §8 punto 5); il caso in cui
+  l'IPS cambiasse il servitore PRIMA del conteggio dei game (non visto in 15 cambi su 15).
+* Dal vivo in paper: per ogni `entry` `fade` deve esserci, nel set in corso e prima
+  dell'ingresso, un game perso dal favorito al servizio (attivita' del bot + punteggio IPS).
+
+### 11.6 File di questa consegna
+
+Modificato: `Betfair/stream/tennis_scalper/tennis_pro_bot.py` (+92/-6). Nuovi:
+`Betfair/stream/tennis_live/tests/test_pro_prezzo_vivo_2026_10_07.py`,
+`Betfair/stream/tennis_live/tests/test_pro_nome_ips_troncato_2026_10_07.py`,
+`Betfair/stream/tennis_live/tests/test_pro_fade_dopo_break_2026_10_07.py`. Aggiornato questo
+referto (percorsi delle patch corretti in `conformita_tennis_proposte/`). Nessun commit.
+
+### 11.7 Replay ESEGUITI al «via libera» (07/10)
+
+Comando, sul codice del worktree (P1 + P2 + D3), uno alla volta:
+`python3 -m Betfair.stream.backtest.certifica tennis_pro 35790089 --data-dir /home/user/python-database-automation/_live_raw_tennis/20260707 --scenari tutti --worker 1`
+-> referto completo `replay_conformita_tennis_pro/tennis_pro_tutti_dopo.txt`. PRIMA = riferimento
+del coordinatore `coord/tennis_base_tennis_pro.txt` (il modulo pro e' identico a `ed9e31eb` senza
+le mie modifiche: la sonda `gate-aperto` sul codice di prima, `sonda_prima_ga.txt`, rifa' le
+stesse 15 azioni del riferimento).
+
+**Esito: 17 scenari su 17 OK, 0 violazioni** (prima: 17 OK, 0 violazioni). Tempo 26,0 s (prima
+30,6 s). Controlli MAI sollecitati: **da 15 su 22 a 3 su 22** (restano B6, regola del solo FLB;
+B10; CP2): adesso il pro su questa partita fa trade che si ABBINANO (prima 0 abbinati su 5
+ordini), quindi K5, RS1, CP1, CP3, CP4, UM1-UM4 hanno finalmente un caso.
+
+| Scenario | Azioni prima | Azioni dopo | Perche' (una per una) |
+|---|---|---|---|
+| base, dry-run, bot-fermo, feed-stantio, parziali, riavvio, catalogo-assente | 0 | 0 | identici, come atteso (cancello di liquidita' chiuso o nessun ingresso; `_traccia_break` non emette niente) |
+| gate-aperto | 15 (5 ingressi: 4 fade 12:35:49, 12:48:44, 12:53:01, 12:57:47 + `compressed_fav` 13:54:27 BACK Simakin a **2,20**; 0 abbinati) | 7 (2 ingressi) | spariti i 4 fade (D3: nessun break; e senza nomi il break non si attribuisce) e il `compressed_fav` sul prezzo fermo (D1). NUOVI 2 `compressed_fav` VERI: 13:28:01 LAY Simakin 1,18 (book 1,17/1,19, ultimo scambiato fermo a 1,36: prima non lo vedeva) -> timeout d'ingresso, piatto; 13:53:07 LAY Simakin 1,22 (tie-break 4-6, medio del book <= 1,20) -> abbinato, stop, residuo 0,03 dichiarato non piazzabile e regolato a mercato chiuso. Sonde: `sonda_prima_ga.txt` / `sonda_dopo_ga.txt` |
+| live, soldi-veri, soldi-veri-paper | 15 | 7 | stessa sequenza di `gate-aperto` (parita' paper/live: numeri identici fra i tre) |
+| rifiuti-betfair, soldi-veri-prova | 23 (rifiuti a raffica sui fade e sul `compressed_fav` falso, freno 5->60 s) | 2 | gli unici tentativi sono i 2 `compressed_fav` veri, entrambi rifiutati (LAY 1,18 e 1,22), freno 5 e 10 s |
+| chiusura-abbinata-in-parte | 15; «NESSUNA chiusura colpita (CP1-CP4 non lo so)» | 9 | ora c'e' una chiusura da colpire: «1 chiusura colpita, 3 viste: BACK chiesto 2,00 tetto 0,80 -> abbinato 0,80, annullato 1,20»; CP4 sollecitato, 0 violazioni |
+| chiudi-ora | 13 (i fade della prima meta') | 1 | prima della pressione di «Chiudi» non c'e' piu' nessun ingresso (i fade erano tutti nella prima meta'); esito identico a prima: «nessuna posizione aperta» |
+| uscite-manuali | 15; proposte nate 0, UM1-UM4 mai sollecitati | 35; proposte nate 16, decadute 15 | adesso le posizioni si abbinano e le uscite di strategia diventano PROPOSTE (nessuna firma: nessuna uscita parte da sola). Le azioni in piu' sono proposte, non ordini |
+| uscite-manuali-firmate | 15 | 9 | 1 proposta firmata ed eseguita (stop: proposta 2,03, piazzati 2,00, resto 0,03 dichiarato non piazzabile: regola del 04/10) |
+
+**Sonda D2 col nome COMPLETO del catalogo** (`"Marcelo Tomas Barrios Vera=9633138,Ilia Simakin=35635727"`,
+solo il cancello di liquidita' aperto, come §3.2): SENZA P2 (`sonda_d2_prima.txt`) 7 ingressi,
+CON P2 (`sonda_d2_dopo.txt`) 8: l'unica differenza e' il **break point delle 13:15:10 su Barrios
+ribattitore** (BACK 1,85), come atteso. Entrambe OK, 0 violazioni.
+
+Da notare nella sonda D2 (non e' una regressione, e' la spec che torna a valere): tolto il fade
+che lo copriva per precedenza, scatta il **set transition** del terzo set (LAY Simakin, che ha
+appena vinto il set: «LAY chi ha appena vinto il set», docstring setup 5), tre volte, a 0-0, 0-1 e
+1-1, cioe' un trade per game dentro la finestra `st_window_games` 2. Prima non scattava MAI.
+
+Strumento della sonda: `replay_conformita_tennis_pro/sonda.py` (avvolge `_emit` del bot per
+annotare ora di mercato e punteggio; non cambia il banco ne' il bot). Albero ripristinato dopo
+ogni sonda «prima» (diff stat identico a prima della sonda).
