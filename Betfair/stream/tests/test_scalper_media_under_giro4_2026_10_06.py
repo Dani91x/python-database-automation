@@ -685,8 +685,8 @@ def test_pronta_allo_stop_solo_con_la_banca_sull_intera_posizione(differita, exc
 
     def _annullo_del_resto() -> bool:
         return bool([p for p in b.kinds("media_annullo")
-                     if str(p.get("motivo", "")).startswith("rientro abbinato in parte")])
-    for _i in range(30):
+                     if str(p.get("motivo", "")).startswith("punta non abbinata entro")])
+    for _i in range(50):
         giri(b, differita, 1, flusso=0.0)
         if _annullo_del_resto():
             break

@@ -71,10 +71,10 @@ def test_quota_su_di_meno_di_n_tick_la_banca_resta_ferma(differita, exchange_it)
 # 2.1 b) punta abbinata in due tempi: la banca si riallinea alla posizione vera
 # ===========================================================================
 def test_punta_abbinata_in_due_tempi_la_banca_si_riallinea(differita, exchange_it):
-    """Rientro a 1,52 (punta 10,00) con 4 sul book: si abbina 4 e il resto si
-    annulla (giro 3); dal 07/10 la banca NON si tocca finche' la punta di
-    rientro e' viva e si SPOSTA una volta a punta terminata, sulla posizione
-    vera di quel momento. Con l'annullo LENTO (esecuzione differita di 4 book)
+    """Rientro a 1,52 (punta 10,00) con 4 sul book: si abbina 4 e il resto
+    resta sul mercato fino al TTL (07/10: la banca NON si tocca finche' la punta
+    di rientro e' viva) e si annulla allo scadere; la banca si SPOSTA una volta
+    a punta terminata, sulla posizione vera di quel momento. Con l'annullo LENTO (esecuzione differita di 4 book)
     gli scambi a 1,52 abbinano il resto prima che l'annullo arrivi: la banca si
     sposta sui 20 puntati. Con l'annullo veloce (1 book) il resto e' annullato e
     la banca si sposta sui 14 puntati. In nessun caso una banca annullata: prima
@@ -84,10 +84,10 @@ def test_punta_abbinata_in_due_tempi_la_banca_si_riallinea(differita, exchange_i
     b.taglie[(b.under, 1.52)] = 4.0
     b.ladder[b.under] = (1.52, 1.53)
     scambiato = False
-    for _i in range(30):
+    for _i in range(50):
         viol += giri(b, differita, 1, flusso=0.0)
         if not scambiato and [p for p in b.kinds("media_annullo")
-                              if str(p.get("motivo", "")).startswith("rientro abbinato in parte")]:
+                              if str(p.get("motivo", "")).startswith("punta non abbinata entro")]:
             # l'annullo del resto e' appena partito
             b.scambia(b.under, 1.52, 2000)
             scambiato = True

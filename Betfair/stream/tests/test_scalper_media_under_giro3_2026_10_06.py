@@ -122,18 +122,17 @@ def test_rientro_in_parte_resto_annullato_banca_sotto_la_media_in_profitto(diffe
     viol = giri(b, differita, 70)
     b.taglie[(b.under, 1.52)] = 4.0
     b.ladder[b.under] = (1.52, 1.53)
-    viol += giri(b, differita, 20, flusso=0.0)
+    viol += giri(b, differita, 45, flusso=0.0)
     assert viol == [], viol[:3]
     punta = _punte(b)[1]
     assert float(punta.size_matched) == pytest.approx(4.0)
     assert not MU.vivo_o_in_volo(punta)
     assert float(punta.order_type.price) == 1.52
     assert float(punta.size_cancelled) == pytest.approx(float(punta.order_type.size) - 4.0)
-    # 07/10: il resto della punta di RIENTRO si annulla alla prima parte
-    # abbinata (la regola del giro 3, identica), la banca non si tocca finche'
-    # la punta e' viva
+    # 07/10: il resto della punta di RIENTRO vive fino al TTL (la banca non si
+    # tocca finche' la punta e' viva), poi si annulla come sempre
     resti = [p for p in b.kinds("media_annullo") if p.get("side") == "BACK"
-             and str(p.get("motivo", "")).startswith("rientro abbinato in parte")]
+             and str(p.get("motivo", "")).startswith("punta non abbinata entro")]
     assert len(resti) == 1 and resti[0]["prezzo"] == 1.52
     pos = b.posizione()
     assert pos.puntato == pytest.approx(14.0)
@@ -218,7 +217,7 @@ def test_m11_rosso_su_banca_non_in_profitto_e_su_resto_vivo(differita, exchange_
     giri(b, differita, 70)
     b.taglie[(b.under, 1.52)] = 4.0
     b.ladder[b.under] = (1.52, 1.53)
-    giri(b, differita, 20, flusso=0.0)
+    giri(b, differita, 45, flusso=0.0)
     oss = _oss(b, params={"media_tick_chiusura": 1})
     assert "M11" not in _codici(oss)
     banca = next(r for r in oss.ordini if r["side"].upper() == "LAY" and CERT._m_vivo(r))
@@ -246,7 +245,7 @@ def test_m6_vuole_la_quota_della_media(differita, exchange_it):
     giri(b, differita, 70)
     b.taglie[(b.under, 1.52)] = 4.0
     b.ladder[b.under] = (1.52, 1.53)
-    giri(b, differita, 20, flusso=0.0)
+    giri(b, differita, 45, flusso=0.0)
     oss = _oss(b, params={"media_tick_chiusura": 1})
     assert "M6" not in _codici(oss)
     righe = [dict(r) for r in oss.ordini]

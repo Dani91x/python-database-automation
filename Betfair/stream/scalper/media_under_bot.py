@@ -24,9 +24,9 @@ COSA FA (spec par.3)
      rientro prima di fare qualsiasi cosa [...] MODIFICARE l'ordine banca e
      spostarlo a seconda dei rientri effettivamente abbinati>>):
      (a) PUNTA subito l'importo di rientro (par.4) con la banca viva INTATTA;
-     (b) finche' la punta di rientro e' viva la banca NON si tocca (il resto
-     non abbinato della punta si annulla come prima: alla prima parte
-     abbinata, giro 3, o allo scadere del TTL);
+     (b) finche' la punta di rientro e' viva (non abbinata o abbinata in
+     parte) la banca NON si tocca; allo scadere del TTL il resto della punta
+     si annulla, come prima;
      (c) a punta TERMINATA con un abbinato, la banca si SPOSTA una volta sulla
      posizione vera: L = banca esatta a ``quota del rientro - tick``; prima
      l'INTEGRAZIONE L - R (R = resto vivo della banca) alla quota nuova, poi
@@ -1764,9 +1764,16 @@ class MediaUnderStrategy(BaseStrategy):
           cio' che la punta ha gia' abbinato e' una posizione nuova, che la
           modalita' gestisce come sempre sulla posizione vera (banca a quota
           abbinata - tick) quando la punta e' terminata;
-        * la punta si e' abbinata in parte -> il resto si annulla (regola del
-          giro 3, <<resti non abbinati annullati>>, identica a prima); la banca
-          si sposta quando la punta e' terminata."""
+        * la punta abbinata in PARTE resta sul mercato fino all'abbinamento
+          intero o allo scadere del TTL (punto 2 dell'ordine del 07/10: <<finche'
+          la punta di rientro e' viva, non abbinata o abbinata in parte, la banca
+          NON si tocca; alla scadenza del TTL il resto si annulla>>). La regola
+          del giro 3 (<<resti non abbinati annullati quando la banca si
+          appoggia>>) resta per la punta d'ingresso; per il rientro la banca si
+          sposta solo a punta terminata, quindi non c'e' un resto da annullare.
+          Prima del 07/10 il resto si annullava alla prima parte abbinata
+          perche' la banca si riappoggiava li' (35797769, `media-under`: 0,30 su
+          10,00 abbinati e resto annullato = ciclo a +0,00)."""
         if not eseguibile(p):
             return
         banche = self._banche()
@@ -1776,10 +1783,6 @@ class MediaUnderStrategy(BaseStrategy):
             if pos.puntato > _EPS and abs(pos.se_vince - pos.se_perde) <= self._toll_pari():
                 self._annulla(market, p, "la banca si e' abbinata per intero (ciclo chiuso): "
                                          "il resto della punta di rientro si annulla")
-                return
-        if abbinato(p)[0] > 0:
-            self._annulla(market, p, "rientro abbinato in parte: il resto si annulla, la "
-                                     "banca si sposta a punta terminata")
 
     def _annulla_resti_delle_punte(self, market: Any) -> None:
         """06/10 (giro 3): ogni resto NON abbinato di una punta (ingresso o

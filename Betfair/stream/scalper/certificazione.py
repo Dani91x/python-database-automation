@@ -1872,15 +1872,15 @@ def _m11(o: OsservazioneMedia) -> Optional[str]:
             return ("banca %s @%s NON sotto la quota media %.4f: la chiusura non e' in "
                     "profitto" % (b.get("order_id"), b.get("price"), media))
     for r in ciclo:
-        # 07/10 (banca spostata): la punta di RIENTRO vive accanto alla banca
-        # finche' non si abbina (la banca non si tocca); il resto di una punta
-        # GIA' abbinata in parte (o di una punta nata prima della banca) va
-        # annullato come prima (giro 3)
+        # 07/10 (banca spostata): la punta di RIENTRO vive accanto alle banche
+        # nate PRIMA di lei finche' non e' terminata (abbinata per intero o TTL:
+        # la banca non si tocca). Il resto di una punta nata prima di una banca
+        # viva (la banca si e' appoggiata o spostata mentre la punta era sul
+        # mercato: la punta d'ingresso) va annullato come prima (giro 3)
         if (str(r.get("side") or "").upper() == "BACK" and _m_vivo(r)
                 and str(r.get("status")) != SB.OrderStatus.CANCELLING.value
-                and (float(r.get("size_matched") or 0.0) > 0
-                     or int(r.get("creato_ms") or 0) < min(int(b.get("creato_ms") or 0)
-                                                          for b in banche))):
+                and int(r.get("creato_ms") or 0) < max(int(b.get("creato_ms") or 0)
+                                                       for b in banche)):
             return ("punta %s @%s con un resto vivo di %s accanto alla banca %s: il resto "
                     "va annullato quando la banca si appoggia"
                     % (r.get("order_id"), r.get("price"), r.get("size_remaining"),

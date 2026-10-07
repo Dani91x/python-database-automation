@@ -81,8 +81,8 @@ Macchina a stati (per la selezione Under scelta):
    (a) ricalcola sulla posizione VERA abbinata (una banca abbinata in parte conta) e PUNTA subito
    l'importo di rientro (§4) al miglior prezzo, con la banca viva INTATTA (nessun annullo, nessun
    ripiazzo); la quota si ricontrolla sul book corrente;
-   (b) finche' la punta di rientro e' viva la banca NON si tocca; il resto non abbinato della punta si
-   annulla come prima (alla prima parte abbinata, regola del giro 3, o allo scadere del TTL);
+   (b) finche' la punta di rientro e' viva (non abbinata o abbinata in parte) la banca NON si tocca;
+   allo scadere del TTL il resto non abbinato della punta si annulla, come prima;
    (c) a punta TERMINATA con un abbinato, la banca si SPOSTA una volta sulla posizione vera: `L` =
    banca esatta alla quota `c` (quota dell'ultimo rientro abbinato - N tick, o sotto la media);
    `R` = resto vivo della banca; PRIMA l'integrazione `L - R` alla quota `c` (PERSIST), POI
@@ -361,14 +361,20 @@ banca».
 
 Strategia IDENTICA: stesse soglie, stessi importi di rientro (`rientro_esatto`, `punta_a_multiplo`),
 stessa quota di chiusura (`quota_della_banca`), stesse persistenze (punte LAPSE, banca PERSIST), stesso
-TTL della punta, stessi tetti, stessa regola dei resti (giro 3). Cambia SOLO la gestione dell'ordine
+TTL della punta, stessi tetti, stessa regola dei resti (giro 3) per la punta d'ingresso. Cambia SOLO
+la gestione dell'ordine
 di banca (`media_under_bot._allinea_banche`):
 
 1. Condizione di rientro vera -> la punta di rientro parte subito, con la banca viva INTATTA. Si
    aspetta solo che uno spostamento gia' chiesto sia concluso (mai due quote diverse vive mentre una
    punta di rientro e' sul mercato).
-2. Finche' la punta di rientro e' viva la banca non si tocca. Il resto della punta si annulla alla
-   prima parte abbinata (giro 3) o allo scadere del TTL, come prima.
+2. Finche' la punta di rientro e' viva (non abbinata o abbinata in parte) la banca non si tocca; allo
+   scadere del TTL il resto della punta si annulla, come prima. La regola del giro 3 (<<resti non
+   abbinati annullati>> quando la banca si appoggia) vale per la punta d'ingresso; per il rientro la
+   banca si sposta solo a punta terminata, quindi un resto della punta di rientro vive fino al TTL.
+   Prima del 07/10 quel resto si annullava alla prima parte abbinata (perche' la banca si
+   riappoggiava li'): sulla 35797769 (`media-under`) una prima versione di questo lavoro che lo
+   faceva ancora abbinava 0,30 su 10,00 e chiudeva il ciclo a +0,00 invece di +0,17.
 3. A punta terminata (abbinata per intero o resto annullato) con un abbinato, la banca si sposta UNA
    volta, sulla posizione vera, un passo per book e senza mai superare `L`:
    - operazione sulla banca in volo (banca non ancora sul book, riduzione o replace in viaggio,

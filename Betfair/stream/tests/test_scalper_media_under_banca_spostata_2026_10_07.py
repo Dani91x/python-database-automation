@@ -168,7 +168,7 @@ def test_rientro_in_parte_banca_ferma_poi_spostata(differita, exchange_it):
     punta = _punte(b)[-1]
     b.scambia(b.under, 1.52, 1008)              # 500 di coda per lato + 4,00
     vista_viva = 0
-    for _i in range(15):
+    for _i in range(45):
         viol += giri(b, differita, 1, flusso=0.0)
         if MU.vivo_o_in_volo(punta):
             vista_viva += 1
@@ -182,7 +182,9 @@ def test_rientro_in_parte_banca_ferma_poi_spostata(differita, exchange_it):
     assert float(punta.size_matched) == pytest.approx(4.0)
     assert not MU.vivo_o_in_volo(punta)
     resti = [p for p in b.kinds("media_annullo") if p.get("side") == "BACK"]
-    assert [str(p["motivo"])[:25] for p in resti] == ["rientro abbinato in parte"]
+    # 07/10: il resto della punta di rientro abbinata in parte vive fino al
+    # TTL (la banca non si tocca), poi si annulla come sempre
+    assert [str(p["motivo"])[:24] for p in resti] == ["punta non abbinata entro"]
     pos = b.posizione()
     c = MU.quota_della_banca(1.52, pos, 2)
     assert _banca_viva(b) == (c, MU.al_centesimo(MU.banca_esatta(pos, c)))
@@ -342,7 +344,7 @@ def test_integrazione_sotto_un_euro_riduzione_e_integrazione_a_un_euro(differita
     viol += _punta_di_rientro_appoggiata(b, differita)
     punta = _punte(b)[-1]
     b.scambia(b.under, 1.52, 1000.6)            # 500 di coda per lato + 0,30
-    for _i in range(25):
+    for _i in range(45):
         viol += giri(b, differita, 1, flusso=0.0)
     assert viol == [], viol[:3]
     assert float(punta.size_matched) == pytest.approx(0.30)
@@ -364,7 +366,7 @@ def test_copertura_in_eccesso_si_riduce_poi_si_sposta(differita, exchange_it):
     viol, banca = _in_posizione(b, differita)
     viol += _punta_di_rientro_appoggiata(b, differita)
     b.scambia(b.under, 1.52, 1000.2)            # + 0,10
-    for _i in range(25):
+    for _i in range(45):
         viol += giri(b, differita, 1, flusso=0.0)
     assert viol == [], viol[:3]
     rid = b.kinds("media_banca_ridotta")
@@ -385,7 +387,7 @@ def test_integrazione_sotto_un_euro_senza_banca_riducibile_dichiarata(differita,
     assert _banca_viva(b) == (1.48, 1.01)
     viol += _punta_di_rientro_appoggiata(b, differita)
     b.scambia(b.under, 1.52, 1000.6)            # + 0,30
-    for _i in range(25):
+    for _i in range(45):
         viol += giri(b, differita, 1, flusso=0.0)
     assert viol == [], viol[:3]
     residui = b.kinds("media_residuo")
