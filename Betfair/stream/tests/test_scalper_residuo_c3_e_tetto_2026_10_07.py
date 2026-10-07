@@ -1,0 +1,215 @@
+"""SCALPER CALCIO (maker e sniper): il residuo sotto 0,50 si chiude con DUE ordini
+legali e il tetto di perdita conta solo le perdite vere (07/10/2026).
+
+Decisioni dell'utente del 07/10 (testuali "1) b 2) b"):
+  1) C3, ingresso abbinato sotto 0,50 (R4 del replay 35797769: BACK abbinata 0,29
+     @1,67, per chiudere servirebbe LAY 0,29, sotto il floor di legge 0,50):
+     si chiude con DUE ordini legali. Prima un ordine di SCAVALCO dal lato
+     opposto (punta 1,00, il minimo della fonte unica, alla miglior quota),
+     poi la banca al centesimo calcolata dal flatten coi prezzi ABBINATI veri
+     (R4: punta 1,00 @1,66 + banca 1,28 @1,67 -> piatto al centesimo);
+  2) il tetto di perdita (`event_loss_cap`) NON conta i residui non chiudibili:
+     solo le perdite vere dei cicli chiusi.
+
+Finti con le chiavi e i tipi degli ordini flumine (`size_matched`,
+`size_remaining`, `size_cancelled`, `size_lapsed`, `average_price_matched`,
+`status` Enum, `order_type.price/size`).
+"""
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import pytest
+from flumine.order.order import OrderStatus
+
+from Betfair.stream.scalper.scalper_bot import (
+    DONE,
+    FLATTENING,
+    ScalperStrategy,
+    compute_green,
+    ordine_di_scavalco,
+    spezza_uscita,
+)
+
+
+class _Market:
+    market_id = "1.259819674"
+
+    def __init__(self):
+        self.orders = []
+        self.cancelled = []
+        self.blotter = []
+
+    def place_order(self, order, **_kw):
+        self.orders.append(order)
+        self.blotter.append(order)
+        return True
+
+    def cancel_order(self, order, size_reduction=None):
+        self.cancelled.append((order, size_reduction))
+
+
+class _Ordine:
+    def __init__(self, side, price, size, size_matched=0.0, live=False, sel=22):
+        self.side = side
+        self.selection_id = sel
+        self.market_id = "1.259819674"
+        self.size_matched = float(size_matched)
+        self.average_price_matched = float(price) if size_matched else 0.0
+        self.size_remaining = round(size - size_matched, 2) if live else 0.0
+        self.size_cancelled = 0.0 if live else round(size - size_matched, 2)
+        self.size_lapsed = 0.0
+        self.status = OrderStatus.EXECUTABLE if live else OrderStatus.EXECUTION_COMPLETE
+        self.order_type = SimpleNamespace(price=float(price), size=float(size),
+                                          persistence_type="LAPSE")
+        self.trade = None
+        self.id = "f%d" % id(self)
+
+
+def _netto(ordini):
+    sb = sum(o.size_matched for o in ordini if o.side == "BACK")
+    sl = sum(o.size_matched for o in ordini if o.side == "LAY")
+    nw = sum(o.size_matched * (o.average_price_matched - 1) for o in ordini if o.side == "BACK") \
+        - sum(o.size_matched * (o.average_price_matched - 1) for o in ordini if o.side == "LAY")
+    return nw, sl - sb
+
+
+def _scalper(events=None, **over):
+    p = {"dry_run": False, "stake": 25.0, "uscite_automatiche": True,
+         "exact_exits": True, "size_step": 0.5, "live_min_bet": 2.0}
+    p.update(over)
+    kw = {}
+    if events is not None:
+        kw["event_sink"] = lambda kind, payload: events.append((kind, payload))
+    return ScalperStrategy(market_filter={}, scalper_params=p, **kw)
+
+
+# ------------------------------------------------------- la regola, pura
+def test_r4_scavalco_punta_1_poi_banca_al_centesimo_piatto():
+    """R4: BACK abbinata 0,29 @1,67 (se vince +0,19, se perde -0,29). Lo scavalco
+    e' una PUNTA 1,00 alla miglior quota di punta (1,66); abbinata, il flatten
+    chiude con una BANCA diretta al centesimo (1,28 @1,67): piatto."""
+    entrata = _Ordine("BACK", 1.67, 25.0, size_matched=0.29)
+    nw, nl = _netto([entrata])
+    sc = ordine_di_scavalco(nw, nl, best_back=1.66, best_lay=1.67)
+    assert sc == ("BACK", pytest.approx(1.66), pytest.approx(1.00))
+    scavalco = _Ordine("BACK", 1.66, 1.00, size_matched=1.00)
+    nw2, nl2 = _netto([entrata, scavalco])
+    lato, size, _ = compute_green(nw2, nl2, 1.67)
+    banca = round(size, 2)
+    assert lato == "LAY" and banca == pytest.approx(1.28)
+    assert spezza_uscita("LAY", 1.67, banca) == (banca, 0.0, 0.0)     # diretta
+    chiusura = _Ordine("LAY", 1.67, banca, size_matched=banca)
+    nw3, nl3 = _netto([entrata, scavalco, chiusura])
+    assert abs(nw3 - nl3) <= 0.02                                       # piatto
+
+
+def test_scavalco_della_posizione_corta_porta_la_punta_a_un_importo_chiudibile():
+    """Posizione corta che chiederebbe una PUNTA sotto 0,50: lo scavalco e' una
+    BANCA al centesimo (>= 1,00) dimensionata perche' la punta di chiusura venga
+    ~2,00 (chiudibile al centesimo: diretta multipla + resto 0,50-0,99)."""
+    entrata = _Ordine("LAY", 1.67, 25.0, size_matched=0.29)
+    nw, nl = _netto([entrata])
+    lato, piccola, _ = compute_green(nw, nl, 1.66)
+    assert lato == "BACK" and piccola < 0.50
+    sc = ordine_di_scavalco(nw, nl, best_back=1.66, best_lay=1.67)
+    assert sc[0] == "LAY" and sc[1] == pytest.approx(1.67) and sc[2] >= 1.00
+    scavalco = _Ordine("LAY", 1.67, sc[2], size_matched=sc[2])
+    nw2, nl2 = _netto([entrata, scavalco])
+    lato2, size2, _ = compute_green(nw2, nl2, 1.66)
+    d, t, r = spezza_uscita("BACK", 1.66, round(size2, 2))
+    assert lato2 == "BACK" and r == 0.0 and round(d + t, 2) == round(size2, 2)
+
+
+def test_scavalco_none_senza_prezzi():
+    assert ordine_di_scavalco(0.19, -0.29, best_back=None, best_lay=1.67) is None
+    assert ordine_di_scavalco(-0.19, 0.29, best_back=1.66, best_lay=None) is None
+
+
+# ------------------------------------------------------- maker, nel flatten vero
+def test_r4_maker_flatten_manda_lo_scavalco_non_dichiara_il_residuo():
+    events = []
+    s = _scalper(events)
+    m = _Market()
+    slot = s._slot(m.market_id, 22)
+    slot.status = FLATTENING
+    slot.flatten_orders.append(_Ordine("BACK", 1.67, 25.0, size_matched=0.29))
+    s._drive_flatten(m, slot, best_back=1.66, best_lay=1.67, now=10_000)
+    kinds = [k for k, _ in events]
+    assert "residuo_ricordato" not in kinds
+    assert slot.status == FLATTENING and not slot.residual_ok
+    assert len(m.orders) == 1
+    o = m.orders[0]
+    assert (o.side, o.order_type.price, o.order_type.size) == ("BACK", 1.66, 1.00)
+    assert "scavalco" in kinds
+
+
+def test_maker_scavalco_ha_un_tetto_poi_dichiara():
+    """Nessun loop: oltre il tetto di scavalchi del ciclo il residuo si dichiara
+    come prima (CP4)."""
+    events = []
+    s = _scalper(events)
+    m = _Market()
+    slot = s._slot(m.market_id, 22)
+    slot.status = FLATTENING
+    slot.flatten_orders.append(_Ordine("BACK", 1.67, 25.0, size_matched=0.29))
+    slot.scavalchi = s._SCAVALCHI_MAX_PER_CICLO
+    slot.flat_tries = 13
+    s._drive_flatten(m, slot, best_back=1.66, best_lay=1.67, now=10_000)
+    assert m.orders == []
+    assert slot.status == DONE and slot.residual_ok
+
+
+# ------------------------------------------------------- sniper
+def test_sniper_r4_flatten_manda_lo_scavalco():
+    from Betfair.stream.scalper.sniper_bot import SniperStrategy
+
+    ev = []
+    s = SniperStrategy(market_filter={}, sniper_params={
+        "stake": 10.0, "exact_exits": True, "size_step": 0.5, "live_min_bet": 2.0},
+        event_sink=lambda k, p: ev.append((k, p)))
+    m = _Market()
+    pos = s._p(m.market_id, 47972)
+    pos.flattening = True
+    pos.flatten_orders.append(_Ordine("BACK", 2.22, 10.0, size_matched=0.21, sel=47972))
+    s._drive_flatten(m, pos, 2.20, 2.22, 10.0)
+    kinds = [k for k, _ in ev]
+    assert "residuo_ricordato" not in kinds and "sniper_flat_residual" not in kinds
+    assert pos.flattening
+    assert [(o.side, o.order_type.price, o.order_type.size) for o in m.orders] == [
+        ("BACK", 2.2, 1.0)]
+
+
+# ------------------------------------------------------- tetto di perdita
+def test_tetto_non_conta_i_residui_non_chiudibili():
+    """Decisione 2: un residuo accettato non entra nel tetto di perdita."""
+    events = []
+    s = _scalper(events, exact_exits=False, size_step=0.5, live_min_bet=1.0,
+                 event_loss_cap=0.5)
+    m = _Market()
+    slot = s._slot(m.market_id, 42)
+    slot.status = FLATTENING
+    slot.flatten_orders.append(_Ordine("LAY", 4.0, 0.20, size_matched=0.20, sel=42))
+    slot.flat_tries = 13
+    s._drive_flatten(m, slot, best_back=4.0, best_lay=4.1, now=10_000)
+    assert slot.residual_ok and s.stats["pnl_locked"] == pytest.approx(-0.60)
+    assert s.stats["pnl_residui"] == pytest.approx(-0.60)
+    assert s._check_event_guards() is False and not s.force_flat
+    # una perdita VERA oltre il tetto lo fa scattare
+    s.stats["pnl_locked"] -= 0.60
+    assert s._check_event_guards() is True and s.force_flat
+    cap = [p for k, p in events if k == "loss_cap"][0]
+    assert cap["locked"] == pytest.approx(-0.60)
+    assert "residui" in cap["msg"]
+
+
+def test_sniper_tetto_non_conta_i_residui():
+    from Betfair.stream.scalper.sniper_bot import SniperStrategy
+
+    s = SniperStrategy(market_filter={}, sniper_params={"stake": 10.0,
+                                                       "event_loss_cap": 1.0})
+    s.stats["pnl_locked"] = -1.20
+    s.stats["pnl_residui"] = -1.20
+    assert s._loss_capped() is False
+    s.stats["pnl_locked"] = -2.30
+    assert s._loss_capped() is True

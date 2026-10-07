@@ -37,7 +37,8 @@ from flumine.order.ordertype import LimitOrder
 from flumine.order.trade import Trade
 from flumine.utils import get_nearest_price, get_price, get_size, price_ticks_away
 
-from .scalper_bot import compute_green, spezza_uscita, stato_parcheggio, ticks_between
+from .scalper_bot import (_chiusura_oltre_la_polvere, compute_green, ordine_di_scavalco, spezza_uscita,
+                          stato_parcheggio, ticks_between)
 from ..trading.minimi_it import IT_MIN_BACK as IT_BACK_MIN_STAKE
 from ..trading.minimi_it import IT_MIN_LAY as IT_LAY_MIN_SIZE
 from ..uscite_proposte import CHIAVE_STATS as CHIAVE_PROPOSTE
@@ -73,6 +74,7 @@ class _Pos:
     t_last_submin: int = 0
     submin_count: int = 0
     residual_accepted: float = 0.0   # entita' |nw-nl| del residuo accettato
+    scavalchi: int = 0               # 07/10: ordini di scavalco del ciclo (C3)
     # 29/09 (cantiere S-bis): chiusura non piazzabile gia' dichiarata CRITICAL
     # (una riga per episodio, non una a ogni book)
     chiusura_bloccata_detta: bool = False
@@ -201,7 +203,7 @@ class SniperStrategy(BaseStrategy):
         self.stats: Dict[str, float] = {
             "orders": 0, "entries": 0, "greens": 0, "stops": 0,
             "timeouts": 0, "flattens": 0, "dry_fires": 0,
-            "pnl_locked": 0.0, "pos_ms_total": 0.0, "cycles": 0,
+            "pnl_locked": 0.0, "pnl_residui": 0.0, "pos_ms_total": 0.0, "cycles": 0,
             "pnl_settled": 0.0,  # verità del settlement simulato (paper)
             "ledger_divergences": 0,
         }
@@ -585,11 +587,17 @@ class SniperStrategy(BaseStrategy):
     def _loss_capped(self) -> bool:
         if self.event_loss_cap <= 0:
             return False
-        if self.stats["pnl_locked"] <= -self.event_loss_cap:
+        # 07/10 (decisione dell'utente "2) b"): solo le perdite VERE dei cicli
+        # chiusi; i residui non chiudibili (`pnl_residui`) restano fuori
+        residui = float(self.stats.get("pnl_residui", 0.0))
+        vere = float(self.stats["pnl_locked"]) - residui
+        if vere <= -self.event_loss_cap:
             if not self._event_done:
                 self._event_done = True
-                self._emit("sniper_loss_cap",
-                           pnl=round(self.stats["pnl_locked"], 3))
+                self._emit("sniper_loss_cap", pnl=round(vere, 3),
+                           residui_esclusi=round(residui, 3),
+                           msg="tetto di perdita dello sniper: perdite vere %.2f "
+                               "(residui non chiudibili %.2f esclusi)" % (vere, residui))
             return True
         return False
 
@@ -773,6 +781,7 @@ class SniperStrategy(BaseStrategy):
         pos.close = None
         pos.flattening = True
         pos.flat_tries = 0
+        pos.scavalchi = 0
 
     def _drive_flatten(self, market: Any, pos: _Pos,
                        bb: Optional[float], bl: Optional[float],
@@ -824,6 +833,11 @@ class SniperStrategy(BaseStrategy):
         # vivo, nessuna sequenza exact in corso e sbilancio piccolo → si
         # chiude contabilizzando il worst-case (evita l'inseguimento infinito
         # quando il residuo non e' piazzabile sull'exchange)
+        # 07/10 (decisione dell'utente "1) b", C3): chiusura tutta sotto il floor
+        # di legge -> ordine di SCAVALCO dal lato opposto; la chiusura al
+        # centesimo la mette questo flatten al book dopo, sui prezzi abbinati
+        if self._scavalca(market, pos, nw, nl, bb, bl, cross=min(pos.flat_tries, 8)):
+            return
         if not pos.submins and abs(nw - nl) <= 0.30:
             locked = self._book_locked(pos, nw, nl)   # delta, mai il cumulato
             pos.flattening = False
@@ -831,6 +845,7 @@ class SniperStrategy(BaseStrategy):
             pos.residual_accepted = abs(nw - nl)
             self.stats["flattens"] += 1
             self.stats["pnl_locked"] += locked
+            self.stats["pnl_residui"] += locked     # 07/10: fuori dal tetto
             self._close_cycle_clock(pos, now)
             self._emit("sniper_flat_residual", locked=round(locked, 3),
                        nw=round(nw, 3), nl=round(nl, 3))
@@ -854,6 +869,7 @@ class SniperStrategy(BaseStrategy):
             pos.residual_accepted = abs(nw - nl)
             self.stats["flattens"] += 1
             self.stats["pnl_locked"] += locked
+            self.stats["pnl_residui"] += locked     # 07/10: fuori dal tetto
             self._close_cycle_clock(pos, now)
             self._emit("sniper_flat_forced", level="WARN",
                        locked=round(locked, 3),
@@ -948,6 +964,38 @@ class SniperStrategy(BaseStrategy):
         if (self.exact_exits and not self.dry_run and trim >= 0.05
                 and pos.submin_count < self._SUBMIN_MAX_PER_CYCLE):
             return False
+        return True
+
+    _SCAVALCHI_MAX_PER_CICLO = 3
+
+    def _scavalca(self, market: Any, pos: _Pos, nw: float, nl: float,
+                  bb: Optional[float], bl: Optional[float], cross: int = 0) -> bool:
+        """07/10 (C3, gemello di ``ScalperStrategy._scavalca``): chiusura tutta
+        sotto il floor di legge -> ordine di scavalco (``ordine_di_scavalco``).
+        Solo con le uscite esatte, mai in dry-run, al piu' 3 per ciclo."""
+        if not self.exact_exits or self.dry_run or pos.submins:
+            return False
+        if abs(nw - nl) <= 0.02 or pos.scavalchi >= self._SCAVALCHI_MAX_PER_CICLO:
+            return False
+        if not self._tutto_residuo(nw, nl, bb, bl, cross=cross):
+            return False
+        if not _chiusura_oltre_la_polvere(nw, nl, bb, bl, cross):
+            return False
+        sc = ordine_di_scavalco(nw, nl, bb, bl, cross=cross)
+        if sc is None:
+            return False
+        lato, quota, importo = sc
+        o = self._place(market, self._sid(pos), lato, quota, importo, floor=False, pos=pos)
+        if o is None or getattr(o, "status", None) == OrderStatus.VIOLATION:
+            return False
+        self._track(pos, o)
+        pos.scavalchi += 1
+        pos.flat_tries += 1
+        self._emit("scavalco", selection_id=self._sid(pos), side=lato, price=quota,
+                   size=importo, nw=round(nw, 3), nl=round(nl, 3),
+                   msg="sniper: chiusura sotto 0,50 non piazzabile: ordine di "
+                       "scavalco %s %.2f @%s, poi chiusura al centesimo"
+                       % (lato, importo, quota))
         return True
 
     def _tutto_residuo(self, nw: float, nl: float,

@@ -69,7 +69,9 @@ def test_scalper_critical_una_volta_a_prezzi_assenti(differita, orologio_mercato
     assert viol == [], viol[:3]
     assert len(_critical(b.righe)) == 1, _critical(b.righe)
     assert slot.status == SCT.SB.FLATTENING
-    viol = SCT.giri(b, differita, 60)
+    # 07/10 (decisione dell'utente "1) b"): un resto sotto 0,50 si chiude con lo
+    # scavalco + la chiusura al centesimo: servono piu' giri (latenza 4: 60 -> 120)
+    viol = SCT.giri(b, differita, 120)
     assert viol == [], viol[:3]
     assert slot.status in (SCT.SB.IDLE, SCT.SB.DONE)
 

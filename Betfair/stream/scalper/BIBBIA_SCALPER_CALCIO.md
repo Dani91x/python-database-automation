@@ -858,6 +858,26 @@ d. Solo se F2 li promuove (Atlante PRIMA del codice, una cella alla
 
 ---
 
+## 13-bis. CHIUSURE AL CENTESIMO E TETTO DI PERDITA (07/10/2026, decisioni dell'utente)
+
+- **Chiusure al centesimo** (ordine dell'utente del 07/10, referto
+  `AUDIT_2026-10-07/SCALPER_CHIUSURA_AL_CENTESIMO.md`): una punta di chiusura non multipla
+  di 0,50 esce ESATTA (diretta un passo sotto + resto 0,50-0,99 col place-and-trim);
+  l'aggiunta di banca alla close sotto il minimo diventa banca al centesimo di aggiunta +
+  1,00 con la close ridotta di 1,00; parcheggio del place-and-trim 1,00 dalla fonte unica,
+  LAY alla quota in banda INVALID_PROFIT_RATIO.
+- **Decisione «1) b»** (C3, ingresso abbinato sotto 0,50, es. BACK 0,29): niente piu'
+  residuo dichiarato. Si chiude con DUE ordini legali: lo SCAVALCO dal lato opposto
+  (`scalper_bot.ordine_di_scavalco`: punta 1,00 alla miglior quota se servirebbe una banca
+  piccola; banca al centesimo dimensionata per una punta di chiusura ~2,00 se servirebbe una
+  punta piccola), poi la chiusura normale del flatten al centesimo sui prezzi abbinati
+  (R4: punta 1,00 @1,66 + banca 1,28 @1,67). Maker e sniper; al piu' 3 scavalchi per ciclo,
+  poi il residuo si dichiara come prima (nessun loop). Sotto 0,05 di chiusura resta la
+  "polvere" accettata di sempre.
+- **Decisione «2) b»**: il tetto di perdita (`event_loss_cap`, maker e sniper) conta solo le
+  perdite VERE dei cicli chiusi: i residui non chiudibili (`stats.pnl_residui`) restano fuori;
+  l'attivita' `loss_cap` / `sniper_loss_cap` scrive le due cifre.
+
 ## 14. MODALITA' «MEDIA UNDER» (05/10/2026) — NON CERTIFICATA
 
 > Specifica: `SPEC_MEDIA_UNDER_2026-10-05.md`. Referto di costruzione:

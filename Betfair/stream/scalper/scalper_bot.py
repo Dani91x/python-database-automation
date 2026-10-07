@@ -155,6 +155,65 @@ def stato_parcheggio(side: str, price: float, target: float) -> Optional[Any]:
     )
 
 
+def ordine_di_scavalco(
+    net_win: float, net_lose: float,
+    best_back: Optional[float], best_lay: Optional[float], cross: int = 0,
+) -> Optional[Tuple[str, float, float]]:
+    """07/10 - DECISIONE DELL'UTENTE "1) b": un residuo la cui chiusura e' sotto
+    il floor di legge (0,50: nessun ordine, nessun place-and-trim; es. R4 del
+    replay 35797769, BACK abbinata 0,29 -> servirebbe LAY 0,29) si chiude con DUE
+    ordini legali. Questo e' il PRIMO: lo SCAVALCO dal lato opposto, che ingrandisce
+    la posizione fino a un importo chiudibile; il SECONDO e' la chiusura normale del
+    flatten, al centesimo, calcolata sui prezzi ABBINATI veri.
+
+      * posizione lunga (servirebbe una banca piccola): PUNTA del minimo della fonte
+        unica (``minimi_it.IT_MIN_BACK``, 1,00, multiplo di 0,50: diretta) alla
+        miglior quota di punta; poi banca (D + 1,00 x B) / L >= 1,00 al centesimo
+        (R4: punta 1,00 @1,66 + banca 1,28 @1,67);
+      * posizione corta (servirebbe una punta piccola): BANCA al centesimo (>= 1,00)
+        alla miglior quota di banca, dimensionata perche' la punta di chiusura
+        venga ~2,00 (da 1,50 a 2,49 si chiude al centesimo: diretta multipla +
+        resto 0,50-0,99 col place-and-trim).
+
+    ``cross`` tick oltre il best (aggressivita' del flatten). Ritorna
+    ``(lato, quota, importo)`` o None se manca un prezzo. Pura."""
+    d = float(net_win) - float(net_lose)
+    if best_back is None or best_lay is None:
+        return None
+    bb = get_nearest_price(best_back)
+    bl = get_nearest_price(best_lay)
+    if d > 0:
+        q = price_ticks_away(bb, -cross) if cross else bb
+        if q is None or q <= 1.0:
+            return None
+        return "BACK", float(q), float(IT_BACK_MIN_STAKE)
+    q = price_ticks_away(bl, +cross) if cross else bl
+    if q is None or q <= 1.0:
+        return None
+    from decimal import ROUND_CEILING, Decimal
+    punta_voluta = 2.0
+    banca = (punta_voluta * float(bb) - abs(d)) / float(q)
+    banca = float(Decimal(str(banca)).quantize(Decimal("0.01"), rounding=ROUND_CEILING))
+    return "LAY", float(q), max(float(IT_LAY_MIN_SIZE), banca)
+
+
+def _chiusura_oltre_la_polvere(net_win: float, net_lose: float,
+                               best_back: Optional[float], best_lay: Optional[float],
+                               cross: int = 0) -> bool:
+    """07/10: lo scavalco si usa solo se la chiusura che servirebbe e' almeno 0,05
+    (la stessa soglia sotto cui le uscite esatte non avviano sequenze): sotto, la
+    "polvere" di centesimi resta il micro-residuo accettato di sempre (uno
+    scavalco costerebbe piu' del residuo stesso)."""
+    side, base = ("LAY", best_lay) if net_win > net_lose else ("BACK", best_back)
+    if base is None:
+        return False
+    p = get_nearest_price(base)
+    if cross:
+        p = price_ticks_away(p, cross if side == "LAY" else -cross) or p
+    g = compute_green(net_win, net_lose, p)
+    return g is not None and float(g[1]) >= 0.05
+
+
 # Stati della macchina.
 # QUOTING  = una gamba resting (modalita' reversion/momentum)
 # QUOTING2 = due gambe resting (modalita' market-maker, cattura spread)
@@ -291,6 +350,7 @@ class _Slot:
     t_last_flat: Optional[int] = None    # ultimo piazzamento flatten (anti-churn live)
     residual_ok: bool = False            # micro-residuo accettato: NON ri-flattenare
     residual_accepted: float = 0.0       # entita' |nw-nl| del residuo accettato
+    scavalchi: int = 0                   # 07/10: ordini di scavalco del ciclo (C3)
     # sequenze park-trim-replace (uscite a size ESATTA su .it): vedi _drive_submins
     submins: list = field(default_factory=list)
     # prints DENTRO lo spread (ts, EUR): il CIBO diretto dei maker
@@ -592,7 +652,7 @@ class ScalperStrategy(BaseStrategy):
             "orders_placed": 0, "dry_quotes": 0, "cycles": 0,
             "scalps": 0, "scratch_pars": 0, "ledger_divergences": 0,
             "roundtrips": 0, "scratches": 0, "stops": 0,
-            "flattens": 0, "pnl_locked": 0.0, "pnl_peak": 0.0,
+            "flattens": 0, "pnl_locked": 0.0, "pnl_peak": 0.0, "pnl_residui": 0.0,
             "pnl_settled": 0.0,  # verità del settlement simulato (paper)
             "trend_entries": 0, "target_hit": 0,
             # contabilita' per FASE (missione one_green_per_phase)
@@ -1090,13 +1150,23 @@ class ScalperStrategy(BaseStrategy):
         locked = float(self.stats.get("pnl_locked", 0.0))
         if locked > float(self.stats.get("pnl_peak", 0.0)):
             self.stats["pnl_peak"] = locked
-        if self.event_loss_cap > 0 and locked <= -self.event_loss_cap:
+        # 07/10 (decisione dell'utente "2) b"): il tetto di perdita conta SOLO le
+        # perdite vere dei cicli chiusi; i residui non chiudibili (al peggiore,
+        # `pnl_residui`) restano fuori (prima: -1,61 di soli residui sulla
+        # 35797769 fermava la sessione 42' prima del KO)
+        residui = float(self.stats.get("pnl_residui", 0.0))
+        vere = locked - residui
+        if self.event_loss_cap > 0 and vere <= -self.event_loss_cap:
             # tetto di perdita partita: FORCE-FLAT totale (non solo stop
             # ingressi: i cicli in volo continuerebbero a perdere — visto
             # -2.10 con cap -1.00 in backtest)
             if not self.force_flat:
                 self.force_flat = True
-                self._emit("loss_cap", locked=round(locked, 2))
+                self._emit("loss_cap", locked=round(vere, 2),
+                           residui_esclusi=round(residui, 2),
+                           msg="tetto di perdita della partita: perdite vere dei "
+                               "cicli chiusi %.2f (residui non chiudibili %.2f "
+                               "esclusi dal conto)" % (vere, residui))
             return True
         if (
             self.event_profit_target > 0
@@ -2283,6 +2353,12 @@ class ScalperStrategy(BaseStrategy):
             # aspettare il flatten.
             if now is not None:
                 slot.t_last_flat = int(now)
+        elif self._scavalca(market, slot, net_win, net_lose, best_back, best_lay,
+                            cross=min(max(slot.flat_tries - 1, 0), 8), now=now):
+            # 07/10 (decisione dell'utente "1) b"): chiusura tutta sotto il floor
+            # di legge -> scavalco dal lato opposto; al book dopo il flatten
+            # chiude al centesimo la posizione ingrandita (ordine in volo: attesa)
+            pass
         else:
             # flatten NON piazzabile (size sotto il minimo/rounding, o book
             # monco): se il residuo NON puo' perdere piu' di pochi centesimi,
@@ -2303,6 +2379,9 @@ class ScalperStrategy(BaseStrategy):
                     slot.residual_accepted = abs(net_win - net_lose)
                     locked = min(net_win, net_lose)
                     self.stats["pnl_locked"] += locked
+                    # 07/10 (decisione dell'utente "2) b"): un residuo NON
+                    # chiudibile non entra nel tetto di perdita
+                    self.stats["pnl_residui"] += locked
                     self._on_cycle_closed(slot, locked,
                                           kind="flatten_residual", now=now)
                     self._emit("flatten_residual", locked=round(locked, 4),
@@ -2337,6 +2416,9 @@ class ScalperStrategy(BaseStrategy):
                     slot.residual_accepted = abs(net_win - net_lose)
                     locked = min(net_win, net_lose)
                     self.stats["pnl_locked"] += locked
+                    # 07/10 (decisione dell'utente "2) b"): un residuo NON
+                    # chiudibile non entra nel tetto di perdita
+                    self.stats["pnl_residui"] += locked
                     self._on_cycle_closed(slot, locked,
                                           kind="flatten_residual", now=now)
                     self._emit("flatten_residual_forced", level="WARN",
@@ -2442,6 +2524,51 @@ class ScalperStrategy(BaseStrategy):
             return False
         diretta, trim, residuo = spezza_uscita(side, float(p), float(g[1]))
         return diretta <= 0 and trim <= 0 and residuo > 0
+
+    def _scavalca(
+        self, market: Any, slot: _Slot, net_win: float, net_lose: float,
+        best_back: Optional[float], best_lay: Optional[float], cross: int = 0,
+        now: Optional[int] = None,
+    ) -> bool:
+        """07/10 - DECISIONE DELL'UTENTE "1) b" (C3): la chiusura che servirebbe e'
+        TUTTA sotto il floor di legge (``_tutto_residuo``): si piazza lo SCAVALCO
+        (``ordine_di_scavalco``) e la chiusura vera la mette il flatten al giro
+        dopo, al centesimo, sui prezzi abbinati. Solo con le uscite esatte (live
+        .it e paper), mai in dry-run; al piu' ``_SCAVALCHI_MAX_PER_CICLO`` per
+        ciclo (poi il residuo si dichiara come prima: nessun loop). True = lo
+        scavalco e' partito."""
+        if not self.exact_exits or self.dry_run or slot.submins:
+            return False
+        if abs(net_win - net_lose) <= 0.02:
+            return False
+        if slot.scavalchi >= self._SCAVALCHI_MAX_PER_CICLO:
+            return False
+        if not self._tutto_residuo(net_win, net_lose, best_back, best_lay, cross=cross):
+            return False
+        if not _chiusura_oltre_la_polvere(net_win, net_lose, best_back, best_lay, cross):
+            return False
+        sc = ordine_di_scavalco(net_win, net_lose, best_back, best_lay, cross=cross)
+        if sc is None:
+            return False
+        o_ref = next((x for x in (slot.entry, slot.entry_back, slot.entry_lay,
+                                  slot.close, *slot.flatten_orders) if x is not None), None)
+        sid = getattr(o_ref, "selection_id", None)
+        if sid is None:
+            return False
+        lato, quota, importo = sc
+        o = self._place(market, int(sid), lato, quota, importo, floor_min=False, slot=slot)
+        if o is None:
+            return False
+        slot.scavalchi += 1
+        slot.chiusura_bloccata_detta = False
+        if now is not None:
+            slot.t_last_flat = int(now)
+        self._emit("scavalco", selection_id=int(sid), side=lato, price=quota,
+                   size=importo, nw=round(net_win, 3), nl=round(net_lose, 3),
+                   msg="chiusura %s sotto 0,50 non piazzabile: ordine di scavalco "
+                       "%s %.2f @%s, poi chiusura al centesimo"
+                       % ("LAY" if net_win > net_lose else "BACK", lato, importo, quota))
+        return True
 
     def _ricorda_residuo(self, slot: _Slot, net_win: float, net_lose: float,
                          quota: Optional[float] = None) -> None:
@@ -2842,6 +2969,8 @@ class ScalperStrategy(BaseStrategy):
     _SUBMIN_MIN_INTERVAL_MS = 30_000   # briglia dura (03/07 sera: il flatten
     # ricreava la sequenza ogni 5s pur con l'ordine gia' a riposo al target)
     _SUBMIN_MAX_PER_CYCLE = 5
+    #: 07/10 (C3): scavalchi per ciclo, oltre il residuo si dichiara (mai un loop)
+    _SCAVALCHI_MAX_PER_CICLO = 3
 
     def _ordini_della_close(self, slot: _Slot) -> set:
         """CANTIERE S (29/09): id() degli ordini che SONO la chiusura corrente
@@ -3145,6 +3274,7 @@ class ScalperStrategy(BaseStrategy):
         slot.residual_ok = False
         slot.residual_accepted = 0.0
         slot.submin_count = 0
+        slot.scavalchi = 0
         slot.chiusura_bloccata_detta = False
         slot.rifiuti_taglia = 0
         slot.taglia_ferma_fino_ms = 0
