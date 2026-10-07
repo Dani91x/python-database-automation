@@ -1,0 +1,69 @@
+diff --git a/Betfair/stream/tennis_scalper/tennis_pro_bot.py b/Betfair/stream/tennis_scalper/tennis_pro_bot.py
+index e39ed8eb..8d589866 100644
+--- a/Betfair/stream/tennis_scalper/tennis_pro_bot.py
++++ b/Betfair/stream/tennis_scalper/tennis_pro_bot.py
+@@ -107,6 +107,9 @@ class TennisProStrategy(BaseStrategy):
+         # (ultimo token) cosi' il match e' robusto.
+         _raw = {_norm(k): int(v) for k, v in dict(kwargs.pop("name_to_sel", {})).items()}
+         self.name_to_sel: Dict[str, int] = dict(_raw)
++        # 07/10: i nomi COMPLETI del catalogo, per il nome IPS TRONCATO (vedi
++        # `_lookup_sel`)
++        self._nomi_catalogo: Dict[str, int] = dict(_raw)
+         # fix audit #13: se i due runner CONDIVIDONO il cognome (sorelle/fratelli,
+         # doppi omonimi) il cognome e' AMBIGUO e NON va indicizzato — un match
+         # sbagliato scambierebbe server/receiver (direzione del trade invertita:
+@@ -312,7 +315,18 @@ class TennisProStrategy(BaseStrategy):
+         if n in self.name_to_sel:
+             return self.name_to_sel[n]
+         parts = n.split()
+-        return self.name_to_sel.get(parts[-1]) if parts else None
++        sel = self.name_to_sel.get(parts[-1]) if parts else None
++        if sel is not None:
++            return sel
++        # 07/10 - NOME IPS TRONCATO. L'IPS taglia i nomi lunghi (35790089:
++        # "Marcelo Tomas Barrios V", 23 caratteri) e ne' il nome completo ne'
++        # il cognome ("v") combaciano col catalogo: il giocatore restava senza
++        # selezione e i setup che dipendono da lui non scattavano mai. Si
++        # accetta il nome del catalogo che COMINCIA col nome IPS, SOLO se e'
++        # uno: due candidati = ambiguo = nessun match (stessa prudenza dei
++        # cognomi condivisi, fix audit #13).
++        cand = {v for k, v in self._nomi_catalogo.items() if k.startswith(n)}
++        return next(iter(cand)) if len(cand) == 1 else None
+ 
+     def _server_receiver_sel(self) -> Tuple[Optional[int], Optional[int]]:
+         s = self.score
+--- /dev/null
++++ b/Betfair/stream/tennis_live/tests/test_pro_nome_ips_troncato_2026_10_07.py	2026-10-07 09:49:59.161155525 +0000
+@@ -0,0 +1,32 @@
++"""07/10 (cantiere conformita' tennis) - tennis_pro: il nome IPS TRONCATO.
++
++Sulla registrazione vera 35790089 l'IPS scrive "Marcelo Tomas Barrios V" (23
++caratteri). Se il catalogo Betfair porta il nome completo, ne' il nome ne' il
++cognome ("v") combaciano: Barrios restava senza selezione e i setup su di lui
++(break point da ribattitore, set vinto, doppio break) non scattavano mai.
++"""
++from betfairlightweight import filters
++
++from Betfair.stream.tennis_scalper.tennis_pro_bot import TennisProStrategy
++
++
++def _bot(catalogo):
++    return TennisProStrategy(
++        market_filter=filters.streaming_market_filter(market_ids=["1.1"]),
++        pro_params={"stake": 2.0, "dry_run": True}, name_to_sel=catalogo)
++
++
++def test_nome_ips_troncato_trova_il_nome_completo_del_catalogo():
++    s = _bot({"Marcelo Tomas Barrios Vera": 9633138, "Ilia Simakin": 35635727})
++    assert s._lookup_sel("Marcelo Tomas Barrios V") == 9633138
++    assert s._lookup_sel("Ilia Simakin") == 35635727
++
++
++def test_prefisso_ambiguo_non_sceglie():
++    s = _bot({"Marcelo Tomas Barrios Vera": 1, "Marcelo Tomas Barrios Verde": 2})
++    assert s._lookup_sel("Marcelo Tomas Barrios V") is None
++
++
++def test_nome_sconosciuto_resta_sconosciuto():
++    s = _bot({"Marcelo Tomas Barrios Vera": 9633138, "Ilia Simakin": 35635727})
++    assert s._lookup_sel("Carlos Alcaraz") is None
