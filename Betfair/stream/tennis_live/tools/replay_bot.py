@@ -85,6 +85,7 @@ from .. import certificazione_bot as CERT
 from ...trading import minimi_it as _MINIMI_IT
 from ...backtest import chiusura_parziale as CP
 from ...backtest import uscite_manuali as UM
+from ...backtest import varianti_bot as VB
 from ..tennis_recorder import default_record_dir
 
 logger = logging.getLogger(__name__)
@@ -676,6 +677,10 @@ class _Ponte:
         self._sv_simulati: set = set()
         self._sv_fermati = 0
         self._sv_idx = 0
+        # 07/10 (Applica bot): l'istante in cui l'utente ARMA il bot. Prima il
+        # bot NON esiste nel runner (in produzione `_instantiate_bot` lo crea
+        # all'armamento): nessun book, nessun punteggio, nessun worker.
+        self.accensione = VB.Accensione(None)
 
     def ruolo_ordine(self, ordine: Any) -> Optional[str]:
         """Il RUOLO di un ordine per il guasto CP, dalla credenza VERA del bot
@@ -700,6 +705,12 @@ class _Ponte:
         self.ref.tick += 1
         pt = getattr(market_book, "publish_time", None)
         ms = int(pt.timestamp() * 1000) if pt is not None else 0
+        if self.accensione.scatta(ms):
+            self.attivita.append(("replay_accensione_utente",
+                                  {"dal_ms": self.accensione.dal_ms, "ms": ms}))
+        if not self.accensione.acceso(ms):
+            # 07/10 (Applica bot): bot non ancora armato dall'utente
+            return False
         self._forse_punteggio(ms)
         self._forse_disarmo(market, ms)
         self._forse_riavvio(market, ms)
@@ -1075,11 +1086,153 @@ class _Ponte:
 # ---------------------------------------------------------------------------
 # IL REPLAY DI UN EVENTO
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# 07/10 (APPLICA BOT) - I PARAMETRI CHE L'UTENTE PUO' VARIARE
+# ---------------------------------------------------------------------------
+# Le chiavi sono quelle della scheda del bot in produzione
+# (``frontend/src/lib/tennis.ts::TENNIS_BOT_REGISTRY``, stessa etichetta, stesso
+# passo, stessi limiti; allargati SOLO dove uno scenario del banco usa gia' un
+# valore fuori dalla scheda, es. ``gate-aperto``), piu' lo stake della riga. Il
+# DEFAULT si legge dall'ISTANZA VERA del bot costruita da ``_instantiate_bot``
+# con la riga dello scenario: preset del runner, default della classe e valori
+# dello scenario sono quelli che il bot userebbe davvero. FUORI: le blindature
+# .it (``size_step``, ``live_min_bet``, ``exact_exits``: regole di Betfair), le
+# soglie tecniche aperte solo da ``gate-aperto`` (``warmup_ms``, ``min_book_size``,
+# ``min_lay_size``, ``min_total_matched``) e ``dry_run`` (sicurezza).
+_MENU_TENNIS: Dict[str, Tuple[Tuple[str, str, str, str, float, float, float, str], ...]] = {
+    # (chiave, etichetta, gruppo, tipo, min, max, passo, unita); scelte a parte
+    "tennis_scalper": (
+        ("stake", "Stake", "Importi", "float", 2.0, 500.0, 0.5, "EUR"),
+        ("signal_ticks", "Tick segnale", "Ingresso", "float", 1, 10, 1, "tick"),
+        ("min_flow", "Flusso minimo per lato", "Filtri", "float", 0, 500, 1, "EUR"),
+        ("min_size", "Size minima ai best", "Filtri", "float", 0, 2000, 1, "EUR"),
+        ("price_min", "Quota minima", "Ingresso", "float", 1.01, 5, 0.1, ""),
+        ("price_max", "Quota massima", "Ingresso", "float", 1.5, 30, 0.1, ""),
+        ("runner_filter", "Runner operato", "Ingresso", "scelta", 0, 0, 0, ""),
+        ("one_tick_per_phase", "Missione 1 tick per fase", "Ingresso", "bool", 0, 0, 0, ""),
+        ("inplay_tick_enabled", "Gamba in-play (sperimentale)", "Ingresso", "bool", 0, 0, 0, ""),
+        ("scalp_ticks", "Tick di profitto", "Uscita", "int", 1, 5, 1, "tick"),
+        ("stop_ticks", "Tick di stop", "Uscita", "int", 1, 8, 1, "tick"),
+    ),
+    "tennis_pro": (
+        ("stake", "Stake", "Importi", "float", 2.0, 500.0, 0.5, "EUR"),
+        ("price_max", "Quota massima", "Ingresso", "float", 1.1, 30, 0.1, ""),
+        ("trend", "Trend-following", "Ingresso", "bool", 0, 0, 0, ""),
+        ("adapt", "Direzione adattiva", "Ingresso", "bool", 0, 0, 0, ""),
+        ("maker", "Ingresso maker", "Ingresso", "bool", 0, 0, 0, ""),
+        ("min_matched", "Abbinato minimo del mercato", "Filtri", "float", 0, 500000, 5000, "EUR"),
+        ("bp_target_ticks", "Break: tick obiettivo", "Uscita", "int", 2, 40, 1, "tick"),
+        ("bp_stop_ticks", "Break: tick di stop", "Uscita", "int", 1, 30, 1, "tick"),
+        ("fade_target_ticks", "Fade: tick obiettivo", "Uscita", "int", 2, 40, 1, "tick"),
+    ),
+    "tennis_flb": (
+        ("stake", "Stake", "Importi", "float", 2.0, 500.0, 0.5, "EUR"),
+        ("lay_max", "Banca solo sotto quota", "Ingresso", "float", 1.01, 1.5, 0.01, ""),
+        ("rearm_mult", "Riarmo dopo movimento (x)", "Ingresso", "float", 1.0, 2.0, 0.05, "x"),
+        ("min_matched", "Abbinato minimo del mercato", "Filtri", "float", 0, 500000, 5000, "EUR"),
+        ("exit_mode", "Uscita", "Uscita", "scelta", 0, 0, 0, ""),
+        ("green_ticks", "Tick di green", "Uscita", "int", 1, 20, 1, "tick"),
+        ("green_frac", "Frazione da greenare", "Uscita", "float", 0.1, 1.0, 0.1, ""),
+    ),
+    "tennis_swing": (
+        ("stake", "Stake", "Importi", "float", 2.0, 500.0, 0.5, "EUR"),
+        ("N", "Finestra N", "Ingresso", "int", 10, 120, 5, "tick"),
+        ("zin", "Z di ingresso", "Ingresso", "float", 1.0, 4.0, 0.1, ""),
+        ("er_max", "Efficiency Ratio massimo", "Filtri", "float", 0.1, 1.0, 0.05, ""),
+        ("stop_ticks", "Tick di stop", "Uscita", "int", 2, 30, 1, "tick"),
+        ("tmax", "Tempo massimo in posizione", "Uscita", "int", 20, 300, 10, "s"),
+    ),
+}
+_SCELTE_TENNIS: Dict[str, Tuple[str, ...]] = {
+    "runner_filter": ("favorite", "all"),
+    "exit_mode": ("hybrid", "hold", "green"),
+}
+
+
+def _bot_dello_scenario(bot: str, scenario: str) -> Any:
+    """L'istanza VERA del bot con la riga dello scenario (`_instantiate_bot`,
+    runner PAPER, nessun mercato reale): da li' si leggono i default."""
+    from betfairlightweight.filters import streaming_market_data_filter
+
+    from ..tennis_runner import LADDER_DEPTH, STREAM_FIELDS, _instantiate_bot
+
+    control: Dict[str, Any] = {
+        "event_id": "0", "bot_key": bot, "status": "running",
+        "stake": stake_scenario(scenario, 2.0),
+        "params": dict(parametri_scenario(scenario, bot)), "stats": None,
+        "mode": "paper",
+    }
+    df = streaming_market_data_filter(fields=list(STREAM_FIELDS), ladder_levels=LADDER_DEPTH)
+    return _instantiate_bot(bot, control, "1.0", {}, lambda *_a: None, df, "PAPER",
+                            market_ids=["1.0"])
+
+
+def parametri_modificabili(scenario: str = "base",
+                           bot: str = "tennis_flb") -> List[Dict[str, Any]]:
+    """Il catalogo dei parametri del bot tennis che "Applica bot" lascia variare."""
+    if bot not in _MENU_TENNIS:
+        raise ValueError("bot tennis sconosciuto: %r" % bot)
+    s = _bot_dello_scenario(bot, scenario)
+    out: List[Dict[str, Any]] = []
+    for chiave, etichetta, gruppo, tipo, lo, hi, passo, unita in _MENU_TENNIS[bot]:
+        v = getattr(s, chiave)
+        if tipo == "int":
+            v = int(v)
+        elif tipo == "float":
+            v = float(v)
+        elif tipo == "bool":
+            v = bool(v)
+        senza_limiti = tipo in ("bool", "scelta")
+        out.append(VB.voce(chiave, etichetta, tipo, v, gruppo=gruppo,
+                           minimo=None if senza_limiti else lo,
+                           massimo=None if senza_limiti else hi,
+                           passo=None if senza_limiti else passo, unita=unita,
+                           scelte=_SCELTE_TENNIS.get(chiave)))
+    return out
+
+
+def _catalogo_per(bot: str):
+    def _f(scenario: str = "base") -> List[Dict[str, Any]]:
+        return parametri_modificabili(scenario, bot)
+    _f.__name__ = "parametri_modificabili_%s" % bot
+    _f.__doc__ = "Catalogo dei parametri modificabili di `%s` (contratto del banco)." % bot
+    return _f
+
+
+parametri_modificabili_tennis_scalper = _catalogo_per("tennis_scalper")
+parametri_modificabili_tennis_pro = _catalogo_per("tennis_pro")
+parametri_modificabili_tennis_flb = _catalogo_per("tennis_flb")
+parametri_modificabili_tennis_swing = _catalogo_per("tennis_swing")
+
+
+def nota_accensione(acc: "VB.Accensione") -> str:
+    """Che cosa vede il bot tennis quando l'utente lo arma a ``dal_ms``."""
+    def _q(ms: Optional[int]) -> str:
+        if ms is None:
+            return "mai (registrazione finita prima)"
+        from datetime import datetime, timezone
+
+        return datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc).isoformat()
+    return ("ACCENSIONE dell'utente a %s (ms %d, primo book al bot a %s): fino a li' "
+            "il bot NON esisteva nel runner (in produzione `_instantiate_bot` lo crea "
+            "all'armamento): niente book, niente punteggio, niente worker. Al primo "
+            "book trova il ladder corrente del mercato (cache di flumine, come il "
+            "runner vivo) e nessuno storico suo: riscaldamento e indicatori (es. "
+            "`warmup_ms`, finestra dello swing) ripartono da li', come in produzione."
+            % (_q(acc.dal_ms), acc.dal_ms, _q(acc.scattata_ms)))
+
+
 def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
                        ogni_ms: int = 1000, campioni_diff: int = 0,
                        bot: str = "tennis_flb",
-                       nomi: Optional[str] = None) -> CERT.Referto:
-    """Un evento, uno scenario, un referto. E' il contratto del banco comune."""
+                       nomi: Optional[str] = None,
+                       parametri: Optional[Dict[str, Any]] = None,
+                       dal_ms: Optional[int] = None) -> CERT.Referto:
+    """Un evento, uno scenario, un referto. E' il contratto del banco comune.
+
+    07/10 (Applica bot): ``parametri`` = sostituzioni del catalogo
+    (``parametri_modificabili``) nella riga del bot (``params``, ``stake``: la
+    strada della UI), ``dal_ms`` = istante in cui l'utente arma il bot."""
     del campioni_diff        # il diff dello scanner non si applica: i bot tennis
     # non passano dalla riga di scan (leggono il MarketBook direttamente)
     from ...backtest import banco_comune as BC
@@ -1124,6 +1277,19 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
     modalita = modalita_scenario(scenario)
     extra = parametri_scenario(scenario, bot)
     stake = stake_scenario(scenario, 2.0)
+    # 07/10 (Applica bot): le sostituzioni dell'utente nella riga del bot
+    sost = VB.valida(parametri_modificabili(scenario, bot), parametri) if parametri else {}
+    if sost:
+        if "stake" in sost:
+            stake = float(sost["stake"])
+        extra = dict(extra)
+        extra.update({k: v for k, v in sost.items() if k != "stake"})
+        if float(extra.get("price_min", 0.0) or 0.0) > float(extra.get("price_max", 1e9) or 1e9):
+            raise ValueError("parametri price_min (%s) e price_max (%s): il minimo supera "
+                             "il massimo" % (extra.get("price_min"), extra.get("price_max")))
+        ref.note.append("VARIANTE DEI PARAMETRI (la strategia non cambia): "
+                        + ", ".join("%s=%s" % kv for kv in sorted(sost.items())))
+    accensione = VB.Accensione(VB.controlla_dal_ms(dal_ms))
     attivita: List[Tuple[str, Dict[str, Any]]] = []
 
     def _sink(kind: str, payload: Dict[str, Any]) -> None:
@@ -1254,6 +1420,7 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
                 feed_stantio_da_ms=None,
                 riavvia=_riavvia if scenario == "riavvio" else None,
             )
+            ponte.accensione = accensione
             if punteggi:
                 primo, ultimo = punteggi[0][0], punteggi[-1][0]
                 ponte.imposta_finestra(primo, ultimo)
@@ -1288,6 +1455,11 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
                                    else "nessuna firma"))
 
             motore = BC.MotoreReplay(quadro)
+            # 07/10 (Applica bot): la CRONOLOGIA degli ordini del bot, dagli
+            # ordini VERI del flumine del banco (sola lettura, dopo ogni book)
+            specchio_ordini = VB.SpecchioOrdini(sorgente=bot, modo=modalita_bot.lower(),
+                                                event_id=str(event_id))
+            specchio_ordini.aggancia(motore)
             guasto_cp = None
             if scenario == CP.SCENARIO:
                 # il RUOLO dell'ordine dalla credenza del bot (ingresso/uscita)
@@ -1325,6 +1497,10 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
             aperti_prima = ponte.residui_del_bot()
             ponte.chiudi(mercato)
             ref.note.append(nota_residui(attivita, aperti_prima))
+            # 07/10: le righe ``betfair_live_orders`` + ``_ms`` (contratto del banco)
+            ref.ordini_specchio = specchio_ordini.chiudi(VB.mercati_del_quadro(quadro))
+            if accensione.attiva:
+                ref.note.append(nota_accensione(accensione))
 
     if scenario in ("gate-aperto", "parziali", "rifiuti-betfair", "live", CP.SCENARIO,
                     SCENARIO_CHIUDI_ORA) or scenario in UM.SCENARI \
@@ -1418,10 +1594,12 @@ def certifica_evento(event_id: str, *, data_dir: str, scenario: str = "base",
 # ---------------------------------------------------------------------------
 def _per_bot(bot: str):
     def _f(event_id: str, *, data_dir: str, scenario: str = "base",
-           ogni_ms: int = 1000, campioni_diff: int = 0) -> CERT.Referto:
+           ogni_ms: int = 1000, campioni_diff: int = 0,
+           parametri: Optional[Dict[str, Any]] = None,
+           dal_ms: Optional[int] = None) -> CERT.Referto:
         return certifica_scenario(event_id, data_dir=data_dir, scenario=scenario,
                                   ogni_ms=ogni_ms, campioni_diff=campioni_diff,
-                                  bot=bot)
+                                  bot=bot, parametri=parametri, dal_ms=dal_ms)
     _f.__name__ = "certifica_scenario_%s" % bot
     _f.__doc__ = ("Il replay di `%s` su UN evento registrato: firma del banco "
                   "comune (`MODELLO_BOT_NUOVO.md` passo 2)." % bot)

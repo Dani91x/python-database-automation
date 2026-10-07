@@ -99,6 +99,7 @@ from ...stream.backtest.banco_comune import (
     nomi_dal_punteggio, simulazione_flumine,
 )
 from ...stream.backtest import chiusura_parziale as CP
+from ...stream.backtest import varianti_bot as VB
 from ...stream.scores import scan_feed as SF
 
 logger = logging.getLogger(__name__)
@@ -1214,8 +1215,14 @@ def _crea_strategia():
                      ferma_su_posizione: bool = False,
                      lay_manuale: bool = False, cashout_globale: bool = False,
                      chiude_fuori_app: bool = False, firma_proposte: bool = False,
-                     ogni_ms: int = 0, riavvia: bool = False, **kw: Any) -> None:
+                     ogni_ms: int = 0, riavvia: bool = False,
+                     dal_ms: Optional[int] = None, **kw: Any) -> None:
             self.event_id = str(event_id)
+            # 07/10 (Applica bot): l'istante in cui l'utente ACCENDE Omega; fino a
+            # li' `omega_control.status='stopped'` (nessun bot opera all'avvio)
+            self.accensione = VB.Accensione(dal_ms)
+            if self.accensione.attiva:
+                status = "stopped"
             self.params = dict(params)
             self.mode = str(mode)
             self.banco = banco
@@ -1306,6 +1313,12 @@ def _crea_strategia():
 
         # ------------------------------------------------------------ Omega
         def _un_giro(self, pt_ms: int) -> None:
+            if self.accensione.scatta(pt_ms):
+                # 07/10 (Applica bot): il gesto della UI sulla STESSA riga che
+                # `run_once` rilegge a ogni giro (`omega_control.status`)
+                self.db.set_control(status="running")
+                self.db.log("replay_accensione_utente",
+                            {"dal_ms": self.accensione.dal_ms, "ms": int(pt_ms)})
             # 1) i punteggi fino a questo istante, dal record IPS grezzo e dal
             #    parser vero (`Scanner.apply_score_state`)
             i = bisect_right(self._ts_punteggi, int(pt_ms))
@@ -1991,7 +2004,8 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                       ogni_ms: int = 0, invecchia_s: float = 0.0,
                       guasti: int = 0, rifiuti: int = 0,
                       riavvia: bool = False,
-                      chiusura_parziale: bool = False) -> CERT.Referto:
+                      chiusura_parziale: bool = False,
+                      dal_ms: Optional[int] = None) -> CERT.Referto:
     """Fa rivivere a Omega una partita registrata e ritorna il referto."""
     from flumine import FlumineSimulation
 
@@ -2027,7 +2041,7 @@ def _certifica_evento(event_id: str, *, data_dir: str,
         status=status, goal=float(goal), ferma_su_posizione=ferma_su_posizione,
         lay_manuale=lay_manuale, cashout_globale=cashout_globale,
         chiude_fuori_app=chiude_fuori_app, firma_proposte=firma_proposte,
-        ogni_ms=ogni_ms, riavvia=riavvia,
+        ogni_ms=ogni_ms, riavvia=riavvia, dal_ms=dal_ms,
         market_filter={"markets": [raw]},
         # I TETTI DI FLUMINE VANNO APERTI: qui il rischio lo governa Omega coi
         # suoi parametri, ed e' quello che si vuole misurare.
@@ -2057,6 +2071,10 @@ def _certifica_evento(event_id: str, *, data_dir: str,
 
     motore = MotoreReplay(quadro, su_book=_scanner_durante_attesa)
     strategia.mercato.motore = motore
+    # 07/10 (Applica bot): la CRONOLOGIA degli ordini di Omega, dagli ordini VERI
+    # del flumine del banco (sola lettura, dopo ogni book)
+    specchio = VB.SpecchioOrdini(sorgente="omega", modo=mode, event_id=str(event_id))
+    specchio.aggancia(motore)
     guasto_cp: Optional[CP.GuastoChiusuraParziale] = None
     if chiusura_parziale:
         # il RUOLO dell'ordine si legge dalla riga che lo ha chiesto
@@ -2071,9 +2089,13 @@ def _certifica_evento(event_id: str, *, data_dir: str,
         strategia.giri_dopo_la_partita()
 
     out = strategia.chiudi()
+    # 07/10: le righe ``betfair_live_orders`` + ``_ms`` (contratto del banco)
+    out.ordini_specchio = specchio.chiudi(VB.mercati_del_quadro(quadro))
     out.ordini_piazzati = len(strategia.mercato.ordini)
     out.righe_scritte = len(strategia.db.trades)
     _componi_note(out, strategia, banco, motore, feed, catalogo, par, mode, status)
+    if strategia.accensione.attiva:
+        out.note.append(nota_accensione(strategia.accensione))
     out.violazioni.extend(CERT.difetti_di_progettazione(
         out.andamento, ordini_piazzati=out.ordini_piazzati,
         righe_scritte=out.righe_scritte))
@@ -2333,17 +2355,157 @@ def cadenza_ms(params: Dict[str, Any]) -> int:
     return int(max(1.0, float(params.get("poll_interval_s") or 20.0)) * 1000)
 
 
+# ---------------------------------------------------------------------------
+# 07/10 (APPLICA BOT) - I PARAMETRI CHE L'UTENTE PUO' VARIARE
+# ---------------------------------------------------------------------------
+# Chiavi della whitelist del servizio (``omega_config._SPEC``): tipo, minimo e
+# massimo vengono DA LI', il default e' quello con cui gira lo scenario
+# (``omega_config.DEFAULTS`` + scenario). Il menu dipende dal MOTORE dello
+# scenario: con ``strategy_version`` 3 (V4, il default di produzione) le chiavi
+# ``v3_*`` che il motore legge (``omega_config.parametri_v3``); col motore v2
+# legacy le soglie, le finestre e il green-up di v2 piu' l'obiettivo giornaliero
+# (``omega_control.daily_goal``, la manopola della Control Room). FUORI, con la
+# causa: cadenze e cache (``*_every_s``, ``*_cache_s``, ``poll_interval_s`` che e'
+# anche la cadenza del banco), percorso d'esecuzione (``execution_mode``,
+# ``omega_live_via_flumine``, ``*_ttl_s``, ``live_fill_deadline_s``), scelte del
+# modello statistico (``model_*``, ``lambda_*``, ``select_*``, ``v3_modello``,
+# ``v3_fusione_mercato``: cambiano il CERVELLO, non una soglia), ``engine`` e
+# ``strategy_version`` (struttura della strategia), la commissione (di Betfair).
+_MENU_V3: Tuple[Tuple[str, str, str, float, str], ...] = (
+    ("v3_stake_eur", "Stake per gamba", "Importi", 0.5, "EUR"),
+    ("v3_k_minimo", "Margine minimo k (modello / mercato)", "Ingresso", 0.01, "x"),
+    ("v3_p_min_pct", "Probabilita' minima della cella", "Ingresso", 0.1, "%"),
+    ("v3_p_max_pct", "Probabilita' massima della cella", "Ingresso", 0.1, "%"),
+    ("v3_distanza_minima_gol", "Distanza minima in gol dal punteggio", "Ingresso", 1, "gol"),
+    ("v3_ht_entry_min", "Gamba 1T: dal minuto", "Ingresso", 1, "min"),
+    ("v3_ht_entry_max", "Gamba 1T: fino al minuto", "Ingresso", 1, "min"),
+    ("v3_ft_entry_min", "Gamba 2T: dal minuto", "Ingresso", 1, "min"),
+    ("v3_ft_entry_max", "Gamba 2T: fino al minuto", "Ingresso", 1, "min"),
+    ("v3_min_lay_liquidity", "Liquidita' minima in banca", "Filtri", 1, "EUR"),
+    ("v3_empirical_min_n", "Campione empirico minimo", "Filtri", 10, "partite"),
+    ("uscite_protezione", "Uscite di protezione", "Uscita", 0, ""),
+    ("proposta_p_lose_max_pct", "Proposta d'uscita: P(perdita) massima (0 = spento)", "Uscita", 0.5, "%"),
+    ("v3_max_liability_per_leg", "Responsabilita' massima per gamba", "Tetti", 5, "EUR"),
+    ("v3_max_liability_per_match", "Responsabilita' massima per partita", "Tetti", 5, "EUR"),
+    ("v3_max_open_liability", "Responsabilita' aperta massima", "Tetti", 10, "EUR"),
+    ("v3_daily_loss_cap", "Stop perdita giornaliera", "Tetti", 5, "EUR"),
+)
+_MENU_V2: Tuple[Tuple[str, str, str, float, str], ...] = (
+    ("daily_goal", "Obiettivo giornaliero", "Importi", 5, "EUR"),
+    ("min_stake", "Stake minimo per gamba", "Importi", 0.5, "EUR"),
+    ("price_min", "Quota di banca minima", "Ingresso", 1, ""),
+    ("price_max", "Quota di banca massima", "Ingresso", 1, ""),
+    ("ht_entry_min", "Gamba 1T: dal minuto", "Ingresso", 1, "min"),
+    ("ht_entry_max", "Gamba 1T: fino al minuto", "Ingresso", 1, "min"),
+    ("ft_entry_min", "Gamba 2T: dal minuto", "Ingresso", 1, "min"),
+    ("ft_entry_max", "Gamba 2T: fino al minuto", "Ingresso", 1, "min"),
+    ("model_p_max_pct", "Probabilita' massima del risultato bancato", "Ingresso", 0.1, "%"),
+    ("model_min_goal_distance", "Distanza minima in gol dal punteggio", "Ingresso", 1, "gol"),
+    ("stop_on_goal", "Ferma le aperture dopo un gol", "Ingresso", 0, ""),
+    ("min_lay_liquidity", "Liquidita' minima in banca", "Filtri", 1, "EUR"),
+    ("greenup_trigger_distance", "Green-up: risultato raggiungibile con N gol", "Uscita", 1, "gol"),
+    ("greenup_price_trigger_ratio", "Green-up: quota scesa sotto (x ingresso)", "Uscita", 0.05, "x"),
+    ("greenup_settle_delay_s", "Green-up: assestamento dopo un gol", "Uscita", 5, "s"),
+    ("greenup_take_profit_frac", "Take profit: frazione dello stake", "Uscita", 0.05, "x"),
+    ("greenup_take_profit_minute", "Take profit dal minuto", "Uscita", 1, "min"),
+    ("max_liability_per_match", "Responsabilita' massima per partita (0 = spento)", "Tetti", 5, "EUR"),
+    ("max_open_liability", "Responsabilita' aperta massima (0 = spento)", "Tetti", 10, "EUR"),
+    ("daily_loss_cap", "Stop perdita giornaliera (0 = spento)", "Tetti", 5, "EUR"),
+)
+_COPPIE_ORDINATE = (("price_min", "price_max"), ("v3_p_min_pct", "v3_p_max_pct"),
+                    ("ht_entry_min", "ht_entry_max"), ("ft_entry_min", "ft_entry_max"),
+                    ("v3_ht_entry_min", "v3_ht_entry_max"),
+                    ("v3_ft_entry_min", "v3_ft_entry_max"))
+
+
+def _parametri_dello_scenario(scenario: str) -> Tuple[Dict[str, Any], float]:
+    """(parametri, obiettivo) con cui gira lo scenario: la STESSA composizione
+    di ``certifica_scenario``."""
+    par = dict(omega_config.DEFAULTS)
+    sc = dict(SCENARI.get(scenario, {}))
+    goal = float(sc.pop("__goal", omega_config.DEFAULT_DAILY_GOAL))
+    par.update(sc)
+    return par, goal
+
+
+def parametri_modificabili(scenario: str = "v4") -> List[Dict[str, Any]]:
+    """Il catalogo dei parametri di Omega che "Applica bot" lascia variare
+    (contratto del banco, ``varianti_bot.voce``)."""
+    par, goal = _parametri_dello_scenario(scenario)
+    v3 = int(par.get("strategy_version") or 2) >= 3
+    out: List[Dict[str, Any]] = []
+    for chiave, etichetta, gruppo, passo, unita in (_MENU_V3 if v3 else _MENU_V2):
+        if chiave == "daily_goal":
+            out.append(VB.voce(chiave, etichetta, "float", goal, gruppo=gruppo,
+                               minimo=1.0, massimo=100000.0, passo=passo, unita=unita))
+            continue
+        if chiave == "uscite_protezione":
+            out.append(VB.voce(chiave, etichetta, "scelta", par[chiave], gruppo=gruppo,
+                               scelte=omega_config.USCITE_PROTEZIONE_AMMESSE))
+            continue
+        _d, cast, lo, hi = omega_config._SPEC[chiave]
+        tipo = {bool: "bool", int: "int", float: "float"}[cast]
+        out.append(VB.voce(chiave, etichetta, tipo, par[chiave], gruppo=gruppo,
+                           minimo=lo, massimo=hi, passo=passo, unita=unita))
+    return out
+
+
+def _applica_parametri(par: Dict[str, Any], goal: float, scenario: str,
+                       parametri: Optional[Dict[str, Any]]) -> Tuple[Dict[str, Any], float]:
+    """Le sostituzioni dell'utente sulla STESSA strada della produzione: in
+    ``omega_control.params`` (rilette da ``resolve_params`` a ogni giro) e
+    l'obiettivo in ``omega_control.daily_goal``. Torna (sostituzioni, goal)."""
+    sost = VB.valida(parametri_modificabili(scenario), parametri)
+    if not sost:
+        return {}, goal
+    prova = dict(par)
+    prova.update(sost)
+    for lo_k, hi_k in _COPPIE_ORDINATE:
+        if prova[lo_k] > prova[hi_k]:
+            # ``resolve_params`` li SCAMBIEREBBE in silenzio: si dice no
+            raise ValueError("parametri %s (%s) e %s (%s): il minimo supera il massimo"
+                             % (lo_k, prova[lo_k], hi_k, prova[hi_k]))
+    for k, v in sost.items():
+        if k == "daily_goal":
+            goal = float(v)
+        else:
+            par[k] = v
+    return sost, goal
+
+
+def nota_accensione(acc: "VB.Accensione") -> str:
+    """Che cosa vede Omega quando l'utente la accende a ``dal_ms``."""
+    def _iso_ms(ms: Optional[int]) -> str:
+        if ms is None:
+            return "mai (registrazione finita prima)"
+        return datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc).isoformat()
+    return ("ACCENSIONE dell'utente a %s (ms %d, primo giro acceso a %s): fino a li' "
+            "`omega_control.status='stopped'` e il servizio girava alla sua cadenza "
+            "come in produzione (catalogo, modello della partita, feed: nessuna "
+            "apertura); lo SCANNER, altro processo in produzione, ha visto tutti i "
+            "book. Da li' la riga e' 'running': la strada della UI."
+            % (_iso_ms(acc.dal_ms), acc.dal_ms, _iso_ms(acc.scattata_ms)))
+
+
 def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
-                       ogni_ms: int = 0, campioni_diff: int = 0) -> CERT.Referto:
+                       ogni_ms: int = 0, campioni_diff: int = 0,
+                       parametri: Optional[Dict[str, Any]] = None,
+                       dal_ms: Optional[int] = None) -> CERT.Referto:
     """ADATTATORE PER IL BANCO — dal NOME dello scenario ai parametri di Omega.
 
     Firma identica per tutti i bot, cosi' il comando
     `python -m Betfair.stream.backtest.certifica <bot>` e' uno solo.
+
+    07/10 (Applica bot): ``parametri`` = sostituzioni del catalogo
+    (``parametri_modificabili``), ``dal_ms`` = istante di accensione. Con
+    entrambi None il referto e' quello di sempre.
     """
     par = dict(omega_config.DEFAULTS)
     sc = dict(SCENARI.get(scenario, {}))
     goal = float(sc.pop("__goal", omega_config.DEFAULT_DAILY_GOAL))
     par.update(sc)
+    sost, goal = _applica_parametri(par, goal, scenario, parametri)
+    dal_ms = VB.controlla_dal_ms(dal_ms)
     mode = "paper" if scenario == "paper" else "live"
     status = "running"
     # il feed stantio si ottiene INVECCHIANDO la riga e lo scanner, non toccando
@@ -2361,8 +2523,12 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
         guasti=(QUANTI_GUASTI if scenario == "esiti-ignoti" else 0),
         rifiuti=(QUANTI_GUASTI if scenario == "rifiuti-betfair" else 0),
         riavvia=(scenario in ("riavvio", "v4-riavvio")),
-        chiusura_parziale=(scenario == CP.SCENARIO))
+        chiusura_parziale=(scenario == CP.SCENARIO),
+        dal_ms=dal_ms)
     ref.note.insert(0, f"scenario '{scenario}': {SCENARI_DESCRITTI.get(scenario, '-')}")
+    if sost:
+        ref.note.insert(1, "VARIANTE DEI PARAMETRI (la strategia non cambia): "
+                        + ", ".join("%s=%s" % kv for kv in sorted(sost.items())))
     if scenario == "manuale-e-bot":
         quante = int(ref.sollecitati.get("E3") or 0)
         ref.note.append(

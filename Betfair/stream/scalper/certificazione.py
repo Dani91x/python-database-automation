@@ -1416,6 +1416,26 @@ class OsservazioneMedia:
     prova: bool = False
     letture_conto: int = 0
     battiti: int = 0
+    # 07/10 (ATTIVA ADESSO): i fatti del BANCO sui clic (mai dal bot). None =
+    # sessione mai "a clic" (la modalita' di sempre: controlli identici a prima)
+    #: da quale istante la sessione e' "a clic" (0 = armata dal pulsante)
+    a_clic_dal_ms: Optional[int] = None
+    #: le CONSEGNE dei clic (prima lettura della riga che porta quell'id):
+    #: [{"id", "clic_ms", "ms", "eseguibile" (None = da decidere), "motivo"}]
+    consegne: List[Dict[str, Any]] = field(default_factory=list)
+    #: il book su cui e' nato ogni ordine (order_id -> {"status", "attivo",
+    #: "inplay", "bb", "bl", "sb", "sl", "ms"}), timbrato dal ponte del banco
+    nascite: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    #: il book dell'Under adesso (ultimo visto dal banco) e da quando un rientro
+    #: e' DOVUTO senza essere partito (``rientro_dovuto``, tenuto dal banco)
+    bb_ora: Optional[float] = None
+    aperto_ora: Optional[bool] = None
+    rientro_dovuto_dal_ms: Optional[int] = None
+    #: da quando l'ultimo ciclo "a clic" risulta CHIUSO pre-match (rientro
+    #: automatico dovuto), tenuto dal banco
+    chiuso_pre_match_dal_ms: Optional[int] = None
+    #: millisecondi di reazione concessi a un clic (consegna -> prima punta)
+    reazione_ms: int = 15000
 
 
 _REGISTRO_MEDIA: List[Tuple[str, str]] = []
@@ -1521,6 +1541,38 @@ def _m_rientri(ciclo: List[Dict[str, Any]], par: Any) -> List[Dict[str, Any]]:
     return out
 
 
+def _m_ciclo_a_clic(o: OsservazioneMedia, ciclo: Sequence[Dict[str, Any]]) -> bool:
+    """07/10: il ciclo e' della sessione "a clic" (avviata col pulsante): la sua
+    prima punta nasce quando la sessione e' gia' "a clic" (fatto del banco)."""
+    if o.a_clic_dal_ms is None or not ciclo:
+        return False
+    punte = [r for r in ciclo if str(r.get("side") or "").upper() == "BACK"]
+    t = int((punte[0] if punte else ciclo[0]).get("creato_ms") or 0)
+    return t >= int(o.a_clic_dal_ms)
+
+
+def _m_ordini_a_clic(o: OsservazioneMedia) -> set:
+    """Gli ordini dei cicli "a clic" (vuoto nella modalita' di sempre)."""
+    if o.a_clic_dal_ms is None:
+        return set()
+    out: set = set()
+    for ciclo in cicli_media(_m_ordinate(o)):
+        if _m_ciclo_a_clic(o, ciclo):
+            out |= {r.get("order_id") for r in ciclo}
+    return out
+
+
+def _m_in_gioco_fuori_dal_clic(o: OsservazioneMedia) -> bool:
+    """In gioco, e il ciclo corrente NON e' "a clic" (i controlli pre-match della
+    banca, M6 e M11, valgono in gioco solo per i cicli avviati col pulsante)."""
+    if o.in_gioco_ms is None or o.ms < o.in_gioco_ms:
+        return False
+    if o.a_clic_dal_ms is None:
+        return True
+    cicli = cicli_media(_m_ordinate(o))
+    return not (cicli and _m_ciclo_a_clic(o, cicli[-1]))
+
+
 def _q_m_ordini(o: OsservazioneMedia) -> bool:
     return bool(o.ordini)
 
@@ -1530,7 +1582,7 @@ def _q_m_rientri(o: OsservazioneMedia) -> bool:
 
 
 def _q_m_banca_ferma(o: OsservazioneMedia) -> bool:
-    if o.in_gioco_ms is not None and o.ms >= o.in_gioco_ms:
+    if _m_in_gioco_fuori_dal_clic(o):
         return False
     vivi = [r for r in o.ordini if _m_vivo(r)]
     return (len(vivi) == 1 and str(vivi[0].get("side") or "").upper() == "LAY"
@@ -1698,7 +1750,7 @@ def _m_tick_sotto_media(media: float) -> Optional[float]:
 
 
 def _q_m_banca_viva(o: OsservazioneMedia) -> bool:
-    if o.in_gioco_ms is not None and o.ms >= o.in_gioco_ms:
+    if _m_in_gioco_fuori_dal_clic(o):
         return False
     return any(_m_vivo(r) and str(r.get("side") or "").upper() == "LAY" for r in o.ordini)
 
@@ -1736,14 +1788,21 @@ def _m11(o: OsservazioneMedia) -> Optional[str]:
                         "niente (spec par.3.6, par.6: <<solo segnalazione>>)",
                   quando=_q_m_in_gioco)
 def _m7(o: OsservazioneMedia) -> Optional[str]:
+    # 07/10 (ATTIVA ADESSO): i cicli avviati col pulsante in gioco OPERANO
+    # (regola dell'utente): M7 resta per la modalita' di sempre; per loro valgono
+    # M13 (nessun ordine a mercato sospeso) e M12 (nessuna prima punta senza clic)
+    a_clic = _m_ordini_a_clic(o)
     for r in o.ordini:
+        if r.get("order_id") in a_clic:
+            continue
         creato = r.get("creato_ms")
         if creato is not None and o.in_gioco_ms is not None and creato >= o.in_gioco_ms:
             return ("ordine %s %s @%s per %s nato in gioco (%d ms, gioco da %d ms)"
                     % (r.get("order_id"), r.get("side"), r.get("price"), r.get("size"),
                        creato, o.in_gioco_ms))
-    if o.annullati_in_gioco:
-        return "annullo in gioco degli ordini %s" % o.annullati_in_gioco
+    annullati = [x for x in o.annullati_in_gioco if x not in a_clic]
+    if annullati:
+        return "annullo in gioco degli ordini %s" % annullati
     return None
 
 
@@ -1768,13 +1827,18 @@ def _m8(o: OsservazioneMedia) -> Optional[str]:
                   quando=_q_m_punte_nuove)
 def _m9(o: OsservazioneMedia) -> Optional[str]:
     par = o.params
+    # 07/10 (ATTIVA ADESSO): i cicli avviati col pulsante non hanno la finestra
+    # di stop (clic e rientri senza filtri, regola dell'utente); il force-flat vale
+    # per tutti
+    a_clic = _m_ordini_a_clic(o)
     for r in o.ordini:
         if str(r.get("side") or "").upper() != "BACK" or r.get("order_id") not in o.nuovi:
             continue
         creato = r.get("creato_ms")
         if creato is None:
             continue
-        if o.ko_ms is not None and creato >= o.ko_ms - par.stop_ingressi_s * 1000.0:
+        if (o.ko_ms is not None and r.get("order_id") not in a_clic
+                and creato >= o.ko_ms - par.stop_ingressi_s * 1000.0):
             return ("punta %s nata a %d ms, dentro la finestra di stop (fischio %d ms - "
                     "%.0f s)" % (r.get("order_id"), creato, o.ko_ms, par.stop_ingressi_s))
         if o.force_flat_ms is not None and creato > o.force_flat_ms + 1:
@@ -1833,3 +1897,336 @@ def verifica_media(oss: OsservazioneMedia, sollecitati: Optional[Dict[str, int]]
 
 def elenco_controlli_media() -> List[Tuple[str, str]]:
     return list(_REGISTRO_MEDIA)
+
+
+# ===========================================================================
+# FAMIGLIA M12-M18 - <<ATTIVA ADESSO>> (07/10/2026, ordine dell'utente)
+# ===========================================================================
+# Un REGISTRO SEPARATO (``elenco_controlli_clic``): la copertura stampata dagli
+# scenari di sempre della modalita' (famiglia M) non cambia di una riga. Si
+# applicano SOLO a una sessione "a clic" (fatto del banco: armata dal pulsante o
+# dopo la prima consegna di un clic). Ogni controllo ricalcola dagli ORDINI del
+# mercato, dalle CONSEGNE dei clic lette dal DB finto (la riga che la sessione
+# legge al battito) e dal book su cui ogni ordine e' nato (timbro del ponte):
+# mai dalle attivita' del bot (catalogo par.7 punto 36).
+#   M12 ogni PRIMA punta di un ciclo "a clic" ha il SUO clic (consegnato al piu'
+#       ``reazione_ms`` prima) o e' il rientro automatico PRE-MATCH dopo una
+#       chiusura; un clic = al piu' una prima punta
+#   M13 nessun ordine nato su un book sospeso/chiuso o con l'Under non attiva
+#   M14 la prima punta del clic (e del rientro automatico) e' lo stake base al
+#       miglior prezzo di punta del book su cui nasce
+#   M15 ogni clic ESEGUIBILE (mercato aperto alla consegna e al book dopo,
+#       nessuna posizione, prezzi vivi, non scaduto) ha la sua prima punta entro
+#       ``reazione_ms``
+#   M16 dopo una chiusura PRE-MATCH (filtri del rientro spenti) il nuovo ciclo
+#       parte entro ``reazione_ms``
+#   M17 coi filtri del rientro ACCESI la prima punta del rientro automatico
+#       rispetta quota, liquidita', spread e finestra di stop (il flusso no:
+#       dichiarato, il banco non lo ricalcola)
+#   M18 nessun rientro DOVUTO (quota salita di N tick sull'ultimo ingresso,
+#       mercato aperto, rientri sotto il massimo, importo piazzabile) resta non
+#       fatto oltre ``reazione_ms`` in un ciclo "a clic" (in gioco e nella
+#       finestra di stop compresi: senza filtri)
+_REGISTRO_CLIC: List[Tuple[str, str]] = []
+_FUNZIONI_CLIC: Dict[str, Callable[[OsservazioneMedia], Optional[str]]] = {}
+_QUANDO_CLIC: Dict[str, Optional[Callable[[OsservazioneMedia], bool]]] = {}
+
+ORIGINE_CLIC = "clic"
+ORIGINE_AUTO = "rientro_automatico"
+
+
+def _controllo_clic(codice: str, regola: str,
+                    quando: Optional[Callable[[OsservazioneMedia], bool]] = None):
+    def _reg(fn: Callable[[OsservazioneMedia], Optional[str]]):
+        _REGISTRO_CLIC.append((codice, regola))
+        _FUNZIONI_CLIC[codice] = fn
+        _QUANDO_CLIC[codice] = quando
+        return fn
+
+    return _reg
+
+
+def _m_back(r: Dict[str, Any]) -> bool:
+    return str(r.get("side") or "").upper() == "BACK"
+
+
+def _m_ciclo_chiuso(ciclo: Sequence[Dict[str, Any]]) -> bool:
+    """Il ciclo e' chiuso: nessun ordine vivo, una banca abbinata, pari (stessa
+    tolleranza di ``cicli_media``)."""
+    if not ciclo or any(_m_vivo(r) for r in ciclo):
+        return False
+    if not any(not _m_back(r) and float(r.get("size_matched") or 0.0) > 0 for r in ciclo):
+        return False
+    w, l, s, _p = _m_posizione(ciclo)
+    return s > 1e-9 and abs(w - l) <= 0.02 + 0.005 * 4.0
+
+
+def origini_dei_clic(o: OsservazioneMedia) -> List[Dict[str, Any]]:
+    """Le PRIME PUNTE dei cicli "a clic" (punte nate prima della prima punta
+    abbinata del loro ciclo), ognuna con la sua origine secondo il banco:
+    ``clic`` (con l'id del clic), ``rientro_automatico`` (pre-match dopo una
+    chiusura) o None (nessuna origine ammessa: M12 rosso)."""
+    if o.a_clic_dal_ms is None:
+        return []
+    usate: set = set()
+    out: List[Dict[str, Any]] = []
+    cicli = cicli_media(_m_ordinate(o))
+    consegne = sorted([c for c in o.consegne if c.get("eseguibile")],
+                      key=lambda c: int(c.get("ms") or 0))
+    for ci, ciclo in enumerate(cicli):
+        if not _m_ciclo_a_clic(o, ciclo):
+            continue
+        prec_chiuso = (ci > 0 and _m_ciclo_a_clic(o, cicli[ci - 1])
+                       and _m_ciclo_chiuso(cicli[ci - 1]))
+        prima: Optional[str] = None
+        for r in ciclo:
+            if not _m_back(r):
+                continue
+            t = int(r.get("creato_ms") or 0)
+            d = next((c for c in consegne if c["id"] not in usate
+                      and int(c["ms"]) <= t <= int(c["ms"]) + int(o.reazione_ms)), None)
+            pre = o.in_gioco_ms is None or t < int(o.in_gioco_ms)
+            if d is not None:
+                usate.add(d["id"])
+                origine: Optional[str] = ORIGINE_CLIC
+            elif pre and ((prima is None and prec_chiuso) or prima == ORIGINE_AUTO):
+                origine = ORIGINE_AUTO
+            else:
+                origine = None
+            if prima is None:
+                prima = origine or "?"
+            out.append({"riga": r, "ms": t, "origine": origine,
+                        "clic": d["id"] if d is not None else None, "ciclo": ci + 1})
+            if float(r.get("size_matched") or 0.0) > 0:
+                break
+    return out
+
+
+def _q_c_prime(o: OsservazioneMedia) -> bool:
+    return bool(origini_dei_clic(o))
+
+
+@_controllo_clic("M12", "ATTIVA ADESSO: ogni prima punta di un ciclo avviato col pulsante "
+                        "ha il SUO clic (consegnato al piu' `reazione_ms` prima, uno per "
+                        "clic) oppure e' il rientro automatico PRE-MATCH dopo una chiusura; "
+                        "in gioco dopo una chiusura nessun ciclo nuovo senza clic",
+                 quando=_q_c_prime)
+def _m12(o: OsservazioneMedia) -> Optional[str]:
+    for x in origini_dei_clic(o):
+        if x["origine"] is None:
+            r = x["riga"]
+            return ("prima punta %s @%s nata a %d ms (ciclo %d, %s) senza un clic suo e "
+                    "senza essere un rientro automatico pre-match"
+                    % (r.get("order_id"), r.get("price"), x["ms"], x["ciclo"],
+                       "in gioco" if o.in_gioco_ms is not None and x["ms"] >= o.in_gioco_ms
+                       else "pre-match"))
+    return None
+
+
+def _q_c_nuovi(o: OsservazioneMedia) -> bool:
+    return o.a_clic_dal_ms is not None and any(
+        r.get("order_id") in o.nuovi and r.get("order_id") in o.nascite for r in o.ordini)
+
+
+@_controllo_clic("M13", "nessun ordine della modalita' nasce su un book a mercato SOSPESO o "
+                        "chiuso, o con l'Under non attiva (protezione che resta col pulsante)",
+                 quando=_q_c_nuovi)
+def _m13(o: OsservazioneMedia) -> Optional[str]:
+    for r in o.ordini:
+        n = o.nascite.get(r.get("order_id"))
+        if r.get("order_id") not in o.nuovi or n is None:
+            continue
+        if n.get("status") != "OPEN" or not n.get("attivo"):
+            return ("ordine %s %s @%s nato su un book %s (Under attiva: %s)"
+                    % (r.get("order_id"), r.get("side"), r.get("price"), n.get("status"),
+                       n.get("attivo")))
+    return None
+
+
+def _q_c_prezzo(o: OsservazioneMedia) -> bool:
+    return any(x["origine"] in (ORIGINE_CLIC, ORIGINE_AUTO)
+               and x["riga"].get("order_id") in o.nascite for x in origini_dei_clic(o))
+
+
+@_controllo_clic("M14", "la prima punta del clic (e del rientro automatico) e' lo stake "
+                        "base al MIGLIOR prezzo di punta del book su cui nasce",
+                 quando=_q_c_prezzo)
+def _m14(o: OsservazioneMedia) -> Optional[str]:
+    par = o.params
+    for x in origini_dei_clic(o):
+        r = x["riga"]
+        n = o.nascite.get(r.get("order_id"))
+        if n is None or x["origine"] is None:
+            continue
+        if n.get("bb") is None or abs(float(r.get("price") or 0.0) - float(n["bb"])) > 1e-9:
+            return ("prima punta %s (%s) @%s: il miglior prezzo di punta del book era %s"
+                    % (r.get("order_id"), x["origine"], r.get("price"), n.get("bb")))
+        if abs(float(r.get("size") or 0.0) - float(par.stake)) > 1e-6:
+            return ("prima punta %s (%s) di %s invece dello stake base %s"
+                    % (r.get("order_id"), x["origine"], r.get("size"), par.stake))
+    return None
+
+
+def _q_c_consegne(o: OsservazioneMedia) -> bool:
+    return any(c.get("eseguibile") is not None
+               and int(c["ms"]) + int(o.reazione_ms) <= o.ms for c in o.consegne)
+
+
+@_controllo_clic("M15", "ogni clic ESEGUIBILE (mercato aperto alla consegna e al book dopo, "
+                        "nessuna posizione ne' ordine vivo, prezzi vivi, non scaduto, sessione "
+                        "non in arresto) ha la sua prima punta entro `reazione_ms`: il clic "
+                        "non aspetta i filtri e non e' fermo in gioco",
+                 quando=_q_c_consegne)
+def _m15(o: OsservazioneMedia) -> Optional[str]:
+    fatti = {x["clic"] for x in origini_dei_clic(o) if x["clic"]}
+    for c in o.consegne:
+        if c.get("eseguibile") and int(c["ms"]) + int(o.reazione_ms) <= o.ms \
+                and c["id"] not in fatti:
+            return ("clic %s consegnato a %d ms ed eseguibile: nessuna prima punta entro "
+                    "%d ms" % (c["id"], int(c["ms"]), int(o.reazione_ms)))
+    return None
+
+
+@_controllo_clic("M16", "dopo la chiusura PRE-MATCH di un ciclo avviato col pulsante, coi "
+                        "filtri del rientro SPENTI (di serie), il nuovo ciclo parte da solo "
+                        "entro `reazione_ms` (mercato aperto, nessun arresto)",
+                 quando=lambda o: (o.chiuso_pre_match_dal_ms is not None
+                                   and not o.params.rientro_auto_filtri))
+def _m16(o: OsservazioneMedia) -> Optional[str]:
+    attesa = o.ms - int(o.chiuso_pre_match_dal_ms or o.ms)
+    if attesa > int(o.reazione_ms):
+        return ("ciclo chiuso pre-match da %d ms e nessun ciclo nuovo (rientro automatico "
+                "senza filtri)" % attesa)
+    return None
+
+
+def _q_c_filtri(o: OsservazioneMedia) -> bool:
+    return bool(o.params.rientro_auto_filtri) and any(
+        x["origine"] == ORIGINE_AUTO and x["riga"].get("order_id") in o.nascite
+        for x in origini_dei_clic(o))
+
+
+@_controllo_clic("M17", "coi filtri del rientro ACCESI la prima punta del rientro automatico "
+                        "rispetta i filtri d'ingresso progettati sul book su cui nasce: quota "
+                        "fra min e max, liquidita' ai due best, spread, fuori dalla finestra di "
+                        "stop (il flusso non e' ricalcolato dal banco: dichiarato)",
+                 quando=_q_c_filtri)
+def _m17(o: OsservazioneMedia) -> Optional[str]:
+    par = o.params
+    for x in origini_dei_clic(o):
+        r = x["riga"]
+        n = o.nascite.get(r.get("order_id"))
+        if x["origine"] != ORIGINE_AUTO or n is None:
+            continue
+        bb, bl = n.get("bb"), n.get("bl")
+        perche = []
+        if bb is None or not (par.quota_min <= float(bb) <= par.quota_max):
+            perche.append("quota %s fuori da %s-%s" % (bb, par.quota_min, par.quota_max))
+        if float(n.get("sb") or 0.0) < par.min_size or float(n.get("sl") or 0.0) < par.min_size:
+            perche.append("liquidita' %s/%s sotto %s" % (n.get("sb"), n.get("sl"), par.min_size))
+        st = SB.ticks_between(bb, bl) if bb is not None and bl is not None else None
+        if st is None or st > par.max_spread_ticks:
+            perche.append("spread %s tick" % st)
+        if o.ko_ms is not None and x["ms"] >= o.ko_ms - par.stop_ingressi_s * 1000.0:
+            perche.append("dentro la finestra di stop")
+        if perche:
+            return ("rientro automatico %s @%s coi filtri accesi ma %s"
+                    % (r.get("order_id"), r.get("price"), "; ".join(perche)))
+    return None
+
+
+def rientro_dovuto(o: OsservazioneMedia) -> bool:
+    """Il banco ricalcola se un RIENTRO e' dovuto adesso nel ciclo "a clic"
+    corrente (stesse regole della strategia, dagli ordini del mercato e dal
+    book): quota di punta >= ultimo ingresso abbinato + N tick, nessuna punta
+    viva, rientri sotto il massimo, importo della formula piazzabile (>= 1,00 a
+    multipli di 0,50), mercato aperto, nessun arresto. Con il rischio massimo
+    acceso non giudica (dichiarato)."""
+    from decimal import ROUND_FLOOR, Decimal
+
+    from flumine.utils import get_nearest_price
+
+    par = o.params
+    if (o.a_clic_dal_ms is None or not o.aperto_ora or o.bb_ora is None
+            or par.rischio_max > 0):
+        return False
+    if o.force_flat_ms is not None and o.ms >= o.force_flat_ms:
+        return False
+    cicli = cicli_media(_m_ordinate(o))
+    if not cicli or not _m_ciclo_a_clic(o, cicli[-1]):
+        return False
+    ciclo = cicli[-1]
+    if any(_m_vivo(r) and _m_back(r) for r in ciclo) or _m_ciclo_chiuso(ciclo):
+        return False
+    abbinate = [r for r in ciclo if _m_back(r) and float(r.get("size_matched") or 0.0) > 0]
+    if not abbinate or len(abbinate) - 1 >= par.max_rientri:
+        return False
+    ultimo = float(abbinate[-1].get("price") or 0.0)
+    su = SB.ticks_between(ultimo, float(o.bb_ora))
+    if su is None or su < par.tick_rientro:
+        return False
+    p0 = float(abbinate[0].get("price") or 0.0)
+    c0 = _m_tick_sotto(p0, par.tick_chiusura)
+    if par.obiettivo_netto is not None:
+        t_lordo = float(par.obiettivo_netto) / (1.0 - float(par.commissione))
+    elif c0:
+        b0 = float(abbinate[0].get("size_matched") or 0.0)
+        t_lordo = b0 * p0 / c0 - b0
+    else:
+        return False
+    q = float(get_nearest_price(float(o.bb_ora)))
+    c = _m_tick_sotto(q, par.tick_chiusura)
+    if c is None or q <= c:
+        return False
+    w, l, _s, _p = _m_posizione(ciclo)
+    x = (c * (t_lordo - l) - (w - l)) / (q - c)
+    xr = float((Decimal(str(round(x, 2))) / Decimal("0.5")).to_integral_value(
+        rounding=ROUND_FLOOR) * Decimal("0.5"))
+    return xr >= 1.0
+
+
+@_controllo_clic("M18", "in un ciclo avviato col pulsante un rientro DOVUTO (quota salita di "
+                        "`media_tick_rientro` tick sull'ultimo ingresso, mercato aperto, rientri "
+                        "sotto il massimo, importo piazzabile) parte entro `reazione_ms`, anche "
+                        "in gioco e dentro la finestra di stop: nessun filtro d'ingresso lo ferma",
+                 quando=lambda o: o.rientro_dovuto_dal_ms is not None)
+def _m18(o: OsservazioneMedia) -> Optional[str]:
+    attesa = o.ms - int(o.rientro_dovuto_dal_ms or o.ms)
+    if attesa > int(o.reazione_ms):
+        return "rientro dovuto da %d ms e nessuna punta di rientro" % attesa
+    return None
+
+
+def verifica_clic(oss: OsservazioneMedia, sollecitati: Optional[Dict[str, int]] = None
+                  ) -> List[Violazione]:
+    """Il giro dei controlli M12-M18 (stessa regola di ``verifica_media``); vuoto
+    per una sessione mai "a clic"."""
+    out: List[Violazione] = []
+    if oss.a_clic_dal_ms is None:
+        return out
+    for codice, regola in _REGISTRO_CLIC:
+        quando = _QUANDO_CLIC.get(codice)
+        try:
+            if quando is not None and not quando(oss):
+                continue
+        except Exception as ex:  # noqa: BLE001 - un `quando` rotto E' un referto
+            out.append(Violazione("%s-ERRORE" % codice, regola,
+                                  "il `quando` e' esploso: %s: %s"
+                                  % (type(ex).__name__, ex), oss.quando))
+            continue
+        if sollecitati is not None:
+            sollecitati[codice] = sollecitati.get(codice, 0) + 1
+        try:
+            det = _FUNZIONI_CLIC[codice](oss)
+        except Exception as ex:  # noqa: BLE001 - un controllo rotto E' un referto
+            out.append(Violazione("%s-ERRORE" % codice, regola,
+                                  "il controllo e' esploso: %s: %s"
+                                  % (type(ex).__name__, ex), oss.quando))
+            continue
+        if det:
+            out.append(Violazione(codice, regola, det, oss.quando))
+    return out
+
+
+def elenco_controlli_clic() -> List[Tuple[str, str]]:
+    return list(_REGISTRO_CLIC)

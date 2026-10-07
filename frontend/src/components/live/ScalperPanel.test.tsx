@@ -18,8 +18,12 @@ vi.mock('@/lib/scalper', () => ({
     SCALPER_PARAM_FIELDS: [],
 }));
 
+// 07/10 «ATTIVA ADESSO»: la RPC del clic a sessione accesa
+vi.mock('@/lib/mediaUnderAttiva', () => ({ mandaAttivaAdesso: vi.fn() }));
+
 import { ScalperPanel } from './ScalperPanel';
 import { activateScalper, fetchScalperState } from '@/lib/scalper';
+import { mandaAttivaAdesso } from '@/lib/mediaUnderAttiva';
 
 const mState = vi.mocked(fetchScalperState);
 const mActivate = vi.mocked(activateScalper);
@@ -150,6 +154,105 @@ describe('ScalperPanel — MEDIA UNDER (05/10, SPEC_MEDIA_UNDER_2026-10-05.md)',
         expect(screen.getByText(/non e' piu' a mercato/)).toBeInTheDocument();
         expect(screen.getByText(/Chiusura — solo ordini del bot/)).toBeInTheDocument();
         expect(screen.getByText(/BANCA €36,53/)).toBeInTheDocument();
+    });
+});
+
+describe('ScalperPanel — ATTIVA ADESSO (07/10, ordine dell\'utente)', () => {
+    const mManda = vi.mocked(mandaAttivaAdesso);
+
+    function sessione(dryRun: boolean, comando: Record<string, unknown> | null) {
+        return {
+            control: {
+                event_id: 'evt1', status: 'running', mode: 'maker', dry_run: dryRun, stake: 25,
+                params: { media_mode: true, media_a_clic: true, media_stake: 10, media_max_rientri: 5,
+                          media_rischio_max: 0 },
+                bias: null, bias_meta: null, error: null,
+                requested_at: '2026-10-07T10:00:00Z', started_at: null, stopped_at: null,
+                heartbeat_at: null,
+                stats: {
+                    media_stato: 'ATTESA_CLIC', media_mercato: 'OVER_UNDER_25', media_rientri: 0,
+                    media_max_rientri: 5, media_totale_puntato: 0, media_quota_media: null,
+                    media_se_vince: 0, media_se_perde: 0, media_banca: { stato: 'nessuna' },
+                    media_a_clic: true, media_comando: comando,
+                },
+            },
+            activity: [],
+        } as never;
+    }
+
+    it('a sessione ferma, in PROVA: il clic accende la sessione armata dal pulsante col comando', async () => {
+        mState.mockResolvedValue({ control: null, activity: [] });
+        mActivate.mockResolvedValue({} as never);
+        const conferma = vi.spyOn(window, 'confirm');
+        render(<ScalperPanel eventId="evt1" eventName="A-B" pollMs={100_000} />);
+        await waitFor(() => expect(mState).toHaveBeenCalled());
+        fireEvent.click(screen.getByText('Attiva Scalper Bot'));
+        fireEvent.click(screen.getByRole('checkbox', { name: /MEDIA UNDER/ }));
+        fireEvent.change(screen.getByLabelText('Mercato della Media Under'), { target: { value: 'OVER_UNDER_25' } });
+        fireEvent.click(screen.getByText(/Attiva adesso \(PROVA\)/));
+        await waitFor(() => expect(mActivate).toHaveBeenCalledTimes(1));
+        expect(conferma).not.toHaveBeenCalled();
+        expect(mActivate.mock.calls[0][2]).toBe(true);                // dry_run: prova
+        const params = mActivate.mock.calls[0][4] as Record<string, unknown>;
+        expect(params.media_mode).toBe(true);
+        expect(params.media_a_clic).toBe(true);
+        expect(params.media_rientro_auto_filtri).toBe(false);
+        const cmd = params.media_attiva_adesso as { id: string; ts: string };
+        expect(cmd.id).toMatch(/^clic-/);
+        expect(typeof cmd.ts).toBe('string');
+        conferma.mockRestore();
+    });
+
+    it('a sessione ferma, in SOLDI VERI: senza la conferma esplicita non parte niente', async () => {
+        mState.mockResolvedValue({ control: null, activity: [] });
+        mActivate.mockResolvedValue({} as never);
+        const conferma = vi.spyOn(window, 'confirm').mockReturnValue(false);
+        render(<ScalperPanel eventId="evt1" eventName="A-B" pollMs={100_000} />);
+        await waitFor(() => expect(mState).toHaveBeenCalled());
+        fireEvent.click(screen.getByText('Attiva Scalper Bot'));
+        fireEvent.click(screen.getByRole('checkbox', { name: /DEMO · PAPER/ }));
+        fireEvent.click(screen.getByRole('checkbox', { name: /MEDIA UNDER/ }));
+        fireEvent.change(screen.getByLabelText('Mercato della Media Under'), { target: { value: 'OVER_UNDER_25' } });
+        fireEvent.click(screen.getByText(/Attiva adesso \(SOLDI VERI\)/));
+        expect(conferma).toHaveBeenCalledTimes(1);
+        expect(String(conferma.mock.calls[0][0])).toMatch(/ATTIVA ADESSO CON ORDINI REALI/);
+        expect(mActivate).not.toHaveBeenCalled();
+        conferma.mockRestore();
+    });
+
+    it('a sessione accesa: il clic manda il comando; la scheda mostra l\'esito scritto dalla sessione', async () => {
+        mState.mockResolvedValue(sessione(true, { id: 'vecchio', esito: 'rifiutato', motivo: 'mercato sospeso: nessun ordine (riprova quando riapre)' }));
+        mManda.mockResolvedValue(undefined);
+        render(<ScalperPanel eventId="evt1" eventName="A-B" pollMs={100_000} />);
+        expect(await screen.findByText(/in ATTESA DEL CLIC/)).toBeInTheDocument();
+        expect(screen.getByText(/RIFIUTATO: mercato sospeso/)).toBeInTheDocument();
+        fireEvent.click(screen.getByText(/Attiva adesso \(PROVA\)/));
+        await waitFor(() => expect(mManda).toHaveBeenCalledTimes(1));
+        expect(mManda.mock.calls[0][0]).toBe('evt1');
+        expect(mManda.mock.calls[0][1].id).toMatch(/^clic-/);
+        expect(await screen.findByText(/INVIATO/)).toBeInTheDocument();
+        // mentre e' inviato il pulsante e' fermo (niente doppio clic)
+        expect(screen.getByText(/Attiva adesso \(PROVA\)/).closest('button')).toBeDisabled();
+    });
+
+    it('a sessione accesa in SOLDI VERI: stessa strada, con la conferma esplicita', async () => {
+        mState.mockResolvedValue(sessione(false, null));
+        mManda.mockResolvedValue(undefined);
+        const conferma = vi.spyOn(window, 'confirm').mockReturnValue(false);
+        render(<ScalperPanel eventId="evt1" eventName="A-B" pollMs={100_000} />);
+        fireEvent.click(await screen.findByText(/Attiva adesso \(SOLDI VERI\)/));
+        expect(conferma).toHaveBeenCalledTimes(1);
+        expect(mManda).not.toHaveBeenCalled();
+        conferma.mockReturnValue(true);
+        fireEvent.click(screen.getByText(/Attiva adesso \(SOLDI VERI\)/));
+        await waitFor(() => expect(mManda).toHaveBeenCalledTimes(1));
+        conferma.mockRestore();
+    });
+
+    it('la sessione dice ESEGUITO con prezzo e importo', async () => {
+        mState.mockResolvedValue(sessione(true, { id: 'c1', esito: 'eseguito', prezzo: 1.62, importo: 10, in_gioco: false }));
+        render(<ScalperPanel eventId="evt1" eventName="A-B" pollMs={100_000} />);
+        expect(await screen.findByText(/ESEGUITO: punta di 10,00 € a 1,62 prima del fischio/)).toBeInTheDocument();
     });
 });
 

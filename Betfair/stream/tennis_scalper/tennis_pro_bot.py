@@ -107,6 +107,9 @@ class TennisProStrategy(BaseStrategy):
         # (ultimo token) cosi' il match e' robusto.
         _raw = {_norm(k): int(v) for k, v in dict(kwargs.pop("name_to_sel", {})).items()}
         self.name_to_sel: Dict[str, int] = dict(_raw)
+        # 07/10: i nomi COMPLETI del catalogo, per il nome IPS TRONCATO (vedi
+        # `_lookup_sel`)
+        self._nomi_catalogo: Dict[str, int] = dict(_raw)
         # fix audit #13: se i due runner CONDIVIDONO il cognome (sorelle/fratelli,
         # doppi omonimi) il cognome e' AMBIGUO e NON va indicizzato — un match
         # sbagliato scambierebbe server/receiver (direzione del trade invertita:
@@ -217,6 +220,9 @@ class TennisProStrategy(BaseStrategy):
         self._set_start_px: Dict[Tuple[str, int, int], float] = {}  # (mid,sel,setnum)->prezzo
         self._set_won: Dict[str, Tuple[int, int]] = {}             # mid -> (winner_sel, games_tot@win)
         self._last_game_traded: Dict[str, Any] = {}                # mid -> game gia' tradato
+        # D3 (07/10): i BREAK visti nel set, per il fade «dopo un break precoce»
+        self._score_prec: Dict[str, TennisScore] = {}               # mid -> campione prec.
+        self._break_set: Dict[Tuple[str, int], List[Tuple[int, str]]] = {}  # (mid,set)->[(game,chi ha perso il servizio)]
         self.stats = {"entries": 0, "greens": 0, "scratches": 0, "stops": 0,
                       "manuali": 0, "pnl": 0.0, "pnl_settled": 0.0}
         # "CHIUDI ORA" (D3, 24/09): il runner alza la richiesta, il bot esce
@@ -312,7 +318,18 @@ class TennisProStrategy(BaseStrategy):
         if n in self.name_to_sel:
             return self.name_to_sel[n]
         parts = n.split()
-        return self.name_to_sel.get(parts[-1]) if parts else None
+        sel = self.name_to_sel.get(parts[-1]) if parts else None
+        if sel is not None:
+            return sel
+        # 07/10 - NOME IPS TRONCATO. L'IPS taglia i nomi lunghi (35790089:
+        # "Marcelo Tomas Barrios V", 23 caratteri) e ne' il nome completo ne'
+        # il cognome ("v") combaciano col catalogo: il giocatore restava senza
+        # selezione e i setup che dipendono da lui non scattavano mai. Si
+        # accetta il nome del catalogo che COMINCIA col nome IPS, SOLO se e'
+        # uno: due candidati = ambiguo = nessun match (stessa prudenza dei
+        # cognomi condivisi, fix audit #13).
+        cand = {v for k, v in self._nomi_catalogo.items() if k.startswith(n)}
+        return next(iter(cand)) if len(cand) == 1 else None
 
     def _server_receiver_sel(self) -> Tuple[Optional[int], Optional[int]]:
         s = self.score
@@ -340,8 +357,23 @@ class TennisProStrategy(BaseStrategy):
         return rr == 3 and rs <= 1          # 0-40 / 15-40 (30-40 escluso)
 
     @staticmethod
-    def _favourite(px: Dict[int, Dict[str, Any]]) -> Optional[int]:
-        cand = {k: v["ltp"] for k, v in px.items() if v.get("ltp")}
+    def _prezzo(d: Dict[str, Any]) -> Optional[float]:
+        """07/10 - il PREZZO del runner: il medio del book quando i due lati
+        sono quotati, l'ultimo scambiato SOLO come ripiego (la stessa regola di
+        `_track_px`). L'ultimo scambiato da solo resta fermo per minuti su un
+        mercato poco liquido: misurato su 35790089, alle 13:54:27 Simakin aveva
+        `ltp` 1,19 e il book 2,18 / 2,32, e il bot e' entrato in
+        `compressed_fav` («favorito cortissimo <= 1,20») su un runner a 2,20
+        che non era nemmeno il favorito."""
+        bb, bl = d.get("bb"), d.get("bl")
+        if bb and bl:
+            return (float(bb) + float(bl)) / 2.0
+        ltp = d.get("ltp")
+        return float(ltp) if ltp else None
+
+    @classmethod
+    def _favourite(cls, px: Dict[int, Dict[str, Any]]) -> Optional[int]:
+        cand = {k: p for k, p in ((k, cls._prezzo(v)) for k, v in px.items()) if p}
         return min(cand, key=cand.get) if cand else None
 
     @staticmethod
@@ -615,6 +647,12 @@ class TennisProStrategy(BaseStrategy):
             return False
         d = px[fav]
         setnum = (s.sets_home or 0) + (s.sets_away or 0)
+        # D3 = A (decisione dell'utente 07/10): la spec dice «dopo un break
+        # PRECOCE che ne ha gonfiato la quota». Prima bastava il salto di
+        # prezzo: sulla 35790089 quattro fade nei primi game del terzo set,
+        # tutti game tenuti al servizio, nessun break.
+        if not self._break_precoce_del(mid, fav, setnum):
+            return False
         start = self._set_start_px.get((mid, fav, setnum))
         if start is None or not d["bl"]:
             return False
@@ -679,10 +717,56 @@ class TennisProStrategy(BaseStrategy):
         if fav is None:
             return False
         d = px[fav]
-        if not d["ltp"] or d["ltp"] > self.cf_max_price:
+        p = self._prezzo(d)
+        if not p or p > self.cf_max_price:
             return False
         return self._open_trade(market, fav, self._setup_side(fav), d, self.cf_target_ticks,
                                 self.cf_stop_ticks, "compressed_fav")
+
+    # ------------------------------------------- D3 (07/10): i break del set
+    def _traccia_break(self, mid: str) -> None:
+        """Registra i BREAK del set corrente dal punteggio IPS (ogni book).
+
+        Break = il game lo vince chi NON serviva. Chi serviva il game e' il
+        `server` dell'ultimo campione PRIMA del cambio dei game (nel campione
+        del cambio l'IPS mostra gia' il servitore del game dopo). Il campo IPS
+        `serviceBreaks` NON e' una fonte: nella registrazione vera 35790089
+        vale 0 per tutta la partita anche dopo i break del terzo set.
+        Fail-closed: niente si attribuisce se cambia il set (l'ultimo game e'
+        del set chiuso), se fra due campioni passano piu' game o se chi
+        serviva non e' noto."""
+        s = self.score
+        if s is None:
+            return
+        prev = self._score_prec.get(mid)
+        if prev is not None and prev.key() == s.key():
+            return
+        self._score_prec[mid] = s
+        if prev is None:
+            return
+        if (prev.sets_home, prev.sets_away) != (s.sets_home, s.sets_away):
+            return
+        dh = (s.games_home or 0) - (prev.games_home or 0)
+        da = (s.games_away or 0) - (prev.games_away or 0)
+        if (dh, da) not in ((1, 0), (0, 1)) or prev.server not in ("home", "away"):
+            return
+        vincitore = "home" if dh == 1 else "away"
+        if vincitore == prev.server:
+            return          # game tenuto al servizio
+        setnum = (s.sets_home or 0) + (s.sets_away or 0)
+        self._break_set.setdefault((mid, setnum), []).append(
+            (self._games_total(s), prev.server))
+
+    def _break_precoce_del(self, mid: str, sel: int, setnum: int) -> bool:
+        """True se nel set ``setnum`` il giocatore ``sel`` ha perso il servizio.
+        «PRECOCE» e' la finestra che il fade ha gia': entra solo con al piu'
+        ``fade_max_game`` game giocati nel set (`_sig_fade`), quindi un break
+        registrato prima dell'ingresso e' per forza dentro quei game.
+        Senza la mappa dei nomi il lato non diventa una selezione: False."""
+        for _game, perso_da in self._break_set.get((mid, setnum), ()):
+            if self._sel_for_ha(perso_da) == sel:
+                return True
+        return False
 
     # -------------------------------------------------------------- main loop
     def _track_sets(self, mid: str, px: Dict[int, Dict[str, Any]]) -> None:
@@ -693,8 +777,9 @@ class TennisProStrategy(BaseStrategy):
         setnum = (s.sets_home or 0) + (s.sets_away or 0)
         for sel, d in px.items():
             k = (mid, sel, setnum)
-            if k not in self._set_start_px and d["ltp"]:
-                self._set_start_px[k] = float(d["ltp"])
+            p = self._prezzo(d)
+            if k not in self._set_start_px and p:
+                self._set_start_px[k] = p
         cur = (s.sets_home or 0, s.sets_away or 0)
         prev = self._prev_sets.get(mid)
         if prev is not None and cur != prev:
@@ -729,6 +814,7 @@ class TennisProStrategy(BaseStrategy):
         pt = getattr(market_book, "publish_time_epoch", None)
         self._now_pt = pt  # publish_time corrente (timeout entry in secondi)
         self._track_sets(mid, px)
+        self._traccia_break(mid)
         self._track_px(pt, px)
 
         # 0) "CHIUDI ORA" dell'utente (D3, 24/09): l'uscita parte da qui, con la

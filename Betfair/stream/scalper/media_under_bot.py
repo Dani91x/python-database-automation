@@ -28,6 +28,16 @@ COSA FA (spec par.3)
      riprezzo. Pubblica il riquadro "chiusura" (par.6) a ogni book.
   7. FINE: posizione pari (in gioco) o mercato regolato.
 
+ATTIVA ADESSO (07/10, ordine dell'utente, spec par.13): col clic sul pulsante la
+modalita' PUNTA SUBITO lo stake base al miglior prezzo di punta (pre-match o in
+gioco), senza filtri d'ingresso, e gestisce la posizione come progettato senza
+filtri (anche dentro la finestra di stop e in gioco; restano tetti e
+protezioni). Ciclo chiuso pre-match: rientra da solo (subito, o coi filtri se
+``media_rientro_auto_filtri``); ciclo chiuso in gioco: ATTESA_CLIC. Il comando
+lo consegna la sessione (``ricevi_comando`` -> registrazione dell'id nella
+riga -> ``rilascia_comando``), si esegue al prossimo book, si consuma UNA volta.
+Senza clic la modalita' e' quella di sempre, identica.
+
 LIMITI DICHIARATI (spec par.6, par.7, par.11: scritti nel referto
 ``AUDIT_2026-10-05/SCALPER_MEDIA_UNDER.md``)
   * gli ordini messi a mano: la sessione dello scalper non li vede (flumine
@@ -107,6 +117,10 @@ VALORI_DI_SERIE: Dict[str, Any] = {
     "media_ttl_punta_ms": 30000,
     "media_obiettivi_live": [0.0, 0.30, 1.00],
     "media_commissione_pct": 5.0,
+    # 07/10 (ATTIVA ADESSO, regola dell'utente punto 2): i rientri automatici
+    # pre-match dopo una chiusura di un ciclo avviato col pulsante entrano
+    # SUBITO (False, di serie) o solo coi filtri d'ingresso (True)
+    "media_rientro_auto_filtri": False,
 }
 #: i parametri che la riga DEVE portare quando la modalita' e' accesa
 #: (``media_obiettivo`` puo' mancare: "0 o assente = automatico")
@@ -117,9 +131,28 @@ OBBLIGATORI: Tuple[str, ...] = (
     "media_stop_ingressi_s", "media_ttl_punta_ms", "media_obiettivi_live",
     "media_commissione_pct",
 )
+# 07/10 - <<ATTIVA ADESSO>> (ordine dell'utente del 07/10, spec par.13)
+#: il COMANDO del pulsante nei params della riga: {"id": <testo unico del clic>,
+#: "ts": <istante del clic, ISO o epoch ms>}. La sessione lo consuma UNA volta
+#: (l'id consumato resta nelle stats e sopravvive al riavvio)
+CHIAVE_COMANDO = "media_attiva_adesso"
+#: la sessione armata DAL PULSANTE (o in attesa del clic): nessun ingresso da
+#: sola finche' un clic non avvia il primo ciclo
+CHIAVE_A_CLIC = "media_a_clic"
+#: l'interruttore dei rientri automatici pre-match coi filtri (vedi sopra)
+CHIAVE_RIENTRO_FILTRI = "media_rientro_auto_filtri"
+#: un comando piu' vecchio di cosi' (dal clic alla consegna) non si esegue:
+#: protezione contro un clic rimasto nei params di una riga riarmata ore dopo
+ATTESA_MASSIMA_COMANDO_S = 120.0
+#: da dove e' partito un ciclo (attivita' ``media_ingresso`` e stats)
+ORIGINE_CLIC = "clic"
+ORIGINE_RIENTRO_AUTO = "rientro_automatico"
+ORIGINE_FILTRI = "filtri"
+
 #: tutte le chiavi che la UI puo' scrivere (whitelist della sessione)
 CHIAVI_UI: Tuple[str, ...] = ("media_mode", "media_mercato", "media_obiettivo") + tuple(
-    k for k in OBBLIGATORI if k != "media_mercato")
+    k for k in OBBLIGATORI if k != "media_mercato") + (
+    CHIAVE_RIENTRO_FILTRI, CHIAVE_A_CLIC, CHIAVE_COMANDO)
 
 # stati del ciclo (spec par.3, macchina a stati)
 FERMO = "FERMO"
@@ -130,12 +163,15 @@ MASSIMO = "MASSIMO"
 LIVE = "LIVE"
 FINE = "FINE"
 BLOCCATA = "BLOCCATA"
+#: 07/10 (ATTIVA ADESSO): la modalita' aspetta un clic (sessione armata dal
+#: pulsante, ciclo chiuso IN GIOCO, prima punta del clic non abbinata)
+ATTESA_CLIC = "ATTESA_CLIC"
 #: 06/10 (giro 4, P13): in SOLDI VERI, dopo un riavvio, la modalita' aspetta di
 #: ritrovare sul conto (e nel blotter di flumine) gli ordini della sessione
 #: morta e ricostruisce il ciclo da li': NESSUN ordine finche' non ha finito
 RIPRESA = "RIPRESA"
 STATI: Tuple[str, ...] = (FERMO, INGRESSO, IN_POSIZIONE, RIENTRO, MASSIMO, LIVE,
-                          FINE, BLOCCATA, RIPRESA)
+                          FINE, BLOCCATA, RIPRESA, ATTESA_CLIC)
 #: stati con una posizione (o un ingresso) che il riavvio non sa ricostruire
 STATI_CON_POSIZIONE = frozenset({INGRESSO, IN_POSIZIONE, RIENTRO, MASSIMO, LIVE})
 
@@ -224,6 +260,9 @@ class ParametriMedia:
     ttl_punta_ms: int
     obiettivi_live: Tuple[float, ...]
     commissione: float                    # frazione (0,05 = 5 %)
+    # 07/10 (ATTIVA ADESSO): rientri automatici pre-match coi filtri (assente =
+    # False: entrano subito al miglior prezzo)
+    rientro_auto_filtri: bool = False
 
 
 def media_mode_acceso(params: Optional[Dict[str, Any]]) -> bool:
@@ -316,6 +355,13 @@ def leggi_parametri(params: Optional[Dict[str, Any]]) -> Tuple[Optional[Parametr
     if comm is None or comm < 0 or comm >= 100:
         errori.append("media_commissione_pct %r non valido (0-99)"
                       % (p.get("media_commissione_pct"),))
+    # 07/10 (ATTIVA ADESSO): facoltativo (assente = False), ma se c'e' e' un
+    # booleano vero e proprio (mai "si'" o 1 interpretati)
+    filtri = p.get(CHIAVE_RIENTRO_FILTRI, False)
+    if filtri is None:
+        filtri = False
+    if not isinstance(filtri, bool):
+        errori.append("%s %r non valido (true o false)" % (CHIAVE_RIENTRO_FILTRI, filtri))
     if errori:
         return None, "; ".join(errori)
     return ParametriMedia(
@@ -330,7 +376,33 @@ def leggi_parametri(params: Optional[Dict[str, Any]]) -> Tuple[Optional[Parametr
         stop_ingressi_s=numeri["media_stop_ingressi_s"],
         ttl_punta_ms=interi["media_ttl_punta_ms"],
         obiettivi_live=tuple(obiettivi), commissione=float(comm) / 100.0,
+        rientro_auto_filtri=bool(filtri),
     ), None
+
+
+def leggi_comando(params: Optional[Dict[str, Any]]) -> Optional[Tuple[str, Optional[float]]]:
+    """07/10 (ATTIVA ADESSO): il comando del pulsante nei params della riga,
+    ``(id, istante del clic in ms epoch o None)``; None se non c'e' o e'
+    illeggibile (un comando senza id non si esegue mai)."""
+    c = (params or {}).get(CHIAVE_COMANDO)
+    if not isinstance(c, dict):
+        return None
+    cid = str(c.get("id") or "").strip()
+    if not cid:
+        return None
+    ts = c.get("ts")
+    ms: Optional[float] = None
+    if isinstance(ts, (int, float)) and not isinstance(ts, bool):
+        ms = float(ts)
+    elif isinstance(ts, str) and ts.strip():
+        try:
+            d = _dt.datetime.fromisoformat(ts.strip().replace("Z", "+00:00"))
+            if d.tzinfo is None:
+                d = d.replace(tzinfo=_dt.timezone.utc)
+            ms = float(d.timestamp()) * 1000.0
+        except ValueError:
+            ms = None
+    return cid, ms
 
 
 def motivo_non_parte(control: Optional[Dict[str, Any]]) -> Optional[str]:
@@ -572,7 +644,9 @@ def riquadro_chiusura(pos: Posizione, *, quota_punta: Optional[float],
                                 "pnl_lordo": round(lordo, 2),
                                 "pnl_netto": round(netto_da_lordo(lordo, commissione), 2)}
     c = tick_sotto(quota_punta, tick) if quota_punta else None
-    if quota_punta and c:
+    # 07/10: alla quota minima della scala (1,01) non c'e' una quota di chiusura
+    # sotto: nessun obiettivo (prima: divisione per zero a ogni book)
+    if quota_punta and c and c < float(quota_punta) - 1e-9:
         for ob in obiettivi_netti:
             t = lordo_da_netto(ob, commissione)
             x = rientro_esatto(pos, quota_punta, c, t)
@@ -784,6 +858,28 @@ MOTIVI_NON_INGRESSO: Dict[str, str] = {
 }
 
 
+@dataclass
+class StatoClic:
+    """07/10 (ATTIVA ADESSO): lo stato del pulsante di UNA strategia.
+
+    * ``a_clic``: sessione armata dal pulsante o avviata da un clic;
+    * ``consumato``: l'id dell'ultimo comando consumato (anche dalla sessione di
+      prima: un riavvio non riesegue lo stesso clic);
+    * ``pronto``: comando validato, in attesa che la sessione l'abbia registrato
+      nella riga; ``comando``: da eseguire al prossimo book;
+    * ``origine``: da dove e' partito il ciclo in corso;
+    * ``in_gioco``, ``in_gioco_detto``, ``ultimo_aperto``: l'ultimo book visto."""
+
+    a_clic: bool = False
+    consumato: Optional[str] = None
+    pronto: Optional[Dict[str, Any]] = None
+    comando: Optional[Dict[str, Any]] = None
+    origine: Optional[str] = None
+    in_gioco: bool = False
+    in_gioco_detto: bool = False
+    ultimo_aperto: Optional[bool] = None
+
+
 class MediaUnderStrategy(BaseStrategy):
     """La modalita' "media under" (vedi il docstring del modulo)."""
 
@@ -809,7 +905,17 @@ class MediaUnderStrategy(BaseStrategy):
         self.force_flat: bool = False
         # riavvio a posizione aperta: non ricostruibile -> BLOCCATA
         self.riavvio: Optional[str] = cfg.get("riavvio_aperto") or None
-        self.stato: str = BLOCCATA if self.riavvio else FERMO
+        # 07/10 (ATTIVA ADESSO): la sessione "a clic" (armata dal pulsante o
+        # avviata da un clic): nessun primo ingresso da sola; dopo una chiusura
+        # pre-match rientra da sola, dopo una chiusura in gioco aspetta il clic.
+        # Senza clic (False) la modalita' e' quella di sempre, identica. Tutto lo
+        # stato del pulsante sta in UN oggetto (``StatoClic``): la parita'
+        # paper/live del banco (S6) confronta i parametri, non lo stato.
+        self._clic = StatoClic(
+            a_clic=cfg.get(CHIAVE_A_CLIC) is True,
+            consumato=(str(cfg.get("comando_consumato"))
+                       if cfg.get("comando_consumato") else None))
+        self.stato: str = BLOCCATA if self.riavvio else (ATTESA_CLIC if self._clic.a_clic else FERMO)
         # mercato e selezione (bloccati al primo book del tipo scelto)
         self._mid: Optional[str] = None
         self._sid: Optional[int] = None
@@ -861,6 +967,13 @@ class MediaUnderStrategy(BaseStrategy):
             "pnl_settled": 0.0, "riavvio": self.riavvio,
             # 05/10 (giro 2): quante volte (book) ogni filtro ha fermato l'ingresso
             "non_ingresso": {},
+            # 07/10 (ATTIVA ADESSO): l'ultimo comando del pulsante (id, esito,
+            # motivo, prezzo, importo), la sessione "a clic", l'origine del
+            # ciclo in corso, se la partita e' in gioco
+            "comando": (dict(cfg["comando_precedente"])
+                        if isinstance(cfg.get("comando_precedente"), dict) else None),
+            "a_clic": self._clic.a_clic, "origine_ciclo": None, "in_gioco": False,
+            "rientro_auto_filtri": par.rientro_auto_filtri,
         }
         self._settled: set = set()
 
@@ -974,6 +1087,13 @@ class MediaUnderStrategy(BaseStrategy):
         aperto = (getattr(market_book, "status", None) == "OPEN"
                   and getattr(runner, "status", None) == "ACTIVE")
         self._leggi_rifiuti(now)
+        # 07/10 (ATTIVA ADESSO): cio' che il clic deve sapere del mercato, e il
+        # comando consegnato dalla sessione, deciso su QUESTO book
+        self._clic.in_gioco = inplay
+        self._clic.ultimo_aperto = aperto
+        self.stats["in_gioco"] = inplay
+        if self._clic.comando is not None:
+            self._esegui_comando(market, market_book, now, inplay, aperto, bb)
         if self.stato == BLOCCATA:
             self._una_volta("bloccata", "media_riavvio_non_ricostruibile", level="CRITICAL",
                             market_id=self._mid, motivo=self.riavvio,
@@ -990,6 +1110,11 @@ class MediaUnderStrategy(BaseStrategy):
             self._pubblica(None, bb, bl)
             return
         if inplay:
+            if self._clic.a_clic:
+                # 07/10 (ATTIVA ADESSO, punto 4): avviata col pulsante, in gioco
+                # gestisce la posizione come pre-match
+                self._in_gioco_a_clic(market, market_book, now, aperto, bb, bl, sb, sl)
+                return
             self._in_live(now, aperto, bb, bl)
             return
         if not aperto:
@@ -1018,6 +1143,25 @@ class MediaUnderStrategy(BaseStrategy):
         if now < self._fermo_punte_ms:
             return _APRIRE_RIFIUTO
         return None
+
+    def _puo_gestire(self, now: float) -> Optional[str]:
+        """07/10 (ATTIVA ADESSO, punto 1 della regola dell'utente): la gestione
+        di un ciclo avviato col pulsante (rientri) e il rientro automatico
+        pre-match senza filtri NON passano dai filtri d'ingresso (quota,
+        liquidita', flusso, spread, finestra di stop prima del fischio, fischio
+        ignoto): restano solo le protezioni (stop/freno della sessione, attesa
+        dopo un rifiuto di Betfair). Mercato aperto e prezzi vivi li decide il
+        book (nessun ordine a mercato sospeso, nessun book = nessun ordine)."""
+        if self.force_flat:
+            return _APRIRE_FRENO
+        if now < self._fermo_punte_ms:
+            return _APRIRE_RIFIUTO
+        return None
+
+    def _filtro_aperture(self, now: float) -> Optional[str]:
+        """Il cancello delle punte di RIENTRO: quello di sempre (``_puo_aprire``)
+        o, per la sessione avviata col pulsante, le sole protezioni."""
+        return self._puo_gestire(now) if self._clic.a_clic else self._puo_aprire(now)
 
     def _pre_match(self, market: Any, mb: Any, now: float, bb: Optional[float],
                    bl: Optional[float], sb: Optional[float], sl: Optional[float]) -> None:
@@ -1062,6 +1206,12 @@ class MediaUnderStrategy(BaseStrategy):
             return
         pos = posizione_da_ordini(self._ordini)
         if self.stato == FERMO:
+            if self._clic.a_clic:
+                # 07/10: ciclo chiuso PRE-MATCH di una sessione avviata col
+                # pulsante: rientra da solo (subito, o coi filtri se l'utente li
+                # ha accesi). In gioco FERMO non esiste: e' ATTESA_CLIC.
+                self._rientro_automatico(market, now, bb, bl, sb, sl)
+                return
             self._forse_ingresso(market, now, bb, bl, sb, sl)
             return
         if not pos.aperta:
@@ -1101,22 +1251,72 @@ class MediaUnderStrategy(BaseStrategy):
         conti[motivo] = int(conti.get(motivo, 0)) + 1
 
     def _forse_ingresso(self, market: Any, now: float, bb: Optional[float],
-                        bl: Optional[float], sb: Optional[float], sl: Optional[float]) -> None:
+                        bl: Optional[float], sb: Optional[float], sl: Optional[float],
+                        origine: str = ORIGINE_FILTRI) -> None:
         motivo = self._perche_non_entra(now, bb, bl, sb, sl)
         if motivo is not None:
             self._conta_non_ingresso(motivo)
             return
+        if self._punta_d_ingresso(market, now, bb, origine) is None:
+            self._conta_non_ingresso("punta_non_piazzata")
+
+    def _punta_d_ingresso(self, market: Any, now: float, bb: Optional[float],
+                          origine: str) -> Optional[Any]:
+        """La prima punta di un ciclo: lo stake base alla miglior quota di punta
+        del book (LAPSE). ``origine``: filtri (la modalita' di sempre), clic
+        (<<Attiva adesso>>), rientro automatico pre-match."""
+        if bb is None:
+            return None
         prezzo = float(get_nearest_price(bb))
         o = self._piazza(market, "BACK", prezzo, self.par.stake, apertura=True,
                          persistenza="LAPSE")
         if o is None:
-            self._conta_non_ingresso("punta_non_piazzata")
-            return
+            return None
         self._punta, self._punta_ms, self._punta_rientro = o, now, False
         self.stato = INGRESSO
+        if origine != ORIGINE_FILTRI or self._clic.a_clic:
+            self._clic.origine = origine
+            self.stats["origine_ciclo"] = origine
+        extra: Dict[str, Any] = {}
+        if origine != ORIGINE_FILTRI:
+            # 07/10: da dove parte il ciclo (il payload della modalita' di sempre
+            # resta identico)
+            extra["origine"] = origine
+            extra["in_gioco"] = self._clic.in_gioco
         self._emit("media_ingresso", market_id=self._mid, selection_id=self._sid,
-                   prezzo=prezzo, importo=self.par.stake,
-                   msg="punta d'ingresso %.2f EUR @%.2f" % (self.par.stake, prezzo))
+                   prezzo=prezzo, importo=self.par.stake, **extra,
+                   msg="punta d'ingresso %.2f EUR @%.2f%s" % (
+                       self.par.stake, prezzo,
+                       {ORIGINE_CLIC: " (Attiva adesso)",
+                        ORIGINE_RIENTRO_AUTO: " (rientro automatico dopo la chiusura)"}
+                       .get(origine, "")))
+        return o
+
+    def _rientro_automatico(self, market: Any, now: float, bb: Optional[float],
+                            bl: Optional[float], sb: Optional[float],
+                            sl: Optional[float]) -> None:
+        """07/10 (regola dell'utente, punto 2): ciclo avviato col pulsante e
+        chiuso PRE-MATCH -> nuovo ciclo da solo. Di serie SUBITO al miglior
+        prezzo (anche dentro la finestra di stop prima del fischio); con
+        ``media_rientro_auto_filtri`` acceso solo quando i filtri d'ingresso di
+        sempre lo permettono. IN GIOCO mai (punto 3): si aspetta il clic (e' qui,
+        in un punto solo, sia per il ciclo chiuso in gioco sia per il ciclo chiuso
+        prima del fischio che arriva al fischio senza essere ripartito)."""
+        if self._clic.in_gioco:
+            self.stato = ATTESA_CLIC
+            return
+        if self.par.rientro_auto_filtri:
+            self._forse_ingresso(market, now, bb, bl, sb, sl, origine=ORIGINE_RIENTRO_AUTO)
+            return
+        aprire = self._puo_gestire(now)
+        if aprire:
+            self._conta_non_ingresso(_MOTIVO_DA_APRIRE.get(aprire, "freno"))
+            return
+        if bb is None:
+            self._conta_non_ingresso("prezzi_mancanti")
+            return
+        if self._punta_d_ingresso(market, now, bb, ORIGINE_RIENTRO_AUTO) is None:
+            self._conta_non_ingresso("punta_non_piazzata")
 
     def _punta_morta(self, p: Any) -> None:
         """La punta (ingresso o rientro) non puo' piu' cambiare: si contabilizza.
@@ -1154,7 +1354,15 @@ class MediaUnderStrategy(BaseStrategy):
                                     "(PERSIST)" % self._rientri)
         else:
             pos = posizione_da_ordini(self._ordini)
-            self.stato = IN_POSIZIONE if pos.aperta else FERMO
+            if pos.aperta:
+                self.stato = IN_POSIZIONE
+            elif self._clic.a_clic and (self._clic.origine == ORIGINE_CLIC or self._clic.in_gioco):
+                # 07/10: la prima punta del CLIC non abbinata (o una punta morta
+                # in gioco senza posizione): un clic = una sola prima punta, si
+                # aspetta il prossimo clic
+                self.stato = ATTESA_CLIC
+            else:
+                self.stato = FERMO
             self._emit("media_punta_non_abbinata", market_id=self._mid,
                        rientro=self._punta_rientro, prezzo=prezzo,
                        msg="punta non abbinata e morta: si rivaluta dal book corrente")
@@ -1165,7 +1373,7 @@ class MediaUnderStrategy(BaseStrategy):
                        pos: Posizione) -> None:
         if self._rientri_bloccati or self._ultimo_ingresso is None or bb is None:
             return
-        if self._puo_aprire(now):
+        if self._filtro_aperture(now):
             return
         su = ticks_between(self._ultimo_ingresso, bb)
         if su is None or su < self.par.tick_rientro:
@@ -1221,7 +1429,7 @@ class MediaUnderStrategy(BaseStrategy):
     def _punta_di_rientro(self, market: Any, now: float, bb: Optional[float]) -> None:
         """(b) ricalcolo sulla posizione VERA, (c) la punta di rientro. La
         condizione del rientro si rilegge sul book corrente."""
-        if bb is None or self._ultimo_ingresso is None or self._puo_aprire(now):
+        if bb is None or self._ultimo_ingresso is None or self._filtro_aperture(now):
             return
         su = ticks_between(self._ultimo_ingresso, bb)
         if su is None or su < self.par.tick_rientro or self._rientri >= self.par.max_rientri:
@@ -1341,6 +1549,26 @@ class MediaUnderStrategy(BaseStrategy):
                                           self._rientri))
         inplay = self.stato == LIVE
         self._nuovo_ciclo()
+        if self._clic.a_clic:
+            # 07/10 (regola dell'utente, punti 2-3): avviata col pulsante. Chiuso
+            # PRE-MATCH -> rientra da solo (FERMO = rientro automatico); chiuso
+            # IN GIOCO -> aspetta il clic, nessun ordine fino al clic (lo decide
+            # ``_rientro_automatico``, al book dopo: in gioco diventa ATTESA_CLIC)
+            self.stato = FERMO
+            self._emit("media_attesa_clic" if self._clic.in_gioco else "media_rientro_automatico",
+                       market_id=self._mid, selection_id=self._sid,
+                       profitto_lordo=round(lordo, 4),
+                       profitto_netto=round(netto_da_lordo(lordo, self.par.commissione), 4),
+                       filtri=self.par.rientro_auto_filtri,
+                       msg=("ciclo chiuso in gioco: %+.2f EUR netti. Clicca Attiva adesso "
+                            "per ripartire" % netto_da_lordo(lordo, self.par.commissione))
+                       if self._clic.in_gioco else
+                       ("ciclo chiuso prima del fischio: %+.2f EUR netti. Nuovo ciclo da "
+                        "solo, %s" % (netto_da_lordo(lordo, self.par.commissione),
+                                      "quando i filtri d'ingresso lo permettono"
+                                      if self.par.rientro_auto_filtri
+                                      else "subito al miglior prezzo")))
+            return True
         self.stato = FINE if inplay else FERMO
         return True
 
@@ -1356,6 +1584,8 @@ class MediaUnderStrategy(BaseStrategy):
         self._banca_vista = {}
         self._dichiarati.discard("massimo")
         self.stats["rientri_bloccati"] = None
+        self._clic.origine = None
+        self.stats["origine_ciclo"] = None
 
     # ------------------------------------------------------------------ live
     def _in_live(self, now: float, aperto: bool, bb: Optional[float],
@@ -1389,6 +1619,163 @@ class MediaUnderStrategy(BaseStrategy):
         if self.stato == LIVE and self._ciclo_chiuso(now):
             return
         self._pubblica(pos, bb, bl, forza=True)
+
+    def _in_gioco_a_clic(self, market: Any, mb: Any, now: float, aperto: bool,
+                         bb: Optional[float], bl: Optional[float], sb: Optional[float],
+                         sl: Optional[float]) -> None:
+        """07/10 (ATTIVA ADESSO, punto 4 della regola dell'utente): la sessione
+        avviata col pulsante, IN GIOCO, opera come pre-match (banca di chiusura,
+        rientri, massimo, rischio massimo) senza i filtri d'ingresso; mercato
+        SOSPESO (gol) = nessun ordine finche' non riapre. Un ciclo chiuso in gioco
+        NON riparte da solo (ATTESA_CLIC). Il riquadro <<chiusura>> resta
+        pubblicato (informativo)."""
+        pos = posizione_da_ordini(self._ordini)
+        if not self._clic.in_gioco_detto:
+            self._clic.in_gioco_detto = True
+            self._emit("media_live", level="CRITICAL" if pos.aperta else "INFO",
+                       market_id=self._mid, totale_puntato=round(pos.puntato, 2),
+                       banca=self._descrivi_banca(), a_clic=True,
+                       msg=("partita in gioco con %.2f EUR puntati: la modalita' avviata col "
+                            "pulsante continua a gestire la posizione come progettato "
+                            "(banca, rientri)" % pos.puntato) if pos.aperta else
+                       "partita in gioco senza posizione: si aspetta il clic su Attiva adesso")
+        if not aperto:
+            if not self._sospeso:
+                self._sospeso = True
+                self._emit("media_sospeso", level="CRITICAL" if pos.aperta else "INFO",
+                           market_id=self._mid, banca=self._descrivi_banca(),
+                           msg="mercato SOSPESO in gioco (gol o altro): nessun ordine")
+        elif self._sospeso:
+            self._sospeso = False
+            self._emit("media_riaperto", market_id=self._mid, banca=self._descrivi_banca(),
+                       msg="mercato riaperto in gioco")
+        self._segui_banca_in_live()
+        if aperto:
+            self._pre_match(market, mb, now, bb, bl, sb, sl)
+        self._pubblica(None, bb, bl, forza=True)
+
+    # ------------------------------------------------- ATTIVA ADESSO (07/10)
+    def comando_consumato(self) -> Optional[str]:
+        """L'id dell'ultimo comando del pulsante gia' consumato."""
+        return self._clic.consumato
+
+    def ricevi_comando(self, cid: str, inviato_ms: Optional[float], ora_ms: float,
+                       prezzi_vivi: Optional[bool] = None) -> Optional[Dict[str, Any]]:
+        """La sessione consegna il comando <<Attiva adesso>> (thread della
+        sessione). Un id gia' consumato non fa niente (None). Altrimenti il
+        comando e' CONSUMATO subito (mai due volte, mai accodato per dopo):
+        scaduto o coi prezzi fermi o col mercato sospeso (ultimo book visto) =
+        rifiutato col motivo; valido = PRONTO, e diventa eseguibile solo quando la
+        sessione l'ha registrato nella riga (``rilascia_comando``). Torna le
+        informazioni del comando (per le stats e l'attivita')."""
+        cid = str(cid or "").strip()
+        if not cid or cid == self._clic.consumato:
+            return None
+        self._clic.consumato = cid
+        info: Dict[str, Any] = {"id": cid, "esito": "ricevuto", "motivo": None,
+                                "inviato_ms": inviato_ms, "ricevuto_ms": float(ora_ms),
+                                "deciso_ms": None, "prezzo": None, "importo": None,
+                                "in_gioco": None}
+        self.stats["comando"] = info
+        if inviato_ms is not None and float(ora_ms) - float(inviato_ms) > \
+                ATTESA_MASSIMA_COMANDO_S * 1000.0:
+            self._rifiuta_comando(info, "comando scaduto: cliccato %d s fa (oltre %d s non "
+                                        "si esegue)" % ((float(ora_ms) - float(inviato_ms))
+                                                        / 1000.0, ATTESA_MASSIMA_COMANDO_S))
+        elif prezzi_vivi is False:
+            self._rifiuta_comando(info, "prezzi fermi: il flusso dei prezzi della partita e' "
+                                        "interrotto, nessun ordine (riprova quando torna)")
+        elif self._clic.ultimo_aperto is False:
+            self._rifiuta_comando(info, "mercato sospeso: nessun ordine (riprova quando riapre)")
+        else:
+            self._clic.pronto = info
+        return dict(info)
+
+    def rilascia_comando(self) -> bool:
+        """La sessione ha registrato il comando nella riga (l'id consumato
+        sopravvive a un riavvio): da adesso si esegue al prossimo book."""
+        c, self._clic.pronto = self._clic.pronto, None
+        if c is None:
+            return False
+        self._clic.comando = c
+        return True
+
+    def annulla_comando(self, motivo: str) -> None:
+        """La sessione NON e' riuscita a registrare il comando: non si esegue
+        (senza registrazione un riavvio potrebbe rieseguirlo)."""
+        c, self._clic.pronto = self._clic.pronto, None
+        if c is not None:
+            self._rifiuta_comando(c, motivo)
+
+    def _rifiuta_comando(self, info: Dict[str, Any], motivo: str,
+                         now: Optional[float] = None) -> None:
+        info["esito"] = "rifiutato"
+        info["motivo"] = motivo
+        info["deciso_ms"] = now
+        self.stats["comando"] = info
+        self._emit("media_comando_rifiutato", level="WARN", market_id=self._mid,
+                   comando=info.get("id"), motivo=motivo,
+                   msg="Attiva adesso NON eseguito: %s" % motivo)
+
+    def _motivo_no_comando(self, aperto: bool, bb: Optional[float], now: float,
+                           mb: Any) -> Optional[str]:
+        """Perche' il clic NON si esegue su questo book (None = si punta). Non
+        sono filtri di strategia: solo protezioni e stato."""
+        if self.stato == BLOCCATA:
+            return ("modalita' bloccata: posizione di una sessione precedente non "
+                    "ricostruibile, nessun ordine")
+        if self.stato == RIPRESA:
+            return "ripresa dal conto in corso: nessun ordine finche' non e' finita"
+        if self._esito is not None or getattr(mb, "status", None) == "CLOSED":
+            return "mercato chiuso"
+        if self.force_flat:
+            return "sessione in arresto (stop, freno o fine vita): nessuna apertura"
+        pos = posizione_da_ordini(self._ordini)
+        if (pos.aperta or self._punta is not None
+                or any(vivo_o_in_volo(o) for o in self._ordini)
+                or self.stato not in (FERMO, ATTESA_CLIC, FINE)):
+            return ("gia' in posizione (stato %s, %.2f EUR puntati): il clic non apre un "
+                    "secondo ciclo" % (self.stato, pos.puntato))
+        if not aperto:
+            return "mercato sospeso: nessun ordine (riprova quando riapre)"
+        if bb is None:
+            return "nessun prezzo di punta disponibile sull'Under"
+        if now < self._fermo_punte_ms:
+            return "attesa dopo un rifiuto di Betfair"
+        return None
+
+    def _esegui_comando(self, market: Any, mb: Any, now: float, inplay: bool, aperto: bool,
+                        bb: Optional[float]) -> None:
+        """Il clic su QUESTO book: PUNTA SUBITO lo stake base al miglior prezzo
+        di punta, senza i filtri d'ingresso; poi la modalita' gestisce la
+        posizione come progettato. Consumato in ogni caso (mai accodato)."""
+        info, self._clic.comando = self._clic.comando, None
+        if info is None:
+            return
+        info["in_gioco"] = bool(inplay)
+        motivo = self._motivo_no_comando(aperto, bb, now, mb)
+        if motivo:
+            self._rifiuta_comando(info, motivo, now)
+            return
+        self._nuovo_ciclo()
+        self._clic.a_clic = True
+        self.stats["a_clic"] = True
+        o = self._punta_d_ingresso(market, now, bb, ORIGINE_CLIC)
+        if o is None:
+            # freno dei soldi veri o rifiuto: la modalita' e' comunque "a clic"
+            self.stato = ATTESA_CLIC
+            self._rifiuta_comando(info, "punta non partita (%s)"
+                                  % (self._apertura_ferma or "rifiutata da Betfair"), now)
+            return
+        info.update({"esito": "eseguito", "deciso_ms": now,
+                     "prezzo": float(o.order_type.price), "importo": float(o.order_type.size)})
+        self.stats["comando"] = info
+        self._emit("media_comando_eseguito", level="CRITICAL", market_id=self._mid,
+                   selection_id=self._sid, comando=info.get("id"),
+                   prezzo=info["prezzo"], importo=info["importo"], in_gioco=bool(inplay),
+                   msg="Attiva adesso: punta %.2f EUR @%.2f %s" % (
+                       info["importo"], info["prezzo"],
+                       "in gioco" if inplay else "prima del fischio"))
 
     def _segui_banca_in_live(self) -> None:
         """Cambi rilevanti della banca in gioco: abbinata (anche in parte),
@@ -1586,6 +1973,7 @@ class MediaUnderStrategy(BaseStrategy):
         s["obiettivo_lordo"] = (round(self._t_lordo, 4) if self._t_lordo is not None
                                 else None)
         s["riavvio"] = self.riavvio
+        s["a_clic"] = self._clic.a_clic
         if self.stato in (LIVE, MASSIMO) or (forza and self.stato != BLOCCATA):
             # 05/10 (giro 2): gli ordini del conto letti dalla sessione entrano
             # SOLO qui (il riquadro), con la fonte e l'ora del dato
@@ -1663,7 +2051,7 @@ class MediaUnderStrategy(BaseStrategy):
         if not righe:
             self._ripresa = None
             if self.stato == RIPRESA:
-                self.stato = FERMO
+                self.stato = ATTESA_CLIC if self._clic.a_clic else FERMO
             self._emit("media_ripresa", ordini=0,
                        msg="ripresa: nessun ordine della modalita' sul conto, si parte da "
                            "zero")
@@ -1696,7 +2084,7 @@ class MediaUnderStrategy(BaseStrategy):
     def _forse_riprendi(self, market: Any, now: float) -> None:
         r = self._ripresa
         if r is None:
-            self.stato = FERMO
+            self.stato = ATTESA_CLIC if self._clic.a_clic else FERMO
             return
         if not r.get("letto"):
             self._una_volta("ripresa_conto", "media_ripresa_in_attesa", level="CRITICAL",
@@ -1803,7 +2191,7 @@ class MediaUnderStrategy(BaseStrategy):
         else:
             self._ordini = []
             self._punta = None
-            self.stato = FERMO
+            self.stato = ATTESA_CLIC if self._clic.a_clic else FERMO
         self._ripresa = None
         b = self._banca
         self._emit("media_ripresa", level="CRITICAL" if pos.aperta else "INFO",
@@ -1837,7 +2225,8 @@ class MediaUnderStrategy(BaseStrategy):
     def serve_ordini_conto(self) -> bool:
         """Gli ordini del conto servono solo quando il riquadro "chiusura" e'
         pubblicato (massimo dei rientri o in gioco) con una posizione aperta."""
-        return self.stato in (LIVE, MASSIMO) and self.posizione_aperta()
+        return ((self.stato in (LIVE, MASSIMO) or (self._clic.a_clic and self._clic.in_gioco))
+                and self.posizione_aperta())
 
     def imposta_ordini_conto(self, righe: Optional[Sequence[Dict[str, Any]]], ora: str,
                              errore: Optional[str] = None) -> None:

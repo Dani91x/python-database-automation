@@ -1,0 +1,35 @@
+== paper dal_ms=KO-20' | 7 s
+   violazioni {} | ordini 0 | righe specchio 0 | NE []
+   primo ordine dello specchio a None (dal_ms 1782834000000 , dopo: None )
+    ACCENSIONE a 1782834000000 ms (dal_ms): la sessione parte 2047 s dopo l'inizio della registrazione
+    sessioni: {'prima': 'finita'}; stato finale 'done' (causa della fine: fine-vita)
+== sniper-paper dal_ms=gioco+5' | 41 s
+   violazioni {} | ordini 0 | righe specchio 0 | NE []
+   primo ordine dello specchio a None (dal_ms 1782835525478 , dopo: None )
+    PARAMETRI del replay (sostituiti nella riga come dalla scheda): [('sniper_stake', 5.0)]
+    ACCENSIONE a 1782835525478 ms (dal_ms): la sessione parte 3573 s dopo l'inizio della registrazione
+    sessioni: {'prima': 'finita'}; stato finale 'done' (causa della fine: ?)
+== media-under-paper dal_ms=gioco+5' liquidita 100 | 74 s
+   violazioni {} | ordini 15 | righe specchio 60465 | NE []
+   primo ordine dello specchio a 1782835530046 (dal_ms 1782835525478 , dopo: True )
+    PARAMETRI del replay (sostituiti nella riga come dalla scheda): [('media_min_size', 100.0)]
+    ATTIVA ADESSO: sessione armata dal pulsante (media_a_clic); clic agli istanti ['in gioco al 5\'00"'] (dal_ms/clic_ms del chiamante); reazione concessa 15000 ms; fatti del raw: inizio 1782831952415, fischio 1782835200000, in gioco 1782835225478, sospensioni in gioco [('in gioco al 1\'33"', 2.0), ('in gioco al 3\'31"', 3.0), ('in gioco al 3\'55"', 13.0), ('in gioco al 7\'36"', 3.0), ('in gioco al 27
+    sessioni: {'prima': 'finita'}; stato finale 'done' (causa della fine: ?)
+    MEDIA UNDER ciclo 1: ingresso 10.00 @2.78 (abbinato 10.00, in gioco al 5'05"); rientro 1 @4.70: esatto 88.78, piazzato 88.50, abbinato 76.96; rientro 2 @5.60: esatto 334.54, piazzato 334.50, abbinato 10.04; rientro 3 @6.20: esatto 368.20, piazzato 368.00, abbinato 0.00; rientro 4 @5.80: esatto 406.58, piazzato 406.50, abbinato 10.03; rientro 5 @9.60: esatto 1133.60, piazzato 1133.50, abbinato 48.4
+    MEDIA UNDER P&L del replay: lordo -178.33 | commissione 0.00 (5.0%) | NETTO -178.33 EUR (dagli ordini abbinati della modalita'; non e' il metro della certificazione: il metro e' la condotta)
+    ATTIVA ADESSO clic clic-1-1782835525478 (in gioco al 5'00"): letto dalla sessione in gioco al 5'04"; per il banco ESEGUIBILE; prima punta 140106551064680180 @2.78 per 10.0 a in gioco al 5'04"
+    ATTIVA ADESSO ciclo 1: prima punta 140106551064680180 @2.78 a in gioco al 5'04", partita da CLIC (clic-1-1782835525478)
+    ATTIVA ADESSO: ultimo comando scritto dalla sessione {'id': 'clic-1-1782835525478', 'esito': 'eseguito', 'motivo': None, 'inviato_ms': 1782835525478.0, 'ricevuto_ms': 1782835529841.0, 'deciso_ms': 1782835529267.0, 'prezzo': 2.78, 'importo': 10.0, 'in_gioco': True}; stato finale FINE
+    ATTIVA ADESSO: controlli M12-M18 sollecitati {'M12': 4760, 'M13': 15, 'M14': 4760, 'M15': 4746, 'M18': 20}; MAI sollecitati (non lo so): M16, M17
+== media-under-paper dal_ms=KO-40' clic_ms=[gioco+20'] | 75 s
+   violazioni {} | ordini 15 | righe specchio 68738 | NE []
+   primo ordine dello specchio a 1782832806808 (dal_ms 1782832800000 , dopo: True )
+    ATTIVA ADESSO: sessione armata dal pulsante (media_a_clic); clic agli istanti ['pre-match, 40\'25" al fischio', 'in gioco al 20\'00"'] (dal_ms/clic_ms del chiamante); reazione concessa 15000 ms; fatti del raw: inizio 1782831952415, fischio 1782835200000, in gioco 1782835225478, sospensioni in gioco [('in gioco al 1\'33"', 2.0), ('in gioco al 3\'31"', 3.0), ('in gioco al 3\'55"', 13.0), ('in gioco 
+    sessioni: {'prima': 'finita'}; stato finale 'done' (causa della fine: ?)
+    MEDIA UNDER ciclo 1: ingresso 10.00 @2.86 (abbinato 10.00, pre-match, 40'19" al fischio); rientro 1 @2.90: esatto 10.14, piazzato 10.00, abbinato 10.00; rientro 2 @2.94: esatto 20.28, piazzato 20.00, abbinato 10.03; rientro 3 @4.70: esatto 243.43, piazzato 243.00, abbinato 76.96; rientro 4 @5.60: esatto 579.29, piazzato 579.00, abbinato 10.04; rientro 5 @6.20: esatto 564.75, piazzato 564.50, abbin
+    MEDIA UNDER P&L del replay: lordo -127.03 | commissione 0.00 (5.0%) | NETTO -127.03 EUR (dagli ordini abbinati della modalita'; non e' il metro della certificazione: il metro e' la condotta)
+    ATTIVA ADESSO clic clic-1-1782832800000 (pre-match, 40'25" al fischio): letto dalla sessione pre-match, 40'19" al fischio; per il banco ESEGUIBILE; prima punta 140106551750379630 @2.86 per 10.0 a pre-match, 40'19" al fischio
+    ATTIVA ADESSO clic clic-2-1782836425478 (in gioco al 20'00"): letto dalla sessione in gioco al 20'03"; per il banco NON eseguibile (posizione aperta o ordine vivo); prima punta nessuna
+    ATTIVA ADESSO ciclo 1: prima punta 140106551750379630 @2.86 a pre-match, 40'19" al fischio, partita da CLIC (clic-1-1782832800000)
+    ATTIVA ADESSO: ultimo comando scritto dalla sessione {'id': 'clic-2-1782836425478', 'esito': 'rifiutato', 'motivo': "gia' in posizione (stato MASSIMO, 127.06 EUR puntati): il clic non apre un secondo ciclo", 'inviato_ms': 1782836425478.0, 'ricevuto_ms': 1782836428537.0, 'deciso_ms': 1782836428430.0, 'prezzo': None, 'importo': None, 'in_gioco': True}; stato finale FINE
+    ATTIVA ADESSO: controlli M12-M18 sollecitati {'M12': 5826, 'M13': 14, 'M14': 5826, 'M15': 5819, 'M18': 17}; MAI sollecitati (non lo so): M16, M17

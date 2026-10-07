@@ -1,0 +1,96 @@
+diff --git a/frontend/src/pages/MatchReplay.tsx b/frontend/src/pages/MatchReplay.tsx
+index d288a044..dfd4243a 100644
+--- a/frontend/src/pages/MatchReplay.tsx
++++ b/frontend/src/pages/MatchReplay.tsx
+@@ -37,6 +37,8 @@ import { simulateOrder, MIN_STAKE_GBP, type BookSnapshot, type OrderRequest, typ
+ import { LadderView, type LadderSource } from '@/components/live/LadderView';
+ import { createTrainingApi, frameToLadderRow, type TrainingApi } from '@/lib/trainingLadder';
+ import { punteggioAlTs, timelineEventMarkers } from '@/lib/replayTimelineEvents';
++import { kickoffIndexSuPassi, kickoffTsDaFrame, passiBarra, sospesiPerPasso } from '@/lib/replayVerificaBarra';
++import { AvvisoCoerenzaBarra } from '@/components/replay/AvvisoCoerenzaBarra';
+ import type { LiveLadderRow } from '@/lib/live';
+ // F42: backtest del ladder-trading sullo storico full-depth (lib pura testata)
+ import { LadderBacktestPanel } from '@/components/replay/LadderBacktestPanel';
+@@ -221,12 +223,7 @@ export default function MatchReplay() {
+     // "KickOff/minute 0" a ogni riconnessione del feed, anche a metà partita →
+     // era la causa dei replay che partivano "da un momento a caso".
+     // Fallback: primo frame in assoluto (registrazione iniziata in-play senza flag).
+-    const kickoffTs = useMemo(() => {
+-        if (!replay) return null;
+-        const sorted = [...replay.frames].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+-        const ip = sorted.find(f => f.inplay === true);
+-        return ip?.ts ?? sorted[0]?.ts ?? null;
+-    }, [replay]);
++    const kickoffTs = useMemo(() => (replay ? kickoffTsDaFrame(replay.frames) : null), [replay]);
+ 
+     // ---- timeline: griglia temporale ~10s (scorribile), non ogni singolo tick ----
+     // (i frame sono migliaia; raggruppiamo a bucket di 10s per un playback usabile;
+@@ -235,32 +232,13 @@ export default function MatchReplay() {
+     // più grossa): il replay PARTE dal kickoff (indice iniziale) ma si può
+     // riavvolgere fino all'inizio della registrazione.
+     const TIMELINE_BUCKET_MS = 10_000;
+-    const timeline = useMemo(() => {
+-        if (!replay) return [] as { ts: string; minute: number | null }[];
+-        const byBucket = new Map<number, { ts: string; minute: number | null }>();
+-        for (const f of replay.frames) {
+-            const b = Math.floor(new Date(f.ts).getTime() / TIMELINE_BUCKET_MS);
+-            const cur = byBucket.get(b);
+-            if (!cur) byBucket.set(b, { ts: f.ts, minute: f.minute });
+-            else if (cur.minute == null && f.minute != null) cur.minute = f.minute;
+-        }
+-        return Array.from(byBucket.values())
+-            .sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+-    }, [replay]);
++    const timeline = useMemo(() => (replay ? passiBarra(replay.frames, TIMELINE_BUCKET_MS) : []), [replay]);
+ 
+     const maxIndex = Math.max(0, timeline.length - 1);
+ 
+     // indice del calcio d'inizio sulla timeline (0 se non determinabile):
+     // primo step con ts >= kickoffTs.
+-    const kickoffIndex = useMemo(() => {
+-        if (!kickoffTs || timeline.length === 0) return 0;
+-        let lo = 0, hi = timeline.length;
+-        while (lo < hi) {
+-            const mid = (lo + hi) >> 1;
+-            if (timeline[mid].ts < kickoffTs) lo = mid + 1; else hi = mid;
+-        }
+-        return Math.min(lo, timeline.length - 1);
+-    }, [timeline, kickoffTs]);
++    const kickoffIndex = useMemo(() => kickoffIndexSuPassi(timeline, kickoffTs), [timeline, kickoffTs]);
+ 
+     // al caricamento di un replay, posiziona il cursore sul CALCIO D'INIZIO
+     // (il pre-match resta raggiungibile riavvolgendo / "salta all'inizio").
+@@ -610,19 +588,10 @@ export default function MatchReplay() {
+     // ---- SOSPENSIONI sulla barra: per ogni step della timeline, MATCH_ODDS sospeso?
+     // (ultimo frame MATCH_ODDS con ts <= step.ts === 'SUSPENDED'; se non c'è MATCH_ODDS,
+     //  usa: QUALSIASI mercato sospeso a quell'istante). Allineato agli indici della timeline.
+-    const suspended = useMemo(() => {
+-        const matchOddsIds = markets.filter(m => (m.market_type || '').toUpperCase() === 'MATCH_ODDS').map(m => m.market_id);
+-        return timeline.map(step => {
+-            if (matchOddsIds.length > 0) {
+-                return matchOddsIds.some(id => statusAtTs(framesByMarket.get(id), step.ts) === 'SUSPENDED');
+-            }
+-            for (const arr of framesByMarket.values()) {
+-                if (statusAtTs(arr, step.ts) === 'SUSPENDED') return true;
+-            }
+-            return false;
+-        });
+-        // eslint-disable-next-line react-hooks/exhaustive-deps
+-    }, [timeline, framesByMarket, markets]);
++    const suspended = useMemo(
++        () => sospesiPerPasso(timeline, replay?.frames ?? [], markets),
++        [timeline, replay, markets],
++    );
+ 
+     // ---- categorizzazione mercati in tab ----
+     const categorized = useMemo(() => {
+@@ -1035,6 +1004,9 @@ export default function MatchReplay() {
+                             />
+                         </Card>
+ 
++                        {/* avviso discreto: barra, simboli e tabellone non tornano con i dati registrati */}
++                        <AvvisoCoerenzaBarra replay={replay} snapshots={snapshots} />
++
+                         {/* menu SOTTO LA TIMELINE: tab categorie mercato + pulsante Opportunità.
+                             Clic su una categoria → vista mercati; clic su Opportunità → vista
+                             opportunità divisa nelle 3 fasce di rischio (🟢/🟡/🟠). */}

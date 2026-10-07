@@ -1,0 +1,15 @@
+ESITO OK tick 5216 azioni 7 ordini 3 abbinati 2 stati ['OPEN', 'CLOSING'] violazioni {}
+STATS {"entries": 2, "greens": 0, "scratches": 0, "stops": 1, "manuali": 0, "pnl": -0.03418803418803407, "pnl_settled": -0.04, "residui_ricordati": []}
+NOTA catalogo NON disponibile: ne' --nomi ne' _names.json
+NOTA SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+NOTA RESIDUI (decisione 1): dichiarati 1 (importi [0.03] EUR, sbilancio [0.04] EUR), tornati pari 0; regolati col mercato 1 (se vince [-0.04] / se perde [0.0] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+NOTA SCENARIO DICHIARATO: cambiati SOLO i parametri ['min_book_size', 'min_matched', 'min_total_matched', 'price_max', 'price_min'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+EVENTI Counter({'entry': 2, 'closed_flat': 2, 'entry_timeout': 1, 'residuo_non_piazzabile': 1, 'exit': 1, 'residuo_regolato': 1})
+13:28:01 entry {"kind": "compressed_fav", "sel": 35635727, "side": "LAY", "price": 1.18, "target": 1.22, "stop": 1.15} S1-1 G3-5 P15-15 srv=away
+13:28:26 entry_timeout {"sel": 35635727, "kind": "compressed_fav", "note": "ingresso scaduto: cancello e sorveglio finche' il blotter non dice che la selezione e' pari"} S1-1 G3-5 P30-15 srv=away
+13:28:27 closed_flat {"sel": 35635727, "kind": "compressed_fav"} S1-1 G3-5 P30-15 srv=away
+13:53:07 entry {"kind": "compressed_fav", "sel": 35635727, "side": "LAY", "price": 1.22, "target": 1.26, "stop": 1.19} S1-1 G6-6 P4-6 srv=home
+13:53:11 residuo_non_piazzabile {"level": "CRITICAL", "proposta": {"azione": "chiudi a mano", "lato": "BACK", "importo": 0.03, "quota": 1.17, "selection_id": 35635727, "market_id": "1.259745327"}, "selection_id": 35635727, "market_id": "1.259745327", "lato": "BACK", "importo": 0.03, "se_vinc S1-1 G6-6 P4-6 srv=home
+13:53:11 exit {"outcome": "stop", "kind": "compressed_fav", "sel": 35635727, "locked": -0.034} S1-1 G6-6 P4-6 srv=home
+13:53:14 closed_flat {"sel": 35635727, "kind": "compressed_fav", "residuo": 0.03, "lato_residuo": "BACK"} S1-1 G6-6 P4-6 srv=home
+13:58:20 residuo_regolato {"selection_id": 35635727, "market_id": "1.259745327", "se_vince": -0.04, "se_perde": 0.0, "note": "mercato chiuso: il residuo si e' regolato col risultato"} S1-2 G6-7 P0-0 srv=home

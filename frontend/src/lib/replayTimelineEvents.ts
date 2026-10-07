@@ -13,7 +13,29 @@
 //     indietro" e risalire -> lo stesso gol disegnato due volte.
 //  3. Il ROSSO da doppia ammonizione (tipi come SecondYellow/YellowRedCard)
 //     era ignorato: ogni tipo che nomina "red" o "secondyellow" e' un rosso.
+//
+// Controllo del 07/10 (barra vs simboli, dati veri di due registrazioni), tre
+// correzioni in piu':
+//  4. PUNTEGGIO AL CURSORE (`punteggioAlTs`): le righe-evento della timeline
+//     (Goal, YellowCard, FirstHalfEnd, SecondHalfEnd, ...) NON portano il
+//     punteggio (score_home/away null). La pagina prendeva "l'ultima riga <= ts"
+//     di QUALUNQUE tipo e leggeva `?? 0`: dopo ogni riga-evento il tabellone
+//     tornava 0-0 (per tutto l'intervallo e a fine partita, "FT" compreso, con il
+//     risultato finale sbagliato). Ora il punteggio e' quello dell'ultima riga
+//     CHE LO PORTA; il minuto resta quello dell'ultima riga di qualunque tipo.
+//  5. FUORI REGISTRAZIONE: un fatto con ts coerente ma PRIMA del primo frame (o
+//     dopo l'ultimo) veniva incollato al 0% (o al 100%). Non ha un istante sulla
+//     barra: nessun simbolo (come gia' per le ri-emissioni, punto c).
+//  6. GOL NEL PUNTEGGIO MA NON NELLA TIMELINE: se la timeline discreta perde un
+//     poll, il punteggio salta ma sulla barra non c'era nessun simbolo. Ora il
+//     gol del punteggio senza un Goal discreto vicino (entro 3 minuti) si disegna
+//     dal punteggio.
+//  7. SALTI DI PIU' UNITA' (verificatore della barra, 07/10): fra due righe del
+//     punteggio il conteggio di gol, cartellini o angoli puo' saltare di 2 o piu'; la
+//     barra disegnava UN solo simbolo per riga e non contava piu' come il punteggio.
+//     Ora un simbolo per ogni unita' del salto.
 // ============================================================================
+
 import type { ScoreEvent } from '@/lib/live';
 
 export interface TimelineMarker {
@@ -43,6 +65,40 @@ export function kindDiTipo(tipo: string | null | undefined): 'goal' | 'yellow' |
     if (ty.includes('yellow')) return 'yellow';
     if (ty === 'corner') return 'corner';
     return null;
+}
+
+// Punteggio e minuto mostrati al cursore (07/10). `sortedScoreTimeline` e' ordinata
+// per ts. Il PUNTEGGIO e' quello dell'ultima riga con ts <= `ts` CHE LO PORTA
+// (score_home e score_away valorizzati): le righe-evento della timeline non lo
+// portano e non devono azzerarlo. Il MINUTO e' quello dell'ultima riga di
+// qualunque tipo (anche un evento: FirstHalfEnd 51', SecondHalfEnd 98'); null =
+// nessuna riga ancora (il chiamante ripiega sul minuto del frame).
+export function punteggioAlTs(
+    sortedScoreTimeline: ReadonlyArray<ScoreEvent>,
+    ts: string,
+): { home: number; away: number; minute: number | null } {
+    let home = 0, away = 0;
+    let minute: number | null = null;
+    for (const ev of sortedScoreTimeline) {
+        if (ev.ts > ts) break;
+        minute = ev.minute;
+        if (ev.score_home != null && ev.score_away != null) { home = ev.score_home; away = ev.score_away; }
+    }
+    return { home, away, minute };
+}
+
+// scarto massimo fra il ts di un Goal discreto e quello della riga del punteggio
+// che lo mostra per considerarli lo STESSO gol (visti sui dati veri: <= 11 s).
+const FINESTRA_GOL_MS = 180_000;
+// il ts dell'ultimo passo e' il primo frame dell'ultimo bucket da 10 s: i fatti
+// fino a un bucket dopo stanno ancora dentro la registrazione.
+const BUCKET_FINALE_MS = 10_000;
+
+// ripete `f` una volta per OGNI unita' di un salto di conteggio (07/10): fra due righe
+// del punteggio il feed puo' saltare di 2 o piu' (due angoli fra un poll e l'altro) e
+// i simboli devono contare quanto il punteggio.
+function unita(salto: number, f: () => void): void {
+    for (let k = 0; k < salto; k++) f();
 }
 
 export function timelineEventMarkers(
@@ -106,6 +162,20 @@ export function timelineEventMarkers(
             ts = placedTs(ev);
             if (!ts) return;
         }
+        // FUORI REGISTRAZIONE (07/10): prima del primo frame o oltre l'ultimo bucket
+        // non esiste un istante della barra in cui il fatto sia avvenuto.
+        if (timeline.length > 0) {
+            const t = Date.parse(ts);
+            const primo = Date.parse(timeline[0].ts);
+            const ultimo = Date.parse(timeline[timeline.length - 1].ts);
+            if (Number.isFinite(t) && Number.isFinite(primo) && Number.isFinite(ultimo)) {
+                if (t < primo) return;
+                if (t > ultimo + BUCKET_FINALE_MS) return;
+                // dentro l'ultimo bucket: visibile all'ultimo passo (il filtro della
+                // pagina e' `m.ts <= ts del cursore`)
+                if (t > ultimo) ts = timeline[timeline.length - 1].ts;
+            }
+        }
         const idx = stepIndexFor(timeline, ts);
         out.push({ ts, pctLeft: Math.min(Math.max(idx / span, 0), 1), kind, team, minute: ev.minute, label });
     };
@@ -118,6 +188,32 @@ export function timelineEventMarkers(
     const angoliDiscreti = sortedScoreTimeline.some(e => kindDiTipo(e.event_type) === 'corner');
     let maxHome = 0, maxAway = 0;
     let pYH = 0, pYA = 0, pRH = 0, pRA = 0, pCH = 0, pCA = 0;
+
+    // GOL DISCRETI col ts a cui verranno posizionati (07/10): servono a capire,
+    // quando il punteggio sale, se la timeline ha gia' il Goal o se l'ha perso.
+    const golDiscreti: { team: string | null; ms: number; preso: boolean }[] = [];
+    if (hasDiscrete) {
+        for (const e of sortedScoreTimeline) {
+            if (kindDiTipo(e.event_type) !== 'goal') continue;
+            const pt = placedTs(e);
+            if (!pt) continue;
+            golDiscreti.push({ team: (e.payload as { team?: string | null } | undefined)?.team ?? null, ms: Date.parse(pt), preso: false });
+        }
+    }
+    const golDalPunteggio = (ev: ScoreEvent, team: 'home' | 'away', quanti: number) => {
+        const msRiga = Date.parse(ev.ts);
+        if (!Number.isFinite(msRiga)) return;
+        for (let k = 0; k < quanti; k++) {
+            let best = -1, bestD = Infinity;
+            golDiscreti.forEach((g, j) => {
+                if (g.preso || (g.team != null && g.team !== team)) return;
+                const d = Math.abs(g.ms - msRiga);
+                if (d <= FINESTRA_GOL_MS && d < bestD) { best = j; bestD = d; }
+            });
+            if (best >= 0) golDiscreti[best].preso = true; // c'e' gia' il Goal della timeline
+            else add(ev, 'goal', team, `Gol ${teamName(team)}`); // la timeline l'ha perso
+        }
+    };
 
     for (const ev of sortedScoreTimeline) {
         // le righe-evento discrete non portano il punteggio: restano al massimo visto
@@ -148,27 +244,32 @@ export function timelineEventMarkers(
                     add(ev, 'corner', pTeam, who ? `Angolo ${who}` : "Calcio d'angolo");
                 }
                 // KickOff/HalfTime/... = fasi: non renderizzate.
-            } else if (!angoliDiscreti) {
-                // ANGOLI dai conteggi del punteggio (la timeline IPS non li porta)
-                const ch = numH(ev.payload, 'numberOfCorners'), ca = numA(ev.payload, 'numberOfCorners');
-                if (ch > pCH) add(ev, 'corner', 'home', `Angolo ${homeName}`);
-                if (ca > pCA) add(ev, 'corner', 'away', `Angolo ${awayName}`);
-                pCH = Math.max(pCH, ch); pCA = Math.max(pCA, ca);
+            } else {
+                // GOL del punteggio che la timeline discreta non ha (07/10)
+                if (dHome > 0) golDalPunteggio(ev, 'home', dHome);
+                if (dAway > 0) golDalPunteggio(ev, 'away', dAway);
+                if (!angoliDiscreti) {
+                    // ANGOLI dai conteggi del punteggio (la timeline IPS non li porta)
+                    const ch = numH(ev.payload, 'numberOfCorners'), ca = numA(ev.payload, 'numberOfCorners');
+                    unita(ch - pCH, () => add(ev, 'corner', 'home', `Angolo ${homeName}`));
+                    unita(ca - pCA, () => add(ev, 'corner', 'away', `Angolo ${awayName}`));
+                    pCH = Math.max(pCH, ch); pCA = Math.max(pCA, ca);
+                }
             }
         } else {
-            // GOL dai delta di punteggio
-            if (dHome > 0) add(ev, 'goal', 'home', `Gol ${homeName}`);
-            if (dAway > 0) add(ev, 'goal', 'away', `Gol ${awayName}`);
+            // GOL dai delta di punteggio (un simbolo per OGNI gol del salto)
+            unita(dHome, () => add(ev, 'goal', 'home', `Gol ${homeName}`));
+            unita(dAway, () => add(ev, 'goal', 'away', `Gol ${awayName}`));
             // CARTELLINI / ANGOLI dai conteggi cumulativi nel payload
             const yh = numH(ev.payload, 'numberOfYellowCards'), ya = numA(ev.payload, 'numberOfYellowCards');
             const rh = numH(ev.payload, 'numberOfRedCards'), ra = numA(ev.payload, 'numberOfRedCards');
             const ch = numH(ev.payload, 'numberOfCorners'), ca = numA(ev.payload, 'numberOfCorners');
-            if (yh > pYH) add(ev, 'yellow', 'home', `Giallo ${homeName}`);
-            if (ya > pYA) add(ev, 'yellow', 'away', `Giallo ${awayName}`);
-            if (rh > pRH) add(ev, 'red', 'home', `Rosso ${homeName}`);
-            if (ra > pRA) add(ev, 'red', 'away', `Rosso ${awayName}`);
-            if (ch > pCH) add(ev, 'corner', 'home', `Angolo ${homeName}`);
-            if (ca > pCA) add(ev, 'corner', 'away', `Angolo ${awayName}`);
+            unita(yh - pYH, () => add(ev, 'yellow', 'home', `Giallo ${homeName}`));
+            unita(ya - pYA, () => add(ev, 'yellow', 'away', `Giallo ${awayName}`));
+            unita(rh - pRH, () => add(ev, 'red', 'home', `Rosso ${homeName}`));
+            unita(ra - pRA, () => add(ev, 'red', 'away', `Rosso ${awayName}`));
+            unita(ch - pCH, () => add(ev, 'corner', 'home', `Angolo ${homeName}`));
+            unita(ca - pCA, () => add(ev, 'corner', 'away', `Angolo ${awayName}`));
             pYH = Math.max(pYH, yh); pYA = Math.max(pYA, ya);
             pRH = Math.max(pRH, rh); pRA = Math.max(pRA, ra);
             pCH = Math.max(pCH, ch); pCA = Math.max(pCA, ca);

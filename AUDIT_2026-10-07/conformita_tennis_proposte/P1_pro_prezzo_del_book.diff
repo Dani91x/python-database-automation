@@ -1,0 +1,147 @@
+diff --git a/Betfair/stream/tennis_scalper/tennis_pro_bot.py b/Betfair/stream/tennis_scalper/tennis_pro_bot.py
+index e39ed8eb..ea878162 100644
+--- a/Betfair/stream/tennis_scalper/tennis_pro_bot.py
++++ b/Betfair/stream/tennis_scalper/tennis_pro_bot.py
+@@ -340,8 +340,23 @@ class TennisProStrategy(BaseStrategy):
+         return rr == 3 and rs <= 1          # 0-40 / 15-40 (30-40 escluso)
+ 
+     @staticmethod
+-    def _favourite(px: Dict[int, Dict[str, Any]]) -> Optional[int]:
+-        cand = {k: v["ltp"] for k, v in px.items() if v.get("ltp")}
++    def _prezzo(d: Dict[str, Any]) -> Optional[float]:
++        """07/10 - il PREZZO del runner: il medio del book quando i due lati
++        sono quotati, l'ultimo scambiato SOLO come ripiego (la stessa regola di
++        `_track_px`). L'ultimo scambiato da solo resta fermo per minuti su un
++        mercato poco liquido: misurato su 35790089, alle 13:54:27 Simakin aveva
++        `ltp` 1,19 e il book 2,18 / 2,32, e il bot e' entrato in
++        `compressed_fav` («favorito cortissimo <= 1,20») su un runner a 2,20
++        che non era nemmeno il favorito."""
++        bb, bl = d.get("bb"), d.get("bl")
++        if bb and bl:
++            return (float(bb) + float(bl)) / 2.0
++        ltp = d.get("ltp")
++        return float(ltp) if ltp else None
++
++    @classmethod
++    def _favourite(cls, px: Dict[int, Dict[str, Any]]) -> Optional[int]:
++        cand = {k: p for k, p in ((k, cls._prezzo(v)) for k, v in px.items()) if p}
+         return min(cand, key=cand.get) if cand else None
+ 
+     @staticmethod
+@@ -679,7 +694,8 @@ class TennisProStrategy(BaseStrategy):
+         if fav is None:
+             return False
+         d = px[fav]
+-        if not d["ltp"] or d["ltp"] > self.cf_max_price:
++        p = self._prezzo(d)
++        if not p or p > self.cf_max_price:
+             return False
+         return self._open_trade(market, fav, self._setup_side(fav), d, self.cf_target_ticks,
+                                 self.cf_stop_ticks, "compressed_fav")
+@@ -693,8 +709,9 @@ class TennisProStrategy(BaseStrategy):
+         setnum = (s.sets_home or 0) + (s.sets_away or 0)
+         for sel, d in px.items():
+             k = (mid, sel, setnum)
+-            if k not in self._set_start_px and d["ltp"]:
+-                self._set_start_px[k] = float(d["ltp"])
++            p = self._prezzo(d)
++            if k not in self._set_start_px and p:
++                self._set_start_px[k] = p
+         cur = (s.sets_home or 0, s.sets_away or 0)
+         prev = self._prev_sets.get(mid)
+         if prev is not None and cur != prev:
+--- /dev/null
++++ b/Betfair/stream/tennis_live/tests/test_pro_prezzo_vivo_2026_10_07.py	2026-10-07 09:48:11.980261111 +0000
+@@ -0,0 +1,92 @@
++"""07/10 (cantiere conformita' tennis) - tennis_pro: il PREZZO del runner e' quello
++del book, non l'ultimo scambiato.
++
++Reperto misurato sulla registrazione vera 35790089 (Barrios Vera - Simakin,
++07/07/2026): l'ultimo scambiato (`last_price_traded`) resta fermo per minuti su
++un mercato poco liquido. Alle 13:54:27 Simakin aveva `ltp` 1,19 (scambiato due
++minuti prima) e il book 2,18 / 2,32; Barrios `ltp` 6,40 e il book 1,76 / 1,84.
++Il bot ha visto Simakin come «favorito cortissimo <= 1,20» ed e' entrato in
++`compressed_fav` su un runner a 2,20 che non era nemmeno il favorito.
++Sulla registrazione il favorito per `ltp` differisce da quello del book in
++921 book su 5.212.
++
++I finti hanno le stesse chiavi del dizionario `px` di produzione
++(`process_market_book`: bb, bl, sb, sl, ltp).
++"""
++from betfairlightweight import filters
++
++from Betfair.stream.tennis_scalper.tennis_pro_bot import TennisProStrategy
++from Betfair.stream.tennis_scalper.tennis_score import TennisScore
++
++
++class _Mercato:
++    market_id = "1.259745327"
++
++    class _Blotter:
++        def strategy_orders(self, _s):
++            return []
++    blotter = _Blotter()
++
++
++def _bot(**params):
++    # variante BASE esplicita (trend/adapt/maker spenti) e dry-run: si guarda
++    # SOLO la decisione d'ingresso, non l'ordine
++    base = {"stake": 2.0, "dry_run": True, "trend": False, "adapt": False,
++            "maker": False, "surface": "clay"}
++    base.update(params)
++    return TennisProStrategy(
++        market_filter=filters.streaming_market_filter(market_ids=["1.259745327"]),
++        pro_params=base,
++        name_to_sel={"Marcelo Tomas Barrios V": 9633138, "Ilia Simakin": 35635727})
++
++
++def _riga(bb, bl, ltp, sb=100.0, sl=100.0):
++    return {"bb": bb, "bl": bl, "sb": sb, "sl": sl, "ltp": ltp}
++
++
++def _px_13_54_27():
++    # i numeri del book reale alle 13:54:27 (tie-break del terzo set, 6-6)
++    return {9633138: _riga(1.76, 1.84, 6.4), 35635727: _riga(2.18, 2.32, 1.19)}
++
++
++def test_favorito_e_quello_del_book_non_dell_ultimo_scambiato():
++    assert TennisProStrategy._favourite(_px_13_54_27()) == 9633138
++
++
++def test_favorito_senza_book_ripiega_sull_ultimo_scambiato():
++    # nessun lato quotato: resta l'unico prezzo disponibile (come `_track_px`)
++    px = {1: {"bb": None, "bl": None, "ltp": 1.4}, 2: {"bb": None, "bl": None, "ltp": 3.0}}
++    assert TennisProStrategy._favourite(px) == 1
++
++
++def test_compressed_fav_non_scatta_su_un_ltp_fermo():
++    s = _bot()
++    s.score = TennisScore(event_id="35790089", sets_home=1, sets_away=1,
++                          games_home=6, games_away=6, point_home="6", point_away="6")
++    assert s._sig_compressed_fav(_Mercato(), _px_13_54_27()) is False
++    assert "1.259745327" not in s._trade
++
++
++def test_compressed_fav_scatta_sul_book_anche_con_ltp_fermo_alto():
++    # 13:27:08 reale: Simakin 1,16 / 1,17 a book, ultimo scambiato 1,36
++    s = _bot()
++    s.score = TennisScore(event_id="35790089", sets_home=1, sets_away=1,
++                          games_home=3, games_away=5)
++    px = {9633138: _riga(6.6, 7.0, 7.0), 35635727: _riga(1.16, 1.17, 1.36)}
++    assert s._sig_compressed_fav(_Mercato(), px) is True
++    assert s._trade["1.259745327"]["sel"] == 35635727
++
++
++def test_prezzo_d_inizio_set_e_quello_del_book():
++    # 12:35:52 reale, primo book del terzo set: Barrios 1,51 / 1,57, ultimo
++    # scambiato 1,40 (di prima che il set finisse). Il «salto» del fade si
++    # misura da qui: con l'ltp fermo il bot vedeva 17 tick di salto a 0-0 nel
++    # set, senza nessun game giocato.
++    s = _bot()
++    px = {9633138: _riga(1.51, 1.57, 1.40), 35635727: _riga(2.74, 2.96, 3.3)}
++    s.score = TennisScore(event_id="35790089", sets_home=1, sets_away=1,
++                          games_home=0, games_away=0, home_name="Marcelo Tomas Barrios V",
++                          away_name="Ilia Simakin")
++    s._track_sets("1.259745327", px)
++    assert s._set_start_px[("1.259745327", 9633138, 2)] == (1.51 + 1.57) / 2.0
++    assert s._sig_fade(_Mercato(), "1.259745327", px) is False

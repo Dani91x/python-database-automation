@@ -81,6 +81,7 @@ from .. import engine as E
 from .. import service as S
 from ...stream.backtest import banco_comune as BANCO
 from ...stream.backtest import chiusura_parziale as CP
+from ...stream.backtest import varianti_bot as VB
 from ...stream.backtest.banco_comune import (
     DbMemoria, MercatoFlumine, MotoreReplay, ScannerReplay,
     assicura_middleware_simulato, carica_punteggi, cliente_simulato,
@@ -587,7 +588,10 @@ def _crea_strategia():
             self.firma_ogni_perdita = bool(kw.pop("firma_ogni_perdita", False))
             self._proposte_firmate: set = set()
             self.firme_mandate: int = 0
-            self.db = DbMemoria({"status": "running", "mode": self.mode, "params": params})
+            # 07/10 (Applica bot): l'istante in cui l'utente accende Mike
+            self.accensione = VB.Accensione(kw.pop("dal_ms", None))
+            self.db = DbMemoria({"status": ("stopped" if self.accensione.attiva else "running"),
+                                 "mode": self.mode, "params": params})
             self.mercato = MercatoFlumine(self)
             # 30/09 (P&L REALE DEL CONTO): la commissione del MERCATO nella
             # lettura per mercato del banco e' quella del parametro del bot
@@ -692,6 +696,12 @@ def _crea_strategia():
                     and int(pt_ms) > int(self.chiusura_utente["ms"])):
                 self._giro_dopo_conto = int(pt_ms)
             self._installa_attesa_col_mercato()
+            if self.accensione.scatta(pt_ms):
+                # 07/10 (Applica bot): il gesto della UI, sulla STESSA riga che
+                # legge `run_once` (`mike_control.status`)
+                self.db.set_control(status="running")
+                self.db.log("replay_accensione_utente",
+                            {"dal_ms": self.accensione.dal_ms, "ms": int(pt_ms)}, self.event_id)
             # 1) i punteggi fino a questo istante, dal record IPS grezzo e dal
             #    parser vero (`Scanner.apply_score_state`)
             i = bisect_right(self._ts_punteggi, int(pt_ms))
@@ -807,10 +817,17 @@ def _crea_strategia():
             terminale = str(self.db.events[self.event_id].get("state") or "") in E.TERMINAL_STATES
             # 30/09 (M1): le attivita' di QUESTO giro (rifiuti feed_stantio)
             n_attivita = len(self.db.attivita)
+            # 07/10 (Applica bot): a bot NON ancora acceso dall'utente i
+            # parametri del giro sono quelli che `run_once` di produzione da' a
+            # `_run_event` con `status != 'running'` (`service._params_for`:
+            # nessun ingresso, protezioni e uscite attive). Acceso (o senza
+            # `dal_ms`): i parametri di sempre del banco, riga per riga.
+            parametri_giro = (self.params if self.accensione.acceso(pt_ms)
+                              else S._params_for(self.params, False, self.mode))
             try:
                 azioni, _settled = S._run_event(
                     db=self.db, market=self.mercato, ev=self.db.events[self.event_id],
-                    row=row, params=self.params, mode=self.mode,
+                    row=row, params=parametri_giro, mode=self.mode,
                     now=datetime.fromtimestamp(now, tz=timezone.utc),
                     # lo scanner e' vecchio quanto la riga: e' l'altra meta'
                     # della regola del feed stantio
@@ -1346,8 +1363,15 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                       firma_dopo_gol: bool = False,
                       chiusure_perse: bool = False,
                       firma_ogni_perdita: bool = False,
-                      solo_banca_fischio: bool = False) -> CERT.Referto:
-    """Fa rivivere a Mike una partita registrata e ritorna il referto."""
+                      solo_banca_fischio: bool = False,
+                      dal_ms: Optional[int] = None) -> CERT.Referto:
+    """Fa rivivere a Mike una partita registrata e ritorna il referto.
+
+    07/10 (Applica bot) - ``dal_ms``: l'utente ACCENDE Mike a quell'istante del
+    banco. Prima la riga ``mike_control`` porta ``status='stopped'`` (come dopo
+    l'avvio dell'app: nessun bot opera), e il servizio gira lo stesso, come in
+    produzione (``run_once``: protezioni sempre, aperture solo se 'running');
+    a ``dal_ms`` la riga passa a 'running', il gesto della UI."""
     from flumine import FlumineSimulation
 
     # OGNI REPLAY PARTE DA UN PROCESSO PULITO. Con la pool (`--worker N`) piu'
@@ -1434,6 +1458,7 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                           punteggio_ko=punteggio_ko, firma_dopo_gol=firma_dopo_gol,
                           chiusure_perse=chiusure_perse,
                           firma_ogni_perdita=firma_ogni_perdita,
+                          dal_ms=dal_ms,
                           market_filter={"markets": [raw]},
                           max_order_exposure=1e9, max_selection_exposure=1e9,
                           max_trade_count=int(1e9), max_live_trade_count=int(1e9))
@@ -1492,6 +1517,11 @@ def _certifica_evento(event_id: str, *, data_dir: str,
     # Betfair, non su quello di t.
     motore = MotoreReplay(quadro, su_book=_scanner_durante_attesa)
     strategia.mercato.motore = motore
+    # 07/10 (Applica bot): la CRONOLOGIA degli ordini di Mike, dagli ordini VERI
+    # del flumine del banco (sola lettura, dopo ogni book)
+    specchio = VB.SpecchioOrdini(sorgente="mike", modo=strategia.mode,
+                                 event_id=str(event_id))
+    specchio.aggancia(motore)
     guasto_cp: Optional[CP.GuastoChiusuraParziale] = None
     if chiusura_parziale:
         # il RUOLO dell'ordine si legge dalla riga di `mike_trades` che lo ha
@@ -1519,6 +1549,10 @@ def _certifica_evento(event_id: str, *, data_dir: str,
         strategia.spegni_fermo()           # P4: il freno torna com'era, sempre
 
     out = strategia.chiudi()
+    # 07/10: le righe ``betfair_live_orders`` + ``_ms`` (contratto del banco)
+    out.ordini_specchio = specchio.chiudi(VB.mercati_del_quadro(quadro))
+    if strategia.accensione.attiva:
+        out.note.append(nota_accensione(strategia.accensione))
     if guasto_cp is not None:
         out.note.append(guasto_cp.riepilogo())
         con_effetto = guasto_cp.colpiti_con_effetto()
@@ -2123,19 +2157,147 @@ def causa_non_esercitato(scenario: str, ref: CERT.Referto) -> Optional[str]:
     return None
 
 
+# ---------------------------------------------------------------------------
+# 07/10 (APPLICA BOT) - I PARAMETRI CHE L'UTENTE PUO' VARIARE
+# ---------------------------------------------------------------------------
+# Le chiavi sono quelle della whitelist del servizio (``config.PARAM_SPEC``):
+# tipo, minimo, massimo e scelte vengono DA LI', il default e' quello di
+# produzione (``config.DEFAULTS``) con sopra lo scenario. Qui si scrivono solo
+# l'etichetta per il trader (quella della scheda parametri di produzione,
+# ``frontend/src/lib/mike.ts::MIKE_PARAM_FIELDS``), il gruppo e il passo.
+# FUORI dal menu, con la causa: le cadenze e le soglie tecniche del feed e del
+# database (``feed_*``, ``*_cache_s``, ``*_heartbeat_s``, ``decide_min_interval_ms``
+# che e' anche la cadenza del banco, ``idle_cycle_s``, ...), le valvole del
+# percorso d'esecuzione (``live_resting_enabled``, ``exact_sizes``), i ritentativi
+# del freno (``cover_rifiuti_max``, ``cover_retry_min_s``, ``close_*``), i
+# parametri SENZA EFFETTO dichiarati (``ko_green_retry_s``,
+# ``last_entry_ticks_above``), la commissione (e' di Betfair, non del bot) e il
+# filtro testuale delle competizioni (su una partita registrata non sceglie).
+_MENU: Tuple[Tuple[str, str, str, float, str], ...] = (
+    # (chiave, etichetta, gruppo, passo, unita)
+    ("stake", "Stake Under 3,5", "Importi", 0.5, "EUR"),
+    ("second_entry_stake_pct", "Seconda puntata: % dello stake", "Importi", 5, "%"),
+    ("pre_enabled", "Pre-match attivo", "Ingresso", 0, ""),
+    ("entry_hours_before_ko", "Finestra pre-match (ore prima del KO)", "Ingresso", 0.25, "h"),
+    ("pre_entry_price_min", "Quota Under 3,5 MIN", "Ingresso", 0.01, ""),
+    ("pre_entry_price_max", "Quota Under 3,5 MAX", "Ingresso", 0.05, ""),
+    ("pre_min_back_size_factor", "Liquidita' minima (x stake)", "Ingresso", 0.1, "x"),
+    ("pre_max_spread_ticks", "Spread massimo", "Ingresso", 1, "tick"),
+    ("pre_entry_ttl_s", "TTL ingresso non abbinato", "Ingresso", 5, "s"),
+    ("pre_max_cycles", "Cicli massimi per partita", "Ingresso", 1, ""),
+    ("pre_reentry_cooldown_s", "Pausa dopo un green", "Ingresso", 5, "s"),
+    ("pre_last_entry_min", "Ultimo ingresso (min prima del KO)", "Ingresso", 1, "min"),
+    ("last_entry_persist", "Ultimo ingresso a 10 min dal fischio", "Ingresso", 0, ""),
+    ("second_entry_enabled", "Seconda puntata dopo un gol precoce", "Ingresso", 0, ""),
+    ("reentry_enabled", "Re-ingresso Under (gol + 3,5)", "Ingresso", 0, ""),
+    ("reentry_max_goals", "Re-ingresso: gol massimi", "Ingresso", 1, "gol"),
+    ("reentry_until_min", "Re-ingresso fino al minuto", "Ingresso", 1, "min"),
+    ("pre_green_ticks", "Green-up pre-match a (+tick)", "Uscita", 1, "tick"),
+    ("pre_exit_mode", "Chiusura pre-match", "Uscita", 0, ""),
+    ("ko_green_enabled", "Uscita al fischio attiva", "Uscita", 0, ""),
+    ("ko_green_ticks", "Uscita al fischio a (+tick dall'ingresso)", "Uscita", 1, "tick"),
+    ("ko_green_window_s", "Finestra dell'uscita al fischio", "Uscita", 30, "s"),
+    ("reentry_green_ticks", "Re-ingresso: green a (+tick)", "Uscita", 1, "tick"),
+    ("cover_enabled", "Copertura attiva", "Uscita", 0, ""),
+    ("cover_form", "Forma della copertura", "Uscita", 0, ""),
+    ("cover_profit_factor", "Fattore copertura", "Uscita", 0.05, "x"),
+    ("cover_policy", "Quando coprire", "Uscita", 0, ""),
+    ("cover_place_at_ticks", "Copertura: tick sotto il best", "Uscita", 1, "tick"),
+    ("early_goal_cover_delay_s", "Prima tranche dopo il gol", "Uscita", 15, "s"),
+    ("early_goal_cover_pct", "Prima tranche: % della copertura", "Uscita", 5, "%"),
+    ("early_goal_cover2_delay_s", "Seconda tranche dopo la prima abbinata", "Uscita", 15, "s"),
+    ("cashout_profit_pct", "Cash out a profitto", "Uscita", 0.5, "%"),
+    ("uscite_automatiche", "Uscite automatiche (spento = proposte da firmare)", "Uscita", 0, ""),
+    ("ht_loss_exit_enabled", "Uscita in perdita all'intervallo", "Uscita", 0, ""),
+    ("ht_loss_pct", "Intervallo: perdita tollerata", "Uscita", 1, "%"),
+    ("h2_loss_exit_enabled", "Uscita in perdita nel 2T", "Uscita", 0, ""),
+    ("h2_loss_pct", "2T: perdita tollerata", "Uscita", 1, "%"),
+    ("max_liability_per_match", "Responsabilita' massima per partita (0 = spento)", "Tetti", 1, "EUR"),
+    ("event_loss_cap_pct", "Perdita massima per partita (% dello stake)", "Tetti", 5, "%"),
+    ("daily_loss_stop", "Stop perdita giornaliera", "Tetti", 1, "EUR"),
+    ("cover_max_goals", "Nessuna copertura oltre (gol)", "Tetti", 1, "gol"),
+    ("veto_p_under35_cal", "Veto P calibrata Under 3,5 (M1)", "Filtri", 0, ""),
+)
+
+_TIPO_DI_CAST = {bool: "bool", int: "int", float: "float", str: "scelta"}
+
+
+def _parametri_dello_scenario(scenario: str) -> Dict[str, Any]:
+    """I parametri con cui gira lo scenario: default di produzione + scenario
+    (la STESSA composizione di ``certifica_scenario``)."""
+    par = dict(C.merge_params(None))
+    par.update(SCENARI.get(scenario, {}))
+    if scenario == SCENARIO_TAKER_IGNOTI:
+        par.update(SCENARI["taker"])
+    return par
+
+
+def parametri_modificabili(scenario: str = "base") -> List[Dict[str, Any]]:
+    """Il catalogo dei parametri di Mike che "Applica bot" lascia variare
+    (contratto del banco, ``varianti_bot.voce``). Default = il valore con cui
+    gira lo scenario; tipo/limiti/scelte = ``config.PARAM_SPEC``."""
+    par = _parametri_dello_scenario(scenario)
+    out: List[Dict[str, Any]] = []
+    for chiave, etichetta, gruppo, passo, unita in _MENU:
+        _default, cast, lo, hi, scelte = C.PARAM_SPEC[chiave]
+        out.append(VB.voce(chiave, etichetta, _TIPO_DI_CAST[cast], par[chiave],
+                           gruppo=gruppo, minimo=lo, massimo=hi, passo=passo,
+                           unita=unita, scelte=scelte))
+    return out
+
+
+def _applica_parametri(par: Dict[str, Any], scenario: str,
+                       parametri: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Le sostituzioni dell'utente sui parametri dello scenario, sulla STESSA
+    strada della produzione: finiscono in ``mike_control.params`` e il servizio
+    le rilegge con ``config.merge_params`` a ogni giro. Torna le sostituzioni."""
+    sost = VB.valida(parametri_modificabili(scenario), parametri)
+    if not sost:
+        return {}
+    prova = dict(par)
+    prova.update(sost)
+    for lo_k, hi_k in C._ORDERED_PAIRS:
+        if prova[lo_k] > prova[hi_k]:
+            # ``merge_params`` le riporterebbe IN SILENZIO al default: si dice no
+            raise ValueError("parametri %s (%s) e %s (%s): il minimo supera il massimo"
+                             % (lo_k, prova[lo_k], hi_k, prova[hi_k]))
+    par.update(sost)
+    return sost
+
+
+def nota_accensione(acc: "VB.Accensione") -> str:
+    """Che cosa vede Mike quando l'utente lo accende a ``dal_ms``."""
+    return ("ACCENSIONE dell'utente a %s (ms %d, primo giro acceso a %s): fino a li' "
+            "`mike_control.status='stopped'` e il servizio girava come in produzione "
+            "(stesse letture del feed, stato delle partite in `mike_events`, nessuna "
+            "apertura); lo SCANNER, che in produzione e' un altro processo, ha visto "
+            "tutti i book dall'inizio. Da li' la riga e' 'running': la strada della UI."
+            % (_iso(acc.dal_ms), acc.dal_ms,
+               _iso(acc.scattata_ms) if acc.scattata_ms is not None
+               else "mai (registrazione finita prima)"))
+
+
 def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
-                       ogni_ms: int = 0, campioni_diff: int = 0) -> CERT.Referto:
+                       ogni_ms: int = 0, campioni_diff: int = 0,
+                       parametri: Optional[Dict[str, Any]] = None,
+                       dal_ms: Optional[int] = None) -> CERT.Referto:
     """ADATTATORE PER IL BANCO — dal NOME dello scenario ai parametri di Mike.
 
     E' la funzione che il REGISTRO dei bot
     (`Betfair/stream/backtest/registro_bot.py`) chiama per certificare Mike:
     firma identica per tutti i bot, cosi' il comando
     `python -m Betfair.stream.backtest.certifica <bot>` e' uno solo.
+
+    07/10 (Applica bot): ``parametri`` = sostituzioni del catalogo
+    (``parametri_modificabili``), ``dal_ms`` = istante di accensione. Con
+    entrambi None il referto e' quello di sempre.
     """
     par = dict(C.merge_params(None))
     par.update(SCENARI.get(scenario, {}))
     if scenario == SCENARIO_TAKER_IGNOTI:
         par.update(SCENARI["taker"])
+    sost = _applica_parametri(par, scenario, parametri)
+    dal_ms = VB.controlla_dal_ms(dal_ms)
     # il feed stantio si ottiene invecchiando la riga, non toccando i prezzi;
     # perche' il feed risulti STANTIO devono essere vecchi TUTTI E DUE: la riga
     # (`feed_max_age_s`) e lo scanner (`scanner_alive_max_s`). Con lo scanner
@@ -2165,7 +2327,11 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
         punteggio_ko=(scenario == SCENARIO_PUNTEGGIO_KO),
         firma_dopo_gol=(scenario in (SCENARIO_FIRMA_GOL_DECISIVO, SCENARIO_FIRMA_SENZA_CHIUSURA)),
         chiusure_perse=(scenario == SCENARIO_FIRMA_SENZA_CHIUSURA),
-        firma_ogni_perdita=(scenario == SCENARIO_USCITE_FIRMATE))
+        firma_ogni_perdita=(scenario == SCENARIO_USCITE_FIRMATE),
+        dal_ms=dal_ms)
+    if sost:
+        ref.note.insert(0, "VARIANTE DEI PARAMETRI (la strategia non cambia): "
+                        + ", ".join("%s=%s" % kv for kv in sorted(sost.items())))
     # 30/09 (ondata 2): uno scenario il cui contatore-chiave resta a zero NON
     # e' OK: il referto lo scrive NON ESERCITATO, con la causa
     causa = causa_non_esercitato(scenario, ref)

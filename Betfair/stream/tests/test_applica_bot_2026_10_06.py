@@ -42,7 +42,8 @@ def test_cronologia_tiene_solo_i_cambi_e_ordina():
 
 
 @pytest.mark.parametrize("params,msg", [
-    ({"bot": "mike", "scenario": "base", "event_id": "1"}, "non applicabile"),
+    # 07/10: Mike e' applicabile (tutti i bot); un bot che non esiste no
+    ({"bot": "inesistente", "scenario": "base", "event_id": "1"}, "non applicabile"),
     ({"bot": "scalper_calcio", "scenario": "inventato", "event_id": "1"}, "scenario non disponibile"),
     ({"bot": "scalper_calcio", "scenario": "paper", "event_id": ""}, "event_id mancante"),
 ])
@@ -58,9 +59,15 @@ def test_registrazione_assente_e_un_errore_parlante(tmp_path):
 
 
 def test_scenari_visivi_esistono_nel_banco():
+    # 07/10: gli scenari applicabili dello scalper (filtro sul registro, non piu'
+    # un elenco a mano separato) esistono nel banco, compresi quelli del 06/10
     from Betfair.stream.scalper.tools import replay_registrazioni as R
 
-    assert set(AB.SCENARI_VISIVI["scalper_calcio"]) <= set(R.SCENARI_DESCRITTI)
+    applicabili = set(AB.SCENARI_APPLICABILI["scalper_calcio"])
+    assert applicabili <= set(R.SCENARI_DESCRITTI)
+    assert {"media-under-paper", "media-under-35", "media-under",
+            "media-under-liquidita-100", "media-under-35-liquidita-50",
+            "paper", "base", "sniper-paper"} <= applicabili
 
 
 # ---------------------------------------------------------------------------

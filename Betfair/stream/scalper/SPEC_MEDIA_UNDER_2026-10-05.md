@@ -271,3 +271,63 @@ Studio precedente sulla stessa idea: backtest del 16/07/2026 su 26 partite (memo
 tracciato): mediazione solo pre-match negativa in media; mediazione pre-match PORTATA oltre il fischio
 sull'Under positiva in tutte le varianti (14 partite, fill ottimistici). La modalita' passa dal processo
 intero: replay su registrazioni vere -> prova -> soldi veri solo se la prova conferma.
+
+## 13. 07/10/2026 - <<ATTIVA ADESSO>> (DIVERGENZA VOLUTA, ordine dell'utente)
+
+Cambio di strategia CHIESTO DALL'UTENTE il 07/10 (non un'iniziativa di chi costruisce). Testo dell'utente:
+<<1. Voglio poter attivare il bot in un momento specifico della partita (sia pre-match che live). 2. Quando
+lo attivo il bot piazza immediatamente al miglior prezzo disponibile la prima puntata back e poi opera
+normalmente come progettato. 3. In questo modo posso attivarlo io in determinati periodi specifici, e andare
+a "ritroso" sulle condizioni che c'erano in quel momento, cosi' da ottimizzarlo una volta per tutte.>>;
+<<in gioco opera come pre match, e' lo stesso identico bot>>; <<una volta che il bot ha piazzato, deve
+gestire la posizione, indipendentemente dai filtri>>; <<Anche nell'app vera, voglio un lavoro completo>>.
+REGOLA DEFINITIVA sui nuovi cicli (07/10, confermata punto per punto, sostituisce la correzione del
+<<riavviare cliccando nuovamente>>):
+
+1. Avvio SOLO col clic su <<Attiva adesso>> (pre-match o in gioco): prima punta immediata al miglior prezzo
+   di punta (lo stake base, LAPSE), poi gestione della posizione come progettato SENZA i filtri d'ingresso
+   (quota, liquidita', flusso, spread, finestra di stop prima del fischio). Restano tetti e protezioni:
+   massimo dei rientri, rischio massimo, mercato aperto (nessun ordine a mercato sospeso o chiuso), prezzi
+   vivi (regola 11: flusso interrotto = nessun ordine), minimi di Betfair, freno dei soldi veri, stop/freno
+   della sessione, attesa dopo un rifiuto di Betfair, una sola punta e una sola banca vive.
+2. Ciclo chiuso PRE-MATCH (avviato col pulsante): la modalita' RIENTRA DA SOLA con un nuovo ciclo. Di serie
+   SENZA filtri (nuova prima punta subito al miglior prezzo, anche dentro la finestra di stop prima del
+   fischio). Parametro nuovo del pulsante `media_rientro_auto_filtri` (booleano, di serie False): se True il
+   nuovo ciclo pre-match entra solo quando i filtri d'ingresso progettati lo permettono.
+3. Ciclo chiuso IN GIOCO: nessun rientro da solo; ATTESA DEL CLIC (stato `ATTESA_CLIC`, detto in UI); un
+   nuovo clic riparte con una prima punta immediata.
+4. Ciclo aperto pre-match e ancora aperto al fischio: in gioco la gestione continua come progettato (banca,
+   rientri, massimo, rischio massimo); chiuso in gioco -> punto 3.
+5. Tutto questo vale SOLO per l'avvio col pulsante. La modalita' accesa nel modo di sempre (senza pulsante)
+   NON cambia in nulla (par.3, par.6: in gioco nessun ordine, solo segnalazione).
+
+### 13.1 Il comando
+- Il clic e' un comando `media_attiva_adesso = {"id": <unico>, "ts": <istante del clic>}` nei params della
+  riga `scalper_control`, la stessa strada dei parametri: sessione accesa = RPC
+  `scalper_media_attiva_adesso` (`migrations/media_under_attiva_adesso_2026-10-07.sql`); sessione ferma = la
+  RPC di sempre `scalper_activate` coi params della modalita' + `media_a_clic: true` (sessione armata dal
+  pulsante: non entra mai da sola) + il comando.
+- La sessione lo legge al battito (5 s) o all'avvio (`scalper_session.consegna_comando_media`). Un id gia'
+  consumato non fa nulla. Un id nuovo e' CONSUMATO subito e mai accodato: scaduto (oltre 120 s dal clic),
+  prezzi fermi (sorveglianza del flusso `vivo = False`) o mercato sospeso all'ultimo prezzo visto =
+  rifiutato col motivo; valido = l'id si REGISTRA nelle stats della riga e solo a scrittura riuscita la
+  modalita' lo esegue al prossimo prezzo (un riavvio non riesegue mai lo stesso clic: l'id consumato si
+  rilegge dalle stats della sessione di prima). Al prezzo: posizione aperta, punta o banca vive, sessione
+  bloccata/in ripresa, mercato sospeso/chiuso, stop della sessione, nessun prezzo di punta, attesa dopo un
+  rifiuto = rifiutato col motivo (attivita' `media_comando_rifiutato`, stats `media_comando`). In soldi veri
+  la punta del clic passa dal freno dei soldi veri come ogni apertura.
+- Stats nuove: `media_comando` (id, esito ricevuto/eseguito/rifiutato, motivo, prezzo, importo, in gioco),
+  `media_a_clic`, `media_origine_ciclo` (clic / rientro_automatico), `media_in_gioco`,
+  `media_rientro_auto_filtri`. Attivita' nuove: `media_comando_eseguito`, `media_comando_rifiutato`,
+  `media_rientro_automatico`, `media_attesa_clic`; `media_ingresso` porta `origine` per i cicli del pulsante.
+
+### 13.2 Divergenze dalla spec di prima (scritte per l'utente)
+- par.3.1 <<solo pre-match>> e filtri d'ingresso: per il clic e per il rientro automatico senza filtri non
+  valgono (punti 1-2).
+- par.3.4 rientro <<solo pre-match>> e par.5 `media_stop_ingressi_s` <<stop nuovi ingressi E RIENTRI>>: per
+  un ciclo avviato col pulsante i rientri si fanno anche dentro la finestra di stop e in gioco.
+- par.3.6 e par.6 <<in live nessun ordine>>: per un ciclo avviato col pulsante in gioco si opera come
+  pre-match (il riquadro <<chiusura>> resta pubblicato, informativo).
+- Banco: controlli M12-M18 (registro separato) per le sessioni <<a clic>>; M7 (nessun ordine in gioco) e la
+  finestra di M9 non si applicano agli ordini dei cicli avviati col pulsante; M6 e M11 valgono anche in gioco
+  per loro. Con la modalita' di sempre i controlli e i referti restano identici.
