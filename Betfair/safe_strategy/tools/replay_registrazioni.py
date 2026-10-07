@@ -1032,6 +1032,16 @@ def _crea_strategia():
         def check_market_book(self, market, market_book) -> bool:
             return True
 
+        def process_closed_market(self, market, market_book) -> None:
+            """07/10 (audit di conformita'): il book CLOSED entra nel mercato
+            del banco. Flumine non consegna i book CLOSED a
+            ``process_market_book`` (``baseflumine.py:157-159``) ma solo qui:
+            senza, ``MercatoSafe.read_market`` rispondeva SOSPESO per sempre e
+            il regolamento della Safe (``settle_open`` -> ``settle_position``)
+            non veniva MAI esercitato (righe 'open' a fine partita). Stesso
+            rimedio del replay di Mike del 30/09."""
+            self.mercato.registra_definizione(market_book)
+
         def process_market_book(self, market, market_book) -> None:
             mtype = self.banco.registra_mercato(market_book)
             if not mtype:
