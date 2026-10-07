@@ -1,0 +1,6 @@
+profitto arrotondato sul totale e non per ordine             ROSSO 1 failed, 10 passed in 1.25s
+identita' dell'ordine dal ref (replace fuso)                 ROSSO 1 failed, 10 passed in 1.26s
+accensione confermata senza la riga del bot                  ROSSO 1 failed, 13 passed in 1.35s
+legame di riprezzo senza prova (stesso trade basta)          ROSSO 1 failed, 12 passed in 1.47s
+legame di riprezzo perso                                     ROSSO 1 failed, 12 passed in 1.42s
+nota P&L del referto letta male (lordo e netto scambiati)    ROSSO 1 failed, 13 passed in 1.68s

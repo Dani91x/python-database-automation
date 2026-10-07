@@ -1,0 +1,5 @@
+10700 passed, 56 skipped, 6 xfailed, 14 warnings in 430.12s (0:07:10)
+ Test Files  353 passed | 10 skipped (363)
+      Tests  5290 passed | 50 skipped (5340)
+tsc exit 0
+npm run build: ok (47.7 s, solo l'avviso sulla dimensione del bundle)

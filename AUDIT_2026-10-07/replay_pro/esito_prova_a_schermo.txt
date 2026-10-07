@@ -1,0 +1,11 @@
+OK  calcio: clic rifiutato spiegato: 21:02:34.6161'RIFIUTATO: il ciclo 1 è ancora aperto: BANCA 11,52 @ 2,20 non ancora abbinata, abbinata per intero solo alle 9'
+OK  calcio: seek all'istante esatto 1783708203059: «cursore all’istante esatto dell’operazione: 20:30:03.059 · pre-partita»
+OK  calcio: sul ladder BANCA appoggiata 10.19 @ 2.16 (lay)
+OK  calcio: sul ladder 1 livelli abbinati del bot
+OK  calcio: P&L del bot sulle selezioni: 🤖 Scalper - Media Under 2,5 (soldi veri simulati)se vince €12.00se perde −€10.00abbinato P 10.00 · B 0.00
+OK  calcio: confronti col banco: ✓ uguale al banco (+0,47) | ✓ uguale al referto del bot (+0,46)
+OK  calcio: P&L cicli al cursore +0,02 (istante 1783710628105)
+OK  calcio: «Attiva adesso» ha mandato SUBITO la richiesta col clic: {"tipo":"applica_bot","bot":"scalper_calcio","scenario":"media-under","event_id":"35797769","clic_ms":[1783710628105]}
+OK  tennis: il riprezzo di Betfair nel registro («BANCA SPOSTATA da 1,01 a 1,69»)
+OK  tennis: sul ladder 2 appoggiati e 5 abbinati del bot all'istante del riprezzo
+OK  errori della pagina: nessuno

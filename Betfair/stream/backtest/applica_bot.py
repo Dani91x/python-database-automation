@@ -41,6 +41,7 @@ import argparse
 import inspect
 import json
 import os
+import re
 import sys
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -250,6 +251,10 @@ ETICHETTE_BOT: Dict[str, str] = {
 
 
 def _chiave(r: Dict[str, Any]) -> str:
+    # 07/10 sera: l'identita' dell'ordine e' ``_ordine`` (id flumine) quando c'e':
+    # un ``replace_order`` crea un ordine nuovo con lo STESSO ref del vecchio
+    if r.get("_ordine"):
+        return "o:" + str(r["_ordine"])
     return str(r.get("client_order_ref") or r.get("bet_id") or id(r))
 
 
@@ -423,6 +428,224 @@ def _clic(valore: Any) -> Optional[List[int]]:
     return sorted(out)
 
 
+#: versione della forma dell'esito: la UI la confronta (un esito senza versione
+#: viene da un worker del Backtest col codice VECCHIO: l'app non e' stata riavviata)
+VERSIONE_ESITO = 2
+
+
+def esiti_dal_raw(percorso: str) -> Dict[str, Dict[str, Any]]:
+    """07/10 sera (REPLAY PROFESSIONALE): per ogni mercato della registrazione,
+    dalle ``marketDefinition`` del RAW (la stessa fonte del banco): tipo,
+    runner nell'ordine di Betfair con lo stato FINALE (WINNER/LOSER/REMOVED/
+    ACTIVE), istante del primo book in gioco e della chiusura (``pt``), aliquota
+    base del mercato. Serve alla UI per il regolamento delle posizioni e per
+    l'evento <<chiusura del mercato>>. Cio' che il raw non dice resta None."""
+    out: Dict[str, Dict[str, Any]] = {}
+    if not percorso or not os.path.isfile(percorso):
+        return out
+    with open(percorso, "r", encoding="utf-8") as fh:
+        for riga in fh:
+            if "marketDefinition" not in riga:
+                continue
+            try:
+                d = json.loads(riga)
+            except ValueError:
+                continue
+            pt = d.get("pt")
+            for mc in d.get("mc") or []:
+                md = mc.get("marketDefinition")
+                if not md:
+                    continue
+                mid = str(mc.get("id"))
+                e = out.setdefault(mid, {
+                    "market_type": md.get("marketType"), "runners": {},
+                    "ordine_runner": [], "stato": None, "in_gioco_ms": None,
+                    "chiuso_ms": None, "aliquota": None, "vincitori": [],
+                })
+                e["stato"] = md.get("status")
+                if md.get("marketBaseRate") is not None:
+                    try:
+                        e["aliquota"] = float(md.get("marketBaseRate")) / 100.0
+                    except (TypeError, ValueError):
+                        pass
+                if md.get("inPlay") and e["in_gioco_ms"] is None and pt is not None:
+                    e["in_gioco_ms"] = int(pt)
+                if md.get("status") == "CLOSED" and e["chiuso_ms"] is None and pt is not None:
+                    e["chiuso_ms"] = int(pt)
+                runners = sorted((r for r in (md.get("runners") or []) if r.get("id") is not None),
+                                 key=lambda r: (r.get("sortPriority") or 0))
+                e["ordine_runner"] = [int(r["id"]) for r in runners]
+                e["runners"] = {str(int(r["id"])): str(r.get("status") or "") for r in runners}
+                e["vincitori"] = [int(r["id"]) for r in runners if r.get("status") == "WINNER"]
+    return out
+
+
+def _profitto_ordine(lato: str, abbinato: float, prezzo: float, stato_runner: str) -> float:
+    """Il profitto di UNA scommessa a regolamento, con la formula e
+    l'arrotondamento di flumine (``SimulatedOrder.profit``: al centesimo per
+    ordine). Runner rimosso o non regolato: 0."""
+    if abbinato <= 0:
+        return 0.0
+    if stato_runner == "WINNER":
+        v = round(abbinato * (prezzo - 1.0), 2)
+        return v if lato == "back" else -v
+    if stato_runner == "LOSER":
+        return -abbinato if lato == "back" else abbinato
+    return 0.0
+
+
+def conto_regolato(righe: List[Dict[str, Any]], esiti: Dict[str, Dict[str, Any]],
+                   aliquota: Optional[float] = None) -> Dict[str, Any]:
+    """Il P&L A REGOLAMENTO degli ordini del bot (ultima riga di ogni ordine:
+    abbinato e prezzo medio) col risultato del mercato registrato: lordo per
+    mercato come ``MercatoFlumine.pnl_betfair`` (profitti al centesimo per
+    ordine, somma al centesimo), commissione per mercato sul netto vincente.
+    I mercati senza runner WINNER/LOSER nel raw restano FUORI e si dichiarano.
+    PURA (le stesse regole le rifa' la UI: ``replayOperazioni.contoRegolato``)."""
+    ultima: Dict[str, Dict[str, Any]] = {}
+    for r in righe or []:
+        ultima[_chiave(r)] = r
+    per_mercato: Dict[str, float] = {}
+    non_regolati: List[str] = []
+    for r in ultima.values():
+        mid = str(r.get("market_id") or "")
+        stati = (esiti.get(mid) or {}).get("runners") or {}
+        if not any(v in ("WINNER", "LOSER") for v in stati.values()):
+            if float(r.get("size_matched") or 0.0) > 0 and mid not in non_regolati:
+                non_regolati.append(mid)
+            continue
+        prof = _profitto_ordine(str(r.get("side") or "").lower(),
+                                float(r.get("size_matched") or 0.0),
+                                float(r.get("average_price_matched") or 0.0),
+                                stati.get(str(r.get("selection_id")), ""))
+        per_mercato[mid] = round(per_mercato.get(mid, 0.0) + round(prof, 2), 2)
+
+    def _aliq(m: str) -> float:
+        if aliquota is not None:
+            return float(aliquota)
+        a = (esiti.get(m) or {}).get("aliquota")
+        return float(a) if a is not None else 0.05
+    comm = {m: (round(v * _aliq(m), 2) if v > 0 else 0.0) for m, v in per_mercato.items()}
+    return {"lordo": round(sum(per_mercato.values()), 2),
+            "commissione": round(sum(comm.values()), 2),
+            "netto": round(sum(round(v - comm[m], 2) for m, v in per_mercato.items()), 2),
+            "mercati": {m: round(v, 2) for m, v in per_mercato.items()},
+            "mercati_non_regolati": non_regolati}
+
+
+def conto_flumine(righe: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Il lordo per mercato come lo ha regolato FLUMINE nel banco
+    (``_profitto_flumine`` sull'ultima riga di ogni ordine, scritto da
+    ``SpecchioOrdini`` quando il mercato e' stato regolato). None se nessun
+    ordine e' stato regolato da flumine (es. lo scalper: la sessione finisce
+    prima del regolamento): allora vale solo il conto dalle righe."""
+    ultima: Dict[str, Dict[str, Any]] = {}
+    for r in righe or []:
+        ultima[_chiave(r)] = r
+    per_mercato: Dict[str, float] = {}
+    visti = 0
+    for r in ultima.values():
+        if r.get("_profitto_flumine") is None:
+            continue
+        visti += 1
+        mid = str(r.get("market_id") or "")
+        per_mercato[mid] = round(per_mercato.get(mid, 0.0) + float(r["_profitto_flumine"]), 2)
+    if not visti:
+        return None
+    return {"lordo": round(sum(per_mercato.values()), 2),
+            "mercati": {m: round(v, 2) for m, v in per_mercato.items()},
+            "ordini_regolati": visti}
+
+
+_PNL_NOTA = re.compile(r"P&L del replay: lordo ([+-]?\d+\.\d+) \| commissione (\d+\.\d+) "
+                       r"\((\d+(?:\.\d+)?)%\) \| NETTO ([+-]?\d+\.\d+)")
+
+
+def conto_dichiarato(ref: Any) -> Optional[Dict[str, Any]]:
+    """Il P&L che il REFERTO del bot dichiara (per il confronto della UI):
+    ``stats_finali['media_conto']`` (media under, per ciclo) oppure la riga
+    <<P&L del replay: lordo .. | commissione .. | NETTO ..>> dei moduli di
+    replay. None se il bot non lo dichiara (lo si dice, non si inventa)."""
+    sf = getattr(ref, "stats_finali", None) or {}
+    mc = sf.get("media_conto") if isinstance(sf, dict) else None
+    if isinstance(mc, dict) and mc.get("lordo") is not None:
+        return {"fonte": "media_conto", "metodo": "cicli",
+                "lordo": float(mc["lordo"]), "commissione": float(mc.get("commissione") or 0.0),
+                "netto": float(mc.get("netto") or 0.0),
+                "aliquota": float(mc.get("aliquota") or 0.0),
+                "cicli_esito_ignoto": int(mc.get("cicli_esito_ignoto") or 0)}
+    for n in getattr(ref, "note", []) or []:
+        m = _PNL_NOTA.search(str(n))
+        if m:
+            return {"fonte": "nota", "metodo": "regolamento",
+                    "lordo": float(m.group(1)), "commissione": float(m.group(2)),
+                    "aliquota": float(m.group(3)) / 100.0, "netto": float(m.group(4)),
+                    "testo": str(n)[:300]}
+    return None
+
+
+def _json_sicuro(x: Any) -> Any:
+    """Una copia che ``json.dumps`` accetta (numeri, testi, liste, dizionari)."""
+    if isinstance(x, dict):
+        return {str(k): _json_sicuro(v) for k, v in x.items()}
+    if isinstance(x, (list, tuple)):
+        return [_json_sicuro(v) for v in x]
+    if x is None or isinstance(x, (bool, int, float, str)):
+        return x
+    return str(x)
+
+
+def cicli_dichiarati(ref: Any) -> Optional[List[Dict[str, Any]]]:
+    """07/10 sera: i CICLI come li riepiloga il bot nel suo referto (dati, non
+    note): oggi la media under (``stats_finali['media_riepilogo_cicli']``) con
+    l'origine di ogni ciclo (clic o rientro automatico, ``media_origini_cicli``).
+    None se il bot non li dichiara: allora la UI li ricava dagli ordini."""
+    sf = getattr(ref, "stats_finali", None) or {}
+    cicli = sf.get("media_riepilogo_cicli") if isinstance(sf, dict) else None
+    if not isinstance(cicli, list):
+        return None
+    origini = sf.get("media_origini_cicli") or []
+    out: List[Dict[str, Any]] = []
+    for c in cicli:
+        c = dict(c)
+        o = next((x for x in origini if int(x.get("ciclo") or 0) == int(c.get("ciclo") or -1)), None)
+        c["origine"] = (o or {}).get("origine")
+        c["clic"] = (o or {}).get("clic")
+        c["prima_punta_ordine"] = (o or {}).get("ordine")
+        c["prima_punta_ms"] = (o or {}).get("ms")
+        out.append(_json_sicuro(c))
+    return out
+
+
+def clic_dichiarati(ref: Any) -> Optional[List[Dict[str, Any]]]:
+    """07/10 sera: ogni clic <<Attiva adesso>> con il suo esito per il banco
+    (eseguito / rifiutato col motivo / mai letto) e la prima punta che ne e'
+    nata (``stats_finali['media_clic']``). None se il bot non ha clic."""
+    sf = getattr(ref, "stats_finali", None) or {}
+    clic = sf.get("media_clic") if isinstance(sf, dict) else None
+    return _json_sicuro(clic) if isinstance(clic, list) else None
+
+
+def conferme(note: List[str], dal_ms: Optional[int],
+             clic_ms: Optional[List[int]]) -> Dict[str, Any]:
+    """07/10 sera (onesta' del clic): che cosa il BOT ha davvero ricevuto. Ogni
+    modulo di replay scrive nel referto la riga ``ACCENSIONE ... (ms <dal_ms>``
+    quando accende il bot a ``dal_ms``; la media under scrive ``ATTIVA ADESSO
+    clic clic-N-<ms>`` per ogni clic mandato alla sessione. Se la riga non c'e'
+    la UI mostra l'avviso: il bot NON ha avuto quell'istante."""
+    testi = [str(n) for n in note or []]
+
+    def _clic_visto(ms: int) -> bool:
+        return any(t.startswith("ATTIVA ADESSO clic clic-") and ("-%d " % ms) in t
+                   for t in testi)
+    dal = None
+    if dal_ms is not None:
+        dal = bool(any(t.startswith("ACCENSIONE") and str(dal_ms) in t for t in testi)
+                   or _clic_visto(int(dal_ms)))
+    clic = [{"ms": int(c), "ricevuto": _clic_visto(int(c))} for c in (clic_ms or [])]
+    return {"dal_ms": dal, "clic_ms": clic}
+
+
 def esegui(params: Dict[str, Any], data_dir: Optional[str] = None) -> Dict[str, Any]:
     """Esegue lo scenario chiesto e torna ``{"righe": [...], "note": [...],
     "parametri_usati": {...}, "dal_ms": ..., ...}``. Solleva ValueError su una
@@ -493,6 +716,7 @@ def esegui(params: Dict[str, Any], data_dir: Optional[str] = None) -> Dict[str, 
                          "applica solo alle partite registrate (Segui live con REC)"
                          % (event_id, cartella))
     righe = cronologia(list(getattr(ref, "ordini_specchio", []) or []))
+    esiti = esiti_dal_raw(os.path.join(cartella, str(event_id), "%s.raw.jsonl" % event_id))
     violazioni = [getattr(v, "codice", str(v)) for v in (getattr(ref, "violazioni", []) or [])]
     usati = VB.parametri_usati(catalogo_sc, sostituzioni)
     cambiati = {k: v for k, v in sostituzioni.items()
@@ -505,7 +729,9 @@ def esegui(params: Dict[str, Any], data_dir: Optional[str] = None) -> Dict[str, 
         "righe": righe,
         "ordini": len({_chiave(r) for r in righe}),
         "violazioni": violazioni,
-        "note": [str(n)[:300] for n in note[-12:]],
+        # 07/10 sera: le note intere (prima 12 da 300 caratteri: il ciclo 1 spariva
+        # e il 3 era troncato); il CONTENUTO pero' passa dai campi strutturati
+        "note": [str(n)[:2000] for n in note[-120:]],
         "parametri_usati": usati,
         "parametri_cambiati": cambiati,
         "dal_ms": dal_ms,
@@ -513,6 +739,24 @@ def esegui(params: Dict[str, Any], data_dir: Optional[str] = None) -> Dict[str, 
         "accensione": next((str(n)[:600] for n in note if str(n).startswith("ACCENSIONE")),
                            None),
         "clic_ms": clic_ms,
+        # 07/10 sera (REPLAY PROFESSIONALE)
+        "versione": VERSIONE_ESITO,
+        # la richiesta COME L'HA RICEVUTA il banco (la UI la confronta con cio'
+        # che ha mandato: se manca qualcosa, il percorso l'ha persa)
+        "richiesta": {"dal_ms": dal_ms, "clic_ms": clic_ms,
+                      "parametri": dict(sostituzioni_chieste or {})},
+        # che cosa il BOT ha davvero ricevuto (righe ACCENSIONE / ATTIVA ADESSO)
+        "conferme": conferme(note, dal_ms, clic_ms),
+        # risultato dei mercati dal raw: regolamento e chiusura sul ladder
+        "esiti_mercati": esiti,
+        # P&L a regolamento dagli ordini (stesse regole della UI) e quello che
+        # il referto del bot dichiara (per il confronto al centesimo)
+        "conto_banco": conto_regolato(righe, esiti),
+        "conto_flumine": conto_flumine(righe),
+        "conto_dichiarato": conto_dichiarato(ref),
+        # cicli e clic come DATI (le note sono tagliate: non portano contenuto)
+        "cicli_bot": cicli_dichiarati(ref),
+        "clic_bot": clic_dichiarati(ref),
     }
 
 

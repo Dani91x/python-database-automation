@@ -19,8 +19,10 @@ import { TradesPanel } from '@/components/replay/TradesPanel';
 import { TrainingTradesPanel } from '@/components/replay/TrainingTradesPanel';
 import { ApplicaBotPanel } from '@/components/replay/ApplicaBotPanel';
 import { EsitoBotPanel } from '@/components/replay/EsitoBotPanel';
-import { conOrdiniDelBot, ordiniBotAlMs, type RigaBot } from '@/lib/replayBot';
 import { useApplicaBot } from '@/lib/useApplicaBot';
+import { useOperativitaBot } from '@/lib/useOperativitaBot';
+import { indiceTimelineAl, istanteCursore, ladderBotAl } from '@/lib/replayOperazioni';
+import type { PuntoSeek } from '@/components/replay/RegistroOperazioniBot';
 import { minutoDiGioco } from '@/lib/applicaBot';
 import { OpportunitaPanel } from '@/components/replay/OpportunitaPanel';
 import { ValidationCard } from '@/components/replay/ValidationCard';
@@ -34,7 +36,7 @@ import {
 } from '@/lib/replay-pnl';
 import { simulateOrder, MIN_STAKE_GBP, type BookSnapshot, type OrderRequest, type Persistence } from '@/lib/matching';
 // F41: TRAINING sul ladder — LadderView reale + orderApi SIMULATO (matching engine)
-import { LadderView, type LadderSource } from '@/components/live/LadderView';
+import { LadderView, type BotLadderOverlay, type LadderSource } from '@/components/live/LadderView';
 import { createTrainingApi, frameToLadderRow, type TrainingApi } from '@/lib/trainingLadder';
 import { punteggioAlTs, timelineEventMarkers } from '@/lib/replayTimelineEvents';
 import { AvvisoCoerenzaBarra } from '@/components/replay/AvvisoCoerenzaBarra';
@@ -113,6 +115,10 @@ export default function MatchReplay() {
 
     // ---- stato simulatore ----
     const [currentIndex, setCurrentIndex] = useState(0);
+    // 07/10 sera: il cursore ESATTO (clic su un'operazione del bot nel registro):
+    // la barra va sul passo che contiene l'istante e il replay mostra il book a
+    // QUELL'istante (ms del banco), non all'inizio del passo da 10 s
+    const [cursoreEsatto, setCursoreEsatto] = useState<{ index: number; ms: number } | null>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [playDir, setPlayDir] = useState<1 | -1>(1);
     const [playSpeed, setPlaySpeed] = useState(PLAY_NORMAL_MS); // base (normale/veloce); l'intervallo reale = playSpeed/speedMult
@@ -277,9 +283,14 @@ export default function MatchReplay() {
     }, [replay]);
     const safeIndex = Math.min(currentIndex, maxIndex);
     const current = timeline[safeIndex] ?? { ts: '', minute: null };
-    const currentTs = current.ts;
+    const cursore = istanteCursore(timeline, safeIndex, cursoreEsatto);
+    const currentTs = cursore.ts;
     const currentMinute = current.minute;
-    const currentMs = currentTs ? new Date(currentTs).getTime() : 0;
+    const currentMs = cursore.ms;
+    // muovere la barra (o il play) annulla il cursore esatto
+    useEffect(() => {
+        if (cursoreEsatto && cursoreEsatto.index !== safeIndex) setCursoreEsatto(null);
+    }, [safeIndex, cursoreEsatto]);
 
     // ---- F41: TRAINING sul ladder — api simulato + sorgente ladder dal replay ----
     // I closures leggono da REF (mai catturare stato stantio): l'api è creato UNA
@@ -421,17 +432,38 @@ export default function MatchReplay() {
     // registrazione; i suoi ordini sul ladder del training all'istante corrente ----
     // 07/10: TUTTI i bot calcio (il tennis ha la sua pagina): richiesta ed
     // esito in `useApplicaBot`, riquadro in ApplicaBotPanel, risultato in EsitoBotPanel
+    // 07/10 sera (REPLAY PROFESSIONALE): gli ordini del bot NON passano piu' dagli
+    // ordini del training (erano filtrati per modalita' e riletti ogni 5 s: «sul
+    // ladder non si vede niente»): il ladder li riceve come sovrapposizione propria
+    // (appoggiati / abbinati / P&L) ricostruita dalla cronologia all'istante del cursore
     const applica = useApplicaBot();
-    const botRigheRef = useRef<RigaBot[]>([]);
-    botRigheRef.current = applica.righe;
-    const trainingOrderApi = useMemo(
-        () => (trainApiRef.current
-            ? conOrdiniDelBot(trainApiRef.current,
-                mid => ordiniBotAlMs(botRigheRef.current, nowMsRef.current, mid))
-            : null),
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-        [trainApiRef.current],
-    );
+    const sortedScoreTimelineRef = useRef<{ ts: string; minute: number | null }[]>([]);
+    const etichettaCalcio = (ms: number) => minutoDiGioco(sortedScoreTimelineRef.current, ms);
+    const runnerCalcio = (mid: string) => replay?.markets.find(m => m.market_id === mid)?.selections?.map(x => x.selection_id);
+    const operativita = useOperativitaBot(applica.esito, etichettaCalcio, runnerCalcio);
+    const botLadder: BotLadderOverlay | undefined = operativita && applica.esito && trainingMarketId
+        ? {
+            etichetta: applica.esito.etichetta,
+            perSelezione: ladderBotAl(operativita.ordini, currentMs, trainingMarketId,
+                applica.esito.esiti_mercati ?? null, runnerCalcio(trainingMarketId)),
+        }
+        : undefined;
+    const [avvisoSeek, setAvvisoSeek] = useState<string | null>(null);
+    const vaiAllOperazione = (p: PuntoSeek) => {
+        setIsPlaying(false);
+        const idx = indiceTimelineAl(timeline, p.ms);
+        setCurrentIndex(idx);
+        setCursoreEsatto({ index: idx, ms: p.ms });
+        const inizio = timeline[0]?.ts ? Date.parse(timeline[0].ts) : null;
+        const presente = p.marketId ? replay?.markets.some(m => m.market_id === p.marketId) : true;
+        if (p.marketId && presente) setTrainingMarketId(p.marketId);
+        setAvvisoSeek(!presente
+            ? 'il mercato di questa operazione non è fra i mercati registrati nel replay caricato: il ladder resta sul mercato scelto'
+            : (inizio != null && p.ms < inizio
+                ? 'l’operazione è PRIMA del primo istante caricato nel replay (pre-match tagliato): il book mostrato è il primo disponibile'
+                : null));
+        setView('ladder');
+    };
 
     // default: mercato MATCH_ODDS (o il primo) quando si apre la vista training
     useEffect(() => {
@@ -445,6 +477,7 @@ export default function MatchReplay() {
         if (!replay) return [];
         return [...replay.score_timeline].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
     }, [replay]);
+    sortedScoreTimelineRef.current = sortedScoreTimeline;
 
     // ---- EVENTI DELLA PARTITA sulla barra timeline (gol/cartellini/angoli) ----
     // Normalizza score_timeline in marker posizionati lungo la track:
@@ -1143,14 +1176,29 @@ export default function MatchReplay() {
                                         sport="calcio"
                                         flussoRunner={false}
                                         ladderSource={trainingSource}
-                                        orderApi={trainingOrderApi ?? trainApiRef.current}
+                                        orderApi={trainApiRef.current}
+                                        botReplay={botLadder}
                                         fallbackSelections={(replay.markets.find(m => m.market_id === trainingMarketId)?.selections ?? [])
                                             .map(s => ({ selection_id: s.selection_id, name: s.name ?? `#${s.selection_id}` }))}
                                     />
                                 )}
-                                {applica.esito && (
+                                {avvisoSeek && (
+                                    <div className="rounded-lg border border-amber-400/50 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-100"
+                                        data-testid="avviso-seek">{avvisoSeek}</div>
+                                )}
+                                {cursore.esatto && (
+                                    <div className="text-[11px] text-amber-200" data-testid="cursore-esatto">
+                                        cursore all’istante esatto dell’operazione: {new Date(currentMs).toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome' })}.{String(currentMs % 1000).padStart(3, '0')} · {etichettaCalcio(currentMs)}
+                                    </div>
+                                )}
+                                {applica.esito && operativita && (
                                     <EsitoBotPanel
                                         esito={applica.esito}
+                                        analisi={operativita}
+                                        inviato={applica.inviato}
+                                        etichettaIstante={etichettaCalcio}
+                                        runnerDi={runnerCalcio}
+                                        onSeek={vaiAllOperazione}
                                         nowMs={currentMs}
                                         nomeMercato={mid => {
                                             const m = replay.markets.find(x => x.market_id === mid);

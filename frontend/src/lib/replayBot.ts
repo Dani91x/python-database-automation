@@ -68,8 +68,65 @@ export interface CatalogoBot {
 // --------------------------------------------------------------------------
 // la richiesta e l'esito
 // --------------------------------------------------------------------------
-// una riga della cronologia: la riga dello specchio + l'istante del banco
-export type RigaBot = Omit<LiveOrderRow, 'id' | 'updated_at'> & { _ms: number };
+// una riga della cronologia: la riga dello specchio + l'istante del banco.
+// 07/10 sera (REPLAY PROFESSIONALE, `varianti_bot.campi_ordine`): i campi `_`
+// del banco, assenti negli esiti di prima (opzionali):
+//   _ordine        id dell'ordine flumine (IDENTITA': un replace di flumine crea
+//                  un ordine nuovo con lo STESSO client_order_ref del vecchio)
+//   _trade_id      il trade flumine (operazione del bot)
+//   _strategia     la strategia flumine che lo ha piazzato
+//   _sostituisce   l'_ordine sostituito da questo (replace di Betfair/flumine)
+//   _profitto_flumine  sull'ultima riga: il profitto regolato da flumine
+export type RigaBot = Omit<LiveOrderRow, 'id' | 'updated_at'> & {
+    _ms: number;
+    _ordine?: string | null;
+    _trade_id?: string | null;
+    _strategia?: string | null;
+    _sostituisce?: string | null;
+    _profitto_flumine?: number | null;
+};
+
+/** Il risultato di un mercato letto dal RAW (`applica_bot.esiti_dal_raw`). */
+export interface EsitoMercato {
+    market_type: string | null;
+    /** selection_id (stringa) -> stato finale del runner (WINNER/LOSER/REMOVED/ACTIVE) */
+    runners: Record<string, string>;
+    /** i runner nell'ordine di Betfair */
+    ordine_runner: number[];
+    stato: string | null;
+    in_gioco_ms: number | null;
+    chiuso_ms: number | null;
+    aliquota: number | null;
+    vincitori: number[];
+}
+
+/** Un conto (lordo/commissione/netto) come lo scrive il banco. */
+export interface ContoBanco {
+    lordo: number;
+    commissione: number;
+    netto: number;
+    mercati?: Record<string, number>;
+    mercati_non_regolati?: string[];
+}
+
+export interface ContoDichiarato {
+    /** media_conto (riepilogo per ciclo del bot) o nota «P&L del replay» */
+    fonte: 'media_conto' | 'nota';
+    /** cicli = profitto bloccato dei cicli chiusi; regolamento = risultato del mercato */
+    metodo: 'cicli' | 'regolamento';
+    lordo: number;
+    commissione: number;
+    netto: number;
+    aliquota: number;
+    cicli_esito_ignoto?: number;
+    testo?: string;
+}
+
+export interface ConfermeBanco {
+    /** null = non chiesto; true = il bot l'ha avuto; false = NON l'ha avuto */
+    dal_ms: boolean | null;
+    clic_ms: Array<{ ms: number; ricevuto: boolean }>;
+}
 
 export interface EsitoBot {
     bot: string;
@@ -88,6 +145,53 @@ export interface EsitoBot {
     dal_ms?: number | null;
     accensione?: string | null;
     clic_ms?: number[] | null;
+    // 07/10 sera (REPLAY PROFESSIONALE; assenti negli esiti di un worker vecchio)
+    /** forma dell'esito: assente = worker del Backtest col codice VECCHIO */
+    versione?: number;
+    /** la richiesta come l'ha ricevuta il banco */
+    richiesta?: { dal_ms: number | null; clic_ms: number[] | null; parametri: Record<string, ValoreParametro> };
+    /** che cosa il BOT ha davvero ricevuto */
+    conferme?: ConfermeBanco;
+    esiti_mercati?: Record<string, EsitoMercato>;
+    /** P&L a regolamento dalle righe (Python, stesse regole della UI) */
+    conto_banco?: ContoBanco;
+    /** P&L regolato da flumine nel banco (null: nessun ordine regolato) */
+    conto_flumine?: { lordo: number; mercati: Record<string, number>; ordini_regolati: number } | null;
+    /** P&L dichiarato dal referto del bot (null: il bot non lo dichiara) */
+    conto_dichiarato?: ContoDichiarato | null;
+    /** i cicli come li riepiloga il bot (oggi la media under), null = non li dichiara */
+    cicli_bot?: CicloDichiarato[] | null;
+    /** i clic «Attiva adesso» col loro esito per il banco, null = nessun clic */
+    clic_bot?: ClicDichiarato[] | null;
+}
+
+/** Un ciclo come lo riepiloga il bot nel referto (`riepilogo_cicli_media`). */
+export interface CicloDichiarato {
+    ciclo: number;
+    esito: string;
+    lordo: number | null;
+    netto: number | null;
+    inizio_ms: number | null;
+    fine_ms: number | null;
+    puntato: number;
+    ordini_id: string[];
+    /** 'clic' | 'rientro_automatico' | null */
+    origine: string | null;
+    clic: string | null;
+    prima_punta_ordine: string | null;
+    prima_punta_ms: number | null;
+    riga: string;
+}
+
+/** Un clic «Attiva adesso» col suo esito per il banco. */
+export interface ClicDichiarato {
+    id: string;
+    clic_ms: number;
+    mandato_ms: number | null;
+    letto_ms: number | null;
+    esito: 'eseguito' | 'rifiutato' | 'non letto' | 'non deciso';
+    motivo: string | null;
+    prima_punta: { ordine: string; quota: number | null; importo: number | null; ms: number } | null;
 }
 
 export interface StatoRichiestaBot {
@@ -133,7 +237,9 @@ export async function leggiEsitoBot(requestId: string): Promise<StatoRichiestaBo
 }
 
 function chiave(r: RigaBot): string {
-    return String(r.client_order_ref ?? r.bet_id ?? '');
+    // 07/10 sera: l'identita' dell'ordine e' `_ordine` (un replace di flumine ha lo
+    // STESSO ref del vecchio); gli esiti di prima ricadono sul ref
+    return r._ordine ? `o:${r._ordine}` : String(r.client_order_ref ?? r.bet_id ?? '');
 }
 
 /** Le righe del referto che spiegano COSA ha fatto il bot e PERCHE' non
@@ -143,7 +249,12 @@ export function noteUtili(note: ReadonlyArray<string>): string[] {
         .map(n => n.replace(/^nota:\s*/, '').replace(/^MEDIA UNDER:?\s*/, ''));
 }
 
-/** Gli ordini del bot come erano all'istante `ms` (ultima riga di ogni ordine
+/** 07/10 sera: le pagine NON usano piu' questa funzione ne' `conOrdiniDelBot`
+ *  (gli ordini del bot passavano dagli ordini del training: filtrati per
+ *  modalita' e riletti ogni 5 s, «sul ladder non si vede niente»). Il registro,
+ *  il ladder e il P&L del bot vengono da `replayOperazioni.ts`. Restano per
+ *  compatibilita' (i loro test).
+ *  Gli ordini del bot come erano all'istante `ms` (ultima riga di ogni ordine
  *  con _ms <= ms), come righe LiveOrderRow (quelle che il ladder legge).
  *  `marketId` filtra un mercato. PURA. */
 export function ordiniBotAlMs(righe: ReadonlyArray<RigaBot>, ms: number, marketId?: string): LiveOrderRow[] {

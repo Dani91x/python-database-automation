@@ -290,7 +290,12 @@ def test_specchio_ordini_righe_del_vero_e_cambi_di_stato():
     righe = sp.chiudi([mercato], 5000)
     attese = LiveTradingStrategy._order_row(SimpleNamespace(mode="live"), o1,
                                             event_id="E1", market_id="1.1")
-    assert set(righe[0]) == set(attese) | {"source", "_ms"}
+    # 07/10 sera (replay professionale): le chiavi della riga VERA piu' quelle
+    # del banco, tutte con `_` (identita' dell'ordine, trade, strategia, riprezzo)
+    assert set(righe[0]) == set(attese) | {"source", "_ms", "_ordine", "_trade_id",
+                                           "_strategia", "_sostituisce"}
+    assert all(r["_ordine"] == str(o1.id) and r["_sostituisce"] is None for r in righe)
+    assert not any(k.startswith("_") for k in attese)  # la riga di produzione non cambia
     for k, v in attese.items():                        # stessi tipi del vero
         assert type(righe[-1][k]) is type(v), k
     assert [r["_ms"] for r in righe] == [1000, 3000, 4000]

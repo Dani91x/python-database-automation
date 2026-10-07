@@ -666,9 +666,20 @@ def riepilogo_cicli_media(ordini: List[Any], nati_ms: Dict[str, int],
                 pezzi.append("posizione aperta: se vince l'Under %+.2f, se perde %+.2f"
                              % (pos.se_vince, pos.se_perde))
             pezzi.append("profitto lordo %+.2f, netto %+.2f [%s]" % (lordo, netto, esito))
+        # 07/10 sera (REPLAY PROFESSIONALE): inizio e fine del ciclo e netto come
+        # DATI (la UI non legge piu' le note): inizio = la sua punta d'ingresso,
+        # fine = l'ultimo abbinamento della banca finale se il ciclo e' CHIUSO
+        fine_ms = None
+        if esito == "CHIUSO" and finale is not None and MU.abbinato(finale)[0] > 0:
+            fine_ms = abbinato_ms.get(str(finale.id))
         cicli.append({"ciclo": len(cicli) + 1, "ordini": len(oo), "rientri": rientri,
                       "puntato": round(puntato, 2), "banca": banca, "esito": esito,
                       "lordo": None if lordo is None else round(lordo, 2),
+                      "netto": (None if lordo is None else
+                                round(lordo * (1.0 - commissione) if lordo > 0 else lordo, 2)),
+                      "inizio_ms": None if da is None else int(da),
+                      "fine_ms": None if fine_ms is None else int(fine_ms),
+                      "ordini_id": [str(getattr(o, "id", "")) for o in oo],
                       "riga": "; ".join(pezzi)})
     comm = max(lordo_tot, 0.0) * float(commissione)
     conto = {"lordo": round(lordo_tot, 2), "commissione": round(comm, 2),
@@ -1778,6 +1789,10 @@ class _Banco:
         self.sessioni_morte: List[Tuple[_FrameworkSessione, Any]] = []
         self._stream_ids: set = set()
         self.specchi: List[Any] = []
+        # 07/10 sera (REPLAY PROFESSIONALE): l'ordine flumine dell'ultima riga
+        # costruita dallo specchio della sessione, per i campi `_` della
+        # cronologia (identita', trade, strategia, riprezzo). Sola lettura.
+        self.ordine_in_specchio: Any = None
         self.righe_specchio: List[Dict[str, Any]] = []
         self._specchio_da = 0
         self.attivita: List[Tuple[str, Dict[str, Any], int]] = []
@@ -1968,6 +1983,17 @@ class _Banco:
         fw.__dict__["_fine"].set()
 
     def registra_specchio(self, mirror: Any) -> None:
+        # 07/10 sera: si ricorda QUALE ordine ha dato la riga (la riga e il suo
+        # contenuto non cambiano: lo specchio della sessione resta quello vero)
+        originale = mirror._order_row
+        banco = self
+
+        def _order_row(order: Any, *, event_id: Any, market_id: Any) -> Any:
+            riga = originale(order, event_id=event_id, market_id=market_id)
+            banco.ordine_in_specchio = order
+            return riga
+
+        mirror._order_row = _order_row
         self.specchi.append(mirror)
 
     # ------------------------------------------------- ATTIVA ADESSO (07/10)
@@ -2931,6 +2957,19 @@ def _iniezioni(banco: _Banco, orologio: _Orologio, kill_file: str):
     def _cattura_ordine(row: Dict[str, Any]) -> None:
         r = dict(row)
         r["_ms"] = orologio.ora_ms()
+        # 07/10 sera (REPLAY PROFESSIONALE): i campi `_` della cronologia
+        # (``varianti_bot.campi_ordine``) dall'ordine che ha dato QUESTA riga
+        # (stesso ref e stesso bet id: mai da un ordine diverso)
+        o = banco.ordine_in_specchio
+        if o is not None:
+            from ...backtest import varianti_bot as _VB
+            from ...engine.live_trading_strategy import _client_order_ref as _ref_di
+
+            bet = getattr(o, "bet_id", None)
+            if (_ref_di(o) == row.get("client_order_ref")
+                    and (None if bet is None else str(bet)) == (
+                        None if row.get("bet_id") is None else str(row.get("bet_id")))):
+                r.update(_VB.campi_ordine(o))
         banco.righe_specchio.append(r)
 
     with ExitStack() as st:
@@ -3490,6 +3529,30 @@ def _referto_clic(ref: CERT.Referto, banco: _Banco) -> None:
     origini = CERT.origini_dei_clic(oss) if oss is not None else []
     gioco = banco.in_gioco_ms.get(str(banco.media_mercato_scelto or ""))
     per_clic = {x["clic"]: x for x in origini if x["clic"]}
+    # 07/10 sera (REPLAY PROFESSIONALE, ordine del coordinatore): i clic e le
+    # origini dei cicli come DATI (non solo note, che l'esito taglia): per ogni
+    # clic istante, consegna, giudizio del banco, motivo, prima punta nata
+    strutturati: List[Dict[str, Any]] = []
+    for c in banco.clic_mandati:
+        cons = banco.consegne.get(c["id"])
+        nata = per_clic.get(c["id"])
+        strutturati.append({
+            "id": c["id"], "clic_ms": c["clic_ms"], "mandato_ms": c.get("mandato_ms"),
+            "letto_ms": cons["ms"] if cons else None,
+            "esito": ("eseguito" if cons and cons["eseguibile"] else
+                      "rifiutato" if cons and cons["eseguibile"] is False else
+                      "non letto" if not cons else "non deciso"),
+            "motivo": (cons or {}).get("motivo") if cons else (
+                "mai letto dalla sessione (sostituito da un clic successivo prima del "
+                "battito, o sessione gia' chiusa)"),
+            "prima_punta": ({"ordine": str(nata["riga"].get("order_id")),
+                             "quota": nata["riga"].get("price"),
+                             "importo": nata["riga"].get("size"), "ms": int(nata["ms"])}
+                            if nata else None)})
+    ref.stats_finali["media_clic"] = strutturati
+    ref.stats_finali["media_origini_cicli"] = [
+        {"ciclo": int(x["ciclo"]), "ms": int(x["ms"]), "origine": x["origine"],
+         "clic": x["clic"], "ordine": str(x["riga"].get("order_id"))} for x in origini]
     for c in banco.clic_mandati:
         cons = banco.consegne.get(c["id"])
         nata = per_clic.get(c["id"])
