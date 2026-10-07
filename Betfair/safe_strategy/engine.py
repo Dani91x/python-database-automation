@@ -47,6 +47,10 @@ from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
+# 07/10: la FASE della partita (1o/2o tempo) dallo stato IPS, fonte unica gia'
+# usata da Safe (nota del modello, `opportunity.py`) e da Mike (`dossier.py`).
+from Betfair.stream.scalper.atlante_v4 import tempo_da_stato_ips as _tempo_da_stato_ips
+
 from . import veto_campionati as _veto
 
 # ------------------------------------------------------------ caratteri speciali
@@ -62,6 +66,7 @@ NDASH = "–"      # range quote (1.4-1.8) e separatore squadre
 EMDASH = "—"     # placeholder nome mancante
 RARR = "→"  # freccia nelle note dei check (D5)
 SI = "s" + IGRAVE     # "si" affermativo dei check
+DEG = "\u00b0"   # 2o tempo (07/10)
 
 
 SPORT_CALCIO = "calcio"
@@ -594,6 +599,16 @@ class FootballMatchCtx:
     # "Regular Season - 5"), pubblicato dallo scanner come `fixture_round`.
     # None = fixture non abbinata o round assente.
     fixture_round: Optional[str] = None
+    # DECISIONE DELL'UTENTE 07/10 (Safe ESATTO solo nel 2o tempo): il TEMPO in
+    # corso dallo stato IPS del feed (``score_raw``: matchStatus, minuto,
+    # elapsedRegularTime) con la fonte unica ``atlante_v4.tempo_da_stato_ips``.
+    # 1 = primo tempo (recupero e intervallo compresi), 2 = secondo tempo,
+    # None = ignoto. ``stato_ips`` = il matchStatus grezzo; con
+    # ``stato_ips_presente`` False lo stato IPS manca nella riga: serve a dire
+    # PERCHE' la fase e' ignota.
+    tempo: Optional[int] = None
+    stato_ips: Optional[str] = None
+    stato_ips_presente: bool = False
 
 
 @dataclass(frozen=True)
@@ -764,7 +779,26 @@ def build_football_ctx_from_scan(
         ),
         # D5 (25/09): chiave ADDITIVA dello scanner; riga vecchia = None
         fixture_round=_text_or_none(p.get("fixture_round")),
+        # 07/10: fase dallo stato IPS. Senza ``score_raw`` NIENTE deduzione
+        # dal solo minuto (fail-closed: fase ignota), anche dove il minuto
+        # basterebbe a ``tempo_da_stato_ips`` (>= 90 -> 2).
+        **_fase_da_scan(p),
     )
+
+
+def _fase_da_scan(p: Dict[str, Any]) -> Dict[str, Any]:
+    """{tempo, stato_ips, stato_ips_presente} dalla riga dello scanner."""
+    raw = p.get("score_raw")
+    if not isinstance(raw, dict):
+        return {"tempo": None, "stato_ips": None, "stato_ips_presente": False}
+    stato = raw.get("matchStatus") or raw.get("status")
+    try:
+        tempo = _tempo_da_stato_ips(raw, p.get("minute"))
+    except Exception:  # noqa: BLE001 - la funzione e' pura: mai un crash qui
+        tempo = None
+    return {"tempo": tempo if tempo in (1, 2) else None,
+            "stato_ips": str(stato) if stato else None,
+            "stato_ips_presente": True}
 
 
 def build_tennis_ctx_from_scan(
@@ -1104,6 +1138,38 @@ def minute_check(check_id: str, minute: Optional[int], from_minute: Any) -> Cond
     )
 
 
+SECONDO_TEMPO_STATO_ASSENTE = "n/d: stato IPS assente"
+
+
+def secondo_tempo_check(ctx: "FootballMatchCtx") -> ConditionCheck:
+    """DECISIONE DELL'UTENTE 07/10 (reperto D1 del referto di conformita'):
+    "e' tassativo nel secondo tempo, il primo tempo va escluso".
+
+    Il feed IPS nel RECUPERO del 1o tempo segna il minuto CUMULATO (46, 47,
+    48 ... con matchStatus 'KickOff', elapsedRegularTime 45) e all'intervallo
+    ('FirstHalfEnd') continua a contare: il solo minuto non distingue il 48'
+    del recupero del 1T dal 48' della ripresa. True SOLO se lo stato IPS dice
+    2o tempo; 1o tempo, recupero del 1T e intervallo = False; stato assente o
+    ambiguo (es. 'KickOff' rimasto vecchio con un minuto da 2T) = None, cioe'
+    n/d: nessun ingresso (fail-closed)."""
+    label = f"Solo nel 2{DEG} tempo"
+    if not ctx.stato_ips_presente:
+        return ConditionCheck("secondHalf", label, SECONDO_TEMPO_STATO_ASSENTE, None)
+    st = ctx.stato_ips or "?"
+    if ctx.tempo == 2:
+        return ConditionCheck("secondHalf", label, f"2{DEG} tempo ({st})", True)
+    if ctx.tempo == 1:
+        norm = "".join(ch for ch in st.lower() if ch.isalpha())
+        if "halfend" in norm or "halftime" in norm:
+            fase = "intervallo"
+        elif isinstance(ctx.minute, int) and ctx.minute > 45:
+            fase = f"recupero del 1{DEG} tempo"
+        else:
+            fase = f"1{DEG} tempo"
+        return ConditionCheck("secondHalf", label, f"{fase} ({st})", False)
+    return ConditionCheck("secondHalf", label, f"n/d: fase non riconosciuta ({st})", None)
+
+
 def market_open_check(label: str, open_: Optional[bool]) -> ConditionCheck:
     """mercato tradabile ORA (post-gol i mercati restano sospesi per secondi)."""
     return ConditionCheck(
@@ -1268,6 +1334,9 @@ def evaluate_esatto(ctx: FootballMatchCtx, params: Dict[str, Any], side: str) ->
     if veto is not None:
         checks.append(veto)
     checks.append(minute_check("minute", ctx.minute, params["minuteMin"]))
+    # 07/10 (decisione dell'utente): la soglia del minuto vale SOLO nel 2o
+    # tempo. Soglia invariata; si aggiunge la fase dallo stato IPS.
+    checks.append(secondo_tempo_check(ctx))
     # RISULTATO ESATTO: condizione INVERTITA rispetto a BASE e PUNTA — la
     # squadra BANCATA non deve avere il controllo. Se comanda il gioco e'
     # piu' probabile che segni ancora, ed e' proprio il gol che fa perdere.
@@ -2074,6 +2143,31 @@ class SafeEngine:
                 "event_name": p.get("event_name"),
                 "minute": _int_field(p.get("minute")),
             })
+        return out
+
+    def esatto_fase_ignota_events(self) -> List[Dict[str, Any]]:
+        """07/10 - partite di calcio IN CORSO, dal minuto dell'ESATTO in poi,
+        su cui l'ESATTO non puo' entrare perche' la FASE e' ignota (stato IPS
+        assente o non riconosciuto: check ``secondHalf`` n/d). Il bot lo scrive
+        nell'attivita' (``_log_esatto_fase_ignota``) invece di tacere."""
+        out: List[Dict[str, Any]] = []
+        soglia = (self._params.get("esatto") or {}).get("minuteMin")
+        for m in getattr(self, "_last_monitors", None) or []:
+            if m.sport != SPORT_CALCIO or not getattr(m.ctx, "inplay", False):
+                continue
+            minuto = getattr(m.ctx, "minute", None)
+            if not isinstance(minuto, int) or soglia is None or minuto < soglia:
+                continue
+            ck = None
+            for ev in m.evaluations:
+                if ev.variant == "esatto":
+                    ck = next((c for c in ev.checks if c.id == "secondHalf"), None)
+                    break
+            if ck is None or ck.ok is not None:
+                continue
+            p = m.payload if isinstance(m.payload, dict) else {}
+            out.append({"event_id": m.event_id, "event_name": p.get("event_name"),
+                        "minute": minuto, "fase": ck.value})
         return out
 
     def control_data_coverage(self) -> Dict[str, int]:

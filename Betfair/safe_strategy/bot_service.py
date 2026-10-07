@@ -6914,6 +6914,32 @@ def _log_pre_match_missing(db, engine, params: dict[str, Any], now: datetime) ->
         })
 
 
+def _log_esatto_fase_ignota(db, engine, params: dict[str, Any], now: datetime) -> None:
+    """07/10 (decisione dell'utente: ESATTO solo nel 2o tempo) - scrive
+    nell'attivita' le partite su cui l'ESATTO non entra perche' la FASE e'
+    ignota (stato IPS assente o non riconosciuto): fail-closed, ma DETTO.
+    Solo con la variante ESATTO accesa; throttlato come ogni scarto."""
+    variants = {str(v) for v in (params.get("variants") or [])}
+    if variants and "esatto" not in variants:
+        return
+    fn = getattr(engine, "esatto_fase_ignota_events", None)
+    if not callable(fn):
+        return
+    try:
+        voci = fn() or []
+    except Exception:  # noqa: BLE001 - una diagnosi non puo' fermare il bot
+        return
+    for ev in voci:
+        _log_skip(db, now, params, {
+            "event_id": str(ev.get("event_id") or ""),
+            "event_name": ev.get("event_name"),
+            "minute": ev.get("minute"),
+            "strategy": "esatto",
+            "fase": ev.get("fase"),
+            "reason": "esatto_fase_ignota",
+        })
+
+
 def _rossi_al_piazzamento(feed_row: Any) -> dict[str, Any]:
     """``{"red_home": n, "red_away": n}`` dal feed, o ``{}`` se il dato manca.
 
@@ -7029,6 +7055,7 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
     # schermo, e l'utente vede solo ESATTO (l'unica che non usa il pre-KO).
     # Va scritto qui, prima dell'uscita anticipata su "nessun segnale".
     _log_pre_match_missing(db, engine, params, now)
+    _log_esatto_fase_ignota(db, engine, params, now)
     _log_copertura_controllo(db, engine, params, now)
     _avvisa_ereditarieta(db, params, mode, now)
     if not signals:

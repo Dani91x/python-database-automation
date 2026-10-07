@@ -193,6 +193,21 @@ iniziata ad app spenta) lo stato resta n/d — ma adesso **lo si legge a schermo
 scarto `pre_ko_assente` nell'attività, invece di non vedere niente.
 Dettaglio in `CERTIFICAZIONE_2026-09-13.md` §0.
 
+**07/10/2026 — ESATTO SOLO NEL SECONDO TEMPO (decisione dell'utente).** Reperto D1
+del referto `AUDIT_2026-10-07/CONFORMITA_BOT_CALCIO.md`: nel RECUPERO del 1° tempo il
+feed IPS segna il minuto cumulato (46', 47', 48' … con `matchStatus=KickOff`,
+`elapsedRegularTime` 45) e all'intervallo (`FirstHalfEnd`) continua a contare; la
+soglia «≥48'» valeva quindi anche prima dell'intervallo (35797769, 19:46-19:50, 1-1:
+nessun ingresso solo perché la banca era fuori 30-70). Decisione testuale: «No, è
+tassativo nel secondo tempo, il primo tempo va escluso». Regola in vigore: **fase =
+2° tempo (stato IPS del feed) E minuto ≥ 48' (soglia invariata)**. Check `secondHalf`
+«Solo nel 2° tempo» in `engine.evaluate_esatto` (`engine.secondo_tempo_check`), fase da
+`score_raw` con la fonte unica `atlante_v4.tempo_da_stato_ips` (già usata dalla nota
+del modello e da Mike). Recupero del 1T e intervallo = mai (`no`); stato IPS assente o
+non riconosciuto = n/d, nessun ingresso, scarto `esatto_fase_ignota` nell'attività.
+Controllo di condotta del banco **E11** (`certificazione.py`). Solo ESATTO: BASE (≥55'),
+PUNTA (≥66') e le uscite non cambiano. Referto `AUDIT_2026-10-07/SAFE_ESATTO_SECONDO_TEMPO.md`.
+
 ### 2.1 «Selezione aggiuntiva» del RISULTATO ESATTO — MODIFICA ORDINATA DALL'UTENTE (16/09/2026)
 
 > **Chi l'ha ordinata**: l'utente, la sera del 16/09, per chiudere la voce ⊗ del
