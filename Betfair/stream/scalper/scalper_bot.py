@@ -2690,6 +2690,14 @@ class ScalperStrategy(BaseStrategy):
         if g is None:
             return None
         side, size, _locked = g
+        # 07/10 (C3, reperto del coordinatore sul test S3): dopo uno SCAVALCO la
+        # chiusura si dimensiona al BEST (prezzo d'abbinamento atteso), il limite
+        # resta inseguito. Dimensionata al limite (LAY @2,38 abbinata a 2,22)
+        # lasciava un nuovo resto sotto 0,50 -> altri scavalchi -> residuo.
+        if slot.scavalchi > 0 and base:
+            g_best = compute_green(net_win, net_lose, base)
+            if g_best is not None:
+                size = g_best[1]
         return self._place(market, sid, side, price, size, floor_min=False, slot=slot)
 
     # --------------------------------------------------------------- utility

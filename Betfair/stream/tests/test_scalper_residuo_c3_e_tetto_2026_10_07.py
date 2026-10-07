@@ -213,3 +213,48 @@ def test_sniper_tetto_non_conta_i_residui():
     assert s._loss_capped() is False
     s.stats["pnl_locked"] = -2.30
     assert s._loss_capped() is True
+
+
+# ------------------------------------- dopo lo scavalco: size al prezzo migliore
+def test_dopo_lo_scavalco_la_chiusura_si_dimensiona_al_best_non_al_limite_inseguito():
+    """Reperto del coordinatore (07/10, test S3 a prezzi assenti, latenza 1): con
+    il flatten che insegue (8 tick oltre il best) la chiusura dopo lo scavalco era
+    dimensionata al LIMITE (LAY @2,38) e si abbinava al best (2,22): restava un
+    nuovo resto sotto 0,50, altri scavalchi, poi residuo 0,07 dichiarato. Dopo uno
+    scavalco la size si calcola al best (prezzo d'abbinamento atteso), il limite
+    resta inseguito."""
+    s = _scalper()
+    m = _Market()
+    slot = s._slot(m.market_id, 22)
+    slot.status = FLATTENING
+    slot.flatten_orders.append(_Ordine("LAY", 2.22, 25.0, size_matched=25.0))
+    slot.flatten_orders.append(_Ordine("BACK", 2.20, 26.5, size_matched=26.5))
+    slot.scavalchi = 1
+    slot.flat_tries = 9
+    nw, nl = s._net_position(slot)
+    assert nw > nl
+    s._drive_flatten(m, slot, best_back=2.20, best_lay=2.22, now=10_000)
+    assert len(m.orders) == 1
+    o = m.orders[0]
+    assert o.side == "LAY" and o.order_type.price > 2.22            # limite inseguito
+    assert o.order_type.size == pytest.approx(round((nw - nl) / 2.22, 2))
+
+
+def test_sniper_dopo_lo_scavalco_size_al_best():
+    from Betfair.stream.scalper.sniper_bot import SniperStrategy
+
+    s = SniperStrategy(market_filter={}, sniper_params={
+        "stake": 10.0, "exact_exits": True, "size_step": 0.5, "live_min_bet": 2.0})
+    m = _Market()
+    pos = s._p(m.market_id, 47972)
+    pos.flattening = True
+    pos.flatten_orders.append(_Ordine("LAY", 2.22, 25.0, size_matched=25.0, sel=47972))
+    pos.flatten_orders.append(_Ordine("BACK", 2.20, 26.5, size_matched=26.5, sel=47972))
+    pos.scavalchi = 1
+    pos.flat_tries = 8
+    nw, nl = _netto(pos.flatten_orders)
+    s._drive_flatten(m, pos, 2.20, 2.22, 10.0)
+    assert len(m.orders) == 1
+    o = m.orders[0]
+    assert o.side == "LAY" and o.order_type.price > 2.22
+    assert o.order_type.size == pytest.approx(round((nw - nl) / 2.22, 2))
