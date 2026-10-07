@@ -246,3 +246,64 @@ Verifiche mie (cloud):
 10.2 REPLAY safe_base (miei), base/paper/riavvio/chiusura-abbinata-in-parte sulle due partite, prima (ramo prima di M) e
 dopo: esiti IDENTICI 8/8, 0 violazioni, controllo B18 «solo secondo tempo» x3849 viol=0, `secondHalf:no` x1898
 sulla 35797769 (`AUDIT_2026-10-07/replay_safe_base/`). Merge di M sul ramo dopo `920fcea`.
+
+---------------------------------------------------------------------------------------------------
+
+## 11. AGGIUNTA DELLA NOTTE (07/10): SOLO CONTROLLO, NIENTE TEST NE' REPLAY
+
+Ordine dell'utente: «non voglio fargli fare altri test, voglio solo che controlli che tutto e' ok».
+Quindi in questo paragrafo NON lanci pytest, vitest, tsc ne' `certifica`: li ho rieseguiti io di persona
+(numeri sotto, referti nel repo). Tu controlli che il PC abbia il codice giusto, che l'app lo usi davvero e
+che a schermo si veda cio' che deve vedersi. Ogni passo: COMANDO / ATTESO / SE NON TORNA. Se un passo non
+torna: fermati, scrivilo all'utente, NON correggere codice.
+
+### 11.0 I due lavori
+
+| # | Lavoro | Commit (merge) | File principali | Prove |
+|---|---|---|---|---|
+| O | REPLAY PROFESSIONALE (calcio e tennis, tutti i bot): registro operazioni per ciclo/ordine/evento, clic sull'operazione -> timeline all'istante esatto e mercato nel ladder, ordini del bot sul ladder (appoggiato ambra con importo, abbinato verde con ✓), colonna P&L e «se vince/se perde» del bot, riepilogo P&L «uguale al banco», «⚡ Attiva adesso al cursore» che ricalcola SUBITO, esito di ogni clic ESEGUITO/RIFIUTATO col motivo, avvisi rossi se il banco non conferma accensione/clic/parametri | `f77a3976` (commit `5ebaf1fc`, `a8d20501`) | `frontend/src/lib/{replayOperazioni,avvisiBanco,useOperativitaBot,replayBot,useApplicaBot}.ts`, `frontend/src/components/replay/{RegistroOperazioniBot,RiepilogoPnlBot,ApplicaBotPanel,EsitoBotPanel,BotOrdersPanel}.tsx`, `frontend/src/components/live/LadderView.tsx` (SOLO prop opzionale `botReplay`), `pages/{MatchReplay,TennisReplay}.tsx`, `Betfair/stream/backtest/{applica_bot,varianti_bot}.py`, `Betfair/stream/scalper/tools/replay_registrazioni.py` | `AUDIT_2026-10-07/replay_pro/` (screenshot 01-05, falsificazioni, prima/dopo) |
+| P | MEDIA UNDER, LA BANCA NON SI TOGLIE PIU' AL RIENTRO (ordine dell'utente): la punta di rientro parte con la banca intatta; la banca si sposta SOLO a rientro terminato e abbinato: integrazione della differenza alla quota nuova + `replaceOrders` della banca esistente (Betfair non aumenta l'importo di un ordine); somma delle banche mai oltre la posizione; replace fallito -> ripiazzo del mancante + avviso CRITICAL | merge `83665277` (+ `3c968099` ... `2a0cd5e5`) e testo dello stato `mediaUnder.ts` | `Betfair/stream/scalper/media_under_bot.py` (`_allinea_banche`, `_sposta`, `_segui_spostamenti`, `_rientro_in_corso`), `Betfair/stream/scalper/certificazione.py` (M4/M5/M6/M11 rivisti, nuovi M19 M20 M21), spec `SPEC_MEDIA_UNDER_2026-10-05.md` par.3 e par.14, test `test_scalper_media_under_banca_spostata_2026_10_07.py` | `AUDIT_2026-10-07/replay_media_banca/` (miei replay prima/dopo) |
+
+Nessuna migrazione nuova per O e P (l'esito del banco resta un JSON nella tabella esistente `replay_bot_esiti`).
+
+### 11.1 Il codice sul PC
+- COMANDO: `git fetch origin claude/eloquent-franklin-g2nyk5` poi `git log -1 --format=%h origin/claude/eloquent-franklin-g2nyk5`.
+  ATTESO: il commit che contiene QUESTO paragrafo (lo trovi con `git log -1 --format=%h -- AUDIT_2026-10-07/HANDOFF_CERTIFICAZIONE_DB.md`). SE NON TORNA: chiedi all'utente.
+- COMANDO: `git status` nel checkout dell'app. ATTESO: sul ramo, allineato al remoto, nessun file di codice modificato a mano. SE NON TORNA: non fare pull sopra modifiche locali, avvisa l'utente.
+- COMANDO: `git grep -n "def _allinea_banche" -- Betfair/stream/scalper/media_under_bot.py` e `git grep -n "botReplay" -- frontend/src/components/live/LadderView.tsx`. ATTESO: 1 riga e almeno 2 righe.
+
+### 11.2 Build e riavvio (li fa l'utente, ad app CHIUSA: CLAUDE.md)
+- L'utente chiude l'app, da `frontend/` lancia `npm run build`, riapre l'app. ATTESO: build riuscita (l'avviso sulla dimensione del bundle e' normale).
+- PERCHE' il riavvio e' obbligatorio: il worker del Backtest (quello che esegue «Applica bot») parte con l'app; se non si riavvia gira il codice VECCHIO (e' gia' successo il 07/10: «acceso dall'inizio della registrazione»).
+
+### 11.3 Controlli in SOLA LETTURA sul DB (dopo che l'utente ha premuto «Applica» una volta nel Match Replay)
+- `SELECT id, status, params->>'scenario' sc, params->'dal_ms' dal, params->'clic_ms' clic FROM public.live_backtest_requests WHERE params->>'tipo'='applica_bot' ORDER BY created_at DESC LIMIT 3;`
+  ATTESO: l'ultima richiesta `DONE`, con `dal`/`clic` valorizzati se l'utente ha acceso dal cursore o cliccato «Attiva adesso».
+- `SELECT esito ? 'versione' AS nuovo, esito ? 'conferme' AS conferme, esito ? 'cicli_bot' AS cicli, esito ? 'clic_bot' AS clic FROM public.replay_bot_esiti WHERE request_id = '<id della riga sopra>';`
+  ATTESO: tutte `true`. SE `false`: il worker gira codice vecchio -> l'app non e' stata riavviata dopo il pull (11.2).
+- Per la media under: `SELECT count(*) FROM public.replay_bot_esiti, jsonb_array_elements(esito->'righe') r WHERE request_id='<id>' AND r ? '_sostituisce' AND r->>'_sostituisce' IS NOT NULL;`
+  ATTESO: >= 0 (righe di banca SPOSTATA col replace, se c'e' stato un rientro abbinato); il controllo vero e' a schermo (11.4).
+
+### 11.4 Prova a schermo (con l'utente, in PROVA)
+Match Replay (calcio), una partita registrata e liquida, «Applica bot» -> Scalper calcio -> «Scalper - Media Under 2,5 (prova)», cursore tutto a sinistra, «accendi il bot all'istante del cursore», Applica:
+1. Sotto il ladder compare il RIEPILOGO del bot: «acceso dalle ...» (NON «dall'inizio della registrazione» se ha acceso dal cursore), parametri, «nessuna violazione», e una riga verde «Il banco ha ricevuto: accensione ...». ATTESO: nessun avviso rosso.
+2. Riquadro «P&L del bot»: lordo/commissione/netto «a regolamento» e «dei cicli», con «✓ uguale al banco».
+3. «Registro operazioni del bot»: cicli, ordini, eventi (inviata, appoggiata, abbinata in parte/per intero con l'orario, BANCA SPOSTATA da X a Y, INTEGRAZIONE della banca, annullata, scaduta). ATTESO: NESSUNA banca «tolta e rimessa» identica nei cicli nuovi (era il difetto).
+4. Clic su una voce del registro: il cursore salta all'istante, il ladder mostra Under 2,5, l'ordine e' evidenziato alla sua quota (ambra = appoggiato con importo, verde ✓ = abbinato), in testa al ladder «se vince / se perde» del bot.
+5. Spostare il cursore in gioco e premere «⚡ Attiva adesso al cursore»: la pagina ricalcola SUBITO; il clic compare in cima al registro come ESEGUITO (prima punta ...) o RIFIUTATO col motivo (es. «il ciclo N e' ancora aperto ...»).
+6. Replay Tennis -> «Applica bot» con un bot tennis: stesso registro, stesso ladder, stesso riquadro P&L (calcio e tennis non si mischiano: solo bot tennis).
+7. Trading vivo (Live/Control Room): il ladder vero e' INVARIATO (nessuna riga del bot, nessuna colonna cambiata).
+8. Scheda Scalper -> Media Under, stato «RIENTRO»: il testo dice «la banca resta appoggiata e si sposta quando il rientro e' abbinato».
+
+### 11.5 Numeri delle mie verifiche (NON rifarle)
+- Suite Python sul codice fuso (O+P): vedi riga finale in `AUDIT_2026-10-07/replay_media_banca/suite_python.txt`. Frontend (O): vitest 5295 verdi / 50 saltati, tsc 0 errori, `npm run build` riuscita.
+- Mie falsificazioni: O) P&L del ladder alterato -> 4 rossi; quota in piu' sul ladder vivo -> 2 rossi. P) integrazione oltre la posizione -> 17 rossi; banca mai spostata -> 21 rossi.
+- Miei replay P prima (`778189ec`) / dopo, 0 violazioni in entrambi (`AUDIT_2026-10-07/replay_media_banca/`): 35797769 `media-clic-lontano` banca ripiazzata identica/annullata -> 0, secondi senza banca 0, spostamenti col replace 3; `media-clic-prima-del-gol` netto +1,51 -> +2,26; `media-under` +0,17 -> +0,00 (vedi 11.6); 35760084 `media-clic-due-clic` +0,40 -> -154,71 (vedi 11.6).
+
+### 11.6 Decisione aperta dell'utente (NON tua)
+Con la banca che non si toglie, la punta di rientro parte subito e puo' abbinarsi solo IN PARTE (es. 0,30 su 10). La regola di
+sempre sposta comunque la banca a «quota del rientro - tick»: con un rientro piccolo il ciclo chiude a ~0 (`media-under`
+35797769: +0,17 -> +0,00). Sulla 35760084 (partita illiquida, 7 EUR scambiati) il percorso cambia e il ciclo 2 resta aperto
+fino ai rientri dopo i gol (6,20 / 8,00 / 8,60): -154,71. Proposta portata all'utente: la banca si sposta solo fin dove serve
+per chiudere con l'obiettivo sulla posizione VERA (con rientro abbinato per intero e' identico a oggi). Finche' l'utente non
+decide, la regola resta quella della spec.
