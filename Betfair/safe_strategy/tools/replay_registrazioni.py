@@ -75,6 +75,7 @@ from ...stream.backtest.banco_comune import (
     nomi_dal_punteggio, simulazione_flumine,
 )
 from ...stream.backtest import chiusura_parziale as CP
+from ...stream.backtest import varianti_bot as VB
 from ...stream.backtest import proposte_modello as PM
 from . import validate_opportunity as VO
 
@@ -979,6 +980,11 @@ def _crea_strategia():
             self.giri_da_apertura = 0
             self.mode = str(kw.pop("mode", "live"))
             self.status = str(kw.pop("status", "running"))
+            # 07/10 (Applica bot): l'istante in cui l'utente ACCENDE la Safe;
+            # fino a li' `safe_strategy_control.status='stopped'`
+            self.accensione = VB.Accensione(kw.pop("dal_ms", None))
+            if self.accensione.attiva:
+                self.status = "stopped"
             self.riavvio_fatto: Optional[List[str]] = None
 
             self.mercati: Dict[str, Any] = {}
@@ -1048,6 +1054,12 @@ def _crea_strategia():
 
         # ------------------------------------------------------------ Safe
         def _un_giro(self, pt_ms: int) -> None:
+            if self.accensione.scatta(pt_ms):
+                # 07/10 (Applica bot): il gesto della UI sulla STESSA riga che
+                # `run_once` rilegge (`status` del control)
+                self.db.set_control(status="running")
+                self.db.log("replay_accensione_utente",
+                            {"dal_ms": self.accensione.dal_ms, "ms": int(pt_ms)})
             # 1) i punteggi arrivati fino a questo istante, dal record IPS
             #    grezzo e dal parser vero (`Scanner.apply_score_state`)
             i = bisect_right(self._ts_punteggi, int(pt_ms))
@@ -1419,7 +1431,8 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                       status: str = "running",
                       scenario: str = "base",
                       chiusura_parziale: bool = False,
-                      scenario_proposte: Optional[str] = None) -> CERT.Referto:
+                      scenario_proposte: Optional[str] = None,
+                      dal_ms: Optional[int] = None) -> CERT.Referto:
     """Fa rivivere a Safe calcio una partita registrata e ritorna il referto."""
     from flumine import FlumineSimulation
 
@@ -1459,7 +1472,7 @@ def _certifica_evento(event_id: str, *, data_dir: str,
         ordine_manuale=ordine_manuale, doppia_lay=doppia_lay,
         manuale_sul_bot=manuale_sul_bot, cashout_globale=cashout_globale,
         timeout_accettato=timeout_accettato, fuori_app=fuori_app,
-        scenario_proposte=scenario_proposte,
+        scenario_proposte=scenario_proposte, dal_ms=dal_ms,
         market_filter={"markets": [raw]},
         # I TETTI DI FLUMINE VANNO APERTI: il rischio lo governa la Safe coi suoi
         # parametri (`max_liability_per_trade`, `max_open_trades`, i cap di
@@ -1558,6 +1571,10 @@ def _certifica_evento(event_id: str, *, data_dir: str,
 
     motore = MotoreReplay(quadro, su_book=_scanner_durante_attesa)
     strategia.mercato.motore = motore
+    # 07/10 (Applica bot): la CRONOLOGIA degli ordini della Safe, dagli ordini
+    # VERI del flumine del banco (sola lettura, dopo ogni book)
+    specchio = VB.SpecchioOrdini(sorgente="safe", modo=mode, event_id=str(event_id))
+    specchio.aggancia(motore)
     guasto_cp: Optional[CP.GuastoChiusuraParziale] = None
     if chiusura_parziale:
         # il RUOLO dell'ordine si legge dalla riga che lo ha chiesto
@@ -1585,7 +1602,11 @@ def _certifica_evento(event_id: str, *, data_dir: str,
         _pulisci_cache_di_processo()
 
     out = strategia.chiudi()
+    # 07/10: le righe ``betfair_live_orders`` + ``_ms`` (contratto del banco)
+    out.ordini_specchio = specchio.chiudi(VB.mercati_del_quadro(quadro))
     _componi_note(out, strategia, banco, motore, scenario, mode, status)
+    if strategia.accensione.attiva:
+        out.note.append(nota_accensione(strategia.accensione))
     if guasto_cp is not None:
         out.note.append(guasto_cp.riepilogo())
     return out
@@ -1823,26 +1844,171 @@ def cadenza_ms(params: Dict[str, Any]) -> int:
     return int(max(1.0, float(params.get("poll_interval_s") or 2.0)) * 1000)
 
 
+# ---------------------------------------------------------------------------
+# 07/10 (APPLICA BOT) - I PARAMETRI CHE L'UTENTE PUO' VARIARE, PER VARIANTE
+# ---------------------------------------------------------------------------
+# Le chiavi sono quelle che la Control Room scrive nei ``params`` del control
+# (sezioni del motore ``engine.DEFAULT_PARAMS``, uscite ``exits``, rischio):
+# il DEFAULT si legge da ``bot_service.resolve_params`` dei parametri dello
+# scenario, cioe' dalla stessa funzione che usa il servizio. Il motore della
+# Safe non ha una whitelist con limiti: minimo e massimo sono quelli della
+# scheda della Control Room o del clamp del servizio, e lo si scrive accanto.
+# FUORI, con la causa: ``scores`` (l'elenco dei punteggi e' la strategia),
+# ``requireControl``/``controlMin`` e i filtri H2H (``selezione``: dati che la
+# registrazione non porta), cadenze e percorso d'esecuzione (``poll_interval_s``,
+# ``execution_mode``, ``*_ttl_s``), le opportunita' di modello (non sono la
+# variante) e le soglie a modello delle uscite in perdita (``hold_max_risk``,
+# ``risk_cap``, ``ev_margin``: il cervello della decisione, non una manopola).
+_MENU_SAFE: Dict[str, Tuple[Tuple[str, str, str, str, float, float, float, str], ...]] = {
+    # (chiave puntata, etichetta, gruppo, tipo, min, max, passo, unita)
+    "base": (
+        ("stake.laySize", "Stake della banca", "Importi", "float", 2.0, 500.0, 0.5, "EUR"),
+        ("base.minuteMin", "Dal minuto", "Ingresso", "int", 1, 90, 1, "min"),
+        ("base.dogLayMin", "Quota di banca della perdente MIN", "Ingresso", "float", 1.01, 1000.0, 0.5, ""),
+        ("base.dogLayMax", "Quota di banca della perdente MAX", "Ingresso", "float", 1.01, 1000.0, 0.5, ""),
+        ("base.favPreMin", "Favorita pre-partita: quota MIN", "Filtri", "float", 1.01, 20.0, 0.05, ""),
+        ("base.favPreMax", "Favorita pre-partita: quota MAX", "Filtri", "float", 1.01, 20.0, 0.05, ""),
+        ("base.dogPreMin", "Sfavorita pre-partita: quota MIN", "Filtri", "float", 1.01, 100.0, 0.5, ""),
+        ("base.dogPreMax", "Sfavorita pre-partita: quota MAX", "Filtri", "float", 1.01, 100.0, 0.5, ""),
+        ("base.scoreConfirmSec", "Conferma del punteggio", "Filtri", "int", 0, 600, 5, "s"),
+        ("base.vetoCampionati", "Veto dei campionati del corso", "Filtri", "bool", 0, 0, 0, ""),
+        ("exits.base_exit_minute", "Uscita al minuto", "Uscita", "int", 1, 120, 1, "min"),
+        ("exits.red_card_fav_exit", "Esci se la favorita prende un rosso", "Uscita", "bool", 0, 0, 0, ""),
+        ("exits.loss_settle_delay_s", "Attesa prima di chiudere in perdita", "Uscita", "int", 0, 600, 5, "s"),
+        ("max_liability_per_trade", "Responsabilita' massima per operazione", "Tetti", "float", 0.0, 100000.0, 5, "EUR"),
+    ),
+    "esatto": (
+        ("stake.laySize", "Stake della banca", "Importi", "float", 2.0, 500.0, 0.5, "EUR"),
+        ("esatto.minuteMin", "Dal minuto", "Ingresso", "int", 1, 90, 1, "min"),
+        ("esatto.entryMin", "Quota di banca MIN", "Ingresso", "float", 1.01, 1000.0, 0.5, ""),
+        ("esatto.entryMax", "Quota di banca MAX", "Ingresso", "float", 1.01, 1000.0, 0.5, ""),
+        ("esatto.maxGoalsLaySide", "Gol massimi della squadra bancata", "Ingresso", "int", 0, 10, 1, "gol"),
+        ("esatto.scoreConfirmSec", "Conferma del punteggio", "Filtri", "int", 0, 600, 5, "s"),
+        ("esatto.vetoCampionati", "Veto dei campionati del corso", "Filtri", "bool", 0, 0, 0, ""),
+        ("exits.esatto_exit_minute", "Uscita al minuto", "Uscita", "int", 1, 120, 1, "min"),
+        ("exits.loss_settle_delay_s", "Attesa prima di chiudere in perdita", "Uscita", "int", 0, 600, 5, "s"),
+        ("max_liability_per_trade", "Responsabilita' massima per operazione", "Tetti", "float", 0.0, 100000.0, 5, "EUR"),
+    ),
+    "punta": (
+        ("stake.backSize", "Stake della punta", "Importi", "float", 2.0, 500.0, 0.5, "EUR"),
+        ("punta.minuteMin", "Dal minuto", "Ingresso", "int", 1, 90, 1, "min"),
+        ("punta.entryMin", "Quota di punta MIN", "Ingresso", "float", 1.01, 20.0, 0.01, ""),
+        ("punta.entryMax", "Quota di punta MAX", "Ingresso", "float", 1.01, 20.0, 0.01, ""),
+        ("punta.minMinutesAfterGoal", "Minuti dopo l'ultimo gol", "Ingresso", "int", 0, 90, 1, "min"),
+        ("punta.vetoCampionati", "Veto dei campionati del corso", "Filtri", "bool", 0, 0, 0, ""),
+        ("exits.punta_exit_minute", "Uscita al minuto", "Uscita", "int", 1, 120, 1, "min"),
+        ("exits.loss_settle_delay_s", "Attesa prima di chiudere in perdita", "Uscita", "int", 0, 600, 5, "s"),
+        ("max_liability_per_trade", "Responsabilita' massima per operazione", "Tetti", "float", 0.0, 100000.0, 5, "EUR"),
+    ),
+}
+_COPPIE_SAFE = (("base.dogLayMin", "base.dogLayMax"), ("base.favPreMin", "base.favPreMax"),
+                ("base.dogPreMin", "base.dogPreMax"), ("esatto.entryMin", "esatto.entryMax"),
+                ("punta.entryMin", "punta.entryMax"))
+
+
+def _risolti_dello_scenario(scenario: str, variante: str) -> Dict[str, Any]:
+    """I parametri EFFETTIVI della variante nello scenario, dalla funzione del
+    servizio (``bot_service.resolve_params``)."""
+    mode = "paper" if scenario == SCENARIO_PAPER else "live"
+    par = _params_di_scenario(scenario, (variante,), mode)
+    return BS.resolve_params(par, engine_mod=E)
+
+
+def _parametri_modificabili_di(variante: str, scenario: str) -> List[Dict[str, Any]]:
+    ris = _risolti_dello_scenario(scenario, variante)
+    out: List[Dict[str, Any]] = []
+    for chiave, etichetta, gruppo, tipo, lo, hi, passo, unita in _MENU_SAFE[variante]:
+        v = VB.leggi_annidato(ris, chiave)
+        if tipo == "int":
+            v = int(v)
+        elif tipo == "float":
+            v = float(v)
+        out.append(VB.voce(chiave, etichetta, tipo, v, gruppo=gruppo,
+                           minimo=None if tipo == "bool" else lo,
+                           massimo=None if tipo == "bool" else hi,
+                           passo=None if tipo == "bool" else passo, unita=unita))
+    return out
+
+
+def parametri_modificabili_base(scenario: str = "base") -> List[Dict[str, Any]]:
+    """Catalogo della variante BASE (contratto del banco)."""
+    return _parametri_modificabili_di("base", scenario)
+
+
+def parametri_modificabili_esatto(scenario: str = "base") -> List[Dict[str, Any]]:
+    """Catalogo della variante RISULTATO ESATTO (contratto del banco)."""
+    return _parametri_modificabili_di("esatto", scenario)
+
+
+def parametri_modificabili_punta(scenario: str = "base") -> List[Dict[str, Any]]:
+    """Catalogo della variante PUNTA (contratto del banco)."""
+    return _parametri_modificabili_di("punta", scenario)
+
+
+def _applica_parametri(par: Dict[str, Any], scenario: str, scelte: Tuple[str, ...],
+                       parametri: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Le sostituzioni dell'utente nei ``params`` GREZZI del control (la stessa
+    forma che scrive la Control Room, sezioni annidate), che il servizio rilegge
+    con ``resolve_params``. Il catalogo e' quello della variante accesa: con
+    piu' varianti accese (la certificazione) non si accettano sostituzioni."""
+    if not parametri:
+        return {}
+    if len(scelte) != 1 or scelte[0] not in _MENU_SAFE:
+        raise ValueError("parametri della Safe: si variano su UNA variante accesa "
+                         "(base, esatto o punta), non su %s" % (list(scelte),))
+    sost = VB.valida(_parametri_modificabili_di(scelte[0], scenario), parametri)
+    ris = _risolti_dello_scenario(scenario, scelte[0])
+    for lo_k, hi_k in _COPPIE_SAFE:
+        lo = sost.get(lo_k, VB.leggi_annidato(ris, lo_k))
+        hi = sost.get(hi_k, VB.leggi_annidato(ris, hi_k))
+        if (lo_k in sost or hi_k in sost) and lo is not None and hi is not None and lo > hi:
+            raise ValueError("parametri %s (%s) e %s (%s): il minimo supera il massimo"
+                             % (lo_k, lo, hi_k, hi))
+    for k, v in sost.items():
+        VB.applica_annidato(par, k, v)
+    return sost
+
+
+def nota_accensione(acc: "VB.Accensione") -> str:
+    """Che cosa vede la Safe quando l'utente la accende a ``dal_ms``."""
+    def _quando(ms: Optional[int]) -> str:
+        return _iso(ms) if ms is not None else "mai (registrazione finita prima)"
+    return ("ACCENSIONE dell'utente a %s (ms %d, primo giro acceso a %s): fino a li' "
+            "il control era 'stopped' e `bot_service.run_once` girava come in "
+            "produzione (riferimento 1X2 pre-partita congelato dallo scanner, "
+            "conferme di punteggio, nessuna apertura); lo SCANNER, altro processo "
+            "in produzione, ha visto tutti i book. Da li' il control e' 'running': "
+            "la strada della UI." % (_quando(acc.dal_ms), acc.dal_ms, _quando(acc.scattata_ms)))
+
+
 def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
                        ogni_ms: int = 0, campioni_diff: int = 0,
-                       strategie: Optional[Tuple[str, ...]] = None) -> CERT.Referto:
+                       strategie: Optional[Tuple[str, ...]] = None,
+                       parametri: Optional[Dict[str, Any]] = None,
+                       dal_ms: Optional[int] = None) -> CERT.Referto:
     """ADATTATORE PER IL BANCO — dal NOME dello scenario ai parametri di Safe.
 
     E' la funzione che il REGISTRO dei bot
     (`Betfair/stream/backtest/registro_bot.py`) chiama: firma identica per tutti
     i bot, cosi' il comando `python -m Betfair.stream.backtest.certifica <bot>`
     resta uno solo.
+
+    07/10 (Applica bot): ``parametri`` = sostituzioni del catalogo della variante
+    accesa (``strategie`` di una sola variante), ``dal_ms`` = istante di
+    accensione. Con entrambi None il referto e' quello di sempre.
     """
     scelte = tuple(strategie or STRATEGIE_SCELTE)
     mode = "paper" if scenario == SCENARIO_PAPER else "live"
     status = "stopped" if scenario == SCENARIO_BOT_FERMO else "running"
     par = _params_di_scenario(scenario, scelte, mode)
+    sost = _applica_parametri(par, scenario, scelte, parametri)
+    dal_ms = VB.controlla_dal_ms(dal_ms)
     risolti = BS.resolve_params(par, engine_mod=E)
     # il feed STANTIO si ottiene invecchiando la riga E lo scanner, non toccando
     # i prezzi: devono essere vecchi TUTTI E DUE (`exits.feed_is_fresh`).
     vecchio = (float(XE.FEED_HARD_MAX_S) * 2.0
                if scenario == SCENARIO_FEED_STANTIO else 0.0)
-    return certifica_evento(
+    ref = certifica_evento(
         event_id, data_dir=data_dir, params_grezzi=par, strategie=scelte,
         ogni_ms=int(ogni_ms) or cadenza_ms(risolti),
         invecchia_s=vecchio,
@@ -1858,7 +2024,12 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
                    ("ridotta" if scenario == SCENARIO_FUORI_APP_RIDOTTA else None)),
         mode=mode, status=status, scenario=scenario,
         chiusura_parziale=(scenario == CP.SCENARIO),
-        scenario_proposte=(scenario if scenario in PM.SCENARI_CALCIO else None))
+        scenario_proposte=(scenario if scenario in PM.SCENARI_CALCIO else None),
+        dal_ms=dal_ms)
+    if sost:
+        ref.note.insert(0, "VARIANTE DEI PARAMETRI (la strategia non cambia): "
+                        + ", ".join("%s=%s" % kv for kv in sorted(sost.items())))
+    return ref
 
 
 def main(argv: Optional[List[str]] = None) -> int:

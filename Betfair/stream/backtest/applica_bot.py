@@ -1,4 +1,4 @@
-"""applica_bot.py - "APPLICA BOT" del Match Replay (06/10/2026).
+"""applica_bot.py - "APPLICA BOT" del Match Replay (06/10/2026; per TUTTI i bot dal 07/10).
 
 Fa girare un bot sulla registrazione di una partita con il CODICE DI
 PRODUZIONE, dallo stesso punto d'ingresso del banco comune
@@ -6,34 +6,43 @@ PRODUZIONE, dallo stesso punto d'ingresso del banco comune
 ``python -m Betfair.stream.backtest.certifica``): flumine simulato, coda,
 latenza e bet delay del banco, minimi .it. Nessun replay "a parte".
 
-Ne esce la CRONOLOGIA DEGLI ORDINI del bot: le righe dello specchio
-``betfair_live_orders`` (le stesse che la sessione vera scrive e che il ladder
-legge), ciascuna con l'istante ``_ms`` del banco (= publish time Betfair, lo
-stesso orologio dei frame del replay). Si tengono solo le righe in cui lo stato
-dell'ordine CAMBIA (la sessione le riscrive a ogni giro dello specchio).
+Ne esce la CRONOLOGIA DEGLI ORDINI del bot: le righe ``betfair_live_orders``
+(``referto.ordini_specchio``: per lo scalper quelle della sessione vera, per gli
+altri bot quelle che ``varianti_bot.SpecchioOrdini`` costruisce dagli ordini
+VERI del flumine del banco con ``LiveTradingStrategy._order_row``), ciascuna con
+l'istante ``_ms`` del banco (= publish time Betfair, lo stesso orologio dei
+frame del replay). Si tengono solo le righe in cui lo stato dell'ordine CAMBIA.
 
-Per ora: lo Scalper calcio (maker, sniper, media under). Gli altri bot si
-aggiungono a ``SCENARI_VISIVI`` quando il loro banco espone lo specchio.
+07/10 (ordini dell'utente): <<portare TUTTI I BOT nella sezione "applica bot">> e
+<<devo poter modificare i parametri di ognuno [...] SENZA CAMBIARE LA STRATEGIA>>.
+Contratto comune (fissato dal coordinatore):
+  * la funzione di replay accetta ``parametri`` (sostituzioni del catalogo del
+    bot, ValueError su chiave/valore non ammesso) e ``dal_ms`` (istante in cui
+    l'utente ACCENDE il bot); con entrambi None il referto e' quello di sempre;
+  * ``clic_ms`` (lista di istanti di clic, <<Attiva adesso>> della media under)
+    SOLO ai bot la cui funzione di replay lo dichiara nella firma;
+  * il catalogo di ogni bot e' ``registro_bot.BotRegistrato.parametri``;
+  * gli scenari NON sono un elenco a mano: vengono da ``elenco_scenari()`` del
+    registro, filtrati qui sotto (``SCENARI_APPLICABILI``/``SCENARI_SCARTATI``,
+    ogni scarto col motivo; il test di contratto rifiuta uno scenario del
+    registro che non sia ne' nell'uno ne' nell'altro).
+
+Il catalogo per la UI (bot -> sport, etichetta, scenari, parametri con i
+default) si GENERA da qui: ``python -m Betfair.stream.backtest.applica_bot
+--catalogo-ts > frontend/src/lib/replayBotCatalogo.ts``; il test di contratto
+``Betfair/stream/tests/test_applica_bot_tutti_2026_10_07.py`` diventa rosso se
+il file TS non e' allineato.
 
 ASCII-only; commenti in italiano.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
-
-#: bot -> scenario -> etichetta mostrata nel menu "Applica bot" del replay
-SCENARI_VISIVI: Dict[str, Dict[str, str]] = {
-    "scalper_calcio": {
-        "media-under-paper": "Scalper - Media Under 2,5 (prova)",
-        "media-under-35": "Scalper - Media Under 3,5",
-        "media-under": "Scalper - Media Under 2,5 (soldi veri simulati)",
-        "media-under-liquidita-100": "Scalper - Media Under 2,5, liquidita' minima 100 EUR",
-        "media-under-35-liquidita-50": "Scalper - Media Under 3,5, liquidita' minima 50 EUR",
-        "paper": "Scalper - maker (prova)",
-        "base": "Scalper - maker (soldi veri simulati)",
-        "sniper-paper": "Scalper - sniper (prova)",
-    },
-}
+import argparse
+import inspect
+import json
+import os
+import sys
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 #: cadenza del banco: quella di ``certifica`` (``--ogni-ms`` 0 = cadenza del servizio)
 OGNI_MS = 0
@@ -42,6 +51,202 @@ OGNI_MS = 0
 _CAMPI_STATO = ("status", "price", "size", "size_matched", "size_remaining",
                 "size_cancelled", "size_lapsed", "size_voided",
                 "average_price_matched", "bet_id")
+
+#: le due modalita' che la UI mostra (paper = specchio del live)
+PROVA = "prova"
+SOLDI_VERI = "soldi_veri_simulati"
+
+# ---------------------------------------------------------------------------
+# GLI SCENARI CHE HANNO SENSO SU UNA PARTITA REGISTRATA
+# ---------------------------------------------------------------------------
+# bot -> scenario -> (famiglia, modalita', etichetta). La FAMIGLIA raggruppa le
+# due modalita' dello STESSO scenario (es. ``paper`` e ``base`` dello scalper):
+# la UI mostra la famiglia e poi <<Prova>> / <<Soldi veri simulati>> se ci sono
+# entrambe. Etichette per il trader; il set degli scenari e' quello del registro.
+SCENARI_APPLICABILI: Dict[str, Dict[str, Tuple[str, str, str]]] = {
+    "mike": {
+        "base": ("Mike - come in produzione", SOLDI_VERI, "parametri di serie"),
+        "taker": ("Mike - chiusura pre-match a mercato", SOLDI_VERI, "uscita pre-match taker"),
+        "copertura-legacy": ("Mike - copertura come punta Over 4,5", SOLDI_VERI,
+                             "copertura nella forma di prima"),
+        "senza-seconda-puntata": ("Mike - senza seconda puntata", SOLDI_VERI,
+                                  "seconda puntata spenta"),
+        "uscite-automatiche": ("Mike - uscite automatiche", SOLDI_VERI,
+                               "il bot esegue da solo anche le uscite in perdita"),
+    },
+    "omega": {
+        "v4": ("Omega - motore V4 (come in produzione)", SOLDI_VERI, "motore di serie"),
+        "uscite-automatiche": ("Omega - V4 con uscite automatiche", SOLDI_VERI,
+                               "uscite di protezione eseguite dal bot"),
+        "v3": ("Omega - cancello V3 del 16/09", SOLDI_VERI, "numeri del 16/09, per confronto"),
+        "base": ("Omega - motore v2 (legacy)", SOLDI_VERI, "motore v2, obiettivo di serie"),
+        "giornata-reale": ("Omega - v2 con obiettivo di una giornata vera", SOLDI_VERI,
+                           "obiettivo 5 EUR su una partita"),
+        "apertura": ("Omega - v2 con banda di quota fino a 500", SOLDI_VERI,
+                     "l'unico v2 che apre sulle registrazioni"),
+        "paper": ("Omega - v2 con banda di quota fino a 500", PROVA,
+                  "stessa cosa in prova"),
+    },
+    "safe_base": {"base": ("Safe Base - come in produzione", SOLDI_VERI, "variante BASE accesa")},
+    "safe_esatto": {"base": ("Safe Risultato Esatto - come in produzione", SOLDI_VERI,
+                             "variante ESATTO accesa")},
+    "safe_punta": {"base": ("Safe Punta - come in produzione", SOLDI_VERI,
+                            "variante PUNTA accesa")},
+    "safe_tennis": {
+        "base": ("Safe tennis - come in produzione", SOLDI_VERI, "percorso live"),
+        "paper": ("Safe tennis - come in produzione", PROVA, "percorso paper"),
+    },
+    "scalper_calcio": {
+        "base": ("Scalper - maker", SOLDI_VERI, "valori di serie della UI"),
+        "paper": ("Scalper - maker", PROVA, "stesso control in prova"),
+        "senza-missione": ("Scalper - maker senza missione 2-tick", SOLDI_VERI,
+                           "tutti i cicli che la strategia concede"),
+        "sniper": ("Scalper - sniper", SOLDI_VERI, "maker + sniper"),
+        "sniper-paper": ("Scalper - sniper", PROVA, "maker + sniper in prova"),
+        "sniper-uscite-auto": ("Scalper - sniper con uscite automatiche", SOLDI_VERI,
+                               "lo sniper prende profitto da solo"),
+        "uscite-manuali": ("Scalper - sniper con uscite manuali (di serie)", SOLDI_VERI,
+                           "ogni uscita resta una proposta"),
+        "media-under": ("Scalper - Media Under 2,5", SOLDI_VERI, "valori di serie della scheda"),
+        "media-under-paper": ("Scalper - Media Under 2,5", PROVA, "in prova"),
+        "media-under-35": ("Scalper - Media Under 3,5", SOLDI_VERI, "linea 3,5"),
+        "media-under-obiettivo-030": ("Scalper - Media Under 2,5, obiettivo 0,30 EUR",
+                                      SOLDI_VERI, "obiettivo fisso"),
+        "media-under-rientri-1": ("Scalper - Media Under 2,5, un rientro", SOLDI_VERI,
+                                  "massimo un rientro"),
+        "media-under-rischio-30": ("Scalper - Media Under 2,5, rischio 30 EUR", SOLDI_VERI,
+                                   "rischio massimo 30 EUR"),
+        "media-under-tick-1": ("Scalper - Media Under 2,5, rientro e chiusura a 1 tick",
+                               SOLDI_VERI, "1 tick"),
+        "media-under-liquidita-100": ("Scalper - Media Under 2,5, liquidita' minima 100 EUR",
+                                      SOLDI_VERI, "liquidita' 100"),
+        "media-under-35-liquidita-50": ("Scalper - Media Under 3,5, liquidita' minima 50 EUR",
+                                        SOLDI_VERI, "liquidita' 50"),
+    },
+}
+for _b in ("tennis_scalper", "tennis_pro", "tennis_flb", "tennis_swing"):
+    _n = {"tennis_scalper": "Tennis Scalper", "tennis_pro": "Tennis Pro",
+          "tennis_flb": "Tennis FLB", "tennis_swing": "Tennis Swing"}[_b]
+    SCENARI_APPLICABILI[_b] = {
+        "base": ("%s - preset di produzione" % _n, PROVA,
+                 "uscite automatiche dichiarate dal banco"),
+        "gate-aperto": ("%s - soglie di liquidita' e bande aperte" % _n, PROVA,
+                        "per vederlo operare dove i default non entrano"),
+        "parziali": ("%s - stake 400 EUR" % _n, PROVA, "ordini abbinati in parte"),
+        "uscite-manuali": ("%s - uscite manuali (di serie), soglie aperte" % _n, PROVA,
+                           "ogni uscita resta una proposta"),
+        "live": ("%s - soglie aperte, percorso live" % _n, SOLDI_VERI,
+                 "minimi e granularita' .it del live"),
+        "soldi-veri": ("%s - soldi veri, soglie aperte" % _n, SOLDI_VERI,
+                       "catena soldi veri del runner"),
+        "soldi-veri-paper": ("%s - soldi veri, soglie aperte" % _n, PROVA,
+                             "bot in prova nel runner live"),
+    }
+
+_GUASTO = "guasto o trasporto iniettato: serve alla certificazione, non a provare una variante"
+_UTENTE = "gesto dell'utente simulato dal banco (firma, cash out, ordine a mano, stop)"
+_UGUALE = "oggi uguale a un altro scenario gia' in elenco"
+_INIETTATO = "posizione o modello dichiarato dal banco, non nato dalla strategia"
+_TETTI = ("tetti stretti per far parlare i controlli di certificazione: i tetti si "
+          "variano dal pannello Parametri")
+
+#: gli scenari del registro che NON si offrono all'utente, col motivo
+SCENARI_SCARTATI: Dict[str, Dict[str, str]] = {
+    "mike": {
+        "bot-fermo": "pre-match e re-ingresso spenti: nessuna apertura per costruzione",
+        "cap-stretto": _TETTI,
+        "feed-stantio": _GUASTO, "esiti-ignoti": _GUASTO, "taker-esiti-ignoti": _GUASTO,
+        "riavvio": _GUASTO, "gol-precoce": _UGUALE + " (e' `base` su un'altra partita)",
+        "cashout-globale": _UTENTE, "chiuso-fuori-app": _UTENTE,
+        "copertura-rifiutata": _GUASTO, "copertura-rifiutata-legacy": _GUASTO,
+        "cashout-dopo-copertura": _UTENTE, "rifiuti-betfair": _GUASTO,
+        "chiusura-abbinata-in-parte": _GUASTO, "ko-green-parziale": _GUASTO,
+        "fermo-copertura": _UTENTE, "lettura-dati-ko": _GUASTO,
+        "firma-dopo-gol-decisivo": _UTENTE,
+        "firma-dopo-gol-decisivo-senza-chiusura": _UTENTE,
+        "uscite-in-perdita-firmate": _UTENTE, "punteggio-ko": _GUASTO,
+    },
+    "omega": {
+        "bot-fermo": _UTENTE, "v4-bot-fermo": _UTENTE, "feed-stantio": _GUASTO,
+        "cap-stretto": _TETTI,
+        "esiti-ignoti": _GUASTO, "riavvio": _GUASTO, "v4-riavvio": _GUASTO,
+        "manuale-e-bot": _UTENTE, "cashout-globale": _UTENTE,
+        "proposta-approvata": _UTENTE, "rifiuti-betfair": _GUASTO,
+        "chiuso-fuori-app": _UTENTE, "chiusura-abbinata-in-parte": _GUASTO,
+    },
+    "safe_tennis": {
+        "paper-iniettata": _INIETTATO, "catalogo-assente": _GUASTO,
+        "posizione-iniettata": _INIETTATO, "approvata-subito": _UTENTE,
+        "mai-approvata": _INIETTATO, "bot-fermo": _UTENTE, "feed-stantio": _GUASTO,
+        "esiti-ignoti": _GUASTO, "rifiuti-betfair": _GUASTO, "uscita-ignota": _GUASTO,
+        "riavvio": _GUASTO, "chiusura-fuori-app": _UTENTE,
+        "chiusura-fuori-app-ridotta": _UTENTE, "chiusura-abbinata-in-parte": _GUASTO,
+        "proposta-approvata": _INIETTATO, "proposta-scaduta": _INIETTATO,
+    },
+    "scalper_calcio": {
+        "bot-fermo": _UTENTE, "kill-switch": _UTENTE, "esiti-ignoti": _GUASTO,
+        "rifiuti-betfair": _GUASTO, "riavvio": _GUASTO,
+        "chiusura-abbinata-in-parte": _GUASTO, "uscite-manuali-firmate": _UTENTE,
+        "auto-live": "armamento dall'auto-mode, non dall'utente",
+        "media-under-riavvio": _GUASTO, "media-under-rifiuti-betfair": _GUASTO,
+        "media-under-esiti-ignoti": _GUASTO, "media-under-kill-switch": _UTENTE,
+        "media-under-bot-fermo": _UTENTE,
+    },
+}
+# 07/10 (integrazione del coordinatore): gli scenari del banco del pulsante
+# <<Attiva adesso>> mettono il clic in punti FISSI della partita (regola del
+# banco); in Applica bot il clic lo mette l'utente sulla barra (``dal_ms`` +
+# ``clic_ms`` sugli scenari della media under), quindi qui restano fuori.
+_CLIC_DEL_BANCO = ("clic in un punto fisso del banco: in Applica bot il clic lo metti tu "
+                   "sulla barra (accendi al cursore + clic aggiuntivi)")
+for _s in ("lontano", "lontano-paper", "lontano-filtri", "lontano-35", "finestra", "gioco",
+           "gioco-35", "prima-del-gol", "prima-del-gol-35", "dopo-il-gol", "sospeso",
+           "prezzi-fermi", "doppio", "in-posizione", "riavvio", "due-clic", "tick-1",
+           "tick-1-filtri"):
+    SCENARI_SCARTATI["scalper_calcio"]["media-clic-" + _s] = _CLIC_DEL_BANCO
+_SAFE_CALCIO_SCARTATI = {
+    "cap-stretto": _UTENTE + " (lo scenario preme <<Investi>>)",
+    "bot-fermo": _UTENTE, "esiti-ignoti": _GUASTO, "feed-stantio": _GUASTO,
+    "riavvio": _GUASTO, "paper": _UTENTE + " (lo scenario preme <<Investi>>)",
+    "ordini-manuali": _UTENTE, "due-lay": _UTENTE, "manuale-e-bot": _UTENTE,
+    "cashout-globale": _UTENTE, "chiusura-fuori-app": _UTENTE,
+    "chiusura-fuori-app-ridotta": _UTENTE, "rifiuti-betfair": _GUASTO,
+    "timeout-dopo-accettazione": _GUASTO, "chiusura-abbinata-in-parte": _GUASTO,
+    "selezione-aggiuntiva": _UGUALE + " (`requireSelection` acceso di serie dal 25/09)",
+    "proposta-approvata": _INIETTATO, "proposta-scaduta": _INIETTATO,
+    "proposta-anomalia-effimera": _INIETTATO, "combos-automatiche": _INIETTATO,
+    "combos-gamba-automatica": _INIETTATO,
+}
+for _b in ("safe_base", "safe_esatto", "safe_punta"):
+    SCENARI_SCARTATI[_b] = dict(_SAFE_CALCIO_SCARTATI)
+for _b in ("tennis_scalper", "tennis_pro", "tennis_flb", "tennis_swing"):
+    SCENARI_SCARTATI[_b] = {
+        "dry-run": "nessun ordine raggiunge il mercato per costruzione",
+        "bot-fermo": _UTENTE, "rifiuti-betfair": _GUASTO, "feed-stantio": _GUASTO,
+        "riavvio": _GUASTO, "catalogo-assente": _GUASTO,
+        "chiusura-abbinata-in-parte": _GUASTO, "chiudi-ora": _UTENTE,
+        "uscite-manuali-firmate": _UTENTE,
+        "soldi-veri-prova": "terza rete del runner: nessun ordine reale per costruzione",
+    }
+
+#: i bot di produzione che NON hanno ancora la cronologia degli ordini col codice
+#: di produzione (vuoto = tutti ce l'hanno). bot -> motivo (la UI lo mostra).
+SENZA_CRONOLOGIA: Dict[str, str] = {}
+
+#: le etichette dei bot per il trader
+ETICHETTE_BOT: Dict[str, str] = {
+    "mike": "Mike (Under 3,5 + copertura)",
+    "omega": "Omega (Correct Score)",
+    "safe_base": "Safe Base",
+    "safe_esatto": "Safe Risultato Esatto",
+    "safe_punta": "Safe Punta",
+    "scalper_calcio": "Scalper calcio",
+    "safe_tennis": "Safe tennis",
+    "tennis_scalper": "Tennis Scalper",
+    "tennis_pro": "Tennis Pro",
+    "tennis_flb": "Tennis FLB",
+    "tennis_swing": "Tennis Swing",
+}
 
 
 def _chiave(r: Dict[str, Any]) -> str:
@@ -66,45 +271,266 @@ def cronologia(righe: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return out
 
 
+# ---------------------------------------------------------------------------
+# il catalogo (registro -> UI)
+# ---------------------------------------------------------------------------
+def scenari_del_bot(nome: str) -> List[Dict[str, Any]]:
+    """Gli scenari del REGISTRO applicabili a una partita registrata, nell'ordine
+    del registro, con famiglia/modalita'/etichetta. Quelli scartati restano fuori
+    (motivo in ``SCENARI_SCARTATI``); uno non classificato resta fuori e lo
+    nomina il test di contratto."""
+    from .registro_bot import bot as _bot
+
+    registrati = _bot(nome).elenco_scenari()
+    tavola = SCENARI_APPLICABILI.get(nome, {})
+    out: List[Dict[str, Any]] = []
+    for sc, descr in registrati.items():
+        if sc not in tavola:
+            continue
+        famiglia, modalita, nota = tavola[sc]
+        out.append({"scenario": sc, "famiglia": famiglia, "modalita": modalita,
+                    "etichetta": "%s (%s)" % (famiglia, "prova" if modalita == PROVA
+                                               else "soldi veri simulati"),
+                    "nota": nota, "descrizione": str(descr)[:400]})
+    return out
+
+
+def non_classificati(nome: str) -> List[str]:
+    """Gli scenari del registro che non sono ne' applicabili ne' scartati."""
+    from .registro_bot import bot as _bot
+
+    noti = set(SCENARI_APPLICABILI.get(nome, {})) | set(SCENARI_SCARTATI.get(nome, {}))
+    return [sc for sc in _bot(nome).elenco_scenari() if sc not in noti]
+
+
+def accetta_argomento(funzione: Callable[..., Any], nome: str) -> bool:
+    """La funzione di replay dichiara l'argomento ``nome`` nella sua firma?"""
+    try:
+        return nome in inspect.signature(funzione).parameters
+    except (TypeError, ValueError):
+        return False
+
+
+def catalogo_del_bot(nome: str, *, con_parametri: bool = True) -> Dict[str, Any]:
+    """La voce di catalogo di UN bot: sport, etichetta, scenari (ciascuno con i
+    suoi parametri e default), e se accetta ``clic_ms``. Un catalogo che non si
+    puo' costruire si DICHIARA (``errore``), mai inventato."""
+    from .registro_bot import bot as _bot
+
+    reg = _bot(nome)
+    voce: Dict[str, Any] = {
+        "bot": nome, "sport": reg.sport, "etichetta": ETICHETTE_BOT.get(nome, nome),
+        "descrizione": reg.descrizione, "scenari": [], "clic_ms": False,
+        "disattivato": SENZA_CRONOLOGIA.get(nome),
+    }
+    try:
+        funzione = reg.funzione_replay()
+        voce["clic_ms"] = bool(funzione is not None and accetta_argomento(funzione, "clic_ms"))
+    except Exception as ex:  # noqa: BLE001 - modulo non importabile: lo si dice
+        voce["disattivato"] = "replay non importabile: %s" % str(ex)[:160]
+        return voce
+    cat_f = None
+    if con_parametri:
+        try:
+            cat_f = reg.funzione_parametri()
+        except Exception as ex:  # noqa: BLE001 - catalogo non (ancora) esposto
+            voce["errore_parametri"] = str(ex)[:300]
+    for sc in scenari_del_bot(nome):
+        sc = dict(sc)
+        sc["parametri"] = []
+        if cat_f is not None:
+            try:
+                sc["parametri"] = list(cat_f(sc["scenario"]))
+            except Exception as ex:  # noqa: BLE001
+                sc["errore_parametri"] = "%s: %s" % (type(ex).__name__, str(ex)[:200])
+        voce["scenari"].append(sc)
+    return voce
+
+
+def catalogo() -> List[Dict[str, Any]]:
+    """Il catalogo di TUTTI i bot del registro (ordine del registro)."""
+    from .registro_bot import elenco
+
+    return [catalogo_del_bot(b.nome) for b in elenco()]
+
+
+def catalogo_ts(cat: Optional[List[Dict[str, Any]]] = None) -> str:
+    """Il file TypeScript del catalogo (``frontend/src/lib/replayBotCatalogo.ts``).
+    GENERATO: chi lo modifica a mano lo vede rifiutato dal test di contratto."""
+    dati = cat if cat is not None else catalogo()
+    corpo = json.dumps(dati, indent=2, ensure_ascii=True, sort_keys=False)
+    return (
+        "// ============================================================================\n"
+        "// FILE GENERATO - NON MODIFICARE A MANO.\n"
+        "// Origine: Betfair/stream/backtest/applica_bot.py (catalogo dal registro del\n"
+        "// banco, `registro_bot`, e dai moduli di replay: `parametri_modificabili`).\n"
+        "// Rigenera: python -m Betfair.stream.backtest.applica_bot --catalogo-ts \\\n"
+        "//     > frontend/src/lib/replayBotCatalogo.ts\n"
+        "// Il test Betfair/stream/tests/test_applica_bot_tutti_2026_10_07.py e' rosso se\n"
+        "// questo file non e' allineato al registro.\n"
+        "// ============================================================================\n"
+        "import type { CatalogoBot } from '@/lib/replayBot';\n\n"
+        "export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = " + corpo + ";\n")
+
+
+# ---------------------------------------------------------------------------
+# la cartella delle registrazioni della partita
+# ---------------------------------------------------------------------------
+def _ha_registrazione(cartella: str, event_id: str) -> bool:
+    return os.path.isfile(os.path.join(cartella, str(event_id), "%s.raw.jsonl" % event_id))
+
+
+def cartella_della_partita(reg: Any, event_id: str, data_dir: Optional[str]) -> str:
+    """Dove sta la registrazione della partita. Calcio: ``DATA_DIR``. Tennis: la
+    RADICE del recorder con le cartelle per GIORNO (``<giorno>/<id>/``): si cerca
+    il giorno che contiene la partita (il registro da' solo il piu' recente)."""
+    if data_dir:
+        if reg.sport == "tennis" and not _ha_registrazione(data_dir, event_id):
+            giorno = _giorno_che_contiene(data_dir, event_id)
+            if giorno:
+                return giorno
+        return data_dir
+    base = reg.cartella()
+    if _ha_registrazione(base, event_id) or reg.sport != "tennis":
+        return base
+    radice = os.path.dirname(base) if os.path.basename(base).isdigit() else base
+    return _giorno_che_contiene(radice, event_id) or base
+
+
+def _giorno_che_contiene(radice: str, event_id: str) -> Optional[str]:
+    if not os.path.isdir(radice):
+        return None
+    for d in sorted((x for x in os.listdir(radice) if x.isdigit()), reverse=True):
+        c = os.path.join(radice, d)
+        if _ha_registrazione(c, event_id):
+            return c
+    return None
+
+
+# ---------------------------------------------------------------------------
+# l'esecuzione
+# ---------------------------------------------------------------------------
+def _clic(valore: Any) -> Optional[List[int]]:
+    if valore is None:
+        return None
+    if not isinstance(valore, (list, tuple)):
+        raise ValueError("clic_ms: attesa una lista di istanti (ms del banco)")
+    out: List[int] = []
+    for v in valore:
+        if isinstance(v, bool) or not isinstance(v, int) or v < 0:
+            raise ValueError("clic_ms: istante non valido %r" % (v,))
+        out.append(int(v))
+    return sorted(out)
+
+
 def esegui(params: Dict[str, Any], data_dir: Optional[str] = None) -> Dict[str, Any]:
     """Esegue lo scenario chiesto e torna ``{"righe": [...], "note": [...],
-    "segno": "OK|KO|NE", ...}``. Solleva ValueError su una richiesta non valida
-    (bot o scenario fuori elenco, registrazione assente)."""
-    from .registro_bot import bot as _bot
+    "parametri_usati": {...}, "dal_ms": ..., ...}``. Solleva ValueError su una
+    richiesta non valida (bot o scenario fuori elenco, parametro non ammesso,
+    registrazione assente)."""
+    from . import minimi_banco as _MB
+    from . import varianti_bot as VB
+    from .certifica import _freni_da_banco
+    from .registro_bot import REGISTRO
 
     nome = str(params.get("bot") or "")
     scenario = str(params.get("scenario") or "")
     event_id = str(params.get("event_id") or "")
-    if nome not in SCENARI_VISIVI:
+    if nome not in REGISTRO or nome not in SCENARI_APPLICABILI:
         raise ValueError("bot non applicabile al replay: %r (disponibili: %s)"
-                         % (nome, ", ".join(sorted(SCENARI_VISIVI))))
-    if scenario not in SCENARI_VISIVI[nome]:
-        raise ValueError("scenario non disponibile per %s: %r" % (nome, scenario))
+                         % (nome, ", ".join(sorted(SCENARI_APPLICABILI))))
+    if nome in SENZA_CRONOLOGIA:
+        raise ValueError("il bot %s non ha ancora la cronologia degli ordini col codice di "
+                         "produzione: %s" % (nome, SENZA_CRONOLOGIA[nome]))
+    applicabili = {s["scenario"]: s for s in scenari_del_bot(nome)}
+    if scenario not in applicabili:
+        motivo = SCENARI_SCARTATI.get(nome, {}).get(scenario)
+        raise ValueError("scenario non disponibile per %s: %r%s" % (
+            nome, scenario, (" (%s)" % motivo) if motivo else ""))
     if not event_id:
         raise ValueError("event_id mancante")
-    from . import minimi_banco as _MB
-    from .certifica import _freni_da_banco
-
-    registrato = _bot(nome)
-    funzione = registrato.funzione_replay()
-    cartella = data_dir or registrato.cartella()
-    # lo STESSO ambiente di ``certifica`` (``_uno``): registro dell'exchange
+    reg = REGISTRO[nome]
+    cartella = cartella_della_partita(reg, event_id, data_dir)
+    if not _ha_registrazione(cartella, event_id):
+        raise ValueError("registrazione assente per la partita %s in %s: il bot si "
+                         "applica solo alle partite registrate (Segui live con REC)"
+                         % (event_id, cartella))
+    funzione = reg.funzione_replay()
+    # il catalogo dello scenario: le sostituzioni si controllano QUI (messaggio
+    # chiaro prima di partire) e di nuovo nella funzione di replay. Senza
+    # sostituzioni un catalogo non (ancora) esposto non blocca la prova: il
+    # referto lo dichiara.
+    sostituzioni_chieste = params.get("parametri") or None
+    note_catalogo: List[str] = []
+    try:
+        catalogo_sc = list(reg.funzione_parametri()(scenario))
+    except ValueError as ex:
+        if sostituzioni_chieste:
+            raise
+        catalogo_sc = []
+        note_catalogo.append("parametri di serie non elencati: %s" % ex)
+    sostituzioni = VB.valida(catalogo_sc, sostituzioni_chieste)
+    dal_ms = VB.controlla_dal_ms(params.get("dal_ms"))
+    clic_ms = _clic(params.get("clic_ms"))
+    argomenti: Dict[str, Any] = dict(reg.argomenti_applica)
+    for chiave_arg, valore in (("parametri", sostituzioni or None), ("dal_ms", dal_ms),
+                               ("clic_ms", clic_ms)):
+        if valore is None:
+            continue
+        if not accetta_argomento(funzione, chiave_arg):
+            raise ValueError("la funzione di replay di %s non accetta ancora `%s`: "
+                             "variante non applicabile" % (nome, chiave_arg))
+        argomenti[chiave_arg] = valore
+    # lo STESSO ambiente di ``certifica`` (``_lavora``): registro dell'exchange
     # simulato azzerato, freni e ambiente del banco (soldi veri simulati serviti)
     _MB.REGISTRO.azzera()
     with _freni_da_banco():
-        ref = funzione(event_id, data_dir=cartella, scenario=scenario, ogni_ms=OGNI_MS)
-    note = list(getattr(ref, "note", []) or [])
+        ref = funzione(event_id, data_dir=cartella, scenario=scenario, ogni_ms=OGNI_MS,
+                       **argomenti)
+    note = list(getattr(ref, "note", []) or []) + note_catalogo
     if any(str(n).startswith("registrazione assente") for n in note):
         raise ValueError("registrazione assente per la partita %s in %s: il bot si "
                          "applica solo alle partite registrate (Segui live con REC)"
                          % (event_id, cartella))
     righe = cronologia(list(getattr(ref, "ordini_specchio", []) or []))
     violazioni = [getattr(v, "codice", str(v)) for v in (getattr(ref, "violazioni", []) or [])]
+    usati = VB.parametri_usati(catalogo_sc, sostituzioni)
+    cambiati = {k: v for k, v in sostituzioni.items()
+                if v != next((x["default"] for x in catalogo_sc if x["chiave"] == k), None)}
     return {
         "bot": nome, "scenario": scenario, "event_id": event_id,
-        "etichetta": SCENARI_VISIVI[nome][scenario],
+        "sport": reg.sport,
+        "etichetta": applicabili[scenario]["etichetta"],
+        "modalita": applicabili[scenario]["modalita"],
         "righe": righe,
         "ordini": len({_chiave(r) for r in righe}),
         "violazioni": violazioni,
         "note": [str(n)[:300] for n in note[-12:]],
+        "parametri_usati": usati,
+        "parametri_cambiati": cambiati,
+        "dal_ms": dal_ms,
+        # cosa vede il bot all'accensione (la nota del suo modulo di replay)
+        "accensione": next((str(n)[:600] for n in note if str(n).startswith("ACCENSIONE")),
+                           None),
+        "clic_ms": clic_ms,
     }
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    p = argparse.ArgumentParser(description="Applica bot: catalogo per la UI")
+    p.add_argument("--catalogo-ts", action="store_true",
+                   help="stampa il file TS del catalogo (frontend/src/lib/replayBotCatalogo.ts)")
+    p.add_argument("--catalogo-json", action="store_true", help="stampa il catalogo in JSON")
+    a = p.parse_args(argv)
+    if a.catalogo_ts:
+        sys.stdout.write(catalogo_ts())
+        return 0
+    if a.catalogo_json:
+        sys.stdout.write(json.dumps(catalogo(), indent=2, ensure_ascii=True))
+        return 0
+    p.print_help()
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

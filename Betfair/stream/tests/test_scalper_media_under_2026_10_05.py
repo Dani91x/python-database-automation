@@ -656,7 +656,10 @@ def soldi_veri_dichiarati():
 @pytest.mark.usefixtures("soldi_veri_dichiarati")
 def test_la_sessione_arma_solo_la_modalita_e_paper_uguale_live():
     cat, follow = _catalogo()
-    for sc in R.SCENARI_MEDIA:
+    # 07/10: gli scenari del pulsante <<Attiva adesso>> (sessione armata dal
+    # pulsante: ATTESA_CLIC) hanno il loro test in
+    # ``test_replay_scalper_attiva_adesso_2026_10_07.py``
+    for sc in [s for s in R.SCENARI_MEDIA if s not in R.SCENARI_MEDIA_CLIC]:
         ctl = R.control_della_ui(EVENTO, sc)
         par, cli = R.arma_e_cattura(EVENTO, ctl, follow, cat)
         assert par["stato"] == MU.FERMO and "flow_window_ms" in par, sc

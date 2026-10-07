@@ -1,0 +1,25 @@
+1 seconda punta per lo stesso comando                   ROSSA | Betfair/stream/tests/test_scalper_media_under_attiva_adesso_2026_10_07.py::test_un_clic_una_sola_prima_
+2a prima punta che aspetta i filtri (finestra)          ROSSA | Betfair/stream/tests/test_scalper_media_under_attiva_adesso_2026_10_07.py::test_il_clic_punta_anche_den
+2b prima punta che aspetta i filtri (liquidita'/flusso) ROSSA | Betfair/stream/tests/test_scalper_media_under_attiva_adesso_2026_10_07.py::test_il_clic_punta_subito_al
+3 rientro bloccato dai filtri                           ROSSA | Betfair/stream/tests/test_scalper_media_under_attiva_adesso_2026_10_07.py::test_rientro_dentro_la_fines
+4 operativita' ferma in gioco                           ROSSA | Betfair/stream/tests/test_scalper_media_under_attiva_adesso_2026_10_07.py::test_in_gioco_gestisce_come_
+5a ordine a mercato sospeso (consegna)                  ROSSA | Betfair/stream/tests/test_scalper_media_under_attiva_adesso_2026_10_07.py::test_clic_a_mercato_sospeso_
+5b ordine a mercato sospeso (book)                      ROSSA | Betfair/stream/tests/test_scalper_media_under_attiva_adesso_2026_10_07.py::test_clic_a_mercato_sospeso_
+6 ordine con prezzi fermi                               ROSSA | Betfair/stream/tests/test_scalper_media_under_attiva_adesso_2026_10_07.py::test_clic_coi_prezzi_fermi_r
+7 comando eseguito mentre gia' in posizione             ROSSA | Betfair/stream/tests/test_scalper_media_under_attiva_adesso_2026_10_07.py::test_un_clic_una_sola_prima_
+8 in gioco rientra da solo                              ROSSA | Betfair/stream/tests/test_scalper_media_under_attiva_adesso_2026_10_07.py::test_chiuso_in_gioco_aspetta
+9 pre-match non rientra                                 ROSSA | Betfair/stream/tests/test_scalper_media_under_attiva_adesso_2026_10_07.py::test_chiuso_pre_match_rientr
+10 coi filtri spenti aspetta i filtri                   ROSSA | Betfair/stream/tests/test_scalper_media_under_attiva_adesso_2026_10_07.py::test_chiuso_pre_match_rientr
+11 coi filtri accesi li ignora                          ROSSA | Betfair/stream/tests/test_scalper_media_under_attiva_adesso_2026_10_07.py::test_chiuso_pre_match_coi_fi
+12 clic eseguito prima della registrazione nella riga   ROSSA | Betfair/stream/tests/test_scalper_media_under_attiva_adesso_2026_10_07.py::test_il_clic_si_esegue_solo_
+13 clic scaduto eseguito                                ROSSA | Betfair/stream/tests/test_scalper_media_under_attiva_adesso_2026_10_07.py::test_clic_scaduto_rifiutato[
+14 il clic salta il freno dei soldi veri                ROSSA | Betfair/stream/tests/test_scalper_media_under_attiva_adesso_2026_10_07.py::test_soldi_veri_fermati_il_c
+15 prima punta del clic non abbinata -> riparte da sola ROSSA | Betfair/stream/tests/test_scalper_media_under_attiva_adesso_2026_10_07.py::test_prima_punta_del_clic_no
+16 la modalita' di sempre diventa a clic                ROSSA | Betfair/stream/tests/test_scalper_media_under_attiva_adesso_2026_10_07.py::test_rientro_dentro_la_fines
+17 riavvio: id consumato non riletto dalle stats        ROSSA | Betfair/stream/tests/test_scalper_media_under_attiva_adesso_2026_10_07.py::test_riavvio_dopo_un_clic_co
+18 il clic non punta al miglior prezzo                  ROSSA | Betfair/stream/tests/test_scalper_media_under_attiva_adesso_2026_10_07.py::test_il_clic_punta_subito_al
+19 stato del ciclo non guardato dal clic (coordinatore) ROSSA | Betfair/stream/tests/test_scalper_media_under_attiva_adesso_2026_10_07.py::test_clic_rifiutato_in_uno_s
+20 riquadro alla quota minima: divisione per zero       ROSSA | Betfair/stream/tests/test_scalper_media_under_attiva_adesso_2026_10_07.py::test_riquadro_alla_quota_min
+diff uguale a prima: True
+MUTAZIONE rimaste: Betfair/stream/scalper/media_under_bot.py:0
+Betfair/stream/scalper/scalper_session.py:0

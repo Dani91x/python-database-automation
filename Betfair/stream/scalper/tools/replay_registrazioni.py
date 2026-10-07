@@ -111,6 +111,10 @@ logger = logging.getLogger(__name__)
 
 # i veri, catturati all'import: l'orologio finto NON deve mai chiamare se stesso
 _TIME_VERO = _time_mod.time
+# 07/10: il `datetime` VERO, preso all'import (la simulazione di flumine sostituisce
+# `datetime.datetime` con l'orologio di mercato dentro il replay; `stream_muto`
+# usa quello vero importato prima): serve alla connessione finta di `prezzi-fermi`
+from datetime import datetime as _DATETIME_VERO  # noqa: E402
 _MONOTONIC = _time_mod.monotonic
 
 # oltre questi secondi REALI senza che il turno passi, il banco si dichiara
@@ -179,16 +183,85 @@ SCENARI_MEDIA_VARIANTI: Dict[str, Tuple[Dict[str, Any], Optional[str], str]] = {
                                     "come `media-under-35` (Under 3,5) con liquidita' "
                                     "minima 50 EUR per lato (richiesta dell'utente, 06/10)"),
 }
+#: 07/10 <<ATTIVA ADESSO>> (ordine dell'utente del 07/10, spec par.13): la
+#: sessione armata DAL PULSANTE (``media_a_clic``) dall'inizio della
+#: registrazione, che non entra da sola; il banco manda il clic (la riga
+#: ``media_attiva_adesso`` nei params, la stessa che scrive la RPC del pulsante)
+#: agli istanti della REGOLA dello scenario, calcolati dai fatti del RAW
+#: (``fatti_del_raw``: inizio, fischio, gioco e sospensioni del mercato scelto).
+#: nome -> (parametri della scheda, guasto del banco o None, regola dei clic,
+#: descrizione). Un nome che finisce per ``-paper`` gira in prova.
+SCENARI_MEDIA_CLIC: Dict[str, Tuple[Dict[str, Any], Optional[str], str, str]] = {
+    "media-clic-lontano": ({}, None, "lontano",
+                           "ATTIVA ADESSO lontano dal fischio (10' dopo l'inizio della "
+                           "registrazione), Under 2,5, soldi veri simulati"),
+    "media-clic-lontano-paper": ({}, None, "lontano",
+                                 "come `media-clic-lontano` in PROVA (paper = live)"),
+    "media-clic-lontano-filtri": ({"media_rientro_auto_filtri": True}, None, "lontano",
+                                  "come `media-clic-lontano` coi rientri automatici "
+                                  "pre-match COI FILTRI"),
+    "media-clic-lontano-35": ({"media_mercato": "OVER_UNDER_35"}, None, "lontano",
+                              "come `media-clic-lontano` sull'Under 3,5"),
+    "media-clic-finestra": ({}, None, "finestra",
+                            "ATTIVA ADESSO dentro la finestra di stop (200 s prima del "
+                            "fischio): il ciclo passa il fischio"),
+    "media-clic-gioco": ({}, None, "gioco",
+                         "ATTIVA ADESSO in gioco a gioco fermo (60 s dopo l'inizio del primo "
+                         "tratto in gioco senza sospensioni lungo almeno 300 s)"),
+    "media-clic-gioco-35": ({"media_mercato": "OVER_UNDER_35"}, None, "gioco",
+                            "come `media-clic-gioco` sull'Under 3,5"),
+    "media-clic-prima-del-gol": ({}, None, "prima-gol",
+                                 "ATTIVA ADESSO 25 s prima della prima sospensione in gioco "
+                                 "(gol): sospensione e salto di prezzo a posizione aperta"),
+    "media-clic-prima-del-gol-35": ({"media_mercato": "OVER_UNDER_35"}, None, "prima-gol",
+                                    "come `media-clic-prima-del-gol` sull'Under 3,5"),
+    "media-clic-dopo-il-gol": ({}, None, "dopo-gol",
+                               "ATTIVA ADESSO 3 s dopo la riapertura della prima "
+                               "sospensione in gioco (prezzo saltato)"),
+    "media-clic-sospeso": ({}, None, "sospeso",
+                           "ATTIVA ADESSO durante la sospensione in gioco piu' lunga: "
+                           "rifiutato col motivo, non accodato"),
+    "media-clic-prezzi-fermi": ({}, "prezzi-fermi", "prezzi-fermi",
+                                "ATTIVA ADESSO coi prezzi fermi (15' prima del fischio il flusso "
+                                "si interrompe per 60 s, clic dopo 20 s): rifiutato col motivo, "
+                                "non accodato"),
+    "media-clic-doppio": ({}, None, "doppio",
+                          "DOPPIO CLIC 15' prima del fischio (due clic a 400 ms): una sola "
+                          "prima punta"),
+    "media-clic-in-posizione": ({}, None, "in-posizione",
+                                "due clic 15' prima del fischio, il secondo 90 s dopo il primo a "
+                                "posizione aperta: rifiutato col motivo"),
+    "media-clic-riavvio": ({}, "riavvio", "lontano",
+                           "clic lontano dal fischio, poi il processo muore e l'utente "
+                           "riarma: lo stesso clic NON si riesegue"),
+    "media-clic-tick-1": ({"media_tick_rientro": 1, "media_tick_chiusura": 1}, None, "lontano",
+                          "come `media-clic-lontano` con rientro e chiusura a 1 tick: cicli "
+                          "chiusi PRE-MATCH e RIENTRO AUTOMATICO subito (filtri spenti)"),
+    "media-clic-tick-1-filtri": ({"media_tick_rientro": 1, "media_tick_chiusura": 1,
+                                  "media_rientro_auto_filtri": True, "media_min_size": 100.0},
+                                 None, "lontano",
+                                 "come `media-clic-tick-1` coi rientri automatici COI FILTRI "
+                                 "(liquidita' minima 100 EUR per lato)"),
+    "media-clic-due-clic": ({"media_mercato": "OVER_UNDER_35"}, None, "due-clic",
+                            "due clic in sequenza in gioco sull'Under 3,5 (il secondo 20' "
+                            "dopo il primo): ciclo 1 chiuso in gioco -> attesa del clic, il "
+                            "secondo clic fa il ciclo 2"),
+}
 SCENARI_MEDIA: Tuple[str, ...] = ((SCENARIO_MEDIA, SCENARIO_MEDIA_PAPER, SCENARIO_MEDIA_35)
-                                  + tuple(SCENARI_MEDIA_VARIANTI))
+                                  + tuple(SCENARI_MEDIA_VARIANTI) + tuple(SCENARI_MEDIA_CLIC))
+#: gli scenari della modalita' in PROVA (dry_run=True)
+SCENARI_MEDIA_PROVA: Tuple[str, ...] = (SCENARIO_MEDIA_PAPER,) + tuple(
+    n for n in SCENARI_MEDIA_CLIC if n.endswith("-paper"))
 
 
-def mercato_media(scenario: str) -> Optional[str]:
+def mercato_media(scenario: str, parametri: Optional[Dict[str, Any]] = None) -> Optional[str]:
     """Il mercato che la scheda sceglie nello scenario "media under" (None fuori).
     Una variante dichiarata puo' scegliere il suo (06/10: Under 3,5)."""
     if scenario not in SCENARI_MEDIA:
         return None
-    variante = SCENARI_MEDIA_VARIANTI.get(scenario)
+    if parametri and parametri.get("media_mercato"):
+        return str(parametri["media_mercato"])
+    variante = SCENARI_MEDIA_VARIANTI.get(scenario) or SCENARI_MEDIA_CLIC.get(scenario)
     if variante is not None and variante[0].get("media_mercato"):
         return str(variante[0]["media_mercato"])
     return "OVER_UNDER_35" if scenario == SCENARIO_MEDIA_35 else "OVER_UNDER_25"
@@ -196,11 +269,285 @@ def mercato_media(scenario: str) -> Optional[str]:
 
 def guasto_dello_scenario(scenario: str) -> str:
     """Il guasto del banco che lo scenario prova: il suo nome, o per una variante
-    della modalita' (``SCENARI_MEDIA_VARIANTI``) il guasto che dichiara."""
-    variante = SCENARI_MEDIA_VARIANTI.get(scenario)
+    della modalita' (``SCENARI_MEDIA_VARIANTI``, ``SCENARI_MEDIA_CLIC``) il guasto
+    che dichiara."""
+    variante = SCENARI_MEDIA_VARIANTI.get(scenario) or SCENARI_MEDIA_CLIC.get(scenario)
     if variante is not None:
         return variante[1] or scenario
     return scenario
+
+
+# ---------------------------------------------------------------------------
+# 07/10 ATTIVA ADESSO: i fatti del raw e gli istanti dei clic
+# ---------------------------------------------------------------------------
+#: quanto dura il flusso interrotto del guasto `prezzi-fermi` e dopo quanto si clicca
+BUIO_PREZZI_S = 60.0
+CLIC_NEL_BUIO_S = 20.0
+
+
+def reazione_clic_ms() -> int:
+    """I ms concessi fra la CONSEGNA di un clic (la lettura della riga al battito)
+    e la sua prima punta: il primo book del mercato arriva entro la soglia di
+    vitalita' del flusso (``stream_muto.SOGLIA_S``: 3 battiti da 5 s), numero che
+    il repo ha gia' (mai uno nuovo)."""
+    from ... import stream_muto as _SMU
+
+    return int(float(_SMU.SOGLIA_S) * 1000.0)
+
+
+def fatti_del_raw(raw: str, mercato: Optional[str]) -> Dict[str, Any]:
+    """Dal RAW (mai dal bot): primo istante, fischio, passaggio in gioco e
+    sospensioni IN GIOCO del mercato scelto ``[(inizio, fine)]`` dai
+    ``marketDefinition`` (stato e inPlay)."""
+    from datetime import datetime
+
+    primo: Optional[int] = None
+    ko: Optional[int] = None
+    in_gioco: Optional[int] = None
+    sosp: List[List[int]] = []
+    stato: Dict[str, Tuple[Any, Any]] = {}
+    with io.open(raw, "r", encoding="utf-8") as fh:
+        for riga in fh:
+            try:
+                d = json.loads(riga)
+            except ValueError:
+                continue
+            pt = d.get("pt")
+            if pt is None:
+                continue
+            pt = int(pt)
+            if primo is None:
+                primo = pt
+            for mc in d.get("mc") or []:
+                md = mc.get("marketDefinition")
+                if not md:
+                    continue
+                if md.get("marketType") == "MATCH_ODDS" and ko is None and md.get("marketTime"):
+                    ko = int(datetime.fromisoformat(
+                        str(md["marketTime"]).replace("Z", "+00:00")).timestamp() * 1000)
+                if md.get("marketType") != mercato:
+                    continue
+                s = (md.get("status"), bool(md.get("inPlay")))
+                mid = str(mc.get("id"))
+                if stato.get(mid) == s:
+                    continue
+                stato[mid] = s
+                if s[1] and in_gioco is None:
+                    in_gioco = pt
+                if s[0] == "SUSPENDED" and s[1]:
+                    sosp.append([pt, pt])
+                elif s[0] == "OPEN" and sosp and sosp[-1][0] == sosp[-1][1]:
+                    sosp[-1][1] = pt
+                elif s[0] == "CLOSED" and sosp and sosp[-1][0] == sosp[-1][1]:
+                    sosp.pop()
+    sosp = [x for x in sosp if x[1] > x[0]]
+    return {"primo": primo, "ko": ko, "in_gioco": in_gioco, "sospensioni": sosp}
+
+
+def clic_della_regola(regola: str, f: Dict[str, Any]) -> List[int]:
+    """Gli istanti (ms del raw) dei clic di una regola di ``SCENARI_MEDIA_CLIC``.
+    Lista vuota = la registrazione non ha il caso (lo scenario esce NE)."""
+    primo, ko, gioco = f.get("primo"), f.get("ko"), f.get("in_gioco")
+    sosp = list(f.get("sospensioni") or [])
+    if primo is None or ko is None:
+        return []
+    lontano = int(primo) + 600_000
+    # 15' prima del fischio: il mercato e' vivo (book ogni pochi secondi), cosi'
+    # il doppio clic, il secondo clic a posizione aperta e il flusso interrotto
+    # cadono davvero su book diversi (lontano dal fischio un mercato fermo per
+    # minuti li fa arrivare alla sessione tutti insieme: visto sulla 35797769)
+    vicino = int(ko) - 900_000
+    if regola == "lontano":
+        return [lontano]
+    if regola == "prezzi-fermi":
+        return [vicino + int(CLIC_NEL_BUIO_S * 1000)]
+    if regola == "doppio":
+        return [vicino, vicino + 400]
+    if regola == "in-posizione":
+        return [vicino, vicino + 90_000]
+    if regola == "finestra":
+        return [int(ko) - 200_000]
+    if gioco is None:
+        return []
+    if regola in ("gioco", "due-clic"):
+        inizio = int(gioco)
+        for a, b in sosp + [[10 ** 15, 10 ** 15]]:
+            if a - inizio >= 300_000:
+                t = inizio + 60_000
+                return [t] if regola == "gioco" else [t, t + 1_200_000]
+            inizio = b
+        return []
+    utili = [x for x in sosp if x[0] - int(gioco) >= 60_000]
+    if regola == "prima-gol":
+        return [utili[0][0] - 25_000] if utili else []
+    if regola == "dopo-gol":
+        return [utili[0][1] + 3_000] if utili else []
+    if regola == "sospeso":
+        if not sosp:
+            return []
+        lunga = max(sosp, key=lambda x: x[1] - x[0])
+        return [lunga[0] + 300]
+    return []
+
+
+# ---------------------------------------------------------------------------
+# 07/10: i PARAMETRI MODIFICABILI (contratto comune del banco, Applica bot)
+# ---------------------------------------------------------------------------
+#: chiave -> (etichetta per il trader, tipo, min, max, passo, unita', gruppo).
+#: I DEFAULT non stanno qui: si leggono dalla riga che la scheda scrive
+#: (``control_della_ui``: ``VALORI_DI_SERIE`` per la media under, i default della
+#: UI per maker e sniper), cioe' dalla stessa fonte del servizio.
+_CATALOGO_MEDIA: Tuple[Tuple[str, str, str, Any, Any, Any, str, str], ...] = (
+    ("media_stake", "Punta d'ingresso", "float", 1.0, 1000.0, 0.5, "EUR", "importi"),
+    ("media_obiettivo", "Profitto voluto netto (0 = automatico)", "float", 0.0, 100.0, 0.05,
+     "EUR", "importi"),
+    ("media_tick_chiusura", "Tick di chiusura", "int", 1, 50, 1, "tick", "chiusura e rientri"),
+    ("media_tick_rientro", "Tick per rientrare", "int", 1, 50, 1, "tick", "chiusura e rientri"),
+    ("media_max_rientri", "Rientri massimi", "int", 0, 20, 1, "rientri", "chiusura e rientri"),
+    ("media_rischio_max", "Rischio massimo (0 = spento)", "float", 0.0, 100000.0, 10.0, "EUR",
+     "chiusura e rientri"),
+    ("media_quota_min", "Quota minima d'ingresso", "float", 1.01, 1000.0, 0.01, "quota",
+     "filtri d'ingresso"),
+    ("media_quota_max", "Quota massima d'ingresso", "float", 1.01, 1000.0, 0.01, "quota",
+     "filtri d'ingresso"),
+    ("media_min_size", "Liquidita' minima ai migliori prezzi", "float", 0.0, 100000.0, 25.0,
+     "EUR", "filtri d'ingresso"),
+    ("media_min_flow", "Scambi minimi per lato (90 s)", "float", 0.0, 100000.0, 5.0, "EUR",
+     "filtri d'ingresso"),
+    ("media_max_spread_ticks", "Distanza massima punta-banca", "int", 0, 50, 1, "tick",
+     "filtri d'ingresso"),
+    ("media_stop_ingressi_s", "Stop ingressi prima del fischio", "float", 0.0, 86400.0, 30.0,
+     "s", "filtri d'ingresso"),
+    ("media_ttl_punta_ms", "Attesa della punta prima del ritiro", "int", 1, 600000, 1000, "ms",
+     "ordini"),
+    ("media_commissione_pct", "Commissione", "float", 0.0, 99.0, 0.5, "%", "importi"),
+    ("media_rientro_auto_filtri", "Rientri automatici pre-match con i filtri", "bool", None,
+     None, None, "", "Attiva adesso"),
+)
+_CATALOGO_MAKER: Tuple[Tuple[str, str, str, Any, Any, Any, str, str], ...] = (
+    ("scalp_ticks", "Tick di profitto", "int", 1, 20, 1, "tick", "maker"),
+    ("stop_ticks", "Tick di stop", "int", 1, 20, 1, "tick", "maker"),
+    ("min_size", "Liquidita' minima ai migliori prezzi", "float", 0.0, 100000.0, 25.0, "EUR",
+     "filtri d'ingresso"),
+    ("min_flow", "Scambi minimi per lato", "float", 0.0, 100000.0, 5.0, "EUR",
+     "filtri d'ingresso"),
+    ("price_min", "Quota minima", "float", 1.01, 1000.0, 0.01, "quota", "filtri d'ingresso"),
+    ("price_max", "Quota massima", "float", 1.01, 1000.0, 0.01, "quota", "filtri d'ingresso"),
+    ("entry_stop_before_s", "Stop ingressi prima del fischio", "int", 0, 86400, 30, "s",
+     "tempi"),
+    ("flatten_before_s", "Chiusura forzata prima del fischio", "int", 0, 86400, 30, "s",
+     "tempi"),
+    ("event_profit_target", "Obiettivo di profitto per partita", "float", 0.0, 1000.0, 0.5,
+     "EUR", "protezioni"),
+    ("event_loss_cap", "Perdita massima per partita", "float", 0.0, 1000.0, 0.5, "EUR",
+     "protezioni"),
+    ("one_green_per_phase", "Missione 2 tick (un verde per fase)", "bool", None, None, None,
+     "", "maker"),
+)
+_CATALOGO_SNIPER: Tuple[Tuple[str, str, str, Any, Any, Any, str, str], ...] = (
+    ("sniper_stake", "Puntata dello sniper", "float", 1.0, 500.0, 0.5, "EUR", "sniper"),
+)
+
+
+def _catalogo_dello_scenario(scenario: str) -> Tuple[Tuple[str, str, str, Any, Any, Any, str, str], ...]:
+    if scenario in SCENARI_MEDIA:
+        return _CATALOGO_MEDIA
+    if sniper_acceso(scenario):
+        return _CATALOGO_MAKER + _CATALOGO_SNIPER
+    return _CATALOGO_MAKER
+
+
+def parametri_modificabili(scenario: str) -> List[Dict[str, Any]]:
+    """Contratto comune del banco (Applica bot): i parametri del bot dello
+    scenario che l'utente puo' cambiare per un replay, ognuno con chiave,
+    etichetta, tipo (int|float|bool|scelta), DEFAULT (letto dalla riga che la
+    scheda scrive per lo scenario: la stessa fonte del servizio), min, max,
+    passo, unita', gruppo. Passano per la STESSA strada della produzione (i
+    params della riga ``scalper_control``)."""
+    params = control_della_ui("0", scenario)["params"]
+    from .. import media_under_bot as MU
+
+    out: List[Dict[str, Any]] = []
+    for k, etichetta, tipo, mn, mx, passo, unita, gruppo in _catalogo_dello_scenario(scenario):
+        if k in params:
+            default = params[k]
+        elif k in MU.VALORI_DI_SERIE:
+            default = MU.VALORI_DI_SERIE[k]
+        else:
+            from .. import scalper_session as _SS
+
+            default = _SS.VALIDATED_PARAMS.get(k)
+        if tipo == "int" and default is not None and not isinstance(default, bool):
+            default = int(default)
+        elif tipo == "float" and default is not None and not isinstance(default, bool):
+            default = float(default)
+        out.append({"chiave": k, "etichetta": etichetta, "tipo": tipo, "default": default,
+                    "min": mn, "max": mx, "passo": passo, "unita": unita,
+                    # 07/10 (integrazione): i gruppi del contratto comune del menu
+                    # (`backtest/varianti_bot.GRUPPI`), uguali per tutti i bot
+                    "gruppo": _GRUPPO_COMUNE.get(gruppo, gruppo),
+                    # 07/10 (integrazione con Applica bot): il contratto comune del
+                    # catalogo (`backtest/varianti_bot.voce`) porta anche le scelte;
+                    # lo scalper non ha parametri a scelta
+                    "scelte": None})
+    return out
+
+
+#: 07/10 (integrazione con Applica bot): gruppo dello scalper -> gruppo del
+#: contratto comune del menu dei parametri (`backtest/varianti_bot.GRUPPI`)
+_GRUPPO_COMUNE: Dict[str, str] = {
+    "filtri d'ingresso": "Filtri", "tempi": "Tempi", "protezioni": "Tetti",
+    "importi": "Importi", "sniper": "Importi", "maker": "Uscita",
+    "chiusura e rientri": "Uscita", "ordini": "Ingresso", "Attiva adesso": "Ingresso",
+}
+
+
+def valida_parametri(scenario: str, parametri: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """I parametri chiesti per un replay, controllati sul catalogo dello scenario:
+    chiave sconosciuta, tipo sbagliato o valore fuori dominio = ``ValueError``
+    chiaro (mai un valore corretto o ignorato in silenzio). Per la media under
+    l'insieme dev'essere anche accettato dalla regola della sessione
+    (``media_under_bot.leggi_parametri``)."""
+    if not parametri:
+        return {}
+    if not isinstance(parametri, dict):
+        raise ValueError("parametri: atteso un dizionario {chiave: valore}, avuto %r"
+                         % type(parametri).__name__)
+    catalogo = {x["chiave"]: x for x in parametri_modificabili(scenario)}
+    out: Dict[str, Any] = {}
+    for k, v in parametri.items():
+        voce = catalogo.get(k)
+        if voce is None:
+            raise ValueError("parametro %r non modificabile nello scenario %r (ammessi: %s)"
+                             % (k, scenario, ", ".join(sorted(catalogo))))
+        tipo = voce["tipo"]
+        if tipo == "bool":
+            if not isinstance(v, bool):
+                raise ValueError("parametro %r: atteso vero/falso, avuto %r" % (k, v))
+            out[k] = v
+            continue
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            raise ValueError("parametro %r: atteso un numero, avuto %r" % (k, v))
+        if tipo == "int":
+            if float(v) != int(v):
+                raise ValueError("parametro %r: atteso un intero, avuto %r" % (k, v))
+            v = int(v)
+        else:
+            v = float(v)
+        if v != v or (voce["min"] is not None and v < voce["min"]) or \
+                (voce["max"] is not None and v > voce["max"]):
+            raise ValueError("parametro %r = %r fuori dominio [%s, %s]"
+                             % (k, v, voce["min"], voce["max"]))
+        out[k] = v
+    if scenario in SCENARI_MEDIA:
+        from .. import media_under_bot as MU
+
+        prova = dict(control_della_ui("0", scenario)["params"])
+        prova.update(out)
+        _par, motivo = MU.leggi_parametri(prova)
+        if motivo:
+            raise ValueError("parametri della media under non validi: %s" % motivo)
+    return out
 
 def _quando_media(ms: Optional[int], ko_ms: Optional[int], in_gioco_ms: Optional[int]) -> str:
     """L'istante di mercato per chi legge: minuti al fischio o minuto di gioco."""
@@ -469,17 +816,44 @@ SCENARI_DESCRITTI: Dict[str, str] = {
                            "(paper = live, controllo S6)"),
     SCENARIO_MEDIA_35: "come `media-under` sul mercato Under 3,5",
     **{nome: v[2] for nome, v in SCENARI_MEDIA_VARIANTI.items()},
+    # 07/10 ATTIVA ADESSO: la sessione armata dal pulsante, i clic agli istanti
+    # della regola dello scenario (fatti del raw), controlli M12-M18
+    **{nome: v[3] for nome, v in SCENARI_MEDIA_CLIC.items()},
 }
 
 
 # ---------------------------------------------------------------------------
 # il control che la UI scrive (`ScalperPanel.tsx` + `lib/scalper.ts`)
 # ---------------------------------------------------------------------------
-def control_della_ui(event_id: str, scenario: str) -> Dict[str, Any]:
+def control_della_ui(event_id: str, scenario: str,
+                     parametri: Optional[Dict[str, Any]] = None,
+                     a_clic: bool = False) -> Dict[str, Any]:
     """La riga `scalper_control` che `scalper_activate` scrive coi DEFAULT della
     UI (`SCALPER_PARAM_DEFAULTS`, mode 'maker', stake 25, missione ON,
     ht/sniper/theta spenti). Le chiavi sono le colonne della migrazione.
-    Gli scenari cambiano SOLO numeri che la UI espone."""
+    Gli scenari cambiano SOLO numeri che la UI espone.
+
+    07/10: ``parametri`` (gia' validati da ``valida_parametri``) sono le
+    sostituzioni chieste per il replay, scritte nei params come le scriverebbe la
+    scheda; ``a_clic`` = la sessione della media under armata dal pulsante
+    <<Attiva adesso>> (``media_a_clic`` e l'interruttore dei rientri coi filtri,
+    come li scrive il pulsante). Senza i due: la riga di sempre, identica."""
+    riga = _control_della_ui(event_id, scenario)
+    if not parametri and not a_clic:
+        return riga
+    params = dict(riga["params"])
+    if a_clic and scenario in SCENARI_MEDIA:
+        from .. import media_under_bot as MU
+
+        params[MU.CHIAVE_A_CLIC] = True
+        params.setdefault(MU.CHIAVE_RIENTRO_FILTRI, MU.VALORI_DI_SERIE[MU.CHIAVE_RIENTRO_FILTRI])
+    params.update(dict(parametri or {}))
+    riga["params"] = params
+    return riga
+
+
+def _control_della_ui(event_id: str, scenario: str) -> Dict[str, Any]:
+    """La riga di sempre (vedi ``control_della_ui``)."""
     params: Dict[str, Any] = {
         "scalp_ticks": 1, "stop_ticks": 1, "min_flow": 10, "min_size": 300,
         "price_min": 1.5, "price_max": 4.6, "entry_stop_before_s": 420,
@@ -500,15 +874,23 @@ def control_della_ui(event_id: str, scenario: str) -> Dict[str, Any]:
         from .. import media_under_bot as MU
 
         params["sniper_mode"] = False
-        params.update(MU.VALORI_DI_SERIE)
+        # 07/10: l'interruttore dei rientri coi filtri lo scrive SOLO il pulsante
+        # <<Attiva adesso>> (la riga di sempre resta identica)
+        params.update({k: v for k, v in MU.VALORI_DI_SERIE.items()
+                       if k != MU.CHIAVE_RIENTRO_FILTRI})
         params["media_mode"] = True
         params["media_mercato"] = mercato_media(scenario)
         params["media_obiettivi_live"] = list(MU.VALORI_DI_SERIE["media_obiettivi_live"])
         # 05/10 (giro 2): la variante dichiarata cambia SOLO i suoi parametri
         params.update(dict(SCENARI_MEDIA_VARIANTI.get(scenario, ({}, None, ""))[0]))
+        if scenario in SCENARI_MEDIA_CLIC:
+            # 07/10: la sessione armata dal pulsante <<Attiva adesso>>
+            params[MU.CHIAVE_A_CLIC] = True
+            params[MU.CHIAVE_RIENTRO_FILTRI] = MU.VALORI_DI_SERIE[MU.CHIAVE_RIENTRO_FILTRI]
+            params.update(dict(SCENARI_MEDIA_CLIC[scenario][0]))
         return {
             "event_id": str(event_id), "status": "requested", "mode": "maker",
-            "dry_run": scenario == SCENARIO_MEDIA_PAPER, "stake": 25,
+            "dry_run": scenario in SCENARI_MEDIA_PROVA, "stake": 25,
             "params": params, "origine": "manuale",
             "bias": None, "bias_meta": None, "stats": None, "error": None,
             "requested_at": None, "started_at": None, "stopped_at": None,
@@ -989,24 +1371,38 @@ class _DbFinto:
                                "rifiutata": rifiuto})
         if rifiuto:
             logger.warning("[replay-scalper] scrittura rifiutata dal CHECK (%s)", rifiuto)
-            return
+            # 07/10: come il vero (``scalper_session.Db.set_control``), dice se la
+            # scrittura e' passata
+            return False
         self.control.update(campi)
         st = campi.get("status")
         if st and st not in self.stati_visti:
             self.stati_visti.append(str(st))
+        return True
 
     def control_status(self, event_id: str) -> Optional[str]:
         return self.control.get("status")
+
+    def _letta(self, riga: Dict[str, Any]) -> None:
+        """07/10 (ATTIVA ADESSO): la sessione ha LETTO la riga (params compresi):
+        il banco sa da qui quando un clic e' stato consegnato (fatto del DB, mai
+        del bot)."""
+        cb = getattr(self, "su_lettura", None)
+        if cb is not None:
+            cb(riga.get("params") if isinstance(riga.get("params"), dict) else {})
 
     def control_stato_e_params(self, event_id: str) -> "Tuple[Optional[str], Optional[Dict[str, Any]]]":
         """25/09 - specchio di ``scalper_session.Db.control_stato_e_params``
         (stessa firma, stesse chiavi: select status,params della riga)."""
         riga = json.loads(json.dumps(self.control, default=str))
+        self._letta(riga)
         params = riga.get("params")
         return riga.get("status"), (params if isinstance(params, dict) else None)
 
     def get_control(self, event_id: str) -> Optional[Dict[str, Any]]:
-        return json.loads(json.dumps(self.control, default=str))
+        riga = json.loads(json.dumps(self.control, default=str))
+        self._letta(riga)
+        return riga
 
     def follow(self, event_id: str) -> Optional[Dict[str, Any]]:
         return dict(self.follow_row)
@@ -1210,6 +1606,10 @@ class _FrameworkSessione:
         self.__dict__["_fine"] = threading.Event()
         self.__dict__["causa_fine"] = None
         self.__dict__["_simulated_execution"] = None
+        if getattr(banco, "buio", None) is not None:
+            # 07/10 (guasto `prezzi-fermi`): la connessione di mercato che
+            # `stream_muto` sorveglia (fuori da questo guasto: quella del quadro)
+            self.__dict__["streams"] = [banco.flusso_finto()]
 
     # il quadro del banco E' il mercato: markets, clients, log_control...
     def __getattr__(self, nome: str) -> Any:
@@ -1449,6 +1849,27 @@ class _Banco:
         self.media_mercato_scelto: Optional[str] = None
         self.media_under: Optional[int] = None
         self.tipo_mercato: Dict[str, str] = {}
+        # 07/10 ATTIVA ADESSO: i clic da mandare (ms del raw), quelli mandati, le
+        # CONSEGNE (prima lettura della riga con quell'id) col giudizio del banco,
+        # da quando la sessione e' "a clic" (0 = armata dal pulsante), il book su
+        # cui nasce ogni ordine della modalita', l'ultimo book del mercato scelto
+        self.clic_da_mandare: List[int] = []
+        self.clic_mandati: List[Dict[str, Any]] = []
+        self.consegne: Dict[str, Dict[str, Any]] = {}
+        self.a_clic_dal_ms: Optional[int] = None
+        self.nascite: Dict[str, Dict[str, Any]] = {}
+        self.media_book_ora: Optional[Dict[str, Any]] = None
+        self.rientro_dovuto_dal_ms: Optional[int] = None
+        self.chiuso_pre_match_dal_ms: Optional[int] = None
+        self.reazione_ms: int = 15000
+        # il guasto `prezzi-fermi`: [inizio, fine) in ms in cui nessun book arriva
+        # alle strategie della sessione (flusso interrotto) e l'ultimo book
+        # consegnato (la vitalita' della connessione finta)
+        self.buio: Optional[Tuple[int, int]] = None
+        self.ultimo_consegnato_ms: Optional[int] = None
+        # 07/10 (contratto `dal_ms` per maker e sniper): la sessione si accende
+        # tardi; il passaggio in gioco si registra anche prima della sessione
+        self.registra_gioco_ovunque = False
 
     # ------------------------------------------------------------ sessioni
     def strategia_corrente(self) -> Any:
@@ -1548,6 +1969,144 @@ class _Banco:
 
     def registra_specchio(self, mirror: Any) -> None:
         self.specchi.append(mirror)
+
+    # ------------------------------------------------- ATTIVA ADESSO (07/10)
+    def manda_clic(self, ms: int) -> None:
+        """Il CLIC dell'utente all'istante del raw: la riga ``media_attiva_adesso``
+        nei params, come la scrive la RPC del pulsante (params sostituiti interi:
+        la sessione li legge da un altro thread). La sessione la legge al suo
+        battito, come in produzione."""
+        if not self.clic_da_mandare:
+            return
+        from datetime import datetime, timezone
+
+        from .. import media_under_bot as MU
+
+        while self.clic_da_mandare and self.clic_da_mandare[0] <= ms:
+            t = self.clic_da_mandare.pop(0)
+            cid = "clic-%d-%d" % (len(self.clic_mandati) + 1, t)
+            params = dict(self.db.control.get("params") or {})
+            # l'istante del clic e' quello in cui il banco lo scrive: il primo book
+            # dopo l'istante voluto (fra i due il mercato non e' cambiato; su un
+            # mercato fermo per minuti l'orologio del banco salta e il clic
+            # risulterebbe "scaduto" per un artefatto del banco: in produzione la
+            # sessione lo legge entro un battito di 5 s di tempo vero)
+            params[MU.CHIAVE_COMANDO] = {
+                "id": cid, "ts": datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc).isoformat()}
+            self.db.control["params"] = params
+            self.clic_mandati.append({"id": cid, "clic_ms": int(t), "mandato_ms": int(ms)})
+
+    def _posizione_media_aperta(self) -> bool:
+        """Dal blotter (verita' del mercato): un ordine della modalita' vivo o una
+        posizione aperta sul mercato scelto."""
+        from .. import media_under_bot as MU
+
+        ordini = [o for o in self.ordini_di(list(self.medie))
+                  if str(getattr(o, "market_id", "")) == str(self.media_mercato_scelto or "")]
+        if any(MU.vivo_o_in_volo(o) for o in ordini):
+            return True
+        pos = MU.posizione_da_ordini(ordini)
+        return abs(pos.se_vince - pos.se_perde) > 0.02 + 0.005 * 4.0
+
+    def su_lettura(self, params: Dict[str, Any]) -> None:
+        """La sessione ha letto la riga: un id di clic MAI letto prima e' una
+        CONSEGNA. Il banco giudica adesso cio' che sa adesso (scaduto, prezzi
+        fermi, arresto, mercato non aperto all'ultimo book, posizione aperta); il
+        resto al primo book del mercato scelto che la strategia vede."""
+        from .. import media_under_bot as MU
+
+        cmd = MU.leggi_comando(params)
+        if cmd is None or cmd[0] in self.consegne:
+            return
+        ms = self.orologio.ora_ms()
+        clic = next((c for c in self.clic_mandati if c["id"] == cmd[0]), None)
+        motivi: List[str] = []
+        if cmd[1] is not None and ms - cmd[1] > MU.ATTESA_MASSIMA_COMANDO_S * 1000.0:
+            motivi.append("scaduto")
+        if self.buio is not None and self.buio[0] <= ms < self.buio[1]:
+            motivi.append("prezzi fermi (flusso interrotto)")
+        if self.force_flat_ms is not None and ms >= self.force_flat_ms:
+            motivi.append("sessione in arresto")
+        b = self.media_book_ora
+        if b is not None and (b.get("status") != "OPEN" or not b.get("attivo")):
+            motivi.append("mercato %s alla consegna" % b.get("status"))
+        if self._posizione_media_aperta():
+            motivi.append("posizione aperta o ordine vivo")
+        self.consegne[cmd[0]] = {
+            "id": cmd[0], "clic_ms": clic["clic_ms"] if clic else None, "ms": int(ms),
+            "eseguibile": False if motivi else None, "motivo": "; ".join(motivi) or None}
+
+    def decidi_consegne(self, book: Dict[str, Any]) -> None:
+        """Al primo book del mercato scelto che la strategia VEDE dopo una
+        consegna ancora da decidere: eseguibile se il mercato e' aperto, l'Under
+        attiva e c'e' un prezzo di punta."""
+        for c in self.consegne.values():
+            if c["eseguibile"] is not None:
+                continue
+            ok = book.get("status") == "OPEN" and book.get("attivo") and book.get("bb") is not None
+            c["eseguibile"] = bool(ok)
+            if not ok:
+                c["motivo"] = "mercato %s al primo book dopo la consegna" % book.get("status")
+            elif self.a_clic_dal_ms is None:
+                # la sessione diventa "a clic" col primo clic eseguibile
+                self.a_clic_dal_ms = int(c["ms"])
+
+    def book_media(self, market_book: Any) -> Dict[str, Any]:
+        """Il book del mercato scelto letto dal banco (stato, Under attiva, migliori
+        prezzi e taglie): il timbro delle nascite e il giudizio dei clic."""
+        futils = _modulo("flumine.utils")
+        r = None
+        for x in getattr(market_book, "runners", None) or []:
+            if self.media_under is not None and int(x.selection_id) == int(self.media_under):
+                r = x
+                break
+        ex = getattr(r, "ex", None) if r is not None else None
+        return {"status": getattr(market_book, "status", None),
+                "attivo": getattr(r, "status", None) == "ACTIVE",
+                "inplay": bool(getattr(market_book, "inplay", False)),
+                "bb": futils.get_price(ex.available_to_back, 0) if ex is not None else None,
+                "bl": futils.get_price(ex.available_to_lay, 0) if ex is not None else None,
+                "sb": futils.get_size(ex.available_to_back, 0) if ex is not None else None,
+                "sl": futils.get_size(ex.available_to_lay, 0) if ex is not None else None,
+                "ms": int(getattr(market_book, "publish_time_epoch", 0) or 0)}
+
+    def timbra_nascite(self, s: Any, market: Any, book: Dict[str, Any]) -> None:
+        """Gli ordini della modalita' nati su QUESTO book (il book che la
+        strategia ha appena letto): il loro timbro."""
+        try:
+            ordini = list(market.blotter.strategy_orders(s) or [])
+        except Exception:  # noqa: BLE001 - blotter illeggibile: nessun timbro
+            return
+        for o in ordini:
+            oid = str(getattr(o, "id", ""))
+            if oid and oid not in self.nascite:
+                self.nascite[oid] = dict(book)
+
+    def flusso_finto(self) -> Any:
+        """La connessione di mercato vista da ``stream_muto.stato_stream`` nel
+        guasto `prezzi-fermi`: un oggetto con le chiavi del vero (listener con
+        ``stream`` di tipo ``MarketStream``, ``time_updated`` datetime UTC,
+        ``status`` None) il cui ultimo messaggio e' l'ultimo book consegnato alla
+        sessione (fuori dal buio la connessione e' viva: i battiti di Betfair non
+        sono nel raw)."""
+        banco = self
+
+        class MarketStream:  # noqa: D401 - il nome del vero (betfairlightweight)
+            @property
+            def time_updated(self) -> Any:
+                from datetime import timedelta, timezone
+
+                ora = banco.orologio.ora_ms()
+                ultimo = banco.ultimo_consegnato_ms
+                eta = 0.0
+                if banco.buio is not None and banco.buio[0] <= ora < banco.buio[1] \
+                        and ultimo is not None:
+                    eta = max(0.0, (ora - ultimo) / 1000.0)
+                return _DATETIME_VERO.now(timezone.utc) - timedelta(seconds=eta)
+
+        return SimpleNamespace(_listener=SimpleNamespace(stream=MarketStream(), status=None),
+                               market_filter={"marketIds": list(self.mercati_catalogo)},
+                               stream_id=1, chiuso=False)
 
     # ------------------------------------------------------------ motore
     def avvia_motore(self) -> None:
@@ -2032,9 +2591,42 @@ class _Banco:
             annullati_in_gioco=annullati,
             prova=bool(self.db.control.get("dry_run", True)),
             letture_conto=int(self.db.letture.get(MU.TABELLA_ORDINI_CONTO, 0)),
-            battiti=sum(1 for w in self.db.scritture if "heartbeat_at" in (w.get("campi") or {})))
+            battiti=sum(1 for w in self.db.scritture if "heartbeat_at" in (w.get("campi") or {})),
+            # 07/10 ATTIVA ADESSO: i fatti del banco sui clic (None = mai "a clic":
+            # i controlli di sempre restano identici)
+            a_clic_dal_ms=self.a_clic_dal_ms, consegne=list(self.consegne.values()),
+            nascite=self.nascite, reazione_ms=self.reazione_ms,
+            bb_ora=(self.media_book_ora or {}).get("bb"),
+            aperto_ora=(None if self.media_book_ora is None else bool(
+                self.media_book_ora.get("status") == "OPEN" and self.media_book_ora.get("attivo"))))
+        if self.a_clic_dal_ms is not None:
+            # da quando un rientro e' DOVUTO e da quando l'ultimo ciclo e' chiuso
+            # pre-match (ricalcolati dal banco a ogni giro, mai dal bot)
+            # solo con una sessione VIVA della modalita' (processo morto prima del
+            # riarmo: nessuno puo' rientrare, e' il guasto dello scenario)
+            vive = any(s is mu for _fw, s, _m in self.sessioni)
+            if vive and CERT.rientro_dovuto(oss):
+                if self.rientro_dovuto_dal_ms is None:
+                    self.rientro_dovuto_dal_ms = int(ms)
+            else:
+                self.rientro_dovuto_dal_ms = None
+            cicli = CERT.cicli_media(CERT._m_ordinate(oss))
+            chiuso_pre = (vive and bool(cicli) and CERT._m_ciclo_a_clic(oss, cicli[-1])
+                          and CERT._m_ciclo_chiuso(cicli[-1])
+                          and (in_gioco is None or ms < in_gioco)
+                          and (self.force_flat_ms is None or ms < self.force_flat_ms)
+                          and bool(oss.aperto_ora))
+            if chiuso_pre:
+                if self.chiuso_pre_match_dal_ms is None:
+                    self.chiuso_pre_match_dal_ms = int(ms)
+            else:
+                self.chiuso_pre_match_dal_ms = None
+            oss.rientro_dovuto_dal_ms = self.rientro_dovuto_dal_ms
+            oss.chiuso_pre_match_dal_ms = self.chiuso_pre_match_dal_ms
+            self.ultima_oss_media = oss
         self.ref.violazioni.extend(CERT.verifica_media(oss, self.ref.sollecitati,
                                                        self.memoria_media))
+        self.ref.violazioni.extend(CERT.verifica_clic(oss, self.ref.sollecitati))
 
     def giro(self, ms: int, quando: str, *, fine: bool = False) -> None:
         if self.osservatore_um is not None:
@@ -2170,12 +2762,28 @@ class _Ponte:
                 and b.sessioni:
             b.stop_ms, b.stop_causa = b.ko_ms + vita_ms, "fine-vita"
         b.evento_scenario(ms)
+        # 07/10 ATTIVA ADESSO: il clic dell'utente all'istante del raw
+        if b.clic_da_mandare:
+            b.manda_clic(ms)
         mid = str(market.market_id)
         if bool(getattr(market_book, "inplay", False)) and mid not in b.in_gioco_ms \
-                and mid in b._mercati_sessione():
+                and (mid in b._mercati_sessione() or b.registra_gioco_ovunque):
             b.in_gioco_ms[mid] = ms
+        # 07/10 (guasto `prezzi-fermi`): nel buio nessun book arriva alle strategie
+        # della sessione (flumine e l'exchange simulato vanno avanti)
+        nel_buio = b.buio is not None and b.buio[0] <= ms < b.buio[1]
+        if not nel_buio:
+            b.ultimo_consegnato_ms = ms
+        libro_m = None
+        # (solo con il pulsante: nella modalita' di sempre il banco non legge
+        # niente in piu', stesso costo di prima)
+        if (b.media is not None and not nel_buio and b.media_mercato_scelto is not None
+                and (b.a_clic_dal_ms is not None or b.clic_da_mandare or b.clic_mandati)
+                and mid == str(b.media_mercato_scelto)):
+            libro_m = b.book_media(market_book)
+            b.decidi_consegne(libro_m)
         for _fw, s, mids in list(b.sessioni):
-            if mid not in mids:
+            if mid not in mids or nel_buio:
                 continue
             if s.force_flat and b.force_flat_ms is None:
                 b.force_flat_ms = ms
@@ -2189,12 +2797,16 @@ class _Ponte:
                 b.ref.decisioni += 1
             b.ref.azioni += len(b.attivita) - prima
             if media:
-                b.ref.azioni += int((getattr(s, "stats", {}) or {}).get("ordini", 0) or 0) \
-                    - prima_m
+                dopo_m = int((getattr(s, "stats", {}) or {}).get("ordini", 0) or 0)
+                b.ref.azioni += dopo_m - prima_m
+                if libro_m is not None and dopo_m != prima_m:
+                    b.timbra_nascite(s, market, libro_m)
             st = getattr(s, "stats", {}) or {}
             if (b.missione_ms is None and getattr(s, "one_green_per_phase", False)
                     and not b.in_gioco_ms and float(st.get("greens_prematch", 0) or 0) >= 1):
                 b.missione_ms = ms
+        if libro_m is not None:
+            b.media_book_ora = libro_m
         # 28/09 - lo SNIPER compagno: la sua linea dalla riga live_now (stessa
         # funzione e stessa cadenza del watcher di produzione), poi il book
         if b.compagne and b.sniper_linea is not None and (
@@ -2206,7 +2818,7 @@ class _Ponte:
 
                 _SS.applica_linea_sniper(b.sniper_linea, riga)
         for _fw, sn, mids in list(b.compagne):
-            if mid not in mids:
+            if mid not in mids or nel_buio:
                 continue
             if futils.call_strategy_error_handling(sn.check_market_book, market, market_book):
                 futils.call_strategy_error_handling(sn.process_market_book, market, market_book)
@@ -2445,12 +3057,34 @@ def parita_paper_live(event_id: str, control: Dict[str, Any], follow: Dict[str, 
 # IL REPLAY DI UN EVENTO
 # ---------------------------------------------------------------------------
 def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
-                       ogni_ms: int = 1000, campioni_diff: int = 0) -> CERT.Referto:
-    """Un evento, uno scenario, un referto. E' il contratto del banco comune."""
+                       ogni_ms: int = 1000, campioni_diff: int = 0,
+                       parametri: Optional[Dict[str, Any]] = None,
+                       dal_ms: Optional[int] = None,
+                       clic_ms: Optional[List[int]] = None) -> CERT.Referto:
+    """Un evento, uno scenario, un referto. E' il contratto del banco comune.
+
+    07/10 (contratto comune, Applica bot):
+    * ``parametri``: sostituzioni dei parametri del bot (``parametri_modificabili``)
+      passate per la STESSA strada della produzione (i params della riga
+      ``scalper_control``); chiave sconosciuta o valore fuori dominio =
+      ``ValueError`` prima di ogni replay;
+    * ``dal_ms``: l'istante del banco (publish time, l'orologio di ``_ms``) in cui
+      l'utente ACCENDE il bot. Media under: la sessione e' armata dal pulsante
+      (``media_a_clic``, nessun ingresso da sola) e a ``dal_ms`` il banco manda il
+      clic <<Attiva adesso>> per la strada del pulsante (la riga). Maker e sniper:
+      la sessione si accende a ``dal_ms``;
+    * ``clic_ms`` (estensione proposta, solo media under): altri istanti di clic
+      dopo ``dal_ms`` (es. il secondo ciclo dopo una chiusura in gioco).
+    Tutti None: il referto di sempre, identico."""
     del campioni_diff          # lo scalper non passa dalla riga di scan
     from ...backtest import banco_comune as BC
     from .. import scalper_session as SS
 
+    parametri = valida_parametri(scenario, parametri)
+    if clic_ms and scenario not in SCENARI_MEDIA:
+        raise ValueError("clic_ms vale solo per gli scenari della media under (%r)" % scenario)
+    if dal_ms is not None and (isinstance(dal_ms, bool) or not isinstance(dal_ms, (int, float))):
+        raise ValueError("dal_ms: atteso un istante in ms, avuto %r" % (dal_ms,))
     ref = CERT.Referto(event_id=str(event_id), scenario=scenario)
     raw = percorso_raw(data_dir, event_id)
     if not os.path.exists(raw):
@@ -2469,7 +3103,25 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
     casa, fuori = BC.nomi_dal_punteggio(punteggi)
     follow = {"event_id": str(event_id), "fixture_id": None, "league_id": None,
               "home_name": casa, "away_name": fuori, "open_date": ko_iso}
-    control = control_della_ui(event_id, scenario)
+    # 07/10 ATTIVA ADESSO: gli istanti dei clic (media under) e l'accensione
+    # tardiva (maker, sniper)
+    clic: List[int] = []
+    fatti: Dict[str, Any] = {}
+    if scenario in SCENARI_MEDIA and (dal_ms is not None or clic_ms
+                                      or scenario in SCENARI_MEDIA_CLIC):
+        fatti = fatti_del_raw(raw, mercato_media(scenario, parametri))
+        if dal_ms is not None or clic_ms:
+            clic = sorted(int(x) for x in ([dal_ms] if dal_ms is not None else [])
+                          + list(clic_ms or []))
+        else:
+            clic = clic_della_regola(SCENARI_MEDIA_CLIC[scenario][2], fatti)
+    a_clic = scenario in SCENARI_MEDIA and (bool(clic) or scenario in SCENARI_MEDIA_CLIC)
+    accendi_ms = (int(dal_ms) if dal_ms is not None and scenario not in SCENARI_MEDIA
+                  else None)
+    control = control_della_ui(event_id, scenario, parametri, a_clic=a_clic)
+    if parametri:
+        ref.note.append("PARAMETRI del replay (sostituiti nella riga come dalla scheda): %s"
+                        % sorted(parametri.items()))
     ref.note.append("control della UI: mode=%s dry_run=%s stake=%s params=%s"
                     % (control["mode"], control["dry_run"], control["stake"],
                        sorted(control["params"].items())))
@@ -2515,7 +3167,7 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
             banco.tipo_mercato = {mid: str(d.get("market_type") or "")
                                   for mid, d in definizioni.items()}
             scelto = [mid for mid, d in definizioni.items()
-                      if d.get("market_type") == mercato_media(scenario)]
+                      if d.get("market_type") == mercato_media(scenario, parametri)]
             banco.media_mercato_scelto = scelto[0] if scelto else None
             if scelto:
                 banco.media_under = next(
@@ -2524,12 +3176,40 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
             ref.note.append("MEDIA UNDER: mercato %s -> %s, Under %s; maker e sniper "
                             "non armati; controlli M1-M11 + S6; B2 e K5 del maker non "
                             "applicati (posizione in gioco per progetto)"
-                            % (mercato_media(scenario), banco.media_mercato_scelto,
+                            % (mercato_media(scenario, parametri), banco.media_mercato_scelto,
                                banco.media_under))
             if not scelto:
                 ref.note.append("MEDIA UNDER: la registrazione NON ha il mercato %s: "
                                 "referto non valido per la modalita'"
-                                % mercato_media(scenario))
+                                % mercato_media(scenario, parametri))
+        if a_clic:
+            # 07/10 ATTIVA ADESSO: la sessione armata dal pulsante (nessun ingresso
+            # da sola), i clic agli istanti dello scenario, le consegne lette dal DB
+            banco.a_clic_dal_ms = 0
+            banco.clic_da_mandare = list(clic)
+            banco.reazione_ms = reazione_clic_ms()
+            db.su_lettura = banco.su_lettura
+            if guasto_dello_scenario(scenario) == "prezzi-fermi" and clic:
+                inizio = int(clic[0] - CLIC_NEL_BUIO_S * 1000)
+                banco.buio = (inizio, int(inizio + BUIO_PREZZI_S * 1000))
+            ref.note.append(
+                "ATTIVA ADESSO: sessione armata dal pulsante (media_a_clic); clic agli "
+                "istanti %s (%s); reazione concessa %d ms; fatti del raw: inizio %s, "
+                "fischio %s, in gioco %s, sospensioni in gioco %s%s"
+                % ([_quando_media(t, ko_ms, fatti.get("in_gioco")) for t in clic],
+                   "dal_ms/clic_ms del chiamante" if (dal_ms is not None or clic_ms)
+                   else "regola `%s` dello scenario" % SCENARI_MEDIA_CLIC[scenario][2],
+                   banco.reazione_ms, fatti.get("primo"), fatti.get("ko"),
+                   fatti.get("in_gioco"),
+                   [(_quando_media(a, ko_ms, fatti.get("in_gioco")), round((b - a) / 1000.0, 1))
+                    for a, b in fatti.get("sospensioni") or []],
+                   ("; FLUSSO INTERROTTO (guasto) da %s per %d s"
+                    % (_quando_media(banco.buio[0], ko_ms, fatti.get("in_gioco")),
+                       int(BUIO_PREZZI_S))) if banco.buio else ""))
+            if not clic:
+                ref.non_esercitato.append(
+                    "ATTIVA ADESSO: la registrazione non ha il caso della regola `%s` "
+                    "(nessun clic mandato)" % SCENARI_MEDIA_CLIC.get(scenario, ("", "", "?"))[2])
         if scenario in ("base", "paper") or scenario in SCENARI_MEDIA:
             banco.parita = parita_paper_live(event_id, control, follow, catalogo)
             p = banco.parita
@@ -2593,6 +3273,8 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
                 if banco.osservatore_um is not None:
                     pila.enter_context(banco.osservatore_um.attivo())
                 pila.enter_context(_iniezioni(banco, orologio, kill_file))
+                if accendi_ms is not None:
+                    _accendi_tardi(banco, orologio, int(accendi_ms), primo)
                 esiti["prima"] = _una_sessione(SS, event_id, banco)
                 if guasto_dello_scenario(scenario) == "riavvio" and esiti["prima"] == "ucciso":
                     _riarma(SS, event_id, banco, esiti)
@@ -2626,6 +3308,34 @@ def _controlla_auto_live(ref: Any, banco: Any, control: Dict[str, Any]) -> None:
             "AL1", "soldi veri scelti sull'interruttore dell'auto-mode: la sessione "
                    "armata dal supervisore manda ordini VERI (ordine dell'utente 04/10)",
             esito))
+
+
+def _accendi_tardi(banco: _Banco, orologio: _Orologio, dal_ms: int,
+                   primo: Optional[int]) -> None:
+    """07/10 (contratto `dal_ms`, maker e sniper): l'utente ACCENDE il bot a
+    ``dal_ms``. Fino a li' la registrazione scorre senza sessione: lo stream la
+    apre una strategia di ATTESA del banco (nessuna decisione, nessun ordine, lo
+    STESSO filtro della sessione: flumine riusa lo stream quando la sessione
+    arriva), l'orologio corre a tempo di mercato, poi parte ``run_session``."""
+    if primo is None or dal_ms <= int(primo):
+        return
+    from flumine import BaseStrategy
+
+    class _Attesa(BaseStrategy):
+        def check_market_book(self, market: Any, market_book: Any) -> bool:
+            return False
+
+        def process_market_book(self, market: Any, market_book: Any) -> None:
+            return None
+
+    att = _Attesa(market_filter={"markets": [banco.raw]}, name="attesa-banco")
+    banco.quadro.add_strategy(att)
+    banco._stream_ids |= set(getattr(att, "stream_ids", set()) or set())
+    banco.registra_gioco_ovunque = True
+    banco.ref.note.append("ACCENSIONE a %d ms (dal_ms): la sessione parte %d s dopo "
+                          "l'inizio della registrazione" % (dal_ms, (dal_ms - int(primo)) // 1000))
+    banco.avvia_motore()
+    orologio.sleep((dal_ms - int(primo)) / 1000.0)
 
 
 def _una_sessione(SS: Any, event_id: str, banco: _Banco) -> str:
@@ -2755,6 +3465,92 @@ def _referto_media(ref: CERT.Referto, banco: _Banco) -> None:
                       if p.get("stato")})
     if stati_m:
         ref.note.append("MEDIA UNDER: stati annunciati %s" % stati_m)
+    if banco.a_clic_dal_ms is not None:
+        _referto_clic(ref, banco)
+
+
+#: 07/10: cio' che ogni regola di clic deve far succedere perche' lo scenario
+#: sia ESERCITATO (altrimenti NE col motivo): un motivo di rifiuto del banco
+#: (sottostringa) o "eseguito" per l'ultimo clic
+_ATTESO_DELLA_REGOLA: Dict[str, Tuple[str, str]] = {
+    "sospeso": ("rifiuto", "mercato SUSPENDED"),
+    "prezzi-fermi": ("rifiuto", "prezzi fermi"),
+    "in-posizione": ("rifiuto", "posizione aperta"),
+    "due-clic": ("eseguiti", "2"),
+    "doppio": ("eseguiti", "1"),
+}
+
+
+def _referto_clic(ref: CERT.Referto, banco: _Banco) -> None:
+    """07/10 ATTIVA ADESSO: per ogni clic quando e' partito, quando la sessione
+    l'ha letto, cosa ne pensa il BANCO (eseguibile o no, perche') e che prima
+    punta ne e' nata; da dove e' partito ogni ciclo; l'ultimo esito che la
+    sessione ha scritto; la copertura M12-M18; lo scenario non esercitato."""
+    oss = getattr(banco, "ultima_oss_media", None)
+    origini = CERT.origini_dei_clic(oss) if oss is not None else []
+    gioco = banco.in_gioco_ms.get(str(banco.media_mercato_scelto or ""))
+    per_clic = {x["clic"]: x for x in origini if x["clic"]}
+    for c in banco.clic_mandati:
+        cons = banco.consegne.get(c["id"])
+        nata = per_clic.get(c["id"])
+        ref.note.append(
+            "ATTIVA ADESSO clic %s (%s): %s; per il banco %s; prima punta %s"
+            % (c["id"], _quando_media(c["clic_ms"], banco.ko_ms, gioco),
+               ("letto dalla sessione %s" % _quando_media(cons["ms"], banco.ko_ms, gioco))
+               if cons else "MAI letto dalla sessione (sostituito da un clic successivo "
+                            "prima del battito, o sessione gia' chiusa)",
+               ("ESEGUIBILE" if cons and cons["eseguibile"] else
+                "NON eseguibile (%s)" % (cons or {}).get("motivo") if cons else "-"),
+               ("%s @%s per %s a %s" % (nata["riga"].get("order_id"), nata["riga"].get("price"),
+                                       nata["riga"].get("size"),
+                                       _quando_media(nata["ms"], banco.ko_ms, gioco)))
+               if nata else "nessuna"))
+    for x in origini:
+        ref.note.append("ATTIVA ADESSO ciclo %d: prima punta %s @%s a %s, partita da %s"
+                        % (x["ciclo"], x["riga"].get("order_id"), x["riga"].get("price"),
+                           _quando_media(x["ms"], banco.ko_ms, gioco),
+                           {CERT.ORIGINE_CLIC: "CLIC (%s)" % x["clic"],
+                            CERT.ORIGINE_AUTO: "RIENTRO AUTOMATICO pre-match"}.get(
+                               x["origine"], "NESSUNA ORIGINE AMMESSA")))
+    mu = banco.media
+    ref.note.append("ATTIVA ADESSO: ultimo comando scritto dalla sessione %s; stato finale %s"
+                    % ((getattr(mu, "stats", {}) or {}).get("comando"),
+                       (getattr(mu, "stats", {}) or {}).get("stato")))
+    elenco = CERT.elenco_controlli_clic()
+    ref.note.append("ATTIVA ADESSO: controlli M12-M18 sollecitati %s; MAI sollecitati (non "
+                    "lo so): %s"
+                    % ({c: ref.sollecitati.get(c, 0) for c, _r in elenco if ref.sollecitati.get(c)},
+                       ", ".join(c for c, _r in elenco if not ref.sollecitati.get(c))
+                       or "nessuno"))
+    regola = SCENARI_MEDIA_CLIC.get(banco.scenario, ({}, None, "", ""))[2]
+    atteso = _ATTESO_DELLA_REGOLA.get(regola)
+    if atteso is not None:
+        tipo, val = atteso
+        if tipo == "rifiuto":
+            ok = any(c.get("eseguibile") is False and val in str(c.get("motivo") or "")
+                     for c in banco.consegne.values())
+            if ok and not origini:
+                # il clic RIFIUTATO e' il caso voluto: <<nessun ordine>> qui e' la
+                # condotta giusta, non uno scenario non esercitato
+                ref.non_esercitato[:] = [x for x in ref.non_esercitato
+                                         if "NESSUN ordine" not in x]
+                ref.note.append("ATTIVA ADESSO `%s`: il caso voluto e' accaduto (clic "
+                                "rifiutato: %s) e nessun ordine e' partito" % (regola, val))
+                return
+            if not ok:
+                ref.non_esercitato.append(
+                    "ATTIVA ADESSO `%s`: nessun clic consegnato nel caso voluto (%s): "
+                    "consegne %s" % (regola, val, [(c["id"], c["eseguibile"], c["motivo"])
+                                                   for c in banco.consegne.values()]))
+        else:
+            n = sum(1 for x in origini if x["origine"] == CERT.ORIGINE_CLIC)
+            if n != int(val):
+                ref.non_esercitato.append(
+                    "ATTIVA ADESSO `%s`: %d cicli partiti da un clic (attesi %s): il caso "
+                    "voluto non e' accaduto" % (regola, n, val))
+    if not origini and not ref.non_esercitato:
+        ref.non_esercitato.append("ATTIVA ADESSO: nessuna prima punta in una sessione "
+                                  "armata dal pulsante (nessun clic eseguibile)")
 
 
 def _chiudi_referto(ref: CERT.Referto, banco: _Banco, rifiuti: Any, ritardi: Any,

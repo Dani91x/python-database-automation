@@ -1,0 +1,12 @@
+R1 in gioco rientra da solo              media-clic-due-clic      ROSSA | {'M12': 4230} | prima punta 140106595311375790 @2.42 nata a 1782836188250 ms (ciclo 2, in gioco) senza un clic suo e senza essere un rientro automatico pre-match
+R2 prima punta che aspetta i filtri      media-clic-lontano       ROSSA | {'M15': 5889} | clic clic-1-1782832552415 consegnato a 1782832579334 ms ed eseguibile: nessuna prima punta entro 15000 ms
+R3 rientro bloccato dai filtri           media-clic-finestra      ROSSA | {'M18': 1852} | rientro dovuto da 15399 ms e nessuna punta di rientro
+R4 seconda punta per lo stesso clic      media-clic-due-clic      SOPRAVVISSUTA | {} | 
+R5 ordine a mercato sospeso              media-clic-sospeso       SOPRAVVISSUTA | {} | 
+R6 ordine coi prezzi fermi               media-clic-prezzi-fermi  ROSSA | {'M12': 5332} | prima punta 140106598960482910 @2.9 nata a 1782834362124 ms (ciclo 1, pre-match) senza un clic suo e senza essere un rientro automatico pre-match
+R7 clic eseguito gia' in posizione       media-clic-in-posizione  ROSSA | {'M3': 5317, 'M4': 5317, 'M11': 4623, 'M5': 5270, 'M2': 3597} | rientro 140106600343925450 @2.90 a 1 tick dall'ultimo ingresso 2.88 (minimo 2)
+R8 operativita' ferma in gioco           media-clic-gioco         ROSSA | {'M18': 851} | rientro dovuto da 15513 ms e nessuna punta di rientro
+diff uguale a prima: True
+Betfair/stream/scalper/media_under_bot.py:0
+Betfair/stream/scalper/scalper_session.py:0
+

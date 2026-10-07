@@ -84,6 +84,7 @@ from .. import exits as XE
 from .. import risk as RK
 from ...stream.backtest import chiusura_parziale as CP
 from ...stream.backtest import proposte_modello as PM
+from ...stream.backtest import varianti_bot as VB
 from ...stream.backtest.banco_comune import DbMemoria, replay_evento
 
 logger = logging.getLogger(__name__)
@@ -494,8 +495,14 @@ def _modo_control(scenario: str) -> str:
 # ---------------------------------------------------------------------------
 def certifica_evento(event_id: str, *, data_dir: str, scenario: str = "base",
                      ogni_ms: int = 0, competizione: Optional[str] = None,
-                     campioni_diff: int = 0) -> CERT.Referto:
-    """Fa rivivere a Safe tennis una partita registrata e ritorna il referto."""
+                     campioni_diff: int = 0,
+                     parametri: Optional[Dict[str, Any]] = None,
+                     dal_ms: Optional[int] = None) -> CERT.Referto:
+    """Fa rivivere a Safe tennis una partita registrata e ritorna il referto.
+
+    07/10 (Applica bot): ``parametri`` = sostituzioni del catalogo
+    (``parametri_modificabili``) nei params GREZZI del control, ``dal_ms`` =
+    istante in cui l'utente accende il bot (fino a li' control 'stopped')."""
     ref = CERT.Referto(event_id=str(event_id))
     raw = os.path.join(data_dir, str(event_id), f"{event_id}.raw.jsonl")
     if not os.path.exists(raw):
@@ -504,8 +511,13 @@ def certifica_evento(event_id: str, *, data_dir: str, scenario: str = "base",
 
     _azzera_stato_di_processo()
     par_control = parametri_scenario(scenario)
+    sost = _applica_parametri(par_control, scenario, parametri)
+    accensione = VB.Accensione(VB.controlla_dal_ms(dal_ms))
+    if sost:
+        ref.note.append("VARIANTE DEI PARAMETRI (la strategia non cambia): "
+                        + ", ".join("%s=%s" % kv for kv in sorted(sost.items())))
     modo = _modo_control(scenario)
-    stato = "stopped" if scenario == "bot-fermo" else "running"
+    stato = "stopped" if (scenario == "bot-fermo" or accensione.attiva) else "running"
     comp = None if scenario == "catalogo-assente" else competizione
     # gli scenari che devono avere una POSIZIONE per dire qualcosa: senza, uscite,
     # ordini, approvazione e riconciliazione non hanno un caso da giudicare
@@ -549,8 +561,27 @@ def certifica_evento(event_id: str, *, data_dir: str, scenario: str = "base",
             ruolo=CP.ruolo_da_righe(lambda: db.trades))
         firma.sorveglianza_cp = CP.Sorveglianza(firma.guasto_cp)
 
+    # 07/10 (Applica bot): la CRONOLOGIA degli ordini della Safe tennis, dagli
+    # ordini VERI del flumine del banco; si aggancia al motore al primo giro
+    # (``market.motore`` esiste solo dentro ``replay_evento``), prima di ogni
+    # piazzamento del bot
+    specchio = VB.SpecchioOrdini(sorgente="safe_tennis", modo=modo,
+                                 event_id=str(event_id))
+    agganci: Dict[str, Any] = {"motore": None, "strategia": None}
+
     def servizio(*, db, market, now, row, banco, strategia):  # noqa: A002
         orologio["now"] = now
+        motore = getattr(market, "motore", None)
+        if motore is not None and agganci["motore"] is None:
+            specchio.aggancia(motore)
+            agganci["motore"] = motore
+        agganci["strategia"] = strategia
+        ms_ora = VB.ms_di(now)
+        if accensione.scatta(ms_ora):
+            # il gesto della UI sulla STESSA riga che `run_once` rilegge
+            db.set_control(status="running")
+            db.log("replay_accensione_utente",
+                   {"dal_ms": accensione.dal_ms, "ms": ms_ora})
         firma.giro(db=db, market=market, now=now, row=row, banco=banco,
                    strategia=strategia)
 
@@ -561,7 +592,91 @@ def certifica_evento(event_id: str, *, data_dir: str, scenario: str = "base",
                               pre_ko_ou_hours=0.0, db=db)
         giri_dopo_il_fischio(firma, raw)
     firma.chiudi(esito)
+    # 07/10: le righe ``betfair_live_orders`` + ``_ms`` (contratto del banco)
+    ref.ordini_specchio = specchio.chiudi(
+        list((getattr(agganci["strategia"], "mercati", None) or {}).values()))
+    if accensione.attiva:
+        ref.note.append(nota_accensione(accensione))
     return ref
+
+
+# ---------------------------------------------------------------------------
+# 07/10 (APPLICA BOT) - I PARAMETRI CHE L'UTENTE PUO' VARIARE
+# ---------------------------------------------------------------------------
+# Chiavi dei ``params`` del control che scrive la Control Room (sezione
+# ``tennis`` del motore, uscite ``exits``, stake, tetto per operazione). Default
+# da ``bot_service.resolve_params`` dei parametri dello scenario: la funzione del
+# servizio. Minimo/massimo: quelli della scheda o del clamp del servizio. FUORI,
+# con la causa: ``excludeCompetitions`` (testo), le soglie a modello delle uscite
+# (``hold_max_risk``, ``risk_cap``, ``ev_margin``: il cervello, non una manopola),
+# cadenze e percorso d'esecuzione.
+_MENU_TENNIS: Tuple[Tuple[str, str, str, str, float, float, float, str], ...] = (
+    ("stake.backSize", "Stake della punta", "Importi", "float", 2.0, 500.0, 0.5, "EUR"),
+    ("tennis.setsLeadMin", "Set di vantaggio minimi", "Ingresso", "int", 0, 3, 1, "set"),
+    ("tennis.gamesLeadMin", "Game di vantaggio minimi", "Ingresso", "int", 0, 6, 1, "game"),
+    ("tennis.backMin", "Quota di punta MIN", "Ingresso", "float", 1.01, 20.0, 0.01, ""),
+    ("tennis.backMax", "Quota di punta MAX", "Ingresso", "float", 1.01, 20.0, 0.01, ""),
+    ("tennis.setsPlayedMax", "Set giocati al massimo (0 = spento)", "Ingresso", "int", 0, 5, 1, "set"),
+    ("tennis.scoreConfirmSec", "Conferma del punteggio", "Filtri", "int", 0, 600, 5, "s"),
+    ("tennis.excludeDoubles", "Escludi i doppi", "Filtri", "bool", 0, 0, 0, ""),
+    ("tennis.excludeBestOf5", "Escludi i match al meglio dei 5", "Filtri", "bool", 0, 0, 0, ""),
+    ("tennis.favSuperMax", "Super favorito sotto quota (0 = spento)", "Filtri", "float", 0.0, 2.0, 0.01, ""),
+    ("exits.tennis_take_profit_next_game", "Take profit al game successivo", "Uscita", "bool", 0, 0, 0, ""),
+    ("exits.tennis_take_profit_min_odds", "Take profit solo da quota", "Uscita", "float", 1.0, 2.0, 0.01, ""),
+    ("exits.tennis_take_profit_min_eur", "Take profit minimo garantito", "Uscita", "float", 0.0, 100.0, 0.01, "EUR"),
+    ("exits.tennis_exit_on_lost_game", "Esci al primo game perso", "Uscita", "bool", 0, 0, 0, ""),
+    ("max_liability_per_trade", "Responsabilita' massima per operazione", "Tetti", "float", 0.0, 100000.0, 5, "EUR"),
+)
+_COPPIE_TENNIS = (("tennis.backMin", "tennis.backMax"),)
+
+
+def parametri_modificabili(scenario: str = "base") -> List[Dict[str, Any]]:
+    """Il catalogo della Safe tennis che "Applica bot" lascia variare."""
+    ris = BS.resolve_params(parametri_scenario(scenario), engine_mod=E)
+    out: List[Dict[str, Any]] = []
+    for chiave, etichetta, gruppo, tipo, lo, hi, passo, unita in _MENU_TENNIS:
+        v = VB.leggi_annidato(ris, chiave)
+        if tipo == "int":
+            v = int(v)
+        elif tipo == "float":
+            v = float(v)
+        out.append(VB.voce(chiave, etichetta, tipo, v, gruppo=gruppo,
+                           minimo=None if tipo == "bool" else lo,
+                           massimo=None if tipo == "bool" else hi,
+                           passo=None if tipo == "bool" else passo, unita=unita))
+    return out
+
+
+def _applica_parametri(par: Dict[str, Any], scenario: str,
+                       parametri: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Le sostituzioni nei params GREZZI del control (la forma della Control
+    Room, sezioni annidate), rilette dal servizio con ``resolve_params``."""
+    sost = VB.valida(parametri_modificabili(scenario), parametri)
+    if not sost:
+        return {}
+    ris = BS.resolve_params(parametri_scenario(scenario), engine_mod=E)
+    for lo_k, hi_k in _COPPIE_TENNIS:
+        lo = sost.get(lo_k, VB.leggi_annidato(ris, lo_k))
+        hi = sost.get(hi_k, VB.leggi_annidato(ris, hi_k))
+        if lo is not None and hi is not None and lo > hi:
+            raise ValueError("parametri %s (%s) e %s (%s): il minimo supera il massimo"
+                             % (lo_k, lo, hi_k, hi))
+    for k, v in sost.items():
+        VB.applica_annidato(par, k, v)
+    return sost
+
+
+def nota_accensione(acc: "VB.Accensione") -> str:
+    """Che cosa vede la Safe tennis quando l'utente la accende a ``dal_ms``."""
+    def _q(ms: Optional[int]) -> str:
+        if ms is None:
+            return "mai (registrazione finita prima)"
+        return datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc).isoformat()
+    return ("ACCENSIONE dell'utente a %s (ms %d, primo giro acceso a %s): fino a li' "
+            "il control era 'stopped' e `run_once` girava come in produzione "
+            "(quota pre-partita congelata dallo scanner, punteggi, nessuna "
+            "apertura). Da li' il control e' 'running': la strada della UI."
+            % (_q(acc.dal_ms), acc.dal_ms, _q(acc.scattata_ms)))
 
 
 def esito_finale_dal_raw(raw: str) -> Dict[str, Dict[str, Any]]:
@@ -1283,14 +1398,17 @@ class _Stato:
 # adattatore per il registro dei bot (firma unica di MODELLO_BOT_NUOVO.md)
 # ---------------------------------------------------------------------------
 def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
-                       ogni_ms: int = 0, campioni_diff: int = 0) -> CERT.Referto:
+                       ogni_ms: int = 0, campioni_diff: int = 0,
+                       parametri: Optional[Dict[str, Any]] = None,
+                       dal_ms: Optional[int] = None) -> CERT.Referto:
     """Firma IDENTICA a quella degli altri bot, cosi' che il giorno in cui la
     scheda `safe_tennis` entra in `registro_bot.py` il comando
     `python -m Betfair.stream.backtest.certifica safe_tennis` funzioni senza
     toccare niente."""
     return certifica_evento(event_id, data_dir=data_dir, scenario=scenario,
                             ogni_ms=ogni_ms, competizione=COMPETIZIONE_DICHIARATA,
-                            campioni_diff=campioni_diff)
+                            campioni_diff=campioni_diff, parametri=parametri,
+                            dal_ms=dal_ms)
 
 
 # La competizione che il raw non porta. NON e' il nome vero del torneo: e' la

@@ -28,11 +28,15 @@ import {
     type ScalperMode, type ScalperParams, type ScalperState,
 } from '@/lib/scalper';
 import {
-    MEDIA_MERCATI, MEDIA_UNDER_CAMPI, MEDIA_STATI_TESTO, mediaUnderDefaults,
+    MEDIA_MERCATI, MEDIA_UNDER_CAMPI, mediaUnderDefaults,
     erroriMediaUnder, paramsMediaUnder, leggiObiettiviLive, leggiMediaUnder,
     testoObiettivo, euro, quota,
-    type MediaMercato, type MediaUnderParams,
+    nuovoComandoAttivaAdesso, paramsAttivaAdesso, statoDelClic, testoStatoClic,
+    pulsanteCliccabile, testoStatoMedia, MEDIA_ORIGINE_TESTO, testoConfermaAttivaAdesso,
+    importiDallaRiga,
+    type MediaMercato, type MediaUnderParams, type ComandoAttivaAdesso,
 } from '@/lib/mediaUnder';
+import { mandaAttivaAdesso } from '@/lib/mediaUnderAttiva';
 
 interface Props {
     eventId: string;
@@ -116,6 +120,11 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
     const [mediaMercato, setMediaMercato] = useState<MediaMercato | ''>('');
     const [mediaParams, setMediaParams] = useState<MediaUnderParams>(mediaUnderDefaults());
     const [mediaObiettiviTesto, setMediaObiettiviTesto] = useState('0; 0,30; 1');
+    // 07/10 «ATTIVA ADESSO»: l'interruttore dei rientri automatici pre-match coi
+    // filtri (spento di serie) e l'ultimo clic mandato da questa scheda
+    const [mediaRientroFiltri, setMediaRientroFiltri] = useState(false);
+    const [clicInviato, setClicInviato] = useState<{ id: string; alle: number } | null>(null);
+    const [adesso, setAdesso] = useState(() => Date.now());
     const [stake, setStake] = useState(25);
     const [params, setParams] = useState<ScalperParams>({ ...SCALPER_PARAM_DEFAULTS });
     const busyRef = useRef(false);
@@ -141,7 +150,7 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
     useEffect(() => {
         setLoading(true);
         void refresh();
-        const t = setInterval(() => void refresh(), pollMs);
+        const t = setInterval(() => { setAdesso(Date.now()); void refresh(); }, pollMs);
         return () => clearInterval(t);
     }, [refresh, pollMs]);
 
@@ -152,11 +161,18 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
         return Date.now() - new Date(ctrl.heartbeat_at).getTime() < 30_000;
     }, [ctrl?.heartbeat_at]);
 
-    const handleActivate = useCallback(async () => {
+    // conClic = il pulsante «Attiva adesso» a sessione ferma: la accende armata
+    // dal pulsante col comando dentro (prima punta al primo prezzo utile)
+    const attiva = useCallback(async (conClic: boolean) => {
         if (busyRef.current) return;
+        if (conClic && !mediaMode) {
+            toast.error('«Attiva adesso» è della Media Under: accendi prima la modalità.');
+            return;
+        }
         // MEDIA UNDER: i valori si controllano PRIMA di mandarli (la sessione con
         // un valore mancante o sbagliato non parte: meglio dirlo qui)
         let mediaPayload: Record<string, unknown> | null = null;
+        let comando: ComandoAttivaAdesso | null = null;
         if (mediaMode) {
             const obiettivi = leggiObiettiviLive(mediaObiettiviTesto);
             const p: MediaUnderParams = { ...mediaParams, media_obiettivi_live: obiettivi ?? [] };
@@ -166,7 +182,12 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                 toast.error(`Media Under non attivata: ${errori.join(' ')}`);
                 return;
             }
-            mediaPayload = paramsMediaUnder(mediaMercato, p);
+            if (conClic) {
+                comando = nuovoComandoAttivaAdesso();
+                mediaPayload = paramsAttivaAdesso(mediaMercato, p, mediaRientroFiltri, comando);
+            } else {
+                mediaPayload = paramsMediaUnder(mediaMercato, p);
+            }
         }
         // Gate THETA (v1): NON validato out-of-sample → può armarsi SOLO in
         // paper. Con dry_run spento si blocca qui, prima di ogni conferma.
@@ -180,7 +201,11 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
         // Gate money-critical: armare con ORDINI REALI attiva un agente
         // autonomo che piazza scommesse vere non presidiato → conferma
         // esplicita (stessa asimmetria del bot tennis / 1-click LIVE).
-        if (!dryRun && mediaMode) {
+        if (!dryRun && mediaMode && conClic) {
+            const mercato = MEDIA_MERCATI.find(m => m.key === mediaMercato)?.label ?? mediaMercato;
+            const ok = window.confirm(testoConfermaAttivaAdesso(eventName, mercato, mediaParams));
+            if (!ok) return;
+        } else if (!dryRun && mediaMode) {
             const mercato = MEDIA_MERCATI.find(m => m.key === mediaMercato)?.label ?? mediaMercato;
             const ok = window.confirm(
                 `⚠️ ATTIVARE LA MEDIA UNDER CON ORDINI REALI su "${eventName}" (${mercato})?\n\n` +
@@ -246,7 +271,10 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
             } as Partial<ScalperParams> & {
                 ht_mode: boolean; sniper_mode: boolean; sniper_stake: number;
             });
-            toast.success(`${mediaMode ? 'Media Under' : 'Scalper'} ${dryRun ? 'ATTIVATO in PAPER (ordini simulati)' : 'ATTIVATO'} — ${eventName}`);
+            toast.success(comando
+                ? `Media Under ACCESA col clic «Attiva adesso» ${dryRun ? '(PROVA)' : '(SOLDI VERI)'} — ${eventName}: punta al primo prezzo utile`
+                : `${mediaMode ? 'Media Under' : 'Scalper'} ${dryRun ? 'ATTIVATO in PAPER (ordini simulati)' : 'ATTIVATO'} — ${eventName}`);
+            if (comando) setClicInviato({ id: comando.id, alle: Date.now() });
             setShowForm(false);
             void refresh();
         } catch (e) {
@@ -258,7 +286,38 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
     }, [eventId, eventName, mode, dryRun, stake, params, htMode, missionTwoTicks,
         sniperMode, sniperStake, sniperHunt, thetaMode, thetaStake, thetaPreset,
         thetaMaxShots, thetaLossCap, mediaMode, mediaMercato, mediaParams,
-        mediaObiettiviTesto, refresh]);
+        mediaObiettiviTesto, mediaRientroFiltri, refresh]);
+
+    const handleActivate = useCallback(() => { void attiva(false); }, [attiva]);
+    const handleAttivaAdessoDaFermo = useCallback(() => { void attiva(true); }, [attiva]);
+
+    // «Attiva adesso» a sessione ACCESA: il comando con la RPC (stessa strada
+    // in prova e in soldi veri; in soldi veri la conferma esplicita di sempre)
+    const handleAttivaAdesso = useCallback(async () => {
+        if (busyRef.current || !state?.control) return;
+        const c = state.control;
+        if (!c.dry_run) {
+            const s = leggiMediaUnder(c.stats ?? null);
+            const mercato = MEDIA_MERCATI.find(m => m.key === s?.mercato)?.label ?? s?.mercato ?? 'Under';
+            const ok = window.confirm(testoConfermaAttivaAdesso(eventName, mercato,
+                importiDallaRiga(c.params)));
+            if (!ok) return;
+        }
+        const comando = nuovoComandoAttivaAdesso();
+        busyRef.current = true;
+        setBusy(true);
+        try {
+            await mandaAttivaAdesso(eventId, comando);
+            setClicInviato({ id: comando.id, alle: Date.now() });
+            toast.success(`Attiva adesso INVIATO ${c.dry_run ? '(PROVA)' : '(SOLDI VERI)'} — la sessione punta al prossimo prezzo o dice perché no`);
+            void refresh();
+        } catch (e) {
+            toast.error(`Attiva adesso NON inviato: ${e instanceof Error ? e.message : e}`);
+        } finally {
+            busyRef.current = false;
+            setBusy(false);
+        }
+    }, [eventId, eventName, state, refresh]);
 
     const handleStop = useCallback(async () => {
         if (busyRef.current) return;
@@ -505,8 +564,10 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                                 l&apos;Under, appoggia subito la banca che chiude in profitto; se la quota
                                 sale, media la posizione fino al numero di rientri impostato. In gioco NON
                                 piazza niente: ti scrive gli importi esatti per chiudere. Con la Media Under
-                                il maker e lo sniper NON si armano. ⚠️ Modalità NON certificata sul replay:
-                                prima il replay, poi la prova, poi i soldi veri.
+                                il maker e lo sniper NON si armano. Col pulsante «⚡ Attiva adesso» invece
+                                punta SUBITO al miglior prezzo e gestisce la posizione come progettato,
+                                senza filtri d&apos;ingresso, anche in gioco. ⚠️ Modalità NON certificata sul
+                                replay: prima il replay, poi la prova, poi i soldi veri.
                             </span>
                         </label>
                         {mediaMode && (
@@ -560,11 +621,26 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                                 </div>
                                 <button
                                     type="button"
-                                    onClick={() => { setMediaParams(mediaUnderDefaults()); setMediaObiettiviTesto('0; 0,30; 1'); }}
+                                    onClick={() => { setMediaParams(mediaUnderDefaults()); setMediaObiettiviTesto('0; 0,30; 1'); setMediaRientroFiltri(false); }}
                                     className="text-[11px] text-orange-300 hover:underline"
                                 >
                                     Ripristina i valori di serie della Media Under
                                 </button>
+                                {/* «ATTIVA ADESSO» (07/10): l'interruttore vale per i cicli avviati col pulsante */}
+                                <label className="flex items-start gap-2 text-[11px] cursor-pointer text-white/70">
+                                    <Checkbox
+                                        checked={mediaRientroFiltri}
+                                        onCheckedChange={v => setMediaRientroFiltri(v === true)}
+                                    />
+                                    <span>
+                                        Rientri automatici pre-match con i filtri (solo per «Attiva adesso»).
+                                        Spento (di serie): chiuso un ciclo prima del fischio, il bot ne riparte
+                                        un altro SUBITO al miglior prezzo, anche a pochi minuti dal fischio.
+                                        Acceso: riparte solo quando quota, liquidità, scambi, distanza punta-banca
+                                        e stop prima del fischio lo permettono. Un ciclo chiuso IN GIOCO non
+                                        riparte mai da solo: aspetta il tuo clic.
+                                    </span>
+                                </label>
                             </div>
                         )}
                         {!dryRun && (
@@ -615,6 +691,16 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4 mr-2" />}
                             {dryRun ? 'Attiva in PAPER (simulato)' : 'Attiva ORDINI REALI'}
                         </Button>
+                        {mediaMode && (
+                            <Button
+                                onClick={handleAttivaAdessoDaFermo}
+                                disabled={busy}
+                                title="Accende la Media Under e PUNTA SUBITO al miglior prezzo: poi gestisce la posizione come progettato"
+                                className="flex-1 bg-orange-600 hover:bg-orange-500 text-white font-black"
+                            >
+                                ⚡ Attiva adesso {dryRun ? '(PROVA)' : '(SOLDI VERI)'}
+                            </Button>
+                        )}
                         <Button variant="secondary" onClick={() => setShowForm(false)} disabled={busy}>
                             Annulla
                         </Button>
@@ -748,8 +834,44 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                         <div className="rounded-lg border border-orange-400/30 bg-orange-500/5 p-2 space-y-1.5 text-xs text-white/80">
                             <div className="font-bold text-orange-200">
                                 📉 Media Under — {MEDIA_MERCATI.find(m => m.key === mediaStato.mercato)?.label ?? mediaStato.mercato ?? '—'}
-                                {' · '}{MEDIA_STATI_TESTO[mediaStato.stato] ?? mediaStato.stato}
+                                {' · '}{testoStatoMedia(mediaStato)}
                             </div>
+                            {/* «ATTIVA ADESSO» (07/10): stesso pulsante in prova e in soldi veri
+                                (in soldi veri con la conferma esplicita); lo stato del clic lo
+                                scrive la sessione (stats.media_comando) */}
+                            {(() => {
+                                const sc = statoDelClic(clicInviato?.id ?? null, mediaStato.comando);
+                                const cliccabile = pulsanteCliccabile(sc, clicInviato?.alle ?? null, adesso)
+                                    && ctrl.status === 'running' && !busy;
+                                return (
+                                    <div className="rounded-md border border-orange-400/40 bg-black/20 p-2 space-y-1">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <Button
+                                                onClick={() => { void handleAttivaAdesso(); }}
+                                                disabled={!cliccabile}
+                                                className="bg-orange-600 hover:bg-orange-500 text-white font-black h-8"
+                                            >
+                                                ⚡ Attiva adesso {ctrl.dry_run ? '(PROVA)' : '(SOLDI VERI)'}
+                                            </Button>
+                                            <span className="text-[11px] text-white/60">
+                                                punta SUBITO {ctrl.dry_run ? '' : 'con soldi veri '}al miglior prezzo e poi gestisce la
+                                                posizione come progettato (anche in gioco)
+                                            </span>
+                                        </div>
+                                        <div className={
+                                            sc.fase === 'rifiutato' ? 'text-amber-300'
+                                            : sc.fase === 'eseguito' ? 'text-emerald-300' : 'text-white/60'
+                                        }>
+                                            {testoStatoClic(sc)}
+                                        </div>
+                                        {mediaStato.origine_ciclo && (
+                                            <div className="text-white/50">
+                                                Ciclo in corso: {MEDIA_ORIGINE_TESTO[mediaStato.origine_ciclo] ?? mediaStato.origine_ciclo}.
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })()}
                             {mediaStato.riavvio && (
                                 <div className="text-red-300 font-bold">
                                     ⚠ {mediaStato.riavvio}: la posizione NON è ricostruibile da questa sessione. Nessun ordine: verificala sul conto e chiudila a mano.

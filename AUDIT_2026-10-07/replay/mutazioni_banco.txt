@@ -1,0 +1,19 @@
+C1 M12: rientro automatico ammesso ovunque         ROSSA | Betfair/stream/tests/test_replay_scalper_attiva_adesso_2026_10_07.py::test_m12_ogni_prima_punta_ha_il_suo_clic_o_
+C1b M12: un clic usato due volte                   ROSSA | Betfair/stream/tests/test_replay_scalper_attiva_adesso_2026_10_07.py::test_m12_ogni_prima_punta_ha_il_suo_clic_o_
+C2 M13: book sospeso non guardato                  ROSSA | Betfair/stream/tests/test_replay_scalper_attiva_adesso_2026_10_07.py::test_m13_m14_nascite_sul_book
+C3 M14: prezzo non guardato                        ROSSA | Betfair/stream/tests/test_replay_scalper_attiva_adesso_2026_10_07.py::test_m13_m14_nascite_sul_book
+C4 M15 muto                                        ROSSA | Betfair/stream/tests/test_replay_scalper_attiva_adesso_2026_10_07.py::test_m15_clic_eseguibile_senza_prima_punta
+C5 M7 esente anche fuori dal pulsante              ROSSA | Betfair/stream/tests/test_replay_scalper_attiva_adesso_2026_10_07.py::test_m7_m9_esenti_solo_per_i_cicli_del_puls
+C6 riga della UI cambiata senza parametri          SOPRAVVISSUTA | 51 passed in 2.21s
+C6b la riga di sempre manda l'interruttore         ROSSA | Betfair/stream/tests/test_replay_scalper_attiva_adesso_2026_10_07.py::test_riga_della_ui_identica_senza_parametri
+C7 dominio dei parametri non controllato           ROSSA | Betfair/stream/tests/test_replay_scalper_attiva_adesso_2026_10_07.py::test_parametri_sbagliati_value_error_chiaro
+C8 chiave sconosciuta accettata                    ROSSA | Betfair/stream/tests/test_replay_scalper_attiva_adesso_2026_10_07.py::test_parametri_sbagliati_value_error_chiaro
+C9 rientro dovuto anche a mercato sospeso          ROSSA | Betfair/stream/tests/test_replay_scalper_attiva_adesso_2026_10_07.py::test_m18_rientro_dovuto_e_rientro_dovuto_da
+C10 connessione finta sempre viva                  ROSSA | Betfair/stream/tests/test_replay_scalper_attiva_adesso_2026_10_07.py::test_flusso_finto_letto_da_stato_stream
+C11 M16 muto                                       ROSSA | Betfair/stream/tests/test_replay_scalper_attiva_adesso_2026_10_07.py::test_m16_m17_rientro_automatico
+C12 M17 senza liquidita'                           ROSSA | Betfair/stream/tests/test_replay_scalper_attiva_adesso_2026_10_07.py::test_m16_m17_rientro_automatico
+C13 M18 muto                                       ROSSA | Betfair/stream/tests/test_replay_scalper_attiva_adesso_2026_10_07.py::test_m18_rientro_dovuto_e_rientro_dovuto_da
+C14 default ricopiato a mano                       ROSSA | Betfair/stream/tests/test_replay_scalper_attiva_adesso_2026_10_07.py::test_parametri_modificabili_media_dalla_ste
+diff uguale a prima: True
+MUTAZIONE rimaste: Betfair/stream/scalper/certificazione.py:0
+Betfair/stream/scalper/tools/replay_registrazioni.py:0
