@@ -534,6 +534,8 @@ describe('build*CtxFromScan', () => {
             minute: 58, score_home: 1, score_away: 0, red_home: 0, red_away: 0,
             pre_ko: { home: 1.65, draw: 4.0, away: 5.5, captured_at: 'x' },
             cs: { market_id: '1.2', status: 'OPEN', any_other_home: { back: 44, lay: 45 }, any_other_away: { back: 48, lay: 50 } },
+            // 07/10: la riga vera porta lo stato IPS; la BASE entra solo nel 2o tempo
+            score_raw: { ...statoIps2T(), timeElapsed: 58, elapsedRegularTime: 58 },
         }, 50, 60);
         const ev = evaluateBase(ctx, DEFAULT_PARAMS.base);
         expect(ev.state).toBe('signal');

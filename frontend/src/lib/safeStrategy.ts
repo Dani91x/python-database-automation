@@ -906,6 +906,10 @@ export function evaluateBase(ctx: FootballMatchCtx, params: BaseParams): Variant
     const veto = campionatoCtx(ctx, params.vetoCampionati);
     if (veto !== null) checks.push(veto);
     checks.push(minuteCheck('minute', ctx.minute, params.minuteMin));
+    // DECISIONE DELL'UTENTE 07/10: "SAFE BASE SEMPRE E SOLO SECONDO TEMPO".
+    // Gemello di `engine.evaluate_base`: all'intervallo il minuto del feed
+    // continua a contare (fino a 56'), la soglia del 55' da sola non basta.
+    checks.push(secondoTempoCheck(ctx));
     // BASE: "la favorita deve avere il controllo del gioco" (specifica).
     if (params.requireControl) {
         checks.push(controlCheck(ctx.pressureIndex, fav, true, params.controlMin));

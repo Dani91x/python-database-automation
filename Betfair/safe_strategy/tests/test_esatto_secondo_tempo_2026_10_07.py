@@ -159,11 +159,12 @@ def test_stato_ips_vecchio_fail_closed():
 
 
 def test_la_regola_e_solo_dellesatto():
-    """La decisione riguarda solo l'ESATTO: BASE e PUNTA non hanno il check."""
+    """La decisione del 07/10 mattina riguardava l'ESATTO; dal 07/10 sera
+    ("SAFE BASE SEMPRE E SOLO SECONDO TEMPO") anche la BASE. La PUNTA no."""
     ctx = eng.build_football_ctx_from_scan("35797769", _payload(RECUPERO_1T_48, 48), 46, 120)
     evs = eng.evaluate_football_all(ctx, eng.DEFAULT_PARAMS)
     per_var = {(e.variant, e.sub_id): e for e in evs}
-    assert _check(per_var[("base", None)], "secondHalf") is None
+    assert _check(per_var[("base", None)], "secondHalf") is not None
     assert _check(per_var[("punta", None)], "secondHalf") is None
     assert _check(per_var[("esatto", "home")], "secondHalf") is not None
     assert _check(per_var[("esatto", "away")], "secondHalf") is not None

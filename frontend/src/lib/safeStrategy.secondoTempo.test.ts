@@ -102,13 +102,13 @@ describe('ESATTO solo nel 2o tempo - check secondHalf (stati IPS veri)', () => {
         expect(ev.state).toBe('nd');
     });
 
-    it('il check sta subito dopo quello del minuto, e il solo ESATTO lo porta', () => {
+    it('il check sta subito dopo quello del minuto; lo portano ESATTO e BASE (07/10), non la PUNTA', () => {
         const ev = esatto({ score_raw: statoIps2T() });
         const ids = ev.checks.map((c) => c.id);
         expect(ids.indexOf('secondHalf')).toBe(ids.indexOf('minute') + 1);
         const tutte = evaluateFootballAll(riga({ score_raw: statoIps2T() }), DEFAULT_PARAMS);
         for (const e of tutte) {
-            expect(e.checks.some((c) => c.id === 'secondHalf')).toBe(e.variant === 'esatto');
+            expect(e.checks.some((c) => c.id === 'secondHalf')).toBe(e.variant === 'esatto' || e.variant === 'base');
         }
     });
 

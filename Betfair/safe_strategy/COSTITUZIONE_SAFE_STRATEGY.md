@@ -208,6 +208,16 @@ non riconosciuto = n/d, nessun ingresso, scarto `esatto_fase_ignota` nell'attivi
 Controllo di condotta del banco **E11** (`certificazione.py`). Solo ESATTO: BASE (≥55'),
 PUNTA (≥66') e le uscite non cambiano. Referto `AUDIT_2026-10-07/SAFE_ESATTO_SECONDO_TEMPO.md`.
 
+**07/10/2026 sera — BASE SOLO NEL SECONDO TEMPO (decisione dell'utente).** Testuale:
+«SAFE BASE SEMPRE E SOLO SECONDO TEMPO». All'intervallo (`FirstHalfEnd`) il minuto del
+feed continua a contare (misurato fino a 56'), quindi la soglia «≥55'» da sola lasciava
+entrare la BASE a partita ferma. Stessa regola dell'ESATTO: check `secondHalf` in
+`engine.evaluate_base` subito dopo il minuto (stessa funzione, stessa fonte, stessi esiti;
+fase ignota = n/d, nessun ingresso, scarto `base_fase_ignota` nell'attività), gemello della
+pagina in `frontend/src/lib/safeStrategy.ts` (`evaluateBase`), controllo di condotta del banco
+**B18**. Soglia 55' invariata. La PUNTA (≥66') resta com'è. Referto
+`AUDIT_2026-10-07/SAFE_BASE_SECONDO_TEMPO.md`.
+
 ### 2.1 «Selezione aggiuntiva» del RISULTATO ESATTO — MODIFICA ORDINATA DALL'UTENTE (16/09/2026)
 
 > **Chi l'ha ordinata**: l'utente, la sera del 16/09, per chiudere la voce ⊗ del
