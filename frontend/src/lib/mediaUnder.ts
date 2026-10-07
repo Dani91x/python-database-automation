@@ -415,7 +415,7 @@ export const MEDIA_STATI_TESTO: Record<string, string> = {
     FERMO: 'in attesa di un ingresso (prima del fischio)',
     INGRESSO: 'punta d\'ingresso piazzata, in attesa di abbinamento',
     IN_POSIZIONE: 'in posizione: banca di chiusura appoggiata',
-    RIENTRO: 'sta mediando: banca ritirata, punta di rientro in corso',
+    RIENTRO: 'sta mediando: punta di rientro in corso, la banca resta appoggiata e si sposta quando il rientro è abbinato',
     MASSIMO: 'rientri finiti: nessuna punta in più, banca appoggiata',
     LIVE: 'partita in gioco: NESSUN ordine, gestisci tu la chiusura',
     FINE: 'finita: nessuna posizione da gestire',
