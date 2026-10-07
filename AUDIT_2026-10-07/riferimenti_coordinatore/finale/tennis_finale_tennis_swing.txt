@@ -1,0 +1,358 @@
+BOT: tennis_swing | spec: TENNIS_BOT_DOSSIER.md | registrazioni: 1 in _live_raw_tennis/20260707
+controlli attivi: 22 | flumine 2.13.11 | betfairlightweight 2.23.2 | codice bot ad97d4d39aa3 (23 file)
+comando: python -m Betfair.stream.backtest.certifica tennis_swing 35790089 --scenari tutti
+ambiente del banco (dichiarato; il .env di chi lancia non conta): ESITI_ORDINI_CANALE=0 LIVE_KILL_SWITCH=false LIVE_ORDER_MODE=LIVE MIKE_CANALE_POSIZIONI=0 MIKE_LEGGE_CANALE=0 MIKE_LIVE_ENABLED=1 MIKE_SVEGLIA_CANALE=0 MOTORE_ORDINI_CANALE=0 MOTORE_ORDINI_CANALE_TENNIS=0 OMEGA_CANALE_POSIZIONI=0 OMEGA_LEGGE_CANALE=0 OMEGA_ORDINI_VIA_CANALE=0 OMEGA_SVEGLIA_CANALE=0 PUNTEGGI_CANALE=0 SAFE_BOT_LEGGE_CANALE=0 SAFE_BOT_SVEGLIA_CANALE=0 SAFE_CANALE_POSIZIONI=0 SAFE_ORDINI_VIA_CANALE=0 SAFE_PRE_KO_OU_HOURS=1 SAFE_SCAN_CANALE=0 SAFE_TENNIS_ORDINI_VIA_CANALE=0 SCALPER_CANALE=0 TENNIS_BOT_CANALE=0 TENNIS_BOT_SVEGLIA_CANALE=0 | interruttore ordini del bot: coda=0 canale=1
+qualita' delle registrazioni: COMPLETE x1
+SCENARI: base, gate-aperto, dry-run, bot-fermo, rifiuti-betfair, feed-stantio, parziali, riavvio, catalogo-assente, live, chiusura-abbinata-in-parte, chiudi-ora, uscite-manuali, uscite-manuali-firmate, soldi-veri, soldi-veri-prova, soldi-veri-paper
+        i numeri di scenari diversi sono confrontabili SOLO dove la sequenza di chiamate e' identica fino al punto confrontato: ogni chiamata bloccante consuma tempo di mercato (in produzione come nel replay) e sposta il book su cui abbina tutto cio' che viene dopo
+
+OK  35790089 [base]  tick=  5216 decisioni= 5212 azioni=   0 stati=- [COMPLETE]
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: RESIDUI (decisione 1): dichiarati 0 (importi [] EUR, sbilancio [] EUR), tornati pari 0; regolati col mercato 0 (se vince [] / se perde [] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      tempo: 35790089 [base] 1.8s (1.8 s) | 2845 tick/s
+OK  35790089 [gate-aperto]  tick=  5216 decisioni= 5212 azioni= 126 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 1
+      nota: RESIDUI (decisione 1): dichiarati 1 (importi [0.03] EUR, sbilancio [0.09] EUR), tornati pari 0; regolati col mercato 1 (se vince [0.03] / se perde [-0.01] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+      tempo: 35790089 [gate-aperto] 4.3s (4.3 s) | 1207 tick/s
+OK  35790089 [dry-run]  tick=  5216 decisioni= 5212 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: RESIDUI (decisione 1): dichiarati 0 (importi [] EUR, sbilancio [] EUR), tornati pari 0; regolati col mercato 0 (se vince [] / se perde [] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      tempo: 35790089 [dry-run] 1.2s (1.2 s) | 4403 tick/s
+OK  35790089 [bot-fermo]  tick=  5216 decisioni= 2483 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: bot DISARMATO a meta' partita con `_disable_strategy` di produzione
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: RESIDUI (decisione 1): dichiarati 0 (importi [] EUR, sbilancio [] EUR), tornati pari 0; regolati col mercato 0 (se vince [] / se perde [] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      tempo: 35790089 [bot-fermo] 0.9s (0.9 s) | 5795 tick/s
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 BACK @1.44 per 2.0 (1-esimo, riprovo fra 5s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 LAY @1.19 per 2.0 (2-esimo, riprovo fra 10s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 BACK @1.69 per 2.0 (3-esimo, riprovo fra 20s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 LAY @1.4 per 2.0 (4-esimo, riprovo fra 40s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 BACK @1.86 per 2.0 (5-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 LAY @1.57 per 2.0 (6-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 LAY @1.29 per 2.0 (7-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 LAY @1.17 per 2.0 (8-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 LAY @1.56 per 2.0 (9-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 LAY @1.69 per 2.0 (10-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 BACK @1.98 per 2.0 (11-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=35635727 BACK @1.45 per 2.0 (1-esimo, riprovo fra 5s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=35635727 BACK @1.45 per 2.0 (2-esimo, riprovo fra 10s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=35635727 BACK @1.45 per 2.0 (3-esimo, riprovo fra 20s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 LAY @1.41 per 2.0 (12-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 BACK @1.66 per 2.0 (13-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 BACK @2.12 per 2.0 (14-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=35635727 LAY @1.51 per 2.0 (4-esimo, riprovo fra 40s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=35635727 BACK @1.28 per 2.0 (5-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=35635727 BACK @1.78 per 2.0 (6-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=35635727 BACK @1.45 per 2.0 (7-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=35635727 BACK @2.24 per 2.0 (8-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=35635727 BACK @3.45 per 2.0 (9-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=35635727 LAY @1.7 per 2.0 (10-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=35635727 LAY @1.01 per 2.0 (11-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 BACK @1.5 per 2.0 (15-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 BACK @2.74 per 2.0 (16-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=35635727 BACK @1.7 per 2.0 (12-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=35635727 LAY @2.06 per 2.0 (13-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 LAY @1.18 per 2.0 (17-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+OK  35790089 [rifiuti-betfair]  tick=  5216 decisioni= 5212 azioni=  42 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: guasto iniettato: ogni piazzamento e' RIFIUTATO da un trading control di flumine (place_order torna False, stato Violation)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: RESIDUI (decisione 1): dichiarati 0 (importi [] EUR, sbilancio [] EUR), tornati pari 0; regolati col mercato 0 (se vince [] / se perde [] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+      tempo: 35790089 [rifiuti-betfair] 1.7s (1.7 s) | 3083 tick/s
+OK  35790089 [feed-stantio]  tick=  5216 decisioni= 5212 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: guasto iniettato: il punteggio smette di arrivare dopo il primo terzo (blackout IPS)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: RESIDUI (decisione 1): dichiarati 0 (importi [] EUR, sbilancio [] EUR), tornati pari 0; regolati col mercato 0 (se vince [] / se perde [] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      tempo: 35790089 [feed-stantio] 1.4s (1.4 s) | 3799 tick/s
+OK  35790089 [parziali]  tick=  5216 decisioni= 5212 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: RESIDUI (decisione 1): dichiarati 0 (importi [] EUR, sbilancio [] EUR), tornati pari 0; regolati col mercato 0 (se vince [] / se perde [] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['stake'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+      tempo: 35790089 [parziali] 1.3s (1.3 s) | 4154 tick/s
+WARNING:flumine.strategy.strategy:Strategy of same name 'TennisSwingStrategy' already added
+OK  35790089 [riavvio]  tick=  5216 decisioni= 5212 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: RIAVVIO a meta' partita concesso a bot FLAT (regola di produzione `_request_restart`): il bot e' stato ri-istanziato con `_instantiate_bot` e il blotter nuovo e' vuoto, come dopo un rebuild dello stream
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: RESIDUI (decisione 1): dichiarati 0 (importi [] EUR, sbilancio [] EUR), tornati pari 0; regolati col mercato 0 (se vince [] / se perde [] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      tempo: 35790089 [riavvio] 1.3s (1.3 s) | 4110 tick/s
+OK  35790089 [catalogo-assente]  tick=  5216 decisioni= 5212 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: scenario `catalogo-assente`: la mappa dei nomi NON e' dichiarata (limite 1 del banco)
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: RESIDUI (decisione 1): dichiarati 0 (importi [] EUR, sbilancio [] EUR), tornati pari 0; regolati col mercato 0 (se vince [] / se perde [] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      tempo: 35790089 [catalogo-assente] 1.4s (1.4 s) | 3732 tick/s
+OK  35790089 [live]  tick=  5216 decisioni= 5212 azioni= 126 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 1
+      nota: RESIDUI (decisione 1): dichiarati 1 (importi [0.03] EUR, sbilancio [0.09] EUR), tornati pari 0; regolati col mercato 1 (se vince [0.03] / se perde [-0.01] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+      tempo: 35790089 [live] 5.1s (5.1 s) | 1013 tick/s
+OK  35790089 [chiusura-abbinata-in-parte]  tick=  5216 decisioni= 5212 azioni= 134 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: scenario chiusura-abbinata-in-parte: 3 chiusura/e colpita/e, 13 chiusure viste: 9633138 LAY chiesto 1.87 tetto 0.74 -> abbinato 0.00 residuo 0.00 lapsed 0.00 annullato 1.87 [SENZA EFFETTO: mai abbinata, guasto riarmato]; 9633138 LAY chiesto 1.58 tetto 0.63 -> abbinato 0.00 residuo 0.00 lapsed 0.00 annullato 1.58 [SENZA EFFETTO: mai abbinata, guasto riarmato]; 9633138 LAY chiesto 1.30 tetto 0.52 -> abbinato 0.52 residuo 0.00 lapsed 0.00 annullato 0.78
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 1
+      nota: RESIDUI (decisione 1): dichiarati 1 (importi [0.05] EUR, sbilancio [0.11] EUR), tornati pari 0; regolati col mercato 1 (se vince [0.03] / se perde [-0.01] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+      tempo: 35790089 [chiusura-abbinata-in-parte] 5.9s (5.9 s) | 889 tick/s
+OK  35790089 [chiudi-ora]  tick=  5216 decisioni= 2574 azioni=  34 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: CHIUDI ORA a meta' partita (via di produzione `chiusura_manuale`): preso in carico
+      nota: CHIUDI ORA concluso: stato riga ['error']; esito: ["nessuna posizione aperta: il bot non aveva niente da chiudere - fermo su questa partita finche' non lo riarmi. ATTENZIONE: chiudi ora: il bot ha finito ma il blotter NON e' pari dopo 45s (residuo non chiudibile) - verifica la posizione su Betfair/ladder"]
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: RESIDUI (decisione 1): dichiarati 1 (importi [0.03] EUR, sbilancio [0.09] EUR), tornati pari 0; regolati col mercato 1 (se vince [-0.61] / se perde [-0.7] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+      tempo: 35790089 [chiudi-ora] 2.3s (2.3 s) | 2284 tick/s
+OK  35790089 [uscite-manuali]  tick=  5216 decisioni= 5212 azioni= 168 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: MANUALI
+      nota: USCITE MANUALI: interruttore spento; nessuna firma
+      nota: USCITE MANUALI (uscite-manuali): decisioni 2912, proposte nate 72, decadute 71, firme del banco 0, uscite firmate eseguite 0; non giudicabili: UM3b: il bot non ha una fine finestra con force-flat (tiene fino a fine mercato per progetto): le protezioni restano quelle dei suoi controlli (Chiudi, freno, fine mercato)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: RESIDUI (decisione 1): dichiarati 0 (importi [] EUR, sbilancio [] EUR), tornati pari 0; regolati col mercato 0 (se vince [] / se perde [] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+      tempo: 35790089 [uscite-manuali] 4.2s (4.2 s) | 1235 tick/s
+OK  35790089 [uscite-manuali-firmate]  tick=  5216 decisioni= 5212 azioni= 118 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: MANUALI
+      nota: USCITE MANUALI: interruttore spento; il banco firma ogni proposta dopo 5 s di mercato (params.uscite_approvate, riletta da `_aggiorna_uscite` ogni BOT_CONTROL_POLL_SEC)
+      nota: USCITE MANUALI (uscite-manuali-firmate): decisioni 104, proposte nate 14, decadute 5, firme del banco 9, uscite firmate eseguite 8; non giudicabili: UF2 tennis_swing|1.259745327|9633138|1783430404476|target: proposta 0.02, uscita 0.00; resto 0.02 dichiarato NON piazzabile dal bot (min_bet_skip, regola esistente); UF2 tennis_swing|1.259745327|9633138|1783430465528|target: proposta 0.02, uscita 0.00; resto 0.02 dichiarato NON piazzabile dal bot (min_bet_skip, regola esistente); UF2 tennis_swing|1.259745327|9633138|1783430478533|stop: proposta 0.02, uscita 0.00; resto 0.02 dichiarato NON piazzabile dal bot (min_bet_skip, regola esistente); UF2 tennis_swing|1.259745327|9633138|1783430503335|stop: proposta 0.02, uscita 0.00; resto 0.02 dichiarato NON piazzabile dal bot (min_bet_skip, regola esistente); UF2 tennis_swing|1.259745327|9633138|1783430623161|stop: proposta 0.02, uscita 0.00; resto 0.02 dichiarato NON piazzabile dal bot (min_bet_skip, regola esistente); UM3b: il bot non ha una fine finestra con force-flat (tiene fino a fine mercato per progetto): le protezioni restano quelle dei suoi controlli (Chiudi, freno, fine mercato)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 1
+      nota: RESIDUI (decisione 1): dichiarati 1 (importi [0.01] EUR, sbilancio [0.04] EUR), tornati pari 0; regolati col mercato 1 (se vince [0.02] / se perde [-0.02] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+      tempo: 35790089 [uscite-manuali-firmate] 5.5s (5.5 s) | 955 tick/s
+OK  35790089 [soldi-veri]  tick=  5216 decisioni= 5212 azioni= 126 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: SOLDI VERI: riga del bot mode=live, «Ordini reali» LIVE di questo avvio, runner col tetto LIVE e i trading control del runner (modalita' del bot, kill-switch, terza rete); bot eseguito in LIVE
+      nota: SOLDI VERI (reale): ordini eseguiti sul client REALE 24, sul client SIMULATO 0; aperture reali fermate dalla terza rete (TENNIS_MODO_ORDINI) 0
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 1
+      nota: RESIDUI (decisione 1): dichiarati 1 (importi [0.03] EUR, sbilancio [0.09] EUR), tornati pari 0; regolati col mercato 1 (se vince [0.03] / se perde [-0.01] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+      tempo: 35790089 [soldi-veri] 5.0s (5.0 s) | 1048 tick/s
+WARNING:Betfair.stream.tennis_live.guardie_tennis:[tennis-runner] ordine REALE fermato: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 BACK @1.44 per 2.0 (1-esimo, riprovo fra 5s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 LAY @1.19 per 2.0 (2-esimo, riprovo fra 10s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 BACK @1.69 per 2.0 (3-esimo, riprovo fra 20s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 LAY @1.4 per 2.0 (4-esimo, riprovo fra 40s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 BACK @1.86 per 2.0 (5-esimo, riprovo fra 60s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 LAY @1.57 per 2.0 (6-esimo, riprovo fra 60s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 LAY @1.29 per 2.0 (7-esimo, riprovo fra 60s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 LAY @1.17 per 2.0 (8-esimo, riprovo fra 60s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 LAY @1.56 per 2.0 (9-esimo, riprovo fra 60s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 LAY @1.69 per 2.0 (10-esimo, riprovo fra 60s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 BACK @1.98 per 2.0 (11-esimo, riprovo fra 60s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=35635727 BACK @1.45 per 2.0 (1-esimo, riprovo fra 5s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=35635727 BACK @1.45 per 2.0 (2-esimo, riprovo fra 10s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=35635727 BACK @1.45 per 2.0 (3-esimo, riprovo fra 20s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 LAY @1.41 per 2.0 (12-esimo, riprovo fra 60s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 BACK @1.66 per 2.0 (13-esimo, riprovo fra 60s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 BACK @2.12 per 2.0 (14-esimo, riprovo fra 60s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=35635727 LAY @1.51 per 2.0 (4-esimo, riprovo fra 40s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=35635727 BACK @1.28 per 2.0 (5-esimo, riprovo fra 60s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=35635727 BACK @1.78 per 2.0 (6-esimo, riprovo fra 60s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=35635727 BACK @1.45 per 2.0 (7-esimo, riprovo fra 60s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=35635727 BACK @2.24 per 2.0 (8-esimo, riprovo fra 60s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=35635727 BACK @3.45 per 2.0 (9-esimo, riprovo fra 60s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=35635727 LAY @1.7 per 2.0 (10-esimo, riprovo fra 60s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=35635727 LAY @1.01 per 2.0 (11-esimo, riprovo fra 60s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 BACK @1.5 per 2.0 (15-esimo, riprovo fra 60s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 BACK @2.74 per 2.0 (16-esimo, riprovo fra 60s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=35635727 BACK @1.7 per 2.0 (12-esimo, riprovo fra 60s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=35635727 LAY @2.06 per 2.0 (13-esimo, riprovo fra 60s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_swing_bot:[SWING] piazzamento RIFIUTATO sel=9633138 LAY @1.18 per 2.0 (17-esimo, riprovo fra 60s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+OK  35790089 [soldi-veri-prova]  tick=  5216 decisioni= 5212 azioni=  42 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: SOLDI VERI: riga del bot mode=live, «Ordini reali» PAPER di questo avvio, runner col tetto LIVE e i trading control del runner (modalita' del bot, kill-switch, terza rete); bot eseguito in LIVE
+      nota: SOLDI VERI (nessuno_reale): ordini eseguiti sul client REALE 0, sul client SIMULATO 0; aperture reali fermate dalla terza rete (TENNIS_MODO_ORDINI) 30
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: RESIDUI (decisione 1): dichiarati 0 (importi [] EUR, sbilancio [] EUR), tornati pari 0; regolati col mercato 0 (se vince [] / se perde [] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+      tempo: 35790089 [soldi-veri-prova] 1.9s (1.9 s) | 2818 tick/s
+OK  35790089 [soldi-veri-paper]  tick=  5216 decisioni= 5212 azioni= 126 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: SOLDI VERI: riga del bot mode=paper, «Ordini reali» LIVE di questo avvio, runner col tetto LIVE e i trading control del runner (modalita' del bot, kill-switch, terza rete); bot eseguito in PAPER
+      nota: SOLDI VERI (simulato): ordini eseguiti sul client REALE 0, sul client SIMULATO 24; aperture reali fermate dalla terza rete (TENNIS_MODO_ORDINI) 0
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 1
+      nota: RESIDUI (decisione 1): dichiarati 1 (importi [0.03] EUR, sbilancio [0.09] EUR), tornati pari 0; regolati col mercato 1 (se vince [0.03] / se perde [-0.01] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+      tempo: 35790089 [soldi-veri-paper] 5.1s (5.1 s) | 1017 tick/s
+
+ESITO: 17 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+       0 violazioni totali
+
+COPERTURA DEI CONTROLLI — quante volte ognuno ha avuto un caso:
+     B1  x5215    in DRY-RUN il bot non manda MAI un ordine a mercato (dossier §4: `
+     B2  x36578   ogni ordine chiesto ha prezzo nella ladder Betfair [1.01, 1000] e 
+     B3  x2       un bot DISABILITATO (disarm del runner, `_tennis_disabled`) non ap
+     B4  x17      nessun ordine viene chiesto a mercato NON operabile (sospeso o chi
+     B5  x115     lo stake d'ingresso e' quello del control (mai piu' di quanto l'ut
+  ?? B6  x0       FLB: l'ingresso e' sempre un LAY del favorito ESTREMO (best-lay <=
+     B7  x36570   l'esposizione per selezione non supera il tetto che il runner pass
+     B8  x9804    in LIVE .it nessun ordine sotto il minimo di giurisdizione (back 1
+     B9  x91      "chiudi ora" dell'utente (D3, 24/09): UNA sola chiusura dell'abbin
+  ?? B10 x0       un ordine che Betfair .it ha RIFIUTATO per taglia (INVALID_BET_SIZ
+     SV1 x15014   «SOLDI VERI» (04/10): l'ordine parte sul client che la catena impo
+     K1  x18811   ogni ordine che il bot STA SEGUENDO esiste davvero a mercato: un o
+     K2  x4901    un ordine RIFIUTATO (place_order ha risposto False, oppure stato V
+     K3  x36578   lo stato di ogni ordine si rilegge come Enum `OrderStatus` (`.valu
+     K4  x18811   una posizione che il bot crede VIVA ha almeno un ordine a mercato 
+     K5  x21106   nessuna ESPOSIZIONE abbinata resta senza una posizione viva del bo
+     RS1 x17621   un residuo che il bot DICHIARA non piazzabile lo e' davvero: l'ord
+     K6  x36578   quando il bot dichiara la posizione CHIUSA non resta nessun suo or
+     K7  x83254   il prezzo medio e l'abbinato che il bot pubblica nelle sue `stats`
+     P1  x36578   ogni ordine del bot arriva allo specchio `tennis_live_orders` con 
+     P2  x36578   lo specchio non dichiara MAI un ordine abbinato piu' di quanto il 
+     P3  x17      a mercato CHIUSO il bot pubblica un P&L di settlement: senza, lo s
+  -- controlli del banco comune, scenario chiusura-abbinata-in-parte:
+     CP1 x8814    chiusura abbinata in parte: la riga (o la credenza) del bot porta 
+  ?? CP2 x0       la copertura dichiarata (hedge_state, meta.hedged_size) si conta s
+     CP3 x2194    una posizione con esposizione residua o con il residuo della chius
+     CP4 x740     dopo una chiusura abbinata in parte nessun loop: mai una chiusura 
+  -- controlli del banco comune, scenari a uscite manuali (uscite-manuali, uscite-manuali-firmate):
+     UM1 x3016    a uscite manuali nessuna uscita di trading parte senza la firma de
+     UM2 x3008    ogni uscita decisa dalla strategia diventa una proposta coi numeri
+     UM3 x3016    le protezioni non passano dal cancello e scattano da sole
+     UM4 x76      una proposta la cui condizione cade sparisce, con la sua firma
+     UF1 x8       una firma fa partire l'uscita una volta sola
+     UF2 x8       l'uscita firmata parte all'importo esatto della proposta di adesso
+     UF3 x8       una firma non esegue mai un'uscita diversa da quella firmata
+
+?? MAI SOLLECITATI: 3 controlli su 22. Su questi il referto NON dice «sano», dice «non lo so»:
+     B6: FLB: l'ingresso e' sempre un LAY del favorito ESTREMO (best-lay <= `lay_max`) e mai un BACK (dossier §4.3)
+     B10: un ordine che Betfair .it ha RIFIUTATO per taglia (INVALID_BET_SIZE: sotto il minimo diretto o, nel place-and-trim, sotto il floor di legge) non si rimanda IDENTICO (stessa selezione, lato, size): verrebbe rifiutato di nuovo e la gamba resta scoperta mentre il bot crede di chiudere (regola dell'utente del 01/10, punto 3)
+     CP2: la copertura dichiarata (hedge_state, meta.hedged_size) si conta sull'ABBINATO della chiusura, mai sul chiesto (fix del 18/09)
+TEMPO TOTALE: 50.3s (50.3 s) su 17 replay | obiettivo 300 s, tetto 600 s (CERTIFICA_TETTO_S)

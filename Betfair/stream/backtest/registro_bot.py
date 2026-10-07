@@ -194,6 +194,7 @@ _MODULI_TENNIS: Tuple[str, ...] = (
     "Betfair.stream.tennis_live.esecutore_tennis",
     "Betfair.stream.tennis_live.guardie_tennis",
     "Betfair.stream.tennis_live.iscrizione_a_caldo",
+    "Betfair.stream.tennis_live.mercati_registrati",
     "Betfair.stream.tennis_live.paper_execution",
     "Betfair.stream.tennis_live.tennis_bot_service", "Betfair.stream.tennis_live.tennis_db",
     "Betfair.stream.tennis_live.tennis_live_order_worker",
