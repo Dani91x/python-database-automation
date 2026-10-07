@@ -106,26 +106,23 @@ def test_i_minimi_dello_scalper_vengono_dal_modulo_condiviso(monkeypatch):
 # ---------------------------------------------------------------------------
 def test_residuo_sotto_050_dichiarato_una_volta_e_ricordato_oltre_il_ciclo(
         differita, orologio_mercato, exchange_it):
-    """LAY 0,20 @2,22: chiusura BACK ~0,20, sotto 0,50: nessun ordine, nessuna
-    sequenza, UNA riga CRITICAL `residuo_ricordato` con la proposta, il bot
-    riprende (ciclo chiuso). Dopo il RESET del ciclo il residuo resta ricordato
-    (`residuo_w/l`) e dichiarato: K5/B2 per tutta la vita, mai ritentato."""
+    """LAY 0,20 @2,22: chiusura BACK ~0,20, sotto 0,50.
+    07/10 (DECISIONE DELL'UTENTE "1) b"): non piu' residuo dichiarato ma chiuso con
+    DUE ordini legali: lo SCAVALCO (banca al centesimo >= 1,00) e poi la punta di
+    chiusura al centesimo. Nessun `residuo_ricordato`, nessun rifiuto di Betfair.
+    Prima (04/10): UNA riga CRITICAL e il residuo restava all'utente."""
     b = SCT._in_flatten("LAY", 2.22, 0.2)
     orologio_mercato["banco"] = b
     viol = _giri(b, differita, 60)
-    slot = b.slot()
     assert viol == [], viol[:3]
-    assert slot.status in (SB.IDLE, SB.DONE)
-    assert _righe(b, "submin_start") == []
-    assert [p for p in _righe(b, "place") if p.get("side") == "BACK"] == []
-    crit = _righe(b, "residuo_ricordato")
-    assert len(crit) == 1, crit
-    assert crit[0]["level"] == "CRITICAL" and "SOTTO_MINIMO_NON_PIAZZABILE" in crit[0]["msg"]
-    assert "Proposta" in crit[0]["msg"]
+    sc = _righe(b, "scavalco")
+    assert sc and sc[0]["side"] == "LAY" and float(sc[0]["size"]) >= 1.0
+    # resta al piu' la POLVERE dell'arrotondamento al centesimo (< 0,05 fra gli
+    # esiti), mai il residuo di prima (0,44 fra gli esiti)
+    assert all(abs(float(r["nw"]) - float(r["nl"])) < 0.05
+               for r in _righe(b, "residuo_ricordato")), _righe(b, "residuo_ricordato")
     w, l = SCT.esposizione_vera(b.market, b.strat)
-    assert abs(w - l) > 0.4                       # il residuo e' a mercato
-    assert slot.residuo_w == pytest.approx(w, abs=0.01)
-    assert slot.residuo_l == pytest.approx(l, abs=0.01)
+    assert abs(w - l) < 0.05, (w, l)
     assert exchange_it.rifiutati == []            # nessun tentativo rifiutato
 
 
@@ -160,19 +157,19 @@ def test_banca_fra_050_e_1_va_al_place_and_trim(differita, orologio_mercato, exc
 
 def test_residuo_non_piazzabile_dichiarato_subito_non_dopo_12_tentativi(
         differita, orologio_mercato, exchange_it):
-    """Decisione 1: «il bot non prova a chiuderlo da solo a ogni giro». LAY 0,45
-    @2,22 (se vince -0,55: oltre il micro-residuo di 0,25): chiusura BACK 0,45,
-    tutta residuo. Prima la ULTIMA SPIAGGIA aspettava piu' di 12 tentativi (~20
-    book); ora si dichiara e si ricorda al primo giro utile."""
+    """LAY 0,45 @2,22 (chiusura BACK 0,45, sotto 0,50).
+    07/10 (DECISIONE DELL'UTENTE "1) b"): al primo giro utile parte lo SCAVALCO
+    (mai 12 tentativi a vuoto, mai un residuo dichiarato). Prima (04/10): residuo
+    dichiarato e ricordato al primo giro."""
     b = SCT._in_flatten("LAY", 2.22, 0.45)
     orologio_mercato["banco"] = b
     slot = b.slot()
     for i in range(4):
         differita()
         b.book()
-    assert len(_righe(b, "residuo_ricordato")) == 1, b.righe[-5:]
+    assert len(_righe(b, "scavalco")) == 1, b.righe[-5:]
+    assert _righe(b, "residuo_ricordato") == []
     assert slot.flat_tries <= 2
-    assert slot.residuo_w == pytest.approx(-0.45 * 1.22, abs=0.01)
 
 
 def test_banca_piazzabile_esce_al_centesimo_mai_arrotondata(
