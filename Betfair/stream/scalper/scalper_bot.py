@@ -61,6 +61,7 @@ from flumine.utils import get_nearest_price, get_price, get_size, price_ticks_aw
 from ..trading.minimi_it import (
     IT_MIN_BACK as IT_BACK_MIN_STAKE,
     IT_MIN_LAY as IT_LAY_MIN_SIZE,
+    IT_PASSO_PUNTA_DIRETTA,
     SOTTO_MINIMO_NON_PIAZZABILE,
     VIA_DIRETTA,
     VIA_PLACE_AND_TRIM,
@@ -102,10 +103,57 @@ def spezza_uscita(side: str, price: float, size: float) -> Tuple[float, float, f
         return 0.0, 0.0, 0.0
     v = importo_piazzabile("back" if (side or "").upper() == "BACK" else "lay", s)
     if v.via == VIA_DIRETTA:
-        return round(v.importo, 2), 0.0, round(v.residuo, 2)
+        # 07/10 (ordine dell'utente: "lo scalper deve chiudere pulito, al
+        # centesimo"; regola 10 del brief): una PUNTA di chiusura non multipla
+        # di 0,50 NON lascia il resto (< 0,50) come residuo. La parte diretta
+        # scende di UN passo (resta multipla di 0,50 e >= 1,00) e il resto
+        # sale fra 0,50 e 0,99, cioe' dentro il place-and-trim (finale >= 0,50,
+        # parcheggio 1,00): 2,80 -> 2,00 + 0,80; 1,98 -> 1,00 + 0,98. La somma
+        # e' SEMPRE l'importo chiesto. Solo fra 1,00 e 1,49 (parte diretta che
+        # scenderebbe a 0,50) il resto resta residuo dichiarato.
+        diretta, resto = round(v.importo, 2), round(v.residuo, 2)
+        if resto >= 0.01:
+            giu = round(diretta - IT_PASSO_PUNTA_DIRETTA, 2)
+            if giu >= float(IT_BACK_MIN_STAKE) - 1e-9:
+                return giu, round(s - giu, 2), 0.0
+        return diretta, 0.0, resto
     if v.via == VIA_PLACE_AND_TRIM:
         return 0.0, round(v.importo, 2), round(v.residuo, 2)
     return 0.0, 0.0, round(v.residuo, 2)
+
+def stato_parcheggio(side: str, price: float, target: float) -> Optional[Any]:
+    """07/10: lo stato INIT della sequenza place-and-trim di un'uscita esatta di
+    ``target`` (0,50-0,99) a quota ``price``. Pura.
+
+    * parcheggio al minimo della fonte unica (``trading/submin.place_min_size``
+      -> ``minimi_it``: 1,00 per i due lati), mai il 2,00 scritto a mano: un
+      parcheggio abbinato prima del taglio sposta la posizione di 1,00 x quota,
+      non di 2,00 (referto SCALPER_TENNIS_CP4 par. 6);
+    * quota del parcheggio: BACK 1000, LAY la quota di
+      ``submin.quota_parcheggio_lontano`` (la piu' bassa con la banca residua
+      dentro la banda INVALID_PROFIT_RATIO 0,80-1,25: 0,70 -> 1,03, 0,80 ->
+      1,01). Prima LAY sempre 1,01: 0,50-0,79 @1,01 = taglio rifiutato da
+      Betfair. None = nessuna quota sicura: nessun ordine.
+    """
+    from ..live_order_build import round_to_tick
+    from ..trading.submin import (SubminState, SubminStep, place_min_size,
+                                  quota_parcheggio_lontano)
+
+    lato = (side or "").lower()
+    park = quota_parcheggio_lontano(lato, float(target))
+    if park is None:
+        return None
+    return SubminState(
+        step=SubminStep.INIT, bet_id=None,
+        target_size=round(float(target), 2),
+        target_price=round_to_tick(price),
+        placed_size=round(float(place_min_size("it", lato)), 2),
+        side=lato,
+        note="exact exit",
+        park_price=float(park),
+        serve_replace=True,
+    )
+
 
 # Stati della macchina.
 # QUOTING  = una gamba resting (modalita' reversion/momentum)
@@ -118,6 +166,14 @@ IDLE, QUOTING, QUOTING2, CANCELLING, LOCKING, FLATTENING, DONE = (
 # ---------------------------------------------------------------------------
 # Helper PURI (testabili senza flumine)
 # ---------------------------------------------------------------------------
+def _quota_chiusura(net_win: float, net_lose: float,
+                    best_back: Optional[float], best_lay: Optional[float]) -> Optional[float]:
+    """07/10: la quota (sulla scala) del lato di chiusura, per il testo del
+    residuo: LAY al best lay se la posizione e' lunga, BACK al best back."""
+    base = best_lay if net_win > net_lose else best_back
+    return get_nearest_price(base) if base else None
+
+
 def _msg_residuo(net_win: float, net_lose: float) -> str:
     """D7 (24/09): il residuo accettato si DICHIARA. ``net_win`` = P&L se la
     selezione vince, ``net_lose`` = P&L se perde (dal blotter dello slot)."""
@@ -1366,6 +1422,29 @@ class ScalperStrategy(BaseStrategy):
             self._emit("close_presize", selection_id=sid, side=cs,
                        adjust=round(delta, 2), ideal=ideal)
         else:
+            # 07/10 (ordine dell'utente: "se facciamo back, possiamo uscire in
+            # lay al centesimo"): un'aggiunta di BANCA sotto il minimo (+0,14:
+            # sotto anche il floor di legge 0,50, prima saltata = residuo a fine
+            # ciclo) diventa una banca DIRETTA al centesimo di delta + 1,00 alla
+            # stessa quota, con la close in coda RIDOTTA di 1,00 (cancel
+            # parziale: la coda del resto resta). Totale = ideale, al centesimo.
+            rem = float(getattr(close, "size_remaining", 0.0) or 0.0)
+            rid = float(IT_LAY_MIN_SIZE)
+            if (cs == "LAY" and self.exact_exits and not self.dry_run
+                    and not self._size_direct_ok(cs, delta)
+                    and rem >= round(rid + float(IT_LAY_MIN_SIZE), 2) - 1e-9):
+                o = self._place(market, sid, cs, pc, round(delta + rid, 2),
+                                floor_min=False, slot=slot)
+                if o is not None:
+                    try:
+                        market.cancel_order(close, size_reduction=round(rid, 2))
+                    except Exception:  # noqa: BLE001 - il flatten pareggia il resto
+                        pass
+                self._emit("close_presize", selection_id=sid, side=cs,
+                           adjust=round(delta, 2), ideal=ideal,
+                           aggiunta=round(delta + rid, 2), riduzione=round(rid, 2),
+                           placed=bool(o is not None))
+                return
             o = self._place(market, sid, cs, pc, delta, floor_min=False,
                             slot=slot)
             self._emit("close_presize", selection_id=sid, side=cs,
@@ -1890,7 +1969,17 @@ class ScalperStrategy(BaseStrategy):
                 # giro dopo (il ritiro e' gia' chiesto), poi si ricalcola sulla
                 # posizione VERA abbinata. Prezzo e importo dello scratch
                 # invariati (stessa regola, solo un giro dopo).
-                if close is not None and self._vivo_o_in_volo(close):
+                # 07/10: la close vecchia puo' essere ESATTA (parte diretta +
+                # sequenza place-and-trim del resto): anche la sequenza e i suoi
+                # ordini (parcheggio, sostituto) si ritirano e si aspettano
+                # morti, altrimenti il sostituto della close vecchia e lo
+                # scratch sarebbero due chiusure vive insieme (CP4)
+                if slot.submins:
+                    self._cancel_submins(market, slot)
+                for o in slot.flatten_orders:
+                    self._cancel_if_live(market, o)
+                if (close is not None and self._vivo_o_in_volo(close)) or any(
+                        self._vivo_o_in_volo(o) for o in slot.flatten_orders):
                     slot.scratch_in_attesa = True
                     return
                 slot.scratch_in_attesa = False
@@ -2147,7 +2236,9 @@ class ScalperStrategy(BaseStrategy):
             # abortita, cancel fallito su un ordine ancora PENDING senza bet_id)
             # non lo governa piu' nessuno: si ritira qui, a ogni giro, finche'
             # non e' morto. Prima il flatten lo aspettava per sempre.
-            if (p >= 999.0 or p <= 1.011) and id(o) in in_seq:
+            # 07/10: il parcheggio LAY puo' stare a 1,02-1,03 (banda del
+            # profit-ratio): lo riconosce l'appartenenza alla sequenza, non la quota
+            if id(o) in in_seq:
                 continue
             side = (getattr(o, "side", "") or "").upper()
             stale = (
@@ -2217,7 +2308,9 @@ class ScalperStrategy(BaseStrategy):
                     self._emit("flatten_residual", locked=round(locked, 4),
                                nw=round(net_win, 3), nl=round(net_lose, 3),
                                msg=_msg_residuo(net_win, net_lose))
-                    self._ricorda_residuo(slot, net_win, net_lose)
+                    self._ricorda_residuo(
+                        slot, net_win, net_lose,
+                        quota=_quota_chiusura(net_win, net_lose, best_back, best_lay))
                 slot.status = DONE
             elif not slot.submins and (
                     slot.flat_tries > 12
@@ -2250,7 +2343,9 @@ class ScalperStrategy(BaseStrategy):
                                locked=round(locked, 4),
                                nw=round(net_win, 3), nl=round(net_lose, 3),
                                msg=_msg_residuo(net_win, net_lose))
-                    self._ricorda_residuo(slot, net_win, net_lose)
+                    self._ricorda_residuo(
+                        slot, net_win, net_lose,
+                        quota=_quota_chiusura(net_win, net_lose, best_back, best_lay))
                 slot.status = DONE
             elif (slot.flat_tries > 12 and not slot.chiusura_bloccata_detta
                   and self._chiusura_bloccata(net_win, net_lose, best_back, best_lay)):
@@ -2348,7 +2443,8 @@ class ScalperStrategy(BaseStrategy):
         diretta, trim, residuo = spezza_uscita(side, float(p), float(g[1]))
         return diretta <= 0 and trim <= 0 and residuo > 0
 
-    def _ricorda_residuo(self, slot: _Slot, net_win: float, net_lose: float) -> None:
+    def _ricorda_residuo(self, slot: _Slot, net_win: float, net_lose: float,
+                         quota: Optional[float] = None) -> None:
         """DECISIONE DELL'UTENTE (04/10) «il residuo resta ricordato e lo chiudo
         io»: il residuo accettato si somma a quello RICORDATO della selezione
         (mai azzerato da `_reset`) e si dichiara con UNA riga CRITICAL col
@@ -2358,16 +2454,25 @@ class ScalperStrategy(BaseStrategy):
         o = next((x for x in (slot.entry, slot.entry_back, slot.entry_lay, slot.close,
                               *slot.flatten_orders) if x is not None), None)
         totale = abs(slot.residuo_w - slot.residuo_l)
+        # 07/10 (CONFORMITA_BOT_CALCIO par. 4): il testo dice l'ORDINE che
+        # servirebbe (lato, importo, quota), non solo la differenza fra gli
+        # esiti: "1,07" letto come importo era fuorviante (l'ordine era 0,48)
+        lato_c = "LAY" if net_win > net_lose else "BACK"
+        g = compute_green(net_win, net_lose, quota) if quota else None
+        ordine_txt = ("ordine di chiusura %s %.2f @%s sotto il minimo .it, "
+                      % (g[0], g[1], quota)) if g else ("ordine di chiusura %s sotto il "
+                                                        "minimo .it, " % lato_c)
         self._emit("residuo_ricordato", level="CRITICAL",
                    market_id=getattr(o, "market_id", None),
                    selection_id=getattr(o, "selection_id", None),
                    nw=round(net_win, 3), nl=round(net_lose, 3),
                    ricordato_se_vince=round(slot.residuo_w, 2),
                    ricordato_se_perde=round(slot.residuo_l, 2),
-                   msg="%s: residuo %.2f non accettato da Betfair .it, RICORDATO "
-                       "(totale della selezione %.2f: se vince %+.2f, se perde %+.2f). "
+                   ordine_size=(round(g[1], 2) if g else None), ordine_quota=quota,
+                   msg="%s: %sRICORDATO (differenza fra gli esiti %.2f; totale della "
+                       "selezione %.2f: se vince %+.2f, se perde %+.2f). "
                        "Proposta: chiuderlo a mano dal sito o lasciarlo; il bot non "
-                       "lo ritenta" % (SOTTO_MINIMO_NON_PIAZZABILE,
+                       "lo ritenta" % (SOTTO_MINIMO_NON_PIAZZABILE, ordine_txt,
                                        abs(net_win - net_lose), totale,
                                        slot.residuo_w, slot.residuo_l))
 
@@ -2793,11 +2898,10 @@ class ScalperStrategy(BaseStrategy):
             quando il book si ferma;
           * UNA sola sequenza attiva per slot (cancel della precedente);
           * creazione rate-limited (3 s) per slot.
-        Park LEGALI e universali: size 2,00 su entrambi i lati (BACK @1000,
-        LAY @1.01 → payout 2.02, liability 0.02, guardia-abort di submin).
+        07/10: parcheggio al minimo della fonte unica (1,00) e LAY alla quota
+        in banda del profit-ratio (``stato_parcheggio``), BACK @1000.
         """
-        from ..live_order_build import round_to_tick
-        from ..trading.submin import FlumineSubminOps, SubminState, SubminStep
+        from ..trading.submin import FlumineSubminOps
 
         # 04/10 (CERTIFICAZIONE SCALPER CALCIO): la spartizione la decide il
         # modulo condiviso dei minimi (`spezza_uscita`). Prima: parte diretta al
@@ -2860,14 +2964,13 @@ class ScalperStrategy(BaseStrategy):
                     return main_order  # sequenza equivalente gia' in corso
             self._cancel_submins(market, slot)
         try:
-            state = SubminState(
-                step=SubminStep.INIT, bet_id=None,
-                target_size=round(rest, 2),
-                target_price=round_to_tick(price),
-                placed_size=2.0,          # park legale/universale (.it)
-                side=side.lower(),
-                note="exact exit",
-            )
+            state = stato_parcheggio(side, price, rest)
+            if state is None:
+                # nessuna quota di parcheggio in banda (INVALID_PROFIT_RATIO):
+                # nessun ordine a rischio, il resto si dichiara
+                self._emit("min_bet_skip", selection_id=int(selection_id),
+                           side=side, size=rest)
+                return main_order
 
             class _CapturingOps(FlumineSubminOps):
                 last_order: Any = None

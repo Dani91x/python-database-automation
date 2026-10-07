@@ -1,0 +1,123 @@
+BOT: scalper_calcio | spec: Betfair/stream/scalper/BIBBIA_SCALPER_CALCIO.md | registrazioni: 1 in /home/user/python-database-automation/_live_raw
+controlli attivi: 22 | flumine 2.13.11 | betfairlightweight 2.23.2 | codice bot ac2794fa2b81 (12 file)
+comando: python -m Betfair.stream.backtest.certifica scalper_calcio 35797769 --scenari base
+ambiente del banco (dichiarato; il .env di chi lancia non conta): ESITI_ORDINI_CANALE=0 LIVE_KILL_SWITCH=false LIVE_ORDER_MODE=LIVE MIKE_CANALE_POSIZIONI=0 MIKE_LEGGE_CANALE=0 MIKE_LIVE_ENABLED=1 MIKE_SVEGLIA_CANALE=0 MOTORE_ORDINI_CANALE=0 MOTORE_ORDINI_CANALE_TENNIS=0 OMEGA_CANALE_POSIZIONI=0 OMEGA_LEGGE_CANALE=0 OMEGA_ORDINI_VIA_CANALE=0 OMEGA_SVEGLIA_CANALE=0 PUNTEGGI_CANALE=0 SAFE_BOT_LEGGE_CANALE=0 SAFE_BOT_SVEGLIA_CANALE=0 SAFE_CANALE_POSIZIONI=0 SAFE_ORDINI_VIA_CANALE=0 SAFE_PRE_KO_OU_HOURS=1 SAFE_SCAN_CANALE=0 SAFE_TENNIS_ORDINI_VIA_CANALE=0 SCALPER_CANALE=0 TENNIS_BOT_CANALE=0 TENNIS_BOT_SVEGLIA_CANALE=0 | interruttore ordini del bot: coda=0 canale=1
+qualita' delle registrazioni: COMPLETE x1
+
+EV 16:35:10 place {'selection_id': 22, 'side': 'BACK', 'price': 1.66, 'size': 25.0}
+EV 16:35:10 place {'selection_id': 22, 'side': 'LAY', 'price': 1.65, 'size': 25.0}
+EV 16:43:52 place {'selection_id': 58805, 'side': 'BACK', 'price': 4.3, 'size': 25.0}
+EV 16:43:52 place {'selection_id': 58805, 'side': 'LAY', 'price': 4.2, 'size': 25.0}
+EV 16:49:39 place {'selection_id': 22, 'side': 'BACK', 'price': 1.66, 'size': 25.0}
+EV 16:49:39 place {'selection_id': 22, 'side': 'LAY', 'price': 1.65, 'size': 25.0}
+EV 16:51:55 close_presize {'selection_id': 58805, 'side': 'BACK', 'adjust': -0.58, 'ideal': 24.42}
+EV 16:51:55 place {'selection_id': 58805, 'side': 'BACK', 'price': 4.2, 'size': 25.0}
+EV 16:51:55 scratch {'selection_id': 58805, 'price': 4.2, 'entry_side': 'LAY'}
+EV 16:59:43 place {'selection_id': 22, 'side': 'BACK', 'price': 1.66, 'size': 25.0}
+EV 16:59:43 place {'selection_id': 22, 'side': 'LAY', 'price': 1.65, 'size': 25.0}
+CICLO 17:00:22 locked 0.0 scratch_par nw/nl [0.0, 0.0]
+     LAY chiesto=25.0 @4.2 abb=25.0 pm=4.2 rem=0.0 canc=0.0 laps=0.0 st=Execution complete
+     BACK chiesto=25.0 @4.2 abb=25.0 pm=4.2 rem=0.0 canc=0.0 laps=0.0 st=Execution complete
+     BACK chiesto=25.0 @4.3 abb=0.0 pm=0.0 rem=0.0 canc=25.0 laps=0.0 st=Execution complete
+EV 17:00:22 cycle {'esito': 'scratch_par', 'locked': 0.0, 'selection_id': 58805}
+EV 17:00:29 place {'selection_id': 22, 'side': 'BACK', 'price': 1.66, 'size': 2.0}
+EV 17:00:29 submin_start {'selection_id': 22, 'side': 'BACK', 'size': 0.78, 'price': 1.66}
+EV 17:00:29 submin_step {'step': 'placed', 'note': 'step1 place 1.00@1000.0 (LAPSE)'}
+EV 17:00:29 place {'selection_id': 22, 'side': 'BACK', 'price': 1.65, 'size': 2.0}
+EV 17:00:29 submin_start {'selection_id': 22, 'side': 'BACK', 'size': 0.8, 'price': 1.65}
+EV 17:00:29 scratch {'selection_id': 22, 'price': 1.65, 'entry_side': 'LAY'}
+EV 17:00:29 submin_step {'step': 'placed', 'note': 'step1 place 1.00@1000.0 (LAPSE)'}
+EV 17:00:31 submin_step {'step': 'trimmed', 'note': 'step2 VERIFICATO su osservazione: residuo 0.80 ≤ target 0.80'}
+EV 17:00:31 submin_step {'step': 'repriced', 'note': 'step3 replace → 1.65'}
+EV 17:00:31 submin_step {'step': 'done', 'note': 'submin completato: ordine sotto-minimo a riposo alla target_price'}
+CICLO 17:02:03 locked 0.0 scratch_par nw/nl [0.0, 0.0]
+     LAY chiesto=25.0 @1.65 abb=2.8 pm=1.65 rem=0.0 canc=22.2 laps=0.0 st=Execution complete
+     BACK chiesto=2.0 @1.65 abb=2.0 pm=1.65 rem=0.0 canc=0.0 laps=0.0 st=Execution complete
+     BACK chiesto=2.0 @1.66 abb=0.0 pm=0.0 rem=0.0 canc=2.0 laps=0.0 st=Execution complete
+     BACK chiesto=1.0 @1000.0 abb=0.0 pm=0.0 rem=0.0 canc=1.0 laps=0.0 st=Execution complete
+     BACK chiesto=1.0 @1000.0 abb=0.0 pm=0.0 rem=0.0 canc=1.0 laps=0.0 st=Execution complete
+     BACK chiesto=0.8 @1.65 abb=0.8 pm=1.65 rem=0.0 canc=0.0 laps=0.0 st=Execution complete
+EV 17:02:03 cycle {'esito': 'scratch_par', 'locked': 0.0, 'selection_id': 22}
+EV 17:02:54 place {'selection_id': 22, 'side': 'BACK', 'price': 1.65, 'size': 25.0}
+EV 17:02:54 place {'selection_id': 22, 'side': 'LAY', 'price': 1.64, 'size': 25.0}
+EV 17:21:32 place {'selection_id': 22, 'side': 'LAY', 'price': 1.64, 'size': 1.15}
+EV 17:21:32 close_presize {'selection_id': 22, 'side': 'LAY', 'adjust': 0.15, 'ideal': 25.15, 'aggiunta': 1.15, 'riduzione': 1.0, 'placed': True}
+EV 17:25:53 place {'selection_id': 47973, 'side': 'BACK', 'price': 1.85, 'size': 25.0}
+EV 17:25:53 place {'selection_id': 47973, 'side': 'LAY', 'price': 1.84, 'size': 25.0}
+EV 17:26:13 close_presize {'selection_id': 47973, 'side': 'BACK', 'adjust': -0.14, 'ideal': 24.86}
+EV 17:26:14 place {'selection_id': 58805, 'side': 'BACK', 'price': 4.2, 'size': 25.0}
+EV 17:26:14 place {'selection_id': 58805, 'side': 'LAY', 'price': 4.1, 'size': 25.0}
+EV 17:26:23 place {'selection_id': 47973, 'side': 'BACK', 'price': 1.84, 'size': 25.0}
+EV 17:26:23 scratch {'selection_id': 47973, 'price': 1.84, 'entry_side': 'LAY'}
+CICLO 17:26:58 locked 0.0 scratch_par nw/nl [0.0, 0.0]
+     LAY chiesto=25.0 @1.84 abb=25.0 pm=1.84 rem=0.0 canc=0.0 laps=0.0 st=Execution complete
+     BACK chiesto=25.0 @1.84 abb=25.0 pm=1.84 rem=0.0 canc=0.0 laps=0.0 st=Execution complete
+     BACK chiesto=25.0 @1.85 abb=0.0 pm=0.0 rem=0.0 canc=25.0 laps=0.0 st=Execution complete
+EV 17:26:58 cycle {'esito': 'scratch_par', 'locked': 0.0, 'selection_id': 47973}
+EV 17:27:02 place {'selection_id': 47973, 'side': 'BACK', 'price': 1.85, 'size': 25.0}
+EV 17:27:02 place {'selection_id': 47973, 'side': 'LAY', 'price': 1.84, 'size': 25.0}
+EV 17:27:09 place {'selection_id': 47973, 'side': 'LAY', 'price': 1.84, 'size': 1.14}
+EV 17:27:09 close_presize {'selection_id': 47973, 'side': 'LAY', 'adjust': 0.14, 'ideal': 25.14, 'aggiunta': 1.14, 'riduzione': 1.0, 'placed': True}
+CICLO 17:27:41 locked 0.14 scalp nw/nl [0.1324, 0.14]
+     BACK chiesto=25.0 @1.85 abb=25.0 pm=1.85 rem=0.0 canc=0.0 laps=0.0 st=Execution complete
+     LAY chiesto=25.0 @1.84 abb=24.0 pm=1.84 rem=0.0 canc=1.0 laps=0.0 st=Execution complete
+     LAY chiesto=1.14 @1.84 abb=1.14 pm=1.84 rem=0.0 canc=0.0 laps=0.0 st=Execution complete
+EV 17:27:41 cycle {'esito': 'scalp', 'locked': 0.14, 'selection_id': 47973}
+EV 17:32:22 place {'selection_id': 22, 'side': 'LAY', 'price': 1.65, 'size': 25.0}
+EV 17:32:22 scratch {'selection_id': 22, 'price': 1.65, 'entry_side': 'BACK'}
+CICLO 17:32:31 locked 0.0 scratch_par nw/nl [0.0, 0.0]
+     BACK chiesto=25.0 @1.65 abb=25.0 pm=1.65 rem=0.0 canc=0.0 laps=0.0 st=Execution complete
+     LAY chiesto=25.0 @1.65 abb=25.0 pm=1.65 rem=0.0 canc=0.0 laps=0.0 st=Execution complete
+     LAY chiesto=1.15 @1.64 abb=0.0 pm=0.0 rem=0.0 canc=1.15 laps=0.0 st=Execution complete
+     LAY chiesto=25.0 @1.64 abb=0.0 pm=0.0 rem=0.0 canc=25.0 laps=0.0 st=Execution complete
+EV 17:32:31 cycle {'esito': 'scratch_par', 'locked': 0.0, 'selection_id': 22}
+OK  35797769  tick=665941 decisioni=121012 azioni=  44 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:LOCKING,slot:DONE,sessione:done [COMPLETE]
+      nota: qualita' registrazione: COMPLETE 95.4%
+      nota: control della UI: mode=maker dry_run=False stake=25 params=[('entry_stop_before_s', 420), ('event_loss_cap', 1.5), ('event_profit_target', 1), ('flatten_before_s', 180), ('ht_mode', False), ('min_flow', 10), ('min_size', 300), ('one_green_per_phase', True), ('price_max', 4.6), ('price_min', 1.5), ('scalp_ticks', 1), ('sniper_mode', False), ('sniper_stake', 10), ('stop_ticks', 1), ('uscite_automatiche', True)]
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (params `uscite_automatiche=True`, come li scrive l'interruttore della UI su AUTOMATICHE)
+      nota: limiti dichiarati: catalogo sintetizzato dai marketDefinition; scanner non usato (lo scalper legge il book); orologio di mercato per `time.time`; settlement non raggiunto (fine vita della sessione); theta fuori perimetro; sniper spento (scenari `sniper*` per lo sniper)
+      nota: parita' paper/live: 86 parametri della strategia confrontati, diversi 0; client paper {'min_bet_validation': False, 'order_stream': True, 'paper_trade': True} / live {'min_bet_validation': False, 'order_stream': True, 'paper_trade': False}
+      nota: sessioni: {'prima': 'finita'}; stato finale 'done' (causa della fine: fine-vita)
+      nota: book in ritardo: 589606; lapse al fischio: 0; lapse alla sospensione: 0; righe di specchio catturate: 130529
+      nota: fasi viste: pre-match, stop-ingressi, finestra-flatten, in-gioco, fine-sessione
+      nota: uscite EFFETTIVE delle strategie a fine sessione: AUTOMATICHE
+      nota: stati dello slot MAI visti: FLATTENING, QUOTING
+      motivo x23: place
+      motivo x5: cycle
+      motivo x5: submin_step
+      motivo x4: close_presize
+      motivo x4: scratch
+      motivo x2: submin_start
+      tempo: 35797769 [base] 59.7s (59.7 s) | 11164 tick/s
+
+ESITO: 1 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+       0 violazioni totali
+
+COPERTURA DEI CONTROLLI — quante volte ognuno ha avuto un caso:
+     B1  x4754    nessun INGRESSO nuovo quando le aperture sono vietate: force-flat 
+     B2  x507     al FISCHIO nessuna posizione aperta: dopo il KO ogni selezione ha 
+     B3  x16      ogni ordine chiesto e' LEGALE su .it: prezzo nella ladder, non sot
+     B4  x8       lo stake d'ingresso e' quello del control (mai piu' di quanto l'ut
+     B5  x5666    l'esposizione abbinata per selezione non supera il tetto che la se
+     B6  x8       tetto transazioni/ora (`max_txn_hour`): oltre il budget nessun NUO
+     K1  x1053    ogni ordine che il bot STA SEGUENDO in una posizione viva esiste d
+  ?? K2  x0       un ordine RIFIUTATO (place_order ha risposto False, stato Violatio
+     K3  x5666    lo stato di ogni ordine si legge come Enum `OrderStatus` (`.value`
+     K4  x1053    uno slot che il bot crede VIVO ha almeno un ordine vivo o dell'abb
+     K5  x664     nessuna ESPOSIZIONE abbinata resta sbilanciata su una selezione il
+     K6  x5666    quando il bot dichiara uno slot CHIUSO (IDLE/DONE) non resta nessu
+     K7  x5       a ogni ciclo chiuso il `locked` che il bot contabilizza (pnl_locke
+     S1  x1474    ogni scrittura del servizio su `scalper_control` rispetta i CHECK 
+     S2  x5       uno STOP (UI 'stopping', kill-switch, fine vita, cap globale) arma
+     S3  x1       a sessione CHUSA nessun ordine della sessione resta vivo a mercato
+     S4  x1       lo stato finale della sessione dice PERCHE' e' finita: 'stopped' s
+     S5  x5769    mentre la sessione e' 'running' il servizio scrive heartbeat_at e 
+     S6  x1       PAPER = LIVE: armata dallo stesso control, la sessione paper e que
+  ?? S7  x0       dopo un RIAVVIO della sessione, l'esposizione abbinata e gli ordin
+     P1  x5515    ogni ordine del bot arriva allo specchio `betfair_live_orders` (ri
+     P2  x5515    lo specchio non dichiara MAI un ordine abbinato piu' di quanto il 
+
+?? MAI SOLLECITATI: 2 controlli su 22. Su questi il referto NON dice «sano», dice «non lo so»:
+     K2: un ordine RIFIUTATO (place_order ha risposto False, stato Violation) non lascia il bot con una posizione creduta viva che poggia SOLO su ordini rifiutati (difetto 2 del 15/09: `res.ok` mai letto)
+     S7: dopo un RIAVVIO della sessione, l'esposizione abbinata e gli ordini vivi lasciati dalla sessione morta sono governati dalla nuova (una sua credenza li segue) oppure il servizio li DICHIARA (allarme): mai una posizione orfana silenziosa (PROCESSO par.6.3 riavvio; catalogo par.7 punto 19)
+TEMPO TOTALE: 1m00.7s (60.7 s) su 1 replay | obiettivo 300 s, tetto 600 s (CERTIFICA_TETTO_S)

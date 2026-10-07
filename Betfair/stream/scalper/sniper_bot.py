@@ -37,7 +37,7 @@ from flumine.order.ordertype import LimitOrder
 from flumine.order.trade import Trade
 from flumine.utils import get_nearest_price, get_price, get_size, price_ticks_away
 
-from .scalper_bot import compute_green, spezza_uscita, ticks_between
+from .scalper_bot import compute_green, spezza_uscita, stato_parcheggio, ticks_between
 from ..trading.minimi_it import IT_MIN_BACK as IT_BACK_MIN_STAKE
 from ..trading.minimi_it import IT_MIN_LAY as IT_LAY_MIN_SIZE
 from ..uscite_proposte import CHIAVE_STATS as CHIAVE_PROPOSTE
@@ -1117,9 +1117,9 @@ class SniperStrategy(BaseStrategy):
                      size: float, pos: _Pos) -> Optional[Any]:
         """Uscita a QUALSIASI size: parte diretta (multipli 0,50) + resto
         ESATTO via park-trim-replace. Identico al percorso di produzione
-        dello scalper (validato live: park legali 2,00 BACK@1000/LAY@1.01)."""
-        from ..live_order_build import round_to_tick
-        from ..trading.submin import FlumineSubminOps, SubminState, SubminStep
+        dello scalper (07/10: parcheggio 1,00 dalla fonte unica, BACK@1000 /
+        LAY alla quota in banda, `scalper_bot.stato_parcheggio`)."""
+        from ..trading.submin import FlumineSubminOps
 
         # 04/10: spartizione dal modulo condiviso dei minimi (gemello dello
         # scalper): parte diretta, place-and-trim solo da 0,50 in su, residuo
@@ -1155,14 +1155,12 @@ class SniperStrategy(BaseStrategy):
                     return main_order  # sequenza equivalente gia' in corso
             self._cancel_submins(market, pos)
         try:
-            state = SubminState(
-                step=SubminStep.INIT, bet_id=None,
-                target_size=round(rest, 2),
-                target_price=round_to_tick(price),
-                placed_size=2.0,          # park legale/universale (.it)
-                side=side.lower(),
-                note="exact exit",
-            )
+            # 07/10: parcheggio al minimo della fonte unica e LAY in banda
+            # (stessa funzione del maker, `scalper_bot.stato_parcheggio`)
+            state = stato_parcheggio(side, price, rest)
+            if state is None:
+                self._emit("min_bet_skip", selection_id=int(sid), side=side, size=rest)
+                return main_order
 
             class _CapturingOps(FlumineSubminOps):
                 last_order: Any = None

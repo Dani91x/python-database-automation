@@ -238,6 +238,10 @@ def tolleranza(ordini: Sequence[Any], stake_extra: float = 0.0) -> float:
 # ---------------------------------------------------------------------------
 # il libro assottigliato, solo per l'ordine colpito (FOK)
 # ---------------------------------------------------------------------------
+#: 07/10: la quota del parcheggio BACK del place-and-trim (massimo di Betfair)
+QUOTA_PARCHEGGIO_BACK = 1000.0
+
+
 class _Vista:
     """Un oggetto di flumine visto com'e', con qualche attributo sostituito."""
 
@@ -618,8 +622,20 @@ class GuastoChiusuraParziale:
         # con una regola «piatta» separata, falso positivo del controllo).
         prezzo_o = _f(getattr(getattr(ordine, "order_type", None), "price", None)) or 0.0
         size_o = float(getattr(getattr(ordine, "order_type", None), "size", 0.0) or 0.0)
-        capacita = size_o * prezzo_o + sum(residuo(o) * float(
-            _f(getattr(getattr(o, "order_type", None), "price", None)) or 0.0) for o in vive)
+
+        def _cap(lato_o: str, s: float, p: float) -> float:
+            # 07/10 (chiusure al centesimo dello scalper calcio): il PARCHEGGIO
+            # BACK del place-and-trim sta alla quota MASSIMA di Betfair (1000),
+            # dove non si abbina: non sposta il netto. Contarlo s*1000 era un falso
+            # positivo (previsto da AUDIT_2026-10-07/SCALPER_TENNIS_CP4.md par.6.4).
+            # L'ordine VERO della sequenza (dopo riduzione e riprezzo) ha un prezzo
+            # normale e resta giudicato come ogni altra chiusura.
+            if lato_o == "BACK" and p >= QUOTA_PARCHEGGIO_BACK:
+                return 0.0
+            return s * p
+
+        capacita = _cap(la, size_o, prezzo_o) + sum(_cap(la, residuo(o), float(
+            _f(getattr(getattr(o, "order_type", None), "price", None)) or 0.0)) for o in vive)
         if capacita > abs(d) * 1.02 + tol:
             self._cp4(st, "sovrarichiesta", (
                 f"{chiave}: chiusura {la} {ref} chiede di spostare il netto di "
