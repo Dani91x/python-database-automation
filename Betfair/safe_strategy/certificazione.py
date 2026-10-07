@@ -834,6 +834,25 @@ def _e10(v: Valutazione) -> Optional[str]:
     return None
 
 
+@_controllo("E11", "DECISIONE DELL'UTENTE 07/10: ESATTO 'tassativo nel secondo tempo, "
+            "il primo tempo va escluso'",
+            "nessun segnale ESATTO se lo stato IPS non dice 2o tempo (recupero del 1T, "
+            "intervallo, stato assente o ambiguo = mai)",
+            Valutazione, quando=_valutazione("esatto"))
+def _e11(v: Valutazione) -> Optional[str]:
+    if _manca(v, "secondHalf"):
+        return "il check della fase (2o tempo) non esiste piu' nella valutazione"
+    tempo = getattr(v.ctx, "tempo", None)
+    presente = bool(getattr(v.ctx, "stato_ips_presente", False))
+    if v.segnale and (not presente or tempo != 2):
+        return (f"segnale al {v.ctx.minute}' con fase {tempo!r} "
+                f"(stato IPS {getattr(v.ctx, 'stato_ips', None)!r}, presente={presente})")
+    ck = v.check.get("secondHalf")
+    if ck is not None and ck.ok is True and (not presente or tempo != 2):
+        return f"check della fase VERO con fase {tempo!r} (stato IPS presente={presente})"
+    return None
+
+
 # ===========================================================================
 # P. CALCIO PUNTA — SPEC §4: punta (back) la favorita avanti di due gol
 # ===========================================================================

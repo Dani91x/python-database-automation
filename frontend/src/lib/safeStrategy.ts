@@ -21,6 +21,7 @@ import type { BetfairOdds } from '@/lib/betfair';
 import type { TennisLiveNowRow, TennisScoreState } from '@/lib/tennis';
 import type { CalcioScanPayload, ScanOddsPair, TennisScanPayload } from '@/lib/safeStrategyScan';
 import { fmtMoney, fmtOdds as fmtOddsFmt } from '@/lib/format';
+import { statoIpsGrezzo, tempoDaStatoIps } from '@/lib/faseIps';
 import {
     MOTIVO_FINALE_NOME, MOTIVO_FINALE_ROUND, MOTIVO_SQUADRA_FEMMINILE, isRoundFinale, motivoVeto,
     nomeIndicaFinale, squadraFemminile, voceVietata,
@@ -493,6 +494,17 @@ export interface FootballMatchCtx {
     /** D5 (25/09): round API-Football della fixture abbinata («Final»,
      *  «Semi-finals», «Regular Season - 5»), pubblicato dallo scanner. */
     fixtureRound?: string | null;
+    /** 07/10 (decisione dell'utente: Safe ESATTO solo nel 2o tempo): fase dallo
+     *  stato IPS della riga dello scanner (`score_raw`), gemello di
+     *  `FootballMatchCtx.tempo/stato_ips/stato_ips_presente` del bot.
+     *  1 = primo tempo (recupero e intervallo compresi), 2 = secondo tempo,
+     *  null/assente = ignoto. */
+    tempo?: 1 | 2 | null;
+    /** matchStatus IPS grezzo (es. 'KickOff', 'FirstHalfEnd'). */
+    statoIps?: string | null;
+    /** false/assente = la riga NON porta lo stato IPS (fase ignota, fail-closed:
+     *  mai dedotta dal solo minuto). */
+    statoIpsPresente?: boolean;
 }
 
 /** I numeri della «Selezione aggiuntiva» come li scrive lo scanner
@@ -620,6 +632,18 @@ function scanMarketOpen(status: string | null | undefined): boolean | null {
     return status == null ? null : status === 'OPEN';
 }
 
+/** {tempo, statoIps, statoIpsPresente} dalla riga dello scanner: gemello di
+ *  `engine._fase_da_scan`. Senza `score_raw` NESSUNA deduzione dal solo minuto
+ *  (anche al 92': fail-closed, fase ignota). */
+function faseDaScan(p: CalcioScanPayload): Pick<FootballMatchCtx, 'tempo' | 'statoIps' | 'statoIpsPresente'> {
+    const raw = p.score_raw;
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+        return { tempo: null, statoIps: null, statoIpsPresente: false };
+    }
+    const tempo = tempoDaStatoIps(raw, p.minute);
+    return { tempo, statoIps: statoIpsGrezzo(raw), statoIpsPresente: true };
+}
+
 /** Contesto calcio dalla riga dello scanner autonomo (payload JSONB difensivo). */
 export function buildFootballCtxFromScan(
     eventId: string,
@@ -658,6 +682,7 @@ export function buildFootballCtxFromScan(
         competition: p.competition?.trim() || null,
         eventName: p.event_name ?? null,
         fixtureRound: typeof p.fixture_round === 'string' ? p.fixture_round.trim() || null : null,
+        ...faseDaScan(p),
         pressureIndex: numOrNull(p.pressure_index),
         selectionHint: p.selection_hint
             ? {
@@ -1066,6 +1091,37 @@ export function tennisSfavoritoEstremoCheck(
     return { id: 'leaderPre', label, value: `favorito pre-match ${fmtOdds(qFav)} (${chi})`, ok: true };
 }
 
+/** Parole del check quando lo stato IPS manca (identiche a
+ *  `engine.SECONDO_TEMPO_STATO_ASSENTE`). */
+export const SECONDO_TEMPO_STATO_ASSENTE = 'n/d: stato IPS assente';
+
+/** DECISIONE DELL'UTENTE 07/10: l'ESATTO entra SOLO nel 2o tempo. Gemello di
+ *  `engine.secondo_tempo_check`: il feed IPS nel RECUPERO del 1o tempo segna il
+ *  minuto cumulato (46, 47, 48 ... con 'KickOff') e all'intervallo continua a
+ *  contare, quindi il solo minuto non distingue il 48' del recupero del 1T dal
+ *  48' della ripresa. True SOLO se lo stato IPS dice 2o tempo; 1o tempo,
+ *  recupero del 1T e intervallo = false; stato assente o ambiguo = null (n/d,
+ *  nessun ingresso). */
+export function secondoTempoCheck(ctx: FootballMatchCtx): ConditionCheck {
+    const label = 'Solo nel 2\u00b0 tempo';
+    if (!ctx.statoIpsPresente) {
+        return { id: 'secondHalf', label, value: SECONDO_TEMPO_STATO_ASSENTE, ok: null };
+    }
+    const st = ctx.statoIps || '?';
+    if (ctx.tempo === 2) {
+        return { id: 'secondHalf', label, value: `2\u00b0 tempo (${st})`, ok: true };
+    }
+    if (ctx.tempo === 1) {
+        const norm = st.toLowerCase().replace(/[^a-z]/g, '');
+        let fase: string;
+        if (norm.includes('halfend') || norm.includes('halftime')) fase = 'intervallo';
+        else if (ctx.minute !== null && Number.isInteger(ctx.minute) && ctx.minute > 45) fase = 'recupero del 1\u00b0 tempo';
+        else fase = '1\u00b0 tempo';
+        return { id: 'secondHalf', label, value: `${fase} (${st})`, ok: false };
+    }
+    return { id: 'secondHalf', label, value: `n/d: fase non riconosciuta (${st})`, ok: null };
+}
+
 export function evaluateEsatto(ctx: FootballMatchCtx, params: EsattoParams, side: SideId): VariantEvaluation {
     const checks: ConditionCheck[] = [];
     const sh = ctx.scoreHome;
@@ -1077,6 +1133,9 @@ export function evaluateEsatto(ctx: FootballMatchCtx, params: EsattoParams, side
     const veto = campionatoCtx(ctx, params.vetoCampionati);
     if (veto !== null) checks.push(veto);
     checks.push(minuteCheck('minute', ctx.minute, params.minuteMin));
+    // 07/10 (decisione dell'utente): la soglia del minuto vale SOLO nel 2o
+    // tempo. Soglia invariata; si aggiunge la fase dallo stato IPS.
+    checks.push(secondoTempoCheck(ctx));
     // RISULTATO ESATTO: condizione INVERTITA rispetto a BASE e PUNTA — la
     // squadra BANCATA non deve avere il controllo. Se comanda il gioco e' piu'
     // probabile che segni ancora, ed e' proprio il gol che fa perdere.

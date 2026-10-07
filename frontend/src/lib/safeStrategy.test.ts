@@ -34,6 +34,7 @@ import {
     type TennisMatchCtx,
     type SignalCandidate,
 } from './safeStrategy';
+import { statoIps2T } from './statoIpsVero.testkit';
 
 // ------------------------------------------------------------------ fixtures
 const FOLLOW = { event_id: 'ev1', home_name: 'Nord FC', away_name: 'Sud FC' };
@@ -103,7 +104,13 @@ function ctxOf(over: Parameters<typeof liveNow>[0] & {
     preMatch?: { home: number; draw: number; away: number } | null;
 } = {}): FootballMatchCtx {
     const { stableSince = 50, observedSec = 60, preMatch = PRE_MATCH, ...rest } = over;
-    return buildFootballCtx(FOLLOW, liveNow(rest), preMatch, stableSince, observedSec);
+    // 07/10: l'ESATTO vuole la fase dallo stato IPS (`score_raw` dello scanner);
+    // il costruttore da live_now non la porta, quindi di serie la partita e' nel
+    // 2o tempo con lo stato vero 'SecondHalfKickOff' (35797769, 20:10:25).
+    return {
+        ...buildFootballCtx(FOLLOW, liveNow(rest), preMatch, stableSince, observedSec),
+        tempo: 2, statoIps: 'SecondHalfKickOff', statoIpsPresente: true,
+    };
 }
 
 // ---------------------------------------------------------------- utilities
@@ -664,6 +671,7 @@ describe('entrySize — importo abbinabile alla quota del segnale', () => {
                 any_other_home: { back: 44, lay: 45, back_size: 3.5, lay_size: 2.25 },
                 any_other_away: { back: 48, lay: 50, back_size: 1, lay_size: 9 },
             },
+            score_raw: statoIps2T(),
             ...over,
         }, 50, 60);
 

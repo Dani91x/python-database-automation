@@ -126,6 +126,10 @@ export interface CalcioScanPayload {
     /** D5 (25/09), chiave ADDITIVA: round API-Football della fixture abbinata
      *  (`matches.raw_json->league->>round`), per il veto delle FINALI. */
     fixture_round?: string | null;
+    /** 07/10: stato IPS grezzo della partita (matchStatus, timeElapsed,
+     *  elapsedRegularTime, ...), come lo pubblica lo scanner (`score_raw`).
+     *  Da qui si ricava la FASE (1T/2T) con `tempoDaStatoIps`. */
+    score_raw?: Record<string, unknown> | null;
     pre_ko: { home: number; draw: number; away: number; captured_at?: string } | null;
     cs: {
         market_id: string | null;

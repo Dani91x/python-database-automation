@@ -12,6 +12,7 @@ import {
     mergeParams,
 } from '@/lib/safeStrategy';
 import { voceVietata } from '@/lib/vetoCampionati';
+import { statoIps2T } from '@/lib/statoIpsVero.testkit';
 
 function scan(competition: string | null, over: Record<string, unknown> = {}) {
     return buildFootballCtxFromScan('ev1', {
@@ -26,6 +27,7 @@ function scan(competition: string | null, over: Record<string, unknown> = {}) {
         minute: 58, score_home: 1, score_away: 0, red_home: 0, red_away: 0,
         pre_ko: { home: 1.65, draw: 4.0, away: 5.5 },
         cs: { market_id: '1.2', status: 'OPEN', any_other_home: { back: 44, lay: 45 }, any_other_away: { back: 48, lay: 50 } },
+        score_raw: statoIps2T(),
         ...over,
     } as Parameters<typeof buildFootballCtxFromScan>[1], 50, 60);
 }

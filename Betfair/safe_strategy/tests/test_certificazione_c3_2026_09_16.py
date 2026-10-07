@@ -28,6 +28,7 @@ from Betfair.safe_strategy import certificazione as CERT
 from Betfair.safe_strategy import db as SD
 from Betfair.safe_strategy import engine as E
 from Betfair.safe_strategy import exits as XE
+from Betfair.safe_strategy.tests.test_engine import stato_ips_calcio
 
 
 # ---------------------------------------------------------------------------
@@ -64,7 +65,13 @@ def payload(*, minute: int = 60, sh: int = 1, sa: int = 0,
                "any_other_away": (coppia(any_away, any_away, 9063255)
                                   if any_away is not None else None),
                "selections": []},
-        "ht": None, "media": None, "score_raw": None, "timeline": None,
+        # 07/10: la riga vera in gioco porta lo stato IPS (ESATTO solo nel 2T);
+        # le fixture di questo file intendono la ripresa oltre il 45'
+        "ht": None, "media": None,
+        "score_raw": stato_ips_calcio(
+            (("SecondHalfKickOff" if minute > 45 else "KickOff") if inplay else None),
+            minute, sh, sa, "Alfa", "Beta"),
+        "timeline": None,
         "mo_total_matched": 1000.0, "odds_ts_ms": 0, "pressure_index": None,
         "_osservato": osservato,
         # da QUANDO il punteggio e' fermo: la PUNTA aspetta 3-4' dal gol

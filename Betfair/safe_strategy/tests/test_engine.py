@@ -25,6 +25,41 @@ PRE_MATCH = {"home": 1.65, "draw": 4.0, "away": 5.5}
 _UNSET = object()
 
 
+def stato_ips_calcio(match_status: Optional[str], minute: Any, sh: Any, sa: Any,
+                     home: str = "Nord FC", away: str = "Sud FC") -> Optional[Dict[str, Any]]:
+    """07/10 - lo stato IPS GREZZO come lo pubblica lo scanner vero nella riga
+    (``score_raw`` = ``scanner.strip_volatile_state(rec)``): stesse chiavi e
+    stessi tipi della registrazione vera (`_live_raw/35797769/*.scores.jsonl`:
+    gol come STRINGHE, ``timeElapsedSeconds`` tolto dallo scanner,
+    ``elapsedAddedTime`` presente solo nel recupero). ``match_status`` None =
+    nessuno stato IPS (riga senza ``score_raw``)."""
+    if match_status is None:
+        return None
+
+    def squadra(nome: str, gol: Any) -> Dict[str, Any]:
+        return {"name": nome, "score": "" if gol is None else str(gol),
+                "halfTimeScore": "", "fullTimeScore": "", "penaltiesScore": "",
+                "penaltiesSequence": [], "games": "", "sets": "",
+                "numberOfYellowCards": 0, "numberOfRedCards": 0, "numberOfCards": 0,
+                "numberOfCorners": 0, "numberOfCornersFirstHalf": 0, "bookingPoints": 0}
+
+    m = minute if isinstance(minute, int) and not isinstance(minute, bool) else None
+    st: Dict[str, Any] = {
+        "eventTypeId": 1, "eventId": 1,
+        "score": {"home": squadra(home, sh), "away": squadra(away, sa),
+                  "numberOfYellowCards": 0, "numberOfRedCards": 0, "numberOfCards": 0,
+                  "numberOfCorners": 0, "numberOfCornersFirstHalf": 0, "bookingPoints": 0},
+        "timeElapsed": m,
+        "elapsedRegularTime": None if m is None else (min(m, 90) if m > 45 else m),
+    }
+    if m is not None and m > 90:
+        st["elapsedAddedTime"] = m - 90
+    st["fullTimeElapsed"] = {"hour": 0, "min": 0, "sec": 0}
+    st["status"] = match_status
+    st["matchStatus"] = match_status
+    return st
+
+
 def calcio_payload(
     minute: Any = 58,
     sh: Any = 1,
@@ -43,8 +78,14 @@ def calcio_payload(
     red_away: Any = _UNSET,
     pre_match: Any = _UNSET,
     with_sizes: bool = False,
+    match_status: Any = _UNSET,
 ) -> Dict[str, Any]:
-    """Equivalente scanner della fixture ``liveNow`` del TS (Nord FC = casa)."""
+    """Equivalente scanner della fixture ``liveNow`` del TS (Nord FC = casa).
+
+    07/10: la riga vera porta lo stato IPS (``score_raw``). Di serie, in gioco,
+    'SecondHalfKickOff' oltre il 45' e 'KickOff' fino al 45' (le fixture
+    storiche intendono la ripresa); pre-partita nessuno stato. ``match_status``
+    lo forza (None = stato IPS assente)."""
 
     def pair(back, lay, bsz=None, lsz=None, sid=None):
         p: Dict[str, Any] = {"back": back, "lay": lay}
@@ -77,6 +118,18 @@ def calcio_payload(
         "pre_ko": PRE_MATCH if pre_match is _UNSET else pre_match,
         "cs": None,
     }
+    if match_status is _UNSET:
+        if not inplay:
+            stato = None
+        elif isinstance(minute, int) and not isinstance(minute, bool) and minute > 45:
+            stato = "SecondHalfKickOff"
+        else:
+            stato = "KickOff"
+    else:
+        stato = match_status
+    raw = stato_ips_calcio(stato, minute, sh, sa)
+    if raw is not None:
+        payload["score_raw"] = raw
     if with_cs:
         payload["cs"] = {
             "market_id": "1.2",
