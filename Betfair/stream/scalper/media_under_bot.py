@@ -1706,10 +1706,35 @@ class MediaUnderStrategy(BaseStrategy):
         parte di PIAZZAMENTO (Betfair: <<the cancellations will not be rolled
         back>>): CRITICAL una volta, e l'allineamento ripiazza SUBITO cio' che
         manca alla quota nuova. La banca vecchia di nuovo sul book alla sua
-        quota = fallito nella parte di ANNULLO: si riprova col freno."""
+        quota = fallito nella parte di ANNULLO: si riprova col freno.
+
+        Il sostituto si adotta anche per un replace che QUESTA istanza non ha
+        chiesto (riavvio: la sessione morta aveva un replace in viaggio e la
+        ripresa ha riadottato la banca vecchia): basta che il suo Trade sia
+        quello di una banca del ciclo (replay 35760084 `media-clic-riavvio`:
+        prima della correzione il sostituto restava orfano, vivo e fuori dai
+        conti, e la banca veniva coperta due volte)."""
+        blotter = getattr(market, "blotter", None)
+        sposti = {id(s["ordine"]) for s in self._spostamenti.values()}
+        for o in [x for x in self._ordini if _lato(x) == "LAY"]:
+            if id(o) in sposti:
+                continue                  # lo segue il giro qui sotto (e lo dice)
+            for x in list(getattr(getattr(o, "trade", None), "orders", None) or []):
+                if x is o or _lato(x) != "LAY" or any(x is y for y in self._ordini):
+                    continue
+                try:
+                    nel_blotter = blotter is not None and getattr(x, "id", None) in blotter
+                except Exception:  # noqa: BLE001 - blotter illeggibile: al book dopo
+                    nel_blotter = False
+                if nel_blotter:
+                    self._ordini.append(x)
+                    self._emit("media_banca_spostata", market_id=self._mid,
+                               selection_id=self._sid, da=float(o.order_type.price),
+                               a=float(x.order_type.price), importo=float(x.order_type.size),
+                               msg="banca spostata (replace di prima del riavvio): %.2f @%.2f"
+                                   % (float(x.order_type.size), float(x.order_type.price)))
         if not self._spostamenti:
             return
-        blotter = getattr(market, "blotter", None)
         for k, s in list(self._spostamenti.items()):
             o = s["ordine"]
             tr = getattr(o, "trade", None)

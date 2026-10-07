@@ -2675,7 +2675,7 @@ class _Banco:
                     self.rientro_dovuto_dal_ms = int(ms)
             else:
                 self.rientro_dovuto_dal_ms = None
-            cicli = CERT.cicli_media(CERT._m_ordinate(oss))
+            cicli = CERT._m_cicli(oss)
             chiuso_pre = (vive and bool(cicli) and CERT._m_ciclo_a_clic(oss, cicli[-1])
                           and CERT._m_ciclo_chiuso(cicli[-1])
                           and (in_gioco is None or ms < in_gioco)

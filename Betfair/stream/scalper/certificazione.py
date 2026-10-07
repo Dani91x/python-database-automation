@@ -1526,25 +1526,49 @@ def _m_ordinate(o: OsservazioneMedia) -> List[Dict[str, Any]]:
                                            int(r.get("indice") or 0)))
 
 
-def cicli_media(righe: Sequence[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
+def cicli_media(righe: Sequence[Dict[str, Any]],
+                foto: Optional[Dict[str, Dict[str, Tuple[float, float]]]] = None
+                ) -> List[List[Dict[str, Any]]]:
     """I cicli ricostruiti DAGLI ORDINI: un ciclo nuovo comincia con una PUNTA
     piazzata quando il ciclo prima e' morto (nessun ordine vivo), ha una banca
-    abbinata ed e' pari entro l'arrotondamento al centesimo della banca."""
+    abbinata ed e' pari entro l'arrotondamento al centesimo della banca.
+
+    07/10 (banca spostata): con la fotografia del banco (``foto``: gli abbinati
+    di tutti gli ordini nel momento in cui e' nata la punta) il ciclo prima si
+    giudica COM'ERA quando la punta e' nata (banca abbinata e pari in quel
+    momento), non com'e' adesso: dal 07/10 le banche restano vive durante il
+    rientro e si abbinano DOPO, e lo stato finale spezzava il ciclo davanti a
+    una punta di rientro (replay 35797769 `media-clic-tick-1`: M12/M14 su una
+    punta di rientro da 80,00 presa per la prima punta di un ciclo nuovo)."""
     cicli: List[List[Dict[str, Any]]] = []
     corrente: List[Dict[str, Any]] = []
     for r in righe:
-        if (str(r.get("side") or "").upper() == "BACK" and corrente
-                and not any(_m_vivo(x) for x in corrente)
-                and any(str(x.get("side") or "").upper() == "LAY"
-                        and float(x.get("size_matched") or 0.0) > 0 for x in corrente)):
-            w, l, _s, _p = _m_posizione(corrente)
-            if abs(w - l) <= 0.02 + 0.005 * 4.0:
-                cicli.append(corrente)
-                corrente = []
+        if str(r.get("side") or "").upper() == "BACK" and corrente:
+            f = (foto or {}).get(str(r.get("order_id")))
+            if f is not None:
+                prima = _m_alla_nascita(corrente, f)
+                chiuso = any(str(x.get("side") or "").upper() == "LAY"
+                             and float(x.get("size_matched") or 0.0) > 0 for x in prima)
+            else:
+                prima = corrente
+                chiuso = (not any(_m_vivo(x) for x in corrente)
+                          and any(str(x.get("side") or "").upper() == "LAY"
+                                  and float(x.get("size_matched") or 0.0) > 0
+                                  for x in corrente))
+            if chiuso:
+                w, l, _s, _p = _m_posizione(prima)
+                if abs(w - l) <= 0.02 + 0.005 * 4.0:
+                    cicli.append(corrente)
+                    corrente = []
         corrente.append(r)
     if corrente:
         cicli.append(corrente)
     return cicli
+
+
+def _m_cicli(o: "OsservazioneMedia") -> List[List[Dict[str, Any]]]:
+    """I cicli dell'osservazione, con la fotografia del banco se c'e'."""
+    return cicli_media(_m_ordinate(o), o.abbinati_alla_nascita)
 
 
 def _m_alla_nascita(righe: Sequence[Dict[str, Any]],
@@ -1609,7 +1633,7 @@ def _m_ordini_a_clic(o: OsservazioneMedia) -> set:
     if o.a_clic_dal_ms is None:
         return set()
     out: set = set()
-    for ciclo in cicli_media(_m_ordinate(o)):
+    for ciclo in _m_cicli(o):
         if _m_ciclo_a_clic(o, ciclo):
             out |= {r.get("order_id") for r in ciclo}
     return out
@@ -1622,7 +1646,7 @@ def _m_in_gioco_fuori_dal_clic(o: OsservazioneMedia) -> bool:
         return False
     if o.a_clic_dal_ms is None:
         return True
-    cicli = cicli_media(_m_ordinate(o))
+    cicli = _m_cicli(o)
     return not (cicli and _m_ciclo_a_clic(o, cicli[-1]))
 
 
@@ -1631,7 +1655,7 @@ def _q_m_ordini(o: OsservazioneMedia) -> bool:
 
 
 def _q_m_rientri(o: OsservazioneMedia) -> bool:
-    return any(_m_rientri(c, o.params) for c in cicli_media(_m_ordinate(o)))
+    return any(_m_rientri(c, o.params) for c in _m_cicli(o))
 
 
 def _q_m_banca_ferma(o: OsservazioneMedia) -> bool:
@@ -1682,7 +1706,7 @@ def _m1(o: OsservazioneMedia) -> Optional[str]:
                   quando=_q_m_rientri)
 def _m2(o: OsservazioneMedia) -> Optional[str]:
     par = o.params
-    for n, ciclo in enumerate(cicli_media(_m_ordinate(o))):
+    for n, ciclo in enumerate(_m_cicli(o)):
         fatti = [x for x in _m_rientri(ciclo, par, o.abbinati_alla_nascita)
                  if float(x["riga"].get("size_matched") or 0.0) > 0]
         if len(fatti) > par.max_rientri:
@@ -1706,7 +1730,7 @@ def _m2(o: OsservazioneMedia) -> Optional[str]:
                   quando=_q_m_rientri)
 def _m3(o: OsservazioneMedia) -> Optional[str]:
     par = o.params
-    for ciclo in cicli_media(_m_ordinate(o)):
+    for ciclo in _m_cicli(o):
         for x in _m_rientri(ciclo, par):
             ult, q = x["ultimo_ingresso"], float(x["riga"].get("price") or 0.0)
             su = SB.ticks_between(ult, q) if ult else None
@@ -1725,7 +1749,7 @@ def _m4(o: OsservazioneMedia) -> Optional[str]:
     from decimal import ROUND_FLOOR, Decimal
 
     par = o.params
-    for ciclo in cicli_media(_m_ordinate(o)):
+    for ciclo in _m_cicli(o):
         for x in _m_rientri(ciclo, par, o.abbinati_alla_nascita):
             r = x["riga"]
             q = float(r.get("price") or 0.0)
@@ -1749,14 +1773,16 @@ def _m_banche_vive(righe: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return [r for r in righe if _m_vivo(r) and str(r.get("side") or "").upper() == "LAY"]
 
 
-def copertura_oltre(righe: Sequence[Dict[str, Any]]) -> Optional[str]:
+def copertura_oltre(righe: Sequence[Dict[str, Any]],
+                    foto: Optional[Dict[str, Dict[str, Tuple[float, float]]]] = None
+                    ) -> Optional[str]:
     """07/10: la somma delle banche vive supera la posizione da coprire? Se
     tutte le banche vive si abbinassero ai loro prezzi, la posizione del
     CICLO si rovescerebbe oltre l'arrotondamento al centesimo della banca:
     ``(se_vince - se_perde) - somma(resto x quota) < -0,0051 x quota max``.
     Con una sola quota e' <<somma dei resti <= L al centesimo>>. Il dettaglio
     o None."""
-    cicli = cicli_media(list(righe))
+    cicli = cicli_media(list(righe), foto)
     if not cicli:
         return None
     ciclo = cicli[-1]
@@ -1787,7 +1813,7 @@ def _m5(o: OsservazioneMedia) -> Optional[str]:
         return ("%d punte vive insieme: %s" % (len(vivi), [(r.get("order_id"), r.get("price"),
                                                           r.get("size_remaining"))
                                                          for r in vivi]))
-    return copertura_oltre(_m_ordinate(o))
+    return copertura_oltre(_m_ordinate(o), o.abbinati_alla_nascita)
 
 
 @_controllo_media("M6", "quando la banca appoggiata e' ferma sul book (nessuna punta "
@@ -1798,7 +1824,7 @@ def _m5(o: OsservazioneMedia) -> Optional[str]:
                   quando=_q_m_banca_ferma, persistente=True)
 def _m6(o: OsservazioneMedia) -> Optional[str]:
     par = o.params
-    ciclo = cicli_media(_m_ordinate(o))[-1]
+    ciclo = _m_cicli(o)[-1]
     vive = [r for r in ciclo if _m_vivo(r)]
     if not vive:
         return None
@@ -1859,7 +1885,7 @@ def _q_m_banca_viva(o: OsservazioneMedia) -> bool:
                          "punta e' ancora vivo senza l'annullo chiesto",
                   quando=_q_m_banca_viva)
 def _m11(o: OsservazioneMedia) -> Optional[str]:
-    ciclo = cicli_media(_m_ordinate(o))[-1]
+    ciclo = _m_cicli(o)[-1]
     banche = [r for r in ciclo if _m_vivo(r) and str(r.get("side") or "").upper() == "LAY"]
     if not banche:
         return None
@@ -2042,7 +2068,7 @@ def senza_banca(o: OsservazioneMedia) -> bool:
         return False
     if o.force_flat_ms is not None and o.ms >= o.force_flat_ms:
         return False
-    cicli = cicli_media(_m_ordinate(o))
+    cicli = _m_cicli(o)
     if not cicli:
         return False
     ciclo = cicli[-1]
@@ -2184,7 +2210,7 @@ def origini_dei_clic(o: OsservazioneMedia) -> List[Dict[str, Any]]:
         return []
     usate: set = set()
     out: List[Dict[str, Any]] = []
-    cicli = cicli_media(_m_ordinate(o))
+    cicli = _m_cicli(o)
     consegne = sorted([c for c in o.consegne if c.get("eseguibile")],
                       key=lambda c: int(c.get("ms") or 0))
     for ci, ciclo in enumerate(cicli):
@@ -2366,7 +2392,7 @@ def rientro_dovuto(o: OsservazioneMedia) -> bool:
         return False
     if o.force_flat_ms is not None and o.ms >= o.force_flat_ms:
         return False
-    cicli = cicli_media(_m_ordinate(o))
+    cicli = _m_cicli(o)
     if not cicli or not _m_ciclo_a_clic(o, cicli[-1]):
         return False
     ciclo = cicli[-1]

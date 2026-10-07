@@ -659,3 +659,67 @@ def test_m20_non_accusa_il_sostituto_di_un_replace(differita, exchange_it):
                 status="Executable", size_remaining=10.14, size_cancelled=0.0,
                 bet_id="998", sostituto=True, sostituito=False)
     assert "M20" not in _codici(_oss(b, righe=righe + [sost]))
+
+
+def test_i_cicli_del_banco_si_giudicano_alla_nascita_della_punta(differita, exchange_it):
+    """La banca vecchia si abbina per intero DOPO la nascita della punta di
+    rientro (che ha gia' abbinato 4,00): e' lo STESSO ciclo (il bot conta il
+    rientro). Con la fotografia del banco (gli abbinati alla nascita della
+    punta) ``cicli_media`` lo vede; con lo stato finale lo spezzava (replay
+    35797769 `media-clic-tick-1`: M12/M14 rossi su una punta di rientro presa
+    per la prima punta di un ciclo nuovo)."""
+    from types import SimpleNamespace
+
+    from Betfair.stream.scalper.tools import replay_registrazioni as R
+
+    b = BancoMedia()
+    _viol, banca = _in_posizione(b, differita)
+    foto_banco = SimpleNamespace(media_foto_nascita={})
+    R._Banco.fotografa_abbinati(foto_banco, b.strat, b.market)
+    b.ladder[b.under] = (1.52, 1.53)
+    n = len(b.ordini())
+    for _i in range(40):
+        giri(b, differita, 1)
+        if len(b.ordini()) != n:
+            R._Banco.fotografa_abbinati(foto_banco, b.strat, b.market)
+            n = len(b.ordini())
+        if b.kinds("media_rientro"):
+            break
+    b.ladder[b.under] = (1.51, 1.52)
+    b.book(flusso=0.0)
+    for _i in range(6):
+        giri(b, differita, 1, flusso=0.0)
+    b.scambia(b.under, 1.52, 1008)              # la punta: + 4,00
+    b.scambia(b.under, 1.48, 2000)              # la banca: abbinata per intero
+    for _i in range(12):
+        giri(b, differita, 1, flusso=0.0)
+    assert float(banca.size_matched) == pytest.approx(10.14)
+    assert float(_punte(b)[-1].size_matched) == pytest.approx(4.0)
+    con = CERT._m_cicli(_oss(b, abbinati_alla_nascita=foto_banco.media_foto_nascita))
+    senza = CERT._m_cicli(_oss(b))
+    assert len(con) == 1 and len(senza) == 2
+    assert b.strat._rientri == 1
+
+
+def test_sostituto_di_un_replace_chiesto_prima_del_riavvio_adottato(differita, exchange_it):
+    """Il replace della banca e' in viaggio quando la sessione muore; la
+    sessione nuova riadotta la banca vecchia ma NON sa del replace. Quando
+    Betfair lo esegue, il sostituto (stesso Trade, nel blotter) deve entrare
+    nei conti: altrimenti resta orfano e vivo, la modalita' integra di nuovo e
+    la banca copre la posizione due volte (replay 35760084 `media-clic-riavvio`,
+    M5 e M19 rossi prima della correzione)."""
+    b = BancoMedia()
+    viol, banca = _in_posizione(b, differita)
+    b.ladder[b.under] = (1.52, 1.53)
+    for _i in range(40):
+        if banca.status.value == "Replacing":
+            break
+        viol += giri(b, differita, 1)
+    assert banca.status.value == "Replacing"
+    # la sessione nuova: stessi ordini, nessun ricordo del replace chiesto
+    b.strat._spostamenti.clear()
+    viol += giri(b, differita, 10)
+    assert viol == [], viol[:3]
+    sost = list(banca.trade.orders)[-1]
+    assert sost is not banca and any(sost is o for o in b.strat._ordini)
+    assert _banca_viva(b) == (1.50, 20.13)
