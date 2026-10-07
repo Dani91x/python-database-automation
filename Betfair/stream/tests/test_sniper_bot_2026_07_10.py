@@ -290,10 +290,11 @@ def test_place_exact_spezza_parte_diretta_piu_submin():
     mkt = _FakeMarket()
     pos = s._p("1.234", 1221385)
     o = s._place(mkt, 1221385, "BACK", 1.27, 7.63, floor=False, pos=pos)
-    assert o is not None and o.order_type.size == pytest.approx(7.5)
-    assert pos.submins == []                           # 0.13 non si tenta
-    assert any(k == "min_bet_skip" and p.get("size") == pytest.approx(0.13)
-               for k, p in s._test_events)
+    # 07/10 (chiusure al centesimo): 7,00 diretti + 0,63 al place-and-trim
+    # (prima 7,50 + 0,13 residuo mai piazzato)
+    assert o is not None and o.order_type.size == pytest.approx(7.0)
+    assert len(pos.submins) == 1
+    assert pos.submins[0]["state"].target_size == pytest.approx(0.63)
     o2 = s._place(mkt, 1221385, "LAY", 1.27, 7.63, floor=False, pos=pos)
     assert o2 is not None and o2.order_type.size == pytest.approx(7.63)
 
@@ -328,9 +329,11 @@ def test_place_exact_micro_resto_accettato():
     mkt = _FakeMarket()
     pos = s._p("1.234", 1221385)
     o = s._place(mkt, 1221385, "BACK", 1.27, 5.04, floor=False, pos=pos)
-    assert o is not None and o.order_type.size == pytest.approx(5.0)
-    assert pos.submins == []
-    assert any(k == "min_bet_skip" for k, _ in s._test_events)
+    # 07/10 (chiusure al centesimo): 4,50 diretti + 0,54 al place-and-trim,
+    # nessun resto accettato (prima 5,00 + 0,04 accettato)
+    assert o is not None and o.order_type.size == pytest.approx(4.5)
+    assert len(pos.submins) == 1
+    assert pos.submins[0]["state"].target_size == pytest.approx(0.54)
 
 
 def test_place_senza_exact_arrotonda_e_bumpa():

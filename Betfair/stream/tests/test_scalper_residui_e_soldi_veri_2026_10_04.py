@@ -75,10 +75,12 @@ def _righe(b: SCT.Banco, kind: str) -> List[Dict[str, Any]]:
 # 1. la spartizione di un'uscita (pura, dal modulo condiviso)
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize("lato,size,atteso", [
-    ("BACK", 2.83, (2.5, 0.0, 0.33)),    # punta per difetto, resto residuo
+    # 07/10 (ordine dell'utente, chiusure al centesimo): la punta non multipla
+    # esce ESATTA, diretta un passo sotto + resto 0,50-0,99 al place-and-trim
+    ("BACK", 2.83, (2.0, 0.83, 0.0)),
     ("BACK", 1.0, (1.0, 0.0, 0.0)),
     ("BACK", 0.73, (0.0, 0.73, 0.0)),    # fra 0,50 e 1,00: place-and-trim (minimi_it)
-    ("BACK", 7.27, (7.0, 0.0, 0.27)),    # punta per difetto (minimi_it)
+    ("BACK", 7.27, (6.5, 0.77, 0.0)),    # 07/10: esatta (prima 7,00 + 0,27 residuo)
     ("BACK", 0.3, (0.0, 0.0, 0.3)),      # sotto 0,50: niente
     ("LAY", 1.37, (1.37, 0.0, 0.0)),     # banca al centesimo
     ("LAY", 0.73, (0.0, 0.73, 0.0)),     # fra 0,50 e 1,00: place-and-trim
@@ -129,16 +131,17 @@ def test_residuo_sotto_050_dichiarato_una_volta_e_ricordato_oltre_il_ciclo(
 
 def test_parte_diretta_piu_residuo_il_caso_del_replay(differita, orologio_mercato,
                                                       exchange_it):
-    """Selezione 22 del replay: LAY 2,80 @2,22, chiusura BACK ~2,83 = 2,50 diretti
-    + 0,33 residuo (prima: sequenza per 0,33, rimpiazzo rifiutato, K1)."""
+    """Selezione 22 del replay: LAY 2,80 @2,22, chiusura BACK ~2,83.
+    07/10 (ordine dell'utente: chiusure al centesimo): 2,00 diretti + 0,83 col
+    place-and-trim, NESSUN residuo. Prima (04/10): 2,50 diretti + 0,33 residuo
+    dichiarato; prima ancora: sequenza per 0,33, rimpiazzo rifiutato, K1."""
     b = SCT._in_flatten("LAY", 2.22, 2.8)
     orologio_mercato["banco"] = b
     viol = _giri(b, differita, 80)
     assert viol == [], viol[:3]
     back = [p for p in _righe(b, "place") if p.get("side") == "BACK"]
-    assert back and float(back[0]["size"]) == 2.5
-    assert _righe(b, "submin_start") == []
-    assert len(_righe(b, "residuo_ricordato")) == 1
+    assert back and float(back[0]["size"]) == 2.0
+    assert _righe(b, "residuo_ricordato") == []
     assert [r for r in exchange_it.rifiutati if r["tipo"] == MB.SOSTITUZIONE] == []
 
 

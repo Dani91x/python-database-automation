@@ -50,14 +50,16 @@ def test_scratch_firmato_parte_esatto_subito_dopo_la_target(differita, orologio_
     slot.entry = b.abbinato("LAY", 1.65, 2.8)
     slot.entry_side = "LAY"
     canc = b.strat.cancello_uscite
-    # la target: proposta, firma, esecuzione (BACK 2,78 @1,66 = 2,50 + 0,28)
+    # la target: proposta, firma, esecuzione (BACK 2,78 @1,66 = 2,00 + 0,78 al place-and-trim, 07/10)
     b.strat._open_lock(b.market, slot, b.pt, slot.entry, 1.64, 1.65)
     target = [p for p in canc.vive() if p.get("motivo") == "target"][0]
     canc.approvate[target["chiave"]] = b.pt / 1000.0
     for _ in range(3):
         differita()
         b.book()
-    assert _importo_a_quota(b, 1.66) >= 2.5, "la target firmata deve essere partita"
+    # 07/10: la parte diretta della target 2,78 e' 2,00 (+ 0,78 al place-and-trim;
+    # prima 2,50 + 0,28 residuo)
+    assert _importo_a_quota(b, 1.66) >= 2.0, "la target firmata deve essere partita"
     # lo scratch: proposto dal bot (il touch e' al prezzo d'ingresso), firmato
     scratch = [p for p in canc.vive() if p.get("motivo") == "scratch"]
     assert scratch, [p.get("motivo") for p in canc.vive()]
@@ -73,7 +75,11 @@ def test_scratch_firmato_parte_esatto_subito_dopo_la_target(differita, orologio_
         vive_i = [o for o in b.market.blotter.strategy_orders(b.strat)
                   if o.side == "BACK" and b.strat._vivo_o_in_volo(o)
                   and float(o.order_type.price) < 999.0]
-        if len(vive_i) > 1:
+        # 07/10: una chiusura ESATTA sono piu' ordini alla STESSA quota (parte
+        # diretta + sostituto del place-and-trim): la sovracopertura e' due
+        # chiusure DIVERSE (quote diverse) o piu' importo vivo dello scratch
+        if (len({float(o.order_type.price) for o in vive_i}) > 1
+                or sum(float(o.size_remaining) for o in vive_i) > proposta + 0.01):
             doppie.append((i, [(float(o.order_type.price), str(o.status.value))
                                for o in vive_i]))
     assert doppie == [], doppie[:3]
@@ -83,13 +89,17 @@ def test_scratch_firmato_parte_esatto_subito_dopo_la_target(differita, orologio_
     # (`min_bet_skip` 0,30) e poi ricordato. Prima: 2,80 interi (punta non
     # multipla, rifiutata su .it). La proprieta' di S4 resta: lo scratch parte
     # SUBITO all'importo che la regola consente, non a 2,50 per la pausa.
-    assert _importo_a_quota(b, 1.65) == 2.5, (
+    # 07/10 (ordine dell'utente, chiusure al centesimo): lo scratch 2,80 esce
+    # ESATTO, 2,00 diretti + 0,80 col place-and-trim (sostituto alla 1,65),
+    # nessun residuo. Prima (04/10): 2,50 + 0,30 residuo dichiarato.
+    assert _importo_a_quota(b, 1.65) == 2.8, (
         _importo_a_quota(b, 1.65), proposta,
         [r for r in b.righe if r[0] in ("min_bet_skip", "submin_start", "place")])
-    assert [r for r in b.righe if r[0] == "min_bet_skip"
-            and abs(float(r[1].get("size") or 0) - 0.30) < 1e-9]
+    assert not [r for r in b.righe if r[0] == "min_bet_skip"
+                and abs(float(r[1].get("size") or 0) - 0.30) < 1e-9]
     # 04/10 (CP4): mai due chiusure BACK vive insieme (target + scratch)
     vive = [o for o in b.market.blotter.strategy_orders(b.strat)
             if o.side == "BACK" and b.strat._vivo_o_in_volo(o)
             and float(o.order_type.price) < 999.0]
-    assert len(vive) <= 1, [(float(o.order_type.price), float(o.size_remaining)) for o in vive]
+    assert len({float(o.order_type.price) for o in vive}) <= 1, [
+        (float(o.order_type.price), float(o.size_remaining)) for o in vive]
