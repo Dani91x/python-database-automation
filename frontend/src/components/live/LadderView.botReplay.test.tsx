@@ -95,6 +95,21 @@ describe('LadderView senza la prop del replay: identico a prima', () => {
         expect(container.innerHTML).toMatchSnapshot();
         expect(screen.queryByTestId('bot-pnl-selezione')).toBeNull();
         expect(screen.queryByTestId('bot-appoggiato')).toBeNull();
+        expect(screen.queryByTestId('bot-abbinato')).toBeNull();
+    });
+    it('le quote disegnate sono ESATTAMENTE quelle di prima (nessuna quota in piu\', nessuna colonna allargata)', async () => {
+        const { container } = await monta();
+        const righe = Array.from(container.querySelectorAll('[class*="ds-v2-ladder-riga"]'));
+        // la cella del prezzo e' l'unico bottone col prezzo a due decimali in grassetto
+        const quote = righe.map(r => r.querySelector('button.font-bold.font-mono')?.textContent ?? '?');
+        expect(quote).toEqual([
+            '3.10', '3.05', '3.00', '2.98', '2.96', '2.94', '2.92', '2.90', '2.88', '2.86',
+            '2.04', '2.02', '2.00', '1.99', '1.98',
+        ]);
+        // le colonne «i tuoi ordini» restano larghe come prima (34px)
+        const testa = container.querySelector('.ds-v2-ladder-testa') as HTMLElement;
+        expect(testa.style.gridTemplateColumns.startsWith('34px')).toBe(true);
+        expect(testa.style.gridTemplateColumns).not.toContain('62px');
     });
 });
 

@@ -295,6 +295,72 @@ describe('arrotondamenti come Python/flumine (il banco arrotonda per ordine con 
     });
 });
 
+describe('P&L per selezione del ladder al centesimo, su esiti VERI (calcio e tennis a 2 selezioni)', () => {
+    // un conteggio INDIPENDENTE dai fill (ultima riga di ogni ordine fino a t):
+    // scritto qui a parte, non con le funzioni della lib
+    function aMano(esito: EsitoBot, ms: number, mid: string): { sel: Record<number, { w: number; l: number }>; seVince: (s: number) => number } {
+        const ultima = new Map<string, RigaBot>();
+        for (const r of [...esito.righe].sort((x, y) => x._ms - y._ms)) {
+            if (r._ms <= ms && r.market_id === mid) ultima.set(String(r._ordine), r);
+        }
+        const sel: Record<number, { w: number; l: number }> = {};
+        const fill = [...ultima.values()].filter(r => r.size_matched > 0);
+        for (const r of fill) {
+            const s = (sel[r.selection_id] ??= { w: 0, l: 0 });
+            const vincita = r.size_matched * (r.average_price_matched - 1);
+            if (r.side === 'back') { s.w += vincita; s.l -= r.size_matched; } else { s.w -= vincita; s.l += r.size_matched; }
+        }
+        const seVince = (v: number) => fill.reduce((t, r) => t + (r.selection_id === v
+            ? (r.side === 'back' ? 1 : -1) * r.size_matched * (r.average_price_matched - 1)
+            : (r.side === 'back' ? -1 : 1) * r.size_matched), 0);
+        return { sel, seVince };
+    }
+    const chiudereA = (p: number, w: number, l: number) => l + (w - l) / p;   // la formula del ladder (lockedPnlAt)
+
+    it('calcio, media under (4 clic, 35797769): alla chiusura del ciclo 1 i numeri calcolati a mano dai fill', () => {
+        const e = ESITI.media_clic_multi_69;
+        const a = analizzaEsito(e);
+        const t = 1783710628105;                         // BANCA 11,52 @ 2,20 abbinata per intero
+        const s = ladderBotAl(a.ordini, t, '1.259819682', e.esiti_mercati);
+        // fill: PUNTA 10,00 @ 2,20 + PUNTA 1,49 @ 2,24 + BANCA 11,52 @ 2,20 sull'Under 2,5
+        expect(s[47972].seVinceSel).toBeCloseTo(10 * 1.2 + 1.49 * 1.24 - 11.52 * 1.2, 9);   // +0,0236
+        expect(s[47972].sePerdeSel).toBeCloseTo(-10 - 1.49 + 11.52, 9);                     // +0,03
+        expect(s[47972].seVinceMercato).toBeCloseTo(0.0236, 9);
+        expect(s[47973].seVinceMercato).toBeCloseTo(0.03, 9);
+        expect(s[47972].abbinatoBack).toBeCloseTo(11.49, 9);
+        expect(s[47972].abbinatoLay).toBeCloseTo(11.52, 9);
+        // P&L per livello (colonna P&L del ladder) a due quote
+        expect(chiudereA(2.2, s[47972].seVinceSel, s[47972].sePerdeSel)).toBeCloseTo(0.03 - 0.0064 / 2.2, 9);
+        expect(chiudereA(1.5, s[47972].seVinceSel, s[47972].sePerdeSel)).toBeCloseTo(0.03 - 0.0064 / 1.5, 9);
+    });
+
+    for (const [nome, mid] of [['media_clic_multi_69', '1.259819682'], ['tennis_scalper', '1.259745327'], ['tennis_swing', '1.259745327']] as const) {
+        it(`${nome}: a ogni evento la posizione del ladder = il conto a mano; a fine replay «se vince» del vincitore = P&L a regolamento lordo`, () => {
+            const e = ESITI[nome];
+            const a = analizzaEsito(e);
+            const istanti = [...new Set(e.righe.map(r => r._ms))];
+            for (const t of istanti) {
+                const s = ladderBotAl(a.ordini, t, mid, e.esiti_mercati);
+                const m = aMano(e, t, mid);
+                for (const [sid, v] of Object.entries(m.sel)) {
+                    expect(s[Number(sid)].seVinceSel).toBeCloseTo(v.w, 9);
+                    expect(s[Number(sid)].sePerdeSel).toBeCloseTo(v.l, 9);
+                    for (const p of [1.5, 3.0]) {
+                        expect(chiudereA(p, s[Number(sid)].seVinceSel, s[Number(sid)].sePerdeSel)).toBeCloseTo(chiudereA(p, v.w, v.l), 9);
+                    }
+                }
+                for (const sid of e.esiti_mercati![mid].ordine_runner) {
+                    if (s[sid]) expect(s[sid].seVinceMercato).toBeCloseTo(m.seVince(sid), 9);
+                }
+            }
+            const fine = ladderBotAl(a.ordini, Number.MAX_SAFE_INTEGER, mid, e.esiti_mercati);
+            const vincitore = e.esiti_mercati![mid].vincitori[0];
+            expect(round2(fine[vincitore].seVinceMercato!)).toBe(e.conto_banco!.mercati![mid]);
+            expect(round2(fine[vincitore].seVinceMercato!)).toBe(a.regolato.mercati[mid]);
+        });
+    }
+});
+
 describe('nuova gestione della banca (media under, delegato parallelo): spostata con replace e integrazione', () => {
     it('banca spostata: nuovo ordine dello STESSO trade con importo uguale a quello tolto (preferito a un altro nato prima)', () => {
         const R: RigaBot[] = [
