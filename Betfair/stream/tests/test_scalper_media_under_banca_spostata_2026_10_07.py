@@ -571,3 +571,44 @@ def test_m21_rosso_sulla_posizione_senza_banca_oltre_la_reazione(differita, exch
     assert "M21" not in _codici(_oss(b, righe=righe, senza_banca_dal_ms=b.pt - 10_000), sol)
     assert sol.get("M21")
     assert "M21" in _codici(_oss(b, righe=righe, senza_banca_dal_ms=b.pt - 16_000))
+
+
+def test_m4_giudica_il_rientro_sulla_posizione_della_sua_nascita(differita, exchange_it):
+    """Dal 07/10 la banca resta viva durante il rientro e puo' abbinarsi DOPO
+    che la punta di rientro e' nata. M4 deve rifare la formula sulla posizione
+    che il bot aveva quando ha deciso (la fotografia del banco al book del
+    piazzamento, ``_Banco.fotografa_abbinati``), non su quella di adesso:
+    senza fotografia il rientro giusto sembra sbagliato (falso positivo)."""
+    from types import SimpleNamespace
+
+    from Betfair.stream.scalper.tools import replay_registrazioni as R
+
+    b = BancoMedia()
+    _viol, banca = _in_posizione(b, differita)
+    foto_banco = SimpleNamespace(media_foto_nascita={})
+    b.ladder[b.under] = (1.52, 1.53)
+    n = 0
+    for _i in range(40):
+        giri(b, differita, 1)
+        if len(b.ordini()) != n:
+            # il ponte del replay: un ordine nuovo della modalita' -> fotografia
+            R._Banco.fotografa_abbinati(foto_banco, b.strat, b.market)
+            n = len(b.ordini())
+        if b.kinds("media_rientro"):
+            break
+    b.ladder[b.under] = (1.51, 1.52)
+    b.book(flusso=0.0)
+    for _i in range(6):
+        giri(b, differita, 1, flusso=0.0)
+    punta = _punte(b)[-1]
+    assert MU.eseguibile(punta) and float(punta.size_matched) == 0.0
+    # la banca vecchia si abbina in parte DOPO la nascita della punta di rientro
+    b.ladder[b.under] = (1.48, 1.49)
+    b.scambia(b.under, 1.48, 1010)              # 500 di coda per lato + 5,00
+    giri(b, differita, 2, flusso=0.0)
+    assert float(banca.size_matched) == pytest.approx(5.0)
+    assert MU.vivo_o_in_volo(punta)
+    con = _oss(b, abbinati_alla_nascita=foto_banco.media_foto_nascita)
+    senza = _oss(b)
+    assert "M4" not in _codici(con)
+    assert "M4" in _codici(senza)
