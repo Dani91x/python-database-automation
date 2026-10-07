@@ -131,6 +131,25 @@ non un loop). Prima c'era una `listMarketBook` per posizione aperta ogni 2 s.
 | 3 | punta | MATCH_ODDS | ≥66' | 2-0/3-1/3-0, leader = favorita, ≥3' dal gol | BACK favorita | 1.03–1.10 | stake.backSize |
 | 4 | tennis | MATCH_ODDS | — | 1 set + ≥2 game di vantaggio, singolare, no competizioni escluse | BACK leader | 1.01–1.10 | stake.backSize |
 
+> **07/10/2026 — la tabella qui sopra è SUPERATA in quattro punti dalle decisioni
+> dell'utente del 25/09** (`CRONOSTORIA.md` 25/09 h15:50, referti
+> `AUDIT_2026-09-25/SAFE_Q1_Q4_Q5.md` e `SAFE_DECISIONI_D5.md`). Il codice le applica
+> (`engine.DEFAULT_PARAMS`, fonte unica dei numeri); questo documento non era stato
+> allineato (audit `AUDIT_2026-10-07/CONFORMITA_BOT_CALCIO.md`):
+> - **BASE** (Q1): la banda d'ingresso è la QUOTA DI BANCA della squadra che perde,
+>   **20–34** estremi inclusi; il filtro «fav live 1.20–1.34» è TOLTO.
+> - **PUNTA** (Q10): stesse bande pre-partita della BASE (favorita 1.40–1.80,
+>   sfavorita 4–8).
+> - **ESATTO** (Q7 + D5): «selezione aggiuntiva» ACCESA (scontri diretti con 4+ gol
+>   ≤ 58 %, almeno 3 incontri; gol subiti dall'avversaria ≤ 1,37); un dato assente
+>   NON blocca e lo dichiara.
+> - **Tutte e tre** (Q4 + D5): veto dei campionati del corso (femminile, amichevoli,
+>   Bundesliga e 2. Bundesliga, Eredivisie ed Eerste Divisie) e delle sole FINALI;
+>   nessun ingresso al minuto di uscita o dopo (Q8: 80' base, 72' esatto, 83' punta).
+> - Tennis (Q5): quota minima 1,02.
+> La SPEC citata dal banco (`SPEC_STRATEGIA_S.md`) NON è versionata: esiste solo sul PC
+> dell'utente.
+
 Gate d'ingresso del bot: liquidità abbinabile ≥ stake × fattore, **spread
 lay/back ≤ 1.6** (il trade 12 del 10/09, back 20 / lay 60, era un'entrata sbagliata),
 rischio (`risk.py`), dedup per `signal_key` (= event:variant:situazione, indice univoco

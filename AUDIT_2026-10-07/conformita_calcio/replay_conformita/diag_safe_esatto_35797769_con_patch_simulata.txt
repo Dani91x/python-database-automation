@@ -1,0 +1,69 @@
+SETTLE giro 20:33:52 aperte [(1, 'open', '1.259819681')] regolate 0
+DECIDE 20:34:29 trade 1 esatto min 72 ultimo 1 1 ingresso 1 1 lato home -> ('time', 'minuto_72_lato_bancato_senza_gol', 0.0)
+DECIDE 20:35:49 trade 1 esatto min 73 ultimo 1 1 ingresso 1 1 lato home -> ('time', 'minuto_73_lato_bancato_senza_gol', 0.0)
+DECIDE 20:35:55 trade 1 esatto min 72 ultimo 1 1 ingresso 1 1 lato home -> ('time', 'minuto_72_lato_bancato_senza_gol', 0.0)
+DECIDE 20:36:02 trade 1 esatto min 73 ultimo 1 1 ingresso 1 1 lato home -> ('time', 'minuto_73_lato_bancato_senza_gol', 0.0)
+DECIDE 20:37:08 trade 1 esatto min 74 ultimo 1 1 ingresso 1 1 lato home -> ('time', 'minuto_74_lato_bancato_senza_gol', 0.0)
+DECIDE 20:37:53 trade 1 esatto min 75 ultimo 1 1 ingresso 1 1 lato home -> ('time', 'minuto_75_lato_bancato_senza_gol', 0.0)
+DECIDE 20:38:53 trade 1 esatto min 76 ultimo 1 1 ingresso 1 1 lato home -> ('time', 'minuto_76_lato_bancato_senza_gol', 0.0)
+DECIDE 20:40:00 trade 1 esatto min 77 ultimo 1 1 ingresso 1 1 lato home -> ('time', 'minuto_77_lato_bancato_senza_gol', 0.0)
+DECIDE 20:40:58 trade 1 esatto min 78 ultimo 1 1 ingresso 1 1 lato home -> ('time', 'minuto_78_lato_bancato_senza_gol', 0.0)
+DECIDE 20:41:24 trade 1 esatto min 79 ultimo 1 1 ingresso 1 1 lato home -> ('time', 'minuto_79_lato_bancato_senza_gol', 0.0)
+DECIDE 20:42:30 trade 1 esatto min 80 ultimo 1 1 ingresso 1 1 lato home -> ('time', 'minuto_80_lato_bancato_senza_gol', 0.0)
+DECIDE 20:43:23 trade 1 esatto min 81 ultimo 1 1 ingresso 1 1 lato home -> ('time', 'minuto_81_lato_bancato_senza_gol', 0.0)
+SETTLE giro 20:44:08 aperte [(1, 'open', '1.259819681')] regolate 0
+DECIDE 20:44:51 trade 1 esatto min 82 ultimo 1 1 ingresso 1 1 lato home -> ('time', 'minuto_82_lato_bancato_senza_gol', 0.0)
+DECIDE 20:45:57 trade 1 esatto min 83 ultimo 1 1 ingresso 1 1 lato home -> ('time', 'minuto_83_lato_bancato_senza_gol', 0.0)
+DECIDE 20:46:56 trade 1 esatto min 84 ultimo 1 1 ingresso 1 1 lato home -> ('time', 'minuto_84_lato_bancato_senza_gol', 0.0)
+DECIDE 20:47:49 trade 1 esatto min 85 ultimo 1 1 ingresso 1 1 lato home -> ('time', 'minuto_85_lato_bancato_senza_gol', 0.0)
+DECIDE 20:48:42 trade 1 esatto min 86 ultimo 1 1 ingresso 1 1 lato home -> ('time', 'minuto_86_lato_bancato_senza_gol', 0.0)
+DECIDE 20:49:44 trade 1 esatto min 87 ultimo 2 1 ingresso 1 1 lato home -> ('loss', 'lato_bancato_segna', 1783716614.22)
+SETTLE giro 20:54:30 aperte [(1, 'open', '1.259819681')] regolate 0
+READ_MARKETS 20:59:26 todo ['1.259819681'] -> {'1.259819681': ('SUSPENDED', False)}
+READ_MARKETS 21:00:22 todo ['1.259819681'] -> {'1.259819681': ('SUSPENDED', False)}
+READ_MARKETS 21:01:10 todo ['1.259819681'] -> {'1.259819681': ('SUSPENDED', False)}
+READ_MARKETS 21:01:20 todo ['1.259819681'] -> {}
+READ_MARKETS 21:01:23 todo ['1.259819681'] -> {'1.259819681': ('SUSPENDED', False)}
+READ_MARKETS 21:01:38 todo ['1.259819681'] -> {'1.259819681': ('CLOSED', True)}
+ULTIMO GIRO DI SETTLE 2026-07-10T21:09:13.703000+00:00
+NOTE:
+   scenario=base | modalita' servizio=live | status=running | strategie accese=base,esatto,punta | strategy_modes={'base': 'live', 'esatto': 'live', 'punta': 'live'}
+   giri di run_once: 6451 | ordini reali su flumine: 1 | righe safe_strategy_trades: 1 | place osservati: 1 | uscite valutate: 910
+   [BASE] valutata 3849 volte | stati {'no': 3776, 'nd': 73} | segnali 0 | scartata per: dogLay:no x3518, score:no x2788, minute:no x2164, minute:nd x461, score:nd x461, scoreConfirmed:nd x461
+   [ESATTO] valutata 7698 volte | stati {'no': 6582, 'nd': 778, 'signal': 338} | segnali 338 | scartata per: entry:no x6213, minute:no x3002, entry:nd x1143, minute:nd x922, score:nd x922, sideGoals:nd x922
+   [PUNTA] valutata 3849 volte | stati {'no': 3818, 'nd': 31} | segnali 0 | scartata per: score:no x3388, entry:nd x3249, leadFav:no x2788, minute:no x2506, minute:nd x461, score:nd x461
+   attivita' del servizio: diagnosi x26, exit_hold x23, exit_wait x6, skip x2, flusso_non_dichiarato x1, place x1, flusso_interrotto x1, settle x1, settle_position x1
+   righe per stato: {'won': 1}
+   scarti dichiarati dal servizio: minuto_ingresso_oltre_uscita x2
+   [RIGA 1] esatto/auto lay sel=9063254 mkt=1.259819681 stato=won mode=live chiesto=2.0 abbinato=2.0 residuo=0.0 prezzo_chiesto=32.0 prezzo_medio=32.0 scorrimento=0 percorso=rest bet_id=100000000001 chiude=None liability=62.0 pnl=1.9
+   fill: 1 abbinamenti su 1 ordini per 2.0 EUR (prezzi [32.0])
+   P&L del replay: lordo +2.00 | commissione 0.10 (5.0%) | NETTO +1.90 EUR (non e' il metro: il metro e' la condotta)
+   bet delay: 1078 book passati durante le attese | book in ritardo: 1549288 | LAPSE al fischio: 0
+   righe di scan scritte dallo SCANNER VERO: 1986 | giri senza riga nel feed: 2602
+   tetti di rischio SPENTI (valore 0): ['model_daily_cap'] | daily_loss_stop=-50.0 | max_liability_per_trade=300.0 | max_open_trades=20
+   metodi di database chiamati dal servizio e ASSENTI dal banco: ['proposte_di_chiusura_vive', 'save_event_model']
+   [NON ESERCITABILE] dati di produzione assenti dalla registrazione: get_event: tabella `events` (anagrafica partite): non e' nello stream di mercato registrato
+   [NON ESERCITABILE] minimo di giurisdizione .it e place-and-trim: flumine non ha un minimo, quindi `place_submin_live` piazza diretto (controllo T11)
+   [FUORI PERIMETRO C.3] opportunita' a modello, combo e anomalie: altro motore, non le tre strategie della SPEC (controllo T5)
+   --- BASE ---
+     B1   SPEC §1 tabella: Mercato = 1X2                                             x3849   viol=0   conforme
+     B2   SPEC §1: BANCA (lay)                                                       x3849   viol=0   conforme
+     B3   SPEC §1: si banca la squadra che sta PERDENDO                              x0      viol=0   non lo so
+     B4   SPEC §1: minuto ingresso DAL 55' (soglia, non fascia)                      x3849   viol=0   conforme
+     B5   SPEC §1: punteggio 1-0 / 2-1 / 2-0 (orientato sulla favorita)              x3849   viol=0   conforme
+     B6   SPEC §1: quota favorita pre-match 1.40-1.80                                x3849   viol=0   conforme
+     B7   SPEC §1: quota sfavorita pre-match 4-8                                     x3849   viol=0   conforme
+     B8   SPEC §1 + decisione dell'utente 25/09 (Q1): quota di entrata 20-34 = QUOTA x3849   viol=0   conforme
+     B9   decisione dell'utente 25/09 (Q1): NESSUN filtro sulla quota live della FAV x3849   viol=0   conforme
+     B10  SPEC §1: la FAVORITA deve avere il controllo del gioco                     x0      viol=0   non lo so
+     B11  PROCESSO §6.2 / CERT 13/09: `pre_ko` CONGELATO al primo tick in-play, mai  x3419   viol=0   conforme
+     B12  SPEC §1 uscita in perdita: la sfavorita PAREGGIA -> accetta subito, non as x0      viol=0   non lo so
+     B13  SPEC §1 uscita in profitto: la favorita segna il 2° gol -> cashout         x0      viol=0   non lo so
+     B14  SPEC §1 uscita a tempo: nessun 2° gol ma si arriva all'80-83' -> esci comu x0      viol=0   non lo so
+     B15  SPEC §1: rosso alla FAVORITA -> esci; rosso alla SFAVORITA -> neutro       x0      viol=0   non lo so
+     B16  SPEC §1: attendi 20-60 s che le quote si stabilizzino                      x0      viol=0   non lo so
+     B17  SPEC §1 uscita in profitto: il controllo passa alla sfavorita -> esci in p x0      viol=0   non lo so
+   --- ESATTO ---
+     E1   SPEC §2: LAY su Risultato Esatto, selezione «Altro risultato»              x7698   viol=0   conforme
+     E2   SPEC §2: minuto ingresso DAL 48' (soglia)                                  x7698   viol=0   conforme
+     E3   SPEC §2: punteggio 0-0 / 1-0 / 1-1 / 2-1 (qualsiasi orientamento)          x7698   viol=0   conforme

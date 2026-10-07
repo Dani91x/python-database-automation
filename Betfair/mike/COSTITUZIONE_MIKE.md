@@ -158,6 +158,23 @@ Hazard 3' = MAX fra Atlante empirico (minuto, gol, lega, squadre) e modello λ-r
 amplificato dalla pressione (corner/cartellini, fino a ×1,25). Comanda la fonte più prudente.
 Esempi: S = 10 € @ 1,50 · 7' 0-0 quota 6,6 → BACK 2,26 € · 12' 1-0 quota 3,5 → BACK 5,05 €.
 
+> **07/10/2026 — allineamento del documento al codice** (audit
+> `AUDIT_2026-10-07/CONFORMITA_BOT_CALCIO.md`; le regole sono già nel codice, qui non
+> erano scritte):
+> - **Forma della copertura** (`cover_form`, di serie `lay_under45`): BANCA dell'Under 4,5
+>   per lo stesso rischio; la «punta Over 4,5» qui sopra è la forma di prima, spenta.
+> - **Copertura a prezzo coerente** (ordine dell'utente 04/10, `CRONOSTORIA.md` 04/10
+>   22:40 e 23:10): un ordine di copertura (prima posa e riprezzo, in entrambe le forme)
+>   parte SOLO se il suo prezzo LIMITE è MINORE della miglior quota di banca dell'Under 3,5
+>   nello stesso istante; altrimenti nessun ordine, `LIVE_UNCOVERED`, ricontrollo a ogni
+>   giro, un avviso critico per episodio (`engine._copertura_banca`,
+>   `_riprezzo_copertura_banca`).
+> - **Seconda condizione** (ordine dell'utente 04/10 23:40, commit `22e8638`): quando la
+>   copertura NON è eseguibile (non nell'attesa programmata) e l'Under 3,5 è in profitto
+>   di almeno 2 tick, Mike lo chiude in banca al miglior prezzo con l'importo che pareggia
+>   i due finali; chiusura confermata = `FLAT`, nessuna copertura
+>   (`engine._chiusura_in_profitto_se_non_copribile`).
+
 ### Fase 4 — Cash-out globale a profitto (stato LIVE_COVERED)
 
 Ogni ciclo il bot calcola "quanto incasso se chiudo ORA entrambe le selezioni con una LAY di

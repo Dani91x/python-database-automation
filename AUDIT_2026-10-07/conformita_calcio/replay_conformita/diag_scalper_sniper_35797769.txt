@@ -1,0 +1,11 @@
+SNIPER sniper_lines {'lines': ['OVER_UNDER_25']}
+SNIPER sniper_lines {'lines': ['OVER_UNDER_35']}
+SNIPER sniper_fire {'price': 2.22, 'size': 10.0, 'minute': 46.0}
+SNIPER sniper_timeout {'pos_s': 300.5}
+SNIPER sniper_flat {'locked': 0.67}
+SNIPER sniper_fire {'price': 1.59, 'size': 10.0, 'minute': 58.0}
+SNIPER sniper_green {'locked': 0.06, 'minute': 60.0}
+SNIPER sniper_mission_done {'pnl': 0.73}
+SNIPER sniper_lines {'lines': ['OVER_UNDER_45']}
+OK  35797769  tick=1511913 decisioni=286052 azioni= 167 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:LOCKING,slot:DONE,slot:FLATTENING,sessione:done [COMPLETE]
+ESITO: 1 partite senza violazioni, 0 con violazioni, 0 senza decisioni
