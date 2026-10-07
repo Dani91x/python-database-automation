@@ -22,6 +22,7 @@ import TradeJournal from "@/pages/TradeJournal";
 import MultiLadder from "@/pages/MultiLadder";
 import LadderPopout from "@/pages/LadderPopout";
 import MatchReplay from "@/pages/MatchReplay";
+import TennisReplay from "@/pages/TennisReplay";
 import Omega from "@/pages/Omega";
 import SafeStrategy from "@/pages/SafeStrategy";
 import Mike from "@/pages/Mike";
@@ -71,6 +72,7 @@ function RotteGuscioV2() {
                 <Route path="/storico/tennis" element={<StoricoTennis />} />
                 <Route path="/tennis" element={<TennisDashboard />} />
                 <Route path="/tennis/terminal" element={<TennisTerminal />} />
+                <Route path="/tennis/replay" element={<TennisReplay />} />
                 <Route path="/trade-journal" element={<TradeJournal />} />
                 <Route path="/report-personale" element={<ReportPersonale />} />
                 <Route path="/watchlist" element={<Watchlist />} />
@@ -229,6 +231,14 @@ function App() {
                                 element={
                                     <ProtectedRoute>
                                         <MatchReplay />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="/tennis/replay"
+                                element={
+                                    <ProtectedRoute>
+                                        <TennisReplay />
                                     </ProtectedRoute>
                                 }
                             />

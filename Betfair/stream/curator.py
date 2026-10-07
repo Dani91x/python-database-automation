@@ -5,8 +5,11 @@ fixture JSONL sintetica.
 
 Curazione = write-on-change con throttle:
   conserva uno snapshot di un mercato SOLO se (a) è il primo, (b) i best
-  back/lay di qualche selezione sono cambiati, oppure (c) è passato almeno
-  `cadence_sec` dall'ultimo conservato per quel mercato.
+  back/lay di qualche selezione sono cambiati, (c) è passato almeno
+  `cadence_sec` dall'ultimo conservato per quel mercato, oppure (d) dal 07/10
+  e' cambiato lo STATO del mercato (status o inplay) rispetto all'ultima riga
+  conservata: senza (d) la chiusura di un mercato gia' vuoto da sospeso spariva
+  dal replay (35760084: 17 mercati su 21 finivano SOSPESI invece che CHIUSI).
 Riduce drasticamente le righe senza perdere la dinamica direzionale.
 """
 from __future__ import annotations
@@ -14,7 +17,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -103,18 +106,45 @@ def curate_event(
     :param timeline: opzionale, lista {ts_ms, minute} per stimare il minuto.
     :returns: righe pronte per l'upsert (ordinate per ts crescente).
     """
+    rows = curate_records(iter_jsonl(path), event_id, cadence_sec=cadence_sec, timeline=timeline)
+    logger.info("[curator] %s: %d snapshot curati da %s", event_id, len(rows), path)
+    return rows
+
+
+def curate_records(
+    records: Iterable[Dict[str, Any]],
+    event_id: str,
+    cadence_sec: float = 10.0,
+    timeline: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
+    """La curazione di ``curate_event`` su record GIA' letti (stessa regola).
+
+    07/10 (decisione dell'utente «correggi», calcio e tennis): un cambio di
+    ``status`` o di ``inplay`` rispetto all'ultima riga conservata entra SEMPRE,
+    anche coi best invariati. E' una riga IN PIU': il resto della regola (cambio
+    dei best, cadenza) e il suo orologio non cambiano, quindi nessuna riga che
+    entrava prima esce (provato sulle 35797769 e 35760084).
+
+    07/10 (replay tennis): estratta da ``curate_event`` SENZA cambiarne la
+    logica, perche' il replay del tennis produce gli stessi record compatti
+    (``recorder.serialize_book``) decodificando il raw nativo con
+    betfairlightweight invece di leggerli da un file curato: la regola di
+    conservazione (primo snapshot, cambio dei best, cadenza minima) resta UNA.
+    """
     cadence_ms = cadence_sec * 1000.0
     last_kept_ms: Dict[str, float] = {}
     last_sig: Dict[str, Tuple] = {}
+    last_stato: Dict[str, Tuple] = {}
     rows: List[Dict[str, Any]] = []
 
-    for rec in iter_jsonl(path):
+    for rec in records:
         market_id = rec.get("market_id")
         if not market_id:
             continue
         pt = rec.get("pt")
         runners = rec.get("runners") or {}
         sig = _best_signature(runners)
+        stato = (rec.get("status") or "OPEN", bool(rec.get("inplay", False)))
 
         seen = market_id in last_sig
         # primo snapshot del mercato = sempre conservato; poi write-on-change.
@@ -125,8 +155,13 @@ def curate_event(
         # (altrimenti i duplicati passerebbero tutti).
         throttled_ok = pt is not None and prev_ms is not None and (pt - prev_ms) >= cadence_ms
 
+        # 07/10: lo stato del mercato cambiato (sospeso, chiuso, in gioco) entra
+        # sempre, SENZA spostare l'orologio della cadenza ne' la firma dei best
+        stato_cambiato = seen and last_stato.get(market_id) != stato
+        regola_di_sempre = changed or throttled_ok
+
         # conserva se è cambiato qualcosa OPPURE è passata la cadenza minima
-        if not changed and not throttled_ok:
+        if not regola_di_sempre and not stato_cambiato:
             continue
 
         rows.append(
@@ -140,10 +175,12 @@ def curate_event(
                 "ladder": ladder_db_format(runners),
             }
         )
+        last_stato[market_id] = stato
+        if not regola_di_sempre:
+            continue                    # riga di solo stato: cadenza e firma invariate
         last_sig[market_id] = sig
         if pt is not None:
             last_kept_ms[market_id] = pt
 
     rows.sort(key=lambda r: (r["ts"] or "", r["market_id"]))
-    logger.info("[curator] %s: %d snapshot curati da %s", event_id, len(rows), path)
     return rows

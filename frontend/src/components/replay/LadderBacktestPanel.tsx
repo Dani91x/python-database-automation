@@ -8,7 +8,7 @@
 import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { FlaskConical, Loader2 } from 'lucide-react';
-import type { BookSnapshot } from '@/lib/matching';
+import { DEFAULT_DELAY_MS, type BookSnapshot } from '@/lib/matching';
 import type { Market } from '@/lib/live';
 import {
     runLadderBacktest, type BacktestResult, type LadderBacktestParams,
@@ -18,6 +18,9 @@ interface Props {
     markets: Market[];
     getSnaps: (marketId: string, selectionId: number) => ReadonlyArray<BookSnapshot>;
     isInplayAt: (marketId: string, tsMs: number) => boolean;
+    /** 07/10 (Replay Tennis): bet-delay in-play del mercato (ms, dal betDelay
+     *  registrato). Assente = il delay di sempre del matching (5s, calcio). */
+    delayMsAt?: (marketId: string) => number;
 }
 
 const DEFAULTS: LadderBacktestParams = {
@@ -27,7 +30,7 @@ const DEFAULTS: LadderBacktestParams = {
 
 const money = (v: number) => `${v < 0 ? '−' : ''}€${Math.abs(v).toFixed(2)}`;
 
-export function LadderBacktestPanel({ markets, getSnaps, isInplayAt }: Props) {
+export function LadderBacktestPanel({ markets, getSnaps, isInplayAt, delayMsAt }: Props) {
     const [marketId, setMarketId] = useState<string>(() =>
         (markets.find(m => m.market_type === 'MATCH_ODDS') ?? markets[0])?.market_id ?? '');
     const market = useMemo(() => markets.find(m => m.market_id === marketId) ?? null, [markets, marketId]);
@@ -63,7 +66,8 @@ export function LadderBacktestPanel({ markets, getSnaps, isInplayAt }: Props) {
         setTimeout(() => {
             try {
                 const snaps = getSnaps(marketId, effectiveSel);
-                setResult(runLadderBacktest(snaps, p, (ts) => isInplayAt(marketId, ts)));
+                setResult(runLadderBacktest(snaps, p, (ts) => isInplayAt(marketId, ts),
+                    delayMsAt ? delayMsAt(marketId) : DEFAULT_DELAY_MS));
             } catch (e: any) {
                 setResult(null);
                 setRunError(e?.message ?? 'errore sconosciuto nel backtest');
@@ -73,6 +77,8 @@ export function LadderBacktestPanel({ markets, getSnaps, isInplayAt }: Props) {
         }, 0);
     };
 
+    // bet-delay in-play mostrato: quello del mercato scelto (tennis) o quello di sempre
+    const delaySec = Math.round((delayMsAt && marketId ? delayMsAt(marketId) : DEFAULT_DELAY_MS) / 1000);
     const inputCls = 'w-16 px-1.5 py-0.5 rounded-md bg-black/40 border border-white/15 text-white font-mono text-[11px]';
     const labelCls = 'text-[10px] text-muted-foreground flex items-center gap-1';
 
@@ -81,10 +87,10 @@ export function LadderBacktestPanel({ markets, getSnaps, isInplayAt }: Props) {
             <div className="rounded-xl border border-cyan-400/40 bg-cyan-500/10 px-3 py-2 text-[11px] text-cyan-100 flex items-start gap-2">
                 <FlaskConical className="w-3.5 h-3.5 mt-0.5 shrink-0" />
                 <span>
-                    <b>Backtest ONESTO</b>: pre-match senza delay · in-play col bet-delay reale (5s) ·
-                    fill solo dalla liquidità VISIBILE del book registrato (code e slippage reali) ·
-                    P&amp;L = worst-case dei due esiti · i trade non richiusi sono DICHIARATI. Una singola
-                    partita non è un campione: servono molte partite prima di trarre conclusioni.
+                    <b>Backtest ONESTO</b>{`: pre-match senza delay · in-play col bet-delay reale (${delaySec}s) · `
+                        + 'fill solo dalla liquidità VISIBILE del book registrato (code e slippage reali) · '
+                        + 'P&L = worst-case dei due esiti · i trade non richiusi sono DICHIARATI. Una singola '
+                        + 'partita non è un campione: servono molte partite prima di trarre conclusioni.'}
                 </span>
             </div>
 

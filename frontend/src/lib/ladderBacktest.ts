@@ -117,11 +117,13 @@ function flattenGreenedTaker(
 }
 
 /** Esegue il backtest della strategia su UNA selezione (snapshots ordinati per ts).
- *  `isInplay(ts)` decide fase e bet-delay. Deterministico. */
+ *  `isInplay(ts)` decide fase e bet-delay. Deterministico. `delayMs` (07/10,
+ *  Replay Tennis): bet-delay in-play del mercato; assente = DEFAULT_DELAY_MS. */
 export function runLadderBacktest(
     snaps: ReadonlyArray<BookSnapshot>,
     params: LadderBacktestParams,
     isInplay: (ts: number) => boolean,
+    delayMs: number = DEFAULT_DELAY_MS,
 ): BacktestResult {
     const trades: BacktestTrade[] = [];
     let attempted = 0;
@@ -157,7 +159,7 @@ export function runLadderBacktest(
         const entryReq: OrderRequest = {
             side: params.side, limitPrice: entryPrice, stake: params.stake,
             placedTs: cursor, inPlay: inplay,
-            delayMs: inplay ? DEFAULT_DELAY_MS : 0,               // PRE-MATCH: NESSUN delay
+            delayMs: inplay ? delayMs : 0,                        // PRE-MATCH: NESSUN delay
             persistence: 'LAPSE',
             cancelledTs: cursor + params.entryTtlSec * 1000,      // TTL: mai resting eterni
         };
@@ -198,7 +200,7 @@ export function runLadderBacktest(
         const tpReq: OrderRequest = {
             side: exitSide, limitPrice: tpPrice, stake: tpSize,
             placedTs: fillTs, inPlay: isInplay(fillTs),
-            delayMs: isInplay(fillTs) ? DEFAULT_DELAY_MS : 0,
+            delayMs: isInplay(fillTs) ? delayMs : 0,
             persistence: 'LAPSE',
             cancelledTs: Number.isFinite(tpCancelTs) ? tpCancelTs : null,
         };

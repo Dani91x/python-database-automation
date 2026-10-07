@@ -66,7 +66,8 @@ beforeEach(() => {
 describe('sidebar: solo rotte esistenti', () => {
     it("ogni voce porta a una rotta gia' presente in App.tsx", () => {
         const voci = NAV.flatMap((g) => g.voci).filter((v) => v.rotta !== null);
-        expect(voci.length).toBe(23);
+        // 07/10: +1 «Replay tennis» (/tennis/replay) nella sezione Tennis
+        expect(voci.length).toBe(24);
         for (const v of voci) {
             expect(APP, `${v.id}: la rotta ${v.rotta} non esiste in App.tsx`).toContain(`path="${v.rotta}"`);
         }
@@ -76,7 +77,8 @@ describe('sidebar: solo rotte esistenti', () => {
         // ramo di oggi: le rotte avvolte da ProtectedRoute
         const ramoOggi = APP.slice(APP.indexOf('function App()'));
         const oggi = [...ramoOggi.matchAll(/path="([^"]+)"\s*\n\s*element=\{\s*\n\s*<ProtectedRoute>/g)].map((m) => m[1]);
-        expect(oggi.length).toBe(21);
+        // 07/10: +1 /tennis/replay (Replay Tennis)
+        expect(oggi.length).toBe(22);
         expect([...oggi].filter((r) => r !== '/ladder-popout').sort()).toEqual([...ROTTE_NEL_GUSCIO].sort());
         // ramo del guscio: ogni rotta e' una figlia della layout route
         const guscio = APP.slice(APP.indexOf('function RotteGuscioV2'), APP.indexOf('function App()'));
@@ -233,7 +235,7 @@ describe('data-nav-legacy: solo navigazione, mai comandi', () => {
             });
         }
         // 6 brand + 5 «Dashboard» + Analytics «Dashboard» + Watchlist «Report» + Report «Watchlist»
-        // + 4 bottoni del Cruscotto + brand e 4 bottoni di TennisNav + brand di BotHeader
-        expect(trovati.length).toBe(24);
+        // + 4 bottoni del Cruscotto + brand e 5 bottoni di TennisNav (07/10: +«Replay») + brand di BotHeader
+        expect(trovati.length).toBe(25);
     });
 });
