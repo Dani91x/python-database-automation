@@ -14,14 +14,25 @@ COSA FA (spec par.3)
   2. IN POSIZIONE: appena la punta e' abbinata (anche in parte) appoggia la
      BANCA DI CHIUSURA (PERSIST) sulla stessa selezione a
      ``ultimo ingresso - tick di chiusura``, importo che pareggia i due esiti
-     sulla posizione VERA. Una sola banca viva per volta.
+     sulla posizione VERA. La somma delle banche vive non supera MAI la
+     posizione da coprire (al centesimo).
   3. CHIUSA IN PROFITTO: banca abbinata per intero e posizione pari -> ciclo
      registrato, si torna FERMO (nuovo ciclo con lo stake base).
   4. RIENTRO (solo pre-match): quota di punta salita di almeno ``tick di
      rientro`` sull'ULTIMO ingresso abbinato e rientri sotto il massimo ->
-     (a) annulla la banca e aspetta che sia morta, (b) ricalcola sulla
-     posizione vera, (c) PUNTA l'importo di rientro (par.4), (d) riappoggia la
-     banca a ``quota del rientro - tick``. Mai replaceOrders.
+     dal 07/10 (ordine dell'utente: <<la banca deve aspettare che si abbini il
+     rientro prima di fare qualsiasi cosa [...] MODIFICARE l'ordine banca e
+     spostarlo a seconda dei rientri effettivamente abbinati>>):
+     (a) PUNTA subito l'importo di rientro (par.4) con la banca viva INTATTA;
+     (b) finche' la punta di rientro e' viva la banca NON si tocca (il resto
+     non abbinato della punta si annulla come prima: alla prima parte
+     abbinata, giro 3, o allo scadere del TTL);
+     (c) a punta TERMINATA con un abbinato, la banca si SPOSTA una volta sulla
+     posizione vera: L = banca esatta a ``quota del rientro - tick``; prima
+     l'INTEGRAZIONE L - R (R = resto vivo della banca) alla quota nuova, poi
+     ``replace_order`` della banca vecchia alla quota nuova (Betfair non
+     aumenta l'importo di un ordine). Mai annullo + ripiazzo identico.
+     Dettagli: ``_allinea_banche`` e la spec par.3 punto 4 (07/10).
   5. MASSIMO: dopo l'ultimo rientro consentito non punta piu'; la banca resta
      appoggiata (PERSIST); lo dice una volta (attivita' CRITICAL).
   6. LIVE (dal passaggio in gioco): NESSUN ordine, nessun annullo, nessun
@@ -56,7 +67,11 @@ LIMITI DICHIARATI (spec par.6, par.7, par.11: scritti nel referto
     ricostruibile: nessun ordine, avviso critico");
   * una banca che servirebbe sotto 1,00 EUR o un rientro sotto 1,00 EUR non
     partono (il place-and-trim non e' costruito per questa modalita'): si
-    dichiarano UNA volta.
+    dichiarano UNA volta. Un'INTEGRAZIONE della banca sotto 1,00 (07/10) si fa
+    riducendo prima una banca viva (``cancelOrders`` con ``sizeReduction``)
+    cosi' che l'integrazione salga a 1,00 al centesimo; se nessuna banca viva
+    regge la riduzione (resterebbe sotto 1,00) l'integrazione si dichiara UNA
+    volta e si sposta solo la parte che c'e'.
 
 ASCII-only nel codice; i commenti sono in italiano.
 """
@@ -925,12 +940,22 @@ class MediaUnderStrategy(BaseStrategy):
         self._punta: Optional[Any] = None     # punta (ingresso o rientro) in corso
         self._punta_ms: float = 0.0
         self._punta_rientro: bool = False
-        self._banca: Optional[Any] = None     # la banca di chiusura (una sola)
+        # 07/10 (banca spostata, ordine dell'utente): le banche di chiusura sono
+        # gli ordini LAY di ``self._ordini`` (la banca, le sue integrazioni e i
+        # sostituti dei replace). ``_spostamenti``: i replace chiesti e non ancora
+        # conclusi (id dell'ordine vecchio -> quota di partenza e d'arrivo);
+        # ``_ritoccate``: gli id delle banche che il bot stesso ha annullato,
+        # ridotto o spostato (non sono <<cadute>>); ``_scoperto``: l'integrazione
+        # sotto il minimo dichiarata e non piazzata (quota, voluto, mancante)
+        self._spostamenti: Dict[int, Dict[str, Any]] = {}
+        self._ritoccate: set = set()
+        self._scoperto: Optional[Tuple[float, float, float]] = None
+        self._fermo_sposta_ms: float = 0.0
+        self._sposta_falliti: int = 0
         self._ultimo_ingresso: Optional[float] = None
         self._rientri: int = 0
         self._t_lordo: Optional[float] = None
         self._rientri_bloccati: Optional[str] = None
-        self._rientro_annullo: bool = False   # RIENTRO, fase (a): banca in annullo
         self._dichiarati: set = set()
         self._rifiuti_visti: set = set()
         self._rifiuti: int = 0
@@ -1038,6 +1063,37 @@ class MediaUnderStrategy(BaseStrategy):
             return None
         return tick_sotto(self._ultimo_ingresso, self.par.tick_chiusura)
 
+    # ------------------------------------------------ le banche (07/10)
+    def _banche(self) -> List[Any]:
+        """Le banche di chiusura del ciclo (in ordine di nascita): la banca, le
+        sue integrazioni e i sostituti dei replace."""
+        return [o for o in self._ordini if _lato(o) == "LAY"]
+
+    def _banche_vive(self) -> List[Any]:
+        return [o for o in self._banche() if vivo_o_in_volo(o)]
+
+    @property
+    def _banca(self) -> Optional[Any]:
+        """La banca <<di riferimento>> (letture e test di prima del 07/10): la
+        piu' recente viva, altrimenti la piu' recente del ciclo."""
+        vive = self._banche_vive()
+        if vive:
+            return vive[-1]
+        banche = self._banche()
+        return banche[-1] if banche else None
+
+    def _banche_ferme(self) -> bool:
+        """Nessuna operazione sulla banca in volo (ogni banca viva e' sul book,
+        nessun replace in attesa del sostituto) e tutte alla STESSA quota: lo
+        spostamento e' concluso. Solo cosi' parte un rientro (mai due quote
+        diverse vive mentre una punta di rientro e' sul mercato)."""
+        if self._spostamenti:
+            return False
+        vive = self._banche_vive()
+        if any(not eseguibile(b) for b in vive):
+            return False
+        return len({round(float(b.order_type.price), 2) for b in vive}) <= 1
+
     # -------------------------------------------------------------- flumine
     def check_market_book(self, market: Any, market_book: Any) -> bool:
         md = getattr(market_book, "market_definition", None)
@@ -1087,6 +1143,9 @@ class MediaUnderStrategy(BaseStrategy):
         aperto = (getattr(market_book, "status", None) == "OPEN"
                   and getattr(runner, "status", None) == "ACTIVE")
         self._leggi_rifiuti(now)
+        # 07/10 (banca spostata): i sostituti dei replace entrano nel ciclo, un
+        # replace fallito si dice (prima di ogni decisione, in ogni stato)
+        self._segui_spostamenti(market, now)
         # 07/10 (ATTIVA ADESSO): cio' che il clic deve sapere del mercato, e il
         # comando consegnato dalla sessione, deciso su QUESTO book
         self._clic.in_gioco = inplay
@@ -1173,7 +1232,13 @@ class MediaUnderStrategy(BaseStrategy):
         if self._punta is not None:
             p = self._punta
             if vivo_o_in_volo(p):
-                if abbinato(p)[0] > 0:
+                if self._punta_rientro:
+                    # 07/10 (ordine dell'utente): finche' la punta di RIENTRO e'
+                    # viva la banca NON si tocca; si sposta una volta sola quando
+                    # la punta e' terminata (``_assicura_banca`` dopo
+                    # ``_punta_morta``)
+                    self._rientro_in_corso(market, p)
+                elif abbinato(p)[0] > 0:
                     # "appena la punta e' abbinata (anche in parte)"
                     self._assicura_banca(market, now, prezzo_ingresso=float(
                         p.order_type.price))
@@ -1182,25 +1247,8 @@ class MediaUnderStrategy(BaseStrategy):
                                   % self.par.ttl_punta_ms)
                 return
             self._punta_morta(p)
-        # 2. la banca in annullo per un rientro (fase a): l'annullo si chiede
-        # appena la banca e' sul book (anche se al momento della decisione era
-        # ancora in volo) e si ASPETTA che sia morta
-        if self.stato == RIENTRO and self._rientro_annullo:
-            if self._banca is not None and vivo_o_in_volo(self._banca):
-                if eseguibile(self._banca):
-                    self._annulla(market, self._banca, "rientro: la banca si ritira "
-                                                       "prima della punta")
-                return
-            self._rientro_annullo = False
-            if self._ciclo_chiuso(now):
-                return
-            self._banca = None
-            self._punta_di_rientro(market, now, bb)
-            if self._punta is not None:
-                # (d) la banca si riappoggia DOPO la punta di rientro
-                return
-            if self.stato == RIENTRO:
-                self.stato = IN_POSIZIONE
+        # 2. (fino al 06/10: la banca in annullo per un rientro. Dal 07/10 la
+        # banca resta viva durante il rientro e si sposta a punta terminata)
         # 3. ciclo chiuso?
         if self._ciclo_chiuso(now):
             return
@@ -1380,23 +1428,13 @@ class MediaUnderStrategy(BaseStrategy):
             return
         if self._rientri >= self.par.max_rientri:
             return
-        piano = self._piano_rientro(pos, bb)
-        if piano is None:
+        # 07/10 (ordine dell'utente): la punta di rientro parte con la banca viva
+        # INTATTA (nessun annullo, nessun ripiazzo). Si aspetta solo che uno
+        # spostamento della banca gia' chiesto sia concluso: mai due quote
+        # diverse vive mentre la punta di rientro e' sul mercato
+        if not self._banche_ferme():
             return
-        # (a) annulla la banca viva e ASPETTA che sia morta
-        self.stato = RIENTRO
-        if self._banca is not None and vivo_o_in_volo(self._banca):
-            self._rientro_annullo = True
-            if eseguibile(self._banca):
-                self._annulla(market, self._banca, "rientro: la banca si ritira prima "
-                                                   "della punta")
-            return
-        self._banca = None
         self._punta_di_rientro(market, now, bb)
-        if self._punta is None and self.stato == RIENTRO:
-            self.stato = IN_POSIZIONE
-            # rientro non partito: la banca torna subito sulla posizione
-            self._assicura_banca(market, now, prezzo_ingresso=self._ultimo_ingresso)
 
     def _piano_rientro(self, pos: Posizione, q: float) -> Optional[Tuple[float, float, float]]:
         """(punta, importo esatto, c) del rientro alla quota q, o None se il
@@ -1427,8 +1465,9 @@ class MediaUnderStrategy(BaseStrategy):
         return xr, xe, c
 
     def _punta_di_rientro(self, market: Any, now: float, bb: Optional[float]) -> None:
-        """(b) ricalcolo sulla posizione VERA, (c) la punta di rientro. La
-        condizione del rientro si rilegge sul book corrente."""
+        """Il ricalcolo sulla posizione VERA (la banca abbinata in parte conta) e
+        la punta di rientro, con la banca viva intatta. La condizione del
+        rientro si rilegge sul book corrente."""
         if bb is None or self._ultimo_ingresso is None or self._filtro_aperture(now):
             return
         su = ticks_between(self._ultimo_ingresso, bb)
@@ -1444,6 +1483,7 @@ class MediaUnderStrategy(BaseStrategy):
         if o is None:
             return
         self._punta, self._punta_ms, self._punta_rientro = o, now, True
+        self.stato = RIENTRO
         self._emit("media_rientro", market_id=self._mid, selection_id=self._sid,
                    rientro=self._rientri + 1, prezzo=q, importo=xr, importo_esatto=xe,
                    chiusura=c, totale_puntato=round(pos.puntato, 2),
@@ -1454,9 +1494,10 @@ class MediaUnderStrategy(BaseStrategy):
 
     def _assicura_banca(self, market: Any, now: float,
                         prezzo_ingresso: Optional[float]) -> None:
-        """Una sola banca di chiusura viva, PERSIST, a ``ingresso - tick``, per
-        l'importo che pareggia la posizione VERA (al centesimo). Se l'importo o
-        la quota cambiano: annullo, attesa che sia morta, nuova banca."""
+        """La banca di chiusura, PERSIST, a ``ingresso - tick`` (o sotto la
+        media), per l'importo che pareggia la posizione VERA (al centesimo).
+        Dal 07/10 la banca si MODIFICA, mai annullo + ripiazzo: vedi
+        ``_allinea_banche``."""
         if prezzo_ingresso is None:
             return
         pos = posizione_da_ordini(self._ordini)
@@ -1468,22 +1509,94 @@ class MediaUnderStrategy(BaseStrategy):
         # abbinato delle punte (ingresso o rientro) si annulla
         if pos.puntato > _EPS:
             self._annulla_resti_delle_punte(market)
-        b = self._banca
-        if b is not None:
-            if vivo_o_in_volo(b):
-                resto = float(getattr(b, "size_remaining", 0.0) or 0.0)
-                # la parte gia' abbinata della banca e' nella posizione: il resto
-                # deve essere quanto pareggia ancora la posizione
-                voluto = al_centesimo(banca_esatta(pos, c))
-                if abs(float(b.order_type.price) - c) < 1e-9 and abs(resto - voluto) <= 0.01:
-                    return
-                if eseguibile(b):
-                    self._annulla(market, b, "banca da riallineare: %.2f @%.2f invece di "
-                                             "%.2f @%.2f" % (resto, float(b.order_type.price),
-                                                             voluto, c))
-                return
-            self._banca = None
         voluto = al_centesimo(banca_esatta(pos, c))
+        self._allinea_banche(market, now, c, voluto, pos, prezzo_ingresso)
+
+    def _allinea_banche(self, market: Any, now: float, c: float, voluto: float,
+                        pos: Posizione, prezzo_ingresso: float) -> None:
+        """07/10 - LA BANCA SI SPOSTA, NON SI RIPIAZZA (ordine dell'utente:
+        <<non voglio rischiare doppi ordini di banca [...] MODIFICARE l'ordine
+        banca e spostarlo a seconda dei rientri effettivamente abbinati>>).
+
+        Porta le banche vive alla quota ``c`` per un resto TOTALE ``voluto``
+        (L), un passo per book, senza che in nessun istante la somma dei resti
+        vivi superi L (invariante: mai copertura oltre la posizione):
+
+        * un'operazione in volo (banca non ancora sul book, annullo o replace in
+          viaggio, sostituto non ancora arrivato) -> si aspetta;
+        * R = somma dei resti vivi; D = L - R al centesimo (entro 0,01 = pari,
+          la tolleranza di sempre);
+        * D < 0 (caso anomalo: la posizione ne vuole meno) -> RIDUZIONE
+          (``cancel_order`` con ``size_reduction``; per intero solo una banca
+          piu' piccola della riduzione) e si aspetta;
+        * D >= 1,00 -> INTEGRAZIONE di D alla quota c (PERSIST) e, nello STESSO
+          book, il replace delle banche vive che stanno a un'altra quota
+          (Betfair non aumenta l'importo di un ordine: ``replaceOrders`` cambia
+          solo il prezzo e porta il resto annullato);
+        * 0 < D < 1,00 (sotto il minimo .it di una banca) -> si RIDUCE una banca
+          viva di 1,00 - D, cosi' al book dopo l'integrazione vale 1,00 al
+          centesimo; se nessuna banca regge la riduzione (resterebbe sotto 1,00)
+          la parte mancante si dichiara UNA volta e si sposta solo cio' che c'e';
+        * D pari -> solo il replace delle banche a un'altra quota (se c'e').
+        Senza banche vive e' il piazzamento di sempre (stesso evento
+        ``media_banca``, stesso testo)."""
+        vive = self._banche_vive()
+        if any(not eseguibile(b) for b in vive) or self._spostamenti:
+            # un'operazione in volo: si decide quando e' arrivata
+            return
+        if not vive:
+            self._scoperto = None
+            self._banca_nuova(market, now, c, voluto, pos, prezzo_ingresso)
+            return
+        resto = round(sum(float(getattr(b, "size_remaining", 0.0) or 0.0) for b in vive), 2)
+        d = round(voluto - resto, 2)
+        if d < -0.01 - 1e-9:
+            self._riduci(market, vive, -d, "la posizione vera ne vuole %.2f @%.2f, vive %.2f"
+                         % (voluto, c, resto))
+            return
+        if d > 0.01 + 1e-9:
+            if importo_piazzabile("lay", d).via == VIA_DIRETTA:
+                if now < self._fermo_banca_ms:
+                    return
+                o = self._piazza(market, "LAY", c, d, apertura=False, persistenza="PERSIST")
+                if o is None:
+                    return
+                self._scoperto = None
+                dalla_media = self._dalla_media(c, pos, prezzo_ingresso)
+                self._emit("media_banca", market_id=self._mid, selection_id=self._sid,
+                           prezzo=c, importo=d, integrazione=True, totale=voluto,
+                           resto_vivo=resto, totale_puntato=round(pos.puntato, 2),
+                           se_vince=round(pos.se_vince, 4), se_perde=round(pos.se_perde, 4),
+                           quota_media=(round(pos.quota_media, 4) if pos.quota_media else None),
+                           dalla_media=dalla_media,
+                           msg="banca di chiusura: integrazione %.2f EUR @%.2f (resto vivo "
+                               "%.2f, totale %.2f, PERSIST%s)"
+                               % (d, c, resto, voluto,
+                                  ", sotto la quota media %.4f" % pos.quota_media
+                                  if dalla_media else ""))
+            else:
+                k = round(1.0 - d, 2)
+                regge = [b for b in vive
+                         if float(getattr(b, "size_remaining", 0.0) or 0.0) - k >= 1.0 - 1e-9]
+                if regge:
+                    b = max(regge, key=lambda x: float(getattr(x, "size_remaining", 0.0) or 0.0))
+                    self._riduci(market, [b], k, "integrazione di %.2f sotto il minimo .it: "
+                                                 "la banca si riduce di %.2f e l'integrazione "
+                                                 "sale a 1,00" % (d, k))
+                    return
+                if self._scoperto is None or abs(self._scoperto[2] - d) > 0.005:
+                    self._scoperto = (c, voluto, d)
+                    self._emit("media_residuo", level="CRITICAL", market_id=self._mid,
+                               selection_id=self._sid, importo=d, quota=c,
+                               msg="integrazione della banca di %.2f EUR @%.2f non piazzabile "
+                                   "(sotto 1,00) e nessuna banca viva riducibile: resta "
+                                   "scoperta e DICHIARATA, la chiudi tu" % (d, c))
+        self._sposta(market, now, vive, c)
+
+    def _banca_nuova(self, market: Any, now: float, c: float, voluto: float,
+                     pos: Posizione, prezzo_ingresso: float) -> None:
+        """Nessuna banca viva: la banca di chiusura di sempre (stesso evento e
+        stesso testo di prima del 07/10)."""
         if voluto <= 0.0:
             return
         if now < self._fermo_banca_ms:
@@ -1499,9 +1612,7 @@ class MediaUnderStrategy(BaseStrategy):
         o = self._piazza(market, "LAY", c, voluto, apertura=False, persistenza="PERSIST")
         if o is None:
             return
-        self._banca = o
-        dalla_media = (pos.quota_media is not None
-                       and c < (tick_sotto(prezzo_ingresso, self.par.tick_chiusura) or c) - 1e-9)
+        dalla_media = self._dalla_media(c, pos, prezzo_ingresso)
         self._emit("media_banca", market_id=self._mid, selection_id=self._sid,
                    prezzo=c, importo=voluto, totale_puntato=round(pos.puntato, 2),
                    se_vince=round(pos.se_vince, 4), se_perde=round(pos.se_perde, 4),
@@ -1510,6 +1621,165 @@ class MediaUnderStrategy(BaseStrategy):
                    msg="banca di chiusura %.2f EUR @%.2f (PERSIST%s)"
                        % (voluto, c, ", sotto la quota media %.4f" % pos.quota_media
                           if dalla_media else ""))
+
+    def _dalla_media(self, c: float, pos: Posizione, prezzo_ingresso: float) -> bool:
+        return (pos.quota_media is not None
+                and c < (tick_sotto(prezzo_ingresso, self.par.tick_chiusura) or c) - 1e-9)
+
+    def _riduci(self, market: Any, vive: Sequence[Any], quanto: float, motivo: str) -> None:
+        """Riduce di ``quanto`` i resti delle banche vive (la piu' grande per
+        prima): ``cancel_order`` con ``size_reduction`` (Betfair permette di
+        RIDURRE un ordine); per intero solo una banca piu' piccola di cio' che
+        resta da togliere."""
+        resta = round(float(quanto), 2)
+        for b in sorted(vive, key=lambda x: -float(getattr(x, "size_remaining", 0.0) or 0.0)):
+            if resta < 0.01:
+                break
+            r = round(float(getattr(b, "size_remaining", 0.0) or 0.0), 2)
+            self._ritoccate.add(id(b))
+            if resta >= r - 0.005:
+                self._annulla(market, b, "banca ridotta per intero: %s" % motivo)
+                resta = round(resta - r, 2)
+                continue
+            try:
+                market.cancel_order(b, size_reduction=resta)
+            except Exception:  # noqa: BLE001 - riduzione non accettata da flumine
+                logger.debug("[media] riduzione KO", exc_info=True)
+                return
+            self._emit("media_banca_ridotta", market_id=self._mid, selection_id=self._sid,
+                       prezzo=float(b.order_type.price), resto=r, riduzione=resta,
+                       motivo=motivo,
+                       msg="banca %.2f @%.2f ridotta di %.2f (%s)"
+                           % (r, float(b.order_type.price), resta, motivo))
+            resta = 0.0
+
+    def _sposta(self, market: Any, now: float, vive: Sequence[Any], c: float) -> None:
+        """``replace_order`` di ogni banca viva che sta a una quota diversa da
+        ``c``: Betfair annulla il resto e lo ripiazza a ``c`` in UNA operazione
+        (il resto vecchio resta sul mercato fino allo spostamento). Nessun
+        ``market_version``: la banca e' PERSIST e deve restare anche dopo un gol."""
+        if now < self._fermo_sposta_ms:
+            return
+        from flumine.exceptions import OrderUpdateError
+
+        for b in vive:
+            da = float(b.order_type.price)
+            if abs(da - c) < 1e-9 or not eseguibile(b) or getattr(b, "bet_id", None) is None:
+                continue
+            resto = float(getattr(b, "size_remaining", 0.0) or 0.0)
+            try:
+                ok = market.replace_order(b, float(c))
+            except OrderUpdateError:
+                logger.debug("[media] replace non accettato da flumine", exc_info=True)
+                continue
+            if ok is False:
+                self._spostamento_fallito(b, now, "replace rifiutato dai controlli di flumine")
+                continue
+            # un replace manda a Betfair un ordine NUOVO (il sostituto): conta fra
+            # gli ordini della modalita' (le azioni del referto)
+            self.stats["ordini"] = int(self.stats["ordini"]) + 1
+            self._ritoccate.add(id(b))
+            self._spostamenti[id(b)] = {"ordine": b, "da": da, "a": float(c), "ms": now,
+                                        "resto": resto}
+            self._emit("media_banca_sposta", market_id=self._mid, selection_id=self._sid,
+                       da=da, a=float(c), resto=round(resto, 2),
+                       msg="banca %.2f spostata da %.2f a %.2f (replace: stesso resto, "
+                           "quota nuova)" % (resto, da, c))
+
+    def _spostamento_fallito(self, b: Any, now: float, motivo: str) -> None:
+        """Un replace non riuscito nella parte di ANNULLO (la banca vecchia e'
+        ancora viva alla sua quota): si riprova dopo 1, 2, 4, 8, 16 poi 30 s di
+        mercato (lo stesso freno dei rifiuti)."""
+        self._sposta_falliti += 1
+        attesa_s = min(30, 2 ** (self._sposta_falliti - 1))
+        self._fermo_sposta_ms = now + attesa_s * 1000.0
+        self._emit("media_banca_sposta_fallita", level="WARN", market_id=self._mid,
+                   prezzo=float(b.order_type.price), motivo=motivo, riprovo_fra_s=attesa_s,
+                   msg="spostamento della banca NON riuscito (%s): la banca resta a %.2f, "
+                       "si riprova fra %d s" % (motivo, float(b.order_type.price), attesa_s))
+
+    def _segui_spostamenti(self, market: Any, now: float) -> None:
+        """07/10: a ogni book, prima di ogni decisione. Il SOSTITUTO di un
+        replace (``Trade.create_order_replacement``: stesso Trade, nel blotter
+        solo se Betfair l'ha piazzato) entra negli ordini del ciclo. Un replace
+        concluso SENZA sostituto con la banca vecchia annullata = fallito nella
+        parte di PIAZZAMENTO (Betfair: <<the cancellations will not be rolled
+        back>>): CRITICAL una volta, e l'allineamento ripiazza SUBITO cio' che
+        manca alla quota nuova. La banca vecchia di nuovo sul book alla sua
+        quota = fallito nella parte di ANNULLO: si riprova col freno."""
+        if not self._spostamenti:
+            return
+        blotter = getattr(market, "blotter", None)
+        for k, s in list(self._spostamenti.items()):
+            o = s["ordine"]
+            tr = getattr(o, "trade", None)
+            nuovi = []
+            for x in list(getattr(tr, "orders", None) or []):
+                if x is o or any(x is y for y in self._ordini):
+                    continue
+                try:
+                    nel_blotter = blotter is not None and getattr(x, "id", None) in blotter
+                except Exception:  # noqa: BLE001 - blotter illeggibile: al book dopo
+                    nel_blotter = False
+                if nel_blotter and _lato(x) == "LAY":
+                    nuovi.append(x)
+            if nuovi:
+                for x in nuovi:
+                    self._ordini.append(x)
+                    self._emit("media_banca_spostata", market_id=self._mid,
+                               selection_id=self._sid, da=s["da"], a=float(x.order_type.price),
+                               importo=float(x.order_type.size),
+                               msg="banca spostata: %.2f @%.2f (era a %.2f)"
+                                   % (float(x.order_type.size), float(x.order_type.price),
+                                      s["da"]))
+                self._sposta_falliti = 0
+                del self._spostamenti[k]
+                continue
+            if vivo_o_in_volo(o):
+                if eseguibile(o) and abs(float(o.order_type.price) - s["da"]) < 1e-9:
+                    # di nuovo sul book alla quota vecchia: l'annullo non e' riuscito
+                    del self._spostamenti[k]
+                    self._spostamento_fallito(o, now, "annullo non riuscito")
+                continue
+            del self._spostamenti[k]
+            m, _p = abbinato(o)
+            if m + 0.005 >= float(o.order_type.size):
+                # abbinata per intero prima dello spostamento: si ricalcola sulla
+                # posizione vera (nessun sostituto serve)
+                continue
+            self._una_volta("sposta_ko_%s" % id(o), "media_banca_spostamento_fallito",
+                            level="CRITICAL", market_id=self._mid, selection_id=self._sid,
+                            da=s["da"], a=s["a"], resto=round(s["resto"], 2),
+                            msg="spostamento della banca FALLITO nel piazzamento: la banca "
+                                "vecchia (%.2f @%.2f) e' annullata e il sostituto a %.2f non "
+                                "c'e'. Si ripiazza subito cio' che manca alla posizione"
+                                % (s["resto"], s["da"], s["a"]))
+
+    def _rientro_in_corso(self, market: Any, p: Any) -> None:
+        """07/10: la punta di RIENTRO e' viva e la banca NON si tocca.
+
+        * la banca si e' abbinata per intero mentre la punta era viva (ciclo
+          gia' chiuso dalla banca: nessuna banca viva, la posizione SENZA la
+          punta di rientro e' pari) -> si annulla SUBITO il resto della punta;
+          cio' che la punta ha gia' abbinato e' una posizione nuova, che la
+          modalita' gestisce come sempre sulla posizione vera (banca a quota
+          abbinata - tick) quando la punta e' terminata;
+        * la punta si e' abbinata in parte -> il resto si annulla (regola del
+          giro 3, <<resti non abbinati annullati>>, identica a prima); la banca
+          si sposta quando la punta e' terminata."""
+        if not eseguibile(p):
+            return
+        banche = self._banche()
+        if (banche and not any(vivo_o_in_volo(b) for b in banche)
+                and any(abbinato(b)[0] > 0 for b in banche)):
+            pos = posizione_da_ordini([o for o in self._ordini if o is not p])
+            if pos.puntato > _EPS and abs(pos.se_vince - pos.se_perde) <= self._toll_pari():
+                self._annulla(market, p, "la banca si e' abbinata per intero (ciclo chiuso): "
+                                         "il resto della punta di rientro si annulla")
+                return
+        if abbinato(p)[0] > 0:
+            self._annulla(market, p, "rientro abbinato in parte: il resto si annulla, la "
+                                     "banca si sposta a punta terminata")
 
     def _annulla_resti_delle_punte(self, market: Any) -> None:
         """06/10 (giro 3): ogni resto NON abbinato di una punta (ingresso o
@@ -1575,12 +1845,13 @@ class MediaUnderStrategy(BaseStrategy):
     def _nuovo_ciclo(self) -> None:
         self._ordini = []
         self._punta = None
-        self._banca = None
+        self._spostamenti = {}
+        self._ritoccate = set()
+        self._scoperto = None
         self._ultimo_ingresso = None
         self._rientri = 0
         self._t_lordo = None
         self._rientri_bloccati = None
-        self._rientro_annullo = False
         self._banca_vista = {}
         self._dichiarati.discard("massimo")
         self.stats["rientri_bloccati"] = None
@@ -1779,46 +2050,75 @@ class MediaUnderStrategy(BaseStrategy):
 
     def _segui_banca_in_live(self) -> None:
         """Cambi rilevanti della banca in gioco: abbinata (anche in parte),
-        caduta (Betfair l'ha annullata: "la banca non e' piu' a mercato")."""
-        b = self._banca
-        if b is None:
+        caduta (Betfair l'ha annullata: "la banca non e' piu' a mercato").
+        07/10: su TUTTE le banche del ciclo (banca, integrazioni, sostituti);
+        caduta = una banca morta con un resto non abbinato che il bot NON ha
+        ritoccato (annullo, riduzione o spostamento suoi) e che Betfair aveva
+        accettato (un rifiuto si dice gia' come rifiuto)."""
+        banche = self._banche()
+        if not banche:
             return
-        m, _a = abbinato(b)
         vista = self._banca_vista
+        m = sum(abbinato(b)[0] for b in banche)
         if m > float(vista.get("abbinato", 0.0)) + 0.005:
+            d = self._descrivi_banca()
             self._emit("media_banca_abbinata", level="CRITICAL", market_id=self._mid,
-                       abbinato=round(m, 2), importo=float(b.order_type.size),
-                       msg="banca di chiusura abbinata %.2f su %.2f"
-                           % (m, float(b.order_type.size)))
+                       abbinato=round(m, 2), importo=d.get("importo"),
+                       msg="banca di chiusura abbinata %.2f (banca appoggiata %.2f @%s)"
+                           % (m, float(d.get("importo") or 0.0), d.get("quota")))
             vista["abbinato"] = m
-        if not vivo_o_in_volo(b) and m + 0.005 < float(b.order_type.size) \
-                and not vista.get("caduta"):
+        cadute = vista.setdefault("cadute", set())
+        for b in banche:
+            mb, _a = abbinato(b)
+            if (vivo_o_in_volo(b) or id(b) in self._ritoccate or id(b) in cadute
+                    or getattr(b, "bet_id", None) is None
+                    or mb + 0.005 >= float(b.order_type.size)):
+                continue
+            cadute.add(id(b))
             vista["caduta"] = True
             self._emit("media_banca_caduta", level="CRITICAL", market_id=self._mid,
-                       abbinato=round(m, 2), importo=float(b.order_type.size),
+                       abbinato=round(mb, 2), importo=float(b.order_type.size),
                        msg="la banca non e' piu' a mercato (annullata da Betfair o "
-                           "scaduta): abbinato %.2f su %.2f" % (m, float(b.order_type.size)))
+                           "scaduta): abbinato %.2f su %.2f" % (mb, float(b.order_type.size)))
 
     def _descrivi_banca(self) -> Dict[str, Any]:
-        b = self._banca
-        if b is None:
+        """La banca appoggiata per la UI e le stats (stesse chiavi di prima).
+        07/10: la banca puo' essere fatta di piu' ordini alla STESSA quota (la
+        banca spostata col replace + le integrazioni): importo e abbinato sono
+        la somma del gruppo corrente (le banche vive, o quelle all'ultima quota),
+        ``ordini`` quanti sono; durante uno spostamento ``quote`` le elenca."""
+        banche = self._banche()
+        if not banche:
             return {"stato": "nessuna", "testo": "nessuna banca appoggiata"}
-        m, _a = abbinato(b)
-        size = float(b.order_type.size)
-        if vivo_o_in_volo(b):
+        vive = [b for b in banche if vivo_o_in_volo(b)]
+        ultima = (vive or banche)[-1]
+        q = float(ultima.order_type.price)
+        gruppo = vive or [b for b in banche if abs(float(b.order_type.price) - q) < 1e-9]
+        size = round(sum(float(b.order_type.size) for b in gruppo), 2)
+        m = round(sum(abbinato(b)[0] for b in gruppo), 2)
+        if vive:
             stato = "viva" if m <= 0 else "abbinata_in_parte"
         elif m + 0.005 >= size:
             stato = "abbinata"
+        elif all(id(b) in self._ritoccate for b in gruppo
+                 if abbinato(b)[0] + 0.005 < float(b.order_type.size)):
+            return {"stato": "nessuna", "testo": "nessuna banca appoggiata"}
         else:
             stato = "caduta"
         testo = {"viva": "appoggiata, non ancora abbinata",
                  "abbinata_in_parte": "appoggiata, abbinata in parte",
                  "abbinata": "abbinata per intero",
                  "caduta": "la banca non e' piu' a mercato"}[stato]
-        return {"stato": stato, "importo": size, "quota": float(b.order_type.price),
-                "abbinato": round(m, 2),
-                "persistenza": str(getattr(b.order_type, "persistence_type", "") or ""),
-                "testo": testo}
+        quote = sorted({round(float(b.order_type.price), 2) for b in gruppo})
+        if len(gruppo) > 1:
+            testo += (" (%d ordini alla stessa quota)" % len(gruppo) if len(quote) == 1
+                      else " (in spostamento: %s)" % " -> ".join("%.2f" % x for x in quote))
+        out = {"stato": stato, "importo": size, "quota": q, "abbinato": m,
+               "persistenza": str(getattr(ultima.order_type, "persistence_type", "") or ""),
+               "testo": testo, "ordini": len(gruppo)}
+        if len(quote) > 1:
+            out["quote"] = quote
+        return out
 
     # ------------------------------------------------------------- ordini
     def _piazza(self, market: Any, lato: str, prezzo: float, importo: float, *,
@@ -1868,6 +2168,9 @@ class MediaUnderStrategy(BaseStrategy):
         except Exception:  # noqa: BLE001
             logger.debug("[media] annullo KO", exc_info=True)
             return
+        if _lato(o) == "LAY":
+            # una banca annullata dal bot non e' <<caduta>> (07/10)
+            self._ritoccate.add(id(o))
         self._emit("media_annullo", market_id=self._mid, side=_lato(o),
                    prezzo=float(o.order_type.price),
                    resto=float(getattr(o, "size_remaining", 0.0) or 0.0), motivo=motivo)
@@ -1900,8 +2203,6 @@ class MediaUnderStrategy(BaseStrategy):
             self._fermo_banca_ms = now + attesa_s * 1000.0
         if o is self._punta:
             self._punta_morta(o)
-        if o is self._banca:
-            self._banca = None
         self._emit("media_rifiuto", level="CRITICAL" if self._rifiuti == 1 else "WARN",
                    market_id=self._mid, side=_lato(o), codice=codice,
                    prezzo=float(o.order_type.price), importo=float(o.order_type.size),
@@ -2000,13 +2301,18 @@ class MediaUnderStrategy(BaseStrategy):
             return (tr is not None and getattr(tr, "strategy", None) is self
                     and _lato(o) == "LAY" and vivo_o_in_volo(o)
                     and str(getattr(o.order_type, "persistence_type", "") or "") == "PERSIST")
-        b = self._banca
-        if b is None or o is not b or _lato(b) != "LAY" or not vivo_o_in_volo(b):
+        # 07/10: OGNI banca viva del ciclo (la banca, le integrazioni, i
+        # sostituti dei replace) e' "la" banca di chiusura
+        try:
+            ordini = list(self._ordini)
+        except Exception:  # noqa: BLE001 - lista che cambia nel thread di flumine
             return False
-        if str(getattr(b.order_type, "persistence_type", "") or "") != "PERSIST":
+        if (_lato(o) != "LAY" or not any(o is x for x in ordini) or not vivo_o_in_volo(o)):
+            return False
+        if str(getattr(o.order_type, "persistence_type", "") or "") != "PERSIST":
             return False
         try:
-            return posizione_da_ordini(list(self._ordini)).aperta
+            return posizione_da_ordini(ordini).aperta
         except Exception:  # noqa: BLE001 - lista che cambia nel thread di flumine
             return False
 
@@ -2025,13 +2331,22 @@ class MediaUnderStrategy(BaseStrategy):
         if self.stato in (LIVE, FINE, BLOCCATA):
             # in gioco la modalita' non piazza e non riprezza: resta cio' che c'e'
             return True
-        b = self._banca
-        if b is None or not vivo_o_in_volo(b):
+        # 07/10: le banche vive (anche piu' ordini) tutte sul book alla quota
+        # giusta, nessuno spostamento in volo, e la somma dei resti copre la
+        # posizione (a meno della parte sotto il minimo DICHIARATA)
+        vive = [x for x in ordini if _lato(x) == "LAY" and vivo_o_in_volo(x)]
+        if not vive or self._spostamenti or any(not eseguibile(x) for x in vive):
             return False
         c = quota_della_banca(self._ultimo_ingresso, pos, self.par.tick_chiusura)
-        resto = float(getattr(b, "size_remaining", 0.0) or 0.0)
-        return (c is not None and abs(float(b.order_type.price) - c) < 1e-9
-                and abs(resto - al_centesimo(banca_esatta(pos, c))) <= 0.01)
+        if c is None or any(abs(float(x.order_type.price) - c) > 1e-9 for x in vive):
+            return False
+        resto = sum(float(getattr(x, "size_remaining", 0.0) or 0.0) for x in vive)
+        voluto = al_centesimo(banca_esatta(pos, c))
+        if abs(resto - voluto) <= 0.01:
+            return True
+        sc = self._scoperto
+        return (sc is not None and abs(sc[0] - c) < 1e-9
+                and abs(resto + sc[2] - voluto) <= 0.01)
 
     def _ritira_la_punta_allo_stop(self, market: Any) -> None:
         """Allo STOP la punta in corso (ingresso o rientro) si ritira subito: la
@@ -2156,10 +2471,11 @@ class MediaUnderStrategy(BaseStrategy):
             pc = posizione_da_ordini(c)
             lordo_chiusi += min(pc.se_vince, pc.se_perde)
         punte_vive = [o for o in ultimo if _lato(o) == "BACK" and vivo_o_in_volo(o)]
-        banche_vive = [o for o in ultimo if _lato(o) == "LAY" and vivo_o_in_volo(o)]
-        if len(punte_vive) > 1 or len(banche_vive) > 1:
-            self._blocca_ripresa("%d punte e %d banche vive insieme sul conto"
-                                 % (len(punte_vive), len(banche_vive)))
+        # 07/10: piu' banche vive sono normali (la banca spostata col replace +
+        # le integrazioni): si riprendono tutte e l'allineamento le porta alla
+        # quota giusta senza mai superare la posizione. Due PUNTE vive no.
+        if len(punte_vive) > 1:
+            self._blocca_ripresa("%d punte vive insieme sul conto" % len(punte_vive))
             return
         self._nuovo_ciclo()
         self.stats["cicli_chiusi"] = len(chiusi)
@@ -2177,7 +2493,6 @@ class MediaUnderStrategy(BaseStrategy):
                 self._t_lordo = obiettivo_automatico(m0, p0, c0) if c0 else None
             self._rientri = len(abbinate) - 1
             self._ultimo_ingresso = float(abbinate[-1].order_type.price)
-        self._banca = banche_vive[0] if banche_vive else None
         if punte_vive:
             self._punta, self._punta_ms = punte_vive[0], now
             self._punta_rientro = bool(abbinate)

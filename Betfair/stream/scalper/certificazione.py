@@ -1379,8 +1379,11 @@ class Referto:
 #   M2 mai piu' rientri del massimo, mai oltre il rischio massimo
 #   M3 ogni rientro ad almeno N tick dall'ultimo ingresso abbinato
 #   M4 importo del rientro = formula (par.4) sulla posizione vera
-#   M5 una sola banca di chiusura viva, una sola punta viva
-#   M6 la banca appoggiata = formula sulla posizione vera, a ingresso - N tick
+#   M5 una sola punta viva; dal 07/10 (banca SPOSTATA, ordine dell'utente) al
+#      posto di <<una sola banca viva>>: la somma delle banche vive non supera
+#      MAI la posizione da coprire (al centesimo della banca)
+#   M6 le banche appoggiate (tutte alla stessa quota) = formula sulla posizione
+#      vera, a ingresso - N tick (o sotto la media)
 #   M7 in gioco nessun ordine nuovo e nessun annullo
 #   M8 punte LAPSE, banche PERSIST
 #   M9 nessuna punta quando le aperture sono vietate (stop prima del fischio,
@@ -1390,6 +1393,12 @@ class Referto:
 #   M11 (06/10, giro 3) <<e' sempre la quota media che comanda>>: ogni banca viva
 #      sta STRETTAMENTE sotto la quota media della posizione vera (chiusura in
 #      profitto) e nessun resto di punta resta vivo accanto a lei (annullo chiesto)
+#   M19 (07/10) mai due banche vive a quote DIVERSE fuori dallo spostamento (un
+#      replace o un'integrazione in volo), mai mentre una punta e' sul mercato
+#   M20 (07/10) nessuna banca annullata e poi ripiazzata IDENTICA (il difetto
+#      del 07/10: richiesta 9a30d0a2, 35797769 sul banco)
+#   M21 (07/10) secondi a posizione aperta SENZA una banca viva (misurati dal
+#      banco): mai oltre ``reazione_ms`` di fila
 # La parita' paper/live della modalita' e' S6 (stesso controllo del maker).
 @dataclass
 class OsservazioneMedia:
@@ -1436,6 +1445,31 @@ class OsservazioneMedia:
     chiuso_pre_match_dal_ms: Optional[int] = None
     #: millisecondi di reazione concessi a un clic (consegna -> prima punta)
     reazione_ms: int = 15000
+    # 07/10 (banca spostata): i fatti del BANCO per M4, M21
+    #: per ogni ordine, gli abbinati di TUTTI gli ordini della modalita' nel
+    #: momento in cui e' nato (order_id -> {order_id: (size_matched, prezzo
+    #: medio)}): la posizione vera su cui il bot ha deciso un rientro (dal 07/10
+    #: la banca resta viva durante il rientro e puo' abbinarsi DOPO)
+    abbinati_alla_nascita: Dict[str, Dict[str, Tuple[float, float]]] = field(
+        default_factory=dict)
+    #: da quando la posizione e' aperta senza una banca viva (``senza_banca``,
+    #: tenuto dal banco), None = adesso no
+    senza_banca_dal_ms: Optional[int] = None
+
+
+def riga_media(ordine: Any) -> Dict[str, Any]:
+    """07/10: la riga di ``riga_ordine`` piu' cio' che serve ai controlli della
+    banca spostata, dai campi VERI di flumine: ``size_cancelled`` e
+    ``sostituito`` (l'ordine ha un SOSTITUTO nel suo Trade: e' stato spostato
+    con un replace, non annullato)."""
+    r = riga_ordine(ordine, True)
+    try:
+        r["size_cancelled"] = float(getattr(ordine, "size_cancelled", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        r["size_cancelled"] = 0.0
+    tr = list(getattr(getattr(ordine, "trade", None), "orders", None) or [])
+    r["sostituito"] = bool(tr) and tr[-1] is not ordine and any(x is ordine for x in tr)
+    return r
 
 
 _REGISTRO_MEDIA: List[Tuple[str, str]] = []
@@ -1513,9 +1547,28 @@ def cicli_media(righe: Sequence[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
     return cicli
 
 
-def _m_rientri(ciclo: List[Dict[str, Any]], par: Any) -> List[Dict[str, Any]]:
+def _m_alla_nascita(righe: Sequence[Dict[str, Any]],
+                    foto: Optional[Dict[str, Tuple[float, float]]]) -> List[Dict[str, Any]]:
+    """07/10: le righe con gli abbinati che avevano quando e' nato un ordine
+    (fotografia del banco); senza fotografia le righe come sono."""
+    if not foto:
+        return list(righe)
+    out = []
+    for x in righe:
+        f = foto.get(str(x.get("order_id")))
+        out.append(x if f is None else dict(x, size_matched=f[0],
+                                            average_price_matched=f[1]))
+    return out
+
+
+def _m_rientri(ciclo: List[Dict[str, Any]], par: Any,
+               foto: Optional[Dict[str, Dict[str, Tuple[float, float]]]] = None
+               ) -> List[Dict[str, Any]]:
     """Per ogni PUNTA di rientro del ciclo: la riga, l'ultimo ingresso abbinato
-    prima di lei, la posizione degli ordini nati prima di lei, T del ciclo."""
+    prima di lei, la posizione degli ordini nati prima di lei, T del ciclo.
+    07/10: la posizione e' quella del momento in cui la punta e' nata
+    (``foto``, fotografia del banco): dal 07/10 la banca resta viva durante il
+    rientro e cio' che abbina DOPO non c'era quando il bot ha deciso."""
     out = []
     primo = None
     ultimo = None
@@ -1524,7 +1577,7 @@ def _m_rientri(ciclo: List[Dict[str, Any]], par: Any) -> List[Dict[str, Any]]:
         if str(r.get("side") or "").upper() != "BACK":
             continue
         if primo is not None:
-            prima = ciclo[:i]
+            prima = _m_alla_nascita(ciclo[:i], (foto or {}).get(str(r.get("order_id"))))
             out.append({"riga": r, "ultimo_ingresso": ultimo, "prima": prima,
                         "t_lordo": t_lordo})
         if float(r.get("size_matched") or 0.0) > 0:
@@ -1582,11 +1635,17 @@ def _q_m_rientri(o: OsservazioneMedia) -> bool:
 
 
 def _q_m_banca_ferma(o: OsservazioneMedia) -> bool:
+    """La banca e' FERMA: nessuna punta viva, le banche vive (una o piu') tutte
+    sul book (nessuna operazione in volo) alla STESSA quota. 07/10: prima
+    <<una sola banca viva>>; dal 07/10 la banca puo' essere piu' ordini alla
+    stessa quota (la banca spostata col replace + le integrazioni)."""
     if _m_in_gioco_fuori_dal_clic(o):
         return False
     vivi = [r for r in o.ordini if _m_vivo(r)]
-    return (len(vivi) == 1 and str(vivi[0].get("side") or "").upper() == "LAY"
-            and str(vivi[0].get("status")) == SB.OrderStatus.EXECUTABLE.value)
+    return (bool(vivi) and all(str(r.get("side") or "").upper() == "LAY"
+                               and str(r.get("status")) == SB.OrderStatus.EXECUTABLE.value
+                               for r in vivi)
+            and len({round(float(r.get("price") or 0.0), 2) for r in vivi}) == 1)
 
 
 def _q_m_in_gioco(o: OsservazioneMedia) -> bool:
@@ -1624,13 +1683,13 @@ def _m1(o: OsservazioneMedia) -> Optional[str]:
 def _m2(o: OsservazioneMedia) -> Optional[str]:
     par = o.params
     for n, ciclo in enumerate(cicli_media(_m_ordinate(o))):
-        fatti = [x for x in _m_rientri(ciclo, par)
+        fatti = [x for x in _m_rientri(ciclo, par, o.abbinati_alla_nascita)
                  if float(x["riga"].get("size_matched") or 0.0) > 0]
         if len(fatti) > par.max_rientri:
             return ("ciclo %d: %d rientri abbinati contro un massimo di %d"
                     % (n + 1, len(fatti), par.max_rientri))
         if par.rischio_max > 0:
-            for x in _m_rientri(ciclo, par):
+            for x in _m_rientri(ciclo, par, o.abbinati_alla_nascita):
                 _w, _l, s, _p = _m_posizione(x["prima"])
                 if s + float(x["riga"].get("size") or 0.0) > par.rischio_max + 1e-6:
                     return ("ciclo %d: rientro %s di %.2f con %.2f gia' puntati oltre il "
@@ -1667,7 +1726,7 @@ def _m4(o: OsservazioneMedia) -> Optional[str]:
 
     par = o.params
     for ciclo in cicli_media(_m_ordinate(o)):
-        for x in _m_rientri(ciclo, par):
+        for x in _m_rientri(ciclo, par, o.abbinati_alla_nascita):
             r = x["riga"]
             q = float(r.get("price") or 0.0)
             c = _m_tick_sotto(q, par.tick_chiusura)
@@ -1686,29 +1745,67 @@ def _m4(o: OsservazioneMedia) -> Optional[str]:
     return None
 
 
-@_controllo_media("M5", "MAI due banche di chiusura vive (o in volo) insieme, MAI "
-                        "due punte vive insieme (spec par.3: difetto CP4 del 04/10)",
-                  quando=_q_m_ordini)
-def _m5(o: OsservazioneMedia) -> Optional[str]:
-    for lato in ("LAY", "BACK"):
-        vivi = [r for r in o.ordini if _m_vivo(r) and str(r.get("side") or "").upper() == lato]
-        if len(vivi) > 1:
-            return ("%d %s vive insieme: %s" % (len(vivi), "banche" if lato == "LAY"
-                                                 else "punte",
-                                                 [(r.get("order_id"), r.get("price"),
-                                                   r.get("size_remaining")) for r in vivi]))
+def _m_banche_vive(righe: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [r for r in righe if _m_vivo(r) and str(r.get("side") or "").upper() == "LAY"]
+
+
+def copertura_oltre(righe: Sequence[Dict[str, Any]]) -> Optional[str]:
+    """07/10: la somma delle banche vive supera la posizione da coprire? Se
+    tutte le banche vive si abbinassero ai loro prezzi, la posizione del
+    CICLO si rovescerebbe oltre l'arrotondamento al centesimo della banca:
+    ``(se_vince - se_perde) - somma(resto x quota) < -0,0051 x quota max``.
+    Con una sola quota e' <<somma dei resti <= L al centesimo>>. Il dettaglio
+    o None."""
+    cicli = cicli_media(list(righe))
+    if not cicli:
+        return None
+    ciclo = cicli[-1]
+    vive = _m_banche_vive(ciclo)
+    if not vive:
+        return None
+    w, l, _s, _p = _m_posizione(ciclo)
+    esposte = sum(float(r.get("size_remaining") or 0.0) * float(r.get("price") or 0.0)
+                  for r in vive)
+    qmax = max(float(r.get("price") or 0.0) for r in vive)
+    if (w - l) - esposte < -(0.0051 * qmax + 1e-6):
+        return ("banche vive %s per %.2f di esposizione: la posizione ne regge %.2f (somma "
+                "delle banche oltre la posizione da coprire)"
+                % ([(r.get("order_id"), r.get("price"), r.get("size_remaining")) for r in vive],
+                   esposte, w - l))
     return None
 
 
-@_controllo_media("M6", "quando la sola banca appoggiata e' sul book (nessuna punta "
-                        "viva, prima del fischio), sta a `ultimo ingresso - tick di "
-                        "chiusura` e il suo resto pareggia la posizione VERA: L = "
+@_controllo_media("M5", "MAI due punte vive insieme (spec par.3: difetto CP4 del 04/10) e, "
+                        "dal 07/10 (banca SPOSTATA, mai ripiazzata: ordine dell'utente), la "
+                        "somma delle banche vive non supera MAI la posizione da coprire: "
+                        "abbinate tutte ai loro prezzi la posizione non si rovescerebbe (al "
+                        "centesimo della banca)",
+                  quando=_q_m_ordini)
+def _m5(o: OsservazioneMedia) -> Optional[str]:
+    vivi = [r for r in o.ordini if _m_vivo(r) and str(r.get("side") or "").upper() == "BACK"]
+    if len(vivi) > 1:
+        return ("%d punte vive insieme: %s" % (len(vivi), [(r.get("order_id"), r.get("price"),
+                                                          r.get("size_remaining"))
+                                                         for r in vivi]))
+    return copertura_oltre(_m_ordinate(o))
+
+
+@_controllo_media("M6", "quando la banca appoggiata e' ferma sul book (nessuna punta "
+                        "viva, prima del fischio; dal 07/10 anche piu' ordini alla stessa "
+                        "quota), sta a `ultimo ingresso - tick di chiusura` (o sotto la "
+                        "media) e la SOMMA dei resti pareggia la posizione VERA: L = "
                         "(se_vince - se_perde) / c al centesimo (spec par.3.2, par.4)",
                   quando=_q_m_banca_ferma, persistente=True)
 def _m6(o: OsservazioneMedia) -> Optional[str]:
     par = o.params
     ciclo = cicli_media(_m_ordinate(o))[-1]
-    banca = next(r for r in ciclo if _m_vivo(r))
+    vive = [r for r in ciclo if _m_vivo(r)]
+    if not vive:
+        return None
+    # 07/10: la banca e' la SOMMA delle banche vive (tutte alla stessa quota)
+    banca = dict(vive[-1], size_remaining=sum(float(r.get("size_remaining") or 0.0)
+                                              for r in vive),
+                 order_id="+".join(str(r.get("order_id")) for r in vive))
     ultimo = None
     for r in ciclo:
         if str(r.get("side") or "").upper() == "BACK" and float(r.get("size_matched") or 0.0) > 0:
@@ -1775,8 +1872,15 @@ def _m11(o: OsservazioneMedia) -> Optional[str]:
             return ("banca %s @%s NON sotto la quota media %.4f: la chiusura non e' in "
                     "profitto" % (b.get("order_id"), b.get("price"), media))
     for r in ciclo:
+        # 07/10 (banca spostata): la punta di RIENTRO vive accanto alla banca
+        # finche' non si abbina (la banca non si tocca); il resto di una punta
+        # GIA' abbinata in parte (o di una punta nata prima della banca) va
+        # annullato come prima (giro 3)
         if (str(r.get("side") or "").upper() == "BACK" and _m_vivo(r)
-                and str(r.get("status")) != SB.OrderStatus.CANCELLING.value):
+                and str(r.get("status")) != SB.OrderStatus.CANCELLING.value
+                and (float(r.get("size_matched") or 0.0) > 0
+                     or int(r.get("creato_ms") or 0) < min(int(b.get("creato_ms") or 0)
+                                                          for b in banche))):
             return ("punta %s @%s con un resto vivo di %s accanto alla banca %s: il resto "
                     "va annullato quando la banca si appoggia"
                     % (r.get("order_id"), r.get("price"), r.get("size_remaining"),
@@ -1857,6 +1961,116 @@ def _m10(o: OsservazioneMedia) -> Optional[str]:
     if o.letture_conto > o.battiti + 1:
         return ("%d letture degli ordini del conto con %d battiti della sessione (al piu' "
                 "una per battito)" % (o.letture_conto, o.battiti))
+    return None
+
+
+# ---------------------------------------------------------------------------
+# 07/10 - LA BANCA SI SPOSTA, NON SI RIPIAZZA (ordine dell'utente: <<la banca
+# deve aspettare che si abbini il rientro prima di fare qualsiasi cosa [...]
+# MODIFICARE l'ordine banca e spostarlo a seconda dei rientri effettivamente
+# abbinati>>; <<voglio una soluzione definitiva per questa banca>>)
+# ---------------------------------------------------------------------------
+def _q_m_quote_diverse(o: OsservazioneMedia) -> bool:
+    if _m_in_gioco_fuori_dal_clic(o):
+        return False
+    return len(_m_banche_vive(o.ordini)) >= 2
+
+
+@_controllo_media("M19", "mai due banche vive a quote DIVERSE fuori dallo spostamento: con "
+                         "tutte le banche sul book (nessun replace o integrazione in volo) "
+                         "stanno alla stessa quota, e mai mentre una punta e' sul mercato "
+                         "(la banca si sposta UNA volta, a punta di rientro terminata)",
+                  quando=_q_m_quote_diverse, persistente=True)
+def _m19(o: OsservazioneMedia) -> Optional[str]:
+    vive = _m_banche_vive(o.ordini)
+    quote = sorted({round(float(r.get("price") or 0.0), 2) for r in vive})
+    if len(quote) <= 1:
+        return None
+    punte = [r for r in o.ordini if _m_vivo(r) and str(r.get("side") or "").upper() == "BACK"]
+    if punte:
+        return ("banche vive a quote %s mentre la punta %s e' sul mercato"
+                % (quote, punte[0].get("order_id")))
+    if all(str(r.get("status")) == SB.OrderStatus.EXECUTABLE.value for r in vive):
+        return "banche vive a quote %s, tutte sul book: lo spostamento non e' concluso" % quote
+    return None
+
+
+def banche_ripiazzate_identiche(righe: Sequence[Dict[str, Any]]) -> List[Tuple[Any, Any]]:
+    """07/10: le coppie (banca annullata, banca nuova IDENTICA): una banca che
+    Betfair aveva accettato (``bet_id``), annullata con un resto (non
+    spostata: nessun sostituto nel suo Trade), e dopo di lei una banca NUOVA
+    (non sostituto di un replace) alla stessa quota con lo stesso importo (o
+    il resto che aveva). E' il difetto del 07/10 (richiesta 9a30d0a2)."""
+    banche = [r for r in righe if str(r.get("side") or "").upper() == "LAY"]
+    out: List[Tuple[Any, Any]] = []
+    for j, b in enumerate(banche):
+        if b.get("sostituto"):
+            continue
+        for a in banche[:j]:
+            if not (float(a.get("size_cancelled") or 0.0) > 0.004 and not a.get("sostituito")
+                    and a.get("bet_id") is not None and not _m_vivo(a)):
+                continue
+            if abs(float(a.get("price") or 0.0) - float(b.get("price") or 0.0)) > 1e-9:
+                continue
+            sa, sb = float(a.get("size") or 0.0), float(b.get("size") or 0.0)
+            if abs(sa - sb) <= 0.005 or abs(sa - float(a.get("size_matched") or 0.0) - sb) <= 0.005:
+                out.append((a.get("order_id"), b.get("order_id")))
+                break
+    return out
+
+
+@_controllo_media("M20", "nessuna banca annullata e poi ripiazzata IDENTICA (stessa quota, "
+                         "stesso importo o il resto che aveva, ordine nuovo e non il sostituto "
+                         "di un replace): la banca si sposta, non si ripiazza (difetto del "
+                         "07/10, richiesta 9a30d0a2)",
+                  quando=lambda o: sum(1 for r in o.ordini
+                                       if str(r.get("side") or "").upper() == "LAY") >= 2)
+def _m20(o: OsservazioneMedia) -> Optional[str]:
+    coppie = banche_ripiazzate_identiche(_m_ordinate(o))
+    if coppie:
+        return "banche annullate e ripiazzate identiche: %s" % coppie
+    return None
+
+
+def senza_banca(o: OsservazioneMedia) -> bool:
+    """07/10: ADESSO la posizione e' aperta senza nessuna banca viva, quando la
+    modalita' DOVREBBE averla (il banco ne misura i secondi): mercato aperto,
+    prima del fischio o ciclo avviato col pulsante, nessun arresto, una banca
+    piazzabile (L >= 1,00 alla quota media) e nessun rifiuto di una banca negli
+    ultimi 35 s (il freno dei rifiuti arriva a 30 s: e' il guasto, non il bot)."""
+    if not o.aperto_ora:
+        return False
+    if o.force_flat_ms is not None and o.ms >= o.force_flat_ms:
+        return False
+    cicli = cicli_media(_m_ordinate(o))
+    if not cicli:
+        return False
+    ciclo = cicli[-1]
+    if o.in_gioco_ms is not None and o.ms >= o.in_gioco_ms and not _m_ciclo_a_clic(o, ciclo):
+        return False
+    if any(_m_vivo(r) and not _m_back(r) for r in ciclo):
+        return False
+    w, l, s, p = _m_posizione(ciclo)
+    if s <= 1e-9 or (w - l) <= 0.04:
+        return False
+    if (w - l) / (1.0 + p / s) < 1.0:
+        return False
+    for r in ciclo:
+        if (not _m_back(r) and r.get("bet_id") is None
+                and int(r.get("creato_ms") or 0) >= o.ms - 35000):
+            return False
+    return True
+
+
+@_controllo_media("M21", "la posizione aperta non resta MAI senza una banca viva oltre "
+                         "`reazione_ms` di fila (mercato aperto, prima del fischio o ciclo "
+                         "del pulsante, banca piazzabile, nessun rifiuto in corso): durante "
+                         "un rientro la banca resta, non si ritira (misura del banco)",
+                  quando=lambda o: o.senza_banca_dal_ms is not None)
+def _m21(o: OsservazioneMedia) -> Optional[str]:
+    attesa = o.ms - int(o.senza_banca_dal_ms or o.ms)
+    if attesa > int(o.reazione_ms):
+        return "posizione aperta senza banca viva da %d ms" % attesa
     return None
 
 

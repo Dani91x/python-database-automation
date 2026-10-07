@@ -343,7 +343,8 @@ def test_rientro_dentro_la_finestra_di_stop_dopo_il_clic(differita, exchange_it)
 
 def test_in_gioco_gestisce_come_pre_match_dopo_il_clic(differita, exchange_it):
     """Ciclo avviato col pulsante e aperto al fischio (punto 4): in gioco la
-    modalita' rientra (quota +2 tick) e riappoggia la banca come pre-match."""
+    modalita' rientra (quota +2 tick) e SPOSTA la banca come pre-match (07/10:
+    la banca spostata col replace + l'integrazione, alla stessa quota)."""
     b = BancoMedia(media_a_clic=True)
     giri(b, differita, 2)
     _clic(b, "c1")
@@ -354,8 +355,9 @@ def test_in_gioco_gestisce_come_pre_match_dopo_il_clic(differita, exchange_it):
     assert viol == [], viol[:3]
     assert [(float(o.order_type.price), float(o.order_type.size)) for o in _punte(b)] \
         == [(1.50, 10.0), (1.52, 10.0)]
-    assert [(float(o.order_type.price), float(o.size_remaining)) for o in b.vivi("LAY")] \
-        == [(1.50, 20.13)]
+    vive = b.vivi("LAY")
+    assert {float(o.order_type.price) for o in vive} == {1.50}
+    assert round(sum(float(o.size_remaining) for o in vive), 2) == 20.13
     assert b.strat.stats["chiusura"] is not None        # riquadro pubblicato
     assert b.kinds("media_live")[0]["a_clic"] is True
 

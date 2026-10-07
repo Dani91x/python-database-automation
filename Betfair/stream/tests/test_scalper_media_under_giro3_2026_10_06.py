@@ -114,10 +114,10 @@ def test_media_esattamente_su_un_tick_va_al_tick_sotto():
 def test_rientro_in_parte_resto_annullato_banca_sotto_la_media_in_profitto(differita,
                                                                            exchange_it):
     """Il caso del replay `media-under-tick-1` (giro 2) sul banco: chiusura a 1
-    tick, punta 10 @1,50, rientro a 1,52 con 4 sul book. Si abbina 4: la banca
-    si appoggia e il resto si annulla; la media 1,5057 comanda: banca
-    a 1,50 (non 1,51) sull'intera posizione; abbinata, il ciclo chiude in
-    PROFITTO (prima: 1,51 e -0,04)."""
+    tick, punta 10 @1,50, rientro a 1,52 con 4 sul book. Si abbina 4: il resto
+    si annulla (giro 3) e, a punta terminata, la banca si SPOSTA (07/10); la
+    media 1,5057 comanda: banca a 1,50 (non 1,51) sull'intera posizione;
+    abbinata, il ciclo chiude in PROFITTO (prima: 1,51 e -0,04)."""
     b = BancoMedia(media_tick_chiusura=1)
     viol = giri(b, differita, 70)
     b.taglie[(b.under, 1.52)] = 4.0
@@ -129,14 +129,18 @@ def test_rientro_in_parte_resto_annullato_banca_sotto_la_media_in_profitto(diffe
     assert not MU.vivo_o_in_volo(punta)
     assert float(punta.order_type.price) == 1.52
     assert float(punta.size_cancelled) == pytest.approx(float(punta.order_type.size) - 4.0)
+    # 07/10: il resto della punta di RIENTRO si annulla alla prima parte
+    # abbinata (la regola del giro 3, identica), la banca non si tocca finche'
+    # la punta e' viva
     resti = [p for p in b.kinds("media_annullo") if p.get("side") == "BACK"
-             and str(p.get("motivo", "")).startswith("banca appoggiata: il resto")]
+             and str(p.get("motivo", "")).startswith("rientro abbinato in parte")]
     assert len(resti) == 1 and resti[0]["prezzo"] == 1.52
     pos = b.posizione()
     assert pos.puntato == pytest.approx(14.0)
     vive = b.vivi("LAY")
-    assert [(float(o.order_type.price), float(o.size_remaining)) for o in vive] == [
-        (1.50, MU.al_centesimo(MU.banca_esatta(pos, 1.50)))]
+    assert {float(o.order_type.price) for o in vive} == {1.50}
+    assert round(sum(float(o.size_remaining) for o in vive), 2) == \
+        MU.al_centesimo(MU.banca_esatta(pos, 1.50))
     banche = b.kinds("media_banca")
     assert banche[-1]["prezzo"] == 1.50 and banche[-1]["dalla_media"] is True
     assert "sotto la quota media" in banche[-1]["msg"]
@@ -159,7 +163,12 @@ def test_rientri_per_intero_banca_dove_era(differita, exchange_it):
         b.ladder[b.under] = (q, round(q + 0.01, 2))
         viol += giri(b, differita, 12)
     assert viol == [], viol[:3]
-    assert [(float(o.order_type.price), float(o.order_type.size)) for o in _banche(b)] == [
+    # 07/10: la banca si sposta (replace + integrazione) agli stessi importi e
+    # alle stesse quote di prima
+    vive = b.vivi("LAY")
+    assert {float(o.order_type.price) for o in vive} == {1.54}
+    assert round(sum(float(o.size_remaining) for o in vive), 2) == 80.13
+    assert [(p["prezzo"], p.get("totale", p["importo"])) for p in b.kinds("media_banca")] == [
         (1.48, 10.14), (1.50, 20.13), (1.52, 40.13), (1.54, 80.13)]
     assert all(p["dalla_media"] is False for p in b.kinds("media_banca"))
     assert not [p for p in b.kinds("media_annullo") if p.get("side") == "BACK"]
@@ -241,8 +250,10 @@ def test_m6_vuole_la_quota_della_media(differita, exchange_it):
     oss = _oss(b, params={"media_tick_chiusura": 1})
     assert "M6" not in _codici(oss)
     righe = [dict(r) for r in oss.ordini]
-    banca = next(r for r in righe if r["side"].upper() == "LAY" and CERT._m_vivo(r))
-    banca["price"] = 1.51
+    # 07/10: la banca puo' essere piu' ordini alla stessa quota: si spostano
+    # tutti alla quota della regola vecchia
+    for banca in [r for r in righe if r["side"].upper() == "LAY" and CERT._m_vivo(r)]:
+        banca["price"] = 1.51
     memoria = CERT.Memoria()
     codici: List[str] = []
     for _i in range(3):            # M6 e' persistente: rosso se si conferma

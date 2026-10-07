@@ -63,15 +63,34 @@ Macchina a stati (per la selezione Under scelta):
 2. `IN POSIZIONE`. Appena la punta e' abbinata (anche in parte): appoggia la BANCA DI CHIUSURA sulla
    stessa selezione, a `quota dell'ultimo ingresso - N tick di chiusura`, per l'importo che rende uguale
    il profitto sui due esiti (§4), con persistenza PERSIST. Una sola banca di chiusura viva per volta.
+   **07/10**: la banca puo' essere fatta di PIU' ordini alla STESSA quota (la banca spostata col
+   replace + le integrazioni, §14); la regola diventa: la somma delle banche vive non supera MAI la
+   posizione da coprire (al centesimo) e mai due banche vive a quote diverse oltre l'istante dello
+   spostamento.
 3. `CHIUSA IN PROFITTO`: la banca e' abbinata per intero e la posizione e' pari -> ciclo chiuso, si
    registra, si torna a `FERMO` e «ricomincia il ciclo» (nuovo primo ingresso con lo stake base), finche'
    si e' in pre-match e dentro la finestra degli ingressi.
 4. `RIENTRO` (solo pre-match): se la miglior quota di punta e' salita di almeno `N tick di rientro`
-   rispetto al prezzo dell'ULTIMO ingresso e i rientri fatti sono meno del massimo: (a) annulla la banca
-   di chiusura viva e ASPETTA che sia morta (mai due chiusure vive insieme: e' il difetto CP4 corretto il
-   04/10); (b) ricalcola sulla posizione VERA abbinata (una banca abbinata in parte conta); (c) PUNTA
-   l'importo di rientro (§4); (d) riappoggia la banca di chiusura a `quota del rientro - N tick`.
-   Annullo + nuovo piazzamento, MAI `replaceOrders`.
+   rispetto al prezzo dell'ULTIMO ingresso e i rientri fatti sono meno del massimo.
+   **Dal 07/10/2026 (ordine dell'utente, sostituisce la regola di prima «annullo + nuovo
+   piazzamento, mai `replaceOrders`»)**. Testo dell'utente: «la banca deve aspettare che si abbini il
+   rientro prima di fare qualsiasi cosa. Però non voglio rischiare doppi ordini di banca, quindi
+   (...) facciamo in modo di MODIFICARE l'ordine banca e spostarlo a seconda dei rientri
+   effettivamente abbinati»; «voglio una soluzione definitiva per questa banca». La regola nuova
+   (dettagli e casi limite al §14):
+   (a) ricalcola sulla posizione VERA abbinata (una banca abbinata in parte conta) e PUNTA subito
+   l'importo di rientro (§4) al miglior prezzo, con la banca viva INTATTA (nessun annullo, nessun
+   ripiazzo); la quota si ricontrolla sul book corrente;
+   (b) finche' la punta di rientro e' viva la banca NON si tocca; il resto non abbinato della punta si
+   annulla come prima (alla prima parte abbinata, regola del giro 3, o allo scadere del TTL);
+   (c) a punta TERMINATA con un abbinato, la banca si SPOSTA una volta sulla posizione vera: `L` =
+   banca esatta alla quota `c` (quota dell'ultimo rientro abbinato - N tick, o sotto la media);
+   `R` = resto vivo della banca; PRIMA l'integrazione `L - R` alla quota `c` (PERSIST), POI
+   `replaceOrders` del resto `R` alla quota `c` (Betfair non aumenta l'importo di un ordine). In
+   nessun istante la somma delle banche vive supera `L`.
+   Il difetto che la regola chiude (dati veri, richiesta 9a30d0a2, evento 35768297; banco,
+   35797769): se fra l'annullo e la punta la quota tornava giu', il rientro non partiva e la banca si
+   rimetteva IDENTICA in fondo alla coda (ping-pong, ~60 s senza banca in gioco).
 5. `MASSIMO RAGGIUNTO`: dopo l'ultimo rientro consentito non punta piu'. Resta appoggiata la banca di
    chiusura esatta, PERSIST, calcolata su tutti i rientri fatti. Lo dice una volta (attivita' critica).
 6. `LIVE` (dal passaggio in-play): la modalita' NON piazza, NON annulla e NON riprezza niente. La banca
@@ -331,3 +350,65 @@ REGOLA DEFINITIVA sui nuovi cicli (07/10, confermata punto per punto, sostituisc
 - Banco: controlli M12-M18 (registro separato) per le sessioni <<a clic>>; M7 (nessun ordine in gioco) e la
   finestra di M9 non si applicano agli ordini dei cicli avviati col pulsante; M6 e M11 valgono anche in gioco
   per loro. Con la modalita' di sempre i controlli e i referti restano identici.
+
+## 14. 07/10/2026 - LA BANCA SI SPOSTA, NON SI RIPIAZZA (ordine dell'utente)
+
+Testo dell'utente (07/10 sera): «la strategia resta identica ad ora (...) quello che mi interessa e'
+che la banca deve aspettare che si abbini il rientro prima di fare qualsiasi cosa. Pero' non voglio
+rischiare doppi ordini di banca, quindi (...) facciamo in modo di MODIFICARE l'ordine banca e
+spostarlo a seconda dei rientri effettivamente abbinati»; «voglio una soluzione definitiva per questa
+banca».
+
+Strategia IDENTICA: stesse soglie, stessi importi di rientro (`rientro_esatto`, `punta_a_multiplo`),
+stessa quota di chiusura (`quota_della_banca`), stesse persistenze (punte LAPSE, banca PERSIST), stesso
+TTL della punta, stessi tetti, stessa regola dei resti (giro 3). Cambia SOLO la gestione dell'ordine
+di banca (`media_under_bot._allinea_banche`):
+
+1. Condizione di rientro vera -> la punta di rientro parte subito, con la banca viva INTATTA. Si
+   aspetta solo che uno spostamento gia' chiesto sia concluso (mai due quote diverse vive mentre una
+   punta di rientro e' sul mercato).
+2. Finche' la punta di rientro e' viva la banca non si tocca. Il resto della punta si annulla alla
+   prima parte abbinata (giro 3) o allo scadere del TTL, come prima.
+3. A punta terminata (abbinata per intero o resto annullato) con un abbinato, la banca si sposta UNA
+   volta, sulla posizione vera, un passo per book e senza mai superare `L`:
+   - operazione sulla banca in volo (banca non ancora sul book, riduzione o replace in viaggio,
+     sostituto non ancora arrivato) -> si aspetta;
+   - `D = L - R` (al centesimo; entro 0,01 = pari, la tolleranza di sempre);
+   - `D >= 1,00` -> integrazione `D` alla quota `c` e, nello stesso book, `replaceOrders` delle banche
+     vive a un'altra quota (nessun `marketVersion`: la banca PERSIST resta anche dopo un gol);
+   - `0 < D < 1,00` (sotto il minimo .it di una banca) -> si RIDUCE una banca viva di `1,00 - D`
+     (`cancelOrders` con `sizeReduction`: Betfair permette di ridurre un ordine) cosi' al book dopo
+     l'integrazione vale 1,00 al centesimo; se nessuna banca viva regge la riduzione restando >= 1,00
+     la parte mancante si DICHIARA una volta (CRITICAL, `media_residuo`) e si sposta solo cio' che c'e'.
+     Scelta di chi ha costruito (il brief diceva place-and-trim fra 0,50 e 1,00): il parcheggio del
+     place-and-trim (1,00 a una quota lontana) supererebbe per qualche istante la posizione da coprire
+     e sarebbe LAPSE nella macchina condivisa (`trading/submin.FlumineSubminOps`); la riduzione della
+     banca esistente e' la stessa tecnica di Betfair (ridurre un ordine sotto il minimo) senza nessun
+     ordine in piu' e senza mai superare `L`;
+   - `D < 0` (caso anomalo: la posizione ne vuole meno) -> prima la riduzione, poi il replace;
+   - `D` pari e quota uguale -> niente; quota diversa -> solo il replace.
+4. Replace fallito nella parte di PIAZZAMENTO (Betfair: «the cancellations will not be rolled back»):
+   la banca vecchia e' morta senza sostituto -> `media_banca_spostamento_fallito` CRITICAL una volta e
+   al book dopo si ripiazza SUBITO cio' che manca per arrivare a `L` alla quota nuova. Replace fallito
+   nella parte di ANNULLO (la banca vecchia di nuovo sul book alla sua quota) -> si riprova col freno
+   dei rifiuti (1, 2, 4, 8, 16, 30 s). Banca abbinata per intero prima dello spostamento -> si
+   ricalcola sulla posizione vera.
+5. La banca vecchia si abbina per intero mentre la punta di rientro e' viva (ciclo gia' chiuso dalla
+   banca) -> si annulla SUBITO il resto della punta; se la punta aveva gia' abbinato qualcosa, quello e'
+   una posizione nuova gestita come sempre sulla posizione vera (banca a quota abbinata - tick, o sotto
+   la media).
+6. In gioco (ciclo avviato col pulsante) la gestione e' identica al pre-match: integrazione e replace
+   passano dal bet delay; nessun `marketVersion` sulle banche. Nella modalita' di sempre in gioco la
+   modalita' non tocca niente (par.3.6).
+
+Conseguenze dichiarate: dopo `k` spostamenti la banca puo' essere fatta di `k + 1` ordini alla stessa
+quota (il replace sposta ogni ordine vivo; `replaceOrders` li manda insieme in una chiamata). Il
+riquadro e le stats sommano gli ordini alla quota corrente (`banca.importo`, `banca.abbinato`,
+`banca.ordini`).
+
+Banco (`certificazione.py`, famiglia M): M5 al posto di «una sola banca viva» controlla che la somma
+delle banche vive non superi mai la posizione da coprire (al centesimo); M6 e M11 accettano piu'
+ordini alla stessa quota; M4 giudica il rientro sulla posizione del momento in cui e' nato
+(fotografia del banco); nuovi M19 (mai due quote diverse oltre lo spostamento), M20 (nessuna banca
+annullata e ripiazzata identica), M21 (posizione aperta senza banca viva oltre `reazione_ms`, misurata
+dal banco, con i secondi totali nel referto).

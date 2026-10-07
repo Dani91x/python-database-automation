@@ -623,17 +623,26 @@ def riepilogo_cicli_media(ordini: List[Any], nati_ms: Dict[str, int],
         finale = con_abb[-1] if con_abb else (banche[-1] if banche else None)
         banca: Dict[str, Any] = {}
         if finale is not None:
-            m = MU.abbinato(finale)[0]
-            quando = abbinato_ms.get(str(finale.id)) if m > 0 else None
-            resto = float(getattr(finale, "size_remaining", 0.0) or 0.0)
-            if MU.vivo_o_in_volo(finale):
+            # 07/10 (banca SPOSTATA): la banca finale puo' essere piu' ordini alla
+            # stessa quota (il sostituto del replace + le integrazioni): si
+            # sommano quelli vivi o abbinati alla quota finale
+            q_f = float(finale.order_type.price)
+            gruppo = [o for o in banche if abs(float(o.order_type.price) - q_f) < 1e-9
+                      and (o is finale or MU.abbinato(o)[0] > 0 or MU.vivo_o_in_volo(o))]
+            m = sum(MU.abbinato(o)[0] for o in gruppo)
+            tempi_b = [abbinato_ms.get(str(o.id)) for o in gruppo if MU.abbinato(o)[0] > 0]
+            tempi_b = [t for t in tempi_b if t is not None]
+            quando = max(tempi_b) if (m > 0 and tempi_b) else None
+            resto = sum(float(getattr(o, "size_remaining", 0.0) or 0.0) for o in gruppo)
+            importo_f = sum(float(o.order_type.size) for o in gruppo)
+            if any(MU.vivo_o_in_volo(o) for o in gruppo):
                 fine_b = "VIVA a mercato (resto %.2f)" % resto
-            elif m + 0.005 >= float(finale.order_type.size):
+            elif m + 0.005 >= importo_f:
                 fine_b = "abbinata per intero"
             else:
                 fine_b = "NON piu' a mercato (annullata o scaduta, resto %.2f)" % (
-                    float(finale.order_type.size) - m)
-            banca = {"importo": float(finale.order_type.size),
+                    importo_f - m)
+            banca = {"importo": round(importo_f, 2),
                      "quota": float(finale.order_type.price), "abbinato": round(m, 2),
                      "dove": _quando_media(quando, ko_ms, in_gioco_ms) if m > 0 else None,
                      "fine": fine_b}
@@ -1870,6 +1879,60 @@ class _Banco:
         # 07/10 (contratto `dal_ms` per maker e sniper): la sessione si accende
         # tardi; il passaggio in gioco si registra anche prima della sessione
         self.registra_gioco_ovunque = False
+        # 07/10 (banca SPOSTATA, M4/M21): gli abbinati di tutti gli ordini della
+        # modalita' quando nasce ognuno, e la posizione aperta senza banca viva
+        # (da quando, secondi in tutto, tratto piu' lungo)
+        self.media_foto_nascita: Dict[str, Dict[str, Tuple[float, float]]] = {}
+        self.senza_banca_dal_ms: Optional[int] = None
+        self.senza_banca_ms: int = 0
+        self.senza_banca_max_ms: int = 0
+        self._senza_banca_prec: Optional[int] = None
+
+    # 07/10 (banca SPOSTATA) ------------------------------------------------
+    def fotografa_abbinati(self, s: Any, market: Any) -> None:
+        """Al book in cui la modalita' ha appena piazzato: per ogni ordine NUOVO
+        gli abbinati (importo, prezzo medio) di TUTTI i suoi ordini in quel
+        momento, cioe' la posizione su cui ha deciso (M4: la banca resta viva
+        durante il rientro e puo' abbinarsi dopo). Campi veri di flumine."""
+        try:
+            ordini = list(market.blotter.strategy_orders(s) or [])
+        except Exception:  # noqa: BLE001 - blotter illeggibile: nessuna foto
+            return
+        foto = {str(getattr(o, "id", "")): (float(getattr(o, "size_matched", 0.0) or 0.0),
+                                            float(getattr(o, "average_price_matched", 0.0)
+                                                  or 0.0))
+                for o in ordini}
+        for oid in foto:
+            if oid and oid not in self.media_foto_nascita:
+                self.media_foto_nascita[oid] = foto
+
+    def _banca_spostata(self, oss: Any, ms: int) -> None:
+        """I fatti del banco per M4 e M21 sull'osservazione del giro: la foto
+        degli abbinati alla nascita, il mercato aperto anche nella modalita' di
+        sempre (dal book del mercato scelto) e da quando la posizione e' aperta
+        senza una banca viva (``CERT.senza_banca``), coi secondi totali."""
+        oss.abbinati_alla_nascita = self.media_foto_nascita
+        if oss.aperto_ora is None and self.media_mercato_scelto is not None:
+            m = self.quadro.markets.markets.get(str(self.media_mercato_scelto))
+            mb = getattr(m, "market_book", None)
+            if mb is not None:
+                attivo = any(int(r.selection_id) == int(self.media_under or -1)
+                             and str(getattr(r, "status", "")) == "ACTIVE"
+                             for r in (getattr(mb, "runners", None) or []))
+                oss.aperto_ora = bool(getattr(mb, "status", None) == "OPEN" and attivo)
+        vive = any(s is self.media for _fw, s, _m in self.sessioni)
+        if vive and CERT.senza_banca(oss):
+            if self.senza_banca_dal_ms is None:
+                self.senza_banca_dal_ms = int(ms)
+            elif self._senza_banca_prec is not None:
+                self.senza_banca_ms += int(ms) - self._senza_banca_prec
+            self.senza_banca_max_ms = max(self.senza_banca_max_ms,
+                                          int(ms) - self.senza_banca_dal_ms)
+            self._senza_banca_prec = int(ms)
+        else:
+            self.senza_banca_dal_ms = None
+            self._senza_banca_prec = None
+        oss.senza_banca_dal_ms = self.senza_banca_dal_ms
 
     # ------------------------------------------------------------ sessioni
     def strategia_corrente(self) -> Any:
@@ -2540,7 +2603,8 @@ class _Banco:
         ordini += [o for o in mu.ordini_dal_conto() if str(o.bet_id) not in bet_ids]
         righe = []
         for i, o in enumerate(ordini):
-            r = CERT.riga_ordine(o, True)
+            # 07/10 (banca spostata): + size_cancelled e sostituito (M20)
+            r = CERT.riga_media(o)
             r["indice"] = i
             righe.append(r)
         ids = {r["order_id"] for r in righe}
@@ -2599,6 +2663,7 @@ class _Banco:
             bb_ora=(self.media_book_ora or {}).get("bb"),
             aperto_ora=(None if self.media_book_ora is None else bool(
                 self.media_book_ora.get("status") == "OPEN" and self.media_book_ora.get("attivo"))))
+        self._banca_spostata(oss, ms)
         if self.a_clic_dal_ms is not None:
             # da quando un rientro e' DOVUTO e da quando l'ultimo ciclo e' chiuso
             # pre-match (ricalcolati dal banco a ogni giro, mai dal bot)
@@ -2801,6 +2866,9 @@ class _Ponte:
                 b.ref.azioni += dopo_m - prima_m
                 if libro_m is not None and dopo_m != prima_m:
                     b.timbra_nascite(s, market, libro_m)
+                if dopo_m != prima_m:
+                    # 07/10 (banca spostata, M4): la posizione su cui ha deciso
+                    b.fotografa_abbinati(s, market)
             st = getattr(s, "stats", {}) or {}
             if (b.missione_ms is None and getattr(s, "one_green_per_phase", False)
                     and not b.in_gioco_ms and float(st.get("greens_prematch", 0) or 0) >= 1):
@@ -3461,6 +3529,29 @@ def _referto_media(ref: CERT.Referto, banco: _Banco) -> None:
                     % ({c: ref.sollecitati.get(c, 0) for c, _r in
                         CERT.elenco_controlli_media() if ref.sollecitati.get(c)},
                        ", ".join(mai_m) or "nessuno"))
+    # 07/10 (banca SPOSTATA, ordine dell'utente): la condotta della banca dagli
+    # ORDINI del mercato (campi veri) e dalla misura del banco
+    righe_b = [CERT.riga_media(o) for o in ordini_m]
+    for i_b, r_b in enumerate(righe_b):
+        r_b["indice"] = i_b
+        r_b["creato_ms"] = r_b.get("creato_ms") or banco.media_nati_ms.get(str(r_b["order_id"]))
+    banche_b = [r for r in righe_b if str(r.get("side") or "").upper() == "LAY"]
+    annulli_b = [r for r in banche_b if float(r.get("size_cancelled") or 0.0) > 0.004
+                 and not r.get("sostituito")]
+    identiche_b = CERT.banche_ripiazzate_identiche(
+        sorted(righe_b, key=lambda r: (int(r.get("creato_ms") or 0), int(r["indice"]))))
+    ref.stats_finali["media_banca_condotta"] = {
+        "annulli": len(annulli_b), "spostamenti": sum(1 for r in banche_b if r.get("sostituito")),
+        "ordini_banca": len(banche_b), "ripiazzate_identiche": len(identiche_b),
+        "secondi_senza_banca": round(banco.senza_banca_ms / 1000.0, 1),
+        "tratto_max_senza_banca_s": round(banco.senza_banca_max_ms / 1000.0, 1)}
+    ref.note.append("MEDIA UNDER banca: ordini di banca %d; annullati (non spostati) %d; "
+                    "spostati col replace %d; ripiazzati IDENTICI %d; posizione aperta senza "
+                    "banca viva %.1f s (tratto piu' lungo %.1f s)"
+                    % (len(banche_b), len(annulli_b),
+                       ref.stats_finali["media_banca_condotta"]["spostamenti"],
+                       len(identiche_b), banco.senza_banca_ms / 1000.0,
+                       banco.senza_banca_max_ms / 1000.0))
     stati_m = sorted({str(p.get("stato") or "") for k, p, _t in banco.attivita_media
                       if p.get("stato")})
     if stati_m:

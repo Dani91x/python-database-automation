@@ -88,6 +88,29 @@ def _banche(b: BancoMedia) -> List[Any]:
     return [o for o in b.ordini() if MU._lato(o) == "LAY"]
 
 
+def _banca_viva(b: BancoMedia) -> Any:
+    """07/10 (banca SPOSTATA): la banca viva come (quota, somma dei resti):
+    puo' essere piu' ordini (la banca spostata col replace + le integrazioni),
+    sempre alla STESSA quota. None senza banche vive."""
+    vive = b.vivi("LAY")
+    if not vive:
+        return None
+    quote = {float(o.order_type.price) for o in vive}
+    assert len(quote) == 1, "banche vive a quote diverse: %s" % sorted(quote)
+    return (quote.pop(), round(sum(float(o.size_remaining) for o in vive), 2))
+
+
+def _annulli_banca(b: BancoMedia) -> List[Any]:
+    """Le banche ANNULLATE dal bot (resto annullato, nessun sostituto di un
+    replace nel loro Trade): dal 07/10 la banca si sposta, non si annulla."""
+    out = []
+    for o in _banche(b):
+        tr = list(o.trade.orders)
+        if float(getattr(o, "size_cancelled", 0.0) or 0.0) > 0.004 and tr[-1] is o:
+            out.append(o)
+    return out
+
+
 # ===========================================================================
 # 1. LE FORMULE (spec par.4): ogni vettore e' un test
 # ===========================================================================
@@ -338,18 +361,27 @@ def test_ciclo_chiuso_in_profitto_e_ricomincia_con_lo_stake_base(differita, exch
 def test_vettore_a_su_flumine_rientri_banche_e_massimo(differita, exchange_it):
     b = BancoMedia()
     viol = _posizione_a(b, differita)
-    viol += _sali(b, differita, [1.52, 1.54, 1.56, 1.58, 1.60, 1.62, 1.64])
+    assert _banca_viva(b) == (1.48, 10.14)
+    # 07/10 (banca SPOSTATA): dopo ogni rientro abbinato la banca e' sulla quota
+    # nuova per l'importo del vettore A (stessi numeri di prima), fatta dalla
+    # banca spostata col replace + l'integrazione; mai annullata e ripiazzata
+    for q, attesa in ((1.52, (1.50, 20.13)), (1.54, (1.52, 40.13)), (1.56, (1.54, 80.13)),
+                      (1.58, (1.56, 160.63)), (1.60, (1.58, 321.13)), (1.62, (1.58, 321.13)),
+                      (1.64, (1.58, 321.13))):
+        viol += _sali(b, differita, [q])
+        assert _banca_viva(b) == attesa, q
     assert viol == [], viol[:3]
     assert [(float(o.order_type.price), float(o.order_type.size)) for o in _punte(b)] == [
         (1.50, 10.0), (1.52, 10.0), (1.54, 20.0), (1.56, 40.0), (1.58, 80.5), (1.60, 160.5)]
-    # una banca per passo, sempre DOPO la punta (mai la banca vecchia riappoggiata)
-    assert [(float(o.order_type.price), float(o.order_type.size)) for o in _banche(b)] == [
-        (1.48, 10.14), (1.50, 20.13), (1.52, 40.13), (1.54, 80.13), (1.56, 160.63),
-        (1.58, 321.13)]
+    assert _annulli_banca(b) == []
+    integrazioni = [p for p in b.kinds("media_banca") if p.get("integrazione")]
+    assert [(p["prezzo"], p["importo"], p["totale"]) for p in integrazioni] == [
+        (1.50, 9.99, 20.13), (1.52, 20.00, 40.13), (1.54, 40.00, 80.13),
+        (1.56, 80.50, 160.63), (1.58, 160.50, 321.13)]
     assert b.strat.stato == MU.MASSIMO
     massimo = b.kinds("media_massimo")
     assert len(massimo) == 1 and massimo[0]["level"] == "CRITICAL"
-    assert len(b.vivi("LAY")) == 1 and b.vivi("BACK") == []
+    assert b.vivi("BACK") == []
     ch = b.strat.stats["chiusura"]
     assert ch is not None and ch["posizione"]["totale_puntato"] == 321.0
 
@@ -367,8 +399,10 @@ def test_banca_abbinata_in_parte_prima_di_un_rientro(differita, exchange_it):
     assert viol == [], viol[:3]
     rientro = b.kinds("media_rientro")[0]
     assert (rientro["importo"], rientro["importo_esatto"]) == (5.0, 5.14)
-    assert [(float(o.order_type.price), float(o.order_type.size)) for o in _banche(b)][-1] \
-        == (1.50, 10.13)
+    # 07/10: la banca (resto 5,14) si sposta a 1,50 e l'integrazione 4,99 la
+    # porta a 10,13 sulla posizione vera
+    assert _banca_viva(b) == (1.50, 10.13)
+    assert _annulli_banca(b) == []
     pos = b.posizione()
     assert pos.se_perde + 10.13 == pytest.approx(0.13, abs=0.006)
 
@@ -397,8 +431,9 @@ def test_punta_di_rientro_non_abbinata_si_annulla_e_non_conta(differita, exchang
 
 def test_rientro_deciso_con_la_banca_ancora_in_volo(differita, exchange_it):
     """La quota sale di 2 tick mentre la banca e' appena partita (PENDING): il
-    rientro aspetta la banca sul book, la annulla, aspetta che sia morta, poi
-    punta (mai bloccato per sempre, mai due chiusure vive)."""
+    rientro aspetta che la banca sia sul book (07/10: NON la annulla), punta, e
+    a punta abbinata la banca si sposta (mai bloccato per sempre, mai una
+    copertura oltre la posizione)."""
     b = BancoMedia()
     viol = giri(b, differita, 61)
     viol += _fino_a(b, differita, "media_banca")
@@ -407,10 +442,10 @@ def test_rientro_deciso_con_la_banca_ancora_in_volo(differita, exchange_it):
     b.ladder[b.under] = (1.52, 1.53)
     viol += giri(b, differita, 15)
     assert viol == [], viol[:3]
-    assert not MU.vivo_o_in_volo(banca)
+    assert not MU.vivo_o_in_volo(banca)          # spostata (replace), non annullata
     assert [float(o.order_type.size) for o in _punte(b)] == [10.0, 10.0]
-    assert [(float(o.order_type.price), float(o.size_remaining)) for o in b.vivi("LAY")] \
-        == [(1.50, 20.13)]
+    assert _banca_viva(b) == (1.50, 20.13)
+    assert _annulli_banca(b) == []
 
 
 def test_rientro_bloccato_dal_massimo_zero(differita, exchange_it):
@@ -432,7 +467,7 @@ def test_rientro_bloccato_dal_rischio_massimo_con_la_riga_di_log(differita, exch
     assert len(righe) == 1 and righe[0]["motivo"] == "rischio_max"
     assert righe[0]["level"] == "CRITICAL" and righe[0]["rientro"] == 20.0
     assert b.strat.stats["rientri_bloccati"] == "rischio_max"
-    assert len(b.vivi("LAY")) == 1       # la banca resta appoggiata
+    assert _banca_viva(b) == (1.50, 20.13)       # la banca resta appoggiata
 
 
 def test_in_gioco_nessun_ordine_banca_persist_resta_punta_lapse_cade(differita, exchange_it):
@@ -721,7 +756,8 @@ def test_registrata_nel_banco_e_scenari_riconosciuti():
     assert R.mercato_media(R.SCENARIO_MEDIA_35) == "OVER_UNDER_35"
     assert R.mercato_media("base") is None
     assert [c for c, _r in CERT.elenco_controlli_media()] == [
-        "M1", "M2", "M3", "M4", "M5", "M6", "M11", "M7", "M8", "M9", "M10"]   # M10 giro 2, M11 giro 3
+        "M1", "M2", "M3", "M4", "M5", "M6", "M11", "M7", "M8", "M9", "M10",
+        "M19", "M20", "M21"]   # M10 giro 2, M11 giro 3, M19-M21 banca spostata (07/10)
     # il registro del maker non cambia: la copertura dei 15 scenari resta quella
     assert not any(c.startswith("M") for c, _r in CERT.elenco_controlli())
     assert CERT.ESCLUSI_MEDIA == {"B2", "K5"}
