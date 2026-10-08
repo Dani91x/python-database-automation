@@ -509,6 +509,13 @@ def test_auto_follow_rifiuto_betfair_rientra_e_dichiara():
                             avvia_stream=avvia)
     righe = _feed(67)
     af, _p = _auto(fw, g, righe)
+    # 08/10: il feed si rilegge a OGNI giro. Con feed_s=0.001 di orologio REALE,
+    # su una macchina veloce il secondo giro dopo la pausa cadeva entro 1 ms dal
+    # primo: niente rilettura, le 22 partite restavano fuori anche con la
+    # capacita' tornata a 540 (rosso 6 volte su 23 nel cloud; sempre rosso con
+    # l'orologio dell'auto-follow fermo). Il giro legge il feed PRIMA di
+    # aggiornare la capacita': le partite rientrano alla lettura successiva.
+    af.feed_s = 0.0
     rifiuta["si"] = True
     af.giro()                                    # apre il 2o frammento: Betfair lo nega
     af.giro()                                    # manutenzione: chiuso, capacita' 180

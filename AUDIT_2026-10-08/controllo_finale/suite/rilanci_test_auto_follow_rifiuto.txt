@@ -1,0 +1,520 @@
+=== GIRO 1
+.                                                                        [100%]
+1 passed in 0.08s
+EXIT=0
+=== GIRO 2
+.                                                                        [100%]
+1 passed in 0.11s
+EXIT=0
+=== GIRO 3
+.                                                                        [100%]
+1 passed in 0.08s
+EXIT=0
+=== GIRO 4
+.                                                                        [100%]
+1 passed in 0.08s
+EXIT=0
+=== GIRO 5
+.                                                                        [100%]
+1 passed in 0.08s
+EXIT=0
+=== GIRO 6
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____________ test_auto_follow_rifiuto_betfair_rientra_e_dichiara ______________
+
+    def test_auto_follow_rifiuto_betfair_rientra_e_dichiara():
+        fw, _rec, _live = _framework(["1.1"])
+        _collega(_market_streams(fw)[0])
+        orologio = _Orologio()
+        rifiuta = {"si": False}
+    
+        def avvia(s: Any) -> None:
+            if rifiuta["si"]:
+                s._listener.on_data(_status(False, codice="MAX_CONNECTION_LIMIT_EXCEEDED"))
+            else:
+                _collega(s)
+        g = FR.GestoreFrammenti(per_conn=180, max_conn=3, riserva=0, orologio=orologio,
+                                avvia_stream=avvia)
+        righe = _feed(67)
+        af, _p = _auto(fw, g, righe)
+        rifiuta["si"] = True
+        af.giro()                                    # apre il 2o frammento: Betfair lo nega
+        af.giro()                                    # manutenzione: chiuso, capacita' 180
+        s = af.stato()
+        assert s["tetto_mercati"] == 180 and s["connessioni_di_mercato"] == 1
+        assert s["mercati_seguiti"] <= 180 and s["mercati_sottoscritti"] <= 180
+        assert s["partite_fuori_n"] == 67 - s["eventi_auto"] > 0
+        assert s["frammenti"]["ultimo_rifiuto"] == "MAX_CONNECTION_LIMIT_EXCEEDED"
+        # dopo la pausa Betfair concede: rientrano tutte
+        rifiuta["si"] = False
+        orologio.t += FR.PAUSA_RIFIUTO_S + 1
+        af.giro()
+        af.giro()
+        s = af.stato()
+>       assert s["eventi_auto"] == 67 and s["partite_fuori_n"] == 0
+E       assert (45 == 67)
+
+Betfair/stream/tests/test_frammenti_mercato_2026_09_28.py:526: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  flumine.streams.streams:streams.py:268 Client u now paper trading
+WARNING  betfairlightweight.streaming.listener:listener.py:27 [Listener: 20002]: stream already registered, replacing data
+ERROR    betfairlightweight.streaming.listener:listener.py:210 [None: 1]: MAX_CONNECTION_LIMIT_EXCEEDED: finto
+WARNING  Betfair.stream.frammenti_mercato:frammenti_mercato.py:519 [frammenti] APERTO frammento 30000 con 88 mercati (connessione in piu')
+WARNING  Betfair.stream.frammenti_mercato:frammenti_mercato.py:543 [frammenti] CHIUSO frammento 30000 (88 mercati): connessione rifiutata: MAX_CONNECTION_LIMIT_EXCEEDED
+WARNING  Betfair.stream.auto_follow:auto_follow.py:857 [auto-follow] capacita' della connessione di mercato: 540 -> 180 mercati
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000000 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000001 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000002 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000003 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000004 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000005 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000006 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000007 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000008 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000009 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000010 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000011 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000012 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000013 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000014 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000015 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000016 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000017 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000018 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000019 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000020 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000021 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  betfairlightweight.streaming.listener:listener.py:27 [Listener: 20003]: stream already registered, replacing data
+WARNING  Betfair.stream.auto_follow:auto_follow.py:1095 [auto-follow] 22 partite idonee NON seguite (capacita' 180 mercati, 1 connessioni): 35000000, 35000001, 35000002, 35000003, 35000004, 35000005, 35000006, 35000007, 35000008, 35000009
+WARNING  Betfair.stream.auto_follow:auto_follow.py:857 [auto-follow] capacita' della connessione di mercato: 180 -> 540 mercati
+WARNING  Betfair.stream.auto_follow:auto_follow.py:1095 [auto-follow] 22 partite idonee NON seguite (capacita' 540 mercati, 1 connessioni): 35000000, 35000001, 35000002, 35000003, 35000004, 35000005, 35000006, 35000007, 35000008, 35000009
+=========================== short test summary info ============================
+FAILED Betfair/stream/tests/test_frammenti_mercato_2026_09_28.py::test_auto_follow_rifiuto_betfair_rientra_e_dichiara
+1 failed in 0.13s
+EXIT=1
+=== GIRO 7
+.                                                                        [100%]
+1 passed in 0.08s
+EXIT=0
+=== GIRO 8
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____________ test_auto_follow_rifiuto_betfair_rientra_e_dichiara ______________
+
+    def test_auto_follow_rifiuto_betfair_rientra_e_dichiara():
+        fw, _rec, _live = _framework(["1.1"])
+        _collega(_market_streams(fw)[0])
+        orologio = _Orologio()
+        rifiuta = {"si": False}
+    
+        def avvia(s: Any) -> None:
+            if rifiuta["si"]:
+                s._listener.on_data(_status(False, codice="MAX_CONNECTION_LIMIT_EXCEEDED"))
+            else:
+                _collega(s)
+        g = FR.GestoreFrammenti(per_conn=180, max_conn=3, riserva=0, orologio=orologio,
+                                avvia_stream=avvia)
+        righe = _feed(67)
+        af, _p = _auto(fw, g, righe)
+        rifiuta["si"] = True
+        af.giro()                                    # apre il 2o frammento: Betfair lo nega
+        af.giro()                                    # manutenzione: chiuso, capacita' 180
+        s = af.stato()
+        assert s["tetto_mercati"] == 180 and s["connessioni_di_mercato"] == 1
+        assert s["mercati_seguiti"] <= 180 and s["mercati_sottoscritti"] <= 180
+        assert s["partite_fuori_n"] == 67 - s["eventi_auto"] > 0
+        assert s["frammenti"]["ultimo_rifiuto"] == "MAX_CONNECTION_LIMIT_EXCEEDED"
+        # dopo la pausa Betfair concede: rientrano tutte
+        rifiuta["si"] = False
+        orologio.t += FR.PAUSA_RIFIUTO_S + 1
+        af.giro()
+        af.giro()
+        s = af.stato()
+>       assert s["eventi_auto"] == 67 and s["partite_fuori_n"] == 0
+E       assert (45 == 67)
+
+Betfair/stream/tests/test_frammenti_mercato_2026_09_28.py:526: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  flumine.streams.streams:streams.py:268 Client u now paper trading
+WARNING  betfairlightweight.streaming.listener:listener.py:27 [Listener: 20002]: stream already registered, replacing data
+ERROR    betfairlightweight.streaming.listener:listener.py:210 [None: 1]: MAX_CONNECTION_LIMIT_EXCEEDED: finto
+WARNING  Betfair.stream.frammenti_mercato:frammenti_mercato.py:519 [frammenti] APERTO frammento 30000 con 88 mercati (connessione in piu')
+WARNING  Betfair.stream.frammenti_mercato:frammenti_mercato.py:543 [frammenti] CHIUSO frammento 30000 (88 mercati): connessione rifiutata: MAX_CONNECTION_LIMIT_EXCEEDED
+WARNING  Betfair.stream.auto_follow:auto_follow.py:857 [auto-follow] capacita' della connessione di mercato: 540 -> 180 mercati
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000000 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000001 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000002 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000003 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000004 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000005 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000006 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000007 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000008 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000009 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000010 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000011 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000012 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000013 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000014 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000015 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000016 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000017 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000018 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000019 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000020 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000021 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  betfairlightweight.streaming.listener:listener.py:27 [Listener: 20003]: stream already registered, replacing data
+WARNING  Betfair.stream.auto_follow:auto_follow.py:1095 [auto-follow] 22 partite idonee NON seguite (capacita' 180 mercati, 1 connessioni): 35000000, 35000001, 35000002, 35000003, 35000004, 35000005, 35000006, 35000007, 35000008, 35000009
+WARNING  Betfair.stream.auto_follow:auto_follow.py:857 [auto-follow] capacita' della connessione di mercato: 180 -> 540 mercati
+WARNING  Betfair.stream.auto_follow:auto_follow.py:1095 [auto-follow] 22 partite idonee NON seguite (capacita' 540 mercati, 1 connessioni): 35000000, 35000001, 35000002, 35000003, 35000004, 35000005, 35000006, 35000007, 35000008, 35000009
+=========================== short test summary info ============================
+FAILED Betfair/stream/tests/test_frammenti_mercato_2026_09_28.py::test_auto_follow_rifiuto_betfair_rientra_e_dichiara
+1 failed in 0.11s
+EXIT=1
+=== GIRO 9
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____________ test_auto_follow_rifiuto_betfair_rientra_e_dichiara ______________
+
+    def test_auto_follow_rifiuto_betfair_rientra_e_dichiara():
+        fw, _rec, _live = _framework(["1.1"])
+        _collega(_market_streams(fw)[0])
+        orologio = _Orologio()
+        rifiuta = {"si": False}
+    
+        def avvia(s: Any) -> None:
+            if rifiuta["si"]:
+                s._listener.on_data(_status(False, codice="MAX_CONNECTION_LIMIT_EXCEEDED"))
+            else:
+                _collega(s)
+        g = FR.GestoreFrammenti(per_conn=180, max_conn=3, riserva=0, orologio=orologio,
+                                avvia_stream=avvia)
+        righe = _feed(67)
+        af, _p = _auto(fw, g, righe)
+        rifiuta["si"] = True
+        af.giro()                                    # apre il 2o frammento: Betfair lo nega
+        af.giro()                                    # manutenzione: chiuso, capacita' 180
+        s = af.stato()
+        assert s["tetto_mercati"] == 180 and s["connessioni_di_mercato"] == 1
+        assert s["mercati_seguiti"] <= 180 and s["mercati_sottoscritti"] <= 180
+        assert s["partite_fuori_n"] == 67 - s["eventi_auto"] > 0
+        assert s["frammenti"]["ultimo_rifiuto"] == "MAX_CONNECTION_LIMIT_EXCEEDED"
+        # dopo la pausa Betfair concede: rientrano tutte
+        rifiuta["si"] = False
+        orologio.t += FR.PAUSA_RIFIUTO_S + 1
+        af.giro()
+        af.giro()
+        s = af.stato()
+>       assert s["eventi_auto"] == 67 and s["partite_fuori_n"] == 0
+E       assert (45 == 67)
+
+Betfair/stream/tests/test_frammenti_mercato_2026_09_28.py:526: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  flumine.streams.streams:streams.py:268 Client u now paper trading
+WARNING  betfairlightweight.streaming.listener:listener.py:27 [Listener: 20002]: stream already registered, replacing data
+ERROR    betfairlightweight.streaming.listener:listener.py:210 [None: 1]: MAX_CONNECTION_LIMIT_EXCEEDED: finto
+WARNING  Betfair.stream.frammenti_mercato:frammenti_mercato.py:519 [frammenti] APERTO frammento 30000 con 88 mercati (connessione in piu')
+WARNING  Betfair.stream.frammenti_mercato:frammenti_mercato.py:543 [frammenti] CHIUSO frammento 30000 (88 mercati): connessione rifiutata: MAX_CONNECTION_LIMIT_EXCEEDED
+WARNING  Betfair.stream.auto_follow:auto_follow.py:857 [auto-follow] capacita' della connessione di mercato: 540 -> 180 mercati
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000000 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000001 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000002 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000003 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000004 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000005 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000006 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000007 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000008 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000009 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000010 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000011 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000012 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000013 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000014 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000015 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000016 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000017 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000018 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000019 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000020 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000021 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  betfairlightweight.streaming.listener:listener.py:27 [Listener: 20003]: stream already registered, replacing data
+WARNING  Betfair.stream.auto_follow:auto_follow.py:1095 [auto-follow] 22 partite idonee NON seguite (capacita' 180 mercati, 1 connessioni): 35000000, 35000001, 35000002, 35000003, 35000004, 35000005, 35000006, 35000007, 35000008, 35000009
+WARNING  Betfair.stream.auto_follow:auto_follow.py:857 [auto-follow] capacita' della connessione di mercato: 180 -> 540 mercati
+WARNING  Betfair.stream.auto_follow:auto_follow.py:1095 [auto-follow] 22 partite idonee NON seguite (capacita' 540 mercati, 1 connessioni): 35000000, 35000001, 35000002, 35000003, 35000004, 35000005, 35000006, 35000007, 35000008, 35000009
+=========================== short test summary info ============================
+FAILED Betfair/stream/tests/test_frammenti_mercato_2026_09_28.py::test_auto_follow_rifiuto_betfair_rientra_e_dichiara
+1 failed in 0.14s
+EXIT=1
+=== GIRO 10
+.                                                                        [100%]
+1 passed in 0.08s
+EXIT=0
+=== GIRO 11
+.                                                                        [100%]
+1 passed in 0.09s
+EXIT=0
+=== GIRO 12
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____________ test_auto_follow_rifiuto_betfair_rientra_e_dichiara ______________
+
+    def test_auto_follow_rifiuto_betfair_rientra_e_dichiara():
+        fw, _rec, _live = _framework(["1.1"])
+        _collega(_market_streams(fw)[0])
+        orologio = _Orologio()
+        rifiuta = {"si": False}
+    
+        def avvia(s: Any) -> None:
+            if rifiuta["si"]:
+                s._listener.on_data(_status(False, codice="MAX_CONNECTION_LIMIT_EXCEEDED"))
+            else:
+                _collega(s)
+        g = FR.GestoreFrammenti(per_conn=180, max_conn=3, riserva=0, orologio=orologio,
+                                avvia_stream=avvia)
+        righe = _feed(67)
+        af, _p = _auto(fw, g, righe)
+        rifiuta["si"] = True
+        af.giro()                                    # apre il 2o frammento: Betfair lo nega
+        af.giro()                                    # manutenzione: chiuso, capacita' 180
+        s = af.stato()
+        assert s["tetto_mercati"] == 180 and s["connessioni_di_mercato"] == 1
+        assert s["mercati_seguiti"] <= 180 and s["mercati_sottoscritti"] <= 180
+        assert s["partite_fuori_n"] == 67 - s["eventi_auto"] > 0
+        assert s["frammenti"]["ultimo_rifiuto"] == "MAX_CONNECTION_LIMIT_EXCEEDED"
+        # dopo la pausa Betfair concede: rientrano tutte
+        rifiuta["si"] = False
+        orologio.t += FR.PAUSA_RIFIUTO_S + 1
+        af.giro()
+        af.giro()
+        s = af.stato()
+>       assert s["eventi_auto"] == 67 and s["partite_fuori_n"] == 0
+E       assert (45 == 67)
+
+Betfair/stream/tests/test_frammenti_mercato_2026_09_28.py:526: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  flumine.streams.streams:streams.py:268 Client u now paper trading
+WARNING  betfairlightweight.streaming.listener:listener.py:27 [Listener: 20002]: stream already registered, replacing data
+ERROR    betfairlightweight.streaming.listener:listener.py:210 [None: 1]: MAX_CONNECTION_LIMIT_EXCEEDED: finto
+WARNING  Betfair.stream.frammenti_mercato:frammenti_mercato.py:519 [frammenti] APERTO frammento 30000 con 88 mercati (connessione in piu')
+WARNING  Betfair.stream.frammenti_mercato:frammenti_mercato.py:543 [frammenti] CHIUSO frammento 30000 (88 mercati): connessione rifiutata: MAX_CONNECTION_LIMIT_EXCEEDED
+WARNING  Betfair.stream.auto_follow:auto_follow.py:857 [auto-follow] capacita' della connessione di mercato: 540 -> 180 mercati
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000000 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000001 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000002 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000003 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000004 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000005 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000006 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000007 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000008 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000009 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000010 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000011 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000012 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000013 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000014 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000015 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000016 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000017 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000018 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000019 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000020 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000021 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  betfairlightweight.streaming.listener:listener.py:27 [Listener: 20003]: stream already registered, replacing data
+WARNING  Betfair.stream.auto_follow:auto_follow.py:1095 [auto-follow] 22 partite idonee NON seguite (capacita' 180 mercati, 1 connessioni): 35000000, 35000001, 35000002, 35000003, 35000004, 35000005, 35000006, 35000007, 35000008, 35000009
+WARNING  Betfair.stream.auto_follow:auto_follow.py:857 [auto-follow] capacita' della connessione di mercato: 180 -> 540 mercati
+WARNING  Betfair.stream.auto_follow:auto_follow.py:1095 [auto-follow] 22 partite idonee NON seguite (capacita' 540 mercati, 1 connessioni): 35000000, 35000001, 35000002, 35000003, 35000004, 35000005, 35000006, 35000007, 35000008, 35000009
+=========================== short test summary info ============================
+FAILED Betfair/stream/tests/test_frammenti_mercato_2026_09_28.py::test_auto_follow_rifiuto_betfair_rientra_e_dichiara
+1 failed in 0.11s
+EXIT=1
+=== GIRO 13
+.                                                                        [100%]
+1 passed in 0.09s
+EXIT=0
+=== GIRO 14
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____________ test_auto_follow_rifiuto_betfair_rientra_e_dichiara ______________
+
+    def test_auto_follow_rifiuto_betfair_rientra_e_dichiara():
+        fw, _rec, _live = _framework(["1.1"])
+        _collega(_market_streams(fw)[0])
+        orologio = _Orologio()
+        rifiuta = {"si": False}
+    
+        def avvia(s: Any) -> None:
+            if rifiuta["si"]:
+                s._listener.on_data(_status(False, codice="MAX_CONNECTION_LIMIT_EXCEEDED"))
+            else:
+                _collega(s)
+        g = FR.GestoreFrammenti(per_conn=180, max_conn=3, riserva=0, orologio=orologio,
+                                avvia_stream=avvia)
+        righe = _feed(67)
+        af, _p = _auto(fw, g, righe)
+        rifiuta["si"] = True
+        af.giro()                                    # apre il 2o frammento: Betfair lo nega
+        af.giro()                                    # manutenzione: chiuso, capacita' 180
+        s = af.stato()
+        assert s["tetto_mercati"] == 180 and s["connessioni_di_mercato"] == 1
+        assert s["mercati_seguiti"] <= 180 and s["mercati_sottoscritti"] <= 180
+        assert s["partite_fuori_n"] == 67 - s["eventi_auto"] > 0
+        assert s["frammenti"]["ultimo_rifiuto"] == "MAX_CONNECTION_LIMIT_EXCEEDED"
+        # dopo la pausa Betfair concede: rientrano tutte
+        rifiuta["si"] = False
+        orologio.t += FR.PAUSA_RIFIUTO_S + 1
+        af.giro()
+        af.giro()
+        s = af.stato()
+>       assert s["eventi_auto"] == 67 and s["partite_fuori_n"] == 0
+E       assert (45 == 67)
+
+Betfair/stream/tests/test_frammenti_mercato_2026_09_28.py:526: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  flumine.streams.streams:streams.py:268 Client u now paper trading
+WARNING  betfairlightweight.streaming.listener:listener.py:27 [Listener: 20002]: stream already registered, replacing data
+ERROR    betfairlightweight.streaming.listener:listener.py:210 [None: 1]: MAX_CONNECTION_LIMIT_EXCEEDED: finto
+WARNING  Betfair.stream.frammenti_mercato:frammenti_mercato.py:519 [frammenti] APERTO frammento 30000 con 88 mercati (connessione in piu')
+WARNING  Betfair.stream.frammenti_mercato:frammenti_mercato.py:543 [frammenti] CHIUSO frammento 30000 (88 mercati): connessione rifiutata: MAX_CONNECTION_LIMIT_EXCEEDED
+WARNING  Betfair.stream.auto_follow:auto_follow.py:857 [auto-follow] capacita' della connessione di mercato: 540 -> 180 mercati
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000000 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000001 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000002 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000003 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000004 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000005 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000006 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000007 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000008 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000009 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000010 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000011 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000012 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000013 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000014 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000015 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000016 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000017 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000018 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000019 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000020 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000021 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  betfairlightweight.streaming.listener:listener.py:27 [Listener: 20003]: stream already registered, replacing data
+WARNING  Betfair.stream.auto_follow:auto_follow.py:1095 [auto-follow] 22 partite idonee NON seguite (capacita' 180 mercati, 1 connessioni): 35000000, 35000001, 35000002, 35000003, 35000004, 35000005, 35000006, 35000007, 35000008, 35000009
+WARNING  Betfair.stream.auto_follow:auto_follow.py:857 [auto-follow] capacita' della connessione di mercato: 180 -> 540 mercati
+WARNING  Betfair.stream.auto_follow:auto_follow.py:1095 [auto-follow] 22 partite idonee NON seguite (capacita' 540 mercati, 1 connessioni): 35000000, 35000001, 35000002, 35000003, 35000004, 35000005, 35000006, 35000007, 35000008, 35000009
+=========================== short test summary info ============================
+FAILED Betfair/stream/tests/test_frammenti_mercato_2026_09_28.py::test_auto_follow_rifiuto_betfair_rientra_e_dichiara
+1 failed in 0.11s
+EXIT=1
+=== GIRO 15
+.                                                                        [100%]
+1 passed in 0.09s
+EXIT=0
+=== GIRO 16
+.                                                                        [100%]
+1 passed in 0.09s
+EXIT=0
+=== GIRO 17
+.                                                                        [100%]
+1 passed in 0.09s
+EXIT=0
+=== GIRO 18
+.                                                                        [100%]
+1 passed in 0.08s
+EXIT=0
+=== GIRO 19
+.                                                                        [100%]
+1 passed in 0.09s
+EXIT=0
+=== GIRO 20
+.                                                                        [100%]
+1 passed in 0.07s
+EXIT=0
+=== GIRO 21
+.                                                                        [100%]
+1 passed in 0.08s
+EXIT=0
+=== GIRO 22
+.                                                                        [100%]
+1 passed in 0.08s
+EXIT=0
+=== GIRO 23
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____________ test_auto_follow_rifiuto_betfair_rientra_e_dichiara ______________
+
+    def test_auto_follow_rifiuto_betfair_rientra_e_dichiara():
+        fw, _rec, _live = _framework(["1.1"])
+        _collega(_market_streams(fw)[0])
+        orologio = _Orologio()
+        rifiuta = {"si": False}
+    
+        def avvia(s: Any) -> None:
+            if rifiuta["si"]:
+                s._listener.on_data(_status(False, codice="MAX_CONNECTION_LIMIT_EXCEEDED"))
+            else:
+                _collega(s)
+        g = FR.GestoreFrammenti(per_conn=180, max_conn=3, riserva=0, orologio=orologio,
+                                avvia_stream=avvia)
+        righe = _feed(67)
+        af, _p = _auto(fw, g, righe)
+        rifiuta["si"] = True
+        af.giro()                                    # apre il 2o frammento: Betfair lo nega
+        af.giro()                                    # manutenzione: chiuso, capacita' 180
+        s = af.stato()
+        assert s["tetto_mercati"] == 180 and s["connessioni_di_mercato"] == 1
+        assert s["mercati_seguiti"] <= 180 and s["mercati_sottoscritti"] <= 180
+        assert s["partite_fuori_n"] == 67 - s["eventi_auto"] > 0
+        assert s["frammenti"]["ultimo_rifiuto"] == "MAX_CONNECTION_LIMIT_EXCEEDED"
+        # dopo la pausa Betfair concede: rientrano tutte
+        rifiuta["si"] = False
+        orologio.t += FR.PAUSA_RIFIUTO_S + 1
+        af.giro()
+        af.giro()
+        s = af.stato()
+>       assert s["eventi_auto"] == 67 and s["partite_fuori_n"] == 0
+E       assert (45 == 67)
+
+Betfair/stream/tests/test_frammenti_mercato_2026_09_28.py:526: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  flumine.streams.streams:streams.py:268 Client u now paper trading
+WARNING  betfairlightweight.streaming.listener:listener.py:27 [Listener: 20002]: stream already registered, replacing data
+ERROR    betfairlightweight.streaming.listener:listener.py:210 [None: 1]: MAX_CONNECTION_LIMIT_EXCEEDED: finto
+WARNING  Betfair.stream.frammenti_mercato:frammenti_mercato.py:519 [frammenti] APERTO frammento 30000 con 88 mercati (connessione in piu')
+WARNING  Betfair.stream.frammenti_mercato:frammenti_mercato.py:543 [frammenti] CHIUSO frammento 30000 (88 mercati): connessione rifiutata: MAX_CONNECTION_LIMIT_EXCEEDED
+WARNING  Betfair.stream.auto_follow:auto_follow.py:857 [auto-follow] capacita' della connessione di mercato: 540 -> 180 mercati
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000000 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000001 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000002 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000003 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000004 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000005 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000006 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000007 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000008 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000009 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000010 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000011 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000012 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000013 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000014 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000015 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000016 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000017 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000018 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000019 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000020 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  Betfair.stream.auto_follow:auto_follow.py:803 [auto-follow] ESPULSO 35000021 (4 mercati, priorita' candidata, senza ordini) per fare posto
+WARNING  betfairlightweight.streaming.listener:listener.py:27 [Listener: 20003]: stream already registered, replacing data
+WARNING  Betfair.stream.auto_follow:auto_follow.py:1095 [auto-follow] 22 partite idonee NON seguite (capacita' 180 mercati, 1 connessioni): 35000000, 35000001, 35000002, 35000003, 35000004, 35000005, 35000006, 35000007, 35000008, 35000009
+WARNING  Betfair.stream.auto_follow:auto_follow.py:857 [auto-follow] capacita' della connessione di mercato: 180 -> 540 mercati
+WARNING  Betfair.stream.auto_follow:auto_follow.py:1095 [auto-follow] 22 partite idonee NON seguite (capacita' 540 mercati, 1 connessioni): 35000000, 35000001, 35000002, 35000003, 35000004, 35000005, 35000006, 35000007, 35000008, 35000009
+=========================== short test summary info ============================
+FAILED Betfair/stream/tests/test_frammenti_mercato_2026_09_28.py::test_auto_follow_rifiuto_betfair_rientra_e_dichiara
+1 failed in 0.12s
+EXIT=1
+=== FILE INTERO
+38 passed in 0.43s

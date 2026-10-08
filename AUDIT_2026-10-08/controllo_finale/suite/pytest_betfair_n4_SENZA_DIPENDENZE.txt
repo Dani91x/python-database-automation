@@ -1,0 +1,47 @@
+# estratto (testa e coda) della corsa SENZA dipendenze: 1016 errori di raccolta, nessun test eseguito; l'intero (2,6 MB) e' sul ramo claude/blissful-sagan-hri7o6-finale-suite
+bringing up nodes...
+bringing up nodes...
+
+EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE [  9%]
+EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE [ 18%]
+EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE [ 27%]
+EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE [ 36%]
+EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE [ 45%]
+EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEsEEEEEEEEEEEEEEEEEEEE [ 54%]
+EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE [ 63%]
+EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE [ 72%]
+EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE [ 81%]
+EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE [ 90%]
+EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE [ 99%]
+EEEEE                                                                    [100%]
+==================================== ERRORS ====================================
+____ ERROR collecting Betfair/mike/test_mike_banco_isolamento_2026_10_08.py ____
+ImportError while importing test module '/home/user/python-database-automation/Betfair/mike/test_mike_banco_isolamento_2026_10_08.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Betfair/mike/test_mike_banco_isolamento_2026_10_08.py:13: in <module>
+    from Betfair.mike.tools import replay_registrazioni as RR
+Betfair/mike/tools/replay_registrazioni.py:78: in <module>
+    from .. import certificazione as CERT
+Betfair/mike/certificazione.py:37: in <module>
+    from . import engine as E
+Betfair/mike/engine.py:26: in <module>
+[...]
+ERROR Betfair/tests/test_contratto_storico_sport_2026_09_17.py::test_drop_function_firme_vecchie_esatte
+ERROR Betfair/tools/test_verifica_margine_2026_09_12.py::TestCaricamento::test_si_scartano_chiusure_righe_senza_modello_e_prezzi_impossibili
+ERROR Betfair/tools/test_verifica_margine_2026_09_12.py::TestCalibrazioneDichiaraQuandoNonSaRispondere::test_senza_eventi_positivi_lo_dice_e_si_ferma
+ERROR Betfair/tools/test_verifica_margine_2026_09_12.py::TestCaricamento::test_una_riga_completa_viene_letta
+ERROR Betfair/tools/test_verifica_margine_2026_09_12.py::TestCaricamento::test_lay_perso_significa_che_il_bancato_e_uscito
+ERROR Betfair/tools/test_verifica_margine_2026_09_12.py::TestCalibrazioneDichiaraQuandoNonSaRispondere::test_con_eventi_positivi_confronta_e_avvisa_se_sono_pochi
+ERROR Betfair/tools/test_verifica_margine_2026_09_12.py::TestScommesseNecessarie::test_formula_dell_intervallo_al_95
+ERROR Betfair/tools/test_verifica_margine_2026_09_12.py::TestScommesseNecessarie::test_piu_rumore_piu_scommesse_piu_margine_meno_scommesse
+ERROR Betfair/tools/test_verifica_margine_2026_09_12.py::TestCalibrazioneDichiaraQuandoNonSaRispondere::test_il_brier_premia_chi_ci_prende_non_chi_e_prudente
+ERROR Betfair/tools/test_verifica_margine_2026_09_12.py::TestScommesseNecessarie::test_nessun_margine_nessun_numero
+ERROR Betfair/tools/test_verifica_margine_2026_09_12.py::TestLaQuotaAltaCostaSoloVarianza::test_il_valore_atteso_non_dipende_dalla_quota
+ERROR Betfair/tools/test_verifica_margine_2026_09_12.py::TestLaQuotaAltaCostaSoloVarianza::test_bancare_a_dieci_invece_che_a_centodieci_costa_molto_meno_campione
+ERROR Betfair/tools/test_verifica_margine_2026_09_12.py::TestLaQuotaAltaCostaSoloVarianza::test_le_scommesse_necessarie_crescono_con_la_quota
+1 skipped, 1016 errors in 37.92s
+EXIT=1 SECONDI=39
