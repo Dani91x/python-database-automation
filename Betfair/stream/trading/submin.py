@@ -98,6 +98,29 @@ _TERMINAL = (SubminStep.DONE, SubminStep.ABORTED)
 _TRIM_RECHECK_MS = 5_000    # residuo intatto dopo il cancel → UNA ri-emissione
 _TRIM_TIMEOUT_MS = 15_000   # trim mai osservato → full cancel + ABORTED
 
+# 08/10/2026 (decisione D-2 dell'utente, reperto D1 del cantiere 9): il passaggio
+# REPRICED -> DONE avviene SOLO quando il SOSTITUTO del replace e' nato. Flumine
+# LIVE (``BetfairExecution.execute_replace``) crea il sostituto nel Trade solo su
+# SUCCESS; sul FAILURE del piazzamento nuovo (``pass  # todo``) il parcheggio resta
+# annullato, nessun sostituto, e il codice d'errore NON arriva a nessuno.
+# Stato flumine del parcheggio con il replace ancora in volo (non ancora eseguito:
+# si aspetta, il sostituto puo' ancora nascere).
+_STATI_IN_VOLO = ("REPLACING",)
+# Giri consecutivi "replace eseguito, sostituto assente" prima dell'abort: il
+# primo si conferma al giro dopo (in flumine il parcheggio diventa completo un
+# istante PRIMA che il sostituto entri nel Trade, nello stesso blocco del thread
+# di esecuzione: mai un abort su quella sola osservazione).
+_GIRI_SOSTITUTO_ASSENTE_MAX = 2
+# 08/10/2026 (D-2b): tetto dell'attesa col replace IN VOLO (parcheggio REPLACING).
+# Un replaceOrders e' una chiamata REST che risponde in ben meno di 15 s (bet
+# delay in-play compreso); 15 s = lo stesso tetto del trim (``_TRIM_TIMEOUT_MS``).
+# Oltre: flumine ha perso il pacchetto (es. "Execution unknown error", nessun
+# reset): mai una sequenza che aspetta per sempre con soldi a mercato.
+_REPLACE_IN_VOLO_TIMEOUT_MS = 15_000
+#: testo della riga di abort (lo scrivono i bot nella riga ``submin_abort``)
+NOTA_RIMPIAZZO_NON_NATO = ("rimpiazzo NON nato (replaceOrders rifiutato; codice non "
+                           "restituito)")
+
 
 @dataclass
 class SubminState:
@@ -116,6 +139,13 @@ class SubminState:
     # una versione precedente si comporta ESATTAMENTE come prima (percorso B).
     park_price: float = 0.0
     serve_replace: bool = True
+    # 08/10/2026 (decisione D-2): giri CONSECUTIVI in REPRICED in cui il replace
+    # risulta eseguito ma il sostituto non c'e'. 0 = mai osservato (default:
+    # uno stato persistito prima di questa versione si comporta come nuovo).
+    giri_senza_sostituto: int = 0
+    # 08/10/2026 (D-2b): epoch ms della prima osservazione del replace IN VOLO
+    # in REPRICED; 0 = mai osservato.
+    replace_in_volo_ms: int = 0
 
     @property
     def prezzo_parcheggio(self) -> float:
@@ -512,6 +542,36 @@ def _order_size(order: Any) -> Optional[float]:
     if size is None:
         size = _size_remaining(order)
     return None if size is None else float(size)
+
+
+def _ordini_della_sequenza(order: Any) -> list:
+    """L'ordine osservato e gli ordini del suo Trade flumine (parcheggio e
+    sostituti). Chi chiama passa a volte il parcheggio (worker e motore: lo
+    ritrovano per ``bet_id``), a volte l'ultimo ordine del Trade (scalper,
+    sniper, scalper tennis, uscite esatte): si guardano tutti e due."""
+    visti = [order]
+    altri = getattr(getattr(order, "trade", None), "orders", None)
+    if isinstance(altri, (list, tuple)):
+        for o in altri:
+            if not any(o is v for v in visti):
+                visti.append(o)
+    return visti
+
+
+def _sostituto_nato(order: Any, state: SubminState) -> bool:
+    """Il sostituto del replace esiste: un ordine della sequenza alla
+    ``target_price`` PIAZZATO (stato flumine valorizzato; il Trade di un
+    parcheggio contiene solo il parcheggio e i suoi sostituti, stesso lato).
+    Un sostituto creato dalla simulazione di flumine ma rifiutato al piazzamento
+    resta nel Trade senza stato (``status=None``): NON e' nato."""
+    for o in _ordini_della_sequenza(order):
+        prezzo = _order_price(o)
+        if prezzo is None or abs(prezzo - state.target_price) > _TOL:
+            continue
+        if _status_name(o) is None:
+            continue
+        return True
+    return False
 
 
 def _guard_replace_cap_lay(
@@ -1150,6 +1210,65 @@ def advance_submin(
 
     # --- DONE: ordine a riposo a (target_price, target_size) ---------------
     if state.step == SubminStep.REPRICED:
+        # 08/10/2026 (decisione D-2, money-critical): dopo un replace (percorso B)
+        # DONE solo se il SOSTITUTO e' nato. Replace in volo -> si aspetta.
+        # Replace eseguito senza sostituto (replaceOrders rifiutato: il parcheggio
+        # e' annullato e nessun ordine sta alla target_price) -> confermato al giro
+        # dopo, poi ABORTED: la chiusura si rifa', mai una posizione detta chiusa
+        # che non lo e'. Percorso A (nessun replace) e ordine non osservato
+        # (``order=None``): come prima.
+        if state.serve_replace and order is not None:
+            ordini = _ordini_della_sequenza(order)
+            if not _sostituto_nato(order, state):
+                if any(_status_name(o) in _STATI_IN_VOLO for o in ordini):
+                    now = int(now_ms if now_ms is not None else time.time() * 1000)
+                    if state.replace_in_volo_ms <= 0:
+                        return _dc_replace(state, giri_senza_sostituto=0,
+                                           replace_in_volo_ms=now)
+                    in_volo = now - state.replace_in_volo_ms
+                    if in_volo < _REPLACE_IN_VOLO_TIMEOUT_MS:
+                        if state.giri_senza_sostituto:
+                            return _dc_replace(state, giri_senza_sostituto=0)
+                        return state  # replace in volo: il sostituto puo' ancora nascere
+                    # D-2b: tetto scaduto. Ritiro BEST EFFORT di ogni ordine della
+                    # sequenza ancora vivo o in volo (flumine rifiuta il cancel di un
+                    # ordine REPLACING: si prova comunque, l'errore non ferma
+                    # l'abort), poi la sequenza si chiude e la chiusura si rifa'.
+                    for o in ordini:
+                        rem = _size_remaining(o)
+                        vivo = _is_executable(o) or _status_name(o) in _STATI_IN_VOLO
+                        if vivo and rem is not None and rem > _TOL:
+                            try:
+                                _require_ops(ops).cancel(market, o, None)
+                            except Exception:  # noqa: BLE001 - best effort, l'abort resta
+                                pass
+                    return _dc_replace(
+                        state, step=SubminStep.ABORTED,
+                        bet_id=_bet_id(order) or state.bet_id,
+                        note=(f"rimpiazzo in volo da {in_volo} ms senza esito; "
+                              "sequenza chiusa, la chiusura si rifa'"),
+                    )
+                giri = int(state.giri_senza_sostituto or 0) + 1
+                if giri < _GIRI_SOSTITUTO_ASSENTE_MAX:
+                    return _dc_replace(
+                        state, giri_senza_sostituto=giri,
+                        note=("step3: replace eseguito, sostituto non ancora visto "
+                              "(conferma al giro dopo)"),
+                    )
+                # Il parcheggio ancora VIVO (annullo del replace fallito o richiesta
+                # rimessa a eseguibile da flumine) si ritira: mai una gamba lasciata
+                # a mercato da una sequenza chiusa.
+                for o in ordini:
+                    rem = _size_remaining(o)
+                    if _is_executable(o) and rem is not None and rem > _TOL:
+                        _require_ops(ops).cancel(market, o, None)
+                return _dc_replace(
+                    state, step=SubminStep.ABORTED, giri_senza_sostituto=giri,
+                    bet_id=_bet_id(order) or state.bet_id,
+                    note=(NOTA_RIMPIAZZO_NON_NATO + ": nessun ordine alla quota "
+                          f"{state.target_price}, parcheggio annullato; "
+                          "sequenza chiusa, la chiusura si rifa'"),
+                )
         return _dc_replace(
             state, step=SubminStep.DONE, bet_id=_bet_id(order) or state.bet_id,
             note="submin completato: ordine sotto-minimo a riposo alla target_price",

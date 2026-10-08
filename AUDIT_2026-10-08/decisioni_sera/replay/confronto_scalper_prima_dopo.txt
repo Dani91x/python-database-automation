@@ -1,0 +1,4 @@
+AUDIT_2026-10-08/decisioni_sera/replay/prima_scalper_35797769.txt: 100 righe | AUDIT_2026-10-08/decisioni_sera/replay/dopo_scalper_35797769.txt: 100 righe | righe diverse: 2
+@@ -25 +25 @@
+-      motivo x79: min_bet_skip
++      motivo x78: min_bet_skip

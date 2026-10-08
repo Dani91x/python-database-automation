@@ -1,0 +1,17 @@
+== base contro AUDIT_2026-10-08/controllo_finale/scalper/scalper_35797769_tutti.txt : righe 18 18 diverse 0
+== rifiuti-betfair-codici contro AUDIT_2026-10-08/controllo_finale/scalper/scalper_35797769_tutti.txt : righe 25 23 diverse 8
+   -KO  35797769 [rifiuti-betfair-codici]  tick=665941 decisioni=121012 azioni= 132 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:FLATTENING,slot:LOCKING,slot:DONE,sessione:done [COMPLETE]
+   +OK  35797769 [rifiuti-betfair-codici]  tick=665941 decisioni=121012 azioni= 132 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:FLATTENING,slot:LOCKING,slot:DONE,sessione:done [COMPLETE]
+   -      nota: FINTO BETFAIR coi codici veri: scavalco INVALID_BET_SIZE (placeOrders) su ('1.259819674', 58805) LAY 1.67 @4.2; ordini dopo 6; fine ciclo differenza 0.013; scritto col codice: si'; parcheggio INVALID_PROFIT_RATIO (placeOrders) su ('1.259819674', 58805) BACK 1.00 @1000.0; ordini dopo 3; fine ciclo differenza 0.013; scritto col codice: si'; rimpiazzo BET_TAKEN_OR_LAPSED (replaceOrders) 
+   +      nota: FINTO BETFAIR coi codici veri: scavalco INVALID_BET_SIZE (placeOrders) su ('1.259819674', 58805) LAY 1.67 @4.2; ordini dopo 6; fine ciclo differenza 0.013; scritto col codice: si'; parcheggio INVALID_PROFIT_RATIO (placeOrders) su ('1.259819674', 58805) BACK 1.00 @1000.0; ordini dopo 3; fine ciclo differenza 0.013; scritto col codice: si'; rimpiazzo BET_TAKEN_OR_LAPSED (replaceOrders) 
+   -      motivo x79: min_bet_skip
+   +      motivo x78: min_bet_skip
+   -      RC3 x1: ogni rifiuto di Betfair e' scritto nell'attivita' del bot col suo codice entro 3 giri
+   -           es. ('1.259819674', 58805): rifiuto BET_TAKEN_OR_LAPSED (rimpiazzo, replaceOrders) mai scritto col codice nell'attivita' del bot
+== rifiuti-betfair-codici contro AUDIT_2026-10-08/decisioni_sera/replay/dopo_scalper_35797769.txt : righe 25 23 diverse 6
+   -KO  35797769 [rifiuti-betfair-codici]  tick=665941 decisioni=121012 azioni= 132 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:FLATTENING,slot:LOCKING,slot:DONE,sessione:done [COMPLETE]
+   +OK  35797769 [rifiuti-betfair-codici]  tick=665941 decisioni=121012 azioni= 132 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:FLATTENING,slot:LOCKING,slot:DONE,sessione:done [COMPLETE]
+   -      nota: FINTO BETFAIR coi codici veri: scavalco INVALID_BET_SIZE (placeOrders) su ('1.259819674', 58805) LAY 1.67 @4.2; ordini dopo 6; fine ciclo differenza 0.013; scritto col codice: si'; parcheggio INVALID_PROFIT_RATIO (placeOrders) su ('1.259819674', 58805) BACK 1.00 @1000.0; ordini dopo 3; fine ciclo differenza 0.013; scritto col codice: si'; rimpiazzo BET_TAKEN_OR_LAPSED (replaceOrders) 
+   +      nota: FINTO BETFAIR coi codici veri: scavalco INVALID_BET_SIZE (placeOrders) su ('1.259819674', 58805) LAY 1.67 @4.2; ordini dopo 6; fine ciclo differenza 0.013; scritto col codice: si'; parcheggio INVALID_PROFIT_RATIO (placeOrders) su ('1.259819674', 58805) BACK 1.00 @1000.0; ordini dopo 3; fine ciclo differenza 0.013; scritto col codice: si'; rimpiazzo BET_TAKEN_OR_LAPSED (replaceOrders) 
+   -      RC3 x1: ogni rifiuto di Betfair e' scritto nell'attivita' del bot col suo codice entro 3 giri
+   -           es. ('1.259819674', 58805): rifiuto BET_TAKEN_OR_LAPSED (rimpiazzo, replaceOrders) mai scritto col codice nell'attivita' del bot

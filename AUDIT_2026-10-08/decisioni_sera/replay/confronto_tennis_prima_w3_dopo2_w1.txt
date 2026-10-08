@@ -1,0 +1,10 @@
+AUDIT_2026-10-08/decisioni_sera/replay/prima_tennis_scalper_35790089.txt: 280 righe | AUDIT_2026-10-08/decisioni_sera/replay/dopo2_tennis_scalper_35790089_w1.txt: 283 righe | righe diverse: 5
+@@ -27,0 +28 @@
++      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+@@ -37,0 +39 @@
++      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+@@ -48,0 +51 @@
++      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+@@ -190 +193 @@
+-      nota: USCITE MANUALI (uscite-manuali-firmate): decisioni 6, proposte nate 3, decadute 0, firme del banco 3, uscite firmate eseguite 3; non giudicabili: UF2 tennis_scalper|1.259745327|9633138|140107792930990440|target: proposta 1.99, uscita 1.50; resto 0.49 dichiarato NON piazzabile dal bot (min_bet_skip, regola esistente); UM3b: il bot non ha una fine finestra con force-flat (tiene fino a fine mercato per progetto): le protezioni restano quelle dei suoi controlli (Chiudi, freno, fine mercato)
++      nota: USCITE MANUALI (uscite-manuali-firmate): decisioni 6, proposte nate 3, decadute 0, firme del banco 3, uscite firmate eseguite 3; non giudicabili: UF2 tennis_scalper|1.259745327|9633138|140107815685332979|target: proposta 1.99, uscita 1.50; resto 0.49 dichiarato NON piazzabile dal bot (min_bet_skip, regola esistente); UM3b: il bot non ha una fine finestra con force-flat (tiene fino a fine mercato per progetto): le protezioni restano quelle dei suoi controlli (Chiudi, freno, fine mercato)

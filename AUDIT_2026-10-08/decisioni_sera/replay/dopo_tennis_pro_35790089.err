@@ -1,0 +1,8 @@
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_pro_bot:[PRO] piazzamento RIFIUTATO sel=35635727 LAY @1.18 per 2.0 (1-esimo, riprovo fra 5s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_pro_bot:[PRO] piazzamento RIFIUTATO sel=35635727 LAY @1.22 per 2.0 (2-esimo, riprovo fra 10s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.strategy.strategy:Strategy of same name 'TennisProStrategy' already added
+WARNING:Betfair.stream.tennis_live.guardie_tennis:[tennis-runner] ordine REALE fermato: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_pro_bot:[PRO] piazzamento RIFIUTATO sel=35635727 LAY @1.18 per 2.0 (1-esimo, riprovo fra 5s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali
+WARNING:Betfair.stream.tennis_scalper.tennis_pro_bot:[PRO] piazzamento RIFIUTATO sel=35635727 LAY @1.22 per 2.0 (2-esimo, riprovo fra 10s): Order has violated: TENNIS_MODO_ORDINI Error: modo ordini tennis PAPER («Ordini reali» della Control Room): apertura 'live' RIFIUTATA - si cambia da Control Room, Ordini reali

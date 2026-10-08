@@ -1,0 +1,20 @@
+B1 nessun tetto all'attesa in volo | 8 failed, 34 passed in 2.80s | ripristino IDENTICO (42075d0be984d56d)
+    rossi: test_tetto_in_volo_vale_quanto_il_tetto_del_trim, test_in_volo_oltre_il_tetto_abort_e_ritiro[parcheggio, test_in_volo_oltre_il_tetto_abort_e_ritiro[ultimo, test_in_volo_oltre_il_tetto_cancel_rifiutato_da_flumine_abort_comunque, test_tetto_in_volo_persistito_fra_i_giri_coda_e_motore, test_parita_bot_tetto_in_volo[scalper], test_parita_bot_tetto_in_volo[sniper], test_parita_bot_tetto_in_volo[tennis_scalper]
+B2 tetto 20 s invece di 15 s | 7 failed, 35 passed in 2.80s | ripristino IDENTICO (42075d0be984d56d)
+    rossi: test_tetto_in_volo_vale_quanto_il_tetto_del_trim, test_in_volo_oltre_il_tetto_abort_e_ritiro[parcheggio, test_in_volo_oltre_il_tetto_abort_e_ritiro[ultimo, test_tetto_in_volo_persistito_fra_i_giri_coda_e_motore, test_parita_bot_tetto_in_volo[scalper], test_parita_bot_tetto_in_volo[sniper], test_parita_bot_tetto_in_volo[tennis_scalper]
+B3 abort subito col replace in volo (attesa spenta) | 10 failed, 32 passed in 3.42s | ripristino IDENTICO (42075d0be984d56d)
+    rossi: test_in_volo_poi_assente_un_giro_poi_nato_nessun_abort[parcheggio, test_in_volo_poi_assente_un_giro_poi_nato_nessun_abort[ultimo, test_conteggio_azzerato_se_il_replace_torna_in_volo, test_in_volo_sotto_il_tetto_attesa[parcheggio, test_in_volo_sotto_il_tetto_attesa[ultimo, test_tetto_in_volo_persistito_fra_i_giri_coda_e_motore, test_parita_bot_tetto_in_volo[scalper], test_parita_bot_tetto_in_volo[sniper], test_parita_bot_tetto_in_volo[tennis_scalper], test_worker_sincrono_timeout_piu_stretto_esito_di_prima
+B4 prima osservazione non registrata | 18 failed, 24 passed in 2.61s | ripristino IDENTICO (42075d0be984d56d)
+    rossi: test_in_volo_poi_assente_un_giro_poi_nato_nessun_abort[parcheggio, test_in_volo_poi_assente_un_giro_poi_nato_nessun_abort[ultimo, test_conteggio_azzerato_se_il_replace_torna_in_volo, test_parita_bot_replace_riuscito[scalper], test_parita_bot_replace_riuscito[sniper], test_parita_bot_replace_riuscito[tennis_scalper], test_parita_uscite_esatte_tennis, test_in_volo_sotto_il_tetto_attesa[parcheggio, test_in_volo_sotto_il_tetto_attesa[ultimo, test_in_volo_oltre_il_tetto_abort_e_ritiro[parcheggio, test_in_volo_oltre_il_tetto_abort_e_ritiro[ultimo, test_sostituto_nato_prima_del_tetto_done[parcheggio, test_sostituto_nato_prima_del_tetto_done[ultimo, test_tetto_in_volo_persistito_fra_i_giri_coda_e_motore, test_parita_bot_tetto_in_volo[scalper], test_parita_bot_tetto_in_volo[sniper], test_parita_bot_tetto_in_volo[tennis_scalper], test_worker_sincrono_timeout_piu_stretto_esito_di_prima
+B5 ordine in volo non ritirato allo scadere | 3 failed, 39 passed in 2.69s | ripristino IDENTICO (42075d0be984d56d)
+    rossi: test_in_volo_oltre_il_tetto_abort_e_ritiro[parcheggio, test_in_volo_oltre_il_tetto_abort_e_ritiro[ultimo, test_in_volo_oltre_il_tetto_cancel_rifiutato_da_flumine_abort_comunque
+B6 errore del cancel non assorbito (abort perso) | 1 failed, 41 passed in 2.70s | ripristino IDENTICO (42075d0be984d56d)
+    rossi: test_in_volo_oltre_il_tetto_cancel_rifiutato_da_flumine_abort_comunque
+B7 worker: inizio dell'attesa NON persistito | 1 failed, 41 passed in 3.32s | ripristino IDENTICO (567bc6fc5d85e80b)
+    rossi: test_tetto_in_volo_persistito_fra_i_giri_coda_e_motore
+B8 worker: inizio dell'attesa NON riletto | 1 failed, 41 passed in 2.66s | ripristino IDENTICO (567bc6fc5d85e80b)
+    rossi: test_tetto_in_volo_persistito_fra_i_giri_coda_e_motore
+A1 RC3: la riga del replace vale anche per place/cancel | 1 failed, 41 passed in 2.92s | ripristino IDENTICO (698461a559b86939)
+    rossi: test_rc3_place_la_riga_del_replace_non_basta
+A2 RC3: la riga del replace non vale (solo il codice) | 1 failed, 41 passed in 3.43s | ripristino IDENTICO (698461a559b86939)
+    rossi: test_rc3_replace_con_la_riga_rimpiazzo_non_nato_ok

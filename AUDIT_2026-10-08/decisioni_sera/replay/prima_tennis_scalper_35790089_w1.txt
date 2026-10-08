@@ -1,0 +1,305 @@
+BOT: tennis_scalper | spec: TENNIS_BOT_DOSSIER.md | registrazioni: 1 in C:\Users\Admin\Desktop\tennis_rec\20260707
+controlli attivi: 23 | flumine 2.13.11 | betfairlightweight 2.23.2 | codice bot 0c363dd4a06a (25 file)
+comando: python -m Betfair.stream.backtest.certifica tennis_scalper 35790089 --scenari tutti
+ambiente del banco (dichiarato; il .env di chi lancia non conta): ESITI_ORDINI_CANALE=0 LIVE_KILL_SWITCH=false LIVE_ORDER_MODE=LIVE MIKE_CANALE_POSIZIONI=0 MIKE_LEGGE_CANALE=0 MIKE_LIVE_ENABLED=1 MIKE_SVEGLIA_CANALE=0 MOTORE_ORDINI_CANALE=0 MOTORE_ORDINI_CANALE_TENNIS=0 OMEGA_CANALE_POSIZIONI=0 OMEGA_LEGGE_CANALE=0 OMEGA_ORDINI_VIA_CANALE=0 OMEGA_SVEGLIA_CANALE=0 PUNTEGGI_CANALE=0 SAFE_BOT_LEGGE_CANALE=0 SAFE_BOT_SVEGLIA_CANALE=0 SAFE_CANALE_POSIZIONI=0 SAFE_ORDINI_VIA_CANALE=0 SAFE_PRE_KO_OU_HOURS=1 SAFE_SCAN_CANALE=0 SAFE_TENNIS_ORDINI_VIA_CANALE=0 SCALPER_CANALE=0 TENNIS_BOT_CANALE=0 TENNIS_BOT_SVEGLIA_CANALE=0 | interruttore ordini del bot: coda=0 canale=1
+nomi dei giocatori: non usati da tennis_scalper (il runner non gli passa il catalogo: `_BOT_REGISTRY`)
+parametri cambiati dallo scenario (il resto e' di produzione):
+  base: nessuno (parametri di produzione)
+  gate-aperto: inplay_tick_enabled=True, min_flow=0.0, min_matched=0.0, min_size=0.0, min_total_matched=0.0, price_max=30.0, price_min=1.01, runner_filter=all, warmup_ms=0 | FUORI dal catalogo della UI (dichiarati): min_matched, min_total_matched, warmup_ms
+  dry-run: nessuno (parametri di produzione)
+  bot-fermo: nessuno (parametri di produzione)
+  rifiuti-betfair: gli stessi di gate-aperto (inplay_tick_enabled=True, min_flow=0.0, min_matched=0.0, min_size=0.0, min_total_matched=0.0, price_max=30.0, price_min=1.01, runner_filter=all, warmup_ms=0)
+  feed-stantio: nessuno (parametri di produzione)
+  parziali: stake=400.0
+  riavvio: nessuno (parametri di produzione)
+  catalogo-assente: nessuno (parametri di produzione)
+  live: gli stessi di gate-aperto (inplay_tick_enabled=True, min_flow=0.0, min_matched=0.0, min_size=0.0, min_total_matched=0.0, price_max=30.0, price_min=1.01, runner_filter=all, warmup_ms=0)
+  chiusura-abbinata-in-parte: gli stessi di gate-aperto (inplay_tick_enabled=True, min_flow=0.0, min_matched=0.0, min_size=0.0, min_total_matched=0.0, price_max=30.0, price_min=1.01, runner_filter=all, warmup_ms=0)
+  chiudi-ora: gli stessi di gate-aperto (inplay_tick_enabled=True, min_flow=0.0, min_matched=0.0, min_size=0.0, min_total_matched=0.0, price_max=30.0, price_min=1.01, runner_filter=all, warmup_ms=0)
+  uscite-manuali: gli stessi di gate-aperto (inplay_tick_enabled=True, min_flow=0.0, min_matched=0.0, min_size=0.0, min_total_matched=0.0, price_max=30.0, price_min=1.01, runner_filter=all, warmup_ms=0)
+  uscite-manuali-firmate: gli stessi di gate-aperto (inplay_tick_enabled=True, min_flow=0.0, min_matched=0.0, min_size=0.0, min_total_matched=0.0, price_max=30.0, price_min=1.01, runner_filter=all, warmup_ms=0)
+  soldi-veri: gli stessi di gate-aperto (inplay_tick_enabled=True, min_flow=0.0, min_matched=0.0, min_size=0.0, min_total_matched=0.0, price_max=30.0, price_min=1.01, runner_filter=all, warmup_ms=0)
+  soldi-veri-prova: gli stessi di gate-aperto (inplay_tick_enabled=True, min_flow=0.0, min_matched=0.0, min_size=0.0, min_total_matched=0.0, price_max=30.0, price_min=1.01, runner_filter=all, warmup_ms=0)
+  soldi-veri-paper: gli stessi di gate-aperto (inplay_tick_enabled=True, min_flow=0.0, min_matched=0.0, min_size=0.0, min_total_matched=0.0, price_max=30.0, price_min=1.01, runner_filter=all, warmup_ms=0)
+qualita' delle registrazioni: COMPLETE x1
+SCENARI: base, gate-aperto, dry-run, bot-fermo, rifiuti-betfair, feed-stantio, parziali, riavvio, catalogo-assente, live, chiusura-abbinata-in-parte, chiudi-ora, uscite-manuali, uscite-manuali-firmate, soldi-veri, soldi-veri-prova, soldi-veri-paper
+        i numeri di scenari diversi sono confrontabili SOLO dove la sequenza di chiamate e' identica fino al punto confrontato: ogni chiamata bloccante consuma tempo di mercato (in produzione come nel replay) e sposta il book su cui abbina tutto cio' che viene dopo
+
+OK  35790089 [base]  tick=  5216 decisioni= 5212 azioni=   1 stati=IDLE [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: fill per mercato che attraversa: 0
+      nota: RESIDUI (decisione 1): dichiarati 0 (importi [] EUR, sbilancio [] EUR), tornati pari 0; regolati col mercato 0 (se vince [] / se perde [] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      tempo: 35790089 [base] 3.7s (3.7 s) | 1421 tick/s
+OK  35790089 [gate-aperto]  tick=  5216 decisioni= 5212 azioni= 113 stati=QUOTING2,CANCELLING,IDLE,FLATTENING,DONE,LOCKING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: fill per mercato che attraversa: 2 [motivo attraversato] - 12:36:39 UTC 1.259745327 sel 9633138 LAY 0.87 @1.54 (scambio a 1.51); 12:37:05 UTC 1.259745327 sel 35635727 BACK 0.58 @2.96 (scambio a 2.98)
+      nota: RESIDUI (decisione 1): dichiarati 2 (importi [0.09, 0.19] EUR, sbilancio [0.09, 0.27] EUR), tornati pari 0; regolati col mercato 2 (se vince [-8.49, -1.4] / se perde [-9.19, -0.65] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['inplay_tick_enabled', 'min_flow', 'min_matched', 'min_size', 'min_total_matched', 'price_max', 'price_min', 'runner_filter', 'warmup_ms'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+      tempo: 35790089 [gate-aperto] 28.6s (28.6 s) | 183 tick/s
+OK  35790089 [dry-run]  tick=  5216 decisioni= 5212 azioni=   1 stati=IDLE [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: fill per mercato che attraversa: 0
+      nota: RESIDUI (decisione 1): dichiarati 0 (importi [] EUR, sbilancio [] EUR), tornati pari 0; regolati col mercato 0 (se vince [] / se perde [] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      tempo: 35790089 [dry-run] 3.8s (3.8 s) | 1388 tick/s
+OK  35790089 [bot-fermo]  tick=  5216 decisioni= 2483 azioni=   1 stati=IDLE [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: bot DISARMATO a meta' partita con `_disable_strategy` di produzione
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: fill per mercato che attraversa: 0
+      nota: RESIDUI (decisione 1): dichiarati 0 (importi [] EUR, sbilancio [] EUR), tornati pari 0; regolati col mercato 0 (se vince [] / se perde [] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      tempo: 35790089 [bot-fermo] 2.7s (2.7 s) | 1898 tick/s
+OK  35790089 [rifiuti-betfair]  tick=  5216 decisioni= 5212 azioni=  80 stati=IDLE [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: guasto iniettato: ogni piazzamento e' RIFIUTATO da un trading control di flumine (place_order torna False, stato Violation)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: fill per mercato che attraversa: 0
+      nota: RESIDUI (decisione 1): dichiarati 0 (importi [] EUR, sbilancio [] EUR), tornati pari 0; regolati col mercato 0 (se vince [] / se perde [] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['inplay_tick_enabled', 'min_flow', 'min_matched', 'min_size', 'min_total_matched', 'price_max', 'price_min', 'runner_filter', 'warmup_ms'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+      tempo: 35790089 [rifiuti-betfair] 5.4s (5.4 s) | 972 tick/s
+OK  35790089 [feed-stantio]  tick=  5216 decisioni= 5212 azioni=   1 stati=IDLE [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: guasto iniettato: il punteggio smette di arrivare dopo il primo terzo (blackout IPS)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: fill per mercato che attraversa: 0
+      nota: RESIDUI (decisione 1): dichiarati 0 (importi [] EUR, sbilancio [] EUR), tornati pari 0; regolati col mercato 0 (se vince [] / se perde [] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      tempo: 35790089 [feed-stantio] 3.7s (3.7 s) | 1422 tick/s
+OK  35790089 [parziali]  tick=  5216 decisioni= 5212 azioni=   1 stati=IDLE [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: fill per mercato che attraversa: 0
+      nota: RESIDUI (decisione 1): dichiarati 0 (importi [] EUR, sbilancio [] EUR), tornati pari 0; regolati col mercato 0 (se vince [] / se perde [] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['stake'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+      tempo: 35790089 [parziali] 3.8s (3.8 s) | 1368 tick/s
+OK  35790089 [riavvio]  tick=  5216 decisioni= 5212 azioni=   2 stati=IDLE [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: RIAVVIO a meta' partita concesso a bot FLAT (regola di produzione `_request_restart`): il bot e' stato ri-istanziato con `_instantiate_bot` e il blotter nuovo e' vuoto, come dopo un rebuild dello stream
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: fill per mercato che attraversa: 0
+      nota: RESIDUI (decisione 1): dichiarati 0 (importi [] EUR, sbilancio [] EUR), tornati pari 0; regolati col mercato 0 (se vince [] / se perde [] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      tempo: 35790089 [riavvio] 3.8s (3.8 s) | 1368 tick/s
+OK  35790089 [catalogo-assente]  tick=  5216 decisioni= 5212 azioni=   1 stati=IDLE [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: scenario `catalogo-assente`: la mappa dei nomi NON e' dichiarata (limite 1 del banco)
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: fill per mercato che attraversa: 0
+      nota: RESIDUI (decisione 1): dichiarati 0 (importi [] EUR, sbilancio [] EUR), tornati pari 0; regolati col mercato 0 (se vince [] / se perde [] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      tempo: 35790089 [catalogo-assente] 3.8s (3.8 s) | 1367 tick/s
+OK  35790089 [live]  tick=  5216 decisioni= 5212 azioni= 113 stati=QUOTING2,CANCELLING,IDLE,FLATTENING,DONE,LOCKING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: fill per mercato che attraversa: 2 [motivo attraversato] - 12:36:39 UTC 1.259745327 sel 9633138 LAY 0.87 @1.54 (scambio a 1.51); 12:37:05 UTC 1.259745327 sel 35635727 BACK 0.58 @2.96 (scambio a 2.98)
+      nota: RESIDUI (decisione 1): dichiarati 2 (importi [0.09, 0.19] EUR, sbilancio [0.09, 0.27] EUR), tornati pari 0; regolati col mercato 2 (se vince [-8.49, -1.4] / se perde [-9.19, -0.65] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['inplay_tick_enabled', 'min_flow', 'min_matched', 'min_size', 'min_total_matched', 'price_max', 'price_min', 'runner_filter', 'warmup_ms'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+      tempo: 35790089 [live] 17.9s (17.9 s) | 291 tick/s
+OK  35790089 [chiusura-abbinata-in-parte]  tick=  5216 decisioni= 5212 azioni=  85 stati=QUOTING2,CANCELLING,IDLE,FLATTENING,DONE [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: scenario chiusura-abbinata-in-parte: 2 chiusura/e colpita/e, 8 chiusure viste: 9633138 LAY chiesto 1.68 tetto 0.67 -> abbinato 0.67 residuo 0.00 lapsed 0.00 annullato 1.01; 35635727 BACK chiesto 10.50 tetto 4.20 -> abbinato 4.20 residuo 0.00 lapsed 6.30 annullato 0.00
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 1
+      nota: fill per mercato che attraversa: 0
+      nota: RESIDUI (decisione 1): dichiarati 1 (importi [0.05] EUR, sbilancio [0.08] EUR), tornati pari 0; regolati col mercato 1 (se vince [-1.3] / se perde [-0.63] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['inplay_tick_enabled', 'min_flow', 'min_matched', 'min_size', 'min_total_matched', 'price_max', 'price_min', 'runner_filter', 'warmup_ms'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+      tempo: 35790089 [chiusura-abbinata-in-parte] 18.2s (18.2 s) | 286 tick/s
+OK  35790089 [chiudi-ora]  tick=  5216 decisioni= 2574 azioni= 114 stati=QUOTING2,CANCELLING,IDLE,FLATTENING,DONE,LOCKING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: CHIUDI ORA a meta' partita (via di produzione `chiusura_manuale`): preso in carico
+      nota: CHIUDI ORA concluso: stato riga ['error']; esito: ["nessuna posizione aperta: il bot non aveva niente da chiudere - fermo su questa partita finche' non lo riarmi. ATTENZIONE: chiudi ora: il bot ha finito ma il blotter NON e' pari dopo 45s (residuo non chiudibile) - verifica la posizione su Betfair/ladder"]
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: fill per mercato che attraversa: 2 [motivo attraversato] - 12:36:39 UTC 1.259745327 sel 9633138 LAY 0.87 @1.54 (scambio a 1.51); 12:37:05 UTC 1.259745327 sel 35635727 BACK 0.58 @2.96 (scambio a 2.98)
+      nota: RESIDUI (decisione 1): dichiarati 2 (importi [0.09, 0.19] EUR, sbilancio [0.09, 0.27] EUR), tornati pari 0; regolati col mercato 2 (se vince [-8.49, -1.4] / se perde [-9.19, -0.65] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['inplay_tick_enabled', 'min_flow', 'min_matched', 'min_size', 'min_total_matched', 'price_max', 'price_min', 'runner_filter', 'warmup_ms'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+      tempo: 35790089 [chiudi-ora] 6.5s (6.5 s) | 798 tick/s
+OK  35790089 [uscite-manuali]  tick=  5216 decisioni= 5212 azioni= 218 stati=QUOTING2,CANCELLING,IDLE,FLATTENING,DONE,LOCKING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: MANUALI
+      nota: USCITE MANUALI: interruttore spento; nessuna firma
+      nota: USCITE MANUALI (uscite-manuali): decisioni 5915, proposte nate 97, decadute 93, firme del banco 0, uscite firmate eseguite 0; non giudicabili: UM3b: il bot non ha una fine finestra con force-flat (tiene fino a fine mercato per progetto): le protezioni restano quelle dei suoi controlli (Chiudi, freno, fine mercato)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: fill per mercato che attraversa: 1 [motivo attraversato] - 12:37:05 UTC 1.259745327 sel 35635727 BACK 0.58 @2.96 (scambio a 2.98)
+      nota: RESIDUI (decisione 1): dichiarati 1 (importi [0.09] EUR, sbilancio [0.09] EUR), tornati pari 0; regolati col mercato 1 (se vince [-8.59] / se perde [-8.5] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['inplay_tick_enabled', 'min_flow', 'min_matched', 'min_size', 'min_total_matched', 'price_max', 'price_min', 'runner_filter', 'warmup_ms'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+      tempo: 35790089 [uscite-manuali] 9.9s (9.9 s) | 528 tick/s
+OK  35790089 [uscite-manuali-firmate]  tick=  5216 decisioni= 5212 azioni=  60 stati=QUOTING2,CANCELLING,IDLE,FLATTENING,DONE,LOCKING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: MANUALI
+      nota: USCITE MANUALI: interruttore spento; il banco firma ogni proposta dopo 5 s di mercato (params.uscite_approvate, riletta da `_aggiorna_uscite` ogni BOT_CONTROL_POLL_SEC)
+      nota: USCITE MANUALI (uscite-manuali-firmate): decisioni 6, proposte nate 3, decadute 0, firme del banco 3, uscite firmate eseguite 3; non giudicabili: UF2 tennis_scalper|1.259745327|9633138|140107818931523967|target: proposta 1.99, uscita 1.50; resto 0.49 dichiarato NON piazzabile dal bot (min_bet_skip, regola esistente); UM3b: il bot non ha una fine finestra con force-flat (tiene fino a fine mercato per progetto): le protezioni restano quelle dei suoi controlli (Chiudi, freno, fine mercato)
+      nota: USCITE MANUALI: controlli MAI sollecitati (non lo so): UM4
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: fill per mercato che attraversa: 3 [motivo attraversato] - 12:36:39 UTC 1.259745327 sel 9633138 LAY 1.01 @1.52 (scambio a 1.51); 12:37:05 UTC 1.259745327 sel 35635727 BACK 0.58 @2.96 (scambio a 2.98); 12:50:54 UTC 1.259745327 sel 35635727 BACK 1.99 @2.26 (scambio a 2.48)
+      nota: RESIDUI (decisione 1): dichiarati 2 (importi [0.09, 0.19] EUR, sbilancio [0.09, 0.25] EUR), tornati pari 0; regolati col mercato 2 (se vince [-8.59, -0.31] / se perde [-8.5, 0.19] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['inplay_tick_enabled', 'min_flow', 'min_matched', 'min_size', 'min_total_matched', 'price_max', 'price_min', 'runner_filter', 'warmup_ms'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+      tempo: 35790089 [uscite-manuali-firmate] 13.6s (13.6 s) | 382 tick/s
+OK  35790089 [soldi-veri]  tick=  5216 decisioni= 5212 azioni= 113 stati=QUOTING2,CANCELLING,IDLE,FLATTENING,DONE,LOCKING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: SOLDI VERI: riga del bot mode=live, «Ordini reali» LIVE di questo avvio, runner col tetto LIVE e i trading control del runner (modalita' del bot, kill-switch, terza rete); bot eseguito in LIVE
+      nota: SOLDI VERI (reale): ordini eseguiti sul client REALE 73, sul client SIMULATO 0; aperture reali fermate dalla terza rete (TENNIS_MODO_ORDINI) 0
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: fill per mercato che attraversa: 2 [motivo attraversato] - 12:36:39 UTC 1.259745327 sel 9633138 LAY 0.87 @1.54 (scambio a 1.51); 12:37:05 UTC 1.259745327 sel 35635727 BACK 0.58 @2.96 (scambio a 2.98)
+      nota: RESIDUI (decisione 1): dichiarati 2 (importi [0.09, 0.19] EUR, sbilancio [0.09, 0.27] EUR), tornati pari 0; regolati col mercato 2 (se vince [-8.49, -1.4] / se perde [-9.19, -0.65] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['inplay_tick_enabled', 'min_flow', 'min_matched', 'min_size', 'min_total_matched', 'price_max', 'price_min', 'runner_filter', 'warmup_ms'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+      tempo: 35790089 [soldi-veri] 25.2s (25.2 s) | 207 tick/s
+OK  35790089 [soldi-veri-prova]  tick=  5216 decisioni= 5212 azioni=  80 stati=IDLE [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: SOLDI VERI: riga del bot mode=live, «Ordini reali» PAPER di questo avvio, runner col tetto LIVE e i trading control del runner (modalita' del bot, kill-switch, terza rete); bot eseguito in LIVE
+      nota: SOLDI VERI (nessuno_reale): ordini eseguiti sul client REALE 0, sul client SIMULATO 0; aperture reali fermate dalla terza rete (TENNIS_MODO_ORDINI) 40
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: fill per mercato che attraversa: 0
+      nota: RESIDUI (decisione 1): dichiarati 0 (importi [] EUR, sbilancio [] EUR), tornati pari 0; regolati col mercato 0 (se vince [] / se perde [] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['inplay_tick_enabled', 'min_flow', 'min_matched', 'min_size', 'min_total_matched', 'price_max', 'price_min', 'runner_filter', 'warmup_ms'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+      tempo: 35790089 [soldi-veri-prova] 3.5s (3.5 s) | 1494 tick/s
+OK  35790089 [soldi-veri-paper]  tick=  5216 decisioni= 5212 azioni= 113 stati=QUOTING2,CANCELLING,IDLE,FLATTENING,DONE,LOCKING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: SOLDI VERI: riga del bot mode=paper, «Ordini reali» LIVE di questo avvio, runner col tetto LIVE e i trading control del runner (modalita' del bot, kill-switch, terza rete); bot eseguito in PAPER
+      nota: SOLDI VERI (simulato): ordini eseguiti sul client REALE 0, sul client SIMULATO 73; aperture reali fermate dalla terza rete (TENNIS_MODO_ORDINI) 0
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: fill per mercato che attraversa: 2 [motivo attraversato] - 12:36:39 UTC 1.259745327 sel 9633138 LAY 0.87 @1.54 (scambio a 1.51); 12:37:05 UTC 1.259745327 sel 35635727 BACK 0.58 @2.96 (scambio a 2.98)
+      nota: RESIDUI (decisione 1): dichiarati 2 (importi [0.09, 0.19] EUR, sbilancio [0.09, 0.27] EUR), tornati pari 0; regolati col mercato 2 (se vince [-8.49, -1.4] / se perde [-9.19, -0.65] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['inplay_tick_enabled', 'min_flow', 'min_matched', 'min_size', 'min_total_matched', 'price_max', 'price_min', 'runner_filter', 'warmup_ms'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+      tempo: 35790089 [soldi-veri-paper] 25.2s (25.2 s) | 207 tick/s
+
+ESITO: 17 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+       0 violazioni totali
+
+COPERTURA DEI CONTROLLI — quante volte ognuno ha avuto un caso:
+     B1  x5215    in DRY-RUN il bot non manda MAI un ordine a mercato (dossier §4: `
+     B2  x39066   ogni ordine chiesto ha prezzo nella ladder Betfair [1.01, 1000] e 
+     B3  x2       un bot DISABILITATO (disarm del runner, `_tennis_disabled`) non ap
+     B4  x17      nessun ordine viene chiesto a mercato NON operabile (sospeso o chi
+     B5  x253     lo stake d'ingresso e' quello del control (mai piu' di quanto l'ut
+  ?? B6  x0       FLB: l'ingresso e' sempre un LAY del favorito ESTREMO (best-lay <=
+     B7  x39058   l'esposizione per selezione non supera il tetto che il runner pass
+     B8  x10426   in LIVE .it nessun ordine sotto il minimo di giurisdizione (back 1
+     B9  x91      "chiudi ora" dell'utente (D3, 24/09): UNA sola chiusura dell'abbin
+  ?? B10 x0       un ordine che Betfair .it ha RIFIUTATO per taglia (INVALID_BET_SIZ
+     B11 x21737   il PARCHEGGIO del place-and-trim sta alla quota della fonte unica 
+     SV1 x15636   «SOLDI VERI» (04/10): l'ordine parte sul client che la catena impo
+     K1  x17120   ogni ordine che il bot STA SEGUENDO esiste davvero a mercato: un o
+     K2  x5212    un ordine RIFIUTATO (place_order ha risposto False, oppure stato V
+     K3  x39066   lo stato di ogni ordine si rilegge come Enum `OrderStatus` (`.valu
+     K4  x17120   una posizione che il bot crede VIVA ha almeno un ordine a mercato 
+     K5  x36442   nessuna ESPOSIZIONE abbinata resta senza una posizione viva del bo
+     RS1 x36249   un residuo che il bot DICHIARA non piazzabile lo e' davvero: l'ord
+     K6  x39066   quando il bot dichiara la posizione CHIUSA non resta nessun suo or
+     K7  x83254   il prezzo medio e l'abbinato che il bot pubblica nelle sue `stats`
+     P1  x39066   ogni ordine del bot arriva allo specchio `tennis_live_orders` con 
+     P2  x39066   lo specchio non dichiara MAI un ordine abbinato piu' di quanto il 
+     P3  x17      a mercato CHIUSO il bot pubblica un P&L di settlement: senza, lo s
+  -- controlli del banco comune, scenario chiusura-abbinata-in-parte:
+     CP1 x9754    chiusura abbinata in parte: la riga (o la credenza) del bot porta 
+  ?? CP2 x0       la copertura dichiarata (hedge_state, meta.hedged_size) si conta s
+     CP3 x9754    una posizione con esposizione residua o con il residuo della chius
+     CP4 x5010    dopo una chiusura abbinata in parte nessun loop: mai una chiusura 
+  -- controlli del banco comune, scenari a uscite manuali (uscite-manuali, uscite-manuali-firmate):
+     UM1 x5921    a uscite manuali nessuna uscita di trading parte senza la firma de
+     UM2 x5918    ogni uscita decisa dalla strategia diventa una proposta coi numeri
+     UM3 x5921    le protezioni non passano dal cancello e scattano da sole
+     UM4 x93      una proposta la cui condizione cade sparisce, con la sua firma
+     UF1 x3       una firma fa partire l'uscita una volta sola
+     UF2 x3       l'uscita firmata parte all'importo esatto della proposta di adesso
+     UF3 x3       una firma non esegue mai un'uscita diversa da quella firmata
+
+?? MAI SOLLECITATI: 3 controlli su 23. Su questi il referto NON dice «sano», dice «non lo so»:
+     B6: FLB: l'ingresso e' sempre un LAY del favorito ESTREMO (best-lay <= `lay_max`) e mai un BACK (dossier §4.3)
+     B10: un ordine che Betfair .it ha RIFIUTATO per taglia (INVALID_BET_SIZE: sotto il minimo diretto o, nel place-and-trim, sotto il floor di legge) non si rimanda IDENTICO (stessa selezione, lato, size): verrebbe rifiutato di nuovo e la gamba resta scoperta mentre il bot crede di chiudere (regola dell'utente del 01/10, punto 3)
+     CP2: la copertura dichiarata (hedge_state, meta.hedged_size) si conta sull'ABBINATO della chiusura, mai sul chiesto (fix del 18/09)
+TEMPO TOTALE: 3m04.9s (184.9 s) su 17 replay | obiettivo 300 s, tetto 600 s (CERTIFICA_TETTO_S)

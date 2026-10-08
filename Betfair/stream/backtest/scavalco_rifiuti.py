@@ -57,7 +57,10 @@ bot solo dove il controllo e' <<credenza contro mercato>>; mai la sola confessio
   RC2  nessun loop: dopo un rifiuto, al piu' `TETTO_ORDINI_DOPO_RIFIUTO`
        ordini nuovi sulla selezione prima che il ciclo si chiuda;
   RC3  ogni rifiuto e' scritto nell'attivita' del bot col suo codice entro
-       `GIRI_DI_TOLLERANZA` giri;
+       `GIRI_DI_TOLLERANZA` giri; SOLO per `replaceOrders` (08/10, decisione D-2a
+       del coordinatore) vale anche la riga `submin.NOTA_RIMPIAZZO_NON_NATO`: in
+       produzione il codice del place rifiutato dentro un replace non arriva al
+       bot (flumine `BetfairExecution.execute_replace`, `pass  # todo`);
   RC4  a ciclo chiuso dopo un rifiuto la posizione e' piatta o il residuo e'
        DICHIARATO dal bot (`residuo_ricordato`, `flatten_residual*`).
 
@@ -70,6 +73,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from . import chiusura_parziale as CP
 from . import uscite_manuali as UM
+from ..trading.submin import NOTA_RIMPIAZZO_NON_NATO
 
 SCENARIO_INGRESSO = "ingresso-abbinato-in-parte"
 SCENARIO_INGRESSO_PAPER = SCENARIO_INGRESSO + "-paper"
@@ -847,9 +851,14 @@ class Sorveglianza:
             rec["giri"] += 1
             # RC3: il rifiuto scritto col suo codice
             if not rec.get("scritto"):
+                # D-2a (08/10): per replaceOrders il codice non arriva al bot
+                # (flumine lo scarta): basta la riga "rimpiazzo NON nato"
+                ammessi = [rec["codice"]]
+                if rec.get("operazione") == "replaceOrders":
+                    ammessi.append(NOTA_RIMPIAZZO_NON_NATO)
                 rec["scritto"] = any(
                     t is not None and int(t) >= int(rec["ms"])
-                    and rec["codice"] in _testo(p) for _kind, p, t in att)
+                    and any(a in _testo(p) for a in ammessi) for _kind, p, t in att)
                 if not rec["scritto"] and (rec["giri"] > GIRI_DI_TOLLERANZA or fine):
                     self._viola("RC3", oggetto, (
                         "%s: rifiuto %s (%s, %s) mai scritto col codice nell'attivita' "

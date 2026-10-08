@@ -3252,6 +3252,9 @@ def _submin_state_to_dict(state: Any) -> Dict[str, Any]:
         # replace; senza, una ripresa dopo riavvio tornerebbe al percorso B.
         "park_price": float(getattr(state, "park_price", 0.0) or 0.0),
         "serve_replace": bool(getattr(state, "serve_replace", True)),
+        # 08/10 (decisione D-2): conferma del rimpiazzo non nato fra due giri
+        "giri_senza_sostituto": int(getattr(state, "giri_senza_sostituto", 0) or 0),
+        "replace_in_volo_ms": int(getattr(state, "replace_in_volo_ms", 0) or 0),
     }
 
 
@@ -3272,6 +3275,9 @@ def _submin_state_from_dict(d: Dict[str, Any]) -> Any:
         # default = comportamento storico per le righe scritte prima del 17/09
         park_price=float(d.get("park_price") or 0.0),
         serve_replace=bool(d.get("serve_replace", True)),
+        # default 0 per le righe scritte prima del 08/10 (decisione D-2)
+        giri_senza_sostituto=int(d.get("giri_senza_sostituto") or 0),
+        replace_in_volo_ms=int(d.get("replace_in_volo_ms") or 0),
     )
 
 

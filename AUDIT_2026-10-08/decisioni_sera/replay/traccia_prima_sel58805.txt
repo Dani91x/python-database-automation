@@ -1,0 +1,117 @@
+ORDINI del blotter su 1.259819674 (sel [58805]): 23
+creato 16:43:52.143 id=578149 bet=100000000003 sel=58805 BACK 25.00@4.3 stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=25.00 void=0.00 fill=[] risposta=SUCCESS/None trade=1/1
+creato 16:43:52.143 id=580617 bet=100000000004 sel=58805 LAY 25.00@4.2 stato=Execution complete abb=0.29 media=4.2 rest=0.00 lapsed=0.00 annull=24.71 void=0.00 fill=[('16:51:55.000', 4.2, 0.29)] risposta=SUCCESS/None trade=1/1
+creato 16:51:55.409 id=254180 bet=None sel=58805 LAY 1.67@4.2 stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=0.00 void=1.67 fill=[] risposta=FAILURE/INVALID_BET_SIZE trade=1/1
+creato 16:51:58.628 id=678839 bet=100000000008 sel=58805 LAY 1.63@4.3 stato=Execution complete abb=1.63 media=4.2 rest=0.00 lapsed=0.00 annull=0.00 void=0.00 fill=[('16:51:58.628', 4.2, 1.63)] risposta=SUCCESS/None trade=1/1
+creato 16:52:07.219 id=312370 bet=100000000009 sel=58805 BACK 1.00@3.95 stato=Execution complete abb=1.00 media=4.1 rest=0.00 lapsed=0.00 annull=0.00 void=0.00 fill=[('16:52:07.219', 4.1, 1.0)] risposta=SUCCESS/None trade=1/1
+creato 16:52:11.150 id=531512 bet=None sel=58805 BACK 1.00@1000.0 stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=0.00 void=1.00 fill=[] risposta=FAILURE/INVALID_PROFIT_RATIO trade=1/1
+creato 16:52:43.766 id=718495 bet=100000000011 sel=58805 BACK 1.00@1000.0 stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=1.00 void=0.00 fill=[] risposta=SUCCESS/None trade=1/1
+creato 16:53:14.513 id=489135 bet=100000000013 sel=58805 BACK 1.00@1000.0 stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=1.00 void=0.00 fill=[] risposta=SUCCESS/None trade=1/2
+creato 16:53:20.908 id=770379 bet=100000000014 sel=58805 BACK 0.97@3.65 stato=Execution complete abb=0.97 media=4.1 rest=0.00 lapsed=0.00 annull=0.00 void=0.00 fill=[('16:53:20.908', 4.1, 0.97)] risposta=SUCCESS/None trade=2/2
+
+ATTIVITA' dello scalper fra 16:43:00 e 16:54:00:
+16:43:52.143 place {"market_id": "1.259819674", "selection_id": 58805, "side": "BACK", "price": 4.3, "size": 25.0}
+16:43:52.143 place {"market_id": "1.259819674", "selection_id": 58805, "side": "LAY", "price": 4.2, "size": 25.0}
+16:49:39.638 place {"market_id": "1.259819674", "selection_id": 22, "side": "BACK", "price": 1.66, "size": 25.0}
+16:49:39.638 place {"market_id": "1.259819674", "selection_id": 22, "side": "LAY", "price": 1.65, "size": 25.0}
+16:51:55.000 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.28}
+16:51:55.409 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.3}
+16:51:55.409 place {"market_id": "1.259819674", "selection_id": 58805, "side": "LAY", "price": 4.2, "size": 1.67}
+16:51:55.409 scavalco {"selection_id": 58805, "side": "LAY", "price": 4.2, "size": 1.67, "nw": -0.928, "nl": 0.29, "msg": "chiusura BACK sotto 0,50 non piazzabile: ordine di scavalco LAY 1.67 @4.2, poi chiusura al centesimo"}
+16:51:55.725 rifiuto_taglia {"level": "CRITICAL", "market_id": "1.259819674", "selection_id": 58805, "side": "LAY", "price": 4.2, "size": 1.67, "rifiuti": 1, "riprovo_fra_s": 1, "msg": "Betfair ha rifiutato l'importo (INVALID_BET_SIZE): nessun ripiazzo prima di 1 s"}
+16:51:58.628 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.3}
+16:51:58.628 place {"market_id": "1.259819674", "selection_id": 58805, "side": "LAY", "price": 4.3, "size": 1.63}
+16:51:58.628 scavalco {"selection_id": 58805, "side": "LAY", "price": 4.3, "size": 1.63, "nw": -0.928, "nl": 0.29, "msg": "chiusura BACK sotto 0,50 non piazzabile: ordine di scavalco LAY 1.63 @4.3, poi chiusura al centesimo"}
+16:52:07.219 place {"market_id": "1.259819674", "selection_id": 58805, "side": "BACK", "price": 3.95, "size": 1.0}
+16:52:07.219 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:11.150 submin_start {"selection_id": 58805, "side": "BACK", "size": 0.97, "price": 3.9}
+16:52:11.150 submin_step {"step": "placed", "note": "step1 place 1.00@1000.0 (LAPSE)"}
+16:52:11.414 submin_abort {"note": "parcheggio non piu' vivo prima del rimpiazzo: sequenza chiusa, la chiusura si rifa' (parcheggio rifiutato da Betfair: INVALID_PROFIT_RATIO)", "codice": "INVALID_PROFIT_RATIO"}
+16:52:18.849 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:18.849 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:19.049 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:19.254 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:19.523 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:21.436 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:21.950 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:24.538 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:24.538 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:27.548 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:27.753 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:28.663 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:28.835 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:29.449 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:29.961 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:30.540 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:30.759 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:32.562 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:32.973 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:33.351 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:34.059 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:34.059 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:35.973 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:35.973 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:36.365 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:37.475 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:37.850 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:38.059 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:38.759 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:41.178 submin_start {"selection_id": 58805, "side": "BACK", "size": 0.97, "price": 3.65}
+16:52:43.766 submin_step {"step": "placed", "note": "step1 place 1.00@1000.0 (LAPSE)"}
+16:52:46.050 submin_step {"step": "trimmed", "note": "step2 VERIFICATO su osservazione: residuo 0.97 \u2264 target 0.97"}
+16:52:47.184 submin_step {"step": "repriced", "note": "step3 replace \u2192 3.65"}
+16:52:47.184 submin_step {"step": "done", "note": "submin completato: ordine sotto-minimo a riposo alla target_price"}
+16:52:47.549 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:48.271 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:51.373 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:51.783 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:52.167 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:52.167 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:52.887 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:53.560 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:53.560 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:55.304 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:55.469 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:55.569 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:56.968 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:57.479 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:57.892 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:57.892 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:57.995 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:58.101 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:58.205 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:58.301 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:58.770 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:58.984 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:59.179 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:59.293 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:59.388 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:59.499 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:52:59.896 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:53:00.208 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:53:00.208 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:53:01.671 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:53:01.974 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:53:02.189 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:53:02.905 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:53:03.067 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:53:04.899 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:53:05.103 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:53:06.875 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:53:08.002 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:53:08.099 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:53:09.705 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:53:09.810 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:53:10.216 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.97}
+16:53:12.801 submin_start {"selection_id": 58805, "side": "BACK", "size": 0.97, "price": 3.65}
+16:53:14.513 submin_step {"step": "placed", "note": "step1 place 1.00@1000.0 (LAPSE)"}
+16:53:17.816 submin_step {"step": "trimmed", "note": "step2 VERIFICATO su osservazione: residuo 0.97 \u2264 target 0.97"}
+16:53:20.908 submin_step {"step": "repriced", "note": "step3 replace \u2192 3.65"}
+16:53:21.535 submin_step {"step": "done", "note": "submin completato: ordine sotto-minimo a riposo alla target_price"}
+16:53:21.535 flatten_done {"locked": -0.05}
+
+REFERTO: violazioni 1
+{'codice': 'RC3', 'regola': "ogni rifiuto di Betfair e' scritto nell'attivita' del bot col suo codice entro 3 giri", 'dettaglio': "('1.259819674', 58805): rifiuto BET_TAKEN_OR_LAPSED (rimpiazzo, replaceOrders) mai scritto col codice nell'attivita' del bot", 'quando': '2026-07-10T16:52:55.304000+00:00'}
+INGRESSO ABBINATO IN PARTE (tetto 0.29): gruppi colpiti 3, senza effetto (riarmati) 2; sel 58805: ingresso abbinato 0.29 su 2 gamba/e -> chiusura BACK 0.29 (SOTTO il floor); scavalchi 2 ['LAY 1.67 @4.2 abbinato 0.00', 'LAY 1.63 @4.3 abbinato 1.63']; chiusure 5; fine ciclo: differenza 0.013; sel 22: ingresso abbinato 0.29 su 2 gamba/e -> chiusura BACK 0.29 (SOTTO il floor); scavalchi 1 ['LAY 1.70 @1.65 abbinato 1.70']; chiusure 1; fine ciclo: differenza 0.0035; sel 47973: ingresso abbinato 0.29 su 2 gamba/e -> chiusura BACK 0.29 (SOTTO il floor); scavalchi 1 ['LAY 1.70 @1.84 abbinato 1.70']; chiusure 1; fine ciclo: differenza 0.0016
+FINTO BETFAIR coi codici veri: scavalco INVALID_BET_SIZE (placeOrders) su ('1.259819674', 58805) LAY 1.67 @4.2; ordini dopo 6; fine ciclo differenza 0.013; scritto col codice: si'; parcheggio INVALID_PROFIT_RATIO (placeOrders) su ('1.259819674', 58805) BACK 1.00 @1000.0; ordini dopo 3; fine ciclo differenza 0.013; scritto col codice: si'; rimpiazzo BET_TAKEN_OR_LAPSED (replaceOrders) su ('1.259819674', 58805) BACK 1.00 @1000.0; ordini dopo 2; fine ciclo differenza 0.013; scritto col codice: NO
+impronta degli ordini del bot (paper = live): 3fe97f9be154db71 su 30 ordini
