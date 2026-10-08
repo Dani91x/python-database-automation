@@ -1,0 +1,47 @@
+sha di partenza: {'Betfair/stream/backtest/banco_comune.py': '1fe70bfdbc2168b1', 'Betfair/omega/tools/replay_registrazioni.py': 'f2fdfc0599f1a6bb'}
+verde di partenza: 23 passed in 3.67s
+M1 RB-1: il CLOSED torna sotto la conflazione: 1 failed, 22 passed in 4.23s
+      rosso: test_rb1_closed_nello_stesso_secondo_di_un_sospeso_arriva_allo_scanner
+M2 RB-1: il CLOSED consegnato a ogni riga (nessuna consegna unica): 2 failed, 21 passed in 3.29s
+      rosso: test_rb1_closed_nello_stesso_secondo_di_un_sospeso_arriva_allo_scanner
+      rosso: test_rb1_omega_passa_la_chiusura_di_betfair_allo_scanner
+M3 RB-1: Omega non passa la chiusura allo scanner: 1 failed, 22 passed in 5.29s
+      rosso: test_rb1_omega_passa_la_chiusura_di_betfair_allo_scanner
+M4 RB-2: finestre ignorate (ogni mercato sottoscritto): 3 failed, 20 passed in 4.42s
+      rosso: test_rb2_finestre_accese_l_ht_non_arriva_dal_45
+      rosso: test_rb2_la_registrazione_conferma_solo_i_mercati_sottoscritti
+      rosso: test_rb2_i_voluti_si_rifanno_alla_cadenza_del_giro_dello_scanner
+M5 RB-2: esposizioni dei bot non dette allo scanner: 1 failed, 22 passed in 3.52s
+      rosso: test_rb2_un_esposizione_di_omega_tiene_l_ht_oltre_il_45
+M6 RB-2: la registrazione conferma anche i mercati non sottoscritti: 1 failed, 22 passed in 5.41s
+      rosso: test_rb2_la_registrazione_conferma_solo_i_mercati_sottoscritti
+M7 RB-2: voluti rifatti a ogni book (cadenza falsa): 1 failed, 22 passed in 3.35s
+      rosso: test_rb2_i_voluti_si_rifanno_alla_cadenza_del_giro_dello_scanner
+M8 RB-3: nessun aggancio dell'orologio del flusso: 1 failed, 22 passed in 3.55s
+      rosso: test_rb3_eta_del_flusso_sull_orologio_di_mercato
+M9 RB-4: il paper senza porta del runner: 1 failed, 22 passed in 3.78s
+      rosso: test_rb4_il_paper_aggancia_la_porta_del_runner
+M10 RB-5: elenco delle tabelle storiche vuoto: 5 failed, 18 passed in 3.80s
+      rosso: test_rb5_due_scenari_in_sequenza_il_secondo_non_vede_le_tabelle_del_primo
+      rosso: test_rb5_anche_l_uscita_dal_replay_le_azzera
+      rosso: test_rb5_l_ingresso_nel_replay_parte_pulito
+      rosso: test_rb5_il_riavvio_a_meta_partita_le_perde_come_un_riavvio_vero
+      rosso: test_rb5_l_elenco_e_esplicito_e_nomina_cache_vere_di_omega_service
+M11 RB-5: AmbienteOmega non azzera le cache all'ingresso: 1 failed, 22 passed in 3.32s
+      rosso: test_rb5_l_ingresso_nel_replay_parte_pulito
+M14 RB-5: _LEG_RETRY fuori dall'elenco del banco: 2 failed, 21 passed in 3.46s
+      rosso: test_rb5_l_elenco_e_esplicito_e_nomina_cache_vere_di_omega_service
+      rosso: test_rb5_un_rifiuto_di_uno_scenario_non_blocca_la_gamba_nel_successivo
+M15 RB-5: AmbienteOmega azzera solo con svuota_le_cache (il banco di partenza): 5 failed, 18 passed in 3.83s
+      rosso: test_rb5_due_scenari_in_sequenza_il_secondo_non_vede_le_tabelle_del_primo
+      rosso: test_rb5_anche_l_uscita_dal_replay_le_azzera
+      rosso: test_rb5_l_ingresso_nel_replay_parte_pulito
+      rosso: test_rb5_il_riavvio_a_meta_partita_le_perde_come_un_riavvio_vero
+      rosso: test_rb5_un_rifiuto_di_uno_scenario_non_blocca_la_gamba_nel_successivo
+M12 RB-2: esposizioni di Omega con righe regolate: 1 failed, 22 passed in 4.21s
+      rosso: test_rb2_esposizioni_omega_come_le_legge_la_produzione
+M13 RB-2: banco di Omega a finestre spente: 1 failed, 22 passed in 3.16s
+      rosso: test_rb2_il_banco_di_omega_accende_le_finestre
+sha finali: {'Betfair/stream/backtest/banco_comune.py': '1fe70bfdbc2168b1', 'Betfair/omega/tools/replay_registrazioni.py': 'f2fdfc0599f1a6bb'} identici: True
+MUTAZIONE residue: 0
+verde finale: 23 passed in 3.15s

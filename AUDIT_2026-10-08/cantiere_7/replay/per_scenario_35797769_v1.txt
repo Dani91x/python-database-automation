@@ -1,0 +1,498 @@
+==================== base 4 righe diverse
+    -      nota: righe di scan scritte dallo SCANNER VERO: 681 | letture del feed di Omega: 312
+    +      nota: righe di scan scritte dallo SCANNER VERO: 373 | letture del feed di Omega: 312 | giri senza riga nel feed: 6
+    +      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 478154 (BOTH_TEAMS_TO_SCORE x60130, CORRECT_SCORE x41440, HALF_TIME x57657, HALF_TIME_SCORE x65521, MATCH_ODDS x18481, OVER_UNDER_05 x65868, OVER_UNDER_15 x60130, OVER_UNDER_25 x29484, OVER_UNDER_35 x1025, OVER_U
+    +      nota: chiusure di Betfair consegnate allo scanner: MATCH_ODDS 21:01:26
+==================== giornata-reale 5 righe diverse
+    +      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico 
+    -      nota: righe di scan scritte dallo SCANNER VERO: 681 | letture del feed di Omega: 312
+    +      nota: righe di scan scritte dallo SCANNER VERO: 373 | letture del feed di Omega: 312 | giri senza riga nel feed: 6
+    +      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 478154 (BOTH_TEAMS_TO_SCORE x60130, CORRECT_SCORE x41440, HALF_TIME x57657, HALF_TIME_SCORE x65521, MATCH_ODDS x18481, OVER_UNDER_05 x65868, OVER_UNDER_15 x60130, OVER_UNDER_25 x29484, OVER_UNDER_35 x1025, OVER_U
+    +      nota: chiusure di Betfair consegnate allo scanner: MATCH_ODDS 21:01:26
+==================== apertura 5 righe diverse
+    +      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico 
+    -      nota: righe di scan scritte dallo SCANNER VERO: 681 | letture del feed di Omega: 312
+    +      nota: righe di scan scritte dallo SCANNER VERO: 373 | letture del feed di Omega: 312 | giri senza riga nel feed: 6
+    +      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 478154 (BOTH_TEAMS_TO_SCORE x60130, CORRECT_SCORE x41440, HALF_TIME x57657, HALF_TIME_SCORE x65521, MATCH_ODDS x18481, OVER_UNDER_05 x65868, OVER_UNDER_15 x60130, OVER_UNDER_25 x29484, OVER_UNDER_35 x1025, OVER_U
+    +      nota: chiusure di Betfair consegnate allo scanner: MATCH_ODDS 21:01:26
+==================== paper 14 righe diverse
+    -      nota: scenario 'paper': MOTORE v2 LEGACY in modalita' PAPER: fill istantaneo di omega_engine.paper_fill, senza bet delay (P4) — si misura la divergenza col live
+    +      nota: scenario 'paper': MOTORE v2 LEGACY in modalita' PAPER, stessi parametri di `apertura`: il paper passa dalla PORTA DEL RUNNER del banco (canale di comando -> MotoreOrdini -> flumine, bet delay e FOK come il live); si confronta col live di `apertura` (parita' paper/live)
+    +      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico 
+    -      nota: attivita' del servizio: skip x3, flusso_interrotto x1
+    +      nota: attivita' del servizio: 
+    -      nota: motivi dichiarati: no_runner_by_model x2 | no_live_state x1
+    -      nota: righe di scan scritte dallo SCANNER VERO: 681 | letture del feed di Omega: 312
+    +      nota: righe di scan scritte dallo SCANNER VERO: 373 | letture del feed di Omega: 312 | giri senza riga nel feed: 6
+    +      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 478154 (BOTH_TEAMS_TO_SCORE x60130, CORRECT_SCORE x41440, HALF_TIME x57657, HALF_TIME_SCORE x65521, MATCH_ODDS x18481, OVER_UNDER_05 x65868, OVER_UNDER_15 x60130, OVER_UNDER_25 x29484, OVER_UNDER_35 x1025, OVER_U
+    +      nota: chiusure di Betfair consegnate allo scanner: MATCH_ODDS 21:01:26
+    -      nota: PAPER: i fill vengono da `omega_engine.paper_fill` (istantaneo, sullo snapshot, SENZA bet delay e senza coda) — non da flumine. E' la divergenza P4 dichiarata nel piano: qui si misura, non si corregge.
+    -      motivo x2: no_runner_by_model
+    -      motivo x1: no_live_state
+    +      nota: PAPER: l'ordine passa dalla PORTA DEL RUNNER del banco (porta vera di Omega sul canale -> MotoreOrdini -> _dispatch del runner -> flumine): bet delay, coda al prezzo, FOK e parziali come il live. Nessun fill simulato in casa.
+==================== cap-stretto 30 righe diverse
+    -OK  35797769 [cap-stretto]  tick=1462841 decisioni=  736 azioni=   4 stati=running [COMPLETE]
+    +OK  35797769 [cap-stretto]  tick=1462561 decisioni=  736 azioni=   4 stati=running [COMPLETE]
+    -      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione
+    +      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico 
+    -      nota: attivita' del servizio: skip x10, live_fok_fallback x2, place x2, settle x2
+    +      nota: attivita' del servizio: skip x9, live_fok_fallback x2, place x2, settle x2
+    -      nota: motivi dichiarati: nessun_candidato x2 | controparte_insufficiente x2 | prezzo_di_back_assente x2 | mercato_sospeso x2 | prezzi_non_freschi x2
+    +      nota: motivi dichiarati: controparte_insufficiente x2 | prezzo_di_back_assente x2 | mercato_sospeso x2 | prezzi_non_freschi x2 | nessun_candidato x1
+    -      nota: bet delay: 1925 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 1549288 | LAPSE al passaggio in gioco: 0
+    -      nota: righe di scan scritte dallo SCANNER VERO: 728 | letture del feed di Omega: 433
+    +      nota: bet delay: 2340 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 1549288 | LAPSE al passaggio in gioco: 0
+    +      nota: righe di scan scritte dallo SCANNER VERO: 422 | letture del feed di Omega: 433 | giri senza riga nel feed: 7
+    +      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 462581 (BOTH_TEAMS_TO_SCORE x60130, CORRECT_SCORE x25773, HALF_TIME x57657, HALF_TIME_SCORE x65521, MATCH_ODDS x18481, OVER_UNDER_05 x65868, OVER_UNDER_15 x60130, OVER_UNDER_25 x29578, OVER_UNDER_35 x1025, OVER_U
+    +      nota: chiusure di Betfair consegnate allo scanner: MATCH_ODDS 21:01:26, CORRECT_SCORE 21:02:30
+    -      nota: chiamate al mercato: list_today_football_events x736, read_market x355
+    +      nota: chiamate al mercato: list_today_football_events x736, read_market x357, get_event_market_by_type x1
+    -      nota: gambe NON aperte, per motivo: ft_cs:nessun_candidato x87 | ht_cs:nessun_candidato x1
+    -      nota: V3 (PERCORSO DI PRODUZIONE): 90 occasioni di selezione osservate | gambe scelte da V3: 2
+    -      nota: V3, perche' non entra: nessun_candidato x88
+    -      nota: V3, scarti dei singoli runner: senza_lay x440 | troppo_vicino_al_punteggio x93 | p_oltre_il_tetto x2 | p_impl_sotto_fascia x2 | p_impl_oltre_fascia x2 | liquidita_insufficiente x1
+    +      nota: gambe NON aperte, per motivo: ft_cs:nessun_candidato x87
+    +      nota: V3 (PERCORSO DI PRODUZIONE): 89 occasioni di selezione osservate | gambe scelte da V3: 2
+    +      nota: V3, perche' non entra: nessun_candidato x87
+    +      nota: V3, scarti dei singoli runner: senza_lay x440 | troppo_vicino_al_punteggio x90 | p_oltre_il_tetto x1 | p_impl_sotto_fascia x1 | p_impl_oltre_fascia x1 | liquidita_insufficiente x1
+    -      nota: V3 ht_cs: al 1' sul 0-0 banca '3 - 3' a 80 per 1.00 EUR | P_nostra 1.068% contro p_implicita 1.188% (margine 1.11x, serve 1.11x) | EV +0.096 EUR | liability 79.00 EUR
+    +      nota: V3 ht_cs: al 1' sul 0-0 banca '3 - 3' a 80 per 1.00 EUR | P_nostra 1.063% contro p_implicita 1.188% (margine 1.12x, serve 1.11x) | EV +0.100 EUR | liability 79.00 EUR
+    -      nota: V3, fonte dei lambda: pre_ko_odds x90
+    +      nota: V3, fonte dei lambda: pre_ko_odds x89
+    -      motivo x2: nessun_candidato
+    +      motivo x1: nessun_candidato
+==================== bot-fermo 27 righe diverse
+    -OK  35797769 [bot-fermo]  tick=1464026 decisioni=  736 azioni=   2 stati=running,stopped [COMPLETE]
+    +OK  35797769 [bot-fermo]  tick=1463747 decisioni=  736 azioni=   2 stati=running,stopped [COMPLETE]
+    +      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico 
+    -      nota: attivita' del servizio: live_fok_fallback x1, place x1, replay_stop_utente x1, settle x1
+    +      nota: attivita' del servizio: skip x1, live_fok_fallback x1, place x1, replay_stop_utente x1, settle x1
+    +      nota: motivi dichiarati: no_live_state x1
+    -      nota: bet delay: 929 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 1549288 | LAPSE al passaggio in gioco: 0
+    -      nota: righe di scan scritte dallo SCANNER VERO: 728 | letture del feed di Omega: 433
+    +      nota: bet delay: 1344 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 1549288 | LAPSE al passaggio in gioco: 0
+    +      nota: righe di scan scritte dallo SCANNER VERO: 422 | letture del feed di Omega: 433 | giri senza riga nel feed: 7
+    +      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 462581 (BOTH_TEAMS_TO_SCORE x60130, CORRECT_SCORE x25773, HALF_TIME x57657, HALF_TIME_SCORE x65521, MATCH_ODDS x18481, OVER_UNDER_05 x65868, OVER_UNDER_15 x60130, OVER_UNDER_25 x29578, OVER_UNDER_35 x1025, OVER_U
+    +      nota: chiusure di Betfair consegnate allo scanner: MATCH_ODDS 21:01:26, CORRECT_SCORE 21:02:30
+    -      nota: chiamate al mercato: list_today_football_events x375, read_market x355
+    +      nota: chiamate al mercato: list_today_football_events x374, read_market x357, get_event_market_by_type x1
+    -      nota: gambe NON aperte, per motivo: ht_cs:nessun_candidato x1
+    -      nota: V3 (PERCORSO DI PRODUZIONE): 2 occasioni di selezione osservate | gambe scelte da V3: 1
+    -      nota: V3, perche' non entra: nessun_candidato x1
+    -      nota: V3, scarti dei singoli runner: troppo_vicino_al_punteggio x6 | p_oltre_il_tetto x2 | p_impl_sotto_fascia x2 | p_impl_oltre_fascia x2
+    -      nota: V3 ht_cs: al 1' sul 0-0 banca '3 - 3' a 80 per 1.00 EUR | P_nostra 1.068% contro p_implicita 1.188% (margine 1.11x, serve 1.11x) | EV +0.096 EUR | liability 79.00 EUR
+    +      nota: V3 (PERCORSO DI PRODUZIONE): 1 occasioni di selezione osservate | gambe scelte da V3: 1
+    +      nota: V3, scarti dei singoli runner: troppo_vicino_al_punteggio x3 | p_oltre_il_tetto x1 | p_impl_sotto_fascia x1 | p_impl_oltre_fascia x1
+    +      nota: V3 ht_cs: al 1' sul 0-0 banca '3 - 3' a 80 per 1.00 EUR | P_nostra 1.063% contro p_implicita 1.188% (margine 1.12x, serve 1.11x) | EV +0.100 EUR | liability 79.00 EUR
+    -      nota: V3, fonte dei lambda: pre_ko_odds x2
+    +      nota: V3, fonte dei lambda: pre_ko_odds x1
+    -      nota: scenario bot-fermo: il controllo C4 («a bot fermo nessuna apertura, le protezioni girano») e' stato sollecitato 361 volte
+    +      nota: scenario bot-fermo: il controllo C4 («a bot fermo nessuna apertura, le protezioni girano») e' stato sollecitato 362 volte
+    +      motivo x1: no_live_state
+==================== feed-stantio 8 righe diverse
+    -      nota: attivita' del servizio: skip x1
+    +      nota: attivita' del servizio: 
+    -      nota: motivi dichiarati: no_live_state x1
+    -      nota: righe di scan scritte dallo SCANNER VERO: 681 | letture del feed di Omega: 374
+    +      nota: righe di scan scritte dallo SCANNER VERO: 373 | letture del feed di Omega: 374 | giri senza riga nel feed: 6
+    +      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 478154 (BOTH_TEAMS_TO_SCORE x60130, CORRECT_SCORE x41440, HALF_TIME x57657, HALF_TIME_SCORE x65521, MATCH_ODDS x18481, OVER_UNDER_05 x65868, OVER_UNDER_15 x60130, OVER_UNDER_25 x29484, OVER_UNDER_35 x1025, OVER_U
+    +      nota: chiusure di Betfair consegnate allo scanner: MATCH_ODDS 21:01:26
+    -      motivo x1: no_live_state
+==================== esiti-ignoti 49 righe diverse
+    -OK  35797769 [esiti-ignoti]  tick=1462964 decisioni=  736 azioni=   6 stati=running [COMPLETE]
+    +OK  35797769 [esiti-ignoti]  tick=1469885 decisioni=  690 azioni=   2 stati=running [COMPLETE]
+    -      nota: modalita': live | status del control: running | cadenza: poll 20s, a vuoto 60.0s | giri di run_once: 736 (di cui 3 dopo il fischio, per il settlement)
+    +      nota: modalita': live | status del control: running | cadenza: poll 20s, a vuoto 60.0s | giri di run_once: 690 (di cui 3 dopo il fischio, per il settlement)
+    -      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione
+    -      nota: ordini reali piazzati su flumine: 2 | righe omega_trades scritte: 2
+    -      nota: attivita' del servizio: skip x8, live_fok_fallback x4, place_reconciling x2, error x2, reconciled_free x2, place x2, settle x2
+    -      nota: righe per stato: {'won': 2}
+    -      nota: riga 3 ht_cs lay '3 - 2' stato=won chiesto=1.0 abbinato=1.0 prezzo=50.0 residuo=None liability=49.0 bet_id=100000000001 pnl=0.95 closes=None fonte_lambda=pre_ko_odds
+    -      nota: riga 4 ft_cs lay 'Any Unquoted Home' stato=won chiesto=1.0 abbinato=1.0 prezzo=50.0 residuo=None liability=49.0 bet_id=100000000002 pnl=0.95 closes=None fonte_lambda=pre_ko_odds
+    -      nota: motivi dichiarati: place_exception_reconciling x2 | mercato_sospeso x2 | prezzo_di_back_assente x2 | controparte_insufficiente x2 | prezzi_non_freschi x2
+    -      nota: fill: 2 abbinamenti su 2 ordini per 2.0 EUR (prezzi [50.0])
+    -      nota: P&L del replay: lordo +2.00 | commissione 0.10 (5.0%) | NETTO +1.90 EUR (non e' il metro: il metro e' la condotta)
+    -      nota: bet delay: 1977 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 1549288 | LAPSE al passaggio in gioco: 0
+    -      nota: righe di scan scritte dallo SCANNER VERO: 728 | letture del feed di Omega: 433
+    +      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico 
+    +      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
+    +      nota: attivita' del servizio: live_fok_fallback x2, place_reconciling x2, error x2, reconciled_free x2, skip x1
+    +      nota: righe per stato: {}
+    +      nota: motivi dichiarati: place_exception_reconciling x2 | nessun_candidato x1
+    +      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
+    +      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
+    +      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 1549288 | LAPSE al passaggio in gioco: 0
+    +      nota: righe di scan scritte dallo SCANNER VERO: 377 | letture del feed di Omega: 378 | giri senza riga nel feed: 6
+    +      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 477007 (BOTH_TEAMS_TO_SCORE x60130, CORRECT_SCORE x40293, HALF_TIME x57657, HALF_TIME_SCORE x65521, MATCH_ODDS x18481, OVER_UNDER_05 x65868, OVER_UNDER_15 x60130, OVER_UNDER_25 x29484, OVER_UNDER_35 x1025, OVER_U
+    +      nota: chiusure di Betfair consegnate allo scanner: MATCH_ODDS 21:01:26
+    -      nota: chiamate al mercato: list_today_football_events x736, read_market x278
+    -      nota: gambe aperte per fase: {'ht_cs': 1, 'ft_cs': 1}
+    -      nota: gambe NON aperte, per motivo: ft_cs:nessun_candidato x87 | ht_cs:nessun_candidato x64
+    -      nota: V3 (PERCORSO DI PRODUZIONE): 155 occasioni di selezione osservate | gambe scelte da V3: 4
+    -      nota: V3, perche' non entra: nessun_candidato x151
+    -      nota: V3, scarti dei singoli runner: senza_lay x442 | troppo_vicino_al_punteggio x273 | p_impl_oltre_fascia x68 | p_oltre_il_tetto x66 | p_impl_sotto_fascia x65 | liquidita_insufficiente x16
+    -      nota: V3 ft_cs: al 74' sul 1-1 banca 'Any Unquoted Home' a 50 per 1.00 EUR | P_nostra 1.551% contro p_implicita 1.902% (margine 1.23x, serve 1.11x) | EV +0.175 EUR | liability 49.00 EUR
+    -      nota: V3 ht_cs: al 1' sul 0-0 banca '3 - 3' a 80 per 1.00 EUR | P_nostra 1.068% contro p_implicita 1.188% (margine 1.11x, serve 1.11x) | EV +0.096 EUR | liability 79.00 EUR
+    +      nota: chiamate al mercato: list_today_football_events x690, get_event_market_by_type x1, read_market x1
+    +      nota: gambe aperte per fase: {}
+    +      nota: gambe NON aperte, per motivo: ft_cs:nessun_candidato x94 | ht_cs:nessun_candidato x46
+    +      nota: V3 (PERCORSO DI PRODUZIONE): 142 occasioni di selezione osservate | gambe scelte da V3: 2
+    +      nota: V3, perche' non entra: nessun_candidato x140
+    +      nota: V3, scarti dei singoli runner: senza_lay x664 | troppo_vicino_al_punteggio x175 | p_oltre_il_tetto x4 | p_impl_sotto_fascia x4 | p_impl_oltre_fascia x4 | liquidita_insufficiente x1
+    +      nota: V3 ft_cs: al 75' sul 1-1 banca 'Any Unquoted Home' a 50 per 1.00 EUR | P_nostra 1.389% contro p_implicita 1.902% (margine 1.37x, serve 1.11x) | EV +0.256 EUR | liability 49.00 EUR
+    +      nota: V3 ht_cs: al 1' sul 0-0 banca '3 - 3' a 80 per 1.00 EUR | P_nostra 1.063% contro p_implicita 1.188% (margine 1.12x, serve 1.11x) | EV +0.100 EUR | liability 79.00 EUR
+    -      nota: V3, fonte dei lambda: pre_ko_odds x155
+    +      nota: V3, fonte dei lambda: pre_ko_odds x142
+    -      motivo x2: mercato_sospeso
+    -      motivo x2: prezzo_di_back_assente
+    -      motivo x2: controparte_insufficiente
+    -      motivo x2: prezzi_non_freschi
+    +      motivo x1: nessun_candidato
+==================== riavvio 31 righe diverse
+    -OK  35797769 [riavvio]  tick=1462841 decisioni=  736 azioni=   4 stati=running [COMPLETE]
+    +OK  35797769 [riavvio]  tick=1462561 decisioni=  736 azioni=   4 stati=running [COMPLETE]
+    +      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico 
+    -      nota: attivita' del servizio: skip x10, live_fok_fallback x2, place x2, settle x2, replay_riavvio x1
+    +      nota: attivita' del servizio: skip x9, live_fok_fallback x2, place x2, settle x2, replay_riavvio x1
+    -      nota: motivi dichiarati: nessun_candidato x2 | controparte_insufficiente x2 | prezzo_di_back_assente x2 | mercato_sospeso x2 | prezzi_non_freschi x2
+    +      nota: motivi dichiarati: controparte_insufficiente x2 | prezzo_di_back_assente x2 | mercato_sospeso x2 | prezzi_non_freschi x2 | nessun_candidato x1
+    -      nota: bet delay: 1925 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 1549288 | LAPSE al passaggio in gioco: 0
+    -      nota: righe di scan scritte dallo SCANNER VERO: 728 | letture del feed di Omega: 433
+    +      nota: bet delay: 2340 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 1549288 | LAPSE al passaggio in gioco: 0
+    +      nota: righe di scan scritte dallo SCANNER VERO: 422 | letture del feed di Omega: 433 | giri senza riga nel feed: 7
+    +      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 462581 (BOTH_TEAMS_TO_SCORE x60130, CORRECT_SCORE x25773, HALF_TIME x57657, HALF_TIME_SCORE x65521, MATCH_ODDS x18481, OVER_UNDER_05 x65868, OVER_UNDER_15 x60130, OVER_UNDER_25 x29578, OVER_UNDER_35 x1025, OVER_U
+    +      nota: chiusure di Betfair consegnate allo scanner: MATCH_ODDS 21:01:26, CORRECT_SCORE 21:02:30
+    -      nota: chiamate al mercato: list_today_football_events x736, read_market x355
+    -      nota: RIAVVIO a meta' partita: azzerate le cache di processo: svuota_le_cache (feed, scanner, aggregati, insiemi, fasi), _SKIP_SEEN, _MARKET_FIT_CACHE, _LAMBDA_CACHE, _IDLE_STATS_AT
+    +      nota: chiamate al mercato: list_today_football_events x736, read_market x357, get_event_market_by_type x1
+    +      nota: RIAVVIO a meta' partita: azzerate le cache di processo: svuota_le_cache (feed, scanner, aggregati, insiemi, fasi), _SKIP_SEEN, _MARKET_FIT_CACHE, _LAMBDA_CACHE, _IDLE_STATS_AT, _EMPIRICAL_CACHE, _MINUTE_CACHE
+    -      nota: gambe NON aperte, per motivo: ft_cs:nessun_candidato x87 | ht_cs:nessun_candidato x1
+    -      nota: V3 (PERCORSO DI PRODUZIONE): 90 occasioni di selezione osservate | gambe scelte da V3: 2
+    -      nota: V3, perche' non entra: nessun_candidato x88
+    -      nota: V3, scarti dei singoli runner: senza_lay x440 | troppo_vicino_al_punteggio x93 | p_oltre_il_tetto x2 | p_impl_sotto_fascia x2 | p_impl_oltre_fascia x2 | liquidita_insufficiente x1
+    +      nota: gambe NON aperte, per motivo: ft_cs:nessun_candidato x87
+    +      nota: V3 (PERCORSO DI PRODUZIONE): 89 occasioni di selezione osservate | gambe scelte da V3: 2
+    +      nota: V3, perche' non entra: nessun_candidato x87
+    +      nota: V3, scarti dei singoli runner: senza_lay x440 | troppo_vicino_al_punteggio x90 | p_oltre_il_tetto x1 | p_impl_sotto_fascia x1 | p_impl_oltre_fascia x1 | liquidita_insufficiente x1
+    -      nota: V3 ht_cs: al 1' sul 0-0 banca '3 - 3' a 80 per 1.00 EUR | P_nostra 1.068% contro p_implicita 1.188% (margine 1.11x, serve 1.11x) | EV +0.096 EUR | liability 79.00 EUR
+    +      nota: V3 ht_cs: al 1' sul 0-0 banca '3 - 3' a 80 per 1.00 EUR | P_nostra 1.063% contro p_implicita 1.188% (margine 1.12x, serve 1.11x) | EV +0.100 EUR | liability 79.00 EUR
+    -      nota: V3, fonte dei lambda: pre_ko_odds x90
+    +      nota: V3, fonte dei lambda: pre_ko_odds x89
+    -      motivo x2: nessun_candidato
+    +      motivo x1: nessun_candidato
+==================== manuale-e-bot 6 righe diverse
+    -OK  35797769 [manuale-e-bot]  tick=1468611 decisioni=  736 azioni=   1 stati=running [COMPLETE]
+    +OK  35797769 [manuale-e-bot]  tick=1468612 decisioni=  736 azioni=   1 stati=running [COMPLETE]
+    -      nota: righe di scan scritte dallo SCANNER VERO: 728 | letture del feed di Omega: 244
+    +      nota: righe di scan scritte dallo SCANNER VERO: 422 | letture del feed di Omega: 244 | giri senza riga nel feed: 7
+    +      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 455293 (BOTH_TEAMS_TO_SCORE x60130, CORRECT_SCORE x18485, HALF_TIME x57657, HALF_TIME_SCORE x65521, MATCH_ODDS x18481, OVER_UNDER_05 x65868, OVER_UNDER_15 x60130, OVER_UNDER_25 x29578, OVER_UNDER_35 x1025, OVER_U
+    +      nota: chiusure di Betfair consegnate allo scanner: MATCH_ODDS 21:01:26, CORRECT_SCORE 21:02:30
+==================== cashout-globale 32 righe diverse
+    -OK  35797769 [cashout-globale]  tick=1466508 decisioni=  736 azioni=   2 stati=running [COMPLETE]
+    +OK  35797769 [cashout-globale]  tick=1466389 decisioni=  736 azioni=   2 stati=running [COMPLETE]
+    +      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico 
+    -      nota: attivita' del servizio: skip x3, diagnosi x2, settle x2, live_fok_fallback x1, place x1, replay_cashout_globale x1, place_parziale x1, cashout x1, cashout_manual x1, settle_position x1
+    +      nota: attivita' del servizio: skip x2, diagnosi x2, settle x2, live_fok_fallback x1, place x1, replay_cashout_globale x1, place_parziale x1, cashout x1, cashout_manual x1, settle_position x1
+    -      nota: riga 2 ht_cs back '3 - 3' stato=lost chiesto=None abbinato=1.0 prezzo=75.0 residuo=None liability=1.0 bet_id=100000000002 pnl=-1.0 closes=1 fonte_lambda=None
+    -      nota: motivi dichiarati: no_live_state x1 | nessun_candidato x1 | evento_chiuso_dall_utente x1
+    -      nota: fill: 2 abbinamenti su 2 ordini per 2.0 EUR (prezzi [75.0, 80.0])
+    +      nota: riga 2 ht_cs back '3 - 3' stato=lost chiesto=None abbinato=1.0 prezzo=70.0 residuo=None liability=1.0 bet_id=100000000002 pnl=-1.0 closes=1 fonte_lambda=None
+    +      nota: motivi dichiarati: no_live_state x1 | evento_chiuso_dall_utente x1
+    +      nota: fill: 2 abbinamenti su 2 ordini per 2.0 EUR (prezzi [70.0, 80.0])
+    -      nota: bet delay: 1995 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 1549288 | LAPSE al passaggio in gioco: 0
+    -      nota: righe di scan scritte dallo SCANNER VERO: 728 | letture del feed di Omega: 197
+    +      nota: bet delay: 2293 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 1549288 | LAPSE al passaggio in gioco: 0
+    +      nota: righe di scan scritte dallo SCANNER VERO: 422 | letture del feed di Omega: 196 | giri senza riga nel feed: 7
+    +      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 462581 (BOTH_TEAMS_TO_SCORE x60130, CORRECT_SCORE x25773, HALF_TIME x57657, HALF_TIME_SCORE x65521, MATCH_ODDS x18481, OVER_UNDER_05 x65868, OVER_UNDER_15 x60130, OVER_UNDER_25 x29578, OVER_UNDER_35 x1025, OVER_U
+    +      nota: chiusure di Betfair consegnate allo scanner: MATCH_ODDS 21:01:26, CORRECT_SCORE 21:02:30
+    -      nota: chiamate al mercato: list_today_football_events x736, read_market x355
+    +      nota: chiamate al mercato: list_today_football_events x736, read_market x357, get_event_market_by_type x1
+    -      nota: gambe NON aperte, per motivo: ht_cs:nessun_candidato x1
+    -      nota: V3 (PERCORSO DI PRODUZIONE): 2 occasioni di selezione osservate | gambe scelte da V3: 1
+    -      nota: V3, perche' non entra: nessun_candidato x1
+    -      nota: V3, scarti dei singoli runner: troppo_vicino_al_punteggio x6 | p_oltre_il_tetto x2 | p_impl_sotto_fascia x2 | p_impl_oltre_fascia x2
+    -      nota: V3 ht_cs: al 1' sul 0-0 banca '3 - 3' a 80 per 1.00 EUR | P_nostra 1.068% contro p_implicita 1.188% (margine 1.11x, serve 1.11x) | EV +0.096 EUR | liability 79.00 EUR
+    +      nota: V3 (PERCORSO DI PRODUZIONE): 1 occasioni di selezione osservate | gambe scelte da V3: 1
+    +      nota: V3, scarti dei singoli runner: troppo_vicino_al_punteggio x3 | p_oltre_il_tetto x1 | p_impl_sotto_fascia x1 | p_impl_oltre_fascia x1
+    +      nota: V3 ht_cs: al 1' sul 0-0 banca '3 - 3' a 80 per 1.00 EUR | P_nostra 1.063% contro p_implicita 1.188% (margine 1.12x, serve 1.11x) | EV +0.100 EUR | liability 79.00 EUR
+    -      nota: V3, fonte dei lambda: pre_ko_odds x2
+    +      nota: V3, fonte dei lambda: pre_ko_odds x1
+    -      nota: scenario cashout-globale: il controllo E4 e' stato sollecitato 361 volte
+    +      nota: scenario cashout-globale: il controllo E4 e' stato sollecitato 362 volte
+    -      motivo x1: nessun_candidato
+==================== proposta-approvata 28 righe diverse
+    -OK  35797769 [proposta-approvata]  tick=1462841 decisioni=  736 azioni=   4 stati=running [COMPLETE]
+    +OK  35797769 [proposta-approvata]  tick=1462561 decisioni=  736 azioni=   4 stati=running [COMPLETE]
+    +      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico 
+    -      nota: attivita' del servizio: live_fok_fallback x2, place x2, skip x2, settle x2
+    +      nota: attivita' del servizio: live_fok_fallback x2, place x2, settle x2
+    -      nota: motivi dichiarati: prezzo_di_back_assente x1 | mercato_sospeso x1
+    -      nota: bet delay: 1925 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 1549288 | LAPSE al passaggio in gioco: 0
+    -      nota: righe di scan scritte dallo SCANNER VERO: 728 | letture del feed di Omega: 433
+    +      nota: bet delay: 2340 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 1549288 | LAPSE al passaggio in gioco: 0
+    +      nota: righe di scan scritte dallo SCANNER VERO: 422 | letture del feed di Omega: 433 | giri senza riga nel feed: 7
+    +      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 462581 (BOTH_TEAMS_TO_SCORE x60130, CORRECT_SCORE x25773, HALF_TIME x57657, HALF_TIME_SCORE x65521, MATCH_ODDS x18481, OVER_UNDER_05 x65868, OVER_UNDER_15 x60130, OVER_UNDER_25 x29578, OVER_UNDER_35 x1025, OVER_U
+    +      nota: chiusure di Betfair consegnate allo scanner: MATCH_ODDS 21:01:26, CORRECT_SCORE 21:02:30
+    -      nota: chiamate al mercato: list_today_football_events x736, read_market x355
+    +      nota: chiamate al mercato: list_today_football_events x736, read_market x357, get_event_market_by_type x1
+    -      nota: gambe NON aperte, per motivo: ft_cs:nessun_candidato x87 | ht_cs:nessun_candidato x1
+    -      nota: V3 (PERCORSO DI PRODUZIONE): 90 occasioni di selezione osservate | gambe scelte da V3: 2
+    -      nota: V3, perche' non entra: nessun_candidato x88
+    -      nota: V3, scarti dei singoli runner: senza_lay x440 | troppo_vicino_al_punteggio x93 | p_oltre_il_tetto x2 | p_impl_sotto_fascia x2 | p_impl_oltre_fascia x2 | liquidita_insufficiente x1
+    +      nota: gambe NON aperte, per motivo: ft_cs:nessun_candidato x87
+    +      nota: V3 (PERCORSO DI PRODUZIONE): 89 occasioni di selezione osservate | gambe scelte da V3: 2
+    +      nota: V3, perche' non entra: nessun_candidato x87
+    +      nota: V3, scarti dei singoli runner: senza_lay x440 | troppo_vicino_al_punteggio x90 | p_oltre_il_tetto x1 | p_impl_sotto_fascia x1 | p_impl_oltre_fascia x1 | liquidita_insufficiente x1
+    -      nota: V3 ht_cs: al 1' sul 0-0 banca '3 - 3' a 80 per 1.00 EUR | P_nostra 1.068% contro p_implicita 1.188% (margine 1.11x, serve 1.11x) | EV +0.096 EUR | liability 79.00 EUR
+    +      nota: V3 ht_cs: al 1' sul 0-0 banca '3 - 3' a 80 per 1.00 EUR | P_nostra 1.063% contro p_implicita 1.188% (margine 1.12x, serve 1.11x) | EV +0.100 EUR | liability 79.00 EUR
+    -      nota: V3, fonte dei lambda: pre_ko_odds x90
+    +      nota: V3, fonte dei lambda: pre_ko_odds x89
+    -      motivo x1: prezzo_di_back_assente
+    -      motivo x1: mercato_sospeso
+==================== uscite-automatiche 32 righe diverse
+    -OK  35797769 [uscite-automatiche]  tick=1462841 decisioni=  736 azioni=   4 stati=running [COMPLETE]
+    +OK  35797769 [uscite-automatiche]  tick=1462561 decisioni=  736 azioni=   4 stati=running [COMPLETE]
+    +      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico 
+    -      nota: attivita' del servizio: skip x7, live_fok_fallback x2, place x2, settle x2
+    +      nota: attivita' del servizio: skip x4, live_fok_fallback x2, place x2, settle x2
+    -      nota: motivi dichiarati: controparte_insufficiente x2 | prezzi_non_freschi x2 | nessun_candidato x1 | prezzo_di_back_assente x1 | mercato_sospeso x1
+    +      nota: motivi dichiarati: controparte_insufficiente x1 | prezzo_di_back_assente x1 | mercato_sospeso x1 | nessun_candidato x1
+    -      nota: bet delay: 1925 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 1549288 | LAPSE al passaggio in gioco: 0
+    -      nota: righe di scan scritte dallo SCANNER VERO: 728 | letture del feed di Omega: 433
+    +      nota: bet delay: 2340 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 1549288 | LAPSE al passaggio in gioco: 0
+    +      nota: righe di scan scritte dallo SCANNER VERO: 422 | letture del feed di Omega: 433 | giri senza riga nel feed: 7
+    +      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 462581 (BOTH_TEAMS_TO_SCORE x60130, CORRECT_SCORE x25773, HALF_TIME x57657, HALF_TIME_SCORE x65521, MATCH_ODDS x18481, OVER_UNDER_05 x65868, OVER_UNDER_15 x60130, OVER_UNDER_25 x29578, OVER_UNDER_35 x1025, OVER_U
+    +      nota: chiusure di Betfair consegnate allo scanner: MATCH_ODDS 21:01:26, CORRECT_SCORE 21:02:30
+    -      nota: chiamate al mercato: list_today_football_events x736, read_market x355
+    +      nota: chiamate al mercato: list_today_football_events x736, read_market x357, get_event_market_by_type x1
+    -      nota: gambe NON aperte, per motivo: ft_cs:nessun_candidato x87 | ht_cs:nessun_candidato x1
+    -      nota: V3 (PERCORSO DI PRODUZIONE): 90 occasioni di selezione osservate | gambe scelte da V3: 2
+    -      nota: V3, perche' non entra: nessun_candidato x88
+    -      nota: V3, scarti dei singoli runner: senza_lay x440 | troppo_vicino_al_punteggio x93 | p_oltre_il_tetto x2 | p_impl_sotto_fascia x2 | p_impl_oltre_fascia x2 | liquidita_insufficiente x1
+    +      nota: gambe NON aperte, per motivo: ft_cs:nessun_candidato x87
+    +      nota: V3 (PERCORSO DI PRODUZIONE): 89 occasioni di selezione osservate | gambe scelte da V3: 2
+    +      nota: V3, perche' non entra: nessun_candidato x87
+    +      nota: V3, scarti dei singoli runner: senza_lay x440 | troppo_vicino_al_punteggio x90 | p_oltre_il_tetto x1 | p_impl_sotto_fascia x1 | p_impl_oltre_fascia x1 | liquidita_insufficiente x1
+    -      nota: V3 ht_cs: al 1' sul 0-0 banca '3 - 3' a 80 per 1.00 EUR | P_nostra 1.068% contro p_implicita 1.188% (margine 1.11x, serve 1.11x) | EV +0.096 EUR | liability 79.00 EUR
+    +      nota: V3 ht_cs: al 1' sul 0-0 banca '3 - 3' a 80 per 1.00 EUR | P_nostra 1.063% contro p_implicita 1.188% (margine 1.12x, serve 1.11x) | EV +0.100 EUR | liability 79.00 EUR
+    -      nota: V3, fonte dei lambda: pre_ko_odds x90
+    +      nota: V3, fonte dei lambda: pre_ko_odds x89
+    -      motivo x2: controparte_insufficiente
+    -      motivo x2: prezzi_non_freschi
+    -      motivo x1: nessun_candidato
+    +      motivo x1: controparte_insufficiente
+    +      motivo x1: nessun_candidato
+==================== v4 33 righe diverse
+    -OK  35797769 [v4]  tick=1462841 decisioni=  736 azioni=   4 stati=running [COMPLETE]
+    +OK  35797769 [v4]  tick=1462561 decisioni=  736 azioni=   4 stati=running [COMPLETE]
+    +      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico 
+    -      nota: attivita' del servizio: skip x2, live_fok_fallback x2, place x2, settle x2
+    +      nota: attivita' del servizio: skip x5, live_fok_fallback x2, place x2, settle x2
+    -      nota: motivi dichiarati: no_live_state x1 | nessun_candidato x1
+    +      nota: motivi dichiarati: prezzi_non_freschi x2 | controparte_insufficiente x1 | prezzo_di_back_assente x1 | mercato_sospeso x1
+    -      nota: bet delay: 1925 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 1549288 | LAPSE al passaggio in gioco: 0
+    -      nota: righe di scan scritte dallo SCANNER VERO: 728 | letture del feed di Omega: 433
+    +      nota: bet delay: 2340 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 1549288 | LAPSE al passaggio in gioco: 0
+    +      nota: righe di scan scritte dallo SCANNER VERO: 422 | letture del feed di Omega: 433 | giri senza riga nel feed: 7
+    +      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 462581 (BOTH_TEAMS_TO_SCORE x60130, CORRECT_SCORE x25773, HALF_TIME x57657, HALF_TIME_SCORE x65521, MATCH_ODDS x18481, OVER_UNDER_05 x65868, OVER_UNDER_15 x60130, OVER_UNDER_25 x29578, OVER_UNDER_35 x1025, OVER_U
+    +      nota: chiusure di Betfair consegnate allo scanner: MATCH_ODDS 21:01:26, CORRECT_SCORE 21:02:30
+    -      nota: chiamate al mercato: list_today_football_events x736, read_market x355
+    +      nota: chiamate al mercato: list_today_football_events x736, read_market x357, get_event_market_by_type x1
+    -      nota: gambe NON aperte, per motivo: ft_cs:nessun_candidato x87 | ht_cs:nessun_candidato x1
+    -      nota: V3 (PERCORSO DI PRODUZIONE): 90 occasioni di selezione osservate | gambe scelte da V3: 2
+    -      nota: V3, perche' non entra: nessun_candidato x88
+    -      nota: V3, scarti dei singoli runner: senza_lay x440 | troppo_vicino_al_punteggio x93 | p_oltre_il_tetto x2 | p_impl_sotto_fascia x2 | p_impl_oltre_fascia x2 | liquidita_insufficiente x1
+    +      nota: gambe NON aperte, per motivo: ft_cs:nessun_candidato x87
+    +      nota: V3 (PERCORSO DI PRODUZIONE): 89 occasioni di selezione osservate | gambe scelte da V3: 2
+    +      nota: V3, perche' non entra: nessun_candidato x87
+    +      nota: V3, scarti dei singoli runner: senza_lay x440 | troppo_vicino_al_punteggio x90 | p_oltre_il_tetto x1 | p_impl_sotto_fascia x1 | p_impl_oltre_fascia x1 | liquidita_insufficiente x1
+    -      nota: V3 ht_cs: al 1' sul 0-0 banca '3 - 3' a 80 per 1.00 EUR | P_nostra 1.068% contro p_implicita 1.188% (margine 1.11x, serve 1.11x) | EV +0.096 EUR | liability 79.00 EUR
+    +      nota: V3 ht_cs: al 1' sul 0-0 banca '3 - 3' a 80 per 1.00 EUR | P_nostra 1.063% contro p_implicita 1.188% (margine 1.12x, serve 1.11x) | EV +0.100 EUR | liability 79.00 EUR
+    -      nota: V3, fonte dei lambda: pre_ko_odds x90
+    +      nota: V3, fonte dei lambda: pre_ko_odds x89
+    -      motivo x1: no_live_state
+    -      motivo x1: nessun_candidato
+    +      motivo x2: prezzi_non_freschi
+    +      motivo x1: controparte_insufficiente
+    +      motivo x1: prezzo_di_back_assente
+    +      motivo x1: mercato_sospeso
+==================== v4-riavvio 25 righe diverse
+    -OK  35797769 [v4-riavvio]  tick=1462841 decisioni=  736 azioni=   4 stati=running [COMPLETE]
+    +OK  35797769 [v4-riavvio]  tick=1462561 decisioni=  736 azioni=   4 stati=running [COMPLETE]
+    +      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico 
+    -      nota: bet delay: 1925 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 1549288 | LAPSE al passaggio in gioco: 0
+    -      nota: righe di scan scritte dallo SCANNER VERO: 728 | letture del feed di Omega: 433
+    +      nota: bet delay: 2340 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 1549288 | LAPSE al passaggio in gioco: 0
+    +      nota: righe di scan scritte dallo SCANNER VERO: 422 | letture del feed di Omega: 433 | giri senza riga nel feed: 7
+    +      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 462581 (BOTH_TEAMS_TO_SCORE x60130, CORRECT_SCORE x25773, HALF_TIME x57657, HALF_TIME_SCORE x65521, MATCH_ODDS x18481, OVER_UNDER_05 x65868, OVER_UNDER_15 x60130, OVER_UNDER_25 x29578, OVER_UNDER_35 x1025, OVER_U
+    +      nota: chiusure di Betfair consegnate allo scanner: MATCH_ODDS 21:01:26, CORRECT_SCORE 21:02:30
+    -      nota: chiamate al mercato: list_today_football_events x736, read_market x355
+    -      nota: RIAVVIO a meta' partita: azzerate le cache di processo: svuota_le_cache (feed, scanner, aggregati, insiemi, fasi), _SKIP_SEEN, _LAMBDA_CACHE
+    +      nota: chiamate al mercato: list_today_football_events x736, read_market x357, get_event_market_by_type x1
+    +      nota: RIAVVIO a meta' partita: azzerate le cache di processo: svuota_le_cache (feed, scanner, aggregati, insiemi, fasi), _SKIP_SEEN, _LAMBDA_CACHE, _EMPIRICAL_CACHE, _MINUTE_CACHE
+    -      nota: gambe NON aperte, per motivo: ft_cs:nessun_candidato x87 | ht_cs:nessun_candidato x1
+    -      nota: V3 (PERCORSO DI PRODUZIONE): 90 occasioni di selezione osservate | gambe scelte da V3: 2
+    -      nota: V3, perche' non entra: nessun_candidato x88
+    -      nota: V3, scarti dei singoli runner: senza_lay x440 | troppo_vicino_al_punteggio x93 | p_oltre_il_tetto x2 | p_impl_sotto_fascia x2 | p_impl_oltre_fascia x2 | liquidita_insufficiente x1
+    +      nota: gambe NON aperte, per motivo: ft_cs:nessun_candidato x87
+    +      nota: V3 (PERCORSO DI PRODUZIONE): 89 occasioni di selezione osservate | gambe scelte da V3: 2
+    +      nota: V3, perche' non entra: nessun_candidato x87
+    +      nota: V3, scarti dei singoli runner: senza_lay x440 | troppo_vicino_al_punteggio x90 | p_oltre_il_tetto x1 | p_impl_sotto_fascia x1 | p_impl_oltre_fascia x1 | liquidita_insufficiente x1
+    -      nota: V3 ht_cs: al 1' sul 0-0 banca '3 - 3' a 80 per 1.00 EUR | P_nostra 1.068% contro p_implicita 1.188% (margine 1.11x, serve 1.11x) | EV +0.096 EUR | liability 79.00 EUR
+    +      nota: V3 ht_cs: al 1' sul 0-0 banca '3 - 3' a 80 per 1.00 EUR | P_nostra 1.063% contro p_implicita 1.188% (margine 1.12x, serve 1.11x) | EV +0.100 EUR | liability 79.00 EUR
+    -      nota: V3, fonte dei lambda: pre_ko_odds x90
+    +      nota: V3, fonte dei lambda: pre_ko_odds x89
+==================== v4-bot-fermo 28 righe diverse
+    -OK  35797769 [v4-bot-fermo]  tick=1464026 decisioni=  736 azioni=   2 stati=running,stopped [COMPLETE]
+    +OK  35797769 [v4-bot-fermo]  tick=1463747 decisioni=  736 azioni=   2 stati=running,stopped [COMPLETE]
+    +      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico 
+    -      nota: attivita' del servizio: skip x2, live_fok_fallback x1, place x1, replay_stop_utente x1, settle x1
+    +      nota: attivita' del servizio: skip x1, live_fok_fallback x1, place x1, replay_stop_utente x1, settle x1
+    -      nota: motivi dichiarati: no_live_state x1 | nessun_candidato x1
+    +      nota: motivi dichiarati: no_live_state x1
+    -      nota: bet delay: 929 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 1549288 | LAPSE al passaggio in gioco: 0
+    -      nota: righe di scan scritte dallo SCANNER VERO: 728 | letture del feed di Omega: 433
+    +      nota: bet delay: 1344 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 1549288 | LAPSE al passaggio in gioco: 0
+    +      nota: righe di scan scritte dallo SCANNER VERO: 422 | letture del feed di Omega: 433 | giri senza riga nel feed: 7
+    +      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 462581 (BOTH_TEAMS_TO_SCORE x60130, CORRECT_SCORE x25773, HALF_TIME x57657, HALF_TIME_SCORE x65521, MATCH_ODDS x18481, OVER_UNDER_05 x65868, OVER_UNDER_15 x60130, OVER_UNDER_25 x29578, OVER_UNDER_35 x1025, OVER_U
+    +      nota: chiusure di Betfair consegnate allo scanner: MATCH_ODDS 21:01:26, CORRECT_SCORE 21:02:30
+    -      nota: chiamate al mercato: list_today_football_events x375, read_market x355
+    +      nota: chiamate al mercato: list_today_football_events x374, read_market x357, get_event_market_by_type x1
+    -      nota: gambe NON aperte, per motivo: ht_cs:nessun_candidato x1
+    -      nota: V3 (PERCORSO DI PRODUZIONE): 2 occasioni di selezione osservate | gambe scelte da V3: 1
+    -      nota: V3, perche' non entra: nessun_candidato x1
+    -      nota: V3, scarti dei singoli runner: troppo_vicino_al_punteggio x6 | p_oltre_il_tetto x2 | p_impl_sotto_fascia x2 | p_impl_oltre_fascia x2
+    -      nota: V3 ht_cs: al 1' sul 0-0 banca '3 - 3' a 80 per 1.00 EUR | P_nostra 1.068% contro p_implicita 1.188% (margine 1.11x, serve 1.11x) | EV +0.096 EUR | liability 79.00 EUR
+    +      nota: V3 (PERCORSO DI PRODUZIONE): 1 occasioni di selezione osservate | gambe scelte da V3: 1
+    +      nota: V3, scarti dei singoli runner: troppo_vicino_al_punteggio x3 | p_oltre_il_tetto x1 | p_impl_sotto_fascia x1 | p_impl_oltre_fascia x1
+    +      nota: V3 ht_cs: al 1' sul 0-0 banca '3 - 3' a 80 per 1.00 EUR | P_nostra 1.063% contro p_implicita 1.188% (margine 1.12x, serve 1.11x) | EV +0.100 EUR | liability 79.00 EUR
+    -      nota: V3, fonte dei lambda: pre_ko_odds x2
+    +      nota: V3, fonte dei lambda: pre_ko_odds x1
+    -      nota: scenario v4-bot-fermo: il controllo C4 («a bot fermo nessuna apertura, le protezioni girano») e' stato sollecitato 361 volte
+    +      nota: scenario v4-bot-fermo: il controllo C4 («a bot fermo nessuna apertura, le protezioni girano») e' stato sollecitato 362 volte
+    -      motivo x1: nessun_candidato
+==================== v3 13 righe diverse
+    -      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione
+    +      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico 
+    -      nota: attivita' del servizio: skip x1
+    +      nota: attivita' del servizio: skip x2
+    -      nota: motivi dichiarati: market_suspended x1
+    +      nota: motivi dichiarati: nessun_candidato x1 | market_suspended x1
+    -      nota: righe di scan scritte dallo SCANNER VERO: 681 | letture del feed di Omega: 302
+    +      nota: righe di scan scritte dallo SCANNER VERO: 373 | letture del feed di Omega: 302 | giri senza riga nel feed: 6
+    +      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 478154 (BOTH_TEAMS_TO_SCORE x60130, CORRECT_SCORE x41440, HALF_TIME x57657, HALF_TIME_SCORE x65521, MATCH_ODDS x18481, OVER_UNDER_05 x65868, OVER_UNDER_15 x60130, OVER_UNDER_25 x29484, OVER_UNDER_35 x1025, OVER_U
+    +      nota: chiusure di Betfair consegnate allo scanner: MATCH_ODDS 21:01:26
+    -      nota: chiamate al mercato: list_today_football_events x686
+    +      nota: chiamate al mercato: list_today_football_events x686, get_event_market_by_type x15, read_market x15
+    +      motivo x1: nessun_candidato
+==================== rifiuti-betfair 11 righe diverse
+    +      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico 
+    -      nota: righe di scan scritte dallo SCANNER VERO: 728 | letture del feed di Omega: 433
+    +      nota: righe di scan scritte dallo SCANNER VERO: 422 | letture del feed di Omega: 433 | giri senza riga nel feed: 7
+    +      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 475542 (BOTH_TEAMS_TO_SCORE x60130, CORRECT_SCORE x38734, HALF_TIME x57657, HALF_TIME_SCORE x65521, MATCH_ODDS x18481, OVER_UNDER_05 x65868, OVER_UNDER_15 x60130, OVER_UNDER_25 x29578, OVER_UNDER_35 x1025, OVER_U
+    +      nota: chiusure di Betfair consegnate allo scanner: MATCH_ODDS 21:01:26, CORRECT_SCORE 21:02:30
+    -      nota: chiamate al mercato: list_today_football_events x736, read_market x285
+    +      nota: chiamate al mercato: list_today_football_events x736, read_market x355, get_event_market_by_type x70
+    -      nota: V3, scarti dei singoli runner: senza_lay x442 | troppo_vicino_al_punteggio x283 | p_impl_oltre_fascia x71 | p_oltre_il_tetto x69 | p_impl_sotto_fascia x68 | liquidita_insufficiente x15
+    +      nota: V3, scarti dei singoli runner: senza_lay x441 | troppo_vicino_al_punteggio x281 | p_impl_oltre_fascia x71 | p_oltre_il_tetto x69 | p_impl_sotto_fascia x69 | liquidita_insufficiente x17
+    -      nota: V3 ht_cs: al 1' sul 0-0 banca '3 - 3' a 80 per 1.00 EUR | P_nostra 1.068% contro p_implicita 1.188% (margine 1.11x, serve 1.11x) | EV +0.096 EUR | liability 79.00 EUR
+    +      nota: V3 ht_cs: al 1' sul 0-0 banca '3 - 3' a 80 per 1.00 EUR | P_nostra 1.063% contro p_implicita 1.188% (margine 1.12x, serve 1.11x) | EV +0.100 EUR | liability 79.00 EUR
+==================== chiuso-fuori-app 19 righe diverse
+    -OK  35797769 [chiuso-fuori-app]  tick=1466579 decisioni=  736 azioni=   2 stati=running [COMPLETE]
+    +OK  35797769 [chiuso-fuori-app]  tick=1466580 decisioni=  736 azioni=   2 stati=running [COMPLETE]
+    +      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico 
+    -      nota: righe di scan scritte dallo SCANNER VERO: 728 | letture del feed di Omega: 243
+    +      nota: righe di scan scritte dallo SCANNER VERO: 422 | letture del feed di Omega: 243 | giri senza riga nel feed: 7
+    +      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 475542 (BOTH_TEAMS_TO_SCORE x60130, CORRECT_SCORE x38734, HALF_TIME x57657, HALF_TIME_SCORE x65521, MATCH_ODDS x18481, OVER_UNDER_05 x65868, OVER_UNDER_15 x60130, OVER_UNDER_25 x29578, OVER_UNDER_35 x1025, OVER_U
+    +      nota: chiusure di Betfair consegnate allo scanner: MATCH_ODDS 21:01:26, CORRECT_SCORE 21:02:30
+    -      nota: chiamate al mercato: list_today_football_events x736, read_market x285, read_book x1
+    +      nota: chiamate al mercato: list_today_football_events x736, read_market x353, get_event_market_by_type x68, read_book x1
+    -      nota: gambe NON aperte, per motivo: ht_cs:nessun_candidato x66
+    -      nota: V3 (PERCORSO DI PRODUZIONE): 67 occasioni di selezione osservate | gambe scelte da V3: 1
+    -      nota: V3, perche' non entra: nessun_candidato x66
+    -      nota: V3, scarti dei singoli runner: troppo_vicino_al_punteggio x187 | p_impl_oltre_fascia x68 | p_oltre_il_tetto x66 | p_impl_sotto_fascia x65 | liquidita_insufficiente x14 | senza_lay x2
+    +      nota: gambe NON aperte, per motivo: ht_cs:nessun_candidato x67
+    +      nota: V3 (PERCORSO DI PRODUZIONE): 68 occasioni di selezione osservate | gambe scelte da V3: 1
+    +      nota: V3, perche' non entra: nessun_candidato x67
+    +      nota: V3, scarti dei singoli runner: troppo_vicino_al_punteggio x188 | p_impl_oltre_fascia x69 | p_oltre_il_tetto x67 | p_impl_sotto_fascia x67 | liquidita_insufficiente x16 | senza_lay x1
+    -      nota: V3, fonte dei lambda: pre_ko_odds x67
+    +      nota: V3, fonte dei lambda: pre_ko_odds x68
+==================== chiusura-abbinata-in-parte 26 righe diverse
+    +      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico 
+    -      nota: attivita' del servizio: skip x5, live_fok_fallback x2, place x2, settle x2, replay_cashout_globale x1, diagnosi x1, place_rifiutato x1, cashout_error x1, cashout_manual x1
+    +      nota: attivita' del servizio: live_fok_fallback x2, place x2, settle x2, replay_cashout_globale x1, diagnosi x1, place_rifiutato x1, cashout_error x1, cashout_manual x1
+    -      nota: motivi dichiarati: place_rifiutato x1 | mercato_sospeso x1 | prezzo_di_back_assente x1 | controparte_insufficiente x1 | nessun_candidato x1 | prezzi_non_freschi x1
+    +      nota: motivi dichiarati: place_rifiutato x1
+    -      nota: righe di scan scritte dallo SCANNER VERO: 728 | letture del feed di Omega: 434
+    +      nota: righe di scan scritte dallo SCANNER VERO: 422 | letture del feed di Omega: 434 | giri senza riga nel feed: 7
+    +      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 475542 (BOTH_TEAMS_TO_SCORE x60130, CORRECT_SCORE x38734, HALF_TIME x57657, HALF_TIME_SCORE x65521, MATCH_ODDS x18481, OVER_UNDER_05 x65868, OVER_UNDER_15 x60130, OVER_UNDER_25 x29578, OVER_UNDER_35 x1025, OVER_U
+    +      nota: chiusure di Betfair consegnate allo scanner: MATCH_ODDS 21:01:26, CORRECT_SCORE 21:02:30
+    -      nota: chiamate al mercato: list_today_football_events x736, read_market x285
+    +      nota: chiamate al mercato: list_today_football_events x736, read_market x353, get_event_market_by_type x68
+    -      nota: gambe NON aperte, per motivo: ft_cs:nessun_candidato x87 | ht_cs:nessun_candidato x66
+    -      nota: V3 (PERCORSO DI PRODUZIONE): 155 occasioni di selezione osservate | gambe scelte da V3: 2
+    -      nota: V3, perche' non entra: nessun_candidato x153
+    -      nota: V3, scarti dei singoli runner: senza_lay x442 | troppo_vicino_al_punteggio x274 | p_impl_oltre_fascia x68 | p_oltre_il_tetto x66 | p_impl_sotto_fascia x65 | liquidita_insufficiente x15
+    +      nota: gambe NON aperte, per motivo: ft_cs:nessun_candidato x87 | ht_cs:nessun_candidato x67
+    +      nota: V3 (PERCORSO DI PRODUZIONE): 156 occasioni di selezione osservate | gambe scelte da V3: 2
+    +      nota: V3, perche' non entra: nessun_candidato x154
+    +      nota: V3, scarti dei singoli runner: senza_lay x441 | troppo_vicino_al_punteggio x275 | p_impl_oltre_fascia x69 | p_oltre_il_tetto x67 | p_impl_sotto_fascia x67 | liquidita_insufficiente x17
+    -      nota: V3, fonte dei lambda: pre_ko_odds x155
+    +      nota: V3, fonte dei lambda: pre_ko_odds x156
+    -      motivo x1: mercato_sospeso
+    -      motivo x1: prezzo_di_back_assente
+    -      motivo x1: controparte_insufficiente
+    -      motivo x1: nessun_candidato
+    -      motivo x1: prezzi_non_freschi
+==================== _coda 50 righe diverse
+    -     A5  x1207    la catena lambda dichiara la sua FONTE (§14.2: fixture -> evento -
+    +     A5  x1187    la catena lambda dichiara la sua FONTE (§14.2: fixture -> evento -
+    -     B2  x13698   la barra della giornata e' coerente: target partita = 2 x target g
+    -     B4  x795     feed STANTIO (riga oltre `DECISION_MAX_AGE_S`): nessuna apertura i
+    +     B2  x13650   la barra della giornata e' coerente: target partita = 2 x target g
+    +     B4  x6494    feed STANTIO (riga oltre `DECISION_MAX_AGE_S`): nessuna apertura i
+    -     C4  x722     a bot FERMO nessuna apertura, ma settlement, green-up, riconciliaz
+    +     C4  x724     a bot FERMO nessuna apertura, ma settlement, green-up, riconciliaz
+    -     E1  x4340    MAI due lay vive o in volo sullo stesso mercato e selezione: se si
+    +     E1  x4071    MAI due lay vive o in volo sullo stesso mercato e selezione: se si
+    -     E3  x1387    le operazioni MANUALI dell'utente non entrano nei numeri con cui i
+    -     E4  x361     dopo il CASH-OUT GLOBALE dell'utente sulla partita il bot lo capis
+    +     E3  x1388    le operazioni MANUALI dell'utente non entrano nei numeri con cui i
+    +     E4  x362     dopo il CASH-OUT GLOBALE dell'utente sulla partita il bot lo capis
+    -     J3  x26      il riferimento del piazzamento e' quello PER GAMBA (`omega-t<id>`,
+    -     J4  x652     `closes_trade_id` sta nella COLONNA della riga di chiusura, non so
+    -     J5  x14420   grafia snake_case ovunque: mai una chiave camelCase nelle righe de
+    +     J3  x24      il riferimento del piazzamento e' quello PER GAMBA (`omega-t<id>`,
+    +     J4  x653     `closes_trade_id` sta nella COLONNA della riga di chiusura, non so
+    +     J5  x14374   grafia snake_case ovunque: mai una chiave camelCase nelle righe de
+    -     F1  x98      settlement: la commissione si applica UNA volta sola, sul netto vi
+    +     F1  x91      settlement: la commissione si applica UNA volta sola, sul netto vi
+    -     A8  x1181    V3: su ogni partita seguita o c'e' la gamba, o c'e' un motivo DICH
+    -     A9  x48      V3: il lay e' ESATTAMENTE `v3_stake_eur` (1,00 EUR), in paper come
+    -     A10 x26      V3: margine k — `P_nostra * k <= p_implicita`, con k misurato per 
+    -     A11 x26      V3: mai il risultato CORRENTE ne' uno raggiungibile senza margine 
+    +     A8  x1163    V3: su ogni partita seguita o c'e' la gamba, o c'e' un motivo DICH
+    +     A9  x44      V3: il lay e' ESATTAMENTE `v3_stake_eur` (1,00 EUR), in paper come
+    +     A10 x24      V3: margine k — `P_nostra * k <= p_implicita`, con k misurato per 
+    +     A11 x24      V3: mai il risultato CORRENTE ne' uno raggiungibile senza margine 
+    -     C5  x52      V3: nessuna gamba oltre `v3_max_liability_per_leg` (progetto V3 §4
+    -     G1  x11702   V3: NESSUNA chiusura automatica — l'uscita e' una proposta che app
+    +     C5  x48      V3: nessuna gamba oltre `v3_max_liability_per_leg` (progetto V3 §4
+    +     G1  x11654   V3: NESSUNA chiusura automatica — l'uscita e' una proposta che app
+    -     K1  x5166    cio' che il bot CREDE di una gamba coincide con cio' che il MERCAT
+    -     K2  x5166    una gamba il cui ordine Betfair ha RIFIUTATO non resta mai viva (d
+    -     K3  x5166    il riferimento con cui il bot ha piazzato si RILEGGE con la stessa
+    -     K4  x5166    ogni gamba di CHIUSURA dichiara la riga di apertura che chiude (di
+    -     K5  x5166    una riga APERTA che dichiara un `bet_id` ha sempre quel l'ordine a
+    -     K6  x5166    il RESIDUO non abbinato e' dichiarato: una riga aperta con meno de
+    -     K7  x5166    il RESIDUO, il CHIESTO e l'ISTANTE di Betfair non restano NULL sul
+    +     K1  x4890    cio' che il bot CREDE di una gamba coincide con cio' che il MERCAT
+    +     K2  x4890    una gamba il cui ordine Betfair ha RIFIUTATO non resta mai viva (d
+    +     K3  x4890    il riferimento con cui il bot ha piazzato si RILEGGE con la stessa
+    +     K4  x4890    ogni gamba di CHIUSURA dichiara la riga di apertura che chiude (di
+    +     K5  x4890    una riga APERTA che dichiara un `bet_id` ha sempre quel l'ordine a
+    +     K6  x4890    il RESIDUO non abbinato e' dichiarato: una riga aperta con meno de
+    +     K7  x4890    il RESIDUO, il CHIESTO e l'ISTANTE di Betfair non restano NULL sul
+    -LENTO: la certificazione ha impiegato 57m51.0s (3471.0 s), sopra il tetto di 600 s | scenario piu' caro: 35797769 [proposta-approvata] 4m06.5s (246.5 s) | e' un AVVISO: l'esito non cambia
+    +LENTO: la certificazione ha impiegato 43m15.7s (2595.7 s), sopra il tetto di 600 s | scenario piu' caro: 35797769 [riavvio] 3m03.9s (183.9 s) | e' un AVVISO: l'esito non cambia
+==================== _testa IDENTICO

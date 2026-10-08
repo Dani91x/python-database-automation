@@ -5283,3 +5283,9 @@ Brief: `ARCHITETTURA_2026-10/BRIEF_PIANO_ARCHITETTURA_2026-10-08.md` (par. 9 val
   `trading/risk_engine.py:21-23`, `desktop/main.js:756` (terzo login Betfair, web SSO); `read_book` in produzione 2
   definizioni (`mike/service.py:146`, `omega/omega_market.py:571`), non 17 come nel brief. Reperti per il piano: 10/10
   connessioni stream nel caso peggiore, scanner senza ripresa clk, orologio del PC +844 ms, 9,6 buchi >5 s per ora in-play.
+- CHECKPOINT C7 - BANCO DI OMEGA, REPERTI RB-1..RB-5 (verificato e integrato): il CLOSED del mercato arriva allo scanner del banco
+  (`process_closed_market`, la causa vera di RB-1 non era la conflazione); finestre di sottoscrizione con la funzione di produzione
+  (`Scanner.relevant_market_ids`); orologio di mercato nei testi dell'eta'; porta del runner per lo scenario `paper` (35760084: paper
+  467/2 = live, prima 438/0); cache di processo azzerate fra scenari (anche `_LEG_RETRY`, che cambiava le decisioni da uno scenario
+  all'altro). `tutti` 20/20 OK su entrambe le partite; Mike e Safe identici. Tempi: 35797769 `tutti` da 3471 a 1764 s. Delegato 15
+  mutazioni rosse; mie 2/2; mio replay identico. Decisioni P1-P3 (comportamenti di produzione mostrati dal banco) per l'utente.

@@ -2593,6 +2593,18 @@ class MotoreReplay:
 _TIPI_OPP = tuple(t.upper() for t in SCAN.OPP_MARKET_TYPES)
 _TIPI_PUNTEGGIO = {"CORRECT_SCORE": "cs", "HALF_TIME_SCORE": "ht"}
 
+#: 08/10 (cantiere 7, RB-2) - ogni quanto lo scanner di produzione RIFA' la
+#: sottoscrizione dello stream (``Scanner.tick`` -> ``ranked_relevant_markets``
+#: -> ``refresh_stream_set``): un giro di ``tick`` e poi ``time.sleep(0.5)``
+#: (``safe_strategy/service.py::_ciclo_persistente``). Il banco ricalcola i
+#: mercati voluti con la STESSA funzione alla stessa cadenza, sul tempo di
+#: mercato. Vale solo con ``ScannerReplay.finestre_di_produzione`` acceso.
+GIRO_SCANNER_S = 0.5
+
+#: lo stato TERMINALE di un mercato Betfair (``marketDefinition.status``): la
+#: conflazione non lo perde mai (RB-1)
+STATO_TERMINALE = "CLOSED"
+
 
 def _nome_runner(market_type: str, sort_priority: Optional[int],
                  linea: Optional[float], squadre: Tuple[Optional[str], Optional[str]]) -> str:
@@ -2677,6 +2689,62 @@ class ScannerReplay:
         # di sempre, byte per byte (``test_banco_flusso_interrotto``).
         self.buchi_flusso: List[Tuple[float, float, Optional[frozenset]]] = []
         self.book_persi_nel_buco: int = 0
+        # 08/10 (cantiere 7, RB-1): l'ultimo STATO del mercato consegnato allo
+        # scanner (``status`` del book). Serve a non perdere MAI lo stato
+        # terminale nella conflazione e a consegnarlo una volta sola (flumine
+        # riconsegna il book CLOSED a ogni riga successiva della registrazione).
+        self._ultimo_stato: Dict[str, str] = {}
+        # 08/10 (cantiere 7, RB-2): LE FINESTRE DI SOTTOSCRIZIONE DELLA
+        # PRODUZIONE. Spento (di serie) = il banco di sempre, che consegna allo
+        # scanner ogni mercato a catalogo dal primo all'ultimo book. Acceso =
+        # passa solo il book di un mercato che lo scanner VERO, in questo
+        # istante, terrebbe sotto quote (``Scanner.relevant_market_ids``: Match
+        # Odds in finestra, Correct Score dei candidati, Half Time Score dal 15'
+        # al 45', mercati a gol, mercati con ESPOSIZIONE di un bot), e la
+        # registrazione conferma il flusso solo di quelli (gli heartbeat di
+        # produzione confermano solo i mercati serviti). Lo accende il replay di
+        # un bot quando sa anche dire allo scanner le esposizioni del bot
+        # (``fonte_esposizioni``): senza, una posizione aperta fuori finestra
+        # perderebbe le quote che in produzione tiene.
+        self.finestre_di_produzione: bool = False
+        # () -> {fonte: [{event_id, market_id, sport, bot}]}: la STESSA forma di
+        # ``safe_strategy.db.list_bot_exposures`` (lettura completa), riletta
+        # ogni ``Scanner._ESPOSIZIONI_TTL_S`` di tempo di mercato come in
+        # produzione. None = nessuna esposizione dichiarata.
+        self.fonte_esposizioni: Optional[Callable[[], Dict[str, List[Dict[str, Any]]]]] = None
+        self._voluti: frozenset = frozenset()
+        self._voluti_ora: Optional[float] = None
+        self._esposizioni_ora: Optional[float] = None
+        # book NON consegnati perche' il mercato era fuori dalle finestre, per
+        # mercato (il referto li conta: un book tolto si dichiara)
+        self.book_fuori_finestra: Dict[str, int] = {}
+
+    # ------------------------------------------------------- finestre (RB-2)
+    def _ricalcola_voluti(self) -> None:
+        """I mercati che lo scanner di produzione terrebbe sotto quote ADESSO:
+        ``Scanner.relevant_market_ids`` (la funzione VERA, non una copia), con
+        le esposizioni dei bot rilette alla cadenza di produzione."""
+        ora = self._ora_s
+        if self.fonte_esposizioni is not None and (
+                self._esposizioni_ora is None
+                or ora - self._esposizioni_ora >= float(self.scan._ESPOSIZIONI_TTL_S)):
+            self._esposizioni_ora = ora
+            fonti = self.fonte_esposizioni() or {}
+            # come la lettura COMPLETA di produzione (``Scanner._esposizioni``):
+            # sostituisce tutto
+            self.scan._esposizioni_fonti = {str(n): list(r or []) for n, r in fonti.items()}
+        self._voluti = frozenset(str(m) for m in
+                                 self.scan.relevant_market_ids(self.sport, self.adesso()))
+        self._voluti_ora = ora
+
+    def sottoscritto(self, market_id: str) -> bool:
+        """Lo stream dello scanner di produzione consegnerebbe ADESSO i book di
+        ``market_id``? Sempre True a finestre spente (il banco di sempre)."""
+        if not self.finestre_di_produzione:
+            return True
+        if self._voluti_ora is None or self._ora_s - self._voluti_ora >= GIRO_SCANNER_S:
+            self._ricalcola_voluti()
+        return str(market_id) in self._voluti
 
     # ------------------------------------------------------------- buchi (J2)
     def dichiara_buco_flusso(self, da_s: float, a_s: float,
@@ -2813,12 +2881,30 @@ class ScannerReplay:
             # scenario «flusso-interrotto»: lo stream di questo mercato e' caduto
             self.book_persi_nel_buco += 1
             return False
+        # 08/10 (cantiere 7, RB-1): LO STATO TERMINALE. Betfair dichiara la
+        # chiusura UNA volta e la conflazione (``conflateMs``) consegna lo stato
+        # FUSO piu' recente: il CLOSED arriva sempre, anche se cade nello stesso
+        # secondo di un altro book. Qui prima la conflazione teneva il PRIMO
+        # book del secondo e scartava gli altri: un CLOSED nello stesso secondo
+        # di un SUSPENDED si perdeva, e dopo la chiusura non arriva piu' niente.
+        # Gli stati NON terminali restano alla regola di sempre: flumine
+        # riemette a ogni riga il book corrente di ogni mercato (`GeneratoreLibri`),
+        # quindi il primo book dopo la finestra porta gia' lo stato piu' recente.
+        terminale = str(getattr(market_book, "status", "") or "") == STATO_TERMINALE
+        if terminale and self._ultimo_stato.get(mid) == STATO_TERMINALE:
+            return False        # gia' consegnato: flumine lo ripete a ogni riga
+        if not self.sottoscritto(mid):
+            # RB-2: in produzione lo stream non serve questo mercato adesso
+            self.book_fuori_finestra[mid] = self.book_fuori_finestra.get(mid, 0) + 1
+            return False
         if self.conflate_ms > 0:
             adesso_ms = int(self._ora_s * 1000)
-            if adesso_ms - self._ultimo_book_ms.get(mid, -10 ** 12) < self.conflate_ms:
+            if (not terminale
+                    and adesso_ms - self._ultimo_book_ms.get(mid, -10 ** 12) < self.conflate_ms):
                 return False
             self._ultimo_book_ms[mid] = adesso_ms
         self.scan._apply_market_book(self._vista_di(market_book))
+        self._ultimo_stato[mid] = str(getattr(market_book, "status", "") or "")
         return True
 
     def _vista_di(self, market_book: Any) -> Any:
@@ -2870,8 +2956,12 @@ class ScannerReplay:
         # replay non inventa veti che in produzione non ci sarebbero.
         # J2 (reperto B): dentro un buco dichiarato la registrazione NON conferma
         # (nessun heartbeat da una connessione caduta)
+        # 08/10 (cantiere 7, RB-2): a finestre accese conferma SOLO i mercati
+        # che lo stream di produzione servirebbe (gli heartbeat confermano le
+        # sottoscrizioni della connessione, non il catalogo)
         self.scan.conferma_flusso([m for m in self.mercati_visti
-                                   if not (self.buchi_flusso and self.nel_buco(m))])
+                                   if not (self.buchi_flusso and self.nel_buco(m))
+                                   and self.sottoscritto(m)])
         rows, wanted = self.scan.build_rows(self.adesso())
         for row in rows:
             self.tabella[str(row["event_id"])] = row

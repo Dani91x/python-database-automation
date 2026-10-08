@@ -1,0 +1,14 @@
+
+ RUN  v3.2.6 /home/user/python-database-automation/.claude/worktrees/agent-adb756da0c06e837d/frontend
+
+ ✓ src/lib/applicaBot.test.ts (12 tests) 79ms
+ ✓ src/components/replay/ApplicaBotPanel.test.tsx (18 tests) 4545ms
+   ✓ ApplicaBotPanel > calcio: solo i bot calcio; tennis: solo i bot tennis  307ms
+   ✓ ApplicaBotPanel > bot -> scenario -> parametri: un parametro cambiato e' evidenziato e parte da solo  2145ms
+   ✓ ApplicaBotPanel > valore fuori dominio: errore scritto e Applica spento; Ripristina torna alla serie  768ms
+
+ Test Files  2 passed (2)
+      Tests  30 passed (30)
+   Start at  11:42:09
+   Duration  17.47s (transform 2.65s, setup 3.13s, collect 4.31s, tests 4.62s, environment 9.64s, prepare 2.11s)
+

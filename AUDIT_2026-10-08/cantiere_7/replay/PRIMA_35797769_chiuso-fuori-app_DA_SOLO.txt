@@ -1,0 +1,3 @@
+[omega] evento 35797769: posizione chiusa DALL'UTENTE fuori dall'app -> il bot non gestisce piu' questa partita
+decisioni 736 azioni 2
+('2026-07-10T19:02:13.974000+00:00', 'ht_cs', '1.259819681', 13, '3 - 3', 'lay', 80.0, None)

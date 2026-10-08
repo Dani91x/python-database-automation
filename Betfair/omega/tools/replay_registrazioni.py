@@ -61,10 +61,12 @@ CHE COSA IL REPLAY **NON** FA (limiti dichiarati, oltre a quelli del banco):
    (`_flumine_gate`) trova l'heartbeat del runner assente e ripiega sul percorso
    REST — che e' esattamente il percorso in cui gli ordini VERI di Omega nascono
    quando il runner e' giu'. E' il percorso che qui si certifica;
- * in PAPER Omega usa `omega_engine.paper_fill`, cioe' un fill ISTANTANEO su
-   snapshot senza bet delay: lo scenario `paper` lo esercita e il referto
-   MISURA la divergenza col percorso live su flumine (decisione 3 dell'utente,
-   16/09: il paper deve passare da flumine — non e' ancora cosi').
+ * in PAPER Omega passa SOLO dal runner (cantiere C del 28/09: nessun fill "di
+   casa"; senza runner l'apertura e' `paper_runner_non_disponibile`). Dal
+   08/10 (cantiere 7, RB-4) lo scenario `paper` aggancia la PORTA DEL RUNNER
+   del banco, come `--trasporto canale`: porta vera di Omega -> `MotoreOrdini`
+   -> `_dispatch` del runner -> flumine, con bet delay, coda e FOK. Prima lo
+   scenario girava senza runner e ogni apertura paper veniva rifiutata.
 
 Uso:
     python -m Betfair.omega.tools.replay_registrazioni 35760084
@@ -75,6 +77,7 @@ ASCII-only nel codice; i commenti sono in italiano.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import math
@@ -84,7 +87,7 @@ import time
 from bisect import bisect_right
 from collections import Counter
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from .. import certificazione as CERT
 from .. import omega_config
@@ -98,6 +101,8 @@ from ...stream.backtest.banco_comune import (
     assicura_middleware_simulato, carica_punteggi, cliente_simulato,
     nomi_dal_punteggio, simulazione_flumine,
 )
+from ...safe_strategy import db as SDB
+from ...stream import flusso_prezzi as FP
 from ...stream.backtest import chiusura_parziale as CP
 from ...stream.backtest import varianti_bot as VB
 from ...stream.scores import scan_feed as SF
@@ -979,8 +984,9 @@ SCENARI: Dict[str, Dict[str, Any]] = {
     "giornata-reale": {"__goal": GOAL_UNA_PARTITA, "strategy_version": 2},
     # l'unico scenario in cui, su QUESTA registrazione, Omega apre davvero
     "apertura": dict(_APRE, strategy_version=2),
-    # PAPER: stessa strategia, altro percorso di esecuzione (E.paper_fill).
-    # Serve a MISURARE la divergenza col live (decisione 3 dell'utente).
+    # PAPER: stessa strategia e stessi parametri di `apertura`; l'ordine passa
+    # dal RUNNER del banco (08/10, RB-4: `certifica_scenario` aggancia la porta
+    # del canale). Serve a provare la parita' paper/live sulla stessa partita.
     "paper": dict(_APRE, strategy_version=2),
     # tetti di rischio STRETTI: oggi in produzione sono tutti a ZERO, cioe'
     # SPENTI (§19.5), quindi senza questo scenario i controlli C1/C2/C3 non
@@ -1096,8 +1102,10 @@ SCENARI_DESCRITTI: Dict[str, str] = {
                 "giornata-reale + banda di quota allargata a 500 (manopola della "
                 "whitelist): su 35760084 l'unico risultato sovrapprezzato dal "
                 "mercato e' il '3 - 3' a 300, fuori dal price_max di 120",
-    "paper": "MOTORE v2 LEGACY in modalita' PAPER: fill istantaneo di omega_engine.paper_fill, "
-             "senza bet delay (P4) — si misura la divergenza col live",
+    "paper": "MOTORE v2 LEGACY in modalita' PAPER, stessi parametri di `apertura`: "
+             "il paper passa dalla PORTA DEL RUNNER del banco (canale di comando "
+             "-> MotoreOrdini -> flumine, bet delay e FOK come il live); si "
+             "confronta col live di `apertura` (parita' paper/live)",
     "cap-stretto": "CONDOTTA (motore di DEFAULT, oggi v3): tetti di rischio del "
                    "v2 stretti - in produzione sono a ZERO (§19.5), "
                    "senza questo scenario C1/C2/C3 non hanno mai un caso",
@@ -1154,6 +1162,59 @@ SCENARI_DESCRITTI: Dict[str, str] = {
 
 QUANTI_GUASTI = 2
 
+#: 08/10 (cantiere 7, RB-5; catalogo §7.37) - LE CACHE DI PROCESSO DI
+#: `omega_service` CHE `svuota_le_cache` NON TOCCA. Il banco le azzerava SOLO al
+#: riavvio a meta' partita (``_riavvia_processo``), MAI fra uno scenario e il
+#: successivo dello stesso processo (`--worker 1`, o un figlio della pool
+#: riusato): lo stato di uno scenario entrava nel seguente. Due casi provati:
+#:  * le tabelle storiche (HT->FT e per minuto, `_empirical_table` /
+#:    `_minute_table`): la nota `[NON ESERCITABILE]` la scriveva solo il PRIMO
+#:    scenario che le leggeva (reperto RB-5 del 07/10);
+#:  * `_LEG_RETRY` (i tentativi falliti per gamba): sulla 35760084 `apertura`
+#:    dopo `paper` (codice di partenza) dava 438 decisioni / 0 azioni invece di
+#:    467 / 2 - il '3 - 3' non si apriva piu' (prova nel referto del cantiere 7).
+#: Elenco ESPLICITO, mai un `dir()`: quello di sempre del riavvio piu' le due
+#: tabelle. Lo usano il riavvio e ``AmbienteOmega`` (ingresso e uscita di ogni
+#: replay): ogni scenario parte come un processo appena avviato. Come Omega
+#: usa queste cache non si tocca.
+CACHE_TABELLE_STORICHE = ("_EMPIRICAL_CACHE", "_MINUTE_CACHE")
+CACHE_DI_PROCESSO_DEL_BANCO = (
+    "_LEG_RETRY", "_SKIP_SEEN", "_BLIND_CYCLES", "_MARKET_FIT_CACHE",
+    "_LAMBDA_CACHE", "_IDLE_STATS_AT",
+    "_CATENA_OMEGA",                                # 04/10: blocchi di catena
+) + CACHE_TABELLE_STORICHE                          # 08/10 (RB-5)
+
+
+#: 08/10 (cantiere 7, RB-2): lo scanner del banco di Omega consegna i book con
+#: le FINESTRE DI SOTTOSCRIZIONE della produzione
+#: (``ScannerReplay.finestre_di_produzione``). False = il banco di prima (ogni
+#: mercato a catalogo, dal primo all'ultimo book): serve solo al confronto.
+FINESTRE_DI_PRODUZIONE = True
+
+
+def esposizioni_omega(trades: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Le esposizioni di Omega come le legge lo scanner di produzione: righe
+    ``omega_trades`` con stato in ``_STATI_TRADE_ESPOSTI`` (pending/open/hedged,
+    la RPC ``list_bot_exposures`` e il suo ripiego), solo le colonne che la
+    lettura seleziona, passate da ``_righe_esposte`` (la funzione VERA)."""
+    vive = [{"event_id": r.get("event_id"), "market_id": r.get("market_id"),
+             "status": r.get("status")}
+            for r in trades or []
+            if str(r.get("status") or "") in SDB._STATI_TRADE_ESPOSTI]
+    return SDB._righe_esposte(vive, "omega", "calcio")
+
+
+def _azzera_cache_di_processo() -> List[str]:
+    """Svuota le cache di ``CACHE_DI_PROCESSO_DEL_BANCO``; torna i nomi di
+    quelle che avevano qualcosa dentro."""
+    azzerati: List[str] = []
+    for nome in CACHE_DI_PROCESSO_DEL_BANCO:
+        d = getattr(S, nome, None)
+        if isinstance(d, dict) and d:
+            d.clear()
+            azzerati.append(nome)
+    return azzerati
+
 
 def _riavvia_processo() -> List[str]:
     """Butta via le cache di PROCESSO di `omega_service`, come un riavvio.
@@ -1165,13 +1226,9 @@ def _riavvia_processo() -> List[str]:
     azzerati: List[str] = []
     S.svuota_le_cache()
     azzerati.append("svuota_le_cache (feed, scanner, aggregati, insiemi, fasi)")
-    for nome in ("_LEG_RETRY", "_SKIP_SEEN", "_BLIND_CYCLES", "_MARKET_FIT_CACHE",
-                 "_LAMBDA_CACHE", "_IDLE_STATS_AT",
-                 "_CATENA_OMEGA"):                  # 04/10: blocchi di catena
-        d = getattr(S, nome, None)
-        if isinstance(d, dict) and d:
-            d.clear()
-            azzerati.append(nome)
+    # 08/10 (RB-5): l'elenco esplicito del banco (quello di sempre del riavvio
+    # piu' le tabelle storiche, che un riavvio vero perde anch'esso)
+    azzerati.extend(_azzera_cache_di_processo())
     return azzerati
 
 
@@ -1296,11 +1353,34 @@ def _crea_strategia():
             self._piazzamenti_visti = 0
             # ultima chiamata a E.dynamic_target: (goal, realized, legs_left, target)
             self.ultimo_target: Optional[Tuple[float, float, int, float]] = None
+            # 08/10 (RB-1): le chiusure di Betfair consegnate allo scanner (id, ms)
+            self.chiusure_allo_scanner: List[Tuple[str, int]] = []
             super().__init__(**kw)
 
         # ---------------------------------------------------------- flumine
         def check_market_book(self, market, market_book) -> bool:
             return True
+
+        def process_closed_market(self, market, market_book) -> None:
+            """08/10 (cantiere 7, RB-1): il book CLOSED entra nello SCANNER VERO.
+
+            Flumine non consegna i book CLOSED a ``process_market_book``
+            (``MotoreReplay._a_flumine`` come ``FlumineSimulation``): li passa
+            qui, e li ripete a ogni riga successiva della registrazione. In
+            produzione lo scanner riceve la chiusura dallo stream; nel banco di
+            Omega non arrivava MAI (l'Half Time Score della 35760084 restava
+            SOSPESO per sempre). Stessa strada di ogni altro book
+            (``ScannerReplay.applica_book``: conflazione che non perde lo stato
+            terminale, consegna una volta sola, finestre di sottoscrizione),
+            stesso rimedio del replay di Mike del 30/09."""
+            if not self.banco.registra_mercato(market_book):
+                return
+            pt = getattr(market_book, "publish_time", None)
+            if pt is not None:
+                self.banco.imposta_ora(pt.timestamp())
+            if self.banco.applica_book(market_book):
+                self.chiusure_allo_scanner.append(
+                    (str(market_book.market_id), int(self.banco.ora * 1000)))
 
         def process_market_book(self, market, market_book) -> None:
             mtype = self.banco.registra_mercato(market_book)
@@ -1974,6 +2054,7 @@ class AmbienteOmega:
             "_real_market": S._real_market,
             "_mono": S._mono,
             "_SHARED_CACHE": SF._SHARED_CACHE,
+            "_ora_ms": FP._ora_ms,
         }
         S._real_market = self.mercato             # type: ignore[assignment]
         S._mono = (lambda: float(self.banco.ora))  # type: ignore[assignment]
@@ -1981,14 +2062,24 @@ class AmbienteOmega:
             ttl_sec=0.0, fetch=self.feed.righe,
             clock=(lambda: float(self.banco.ora)),
             fetch_status=self.feed.stato_scanner)
+        # 08/10 (cantiere 7, RB-3): l'«adesso» del verdetto sul flusso. Omega
+        # chiama `flusso_prezzi.valuta` senza `adesso_ms` e il modulo legge
+        # l'orologio del PC (`_ora_ms`), mentre il `dal_ms` della riga e'
+        # quello dello SCANNER, cioe' il tempo di MERCATO: nei testi del replay
+        # usciva «da 8534488 s». Stesso aggancio di `_mono`: l'orologio di
+        # mercato per la durata del replay, rimesso a posto all'uscita.
+        FP._ora_ms = (lambda: int(float(self.banco.ora) * 1000))  # type: ignore[assignment]
         S.svuota_le_cache()
+        _azzera_cache_di_processo()               # 08/10 (RB-5)
         return self
 
     def __exit__(self, *_exc: Any) -> None:
         S._real_market = self._prima["_real_market"]      # type: ignore[assignment]
         S._mono = self._prima["_mono"]                    # type: ignore[assignment]
         SF._SHARED_CACHE = self._prima["_SHARED_CACHE"]   # type: ignore[assignment]
+        FP._ora_ms = self._prima["_ora_ms"]               # type: ignore[assignment]
         S.svuota_le_cache()
+        _azzera_cache_di_processo()               # 08/10 (RB-5)
 
 
 # ---------------------------------------------------------------------------
@@ -2054,6 +2145,11 @@ def _certifica_evento(event_id: str, *, data_dir: str,
         # suoi parametri, ed e' quello che si vuole misurare.
         max_order_exposure=1e9, max_selection_exposure=1e9,
         max_trade_count=int(1e9), max_live_trade_count=int(1e9))
+    # 08/10 (cantiere 7, RB-2): allo scanner arrivano solo i mercati che lo
+    # stream di produzione servirebbe, con le esposizioni di Omega dette allo
+    # scanner nella forma di `list_bot_exposures` (righe `omega_trades` vive)
+    banco.finestre_di_produzione = FINESTRE_DI_PRODUZIONE
+    banco.fonte_esposizioni = lambda: {"omega": esposizioni_omega(strategia.db.trades)}
     if guasti > 0:
         strategia.mercato.guasti["place_exception"] = int(guasti)
     if rifiuti > 0:
@@ -2212,6 +2308,28 @@ def _componi_note(out: CERT.Referto, strategia: Any, banco: ScannerReplay,
                     f"| letture del feed di Omega: {feed.letture}"
                     + (f" | giri senza riga nel feed: {strategia.righe_assenti}"
                        if strategia.righe_assenti else ""))
+    # 08/10 (cantiere 7, RB-1/RB-2): che cosa lo scanner del banco NON ha
+    # ricevuto perche' lo stream di produzione non l'avrebbe servito, e le
+    # chiusure di Betfair che ha ricevuto. Un book tolto si dichiara.
+    if banco.finestre_di_produzione:
+        fuori = Counter()
+        for mid, n in banco.book_fuori_finestra.items():
+            fuori[str(banco.mercati_visti.get(mid) or mid)] += int(n)
+        out.note.append(
+            "finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): "
+            f"book non consegnati allo scanner {sum(fuori.values())}"
+            + (" (" + ", ".join(f"{t} x{n}" for t, n in sorted(fuori.items())) + ")"
+               if fuori else ""))
+    else:
+        out.note.append("finestre di sottoscrizione: SPENTE (ogni mercato a catalogo "
+                        "arriva allo scanner dal primo all'ultimo book)")
+    out.note.append(
+        "chiusure di Betfair consegnate allo scanner: "
+        + (", ".join("%s %s" % (banco.mercati_visti.get(m) or m,
+                                datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc)
+                                .strftime("%H:%M:%S"))
+                     for m, ms in strategia.chiusure_allo_scanner)
+           if strategia.chiusure_allo_scanner else "nessuna"))
     out.note.append(f"catalogo ricostruito dalla registrazione: "
                     f"{len(catalogo.tipi)} mercati, scoreline nominate su "
                     f"{len(catalogo.nomi)} mercati "
@@ -2347,10 +2465,24 @@ def _componi_note(out: CERT.Referto, strategia: Any, banco: ScannerReplay,
             "gamba la sceglie, la dimensiona e la piazza V3 lungo la catena di "
             "produzione (riserva -> ordine -> conferma -> consapevolezza).")
     if mode == "paper":
-        out.note.append(
-            "PAPER: i fill vengono da `omega_engine.paper_fill` (istantaneo, sullo "
-            "snapshot, SENZA bet delay e senza coda) — non da flumine. E' la "
-            "divergenza P4 dichiarata nel piano: qui si misura, non si corregge.")
+        # 08/10 (cantiere 7, RB-4): la nota di prima parlava di
+        # `omega_engine.paper_fill`, che dal 28/09 (cantiere C) non esiste piu'
+        # sul percorso: il paper di Omega passa SOLO dal runner
+        from ...stream.backtest import trasporto as TRA
+
+        st = TRA.attivo()
+        if st and st.get("trasporto") == "canale":
+            out.note.append(
+                "PAPER: l'ordine passa dalla PORTA DEL RUNNER del banco (porta "
+                "vera di Omega sul canale -> MotoreOrdini -> _dispatch del runner "
+                "-> flumine): bet delay, coda al prezzo, FOK e parziali come il "
+                "live. Nessun fill simulato in casa.")
+        else:
+            out.note.append(
+                "PAPER SENZA RUNNER: il trasporto di questo replay non ha la porta "
+                "del runner, e dal 28/09 il paper di Omega passa SOLO dal runner: "
+                "ogni apertura paper e' `paper_runner_non_disponibile` (nessun "
+                "ordine). La parita' paper/live NON e' provata da questo replay.")
 
 
 # ---------------------------------------------------------------------------
@@ -2494,6 +2626,29 @@ def nota_accensione(acc: "VB.Accensione") -> str:
             % (_iso_ms(acc.dal_ms), acc.dal_ms, _iso_ms(acc.scattata_ms)))
 
 
+@contextlib.contextmanager
+def _porta_del_runner_per_il_paper(mode: str) -> Iterator[None]:
+    """08/10 (cantiere 7, RB-4): IL PAPER DI OMEGA PASSA SOLO DAL RUNNER.
+
+    Dal 28/09 (cantiere C) un'apertura paper senza runner e' dichiarata NON
+    eseguita (`omega_service`, `paper_runner_non_disponibile`): il banco senza
+    runner non poteva certificare il paper (5 rifiuti sulla 35760084, reperto
+    RB-4 del 07/10). Qui, per il replay in PAPER senza un trasporto gia'
+    scelto da ``certifica --trasporto``, si aggancia la PORTA DEL RUNNER del
+    banco: ``trasporto.contesto("omega", "canale")``, la stessa di
+    ``--trasporto canale`` (porta vera di Omega -> ``WsBanco`` ->
+    ``MotoreOrdini`` -> ``_dispatch`` del runner sul flumine del banco).
+    Nessuna classe di laboratorio, nessun fill a mano. Con un trasporto gia'
+    attivo (``--trasporto coda|canale|entrambi``) si rispetta quello."""
+    from ...stream.backtest import trasporto as TRA
+
+    if mode != "paper" or TRA.attivo() is not None:
+        yield
+        return
+    with TRA.contesto("omega", "canale"):
+        yield
+
+
 def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
                        ogni_ms: int = 0, campioni_diff: int = 0,
                        parametri: Optional[Dict[str, Any]] = None,
@@ -2519,19 +2674,20 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
     # i prezzi: tre volte il tetto piu' largo che il servizio usa per decidere
     vecchio = (max(S.FEED_MAX_AGE_S, S.DECISION_MAX_AGE_S, S.GREENUP_MAX_AGE_S) * 3.0
                if scenario == "feed-stantio" else 0.0)
-    ref = certifica_evento(
-        event_id, data_dir=data_dir, params=par, mode=mode, status=status,
-        goal=goal, ferma_su_posizione=(scenario in ("bot-fermo", "v4-bot-fermo")),
-        lay_manuale=(scenario == "manuale-e-bot"),
-        cashout_globale=(scenario in ("cashout-globale", CP.SCENARIO)),
-        chiude_fuori_app=(scenario == "chiuso-fuori-app"),
-        firma_proposte=(scenario == "proposta-approvata"),
-        ogni_ms=int(ogni_ms or 0), invecchia_s=vecchio,
-        guasti=(QUANTI_GUASTI if scenario == "esiti-ignoti" else 0),
-        rifiuti=(QUANTI_GUASTI if scenario == "rifiuti-betfair" else 0),
-        riavvia=(scenario in ("riavvio", "v4-riavvio")),
-        chiusura_parziale=(scenario == CP.SCENARIO),
-        dal_ms=dal_ms)
+    with _porta_del_runner_per_il_paper(mode):
+        ref = certifica_evento(
+            event_id, data_dir=data_dir, params=par, mode=mode, status=status,
+            goal=goal, ferma_su_posizione=(scenario in ("bot-fermo", "v4-bot-fermo")),
+            lay_manuale=(scenario == "manuale-e-bot"),
+            cashout_globale=(scenario in ("cashout-globale", CP.SCENARIO)),
+            chiude_fuori_app=(scenario == "chiuso-fuori-app"),
+            firma_proposte=(scenario == "proposta-approvata"),
+            ogni_ms=int(ogni_ms or 0), invecchia_s=vecchio,
+            guasti=(QUANTI_GUASTI if scenario == "esiti-ignoti" else 0),
+            rifiuti=(QUANTI_GUASTI if scenario == "rifiuti-betfair" else 0),
+            riavvia=(scenario in ("riavvio", "v4-riavvio")),
+            chiusura_parziale=(scenario == CP.SCENARIO),
+            dal_ms=dal_ms)
     ref.note.insert(0, f"scenario '{scenario}': {SCENARI_DESCRITTI.get(scenario, '-')}")
     if sost:
         ref.note.insert(1, "VARIANTE DEI PARAMETRI (la strategia non cambia): "

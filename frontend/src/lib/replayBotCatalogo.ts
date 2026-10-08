@@ -3406,7 +3406,7 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
         "modalita": "prova",
         "etichetta": "Omega - v2 con banda di quota fino a 500 (prova)",
         "nota": "stessa cosa in prova",
-        "descrizione": "MOTORE v2 LEGACY in modalita' PAPER: fill istantaneo di omega_engine.paper_fill, senza bet delay (P4) \u2014 si misura la divergenza col live",
+        "descrizione": "MOTORE v2 LEGACY in modalita' PAPER, stessi parametri di `apertura`: il paper passa dalla PORTA DEL RUNNER del banco (canale di comando -> MotoreOrdini -> flumine, bet delay e FOK come il live); si confronta col live di `apertura` (parita' paper/live)",
         "parametri": [
           {
             "chiave": "daily_goal",
