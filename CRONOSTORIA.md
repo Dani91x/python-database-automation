@@ -5173,3 +5173,27 @@ dal percorso nuovo, o artefatto del messaggio aggregato delle 17:00:06): referti
 - Tennis (tennis_pro 35790089, 17 scenari, 19 s): prima/dopo identici salvo la nota nuova «fill per mercato che attraversa: 0».
 - CALCIO: scalper_calcio 35797769, 5 scenari del riferimento: base/paper/rifiuti-betfair/sniper-paper OK ma con percorso diverso (azioni 44 -> 18: alle 17:00:06.704 un solo messaggio dello stream porta scambi da 1,64 a 1,72 e BACK 1,66 + LAY 1,65 + BACK 4,20 si abbinano nello stesso book); **chiusura-abbinata-in-parte KO NUOVO**: B2 (selezione 22 di 1.259819674 aperta al fischio con 0,91: il residuo 0,60 di una chiusura BACK 1,00 LAPSE scade al fischio) e CP4 (una chiusura LAY chiede 1,02 con 0,91 da chiudere). REPERTO APERTO money-critical: o condotta dello scalper sotto fill realistici (gamba lasciata a mercato: vietato dall'ordine del 01/10) o artefatto del messaggio aggregato; va al cloud come CANTIERE 15 (specifiche, in testa alla priorita'). Il «prima» con tutti i 47 scenari ha impiegato 115 min (tetto 10): cantiere 11.
 - Il `prima` di riferimento dello scalper (44 azioni) NON e' piu' il riferimento: con il banco realistico i numeri di scalper cambiano e vanno rifatti nel cantiere 15. Integrato con l'interruttore `ATTRAVERSAMENTO = True` perche' il banco deve dire la verita' (ordine dell'utente: «replicare esattamente la realta'»).
+
+## 2026-10-08 — Sessione cloud: pagina «Cash Out» + cantieri delle specifiche (coordinatore cloud)
+
+### Stato di partenza (verificato)
+- Ramo di lavoro `claude/blissful-sagan-hri7o6`, portato in avanti (fast-forward) sulla cima `b5547eb`
+  di `claude/eloquent-franklin-g2nyk5` (contiene «fix(banco): regola del mercato che attraversa»).
+  Albero pulito. Container cloud Linux: dipendenze installate qui (`requirements.txt` + pytest, `npm ci`
+  in `frontend/`), nessuna registrazione tennis, nessun DB di produzione.
+- Due ordini dell'utente dell'08/10: (A) pagina «Cash Out» sotto la Control Room (prototipo approvato in
+  chat; decisioni: 1 = pulsante per gamba di Mike/tennis/Scalper resta il comando di oggi che chiude la
+  posizione del bot, detto sul pulsante; 2 = gli ordini del sito si chiudono dall'app; 3 = nessuna
+  lettura nuova per ordini manuali tennis/prova; 4 = pre-partita con le posizioni dei bot, anche oltre
+  i 15' dal fischio; 5 = i bot devono sapere in tempo reale degli ordini esterni da app e sito, anche in
+  prova); pulsanti «Pre-match» e «Live» in testata accanto ai filtri sport. (B) i cantieri di
+  `AUDIT_2026-10-08/SPECIFICHE_CANTIERI_CLOUD_2026-10-08.md`, dal 15 e poi nell'ordine del §0.
+- Ordine dell'utente: «TASSATIVAMENTE NESSUNA REGRESSIONE»; alla fine un documento per far verificare
+  tutto all'agente sul PC, rapido ma senza rinunciare alla certificazione.
+
+### Domini dei delegati (worktree separati; il coordinatore integra un commit per cantiere)
+- W1 pagina Cash Out: solo `frontend/`. W2 chiusura degli ordini del sito: `Betfair/stream/live_order_worker.py`.
+- W3a consapevolezza degli ordini esterni: Mike, Omega, Safe, `esiti_ordini_canale.py`, pubblicazione in
+  `engine/live_trading_strategy.py`, banco (additivo). W3b (dopo C15 e C5): scalper calcio e bot tennis.
+- C15 scalper/banco; C12 `replayVerificaBarra*` e script; C5 bot tennis (parcheggio); C14 registratore e
+  convertitore tennis; C10 `replayOperazioni` e registro del replay. Poi C6, C13, C7, C9, C11.
