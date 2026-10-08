@@ -35,6 +35,7 @@ blocchi di lega-stagioni): nessuna lettura riga-per-riga delle tabelle enormi
 """
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
@@ -67,6 +68,31 @@ COLONNE_COVERAGE = ("league_id,league_name,country_name,season_year,season_start
 
 class MigrazioneMancante(RuntimeError):
     """La migrazione season_gaps_2026-09-25.sql non e' applicata."""
+
+
+_log = logging.getLogger("season_gaps")
+
+# 08/10 sera (run 37743110569, lega 667 stagione 2026): un SINGOLO 57014 sulla RPC
+# season_detail_gaps chiamata dentro il ciclo per lega-stagione dava exit 1. Il caso vero
+# si e' risolto da solo in 4 s (la chiamata dopo alla stessa RPC: HTTP 200). Si ritenta
+# al massimo 2 volte (1 esecuzione + 2 ritentativi), attese brevi e fisse.
+ATTESE_57014_S: Tuple[float, ...] = (5.0, 10.0)
+STATISTICHE_57014: Dict[str, int] = {"ritentativi": 0, "riusciti_dopo_ritentativo": 0, "persistenti": 0}
+
+
+class Timeout57014Persistente(RuntimeError):
+    """season_detail_gaps ancora in 57014 (statement timeout) dopo tutti i ritentativi.
+    Chi la riceve nel catchup DEGRADA la lega-stagione (R-CATCHUP-2/3: niente decisione
+    oggi, nessun errore, contatore dei giorni consecutivi), non la mette in errore.
+    Il testo contiene il messaggio originale (57014): _e_statement_timeout la riconosce."""
+
+    def __init__(self, league_id: int, season_year: int, tentativi: int, ultimo: BaseException) -> None:
+        self.league_id = int(league_id)
+        self.season_year = int(season_year)
+        self.tentativi = tentativi
+        self.ultimo = ultimo
+        super().__init__(f"57014 persistente su rpc season_detail_gaps lega {league_id} stagione "
+                         f"{season_year} dopo {tentativi} tentativi: {str(ultimo)[:200]}")
 
 
 def _e_funzione_mancante(err: Exception) -> bool:
@@ -221,21 +247,44 @@ def _applica_righe(l: Lacune, righe: Iterable[Dict[str, Any]], con_id: bool) -> 
 
 
 def lacune_stagione(sb: Any, league_id: int, season_year: int,
-                    fixture_ids: Optional[List[int]] = None) -> Lacune:
-    """Una RPC: tutte le lacune (con gli id) di una lega-stagione (o di alcune fixture)."""
-    try:
-        # 08/10: ritentativi sui guasti di rete/gateway (run 37743110569: HTTP 520 HTML qui)
-        resp = esegui_con_retry(lambda c: c.rpc("season_detail_gaps", {"p_league_id": int(league_id),
-                                                                     "p_season_year": int(season_year),
-                                                                     "p_fixture_ids": fixture_ids}),
-                                sb, etichetta="rpc season_detail_gaps")
-    except GuastoRete:
-        raise
-    except Exception as e:
-        if _e_funzione_mancante(e):
-            raise MigrazioneMancante(
-                f"RPC season_detail_gaps assente: applica {MIGRAZIONE} (errore: {e})") from e
-        raise
+                    fixture_ids: Optional[List[int]] = None,
+                    attese_57014: Optional[Sequence[float]] = None) -> Lacune:
+    """Una RPC: tutte le lacune (con gli id) di una lega-stagione (o di alcune fixture).
+
+    08/10 sera: sul 57014 (statement timeout) la RPC si riesegue al massimo
+    len(ATTESE_57014_S) volte (5 s, poi 10 s); se resta in 57014 -> Timeout57014Persistente.
+    Nessun altro errore viene ritentato qui (i guasti di rete li ritenta gia'
+    esegui_con_retry; 4xx e applicativi risalgono subito, identici)."""
+    attese = tuple(ATTESE_57014_S if attese_57014 is None else attese_57014)
+    totale = len(attese) + 1
+    for i in range(totale):
+        try:
+            # 08/10: ritentativi sui guasti di rete/gateway (run 37743110569: HTTP 520 HTML qui)
+            resp = esegui_con_retry(lambda c: c.rpc("season_detail_gaps", {"p_league_id": int(league_id),
+                                                                         "p_season_year": int(season_year),
+                                                                         "p_fixture_ids": fixture_ids}),
+                                    sb, etichetta="rpc season_detail_gaps")
+        except GuastoRete:
+            raise
+        except Exception as e:
+            if _e_funzione_mancante(e):
+                raise MigrazioneMancante(
+                    f"RPC season_detail_gaps assente: applica {MIGRAZIONE} (errore: {e})") from e
+            if not _e_statement_timeout(e):
+                raise
+            if i + 1 >= totale:
+                STATISTICHE_57014["persistenti"] += 1
+                _log.error("[RETE] rpc season_detail_gaps lega %s stagione %s: 57014 PERSISTENTE dopo %d "
+                           "tentativi", league_id, season_year, totale)
+                raise Timeout57014Persistente(league_id, season_year, totale, e) from e
+            STATISTICHE_57014["ritentativi"] += 1
+            _log.warning("[RETE] rpc season_detail_gaps: 57014 (tentativo %d/%d) lega %s stagione %s -> "
+                         "ritento tra %.0f s", i + 1, totale, league_id, season_year, attese[i])
+            time.sleep(attese[i])
+            continue
+        if i:
+            STATISTICHE_57014["riusciti_dopo_ritentativo"] += 1
+        break
     l = Lacune(int(league_id), int(season_year))
     _applica_righe(l, _righe_rpc(resp), con_id=True)
     return l
@@ -533,14 +582,20 @@ def scrivi_stati(sb: Any, righe: List[Dict[str, Any]], blocco: int = 200) -> Non
 
 
 def segna_degradato_57014(sb: Any, league_id: int, season_year: int, oggi: date,
-                          stampa: Callable[[str], None] = print) -> Optional[int]:
+                          stampa: Callable[[str], None] = print,
+                          prec: Optional[Dict[str, Any]] = None) -> Optional[int]:
     """R-CATCHUP-3 (28/09, ordine dell'utente: le degradate NON possono restare mute).
     Scrive/aggiorna SOLO `stats_json.degradato_57014` (letto/riscritto senza toccare
     `status` ne' nessun altro campo dello stato vero: stessa tecnica gia' usata da
     `_salva_verifica_current` in seasons_catchup.py per non alterare uno stato che
     quel giro NON e' stato ricalcolato). -> giorni consecutivi di degrado (>= 1), o
     None se la scrittura non e' riuscita (avviso, non fail-loud: e' solo un contatore
-    di osservabilita', non deve MAI far morire il catchup)."""
+    di osservabilita', non deve MAI far morire il catchup).
+    `prec` (08/10 sera, degrado DENTRO il ciclo per lega-stagione): il contatore come era
+    a INIZIO run. Serve perche' in quel caso lo stato della lega-stagione e' gia' stato
+    riscritto in questa run (scrivi_stati dopo il riepilogo, che non porta il campo):
+    rileggerlo dal DB azzererebbe il contatore ogni giorno (degradata muta per sempre).
+    None = come prima, contatore letto dal DB."""
     k = (int(league_id), int(season_year))
     try:
         resp = esegui_con_retry(lambda c: c.table("season_backfill_state").select("status,stats_json")
@@ -549,7 +604,8 @@ def segna_degradato_57014(sb: Any, league_id: int, season_year: int, oggi: date,
         righe = list(getattr(resp, "data", None) or [])
         riga = righe[0] if righe else None
         sj = dict((riga or {}).get("stats_json") or {})
-        prec = sj.get("degradato_57014") or {}
+        if prec is None:
+            prec = sj.get("degradato_57014") or {}
         primo_at = prec.get("primo_at") or oggi.isoformat()
         consecutivi = int(prec.get("consecutivi") or 0) + 1
         sj["degradato_57014"] = {"consecutivi": consecutivi, "primo_at": primo_at, "ultimo_at": oggi.isoformat()}
@@ -627,7 +683,9 @@ def leggi_stati(sb: Any, league_id: Optional[int] = None, pagina: int = 1000) ->
                "buco_aperto_dal:stats_json->>buco_aperto_dal,ft_count:stats_json->fixtures->>ft_count,"
                "matches_count:stats_json->fixtures->>matches_count,"
                "aggregati_tentativi:stats_json->aggregati_tentativi,mai_caricata:stats_json->mai_caricata,"
-               "verifica_current:stats_json->verifica_current,rinviato_rete:stats_json->rinviato_rete"
+               "verifica_current:stats_json->verifica_current,rinviato_rete:stats_json->rinviato_rete,"
+               # 08/10 sera: contatore R-CATCHUP-3 com'era a inizio run (degrado dentro il ciclo)
+               "degradato_57014:stats_json->degradato_57014"
                if leggero else "league_id,season_year,status,last_run_at,stats_json")
     while True:
         def _q(c: Any, da: int = inizio) -> Any:
@@ -652,7 +710,9 @@ def leggi_stati(sb: Any, league_id: Optional[int] = None, pagina: int = 1000) ->
                                         **({"verifica_current": r["verifica_current"]}
                                            if r.get("verifica_current") else {}),
                                         **({CAMPO_RINVIO_RETE: r["rinviato_rete"]}
-                                           if r.get("rinviato_rete") else {})}}
+                                           if r.get("rinviato_rete") else {}),
+                                        **({"degradato_57014": r["degradato_57014"]}
+                                           if r.get("degradato_57014") else {})}}
                 out[(int(r["league_id"]), int(r["season_year"]))] = r
             except (KeyError, TypeError, ValueError):
                 continue

@@ -5316,3 +5316,19 @@ Il piano e' pronto per la revisione del PC e la decisione dell'utente. Prossimi 
 4. Stasera (ordine dell'utente «facciamo tutto stasera»): fusione su master di questo ramo + ramo cloud
    `claude/blissful-sagan-hri7o6` (cantieri 5-15, ultimo `9fd1474b`) + correzione della action; `git gc` per il commit orfano
    `1f35f5c8` (log da 3 GB, MAI pushare); build finale ad app chiusa; rilancio della action da master.
+
+### VERIFICA DEL COORDINATORE (Fable 5.1) sul 57014 dentro il ciclo del catchup — ore 18:40 dell'08/10
+- Delegato Opus (brief: AUDIT_2026-10-08/action_catchup/REFERTO.md §2.5). File: `season_gaps.py` (+100/-21: ritentativi 5 s e 10 s
+  sul 57014 di `season_detail_gaps`, poi `Timeout57014Persistente`; `leggi_stati` legge anche `stats_json->degradato_57014`;
+  `segna_degradato_57014(prec=...)`), `seasons_catchup.py` (+64: le 5 vie del ciclo P1-P3 e P4 degradano invece di mettere in
+  `ris.errori`; referto con riga «DEGRADATA per 57014 nel ciclo»), test nuovo `test_catchup_57014_ciclo_2026_10_08.py` (13).
+  Difetto in piu' trovato dal delegato: senza la colonna in `leggi_stati` il contatore R-CATCHUP-3 ripartiva da 1 (degradata muta).
+- Verificato di persona: diff riletto riga per riga; CRLF conservati (739/739, 1206/1206, 338/338); `db_client.py` e
+  `season_backfill.py` intatti. Test rilanciati da me: 37/37 (catchup rete + 57014 ciclo); 269/270 sulle 16 suite che importano
+  i moduli toccati (l'unico rosso, `test_analytics_market_stats.py::test_cert_delay_shift_vs_rpc`, legge il DB vivo, passa
+  su HEAD e passa 2 volte su 2 rilanci con la correzione: dato del DB cambiato tra una lettura e l'altra, non la correzione).
+  Falsificazione MIA, in una direzione non provata dal delegato: tolta la registrazione in `ris.degradate_timeout` -> 4 test
+  rossi; ripristino byte-identico, 13/13 verdi. Sintassi della colonna nuova provata in SOLA LETTURA sul DB vero: 8.692
+  lega-stagioni lette, 0 con contatore (nessuna degradata oggi, quindi il valore letto non e' ancora esercitato dal vero).
+- Esito: con le due correzioni (mattina + sera) la run 37743110569 avrebbe dato exit 0. CERTIFICATO. Action NON rilanciata
+  (ordine dell'utente: crediti API-Football finiti); riparte da sola dal prossimo giro programmato dopo la fusione su master.
