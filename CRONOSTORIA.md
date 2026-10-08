@@ -5488,3 +5488,35 @@ Il piano e' pronto per la revisione del PC e la decisione dell'utente. Prossimi 
   lega-stagioni lette, 0 con contatore (nessuna degradata oggi, quindi il valore letto non e' ancora esercitato dal vero).
 - Esito: con le due correzioni (mattina + sera) la run 37743110569 avrebbe dato exit 0. CERTIFICATO. Action NON rilanciata
   (ordine dell'utente: crediti API-Football finiti); riparte da sola dal prossimo giro programmato dopo la fusione su master.
+
+### FUSIONE SU MASTER — 08/10, ore 19:45 (coordinatore PC, Fable 5.1; protocollo `AUDIT_2026-10-08/HANDOFF_VERIFICA_PC_E_FUSIONE.md`, passi A-F)
+- Sha prima: `origin/master` = `8226d766`. Sha dopo: `6e61f9b9` (avanzamento veloce, `git push origin fusione-master:refs/heads/master`,
+  nessun rebase, nessun force). Cima cloud verificata `2eae1b0e` (= sha attesa, commit «docs: PRONTO PER LA VERIFICA SUL PC ...»).
+- A: stage pulito, master antenato del ramo cloud; il PC aveva 9 commit dopo `3c4aae6` (piano di architettura 04-08, correzione
+  57014 nel ciclo del catchup, cronostoria) -> §5.1: ramo `fusione-master` nel worktree `..\verifica-fusione` (junction a `.venv` e
+  `node_modules`), `git merge --no-ff origin/claude/eloquent-franklin-g2nyk5` = `551bad3c`, 0 conflitti, 0 righe di CRONOSTORIA
+  perse rispetto ai due genitori, 0 file nuovi > 1 MB, `git diff d01de76 HEAD -- Betfair/` senza tools/tests = VUOTO (nessun file
+  di produzione dei bot cambiato dopo il controllo finale del cloud).
+- B: 0 file nuovi > 1 MB, 0 cancellati, parametri: solo `v3_include_aggregate` in `omega_config.py` (decisione del 07/10);
+  registrazioni `timeline.jsonl` con `i/lf`.
+- C (worktree, PC): pytest Betfair 11.314 verdi / 71 skipped / 6 xfailed / 0 rossi (7 min 15 s); tools 17; catchup 103 (90 + 13 del
+  57014 nel ciclo); tsc app 0 errori; vitest 5.446 verdi + 1 ROSSO anche da solo (3/3): `LadderView.botReplay.test.tsx`, istantanea
+  del DOM con «Aggiornato: 16:13:20» scritta nel cloud in UTC, sul PC (Europe/Rome) esce 18:13:20 con lo STESSO codice (provato:
+  `TZ=UTC` 4/4 verdi, `TZ=Europe/Rome` 1 rosso). STOP riportato all'utente; decisione dell'utente: «correggi, tutto deve funzionare
+  alla perfezione, se necessario test aggiuntivi». Correzione SOLO di test (`6e61f9b9`): `process.env.TZ = 'UTC'` in
+  `frontend/vitest.config.ts` prima dell'avvio dei worker + guardia `frontend/src/test/fusoOrarioUTC.test.ts` (3 test). Falsificata:
+  riga tolta -> 4 rossi; ripristino byte-identico -> 7 verdi. Vitest intero dopo: 5.450 verdi / 0 rossi; tsc app 0 errori.
+  Nota: `tsc -p tsconfig.node.json` ha 2 avvisi TS6133 preesistenti in `vite.config.ts` (non toccato).
+- D: `origin/master` ancora `8226d766` al momento del push; dopo la fusione `origin/master` = `fusione-master` = `6e61f9b9`;
+  `git diff origin/claude/blissful-sagan-hri7o6 origin/master` = solo i commit del PC (39 file: ARCHITETTURA_2026-10, catchup,
+  cronostoria, correzione del test).
+- Non rilanciato: nessun replay, nessun `certifica`, nessuna migrazione, nessuna build, action NON rilanciata (crediti API-Football
+  finiti; riparte da sola dal prossimo giro programmato con il codice di master). Nessun ramo cancellato: 35 rami remoti non fusi
+  (`git branch -r --no-merged origin/master`), quasi tutti rami d'appoggio del cloud, piu' `audit-ml`, `schema-architettura`,
+  `feature/scalper-media-under` (D-8) e rami vecchi del PC: all'utente, non fusi.
+- Migrazioni, verificato in SOLA LETTURA sul DB vero: 06/10 (3) e 07/10 (2) applicate; `replay_tennis_mercati_elenco_2026-10-08`
+  applicata (`list_replays_tennis` ha `market_types`); MANCA `replay_tennis_fonte_nomi_2026-10-08.sql` (nessuna funzione ha `nomi_fonte`).
+- PUNTO DI RIPRESA: master = `6e61f9b9`. Prossimi passi: (1) checkout principale su master ad app CHIUSA, `npm run build`, riavvio
+  (bot spenti all'avvio); (2) migrazione `replay_tennis_fonte_nomi_2026-10-08.sql`; (3) prove a schermo in PROVA: pagina Cash Out
+  (§3.4), registro del replay (§3.5); (4) decisioni D-1..D-15 (§6), prima D-2 (money-critical); (5) `git gc` per il commit orfano
+  `1f35f5c8` (log da 3 GB); (6) piano di architettura: `ARCHITETTURA_2026-10/README.md`, decisioni U-62/32/27/44/37/59/60.
