@@ -1,0 +1,14 @@
+master 58 passed in 1.42s
+ripristino verificato sha256 d4056041f55e4f32
+d7 58 passed in 1.51s
+test con esegui: 46, chiamate a esegui: 47, diversi: 1
+DIVERSO: Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_copertura_dell_app_ancora_appesa_sul_lato_della_copertura_ferma_il_secondo
+    letture_db 
+      master: ["omega_trades", "safe_strategy_trades", "mike_trades", "betfair_live_orders", "betfair_live_order_requests"] 
+      d7    : ["omega_trades", "safe_strategy_trades", "mike_trades", "betfair_live_orders", "betfair_live_order_requests", "omega_trades", "safe_strategy_trades", "mike_trades", "betfair_live_orders", "betfair_live_order_requests"]
+    metodi 
+      master: ["SportsAPING/v1.0/listCurrentOrders"] 
+      d7    : ["SportsAPING/v1.0/listCurrentOrders", "SportsAPING/v1.0/cancelOrders", "SportsAPING/v1.0/listCurrentOrders"]
+    riga 
+      master: {"action": "greenup", "bet_id": null, "client_ref": "ui-501", "error": "greenup fuori_bot: ordine dell'app H1 LAY ancora non abbinato (6.0) sul lato della copertura: nessun secondo ordine (annullarlo o attendere)", "handicap": 0, "id": 501, "market_id": "1.100", "mode": "live", "params": {"esposizione": "fuori_bot"}, "price": null, "result": {"action": "greenup", "average_price_matched": null, "be 
+      d7    : {"action": "greenup", "bet_id": null, "client_ref": "ui-501", "error": "greenup fuori_bot: ordine dell'app H1 LAY ancora non abbinato (6.0) dopo l'annullo: nessuna copertura; annullo automatico ordine dell'app: H1 LAY @2.50 (6.00 non abbinato) annullo FALLITO: cancelOrders: risposta inattesa (None None); esposizione riletta dal conto", "handicap": 0, "id": 501, "market_id": "1.100", "mode": "live"

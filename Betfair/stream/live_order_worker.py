@@ -2339,6 +2339,149 @@ def _netti_per_bot(ordini: List[Dict[str, Any]],
     return {b: _EFB.netto_size(v) for b, v in _ordini_per_bot(ordini, classe).items()}
 
 
+def _efb_posizione(sb: Any, client: Any, market: Any, market_id: str, selection_id: int,
+                   handicap: float) -> Dict[str, Any]:
+    """Il CONTO riletto ADESSO e la posizione FUORI BOT della selezione (sul MERCATO se
+    a due esiti esaustivi), col piano del green-up pieno al miglior prezzo opposto.
+    08/10 sera (D-7): estratta da ``_do_greenup_fuori_bot`` senza cambiarne una
+    riga, per poterla RILEGGERE dopo l'annullo di un ordine dell'app."""
+    from .motore_ordini import altro_runner_due_esiti
+    from .trading.greenup import compute_greenup
+
+    # 1) il CONTO, riletto ADESSO (idempotenza: una copertura gia' fatta e' dentro)
+    try:
+        ordini = _ordini_del_conto(client, market_id)
+    except Exception as ex:  # noqa: BLE001 - conto illeggibile: rifiuto esplicito
+        raise ValueError(f"greenup {_EFB.FUORI_BOT}: conto non leggibile "
+                         f"({str(ex)[:160]}): nessun ordine") from ex
+    # 2) mercato a DUE esiti esaustivi: la posizione fuori bot si legge sul mercato,
+    # come nel green-up di sempre (punto 9 del 02/10: mai una seconda chiusura)
+    altro = altro_runner_due_esiti(market, selection_id)
+    qui = [o for o in ordini if _EFB.sulla_selezione(o, market_id, selection_id, handicap)]
+    la = ([o for o in ordini if _EFB.sulla_selezione(o, market_id, altro[0], altro[1])]
+          if altro is not None else [])
+    classe = _classifica_conto(sb, qui + la)
+    fuori = [o for o in qui if classe.get(id(o)) is None]
+    bot = [(o, str(classe.get(id(o)))) for o in qui if classe.get(id(o)) is not None]
+    w, l = _EFB.esposizione_abbinata(fuori)
+    nota = (f"conto: {len(fuori)} ordini fuori bot, {len(bot)} dei bot (esclusi); "
+            f"W={w:.2f} L={l:.2f}")
+    if altro is not None:
+        w2, l2 = _EFB.esposizione_abbinata([o for o in la if classe.get(id(o)) is None])
+        if abs(w2) > 1e-9 or abs(l2) > 1e-9:
+            w, l = w + l2, l + w2
+            nota += (f"; posizione del MERCATO a due esiti (altra selezione {altro[0]}: "
+                     f"W={w2:.2f} L={l2:.2f})")
+    best_back, best_lay = _best_prices(market, selection_id, handicap)
+    plan = compute_greenup(matched_if_win=w, matched_if_lose=l,
+                           best_back_price=best_back, best_lay_price=best_lay,
+                           fraction=1.0, place_at_ticks=0, target_price=None, amount=None)
+    return {"qui": qui, "classe": classe, "fuori": fuori, "bot": bot, "w": w, "l": l,
+            "nota": nota, "plan": plan}
+
+
+def _efb_app_appese(fuori: List[Dict[str, Any]], side: str) -> List[Dict[str, Any]]:
+    """Gli ordini dell'APP (``customerStrategyRef`` 'live', fra i SOLI fuori bot)
+    ancora non abbinati sul lato della copertura. Gli ordini del sito non ci sono
+    (non sono nostre coperture: non contano e non fermano), quelli dei bot neppure
+    (non sono fuori bot)."""
+    return [o for o in fuori
+            if (str(o.get("customerStrategyRef") or "").strip().lower()
+                == _EFB.STRATEGIA_MANUALE_APP
+                and str(o.get("status") or "").upper() == "EXECUTABLE"
+                and (_f(o.get("sizeRemaining")) or 0.0) > 0
+                and str(o.get("side") or "").lower() == side)]
+
+
+def _efb_annulla_app(client: Any, market_id: str,
+                     appese: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """08/10 sera (D-7): ANNULLA gli ordini dell'app non abbinati sul lato della
+    copertura, con ``cancelOrders`` del client REALE della riga (la stessa via di
+    ``listCurrentOrders`` con cui il ramo legge il conto: l'ordine puo' non essere nel
+    blotter del runner, per esempio dopo un riavvio). Annullo SINCRONO: l'esito di
+    Betfair per ogni ``betId`` (``SUCCESS`` + ``sizeCancelled``, o il motivo).
+
+    MONEY-CRITICAL: ``cancelOrders`` senza ``betId`` annulla TUTTI gli ordini del
+    mercato (anche dei bot) e senza ``marketId`` tutti quelli del CONTO: mai una
+    chiamata senza entrambi. Non solleva: ogni problema finisce nell'esito
+    dell'ordine (``esito: 'fallito'`` + ``errore``); a decidere e' la RILETTURA del
+    conto che segue, non questo esito."""
+    righe: List[Dict[str, Any]] = []
+    ids: List[str] = []
+    for o in appese:
+        bid = str(o.get("betId") or "").strip()
+        ps = o.get("priceSize") if isinstance(o.get("priceSize"), dict) else {}
+        righe.append({"bet_id": bid, "side": str(o.get("side") or "").lower(),
+                      "price": _f(ps.get("price")),
+                      "non_abbinato": _f(o.get("sizeRemaining")),
+                      "size_annullata": None, "esito": "fallito", "errore": None})
+        if bid:
+            ids.append(bid)
+    mid = str(market_id or "").strip()
+
+    def _tutti(errore: str) -> List[Dict[str, Any]]:
+        for r in righe:
+            r["errore"] = errore
+        return righe
+
+    if not mid or not ids or len(ids) != len(righe):
+        return _tutti("bet_id o mercato assente: nessun annullo chiesto")
+    bc = getattr(client, "betting_client", None) if client is not None else None
+    betting = getattr(bc, "betting", None) if bc is not None else None
+    if betting is None or not callable(getattr(betting, "cancel_orders", None)):
+        return _tutti("nessun client reale con cancelOrders")
+    try:
+        res = betting.cancel_orders(market_id=mid,
+                                    instructions=[{"betId": b} for b in ids],
+                                    lightweight=True)
+    except Exception as ex:  # noqa: BLE001 - esito ignoto: decide la rilettura del conto
+        return _tutti(f"cancelOrders KO: {type(ex).__name__}: {str(ex)[:100]}")
+    reports = res.get("instructionReports") if isinstance(res, dict) else None
+    if not isinstance(reports, list):
+        stato = res.get("status") if isinstance(res, dict) else type(res).__name__
+        codice = res.get("errorCode") if isinstance(res, dict) else None
+        return _tutti(f"cancelOrders: risposta inattesa ({stato} {codice})")
+    per_bet: Dict[str, Dict[str, Any]] = {}
+    for rep in reports:
+        if isinstance(rep, dict):
+            ins = rep.get("instruction") if isinstance(rep.get("instruction"), dict) else {}
+            per_bet[str(ins.get("betId") or "").strip()] = rep
+    for r in righe:
+        rep = per_bet.get(r["bet_id"])
+        if rep is None:
+            r["errore"] = "cancelOrders: nessun esito per l'ordine"
+        elif str(rep.get("status") or "").upper() == "SUCCESS":
+            r["esito"] = "annullato"
+            r["size_annullata"] = _f(rep.get("sizeCancelled"))
+        else:
+            r["errore"] = (f"cancelOrders {rep.get('status')}: "
+                           f"{rep.get('errorCode') or res.get('errorCode')}")
+    return righe
+
+
+def _efb_nota_annullo(annullati: List[Dict[str, Any]]) -> str:
+    """Il testo dell'annullo per l'esito (in TESTA al ``detail``, troncato a 300)."""
+    parti = []
+    for a in annullati:
+        prezzo = a.get("price")
+        na = a.get("non_abbinato")
+        base = f"{a.get('bet_id')} {str(a.get('side') or '').upper()}"
+        if prezzo is not None:
+            base += f" @{prezzo:.2f}"
+        if na is not None:
+            base += f" ({na:.2f} non abbinato)"
+        if a.get("esito") == "annullato":
+            sa = a.get("size_annullata")
+            s = f"{base} annullato" + (f" {sa:.2f}" if sa is not None else "")
+            if sa is not None and na is not None and sa < na - 1e-9:
+                s += f", {na - sa:.2f} abbinato nel frattempo"
+        else:
+            s = f"{base} annullo FALLITO: {a.get('errore')}"
+        parti.append(s)
+    return ("annullo automatico ordine dell'app: " + ", ".join(parti)
+            + "; esposizione riletta dal conto")
+
+
 def _do_greenup_fuori_bot(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str,
                           strategy: Any, *, client: Any = None) -> None:
     """Green-up PIENO dell'esposizione abbinata FUORI BOT di una selezione, dal CONTO.
@@ -2346,11 +2489,16 @@ def _do_greenup_fuori_bot(sb: Any, flumine: Any, request_row: Dict[str, Any], mo
     Rifiuti ESPLICITI (riga 'error', nessun ordine): valore di ``esposizione`` ignoto,
     parametri del green-up parziale, comando di un bot, modalita' paper (il sito non
     esiste in prova), runner senza client reale, conto o DB non leggibili, prezzo
-    assente con esposizione aperta, copertura dell'app ancora non abbinata sul lato
-    della copertura, copertura che farebbe dichiarare a un bot "chiusa dall'utente" la
-    sua posizione. Esposizione gia' piatta: riga 'done' senza ordine."""
-    from .motore_ordini import altro_runner_due_esiti
-    from .trading.greenup import FLAT_EPS, compute_greenup
+    assente con esposizione aperta, ordine dell'app non abbinato sul lato della
+    copertura che resta vivo anche dopo l'annullo automatico (D-7), copertura che
+    farebbe dichiarare a un bot "chiusa dall'utente" la
+    sua posizione. Esposizione gia' piatta: riga 'done' senza ordine.
+
+    08/10 sera (D-7): un ordine dell'APP non abbinato sul lato della copertura non
+    ferma piu' il comando: si annulla in automatico, si rilegge il conto e si copre
+    l'esposizione reale; l'esito dichiara l'annullo (``annullati_app`` e testa del
+    ``detail``). Annullo fallito (l'ordine resta vivo): rifiuto, nessun ordine."""
+    from .trading.greenup import FLAT_EPS
 
     rid = request_row["id"]
     cust_ref = _cust_ref(rid)
@@ -2390,65 +2538,62 @@ def _do_greenup_fuori_bot(sb: Any, flumine: Any, request_row: Dict[str, Any], mo
     selection_id = int(request_row["selection_id"])
     handicap = float(request_row.get("handicap") or 0)
 
-    # 1) il CONTO, riletto ADESSO (idempotenza: una copertura gia' fatta e' dentro)
-    try:
-        ordini = _ordini_del_conto(client, market_id)
-    except Exception as ex:  # noqa: BLE001 - conto illeggibile: rifiuto esplicito
-        raise ValueError(f"greenup {_EFB.FUORI_BOT}: conto non leggibile "
-                         f"({str(ex)[:160]}): nessun ordine") from ex
-    # 2) mercato a DUE esiti esaustivi: la posizione fuori bot si legge sul mercato,
-    # come nel green-up di sempre (punto 9 del 02/10: mai una seconda chiusura)
-    altro = altro_runner_due_esiti(market, selection_id)
-    qui = [o for o in ordini if _EFB.sulla_selezione(o, market_id, selection_id, handicap)]
-    la = ([o for o in ordini if _EFB.sulla_selezione(o, market_id, altro[0], altro[1])]
-          if altro is not None else [])
-    classe = _classifica_conto(sb, qui + la)
-    fuori = [o for o in qui if classe.get(id(o)) is None]
-    bot = [(o, str(classe.get(id(o)))) for o in qui if classe.get(id(o)) is not None]
-    w, l = _EFB.esposizione_abbinata(fuori)
-    nota = (f"conto: {len(fuori)} ordini fuori bot, {len(bot)} dei bot (esclusi); "
-            f"W={w:.2f} L={l:.2f}")
-    if altro is not None:
-        w2, l2 = _EFB.esposizione_abbinata([o for o in la if classe.get(id(o)) is None])
-        if abs(w2) > 1e-9 or abs(l2) > 1e-9:
-            w, l = w + l2, l + w2
-            nota += (f"; posizione del MERCATO a due esiti (altra selezione {altro[0]}: "
-                     f"W={w2:.2f} L={l2:.2f})")
-    best_back, best_lay = _best_prices(market, selection_id, handicap)
-    plan = compute_greenup(matched_if_win=w, matched_if_lose=l,
-                           best_back_price=best_back, best_lay_price=best_lay,
-                           fraction=1.0, place_at_ticks=0, target_price=None, amount=None)
+    # 1) il CONTO, riletto ADESSO, e 2) la posizione fuori bot: ``_efb_posizione``
+    pos = _efb_posizione(sb, client, market, market_id, selection_id, handicap)
+    # 3) 08/10 sera, D-7 (decisione dell'utente: "annullarlo"): un ordine dell'APP
+    # ancora non abbinato sul lato della copertura (la copertura precedente in attesa
+    # di abbinamento, o un ordine manuale dell'app) si ANNULLA in automatico, come
+    # ``cancel_unmatched``; poi il conto si RILEGGE e la copertura si calcola
+    # sull'esposizione REALE di adesso (l'ordine puo' essersi abbinato in tutto o in
+    # parte durante l'annullo). Se dopo la rilettura un ordine dell'app e' ancora
+    # vivo sul lato della copertura (annullo fallito): nessun ordine, mai due
+    # coperture vive. Gli ordini dei bot non sono fuori bot: non si toccano. Senza
+    # ordini dell'app appesi nessuna chiamata in piu': tutto come prima.
+    annullati: List[Dict[str, Any]] = []
+    nota_annullo = ""
+    appese = (_efb_app_appese(pos["fuori"], str(pos["plan"].side))
+              if pos["plan"].actionable else [])
+    if appese:
+        annullati = _efb_annulla_app(client, market_id, appese)
+        nota_annullo = _efb_nota_annullo(annullati)
+        logger.warning("[live-order] greenup %s riga %s: %s", _EFB.FUORI_BOT, rid,
+                       nota_annullo)
+        try:
+            pos = _efb_posizione(sb, client, market, market_id, selection_id, handicap)
+        except ValueError as ex:
+            raise ValueError(f"{nota_annullo}; poi {ex}") from ex
+        ancora = (_efb_app_appese(pos["fuori"], str(pos["plan"].side))
+                  if pos["plan"].actionable else [])
+        if ancora:
+            o = ancora[0]
+            raise ValueError(
+                f"greenup {_EFB.FUORI_BOT}: ordine dell'app {o.get('betId')} "
+                f"{str(o.get('side') or '').upper()} ancora non abbinato "
+                f"({o.get('sizeRemaining')}) dopo l'annullo: nessuna copertura; "
+                f"{nota_annullo}")
+    qui, classe, fuori, bot = pos["qui"], pos["classe"], pos["fuori"], pos["bot"]
+    w, l, nota, plan = pos["w"], pos["l"], pos["nota"], pos["plan"]
+    testa = f"{nota_annullo}; " if nota_annullo else ""
     extra = {"esposizione": _EFB.FUORI_BOT,
              "conto": {"fuori_bot": [str(o.get("betId")) for o in fuori],
                        "bot": [{"bet_id": str(o.get("betId")), "motivo": m}
                                for o, m in bot],
                        "w": round(w, 2), "l": round(l, 2)}}
+    if annullati:
+        extra["annullati_app"] = annullati
     if not plan.actionable:
         if abs(w - l) >= FLAT_EPS:
-            raise ValueError(f"greenup {_EFB.FUORI_BOT} NON eseguibile con esposizione "
-                             f"aperta (W={w:.2f} L={l:.2f}): {plan.note} - ritentare "
-                             "(mercato sospeso/book vuoto?)")
+            raise ValueError(f"{testa}greenup {_EFB.FUORI_BOT} NON eseguibile con "
+                             f"esposizione aperta (W={w:.2f} L={l:.2f}): {plan.note} - "
+                             "ritentare (mercato sospeso/book vuoto?)")
         result = _result(ok=True, action="greenup", mode=mode, request_row=request_row,
                          cust_ref=cust_ref,
-                         detail=f"esposizione fuori bot gia' piatta: nessun ordine; {nota}")
+                         detail=f"{testa}esposizione fuori bot gia' piatta: nessun "
+                                f"ordine; {nota}")
         result.update(extra)
         _write_done(sb, rid, result)
         return
     side = str(plan.side)
-    # 3) una copertura dell'APP ancora appesa sul lato della copertura (la precedente in
-    # attesa di abbinamento, o un ordine manuale dell'app): un secondo ordine potrebbe
-    # abbinarsi insieme e invertire la posizione. La segue il follow-through (annulla e
-    # ricopre); qui nessun secondo ordine.
-    for o in fuori:
-        if (str(o.get("customerStrategyRef") or "").strip().lower()
-                == _EFB.STRATEGIA_MANUALE_APP
-                and str(o.get("status") or "").upper() == "EXECUTABLE"
-                and (_f(o.get("sizeRemaining")) or 0.0) > 0
-                and str(o.get("side") or "").lower() == side):
-            raise ValueError(
-                f"greenup {_EFB.FUORI_BOT}: ordine dell'app {o.get('betId')} "
-                f"{side.upper()} ancora non abbinato ({o.get('sizeRemaining')}) sul lato "
-                "della copertura: nessun secondo ordine (annullarlo o attendere)")
     # 4) i verdetti di conto dei bot: la copertura non deve far credere a un bot
     # che l'utente gli abbia CHIUSO la posizione (smetterebbe di proteggerla).
     # "Ridotta" si dichiara nell'esito, "chiusa" si rifiuta. 08/10 (W3a): la
@@ -2462,7 +2607,7 @@ def _do_greenup_fuori_bot(sb: Any, flumine: Any, request_row: Dict[str, Any], mo
     if chiuse:
         e = chiuse[0]
         raise ValueError(
-            f"greenup {_EFB.FUORI_BOT}: la copertura {side.upper()} {plan.size:.2f} "
+            f"{testa}greenup {_EFB.FUORI_BOT}: la copertura {side.upper()} {plan.size:.2f} "
             f"porterebbe il netto di conto della selezione da {e['netto_conto_prima']:.2f} "
             f"a {e['netto_conto_dopo']:.2f} e il bot {e['bot']} (posizione "
             f"{e['posizione']:.2f}) la dichiarerebbe CHIUSA DALL'UTENTE: nessun ordine")
@@ -2471,25 +2616,34 @@ def _do_greenup_fuori_bot(sb: Any, flumine: Any, request_row: Dict[str, Any], mo
         nota += "; ATTENZIONE: " + ", ".join(
             f"{e['bot']} vedra' la sua posizione ridotta ({e['viva_prima']:.2f}->"
             f"{e['viva_dopo']:.2f}, metro {e.get('metro')})" for e in effetti)
-    hedge_order, hedge_price, hedge_size = _costruisci_chiusura(
-        market, strategy=strategy, selection_id=selection_id, handicap=handicap,
-        side=side, price=plan.price, size=plan.size, persistence=persistence,
-        cust_ref=cust_ref, mode=mode,
-    )
-    submin_state = _place_closing_leg(
-        flumine, market, order=hedge_order, strategy=strategy,
-        market_id=request_row.get("market_id"), selection_id=selection_id, handicap=handicap,
-        side=side, price=hedge_price, size=hedge_size,
-        cust_ref=cust_ref, what=f"greenup {_EFB.FUORI_BOT}", mode=mode, params=params,
-        max_stake=_effective_cap(request_row), client=client,
-    )
+    try:
+        hedge_order, hedge_price, hedge_size = _costruisci_chiusura(
+            market, strategy=strategy, selection_id=selection_id, handicap=handicap,
+            side=side, price=plan.price, size=plan.size, persistence=persistence,
+            cust_ref=cust_ref, mode=mode,
+        )
+        submin_state = _place_closing_leg(
+            flumine, market, order=hedge_order, strategy=strategy,
+            market_id=request_row.get("market_id"), selection_id=selection_id,
+            handicap=handicap, side=side, price=hedge_price, size=hedge_size,
+            cust_ref=cust_ref, what=f"greenup {_EFB.FUORI_BOT}", mode=mode, params=params,
+            max_stake=_effective_cap(request_row), client=client,
+        )
+    except (ValueError, RuntimeError) as ex:
+        # D-7: un ordine dell'app e' gia' stato annullato: l'esito d'errore lo dice
+        # IN CODA (la testa del testo resta quella di sempre: ``post_place:`` e i
+        # codici d'errore). Stesso tipo di eccezione; senza annullo nulla cambia.
+        if not annullati or type(ex) not in (ValueError, RuntimeError):
+            raise
+        raise type(ex)(f"{ex} [prima: annullo automatico ordini dell'app "
+                       f"{', '.join(str(a.get('bet_id')) for a in annullati)}]") from ex
     sub_note = "" if submin_state is None else "; via place-and-trim (sotto-minimo)"
     result = _result(
         ok=True, action="greenup", mode=mode, request_row=request_row,
         cust_ref=cust_ref, order=(hedge_order if submin_state is None else None),
         price=hedge_price, size=hedge_size, side=plan.side,
         submin_step=(submin_state.step.value if submin_state is not None else None),
-        detail=f"{plan.note}; atteso vince={plan.expected_if_win} "
+        detail=f"{testa}{plan.note}; atteso vince={plan.expected_if_win} "
                f"perde={plan.expected_if_lose}; {nota}{sub_note}",
     )
     result.update(extra)
