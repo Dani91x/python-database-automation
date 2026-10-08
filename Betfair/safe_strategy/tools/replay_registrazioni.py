@@ -1516,8 +1516,11 @@ def _certifica_evento(event_id: str, *, data_dir: str,
     """Fa rivivere a Safe calcio una partita registrata e ritorna il referto."""
     from flumine import FlumineSimulation
 
-    if scenario_proposte:
-        PM.azzera_cache_lambda()
+    # 08/10 (controllo finale, reperto D-13): la cache dei lambda di
+    # `omega_service` (catena di Safe) scade a orologio di PARETE: si azzera a
+    # OGNI scenario, non solo per gli scenari delle proposte, cosi' il referto
+    # non dipende dalla velocita' della macchina ne' dal numero di worker.
+    PM.azzera_cache_lambda()
 
     # OGNI REPLAY PARTE DA UN PROCESSO PULITO. Con la pool (`--worker N`) piu'
     # coppie evento x scenario girano nello STESSO processo figlio, una dopo
@@ -1529,6 +1532,10 @@ def _certifica_evento(event_id: str, *, data_dir: str,
     _pulisci_cache_di_processo()
     # 08/10 (W3a): il canale del conto lo monta SOLO lo scenario che lo esercita
     BS._CONTO.installa(None)
+    # 08/10 (controllo finale): l'avviso «scanner che non dichiara il flusso»
+    # e' una volta per PROCESSO: con `--worker 3` compariva in ogni scenario,
+    # con `--worker 1` solo nel primo. Un processo nuovo lo ha da dare.
+    BS._FP._NON_NOTO_AVVISATO.discard("safe")
 
     raw = os.path.join(data_dir, str(event_id), f"{event_id}.raw.jsonl")
     ref = CERT.Referto(event_id=str(event_id))

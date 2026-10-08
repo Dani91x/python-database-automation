@@ -1474,6 +1474,14 @@ def _certifica_evento(event_id: str, *, data_dir: str,
     # 30/09: il canale del conto lo monta SOLO lo scenario che lo esercita
     # (``chiuso-fuori-app``); nessun replay lo eredita da quello prima.
     S.installa_conto_canale(None)
+    # 08/10 (controllo finale): la memoria W3a del conto («di chi e' questo
+    # ordine», selezioni in verifica, versioni e segnali) e' di PROCESSO e il
+    # finto Betfair rida' gli STESSI bet_id in ogni scenario: il secondo
+    # scenario trovava la risposta gia' in memoria (nota `proprietari_bot_conto`
+    # sparita con `--worker 1`). Omega e Safe la azzerano gia' nel loro
+    # `svuota_le_cache`; Mike no. Solo il banco: in produzione i bet_id non si
+    # ripetono.
+    S._CONTO.azzera()
     par = dict(params or C.merge_params(None))
     raw = os.path.join(data_dir, str(event_id), f"{event_id}.raw.jsonl")
     ref = CERT.Referto(event_id=str(event_id))
