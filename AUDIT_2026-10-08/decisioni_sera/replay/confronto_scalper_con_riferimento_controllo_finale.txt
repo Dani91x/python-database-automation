@@ -1,0 +1,9 @@
+riferimento: AUDIT_2026-10-08/controllo_finale/scalper/scalper_35797769_tutti.txt (blocchi per scenario, senza tempi/log)
+prima_scalper_35797769.txt base righe 18 18 diverse 0
+prima_scalper_35797769.txt ingresso-abbinato-in-parte righe 22 22 diverse 0
+prima_scalper_35797769.txt rifiuti-betfair-codici righe 25 25 diverse 0
+dopo_scalper_35797769.txt base righe 18 18 diverse 0
+dopo_scalper_35797769.txt ingresso-abbinato-in-parte righe 22 22 diverse 0
+dopo_scalper_35797769.txt rifiuti-betfair-codici righe 25 25 diverse 1
+   RIF:       motivo x79: min_bet_skip
+   QUI:       motivo x78: min_bet_skip
