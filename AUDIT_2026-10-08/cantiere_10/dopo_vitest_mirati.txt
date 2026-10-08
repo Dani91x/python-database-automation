@@ -1,0 +1,41 @@
+
+ RUN  v3.2.6 /home/user/python-database-automation/.claude/worktrees/agent-a6c264c7010c81043/frontend
+
+ ✓ src/components/replay/RegistroFasi.test.tsx (12 tests) 5983ms
+   ✓ registro per fase (calcio, media under 35797769, 4 clic veri) > sezioni fisse PRE-PARTITA / 1° TEMPO / INTERVALLO / 2° TEMPO coi cicli del bot nati in ciascuna  1311ms
+   ✓ registro per fase (calcio, media under 35797769, 4 clic veri) > il ciclo che attraversa due fasi sta dove e' nato, con «chiuso al ...» e la fase della chiusura  464ms
+   ✓ registro per fase (calcio, media under 35797769, 4 clic veri) > vista cronologica divisa per fase (la fase dell'istante di ogni evento)  1880ms
+   ✓ registro per fase (calcio, media under 35797769, 4 clic veri) > senza la fase il registro e' quello di prima (nessuna sezione, nessun totale)  589ms
+   ✓ i cicli sono quelli del bot; il ripiego lo dice > 4 cicli del bot (due coppie nello stesso istante) -> 4 cicli nel registro, coi numeri e le origini del bot  363ms
+   ✓ i cicli sono quelli del bot; il ripiego lo dice > scalper (il bot non dichiara i cicli): ricavati dagli ordini, e il registro lo dice  939ms
+ ✓ src/components/replay/ApplicaBotPanel.test.tsx (18 tests) 8056ms
+   ✓ ApplicaBotPanel > bot -> scenario -> parametri: un parametro cambiato e' evidenziato e parte da solo  3877ms
+   ✓ ApplicaBotPanel > valore fuori dominio: errore scritto e Applica spento; Ripristina torna alla serie  1705ms
+   ✓ ApplicaBotPanel > di serie (niente cambiato, niente accensione): il payload del 06/10  351ms
+   ✓ ApplicaBotPanel > Prova / Soldi veri simulati scelgono lo scenario gemello  393ms
+   ✓ ApplicaBotPanel > accendi al cursore + «Attiva adesso» allo stesso istante: UNA richiesta (il clic e' l'accensione)  495ms
+ ✓ src/components/replay/RegistroOperazioniBot.test.tsx (8 tests) 9138ms
+   ✓ RegistroOperazioniBot > media under: i 4 clic col loro esito, i cicli del bot, una riga per ordine  804ms
+   ✓ RegistroOperazioniBot > clic su un evento: la timeline va all'istante ESATTO dell'evento, sul suo mercato  591ms
+   ✓ RegistroOperazioniBot > il clic RIFIUTATO porta all'istante del clic; l'eseguito alla prima riga della prima punta  533ms
+   ✓ RegistroOperazioniBot > tennis (stesso componente): il riprezzo di Betfair e' una riga di registro  4865ms
+   ✓ RegistroOperazioniBot > scalper su due mercati: il filtro per mercato tiene solo quel mercato  1497ms
+   ✓ RegistroOperazioniBot > l'evento attuale (ultimo <= cursore) e' evidenziato; i futuri sono attenuati  503ms
+ ✓ src/components/replay/TimelineSlider.test.tsx (12 tests) 2202ms
+   ✓ TimelineSlider — cursore > sta a (valore - min) / (max - min): 0% al primo passo, 100% all'ultimo, e il DOM lo dice come lo stile  897ms
+   ✓ TimelineSlider — sospensioni e calcio d'inizio > il segmento del passo i parte dalla posizione del cursore su quel passo ed e' largo un passo  361ms
+ ✓ src/components/replay/AvvisoCoerenzaBarra.test.tsx (10 tests) 1579ms
+ ✓ src/components/replay/TrainingTradesPanel.test.tsx (3 tests) 1232ms
+   ✓ TrainingTradesPanel > elenca i trade con lo stato del matching e la X li elimina  1109ms
+ ✓ src/lib/applicaBot.test.ts (12 tests) 57ms
+ ✓ src/lib/replayOperazioni.test.ts (29 tests) 339ms
+
+ Test Files  8 passed (8)
+      Tests  104 passed (104)
+   Start at  10:08:24
+   Duration  38.05s (transform 3.67s, setup 10.71s, collect 10.68s, tests 28.59s, environment 35.30s, prepare 6.90s)
+
+
+real	0m41.373s
+user	0m22.163s
+sys	0m2.513s

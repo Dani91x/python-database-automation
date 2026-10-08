@@ -5241,3 +5241,8 @@ dal percorso nuovo, o artefatto del messaggio aggregato delle 17:00:06): referti
   ladder pop-out (`lib/ladderPopout.ts`). Corretto in passando: il ritorno al punto della Control Room non scorreva mai (timer
   cancellato da se'). Fotografie: Control Room e ogni `*.off`/`*.v2` IDENTICHE; i 22 `*.v2.guscio` cambiano solo per la voce nuova.
   Delegato: 28 mutazioni rosse; mie 5/5 rosse (piu' 1 equivalente scartata). DA FARE SUL PC: prova a schermo e `npm run build`.
+- CHECKPOINT C10 - REGISTRO OPERAZIONI E P&L DEL BOT PER FASI (verificato e integrato): il registro usa i cicli DEL BOT (`cicli_bot`:
+  numero, istanti, origine, lordo/netto) e solo in mancanza il ripiego «da piatto a piatto» (dichiarato); due cicli che si toccano
+  nello stesso istante restano due. Sezioni PRE-PARTITA / 1T / INTERVALLO / 2T (tennis: per set) dai tempi IPS, un ciclo nella fase in
+  cui nasce («chiuso al X'»), riga «per fase» nel riquadro P&L, totali identici a prima. Tipo TS `CicloDichiarato` completato
+  (`ordini`, `rientri`, `banca`) con contratto Python<->TS. Delegato 16 mutazioni rosse; mie 3/3. DA FARE SUL PC: 35768297 a schermo.

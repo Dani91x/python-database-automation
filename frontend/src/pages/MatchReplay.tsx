@@ -39,6 +39,7 @@ import { simulateOrder, MIN_STAKE_GBP, type BookSnapshot, type OrderRequest, typ
 import { LadderView, type BotLadderOverlay, type LadderSource } from '@/components/live/LadderView';
 import { createTrainingApi, frameToLadderRow, type TrainingApi } from '@/lib/trainingLadder';
 import { punteggioAlTs, timelineEventMarkers } from '@/lib/replayTimelineEvents';
+import { confiniCalcio, faseCalcioDaConfini } from '@/lib/replayFasi';
 import { AvvisoCoerenzaBarra } from '@/components/replay/AvvisoCoerenzaBarra';
 import type { LiveLadderRow } from '@/lib/live';
 // F42: backtest del ladder-trading sullo storico full-depth (lib pura testata)
@@ -478,6 +479,13 @@ export default function MatchReplay() {
         return [...replay.score_timeline].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
     }, [replay]);
     sortedScoreTimelineRef.current = sortedScoreTimeline;
+    // 08/10 (cantiere 10): le FASI della partita per il registro e il P&L del bot,
+    // dagli stati IPS della stessa cronologia (KickOff / FirstHalfEnd / SecondHalfKickOff)
+    // (funzione stabile: le sezioni si ricalcolano solo quando cambia la cronologia)
+    const faseCalcioIstante = useMemo(() => {
+        const confini = confiniCalcio(sortedScoreTimeline);
+        return (ms: number) => faseCalcioDaConfini(confini, ms);
+    }, [sortedScoreTimeline]);
 
     // ---- EVENTI DELLA PARTITA sulla barra timeline (gol/cartellini/angoli) ----
     // Normalizza score_timeline in marker posizionati lungo la track:
@@ -1197,6 +1205,7 @@ export default function MatchReplay() {
                                         analisi={operativita}
                                         inviato={applica.inviato}
                                         etichettaIstante={etichettaCalcio}
+                                        faseIstante={faseCalcioIstante}
                                         runnerDi={runnerCalcio}
                                         onSeek={vaiAllOperazione}
                                         nowMs={currentMs}

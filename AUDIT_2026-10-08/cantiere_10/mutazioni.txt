@@ -1,0 +1,83 @@
+== M1 il registro ignora cicli_bot (sempre «da piatto a piatto»)  [frontend/src/lib/replayOperazioni.ts]
+   vitest: 5 failed | 30 passed (35) | pytest contratto: -
+   ROSSO: il registro usa ESATTAMENTE i cicli del bot quando l'esito li porta > esiti veri della media under: numero, istanti, origine, lordo/netto del bot; ogni ordine in un solo ciclo 54ms
+   ROSSO: il caso del difetto: 4 cicli del bot, due coppie che si toccano nello stesso istante > il registro ne mostra 4, coi numeri e le origini del bot; i due che si toccano restano 2 1ms
+   ROSSO: il caso del difetto: 4 cicli del bot, due coppie che si toccano nello stesso istante > vista cronologica: le chiusure di ciclo sono quelle del bot (4), non quelle ricavate (2) 11ms
+   ROSSO: il caso del difetto: 4 cicli del bot, due coppie che si toccano nello stesso istante > ordini che il bot non mette in nessun ciclo restano nel registro («fuori dai cicli del bot») 6ms
+   ROSSO: i cicli sono quelli del bot; il ripiego lo dice > 4 cicli del bot (due coppie nello stesso istante) -> 4 cicli nel registro, coi numeri e le origini del bot 205ms
+   ripristino: sha256 12923569111232d28708f721c65e0311df35177a7d7fe886dba2f4f8517515d8 IDENTICO
+== M2 i cicli del rientro automatico spariscono (fusi nel ciclo prima)  [frontend/src/lib/replayOperazioni.ts]
+   vitest: 4 failed | 31 passed (35) | pytest contratto: -
+   ROSSO: il caso del difetto: 4 cicli del bot, due coppie che si toccano nello stesso istante > il registro ne mostra 4, coi numeri e le origini del bot; i due che si toccano restano 2 73ms
+   ROSSO: il caso del difetto: 4 cicli del bot, due coppie che si toccano nello stesso istante > vista cronologica: le chiusure di ciclo sono quelle del bot (4), non quelle ricavate (2) 9ms
+   ROSSO: il caso del difetto: 4 cicli del bot, due coppie che si toccano nello stesso istante > ordini che il bot non mette in nessun ciclo restano nel registro («fuori dai cicli del bot») 14ms
+   ROSSO: i cicli sono quelli del bot; il ripiego lo dice > 4 cicli del bot (due coppie nello stesso istante) -> 4 cicli nel registro, coi numeri e le origini del bot 160ms
+   ripristino: sha256 12923569111232d28708f721c65e0311df35177a7d7fe886dba2f4f8517515d8 IDENTICO
+== M3 istanti del ciclo dagli ordini invece che dal bot  [frontend/src/lib/replayOperazioni.ts]
+   vitest: 2 failed | 33 passed (35) | pytest contratto: -
+   ROSSO: il registro usa ESATTAMENTE i cicli del bot quando l'esito li porta > esiti veri della media under: numero, istanti, origine, lordo/netto del bot; ogni ordine in un solo ciclo 73ms
+   ROSSO: il caso del difetto: 4 cicli del bot, due coppie che si toccano nello stesso istante > il registro ne mostra 4, coi numeri e le origini del bot; i due che si toccano restano 2 9ms
+   ripristino: sha256 12923569111232d28708f721c65e0311df35177a7d7fe886dba2f4f8517515d8 IDENTICO
+== M4 nessun intervallo (fine del 1T ignorata)  [frontend/src/lib/replayFasi.ts]
+   vitest: 6 failed | 29 passed (35) | pytest contratto: -
+   ROSSO: fasi del calcio dagli stati IPS della registrazione (KickOff / FirstHalfEnd / SecondHalfKickOff) > 35797769: i confini sono gli istanti VERI degli eventi della timeline Betfair 52ms
+   ROSSO: sezioni per fase sugli esiti VERI: nessun ciclo e nessun ordine perso, totali uguali a quelli di oggi > media under 35797769 (4 clic veri): ciclo 1 PRE-PARTITA chiuso nel 1° tempo, ciclo 2 nel 1° tempo, ciclo 3 nato all'INTERVALLO e chiuso nel 2° tempo 10ms
+   ROSSO: registro per fase (calcio, media under 35797769, 4 clic veri) > sezioni fisse PRE-PARTITA / 1° TEMPO / INTERVALLO / 2° TEMPO coi cicli del bot nati in ciascuna 923ms
+   ROSSO: registro per fase (calcio, media under 35797769, 4 clic veri) > in fondo i totali di oggi, «✓ uguale al referto del bot» 403ms
+   ROSSO: registro per fase (calcio, media under 35797769, 4 clic veri) > vista cronologica divisa per fase (la fase dell'istante di ogni evento) 1177ms
+   ROSSO: riquadro P&L: la riga «per fase» sopra «a regolamento», il resto identico > media under 35797769: pre-partita / 1T / intervallo (ha un ciclo) / 2T coi lordi dei cicli del bot 25ms
+   ripristino: sha256 0e187af993996a306460ab9302293b706d53a41616e389e10e5474d2746e1d19 IDENTICO
+== M5 il KickOff ri-emesso sposta il calcio d'inizio (ultimo invece del primo)  [frontend/src/lib/replayFasi.ts]
+   vitest: 1 failed | 34 passed (35) | pytest contratto: -
+   ROSSO: fasi del calcio dagli stati IPS della registrazione (KickOff / FirstHalfEnd / SecondHalfKickOff) > un KickOff RI-EMESSO a meta' partita (riconnessione del feed) non sposta il calcio d'inizio 80ms
+   ripristino: sha256 0e187af993996a306460ab9302293b706d53a41616e389e10e5474d2746e1d19 IDENTICO
+== M6 fase inventata dal minuto quando mancano gli stati dei tempi  [frontend/src/lib/replayFasi.ts]
+   vitest: 1 failed | 34 passed (35) | pytest contratto: -
+   ROSSO: fasi del calcio dagli stati IPS della registrazione (KickOff / FirstHalfEnd / SecondHalfKickOff) > senza gli stati dei tempi la fase e' «IN GIOCO (tempi IPS non registrati)», mai inventata dal minuto 76ms
+   ripristino: sha256 0e187af993996a306460ab9302293b706d53a41616e389e10e5474d2746e1d19 IDENTICO
+== M7 il ciclo nella fase in cui si chiude invece di quella in cui nasce  [frontend/src/lib/replayOperazioni.ts]
+   vitest: 9 failed | 26 passed (35) | pytest contratto: -
+   ROSSO: sezioni per fase sugli esiti VERI: nessun ciclo e nessun ordine perso, totali uguali a quelli di oggi > media_clic_multi_69: la somma delle fasi e' il totale di oggi (35797769) 31ms
+   ROSSO: sezioni per fase sugli esiti VERI: nessun ciclo e nessun ordine perso, totali uguali a quelli di oggi > media_clic_69: la somma delle fasi e' il totale di oggi (35797769) 2ms
+   ROSSO: sezioni per fase sugli esiti VERI: nessun ciclo e nessun ordine perso, totali uguali a quelli di oggi > media_presto_84: la somma delle fasi e' il totale di oggi (35760084) 1ms
+   ROSSO: sezioni per fase sugli esiti VERI: nessun ciclo e nessun ordine perso, totali uguali a quelli di oggi > media_presto_69: la somma delle fasi e' il totale di oggi (35797769) 10ms
+   ROSSO: sezioni per fase sugli esiti VERI: nessun ciclo e nessun ordine perso, totali uguali a quelli di oggi > tennis_scalper: la somma delle fasi e' il totale di oggi (tennis) 12ms
+   ROSSO: sezioni per fase sugli esiti VERI: nessun ciclo e nessun ordine perso, totali uguali a quelli di oggi > tennis_swing: la somma delle fasi e' il totale di oggi (tennis) 2ms
+   ROSSO: sezioni per fase sugli esiti VERI: nessun ciclo e nessun ordine perso, totali uguali a quelli di oggi > media under 35797769 (4 clic veri): ciclo 1 PRE-PARTITA chiuso nel 1° tempo, ciclo 2 nel 1° tempo, ciclo 3 nato all'INTERVALLO e chiuso nel 2° tempo 17ms
+   ROSSO: registro per fase (calcio, media under 35797769, 4 clic veri) > sezioni fisse PRE-PARTITA / 1° TEMPO / INTERVALLO / 2° TEMPO coi cicli del bot nati in ciascuna 590ms
+   ROSSO: riquadro P&L: la riga «per fase» sopra «a regolamento», il resto identico > media under 35797769: pre-partita / 1T / intervallo (ha un ciclo) / 2T coi lordi dei cicli del bot 16ms
+   ripristino: sha256 12923569111232d28708f721c65e0311df35177a7d7fe886dba2f4f8517515d8 IDENTICO
+== M8 P&L di sezione sempre a regolamento (non col metodo del bot)  [frontend/src/lib/replayOperazioni.ts]
+   vitest: 6 failed | 29 passed (35) | pytest contratto: -
+   ROSSO: sezioni per fase sugli esiti VERI: nessun ciclo e nessun ordine perso, totali uguali a quelli di oggi > media_clic_multi_69: la somma delle fasi e' il totale di oggi (35797769) 82ms
+   ROSSO: sezioni per fase sugli esiti VERI: nessun ciclo e nessun ordine perso, totali uguali a quelli di oggi > media_clic_69: la somma delle fasi e' il totale di oggi (35797769) 2ms
+   ROSSO: sezioni per fase sugli esiti VERI: nessun ciclo e nessun ordine perso, totali uguali a quelli di oggi > media under 35797769 (4 clic veri): ciclo 1 PRE-PARTITA chiuso nel 1° tempo, ciclo 2 nel 1° tempo, ciclo 3 nato all'INTERVALLO e chiuso nel 2° tempo 47ms
+   ROSSO: registro per fase (calcio, media under 35797769, 4 clic veri) > sezioni fisse PRE-PARTITA / 1° TEMPO / INTERVALLO / 2° TEMPO coi cicli del bot nati in ciascuna 731ms
+   ROSSO: registro per fase (calcio, media under 35797769, 4 clic veri) > in fondo i totali di oggi, «✓ uguale al referto del bot» 365ms
+   ROSSO: riquadro P&L: la riga «per fase» sopra «a regolamento», il resto identico > media under 35797769: pre-partita / 1T / intervallo (ha un ciclo) / 2T coi lordi dei cicli del bot 38ms
+   ripristino: sha256 12923569111232d28708f721c65e0311df35177a7d7fe886dba2f4f8517515d8 IDENTICO
+== M9 ordini fuori dai cicli del bot persi  [frontend/src/lib/replayOperazioni.ts]
+   vitest: 1 failed | 34 passed (35) | pytest contratto: -
+   ROSSO: il caso del difetto: 4 cicli del bot, due coppie che si toccano nello stesso istante > ordini che il bot non mette in nessun ciclo restano nel registro («fuori dai cicli del bot») 27ms
+   ripristino: sha256 12923569111232d28708f721c65e0311df35177a7d7fe886dba2f4f8517515d8 IDENTICO
+== M10 vista cronologica con le chiusure ricavate (non quelle del bot)  [frontend/src/lib/replayOperazioni.ts]
+   vitest: 1 failed | 34 passed (35) | pytest contratto: -
+   ROSSO: il caso del difetto: 4 cicli del bot, due coppie che si toccano nello stesso istante > vista cronologica: le chiusure di ciclo sono quelle del bot (4), non quelle ricavate (2) 30ms
+   ripristino: sha256 12923569111232d28708f721c65e0311df35177a7d7fe886dba2f4f8517515d8 IDENTICO
+== M11 clic rifiutato col numero ricavato, non quello del bot  [frontend/src/lib/useOperativitaBot.ts]
+   vitest: 1 failed | 34 passed (35) | pytest contratto: -
+   ROSSO: il caso del difetto: 4 cicli del bot, due coppie che si toccano nello stesso istante > il clic rifiutato «ciclo aperto» nomina il ciclo DEL BOT 21ms
+   ripristino: sha256 d261accafb3c997860ad8c50a98702a7bb74ed80f6aa5a7ad54b3a46cbfc2bdd IDENTICO
+== M12 nessuna indicazione «chiuso al» per il ciclo che attraversa due fasi  [frontend/src/components/replay/RegistroOperazioniBot.tsx]
+   vitest: 1 failed | 34 passed (35) | pytest contratto: -
+   ROSSO: registro per fase (calcio, media under 35797769, 4 clic veri) > il ciclo che attraversa due fasi sta dove e' nato, con «chiuso al ...» e la fase della chiusura 124ms
+   ripristino: sha256 bc87975580d0503c7865eb791da5b03519e623139267fc20535651cf6dc1b396 IDENTICO
+== M13 riquadro: la riga per fase non mostra l'intervallo anche se ha operazioni  [frontend/src/components/replay/RiepilogoPnlBot.tsx]
+   vitest: 1 failed | 34 passed (35) | pytest contratto: -
+   ROSSO: riquadro P&L: la riga «per fase» sopra «a regolamento», il resto identico > media under 35797769: pre-partita / 1T / intervallo (ha un ciclo) / 2T coi lordi dei cicli del bot 43ms
+   ripristino: sha256 8f4077488b10e155b2deaa7b6462c4a14e831d8f7b494654fd92a9979862c9b9 IDENTICO
+== M14 tipo TS senza la chiave banca (contratto Python<->TS)  [frontend/src/lib/replayBot.ts]
+   vitest: 35 passed (35) | pytest contratto: 6 failed, 2 passed in 3.21s
+   ripristino: sha256 9260de457c7ff222437575ffa36d7612e7cd338bd57511b1d45421db71a09d6f IDENTICO
+src/lib/replayRegistroFasi.test.ts(187,47): error TS2353: Object literal may only specify known properties, and 'banca' does not exist in type 'Record<keyof CicloDichiarato, true>'.
+   (tsc con M14: 1 errore TS2353 sopra; ripristino replayBot.ts sha256 9260de457c7ff222437575ffa36d7612e7cd338bd57511b1d45421db71a09d6f, diff identico al prima)

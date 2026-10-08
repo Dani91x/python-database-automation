@@ -1,0 +1,8 @@
+== M15 vista cronologica senza le testate di fase  [frontend/src/components/replay/RegistroOperazioniBot.tsx]
+   vitest: 1 failed | 34 passed (35) | pytest contratto: -
+   ROSSO: registro per fase (calcio, media under 35797769, 4 clic veri) > vista cronologica divisa per fase (la fase dell'istante di ogni evento) 589ms
+   ripristino: sha256 ff53f21dd91d84a783b63486cdcec95011da8912fecda8695e5628d80a74bc28 IDENTICO
+== M16 il ripiego non lo dice (fonte dei cicli sempre «del bot»)  [frontend/src/components/replay/RegistroOperazioniBot.tsx]
+   vitest: 1 failed | 34 passed (35) | pytest contratto: -
+   ROSSO: i cicli sono quelli del bot; il ripiego lo dice > scalper (il bot non dichiara i cicli): ricavati dagli ordini, e il registro lo dice 217ms
+   ripristino: sha256 ff53f21dd91d84a783b63486cdcec95011da8912fecda8695e5628d80a74bc28 IDENTICO

@@ -6,8 +6,8 @@
 import { useMemo } from 'react';
 import type { EsitoBot } from '@/lib/replayBot';
 import {
-    analizza, clicNelRegistro, contoCicli, contoRegolato,
-    type ClicRegistro, type CicloOperativo, type EventoOperazione, type OrdineBot,
+    analizza, clicNelRegistro, contoCicli, contoRegolato, numeroDelBot, registroCicli,
+    type ClicRegistro, type CicloOperativo, type EventoOperazione, type OrdineBot, type RegistroCicli,
 } from '@/lib/replayOperazioni';
 
 export interface OperativitaBot {
@@ -21,6 +21,8 @@ export interface OperativitaBot {
     /** P&L dei cicli col metodo del banco della media under */
     cicliConto: ReturnType<typeof contoCicli>;
     aliquota: number;
+    /** 08/10 (cantiere 10): i cicli del REGISTRO, quelli del bot quando li dichiara */
+    registro: RegistroCicli;
 }
 
 /** L'analisi PURA dell'esito (fuori da React: la usano anche i test). */
@@ -35,10 +37,12 @@ export function analizzaEsito(esito: EsitoBot, etichetta?: (ms: number) => strin
         perChiave: new Map(ordini.map(o => [o.chiave, o])),
         cicli,
         eventi,
-        clic: clicNelRegistro(esito.clic_bot ?? null, ordini, cicli, etichetta),
+        clic: clicNelRegistro(esito.clic_bot ?? null, ordini, cicli, etichetta,
+            esito.cicli_bot ? numeroDelBot(esito.cicli_bot) : undefined),
         regolato: contoRegolato(ordini, esito.esiti_mercati ?? null),
         cicliConto: contoCicli(cicli, aliquota),
         aliquota,
+        registro: registroCicli(ordini, cicli, esito.cicli_bot, esito.esiti_mercati ?? null),
     };
 }
 

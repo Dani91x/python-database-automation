@@ -22,9 +22,13 @@
 //   * contoRegolato     il P&L a regolamento (stesse regole di
 //                       `applica_bot.conto_regolato` e di flumine),
 //   * contoCicli        il P&L dei cicli col metodo del banco della media under
-//                       (`riepilogo_cicli_media`: chiuso = profitto bloccato).
+//                       (`riepilogo_cicli_media`: chiuso = profitto bloccato),
+//   * registroCicli     (08/10) i cicli del REGISTRO: quelli dichiarati dal bot
+//                       (`esito.cicli_bot`) o, solo se mancano, quelli ricavati,
+//   * sezioniPerFase    (08/10) il registro e il P&L divisi per fase della partita.
 // ============================================================================
-import type { EsitoMercato, RigaBot } from '@/lib/replayBot';
+import type { CicloDichiarato, EsitoBot, EsitoMercato, RigaBot } from '@/lib/replayBot';
+import type { FaseReplay } from '@/lib/replayFasi';
 import { roundToTick } from '@/lib/matching';
 
 export type Lato = 'back' | 'lay';
@@ -398,6 +402,8 @@ export interface EventoOperazione {
     ciclo: number | null;
     /** solo per ciclo_chiuso */
     cicloInfo?: CicloOperativo;
+    /** 08/10: solo per la chiusura di un ciclo DICHIARATO dal bot (`eventiDelRegistro`) */
+    cicloRegistro?: CicloRegistro;
 }
 
 export interface CicloOperativo {
@@ -743,7 +749,7 @@ export function contoRegolato(ordini: ReadonlyArray<OrdineBot>, esiti: Record<st
 /** Il P&L dei cicli col metodo del banco della media under
  *  (`riepilogo_cicli_media`): somma dei contributi dei cicli con esito noto,
  *  commissione sul totale positivo, arrotondamenti alla fine. PURA. */
-export function contoCicli(cicli: ReadonlyArray<CicloOperativo>, aliquota: number):
+export function contoCicli(cicli: ReadonlyArray<Pick<CicloOperativo, 'lordoConto'>>, aliquota: number):
     { lordo: number; commissione: number; netto: number; cicliEsitoIgnoto: number } {
     let lordo = 0;
     let ignoti = 0;
@@ -778,6 +784,205 @@ export function riepilogoAl(ordini: ReadonlyArray<OrdineBot>, cicli: ReadonlyArr
         ordiniVivi: stato.filter(x => x.vivo).length,
         appoggiato: round2(stato.reduce((s, x) => s + x.residuo, 0)),
     };
+}
+
+// --------------------------------------------------------------------------
+// i cicli del REGISTRO e le fasi della partita (08/10, cantiere 10)
+// --------------------------------------------------------------------------
+/** Un ciclo come lo mostra il registro: quello DICHIARATO dal bot (numero,
+ *  istanti, origine, lordo/netto del bot: `esito.cicli_bot`) o, SOLO quando il
+ *  bot non li dichiara, quello ricavato dagli ordini «da posizione piatta a
+ *  piatta» (`cicliOperativi`, numeri di prima). */
+export interface CicloRegistro {
+    n: number;
+    fonte: 'bot' | 'ordini';
+    marketId: string;
+    daMs: number;
+    aMs: number | null;
+    /** chiavi degli ordini del ciclo, in ordine di nascita */
+    ordini: string[];
+    stato: CicloOperativo['stato'];
+    /** P&L dell'intestazione: bot = lordo dichiarato; ordini = regolato o bloccato (come prima) */
+    pnl: number | null;
+    /** il contributo al conto dei cicli (null = esito ignoto) */
+    lordoConto: number | null;
+    /** abbinato (punta + banca) degli ordini del ciclo a fine prova */
+    abbinato: number;
+    /** il ciclo come lo dichiara il bot (fonte 'bot') */
+    dichiarato: CicloDichiarato | null;
+    /** il ciclo ricavato dagli ordini (fonte 'ordini') */
+    operativo: CicloOperativo | null;
+}
+
+export interface RegistroCicli {
+    /** 'bot' = i cicli dichiarati dal bot; 'ordini' = ripiego «da piatto a piatto» */
+    fonte: 'bot' | 'ordini';
+    cicli: CicloRegistro[];
+    /** ordini che nessun ciclo dichiarato contiene (solo fonte 'bot'): restano nel registro */
+    fuoriCiclo: string[];
+    /** ordini_id dichiarati dal bot che la cronologia non ha */
+    mancanti: string[];
+}
+
+/** Lo stato di un ciclo dichiarato dal bot dal suo esito
+ *  (`riepilogo_cicli_media`: CHIUSO / NESSUNA POSIZIONE / APERTO, regolato ... /
+ *  APERTO, esito ignoto). PURA. */
+export function statoDichiarato(d: CicloDichiarato): CicloOperativo['stato'] {
+    const e = String(d.esito ?? '').toUpperCase();
+    if (e.startsWith('CHIUSO') || e.startsWith('NESSUNA POSIZIONE')) return 'chiuso';
+    if (e.startsWith('APERTO') && d.lordo != null) return 'regolato';
+    return 'aperto';
+}
+
+/** I cicli del registro: ESATTAMENTE quelli del bot quando l'esito li porta
+ *  (`cicli_bot` non null), altrimenti quelli ricavati dagli ordini. Il numero,
+ *  gli istanti e il P&L sono quelli del bot; gli ordini sono quelli che il bot
+ *  elenca (`ordini_id` = `_ordine` delle righe). PURA. */
+export function registroCicli(ordini: ReadonlyArray<OrdineBot>, cicli: ReadonlyArray<CicloOperativo>,
+    dichiarati: ReadonlyArray<CicloDichiarato> | null | undefined,
+    esiti?: Record<string, EsitoMercato> | null): RegistroCicli {
+    if (dichiarati == null) {
+        return {
+            fonte: 'ordini', fuoriCiclo: [], mancanti: [],
+            cicli: cicli.map(c => ({
+                n: c.n, fonte: 'ordini', marketId: c.marketId, daMs: c.daMs, aMs: c.aMs, ordini: [...c.ordini],
+                stato: c.stato, pnl: c.stato === 'regolato' ? c.regolato : c.garantito, lordoConto: c.lordoConto,
+                abbinato: round2(c.abbinatoBack + c.abbinatoLay), dichiarato: null, operativo: c,
+            })),
+        };
+    }
+    const perChiave = new Map(ordini.map(o => [o.chiave, o]));
+    const presi = new Set<string>();
+    const mancanti: string[] = [];
+    const out: CicloRegistro[] = dichiarati.map(d => {
+        const oo: OrdineBot[] = [];
+        for (const id of d.ordini_id ?? []) {
+            const o = perChiave.get(`o:${id}`);
+            if (o) {
+                oo.push(o);
+                presi.add(o.chiave);
+            } else mancanti.push(String(id));
+        }
+        oo.sort((a, b) => a.primoMs - b.primoMs);
+        const marketId = oo[0]?.marketId ?? '';
+        const stato = statoDichiarato(d);
+        const abb = abbinamentiDi(oo, Number.MAX_SAFE_INTEGER);
+        return {
+            n: d.ciclo, fonte: 'bot', marketId,
+            daMs: d.inizio_ms ?? oo[0]?.primoMs ?? 0,
+            // il ciclo regolato dal libro finale non ha una fine del bot: la chiusura del mercato
+            aMs: d.fine_ms ?? (stato === 'regolato' ? (esiti?.[marketId]?.chiuso_ms ?? null) : null),
+            ordini: oo.map(o => o.chiave), stato, pnl: d.lordo, lordoConto: d.lordo,
+            abbinato: round2(abb.reduce((s, a) => s + a.importo, 0)), dichiarato: d, operativo: null,
+        };
+    });
+    return { fonte: 'bot', cicli: out, fuoriCiclo: ordini.filter(o => !presi.has(o.chiave)).map(o => o.chiave), mancanti };
+}
+
+/** Il numero DEL BOT del ciclo aperto a `ms` per il testo di un clic rifiutato
+ *  («il ciclo N e' ancora aperto»): il ciclo dichiarato che contiene gli ordini
+ *  vivi a quell'istante, altrimenti quello aperto a `ms` secondo i suoi istanti,
+ *  altrimenti il numero ricavato. PURA. */
+export function numeroDelBot(dichiarati: ReadonlyArray<CicloDichiarato>):
+    (c: CicloOperativo, vivi: ReadonlyArray<OrdineBot>, ms: number) => number {
+    return (c, vivi, ms) => {
+        const ids = new Set(vivi.filter(o => o.chiave.startsWith('o:')).map(o => o.chiave.slice(2)));
+        const coiVivi = dichiarati.find(d => (d.ordini_id ?? []).some(id => ids.has(String(id))));
+        const aperto = dichiarati.find(d => d.inizio_ms != null && d.inizio_ms <= ms && (d.fine_ms == null || d.fine_ms > ms));
+        return (coiVivi ?? aperto)?.ciclo ?? c.n;
+    };
+}
+
+/** Gli eventi della vista cronologica: con i cicli del bot, le chiusure di
+ *  ciclo sono quelle del BOT (all'istante della sua fine) al posto di quelle
+ *  ricavate; gli eventi degli ordini restano tutti, nello stesso ordine. PURA. */
+export function eventiDelRegistro(eventi: ReadonlyArray<EventoOperazione>, reg: RegistroCicli): EventoOperazione[] {
+    if (reg.fonte === 'ordini') return [...eventi];
+    const out = eventi.filter(e => e.tipo !== 'ciclo_chiuso' && e.tipo !== 'mercato_chiuso');
+    for (const c of reg.cicli) {
+        if (c.aMs == null) continue;
+        out.push({
+            id: `ciclo-bot:${c.n}`, ms: c.aMs, tipo: c.stato === 'regolato' ? 'mercato_chiuso' : 'ciclo_chiuso',
+            ordine: null, marketId: c.marketId, selectionId: null, lato: null, quota: null, importo: null,
+            abbinatoEvento: 0, prezzoEvento: null, abbinato: 0, prezzoMedio: 0, residuo: 0, tolto: 0,
+            sostituisce: null, daQuota: null, daImporto: null, riprezzoDichiarato: false, motivoSostituzione: null,
+            integra: null, integraResiduo: null, sostituitoDa: null, ciclo: c.n, cicloRegistro: c,
+        });
+    }
+    // stessa regola di `analizza`: per istante, a pari istante prima gli ordini
+    const peso = (e: EventoOperazione) => (e.ordine ? 0 : 1);
+    const pos = new Map(out.map((e, i) => [e.id, i]));
+    return out.sort((a, b) => (a.ms - b.ms) || (peso(a) - peso(b)) || ((pos.get(a.id) ?? 0) - (pos.get(b.id) ?? 0)));
+}
+
+/** Il metodo del conto: quello che il bot dichiara (i cicli della media under)
+ *  o il regolamento del mercato. */
+export type MetodoConto = 'cicli' | 'regolamento';
+
+/** Il metodo del conto dell'esito: i cicli se il bot li dichiara come conto
+ *  (`conto_dichiarato.metodo`), altrimenti il regolamento del mercato (i due
+ *  blocchi del riquadro P&L di sempre). PURA. */
+export function metodoConto(esito: Pick<EsitoBot, 'conto_dichiarato'>): MetodoConto {
+    return esito.conto_dichiarato?.metodo === 'cicli' ? 'cicli' : 'regolamento';
+}
+
+/** Una sezione del registro: i cicli NATI in quella fase, gli ordini fuori
+ *  ciclo nati in quella fase, e il P&L della sezione col metodo del conto. */
+export interface SezioneFase {
+    fase: FaseReplay;
+    cicli: CicloRegistro[];
+    fuoriCiclo: string[];
+    /** ordini della sezione (dei suoi cicli + fuori ciclo) */
+    ordini: number;
+    lordo: number;
+    commissione: number;
+    netto: number;
+    /** cicli con esito ignoto (metodo dei cicli: fuori dal conto, come oggi) */
+    cicliEsitoIgnoto: number;
+}
+
+/** Le sezioni per fase: le fisse dello sport sempre (anche vuote), piu' ogni
+ *  altra fase incontrata, in ordine. Un ciclo sta nella fase in cui e' NATO.
+ *  P&L della sezione: metodo dei cicli = `contoCicli` sui suoi cicli; metodo del
+ *  regolamento = `contoRegolato` sui suoi ordini (le funzioni dei totali di oggi,
+ *  applicate alla sezione). PURA. */
+export function sezioniPerFase(reg: RegistroCicli, ordini: ReadonlyArray<OrdineBot>, faseAl: (ms: number) => FaseReplay,
+    fisse: ReadonlyArray<FaseReplay>, metodo: MetodoConto, esiti: Record<string, EsitoMercato> | null | undefined,
+    aliquota: number): SezioneFase[] {
+    const sez = new Map<string, SezioneFase>();
+    const prendi = (f: FaseReplay): SezioneFase => {
+        let s = sez.get(f.id);
+        if (!s) {
+            s = { fase: f, cicli: [], fuoriCiclo: [], ordini: 0, lordo: 0, commissione: 0, netto: 0, cicliEsitoIgnoto: 0 };
+            sez.set(f.id, s);
+        }
+        return s;
+    };
+    for (const f of fisse) prendi(f);
+    const perChiave = new Map(ordini.map(o => [o.chiave, o]));
+    for (const c of reg.cicli) prendi(faseAl(c.daMs)).cicli.push(c);
+    for (const k of reg.fuoriCiclo) {
+        const o = perChiave.get(k);
+        if (o) prendi(faseAl(o.primoMs)).fuoriCiclo.push(k);
+    }
+    for (const s of sez.values()) {
+        const chiavi = [...s.cicli.flatMap(c => c.ordini), ...s.fuoriCiclo];
+        s.ordini = chiavi.length;
+        if (metodo === 'cicli') {
+            const c = contoCicli(s.cicli, aliquota);
+            s.lordo = c.lordo;
+            s.commissione = c.commissione;
+            s.netto = c.netto;
+            s.cicliEsitoIgnoto = c.cicliEsitoIgnoto;
+        } else {
+            const oo = chiavi.map(k => perChiave.get(k)).filter((o): o is OrdineBot => o != null);
+            const c = contoRegolato(oo, esiti);
+            s.lordo = c.lordo;
+            s.commissione = c.commissione;
+            s.netto = c.netto;
+        }
+    }
+    return [...sez.values()].sort((a, b) => a.fase.ordine - b.fase.ordine);
 }
 
 // --------------------------------------------------------------------------
@@ -863,6 +1068,11 @@ export function testoEvento(e: EventoOperazione): string {
             return 'RIFIUTATA o mai arrivata sul book (nessun abbinamento)';
         case 'ciclo_chiuso':
         case 'mercato_chiuso': {
+            const r = e.cicloRegistro;
+            if (r?.dichiarato) {
+                const d = r.dichiarato;
+                return `CICLO ${r.n} del bot ${r.stato === 'regolato' ? 'regolato alla chiusura del mercato' : 'chiuso'}: ${d.esito} — lordo ${pnl(d.lordo)} · netto ${pnl(d.netto)}`;
+            }
             const c = e.cicloInfo;
             if (!c) return 'ciclo chiuso';
             const esiti = Object.values(c.esiti);
@@ -934,7 +1144,8 @@ export function cicloApertoAl(cicli: ReadonlyArray<CicloOperativo>, ms: number, 
  *  aperto (es. «il ciclo 3 e' ancora aperto: BANCA 50,19 @ 2,14 non
  *  abbinata, abbinata per intero solo alle 3'28"»). PURA. */
 export function clicNelRegistro(clic: ReadonlyArray<ClicIn> | null | undefined, ordini: ReadonlyArray<OrdineBot>,
-    cicli: ReadonlyArray<CicloOperativo>, etichetta: (ms: number) => string = () => ''): ClicRegistro[] {
+    cicli: ReadonlyArray<CicloOperativo>, etichetta: (ms: number) => string = () => '',
+    numeroCiclo?: (c: CicloOperativo, vivi: ReadonlyArray<OrdineBot>, ms: number) => number): ClicRegistro[] {
     if (!clic) return [];
     const quando = (ms: number) => etichetta(ms) || new Date(ms).toISOString().slice(11, 19);
     return clic.map(c => {
@@ -958,16 +1169,19 @@ export function clicNelRegistro(clic: ReadonlyArray<ClicIn> | null | undefined, 
             const ciclo = cicloApertoAl(cicli, ms);
             if (ciclo) {
                 marketId = ciclo.marketId;
-                const perche = ordini.filter(o => o.ciclo === ciclo.n)
+                const vivi = ordini.filter(o => o.ciclo === ciclo.n)
                     .map(o => ({ o, r: ultimaAl(o, ms) }))
-                    .filter((x): x is { o: OrdineBot; r: RigaBot } => x.r != null && vivo(x.r))
+                    .filter((x): x is { o: OrdineBot; r: RigaBot } => x.r != null && vivo(x.r));
+                // 08/10: con i cicli del bot il numero e' il SUO (cantiere 10)
+                const n = numeroCiclo ? numeroCiclo(ciclo, vivi.map(x => x.o), ms) : ciclo.n;
+                const perche = vivi
                     .map(({ o, r }) => {
                         const intero = o.righe.find(z => num(z.size_matched) > EPS && num(z.size_matched) + EPS >= num(z.size));
                         const abb = num(r.size_matched);
                         return `${nomeLato(o.lato)} ${eur(o.importo)} @ ${eur(o.quota)} ${abb > EPS ? `abbinata ${eur(abb)}` : 'non ancora abbinata'}`
                             + (intero ? `, abbinata per intero solo alle ${quando(intero._ms)}` : ', mai abbinata per intero');
                     });
-                motivo = `il ciclo ${ciclo.n} è ancora aperto${perche.length ? `: ${perche.join('; ')}` : ' (posizione non coperta)'}`;
+                motivo = `il ciclo ${n} è ancora aperto${perche.length ? `: ${perche.join('; ')}` : ' (posizione non coperta)'}`;
             }
         }
         return {

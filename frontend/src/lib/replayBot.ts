@@ -167,9 +167,35 @@ export interface EsitoBot {
     clic_bot?: ClicDichiarato[] | null;
 }
 
-/** Un ciclo come lo riepiloga il bot nel referto (`riepilogo_cicli_media`). */
+/** Un rientro del ciclo (`riepilogo_cicli_media`, chiave `rientri`). */
+export interface RientroDichiarato {
+    quota: number;
+    /** l'importo esatto prima del multiplo di 0,50 (null se l'attivita' non lo dice) */
+    esatto: number | null;
+    piazzato: number;
+    abbinato: number;
+}
+
+/** La banca finale del ciclo (`riepilogo_cicli_media`, chiave `banca`). */
+export interface BancaDichiarata {
+    importo: number;
+    quota: number;
+    abbinato: number;
+    dove: string | null;
+    fine: string;
+}
+
+/** Un ciclo come lo riepiloga il bot nel referto (`riepilogo_cicli_media`).
+ *  08/10 (cantiere 10): chiavi IDENTICHE a quelle che scrive Python
+ *  (`applica_bot.cicli_dichiarati`), controllate dal test di contratto
+ *  `Betfair/stream/tests/test_contratto_cicli_bot_ts_2026_10_08.py`. */
 export interface CicloDichiarato {
     ciclo: number;
+    /** numero di ordini del ciclo */
+    ordini: number;
+    rientri: RientroDichiarato[];
+    /** la banca finale; {} se il ciclo non ne ha */
+    banca: BancaDichiarata | Record<string, never>;
     esito: string;
     lordo: number | null;
     netto: number | null;

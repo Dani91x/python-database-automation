@@ -1,0 +1,2 @@
+MISURA tennis_scalper: analizza (esistente) 5.13 ms; registro+sezioni+eventi (nuovo) 2.123 ms
+MISURA media_clic_multi_69: analizza (esistente) 0.70 ms; registro+sezioni+eventi (nuovo) 0.335 ms

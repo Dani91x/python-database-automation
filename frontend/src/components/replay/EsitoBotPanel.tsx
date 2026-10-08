@@ -18,6 +18,7 @@ import { testoIstante, testoValore } from '@/lib/applicaBot';
 import { avvisiBanco, confermaBanco } from '@/lib/avvisiBanco';
 import { CATALOGO_BOT } from '@/lib/replayBotCatalogo';
 import type { CatalogoBot, EsitoBot, OpzioniApplica, VoceParametro } from '@/lib/replayBot';
+import type { FaseReplay } from '@/lib/replayFasi';
 import { statoOrdiniAl } from '@/lib/replayOperazioni';
 import type { OperativitaBot } from '@/lib/useOperativitaBot';
 
@@ -32,6 +33,8 @@ export interface EsitoBotPanelProps {
     nomeMercato: (marketId: string) => string;
     nomeSelezione: (marketId: string, selectionId: number) => string;
     etichettaIstante?: (ms: number) => string;
+    /** 08/10 (cantiere 10): la fase della partita all'istante (sezioni del registro e riga «per fase») */
+    faseIstante?: (ms: number) => FaseReplay;
     runnerDi?: (marketId: string) => ReadonlyArray<number> | undefined;
     onSeek: (p: PuntoSeek) => void;
     catalogo?: ReadonlyArray<CatalogoBot>;
@@ -48,7 +51,7 @@ export function righeCambiati(esito: EsitoBot, catalogo: ReadonlyArray<CatalogoB
 }
 
 export function EsitoBotPanel({
-    esito, analisi, inviato = null, nowMs, nomeMercato, nomeSelezione, etichettaIstante, runnerDi, onSeek,
+    esito, analisi, inviato = null, nowMs, nomeMercato, nomeSelezione, etichettaIstante, faseIstante, runnerDi, onSeek,
     catalogo = CATALOGO_BOT,
 }: EsitoBotPanelProps) {
     const [referto, setReferto] = useState(false);
@@ -88,10 +91,10 @@ export function EsitoBotPanel({
                     ))}
                 </div>
             )}
-            <RiepilogoPnlBot esito={esito} analisi={analisi} nowMs={nowMs} runnerDi={runnerDi} />
+            <RiepilogoPnlBot esito={esito} analisi={analisi} nowMs={nowMs} runnerDi={runnerDi} faseIstante={faseIstante} />
             <RegistroOperazioniBot esito={esito} analisi={analisi} nowMs={nowMs}
                 nomeMercato={nomeMercato} nomeSelezione={nomeSelezione}
-                etichettaIstante={etichettaIstante} onSeek={onSeek} />
+                etichettaIstante={etichettaIstante} faseIstante={faseIstante} onSeek={onSeek} />
             <BotOrdersPanel
                 titolo={esito.etichetta}
                 ordini={statoOrdiniAl(analisi.ordini, nowMs)}

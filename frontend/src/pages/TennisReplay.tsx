@@ -54,6 +54,7 @@ import { validateFromDetections } from '@/lib/opportunities/validate';
 import { arbExecutableUnderDelay } from '@/lib/opportunities/arb_exec';
 import { orderFlowImbalance, weightOfMoney, spreadScalp } from '@/lib/opportunities/tier2_micro';
 import type { Detector, OppConfig, Opportunity } from '@/lib/opportunities/types';
+import { faseTennisDaEtichetta } from '@/lib/replayFasi';
 import {
     CLASSE_NOTA, notaNomeGiocatore,
     conFaseTennis, costruisciTimeline, delayMercatoMs, faseTennis, fetchTennisReplay, fetchTennisReplayList,
@@ -335,6 +336,12 @@ export default function TennisReplay() {
     // ---- punteggio tennis all'istante del cursore ----
     const punteggiOrdinati = useMemo(() => ordinaPunteggio(replay?.score_timeline ?? []), [replay]);
     punteggiRef.current = punteggiOrdinati;
+    // 08/10 (cantiere 10): la FASE (PRE-PARTITA / SET n) per il registro e il P&L del
+    // bot, dalla fase che il replay gia' calcola (`faseTennis`); funzione stabile
+    const faseTennisIstante = useMemo(
+        () => (ms: number) => faseTennisDaEtichetta(faseTennis(punteggiOrdinati, new Date(ms).toISOString(), inGiocoTs)),
+        [punteggiOrdinati, inGiocoTs],
+    );
     const rigaPunteggio = currentTs ? punteggioAl(punteggiOrdinati, currentTs) : null;
     const puntiAlCursore = useMemo(
         () => (currentTs ? puntiFinoA(punteggiOrdinati, currentTs) : []),
@@ -742,6 +749,7 @@ export default function TennisReplay() {
                                         {applica.esito && operativita && (
                                             <EsitoBotPanel esito={applica.esito} analisi={operativita} inviato={applica.inviato}
                                                 nowMs={currentMs} etichettaIstante={etichettaTennis} runnerDi={runnerTennis}
+                                                faseIstante={faseTennisIstante}
                                                 onSeek={vaiAllOperazione}
                                                 nomeMercato={nomeMercato} nomeSelezione={nomeSelezione} />
                                         )}

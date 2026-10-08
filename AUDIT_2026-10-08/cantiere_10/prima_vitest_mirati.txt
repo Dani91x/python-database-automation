@@ -1,0 +1,41 @@
+
+ RUN  v3.2.6 /home/user/python-database-automation/.claude/worktrees/agent-a6c264c7010c81043/frontend
+
+ ✓ src/components/replay/TimelineSlider.test.tsx (12 tests) 470ms
+ ✓ src/lib/replayOperazioni.test.ts (29 tests) 473ms
+ ✓ src/components/replay/ApplicaBotPanel.test.tsx (18 tests) 9020ms
+   ✓ ApplicaBotPanel > calcio: solo i bot calcio; tennis: solo i bot tennis  363ms
+   ✓ ApplicaBotPanel > bot -> scenario -> parametri: un parametro cambiato e' evidenziato e parte da solo  3851ms
+   ✓ ApplicaBotPanel > valore fuori dominio: errore scritto e Applica spento; Ripristina torna alla serie  1923ms
+   ✓ ApplicaBotPanel > Prova / Soldi veri simulati scelgono lo scenario gemello  438ms
+   ✓ ApplicaBotPanel > un clic durante il ricalcolo e' EVIDENTE («non ancora inviato») e parte da solo alla fine  489ms
+   ✓ ApplicaBotPanel > accendi al cursore + «Attiva adesso» allo stesso istante: UNA richiesta (il clic e' l'accensione)  465ms
+   ✓ ApplicaBotPanel > Applica acceso al cursore, poi «Attiva adesso» piu' tardi: una richiesta in piu' e nessun rilancio a vuoto  347ms
+ ✓ src/components/replay/AvvisoCoerenzaBarra.test.tsx (10 tests) 3248ms
+   ✓ AvvisoCoerenzaBarra - partita vera 35760084 > barra coerente: non compare nulla  458ms
+   ✓ AvvisoCoerenzaBarra - partita vera 35760084 > barra con un difetto: compare l'avviso con il codice, l'istante e la spiegazione  439ms
+   ✓ AvvisoCoerenzaBarra - partita vera 35760084 > usa gli snapshot passati dalla pagina (non li rifa): un motore con il punteggio sbagliato compare come MOTORE_PUNTEGGIO  311ms
+   ✓ AvvisoCoerenzaBarra - partita vera 35797769 > barra coerente: non compare nulla  487ms
+   ✓ AvvisoCoerenzaBarra - partita vera 35797769 > barra con un difetto: compare l'avviso con il codice, l'istante e la spiegazione  408ms
+   ✓ AvvisoCoerenzaBarra - partita vera 35797769 > usa gli snapshot passati dalla pagina (non li rifa): un motore con il punteggio sbagliato compare come MOTORE_PUNTEGGIO  460ms
+   ✓ AvvisoCoerenzaBarra - casi limite > elenca al massimo `massimo` segnalazioni e dice quante altre ce ne sono (singolare e plurale)  529ms
+ ✓ src/components/replay/RegistroOperazioniBot.test.tsx (8 tests) 11848ms
+   ✓ RegistroOperazioniBot > media under: i 4 clic col loro esito, i cicli del bot, una riga per ordine  1107ms
+   ✓ RegistroOperazioniBot > il clic RIFIUTATO porta all'istante del clic; l'eseguito alla prima riga della prima punta  510ms
+   ✓ RegistroOperazioniBot > tennis (stesso componente): il riprezzo di Betfair e' una riga di registro  5892ms
+   ✓ RegistroOperazioniBot > scalper su due mercati: il filtro per mercato tiene solo quel mercato  2292ms
+   ✓ RegistroOperazioniBot > l'evento attuale (ultimo <= cursore) e' evidenziato; i futuri sono attenuati  956ms
+   ✓ EsitoBotPanel con l'esito vero: P&L confrontato col banco > i confronti col banco sono tutti «uguale»  680ms
+ ✓ src/lib/applicaBot.test.ts (12 tests) 78ms
+ ✓ src/components/replay/TrainingTradesPanel.test.tsx (3 tests) 1030ms
+   ✓ TrainingTradesPanel > elenca i trade con lo stato del matching e la X li elimina  935ms
+
+ Test Files  7 passed (7)
+      Tests  92 passed (92)
+   Start at  09:12:51
+   Duration  34.86s (transform 4.25s, setup 10.01s, collect 8.67s, tests 26.17s, environment 37.97s, prepare 4.73s)
+
+
+real	0m37.507s
+user	0m21.134s
+sys	0m2.281s

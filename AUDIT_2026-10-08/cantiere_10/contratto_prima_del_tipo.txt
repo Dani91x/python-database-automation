@@ -1,0 +1,2 @@
+6 failed, 2 passed in 3.35s
+E             Left contains 3 more items, first extra item: "CicloDichiarato: chiave 'banca' scritta da Python e assente nel tipo TS"

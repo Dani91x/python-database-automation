@@ -1,0 +1,8 @@
+== M12 nessuna indicazione «chiuso al» per il ciclo che attraversa due fasi  [frontend/src/components/replay/RegistroOperazioniBot.tsx]
+   vitest: 1 failed | 34 passed (35) | pytest contratto: -
+   ROSSO: registro per fase (calcio, media under 35797769, 4 clic veri) > il ciclo che attraversa due fasi sta dove e' nato, con «chiuso al ...» e la fase della chiusura 433ms
+   ripristino: sha256 ff53f21dd91d84a783b63486cdcec95011da8912fecda8695e5628d80a74bc28 IDENTICO
+== M13 riquadro: la riga per fase non mostra l'intervallo anche se ha operazioni  [frontend/src/components/replay/RiepilogoPnlBot.tsx]
+   vitest: 1 failed | 34 passed (35) | pytest contratto: -
+   ROSSO: riquadro P&L: la riga «per fase» sopra «a regolamento», il resto identico > media under 35797769: pre-partita / 1T / intervallo (ha un ciclo) / 2T coi lordi dei cicli del bot 39ms
+   ripristino: sha256 a75cac4ca9aaf6d362ea1e8cc2f79f9b6775a47b11538bce910212357eac3599 IDENTICO
