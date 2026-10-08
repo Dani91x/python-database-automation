@@ -40,6 +40,8 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
+from db_client import GuastoRete, _client_per, con_ritentativi, esegui_con_retry
+
 MIGRAZIONE = "migrations/season_gaps_2026-09-25.sql"
 FT_STATUSES = ("FT", "AET", "PEN")
 
@@ -222,9 +224,13 @@ def lacune_stagione(sb: Any, league_id: int, season_year: int,
                     fixture_ids: Optional[List[int]] = None) -> Lacune:
     """Una RPC: tutte le lacune (con gli id) di una lega-stagione (o di alcune fixture)."""
     try:
-        resp = sb.rpc("season_detail_gaps", {"p_league_id": int(league_id),
-                                             "p_season_year": int(season_year),
-                                             "p_fixture_ids": fixture_ids}).execute()
+        # 08/10: ritentativi sui guasti di rete/gateway (run 37743110569: HTTP 520 HTML qui)
+        resp = esegui_con_retry(lambda c: c.rpc("season_detail_gaps", {"p_league_id": int(league_id),
+                                                                     "p_season_year": int(season_year),
+                                                                     "p_fixture_ids": fixture_ids}),
+                                sb, etichetta="rpc season_detail_gaps")
+    except GuastoRete:
+        raise
     except Exception as e:
         if _e_funzione_mancante(e):
             raise MigrazioneMancante(
@@ -303,7 +309,8 @@ def riepilogo_lacune(sb: Any, coppie: Sequence[Tuple[int, int]], blocco: Optiona
                      costo_freddo_per_coppia: float = COSTO_FREDDO_SEC_PER_COPPIA_DEFAULT,
                      soglia_sicura_sec: float = BLOCCO_SOGLIA_SICURA_SEC_DEFAULT,
                      stampa: Callable[[str], None] = print,
-                     orologio: Callable[[], float] = time.time
+                     orologio: Callable[[], float] = time.time,
+                     rinviate_rete: Optional[List[Tuple[int, int]]] = None
                      ) -> Tuple[Dict[Tuple[int, int], Lacune], List[Tuple[int, int]]]:
     """RPC season_gaps_summary a blocchi (vedi esegui_a_blocchi_adattivo per la
     dimensione, ADATTIVA di default: blocco=None).
@@ -318,7 +325,13 @@ def riepilogo_lacune(sb: Any, coppie: Sequence[Tuple[int, int]], blocco: Optiona
     chiamante (seasons_catchup.esegui_catchup) NON scrive stato per le
     lega-stagioni degradate: restano come erano, si riverificano al giro dopo.
     -> (lacune delle coppie verificate, lega-stagioni degradate per 57014
-    persistente anche a blocco 1)."""
+    persistente anche a blocco 1).
+
+    08/10 (guasti di rete/gateway): ogni RPC passa da db_client.esegui_con_retry. Se un
+    blocco resta in guasto dopo tutti i ritentativi (GuastoRete) e il chiamante ha passato
+    `rinviate_rete` (una lista), le sue lega-stagioni vi finiscono come RINVIATE (non
+    verificate, nessuno stato scritto: stesso schema delle degradate) e si prosegue col
+    blocco dopo; senza lista (Daily, orchestratore) il GuastoRete risale."""
     out: Dict[Tuple[int, int], Lacune] = {(int(a), int(b)): Lacune(int(a), int(b)) for a, b in coppie}
     degradate: List[Tuple[int, int]] = []
 
@@ -328,8 +341,17 @@ def riepilogo_lacune(sb: Any, coppie: Sequence[Tuple[int, int]], blocco: Optiona
         def _tenta(sotto_pezzo: List[Tuple[int, int]]) -> None:
             nonlocal ebbe_57014
             try:
-                resp = sb.rpc("season_gaps_summary", {"p_league_ids": [p[0] for p in sotto_pezzo],
-                                                      "p_season_years": [p[1] for p in sotto_pezzo]}).execute()
+                resp = esegui_con_retry(
+                    lambda c: c.rpc("season_gaps_summary", {"p_league_ids": [p[0] for p in sotto_pezzo],
+                                                            "p_season_years": [p[1] for p in sotto_pezzo]}),
+                    sb, etichetta="rpc season_gaps_summary")
+            except GuastoRete as e:
+                if rinviate_rete is None:
+                    raise
+                stampa(f"[LACUNE] guasto di rete/gateway persistente su blocco di {len(sotto_pezzo)} "
+                      f"lega-stagioni: RINVIATE (non verificate questo giro, nessuno stato scritto). {e}")
+                rinviate_rete.extend(sotto_pezzo)
+                return
             except Exception as e:
                 if _e_funzione_mancante(e):
                     raise MigrazioneMancante(
@@ -385,8 +407,10 @@ def registra_esiti(sb: Any, righe: List[Dict[str, Any]], obbligatorio: bool = Fa
     if not righe:
         return True
     try:
-        sb.rpc("record_fixture_detail_checks", {"p_rows": righe}).execute()
+        _registra_una_volta_sola(sb, righe)
         return True
+    except GuastoRete:
+        raise                                            # rete: lo gestisce il chiamante (rinvio)
     except Exception as e:
         if obbligatorio:
             if _e_funzione_mancante(e):
@@ -398,6 +422,47 @@ def registra_esiti(sb: Any, righe: List[Dict[str, Any]], obbligatorio: bool = Fa
                   f"richiamate a ogni recupero.")
             _avviso_registro_dato = True
         return False
+
+
+TOLLERANZA_OROLOGIO_S = 60
+
+
+def _registra_una_volta_sola(sb: Any, righe: List[Dict[str, Any]]) -> None:
+    """08/10: record_fixture_detail_checks NON e' idempotente (incrementa `vuoti`/`errori`:
+    due 'vuoto' = vuoto_definitivo). Su un guasto di rete la RPC puo' essere arrivata al DB
+    anche senza risposta (520 di Cloudflare, GOAWAY sull'ultimo stream): prima di
+    ritentarla si guarda se c'e' gia'. La RPC e' UNA istruzione SQL (tutto o niente): basta
+    una riga 'vuoto'/'errore'/'parziale' del lotto con quell'esito e `ultimo_controllo_at`
+    successivo all'inizio del primo tentativo (meno TOLLERANZA_OROLOGIO_S per lo scarto
+    fra gli orologi; nessun altro scrive la stessa partita-tabella in quel minuto: il
+    catchup non gira insieme al Daily). Solo righe 'ok' (cancellazioni): si ritenta e basta."""
+    campione = next((r for r in righe if r.get("esito") in ("vuoto", "errore", "parziale")), None)
+    inizio = datetime.now(timezone.utc) - timedelta(seconds=TOLLERANZA_OROLOGIO_S)
+    gia_tentata = [False]
+
+    def _tentativo() -> None:
+        if gia_tentata[0] and campione is not None:
+            resp = (_client_per(sb).table("fixture_detail_checks").select("esito,ultimo_controllo_at")
+                    .eq("fixture_id", int(campione["fixture_id"])).eq("tabella", campione["tabella"])
+                    .limit(1).execute())
+            riga = (list(getattr(resp, "data", None) or []) or [None])[0]
+            quando = _istante(riga.get("ultimo_controllo_at")) if riga else None
+            if riga and riga.get("esito") == campione["esito"] and quando is not None and quando >= inizio:
+                print(f"[LACUNE] record_fixture_detail_checks: il tentativo precedente era arrivato al DB "
+                      f"(fixture {campione['fixture_id']} {campione['tabella']}): NON si riapplica")
+                return
+        gia_tentata[0] = True
+        _client_per(sb).rpc("record_fixture_detail_checks", {"p_rows": righe}).execute()
+
+    con_ritentativi(_tentativo, etichetta="rpc record_fixture_detail_checks")
+
+
+def _istante(v: Any) -> Optional[datetime]:
+    try:
+        t = datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
 
 
 # ---------------------------------------------------------------------------
@@ -452,10 +517,10 @@ def giorni_aperto(stats_json: Dict[str, Any], oggi: Optional[date] = None) -> in
 
 
 def scrivi_stato(sb: Any, league_id: int, season_year: int, status: str, stats_json: Dict[str, Any]) -> None:
-    sb.table("season_backfill_state").upsert({
-        "league_id": int(league_id), "season_year": int(season_year), "status": status,
-        "last_run_at": datetime.now(timezone.utc).isoformat(), "stats_json": stats_json,
-    }, on_conflict="league_id,season_year").execute()
+    riga = {"league_id": int(league_id), "season_year": int(season_year), "status": status,
+            "last_run_at": datetime.now(timezone.utc).isoformat(), "stats_json": stats_json}
+    esegui_con_retry(lambda c: c.table("season_backfill_state").upsert(riga, on_conflict="league_id,season_year"),
+                     sb, etichetta="upsert season_backfill_state")
 
 
 def scrivi_stati(sb: Any, righe: List[Dict[str, Any]], blocco: int = 200) -> None:
@@ -463,7 +528,8 @@ def scrivi_stati(sb: Any, righe: List[Dict[str, Any]], blocco: int = 200) -> Non
     adesso = datetime.now(timezone.utc).isoformat()
     for i in range(0, len(righe), blocco):
         pezzo = [{**r, "last_run_at": adesso} for r in righe[i:i + blocco]]
-        sb.table("season_backfill_state").upsert(pezzo, on_conflict="league_id,season_year").execute()
+        esegui_con_retry(lambda c, p=pezzo: c.table("season_backfill_state").upsert(
+            p, on_conflict="league_id,season_year"), sb, etichetta="upsert season_backfill_state (blocco)")
 
 
 def segna_degradato_57014(sb: Any, league_id: int, season_year: int, oggi: date,
@@ -477,8 +543,9 @@ def segna_degradato_57014(sb: Any, league_id: int, season_year: int, oggi: date,
     di osservabilita', non deve MAI far morire il catchup)."""
     k = (int(league_id), int(season_year))
     try:
-        resp = (sb.table("season_backfill_state").select("status,stats_json")
-                .eq("league_id", k[0]).eq("season_year", k[1]).limit(1).execute())
+        resp = esegui_con_retry(lambda c: c.table("season_backfill_state").select("status,stats_json")
+                                .eq("league_id", k[0]).eq("season_year", k[1]).limit(1), sb,
+                                etichetta="select season_backfill_state")
         righe = list(getattr(resp, "data", None) or [])
         riga = righe[0] if righe else None
         sj = dict((riga or {}).get("stats_json") or {})
@@ -486,14 +553,65 @@ def segna_degradato_57014(sb: Any, league_id: int, season_year: int, oggi: date,
         primo_at = prec.get("primo_at") or oggi.isoformat()
         consecutivi = int(prec.get("consecutivi") or 0) + 1
         sj["degradato_57014"] = {"consecutivi": consecutivi, "primo_at": primo_at, "ultimo_at": oggi.isoformat()}
-        sb.table("season_backfill_state").upsert({
-            "league_id": k[0], "season_year": k[1],
-            "status": (riga or {}).get("status") or "in_progress",
-            "last_run_at": datetime.now(timezone.utc).isoformat(), "stats_json": sj,
-        }, on_conflict="league_id,season_year").execute()
+        nuova = {"league_id": k[0], "season_year": k[1],
+                 "status": (riga or {}).get("status") or "in_progress",
+                 "last_run_at": datetime.now(timezone.utc).isoformat(), "stats_json": sj}
+        esegui_con_retry(lambda c: c.table("season_backfill_state").upsert(nuova, on_conflict="league_id,season_year"),
+                         sb, etichetta="upsert season_backfill_state (degradato_57014)")
         return consecutivi
     except Exception as e:
         stampa(f"[CATCHUP] AVVISO: contatore 'degradato_57014' per lega {k[0]} stagione {k[1]} non scritto ({e}).")
+        return None
+
+
+CAMPO_RINVIO_RETE = "rinviato_rete"
+
+
+def giorni_consecutivi(prec: Optional[Dict[str, Any]], oggi: date) -> int:
+    """GIORNI di calendario consecutivi (il catchup gira 2 volte al giorno: la seconda run
+    dello stesso giorno non conta un giorno in piu')."""
+    prec = prec or {}
+    ultimo = _data(prec.get("ultimo_at"))
+    n = int(prec.get("consecutivi") or 0)
+    if ultimo == oggi:
+        return max(1, n)
+    if ultimo == oggi - timedelta(days=1):
+        return n + 1
+    return 1
+
+
+def segna_rinvio_rete(sb: Any, league_id: int, season_year: int, oggi: date, motivo: str,
+                      prec: Optional[Dict[str, Any]] = None,
+                      stampa: Callable[[str], None] = print) -> Optional[int]:
+    """08/10: contatore dei giorni consecutivi di RINVIO per guasto di rete/gateway, gemello
+    di `degradato_57014`: scrive SOLO `stats_json.rinviato_rete` (status e resto intatti).
+    `prec` = il valore letto all'inizio della run (leggi_stati), perche' una lega-stagione
+    lavorata a meta' ha gia' lo stats_json riscritto da season_backfill.esegui. Si azzera da
+    solo: ogni stato scritto da una verifica riuscita (costruisci_stats_json) non lo porta.
+    -> giorni consecutivi (>= 1), o None se non scritto (avviso, mai fail-loud: con la rete
+    giu' e' normale che non si scriva)."""
+    k = (int(league_id), int(season_year))
+    try:
+        resp = esegui_con_retry(lambda c: c.table("season_backfill_state").select("status,stats_json")
+                                .eq("league_id", k[0]).eq("season_year", k[1]).limit(1), sb,
+                                etichetta="select season_backfill_state")
+        righe = list(getattr(resp, "data", None) or [])
+        riga = righe[0] if righe else None
+        sj = dict((riga or {}).get("stats_json") or {})
+        base = prec if prec is not None else (sj.get(CAMPO_RINVIO_RETE) or {})
+        consecutivi = giorni_consecutivi(base, oggi)
+        primo = (base or {}).get("primo_at") if consecutivi > 1 else None
+        sj[CAMPO_RINVIO_RETE] = {"consecutivi": consecutivi, "primo_at": primo or oggi.isoformat(),
+                                 "ultimo_at": oggi.isoformat(), "motivo": str(motivo)[:200]}
+        nuova = {"league_id": k[0], "season_year": k[1],
+                 "status": (riga or {}).get("status") or "in_progress",
+                 "last_run_at": datetime.now(timezone.utc).isoformat(), "stats_json": sj}
+        esegui_con_retry(lambda c: c.table("season_backfill_state").upsert(nuova, on_conflict="league_id,season_year"),
+                         sb, etichetta="upsert season_backfill_state (rinviato_rete)")
+        return consecutivi
+    except Exception as e:
+        stampa(f"[CATCHUP] AVVISO: contatore '{CAMPO_RINVIO_RETE}' per lega {k[0]} stagione {k[1]} non scritto "
+               f"({str(e)[:200]}).")
         return None
 
 
@@ -509,13 +627,15 @@ def leggi_stati(sb: Any, league_id: Optional[int] = None, pagina: int = 1000) ->
                "buco_aperto_dal:stats_json->>buco_aperto_dal,ft_count:stats_json->fixtures->>ft_count,"
                "matches_count:stats_json->fixtures->>matches_count,"
                "aggregati_tentativi:stats_json->aggregati_tentativi,mai_caricata:stats_json->mai_caricata,"
-               "verifica_current:stats_json->verifica_current"
+               "verifica_current:stats_json->verifica_current,rinviato_rete:stats_json->rinviato_rete"
                if leggero else "league_id,season_year,status,last_run_at,stats_json")
     while True:
-        q = sb.table("season_backfill_state").select(colonne)
-        if league_id is not None:
-            q = q.eq("league_id", int(league_id))
-        resp = q.order("league_id").order("season_year").range(inizio, inizio + pagina - 1).execute()
+        def _q(c: Any, da: int = inizio) -> Any:
+            q = c.table("season_backfill_state").select(colonne)
+            if league_id is not None:
+                q = q.eq("league_id", int(league_id))
+            return q.order("league_id").order("season_year").range(da, da + pagina - 1)
+        resp = esegui_con_retry(_q, sb, etichetta="select season_backfill_state (pagina)")
         righe = list(getattr(resp, "data", None) or [])
         for r in righe:
             try:
@@ -530,7 +650,9 @@ def leggi_stati(sb: Any, league_id: Optional[int] = None, pagina: int = 1000) ->
                                         **({"mai_caricata": r["mai_caricata"]} if r.get("mai_caricata")
                                            else {}),
                                         **({"verifica_current": r["verifica_current"]}
-                                           if r.get("verifica_current") else {})}}
+                                           if r.get("verifica_current") else {}),
+                                        **({CAMPO_RINVIO_RETE: r["rinviato_rete"]}
+                                           if r.get("rinviato_rete") else {})}}
                 out[(int(r["league_id"]), int(r["season_year"]))] = r
             except (KeyError, TypeError, ValueError):
                 continue
@@ -544,10 +666,12 @@ def leggi_coverage(sb: Any, league_id: Optional[int] = None, pagina: int = 1000)
     out: List[Dict[str, Any]] = []
     inizio = 0
     while True:
-        q = sb.table("api_coverage_by_season").select(COLONNE_COVERAGE)
-        if league_id is not None:
-            q = q.eq("league_id", int(league_id))
-        resp = q.order("league_id").order("season_year").range(inizio, inizio + pagina - 1).execute()
+        def _q(c: Any, da: int = inizio) -> Any:
+            q = c.table("api_coverage_by_season").select(COLONNE_COVERAGE)
+            if league_id is not None:
+                q = q.eq("league_id", int(league_id))
+            return q.order("league_id").order("season_year").range(da, da + pagina - 1)
+        resp = esegui_con_retry(_q, sb, etichetta="select api_coverage_by_season (pagina)")
         righe = list(getattr(resp, "data", None) or [])
         out.extend(righe)
         if len(righe) < pagina:

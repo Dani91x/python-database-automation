@@ -35,6 +35,15 @@ flag di coverage), che a sua volta parte dopo il Daily. Passi:
             (04/10) i buchi vecchi dovuti SOLO a "API vuota / in attesa del 2o
             tentativo / flag coverage False" NON sono un guasto: exit 0, ma elencati
             in vista (log e GITHUB_STEP_SUMMARY) come AVVISO;
+            (08/10) guasti di RETE/GATEWAY (HTTP 5xx/520 con pagina HTML, connessione
+            HTTP/2 terminata, timeout di rete): ogni chiamata PostgREST si ritenta
+            (db_client.esegui_con_retry, ~62 s); se il guasto resta, la lega-stagione e'
+            RINVIATA (nessuno stato falso, si riprova al giro dopo) e dichiarata sotto
+            "RINVIATE PER GATEWAY/RETE": exit 0, salvo rinvii oltre
+            CATCHUP_SOGLIA_RINVII_RETE_PCT (50%) delle lega-stagioni considerate, una
+            lega-stagione rinviata da piu' di BACKFILL_BUCHI_MAX_GIORNI giorni
+            consecutivi, o un guasto che impedisce la run intera (pre-controlli,
+            letture iniziali): exit 1, sempre senza traceback;
        2  = pre-controlli falliti (migrazione mancante, quota non leggibile).
 """
 from __future__ import annotations
@@ -55,6 +64,7 @@ import season_aggregates as sa
 import season_backfill as sbk
 import season_gaps as sg
 from api_quota import GestoreQuota, QuotaConPavimento, QuotaNonLeggibile, margine_medio_log
+from db_client import MOTIVO_GUASTO_RETE, GuastoRete, esegui_con_retry, riepilogo_rete
 
 logger = logging.getLogger("seasons_catchup")
 
@@ -73,6 +83,10 @@ VERIFICA_CURRENT_MAX_DEFAULT = 100  # CATCHUP_MAX_VERIFICHE_CURRENT: chiamate di
 P4_GIORNI_TRA_TENTATIVI = 7         # /fixtures senza partite: si ritenta dopo 7 giorni...
 P4_MAX_TENTATIVI_VUOTI = 2          # ...e dopo 2 risposte senza partite la stagione e' dichiarata "API senza partite"
 P4_GIORNI_MEDIA = 7                 # margine medio degli ultimi 7 giorni (api_call_log) per la stima dei giorni
+# 08/10: rinvii per guasto di rete/gateway oltre questa percentuale delle lega-stagioni considerate -> exit 1
+SOGLIA_RINVII_RETE_PCT_DEFAULT = 50  # CATCHUP_SOGLIA_RINVII_RETE_PCT
+RINNOVO_CLIENT_DEFAULT = 5000        # CATCHUP_RINNOVO_CLIENT_OGNI (il server chiude a 10.000 richieste)
+TITOLO_RINVII_RETE = "RINVIATE PER GATEWAY/RETE"
 
 
 def _env_int(nome: str, default: int, env: Optional[Dict[str, str]] = None) -> int:
@@ -372,14 +386,17 @@ def _current_da_api(data: Any, season_year: int) -> Optional[bool]:
 def _salva_verifica_current(sb: Any, k: Tuple[int, int], esito: Dict[str, Any]) -> bool:
     """Scrive stats_json.verifica_current SENZA toccare il resto (lettura dello stats_json
     completo di quella sola riga + update). Nessuna riga di stato -> non si crea (False)."""
-    resp = (sb.table("season_backfill_state").select("stats_json")
-            .eq("league_id", k[0]).eq("season_year", k[1]).limit(1).execute())
+    resp = esegui_con_retry(lambda c: c.table("season_backfill_state").select("stats_json")
+                            .eq("league_id", k[0]).eq("season_year", k[1]).limit(1), sb,
+                            etichetta="select season_backfill_state")
     righe = list(getattr(resp, "data", None) or [])
     if not righe:
         return False
     sj = dict(righe[0].get("stats_json") or {})
     sj["verifica_current"] = esito
-    sb.table("season_backfill_state").update({"stats_json": sj}).eq("league_id", k[0]).eq("season_year", k[1]).execute()
+    esegui_con_retry(lambda c: c.table("season_backfill_state").update({"stats_json": sj})
+                     .eq("league_id", k[0]).eq("season_year", k[1]), sb,
+                     etichetta="update season_backfill_state (verifica_current)")
     return True
 
 
@@ -420,7 +437,10 @@ def verifica_current_sospette(sb: Any, client: Any, quota: Any, coperture: List[
             valore = valore_api
             esito = {"at": oggi.isoformat(), "current": valore}
             stati.setdefault(k, {}).setdefault("stats_json", {})["verifica_current"] = esito
-            _salva_verifica_current(sb, k, esito)
+            try:
+                _salva_verifica_current(sb, k, esito)
+            except GuastoRete as e:                      # 08/10: solo una nota, si richiede al giro dopo
+                stampa(f"[CATCHUP] AVVISO: verifica current lega {k[0]} stagione {k[1]} non salvata ({e})")
             stampa(f"[CATCHUP] verifica current lega {k[0]} stagione {k[1]} (fine {r.get('season_end')}): "
                    f"API current={valore} -> trattata come {'viva' if valore else 'passata'}")
         r["current"] = valore                       # in memoria: la stagione e' trattata come dice l'API
@@ -551,6 +571,12 @@ class Risultato:
     degradate_consecutivi: Dict[Tuple[int, int], int] = field(default_factory=dict)
     # R-CATCHUP-2 esteso agli aggregati (season_aggregates_summary, stesso difetto)
     degradate_aggregati: List[Tuple[int, int]] = field(default_factory=list)
+    # 08/10: lega-stagioni RINVIATE per guasto di rete/gateway persistente -> fase/motivo
+    rinviate_rete: Dict[Tuple[int, int], str] = field(default_factory=dict)
+    # 08/10: giorni CONSECUTIVI di rinvio per rete (stats_json.rinviato_rete)
+    rinviate_rete_consecutivi: Dict[Tuple[int, int], int] = field(default_factory=dict)
+    # 08/10: lega-stagioni considerate questo giro (base della percentuale dei rinvii)
+    considerate: int = 0
 
 
 def esegui_catchup(sb: Any, client: Any, quota: Any, concorrenza: Any = None,
@@ -598,7 +624,12 @@ def esegui_catchup(sb: Any, client: Any, quota: Any, concorrenza: Any = None,
            f"(non verificate stanotte: {conti['passate_non_verificate']}, "
            f"passate mai caricate: {conti['passate_mai_caricate']})")
     righe_per_k = {(int(r["league_id"]), int(r["season_year"])): r for r in vive + passate}
-    lacune, ris.degradate_timeout = sg.riepilogo_lacune(sb, list(righe_per_k), stampa=stampa)
+    ris.considerate = len(righe_per_k)
+    rinviate_verifica: List[Tuple[int, int]] = []
+    lacune, ris.degradate_timeout = sg.riepilogo_lacune(sb, list(righe_per_k), stampa=stampa,
+                                                        rinviate_rete=rinviate_verifica)
+    for k in rinviate_verifica:
+        _rinvia_per_rete(sb, ris, k, "verifica delle lacune (season_gaps_summary)", stati, oggi, stampa)
     if ris.degradate_timeout:
         degradate_str = ", ".join(f"lega {k[0]} stagione {k[1]}" for k in ris.degradate_timeout[:10])
         stampa(f"[CATCHUP] AVVISO: {len(ris.degradate_timeout)} lega-stagioni DEGRADATE (57014 persistente sul "
@@ -610,7 +641,9 @@ def esegui_catchup(sb: Any, client: Any, quota: Any, concorrenza: Any = None,
             consecutivi = sg.segna_degradato_57014(sb, k[0], k[1], oggi, stampa)
             if consecutivi is not None:
                 ris.degradate_consecutivi[k] = consecutivi
-    degradate_set = set(ris.degradate_timeout)
+    # 08/10: le RINVIATE per rete seguono lo schema delle degradate: nessuna decisione oggi,
+    # nessuno stato scritto, fuori dalla coda e dalla P4 (Lacune vuoto = placeholder)
+    degradate_set = set(ris.degradate_timeout) | set(rinviate_verifica)
     # aggregati di TUTTE le stagioni verificate (vive ogni giorno, per cadenza): il Daily non li fa
     ris.degradate_aggregati = sa.attacca(sb, lacune, righe_per_k, stati, sa.adesso(), stampa=stampa)
     voci: List[Voce] = []
@@ -677,7 +710,11 @@ def esegui_catchup(sb: Any, client: Any, quota: Any, concorrenza: Any = None,
             ris.chiamate += es.chiamate
             ris.fatte.append(k)
             ris.fermate_per[k] = es.fermato_per
-            if es.errore:
+            if _e_guasto_rete(es):
+                _rinvia_per_rete(sb, ris, k, f"lavoro: {es.errore or es.fermato_per}", stati, oggi, stampa)
+                ris.fermate_per[k] = MOTIVO_GUASTO_RETE
+                es.fermato_per = MOTIVO_GUASTO_RETE
+            elif es.errore:
                 ris.errori.append(f"lega {k[0]} stagione {k[1]}: {es.errore}")
             if es.fermato_per and es.fermato_per != "errori_api":
                 ris.fermato_per = es.fermato_per         # quota / tempo / action concorrente: stop della run
@@ -687,6 +724,12 @@ def esegui_catchup(sb: Any, client: Any, quota: Any, concorrenza: Any = None,
             stampa("[CATCHUP] " + sbk.riga_log_dopo(es, quota, prossima))
         except (sg.MigrazioneMancante, QuotaNonLeggibile):
             raise
+        except GuastoRete as e:                            # 08/10: rinvio dichiarato, stop della run
+            _rinvia_per_rete(sb, ris, k, f"lavoro: {e}", stati, oggi, stampa)
+            ris.fermato_per = MOTIVO_GUASTO_RETE
+            ris.fermate_per[k] = MOTIVO_GUASTO_RETE
+            if k not in ris.fatte:
+                ris.rimaste.append(k)
         except Exception as e:                             # DB giu' ecc.: la run prosegue, exit 1 alla fine
             ris.errori.append(f"lega {k[0]} stagione {k[1]}: {type(e).__name__}: {e}")
             if k not in ris.fatte:
@@ -766,6 +809,10 @@ def esegui_p4(sb: Any, client: Any, quota: Any, ris: Risultato, coperture: List[
             es = sbk.esegui(sb, client, q4, piano, c.stato_prec, "catchup_p4", deve_fermarsi, oggi)
             ris.chiamate += es.chiamate
             ris.p4_chiamate[k] = es.chiamate
+            if _e_guasto_rete(es):
+                _rinvia_per_rete(sb, ris, k, f"P4: {es.errore or es.fermato_per}", stati, oggi, stampa)
+                ris.p4_non_partita = f"fermata a fine partita: {MOTIVO_GUASTO_RETE}"
+                return
             if es.errore:
                 ris.errori.append(f"P4 lega {k[0]} stagione {k[1]}: {es.errore}")
             lac_dopo = es.lacune_dopo
@@ -782,11 +829,36 @@ def esegui_p4(sb: Any, client: Any, quota: Any, ris: Risultato, coperture: List[
                 return
         except (sg.MigrazioneMancante, QuotaNonLeggibile):
             raise
+        except GuastoRete as e:                              # 08/10: rinvio dichiarato, P4 ferma
+            _rinvia_per_rete(sb, ris, k, f"P4: {e}", stati, oggi, stampa)
+            ris.p4_non_partita = f"fermata: {MOTIVO_GUASTO_RETE}"
+            return
         except Exception as e:                               # la P4 non abbatte la run: exit 1 alla fine
             ris.errori.append(f"P4 lega {k[0]} stagione {k[1]}: {type(e).__name__}: {e}")
     if ris.p4_non_entrate and not ris.p4_non_partita:
         ris.p4_non_partita = (f"{len(ris.p4_non_entrate)} stagioni non entrano PER INTERO nel margine di oggi "
                               f"(margine {quota.margine()} - pavimento {pavimento}): nessuna lasciata a meta'")
+
+
+def _e_guasto_rete(es: Any) -> bool:
+    """season_backfill.esegui inghiotte le eccezioni in `es.errore` = "<Classe>: <testo>":
+    un GuastoRete li' (o lo stop a fine partita di per_fixture_backfill) e' un RINVIO."""
+    return (str(getattr(es, "errore", None) or "").startswith(GuastoRete.__name__ + ":")
+            or getattr(es, "fermato_per", None) == MOTIVO_GUASTO_RETE)
+
+
+def _rinvia_per_rete(sb: Any, ris: "Risultato", k: Tuple[int, int], motivo: str,
+                     stati: Dict[Tuple[int, int], Dict[str, Any]], oggi: date,
+                     stampa: Callable[[str], None]) -> None:
+    """08/10: lega-stagione RINVIATA per guasto di rete/gateway (stesso schema delle degradate
+    57014): dichiarata, contatore dei giorni consecutivi in stats_json.rinviato_rete."""
+    motivo = motivo[:300]
+    ris.rinviate_rete[k] = motivo
+    stampa(f"[CATCHUP] lega {k[0]} stagione {k[1]}: RINVIATA per guasto di rete/gateway ({motivo})")
+    prec = (((stati.get(k) or {}).get("stats_json")) or {}).get(sg.CAMPO_RINVIO_RETE)
+    consecutivi = sg.segna_rinvio_rete(sb, k[0], k[1], oggi, motivo, prec=prec or {}, stampa=stampa)
+    if consecutivi is not None:
+        ris.rinviate_rete_consecutivi[k] = consecutivi
 
 
 def _cause(lac: sg.Lacune, flags: Dict[str, bool], fermato: Optional[str]) -> str:
@@ -983,12 +1055,44 @@ def referto_buchi(voci: List[Voce], ris: Risultato, quota: Any, max_giorni: int,
                               + [f"- {a}" for a in avvisi], stampa)
     for d in degradate_persistenti:
         stampa(f"DEGRADATA PERSISTENTE (> {max_giorni} giorni consecutivi, non piu' muta): {d}")
+    rete_guasto = _referto_rete(ris, max_giorni, stampa)
     referto_p4(ris, stampa, margine_medio)
     if aperte == 0:
         stampa("DB SENZA BUCHI")
     else:
         stampa(f"BUCHI APERTI: {aperte} lega-stagioni, ~{costo_tot} chiamate, il piu' vecchio da {piu_vecchio} giorni")
-    return 1 if (ris.errori or falliti or degradate_persistenti) else 0
+    return 1 if (ris.errori or falliti or degradate_persistenti or rete_guasto) else 0
+
+
+def _referto_rete(ris: "Risultato", max_giorni: int, stampa: Callable[[str], None]) -> bool:
+    """08/10: sezione RINVIATE PER GATEWAY/RETE + riga dei ritentativi. -> True = guasto vero
+    (exit 1): rinvii oltre la soglia percentuale, o una lega-stagione rinviata da piu' di
+    max_giorni giorni consecutivi. Sotto soglia: exit 0, ma tutto dichiarato."""
+    soglia = _env_int("CATCHUP_SOGLIA_RINVII_RETE_PCT", SOGLIA_RINVII_RETE_PCT_DEFAULT)
+    stampa(f"Rete PostgREST: {riepilogo_rete()}")
+    if not ris.rinviate_rete:
+        return False
+    n = len(ris.rinviate_rete)
+    base = max(1, ris.considerate)
+    pct = 100.0 * n / base
+    persistenti = [k for k, c in ris.rinviate_rete_consecutivi.items() if c > max_giorni]
+    oltre = pct > soglia
+    righe = [f"{TITOLO_RINVII_RETE}: {n} lega-stagioni ({pct:.1f}% delle {base} considerate, soglia {soglia}%): "
+             f"non verificate o lavorate solo in parte, nessuno stato falso scritto, si riprova al prossimo giro."]
+    for k, motivo in ris.rinviate_rete.items():
+        c = ris.rinviate_rete_consecutivi.get(k)
+        righe.append(f"RINVIATA PER GATEWAY/RETE: lega {k[0]} stagione {k[1]} ({motivo}); giorni consecutivi: "
+                     f"{c if c is not None else 'non scritti'}")
+    if oltre:
+        righe.append(f"GUASTO DI RETE/GATEWAY: rinvii oltre la soglia ({pct:.1f}% > {soglia}%) -> exit 1")
+    for k in persistenti:
+        righe.append(f"GUASTO DI RETE/GATEWAY PERSISTENTE: lega {k[0]} stagione {k[1]} rinviata da "
+                     f"{ris.rinviate_rete_consecutivi[k]} giorni consecutivi (> {max_giorni}) -> exit 1")
+    for r in righe:
+        stampa(r)
+    _scrivi_riepilogo_job([f"### {TITOLO_RINVII_RETE}", f"Rete PostgREST: {riepilogo_rete()}", ""]
+                          + [f"- {r}" for r in righe], stampa)
+    return bool(oltre or persistenti)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -1000,8 +1104,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     logging.basicConfig(level=logging.INFO)
     from api_client import APIFootballClient
     from config import API_FOOTBALL_KEY
-    from db_client import get_supabase_client
-    sb = get_supabase_client()
+    from db_client import ClientResiliente, attiva_rinnovo_connessioni, get_supabase_client
+    # 08/10: client rinnovato ogni N richieste (il server chiude la connessione HTTP/2 a 10.000)
+    # e TUTTE le chiamate PostgREST passate per `sb` con i ritentativi (anche season_aggregates,
+    # season_backfill, api_quota, che lo ricevono)
+    attiva_rinnovo_connessioni(_env_int("CATCHUP_RINNOVO_CLIENT_OGNI", RINNOVO_CLIENT_DEFAULT))
+    get_supabase_client()
+    sb = ClientResiliente()
     client = APIFootballClient()
     concorrenza = ControlloConcorrenza()
     # riserva dinamica: piena finche' Daily/Today/Results di oggi non hanno finito, poi residua
@@ -1015,6 +1124,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     except (QuotaNonLeggibile, sg.MigrazioneMancante) as e:
         print(f"CATCHUP NON PARTITO: {e}")
         return 2
+    except GuastoRete as e:
+        # 08/10: guasto di rete/gateway persistente in una fase che serve a TUTTA la run
+        # (pre-controlli, letture iniziali, scrittura degli stati): niente traceback, 100%
+        # rinviato (oltre ogni soglia) -> exit 1 dichiarato
+        righe = [f"{TITOLO_RINVII_RETE}: TUTTA LA RUN, interrotta in una fase comune (non di una singola "
+                 f"lega-stagione): {e}",
+                 f"Rete PostgREST: {riepilogo_rete()}",
+                 "Gli stati gia' scritti restano veri (nessuno stato falso); il resto si riprova al prossimo "
+                 "giro. Exit 1 (guasto vero)."]
+        for r in righe:
+            print(r)
+        _scrivi_riepilogo_job([f"### {TITOLO_RINVII_RETE}", ""] + [f"- {r}" for r in righe], print)
+        return 1
     return ris.codice
 
 

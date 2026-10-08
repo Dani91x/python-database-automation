@@ -1,0 +1,7 @@
+python chiavi: 107  ts campi: 107  ts default: 107
+solo python: []
+solo ts campi: []
+senza default ts: []
+default ts senza chiave python: []
+differenze: 0
+campi per tipo: {'choice': 6, 'bool': 17, 'text': 1, 'number': 83}

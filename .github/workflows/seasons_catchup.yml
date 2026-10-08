@@ -19,6 +19,14 @@ name: Seasons Catchup (buchi di dati)
 # BACKFILL_BUCHI_MAX_GIORNI per errore API ripetuto (o partite non tentate/aggregati da fare),
 # degradata 57014 persistente; 2 pre-controlli (migrazione season_gaps_2026-09-25.sql non
 # applicata, contatore quota non leggibile).
+# Rete/gateway (regola dell'08/10, AUDIT_2026-10-08/action_catchup/REFERTO.md): HTTP 5xx/520 con
+# pagina HTML di Cloudflare, connessione HTTP/2 chiusa dal server (GOAWAY a 10.000 richieste) e
+# timeout di rete si RITENTANO (db_client.esegui_con_retry: 1 + 5 tentativi, ~62 s; client
+# rinnovato ogni CATCHUP_RINNOVO_CLIENT_OGNI richieste). Guasto che resta: lega-stagione RINVIATA,
+# dichiarata nel log e nel riepilogo del job ("RINVIATE PER GATEWAY/RETE"), exit 0; exit 1 solo
+# oltre CATCHUP_SOGLIA_RINVII_RETE_PCT delle lega-stagioni considerate, per una lega-stagione
+# rinviata da piu' di BACKFILL_BUCHI_MAX_GIORNI giorni consecutivi, o se il guasto blocca la run
+# intera. Mai piu' un traceback per un guasto di rete.
 
 on:
   workflow_run:
@@ -85,4 +93,10 @@ jobs:
           CATCHUP_P4_ANCHE_SENZA_EVENTI: '0'
           # stagioni 'current' con fine passata da > 30 gg: /leagues mirata (1 chiamata, 1 volta/settimana)
           CATCHUP_MAX_VERIFICHE_CURRENT: '100'
+          # 08/10: client PostgREST nuovo ogni 5.000 richieste (il server chiude la connessione a 10.000)
+          CATCHUP_RINNOVO_CLIENT_OGNI: '5000'
+          # 08/10: rinvii per guasto di rete/gateway oltre questa % delle lega-stagioni considerate -> exit 1
+          CATCHUP_SOGLIA_RINVII_RETE_PCT: '50'
+          # 08/10: stampe e log nell'ordine vero (prima i print del referto uscivano tutti in fondo)
+          PYTHONUNBUFFERED: '1'
         run: python seasons_catchup.py

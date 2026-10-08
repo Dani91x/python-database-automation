@@ -5257,32 +5257,6 @@ dal percorso nuovo, o artefatto del messaggio aggregato delle 17:00:06): referti
   identici prima/dopo; `ingresso-abbinato-in-parte` OK (3 scavalchi, cicli piatti); `rifiuti-betfair-codici` KO RC3 = DIFETTO VERO
   MONEY-CRITICAL (D1): dopo un `replaceOrders` rifiutato il place-and-trim passa a DONE e il bot crede chiusa per ~25 s una posizione
   aperta (`trading/submin.py`, condiviso da tutti i bot del place-and-trim): da decidere con l'utente. Mio replay identico.
-
-### PUNTO DI RIPRESA — ore 12:21 dell'08/10 (coordinatore PC, Fable 5.1)
-- Tre linee in corso, da fondere alla fine (decisione dell'utente): (1) SESSIONE CLOUD sui cantieri di `AUDIT_2026-10-08/SPECIFICHE_CANTIERI_CLOUD_2026-10-08.md` (15 per primo, poi 12, 5, 6, 14, 10, 13, 7, 9, 11), commit per cantiere sul ramo; (2) SESSIONE A CREDITI API (Agent SDK, lanciata alle 12:18 con `ARCHITETTURA_2026-10/strumenti/sessione_sdk.py`, tetto 190 USD, prova da 0,22 USD riuscita) che scrive SOLO in `ARCHITETTURA_2026-10/` il piano della nuova architettura (brief `BRIEF_PIANO_ARCHITETTURA_2026-10-08.md`, par. 9 compreso); (3) PC: build delle 12:19 su `40051ed9` (banco «mercato che attraversa» + Applica bot tennis per mercato), app riaperta dall'utente per le prove a schermo (par. 6, 11.4 e 10.1 del protocollo; lista nel referto `AUDIT_2026-10-07/certificazione_db/REFERTO_CERTIFICAZIONE_DB.md`).
-- Prossimi passi sul PC: esiti delle prove a schermo dell'utente (tennis con i mercati, calcio con i fill realistici); verifica dei commit del cloud man mano che arrivano (diff riletto, test e replay rilanciati, mutazioni mie); verifica a campione delle schede della sessione API contro il codice; fusione su master solo alla fine, con suite verde e replay di riferimento identici.
-- Reperti aperti fuori bot: disco Supabase 52 GB (margine 4-6 GB), decisione rimandata; 6 test vitest rossi solo su Windows (cantiere 12); barra 13/38 partite di luglio (cantiere 13).
-
-## 2026-10-08 — PIANO DI ARCHITETTURA (sessione a crediti API via Claude Agent SDK; coordinatore Opus 5.5; delegati Sonnet)
-
-Dominio di questa sessione: SOLO `ARCHITETTURA_2026-10/` e questo blocco. Nessun codice di produzione.
-Brief: `ARCHITETTURA_2026-10/BRIEF_PIANO_ARCHITETTURA_2026-10-08.md` (par. 9 vale su tutto). Tetto 190 USD; costi in
-`ARCHITETTURA_2026-10/COSTI.md`.
-
-### Checkpoint
-- 12:20 tappa 0: brief comune dei delegati `ARCHITETTURA_2026-10/strumenti/BRIEF_COMUNE_DELEGATI.md`; lanciati 19
-  delegati Sonnet in parallelo: inventario (00), competitor (02), misure di oggi (07), schede A, B, C, D, E1 Mike,
-  E2 Omega, E3 Safe, E4 Scalper calcio, E5 Tennis, F, G1 dati, G2 algoritmi del cloud, H banco, I processi h24,
-  J frontend, K cartelle e codice morto.
-- 14:33 ripresa dopo l'arresto del primo processo (12:37, 40,94 USD): delegati interrotti senza schede; script e uscite
-  in `ARCHITETTURA_2026-10/strumenti/` riusati. Delegati da ora in primo piano, 4 alla volta.
-- 15:35 tappa 1 ACCETTATA: `00_INVENTARIO.md` (2.165 righe), `02_COMPETITOR.md` (63 fonti), `07_MISURE_OGGI.md`,
-  `03_SCHEDE_COMPONENTI/A_CONNESSIONE_BETFAIR.md` (86 funzionalita'). Verifica del coordinatore a campione, tutte
-  confermate sul codice: `runner.py:743-755` (ladder: publish sul canale poi upsert DB nello stesso thread),
-  `safe_strategy/stream.py:66` (`_CONFLATE_MS = 1000` dello scanner), `config_stream.py:311` (risk engine a 1 s),
-  `trading/risk_engine.py:21-23`, `desktop/main.js:756` (terzo login Betfair, web SSO); `read_book` in produzione 2
-  definizioni (`mike/service.py:146`, `omega/omega_market.py:571`), non 17 come nel brief. Reperti per il piano: 10/10
-  connessioni stream nel caso peggiore, scanner senza ripresa clk, orologio del PC +844 ms, 9,6 buchi >5 s per ora in-play.
 - CHECKPOINT C7 - BANCO DI OMEGA, REPERTI RB-1..RB-5 (verificato e integrato): il CLOSED del mercato arriva allo scanner del banco
   (`process_closed_market`, la causa vera di RB-1 non era la conflazione); finestre di sottoscrizione con la funzione di produzione
   (`Scanner.relevant_market_ids`); orologio di mercato nei testi dell'eta'; porta del runner per lo scenario `paper` (35760084: paper
@@ -5314,3 +5288,65 @@ Brief: `ARCHITETTURA_2026-10/BRIEF_PIANO_ARCHITETTURA_2026-10-08.md` (par. 9 val
   porta un riferimento debole allo stream e un id() riciclato riparte da adesso (lo `stream_id` NON va bene come chiave: cambia
   all'iscrizione, primo tentativo scartato perche' 2 test esistenti diventavano rossi). Test nuovo deterministico (id() forzato uguale)
   `test_frammenti_id_riciclato_2026_10_08.py`; mutazione senza controllo d'identita' -> rosso; test dei frammenti 40/40, collegati 86/86.
+### PUNTO DI RIPRESA — ore 12:21 dell'08/10 (coordinatore PC, Fable 5.1)
+- Tre linee in corso, da fondere alla fine (decisione dell'utente): (1) SESSIONE CLOUD sui cantieri di `AUDIT_2026-10-08/SPECIFICHE_CANTIERI_CLOUD_2026-10-08.md` (15 per primo, poi 12, 5, 6, 14, 10, 13, 7, 9, 11), commit per cantiere sul ramo; (2) SESSIONE A CREDITI API (Agent SDK, lanciata alle 12:18 con `ARCHITETTURA_2026-10/strumenti/sessione_sdk.py`, tetto 190 USD, prova da 0,22 USD riuscita) che scrive SOLO in `ARCHITETTURA_2026-10/` il piano della nuova architettura (brief `BRIEF_PIANO_ARCHITETTURA_2026-10-08.md`, par. 9 compreso); (3) PC: build delle 12:19 su `40051ed9` (banco «mercato che attraversa» + Applica bot tennis per mercato), app riaperta dall'utente per le prove a schermo (par. 6, 11.4 e 10.1 del protocollo; lista nel referto `AUDIT_2026-10-07/certificazione_db/REFERTO_CERTIFICAZIONE_DB.md`).
+- Prossimi passi sul PC: esiti delle prove a schermo dell'utente (tennis con i mercati, calcio con i fill realistici); verifica dei commit del cloud man mano che arrivano (diff riletto, test e replay rilanciati, mutazioni mie); verifica a campione delle schede della sessione API contro il codice; fusione su master solo alla fine, con suite verde e replay di riferimento identici.
+- Reperti aperti fuori bot: disco Supabase 52 GB (margine 4-6 GB), decisione rimandata; 6 test vitest rossi solo su Windows (cantiere 12); barra 13/38 partite di luglio (cantiere 13).
+
+### 08/10 — Action Seasons Catchup: resilienza di rete (delegato Opus)
+
+Ore dall'orologio del PC: inizio 14:55, fine 15:34 (08/10/2026). Ramo `claude/eloquent-franklin-g2nyk5`. Referto: `AUDIT_2026-10-08/action_catchup/REFERTO.md`.
+
+- ORDINE DELL'UTENTE: «Risolvi DEFINITIVAMENTE i problemi della GitHub Action "Seasons Catchup (buchi di dati)" che continua a fallire tutti i giorni.»
+- CLASSIFICAZIONE (8 run rosse su 29, log veri): 57014 su `season_gaps_summary` 26-27/09 (prima di R-CATCHUP-2 del 28/09, gia' risolto); BUCO VECCHIO da «API vuota» 29/09, 01/10, 04/10 mattina (regola del 04/10, gia' risolto); `ConnectionTerminated last_stream_id:19999` 02/10 e 03/10 (connessione HTTP/2 chiusa dal server dopo 10.000 richieste -> partita 'parziale' -> BUCO VECCHIO «errore API ripetuto» -> exit 1: NON risolto dal 04/10, il cui referto le attribuiva all'API vuota); HTTP 520 HTML di Cloudflare su `season_detail_gaps` 08/10 (traceback al pre-controllo). Nessun guasto di API-Football.
+- CORREZIONE: un solo punto in `db_client.py` (`classifica_guasto_rete`, `con_ritentativi` 1+5 tentativi 2-32 s con jitter, `esegui_con_retry`, `GuastoRete`, interruttore dopo 2 guasti, client ricreato sulla connessione terminata, rinnovo preventivo ogni 5.000 richieste solo nel catchup, `ClientResiliente` per tutto cio' che riceve `sb`); mai ritentati 4xx, applicativi, 57014 (resta R-CATCHUP-2), 53100. Le 16 `.execute()` di `season_gaps.py`/`per_fixture_backfill.py`/`seasons_catchup.py` passano di li'; insert e `record_fixture_detail_checks` (non idempotenti) ritentati come unita' (delete+insert; verifica «era gia' arrivata?» prima di riapplicare la RPC). `per_fixture_backfill._supabase` tolto: accessore. Guasto persistente -> lega-stagione RINVIATA (niente stato falso, contatore dei giorni in `stats_json.rinviato_rete`), sezione «RINVIATE PER GATEWAY/RETE» nel log e nel riepilogo del job; exit 1 solo oltre il 50% delle lega-stagioni considerate, rinvio da > 3 giorni consecutivi, o guasto nella fase comune; mai traceback. Workflow: env `CATCHUP_RINNOVO_CLIENT_OGNI`, `CATCHUP_SOGLIA_RINVII_RETE_PCT`, `PYTHONUNBUFFERED`; nessun orario o quota cambiati.
+- TEST: `pytest test_catchup_*.py` 90 verdi (66 + 24 nuovi in `test_catchup_rete_2026_10_08.py`, client supabase/postgrest/httpx VERO su `httpx.MockTransport`, pagina 520 e GOAWAY dei log veri); con i test collegati (backfill, orchestratore, daily, riserva, paginazione, db_client timeout bot, net_retry, reconcile, replay scalper isolato) 309 verdi. Falsificazione: 19 mutazioni tutte ROSSE, ripristino con sha (`falsificazione_esito.txt`).
+- PROVA VERA (sola lettura, DB vero): il catchup non ha una modalita' di prova (non inventata); sonda in sola lettura sulle funzioni della catena (lega 135/2025, rinnovo del client dopo 3 richieste visto davvero, 0 ritentativi) e `league_orchestrator.py --league 135 --season 2025 --dry-run` regolare (solo `/status`).
+- NON VERIFICATO: una run vera dell'action (vietato lanciarla): da guardare nella prossima run le righe `[RETE]` e «Rete PostgREST: ...» in fondo al referto. Fuori perimetro e non toccati: `season_aggregates`, `season_backfill`, `api_quota`, `logger` (coperti dal `ClientResiliente` salvo gli insert degli aggregati e il log `api_call_log`).
+- verificato da: in attesa del coordinatore.
+
+## 2026-10-08 — PIANO DI ARCHITETTURA (sessione a crediti API via Claude Agent SDK; coordinatore Opus 5.5; delegati Sonnet)
+
+Dominio di questa sessione: SOLO `ARCHITETTURA_2026-10/` e questo blocco. Nessun codice di produzione.
+Brief: `ARCHITETTURA_2026-10/BRIEF_PIANO_ARCHITETTURA_2026-10-08.md` (par. 9 vale su tutto). Tetto 190 USD; costi in
+`ARCHITETTURA_2026-10/COSTI.md`.
+
+### Checkpoint
+- 12:20 tappa 0: brief comune dei delegati `ARCHITETTURA_2026-10/strumenti/BRIEF_COMUNE_DELEGATI.md`; lanciati 19
+  delegati Sonnet in parallelo: inventario (00), competitor (02), misure di oggi (07), schede A, B, C, D, E1 Mike,
+  E2 Omega, E3 Safe, E4 Scalper calcio, E5 Tennis, F, G1 dati, G2 algoritmi del cloud, H banco, I processi h24,
+  J frontend, K cartelle e codice morto.
+- 14:33 ripresa dopo l'arresto del primo processo (12:37, 40,94 USD): delegati interrotti senza schede; script e uscite
+  in `ARCHITETTURA_2026-10/strumenti/` riusati. Delegati da ora in primo piano, 4 alla volta.
+- 15:35 tappa 1 ACCETTATA: `00_INVENTARIO.md` (2.165 righe), `02_COMPETITOR.md` (63 fonti), `07_MISURE_OGGI.md`,
+  `03_SCHEDE_COMPONENTI/A_CONNESSIONE_BETFAIR.md` (86 funzionalita'). Verifica del coordinatore a campione, tutte
+  confermate sul codice: `runner.py:743-755` (ladder: publish sul canale poi upsert DB nello stesso thread),
+  `safe_strategy/stream.py:66` (`_CONFLATE_MS = 1000` dello scanner), `config_stream.py:311` (risk engine a 1 s),
+  `trading/risk_engine.py:21-23`, `desktop/main.js:756` (terzo login Betfair, web SSO); `read_book` in produzione 2
+  definizioni (`mike/service.py:146`, `omega/omega_market.py:571`), non 17 come nel brief. Reperti per il piano: 10/10
+  connessioni stream nel caso peggiore, scanner senza ripresa clk, orologio del PC +844 ms, 9,6 buchi >5 s per ora in-play.
+- 16:20 tappa 2 ACCETTATA: schede C (porta ordini: 7 strade verso Betfair, 9 riconciliazioni), D (runtime: firma
+  `osserva(book, stato, orologio)` del brief NON regge per scalper/tennis/Safe -> contratto a due livelli Decisore /
+  OspiteFlumine), G (dati + algoritmi del cloud: 45 funzionalita', SQLite WAL FULL per il denaro + NORMAL per lo stato,
+  outbox del postino), I (processi h24: nessun supervisore del watchdog, log del worker 1,1 GB). Verifica a campione,
+  tutte confermate: `omega_market.py:704` (`place_order_live` REST diretto), `order_exec.py:215`, `execution.py:1219`,
+  `avvio_app.py:173` (avvio conosce i bot per nome), `mike/db.py:175-181` (id dal cloud), `dossier.py:147` (cache senza
+  scadenza) vs `omega_service.py:106` (6 h), `desktop/main.js:401-410` (watchdog morto non riavviato), `:937`.
+- 17:05 tappa 3 ACCETTATA: E1 Mike, E2 Omega, E3 Safe (+ scanner), E4 Scalper calcio. Verifica a campione:
+  `mike/service.py:4259-4264` e `config.py:350` (cadenza 1 s / 5 s a riposo: spiega 255 -> 48 richieste/min senza
+  cambi di codice), `omega_v3.py:115` (`K_MINIMO = 2.0` dormiente), `omega_config.py:417-420`, `bot_service.py:10957`,
+  `scalper_bot.py:2818` (`freno_live` nel percorso del tick), `tennis_scalper_bot.py:274` (copia dichiarata),
+  `one_green_per_phase` False nel bot vs true in `scalper.ts:117` (VERO). **E1 RESPINTA e corretta**: il reperto D6
+  (limiti 100 nel frontend) era FALSO (`mike.ts:552-553` = 100_000, script che leggeva male `_`); ritirato, 0 differenze
+  Python/TS sui 107 parametri.
+- 17:30 tappa 4 ACCETTATA: E5 Tennis, B punteggi, F money management. Verifica: `money_management.py` e' il «Quant Fund»
+  su Google Sheets (non usato dai bot; riscritto dal workflow settimanale), `trading/daily_pnl.py:49` (stop su profit
+  lordi), `reconcile_worker.py:747`, `omega_service.py:62-66` (assente = fresco), `poller.py:79-82`,
+  `registro_bot.py:53` (registrazioni tennis fuori dal repo, `~/Desktop/tennis_rec`).
+- 18:05 tappa 5 ACCETTATA: H banco (congelamento con sha256 di 17 registrazioni e 11 referti; modalita' ombra),
+  J frontend (101 voci per rotta), K codice morto (3.440 righe con prova piena, 9 decisioni). Verifica:
+  `applica_bot.py:365,375` (genera `replayBotCatalogo.ts`), `banco_comune.py:1642` (impronta flumine 2.13.11),
+  `App.tsx:39,100` (QueryClient montato, 0 `useQuery(`), `weekly_poisson_calibration.yml:43,60` (CI riscrive
+  `money_management.py`), `predict_fixture.py:986` (import di `market_intelligence`).
+- 18:20 `01_FUNZIONALITA.md`: 970 voci da 15 schede, generato e rieseguibile (`strumenti/f01_assembla_funzionalita.py`);
+  campione verificato (`auth.py:156` CustodeSessione, `motore_ordini.py:692` MotoreOrdini).

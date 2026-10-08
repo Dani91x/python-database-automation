@@ -1,0 +1,88 @@
+# funzioni/metodi di produzione mai riferiti (nome presente 1 sola volta nel corpus): 45, 318 righe
+# per file (n funzioni, righe):
+    40 righe   1 fn  Betfair/stream/scalper/validazione_hazard/parita.py
+    32 righe   1 fn  per_fixture_backfill.py
+    24 righe   3 fn  Betfair/stream/odds_http.py
+    22 righe   3 fn  Prediction/today_predictions_backfill.py
+    17 righe   1 fn  Betfair/stream/runner.py
+    16 righe   1 fn  Betfair/omega/omega_model.py
+    12 righe   1 fn  Ai Engine/ai_engine/predict_fixture.py
+    11 righe   1 fn  Ai Engine/ai_engine/advanced_validation.py
+    11 righe   1 fn  config.py
+     9 righe   1 fn  Betfair/safe_strategy/proposte_opportunita.py
+     9 righe   1 fn  football_data_scraper/fixture_matcher.py
+     7 righe   1 fn  Ai Engine/ai_engine/validation.py
+     7 righe   1 fn  Betfair/stream/tennis_scalper/research_data.py
+     7 righe   1 fn  import_betfair_operations.py
+     6 righe   2 fn  Betfair/betfair_report_manager.py
+     6 righe   1 fn  Betfair/client.py
+     6 righe   1 fn  Betfair/omega/omega_engine.py
+     6 righe   1 fn  Betfair/safe_strategy/bot_db.py
+     6 righe   1 fn  Betfair/safe_strategy/certificazione_tennis.py
+     6 righe   1 fn  Betfair/stream/tennis_live/guardie_tennis.py
+     5 righe   1 fn  Betfair/stream/saldo_evento.py
+     5 righe   1 fn  market_intelligence/edge_scorer.py
+     4 righe   1 fn  Ai Engine/ai_engine/targets.py
+     4 righe   1 fn  season_gaps.py
+     4 righe   1 fn  training_planner.py
+     3 righe   1 fn  Betfair/mike/db.py
+     3 righe   1 fn  Betfair/omega/certificazione.py
+     3 righe   1 fn  Betfair/omega/omega_market.py
+     3 righe   1 fn  Betfair/safe_strategy/combos.py
+     3 righe   1 fn  Betfair/stream/frammenti_mercato.py
+     3 righe   1 fn  leagues_mapper.py
+     2 righe   1 fn  Betfair/mike/certificazione.py
+     2 righe   1 fn  Betfair/safe_strategy/execution.py
+     2 righe   1 fn  Betfair/safe_strategy/porta_ordini.py
+     2 righe   1 fn  Betfair/stream/backtest/proposte_modello.py
+     2 righe   1 fn  Betfair/stream/limits.py
+     2 righe   1 fn  Betfair/stream/recorder.py
+     2 righe   1 fn  Betfair/stream/scalper/certificazione.py
+     2 righe   1 fn  Betfair/stream/scores/api_football.py
+     2 righe   1 fn  Betfair/stream/scores/base.py
+# dettaglio (file:riga nome righe)
+Betfair/stream/scalper/validazione_hazard/parita.py:18 confronta_v3 40
+per_fixture_backfill.py:203 delete_existing_for_fixture 32
+Betfair/stream/odds_http.py:108 do_POST 18
+Betfair/stream/runner.py:1864 _is_finished_stale 17
+Betfair/omega/omega_model.py:1167 rank_by_cover_cost 16
+Prediction/today_predictions_backfill.py:901 upsert_odds_row 14
+Ai Engine/ai_engine/predict_fixture.py:318 _scale_probabilities 12
+Ai Engine/ai_engine/advanced_validation.py:35 conflict_explanation 11
+config.py:48 print_loaded_config 11
+Betfair/safe_strategy/proposte_opportunita.py:92 e_proposta_combo 9
+football_data_scraper/fixture_matcher.py:53 _team_names_match 9
+Ai Engine/ai_engine/validation.py:56 validate_conflicts 7
+Betfair/stream/tennis_scalper/research_data.py:59 series_at 7
+import_betfair_operations.py:97 _mins_between 7
+Betfair/client.py:159 logout_local 6
+Betfair/omega/omega_engine.py:1190 cap_di_gamba_v3 6
+Betfair/safe_strategy/bot_db.py:368 open_trades_auto 6
+Betfair/safe_strategy/certificazione_tennis.py:229 _check_di 6
+Betfair/stream/tennis_live/guardie_tennis.py:155 client_paper_del_framework 6
+Prediction/today_predictions_backfill.py:1895 upsert_prediction_row 6
+Betfair/stream/saldo_evento.py:243 _process_order 5
+market_intelligence/edge_scorer.py:99 reload_cache 5
+Ai Engine/ai_engine/targets.py:20 _over_under 4
+Betfair/stream/odds_http.py:103 do_OPTIONS 4
+season_gaps.py:513 giorni_aperto 4
+training_planner.py:113 _matches_last_n 4
+Betfair/betfair_report_manager.py:84 _save_name_map 3
+Betfair/betfair_report_manager.py:1618 _fetch_odds_for_event 3
+Betfair/mike/db.py:167 delete_events 3
+Betfair/omega/certificazione.py:2158 elenco_controlli_banco 3
+Betfair/omega/omega_market.py:249 _best_back_price 3
+Betfair/safe_strategy/combos.py:220 _net_payoffs 3
+Betfair/stream/frammenti_mercato.py:462 _strategie_di 3
+leagues_mapper.py:124 get_existing_league_season_pairs 3
+Betfair/mike/certificazione.py:99 _vive 2
+Betfair/safe_strategy/execution.py:240 opposite 2
+Betfair/safe_strategy/porta_ordini.py:508 attendi_ack 2
+Betfair/stream/backtest/proposte_modello.py:419 per_nome 2
+Betfair/stream/limits.py:73 is_limit_error 2
+Betfair/stream/odds_http.py:217 log_message 2
+Betfair/stream/recorder.py:180 file_path_for 2
+Betfair/stream/scalper/certificazione.py:431 _q_credenze 2
+Betfair/stream/scores/api_football.py:74 set_fixture_id 2
+Betfair/stream/scores/base.py:41 score_tuple 2
+Prediction/today_predictions_backfill.py:522 setup_logger 2

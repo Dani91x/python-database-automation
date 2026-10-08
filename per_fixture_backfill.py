@@ -9,7 +9,8 @@ except ImportError:
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
 
-from db_client import get_supabase_client
+from db_client import (MOTIVO_GUASTO_RETE, GuastoRete, _client_per, classifica_guasto_rete,
+                       con_ritentativi, esegui_con_retry, get_supabase_client)
 from api_client import APIFootballClient
 
 
@@ -79,14 +80,12 @@ def _parse_percentage_to_int(value: Any) -> Optional[int]:
 # Supabase client
 # ========================
 
-_supabase = None
-
-
 def get_supabase():
-    global _supabase
-    if _supabase is None:
-        _supabase = get_supabase_client()
-    return _supabase
+    """08/10: ACCESSORE, niente piu' variabile di modulo catturata alla prima chiamata
+    (`_supabase`): dopo un rinnovo del client (connessione HTTP/2 terminata dal server,
+    run 37049359939/37141249749) la chiamata dopo deve usare il client NUOVO del thread.
+    I test sostituiscono questa funzione con il loro finto."""
+    return get_supabase_client()
 
 
 # ========================
@@ -101,8 +100,8 @@ def get_coverage_for_season(league_id: int, season_year: int) -> Optional[Dict[s
     """
     supabase = get_supabase()
     try:
-        resp = (
-            supabase.table("api_coverage_by_season")
+        resp = esegui_con_retry(
+            lambda c: c.table("api_coverage_by_season")
             .select(
                 "fixtures_events, fixtures_lineups, "
                 "fixtures_statistics_fixtures, fixtures_statistics_players, "
@@ -110,9 +109,8 @@ def get_coverage_for_season(league_id: int, season_year: int) -> Optional[Dict[s
             )
             .eq("league_id", league_id)
             .eq("season_year", season_year)
-            .maybe_single()
-            .execute()
-        )
+            .maybe_single(),
+            supabase, etichetta="select api_coverage_by_season")
         data = getattr(resp, "data", None)
         if not data:
             logger.warning(
@@ -160,14 +158,13 @@ def get_fixtures_from_matches(league_id: int, season_year: int) -> List[int]:
             league_id,
             season_year,
         )
-        resp = (
-            supabase.table("matches")
+        resp = esegui_con_retry(
+            lambda c: c.table("matches")
             .select("fixture_id")
             .eq("league_id", league_id)
             .eq("season_year", season_year)
-            .range(0, 99999)
-            .execute()
-        )
+            .range(0, 99999),
+            supabase, etichetta="select matches")
         data = getattr(resp, "data", None) or []
         for row in data:
             fid = _parse_int(row.get("fixture_id"))
@@ -218,12 +215,9 @@ def delete_existing_for_fixture(fixture_id: int) -> None:
     logger.info("🧹 Cancellazione dati per fixture_id=%s dalle tabelle per-fixture", fixture_id)
     for table in tables:
         try:
-            resp = (
-                supabase.table(table)
-                .delete()
-                .eq("fixture_id", fixture_id)
-                .execute()
-            )
+            resp = esegui_con_retry(
+                lambda c, t=table: c.table(t).delete().eq("fixture_id", fixture_id),
+                supabase, etichetta=f"delete {table}")
             deleted = len(getattr(resp, "data", None) or [])
             logger.info(
                 "   🗑️ %s: cancellate %s righe per fixture_id=%s",
@@ -265,6 +259,8 @@ def insert_rows(table: str, rows: List[Dict[str, Any]], batch_size: int = 200) -
             i + len(chunk),
         )
         try:
+            # insert NON idempotente: nessun ritentativo qui. Un guasto di rete risale a
+            # _sostituisci_righe, che rifa' l'UNITA' delete+insert (08/10).
             resp = supabase.table(table).insert(chunk).execute()
             data = getattr(resp, "data", None) or []
             inserted_total += len(data)
@@ -275,6 +271,8 @@ def insert_rows(table: str, rows: List[Dict[str, Any]], batch_size: int = 200) -
                 len(data),
             )
         except Exception as e:
+            if classifica_guasto_rete(e):
+                raise
             batch_errors += 1
             logger.error(
                 "   ❌ Errore insert in %s batch %s: %s",
@@ -930,17 +928,34 @@ def _sostituisci_righe(table: str, fixture_id: int, rows: List[Dict[str, Any]]) 
     match_odds ha DUE fonti per la stessa partita: 'api_football' (scritta qui)
     e 'football_data_csv' (quote di chiusura importate da CSV, usate da ML e
     backtest): si cancella SOLO snapshot_type='api_football', mai altre fonti.
-    Le altre 4 tabelle non hanno una colonna di fonte: per fixture_id."""
-    supabase = get_supabase()
-    try:
-        q = supabase.table(table).delete().eq("fixture_id", fixture_id)
+    Le altre 4 tabelle non hanno una colonna di fonte: per fixture_id.
+
+    08/10 - UNITA' delete+insert ritentata per intero sui guasti di rete/gateway
+    (db_client.con_ritentativi): l'insert non si puo' ripetere da solo (se il primo era
+    arrivato al DB senza risposta, es. GOAWAY sull'ultimo stream o 520, le righe
+    sarebbero doppie), la delete davanti lo rende ripetibile. Guasto persistente ->
+    GuastoRete al chiamante (partita rinviata). Errore non di rete: come prima, (0, 1)
+    se la delete fallisce, gli errori di batch dell'insert contati."""
+    stato = {"cancellata": False}
+
+    def _unita() -> Tuple[int, int]:
+        stato["cancellata"] = False
+        q = _client_per(get_supabase()).table(table).delete().eq("fixture_id", fixture_id)
         if table == "match_odds":
             q = q.eq("snapshot_type", "api_football")
         q.execute()
+        stato["cancellata"] = True
+        return insert_rows(table, rows)
+
+    try:
+        return con_ritentativi(_unita, etichetta=f"delete+insert {table} fixture {fixture_id}")
+    except GuastoRete:
+        raise
     except Exception as e:
+        if stato["cancellata"]:
+            raise                                        # non dovrebbe: insert_rows conta i suoi errori
         logger.error("   Errore cancellazione in %s per fixture_id=%s: %s", table, fixture_id, e)
         return 0, 1
-    return insert_rows(table, rows)
 
 
 def process_single_fixture(
@@ -1024,6 +1039,17 @@ def process_single_fixture(
             # 'ok' cancella un'eventuale riga di controllo vecchia.
             da_registrare.append({"fixture_id": fixture_id, "tabella": tabella, "league_id": league_id,
                                   "season_year": season_year, "esito": "parziale" if batch_err else "ok"})
+        except GuastoRete as e:
+            # 08/10: DB irraggiungibile dopo tutti i ritentativi. Esito vero: 'parziale' (la
+            # tabella puo' essere a meta'); niente altre chiamate API per questa partita
+            # (quota sprecata se il DB non scrive): il chiamante ferma la lega-stagione.
+            stats[f"{chiave}_errors"] += 1
+            stats["esiti"][chiave] = "errore"
+            stats["rinvio_rete"] = str(e)
+            logger.error("Guasto di rete/gateway persistente su %s per fixture_id=%s: %s", etichetta, fixture_id, e)
+            da_registrare.append({"fixture_id": fixture_id, "tabella": tabella, "league_id": league_id,
+                                  "season_year": season_year, "esito": "parziale"})
+            break
         except Exception as e:
             stats[f"{chiave}_errors"] += 1
             stats["esiti"][chiave] = "errore"
@@ -1033,7 +1059,13 @@ def process_single_fixture(
 
     if registra and da_registrare:
         from season_gaps import registra_esiti
-        registra_esiti(get_supabase(), da_registrare, obbligatorio=registro_obbligatorio)
+        try:
+            registra_esiti(get_supabase(), da_registrare, obbligatorio=registro_obbligatorio)
+        except GuastoRete as e:
+            # esiti non registrati: le partite-tabella restano come le vede il DB e si
+            # ritentano al giro dopo (nessuno stato falso scritto); stop della lega-stagione
+            stats["rinvio_rete"] = stats.get("rinvio_rete") or str(e)
+            logger.error("Esiti di fixture_id=%s NON registrati (guasto di rete/gateway): %s", fixture_id, e)
 
     logger.info(
         "Riepilogo fixture_id=%s -> events_rows=%s, lineups_rows=%s, player_stats_rows=%s, team_stats_rows=%s, odds_rows=%s",
@@ -1131,6 +1163,13 @@ def backfill_per_fixture_for_league_season(
         esiti = [fs["esiti"].get(e) for e in endpoints]
         total_stats["vuoti"] += esiti.count("vuoto")
         total_stats["errori_api"] += esiti.count("errore")
+        if fs.get("rinvio_rete"):
+            # 08/10: guasto di rete/gateway persistente: stop a fine partita, dichiarato
+            total_stats["fermato_per"] = MOTIVO_GUASTO_RETE
+            total_stats["rinvio_rete"] = fs["rinvio_rete"]
+            logger.error("Guasto di rete/gateway persistente: interrompo la lega-stagione (%s/%s fatte).",
+                         idx + 1, len(lavoro))
+            break
         di_fila_tutto_errore = di_fila_tutto_errore + 1 if esiti and all(x == "errore" for x in esiti) else 0
         if di_fila_tutto_errore >= 10:
             total_stats["fermato_per"] = "errori_api"

@@ -1,0 +1,10 @@
+WARNING:db_client:[RETE] client Supabase rinnovato dopo 3 richieste (prevenzione GOAWAY a 10.000 richieste per connessione HTTP/2)
+lacune_stagione(135, 2025): FT 380, partite 380, tabelle ['match_odds']
+[LACUNE] blocco iniziale ADATTIVO: 7 coppie (soglia sicura 6.0s / 0.85s a coppia a freddo, tetto 20)
+[LACUNE] blocco di 2 coppie in 0.39s
+riepilogo_lacune: [((135, 2025), 380), ((39, 2025), 380)], degradate []
+leggi_coverage(135): 17 righe; leggi_stati(135): 17 righe
+proxy select: [{'league_id': 135, 'season_year': 2010, 'status': 'completed'}, {'league_id': 135, 'season_year': 2011, 'status': 'completed'}]
+client creati/rinnovati: 1 rinnovi
+Rete PostgREST: ritentativi 0 (riusciti dopo un ritentativo 0), guasti persistenti 0, client rinnovati 1; errori transitori per classe: nessuno
+tempo: 3.2 s

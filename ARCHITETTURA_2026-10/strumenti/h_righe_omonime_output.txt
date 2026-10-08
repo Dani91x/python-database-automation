@@ -1,0 +1,16 @@
+=== ADATTATORI DI REPLAY
+  mike         file  2370 righe | in nomi omonimi (>=2 file)  1508
+  omega        file  2593 righe | in nomi omonimi (>=2 file)  1078
+  safe         file  2092 righe | in nomi omonimi (>=2 file)   989
+  safe_tennis  file  1577 righe | in nomi omonimi (>=2 file)   341
+  scalper      file  3803 righe | in nomi omonimi (>=2 file)   456
+  tennis       file  1679 righe | in nomi omonimi (>=2 file)  1030
+  TOTALE       file 14114 righe | in nomi omonimi  5402 (38.3%)
+=== MODULI DI CONTROLLI
+  mike         file  2084 righe | in nomi omonimi (>=2 file)   865
+  omega        file  2160 righe | in nomi omonimi (>=2 file)   953
+  safe         file  2036 righe | in nomi omonimi (>=2 file)   738
+  safe_tennis  file  1217 righe | in nomi omonimi (>=2 file)   674
+  scalper      file  2472 righe | in nomi omonimi (>=2 file)   539
+  tennis       file  1189 righe | in nomi omonimi (>=2 file)   698
+  TOTALE       file 11158 righe | in nomi omonimi  4467 (40.0%)

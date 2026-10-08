@@ -11,3 +11,8 @@ Cumulativo = spesa totale (coordinatore + delegati).
 | 12:37 | Fine del primo processo: delegati interrotti prima di scrivere le schede; restano script e uscite in `strumenti/` | 40,94 | dato del registro di `sessione_sdk.py` |
 | 14:40 | Ripresa: stato su disco verificato, brief comune con sezione «ripresa ed efficienza»; delegati a ondate di 4, in primo piano | 41,70 | |
 | 15:35 | 2. Ondata 1 (4 delegati Sonnet in primo piano): 00 inventario, 02 competitor, 07 misure, scheda A; verifica a campione del coordinatore | 68,60 | ~6,5 USD per delegato: dalla prossima ondata tetto di chiamate piu' stretto; G1+G2 fuse, K assorbita da 00 |
+| 16:20 | 3. Ondata 2 (C porta ordini, D runtime e contratto, G dati e algoritmi del cloud, I processi h24) + verifica a campione | 79,20 | ~2,4 USD per delegato col tetto di chiamate |
+| 17:05 | 4. Ondata 3 (E1 Mike, E2 Omega, E3 Safe, E4 Scalper calcio) + verifica; E1 respinta su D6 (falso) e corretta | 92,70 | |
+| 17:30 | 5. Ondata 4 (E5 Tennis, B punteggi, F money management) + verifica | 100,20 | |
+| 18:05 | 6. Ondata 5 (H banco, J frontend, K cartelle e codice morto) + verifica | 108,70 | |
+| 18:20 | 7. `01_FUNZIONALITA.md` generato dalle schede (970 voci) con `strumenti/f01_assembla_funzionalita.py` | 109,10 | |
