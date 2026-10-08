@@ -533,3 +533,164 @@ describe('secondo giro: riepilogo «Se chiudo tutto adesso»', () => {
         expect(screen.getByTestId('co-totale-live-vuoto').textContent).toBe('—');
     });
 });
+
+// ---------------------------------------------------------------------------
+// 08/10 sera (D-6, decisione dell'utente: «quelle concluse: crea una sezione
+// apposta e spostale li'»): la sezione «Concluse», i pulsanti spenti col motivo.
+// ---------------------------------------------------------------------------
+describe('D-6: sezione Concluse', () => {
+    /** E1 Mike (calcio) + E2 tennis_pro con la riga di oggi; E2 con stato e mercato scelti */
+    function conE2(statoE2: PartitaGiornata['stato'], mercatoE2: string | null) {
+        return vm({
+            giornata: gruppo([
+                partita(),
+                partita({ event_id: 'E2', sport: 'tennis', nome: 'Sinner v Alcaraz', stato: statoE2, koMs: ORA - 3 * 3600_000, statoMercato: mercatoE2 }),
+            ]),
+            posizioni: [...MIKE3.posizioni, pos({ bot: 'tennis_pro', id: 9, eventId: 'E2', partita: 'Sinner v Alcaraz', selezione: null })],
+            operazioni: new Map([
+                ['E1', MIKE3.operazioni],
+                ['E2', [op({ bot: 'tennis_pro', id: 9, eventId: 'E2', selezione: null, marketId: '1.TMO', selectionId: 11 })]],
+            ]),
+        });
+    }
+
+    it('mercato CHIUSO e posizioni da regolare: la scatola sta SOLO in «Concluse» e lo dice', () => {
+        mVm.mockReturnValue(conE2('chiusa', 'CLOSED'));
+        mostra();
+        const sez = screen.getByTestId('co-sezione-concluse');
+        const box = within(sez).getByTestId('co-scatola-E2');
+        expect(within(box).getByTestId('co-fase-conclusa').textContent).toBe('conclusa · posizioni da regolare');
+        expect(within(screen.getByTestId('co-sezione-gioco')).queryByTestId('co-scatola-E2')).toBeNull();
+        expect(within(screen.getByTestId('co-sezione-pre')).queryByTestId('co-scatola-E2')).toBeNull();
+        expect(screen.getAllByTestId('co-scatola-E2')).toHaveLength(1);
+        expect(within(sez).getByTestId('co-sezione-concluse-conta').textContent).toBe('1 partita');
+        expect(screen.getByTestId('co-riepilogo-fasi-conta').textContent).toBe('1 in gioco · 0 pre-match · 1 conclusa');
+        // la partita in gioco resta dov'era
+        expect(within(screen.getByTestId('co-sezione-gioco')).getByTestId('co-scatola-E1')).toBeTruthy();
+    });
+
+    it('TUTTE: anche con «inplay» ancora acceso nel feed, mercato CHIUSO = Concluse', () => {
+        mVm.mockReturnValue(conE2('live', 'CLOSED'));
+        mostra();
+        expect(within(screen.getByTestId('co-sezione-concluse')).getByTestId('co-scatola-E2')).toBeTruthy();
+        expect(within(screen.getByTestId('co-sezione-gioco')).queryByTestId('co-scatola-E2')).toBeNull();
+    });
+
+    it('nessuna conclusa: la sezione non c\'e\' (niente rumore), il riepilogo dice 0', () => {
+        mVm.mockReturnValue(conE2('live', 'OPEN'));
+        mostra();
+        expect(screen.queryByTestId('co-sezione-concluse')).toBeNull();
+        expect(screen.getByTestId('co-riepilogo-fasi-conta').textContent).toBe('2 in gioco · 0 pre-match · 0 concluse');
+    });
+
+    it('passaggio in gioco -> conclusa: la STESSA scatola cambia sezione, non sparisce', () => {
+        mVm.mockReturnValue(conE2('live', 'OPEN'));
+        const r = mostra();
+        expect(within(screen.getByTestId('co-sezione-gioco')).getByTestId('co-scatola-E2')).toBeTruthy();
+        mVm.mockReturnValue(conE2('chiusa', 'CLOSED'));
+        r.rerender(<HelmetProvider><MemoryRouter><CashOut /></MemoryRouter></HelmetProvider>);
+        expect(within(screen.getByTestId('co-sezione-concluse')).getByTestId('co-scatola-E2')).toBeTruthy();
+        expect(within(screen.getByTestId('co-sezione-gioco')).queryByTestId('co-scatola-E2')).toBeNull();
+        expect(screen.getAllByTestId('co-scatola-E2')).toHaveLength(1);
+    });
+
+    it('i filtri valgono: «Live» tiene le concluse, «Pre-match» le toglie, lo sport sceglie', () => {
+        mVm.mockReturnValue(conE2('chiusa', 'CLOSED'));
+        mostra();
+        fireEvent.click(screen.getByTestId('co-filtro-fase-live'));
+        expect(within(screen.getByTestId('co-sezione-concluse')).getByTestId('co-scatola-E2')).toBeTruthy();
+        fireEvent.click(screen.getByTestId('co-filtro-fase-pre'));
+        expect(screen.queryByTestId('co-sezione-concluse')).toBeNull();
+        expect(screen.queryByTestId('co-scatola-E2')).toBeNull();
+        fireEvent.click(screen.getByTestId('co-filtro-fase-pre'));
+        fireEvent.click(screen.getByTestId('co-filtro-sport-calcio'));
+        expect(screen.queryByTestId('co-sezione-concluse')).toBeNull();
+        fireEvent.click(screen.getByTestId('co-filtro-sport-tennis'));
+        expect(within(screen.getByTestId('co-sezione-concluse')).getByTestId('co-scatola-E2')).toBeTruthy();
+        fireEvent.click(screen.getByTestId('co-filtro-soldi-prova'));
+        expect(screen.queryByTestId('co-scatola-E2')).toBeNull();
+    });
+
+    it('cash out della gamba SPENTO col motivo (mercato chiuso); in gioco lo stesso pulsante e\' acceso', () => {
+        mVm.mockReturnValue(conE2('chiusa', 'CLOSED'));
+        const r = mostra();
+        let box = screen.getByTestId('co-scatola-E2');
+        let b = within(box).getByTestId('cr-op-chiudi');
+        expect(b).toBeDisabled();
+        expect(b.getAttribute('data-motivo')).toMatch(/Betfair ha CHIUSO il mercato, il cash out non e' possibile/);
+        expect(b.getAttribute('title')).toMatch(/^non chiudibile: partita conclusa/);
+        expect(within(box).getByTestId('co-conclusa-motivo').textContent).toMatch(/il cash out non e' possibile/);
+        mVm.mockReturnValue(conE2('live', 'OPEN'));
+        r.rerender(<HelmetProvider><MemoryRouter><CashOut /></MemoryRouter></HelmetProvider>);
+        box = screen.getByTestId('co-scatola-E2');
+        b = within(box).getByTestId('cr-op-chiudi');
+        expect(b).not.toBeDisabled();
+        expect(b.getAttribute('data-motivo')).toBeNull();
+        expect(within(box).queryByTestId('co-conclusa-motivo')).toBeNull();
+    });
+
+    it('un clic sul pulsante spento non manda nessun comando', () => {
+        const v = conE2('chiusa', 'CLOSED');
+        mVm.mockReturnValue(v);
+        mostra();
+        fireEvent.click(within(screen.getByTestId('co-scatola-E2')).getByTestId('cr-op-chiudi'));
+        expect(v.chiudi).not.toHaveBeenCalled();
+        expect(within(screen.getByTestId('co-scatola-E2')).queryByTestId('cr-op-chiudi-conferma')).toBeNull();
+    });
+
+    it('lo scalper resta fermabile: il suo pulsante ferma la sessione, non piazza sul mercato chiuso', () => {
+        mVm.mockReturnValue(vm({
+            giornata: gruppo([partita({ stato: 'chiusa', statoMercato: 'CLOSED' })]),
+            posizioni: [pos({ bot: 'scalper', id: 5, eventId: 'E1', modalita: 'paper' })],
+            operazioni: new Map([['E1', [op({ bot: 'scalper', id: 5, modalita: 'paper', stato: 'running', firma: '2026-10-08T14:00:00Z', marketId: '1.MO', selectionId: 1 })]]]),
+        }));
+        mostra();
+        const box = within(screen.getByTestId('co-sezione-concluse')).getByTestId('co-scatola-E1');
+        expect(within(box).getByTestId('cr-op-chiudi')).not.toBeDisabled();
+    });
+
+    it('ordini fuori dai bot e posizione col conto: Cash out spenti col motivo scritto', () => {
+        PREZZI.set('1.OU25', [{ sid: 47973, back: 1.5, lay: 1.52 }]);
+        mVm.mockReturnValue(vm({
+            giornata: gruppo([partita({ stato: 'chiusa', statoMercato: 'CLOSED' })]),
+            posizioni: [], operazioni: new Map(),
+            ordiniConto: raggruppaOrdiniConto([SITO], '2026-10-08T14:59:50Z'),
+        }));
+        mostra();
+        const box = within(screen.getByTestId('co-sezione-concluse')).getByTestId('co-scatola-E1');
+        expect(within(box).getByTestId('co-fuori-bot-cashout')).toBeDisabled();
+        expect(within(box).getByTestId('co-fuori-bot-cashout-spento').textContent).toMatch(/Betfair ha CHIUSO il mercato/);
+        expect(within(box).getByTestId('co-posizione-conto-cashout')).toBeDisabled();
+        expect(within(box).getByTestId('co-posizione-conto-cashout-spento').textContent).toMatch(/Betfair ha CHIUSO il mercato/);
+    });
+
+    it('«Chiudi tutte le gambe dei bot» spento col motivo anche con la cifra calcolabile; in gioco acceso', async () => {
+        PREZZI.set('1.MO', [{ sid: 1, back: 2.0, lay: 2.02 }]);
+        const conOmega = (p: Partial<PartitaGiornata>) => vm({
+            giornata: gruppo([partita(p)]),
+            posizioni: [pos({ bot: 'omega', id: 7, eventId: 'E1', modalita: 'paper', selezione: 'Inter' })],
+            operazioni: new Map([['E1', [op({ bot: 'omega', id: 7, modalita: 'paper', selezione: 'Inter', marketId: '1.MO', selectionId: 1, ordine: ordine('back', 2.1, 10) })]]]),
+        });
+        mVm.mockReturnValue(conOmega({ stato: 'chiusa', statoMercato: 'CLOSED' }));
+        const r = mostra();
+        await waitFor(() => expect(screen.getByTestId('cr-cashout-globale-prova-netto')).toBeTruthy());
+        const avvia = screen.getByTestId('cr-cashout-globale-prova-chiudi-tutte-avvia');
+        expect(avvia).toBeDisabled();
+        expect(avvia.getAttribute('title')).toMatch(/Betfair ha CHIUSO il mercato/);
+        mVm.mockReturnValue(conOmega({ stato: 'live' }));
+        r.rerender(<HelmetProvider><MemoryRouter><CashOut /></MemoryRouter></HelmetProvider>);
+        await waitFor(() => expect(screen.getByTestId('cr-cashout-globale-prova-chiudi-tutte-avvia')).not.toBeDisabled());
+    });
+
+    it('Safe: «Cash out Safe» spento col motivo scritto accanto', () => {
+        mVm.mockReturnValue(vm({
+            giornata: gruppo([partita({ stato: 'chiusa', statoMercato: 'CLOSED' })]),
+            posizioni: [pos({ bot: 'safe', id: 4, eventId: 'E1', modalita: 'paper' })],
+            operazioni: new Map([['E1', [op({ bot: 'safe', id: 4, modalita: 'paper' })]]]),
+        }));
+        mostra();
+        const box = screen.getByTestId('co-scatola-E1');
+        expect(within(box).getByTestId('cr-cashout-partita-avvia')).toBeDisabled();
+        expect(within(box).getByTestId('cr-cashout-partita-bloccato').textContent).toMatch(/Betfair ha CHIUSO il mercato/);
+    });
+});

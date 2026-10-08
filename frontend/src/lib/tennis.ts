@@ -730,6 +730,10 @@ export const TENNIS_BOT_REGISTRY: TennisBotDescriptor[] = [
             { key: 'signal_ticks', label: 'Tick segnale', step: 1, min: 1, max: 10, hint: 'ampiezza deviazione per entrare' },
             { key: 'min_flow', label: 'Flusso min €/lato', step: 1, min: 0, max: 500, hint: 'gate volume stampato (preset validato: 2)' },
             { key: 'min_size', label: 'Size min ai best €', step: 1, min: 0, max: 2000, hint: 'liquidità minima sul touch' },
+            // 08/10 sera (D-4, decisione utente "esporre"): soglia che il bot LEGGE
+            // (`c.get('warmup_ms', ...)`, preset del runner 30000) e che lo scenario
+            // `gate-aperto` del banco apre a 0: ora si vede e si cambia qui.
+            { key: 'warmup_ms', label: 'Osservazione iniziale (ms)', step: 1000, min: 0, max: 120000, hint: 'tempo in cui il bot osserva il runner prima di quotare (preset validato: 30000 ms = 30 s; 0 = quota subito)' },
             { key: 'price_min', label: 'Quota min', step: 0.1, min: 1.01, max: 5, hint: 'sotto: code lente' },
             { key: 'price_max', label: 'Quota max', step: 0.1, min: 1.5, max: 20, hint: 'sopra: tick larghi' },
             { key: 'one_tick_per_phase', label: 'Missione 1 tick/fase', step: 0, min: 0, max: 0, type: 'select', bool: true,
@@ -750,6 +754,7 @@ export const TENNIS_BOT_REGISTRY: TennisBotDescriptor[] = [
             signal_ticks: 1,
             min_flow: 2,
             min_size: 5,
+            warmup_ms: 30000,
             price_min: 1.2,
             price_max: 6,
             one_tick_per_phase: 'on',
@@ -770,6 +775,10 @@ export const TENNIS_BOT_REGISTRY: TennisBotDescriptor[] = [
             { key: 'fade_target_ticks', label: 'Fade: tick target', step: 1, min: 2, max: 40, hint: 'obiettivo fade over-reaction' },
             { key: 'min_matched', label: 'Matched min €', step: 5000, min: 0, max: 500000, hint: 'liquidità minima mercato' },
             { key: 'price_max', label: 'Quota max', step: 0.1, min: 1.1, max: 10, hint: 'non entrare sopra questa quota' },
+            // 08/10 sera (D-4): soglie che il bot LEGGE (`c.get('price_min', 1.08)`,
+            // `c.get('min_book_size', 10.0)`) e che `gate-aperto` del banco apre.
+            { key: 'price_min', label: 'Quota min', step: 0.01, min: 1.01, max: 5, hint: 'non entrare sotto questa quota' },
+            { key: 'min_book_size', label: 'Size min all\'ingresso €', step: 1, min: 0, max: 2000, hint: 'liquidità minima alla quota di ingresso, sul lato dell\'ordine' },
             // 25/09 (decisione utente): la SUPERFICIE non si sceglie piu' qui. La
             // decide il runner per OGNI partita dal nome del torneo
             // (`Betfair/stream/tennis_scalper/superficie.py`, via
@@ -792,7 +801,7 @@ export const TENNIS_BOT_REGISTRY: TennisBotDescriptor[] = [
               hint: 'entra passivo a maker_offset tick dal best (fill non garantito). ' + HINT_ACCESO_DI_DEFAULT },
         ],
         defaults: { bp_target_ticks: 5, bp_stop_ticks: 3, fade_target_ticks: 4, min_matched: 50000, price_max: 3.6,
-            trend: 'on', adapt: 'on', maker: 'on' },
+            price_min: 1.08, min_book_size: 10, trend: 'on', adapt: 'on', maker: 'on' },
     },
     {
         key: 'tennis_flb',
@@ -807,12 +816,15 @@ export const TENNIS_BOT_REGISTRY: TennisBotDescriptor[] = [
             { key: 'green_frac', label: 'Frazione green', step: 0.1, min: 0.1, max: 1, hint: 'quota di posizione da chiudere' },
             { key: 'rearm_mult', label: 'Rearm mult', step: 0.05, min: 1, max: 2, hint: 'riarmo dopo movimento' },
             { key: 'min_matched', label: 'Matched min €', step: 5000, min: 0, max: 500000, hint: 'liquidità minima mercato' },
+            // 08/10 sera (D-4): soglia che il bot LEGGE (`c.get('min_lay_size', 5.0)`)
+            // e che `gate-aperto` del banco apre a 0.
+            { key: 'min_lay_size', label: 'Size min al best lay €', step: 1, min: 0, max: 2000, hint: 'liquidità minima alla miglior quota banca per entrare' },
             { key: 'exit_mode', label: 'Uscita', step: 0, min: 0, max: 0, type: 'select',
               options: [{ value: 'hybrid', label: 'hybrid' }, { value: 'hold', label: 'hold' }, { value: 'green', label: 'green' }],
               hint: 'hold = preset col miglior backtest (direzionale, locked può restare <0); hybrid = green parziale' },
         ],
         defaults: { lay_max: 1.1, green_ticks: 8, green_frac: 0.5, rearm_mult: 1.1, min_matched: 10000,
-            exit_mode: 'hybrid' },
+            min_lay_size: 5, exit_mode: 'hybrid' },
     },
     {
         key: 'tennis_swing',
@@ -825,10 +837,18 @@ export const TENNIS_BOT_REGISTRY: TennisBotDescriptor[] = [
             { key: 'N', label: 'Finestra N', step: 5, min: 10, max: 120, hint: 'lookback tick-index' },
             { key: 'zin', label: 'Z ingresso', step: 0.1, min: 1, max: 4, hint: 'soglia z per entrare' },
             { key: 'er_max', label: 'ER max', step: 0.05, min: 0.1, max: 0.9, hint: 'gate regime (Efficiency Ratio)' },
+            // 08/10 sera (D-4): soglie che il bot LEGGE (`c.get('conf_ticks', 2)`,
+            // `c.get('min_matched', 10_000.0)`, `c.get('price_min', 1.08)`,
+            // `c.get('price_max', 8.0)`) e che `gate-aperto` del banco apre.
+            { key: 'conf_ticks', label: 'Tick conferma', step: 1, min: 1, max: 10, hint: 'tick di ritorno dall\'estremo richiesti prima di entrare' },
+            { key: 'min_matched', label: 'Matched min €', step: 5000, min: 0, max: 500000, hint: 'liquidità minima mercato' },
+            { key: 'price_min', label: 'Quota min', step: 0.01, min: 1.01, max: 5, hint: 'non entrare sotto questa quota (media back/lay del favorito)' },
+            { key: 'price_max', label: 'Quota max', step: 0.1, min: 1.5, max: 30, hint: 'non entrare sopra questa quota (media back/lay del favorito)' },
             { key: 'stop_ticks', label: 'Tick stop', step: 1, min: 2, max: 30, hint: 'stop di protezione' },
             { key: 'tmax', label: 'T max (s)', step: 10, min: 20, max: 300, hint: 'time-stop posizione' },
         ],
-        defaults: { N: 40, zin: 2.0, er_max: 0.4, stop_ticks: 8, tmax: 90 },
+        defaults: { N: 40, zin: 2.0, er_max: 0.4, stop_ticks: 8, tmax: 90,
+            conf_ticks: 2, min_matched: 10000, price_min: 1.08, price_max: 8 },
     },
 ];
 

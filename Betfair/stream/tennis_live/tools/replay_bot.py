@@ -295,35 +295,49 @@ def scenari_del_bot(bot: str) -> Dict[str, str]:
 # sono nel catalogo dei parametri che l'utente varia dalla UI
 # (`parametri_modificabili`, la lista bianca). Sono DICHIARATE una per una con
 # lo stato misurato sull'istanza vera del bot (`_instantiate_bot`): una chiave
-# che il bot non legge non cambia niente, una che legge cambia la soglia. Non
-# si toccano (cambierebbero i referti di tutti gli scenari coi gate aperti): la
-# scelta e' dell'utente (referto del cantiere 6, "Decisioni per l'utente"). Il
+# che il bot non legge non cambia niente, una che legge cambia la soglia. Il
 # test di contratto diventa ROSSO se gate-aperto cambia una chiave che non e'
 # ne' nel catalogo ne' qui, e se qui resta una chiave che non serve piu'.
+# 08/10 sera (D-4, decisione dell'utente: "esporre"): le soglie che il bot LEGGE
+# e che lo scenario cambia (scalper `warmup_ms`; pro `min_book_size`,
+# `price_min`; flb `min_lay_size`; swing `conf_ticks`, `min_matched`,
+# `price_min`, `price_max`) sono ora nel catalogo (`_MENU_TENNIS`) e nella
+# scheda della UI. Qui restano SOLO le chiavi che esporre sarebbe una bugia a
+# schermo: il bot non le legge, o lo scenario non ne cambia il valore. I valori
+# di `gate-aperto` NON sono cambiati (stessi referti).
 _NON_LETTA = "chiave che il bot NON legge (nessun attributo): non cambia niente"
 SOGLIE_FUORI_CATALOGO: Dict[str, Dict[str, str]] = {
     "tennis_scalper": {
         "min_matched": _NON_LETTA,
         "min_total_matched": "gia' 0 nel preset del runner: non cambia niente",
-        "warmup_ms": "riscaldamento 30000 -> 0 ms (soglia tecnica, non nella scheda)",
     },
     "tennis_pro": {
-        "min_book_size": "size minima al best 10 -> 0 EUR (non nella scheda)",
         "min_total_matched": _NON_LETTA,
-        "price_min": "quota minima 1,08 -> 1,01 (la scheda espone solo la massima)",
     },
     "tennis_flb": {
-        "min_lay_size": "size minima in banca 5 -> 0 EUR (non nella scheda)",
         "min_total_matched": _NON_LETTA,
     },
     "tennis_swing": {
-        "conf_ticks": "tick di conferma 2 -> 1 (soglia del detector, non nella scheda)",
-        "min_matched": "abbinato minimo del mercato 10000 -> 0 EUR (non nella scheda)",
         "min_total_matched": _NON_LETTA,
-        "price_max": "quota massima 8 -> 30 (non nella scheda)",
-        "price_min": "quota minima 1,08 -> 1,01 (non nella scheda)",
     },
 }
+
+
+def nota_parametri_dichiarati(extra: Dict[str, Any], bot: str) -> str:
+    """La nota "SCENARIO DICHIARATO" del referto: quali parametri lo scenario
+    cambia. 08/10 sera (D-4): dice il vero chiave per chiave; le chiavi rimaste
+    fuori dalla scheda della UI (`SOGLIE_FUORI_CATALOGO`: il bot non le legge o
+    lo scenario non ne cambia il valore) si nominano a parte. ``extra`` vuoto ->
+    "stake" (forma di sempre)."""
+    if not extra:
+        return "stake"
+    fuori_ui = sorted(k for k in extra if k in SOGLIE_FUORI_CATALOGO.get(bot, {}))
+    dalla_ui = "numeri che l'utente puo' gia' cambiare dalla UI"
+    if fuori_ui:
+        dalla_ui += ("; fuori dalla scheda %s: il bot non le legge o lo scenario "
+                     "non ne cambia il valore" % fuori_ui)
+    return ("SCENARIO DICHIARATO: cambiati SOLO i parametri %s (%s). La strategia "
+            "e' quella di produzione." % (sorted(extra), dalla_ui))
 
 
 def descrivi_parametri_scenario(scenario: str, bot: str) -> str:
@@ -1269,9 +1283,14 @@ class _Ponte:
 # DEFAULT si legge dall'ISTANZA VERA del bot costruita da ``_instantiate_bot``
 # con la riga dello scenario: preset del runner, default della classe e valori
 # dello scenario sono quelli che il bot userebbe davvero. FUORI: le blindature
-# .it (``size_step``, ``live_min_bet``, ``exact_exits``: regole di Betfair), le
-# soglie tecniche aperte solo da ``gate-aperto`` (``warmup_ms``, ``min_book_size``,
-# ``min_lay_size``, ``min_total_matched``) e ``dry_run`` (sicurezza).
+# .it (``size_step``, ``live_min_bet``, ``exact_exits``: regole di Betfair),
+# ``dry_run`` (sicurezza) e le chiavi di ``gate-aperto`` che il bot NON legge o
+# che lo scenario non cambia (``SOGLIE_FUORI_CATALOGO``).
+# 08/10 sera (D-4, decisione dell'utente: "esporre"): le soglie che
+# ``gate-aperto`` apriva fuori dalla scheda e che il bot LEGGE davvero entrano
+# qui E nella scheda TS (stessa chiave, stessi limiti): scalper ``warmup_ms``;
+# pro ``min_book_size``, ``price_min``; flb ``min_lay_size``; swing
+# ``conf_ticks``, ``min_matched``, ``price_min``, ``price_max``.
 _MENU_TENNIS: Dict[str, Tuple[Tuple[str, str, str, str, float, float, float, str], ...]] = {
     # (chiave, etichetta, gruppo, tipo, min, max, passo, unita); scelte a parte
     "tennis_scalper": (
@@ -1279,6 +1298,7 @@ _MENU_TENNIS: Dict[str, Tuple[Tuple[str, str, str, str, float, float, float, str
         ("signal_ticks", "Tick segnale", "Ingresso", "float", 1, 10, 1, "tick"),
         ("min_flow", "Flusso minimo per lato", "Filtri", "float", 0, 500, 1, "EUR"),
         ("min_size", "Size minima ai best", "Filtri", "float", 0, 2000, 1, "EUR"),
+        ("warmup_ms", "Osservazione prima di quotare", "Tempi", "int", 0, 120000, 1000, "ms"),
         ("price_min", "Quota minima", "Ingresso", "float", 1.01, 5, 0.1, ""),
         ("price_max", "Quota massima", "Ingresso", "float", 1.5, 30, 0.1, ""),
         ("runner_filter", "Runner operato", "Ingresso", "scelta", 0, 0, 0, ""),
@@ -1289,11 +1309,13 @@ _MENU_TENNIS: Dict[str, Tuple[Tuple[str, str, str, str, float, float, float, str
     ),
     "tennis_pro": (
         ("stake", "Stake", "Importi", "float", 2.0, 500.0, 0.5, "EUR"),
+        ("price_min", "Quota minima", "Ingresso", "float", 1.01, 5, 0.01, ""),
         ("price_max", "Quota massima", "Ingresso", "float", 1.1, 30, 0.1, ""),
         ("trend", "Trend-following", "Ingresso", "bool", 0, 0, 0, ""),
         ("adapt", "Direzione adattiva", "Ingresso", "bool", 0, 0, 0, ""),
         ("maker", "Ingresso maker", "Ingresso", "bool", 0, 0, 0, ""),
         ("min_matched", "Abbinato minimo del mercato", "Filtri", "float", 0, 500000, 5000, "EUR"),
+        ("min_book_size", "Size minima alla quota di ingresso", "Filtri", "float", 0, 2000, 1, "EUR"),
         ("bp_target_ticks", "Break: tick obiettivo", "Uscita", "int", 2, 40, 1, "tick"),
         ("bp_stop_ticks", "Break: tick di stop", "Uscita", "int", 1, 30, 1, "tick"),
         ("fade_target_ticks", "Fade: tick obiettivo", "Uscita", "int", 2, 40, 1, "tick"),
@@ -1303,6 +1325,7 @@ _MENU_TENNIS: Dict[str, Tuple[Tuple[str, str, str, str, float, float, float, str
         ("lay_max", "Banca solo sotto quota", "Ingresso", "float", 1.01, 1.5, 0.01, ""),
         ("rearm_mult", "Riarmo dopo movimento (x)", "Ingresso", "float", 1.0, 2.0, 0.05, "x"),
         ("min_matched", "Abbinato minimo del mercato", "Filtri", "float", 0, 500000, 5000, "EUR"),
+        ("min_lay_size", "Size minima alla miglior quota banca", "Filtri", "float", 0, 2000, 1, "EUR"),
         ("exit_mode", "Uscita", "Uscita", "scelta", 0, 0, 0, ""),
         ("green_ticks", "Tick di green", "Uscita", "int", 1, 20, 1, "tick"),
         ("green_frac", "Frazione da greenare", "Uscita", "float", 0.1, 1.0, 0.1, ""),
@@ -1311,7 +1334,11 @@ _MENU_TENNIS: Dict[str, Tuple[Tuple[str, str, str, str, float, float, float, str
         ("stake", "Stake", "Importi", "float", 2.0, 500.0, 0.5, "EUR"),
         ("N", "Finestra N", "Ingresso", "int", 10, 120, 5, "tick"),
         ("zin", "Z di ingresso", "Ingresso", "float", 1.0, 4.0, 0.1, ""),
+        ("conf_ticks", "Tick di conferma dell'inversione", "Ingresso", "int", 1, 10, 1, "tick"),
+        ("price_min", "Quota minima", "Ingresso", "float", 1.01, 5, 0.01, ""),
+        ("price_max", "Quota massima", "Ingresso", "float", 1.5, 30, 0.1, ""),
         ("er_max", "Efficiency Ratio massimo", "Filtri", "float", 0.1, 1.0, 0.05, ""),
+        ("min_matched", "Abbinato minimo del mercato", "Filtri", "float", 0, 500000, 5000, "EUR"),
         ("stop_ticks", "Tick di stop", "Uscita", "int", 2, 30, 1, "tick"),
         ("tmax", "Tempo massimo in posizione", "Uscita", "int", 20, 300, 10, "s"),
     ),
@@ -1684,10 +1711,7 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
     if scenario in ("gate-aperto", "parziali", "rifiuti-betfair", "live", CP.SCENARIO,
                     SCENARIO_CHIUDI_ORA) or scenario in UM.SCENARI \
             or scenario in SCENARI_SOLDI_VERI:
-        ref.note.append("SCENARIO DICHIARATO: cambiati SOLO i parametri %s "
-                        "(numeri che l'utente puo' gia' cambiare dalla UI). La "
-                        "strategia e' quella di produzione."
-                        % sorted(extra) if extra else "stake")
+        ref.note.append(nota_parametri_dichiarati(extra, bot))
     if not ref.decisioni:
         ref.note.append("il bot non ha MAI deciso: nessun controllo puo' dire "
                         "«sano», il referto dice «non lo so»")

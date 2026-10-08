@@ -14,6 +14,8 @@
 //     (Mike: `ko_at` e `live.inplay`; Omega: `kickoff` della riga). Fase non
 //     ricavabile = Pre-match con «orario non dichiarato»: mai una scatola che
 //     sparisce;
+//   * LA SEZIONE (08/10 sera, D-6): In gioco, Pre-match, Concluse (Match Odds
+//     CHIUSO, posizioni da regolare): `sezioneScatola`;
 //   * cosa DICE il pulsante di una gamba dei bot: il comando di oggi
 //     (`chiudiRiga.ts`) chiude per PARTITA Mike, per partita e mercato i 4 bot
 //     tennis, per SESSIONE lo scalper; Omega e Safe la sola riga;
@@ -67,10 +69,15 @@ export function faseEvento(
     nowMs: number,
 ): FaseEvento {
     if (partita) {
+        // review finale 30/09 (R2-A1): «conclusa» solo se Betfair ha CHIUSO il Match Odds.
+        // 08/10 sera (D-6): il Match Odds CHIUSO viene PRIMA di ogni altra fase: e'
+        // lo stato definitivo di Betfair, e TUTTE le partite col mercato chiuso
+        // vanno nella sezione «Concluse» (un `inplay` ancora acceso nel feed non
+        // la riporta «in gioco»). `fase` resta 'gioco': per il filtro Pre-match /
+        // Live una conclusa e' una partita gia' entrata in gioco, come prima.
+        if (partita.statoMercato === 'CLOSED') return { fase: 'gioco', nota: 'conclusa', koMs: partita.koMs, fonte: 'scanner' };
         if (partita.stato === 'live') return { fase: 'gioco', nota: 'in-gioco', koMs: partita.koMs, fonte: 'scanner' };
         if (partita.stato === 'pre') return { fase: 'pre', nota: 'fischio-fra', koMs: partita.koMs, fonte: 'scanner' };
-        // review finale 30/09 (R2-A1): «conclusa» solo se Betfair ha CHIUSO il Match Odds
-        if (partita.statoMercato === 'CLOSED') return { fase: 'gioco', nota: 'conclusa', koMs: partita.koMs, fonte: 'scanner' };
         return { fase: 'pre', nota: 'fischio-passato', koMs: partita.koMs, fonte: 'scanner' };
     }
     // fuori dal programma dello scanner: i dati del bot gia' in memoria
@@ -241,6 +248,38 @@ export function contaPerModalita(scatole: readonly ScatolaCashOut[]): Record<'li
         if (paper > 0) out.paper.partite += 1;
     }
     return out;
+}
+
+// ------------------------------------------------------------ sezioni (D-6)
+
+/**
+ * 08/10 sera (D-6, decisione dell'utente: «quelle concluse: crea una sezione
+ * apposta e spostale li'»). La sezione di una scatola:
+ *  - `concluse`: Betfair ha CHIUSO il Match Odds e ci sono ancora posizioni da
+ *    regolare (TUTTE e SOLE le scatole con `nota === 'conclusa'`);
+ *  - `gioco` / `pre`: la fase di sempre.
+ * Ogni scatola sta in UNA sola sezione: il passaggio la sposta, non la toglie.
+ */
+export type SezioneScatola = 'gioco' | 'pre' | 'concluse';
+
+export function sezioneScatola(s: Pick<ScatolaCashOut, 'fase'>): SezioneScatola {
+    if (s.fase.nota === 'conclusa') return 'concluse';
+    return s.fase.fase === 'gioco' ? 'gioco' : 'pre';
+}
+
+/** Il testo della fase di una conclusa, nella testata della scatola. */
+export const TESTO_CONCLUSA = 'conclusa · posizioni da regolare';
+
+/**
+ * Perche' i pulsanti di cash out di una scatola conclusa sono spenti: col
+ * Match Odds CHIUSO Betfair non accetta ordini, le posizioni le regola Betfair.
+ * Lo stesso meccanismo dei pulsanti di soldi spenti (`motivoPrezziFermi`):
+ * un testo, mai un `disabled` muto. `null` = la partita non e' conclusa.
+ */
+export function motivoCashOutConclusa(s: Pick<ScatolaCashOut, 'fase'>): string | null {
+    return s.fase.nota === 'conclusa'
+        ? 'partita conclusa: Betfair ha CHIUSO il mercato, il cash out non e\' possibile (le posizioni le regola Betfair)'
+        : null;
 }
 
 /** Ordine dentro una sezione: prima le LIVE (soldi veri), poi per fischio (ignoto in fondo). */

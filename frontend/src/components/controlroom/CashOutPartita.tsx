@@ -60,10 +60,14 @@ export interface CashOutPartitaProps {
      * in memoria/realtime — nessuna lettura nuova qui dentro.
      */
     esito?: StrisciaEsitoChiusuraProps;
+    /** 08/10 sera (D-6, pagina Cash Out): il cash out di Safe e' spento con
+     *  questo motivo (partita conclusa: mercato CHIUSO da Betfair), scritto
+     *  accanto come ogni altro blocco; assente = come prima */
+    spentoPerche?: string | null;
 }
 
 export function CashOutPartita({
-    eventId, modalita, posizioniVive, stato, onCashOut, onRiprendi, compatto = false, esito,
+    eventId, modalita, posizioniVive, stato, onCashOut, onRiprendi, compatto = false, esito, spentoPerche = null,
 }: CashOutPartitaProps) {
     const [armato, setArmato] = useState(false);
     // 30/09 (P12b, review) - ANTI DOPPIO CLIC: la conferma compare nello stesso
@@ -93,7 +97,7 @@ export function CashOutPartita({
     // chiedere una conferma di troppo non ha mai chiuso una posizione sbagliata.
     const chiedeConferma = modalita !== 'paper';
 
-    const bloccoCashout = motivoCashoutSpento({
+    const bloccoCashout = spentoPerche ?? motivoCashoutSpento({
         eventId, posizioniVive, chiusa: stato.chiusa, inCorso,
     });
     const bloccoRiprendi = motivoRiprendiSpento({ eventId, chiusa: stato.chiusa, inCorso });
@@ -138,8 +142,8 @@ export function CashOutPartita({
             {!stato.chiusa && (
                 armato ? (
                     <Button
-                        onClick={() => { if (!troppoPresto) void esegui(onCashOut); }}
-                        disabled={inCorso || troppoPresto}
+                        onClick={() => { if (!troppoPresto && spentoPerche == null) void esegui(onCashOut); }}
+                        disabled={inCorso || troppoPresto || spentoPerche != null}
                         className={`${dim} rounded bg-orange-500 text-black hover:bg-orange-400 font-bold uppercase tracking-wider`}
                         data-testid="cr-cashout-partita-conferma"
                     >

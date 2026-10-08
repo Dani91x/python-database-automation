@@ -324,8 +324,10 @@ function MarcatoreRigaOp({ meta }: { meta: Record<string, unknown> | null }) {
 export function RigaOperazione({ o, testId = 'cr-op', nomeSelezioneRisolto = null, chiudi }: {
     o: OperazionePartita; testId?: string;
     /** 08/10 (W1, pagina Cash Out) - testo del «Chiudi» e quanto chiude il
-     *  comando del bot; assente = il «Chiudi» di sempre. */
-    chiudi?: { etichetta: string; ambito: string | null };
+     *  comando del bot; assente = il «Chiudi» di sempre. 08/10 sera (D-6):
+     *  `spentoPerche` = il pulsante e' spento con quel motivo (partita
+     *  conclusa: mercato CHIUSO da Betfair); assente = come prima. */
+    chiudi?: { etichetta: string; ambito: string | null; spentoPerche?: string | null };
     /**
      * TASK A2 (18/09, raccordo) — per i 4 bot tennis `o.selezione` è sempre
      * `null` (il servizio non lo pubblica): il chiamante risolve il nome dal
@@ -425,7 +427,7 @@ export function RigaOperazione({ o, testId = 'cr-op', nomeSelezioneRisolto = nul
                 testId={`${testId}-chiudi`}
                 prezzoAlClic={ch ? () => prezzoAlClic(ch, Date.now()) : undefined}
                 stimaOra={ch?.bloccabile ?? null}
-                {...(chiudi ? { etichetta: chiudi.etichetta, ambito: chiudi.ambito } : {})}
+                {...(chiudi ? { etichetta: chiudi.etichetta, ambito: chiudi.ambito, spentoPerche: chiudi.spentoPerche ?? null } : {})}
             />
             {o.quale && (
                 <span className="text-[9px] text-white/30 uppercase"

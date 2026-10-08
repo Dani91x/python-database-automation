@@ -8006,6 +8006,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "scelte": null
           },
           {
+            "chiave": "warmup_ms",
+            "etichetta": "Osservazione prima di quotare",
+            "tipo": "int",
+            "default": 30000,
+            "min": 0,
+            "max": 120000,
+            "passo": 1000,
+            "unita": "ms",
+            "gruppo": "Tempi",
+            "scelte": null
+          },
+          {
             "chiave": "price_min",
             "etichetta": "Quota minima",
             "tipo": "float",
@@ -8148,6 +8160,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "passo": 1.0,
             "unita": "EUR",
             "gruppo": "Filtri",
+            "scelte": null
+          },
+          {
+            "chiave": "warmup_ms",
+            "etichetta": "Osservazione prima di quotare",
+            "tipo": "int",
+            "default": 0,
+            "min": 0,
+            "max": 120000,
+            "passo": 1000,
+            "unita": "ms",
+            "gruppo": "Tempi",
             "scelte": null
           },
           {
@@ -8296,6 +8320,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "scelte": null
           },
           {
+            "chiave": "warmup_ms",
+            "etichetta": "Osservazione prima di quotare",
+            "tipo": "int",
+            "default": 30000,
+            "min": 0,
+            "max": 120000,
+            "passo": 1000,
+            "unita": "ms",
+            "gruppo": "Tempi",
+            "scelte": null
+          },
+          {
             "chiave": "price_min",
             "etichetta": "Quota minima",
             "tipo": "float",
@@ -8438,6 +8474,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "passo": 1.0,
             "unita": "EUR",
             "gruppo": "Filtri",
+            "scelte": null
+          },
+          {
+            "chiave": "warmup_ms",
+            "etichetta": "Osservazione prima di quotare",
+            "tipo": "int",
+            "default": 0,
+            "min": 0,
+            "max": 120000,
+            "passo": 1000,
+            "unita": "ms",
+            "gruppo": "Tempi",
             "scelte": null
           },
           {
@@ -8586,6 +8634,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "scelte": null
           },
           {
+            "chiave": "warmup_ms",
+            "etichetta": "Osservazione prima di quotare",
+            "tipo": "int",
+            "default": 0,
+            "min": 0,
+            "max": 120000,
+            "passo": 1000,
+            "unita": "ms",
+            "gruppo": "Tempi",
+            "scelte": null
+          },
+          {
             "chiave": "price_min",
             "etichetta": "Quota minima",
             "tipo": "float",
@@ -8728,6 +8788,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "passo": 1.0,
             "unita": "EUR",
             "gruppo": "Filtri",
+            "scelte": null
+          },
+          {
+            "chiave": "warmup_ms",
+            "etichetta": "Osservazione prima di quotare",
+            "tipo": "int",
+            "default": 0,
+            "min": 0,
+            "max": 120000,
+            "passo": 1000,
+            "unita": "ms",
+            "gruppo": "Tempi",
             "scelte": null
           },
           {
@@ -8876,6 +8948,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "scelte": null
           },
           {
+            "chiave": "warmup_ms",
+            "etichetta": "Osservazione prima di quotare",
+            "tipo": "int",
+            "default": 0,
+            "min": 0,
+            "max": 120000,
+            "passo": 1000,
+            "unita": "ms",
+            "gruppo": "Tempi",
+            "scelte": null
+          },
+          {
             "chiave": "price_min",
             "etichetta": "Quota minima",
             "tipo": "float",
@@ -8998,6 +9082,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "scelte": null
           },
           {
+            "chiave": "price_min",
+            "etichetta": "Quota minima",
+            "tipo": "float",
+            "default": 1.08,
+            "min": 1.01,
+            "max": 5.0,
+            "passo": 0.01,
+            "unita": "",
+            "gruppo": "Ingresso",
+            "scelte": null
+          },
+          {
             "chiave": "price_max",
             "etichetta": "Quota massima",
             "tipo": "float",
@@ -9053,6 +9149,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "min": 0.0,
             "max": 500000.0,
             "passo": 5000.0,
+            "unita": "EUR",
+            "gruppo": "Filtri",
+            "scelte": null
+          },
+          {
+            "chiave": "min_book_size",
+            "etichetta": "Size minima alla quota di ingresso",
+            "tipo": "float",
+            "default": 10.0,
+            "min": 0.0,
+            "max": 2000.0,
+            "passo": 1.0,
             "unita": "EUR",
             "gruppo": "Filtri",
             "scelte": null
@@ -9116,6 +9224,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "scelte": null
           },
           {
+            "chiave": "price_min",
+            "etichetta": "Quota minima",
+            "tipo": "float",
+            "default": 1.01,
+            "min": 1.01,
+            "max": 5.0,
+            "passo": 0.01,
+            "unita": "",
+            "gruppo": "Ingresso",
+            "scelte": null
+          },
+          {
             "chiave": "price_max",
             "etichetta": "Quota massima",
             "tipo": "float",
@@ -9171,6 +9291,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "min": 0.0,
             "max": 500000.0,
             "passo": 5000.0,
+            "unita": "EUR",
+            "gruppo": "Filtri",
+            "scelte": null
+          },
+          {
+            "chiave": "min_book_size",
+            "etichetta": "Size minima alla quota di ingresso",
+            "tipo": "float",
+            "default": 0.0,
+            "min": 0.0,
+            "max": 2000.0,
+            "passo": 1.0,
             "unita": "EUR",
             "gruppo": "Filtri",
             "scelte": null
@@ -9234,6 +9366,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "scelte": null
           },
           {
+            "chiave": "price_min",
+            "etichetta": "Quota minima",
+            "tipo": "float",
+            "default": 1.08,
+            "min": 1.01,
+            "max": 5.0,
+            "passo": 0.01,
+            "unita": "",
+            "gruppo": "Ingresso",
+            "scelte": null
+          },
+          {
             "chiave": "price_max",
             "etichetta": "Quota massima",
             "tipo": "float",
@@ -9289,6 +9433,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "min": 0.0,
             "max": 500000.0,
             "passo": 5000.0,
+            "unita": "EUR",
+            "gruppo": "Filtri",
+            "scelte": null
+          },
+          {
+            "chiave": "min_book_size",
+            "etichetta": "Size minima alla quota di ingresso",
+            "tipo": "float",
+            "default": 10.0,
+            "min": 0.0,
+            "max": 2000.0,
+            "passo": 1.0,
             "unita": "EUR",
             "gruppo": "Filtri",
             "scelte": null
@@ -9352,6 +9508,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "scelte": null
           },
           {
+            "chiave": "price_min",
+            "etichetta": "Quota minima",
+            "tipo": "float",
+            "default": 1.01,
+            "min": 1.01,
+            "max": 5.0,
+            "passo": 0.01,
+            "unita": "",
+            "gruppo": "Ingresso",
+            "scelte": null
+          },
+          {
             "chiave": "price_max",
             "etichetta": "Quota massima",
             "tipo": "float",
@@ -9407,6 +9575,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "min": 0.0,
             "max": 500000.0,
             "passo": 5000.0,
+            "unita": "EUR",
+            "gruppo": "Filtri",
+            "scelte": null
+          },
+          {
+            "chiave": "min_book_size",
+            "etichetta": "Size minima alla quota di ingresso",
+            "tipo": "float",
+            "default": 0.0,
+            "min": 0.0,
+            "max": 2000.0,
+            "passo": 1.0,
             "unita": "EUR",
             "gruppo": "Filtri",
             "scelte": null
@@ -9470,6 +9650,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "scelte": null
           },
           {
+            "chiave": "price_min",
+            "etichetta": "Quota minima",
+            "tipo": "float",
+            "default": 1.01,
+            "min": 1.01,
+            "max": 5.0,
+            "passo": 0.01,
+            "unita": "",
+            "gruppo": "Ingresso",
+            "scelte": null
+          },
+          {
             "chiave": "price_max",
             "etichetta": "Quota massima",
             "tipo": "float",
@@ -9525,6 +9717,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "min": 0.0,
             "max": 500000.0,
             "passo": 5000.0,
+            "unita": "EUR",
+            "gruppo": "Filtri",
+            "scelte": null
+          },
+          {
+            "chiave": "min_book_size",
+            "etichetta": "Size minima alla quota di ingresso",
+            "tipo": "float",
+            "default": 0.0,
+            "min": 0.0,
+            "max": 2000.0,
+            "passo": 1.0,
             "unita": "EUR",
             "gruppo": "Filtri",
             "scelte": null
@@ -9588,6 +9792,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "scelte": null
           },
           {
+            "chiave": "price_min",
+            "etichetta": "Quota minima",
+            "tipo": "float",
+            "default": 1.01,
+            "min": 1.01,
+            "max": 5.0,
+            "passo": 0.01,
+            "unita": "",
+            "gruppo": "Ingresso",
+            "scelte": null
+          },
+          {
             "chiave": "price_max",
             "etichetta": "Quota massima",
             "tipo": "float",
@@ -9643,6 +9859,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "min": 0.0,
             "max": 500000.0,
             "passo": 5000.0,
+            "unita": "EUR",
+            "gruppo": "Filtri",
+            "scelte": null
+          },
+          {
+            "chiave": "min_book_size",
+            "etichetta": "Size minima alla quota di ingresso",
+            "tipo": "float",
+            "default": 0.0,
+            "min": 0.0,
+            "max": 2000.0,
+            "passo": 1.0,
             "unita": "EUR",
             "gruppo": "Filtri",
             "scelte": null
@@ -9706,6 +9934,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "scelte": null
           },
           {
+            "chiave": "price_min",
+            "etichetta": "Quota minima",
+            "tipo": "float",
+            "default": 1.01,
+            "min": 1.01,
+            "max": 5.0,
+            "passo": 0.01,
+            "unita": "",
+            "gruppo": "Ingresso",
+            "scelte": null
+          },
+          {
             "chiave": "price_max",
             "etichetta": "Quota massima",
             "tipo": "float",
@@ -9761,6 +10001,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "min": 0.0,
             "max": 500000.0,
             "passo": 5000.0,
+            "unita": "EUR",
+            "gruppo": "Filtri",
+            "scelte": null
+          },
+          {
+            "chiave": "min_book_size",
+            "etichetta": "Size minima alla quota di ingresso",
+            "tipo": "float",
+            "default": 0.0,
+            "min": 0.0,
+            "max": 2000.0,
+            "passo": 1.0,
             "unita": "EUR",
             "gruppo": "Filtri",
             "scelte": null
@@ -9873,6 +10125,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "scelte": null
           },
           {
+            "chiave": "min_lay_size",
+            "etichetta": "Size minima alla miglior quota banca",
+            "tipo": "float",
+            "default": 5.0,
+            "min": 0.0,
+            "max": 2000.0,
+            "passo": 1.0,
+            "unita": "EUR",
+            "gruppo": "Filtri",
+            "scelte": null
+          },
+          {
             "chiave": "exit_mode",
             "etichetta": "Uscita",
             "tipo": "scelta",
@@ -9966,6 +10230,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "min": 0.0,
             "max": 500000.0,
             "passo": 5000.0,
+            "unita": "EUR",
+            "gruppo": "Filtri",
+            "scelte": null
+          },
+          {
+            "chiave": "min_lay_size",
+            "etichetta": "Size minima alla miglior quota banca",
+            "tipo": "float",
+            "default": 0.0,
+            "min": 0.0,
+            "max": 2000.0,
+            "passo": 1.0,
             "unita": "EUR",
             "gruppo": "Filtri",
             "scelte": null
@@ -10069,6 +10345,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "scelte": null
           },
           {
+            "chiave": "min_lay_size",
+            "etichetta": "Size minima alla miglior quota banca",
+            "tipo": "float",
+            "default": 5.0,
+            "min": 0.0,
+            "max": 2000.0,
+            "passo": 1.0,
+            "unita": "EUR",
+            "gruppo": "Filtri",
+            "scelte": null
+          },
+          {
             "chiave": "exit_mode",
             "etichetta": "Uscita",
             "tipo": "scelta",
@@ -10162,6 +10450,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "min": 0.0,
             "max": 500000.0,
             "passo": 5000.0,
+            "unita": "EUR",
+            "gruppo": "Filtri",
+            "scelte": null
+          },
+          {
+            "chiave": "min_lay_size",
+            "etichetta": "Size minima alla miglior quota banca",
+            "tipo": "float",
+            "default": 0.0,
+            "min": 0.0,
+            "max": 2000.0,
+            "passo": 1.0,
             "unita": "EUR",
             "gruppo": "Filtri",
             "scelte": null
@@ -10265,6 +10565,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "scelte": null
           },
           {
+            "chiave": "min_lay_size",
+            "etichetta": "Size minima alla miglior quota banca",
+            "tipo": "float",
+            "default": 0.0,
+            "min": 0.0,
+            "max": 2000.0,
+            "passo": 1.0,
+            "unita": "EUR",
+            "gruppo": "Filtri",
+            "scelte": null
+          },
+          {
             "chiave": "exit_mode",
             "etichetta": "Uscita",
             "tipo": "scelta",
@@ -10363,6 +10675,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "scelte": null
           },
           {
+            "chiave": "min_lay_size",
+            "etichetta": "Size minima alla miglior quota banca",
+            "tipo": "float",
+            "default": 0.0,
+            "min": 0.0,
+            "max": 2000.0,
+            "passo": 1.0,
+            "unita": "EUR",
+            "gruppo": "Filtri",
+            "scelte": null
+          },
+          {
             "chiave": "exit_mode",
             "etichetta": "Uscita",
             "tipo": "scelta",
@@ -10456,6 +10780,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "min": 0.0,
             "max": 500000.0,
             "passo": 5000.0,
+            "unita": "EUR",
+            "gruppo": "Filtri",
+            "scelte": null
+          },
+          {
+            "chiave": "min_lay_size",
+            "etichetta": "Size minima alla miglior quota banca",
+            "tipo": "float",
+            "default": 0.0,
+            "min": 0.0,
+            "max": 2000.0,
+            "passo": 1.0,
             "unita": "EUR",
             "gruppo": "Filtri",
             "scelte": null
@@ -10560,6 +10896,42 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "scelte": null
           },
           {
+            "chiave": "conf_ticks",
+            "etichetta": "Tick di conferma dell'inversione",
+            "tipo": "int",
+            "default": 2,
+            "min": 1,
+            "max": 10,
+            "passo": 1,
+            "unita": "tick",
+            "gruppo": "Ingresso",
+            "scelte": null
+          },
+          {
+            "chiave": "price_min",
+            "etichetta": "Quota minima",
+            "tipo": "float",
+            "default": 1.08,
+            "min": 1.01,
+            "max": 5.0,
+            "passo": 0.01,
+            "unita": "",
+            "gruppo": "Ingresso",
+            "scelte": null
+          },
+          {
+            "chiave": "price_max",
+            "etichetta": "Quota massima",
+            "tipo": "float",
+            "default": 8.0,
+            "min": 1.5,
+            "max": 30.0,
+            "passo": 0.1,
+            "unita": "",
+            "gruppo": "Ingresso",
+            "scelte": null
+          },
+          {
             "chiave": "er_max",
             "etichetta": "Efficiency Ratio massimo",
             "tipo": "float",
@@ -10568,6 +10940,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "max": 1.0,
             "passo": 0.05,
             "unita": "",
+            "gruppo": "Filtri",
+            "scelte": null
+          },
+          {
+            "chiave": "min_matched",
+            "etichetta": "Abbinato minimo del mercato",
+            "tipo": "float",
+            "default": 10000.0,
+            "min": 0.0,
+            "max": 500000.0,
+            "passo": 5000.0,
+            "unita": "EUR",
             "gruppo": "Filtri",
             "scelte": null
           },
@@ -10642,6 +11026,42 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "scelte": null
           },
           {
+            "chiave": "conf_ticks",
+            "etichetta": "Tick di conferma dell'inversione",
+            "tipo": "int",
+            "default": 1,
+            "min": 1,
+            "max": 10,
+            "passo": 1,
+            "unita": "tick",
+            "gruppo": "Ingresso",
+            "scelte": null
+          },
+          {
+            "chiave": "price_min",
+            "etichetta": "Quota minima",
+            "tipo": "float",
+            "default": 1.01,
+            "min": 1.01,
+            "max": 5.0,
+            "passo": 0.01,
+            "unita": "",
+            "gruppo": "Ingresso",
+            "scelte": null
+          },
+          {
+            "chiave": "price_max",
+            "etichetta": "Quota massima",
+            "tipo": "float",
+            "default": 30.0,
+            "min": 1.5,
+            "max": 30.0,
+            "passo": 0.1,
+            "unita": "",
+            "gruppo": "Ingresso",
+            "scelte": null
+          },
+          {
             "chiave": "er_max",
             "etichetta": "Efficiency Ratio massimo",
             "tipo": "float",
@@ -10650,6 +11070,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "max": 1.0,
             "passo": 0.05,
             "unita": "",
+            "gruppo": "Filtri",
+            "scelte": null
+          },
+          {
+            "chiave": "min_matched",
+            "etichetta": "Abbinato minimo del mercato",
+            "tipo": "float",
+            "default": 0.0,
+            "min": 0.0,
+            "max": 500000.0,
+            "passo": 5000.0,
+            "unita": "EUR",
             "gruppo": "Filtri",
             "scelte": null
           },
@@ -10724,6 +11156,42 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "scelte": null
           },
           {
+            "chiave": "conf_ticks",
+            "etichetta": "Tick di conferma dell'inversione",
+            "tipo": "int",
+            "default": 2,
+            "min": 1,
+            "max": 10,
+            "passo": 1,
+            "unita": "tick",
+            "gruppo": "Ingresso",
+            "scelte": null
+          },
+          {
+            "chiave": "price_min",
+            "etichetta": "Quota minima",
+            "tipo": "float",
+            "default": 1.08,
+            "min": 1.01,
+            "max": 5.0,
+            "passo": 0.01,
+            "unita": "",
+            "gruppo": "Ingresso",
+            "scelte": null
+          },
+          {
+            "chiave": "price_max",
+            "etichetta": "Quota massima",
+            "tipo": "float",
+            "default": 8.0,
+            "min": 1.5,
+            "max": 30.0,
+            "passo": 0.1,
+            "unita": "",
+            "gruppo": "Ingresso",
+            "scelte": null
+          },
+          {
             "chiave": "er_max",
             "etichetta": "Efficiency Ratio massimo",
             "tipo": "float",
@@ -10732,6 +11200,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "max": 1.0,
             "passo": 0.05,
             "unita": "",
+            "gruppo": "Filtri",
+            "scelte": null
+          },
+          {
+            "chiave": "min_matched",
+            "etichetta": "Abbinato minimo del mercato",
+            "tipo": "float",
+            "default": 10000.0,
+            "min": 0.0,
+            "max": 500000.0,
+            "passo": 5000.0,
+            "unita": "EUR",
             "gruppo": "Filtri",
             "scelte": null
           },
@@ -10806,6 +11286,42 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "scelte": null
           },
           {
+            "chiave": "conf_ticks",
+            "etichetta": "Tick di conferma dell'inversione",
+            "tipo": "int",
+            "default": 1,
+            "min": 1,
+            "max": 10,
+            "passo": 1,
+            "unita": "tick",
+            "gruppo": "Ingresso",
+            "scelte": null
+          },
+          {
+            "chiave": "price_min",
+            "etichetta": "Quota minima",
+            "tipo": "float",
+            "default": 1.01,
+            "min": 1.01,
+            "max": 5.0,
+            "passo": 0.01,
+            "unita": "",
+            "gruppo": "Ingresso",
+            "scelte": null
+          },
+          {
+            "chiave": "price_max",
+            "etichetta": "Quota massima",
+            "tipo": "float",
+            "default": 30.0,
+            "min": 1.5,
+            "max": 30.0,
+            "passo": 0.1,
+            "unita": "",
+            "gruppo": "Ingresso",
+            "scelte": null
+          },
+          {
             "chiave": "er_max",
             "etichetta": "Efficiency Ratio massimo",
             "tipo": "float",
@@ -10814,6 +11330,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "max": 1.0,
             "passo": 0.05,
             "unita": "",
+            "gruppo": "Filtri",
+            "scelte": null
+          },
+          {
+            "chiave": "min_matched",
+            "etichetta": "Abbinato minimo del mercato",
+            "tipo": "float",
+            "default": 0.0,
+            "min": 0.0,
+            "max": 500000.0,
+            "passo": 5000.0,
+            "unita": "EUR",
             "gruppo": "Filtri",
             "scelte": null
           },
@@ -10888,6 +11416,42 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "scelte": null
           },
           {
+            "chiave": "conf_ticks",
+            "etichetta": "Tick di conferma dell'inversione",
+            "tipo": "int",
+            "default": 1,
+            "min": 1,
+            "max": 10,
+            "passo": 1,
+            "unita": "tick",
+            "gruppo": "Ingresso",
+            "scelte": null
+          },
+          {
+            "chiave": "price_min",
+            "etichetta": "Quota minima",
+            "tipo": "float",
+            "default": 1.01,
+            "min": 1.01,
+            "max": 5.0,
+            "passo": 0.01,
+            "unita": "",
+            "gruppo": "Ingresso",
+            "scelte": null
+          },
+          {
+            "chiave": "price_max",
+            "etichetta": "Quota massima",
+            "tipo": "float",
+            "default": 30.0,
+            "min": 1.5,
+            "max": 30.0,
+            "passo": 0.1,
+            "unita": "",
+            "gruppo": "Ingresso",
+            "scelte": null
+          },
+          {
             "chiave": "er_max",
             "etichetta": "Efficiency Ratio massimo",
             "tipo": "float",
@@ -10896,6 +11460,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "max": 1.0,
             "passo": 0.05,
             "unita": "",
+            "gruppo": "Filtri",
+            "scelte": null
+          },
+          {
+            "chiave": "min_matched",
+            "etichetta": "Abbinato minimo del mercato",
+            "tipo": "float",
+            "default": 0.0,
+            "min": 0.0,
+            "max": 500000.0,
+            "passo": 5000.0,
+            "unita": "EUR",
             "gruppo": "Filtri",
             "scelte": null
           },
@@ -10970,6 +11546,42 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "scelte": null
           },
           {
+            "chiave": "conf_ticks",
+            "etichetta": "Tick di conferma dell'inversione",
+            "tipo": "int",
+            "default": 1,
+            "min": 1,
+            "max": 10,
+            "passo": 1,
+            "unita": "tick",
+            "gruppo": "Ingresso",
+            "scelte": null
+          },
+          {
+            "chiave": "price_min",
+            "etichetta": "Quota minima",
+            "tipo": "float",
+            "default": 1.01,
+            "min": 1.01,
+            "max": 5.0,
+            "passo": 0.01,
+            "unita": "",
+            "gruppo": "Ingresso",
+            "scelte": null
+          },
+          {
+            "chiave": "price_max",
+            "etichetta": "Quota massima",
+            "tipo": "float",
+            "default": 30.0,
+            "min": 1.5,
+            "max": 30.0,
+            "passo": 0.1,
+            "unita": "",
+            "gruppo": "Ingresso",
+            "scelte": null
+          },
+          {
             "chiave": "er_max",
             "etichetta": "Efficiency Ratio massimo",
             "tipo": "float",
@@ -10978,6 +11590,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "max": 1.0,
             "passo": 0.05,
             "unita": "",
+            "gruppo": "Filtri",
+            "scelte": null
+          },
+          {
+            "chiave": "min_matched",
+            "etichetta": "Abbinato minimo del mercato",
+            "tipo": "float",
+            "default": 0.0,
+            "min": 0.0,
+            "max": 500000.0,
+            "passo": 5000.0,
+            "unita": "EUR",
             "gruppo": "Filtri",
             "scelte": null
           },
@@ -11052,6 +11676,42 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "scelte": null
           },
           {
+            "chiave": "conf_ticks",
+            "etichetta": "Tick di conferma dell'inversione",
+            "tipo": "int",
+            "default": 1,
+            "min": 1,
+            "max": 10,
+            "passo": 1,
+            "unita": "tick",
+            "gruppo": "Ingresso",
+            "scelte": null
+          },
+          {
+            "chiave": "price_min",
+            "etichetta": "Quota minima",
+            "tipo": "float",
+            "default": 1.01,
+            "min": 1.01,
+            "max": 5.0,
+            "passo": 0.01,
+            "unita": "",
+            "gruppo": "Ingresso",
+            "scelte": null
+          },
+          {
+            "chiave": "price_max",
+            "etichetta": "Quota massima",
+            "tipo": "float",
+            "default": 30.0,
+            "min": 1.5,
+            "max": 30.0,
+            "passo": 0.1,
+            "unita": "",
+            "gruppo": "Ingresso",
+            "scelte": null
+          },
+          {
             "chiave": "er_max",
             "etichetta": "Efficiency Ratio massimo",
             "tipo": "float",
@@ -11060,6 +11720,18 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
             "max": 1.0,
             "passo": 0.05,
             "unita": "",
+            "gruppo": "Filtri",
+            "scelte": null
+          },
+          {
+            "chiave": "min_matched",
+            "etichetta": "Abbinato minimo del mercato",
+            "tipo": "float",
+            "default": 0.0,
+            "min": 0.0,
+            "max": 500000.0,
+            "passo": 5000.0,
+            "unita": "EUR",
             "gruppo": "Filtri",
             "scelte": null
           },

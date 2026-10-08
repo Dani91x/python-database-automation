@@ -7,6 +7,7 @@ import { describe, it, expect } from 'vitest';
 import {
     faseEvento, scatoleCashOut, filtraScatole, ordinaScatole, testoCashOutRiga,
     selezioniFuoriBot, gambeFuoriBot, origineFuoriBot, totaleModalita, contaPerModalita,
+    sezioneScatola, motivoCashOutConclusa, TESTO_CONCLUSA,
 } from './cashOutPagina';
 import type { SintesiCashOut, SintesiModalitaCashOut } from '@/components/controlroom/useCashOutPartita';
 import { raggruppaOrdiniConto, ORDINI_CONTO_NON_LETTI } from '@/components/controlroom/ordiniConto';
@@ -223,5 +224,59 @@ describe('secondo giro: filtro dei soldi, riepilogo per modalita\'', () => {
         // la prova non risente del live non calcolabile
         expect(totaleModalita(S, m, 'paper').stato).toBe('nessuna');
         expect(totaleModalita(S, new Map([['A', sint({ netto: 1, nGambe: 1 })]]), 'live').stato).toBe('calcolo');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// 08/10 sera (D-6, decisione dell'utente): la sezione «Concluse»
+// ---------------------------------------------------------------------------
+describe('D-6: sezione Concluse (Match Odds CHIUSO, posizioni da regolare)', () => {
+    const scatola = (p: PartitaGiornata) => scatoleCashOut({
+        giornata: [{ campionato: 'Serie A', primoKoMs: p.koMs, partite: [p] }],
+        posizioni: [pos({ bot: 'mike', id: 1, eventId: p.event_id })],
+        operazioni: new Map([[p.event_id, [op({ bot: 'mike', id: 1, eventId: p.event_id })]]]),
+        mikeEventi: new Map(), ordiniConto: null, nowMs: ORA,
+    })[0];
+
+    it('il Match Odds CHIUSO vince su ogni altra fase: TUTTE le partite col mercato chiuso sono concluse', () => {
+        for (const stato of ['live', 'pre', 'chiusa'] as const) {
+            const f = faseEvento(partita({ stato, statoMercato: 'CLOSED' }), null, [], ORA);
+            expect(f, stato).toMatchObject({ nota: 'conclusa', fase: 'gioco', fonte: 'scanner' });
+            expect(sezioneScatola({ fase: f }), stato).toBe('concluse');
+        }
+    });
+
+    it('e SOLE: mercato aperto, sospeso o non dichiarato non sono mai concluse', () => {
+        for (const statoMercato of ['OPEN', 'SUSPENDED', null, undefined]) {
+            for (const stato of ['live', 'pre', 'chiusa'] as const) {
+                const s = scatola(partita({ stato, statoMercato }));
+                expect(sezioneScatola(s), `${stato}/${String(statoMercato)}`).not.toBe('concluse');
+                expect(motivoCashOutConclusa(s), `${stato}/${String(statoMercato)}`).toBeNull();
+            }
+        }
+        expect(sezioneScatola(scatola(partita({ stato: 'live' })))).toBe('gioco');
+        expect(sezioneScatola(scatola(partita({ stato: 'pre' })))).toBe('pre');
+        expect(sezioneScatola(scatola(partita({ stato: 'chiusa', statoMercato: 'OPEN' })))).toBe('pre');
+        // fuori programma: nessun mercato letto, mai «conclusa»
+        const fuori = scatoleCashOut({
+            giornata: [], posizioni: [pos({ bot: 'mike', id: 1, eventId: 'F1' })],
+            operazioni: new Map(), mikeEventi: new Map(), ordiniConto: null, nowMs: ORA,
+        })[0];
+        expect(sezioneScatola(fuori)).toBe('pre');
+    });
+
+    it('testo veritiero e motivo del cash out spento', () => {
+        const s = scatola(partita({ stato: 'chiusa', statoMercato: 'CLOSED' }));
+        expect(TESTO_CONCLUSA).toBe('conclusa · posizioni da regolare');
+        expect(motivoCashOutConclusa(s)).toMatch(/Betfair ha CHIUSO il mercato, il cash out non e' possibile/);
+    });
+
+    it('i filtri valgono: «Live» tiene le concluse (gia\' entrate in gioco), «Pre-match» le toglie, lo sport conta', () => {
+        const c = scatola(partita({ stato: 'chiusa', statoMercato: 'CLOSED' }));
+        expect(filtraScatole([c], { sport: null, fase: 'live' })).toHaveLength(1);
+        expect(filtraScatole([c], { sport: null, fase: 'pre' })).toHaveLength(0);
+        expect(filtraScatole([c], { sport: 'tennis', fase: null })).toHaveLength(0);
+        expect(filtraScatole([c], { sport: 'calcio', fase: null, soldi: 'live' })).toHaveLength(1);
+        expect(filtraScatole([c], { sport: 'calcio', fase: null, soldi: 'prova' })).toHaveLength(0);
     });
 });

@@ -20,6 +20,11 @@
 // Secondo giro: la scatola riporta alla pagina la cifra che GIA' calcola
 // (`onSintesi`, una fonte per scatola) per il riepilogo in testa.
 // Nessuna lettura nuova: tutto arriva da `useControlRoom()` della pagina.
+// 08/10 sera (D-6): una scatola CONCLUSA (Match Odds chiuso da Betfair,
+// posizioni da regolare) dice «conclusa · posizioni da regolare» e tiene i
+// pulsanti di cash out SPENTI col motivo (`motivoCashOutConclusa`, stesso
+// meccanismo dei pulsanti di soldi spenti); lo scalper resta fermabile (il suo
+// pulsante ferma la sessione, non piazza un cash out sul mercato chiuso).
 // ============================================================================
 import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
@@ -44,7 +49,7 @@ import { faseMostrata, TESTO_FASE, type FaseChiusura } from '@/components/contro
 import { RigaPosizioneOrfana, StatoPartitaRiga } from '@/components/controlroom/aperte/PosizioniAperte';
 import { statoPartitaAperta } from '@/components/controlroom/aperte/statoPartitaAperta';
 import {
-    gambeFuoriBot, selezioniFuoriBot, testoCashOutRiga,
+    gambeFuoriBot, motivoCashOutConclusa, selezioniFuoriBot, testoCashOutRiga, TESTO_CONCLUSA,
     type ScatolaCashOut as Scatola, type SelezioneFuoriBot,
 } from '@/components/controlroom/aperte/cashOutPagina';
 import { dueEsitiMike, dueEsitiPartita, esitoDecisoMike } from '@/lib/cashOutPartita';
@@ -173,12 +178,14 @@ function BottoneLadder({ sport, marketId, eventId, eventName, marketName, giocat
 // ------------------------------------------------------- ordini fuori dai bot
 
 /** Una selezione con ordini fuori dai bot: ordini, «se chiudo ora», cash out, ladder. */
-function RigaFuoriBot({ sel, sorgente, dueEsiti, eventId, eventName }: {
+function RigaFuoriBot({ sel, sorgente, dueEsiti, eventId, eventName, spentoConclusa = null }: {
     sel: SelezioneFuoriBot;
     sorgente: SorgenteLadder | null;
     dueEsiti?: (marketId: string) => boolean;
     eventId: string;
     eventName: string;
+    /** D-6: partita conclusa (mercato CHIUSO): il cash out e' spento con questo motivo */
+    spentoConclusa?: string | null;
 }) {
     const gambe = useMemo(() => gambeFuoriBot(sel.ordini, dueEsiti), [sel.ordini, dueEsiti]);
     const r = useCashOutPartita({ operazioni: NESSUNA_RIGA, gambeExtra: gambe, sorgente, sport: 'calcio', dueEsiti });
@@ -186,9 +193,9 @@ function RigaFuoriBot({ sel, sorgente, dueEsiti, eventId, eventName }: {
     const [esito, setEsito] = useState<EsitoFuoriBot | null>(null);
     const live = r?.live ?? null;
     const origini = sel.origini.join(' + ');
-    const spento = !sel.abbinato ? 'nulla di abbinato su questa selezione: niente da chiudere'
+    const spento = spentoConclusa ?? (!sel.abbinato ? 'nulla di abbinato su questa selezione: niente da chiudere'
         : live == null ? 'cifra non calcolabile'
-            : motivoPrezziFermi(live) ?? (live.netto == null ? 'cifra non calcolabile: non si chiude alla cieca' : null);
+            : motivoPrezziFermi(live) ?? (live.netto == null ? 'cifra non calcolabile: non si chiude alla cieca' : null));
     return (
         <div className="flex items-start gap-2 text-[11px]" data-testid="co-fuori-bot"
             data-origine={origini} data-selezione={sel.chiave}>
@@ -273,9 +280,9 @@ function CashOutPosizioneConto({ s, mike, sorgente, dueEsiti, onSintesi }: {
     const [esitiFuori, setEsitiFuori] = useState<{ chi: string; esito: EsitoFuoriBot }[]>([]);
     if (gambe.length === 0) return null;
     const live = r?.live ?? null;
-    const spento = !api ? 'comandi dei bot non disponibili su questa pagina'
+    const spento = motivoCashOutConclusa(s) ?? (!api ? 'comandi dei bot non disponibili su questa pagina'
         : live == null ? 'cifra non calcolabile'
-            : motivoPrezziFermi(live) ?? (live.netto == null ? 'cifra della posizione non calcolabile: non si chiude alla cieca' : null);
+            : motivoPrezziFermi(live) ?? (live.netto == null ? 'cifra della posizione non calcolabile: non si chiude alla cieca' : null));
     const esegui = async () => {
         if (!api) return;
         setInVolo(true);
@@ -394,6 +401,8 @@ export function ScatolaCashOut({ s, mike, safe, sorgente, nowMs, onSintesi }: {
     riporta.current = onSintesi;
     useEffect(() => () => riporta.current?.(undefined), []);
     const prova = s.posizioni.some((x) => x.modalita === 'paper');
+    // D-6: non null = partita conclusa, i cash out sono spenti con questo motivo
+    const conclusa = motivoCashOutConclusa(s);
     const viveSafe = s.operazioni.filter((o) => o.bot === 'safe' && !isSettled(o.stato) && !isErrorRow(o.stato)).length;
     return (
         <article className="rounded border border-white/10 bg-white/[0.02] overflow-hidden"
@@ -415,12 +424,19 @@ export function ScatolaCashOut({ s, mike, safe, sorgente, nowMs, onSintesi }: {
                 {s.posizioni.some((x) => x.modalita !== 'paper') && (
                     <StatoPartitaRiga
                         esito={statoPartitaAperta(s.operazioni, {
-                            chiusa: p?.stato === 'chiusa' && p?.statoMercato === 'CLOSED',
+                            // D-6: stessa regola della sezione «Concluse» (Match Odds CHIUSO)
+                            chiusa: s.fase.nota === 'conclusa',
                             dueEsiti,
                         })}
                         testId={`co-stato-${s.eventId}`} />
                 )}
-                {p ? <StatoPill p={p} /> : <FaseFuoriProgramma s={s} nowMs={nowMs} />}
+                {conclusa != null ? (
+                    <span className="shrink-0 text-[11px] px-1.5 py-0.5 rounded bg-white/5 text-white/50"
+                        data-testid="co-fase-conclusa"
+                        title="Betfair ha CHIUSO il Match Odds: la partita e' finita, le posizioni restano aperte finche' Betfair non le regola">
+                        {TESTO_CONCLUSA}
+                    </span>
+                ) : p ? <StatoPill p={p} /> : <FaseFuoriProgramma s={s} nowMs={nowMs} />}
                 {p?.stato === 'pre' && p.koMs != null && (
                     <span className="shrink-0 text-[10px] font-mono text-white/35" data-testid="co-fischio-fra">
                         fra {fmtAge(Math.max(0, Math.round((p.koMs - nowMs) / 1000)))}
@@ -441,10 +457,17 @@ export function ScatolaCashOut({ s, mike, safe, sorgente, nowMs, onSintesi }: {
 
             {/* ── le gambe: bot, orfane, fuori dai bot ── */}
             <div className="px-2.5 py-2 space-y-1.5" data-testid="co-gambe">
+                {conclusa != null && (
+                    <div className="text-[10px] text-white/50" data-testid="co-conclusa-motivo">{conclusa}</div>
+                )}
                 {s.righe.map((o) => (
                     <div key={`${o.bot}-${o.id}`} className="flex items-start gap-2" data-testid="co-gamba" data-bot={o.bot}>
                         <div className="flex-1 min-w-0">
-                            <RigaOperazione o={o} chiudi={testoCashOutRiga(o, s.righe)} />
+                            <RigaOperazione o={o} chiudi={{
+                                ...testoCashOutRiga(o, s.righe),
+                                // lo scalper ferma la sessione (nessun ordine sul mercato chiuso)
+                                spentoPerche: o.bot === 'scalper' ? null : conclusa,
+                            }} />
                         </div>
                         <BottoneLadder sport={s.sport} marketId={o.marketId} eventId={s.eventId} eventName={s.nome}
                             giocatori={p?.giocatori ?? null} />
@@ -453,7 +476,7 @@ export function ScatolaCashOut({ s, mike, safe, sorgente, nowMs, onSintesi }: {
                 {s.orfane.map((x) => <RigaPosizioneOrfana key={`${x.bot}-${x.id}`} p={x} />)}
                 {selezioni.map((sel) => (
                     <RigaFuoriBot key={sel.chiave} sel={sel} sorgente={sorgente} dueEsiti={dueEsiti}
-                        eventId={s.eventId} eventName={s.nome} />
+                        eventId={s.eventId} eventName={s.nome} spentoConclusa={conclusa} />
                 ))}
             </div>
 
@@ -463,11 +486,11 @@ export function ScatolaCashOut({ s, mike, safe, sorgente, nowMs, onSintesi }: {
                     <div className="px-2.5 pt-1.5">
                         <CashOutPartita eventId={s.eventId} modalita={safe.modalita} posizioniVive={viveSafe}
                             stato={safe.statoChiusura(s.eventId)} onCashOut={safe.onCashOut} onRiprendi={safe.onRiprendi}
-                            compatto esito={trovaEsitoCashOut(s.operazioni, 'safe')} />
+                            compatto esito={trovaEsitoCashOut(s.operazioni, 'safe')} spentoPerche={conclusa} />
                     </div>
                 )}
                 <CashOutGlobalePartita sport={s.sport} operazioni={s.operazioni} mike={mike} moMarketId={p?.marketId ?? null}
-                    onSintesi={conConto ? undefined : (x) => riporta.current?.(x)} />
+                    onSintesi={conConto ? undefined : (x) => riporta.current?.(x)} spentoPerche={conclusa} />
                 {s.fuoriBot.length > 0 && (
                     <CashOutPosizioneConto s={s} mike={mike} sorgente={sorgente} dueEsiti={dueEsiti}
                         onSintesi={conConto ? (x) => riporta.current?.(x) : undefined} />

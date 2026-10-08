@@ -71,6 +71,10 @@ export interface CashOutGlobaleProps {
     testId?: string;
     /** P16: le righe della partita; assenti = nessun «Chiudi tutte le gambe» */
     operazioni?: readonly OperazionePerChiusura[];
+    /** 08/10 sera (D-6, pagina Cash Out): motivo per cui «Chiudi tutte le gambe»
+     *  e' spento a prescindere dalla cifra (partita conclusa: mercato CHIUSO da
+     *  Betfair); assente = come prima */
+    spentoPerche?: string | null;
 }
 
 const nomeBot = (b: string) => (BOT_LABEL as Record<string, string>)[b as Bot] ?? b;
@@ -333,15 +337,16 @@ function RigaGamba({ p, modo, testId }: { p: PosizioneCashOut; modo: 'LIVE' | 'P
     );
 }
 
-function Blocco({ r, modo, testId, valoriBot, operazioni }: {
+function Blocco({ r, modo, testId, valoriBot, operazioni, spentoEsterno = null }: {
     r: CashOutModalita; modo: 'LIVE' | 'PROVA'; testId: string; valoriBot: readonly ValoreBotCashOut[];
     operazioni?: readonly OperazionePerChiusura[];
+    spentoEsterno?: string | null;
 }) {
     const eta = r.etaIgnota ? null : r.etaPrezziS;
     const modalita = modo === 'LIVE' ? 'live' : 'paper';
     const piano = operazioni ? pianoChiusuraPartita(operazioni, modalita) : null;
     // pulsante di soldi: spento su prezzi fermi/ignoti e se la cifra non e' calcolabile
-    const spentoPerche = motivoPrezziFermi(r)
+    const spentoPerche = spentoEsterno ?? motivoPrezziFermi(r)
         ?? (r.netto == null ? 'cifra della partita non calcolabile: non si chiude alla cieca' : null);
     return (
         <div className="flex flex-col gap-1" data-testid={testId}>
@@ -430,7 +435,7 @@ function Blocco({ r, modo, testId, valoriBot, operazioni }: {
     );
 }
 
-export function CashOutGlobale({ risultato, valoriBot = [], testId = 'cr-cashout-globale', operazioni }: CashOutGlobaleProps) {
+export function CashOutGlobale({ risultato, valoriBot = [], testId = 'cr-cashout-globale', operazioni, spentoPerche = null }: CashOutGlobaleProps) {
     if (risultato == null) {
         return (
             <div className="text-[10px] text-white/40" data-testid={testId} data-vuoto="1">
@@ -445,14 +450,16 @@ export function CashOutGlobale({ risultato, valoriBot = [], testId = 'cr-cashout
     return (
         <div className="flex flex-col gap-1.5 rounded border border-white/10 px-2 py-1.5" data-testid={testId}>
             {haLive ? (
-                <Blocco r={risultato.live} modo="LIVE" testId={`${testId}-live`} valoriBot={botLive} operazioni={operazioni} />
+                <Blocco r={risultato.live} modo="LIVE" testId={`${testId}-live`} valoriBot={botLive} operazioni={operazioni}
+                    spentoEsterno={spentoPerche} />
             ) : (
                 <div className="text-[10px] text-white/40" data-testid={`${testId}-live-vuoto`}>
                     Cash out della partita: nessuna gamba LIVE abbinata su questa partita
                 </div>
             )}
             {haProva && (
-                <Blocco r={risultato.paper} modo="PROVA" testId={`${testId}-prova`} valoriBot={botProva} operazioni={operazioni} />
+                <Blocco r={risultato.paper} modo="PROVA" testId={`${testId}-prova`} valoriBot={botProva} operazioni={operazioni}
+                    spentoEsterno={spentoPerche} />
             )}
         </div>
     );
@@ -465,7 +472,7 @@ export function CashOutGlobale({ risultato, valoriBot = [], testId = 'cr-cashout
  * la cifra del servizio di Mike. Una partita senza gambe abbinate non mostra
  * niente e non apre sottoscrizioni.
  */
-export function CashOutGlobalePartita({ sport, operazioni, mike = null, moMarketId = null, onSintesi }: {
+export function CashOutGlobalePartita({ sport, operazioni, mike = null, moMarketId = null, onSintesi, spentoPerche = null }: {
     sport: 'calcio' | 'tennis';
     /** W_C: il Match Odds della partita (`p.marketId` = `mo_market_id`); nel
      *  TENNIS e' a due esiti (P1/P2): le gambe sui due giocatori si nettano */
@@ -476,6 +483,9 @@ export function CashOutGlobalePartita({ sport, operazioni, mike = null, moMarket
     /** 08/10 (W1, secondo giro) - riceve la sintesi di QUESTA cifra (pagina Cash
      *  Out, riepilogo in testa); assente = niente, come prima */
     onSintesi?: (s: SintesiCashOut | null) => void;
+    /** 08/10 sera (D-6, pagina Cash Out): «Chiudi tutte le gambe» spento con
+     *  questo motivo (partita conclusa); assente = come prima */
+    spentoPerche?: string | null;
 }) {
     const sorgente = useContext(ChiusuraRigaContext)?.sorgenteLadder ?? null;
     const dueEsiti = useMemo(() => dueEsitiPartita(sport, moMarketId, dueEsitiMike(mike)), [sport, moMarketId, mike]);
@@ -488,7 +498,7 @@ export function CashOutGlobalePartita({ sport, operazioni, mike = null, moMarket
     const vb = valoreBotMike(mike, Date.now());
     return (
         <div className="px-2.5 pt-1.5">
-            <CashOutGlobale risultato={r} valoriBot={vb ? [vb] : []} operazioni={operazioni} />
+            <CashOutGlobale risultato={r} valoriBot={vb ? [vb] : []} operazioni={operazioni} spentoPerche={spentoPerche} />
         </div>
     );
 }

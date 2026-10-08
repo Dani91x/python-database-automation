@@ -29,7 +29,7 @@ import { MarchioSoldi } from '@/components/controlroom/MarchioSoldi';
 import { useControlRoom } from '@/components/controlroom/useControlRoom';
 import { ContestiRigheBanco, SORGENTE_LADDER_RIGHE } from '@/components/controlroom/aperte/PosizioniAperte';
 import {
-    contaPerModalita, filtraScatole, ordinaScatole, scatoleCashOut, totaleModalita,
+    contaPerModalita, filtraScatole, ordinaScatole, scatoleCashOut, sezioneScatola, totaleModalita,
     type ScatolaCashOut as Scatola, type SportScatola, type TotaleModalita,
 } from '@/components/controlroom/aperte/cashOutPagina';
 import { ScatolaCashOut, type SafeScatola } from '@/components/controlroom/aperte/ScatolaCashOut';
@@ -162,8 +162,11 @@ export default function CashOut() {
         mikeEventi: vm.mikeEventi, ordiniConto: vm.ordiniConto, nowMs: vm.nowMs,
     }), [vm.giornata, vm.posizioni, vm.operazioni, vm.mikeEventi, vm.ordiniConto, vm.nowMs]);
     const visibili = useMemo(() => filtraScatole(scatole, { sport, fase, soldi }), [scatole, sport, fase, soldi]);
-    const inGioco = useMemo(() => ordinaScatole(visibili.filter((s) => s.fase.fase === 'gioco')), [visibili]);
-    const pre = useMemo(() => ordinaScatole(visibili.filter((s) => s.fase.fase === 'pre')), [visibili]);
+    // 08/10 sera (D-6): ogni scatola in UNA sezione (`sezioneScatola`): le
+    // concluse (Match Odds CHIUSO, posizioni da regolare) hanno la loro
+    const inGioco = useMemo(() => ordinaScatole(visibili.filter((s) => sezioneScatola(s) === 'gioco')), [visibili]);
+    const pre = useMemo(() => ordinaScatole(visibili.filter((s) => sezioneScatola(s) === 'pre')), [visibili]);
+    const concluse = useMemo(() => ordinaScatole(visibili.filter((s) => sezioneScatola(s) === 'concluse')), [visibili]);
     // le cifre che le scatole MOSTRATE hanno gia' calcolato (una scatola smontata esce)
     const [sintesi, setSintesi] = useState<ReadonlyMap<string, SintesiCashOut | null>>(new Map());
     const riporta = useCallback((eventId: string, x: SintesiCashOut | null | undefined) => {
@@ -209,8 +212,10 @@ export default function CashOut() {
                 <div className="rounded border border-white/10 bg-white/[0.02] px-3 py-2 text-[11px] text-white/50"
                     data-testid="co-riepilogo-fasi">
                     <div className="text-[10px] uppercase tracking-wider text-white/55">Partite mostrate</div>
-                    <div className="font-mono text-[15px] text-white/80">{inGioco.length} in gioco · {pre.length} pre-match</div>
-                    <div className="text-[10px] text-white/40">la fase la dà il flag «inplay» di Betfair</div>
+                    <div className="font-mono text-[15px] text-white/80" data-testid="co-riepilogo-fasi-conta">
+                        {inGioco.length} in gioco · {pre.length} pre-match · {concluse.length} {concluse.length === 1 ? 'conclusa' : 'concluse'}
+                    </div>
+                    <div className="text-[10px] text-white/40">la fase la dà il flag «inplay» di Betfair; conclusa = Match Odds chiuso da Betfair</div>
                 </div>
             </div>
 
@@ -241,6 +246,15 @@ export default function CashOut() {
                             <Sezione titolo="Pre-match" testId="co-sezione-pre" scatole={pre} vm={vm} safe={safe}
                                 riporta={riporta}
                                 vuoto="Nessuna operazione aperta su partite che devono ancora entrare in gioco." />
+                        )}
+                        {/* 08/10 sera (D-6): in fondo, perche' non c'e' piu' niente da
+                            chiudere (il cash out e' spento), solo da attendere il
+                            regolamento; compare solo se ce n'e' almeno una e segue il
+                            filtro Live (sono partite gia' entrate in gioco) */}
+                        {fase !== 'pre' && concluse.length > 0 && (
+                            <Sezione titolo="Concluse · posizioni da regolare" testId="co-sezione-concluse" scatole={concluse}
+                                vm={vm} safe={safe} riporta={riporta}
+                                vuoto="Nessuna partita conclusa con posizioni da regolare." />
                         )}
                     </div>
                 )}
