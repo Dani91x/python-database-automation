@@ -19,10 +19,14 @@ dei best, cadenza minima). Il punteggio passa da ``parse_tennis_scores`` e
 
 Cosa il raw NON porta e da dove arriva (dichiarato, mai inventato):
   * NOMI dei runner: lo stream ha solo ``id`` e ``sortPriority``. Ordine delle
-    fonti: nomi dati dal chiamante (catalogo del runner o ``_names.json``) ->
-    ``name`` della marketDefinition (presente nei file storici Betfair) -> per il
-    MATCH_ODDS i nomi IPS per ``sortPriority`` (p1 = home = sortPriority 1, la
-    stessa convenzione di ``TennisMatchStats``/``tennis_score_state``) -> ``#id``.
+    fonti: nomi dati dal chiamante (catalogo del runner, ``_names.json``, catalogo
+    nel DB) -> ``name`` della marketDefinition (presente nei file storici Betfair)
+    -> per il MATCH_ODDS i nomi IPS per ``sortPriority`` (p1 = home =
+    sortPriority 1, la stessa convenzione di ``TennisMatchStats``/
+    ``tennis_score_state``) -> ``#id``. 08/10 (cantiere 14): ogni selezione porta
+    ``name_source`` (``catalogo``/``marketdef``/``ips``/``id``) e l'evento
+    ``diagnostica["nomi_fonte"]`` (chi ha dato i nomi dei due giocatori): il nome
+    IPS e' TRONCATO (caso 35790089, «Marcelo Tomas Barrios V») e la pagina lo dice.
   * VALUTA: le size restano GBP (nessun marcatore ``valuta``): il frontend le
     converte alla fonte con ``CAMBIO_RIPIEGO_GBP_EUR``, come per il calcio.
 
@@ -62,6 +66,20 @@ NOMI_MERCATO: Dict[str, str] = {
 SOGLIA_BUCO_MS = 60_000
 
 _STATI_FINITI = ("finished", "complete", "completed", "ended", "closed")
+
+#: fonte di un nome -> rango (08/10, cantiere 14): una fonte migliore SOSTITUISCE una
+#: peggiore al reimport, mai il contrario. ``catalogo`` = listMarketCatalogue (runner
+#: tennis, ``_names.json``, tabelle tennis nel DB); ``marketdef``/``evento`` = ``name``
+#: della marketDefinition o ``eventName`` "A v B" (file storici Betfair); ``ips`` = nome
+#: del punteggio IPS (TRONCATO); ``id`` = segnaposto ``#id``.
+RANGO_NOME_FONTE: Dict[str, int] = {"catalogo": 3, "marketdef": 2, "evento": 2, "ips": 1, "id": 0}
+#: rango di un nome gia' nel DB senza fonte dichiarata (righe di prima del cantiere 14):
+#: trattato come IPS (il piu' basso fra i nomi veri), cosi' ogni fonte migliore lo supera
+RANGO_NOME_SENZA_FONTE = 1
+
+#: chiave riservata di ``_names.json`` per i nomi di TUTTI i mercati registrati
+#: (``{event_id: {market_id: {selection_id: nome}}}``); la scrive il registratore tennis
+CHIAVE_MERCATI_NOMI = "_mercati"
 
 
 # ---------------------------------------------------------------------------
@@ -377,19 +395,56 @@ def righe_punteggio(punteggi: Sequence[Tuple[float, TennisScore]], event_id: str
 # ---------------------------------------------------------------------------
 def selezioni_mercato(stato: StatoMercato, nomi: Optional[Dict[str, str]],
                       nomi_ips: Optional[Tuple[Optional[str], Optional[str]]]) -> List[Dict[str, Any]]:
-    """``[{selection_id, name, sort_priority, status}]`` ordinate per sortPriority."""
+    """``[{selection_id, name, name_source, sort_priority, status}]`` ordinate per sortPriority."""
     out: List[Dict[str, Any]] = []
     for sid, info in sorted(stato.runners.items(), key=lambda kv: (kv[1].get("sort_priority") or 999, kv[0])):
-        nome = (nomi or {}).get(str(sid)) or info.get("name")
+        nome = (nomi or {}).get(str(sid))
+        fonte = "catalogo" if nome else None
+        if not nome and info.get("name"):
+            nome, fonte = info.get("name"), "marketdef"
         sp = info.get("sort_priority")
         if not nome and (stato.market_type or "").upper() == "MATCH_ODDS" and nomi_ips and sp in (1, 2):
             nome = nomi_ips[sp - 1]
+            fonte = "ips" if nome else None
         out.append({
             "selection_id": sid,
             "name": nome or f"#{sid}",
+            "name_source": fonte or "id",
             "sort_priority": sp,
             "status": info.get("status"),
         })
+    return out
+
+
+def rango_selezione(sel: Optional[Dict[str, Any]]) -> int:
+    """Rango del nome di una selezione (gia' nel DB o appena convertita); -1 = assente."""
+    if not sel:
+        return -1
+    nome = str(sel.get("name") or "")
+    if not nome or nome.startswith("#"):
+        return RANGO_NOME_FONTE["id"]
+    fonte = sel.get("name_source")
+    return RANGO_NOME_FONTE.get(str(fonte), RANGO_NOME_SENZA_FONTE) if fonte else RANGO_NOME_SENZA_FONTE
+
+
+def migliora_selezioni(esistenti: Optional[Sequence[Dict[str, Any]]],
+                       nuove: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Le selezioni da scrivere: le NUOVE (stato, esito, ordine aggiornati) ma col NOME
+    gia' nel DB se la sua fonte e' MIGLIORE di quella nuova. Fonte pari o peggiore:
+    resta il nome in DB; migliore: il nome si aggiorna. Reimport idempotente."""
+    per_id = {int(s["selection_id"]): s for s in (esistenti or []) if s.get("selection_id") is not None}
+    out: List[Dict[str, Any]] = []
+    for n in nuove:
+        e = per_id.get(int(n["selection_id"]))
+        if e is not None and rango_selezione(e) > rango_selezione(n):
+            m = dict(n, name=e["name"])
+            if e.get("name_source"):
+                m["name_source"] = e["name_source"]
+            else:
+                m.pop("name_source", None)
+            out.append(m)
+        else:
+            out.append(dict(n))
     return out
 
 
@@ -472,15 +527,20 @@ def converti_evento(
 
     mo = next((m for m in mercati if m["market_type"] == "MATCH_ODDS"), None)
     p1 = p2 = None
+    fonte_p1 = fonte_p2 = None   # 08/10 (cantiere 14): chi ha dato il nome di ciascun giocatore
     if mo:
-        nomi_mo = [s["name"] for s in mo["selections"] if s.get("sort_priority") in (1, 2)]
+        sel_mo = [s for s in mo["selections"] if s.get("sort_priority") in (1, 2)]
+        nomi_mo = [s["name"] for s in sel_mo]
         if len(nomi_mo) == 2 and not any(n.startswith("#") for n in nomi_mo):
             p1, p2 = nomi_mo
+            fonte_p1, fonte_p2 = sel_mo[0]["name_source"], sel_mo[1]["name_source"]
     nome_evento = next((m.event_name for m in dec.mercati.values() if m.event_name), None)
     if (p1 is None or p2 is None) and nome_evento and " v " in nome_evento:
         p1, p2 = [x.strip() for x in nome_evento.split(" v ", 1)]
+        fonte_p1 = fonte_p2 = "evento"
     if (p1 is None or p2 is None) and nomi_ips:
         p1, p2 = nomi_ips
+        fonte_p1, fonte_p2 = ("ips" if p1 else None), ("ips" if p2 else None)
     evento = {
         "event_id": ev,
         "competition_name": None,
@@ -488,9 +548,13 @@ def converti_evento(
         "player2_name": p2 or "",
         "open_date": next((m.open_date for m in dec.mercati.values() if m.open_date), None),
     }
+    fonti_giocatori = {"player1_name": fonte_p1, "player2_name": fonte_p2}
     for k, v in (meta or {}).items():
         if k in evento and v:
             evento[k] = v
+            if k in fonti_giocatori:
+                fonti_giocatori[k] = "catalogo"   # anagrafica data dal chiamante (DB tennis: catalogo Betfair)
+    nomi_fonte = {k: f for k, f in fonti_giocatori.items() if f and evento[k]}
 
     punteggio = righe_punteggio(punteggi, ev)
     diagnostica = {
@@ -501,14 +565,20 @@ def converti_evento(
         "mercati": len(mercati),
         "punteggi": len(punteggio),
         "buchi": [{"da": ms_a_iso(a), "a": ms_a_iso(b), "secondi": round((b - a) / 1000.0, 1)} for a, b in dec.buchi],
+        "nomi_fonte": nomi_fonte,
     }
     return ReplayTennis(evento=evento, mercati=mercati, snapshot=snapshot,
                         punteggio=punteggio, diagnostica=diagnostica)
 
 
 def nomi_da_cache(data_dir: str, event_id: str) -> Dict[str, Dict[str, str]]:
-    """``_names.json`` accanto alle registrazioni (formato dei grid runner, letto
-    anche dal banco: ``{event_id: {selection_id: nome}}``) -> ``{"*": {...}}``."""
+    """``_names.json`` accanto alle registrazioni -> ``{"*": {...}, market_id: {...}}``.
+
+    Formato PIATTO (grid runner, banco, lab: ``{event_id: {selection_id: nome}}``, i
+    nomi del Match Odds) -> chiave ``"*"``. 08/10 (cantiere 14): il registratore tennis
+    aggiunge ``{"_mercati": {event_id: {market_id: {selection_id: nome}}}}`` con i nomi
+    COMPLETI di tutti i mercati registrati (chiave riservata: non e' un event_id, i
+    lettori piatti non la vedono) -> una chiave per mercato."""
     path = os.path.join(data_dir, "_names.json")
     if not os.path.exists(path):
         return {}
@@ -517,7 +587,20 @@ def nomi_da_cache(data_dir: str, event_id: str) -> Dict[str, Dict[str, str]]:
             tutto = json.load(fh) or {}
     except (ValueError, OSError):
         return {}
-    per_evento = tutto.get(str(event_id)) or {}
-    if not isinstance(per_evento, dict) or not per_evento:
+    if not isinstance(tutto, dict):
         return {}
-    return {"*": {str(k): str(v) for k, v in per_evento.items()}}
+    out: Dict[str, Dict[str, str]] = {}
+    per_evento = tutto.get(str(event_id)) or {}
+    if isinstance(per_evento, dict):
+        piatti = {str(k): v for k, v in per_evento.items() if isinstance(v, str) and v}
+        if piatti:
+            out["*"] = piatti
+    tutti_i_mercati = tutto.get(CHIAVE_MERCATI_NOMI)
+    per_mercato = tutti_i_mercati.get(str(event_id)) if isinstance(tutti_i_mercati, dict) else None
+    if isinstance(per_mercato, dict):
+        for mid, nomi in per_mercato.items():
+            if isinstance(nomi, dict):
+                validi = {str(k): v for k, v in nomi.items() if isinstance(v, str) and v}
+                if validi:
+                    out[str(mid)] = validi
+    return out

@@ -55,6 +55,7 @@ import { arbExecutableUnderDelay } from '@/lib/opportunities/arb_exec';
 import { orderFlowImbalance, weightOfMoney, spreadScalp } from '@/lib/opportunities/tier2_micro';
 import type { Detector, OppConfig, Opportunity } from '@/lib/opportunities/types';
 import {
+    CLASSE_NOTA, notaNomeGiocatore,
     conFaseTennis, costruisciTimeline, delayMercatoMs, faseTennis, fetchTennisReplay, fetchTennisReplayList,
     framesPerMercato, indiceDiPasso, inizioInGioco, minutiDiGioco, ordinaPunteggio, perMotoreOpportunita,
     punteggioAl, puntiFinoA, etichettaPunteggio, raggruppaMercatiTennis, simboliTennis, sospesoPerPasso, ultimoAl,
@@ -341,6 +342,8 @@ export default function TennisReplay() {
     );
     const p1 = replay?.event.player1_name || 'Giocatore 1';
     const p2 = replay?.event.player2_name || 'Giocatore 2';
+    const nota1 = notaNomeGiocatore(replay?.event.nomi_fonte, 1);   // 08/10: «nome dall'IPS, troncato»
+    const nota2 = notaNomeGiocatore(replay?.event.nomi_fonte, 2);
     const mo = markets.find(m => (m.market_type || '').toUpperCase() === 'MATCH_ODDS') ?? markets[0];
     const statoMo = mo ? currentStatus(mo.market_id) : undefined;
     const inGiocoAlCursore = mo ? (ultimoAl(framesByMarket.get(mo.market_id), currentTs)?.inplay ?? false) : false;
@@ -586,11 +589,13 @@ export default function TennisReplay() {
                                 {replay.event.competition_name ?? ''}
                             </div>
                             <div className="flex items-center justify-center gap-4">
-                                <span className="text-emerald-400 font-bold text-lg truncate max-w-[34%] text-right">{p1}</span>
+                                <span className={`text-emerald-400 font-bold text-lg truncate max-w-[34%] text-right${nota1 ? CLASSE_NOTA : ''}`}
+                                    title={nota1}>{p1}</span>
                                 <span className="font-display font-black text-2xl md:text-3xl tabular-nums text-white" data-testid="tennis-replay-set">
                                     {s ? `${s.sets.p1} - ${s.sets.p2}` : '—'}
                                 </span>
-                                <span className="text-amber-400 font-bold text-lg truncate max-w-[34%]">{p2}</span>
+                                <span className={`text-amber-400 font-bold text-lg truncate max-w-[34%]${nota2 ? CLASSE_NOTA : ''}`}
+                                    title={nota2}>{p2}</span>
                             </div>
                             <div className="text-center text-xs text-muted-foreground mt-1 tabular-nums" data-testid="tennis-replay-stato">
                                 {statoPartita}

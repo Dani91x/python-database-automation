@@ -29,6 +29,10 @@ di questo stesso processo (nessun processo nuovo), dopo
 riga di punteggio). ``TENNIS_REPLAY_CARICA=0`` lo spegne. Un errore (migrazione
 non applicata, rete) e' solo un warning: la registrazione resta su disco e si
 carica a mano con ``python -m Betfair.stream.tennis_replay.importa``.
+
+08/10 (cantiere 14, caso 35790089 «Marcelo Tomas Barrios V» troncato dall'IPS): a ogni REC il
+tee scrive accanto al raw, in ``<cartella del giorno>/_names.json``, i nomi COMPLETI dei runner
+di tutti i mercati registrati (catalogo ``listMarketCatalogue``): vedi ``scrivi_nomi_catalogo``.
 """
 from __future__ import annotations
 
@@ -65,6 +69,106 @@ def default_record_dir(now: Optional[datetime] = None) -> str:
     return os.path.join(root, day)
 
 
+#: nome del file dei nomi accanto alle registrazioni (stesso dei grid runner/lab/banco)
+FILE_NOMI = "_names.json"
+_LOCK_NOMI = threading.Lock()   # un solo scrittore di _names.json alla volta, in questo processo
+
+
+def nomi_dal_catalogo(meta: Optional[Dict[str, Any]]) -> "tuple[Dict[str, str], Dict[str, Dict[str, str]]]":
+    """``(nomi del Match Odds, {market_id: nomi})`` dal catalogo del runner (``market_meta[event]``).
+
+    Solo nomi veri (stringhe non vuote): il catalogo e' ``listMarketCatalogue``, i nomi COMPLETI."""
+    meta = meta or {}
+
+    def _pulisci(d: Any) -> Dict[str, str]:
+        return {str(k): str(v) for k, v in (d or {}).items() if isinstance(v, str) and v.strip()}
+
+    per_mercato: Dict[str, Dict[str, str]] = {}
+    mo = _pulisci(meta.get("selection_names"))
+    if meta.get("market_id") and mo:
+        per_mercato[str(meta["market_id"])] = mo
+    for x in meta.get(_CHIAVE_MERCATI) or []:
+        n = _pulisci((x or {}).get("selection_names"))
+        if (x or {}).get("market_id") and n:
+            per_mercato[str(x["market_id"])] = n
+    return mo, per_mercato
+
+
+ESITO_SCRITTO = "scritto"
+ESITO_INVARIATO = "invariato"   # niente di nuovo da aggiungere (o nessun nome nel catalogo)
+ESITO_ERRORE = "errore"
+
+
+def scrivi_nomi_catalogo(cartella: str, event_id: str, meta: Optional[Dict[str, Any]]) -> str:
+    """Scrive in ``<cartella>/_names.json`` i nomi COMPLETI dei runner dell'evento (08/10,
+    cantiere 14: il flusso Betfair non porta i nomi e l'IPS li tronca, caso 35790089).
+
+    Formato, compatibile con TUTTI i lettori di ``_names.json`` (grid runner, lab, banco,
+    ``replay_bot``, Replay Tennis): chiave piatta ``{event_id: {selection_id: nome}}`` per il
+    Match Odds, e in piu' la chiave riservata ``"_mercati"`` ->
+    ``{event_id: {market_id: {selection_id: nome}}}`` per TUTTI i mercati registrati.
+    NON SOVRASCRIVE: la voce piatta di una partita gia' presente resta com'e'; di ogni
+    mercato si aggiungono solo le selezioni mancanti. Scrittura atomica (file temporaneo +
+    ``os.replace``). File esistente illeggibile = non si tocca (warning). Ritorna
+    ``ESITO_SCRITTO``, ``ESITO_INVARIATO`` o ``ESITO_ERRORE``. Best-effort: MAI
+    un'eccezione verso il chiamante."""
+    ev = str(event_id)
+    path = os.path.join(cartella, FILE_NOMI)
+    try:
+        from ..tennis_replay.convertitore import CHIAVE_MERCATI_NOMI
+
+        mo, per_mercato = nomi_dal_catalogo(meta)
+        if not mo and not per_mercato:
+            return ESITO_INVARIATO
+        with _LOCK_NOMI:
+            tutto: Dict[str, Any] = {}
+            if os.path.exists(path):
+                try:
+                    with open(path, "r", encoding="utf-8") as fh:
+                        tutto = json.load(fh)
+                except (ValueError, OSError) as exc:
+                    logger.warning("[tennis-rec] %s illeggibile (%s): non lo tocco, nomi di %s non scritti",
+                                   path, str(exc)[:100], ev)
+                    return ESITO_ERRORE
+                if not isinstance(tutto, dict):
+                    logger.warning("[tennis-rec] %s non e' un oggetto json: non lo tocco", path)
+                    return ESITO_ERRORE
+            cambiato = False
+            if mo and not (isinstance(tutto.get(ev), dict) and tutto[ev]):
+                tutto[ev] = dict(mo)
+                cambiato = True
+            mercati = tutto.get(CHIAVE_MERCATI_NOMI)
+            if not isinstance(mercati, dict):
+                mercati = {}
+            del_evento = mercati.get(ev)
+            if not isinstance(del_evento, dict):
+                del_evento = {}
+            for mid, nomi in per_mercato.items():
+                voce = del_evento.get(mid)
+                if not isinstance(voce, dict):
+                    voce = {}
+                for sid, nome in nomi.items():
+                    if sid not in voce:
+                        voce[sid] = nome
+                        cambiato = True
+                if voce:
+                    del_evento[mid] = voce
+            if not cambiato:
+                return ESITO_INVARIATO
+            mercati[ev] = del_evento
+            tutto[CHIAVE_MERCATI_NOMI] = mercati
+            os.makedirs(cartella, exist_ok=True)
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(tutto, fh, indent=2, default=str)
+            os.replace(tmp, path)
+        logger.info("[tennis-rec] nomi dei runner di %s scritti in %s (%d mercati)", ev, path, len(per_mercato))
+        return ESITO_SCRITTO
+    except Exception as exc:  # noqa: BLE001 - i nomi non rompono mai la registrazione
+        logger.warning("[tennis-rec] nomi dei runner di %s NON scritti in %s: %s", ev, path, str(exc)[:150])
+        return ESITO_ERRORE
+
+
 class TennisRawTee:
     """Stato del tee raw tennis con gating PER-EVENTO (istanza dedicata al tennis).
 
@@ -93,6 +197,10 @@ class TennisRawTee:
         # torneo) e caricamenti a fine partita gia' programmati (uno per evento)
         self._meta: Dict[str, Dict[str, Any]] = {}
         self._fine_programmata: Dict[str, threading.Timer] = {}
+        # 08/10 (cantiere 14): firma dell'ultimo catalogo scritto in _names.json per evento
+        # e istante prima del quale non si riprova dopo un errore di scrittura
+        self._nomi_firma: Dict[str, str] = {}
+        self._nomi_riprova: Dict[str, float] = {}
 
     # -- controllo (record_flag_worker) ------------------------------------ #
     def enable(self, event_id: str, market_ids: Iterable[str],
@@ -114,6 +222,30 @@ class TennisRawTee:
             if ev not in self.enabled_events:
                 self.enabled_events.add(ev)
                 logger.info("[tennis-rec] REC ON evento %s -> %s", ev, self.dir)
+            cartella, meta_att = self.dir, dict(self._meta.get(ev) or {})
+        # 08/10 (cantiere 14): FUORI dal lock del tee (il tee dei messaggi non aspetta il disco)
+        self._scrivi_nomi(ev, cartella, meta_att)
+
+    def _scrivi_nomi(self, ev: str, cartella: Optional[str], meta: Dict[str, Any]) -> None:
+        """Nomi COMPLETI dei runner (catalogo) accanto al raw, in ``_names.json``.
+
+        Chiamata a ogni ``enable`` (il ``record_flag_worker`` lo richiama a ogni giro con il
+        catalogo piu' recente, anche quando i mercati in piu' arrivano dopo): scrive solo se il
+        catalogo e' cambiato dall'ultima volta; dopo un errore riprova non prima di 60 s."""
+        if not cartella or not meta:
+            return
+        try:
+            firma = json.dumps(nomi_dal_catalogo(meta), sort_keys=True)
+            if self._nomi_firma.get(ev) == firma or time.time() < self._nomi_riprova.get(ev, 0.0):
+                return
+            esito = scrivi_nomi_catalogo(cartella, ev, meta)
+            if esito == ESITO_ERRORE:
+                self._nomi_riprova[ev] = time.time() + 60.0
+            else:
+                self._nomi_firma[ev] = firma
+                self._nomi_riprova.pop(ev, None)
+        except Exception as exc:  # noqa: BLE001 - mai rompere il worker per i nomi
+            logger.warning("[tennis-rec] nomi dei runner %s KO (ignorato): %s", ev, str(exc)[:150])
 
     def disable(self, event_id: str) -> None:
         """Spegne la registrazione per UN evento e chiude i file (idempotente)."""

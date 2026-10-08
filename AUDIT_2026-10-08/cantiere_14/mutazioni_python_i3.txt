@@ -1,0 +1,6 @@
+[I3] il segnaposto '?' accettato come nome (rilancio dopo il rinforzo del test)
+    file: Betfair/stream/tennis_replay/importa.py
+    esito: 1 failed, 51 passed, 6 skipped in 6.20s
+    rossi (1): test_nomi_nulli_o_segnaposto_non_sono_nomi
+    ripristino: sha aa2de72dadc7 -> aa2de72dadc7 UGUALE
+    dopo il ripristino: 52 passed, 6 skipped in 6.62s

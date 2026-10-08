@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { TennisReplayList } from './TennisReplayList';
-import { motivoNessunBotTennis, type TennisReplayItem } from '@/lib/tennisReplay';
+import { motivoNessunBotTennis, notaNomeGiocatore, NOTA_NOME_IPS, type TennisReplayItem } from '@/lib/tennisReplay';
 
 function riga(event_id: string, market_types?: string[] | null): TennisReplayItem {
     const r: TennisReplayItem = {
@@ -39,5 +39,31 @@ describe('TennisReplayList - mercati registrati (08/10)', () => {
 
     it('nessun mercato registrato: motivo «solo punteggi»', () => {
         expect(motivoNessunBotTennis(riga('35791111', []))).toMatch(/solo punteggi/);
+    });
+});
+
+// 08/10 (cantiere 14): il nome dall'IPS e' troncato e l'elenco lo dice (tooltip), mai come se fosse intero.
+describe('TennisReplayList - nome dall\'IPS, troncato (08/10)', () => {
+    it('notaNomeGiocatore: solo la fonte `ips` ha la nota, per il giocatore giusto', () => {
+        expect(notaNomeGiocatore({ player1_name: 'ips', player2_name: 'catalogo' }, 1)).toBe(NOTA_NOME_IPS);
+        expect(notaNomeGiocatore({ player1_name: 'ips', player2_name: 'catalogo' }, 2)).toBeUndefined();
+        for (const f of ['catalogo', 'marketdef', 'evento', 'id', '']) {
+            expect(notaNomeGiocatore({ player1_name: f, player2_name: f }, 1)).toBeUndefined();
+        }
+        expect(notaNomeGiocatore(null, 1)).toBeUndefined();
+        expect(notaNomeGiocatore(undefined, 2)).toBeUndefined();
+        expect(notaNomeGiocatore({}, 2)).toBeUndefined();
+        expect(NOTA_NOME_IPS).toBe("nome dall'IPS, troncato");
+    });
+
+    it('l\'elenco mette il tooltip sul solo nome dall\'IPS e nessuna nota senza la migrazione', () => {
+        const con = { ...riga('35790089'), player1_name: 'Marcelo Tomas Barrios V', player2_name: 'Ilia Simakin',
+            nomi_fonte: { player1_name: 'ips', player2_name: 'catalogo' } };
+        const senza = { ...riga('35794049'), player1_name: 'Jannik Sinner', player2_name: 'Alexander Struff' };
+        render(<TennisReplayList items={[con, senza]} onSelect={() => undefined} />);
+        expect(screen.getByText('Marcelo Tomas Barrios V')).toHaveAttribute('title', "nome dall'IPS, troncato");
+        expect(screen.getByText('Ilia Simakin')).not.toHaveAttribute('title');
+        expect(screen.getByText('Jannik Sinner')).not.toHaveAttribute('title');
+        expect(screen.getByText('Alexander Struff')).not.toHaveAttribute('title');
     });
 });

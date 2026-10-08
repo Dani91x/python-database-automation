@@ -15,7 +15,11 @@ import { MemoryRouter } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
 import fixture from '@/lib/__fixtures__/replay_tennis_35790089.json';
 
-const registro = vi.hoisted(() => ({ rpc: [] as string[], lista: true, args: [] as Array<{ nome: string; args: unknown }> }));
+const registro = vi.hoisted(() => ({
+    rpc: [] as string[], lista: true, args: [] as Array<{ nome: string; args: unknown }>,
+    // 08/10 (cantiere 14): chi ha dato i nomi dei giocatori, come lo espone la migrazione replay_tennis_fonte_nomi
+    nomiFonte: null as null | { player1_name?: string; player2_name?: string },
+}));
 
 vi.mock('@/integrations/supabase/client', async () => {
     const fx = (await import('@/lib/__fixtures__/replay_tennis_35790089.json')).default as unknown as {
@@ -53,6 +57,7 @@ vi.mock('@/integrations/supabase/client', async () => {
                             player1_name: fx.event.player1_name, player2_name: fx.event.player2_name,
                             open_date: fx.event.open_date, n_markets: 1, n_snapshots: 3355, n_score: 104,
                             ts_min: fx.frames[0].ts, ts_max: fx.frames[fx.frames.length - 1].ts, fonte: 'import',
+                            ...(registro.nomiFonte ? { nomi_fonte: registro.nomiFonte } : {}),
                         }] : [],
                     },
                     error: null,
@@ -61,7 +66,10 @@ vi.mock('@/integrations/supabase/client', async () => {
             if (nome === 'get_replay_tennis_meta') {
                 return {
                     data: {
-                        event: { ...fx.event, competition_name: 'Challenger Prova' }, markets: fx.markets,
+                        event: {
+                            ...fx.event, competition_name: 'Challenger Prova',
+                            ...(registro.nomiFonte ? { nomi_fonte: registro.nomiFonte } : {}),
+                        }, markets: fx.markets,
                         score_timeline: fx.score_timeline, ts_min: fx.frames[0].ts,
                         ts_max: fx.frames[fx.frames.length - 1].ts, inplay_from_ts: fx.frames[0].ts,
                     },
@@ -120,6 +128,7 @@ beforeEach(() => {
     registro.rpc = [];
     registro.args = [];
     registro.lista = true;
+    registro.nomiFonte = null;
 });
 
 describe('Replay Tennis — elenco', () => {
@@ -205,5 +214,39 @@ describe('Replay Tennis — simulatore sulla partita vera', () => {
         const u = await apriPartita();
         await u.click(screen.getByRole('button', { name: /Backtest/ }));
         expect(await screen.findByText(/in-play col bet-delay reale \(3s\)/)).toBeInTheDocument();
+    });
+});
+
+// 08/10 (cantiere 14): il nome che viene dall'IPS e' TRONCATO («Marcelo Tomas Barrios V»): la pagina lo
+// dice con un tooltip, nell'elenco e nella testata; niente nota se la fonte e' altra o non e' dichiarata.
+describe("Replay Tennis — nome dall'IPS, troncato (08/10)", () => {
+    it("elenco: tooltip solo sul giocatore col nome dall'IPS", async () => {
+        registro.nomiFonte = { player1_name: 'ips', player2_name: 'catalogo' };
+        monta();
+        const carta = await screen.findByTestId('tennis-replay-partita-35790089');
+        expect(within(carta).getByText(P1)).toHaveAttribute('title', "nome dall'IPS, troncato");
+        expect(within(carta).getByText(P2)).not.toHaveAttribute('title');
+    });
+
+    it('elenco senza la migrazione (nomi_fonte assente): nessuna nota, come prima', async () => {
+        monta();
+        const carta = await screen.findByTestId('tennis-replay-partita-35790089');
+        expect(within(carta).getByText(P1)).not.toHaveAttribute('title');
+        expect(within(carta).getByText(P2)).not.toHaveAttribute('title');
+    });
+
+    it("testata della partita aperta: tooltip sul nome dall'IPS", async () => {
+        registro.nomiFonte = { player1_name: 'catalogo', player2_name: 'ips' };
+        await apriPartita();
+        const testata = screen.getByTestId('tennis-replay-testata');
+        expect(within(testata).getByText(P1)).not.toHaveAttribute('title');
+        expect(within(testata).getByText(P2)).toHaveAttribute('title', "nome dall'IPS, troncato");
+    });
+
+    it("testata senza nota quando la fonte non e' dichiarata", async () => {
+        await apriPartita();
+        const testata = screen.getByTestId('tennis-replay-testata');
+        expect(within(testata).getByText(P1)).not.toHaveAttribute('title');
+        expect(within(testata).getByText(P2)).not.toHaveAttribute('title');
     });
 });

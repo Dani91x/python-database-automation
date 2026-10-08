@@ -30,12 +30,37 @@ import { CATALOGO_BOT } from '@/lib/replayBotCatalogo';
 // ---------------------------------------------------------------------------
 // tipi (forma delle RPC del tennis)
 // ---------------------------------------------------------------------------
+/**
+ * 08/10 (cantiere 14): chi ha dato il nome di ciascun giocatore, da
+ * `tennis_replay_eventi.diagnostica.nomi_fonte` (catalogo | marketdef | evento | ips).
+ * Il nome `ips` e' quello del punteggio e puo' essere TRONCATO («Marcelo Tomas Barrios V»).
+ * Assente finche' non e' applicata `migrations/replay_tennis_fonte_nomi_2026-10-08.sql`
+ * (o per le partite caricate prima): nessuna nota, come prima.
+ */
+export interface TennisNomiFonte {
+    player1_name?: string;
+    player2_name?: string;
+}
+
+/** Testo del tooltip di un nome che viene dall'IPS. */
+export const NOTA_NOME_IPS = "nome dall'IPS, troncato";
+/** Classi in piu' (solo con la nota): sottolineatura punteggiata e cursore d'aiuto; nessun cambio di layout. */
+export const CLASSE_NOTA = ' underline decoration-dotted underline-offset-2 cursor-help';
+
+/** La nota (tooltip) del nome di un giocatore, o `undefined` se non viene dall'IPS. PURA. */
+export function notaNomeGiocatore(fonte: TennisNomiFonte | null | undefined, giocatore: 1 | 2): string | undefined {
+    const f = giocatore === 1 ? fonte?.player1_name : fonte?.player2_name;
+    return f === 'ips' ? NOTA_NOME_IPS : undefined;
+}
+
 export interface TennisReplayItem {
     event_id: string;
     competition_name: string | null;
     player1_name: string;
     player2_name: string;
     open_date: string | null;
+    /** vedi `TennisNomiFonte` */
+    nomi_fonte?: TennisNomiFonte | null;
     n_markets: number | null;
     /**
      * 08/10: i tipi di mercato registrati (MATCH_ODDS, SET_BETTING, ...) da
@@ -53,6 +78,8 @@ export interface TennisReplayItem {
 export interface TennisReplaySelection extends ReplaySelection {
     /** esito finale nella marketDefinition: WINNER | LOSER | ACTIVE | REMOVED */
     status: string | null;
+    /** 08/10: da dove viene il nome (catalogo | marketdef | ips | id); assente nelle partite caricate prima */
+    name_source?: string;
 }
 
 export interface TennisReplayMarket extends Market {
@@ -80,6 +107,8 @@ export interface TennisReplayEvent {
     player2_name: string;
     open_date: string | null;
     valuta: string;
+    /** vedi `TennisNomiFonte` */
+    nomi_fonte?: TennisNomiFonte | null;
 }
 
 export interface TennisReplayData {

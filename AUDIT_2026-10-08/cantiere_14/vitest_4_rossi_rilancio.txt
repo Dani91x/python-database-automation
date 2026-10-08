@@ -1,0 +1,93 @@
+
+ RUN  v3.2.6 /home/user/python-database-automation/.claude/worktrees/agent-ac4c6d5023a08ad94/frontend
+
+ ✓ src/components/controlroom/PosizioniChiuse.raggruppamento.test.tsx (22 tests) 8122ms
+   ✓ una regola: giornata -> bot -> partita -> ciclo > un blocco per bot (Safe diviso per sport), con il totale del bot  821ms
+   ✓ una regola: giornata -> bot -> partita -> ciclo > dentro il bot, una riga per partita; dentro la partita, i cicli  572ms
+   ✓ una regola: giornata -> bot -> partita -> ciclo > ogni ciclo dice bot, mercato, selezione, lato, esito, netto e fonte  601ms
+   ✓ una regola: giornata -> bot -> partita -> ciclo > il totale in testa e' la somma dei bot  814ms
+   ✓ paper e live: mai insieme > di serie soldi veri; "prova" mostra solo la simulazione  537ms
+   ✓ paper e live: mai insieme > la lettura della giornata chiede UNA modalita' alla volta  374ms
+   ✓ la fonte di ogni cifra: Betfair / stimato > "solo Betfair" lascia solo cio' che Betfair ha regolato  320ms
+   ✓ giornata della PARTITA (01/10), scelta dal trader, letta a richiesta > con il giorno del database (partita di IERI): non e' di oggi, e sta sotto ieri  527ms
+   ✓ VELOCITA': 500 operazioni, apertura sotto il secondo > 500 cicli (1000 righe): montata in meno di 1 s, cambio filtro in meno di 1 s  1121ms
+ ✓ src/pages/SafeStrategy.test.tsx (28 tests) 40177ms
+   ✓ pagina Safe Strategy > mostra intestazione, stato bot e modalita PAPER  3560ms
+   ✓ pagina Safe Strategy > non promette piu che nessun ordine venga piazzato  900ms
+   ✓ pagina Safe Strategy > KPI: segnali attivi, trade aperti e P&L  694ms
+   ✓ pagina Safe Strategy > M-15: "Trade aperti" conta le posizioni vive, non le chiusure ne le hedged complete  1014ms
+   ✓ pagina Safe Strategy > la tab Trade elenca il trade aperto col cash out  1948ms
+   ✓ pagina Safe Strategy > dal segnale si accoda una richiesta place con gli id risolti dal feed  2022ms
+   ✓ pagina Safe Strategy > trade MANUALE piazzato da un segnale: agganciato alla card tramite meta.idempotency_key (H1)  846ms
+   ✓ pagina Safe Strategy > la gamba di chiusura tagliata dalla liquidita e marcata parziale  1419ms
+   ✓ pagina Safe Strategy > senza id di selezione nel feed l azione resta non disponibile  858ms
+   ✓ pagina Safe Strategy > se esiste gia un trade per il segnale mostra il suo stato al posto dell azione  1367ms
+   ✓ Safe Strategy — cash out con la modalita del TRADE (CRITICAL-2) > pagina LIVE ma trade paper: nessuna doppia conferma "soldi veri"  2783ms
+   ✓ Safe Strategy — cash out con la modalita del TRADE (CRITICAL-2) > pagina PAPER ma trade live: doppia conferma e avviso soldi veri  2648ms
+   ✓ Safe Strategy — cash out con la modalita del TRADE (CRITICAL-2) > anche nella card del segnale il cash out usa la modalita del trade  1022ms
+   ✓ Safe Strategy — un solo cash out per trade (HIGH-1) > gamba di chiusura gia in coda: bottone spento  1281ms
+   ✓ Safe Strategy — un solo cash out per trade (HIGH-1) > richiesta cashout pending sul DB: bottone spento  952ms
+   ✓ Safe Strategy — feed stantio (HIGH-2) > riga vecchia E scanner morto: cash out e Investi spenti con motivo  1023ms
+   ✓ Safe Strategy — feed stantio (HIGH-2) > riga vecchia ma scanner vivo (write-on-change): badge eta, bottoni attivi  1043ms
+   ✓ Safe Strategy — tennis (HIGH-3) > un trade tennis riceve il book dal feed tennis: cash out attivo e live "set/game"  1295ms
+   ✓ Safe Strategy — sync parametri (HIGH-4) > payload server con chiave ignota: nessun salvataggio (niente loop)  899ms
+   ✓ Safe Strategy — sync parametri (HIGH-4) > condizione davvero diversa sul server: UN solo salvataggio normalizzato  955ms
+   ✓ Safe Strategy — LIVE ereditato dal control (MEDIUM-4) > banner LIVE ma nessun piazzamento senza conferma in questa sessione  1017ms
+   ✓ Safe Strategy — l ordine a mano ha la sua modalita (24/09) > servizio LIVE e `manual` NON scritto: l ordine a mano parte in PAPER  967ms
+   ✓ Safe Strategy — l ordine a mano ha la sua modalita (24/09) > servizio PAPER e `manual` scritto live: resta PAPER (il servizio e un tetto)  958ms
+   ✓ Safe Strategy — opportunita per tipo, combinazioni e tennis > chip per tipo con conteggi; il filtro tipo isola la combinazione  2298ms
+   ✓ Safe Strategy — opportunita per tipo, combinazioni e tennis > combinazione: "Piazza" accoda UNA richiesta per gamba, stake scalato, stesso prefisso di idempotenza e modalita  1872ms
+   ✓ Safe Strategy — opportunita per tipo, combinazioni e tennis > tennis: tab Opportunità tennis con la card e piazzamento con sport tennis e kind  1623ms
+   ✓ Safe Strategy — opportunita per tipo, combinazioni e tennis > pannello Rischio nei KPI: liability vs cap e stop perdita dal control.stats  878ms
+   ✓ Safe Strategy — opportunita filtrate (MEDIUM-5) > filtri che escludono tutto: stato vuoto esplicativo  2018ms
+ ✓ src/components/safestrategy/BotParamsSheet.test.tsx (47 tests) 50142ms
+   ✓ BotParamsSheet — gruppi e valori > Rischio: legge params.risk (valori DB + default per i mancanti)  1973ms
+   ✓ BotParamsSheet — gruppi e valori > «Auto-trade» non ha più una vista: nessuno di quei quattro piazza più da solo  1161ms
+   ✓ BotParamsSheet — gruppi e valori > Proponimi...: quattro rubinetti NUOVI, default ACCESO, stato dal DB  1710ms
+   ✓ BotParamsSheet — gruppi e valori > Proponimi...: un rubinetto spento sul DB si mostra spento  1048ms
+   ✓ BotParamsSheet — gruppi e valori > 24/09 gamba manuale della combo: DUE pulsanti, default «Avvisa e proponi» (chiave assente)  1115ms
+   ✓ BotParamsSheet — gruppi e valori > 24/09 valore sconosciuto sul DB -> «Avvisa e proponi»; «automatico» sul DB -> pulsante acceso  648ms
+   ✓ BotParamsSheet — gruppi e valori > 24/09 premere «Automatico» e salvare manda combo_gamba_manuale=automatico (e il resto invariato)  1193ms
+   ✓ BotParamsSheet — gruppi e valori > 24/09 da «automatico» si torna ad «Avvisa e proponi» con un clic  2195ms
+   ✓ BotParamsSheet — gruppi e valori > salvare non tocca gli auto_trade_* storici: restano quelli del DB, invariati  964ms
+   ✓ BotParamsSheet — gruppi e valori > Uscite modello e Tennis/Anomalie: campi presenti con i valori DB  991ms
+   ✓ BotParamsSheet — gruppi e valori > salvataggio: chiavi ignote preservate, toggles/risk/exits/variants espliciti  3231ms
+   ✓ BotParamsSheet — H-14 varianti > variants vuote sul DB: avviso esplicito, nessuna riattivazione silenziosa  407ms
+   ✓ BotParamsSheet — H-14 varianti > salvare senza nessuna strategia selezionata viene RIFIUTATO  2276ms
+   ✓ BotParamsSheet — H-14 varianti > varianti effettive diverse da quelle salvate: la scheda lo dice  517ms
+   ✓ BotParamsSheet — H-15 clamp e valore effettivo > valore fuori range: clampato e DICHIARATO con i limiti del servizio  1070ms
+   ✓ BotParamsSheet — H-15 clamp e valore effettivo > parametro in uso diverso da quello salvato: mostra ENTRAMBI i valori  315ms
+   ✓ BotParamsSheet — H-15 clamp e valore effettivo > le correzioni dichiarate dall'attività params_clamped compaiono sul campo  344ms
+   ✓ BotParamsSheet — H-15 clamp e valore effettivo > stop perdita: il segno non conta, la scheda mostra sempre quello vero  1198ms
+   ✓ BotParamsSheet — H-15 clamp e valore effettivo > exits e risk effettivi sono letti dalle loro sezioni  331ms
+   ✓ BotParamsSheet — Default > il bottone Default riporta ai valori di fabbrica  679ms
+   ✓ BotParamsSheet — valori in uso non disponibili > senza params_effective: avviso esplicito, nessuna riga "in uso dal servizio"  476ms
+   ✓ BotParamsSheet — valori in uso non disponibili > con params_effective: si torna a dichiarare le strategie in uso  463ms
+   ✓ BotParamsSheet — modalita per strategia > mostra una scelta per ogni strategia, col valore salvato sul DB  1236ms
+   ✓ BotParamsSheet — modalita per strategia > dichiara che il servizio in PAPER e un TETTO  426ms
+   ✓ BotParamsSheet — modalita per strategia > salva la mappa; «come il servizio» NON scrive la chiave  1039ms
+   ✓ BotParamsSheet — `soloStrategia` nel foglio vero > mostra SOLO i campi del tennis: niente Rischio, niente Auto-trade, niente Base  347ms
+   ✓ BotParamsSheet — `soloStrategia` nel foglio vero > salvare dal foglio del tennis NON tocca variants/modi delle altre tre  844ms
+   ✓ BotParamsSheet - R-06 tetto delle posizioni aperte (risk.max_open_trades) > (a) chiave ASSENTE nel database + campo non toccato: il payload NON la porta  861ms
+   ✓ BotParamsSheet - R-06 tetto delle posizioni aperte (risk.max_open_trades) > (b) chiave 5 nel database: si mostra 5 e si salva 5  561ms
+   ✓ BotParamsSheet - R-06 tetto delle posizioni aperte (risk.max_open_trades) > chiave 0 nel database e campo non toccato: resta 0 (non si decide per l'utente)  484ms
+   ✓ BotParamsSheet - R-06 tetto delle posizioni aperte (risk.max_open_trades) > (c) l'utente scrive 0 su una chiave assente: si salva 0 (= nessun tetto, scelto da lui)  1269ms
+   ✓ BotParamsSheet - R-06 tetto delle posizioni aperte (risk.max_open_trades) > (d) l'utente svuota il campo (era 5): la chiave sparisce dal payload  647ms
+   ✓ BotParamsSheet - R-06 tetto delle posizioni aperte (risk.max_open_trades) > il campo dice il significato vero di 0 e del vuoto, col tetto del bot in uso  394ms
+   ✓ BotParamsSheet - R-06 tetto delle posizioni aperte (risk.max_open_trades) > Default: il campo torna VUOTO (= tetto del bot), non 0  921ms
+   ✓ BotParamsSheet - 35 campo numerico svuotato: chiave assente, mai "" > l'elenco dei campi numerici e' quello del foglio (64 campi, nessuno escluso)  357ms
+   ✓ BotParamsSheet - 35 campo numerico svuotato: chiave assente, mai "" > puro, OGNI campo numerico: vuoto -> chiave assente, gli altri campi identici, nessun "" nel payload  327ms
+   ✓ BotParamsSheet - 35 campo numerico svuotato: chiave assente, mai "" > nel foglio vero: si svuotano TUTTI i campi numerici e si salva -> nessuna chiave numerica, nessun ""  13810ms
+   ✓ BotParamsSheet - reperto 1: uscita BASE "controllo alla sfavorita" letta dal DB > riga con l'uscita ACCESA e soglia -0,35: il foglio la mostra accesa e -0.35, e salvando senza toccare resta cosi'  560ms
+   ✓ BotParamsSheet - reperto 1: uscita BASE "controllo alla sfavorita" letta dal DB > riga senza le due chiavi: si mostrano i valori di serie del servizio (spenta, -0.2)  487ms
+   ✓ BotParamsSheet - reperto 1: uscita BASE "controllo alla sfavorita" letta dal DB > spegnere dal foglio scrive false; svuotare la soglia toglie la chiave (regola del punto 35)  1223ms
+
+ Test Files  3 passed (3)
+      Tests  97 passed (97)
+   Start at  10:02:39
+   Duration  66.01s (transform 9.53s, setup 5.65s, collect 19.44s, tests 98.44s, environment 21.54s, prepare 2.95s)
+
+
+real	1m8.884s
+user	0m32.110s
+sys	0m1.863s

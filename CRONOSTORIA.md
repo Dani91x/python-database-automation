@@ -5212,3 +5212,9 @@ dal percorso nuovo, o artefatto del messaggio aggregato delle 17:00:06): referti
   `npx.cmd` + shell + argomenti tra virgolette), fallimento rapido se il figlio non parte, timeout 40 s. Mutazioni del delegato 12/12
   rosse, mie 2/2. Windows vero DA PROVARE SUL PC (referto sez. 8). Reperto: `test_fixture_riproducibile_dal_raw` rosso gia' sulla
   partenza nel cloud (1108 frame contro 1107) -> cantiere 13.
+- CHECKPOINT C14 - NOMI TENNIS TRONCATI (verificato e integrato): il registratore tennis scrive a ogni REC i nomi COMPLETI del
+  catalogo in `_names.json` (chiave piatta di sempre + `_mercati`, mai sovrascritti); convertitore/importatore con fonte del nome
+  (`name_source`, ordine `_names.json` > catalogo nel DB > IPS > `#id`), reimport che non declassa piu' i nomi, `--solo-nomi`;
+  Replay Tennis mostra «nome dall'IPS, troncato» nel tooltip. Delegato: 26 mutazioni rosse; mie 3/3 rosse. MIGRAZIONE DA APPLICARE
+  (utente): `migrations/replay_tennis_fonte_nomi_2026-10-08.sql` DOPO `replay_tennis_mercati_elenco_2026-10-08.sql`. Sul PC:
+  35790089 con il nome intero messo a mano in `_names.json` + `importa --evento 35790089 --solo-nomi` (referto sez. 4).

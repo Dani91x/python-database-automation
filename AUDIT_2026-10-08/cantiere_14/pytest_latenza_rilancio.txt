@@ -1,0 +1,3 @@
+[misura PRIMA] worker a 1,0 s, comando->place: 948, 650, 351 ms
+............                                                             [100%]
+84 passed in 9.27s

@@ -7,7 +7,7 @@ import { History, Trophy } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { tipiMercatoRegistrati } from '@/lib/applicaBot';
-import { motivoNessunBotTennis, raggruppaPerTorneo, type TennisReplayItem } from '@/lib/tennisReplay';
+import { CLASSE_NOTA, motivoNessunBotTennis, notaNomeGiocatore, raggruppaPerTorneo, type TennisReplayItem } from '@/lib/tennisReplay';
 
 function dataOra(iso: string | null): string {
     if (!iso) return '—';
@@ -49,6 +49,8 @@ export function TennisReplayList({ items, onSelect }: {
                             <div className="space-y-2 ds-v2-mr-griglia">
                                 {a.items.map(it => {
                                     const motivo = motivoNessunBotTennis(it);
+                                    const nota1 = notaNomeGiocatore(it.nomi_fonte, 1);
+                                    const nota2 = notaNomeGiocatore(it.nomi_fonte, 2);
                                     return (
                                     <Card key={it.event_id} onClick={() => onSelect(it)} role="button" tabIndex={0}
                                         onKeyDown={e => { if (e.key === 'Enter') onSelect(it); }}
@@ -57,9 +59,11 @@ export function TennisReplayList({ items, onSelect }: {
                                         <div className="flex items-center justify-between gap-3">
                                             <div className="min-w-0">
                                                 <div className="flex items-center gap-2 mt-0.5">
-                                                    <span className="text-emerald-400 font-bold truncate">{it.player1_name || '—'}</span>
+                                                    <span className={`text-emerald-400 font-bold truncate${nota1 ? CLASSE_NOTA : ''}`}
+                                                        title={nota1}>{it.player1_name || '—'}</span>
                                                     <span className="text-white/30 text-xs">vs</span>
-                                                    <span className="text-amber-400 font-bold truncate">{it.player2_name || '—'}</span>
+                                                    <span className={`text-amber-400 font-bold truncate${nota2 ? CLASSE_NOTA : ''}`}
+                                                        title={nota2}>{it.player2_name || '—'}</span>
                                                 </div>
                                                 <div className="text-[11px] text-muted-foreground mt-1 flex items-center gap-2">
                                                     {dataOra(it.open_date)}

@@ -1,0 +1,17 @@
+[con _names.json] giro 1: riepilogo={"event_id": "35999999", "fonte": "import", "n_markets": 3, "n_snapshots": 9, "punteggi_scritti": 1, "snapshot_scritti": 9}
+[con _names.json] giro 2: riepilogo={"event_id": "35999999", "fonte": "import", "n_markets": 3, "n_snapshots": 9, "punteggi_scritti": 1, "snapshot_scritti": 9}
+[con _names.json] conteggi: eventi=1 mercati=3 snapshot=9 punteggi=1
+[con _names.json] evento: n_markets=3 n_snapshots=9 n_score=1 p1='Uno Completo' p2='Due Completo'
+[con _names.json] mercato 1.900000001 MATCH_ODDS n_updates=5 selezioni=[{"name": "Uno Completo", "name_source": "catalogo", "selection_id": 101, "sort_priority": 1, "status": "LOSER"}, {"name": "Due Completo", "name_source": "catalogo", "selection_id": 202, "sort_priority": 2, "status": "WINNER"}]
+[con _names.json] mercato 1.900000002 SET_BETTING n_updates=2 selezioni=[{"name": "#401", "name_source": "id", "selection_id": 401, "sort_priority": 1, "status": "ACTIVE"}, {"name": "#402", "name_source": "id", "selection_id": 402, "sort_priority": 2, "status": "ACTIVE"}, {"name": "#403", "name_source": "id", "selection_id": 403, "sort_priority": 3, "status": "ACTIVE"}, {"name": "#404", "name_source": "id", "selection_id": 404, "sort_priority": 4, "status": "ACTIVE"}]
+[con _names.json] mercato 1.900000003 TOTAL_GAMES n_updates=2 selezioni=[{"name": "#301", "name_source": "id", "selection_id": 301, "sort_priority": 1, "status": "ACTIVE"}, {"name": "#302", "name_source": "id", "selection_id": 302, "sort_priority": 2, "status": "ACTIVE"}]
+[senza _names.json] giro 1: riepilogo={"event_id": "35999999", "fonte": "import", "n_markets": 3, "n_snapshots": 9, "punteggi_scritti": 1, "snapshot_scritti": 9}
+[senza _names.json] giro 2: riepilogo={"event_id": "35999999", "fonte": "import", "n_markets": 3, "n_snapshots": 9, "punteggi_scritti": 1, "snapshot_scritti": 9}
+[senza _names.json] conteggi: eventi=1 mercati=3 snapshot=9 punteggi=1
+[senza _names.json] evento: n_markets=3 n_snapshots=9 n_score=1 p1='Uno Troncato' p2='Due Troncato'
+[senza _names.json] mercato 1.900000001 MATCH_ODDS n_updates=5 selezioni=[{"name": "Uno Troncato", "name_source": "ips", "selection_id": 101, "sort_priority": 1, "status": "LOSER"}, {"name": "Due Troncato", "name_source": "ips", "selection_id": 202, "sort_priority": 2, "status": "WINNER"}]
+[senza _names.json] mercato 1.900000002 SET_BETTING n_updates=2 selezioni=[{"name": "#401", "name_source": "id", "selection_id": 401, "sort_priority": 1, "status": "ACTIVE"}, {"name": "#402", "name_source": "id", "selection_id": 402, "sort_priority": 2, "status": "ACTIVE"}, {"name": "#403", "name_source": "id", "selection_id": 403, "sort_priority": 3, "status": "ACTIVE"}, {"name": "#404", "name_source": "id", "selection_id": 404, "sort_priority": 4, "status": "ACTIVE"}]
+[senza _names.json] mercato 1.900000003 TOTAL_GAMES n_updates=2 selezioni=[{"name": "#301", "name_source": "id", "selection_id": 301, "sort_priority": 1, "status": "ACTIVE"}, {"name": "#302", "name_source": "id", "selection_id": 302, "sort_priority": 2, "status": "ACTIVE"}]
+[sequenza] 1 senza nomi: p1='Uno Troncato' p2='Due Troncato' selezioni_MO=['Uno Troncato', 'Due Troncato'] snapshot=9 mercati=3
+[sequenza] 2 con nomi: p1='Uno Completo' p2='Due Completo' selezioni_MO=['Uno Completo', 'Due Completo'] snapshot=9 mercati=3
+[sequenza] 3 di nuovo senza nomi: p1='Uno Completo' p2='Due Completo' selezioni_MO=['Uno Completo', 'Due Completo'] snapshot=9 mercati=3

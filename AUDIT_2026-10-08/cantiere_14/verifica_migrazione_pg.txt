@@ -1,0 +1,29 @@
+OK [A] ambiente Supabase simulato
+OK [A] applicata replay_tennis_2026-10-07.sql
+OK [A] applicata replay_tennis_mercati_elenco_2026-10-08.sql
+OK [A] eventi di prova inseriti
+OK [A] FALSIFICAZIONE: prima della nuova migrazione 'nomi_fonte' NON c'e'  [['fonte', 'ts_max', 'ts_min', 'n_score', 'event_id', 'n_markets', 'open_date', 'n_snapshots', 'market_types', 'player1_name', 'player2_name', 'competition_name']]
+OK [A] nuova migrazione applicata
+OK [A] nuova migrazione riapplicata (idempotente)
+OK [A] list: nomi_fonte della 35790089 = quello di diagnostica  [{'player1_name': 'ips', 'player2_name': 'marketdef'}]
+OK [A] list: market_types ancora presente (elenco 08/10 non perso)  [['MATCH_ODDS']]
+OK [A] list: evento caricato prima (senza nomi_fonte) -> chiave presente, valore null  [{'fonte': 'import', 'ts_max': None, 'ts_min': None, 'n_score': 1, 'event_id': '35000001', 'n_markets': 1, 'open_date': None, 'nomi_fonte': None, 'n_snapshots': 5, 'market_types': ['SET_BETTING'], 'player1_name': 'Uno', 'player2_name': 'Due', 'competition_name': 'ATP Vecchio'}]
+OK [A] meta: event.nomi_fonte presente; mercati e selezioni intatti
+OK [A] meta: evento vecchio -> nomi_fonte null
+OK [A] non owner rifiutato: list_replays_tennis(10);  [psql:/tmp/pgnomi_u4_o5027/q.sql:2: ERROR:  accesso negato
+CONTEXT:  PL/pgSQL function list_replays_tennis(integer) line ]
+OK [A] anon senza EXECUTE: list_replays_tennis(10);  [psql:/tmp/pgnomi_u4_o5027/q.sql:2: ERROR:  permission denied for function list_replays_tennis]
+OK [A] non owner rifiutato: get_replay_tennis_meta('35  [psql:/tmp/pgnomi_u4_o5027/q.sql:2: ERROR:  accesso negato
+CONTEXT:  PL/pgSQL function get_replay_tennis_meta(text) line ]
+OK [A] anon senza EXECUTE: get_replay_tennis_meta('35  [psql:/tmp/pgnomi_u4_o5027/q.sql:2: ERROR:  permission denied for function get_replay_tennis_meta]
+OK [A] FALSIFICAZIONE: riapplicando DOPO la sola migrazione dell'elenco la chiave sparisce (come dichiarato nel file)  [['fonte', 'ts_max', 'ts_min', 'n_score', 'event_id', 'n_markets', 'open_date', 'n_snapshots', 'market_types', 'player1_name', 'player2_name', 'competition_name']]
+OK [A] riapplicando la nuova la chiave torna
+OK [B] ambiente Supabase simulato
+OK [B] la nuova si applica subito dopo la 07/10 (senza l'elenco 08/10)
+OK [B] ... e porta gia' nomi_fonte E market_types  [{'fonte': 'import', 'ts_max': None, 'ts_min': None, 'n_score': 1, 'event_id': '35790089', 'n_markets': 1, 'open_date': None, 'nomi_fonte': {'player1_name': 'ips', 'player2_name': 'marketdef'}, 'n_snapshots': 5, 'market_types': ['MATCH_ODDS'], 'player1_name': 'Marcelo Tomas Barrios V', 'player2_name': 'Ilia Simakin', 'competition_name': 'ATP Prova'}]
+
+21/21 controlli OK
+
+real	0m16.767s
+user	0m1.207s
+sys	0m0.725s

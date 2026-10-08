@@ -1,0 +1,138 @@
+[M1] il tee non scrive piu' i nomi all'enable
+    file: Betfair/stream/tennis_live/tennis_recorder.py
+    esito: 11 failed, 1 passed in 4.04s
+    rossi (11): test_dal_raw_al_replay_nomi_completi_per_ogni_mercato; test_di_un_mercato_gia_presente_si_aggiungono_solo_le_selezioni_mancanti; test_errore_di_scrittura_mai_verso_il_chiamante_e_riprova_dopo_60s; test_i_mercati_in_piu_arrivano_dopo_e_si_aggiungono; test_il_file_e_letto_dai_lettori_veri; test_il_tee_dei_messaggi_non_aspetta_il_disco; test_non_sovrascrive_le_partite_gia_presenti_e_conserva_le_altre; test_rec_acceso_scrive_i_nomi_di_tutti_i_mercati; test_scrive_una_volta_sola_finche_il_catalogo_non_cambia; test_senza_catalogo_non_scrive_nulla_e_poi_scrive_quando_arriva; test_sync_record_flags_scrive_i_nomi_solo_per_gli_eventi_con_rec
+    ripristino: sha 5b060a416c6b -> 5b060a416c6b UGUALE
+    dopo il ripristino: 12 passed in 5.86s
+[M2] sovrascrive la voce piatta di una partita gia' presente
+    file: Betfair/stream/tennis_live/tennis_recorder.py
+    esito: 1 failed, 11 passed in 6.19s
+    rossi (1): test_non_sovrascrive_le_partite_gia_presenti_e_conserva_le_altre
+    ripristino: sha 5b060a416c6b -> 5b060a416c6b UGUALE
+    dopo il ripristino: 12 passed in 6.84s
+[M3] sovrascrive le selezioni gia' scritte di un mercato
+    file: Betfair/stream/tennis_live/tennis_recorder.py
+    esito: 1 failed, 11 passed in 6.70s
+    rossi (1): test_di_un_mercato_gia_presente_si_aggiungono_solo_le_selezioni_mancanti
+    ripristino: sha 5b060a416c6b -> 5b060a416c6b UGUALE
+    dopo il ripristino: 12 passed in 6.25s
+[M4] scrive solo il primo mercato (non tutti i registrati)
+    file: Betfair/stream/tennis_live/tennis_recorder.py
+    esito: 5 failed, 7 passed in 4.51s
+    rossi (5): test_dal_raw_al_replay_nomi_completi_per_ogni_mercato; test_di_un_mercato_gia_presente_si_aggiungono_solo_le_selezioni_mancanti; test_i_mercati_in_piu_arrivano_dopo_e_si_aggiungono; test_il_file_e_letto_dai_lettori_veri; test_rec_acceso_scrive_i_nomi_di_tutti_i_mercati
+    ripristino: sha 5b060a416c6b -> 5b060a416c6b UGUALE
+    dopo il ripristino: 12 passed in 7.08s
+[M5] un _names.json illeggibile viene sovrascritto
+    file: Betfair/stream/tennis_live/tennis_recorder.py
+    esito: 1 failed, 11 passed in 7.62s
+    rossi (1): test_file_illeggibile_non_si_tocca
+    ripristino: sha 5b060a416c6b -> 5b060a416c6b UGUALE
+    dopo il ripristino: 12 passed in 7.18s
+[M6] scrittura non atomica (residuo .tmp)
+    file: Betfair/stream/tennis_live/tennis_recorder.py
+    esito: 1 failed, 11 passed in 8.06s
+    rossi (1): test_rec_acceso_scrive_i_nomi_di_tutti_i_mercati
+    ripristino: sha 5b060a416c6b -> 5b060a416c6b UGUALE
+    dopo il ripristino: 12 passed in 6.84s
+[M7] riscrive a ogni giro (firma ignorata)
+    file: Betfair/stream/tennis_live/tennis_recorder.py
+    esito: 2 failed, 10 passed in 7.29s
+    rossi (2): test_errore_di_scrittura_mai_verso_il_chiamante_e_riprova_dopo_60s; test_scrive_una_volta_sola_finche_il_catalogo_non_cambia
+    ripristino: sha 5b060a416c6b -> 5b060a416c6b UGUALE
+    dopo il ripristino: 12 passed in 7.40s
+[M8] dopo un errore non c'e' attesa di 60 s
+    file: Betfair/stream/tennis_live/tennis_recorder.py
+    esito: 1 failed, 11 passed in 6.66s
+    rossi (1): test_errore_di_scrittura_mai_verso_il_chiamante_e_riprova_dopo_60s
+    ripristino: sha 5b060a416c6b -> 5b060a416c6b UGUALE
+    dopo il ripristino: 12 passed in 6.90s
+[M9] la scrittura dei nomi dentro il lock del tee
+    file: Betfair/stream/tennis_live/tennis_recorder.py
+    esito: 1 failed, 11 passed in 7.31s
+    rossi (1): test_il_tee_dei_messaggi_non_aspetta_il_disco
+    ripristino: sha 5b060a416c6b -> 5b060a416c6b UGUALE
+    dopo il ripristino: 12 passed in 6.45s
+[C1] il nome IPS dichiarato come catalogo
+    file: Betfair/stream/tennis_replay/convertitore.py
+    esito: 5 failed, 47 passed, 6 skipped in 4.58s
+    rossi (5): test_aggiorna_nomi_non_declassa_e_non_crea; test_anagrafica_del_chiamante_vale_catalogo; test_caso_35790089_solo_nome_ips_e_dichiarato_ips; test_fonte_marketdef_poi_ips_poi_id; test_il_nome_sale_con_una_fonte_migliore_e_non_ridiscende
+    ripristino: sha cedd9d86be48 -> cedd9d86be48 UGUALE
+    dopo il ripristino: 52 passed, 6 skipped in 4.76s
+[C2] regola del nome migliore invertita (>  ->  <)
+    file: Betfair/stream/tennis_replay/convertitore.py
+    esito: 5 failed, 47 passed, 6 skipped in 4.80s
+    rossi (5): test_aggiorna_nomi_non_declassa_e_non_crea; test_aggiorna_nomi_non_tocca_snapshot_punteggio_e_conteggi; test_il_nome_sale_con_una_fonte_migliore_e_non_ridiscende; test_migliora_selezioni_regole; test_righe_di_prima_senza_fonte_salgono_con_il_catalogo
+    ripristino: sha cedd9d86be48 -> cedd9d86be48 UGUALE
+    dopo il ripristino: 52 passed, 6 skipped in 4.90s
+[C3] a parita' resta il vecchio (>  ->  >=)
+    file: Betfair/stream/tennis_replay/convertitore.py
+    esito: 1 failed, 51 passed, 6 skipped in 4.91s
+    rossi (1): test_migliora_selezioni_regole
+    ripristino: sha cedd9d86be48 -> cedd9d86be48 UGUALE
+    dopo il ripristino: 52 passed, 6 skipped in 3.83s
+[C4] nomi_da_cache ignora la chiave _mercati
+    file: Betfair/stream/tennis_replay/convertitore.py
+    esito: 4 failed, 60 passed, 6 skipped in 5.35s
+    rossi (4): test_dal_raw_al_replay_nomi_completi_per_ogni_mercato; test_il_file_e_letto_dai_lettori_veri; test_importa_dal_file_esteso_nomi_di_tutti_i_mercati; test_nomi_da_cache_formato_esteso_e_piatto
+    ripristino: sha cedd9d86be48 -> cedd9d86be48 UGUALE
+    dopo il ripristino: 64 passed, 6 skipped in 7.65s
+[C5] l'anagrafica del chiamante non dichiara la fonte catalogo
+    file: Betfair/stream/tennis_replay/convertitore.py
+    esito: 1 failed, 51 passed, 6 skipped in 4.99s
+    rossi (1): test_anagrafica_del_chiamante_vale_catalogo
+    ripristino: sha cedd9d86be48 -> cedd9d86be48 UGUALE
+    dopo il ripristino: 52 passed, 6 skipped in 4.79s
+[C6] i nomi dei giocatori si riscrivono sempre (anche con fonte peggiore)
+    file: Betfair/stream/tennis_replay/caricamento.py
+    esito: 2 failed, 50 passed, 6 skipped in 6.05s
+    rossi (2): test_aggiorna_nomi_non_declassa_e_non_crea; test_il_nome_sale_con_una_fonte_migliore_e_non_ridiscende
+    ripristino: sha 32aaf9a1d522 -> 32aaf9a1d522 UGUALE
+    dopo il ripristino: 52 passed, 6 skipped in 5.14s
+[C7] le selezioni dei mercati si riscrivono sempre con la fonte nuova
+    file: Betfair/stream/tennis_replay/caricamento.py
+    esito: 2 failed, 50 passed, 6 skipped in 5.58s
+    rossi (2): test_aggiorna_nomi_non_declassa_e_non_crea; test_il_nome_sale_con_una_fonte_migliore_e_non_ridiscende
+    ripristino: sha 32aaf9a1d522 -> 32aaf9a1d522 UGUALE
+    dopo il ripristino: 52 passed, 6 skipped in 4.81s
+[C8] aggiorna_nomi cancella gli snapshot
+    file: Betfair/stream/tennis_replay/caricamento.py
+    esito: 2 failed, 50 passed, 6 skipped in 5.70s
+    rossi (2): test_aggiorna_nomi_non_tocca_snapshot_punteggio_e_conteggi; test_main_solo_nomi
+    ripristino: sha 32aaf9a1d522 -> 32aaf9a1d522 UGUALE
+    dopo il ripristino: 52 passed, 6 skipped in 4.95s
+[C9] aggiorna_nomi aggiorna anche mercati non presenti nel DB
+    file: Betfair/stream/tennis_replay/caricamento.py
+    esito: 1 failed, 51 passed, 6 skipped in 5.30s
+    rossi (1): test_aggiorna_nomi_non_declassa_e_non_crea
+    ripristino: sha 32aaf9a1d522 -> 32aaf9a1d522 UGUALE
+    dopo il ripristino: 52 passed, 6 skipped in 5.58s
+[C10] aggiorna_nomi su una partita non caricata procede
+    file: Betfair/stream/tennis_replay/caricamento.py
+    esito: 1 failed, 51 passed, 6 skipped in 5.56s
+    rossi (1): test_aggiorna_nomi_non_declassa_e_non_crea
+    ripristino: sha 32aaf9a1d522 -> 32aaf9a1d522 UGUALE
+    dopo il ripristino: 52 passed, 6 skipped in 4.86s
+[I1] niente fallback sulle tabelle tennis_live_*
+    file: Betfair/stream/tennis_replay/importa.py
+    esito: 3 failed, 49 passed, 6 skipped in 5.78s
+    rossi (3): test_nomi_dalla_tabella_ladder_se_manca_now; test_nomi_dalla_tabella_now_quando_il_match_odds_non_e_in_tennis_markets; test_nomi_nulli_o_segnaposto_non_sono_nomi
+    ripristino: sha aa2de72dadc7 -> aa2de72dadc7 UGUALE
+    dopo il ripristino: 52 passed, 6 skipped in 6.14s
+[I2] tabelle tennis_live_* lette sempre (anche con il Match Odds gia' noto)
+    file: Betfair/stream/tennis_replay/importa.py
+    esito: 3 failed, 49 passed, 6 skipped in 6.75s
+    rossi (3): test_anagrafica_dal_db_legge_solo_tabelle_tennis; test_tennis_markets_senza_match_odds_completa_dalle_tabelle_live_senza_sovrascrivere; test_tennis_markets_vince_e_se_ha_il_match_odds_le_tabelle_live_non_si_leggono
+    ripristino: sha aa2de72dadc7 -> aa2de72dadc7 UGUALE
+    dopo il ripristino: 52 passed, 6 skipped in 6.43s
+[I3] il segnaposto '?' accettato come nome
+    file: Betfair/stream/tennis_replay/importa.py
+    esito: 52 passed, 6 skipped in 5.71s
+    rossi (0): 
+    ripristino: sha aa2de72dadc7 -> aa2de72dadc7 UGUALE
+    dopo il ripristino: 52 passed, 6 skipped in 5.33s
+[I4] --solo-nomi ignorato (fa l'import completo)
+    file: Betfair/stream/tennis_replay/importa.py
+    esito: 1 failed, 51 passed, 6 skipped in 6.94s
+    rossi (1): test_main_solo_nomi
+    ripristino: sha aa2de72dadc7 -> aa2de72dadc7 UGUALE
+    dopo il ripristino: 52 passed, 6 skipped in 5.61s
