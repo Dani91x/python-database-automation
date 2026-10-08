@@ -229,9 +229,11 @@ def test_intestazione_tennis_pro_nomi_e_parametri(tmp_path):
     assert "NON ESERCITABILI" in testo and "fade" in testo and "SP1, SP2, SP3" in testo
     assert "  base: nessuno (parametri di produzione)" in righe
     assert "  pro-fade-dopo-break: nessuno (parametri di produzione)" in righe
+    # 08/10 sera (D-4): min_book_size e price_min sono nella scheda; fuori
+    # resta solo la chiave che il pro non legge
     assert any(r.startswith("  gate-aperto: min_book_size=0.0") and
-               "FUORI dal catalogo della UI (dichiarati): min_book_size, "
-               "min_total_matched, price_min" in r for r in righe)
+               r.endswith("FUORI dal catalogo della UI (dichiarati): "
+                          "min_total_matched") for r in righe)
     assert any(r.startswith("  live: gli stessi di gate-aperto") for r in righe)
     assert "  parziali: stake=400.0" in righe
 

@@ -40,7 +40,7 @@
     "runner OFF: dry-run forzato, nessun ordine possibile",
     "Parametri",
     "(",
-    "10",
+    "11",
     ")",
     "default",
     "ARMA",
@@ -55,7 +55,7 @@
     "runner OFF: dry-run forzato, nessun ordine possibile",
     "Parametri",
     "(",
-    "8",
+    "10",
     ")",
     "default",
     "ARMA",
@@ -69,7 +69,7 @@
     "runner OFF: dry-run forzato, nessun ordine possibile",
     "Parametri",
     "(",
-    "6",
+    "7",
     ")",
     "default",
     "ARMA",
@@ -83,7 +83,7 @@
     "runner OFF: dry-run forzato, nessun ordine possibile",
     "Parametri",
     "(",
-    "5",
+    "9",
     ")",
     "default",
     "ARMA",
@@ -196,6 +196,28 @@
     },
     {
       "ruolo": "button",
+      "nome": "Parametri(11)default"
+    },
+    {
+      "ruolo": "button",
+      "nome": "default"
+    },
+    {
+      "ruolo": "button",
+      "nome": "ARMA (dry-run)"
+    },
+    {
+      "ruolo": "spinbutton",
+      "nome": "Stake €"
+    },
+    {
+      "ruolo": "checkbox",
+      "nome": "Dry-run (solo log: nessun ordine, nemmeno simulato)",
+      "disabled": true,
+      "spuntato": "true"
+    },
+    {
+      "ruolo": "button",
       "nome": "Parametri(10)default"
     },
     {
@@ -218,7 +240,7 @@
     },
     {
       "ruolo": "button",
-      "nome": "Parametri(8)default"
+      "nome": "Parametri(7)default"
     },
     {
       "ruolo": "button",
@@ -240,29 +262,7 @@
     },
     {
       "ruolo": "button",
-      "nome": "Parametri(6)default"
-    },
-    {
-      "ruolo": "button",
-      "nome": "default"
-    },
-    {
-      "ruolo": "button",
-      "nome": "ARMA (dry-run)"
-    },
-    {
-      "ruolo": "spinbutton",
-      "nome": "Stake €"
-    },
-    {
-      "ruolo": "checkbox",
-      "nome": "Dry-run (solo log: nessun ordine, nemmeno simulato)",
-      "disabled": true,
-      "spuntato": "true"
-    },
-    {
-      "ruolo": "button",
-      "nome": "Parametri(5)default"
+      "nome": "Parametri(9)default"
     },
     {
       "ruolo": "button",

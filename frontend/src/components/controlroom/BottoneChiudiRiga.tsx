@@ -75,6 +75,7 @@ const CLS_BOTTONE: Record<'riga' | 'orfana', string> = {
 
 export function BottoneChiudiRiga({
     riga, testId = 'cr-op-chiudi', variante = 'riga', prezzoAlClic, stimaOra, etichetta = 'Chiudi', ambito = null,
+    spentoPerche = null,
 }: {
     riga: RigaDaChiudere;
     testId?: string;
@@ -93,6 +94,11 @@ export function BottoneChiudiRiga({
     /** 08/10 (W1) - quanto chiude il comando del bot (es. «tutte le 3 gambe di
      *  Mike»), scritto accanto e nella conferma; di serie nessun testo. */
     ambito?: string | null;
+    /** 08/10 sera (D-6, pagina Cash Out) - il chiamante sa che il comando non
+     *  puo' avere effetto (partita conclusa: mercato CHIUSO da Betfair): il
+     *  pulsante resta visibile ma SPENTO, col motivo come per una riga non
+     *  chiudibile. Di serie `null` = come prima. */
+    spentoPerche?: string | null;
 }) {
     const api = useContext(ChiusuraRigaContext);
     const [inVolo, setInVolo] = useState(false);
@@ -113,7 +119,8 @@ export function BottoneChiudiRiga({
     // bottone si spegne (riga occupata, non piu' chiudibile, contesto assente)
     // e comunque allo scadere di SCADENZA_CONFERMA_MS: riaprendo la scheda
     // piu' tardi, il primo clic torna a essere «Chiudi», mai «Conferma».
-    const cPre = chiudibile(riga);
+    const cBase = chiudibile(riga);
+    const cPre = cBase != null && cBase.ok && spentoPerche ? { ok: false as const, motivo: spentoPerche } : cBase;
     const sPre = api ? api.stato(riga.bot, riga.id) : null;
     const accesoPre = !!api && cPre != null && cPre.ok && !(inVolo || inCorso(sPre));
     useEffect(() => { if (!accesoPre) setArmatoDa(null); }, [accesoPre]);

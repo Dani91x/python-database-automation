@@ -1,0 +1,10 @@
+C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin/ef960131-e4cb-434d-b10f-b9585ed0d238/scratchpad/swing_PRIMA.txt: 70 righe | C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin/ef960131-e4cb-434d-b10f-b9585ed0d238/scratchpad/swing_DOPO.txt: 70 righe | righe diverse: 6
+@@ -2 +2 @@
+-controlli attivi: 23 | flumine 2.13.11 | betfairlightweight 2.23.2 | codice bot 3605f3336584 (25 file)
++controlli attivi: 23 | flumine 2.13.11 | betfairlightweight 2.23.2 | codice bot 0c363dd4a06a (25 file)
+@@ -7 +7 @@
+-  gate-aperto: conf_ticks=1, er_max=1.0, min_matched=0.0, min_total_matched=0.0, price_max=30.0, price_min=1.01, zin=1.0 | FUORI dal catalogo della UI (dichiarati): conf_ticks, min_matched, min_total_matched, price_max, price_min
++  gate-aperto: conf_ticks=1, er_max=1.0, min_matched=0.0, min_total_matched=0.0, price_max=30.0, price_min=1.01, zin=1.0 | FUORI dal catalogo della UI (dichiarati): min_total_matched
+@@ -23 +23 @@
+-      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
++      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI; fuori dalla scheda ['min_total_matched']: il bot non le legge o lo scenario non ne cambia il valore). La strategia e' quella di produzione.
