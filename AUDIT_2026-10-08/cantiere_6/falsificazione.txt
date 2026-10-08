@@ -1,0 +1,18 @@
+M1 certifica non risolve la cartella della partita      -> 1 failed, 45 passed in 6.62s
+M2 nessun ripiego su _mercati                           -> 1 failed, 45 passed in 7.48s
+M3 _mercati letto con un mercato qualsiasi              -> 1 failed, 45 passed in 10.73s
+M4 price_min del pro non dichiarato                     -> 2 failed, 44 passed in 6.87s
+M5 gate-aperto tocca una soglia di strategia del pro    -> 2 failed, 44 passed in 6.46s
+M6 SP1 senza la verifica del break                      -> 1 failed, 45 passed in 6.51s
+M7 SP3 accetta i punti del tie-break                    -> 2 failed, 44 passed in 6.22s
+M8 SP3 superficie invertita                             -> 3 failed, 43 passed in 5.83s
+M9 il metro attribuisce il break a chi vince il game    -> 1 failed, 45 passed in 6.84s
+M10 NE se UN referto lo dichiara (unione)               -> 1 failed, 45 passed in 7.39s
+M11 NON ESERCITATO anche negli scenari non di setup     -> 1 failed, 45 passed in 7.25s
+M12 famiglia SP sempre accesa                           -> 1 failed, 45 passed in 6.68s
+M13 testa muta sui nomi assenti                         -> 2 failed, 44 passed in 5.68s
+M14 compressed_fav fra i setup coi nomi                 -> 2 failed, 45 passed in 6.50s
+M15 favorito letto come il prezzo piu' alto             -> 3 failed, 43 passed in 7.37s
+sha256 Betfair/stream/tennis_live/certificazione_bot.py eb06d0c5ebabea54f7f71a8e7206dba5ef1c8b91069f251d0c4a6c320feca7ac (identico a prima: True)
+sha256 Betfair/stream/tennis_live/tools/replay_bot.py 0d4b40f91107b1dc835cb72d41f37835d12f19325fdc1e07fd6b9b3f548c7d83 (identico a prima: True)
+sha256 Betfair/stream/backtest/certifica.py dc7f2f13fa22c79243211274bb92517797ac3a509a3eab00866292530c3252da (identico a prima: True)

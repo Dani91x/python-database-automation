@@ -365,7 +365,9 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
         mercati=("MATCH_ODDS",),
         replay="Betfair.stream.tennis_live.tools.replay_bot:certifica_scenario_tennis_pro",
         parametri="Betfair.stream.tennis_live.tools.replay_bot:parametri_modificabili_tennis_pro",
-        scenari="Betfair.stream.tennis_live.tools.replay_bot:SCENARI_DESCRITTI",
+        # 08/10 (cantiere 6): gli scenari comuni piu' i tre dei setup coi nomi
+        # (fade, set transition, break point), solo per il pro
+        scenari="Betfair.stream.tennis_live.tools.replay_bot:SCENARI_DESCRITTI_PRO",
         controlli="Betfair.stream.tennis_live.certificazione_bot",
         spec="TENNIS_BOT_DOSSIER.md",
         cartella=_cartella_tennis,

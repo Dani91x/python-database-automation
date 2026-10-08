@@ -5226,3 +5226,8 @@ dal percorso nuovo, o artefatto del messaggio aggregato delle 17:00:06): referti
   da KO B2 0,91 + CP4 a KO SOLO B2 0,04 (sel 58805: due resti per ciclo sotto la tolleranza per ciclo del bot) = DECISIONE D1
   DELL'UTENTE. 35760084: 5/5 OK identici; `tutti` 46/47 OK, KO `auto-live` gia' presente su b5547eb. Mie mutazioni 3/3 rosse, mio
   replay identico. Riferimenti nuovi in `AUDIT_2026-10-08/riferimenti/`. Da rilanciare (punto 4): Mike/Omega/Safe/tennis col banco nuovo.
+- CHECKPOINT C6 - BANCO TENNIS: NOMI DEI GIOCATORI E `gate-aperto` (verificato e integrato): `certifica` trova la cartella della partita
+  come «Applica bot» e passa `_names.json`; testa del referto «nomi PRESENTI/ASSENTI» e «parametri cambiati dallo scenario»; tre scenari
+  nuovi del pro (fade dopo il break, transizione di set, break point) con controlli SP1-SP3 o NE con causa; test di contratto su
+  `gate-aperto` (le chiavi fuori dalla UI sono dichiarate, decisione per l'utente). Delegato 15/15 mutazioni rosse, mie 3/3. Reperto
+  di strategia per l'utente: il pro entra in break point anche nel tie-break. REPLAY TENNIS DA RIESEGUIRE SUL PC.

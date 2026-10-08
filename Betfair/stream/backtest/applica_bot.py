@@ -229,6 +229,11 @@ for _b in ("tennis_scalper", "tennis_pro", "tennis_flb", "tennis_swing"):
         "uscite-manuali-firmate": _UTENTE,
         "soldi-veri-prova": "terza rete del runner: nessun ordine reale per costruzione",
     }
+# 08/10 (cantiere 6): gli scenari di certificazione dei setup di tennis_pro coi
+# nomi dei giocatori sono `base` col controllo-chiave del setup: non una variante
+for _s in ("pro-fade-dopo-break", "pro-transizione-di-set", "pro-break-point"):
+    SCENARI_SCARTATI["tennis_pro"][_s] = (
+        _UGUALE + " (e' `base` col controllo-chiave di un setup del pro: certificazione)")
 
 #: i bot di produzione che NON hanno ancora la cronologia degli ordini col codice
 #: di produzione (vuoto = tutti ce l'hanno). bot -> motivo (la UI lo mostra).

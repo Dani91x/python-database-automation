@@ -256,6 +256,121 @@ def parametri_scenario(scenario: str, bot: str) -> Dict[str, Any]:
     return {}
 
 
+# ---------------------------------------------------------------------------
+# 08/10 (cantiere 6) - I SETUP DI tennis_pro CHE DIPENDONO DAI NOMI
+# ---------------------------------------------------------------------------
+# Uno scenario per setup, SOLO per tennis_pro. Non cambiano NESSUN parametro
+# (`parametri_scenario` -> {}): e' la partita come gira in produzione, coi nomi
+# dei giocatori del catalogo. Ognuno ha il suo CONTROLLO-CHIAVE della famiglia
+# SP (`certificazione_bot`): sollecitato almeno una volta, oppure il referto
+# dice NON ESERCITATO con la causa misurata dal banco sulla registrazione (mai
+# un OK a vuoto). I controlli SP girano anche negli altri scenari del pro.
+SCENARI_SETUP_PRO: Dict[str, str] = {
+    "pro-fade-dopo-break": (
+        "tennis_pro come in produzione, coi nomi del catalogo: certifica il FADE "
+        "(back del favorito dopo un break precoce subito nel set, controllo SP1)"),
+    "pro-transizione-di-set": (
+        "tennis_pro come in produzione, coi nomi del catalogo: certifica la SET "
+        "TRANSITION (ingresso su chi ha appena vinto il set, controllo SP2)"),
+    "pro-break-point": (
+        "tennis_pro come in produzione, coi nomi del catalogo: certifica il BREAK "
+        "POINT (0-40/15-40, chi serve o chi riceve secondo la superficie, controllo SP3)"),
+}
+#: scenario -> il suo controllo-chiave
+CONTROLLO_DEL_SETUP: Dict[str, str] = {
+    "pro-fade-dopo-break": "SP1",
+    "pro-transizione-di-set": "SP2",
+    "pro-break-point": "SP3",
+}
+#: gli scenari di tennis_pro (registro del banco): quelli comuni + i tre setup
+SCENARI_DESCRITTI_PRO: Dict[str, str] = {**SCENARI_DESCRITTI, **SCENARI_SETUP_PRO}
+
+
+def scenari_del_bot(bot: str) -> Dict[str, str]:
+    """Gli scenari del bot tennis (gli stessi del registro del banco)."""
+    return dict(SCENARI_DESCRITTI_PRO if bot == "tennis_pro" else SCENARI_DESCRITTI)
+
+
+# 08/10 (cantiere 6) - `gate-aperto`: le soglie che lo scenario cambia e che NON
+# sono nel catalogo dei parametri che l'utente varia dalla UI
+# (`parametri_modificabili`, la lista bianca). Sono DICHIARATE una per una con
+# lo stato misurato sull'istanza vera del bot (`_instantiate_bot`): una chiave
+# che il bot non legge non cambia niente, una che legge cambia la soglia. Non
+# si toccano (cambierebbero i referti di tutti gli scenari coi gate aperti): la
+# scelta e' dell'utente (referto del cantiere 6, "Decisioni per l'utente"). Il
+# test di contratto diventa ROSSO se gate-aperto cambia una chiave che non e'
+# ne' nel catalogo ne' qui, e se qui resta una chiave che non serve piu'.
+_NON_LETTA = "chiave che il bot NON legge (nessun attributo): non cambia niente"
+SOGLIE_FUORI_CATALOGO: Dict[str, Dict[str, str]] = {
+    "tennis_scalper": {
+        "min_matched": _NON_LETTA,
+        "min_total_matched": "gia' 0 nel preset del runner: non cambia niente",
+        "warmup_ms": "riscaldamento 30000 -> 0 ms (soglia tecnica, non nella scheda)",
+    },
+    "tennis_pro": {
+        "min_book_size": "size minima al best 10 -> 0 EUR (non nella scheda)",
+        "min_total_matched": _NON_LETTA,
+        "price_min": "quota minima 1,08 -> 1,01 (la scheda espone solo la massima)",
+    },
+    "tennis_flb": {
+        "min_lay_size": "size minima in banca 5 -> 0 EUR (non nella scheda)",
+        "min_total_matched": _NON_LETTA,
+    },
+    "tennis_swing": {
+        "conf_ticks": "tick di conferma 2 -> 1 (soglia del detector, non nella scheda)",
+        "min_matched": "abbinato minimo del mercato 10000 -> 0 EUR (non nella scheda)",
+        "min_total_matched": _NON_LETTA,
+        "price_max": "quota massima 8 -> 30 (non nella scheda)",
+        "price_min": "quota minima 1,08 -> 1,01 (non nella scheda)",
+    },
+}
+
+
+def descrivi_parametri_scenario(scenario: str, bot: str) -> str:
+    """Una riga per la testa del referto: che cosa cambia lo scenario rispetto
+    alla produzione, separando cio' che e' nel catalogo della UI da cio' che non
+    lo e' (dichiarato in `SOGLIE_FUORI_CATALOGO`)."""
+    p = parametri_scenario(scenario, bot)
+    if not p:
+        return "nessuno (parametri di produzione)"
+    voci = ", ".join("%s=%s" % (k, p[k]) for k in sorted(p))
+    if scenario != "gate-aperto" and p == parametri_scenario("gate-aperto", bot):
+        return "gli stessi di gate-aperto (%s)" % voci
+    fuori = sorted(k for k in p if k in SOGLIE_FUORI_CATALOGO.get(bot, {}))
+    return voci + (" | FUORI dal catalogo della UI (dichiarati): %s" % ", ".join(fuori)
+                   if fuori else "")
+
+
+def intestazione_certifica(bot: str, cartelle: Dict[str, str],
+                           scenari: List[str]) -> List[str]:
+    """08/10 (cantiere 6): le righe di TESTA del referto di `certifica` per un
+    bot tennis: i nomi dei giocatori di ogni partita (presenti / ASSENTI, con la
+    causa e i setup che senza nomi non si possono esercitare) e i parametri che
+    ogni scenario cambia. ``cartelle`` = evento -> cartella risolta."""
+    from ..tennis_runner import _BOT_REGISTRY
+
+    righe: List[str] = []
+    usa_nomi = bool(_BOT_REGISTRY.get(bot, (None, None, False))[2])
+    if not usa_nomi:
+        righe.append("nomi dei giocatori: non usati da %s (il runner non gli passa il "
+                     "catalogo: `_BOT_REGISTRY`)" % bot)
+    else:
+        for ev in sorted(cartelle):
+            st = stato_nomi(cartelle[ev], ev)
+            if st["presenti"]:
+                righe.append("nomi dei giocatori %s: PRESENTI (%s) da %s"
+                             % (ev, ", ".join(st["nomi"]), st["file"]))
+            else:
+                righe.append("nomi dei giocatori %s: ASSENTI (%s): setup %s di %s NON "
+                             "ESERCITABILI (controlli %s)"
+                             % (ev, st["causa"], ", ".join(CERT.SETUP_CON_NOMI), bot,
+                                ", ".join(sorted(CERT.SETUP_CERTIFICATI))))
+    righe.append("parametri cambiati dallo scenario (il resto e' di produzione):")
+    for sc in scenari:
+        righe.append("  %s: %s" % (sc, descrivi_parametri_scenario(sc, bot)))
+    return righe
+
+
 def credenze_cp(cred: List[Dict[str, Any]],
                 specchio: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Le credenze del bot tennis nella forma dei controlli CP.
@@ -456,13 +571,67 @@ def carica_punteggi(score: str) -> List[Tuple[int, Dict[str, Any]]]:
     return out
 
 
+#: 08/10 (cantiere 6): il file dei nomi accanto alle registrazioni (cartella
+#: della partita, quella che `applica_bot.risolvi_cartella_tennis` sceglie)
+FILE_NOMI = "_names.json"
+#: la chiave RISERVATA dei nomi per mercato (cantiere 14, `tennis_replay.
+#: convertitore.CHIAVE_MERCATI_NOMI`): non e' un event_id
+CHIAVE_MERCATI_NOMI = "_mercati"
+
+
+def _nomi_della_partita(data_dir: str, event_id: str,
+                        market_id: Optional[str] = None) -> Tuple[Dict[str, int], str]:
+    """``({nome: selection_id}, causa)`` dal ``_names.json`` di ``data_dir``.
+    ``causa`` e' vuota se i nomi ci sono, altrimenti dice PERCHE' no.
+
+    La forma del file (grid runner, e registratore tennis del cantiere 14):
+      * chiave PIATTA per evento, i nomi del Match Odds: ``{event_id:
+        {selection_id: nome}}`` (si legge per prima, come sempre);
+      * chiave RISERVATA ``"_mercati"`` (cantiere 14): ``{"_mercati": {event_id:
+        {market_id: {selection_id: nome}}}}``. Non e' un event_id: si legge SOLO
+        come ripiego, per il mercato del bot (``market_id``, il MATCH_ODDS del
+        raw), se la chiave piatta della partita manca. Mai un altro mercato."""
+    cache = os.path.join(data_dir, FILE_NOMI)
+    if not os.path.exists(cache):
+        return {}, "%s assente in %s" % (FILE_NOMI, data_dir)
+    try:
+        with io.open(cache, "r", encoding="utf-8") as f:
+            tutto = json.load(f)
+    except (ValueError, OSError) as ex:
+        return {}, "%s illeggibile (%s)" % (cache, type(ex).__name__)
+    if not isinstance(tutto, dict):
+        return {}, "%s non e' un oggetto json" % cache
+    per_evento = tutto.get(str(event_id))
+    if not isinstance(per_evento, dict) or not per_evento:
+        mercati = tutto.get(CHIAVE_MERCATI_NOMI)
+        per_mercato = mercati.get(str(event_id)) if isinstance(mercati, dict) else None
+        voce = (per_mercato.get(str(market_id))
+                if isinstance(per_mercato, dict) and market_id else None)
+        if not isinstance(voce, dict) or not voce:
+            return {}, "%s non ha la partita %s" % (cache, event_id)
+        per_evento = voce
+    out: Dict[str, int] = {}
+    for sel, nome in per_evento.items():
+        if not isinstance(nome, str) or not nome.strip():
+            continue
+        try:
+            out[str(nome)] = int(sel)
+        except (TypeError, ValueError):
+            continue
+    if not out:
+        return {}, "%s: nessun nome leggibile per la partita %s" % (cache, event_id)
+    return out, ""
+
+
 def catalogo_dichiarato(data_dir: str, event_id: str,
-                        nomi: Optional[str] = None) -> Dict[str, int]:
+                        nomi: Optional[str] = None,
+                        market_id: Optional[str] = None) -> Dict[str, int]:
     """La mappa `{nome_runner: selection_id}` che in produzione porta
     `listMarketCatalogue` e che il raw NON contiene (limite 1).
 
     Fonti, in ordine: `--nomi "Nome=selid,Nome=selid"`, poi la cache
-    `_names.json` che i grid runner scrivono accanto alle registrazioni.
+    `_names.json` che i grid runner scrivono accanto alle registrazioni
+    (08/10: chiave riservata `_mercati` come ripiego, vedi `_nomi_della_partita`).
     """
     if nomi:
         out: Dict[str, int] = {}
@@ -475,22 +644,18 @@ def catalogo_dichiarato(data_dir: str, event_id: str,
             except ValueError:
                 continue
         return out
-    cache = os.path.join(data_dir, "_names.json")
-    if not os.path.exists(cache):
-        return {}
-    try:
-        with io.open(cache, "r", encoding="utf-8") as f:
-            tutto = json.load(f)
-    except (ValueError, OSError):
-        return {}
-    per_evento = (tutto or {}).get(str(event_id)) or {}
-    out = {}
-    for sel, nome in per_evento.items():
-        try:
-            out[str(nome)] = int(sel)
-        except (TypeError, ValueError):
-            continue
-    return out
+    return _nomi_della_partita(data_dir, event_id, market_id)[0]
+
+
+def stato_nomi(data_dir: str, event_id: str) -> Dict[str, Any]:
+    """08/10 (cantiere 6): i nomi dei giocatori di UNA partita per la testa del
+    referto: ``{"presenti": bool, "nomi": [...], "causa": str, "file": path}``.
+    Il mercato e' il MATCH_ODDS del raw (serve al ripiego su `_mercati`)."""
+    raw, _score = percorsi(data_dir, event_id)
+    market_id = mercato_dal_raw(raw)[0] if os.path.exists(raw) else None
+    cat, causa = _nomi_della_partita(data_dir, event_id, market_id)
+    return {"presenti": bool(cat), "nomi": sorted(cat), "causa": causa,
+            "file": os.path.join(data_dir, FILE_NOMI)}
 
 
 def qualita_registrazione(data_dir: str, event_id: str) -> str:
@@ -681,6 +846,9 @@ class _Ponte:
         # bot NON esiste nel runner (in produzione `_instantiate_bot` lo crea
         # all'armamento): nessun book, nessun punteggio, nessun worker.
         self.accensione = VB.Accensione(None)
+        # 08/10 (cantiere 6): il METRO dei setup di tennis_pro (famiglia SP),
+        # None per gli altri bot
+        self.lettore_setup: Optional[CERT.LettoreSetupPro] = None
 
     def ruolo_ordine(self, ordine: Any) -> Optional[str]:
         """Il RUOLO di un ordine per il guasto CP, dalla credenza VERA del bot
@@ -760,6 +928,9 @@ class _Ponte:
             self.s.score = ts
         if hasattr(self.s, "point_pressure") and ts is not None:
             self.s.point_pressure = bool(ts.point_pressure)
+        if self.lettore_setup is not None:
+            # il banco legge lo STESSO campione col suo metro (famiglia SP)
+            self.lettore_setup.campione(ts, self._ultimo_book, self.s)
 
     def _forse_disarmo(self, market: Any, ms: int) -> None:
         """Lo scenario `bot-fermo`: a meta' partita il runner disarma davvero."""
@@ -1042,6 +1213,8 @@ class _Ponte:
             rifiuti_taglia=self.rifiuti_taglia(),
             catena_soldi_veri=self.catena_soldi_veri,
             residui=self.residui_del_bot(),
+            setup_pro=(self.lettore_setup.stato(self.s, market_book)
+                       if self.lettore_setup is not None else None),
         )
         if self.catena_soldi_veri is not None:
             self._conta_soldi_veri(righe, self.attivita[self._sv_idx:])
@@ -1264,7 +1437,7 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
 
     catalogo: Dict[str, int] = {}
     if scenario != "catalogo-assente":
-        catalogo = catalogo_dichiarato(data_dir, event_id, nomi)
+        catalogo = catalogo_dichiarato(data_dir, event_id, nomi, market_id=market_id)
         if catalogo:
             ref.note.append("catalogo DICHIARATO (il raw non lo contiene): %s"
                             % ", ".join(sorted(catalogo)))
@@ -1421,6 +1594,10 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
                 riavvia=_riavvia if scenario == "riavvio" else None,
             )
             ponte.accensione = accensione
+            if bot == "tennis_pro":
+                # 08/10 (cantiere 6): il metro dei setup coi nomi (famiglia SP),
+                # con lo STESSO catalogo che riceve il bot
+                ponte.lettore_setup = CERT.LettoreSetupPro(catalogo)
             if punteggi:
                 primo, ultimo = punteggi[0][0], punteggi[-1][0]
                 ponte.imposta_finestra(primo, ultimo)
@@ -1514,7 +1691,29 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
     if not ref.decisioni:
         ref.note.append("il bot non ha MAI deciso: nessun controllo puo' dire "
                         "«sano», il referto dice «non lo so»")
+    if bot == "tennis_pro":
+        chiudi_setup_pro(ref, scenario, ponte.lettore_setup)
     return ref
+
+
+def chiudi_setup_pro(ref: CERT.Referto, scenario: str,
+                     lettore: Optional[CERT.LettoreSetupPro]) -> None:
+    """08/10 (cantiere 6): a fine replay di tennis_pro, i controlli SP mai
+    sollecitati si dichiarano NON ESERCITABILI con la causa misurata (nomi
+    assenti, zero occasioni nella registrazione); negli scenari di setup il
+    controllo-chiave a zero rende lo scenario NON ESERCITATO (segno NE, mai OK)."""
+    for codice in sorted(CERT.SETUP_CERTIFICATI):
+        non_esercitabile, _ = CERT.esito_setup(codice, ref.sollecitati, lettore)
+        if non_esercitabile:
+            ref.non_esercitabili[codice] = non_esercitabile
+    chiave = CONTROLLO_DEL_SETUP.get(scenario)
+    if chiave is None:
+        return
+    if lettore is not None:
+        ref.note.append(lettore.misura())
+    _, non_esercitato = CERT.esito_setup(chiave, ref.sollecitati, lettore)
+    if non_esercitato:
+        ref.non_esercitato.append(non_esercitato)
 
 
 def nota_residui(attivita: List[Tuple[str, Dict[str, Any]]],
@@ -1633,7 +1832,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     logging.basicConfig(level=logging.WARNING)
     data_dir = a.data_dir or cartella_predefinita()
     eventi = a.eventi or [EVENTO_DI_RIFERIMENTO]
-    scelti = (list(SCENARI_DESCRITTI) if a.scenari.strip().lower() == "tutti"
+    scelti = (list(scenari_del_bot(a.bot)) if a.scenari.strip().lower() == "tutti"
               else [x.strip() for x in a.scenari.split(",") if x.strip()])
     imp = impronta()
     print("BOT: %s | flumine %s | betfairlightweight %s | codice bot %s"

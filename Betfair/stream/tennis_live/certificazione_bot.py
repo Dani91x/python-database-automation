@@ -161,6 +161,11 @@ class Osservazione:
     # (`ResiduiRicordati.per_stats()`: market_id, selection_id, lato, importo,
     # se_vince, se_perde, sbilancio). Li giudicano K5 (tolleranza) e RS1.
     residui: List[Dict[str, Any]] = field(default_factory=list)
+    # 08/10 (cantiere 6, famiglia SP): cio' che il BANCO ha letto da se' del
+    # punteggio IPS e del book per i setup di tennis_pro che dipendono dai nomi
+    # (`LettoreSetupPro.stato`). None = famiglia SP non in gioco (altri bot, o
+    # il giro di settlement).
+    setup_pro: Optional[Dict[str, Any]] = None
 
     def kinds(self) -> List[str]:
         return [k for k, _ in self.attivita]
@@ -173,13 +178,18 @@ Controllo = Callable[[Osservazione], Optional[str]]
 _REGISTRO: List[Tuple[str, str]] = []
 _FUNZIONI: Dict[str, Controllo] = {}
 _QUANDO: Dict[str, Optional[Controllo]] = {}
+# 08/10 (cantiere 6): la famiglia SP (setup di tennis_pro) sta in un registro
+# SUO: vale solo per tennis_pro, e i referti degli altri tre bot non cambiano
+# (stessa tabella di copertura, stesso conteggio dei controlli attivi).
+_REGISTRO_SP: List[Tuple[str, str]] = []
 
 
-def _controllo(codice: str, regola: str, quando: Optional[Controllo] = None):
+def _controllo(codice: str, regola: str, quando: Optional[Controllo] = None,
+               registro: Optional[List[Tuple[str, str]]] = None):
     """Registra un controllo e dichiara QUANDO ha davvero un caso."""
 
     def _reg(fn: Controllo) -> Controllo:
-        _REGISTRO.append((codice, regola))
+        (_REGISTRO if registro is None else registro).append((codice, regola))
         _FUNZIONI[codice] = fn
         _QUANDO[codice] = quando
         return fn
@@ -1221,13 +1231,368 @@ def _p3(oss: Osservazione) -> Optional[str]:
 
 
 # ===========================================================================
+# FAMIGLIA SP - i SETUP di tennis_pro che dipendono dai NOMI (cantiere 6, 08/10)
+# ===========================================================================
+# Il raw dello stream non porta i nomi dei runner (limite 1 del banco): la mappa
+# nome IPS -> selezione la porta solo il catalogo (`listMarketCatalogue` in
+# produzione, `_names.json` / `--nomi` nel banco). Senza, i setup che devono
+# sapere CHI serve, chi ha perso il servizio o chi ha vinto il set non scattano
+# MAI (fail-closed, fix audit #13). Sono questi, letti dal codice del bot
+# (`tennis_pro_bot.py`): break point (`_server_receiver_sel`), fade
+# (`_break_precoce_del` -> `_sel_for_ha`), set transition (`_track_sets` ->
+# `_sel_for_ha`), serving for set (`_server_receiver_sel`), double break
+# (`_sel_for_ha`). Il compressed favourite guarda solo il book. Il test
+# `test_cantiere6_*` li prova sulla classe di produzione (coi nomi scattano,
+# senza no).
+SETUP_CON_NOMI: Tuple[str, ...] = ("break_point", "fade", "set_transition",
+                                   "serving_for_set", "double_break")
+
+#: i setup che il banco certifica con un controllo SUO: codice -> `kind` che il
+#: bot scrive nell'attivita' `entry` (`_open_trade`)
+SETUP_CERTIFICATI: Dict[str, str] = {"SP1": "fade", "SP2": "set_transition",
+                                     "SP3": "break_point"}
+
+#: le superfici su cui il break point punta chi SERVE (docstring del setup 1 del
+#: bot: "erba/fast -> BACK chi serve; clay/wta -> BACK chi riceve"; codice
+#: `_sig_break_point`: ogni altra superficie punta chi riceve)
+SUPERFICI_SERVE: Tuple[str, ...] = ("grass", "fast")
+
+#: i punti di un game NORMALE come li scrive l'IPS (il tie-break usa i punti
+#: numerici 0, 1, 2, ...: li' non c'e' un servizio da strappare)
+_PUNTI_GAME = {"0": 0, "15": 1, "30": 2, "40": 3}
+
+
+def _norm_nome(nome: Any) -> str:
+    return " ".join(str(nome or "").strip().lower().split())
+
+
+def selezione_del_nome(nome: Any, catalogo: Dict[str, int]) -> Optional[int]:
+    """La selezione di un nome IPS nel CATALOGO, con le regole scritte per il
+    bot (fix audit #13 e 07/10) ma calcolata qui, dal banco: il nome intero; poi
+    il cognome IPS (ultimo token) uguale al nome o al cognome di UNA sola voce
+    del catalogo; poi la voce del catalogo che COMINCIA col nome IPS (troncato a
+    23 caratteri dall'IPS), se e' una sola. Ambiguo o assente = None: mai
+    un'attribuzione a caso."""
+    n = _norm_nome(nome)
+    if not n or not catalogo:
+        return None
+    per_nome: Dict[str, int] = {}
+    for k, v in catalogo.items():
+        try:
+            per_nome[_norm_nome(k)] = int(v)
+        except (TypeError, ValueError):
+            continue
+    if n in per_nome:
+        return per_nome[n]
+    cognome = n.split()[-1]
+    cand = {v for k, v in per_nome.items()
+            if k == cognome or (k.split() and k.split()[-1] == cognome)}
+    if len(cand) == 1:
+        return next(iter(cand))
+    cand = {v for k, v in per_nome.items() if k.startswith(n)}
+    return next(iter(cand)) if len(cand) == 1 else None
+
+
+def _giocati(s: Any) -> int:
+    return int(getattr(s, "games_home", 0) or 0) + int(getattr(s, "games_away", 0) or 0)
+
+
+def _set_in_corso(s: Any) -> int:
+    return int(getattr(s, "sets_home", 0) or 0) + int(getattr(s, "sets_away", 0) or 0)
+
+
+def e_break_point(s: Any) -> bool:
+    """Break point della SPEC del setup 1 ("0-40 / 15-40", 30-40 escluso): il
+    ribattitore a 40, chi serve a 0 o 15, in un game normale (non tie-break)."""
+    if s is None or getattr(s, "server", None) not in ("home", "away"):
+        return False
+    ph, pa = str(getattr(s, "point_home", "") or ""), str(getattr(s, "point_away", "") or "")
+    srv, rcv = (ph, pa) if s.server == "home" else (pa, ph)
+    return _PUNTI_GAME.get(rcv.strip().upper()) == 3 and _PUNTI_GAME.get(
+        srv.strip().upper(), 9) <= 1
+
+
+def favoriti(market_book: Any) -> set:
+    """Le selezioni FAVORITE del book (prezzo piu' basso; a pari prezzo tutte):
+    prezzo = medio fra miglior punta e miglior banca quando entrambe ci sono,
+    altrimenti l'ultimo scambiato (la regola del favorito del setup)."""
+    from flumine.utils import get_price
+
+    prezzi: Dict[int, float] = {}
+    for r in getattr(market_book, "runners", None) or []:
+        if getattr(r, "status", None) != "ACTIVE":
+            continue
+        ex = getattr(r, "ex", None)
+        if ex is None:
+            continue
+        bb = get_price(getattr(ex, "available_to_back", None), 0)
+        bl = get_price(getattr(ex, "available_to_lay", None), 0)
+        p = (float(bb) + float(bl)) / 2.0 if (bb and bl) else (
+            _f(getattr(r, "last_price_traded", None)))
+        if p:
+            prezzi[int(r.selection_id)] = float(p)
+    if not prezzi:
+        return set()
+    minimo = min(prezzi.values())
+    return {k for k, p in prezzi.items() if abs(p - minimo) < 1e-9}
+
+
+class LettoreSetupPro:
+    """IL METRO dei setup di tennis_pro. Il banco legge DA SE' gli stessi
+    campioni del punteggio IPS che il ponte passa al bot (`parse_tennis_scores`
+    alla cadenza del `score_and_now_worker`) e il book di flumine dello stesso
+    istante, e tiene:
+
+      * i BREAK di ogni set: il game lo vince chi NON serviva nel campione
+        precedente (definizione della spec D3 del 07/10); cambio di set, due
+        game fra due campioni o servitore ignoto = non attribuibile;
+      * i SET VINTI (chi, a quanti game giocati del set nuovo);
+      * le OCCASIONI di ogni setup misurate sulla registrazione, in gioco e coi
+        giocatori nel catalogo: break subito dal favorito entro `fade_max_game`
+        game (SP1), set vinti (SP2), break point 0-40/15-40 (SP3).
+
+    Nessuna funzione del bot: e' il metro, non il bot. Le soglie si leggono
+    dall'istanza di PRODUZIONE (`fade_max_game`, `st_window_games`, `surface`)."""
+
+    def __init__(self, catalogo: Optional[Dict[str, int]]) -> None:
+        self.catalogo: Dict[str, int] = dict(catalogo or {})
+        self._prec: Any = None
+        self.campioni = 0
+        self.break_visti = 0
+        self.break_set: Dict[int, List[Dict[str, Any]]] = {}
+        self.set_vinti: List[Dict[str, Any]] = []
+        self.occasioni: Dict[str, int] = {c: 0 for c in SETUP_CERTIFICATI}
+
+    def _sel(self, s: Any, lato: Optional[str]) -> Optional[int]:
+        if lato not in ("home", "away"):
+            return None
+        return selezione_del_nome(getattr(s, "%s_name" % lato, None), self.catalogo)
+
+    def campione(self, s: Any, market_book: Any, strat: Any) -> None:
+        """Un campione del punteggio appena passato al bot (lo stesso oggetto)."""
+        if s is None:
+            return
+        prec = self._prec
+        if prec is not None and prec.key() == s.key():
+            return
+        self._prec = s
+        self.campioni += 1
+        in_gioco = bool(getattr(market_book, "inplay", False))
+        if in_gioco and e_break_point(s):
+            srv = self._sel(s, s.server)
+            rcv = self._sel(s, "away" if s.server == "home" else "home")
+            if srv is not None and rcv is not None:
+                self.occasioni["SP3"] += 1
+        if prec is None:
+            return
+        if (prec.sets_home, prec.sets_away) != (s.sets_home, s.sets_away):
+            dh = int(s.sets_home or 0) - int(prec.sets_home or 0)
+            da = int(s.sets_away or 0) - int(prec.sets_away or 0)
+            if (dh, da) in ((1, 0), (0, 1)):
+                lato = "home" if dh == 1 else "away"
+                sel = self._sel(s, lato)
+                self.set_vinti.append({"lato": lato, "sel": sel, "giocati": _giocati(s),
+                                       "set": _set_in_corso(s)})
+                if in_gioco and sel is not None:
+                    self.occasioni["SP2"] += 1
+            return
+        gh = int(s.games_home or 0) - int(prec.games_home or 0)
+        ga = int(s.games_away or 0) - int(prec.games_away or 0)
+        if (gh, ga) not in ((1, 0), (0, 1)) or prec.server not in ("home", "away"):
+            return
+        vincitore = "home" if gh == 1 else "away"
+        if vincitore == prec.server:
+            return              # game tenuto al servizio
+        self.break_visti += 1
+        perso = self._sel(s, prec.server)
+        setnum = _set_in_corso(s)
+        self.break_set.setdefault(setnum, []).append(
+            {"lato": prec.server, "sel": perso, "giocati": _giocati(s)})
+        limite = getattr(strat, "fade_max_game", None)
+        if (in_gioco and perso is not None and limite is not None
+                and _giocati(s) <= int(limite) and perso in favoriti(market_book)):
+            self.occasioni["SP1"] += 1
+
+    def stato(self, strat: Any, market_book: Any) -> Dict[str, Any]:
+        """Cio' che i controlli SP leggono in un giro."""
+        return {
+            "catalogo": self.catalogo,
+            "score": getattr(strat, "score", None),
+            "favoriti": favoriti(market_book),
+            "break_set": self.break_set,
+            "set_vinti": self.set_vinti,
+            "superficie": str(getattr(strat, "surface", "") or "").lower(),
+            "fade_max_game": getattr(strat, "fade_max_game", None),
+            "st_window_games": getattr(strat, "st_window_games", None),
+        }
+
+    def misura(self) -> str:
+        """La riga del referto: che cosa il banco ha visto sulla registrazione."""
+        return ("LETTURA DEL BANCO (setup di tennis_pro, dal punteggio IPS e dal book): "
+                "campioni del punteggio %d; break visti %d; set vinti %d; occasioni: "
+                "fade (break subito dal favorito nei primi game del set) %d, set "
+                "transition %d, break point 0-40/15-40 %d; catalogo dei nomi %s"
+                % (self.campioni, self.break_visti, len(self.set_vinti),
+                   self.occasioni["SP1"], self.occasioni["SP2"], self.occasioni["SP3"],
+                   "PRESENTE" if self.catalogo else "ASSENTE"))
+
+
+def esito_setup(codice: str, sollecitati: Dict[str, int],
+                lettore: Optional[LettoreSetupPro]) -> Tuple[Optional[str], Optional[str]]:
+    """(causa NON ESERCITABILE, causa NON ESERCITATO) del controllo SP ``codice``
+    a fine replay. Sollecitato = (None, None). Senza nomi, o con ZERO occasioni
+    misurate sulla registrazione, il controllo non e' esercitabile (le due cause
+    coincidono). Con occasioni ma senza un ingresso del bot NON e' "non
+    esercitabile": e' "non lo so" (il referto lo lascia fra i MAI SOLLECITATI)."""
+    if int((sollecitati or {}).get(codice) or 0) > 0:
+        return None, None
+    kind = SETUP_CERTIFICATI[codice]
+    if lettore is None or not lettore.catalogo:
+        c = ("%s NON ESERCITABILE: nomi dei giocatori ASSENTI (ne' --nomi ne' "
+             "_names.json con la partita), il setup %s di tennis_pro non puo' "
+             "scattare (fail-closed)" % (codice, kind))
+        return c, c
+    n = int(lettore.occasioni.get(codice) or 0)
+    if n == 0:
+        if lettore.campioni == 0:
+            dove = "nessun campione del punteggio IPS (sidecar assente o vuoto)"
+        elif codice == "SP1":
+            dove = ("nessun break subito dal FAVORITO nei primi game di un set "
+                    "(break visti in tutta la partita: %d)" % lettore.break_visti)
+        elif codice == "SP2":
+            dove = ("nessun set vinto in gioco col vincitore nel catalogo (set "
+                    "vinti visti: %d)" % len(lettore.set_vinti))
+        else:
+            dove = ("nessun break point 0-40/15-40 in gioco coi giocatori nel "
+                    "catalogo (campioni del punteggio: %d)" % lettore.campioni)
+        c = ("%s NON ESERCITABILE, misurato sulla registrazione: %s"
+             % (codice, dove))
+        return c, c
+    return None, ("%s mai sollecitato: %d occasioni del setup %s nella registrazione "
+                  "ma nessun ingresso %s del bot (cancello di liquidita', banda di "
+                  "prezzo, regime neutro, precedenza fra i setup o un trade gia' "
+                  "aperto): NON LO SO" % (codice, n, kind, kind))
+
+
+def _sel_int(v: Any) -> Optional[int]:
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _entrate_di(oss: Osservazione, kind: str) -> List[Dict[str, Any]]:
+    return [p for p in oss.attivita_di("entry") if str(p.get("kind") or "") == kind]
+
+
+def _q_setup(kind: str) -> Controllo:
+    def _q(oss: Osservazione) -> bool:
+        # la lettura del banco (`setup_pro`) la richiede `verifica`, una volta
+        return oss.bot == "tennis_pro" and bool(_entrate_di(oss, kind))
+    return _q
+
+
+def _punteggio_leggibile(s: Any) -> str:
+    if s is None:
+        return "nessun punteggio"
+    return "set %s-%s game %s-%s punti %s-%s servizio %s" % (
+        s.sets_home, s.sets_away, s.games_home, s.games_away, s.point_home,
+        s.point_away, s.server)
+
+
+@_controllo("SP1", "PRO fade (setup 2 + D3 del 07/10): l'ingresso e' un BACK del "
+                   "FAVORITO del book, con al piu' `fade_max_game` game giocati nel set "
+                   "e DOPO un break subito dal favorito in quel set (letto dal banco)",
+            quando=_q_setup("fade"), registro=_REGISTRO_SP)
+def _sp1(oss: Osservazione) -> Optional[str]:
+    st = oss.setup_pro or {}
+    s = st.get("score")
+    for p in _entrate_di(oss, "fade"):
+        sel = _sel_int(p.get("sel"))
+        if str(p.get("side") or "").upper() != "BACK":
+            return "fade su %s con side '%s' invece di BACK" % (sel, p.get("side"))
+        fav = st.get("favoriti") or set()
+        if sel not in fav:
+            return ("fade su %s ma il favorito del book e' %s"
+                    % (sel, sorted(fav) or "nessuno"))
+        if s is None:
+            return "fade su %s senza un punteggio" % sel
+        limite = st.get("fade_max_game")
+        if limite is not None and _giocati(s) > int(limite):
+            return ("fade su %s con %d game giocati nel set (al piu' %s): %s"
+                    % (sel, _giocati(s), limite, _punteggio_leggibile(s)))
+        nel_set = (st.get("break_set") or {}).get(_set_in_corso(s), [])
+        if not any(b.get("sel") == sel for b in nel_set):
+            return ("fade su %s (%s) ma nel set il banco non vede nessun break subito "
+                    "da lui (break del set: %s)"
+                    % (sel, _punteggio_leggibile(s), nel_set or "nessuno"))
+    return None
+
+
+@_controllo("SP2", "PRO set transition (setup 5): l'ingresso e' sul giocatore che ha "
+                   "APPENA vinto il set, entro `st_window_games` game del set nuovo "
+                   "(set vinti letti dal banco sul punteggio IPS)",
+            quando=_q_setup("set_transition"), registro=_REGISTRO_SP)
+def _sp2(oss: Osservazione) -> Optional[str]:
+    st = oss.setup_pro or {}
+    s = st.get("score")
+    for p in _entrate_di(oss, "set_transition"):
+        sel = _sel_int(p.get("sel"))
+        vinti = st.get("set_vinti") or []
+        if not vinti:
+            return "set transition su %s ma il banco non ha visto nessun set vinto" % sel
+        ultimo = vinti[-1]
+        if ultimo.get("sel") != sel:
+            return ("set transition su %s ma l'ultimo set lo ha vinto %s (%s)"
+                    % (sel, ultimo.get("sel"), ultimo.get("lato")))
+        finestra = st.get("st_window_games")
+        if s is not None and finestra is not None and \
+                _giocati(s) - int(ultimo.get("giocati") or 0) > int(finestra):
+            return ("set transition su %s fuori finestra: %d game dal set vinto (al "
+                    "piu' %s)" % (sel, _giocati(s) - int(ultimo.get("giocati") or 0),
+                                  finestra))
+    return None
+
+
+@_controllo("SP3", "PRO break point (setup 1): l'ingresso e' un BACK sul punteggio "
+                   "0-40 / 15-40 del ribattitore, su chi SERVE in erba/fast e su chi "
+                   "RICEVE altrove (giocatori dal catalogo, letti dal banco)",
+            quando=_q_setup("break_point"), registro=_REGISTRO_SP)
+def _sp3(oss: Osservazione) -> Optional[str]:
+    st = oss.setup_pro or {}
+    s = st.get("score")
+    cat = st.get("catalogo") or {}
+    for p in _entrate_di(oss, "break_point"):
+        sel = _sel_int(p.get("sel"))
+        if str(p.get("side") or "").upper() != "BACK":
+            return "break point su %s con side '%s' invece di BACK" % (sel, p.get("side"))
+        if not e_break_point(s):
+            return ("break point su %s ma il punteggio non e' 0-40/15-40 del "
+                    "ribattitore: %s" % (sel, _punteggio_leggibile(s)))
+        lato_srv = s.server
+        lato_rcv = "away" if lato_srv == "home" else "home"
+        su_chi_serve = st.get("superficie") in SUPERFICI_SERVE
+        atteso = selezione_del_nome(getattr(s, "%s_name" % (
+            lato_srv if su_chi_serve else lato_rcv)), cat)
+        if atteso is None or sel != atteso:
+            return ("break point su %s ma su superficie '%s' tocca a %s (%s, %s)"
+                    % (sel, st.get("superficie"), atteso,
+                       "chi serve" if su_chi_serve else "chi riceve",
+                       _punteggio_leggibile(s)))
+    return None
+
+
+# ===========================================================================
 # il giro completo
 # ===========================================================================
 def verifica(oss: Osservazione,
              sollecitati: Optional[Dict[str, int]] = None) -> List[Violazione]:
-    """I controlli su UN giro. Ogni controllo che ha un CASO viene contato."""
+    """I controlli su UN giro. Ogni controllo che ha un CASO viene contato.
+    08/10 (cantiere 6): la famiglia SP gira SOLO se il ponte ha portato la
+    lettura del banco (`setup_pro`, solo tennis_pro)."""
     out: List[Violazione] = []
-    for codice, regola in _REGISTRO:
+    registri = list(_REGISTRO) + (list(_REGISTRO_SP) if oss.setup_pro is not None else [])
+    for codice, regola in registri:
         quando = _QUANDO.get(codice)
         try:
             if quando is not None and not quando(oss):
@@ -1262,6 +1627,22 @@ def mai_sollecitati(sollecitati: Dict[str, int]) -> List[Tuple[str, str]]:
     return [(c, r) for c, r in _REGISTRO if not sollecitati.get(c)]
 
 
+def elenco_controlli_setup() -> List[Tuple[str, str]]:
+    """08/10 (cantiere 6): la famiglia SP, solo per tennis_pro."""
+    return list(_REGISTRO_SP)
+
+
+def famiglie_del_bot(bot: str) -> List[Tuple[str, List[Tuple[str, str]]]]:
+    """Le famiglie di controlli IN PIU' di ``bot`` (oltre a `elenco_controlli`),
+    che `certifica` stampa nella tabella della copertura con la stessa regola
+    del "non lo so". Vuoto per gli altri tre bot tennis: i loro referti non
+    cambiano."""
+    if str(bot) != "tennis_pro":
+        return []
+    return [("setup di tennis_pro che dipendono dai NOMI dei giocatori",
+             elenco_controlli_setup())]
+
+
 # ---------------------------------------------------------------------------
 # il referto di UNA partita
 # ---------------------------------------------------------------------------
@@ -1284,6 +1665,14 @@ class Referto:
     note: List[str] = field(default_factory=list)
     motivi: Dict[str, int] = field(default_factory=dict)
     stats_finali: Dict[str, Any] = field(default_factory=dict)
+    # 08/10 (cantiere 6), stesse chiavi dei referti di Mike/scalper che
+    # `certifica` legge: lo scenario NON ha esercitato cio' per cui esiste
+    # (una causa per riga: il segno diventa NE, non OK) ...
+    non_esercitato: List[str] = field(default_factory=list)
+    # ... e i controlli NON ESERCITABILI su questa registrazione (codice ->
+    # causa misurata: nomi assenti, zero occasioni): nella copertura escono
+    # marcati, mai "conformi" a vuoto
+    non_esercitabili: Dict[str, str] = field(default_factory=dict)
 
     @property
     def pulita(self) -> bool:

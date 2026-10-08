@@ -390,6 +390,85 @@ def descrivi_ambiente() -> str:
             + " | interruttore ordini del bot: coda=0 canale=1")
 
 
+# ---------------------------------------------------------------------------
+# 08/10 (cantiere 6) - LA CARTELLA DI OGNI PARTITA TENNIS e la TESTA del referto
+# ---------------------------------------------------------------------------
+def cartelle_degli_eventi(scheda: Any, eventi: List[str], data_dir_chiesta: Optional[str],
+                          data_dir: str) -> Tuple[Dict[str, str], Dict[str, str]]:
+    """``(evento -> cartella, evento -> errore)``. Calcio: ``data_dir`` per tutti,
+    come sempre. Tennis: la cartella che ha il raw col MERCATO del bot, la
+    STESSA che sceglie "Applica bot" (``applica_bot.risolvi_cartella_tennis``):
+    accanto c'e' il ``_names.json`` coi nomi dei giocatori che il banco passa al
+    bot. Con ``--data-dir`` sulla cartella della partita torna quella, identica
+    (i referti di prima non cambiano); un errore di risoluzione lascia
+    ``data_dir`` e si scrive in testa al referto."""
+    cartelle = {str(ev): data_dir for ev in eventi}
+    errori: Dict[str, str] = {}
+    if getattr(scheda, "sport", "") != "tennis":
+        return cartelle, errori
+    try:
+        from .applica_bot import risolvi_cartella_tennis
+    except Exception as ex:  # noqa: BLE001 - si dice in testa, il banco prosegue
+        return cartelle, {str(ev): "risoluzione della cartella non disponibile: %s"
+                          % str(ex)[:120] for ev in eventi}
+    for ev in eventi:
+        try:
+            cartella, errore = risolvi_cartella_tennis(scheda, str(ev), data_dir_chiesta)
+        except Exception as ex:  # noqa: BLE001 - idem
+            cartella, errore = data_dir, "risoluzione fallita: %s" % str(ex)[:120]
+        cartelle[str(ev)] = cartella or data_dir
+        if errore:
+            errori[str(ev)] = errore
+    return cartelle, errori
+
+
+def intestazione_del_bot(scheda: Any, cartelle: Dict[str, str],
+                         scenari: List[str]) -> List[str]:
+    """Le righe di TESTA che il modulo di replay del bot dichiara
+    (``intestazione_certifica``: per i bot tennis i nomi dei giocatori e i
+    parametri cambiati da ogni scenario). Un modulo che non la espone non
+    aggiunge niente: i referti degli altri bot restano riga per riga quelli di
+    prima."""
+    import importlib
+
+    modulo = str(getattr(scheda, "replay", "") or "").partition(":")[0]
+    if not modulo:
+        return []
+    try:
+        f = getattr(importlib.import_module(modulo), "intestazione_certifica", None)
+    except Exception:  # noqa: BLE001 - il replay non importabile lo dice main
+        return []
+    if not callable(f):
+        return []
+    try:
+        return [str(r) for r in f(scheda.nome, dict(cartelle), list(scenari))]
+    except Exception as ex:  # noqa: BLE001 - una testa rotta si dice, non si tace
+        return ["testa del referto NON disponibile: %s: %s" % (type(ex).__name__,
+                                                                str(ex)[:160])]
+
+
+def non_esercitabili_di_tutti(referti: List[Any]) -> Dict[str, str]:
+    """I controlli che OGNI referto del giro dichiara non esercitabili
+    (``non_esercitabili``: nomi assenti, zero occasioni misurate), con le cause
+    distinte. Basta UN referto che non lo dichiara (e non lo ha sollecitato) e
+    il controllo resta "non lo so" (??): mai un NE che copre un buco."""
+    if not referti:
+        return {}
+    comuni: Optional[set] = None
+    for r in referti:
+        chiavi = set((getattr(r, "non_esercitabili", None) or {}).keys())
+        comuni = chiavi if comuni is None else (comuni & chiavi)
+    out: Dict[str, str] = {}
+    for cod in sorted(comuni or ()):
+        cause: List[str] = []
+        for r in referti:
+            c = str((getattr(r, "non_esercitabili", None) or {}).get(cod) or "")
+            if c and c not in cause:
+                cause.append(c)
+        out[cod] = " | ".join(cause)
+    return out
+
+
 def _lavora(compito: tuple) -> Any:
     """UN replay, in un processo suo. Deve stare a livello di modulo per essere
     inviabile a un processo figlio (su Windows la pool usa `spawn`)."""
@@ -780,7 +859,13 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     data_dir = a.data_dir or scheda.cartella()
     eventi = a.eventi or eventi_disponibili(data_dir)
-    verdetti = verdetti_registrazioni(data_dir, eventi)
+    # 08/10 (cantiere 6): la cartella di OGNI partita (tennis: quella col mercato
+    # del bot e il `_names.json` dei giocatori; calcio: `data_dir`, come sempre)
+    cartelle, errori_cartella = cartelle_degli_eventi(scheda, eventi, a.data_dir, data_dir)
+    verdetti: Dict[str, str] = {}
+    for cartella in sorted(set(cartelle.values())):
+        verdetti.update(verdetti_registrazioni(
+            cartella, [e for e in eventi if cartelle.get(str(e)) == cartella]))
     if a.complete and verdetti:
         eventi = [e for e in eventi if verdetti.get(e) == "COMPLETE"]
 
@@ -827,6 +912,16 @@ def main(argv: Optional[List[str]] = None) -> int:
           + (f" --trasporto {a.trasporto}" if a.trasporto else ""))
     # 02/10 (PARITA_SAFE_ENV): l'ambiente dichiarato, in testa (par. 6.8)
     print(descrivi_ambiente())
+    # 08/10 (cantiere 6): la cartella di ogni partita che NON e' quella chiesta,
+    # gli errori di risoluzione e la testa dichiarata dal replay del bot
+    for ev in eventi:
+        if cartelle.get(str(ev), data_dir) != data_dir:
+            print(f"cartella della partita {ev}: {cartelle[str(ev)]}")
+        if str(ev) in errori_cartella:
+            print(f"!! cartella della partita {ev}: {errori_cartella[str(ev)]}")
+    for riga in intestazione_del_bot(
+            scheda, {str(ev): cartelle.get(str(ev), data_dir) for ev in eventi}, scelti):
+        print(riga)
     qualita: Dict[str, int] = {}
     for e in eventi:
         v = verdetti.get(e, "?")
@@ -870,8 +965,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     # (registro: ``trasporti_scenari``) sul canale gira sul SUO trasporto, e
     # l'etichetta del referto lo dice
     obbligati = scheda.trasporto_obbligato()
-    compiti = [(scheda.nome, ev, data_dir, sc, a.ogni_ms, int(a.diff or 0),
-                trasporto_dello_scenario(obbligati, sc, tr, a.trasporto))
+    compiti = [(scheda.nome, ev, cartelle.get(str(ev), data_dir), sc, a.ogni_ms,
+                int(a.diff or 0), trasporto_dello_scenario(obbligati, sc, tr, a.trasporto))
                for tr in trasporti for sc in scelti for ev in eventi]
     if obbligati and a.trasporto == "canale":
         spostati = sorted(sc for sc in scelti if sc in obbligati)
@@ -991,12 +1086,27 @@ def main(argv: Optional[List[str]] = None) -> int:
     non_applicabili: Dict[str, str] = {}
     for r in referti:
         non_applicabili.update(getattr(r, "non_applicabili", None) or {})
+    # 08/10 (cantiere 6): NON ESERCITABILI su questa registrazione in TUTTI i
+    # referti del giro (nomi assenti, zero occasioni misurate): segno NE
+    non_esercitabili = non_esercitabili_di_tutti(referti)
     for cod, reg in CERT.elenco_controlli():
         n = sollecitati_tot.get(cod, 0)
-        segno = "  " if n else ("NA" if cod in non_applicabili else "??")
+        segno = "  " if n else ("NA" if cod in non_applicabili else
+                                ("NE" if cod in non_esercitabili else "??"))
         print(f"  {segno} {cod:3} x{n:<7} {reg[:66]}")
     mai = [(c, g) for c, g in CERT.mai_sollecitati(sollecitati_tot)
-           if c not in non_applicabili]
+           if c not in non_applicabili and c not in non_esercitabili]
+    # 08/10 (cantiere 6): le famiglie di controlli IN PIU' del bot (es. i setup
+    # di tennis_pro coi nomi), stessa regola del "non lo so"
+    famiglie = getattr(CERT, "famiglie_del_bot", None)
+    for titolo, controlli in (famiglie(scheda.nome) if callable(famiglie) else []):
+        print(f"  -- controlli dei {titolo}:")
+        for cod, reg in controlli:
+            n = sollecitati_tot.get(cod, 0)
+            segno = "  " if n else ("NE" if cod in non_esercitabili else "??")
+            print(f"  {segno} {cod:3} x{n:<7} {reg[:66]}")
+            if not n and cod not in non_esercitabili:
+                mai.append((cod, reg))
     # I CONTROLLI DEL BANCO COMUNE (famiglia CP, scenario
     # `chiusura-abbinata-in-parte`): non stanno nel modulo di controlli del bot
     # perche' valgono per TUTTI; si contano qui, con la stessa regola del «non
@@ -1048,6 +1158,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         print()
         print("NA NON APPLICABILI (dichiarati dal replay del bot, con la causa):")
         for cod, causa in sorted(non_applicabili.items()):
+            print(f"     {cod}: {causa}")
+    if non_esercitabili:
+        print()
+        print("NE NON ESERCITABILI su queste registrazioni (in ogni scenario, causa "
+              "misurata dal banco): non sono conformi, non hanno avuto un caso:")
+        for cod, causa in sorted(non_esercitabili.items()):
             print(f"     {cod}: {causa}")
     # 30/09 (ondata 2, PROCESSO_STANDARD_BOT par. 6.3): gli stati MAI VISTI in
     # nessuno scenario, per nome
