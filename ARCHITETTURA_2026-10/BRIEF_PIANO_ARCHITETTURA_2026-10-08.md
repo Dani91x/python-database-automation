@@ -206,3 +206,53 @@ tempo decisione → `placeOrders` → risposta): numeri, non aggettivi.
   strati attorno (servizio, DB, UI, banco), non le regole.
 - Non affermare nulla sui competitor senza fonte pubblica citata.
 - Non inventare numeri: ogni misura ha lo strumento che l'ha prodotta, rieseguibile.
+
+## 9. AGGIUNTA DELL'UTENTE (08/10, dopo la prima versione) — vincoli espliciti, testuali
+
+> «Il tutto deve essere organizzato nel miglior modo possibile: facile da editare, cambiare, sostituire; scritto
+> chiaramente ogni cosa e cosa fa. Il nostro database cloud alimenta vari algoritmi: quelli ovviamente devono
+> restare. Tutto quello che riguarda Betfair deve essere al millisecondo come i competitor. Non voglio un lavoro
+> superficiale. Controlla con occhio critico: non fidarti del coordinatore, fidati solo del codice. Se serve un
+> SQLite per avere tutto al millisecondo, facciamolo; altrimenti cercate la soluzione ingegneristica migliore in
+> assoluto. L'app deve stare accesa h24 e monitorare costantemente sia calcio che tennis. Il database cloud resta
+> l'archivio generale.»
+
+Come si applica, punto per punto:
+
+1. **Organizzazione editabile/sostituibile**: ogni componente della struttura nuova ha UNA cartella, UN contratto
+   scritto (interfaccia con tipi), UN documento `COSA_FA.md` in testa (scopo, entrate, uscite, dipendenze,
+   come si sostituisce, come si prova da solo). Il criterio di accettazione del piano: «per sostituire X tocco
+   solo la cartella di X e i suoi test di contratto». Ogni scheda di §2 deve dimostrarlo per il suo componente
+   (sezione 4: elenco dei file che si toccano per sostituirlo DOMANI vs OGGI).
+2. **Gli algoritmi alimentati dal DB cloud RESTANO**: inventariarli uno per uno con `file:riga`, tabelle lette,
+   frequenza e latenza tollerata. Punti di partenza noti (da verificare e completare): modello di Mike
+   (`Betfair/mike/dossier.py`: lambda/rho dalle fixture, tabella empirica HT→FT per lega, `ht_ft_transitions`),
+   cache empiriche di Omega (`omega_service.py` `_EMPIRICAL_CACHE`/`_MINUTE_CACHE`, `omega_minute_transitions*`),
+   segnali e previsioni (`analytics_signals`, `fixture_predictions`, `Prediction/`), statistiche di contorno
+   (`standings`, `injuries`, `top_scorers`, `top_cards`, `match_*`), lo scanner `safe_strategy_scan`, il P&L
+   reale del conto (`regolato_conto.py`, `betfair_report_manager.py`), lo storico delle giornate. Per ciascuno
+   il piano dice: resta sul cloud (letto quando, con che cache locale) / si replica in locale / si precalcola.
+   Nessuno di questi si perde o si degrada.
+3. **Millisecondo su Betfair, come i competitor**: il percorso stream → cache → decisione → ordine → specchio
+   → ladder non attraversa MAI la rete verso il DB. Misurare oggi e fissare obiettivi numerici per tappa.
+   Se lo stato vivo richiede un archivio locale, la scelta (SQLite WAL, memoria + log append-only, altro) va
+   motivata con numeri (latenza di scrittura, durabilita' al crash, dimensione) e confrontata con cio' che i
+   competitor dichiarano. «La soluzione ingegneristica migliore in assoluto» = quella che vince il confronto
+   misurato, non quella piu' nota.
+4. **h24, calcio e tennis insieme**: il piano include il ciclo della giornata (cambio di giorno, regolamento
+   notturno, riconciliazione), la supervisione dei processi (crash, riavvio senza perdita di stato, memoria
+   che non cresce), la rete (riconnessione dello stream, sessione Betfair che scade, keep-alive), i limiti
+   dell'API Betfair (connessioni, richieste/secondo, mercati per stream), e le misure di risorse per 24 ore
+   (CPU, RAM, richieste al cloud/giorno) con obiettivi. Fase 2 del piano del 02/10: assorbirla e dettagliarla.
+5. **Il DB cloud e' l'archivio generale**: tutto cio' che oggi vi finisce continua a finirci (nessuna tabella
+   persa), ma via postino asincrono con coda, ripresa dopo rete assente, e idempotenza; le letture nel percorso
+   critico spariscono. Il piano elenca tabella per tabella: chi scrive oggi → chi scrivera' → ritardo massimo
+   accettato → come si verifica che «non manca nulla» (conteggi, controllo notturno).
+6. **Occhio critico**: le ipotesi di §4 sono del coordinatore PC e NON sono vincolanti; se il codice o le misure
+   dicono altro, il piano lo scrive e propone la soluzione migliore con le prove. Ogni scheda termina con
+   «cosa ho verificato di persona / cosa non ho potuto verificare».
+7. **Non superficiale**: una scheda senza l'elenco completo delle funzionalita' con `file:riga`, senza i numeri,
+   senza il test di parita' e senza la stima delle righe non e' accettata; il coordinatore della sessione la
+   rimanda al delegato. Meglio 5 schede complete che 11 superficiali: se il budget non basta, si consegna
+   l'inventario completo (00, 01), i competitor (02) e le schede fatte, con l'elenco di quelle mancanti e il
+   punto di ripresa.
