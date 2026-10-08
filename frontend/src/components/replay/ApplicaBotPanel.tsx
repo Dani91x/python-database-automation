@@ -17,7 +17,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { ParametriBotPanel } from '@/components/replay/ParametriBotPanel';
 import {
-    ETICHETTA_MODALITA, botDelloSport, famiglieScenari, modalitaDisponibile, sostituzioni, testoIstante,
+    ETICHETTA_MODALITA, botDelloSport, famiglieScenari, modalitaDisponibile, motivoMercatiMancanti, sostituzioni,
+    testoIstante, tipiMercatoRegistrati,
 } from '@/lib/applicaBot';
 import { CATALOGO_BOT } from '@/lib/replayBotCatalogo';
 import type { CatalogoBot, ModalitaScenario, SportBot } from '@/lib/replayBot';
@@ -40,6 +41,12 @@ export interface ApplicaBotPanelProps {
     catalogo?: ReadonlyArray<CatalogoBot>;
     /** testo in piu' per un istante (es. il minuto di gioco) */
     etichettaIstante?: (ms: number) => string;
+    /**
+     * 08/10 (Replay Tennis): i tipi di mercato REGISTRATI per la partita (dal
+     * catalogo del replay). undefined = non noti (Match Replay calcio: nessun
+     * controllo). Se il bot non ha il suo mercato, «Applica» resta spento col motivo.
+     */
+    mercatiRegistrati?: ReadonlyArray<string | null> | null;
 }
 
 function testoStato(a: ApplicaBot): { testo: string; errore: boolean } {
@@ -64,7 +71,7 @@ function testoStato(a: ApplicaBot): { testo: string; errore: boolean } {
 }
 
 export function ApplicaBotPanel({
-    sport, eventId, cursoreMs, applica, catalogo = CATALOGO_BOT, etichettaIstante,
+    sport, eventId, cursoreMs, applica, catalogo = CATALOGO_BOT, etichettaIstante, mercatiRegistrati,
 }: ApplicaBotPanelProps) {
     const bots = useMemo(() => botDelloSport(catalogo, sport), [catalogo, sport]);
     const [botScelto, setBotScelto] = useState('');
@@ -83,6 +90,8 @@ export function ApplicaBotPanel({
     const { cambiati, errori } = sostituzioni(voci, valori);
     const nErrori = Object.keys(errori).length;
     const stato = testoStato(applica);
+    // 08/10: il bot non ha il suo mercato registrato su questa partita -> nessun clic a vuoto
+    const motivoMercati = bot ? motivoMercatiMancanti(eventId, sport, bot.mercati, mercatiRegistrati) : null;
     const istante = (ms: number) => `${testoIstante(ms)}${etichettaIstante ? ` · ${etichettaIstante(ms)}` : ''}`;
 
     const scegliBot = (b: string) => {
@@ -115,7 +124,7 @@ export function ApplicaBotPanel({
             clic_ms: bot.clic_ms && clicDaMandare.some(c => c !== dal) ? clicDaMandare.filter(c => c !== dal) : undefined,
         });
     };
-    const puoAvviare = !!bot && !bot.disattivato && !!scenario && !!eventId && nErrori === 0 && !applica.inCorso;
+    const puoAvviare = !!bot && !bot.disattivato && !motivoMercati && !!scenario && !!eventId && nErrori === 0 && !applica.inCorso;
     // 07/10 sera (caso vero dell'utente: clic accodati in silenzio, mai partiti):
     // i clic NON ancora mandati al banco sono quelli che non sono nell'ultima
     // richiesta; finita la richiesta in corso, partono da soli
@@ -124,7 +133,7 @@ export function ApplicaBotPanel({
     const daMandare = clic.filter(c => !mandati.includes(c));
     const tolti = (applica.inviato?.clic_ms ?? []).filter(c => !clic.includes(c));
     const modificheClic = daMandare.length > 0 || tolti.length > 0;
-    const pronto = !!bot && !bot.disattivato && !!scenario && !!eventId && nErrori === 0;
+    const pronto = !!bot && !bot.disattivato && !motivoMercati && !!scenario && !!eventId && nErrori === 0;
     useEffect(() => {
         if (!applica.inCorso && modificheClic && pronto && applica.inviato != null) avvia(clic, applica.inviato.dal_ms);
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -213,6 +222,16 @@ export function ApplicaBotPanel({
                     {stato.testo}
                 </span>
             </div>
+            {mercatiRegistrati != null && (
+                <div className="text-white/60" data-testid="applica-bot-mercati-registrati">
+                    mercati registrati: {tipiMercatoRegistrati(mercatiRegistrati).join(', ') || 'nessuno (solo punteggi)'}
+                </div>
+            )}
+            {motivoMercati && (
+                <div className="text-red-300 font-bold" data-testid="applica-bot-mercato-mancante">
+                    Applica non disponibile: {motivoMercati}
+                </div>
+            )}
             {bot?.disattivato && (
                 <div className="text-red-300" data-testid="applica-bot-disattivato">
                     {bot.etichetta} non si può applicare: {bot.disattivato}

@@ -1,0 +1,65 @@
+BOT: tennis_pro | spec: TENNIS_BOT_DOSSIER.md | registrazioni: 1 in C:\Users\Admin\Desktop\tennis_rec\20260707
+controlli attivi: 22 | flumine 2.13.11 | betfairlightweight 2.23.2 | codice bot 8b0dbb723dd4 (23 file)
+comando: python -m Betfair.stream.backtest.certifica tennis_pro 35790089 --scenari base
+ambiente del banco (dichiarato; il .env di chi lancia non conta): ESITI_ORDINI_CANALE=0 LIVE_KILL_SWITCH=false LIVE_ORDER_MODE=LIVE MIKE_CANALE_POSIZIONI=0 MIKE_LEGGE_CANALE=0 MIKE_LIVE_ENABLED=1 MIKE_SVEGLIA_CANALE=0 MOTORE_ORDINI_CANALE=0 MOTORE_ORDINI_CANALE_TENNIS=0 OMEGA_CANALE_POSIZIONI=0 OMEGA_LEGGE_CANALE=0 OMEGA_ORDINI_VIA_CANALE=0 OMEGA_SVEGLIA_CANALE=0 PUNTEGGI_CANALE=0 SAFE_BOT_LEGGE_CANALE=0 SAFE_BOT_SVEGLIA_CANALE=0 SAFE_CANALE_POSIZIONI=0 SAFE_ORDINI_VIA_CANALE=0 SAFE_PRE_KO_OU_HOURS=1 SAFE_SCAN_CANALE=0 SAFE_TENNIS_ORDINI_VIA_CANALE=0 SCALPER_CANALE=0 TENNIS_BOT_CANALE=0 TENNIS_BOT_SVEGLIA_CANALE=0 | interruttore ordini del bot: coda=0 canale=1
+qualita' delle registrazioni: COMPLETE x1
+
+OK  35790089  tick=  5216 decisioni= 5212 azioni=   0 stati=- [COMPLETE]
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (riga del bot con `uscite_automatiche=True`, come la scrive l'interruttore della UI su AUTOMATICHE)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: uscite EFFETTIVE del bot istanziato: AUTOMATICHE
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: RESIDUI (decisione 1): dichiarati 0 (importi [] EUR, sbilancio [] EUR), tornati pari 0; regolati col mercato 0 (se vince [] / se perde [] EUR); aperti a fine partita 0 (importi [] EUR, sbilancio totale 0.00 EUR, se vince 0.00 / se perde 0.00)
+      tempo: 35790089 [base] 1.9s (1.9 s) | 2695 tick/s
+
+ESITO: 1 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+       0 violazioni totali
+
+COPERTURA DEI CONTROLLI — quante volte ognuno ha avuto un caso:
+  ?? B1  x0       in DRY-RUN il bot non manda MAI un ordine a mercato (dossier §4: `
+  ?? B2  x0       ogni ordine chiesto ha prezzo nella ladder Betfair [1.01, 1000] e 
+  ?? B3  x0       un bot DISABILITATO (disarm del runner, `_tennis_disabled`) non ap
+     B4  x1       nessun ordine viene chiesto a mercato NON operabile (sospeso o chi
+  ?? B5  x0       lo stake d'ingresso e' quello del control (mai piu' di quanto l'ut
+  ?? B6  x0       FLB: l'ingresso e' sempre un LAY del favorito ESTREMO (best-lay <=
+  ?? B7  x0       l'esposizione per selezione non supera il tetto che il runner pass
+  ?? B8  x0       in LIVE .it nessun ordine sotto il minimo di giurisdizione (back 1
+  ?? B9  x0       "chiudi ora" dell'utente (D3, 24/09): UNA sola chiusura dell'abbin
+  ?? B10 x0       un ordine che Betfair .it ha RIFIUTATO per taglia (INVALID_BET_SIZ
+  ?? SV1 x0       «SOLDI VERI» (04/10): l'ordine parte sul client che la catena impo
+  ?? K1  x0       ogni ordine che il bot STA SEGUENDO esiste davvero a mercato: un o
+  ?? K2  x0       un ordine RIFIUTATO (place_order ha risposto False, oppure stato V
+  ?? K3  x0       lo stato di ogni ordine si rilegge come Enum `OrderStatus` (`.valu
+  ?? K4  x0       una posizione che il bot crede VIVA ha almeno un ordine a mercato 
+  ?? K5  x0       nessuna ESPOSIZIONE abbinata resta senza una posizione viva del bo
+  ?? RS1 x0       un residuo che il bot DICHIARA non piazzabile lo e' davvero: l'ord
+  ?? K6  x0       quando il bot dichiara la posizione CHIUSA non resta nessun suo or
+     K7  x5213    il prezzo medio e l'abbinato che il bot pubblica nelle sue `stats`
+  ?? P1  x0       ogni ordine del bot arriva allo specchio `tennis_live_orders` con 
+  ?? P2  x0       lo specchio non dichiara MAI un ordine abbinato piu' di quanto il 
+     P3  x1       a mercato CHIUSO il bot pubblica un P&L di settlement: senza, lo s
+
+?? MAI SOLLECITATI: 19 controlli su 22. Su questi il referto NON dice «sano», dice «non lo so»:
+     B1: in DRY-RUN il bot non manda MAI un ordine a mercato (dossier §4: `dry_run` gatea ogni `market.place_order`; e' il kill-switch che il runner forza in OFF)
+     B2: ogni ordine chiesto ha prezzo nella ladder Betfair [1.01, 1000] e size >= 0.01 (guardie di `_place`)
+     B3: un bot DISABILITATO (disarm del runner, `_tennis_disabled`) non apre piu' nulla: le protezioni girano, le aperture no (PROCESSO_STANDARD_BOT §6.3)
+     B5: lo stake d'ingresso e' quello del control (mai piu' di quanto l'utente ha acceso): `_instantiate_bot` scrive `params['stake']` dal control-row
+     B6: FLB: l'ingresso e' sempre un LAY del favorito ESTREMO (best-lay <= `lay_max`) e mai un BACK (dossier §4.3)
+     B7: l'esposizione per selezione non supera il tetto che il runner passa al bot (`max_selection_exposure`): i tetti di flumine sono aperti nel banco, quello del bot no
+     B8: in LIVE .it nessun ordine sotto il minimo di giurisdizione (back 1.00 / lay 1.00, da `trading/minimi_it`): Betfair lo RIFIUTA e la gamba resta scoperta (PROCESSO_STANDARD_BOT §6.4)
+     B9: "chiudi ora" dell'utente (D3, 24/09): UNA sola chiusura dell'abbinato, poi nessun rientro - dopo l'esito del bot nessun ordine nuovo e' un INGRESSO, mai due ordini di chiusura vivi insieme sulla stessa selezione, e con "nessuna posizione" nessun ordine nuovo
+     B10: un ordine che Betfair .it ha RIFIUTATO per taglia (INVALID_BET_SIZE: sotto il minimo diretto o, nel place-and-trim, sotto il floor di legge) non si rimanda IDENTICO (stessa selezione, lato, size): verrebbe rifiutato di nuovo e la gamba resta scoperta mentre il bot crede di chiudere (regola dell'utente del 01/10, punto 3)
+     SV1: «SOLDI VERI» (04/10): l'ordine parte sul client che la catena impone - bot in soldi veri + «Ordini reali» LIVE di questo avvio -> client REALE; «Ordini reali» in prova -> NESSUN ordine reale eseguito; bot in prova -> client SIMULATO
+     K1: ogni ordine che il bot STA SEGUENDO esiste davvero a mercato: un ordine che il bot tiene in mano e che il blotter non conosce e' una posizione che nessuno governa
+     K2: un ordine RIFIUTATO (place_order ha risposto False, oppure stato Violation) non lascia il bot con una posizione creduta viva (difetto 2 del 15/09: `res.ok` mai letto)
+     K3: lo stato di ogni ordine si rilegge come Enum `OrderStatus` (`.value`), mai come stringa: `str(stato)` da' 'OrderStatus.EXECUTABLE' e nessun ordine risulta vivo (catalogo §7 punto 10)
+     K4: una posizione che il bot crede VIVA ha almeno un ordine a mercato o dell'abbinato: altrimenti il bot sorveglia il nulla (difetto 4 del 15/09)
+     K5: nessuna ESPOSIZIONE abbinata resta senza una posizione viva del bot che la governi: nessuna posizione FANTASMA (difetto 4 del 15/09 visto dall'altra parte)
+     RS1: un residuo che il bot DICHIARA non piazzabile lo e' davvero: l'ordine che lo chiuderebbe e' sotto il floor di legge del place-and-trim (`minimi_it.SUBMIN_IMPORTO_FINALE_MIN`), con lato e sbilancio dichiarati (decisione 1 dell'utente, 04/10)
+     K6: quando il bot dichiara la posizione CHIUSA non resta nessun suo ordine ancora VIVO sul book (residuo non governato: PROCESSO_STANDARD_BOT §6.4 «mai una posizione scoperta non dichiarata»)
+     P1: ogni ordine del bot arriva allo specchio `tennis_live_orders` con chiesto, abbinato, residuo, prezzo medio e stato: sono i campi che la UI mostra (§6.5)
+     P2: lo specchio non dichiara MAI un ordine abbinato piu' di quanto il mercato dica (nessun fill dedotto dal prezzo)
+TEMPO TOTALE: 2.4s (2.4 s) su 1 replay | obiettivo 300 s, tetto 600 s (CERTIFICA_TETTO_S)

@@ -327,6 +327,9 @@ def catalogo_del_bot(nome: str, *, con_parametri: bool = True) -> Dict[str, Any]
         "bot": nome, "sport": reg.sport, "etichetta": ETICHETTE_BOT.get(nome, nome),
         "descrizione": reg.descrizione, "scenari": [], "clic_ms": False,
         "disattivato": SENZA_CRONOLOGIA.get(nome),
+        # 08/10: i mercati che servono al bot (registro): la UI del Replay Tennis
+        # disabilita <<Applica>> se la partita non li ha registrati
+        "mercati": list(getattr(reg, "mercati", ()) or ()),
     }
     try:
         funzione = reg.funzione_replay()
@@ -387,16 +390,25 @@ def _ha_registrazione(cartella: str, event_id: str) -> bool:
 
 def cartella_della_partita(reg: Any, event_id: str, data_dir: Optional[str]) -> str:
     """Dove sta la registrazione della partita. Calcio: ``DATA_DIR``. Tennis: la
-    RADICE del recorder con le cartelle per GIORNO (``<giorno>/<id>/``): si cerca
-    il giorno che contiene la partita (il registro da' solo il piu' recente)."""
+    cartella che ha il raw col MERCATO del bot (``risolvi_cartella_tennis``);
+    se nessuna lo ha, quella di sempre (l'errore lo da' ``esegui``)."""
+    if reg.sport != "tennis":
+        return data_dir or reg.cartella()
+    cartella, _errore = risolvi_cartella_tennis(reg, event_id, data_dir)
+    return cartella
+
+
+def _cartella_come_prima(reg: Any, event_id: str, data_dir: Optional[str]) -> str:
+    """La risoluzione di prima dell'08/10 (solo cartelle-giorno numeriche): resta
+    la PRIMA scelta, cosi' le partite col Match Odds tornano la stessa cartella."""
     if data_dir:
-        if reg.sport == "tennis" and not _ha_registrazione(data_dir, event_id):
+        if not _ha_registrazione(data_dir, event_id):
             giorno = _giorno_che_contiene(data_dir, event_id)
             if giorno:
                 return giorno
         return data_dir
     base = reg.cartella()
-    if _ha_registrazione(base, event_id) or reg.sport != "tennis":
+    if _ha_registrazione(base, event_id):
         return base
     radice = os.path.dirname(base) if os.path.basename(base).isdigit() else base
     return _giorno_che_contiene(radice, event_id) or base
@@ -410,6 +422,99 @@ def _giorno_che_contiene(radice: str, event_id: str) -> Optional[str]:
         if _ha_registrazione(c, event_id):
             return c
     return None
+
+
+def _radice_tennis(reg: Any, data_dir: Optional[str]) -> str:
+    """Dove si cerca: la cartella data dal chiamante, altrimenti la RADICE del
+    recorder (il registro da' il giorno piu' recente: si risale di uno)."""
+    if data_dir:
+        return data_dir
+    base = reg.cartella()
+    return os.path.dirname(base) if os.path.basename(base).isdigit() else base
+
+
+def tipi_mercato_del_raw(percorso: str) -> List[str]:
+    """I ``marketType`` delle ``marketDefinition`` del raw (la fonte del banco),
+    in ordine alfabetico. Vuoto = il raw non dichiara nessun mercato."""
+    return sorted({str(e.get("market_type")) for e in esiti_dal_raw(percorso).values()
+                   if e.get("market_type")})
+
+
+_NOMI_MERCATO = {"MATCH_ODDS": "Match Odds", "SET_BETTING": "Set Betting"}
+
+
+def _cartelle_col_punteggio(radice: str, event_id: str) -> List[str]:
+    out: List[str] = []
+    if not os.path.isdir(radice):
+        return out
+    nome = "%s.score.jsonl" % event_id
+    for dirpath, dirnames, filenames in os.walk(radice):
+        dirnames.sort()
+        if os.path.basename(os.path.normpath(dirpath)) == str(event_id) and nome in filenames:
+            out.append(os.path.dirname(os.path.normpath(dirpath)))
+    return out
+
+
+def _relativa(radice: str, cartella: str) -> str:
+    try:
+        r = os.path.relpath(cartella, radice)
+    except ValueError:
+        return cartella
+    return cartella if r == "." else r
+
+
+def risolvi_cartella_tennis(reg: Any, event_id: str,
+                            data_dir: Optional[str]) -> Tuple[str, Optional[str]]:
+    """08/10 (Replay Tennis, caso 35797566): la cartella del tennis che ha
+    ``<id>/<id>.raw.jsonl`` CON il mercato che serve al bot (``reg.mercati``,
+    MATCH_ODDS per i bot tennis). Si cerca in TUTTE le sottocartelle della
+    radice con la stessa visita dell'importatore del Replay Tennis
+    (``tennis_replay.importa.trova_registrazioni``): ``20260707`` col Match Odds,
+    ``setbetting_20260707`` col Set Betting. Il banco tennis apre UNA cartella
+    (nessuna fusione di piu' raw): si sceglie quella col mercato del bot.
+
+    Ordine: (1) la cartella di prima (``_cartella_come_prima``) se il suo raw ha
+    il mercato del bot - le partite col Match Odds tornano la STESSA cartella;
+    (2) la prima, nell'ordine della visita, col mercato del bot; (3) un raw che
+    non dichiara nessun mercato (nessuna ``marketDefinition``: non si puo' dire
+    che manchi). Altrimenti torna ``(cartella di prima, errore esatto)``."""
+    from ..tennis_replay.importa import trova_registrazioni
+
+    richiesti = [m for m in (getattr(reg, "mercati", ()) or ()) if m] or ["MATCH_ODDS"]
+    prima = _cartella_come_prima(reg, event_id, data_dir)
+    radice = _radice_tennis(reg, data_dir)
+    candidati: List[str] = []
+    if _ha_registrazione(prima, event_id):
+        candidati.append(os.path.normpath(prima))
+    voce = trova_registrazioni([radice]).get(str(event_id)) if os.path.isdir(radice) else None
+    for d in (voce or {}).get("dirs", []):
+        if os.path.normpath(d) not in candidati:
+            candidati.append(os.path.normpath(d))
+    tipi_per_cartella: List[Tuple[str, List[str]]] = []
+    for c in candidati:
+        tipi_per_cartella.append(
+            (c, tipi_mercato_del_raw(os.path.join(c, str(event_id), "%s.raw.jsonl" % event_id))))
+    for c, tipi in tipi_per_cartella:
+        if any(m in tipi for m in richiesti):
+            return (prima if os.path.normpath(prima) == c else c), None
+    for c, tipi in tipi_per_cartella:
+        if not tipi:
+            return (prima if os.path.normpath(prima) == c else c), None
+    voluti = " / ".join(_NOMI_MERCATO.get(m, m) for m in richiesti)
+    chi = "i bot tennis lavorano" if reg.sport == "tennis" else "il bot lavora"
+    if tipi_per_cartella:
+        registrati = ["%s (cartella %s)" % (", ".join(tipi), _relativa(radice, c))
+                      for c, tipi in tipi_per_cartella]
+        return prima, ("per la partita %s e' registrato solo il %s: %s sul %s, che non e' "
+                       "stato registrato" % (event_id, "; ".join(registrati), chi, voluti))
+    punteggi = _cartelle_col_punteggio(radice, event_id)
+    if punteggi:
+        return prima, ("registrazione senza flusso di mercato (solo punteggi) per la partita "
+                       "%s in %s: nessun %s.raw.jsonl, il bot non ha prezzi su cui girare"
+                       % (event_id, ", ".join(_relativa(radice, c) for c in punteggi),
+                          event_id))
+    return prima, ("nessuna registrazione della partita %s sotto %s: il bot si applica "
+                   "solo alle partite registrate (Segui live con REC)" % (event_id, radice))
 
 
 # ---------------------------------------------------------------------------
@@ -673,7 +778,14 @@ def esegui(params: Dict[str, Any], data_dir: Optional[str] = None) -> Dict[str, 
     if not event_id:
         raise ValueError("event_id mancante")
     reg = REGISTRO[nome]
-    cartella = cartella_della_partita(reg, event_id, data_dir)
+    if reg.sport == "tennis":
+        # 08/10: la cartella col MERCATO del bot, oppure l'errore esatto (mai
+        # <<registrazione assente>> quando la partita e' registrata)
+        cartella, errore_cartella = risolvi_cartella_tennis(reg, event_id, data_dir)
+        if errore_cartella:
+            raise ValueError(errore_cartella)
+    else:
+        cartella = cartella_della_partita(reg, event_id, data_dir)
     if not _ha_registrazione(cartella, event_id):
         raise ValueError("registrazione assente per la partita %s in %s: il bot si "
                          "applica solo alle partite registrate (Segui live con REC)"

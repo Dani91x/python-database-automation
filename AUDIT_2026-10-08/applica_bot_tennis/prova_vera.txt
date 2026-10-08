@@ -1,0 +1,7 @@
+radice del worker (registro_bot._cartella_tennis): C:\Users\Admin\Desktop\tennis_rec\20260707
+worker 35797566 base -> ERROR per la partita 35797566 e' registrato solo il SET_BETTING (cartella setbetting_20260707): i bot tennis lavorano sul Match Odds, che non e' stato registrato (0.1s)
+worker 35790089 base -> DONE ordini=0 righe=0 violazioni=[] (3.3s)
+worker 35790089 gate-aperto -> DONE ordini=3 righe=7 violazioni=[] (2.4s)
+radice 35797566 base -> ERROR per la partita 35797566 e' registrato solo il SET_BETTING (cartella setbetting_20260707): i bot tennis lavorano sul Match Odds, che non e' stato registrato (0.0s)
+radice 35790089 base -> DONE ordini=0 righe=0 violazioni=[] (1.7s)
+radice 35790089 gate-aperto -> DONE ordini=3 righe=7 violazioni=[] (2.5s)

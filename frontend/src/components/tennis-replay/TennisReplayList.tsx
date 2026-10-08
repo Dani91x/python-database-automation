@@ -6,7 +6,8 @@
 import { History, Trophy } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
-import { raggruppaPerTorneo, type TennisReplayItem } from '@/lib/tennisReplay';
+import { tipiMercatoRegistrati } from '@/lib/applicaBot';
+import { motivoNessunBotTennis, raggruppaPerTorneo, type TennisReplayItem } from '@/lib/tennisReplay';
 
 function dataOra(iso: string | null): string {
     if (!iso) return '—';
@@ -46,7 +47,9 @@ export function TennisReplayList({ items, onSelect }: {
                                 {a.anno > 0 ? a.anno : '—'}
                             </div>
                             <div className="space-y-2 ds-v2-mr-griglia">
-                                {a.items.map(it => (
+                                {a.items.map(it => {
+                                    const motivo = motivoNessunBotTennis(it);
+                                    return (
                                     <Card key={it.event_id} onClick={() => onSelect(it)} role="button" tabIndex={0}
                                         onKeyDown={e => { if (e.key === 'Enter') onSelect(it); }}
                                         data-testid={`tennis-replay-partita-${it.event_id}`}
@@ -72,8 +75,23 @@ export function TennisReplayList({ items, onSelect }: {
                                                 </div>
                                             </div>
                                         </div>
+                                        {it.market_types != null && (
+                                            <div className="mt-2 flex items-center gap-1 flex-wrap text-[10px]" data-testid={`tennis-replay-mercati-${it.event_id}`}>
+                                                <span className="text-muted-foreground">mercati registrati:</span>
+                                                {tipiMercatoRegistrati(it.market_types).map(t => (
+                                                    <Badge key={t} variant="outline" className="border-white/15 text-white/70 text-[9px] px-1.5 py-0">{t}</Badge>
+                                                ))}
+                                                {tipiMercatoRegistrati(it.market_types).length === 0 && <span className="text-white/50">nessuno</span>}
+                                            </div>
+                                        )}
+                                        {motivo && (
+                                            <div className="mt-1 text-[10px] text-red-300" data-testid={`tennis-replay-bot-non-applicabili-${it.event_id}`}>
+                                                Applica bot non disponibile: {motivo}
+                                            </div>
+                                        )}
                                     </Card>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
                     ))}

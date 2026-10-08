@@ -1,0 +1,5 @@
+MUTAZIONE F1 pannello: Applica non guarda il motivo -> Tests  2 failed | 19 passed (21) | ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯ | rossi: ["solo SET_BETTING: Applica spento, motivo scritto, nessuna richiesta","nessun mercato (solo punteggi): motivo «solo punteggi»"]
+MUTAZIONE F2 regola: il mercato mancante non si vede mai -> Tests  4 failed | 17 passed (21) | ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯ | rossi: ["solo SET_BETTING: Applica spento, motivo scritto, nessuna richiesta","nessun mercato (solo punteggi): motivo «solo punteggi»","solo SET_BETTING: mercati elencati e bot non applicabili col motivo","nessun mercato registrato: motivo «solo punteggi»"]
+MUTAZIONE F3 elenco: niente avviso sotto la partita -> Tests  1 failed | 20 passed (21) | ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯ | rossi: ["solo SET_BETTING: mercati elencati e bot non applicabili col motivo"]
+MUTAZIONE F4 regola: il testo del banco cambia (registrato solo il) -> Tests  2 failed | 19 passed (21) | ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯ | rossi: ["solo SET_BETTING: Applica spento, motivo scritto, nessuna richiesta","solo SET_BETTING: mercati elencati e bot non applicabili col motivo"]
+ripristinato, sha uguali

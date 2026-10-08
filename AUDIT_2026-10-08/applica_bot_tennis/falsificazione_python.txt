@@ -1,0 +1,7 @@
+MUTAZIONE a: solo cartelle-giorno numeriche (niente visita in profondita') -> ['5 failed, 33 passed in 5.00s'] | rossi: ['test_a_match_odds_solo_nella_seconda_cartella_si_trova', 'test_b_solo_set_betting_errore_esatto', 'test_e_esegui_da_l_errore_esatto_prima_del_banco']
+MUTAZIONE b: il mercato del raw non si guarda (qualunque raw va bene) -> ['3 failed, 35 passed in 6.07s'] | rossi: ['test_b_solo_set_betting_errore_esatto', 'test_e_esegui_da_l_errore_esatto_prima_del_banco']
+MUTAZIONE c: niente ramo <<solo punteggi>> -> ['3 failed, 35 passed in 4.82s'] | rossi: ['test_c_senza_raw_errore_solo_punteggi', 'test_e_esegui_da_l_errore_esatto_prima_del_banco']
+MUTAZIONE d: la cartella di prima non e' piu' la prima scelta -> ['10 failed, 28 passed in 4.51s'] | rossi: ['test_d_col_match_odds_la_stessa_cartella_di_prima']
+MUTAZIONE e: esegui non guarda l'errore della cartella -> ['1 failed, 37 passed in 6.64s'] | rossi: ['test_e_esegui_da_l_errore_esatto_prima_del_banco']
+MUTAZIONE f: il catalogo non dichiara i mercati -> ['1 failed, 37 passed in 5.56s'] | rossi: ['test_il_catalogo_dichiara_i_mercati_del_bot']
+ripristinato, sha uguale

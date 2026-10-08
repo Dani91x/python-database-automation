@@ -2638,7 +2638,11 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
       }
     ],
     "clic_ms": false,
-    "disattivato": null
+    "disattivato": null,
+    "mercati": [
+      "OVER_UNDER_35",
+      "OVER_UNDER_45"
+    ]
   },
   {
     "bot": "omega",
@@ -4299,7 +4303,12 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
       }
     ],
     "clic_ms": false,
-    "disattivato": null
+    "disattivato": null,
+    "mercati": [
+      "CORRECT_SCORE",
+      "HALF_TIME_SCORE",
+      "MATCH_ODDS"
+    ]
   },
   {
     "bot": "safe_base",
@@ -4487,7 +4496,11 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
       }
     ],
     "clic_ms": false,
-    "disattivato": null
+    "disattivato": null,
+    "mercati": [
+      "MATCH_ODDS",
+      "CORRECT_SCORE"
+    ]
   },
   {
     "bot": "safe_esatto",
@@ -4627,7 +4640,10 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
       }
     ],
     "clic_ms": false,
-    "disattivato": null
+    "disattivato": null,
+    "mercati": [
+      "CORRECT_SCORE"
+    ]
   },
   {
     "bot": "safe_punta",
@@ -4755,7 +4771,10 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
       }
     ],
     "clic_ms": false,
-    "disattivato": null
+    "disattivato": null,
+    "mercati": [
+      "MATCH_ODDS"
+    ]
   },
   {
     "bot": "safe_tennis",
@@ -5145,7 +5164,10 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
       }
     ],
     "clic_ms": false,
-    "disattivato": null
+    "disattivato": null,
+    "mercati": [
+      "MATCH_ODDS"
+    ]
   },
   {
     "bot": "scalper_calcio",
@@ -7907,7 +7929,19 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
       }
     ],
     "clic_ms": true,
-    "disattivato": null
+    "disattivato": null,
+    "mercati": [
+      "MATCH_ODDS",
+      "OVER_UNDER_05",
+      "OVER_UNDER_15",
+      "OVER_UNDER_25",
+      "OVER_UNDER_35",
+      "OVER_UNDER_45",
+      "OVER_UNDER_55",
+      "OVER_UNDER_65",
+      "OVER_UNDER_75",
+      "OVER_UNDER_85"
+    ]
   },
   {
     "bot": "tennis_scalper",
@@ -8932,7 +8966,10 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
       }
     ],
     "clic_ms": false,
-    "disattivato": null
+    "disattivato": null,
+    "mercati": [
+      "MATCH_ODDS"
+    ]
   },
   {
     "bot": "tennis_pro",
@@ -9768,7 +9805,10 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
       }
     ],
     "clic_ms": false,
-    "disattivato": null
+    "disattivato": null,
+    "mercati": [
+      "MATCH_ODDS"
+    ]
   },
   {
     "bot": "tennis_flb",
@@ -10464,7 +10504,10 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
       }
     ],
     "clic_ms": false,
-    "disattivato": null
+    "disattivato": null,
+    "mercati": [
+      "MATCH_ODDS"
+    ]
   },
   {
     "bot": "tennis_swing",
@@ -11048,6 +11091,9 @@ export const CATALOGO_BOT: ReadonlyArray<CatalogoBot> = [
       }
     ],
     "clic_ms": false,
-    "disattivato": null
+    "disattivato": null,
+    "mercati": [
+      "MATCH_ODDS"
+    ]
   }
 ];

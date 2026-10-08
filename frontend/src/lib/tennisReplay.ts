@@ -23,6 +23,9 @@ import {
 } from '@/lib/replay-pnl';
 import { DEFAULT_DELAY_MS } from '@/lib/matching';
 import type { Opportunity } from '@/lib/opportunities/types';
+import { botDelloSport, motivoMercatiMancanti } from '@/lib/applicaBot';
+import type { CatalogoBot } from '@/lib/replayBot';
+import { CATALOGO_BOT } from '@/lib/replayBotCatalogo';
 
 // ---------------------------------------------------------------------------
 // tipi (forma delle RPC del tennis)
@@ -34,6 +37,12 @@ export interface TennisReplayItem {
     player2_name: string;
     open_date: string | null;
     n_markets: number | null;
+    /**
+     * 08/10: i tipi di mercato registrati (MATCH_ODDS, SET_BETTING, ...) da
+     * `tennis_replay_mercati`; assente finche' non e' applicata
+     * `migrations/replay_tennis_mercati_elenco_2026-10-08.sql`.
+     */
+    market_types?: string[] | null;
     n_snapshots: number | null;
     n_score: number | null;
     ts_min: string | null;
@@ -481,4 +490,15 @@ export function raggruppaPerTorneo(list: ReadonlyArray<TennisReplayItem>): {
             torneo: t,
             anni: Array.from(anni.entries()).sort((a, b) => b[0] - a[0]).map(([anno, items]) => ({ anno, items })),
         }));
+}
+
+/**
+ * 08/10: perche' NESSUN bot tennis del catalogo si puo' applicare alla partita
+ * (mercato del bot non registrato), col testo del banco; null = almeno uno si
+ * puo', oppure i mercati registrati non sono noti (migrazione non applicata). PURA.
+ */
+export function motivoNessunBotTennis(it: TennisReplayItem, catalogo: ReadonlyArray<CatalogoBot> = CATALOGO_BOT): string | null {
+    if (it.market_types == null) return null;
+    const motivi = botDelloSport(catalogo, 'tennis').map(b => motivoMercatiMancanti(it.event_id, 'tennis', b.mercati, it.market_types));
+    return motivi.length > 0 && motivi.every(m => m != null) ? motivi[0] : null;
 }

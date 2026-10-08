@@ -246,3 +246,60 @@ describe('EsitoBotPanel', () => {
         expect(screen.getByTestId('esito-bot-conferma').textContent).toMatch(/acceso alle .* \(confermato dal bot\)/);
     });
 });
+
+// 08/10 (Replay Tennis, caso vero 35797566): la partita ha registrato SOLO il
+// SET_BETTING; i bot tennis lavorano sul MATCH_ODDS. «Applica» spento col motivo
+// (stesso testo del banco), nessuna richiesta parte a vuoto.
+function BancoTennis({ eventId, mercati }: { eventId: string; mercati?: ReadonlyArray<string | null> | null }) {
+    const applica = useApplicaBot();
+    return <ApplicaBotPanel sport="tennis" eventId={eventId} cursoreMs={CURSORE} applica={applica}
+        mercatiRegistrati={mercati} />;
+}
+
+function scegliTennisPro() {
+    fireEvent.change(screen.getByTestId('applica-bot-bot'), { target: { value: 'tennis_pro' } });
+    fireEvent.change(screen.getByTestId('applica-bot-scenario'), { target: { value: 'Tennis Pro - preset di produzione' } });
+}
+
+describe('ApplicaBotPanel - mercati registrati (08/10)', () => {
+    it('solo SET_BETTING: Applica spento, motivo scritto, nessuna richiesta', async () => {
+        render(<BancoTennis eventId="35797566" mercati={['SET_BETTING']} />);
+        expect(screen.getByTestId('applica-bot-mercati-registrati').textContent).toBe('mercati registrati: SET_BETTING');
+        scegliTennisPro();
+        expect(screen.getByTestId('applica-bot-mercato-mancante').textContent).toBe(
+            "Applica non disponibile: per la partita 35797566 e' registrato solo il SET_BETTING: "
+            + "i bot tennis lavorano sul Match Odds, che non e' stato registrato");
+        const avvia = screen.getByTestId('applica-bot-avvia') as HTMLButtonElement;
+        expect(avvia.disabled).toBe(true);
+        await act(async () => { fireEvent.click(avvia); });
+        expect(rpc).not.toHaveBeenCalled();
+    });
+
+    it('nessun mercato (solo punteggi): motivo «solo punteggi»', () => {
+        render(<BancoTennis eventId="35791111" mercati={[]} />);
+        scegliTennisPro();
+        expect(screen.getByTestId('applica-bot-mercato-mancante').textContent).toMatch(/solo punteggi/);
+        expect((screen.getByTestId('applica-bot-avvia') as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it('con MATCH_ODDS (anche insieme al SET_BETTING): Applica acceso come oggi e la richiesta parte', async () => {
+        render(<BancoTennis eventId="35793960" mercati={['SET_BETTING', 'MATCH_ODDS', null]} />);
+        expect(screen.getByTestId('applica-bot-mercati-registrati').textContent).toBe('mercati registrati: MATCH_ODDS, SET_BETTING');
+        scegliTennisPro();
+        expect(screen.queryByTestId('applica-bot-mercato-mancante')).toBeNull();
+        const avvia = screen.getByTestId('applica-bot-avvia') as HTMLButtonElement;
+        expect(avvia.disabled).toBe(false);
+        await act(async () => { fireEvent.click(avvia); });
+        expect(rpc).toHaveBeenCalledWith('request_backtest', {
+            p_params: { tipo: 'applica_bot', bot: 'tennis_pro', scenario: 'base', event_id: '35793960' },
+        });
+    });
+
+    it('mercati non noti (Match Replay calcio): nessun controllo, nessuna riga', () => {
+        render(<BancoTennis eventId="35790089" />);
+        expect(screen.queryByTestId('applica-bot-mercati-registrati')).toBeNull();
+        scegliTennisPro();
+        expect(screen.queryByTestId('applica-bot-mercato-mancante')).toBeNull();
+        expect((screen.getByTestId('applica-bot-avvia') as HTMLButtonElement).disabled).toBe(false);
+    });
+});

@@ -26,6 +26,34 @@ export function botDelloSport(catalogo: ReadonlyArray<CatalogoBot>, sport: Sport
     return catalogo.filter(b => b.sport === sport);
 }
 
+const NOMI_MERCATO: Readonly<Record<string, string>> = { MATCH_ODDS: 'Match Odds', SET_BETTING: 'Set Betting' };
+
+/** I tipi di mercato registrati: distinti, senza vuoti, in ordine alfabetico. PURA. */
+export function tipiMercatoRegistrati(tipi: ReadonlyArray<string | null | undefined>): string[] {
+    return Array.from(new Set(tipi.filter((t): t is string => !!t))).sort();
+}
+
+/**
+ * 08/10 (Replay Tennis, caso 35797566): perche' il bot NON si puo' applicare a
+ * questa partita, con lo stesso testo del banco (`applica_bot.risolvi_cartella_tennis`,
+ * senza il nome della cartella che la pagina non conosce). null = si puo'
+ * (o non si sa: mercati registrati non noti, bot senza mercati dichiarati). PURA.
+ */
+export function motivoMercatiMancanti(
+    eventId: string, sport: SportBot, richiesti: ReadonlyArray<string> | undefined,
+    registrati: ReadonlyArray<string | null | undefined> | null | undefined,
+): string | null {
+    if (registrati == null || !richiesti || richiesti.length === 0) return null;
+    const tipi = tipiMercatoRegistrati(registrati);
+    if (richiesti.some(m => tipi.includes(m))) return null;
+    if (tipi.length === 0) {
+        return `registrazione senza flusso di mercato (solo punteggi) per la partita ${eventId}: il bot non ha prezzi su cui girare`;
+    }
+    const voluti = richiesti.map(m => NOMI_MERCATO[m] ?? m).join(' / ');
+    const chi = sport === 'tennis' ? 'i bot tennis lavorano' : 'il bot lavora';
+    return `per la partita ${eventId} e' registrato solo il ${tipi.join(', ')}: ${chi} sul ${voluti}, che non e' stato registrato`;
+}
+
 export interface FamigliaScenari {
     famiglia: string;
     /** modalita' -> scenario del registro */

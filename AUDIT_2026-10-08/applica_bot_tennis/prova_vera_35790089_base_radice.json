@@ -1,0 +1,18 @@
+{
+  "stato": "DONE",
+  "ordini": 0,
+  "righe": 0,
+  "violazioni": [],
+  "conto_banco": {
+    "lordo": 0,
+    "commissione": 0,
+    "netto": 0,
+    "mercati": {},
+    "mercati_non_regolati": []
+  },
+  "mercati": {
+    "1.259745327": "MATCH_ODDS"
+  },
+  "prime_righe": [],
+  "secondi": 1.7
+}

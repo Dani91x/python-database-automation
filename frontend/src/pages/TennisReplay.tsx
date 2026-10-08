@@ -709,6 +709,7 @@ export default function TennisReplay() {
                                             cursoreMs={currentMs}
                                             applica={applica}
                                             etichettaIstante={ms => oraLocale(new Date(ms).toISOString())}
+                                            mercatiRegistrati={replay ? markets.map(m => m.market_type) : null}
                                         />
                                         {trainingMarketId && trainApiRef.current && (
                                             <LadderView

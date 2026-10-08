@@ -63,6 +63,8 @@ export interface CatalogoBot {
     /** non null = il bot non si puo' applicare, con il motivo */
     disattivato: string | null;
     errore_parametri?: string;
+    /** 08/10: i tipi di mercato Betfair che servono al bot (registro del banco) */
+    mercati?: string[];
 }
 
 // --------------------------------------------------------------------------
