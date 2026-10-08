@@ -14,7 +14,10 @@ lavoro di questo piano.
 ## 0. Le regole di ogni tappa (valgono su tutte e non si ripetono)
 
 1. **Il guscio**: il componente nuovo nasce accanto al vecchio, dietro un interruttore `ARCH_<COMPONENTE>[_<BOT>]` con valori
-   `vecchio | ombra | nuovo`, default `vecchio` (04 §8). In `ombra` il nuovo calcola e confronta, non scrive ordini ne' righe.
+   `vecchio | ombra | nuovo`, default `vecchio` (04 §8). In `ombra` il nuovo calcola e confronta, non scrive ordini ne' righe. [revisione critica 08/10] Rettifica: «righe» = righe delle tabelle VERE sulle
+   chiavi del vecchio scrittore. Le tappe che in ombra devono scrivere (T8, T13, T14) scrivono SOLO su tabelle d'ombra
+   (`<tabella>_ombra`, stessa forma) o su chiavi additive dichiarate (T13 `pnl_reale_oggi_ombra`); due scrittori sulla stessa chiave
+   sono vietati (R02, R21 di `08_REVISIONE_CRITICA.md`).
    Il vecchio si cancella solo nella tappa di taglio, dopo l'ombra a zero divergenze (H §6 passo 9).
 2. **Criterio di «fatto» comune** (P0210 «Regole del programma»; CANT §0 regole 4-5; `CLAUDE.md`):
    (a) `python -m pytest Betfair/ -q -p no:cacheprovider` 0 rossi; `frontend/`: `npx vitest run` 0 rossi e
@@ -84,6 +87,12 @@ le migrazioni (utente), verifica e firma.
   httpx e' l'unica misura delle richieste al DB (I D7): non abbassare il livello dei log prima che il monitor conti (U-65).
 - **Chi**: cloud scrive codice e test; PC: migrazione `monitor_metrics` (utente), 24 h con app accesa, sincronizzazione dell'orologio
   di Windows (U-62: oggi +844 ms, w32time fermo, 07 1e: senza questo ogni latenza contro `pt` e' falsata di ~0,84 s).
+- **[revisione critica 08/10] Misure aggiunte** (R04, R12, R13, R14, R16 di 08): (1) nel percorso dell'ordine la marca prima/dopo il `fsync` del diario
+  (`motore_ordini.py:1424`), p50/p99/max dentro L6 (04 §7 L6b); (2) le grandezze L15-L19 di 04 §7 con gli obiettivi provvisori di I §7,
+  confermati o corretti a fine baseline: da qui il criterio comune (e) e' «entro gli obiettivi», non solo «uguale o migliore»; (3) il
+  contatore di transazioni/ora per conto; (4) nella «Salute»: orario attivo e riavvii pendenti di Windows Update, versioni di
+  Python/pacchetti/Electron/Node contro il manifesto di T0C (versioni bloccate fino a T26, U-84). Accendere la sincronizzazione dell'ora
+  (U-62) fa saltare l'orologio di ~0,84 s all'indietro: farlo con l'app ferma o con tutti i bot flat (R16).
 
 ### T0B - Prerequisiti del banco (lavoro gia' assegnato o da decidere; senza di loro i riferimenti cambiano sotto i piedi)
 
@@ -226,6 +235,9 @@ nella sezione 4.
 - **Ritorno**: interruttore. **Stima**: ~450 righe del client unico (G §4.6) + 250 registro + 200 riconcilia; ~300 righe tolte; 2-3 giorni.
 - **Rischi**: il ritento delle INSERT di log senza `uid` duplica (G §3 punto 4): in T2 si ritenta SOLO cio' che e' idempotente (upsert).
 - **Chi**: cloud (codice, test con transport finto); PC (riconcilia sul DB vero, sola lettura).
+- **[revisione critica 08/10] Consegna aggiunta** (R23 di 08): il registro `SpecTabella` ha UNA riga per ciascuna delle 89 tabelle di 00 §0 (scrittore
+  oggi, scrittore domani, regime, ritardo massimo, verifica, `rev_colonna`, `dipende_da`: 04 §3.7); test che rifiuta una tabella scritta
+  dal codice (`.table(`/RPC) ma assente dal registro, falsificato togliendo una riga; ritardi approvati con U-86.
 
 ### T3 - I1: log ruotati, worker del banco a richiesta, supervisore in ombra
 
@@ -316,6 +328,13 @@ nella sezione 4.
   e allarme `postino_offline`; riga rifiutata da un CHECK -> `dead_letter` visibile (G §5 falsificazioni 1-5). PSB §6.5, §7 n.18, n.27.
 - **Ritorno**: interruttore (la vecchia scrittura resta fino a T24). **Stima**: ~850 nuove, ~80 toccate; 4-5 giorni.
 - **Rischi**: crescita della coda in offline lungo (tetto di disco + allarme). **Chi**: cloud scrive; PC (migrazione, ombra notturna sul DB).
+- **[revisione critica 08/10] Rettifiche e prove aggiunte** (R06, R08, R21, R24 di 08): (1) l'ombra scrive SOLO su tabelle d'ombra: la via «con `uid` e
+  `ON CONFLICT DO NOTHING`» sulla tabella vera aggiunge una riga per evento (la insert vecchia non porta lo stesso `uid`) e il confronto
+  +/- 0 fallirebbe per costruzione; (2) 23503 (chiave esterna) e' transitorio con tetto, poi `dead_letter` con allarme; ordine padre ->
+  figlio da `dipende_da` (04 §3.7); (3) prova sotto carico: replay a cadenza reale con scrittore e postino accesi contro spenti, L2/L6 p99
+  non peggiori oltre la variabilita' fra due esecuzioni identiche, altrimenti U-82; (4) riga JSONL troncata da un crash: si scarta e si
+  segnala, non e' un `dead_letter`; (5) le prove dichiarate mancanti in 04 §6.1 (checkpoint fuori dal percorso; due file, U-55) si fanno
+  qui, prima di T14.
 
 ### T9 - B: un servizio dello stato della partita (calcio, poi tennis)
 
@@ -356,6 +375,9 @@ nella sezione 4.
   (togliere dedup, togliere `da_seq`, `ok` all'esito ignoto, ritento in `call_mutating`). PSB §6.4, §7 n.1-7, n.10, n.33.
 - **Ritorno**: interruttore per attore. **Stima**: +450 righe di contratto, porte 1.245 -> 740, coda flumine -200; 3-4 giorni.
 - **Rischi**: doppio ordine nella finestra di passaggio (dedup per ref falsificato). **Chi**: cloud; PC (prova su Betfair in paper).
+- **[revisione critica 08/10] Prove aggiunte** (R07, R13 di 08): (1) i consumatori di `EventoOrdine` controllano la contiguita' di `seq` e chiedono `da_seq`
+  al buco: test con un push scartato di proposito (verde) e con il controllo tolto (rosso); (2) contatore delle transazioni/ora UNO per
+  conto nella porta (`ordini/controlli.py`) con il tetto di oggi (`config_stream.py:256-262`), test che lo somma su piu' attori.
 
 ### T11 - C2: un riconciliatore in ombra accanto ai nove di oggi
 
@@ -420,6 +442,10 @@ nella sezione 4.
   5 giornate di ombra.
 - **Rischi**: `Decimal` cambia gli arrotondamenti (la griglia lo cattura); la giornata unica cambia numeri visibili (U-47); lo stop netto e la
   commissione unica sono decisioni (U-48, U-49). **Chi**: cloud (codice, banco); PC (ombra sulle giornate, conto vero).
+- **[revisione critica 08/10] Aggiunte** (R10, R20 di 08): (1) `CambioGiorno` nasce qui (temporizzatore della contabilita', Europe/Rome) e passa al
+  supervisore in T22; test di `giornata()` sui giorni di 25 e 23 ore (25/10/2026, 28/03/2027) con partite a cavallo dell'ora ripetuta,
+  falsificato con un calcolo «+24 h»; (2) le «5 giornate live» dipendono dall'utente (i bot li accende solo lui) e T13 precede T15:
+  alternativa in U-85.
 
 ---------------------------------------------------------------------------------------------------
 
@@ -442,6 +468,14 @@ nella sezione 4.
   5-6 giorni + 5 notti di ombra.
 - **Rischi**: divergenza locale/cloud (riconcilia e watermark); due file SQLite (U-55: misura `m06` con due file concorrenti prima della scelta).
 - **Chi**: cloud (codice, banco); PC (migrazione, ombra sulle giornate, prova di uccisione in paper).
+- **[revisione critica 08/10] Rettifiche** (R01, R02, R03, R06 di 08): (1) **identita' dei trade**: senza l'id del cloud cambierebbero il
+  `customerOrderRef` `mike-t<id>` (`mike/porta_ordini.py:52`, `mike/certificazione.py:1476-1501`), la chiave esterna `closes_trade_id`
+  (`mike_bot.sql:109`, `omega_cashout.sql:50`, `safe_strategy_bot.sql:73`) e il P&L per posizione (`mike/db.py:268-347`): T14 non parte
+  per i trade senza U-80 (proposta: id riservati a blocchi, tutto identico); specchio e posizioni possono procedere; (2) **ombra**: il
+  postino scrive su `<tabella>_ombra`, MAI sulle stesse chiavi della scrittura diretta (un upsert tardivo riporterebbe indietro lo stato
+  che Omega rilegge fino a 20 s); al passaggio a `nuovo` upsert solo con `rev` crescente (04 §3.7); (3) **prima la riga, poi l'invio**
+  (04 §4.1): «fatto quando» esteso con la prova di uccisione del bot fra scrittura e invio e fra invio e risposta (0 ordini doppi) e con
+  ref e `closes_trade_id` identici alla cassetta; (4) ordine padre -> figlio fra tabelle da `dipende_da`.
 
 ### T15 - E1: Mike sul runtime comune, in PAPER
 
@@ -593,6 +627,12 @@ nella sezione 4.
   PSB §6.3, §6.6, §7 n.20, n.22, n.24.
 - **Ritorno**: interruttori; `spawnRunner` resta nel repo fino al taglio. **Stima**: ~-600 righe (I §4.7) + ~-400 di letture ripetute; 3-4 giorni.
 - **Rischi**: comportamento con cloud irraggiungibile (U-52); autorita' della configurazione (U-51). **Chi**: cloud scrive; PC (app, 24 h, firma).
+- **[revisione critica 08/10] Aggiunte** (R05, R09, R10 di 08): (1) backstop con `rev` + `origine` (04 §4.3): test «comando locale non ancora nel mirror +
+  backstop che legge il valore vecchio» -> vince il comando locale; filtro tolto -> rosso; (2) guardia del supervisore e Job Object
+  secondo U-83 (04 §5.1): prova «supervisore ucciso con runner in paper con posizioni» -> i runner restano vivi e vengono adottati
+  (oppure, se l'utente sceglie l'uccisione, ripartono ricostruendo, 04 §4.5); prova «finestra chiusa + supervisore ucciso» -> rilanciato
+  entro il periodo del terzo livello; (3) il supervisore emette `CambioGiorno` (fino a qui lo fa la contabilita', T13), stesso istante,
+  test sui giorni di cambio dell'ora.
 
 ### T23 - H2: un adattatore del banco sul contratto D
 
@@ -686,6 +726,9 @@ graph TD
   T4 --> T17
   T12 --> T18[T18 UI dai manifesti]
   T13 --> T18
+  T20 --> T18b[T18 secondo passo: manifesti scalper e tennis - revisione critica 08/10]
+  T21 --> T18b
+  T18b --> T24
   T6 --> T19[T19 gestore dei flussi]
   T17 --> T19
   T15 --> T20[T20 scalper calcio]
@@ -706,6 +749,14 @@ graph TD
 Lavorabili in parallelo (domini di file disgiunti, regola «mai due blocchi sullo stesso file»): T1, T2, T3, T4 dopo T0; T6 con T7/T8;
 T9 con T10; T13 con T12 (file diversi: contabilita' contro runtime); T18 (frontend) con T19-T21 (backend). Percorso critico:
 T0 -> T5 -> T10 -> T11 -> T12 -> T15 -> T17 -> T19 -> T20 -> T21 -> T23 -> T24 -> T26.
+
+**[revisione critica 08/10] Rettifica** (R17, R18, R19 di 08): (1) **T13 NON e' parallela a T12**: entrambe toccano `omega_service.py` (T12 `:1-1137,
+7752-8936`; T13 `:4971-5424`) e `safe_strategy/execution.py` (T12 rompe il ciclo con `omega_service.py`; T13 `:2686-3100`): T13 dopo
+T12; (2) **T6 NON e' parallela a T8**: entrambe toccano `stream/db.py` (T6 `:650-710`, T8 `:644,697,988`); T7 resta parallela a T6;
+(3) **T18 in due passi**: il primo (Mike, Omega, Safe, plancia, contabilita') dopo T12 e T13; il secondo (manifesti di scalper e tennis:
+voci `E4-080..E4-083`, `E5-103..E5-105`, `E5-110..E5-118`, che restano assegnate a T18 in sezione 4) dopo T20 e T21, che creano i
+cataloghi; (4) **percorso critico corretto**: T0 -> T5 -> T10 -> T11 -> T12 -> **T14** -> T15 -> T17 -> T19 -> T20 -> T21 -> T23 -> T24
+-> **T25** -> T26 (il grafo ha T12 -> T14 -> T15 e T24 -> T25 -> T26).
 
 ---------------------------------------------------------------------------------------------------
 
@@ -795,6 +846,14 @@ giorni, T15 1 giornata) = **circa 13-17 settimane**. Senza le parti che il 02/10
 T23 banco unico, T25-T26) il sottoinsieme equivalente alle fasi 0-1-2 di P0210 (T0, T2-T4, T7, T8, T10-T15, T17, T22, T24) e' di 62-81 giorni
 di lavoro, cioe' **8-10 settimane con due linee**.
 
+**[revisione critica 08/10] Rettifica delle settimane** (R19 di 08): il percorso critico scritto sopra salta T14 (5-6 giorni + 5 notti di ombra) e T25 (2-3),
+e la somma delle sole tappe elencate da' 65-84 giorni, non 61-80. Con le stime della tabella: T0 (max(T0A, T0B) 2-3 + T0C 3-4 = 5-7) +
+T5 3-4 + T10 3-4 + T11 4-5 + T12 7-9 + T14 5-6 + T15 4-5 + T17 7-9 + T19 7-9 + T20 5-6 + T21 5-6 + T23 7-9 + T24 4-5 + T25 2-3 + T26 4-6
+= **72-93 giorni** = 14,4-18,6 settimane, piu' le ombre sul percorso (T11 N giornate, T12 2-3 giorni, T14 5 notti, T15 1 giornata):
+**circa 16-20 settimane con due linee**. Il sottoinsieme delle fasi 0-1-2 del 02/10 non era chiuso per dipendenze: servono anche T5
+(prerequisito di T10) e T9 (di T12), +7-9 giorni; il suo percorso critico T0 -> T5 -> T10 -> T11 -> T12 -> T14 -> T15 -> T17 -> T24 =
+**42-54 giorni** + ombre = **circa 10-12 settimane**, non 8-10. Se T13 aspetta 5 giornate live (U-85) il calendario si allunga ancora.
+
 **Confronto con le 5-6 settimane del 02/10** (P0210, «Metodo»): la stima di oggi e' circa il doppio per le stesse fasi. Le cause sono misurate:
 (1) ogni tappa richiede i replay di TUTTI i bot toccati prima/dopo e oggi una certificazione completa costa 728 s per Mike, 6.916 s per lo
 scalper, 33 min per Omega sulla 35797769 (H §7, CANT 11): finche' il cantiere 11 non le porta entro 300 s ogni tappa costa ore di macchina;
@@ -823,6 +882,12 @@ due blocchi sullo stesso file» e la verifica di persona del PC su ogni tappa se
 | R12 | Contesa delle 10 connessioni Stream | caso peggiore 10/10 (A §1.3) | ombra dei flussi solo sul banco (T19); `connectionsAvailable` letto dal supervisore prima di una sessione scalper |
 | R13 | App riavviata con posizioni aperte | P0210, «Regole del programma» | ogni tappa integrata si attiva al riavvio dell'utente, mai con posizioni; ricambi solo se flat |
 | R14 | Budget di macchina dei replay | H §7 | cantiere 11 prima (T0B); durata dichiarata prima di ogni lancio; nessun replay oltre 10 minuti senza dirlo |
+| R15 | [revisione critica 08/10] Identita' dei trade e ref d'ordine legati all'id del cloud | `mike/porta_ordini.py:52`, `mike_bot.sql:109` (08 R01) | U-80; T14 non parte per i trade senza decisione |
+| R16 | [revisione critica 08/10] Due scrittori sulla stessa chiave del cloud; split-brain del backstop | 05 T14 (ombra), 04 §4.3 (08 R02, R05) | tabelle d'ombra; `rev` monotono e `origine` (04 §3.7, §4.3) |
+| R17 | [revisione critica 08/10] Coda di `fsync` e GIL nel percorso dell'ordine | C riga 73; 07 riga 125; E4 riga 153 (08 R04, R08) | misure in T0A e T8; U-81, U-82 |
+| R18 | [revisione critica 08/10] Supervisore senza guardia a finestra chiusa; Job Object che abbatte i runner | I righe 81, 312, 437 (08 R09) | U-83; prove in T22 |
+| R19 | [revisione critica 08/10] Giorni di 23/25 ore; finestra notturna che col tennis h24 non arriva | 04 §4.6 (08 R10, R11) | test sui giorni di cambio dell'ora (T13); regolamento continuo, eta' massima del ricambio |
+| R20 | [revisione critica 08/10] Riavvio di Windows o aggiornamento di una libreria durante la migrazione | 05 T0C, T26 (08 R14) | versioni bloccate dal congelamento a T26; U-84; controllo nella «Salute» |
 
 ---------------------------------------------------------------------------------------------------
 
@@ -946,7 +1011,19 @@ cosa fa il piano in assenza di risposta (mai un cambio di strategia per difetto)
 | U-79 | K §4.1; 04 §2.1 | Spostare i raccoglitori e i motori ML in `cloud/` | ordine delle cartelle | ultimo, con i workflow aggiornati | restano in radice |
 | U-58 | H dec. 4; P0210 | flumine 3: dopo la parita' di tutti i componenti o prima di tutti | cambia i numeri dei replay | DOPO (T26) | DOPO |
 
-Conteggio: 7 (8.1) + 9 (8.2) + 23 (8.3) + 21 (8.4) + 19 (8.5) = **79 decisioni**. Fuse (stessa domanda da piu' schede): U-01/02 (A, 02),
+### 8.6 Aggiunte dalla revisione critica (08/10) [revisione critica 08/10]
+
+| U | Origine | Decisione | Effetto | Proposta tecnica | Se non decide |
+|---|---|---|---|---|---|
+| U-80 | 08 R01 | Identita' dei trade senza il cloud nel percorso: id riservati a blocchi dalla sequenza del cloud (hi-lo) oppure nuova chiave `trade_uid` con ref nuovo | hi-lo: `mike-t<id>`, `closes_trade_id` e P&L per posizione IDENTICI; `trade_uid`: migrazione, ref nuovo, doppio formato in lettura durante la transizione | hi-lo; a blocco esaurito e rete assente, come oggi (nessuna apertura) | T14 non toglie l'insert sincrono dei trade (specchio e posizioni passano comunque al postino); L11 di oggi resta per i trade |
+| U-81 | 08 R04 | Supporto del diario write-ahead degli ordini: JSONL+fsync di oggi o `stato_denaro` WAL FULL | laboratorio: fsync max 0,24-0,89 s contro WAL FULL max 67-180 ms (04 §6.1) | decidere DOPO la misura di T0A sul disco vero | diario di oggi |
+| U-82 | 08 R08 | Se scrittore e postino peggiorano L2/L6 p99 nel runner: drenaggio rallentato a lotti o postino in un processo separato | il processo separato e' un processo nuovo: serve il tuo permesso | prima il drenaggio rallentato; processo separato solo se non basta | drenaggio rallentato |
+| U-83 | 08 R09 | Guardia del supervisore e Job Object | con uccisione dei figli: nessun orfano, ma un crash del supervisore abbatte i runner con posizioni; senza: i figli vanno adottati | nessuna uccisione + adozione + Utilita' di pianificazione ogni minuto | T22 non passa i runner al supervisore (restano i watchdog di oggi) |
+| U-84 | 08 R14 | Windows Update (orario attivo, rinvio dei riavvii) e versioni bloccate (Python, pacchetti, Electron, Node) fino a T26 | un riavvio forzato ferma l'h24 con posizioni; un aggiornamento cambia il metro dei replay | orario attivo + riavvii solo a mano con bot flat; versioni dal manifesto di T0C | Windows puo' riavviare il PC da solo; il manifesto controlla comunque le versioni |
+| U-85 | 08 R20 | Ombra della contabilita' (T13): 5 giornate LIVE consecutive, oppure giornate con regolamenti reali anche manuali + replay | T13 precede T15: senza giornate live il percorso si ferma | giornate con regolamenti reali di qualunque fonte (`manuale_sito`, `manuale_app`, 04 §3.6) + replay identici | T13 aspetta 5 giornate live |
+| U-86 | 08 R23; G §4.3 | Approvare i ritardi massimi verso il cloud per tabella (G li dichiara «proposta») | definisce «non manca nulla» e gli allarmi del postino | valori di G §4.3, una riga per ciascuna delle 89 tabelle nel registro di T2 | valori di G come proposta |
+
+Conteggio: 7 (8.1) + 9 (8.2) + 23 (8.3) + 21 (8.4) + 19 (8.5) = **79 decisioni** ([revisione critica 08/10] piu' le 7 di 8.6 = **86**). Fuse (stessa domanda da piu' schede): U-01/02 (A, 02),
 U-15/22 (C, D), U-17 (C, 02), U-18 (C, E1), U-27 (E1, H), U-29 (E2, K), U-32 (E2, H), U-35 (E3, J), U-37 (E3, K), U-39 (E4, J), U-40 (E4, E5),
 U-63 (I, H), U-64 (I, E5), U-74 (K, F), U-75 (K, E5), U-76 (E4, K). Non sono decisioni ma informazioni per l'utente: E3 dec. 5 (`base_control_exit`
 nasce spenta, copertura dei dati non misurata).

@@ -300,6 +300,66 @@ Verifica comune V1 = (a) `outbox` svuotata: `in_coda==0` e `eta_max_s` entro il 
 
 Le tabelle con `leads` (landing, `AuthSection.tsx:74`) e `fixture_detail_checks` restano CLOUD (nessun bot le tocca).
 
+#### Tabelle aggiunte dalla verifica di completezza 08/10
+
+Aggiunta del 08/10 dopo il controllo `strumenti/verifica/g_copertura_tabelle.py` (referto: `strumenti/verifica/verifica_G_completezza.md`). Le 89 tabelle di `00 §3.2` erano tutte nominate nella scheda (88 per nome pieno; `tennis_replay_mercati` solo nella sigla abbreviata `tennis_replay_eventi/_mercati/...` di T15, senza riga propria in §4.3). Il controllo ha trovato due lacune di sostanza: (a) **sei tabelle scritte dalle RPC della UI che non sono nell'elenco delle 89** (stanno nel «mondo SQL», `00 §3.4`: la matrice cerca solo `.table()`, non il DML dentro le RPC; `betfair_live_settings` era citata solo come appendice di T05) e (b) **68 RPC scriventi mai citate in G**. Righe nel formato di §4.3, con le colonne richieste dal brief §9.5. Natura: SV stato vivo, CMD comando, ARC archivio, STA statistica, CFG configurazione, BATCH raccoglitore. I `file:riga` vengono dalla matrice `s03_matrice_*.tsv` e sono stati campionati con `sed -n` (11 chiamanti su 11 e 6 definizioni SQL su 6 coincidono); le colonne «chi legge» marcate (nv) non sono verificabili dal repo.
+
+**A. Tabelle dell'elenco 89 senza riga propria**
+
+| Tabella | Chi scrive oggi | Chi legge | Natura | Chi scrive domani | Ritardo max cloud | Verifica «non manca nulla» |
+|---|---|---|---|---|---|---|
+| `tennis_replay_mercati` | `tennis_replay/caricamento.py:79` (upsert del catalogo mercati per evento; la tabella gemella `_eventi` `:75`, `:108`) | `caricamento.py:97` (rilettura per `market_id`: `n_updates, ts_min, ts_max`) | ARC / BATCH | **resta com'e'**, fuori dal perimetro dell'app (caricamento a lotti a fine partita, come T15) | n/a (lotti) | il caricamento stesso rilegge (`:97`) e confronta i mercati caricati con quelli in tabella; controllo notturno: `count(*)` per `event_id` contro il file sorgente |
+
+**B. Tabelle scritte da RPC e non presenti nelle 89** (nessuna e' toccata dai bot; le scrive la UI via RPC, oppure uno script di import; restano nel cloud)
+
+| Tabella | Chi scrive oggi | Chi legge | Natura | Chi scrive domani | Ritardo max cloud | Verifica «non manca nulla» |
+|---|---|---|---|---|---|---|
+| `betfair_live_settings` | RPC `set_live_settings` (`liveOrders.ts:705`, def `migrations/betfair_live_risk_limits_v4.sql:47`), `set_live_order_mode` (`liveOrders.ts:693`, def `live_order_mode_control_2026-09-24.sql:68`), `set_live_kill_switch`, `live_order_mode_avvio` | RPC `get_live_settings`: `live_order_worker.py:498`, `modo_ordini.py:300`, `runner.py:2491`, UI `liveOrders.ts:676` (gia' in T05) | CFG | **resta cloud + CACHE a 1 s fuori dal ciclo** (come T05); la UI desktop scrive sul canale e il postino riflette | cloud->bot <= 1 s; UI->cloud 0 (RPC diretta) | come T05: kill switch dalla UI visto dal bot entro 1 s; `updated_at` della riga confrontato col valore in cache |
+| `personal_trade_legs` | RPC `add_trade_leg` (`personalReport.ts:333`, def `personal_tracking_rpc.sql:505`), `reset_personal_report` (`personalReport.ts:403`, def `:934`) | UI diario personale via RPC di lettura (nv) | SV (diario manuale) | **resta cloud**: nessun bot la tocca; la UI chiama la RPC | n/a (azione dell'utente) | invariato: nessun tratto locale da riconciliare; V1 non applicabile |
+| `personal_cash_movements` | RPC `upsert_cash_movement` (`import_betfair_operations.py:194`, def `personal_cash_movements.sql:32`; tabella `:11`) | UI diario/bankroll via RPC (nv) | ARC (movimenti di cassa importati) | **resta com'e'**: scritta dallo script di import `import_betfair_operations.py`, fuori dal perimetro dell'app | n/a (import manuale) | upsert idempotente per chiave del movimento: `count(*)` per giorno a import concluso |
+| `strategies` | RPC `save_strategy` (`analytics.ts:340`, def `analytics_strategies_store.sql:27`), `delete_strategy` (`analytics.ts:346`, def `:60`) | UI Analytics (lista strategie salvate) (nv) | CFG | **resta cloud** (preferenze della UI, nessun bot) | n/a | invariato |
+| `tennis_refresh_requests` | RPC `request_tennis_refresh` (`tennis.ts:123`, def `tennis_markets.sql:145`; tabella `:66`) | un raccoglitore/worker tennis (nv: nessun `.table()` in Python, `00 §3.4`) | CMD (legacy, bassissima frequenza) | **resta cloud** come T14 (`betfair_refresh_requests`) | n/a | invariato; si rivaluta con T14 |
+| `omega_requests` | RPC `omega_request_ignore` (`omegaProposte.ts:348`, def `omega_proposte_uscita_2026-09-16.sql:151`; tabella `:30`) e, per lo stesso file SQL, le altre RPC delle proposte di uscita (nv) | UI proposte (`omegaProposte.ts`); in Python solo `omega/certificazione.py:1603` | CMD (proposte di uscita Omega) | **CMD-L come `omega_manual_requests`** (T10, CACHE+sveglia) se il bot le legge; altrimenti resta cloud: **da chiarire** (domanda aperta, non decisa qui) | se CMD-L: <= 1 s come T10 | V1; prima verificare chi consuma la riga (nessun lettore Python di produzione nella matrice) |
+
+**C. RPC scriventi chiamate da produzione o frontend e mai citate in G** (72 scriventi nell'elenco, 4 gia' citate: `request_betfair_live_order`, `set_live_kill_switch`, `live_order_mode_avvio`, `get_live_settings`). Una riga per famiglia: la RPC e' solo il mezzo con cui la UI (o uno script) scrive la tabella indicata, che ha gia' la sua riga in §4.3 o in B; la proposta per la tabella vale anche per la RPC. «UI» = chiamata da `frontend/src/lib/*` (desktop e UI remota).
+
+| RPC (chiamante `file:riga`) | Tabella scritta | Natura | Chi scrive domani | Ritardo max cloud | Verifica «non manca nulla» |
+|---|---|---|---|---|---|
+| `mike_activate` (`mike.ts:2228`), `mike_stop` (`:2234`), `mike_update_params` (`:2240`) | `mike_control` (T09) | CFG | CACHE+sveglia (T09); la RPC resta la via della UI remota; UI desktop sul canale + mirror | <= 1 s | V1 + test: la riga scritta dalla UI e' lavorata una sola volta |
+| `mike_request` (`mike.ts:2274`) | `mike_requests` (T09) | CMD | come sopra (CMD-L) | <= 1 s | V1 |
+| `omega_activate` (`omega.ts:1317`), `omega_stop` (`:1325`), `omega_update_params` (`:1333`) | `omega_control`, `omega_daily_goal` (T10) | CFG | come T10 | <= 1 s | V1 |
+| `omega_request` (`omega.ts:1501`), `omega_request_approve` (`omegaProposte.ts:338`) | `omega_manual_requests` (T10) | CMD | come T10 | <= 1 s | V1 |
+| `omega_request_ignore` (`omegaProposte.ts:348`) | `omega_requests` (riga B) | CMD | vedi B | vedi B | vedi B |
+| `omega_evento_riprendi` (`omega.ts:1421`); `omega_eventi_chiusi_dall_utente` (`:1398`, nessun DML nella definizione: lettura) | `omega_events`, `omega_activity` (T10) | SV / ARC | L+P (T10) | <= 5 s / 60 s | V1 |
+| `omega_mission_activate` (`omegaMissions.ts:150`), `omega_mission_stop` (`:162`) | `omega_missions` (T10) | CFG | come T10 | <= 1 s | V1 |
+| `omega_mission_follow` (`omegaMissions.ts:174`), `set_follow_record` (`:190`), `segui_live_apri_partita` (`live.ts:51`) | `live_follow` (T07) | SV/CMD | L+P (T07) | <= 5 s | V1 |
+| `safe_activate` (`safeBot.ts:1147`), `safe_stop` (`:1155`), `safe_update_params` (`:1161`) | `safe_strategy_control` (T11) | CFG | CACHE+sveglia (T11) | <= 1 s | V1 |
+| `safe_request` (`safeBot.ts:1224`), `safe_request_approve` (`controlRoomProposte.ts:400`), `safe_request_ignore` (`:409`) | `safe_strategy_requests` (T11) | CMD | transizione locale + mirror (T11) | <= 1 s | V1 |
+| `scalper_activate` (`scalper.ts:148`), `scalper_stop` (`:160`), `scalper_stop_sessione` (`scalperControlRoom.ts:298`), `scalper_approva_uscita` (`proposteUscite.ts:90`), `scalper_uscite_automatiche` (`scalperControlRoom.ts:313`), `scalper_media_attiva_adesso` (`mediaUnderAttiva.ts:17`) | `scalper_control` (T12) | CFG/CMD | CACHE+poll 3 s (T12) | <= 3 s | V1 |
+| `scalper_auto_activate` (`scalperControlRoom.ts:166`), `scalper_auto_stop` (`:177`), `scalper_auto_update` (`:188`) | `scalper_service_control` (e `scalper_control` per lo stop) (T12) | CFG | CACHE+poll 3 s (T12) | <= 3 s | V1 |
+| `tennis_bot_arm` (`tennis.ts:876`), `tennis_bot_disarm` (`:889`), `tennis_bot_approva_uscita` (`proposteUscite.ts:91`) | `tennis_bot_control` (T13) | CFG | CACHE+sveglia 47337 (T13) | <= 1 s | V1 |
+| `tennis_bot_service_activate` (`tennis.ts:997`), `tennis_bot_service_stop` (`:1008`), `tennis_bot_service_update_params` (`:1022`), `tennis_bot_service_set_uscite` (`:966`) | `tennis_bot_service_control` (T13) | CFG | come sopra | <= 1 s | V1 |
+| `tennis_follow_event` (`tennis.ts:180`), `tennis_set_follow_record` (`:198`) | `tennis_live_follow` (T13) | SV | L+P (T13) | <= 5 s | V1 |
+| `request_tennis_live_order` (`tennis.ts:422`, `:483`) | `tennis_live_order_queue` (T13) | CMD | CMD-L (T13/T01) | 0 ms locale; mirror <= 5 s | V1 + `client_ref` unico |
+| `request_live_risk_rule` (`liveOrders.ts:483`) | `betfair_live_risk_rules` (T04) | CFG/CMD | L+P, autorita' locale (T04) | 0 ms; mirror <= 5 s | V1; decisione 2 |
+| `set_live_settings` (`liveOrders.ts:705`), `set_live_order_mode` (`:693`) | `betfair_live_settings` (riga B) | CFG | CACHE 1 s (T05) | <= 1 s | come T05 |
+| `set_live_journal_note` (`liveOrders.ts:932`) | `betfair_live_journal` (T06) | ARC | L+P log (T06) | <= 60 s | V1 |
+| `ack_alert` (`live.ts:691`) | `live_alerts` (T06) | ARC/SV | L+P (T06) | <= 60 s | V1 |
+| `request_backtest` (`analytics.ts:456`, `replayBot.ts:228`) | `live_backtest_requests` (T15) | CMD (lotti) | CLOUD (T15) | n/a | invariato |
+| `request_betfair_order` (`betfair.ts:167`), `request_betfair_refresh` (`betfair.ts:81`) | `betfair_order_requests`, `betfair_refresh_requests` (T14) | CMD (legacy) | CLOUD (T14) | n/a | invariato |
+| `request_tennis_refresh` (`tennis.ts:123`) | `tennis_refresh_requests` (riga B) | CMD (legacy) | CLOUD | n/a | invariato |
+| `add_to_watchlist` (`watchlist.ts:110`), `delete_from_watchlist` (`:126`), `set_watchlist_follow_live` (`:134`), `set_watchlist_decision` (`:144`) | `personal_watchlist` (T07) | SV | CLOUD + CACHE (T07) | n/a (azione utente) | invariato |
+| `add_personal_trade` (`personalReport.ts:325`, anche `_certify_personal_report.py:359`), `settle_personal_trade` (`:340`), `set_trade_time_operative` (`:378`), `upsert_imported_trade` (`import_betfair_operations.py:358`) | `personal_trades` (T16) | STA (diario) | CLOUD (T16); l'import resta lo script | n/a | invariato |
+| `add_trade_leg` (`personalReport.ts:333`), `reset_personal_report` (`:403`) | `personal_trade_legs` (riga B), `personal_trades`, `personal_watchlist` | SV | CLOUD | n/a | invariato |
+| `upsert_cash_movement` (`import_betfair_operations.py:194`) | `personal_cash_movements` (riga B) | ARC | resta com'e' (script di import) | n/a | invariato |
+| `save_strategy` (`analytics.ts:340`), `delete_strategy` (`:346`) | `strategies` (riga B) | CFG | CLOUD | n/a | invariato |
+| `bulk_update_prediction_results` (`Prediction/predictions_results_backfill.py:671`) | `fixture_predictions` (T17) | BATCH | **resta com'e'**, fuori dal perimetro dell'app | n/a | invariato |
+| `flush_analytics_snap_staging` (`enrich_analytics_snapshots.py:312`) | `analytics_signals` da `analytics_snap_staging` (T16) | BATCH | **resta com'e'** | n/a | invariato |
+| `record_fixture_detail_checks` (`season_gaps.py:455`) | `fixture_detail_checks` (T17) | BATCH | **resta com'e'** | n/a | invariato |
+| `refresh_analytics_bets_range` (`refresh_analytics_bets.py:197`; nessun DML nella definizione: delega ad altre funzioni) | `analytics_bets` (T16) | BATCH | **resta com'e'** | n/a | invariato |
+
+Nota di perimetro: le righe BATCH e quelle scritte da script di import non passano dall'app e non passeranno dal postino. «Nessuna tabella persa» per queste vale per costruzione: il codice non cambia.
+
 ### 4.4 PARTE 2 - Gli algoritmi: dove vivono, con che cache, mai degradati
 
 | Algoritmo | Proposta | Perche' (numeri) | Dato che deve restare IDENTICO |

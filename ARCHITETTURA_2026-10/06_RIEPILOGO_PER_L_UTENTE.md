@@ -31,9 +31,10 @@ senza tappa). **Nessuna funzionalita' si perde.**
 - **Ogni componente in UNA cartella**, con un documento che dice cosa fa e un «contratto» scritto (cosa riceve, cosa
   restituisce). Per sostituire un pezzo si tocca solo la sua cartella: e' il criterio con cui si accetta ogni tappa.
 - **Il percorso Betfair → decisione → ordine non passa piu' dal database.** Lo stato vivo sta in memoria e su un archivio
-  locale (SQLite, scelto perche' ha vinto la prova misurata: 0,6 ms per una scrittura che sopravvive allo spegnimento, contro
-  21 ms di rete verso il cloud). Un «postino» copia tutto nel database cloud in sottofondo, senza perdere niente e senza
-  doppioni, anche dopo un'assenza di rete.
+  locale (SQLite, scelto perche' ha vinto la prova misurata: 0,6 ms per una scrittura che sopravvive al crash del programma, contro
+  21 ms di rete verso il cloud; [revisione critica 08/10] lo spegnimento improvviso del PC NON e' stato provato: per il denaro vale la tenuta
+  dichiarata da SQLite, le ultime righe dei registri di attivita' possono perdersi). Un «postino» copia tutto nel database cloud in
+  sottofondo, senza doppioni, anche dopo un'assenza di rete.
 - **Una sola porta per gli ordini**, una sola riconciliazione, un solo modo di contare soldi e giornate, un solo servizio
   per i punteggi, un solo supervisore dei processi (da 18 processi a 8).
 - **I pannelli della app nascono dal contratto dei bot** (come gia' oggi il catalogo del replay): un parametro si scrive in un
@@ -64,16 +65,16 @@ cambiare un pezzo.**
 
 ## 6. Quanto ci vuole
 
-29 tappe piccole (`05`), ognuna con prova di parita', interruttore e ritorno indietro. **Circa 13-17 settimane** lavorando su
-due linee (il cloud costruisce e certifica, il PC misura, prova in ombra e firma); circa 8-10 settimane per la sola parte che
-avevi gia' deciso il 02/10, il doppio di quanto stimato allora, perche' i replay di oggi sono lenti (Mike 12 minuti, scalper
+29 tappe piccole (`05`), ognuna con prova di parita', interruttore e ritorno indietro. **Circa 16-20 settimane** ([revisione critica 08/10]: prima 13-17; il calcolo aveva saltato due tappe obbligate) lavorando su
+due linee (il cloud costruisce e certifica, il PC misura, prova in ombra e firma); circa 10-12 settimane ([revisione critica 08/10]: prima 8-10) per la sola parte che
+avevi gia' deciso il 02/10, piu' del doppio di quanto stimato allora, perche' i replay di oggi sono lenti (Mike 12 minuti, scalper
 quasi 2 ore per tutti gli scenari) e perche' ora ogni tappa ha il congelamento dei riferimenti e il periodo in ombra.
 **Prima tappa**: il pannello «Salute» (misure vere di CPU, memoria, feed, database, tempi degli ordini) e il congelamento
 delle registrazioni e dei referti di riferimento.
 
 ## 7. Le decisioni che servono da te
 
-Sono 79, tutte in `05_PIANO_DI_MIGRAZIONE.md` §8, con l'effetto e cosa succede se non decidi (in quel caso il piano non
+Sono 86 (79 + 7 aggiunte dalla revisione critica dell'08/10), tutte in `05_PIANO_DI_MIGRAZIONE.md` §8, con l'effetto e cosa succede se non decidi (in quel caso il piano non
 cambia nulla di strategia). **Bloccano l'inizio (tappa 0):**
 
 1. **U-62** Accendere il servizio dell'ora di Windows, impedire la sospensione del PC, avvio della app all'accensione.
@@ -98,6 +99,15 @@ cambia nulla di strategia). **Bloccano l'inizio (tappa 0):**
 - **U-24** Stop e trailing a ogni tick invece che ogni 0,15 s.
 - **U-71/U-73/U-74** Archiviare (mai cancellare) il codice morto: 3.440 righe con prova piena, fino a ~24.000 con le tue
   conferme (fogli Google, 41 script manuali, laboratori).
+
+**[revisione critica 08/10] Aggiunte importanti** (dettaglio in `08_REVISIONE_CRITICA.md`):
+- **U-80** Come numerare i trade quando il cloud non e' piu' nel percorso: oggi il numero del cloud e' anche il riferimento
+  dell'ordine di Mike su Betfair. Proposta: numeri riservati in anticipo, cosi' tutto resta identico.
+- **U-83** Chi riaccende il supervisore se la finestra e' chiusa, e se un suo crash debba spegnere anche i runner con posizioni
+  aperte (proposta: no, i runner restano vivi e vengono ripresi).
+- **U-84** Aggiornamenti di Windows (niente riavvii automatici con posizioni aperte) e versioni dei programmi bloccate fino alla fine.
+- **U-85** La prova della contabilita' chiede 5 giornate live di fila: se non operi live, accettare giornate con regolamenti reali
+  anche manuali.
 
 ## 8. Cosa NON abbiamo potuto verificare
 

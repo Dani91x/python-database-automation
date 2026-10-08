@@ -422,8 +422,18 @@ class Postino(Protocol):
 class SpecTabella:                                     # UNA riga del registro per tabella: un bot nuovo non scrive un nuovo *_db.py
     nome: str; chiave_naturale: tuple[str, ...]; natura: Literal["SV", "CMD", "ARC", "STA", "CFG"]
     regime: Literal["stato_denaro", "stato_vivo", "log", "cache", "cloud"]; ritardo_max_s: float; coalesce: bool
+    rev_colonna: str | None; dipende_da: tuple[str, ...]   # [revisione critica 08/10] R02, R06 di 08_REVISIONE_CRITICA.md
 # esposti: dati.postino_offline(da), dati.dead_letter(tabella, riga, errore), dati.riconciliazione(rapporto)
 ```
+
+**[revisione critica 08/10] Versione e dipendenze delle righe.** (1) Ogni upsert del postino e' condizionato a una versione monotona per riga
+(`rev_colonna`: un `rev` intero o l'`updated_at` del produttore; `ON CONFLICT ... DO UPDATE ... WHERE excluded.rev > t.rev`): una riga
+vecchia arrivata tardi (ritento, offline) non riporta mai indietro lo stato del cloud, che Omega oggi rilegge per decidere fino a 20 s
+(sezione 7, L8). (2) `dipende_da` elenca le tabelle padre delle chiavi esterne di oggi (`migrations/scalper_bot.sql:26` ->
+`live_follow`; `tennis_live.sql:56-58,73-76` -> `tennis_live_follow` con `ON DELETE CASCADE`; `closes_trade_id` -> `*_trades(id)`,
+`mike_bot.sql:109`, `omega_cashout.sql:50`, `safe_strategy_bot.sql:73`): padre e figlio possono essere scritti da processi diversi e
+l'ordine per `seq` vale dentro UN processo; un 23503 (chiave esterna) e' transitorio con tetto, poi `dead_letter` (4.4). R02, R06 di
+`08_REVISIONE_CRITICA.md`.
 
 ### 3.8 H - Banco: scenario e cassetta d'ombra (`Betfair/stream/backtest/`, H §4.2-4.4)
 
@@ -511,6 +521,11 @@ export interface Nucleo { plancia(): Plancia;
 | `CambioGiorno` | supervisore (I) | F, runtime, bot | canale del supervisore (nuovo topic sul canale esistente) |
 | `postino_offline`, `dead_letter` | G | I (salute), UI | `monitor_metrics` + allarme |
 
+[revisione critica 08/10] Il canale locale per costruzione «salta il giro» verso un client lento (`local_channel.py:630-672`, tetto
+`_MAX_INVII_IN_VOLO = 64` a `:176`): va bene per i topic di STATO (`ladder`, `plancia`, `scan_*`), non per un flusso differenziale
+(lo dice la docstring stessa). `EventoOrdine` e' differenziale: ogni consumatore controlla la contiguita' di `seq` per attore e al
+primo buco chiede `da_seq` (gia' servito dal motore, `motore_ordini.py:913,961-962,2245`); test falsificato in T10. R07.
+
 ---------------------------------------------------------------------------------------------------
 
 ## 4. I flussi (mermaid)
@@ -559,6 +574,11 @@ postino (oggi upsert `safe_strategy_scan` 65,4 POST/min riletto dai bot, E3 §3.
 G §4.4); (8) una strada sola (oggi 7, C §1.1); (13) il bot riceve l'esito dall'evento (oggi poll dello specchio fino a 20 s per
 Omega, C §7); (15-16) il cloud riceve la riga dopo, mai prima della decisione (oggi `insert_trade` sincrono con id restituito,
 `mike/db.py:175-181`).
+
+[revisione critica 08/10] **Prima la riga, poi l'invio** (passi 7-8): il bot decisore scrive la riga del trade con il `ref` in `stato_denaro`
+(WAL FULL, sezione 6.1) e SOLO dopo invia la `RichiestaOrdine`; il dedup del motore (`motore_ordini.py:2342`) protegge da un secondo
+invio solo se il `ref` nasce da una riga gia' durevole, e il dedup di Betfair dura 60 s (02 §3.4). Il `ref` di oggi di Mike e'
+`mike-t<id>` con l'id del cloud (`mike/porta_ordini.py:52`): come resta identico senza il cloud nel percorso e' in 6.2 (R01). R03.
 
 ### 4.2 Punteggi e stato della partita
 
@@ -619,6 +639,11 @@ comanda da un dispositivo senza PC (U-51; oggi la UI scrive sul cloud con RPC `*
 kill switch (`get_live_settings`, oggi 119,9/min dal runner, 07 §4.2) diventa cache in memoria aggiornata da un thread a 1 s fuori
 dal ciclo; con cloud irraggiungibile: ultimo valore noto + allarme (proposta di G, decisione U-52).
 
+[revisione critica 08/10] **Niente split-brain nel backstop.** Senza un filtro il backstop puo' rileggere dal cloud il valore VECCHIO di un comando
+appena dato in locale (il mirror parte dopo, entro 1 s) e «importarlo come un comando locale»: un bot fermato riparte. Regola: ogni
+riga CFG/CMD porta `rev` monotono e `origine` (`pc` | `remoto`); il backstop importa SOLO righe con `origine=remoto` e `rev` maggiore
+del locale; test falsificato (filtro tolto -> rosso) in T22. R05.
+
 ### 4.4 Il postino verso il cloud
 
 ```mermaid
@@ -636,6 +661,7 @@ flowchart TB
   POST -->|upsert o insert ON CONFLICT con uid| CLOUD[(Supabase: archivio generale)]
   POST -->|errore transitorio: 2-4-8-16-32 s, tetto 60 s, interruttore dopo 2 guasti| POST
   POST -->|errore NON transitorio, es. CHECK| DL[dead_letter + allarme visibile]
+  POST -->|revisione critica 08/10: 23503 chiave esterna = transitorio con tetto, poi dead_letter| POST
   CLOUD -.->|riconcilia notturno: count + hash chiave e updated_at| POST
 ```
 
@@ -668,6 +694,9 @@ sequenceDiagram
 
 Prova obbligatoria (P0210 fase 1 blocco 1; PSB §7 n.19, n.22): uccidere il servizio con posizioni aperte in paper; riparte,
 ricostruisce, nessun ordine doppio (dedup per ref che sopravvive al riavvio, `motore_ordini.py:2342`).
+[revisione critica 08/10] In piu': ogni `ref` presente nelle righe salvate del bot e senza `EventoOrdine` si interroga con `PortaOrdini.stato(ref)`
+(e, se ignoto, sul conto per `customerOrderRef`) PRIMA di qualunque decisione nuova; la prova uccide il bot fra scrittura e invio e fra
+invio e risposta: 0 ordini doppi in entrambi i casi (R03).
 
 ### 4.6 Il ciclo della giornata h24 (calcio e tennis insieme)
 
@@ -688,6 +717,14 @@ Fonti: cambio di giorno e regolamento notturno (F §4.3, I §4.4); orari dei wor
 igienico oggi solo nei due runner (`runner.py:1796-1801`, I D11); riconciliazione 30 s (`reconcile_worker.py:1329`); tennis-odds
 oggi 48 certlogin al giorno (`betfair_tennis_odds.py:311-312`, I D9). La «giornata» e' UNA funzione (oggi 11 file ridefiniscono
 Europe/Rome, I §3; 4 definizioni di «oggi», F D3).
+
+[revisione critica 08/10] (1) Con il tennis h24 la «notte senza partite» puo' non esserci, e il runner calcio e' «flat» solo se NESSUN bot decisore
+ha posizioni calcio (il loro motore vive li', 4.1): il regolamento contro `listClearedOrders` gira a ciclo continuo (ogni N ore,
+indipendente dalle posizioni), non in una finestra; il ricambio igienico ha un'eta' massima e un allarme quando non trova il flat oltre
+la soglia, e la guardia vera della memoria sono gli obiettivi L15-L16 (sezione 7). (2) Ora legale: `CambioGiorno` e `giornata()`
+provati sui giorni di 25 e 23 ore (25/10/2026 e 28/03/2027; direttiva 2000/84/CE: ultima domenica di ottobre e di marzo), con
+partite a cavallo dell'ora ripetuta; prima di questa revisione nessun documento del piano ne parlava. Il `CambioGiorno` nasce in T13 e
+passa al supervisore in T22 (05). R10, R11.
 
 ---------------------------------------------------------------------------------------------------
 
@@ -711,6 +748,13 @@ ospite, tennis ospite, scanner, supervisore»): scelgo I, perche' il codice most
 e perche' D stesso scrive che un errore del runtime fermerebbe i 4 bot tennis ospitati insieme (D §6 rischio d). Ridurre i
 processi non riduce le connessioni Betfair (5.2).
 
+[revisione critica 08/10] **La guardia del supervisore.** «Sorvegliato da Electron e dall'avvio al login» (I riga 312) non regge quando la finestra
+e' chiudibile (U-61): a finestra chiusa nessuno lo rilancia fino al login successivo. E «nessun orfano (Job Object)» (05 T22) ha due
+forme opposte: con uccisione dei figli alla chiusura del Job, un crash del supervisore abbatte INSIEME i runner con posizioni aperte;
+senza, i figli sopravvivono e vanno ADOTTATI al riavvio (lock di porta e pid; oggi gli orfani bloccano i lock, I riga 81). Il Job
+Object non e' verificato su fonte (I riga 437). Proposta: nessuna uccisione alla chiusura + adozione + terzo livello dall'Utilita' di
+pianificazione con ripetizione ogni minuto; decisione U-83. R09.
+
 ### 5.2 Il budget delle connessioni Stream (limite 10 per app key, `frammenti_mercato.py:85`)
 
 | Connessione | Oggi (A §1.3) | Domani | Nota |
@@ -728,6 +772,10 @@ x 5 riavvii/h = 45/h nel caso peggiore, I §4.5); keepAlive entro 20 min sul .it
 famiglie, 12 punti `build_client(login=True)` e 6 `BetfairClient()`, A D6); `TOO_MANY_REQUESTS` a 3 richieste concorrenti per
 CONTO (02 §3.2): porta ordini e contabilita' sono gli unici chiamanti di `listCurrentOrders`/`listClearedOrders` (oggi 4 lettori di
 `listClearedOrders`, F D5).
+[revisione critica 08/10] **Transazioni per ora**: Betfair fissa un limite orario oltre il quale si paga (02 riga 45, BA-PDF r.9905-9913); oggi tetto
+1000/ora nel codice (`config_stream.py:256-262`, 02 P-13) e contatori per bot (`_max_orders_per_min`, C riga 417); flumine ha
+`MaxTransactionCount` (02 riga 249). Con una porta per tutti il contatore e' UNO per conto, nella porta (`ordini/controlli.py`), col
+valore di oggi e visibile nella «Salute» (P-13: oggi non in UI). R13.
 
 ---------------------------------------------------------------------------------------------------
 
@@ -758,6 +806,12 @@ misura, non la notorieta' (brief §9.3):
 I competitor non dichiarano il loro motore di persistenza (02 §6.4 R-04: «n.d.»): il confronto e' con i numeri misurati. Non provati
 (G, 07): spegnimento del PC; checkpoint spostato fuori dal percorso (il massimo 0,70-0,96 s di NORMAL e' il default
 `wal_autocheckpoint`); due file concorrenti (U-55). WAL solo su disco locale (documentazione SQLite, 07 §6.1).
+[revisione critica 08/10] I ~15 us di accodamento sono misurati su un thread solo (07 riga 125: «nessuna GIL contesa»). Nel runner calcio
+convivono stream, flumine, motore degli ordini di Mike/Omega/Safe, ladder a ogni cambio (`json.dumps` 167 us p50 per push, 07 2b),
+thread di scrittura e postino (httpx + JSON): la contesa del GIL non e' misurata (E4 riga 153). Prova obbligatoria in T8: replay a
+cadenza reale con scrittore e postino accesi contro spenti, L2 e L6 p99 non peggiori oltre la variabilita' fra due esecuzioni identiche;
+se peggiori, U-82. Il diario write-ahead degli ordini (JSONL+fsync, C riga 73) sta nel percorso dell'ordine con la coda della riga
+«write+flush+fsync» qui sopra: L6b in sezione 7, U-81. R04, R08.
 
 ### 6.2 Il postino, tabella per tabella (sintesi di G §4.3; il dettaglio con le chiavi naturali e le migrazioni e' in G)
 
@@ -786,6 +840,16 @@ Nessuna tabella si perde (brief §9.5): cio' che oggi finisce nel cloud continua
 postino) e quando (dopo la decisione). Prerequisito: colonna `uid` UNIQUE su 10 tabelle di log e `trade_uid` sulle 3 tabelle di
 trade, migrazione scritta dal coordinatore e applicata dall'utente (G §4.2, U-50): senza, un ritento duplica.
 
+[revisione critica 08/10] (1) **Identita' dei trade.** L'`id` BIGINT del cloud oggi e' il `customerOrderRef` di Mike (`mike-t<id>`,
+`mike/porta_ordini.py:52`, letto dalla certificazione `mike/certificazione.py:1476-1501`), la chiave esterna `closes_trade_id`
+(`mike_bot.sql:109`, `omega_cashout.sql:50`, `safe_strategy_bot.sql:73`) e la chiave del P&L per posizione (`mike/db.py:268-347`).
+Togliere l'insert sincrono (T14) senza un id locale cambierebbe tutte e tre. Proposta: id riservati a blocchi dalla sequenza del cloud
+quando c'e' rete (hi-lo): ref, chiave esterna e P&L restano IDENTICI; a blocco esaurito e rete assente vale il comportamento di oggi
+(nessuna apertura, G §1.1). Decisione U-80. (2) **Tabella per tabella.** Questa tabella e G §4.3 sono per FAMIGLIA (17 righe) e i
+ritardi sono «proposta, da validare con l'utente» (intestazione di G §4.3); le tabelle toccate sono 89 (00 §0). Il registro
+`SpecTabella` di T2 ha UNA riga per ciascuna delle 89 (scrittore oggi, scrittore domani, regime, ritardo, verifica) e un test rifiuta
+una tabella scritta dal codice ma non registrata; ritardi approvati con U-86. R01, R23.
+
 ### 6.3 Gli algoritmi del cloud che RESTANO (G parte 2, brief §9.2)
 
 | Algoritmo (G) | Dove vive domani | Con che cache | Perche' (numeri) | Dato che deve restare identico |
@@ -801,6 +865,7 @@ trade, migrazione scritta dal coordinatore e applicata dall'utente (G §4.2, U-5
 | `standings`, `injuries`, `top_*` (G-041), storico `match_*` (G-042) | CLOUD, raccoglitori invariati | - | 45 GB, nessun lettore dal vivo | invariato |
 | Atlante hazard (G-043) | file locale (gia' cosi') | `load_hazard_atlas` | - | invariato |
 | P&L reale del conto (G-044) | `nucleo/contabilita` (funzioni pure, nessun DB) | - | - | `pnl_reale_oggi` centesimo per centesimo (F §5) |
+| [revisione critica 08/10] Storico delle giornate (RPC `get_*_daily`, `lib/dailyHistory.ts`; brief §9.2) | CLOUD (RPC) | nessuna nel ciclo: lo legge la UI | non entra nelle decisioni | `giornata()` = RPC `get_*_daily` (05 T13) |
 | Raccoglitori (G-045) | CLOUD; **da aggiungere** un controllo di vitalita' (max data per tabella) e il lancio documentato di `football_data_scraper` | - | 10 workflow, 2 pg_cron | invariato |
 
 Nessun algoritmo si sposta in locale, nessuno si degrada: replica e prefetch sono equivalenti per costruzione e si provano col
@@ -831,6 +896,12 @@ di 05).
 | L12 | regolamento Betfair -> numero a schermo | fino a 35 s (cache) o 300 s (giro ordini), 5-20 s se forzato (F §7) | n.d. | entro 20 s (F §7) | `pnl_letto_at` contro `settled_at` |
 | L13 | clic UI -> stato visibile | poll 1,5-2 s o realtime con debounce 1,2-1,5 s (J §7) | n.d. | un evento dal nucleo | marca dal clic all'evento `bot:<id>` |
 | L14 | «Applica bot» e certificazione | 258-314 s; Mike 728 s; scalper 6.916 s su 47 replay (H §7, CANT 11) | Gruss: replay a pagamento, senza tempi | 30 s; certificazione 300 s, tetto 600 (PSB §6.9, CANT 11) | `certifica`, riga TEMPO TOTALE |
+| L6b | [revisione critica 08/10] diario write-ahead (flush+fsync) prima di ogni `place_order` (C riga 73, `motore_ordini.py:183-254,1424`) | non misurato nel percorso; laboratorio: p99 9,7-37 ms, max 0,24-0,89 s (6.1) | n.d. | p50/p99/max misurati in T0A dentro L6; p99 fissato dopo la misura; supporto U-81 (R04) | marca prima/dopo `fsync` in `_pre_invio` |
+| L15 | [revisione critica 08/10] CPU per servizio, 24 h | non misurata (07 §5.1) | n.d. (02 §2) | provvisorio I §7: app <= 100% di un core mediano, nessun servizio > 30% p95 a riposo (R12) | `psutil` nel monitor (T0A) |
+| L16 | [revisione critica 08/10] RAM per servizio, 24 h | non misurata | n.d. | provvisorio I §7: crescita <= 5% fra 2a e 24a ora; totale <= 25% di 15,8 GB | `monitor_metrics.rss` |
+| L17 | [revisione critica 08/10] richieste al cloud al giorno | 707,5/min = 1.018.800/giorno (I §7, 07 §0 4a) | - | servizi bot <= 60/min (D §7, sezione 10); backtest-worker a riposo 0 | contatore del monitor |
+| L18 | [revisione critica 08/10] log al giorno, re-login, riavvii non pianificati | fino a 468 MB/giorno; re-login e riavvii non contati (I §7) | - | <= 50 MB/giorno a riposo; <= 1 re-login per servizio ogni 12 h; 0 riavvii non pianificati (I §7) | referto Salute |
+| L19 | [revisione critica 08/10] scarto dell'orologio | +844 ms (07 1e) | - | <= 100 ms (I §7), dopo U-62 | `m00b_ntp_offset.py` |
 
 Note: il ritardo di scommessa osservato (5 s per 6.388 definizioni in-play, 07 1f) non dipende da noi; il gap del ladder a 200 ms
 contro 20 ms (02 L-02) si chiude in A P3 senza cambiare cio' che ricevono i bot (il ladder va alla UI); il conflate dello scanner
@@ -984,3 +1055,4 @@ NON verificato:
 - Spegnimento del PC durante la scrittura, checkpoint di SQLite fuori dal percorso critico, due file SQLite concorrenti: non provati
   (07 §6, punti 9-10).
 - Nessun replay, nessuna suite, nessun processo eseguito (regole del brief).
+- [revisione critica 08/10] I rilievi della revisione critica e le correzioni marcate in questo documento: `08_REVISIONE_CRITICA.md`.

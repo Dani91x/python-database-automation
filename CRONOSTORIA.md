@@ -5252,3 +5252,11 @@ Brief: `ARCHITETTURA_2026-10/BRIEF_PIANO_ARCHITETTURA_2026-10-08.md` (par. 9 val
 - 20:00 REVISIONE INDIPENDENTE delle citazioni (`ARCHITETTURA_2026-10/strumenti/verifica/RIEPILOGO_VERIFICA.md`): 415
   citazioni a campione riproducibile, 402 confermate (96,9%), 10 spostate e 3 false, tutte corrette nelle schede; nessuna
   cambia un reperto o una decisione. 01 rigenerato, copertura del 05 = 971/971.
+- 20:30 `08_REVISIONE_CRITICA.md` ACCETTATO (revisore Opus): 24 rilievi (5 ALTA: id dei trade dal cloud usato come
+  riferimento Betfair di Mike e chiave esterna; scritture concorrenti postino/diretta durante l'ombra; intento non salvato
+  prima dell'invio; `fsync` del diario nel percorso dell'ordine; supervisore non rilanciato a finestra chiusa), correzioni
+  marcate «[revisione critica 08/10]» in 04/05/06, decisioni U-80..U-86 (totale 86), settimane corrette a 16-20 (percorso
+  critico che saltava T14 e T25). Verifica del coordinatore: `mike/porta_ordini.py:50-53` (`mike-t<id>`),
+  `migrations/mike_bot.sql:109` (`closes_trade_id` FK), `motore_ordini.py:21,211,1424` (fsync prima del place).
+  Completezza §9.5 nella scheda G: 89/89 tabelle + 6 scritte da RPC + 72/72 RPC scriventi
+  (`strumenti/verifica/g_copertura_tabelle.py`, falsificato dal delegato). Copertura di 05 ancora 971/971.
