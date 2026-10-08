@@ -19,3 +19,4 @@ Cumulativo = spesa totale (coordinatore + delegati).
 | 19:00 | 8. Sintesi Opus: `04_ARCHITETTURA_OBIETTIVO.md` completo; `05` a meta' (delegato interrotto da errore di rete, ENOTFOUND) | 118,59 | dato comunicato dall'utente (40,94 + 77,65 del secondo processo) |
 | 19:25 | 9. `05_PIANO_DI_MIGRAZIONE.md` completato dal delegato Opus (ripreso dopo l'errore di rete) + verifica indipendente della copertura | 126,50 | 40,94 + 85,51 |
 | 19:40 | 10. `06_RIEPILOGO_PER_L_UTENTE.md` scritto dal coordinatore | 126,85 | |
+| 20:00 | 11. Revisione indipendente: 415 citazioni di 15 schede + 04 + 05 (4 verificatori Sonnet); 13 correzioni; 01 rigenerato | 133,40 | |

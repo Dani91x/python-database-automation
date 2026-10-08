@@ -5249,3 +5249,6 @@ Brief: `ARCHITETTURA_2026-10/BRIEF_PIANO_ARCHITETTURA_2026-10-08.md` (par. 9 val
   (`config_stream.py:74`), upsert DB 0,3 s nell'app (`ambiente_runner.js:70`): 04 corretto.
 - 19:40 `06_RIEPILOGO_PER_L_UTENTE.md` scritto dal coordinatore (cosa cambia, cosa resta, -80% non dimostrato, 13-17
   settimane, 7 decisioni che bloccano la tappa 0 + le principali dopo; elenco completo in 05 §8).
+- 20:00 REVISIONE INDIPENDENTE delle citazioni (`ARCHITETTURA_2026-10/strumenti/verifica/RIEPILOGO_VERIFICA.md`): 415
+  citazioni a campione riproducibile, 402 confermate (96,9%), 10 spostate e 3 false, tutte corrette nelle schede; nessuna
+  cambia un reperto o una decisione. 01 rigenerato, copertura del 05 = 971/971.

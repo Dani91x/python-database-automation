@@ -99,7 +99,7 @@ Divergenza strutturale gia' nota: 3 voci usano il giorno della PARTITA (U3, U4) 
 
 ### 1.4 Green-up e «chiusure perfette» (condizione 10 di `BRIEF_STANDARD_DELEGATI.md:45`)
 La matematica di green-up e' calcolata in **UNA libreria condivisa piu' 6 copie**:
-- Condivisa: `stream/trading/greenup.py:118` `compute_greenup` (249 righe) chiamata da Mike (14 punti: `engine.py:997, 1071, 3742, 3755, 3791, 3817, 4045, 4418, 5097, 5111, 5201, 5239, 5263, 5291`),
+- Condivisa: `stream/trading/greenup.py:118` `compute_greenup` (132 righe, 118-249; il file ne ha 249) [corretto dal verificatore 08/10] chiamata da Mike (14 punti: `engine.py:997, 1071, 3742, 3755, 3791, 3817, 4045, 4418, 5097, 5111, 5201, 5239, 5263, 5291`),
   Safe (`execution.py:2264-2272`, 3 punti), runner (`live_order_worker.py:2330, 2627`), tennis (`tennis_live_order_worker.py:992`), `hedging.py` (2 punti). `git grep -c "compute_greenup("`: 5 file + 2.
 - Copie: `scalper/scalper_bot.py:297` e `tennis_scalper/tennis_scalper_bot.py:164` (`compute_green`, **IDENTICHE**: `s04_funzioni_duplicate.tsv:254`, + `laboratorio/scalper_lab/scalper_bot_base.py:132`);
   `omega/omega_v3.py:949` `profitto_bloccabile`; `mike/engine.py:440` `locked_pnl_back`; `omega/liquidity_probe.py:239` `greenup_need`; `safe_strategy/execution.py:2283` `locked_pnl`;
@@ -123,8 +123,8 @@ Valori di DEFAULT del codice (non i valori vivi nel DB `*_control`/`betfair_live
 Tre implementazioni di «stop perdita giornaliera» (Mike, Omega, Safe) + quella di conto (`daily_stop_worker`): quattro, con basi di calcolo diverse (realizzato del bot vs somma lorda dei settled del conto).
 
 ### 1.6 Giornata e obiettivo
-«Oggi» ha **4 definizioni** (le 3 di I-§1.4 + una): (a) giornata di Roma del REGOLAMENTO per conto e stop: `day_window_utc` `daily_pnl.py:129` (usata da `reconcile_worker.py:495, 696`, `daily_stop_worker.py:424`);
-(b) finestra mobile di 12 h di Omega `omega_market.py:257`; (c) data locale del PC `betfair_tennis_odds.py:310`; (d) giorno della PARTITA (Roma) per lo storico da 01/10: `dailyHistory.ts:636-650`, `romeDay :452`.
+«Oggi» ha **4 definizioni** (le 3 di I-§1.4 + una): (a) giornata di Roma del REGOLAMENTO per conto e stop: `day_window_utc` `daily_pnl.py:129` (usata da `reconcile_worker.py:495, 696`, `daily_stop_worker.py:435` [corretto dal verificatore 08/10: era :424]);
+(b) finestra mobile di 12 h di Omega `omega_market.py:257`; (c) data locale del PC `betfair_tennis_odds.py:311` [corretto dal coordinatore 08/10: era 310]; (d) giorno della PARTITA (Roma) per lo storico da 01/10: `dailyHistory.ts:636-650`, `romeDay :452`.
 Cambio di giorno: nessun evento, ogni modulo ricalcola a ogni giro (I-§1.4); obiettivo Omega scritto una volta per giorno (`omega_service.py:5318-5332`, `omega_db.py:1041-1051` -> `omega_daily_goal`).
 
 ### 1.7 Tabelle lette/scritte (da `s03_matrice_tabelle.tsv`, verificate a campione)

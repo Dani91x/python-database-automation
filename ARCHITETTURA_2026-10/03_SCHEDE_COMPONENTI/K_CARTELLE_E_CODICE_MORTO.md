@@ -63,7 +63,7 @@ Chi le avvia e' scritto accanto. Il cloud gira da GitHub Actions; il locale da `
   (pagella `direction_pagella` per motore poisson/ml/tacticai, 238). Moduli puri condivisi: `analytics_market_stats.py` (307), `analytics_settlement.py` (125). [UI: pagine Analytics/Direzione]
 - K-005 **Calibrazione Poisson settimanale** (lunedi' 03:27 UTC, `weekly_poisson_calibration.yml:5`): Step 1 `generate_dynamic_cal.py:36` scrive `dynamic_cal.json` (26.304 righe) E la tabella DB `poisson_calibration`
   (`generate_dynamic_cal.py:438-461`, upsert); Step 2 `update_poisson_calibration.py --apply` `:43` riscrive `CALIBRATION_TABLE` dentro `Betfair/money_management.py:199` (nessuna scrittura DB: solo letture,
-  `update_poisson_calibration.py:146,183`); Step 3 `generate_dc_rho.py:54` scrive `dc_rho_by_league.json` (182 righe). Commit automatico `:60`. Letture a valle: `live_engine_pro.py:37-38` (`_RHO_PATH`, `_CAL_PATH`),
+  `update_poisson_calibration.py:146,183`); Step 3 `generate_dc_rho.py` (riga `:54` del workflow `weekly_poisson_calibration.yml`; [chiarito dal verificatore 08/10]) scrive `dc_rho_by_league.json` (182 righe). Commit automatico `:60`. Letture a valle: `live_engine_pro.py:37-38` (`_RHO_PATH`, `_CAL_PATH`),
   `Prediction/today_predictions_backfill.py:1169` (rho), `poisson_calibrator.py:60` (DB-first, JSON come ripiego). [Bot: Omega/Safe via motore; Step 2 nessun consumatore vivo]
 - K-006 **Post-calibrazione ML**: `ml_calibration.yml:28` (cron `14 5 * * *` + `workflow_run` dopo il retrain, `:23`) -> `compute_ml_post_calibration.py:78` -> tabella `ml_post_calibration`, letta da
   `Ai Engine/ai_engine/predict_fixture.py:373` (`_load_post_calibration`). [cloud]

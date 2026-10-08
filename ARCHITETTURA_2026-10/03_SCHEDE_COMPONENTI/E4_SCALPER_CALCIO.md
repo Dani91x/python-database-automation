@@ -201,7 +201,7 @@ verificati con `sed -n`/`grep -n`. I valori di serie "ctor" sono quelli del cost
 - **E4-016 [S] Flatten con escalation.** `_begin_flatten` (`:2228`), `_drive_flatten` (`:2247-2453`): piatta entro 0,02 (`:2263`), contabilita' `flatten_done` (`:2276-2281`),
   `circuit_breaker` in-play se un ciclo perde >= `cycle_loss_breaker` (ctor 0,50, `:458`; `:2282-2291`), anti-churn `flatten_min_interval_ms` (`:600`), `flat_tries`.
 - **E4-017 [S] Fase in-play e intervallo.** `inplay_from_s`/`inplay_to_s` (`:450-451`; `:1051-1063`), rilevatore reale `ht_active` + clock di sanita',
-  `max_inplay_slots` 2 (`:455`; `:1065-1071`), `inplay_close_now` (`:832-841`). **[PAR]** `ht_mode` (whitelist; UI `ScalperPanel.tsx:430-440`).
+  `max_inplay_slots` 2 (`:455`; `:1065-1071`), `inplay_close_now` (`:832-841`). **[PAR]** `ht_mode` (whitelist; UI `ScalperPanel.tsx:439-447` [corretto dal verificatore 08/10: il checkbox `htMode` sta a 439-447; 430-433 e' `missionTwoTicks`]).
 - **E4-018 [S] Contabilita' di ciclo.** `_on_cycle_closed` (`:1115-1139`: `pnl_prematch`/`pnl_inplay`, `cycle_log` max 200, `greens_*`), `process_closed_market` (`:1079-1107`:
   `pnl_settled` dal settlement simulato, dedup per ordine). **[UI]** `ScalperPanel.tsx:963-965` ("P&L bloccato (lordo)", "settlato (lordo)").
 
