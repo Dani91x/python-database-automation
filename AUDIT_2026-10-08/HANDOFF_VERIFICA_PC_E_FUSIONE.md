@@ -4,8 +4,8 @@ Destinatario: l'agente sul PC dell'utente (quello con accesso al PC, alle regist
 all'app desktop) e l'agente che fonde su master. Autore: coordinatore della sessione cloud.
 Comunicare in italiano. Regole: `CLAUDE.md`, `BRIEF_STANDARD_DELEGATI.md`, `PROCESSO_STANDARD_BOT.md` §6-§7.
 
-> BOZZA IN CORSO: le sezioni marcate «[IN ATTESA]» si completano quando chiudono gli ultimi cantieri.
-> La versione finale e' quella con la riga «STATO: COMPLETO» in testa.
+> **STATO: COMPLETO** (08/10/2026, sera). Cima da fondere = l'ultimo commit del ramo `claude/blissful-sagan-hri7o6`,
+> «docs: PRONTO PER LA VERIFICA SUL PC ...»; la sua sha esatta e' nel messaggio di consegna dell'utente.
 
 Ordine dell'utente (08/10, testuale): «ALLA FINE DI TUTTI I LAVORI DOVRAI STILARE UN DOCUMENTO DETTAGLIATO PER
 FAR CONTROLLARE IL TUTTO ALL'ALTRO AGENTE, TUTTE LE TASK LUNGHE CERTIFICALE E APPROVALE TU, L'ALTRO AGENTE
@@ -26,18 +26,21 @@ NON chiudi e NON ricompili l'app. Fai SOLO i passi A-F, nell'ordine; ogni «STOP
 **Cosa e' gia' certificato nel cloud (non rifarlo):** ogni cantiere con diff riletto, test, mutazioni proprie e replay del
 coordinatore; controllo finale sulla cima `d01de76` con 5 macchine: suite Betfair 11295 verdi (parallela e
 seriale), tools 17, catchup 90, tsc 0, vitest 5447, build ok; replay `--scenari tutti` di Mike, Omega, Safe (3 varianti),
-Scalper calcio su entrambe le registrazioni: {ESITO_REPLAY}. Dopo il controllo sono cambiati SOLO: un test
+Scalper calcio su entrambe le registrazioni: 0 KO nuovi, 0 controlli violati nuovi, righe di esito IDENTICHE ai riferimenti in tutti gli scenari (Mike 58, Omega 44, Safe 138, Scalper calcio 112; cartella `AUDIT_2026-10-08/controllo_finale/`). Dopo il controllo sono cambiati SOLO: un test
 (`test_frammenti_mercato_2026_09_28.py`), un test nuovo (`test_banco_isolamento_conto_2026_10_08.py`), gli innesti del banco di Mike e Safe
 (`mike/tools/replay_registrazioni.py`, `safe_strategy/tools/replay_registrazioni.py`: strumenti di replay, NON codice dei bot) e documenti. Controllo:
-`git diff --stat d01de76 {SHA_FINALE} -- Betfair/ ':!Betfair/**/tools/**' ':!Betfair/**/tests/**' ':!Betfair/**/test_*'` -> VUOTO
+`git diff --stat d01de76 <SHA_FINALE> -- Betfair/ ':!Betfair/**/tools/**' ':!Betfair/**/tests/**' ':!Betfair/**/test_*'` -> VUOTO
 (nessun file di produzione dei bot cambiato dopo il controllo finale).
+
+`<SHA_FINALE>` = la sha che l'utente ti da' nel messaggio; deve essere la cima di `origin/claude/blissful-sagan-hri7o6` e il
+suo commit deve chiamarsi «docs: PRONTO PER LA VERIFICA SUL PC ...». Se non coincide: STOP.
 
 ### A. Stato (sola lettura, 2 minuti)
 ```
 cd "<radice del repo>"
 git status                                   # STOP se ci sono modifiche non tue in stage; MAI `git add -A`
 git fetch origin
-git rev-parse origin/claude/blissful-sagan-hri7o6        # atteso: {SHA_FINALE}  (altrimenti STOP: chiedi)
+git rev-parse origin/claude/blissful-sagan-hri7o6        # atteso: <SHA_FINALE>  (altrimenti STOP: chiedi)
 git rev-parse origin/master                               # atteso: 8226d766... (altrimenti §5.5)
 git merge-base --is-ancestor origin/master origin/claude/blissful-sagan-hri7o6 && echo OK_ANTENATO   # atteso OK_ANTENATO
 git log --oneline origin/claude/blissful-sagan-hri7o6..origin/claude/eloquent-franklin-g2nyk5         # lavoro del PC dopo
@@ -52,7 +55,7 @@ Se l'ultima riga NON e' vuota: il PC ha pushato altro dopo `3c4aae6`; segui §5.
    ATTESO: vuoto o soli file elencati qui: nessuno (verificato: 0 file cancellati rispetto a master). Altro = STOP.
 3. Strategie NON alterate: `git diff origin/master origin/claude/blissful-sagan-hri7o6 -- Betfair/omega/omega_config.py`
    ATTESO: SOLO l'aggiunta di `v3_include_aggregate` (decisione dell'utente del 07/10, commit `bae79eb6`, gia' sul ramo del
-   PC). La sessione cloud non ha toccato nessun file di parametri (verificato: `git diff b5547eb8 {SHA_FINALE}` sui file
+   PC). La sessione cloud non ha toccato nessun file di parametri (verificato: `git diff b5547eb8 <SHA_FINALE>` sui file
    di configurazione = vuoto). Qualunque altra riga cambiata in un file di parametri = STOP.
 4. Fine riga delle fixture (cantiere 12): `git ls-files --eol frontend/src/**/__fixtures__/*.timeline.jsonl` (se il glob non
    va, `git ls-files --eol | findstr timeline`): ATTESO `i/lf` per tutte.
@@ -89,13 +92,13 @@ git fetch origin
 git checkout master                     # nel checkout principale: l'app usa i file del checkout! fallo SOLO con
                                         # l'utente d'accordo e app CHIUSA, oppure nel worktree (vedi sotto)
 git merge --ff-only origin/claude/blissful-sagan-hri7o6
-git log --oneline -1                    # = {SHA_FINALE}
+git log --oneline -1                    # = <SHA_FINALE>
 git push origin master                  # MAI --force
 ```
 Variante senza toccare il checkout dell'app (consigliata se l'app e' aperta): dal worktree o da qualunque cartella del repo
 `git push origin origin/claude/blissful-sagan-hri7o6:refs/heads/master` — e' un avanzamento veloce (fast-forward): se Git
 lo rifiuta («non-fast-forward») master e' andato avanti: STOP e §5.5, MAI `--force`.
-Dopo: `git fetch origin && git rev-parse origin/master` = {SHA_FINALE}; `git diff origin/master origin/claude/blissful-sagan-hri7o6 --stat` vuoto.
+Dopo: `git fetch origin && git rev-parse origin/master` = <SHA_FINALE>; `git diff origin/master origin/claude/blissful-sagan-hri7o6 --stat` vuoto.
 
 ### E. Dopo la fusione (documenti, 5 minuti)
 - `CRONOSTORIA.md`: blocco «FUSIONE SU MASTER — 08/10» nel TUO blocco: sha prima (8226d76) e dopo, esiti di A-C con i
@@ -125,9 +128,9 @@ fondere, riporta all'utente l'uscita intera e la tua lettura, e aspetta.
 - `origin/master` e' a `8226d76` (06/10) ed e' ANTENATO del ramo: la fusione e' un avanzamento senza conflitti
   (fast-forward possibile; vedi §5 per come farla).
 - Il coordinatore cloud ha gia' certificato ogni cantiere: diff riletto, test rilanciati, mutazioni PROPRIE (oltre a
-  quelle del delegato), replay rifatti di persona dove la registrazione e' nel cloud. Il PC NON rifa' tutto:
-  controlla che i numeri del cloud siano veri sulla macchina vera e fa SOLO cio' che nel cloud non si poteva
-  (registrazioni tennis, DB, app a schermo, Windows). Stima: 2-3 ore di macchina, quasi tutte in parallelo.
+  quelle del delegato), replay rifatti di persona dove la registrazione e' nel cloud, controllo finale sulla cima.
+  Per ordine dell'utente (08/10 sera) l'agente del PC NON fa replay: fa i controlli A-C della sezione vincolante in
+  testa (circa 30-45 minuti, quasi tutti di suite) e poi fonde (D-E).
 
 ## 1. Cantieri e commit
 
@@ -375,6 +378,9 @@ infine `git checkout master && git merge --ff-only fusione-master`.
 - D-13 (banco, trovato verificando W3a) `omega_service._LAMBDA_CACHE` (usata anche dalla Safe) scade dopo 900 s di orologio di
   PARETE e il banco della Safe non la azzera fra scenari: in quale scenario si ricalcola il modello dipende dalla velocita' della
   macchina (oggi sposta solo una nota, decisioni identiche). Proposta: azzerarla fra scenari come RB-5 di Omega (solo banco).
+- D-15 (controllo finale) `certifica scalper_calcio 35797769 --scenari tutti --worker 3` (56 scenari): il processo PADRE e'
+  cresciuto a ~10 GB ed e' stato ucciso per memoria nel container da 15 GB (lo scenario mancante rifatto da solo: identico).
+  Finche' non si corregge: lo scalper calcio `tutti` a blocchi di scenari o `--worker 1`.
 - D-14 (cantiere 11) a) `pytest-xdist` nel `.venv` del PC (suite 291 -> 88 s nel cloud): installazione da autorizzare;
   b) `psutil` non e' in `requirements.txt`: senza, `--worker N` diventa 1 in silenzio (aggiungerlo o stampare una riga);
   c) lo scenario `riavvio` di Omega azzera solo 7 stati su 20 (un riavvio vero li perde tutti): cambiarlo cambia lo scenario;

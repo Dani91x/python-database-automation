@@ -5302,6 +5302,34 @@ dal percorso nuovo, o artefatto del messaggio aggregato delle 17:00:06): referti
   piu' rapidi a referto identico (-3/-9 %); suite con pytest-xdist 291 -> 88 s (proposta per il PC, da autorizzare). Conflitto col
   cantiere 7 risolto tenendo entrambi. Delegato 22 mutazioni rosse; mie 2/2 + 1 equivalente spiegata. Mio replay: omega w1 = w3
   (0 righe), esiti identici a W3a, scalper identico salvo impronta.
+- 08/10 CONTROLLO FINALE sulla cima `d01de76` (5 macchine cloud, `AUDIT_2026-10-08/controllo_finale/`): suite Betfair 11295 verdi
+  in parallelo E in serie, tools 17, catchup 90, tsc 0, vitest 5447, build ok; replay `--scenari tutti --worker 3` di Mike (58),
+  Omega (44), Safe 3 varianti (138), Scalper calcio (112): 0 KO nuovi, 0 controlli violati nuovi, righe di esito IDENTICHE ai
+  riferimenti. Trovati e chiusi dal coordinatore: (1) test del rientro dopo il rifiuto dipendente dalla velocita' della macchina
+  (`8345478`, solo test, prova deterministica con l'orologio fermo); (2) innesti del banco di Mike e Safe che non azzeravano la
+  memoria del conto / l'avviso del flusso / la cache dei lambda fra scenari (`be3beb6`, solo banco, worker 1 = worker 3 provato).
+  Suite Betfair sul codice definitivo (`f7a1fdf`): 11321 verdi, 0 rossi. Reperto D-15 (memoria del padre di `certifica` con 56
+  scenari). Nessun parametro di strategia toccato dalla sessione cloud (verificato col diff da `b5547eb`).
+
+### PRONTO PER LA VERIFICA SUL PC (08/10, sera — coordinatore cloud)
+Documento unico e vincolante: `AUDIT_2026-10-08/HANDOFF_VERIFICA_PC_E_FUSIONE.md` (STATO: COMPLETO). Per ordine dell'utente
+l'agente del PC NON fa replay: controlli A-C (stato, integrita' del ramo, suite in un worktree) e fusione su master in
+avanzamento veloce (D-E), con condizioni di STOP. Ramo: `claude/blissful-sagan-hri7o6` (contiene tutto `eloquent-franklin` fino a
+`3c4aae6`). Commit di lavoro, uno per cantiere, ognuno con referto e verifica del coordinatore:
+- W2 `5cc7103` chiusura dall'app degli ordini fatti sul sito · cantiere 5 `f0f14f6` parcheggio place-and-trim tennis · 12 `4b262c4`
+  test su Windows · 14 `d1d4cd3` nomi tennis · 15 `3b8ce19` rivalutazione oraria del cambio nel banco · 6 `7633e20` banco tennis ·
+  W1 `00fbd9b` PAGINA CASH OUT · 10 `16d6c67` registro del replay per fasi · 13 `6f04054` strumento della barra · 9 `1ac69d0`
+  scavalco e rifiuti Betfair nel banco · 7 `328de86` banco di Omega RB-1..RB-5 · W3b `597ea3a` scalper e tennis sanno degli
+  ordini esterni · W3a `b4d91ed` Mike/Omega/Safe sanno subito degli ordini esterni (anche in prova) · 11 `3e235d1` velocita' e
+  isolamento del banco · correzioni trovate dalle suite: `56ceb13` (test heartbeat), `71e56de` (id() riciclato nei frammenti, codice),
+  `8345478` (test del rientro), `be3beb6` (isolamento degli innesti) · merge del PC `d0cf8b94`, `66fee09`.
+- Migrazioni (le applica l'utente): `replay_tennis_mercati_elenco_2026-10-08.sql` POI `replay_tennis_fonte_nomi_2026-10-08.sql`
+  (piu' quelle del 06-07/10 se mancano, §4 del documento). W3a, W3b, 7, 11: nessuna migrazione.
+- All'utente, dopo la fusione: `npm run build` ad app chiusa e riavvio; prove a schermo della pagina Cash Out in PROVA; decisioni
+  aperte D-1 ... D-15 (§6), la piu' urgente D-2 (money-critical: place-and-trim dopo un replace rifiutato). Replay tennis (5, 6, 9,
+  W3b) NON eseguiti (registrazioni solo sul PC), coperti da test: disponibili i comandi del §3.1 se l'utente li vuole.
+- PUNTO DI RIPRESA: fusione su master dall'agente del PC secondo il documento. PROSSIMI PASSI: decisioni D-1..D-15 con l'utente;
+  correzione D-2; memoria del padre di `certifica` (D-15); `psutil` e `pytest-xdist` sul PC (D-14, da autorizzare).
 ### PUNTO DI RIPRESA — ore 12:21 dell'08/10 (coordinatore PC, Fable 5.1)
 - Tre linee in corso, da fondere alla fine (decisione dell'utente): (1) SESSIONE CLOUD sui cantieri di `AUDIT_2026-10-08/SPECIFICHE_CANTIERI_CLOUD_2026-10-08.md` (15 per primo, poi 12, 5, 6, 14, 10, 13, 7, 9, 11), commit per cantiere sul ramo; (2) SESSIONE A CREDITI API (Agent SDK, lanciata alle 12:18 con `ARCHITETTURA_2026-10/strumenti/sessione_sdk.py`, tetto 190 USD, prova da 0,22 USD riuscita) che scrive SOLO in `ARCHITETTURA_2026-10/` il piano della nuova architettura (brief `BRIEF_PIANO_ARCHITETTURA_2026-10-08.md`, par. 9 compreso); (3) PC: build delle 12:19 su `40051ed9` (banco «mercato che attraversa» + Applica bot tennis per mercato), app riaperta dall'utente per le prove a schermo (par. 6, 11.4 e 10.1 del protocollo; lista nel referto `AUDIT_2026-10-07/certificazione_db/REFERTO_CERTIFICAZIONE_DB.md`).
 - Prossimi passi sul PC: esiti delle prove a schermo dell'utente (tennis con i mercati, calcio con i fill realistici); verifica dei commit del cloud man mano che arrivano (diff riletto, test e replay rilanciati, mutazioni mie); verifica a campione delle schede della sessione API contro il codice; fusione su master solo alla fine, con suite verde e replay di riferimento identici.
