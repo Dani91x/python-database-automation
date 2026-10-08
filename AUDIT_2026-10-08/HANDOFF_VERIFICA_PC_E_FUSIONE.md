@@ -46,7 +46,7 @@ CERTIFICAZIONE.)» e «VOGLIO CHE MASTER SIA PERFETTO [...] SENZA REGRESSIONI DI
 | `56ceb13` | test | heartbeat-stall: il test presumeva la macchina accesa da >900 s (4 rossi nel cloud) | vecchio test 4 rossi con intervallo > uptime, nuovo 16 verdi | nessuna |
 | `597ea3a` | W3b | Scalper calcio e 4 bot tennis sanno degli ordini esterni (sito/app) e non fanno altro; ordini di altri bot riconosciuti (classificazione W2) | 82 test, mutazioni 4 mie (15 rossi), replay DOPO su macchina separata 14 scenari x 2 = attesi, controllo sulla cima 28/28 identici | replay tennis (§3.1, stessa corsa), log dal vivo (§3.7) |
 | `5beb289` | riferimenti | Mike/Omega/Safe/Scalper `--scenari tutti` col banco realistico (punto 4 del cantiere 15), suite cloud | 3 macchine parallele: Mike 26/26 OK x2, Safe 22/22 OK x3 varianti x2, Omega 0 violazioni, Scalper KO tutti attesi tranne `riavvio` B1 PREESISTENTE (§6 D-9) | nessuna (sono il riferimento del PC) |
-| `b4d91ed` | W3a | Mike/Omega/Safe sanno SUBITO (canale del conto, anche in prova) degli ordini esterni; ordini di altri bot riconosciuti; verdetto in esposizione; W2 riallineato | [IN ATTESA del replay DOPO cloud] | log dal vivo (§3.7) |
+| `b4d91ed` | W3a | Mike/Omega/Safe sanno SUBITO (canale del conto, anche in prova) degli ordini esterni; ordini di altri bot riconosciuti; verdetto in esposizione; W2 riallineato | replay DOPO su 2 macchine: 0 KO, 0 violazioni (Mike 29, Omega 22, Safe 23 x3); 2 differenze non attese spiegate di persona con sonde (`W3A_CONSAPEVOLEZZA_SERVIZI.md`, verifica); suite cima `66fee09` 11273/0 | log dal vivo e prova in paper (§3.7) |
 | `71e56de` | fix | frammenti di mercato: un id() riciclato non eredita il tempo di un altro frammento (test rosso a caso nel cloud, 20/20 rosso da solo) | test nuovo deterministico, mutazione rossa, 10/10 verdi ripetuti | nessuna |
 | `66fee09` | merge | `eloquent-franklin` fino a `3c4aae6`: action Seasons Catchup resiliente alla rete + architettura tappe 2-5 | `test_catchup_*.py` 90/90, nessun file nuovo > 500 KB, CRONOSTORIA senza righe perse | nessuna |
 | [IN ATTESA] | 11 | velocita' del banco | | |
@@ -122,7 +122,8 @@ python -m Betfair.stream.backtest.certifica mike 35760084 --scenari base,cap-str
 python -m Betfair.stream.backtest.certifica safe_base 35760084 --scenari base,riavvio --worker 1
 python -m Betfair.stream.backtest.certifica scalper_calcio 35797769 --scenari base,ordine-esterno,ordine-esterno-di-un-bot --worker 1   # OK 44 azioni / OK 2 azioni (stop) / OK 44 azioni
 ```
-ATTESO: righe IDENTICHE (esclusi `tempo:`, `TEMPO TOTALE`) ai file del cloud indicati nel riepilogo di W3a
+ATTESO: righe IDENTICHE (esclusi `tempo:`, `TEMPO TOTALE`, e per la Safe la nota «metodi ASSENTI dal banco» /
+«NON ESERCITABILE get_event», che dipende dalla velocita' della macchina: §6 D-13) ai file del cloud indicati nel riepilogo di W3a
 (`AUDIT_2026-10-08/W3A_DOPO_CLOUD/`) e di W3b (`AUDIT_2026-10-08/W3B/dopo_cloud/`); fonte
 delle righe scalper: `AUDIT_2026-10-08/controllo_scalper_597ea3a/35797769_blocco{1,3,4}.txt`.
 Test mirati (un minuto):
@@ -256,4 +257,7 @@ infine `git checkout master && git merge --ff-only fusione-master`.
   banca PERSIST; D5 scalper in PROVA non sa degli ordini manuali del ladder in prova (processo separato, paper non specchio su
   questo punto); D6 nessuna soglia minima (anche 2 EUR fermano); D7 durante la sospensione (verifica o DB giu') si rifiutano
   anche le chiusure del bot su quella selezione (alternativa: lasciar passare le sole chiusure).
+- D-13 (banco, trovato verificando W3a) `omega_service._LAMBDA_CACHE` (usata anche dalla Safe) scade dopo 900 s di orologio di
+  PARETE e il banco della Safe non la azzera fra scenari: in quale scenario si ricalcola il modello dipende dalla velocita' della
+  macchina (oggi sposta solo una nota, decisioni identiche). Proposta: azzerarla fra scenari come RB-5 di Omega (solo banco).
 - [IN ATTESA: decisioni del cantiere 11]

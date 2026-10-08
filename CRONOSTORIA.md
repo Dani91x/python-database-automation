@@ -5288,6 +5288,13 @@ dal percorso nuovo, o artefatto del messaggio aggregato delle 17:00:06): referti
   porta un riferimento debole allo stream e un id() riciclato riparte da adesso (lo `stream_id` NON va bene come chiave: cambia
   all'iscrizione, primo tentativo scartato perche' 2 test esistenti diventavano rossi). Test nuovo deterministico (id() forzato uguale)
   `test_frammenti_id_riciclato_2026_10_08.py`; mutazione senza controllo d'identita' -> rosso; test dei frammenti 40/40, collegati 86/86.
+- CHECKPOINT W3a - MIKE, OMEGA E SAFE SANNO SUBITO DEGLI ORDINI ESTERNI (verificato e integrato, `b4d91ed`): canale del conto
+  (stream ordini del runner, topic `conto` in live e `conto_paper` in prova) come meccanismo UNICO; ordini di altri bot riconosciuti
+  (classificazione di W2); verdetto in ESPOSIZIONE (un green-up dell'utente di un suo ordine non ferma il bot); riduzione parziale =
+  stop. Replay DOPO su 2 macchine cloud: 0 KO, 0 violazioni (Mike 29, Omega 22, Safe 23 x3). Due differenze non attese indagate di
+  persona: (1) Mike, 284 avvisi CRITICAL FALSI del PRIMA dovuti ai suoi stessi ordini del ciclo precedente, ora riconosciuti (una
+  correzione); (2) nota del banco della Safe spostata dal TTL a orologio di parete di `_LAMBDA_CACHE` (artefatto, reperto D-13).
+  Suite Betfair sulla cima 66fee096: 11273 verdi, 0 rossi.
 ### PUNTO DI RIPRESA — ore 12:21 dell'08/10 (coordinatore PC, Fable 5.1)
 - Tre linee in corso, da fondere alla fine (decisione dell'utente): (1) SESSIONE CLOUD sui cantieri di `AUDIT_2026-10-08/SPECIFICHE_CANTIERI_CLOUD_2026-10-08.md` (15 per primo, poi 12, 5, 6, 14, 10, 13, 7, 9, 11), commit per cantiere sul ramo; (2) SESSIONE A CREDITI API (Agent SDK, lanciata alle 12:18 con `ARCHITETTURA_2026-10/strumenti/sessione_sdk.py`, tetto 190 USD, prova da 0,22 USD riuscita) che scrive SOLO in `ARCHITETTURA_2026-10/` il piano della nuova architettura (brief `BRIEF_PIANO_ARCHITETTURA_2026-10-08.md`, par. 9 compreso); (3) PC: build delle 12:19 su `40051ed9` (banco «mercato che attraversa» + Applica bot tennis per mercato), app riaperta dall'utente per le prove a schermo (par. 6, 11.4 e 10.1 del protocollo; lista nel referto `AUDIT_2026-10-07/certificazione_db/REFERTO_CERTIFICAZIONE_DB.md`).
 - Prossimi passi sul PC: esiti delle prove a schermo dell'utente (tennis con i mercati, calcio con i fill realistici); verifica dei commit del cloud man mano che arrivano (diff riletto, test e replay rilanciati, mutazioni mie); verifica a campione delle schede della sessione API contro il codice; fusione su master solo alla fine, con suite verde e replay di riferimento identici.

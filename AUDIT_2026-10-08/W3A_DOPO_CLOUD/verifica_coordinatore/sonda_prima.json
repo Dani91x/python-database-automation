@@ -1,0 +1,98 @@
+{
+ "n_voci": 284,
+ "verdetti_voci": {
+  "ridotta_dall_utente": 284
+ },
+ "chiamate_verdetto (chiuse,parziali,nonritr)": {
+  "(0, 0, 0)": 74,
+  "(0, 1, 0)": 284
+ },
+ "prime_voci": [
+  {
+   "mercato": "OU35",
+   "selezione": "UNDER",
+   "market_id": "1.259819686",
+   "selection_id": 1222344,
+   "atteso": 10.0,
+   "mio_sul_conto": 10.0,
+   "netto_di_conto": 9.86,
+   "altrui": -0.14,
+   "verdetto": "ridotta_dall_utente",
+   "ancora_viva": 9.86,
+   "critical": true,
+   "nota": "il conto contiene solo in PARTE la posizione di Mike: si dichiara, il bot continua a proteggere quello che resta"
+  },
+  {
+   "mercato": "OU35",
+   "selezione": "UNDER",
+   "market_id": "1.259819686",
+   "selection_id": 1222344,
+   "atteso": 10.0,
+   "mio_sul_conto": 10.0,
+   "netto_di_conto": 9.86,
+   "altrui": -0.14,
+   "verdetto": "ridotta_dall_utente",
+   "ancora_viva": 9.86,
+   "critical": true,
+   "nota": "il conto contiene solo in PARTE la posizione di Mike: si dichiara, il bot continua a proteggere quello che resta"
+  },
+  {
+   "mercato": "OU35",
+   "selezione": "UNDER",
+   "market_id": "1.259819686",
+   "selection_id": 1222344,
+   "atteso": 10.0,
+   "mio_sul_conto": 10.0,
+   "netto_di_conto": 9.86,
+   "altrui": -0.14,
+   "verdetto": "ridotta_dall_utente",
+   "ancora_viva": 9.86,
+   "critical": true,
+   "nota": "il conto contiene solo in PARTE la posizione di Mike: si dichiara, il bot continua a proteggere quello che resta"
+  }
+ ],
+ "esempi_parziali": [
+  [
+   {
+    "mercato": "OU35",
+    "selezione": "UNDER",
+    "market_id": "1.259819686",
+    "selection_id": 1222344,
+    "atteso": 10.0,
+    "mio_sul_conto": 10.0,
+    "netto_di_conto": 9.86,
+    "altrui": -0.14,
+    "verdetto": "ridotta_dall_utente",
+    "ancora_viva": 9.86
+   }
+  ],
+  [
+   {
+    "mercato": "OU35",
+    "selezione": "UNDER",
+    "market_id": "1.259819686",
+    "selection_id": 1222344,
+    "atteso": 10.0,
+    "mio_sul_conto": 10.0,
+    "netto_di_conto": 9.86,
+    "altrui": -0.14,
+    "verdetto": "ridotta_dall_utente",
+    "ancora_viva": 9.86
+   }
+  ],
+  [
+   {
+    "mercato": "OU35",
+    "selezione": "UNDER",
+    "market_id": "1.259819686",
+    "selection_id": 1222344,
+    "atteso": 10.0,
+    "mio_sul_conto": 10.0,
+    "netto_di_conto": 9.86,
+    "altrui": -0.14,
+    "verdetto": "ridotta_dall_utente",
+    "ancora_viva": 9.86
+   }
+  ]
+ ]
+}

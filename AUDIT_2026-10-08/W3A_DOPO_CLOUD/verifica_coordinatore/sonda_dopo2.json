@@ -1,0 +1,355 @@
+[
+ {
+  "tipo": "separa",
+  "altrui": [],
+  "altri_bot": [
+   {
+    "bet_id": "100000000001",
+    "motivo": "ref:mike-t1"
+   },
+   {
+    "bet_id": "100000000002",
+    "motivo": "ref:mike-t2"
+   }
+  ],
+  "ignoti": [],
+  "righe": [
+   {
+    "bet_id": "100000000001",
+    "market_id": "1.259819686",
+    "selection_id": 1222344,
+    "side": "back",
+    "status": "EXECUTION_COMPLETE",
+    "size_matched": 10.0,
+    "avg_price_matched": 1.46,
+    "size_remaining": 0.0,
+    "size_settled": 10.0,
+    "customer_order_ref": "mike-t1",
+    "size_cancelled": 0.0,
+    "size_lapsed": 0.0,
+    "size_voided": 0.0,
+    "price_requested": 1.46,
+    "size_requested": 10.0,
+    "average_price_matched": 1.46,
+    "customer_strategy_ref": null
+   },
+   {
+    "bet_id": "100000000002",
+    "market_id": "1.259819686",
+    "selection_id": 1222344,
+    "side": "lay",
+    "status": "EXECUTION_COMPLETE",
+    "size_matched": 10.14,
+    "avg_price_matched": 1.44,
+    "size_remaining": 0.0,
+    "size_settled": 10.14,
+    "customer_order_ref": "mike-t2",
+    "size_cancelled": 0.0,
+    "size_lapsed": 0.0,
+    "size_voided": 0.0,
+    "price_requested": 1.44,
+    "size_requested": 10.14,
+    "average_price_matched": 1.44,
+    "customer_strategy_ref": null
+   },
+   {
+    "bet_id": "100000000003",
+    "market_id": "1.259819686",
+    "selection_id": 1222344,
+    "side": "back",
+    "status": "EXECUTION_COMPLETE",
+    "size_matched": 10.0,
+    "avg_price_matched": 1.44,
+    "size_remaining": 0.0,
+    "size_settled": 10.0,
+    "customer_order_ref": "mike-t3",
+    "size_cancelled": 0.0,
+    "size_lapsed": 0.0,
+    "size_voided": 0.0,
+    "price_requested": 1.44,
+    "size_requested": 10.0,
+    "average_price_matched": 1.44,
+    "customer_strategy_ref": null
+   }
+  ]
+ },
+ {
+  "tipo": "separa",
+  "altrui": [],
+  "altri_bot": [
+   {
+    "bet_id": "100000000001",
+    "motivo": "ref:mike-t1"
+   },
+   {
+    "bet_id": "100000000002",
+    "motivo": "ref:mike-t2"
+   }
+  ],
+  "ignoti": [],
+  "righe": [
+   {
+    "bet_id": "100000000004",
+    "market_id": "1.259819686",
+    "selection_id": 1222344,
+    "side": "lay",
+    "status": "EXECUTABLE",
+    "size_matched": 0.0,
+    "avg_price_matched": null,
+    "size_remaining": 10.14,
+    "size_settled": 0.0,
+    "customer_order_ref": "mike-t4",
+    "size_cancelled": 0.0,
+    "size_lapsed": 0.0,
+    "size_voided": 0.0,
+    "price_requested": 1.42,
+    "size_requested": 10.14,
+    "average_price_matched": null,
+    "customer_strategy_ref": null
+   },
+   {
+    "bet_id": "100000000001",
+    "market_id": "1.259819686",
+    "selection_id": 1222344,
+    "side": "back",
+    "status": "EXECUTION_COMPLETE",
+    "size_matched": 10.0,
+    "avg_price_matched": 1.46,
+    "size_remaining": 0.0,
+    "size_settled": 10.0,
+    "customer_order_ref": "mike-t1",
+    "size_cancelled": 0.0,
+    "size_lapsed": 0.0,
+    "size_voided": 0.0,
+    "price_requested": 1.46,
+    "size_requested": 10.0,
+    "average_price_matched": 1.46,
+    "customer_strategy_ref": null
+   },
+   {
+    "bet_id": "100000000002",
+    "market_id": "1.259819686",
+    "selection_id": 1222344,
+    "side": "lay",
+    "status": "EXECUTION_COMPLETE",
+    "size_matched": 10.14,
+    "avg_price_matched": 1.44,
+    "size_remaining": 0.0,
+    "size_settled": 10.14,
+    "customer_order_ref": "mike-t2",
+    "size_cancelled": 0.0,
+    "size_lapsed": 0.0,
+    "size_voided": 0.0,
+    "price_requested": 1.44,
+    "size_requested": 10.14,
+    "average_price_matched": 1.44,
+    "customer_strategy_ref": null
+   },
+   {
+    "bet_id": "100000000003",
+    "market_id": "1.259819686",
+    "selection_id": 1222344,
+    "side": "back",
+    "status": "EXECUTION_COMPLETE",
+    "size_matched": 10.0,
+    "avg_price_matched": 1.44,
+    "size_remaining": 0.0,
+    "size_settled": 10.0,
+    "customer_order_ref": "mike-t3",
+    "size_cancelled": 0.0,
+    "size_lapsed": 0.0,
+    "size_voided": 0.0,
+    "price_requested": 1.44,
+    "size_requested": 10.0,
+    "average_price_matched": 1.44,
+    "customer_strategy_ref": null
+   }
+  ]
+ },
+ {
+  "tipo": "separa",
+  "altrui": [],
+  "altri_bot": [
+   {
+    "bet_id": "100000000001",
+    "motivo": "ref:mike-t1"
+   },
+   {
+    "bet_id": "100000000002",
+    "motivo": "ref:mike-t2"
+   }
+  ],
+  "ignoti": [],
+  "righe": [
+   {
+    "bet_id": "100000000004",
+    "market_id": "1.259819686",
+    "selection_id": 1222344,
+    "side": "lay",
+    "status": "EXECUTABLE",
+    "size_matched": 0.0,
+    "avg_price_matched": null,
+    "size_remaining": 10.14,
+    "size_settled": 0.0,
+    "customer_order_ref": "mike-t4",
+    "size_cancelled": 0.0,
+    "size_lapsed": 0.0,
+    "size_voided": 0.0,
+    "price_requested": 1.42,
+    "size_requested": 10.14,
+    "average_price_matched": null,
+    "customer_strategy_ref": null
+   },
+   {
+    "bet_id": "100000000001",
+    "market_id": "1.259819686",
+    "selection_id": 1222344,
+    "side": "back",
+    "status": "EXECUTION_COMPLETE",
+    "size_matched": 10.0,
+    "avg_price_matched": 1.46,
+    "size_remaining": 0.0,
+    "size_settled": 10.0,
+    "customer_order_ref": "mike-t1",
+    "size_cancelled": 0.0,
+    "size_lapsed": 0.0,
+    "size_voided": 0.0,
+    "price_requested": 1.46,
+    "size_requested": 10.0,
+    "average_price_matched": 1.46,
+    "customer_strategy_ref": null
+   },
+   {
+    "bet_id": "100000000002",
+    "market_id": "1.259819686",
+    "selection_id": 1222344,
+    "side": "lay",
+    "status": "EXECUTION_COMPLETE",
+    "size_matched": 10.14,
+    "avg_price_matched": 1.44,
+    "size_remaining": 0.0,
+    "size_settled": 10.14,
+    "customer_order_ref": "mike-t2",
+    "size_cancelled": 0.0,
+    "size_lapsed": 0.0,
+    "size_voided": 0.0,
+    "price_requested": 1.44,
+    "size_requested": 10.14,
+    "average_price_matched": 1.44,
+    "customer_strategy_ref": null
+   },
+   {
+    "bet_id": "100000000003",
+    "market_id": "1.259819686",
+    "selection_id": 1222344,
+    "side": "back",
+    "status": "EXECUTION_COMPLETE",
+    "size_matched": 10.0,
+    "avg_price_matched": 1.44,
+    "size_remaining": 0.0,
+    "size_settled": 10.0,
+    "customer_order_ref": "mike-t3",
+    "size_cancelled": 0.0,
+    "size_lapsed": 0.0,
+    "size_voided": 0.0,
+    "price_requested": 1.44,
+    "size_requested": 10.0,
+    "average_price_matched": 1.44,
+    "customer_strategy_ref": null
+   }
+  ]
+ },
+ {
+  "tipo": "separa",
+  "altrui": [],
+  "altri_bot": [
+   {
+    "bet_id": "100000000001",
+    "motivo": "ref:mike-t1"
+   },
+   {
+    "bet_id": "100000000002",
+    "motivo": "ref:mike-t2"
+   }
+  ],
+  "ignoti": [],
+  "righe": [
+   {
+    "bet_id": "100000000004",
+    "market_id": "1.259819686",
+    "selection_id": 1222344,
+    "side": "lay",
+    "status": "EXECUTABLE",
+    "size_matched": 0.0,
+    "avg_price_matched": null,
+    "size_remaining": 10.14,
+    "size_settled": 0.0,
+    "customer_order_ref": "mike-t4",
+    "size_cancelled": 0.0,
+    "size_lapsed": 0.0,
+    "size_voided": 0.0,
+    "price_requested": 1.42,
+    "size_requested": 10.14,
+    "average_price_matched": null,
+    "customer_strategy_ref": null
+   },
+   {
+    "bet_id": "100000000001",
+    "market_id": "1.259819686",
+    "selection_id": 1222344,
+    "side": "back",
+    "status": "EXECUTION_COMPLETE",
+    "size_matched": 10.0,
+    "avg_price_matched": 1.46,
+    "size_remaining": 0.0,
+    "size_settled": 10.0,
+    "customer_order_ref": "mike-t1",
+    "size_cancelled": 0.0,
+    "size_lapsed": 0.0,
+    "size_voided": 0.0,
+    "price_requested": 1.46,
+    "size_requested": 10.0,
+    "average_price_matched": 1.46,
+    "customer_strategy_ref": null
+   },
+   {
+    "bet_id": "100000000002",
+    "market_id": "1.259819686",
+    "selection_id": 1222344,
+    "side": "lay",
+    "status": "EXECUTION_COMPLETE",
+    "size_matched": 10.14,
+    "avg_price_matched": 1.44,
+    "size_remaining": 0.0,
+    "size_settled": 10.14,
+    "customer_order_ref": "mike-t2",
+    "size_cancelled": 0.0,
+    "size_lapsed": 0.0,
+    "size_voided": 0.0,
+    "price_requested": 1.44,
+    "size_requested": 10.14,
+    "average_price_matched": 1.44,
+    "customer_strategy_ref": null
+   },
+   {
+    "bet_id": "100000000003",
+    "market_id": "1.259819686",
+    "selection_id": 1222344,
+    "side": "back",
+    "status": "EXECUTION_COMPLETE",
+    "size_matched": 10.0,
+    "avg_price_matched": 1.44,
+    "size_remaining": 0.0,
+    "size_settled": 10.0,
+    "customer_order_ref": "mike-t3",
+    "size_cancelled": 0.0,
+    "size_lapsed": 0.0,
+    "size_voided": 0.0,
+    "price_requested": 1.44,
+    "size_requested": 10.0,
+    "average_price_matched": 1.44,
+    "customer_strategy_ref": null
+   }
+  ]
+ }
+]

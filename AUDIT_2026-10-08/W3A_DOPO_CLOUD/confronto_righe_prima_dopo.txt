@@ -1,0 +1,427 @@
+##### mike 35760084
+ESITI DOPO:
+   OK  35760084 [base]  tick= 52082 decisioni= 5246 azioni=   6 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PENDING,LIVE_CO
+   OK  35760084 [taker]  tick= 53466 decisioni= 5531 azioni=   4 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PENDING,LIVE_C
+   OK  35760084 [cap-stretto]  tick= 52082 decisioni= 5246 azioni=   6 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PENDING,
+   OK  35760084 [bot-fermo]  tick= 56229 decisioni= 1024 azioni=   0 stati=WATCH,IDLE_LIVE,SETTLED [COMPLETE]
+   OK  35760084 [senza-seconda-puntata]  tick= 52082 decisioni= 5246 azioni=   6 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVE
+   OK  35760084 [feed-stantio]  tick= 56229 decisioni= 1024 azioni=   0 stati=WATCH,IDLE_LIVE,SETTLED [COMPLETE]
+   OK  35760084 [esiti-ignoti]  tick= 52137 decisioni= 5262 azioni=   9 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PENDING
+   OK  35760084 [taker-esiti-ignoti]  tick= 53470 decisioni= 5531 azioni=   7 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_P
+   OK  35760084 [riavvio]  tick= 52082 decisioni= 5246 azioni=   6 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PENDING,LIVE
+   OK  35760084 [gol-precoce]  tick= 52082 decisioni= 5246 azioni=   6 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PENDING,
+   OK  35760084 [cashout-globale]  tick= 56220 decisioni= 5885 azioni=   2 stati=WATCH,PRE_ENTRY_PENDING,PRE_GREEN_PENDING,IDLE_LIVE,SETTLING,SETTLED [COMPLETE]
+   OK  35760084 [chiuso-fuori-app]  tick= 56216 decisioni= 5882 azioni=   1 stati=WATCH,PRE_ENTRY_PENDING,SETTLING,SETTLED [COMPLETE]
+   OK  35760084 [ridotto-fuori-app]  tick= 56220 decisioni= 5882 azioni=   1 stati=WATCH,PRE_ENTRY_PENDING,SETTLING,SETTLED [COMPLETE]
+   OK  35760084 [manuale-app-paper] <canale>  tick= 56223 decisioni= 5883 azioni=   1 stati=WATCH,PRE_ENTRY_PENDING,SETTLING,SETTLED [COMPLETE]
+   OK  35760084 [annullato-dal-sito]  tick= 56210 decisioni= 5881 azioni=   2 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,SETTLING,SETTLED [COMPLETE]
+   OK  35760084 [copertura-rifiutata]  tick= 53262 decisioni= 5367 azioni=   6 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_
+   OK  35760084 [copertura-rifiutata-legacy]  tick= 53213 decisioni= 5354 azioni=   6 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE
+   OK  35760084 [copertura-legacy]  tick= 52094 decisioni= 5243 azioni=   6 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PEN
+   NE  35760084 [cashout-dopo-copertura]  tick= 51947 decisioni= 5237 azioni=   8 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COV
+   OK  35760084 [rifiuti-betfair]  tick= 53703 decisioni= 5543 azioni=   5 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PEND
+   OK  35760084 [chiusura-abbinata-in-parte]  tick= 52082 decisioni= 5246 azioni=   6 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE
+   OK  35760084 [ko-green-parziale]  tick= 52082 decisioni= 5246 azioni=   6 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PE
+   OK  35760084 [fermo-copertura]  tick= 52134 decisioni= 5246 azioni=   7 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PEND
+   OK  35760084 [lettura-dati-ko]  tick= 51806 decisioni= 5219 azioni=   8 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PEND
+   OK  35760084 [firma-dopo-gol-decisivo]  tick= 52027 decisioni= 5232 azioni=   9 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_CO
+   OK  35760084 [firma-dopo-gol-decisivo-senza-chiusura]  tick= 52027 decisioni= 5230 azioni=   9 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UN
+   OK  35760084 [uscite-in-perdita-firmate]  tick= 51964 decisioni= 5237 azioni=   8 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_
+   OK  35760084 [uscite-automatiche]  tick= 51959 decisioni= 5236 azioni=   8 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_P
+   OK  35760084 [punteggio-ko]  tick= 52133 decisioni= 5245 azioni=   6 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PENDING
+SCENARI NUOVI: ['ridotto-fuori-app', 'manuale-app-paper', 'annullato-dal-sito']
+SCENARI SPARITI: []
+=== DIFF [chiuso-fuori-app]
+  PRIMA:       nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: proprietari_bet: tabelle degli altri bot (omega_trades, safe_strategy_trades, betfair_live_orders): non sono nel replay, il proprietario di un ordine non di Mike si decide dal riferimento d'ordine
+  DOPO :       nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: proprietari_bot_conto: tabelle degli altri bot e coda del runner (proprietari degli ordini altrui sul conto): non sono nel replay, un ordine non del bot si decide dai riferimenti (nessun altro bot) | proprietari_bet: tabelle degli altri bot (omega_trades, safe_strategy_trades, betfair_live_orders): non sono nel replay, il proprietario di un ordine non di Mike si decide dal riferimento d'ordine
+=== DIFF coda/intestazione
+  PRIMA: SCENARI: base, taker, cap-stretto, bot-fermo, senza-seconda-puntata, feed-stantio, esiti-ignoti, taker-esiti-ignoti, riavvio, gol-precoce, cashout-globale, chiuso-fuori-app, copertura-rifiutata, copertura-rifiutata-legacy, copertura-legacy, cashout-dopo-copertura, rifiuti-betfair, chiusura-abbinata-in-parte, ko-green-parziale, fermo-copertura, lettura-dati-ko, firma-dopo-gol-decisivo, firma-dopo-gol-decisivo-senza-chiusura, uscite-in-perdita-firmate, uscite-automatiche, punteggio-ko
+  PRIMA: ESITO: 26 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+  PRIMA:      A1  x130250  lo stato prodotto deve essere uno stato dichiarato (§3)
+  PRIMA:      A3  x148     ogni decisione dichiara un motivo leggibile (§8)
+  PRIMA:      B2  x1504    feed stantio: nessun ingresso, le chiusure restano permesse (§5)
+  PRIMA:      B4  x30      ingresso pre-match solo con la quota BACK Under 3.5 nella banda de
+  PRIMA:      B5  x30      i cicli pre-match non superano `pre_max_cycles` (§3 Fase 1)
+  PRIMA:      C1  x129     ogni ordine ha un prezzo dentro la scala Betfair e una size positi
+  PRIMA:      C2  x129     Mike non inventa prezzi: nessun ordine su una linea assente dal fe
+  PRIMA:      C3  x129     nessun ordine su un mercato che non e' APERTO (§3 Fase 1)
+  PRIMA:      D1  x65      le esposizioni vengono dai FILL, mai dalla size chiesta: la gamba 
+  PRIMA:      D2  x23      pre-match non si chiude mai in perdita: il green e' a quota MIGLIO
+  PRIMA:      D3  x15361   pre-partita: la banca di green appoggiata resta fino al fischio, n
+  PRIMA:      E1  x59837   con 3+ gol non si copre piu': la gestione passa al cash-out (§3 Fa
+  PRIMA:      L1  x129     nessun ordine di CHIUSURA sotto il minimo Betfair .it (punta 1,00,
+  PRIMA:      L3  x41      nessuna PUNTA da 1,00 in su che non sia un multiplo di 0,50: Betfa
+  PRIMA:      J2  x75      non si piazza una gamba di chiusura se ce n'e' gia' una IN VOLO co
+  PRIMA:      J3  x127556  ogni gamba nasce con un riferimento suo, e nessun riferimento si r
+  PRIMA:      R3  x5854    se la posizione l'ha chiusa l'UTENTE fuori dall'app, il bot non em
+  PRIMA:      S2  x452     nessun piazzamento di copertura mentre il mercato della copertura 
+  PRIMA:      K1  x141357  cio' che il bot CREDE di una gamba coincide con cio' che il MERCAT
+  PRIMA:      K2  x141357  una gamba il cui ordine Betfair ha RIFIUTATO non resta mai viva (d
+  PRIMA:      K3  x141357  il riferimento con cui il bot ha piazzato si RILEGGE con la stessa
+  PRIMA:      K4  x141357  ogni gamba di CHIUSURA dichiara la riga di apertura che chiude (di
+  PRIMA:      M1  x25985   con una linea DECISA dal punteggio e l'altra VIVA la partita non e
+  PRIMA:      RG1 x25      al regolamento il P&L della partita e l'esito di OGNI riga di mike
+  DOPO : SCENARI: base, taker, cap-stretto, bot-fermo, senza-seconda-puntata, feed-stantio, esiti-ignoti, taker-esiti-ignoti, riavvio, gol-precoce, cashout-globale, chiuso-fuori-app, ridotto-fuori-app, manuale-app-paper, annullato-dal-sito, copertura-rifiutata, copertura-rifiutata-legacy, copertura-legacy, cashout-dopo-copertura, rifiuti-betfair, chiusura-abbinata-in-parte, ko-green-parziale, fermo-copertura, lettura-dati-ko, firma-dopo-gol-decisivo, firma-dopo-gol-decisivo-senza-chiusura, uscite-in-perdita-firmate, uscite-automatiche, punteggio-ko
+  DOPO : WARNING:flumine.controls:Order has violated: MARKET_VALIDATION Error: Market is not open
+  DOPO : CRITICAL:mike:[mike] 35760084: Betfair ha RIFIUTATO la lay appoggiata ko_green-0-3 (EXPIRED): nessun ordine a mercato
+  DOPO : CRITICAL:mike:[mike] 35760084: gamba under_entry-0-1 con esito IGNOTO → riconciliazione (nessun rientro)
+  DOPO : CRITICAL:mike:[mike] 35760084: gamba under_entry-0-2 con esito IGNOTO → riconciliazione (nessun rientro)
+  DOPO : CRITICAL:mike:[mike] 35760084: gamba under_entry-0-3 con esito IGNOTO → riconciliazione (nessun rientro)
+  DOPO : CRITICAL:mike:[mike] 35760084: gamba under_entry-0-1 con esito IGNOTO → riconciliazione (nessun rientro)
+  DOPO : CRITICAL:mike:[mike] 35760084: gamba under_entry-0-2 con esito IGNOTO → riconciliazione (nessun rientro)
+  DOPO : CRITICAL:mike:[mike] 35760084: gamba under_entry-0-3 con esito IGNOTO → riconciliazione (nessun rientro)
+  DOPO : WARNING:flumine.controls:Order has violated: MARKET_VALIDATION Error: Market is not open
+  DOPO : CRITICAL:mike:[mike] 35760084: Betfair ha RIFIUTATO la lay appoggiata ko_green-0-6 (EXPIRED): nessun ordine a mercato
+  DOPO : CRITICAL:mike:[mike] 35760084: intervento DELL'UTENTE (fuori dall'app (stream ordini), chiusa) -> il bot non gestisce piu' questa partita
+  DOPO : CRITICAL:mike:[mike] 35760084: intervento DELL'UTENTE (fuori dall'app (stream ordini), ridotta) -> il bot non gestisce piu' questa partita
+  DOPO : CRITICAL:mike:[mike] 35760084: intervento DELL'UTENTE (dall'app (ordine manuale sul runner paper), chiusa) -> il bot non gestisce piu' questa partita
+  DOPO : CRITICAL:mike:[mike] 35760084: intervento DELL'UTENTE (fuori dall'app, annullata) -> il bot non gestisce piu' questa partita
+  DOPO : WARNING:safe.porta_ordini:[safe.porta] canale di comando ws://127.0.0.1:0/comando/mike non disponibile (socket del banco chiuso)
+  DOPO : CRITICAL:mike:[mike] 35760084: COPERTURA BLOCCATA dopo 1 rifiuti 'CANCELLED_NOT_PLACED' (over_cover-0-5)
+  DOPO : CRITICAL:mike:[mike] 35760084: COPERTURA BLOCCATA dopo 1 rifiuti 'CANCELLED_NOT_PLACED' (over_cover-0-5)
+  DOPO : CRITICAL:mike:[mike] 35760084: chiusura parziale: residuo scoperto su OU35/UNDER banca 0.05 @ 1.77; OU45/UNDER punta 0.42 @ 1.3 (chiusura manuale: l'ordine che chiude e' sotto il minimo Betfair .it) - stato LIVE_CLOSING, proposta all'utente
+  DOPO : CRITICAL:mike:[mike] 35760084: Betfair ha RIFIUTATO la lay appoggiata under_green-0-2 (EXPIRED): nessun ordine a mercato
+  DOPO : CRITICAL:mike:[mike] 35760084: Betfair ha RIFIUTATO la lay appoggiata ko_green-0-3 (EXPIRED): nessun ordine a mercato
+  DOPO : CRITICAL:mike:[mike] 35760084: aperture FERME (live_kill_switch_attivo, live): nessuna riproposizione finche' la causa non cambia
+  DOPO : WARNING:mike:[mike] 35760084: aperture RIPRESE (prima: live_kill_switch_attivo)
+  DOPO : CRITICAL:mike:[mike] lettura del feed FALLITA: si ritenta a ogni giro, nessuna partita viene data per sparita
+  DOPO : WARNING:mike:[mike] lettura del feed RIPRESA dopo 720 s
+  DOPO : CRITICAL:mike:[mike] 35760084: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.25 @ 3.95 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+  DOPO : CRITICAL:mike:[mike] 35760084: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.25 @ 3.95 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+  DOPO : CRITICAL:mike:[mike] 35760084: chiusura parziale: residuo scoperto su OU35/UNDER: nessun prezzo; OU45/UNDER punta 0.01 @ 2.58 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+  DOPO : CRITICAL:mike:[mike] 35760084: chiusura parziale: residuo scoperto su OU35/UNDER banca 0.04 @ 8.8; OU45/UNDER punta 0.06 @ 2.54 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+  DOPO : ESITO: 29 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+  DOPO :      A1  x147896  lo stato prodotto deve essere uno stato dichiarato (§3)
+  DOPO :      A3  x152     ogni decisione dichiara un motivo leggibile (§8)
+  DOPO :      B2  x1522    feed stantio: nessun ingresso, le chiusure restano permesse (§5)
+  DOPO :      B4  x33      ingresso pre-match solo con la quota BACK Under 3.5 nella banda de
+  DOPO :      B5  x33      i cicli pre-match non superano `pre_max_cycles` (§3 Fase 1)
+  DOPO :      C1  x133     ogni ordine ha un prezzo dentro la scala Betfair e una size positi
+  DOPO :      C2  x133     Mike non inventa prezzi: nessun ordine su una linea assente dal fe
+  DOPO :      C3  x133     nessun ordine su un mercato che non e' APERTO (§3 Fase 1)
+  DOPO :      D1  x66      le esposizioni vengono dai FILL, mai dalla size chiesta: la gamba 
+  DOPO :      D2  x24      pre-match non si chiude mai in perdita: il green e' a quota MIGLIO
+  DOPO :      D3  x16352   pre-partita: la banca di green appoggiata resta fino al fischio, n
+  DOPO :      E1  x67763   con 3+ gol non si copre piu': la gestione passa al cash-out (§3 Fa
+  DOPO :      L1  x133     nessun ordine di CHIUSURA sotto il minimo Betfair .it (punta 1,00,
+  DOPO :      L3  x44      nessuna PUNTA da 1,00 in su che non sia un multiplo di 0,50: Betfa
+  DOPO :      J2  x76      non si piazza una gamba di chiusura se ce n'e' gia' una IN VOLO co
+  DOPO :      J3  x145118  ogni gamba nasce con un riferimento suo, e nessun riferimento si r
+  DOPO :      R3  x23415   se la posizione l'ha chiusa l'UTENTE fuori dall'app, il bot non em
+  DOPO :      S2  x524     nessun piazzamento di copertura mentre il mercato della copertura 
+  DOPO :      K1  x160719  cio' che il bot CREDE di una gamba coincide con cio' che il MERCAT
+  DOPO :      K2  x160719  una gamba il cui ordine Betfair ha RIFIUTATO non resta mai viva (d
+  DOPO :      K3  x160719  il riferimento con cui il bot ha piazzato si RILEGGE con la stessa
+  DOPO :      K4  x160719  ogni gamba di CHIUSURA dichiara la riga di apertura che chiude (di
+  DOPO :      M1  x29420   con una linea DECISA dal punteggio e l'altra VIVA la partita non e
+  DOPO :      RG1 x28      al regolamento il P&L della partita e l'esito di OGNI riga di mike
+##### omega 35760084
+ESITI DOPO:
+   OK  35760084 [base]  tick=483985 decisioni=  438 azioni=   0 stati=running [COMPLETE]
+   OK  35760084 [giornata-reale]  tick=483985 decisioni=  438 azioni=   0 stati=running [COMPLETE]
+   OK  35760084 [apertura]  tick=482034 decisioni=  467 azioni=   2 stati=running [COMPLETE]
+   OK  35760084 [chiuso-fuori-app-canale]  tick=481805 decisioni=  467 azioni=   2 stati=running [COMPLETE]
+   OK  35760084 [ridotto-fuori-app-canale]  tick=482411 decisioni=  467 azioni=   2 stati=running [COMPLETE]
+   OK  35760084 [paper]  tick=482983 decisioni=  467 azioni=   2 stati=running [COMPLETE]
+   OK  35760084 [cap-stretto]  tick=483985 decisioni=  438 azioni=   0 stati=running [COMPLETE]
+   OK  35760084 [bot-fermo]  tick=483985 decisioni=  438 azioni=   0 stati=running [COMPLETE]
+   OK  35760084 [feed-stantio]  tick=483985 decisioni=  438 azioni=   0 stati=running [COMPLETE]
+   OK  35760084 [esiti-ignoti]  tick=483985 decisioni=  438 azioni=   0 stati=running [COMPLETE]
+   OK  35760084 [riavvio]  tick=483985 decisioni=  438 azioni=   0 stati=running [COMPLETE]
+   OK  35760084 [manuale-e-bot]  tick=482983 decisioni=  467 azioni=   1 stati=running [COMPLETE]
+   OK  35760084 [cashout-globale]  tick=483985 decisioni=  438 azioni=   0 stati=running [COMPLETE]
+   OK  35760084 [proposta-approvata]  tick=483985 decisioni=  438 azioni=   0 stati=running [COMPLETE]
+   OK  35760084 [uscite-automatiche]  tick=483985 decisioni=  438 azioni=   0 stati=running [COMPLETE]
+   OK  35760084 [v4]  tick=483985 decisioni=  438 azioni=   0 stati=running [COMPLETE]
+   OK  35760084 [v4-riavvio]  tick=483985 decisioni=  438 azioni=   0 stati=running [COMPLETE]
+   OK  35760084 [v4-bot-fermo]  tick=483985 decisioni=  438 azioni=   0 stati=running [COMPLETE]
+   OK  35760084 [v3]  tick=483985 decisioni=  438 azioni=   0 stati=running [COMPLETE]
+   OK  35760084 [rifiuti-betfair]  tick=483985 decisioni=  438 azioni=   0 stati=running [COMPLETE]
+   OK  35760084 [chiuso-fuori-app]  tick=483985 decisioni=  438 azioni=   0 stati=running [COMPLETE]
+   OK  35760084 [chiusura-abbinata-in-parte]  tick=483985 decisioni=  438 azioni=   0 stati=running [COMPLETE]
+SCENARI NUOVI: ['chiuso-fuori-app-canale', 'ridotto-fuori-app-canale']
+SCENARI SPARITI: []
+=== DIFF coda/intestazione
+  PRIMA: SCENARI: base, giornata-reale, apertura, paper, cap-stretto, bot-fermo, feed-stantio, esiti-ignoti, riavvio, manuale-e-bot, cashout-globale, proposta-approvata, uscite-automatiche, v4, v4-riavvio, v4-bot-fermo, v3, rifiuti-betfair, chiuso-fuori-app, chiusura-abbinata-in-parte
+  PRIMA: ESITO: 20 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+  PRIMA:      A1  x322     una gamba che non parte lascia SEMPRE scritto il perche' (§14.2: d
+  PRIMA:      A2  x2       mai il punteggio CORRENTE ne' un risultato piu' vicino di `model_m
+  PRIMA:      A3  x2       P del modello entro `model_p_max_pct` e SOTTO la probabilita' impl
+  PRIMA:      A4  x2       quota nella banda [price_min, price_max] e liquidita' almeno pari 
+  PRIMA:      A5  x2344    la catena lambda dichiara la sua FONTE (§14.2: fixture -> evento -
+  PRIMA:      A7  x2       solo scoreline numeriche: gli aggregati restano fuori se `include_
+  PRIMA:      B1  x2       target di GAMBA = (G - R) / gambe ancora piazzabili (§14.2)
+  PRIMA:      B2  x8847    la barra della giornata e' coerente: target partita = 2 x target g
+  PRIMA:      B4  x2106    feed STANTIO (riga oltre `DECISION_MAX_AGE_S`): nessuna apertura i
+  PRIMA:      B3  x6       obiettivo raggiunto (R >= G con `stop_on_goal`): nessuna NUOVA ape
+  PRIMA:      E1  x216     MAI due lay vive o in volo sullo stesso mercato e selezione: se si
+  PRIMA:   ?? E5  x0       una chiusura fatta dall'UTENTE FUORI DALL'APP (un ordine suo su Be
+  PRIMA:      J3  x1       il riferimento del piazzamento e' quello PER GAMBA (`omega-t<id>`,
+  PRIMA:      J5  x8847    grafia snake_case ovunque: mai una chiave camelCase nelle righe de
+  PRIMA:      F1  x9       settlement: la commissione si applica UNA volta sola, sul netto vi
+  PRIMA:      K1  x688     cio' che il bot CREDE di una gamba coincide con cio' che il MERCAT
+  PRIMA:      K2  x688     una gamba il cui ordine Betfair ha RIFIUTATO non resta mai viva (d
+  PRIMA:      K3  x688     il riferimento con cui il bot ha piazzato si RILEGGE con la stessa
+  PRIMA:      K4  x688     ogni gamba di CHIUSURA dichiara la riga di apertura che chiude (di
+  PRIMA:      K5  x688     una riga APERTA che dichiara un `bet_id` ha sempre quel l'ordine a
+  PRIMA:      K6  x688     il RESIDUO non abbinato e' dichiarato: una riga aperta con meno de
+  PRIMA:      K7  x688     il RESIDUO, il CHIESTO e l'ISTANTE di Betfair non restano NULL sul
+  PRIMA: ?? MAI SOLLECITATI: 38 controlli su 52. Su questi il referto NON dice «sano», dice «non lo so»:
+  PRIMA:      E5: una chiusura fatta dall'UTENTE FUORI DALL'APP (un ordine suo su Betfair) il bot la VEDE, e da li' in poi non gestisce piu' una posizione che non esiste (ordine dell'utente 16/09 sera)
+  DOPO : SCENARI: base, giornata-reale, apertura, chiuso-fuori-app-canale, ridotto-fuori-app-canale, paper, cap-stretto, bot-fermo, feed-stantio, esiti-ignoti, riavvio, manuale-e-bot, cashout-globale, proposta-approvata, uscite-automatiche, v4, v4-riavvio, v4-bot-fermo, v3, rifiuti-betfair, chiuso-fuori-app, chiusura-abbinata-in-parte
+  DOPO : CRITICAL:omega.service:[omega] il lettore degli aggregati non separa le modalita': paper e live SOMMATI nelle decisioni (catalogo 7.21)
+  DOPO : CRITICAL:omega.service:[omega] evento 35760084: posizione ridotta DALL'UTENTE fuori dall'app -> il bot non gestisce piu' questa partita
+  DOPO : CRITICAL:omega.service:[omega] evento 35760084: posizione ridotta DALL'UTENTE fuori dall'app -> il bot non gestisce piu' questa partita
+  DOPO : WARNING:safe.porta_ordini:[safe.porta] canale di comando ws://127.0.0.1:0/comando/omega non disponibile (socket del banco chiuso)
+  DOPO : ESITO: 22 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+  DOPO :      A1  x450     una gamba che non parte lascia SEMPRE scritto il perche' (§14.2: d
+  DOPO :      A2  x4       mai il punteggio CORRENTE ne' un risultato piu' vicino di `model_m
+  DOPO :      A3  x4       P del modello entro `model_p_max_pct` e SOTTO la probabilita' impl
+  DOPO :      A4  x4       quota nella banda [price_min, price_max] e liquidita' almeno pari 
+  DOPO :      A5  x2346    la catena lambda dichiara la sua FONTE (§14.2: fixture -> evento -
+  DOPO :      A7  x4       solo scoreline numeriche: gli aggregati restano fuori se `include_
+  DOPO :      B1  x4       target di GAMBA = (G - R) / gambe ancora piazzabili (§14.2)
+  DOPO :      B2  x9781    la barra della giornata e' coerente: target partita = 2 x target g
+  DOPO :      B4  x2282    feed STANTIO (riga oltre `DECISION_MAX_AGE_S`): nessuna apertura i
+  DOPO :      B3  x12      obiettivo raggiunto (R >= G con `stop_on_goal`): nessuna NUOVA ape
+  DOPO :      E1  x432     MAI due lay vive o in volo sullo stesso mercato e selezione: se si
+  DOPO :      E5  x218     una chiusura fatta dall'UTENTE FUORI DALL'APP (un ordine suo su Be
+  DOPO :      J3  x3       il riferimento del piazzamento e' quello PER GAMBA (`omega-t<id>`,
+  DOPO :      J5  x9781    grafia snake_case ovunque: mai una chiave camelCase nelle righe de
+  DOPO :      F1  x15      settlement: la commissione si applica UNA volta sola, sul netto vi
+  DOPO :      K1  x910     cio' che il bot CREDE di una gamba coincide con cio' che il MERCAT
+  DOPO :      K2  x910     una gamba il cui ordine Betfair ha RIFIUTATO non resta mai viva (d
+  DOPO :      K3  x910     il riferimento con cui il bot ha piazzato si RILEGGE con la stessa
+  DOPO :      K4  x910     ogni gamba di CHIUSURA dichiara la riga di apertura che chiude (di
+  DOPO :      K5  x910     una riga APERTA che dichiara un `bet_id` ha sempre quel l'ordine a
+  DOPO :      K6  x910     il RESIDUO non abbinato e' dichiarato: una riga aperta con meno de
+  DOPO :      K7  x910     il RESIDUO, il CHIESTO e l'ISTANTE di Betfair non restano NULL sul
+  DOPO : ?? MAI SOLLECITATI: 37 controlli su 52. Su questi il referto NON dice «sano», dice «non lo so»:
+##### mike 35797769
+ESITI DOPO:
+   OK  35797769 [base]  tick=153269 decisioni=10659 azioni=  10 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PENDING,LIVE_CO
+   OK  35797769 [taker]  tick=161725 decisioni=11437 azioni=   2 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,PRE_GREEN_PENDING,IDLE_LIVE,SETTLING,SETTLED [COMPLETE
+   OK  35797769 [cap-stretto]  tick=154573 decisioni=10733 azioni=   9 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PENDING,
+   OK  35797769 [bot-fermo]  tick=162229 decisioni= 5085 azioni=   0 stati=WATCH,IDLE_LIVE,SETTLED [COMPLETE]
+   OK  35797769 [senza-seconda-puntata]  tick=153269 decisioni=10659 azioni=  10 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVE
+   OK  35797769 [feed-stantio]  tick=162229 decisioni= 5085 azioni=   0 stati=WATCH,IDLE_LIVE,SETTLED [COMPLETE]
+   OK  35797769 [esiti-ignoti]  tick=153394 decisioni=10675 azioni=  13 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PENDING
+   OK  35797769 [taker-esiti-ignoti]  tick=161729 decisioni=11438 azioni=   5 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,PRE_GREEN_PENDING,IDLE_LIVE,SETTLING,SETT
+   OK  35797769 [riavvio]  tick=153269 decisioni=10659 azioni=  10 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PENDING,LIVE
+   NE  35797769 [gol-precoce]  tick=153269 decisioni=10659 azioni=  10 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PENDING,
+   OK  35797769 [cashout-globale]  tick=162217 decisioni=11505 azioni=   2 stati=WATCH,PRE_ENTRY_PENDING,PRE_GREEN_PENDING,IDLE_LIVE,SETTLING,SETTLED [COMPLETE]
+   OK  35797769 [chiuso-fuori-app]  tick=162201 decisioni=11500 azioni=   1 stati=WATCH,PRE_ENTRY_PENDING,SETTLING,SETTLED [COMPLETE]
+   OK  35797769 [ridotto-fuori-app]  tick=162206 decisioni=11501 azioni=   1 stati=WATCH,PRE_ENTRY_PENDING,SETTLING,SETTLED [COMPLETE]
+   OK  35797769 [manuale-app-paper] <canale>  tick=162211 decisioni=11501 azioni=   1 stati=WATCH,PRE_ENTRY_PENDING,SETTLING,SETTLED [COMPLETE]
+   OK  35797769 [annullato-dal-sito]  tick=162199 decisioni=11499 azioni=   2 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,SETTLING,SETTLED [COMPLETE]
+   OK  35797769 [copertura-rifiutata]  tick=154912 decisioni=10750 azioni=   9 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_
+   OK  35797769 [copertura-rifiutata-legacy]  tick=155395 decisioni=10790 azioni=   8 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE
+   OK  35797769 [copertura-legacy]  tick=155639 decisioni=10812 azioni=   9 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PEN
+   NE  35797769 [cashout-dopo-copertura]  tick=153179 decisioni=10650 azioni=   9 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COV
+   OK  35797769 [rifiuti-betfair]  tick=158523 decisioni=11235 azioni=   7 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PEND
+   OK  35797769 [chiusura-abbinata-in-parte]  tick=153117 decisioni=10639 azioni=   9 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE
+   OK  35797769 [ko-green-parziale]  tick=153204 decisioni=10649 azioni=  12 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PE
+   OK  35797769 [fermo-copertura]  tick=153446 decisioni=10666 azioni=  10 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PEND
+   OK  35797769 [lettura-dati-ko]  tick=155622 decisioni=10804 azioni=   5 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,IDLE_LIVE,SETTLING,SETTLED [COMPLETE]
+   NE  35797769 [firma-dopo-gol-decisivo]  tick=153269 decisioni=10659 azioni=  10 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_CO
+   NE  35797769 [firma-dopo-gol-decisivo-senza-chiusura]  tick=153269 decisioni=10659 azioni=  10 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UN
+   NE  35797769 [uscite-in-perdita-firmate]  tick=153269 decisioni=10659 azioni=  10 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_
+   NE  35797769 [uscite-automatiche]  tick=153269 decisioni=10659 azioni=  10 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_P
+   OK  35797769 [punteggio-ko]  tick=153299 decisioni=10660 azioni=  10 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PENDING
+SCENARI NUOVI: ['ridotto-fuori-app', 'manuale-app-paper', 'annullato-dal-sito']
+SCENARI SPARITI: []
+=== DIFF [base]
+  PRIMA:       nota: attivita' del servizio: posizione_di_conto x284, state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+  DOPO :       nota: attivita' del servizio: state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+=== DIFF [cap-stretto]
+  PRIMA:       nota: attivita' del servizio: posizione_di_conto x125, state x11, place x5, place_resting x3, rilettura_alla_riapertura x2, feed_line_missing x2, skip x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+  DOPO :       nota: attivita' del servizio: state x11, place x5, place_resting x3, rilettura_alla_riapertura x2, feed_line_missing x2, skip x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+=== DIFF [senza-seconda-puntata]
+  PRIMA:       nota: attivita' del servizio: posizione_di_conto x284, state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+  DOPO :       nota: attivita' del servizio: state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+=== DIFF [esiti-ignoti]
+  PRIMA:       nota: attivita' del servizio: posizione_di_conto x284, state x17, reconcile_pending x6, place x5, place_exception x3, reconcile_fix x3, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1
+  DOPO :       nota: attivita' del servizio: state x17, reconcile_pending x6, place x5, place_exception x3, reconcile_fix x3, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1
+=== DIFF [riavvio]
+  PRIMA:       nota: attivita' del servizio: posizione_di_conto x284, state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, replay_riavvio x1, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+  DOPO :       nota: attivita' del servizio: state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, replay_riavvio x1, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+=== DIFF [gol-precoce]
+  PRIMA:       nota: attivita' del servizio: posizione_di_conto x284, state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+  DOPO :       nota: attivita' del servizio: state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+=== DIFF [chiuso-fuori-app]
+  PRIMA:       nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: proprietari_bet: tabelle degli altri bot (omega_trades, safe_strategy_trades, betfair_live_orders): non sono nel replay, il proprietario di un ordine non di Mike si decide dal riferimento d'ordine
+  DOPO :       nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: proprietari_bot_conto: tabelle degli altri bot e coda del runner (proprietari degli ordini altrui sul conto): non sono nel replay, un ordine non del bot si decide dai riferimenti (nessun altro bot) | proprietari_bet: tabelle degli altri bot (omega_trades, safe_strategy_trades, betfair_live_orders): non sono nel replay, il proprietario di un ordine non di Mike si decide dal riferimento d'ordine
+=== DIFF [copertura-rifiutata]
+  PRIMA:       nota: attivita' del servizio: cover x1302, posizione_di_conto x134, state x12, place x3, place_resting x3, skip x3, place_rifiutato x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, error x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+  DOPO :       nota: attivita' del servizio: cover x1302, state x12, place x3, place_resting x3, skip x3, place_rifiutato x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, error x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+=== DIFF [copertura-legacy]
+  PRIMA:       nota: attivita' del servizio: posizione_di_conto x129, state x12, place x5, place_resting x3, rilettura_alla_riapertura x2, flusso_interrotto x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, feed_line_missing x1, skip x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, residuo_non_piazzabile x1, settled x1
+  DOPO :       nota: attivita' del servizio: state x12, place x5, place_resting x3, rilettura_alla_riapertura x2, flusso_interrotto x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, feed_line_missing x1, skip x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, residuo_non_piazzabile x1, settled x1
+=== DIFF [cashout-dopo-copertura]
+  PRIMA:       nota: attivita' del servizio: posizione_di_conto x319, state x11, place x5, place_resting x3, feed_line_missing x3, rilettura_alla_riapertura x2, skip x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, replay_cashout_utente x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+  DOPO :       nota: attivita' del servizio: state x11, place x5, place_resting x3, feed_line_missing x3, rilettura_alla_riapertura x2, skip x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, replay_cashout_utente x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+=== DIFF [ko-green-parziale]
+  PRIMA:       nota: attivita' del servizio: posizione_di_conto x286, state x11, place x6, skip x4, place_resting x3, uscita_proposta x3, chiusura_parziale x3, rilettura_alla_riapertura x2, feed_line_missing x2, place_rifiutato x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, uscita_proposta_decaduta x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, settled x1
+  DOPO :       nota: attivita' del servizio: state x11, place x6, skip x4, place_resting x3, uscita_proposta x3, chiusura_parziale x3, rilettura_alla_riapertura x2, feed_line_missing x2, place_rifiutato x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, uscita_proposta_decaduta x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, settled x1
+=== DIFF [fermo-copertura]
+  PRIMA:       nota: attivita' del servizio: posizione_di_conto x282, cover x82, state x14, place x5, skip x4, place_resting x3, rilettura_alla_riapertura x2, feed_line_missing x2, replay_fermo_copertura x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+  DOPO :       nota: attivita' del servizio: cover x82, state x14, place x5, skip x4, place_resting x3, rilettura_alla_riapertura x2, feed_line_missing x2, replay_fermo_copertura x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+=== DIFF [lettura-dati-ko]
+  PRIMA:       nota: attivita' del servizio: posizione_di_conto x95, state x7, place_resting x3, rilettura_alla_riapertura x3, place x2, pre_cycle x2, replay_lettura_ko x2, flusso_interrotto x2, ordine_scaduto_alla_sospensione x1, error x1, skip x1, settled x1
+  DOPO :       nota: attivita' del servizio: state x7, place_resting x3, rilettura_alla_riapertura x3, place x2, pre_cycle x2, replay_lettura_ko x2, flusso_interrotto x2, ordine_scaduto_alla_sospensione x1, error x1, skip x1, settled x1
+=== DIFF [firma-dopo-gol-decisivo]
+  PRIMA:       nota: attivita' del servizio: posizione_di_conto x284, state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+  DOPO :       nota: attivita' del servizio: state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+=== DIFF [firma-dopo-gol-decisivo-senza-chiusura]
+  PRIMA:       nota: attivita' del servizio: posizione_di_conto x284, state x11, place x5, place_resting x3, feed_line_missing x3, skip x3, rilettura_alla_riapertura x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1
+  DOPO :       nota: attivita' del servizio: state x11, place x5, place_resting x3, feed_line_missing x3, skip x3, rilettura_alla_riapertura x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1
+=== DIFF [uscite-in-perdita-firmate]
+  PRIMA:       nota: attivita' del servizio: posizione_di_conto x284, state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, replay_firma_utente x1, settled x1
+  DOPO :       nota: attivita' del servizio: state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, replay_firma_utente x1, settled x1
+=== DIFF [uscite-automatiche]
+  PRIMA:       nota: attivita' del servizio: posizione_di_conto x284, state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+  DOPO :       nota: attivita' del servizio: state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+=== DIFF [punteggio-ko]
+  PRIMA:       nota: attivita' del servizio: posizione_di_conto x284, state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+  DOPO :       nota: attivita' del servizio: state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+=== DIFF coda/intestazione
+  PRIMA: SCENARI: base, taker, cap-stretto, bot-fermo, senza-seconda-puntata, feed-stantio, esiti-ignoti, taker-esiti-ignoti, riavvio, gol-precoce, cashout-globale, chiuso-fuori-app, copertura-rifiutata, copertura-rifiutata-legacy, copertura-legacy, cashout-dopo-copertura, rifiuti-betfair, chiusura-abbinata-in-parte, ko-green-parziale, fermo-copertura, lettura-dati-ko, firma-dopo-gol-decisivo, firma-dopo-gol-decisivo-senza-chiusura, uscite-in-perdita-firmate, uscite-automatiche, punteggio-ko
+  PRIMA: ESITO: 26 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+  PRIMA:      A1  x270385  lo stato prodotto deve essere uno stato dichiarato (§3)
+  PRIMA:      A3  x182     ogni decisione dichiara un motivo leggibile (§8)
+  PRIMA:      B2  x5919    feed stantio: nessun ingresso, le chiusure restano permesse (§5)
+  PRIMA:      B4  x48      ingresso pre-match solo con la quota BACK Under 3.5 nella banda de
+  PRIMA:      B5  x48      i cicli pre-match non superano `pre_max_cycles` (§3 Fase 1)
+  PRIMA:      C1  x164     ogni ordine ha un prezzo dentro la scala Betfair e una size positi
+  PRIMA:      C2  x164     Mike non inventa prezzi: nessun ordine su una linea assente dal fe
+  PRIMA:      C3  x164     nessun ordine su un mercato che non e' APERTO (§3 Fase 1)
+  PRIMA:      D1  x60      le esposizioni vengono dai FILL, mai dalla size chiesta: la gamba 
+  PRIMA:      D2  x41      pre-match non si chiude mai in perdita: il green e' a quota MIGLIO
+  PRIMA:      D3  x46962   pre-partita: la banca di green appoggiata resta fino al fischio, n
+  PRIMA:      E1  x12347   con 3+ gol non si copre piu': la gestione passa al cash-out (§3 Fa
+  PRIMA:      L1  x164     nessun ordine di CHIUSURA sotto il minimo Betfair .it (punta 1,00,
+  PRIMA:      L3  x68      nessuna PUNTA da 1,00 in su che non sia un multiplo di 0,50: Betfa
+  PRIMA:      J2  x95      non si piazza una gamba di chiusura se ce n'e' gia' una IN VOLO co
+  PRIMA:      J3  x202881  ogni gamba nasce con un riferimento suo, e nessun riferimento si r
+  PRIMA:      R3  x9111    se la posizione l'ha chiusa l'UTENTE fuori dall'app, il bot non em
+  PRIMA:      S2  x594     nessun piazzamento di copertura mentre il mercato della copertura 
+  PRIMA:      K1  x206002  cio' che il bot CREDE di una gamba coincide con cio' che il MERCAT
+  PRIMA:      K2  x206002  una gamba il cui ordine Betfair ha RIFIUTATO non resta mai viva (d
+  PRIMA:      K3  x206002  il riferimento con cui il bot ha piazzato si RILEGGE con la stessa
+  PRIMA:      K4  x206002  ogni gamba di CHIUSURA dichiara la riga di apertura che chiude (di
+  PRIMA:      RG1 x25      al regolamento il P&L della partita e l'esito di OGNI riga di mike
+  DOPO : SCENARI: base, taker, cap-stretto, bot-fermo, senza-seconda-puntata, feed-stantio, esiti-ignoti, taker-esiti-ignoti, riavvio, gol-precoce, cashout-globale, chiuso-fuori-app, ridotto-fuori-app, manuale-app-paper, annullato-dal-sito, copertura-rifiutata, copertura-rifiutata-legacy, copertura-legacy, cashout-dopo-copertura, rifiuti-betfair, chiusura-abbinata-in-parte, ko-green-parziale, fermo-copertura, lettura-dati-ko, firma-dopo-gol-decisivo, firma-dopo-gol-decisivo-senza-chiusura, uscite-in-perdita-firmate, uscite-automatiche, punteggio-ko
+  DOPO : CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.38 @ 1.01 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+  DOPO : CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.42 @ 1.09 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+  DOPO : CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.38 @ 1.01 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+  DOPO : CRITICAL:mike:[mike] 35797769: gamba under_entry-0-1 con esito IGNOTO → riconciliazione (nessun rientro)
+  DOPO : CRITICAL:mike:[mike] 35797769: gamba under_entry-0-2 con esito IGNOTO → riconciliazione (nessun rientro)
+  DOPO : CRITICAL:mike:[mike] 35797769: gamba under_entry-0-3 con esito IGNOTO → riconciliazione (nessun rientro)
+  DOPO : CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.38 @ 1.01 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+  DOPO : CRITICAL:mike:[mike] 35797769: gamba under_entry-0-1 con esito IGNOTO → riconciliazione (nessun rientro)
+  DOPO : CRITICAL:mike:[mike] 35797769: gamba under_entry-0-2 con esito IGNOTO → riconciliazione (nessun rientro)
+  DOPO : CRITICAL:mike:[mike] 35797769: gamba under_entry-0-3 con esito IGNOTO → riconciliazione (nessun rientro)
+  DOPO : CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.38 @ 1.01 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+  DOPO : CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.38 @ 1.01 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+  DOPO : CRITICAL:mike:[mike] 35797769: intervento DELL'UTENTE (fuori dall'app (stream ordini), chiusa) -> il bot non gestisce piu' questa partita
+  DOPO : WARNING:mike:[mike] 35797769: P&L interno +4.37 contro Betfair +4.60: vince Betfair
+  DOPO : CRITICAL:mike:[mike] 35797769: intervento DELL'UTENTE (fuori dall'app (stream ordini), ridotta) -> il bot non gestisce piu' questa partita
+  DOPO : WARNING:mike:[mike] 35797769: P&L interno +4.37 contro Betfair +4.49: vince Betfair
+  DOPO : CRITICAL:mike:[mike] 35797769: intervento DELL'UTENTE (dall'app (ordine manuale sul runner paper), chiusa) -> il bot non gestisce piu' questa partita
+  DOPO : WARNING:safe.porta_ordini:[safe.porta] canale di comando ws://127.0.0.1:0/comando/mike non disponibile (socket del banco chiuso)
+  DOPO : CRITICAL:mike:[mike] 35797769: intervento DELL'UTENTE (fuori dall'app, annullata) -> il bot non gestisce piu' questa partita
+  DOPO : CRITICAL:mike:[mike] 35797769: COPERTURA BLOCCATA dopo 1 rifiuti 'CANCELLED_NOT_PLACED' (over_cover-1-6)
+  DOPO : CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU35/UNDER banca 0.09 @ 1.26 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+  DOPO : CRITICAL:mike:[mike] 35797769: COPERTURA BLOCCATA dopo 1 rifiuti 'CANCELLED_NOT_PLACED' (over_cover-1-6)
+  DOPO : CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU35/UNDER banca 0.02 @ 1.8 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+  DOPO : CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU35/UNDER banca 0.13 @ 1.49; OU45/UNDER punta 0.24 @ 1.18 (chiusura manuale: l'ordine che chiude e' sotto il minimo Betfair .it) - stato LIVE_CLOSING, proposta all'utente
+  DOPO : CRITICAL:mike:[mike] 35797769: Betfair ha RIFIUTATO la lay appoggiata under_green-0-2 (EXPIRED): nessun ordine a mercato
+  DOPO : CRITICAL:mike:[mike] 35797769: Betfair ha RIFIUTATO la lay appoggiata ko_green-0-3 (EXPIRED): nessun ordine a mercato
+  DOPO : CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.36 @ 1.01 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+  DOPO : CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/OVER: nessun prezzo (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+  DOPO : CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/OVER banca 0.12 @ 75.0 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+  DOPO : CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.27 @ 1.02 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+  DOPO : CRITICAL:mike:[mike] 35797769: aperture FERME (live_kill_switch_attivo, live): nessuna riproposizione finche' la causa non cambia
+  DOPO : WARNING:mike:[mike] 35797769: aperture RIPRESE (prima: live_kill_switch_attivo)
+  DOPO : CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.26 @ 1.01 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+  DOPO : CRITICAL:mike:[mike] lettura del feed FALLITA: si ritenta a ogni giro, nessuna partita viene data per sparita
+  DOPO : WARNING:mike:[mike] lettura del feed RIPRESA dopo 713 s
+  DOPO : CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.38 @ 1.01 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+  DOPO : CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.38 @ 1.01 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+  DOPO : CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.38 @ 1.01 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+  DOPO : CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.38 @ 1.01 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+  DOPO : CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.38 @ 1.01 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+  DOPO : ESITO: 29 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+  DOPO :      A1  x304886  lo stato prodotto deve essere uno stato dichiarato (§3)
+  DOPO :      A3  x186     ogni decisione dichiara un motivo leggibile (§8)
+  DOPO :      B2  x5970    feed stantio: nessun ingresso, le chiusure restano permesse (§5)
+  DOPO :      B4  x51      ingresso pre-match solo con la quota BACK Under 3.5 nella banda de
+  DOPO :      B5  x51      i cicli pre-match non superano `pre_max_cycles` (§3 Fase 1)
+  DOPO :      C1  x168     ogni ordine ha un prezzo dentro la scala Betfair e una size positi
+  DOPO :      C2  x168     Mike non inventa prezzi: nessun ordine su una linea assente dal fe
+  DOPO :      C3  x168     nessun ordine su un mercato che non e' APERTO (§3 Fase 1)
+  DOPO :      D1  x61      le esposizioni vengono dai FILL, mai dalla size chiesta: la gamba 
+  DOPO :      D2  x42      pre-match non si chiude mai in perdita: il green e' a quota MIGLIO
+  DOPO :      D3  x49652   pre-partita: la banca di green appoggiata resta fino al fischio, n
+  DOPO :      E1  x13907   con 3+ gol non si copre piu': la gestione passa al cash-out (§3 Fa
+  DOPO :      L1  x168     nessun ordine di CHIUSURA sotto il minimo Betfair .it (punta 1,00,
+  DOPO :      L3  x71      nessuna PUNTA da 1,00 in su che non sia un multiplo di 0,50: Betfa
+  DOPO :      J2  x96      non si piazza una gamba di chiusura se ce n'e' gia' una IN VOLO co
+  DOPO :      J3  x230215  ogni gamba nasce con un riferimento suo, e nessun riferimento si r
+  DOPO :      R3  x36444   se la posizione l'ha chiusa l'UTENTE fuori dall'app, il bot non em
+  DOPO :      S2  x672     nessun piazzamento di copertura mentre il mercato della copertura 
+  DOPO :      K1  x233747  cio' che il bot CREDE di una gamba coincide con cio' che il MERCAT
+  DOPO :      K2  x233747  una gamba il cui ordine Betfair ha RIFIUTATO non resta mai viva (d
+  DOPO :      K3  x233747  il riferimento con cui il bot ha piazzato si RILEGGE con la stessa
+  DOPO :      K4  x233747  ogni gamba di CHIUSURA dichiara la riga di apertura che chiude (di
+  DOPO :      RG1 x28      al regolamento il P&L della partita e l'esito di OGNI riga di mike
+##### omega 35797769
+ESITI DOPO:
+   OK  35797769 [base]  tick=1470869 decisioni=  686 azioni=   0 stati=running [COMPLETE]
+   OK  35797769 [giornata-reale]  tick=1470869 decisioni=  686 azioni=   0 stati=running [COMPLETE]
+   OK  35797769 [apertura]  tick=1470869 decisioni=  686 azioni=   0 stati=running [COMPLETE]
+   NE  35797769 [chiuso-fuori-app-canale]  tick=1470869 decisioni=  686 azioni=   0 stati=running [COMPLETE]
+   NE  35797769 [ridotto-fuori-app-canale]  tick=1470869 decisioni=  686 azioni=   0 stati=running [COMPLETE]
+   OK  35797769 [paper]  tick=1470869 decisioni=  686 azioni=   0 stati=running [COMPLETE]
+   OK  35797769 [cap-stretto]  tick=1462561 decisioni=  736 azioni=   4 stati=running [COMPLETE]
+   OK  35797769 [bot-fermo]  tick=1463747 decisioni=  736 azioni=   2 stati=running,stopped [COMPLETE]
+   OK  35797769 [feed-stantio]  tick=1470869 decisioni=  686 azioni=   0 stati=running [COMPLETE]
+   OK  35797769 [esiti-ignoti]  tick=1469885 decisioni=  690 azioni=   2 stati=running [COMPLETE]
+   OK  35797769 [riavvio]  tick=1462561 decisioni=  736 azioni=   4 stati=running [COMPLETE]
+   OK  35797769 [manuale-e-bot]  tick=1468612 decisioni=  736 azioni=   1 stati=running [COMPLETE]
+   OK  35797769 [cashout-globale]  tick=1466389 decisioni=  736 azioni=   2 stati=running [COMPLETE]
+   OK  35797769 [proposta-approvata]  tick=1462561 decisioni=  736 azioni=   4 stati=running [COMPLETE]
+   OK  35797769 [uscite-automatiche]  tick=1462561 decisioni=  736 azioni=   4 stati=running [COMPLETE]
+   OK  35797769 [v4]  tick=1462561 decisioni=  736 azioni=   4 stati=running [COMPLETE]
+   OK  35797769 [v4-riavvio]  tick=1462561 decisioni=  736 azioni=   4 stati=running [COMPLETE]
+   OK  35797769 [v4-bot-fermo]  tick=1463747 decisioni=  736 azioni=   2 stati=running,stopped [COMPLETE]
+   OK  35797769 [v3]  tick=1470869 decisioni=  686 azioni=   0 stati=running [COMPLETE]
+   OK  35797769 [rifiuti-betfair]  tick=1464070 decisioni=  736 azioni=   4 stati=running [COMPLETE]
+   OK  35797769 [chiuso-fuori-app]  tick=1466389 decisioni=  736 azioni=   2 stati=running [COMPLETE]
+   OK  35797769 [chiusura-abbinata-in-parte]  tick=1461640 decisioni=  736 azioni=   4 stati=running [COMPLETE]
+SCENARI NUOVI: ['chiuso-fuori-app-canale', 'ridotto-fuori-app-canale']
+SCENARI SPARITI: []
+=== DIFF [chiuso-fuori-app]
+  PRIMA:       nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+  DOPO :       nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella | proprietari_bot_conto: tabelle degli altri bot e coda del runner (proprietari degli ordini altrui sul conto): non sono nel replay, un ordine non del bot si decide dai riferimenti (nessun altro bot)
+=== DIFF coda/intestazione
+  PRIMA: SCENARI: base, giornata-reale, apertura, paper, cap-stretto, bot-fermo, feed-stantio, esiti-ignoti, riavvio, manuale-e-bot, cashout-globale, proposta-approvata, uscite-automatiche, v4, v4-riavvio, v4-bot-fermo, v3, rifiuti-betfair, chiuso-fuori-app, chiusura-abbinata-in-parte
+  PRIMA: ESITO: 20 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+  PRIMA:      A1  x540     una gamba che non parte lascia SEMPRE scritto il perche' (§14.2: d
+  PRIMA:      B2  x13650   la barra della giornata e' coerente: target partita = 2 x target g
+  PRIMA:      B4  x6494    feed STANTIO (riga oltre `DECISION_MAX_AGE_S`): nessuna apertura i
+  PRIMA:      J5  x14374   grafia snake_case ovunque: mai una chiave camelCase nelle righe de
+  DOPO : SCENARI: base, giornata-reale, apertura, chiuso-fuori-app-canale, ridotto-fuori-app-canale, paper, cap-stretto, bot-fermo, feed-stantio, esiti-ignoti, riavvio, manuale-e-bot, cashout-globale, proposta-approvata, uscite-automatiche, v4, v4-riavvio, v4-bot-fermo, v3, rifiuti-betfair, chiuso-fuori-app, chiusura-abbinata-in-parte
+  DOPO : CRITICAL:omega.service:[omega] il lettore degli aggregati non separa le modalita': paper e live SOMMATI nelle decisioni (catalogo 7.21)
+  DOPO : WARNING:safe.porta_ordini:[safe.porta] canale di comando ws://127.0.0.1:0/comando/omega non disponibile (socket del banco chiuso)
+  DOPO : CRITICAL:omega.service:[omega] place LIVE a esito IGNOTO (trade 1, evento 35797769): in riconciliazione
+  DOPO : CRITICAL:omega.service:[omega] place LIVE a esito IGNOTO (trade 2, evento 35797769): in riconciliazione
+  DOPO : WARNING:safe.execution:[safe.exec] punta 1.11 -> 1.00 (multiplo di 0,50 per difetto): residuo 0.11 dichiarato (trade 2)
+  DOPO : CRITICAL:omega.service:[omega] evento 35797769: posizione chiusa DALL'UTENTE fuori dall'app -> il bot non gestisce piu' questa partita
+  DOPO : WARNING:safe.execution:[safe.exec] punta 1.11 -> 1.00 (multiplo di 0,50 per difetto): residuo 0.11 dichiarato (trade 2)
+  DOPO : ESITO: 22 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+  DOPO : NE: 2 scenari senza violazioni ma NON ESERCITATI (contatore-chiave a zero): 35797769 [chiuso-fuori-app-canale], 35797769 [ridotto-fuori-app-canale]
+  DOPO :      A1  x810     una gamba che non parte lascia SEMPRE scritto il perche' (§14.2: d
+  DOPO :      B2  x15022   la barra della giornata e' coerente: target partita = 2 x target g
+  DOPO :      B4  x7106    feed STANTIO (riga oltre `DECISION_MAX_AGE_S`): nessuna apertura i
+  DOPO :      J5  x15746   grafia snake_case ovunque: mai una chiave camelCase nelle righe de

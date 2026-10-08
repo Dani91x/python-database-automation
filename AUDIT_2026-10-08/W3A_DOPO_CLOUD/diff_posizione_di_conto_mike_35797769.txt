@@ -1,0 +1,68 @@
+[base]
+ PRIMA:      nota: attivita' del servizio: posizione_di_conto x284, state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+ DOPO :      nota: attivita' del servizio: state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+
+[cap-stretto]
+ PRIMA:      nota: attivita' del servizio: posizione_di_conto x125, state x11, place x5, place_resting x3, rilettura_alla_riapertura x2, feed_line_missing x2, skip x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+ DOPO :      nota: attivita' del servizio: state x11, place x5, place_resting x3, rilettura_alla_riapertura x2, feed_line_missing x2, skip x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+
+[senza-seconda-puntata]
+ PRIMA:      nota: attivita' del servizio: posizione_di_conto x284, state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+ DOPO :      nota: attivita' del servizio: state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+
+[esiti-ignoti]
+ PRIMA:      nota: attivita' del servizio: posizione_di_conto x284, state x17, reconcile_pending x6, place x5, place_exception x3, reconcile_fix x3, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1
+ DOPO :      nota: attivita' del servizio: state x17, reconcile_pending x6, place x5, place_exception x3, reconcile_fix x3, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1
+
+[riavvio]
+ PRIMA:      nota: attivita' del servizio: posizione_di_conto x284, state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, replay_riavvio x1, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+ DOPO :      nota: attivita' del servizio: state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, replay_riavvio x1, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+
+[gol-precoce]
+ PRIMA:      nota: attivita' del servizio: posizione_di_conto x284, state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+ DOPO :      nota: attivita' del servizio: state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+
+[copertura-rifiutata]
+ PRIMA:      nota: attivita' del servizio: cover x1302, posizione_di_conto x134, state x12, place x3, place_resting x3, skip x3, place_rifiutato x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, error x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+ DOPO :      nota: attivita' del servizio: cover x1302, state x12, place x3, place_resting x3, skip x3, place_rifiutato x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, error x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+
+[copertura-legacy]
+ PRIMA:      nota: attivita' del servizio: posizione_di_conto x129, state x12, place x5, place_resting x3, rilettura_alla_riapertura x2, flusso_interrotto x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, feed_line_missing x1, skip x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, residuo_non_piazzabile x1, settled x1
+ DOPO :      nota: attivita' del servizio: state x12, place x5, place_resting x3, rilettura_alla_riapertura x2, flusso_interrotto x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, feed_line_missing x1, skip x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, residuo_non_piazzabile x1, settled x1
+
+[cashout-dopo-copertura]
+ PRIMA:      nota: attivita' del servizio: posizione_di_conto x319, state x11, place x5, place_resting x3, feed_line_missing x3, rilettura_alla_riapertura x2, skip x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, replay_cashout_utente x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+ DOPO :      nota: attivita' del servizio: state x11, place x5, place_resting x3, feed_line_missing x3, rilettura_alla_riapertura x2, skip x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, replay_cashout_utente x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+
+[ko-green-parziale]
+ PRIMA:      nota: attivita' del servizio: posizione_di_conto x286, state x11, place x6, skip x4, place_resting x3, uscita_proposta x3, chiusura_parziale x3, rilettura_alla_riapertura x2, feed_line_missing x2, place_rifiutato x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, uscita_proposta_decaduta x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, settled x1
+ DOPO :      nota: attivita' del servizio: state x11, place x6, skip x4, place_resting x3, uscita_proposta x3, chiusura_parziale x3, rilettura_alla_riapertura x2, feed_line_missing x2, place_rifiutato x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, uscita_proposta_decaduta x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, settled x1
+
+[fermo-copertura]
+ PRIMA:      nota: attivita' del servizio: posizione_di_conto x282, cover x82, state x14, place x5, skip x4, place_resting x3, rilettura_alla_riapertura x2, feed_line_missing x2, replay_fermo_copertura x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+ DOPO :      nota: attivita' del servizio: cover x82, state x14, place x5, skip x4, place_resting x3, rilettura_alla_riapertura x2, feed_line_missing x2, replay_fermo_copertura x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+
+[lettura-dati-ko]
+ PRIMA:      nota: attivita' del servizio: posizione_di_conto x95, state x7, place_resting x3, rilettura_alla_riapertura x3, place x2, pre_cycle x2, replay_lettura_ko x2, flusso_interrotto x2, ordine_scaduto_alla_sospensione x1, error x1, skip x1, settled x1
+ DOPO :      nota: attivita' del servizio: state x7, place_resting x3, rilettura_alla_riapertura x3, place x2, pre_cycle x2, replay_lettura_ko x2, flusso_interrotto x2, ordine_scaduto_alla_sospensione x1, error x1, skip x1, settled x1
+
+[firma-dopo-gol-decisivo]
+ PRIMA:      nota: attivita' del servizio: posizione_di_conto x284, state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+ DOPO :      nota: attivita' del servizio: state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+
+[firma-dopo-gol-decisivo-senza-chiusura]
+ PRIMA:      nota: attivita' del servizio: posizione_di_conto x284, state x11, place x5, place_resting x3, feed_line_missing x3, skip x3, rilettura_alla_riapertura x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1
+ DOPO :      nota: attivita' del servizio: state x11, place x5, place_resting x3, feed_line_missing x3, skip x3, rilettura_alla_riapertura x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1
+
+[uscite-in-perdita-firmate]
+ PRIMA:      nota: attivita' del servizio: posizione_di_conto x284, state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, replay_firma_utente x1, settled x1
+ DOPO :      nota: attivita' del servizio: state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, replay_firma_utente x1, settled x1
+
+[uscite-automatiche]
+ PRIMA:      nota: attivita' del servizio: posizione_di_conto x284, state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+ DOPO :      nota: attivita' del servizio: state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+
+[punteggio-ko]
+ PRIMA:      nota: attivita' del servizio: posizione_di_conto x284, state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+ DOPO :      nota: attivita' del servizio: state x11, place x5, place_resting x3, skip x3, rilettura_alla_riapertura x2, feed_line_missing x2, flusso_interrotto x2, flusso_interrotto_senza_rest x2, pre_cycle x1, ordine_scaduto_alla_sospensione x1, cancel_richiesto x1, cancel_esito x1, cancel x1, cover x1, place_rifiutato x1, uscita_proposta x1, chiusura_parziale x1, settled x1
+

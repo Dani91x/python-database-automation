@@ -519,3 +519,29 @@ commit. Nessun replay lungo (ordine del coordinatore): solo tre controlli mirati
 - Ripresa: il coordinatore rilegge il diff, rilancia suite e `certifica` (vedi sez. 4), decide
   sulle 6 decisioni della sez. 8, poi commit dal worktree.
 ```
+
+## Verifica del coordinatore cloud (08/10)
+- Diff riletto (meccanismo unico `esiti_ordini_canale`: SorveglianzaConto, ProprietariConto, `verdetto_posizione`, topic
+  `conto_paper` pubblicato dal runner paper; Mike/Omega/Safe agganciati; classificazione «del bot / fuori bot» di W2; verdetto in
+  ESPOSIZIONE; banco solo additivo). Strategie non toccate (soglie, stake, tetti, gambe).
+- Test W3a nel checkout integrato verdi; suite complete sulla `b4d91ed` in cloud (`suite_cloud_b4d91ed/`): vitest 5447, tsc 0,
+  build ok, pytest tools 17/17, pytest Betfair 11247 verdi e 1 rosso NON deterministico
+  (`test_auto_follow_rifiuto_betfair_rientra_e_dichiara`) = difetto vero dei frammenti di mercato, CORRETTO in `71e56de`
+  (id() riciclato). Suite Betfair completa sulla cima `66fee096` (W3a + correzione + lavoro del PC): **11273 passed, 0 failed**.
+- REPLAY DOPO su due macchine cloud separate (`W3A_DOPO_CLOUD/`, `--scenari tutti`, 10 referti): **0 KO, 0 violazioni**.
+  Mike 29 scenari (3 nuovi OK su entrambe), Omega 22 (35760084 `apertura`/`paper` 467/2 IDENTICI al cantiere 7; i 2 nuovi
+  `*-canale` OK su 35760084, NE con causa su 35797769 dove Omega non apre), Safe base/esatto/punta 23 (nuovo `-canale` OK su
+  35797769; `chiusura-fuori-app-ridotta` ora FERMA il bot = regola «riduzione = stop», T14 x919 conforme).
+- DUE DIFFERENZE NON ATTESE, INDAGATE DI PERSONA (sonde in sola lettura in `W3A_DOPO_CLOUD/verifica_coordinatore/`):
+  1. Mike 35797769: la voce `posizione_di_conto` (x95-x319 per scenario) sparisce in 17 scenari esistenti, righe di esito identiche.
+     CAUSA (rigiocato `base` sul PRIMA `1ac69d0` e sul DOPO con la sonda): nel PRIMA erano 284 avvisi CRITICAL FALSI
+     «ridotta_dall_utente» (atteso 10, netto di conto 9,86, «altrui» -0,14) prodotti dagli ordini del CICLO PRECEDENTE di Mike
+     stesso (`mike-t1` punta 10 @1,46 e `mike-t2` banca 10,14 @1,44: un green-up gia' chiuso) che non stanno fra i ref della gamba
+     corrente. Nel DOPO `separa_altrui` li riconosce come ordini di bot (ref `mike-`) e li toglie: verdetto «intera», 0 voci.
+     E' una CORREZIONE: col PRIMA e la regola nuova «riduzione = stop» Mike si sarebbe fermato da solo a ogni rientro.
+  2. Safe 35797769 (tre bot): la nota «metodi ASSENTI dal banco: save_event_model» / «NON ESERCITABILE get_event» passa da
+     `chiusura-abbinata-in-parte` a `manuale-e-bot`, esiti identici. CAUSA: `omega_service._LAMBDA_CACHE` (usata dalla Safe) ha un
+     TTL di 900 s di orologio di PARETE e il banco della Safe non la azzera fra scenari: scade nello scenario che gira a ~900 s di
+     orologio, e il DOPO girava piu' lento (4 processi su 4 CPU: 2409 s contro 1422 s). Artefatto del banco, non di W3a, non
+     cambia decisioni; reperto per il banco (§ D-13 del documento di verifica): stesso rimedio di RB-5 di Omega.
+- W3a CERTIFICATO. Decisioni per l'utente: §8 (1, 2, 3, 4, 5, 6).
