@@ -5289,3 +5289,8 @@ Brief: `ARCHITETTURA_2026-10/BRIEF_PIANO_ARCHITETTURA_2026-10-08.md` (par. 9 val
   467/2 = live, prima 438/0); cache di processo azzerate fra scenari (anche `_LEG_RETRY`, che cambiava le decisioni da uno scenario
   all'altro). `tutti` 20/20 OK su entrambe le partite; Mike e Safe identici. Tempi: 35797769 `tutti` da 3471 a 1764 s. Delegato 15
   mutazioni rosse; mie 2/2; mio replay identico. Decisioni P1-P3 (comportamenti di produzione mostrati dal banco) per l'utente.
+- 08/10 SUITE COMPLETE SULLA CIMA d0cf8b94 (sessione cloud parallela, 4 CPU, `AUDIT_2026-10-08/suite_cloud/` sul ramo
+  `claude/blissful-sagan-hri7o6-suite`): vitest 5447/5447, tsc 0, build ok, pytest tools 17/17, pytest Betfair 11077 verdi e 4 rossi
+  in `test_stream_heartbeat_stall_2026_07_17.py`, rossi anche da soli: il test presumeva la macchina accesa da piu' di 900 s
+  (`_RAW_STALL_LAST_RESTART = 0.0` contro l'orologio monotonico). CORRETTO SOLO IL TEST (ora «molto prima di adesso»); prova:
+  con l'intervallo portato a 30000 s (piu' dell'uptime) il test vecchio fa 4 rossi, il nuovo 16 verdi.

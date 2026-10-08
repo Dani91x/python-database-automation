@@ -1,0 +1,10 @@
+35797769 blocco3 rc=1 secondi=57 scenari=rifiuti-betfair-codici-paper,ordine-esterno,ordine-esterno-app
+35797769 blocco4 rc=0 secondi=157 scenari=ordine-esterno-di-un-bot,ordine-esterno-db-giu,ordine-esterno-altro-mercato
+35797769 blocco1 rc=1 secondi=200 scenari=base,paper,chiusura-abbinata-in-parte,rifiuti-betfair
+35797769 blocco2 rc=1 secondi=293 scenari=sniper-paper,ingresso-abbinato-in-parte,ingresso-abbinato-in-parte-paper,rifiuti-betfair-codici
+35797769 TOTALE parete secondi=293
+35760084 blocco3 rc=0 secondi=11 scenari=rifiuti-betfair-codici-paper,ordine-esterno,ordine-esterno-app
+35760084 blocco1 rc=0 secondi=21 scenari=base,paper,chiusura-abbinata-in-parte,rifiuti-betfair
+35760084 blocco4 rc=0 secondi=22 scenari=ordine-esterno-di-un-bot,ordine-esterno-db-giu,ordine-esterno-altro-mercato
+35760084 blocco2 rc=0 secondi=47 scenari=sniper-paper,ingresso-abbinato-in-parte,ingresso-abbinato-in-parte-paper,rifiuti-betfair-codici
+35760084 TOTALE parete secondi=47

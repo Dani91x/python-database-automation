@@ -132,7 +132,11 @@ def _stall_env(monkeypatch, *, live_orders, last_heartbeat_ms,
     from Betfair.stream import runner as R
     import Betfair.stream.raw_listener as RL
 
-    monkeypatch.setattr(R, "_RAW_STALL_LAST_RESTART", 0.0)
+    # 08/10 (coordinatore cloud): "nessun restart recente" = molto prima di ADESSO sull'orologio
+    # monotonico, non 0.0: su una macchina accesa da meno di _RAW_STALL_RESTART_MIN_INTERVAL_SEC
+    # (900 s) 0.0 cade DENTRO l'intervallo e il throttle bloccava il restart (4 rossi nel cloud).
+    monkeypatch.setattr(R, "_RAW_STALL_LAST_RESTART",
+                        _time.monotonic() - R._RAW_STALL_RESTART_MIN_INTERVAL_SEC - 10_000)
     monkeypatch.setattr(R, "_RAW_STALL_ALERTED", True)  # niente ramo WARN
     monkeypatch.setattr(R, "_STREAM_KA_LAST", _time.monotonic())  # no keepAlive
     monkeypatch.setattr(R.db, "upsert_live_heartbeat", lambda **k: None)
