@@ -5300,3 +5300,10 @@ Brief: `ARCHITETTURA_2026-10/BRIEF_PIANO_ARCHITETTURA_2026-10-08.md` (par. 9 val
   altro bot -> riprende; fuori bot (sito/app) -> stop, annullo dei vivi, nessuna copertura, mai riarmato; DB illeggibile -> resta sospeso.
   Latenza nel banco: sospensione 0 ms, decisione ~1 s (stima del banco). Replay DOPO su macchina cloud identici agli attesi; mie mutazioni
   4/4 rosse. Decisioni per l'utente D1, D3, D4, D6, D7; limite D5 (prova dello scalper). Registrazioni tennis: sul PC.
+- 08/10 RIFERIMENTI DEL BANCO REALISTICO (punto 4 del cantiere 15) su `1ac69d0`, da 3 macchine cloud in parallelo
+  (`AUDIT_2026-10-08/riferimenti_cloud/`): Mike 26/26 OK su entrambe le partite; Safe base/esatto/punta 22/22 OK su entrambe; Omega
+  `tutti` 0 violazioni (35760084 e 35797769) e `apertura` 467/2; Scalper calcio `tutti` 35797769 OK 44, KO 5, NE 2 (attesi B2, RC3 live
+  e paper, UF2; NON ATTESO `riavvio` B1 x21: dopo il riarmo la sessione apre ingressi col divieto `missione_prematch` attivo,
+  riproducibile da solo, gia' visto dal PC sulla b5547eb = PREESISTENTE, reperto aperto per l'utente), 35760084 OK 32, KO 1 (`auto-live`
+  AL1, atteso), NE 18. Controllo scalper sulla cima 597ea3a (C7 + W3b): 28/28 scenari identici al DOPO di W3b
+  (`AUDIT_2026-10-08/controllo_scalper_597ea3a/`). Suite complete sulla d0cf8b94 in `AUDIT_2026-10-08/suite_cloud/`.

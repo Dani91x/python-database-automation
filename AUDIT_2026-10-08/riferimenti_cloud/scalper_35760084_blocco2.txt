@@ -1,0 +1,340 @@
+BOT: scalper_calcio | spec: Betfair/stream/scalper/BIBBIA_SCALPER_CALCIO.md | registrazioni: 1 in /home/user/python-database-automation/_live_raw
+controlli attivi: 22 | flumine 2.13.11 | betfairlightweight 2.23.2 | codice bot a80c2527fcb7 (12 file)
+comando: python -m Betfair.stream.backtest.certifica scalper_calcio 35760084 --scenari paper,esiti-ignoti,sniper,uscite-manuali-firmate,media-under-35,media-under-tick-1,media-under-kill-switch,media-clic-lontano,media-clic-finestra,media-clic-prima-del-gol-35,media-clic-doppio,media-clic-tick-1-filtri,rifiuti-betfair-codici
+ambiente del banco (dichiarato; il .env di chi lancia non conta): ESITI_ORDINI_CANALE=0 LIVE_KILL_SWITCH=false LIVE_ORDER_MODE=LIVE MIKE_CANALE_POSIZIONI=0 MIKE_LEGGE_CANALE=0 MIKE_LIVE_ENABLED=1 MIKE_SVEGLIA_CANALE=0 MOTORE_ORDINI_CANALE=0 MOTORE_ORDINI_CANALE_TENNIS=0 OMEGA_CANALE_POSIZIONI=0 OMEGA_LEGGE_CANALE=0 OMEGA_ORDINI_VIA_CANALE=0 OMEGA_SVEGLIA_CANALE=0 PUNTEGGI_CANALE=0 SAFE_BOT_LEGGE_CANALE=0 SAFE_BOT_SVEGLIA_CANALE=0 SAFE_CANALE_POSIZIONI=0 SAFE_ORDINI_VIA_CANALE=0 SAFE_PRE_KO_OU_HOURS=1 SAFE_SCAN_CANALE=0 SAFE_TENNIS_ORDINI_VIA_CANALE=0 SCALPER_CANALE=0 TENNIS_BOT_CANALE=0 TENNIS_BOT_SVEGLIA_CANALE=0 | interruttore ordini del bot: coda=0 canale=1
+qualita' delle registrazioni: COMPLETE x1
+SCENARI: paper, esiti-ignoti, sniper, uscite-manuali-firmate, media-under-35, media-under-tick-1, media-under-kill-switch, media-clic-lontano, media-clic-finestra, media-clic-prima-del-gol-35, media-clic-doppio, media-clic-tick-1-filtri, rifiuti-betfair-codici
+        i numeri di scenari diversi sono confrontabili SOLO dove la sequenza di chiamate e' identica fino al punto confrontato: ogni chiamata bloccante consuma tempo di mercato (in produzione come nel replay) e sposta il book su cui abbina tutto cio' che viene dopo
+
+OK  35760084 [paper]  tick=124672 decisioni=23599 azioni=   0 stati=sessione:arming,sessione:running,slot:IDLE,sessione:done [COMPLETE]
+      nota: qualita' registrazione: COMPLETE 95.2%
+      nota: control della UI: mode=maker dry_run=True stake=25 params=[('entry_stop_before_s', 420), ('event_loss_cap', 1.5), ('event_profit_target', 1), ('flatten_before_s', 180), ('ht_mode', False), ('min_flow', 10), ('min_size', 300), ('one_green_per_phase', True), ('price_max', 4.6), ('price_min', 1.5), ('scalp_ticks', 1), ('sniper_mode', False), ('sniper_stake', 10), ('stop_ticks', 1), ('uscite_automatiche', True)]
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (params `uscite_automatiche=True`, come li scrive l'interruttore della UI su AUTOMATICHE)
+      nota: limiti dichiarati: catalogo sintetizzato dai marketDefinition; scanner non usato (lo scalper legge il book); orologio di mercato per `time.time`; settlement non raggiunto (fine vita della sessione); theta fuori perimetro; sniper spento (scenari `sniper*` per lo sniper)
+      nota: parita' paper/live: 86 parametri della strategia confrontati, diversi 0; client paper {'min_bet_validation': False, 'order_stream': True, 'paper_trade': True} / live {'min_bet_validation': False, 'order_stream': True, 'paper_trade': False}
+      nota: sessioni: {'prima': 'finita'}; stato finale 'done' (causa della fine: fine-vita)
+      nota: book in ritardo: 107943; lapse al fischio: 0; lapse alla sospensione: 0; righe di specchio catturate: 0
+      nota: fill per mercato che attraversa: 0
+      nota: fasi viste: pre-match, stop-ingressi, finestra-flatten, in-gioco, fine-sessione
+      nota: uscite EFFETTIVE delle strategie a fine sessione: AUTOMATICHE
+      nota: stati dello slot MAI visti: CANCELLING, DONE, FLATTENING, LOCKING, QUOTING, QUOTING2
+      tempo: 35760084 [paper] 4.8s (4.8 s) | 25862 tick/s
+OK  35760084 [esiti-ignoti]  tick=124672 decisioni=23599 azioni=   0 stati=sessione:arming,sessione:running,slot:IDLE,sessione:done [COMPLETE]
+      nota: qualita' registrazione: COMPLETE 95.2%
+      nota: control della UI: mode=maker dry_run=False stake=25 params=[('entry_stop_before_s', 420), ('event_loss_cap', 1.5), ('event_profit_target', 1), ('flatten_before_s', 180), ('ht_mode', False), ('min_flow', 10), ('min_size', 300), ('one_green_per_phase', True), ('price_max', 4.6), ('price_min', 1.5), ('scalp_ticks', 1), ('sniper_mode', False), ('sniper_stake', 10), ('stop_ticks', 1), ('uscite_automatiche', True)]
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (params `uscite_automatiche=True`, come li scrive l'interruttore della UI su AUTOMATICHE)
+      nota: limiti dichiarati: catalogo sintetizzato dai marketDefinition; scanner non usato (lo scalper legge il book); orologio di mercato per `time.time`; settlement non raggiunto (fine vita della sessione); theta fuori perimetro; sniper spento (scenari `sniper*` per lo sniper)
+      nota: sessioni: {'prima': 'finita'}; stato finale 'done' (causa della fine: fine-vita)
+      nota: book in ritardo: 107943; lapse al fischio: 0; lapse alla sospensione: 0; righe di specchio catturate: 0
+      nota: fill per mercato che attraversa: 0
+      nota: fasi viste: pre-match, stop-ingressi, finestra-flatten, in-gioco, fine-sessione
+      nota: uscite EFFETTIVE delle strategie a fine sessione: AUTOMATICHE
+      nota: stati dello slot MAI visti: CANCELLING, DONE, FLATTENING, LOCKING, QUOTING, QUOTING2
+      nota: guasto: 0 piazzamenti con esito IGNOTO per 20 s
+      tempo: 35760084 [esiti-ignoti] 4.0s (4.0 s) | 31037 tick/s
+OK  35760084 [sniper]  tick=504571 decisioni=87165 azioni=   0 stati=sessione:arming,sessione:running,slot:IDLE,sessione:done [COMPLETE]
+      nota: qualita' registrazione: COMPLETE 95.2%
+      nota: control della UI: mode=maker dry_run=False stake=25 params=[('entry_stop_before_s', 420), ('event_loss_cap', 1.5), ('event_profit_target', 1), ('flatten_before_s', 180), ('ht_mode', False), ('min_flow', 10), ('min_size', 300), ('one_green_per_phase', True), ('price_max', 4.6), ('price_min', 1.5), ('scalp_ticks', 1), ('sniper_mode', True), ('sniper_stake', 10), ('stop_ticks', 1), ('uscite_automatiche', True)]
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (params `uscite_automatiche=True`, come li scrive l'interruttore della UI su AUTOMATICHE)
+      nota: limiti dichiarati: catalogo sintetizzato dai marketDefinition; scanner non usato (lo scalper legge il book); orologio di mercato per `time.time`; settlement non raggiunto (fine vita della sessione); theta fuori perimetro
+      nota: SNIPER: righe live_now dal sidecar 96 (linea Under (gol+1).5 con `scalper_session.applica_linea_sniper` ogni 15 s di mercato); vita della sessione KO+7800 s
+      nota: sessioni: {'prima': 'finita'}; stato finale 'done' (causa della fine: ?)
+      nota: book in ritardo: 560388; lapse al fischio: 0; lapse alla sospensione: 0; righe di specchio catturate: 0
+      nota: fill per mercato che attraversa: 0
+      nota: fasi viste: pre-match, stop-ingressi, finestra-flatten, in-gioco, fine-sessione
+      nota: uscite EFFETTIVE delle strategie a fine sessione: AUTOMATICHE
+      nota: SNIPER: uscite automatiche; stats {}; eventi {'sniper_lines': 4}; piatto a fine sessione: True
+      nota: stati dello slot MAI visti: CANCELLING, DONE, FLATTENING, LOCKING, QUOTING, QUOTING2
+      tempo: 35760084 [sniper] 24.8s (24.8 s) | 20353 tick/s
+OK  35760084 [uscite-manuali-firmate]  tick=504571 decisioni=87165 azioni=   0 stati=sessione:arming,sessione:running,slot:IDLE,sessione:done [COMPLETE]
+      nota: qualita' registrazione: COMPLETE 95.2%
+      nota: control della UI: mode=maker dry_run=False stake=25 params=[('entry_stop_before_s', 420), ('event_loss_cap', 1.5), ('event_profit_target', 1), ('flatten_before_s', 180), ('ht_mode', False), ('min_flow', 10), ('min_size', 300), ('one_green_per_phase', True), ('price_max', 4.6), ('price_min', 1.5), ('scalp_ticks', 1), ('sniper_mode', True), ('sniper_stake', 10), ('stop_ticks', 1), ('uscite_automatiche', False)]
+      nota: limiti dichiarati: catalogo sintetizzato dai marketDefinition; scanner non usato (lo scalper legge il book); orologio di mercato per `time.time`; settlement non raggiunto (fine vita della sessione); theta fuori perimetro
+      nota: SNIPER: righe live_now dal sidecar 96 (linea Under (gol+1).5 con `scalper_session.applica_linea_sniper` ogni 15 s di mercato); vita della sessione KO+7800 s
+      nota: USCITE MANUALI: interruttore spento; il banco firma ogni proposta dopo 5 s di mercato (params.uscite_approvate, riletta dalla sessione al battito)
+      nota: sessioni: {'prima': 'finita'}; stato finale 'done' (causa della fine: ?)
+      nota: book in ritardo: 560388; lapse al fischio: 0; lapse alla sospensione: 0; righe di specchio catturate: 0
+      nota: fill per mercato che attraversa: 0
+      nota: fasi viste: pre-match, stop-ingressi, finestra-flatten, in-gioco, fine-sessione
+      nota: uscite EFFETTIVE delle strategie a fine sessione: MANUALI
+      nota: SNIPER: uscite manuali; stats {}; eventi {'sniper_lines': 4}; piatto a fine sessione: True
+      nota: stati dello slot MAI visti: CANCELLING, DONE, FLATTENING, LOCKING, QUOTING, QUOTING2
+      nota: USCITE MANUALI (uscite-manuali-firmate): decisioni 0, proposte nate 0, decadute 0, firme del banco 0, uscite firmate eseguite 0; non giudicabili: nessuna
+      nota: USCITE MANUALI: controlli MAI sollecitati (non lo so): UM1, UM2, UM4, UF1, UF2, UF3
+      tempo: 35760084 [uscite-manuali-firmate] 24.6s (24.6 s) | 20486 tick/s
+NE  35760084 [media-under-35]  tick=504571 decisioni=25586 azioni=   0 stati=sessione:arming,sessione:running,sessione:done [COMPLETE]
+      nota: qualita' registrazione: COMPLETE 95.2%
+      nota: control della UI: mode=maker dry_run=False stake=25 params=[('entry_stop_before_s', 420), ('event_loss_cap', 1.5), ('event_profit_target', 1), ('flatten_before_s', 180), ('ht_mode', False), ('media_commissione_pct', 5.0), ('media_max_rientri', 5), ('media_max_spread_ticks', 2), ('media_mercato', 'OVER_UNDER_35'), ('media_min_flow', 10.0), ('media_min_size', 300.0), ('media_mode', True), ('media_obiettivi_live', [0.0, 0.3, 1.0]), ('media_obiettivo', 0.0), ('media_quota_max', 4.0), ('media_quota_min', 1.2), ('media_rischio_max', 0.0), ('media_stake', 10.0), ('media_stop_ingressi_s', 420.0), ('media_tick_chiusura', 2), ('media_tick_rientro', 2), ('media_ttl_punta_ms', 30000), ('min_flow', 10), ('min_size', 300), ('one_green_per_phase', True), ('price_max', 4.6), ('price_min', 1.5), ('scalp_ticks', 1), ('sniper_mode', False), ('sniper_stake', 10), ('stop_ticks', 1), ('uscite_automatiche', True)]
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (params `uscite_automatiche=True`, come li scrive l'interruttore della UI su AUTOMATICHE)
+      nota: limiti dichiarati: catalogo sintetizzato dai marketDefinition; scanner non usato (lo scalper legge il book); orologio di mercato per `time.time`; settlement non raggiunto (fine vita della sessione); theta fuori perimetro; sniper spento (scenari `sniper*` per lo sniper)
+      nota: MEDIA UNDER: mercato OVER_UNDER_35 -> 1.259475537, Under 1222344; maker e sniper non armati; controlli M1-M11 + S6; B2 e K5 del maker non applicati (posizione in gioco per progetto)
+      nota: parita' paper/live: 54 parametri della strategia confrontati, diversi 0; client paper {'min_bet_validation': False, 'order_stream': True, 'paper_trade': True} / live {'min_bet_validation': False, 'order_stream': True, 'paper_trade': False}
+      nota: sessioni: {'prima': 'finita'}; stato finale 'done' (causa della fine: ?)
+      nota: book in ritardo: 560388; lapse al fischio: 0; lapse alla sospensione: 0; righe di specchio catturate: 0
+      nota: fill per mercato che attraversa: 0
+      nota: fasi viste: pre-match, finestra-flatten, in-gioco, fine-sessione
+      nota: uscite EFFETTIVE delle strategie a fine sessione: MANUALI
+      nota: MEDIA UNDER: stato finale FINE; sessioni della modalita' 1; cicli chiusi 0; ordini piazzati (le azioni del referto) 0; eventi {'media_live': 1, 'media_sospeso': 7, 'media_riaperto': 6}
+      nota: MEDIA UNDER: nessun ciclo (nessun ordine della modalita')
+      nota: MEDIA UNDER P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (dagli ordini abbinati della modalita'; non e' il metro della certificazione: il metro e' la condotta)
+      nota: MEDIA UNDER: motivi di non ingresso (book in cui il filtro ha fermato la punta, il PRIMO filtro che non passa): liquidita' sotto il minimo al miglior prezzo (min size) x2413; dentro la finestra di stop prima del fischio x504; manca il miglior prezzo di punta o di banca x3
+      nota: MEDIA UNDER: letture degli ordini del conto (`betfair_live_orders`) 0 su 1635 battiti della sessione (soldi veri: solo a posizione aperta, al piu' una per battito); fonte finale del riquadro: solo ordini del bot: gli ordini messi a mano dal sito o dal terminale NON sono visti da questa sessione
+      nota: MEDIA UNDER: controlli M sollecitati {'M7': 5006, 'M10': 6078}; MAI sollecitati (non lo so): M1, M2, M3, M4, M5, M6, M11, M8, M9, M19, M20, M21
+      nota: MEDIA UNDER banca: ordini di banca 0; annullati (non spostati) 0; spostati col replace 0; ripiazzati IDENTICI 0; posizione aperta senza banca viva 0.0 s (tratto piu' lungo 0.0 s)
+      nota: stati dello slot MAI visti: CANCELLING, DONE, FLATTENING, IDLE, LOCKING, QUOTING, QUOTING2
+      nota: chiamate REST della sessione (registrate, mai eseguite): list_current_orders
+      NON ESERCITATO: la modalita' media under non ha piazzato NESSUN ordine su 1.259475537: filtro che l'ha fermata piu' spesso: liquidita' sotto il minimo al miglior prezzo (min size) (x2413)
+      tempo: 35760084 [media-under-35] 23.3s (23.3 s) | 21646 tick/s
+NE  35760084 [media-under-tick-1]  tick=504571 decisioni=18662 azioni=   0 stati=sessione:arming,sessione:running,sessione:done [COMPLETE]
+      nota: qualita' registrazione: COMPLETE 95.2%
+      nota: control della UI: mode=maker dry_run=False stake=25 params=[('entry_stop_before_s', 420), ('event_loss_cap', 1.5), ('event_profit_target', 1), ('flatten_before_s', 180), ('ht_mode', False), ('media_commissione_pct', 5.0), ('media_max_rientri', 5), ('media_max_spread_ticks', 2), ('media_mercato', 'OVER_UNDER_25'), ('media_min_flow', 10.0), ('media_min_size', 300.0), ('media_mode', True), ('media_obiettivi_live', [0.0, 0.3, 1.0]), ('media_obiettivo', 0.0), ('media_quota_max', 4.0), ('media_quota_min', 1.2), ('media_rischio_max', 0.0), ('media_stake', 10.0), ('media_stop_ingressi_s', 420.0), ('media_tick_chiusura', 1), ('media_tick_rientro', 1), ('media_ttl_punta_ms', 30000), ('min_flow', 10), ('min_size', 300), ('one_green_per_phase', True), ('price_max', 4.6), ('price_min', 1.5), ('scalp_ticks', 1), ('sniper_mode', False), ('sniper_stake', 10), ('stop_ticks', 1), ('uscite_automatiche', True)]
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (params `uscite_automatiche=True`, come li scrive l'interruttore della UI su AUTOMATICHE)
+      nota: limiti dichiarati: catalogo sintetizzato dai marketDefinition; scanner non usato (lo scalper legge il book); orologio di mercato per `time.time`; settlement non raggiunto (fine vita della sessione); theta fuori perimetro; sniper spento (scenari `sniper*` per lo sniper)
+      nota: MEDIA UNDER: mercato OVER_UNDER_25 -> 1.259475533, Under 47972; maker e sniper non armati; controlli M1-M11 + S6; B2 e K5 del maker non applicati (posizione in gioco per progetto)
+      nota: parita' paper/live: 54 parametri della strategia confrontati, diversi 0; client paper {'min_bet_validation': False, 'order_stream': True, 'paper_trade': True} / live {'min_bet_validation': False, 'order_stream': True, 'paper_trade': False}
+      nota: sessioni: {'prima': 'finita'}; stato finale 'done' (causa della fine: ?)
+      nota: book in ritardo: 560388; lapse al fischio: 0; lapse alla sospensione: 0; righe di specchio catturate: 0
+      nota: fill per mercato che attraversa: 0
+      nota: fasi viste: pre-match, finestra-flatten, in-gioco, fine-sessione
+      nota: uscite EFFETTIVE delle strategie a fine sessione: MANUALI
+      nota: MEDIA UNDER: stato finale FINE; sessioni della modalita' 1; cicli chiusi 0; ordini piazzati (le azioni del referto) 0; eventi {'media_live': 1, 'media_sospeso': 6, 'media_riaperto': 5}
+      nota: MEDIA UNDER: nessun ciclo (nessun ordine della modalita')
+      nota: MEDIA UNDER P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (dagli ordini abbinati della modalita'; non e' il metro della certificazione: il metro e' la condotta)
+      nota: MEDIA UNDER: motivi di non ingresso (book in cui il filtro ha fermato la punta, il PRIMO filtro che non passa): liquidita' sotto il minimo al miglior prezzo (min size) x2392; dentro la finestra di stop prima del fischio x523; manca il miglior prezzo di punta o di banca x4; quota fuori dall'intervallo (quota min / max) x2
+      nota: MEDIA UNDER: letture degli ordini del conto (`betfair_live_orders`) 0 su 1635 battiti della sessione (soldi veri: solo a posizione aperta, al piu' una per battito); fonte finale del riquadro: solo ordini del bot: gli ordini messi a mano dal sito o dal terminale NON sono visti da questa sessione
+      nota: MEDIA UNDER: controlli M sollecitati {'M7': 5005, 'M10': 6078}; MAI sollecitati (non lo so): M1, M2, M3, M4, M5, M6, M11, M8, M9, M19, M20, M21
+      nota: MEDIA UNDER banca: ordini di banca 0; annullati (non spostati) 0; spostati col replace 0; ripiazzati IDENTICI 0; posizione aperta senza banca viva 0.0 s (tratto piu' lungo 0.0 s)
+      nota: stati dello slot MAI visti: CANCELLING, DONE, FLATTENING, IDLE, LOCKING, QUOTING, QUOTING2
+      nota: chiamate REST della sessione (registrate, mai eseguite): list_current_orders
+      NON ESERCITATO: la modalita' media under non ha piazzato NESSUN ordine su 1.259475533: filtro che l'ha fermata piu' spesso: liquidita' sotto il minimo al miglior prezzo (min size) (x2392)
+      tempo: 35760084 [media-under-tick-1] 19.9s (19.9 s) | 25361 tick/s
+NE  35760084 [media-under-kill-switch]  tick= 29369 decisioni= 1398 azioni=   0 stati=sessione:arming,sessione:running,sessione:done [COMPLETE]
+      nota: qualita' registrazione: COMPLETE 95.2%
+      nota: control della UI: mode=maker dry_run=False stake=25 params=[('entry_stop_before_s', 420), ('event_loss_cap', 1.5), ('event_profit_target', 1), ('flatten_before_s', 180), ('ht_mode', False), ('media_commissione_pct', 5.0), ('media_max_rientri', 5), ('media_max_spread_ticks', 2), ('media_mercato', 'OVER_UNDER_25'), ('media_min_flow', 10.0), ('media_min_size', 300.0), ('media_mode', True), ('media_obiettivi_live', [0.0, 0.3, 1.0]), ('media_obiettivo', 0.0), ('media_quota_max', 4.0), ('media_quota_min', 1.2), ('media_rischio_max', 0.0), ('media_stake', 10.0), ('media_stop_ingressi_s', 420.0), ('media_tick_chiusura', 2), ('media_tick_rientro', 2), ('media_ttl_punta_ms', 30000), ('min_flow', 10), ('min_size', 300), ('one_green_per_phase', True), ('price_max', 4.6), ('price_min', 1.5), ('scalp_ticks', 1), ('sniper_mode', False), ('sniper_stake', 10), ('stop_ticks', 1), ('uscite_automatiche', True)]
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (params `uscite_automatiche=True`, come li scrive l'interruttore della UI su AUTOMATICHE)
+      nota: limiti dichiarati: catalogo sintetizzato dai marketDefinition; scanner non usato (lo scalper legge il book); orologio di mercato per `time.time`; settlement non raggiunto (fine vita della sessione); theta fuori perimetro; sniper spento (scenari `sniper*` per lo sniper)
+      nota: MEDIA UNDER: mercato OVER_UNDER_25 -> 1.259475533, Under 47972; maker e sniper non armati; controlli M1-M11 + S6; B2 e K5 del maker non applicati (posizione in gioco per progetto)
+      nota: parita' paper/live: 54 parametri della strategia confrontati, diversi 0; client paper {'min_bet_validation': False, 'order_stream': True, 'paper_trade': True} / live {'min_bet_validation': False, 'order_stream': True, 'paper_trade': False}
+      nota: KILL-SWITCH (file nella cartella del replay) a 1782833730395 ms (posizione abbinata aperta: no)
+      nota: sessioni: {'prima': 'finita'}; stato finale 'done' (causa della fine: kill-switch)
+      nota: book in ritardo: 26484; lapse al fischio: 0; lapse alla sospensione: 0; righe di specchio catturate: 0
+      nota: fill per mercato che attraversa: 0
+      nota: fasi viste: pre-match, fine-sessione
+      nota: uscite EFFETTIVE delle strategie a fine sessione: MANUALI
+      nota: MEDIA UNDER: stato finale FERMO; sessioni della modalita' 1; cicli chiusi 0; ordini piazzati (le azioni del referto) 0; eventi {}
+      nota: MEDIA UNDER: nessun ciclo (nessun ordine della modalita')
+      nota: MEDIA UNDER P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (dagli ordini abbinati della modalita'; non e' il metro della certificazione: il metro e' la condotta)
+      nota: MEDIA UNDER: motivi di non ingresso (book in cui il filtro ha fermato la punta, il PRIMO filtro che non passa): liquidita' sotto il minimo al miglior prezzo (min size) x1392; manca il miglior prezzo di punta o di banca x4; quota fuori dall'intervallo (quota min / max) x2
+      nota: MEDIA UNDER: letture degli ordini del conto (`betfair_live_orders`) 0 su 212 battiti della sessione (soldi veri: solo a posizione aperta, al piu' una per battito); fonte finale del riquadro: solo ordini del bot: gli ordini messi a mano dal sito o dal terminale NON sono visti da questa sessione
+      nota: MEDIA UNDER: controlli M sollecitati {'M10': 547}; MAI sollecitati (non lo so): M1, M2, M3, M4, M5, M6, M11, M7, M8, M9, M19, M20, M21
+      nota: MEDIA UNDER banca: ordini di banca 0; annullati (non spostati) 0; spostati col replace 0; ripiazzati IDENTICI 0; posizione aperta senza banca viva 0.0 s (tratto piu' lungo 0.0 s)
+      nota: stati dello slot MAI visti: CANCELLING, DONE, FLATTENING, IDLE, LOCKING, QUOTING, QUOTING2
+      nota: chiamate REST della sessione (registrate, mai eseguite): list_current_orders
+      NON ESERCITATO: la modalita' media under non ha piazzato NESSUN ordine su 1.259475533: filtro che l'ha fermata piu' spesso: liquidita' sotto il minimo al miglior prezzo (min size) (x1392)
+      tempo: 35760084 [media-under-kill-switch] 1.2s (1.2 s) | 24012 tick/s
+OK  35760084 [media-clic-lontano]  tick=504571 decisioni=18662 azioni=  25 stati=sessione:arming,sessione:running,sessione:done [COMPLETE]
+      nota: qualita' registrazione: COMPLETE 95.2%
+      nota: control della UI: mode=maker dry_run=False stake=25 params=[('entry_stop_before_s', 420), ('event_loss_cap', 1.5), ('event_profit_target', 1), ('flatten_before_s', 180), ('ht_mode', False), ('media_a_clic', True), ('media_commissione_pct', 5.0), ('media_max_rientri', 5), ('media_max_spread_ticks', 2), ('media_mercato', 'OVER_UNDER_25'), ('media_min_flow', 10.0), ('media_min_size', 300.0), ('media_mode', True), ('media_obiettivi_live', [0.0, 0.3, 1.0]), ('media_obiettivo', 0.0), ('media_quota_max', 4.0), ('media_quota_min', 1.2), ('media_rientro_auto_filtri', False), ('media_rischio_max', 0.0), ('media_stake', 10.0), ('media_stop_ingressi_s', 420.0), ('media_tick_chiusura', 2), ('media_tick_rientro', 2), ('media_ttl_punta_ms', 30000), ('min_flow', 10), ('min_size', 300), ('one_green_per_phase', True), ('price_max', 4.6), ('price_min', 1.5), ('scalp_ticks', 1), ('sniper_mode', False), ('sniper_stake', 10), ('stop_ticks', 1), ('uscite_automatiche', True)]
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (params `uscite_automatiche=True`, come li scrive l'interruttore della UI su AUTOMATICHE)
+      nota: limiti dichiarati: catalogo sintetizzato dai marketDefinition; scanner non usato (lo scalper legge il book); orologio di mercato per `time.time`; settlement non raggiunto (fine vita della sessione); theta fuori perimetro; sniper spento (scenari `sniper*` per lo sniper)
+      nota: MEDIA UNDER: mercato OVER_UNDER_25 -> 1.259475533, Under 47972; maker e sniper non armati; controlli M1-M11 + S6; B2 e K5 del maker non applicati (posizione in gioco per progetto)
+      nota: ATTIVA ADESSO: sessione armata dal pulsante (media_a_clic); clic agli istanti ['pre-match, 44\'33" al fischio'] (regola `lontano` dello scenario); reazione concessa 15000 ms; fatti del raw: inizio 1782831952415, fischio 1782835200000, in gioco 1782835225478, sospensioni in gioco [('in gioco al 1\'33"', 2.0), ('in gioco al 3\'31"', 3.0), ('in gioco al 3\'55"', 13.0), ('in gioco al 7\'36"', 3.0), ('in gioco al 27\'49"', 4.0)]
+      nota: parita' paper/live: 54 parametri della strategia confrontati, diversi 0; client paper {'min_bet_validation': False, 'order_stream': True, 'paper_trade': True} / live {'min_bet_validation': False, 'order_stream': True, 'paper_trade': False}
+      nota: sessioni: {'prima': 'finita'}; stato finale 'done' (causa della fine: ?)
+      nota: book in ritardo: 560388; lapse al fischio: 0; lapse alla sospensione: 0; righe di specchio catturate: 94385
+      nota: fill per mercato che attraversa: 0
+      nota: fasi viste: pre-match, finestra-flatten, in-gioco, fine-sessione
+      nota: uscite EFFETTIVE delle strategie a fine sessione: MANUALI
+      nota: MEDIA UNDER: stato finale FINE; sessioni della modalita' 1; cicli chiusi 0; ordini piazzati (le azioni del referto) 25; eventi {'media_ingresso': 1, 'media_comando_eseguito': 1, 'media_punta_abbinata': 6, 'media_banca': 6, 'media_rientro': 6, 'media_annullo': 5, 'media_banca_sposta': 12, 'media_banca_spostata': 12, 'media_banca_spostamento_fallito': 7, 'media_live': 1, 'media_sospeso': 6, 'media_riaperto': 5, 'media_punta_non_abbinata': 1, 'media_massimo': 1, 'media_esito': 1}
+      nota: MEDIA UNDER ciclo 1: ingresso 10.00 @2.68 (abbinato 10.00, pre-match, 44'06" al fischio); rientro 1 @2.86: esatto 45.68, piazzato 45.50, abbinato 10.03; rientro 2 @2.90: esatto 55.83, piazzato 55.50, abbinato 55.50; rientro 3 @2.94: esatto 76.01, piazzato 76.00, abbinato 10.03; rientro 4 @4.70: esatto 698.89, piazzato 698.50, abbinato 76.96; rientro 5 @6.00: esatto 1610.03, piazzato 1610.00, abbinato 0.00; rientro 6 @5.80: esatto 1447.36, piazzato 1447.00, abbinato 10.03; totale puntato massimo 172.55; banca finale 174.27 @3.90 PERSIST, abbinata 0.00, a fine replay VIVA a mercato (resto 174.27); posizione aperta: se vince l'Under +507.11, se perde -172.55; profitto lordo -172.55, netto -172.55 [APERTO, regolato dal libro finale (Under LOSER)]
+      nota: MEDIA UNDER P&L del replay: lordo -172.55 | commissione 0.00 (5.0%) | NETTO -172.55 EUR (dagli ordini abbinati della modalita'; non e' il metro della certificazione: il metro e' la condotta)
+      nota: MEDIA UNDER: letture degli ordini del conto (`betfair_live_orders`) 521 su 1635 battiti della sessione (soldi veri: solo a posizione aperta, al piu' una per battito); fonte finale del riquadro: ordini del bot + ordini del conto letti alle 16:47:55 (0 a mano su questa selezione)
+      nota: MEDIA UNDER: controlli M sollecitati {'M1': 5891, 'M2': 5889, 'M3': 5889, 'M4': 5889, 'M5': 5891, 'M6': 5782, 'M11': 5890, 'M7': 5005, 'M8': 5891, 'M9': 7, 'M10': 6078, 'M19': 5882, 'M20': 5882}; MAI sollecitati (non lo so): M21
+      nota: MEDIA UNDER banca: ordini di banca 18; annullati (non spostati) 0; spostati col replace 12; ripiazzati IDENTICI 0; posizione aperta senza banca viva 0.0 s (tratto piu' lungo 0.0 s)
+      nota: ATTIVA ADESSO clic clic-1-1782832552415 (pre-match, 44'33" al fischio): letto dalla sessione pre-match, 44'06" al fischio; per il banco ESEGUIBILE; prima punta 140107607985388350 @2.68 per 10.0 a pre-match, 44'06" al fischio
+      nota: ATTIVA ADESSO ciclo 1: prima punta 140107607985388350 @2.68 a pre-match, 44'06" al fischio, partita da CLIC (clic-1-1782832552415)
+      nota: ATTIVA ADESSO: ultimo comando scritto dalla sessione {'id': 'clic-1-1782832552415', 'esito': 'eseguito', 'motivo': None, 'inviato_ms': 1782832558191.0, 'ricevuto_ms': 1782832579334.0, 'deciso_ms': 1782832579334.0, 'prezzo': 2.68, 'importo': 10.0, 'in_gioco': False}; stato finale FINE
+      nota: ATTIVA ADESSO: controlli M12-M18 sollecitati {'M12': 5891, 'M13': 12, 'M14': 5891, 'M15': 5889, 'M18': 6}; MAI sollecitati (non lo so): M16, M17
+      nota: stati dello slot MAI visti: CANCELLING, DONE, FLATTENING, IDLE, LOCKING, QUOTING, QUOTING2
+      nota: chiamate REST della sessione (registrate, mai eseguite): list_current_orders
+      tempo: 35760084 [media-clic-lontano] 47.9s (47.9 s) | 10538 tick/s
+OK  35760084 [media-clic-finestra]  tick=504571 decisioni=18662 azioni=  10 stati=sessione:arming,sessione:running,sessione:done [COMPLETE]
+      nota: qualita' registrazione: COMPLETE 95.2%
+      nota: control della UI: mode=maker dry_run=False stake=25 params=[('entry_stop_before_s', 420), ('event_loss_cap', 1.5), ('event_profit_target', 1), ('flatten_before_s', 180), ('ht_mode', False), ('media_a_clic', True), ('media_commissione_pct', 5.0), ('media_max_rientri', 5), ('media_max_spread_ticks', 2), ('media_mercato', 'OVER_UNDER_25'), ('media_min_flow', 10.0), ('media_min_size', 300.0), ('media_mode', True), ('media_obiettivi_live', [0.0, 0.3, 1.0]), ('media_obiettivo', 0.0), ('media_quota_max', 4.0), ('media_quota_min', 1.2), ('media_rientro_auto_filtri', False), ('media_rischio_max', 0.0), ('media_stake', 10.0), ('media_stop_ingressi_s', 420.0), ('media_tick_chiusura', 2), ('media_tick_rientro', 2), ('media_ttl_punta_ms', 30000), ('min_flow', 10), ('min_size', 300), ('one_green_per_phase', True), ('price_max', 4.6), ('price_min', 1.5), ('scalp_ticks', 1), ('sniper_mode', False), ('sniper_stake', 10), ('stop_ticks', 1), ('uscite_automatiche', True)]
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (params `uscite_automatiche=True`, come li scrive l'interruttore della UI su AUTOMATICHE)
+      nota: limiti dichiarati: catalogo sintetizzato dai marketDefinition; scanner non usato (lo scalper legge il book); orologio di mercato per `time.time`; settlement non raggiunto (fine vita della sessione); theta fuori perimetro; sniper spento (scenari `sniper*` per lo sniper)
+      nota: MEDIA UNDER: mercato OVER_UNDER_25 -> 1.259475533, Under 47972; maker e sniper non armati; controlli M1-M11 + S6; B2 e K5 del maker non applicati (posizione in gioco per progetto)
+      nota: ATTIVA ADESSO: sessione armata dal pulsante (media_a_clic); clic agli istanti ['pre-match, 3\'45" al fischio'] (regola `finestra` dello scenario); reazione concessa 15000 ms; fatti del raw: inizio 1782831952415, fischio 1782835200000, in gioco 1782835225478, sospensioni in gioco [('in gioco al 1\'33"', 2.0), ('in gioco al 3\'31"', 3.0), ('in gioco al 3\'55"', 13.0), ('in gioco al 7\'36"', 3.0), ('in gioco al 27\'49"', 4.0)]
+      nota: parita' paper/live: 54 parametri della strategia confrontati, diversi 0; client paper {'min_bet_validation': False, 'order_stream': True, 'paper_trade': True} / live {'min_bet_validation': False, 'order_stream': True, 'paper_trade': False}
+      nota: sessioni: {'prima': 'finita'}; stato finale 'done' (causa della fine: ?)
+      nota: book in ritardo: 560388; lapse al fischio: 0; lapse alla sospensione: 0; righe di specchio catturate: 43835
+      nota: fill per mercato che attraversa: 3 [motivo attraversato] - 16:24:45 UTC 1.259475533 sel 47972 LAY 8.52 @4.70 (scambio a 4.20); 16:24:45 UTC 1.259475533 sel 47972 LAY 79.85 @4.70 (scambio a 4.20); 16:24:45 UTC 1.259475533 sel 47972 LAY 10.14 @4.70 (scambio a 4.20)
+      nota: fasi viste: pre-match, finestra-flatten, in-gioco, fine-sessione
+      nota: uscite EFFETTIVE delle strategie a fine sessione: MANUALI
+      nota: MEDIA UNDER: stato finale FINE; sessioni della modalita' 1; cicli chiusi 1; ordini piazzati (le azioni del referto) 10; eventi {'media_ingresso': 1, 'media_comando_eseguito': 1, 'media_punta_abbinata': 3, 'media_banca': 3, 'media_live': 1, 'media_sospeso': 6, 'media_riaperto': 5, 'media_rientro': 3, 'media_annullo': 3, 'media_banca_sposta': 3, 'media_banca_spostata': 3, 'media_punta_non_abbinata': 1, 'media_banca_spostamento_fallito': 1, 'media_banca_abbinata': 1, 'media_ciclo_chiuso': 1, 'media_attesa_clic': 1}
+      nota: MEDIA UNDER ciclo 1: ingresso 10.00 @2.94 (abbinato 10.00, pre-match, 3'32" al fischio); rientro 1 @4.70: esatto 81.10, piazzato 81.00, abbinato 76.96; rientro 2 @6.00: esatto 501.02, piazzato 501.00, abbinato 0.00; rientro 3 @5.80: esatto 413.92, piazzato 413.50, abbinato 10.03; totale puntato massimo 96.99; banca finale 98.54 @4.70 PERSIST, abbinata 98.54 (ultimo abbinamento: in gioco al 24'20"), a fine replay abbinata per intero; profitto lordo +1.55, netto +1.47 [CHIUSO]
+      nota: MEDIA UNDER P&L del replay: lordo +1.55 | commissione 0.08 (5.0%) | NETTO +1.47 EUR (dagli ordini abbinati della modalita'; non e' il metro della certificazione: il metro e' la condotta)
+      nota: MEDIA UNDER: letture degli ordini del conto (`betfair_live_orders`) 274 su 1635 battiti della sessione (soldi veri: solo a posizione aperta, al piu' una per battito); fonte finale del riquadro: solo ordini del bot: gli ordini messi a mano dal sito o dal terminale NON sono visti da questa sessione
+      nota: MEDIA UNDER: controlli M sollecitati {'M1': 5114, 'M2': 4620, 'M3': 4620, 'M4': 4620, 'M5': 5114, 'M6': 1231, 'M11': 1321, 'M7': 5005, 'M8': 5114, 'M9': 4, 'M10': 6078, 'M19': 801, 'M20': 4593}; MAI sollecitati (non lo so): M21
+      nota: MEDIA UNDER banca: ordini di banca 6; annullati (non spostati) 0; spostati col replace 3; ripiazzati IDENTICI 0; posizione aperta senza banca viva 0.0 s (tratto piu' lungo 0.0 s)
+      nota: ATTIVA ADESSO clic clic-1-1782835000000 (pre-match, 3'45" al fischio): letto dalla sessione pre-match, 3'35" al fischio; per il banco ESEGUIBILE; prima punta 140107608478811110 @2.94 per 10.0 a pre-match, 3'35" al fischio
+      nota: ATTIVA ADESSO ciclo 1: prima punta 140107608478811110 @2.94 a pre-match, 3'35" al fischio, partita da CLIC (clic-1-1782835000000)
+      nota: ATTIVA ADESSO: ultimo comando scritto dalla sessione {'id': 'clic-1-1782835000000', 'esito': 'eseguito', 'motivo': None, 'inviato_ms': 1782835001355.0, 'ricevuto_ms': 1782835010856.0, 'deciso_ms': 1782834994875.0, 'prezzo': 2.94, 'importo': 10.0, 'in_gioco': False}; stato finale FINE
+      nota: ATTIVA ADESSO: controlli M12-M18 sollecitati {'M12': 5114, 'M13': 7, 'M14': 5114, 'M15': 5110, 'M18': 5}; MAI sollecitati (non lo so): M16, M17
+      nota: stati dello slot MAI visti: CANCELLING, DONE, FLATTENING, IDLE, LOCKING, QUOTING, QUOTING2
+      nota: chiamate REST della sessione (registrate, mai eseguite): list_current_orders
+      tempo: 35760084 [media-clic-finestra] 31.4s (31.4 s) | 16068 tick/s
+OK  35760084 [media-clic-prima-del-gol-35]  tick=504571 decisioni=25586 azioni=   9 stati=sessione:arming,sessione:running,sessione:done [COMPLETE]
+      nota: qualita' registrazione: COMPLETE 95.2%
+      nota: control della UI: mode=maker dry_run=False stake=25 params=[('entry_stop_before_s', 420), ('event_loss_cap', 1.5), ('event_profit_target', 1), ('flatten_before_s', 180), ('ht_mode', False), ('media_a_clic', True), ('media_commissione_pct', 5.0), ('media_max_rientri', 5), ('media_max_spread_ticks', 2), ('media_mercato', 'OVER_UNDER_35'), ('media_min_flow', 10.0), ('media_min_size', 300.0), ('media_mode', True), ('media_obiettivi_live', [0.0, 0.3, 1.0]), ('media_obiettivo', 0.0), ('media_quota_max', 4.0), ('media_quota_min', 1.2), ('media_rientro_auto_filtri', False), ('media_rischio_max', 0.0), ('media_stake', 10.0), ('media_stop_ingressi_s', 420.0), ('media_tick_chiusura', 2), ('media_tick_rientro', 2), ('media_ttl_punta_ms', 30000), ('min_flow', 10), ('min_size', 300), ('one_green_per_phase', True), ('price_max', 4.6), ('price_min', 1.5), ('scalp_ticks', 1), ('sniper_mode', False), ('sniper_stake', 10), ('stop_ticks', 1), ('uscite_automatiche', True)]
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (params `uscite_automatiche=True`, come li scrive l'interruttore della UI su AUTOMATICHE)
+      nota: limiti dichiarati: catalogo sintetizzato dai marketDefinition; scanner non usato (lo scalper legge il book); orologio di mercato per `time.time`; settlement non raggiunto (fine vita della sessione); theta fuori perimetro; sniper spento (scenari `sniper*` per lo sniper)
+      nota: MEDIA UNDER: mercato OVER_UNDER_35 -> 1.259475537, Under 1222344; maker e sniper non armati; controlli M1-M11 + S6; B2 e K5 del maker non applicati (posizione in gioco per progetto)
+      nota: ATTIVA ADESSO: sessione armata dal pulsante (media_a_clic); clic agli istanti ['in gioco al 1\'08"'] (regola `prima-gol` dello scenario); reazione concessa 15000 ms; fatti del raw: inizio 1782831952415, fischio 1782835200000, in gioco 1782835225284, sospensioni in gioco [('in gioco al 1\'33"', 2.0), ('in gioco al 3\'31"', 3.0), ('in gioco al 3\'55"', 13.1), ('in gioco al 7\'36"', 3.1), ('in gioco al 27\'49"', 3.0), ('in gioco al 46\'00"', 3.0)]
+      nota: parita' paper/live: 54 parametri della strategia confrontati, diversi 0; client paper {'min_bet_validation': False, 'order_stream': True, 'paper_trade': True} / live {'min_bet_validation': False, 'order_stream': True, 'paper_trade': False}
+      nota: sessioni: {'prima': 'finita'}; stato finale 'done' (causa della fine: ?)
+      nota: book in ritardo: 560388; lapse al fischio: 0; lapse alla sospensione: 0; righe di specchio catturate: 39254
+      nota: fill per mercato che attraversa: 3 [motivo attraversato] - 16:25:00 UTC 1.259475537 sel 1222344 LAY 9.65 @2.38 (scambio a 2.10); 16:25:00 UTC 1.259475537 sel 1222344 LAY 116.49 @2.38 (scambio a 2.10); 16:25:00 UTC 1.259475537 sel 1222344 LAY 8.11 @2.38 (scambio a 2.10)
+      nota: fasi viste: pre-match, finestra-flatten, in-gioco, fine-sessione
+      nota: uscite EFFETTIVE delle strategie a fine sessione: MANUALI
+      nota: MEDIA UNDER: stato finale FINE; sessioni della modalita' 1; cicli chiusi 1; ordini piazzati (le azioni del referto) 9; eventi {'media_live': 1, 'media_ingresso': 1, 'media_comando_eseguito': 1, 'media_annullo': 2, 'media_banca': 3, 'media_punta_abbinata': 3, 'media_sospeso': 7, 'media_riaperto': 6, 'media_rientro': 2, 'media_banca_sposta': 3, 'media_banca_spostata': 3, 'media_banca_spostamento_fallito': 1, 'media_banca_abbinata': 1, 'media_ciclo_chiuso': 1, 'media_attesa_clic': 1}
+      nota: MEDIA UNDER ciclo 1: ingresso 10.00 @1.74 (abbinato 8.02, in gioco al 1'12"); rientro 1 @2.32: esatto 113.59, piazzato 113.50, abbinato 113.50; rientro 2 @2.58: esatto 620.32, piazzato 620.00, abbinato 27.08; totale puntato massimo 148.60; banca finale 149.29 @2.38 PERSIST, abbinata 149.29 (ultimo abbinamento: in gioco al 24'36"), a fine replay abbinata per intero; profitto lordo +0.69, netto +0.65 [CHIUSO]
+      nota: MEDIA UNDER P&L del replay: lordo +0.69 | commissione 0.03 (5.0%) | NETTO +0.65 EUR (dagli ordini abbinati della modalita'; non e' il metro della certificazione: il metro e' la condotta)
+      nota: MEDIA UNDER: letture degli ordini del conto (`betfair_live_orders`) 262 su 1635 battiti della sessione (soldi veri: solo a posizione aperta, al piu' una per battito); fonte finale del riquadro: solo ordini del bot: gli ordini messi a mano dal sito o dal terminale NON sono visti da questa sessione
+      nota: MEDIA UNDER: controlli M sollecitati {'M1': 4946, 'M2': 4620, 'M3': 4620, 'M4': 4620, 'M5': 4946, 'M6': 1118, 'M11': 1163, 'M7': 5006, 'M8': 4946, 'M9': 3, 'M10': 6078, 'M19': 838, 'M20': 4616}; MAI sollecitati (non lo so): M21
+      nota: MEDIA UNDER banca: ordini di banca 6; annullati (non spostati) 0; spostati col replace 3; ripiazzati IDENTICI 0; posizione aperta senza banca viva 0.0 s (tratto piu' lungo 0.0 s)
+      nota: ATTIVA ADESSO clic clic-1-1782835293214 (in gioco al 1'08"): letto dalla sessione in gioco al 1'12"; per il banco ESEGUIBILE; prima punta 140107608798608520 @1.74 per 10.0 a in gioco al 1'12"
+      nota: ATTIVA ADESSO ciclo 1: prima punta 140107608798608520 @1.74 a in gioco al 1'12", partita da CLIC (clic-1-1782835293214)
+      nota: ATTIVA ADESSO: ultimo comando scritto dalla sessione {'id': 'clic-1-1782835293214', 'esito': 'eseguito', 'motivo': None, 'inviato_ms': 1782835293217.0, 'ricevuto_ms': 1782835296910.0, 'deciso_ms': 1782835296910.0, 'prezzo': 1.74, 'importo': 10.0, 'in_gioco': True}; stato finale FINE
+      nota: ATTIVA ADESSO: controlli M12-M18 sollecitati {'M12': 4946, 'M13': 6, 'M14': 4946, 'M15': 4932, 'M18': 9}; MAI sollecitati (non lo so): M16, M17
+      nota: stati dello slot MAI visti: CANCELLING, DONE, FLATTENING, IDLE, LOCKING, QUOTING, QUOTING2
+      nota: chiamate REST della sessione (registrate, mai eseguite): list_current_orders
+      tempo: 35760084 [media-clic-prima-del-gol-35] 32.8s (32.8 s) | 15362 tick/s
+OK  35760084 [media-clic-doppio]  tick=504571 decisioni=18662 azioni=  15 stati=sessione:arming,sessione:running,sessione:done [COMPLETE]
+      nota: qualita' registrazione: COMPLETE 95.2%
+      nota: control della UI: mode=maker dry_run=False stake=25 params=[('entry_stop_before_s', 420), ('event_loss_cap', 1.5), ('event_profit_target', 1), ('flatten_before_s', 180), ('ht_mode', False), ('media_a_clic', True), ('media_commissione_pct', 5.0), ('media_max_rientri', 5), ('media_max_spread_ticks', 2), ('media_mercato', 'OVER_UNDER_25'), ('media_min_flow', 10.0), ('media_min_size', 300.0), ('media_mode', True), ('media_obiettivi_live', [0.0, 0.3, 1.0]), ('media_obiettivo', 0.0), ('media_quota_max', 4.0), ('media_quota_min', 1.2), ('media_rientro_auto_filtri', False), ('media_rischio_max', 0.0), ('media_stake', 10.0), ('media_stop_ingressi_s', 420.0), ('media_tick_chiusura', 2), ('media_tick_rientro', 2), ('media_ttl_punta_ms', 30000), ('min_flow', 10), ('min_size', 300), ('one_green_per_phase', True), ('price_max', 4.6), ('price_min', 1.5), ('scalp_ticks', 1), ('sniper_mode', False), ('sniper_stake', 10), ('stop_ticks', 1), ('uscite_automatiche', True)]
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (params `uscite_automatiche=True`, come li scrive l'interruttore della UI su AUTOMATICHE)
+      nota: limiti dichiarati: catalogo sintetizzato dai marketDefinition; scanner non usato (lo scalper legge il book); orologio di mercato per `time.time`; settlement non raggiunto (fine vita della sessione); theta fuori perimetro; sniper spento (scenari `sniper*` per lo sniper)
+      nota: MEDIA UNDER: mercato OVER_UNDER_25 -> 1.259475533, Under 47972; maker e sniper non armati; controlli M1-M11 + S6; B2 e K5 del maker non applicati (posizione in gioco per progetto)
+      nota: ATTIVA ADESSO: sessione armata dal pulsante (media_a_clic); clic agli istanti ['pre-match, 15\'25" al fischio', 'pre-match, 15\'25" al fischio'] (regola `doppio` dello scenario); reazione concessa 15000 ms; fatti del raw: inizio 1782831952415, fischio 1782835200000, in gioco 1782835225478, sospensioni in gioco [('in gioco al 1\'33"', 2.0), ('in gioco al 3\'31"', 3.0), ('in gioco al 3\'55"', 13.0), ('in gioco al 7\'36"', 3.0), ('in gioco al 27\'49"', 4.0)]
+      nota: parita' paper/live: 54 parametri della strategia confrontati, diversi 0; client paper {'min_bet_validation': False, 'order_stream': True, 'paper_trade': True} / live {'min_bet_validation': False, 'order_stream': True, 'paper_trade': False}
+      nota: sessioni: {'prima': 'finita'}; stato finale 'done' (causa della fine: ?)
+      nota: book in ritardo: 560388; lapse al fischio: 0; lapse alla sospensione: 0; righe di specchio catturate: 67613
+      nota: fill per mercato che attraversa: 4 [motivo attraversato] - 16:24:45 UTC 1.259475533 sel 47972 LAY 10.71 @4.50 (scambio a 4.20); 16:24:45 UTC 1.259475533 sel 47972 LAY 78.40 @4.50 (scambio a 4.20); 16:24:45 UTC 1.259475533 sel 47972 LAY 10.14 @4.50 (scambio a 4.20); 16:24:45 UTC 1.259475533 sel 47972 LAY 10.00 @4.50 (scambio a 4.20)
+      nota: fasi viste: pre-match, finestra-flatten, in-gioco, fine-sessione
+      nota: uscite EFFETTIVE delle strategie a fine sessione: MANUALI
+      nota: MEDIA UNDER: stato finale FINE; sessioni della modalita' 1; cicli chiusi 1; ordini piazzati (le azioni del referto) 15; eventi {'media_ingresso': 1, 'media_comando_eseguito': 1, 'media_punta_abbinata': 4, 'media_banca': 4, 'media_rientro': 4, 'media_banca_sposta': 6, 'media_banca_spostata': 6, 'media_live': 1, 'media_sospeso': 6, 'media_riaperto': 5, 'media_annullo': 3, 'media_banca_spostamento_fallito': 3, 'media_punta_non_abbinata': 1, 'media_banca_abbinata': 1, 'media_ciclo_chiuso': 1, 'media_attesa_clic': 1}
+      nota: MEDIA UNDER ciclo 1: ingresso 10.00 @2.88 (abbinato 10.00, pre-match, 15'09" al fischio); rientro 1 @2.92: esatto 10.14, piazzato 10.00, abbinato 10.00; rientro 2 @4.70: esatto 163.17, piazzato 163.00, abbinato 76.96; rientro 3 @6.00: esatto 648.10, piazzato 648.00, abbinato 0.00; rientro 4 @5.80: esatto 551.00, piazzato 551.00, abbinato 10.03; totale puntato massimo 106.99; banca finale 109.28 @4.50 PERSIST, abbinata 109.28 (ultimo abbinamento: in gioco al 24'20"), a fine replay abbinata per intero; profitto lordo +2.27, netto +2.16 [CHIUSO]
+      nota: MEDIA UNDER P&L del replay: lordo +2.27 | commissione 0.11 (5.0%) | NETTO +2.16 EUR (dagli ordini abbinati della modalita'; non e' il metro della certificazione: il metro e' la condotta)
+      nota: MEDIA UNDER: letture degli ordini del conto (`betfair_live_orders`) 274 su 1635 battiti della sessione (soldi veri: solo a posizione aperta, al piu' una per battito); fonte finale del riquadro: solo ordini del bot: gli ordini messi a mano dal sito o dal terminale NON sono visti da questa sessione
+      nota: MEDIA UNDER: controlli M sollecitati {'M1': 5352, 'M2': 5315, 'M3': 5315, 'M4': 5315, 'M5': 5352, 'M6': 1469, 'M11': 1560, 'M7': 5005, 'M8': 5352, 'M9': 5, 'M10': 6078, 'M19': 1522, 'M20': 5314}; MAI sollecitati (non lo so): M21
+      nota: MEDIA UNDER banca: ordini di banca 10; annullati (non spostati) 0; spostati col replace 6; ripiazzati IDENTICI 0; posizione aperta senza banca viva 0.0 s (tratto piu' lungo 0.0 s)
+      nota: ATTIVA ADESSO clic clic-1-1782834300000 (pre-match, 15'25" al fischio): MAI letto dalla sessione (sostituito da un clic successivo prima del battito, o sessione gia' chiusa); per il banco -; prima punta nessuna
+      nota: ATTIVA ADESSO clic clic-2-1782834300400 (pre-match, 15'25" al fischio): letto dalla sessione pre-match, 15'14" al fischio; per il banco ESEGUIBILE; prima punta 140107609122096710 @2.88 per 10.0 a pre-match, 15'14" al fischio
+      nota: ATTIVA ADESSO ciclo 1: prima punta 140107609122096710 @2.88 a pre-match, 15'14" al fischio, partita da CLIC (clic-2-1782834300400)
+      nota: ATTIVA ADESSO: ultimo comando scritto dalla sessione {'id': 'clic-2-1782834300400', 'esito': 'eseguito', 'motivo': None, 'inviato_ms': 1782834301745.0, 'ricevuto_ms': 1782834311352.0, 'deciso_ms': 1782834294059.0, 'prezzo': 2.88, 'importo': 10.0, 'in_gioco': False}; stato finale FINE
+      nota: ATTIVA ADESSO: controlli M12-M18 sollecitati {'M12': 5352, 'M13': 8, 'M14': 5352, 'M15': 5345, 'M18': 5}; MAI sollecitati (non lo so): M16, M17
+      nota: stati dello slot MAI visti: CANCELLING, DONE, FLATTENING, IDLE, LOCKING, QUOTING, QUOTING2
+      nota: chiamate REST della sessione (registrate, mai eseguite): list_current_orders
+      tempo: 35760084 [media-clic-doppio] 36.6s (36.6 s) | 13796 tick/s
+OK  35760084 [media-clic-tick-1-filtri]  tick=504571 decisioni=18662 azioni=  23 stati=sessione:arming,sessione:running,sessione:done [COMPLETE]
+      nota: qualita' registrazione: COMPLETE 95.2%
+      nota: control della UI: mode=maker dry_run=False stake=25 params=[('entry_stop_before_s', 420), ('event_loss_cap', 1.5), ('event_profit_target', 1), ('flatten_before_s', 180), ('ht_mode', False), ('media_a_clic', True), ('media_commissione_pct', 5.0), ('media_max_rientri', 5), ('media_max_spread_ticks', 2), ('media_mercato', 'OVER_UNDER_25'), ('media_min_flow', 10.0), ('media_min_size', 100.0), ('media_mode', True), ('media_obiettivi_live', [0.0, 0.3, 1.0]), ('media_obiettivo', 0.0), ('media_quota_max', 4.0), ('media_quota_min', 1.2), ('media_rientro_auto_filtri', True), ('media_rischio_max', 0.0), ('media_stake', 10.0), ('media_stop_ingressi_s', 420.0), ('media_tick_chiusura', 1), ('media_tick_rientro', 1), ('media_ttl_punta_ms', 30000), ('min_flow', 10), ('min_size', 300), ('one_green_per_phase', True), ('price_max', 4.6), ('price_min', 1.5), ('scalp_ticks', 1), ('sniper_mode', False), ('sniper_stake', 10), ('stop_ticks', 1), ('uscite_automatiche', True)]
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (params `uscite_automatiche=True`, come li scrive l'interruttore della UI su AUTOMATICHE)
+      nota: limiti dichiarati: catalogo sintetizzato dai marketDefinition; scanner non usato (lo scalper legge il book); orologio di mercato per `time.time`; settlement non raggiunto (fine vita della sessione); theta fuori perimetro; sniper spento (scenari `sniper*` per lo sniper)
+      nota: MEDIA UNDER: mercato OVER_UNDER_25 -> 1.259475533, Under 47972; maker e sniper non armati; controlli M1-M11 + S6; B2 e K5 del maker non applicati (posizione in gioco per progetto)
+      nota: ATTIVA ADESSO: sessione armata dal pulsante (media_a_clic); clic agli istanti ['pre-match, 44\'33" al fischio'] (regola `lontano` dello scenario); reazione concessa 15000 ms; fatti del raw: inizio 1782831952415, fischio 1782835200000, in gioco 1782835225478, sospensioni in gioco [('in gioco al 1\'33"', 2.0), ('in gioco al 3\'31"', 3.0), ('in gioco al 3\'55"', 13.0), ('in gioco al 7\'36"', 3.0), ('in gioco al 27\'49"', 4.0)]
+      nota: parita' paper/live: 54 parametri della strategia confrontati, diversi 0; client paper {'min_bet_validation': False, 'order_stream': True, 'paper_trade': True} / live {'min_bet_validation': False, 'order_stream': True, 'paper_trade': False}
+      nota: sessioni: {'prima': 'finita'}; stato finale 'done' (causa della fine: ?)
+      nota: book in ritardo: 560388; lapse al fischio: 0; lapse alla sospensione: 0; righe di specchio catturate: 93634
+      nota: fill per mercato che attraversa: 0
+      nota: fasi viste: pre-match, finestra-flatten, in-gioco, fine-sessione
+      nota: uscite EFFETTIVE delle strategie a fine sessione: MANUALI
+      nota: MEDIA UNDER: stato finale FINE; sessioni della modalita' 1; cicli chiusi 0; ordini piazzati (le azioni del referto) 23; eventi {'media_ingresso': 1, 'media_comando_eseguito': 1, 'media_punta_abbinata': 6, 'media_banca': 6, 'media_rientro': 5, 'media_annullo': 5, 'media_banca_sposta': 11, 'media_banca_spostata': 11, 'media_banca_spostamento_fallito': 6, 'media_massimo': 1, 'media_live': 1, 'media_sospeso': 6, 'media_riaperto': 5, 'media_esito': 1}
+      nota: MEDIA UNDER ciclo 1: ingresso 10.00 @2.68 (abbinato 10.00, pre-match, 44'06" al fischio); rientro 1 @2.86: esatto 90.68, piazzato 90.50, abbinato 10.03; rientro 2 @2.88: esatto 100.75, piazzato 100.50, abbinato 10.03; rientro 3 @2.90: esatto 120.86, piazzato 120.50, abbinato 66.71; rientro 4 @2.92: esatto 150.99, piazzato 150.50, abbinato 10.03; rientro 5 @2.94: esatto 247.84, piazzato 247.50, abbinato 10.03; totale puntato massimo 116.83; banca finale 116.88 @2.88 PERSIST, abbinata 0.00, a fine replay VIVA a mercato (resto 116.88); posizione aperta: se vince l'Under +219.78, se perde -116.83; profitto lordo -116.83, netto -116.83 [APERTO, regolato dal libro finale (Under LOSER)]
+      nota: MEDIA UNDER P&L del replay: lordo -116.83 | commissione 0.00 (5.0%) | NETTO -116.83 EUR (dagli ordini abbinati della modalita'; non e' il metro della certificazione: il metro e' la condotta)
+      nota: MEDIA UNDER: letture degli ordini del conto (`betfair_live_orders`) 578 su 1635 battiti della sessione (soldi veri: solo a posizione aperta, al piu' una per battito); fonte finale del riquadro: ordini del bot + ordini del conto letti alle 16:47:55 (0 a mano su questa selezione)
+      nota: MEDIA UNDER: controlli M sollecitati {'M1': 5891, 'M2': 5889, 'M3': 5889, 'M4': 5889, 'M5': 5891, 'M6': 5820, 'M11': 5890, 'M7': 5005, 'M8': 5891, 'M9': 6, 'M10': 6078, 'M19': 5882, 'M20': 5882}; MAI sollecitati (non lo so): M21
+      nota: MEDIA UNDER banca: ordini di banca 17; annullati (non spostati) 0; spostati col replace 11; ripiazzati IDENTICI 0; posizione aperta senza banca viva 0.0 s (tratto piu' lungo 0.0 s)
+      nota: ATTIVA ADESSO clic clic-1-1782832552415 (pre-match, 44'33" al fischio): letto dalla sessione pre-match, 44'06" al fischio; per il banco ESEGUIBILE; prima punta 140107609474084370 @2.68 per 10.0 a pre-match, 44'06" al fischio
+      nota: ATTIVA ADESSO ciclo 1: prima punta 140107609474084370 @2.68 a pre-match, 44'06" al fischio, partita da CLIC (clic-1-1782832552415)
+      nota: ATTIVA ADESSO: ultimo comando scritto dalla sessione {'id': 'clic-1-1782832552415', 'esito': 'eseguito', 'motivo': None, 'inviato_ms': 1782832558191.0, 'ricevuto_ms': 1782832579334.0, 'deciso_ms': 1782832579334.0, 'prezzo': 2.68, 'importo': 10.0, 'in_gioco': False}; stato finale FINE
+      nota: ATTIVA ADESSO: controlli M12-M18 sollecitati {'M12': 5891, 'M13': 12, 'M14': 5891, 'M15': 5889, 'M18': 1}; MAI sollecitati (non lo so): M16, M17
+      nota: stati dello slot MAI visti: CANCELLING, DONE, FLATTENING, IDLE, LOCKING, QUOTING, QUOTING2
+      nota: chiamate REST della sessione (registrate, mai eseguite): list_current_orders
+      tempo: 35760084 [media-clic-tick-1-filtri] 50.1s (50.1 s) | 10064 tick/s
+NE  35760084 [rifiuti-betfair-codici]  tick=124672 decisioni=23599 azioni=   0 stati=sessione:arming,sessione:running,slot:IDLE,sessione:done [COMPLETE]
+      nota: qualita' registrazione: COMPLETE 95.2%
+      nota: control della UI: mode=maker dry_run=False stake=25 params=[('entry_stop_before_s', 420), ('event_loss_cap', 1.5), ('event_profit_target', 1), ('flatten_before_s', 180), ('ht_mode', False), ('min_flow', 10), ('min_size', 300), ('one_green_per_phase', True), ('price_max', 4.6), ('price_min', 1.5), ('scalp_ticks', 1), ('sniper_mode', False), ('sniper_stake', 10), ('stop_ticks', 1), ('uscite_automatiche', True)]
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (params `uscite_automatiche=True`, come li scrive l'interruttore della UI su AUTOMATICHE)
+      nota: limiti dichiarati: catalogo sintetizzato dai marketDefinition; scanner non usato (lo scalper legge il book); orologio di mercato per `time.time`; settlement non raggiunto (fine vita della sessione); theta fuori perimetro; sniper spento (scenari `sniper*` per lo sniper)
+      nota: scenario 'rifiuti-betfair-codici': come `ingresso-abbinato-in-parte`, e il finto Betfair risponde FAILURE coi codici veri al primo scavalco (INVALID_BET_SIZE), al primo parcheggio del place-and-trim (INVALID_PROFIT_RATIO) e al primo rimpiazzo (replaceOrders, BET_TAKEN_OR_LAPSED): nessuna posizione fantasma, nessun loop, ogni rifiuto scritto col codice, residuo dichiarato se non chiudibile (RC1-RC4) - soldi veri simulati
+      nota: sessioni: {'prima': 'finita'}; stato finale 'done' (causa della fine: fine-vita)
+      nota: book in ritardo: 107943; lapse al fischio: 0; lapse alla sospensione: 0; righe di specchio catturate: 0
+      nota: fill per mercato che attraversa: 0
+      nota: fasi viste: pre-match, stop-ingressi, finestra-flatten, in-gioco, fine-sessione
+      nota: uscite EFFETTIVE delle strategie a fine sessione: AUTOMATICHE
+      nota: stati dello slot MAI visti: CANCELLING, DONE, FLATTENING, LOCKING, QUOTING, QUOTING2
+      nota: INGRESSO ABBINATO IN PARTE (tetto 0.29): gruppi colpiti 0, senza effetto (riarmati) 0; nessun ciclo
+      nota: FINTO BETFAIR coi codici veri: nessun rifiuto
+      nota: impronta degli ordini del bot (paper = live): e3b0c44298fc1c14 su 0 ordini
+      nota: loss_cap visti: 0
+      nota: controlli del cantiere 9 MAI sollecitati (non lo so): SV1, SV2, SV3, SV4, SV5, RC1, RC2, RC3, RC4
+      NON ESERCITATO: rifiuti-betfair-codici: nessun gruppo d'ingresso abbinato in parte (il guasto non ha mai avuto effetto: SV1-SV5 'non lo so')
+      NON ESERCITATO: rifiuti-betfair-codici: rifiuti del piano MAI eseguiti (nessun ordine di quel tipo): scavalco, parcheggio, rimpiazzo
+      tempo: 35760084 [rifiuti-betfair-codici] 5.1s (5.1 s) | 24530 tick/s
+
+ESITO: 13 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+       0 violazioni totali
+NE: 4 scenari senza violazioni ma NON ESERCITATI (contatore-chiave a zero): 35760084 [media-under-35], 35760084 [media-under-tick-1], 35760084 [media-under-kill-switch], 35760084 [rifiuti-betfair-codici]
+
+COPERTURA DEI CONTROLLI — quante volte ognuno ha avuto un caso:
+     B1  x47247   nessun INGRESSO nuovo quando le aperture sono vietate: force-flat 
+     B2  x11330   al FISCHIO nessuna posizione aperta: dopo il KO ogni selezione ha 
+     B3  x54      ogni ordine chiesto e' LEGALE su .it: prezzo nella ladder, non sot
+  ?? B4  x0       lo stake d'ingresso e' quello del control (mai piu' di quanto l'ut
+  ?? B5  x0       l'esposizione abbinata per selezione non supera il tetto che la se
+  ?? B6  x0       tetto transazioni/ora (`max_txn_hour`): oltre il budget nessun NUO
+  ?? K1  x0       ogni ordine che il bot STA SEGUENDO in una posizione viva esiste d
+  ?? K2  x0       un ordine RIFIUTATO (place_order ha risposto False, stato Violatio
+     K3  x27194   lo stato di ogni ordine si legge come Enum `OrderStatus` (`.value`
+  ?? K4  x0       uno slot che il bot crede VIVO ha almeno un ordine vivo o dell'abb
+  ?? K5  x0       nessuna ESPOSIZIONE abbinata resta sbilanciata su una selezione il
+  ?? K6  x0       quando il bot dichiara uno slot CHIUSO (IDLE/DONE) non resta nessu
+  ?? K7  x0       a ogni ciclo chiuso il `locked` che il bot contabilizza (pnl_locke
+     S1  x16445   ogni scrittura del servizio su `scalper_control` rispetta i CHECK 
+     S2  x17      uno STOP (UI 'stopping', kill-switch, fine vita, cap globale) arma
+     S3  x13      a sessione CHUSA nessun ordine della sessione resta vivo a mercato
+     S4  x13      lo stato finale della sessione dice PERCHE' e' finita: 'stopped' s
+     S5  x59761   mentre la sessione e' 'running' il servizio scrive heartbeat_at e 
+     S6  x9       PAPER = LIVE: armata dallo stesso control, la sessione paper e que
+  ?? S7  x0       dopo un RIAVVIO della sessione, l'esposizione abbinata e gli ordin
+     P1  x27185   ogni ordine del bot arriva allo specchio `betfair_live_orders` (ri
+     P2  x27185   lo specchio non dichiara MAI un ordine abbinato piu' di quanto il 
+  -- controlli del banco comune, scenari a uscite manuali (uscite-manuali-firmate):
+  ?? UM1 x0       a uscite manuali nessuna uscita di trading parte senza la firma de
+  ?? UM2 x0       ogni uscita decisa dalla strategia diventa una proposta coi numeri
+     UM3 x1       le protezioni non passano dal cancello e scattano da sole
+  ?? UM4 x0       una proposta la cui condizione cade sparisce, con la sua firma
+  ?? UF1 x0       una firma fa partire l'uscita una volta sola
+  ?? UF2 x0       l'uscita firmata parte all'importo esatto della proposta di adesso
+  ?? UF3 x0       una firma non esegue mai un'uscita diversa da quella firmata
+
+?? MAI SOLLECITATI: 16 controlli su 22. Su questi il referto NON dice «sano», dice «non lo so»:
+     B4: lo stake d'ingresso e' quello del control (mai piu' di quanto l'utente ha acceso): `run_session` scrive `params['stake']` da `scalper_control.stake`
+     B5: l'esposizione abbinata per selezione non supera il tetto che la sessione passa alla strategia (`max_selection_exposure` = stake x (price_max-1) x 2): i tetti di flumine sono aperti, quello del bot no (par.6.6)
+     B6: tetto transazioni/ora (`max_txn_hour`): oltre il budget nessun NUOVO ingresso (le chiusure passano sempre); l'ora e' quella di MERCATO (par.6.6)
+     K1: ogni ordine che il bot STA SEGUENDO in una posizione viva esiste davvero a mercato (nel blotter): un ordine in mano al bot che il mercato non conosce e' una posizione che nessuno governa (difetti 4 e 7 del 15/09)
+     K2: un ordine RIFIUTATO (place_order ha risposto False, stato Violation) non lascia il bot con una posizione creduta viva che poggia SOLO su ordini rifiutati (difetto 2 del 15/09: `res.ok` mai letto)
+     K4: uno slot che il bot crede VIVO ha almeno un ordine vivo o dell'abbinato sulla sua selezione: altrimenti sorveglia il nulla (difetto 4 del 15/09)
+     K5: nessuna ESPOSIZIONE abbinata resta sbilanciata su una selezione il cui slot e' dichiarato chiuso (IDLE/DONE), oltre la tolleranza che il bot stesso dichiara: nessuna posizione fantasma (PROCESSO par.6.4 'mai una posizione scoperta non dichiarata')
+     K6: quando il bot dichiara uno slot CHIUSO (IDLE/DONE) non resta nessun ordine VIVO di quella selezione sul book (un cancel in viaggio, `Cancelling`, e' governato e non conta)
+     K7: a ogni ciclo chiuso il `locked` che il bot contabilizza (pnl_locked, loss cap, missione) e' il worst-case VERO degli ordini abbinati dello slot, letto da `size_matched` e `average_price_matched` (difetto 3 del 15/09: prezzo medio letto da un campo sbagliato)
+     S7: dopo un RIAVVIO della sessione, l'esposizione abbinata e gli ordini vivi lasciati dalla sessione morta sono governati dalla nuova (una sua credenza li segue) oppure il servizio li DICHIARA (allarme): mai una posizione orfana silenziosa (PROCESSO par.6.3 riavvio; catalogo par.7 punto 19)
+     UM1: a uscite manuali nessuna uscita di trading parte senza la firma dell'utente
+     UM2: ogni uscita decisa dalla strategia diventa una proposta coi numeri
+     UM4: una proposta la cui condizione cade sparisce, con la sua firma
+     UF1: una firma fa partire l'uscita una volta sola
+     UF2: l'uscita firmata parte all'importo esatto della proposta di adesso
+     UF3: una firma non esegue mai un'uscita diversa da quella firmata
+TEMPO TOTALE: 5m06.8s (306.8 s) su 13 replay | obiettivo 300 s, tetto 600 s (CERTIFICA_TETTO_S)

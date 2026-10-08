@@ -1,0 +1,83 @@
+........FFFF....                                                         [100%]
+=================================== FAILURES ===================================
+___________ test_fresh_heartbeats_but_data_beyond_hard_cap_restarts ____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f0c8978c7d0>
+
+    def test_fresh_heartbeats_but_data_beyond_hard_cap_restarts(monkeypatch):
+        """Review 17/07 (seconda passata): heartbeat freschi con silenzio dati
+        OLTRE l'hard-cap (subscription rotta a socket vivo) → restart COMUNQUE.
+        Garanzia anti-16/07 preservata anche se gli heartbeat 'mentono'."""
+        now_ms = _time.time() * 1000.0
+        R, session, flumine, alerts, stopped, _mk = _stall_env(
+            monkeypatch, live_orders=[], last_heartbeat_ms=now_ms - 2_000.0,
+            last_write_ms=now_ms - 2_400_000.0)   # dati fermi da 40 min (> cap 30')
+        R.heartbeat_worker({}, flumine, session)
+>       assert session.restart_requested.is_set()
+E       AssertionError: assert False
+E        +  where False = is_set()
+E        +    where is_set = <threading.Event at 0x7f0c89b49f30: unset>.is_set
+E        +      where <threading.Event at 0x7f0c89b49f30: unset> = namespace(market_to_event={'1.1': 'E1'}, shutdown_requested=<threading.Event at 0x7f0c89b49480: unset>, restart_reques...[], 'muto_da_s': None, 'episodi': 0}, _custode_sessione=<Betfair.stream.auth.CustodeSessione object at 0x7f0c89b7ec10>).restart_requested
+
+Betfair/stream/tests/test_stream_heartbeat_stall_2026_07_17.py:186: AssertionError
+__________________ test_dead_stream_stale_heartbeats_restarts __________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f0c89762dd0>
+
+    def test_dead_stream_stale_heartbeats_restarts(monkeypatch):
+        """Dati fermi E heartbeat vecchi = connessione morta → restart (come 16/07)."""
+        R, session, flumine, alerts, stopped, markers = _stall_env(
+            monkeypatch, live_orders=[], last_heartbeat_ms=1.0)
+        R.heartbeat_worker({}, flumine, session)
+>       assert session.restart_requested.is_set()
+E       AssertionError: assert False
+E        +  where False = is_set()
+E        +    where is_set = <threading.Event at 0x7f0c89b51e10: unset>.is_set
+E        +      where <threading.Event at 0x7f0c89b51e10: unset> = namespace(market_to_event={'1.1': 'E1'}, shutdown_requested=<threading.Event at 0x7f0c8976f890: unset>, restart_reques...[], 'muto_da_s': None, 'episodi': 0}, _custode_sessione=<Betfair.stream.auth.CustodeSessione object at 0x7f0c89b7e710>).restart_requested
+
+Betfair/stream/tests/test_stream_heartbeat_stall_2026_07_17.py:195: AssertionError
+_________________ test_dead_stream_no_heartbeat_info_restarts __________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f0c8979baf0>
+
+    def test_dead_stream_no_heartbeat_info_restarts(monkeypatch):
+        """Heartbeat MAI visti (0) → età stream (retro-compat col caso 16/07)."""
+        R, session, flumine, alerts, stopped, _mk = _stall_env(
+            monkeypatch, live_orders=[], last_heartbeat_ms=0)
+        R.heartbeat_worker({}, flumine, session)
+>       assert session.restart_requested.is_set()
+E       AssertionError: assert False
+E        +  where False = is_set()
+E        +    where is_set = <threading.Event at 0x7f0c89ba0f50: unset>.is_set
+E        +      where <threading.Event at 0x7f0c89ba0f50: unset> = namespace(market_to_event={'1.1': 'E1'}, shutdown_requested=<threading.Event at 0x7f0c89b519d0: unset>, restart_reques...[], 'muto_da_s': None, 'episodi': 0}, _custode_sessione=<Betfair.stream.auth.CustodeSessione object at 0x7f0c89b4a520>).restart_requested
+
+Betfair/stream/tests/test_stream_heartbeat_stall_2026_07_17.py:207: AssertionError
+___________________ test_stall_restart_toctou_recheck_blocks ___________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f0c89bc6820>
+
+    def test_stall_restart_toctou_recheck_blocks(monkeypatch):
+        R, session, flumine, alerts, stopped, markers = _stall_env(
+            monkeypatch, live_orders=[], last_heartbeat_ms=1.0)
+        calls = {"n": 0}
+    
+        def _blockers_race(fl, **kw):  # fresh kwarg (fix 17/07)
+            calls["n"] += 1
+            # 1° check (pre-alert): pulito; 2° check (dentro _request_soft_restart):
+            # un ordine è comparso nel frattempo (live_order_worker concorrente).
+            return None if calls["n"] == 1 else "1 ordini vivi sul mercato 1.1"
+    
+        monkeypatch.setattr(R, "_lifecycle_blockers", _blockers_race)
+        R.heartbeat_worker({}, flumine, session)
+    
+>       assert calls["n"] >= 2                          # doppio check eseguito
+        ^^^^^^^^^^^^^^^^^^^^^^
+E       assert 0 >= 2
+
+Betfair/stream/tests/test_stream_heartbeat_stall_2026_07_17.py:228: AssertionError
+=========================== short test summary info ============================
+FAILED Betfair/stream/tests/test_stream_heartbeat_stall_2026_07_17.py::test_fresh_heartbeats_but_data_beyond_hard_cap_restarts
+FAILED Betfair/stream/tests/test_stream_heartbeat_stall_2026_07_17.py::test_dead_stream_stale_heartbeats_restarts
+FAILED Betfair/stream/tests/test_stream_heartbeat_stall_2026_07_17.py::test_dead_stream_no_heartbeat_info_restarts
+FAILED Betfair/stream/tests/test_stream_heartbeat_stall_2026_07_17.py::test_stall_restart_toctou_recheck_blocks
+4 failed, 12 passed in 0.20s

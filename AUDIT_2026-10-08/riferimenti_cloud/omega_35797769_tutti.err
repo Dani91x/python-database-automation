@@ -1,0 +1,8 @@
+CRITICAL:omega.service:[omega] il lettore degli aggregati non separa le modalita': paper e live SOMMATI nelle decisioni (catalogo 7.21)
+CRITICAL:omega.service:[omega] place LIVE a esito IGNOTO (trade 1, evento 35797769): in riconciliazione
+CRITICAL:omega.service:[omega] place LIVE a esito IGNOTO (trade 2, evento 35797769): in riconciliazione
+WARNING:safe.execution:[safe.exec] punta 1.07 -> 1.00 (multiplo di 0,50 per difetto): residuo 0.07 dichiarato (trade 2)
+CRITICAL:omega.service:[omega] evento 35797769: posizione chiusa DALL'UTENTE fuori dall'app -> il bot non gestisce piu' questa partita
+WARNING:safe.execution:[safe.exec] punta 1.32 -> 1.00 (multiplo di 0,50 per difetto): residuo 0.32 dichiarato (trade 2)
+EXIT 0
+TEMPO_REALE_S 2433.971334722

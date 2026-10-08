@@ -1,0 +1,13 @@
+WARNING:flumine.strategy.strategy:Strategy of same name 'scm35797769' already added
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_PRIMI Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_PRIMI Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_PRIMI Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_PRIMI Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_PRIMI Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_PRIMI Error: rifiuto iniettato dal replay
+WARNING:flumine.strategy.strategy:Strategy of same name 'mu35797769' already added
+WARNING:flumine.strategy.runnercontext:Trade '009836fa-2974-4174-afee-2d1dfd09eca0' not present in RunnerContext live_trades on reset
+
+real	20m40.073s
+user	19m34.182s
+sys	0m22.285s
