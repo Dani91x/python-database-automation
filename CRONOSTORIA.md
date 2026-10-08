@@ -5247,3 +5247,5 @@ Brief: `ARCHITETTURA_2026-10/BRIEF_PIANO_ARCHITETTURA_2026-10-08.md` (par. 9 val
   0 inesistenti; falsificata (G-013 -> G-999: 1 mancante + 1 inesistente, rosso). Citazioni: `banco_comune.py:1844`
   (`LATENZA_LETTURA_S = 0.120`), `ambiente_runner.js:69,75` (code a 0,15 s nell'app). Ladder: canale 200 ms
   (`config_stream.py:74`), upsert DB 0,3 s nell'app (`ambiente_runner.js:70`): 04 corretto.
+- 19:40 `06_RIEPILOGO_PER_L_UTENTE.md` scritto dal coordinatore (cosa cambia, cosa resta, -80% non dimostrato, 13-17
+  settimane, 7 decisioni che bloccano la tappa 0 + le principali dopo; elenco completo in 05 §8).
