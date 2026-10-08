@@ -183,6 +183,8 @@ _MODULI_SCALPER_CALCIO: Tuple[str, ...] = (
     "Betfair.stream.scalper.sniper_bot", "Betfair.stream.scalper.theta_bot",
     # 05/10: la modalita' "media under" (SPEC_MEDIA_UNDER_2026-10-05.md)
     "Betfair.stream.scalper.media_under_bot",
+    # 08/10 (W3b): gli ordini esterni dallo stream ordini del conto
+    "Betfair.stream.tennis_scalper.ordini_esterni",
 )
 # i quattro bot tennis girano nello STESSO processo (``tennis_runner``, stato
 # e tetti condivisi): ciascuno porta l'intera chiusura del runner, strategie
@@ -195,11 +197,14 @@ _MODULI_TENNIS: Tuple[str, ...] = (
     "Betfair.stream.tennis_live.guardie_tennis",
     "Betfair.stream.tennis_live.iscrizione_a_caldo",
     "Betfair.stream.tennis_live.mercati_registrati",
+    # 08/10 (W3b): gli ordini esterni (sito, ladder) ai bot ospitati
+    "Betfair.stream.tennis_live.ordini_esterni_tennis",
     "Betfair.stream.tennis_live.paper_execution",
     "Betfair.stream.tennis_live.tennis_bot_service", "Betfair.stream.tennis_live.tennis_db",
     "Betfair.stream.tennis_live.tennis_live_order_worker",
     "Betfair.stream.tennis_live.tennis_recorder",
     "Betfair.stream.tennis_scalper.condotta_ordini",
+    "Betfair.stream.tennis_scalper.ordini_esterni",
     "Betfair.stream.tennis_scalper.run_tennis_scalper",
     "Betfair.stream.tennis_scalper.superficie",
     "Betfair.stream.tennis_scalper.tennis_flb_bot",

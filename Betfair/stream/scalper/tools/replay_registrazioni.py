@@ -104,6 +104,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ...backtest import chiusura_parziale as CP
 from ...backtest import scavalco_rifiuti as SR
+from ...backtest import ordini_esterni_banco as OEB
 from ...backtest import uscite_manuali as UM
 from ...live_order_build import SUBMIN_IMPORTO_FINALE_MIN
 from .. import certificazione as CERT
@@ -794,6 +795,9 @@ SCENARI_DESCRITTI: Dict[str, str] = {
                 "della vecchia deve essere governata o dichiarata (S7)"
                 % int(ATTESA_RIARMO_S)),
     CP.SCENARIO: "come `base`, ma " + CP.DESCRIZIONE,
+    # 08/10 (W3b): l'ordine ESTERNO dell'utente (dal sito) visto dallo stream
+    # ordini del conto della sessione (LIVE, come `base`)
+    **{nome: "come `base`, ma " + OEB.DESCRIZIONI[nome] for nome in OEB.SCENARI},
     # 28/09 (cantiere D2): lo SNIPER in gioco, acceso di default in produzione
     # dal 25/09 e mai certificato sul banco. Sessione VERA con `sniper_mode`,
     # vita della sessione di produzione (`auto_mode.vita_sessione_s`: KO+130'),
@@ -1305,16 +1309,41 @@ class _Tabella:
         self._op, self._riga = "update", riga
         return self
 
-    def eq(self, *_a: Any, **_k: Any) -> "_Tabella":
+    def eq(self, *a: Any, **_k: Any) -> "_Tabella":
+        # 08/10 (W3b): i filtri si ricordano; contano SOLO sulle tabelle che uno
+        # scenario dichiara vere (``_DbFinto.tabelle_vere``), altrove come prima
+        if len(a) >= 2:
+            self.__dict__.setdefault("_filtri", []).append(("eq", a[0], a[1]))
         return self
 
-    def in_(self, *_a: Any, **_k: Any) -> "_Tabella":
+    def in_(self, *a: Any, **_k: Any) -> "_Tabella":
+        if len(a) >= 2:
+            self.__dict__.setdefault("_filtri", []).append(("in", a[0], list(a[1])))
         return self
+
+    def _righe_filtrate(self) -> List[Dict[str, Any]]:
+        out = []
+        for r in self._db.tabelle.get(self._nome, []):
+            ok = True
+            for tipo, col, val in self.__dict__.get("_filtri", []):
+                v = r.get(col)
+                if (tipo == "eq" and str(v) != str(val)) or \
+                        (tipo == "in" and str(v) not in {str(x) for x in val}):
+                    ok = False
+                    break
+            if ok:
+                out.append(dict(r))
+        return out
 
     def execute(self) -> _Risposta:
         if self._op == "select":
             # 05/10 (giro 2): le letture della sessione, per tabella (M10)
             self._db.letture[self._nome] = self._db.letture.get(self._nome, 0) + 1
+            # 08/10 (W3b): il DB giu' degli scenari `ordine-esterno-db-giu`
+            if self._nome in getattr(self._db, "letture_ko", ()):
+                raise RuntimeError("DB illeggibile (guasto del replay): %s" % self._nome)
+            if self._nome in getattr(self._db, "tabelle_vere", ()):
+                return _Risposta(self._righe_filtrate())
         if self._op == "insert":
             righe = self._riga if isinstance(self._riga, list) else [self._riga]
             dest = self._db.tabelle.setdefault(self._nome, [])
@@ -1831,6 +1860,9 @@ class _Banco:
         self.evento_fatto = False
         self.kill_file: Optional[str] = None
         self.sorveglianza_cp: Optional[Any] = None
+        # 08/10 (W3b): l'ordine esterno dell'utente e lo stream ordini del conto
+        # (None fuori dagli scenari `ordine-esterno*`: nessun lavoro in piu')
+        self.esterni_banco: Optional[Any] = None
         # 04/10: ultima riga di specchio per ordine (bet_id), per CP1
         self.specchio_per_ordine: Dict[str, Dict[str, Any]] = {}
         self.parita: Optional[Dict[str, Any]] = None
@@ -2366,7 +2398,13 @@ class _Banco:
     def osservazione(self, ms: int, quando: str, *, fine: bool = False,
                      stato_mercato: str = "OPEN") -> CERT.Osservazione:
         s = self.strategia_corrente()
-        cred = CERT.credenze(s) if s is not None else []
+        # 08/10 (W3b): una strategia FERMATA dall'intervento dell'utente non
+        # decide piu' e i suoi ordini li ha annullati la sorveglianza: le sue
+        # credenze sono quelle dell'istante dell'intervento e non governano piu'
+        # niente (la sessione si chiude al battito). Al loro posto OE3/OE4 (nessun
+        # ordine nuovo, nessun vivo a fine sessione); S3 resta.
+        cred = (CERT.credenze(s) if s is not None
+                and not getattr(s, "_fermo_per_intervento", False) else [])
         righe = self.righe_correnti(s, cred)
         tutti = {r.get("order_id") for r in righe}
         nuovi = tutti - self.ordini_visti
@@ -2927,6 +2965,8 @@ class _Ponte:
                 continue
             if futils.call_strategy_error_handling(sn.check_market_book, market, market_book):
                 futils.call_strategy_error_handling(sn.process_market_book, market, market_book)
+        if b.esterni_banco is not None:
+            b.esterni_banco.dopo_il_book(mid, ms)
         if b.sessioni:
             b.gira_specchio(ms)
         for sv in b.sorveglianze_extra:
@@ -2952,6 +2992,24 @@ def _posizione_aperta(s: Any) -> bool:
     return False
 
 
+def _istanti_evento(banco: _Banco, s: Any) -> Tuple[int, int]:
+    """(meta', ultimo istante) della finestra pre-match in cui gli scenari
+    provocano il loro evento: meta' fra il primo book e KO - entry_stop_before_s,
+    piu' un quarto della seconda meta'."""
+    fine = banco.ko_ms - int(float(getattr(s, "entry_stop_before_s", 420.0) or 0) * 1000)
+    meta = banco.primo_ms + (fine - banco.primo_ms) // 2
+    return meta, meta + (fine - meta) // 4
+
+
+def _istante_esterno(banco: _Banco, quale: int) -> Optional[int]:
+    """08/10 (W3b): gli istanti dell'ordine dell'utente (0 = da quando, 1 =
+    entro quando), gli stessi degli altri eventi degli scenari."""
+    s = banco.strategia_corrente()
+    if s is None or banco.ko_ms is None or banco.primo_ms is None:
+        return None
+    return _istanti_evento(banco, s)[quale]
+
+
 def _evento_scenario(self: _Banco, ms: int) -> None:
     """Stop da UI / kill-switch / morte del processo: a meta' della finestra
     pre-match (dal primo book a KO - entry_stop_before_s), appena il bot ha una
@@ -2964,10 +3022,7 @@ def _evento_scenario(self: _Banco, ms: int) -> None:
     if s is None or self.ko_ms is None or self.primo_ms is None:
         return
     if self.evento_ms is None:
-        fine = self.ko_ms - int(float(getattr(s, "entry_stop_before_s", 420.0) or 0) * 1000)
-        meta = self.primo_ms + (fine - self.primo_ms) // 2
-        self.evento_ms = meta
-        self._evento_ultimo = meta + (fine - meta) // 4
+        self.evento_ms, self._evento_ultimo = _istanti_evento(self, s)
     if ms < self.evento_ms:
         return
     if not _posizione_aperta(s) and ms < self._evento_ultimo:
@@ -3058,6 +3113,12 @@ def _iniezioni(banco: _Banco, orologio: _Orologio, kill_file: str):
         _patch(st, SS, "Db", lambda: banco.db)
         _patch(st, SS, "time", _TempoSessione(orologio))
         _patch(st, SS, "KILL_FILE", kill_file)
+        # 08/10 (W3b, secondo giro): la verifica "del bot / fuori bot" sul DB del
+        # replay, con la regola VERA di W2 e la latenza delle letture sul tempo di
+        # mercato (nessun thread: deterministica). Lavora solo se arriva un ordine
+        # esterno, cioe' negli scenari `ordine-esterno*`.
+        _patch(st, SS, "conferma_dei_bot",
+               lambda db, framework, registro: OEB.ConfermaBanco(db, orologio.ora_ms))
         _patch(st, SS, "_order_mirror_loop",
                lambda mirror, framework, stop_flag, tick_s=1.0: banco.registra_specchio(mirror))
         _patch(st, AUTH, "build_client", lambda login=True: trading)
@@ -3398,6 +3459,23 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
                                "(params.uscite_approvate, riletta dalla sessione al "
                                "battito)" % int(UM.FIRMA_DOPO_S)
                                if scenario == UM.SCENARIO_FIRMATE else "nessuna firma"))
+        if scenario in OEB.SCENARI:
+            utente = OEB.strategia_utente()
+            utente.market_filter = {"markets": [raw]}
+            banco.quadro.add_strategy(utente)
+            # secondo giro: il DB del replay risponde DAVVERO (filtri eq/in_) sulle
+            # tabelle della verifica; `db-giu`: ogni loro lettura fallisce
+            db.tabelle_vere = set(OEB.TABELLE_VERIFICA)
+            if scenario == OEB.SCENARIO_DB_GIU:
+                db.letture_ko = set(OEB.TABELLE_VERIFICA)
+            banco.esterni_banco = OEB.Iniettore(
+                scenario, quadro=banco.quadro, utente=utente, db=db,
+                strategie=lambda: [s for fw in banco.framework_creati for s in fw.strategie],
+                mercati_sessione=banco._mercati_sessione,
+                mercati_raw=list(definizioni),
+                da_ms=lambda: _istante_esterno(banco, 0),
+                entro_ms=lambda: _istante_esterno(banco, 1))
+            ref.note.append("ORDINE ESTERNO: %s" % OEB.DESCRIZIONI[scenario])
         try:
             with ExitStack() as pila:
                 if banco.osservatore_um is not None:
@@ -3811,6 +3889,22 @@ def _chiudi_referto(ref: CERT.Referto, banco: _Banco, rifiuti: Any, ritardi: Any
             "BANCO-PONTE", "un errore del replay dentro il giro di un book e' un "
             "guasto del banco, mai un OK muto",
             "%d errori, primo: %s" % (len(banco.errori_ponte), banco.errori_ponte[0])))
+    ie = banco.esterni_banco
+    if ie is not None:
+        ie.chiudi(stato_finale=db.control.get("status"),
+                  stats_finali=dict(db.control.get("stats") or {}),
+                  attivita=db.attivita(), ora_ms=banco.orologio.ora_ms())
+        for cod, n in ie.sollecitati.items():
+            ref.sollecitati[cod] = ref.sollecitati.get(cod, 0) + n
+        for cod, reg, det, quando in ie.violazioni:
+            ref.violazioni.append(CERT.Violazione(cod, reg, det, quando))
+        ref.note.append(ie.riepilogo())
+        mai = [c for c, _r in OEB.elenco_controlli(ie.scenario) if not ie.sollecitati.get(c)]
+        if mai:
+            ref.note.append("ORDINI ESTERNI: controlli MAI sollecitati (non lo so): %s"
+                            % ", ".join(mai))
+            ref.non_esercitato.append("ordine esterno: controlli %s mai sollecitati"
+                                      % ", ".join(mai))
     oss = banco.osservatore_um
     if oss is not None:
         for cod, n in oss.sollecitati.items():

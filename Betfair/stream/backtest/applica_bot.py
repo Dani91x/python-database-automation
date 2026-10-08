@@ -195,6 +195,10 @@ SCENARI_SCARTATI: Dict[str, Dict[str, str]] = {
         # 08/10 (cantiere 9): ingresso abbinato in parte e finto Betfair coi codici
         "ingresso-abbinato-in-parte": _GUASTO, "ingresso-abbinato-in-parte-paper": _GUASTO,
         "rifiuti-betfair-codici": _GUASTO, "rifiuti-betfair-codici-paper": _GUASTO,
+        # 08/10 (W3b): l'ordine esterno dell'utente (dal sito) simulato dal banco
+        "ordine-esterno": _UTENTE, "ordine-esterno-altro-mercato": _UTENTE,
+        "ordine-esterno-app": _UTENTE, "ordine-esterno-di-un-bot": _UTENTE,
+        "ordine-esterno-db-giu": _GUASTO,
     },
 }
 # 07/10 (integrazione del coordinatore): gli scenari del banco del pulsante

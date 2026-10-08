@@ -1,0 +1,4 @@
+RM7 esito 'di un bot' trattato come fuori bot [ordine-esterno-di-un-bot] -> rc=1 esito=['KO'] violazioni=['OE6'] | sha 14f893ed26a8 ripristinato
+RM8 DB illeggibile = fuori bot (stop al buio) [ordine-esterno-db-giu] -> rc=0 esito=['OK'] violazioni=[] | sha 14f893ed26a8 ripristinato
+RM9 il controllo non rifiuta sulla selezione sospesa [ordine-esterno-db-giu] -> rc=1 esito=['KO'] violazioni=['OE7'] | sha 14f893ed26a8 ripristinato
+RM10 decisione dai soli riferimenti (verifica saltata) [ordine-esterno-di-un-bot] -> rc=1 esito=['KO'] violazioni=['OE6'] | sha 14f893ed26a8 ripristinato

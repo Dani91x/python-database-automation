@@ -274,6 +274,18 @@ _CHIAMANTI_AUTORIZZATI: Dict[str, _Autorizzato] = {
         motivo="supporto del banco: mercato/strategia di prova del motore ordini in certificazione",
         strade=("BANCO",),
     ),
+    # 08/10 (W3b): l'ordine ESTERNO dell'utente negli scenari `ordine-esterno*`
+    # dello scalper calcio, piazzato sul Market della FlumineSimulation senza
+    # fermare il motore (l'utente non blocca il bot: esecuzione asincrona come
+    # su Betfair, a differenza di ``place_order_utente`` che aspetta il pacchetto)
+    "Betfair/stream/backtest/ordini_esterni_banco.py": _Autorizzato(
+        motivo=(
+            "IL BANCO di certificazione (non produzione): Iniettore._piazza chiama "
+            "market.place_order sul Market della FlumineSimulation per l'ordine "
+            "dell'utente dal sito degli scenari ordine-esterno (W3b)."
+        ),
+        strade=("BANCO",),
+    ),
     # -- 25/09, F10a: i 4 "trovati dalla scansione, da decidere" (grid_strategy, --
     # -- scalper_bot_base, theta_strategy di scalper_lab; tennis_lab.py) sono   --
     # -- stati spostati fuori da Betfair/ (laboratorio/, decisione utente): non --

@@ -1,0 +1,62 @@
+BOT: scalper_calcio | spec: Betfair/stream/scalper/BIBBIA_SCALPER_CALCIO.md | registrazioni: 1 in /home/user/python-database-automation/.claude/worktrees/agent-aa6d8083bb40b34bd/_live_raw
+controlli attivi: 22 | flumine 2.13.11 | betfairlightweight 2.23.2 | codice bot ba1dabb23b9c (13 file)
+comando: python -m Betfair.stream.backtest.certifica scalper_calcio 35797769 --scenari ordine-esterno
+ambiente del banco (dichiarato; il .env di chi lancia non conta): ESITI_ORDINI_CANALE=0 LIVE_KILL_SWITCH=false LIVE_ORDER_MODE=LIVE MIKE_CANALE_POSIZIONI=0 MIKE_LEGGE_CANALE=0 MIKE_LIVE_ENABLED=1 MIKE_SVEGLIA_CANALE=0 MOTORE_ORDINI_CANALE=0 MOTORE_ORDINI_CANALE_TENNIS=0 OMEGA_CANALE_POSIZIONI=0 OMEGA_LEGGE_CANALE=0 OMEGA_ORDINI_VIA_CANALE=0 OMEGA_SVEGLIA_CANALE=0 PUNTEGGI_CANALE=0 SAFE_BOT_LEGGE_CANALE=0 SAFE_BOT_SVEGLIA_CANALE=0 SAFE_CANALE_POSIZIONI=0 SAFE_ORDINI_VIA_CANALE=0 SAFE_PRE_KO_OU_HOURS=1 SAFE_SCAN_CANALE=0 SAFE_TENNIS_ORDINI_VIA_CANALE=0 SCALPER_CANALE=0 TENNIS_BOT_CANALE=0 TENNIS_BOT_SVEGLIA_CANALE=0 | interruttore ordini del bot: coda=0 canale=1
+qualita' delle registrazioni: COMPLETE x1
+
+KO  35797769  tick=  7760 decisioni= 1357 azioni=   2 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,sessione:stopped [COMPLETE]
+      nota: qualita' registrazione: COMPLETE 95.4%
+      nota: control della UI: mode=maker dry_run=False stake=25 params=[('entry_stop_before_s', 420), ('event_loss_cap', 1.5), ('event_profit_target', 1), ('flatten_before_s', 180), ('ht_mode', False), ('min_flow', 10), ('min_size', 300), ('one_green_per_phase', True), ('price_max', 4.6), ('price_min', 1.5), ('scalp_ticks', 1), ('sniper_mode', False), ('sniper_stake', 10), ('stop_ticks', 1), ('uscite_automatiche', True)]
+      nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (params `uscite_automatiche=True`, come li scrive l'interruttore della UI su AUTOMATICHE)
+      nota: limiti dichiarati: catalogo sintetizzato dai marketDefinition; scanner non usato (lo scalper legge il book); orologio di mercato per `time.time`; settlement non raggiunto (fine vita della sessione); theta fuori perimetro; sniper spento (scenari `sniper*` per lo sniper)
+      nota: ORDINE ESTERNO: a meta' della finestra pre-match l'UTENTE piazza un BACK 2,00 a 1,01 (taker) senza riferimenti (dal SITO) sulla selezione della sessione; lo stream ordini del conto lo porta alla sessione (cache e produttore VERI): la sessione deve fermarsi subito, annullare i suoi vivi e non coprire (controlli OE1-OE4)
+      nota: sessioni: {'prima': 'finita'}; stato finale 'stopped' (causa della fine: ?)
+      nota: book in ritardo: 7114; lapse al fischio: 0; lapse alla sospensione: 0; righe di specchio catturate: 7
+      nota: fill per mercato che attraversa: 0
+      nota: fasi viste: pre-match, fine-sessione
+      nota: uscite EFFETTIVE delle strategie a fine sessione: AUTOMATICHE
+      nota: stati dello slot MAI visti: CANCELLING, DONE, FLATTENING, LOCKING, QUOTING
+      nota: chiamate REST della sessione (registrate, mai eseguite): list_current_orders
+      nota: ORDINI ESTERNI: ORDINE DELL'UTENTE (dal sito, nessun riferimento): BACK 2.00 a 1.01 su 1.259819674/22 a 1783701310639 ms | ORDINI ESTERNI: pubblicazioni del conto 2 (di cui 1 prima dell'abbinato dell'utente); giudizi {'valutazioni': 2, 'proprio': 4, 'bot': 0, 'utente': 2, 'fuori_dal_bot': 0} | INTERVENTO visto: dove=sito fonte=stream_ordini mercato=1.259819674 abbinato 2.00; fotografia a 1783701311546 ms, decisione a 1783701311546 ms: LATENZA 0 ms di mercato (primo book dopo: +100 ms); annullo {} | limite dichiarato: l'ordine dell'utente sta nel blotter del quadro condiviso (specchio e dichiarazione di fine sessione del servizio possono contarlo; in produzione vedono solo la sessione)
+      motivo x2: place
+      OE4 x2: dopo l'intervento: al primo book ogni ordine vivo della sessione e' gia' in annullo; a sessione chiusa nessun ordine vivo, riga 'stopped' col marcatore e attivita' 'intervento_utente'
+           es. al primo book dopo l'intervento l'ordine 100000000001 (EXECUTABLE) e' ancora vivo e non in annullo
+      tempo: 35797769 [ordine-esterno] 13.6s (13.6 s) | 572 tick/s
+
+ESITO: 0 partite senza violazioni, 1 con violazioni, 0 senza decisioni
+       2 violazioni totali
+
+COPERTURA DEI CONTROLLI — quante volte ognuno ha avuto un caso:
+  ?? B1  x0       nessun INGRESSO nuovo quando le aperture sono vietate: force-flat 
+  ?? B2  x0       al FISCHIO nessuna posizione aperta: dopo il KO ogni selezione ha 
+     B3  x1       ogni ordine chiesto e' LEGALE su .it: prezzo nella ladder, non sot
+     B4  x1       lo stake d'ingresso e' quello del control (mai piu' di quanto l'ut
+     B5  x4       l'esposizione abbinata per selezione non supera il tetto che la se
+     B6  x1       tetto transazioni/ora (`max_txn_hour`): oltre il budget nessun NUO
+     K1  x1       ogni ordine che il bot STA SEGUENDO in una posizione viva esiste d
+  ?? K2  x0       un ordine RIFIUTATO (place_order ha risposto False, stato Violatio
+     K3  x4       lo stato di ogni ordine si legge come Enum `OrderStatus` (`.value`
+     K4  x1       uno slot che il bot crede VIVO ha almeno un ordine vivo o dell'abb
+  ?? K5  x0       nessuna ESPOSIZIONE abbinata resta sbilanciata su una selezione il
+     K6  x1       quando il bot dichiara uno slot CHIUSO (IDLE/DONE) non resta nessu
+  ?? K7  x0       a ogni ciclo chiuso il `locked` che il bot contabilizza (pnl_locke
+     S1  x36      ogni scrittura del servizio su `scalper_control` rispetta i CHECK 
+  ?? S2  x0       uno STOP (UI 'stopping', kill-switch, fine vita, cap globale) arma
+     S3  x1       a sessione CHUSA nessun ordine della sessione resta vivo a mercato
+     S4  x1       lo stato finale della sessione dice PERCHE' e' finita: 'stopped' s
+     S5  x107     mentre la sessione e' 'running' il servizio scrive heartbeat_at e 
+  ?? S6  x0       PAPER = LIVE: armata dallo stesso control, la sessione paper e que
+  ?? S7  x0       dopo un RIAVVIO della sessione, l'esposizione abbinata e gli ordin
+     P1  x3       ogni ordine del bot arriva allo specchio `betfair_live_orders` (ri
+     P2  x3       lo specchio non dichiara MAI un ordine abbinato piu' di quanto il 
+
+?? MAI SOLLECITATI: 8 controlli su 22. Su questi il referto NON dice «sano», dice «non lo so»:
+     B1: nessun INGRESSO nuovo quando le aperture sono vietate: force-flat (stop UI, kill-switch, loss cap, fine vita), entro `entry_stop_before_s` dal KO, in gioco con `allow_inplay=False` (bibbia; PROCESSO par.6.3 bot fermo)
+     B2: al FISCHIO nessuna posizione aperta: dopo il KO ogni selezione ha l'esposizione abbinata piatta (entro la tolleranza che il bot dichiara) e nessun ingresso vivo (`flatten_before_s`, bibbia 'mai posizioni aperte al KO')
+     K2: un ordine RIFIUTATO (place_order ha risposto False, stato Violation) non lascia il bot con una posizione creduta viva che poggia SOLO su ordini rifiutati (difetto 2 del 15/09: `res.ok` mai letto)
+     K5: nessuna ESPOSIZIONE abbinata resta sbilanciata su una selezione il cui slot e' dichiarato chiuso (IDLE/DONE), oltre la tolleranza che il bot stesso dichiara: nessuna posizione fantasma (PROCESSO par.6.4 'mai una posizione scoperta non dichiarata')
+     K7: a ogni ciclo chiuso il `locked` che il bot contabilizza (pnl_locked, loss cap, missione) e' il worst-case VERO degli ordini abbinati dello slot, letto da `size_matched` e `average_price_matched` (difetto 3 del 15/09: prezzo medio letto da un campo sbagliato)
+     S2: uno STOP (UI 'stopping', kill-switch, fine vita, cap globale) arma il force-flat della strategia entro un heartbeat del servizio (HEARTBEAT_S + 1 s di mercato): le protezioni girano, le aperture no (par.6.3)
+     S6: PAPER = LIVE: armata dallo stesso control, la sessione paper e quella live producono la STESSA strategia (parametri campo per campo) e un client flumine che differisce SOLO per `paper_trade` (par.4; catalogo par.7 punti 14, 25, 26)
+     S7: dopo un RIAVVIO della sessione, l'esposizione abbinata e gli ordini vivi lasciati dalla sessione morta sono governati dalla nuova (una sua credenza li segue) oppure il servizio li DICHIARA (allarme): mai una posizione orfana silenziosa (PROCESSO par.6.3 riavvio; catalogo par.7 punto 19)
+TEMPO TOTALE: 15.1s (15.1 s) su 1 replay | obiettivo 300 s, tetto 600 s (CERTIFICA_TETTO_S)
