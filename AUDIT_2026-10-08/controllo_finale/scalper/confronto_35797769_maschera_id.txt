@@ -1,0 +1,61 @@
+referto nuovo: controllo_finale/scalper/scalper_35797769_tutti.txt (55 scenari)
+R1: 14 scenari, R2: 51 scenari
+
+=== RIASSUNTO
+evento | scenario | rif | esito DOPO | esito PRIMA | righe diverse
+35797769 | base | R1 | OK | OK | 0
+35797769 | paper | R1 | OK | OK | 0
+35797769 | senza-missione | R2 | OK | OK | 0
+35797769 | bot-fermo | R2 | OK | OK | 0
+35797769 | kill-switch | R2 | OK | OK | 0
+35797769 | esiti-ignoti | R2 | OK | OK | 0
+35797769 | rifiuti-betfair | R1 | OK | OK | 0
+35797769 | riavvio | R2 | KO | KO | 0
+35797769 | chiusura-abbinata-in-parte | R1 | KO | KO | 0
+35797769 | ordine-esterno | R1 | OK | OK | 0
+35797769 | ordine-esterno-app | R1 | OK | OK | 0
+35797769 | ordine-esterno-di-un-bot | R1 | OK | OK | 0
+35797769 | ordine-esterno-db-giu | R1 | OK | OK | 0
+35797769 | ordine-esterno-altro-mercato | R1 | OK | OK | 0
+35797769 | sniper | R2 | OK | OK | 0
+35797769 | sniper-paper | R1 | OK | OK | 0
+35797769 | sniper-uscite-auto | R2 | OK | OK | 0
+35797769 | uscite-manuali | R2 | OK | OK | 0
+35797769 | uscite-manuali-firmate | R2 | KO | KO | 0
+35797769 | auto-live | R2 | OK | OK | 0
+35797769 | media-under | R2 | OK | OK | 0
+35797769 | media-under-paper | R2 | OK | OK | 0
+35797769 | media-under-35 | R2 | NE | NE | 0
+35797769 | media-under-obiettivo-030 | R2 | OK | OK | 0
+35797769 | media-under-rientri-1 | R2 | OK | OK | 0
+35797769 | media-under-rischio-30 | R2 | OK | OK | 0
+35797769 | media-under-tick-1 | R2 | OK | OK | 0
+35797769 | media-under-riavvio | R2 | OK | OK | 0
+35797769 | media-under-rifiuti-betfair | R2 | OK | OK | 0
+35797769 | media-under-esiti-ignoti | R2 | OK | OK | 0
+35797769 | media-under-kill-switch | R2 | OK | OK | 0
+35797769 | media-under-bot-fermo | R2 | OK | OK | 0
+35797769 | media-under-liquidita-100 | R2 | OK | OK | 0
+35797769 | media-under-35-liquidita-50 | R2 | OK | OK | 0
+35797769 | media-clic-lontano | R2 | OK | OK | 0
+35797769 | media-clic-lontano-paper | R2 | OK | OK | 0
+35797769 | media-clic-lontano-filtri | R2 | OK | OK | 0
+35797769 | media-clic-lontano-35 | R2 | OK | OK | 0
+35797769 | media-clic-finestra | R2 | OK | OK | 0
+35797769 | media-clic-gioco | R2 | OK | OK | 0
+35797769 | media-clic-gioco-35 | R2 | OK | OK | 0
+35797769 | media-clic-prima-del-gol | R2 | OK | OK | 0
+35797769 | media-clic-prima-del-gol-35 | R2 | OK | OK | 0
+35797769 | media-clic-dopo-il-gol | R2 | OK | OK | 0
+35797769 | media-clic-sospeso | R2 | NE | NE | 0
+35797769 | media-clic-prezzi-fermi | R2 | OK | OK | 0
+35797769 | media-clic-doppio | R2 | OK | OK | 0
+35797769 | media-clic-in-posizione | R2 | OK | OK | 0
+35797769 | media-clic-riavvio | R2 | OK | OK | 0
+35797769 | media-clic-tick-1 | R2 | OK | OK | 0
+35797769 | media-clic-tick-1-filtri | R2 | OK | OK | 0
+35797769 | media-clic-due-clic | R2 | OK | OK | 0
+35797769 | ingresso-abbinato-in-parte | R1 | OK | OK | 0
+35797769 | ingresso-abbinato-in-parte-paper | R1 | OK | OK | 0
+35797769 | rifiuti-betfair-codici | R1 | KO | KO | 0
+MANCANTE nel nuovo referto: 35797769 [rifiuti-betfair-codici-paper]
