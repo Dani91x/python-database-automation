@@ -1,0 +1,8 @@
+26c26
+<       tempo: 35760084 [base] <canale> 58.1s (58.1 s) | 8330 tick/s
+---
+>       tempo: 35760084 [base] <canale> 50.8s (50.8 s) | 9528 tick/s
+134c134
+< TEMPO TOTALE: 1m00.2s (60.2 s) su 1 replay | obiettivo 300 s, tetto 600 s (CERTIFICA_TETTO_S)
+---
+> TEMPO TOTALE: 52.9s (52.9 s) su 1 replay | obiettivo 300 s, tetto 600 s (CERTIFICA_TETTO_S)

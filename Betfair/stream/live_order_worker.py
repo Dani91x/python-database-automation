@@ -1886,6 +1886,10 @@ def _ft_enqueue_rehedge(
                 "ft_retry": retry_n,
             },
         }
+        # 08/10/2026 (W2): il re-hedge di una copertura FUORI BOT rilegge il CONTO come
+        # la madre (senza, rileggerebbe il blotter del runner: un'altra posizione).
+        if params_src.get(_EFB_PARAM) is not None:
+            payload["params"][_EFB_PARAM] = params_src.get(_EFB_PARAM)
     try:
         res = sb.rpc("request_betfair_live_order", {"p": payload}).execute()
         data = getattr(res, "data", None)
@@ -2217,6 +2221,288 @@ def _costruisci_chiusura(market: Any, *, strategy: Any, selection_id: int, handi
     return built.order, float(built.price), float(built.size)
 
 
+# ---------------------------------------------------------------------------
+# 08/10/2026 (W2) - green-up dell'esposizione FUORI BOT, letta dal CONTO
+# ---------------------------------------------------------------------------
+# Ordine dell'utente: "se apro dal sito devo poter chiudere anche dall'app". Il
+# ``greenup`` con ``params.esposizione='fuori_bot'`` copre PER INTERO l'esposizione
+# ABBINATA degli ordini del CONTO su (mercato, selezione) che NON sono dei bot (ordini
+# del sito + manuali dell'app), letta con ``listCurrentOrders`` del mercato. La
+# matematica e il piazzamento sono quelli del green-up di sempre (``compute_greenup``,
+# ``_costruisci_chiusura``, ``_place_closing_leg``); la copertura e' un ordine MANUALE
+# della strategia del runner (``customerStrategyRef`` 'live'), quindi alla rilettura
+# successiva fa parte della stessa esposizione fuori bot: un secondo comando trova la
+# posizione piatta e non piazza niente. Riconoscimento dei bot e aritmetica pura in
+# ``trading/esposizione_fuori_bot.py``.
+from .trading import esposizione_fuori_bot as _EFB  # noqa: E402
+
+_EFB_PARAM = _EFB.PARAM
+#: pagine massime di ``listCurrentOrders`` per UN mercato (1000 ordini l'una)
+_EFB_MAX_PAGINE = 10
+#: bet_id per lettura del DB (lunghezza dell'URL PostgREST, come
+#: ``reconcile_worker._BLOCCO_IN``)
+_EFB_BLOCCO_IN = 100
+#: parametri del green-up di sempre che con la copertura fuori bot NON hanno senso
+#: (copertura PIENA al miglior prezzo opposto: nessuna frazione, importo, prezzo scelto,
+#: tick oltre il migliore, annullo dei non abbinati)
+_EFB_PARAM_NON_AMMESSI = ("amount", "target_price", "place_at_ticks", "cancel_unmatched",
+                          "risk_rule_id", "comando")
+
+
+def _ordini_del_conto(client: Any, market_id: str) -> List[Dict[str, Any]]:
+    """Gli ordini del CONTO sul mercato (``listCurrentOrders`` con i soli ``marketIds``,
+    senza filtro di strategia), normalizzati nella grafia di Betfair. Paginato.
+
+    ``client`` e' il client REALE della riga (``_client_for_mode``): si usa il suo
+    ``betting_client`` (betfairlightweight), la stessa via di ``reconcile_worker.
+    _fetch_current_orders``. Solleva su qualunque problema: chi copre soldi veri non
+    decide al buio."""
+    bc = getattr(client, "betting_client", None) if client is not None else None
+    betting = getattr(bc, "betting", None) if bc is not None else None
+    if betting is None or not callable(getattr(betting, "list_current_orders", None)):
+        raise ValueError("conto non leggibile: nessun client reale con listCurrentOrders")
+    out: List[Dict[str, Any]] = []
+    from_record = 0
+    for _pagina in range(_EFB_MAX_PAGINE):
+        res = betting.list_current_orders(market_ids=[str(market_id)],
+                                          from_record=from_record, record_count=1000)
+        if isinstance(res, dict):
+            pagina = res.get("currentOrders") or []
+            altre = bool(res.get("moreAvailable"))
+        else:
+            pagina = getattr(res, "orders", None)
+            if pagina is None:
+                raise ValueError(f"conto non leggibile: risposta inattesa {type(res).__name__}")
+            altre = bool(getattr(res, "more_available", False))
+        out.extend(_EFB.normalizza(o) for o in pagina)
+        from_record += len(pagina)
+        if not pagina or not altre:
+            return out
+    raise ValueError(f"conto non leggibile: piu' di {_EFB_MAX_PAGINE} pagine di ordini "
+                     f"sul mercato {market_id}")
+
+
+def _proprietari_bot(sb: Any, bet_ids: List[str]) -> Dict[str, str]:
+    """bet_id -> motivo, per gli ordini che il DB dice dei BOT. Le regole della RPC
+    ``get_live_orders_account_open`` (tabelle dei bot, source dello specchio) piu' la
+    riga di coda del runner (bot che ha piazzato dalla coda e non ha ancora scritto il
+    bet_id nella sua tabella). Letture a blocchi (lunghezza dell'URL PostgREST, come
+    ``reconcile_worker._BLOCCO_IN``). Solleva se una lettura fallisce: mai un "fuori
+    bot" dedotto da una lettura KO."""
+    ids = sorted({str(b) for b in bet_ids if str(b or "").strip()})
+    out: Dict[str, str] = {}
+    for i in range(0, len(ids), _EFB_BLOCCO_IN):
+        blocco = ids[i:i + _EFB_BLOCCO_IN]
+        for tabella in _EFB.TABELLE_BOT:
+            res = (sb.table(tabella).select("bet_id").eq("mode", "live")
+                   .in_("bet_id", blocco).execute())
+            for r in getattr(res, "data", None) or []:
+                out.setdefault(str(r.get("bet_id")), f"tabella:{tabella}")
+        res = (sb.table("betfair_live_orders").select("bet_id,source").eq("mode", "live")
+               .in_("bet_id", blocco).execute())
+        for r in getattr(res, "data", None) or []:
+            src = str(r.get("source") or "").strip().lower()
+            if src not in _EFB.SOURCE_SPECCHIO_A_MANO:
+                out.setdefault(str(r.get("bet_id")), f"specchio:{src or '?'}")
+        res = (sb.table(_TABLE).select("bet_id,client_ref,params").eq("mode", "live")
+               .in_("bet_id", blocco).execute())
+        for r in getattr(res, "data", None) or []:
+            motivo = _EFB.motivo_bot_da_coda(r)
+            if motivo:
+                out.setdefault(str(r.get("bet_id")), motivo)
+    return out
+
+
+def _classifica_conto(sb: Any, ordini: List[Dict[str, Any]]) -> Dict[int, Optional[str]]:
+    """id(ordine) -> motivo "del bot", oppure ``None`` = FUORI BOT. Prima i riferimenti
+    dell'ordine, poi UNA passata sul DB per tutti i bet_id. Il DB si interroga anche
+    per gli ordini gia' riconosciuti dai riferimenti: la tabella del bot e' l'identita'
+    piu' affidabile per sapere DI QUALE bot e' la posizione (``_netti_per_bot``).
+    Nel dubbio un ordine e' del bot."""
+    try:
+        dal_db = _proprietari_bot(sb, [str(o.get("betId") or "") for o in ordini])
+    except Exception as ex:  # noqa: BLE001 - lettura KO: nessuna decisione al buio
+        raise ValueError(f"conto non leggibile: proprietari degli ordini non letti dal DB "
+                         f"({str(ex)[:120]}): nessun ordine") from ex
+    out: Dict[int, Optional[str]] = {}
+    for o in ordini:
+        bid = str(o.get("betId") or "").strip()
+        db_motivo = dal_db.get(bid) if bid else None
+        if db_motivo and db_motivo.startswith("tabella:"):
+            out[id(o)] = db_motivo
+            continue
+        motivo = _EFB.motivo_bot_da_riferimenti(o)
+        if motivo is None and not bid:
+            motivo = "senza_bet_id"            # non riconoscibile: mai coperto
+        out[id(o)] = motivo or db_motivo
+    return out
+
+
+def _netti_per_bot(ordini: List[Dict[str, Any]],
+                   classe: Dict[int, Optional[str]]) -> Dict[str, float]:
+    """Netto (size) delle gambe abbinate di OGNI bot sulla selezione."""
+    per_bot: Dict[str, List[Dict[str, Any]]] = {}
+    for o in ordini:
+        motivo = classe.get(id(o))
+        if motivo:
+            per_bot.setdefault(_EFB.bot_di(motivo), []).append(o)
+    return {b: _EFB.netto_size(v) for b, v in per_bot.items()}
+
+
+def _do_greenup_fuori_bot(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str,
+                          strategy: Any, *, client: Any = None) -> None:
+    """Green-up PIENO dell'esposizione abbinata FUORI BOT di una selezione, dal CONTO.
+
+    Rifiuti ESPLICITI (riga 'error', nessun ordine): valore di ``esposizione`` ignoto,
+    parametri del green-up parziale, comando di un bot, modalita' paper (il sito non
+    esiste in prova), runner senza client reale, conto o DB non leggibili, prezzo
+    assente con esposizione aperta, copertura dell'app ancora non abbinata sul lato
+    della copertura, copertura che farebbe dichiarare a un bot "chiusa dall'utente" la
+    sua posizione. Esposizione gia' piatta: riga 'done' senza ordine."""
+    from .motore_ordini import altro_runner_due_esiti
+    from .trading.greenup import FLAT_EPS, compute_greenup
+
+    rid = request_row["id"]
+    cust_ref = _cust_ref(rid)
+    params = request_row.get("params") or {}
+    valore = params.get(_EFB_PARAM)
+    if valore != _EFB.FUORI_BOT:
+        raise ValueError(f"greenup: params.{_EFB_PARAM} non ammesso ({valore!r}): "
+                         f"atteso '{_EFB.FUORI_BOT}' o assente")
+    if str(mode or "").strip().lower() != "live":
+        raise ValueError(f"greenup {_EFB.FUORI_BOT}: solo LIVE - in prova (mode "
+                         f"'{mode}') gli ordini del sito non esistono: nessun ordine")
+    for k in _EFB_PARAM_NON_AMMESSI:
+        v = params.get(k)
+        if v is None or v is False or (isinstance(v, (int, float)) and v == 0):
+            continue
+        raise ValueError(f"greenup {_EFB.FUORI_BOT}: params.{k} non ammesso "
+                         "(copertura PIENA, solo dall'utente)")
+    fraction = _f(params.get("fraction"))
+    if params.get("fraction") is not None and (fraction is None
+                                               or abs(fraction - 1.0) > 1e-9):
+        raise ValueError(f"greenup {_EFB.FUORI_BOT}: params.fraction "
+                         f"{params.get('fraction')!r} non ammessa (solo copertura piena)")
+    persistence = "LAPSE"
+    if params.get("persistence") is not None:
+        persistence = str(params.get("persistence"))
+        if persistence not in ("LAPSE", "PERSIST", "MARKET_ON_CLOSE"):
+            raise ValueError(
+                f"greenup: params.persistence non valida ({params.get('persistence')!r}): "
+                "attesa LAPSE|PERSIST|MARKET_ON_CLOSE")
+    if strategy is None:
+        raise ValueError("greenup richiede la strategy registrata (LiveTradingStrategy)")
+    if client is None or _is_paper_client(client):
+        raise ValueError(f"greenup {_EFB.FUORI_BOT}: conto non leggibile - nessun client "
+                         "reale per la riga: nessun ordine")
+    market_id = str(request_row.get("market_id") or "")
+    market = _resolve_market(flumine, market_id)
+    selection_id = int(request_row["selection_id"])
+    handicap = float(request_row.get("handicap") or 0)
+
+    # 1) il CONTO, riletto ADESSO (idempotenza: una copertura gia' fatta e' dentro)
+    try:
+        ordini = _ordini_del_conto(client, market_id)
+    except Exception as ex:  # noqa: BLE001 - conto illeggibile: rifiuto esplicito
+        raise ValueError(f"greenup {_EFB.FUORI_BOT}: conto non leggibile "
+                         f"({str(ex)[:160]}): nessun ordine") from ex
+    # 2) mercato a DUE esiti esaustivi: la posizione fuori bot si legge sul mercato,
+    # come nel green-up di sempre (punto 9 del 02/10: mai una seconda chiusura)
+    altro = altro_runner_due_esiti(market, selection_id)
+    qui = [o for o in ordini if _EFB.sulla_selezione(o, market_id, selection_id, handicap)]
+    la = ([o for o in ordini if _EFB.sulla_selezione(o, market_id, altro[0], altro[1])]
+          if altro is not None else [])
+    classe = _classifica_conto(sb, qui + la)
+    fuori = [o for o in qui if classe.get(id(o)) is None]
+    bot = [(o, str(classe.get(id(o)))) for o in qui if classe.get(id(o)) is not None]
+    w, l = _EFB.esposizione_abbinata(fuori)
+    nota = (f"conto: {len(fuori)} ordini fuori bot, {len(bot)} dei bot (esclusi); "
+            f"W={w:.2f} L={l:.2f}")
+    if altro is not None:
+        w2, l2 = _EFB.esposizione_abbinata([o for o in la if classe.get(id(o)) is None])
+        if abs(w2) > 1e-9 or abs(l2) > 1e-9:
+            w, l = w + l2, l + w2
+            nota += (f"; posizione del MERCATO a due esiti (altra selezione {altro[0]}: "
+                     f"W={w2:.2f} L={l2:.2f})")
+    best_back, best_lay = _best_prices(market, selection_id, handicap)
+    plan = compute_greenup(matched_if_win=w, matched_if_lose=l,
+                           best_back_price=best_back, best_lay_price=best_lay,
+                           fraction=1.0, place_at_ticks=0, target_price=None, amount=None)
+    extra = {"esposizione": _EFB.FUORI_BOT,
+             "conto": {"fuori_bot": [str(o.get("betId")) for o in fuori],
+                       "bot": [{"bet_id": str(o.get("betId")), "motivo": m}
+                               for o, m in bot],
+                       "w": round(w, 2), "l": round(l, 2)}}
+    if not plan.actionable:
+        if abs(w - l) >= FLAT_EPS:
+            raise ValueError(f"greenup {_EFB.FUORI_BOT} NON eseguibile con esposizione "
+                             f"aperta (W={w:.2f} L={l:.2f}): {plan.note} - ritentare "
+                             "(mercato sospeso/book vuoto?)")
+        result = _result(ok=True, action="greenup", mode=mode, request_row=request_row,
+                         cust_ref=cust_ref,
+                         detail=f"esposizione fuori bot gia' piatta: nessun ordine; {nota}")
+        result.update(extra)
+        _write_done(sb, rid, result)
+        return
+    side = str(plan.side)
+    # 3) una copertura dell'APP ancora appesa sul lato della copertura (la precedente in
+    # attesa di abbinamento, o un ordine manuale dell'app): un secondo ordine potrebbe
+    # abbinarsi insieme e invertire la posizione. La segue il follow-through (annulla e
+    # ricopre); qui nessun secondo ordine.
+    for o in fuori:
+        if (str(o.get("customerStrategyRef") or "").strip().lower()
+                == _EFB.STRATEGIA_MANUALE_APP
+                and str(o.get("status") or "").upper() == "EXECUTABLE"
+                and (_f(o.get("sizeRemaining")) or 0.0) > 0
+                and str(o.get("side") or "").lower() == side):
+            raise ValueError(
+                f"greenup {_EFB.FUORI_BOT}: ordine dell'app {o.get('betId')} "
+                f"{side.upper()} ancora non abbinato ({o.get('sizeRemaining')}) sul lato "
+                "della copertura: nessun secondo ordine (annullarlo o attendere)")
+    # 4) i verdetti di conto dei bot (aritmetica a size): la copertura non deve far
+    # credere a un bot che l'utente gli abbia CHIUSO la posizione (smetterebbe di
+    # proteggerla). "Ridotta" si dichiara nell'esito, "chiusa" si rifiuta.
+    delta = float(plan.size) if side == "back" else -float(plan.size)
+    effetti = _EFB.effetto_sui_bot(_netti_per_bot(qui, classe), _EFB.netto_size(qui),
+                                   delta)
+    chiuse = [e for e in effetti if e["verdetto"] == "chiusa"]
+    if chiuse:
+        e = chiuse[0]
+        raise ValueError(
+            f"greenup {_EFB.FUORI_BOT}: la copertura {side.upper()} {plan.size:.2f} "
+            f"porterebbe il netto di conto della selezione da {e['netto_conto_prima']:.2f} "
+            f"a {e['netto_conto_dopo']:.2f} e il bot {e['bot']} (posizione "
+            f"{e['posizione']:.2f}) la dichiarerebbe CHIUSA DALL'UTENTE: nessun ordine")
+    if effetti:
+        extra["bot_toccati_nel_verdetto"] = effetti
+        nota += "; ATTENZIONE: " + ", ".join(
+            f"{e['bot']} vedra' la sua posizione ridotta ({e['viva_prima']:.2f}->"
+            f"{e['viva_dopo']:.2f}, aritmetica a size)" for e in effetti)
+    hedge_order, hedge_price, hedge_size = _costruisci_chiusura(
+        market, strategy=strategy, selection_id=selection_id, handicap=handicap,
+        side=side, price=plan.price, size=plan.size, persistence=persistence,
+        cust_ref=cust_ref, mode=mode,
+    )
+    submin_state = _place_closing_leg(
+        flumine, market, order=hedge_order, strategy=strategy,
+        market_id=request_row.get("market_id"), selection_id=selection_id, handicap=handicap,
+        side=side, price=hedge_price, size=hedge_size,
+        cust_ref=cust_ref, what=f"greenup {_EFB.FUORI_BOT}", mode=mode, params=params,
+        max_stake=_effective_cap(request_row), client=client,
+    )
+    sub_note = "" if submin_state is None else "; via place-and-trim (sotto-minimo)"
+    result = _result(
+        ok=True, action="greenup", mode=mode, request_row=request_row,
+        cust_ref=cust_ref, order=(hedge_order if submin_state is None else None),
+        price=hedge_price, size=hedge_size, side=plan.side,
+        submin_step=(submin_state.step.value if submin_state is not None else None),
+        detail=f"{plan.note}; atteso vince={plan.expected_if_win} "
+               f"perde={plan.expected_if_lose}; {nota}{sub_note}",
+    )
+    result.update(extra)
+    _write_done(sb, rid, result)
+
+
 def _do_greenup(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any,
                 *, client: Any = None) -> None:
     """Green-up / cash-out: chiude (totale o frazione) l'esposizione MATCHED di una selezione.
@@ -2228,6 +2514,14 @@ def _do_greenup(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, s
     è già piatta / frazione nulla / prezzo assente → riga 'done' SENZA piazzare (no-op).
     """
     from .trading.greenup import compute_greenup
+
+    # 08/10/2026 (W2): ``params.esposizione`` presente -> la posizione si legge dal CONTO
+    # (ordini del sito e manuali dell'app), non dal blotter. Assente (o null): il
+    # green-up di sempre, nessuna riga sotto e' cambiata.
+    _p_esp = request_row.get("params")
+    if isinstance(_p_esp, dict) and _p_esp.get(_EFB_PARAM) is not None:
+        _do_greenup_fuori_bot(sb, flumine, request_row, mode, strategy, client=client)
+        return
 
     rid = request_row["id"]
     cust_ref = _cust_ref(rid)

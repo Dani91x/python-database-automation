@@ -5197,3 +5197,8 @@ dal percorso nuovo, o artefatto del messaggio aggregato delle 17:00:06): referti
   `engine/live_trading_strategy.py`, banco (additivo). W3b (dopo C15 e C5): scalper calcio e bot tennis.
 - C15 scalper/banco; C12 `replayVerificaBarra*` e script; C5 bot tennis (parcheggio); C14 registratore e
   convertitore tennis; C10 `replayOperazioni` e registro del replay. Poi C6, C13, C7, C9, C11.
+- CHECKPOINT W2 - CHIUDERE DALL'APP GLI ORDINI DEL SITO (verificato e integrato): `greenup` con `params.esposizione='fuori_bot'`
+  = green-up dell'esposizione abbinata fuori bot letta dal CONTO (listCurrentOrders), solo live; senza il parametro il green-up e'
+  identico (parita' su 51 scenari col worker di b5547eb, test di parita' in suite). Delegato: 56 test, 19 mutazioni rosse, suite
+  10813 verdi / 2 rossi di latenza <20 ms intermittenti anche su b5547eb (macchina carica: da rilanciare sul PC). Mie mutazioni 5/5
+  rosse. Referto `AUDIT_2026-10-08/W2_CHIUSURA_ORDINI_SITO.md`. Non provato su Betfair vero.

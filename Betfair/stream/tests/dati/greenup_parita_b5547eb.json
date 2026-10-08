@@ -1,0 +1,1685 @@
+{
+ "MO-back_led-0": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [
+   {
+    "csr": "live",
+    "kw": [
+     "customer_strategy_ref"
+    ],
+    "persistence": "LAPSE",
+    "price": 2.98,
+    "side": "BACK",
+    "size": 4.0
+   }
+  ],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "BACK 4.03@2.98 (f=1.00); atteso vince=-0.02 perde=-0.03",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": 2.98,
+     "selection_id": 47999,
+     "side": "back",
+     "size": 4.0,
+     "size_matched": 0.0,
+     "size_remaining": 4.0,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-back_led-1": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [
+   {
+    "csr": "live",
+    "kw": [
+     "customer_strategy_ref"
+    ],
+    "persistence": "LAPSE",
+    "price": 2.98,
+    "side": "BACK",
+    "size": 4.0
+   }
+  ],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "BACK 4.03@2.98 (f=1.00); atteso vince=-0.02 perde=-0.03",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": 2.98,
+     "selection_id": 47999,
+     "side": "back",
+     "size": 4.0,
+     "size_matched": 0.0,
+     "size_remaining": 4.0,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-back_led-10": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [
+   {
+    "csr": "live",
+    "kw": [
+     "customer_strategy_ref"
+    ],
+    "persistence": "LAPSE",
+    "price": 2.98,
+    "side": "BACK",
+    "size": 1.0
+   }
+  ],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "BACK 1.01@2.98 (f=0.25); atteso vince=-6.0 perde=2.99",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": 2.98,
+     "selection_id": 47999,
+     "side": "back",
+     "size": 1.0,
+     "size_matched": 0.0,
+     "size_remaining": 1.0,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-back_led-11": {
+  "altro": [],
+  "calls": [],
+  "errore": "ValueError: greenup: params.amount non valido ('x'): atteso un importo finito > 0",
+  "updates": []
+ },
+ "MO-back_led-12": {
+  "altro": [],
+  "calls": [],
+  "errore": "ValueError: greenup: params.persistence non valida ('BOH'): attesa LAPSE|PERSIST|MARKET_ON_CLOSE",
+  "updates": []
+ },
+ "MO-back_led-13": {
+  "altro": [],
+  "calls": [],
+  "errore": "ValueError: greenup: params.cancel_unmatched non \u00e8 compatibile con params.target_price (cash-out completo vs take-profit resting)",
+  "updates": []
+ },
+ "MO-back_led-14": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [
+   {
+    "csr": "live",
+    "kw": [
+     "customer_strategy_ref"
+    ],
+    "persistence": "LAPSE",
+    "price": 2.98,
+    "side": "BACK",
+    "size": 4.0
+   }
+  ],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "BACK 4.03@2.98 (f=1.00); atteso vince=-0.02 perde=-0.03",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": 2.98,
+     "selection_id": 47999,
+     "side": "back",
+     "size": 4.0,
+     "size_matched": 0.0,
+     "size_remaining": 4.0,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-back_led-15": {
+  "altro": [],
+  "calls": [],
+  "errore": "ValueError: SOTTO_MINIMO_NON_PIAZZABILE: greenup: size 0.20 < minimo 1.00 e place-and-trim escluso (params.allow_sub_minimum=False): nessun ordine inviato",
+  "updates": []
+ },
+ "MO-back_led-2": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [
+   {
+    "csr": "live",
+    "kw": [
+     "customer_strategy_ref"
+    ],
+    "persistence": "LAPSE",
+    "price": 2.98,
+    "side": "BACK",
+    "size": 2.0
+   }
+  ],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "BACK 2.01@2.98 (f=0.50); atteso vince=-4.02 perde=1.99",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": 2.98,
+     "selection_id": 47999,
+     "side": "back",
+     "size": 2.0,
+     "size_matched": 0.0,
+     "size_remaining": 2.0,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-back_led-3": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [
+   {
+    "csr": "live",
+    "kw": [
+     "customer_strategy_ref"
+    ],
+    "persistence": "LAPSE",
+    "price": 2.98,
+    "side": "BACK",
+    "size": 2.5
+   }
+  ],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "BACK 2.50@2.98 (amount \u20ac2.50); atteso vince=-3.05 perde=1.5",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": 2.98,
+     "selection_id": 47999,
+     "side": "back",
+     "size": 2.5,
+     "size_matched": 0.0,
+     "size_remaining": 2.5,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-back_led-4": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [
+   {
+    "csr": "live",
+    "kw": [
+     "customer_strategy_ref"
+    ],
+    "persistence": "LAPSE",
+    "price": 2.98,
+    "side": "BACK",
+    "size": 4.0
+   }
+  ],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "BACK 4.03@2.98 (amount \u20ac100.00 CAPPATO al green totale \u20ac4.03); atteso vince=-0.02 perde=-0.03",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": 2.98,
+     "selection_id": 47999,
+     "side": "back",
+     "size": 4.0,
+     "size_matched": 0.0,
+     "size_remaining": 4.0,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-back_led-5": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [
+   {
+    "csr": "live",
+    "kw": [
+     "customer_strategy_ref"
+    ],
+    "persistence": "LAPSE",
+    "price": 3.5,
+    "side": "BACK",
+    "size": 3.0
+   }
+  ],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "BACK 3.43@3.5 (f=1.00); atteso vince=0.58 perde=0.57",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": 3.5,
+     "selection_id": 47999,
+     "side": "back",
+     "size": 3.0,
+     "size_matched": 0.0,
+     "size_remaining": 3.0,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-back_led-6": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [
+   {
+    "csr": "live",
+    "kw": [
+     "customer_strategy_ref"
+    ],
+    "persistence": "LAPSE",
+    "price": 2.94,
+    "side": "BACK",
+    "size": 4.0
+   }
+  ],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "BACK 4.08@2.94 (f=1.00); atteso vince=-0.08 perde=-0.08",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": 2.94,
+     "selection_id": 47999,
+     "side": "back",
+     "size": 4.0,
+     "size_matched": 0.0,
+     "size_remaining": 4.0,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-back_led-7": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [
+   {
+    "csr": "live",
+    "kw": [
+     "customer_strategy_ref"
+    ],
+    "persistence": "PERSIST",
+    "price": 2.98,
+    "side": "BACK",
+    "size": 4.0
+   }
+  ],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "BACK 4.03@2.98 (f=1.00); atteso vince=-0.02 perde=-0.03",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": 2.98,
+     "selection_id": 47999,
+     "side": "back",
+     "size": 4.0,
+     "size_matched": 0.0,
+     "size_remaining": 4.0,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-back_led-8": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [
+   {
+    "csr": "live",
+    "kw": [
+     "customer_strategy_ref"
+    ],
+    "persistence": "LAPSE",
+    "price": 2.98,
+    "side": "BACK",
+    "size": 4.0
+   }
+  ],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "BACK 4.03@2.98 (f=1.00); atteso vince=-0.02 perde=-0.03; unmatched annullati: 0",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": 2.98,
+     "selection_id": 47999,
+     "side": "back",
+     "size": 4.0,
+     "size_matched": 0.0,
+     "size_remaining": 4.0,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-back_led-9": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [
+   {
+    "csr": "live",
+    "kw": [
+     "customer_strategy_ref"
+    ],
+    "persistence": "LAPSE",
+    "price": 2.98,
+    "side": "BACK",
+    "size": 4.0
+   }
+  ],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "BACK 4.03@2.98 (f=1.00); atteso vince=-0.02 perde=-0.03",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": 2.98,
+     "selection_id": 47999,
+     "side": "back",
+     "size": 4.0,
+     "size_matched": 0.0,
+     "size_remaining": 4.0,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-flat-0": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "posizione gi\u00e0 piatta o frazione nulla: nessun ordine",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-flat-1": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "posizione gi\u00e0 piatta o frazione nulla: nessun ordine",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-flat-10": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "posizione gi\u00e0 piatta o frazione nulla: nessun ordine",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-flat-11": {
+  "altro": [],
+  "calls": [],
+  "errore": "ValueError: greenup: params.amount non valido ('x'): atteso un importo finito > 0",
+  "updates": []
+ },
+ "MO-flat-12": {
+  "altro": [],
+  "calls": [],
+  "errore": "ValueError: greenup: params.persistence non valida ('BOH'): attesa LAPSE|PERSIST|MARKET_ON_CLOSE",
+  "updates": []
+ },
+ "MO-flat-13": {
+  "altro": [],
+  "calls": [],
+  "errore": "ValueError: greenup: params.cancel_unmatched non \u00e8 compatibile con params.target_price (cash-out completo vs take-profit resting)",
+  "updates": []
+ },
+ "MO-flat-14": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "posizione gi\u00e0 piatta o frazione nulla: nessun ordine",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-flat-15": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "posizione gi\u00e0 piatta o frazione nulla: nessun ordine",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-flat-2": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "posizione gi\u00e0 piatta o frazione nulla: nessun ordine",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-flat-3": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "posizione gi\u00e0 piatta o frazione nulla: nessun ordine",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-flat-4": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "posizione gi\u00e0 piatta o frazione nulla: nessun ordine",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-flat-5": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "posizione gi\u00e0 piatta o frazione nulla: nessun ordine",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-flat-6": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "posizione gi\u00e0 piatta o frazione nulla: nessun ordine",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-flat-7": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "posizione gi\u00e0 piatta o frazione nulla: nessun ordine",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-flat-8": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "posizione gi\u00e0 piatta o frazione nulla: nessun ordine; unmatched annullati: 0",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-flat-9": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "posizione gi\u00e0 piatta o frazione nulla: nessun ordine",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-lay_led-0": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [
+   {
+    "csr": "live",
+    "kw": [
+     "customer_strategy_ref"
+    ],
+    "persistence": "LAPSE",
+    "price": 3.0,
+    "side": "LAY",
+    "size": 5.0
+   }
+  ],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "LAY 5.00@3.0 (f=1.00); atteso vince=0.0 perde=0.0",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": 3.0,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 5.0,
+     "size_matched": 0.0,
+     "size_remaining": 5.0,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-lay_led-1": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [
+   {
+    "csr": "live",
+    "kw": [
+     "customer_strategy_ref"
+    ],
+    "persistence": "LAPSE",
+    "price": 3.0,
+    "side": "LAY",
+    "size": 5.0
+   }
+  ],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "LAY 5.00@3.0 (f=1.00); atteso vince=0.0 perde=0.0",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": 3.0,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 5.0,
+     "size_matched": 0.0,
+     "size_remaining": 5.0,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-lay_led-10": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [
+   {
+    "csr": "live",
+    "kw": [
+     "customer_strategy_ref"
+    ],
+    "persistence": "LAPSE",
+    "price": 3.0,
+    "side": "LAY",
+    "size": 1.25
+   }
+  ],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "LAY 1.25@3.0 (f=0.25); atteso vince=7.5 perde=-3.75",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": 3.0,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 1.25,
+     "size_matched": 0.0,
+     "size_remaining": 1.25,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-lay_led-11": {
+  "altro": [],
+  "calls": [],
+  "errore": "ValueError: greenup: params.amount non valido ('x'): atteso un importo finito > 0",
+  "updates": []
+ },
+ "MO-lay_led-12": {
+  "altro": [],
+  "calls": [],
+  "errore": "ValueError: greenup: params.persistence non valida ('BOH'): attesa LAPSE|PERSIST|MARKET_ON_CLOSE",
+  "updates": []
+ },
+ "MO-lay_led-13": {
+  "altro": [],
+  "calls": [],
+  "errore": "ValueError: greenup: params.cancel_unmatched non \u00e8 compatibile con params.target_price (cash-out completo vs take-profit resting)",
+  "updates": []
+ },
+ "MO-lay_led-14": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [
+   {
+    "csr": "live",
+    "kw": [
+     "customer_strategy_ref"
+    ],
+    "persistence": "LAPSE",
+    "price": 3.0,
+    "side": "LAY",
+    "size": 5.0
+   }
+  ],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "LAY 5.00@3.0 (f=1.00); atteso vince=0.0 perde=0.0",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": 3.0,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 5.0,
+     "size_matched": 0.0,
+     "size_remaining": 5.0,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-lay_led-15": {
+  "altro": [],
+  "calls": [],
+  "errore": "ValueError: SOTTO_MINIMO_NON_PIAZZABILE: greenup: size 0.25 < minimo 1.00 e place-and-trim escluso (params.allow_sub_minimum=False): nessun ordine inviato",
+  "updates": []
+ },
+ "MO-lay_led-2": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [
+   {
+    "csr": "live",
+    "kw": [
+     "customer_strategy_ref"
+    ],
+    "persistence": "LAPSE",
+    "price": 3.0,
+    "side": "LAY",
+    "size": 2.5
+   }
+  ],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "LAY 2.50@3.0 (f=0.50); atteso vince=5.0 perde=-2.5",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": 3.0,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 2.5,
+     "size_matched": 0.0,
+     "size_remaining": 2.5,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-lay_led-3": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [
+   {
+    "csr": "live",
+    "kw": [
+     "customer_strategy_ref"
+    ],
+    "persistence": "LAPSE",
+    "price": 3.0,
+    "side": "LAY",
+    "size": 2.5
+   }
+  ],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "LAY 2.50@3.0 (amount \u20ac2.50); atteso vince=5.0 perde=-2.5",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": 3.0,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 2.5,
+     "size_matched": 0.0,
+     "size_remaining": 2.5,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-lay_led-4": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [
+   {
+    "csr": "live",
+    "kw": [
+     "customer_strategy_ref"
+    ],
+    "persistence": "LAPSE",
+    "price": 3.0,
+    "side": "LAY",
+    "size": 5.0
+   }
+  ],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "LAY 5.00@3.0 (amount \u20ac100.00 CAPPATO al green totale \u20ac5.00); atteso vince=0.0 perde=0.0",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": 3.0,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 5.0,
+     "size_matched": 0.0,
+     "size_remaining": 5.0,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-lay_led-5": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [
+   {
+    "csr": "live",
+    "kw": [
+     "customer_strategy_ref"
+    ],
+    "persistence": "LAPSE",
+    "price": 3.5,
+    "side": "LAY",
+    "size": 4.29
+   }
+  ],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "LAY 4.29@3.5 (f=1.00); atteso vince=-0.72 perde=-0.71",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": 3.5,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 4.29,
+     "size_matched": 0.0,
+     "size_remaining": 4.29,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-lay_led-6": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [
+   {
+    "csr": "live",
+    "kw": [
+     "customer_strategy_ref"
+    ],
+    "persistence": "LAPSE",
+    "price": 3.1,
+    "side": "LAY",
+    "size": 4.84
+   }
+  ],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "LAY 4.84@3.1 (f=1.00); atteso vince=-0.16 perde=-0.16",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": 3.1,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 4.84,
+     "size_matched": 0.0,
+     "size_remaining": 4.84,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-lay_led-7": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [
+   {
+    "csr": "live",
+    "kw": [
+     "customer_strategy_ref"
+    ],
+    "persistence": "PERSIST",
+    "price": 3.0,
+    "side": "LAY",
+    "size": 5.0
+   }
+  ],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "LAY 5.00@3.0 (f=1.00); atteso vince=0.0 perde=0.0",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": 3.0,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 5.0,
+     "size_matched": 0.0,
+     "size_remaining": 5.0,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-lay_led-8": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [
+   {
+    "csr": "live",
+    "kw": [
+     "customer_strategy_ref"
+    ],
+    "persistence": "LAPSE",
+    "price": 3.0,
+    "side": "LAY",
+    "size": 5.0
+   }
+  ],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "LAY 5.00@3.0 (f=1.00); atteso vince=0.0 perde=0.0; unmatched annullati: 0",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": 3.0,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 5.0,
+     "size_matched": 0.0,
+     "size_remaining": 5.0,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "MO-lay_led-9": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [
+   {
+    "csr": "live",
+    "kw": [
+     "customer_strategy_ref"
+    ],
+    "persistence": "LAPSE",
+    "price": 3.0,
+    "side": "LAY",
+    "size": 5.0
+   }
+  ],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "LAY 5.00@3.0 (f=1.00); atteso vince=0.0 perde=0.0",
+     "error": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": true,
+     "price": 3.0,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 5.0,
+     "size_matched": 0.0,
+     "size_remaining": 5.0,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "OU-0": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [
+   {
+    "csr": "live",
+    "kw": [
+     "customer_strategy_ref"
+    ],
+    "persistence": "LAPSE",
+    "price": 1.95,
+    "side": "LAY",
+    "size": 6.15
+   }
+  ],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "LAY 6.15@1.95 (f=1.00); atteso vince=1.16 perde=1.15; posizione del MERCATO a due esiti (altra selezione 48000: W=-2.00 L=1.00)",
+     "error": null,
+     "market_id": "1.200",
+     "mode": "paper",
+     "ok": true,
+     "price": 1.95,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 6.15,
+     "size_matched": 0.0,
+     "size_remaining": 6.15,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "OU-1": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [
+   {
+    "csr": "live",
+    "kw": [
+     "customer_strategy_ref"
+    ],
+    "persistence": "LAPSE",
+    "price": 1.95,
+    "side": "LAY",
+    "size": 3.08
+   }
+  ],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "LAY 3.08@1.95 (f=0.50); atteso vince=4.07 perde=-1.92; posizione del MERCATO a due esiti (altra selezione 48000: W=-2.00 L=1.00)",
+     "error": null,
+     "market_id": "1.200",
+     "mode": "paper",
+     "ok": true,
+     "price": 1.95,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 3.08,
+     "size_matched": 0.0,
+     "size_remaining": 3.08,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ },
+ "OU-2": {
+  "altro": [
+   "betfair_live_audit"
+  ],
+  "calls": [
+   {
+    "csr": "live",
+    "kw": [
+     "customer_strategy_ref"
+    ],
+    "persistence": "LAPSE",
+    "price": 1.95,
+    "side": "LAY",
+    "size": 6.15
+   }
+  ],
+  "errore": null,
+  "updates": [
+   {
+    "bet_id": null,
+    "error": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "customer_order_ref": "awlq77",
+     "detail": "LAY 6.15@1.95 (f=1.00); atteso vince=1.16 perde=1.15; posizione del MERCATO a due esiti (altra selezione 48000: W=-2.00 L=1.00)",
+     "error": null,
+     "market_id": "1.200",
+     "mode": "paper",
+     "ok": true,
+     "price": 1.95,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 6.15,
+     "size_matched": 0.0,
+     "size_remaining": 6.15,
+     "status": null,
+     "submin_step": null
+    },
+    "status": "done"
+   }
+  ]
+ }
+}
