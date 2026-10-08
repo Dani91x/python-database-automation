@@ -5520,3 +5520,7 @@ Il piano e' pronto per la revisione del PC e la decisione dell'utente. Prossimi 
   (bot spenti all'avvio); (2) migrazione `replay_tennis_fonte_nomi_2026-10-08.sql`; (3) prove a schermo in PROVA: pagina Cash Out
   (§3.4), registro del replay (§3.5); (4) decisioni D-1..D-15 (§6), prima D-2 (money-critical); (5) `git gc` per il commit orfano
   `1f35f5c8` (log da 3 GB); (6) piano di architettura: `ARCHITETTURA_2026-10/README.md`, decisioni U-62/32/27/44/37/59/60.
+- 19:43 BUILD ad app chiusa (verificato: nessun processo dell'app, il solo node.exe era di Adobe): checkout principale portato su
+  `master` = `a025f1f2`, `npm run build` exit 0 in 31 s (`AUDIT_2026-10-08/build_coordinatore_a025f1f2.txt`). Rami di ieri e oggi
+  tutti in master; i due rami d'appoggio del cloud non fusi (`-c11`, `-w3b-appoggio`) sono bozze precedenti superate da master
+  (confronto file per file). L'utente riavvia l'app; all'avvio nessun bot opera.
