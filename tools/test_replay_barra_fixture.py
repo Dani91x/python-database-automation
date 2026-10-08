@@ -115,3 +115,84 @@ def test_estremi_come_get_replay_meta_e_serializzazione_deterministica():
     assert meta["ts_min"] == righe[0]["ts"] and meta["ts_max"] == righe[2]["ts"] and meta["inplay_from_ts"] == righe[1]["ts"]
     assert gen.serializza({"b": 1, "a": [1, 2]}) == gen.serializza({"b": 1, "a": [1, 2]})
     assert gen.serializza({"a": 1}).endswith("\n")
+
+
+# ---------------------------------------------------------------------------
+# 08/10 (cantiere 12): l'impronta dei .jsonl e' INDIPENDENTE DAI FINE RIGA
+# (CRLF su Windows con core.autocrlf=true, LF nel repository); i .gz non si toccano
+# ---------------------------------------------------------------------------
+def _scrivi_registrazione(radice, ev, timeline: bytes, gz: bytes):
+    """Cartella di registrazione minima: timeline in chiaro, raw e scores come .gz (chiavi come nel repository)."""
+    d = os.path.join(radice, ev)
+    os.makedirs(d, exist_ok=True)
+    for nome, dati in ((f"{ev}.timeline.jsonl", timeline), (f"{ev}.raw.jsonl.gz", gz), (f"{ev}.scores.jsonl.gz", gz)):
+        with open(os.path.join(d, nome), "wb") as fh:
+            fh.write(dati)
+
+
+def test_impronta_uguale_con_fine_riga_lf_e_crlf(tmp_path):
+    lf = b'{"a": 1}\n{"b": 2}\n{"c": 3}\n'
+    crlf = lf.replace(b"\n", b"\r\n")
+    assert lf != crlf  # la copia CRLF e' davvero diversa sul disco
+    _scrivi_registrazione(str(tmp_path / "lf"), "9", lf, b"gz")
+    _scrivi_registrazione(str(tmp_path / "crlf"), "9", crlf, b"gz")
+    a = gen.impronte_sorgente("9", str(tmp_path / "lf"))
+    b = gen.impronte_sorgente("9", str(tmp_path / "crlf"))
+    assert a == b
+    assert a["9.timeline.jsonl"] is not None
+
+
+def test_impronta_dei_gz_non_normalizza_i_fine_riga(tmp_path):
+    # dentro un gzip la coppia 0d 0a puo' capitare per caso: non e' un fine riga e non va toccata
+    _scrivi_registrazione(str(tmp_path / "a"), "9", b"x\n", b"ab\r\ncd")
+    _scrivi_registrazione(str(tmp_path / "b"), "9", b"x\n", b"ab\ncd")
+    a = gen.impronte_sorgente("9", str(tmp_path / "a"))
+    b = gen.impronte_sorgente("9", str(tmp_path / "b"))
+    assert a["9.raw.jsonl"] != b["9.raw.jsonl"]
+    assert a["9.scores.jsonl"] != b["9.scores.jsonl"]
+    assert a["9.timeline.jsonl"] == b["9.timeline.jsonl"]
+
+
+def test_impronta_crlf_a_cavallo_del_blocco_di_lettura(tmp_path):
+    # il CR e' l'ultimo byte del primo blocco da 1 MiB e il LF il primo del secondo
+    lf = b"x" * ((1 << 20) - 1) + b"\n" + b"y\n"
+    crlf = b"x" * ((1 << 20) - 1) + b"\r\n" + b"y\r\n"
+    assert crlf[(1 << 20) - 1:(1 << 20) + 1] == b"\r\n" and crlf[(1 << 20) - 1] == 13
+    _scrivi_registrazione(str(tmp_path / "lf"), "9", lf, b"gz")
+    _scrivi_registrazione(str(tmp_path / "crlf"), "9", crlf, b"gz")
+    assert gen.impronte_sorgente("9", str(tmp_path / "lf")) == gen.impronte_sorgente("9", str(tmp_path / "crlf"))
+
+
+def test_un_cr_isolato_non_e_un_fine_riga_e_resta_nell_impronta(tmp_path):
+    _scrivi_registrazione(str(tmp_path / "a"), "9", b"a\rb\n", b"gz")
+    _scrivi_registrazione(str(tmp_path / "b"), "9", b"a\nb\n", b"gz")
+    _scrivi_registrazione(str(tmp_path / "c"), "9", b"a", b"gz")
+    _scrivi_registrazione(str(tmp_path / "d"), "9", b"a\r", b"gz")  # CR finale del file: va incluso
+    assert gen.impronte_sorgente("9", str(tmp_path / "a")) != gen.impronte_sorgente("9", str(tmp_path / "b"))
+    assert gen.impronte_sorgente("9", str(tmp_path / "c")) != gen.impronte_sorgente("9", str(tmp_path / "d"))
+
+
+@pytest.mark.parametrize("ev", EVENTI)
+def test_le_impronte_lf_delle_fixture_esistenti_restano_identiche(ev, tmp_path):
+    """Le fixture NON si rigenerano: l'impronta di oggi (qualunque fine riga abbia il disco) coincide con quella
+    scritta nella fixture, e con quella di una copia CRLF della stessa registrazione."""
+    import json
+    import shutil
+
+    sorgente = os.path.join(gen.CARTELLA_REGISTRAZIONI, ev)
+    with open(gen.nome_fixture(ev), "r", encoding="utf-8") as fh:
+        atteso = json.load(fh)["sorgente"]
+    copia = str(tmp_path / "crlf")
+    os.makedirs(os.path.join(copia, ev))
+    for nome in os.listdir(sorgente):
+        p = os.path.join(sorgente, nome)
+        if not os.path.isfile(p):
+            continue
+        dati = open(p, "rb").read()
+        if nome.endswith(".jsonl"):  # solo i file in chiaro vengono riscritti con CRLF
+            dati = dati.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+        with open(os.path.join(copia, ev, nome), "wb") as fh:
+            fh.write(dati)
+    assert gen.impronte_sorgente(ev) == atteso
+    assert gen.impronte_sorgente(ev, copia) == atteso
+    shutil.rmtree(copia)

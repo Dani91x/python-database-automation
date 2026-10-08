@@ -1,0 +1,48 @@
+...FF..........                                                          [100%]
+=================================== FAILURES ===================================
+_________________ test_fixture_riproducibile_dal_raw[35760084] _________________
+
+ev = '35760084'
+
+    @pytest.mark.skipif(os.environ.get("BARRA_FIXTURE_SALTA_RIGENERAZIONE") == "1", reason="rigenerazione saltata su richiesta")
+    @pytest.mark.parametrize("ev", EVENTI)
+    def test_fixture_riproducibile_dal_raw(ev):
+        atteso = open(gen.nome_fixture(ev), "r", encoding="utf-8").read()
+>       assert gen.serializza(gen.costruisci_fixture(ev)) == atteso, (
+            f"la fixture di {ev} non coincide con quella rigenerata dal raw: "
+            f"rilancia `python3 tools/replay_barra_fixture.py {ev}` e rivedi il diff"
+        )
+E       AssertionError: la fixture di 35760084 non coincide con quella rigenerata dal raw: rilancia `python3 tools/replay_barra_fixture.py 35760084` e rivedi il diff
+E       assert '{"event":{"e...1bf6a181"}}\n' == '{"event":{"e...1bf6a181"}}\n'
+E         
+E         Skipping 28166 identical leading characters in diff, use -v to show
+E         - 30T16:04:34.412000+00:00",3,1,"OPEN",{"206565":[[1.35,24.97],[1.39,8.61]],"86159298":[[8,1.59],[10.5,2.58]],"58805":[[5.6,2.58],[6.4,10.33]]}],[1,"2026-06-30T16:04:49.658000+00:00",3,1,"OPEN",{"206565":[[1.37,22.39],[1.39,31.86]],"86159298":[[9.2,1.72],[10,17.65]],"58805":[[5.7,3.44],[6.2,105.49]]}],[1,"2026-06-30T16:05:04.727000+00:00",3,1,"OPEN",{"206565":[[1.37,22.39],[1.39,23.25]],"86159298":[[9.6,34.44],[10,17.65]],"58805":[[5.7,3.44],[6,6.89]]}],[1,"2026-06-30T16:05:22.259000+00:00",4,1,"OPEN",{"...
+E         
+E         ...Full output truncated (4 lines hidden), use '-vv' to show
+
+tools/test_replay_barra_fixture.py:57: AssertionError
+_________________ test_fixture_riproducibile_dal_raw[35797769] _________________
+
+ev = '35797769'
+
+    @pytest.mark.skipif(os.environ.get("BARRA_FIXTURE_SALTA_RIGENERAZIONE") == "1", reason="rigenerazione saltata su richiesta")
+    @pytest.mark.parametrize("ev", EVENTI)
+    def test_fixture_riproducibile_dal_raw(ev):
+        atteso = open(gen.nome_fixture(ev), "r", encoding="utf-8").read()
+>       assert gen.serializza(gen.costruisci_fixture(ev)) == atteso, (
+            f"la fixture di {ev} non coincide con quella rigenerata dal raw: "
+            f"rilancia `python3 tools/replay_barra_fixture.py {ev}` e rivedi il diff"
+        )
+E       AssertionError: la fixture di 35797769 non coincide con quella rigenerata dal raw: rilancia `python3 tools/replay_barra_fixture.py 35797769` e rivedi il diff
+E       assert '{"event":{"e...ef1fe094"}}\n' == '{"event":{"e...ef1fe094"}}\n'
+E         
+E         Skipping 243 identical leading characters in diff, use -v to show
+E         - 10T21:09:11.034000+00:00","inplay_from_ts":"2026-07-10T19:00:34.616000+00:00","n_mercati":22,"bucket_pre_sec":79,"bucket_in_sec":19},"mo":{"market_id":"1.259819674","selections":[[22,"22"],[29578,"29578"],[58805,"58805"]]},"frames":[[0,"2026-07-10T16:31:46.771000+00:00",null,0],[0,"2026-07-10T16:33:07.386000+00:00",null,0],[0,"2026-07-10T16:34:39.385000+00:00",null,0],[0,"2026-07-10T16:36:21.008000+00:00",null,0],[0,"2026-07-10T16:40:00.804000+00:00",null,0],[0,"2026-07-10T16:33:23.754000+00:00",null,0],...
+E         
+E         ...Full output truncated (4 lines hidden), use '-vv' to show
+
+tools/test_replay_barra_fixture.py:57: AssertionError
+=========================== short test summary info ============================
+FAILED tools/test_replay_barra_fixture.py::test_fixture_riproducibile_dal_raw[35760084]
+FAILED tools/test_replay_barra_fixture.py::test_fixture_riproducibile_dal_raw[35797769]
+2 failed, 13 passed in 81.79s (0:01:21)

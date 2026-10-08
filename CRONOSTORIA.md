@@ -5207,3 +5207,8 @@ dal percorso nuovo, o artefatto del messaggio aggregato delle 17:00:06): referti
   dello scalper tennis riconosce il parcheggio fino a 1,03; banco tennis nuovo controllo B11 (22->23). Test tennis 1112 verdi; mutazioni
   del delegato 10/10 rosse, mie 4/4 rosse. REPLAY TENNIS DA RIESEGUIRE SUL PC (`AUDIT_2026-10-08/cantiere_5/REFERTO.md` sez. 6).
   Reperto del banco comune (`uscite_manuali.e_parcheggio` solo 1,01, anche calcio) -> cantiere 9.
+- CHECKPOINT C12 - SEI TEST VITEST ROSSI SOLO SU WINDOWS (verificato e integrato): impronta dei `.jsonl` indipendente dai fine riga
+  (TS e script Python, fixture invariate), lancio di `npx vite-node` da una funzione sola (`replayVerificaBarraLancio.ts`: su win32
+  `npx.cmd` + shell + argomenti tra virgolette), fallimento rapido se il figlio non parte, timeout 40 s. Mutazioni del delegato 12/12
+  rosse, mie 2/2. Windows vero DA PROVARE SUL PC (referto sez. 8). Reperto: `test_fixture_riproducibile_dal_raw` rosso gia' sulla
+  partenza nel cloud (1108 frame contro 1107) -> cantiere 13.

@@ -12,10 +12,15 @@ import { resolve } from 'node:path';
 import type { ReplayData } from '@/lib/live';
 import { FintoDb, avviaServerFinto, type ServerFinto } from './__fixtures__/replayBarraDbFinto';
 import { eventiConFixture } from './__fixtures__/replayBarraTutte';
+import { comandoViteNode } from './replayVerificaBarraLancio';
 
 const FRONTEND = resolve(__dirname, '../..');
 const EVENTI = eventiConFixture();
 const CHIAVE_FINTA = 'chiave-finta-solo-per-il-test';
+// 08/10 (cantiere 12): prima 120-180 s, e se il figlio non partiva (Windows, spawn ENOENT) il rosso arrivava
+// solo dopo il timeout. Ora il mancato avvio cade subito (evento `error` del figlio) e il timeout e' solo la
+// rete di sicurezza: misurato 9-19 s per caso su 4 CPU con load average 28, quindi 40 s lascia il doppio.
+const TEMPO_MAX_MS = 40_000;
 
 let server: ServerFinto | null = null;
 afterEach(async () => { await server?.chiudi(); server = null; });
@@ -26,11 +31,16 @@ function lancia(args: string[], env: Record<string, string>): Promise<{ codice: 
     for (const [k, v] of Object.entries(process.env)) {
         if (v != null && !/SUPABASE|VERIFICA_/i.test(k)) base[k] = v;
     }
+    // 08/10 (cantiere 12): il comando lo costruisce la funzione comune con lo script (su Windows `npx.cmd`
+    // con shell e argomenti tra virgolette; prima `spawn('npx')` senza shell dava ENOENT e poi il timeout)
+    const cmd = comandoViteNode(['scripts/verifica_barra_replay.ts', ...args], process.platform);
     return new Promise((ok) => {
-        const p = spawn('npx', ['vite-node', 'scripts/verifica_barra_replay.ts', ...args], { cwd: FRONTEND, env: { ...base, ...env } });
+        const p = spawn(cmd.comando, cmd.argomenti, { cwd: FRONTEND, env: { ...base, ...env }, shell: cmd.shell });
         let out = '', err = '';
         p.stdout.on('data', d => { out += String(d); });
         p.stderr.on('data', d => { err += String(d); });
+        // se il figlio non parte (ENOENT...) il test cade SUBITO con il motivo, senza aspettare il timeout
+        p.on('error', e => ok({ codice: -1, out, err: `${err}\nil processo figlio non e' partito: ${e.message}` }));
         p.on('close', c => ok({ codice: c ?? -1, out, err }));
     });
 }
@@ -50,7 +60,7 @@ describe('script verifica_barra_replay.ts lanciato davvero (finto PostgREST su l
         expect(server.richieste.some(q => q.includes('list_replays'))).toBe(true);
         expect(server.richieste.some(q => q.includes('get_replay_meta'))).toBe(true);
         expect(server.richieste.some(q => q.includes('get_replay_frames'))).toBe(true);
-    }, 180_000);
+    }, TEMPO_MAX_MS);
 
     it('database con un difetto sul punteggio: esce con 1 e dice quale partita e quale codice', async () => {
         const difettoso = new FintoDb(EVENTI, {
@@ -68,7 +78,7 @@ describe('script verifica_barra_replay.ts lanciato davvero (finto PostgREST su l
         expect(r.out).toContain('TABELLONE_SCENDE');
         expect(r.out).toContain(`0 OK, ${EVENTI.length} con incoerenze`);
         for (const q of server.richieste) expect(q).toMatch(RICHIESTA_AMMESSA);
-    }, 180_000);
+    }, TEMPO_MAX_MS);
 
     it('--evento filtra una sola partita; --json stampa un documento leggibile da una macchina', async () => {
         server = await avviaServerFinto(new FintoDb(EVENTI));
@@ -78,7 +88,7 @@ describe('script verifica_barra_replay.ts lanciato davvero (finto PostgREST su l
         expect(j.riepilogo).toMatchObject({ partite: 1, ok: 1 });
         expect(j.partite[0].event_id).toBe(EVENTI[0]);
         expect(j.partite[0].incoerenze).toEqual([]);
-    }, 120_000);
+    }, TEMPO_MAX_MS);
 
     it('credenziali SOLO da ambiente: senza esce con 2 e lo dice; con la sola chiave anonima chiede anche l\'utente', async () => {
         const senza = await lancia([], {});
@@ -89,5 +99,5 @@ describe('script verifica_barra_replay.ts lanciato davvero (finto PostgREST su l
         expect(anon.err).toContain('VERIFICA_EMAIL');
         const uso = await lancia(['--limite', '0'], { VITE_SUPABASE_URL: 'http://127.0.0.1:9', SUPABASE_SERVICE_ROLE_KEY: CHIAVE_FINTA });
         expect(uso.codice).toBe(2);
-    }, 120_000);
+    }, TEMPO_MAX_MS);
 });

@@ -31,6 +31,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { comandoViteNode } from '@/lib/replayVerificaBarraLancio';
 
 interface Argomenti {
     eventi: string[];
@@ -104,11 +105,15 @@ async function principale(): Promise<number> {
             return 2;
         }
         // (vite-node lascia in process.argv solo [node, vite-node, ...argomenti]: il rilancio passa da npx come l'avvio)
-        const figlio = spawnSync(process.platform === 'win32' ? 'npx.cmd' : 'npx', ['vite-node', fileURLToPath(import.meta.url), ...process.argv.slice(2)], {
+        // 08/10 (cantiere 12): il comando lo costruisce la funzione comune (su Windows `npx.cmd` con shell e il
+        // percorso del file tra virgolette: "C:\PYTHON DATABASE\..." ha uno spazio), la stessa del test.
+        const cmd = comandoViteNode([fileURLToPath(import.meta.url), ...process.argv.slice(2)], process.platform);
+        const figlio = spawnSync(cmd.comando, cmd.argomenti, {
             stdio: 'inherit',
-            shell: process.platform === 'win32',
+            shell: cmd.shell,
             env: { ...process.env, VITE_SUPABASE_URL: url, VITE_SUPABASE_ANON_KEY: chiave, VERIFICA_BARRA_RILANCIATO: '1' },
         });
+        if (figlio.error) { console.error(`Il rilancio non e' partito: ${figlio.error.message}`); return 1; }
         return figlio.status ?? 1;
     }
 

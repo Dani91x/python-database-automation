@@ -43,17 +43,30 @@ export function eventiRegistrati(): string[] {
 export const percorsoFixture = (ev: string): string => join(CARTELLA_FIXTURE, `replay_barra_${ev}.json`);
 export const comandoRigenera = (ev: string): string => `python3 tools/replay_barra_fixture.py ${ev}`;
 
-function sha256(percorso: string): string | null {
-    if (!existsSync(percorso)) return null;
-    return createHash('sha256').update(readFileSync(percorso)).digest('hex');
+/**
+ * 08/10 (cantiere 12): impronta sha256 INDIPENDENTE DAI FINE RIGA. Un file di testo (.jsonl) puo' stare sul
+ * disco con LF (Linux, repository) o con CRLF (Windows con `core.autocrlf=true`): prima di fare lo sha il
+ * contenuto passa da `\r\n` a `\n`, cosi' la stessa registrazione da' la stessa impronta ovunque. I file
+ * binari (.gz) NON si toccano: una coppia di byte 0d 0a dentro un gzip non e' un fine riga.
+ * (Stessa regola di `tools/replay_barra_fixture.py::_sha256_file`.)
+ */
+export function improntaContenuto(contenuto: Buffer, testo: boolean): string {
+    const dati = testo ? Buffer.from(contenuto.toString('latin1').replace(/\r\n/g, '\n'), 'latin1') : contenuto;
+    return createHash('sha256').update(dati).digest('hex');
 }
 
-/** sha256 dei file di registrazione come stanno nel repository (stessa regola del generatore Python). */
-export function impronteSorgente(ev: string): Record<string, string | null> {
-    const dir = join(CARTELLA_REGISTRAZIONI, ev);
+function sha256(percorso: string, testo: boolean): string | null {
+    if (!existsSync(percorso)) return null;
+    return improntaContenuto(readFileSync(percorso), testo);
+}
+
+/** sha256 dei file di registrazione come stanno nel repository (stessa regola del generatore Python).
+ *  `cartella` e' la radice delle registrazioni (i test ne passano una temporanea; di serie quella del repository). */
+export function impronteSorgente(ev: string, cartella: string = CARTELLA_REGISTRAZIONI): Record<string, string | null> {
+    const dir = join(cartella, ev);
     const out: Record<string, string | null> = {};
     for (const nome of [`${ev}.raw.jsonl`, `${ev}.scores.jsonl`, `${ev}.timeline.jsonl`]) {
-        out[nome] = sha256(join(dir, nome)) ?? sha256(join(dir, `${nome}.gz`));
+        out[nome] = sha256(join(dir, nome), true) ?? sha256(join(dir, `${nome}.gz`), false);
     }
     return out;
 }

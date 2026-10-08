@@ -97,23 +97,40 @@ def _apri_testo(path_base: str):
     return None
 
 
-def _sha256_file(path: str) -> Optional[str]:
+def _sha256_file(path: str, testo: bool = False) -> Optional[str]:
+    """sha256 del file. Con `testo=True` l'impronta e' INDIPENDENTE DAI FINE RIGA (08/10, cantiere 12):
+    `\\r\\n` -> `\\n` prima dello sha, cosi' un .jsonl scritto con CRLF (Windows con `core.autocrlf=true`)
+    e lo stesso con LF danno la stessa impronta. I file binari (.gz) vanno con `testo=False`: dentro un
+    gzip la coppia di byte 0d 0a non e' un fine riga. Stessa regola di `improntaContenuto` in
+    `frontend/src/lib/__fixtures__/replayBarraTutte.ts`."""
     if not os.path.exists(path):
         return None
     h = hashlib.sha256()
+    resto = b""  # un CR in fondo al blocco aspetta il blocco dopo (potrebbe essere l'inizio di CR LF)
     with open(path, "rb") as fh:
         for blocco in iter(lambda: fh.read(1 << 20), b""):
-            h.update(blocco)
+            if not testo:
+                h.update(blocco)
+                continue
+            dati = resto + blocco
+            resto = b""
+            if dati.endswith(b"\r"):
+                resto = b"\r"
+                dati = dati[:-1]
+            h.update(dati.replace(b"\r\n", b"\n"))
+    if resto:
+        h.update(resto)
     return h.hexdigest()
 
 
-def impronte_sorgente(event_id: str) -> Dict[str, Optional[str]]:
-    """sha256 dei file di registrazione cosi' come stanno nel repository."""
-    d = os.path.join(CARTELLA_REGISTRAZIONI, event_id)
+def impronte_sorgente(event_id: str, cartella: Optional[str] = None) -> Dict[str, Optional[str]]:
+    """sha256 dei file di registrazione, indipendente dai fine riga per i .jsonl (non per i .gz).
+    `cartella` e' la radice delle registrazioni (di serie quella del repository)."""
+    d = os.path.join(cartella or CARTELLA_REGISTRAZIONI, event_id)
     out: Dict[str, Optional[str]] = {}
     for nome in (f"{event_id}.raw.jsonl", f"{event_id}.scores.jsonl", f"{event_id}.timeline.jsonl"):
         p = os.path.join(d, nome)
-        out[nome] = _sha256_file(p) or _sha256_file(p + ".gz")
+        out[nome] = _sha256_file(p, testo=True) or _sha256_file(p + ".gz", testo=False)
     return out
 
 
