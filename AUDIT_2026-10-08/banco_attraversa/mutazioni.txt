@@ -1,0 +1,36 @@
+M1 LAY: scambio AL suo prezzo conta come oltre (< diventa <=) -> ROSSO | 5 failed, 6 passed in 2.52s
+      FAILED Betfair/stream/tests/test_banco_attraversa_2026_10_08.py::test_a_lay_abbinata_quando_il_mercato_scambia_sotto
+      FAILED Betfair/stream/tests/test_banco_attraversa_2026_10_08.py::test_b_scambi_solo_al_suo_prezzo_resta_in_coda
+      FAILED Betfair/stream/tests/test_banco_attraversa_2026_10_08.py::test_e_parziale_residuo_abbinato_parte_abbinata_invariata
+      FAILED Betfair/stream/tests/test_banco_attraversa_2026_10_08.py::test_e_campi_dello_specchio_portano_il_motivo
+      FAILED Betfair/stream/tests/test_banco_attraversa_2026_10_08.py::test_e_guasto_con_tetto_niente_voce_senza_abbinato
+M2 fill al prezzo ATTRAVERSATO invece che al prezzo dell'ordine -> ROSSO | 6 failed, 5 passed in 2.56s
+      FAILED Betfair/stream/tests/test_banco_attraversa_2026_10_08.py::test_a_lay_abbinata_quando_il_mercato_scambia_sotto
+      FAILED Betfair/stream/tests/test_banco_attraversa_2026_10_08.py::test_c_back_abbinata_quando_il_mercato_scambia_sopra
+      FAILED Betfair/stream/tests/test_banco_attraversa_2026_10_08.py::test_d_scambio_oltre_nel_book_del_piazzamento_non_anticipa
+      FAILED Betfair/stream/tests/test_banco_attraversa_2026_10_08.py::test_d_vivo_dopo_il_delay_abbina_al_primo_scambio_oltre
+      FAILED Betfair/stream/tests/test_banco_attraversa_2026_10_08.py::test_e_parziale_residuo_abbinato_parte_abbinata_invariata
+      FAILED Betfair/stream/tests/test_banco_attraversa_2026_10_08.py::test_e_guasto_con_tetto_niente_voce_senza_abbinato
+M3 niente guardie del piazzamento (stato, bet_id, ora): vale anche nel bet delay -> ROSSO | 2 failed, 9 passed in 2.81s
+      FAILED Betfair/stream/tests/test_banco_attraversa_2026_10_08.py::test_d_attraversamento_durante_il_bet_delay_non_abbina
+      FAILED Betfair/stream/tests/test_banco_attraversa_2026_10_08.py::test_d_scambio_oltre_nel_book_del_piazzamento_non_anticipa
+M3b solo la guardia dello STATO tolta (bet_id e ora restano: ridondanza attesa) -> VERDE (!!) | 11 passed in 2.01s
+M4 niente 'book pubblicato DOPO il piazzamento' -> ROSSO | 1 failed, 10 passed in 2.49s
+      FAILED Betfair/stream/tests/test_banco_attraversa_2026_10_08.py::test_d_scambio_oltre_nel_book_del_piazzamento_non_anticipa
+M5 abbina la size INTERA invece del residuo -> ROSSO | 1 failed, 10 passed in 2.54s
+      FAILED Betfair/stream/tests/test_banco_attraversa_2026_10_08.py::test_e_parziale_residuo_abbinato_parte_abbinata_invariata
+M6 regola non agganciata al motore -> ROSSO | 7 failed, 4 passed in 2.55s
+      FAILED Betfair/stream/tests/test_banco_attraversa_2026_10_08.py::test_a_lay_abbinata_quando_il_mercato_scambia_sotto
+      FAILED Betfair/stream/tests/test_banco_attraversa_2026_10_08.py::test_c_back_abbinata_quando_il_mercato_scambia_sopra
+      FAILED Betfair/stream/tests/test_banco_attraversa_2026_10_08.py::test_d_scambio_oltre_nel_book_del_piazzamento_non_anticipa
+      FAILED Betfair/stream/tests/test_banco_attraversa_2026_10_08.py::test_d_vivo_dopo_il_delay_abbina_al_primo_scambio_oltre
+      FAILED Betfair/stream/tests/test_banco_attraversa_2026_10_08.py::test_e_parziale_residuo_abbinato_parte_abbinata_invariata
+      FAILED Betfair/stream/tests/test_banco_attraversa_2026_10_08.py::test_e_campi_dello_specchio_portano_il_motivo
+      FAILED Betfair/stream/tests/test_banco_attraversa_2026_10_08.py::test_e_guasto_con_tetto_niente_voce_senza_abbinato
+M7 BACK: confronto rovesciato -> ROSSO | 1 failed, 10 passed in 2.42s
+      FAILED Betfair/stream/tests/test_banco_attraversa_2026_10_08.py::test_c_back_abbinata_quando_il_mercato_scambia_sopra
+M9 voce scritta anche se l'abbinato effettivo e' zero (guasto con tetto) -> ROSSO | 1 failed, 10 passed in 2.46s
+      FAILED Betfair/stream/tests/test_banco_attraversa_2026_10_08.py::test_e_guasto_con_tetto_niente_voce_senza_abbinato
+M8 volume CUMULATIVO invece del delta del book -> ROSSO | 2 failed, 9 passed in 2.45s
+      FAILED Betfair/stream/tests/test_banco_attraversa_2026_10_08.py::test_d_attraversamento_durante_il_bet_delay_non_abbina
+      FAILED Betfair/stream/tests/test_banco_attraversa_2026_10_08.py::test_d_scambio_oltre_nel_book_del_piazzamento_non_anticipa

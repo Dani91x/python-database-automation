@@ -354,3 +354,41 @@ causa, file:riga, test (verdi e mutazioni rosse), replay prima/dopo con ogni rig
 prima/dopo, «cosa non ho potuto verificare», e il blocco in `CRONOSTORIA.md`. Alla fine: un paragrafo
 «PRONTO PER LA VERIFICA SUL PC» con l'elenco dei cantieri, i commit e i comandi che il coordinatore PC deve
 rilanciare, nello stile di `AUDIT_2026-10-07/HANDOFF_CERTIFICAZIONE_DB.md`.
+
+---------------------------------------------------------------------------------------------------
+
+## CANTIERE 15 (AGGIUNTO ALLE 11:00 DELL'08/10, PRIORITA' MASSIMA, PRIMA DI TUTTI GLI ALTRI) — Scalper calcio sotto il banco realistico
+
+**Fatto nuovo.** Il banco comune ha la regola del «mercato che attraversa» (commit del coordinatore PC,
+`banco_comune.py` sez. 6-quater, `MotoreReplay._mercato_che_attraversa`, interruttore `ATTRAVERSAMENTO`):
+un ordine appoggiato vivo si abbina al suo prezzo appena il mercato scambia oltre (LAY sotto, BACK sopra).
+Prova sul caso vero e referti: `AUDIT_2026-10-08/banco_attraversa/`. Con il banco realistico:
+- `certifica scalper_calcio 35797769 --scenari chiusura-abbinata-in-parte` e' **KO** (`calcio_dopo_5.txt`):
+  **B2** la selezione 22 di `1.259819674` resta APERTA AL FISCHIO con 0,91 (il residuo 0,60 di una chiusura
+  BACK 1,00 con persistenza LAPSE scade al fischio e non viene richiuso); **CP4** una chiusura LAY chiede
+  1,02 quando ne restano 0,91.
+- Gli altri 4 scenari sono OK ma con percorso diverso dal riferimento del 07/10 (base 44 → 18 azioni): alle
+  17:00:06.704 un SOLO messaggio dello stream porta scambi da 1,64 a 1,72 (sel. 22) e da 4,0 a 4,4 (sel. 58805):
+  BACK 1,66, LAY 1,65 e BACK 4,20 si abbinano nello stesso book.
+
+**Da stabilire, con prova, e correggere.**
+1. B2: perche' lo scalper lascia 0,91 a mercato fino al fischio finale? Ricostruire ordine per ordine
+   (specchio + attivita'): chiusura pre-KO con LAPSE abbinata in parte, residuo scaduto al KO, poi cosa fa il
+   bot in gioco (richiude? a che prezzo? rifiutato? CP4?). Regola dell'utente del 01/10: MAI una gamba
+   lasciata a mercato dopo una chiusura; controllo di piatto dopo ogni chiusura. Se e' condotta del bot:
+   correzione con test rosso → verde + falsificazione (es. il residuo di una chiusura LAPSE scaduta al KO
+   viene richiuso in gioco con il place-and-trim al centesimo); se e' un difetto del banco (es. CP4 che non
+   capisce la chiusura dimensionata al prezzo di abbinamento, cantiere N del 07/10, o il parcheggio), correggere
+   il banco. Scrivere quale dei due con la prova.
+2. Il messaggio aggregato delle 17:00:06.704: stabilire dal raw se e' conflazione del registratore (`conflateMs`)
+   o un burst reale; in ogni caso il bot deve reggere fill simultanei su piu' gambe (nella realta' succede):
+   verificare che la condotta non vada allo scoperto quando due chiusure si abbinano nello stesso istante.
+3. Nuovo riferimento dello scalper calcio con il banco realistico: `--scenari tutti` su 35797769 e 35760084
+   (dopo il cantiere 11, oppure a blocchi se oltre il tetto), 0 violazioni; numeri scritti in
+   `AUDIT_2026-10-08/riferimenti/`. Da qui in poi e' questo il riferimento.
+4. Stesso controllo per gli altri bot calcio e tennis con il banco realistico: Mike, Omega, Safe (calcio),
+   tennis_pro/scalper/flb/swing/safe_tennis: `--scenari tutti` sulle registrazioni di riferimento, 0 violazioni
+   o reperto scritto. Dove il banco anticipa un fill, la riga va spiegata («fill per mercato che attraversa»).
+
+**Non fare.** Non spegnere `ATTRAVERSAMENTO` per far tornare verde: il banco deve dire la verita'. Non
+alzare tolleranze dei controlli B2/CP4.

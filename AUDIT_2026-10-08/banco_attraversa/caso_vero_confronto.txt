@@ -1,0 +1,138 @@
+sha applica uguale True | sha banco uguale False
+righe 36 41
+prima differenza all'indice 2
+PRIMA:
+  - ('21:03:37', '1.259557067', 47972, 'lay', 2.2, 10.18, 'EXECUTABLE', 2.41)
+  - ('21:04:21', '1.259557067', 47972, 'lay', 2.2, 10.18, 'EXECUTION_COMPLETE', 10.18)
+  - ('21:04:21', '1.259557067', 47972, 'back', 2.14, 10.0, 'PENDING', 0.0)
+  - ('21:04:22', '1.259557067', 47972, 'back', 2.14, 10.0, 'EXECUTION_COMPLETE', 10.0)
+  - ('21:04:22', '1.259557067', 47972, 'lay', 2.1, 10.19, 'EXECUTABLE', 0.0)
+  - ('21:41:38', '1.259557067', 47972, 'lay', 2.1, 10.19, 'EXECUTION_COMPLETE', 10.19)
+  - ('21:41:40', '1.259557067', 47972, 'back', 2.08, 10.0, 'EXECUTION_COMPLETE', 10.0)
+  - ('21:41:40', '1.259557067', 47972, 'lay', 2.04, 10.2, 'EXECUTABLE', 0.0)
+  - ('22:08:01', '1.259557067', 47972, 'back', 2.12, 10.0, 'EXECUTABLE', 1.09)
+  - ('22:08:32', '1.259557067', 47972, 'lay', 2.04, 10.2, 'REPLACING', 0.0)
+  - ('22:08:32', '1.259557067', 47972, 'back', 2.12, 10.0, 'EXECUTION_COMPLETE', 1.09)
+  - ('22:08:32', '1.259557067', 47972, 'lay', 2.08, 1.0, 'PENDING', 0.0)
+  - ('22:08:33', '1.259557067', 47972, 'lay', 2.04, 10.2, 'EXECUTION_COMPLETE', 0.0)
+  - ('22:08:33', '1.259557067', 47972, 'lay', 2.08, 1.0, 'EXECUTABLE', 0.0)
+  - ('22:08:33', '1.259557067', 47972, 'lay', 2.08, 10.11, 'EXECUTABLE', 0.0)
+  - ('22:15:04', '1.259557067', 47972, 'back', 2.16, 20.0, 'PENDING', 0.0)
+  - ('22:15:05', '1.259557067', 47972, 'lay', 2.08, 1.0, 'EXECUTION_COMPLETE', 0.0)
+  - ('22:15:05', '1.259557067', 47972, 'lay', 2.08, 10.11, 'EXECUTION_COMPLETE', 0.0)
+  - ('22:15:05', '1.259557067', 47972, 'back', 2.16, 20.0, 'EXECUTION_COMPLETE', 20.0)
+  - ('22:15:05', '1.259557067', 47972, 'lay', 2.12, 20.17, 'EXECUTABLE', 0.0)
+  - ('22:15:05', '1.259557067', 47972, 'lay', 2.12, 1.0, 'EXECUTABLE', 0.0)
+  - ('22:15:05', '1.259557067', 47972, 'lay', 2.12, 10.11, 'EXECUTABLE', 0.0)
+  - ('23:01:17', '1.259557067', 47972, 'lay', 2.12, 20.17, 'EXECUTION_COMPLETE', 20.17)
+  - ('23:02:35', '1.259557067', 47972, 'lay', 2.12, 1.0, 'EXECUTION_COMPLETE', 1.0)
+  - ('23:10:55', '1.259557067', 47972, 'back', 2.2, 10.5, 'PENDING', 0.0)
+  - ('23:11:00', '1.259557067', 47972, 'back', 2.2, 10.5, 'EXECUTABLE', 0.0)
+  - ('23:11:26', '1.259557067', 47972, 'back', 2.2, 10.5, 'EXECUTION_COMPLETE', 0.0)
+  - ('23:14:25', '1.259557067', 47972, 'lay', 2.12, 10.11, 'EXECUTABLE', 6.02)
+  - ('23:15:22', '1.259557067', 47972, 'lay', 2.12, 10.11, 'EXECUTION_COMPLETE', 10.11)
+  - ('23:15:35', '1.259557067', 47972, 'back', 2.06, 10.0, 'PENDING', 0.0)
+  - ('23:15:40', '1.259557067', 47972, 'back', 2.06, 10.0, 'EXECUTION_COMPLETE', 10.0)
+  - ('23:15:40', '1.259557067', 47972, 'lay', 2.02, 10.2, 'PENDING', 0.0)
+  - ('23:15:45', '1.259557067', 47972, 'lay', 2.02, 10.2, 'EXECUTABLE', 0.0)
+  - ('23:21:53', '1.259557067', 47972, 'lay', 2.02, 10.2, 'EXECUTION_COMPLETE', 10.2)
+DOPO:
+  + ('20:57:46', '1.259557067', 47972, 'lay', 2.2, 10.18, 'EXECUTION_COMPLETE', 10.18)
+  + ('20:57:46', '1.259557067', 47972, 'back', 2.18, 10.0, 'EXECUTION_COMPLETE', 10.0)
+  + ('20:57:46', '1.259557067', 47972, 'lay', 2.14, 10.19, 'EXECUTABLE', 0.0)
+  + ('21:05:17', '1.259557067', 47972, 'lay', 2.14, 10.19, 'EXECUTION_COMPLETE', 10.19)
+  + ('21:05:17', '1.259557067', 47972, 'back', 2.1, 10.0, 'EXECUTION_COMPLETE', 10.0)
+  + ('21:05:17', '1.259557067', 47972, 'lay', 2.06, 10.19, 'EXECUTABLE', 0.0)
+  + ('21:16:19', '1.259557067', 47972, 'back', 2.14, 10.0, 'PENDING', 0.0)
+  + ('21:16:21', '1.259557067', 47972, 'lay', 2.06, 10.19, 'EXECUTION_COMPLETE', 0.0)
+  + ('21:16:21', '1.259557067', 47972, 'back', 2.14, 10.0, 'EXECUTION_COMPLETE', 10.0)
+  + ('21:16:21', '1.259557067', 47972, 'lay', 2.1, 10.0, 'EXECUTABLE', 0.0)
+  + ('21:16:21', '1.259557067', 47972, 'lay', 2.1, 10.19, 'EXECUTABLE', 0.0)
+  + ('21:40:29', '1.259557067', 47972, 'lay', 2.1, 10.0, 'EXECUTABLE', 9.42)
+  + ('21:40:30', '1.259557067', 47972, 'lay', 2.1, 10.0, 'EXECUTION_COMPLETE', 10.0)
+  + ('21:41:09', '1.259557067', 47972, 'lay', 2.1, 10.19, 'EXECUTABLE', 1.15)
+  + ('21:41:38', '1.259557067', 47972, 'lay', 2.1, 10.19, 'EXECUTION_COMPLETE', 10.19)
+  + ('21:41:40', '1.259557067', 47972, 'back', 2.08, 10.0, 'EXECUTION_COMPLETE', 10.0)
+  + ('21:41:40', '1.259557067', 47972, 'lay', 2.04, 10.2, 'EXECUTABLE', 0.0)
+  + ('22:08:01', '1.259557067', 47972, 'back', 2.12, 10.0, 'EXECUTABLE', 1.09)
+  + ('22:08:32', '1.259557067', 47972, 'lay', 2.04, 10.2, 'REPLACING', 0.0)
+  + ('22:08:32', '1.259557067', 47972, 'back', 2.12, 10.0, 'EXECUTION_COMPLETE', 1.09)
+  + ('22:08:32', '1.259557067', 47972, 'lay', 2.08, 1.0, 'PENDING', 0.0)
+  + ('22:08:33', '1.259557067', 47972, 'lay', 2.04, 10.2, 'EXECUTION_COMPLETE', 0.0)
+  + ('22:08:33', '1.259557067', 47972, 'lay', 2.08, 1.0, 'EXECUTABLE', 0.0)
+  + ('22:08:33', '1.259557067', 47972, 'lay', 2.08, 10.11, 'EXECUTABLE', 0.0)
+  + ('22:15:04', '1.259557067', 47972, 'back', 2.16, 20.0, 'PENDING', 0.0)
+  + ('22:15:05', '1.259557067', 47972, 'lay', 2.08, 1.0, 'EXECUTION_COMPLETE', 0.0)
+  + ('22:15:05', '1.259557067', 47972, 'lay', 2.08, 10.11, 'EXECUTION_COMPLETE', 0.0)
+  + ('22:15:05', '1.259557067', 47972, 'back', 2.16, 20.0, 'EXECUTION_COMPLETE', 20.0)
+  + ('22:15:05', '1.259557067', 47972, 'lay', 2.12, 20.17, 'EXECUTABLE', 0.0)
+  + ('22:15:05', '1.259557067', 47972, 'lay', 2.12, 1.0, 'EXECUTABLE', 0.0)
+  + ('22:15:05', '1.259557067', 47972, 'lay', 2.12, 10.11, 'EXECUTABLE', 0.0)
+  + ('23:01:17', '1.259557067', 47972, 'lay', 2.12, 20.17, 'EXECUTION_COMPLETE', 20.17)
+  + ('23:01:34', '1.259557067', 47972, 'lay', 2.12, 1.0, 'EXECUTION_COMPLETE', 1.0)
+  + ('23:01:34', '1.259557067', 47972, 'lay', 2.12, 10.11, 'EXECUTION_COMPLETE', 10.11)
+  + ('23:15:35', '1.259557067', 47972, 'back', 2.06, 10.0, 'PENDING', 0.0)
+  + ('23:15:40', '1.259557067', 47972, 'back', 2.06, 10.0, 'EXECUTION_COMPLETE', 10.0)
+  + ('23:15:40', '1.259557067', 47972, 'lay', 2.02, 10.2, 'PENDING', 0.0)
+  + ('23:15:45', '1.259557067', 47972, 'lay', 2.02, 10.2, 'EXECUTABLE', 0.0)
+  + ('23:18:01', '1.259557067', 47972, 'lay', 2.02, 10.2, 'EXECUTION_COMPLETE', 10.2)
+ATTR 20:57:46 [{'ms': 1783025865640, 'market_id': '1.259557067', 'selection_id': 47972, 'side': 'LAY', 'prezzo': 2.2, 'size': 10.18, 'prezzo_oltre': 2.18, 'ordine': '140107385536746835', 'motivo': 'attraversato'}]
+ATTR 21:05:17 [{'ms': 1783026316989, 'market_id': '1.259557067', 'selection_id': 47972, 'side': 'LAY', 'prezzo': 2.14, 'size': 10.19, 'prezzo_oltre': 2.12, 'ordine': '140107385799261396', 'motivo': 'attraversato'}]
+ATTR 23:01:34 [{'ms': 1783033293997, 'market_id': '1.259557067', 'selection_id': 47972, 'side': 'LAY', 'prezzo': 2.12, 'size': 1.0, 'prezzo_oltre': 2.1, 'ordine': '140107386242129859', 'motivo': 'attraversato'}]
+ATTR 23:01:34 [{'ms': 1783033293997, 'market_id': '1.259557067', 'selection_id': 47972, 'side': 'LAY', 'prezzo': 2.12, 'size': 10.11, 'prezzo_oltre': 2.1, 'ordine': '140107386242131159', 'motivo': 'attraversato'}]
+ATTR 23:18:01 [{'ms': 1783034281135, 'market_id': '1.259557067', 'selection_id': 47972, 'side': 'LAY', 'prezzo': 2.02, 'size': 10.2, 'prezzo_oltre': 2.0, 'ordine': '140107386733062728', 'motivo': 'attraversato'}]
+violazioni UGUALE
+ordini DIVERSO
+  PRIMA 16 
+  DOPO  20
+conto_banco DIVERSO
+  PRIMA {"lordo": 0.76, "commissione": 0.04, "netto": 0.72, "mercati": {"1.259557067": 0.76}, "mercati_non_regolati": []} 
+  DOPO  {"lordo": 0.95, "commissione": 0.05, "netto": 0.9, "mercati": {"1.259557067": 0.95}, "mercati_non_regolati": []}
+conto_flumine UGUALE
+conto_dichiarato DIVERSO
+  PRIMA {"fonte": "media_conto", "metodo": "cicli", "lordo": 0.75, "commissione": 0.04, "netto": 0.72, "aliquota": 0.05, "cicli_esito_ignoto": 0} 
+  DOPO  {"fonte": "media_conto", "metodo": "cicli", "lordo": 0.94, "commissione": 0.05, "netto": 0.89, "aliquota": 0.05, "cicli_esito_ignoto": 0}
+esiti_mercati UGUALE
+cicli_bot DIVERSO
+  PRIMA [{"ciclo": 1, "ordini": 2, "rientri": [], "puntato": 10.0, "banca": {"importo": 10.18, "quota": 2.2, "abbinato": 10.18, "dove": "pre-match, 115'44\" al fischio", "fine": "abbinata per intero"}, "esito": "CHIUSO", "lordo": 0.18, "netto": 0.17, "inizio_ms": 1783018805077, "fine_ms": 1783026261752, "ordini_id": ["140107362289254058", "140107362289299432"], "riga": "ingresso 10.00 @2.24 (abbinato 10.00, pre-match, 239'59\" al fischio); totale puntato massimo 10.00; banca finale 10.18 @2.20 PERSIST, abbinata 10.18 (ultimo abbinamento: pre-match, 115'44\" al fischio), a fine replay abbinata per intero; profitto lordo +0.18, netto +0.17 [CHIUSO]", "origine": "clic", "clic": "clic-1-1783018803475", "prima_punta_ordine": "140107362289254058", "prima_punta_ms": 1783018805077}, {"ciclo": 2, "ordini": 2, "rientri": [], "puntato": 10.0, "banca": {"importo": 10.19, "quota": 2.1, "abbinato": 10.19, "dove": "pre-match, 78'26\" al fischio", "fine": "abbinata per intero"}, "esito": "CHIUSO", "lordo": 0.19, "netto": 0.18, "inizio_ms": 1783026261651, "fine_ms": 1783028498998, "ordini_id": ["140107362712607120", "140107362712751061"], "riga": "ingresso 10.00 @2.14 (abbinato 10.00, pre-match, 115'44\" al fischio); totale puntato massimo 10.00; banca finale 10.19 @2.10 PERSIST, abbinata 10.19 (ultimo abbinamento: pre-match, 78'26\" al fischio), a fine replay abbinata per intero; profitto lordo +0.19, netto +0.18 [CHIUSO]", "origine": "rientro_automatico", "clic": null, "prima_punta_ordine": "140107 
+  DOPO  [{"ciclo": 1, "ordini": 2, "rientri": [], "puntato": 10.0, "banca": {"importo": 10.18, "quota": 2.2, "abbinato": 10.18, "dove": "pre-match, 122'19\" al fischio", "fine": "abbinata per intero"}, "esito": "CHIUSO", "lordo": 0.18, "netto": 0.17, "inizio_ms": 1783018805077, "fine_ms": 1783025866546, "ordini_id": ["140107385536732732", "140107385536746835"], "riga": "ingresso 10.00 @2.24 (abbinato 10.00, pre-match, 239'59\" al fischio); totale puntato massimo 10.00; banca finale 10.18 @2.20 PERSIST, abbinata 10.18 (ultimo abbinamento: pre-match, 122'19\" al fischio), a fine replay abbinata per intero; profitto lordo +0.18, netto +0.17 [CHIUSO]", "origine": "clic", "clic": "clic-1-1783018803475", "prima_punta_ordine": "140107385536732732", "prima_punta_ms": 1783018805077}, {"ciclo": 2, "ordini": 2, "rientri": [], "puntato": 10.0, "banca": {"importo": 10.19, "quota": 2.14, "abbinato": 10.19, "dove": "pre-match, 114'48\" al fischio", "fine": "abbinata per intero"}, "esito": "CHIUSO", "lordo": 0.18, "netto": 0.17, "inizio_ms": 1783025865735, "fine_ms": 1783026317805, "ordini_id": ["140107385799232736", "140107385799261396"], "riga": "ingresso 10.00 @2.18 (abbinato 10.00, pre-match, 122'19\" al fischio); totale puntato massimo 10.00; banca finale 10.19 @2.14 PERSIST, abbinata 10.19 (ultimo abbinamento: pre-match, 114'48\" al fischio), a fine replay abbinata per intero; profitto lordo +0.18, netto +0.17 [CHIUSO]", "origine": "rientro_automatico", "clic": null, "prima_punta_ordine": "140
+clic_bot DIVERSO
+  PRIMA [{"id": "clic-1-1783018803475", "clic_ms": 1783018803475, "mandato_ms": 1783018803475, "letto_ms": 1783018805077, "esito": "eseguito", "motivo": null, "prima_punta": {"ordine": "140107362289254058", "quota": 2.24, "importo": 10.0, "ms": 1783018805077}}, {"id": "clic-2-1783034130481", "clic_ms": 1783034130481, "mandato_ms": 1783034130481, "letto_ms": 1783034134705, "esito": "eseguito", "motivo": null, "prima_punta": {"ordine": "140107363913283446", "quota": 2.06, "importo": 10.0, "ms": 1783034134705}}] 
+  DOPO  [{"id": "clic-1-1783018803475", "clic_ms": 1783018803475, "mandato_ms": 1783018803475, "letto_ms": 1783018805077, "esito": "eseguito", "motivo": null, "prima_punta": {"ordine": "140107385536732732", "quota": 2.24, "importo": 10.0, "ms": 1783018805077}}, {"id": "clic-2-1783034130481", "clic_ms": 1783034130481, "mandato_ms": 1783034130481, "letto_ms": 1783034134705, "esito": "eseguito", "motivo": null, "prima_punta": {"ordine": "140107386732037885", "quota": 2.06, "importo": 10.0, "ms": 1783034134705}}]
+accensione UGUALE
+NOTA- book in ritardo: 2097770; lapse al fischio: 0; lapse alla sospensione: 0; righe di specchio catturate: 140054
+NOTA- fill per mercato che attraversa: regola SPENTA (solo coda di flumine)
+NOTA- MEDIA UNDER: stato finale FINE; sessioni della modalita' 1; cicli chiusi 4; ordini piazzati (le azioni del referto) 16; eventi {'media_ingresso': 4, 'media_comando_eseguito': 2, 'media_punta_abbinata': 6, 'media_banca': 6, 'media_ciclo_chiuso': 4, 'media_rientro_automatico': 2, 'media_rientro': 3, 'media_annullo': 2, 'media_banca_ridotta': 1, 'media_banca_sposta': 3, 'media_banca_spostata': 3, 'media_banca_spostamento_fallito': 1, 'media_live': 1, 'media_banca_abbinata': 5, 'media_punta_non_abbi
+NOTA- MEDIA UNDER ciclo 1: ingresso 10.00 @2.24 (abbinato 10.00, pre-match, 239'59" al fischio); totale puntato massimo 10.00; banca finale 10.18 @2.20 PERSIST, abbinata 10.18 (ultimo abbinamento: pre-match, 115'44" al fischio), a fine replay abbinata per intero; profitto lordo +0.18, netto +0.17 [CHIUSO]
+NOTA- MEDIA UNDER ciclo 2: ingresso 10.00 @2.14 (abbinato 10.00, pre-match, 115'44" al fischio); totale puntato massimo 10.00; banca finale 10.19 @2.10 PERSIST, abbinata 10.19 (ultimo abbinamento: pre-match, 78'26" al fischio), a fine replay abbinata per intero; profitto lordo +0.19, netto +0.18 [CHIUSO]
+NOTA- MEDIA UNDER ciclo 3: ingresso 10.00 @2.08 (abbinato 10.00, pre-match, 78'25" al fischio); rientro 1 @2.12: esatto 10.20, piazzato 10.00, abbinato 1.09; rientro 2 @2.16: esatto 20.39, piazzato 20.00, abbinato 20.00; rientro 3 @2.20: esatto 10.51, piazzato 10.50, abbinato 0.00; totale puntato massimo 31.09; banca finale 31.28 @2.12 PERSIST, abbinata 31.28 (ultimo abbinamento: in gioco al 15'17"), a fine replay abbinata per intero; profitto lordo +0.19, netto +0.18 [CHIUSO]
+NOTA- MEDIA UNDER ciclo 4: ingresso 10.00 @2.06 (abbinato 10.00, in gioco al 15'30"); totale puntato massimo 10.00; banca finale 10.20 @2.02 PERSIST, abbinata 10.20 (ultimo abbinamento: in gioco al 21'48"), a fine replay abbinata per intero; profitto lordo +0.20, netto +0.19 [CHIUSO]
+NOTA- MEDIA UNDER P&L del replay: lordo +0.75 | commissione 0.04 (5.0%) | NETTO +0.72 EUR (dagli ordini abbinati della modalita'; non e' il metro della certificazione: il metro e' la condotta)
+NOTA- MEDIA UNDER: controlli M sollecitati {'M1': 15787, 'M2': 8993, 'M3': 8993, 'M4': 8993, 'M5': 15787, 'M6': 10299, 'M11': 10355, 'M7': 6635, 'M8': 15787, 'M9': 7, 'M10': 18381, 'M19': 2477, 'M20': 11929}; MAI sollecitati (non lo so): M21
+NOTA- MEDIA UNDER banca: ordini di banca 9; annullati (non spostati) 0; spostati col replace 3; ripiazzati IDENTICI 0; posizione aperta senza banca viva 0.0 s (tratto piu' lungo 0.0 s)
+NOTA- ATTIVA ADESSO clic clic-1-1783018803475 (pre-match, 240'02" al fischio): letto dalla sessione pre-match, 240'00" al fischio; per il banco ESEGUIBILE; prima punta 140107362289254058 @2.24 per 10.0 a pre-match, 240'00" al fischio
+NOTA- ATTIVA ADESSO clic clic-2-1783034130481 (in gioco al 15'25"): letto dalla sessione in gioco al 15'29"; per il banco ESEGUIBILE; prima punta 140107363913283446 @2.06 per 10.0 a in gioco al 15'29"
+NOTA- ATTIVA ADESSO ciclo 1: prima punta 140107362289254058 @2.24 a pre-match, 240'00" al fischio, partita da CLIC (clic-1-1783018803475)
+NOTA- ATTIVA ADESSO ciclo 2: prima punta 140107362712607120 @2.14 a pre-match, 115'44" al fischio, partita da RIENTRO AUTOMATICO pre-match
+NOTA- ATTIVA ADESSO ciclo 3: prima punta 140107362992714948 @2.08 a pre-match, 78'26" al fischio, partita da RIENTRO AUTOMATICO pre-match
+NOTA- ATTIVA ADESSO ciclo 4: prima punta 140107363913283446 @2.06 a in gioco al 15'29", partita da CLIC (clic-2-1783034130481)
+NOTA- ATTIVA ADESSO: controlli M12-M18 sollecitati {'M12': 15787, 'M13': 11, 'M14': 15787, 'M15': 15784, 'M16': 1}; MAI sollecitati (non lo so): M17, M18
+NOTA+ book in ritardo: 2097770; lapse al fischio: 0; lapse alla sospensione: 0; righe di specchio catturate: 192551
+NOTA+ fill per mercato che attraversa: 5 [motivo attraversato] - 20:57:45 UTC 1.259557067 sel 47972 LAY 10.18 @2.20 (scambio a 2.18); 21:05:16 UTC 1.259557067 sel 47972 LAY 10.19 @2.14 (scambio a 2.12); 23:01:33 UTC 1.259557067 sel 47972 LAY 1.00 @2.12 (scambio a 2.10); 23:01:33 UTC 1.259557067 sel 47972 LAY 10.11 @2.12 (scambio a 2.10); 23:18:01 UTC 1.259557067 sel 47972 LAY 10.20 @2.02 (scambio a 2.00)
+NOTA+ MEDIA UNDER: stato finale FINE; sessioni della modalita' 1; cicli chiusi 5; ordini piazzati (le azioni del referto) 20; eventi {'media_ingresso': 5, 'media_comando_eseguito': 2, 'media_punta_abbinata': 8, 'media_banca': 8, 'media_ciclo_chiuso': 5, 'media_rientro_automatico': 3, 'media_rientro': 3, 'media_banca_sposta': 4, 'media_banca_spostata': 4, 'media_annullo': 1, 'media_banca_ridotta': 1, 'media_banca_spostamento_fallito': 1, 'media_live': 1, 'media_banca_abbinata': 3, 'media_attesa_clic': 
+NOTA+ MEDIA UNDER ciclo 1: ingresso 10.00 @2.24 (abbinato 10.00, pre-match, 239'59" al fischio); totale puntato massimo 10.00; banca finale 10.18 @2.20 PERSIST, abbinata 10.18 (ultimo abbinamento: pre-match, 122'19" al fischio), a fine replay abbinata per intero; profitto lordo +0.18, netto +0.17 [CHIUSO]
+NOTA+ MEDIA UNDER ciclo 2: ingresso 10.00 @2.18 (abbinato 10.00, pre-match, 122'19" al fischio); totale puntato massimo 10.00; banca finale 10.19 @2.14 PERSIST, abbinata 10.19 (ultimo abbinamento: pre-match, 114'48" al fischio), a fine replay abbinata per intero; profitto lordo +0.18, netto +0.17 [CHIUSO]
+NOTA+ MEDIA UNDER ciclo 3: ingresso 10.00 @2.10 (abbinato 10.00, pre-match, 114'48" al fischio); rientro 1 @2.14: esatto 10.19, piazzato 10.00, abbinato 10.00; totale puntato massimo 20.00; banca finale 20.19 @2.10 PERSIST, abbinata 20.19 (ultimo abbinamento: pre-match, 78'26" al fischio), a fine replay abbinata per intero; profitto lordo +0.19, netto +0.18 [CHIUSO]
+NOTA+ MEDIA UNDER ciclo 4: ingresso 10.00 @2.08 (abbinato 10.00, pre-match, 78'25" al fischio); rientro 1 @2.12: esatto 10.20, piazzato 10.00, abbinato 1.09; rientro 2 @2.16: esatto 20.39, piazzato 20.00, abbinato 20.00; totale puntato massimo 31.09; banca finale 31.28 @2.12 PERSIST, abbinata 31.28 (ultimo abbinamento: in gioco al 1'29"), a fine replay abbinata per intero; profitto lordo +0.19, netto +0.18 [CHIUSO]
+NOTA+ MEDIA UNDER ciclo 5: ingresso 10.00 @2.06 (abbinato 10.00, in gioco al 15'30"); totale puntato massimo 10.00; banca finale 10.20 @2.02 PERSIST, abbinata 10.20 (ultimo abbinamento: in gioco al 17'56"), a fine replay abbinata per intero; profitto lordo +0.20, netto +0.19 [CHIUSO]
+NOTA+ MEDIA UNDER P&L del replay: lordo +0.94 | commissione 0.05 (5.0%) | NETTO +0.89 EUR (dagli ordini abbinati della modalita'; non e' il metro della certificazione: il metro e' la condotta)
+NOTA+ MEDIA UNDER: controlli M sollecitati {'M1': 15787, 'M2': 11368, 'M3': 11368, 'M4': 11368, 'M5': 15787, 'M6': 9336, 'M11': 9365, 'M7': 6635, 'M8': 15787, 'M9': 8, 'M10': 18381, 'M19': 3530, 'M20': 12284}; MAI sollecitati (non lo so): M21
+NOTA+ MEDIA UNDER banca: ordini di banca 12; annullati (non spostati) 0; spostati col replace 4; ripiazzati IDENTICI 0; posizione aperta senza banca viva 0.0 s (tratto piu' lungo 0.0 s)
+NOTA+ ATTIVA ADESSO clic clic-1-1783018803475 (pre-match, 240'02" al fischio): letto dalla sessione pre-match, 240'00" al fischio; per il banco ESEGUIBILE; prima punta 140107385536732732 @2.24 per 10.0 a pre-match, 240'00" al fischio
+NOTA+ ATTIVA ADESSO clic clic-2-1783034130481 (in gioco al 15'25"): letto dalla sessione in gioco al 15'29"; per il banco ESEGUIBILE; prima punta 140107386732037885 @2.06 per 10.0 a in gioco al 15'29"
+NOTA+ ATTIVA ADESSO ciclo 1: prima punta 140107385536732732 @2.24 a pre-match, 240'00" al fischio, partita da CLIC (clic-1-1783018803475)
+NOTA+ ATTIVA ADESSO ciclo 2: prima punta 140107385799232736 @2.18 a pre-match, 122'20" al fischio, partita da RIENTRO AUTOMATICO pre-match
+NOTA+ ATTIVA ADESSO ciclo 3: prima punta 140107385850896164 @2.1 a pre-match, 114'48" al fischio, partita da RIENTRO AUTOMATICO pre-match
+NOTA+ ATTIVA ADESSO ciclo 4: prima punta 140107386046508589 @2.08 a pre-match, 78'26" al fischio, partita da RIENTRO AUTOMATICO pre-match
+NOTA+ ATTIVA ADESSO ciclo 5: prima punta 140107386732037885 @2.06 a in gioco al 15'29", partita da CLIC (clic-2-1783034130481)
+NOTA+ ATTIVA ADESSO: controlli M12-M18 sollecitati {'M12': 15787, 'M13': 12, 'M14': 15787, 'M15': 15784, 'M16': 1}; MAI sollecitati (non lo so): M17, M18

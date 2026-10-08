@@ -3746,6 +3746,10 @@ def _chiudi_referto(ref: CERT.Referto, banco: _Banco, rifiuti: Any, ritardi: Any
                     "sospensione: %d; righe di specchio catturate: %d"
                     % (mot.book_in_ritardo, mot.lapse_al_fischio,
                        mot.lapse_alla_sospensione, len(banco.righe_specchio)))
+    # 08/10 (banco_comune, 6-quater): i fill dati dal MERCATO CHE ATTRAVERSA
+    from ...backtest import banco_comune as _BC
+
+    ref.note.append(_BC.nota_fill_attraversati(mot))
     ref.note.append("fasi viste: %s" % ", ".join(banco.fasi_viste))
     ref.note.append("uscite EFFETTIVE delle strategie a fine sessione: %s"
                     % ("AUTOMATICHE" if viste and all(

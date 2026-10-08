@@ -1493,6 +1493,8 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
                 "lapse alla sospensione: %d"
                 % (motore.pompati, motore.lapse_al_fischio,
                    motore.lapse_alla_sospensione))
+            # 08/10 (banco_comune, 6-quater): i fill dati dal MERCATO CHE ATTRAVERSA
+            ref.note.append(BC.nota_fill_attraversati(motore))
             mercato = quadro.markets.markets.get(market_id)
             aperti_prima = ponte.residui_del_bot()
             ponte.chiudi(mercato)

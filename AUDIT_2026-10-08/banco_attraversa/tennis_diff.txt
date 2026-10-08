@@ -1,0 +1,38 @@
+15a16
+>       nota: fill per mercato che attraversa: 0
+25a27
+>       nota: fill per mercato che attraversa: 0
+36a39
+>       nota: fill per mercato che attraversa: 0
+47a51
+>       nota: fill per mercato che attraversa: 0
+58a63
+>       nota: fill per mercato che attraversa: 0
+70a76
+>       nota: fill per mercato che attraversa: 0
+80a87
+>       nota: fill per mercato che attraversa: 0
+92a100
+>       nota: fill per mercato che attraversa: 0
+102a111
+>       nota: fill per mercato che attraversa: 0
+112a122
+>       nota: fill per mercato che attraversa: 0
+124a135
+>       nota: fill per mercato che attraversa: 0
+137a149
+>       nota: fill per mercato che attraversa: 0
+149a162
+>       nota: fill per mercato che attraversa: 0
+162a176
+>       nota: fill per mercato che attraversa: 0
+175a190
+>       nota: fill per mercato che attraversa: 0
+188a204
+>       nota: fill per mercato che attraversa: 0
+201a218
+>       nota: fill per mercato che attraversa: 0
+249c266
+< TEMPO TOTALE: 39.8s (39.8 s) su 17 replay | obiettivo 300 s, tetto 600 s (CERTIFICA_TETTO_S)
+---
+> TEMPO TOTALE: 18.9s (18.9 s) su 17 replay | obiettivo 300 s, tetto 600 s (CERTIFICA_TETTO_S)

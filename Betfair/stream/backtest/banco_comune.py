@@ -145,6 +145,37 @@ LIMITI DICHIARATI (un banco che non li dichiara e' peggio di nessun banco)
    diversi e chiedono prezzi diversi: non e' un difetto, e confrontarne le quote
    non vuol dire niente.
 
+6-quater. IL MERCATO CHE ATTRAVERSA (08/10/2026).
+   Il modello di coda di flumine (`_piq` consumato da `_process_traded`, con
+   META' del volume scambiato) abbina un ordine appoggiato solo quando il
+   volume scambiato a prezzi pari o migliori del suo ha consumato la coda
+   davanti. Ma su Betfair un ordine APPOGGIATO al prezzo P e' gia' abbinato
+   quando il mercato SCAMBIA OLTRE P: per una LAY (banca) uno scambio a un
+   prezzo < P, per una BACK (punta) uno scambio a un prezzo > P. Nessuno punta
+   a 2,00 mentre a 2,02 c'e' un'offerta disponibile: gli ordini davanti in coda
+   sono stati abbinati o cancellati, e il nostro con loro. Reperto: 35768297,
+   O/U 2,5, Under, banca 10,20 @2,02 appoggiata alle 23:15:40 UTC con 902,94
+   davanti; a 2,02 si scambiano 685,86 (meno della coda), alle 23:18:01 il
+   mercato scambia a 2,00 e poi scende a 1,87; flumine la abbinava alle 23:21:53
+   (quando la somma degli scambi <= 2,02 superava la coda), Betfair alle
+   23:18:01. Stesso prezzo, quattro minuti dopo: con un gol nel mezzo il replay
+   direbbe "scoperto" mentre il bot vero era chiuso.
+   LA REGOLA (`MotoreReplay._mercato_che_attraversa`, DOPO il middleware che
+   abbina e PRIMA che flumine chiuda gli ordini completati): un ordine LIMIT
+   VIVO (gia' piazzato: fuori dal bet delay, `bet_id` assegnato, book
+   PUBBLICATO DOPO il piazzamento), con residuo, su un mercato OPEN, il cui
+   runner (ACTIVE) nel book corrente ha VOLUME SCAMBIATO NUOVO (delta di
+   `tradedVolume`, lo stesso `RunnerAnalytics.traded` che flumine usa per la
+   coda) a un prezzo oltre il suo, viene abbinato per TUTTO il residuo al SUO
+   prezzo (mai al prezzo attraversato), con il publish time di quel book. Il
+   solo spostamento delle offerte non conta: serve uno scambio. Tutto il resto
+   resta di flumine (parziali a P dalla coda, lapse, sospensioni, bet delay).
+   Ogni fill cosi' e' scritto in `SimulatedOrder.fill_attraversati`
+   (motivo `attraversato`), contato in `MotoreReplay.fill_attraversati`, e
+   compare nel referto e nello specchio (`varianti_bot.campi_ordine`,
+   `_fill_attraversato`). `ATTRAVERSAMENTO = False` rimette il modello di sola
+   coda: serve SOLO alla misura prima/dopo e alla falsificazione.
+
 6. NESSUN ERRORE DI RETE. Gli stati di riconciliazione da esito IGNOTO non
    capitano da soli: si provocano con `MercatoFlumine.guasti["place_exception"]`.
 
@@ -1273,7 +1304,20 @@ class MercatoFlumine:
             "fill": len(tutti),
             "abbinato": round(sum(float(r[2]) for r in tutti), 2),
             "prezzi": sorted({round(float(r[1]), 2) for r in tutti})[:8],
+            # 08/10 (6-quater): di cui dati dal mercato che attraversa
+            "attraversati": len(self.fill_attraversati()),
         }
+
+    def fill_attraversati(self) -> List[Dict[str, Any]]:
+        """08/10 (6-quater): i fill dati dal MERCATO CHE ATTRAVERSA, con il
+        motivo `attraversato` e il ref del bot (``MotoreReplay.
+        _mercato_che_attraversa``), in ordine di tempo."""
+        out: List[Dict[str, Any]] = []
+        for ref, o in self.ordini.items():
+            for v in getattr(getattr(o, "simulated", None), "fill_attraversati", None) or []:
+                out.append(dict(v, ref=ref))
+        out.sort(key=lambda v: v["ms"])
+        return out
 
     def pnl(self, commissione: float) -> Dict[str, Any]:
         """P&L LORDO e NETTO del replay, con la commissione della produzione.
@@ -1779,6 +1823,12 @@ RIUSA_LIBRO_CHIUSO = True
 # serve SOLO al test di equivalenza e alla falsificazione.
 RIUSA_LAPSE = True
 
+# 08/10/2026 - IL MERCATO CHE ATTRAVERSA (vedi 6-quater nella testata e
+# `MotoreReplay._mercato_che_attraversa`): un ordine appoggiato a P e' abbinato
+# a P quando il mercato scambia oltre P. `False` = il modello di sola coda di
+# flumine, come prima: serve SOLO alla misura prima/dopo e alla falsificazione.
+ATTRAVERSAMENTO = True
+
 # LATENZA DELLE CHIAMATE DI LETTURA — ASSUNTA, NON MISURATA (16/09/2026).
 # `list_current_orders`, `list_cleared_orders` e `read_book` sono REST sincrone
 # come il piazzamento, ma Betfair NON le trattiene per il bet delay: costano
@@ -1991,6 +2041,10 @@ class MotoreReplay:
         # (`chiusura_parziale.GuastoChiusuraParziale`). None = nessun guasto:
         # tutti gli altri scenari restano identici, riga per riga.
         self.guasto_chiusure: Any = None
+        # 08/10 (6-quater): i fill dati dal MERCATO CHE ATTRAVERSA, uno per
+        # ordine e book: {ms, market_id, selection_id, side, prezzo, size,
+        # prezzo_oltre, ordine, motivo}. Il referto li conta.
+        self.fill_attraversati: List[Dict[str, Any]] = []
 
     def _prepara_pacchi(self, pacchi: Sequence[Any]) -> None:
         """Passa al guasto (se c'e') i pacchetti PRIMA che flumine li esegua."""
@@ -2048,9 +2102,115 @@ class MotoreReplay:
             self._ultimo_book_lapse[market_id] = market_book
         for middleware in quadro._market_middleware:
             futils.call_middleware_error_handling(middleware, market)
+        if ATTRAVERSAMENTO and market.blotter.active:
+            # 08/10 (6-quater): DOPO il middleware (la coda di flumine ha gia'
+            # dato i suoi parziali a P su questo book) e PRIMA che flumine
+            # chiuda gli ordini completati
+            self._mercato_che_attraversa(market, market_book)
         if market.blotter.active:
             quadro._process_simulated_orders(market)
         return market, nuovo
+
+    def _mercato_che_attraversa(self, mercato: Any, market_book: Any) -> int:
+        """IL MERCATO SCAMBIA OLTRE IL PREZZO DI UN ORDINE APPOGGIATO: su
+        Betfair quell'ordine e' gia' abbinato. Torna quanti ordini ha abbinato.
+
+        LAY a P: uno scambio a un prezzo < P vuol dire che un puntatore ha preso
+        una quota PEGGIORE della nostra; la nostra (migliore per lui) non poteva
+        essere ancora disponibile. BACK a P: uno scambio a un prezzo > P, idem
+        per il bancatore. Quindi il residuo e' abbinato, AL NOSTRO PREZZO P,
+        all'istante del book che porta lo scambio (testata, 6-quater).
+
+        Le condizioni, tutte necessarie:
+          * il mercato e' OPEN e il runner e' ACTIVE in QUESTO book (solo allora
+            il middleware ha ricalcolato `RunnerAnalytics.traded` su questo
+            book: per un runner non attivo il delta sarebbe quello vecchio);
+          * l'ordine e' LIMIT, VIVO e PIAZZATO: stato vivo di flumine ma non
+            PENDING (nel bet delay l'ordine non e' ancora sul book di Betfair),
+            `bet_id` assegnato, e il book e' stato PUBBLICATO DOPO il
+            piazzamento (`responses.date_time_placed`): gli scambi dello stesso
+            intervallo potrebbero essere avvenuti prima che l'ordine esistesse,
+            e nel dubbio non si anticipa niente;
+          * residuo > 0;
+          * volume scambiato NUOVO (> 0) a un prezzo oltre P. Il delta e' quello
+            di `RunnerAnalytics.traded` (`markets/middleware.py:256-288`), il
+            dizionario di flumine NON consumato dalla coda (il middleware passa
+            agli ordini una COPIA): lo scambio e' un fatto del mercato, non
+            dipende da quanto ne hanno gia' preso altri nostri ordini.
+        Il fill passa da `SimulatedOrder._update_matched`, come ogni fill di
+        flumine (stessa forma `[publish_time_ms, prezzo, size]`, stessa media
+        pesata); la coda `_piq` va a zero.
+        """
+        if str(getattr(market_book, "status", "") or "") != "OPEN":
+            return 0
+        analitiche = (getattr(mercato, "context", None) or {}).get("simulated")
+        if not analitiche:
+            return 0
+        from flumine.order.order import OrderStatus
+        from flumine.order.ordertype import OrderTypes
+
+        pt = getattr(market_book, "publish_time", None)
+        pt_ms = getattr(market_book, "publish_time_epoch", None)
+        if pt is None or pt_ms is None:
+            return 0
+        attivi = {(r.selection_id, r.handicap) for r in (market_book.runners or [])
+                  if getattr(r, "status", None) == "ACTIVE"}
+        vivi = (OrderStatus.EXECUTABLE, OrderStatus.CANCELLING,
+                OrderStatus.UPDATING, OrderStatus.REPLACING)
+        abbinati = 0
+        for ordine in list(getattr(mercato.blotter, "live_orders", []) or []):
+            sim = getattr(ordine, "simulated", None)
+            if sim is None or ordine.status not in vivi:
+                continue
+            tipo = getattr(ordine, "order_type", None)
+            if getattr(tipo, "ORDER_TYPE", None) != OrderTypes.LIMIT:
+                continue
+            if getattr(ordine, "bet_id", None) is None:
+                continue
+            piazzato = getattr(getattr(ordine, "responses", None), "date_time_placed", None)
+            if piazzato is None or not pt > piazzato:
+                continue
+            chiave = (ordine.selection_id, ordine.handicap)
+            if chiave not in attivi:
+                continue
+            scambi = getattr(analitiche.get(chiave), "traded", None) or {}
+            if not scambi:
+                continue
+            residuo = float(sim.size_remaining or 0.0)
+            if residuo <= 0:
+                continue
+            prezzo = float(tipo.price)
+            if ordine.side == "LAY":
+                oltre = [float(p) for p, v in scambi.items()
+                         if float(v or 0.0) > 0 and float(p) < prezzo - 1e-9]
+                prezzo_oltre = max(oltre) if oltre else None
+            else:
+                oltre = [float(p) for p, v in scambi.items()
+                         if float(v or 0.0) > 0 and float(p) > prezzo + 1e-9]
+                prezzo_oltre = min(oltre) if oltre else None
+            if prezzo_oltre is None:
+                continue
+            prima = float(sim.size_matched or 0.0)
+            sim._update_matched([pt_ms, tipo.price, round(residuo, 2)])
+            # l'abbinato EFFETTIVO: un guasto di scenario (``chiusura_parziale``
+            # avvolge ``_update_matched`` con un tetto) puo' rifiutarne una parte
+            # o tutto, e il referto deve dire quello che e' successo davvero
+            size = round(float(sim.size_matched or 0.0) - prima, 2)
+            if size <= 0:
+                continue
+            sim._piq = 0.0
+            voce = {"ms": int(pt_ms), "market_id": str(mercato.market_id),
+                    "selection_id": ordine.selection_id, "side": ordine.side,
+                    "prezzo": prezzo, "size": size, "prezzo_oltre": prezzo_oltre,
+                    "ordine": str(ordine.id), "motivo": "attraversato"}
+            registro = getattr(sim, "fill_attraversati", None)
+            if registro is None:
+                registro = []
+                sim.fill_attraversati = registro
+            registro.append(voce)
+            self.fill_attraversati.append(voce)
+            abbinati += 1
+        return abbinati
 
     def _lapse_al_fischio(self, mercato: Any, market_book: Any) -> int:
         """Il mercato PASSA IN GIOCO: Betfair cancella gli ordini LAPSE non
@@ -2723,6 +2883,28 @@ class EsitoReplay:
         self.lapse_al_fischio: int = 0
         # ordini appoggiati uccisi dalla SOSPENSIONE IN GIOCO (gol/rigore/rosso)
         self.lapse_alla_sospensione: int = 0
+        # 08/10 (6-quater): ordini abbinati perche' il mercato ha attraversato
+        self.fill_attraversati: int = 0
+
+
+def nota_fill_attraversati(motore: Any) -> str:
+    """08/10 (6-quater): la riga del referto con i fill dati dal MERCATO CHE
+    ATTRAVERSA, uno per uno (ora UTC, mercato, lato, prezzo, size, prezzo
+    scambiato oltre). Sempre presente, anche a zero: un referto deve dire che la
+    regola c'era."""
+    voci = list(getattr(motore, "fill_attraversati", None) or [])
+    if not ATTRAVERSAMENTO:
+        return "fill per mercato che attraversa: regola SPENTA (solo coda di flumine)"
+    if not voci:
+        return "fill per mercato che attraversa: 0"
+    parti = []
+    for v in voci:
+        ora = datetime.fromtimestamp(int(v["ms"]) / 1000.0, tz=timezone.utc)
+        parti.append("%s UTC %s sel %s %s %.2f @%.2f (scambio a %.2f)" % (
+            ora.strftime("%H:%M:%S"), v["market_id"], v["selection_id"], v["side"],
+            float(v["size"]), float(v["prezzo"]), float(v["prezzo_oltre"])))
+    return "fill per mercato che attraversa: %d [motivo attraversato] - %s" % (
+        len(voci), "; ".join(parti))
 
 
 def replay_evento(**kw: Any) -> EsitoReplay:
@@ -2859,5 +3041,6 @@ def _replay_evento(*, event_id: str, cartella: str, servizio: Callable[..., Any]
     esito.book_in_ritardo = motore.book_in_ritardo
     esito.lapse_al_fischio = motore.lapse_al_fischio
     esito.lapse_alla_sospensione = motore.lapse_alla_sospensione
+    esito.fill_attraversati = len(motore.fill_attraversati)
     esito.senza_futuro = motore.senza_futuro
     return esito

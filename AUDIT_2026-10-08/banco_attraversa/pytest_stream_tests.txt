@@ -1,0 +1,133 @@
+........................................................................ [  1%]
+........................................................................ [  2%]
+..................................................sss................... [  4%]
+........................................................................ [  5%]
+........................................................................ [  7%]
+........................................................................ [  8%]
+........................................................................ [ 10%]
+........................................................................ [ 11%]
+........................................................................ [ 13%]
+........................................................................ [ 14%]
+........................................................................ [ 15%]
+........................................................................ [ 17%]
+........................................................................ [ 18%]
+........................................................................ [ 20%]
+........................................................................ [ 21%]
+........................................................................ [ 23%]
+........................................................................ [ 24%]
+........................................................................ [ 26%]
+........................................................................ [ 27%]
+........................................................................ [ 28%]
+........................................................................ [ 30%]
+........................................................................ [ 31%]
+........................................................................ [ 33%]
+........................................................................ [ 34%]
+........................................................................ [ 36%]
+........................................................................ [ 37%]
+........................................................................ [ 39%]
+........................................................................ [ 40%]
+..............
+[misura DOPO] motore a evento, comando->place: p50=1.57 ms p95=2.18 ms max=3.24 ms (n=60)
+.
+[misura PRIMA] worker a 1,0 s, comando->place: 951, 651, 351 ms
+......................................................... [ 41%]
+........................................................................ [ 43%]
+........................................................................ [ 44%]
+........................................................................ [ 46%]
+........................................................................ [ 47%]
+........................................................................ [ 49%]
+.................ss..................................................... [ 50%]
+........................................................................ [ 52%]
+........................................................................ [ 53%]
+........................................................................ [ 54%]
+........................................................................ [ 56%]
+........................................................................ [ 57%]
+........................................................................ [ 59%]
+........................................................................ [ 60%]
+........................................................................ [ 62%]
+........................................................................ [ 63%]
+........................................................................ [ 65%]
+........................................................................ [ 66%]
+........................................................................ [ 67%]
+........................................................................ [ 69%]
+........................................................................ [ 70%]
+........................................................................ [ 72%]
+........................................................................ [ 73%]
+........................................................................ [ 75%]
+........................................................................ [ 76%]
+........................................................................ [ 78%]
+........................................................................ [ 79%]
+........................................................................ [ 80%]
+........................................................................ [ 82%]
+........................................................................ [ 83%]
+............xxxx....x................................................... [ 85%]
+........................................................................ [ 86%]
+........................................................................ [ 88%]
+........................................................................ [ 89%]
+........................................................................ [ 91%]
+........................................................................ [ 92%]
+........................................................................ [ 93%]
+........................................................................ [ 95%]
+........................................................................ [ 96%]
+........................................................................ [ 98%]
+........................................................................ [ 99%]
+............                                                             [100%]
+============================== warnings summary ===============================
+Betfair/stream/tests/test_db_client_timeout_bot_2026_09_28.py::test_il_default_resta_quello_di_sempre_per_tutti_gli_altri_processi
+Betfair/stream/tests/test_db_client_timeout_bot_2026_09_28.py::test_il_profilo_bot_arriva_al_client_httpx_di_postgrest
+Betfair/stream/tests/test_db_client_timeout_bot_2026_09_28.py::test_il_client_gia_creato_nel_thread_viene_sostituito
+Betfair/stream/tests/test_db_client_timeout_bot_2026_09_28.py::test_vale_per_ogni_thread_del_processo
+Betfair/stream/tests/test_punto6_b_stato_bot_e_battito_tennis_2026_09_25.py::test_tennis_in_attesa_senza_eventi_pubblica_il_battito
+Betfair/stream/tests/test_punto6_b_stato_bot_e_battito_tennis_2026_09_25.py::test_tennis_in_attesa_senza_mercati_pubblica_il_battito
+Betfair/stream/tests/test_review_finale_2026_07_17.py::test_tennis_worker_split_throttle
+Betfair/stream/tennis_live/tests/test_tennis_hardening.py::test_disarm_stopping_timeout_not_flat_is_error
+Betfair/stream/tennis_live/tests/test_tennis_mission_done.py::test_score_worker_keeps_point_pressure_on_feed_error
+  C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Lib\site-packages\supabase\_sync\client.py:309: DeprecationWarning: The 'timeout' parameter is deprecated. Please configure it in the http client instead.
+    return SyncPostgrestClient(
+
+Betfair/stream/tests/test_db_client_timeout_bot_2026_09_28.py::test_il_default_resta_quello_di_sempre_per_tutti_gli_altri_processi
+Betfair/stream/tests/test_db_client_timeout_bot_2026_09_28.py::test_il_profilo_bot_arriva_al_client_httpx_di_postgrest
+Betfair/stream/tests/test_db_client_timeout_bot_2026_09_28.py::test_il_client_gia_creato_nel_thread_viene_sostituito
+Betfair/stream/tests/test_db_client_timeout_bot_2026_09_28.py::test_vale_per_ogni_thread_del_processo
+Betfair/stream/tests/test_punto6_b_stato_bot_e_battito_tennis_2026_09_25.py::test_tennis_in_attesa_senza_eventi_pubblica_il_battito
+Betfair/stream/tests/test_punto6_b_stato_bot_e_battito_tennis_2026_09_25.py::test_tennis_in_attesa_senza_mercati_pubblica_il_battito
+Betfair/stream/tests/test_review_finale_2026_07_17.py::test_tennis_worker_split_throttle
+Betfair/stream/tennis_live/tests/test_tennis_hardening.py::test_disarm_stopping_timeout_not_flat_is_error
+Betfair/stream/tennis_live/tests/test_tennis_mission_done.py::test_score_worker_keeps_point_pressure_on_feed_error
+  C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Lib\site-packages\supabase\_sync\client.py:309: DeprecationWarning: The 'verify' parameter is deprecated. Please configure it in the http client instead.
+    return SyncPostgrestClient(
+
+Betfair/stream/tests/test_frammenti_tcp_2026_09_28.py::test_frammento_aperto_a_caldo_arriva_a_process_market_book
+Betfair/stream/tests/test_frammenti_tcp_2026_09_28.py::test_rifiuto_max_connection_limit_chiude_e_non_ritenta
+Betfair/stream/tests/test_frammenti_tcp_2026_09_28.py::test_connessione_che_cade_si_riconnette_con_initialclk_e_clk
+Betfair/stream/tests/test_frammenti_tcp_2026_09_28.py::test_connessione_che_cade_si_riconnette_con_initialclk_e_clk
+Betfair/stream/tests/test_frammenti_tcp_2026_09_28.py::test_uscita_ordinata_chiude_tutte_le_connessioni_a_caldo
+  C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Lib\site-packages\betfairlightweight\streaming\betfairstream.py:216: DeprecationWarning: ssl.PROTOCOL_TLS is deprecated
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS)
+
+Betfair/stream/tests/test_punto6_b_stato_bot_e_battito_tennis_2026_09_25.py::test_tennis_in_attesa_senza_mercati_pubblica_il_battito
+  C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Lib\site-packages\_pytest\threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread cambio-gbp-eur
+  
+  Traceback (most recent call last):
+    File "C:\Python313\Lib\threading.py", line 1041, in _bootstrap_inner
+      self.run()
+      ~~~~~~~~^^
+    File "C:\Python313\Lib\threading.py", line 992, in run
+      self._target(*self._args, **self._kwargs)
+      ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\Betfair\stream\valuta.py", line 226, in _ciclo
+      time.sleep(RINFRESCO_S)
+      ~~~~~~~~~~^^^^^^^^^^^^^
+    File "C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\Betfair\stream\tests\test_punto6_b_stato_bot_e_battito_tennis_2026_09_25.py", line 169, in _sonno
+      raise _Fermo()
+  Betfair.stream.tests.test_punto6_b_stato_bot_e_battito_tennis_2026_09_25._Fermo
+  
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+
+real	6m11.863s
+user	0m0.015s
+sys	0m0.031s

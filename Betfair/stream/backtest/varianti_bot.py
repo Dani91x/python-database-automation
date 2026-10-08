@@ -275,6 +275,12 @@ def campi_ordine(ordine: Any) -> Dict[str, Any]:
         "_strategia": None if strat is None else str(strat),
         "_sostituisce": None,
     }
+    # 08/10 (banco_comune, 6-quater): l'ordine abbinato perche' il MERCATO HA
+    # ATTRAVERSATO il suo prezzo porta il motivo e l'istante del fill. La chiave
+    # c'e' SOLO quando e' successo (le righe di sempre restano identiche).
+    attraversati = getattr(getattr(ordine, "simulated", None), "fill_attraversati", None)
+    if attraversati:
+        out["_fill_attraversato"] = [dict(v) for v in attraversati]
     ot = getattr(ordine, "order_type", None)
     prezzo = _num(getattr(ot, "price", None))
     if tr is None or prezzo is None:
