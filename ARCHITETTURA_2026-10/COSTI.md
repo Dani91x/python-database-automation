@@ -16,3 +16,4 @@ Cumulativo = spesa totale (coordinatore + delegati).
 | 17:30 | 5. Ondata 4 (E5 Tennis, B punteggi, F money management) + verifica | 100,20 | |
 | 18:05 | 6. Ondata 5 (H banco, J frontend, K cartelle e codice morto) + verifica | 108,70 | |
 | 18:20 | 7. `01_FUNZIONALITA.md` generato dalle schede (970 voci) con `strumenti/f01_assembla_funzionalita.py` | 109,10 | |
+| 19:00 | 8. Sintesi Opus: `04_ARCHITETTURA_OBIETTIVO.md` completo; `05` a meta' (delegato interrotto da errore di rete, ENOTFOUND) | 118,59 | dato comunicato dall'utente (40,94 + 77,65 del secondo processo) |

@@ -5236,3 +5236,7 @@ Brief: `ARCHITETTURA_2026-10/BRIEF_PIANO_ARCHITETTURA_2026-10-08.md` (par. 9 val
   `money_management.py`), `predict_fixture.py:986` (import di `market_intelligence`).
 - 18:20 `01_FUNZIONALITA.md`: 970 voci da 15 schede, generato e rieseguibile (`strumenti/f01_assembla_funzionalita.py`);
   campione verificato (`auth.py:156` CustodeSessione, `motore_ordini.py:692` MotoreOrdini).
+- 19:00 `04_ARCHITETTURA_OBIETTIVO.md` ACCETTATO (986 righe, delegato Opus): 11 componenti, contratti tipati, flussi mermaid,
+  8 processi invece di 18, righe -10,4% sicuro / -17,5% con le decisioni (il -80% globale NON e' dimostrato: strati attorno ai
+  bot -45/-73%, strategia identica per regola). Verifica del coordinatore: quota di commento dei runner rimisurata 35,4% /
+  28,8% (04 dice 38% / 33%: altro metodo, stesso ordine). `05` interrotto a meta' da un errore di rete del delegato.
