@@ -49,7 +49,7 @@ CERTIFICAZIONE.)» e «VOGLIO CHE MASTER SIA PERFETTO [...] SENZA REGRESSIONI DI
 | `b4d91ed` | W3a | Mike/Omega/Safe sanno SUBITO (canale del conto, anche in prova) degli ordini esterni; ordini di altri bot riconosciuti; verdetto in esposizione; W2 riallineato | replay DOPO su 2 macchine: 0 KO, 0 violazioni (Mike 29, Omega 22, Safe 23 x3); 2 differenze non attese spiegate di persona con sonde (`W3A_CONSAPEVOLEZZA_SERVIZI.md`, verifica); suite cima `66fee09` 11273/0 | log dal vivo e prova in paper (§3.7) |
 | `71e56de` | fix | frammenti di mercato: un id() riciclato non eredita il tempo di un altro frammento (test rosso a caso nel cloud, 20/20 rosso da solo) | test nuovo deterministico, mutazione rossa, 10/10 verdi ripetuti | nessuna |
 | `66fee09` | merge | `eloquent-franklin` fino a `3c4aae6`: action Seasons Catchup resiliente alla rete + architettura tappe 2-5 | `test_catchup_*.py` 90/90, nessun file nuovo > 500 KB, CRONOSTORIA senza righe perse | nessuna |
-| [IN ATTESA] | 11 | velocita' del banco | | |
+| `3e235d1` | 11 | velocita' del banco: SCENARI ISOLATI per Omega (13 stati di processo + 2 avvisi) e Mike (dossier) -> `--worker 1` = `--worker N` = scenario da solo; conversione dei livelli e verdetto del raw piu' rapidi a referto identico; `confronta_referti` | delegato 22 mutazioni rosse; mie 2/2 rosse + 1 equivalente spiegata; mio replay omega `tutti` worker 1 = worker 3 (0 righe), esiti identici a W3a, scalper identico salvo impronta | §2.3 e §3.7 (`--worker 3` contro `--worker 1` sul PC, `psutil`) |
 
 ## 2. Il metodo rapido (perche' non servono replay di settimane)
 
@@ -59,8 +59,11 @@ CERTIFICAZIONE.)» e «VOGLIO CHE MASTER SIA PERFETTO [...] SENZA REGRESSIONI DI
 2. **Solo cio' che il cloud non poteva fare.** Le registrazioni calcio del banco (35760084, 35797769) sono state
    rigiocate nel cloud dal coordinatore e dalle sessioni parallele: sul PC NON si rifanno per intero.
 3. **Parallelo.** `certifica` accetta `--worker N`: per la verifica rapida si lanciano processi separati per bot e
-   per registrazione (uno per CPU), non in fila. [IN ATTESA cantiere 11: se il referto con `--worker N>1` e'
-   identico a `--worker 1`, diventa la via ufficiale.]
+   per registrazione (uno per CPU), non in fila. DAL CANTIERE 11 `--worker 3` e' la via ufficiale per la verifica
+   veloce: il referto e' identico a `--worker 1` riga per riga (Omega e Mike prima NON erano isolati fra scenari:
+   corretto), confronto con `python -m Betfair.stream.backtest.tools.confronta_referti W1.txt W3.txt` (atteso 0
+   righe). ATTENZIONE: senza `psutil` il tetto dei worker diventa 1 IN SILENZIO (nessuna riga «worker:» nel referto);
+   sul PC verificare `python -c "import psutil"` (se manca: chiedere all'utente prima di installarlo).
 4. **Mutazioni a campione.** Per ogni cantiere UNA mutazione scelta da chi verifica (non fra quelle del referto):
    deve diventare rossa. Se resta verde: reperto, il cantiere non e' certificato.
 5. **Confronto, non lettura.** I referti si confrontano con `diff` esclusi tempi e hash, contro i file del cloud
@@ -260,4 +263,7 @@ infine `git checkout master && git merge --ff-only fusione-master`.
 - D-13 (banco, trovato verificando W3a) `omega_service._LAMBDA_CACHE` (usata anche dalla Safe) scade dopo 900 s di orologio di
   PARETE e il banco della Safe non la azzera fra scenari: in quale scenario si ricalcola il modello dipende dalla velocita' della
   macchina (oggi sposta solo una nota, decisioni identiche). Proposta: azzerarla fra scenari come RB-5 di Omega (solo banco).
-- [IN ATTESA: decisioni del cantiere 11]
+- D-14 (cantiere 11) a) `pytest-xdist` nel `.venv` del PC (suite 291 -> 88 s nel cloud): installazione da autorizzare;
+  b) `psutil` non e' in `requirements.txt`: senza, `--worker N` diventa 1 in silenzio (aggiungerlo o stampare una riga);
+  c) lo scenario `riavvio` di Omega azzera solo 7 stati su 20 (un riavvio vero li perde tutti): cambiarlo cambia lo scenario;
+  d) memoria per identita' delle liste convertite in `valuta` (-65 % dei livelli convertiti, codice di produzione): non fatta.
